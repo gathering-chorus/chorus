@@ -1248,7 +1248,7 @@ fi
 # cannot ask (#3726 — a blind verify never passes).
 # =============================================================================
 if [ -z "${TTL:-}" ]; then
-  SERVICES_GRAPH="${SERVICES_GRAPH:-urn:chorus:instances}"   # NOT domains:services — service-harvest-load.sh PUT-replaces that graph wholesale; co-tenants wiped every cycle (proven 2026-08-27)
+  SERVICES_GRAPH="${SERVICES_GRAPH:-urn:chorus:domains:services}"   # #4187 — the domain graph, the row's home (Jeff 09-13). Was urn:chorus:instances because service-harvest-load.sh PUT-replaced this graph wholesale (proven 2026-08-27); #4089 made the harvester replace only its own classes, so co-tenancy is safe again and the reason for the catch-all is gone.
   SERVICES_STAGING="${SERVICES_GRAPH}-staging-deploy"
   SERVICES_SET=(
     "$CHORUS_ROOT/designing/data/service-instances.ttl"

@@ -2476,7 +2476,12 @@ chorus:ServiceShape a sh:NodeShape ;
     # wiped all nine Service records. Proven live 2026-08-27 10:12.
     # The home is urn:chorus:instances — the graph Product already uses:
     # DAL-writable, additively merged, no replace-semantics tenant.
-    chorus:instancesGraph "urn:chorus:instances" ;
+    # #4187 — a row's home is its domain graph (Jeff 09-13). The paragraph above is
+    # why Service rows left it: the harvester PUT-replaced the whole graph. #4089
+    # made the harvester replace only its own classes (Commitment, ScheduledJob,
+    # ServiceInstance, MappingStaleness), so co-tenancy is safe and the reason is
+    # gone. The v1 copies are retired by the deploy that seeds SERVICES_SET here.
+    chorus:instancesGraph "urn:chorus:domains:services" ;
     # ADR-048 §3 field-exposure (Silas's spec; #3506 carries his name/port/authToken
     # example onto real ServiceShape fields — re-classify freely, it's a 1-line model edit):
     #   public = emitted to everyone · internal = authed callers only · secret = never

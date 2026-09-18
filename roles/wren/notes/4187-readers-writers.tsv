@@ -1,0 +1,199 @@
+platform/config/instance-seed-manifest.txt	instances	read	?	25:# other (#3839). Lands in urn:chorus:instances with the rest (see the file heade
+platform/mcp-server/tests/athena-validate-report.test.ts	instances	read	?	39:await withServer('echo "1) retired predicates in use:"; echo "graph-issue|v1-row
+platform/mcp-server/src/server.ts	both	read	Domain,SubDomain	827:"Show a role's priorities sorted by the #3654 board-domain order: chunks in role
+platform/tests/3540-tests-domain-schema-land.bats	ontology	read	Test	134:run env ONTOLOGY_GRAPH="$TEST_GRAPH" TTL="$TTL" bash "$SCRIPT"
+platform/tests/3550-athena-deploy-non-clobbering.bats	ontology	both	ValueStreamStep	28:TEST_GRAPH="urn:chorus:ontology-test-bats-3550"
+platform/tests/3697-value-stream-grammar.bats	instances	read	?	13:# Canonical grammar lives in value-stream-instances.ttl (live in urn:chorus:inst
+platform/tests/3698-value-stream-serve.bats	both	read	?	59:@test "AC1 ValueStreamShape declares instancesGraph urn:chorus:instances" {
+platform/tests/3838-roles-model.bats	instances	read	?	93:[ "$g" = "urn:chorus:instances" ] || { echo "RoleShape instancesGraph = '${g:-<n
+platform/tests/4029-deploy-twice-same-count.bats	ontology	read	?	69:deploy() { env ONTOLOGY_GRAPH="$GRAPH" TTL="$TTL" "$@" bash "$SCRIPT" >> "$BATS_
+platform/tests/4058-authz-scope-reachable.bats	instances	read	?	49:printf 'urn:chorus:ops\nurn:chorus:instances\n' > "$AUTHZ_HELD_FILE"
+platform/tests/4080-deploy-model-werk-target-guard.bats	ontology	read	?	22:export ONTOLOGY_GRAPH="urn:chorus:ontology-test-bats-4080"
+platform/tests/4080-products-sections.bats	instances	read	?	63:# seeder's graph placement (documents seed into urn:chorus:instances, the API
+platform/tests/4187-athena-validate-v1-rows.bats	both	both	?	11:stub_start() {  # $1 = rows the stub reports in urn:chorus:instances for class F
+platform/tests/athena-model-e2e.sh	instances	both	?	27:curl -sf --data-urlencode "update=DELETE WHERE { GRAPH <urn:chorus:instances> { 
+platform/tests/bats-graph-isolation.bats	ontology	both	?	51:a="$(bash -c 'echo "urn:chorus:ontology-test-bats-3540-$$"')"
+platform/tests/board-3654-door-proof.sh	both	both	Role	25:# so both the writes and the sibling-checks land here, never in live urn:chorus:
+platform/tests/card-ownership-4116.test.sh	instances	read	?	25:GRAPH="${CARD_GRAPH:-urn:chorus:instances}"
+platform/tests/catalog-curation-api.test.sh	instances	write	CatalogDoc	154:INSERT DATA { GRAPH <urn:chorus:instances> { <$MALFORMED_URI> a chorus:CatalogDo
+platform/tests/decisions-graph.test.sh	instances	read	Decision	90:GRAPH_DEC_COUNT=$(count_query "PREFIX chorus: <https://jeffbridwell.com/chorus#>
+platform/tests/principles-api.test.sh	both	read	?	111:# urn:chorus:ontology, Principle instances now live in urn:chorus:instances. The
+platform/tests/principles-graph.test.sh	instances	read	?	8:# Post-#2314 (ADR-025), Principle instances lived in urn:chorus:instances.
+platform/tests/sparql-prefix-lint.test.sh	ontology	read	Principle	46:GRAPH <urn:chorus:ontology> {
+platform/tests/test-instances-graph-3768.sh	ontology	read	?	35:elif [ "$served" != "urn:chorus:ontology" ]; then
+platform/tests/test-principles-serve-3749.sh	ontology	read	?	45:stale=$(count_q "PREFIX c: <$NS> SELECT (COUNT(DISTINCT ?p) AS ?n) WHERE { GRAPH
+platform/tests/test_helper.bash	ontology	read	?	57:printf 'urn:chorus:ontology-test-bats-%s-%s' "$1" "$run_id"
+platform/spikes/mcp-registry/generator.mjs	ontology	read	Skill	25:GRAPH <urn:chorus:ontology> {
+platform/spikes/mcp-registry/server.mjs	ontology	read	Skill	155:GRAPH <urn:chorus:ontology> {
+platform/hooks/pre-commit	ontology	read	TBox	54:echo "   Isolate with ONTOLOGY_GRAPH=<test graph>, or add: wipe-guard: exempt — 
+platform/scripts/athena-deploy-model.sh	both	both	Domain,Principle	1107:SERVICES_GRAPH="${SERVICES_GRAPH:-urn:chorus:instances}"   # NOT domains:service
+platform/scripts/athena-model-gate.sh	ontology	read	TBox	20:#   2. assert_dal_writable marks urn:chorus:ontology DBA-path-only (#3356), so
+platform/scripts/athena-validate.sh	both	read	GovernanceCheck	19:G="urn:chorus:instances"
+platform/scripts/authz-coverage.sh	ontology	read	APISurface	86:GRAPH <urn:chorus:ontology> { ?s a chorus:APISurface ; chorus:requiresScope ?req
+platform/scripts/board-3654-project.sh	instances	both	Chunk,ChunkMembership,Card	62:Q='PREFIX chorus: <https://jeffbridwell.com/chorus#> SELECT ?slug ?cid ?rank ?rs
+platform/scripts/card-ownership-backfill-4116.sh	instances	both	Card,Role	22:GRAPH="${CARD_GRAPH:-urn:chorus:instances}"
+platform/scripts/check-decision-direct-edit.sh	instances	read	Decision	55:echo "Decisions live in urn:chorus:instances and are written via the Athena API:
+platform/scripts/check-principle-direct-edit.sh	instances	read	Principle	143:echo "Principles live in urn:chorus:instances and are written via the Athena API
+platform/scripts/chorus-rerank	instances	both	Chunk,ChunkMembership,Card	60:local q="PREFIX chorus: <$NS> SELECT ?slug ?rseq WHERE { GRAPH <urn:chorus:insta
+platform/scripts/crawler-facet-file-domain.py	instances	write	File,Domain	9:`<domain> chorus:contains <file>` into urn:chorus:instances so owl-api
+platform/scripts/enrichment-write-fileDependsOn.sh	instances	write	File	21:HYDRATION_GRAPH="${HYDRATION_GRAPH:-urn:chorus:instances}"
+platform/scripts/enrichment-write-fileInDomain.sh	instances	write	File,Domain	30:HYDRATION_GRAPH="${HYDRATION_GRAPH:-urn:chorus:instances}"
+platform/scripts/fuseki-rebuild.sh	both	both	?	205:CATCHALL="${FUSEKI_CATCHALL_GRAPH:-urn:chorus:instances}"
+platform/scripts/graph-health	both	read	Domain,Product,SubDomain	19:INSTANCES_GRAPH="urn:chorus:instances"
+platform/scripts/hats-appointments-4175.py	instances	read	Service,Hat	17:urn:chorus:instances — the graph the door reports as servedFrom. Until that is
+platform/scripts/migrate-4154-codefile-catchall.sh	instances	both	CodeFile	12:curl -sf -H 'Accept: text/csv' --data-urlencode 'query=PREFIX c: <https://jeffbr
+platform/scripts/products-3603-migrate.sh	ontology	both	?	38:GRAPH="urn:chorus:ontology"
+platform/scripts/restore-drill.sh	both	read	?	58:GRAPHS="urn:chorus:ontology urn:chorus:instances urn:chorus:domains:security"
+platform/scripts/security-3618-migrate.sh	ontology	both	?	33:GRAPH="urn:chorus:ontology"
+platform/scripts/security-sweep	ontology	read	APISurface	9:*               boots from (fuseki urn:chorus:ontology)
+platform/scripts/service-harvest-load.sh	instances	read	Service,Commitment	12:# the reason Service rows fled to urn:chorus:instances). Jeff, 2026-09-03: a
+platform/scripts/test-athena-deploy-model.bats	ontology	both	Domain,Test	14:TEST_GRAPH="urn:chorus:ontology-test-bats-3509"
+platform/scripts/test-ontology-wipe-guard.sh	ontology	read	TBox	50:env ONTOLOGY_GRAPH="urn:chorus:test-\$\$" bash "\$ROOT/platform/scripts/$DEPLOY_
+platform/scripts/wipe-guard-scan.sh	ontology	read	TBox	31:LIVE_B='urn:chorus:ontology([^-A-Za-z0-9]|$)'
+platform/api/tests/athena.integration.test.ts	ontology	write	?	375:// which DROPs urn:chorus:ontology then reloads chorus.ttl ONLY, collapsing the 
+platform/api/tests/class-atlas-3992.test.ts	ontology	read	?	5:// live query against urn:chorus:ontology on 2026-08-27 — never hand-shaped
+platform/api/tests/class-atlas-constraints-4053.test.ts	ontology	read	?	5:// Counted live in urn:chorus:ontology on 2026-09-01: maxCount 44, pattern 7,
+platform/api/tests/class-atlas-handler-4030.test.ts	ontology	read	?	41:expect(body.graph).toBe('urn:chorus:ontology');
+platform/api/tests/class-atlas-served-4053.test.ts	ontology	read	?	3:// reads urn:chorus:ontology only, so it shows what the PEN declared and cannot 
+platform/api/tests/quality-summary.integration.test.ts	ontology	read	?	33:generatedFrom: { graph: 'urn:chorus:ontology', shape: 'chorus:TestShape', shapeV
+platform/api/tests/quality-summary.test.ts	ontology	read	?	42:graph: 'urn:chorus:ontology',
+platform/api/tests/seed-loom-decisions.test.ts	instances	write	Decision	80:it('emits SPARQL INSERT DATA targeting urn:chorus:instances graph', () => {
+platform/api/tests/regression/athena-batch.regression.integration.test.ts	ontology	read	?	26:_meta: { source: 'athena', query_name: queryName, graph: 'urn:chorus:ontology', 
+platform/api/tests/regression/athena-enrichment-write.regression.test.ts	both	both	?	23:store.load(ttl, { format: 'text/turtle', to_graph_name: oxigraph.namedNode('urn:
+platform/api/tests/regression/athena-subdomain-batch.regression.integration.test.ts	ontology	read	?	41:_meta: { source: 'athena', query_name: queryName, graph: 'urn:chorus:ontology', 
+platform/api/tests/regression/athena-subdomain-detail.regression.integration.test.ts	ontology	read	?	21:_meta: { source: 'athena', query_name: queryName, graph: 'urn:chorus:ontology', 
+platform/api/tests/regression/athena-subdomains.regression.integration.test.ts	ontology	read	?	24:_meta: { source: 'athena', query_name: queryName, graph: 'urn:chorus:ontology', 
+platform/api/tests/regression/chorus-domain-multi-comment.regression.test.ts	instances	read	?	7:* present in urn:chorus:instances via direct SPARQL.
+platform/api/tests/regression/chorus-domain.regression.integration.test.ts	both	read	?	31:sparql: async (query) => sparql(query.replace(/urn:chorus:instances/g, 'urn:chor
+platform/api/tests/regression/replay-chorus-domain-enrichment.regression.test.ts	both	read	?	138:// Dump contains real-world IDs like "role-declared.json" and "fuseki-tdb2-(urn:
+platform/api/tests/regression/golden/athena-blast-radius.json	ontology	read	?	5:"graph": "urn:chorus:ontology",
+platform/api/tests/regression/golden/athena-health.json	ontology	read	?	5:"graph": "urn:chorus:ontology"
+platform/api/tests/regression/golden/athena-machines.json	ontology	read	?	5:"graph": "urn:chorus:ontology",
+platform/api/tests/regression/golden/athena-owners.json	ontology	read	?	5:"graph": "urn:chorus:ontology",
+platform/api/tests/regression/golden/athena-subdomain-actors.json	ontology	read	?	5:"graph": "urn:chorus:ontology",
+platform/api/tests/regression/golden/athena-subdomain-alerts.json	ontology	read	?	5:"graph": "urn:chorus:ontology",
+platform/api/tests/regression/golden/athena-subdomain-cards.json	ontology	read	?	5:"graph": "urn:chorus:ontology",
+platform/api/tests/regression/golden/athena-subdomain-code.json	ontology	read	?	5:"graph": "urn:chorus:ontology",
+platform/api/tests/regression/golden/athena-subdomain-completeness.json	ontology	read	?	5:"graph": "urn:chorus:ontology",
+platform/api/tests/regression/golden/athena-subdomain-contract.json	ontology	read	?	5:"graph": "urn:chorus:ontology",
+platform/api/tests/regression/golden/athena-subdomain-coverage.json	ontology	read	?	5:"graph": "urn:chorus:ontology",
+platform/api/tests/regression/golden/athena-subdomain-detail.json	ontology	read	?	5:"graph": "urn:chorus:ontology"
+platform/api/tests/regression/golden/athena-subdomain-endpoints.json	ontology	read	?	5:"graph": "urn:chorus:ontology",
+platform/api/tests/regression/golden/athena-subdomain-integrations.json	ontology	read	?	5:"graph": "urn:chorus:ontology",
+platform/api/tests/regression/golden/athena-subdomain-pages.json	ontology	read	?	5:"graph": "urn:chorus:ontology",
+platform/api/tests/regression/golden/athena-subdomain-persistence.json	ontology	read	?	5:"graph": "urn:chorus:ontology",
+platform/api/tests/regression/golden/athena-subdomain-prior-art.json	ontology	read	?	5:"graph": "urn:chorus:ontology",
+platform/api/tests/regression/golden/athena-subdomain-scenarios.json	ontology	read	?	5:"graph": "urn:chorus:ontology",
+platform/api/tests/regression/golden/athena-subdomain-test-coverage.json	ontology	read	?	5:"graph": "urn:chorus:ontology",
+platform/api/tests/regression/golden/athena-subdomains.json	ontology	read	?	5:"graph": "urn:chorus:ontology",
+platform/api/tests/handlers/catalog-curation.test.ts	instances	read	?	90:expect(u).toContain('urn:chorus:instances');
+platform/api/tests/handlers/chorus-domain-dependencies.test.ts	both	read	?	52:test('consumes query reads from urn:chorus:instances (graph-split: writes go the
+platform/api/tests/handlers/domain-identity.test.ts	ontology	read	?	90:it('defaults ontologyGraph to urn:chorus:ontology', () => {
+platform/api/public/chorus-er-diagram.js	ontology	read	Product	27:sparql('PREFIX rdfs: <http://www.w3.org/2000/01/rdf-schema#>\nPREFIX owl: <http:
+platform/api/public/chorus-instance-explorer.js	ontology	read	?	6:const GRAPH = 'urn:chorus:ontology';
+platform/api/public/borg/graph-validate.txt	both	read	?	1:=== athena-validate — conformance sweep over GRAPH <urn:chorus:instances> ===
+platform/api/scripts/migrate-aliases-to-graph.ts	ontology	both	SubDomain	56:+ 'SELECT ?sd ?label WHERE { GRAPH <urn:chorus:ontology> { '
+platform/api/src/discover-tests.ts	both	both	Test,TestCoverage	148:+ 'DELETE WHERE { GRAPH <urn:chorus:instances> { '
+platform/api/src/index-all-sources-deps.ts	instances	both	Practice	36:GRAPH <urn:chorus:instances> {
+platform/api/src/security-envelope.ts	ontology	read	?	6:*     securedBy + requiresScope in urn:chorus:ontology).
+platform/api/src/security-surfaces-emit.ts	ontology	read	APISurface	32:GRAPH <urn:chorus:ontology> {
+platform/api/src/seed-loom-decisions.ts	instances	both	Decision	23:const INSTANCES_GRAPH = 'urn:chorus:instances';
+platform/api/src/server.ts	both	both	Page,Endpoint,CodeFile,SubDomain,CatalogDoc	1777:const query = `PREFIX chorus: <https://jeffbridwell.com/chorus#> SELECT ?filePat
+platform/api/src/subdomain-resolver.ts	ontology	read	SubDomain	20:const bareCheck = `PREFIX chorus: <https://jeffbridwell.com/chorus#> ASK { GRAPH
+platform/api/src/sparql/blast-radius.sparql	instances	read	?	4:GRAPH <urn:chorus:instances> {
+platform/api/src/sparql/health.sparql	ontology	read	?	1:SELECT (COUNT(*) AS ?count) WHERE { GRAPH <urn:chorus:ontology> { ?s ?p ?o } }
+platform/api/src/sparql/loom-decisions.sparql	instances	read	Decision	4:GRAPH <urn:chorus:instances> {
+platform/api/src/sparql/loom-policies.sparql	ontology	read	Policy	4:GRAPH <urn:chorus:ontology> {
+platform/api/src/sparql/loom-principles.sparql	instances	read	Principle	5:GRAPH <urn:chorus:instances> {
+platform/api/src/sparql/machines.sparql	ontology	read	Machine	4:GRAPH <urn:chorus:ontology> {
+platform/api/src/sparql/owners.sparql	both	read	?	7:# #4079: role labels live in urn:chorus:instances since #3838 (roles model),
+platform/api/src/sparql/subdomain-detail.sparql	both	read	SubDomain	21:{ GRAPH <urn:chorus:instances> { <$URI> chorus:contains ?instance } }
+platform/api/src/sparql/subdomains.sparql	ontology	read	SubDomain	4:GRAPH <urn:chorus:ontology> {
+platform/api/src/sparql/migrations/2314-no-competing-broader.rq	instances	write	?	6:GRAPH <urn:chorus:instances> {
+platform/api/src/sparql/migrations/2314-principle-hemenway-order.rq	instances	write	?	7:GRAPH <urn:chorus:instances> {
+platform/api/src/sparql/migrations/2314-principle-ontology-to-instances.rq	both	write	Principle	16:GRAPH <urn:chorus:instances> {
+platform/api/src/sparql/seeds/chorus-policies.rq	ontology	write	Policy	15:GRAPH <urn:chorus:ontology> {
+platform/api/src/sparql/seeds/permaculture-principles.rq	ontology	write	Principle	6:GRAPH <urn:chorus:ontology> {
+platform/api/src/lib/context-envelope.ts	ontology	read	?	17:export const ATHENA_GRAPH = 'urn:chorus:ontology';
+platform/api/src/handlers/athena-enrichment-write.ts	instances	write	File,SubDomain	17:const INSTANCES_GRAPH = 'urn:chorus:instances';
+platform/api/src/handlers/athena-model-relationships.ts	ontology	read	?	18:SELECT ?prop ?a ?b ?da ?db WHERE { GRAPH <urn:chorus:ontology> {
+platform/api/src/handlers/athena-owner-write.ts	ontology	write	?	14:const ONTOLOGY_GRAPH = 'urn:chorus:ontology';
+platform/api/src/handlers/athena-subdomain-code.ts	instances	read	?	67:const query = `PREFIX chorus: <https://jeffbridwell.com/chorus#> PREFIX rdfs: <h
+platform/api/src/handlers/athena-subdomain-completeness.ts	both	read	Decision,SubDomain	75:return `PREFIX chorus: <https://jeffbridwell.com/chorus#> SELECT (COUNT(DISTINCT
+platform/api/src/handlers/athena-subdomain-coverage.ts	instances	read	?	33:return `PREFIX chorus: <https://jeffbridwell.com/chorus#> SELECT ?testFile ?test
+platform/api/src/handlers/athena-subdomain-endpoints.ts	instances	read	Endpoint	45:const query = `PREFIX chorus: <https://jeffbridwell.com/chorus#> PREFIX rdfs: <h
+platform/api/src/handlers/athena-subdomain-facets.ts	both	read	Decision,SubDomain	68:return `PREFIX chorus: <https://jeffbridwell.com/chorus#> PREFIX rdfs: <http://w
+platform/api/src/handlers/athena-subdomain-pages.ts	instances	read	Page	44:const query = `PREFIX chorus: <https://jeffbridwell.com/chorus#> PREFIX rdfs: <h
+platform/api/src/handlers/athena-validate.ts	both	read	CatalogDoc,Product,SubDomain	108:SELECT ?node WHERE { GRAPH <urn:chorus:instances> {
+platform/api/src/handlers/catalog-curation.ts	instances	both	CatalogDoc	28:const ATHENA_INSTANCES = 'urn:chorus:instances';
+platform/api/src/handlers/chorus-crawl.ts	instances	read	?	419:const codeQuery = `PREFIX chorus: <https://jeffbridwell.com/chorus#> SELECT ?fil
+platform/api/src/handlers/chorus-domain-code.ts	instances	read	?	60:const query = `PREFIX chorus: <https://jeffbridwell.com/chorus#> PREFIX rdfs: <h
+platform/api/src/handlers/chorus-domain-dependencies.ts	both	read	?	49:GRAPH <urn:chorus:instances> {
+platform/api/src/handlers/chorus-domain.ts	both	read	?	156:GRAPH <urn:chorus:instances> {
+platform/api/src/handlers/class-atlas.ts	ontology	read	?	254:SELECT ?domain ?class ?prop ?min ?max ?dt ?rc ?parent ?inValue ?orClass ?invOf ?
+platform/api/src/handlers/context-priorities.ts	instances	read	Chunk,ChunkMembership	107:const walk = `PREFIX chorus: <${NS}> SELECT ?chunkLabel ?roleSeq ?loomSeq ?rank 
+platform/api/src/handlers/domain-facets.ts	both	read	Endpoint	83:const query = `PREFIX chorus: <https://jeffbridwell.com/chorus#> SELECT ?testFil
+platform/api/src/handlers/domain-identity.ts	both	read	?	36:/** Fuseki graph — `urn:chorus:ontology` for Chorus subdomains, `urn:chorus:inst
+platform/api/src/handlers/loom-decisions.ts	instances	read	Decision	4:* Reads the rich schema migrated from urn:chorus:decisions → urn:chorus:instance
+platform/api/src/handlers/loom-principles.ts	both	read	?	66:// foldBindings + loom-principles.sparql) is RETIRED: it read urn:chorus:instanc
+platform/api/src/handlers/subdomain-entities.ts	both	both	SubDomain,Page,Endpoint,Decision,CatalogDoc	48:const graphs = spec.homeGraph && spec.homeGraph !== 'urn:chorus:instances'
+platform/services/athena-make/Cargo.toml	ontology	read	Domain	7:# `generate` reads chorus:Domain + DomainShape from urn:chorus:ontology and
+platform/services/athena-make/gen1.json	ontology	read	?	3:"graph": "urn:chorus:ontology",
+platform/services/athena-make/gen2.json	ontology	read	?	3:"graph": "urn:chorus:ontology",
+platform/services/athena-make/generated/openapi-domain.json	ontology	read	?	3:"info": { "title": "OWL API — generated Domain API", "version": "0", "descriptio
+platform/services/athena-make/generated/routes-domain.json	ontology	both	Domain	3:"graph": "urn:chorus:ontology",
+platform/services/athena-make/tests/coverage_3701_hermetic.rs	both	both	Revision	132:format!("{} urn:chorus:instances", WREN_WEBID),
+platform/services/athena-make/tests/effective.rs	instances	read	?	154:let q = effective_fetch_query("https://jeffbridwell.com/chorus#node1", "urn:chor
+platform/services/athena-make/tests/generated_surfaces.rs	instances	write	?	28:instances_graph: "urn:chorus:instances".into(),  // #3570 — default home (back-c
+platform/services/athena-make/tests/ilities.rs	instances	read	?	32:instances_graph: "urn:chorus:instances".into(),  // #3570 — default home (back-c
+platform/services/athena-make/tests/instances_graph_spine.rs	instances	read	?	5:// default (urn:chorus:instances) is deleted: a class the model never placed was
+platform/services/athena-make/tests/live_envelope.rs	ontology	read	?	13:let table = generate("Domain").expect("DomainShape must be in urn:chorus:ontolog
+platform/services/athena-make/tests/schema_relationships.rs	instances	read	?	19:instances_graph: "urn:chorus:instances".into(),
+platform/services/athena-make/tests/scope_chain_3863.rs	instances	read	?	119:let q = athena_make::effective_fetch_query("https://x#role-wren", "urn:chorus:in
+platform/services/athena-make/tests/tree_read.rs	instances	read	?	35:instances_graph: "urn:chorus:instances".into(),
+platform/services/athena-make/src/lib.rs	both	both	Domain,Product,Revision,SubDomain,TBox	26:pub const INSTANCES_GRAPH: &str = "urn:chorus:instances";
+platform/services/athena-make/src/reconcile.rs	both	both	Domain,TBox	696:("urn:chorus:instances".to_string(), 8u64),
+platform/services/athena-deploy/src/lib.rs	ontology	write	TBox	162:let ontology = env_or("ONTOLOGY_GRAPH", "urn:chorus:ontology");
+platform/services/chorus-oidc/src/oidc.rs	ontology	read	?	1321:vec![(wren_webid(), vec!["urn:chorus:ontology".to_string()])] }),
+platform/services/athena-model/tests/add_batch_a1.rs	ontology	read	?	315:.filter(|q| q.contains("urn:chorus:ontology") && q.contains("targetClass"))
+platform/services/athena-model/tests/identity_gate.rs	both	read	?	286:// default (None → urn:chorus:instances)
+platform/services/athena-model/tests/seed_verb_3692.rs	both	read	?	43:Ok(vec!["urn:chorus:instances".to_string()])
+platform/services/athena-model/src/adr.rs	both	read	Domain	405:let r = check_placement("Product", Some("products"), Some("urn:chorus:instances"
+platform/services/athena-model/src/lib.rs	both	both	Domain,Product	46:pub const INSTANCES_GRAPH: &str = "urn:chorus:instances";
+platform/services/athena-model/src/main.rs	instances	both	Domain,Product,TBox	25:athena-model seed --deploy   built-in instance manifest -> urn:chorus:instances,
+roles/wren/ontology/board-3654.ttl	both	both	Card,Chunk,ChunkMembership,Document,Domain,Principal	100:chorus:instancesGraph "urn:chorus:instances" ;  # #3686: serve reads need the DA
+roles/wren/ontology/clearing-domains-3860.ttl	both	read	Domain,Role	48:chorus:instancesGraph "urn:chorus:instances" ;
+roles/wren/ontology/hats-4175.ttl	instances	read	Hat,Role	228:rdfs:comment "The role-to-hat reading of the same fact. DECLARED, NOT STORED: ou
+roles/wren/ontology/hats-instances-4175.ttl	both	read	?	103:# The seat points at chorus:role-<name>, the Role ROW in urn:chorus:instances
+roles/wren/ontology/principles-instances-3749.ttl	instances	read	Principle	20:# INSERTs these into urn:chorus:instances, the catch-all graph, and was never
+roles/wren/ontology/priorities-3686.ttl	both	both	Role	112:chorus:instancesGraph "urn:chorus:instances" ;
+roles/wren/ontology/role-instances-3838.ttl	both	read	Role	14:#   chorus:role-wren   Role, urn:chorus:instances      — 6 references, and they
+roles/wren/seeds/chorus-domain-enrichment.ttl	both	read	?	17:<https://jeffbridwell.com/chorus#chorus-domain-store-fuseki-tdb2-(urn:chorus:ont
+roles/silas/ontology/borg.ttl	ontology	read	SubDomain	176:rdfs:comment "Canonical identifier, e.g. 'urn:chorus:ontology' for a named graph
+roles/silas/ontology/chorus.ttl	both	both	TBox,Domain,SubDomain,Service,Product,Document,File,Revision,Role,Machine,Principal,ValueStream,ValueStreamStep	122:rdfs:comment "DEPRECATED (v1, #3697) — the value-stream grammar is now ValueStre
+roles/silas/ontology/governance-checks-3846.ttl	both	read	GovernanceCheck	83:GRAPH <urn:chorus:instances> { ?s a ?t2 }
+roles/silas/ontology/graph-status-3733.ttl	both	read	?	39:chorus:graphIri "urn:chorus:instances" ;
+roles/silas/ontology/identity-principals-3613.ttl	ontology	read	Principal,Role	5:# chorus:KeyRegistryEntry — LIVE in urn:chorus:ontology) and the Principal insta
+roles/silas/ontology/nostr-credential-shape-3691.ttl	ontology	read	?	8:# Deploys to: urn:chorus:ontology (DBA path). Instances live in
+roles/silas/ontology/permissions-4183.ttl	both	read	?	85:rdfs:label "silas may write urn:chorus:instances" ;
+roles/silas/ontology/security-model-3618.ttl	ontology	read	APISurface,TBox	458:chorus:instancesGraph "urn:chorus:ontology" ;
+roles/silas/ontology/security-posture-3729.ttl	instances	read	?	9:# graph fact, not folklore. Deploys via MODEL_SET into urn:chorus:instances.
+roles/silas/ontology/security-scopes-3689.ttl	both	read	Principal,Scope	45:"urn:chorus:instances"^^xsd:anyURI ,
+roles/kade/ontology/domains-kade-3581.ttl	ontology	read	Domain	9:# (every edge target confirmed to exist in urn:chorus:ontology — NOT tree.json's
+roles/kade/ontology/pipeline-instances.ttl	instances	read	?	8:# archetype). Pure ABox → urn:chorus:instances via instance-seed-manifest.
+roles/kade/ontology/pipelines-4040.ttl	instances	read	PipelineRun	68:chorus:instancesGraph "urn:chorus:instances" ;
+roles/kade/ontology/werk-domains.ttl	instances	read	SourceFile,Test	505:# urn:chorus:instances bucket. The 4617 Test instances are moved there to match.
+designing/products/athena/domains/domains/openapi.json	ontology	read	?	3:"info": { "title": "OWL API — generated Domain API", "version": "0", "descriptio
+designing/products/athena/domains/domains/routes.json	ontology	both	Domain	3:"graph": "urn:chorus:ontology",
+designing/schemas/spine-events.json	ontology	read	TBox	2869:"graph": "Target ontology graph (e.g. urn:chorus:ontology)",
+designing/data/document-instances.ttl	instances	read	Document	48:chorus:comment """Migrated from urn:chorus:instances (#3558 recovery row). V1 at
+designing/data/product-instances.ttl	instances	read	?	12:# seeded by athena-model into urn:chorus:instances under act — in the werk
+designing/data/products.json	instances	read	?	3:"graph": "urn:chorus:instances",
+designing/data/service-instances.ttl	instances	read	Service	12:# (ValueStreamStep — NOTE: lives in urn:chorus:instances, cross-graph; Silas
+designing/data/value-stream-instances.ttl	instances	read	?	6:# deploy strips what's omitted. Deployed to urn:chorus:instances (where the serv
+designing/data/value-stream-step-instances.ttl	instances	read	?	6:# deploy strips what's omitted. Deployed to urn:chorus:instances (where the serv
+designing/data/value-streams.json	instances	read	?	3:"graph": "urn:chorus:instances",
+.github/workflows/athena.yml	ontology	both	TBox	397:STAMP=$(curl -s -m 10 "${AUTH[@]}" "$STORE/query" --data-urlencode 'query=SELECT
+.github/workflows/quality.yml	instances	both	Principle,TBox	726:"http://localhost:3030/pods/data?graph=urn:chorus:instances" > /dev/null
+data/athena/tree.json	instances	read	File	769:"store": "fuseki:urn:chorus:instances",
+data/athena/recovery/recover-3558.py	both	both	?	11:urn:chorus:instances) and for partOf edges (Domain's declared graph is
