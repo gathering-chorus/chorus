@@ -109,7 +109,9 @@ chorus:pk-responseWordCap a chorus:PropertyKey ;
 
 chorus:RoleShape a sh:NodeShape ;
   sh:targetClass chorus:Role ;
-  chorus:instancesGraph "urn:chorus:instances" ;
+  # #4187 — pin removed 2026-09-18. The roles domain claims Role, AgentRole and
+  # HumanRole, so the home derives from the model; the six Role rows were copied
+  # to urn:chorus:domains:roles and verified before this line came out.
   # #4175 — rdfs:label REMOVED from the shape (it stays in the store; every Role
   # row carries both spellings, verified 6/6). The atlas reported Role as 2 of 3
   # defined because this entry has no definition and rdfs: is a W3C predicate we
