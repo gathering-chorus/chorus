@@ -6719,6 +6719,49 @@ mod tests {
         assert!(src.contains("\"ownedBy\".to_string(), \"principal\".to_string(), caller_role.to_string()"));
     }
 
+    /// #4209 NEGATIVE PROOF — #4196 bound thirteen owner shapes to Principal and left
+    /// LogSourceShape silent. A shape that declares the owner gets a typed edge; a shape
+    /// that says NOTHING still gets the literal fallback. The check has to separate those
+    /// two states, because that is the defect: ten silent shapes wrote 824,599 rows whose
+    /// owner was a bare string, and a data rename to 0 refilled within four minutes.
+    #[test]
+    fn a_silent_shape_still_stamps_a_literal_owner() {
+        let table = |fields: Vec<String>| RouteTable {
+            domain: String::new(), base_path: String::new(),
+            class: "https://jeffbridwell.com/chorus#LogSource".into(),
+            fields,
+            routes: vec![], secured: vec![], mandatory: vec![], write_required: vec![],
+            repo_target: String::new(), exposure: vec![],
+            instances_graph: "urn:chorus:domains:logs".into(),
+            tree_edges: vec![], tree_order: None, model_version: "unclassified".into(),
+        };
+
+        // DECLARED (what #4209 lands): a typed edge to a Principal, no literal field.
+        let declared = table(vec!["launchdLabel".into(), "ownedBy|edge:Principal".into()]);
+        let (fields, edges) = verified_owner_projection(&declared, "kade");
+        assert!(fields.iter().all(|(p, _)| p != "ownedBy"), "declared shape still wrote a literal: {fields:?}");
+        assert_eq!(edges, vec![("ownedBy".to_string(), kind_of_class("Principal"), "kade".to_string())]);
+
+        // SILENT (the violated condition): the fallback branch, a bare string of the caller.
+        let silent = table(vec!["launchdLabel".into()]);
+        let (fields, edges) = verified_owner_projection(&silent, "kade");
+        assert!(edges.is_empty(), "silent shape minted an edge it never declared: {edges:?}");
+        assert_eq!(fields, vec![("ownedBy".to_string(), "kade".to_string())]);
+
+        // a shape naming a Role is the third state — the source of the 209 role-* owners.
+        let role_shaped = table(vec!["ownedBy|edge:Role".into()]);
+        let (_, edges) = verified_owner_projection(&role_shaped, "kade");
+        assert_ne!(edges[0].1, kind_of_class("Principal"), "a Role-shaped owner must not read as a Principal");
+    }
+
+    /// #4209 — a class is row-owner-governed only when its shape says so (lib.rs:5440).
+    /// That silence, not a missing Permission row, is what 403'd Kade's 132 log writes.
+    #[test]
+    fn logsource_is_row_owner_governed_only_when_declared() {
+        assert!(row_owner_governed(&["launchdLabel".to_string(), "ownedBy|edge:Principal".to_string()]));
+        assert!(!row_owner_governed(&["launchdLabel".to_string()]), "a silent shape must NOT read as owner-governed");
+    }
+
     #[test]
     fn a_refusal_names_the_row_that_would_open_the_door() {
         // #4196 req 6 — principal, graph, mode; and a different caller names a different row
