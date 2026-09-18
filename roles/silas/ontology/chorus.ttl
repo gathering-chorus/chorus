@@ -2400,7 +2400,11 @@ chorus:ProductShape a sh:NodeShape ;
     # (board-3654.ttl:100, "without it the generated route reads the wrong graph
     # and serves 0 rows"). Same defect class, diagnosed and fixed there, never
     # applied here.
-    chorus:instancesGraph "urn:chorus:instances" ;
+    # #4187 — pin removed 2026-09-18. The products domain claims Product via
+    # definesVocabulary, so athena-make derives urn:chorus:domains:products for
+    # both the write and every serve read. All ten products are there, including
+    # gathering, which the catch-all never held and /products therefore never
+    # showed. borgProduct and chorusProduct were merged away first.
     sh:property [ sh:path rdfs:label              ; sh:minCount 1 ; sh:datatype xsd:string ] ;
     sh:property [ sh:path rdfs:comment            ; sh:minCount 1 ; sh:datatype xsd:string ] ;
     sh:property [ sh:path chorus:ownedBy          ; sh:minCount 1 ; sh:class chorus:Principal ] ;
