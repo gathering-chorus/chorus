@@ -331,9 +331,9 @@ fn plurality(signals: &[Signal]) -> Option<String> {
             None => tally.push((s.domain.clone(), vec![s.rule])),
         }
     }
-    tally.sort_by(|a, b| b.1.len().cmp(&a.1.len()));
+    tally.sort_by_key(|(_, rules)| std::cmp::Reverse(rules.len()));
     match tally.as_slice() {
-        [(d, top), rest @ ..] if rest.first().map_or(false, |(_, n)| n.len() < top.len()) => {
+        [(d, top), rest @ ..] if rest.first().is_some_and(|(_, n)| n.len() < top.len()) => {
             Some(d.clone())
         }
         _ => None,
@@ -459,10 +459,10 @@ pub fn relative_imports(content: &str) -> Vec<String> {
             let mut it = l.split(q);
             it.next();
             while let Some(spec) = it.next() {
-                if spec.starts_with("./") || spec.starts_with("../") {
-                    if !out.contains(&spec.to_string()) {
-                        out.push(spec.to_string());
-                    }
+                if (spec.starts_with("./") || spec.starts_with("../"))
+                    && !out.contains(&spec.to_string())
+                {
+                    out.push(spec.to_string());
                 }
                 if it.next().is_none() {
                     break;
@@ -505,7 +505,7 @@ pub fn resolve_relative(from: &str, spec: &str) -> Vec<String> {
 /// no recursion. This is what the neighbour rule asks of an imported file.
 fn external_signal(content: &str, valid: &[String]) -> Option<Signal> {
     let imports = import_lines(content);
-    for s in [
+    [
         fire(Rule::Route, ROUTES, content, valid),
         fire(Rule::Binary, BINARIES, content, valid),
         fire(Rule::Class, CLASSES, content, valid),
@@ -513,12 +513,7 @@ fn external_signal(content: &str, valid: &[String]) -> Option<Signal> {
     ]
     .into_iter()
     .flatten()
-    {
-        if !s.domain.is_empty() {
-            return Some(s);
-        }
-    }
-    None
+    .find(|s| !s.domain.is_empty())
 }
 
 /// #4201 — the file a test imports is the file it exercises. Reads each
