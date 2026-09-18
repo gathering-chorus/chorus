@@ -2471,7 +2471,10 @@ chorus:ServiceShape a sh:NodeShape ;
     # made the harvester replace only its own classes (Commitment, ScheduledJob,
     # ServiceInstance, MappingStaleness), so co-tenancy is safe and the reason is
     # gone. The v1 copies are retired by the deploy that seeds SERVICES_SET here.
-    chorus:instancesGraph "urn:chorus:domains:services" ;
+    # #4187 — pin removed 2026-09-18. It named the SAME graph the services
+    # domain derives from its own definesVocabulary claim, so dropping it is a
+    # no-op at runtime and a fix in the source: one fewer hand-written override
+    # that can disagree with the model. Rows copied and verified 10 -> 13 first.
     # ADR-048 §3 field-exposure (Silas's spec; #3506 carries his name/port/authToken
     # example onto real ServiceShape fields — re-classify freely, it's a 1-line model edit):
     #   public = emitted to everyone · internal = authed callers only · secret = never
