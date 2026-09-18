@@ -7,7 +7,18 @@
 
 set -uo pipefail
 
+# #4187 — this file wrote 90 CatalogDoc rows into the LIVE store, one batch per run
+# since #2549, because its default target IS production and its "unique hrefs per
+# run" comment meant reruns did not COLLIDE, not that they cleaned up. Refuse the
+# canonical target unless a human says so out loud. The membrane (#3615) refuses
+# prod writes from test context through the generated API; a shell test with curl
+# goes around it, which is why this one kept writing.
 API_BASE="${API_BASE:-http://localhost:3340}"
+if [ "$API_BASE" = "http://localhost:3340" ] && [ "${CHORUS_ALLOW_PROD_TEST:-0}" != "1" ]; then
+  echo "REFUSED: API_BASE is the production chorus-api. Point it at a werk variant," >&2
+  echo "  or set CHORUS_ALLOW_PROD_TEST=1 to write test rows into the live store." >&2
+  exit 1
+fi
 TAGS_URL="$API_BASE/api/chorus/catalog/tags"
 LINEAGE_URL="$API_BASE/api/chorus/catalog/lineage"
 DOC_URL="$API_BASE/api/chorus/catalog/doc"
