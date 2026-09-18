@@ -27,7 +27,7 @@ def bindings(q):
     if "c:ownedBy ?o" in q:
         b = []
         if OWNERS > 0:
-            b.append({"o": {"value": "https://jeffbridwell.com/chorus#crawler"}, "n": {"value": str(OWNERS)}})
+            b.append({"kind": {"value": "literal"}, "o": {"value": "crawler"}, "n": {"value": str(OWNERS)}})
         return {"head": {"vars": ["o", "n"]}, "results": {"bindings": b}}
     return {"head": {"vars": []}, "results": {"bindings": []}}
 class H(BaseHTTPRequestHandler):
@@ -66,7 +66,7 @@ teardown() { [ -n "${STUB_PID:-}" ] && kill "$STUB_PID" 2>/dev/null; rm -rf "${T
   stub_start 0 5
   run env ATHENA_VALIDATE_NUDGE=0 ATHENA_VALIDATE_REPORT="$TMP/gv.txt" FUSEKI_QUERY="http://127.0.0.1:$PORT/query" bash "$SCRIPT"
   [ "$status" -eq 1 ]
-  grep -q "^graph-issue|owner-not-principal|crawler|5$" "$TMP/gv.txt"
+  grep -q "^graph-issue|owner-not-principal|literal|crawler|5$" "$TMP/gv.txt"
   grep -q "^graph-summary|5|dirty$" "$TMP/gv.txt"
 }
 

@@ -191,7 +191,11 @@ fi
 # wrote it. Counted per owner name so the fix is a rename list, not a number.
 # A failed count is a violation, never a 0 — same rule as section 6.
 echo "7) ownedBy objects that are not a Principal (#4187 — the door can never write these):"
-OWN=$(Q "PREFIX c: <$NS> SELECT ?o (COUNT(*) AS ?n) WHERE { GRAPH ?g { ?s c:ownedBy ?o } FILTER(STRSTARTS(STR(?g), 'urn:chorus:')) FILTER NOT EXISTS { GRAPH ?pg { ?o a c:Principal } } } GROUP BY ?o ORDER BY DESC(?n)")
+# Two different defects wear one symptom, so report them apart (measured
+# 2026-09-18: 26,554 literals, 209 IRIs). A literal breaks ownedBy's declared
+# rdfs:range outright; a Role IRI is a real node of the wrong class. The fix
+# differs, so the line has to.
+OWN=$(Q "PREFIX c: <$NS> SELECT ?kind ?o (COUNT(*) AS ?n) WHERE { GRAPH ?g { ?s c:ownedBy ?o } FILTER(STRSTARTS(STR(?g), 'urn:chorus:')) FILTER NOT EXISTS { GRAPH ?pg { ?o a c:Principal } } BIND(IF(isLiteral(?o), 'literal', 'iri') AS ?kind) } GROUP BY ?kind ?o ORDER BY DESC(?n)")
 if [ -z "$OWN" ]; then
   echo "  ⚠️  owner-shape count FAILED — counted as a violation, never as 0"
   echo "graph-issue|owner-not-principal|UNMEASURED|?|1"
@@ -203,9 +207,10 @@ rows = json.load(sys.stdin)["results"]["bindings"]
 total = 0
 for b in rows:
     o = b["o"]["value"].split("#")[-1].split("/")[-1]; n = int(b["n"]["value"])
+    k = b.get("kind", {}).get("value", "iri")
     total += n
-    print(f"  ⚠️  {o} {n}")
-    print(f"graph-issue|owner-not-principal|{o}|{n}")
+    print(f"  ⚠️  {k:7s} {o} {n}")
+    print(f"graph-issue|owner-not-principal|{k}|{o}|{n}")
 print(f"OWNTOTAL={total} NAMES={len(rows)}")
 ' 2>/dev/null | tee /tmp/own-out.$$ | grep -o "OWNTOTAL=[0-9]*" | cut -d= -f2)
   grep -v "^OWNTOTAL=" /tmp/own-out.$$; rm -f /tmp/own-out.$$
