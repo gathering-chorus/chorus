@@ -1719,12 +1719,47 @@ fn main() {
         for f in failed.iter().take(5) {
             eprintln!("chorus-crawl: FAILED {f}");
         }
+        // #4201 — five named lines out of thousands says nothing about WHY.
+        // Every failure is counted by its verb, route family and status, so
+        // the run names its classes, not a sample of them.
+        for (class, n) in failure_classes(&failed) {
+            eprintln!("chorus-crawl: FAILED x{n} — {class}");
+        }
         eprintln!(
             "chorus-crawl: {} write(s) failed — the run is RED, not partially green",
             failed.len()
         );
         std::process::exit(1);
     }
+}
+
+/// Each failure reduced to `VERB /route/family -> STATUS`, counted, most first.
+/// A failure line the crawler prints reads like
+/// `delete case path :: name: DELETE /tests/tests/<id> -> HTTP 403`.
+fn failure_classes(failed: &[String]) -> Vec<(String, usize)> {
+    let mut counts: std::collections::HashMap<String, usize> = std::collections::HashMap::new();
+    for f in failed {
+        let verb_route = f
+            .split_whitespace()
+            .position(|w| matches!(w, "POST" | "PUT" | "DELETE" | "PATCH"))
+            .and_then(|i| {
+                let w: Vec<&str> = f.split_whitespace().collect();
+                let route = w.get(i + 1)?;
+                let family: String = route.split('/').take(3).collect::<Vec<_>>().join("/");
+                Some(format!("{} {}", w[i], family))
+            })
+            .unwrap_or_else(|| "(no route in line)".to_string());
+        let status = f
+            .split("HTTP ")
+            .nth(1)
+            .map(|t| t.chars().take_while(char::is_ascii_digit).collect::<String>())
+            .filter(|t| !t.is_empty())
+            .unwrap_or_else(|| "?".to_string());
+        *counts.entry(format!("{verb_route} -> HTTP {status}")).or_default() += 1;
+    }
+    let mut out: Vec<(String, usize)> = counts.into_iter().collect();
+    out.sort_by(|a, b| b.1.cmp(&a.1).then(a.0.cmp(&b.0)));
+    out
 }
 
 /// The joined size of a batch body so far (rows plus the commas between them).
@@ -1868,4 +1903,40 @@ fn fields_json(fields: &[(String, String)]) -> String {
         .map(|(k, v)| format!("\"{}\":\"{}\"", json_escape(k), json_escape(v)))
         .collect();
     format!("{{{}}}", body.join(","))
+}
+
+#[cfg(test)]
+mod failure_classes_4201 {
+    use super::failure_classes;
+
+    /// NEGATIVE PROOF: thousands of failures printed as five lines cannot tell
+    /// one refused class from another. Same five names, two different causes.
+    #[test]
+    fn the_classes_separate_two_causes_the_sample_would_not() {
+        let failed: Vec<String> = (0..3)
+            .map(|i| format!("delete case a{i}.ts :: n: DELETE /tests/tests/x{i} -> HTTP 403 "))
+            .chain((0..2).map(|i| {
+                format!("post case b{i}.ts :: n: POST /tests/results -> HTTP 422 ")
+            }))
+            .collect();
+        let classes = failure_classes(&failed);
+        assert_eq!(
+            classes,
+            vec![
+                ("DELETE /tests/tests -> HTTP 403".to_string(), 3),
+                ("POST /tests/results -> HTTP 422".to_string(), 2),
+            ]
+        );
+    }
+
+    /// CONTROL: a line with no route still counts, and says so, rather than
+    /// vanishing from the total.
+    #[test]
+    fn a_line_with_no_route_is_still_counted() {
+        let failed = vec!["could not serialise row".to_string()];
+        assert_eq!(
+            failure_classes(&failed),
+            vec![("(no route in line) -> HTTP ?".to_string(), 1)]
+        );
+    }
 }
