@@ -227,6 +227,41 @@ print(f"OWNTOTAL={total} NAMES={len(rows)}")
   fi
 fi
 
+# 8. #4187 — a class whose rows carry ownedBy but whose shape never says what an
+# owner is. Section 7 counts the bad rows; this counts the silence that lets them
+# in. Silas measured it 2026-09-18 after the owner rename refilled in four
+# minutes: 23 classes use ownedBy, 15 shapes declare it, and the rest accept
+# anything because the generated door enforces exactly what the shape states and
+# no more. Eleven shape edits fix today's set; this line is what stops the
+# twelfth. A failed count is a violation, never a 0.
+echo "8) classes whose rows carry ownedBy with no shape rule (#4187 — the door has nothing to enforce):"
+SIL=$(Q "PREFIX c: <$NS> PREFIX sh: <http://www.w3.org/ns/shacl#> SELECT ?cls (COUNT(DISTINCT ?s) AS ?n) WHERE { GRAPH ?g { ?s c:ownedBy ?o ; a ?cls } FILTER NOT EXISTS { GRAPH ?sg { ?sh sh:targetClass ?cls ; sh:property ?p . ?p sh:path c:ownedBy ; sh:class c:Principal } } } GROUP BY ?cls ORDER BY DESC(?n)")
+if [ -z "$SIL" ]; then
+  echo "  ⚠️  silent-shape count FAILED — counted as a violation, never as 0"
+  echo "graph-issue|owner-rule-missing|UNMEASURED|?|1"
+  BAD=$((BAD+1))
+else
+  NSIL=$(echo "$SIL" | python3 -c '
+import sys, json
+rows = json.load(sys.stdin)["results"]["bindings"]
+total = 0
+for b in rows:
+    c = b["cls"]["value"].split("#")[-1].split("/")[-1]; n = int(b["n"]["value"])
+    total += n
+    print(f"  ⚠️  {c} {n}")
+    print(f"graph-issue|owner-rule-missing|{c}|{n}")
+print(f"SILTOTAL={total} CLASSES={len(rows)}")
+' 2>/dev/null | tee /tmp/sil-out.$$ | grep -o "SILTOTAL=[0-9]*" | cut -d= -f2)
+  grep -v "^SILTOTAL=" /tmp/sil-out.$$; rm -f /tmp/sil-out.$$
+  if [ -z "$NSIL" ]; then
+    echo "  ⚠️  silent-shape count unparseable — counted as a violation"; echo "graph-issue|owner-rule-missing|UNMEASURED|?|1"; BAD=$((BAD+1))
+  elif [ "$NSIL" = "0" ]; then
+    echo "  ✅ every class that carries an owner has a shape that says what an owner is"
+  else
+    echo "  ⚠️  $NSIL row(s) in classes with no owner rule"; BAD=$((BAD+NSIL))
+  fi
+fi
+
 echo
 if [ "$BAD" = "0" ]; then
   echo "PROVEN CLEAN — no old/bad data in the instance graph."
