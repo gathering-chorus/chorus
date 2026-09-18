@@ -448,6 +448,14 @@ chorus:PipelineRunShape a sh:NodeShape ;
 
 chorus:GateResultShape a sh:NodeShape ;
     sh:targetClass chorus:GateResult ;
+    # #4201 — the owner is a Principal, not a word. athena-make's
+    # verified_owner_projection writes a typed edge when the shape declares the
+    # class and a bare literal of the caller's role name when it does not
+    # (athena-make/src/lib.rs:2139). Undeclared here, every row this graph took
+    # today landed with ownedBy "kade" as a string, which the door can never
+    # write again. minCount stays off: the server stamps the value, the shape
+    # only says what kind of thing it is.
+    sh:property [ sh:path chorus:ownedBy ; sh:class chorus:Principal ] ;
     sh:property [ sh:path chorus:cardId ; sh:minCount 1 ] ;
     sh:property [ sh:path chorus:ts ; sh:minCount 1 ] ;
     sh:property [ sh:path chorus:result ; sh:minCount 1 ]  .
@@ -505,6 +513,14 @@ chorus:TestShape a sh:NodeShape ;
     # urn:chorus:instances bucket. The 4617 Test instances are moved there to match. ("tests not
     # instances" — Jeff, 2026-06-22; the urn becomes meaningful, owl-api dictates it.)
     chorus:instancesGraph "urn:chorus:domains:tests" ;
+    # #4201 — the owner is a Principal, not a word. athena-make's
+    # verified_owner_projection writes a typed edge when the shape declares the
+    # class and a bare literal of the caller's role name when it does not
+    # (athena-make/src/lib.rs:2139). Undeclared here, every row this graph took
+    # today landed with ownedBy "kade" as a string, which the door can never
+    # write again. minCount stays off: the server stamps the value, the shape
+    # only says what kind of thing it is.
+    sh:property [ sh:path chorus:ownedBy ; sh:class chorus:Principal ] ;
     sh:property [ sh:path chorus:filePath ; sh:minCount 1 ] ;
     sh:property [ sh:path chorus:testName ; sh:minCount 1 ]  .
 
@@ -523,6 +539,14 @@ chorus:TestResultShape a sh:NodeShape ;
     # #3592 (steward MUST-FIX, #3675 pattern) — explicit instance home, matching
     # the DAL write target. See TestSuiteRunShape note.
     chorus:instancesGraph "urn:chorus:domains:tests" ;
+    # #4201 — the owner is a Principal, not a word. athena-make's
+    # verified_owner_projection writes a typed edge when the shape declares the
+    # class and a bare literal of the caller's role name when it does not
+    # (athena-make/src/lib.rs:2139). Undeclared here, every row this graph took
+    # today landed with ownedBy "kade" as a string, which the door can never
+    # write again. minCount stays off: the server stamps the value, the shape
+    # only says what kind of thing it is.
+    sh:property [ sh:path chorus:ownedBy ; sh:class chorus:Principal ] ;
     sh:property [ sh:path chorus:filePath ; sh:minCount 1 ] ;
     sh:property [ sh:path chorus:testName ; sh:minCount 1 ] ;
     sh:property [ sh:path chorus:result ; sh:minCount 1 ] ;
