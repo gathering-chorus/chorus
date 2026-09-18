@@ -37,6 +37,9 @@ AUTH=(); [ -n "$FU" ] && AUTH=(-u "$FU:$FP")
 count() { curl -sf ${AUTH[@]+"${AUTH[@]}"} --max-time 60 -H 'Accept: application/sparql-results+json' \
   --data-urlencode "query=PREFIX c: <$NS> SELECT (COUNT(DISTINCT ?s) AS ?n) WHERE { GRAPH <$1> { ?s a c:$CLASS } }" "$QRY" \
   | python3 -c 'import sys,json;print(json.load(sys.stdin)["results"]["bindings"][0]["n"]["value"])'; }
+missing_triples() { curl -sf ${AUTH[@]+"${AUTH[@]}"} --max-time 120 -H 'Accept: application/sparql-results+json' \
+  --data-urlencode "query=PREFIX c: <$NS> SELECT (COUNT(*) AS ?n) WHERE { GRAPH <$SRC> { ?s a c:$CLASS ; ?p ?o } FILTER NOT EXISTS { GRAPH <$DST> { ?s ?p ?o } } }" "$QRY" \
+  | python3 -c 'import sys,json;print(json.load(sys.stdin)["results"]["bindings"][0]["n"]["value"])'; }
 echo "$CLASS: $SRC=$(count "$SRC")  $DST=$(count "$DST")"
 case "$MODE" in
   --go)
@@ -45,7 +48,12 @@ case "$MODE" in
     [ "$code" = "200" ] || [ "$code" = "204" ] || { echo "REFUSED: the store answered $code on the copy (401 means no credentials)"; exit 1; }
     a=$(count "$SRC"); b=$(count "$DST")
     echo "after copy: $SRC=$a  $DST=$b"
-    [ "$a" = "$b" ] || { echo "REFUSED: copy is short — $a in source, $b in destination"; exit 1; }
+    # A raw count comparison cannot tell an incomplete copy from a destination
+    # that legitimately holds more rows than the source — it refused a correct
+    # Document copy (12 in, 19 already there) on 2026-09-18. Ask the only
+    # question that matters instead: is any source triple missing downstream?
+    missing=$(missing_triples)
+    [ "$missing" = "0" ] || { echo "REFUSED: copy is short — $missing triple(s) still only in $SRC"; exit 1; }
     echo "copy verified. Next: delete the shape's chorus:instancesGraph line, deploy, check the route, then --prune." ;;
   --prune)
     b=$(count "$DST"); [ "$b" != "0" ] || { echo "REFUSED: destination is empty, nothing was copied"; exit 1; }
