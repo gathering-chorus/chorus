@@ -107,3 +107,46 @@ Commitment     urn:chorus:domains:services=77
 #    and only then does the ontology-graph copy go.
 #
 # Nothing staged, nothing written. The finding is the deliverable.
+
+# THE ACTUAL CAUSE, measured 2026-09-18 11:25. It is not nine missing graphs.
+#
+# athena-model already DERIVES the target graph from the model:
+#   athena-model/src/adr.rs:157  derived_placement(class, defining_domain)
+#     -> urn:chorus:domains:{defining_domain}
+# where defining_domain is the domain whose definesVocabulary claims the class.
+# An explicit chorus:instancesGraph that disagrees is an OVERRIDE, allowed only
+# with a stated reason (check_placement, same file).
+#
+# Ten of twelve classes ARE claimed by a domain, and every one carries a stale
+# override to the catch-all:
+#
+#   class            claimed by       declared instancesGraph
+#   Product          products         urn:chorus:instances
+#   ValueStream      value-streams    urn:chorus:instances
+#   Card             cards            urn:chorus:instances
+#   Chunk            board            urn:chorus:instances
+#   ChunkMembership  board            urn:chorus:instances
+#   Revision         products         urn:chorus:instances
+#   Property         properties       urn:chorus:ontology
+#   PropertyKey      properties       urn:chorus:ontology
+#   Metric           metrics          urn:chorus:ontology
+#   EmitContract     spine            urn:chorus:ontology
+#   Step             — no claim —     — none —
+#   File             — no claim —     urn:chorus:instances
+#
+# So the work is DELETE TEN LINES, not create nine graphs and move rows by hand.
+# The derivation already points at the right place; the pin is what overrides it.
+#
+# TWO THINGS TO SETTLE FIRST, neither of them mine alone:
+#
+# 1. check_placement has NO CALLER. grep across platform/services finds the
+#    function and its tests, and no run path. The rule is written and inert —
+#    which is exactly why ten shapes drifted from it without anything going red.
+#
+# 2. The pins are not arbitrary. #3686 added them because the generated SERVE
+#    route read the declared graph, and without the pin /cards served 0 — the
+#    /domains=0 defect. Removing a pin only works if the read path uses the same
+#    derivation as the write path. Verify that before deleting anything.
+#
+# 3. Revision is claimed by the PRODUCTS domain. A revision of a document is not
+#    a product thing. Worth a second look before its 9,360 rows follow the claim.
