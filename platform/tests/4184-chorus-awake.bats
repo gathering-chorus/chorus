@@ -32,6 +32,16 @@ echo "claude \$*" >> "$T/claude.log"
 if [ "\$1" = "agents" ]; then [ -f "$T/agents-fail" ] && { echo "boom: unknown option --cwd" >&2; exit 1; }; cat "$T/agents.json" 2>/dev/null || echo '[]'; fi
 exit 0
 EOS
+  # #4202 — login is mandatory before a pane starts: stub the minter, the
+  # security API and the spine so this suite never reaches the live ones.
+  mkdir -p "$T/identity/kade"
+  payload=$(printf '{"webid":"https://id.lightlifeurbangardens.com/kade/profile/card#me","jti":"jti-4184","iat":%s,"exp":%s}' "$(date +%s)" "$(( $(date +%s) + 600 ))" | base64 | tr '+/' '-_' | tr -d '=\n')
+  printf 'eyJhbGciOiJFUzI1NiJ9.%s.sig' "$payload" > "$T/token.fixture"
+  printf '#!/bin/bash\ncat "%s/token.fixture"\n' "$T" > "$T/bin/token"
+  printf '#!/bin/bash\necho 201\n' > "$T/bin/curl"
+  printf '#!/bin/bash\nexit 0\n' > "$T/bin/chorus-log"
+  export CHORUS_TOKEN_BIN="$T/bin/token" AWAKE_CURL="$T/bin/curl" CHORUS_LOG_BIN="$T/bin/chorus-log"
+  export CHORUS_IDENTITY_DIR="$T/identity" CHORUS_API_URL="http://stub:1"
   chmod +x "$T/bin/"*
   echo '[]' > "$T/agents.json"
   export CLAUDE_BIN="$T/bin/claude" TMUX_BIN="$T/bin/tmux" AWAKE_PS="$T/bin/ps"

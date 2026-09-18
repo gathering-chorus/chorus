@@ -235,7 +235,13 @@ if [ -n "${CHORUS_ROLE:-}" ] && [ -f "$HOME/.chorus/identity/${CHORUS_ROLE}/cred
     # (wren ×11 on 08-27, silas ×4 on 08-28). Resolve by path, PATH as fallback.
     local __minter="${CHORUS_HOME:-$HOME/CascadeProjects/chorus}/platform/scripts/chorus-identity-token"
     [ -x "$__minter" ] || __minter="$(command -v chorus-identity-token 2>/dev/null || true)"
-    __tok="$( [ -n "$__minter" ] && "$__minter" "${DEPLOY_ROLE:-$CHORUS_ROLE}" 2>/dev/null || true)"
+    # #4202 — a logged-in pane writes as the SESSION's role: chorus-awake sets
+    # CHORUS_SESSION_TOKEN_FILE to <identity dir>/<role>/token.cache, so the role
+    # is the file's parent dir name and the minter refreshes that same file. A
+    # typed DEPLOY_ROLE cannot make a logged-in pane write as someone else.
+    local __role="${DEPLOY_ROLE:-$CHORUS_ROLE}"
+    [ -n "${CHORUS_SESSION_TOKEN_FILE:-}" ] && __role="$(basename "$(dirname "$CHORUS_SESSION_TOKEN_FILE")")"
+    __tok="$( [ -n "$__minter" ] && "$__minter" "$__role" 2>/dev/null || true)"
     [ -n "$__tok" ] || echo "athena-model: WARN no identity token minted (minter=${__minter:-none}) — the write will refuse" >&2
     CHORUS_IDENTITY_TOKEN="$__tok" command athena-model "$@"
   }

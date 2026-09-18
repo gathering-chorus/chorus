@@ -512,16 +512,29 @@ fn main() -> ExitCode {
         input
     };
 
-    // Inject DEPLOY_ROLE into hook input so the service can detect role (#1714)
-    let input = if let Ok(deploy_role) = std::env::var("DEPLOY_ROLE") {
-        if let Ok(mut json) = serde_json::from_str::<serde_json::Value>(&input) {
-            json["deploy_role"] = serde_json::Value::String(deploy_role);
-            json.to_string()
-        } else {
-            input
+    // Inject the caller's role into hook input so the service can detect it (#1714).
+    // #4202 — the SESSION names the caller: when chorus-awake logged this pane in
+    // (CHORUS_SESSION_TOKEN_FILE), `deploy_role` is the role the token's WebID
+    // names and `session_webid` rides beside it; a typed DEPLOY_ROLE cannot
+    // override a login. Only a pane with no session still uses DEPLOY_ROLE.
+    let input = {
+        let session = crate::shared::role::session_token_from_env();
+        let from_session = session.as_deref().and_then(crate::shared::role::webid_of_token);
+        match (from_session, std::env::var("DEPLOY_ROLE").ok()) {
+            (Some(webid), _) => match serde_json::from_str::<serde_json::Value>(&input) {
+                Ok(mut json) => {
+                    if let Some(role) = crate::shared::role::role_from_webid(&webid) { json["deploy_role"] = serde_json::Value::String(role); }
+                    json["session_webid"] = serde_json::Value::String(webid);
+                    json.to_string()
+                }
+                Err(_) => input,
+            },
+            (None, Some(deploy_role)) => match serde_json::from_str::<serde_json::Value>(&input) {
+                Ok(mut json) => { json["deploy_role"] = serde_json::Value::String(deploy_role); json.to_string() }
+                Err(_) => input,
+            },
+            (None, None) => input,
         }
-    } else {
-        input
     };
 
     // #3252: propagate CHORUS_TRACE_ID — the SHARED werk trace minted by the

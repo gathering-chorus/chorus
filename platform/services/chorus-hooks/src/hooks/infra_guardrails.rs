@@ -72,6 +72,25 @@ static GIT_BRANCH_CREATE_RE: LazyLock<Regex> = LazyLock::new(|| {
     Regex::new(r"\bgit\s+branch\s+[^-\s]\S*").unwrap()
 });
 
+// #4202 — `security login-keychain -s` / `default-keychain -s` rewrite which
+// keychain the CALLER's login session uses, and under `sudo -u chorus-<role>`
+// they still land on the caller: Jeff's Terminal. On 2026-09-17 that left his
+// session pointing at no login keychain, so every process that touched the
+// keychain raised a password panel nothing could answer, no agent could reach,
+// and no kill command closed. He hard powered off the Library Mac.
+// The read forms (`security login-keychain`, no -s) stay allowed — that is how
+// chorus-keychain-repair verifies itself.
+static KEYCHAIN_SET_RE: LazyLock<Regex> = LazyLock::new(|| {
+    Regex::new(r"\bsecurity\s+(login-keychain|default-keychain)\b[^\n]*\s-s\b").unwrap()
+});
+
+// Any `security` subcommand driven at a role account from another account's
+// shell. A role account's keychain is that account's own business; reaching it
+// through sudo is the shape that produced the unclosable panel.
+static SUDO_ROLE_SECURITY_RE: LazyLock<Regex> = LazyLock::new(|| {
+    Regex::new(r"\bsudo\b[^\n]*\s-u\s+chorus-\w+[^\n]*\bsecurity\s").unwrap()
+});
+
 static HEREDOC_RE: LazyLock<Regex> = LazyLock::new(|| {
     Regex::new(r#"<<['"]?EOF"#).unwrap()
 });
@@ -152,6 +171,22 @@ pub async fn check(input: &HookInput) -> HookResponse {
             ));
         }
         log_guardrail("allow", "kill-signal-0").await;
+    }
+
+    // #4202 — keychain settings are the one surface where a mistake reaches a
+    // GUI panel: no agent can see it, no agent can close it, and the person in
+    // front of the machine has no working answer. Refuse both shapes.
+    if KEYCHAIN_SET_RE.is_match(&cmd) || SUDO_ROLE_SECURITY_RE.is_match(&cmd) {
+        log_guardrail("deny", "keychain-mutation").await;
+        return HookResponse::deny(&permission_deny_json(
+            "BLOCKED: keychain settings are not an agent surface (#4202). \
+             `security login-keychain -s` / `default-keychain -s` apply to the CALLING login session — \
+             Jeff's Terminal — even wrapped in `sudo -u chorus-<role>`. On 2026-09-17 that pointed his \
+             session at no login keychain; every process that touched it raised a password panel he \
+             could not answer and no agent could close, and he hard powered off the Mac. \
+             Read forms (`security login-keychain` with no -s) are allowed. \
+             To repair a session that is already stuck, Jeff runs `chorus-keychain-repair` himself."
+        ));
     }
 
     // git mutating ops in team repo only — #2598 extended push/rebase/cherry-pick/reset
@@ -771,5 +806,67 @@ mod tests {
         let input = kade_bash("git rebase -i HEAD~3");
         let r = check(&input).await;
         assert!(r.stdout.is_some(), "git rebase -i must still block (interactive rebase mutation)");
+    }
+
+    // === #4202: keychain settings are not an agent surface ===
+    // Negative proof first: the exact commands typed on 2026-09-17 that pointed
+    // Jeff's login session at no keychain. If the guard can't refuse THESE, it
+    // refuses nothing that matters.
+
+    #[tokio::test]
+    async fn test_deny_login_keychain_set_under_sudo_to_role_account() {
+        let input = silas_bash(
+            "sudo -u chorus-silas -H security login-keychain -d user -s /Users/chorus-silas/Library/Keychains/login.keychain-db"
+        );
+        let r = check(&input).await;
+        assert!(r.stdout.is_some(), "the command that broke Jeff's session must block");
+        let body = r.stdout.unwrap();
+        assert!(body.contains("chorus-keychain-repair"), "deny names the repair Jeff runs: {body}");
+    }
+
+    #[tokio::test]
+    async fn test_deny_login_keychain_set_without_sudo() {
+        let input = silas_bash("security login-keychain -d user -s ~/Library/Keychains/login.keychain-db");
+        let r = check(&input).await;
+        assert!(r.stdout.is_some(), "setting the login keychain must block with or without sudo");
+    }
+
+    #[tokio::test]
+    async fn test_deny_default_keychain_set() {
+        let input = kade_bash("security default-keychain -s /Users/chorus-kade/Library/Keychains/login.keychain-db");
+        let r = check(&input).await;
+        assert!(r.stdout.is_some(), "setting the default keychain must block");
+    }
+
+    #[tokio::test]
+    async fn test_deny_sudo_role_account_any_security_subcommand() {
+        let input = silas_bash("sudo -u chorus-wren security create-keychain -p hunter chorus.keychain");
+        let r = check(&input).await;
+        assert!(r.stdout.is_some(), "any security subcommand aimed at a role account must block");
+    }
+
+    // The separating half: the guard must still pass the READ forms, or it
+    // cannot tell "asking what the setting is" from "changing it", and the
+    // repair loses the only way it can verify itself.
+
+    #[tokio::test]
+    async fn test_allow_login_keychain_read() {
+        let input = silas_bash("security login-keychain");
+        let r = check(&input).await;
+        assert!(r.stdout.is_none(), "reading the login keychain setting must pass");
+    }
+
+    #[tokio::test]
+    async fn test_allow_default_keychain_read() {
+        let input = silas_bash("security default-keychain && security list-keychains");
+        let r = check(&input).await;
+        assert!(r.stdout.is_none(), "reading keychain settings must pass");
+    }
+
+    #[tokio::test]
+    async fn test_allow_sudo_role_account_without_security() {
+        let input = silas_bash("sudo -u chorus-silas id -un");
+        let r = check(&input).await;
+        assert!(r.stdout.is_none(), "sudo to a role account is not itself the problem");
     }
 }

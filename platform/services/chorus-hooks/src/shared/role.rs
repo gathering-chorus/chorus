@@ -297,3 +297,123 @@ pub fn process_ancestry(start: u32, max_depth: usize) -> Vec<u32> {
     }
     out
 }
+
+
+// ---------------------------------------------------------------- #4202 session
+
+/// #4202 — the SESSION is the identity source. chorus-awake logs a role in
+/// before its first turn and hands the pane `CHORUS_SESSION_TOKEN_FILE`; every
+/// hook call in that pane names its caller from the token's WebID, and an env
+/// var cannot override it. Jeff, 2026-09-17: "agents must login to chorus";
+/// "and then follow authz rules"; "we need a key that we can trust".
+///
+/// The signature is not checked here (the security API verifies on every
+/// write); this resolves WHO the session names so attribution and the guards
+/// key on the login, not on a typed DEPLOY_ROLE. Pure: the caller supplies the
+/// token text, so the suite brings its own world (#3528).
+pub fn role_from_webid(webid: &str) -> Option<String> {
+    for role in ["wren", "silas", "kade"] {
+        if webid.ends_with(&format!("/{role}/profile/card#me")) {
+            return Some(role.to_string());
+        }
+    }
+    None
+}
+
+fn b64url_decode(s: &str) -> Option<Vec<u8>> {
+    let mut out = Vec::with_capacity(s.len() * 3 / 4);
+    let (mut buf, mut bits) = (0u32, 0u32);
+    for c in s.trim().bytes() {
+        let v = match c {
+            b'A'..=b'Z' => c - b'A',
+            b'a'..=b'z' => c - b'a' + 26,
+            b'0'..=b'9' => c - b'0' + 52,
+            b'-' | b'+' => 62,
+            b'_' | b'/' => 63,
+            b'=' => break,
+            _ => return None,
+        } as u32;
+        buf = (buf << 6) | v;
+        bits += 6;
+        if bits >= 8 { bits -= 8; out.push(((buf >> bits) & 0xff) as u8); }
+    }
+    Some(out)
+}
+
+/// The WebID a JWT-shaped token names (its `webid` claim), or None.
+pub fn webid_of_token(token: &str) -> Option<String> {
+    let payload = token.trim().split('.').nth(1)?;
+    let v: serde_json::Value = serde_json::from_slice(&b64url_decode(payload)?).ok()?;
+    v.get("webid").and_then(|w| w.as_str()).map(|w| w.to_string())
+}
+
+/// Resolve with the session FIRST. `session_token` is the token text when a
+/// session file is present. A session that names a role wins over every env
+/// var; a session that names a non-role is `not-a-role` (never fall back to a
+/// typed name around a bad login); no session → the #3959 env resolution.
+pub fn resolve_role_with_session(
+    session_token: Option<&str>,
+    chorus_role: Option<String>,
+    deploy_role: Option<String>,
+    cwd: &str,
+) -> Result<String, RoleUnresolved> {
+    match session_token.and_then(webid_of_token) {
+        Some(webid) => role_from_webid(&webid).ok_or(RoleUnresolved::NotARole { value: webid }),
+        None => resolve_role_from(chorus_role, deploy_role, cwd),
+    }
+}
+
+/// The live read: `CHORUS_SESSION_TOKEN_FILE` → its text, when set and readable.
+pub fn session_token_from_env() -> Option<String> {
+    let p = std::env::var("CHORUS_SESSION_TOKEN_FILE").ok()?;
+    std::fs::read_to_string(p).ok().filter(|t| !t.trim().is_empty())
+}
+
+#[cfg(test)]
+mod session_resolver_tests_4202 {
+    use super::*;
+    const CWD: &str = "/Users/j/CascadeProjects/chorus-werk/silas-4202";
+    fn s(v: &str) -> Option<String> { Some(v.to_string()) }
+    fn tok(webid: &str) -> String {
+        // payload → base64url (no padding), hand-rolled so the test brings its own encoder
+        let payload = format!(r#"{{"webid":"{}","jti":"j","exp":9999999999}}"#, webid);
+        const T: &[u8] = b"ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789-_";
+        let mut out = String::new();
+        for ch in payload.as_bytes().chunks(3) {
+            let n = ((ch[0] as u32) << 16) | ((*ch.get(1).unwrap_or(&0) as u32) << 8) | (*ch.get(2).unwrap_or(&0) as u32);
+            out.push(T[((n >> 18) & 63) as usize] as char);
+            out.push(T[((n >> 12) & 63) as usize] as char);
+            if ch.len() > 1 { out.push(T[((n >> 6) & 63) as usize] as char); }
+            if ch.len() > 2 { out.push(T[(n & 63) as usize] as char); }
+        }
+        format!("eyJhbGciOiJFUzI1NiJ9.{out}.sig")
+    }
+    const SILAS: &str = "https://id.lightlifeurbangardens.com/silas/profile/card#me";
+
+    #[test]
+    fn the_session_names_the_caller() {
+        assert_eq!(resolve_role_with_session(Some(&tok(SILAS)), None, None, CWD).unwrap(), "silas");
+    }
+
+    /// NEGATIVE PROOF — a typed DEPLOY_ROLE cannot override the login.
+    #[test]
+    fn env_cannot_override_the_session() {
+        let r = resolve_role_with_session(Some(&tok(SILAS)), s("kade"), s("kade"), CWD).unwrap();
+        assert_eq!(r, "silas");
+    }
+
+    /// NEGATIVE PROOF — a session for a non-role WebID is refused, never patched
+    /// over with the env's name.
+    #[test]
+    fn a_session_for_a_non_role_is_not_a_role_even_with_env_set() {
+        let e = resolve_role_with_session(Some(&tok("https://id.example/crawler/profile/card#me")), s("kade"), None, CWD).unwrap_err();
+        assert_eq!(e.reason(), "not-a-role");
+    }
+
+    #[test]
+    fn no_session_falls_back_to_the_3959_env_resolution() {
+        assert_eq!(resolve_role_with_session(None, s("wren"), None, CWD).unwrap(), "wren");
+        assert_eq!(resolve_role_with_session(Some("garbage"), s("wren"), None, CWD).unwrap(), "wren");
+        assert_eq!(resolve_role_with_session(None, None, None, CWD).unwrap_err().reason(), "no-env");
+    }
+}
