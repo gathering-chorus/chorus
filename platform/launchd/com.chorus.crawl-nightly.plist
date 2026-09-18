@@ -5,9 +5,18 @@
 
   CHORUS_ROLE is the load-bearing line, not boilerplate. The door stamps ownedBy
   from the caller and only the owner may update a row, so whoever runs this TAKES
-  every row it writes. Wired as anything but `crawler`, the first run reassigns
-  5,500 rows to a person and every run after that is refused — measured on the
-  variant 2026-09-15: one pass as `wren` left {crawler 5547, wren 1}.
+  every row it writes.
+
+  It said `crawler` until 2026-09-18, on the reasoning that a service should own
+  what it writes. Jeff ruled the other way on 09-17: principals own things,
+  principals own services — a service's rows belong to the principal it runs as.
+  Holding `crawler` cost three hand-migrations in one day (code 6,218 rows, tests
+  6,610, logs 132), because a role editing this repo cannot update rows a service
+  took. `kade` is that principal; the crawler is the tool, not the owner.
+
+  The 2026-09-15 measurement that argued for `crawler` still holds and is the
+  reason this value is never changed casually: one pass as a different name
+  reassigns every row it touches, and the previous owner's runs are then refused.
 -->
 <plist version="1.0">
 <dict>
@@ -20,7 +29,7 @@
   <key>EnvironmentVariables</key>
   <dict>
     <key>CHORUS_ROLE</key>
-    <string>crawler</string>
+    <string>kade</string>
     <key>CHORUS_ROOT</key>
     <string>/Users/jeffbridwell/CascadeProjects/chorus</string>
     <key>CHORUS_OWL_API</key>

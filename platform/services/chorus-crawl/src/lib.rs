@@ -11,6 +11,7 @@
 
 /// #4185 — test CASE rows: parsers, covers, the share gate, the case plan.
 pub mod cases;
+pub mod domain;
 
 /// What a file is, from the model's served CodeKind individuals (#4157):
 /// code · config · doc · log · test, plus `data` (#4173). Never a free string.
@@ -501,6 +502,21 @@ pub struct InGraph {
 /// The whole decision, as a pure function of (tree, graph, how well we read the
 /// tree). No clock, no network, no filesystem.
 pub fn plan(disk: &[OnDisk], graph: &[InGraph], read: TreeRead) -> Vec<Action> {
+    plan_with(disk, graph, read, &|_, _| false)
+}
+
+/// #4201 — a file's CONTENT is not the only thing that can go stale. The domain
+/// a file belongs to is computed from its text, and a rule change moves it
+/// while the sha stands still: tagging `hasDomain` on a tree whose shas all
+/// match produced 30 replaces out of 6,226 rows, because only a changed sha
+/// could make a row eligible. `restate` answers, for one row, whether what the
+/// crawler would write differs from what the row holds.
+pub fn plan_with(
+    disk: &[OnDisk],
+    graph: &[InGraph],
+    read: TreeRead,
+    restate: &dyn Fn(&str, &InGraph) -> bool,
+) -> Vec<Action> {
     let mut out = Vec::new();
     for f in disk {
         if !f.classified {
@@ -513,7 +529,7 @@ pub fn plan(disk: &[OnDisk], graph: &[InGraph], read: TreeRead) -> Vec<Action> {
             None => out.push(Action::Post {
                 path: f.path.clone(),
             }),
-            Some(g) if g.sha != f.sha => out.push(Action::Replace {
+            Some(g) if g.sha != f.sha || restate(&f.path, g) => out.push(Action::Replace {
                 path: f.path.clone(),
             }),
             Some(_) => out.push(Action::Unchanged {
@@ -1876,6 +1892,7 @@ pub fn uncovered_lands(
 }
 
 /// The morning line, one field per verdict.
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub struct ProjectLine {
     pub file_rows: usize,
     pub tracked: usize,
@@ -1892,6 +1909,10 @@ pub struct ProjectLine {
     pub logs_drift: usize,
     pub lands: usize,
     pub uncovered: Vec<String>,
+    /// #4201 — test files the five rules placed, left in conflict, left unplaced
+    pub tag_placed: usize,
+    pub tag_conflicts: usize,
+    pub tag_unplaced: usize,
 }
 
 impl ProjectLine {
@@ -1914,8 +1935,9 @@ impl ProjectLine {
             )
         };
         format!(
-            "graph vs project · complete files={}/{} no-kind={} ({}) cases={} no-case={} ({}) logs={} rows/{} files · current lag={} · consistent files={} cases={} logs={} · {}",
+            "graph vs project · complete files={}/{} no-kind={} ({}) cases={} no-case={} ({}) logs={} rows/{} files · tagged placed={} conflicts={} unplaced={} · current lag={} · consistent files={} cases={} logs={} · {}",
             self.file_rows, self.tracked, self.no_kind, self.no_kind_top, self.case_rows, self.no_case, self.no_case_detail, self.log_rows, self.log_files,
+            self.tag_placed, self.tag_conflicts, self.tag_unplaced,
             self.lag_commits, verdict(self.files_drift), verdict(self.cases_drift), verdict(self.logs_drift), lossless
         )
     }
@@ -1925,6 +1947,8 @@ impl ProjectLine {
             && self.cases_drift == 0
             && self.logs_drift == 0
             && self.uncovered.is_empty()
+            && self.tag_conflicts == 0
+            && self.tag_unplaced == 0
     }
 }
 
@@ -2020,8 +2044,16 @@ mod project_4199 {
             logs_drift: 0,
             lands: 3,
             uncovered: vec![],
+            tag_placed: 1000,
+            tag_conflicts: 0,
+            tag_unplaced: 0,
         };
         assert!(p.is_clean());
+        // #4201 — an unplaced test file is not clean, and the line says so
+        let mut q = p.clone();
+        q.tag_unplaced = 1;
+        assert!(!q.is_clean());
+        assert!(q.render().contains("tagged placed=1000 conflicts=0 unplaced=1"), "{}", q.render());
         let line = p.render();
         assert!(
             line.contains("complete files=5575/6214 no-kind=642 (png 233, none 180)"),
@@ -2485,5 +2517,55 @@ mod logs_4199 {
         assert!(f.contains(&("label".to_string(), "a.log (library)".to_string())));
         assert!(f.contains(&("onMachine".to_string(), "library".to_string())));
         assert!(f.contains(&("launchdLabel".to_string(), UNMANAGED.to_string())));
+    }
+}
+
+#[cfg(test)]
+mod plan_domain_4201 {
+    use super::{plan, plan_with, Action, InGraph, OnDisk, TreeRead};
+
+    fn disk(path: &str, sha: &str) -> OnDisk {
+        OnDisk { path: path.to_string(), sha: sha.to_string(), classified: true }
+    }
+    fn row(path: &str, sha: &str, domain: &str) -> InGraph {
+        InGraph {
+            path: path.to_string(),
+            sha: sha.to_string(),
+            other: vec![("hasDomain".to_string(), domain.to_string())],
+        }
+    }
+
+    /// NEGATIVE PROOF: a row whose sha has not moved but whose domain is wrong.
+    /// plan() can only see content, so tagging hasDomain across a settled tree
+    /// produced 30 replaces out of 6,226 rows — the other 1,563 were eligible
+    /// for nothing and would have stayed blank forever.
+    #[test]
+    fn a_stale_domain_makes_a_row_eligible_even_when_the_sha_stands_still() {
+        let d = vec![disk("a.ts", "SAME")];
+        let g = vec![row("a.ts", "SAME", "")];
+
+        // the guarded condition: sha-only planning calls it Unchanged
+        assert!(matches!(
+            plan(&d, &g, TreeRead::Complete).as_slice(),
+            [Action::Unchanged { .. }]
+        ));
+
+        // and with the domain question asked, the same row is a Replace
+        let acts = plan_with(&d, &g, TreeRead::Complete, &|_, g| {
+            g.other.iter().any(|(k, v)| k == "hasDomain" && v.is_empty())
+        });
+        assert!(matches!(acts.as_slice(), [Action::Replace { .. }]), "{acts:?}");
+    }
+
+    /// CONTROL: a row that already holds the right domain stays Unchanged —
+    /// otherwise every pass would rewrite the whole tree.
+    #[test]
+    fn a_row_whose_domain_is_already_right_is_not_restated() {
+        let d = vec![disk("a.ts", "SAME")];
+        let g = vec![row("a.ts", "SAME", "cards")];
+        let acts = plan_with(&d, &g, TreeRead::Complete, &|_, g| {
+            g.other.iter().any(|(k, v)| k == "hasDomain" && v.is_empty())
+        });
+        assert!(matches!(acts.as_slice(), [Action::Unchanged { .. }]), "{acts:?}");
     }
 }

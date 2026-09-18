@@ -9,6 +9,7 @@
 //! server, or a clock.
 
 use chorus_crawl::cases::{self, CaseAction, CaseInGraph, CaseRow};
+use chorus_crawl::domain;
 use chorus_crawl::*;
 use std::collections::HashMap;
 use std::process::Command;
@@ -258,6 +259,120 @@ impl Identity {
 
 /// One write through the door under a live identity: mints when the token is
 /// about to expire, and retries exactly once on a 401 after a fresh mint.
+/// #4201 — one queued full-replace, written after the planning loops.
+struct PendingPut {
+    kind: &'static str,
+    label: String,
+    path: String,
+    fields: Vec<(String, String)>,
+}
+
+/// CHORUS_CRAWL_WRITERS, clamped to 1..=8; unset or unparsable is 4.
+fn writers_from_env(v: Option<&str>) -> usize {
+    v.and_then(|s| s.trim().parse::<usize>().ok())
+        .unwrap_or(4)
+        .clamp(1, 8)
+}
+
+/// Write the queued PUTs `writers` at a time. The FIRST goes alone through
+/// `write()` so the door's prefix is learned and the token minted; the rest go
+/// in chunks of 200 under one token (a chunk is well inside the 600 s TTL), and
+/// any 401 in a chunk is retried once, alone, after a re-mint. Order within a
+/// chunk does not matter: every PUT is a full replace of its own row.
+fn flush_puts(
+    puts: &mut Vec<PendingPut>,
+    ident: &std::cell::RefCell<Identity>,
+    api: &str,
+    prefixes: &mut PrefixMemory,
+    writers: usize,
+    failed: &mut Vec<String>,
+    wrote: &mut usize,
+) {
+    if puts.is_empty() {
+        return;
+    }
+    let mut queue: std::collections::VecDeque<PendingPut> = puts.drain(..).collect();
+    // the first one, alone: learn the prefix, mint the token
+    if let Some(mut first) = queue.pop_front() {
+        let mut attempt = 0;
+        loop {
+            let body = fields_json(&first.fields);
+            match write(ident, api, "PUT", &first.path, Some(&body)) {
+                Ok(_) => {
+                    *wrote += 1;
+                    break;
+                }
+                Err(e) if attempt == 0 && prefixes.learn(&e) && prefixes.apply(&mut first.fields) => {
+                    attempt += 1
+                }
+                Err(e) => {
+                    failed.push(format!("update {} {}: {e}", first.kind, first.label));
+                    break;
+                }
+            }
+        }
+    }
+    for p in queue.iter_mut() {
+        prefixes.apply(&mut p.fields);
+    }
+    while !queue.is_empty() {
+        let chunk: Vec<PendingPut> = queue.drain(..queue.len().min(200)).collect();
+        let token = match ident.borrow_mut().bearer() {
+            Ok(t) => t,
+            Err(e) => {
+                for p in chunk {
+                    failed.push(format!("update {} {}: {e}", p.kind, p.label));
+                }
+                continue;
+            }
+        };
+        let work = std::sync::Mutex::new(std::collections::VecDeque::from(chunk));
+        let results: std::sync::Mutex<Vec<(PendingPut, Result<(), String>)>> =
+            std::sync::Mutex::new(Vec::new());
+        std::thread::scope(|s| {
+            for _ in 0..writers {
+                s.spawn(|| loop {
+                    let next = work.lock().ok().and_then(|mut q| q.pop_front());
+                    let Some(p) = next else { break };
+                    let body = fields_json(&p.fields);
+                    let r = curl(api, "PUT", &p.path, Some(&body), Some(&token)).map(|_| ());
+                    if let Ok(mut v) = results.lock() {
+                        v.push((p, r));
+                    }
+                });
+            }
+        });
+        let results = results.into_inner().unwrap_or_default();
+        for (p, r) in results {
+            match r {
+                Ok(()) => *wrote += 1,
+                Err(e) if e.contains("HTTP 401") => {
+                    // token died mid-chunk: once more, alone, after a re-mint
+                    let body = fields_json(&p.fields);
+                    match write(ident, api, "PUT", &p.path, Some(&body)) {
+                        Ok(_) => *wrote += 1,
+                        Err(e2) => failed.push(format!("update {} {}: {e2}", p.kind, p.label)),
+                    }
+                }
+                Err(e) => failed.push(format!("update {} {}: {e}", p.kind, p.label)),
+            }
+        }
+    }
+}
+
+#[cfg(test)]
+mod writers_4201 {
+    use super::writers_from_env;
+    #[test]
+    fn writers_default_four_and_clamp() {
+        assert_eq!(writers_from_env(None), 4);
+        assert_eq!(writers_from_env(Some("x")), 4);
+        assert_eq!(writers_from_env(Some("1")), 1);
+        assert_eq!(writers_from_env(Some("0")), 1);
+        assert_eq!(writers_from_env(Some("64")), 8);
+    }
+}
+
 fn write(
     ident: &std::cell::RefCell<Identity>,
     api: &str,
@@ -607,7 +722,10 @@ fn case_row_json(name: &str, row: &CaseRow) -> String {
 /// not a crate; its #[test] fns run under the including crate's names, so a row
 /// registered here is a name no lane can ever emit.
 fn registers_cases(path: &str) -> bool {
-    !path.contains("platform/services/shared/")
+    // #4201 — a file under tests/fixtures/ is DATA a test reads, not a suite.
+    // My two placement fixtures landed in the registry the run after I wrote
+    // them and moved the counts they exist to prove (read 1045 -> 1048).
+    !path.contains("platform/services/shared/") && !path.contains("/tests/fixtures/")
 }
 
 #[cfg(test)]
@@ -620,6 +738,14 @@ mod registers_cases_4131 {
     #[test]
     fn negative_proof_the_shared_source_dir_registers_no_cases_and_a_crate_does() {
         assert!(!registers_cases("platform/services/shared/scope_units.rs"));
+        // #4201 — fixture data, read by a proof, never run as a suite
+        assert!(!registers_cases(
+            "platform/services/chorus-crawl/tests/fixtures/route-cards-header-search.test.ts"
+        ));
+        assert!(
+            registers_cases("platform/services/chorus-crawl/tests/ac_fixtures_4201.rs"),
+            "control: the proof itself is a real suite and does register"
+        );
         assert!(
             registers_cases("platform/services/werk-test/src/lib.rs"),
             "control: a real crate's file does register"
@@ -639,9 +765,26 @@ struct Parsed {
     declared: usize,
     inferred: usize,
     complete: bool,
+    /// #4201 — how the five rules placed the files that have cases
+    tags: domain::TagCounts,
+    /// one line per conflicted or unplaced file
+    tag_lines: Vec<String>,
 }
 
-fn parse_cases(root: &str, test_files: &[&str]) -> Parsed {
+/// The authored unit → domain rows, relative to the tree root (#4084).
+const UNIT_DOMAIN_TTL: &str = "roles/silas/ontology/unit-domain-4084.ttl";
+
+fn parse_cases(
+    root: &str,
+    test_files: &[&str],
+    valid_domains: &[String],
+    card_domain: &dyn Fn(u32) -> Option<String>,
+) -> Parsed {
+    // #4084's authored unit → domain rows, read once per run.
+    let unit_rows = domain::unit_domain_rows(
+        &std::fs::read_to_string(format!("{root}/{UNIT_DOMAIN_TTL}")).unwrap_or_default(),
+    );
+    let unit_rows = &unit_rows[..];
     let mut p = Parsed {
         desired: Vec::new(),
         parsed_files: Vec::new(),
@@ -650,6 +793,8 @@ fn parse_cases(root: &str, test_files: &[&str]) -> Parsed {
         declared: 0,
         inferred: 0,
         complete: true,
+        tags: domain::TagCounts::default(),
+        tag_lines: Vec::new(),
     };
     for path in test_files {
         if !registers_cases(path) {
@@ -678,7 +823,31 @@ fn parse_cases(root: &str, test_files: &[&str]) -> Parsed {
         } else {
             p.inferred += 1
         }
-        let covers = cases::covers_with_concern(path, fc.concern).to_string();
+        // #4201 — the domain comes from the file, never the folder
+        // #4201 — the unit the file declares (nearest manifest), for the rule
+        // that reads a crate source file's own identity.
+        let unit = domain::declared_unit(path, &|p: &str| {
+            std::fs::read_to_string(std::path::Path::new(&root).join(p)).ok()
+        });
+        let placement = domain::place_in_file(
+            &content,
+            path,
+            unit.as_deref(),
+            unit_rows,
+            valid_domains,
+            card_domain,
+            &|p: &str| std::fs::read_to_string(std::path::Path::new(&root).join(p)).ok(),
+        );
+        p.tags.read += 1;
+        match &placement {
+            domain::Placement::Tagged { .. } => p.tags.placed += 1,
+            domain::Placement::Conflict { .. } => p.tags.conflicts += 1,
+            domain::Placement::Unplaced => p.tags.unplaced += 1,
+        }
+        if let Some(line) = domain::listing(path, &placement) {
+            p.tag_lines.push(line);
+        }
+        let covers = cases::covers_from(placement.domain(), fc.concern);
         let in_file = stable_name(path);
         for case in names {
             p.desired.push(CaseRow {
@@ -722,12 +891,42 @@ fn seam(args: &[String]) -> bool {
             }
         }
         "--covers-of" => {
+            // #4201 — hermetic: the valid Domain list comes from CHORUS_VALID_DOMAINS
+            // (comma-separated) since no store is in reach; prints the domain, or
+            // "conflict: ..." / "unplaced".
             let path = arg(2);
             let content = std::fs::read_to_string(&path).unwrap_or_default();
-            println!(
-                "{}",
-                cases::covers_with_concern(&path, cases::file_class(&path, &content).concern)
+            let valid: Vec<String> = std::env::var("CHORUS_VALID_DOMAINS")
+                .unwrap_or_default()
+                .split(',')
+                .map(|s| s.trim().to_string())
+                .filter(|s| !s.is_empty())
+                .collect();
+            // #4201 — the seam must answer with the SAME rules the crawl runs,
+            // unit rule included, or it reports a file unplaced that the pass
+            // places (seen 2026-09-17 on chorus-hooks).
+            let unit = domain::declared_unit(&path, &|p: &str| std::fs::read_to_string(p).ok());
+            let unit_rows = domain::unit_domain_rows(
+                &std::fs::read_to_string(UNIT_DOMAIN_TTL).unwrap_or_default(),
             );
+            let placement = domain::place_in_file(
+                &content,
+                &path,
+                unit.as_deref(),
+                &unit_rows,
+                &valid,
+                &|_| None,
+                &|p: &str| std::fs::read_to_string(p).ok(),
+            );
+            let concern = cases::file_class(&path, &content).concern;
+            let covers = cases::covers_from(placement.domain(), concern);
+            // #4201 — the answer on stdout, the reason on stderr. Printing
+            // both on one line made the seam unreadable by anything that
+            // compares it: `security (unplaced …)` never equals `security`.
+            println!("{covers}");
+            if let Some(l) = domain::listing(&path, &placement) {
+                eprintln!("{l}");
+            }
         }
         "--classify" => {
             let path = arg(2);
@@ -762,6 +961,46 @@ fn seam(args: &[String]) -> bool {
         _ => return false,
     }
     true
+}
+
+/// #4201 — a run that cannot write must say so ON the count line, not in a
+/// footnote. `--reconcile` is read-only, but its `posted/replaced/deleted`
+/// line was byte-identical to a write pass's, and the disclaimer sat eleven
+/// lines below. On 2026-09-17 that cost an afternoon: two reconciles were read
+/// as data changes, and the store never moved. The counts a run did not make
+/// carry the reason on the same line.
+fn wrote_nothing(dry_run: bool, reconciling: bool) -> &'static str {
+    match (dry_run, reconciling) {
+        (true, _) => "  (dry-run — NOTHING WRITTEN)",
+        (_, true) => "  (--reconcile is read-only — NOTHING WRITTEN, this is what a write pass would do)",
+        _ => "",
+    }
+}
+
+#[cfg(test)]
+mod wrote_nothing_4201 {
+    use super::wrote_nothing;
+
+    /// Negative proof: the state that cost the afternoon — a reconcile whose
+    /// counts read as writes. The line must name itself read-only.
+    #[test]
+    fn a_reconcile_line_says_nothing_was_written() {
+        let s = wrote_nothing(false, true);
+        assert!(s.contains("NOTHING WRITTEN"), "{s}");
+        assert!(s.contains("read-only"), "{s}");
+    }
+
+    #[test]
+    fn a_dry_run_line_says_nothing_was_written() {
+        assert!(wrote_nothing(true, false).contains("NOTHING WRITTEN"));
+    }
+
+    /// Control: a real write pass carries no disclaimer, so the marker never
+    /// becomes noise that stops being read.
+    #[test]
+    fn a_write_pass_carries_no_disclaimer() {
+        assert_eq!(wrote_nothing(false, false), "");
+    }
 }
 
 fn main() {
@@ -858,7 +1097,16 @@ fn main() {
 
     let api =
         std::env::var("CHORUS_OWL_API").unwrap_or_else(|_| "http://localhost:3360".to_string());
-    let role = std::env::var("CHORUS_ROLE").unwrap_or_else(|_| "crawler".to_string());
+    // #4210 — a default here INVENTS a principal. Every row this pass wrote
+    // landed owned by `crawler`, and Silas hand-moved them three times on
+    // 2026-09-18 alone. The caller says who it is or the pass refuses.
+    let role = match declared_role(std::env::var("CHORUS_ROLE").ok()) {
+        Ok(r) => r,
+        Err(why) => {
+            eprintln!("chorus-crawl: {why}");
+            std::process::exit(2);
+        }
+    };
 
     // What the graph already holds. Read BEFORE deciding anything — the walk is
     // idempotent by diff, not by luck.
@@ -963,7 +1211,8 @@ fn main() {
         );
         actions.retain(|a| !matches!(a, Action::Delete { .. }));
     }
-    let c = counts(&actions);
+    // #4201 — tallied AFTER the hasDomain restate below, or the line reports
+    // 30 replaces on a run that restates 1,563 rows.
 
     // #4185 — the case pass: every kind=test file this run walked, parsed.
     let test_files: Vec<&str> = disk
@@ -977,7 +1226,70 @@ fn main() {
         })
         .map(|f| f.path.as_str())
         .collect();
-    let parsed = parse_cases(&root, &test_files);
+    // #4201 — only a real Domain row can be a tag; read them from the API.
+    let valid_domains: Vec<String> = match fetch_rows(&api, &token, "Domain") {
+        Ok(rows) => rows
+            .into_iter()
+            .filter_map(|f| f.into_iter().find(|(k, _)| k == "name").map(|(_, v)| v))
+            .filter(|v| !v.is_empty())
+            .collect(),
+        Err(e) => {
+            eprintln!("chorus-crawl: cannot read Domain rows ({e}) — refusing to tag tests against an unknown domain list");
+            std::process::exit(2);
+        }
+    };
+    // rule 5: a card's labels name a real Domain. Today the board carries
+    // sequence/subproduct labels (athena, werk, borg), not Domain rows, so this
+    // answers None for every card; the rule is wired and inert until a label does.
+    let card_domain = |_card: u32| -> Option<String> { None };
+
+    // #4201 — a row whose stored hasDomain is not what the rules now say is
+    // stale even though its sha has not moved. plan() ran before the Domain
+    // list was readable, so the eligibility is settled here: Unchanged becomes
+    // Replace for exactly those rows, and for nothing else.
+    {
+        let unit_rows = domain::unit_domain_rows(
+            &std::fs::read_to_string(format!("{root}/{UNIT_DOMAIN_TTL}")).unwrap_or_default(),
+        );
+        let read_file = |q: &str| std::fs::read_to_string(std::path::Path::new(&root).join(q)).ok();
+        let in_graph: std::collections::HashMap<&str, &InGraph> =
+            graph.iter().map(|g| (g.path.as_str(), g)).collect();
+        let mut restated = 0usize;
+        for a in actions.iter_mut() {
+            let Action::Unchanged { path } = a else { continue };
+            let Some(g) = in_graph.get(path.as_str()) else {
+                continue;
+            };
+            let held = g
+                .other
+                .iter()
+                .find(|(k, _)| k == "hasDomain")
+                .map(|(_, v)| v.as_str())
+                .unwrap_or("");
+            let Some(content) = read_file(path) else { continue };
+            let unit = domain::declared_unit(path, &read_file);
+            let want = domain::place_in_file(
+                &content,
+                path,
+                unit.as_deref(),
+                &unit_rows,
+                &valid_domains,
+                &card_domain,
+                &read_file,
+            );
+            let want = want.domain().unwrap_or("");
+            if want != held {
+                restated += 1;
+                *a = Action::Replace { path: path.clone() };
+            }
+        }
+        if restated > 0 {
+            println!("chorus-crawl: {restated} code row(s) restated — hasDomain differs from the rules");
+        }
+    }
+
+    let c = counts(&actions);
+    let parsed = parse_cases(&root, &test_files, &valid_domains, &card_domain);
     // A test file we could not read outranks a clean tree read: no deletes.
     let case_read = if parsed.complete {
         read
@@ -1047,20 +1359,20 @@ fn main() {
         c.unchanged,
         c.deleted,
         c.skipped,
-        if dry_run {
-            "  (dry-run — nothing written)"
-        } else {
-            ""
-        }
+        wrote_nothing(dry_run, reconciling)
     );
     println!(
         "chorus-crawl: cases posted={} replaced={} unchanged={} deleted={} · test files parsed={} declared={} inferred={} no-case={}{}",
         cc.posted, cc.replaced, cc.unchanged, cc.deleted,
         parsed.parsed_files.len(), parsed.declared, parsed.inferred, parsed.no_case.len(),
-        if dry_run { "  (dry-run — nothing written)" } else { "" }
+        wrote_nothing(dry_run, reconciling)
     );
     if !parsed.no_case.is_empty() {
         println!("chorus-crawl: {}", cases::no_case_report(&parsed.no_case));
+    }
+    println!("chorus-crawl: tags: {}", parsed.tags.render());
+    for l in &parsed.tag_lines {
+        println!("chorus-crawl: {l}");
     }
     println!(
         "chorus-crawl: logs posted={} replaced={} unchanged={} deleted={} · log files={} rows={}{}",
@@ -1116,6 +1428,7 @@ fn main() {
             &head,
             wm_file.as_deref(),
             &parsed.no_case_buckets,
+            &parsed.tags,
         );
         std::process::exit(if clean { 0 } else { 1 });
     }
@@ -1134,12 +1447,19 @@ fn main() {
         }
     };
     let by_path: HashMap<&str, &OnDisk> = disk.iter().map(|f| (f.path.as_str(), f)).collect();
+    // #4201 — the authored unit rows, for tagging each code row's domain.
+    let unit_rows = domain::unit_domain_rows(
+        &std::fs::read_to_string(format!("{root}/{UNIT_DOMAIN_TTL}")).unwrap_or_default(),
+    );
     let mut wrote = 0usize;
     let mut failed: Vec<String> = Vec::new();
     let mut batch: Vec<String> = Vec::new();
 
     let ident = ident.as_ref().expect("writes happen only with an identity");
     let mut prefixes = PrefixMemory::default();
+    // #4201 — updates are queued and written `writers` at a time (CHORUS_CRAWL_WRITERS, default 4)
+    let writers = writers_from_env(std::env::var("CHORUS_CRAWL_WRITERS").ok().as_deref());
+    let mut puts: Vec<PendingPut> = Vec::new();
     let flush = |batch: &mut Vec<String>, failed: &mut Vec<String>, wrote: &mut usize| {
         if batch.is_empty() {
             return;
@@ -1196,6 +1516,32 @@ fn main() {
                 if let Some(lang) = l {
                     owned.push(("hasLanguage".to_string(), lang.to_string()));
                 }
+                // #4201 — the same rules that place a test place the file it
+                // tests. `hasDomain` was declared and empty on all 6,226 code
+                // rows, which is why a test whose only signal is the module it
+                // imports still cannot be placed: the module has no domain
+                // either. Read from the file, never the folder; silence when
+                // the rules cannot agree, exactly as for a test.
+                if let Ok(content) = std::fs::read_to_string(std::path::Path::new(&root).join(path))
+                {
+                    let unit = domain::declared_unit(path, &|q: &str| {
+                        std::fs::read_to_string(std::path::Path::new(&root).join(q)).ok()
+                    });
+                    let placement = domain::place_in_file(
+                        &content,
+                        path,
+                        unit.as_deref(),
+                        &unit_rows,
+                        &valid_domains,
+                        &card_domain,
+                        &|q: &str| {
+                            std::fs::read_to_string(std::path::Path::new(&root).join(q)).ok()
+                        },
+                    );
+                    if let Some(d) = placement.domain() {
+                        owned.push(("hasDomain".to_string(), d.to_string()));
+                    }
+                }
                 let mut fields = merge_row(existing, &owned);
                 let name = stable_name(path);
                 // The door names the prefix its mint adds; a refusal that names
@@ -1203,27 +1549,13 @@ fn main() {
                 // from a table kept in step by hand — and once learned, the
                 // prefix is stripped from every later row BEFORE its first PUT (#4192).
                 prefixes.apply(&mut fields);
-                let mut attempt = 0;
-                loop {
-                    let body = fields_json(&fields);
-                    match write(ident, &api, "PUT", &format!("{coll}/{name}"), Some(&body)) {
-                        Ok(_) => {
-                            wrote += 1;
-                            break;
-                        }
-                        Err(e)
-                            if attempt == 0
-                                && prefixes.learn(&e)
-                                && prefixes.apply(&mut fields) =>
-                        {
-                            attempt += 1
-                        }
-                        Err(e) => {
-                            failed.push(format!("update {path}: {e}"));
-                            break;
-                        }
-                    }
-                }
+                // #4201 — queued; flushed writers at a time after the loop
+                puts.push(PendingPut {
+                    kind: "file",
+                    label: path.clone(),
+                    path: format!("{coll}/{name}"),
+                    fields,
+                });
             }
             Action::Delete { path } => {
                 let name = stable_name(path);
@@ -1244,7 +1576,9 @@ fn main() {
         let mut per_domain: Vec<(String, usize)> = Vec::new();
         let mut seen_files: Vec<&str> = Vec::new();
         for r in &parsed.desired {
-            if seen_files.contains(&r.file.as_str()) {
+            // #4201 — the tests domain is the explicit home of the unplaced, counted
+            // on the line as unplaced/conflicts; it is not a corpus share to gate
+            if r.covers == cases::UNPLACED_HOME || seen_files.contains(&r.file.as_str()) {
                 continue;
             }
             seen_files.push(&r.file);
@@ -1310,35 +1644,17 @@ fn main() {
                     if row.concern.is_none() {
                         fields.retain(|(k, _)| k != "testConcern");
                     }
-                    prefixes.apply(&mut fields);
-                    let mut attempt = 0;
-                    loop {
-                        let body = fields_json(&fields);
-                        match write(
-                            ident,
-                            &api,
-                            "PUT",
-                            &format!("{case_coll}/{name}"),
-                            Some(&body),
-                        ) {
-                            Ok(_) => {
-                                wrote += 1;
-                                break;
-                            }
-                            Err(e)
-                                if attempt == 0
-                                    && prefixes.learn(&e)
-                                    && prefixes.apply(&mut fields) =>
-                            {
-                                attempt += 1
-                            }
-                            Err(e) => {
-                                failed
-                                    .push(format!("update case {} :: {}: {e}", row.file, row.case));
-                                break;
-                            }
-                        }
+                    // #4201 — an untagged file must not keep a folder-era covers
+                    if row.covers.is_empty() {
+                        fields.retain(|(k, _)| k != "covers");
                     }
+                    prefixes.apply(&mut fields);
+                    puts.push(PendingPut {
+                        kind: "case",
+                        label: format!("{} :: {}", row.file, row.case),
+                        path: format!("{case_coll}/{name}"),
+                        fields,
+                    });
                 }
                 CaseAction::Delete { name, file, case } => {
                     if let Err(e) =
@@ -1405,33 +1721,12 @@ fn main() {
                         .unwrap_or(&[]);
                     let mut fields = merge_row(existing, &row.owned_fields(&machine, observed));
                     prefixes.apply(&mut fields);
-                    let mut attempt = 0;
-                    loop {
-                        let body = fields_json(&fields);
-                        match write(
-                            ident,
-                            &api,
-                            "PUT",
-                            &format!("{log_coll}/{name}"),
-                            Some(&body),
-                        ) {
-                            Ok(_) => {
-                                wrote += 1;
-                                break;
-                            }
-                            Err(e)
-                                if attempt == 0
-                                    && prefixes.learn(&e)
-                                    && prefixes.apply(&mut fields) =>
-                            {
-                                attempt += 1
-                            }
-                            Err(e) => {
-                                failed.push(format!("update log {}: {e}", row.path));
-                                break;
-                            }
-                        }
-                    }
+                    puts.push(PendingPut {
+                        kind: "log",
+                        label: row.path.clone(),
+                        path: format!("{log_coll}/{name}"),
+                        fields,
+                    });
                 }
                 LogAction::Delete { name, path } => {
                     if let Err(e) =
@@ -1445,6 +1740,8 @@ fn main() {
         }
         lflush(&mut lbatch, &mut failed, &mut wrote);
     }
+
+    flush_puts(&mut puts, ident, &api, &mut prefixes, writers, &mut failed, &mut wrote);
 
     let elapsed = started.elapsed().as_secs_f64();
     let attempted = wrote + failed.len();
@@ -1490,6 +1787,7 @@ fn main() {
                     &head,
                     Some(&head),
                     &parsed.no_case_buckets,
+            &parsed.tags,
                 );
             }
             (Err(e), _) | (_, Err(e)) => println!(
@@ -1522,11 +1820,86 @@ fn main() {
         for f in failed.iter().take(5) {
             eprintln!("chorus-crawl: FAILED {f}");
         }
+        // #4201 — five named lines out of thousands says nothing about WHY.
+        // Every failure is counted by its verb, route family and status, so
+        // the run names its classes, not a sample of them.
+        for (class, n) in failure_classes(&failed) {
+            eprintln!("chorus-crawl: FAILED x{n} — {class}");
+        }
         eprintln!(
             "chorus-crawl: {} write(s) failed — the run is RED, not partially green",
             failed.len()
         );
         std::process::exit(1);
+    }
+}
+
+/// Each failure reduced to `VERB /route/family -> STATUS`, counted, most first.
+/// A failure line the crawler prints reads like
+/// `delete case path :: name: DELETE /tests/tests/<id> -> HTTP 403`.
+fn failure_classes(failed: &[String]) -> Vec<(String, usize)> {
+    let mut counts: std::collections::HashMap<String, usize> = std::collections::HashMap::new();
+    for f in failed {
+        // The verb must be followed by an actual path. A case NAME can contain
+        // the word DELETE ("a DELETE fires the guard") and did, inventing five
+        // one-off classes in the first run that used this.
+        let w: Vec<&str> = f.split_whitespace().collect();
+        let verb_route = w
+            .iter()
+            .enumerate()
+            .position(|(i, x)| {
+                matches!(*x, "POST" | "PUT" | "DELETE" | "PATCH")
+                    && w.get(i + 1).is_some_and(|r| r.starts_with('/'))
+            })
+            .map(|i| {
+                let family: String = w[i + 1].split('/').take(3).collect::<Vec<_>>().join("/");
+                format!("{} {}", w[i], family)
+            })
+            .unwrap_or_else(|| "(no route in line)".to_string());
+        let status = f
+            .split("HTTP ")
+            .nth(1)
+            .map(|t| t.chars().take_while(char::is_ascii_digit).collect::<String>())
+            .filter(|t| !t.is_empty())
+            .unwrap_or_else(|| "?".to_string());
+        *counts.entry(format!("{verb_route} -> HTTP {status}")).or_default() += 1;
+    }
+    let mut out: Vec<(String, usize)> = counts.into_iter().collect();
+    out.sort_by(|a, b| b.1.cmp(&a.1).then(a.0.cmp(&b.0)));
+    out
+}
+
+/// The principal this pass writes as. #4210 — a default here INVENTS one: every
+/// row the nightly wrote landed owned by `crawler`, and Silas hand-moved them
+/// three times on 2026-09-18 alone. The caller says who it is or the pass
+/// refuses; an unset variable is not a licence to pick a name.
+fn declared_role(env: Option<String>) -> Result<String, String> {
+    match env {
+        Some(r) if !r.trim().is_empty() => Ok(r.trim().to_string()),
+        _ => Err("CHORUS_ROLE is unset — refusing to write as an invented principal. \
+                  Set it to the principal that OWNS these rows (the plist's \
+                  EnvironmentVariables)."
+            .to_string()),
+    }
+}
+
+#[cfg(test)]
+mod declared_role_4210 {
+    use super::declared_role;
+
+    /// NEGATIVE PROOF: the state that cost three hand-migrations in one day.
+    #[test]
+    fn an_unset_role_refuses_instead_of_inventing_one() {
+        assert!(declared_role(None).is_err());
+        assert!(declared_role(Some("   ".to_string())).is_err());
+        let why = declared_role(None).unwrap_err();
+        assert!(why.contains("CHORUS_ROLE"), "{why}");
+        assert!(!why.contains("crawler"), "the refusal must not suggest a name: {why}");
+    }
+
+    #[test]
+    fn a_declared_role_is_taken_as_given() {
+        assert_eq!(declared_role(Some(" kade ".to_string())).unwrap(), "kade");
     }
 }
 
@@ -1550,6 +1923,7 @@ fn print_graph_vs_project(
     head: &str,
     watermark: Option<&str>,
     no_case_buckets: &[&str],
+    tags: &domain::TagCounts,
 ) -> bool {
     let drift = reconcile(disk, graph);
     println!("chorus-crawl: {}", drift.report());
@@ -1651,6 +2025,9 @@ fn print_graph_vs_project(
         logs_drift: log_drift.files_without_rows.len() + log_drift.rows_without_files.len(),
         lands,
         uncovered,
+        tag_placed: tags.placed,
+        tag_conflicts: tags.conflicts,
+        tag_unplaced: tags.unplaced,
     };
     println!("chorus-crawl: {}", line.render());
     drift.is_clean() && case_drift.is_clean() && log_drift.is_clean() && line.is_clean()
@@ -1667,4 +2044,56 @@ fn fields_json(fields: &[(String, String)]) -> String {
         .map(|(k, v)| format!("\"{}\":\"{}\"", json_escape(k), json_escape(v)))
         .collect();
     format!("{{{}}}", body.join(","))
+}
+
+#[cfg(test)]
+mod failure_classes_4201 {
+    use super::failure_classes;
+
+    /// NEGATIVE PROOF: thousands of failures printed as five lines cannot tell
+    /// one refused class from another. Same five names, two different causes.
+    #[test]
+    fn the_classes_separate_two_causes_the_sample_would_not() {
+        let failed: Vec<String> = (0..3)
+            .map(|i| format!("delete case a{i}.ts :: n: DELETE /tests/tests/x{i} -> HTTP 403 "))
+            .chain((0..2).map(|i| {
+                format!("post case b{i}.ts :: n: POST /tests/results -> HTTP 422 ")
+            }))
+            .collect();
+        let classes = failure_classes(&failed);
+        assert_eq!(
+            classes,
+            vec![
+                ("DELETE /tests/tests -> HTTP 403".to_string(), 3),
+                ("POST /tests/results -> HTTP 422".to_string(), 2),
+            ]
+        );
+    }
+
+    /// CONTROL: a line with no route still counts, and says so, rather than
+    /// vanishing from the total.
+    /// NEGATIVE PROOF: a case NAME containing the word DELETE. The first run
+    /// that used these classes invented five one-off entries from lines like
+    /// "a DELETE fires the guard" — the verb was real, the next word was not a
+    /// route.
+    #[test]
+    fn a_verb_inside_a_case_name_is_not_a_route() {
+        let failed = vec![
+            "delete case a.ts :: a DELETE fires the guard: DELETE /tests/tests/x -> HTTP 403 "
+                .to_string(),
+        ];
+        assert_eq!(
+            failure_classes(&failed),
+            vec![("DELETE /tests/tests -> HTTP 403".to_string(), 1)]
+        );
+    }
+
+    #[test]
+    fn a_line_with_no_route_is_still_counted() {
+        let failed = vec!["could not serialise row".to_string()];
+        assert_eq!(
+            failure_classes(&failed),
+            vec![("(no route in line) -> HTTP ?".to_string(), 1)]
+        );
+    }
 }

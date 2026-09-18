@@ -60,5 +60,13 @@ setup() {
   f="$BATS_TEST_TMPDIR/x.bats"; printf '# @test-type: contract\n@test "one" {\n  true\n}\n' > "$f"
   run "$BIN" --names-of "$f"; [ "$output" = "one" ]
   run "$BIN" --classify "$f"; [ "$output" = "contract hermetic - declared" ]
-  run "$BIN" --covers-of "platform/tests/4185-x.bats"; [ "$output" = "services" ]
+  # #4201 — the `services` default for anything under platform/tests/ is
+  # retired: the folder is never a rule. A path with no file on disk names
+  # nothing, so the seam answers the tests domain and says why on stderr.
+  # `run` merges stderr into $output, and the reason now goes there, so read
+  # the answer from stdout alone.
+  [ "$("$BIN" --covers-of "platform/tests/4185-x.bats" 2>/dev/null)" = "tests" ]
+  # and the reason is still printed, on the other stream
+  err="$("$BIN" --covers-of "platform/tests/4185-x.bats" 2>&1 >/dev/null)"
+  grep -qF 'no rule fired' <<<"$err"
 }

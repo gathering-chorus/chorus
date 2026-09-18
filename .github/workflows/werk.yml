@@ -559,7 +559,11 @@ jobs:
         if: ${{ steps.demo.outputs.proven == 'true' }}
         continue-on-error: true
         env:
-          CHORUS_ROLE: crawler
+          # #4210 — the principal that OWNS these rows, not the automation's
+          # name. A pass run as `crawler` takes every row it writes away from
+          # the owner, and the next one is refused; that cost three hand
+          # migrations on 2026-09-18 (code 6,218 rows, tests 6,610, logs 132).
+          CHORUS_ROLE: kade
         run: bash "${CHORUS_HOME}/platform/scripts/crawl-detached.sh"
 
       - name: outcome
