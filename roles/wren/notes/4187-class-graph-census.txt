@@ -36,3 +36,36 @@ Commitment     urn:chorus:domains:services=77
 #    them on the next deploy. Card rows are DAL-written from the Vikunja
 #    harvest, so the writer and the rows have to move together or the board
 #    serves 0. That sequencing belongs on its own card, not inside this walk.
+
+# CORRECTION, 2026-09-18 07:05. Finding 2 above was not a finding.
+# athena-validate's own gc-one-home-per-subject (ADR-051, wired in #4166) already
+# names all eight: spine, pulse, werk, convergence, chorus, loom, borg, athena —
+# each in urn:chorus:instances AND urn:chorus:ontology. Section 5 prints the two
+# graphs for each. I re-reported a check we already ship. Run the sweep before
+# calling anything new.
+#
+# What the sweep measures today (live, 07:05): 37,146 issues, 26,076 of them rows
+# still in the two v1 graphs.
+#
+# WHAT ACTUALLY BLOCKS THE REST OF THE WALK
+#
+# Thirteen domain graphs exist: alerts, code, documents, identity, infrastructure,
+# logs, practices, principles, roles, security, services, tests, values.
+#
+# The classes still to move have no domain graph to move INTO:
+#
+#   class          rows  where they are now      candidate home     owner
+#   EmitContract      1  urn:chorus:ontology     alerts? logs?      silas
+#   Metric            6  urn:chorus:ontology     alerts? logs?      silas
+#   Property          8  ontology + instances    none exists        silas
+#   PropertyKey       6  urn:chorus:ontology     none exists        silas
+#   Product          20  ontology + instances    none exists        wren
+#   ValueStream       3  urn:chorus:ontology     none exists        wren
+#   Step             48  urn:chorus:instances    none exists        wren
+#   Card            229  urn:chorus:instances    board? none exists wren
+#   Revision      9,360  urn:chorus:instances    follows its subject wren/kade
+#
+# Creating a domain graph is naming a domain, and naming a domain is Jeff's call,
+# not mine (2026-09-17: never mint beyond the ruling). So the walk stops here
+# until those homes are named. It does not stop because the work is hard; it
+# stops because the next step is a decision I do not get to make.
