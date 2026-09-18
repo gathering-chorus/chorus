@@ -353,3 +353,35 @@ chorus:permission-jeff-security a chorus:Permission ;
     chorus:accessTo "urn:chorus:domains:security"^^xsd:anyURI ;
     chorus:mode acl:Write ;
     chorus:ownedBy chorus:role-silas .
+
+# ── #4204 — logging in, and nothing more ────────────────────────────────────
+#
+# Each role may write its own Session rows into urn:chorus:domains:identity.
+# That graph holds logins only; Principals, Credentials and Permission rows stay
+# in urn:chorus:domains:security, which none of these three rows opens. Measured
+# 2026-09-18 07:36: wren and kade were refused 403 at /v1/identity/sessions
+# because the only grant that would have let them log in was Write on the
+# security graph — i.e. the power to rewrite who exists, handed out so a pane
+# could start. Permission is graph-scoped (agent, accessTo, mode), so a narrow
+# grant only became possible once Sessions had a graph of their own.
+
+chorus:permission-silas-identity a chorus:Permission ;
+    rdfs:label "silas may write urn:chorus:domains:identity" ;
+    chorus:agent chorus:principal-silas ;
+    chorus:accessTo "urn:chorus:domains:identity"^^xsd:anyURI ;
+    chorus:mode acl:Write ;
+    chorus:ownedBy chorus:role-silas .
+
+chorus:permission-wren-identity a chorus:Permission ;
+    rdfs:label "wren may write urn:chorus:domains:identity" ;
+    chorus:agent chorus:principal-wren ;
+    chorus:accessTo "urn:chorus:domains:identity"^^xsd:anyURI ;
+    chorus:mode acl:Write ;
+    chorus:ownedBy chorus:role-wren .
+
+chorus:permission-kade-identity a chorus:Permission ;
+    rdfs:label "kade may write urn:chorus:domains:identity" ;
+    chorus:agent chorus:principal-kade ;
+    chorus:accessTo "urn:chorus:domains:identity"^^xsd:anyURI ;
+    chorus:mode acl:Write ;
+    chorus:ownedBy chorus:role-kade .
