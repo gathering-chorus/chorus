@@ -50,7 +50,14 @@ chorus:hostAccount a owl:DatatypeProperty ;
 
 chorus:SessionShape a sh:NodeShape ;
     sh:targetClass chorus:Session ;
-    chorus:instancesGraph "urn:chorus:domains:security" ;
+    # #4204 — a Session lives in its OWN graph, not security's. Rows landing in
+    # urn:chorus:domains:security meant logging in required Write on the graph
+    # that holds Principals, Credentials and Permission rows: wren and kade were
+    # refused 403 on 2026-09-18, and the only grant that would have opened it
+    # also hands every role the power to rewrite who exists. Permission is
+    # graph-scoped (agent, accessTo, mode), so the narrow grant only exists once
+    # the rows have a graph of their own.
+    chorus:instancesGraph "urn:chorus:domains:identity" ;
     sh:property chorus:SessionShape-label ;
     sh:property chorus:SessionShape-ownedBy ;
     sh:property chorus:SessionShape-tokenId ;
