@@ -670,6 +670,26 @@ pub fn place_in_file(
     signals.extend(fire_all(Rule::Module, MODULES, &imports, valid));
     // Only when nothing external was named: a file that imports a unit is
     // testing THAT unit, and must not be overridden by the crate it lives in.
+    // #4201 — a test inside a unit that HAS a declared domain is part of that
+    // unit's domain unless the file itself names it. A clearing tunnel-auth
+    // test asserting once on /api/chorus/domain/ is not a test of the domains
+    // model; clearing is messages. The unit only wins over mentions, never
+    // over the file naming its own unit's domain.
+    let unit_domain = unit.and_then(|u| {
+        fire(Rule::Unit, UNITS, u, valid).or_else(|| unit_row_domain(u, unit_rows, valid))
+    });
+    // Only against MENTIONS — a route called, a binary named, a class asserted.
+    // An import is different in kind: a file that imports another unit is
+    // testing that unit, and keeps its answer.
+    if let Some(ud) = &unit_domain {
+        let all_mentions = signals
+            .iter()
+            .all(|s| matches!(s.rule, Rule::Route | Rule::Binary | Rule::Class));
+        if !signals.is_empty() && all_mentions && !signals.iter().any(|s| s.domain == ud.domain) {
+            signals.clear();
+            signals.push(ud.clone());
+        }
+    }
     // Only when nothing in this file named a domain: follow what it imports.
     if signals.is_empty() {
         if let Some(s) = place_by_neighbor(content, path, valid, read) {
@@ -1190,10 +1210,13 @@ mod tests_4201 {
         let p = place_in_file(tied, "platform/services/athena-make/tests/c.rs",
             Some("athena-make"), &[], &valid(), &no_card, &|_| None);
         assert_eq!(p.domain(), Some("domains"));
-        // the unit is NOT among the candidates: it must not speak
+        // the unit is NOT among the candidates: the mentions are someone
+        // else's names in chorus-hooks' own test, so the unit replaces them.
+        // (Before the mention-vs-unit precedence landed this was a conflict;
+        // the conflict was the file being read as a test of what it names.)
         let p = place_in_file(tied, "platform/services/chorus-hooks/tests/c.rs",
             Some("chorus-hooks"), &[], &valid(), &no_card, &|_| None);
-        assert!(matches!(p, Placement::Conflict { .. }), "{p:?}");
+        assert_eq!(p.domain(), Some("spine"), "{p:?}");
     }
     /// The three crates added 2026-09-18, each proved by the state that made
     /// it necessary: the file names nothing the tables know, so without the
@@ -1205,5 +1228,45 @@ mod tests_4201 {
         let p = place_in_file(c, "directing/products/cards/tests/a.test.ts",
             Some("cards"), &[], &valid(), &no_card, &|_| None);
         assert_eq!(p.domain(), Some("cards"));
+    }
+    /// NEGATIVE PROOF: one incidental mention outranked the crate the test
+    /// lives in. clearing's tunnel-auth test asserts once on
+    /// `/api/chorus/domain/chorus` and was tagged `domains`; clearing is
+    /// messages. Same for a cards test that reads the domain API to compute a
+    /// blast radius — the subject is cards.
+    #[test]
+    fn a_mention_does_not_outrank_the_unit_that_declares_a_domain() {
+        let mut v = valid();
+        v.push("messages".to_string());
+        let rows = vec![("com.chorus.clearing".to_string(), "messages".to_string())];
+        let c = "expect(stubHits).toEqual(['/api/chorus/domain/chorus']);";
+
+        // with no unit domain to weigh it against, the mention still decides
+        let p = place_in_file(c, "x/t.test.ts", None, &[], &v, &no_card, &|_| None);
+        assert_eq!(p.domain(), Some("domains"), "control: the rule still fires alone");
+
+        // inside a unit that declares one, the unit is the subject
+        let p = place_in_file(c, "directing/clearing/tests/t.test.ts",
+            Some("clearing"), &rows, &v, &no_card, &|_| None);
+        assert_eq!(p.domain(), Some("messages"));
+    }
+
+    /// CONTROL: the unit never overrides the file naming the unit's OWN
+    /// domain — a clearing test about messages keeps every signal it earned.
+    #[test]
+    fn the_unit_does_not_override_a_file_that_names_its_own_domain() {
+        let mut v = valid();
+        v.push("messages".to_string());
+        let rows = vec![("com.chorus.clearing".to_string(), "messages".to_string())];
+        let c = "await request(app).post('/api/chorus/nudge');";
+        let p = place_in_file(c, "directing/clearing/tests/t.test.ts",
+            Some("clearing"), &rows, &v, &no_card, &|_| None);
+        assert_eq!(p.domain(), Some("messages"));
+        match p {
+            Placement::Tagged { signals, .. } => {
+                assert_eq!(signals[0].rule, Rule::Route, "the route signal survives, not a unit stand-in");
+            }
+            other => panic!("{other:?}"),
+        }
     }
 }
