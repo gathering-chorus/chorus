@@ -81,7 +81,7 @@ chorus:alerts a owl:Class, chorus:Domain ;
     chorus:comment "Alert rules and the routing that decides who gets interrupted, and when." ;
     rdfs:comment "Alert rules and the routing that decides who gets interrupted, and when." ;
     chorus:purpose "Decide who gets interrupted and when — the rules, their routes, and the record of what actually fired." ;
-    chorus:ownedBy chorus:role-silas ;
+    chorus:ownedBy chorus:principal-silas ;
     chorus:partOf chorus:borgProduct ;
     chorus:atStep chorus:Proving ;
     chorus:atStream chorus:chorusStream ;
@@ -97,7 +97,7 @@ chorus:monitors a owl:Class, chorus:Domain ;
     chorus:comment "Probes and health checks — the things that measure whether the system is working." ;
     rdfs:comment "Probes and health checks — the things that measure whether the system is working." ;
     chorus:purpose "Measure whether the system is working — probes, health checks, and the readings they produce." ;
-    chorus:ownedBy chorus:role-silas ;
+    chorus:ownedBy chorus:principal-silas ;
     chorus:partOf chorus:borgProduct ;
     chorus:atStep chorus:Proving ;
     chorus:atStream chorus:chorusStream ;
@@ -120,7 +120,7 @@ chorus:document-alerts-service-design a chorus:Document ;
     chorus:comment "Authored by #4085 alongside the alerts/monitors split. Deliberately short — per #4064 a service's commitments are rows with a status and a card, not paragraphs here." ;
     rdfs:comment "Authored by #4085 alongside the alerts/monitors split." ;
     chorus:hasDomain chorus:alerts ;
-    chorus:ownedBy chorus:role-silas .
+    chorus:ownedBy chorus:principal-silas .
 
 # ---------------------------------------------------------------------------
 # 5. The monitors half, modelled — not deferred. A domain that defines no class
@@ -169,4 +169,4 @@ chorus:document-monitors-service-design a chorus:Document ;
     chorus:comment "Authored by #4085 with the split. A monitor measures; an alert routes. Kept short per #4064." ;
     rdfs:comment "Authored by #4085 with the split." ;
     chorus:hasDomain chorus:monitors ;
-    chorus:ownedBy chorus:role-silas .
+    chorus:ownedBy chorus:principal-silas .

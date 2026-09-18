@@ -39,7 +39,7 @@ chorus:hasScope a owl:DatatypeProperty ;
 # urn:chorus:instances, already in every role's scope, after the first home
 # turned out to be the harvester's PUT-replaced graph.)
 # #4085 — alerts and monitors added for silas only, because silas owns both
-# domains (chorus:alerts and chorus:monitors are ownedBy chorus:role-silas).
+# domains (chorus:alerts and chorus:monitors are ownedBy chorus:principal-silas).
 # The write door refused every Alert row with "target graph
 # urn:chorus:domains:alerts is not in this token's scope and this class carries
 # no row owner" — correct refusal, missing grant.
