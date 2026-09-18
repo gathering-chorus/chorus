@@ -401,6 +401,9 @@ chorus:code-domain
 chorus:tests a owl:Class, chorus:Domain ;
     rdfs:label "tests" ;
     rdfs:comment "The set of all Tests — every automated test (jest, bats, cargo, integration) registered as a Test instance with its pyramid layer, hermeticity, and the domain it covers. The noun the register/run/trace verbs operate on." ;
+    # #4201 — principal-kade, not role-kade: ownedBy has rdfs:range Principal
+    # and a role-* IRI is not one. Silas caught it reading the branch for
+    # gate:arch; this was the last role-* in the file.
     chorus:ownedBy chorus:principal-kade ;
     chorus:purpose "Make the system's tests a first-class queryable set, so any domain can ask for its tests and results and the runner/gates/proving consume them uniformly." ;
     chorus:definesVocabulary chorus:Test , chorus:TestResult , chorus:TestSuiteRun ;
