@@ -14,6 +14,18 @@
 #
 # Asserts use simple commands, never `[[ ]]` — on bash 3.2 a failing `[[` that is not
 # the test's last line passes the test silently (91 of 223 suites had this shape).
+#
+# #4213 — and never `grep -qv` either. It succeeds when ANY line of multi-line
+# output lacks the string, so it is true even when the string is present. Three
+# asserts in this file were written that way and reported green while asserting
+# nothing; Wren caught them reading the diff.
+#
+# And `! cmd` is no better: under `set -e` bash IGNORES a failure whose status was
+# inverted by `!`, so a mid-block `! echo "$output" | grep -q X` asserts nothing
+# either. Proven by mutation — the same wrong expectation went RED where the line
+# happened to be last, and stayed GREEN where it did not. Absence is written
+#   test -z "$(printf '%s' "$output" | grep -F "X" || true)"
+# which is a simple command and fails wherever it sits.
 
 SCRIPT="$(cd "$BATS_TEST_DIRNAME/../scripts" && pwd)/athena-deploy-model.sh"
 Q="http://localhost:3030/pods/query"
@@ -123,7 +135,7 @@ _live_count() {
 
   run _deploy
   test "$status" -eq 0
-  echo "$output" | grep -qv "REFUSED"
+  test -z "$(printf '%s' "$output" | grep -F "REFUSED" || true)"
   test "$(_live_count fixtureDropMe)" -eq 0
   test "$(_live_count fixtureKeep)" -gt 0
 }
@@ -135,7 +147,7 @@ _live_count() {
   _deploy >/dev/null 2>&1                              # stamps, with only fixtureKeep live
   run _deploy
   test "$status" -eq 0
-  echo "$output" | grep -qv "fixtureDropMe"
+  test -z "$(printf '%s' "$output" | grep -F "fixtureDropMe" || true)"
 }
 
 # --- the second leg of #4125: the source may not author a Role as an owner ---
@@ -158,7 +170,7 @@ _live_count() {
   git -C "$REPO" commit -aqm "fixture: legitimate role references" >/dev/null 2>&1
   run _deploy
   test "$status" -eq 0
-  echo "$output" | grep -qv "authors a Role as an owner"
+  test -z "$(printf '%s' "$output" | grep -F "authors a Role as an owner" || true)"
 }
 
 @test "#4125 the shipped MODEL_SET authors zero role owners" {
