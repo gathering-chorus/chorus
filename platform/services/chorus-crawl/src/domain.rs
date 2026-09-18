@@ -237,6 +237,12 @@ const UNITS: &[(&str, &str)] = &[
     // athena-model and model tests.
     ("athena-", "domains"),
     ("properties-resolver", "Properties"),
+    // #4201 — the cards CLI is the board's client: 48 of its test files named
+    // no route, no class and no import the tables know, because they drive the
+    // binary they ship with. The crate IS the cards domain.
+    ("cards", "cards"),
+    ("chorus-mcp", "spine"),
+    ("chorus-messaging", "messages"),
 ];
 
 /// The unit name declared by the nearest manifest above `path`, if any.
@@ -1188,5 +1194,16 @@ mod tests_4201 {
         let p = place_in_file(tied, "platform/services/chorus-hooks/tests/c.rs",
             Some("chorus-hooks"), &[], &valid(), &no_card, &|_| None);
         assert!(matches!(p, Placement::Conflict { .. }), "{p:?}");
+    }
+    /// The three crates added 2026-09-18, each proved by the state that made
+    /// it necessary: the file names nothing the tables know, so without the
+    /// unit row it is unplaced.
+    #[test]
+    fn the_cards_cli_tests_are_the_cards_domain() {
+        let c = "const out = execSync(`${CLI} add --title x`);\nexpect(out).toContain('ok');";
+        assert_eq!(place(c, &valid(), &no_card), Placement::Unplaced, "control: no signal in the file");
+        let p = place_in_file(c, "directing/products/cards/tests/a.test.ts",
+            Some("cards"), &[], &valid(), &no_card, &|_| None);
+        assert_eq!(p.domain(), Some("cards"));
     }
 }
