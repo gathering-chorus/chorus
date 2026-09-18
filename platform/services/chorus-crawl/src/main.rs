@@ -1094,7 +1094,16 @@ fn main() {
 
     let api =
         std::env::var("CHORUS_OWL_API").unwrap_or_else(|_| "http://localhost:3360".to_string());
-    let role = std::env::var("CHORUS_ROLE").unwrap_or_else(|_| "crawler".to_string());
+    // #4210 — a default here INVENTS a principal. Every row this pass wrote
+    // landed owned by `crawler`, and Silas hand-moved them three times on
+    // 2026-09-18 alone. The caller says who it is or the pass refuses.
+    let role = match declared_role(std::env::var("CHORUS_ROLE").ok()) {
+        Ok(r) => r,
+        Err(why) => {
+            eprintln!("chorus-crawl: {why}");
+            std::process::exit(2);
+        }
+    };
 
     // What the graph already holds. Read BEFORE deciding anything — the walk is
     // idempotent by diff, not by luck.
@@ -1777,6 +1786,40 @@ fn failure_classes(failed: &[String]) -> Vec<(String, usize)> {
     let mut out: Vec<(String, usize)> = counts.into_iter().collect();
     out.sort_by(|a, b| b.1.cmp(&a.1).then(a.0.cmp(&b.0)));
     out
+}
+
+/// The principal this pass writes as. #4210 — a default here INVENTS one: every
+/// row the nightly wrote landed owned by `crawler`, and Silas hand-moved them
+/// three times on 2026-09-18 alone. The caller says who it is or the pass
+/// refuses; an unset variable is not a licence to pick a name.
+fn declared_role(env: Option<String>) -> Result<String, String> {
+    match env {
+        Some(r) if !r.trim().is_empty() => Ok(r.trim().to_string()),
+        _ => Err("CHORUS_ROLE is unset — refusing to write as an invented principal. \
+                  Set it to the principal that OWNS these rows (the plist's \
+                  EnvironmentVariables)."
+            .to_string()),
+    }
+}
+
+#[cfg(test)]
+mod declared_role_4210 {
+    use super::declared_role;
+
+    /// NEGATIVE PROOF: the state that cost three hand-migrations in one day.
+    #[test]
+    fn an_unset_role_refuses_instead_of_inventing_one() {
+        assert!(declared_role(None).is_err());
+        assert!(declared_role(Some("   ".to_string())).is_err());
+        let why = declared_role(None).unwrap_err();
+        assert!(why.contains("CHORUS_ROLE"), "{why}");
+        assert!(!why.contains("crawler"), "the refusal must not suggest a name: {why}");
+    }
+
+    #[test]
+    fn a_declared_role_is_taken_as_given() {
+        assert_eq!(declared_role(Some(" kade ".to_string())).unwrap(), "kade");
+    }
 }
 
 /// The joined size of a batch body so far (rows plus the commas between them).
