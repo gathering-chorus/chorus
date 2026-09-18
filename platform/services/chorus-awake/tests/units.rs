@@ -133,7 +133,10 @@ mod login_4202 {
     fn the_session_row_is_owned_by_the_principal_and_never_carries_the_token() {
         let l = login_check("kade", &tok(KADE, "abc-jti-0001", 1758124800, 1758125400), 1758124801).unwrap();
         let (name, body) = session_row("kade", &l, "chorus-kade");
-        assert_eq!(name, "session-kade-jti-0001");
+        // #4202 — the BARE name. The mint adds the `session-` prefix and refuses
+        // a name that already carries it ("double-prefix ... pass the bare
+        // name"), which is a 422 the first real login earned.
+        assert_eq!(name, "kade-jti-0001");
         assert_eq!(body["ownedBy"], "principal-kade");
         assert_eq!(body["tokenId"], "abc-jti-0001");
         assert_eq!(body["sessionState"], "open");
