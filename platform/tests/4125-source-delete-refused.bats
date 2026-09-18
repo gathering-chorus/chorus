@@ -24,7 +24,8 @@ GRAPH="urn:chorus:ontology-test-bats-4125"
 . "$(cd "$BATS_TEST_DIRNAME/../scripts" && pwd)/fuseki-auth.sh" 2>/dev/null || true
 
 _drop_graph() {
-  curl -s "${FUSEKI_AUTH[@]+"${FUSEKI_AUTH[@]}"}" -X DELETE "$GSP?graph=$1" -o /dev/null 2>/dev/null || true
+  # #4175 — every Fuseki write carries a timeout, tests included.
+  curl -s --max-time "${FUSEKI_WRITE_TIMEOUT:-120}" "${FUSEKI_AUTH[@]+"${FUSEKI_AUTH[@]}"}" -X DELETE "$GSP?graph=$1" -o /dev/null 2>/dev/null || true
 }
 
 # A minimal tracked model file. One subject we will delete, one we keep so the deploy

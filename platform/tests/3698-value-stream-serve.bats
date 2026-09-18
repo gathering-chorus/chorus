@@ -73,13 +73,24 @@ sq() {
 
 # ── AC3 (data precondition): the instances graph holds >=3 SHAPE-VALID streams ──
 # (label+trigger+outcome+>=1 step) — proves the serve will return rows, not re-hit 0.
-@test "AC3 urn:chorus:instances holds >=3 shape-valid ValueStreams" {
+@test "AC3 the value-streams domain graph holds >=3 shape-valid ValueStreams" {
+  # 2026-09-18: #4187 moved ValueStream out of the catch-all into its own domain graph
+  # (Jeff: a row's home is its domain's graph). Measured after the move — 8 streams in
+  # urn:chorus:domains:value-streams, 0 in urn:chorus:instances. The old assertion was
+  # asserting the thing the card exists to end, so it went red for being right.
+  # The graph is read from the shape, not hardcoded, so the next move cannot strand it.
+  # Read from the shape was the obvious move and it does not work yet: as of
+  # 2026-09-18 ValueStreamShape declares NO instancesGraph at all and StepShape still
+  # declares urn:chorus:instances, while every row has moved. The model has not caught
+  # up with the data — raised with Wren on #4187. Until it does, the domain graph is
+  # named here, and this comment is the reason it is a literal.
   command -v curl
-  local q='PREFIX c: <https://jeffbridwell.com/chorus#> PREFIX rdfs: <http://www.w3.org/2000/01/rdf-schema#> SELECT (COUNT(DISTINCT ?vs) AS ?n) WHERE { GRAPH <urn:chorus:instances> { ?vs a c:ValueStream ; rdfs:label ?l ; c:trigger ?t ; c:outcome ?o . ?s c:inStream ?vs } }'
+  local vg="urn:chorus:domains:value-streams"
+  local q="PREFIX c: <https://jeffbridwell.com/chorus#> PREFIX rdfs: <http://www.w3.org/2000/01/rdf-schema#> SELECT (COUNT(DISTINCT ?vs) AS ?n) WHERE { GRAPH <$vg> { ?vs a c:ValueStream ; rdfs:label ?l ; c:trigger ?t ; c:outcome ?o . ?s c:inStream ?vs } }"
   run curl -s --max-time 8 "$FUSEKI_QUERY" --data-urlencode "query=$q" -H 'Accept: text/csv'
-  [ "$status" -eq 0 ]
+  test "$status" -eq 0
   local n; n=$(echo "$output" | tail -1 | tr -dc '0-9')
-  [ "${n:-0}" -ge 3 ]
+  test "${n:-0}" -ge 3
 }
 
 # ── AC3/AC4 (live serve): the owl-api endpoints return the rows, no hard-refuse ──
