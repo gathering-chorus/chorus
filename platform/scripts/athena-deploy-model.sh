@@ -82,6 +82,12 @@ else
     # #3860 — the Clearing's four domains get vocabulary: SpineEvent (events),
     # Message/Nudge (messages), and the definesVocabulary claims for cards.
     # Day-authored MODEL_SET discipline (#3654/#3686) — never live-only.
+    # #4085 — the alerts/monitors split. Alert + Monitor classes, both SHACL
+    # floors, and the two Domain rows that replace alerts-monitors. In MODEL_SET
+    # the day it is authored, never live-only (#3654/#3686), and the retired
+    # alerts-monitors row is removed from domains-wren-silas.ttl in the same
+    # commit so one subject has one definition (#3735 pattern).
+    "$CHORUS_ROOT/roles/silas/ontology/alerts-4085.ttl"
     "$CHORUS_ROOT/roles/wren/ontology/clearing-domains-3860.ttl"
     # #3860 — the #4010 memory OWL (Memory/ShortTerm/LongTerm/Knowledge) was
     # landed-but-never-deployed (#3881 class; chorus:Memory reached the store by
@@ -193,6 +199,37 @@ for ttl in "${MODEL_SET[@]}"; do
   [ -f "$ttl" ] || { echo "athena-deploy-model: TTL not found: $ttl" >&2; exit 1; }
 done
 
+# =============================================================================
+# #4125 — A SOURCE FILE MAY NOT AUTHOR A ROLE AS AN OWNER.
+#
+# chorus:ownedBy is declared `a owl:ObjectProperty ; rdfs:range chorus:Principal`.
+# 243 lines across 18 MODEL_SET files authored `ownedBy chorus:role-<name>` anyway.
+# I took the store's bad owners to 0 at 10:29 on 2026-09-18; Wren's next three
+# deploys put 208 of them straight back, because the deploy re-creates whatever the
+# source says. A store fix cannot hold while the source authors the violation, so
+# the refusal belongs here, at the point the source enters the store.
+#
+# Scoped to the ownedBy predicate only: chorus:role-<name> is a legitimate subject
+# elsewhere (holdsRole, appointedHat — 24 such uses remain and are none of this
+# check's business). A guard that cannot tell those two apart would be the #3734
+# shape again.
+_role_owner_offenders=""
+for ttl in "${MODEL_SET[@]}"; do
+  _hits=$(grep -nE 'ownedBy[[:space:]]+chorus:role-' "$ttl" 2>/dev/null | head -3) || true
+  [ -z "$_hits" ] && continue
+  _n=$(grep -cE 'ownedBy[[:space:]]+chorus:role-' "$ttl" 2>/dev/null || true)
+  _role_owner_offenders="${_role_owner_offenders}  ${ttl#$CHORUS_ROOT/}: ${_n} line(s), e.g. $(printf '%s' "$_hits" | head -1 | cut -c1-90)
+"
+done
+if [ -n "$_role_owner_offenders" ]; then
+  echo "athena-deploy-model: REFUSED — a source file authors a Role as an owner (#4125). chorus:ownedBy ranges over chorus:Principal:" >&2
+  printf '%s' "$_role_owner_offenders" >&2
+  echo "    -> change chorus:role-<name> to chorus:principal-<name> on the ownedBy line only;" >&2
+  echo "       other chorus:role-* uses (holdsRole, appointedHat) are fine and untouched." >&2
+  "$CHORUS_LOG" model.deploy.failed "$ROLE" graph="$ONTOLOGY_GRAPH" reason="source-authors-role-owner" 2>/dev/null || true
+  exit 1
+fi
+
 # Don't deploy a broken model — riot-validate every set member first.
 # #3731 — ABSENT riot used to mean "every .ttl deploys unvalidated, output
 # identical to a clean run" (fail-open hole 3). Now: refuse loudly, with an
@@ -303,6 +340,89 @@ if [ "${DEPLOY_BNODE_CLEANUP:-1}" = "1" ]; then
     BNODE_CLEANUP="${BNODE_CLEANUP}DELETE { GRAPH <$ONTOLOGY_GRAPH> { ?ob ?op ?oo } } WHERE { GRAPH <$ONTOLOGY_GRAPH> { ?ob ?op ?oo FILTER(isBlank(?ob)) FILTER NOT EXISTS { GRAPH <$ONTOLOGY_GRAPH> { ?ox ?oy ?ob } } } } ; "
   done
 fi
+# =============================================================================
+# #4125 — A SUBJECT DELETED FROM SOURCE IS NAMED, NOT SILENTLY KEPT.
+#
+# The merge below is PER-SUBJECT ADDITIVE: it deletes a STAGED subject's triples
+# and re-inserts them. A subject removed from a source .ttl is never in staging,
+# so nothing touches it and it lives forever. Log evidence, Loki 2026-09-18: two
+# deploys in one hour (wren 13:04, silas 13:22, both 6,371 triples) and the only
+# subject that LEFT the graph — borgProduct — left through an explicit ledger line
+# (model.retirement.executed target="subject ...#borgProduct" line="121"). Nothing
+# has ever left by absence. Wren lost three attempts to this on one merge today.
+#
+# The obvious fix — delete whatever is absent from staging — is the 2026-06-26
+# graph wipe. That is what RETIRE_ABSENT does, and #3536 turned it OFF by default
+# after a deploy whose staging lacked the 34 live domains retired them all ("stop
+# truncating our data" — Jeff, 2026-06-30). Widening it to every class multiplies
+# that blast radius. So absence never drives a DELETE here; it drives a REFUSAL a
+# human resolves by staging a retirement — the mechanism that already exists.
+#
+# Compared against the commit the STORE says it was deployed from, not HEAD~1: the
+# question is what this store has lost since it was last written, and only the
+# store can answer it. No stamp (a fresh store) → nothing to compare; say so.
+#
+# The refusal names the FIX, not just the fact (Wren, 13:27). This morning's 403
+# named a Permission row its own code path never reads and cost us both an hour
+# hunting a remedy that could not work. A refusal nobody can act on is worse than
+# the failure it reports.
+source_delete_guard() {
+  local prev live_n staged report=""
+  local missing=()
+  prev=$(curl -s --max-time 30 "$FUSEKI_QUERY" -H 'Accept: text/csv' \
+    --data-urlencode "query=SELECT ?c WHERE { GRAPH <$ONTOLOGY_GRAPH> { <urn:chorus:model-deploy> <urn:chorus:vocab#deployedFromCommit> ?c } }" \
+    2>/dev/null | tail -1 | tr -dc '0-9a-f')
+  if [ -z "$prev" ]; then
+    echo "athena-deploy-model: no deployedFromCommit stamp in <$ONTOLOGY_GRAPH> — source-delete check SKIPPED (first deploy into this store)"
+    return 0
+  fi
+  if ! git -C "$CHORUS_ROOT" cat-file -e "${prev}^{commit}" 2>/dev/null; then
+    echo "athena-deploy-model: stamped commit $prev is not in this tree — source-delete check SKIPPED (shallow clone or rewritten history)" >&2
+    return 0
+  fi
+  # A file's DECLARED subjects: `chorus:<local> a ...` at the start of a line — the
+  # shape every MODEL_SET file uses for a typed subject. A subject appearing only as
+  # an object is not owned by this file and is not its to retire.
+  _declared() { grep -Eo '^chorus:[A-Za-z0-9_-]+[[:space:]]+a[[:space:]]' | awk '{print $1}' | sed 's/^chorus://' | sort -u; }
+  local ttl rel
+  for ttl in "${MODEL_SET[@]}"; do
+    rel="${ttl#$CHORUS_ROOT/}"
+    git -C "$CHORUS_ROOT" cat-file -e "$prev:$rel" 2>/dev/null || continue   # file is new since the stamp
+    while read -r _name; do
+      [ -n "$_name" ] && missing+=("$_name|$rel")
+    done < <(comm -23 \
+      <(git -C "$CHORUS_ROOT" show "$prev:$rel" 2>/dev/null | _declared) \
+      <(_declared < "$ttl"))
+  done
+  [ ${#missing[@]} -eq 0 ] && return 0
+  local entry name file
+  for entry in "${missing[@]}"; do
+    name="${entry%%|*}"; file="${entry##*|}"
+    # Gone from the store too? Then it was a clean removal — nothing to report.
+    live_n=$(curl -s --max-time 30 "$FUSEKI_QUERY" -H 'Accept: text/csv' \
+      --data-urlencode "query=SELECT (COUNT(*) AS ?n) WHERE { GRAPH ?g { <${NS_CHORUS}${name}> ?p ?o } }" \
+      2>/dev/null | tail -1 | tr -dc '0-9')
+    [ "${live_n:-0}" -eq 0 ] && continue
+    # Already staged? The retirement leg further down removes it.
+    staged=$(grep -c "\"retire_subject\"[[:space:]]*:[[:space:]]*\"${NS_CHORUS}${name}\"" "$RETIREMENTS_FILE" 2>/dev/null || true)
+    [ "${staged:-0}" -gt 0 ] && continue
+    report="${report}  ${name} removed from ${file} but ${live_n} triples still live
+    -> stage a retirement, then re-run this deploy:
+       athena-model retire-subject --subject ${name} --reason '<why>' --card <id>
+       (appends to ${RETIREMENTS_FILE#$CHORUS_ROOT/})
+"
+  done
+  [ -z "$report" ] && return 0
+  echo "athena-deploy-model: REFUSED — subjects deleted from source are still live (#4125). This merge is additive and will never remove them:" >&2
+  printf '%s' "$report" >&2
+  "$CHORUS_LOG" model.deploy.failed "$ROLE" graph="$ONTOLOGY_GRAPH" reason="source-delete-unretired" since="$prev" 2>/dev/null || true
+  curl -s --max-time "${FUSEKI_WRITE_TIMEOUT:-120}" "${FUSEKI_AUTH[@]+"${FUSEKI_AUTH[@]}"}" -X DELETE "$FUSEKI_GSP?graph=$STAGING" -o /dev/null 2>/dev/null || true
+  exit 1
+}
+# DEPLOY_SOURCE_DELETE_CHECK=0 exists so the negative proof can show what the deploy
+# does WITHOUT the guard — the subject surviving — not as an operational escape hatch.
+[ "${DEPLOY_SOURCE_DELETE_CHECK:-1}" = "1" ] && source_delete_guard
+
 MERGE_SPARQL="${BNODE_CLEANUP}DELETE { GRAPH <$ONTOLOGY_GRAPH> { ?s ?p ?o } } WHERE { GRAPH <$STAGING> { ?s ?sp ?so } GRAPH <$ONTOLOGY_GRAPH> { ?s ?p ?o } } ; INSERT { GRAPH <$ONTOLOGY_GRAPH> { ?s ?p ?o } } WHERE { GRAPH <$STAGING> { ?s ?p ?o } }${RETIRE_CLAUSE}"
 ccode=$(curl -s --max-time "${FUSEKI_WRITE_TIMEOUT:-120}" "${FUSEKI_AUTH[@]+"${FUSEKI_AUTH[@]}"}" -o /tmp/chorus-model-copy-resp.txt -w '%{http_code}' -X POST \
   -H 'Content-Type: application/sparql-update' \
@@ -374,7 +494,27 @@ fi
 if [ -z "${TTL:-}" ] || [ "${SHACL_REPORT:-0}" = "1" ]; then
   if command -v "$SHACL_BIN" >/dev/null 2>&1; then
     _v2shapes="$CHORUS_ROOT/roles/silas/ontology/chorus.ttl"
-    _union="$(mktemp)"; cat "${MODEL_SET[@]}" > "$_union" 2>/dev/null
+    # #4085 — the union file MUST end in .ttl. Jena picks its parser from the
+    # file extension, and mktemp yields an extensionless name, so every full
+    # deploy died with "Failed to determine the content type" before reading a
+    # single triple. Combined with `2>/dev/null` below, the reason was never
+    # visible: the leg reported violations=unknown (and, before #3731, a clean
+    # "0 violations") on every run since the union was introduced. The
+    # validator has therefore never actually validated this model.
+    # #4085 (second cause) — and every member must be BOM-stripped as it goes in.
+    # security-model-3618.ttl began with a UTF-8 BOM. Jena tolerates one at the
+    # START of a file, so riot validated it alone and nobody noticed; inside a
+    # concatenation the same three bytes land mid-stream and the whole union
+    # dies at that line with "Out of place: [KEYWORD:]". With the extension fix
+    # above this was the NEXT crash, not the last one — the leg still reported
+    # violations=unknown on every full deploy. Stripping per file, rather than
+    # only fixing the one file, is the difference between this recurring on the
+    # next authored .ttl and not.
+    _union="$(mktemp).ttl"; : > "$_union"
+    for _m in "${MODEL_SET[@]}"; do
+      [ -f "$_m" ] || continue
+      LC_ALL=C sed $'1s/^\xef\xbb\xbf//' "$_m" >> "$_union" 2>/dev/null
+    done
     if _shacl_out=$("$SHACL_BIN" validate --shapes "$_v2shapes" --data "$_union" 2>/dev/null); then
       _shacl_n=$(printf '%s' "$_shacl_out" | grep -c 'sh:resultSeverity' 2>/dev/null || true)
       echo "athena-deploy-model: SHACL report (V2 shapes, non-gating) — ${_shacl_n:-0} violation(s) [migration-progress signal, not a gate]"

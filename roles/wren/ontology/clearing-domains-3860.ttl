@@ -88,7 +88,7 @@ chorus:cards a owl:Class, chorus:Domain ;
   rdfs:label "cards" ;
   chorus:comment "Work items and their chunks — the team's one board." ;
   chorus:purpose "Hold the team's work as cards and chunks — one board, one WIP discipline, every commitment visible." ;
-  chorus:ownedBy chorus:role-wren ; chorus:partOf chorus:product-werk ;
+  chorus:ownedBy chorus:principal-wren ; chorus:partOf chorus:product-werk ;
   chorus:atStep chorus:Directing ; chorus:atStream chorus:chorusStream ;
   chorus:repoTarget "directing/products/cards" .
   # partOf product-werk per #3603 ("work tracking is the werk pipeline's bounded
@@ -98,7 +98,7 @@ chorus:events a owl:Class, chorus:Domain ;
   rdfs:label "events" ;
   chorus:comment "The spine's event lines — timestamped, role-attributed history of everything the team does." ;
   chorus:purpose "Make the team's history observable as data: one event vocabulary every emitter shares." ;
-  chorus:ownedBy chorus:role-wren ; chorus:partOf chorus:product-spine ;
+  chorus:ownedBy chorus:principal-wren ; chorus:partOf chorus:product-spine ;
   chorus:atStep chorus:Directing ; chorus:atStream chorus:chorusStream ;
   chorus:repoTarget "platform/scripts/chorus-log" .
 
@@ -106,7 +106,7 @@ chorus:messages a owl:Class, chorus:Domain ;
   rdfs:label "messages" ;
   chorus:comment "Direct role-to-role and Jeff-to-role communication — persisted, attributable, deliverable." ;
   chorus:purpose "Carry the team's conversations as data: every message persisted and attributed, every nudge answerable." ;
-  chorus:ownedBy chorus:role-wren ; chorus:partOf chorus:product-clearing ;
+  chorus:ownedBy chorus:principal-wren ; chorus:partOf chorus:product-clearing ;
   chorus:atStep chorus:Directing ; chorus:atStream chorus:chorusStream ;
   chorus:repoTarget "platform/api" .
 
@@ -114,7 +114,7 @@ chorus:streams a owl:Class, chorus:Domain ;
   rdfs:label "streams" ;
   chorus:comment "Live event streams — the Clearing's real-time feed of spine, session, and log flow." ;
   chorus:purpose "Turn the spine into something watchable live — streams a person or role can sit on." ;
-  chorus:ownedBy chorus:role-silas ; chorus:partOf chorus:product-clearing ;
+  chorus:ownedBy chorus:principal-silas ; chorus:partOf chorus:product-clearing ;
   chorus:atStep chorus:Directing ; chorus:atStream chorus:chorusStream ;
   chorus:repoTarget "platform/api" .
   # ownedBy silas — observation layer (CLAUDE.md ownership split), matching the

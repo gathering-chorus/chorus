@@ -23,9 +23,13 @@ teardown() { rm -rf "$T"; }
 
 rows() { arq --results csv --query "$T/q.rq" "$@" 2>/dev/null | tail -n +2 | grep -c . || true; }
 
-@test "the permissions file holds exactly the 42 grants it replaced" {
+@test "the permissions file holds every grant it replaced, and the three #4204 added" {
+  # 42 was the hasScope set this file replaced. #4204 (2026-09-18) moved Session rows
+  # out of the security graph into identity and opened that graph to the three roles,
+  # which is three more rows — not drift. The count is asserted, not floored, so a row
+  # vanishing still goes red.
   run grep -c "a chorus:Permission" "$PERMS"
-  [ "$output" -eq 42 ]
+  test "$output" -eq 45
 }
 
 @test "the scope query grants from Permission rows joined to real principals" {

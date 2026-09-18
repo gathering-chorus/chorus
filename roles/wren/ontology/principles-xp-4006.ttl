@@ -22,7 +22,7 @@
 @prefix xsd: <http://www.w3.org/2001/XMLSchema#> .
 
 chorus:xp-humanity a chorus:Principle ;
-    chorus:ownedBy chorus:role-wren ;
+    chorus:ownedBy chorus:principal-wren ;
     rdfs:label "Humanity" ;
     rdfs:comment "Software is written by people. To be effective, a process must acknowledge human needs — safety, accomplishment, belonging, growth, intimacy — and the tension between what a person needs and what a team needs." ;
     chorus:source "Beck, K. with Andres, C. Extreme Programming Explained: Embrace Change, 2nd ed. (Addison-Wesley, 2004), ch. 3." ;
@@ -33,7 +33,7 @@ chorus:xp-humanity a chorus:Principle ;
     dcterms:modified "2026-08-25T13:00:00Z"^^xsd:dateTime .
 
 chorus:xp-economics a chorus:Principle ;
-    chorus:ownedBy chorus:role-wren ;
+    chorus:ownedBy chorus:principal-wren ;
     rdfs:label "Economics" ;
     rdfs:comment "Someone has to pay. Software development that does not serve economic needs dies. Time value of money and the option value of systems are the two economic drivers that matter most." ;
     chorus:source "Beck, K. with Andres, C. Extreme Programming Explained: Embrace Change, 2nd ed. (Addison-Wesley, 2004), ch. 3." ;
@@ -44,7 +44,7 @@ chorus:xp-economics a chorus:Principle ;
     dcterms:modified "2026-08-25T13:00:00Z"^^xsd:dateTime .
 
 chorus:xp-mutual-benefit a chorus:Principle ;
-    chorus:ownedBy chorus:role-wren ;
+    chorus:ownedBy chorus:principal-wren ;
     rdfs:label "Mutual Benefit" ;
     rdfs:comment "Every activity should benefit all concerned. Solutions that benefit me now at your expense, or me now at my own expense later, are the most destructive form of waste." ;
     chorus:source "Beck, K. with Andres, C. Extreme Programming Explained: Embrace Change, 2nd ed. (Addison-Wesley, 2004), ch. 3." ;
@@ -55,7 +55,7 @@ chorus:xp-mutual-benefit a chorus:Principle ;
     dcterms:modified "2026-08-25T13:00:00Z"^^xsd:dateTime .
 
 chorus:xp-self-similarity a chorus:Principle ;
-    chorus:ownedBy chorus:role-wren ;
+    chorus:ownedBy chorus:principal-wren ;
     rdfs:label "Self-Similarity" ;
     rdfs:comment "Try copying the structure of one solution into a new context, even at a different scale. The details will be wrong; the shape is often right." ;
     chorus:source "Beck, K. with Andres, C. Extreme Programming Explained: Embrace Change, 2nd ed. (Addison-Wesley, 2004), ch. 3." ;
@@ -66,7 +66,7 @@ chorus:xp-self-similarity a chorus:Principle ;
     dcterms:modified "2026-08-25T13:00:00Z"^^xsd:dateTime .
 
 chorus:xp-improvement a chorus:Principle ;
-    chorus:ownedBy chorus:role-wren ;
+    chorus:ownedBy chorus:principal-wren ;
     rdfs:label "Improvement" ;
     rdfs:comment "There is no perfect process. Excellence in software development comes through a process of improvement, not through perfection at the outset. Make it work, make it right, make it fast — in that order." ;
     chorus:source "Beck, K. with Andres, C. Extreme Programming Explained: Embrace Change, 2nd ed. (Addison-Wesley, 2004), ch. 3." ;
@@ -77,7 +77,7 @@ chorus:xp-improvement a chorus:Principle ;
     dcterms:modified "2026-08-25T13:00:00Z"^^xsd:dateTime .
 
 chorus:xp-diversity a chorus:Principle ;
-    chorus:ownedBy chorus:role-wren ;
+    chorus:ownedBy chorus:principal-wren ;
     rdfs:label "Diversity" ;
     rdfs:comment "Teams need to bring together a variety of skills, attitudes and perspectives to see problems and pitfalls, to think of multiple ways to solve problems, and to implement the solutions." ;
     chorus:source "Beck, K. with Andres, C. Extreme Programming Explained: Embrace Change, 2nd ed. (Addison-Wesley, 2004), ch. 3." ;
@@ -88,7 +88,7 @@ chorus:xp-diversity a chorus:Principle ;
     dcterms:modified "2026-08-25T13:00:00Z"^^xsd:dateTime .
 
 chorus:xp-reflection a chorus:Principle ;
-    chorus:ownedBy chorus:role-wren ;
+    chorus:ownedBy chorus:principal-wren ;
     rdfs:label "Reflection" ;
     rdfs:comment "Good teams do not just do their work, they think about how they are working and why they are working. They analyse why they succeeded or failed, and hide neither mistakes nor problems." ;
     chorus:source "Beck, K. with Andres, C. Extreme Programming Explained: Embrace Change, 2nd ed. (Addison-Wesley, 2004), ch. 3." ;
@@ -99,7 +99,7 @@ chorus:xp-reflection a chorus:Principle ;
     dcterms:modified "2026-08-25T13:00:00Z"^^xsd:dateTime .
 
 chorus:xp-flow a chorus:Principle ;
-    chorus:ownedBy chorus:role-wren ;
+    chorus:ownedBy chorus:principal-wren ;
     rdfs:label "Flow" ;
     rdfs:comment "Deliver a steady flow of valuable software by engaging in all the activities of development simultaneously. Flow suggests deploying smaller increments of value ever more frequently." ;
     chorus:source "Beck, K. with Andres, C. Extreme Programming Explained: Embrace Change, 2nd ed. (Addison-Wesley, 2004), ch. 3." ;
@@ -110,7 +110,7 @@ chorus:xp-flow a chorus:Principle ;
     dcterms:modified "2026-08-25T13:00:00Z"^^xsd:dateTime .
 
 chorus:xp-opportunity a chorus:Principle ;
-    chorus:ownedBy chorus:role-wren ;
+    chorus:ownedBy chorus:principal-wren ;
     rdfs:label "Opportunity" ;
     rdfs:comment "Learn to see problems as opportunities for change. Problems are not just occasions to survive; they are chances to transform the team's practice." ;
     chorus:source "Beck, K. with Andres, C. Extreme Programming Explained: Embrace Change, 2nd ed. (Addison-Wesley, 2004), ch. 3." ;
@@ -121,7 +121,7 @@ chorus:xp-opportunity a chorus:Principle ;
     dcterms:modified "2026-08-25T13:00:00Z"^^xsd:dateTime .
 
 chorus:xp-redundancy a chorus:Principle ;
-    chorus:ownedBy chorus:role-wren ;
+    chorus:ownedBy chorus:principal-wren ;
     rdfs:label "Redundancy" ;
     rdfs:comment "Critical, difficult problems should be solved several different ways. Then if one solution fails, the others prevent disaster." ;
     chorus:source "Beck, K. with Andres, C. Extreme Programming Explained: Embrace Change, 2nd ed. (Addison-Wesley, 2004), ch. 3." ;
@@ -132,7 +132,7 @@ chorus:xp-redundancy a chorus:Principle ;
     dcterms:modified "2026-08-25T13:00:00Z"^^xsd:dateTime .
 
 chorus:xp-failure a chorus:Principle ;
-    chorus:ownedBy chorus:role-wren ;
+    chorus:ownedBy chorus:principal-wren ;
     rdfs:label "Failure" ;
     rdfs:comment "When you do not know what to do, risking failure can be the shortest, surest road to success. Failure is not waste if it imparts knowledge." ;
     chorus:source "Beck, K. with Andres, C. Extreme Programming Explained: Embrace Change, 2nd ed. (Addison-Wesley, 2004), ch. 3." ;
@@ -143,7 +143,7 @@ chorus:xp-failure a chorus:Principle ;
     dcterms:modified "2026-08-25T13:00:00Z"^^xsd:dateTime .
 
 chorus:xp-quality a chorus:Principle ;
-    chorus:ownedBy chorus:role-wren ;
+    chorus:ownedBy chorus:principal-wren ;
     rdfs:label "Quality" ;
     rdfs:comment "Quality is not a purchase decision — you do not get to choose between quality and speed. Projects do not go faster by accepting lower quality, and they do not go slower by demanding higher quality." ;
     chorus:source "Beck, K. with Andres, C. Extreme Programming Explained: Embrace Change, 2nd ed. (Addison-Wesley, 2004), ch. 3." ;
@@ -154,7 +154,7 @@ chorus:xp-quality a chorus:Principle ;
     dcterms:modified "2026-08-25T13:00:00Z"^^xsd:dateTime .
 
 chorus:xp-baby-steps a chorus:Principle ;
-    chorus:ownedBy chorus:role-wren ;
+    chorus:ownedBy chorus:principal-wren ;
     rdfs:label "Baby Steps" ;
     rdfs:comment "What is the least you could do that is recognisably in the right direction? Big changes made all at once are dangerous; small steps let you back out of a mistake cheaply." ;
     chorus:source "Beck, K. with Andres, C. Extreme Programming Explained: Embrace Change, 2nd ed. (Addison-Wesley, 2004), ch. 3." ;
@@ -165,7 +165,7 @@ chorus:xp-baby-steps a chorus:Principle ;
     dcterms:modified "2026-08-25T13:00:00Z"^^xsd:dateTime .
 
 chorus:xp-accepted-responsibility a chorus:Principle ;
-    chorus:ownedBy chorus:role-wren ;
+    chorus:ownedBy chorus:principal-wren ;
     rdfs:label "Accepted Responsibility" ;
     rdfs:comment "Responsibility cannot be assigned; it can only be accepted. If someone tries to give you responsibility, only you can decide whether you are responsible or not." ;
     chorus:source "Beck, K. with Andres, C. Extreme Programming Explained: Embrace Change, 2nd ed. (Addison-Wesley, 2004), ch. 3." ;

@@ -1,4 +1,4 @@
-﻿# ============================================================================
+# ============================================================================
 # #3618 — The security family, modeled completely, once.
 # DRAFT for Jeff's review — nothing here deploys until reviewed (AC2) and the
 # door (#3609) can carry the batch.
@@ -41,7 +41,7 @@ chorus:security a owl:Class, chorus:Domain ;
     rdfs:label "security" ;
     chorus:comment "Who may touch what, provably. Authentication (identity), authorization (permissions), secrets custody, TCC/platform trust, and the live security posture — modeled, generated, attested." ;
     chorus:purpose "Protect Jeff's data from agent intrusion and agent error: every write surface carries a door, every door checks an unforgeable identity, every check is attestable from the graph." ;
-    chorus:ownedBy chorus:role-silas ;
+    chorus:ownedBy chorus:principal-silas ;
     chorus:partOf chorus:borgProduct ;
     chorus:atStep chorus:Operating ;
     chorus:atStream chorus:chorusStream ;
@@ -72,7 +72,7 @@ chorus:document-service-design-security a chorus:Document ;
     chorus:comment """The security domain's design lives in the graph (#4064): purpose, gaps and vocabulary on the security and identity Domain rows, rendered by the generated domain page; overview / as-is / to-be / gaps / not-in-scope / path-to-close on the Identity Service row and every promise as a Commitment row, rendered by the generated service page. The 2026-05-01 hand-written design (#2659) was deleted, not rewritten.""" ;
     rdfs:comment """The security domain's design as a projection of the graph (#4064).""" ;
     chorus:hasDomain chorus:security ;
-    chorus:ownedBy chorus:role-silas ;
+    chorus:ownedBy chorus:principal-silas ;
     chorus:hasProduct chorus:borgProduct .
 
 # ----------------------------------------------------------------------------
@@ -83,7 +83,7 @@ chorus:identity a owl:Class, chorus:Domain ;
     rdfs:label "identity" ;
     chorus:comment "The authentication child of security: principals, the credentials they own, the roles they act as, and the key registry that verifies them. One reusable service (mint/verify/revoke) — every door calls the same one." ;
     chorus:purpose "Make 'who did this' cryptographically true: retire self-declared DEPLOY_ROLE attribution; an agent cannot impersonate a role or Jeff." ;
-    chorus:ownedBy chorus:role-silas ;
+    chorus:ownedBy chorus:principal-silas ;
     chorus:partOf chorus:security ;
     chorus:atStep chorus:Operating ;
     chorus:atStream chorus:chorusStream ;
