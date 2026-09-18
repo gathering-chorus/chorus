@@ -535,6 +535,34 @@ pub fn resolve_relative(from: &str, spec: &str) -> Vec<String> {
 
 /// The four external rules read against one file's content — no unit, no card,
 /// no recursion. This is what the neighbour rule asks of an imported file.
+/// A route path whose own segment names a live domain. Only ever consulted for
+/// an IMPORTED file (the neighbour hop): a source file that registers exactly
+/// one route family is about that family, and the 43-row ROUTES table cannot
+/// keep up with an API that adds routes weekly. Tried at the top level on
+/// 2026-09-18 and reverted — there it placed 1 file and created 8 conflicts.
+fn route_segment_signal(content: &str, valid: &[String]) -> Option<Signal> {
+    let mut hits: Vec<Signal> = Vec::new();
+    for (i, _) in content.match_indices("/api/") {
+        let rest = &content[i + 1..];
+        let end = rest
+            .find(|c: char| !(c.is_ascii_alphanumeric() || "/-_".contains(c)))
+            .unwrap_or(rest.len());
+        for seg in rest[..end].split('/').skip(1) {
+            if let Some(d) = valid.iter().find(|v| *v == seg) {
+                if !hits.iter().any(|h: &Signal| h.domain == *d) {
+                    hits.push(Signal {
+                        rule: Rule::Route,
+                        domain: d.clone(),
+                        evidence: format!("/{}", &rest[..end]),
+                    });
+                }
+                break;
+            }
+        }
+    }
+    (hits.len() == 1).then(|| hits.remove(0))
+}
+
 fn external_signal(content: &str, valid: &[String]) -> Option<Signal> {
     let imports = import_lines(content);
     let mut hits: Vec<Signal> = Vec::new();
@@ -547,6 +575,9 @@ fn external_signal(content: &str, valid: &[String]) -> Option<Signal> {
     // routes, tag 67 clearing tests `domains` off one incidental
     // `/api/chorus/domain/` — while the authored row says clearing is
     // messages. An ambiguous neighbour says nothing and the unit rule decides.
+    if hits.is_empty() {
+        return route_segment_signal(content, valid);
+    }
     let domain = one_domain(&hits).or_else(|| plurality(&hits))?;
     hits.into_iter().find(|s| s.domain == domain)
 }
@@ -1268,5 +1299,44 @@ mod tests_4201 {
             }
             other => panic!("{other:?}"),
         }
+    }
+    /// NEGATIVE PROOF: a source file the ROUTES table has never heard of. The
+    /// table is 43 hand-kept rows against an API that adds routes weekly, so
+    /// an imported handler registering `/api/chorus/<domain>` said nothing and
+    /// its test stayed unplaced. Derived from the live domain list instead —
+    /// and only for an imported file, only when the four rules found nothing,
+    /// only when exactly one domain is named.
+    #[test]
+    fn an_imported_handler_naming_one_unlisted_route_family_places() {
+        // `deploys` is a live domain with NO row in the 43-line ROUTES table —
+        // exactly the gap this derivation covers.
+        let test = "import { handler } from '../src/handlers/deploys';";
+        let v = valid();
+        let src = "app.get('/api/chorus/deploys/:id', handler);";
+        let read = |p: &str| (p == "a/src/handlers/deploys.ts").then(|| src.to_string());
+
+        // the guarded condition: without the derivation, nothing fires
+        assert_eq!(
+            place_in_file(test, "a/tests/t.test.ts", None, &[], &v, &no_card, &|_| None),
+            Placement::Unplaced
+        );
+        let p = place_in_file(test, "a/tests/t.test.ts", None, &[], &v, &no_card, &read);
+        assert_eq!(p.domain(), Some("deploys"));
+    }
+
+    /// CONTROL: a neighbour naming TWO domains this way still says nothing —
+    /// the derivation must not turn an ambiguous file into a coin flip.
+    #[test]
+    fn a_derived_route_that_names_two_domains_stays_silent() {
+        let test = "import { h } from '../src/handlers/both';";
+        let v = valid();
+        // both families are absent from ROUTES, so only the derivation can see
+        // them — and seeing two, it must say nothing.
+        let src = "app.get('/api/chorus/deploys/x', h);\napp.get('/api/chorus/cicd/y', h);";
+        let read = |_: &str| Some(src.to_string());
+        assert_eq!(
+            place_in_file(test, "a/tests/t.test.ts", None, &[], &v, &no_card, &read),
+            Placement::Unplaced
+        );
     }
 }
