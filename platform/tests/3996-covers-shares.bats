@@ -23,27 +23,38 @@ setup() {
 
 # --covers-of reads the file if it exists (a security CONCERN re-homes covers to
 # security, #3922 lane); these paths are not on disk, so the path rules answer.
-cov() { "$BIN" --covers-of "$1"; }
+# #4201 — the seam answers on stdout and explains on stderr, so a caller can
+# compare the answer. `2>/dev/null` here keeps the reason out of the value.
+cov() { "$BIN" --covers-of "$1" 2>/dev/null; }
 
-@test "the former services-bucket trees map to their real domains" {
-  [ "$(cov directing/products/cards/tests/card-lifecycle-flow.test.ts)" = "cards" ]
-  [ "$(cov directing/clearing/tests/router.test.ts)" = "messages" ]
-  [ "$(cov platform/services/athena-make/tests/reconcile.rs)" = "domains" ]
-  [ "$(cov platform/services/chorus-oidc/tests/token.rs)" = "identity" ]
+@test "#4201: a path alone answers nothing — the rules read the FILE" {
+  # These paths carry no file, so no route, class, import or card can be read
+  # from them. The folder rule that used to map directing/products/cards/** to
+  # cards, and a basename keyword like `alert` to alerts-monitors, is retired:
+  # a name is not evidence. Unplaced falls to the tests domain and is listed.
+  eq "$(cov directing/products/cards/tests/card-lifecycle-flow.test.ts)" "tests"
+  eq "$(cov platform/api/tests/eventloop-alert.test.ts)" "tests"
+  eq "$(cov platform/services/athena-make/tests/reconcile.rs)" "tests"
 }
 
-@test "basename keywords beat package prefixes (api test about alerts covers alerts)" {
-  [ "$(cov platform/api/tests/eventloop-alert.test.ts)" = "alerts-monitors" ]
-  [ "$(cov platform/api/tests/search-meta.test.ts)" = "search" ]
-  # no keyword in the name → the package prefix still answers
-  [ "$(cov platform/api/tests/server-unit.test.ts)" = "services" ]
+@test "#4201 NEGATIVE PROOF: the same basenames with real content DO place" {
+  # The control for the test above: if the retired rules were merely renamed,
+  # these would answer the same as the pathless case. They do not — the domain
+  # comes out of what is written in the file.
+  a="$BATS_TEST_TMPDIR/eventloop-alert.test.ts"
+  printf '%s\n' "await request(app).get('/api/chorus/cards');" > "$a"
+  eq "$(CHORUS_VALID_DOMAINS="cards,alerts-monitors,tests" "$BIN" --covers-of "$a" 2>/dev/null)" "cards"
+
+  b="$BATS_TEST_TMPDIR/server-unit.test.ts"
+  printf '%s\n' "it('boots', () => {});" > "$b"
+  eq "$(CHORUS_VALID_DOMAINS="cards,services,tests" "$BIN" --covers-of "$b" 2>/dev/null)" "tests"
 }
 
 @test "a security-concern file covers security, whatever its path (the #3922 lane keeps its rows)" {
   f="$BATS_TEST_TMPDIR/account.test.ts"
   printf '%s\n' "// @test-type: integration:security" "it('refuses', () => {});" > "$f"
-  [ "$(cov "$f")" = "security" ]
-  # control: the same path with no security concern falls to the path rules
+  eq "$(cov "$f")" "security"
+  # control: the same path with no security concern falls to the file rules
   g="$BATS_TEST_TMPDIR/router.test.ts"
   printf '%s\n' "it('routes', () => {});" > "$g"
   [ "$(cov "$g")" != "security" ]

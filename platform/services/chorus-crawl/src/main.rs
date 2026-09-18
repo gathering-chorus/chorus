@@ -920,9 +920,12 @@ fn seam(args: &[String]) -> bool {
             );
             let concern = cases::file_class(&path, &content).concern;
             let covers = cases::covers_from(placement.domain(), concern);
-            match domain::listing(&path, &placement) {
-                Some(l) => println!("{covers} ({l})"),
-                None => println!("{covers}"),
+            // #4201 — the answer on stdout, the reason on stderr. Printing
+            // both on one line made the seam unreadable by anything that
+            // compares it: `security (unplaced …)` never equals `security`.
+            println!("{covers}");
+            if let Some(l) = domain::listing(&path, &placement) {
+                eprintln!("{l}");
             }
         }
         "--classify" => {
