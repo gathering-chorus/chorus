@@ -55,7 +55,7 @@ world() {
 @test "NEGATIVE PROOF — a role store that cannot be read is UNMEASURED, not no-role" {
   # A failed read is not a FALSE. Read the other way, an unreachable roles
   # domain refuses every provision and calls it a policy decision.
-  run "$BIN" create somebody-new --kind agent
+  run "$BIN" create somebody-new --kind agent --role role-test
   [ "$status" -eq 2 ]
   [[ "$output" == *"UNMEASURED, not no-role"* ]]
   [[ "$output" == *"nothing was written"* ]]
@@ -65,7 +65,7 @@ world() {
   # The first version logged a WARN and returned true: every Fuseki outage
   # became a minted credential. Under the same dead store, nothing past the
   # gate may run — the register refusal text must NOT appear.
-  run "$BIN" create somebody-new --kind agent
+  run "$BIN" create somebody-new --kind agent --role role-test
   [[ "$output" != *"could not reach the CSS accounts API"* ]]
 }
 
@@ -110,7 +110,7 @@ world() {
   # a pointer to nothing, stamped as a no-op. The register decides existence.
   world 401 200
   export CHORUS_IDENTITY_TOKEN="test-token"
-  run "$BIN" create ghost --kind agent
+  run "$BIN" create ghost --kind agent --role role-test
   [[ "$output" != *"already exists"* ]]
   [[ "$output" == *"HALF-PROVISIONED"* ]]
   # ...and it went on to the register, which is dead here, so it refused there.
@@ -121,7 +121,7 @@ world() {
 @test "control — a row whose profile card the register SERVES is a no-op returning that webId" {
   world 401 200
   export CHORUS_IDENTITY_TOKEN="test-token"
-  run "$BIN" create whole --kind agent
+  run "$BIN" create whole --kind agent --role role-test
   [ "$status" -eq 0 ]
   [[ "$output" == *"already exists"* ]]
   [[ "${lines[0]}" == *"/whole/profile/card#me" ]]
@@ -131,10 +131,10 @@ world() {
   # The check separates its states on the CARD STATUS, not on the name.
   world 200 401
   export CHORUS_IDENTITY_TOKEN="test-token"
-  run "$BIN" create ghost --kind agent
+  run "$BIN" create ghost --kind agent --role role-test
   [ "$status" -eq 0 ]
   [[ "$output" == *"already exists"* ]]
-  run "$BIN" create whole --kind agent
+  run "$BIN" create whole --kind agent --role role-test
   [[ "$output" == *"HALF-PROVISIONED"* ]]
 }
 
@@ -150,7 +150,7 @@ world() {
   # (Store stubbed so the run reaches that step; register still dead.)
   world 401 200
   export ATHENA_MAKE_URL="http://127.0.0.1:59997" CHORUS_IDENTITY_TOKEN="test-token"
-  run "$BIN" create somebody-new --kind agent
+  run "$BIN" create somebody-new --kind agent --role role-test
   [ "$status" -eq 2 ]
   [[ "$output" == *"discovery document does not name a Principal collection"* ]]
   ! grep -q '"/v1/identity/principals"' "${BATS_TEST_DIRNAME}/../services/chorus-principal/src/main.rs"
@@ -159,7 +159,7 @@ world() {
 @test "the register being unreachable REFUSES before anything is written" {
   world 401 200
   export CHORUS_IDENTITY_TOKEN="test-token"
-  run "$BIN" create somebody-new --kind agent
+  run "$BIN" create somebody-new --kind agent --role role-test
   [ "$status" -eq 2 ]
   [[ "$output" == *"could not reach the CSS accounts API"* ]]
   [[ "$output" == *"nothing was written"* ]]
@@ -170,7 +170,7 @@ world() {
   # identifier, there is nothing honest to write.
   world 401 200
   export CHORUS_IDENTITY_TOKEN="test-token"
-  run "$BIN" create somebody-new --kind agent
+  run "$BIN" create somebody-new --kind agent --role role-test
   [[ "$output" == *"only source of a webId"* ]]
 }
 
