@@ -11,7 +11,7 @@
 # when, under which token id, and on which host account. "Who is logged in"
 # is rows in the security graph, read by pulse and /sup, never a declared
 # state. Rows are written by chorus-awake at boot through the generated
-# security API and served at /v1/security/sessions.
+# security API and served at /v1/identity/sessions.
 
 chorus:identity chorus:definesVocabulary chorus:Session .
 

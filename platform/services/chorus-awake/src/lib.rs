@@ -26,7 +26,7 @@
 //!      authz rules". Before the pane is started the role's token is obtained
 //!      (chorus-identity-token), checked to name THAT role's WebID and to be
 //!      unexpired, recorded as a Session row through the security API
-//!      (/v1/security/sessions, owned by the principal), and announced on the
+//!      (/v1/identity/sessions, owned by the principal), and announced on the
 //!      spine as session.login. The pane inherits CHORUS_SESSION_TOKEN_FILE —
 //!      the token file, never the token on a command line. No token, wrong
 //!      principal, expired, or row refused → REFUSED, nothing started.
@@ -203,11 +203,16 @@ fn iso_utc(secs: u64) -> String {
     format!("{:04}-{:02}-{:02}T{:02}:{:02}:{:02}Z", y, m, d, rem / 3600, (rem % 3600) / 60, rem % 60)
 }
 
-/// The Session row body for the generated security API (the shape in
-/// session-4202.ttl). `name` is the row key: session-<role>-<jti tail>.
+/// The Session row body for the generated identity API (the shape in
+/// session-4202.ttl).
+///
+/// `name` is the BARE key — <role>-<jti tail>, no `session-` prefix. The mint
+/// adds the prefix itself (ADR-040) and refuses a name that already carries it:
+/// "double-prefix ... pass the bare name". Sending session-<role>-<tail> got a
+/// 422 on the first real login, after the route and the kind were both fixed.
 pub fn session_row(role: &str, l: &Login, host_account: &str) -> (String, Value) {
     let tail: String = l.jti.chars().rev().take(8).collect::<Vec<_>>().into_iter().rev().collect();
-    let name = format!("session-{}-{}", role, tail.replace(|c: char| !c.is_ascii_alphanumeric(), "-"));
+    let name = format!("{}-{}", role, tail.replace(|c: char| !c.is_ascii_alphanumeric(), "-"));
     let body = serde_json::json!({
         "name": name,
         "label": format!("{} logged in {} on {}", role, iso_utc(l.iat), host_account),
@@ -333,7 +338,7 @@ pub fn run(args: &[String]) -> i32 {
     }
     let api = envd("CHORUS_API_URL", "http://localhost:3360");
     let curl = envd("AWAKE_CURL", "curl");
-    let url = format!("{}/v1/security/sessions", api);
+    let url = format!("{}/v1/identity/sessions", api);
     let hdr_arg = format!("@{}", hdr.display());
     let body_arg = format!("@{}", body_path.display());
     let code = sh(&curl, &["-s", "-o", "/dev/null", "-w", "%{http_code}", "--max-time", "10", "-X", "POST", "-H", "Content-Type: application/json", "-H", &hdr_arg, "--data-binary", &body_arg, &url]).map(|c| c.trim().to_string()).unwrap_or_else(|e| format!("curl failed: {}", e.trim()));

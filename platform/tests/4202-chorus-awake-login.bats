@@ -89,7 +89,7 @@ file_lacks() { ! grep -q -- "$2" "$1"; }
   ( sleep 0.3; reg 778 %5 ) &
   run "$SCRIPT" kade
   [ "$status" -eq 0 ]
-  file_has "$T/curl.log" "http://stub:1/v1/security/sessions"
+  file_has "$T/curl.log" "http://stub:1/v1/identity/sessions"
   file_has "$T/curl.body" '"ownedBy":"principal-kade"'
   file_has "$T/curl.body" '"tokenId":"jti-kade-0001"'
   file_has "$T/curl.body" '"sessionState":"open"'

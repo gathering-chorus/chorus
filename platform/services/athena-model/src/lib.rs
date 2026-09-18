@@ -73,6 +73,11 @@ const KINDS: &[(&str, &str, bool)] = &[
     ("decision", "Decision", false),
     ("document", "Document", false),
     ("revision", "Revision", false),   // #4102 — a prior version of a row, kept by the door at replace
+    // #4202 — Session: one login of a Principal, written by chorus-awake before
+    // a role's first turn. The class and its shape deployed, the route served,
+    // and the write still 502'd "unknown-kind: session" — a row the model knows
+    // and the writer does not is a row nobody can create.
+    ("session", "Session", false),
     // #4089 — Commitment rows (a service design's promises, #4064) deploy through
     // the INSTANCE_SET like every cross-domain instance (Silas's OWL-DBA ruling
     // 2026-09-03: not a domain's harvested graph). Type-prefixed: commitment-<name>.
