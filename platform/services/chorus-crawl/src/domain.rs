@@ -103,7 +103,6 @@ const ROUTES: &[(&str, &str)] = &[
     ("/api/chorus/identity", "identity"),
     ("/api/chorus/domain/", "domains"),
     ("/api/chorus/class-atlas", "domains"),
-    ("/api/athena/", "domains"),
     ("/api/nudge", "messages"),
     ("/valuestreams", "value-streams"),
     ("/pipelines", "pipelines"),
@@ -155,8 +154,6 @@ const BINARIES: &[(&str, &str)] = &[
     ("git-queue", "version-control"),
     ("chorus-inject", "messages"),
     ("chorus-model", "domains"),
-    ("athena-model", "domains"),
-    ("athena-make", "domains"),
     ("service-harvest", "services"),
     ("service-drift", "services"),
     ("log-harvest", "logs"),
@@ -231,6 +228,14 @@ const UNITS: &[(&str, &str)] = &[
     ("chorus-inject", "spine"),
     ("chorus-awake", "spine"),
     ("werk-", "builds"),
+    // #4201 — athena-make is the API every domain is read and written through,
+    // and athena-model is the layer under it. A test that MENTIONS either is
+    // usually just reaching the surface it tests: `/api/athena/` and the
+    // athena-make binary tagged the security-envelope test, a spine e2e gate
+    // and a test-dispatch gate as `domains`. Only a test that IS one of those
+    // crates belongs to domains, which is what the card says: athena-make,
+    // athena-model and model tests.
+    ("athena-", "domains"),
     ("properties-resolver", "Properties"),
 ];
 
@@ -273,7 +278,6 @@ const MODULES: &[(&str, &str)] = &[
     ("class-atlas", "domains"),
     ("chorus-domain", "domains"),
     ("domain-renderer", "domains"),
-    ("athena-", "domains"),
     ("embed", "search"),
     ("lance-store", "search"),
     ("security-", "security"),
@@ -419,9 +423,9 @@ fn import_lines(content: &str) -> String {
         })
         .collect::<Vec<_>>()
         .join("\n")
-        // #4201 — a Rust crate imports as `use athena_make::…` while the module
+        // #4201 — a Rust crate imports as `use class_atlas::…` while the module
         // table (and every path, package and binary name in this repo) spells
-        // the same unit `athena-make`. Underscores are the crate-name spelling
+        // the same unit `class-atlas`. Underscores are the crate-name spelling
         // of the hyphen, so the table never matched a single `use` line: 109 of
         // the 503 unplaced files on 2026-09-17 were service tests whose only
         // signal was the crate they exercise. Normalise the separator so one
@@ -695,7 +699,24 @@ pub fn place_in_file(
     if signals.iter().any(|s| s.domain.is_empty()) {
         return Placement::Conflict { signals };
     }
-    match one_domain(&signals).or_else(|| plurality(&signals)) {
+    // #4201 — last resort on a tie: the crate the file lives in. athena-make's
+    // own coverage test names seven domains across two rules and ties at two
+    // apiece; the one thing it is beyond argument is a test of athena-make.
+    // Only breaks a tie, and only when the unit's domain is already one of the
+    // candidates — it can never introduce a domain the file never named.
+    let by_unit = || {
+        let u = unit?;
+        let s = fire(Rule::Unit, UNITS, u, valid)
+            .or_else(|| unit_row_domain(u, unit_rows, valid))?;
+        signals
+            .iter()
+            .any(|c| c.domain == s.domain)
+            .then_some(s.domain)
+    };
+    match one_domain(&signals)
+        .or_else(|| plurality(&signals))
+        .or_else(by_unit)
+    {
         Some(domain) => Placement::Tagged { domain, signals },
         None => Placement::Conflict { signals },
     }
@@ -766,12 +787,12 @@ mod tests_4201 {
     }
 
     /// #4201 negative proof: the Rust spelling of a unit name. Before the
-    /// separator was normalised this file fired NO rule — `use athena_make::`
-    /// could not match the table's `athena-`, so every service test in the
+    /// separator was normalised this file fired NO rule — `use class_atlas::`
+    /// could not match the table's `class-atlas`, so every service test in the
     /// repo landed on the `tests` fallback.
     #[test]
     fn a_rust_crate_import_tags_the_file() {
-        let c = "//! #3373 cors\nuse athena_make::http_response;\n#[test]\nfn t() {}";
+        let c = "//! #3373 cors\nuse class_atlas::http_response;\n#[test]\nfn t() {}";
         assert_eq!(place(c, &valid(), &no_card).domain(), Some("domains"));
     }
 
@@ -808,7 +829,7 @@ mod tests_4201 {
     /// is never overridden by the crate it happens to live in.
     #[test]
     fn an_imported_unit_beats_the_crate_it_lives_in() {
-        let c = "use athena_make::http_response;";
+        let c = "use class_atlas::http_response;";
         assert_eq!(
             place_in_unit(c, Some("chorus-hooks"), &valid(), &no_card).domain(),
             Some("domains")
@@ -1074,14 +1095,14 @@ mod tests_4201 {
         let mut v = valid();
         v.push("value-streams".to_string());
         // even split: one rule each — must stay a conflict
-        let even = "app.get('/api/athena/x'); const s: ValueStreamStep = q;";
+        let even = "app.get('/api/chorus/logs'); const s: ValueStreamStep = q;";
         assert!(
             matches!(place(even, &v, &no_card), Placement::Conflict { .. }),
             "an even split must not be broken"
         );
-        // plurality: route, binary and module all name domains
-        let many = "app.get('/api/athena/x');\nimport { a } from 'athena-make';\n                    const s: ValueStreamStep = q;\nconst bin = 'athena-make';";
-        assert_eq!(place(many, &v, &no_card).domain(), Some("domains"));
+        // plurality: route, binary and module all name logs
+        let many = "app.get('/api/chorus/logs');\nimport { q } from 'logs-query';\n                    const s: ValueStreamStep = q;\nconst bin = 'log-harvest';";
+        assert_eq!(place(many, &v, &no_card).domain(), Some("logs"));
     }
     /// NEGATIVE PROOF: chorus-hooks declares `pub struct Commitment` — its own
     /// autonomy commitment, not the services registry's row. The class rule
@@ -1125,5 +1146,47 @@ mod tests_4201 {
         let p = place_in_file(test, path, Some("clearing"), &rows, &v, &no_card,
             &|q: &str| (q == "directing/clearing/src/server.ts").then(|| one.to_string()));
         assert_eq!(p.domain(), Some("domains"), "{p:?}");
+    }
+    /// NEGATIVE PROOF: athena-make is the API every domain is read and written
+    /// through, so a MENTION of it says how a test reaches its subject, not
+    /// what its subject is. It tagged the security-envelope test, a spine e2e
+    /// gate and a test-dispatch gate `domains`. Only a test that IS one of the
+    /// athena crates belongs there.
+    #[test]
+    fn mentioning_athena_make_is_not_a_domain_signal_being_it_is() {
+        let mut v = valid();
+        v.push("value-streams".to_string());
+        let reaches = "const r = await fetch('/api/athena/domains');\n                       execSync('athena-make deploy');\n                       import { verify } from '../src/es256';";
+        // the file reaches athena to test something else: athena says nothing,
+        // and the one real signal it carries decides
+        assert_eq!(place(reaches, &v, &no_card).domain(), Some("identity"));
+
+        // control: a file that IS an athena crate tags domains, off the unit
+        let p = place_in_file("fn main() {}", "platform/services/athena-make/src/lib.rs",
+            Some("athena-make"), &[], &v, &no_card, &|_| None);
+        assert_eq!(p.domain(), Some("domains"));
+    }
+    /// NEGATIVE PROOF: the unit breaks a tie but can never invent one.
+    /// athena-make's own coverage test names seven domains across two rules
+    /// and ties two-all; the one thing beyond argument is that it tests
+    /// athena-make. The same tie in a crate with no domain stays a conflict,
+    /// and a unit whose domain is NOT among the candidates is ignored.
+    #[test]
+    fn the_unit_breaks_a_tie_and_never_introduces_a_new_domain() {
+        let tied = "execSync('werk-test');\nconst c: TestResult = r;\n                    execSync('chorus-model');\nconst d: DomainShape = s;";
+
+        // no unit: the tie stands
+        assert!(
+            matches!(place(tied, &valid(), &no_card), Placement::Conflict { .. }),
+            "with no unit this must stay a conflict"
+        );
+        // the unit is one of the candidates: it decides
+        let p = place_in_file(tied, "platform/services/athena-make/tests/c.rs",
+            Some("athena-make"), &[], &valid(), &no_card, &|_| None);
+        assert_eq!(p.domain(), Some("domains"));
+        // the unit is NOT among the candidates: it must not speak
+        let p = place_in_file(tied, "platform/services/chorus-hooks/tests/c.rs",
+            Some("chorus-hooks"), &[], &valid(), &no_card, &|_| None);
+        assert!(matches!(p, Placement::Conflict { .. }), "{p:?}");
     }
 }
