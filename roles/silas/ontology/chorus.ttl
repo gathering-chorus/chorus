@@ -4079,7 +4079,13 @@ chorus:LogSourceShape a sh:NodeShape ;
     sh:property [ sh:path chorus:logStatus     ; sh:minCount 1 ; sh:maxCount 1 ; sh:in ( "active" "silent" "missing" "unobservable" ) ; chorus:exposure chorus:public ] ;
     sh:property [ sh:path chorus:lastWrittenAt ; sh:minCount 0 ; sh:maxCount 1 ; sh:datatype xsd:dateTime ; chorus:exposure chorus:public ] ;
     sh:property [ sh:path chorus:sizeBytes     ; sh:minCount 0 ; sh:maxCount 1 ; sh:datatype xsd:integer  ; chorus:exposure chorus:public ] ;
-    sh:property [ sh:path chorus:lastObserved  ; sh:minCount 1 ; sh:maxCount 1 ; sh:datatype xsd:dateTime ; chorus:exposure chorus:public ] .
+    sh:property [ sh:path chorus:lastObserved  ; sh:minCount 1 ; sh:maxCount 1 ; sh:datatype xsd:dateTime ; chorus:exposure chorus:public ] ;
+    # #4209 — declare the owner or athena-make writes it as a LITERAL. verified_owner_projection
+    # (athena-make/src/lib.rs:2139) reads the SHAPE, not the property: a shape that says nothing
+    # takes the fallback branch and stores a bare string of the caller's name. The same silence
+    # makes the ROUTE graph-scoped instead of row-owner-governed (lib.rs:5440), which is why
+    # Kade's 132 PUT /v1/logs/sources were 403 against rows he already owned.
+    sh:property [ sh:path chorus:ownedBy       ; sh:minCount 1 ; sh:maxCount 1 ; sh:class chorus:Principal ; chorus:exposure chorus:public ] .
     # hasDomain minCount 0 on purpose: a unit with no UnitDomainMapping row is emitted
     # WITHOUT the edge and counted as unmapped; log-harvest.sh --check goes red on it.
     # Hiding the row would hide the gap (the skip-counts-as-pass shape, #3734).
