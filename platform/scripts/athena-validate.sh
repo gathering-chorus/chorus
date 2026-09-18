@@ -18,7 +18,11 @@ set -uo pipefail
 FUSEKI="${FUSEKI_QUERY:-http://localhost:3030/pods/query}"
 G="urn:chorus:instances"
 NS="https://jeffbridwell.com/chorus#"
-Q() { curl -sf --max-time 20 -H "Accept: application/sparql-results+json" --data-urlencode "query=$1" "$FUSEKI" 2>/dev/null; }
+# #4187 — 20s was too tight. The owner-shape query (section 7) measured 13.8s
+# against the live store on 2026-09-18 and still came back UNMEASURED inside a
+# full run, because by then the store is warm with six earlier sweeps. A budget
+# that close to the measurement turns a real answer into a false violation.
+Q() { curl -sf --max-time "${ATHENA_VALIDATE_TIMEOUT:-60}" -H "Accept: application/sparql-results+json" --data-urlencode "query=$1" "$FUSEKI" 2>/dev/null; }
 count() { echo "$1" | python3 -c 'import sys,json; print(len(json.load(sys.stdin)["results"]["bindings"]))' 2>/dev/null || echo "?"; }
 rows()  { echo "$1" | python3 -c 'import sys,json;[print("    "+" ".join(v["value"].split("#")[-1] for v in b.values())) for b in json.load(sys.stdin)["results"]["bindings"][:8]]' 2>/dev/null; }
 
