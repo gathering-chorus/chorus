@@ -1211,7 +1211,8 @@ fn main() {
         );
         actions.retain(|a| !matches!(a, Action::Delete { .. }));
     }
-    let c = counts(&actions);
+    // #4201 — tallied AFTER the hasDomain restate below, or the line reports
+    // 30 replaces on a run that restates 1,563 rows.
 
     // #4185 — the case pass: every kind=test file this run walked, parsed.
     let test_files: Vec<&str> = disk
@@ -1241,6 +1242,53 @@ fn main() {
     // sequence/subproduct labels (athena, werk, borg), not Domain rows, so this
     // answers None for every card; the rule is wired and inert until a label does.
     let card_domain = |_card: u32| -> Option<String> { None };
+
+    // #4201 — a row whose stored hasDomain is not what the rules now say is
+    // stale even though its sha has not moved. plan() ran before the Domain
+    // list was readable, so the eligibility is settled here: Unchanged becomes
+    // Replace for exactly those rows, and for nothing else.
+    {
+        let unit_rows = domain::unit_domain_rows(
+            &std::fs::read_to_string(format!("{root}/{UNIT_DOMAIN_TTL}")).unwrap_or_default(),
+        );
+        let read_file = |q: &str| std::fs::read_to_string(std::path::Path::new(&root).join(q)).ok();
+        let in_graph: std::collections::HashMap<&str, &InGraph> =
+            graph.iter().map(|g| (g.path.as_str(), g)).collect();
+        let mut restated = 0usize;
+        for a in actions.iter_mut() {
+            let Action::Unchanged { path } = a else { continue };
+            let Some(g) = in_graph.get(path.as_str()) else {
+                continue;
+            };
+            let held = g
+                .other
+                .iter()
+                .find(|(k, _)| k == "hasDomain")
+                .map(|(_, v)| v.as_str())
+                .unwrap_or("");
+            let Some(content) = read_file(path) else { continue };
+            let unit = domain::declared_unit(path, &read_file);
+            let want = domain::place_in_file(
+                &content,
+                path,
+                unit.as_deref(),
+                &unit_rows,
+                &valid_domains,
+                &card_domain,
+                &read_file,
+            );
+            let want = want.domain().unwrap_or("");
+            if want != held {
+                restated += 1;
+                *a = Action::Replace { path: path.clone() };
+            }
+        }
+        if restated > 0 {
+            println!("chorus-crawl: {restated} code row(s) restated — hasDomain differs from the rules");
+        }
+    }
+
+    let c = counts(&actions);
     let parsed = parse_cases(&root, &test_files, &valid_domains, &card_domain);
     // A test file we could not read outranks a clean tree read: no deletes.
     let case_read = if parsed.complete {
@@ -1399,6 +1447,10 @@ fn main() {
         }
     };
     let by_path: HashMap<&str, &OnDisk> = disk.iter().map(|f| (f.path.as_str(), f)).collect();
+    // #4201 — the authored unit rows, for tagging each code row's domain.
+    let unit_rows = domain::unit_domain_rows(
+        &std::fs::read_to_string(format!("{root}/{UNIT_DOMAIN_TTL}")).unwrap_or_default(),
+    );
     let mut wrote = 0usize;
     let mut failed: Vec<String> = Vec::new();
     let mut batch: Vec<String> = Vec::new();
@@ -1463,6 +1515,32 @@ fn main() {
                 ];
                 if let Some(lang) = l {
                     owned.push(("hasLanguage".to_string(), lang.to_string()));
+                }
+                // #4201 — the same rules that place a test place the file it
+                // tests. `hasDomain` was declared and empty on all 6,226 code
+                // rows, which is why a test whose only signal is the module it
+                // imports still cannot be placed: the module has no domain
+                // either. Read from the file, never the folder; silence when
+                // the rules cannot agree, exactly as for a test.
+                if let Ok(content) = std::fs::read_to_string(std::path::Path::new(&root).join(path))
+                {
+                    let unit = domain::declared_unit(path, &|q: &str| {
+                        std::fs::read_to_string(std::path::Path::new(&root).join(q)).ok()
+                    });
+                    let placement = domain::place_in_file(
+                        &content,
+                        path,
+                        unit.as_deref(),
+                        &unit_rows,
+                        &valid_domains,
+                        &card_domain,
+                        &|q: &str| {
+                            std::fs::read_to_string(std::path::Path::new(&root).join(q)).ok()
+                        },
+                    );
+                    if let Some(d) = placement.domain() {
+                        owned.push(("hasDomain".to_string(), d.to_string()));
+                    }
                 }
                 let mut fields = merge_row(existing, &owned);
                 let name = stable_name(path);

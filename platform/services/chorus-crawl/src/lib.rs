@@ -502,6 +502,21 @@ pub struct InGraph {
 /// The whole decision, as a pure function of (tree, graph, how well we read the
 /// tree). No clock, no network, no filesystem.
 pub fn plan(disk: &[OnDisk], graph: &[InGraph], read: TreeRead) -> Vec<Action> {
+    plan_with(disk, graph, read, &|_, _| false)
+}
+
+/// #4201 — a file's CONTENT is not the only thing that can go stale. The domain
+/// a file belongs to is computed from its text, and a rule change moves it
+/// while the sha stands still: tagging `hasDomain` on a tree whose shas all
+/// match produced 30 replaces out of 6,226 rows, because only a changed sha
+/// could make a row eligible. `restate` answers, for one row, whether what the
+/// crawler would write differs from what the row holds.
+pub fn plan_with(
+    disk: &[OnDisk],
+    graph: &[InGraph],
+    read: TreeRead,
+    restate: &dyn Fn(&str, &InGraph) -> bool,
+) -> Vec<Action> {
     let mut out = Vec::new();
     for f in disk {
         if !f.classified {
@@ -514,7 +529,7 @@ pub fn plan(disk: &[OnDisk], graph: &[InGraph], read: TreeRead) -> Vec<Action> {
             None => out.push(Action::Post {
                 path: f.path.clone(),
             }),
-            Some(g) if g.sha != f.sha => out.push(Action::Replace {
+            Some(g) if g.sha != f.sha || restate(&f.path, g) => out.push(Action::Replace {
                 path: f.path.clone(),
             }),
             Some(_) => out.push(Action::Unchanged {
@@ -2502,5 +2517,55 @@ mod logs_4199 {
         assert!(f.contains(&("label".to_string(), "a.log (library)".to_string())));
         assert!(f.contains(&("onMachine".to_string(), "library".to_string())));
         assert!(f.contains(&("launchdLabel".to_string(), UNMANAGED.to_string())));
+    }
+}
+
+#[cfg(test)]
+mod plan_domain_4201 {
+    use super::{plan, plan_with, Action, InGraph, OnDisk, TreeRead};
+
+    fn disk(path: &str, sha: &str) -> OnDisk {
+        OnDisk { path: path.to_string(), sha: sha.to_string(), classified: true }
+    }
+    fn row(path: &str, sha: &str, domain: &str) -> InGraph {
+        InGraph {
+            path: path.to_string(),
+            sha: sha.to_string(),
+            other: vec![("hasDomain".to_string(), domain.to_string())],
+        }
+    }
+
+    /// NEGATIVE PROOF: a row whose sha has not moved but whose domain is wrong.
+    /// plan() can only see content, so tagging hasDomain across a settled tree
+    /// produced 30 replaces out of 6,226 rows — the other 1,563 were eligible
+    /// for nothing and would have stayed blank forever.
+    #[test]
+    fn a_stale_domain_makes_a_row_eligible_even_when_the_sha_stands_still() {
+        let d = vec![disk("a.ts", "SAME")];
+        let g = vec![row("a.ts", "SAME", "")];
+
+        // the guarded condition: sha-only planning calls it Unchanged
+        assert!(matches!(
+            plan(&d, &g, TreeRead::Complete).as_slice(),
+            [Action::Unchanged { .. }]
+        ));
+
+        // and with the domain question asked, the same row is a Replace
+        let acts = plan_with(&d, &g, TreeRead::Complete, &|_, g| {
+            g.other.iter().any(|(k, v)| k == "hasDomain" && v.is_empty())
+        });
+        assert!(matches!(acts.as_slice(), [Action::Replace { .. }]), "{acts:?}");
+    }
+
+    /// CONTROL: a row that already holds the right domain stays Unchanged —
+    /// otherwise every pass would rewrite the whole tree.
+    #[test]
+    fn a_row_whose_domain_is_already_right_is_not_restated() {
+        let d = vec![disk("a.ts", "SAME")];
+        let g = vec![row("a.ts", "SAME", "cards")];
+        let acts = plan_with(&d, &g, TreeRead::Complete, &|_, g| {
+            g.other.iter().any(|(k, v)| k == "hasDomain" && v.is_empty())
+        });
+        assert!(matches!(acts.as_slice(), [Action::Unchanged { .. }]), "{acts:?}");
     }
 }
