@@ -527,15 +527,18 @@ pub fn resolve_relative(from: &str, spec: &str) -> Vec<String> {
 /// no recursion. This is what the neighbour rule asks of an imported file.
 fn external_signal(content: &str, valid: &[String]) -> Option<Signal> {
     let imports = import_lines(content);
-    [
-        fire(Rule::Route, ROUTES, content, valid),
-        fire(Rule::Binary, BINARIES, content, valid),
-        fire(Rule::Class, CLASSES, content, valid),
-        fire(Rule::Module, MODULES, &imports, valid),
-    ]
-    .into_iter()
-    .flatten()
-    .find(|s| !s.domain.is_empty())
+    let mut hits: Vec<Signal> = Vec::new();
+    hits.extend(fire_all(Rule::Route, ROUTES, content, valid));
+    hits.extend(fire_all(Rule::Binary, BINARIES, content, valid));
+    hits.extend(fire_all(Rule::Class, CLASSES, content, valid));
+    hits.extend(fire_all(Rule::Module, MODULES, &imports, valid));
+    // #4201 — the imported file has to be ABOUT one domain to speak for the
+    // test. Taking its first hit let clearing's server.ts, which serves many
+    // routes, tag 67 clearing tests `domains` off one incidental
+    // `/api/chorus/domain/` — while the authored row says clearing is
+    // messages. An ambiguous neighbour says nothing and the unit rule decides.
+    let domain = one_domain(&hits).or_else(|| plurality(&hits))?;
+    hits.into_iter().find(|s| s.domain == domain)
 }
 
 /// #4201 — the file a test imports is the file it exercises. Reads each
@@ -1098,5 +1101,29 @@ mod tests_4201 {
     fn using_a_class_it_does_not_define_still_fires() {
         let uses = "const c: Commitment = await get('/x');\nexpect(c.id).toBe('a');";
         assert_eq!(place(uses, &valid(), &no_card).domain(), Some("services"));
+    }
+    /// NEGATIVE PROOF: an ambiguous neighbour must not speak. clearing's
+    /// server.ts serves many routes; taking its FIRST hit tagged 67 clearing
+    /// tests `domains` off one incidental `/api/chorus/domain/` line, against
+    /// an authored row that says clearing is messages.
+    #[test]
+    fn a_neighbor_that_serves_many_domains_says_nothing() {
+        let mut v = valid();
+        v.push("messages".to_string());
+        let test = "import { start } from '../src/server';\nit('boots', () => {});";
+        let many = "app.get('/api/chorus/domain/x', h);\napp.get('/api/chorus/cards', h);";
+        let one = "app.get('/api/chorus/domain/x', h);";
+        let rows = vec![("com.chorus.clearing".to_string(), "messages".to_string())];
+        let path = "directing/clearing/tests/server-unit.test.ts";
+
+        // ambiguous neighbour: the unit rule decides, and gets it right
+        let p = place_in_file(test, path, Some("clearing"), &rows, &v, &no_card,
+            &|q: &str| (q == "directing/clearing/src/server.ts").then(|| many.to_string()));
+        assert_eq!(p.domain(), Some("messages"), "{p:?}");
+
+        // control: a neighbour that IS about one domain still speaks, and wins
+        let p = place_in_file(test, path, Some("clearing"), &rows, &v, &no_card,
+            &|q: &str| (q == "directing/clearing/src/server.ts").then(|| one.to_string()));
+        assert_eq!(p.domain(), Some("domains"), "{p:?}");
     }
 }
