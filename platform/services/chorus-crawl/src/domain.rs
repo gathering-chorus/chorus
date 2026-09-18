@@ -299,6 +299,47 @@ const MODULES: &[(&str, &str)] = &[
     ("search", "search"),
 ];
 
+/// Every hit a table makes, uncollapsed. `fire` folds several domains into one
+/// empty-domain signal, which hides WHICH rules agree — the plurality below
+/// needs to count them.
+fn fire_all(rule: Rule, table: &[(&str, &str)], hay: &str, valid: &[String]) -> Vec<Signal> {
+    let mut hits: Vec<Signal> = Vec::new();
+    for (needle, dom) in table.iter().copied() {
+        if hay.contains(needle)
+            && valid.iter().any(|v| v == dom)
+            && !hits.iter().any(|h| h.domain == dom)
+        {
+            hits.push(Signal { rule, domain: dom.to_string(), evidence: needle.to_string() });
+        }
+    }
+    hits
+}
+
+/// The domain named by strictly more rules than any other, if there is one.
+/// #4201 — rules disagreeing is not the same as rules being evenly split: a
+/// binary name mentioned once in a fixture does not outweigh a route, a class
+/// and an import all naming the same domain.
+fn plurality(signals: &[Signal]) -> Option<String> {
+    let mut tally: Vec<(String, Vec<Rule>)> = Vec::new();
+    for s in signals.iter().filter(|s| !s.domain.is_empty()) {
+        match tally.iter_mut().find(|(d, _)| *d == s.domain) {
+            Some((_, rules)) => {
+                if !rules.contains(&s.rule) {
+                    rules.push(s.rule);
+                }
+            }
+            None => tally.push((s.domain.clone(), vec![s.rule])),
+        }
+    }
+    tally.sort_by(|a, b| b.1.len().cmp(&a.1.len()));
+    match tally.as_slice() {
+        [(d, top), rest @ ..] if rest.first().map_or(false, |(_, n)| n.len() < top.len()) => {
+            Some(d.clone())
+        }
+        _ => None,
+    }
+}
+
 fn one_domain(signals: &[Signal]) -> Option<String> {
     let first = signals.first()?.domain.clone();
     signals
@@ -592,19 +633,11 @@ pub fn place_in_file(
     read: &dyn Fn(&str) -> Option<String>,
 ) -> Placement {
     let mut signals: Vec<Signal> = Vec::new();
-    if let Some(s) = fire(Rule::Route, ROUTES, content, valid) {
-        signals.push(s);
-    }
-    if let Some(s) = fire(Rule::Binary, BINARIES, content, valid) {
-        signals.push(s);
-    }
-    if let Some(s) = fire(Rule::Class, CLASSES, content, valid) {
-        signals.push(s);
-    }
+    signals.extend(fire_all(Rule::Route, ROUTES, content, valid));
+    signals.extend(fire_all(Rule::Binary, BINARIES, content, valid));
+    signals.extend(fire_all(Rule::Class, CLASSES, content, valid));
     let imports = import_lines(content);
-    if let Some(s) = fire(Rule::Module, MODULES, &imports, valid) {
-        signals.push(s);
-    }
+    signals.extend(fire_all(Rule::Module, MODULES, &imports, valid));
     // Only when nothing external was named: a file that imports a unit is
     // testing THAT unit, and must not be overridden by the crate it lives in.
     // Only when nothing in this file named a domain: follow what it imports.
@@ -642,7 +675,7 @@ pub fn place_in_file(
     if signals.iter().any(|s| s.domain.is_empty()) {
         return Placement::Conflict { signals };
     }
-    match one_domain(&signals) {
+    match one_domain(&signals).or_else(|| plurality(&signals)) {
         Some(domain) => Placement::Tagged { domain, signals },
         None => Placement::Conflict { signals },
     }
@@ -834,7 +867,9 @@ mod tests_4201 {
         let p = place(c, &valid(), &no_card);
         assert_eq!(p.domain(), None);
         let line = listing("f.ts", &p).unwrap();
-        assert!(line.contains("route ["));
+        // #4201 — each hit is its own signal now, so the line names the rule
+        // once per domain rather than folding them into `route [a, b]`.
+        assert_eq!(line.matches("route→").count(), 2, "{line}");
         assert!(line.contains("cards"));
         assert!(line.contains("search"));
     }
@@ -1010,5 +1045,22 @@ mod tests_4201 {
             (p == "x/Cargo.toml").then(|| "[package]\nname = \"chorus-hooks\"\n".to_string())
         };
         assert_eq!(declared_unit("x/src/a.rs", &read), Some("chorus-hooks".to_string()));
+    }
+    /// NEGATIVE PROOF for the plurality: three rules name `domains`, one names
+    /// `value-streams` off a single mention. Even split → conflict, as before;
+    /// strict plurality → tagged. Same file, one extra agreeing rule.
+    #[test]
+    fn a_plurality_of_rules_breaks_a_tie_an_even_split_does_not() {
+        let mut v = valid();
+        v.push("value-streams".to_string());
+        // even split: one rule each — must stay a conflict
+        let even = "app.get('/api/athena/x'); const s: ValueStreamStep = q;";
+        assert!(
+            matches!(place(even, &v, &no_card), Placement::Conflict { .. }),
+            "an even split must not be broken"
+        );
+        // plurality: route, binary and module all name domains
+        let many = "app.get('/api/athena/x');\nimport { a } from 'athena-make';\n                    const s: ValueStreamStep = q;\nconst bin = 'athena-make';";
+        assert_eq!(place(many, &v, &no_card).domain(), Some("domains"));
     }
 }
