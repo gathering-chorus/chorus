@@ -1,0 +1,38 @@
+EmitContract   urn:chorus:ontology=1
+Metric         urn:chorus:ontology=6
+Property       urn:chorus:ontology=8, urn:chorus:instances=1
+PropertyKey    urn:chorus:ontology=6
+Card           urn:chorus:instances=229, urn:chorus:domains:security=2
+Chunk          urn:chorus:instances=21
+ChunkMembership urn:chorus:instances=218
+Revision       urn:chorus:instances=9360
+File           urn:chorus:test-enrichment-86212=5, urn:chorus:test-enrichment-84377=5, urn:chorus:test-enrichment-65769=5, urn:chorus:test-enrichment-37666=5, urn:chorus:test-enrichment-11103=5, urn:chorus:instances=14425, urn:chorus:test-enrichment-65276=5, urn:chorus:test-enrichment-83191=5, urn:chorus:test-enrichment-17596=6, urn:chorus:test-enrichment-20086=5, urn:chorus:test-enrichment-44671=5, urn:chorus:test-enrichment-47720=5, urn:chorus:test-enrichment-19581=5, urn:chorus:test-enrichment-18393=6, urn:chorus:test-enrichment-80537=5, urn:chorus:test-enrichment-25446=5, urn:chorus:test-enrichment-47530=5, urn:chorus:test-enrichment-84767=5
+Product        urn:chorus:ontology=11, urn:chorus:instances=9
+Domain         urn:chorus:ontology=42
+Service        urn:chorus:instances=13
+Test           urn:chorus:domains:tests=8307, urn:chorus:instances=1
+Document       urn:chorus:documents=259, urn:chorus:ontology=4, urn:chorus:instances=12, urn:chorus:domains:documents=19
+Principal      urn:chorus:domains:security=12
+Commitment     urn:chorus:domains:services=77
+
+# measured 2026-09-18 02:50 Boston against http://localhost:3030/pods/query (read-only)
+#
+# THREE findings, none of which the per-class walk had on its list:
+#
+# 1. 17 graphs named urn:chorus:test-enrichment-<n> exist IN THE PROD STORE,
+#    holding 87 File rows between them. Test fixtures that were never torn down.
+#    They are not a home for anything; they are litter. Needs its own decision
+#    (delete vs. keep-as-evidence) from Jeff before anything is removed.
+#
+# 2. Two classes have SPLIT homes — rows of one class in two graphs at once:
+#      Property  8 in urn:chorus:ontology + 1 in urn:chorus:instances
+#      Product  11 in urn:chorus:ontology + 9 in urn:chorus:instances
+#      Card    229 in urn:chorus:instances + 2 in urn:chorus:domains:security
+#    A split home means the serve route reads one of the two and silently
+#    under-reports. This is the /domains=0 class of defect, already live.
+#
+# 3. Card/Chunk/ChunkMembership (468 rows) cannot move the way Service did.
+#    Service rows are seeded from MODEL_SET, so re-pointing the deployer moves
+#    them on the next deploy. Card rows are DAL-written from the Vikunja
+#    harvest, so the writer and the rows have to move together or the board
+#    serves 0. That sequencing belongs on its own card, not inside this walk.
