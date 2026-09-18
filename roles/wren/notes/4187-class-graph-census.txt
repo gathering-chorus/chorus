@@ -69,3 +69,41 @@ Commitment     urn:chorus:domains:services=77
 # not mine (2026-09-17: never mint beyond the ruling). So the walk stops here
 # until those homes are named. It does not stop because the work is hard; it
 # stops because the next step is a decision I do not get to make.
+
+# ROLE / AGENTROLE — measured 2026-09-18 10:30, and it does NOT move the way
+# Service did. Jeff put this class on the card at 18:32 on 09-17.
+#
+# 16 rows, 4 graphs, 3 types, 2 spellings:
+#   urn:chorus:domains:roles      role-abby-normal            Role
+#   urn:chorus:domains:security   role-nightly                Role
+#   urn:chorus:instances          role-{crawler,jeff,kade,nightly,silas,wren}  Role
+#                                 role-{kade,silas,wren}      AgentRole
+#                                 role-jeff                   HumanRole
+#   urn:chorus:ontology           {kade,silas,wren}           AgentRole
+#                                 jeff                        HumanRole
+#
+# HumanRole and AgentRole are both rdfs:subClassOf Role, so the doubled typing
+# in urn:chorus:instances is redundant, not contradictory.
+#
+# THREE THINGS BLOCK THE MOVE, all found by looking rather than assuming:
+#
+# 1. ROLES_SET seeds HATS, not Roles. athena-deploy-model.sh:834 says so in its
+#    own comment: "Roles still live in urn:chorus:instances until #4090 moves
+#    them, and stage_merge_set is a per-subject additive merge: staging a Role
+#    subject here would DELETE the rest of that Role row." So there is no set to
+#    re-point, and #4090 already exists for this. Same shape as Card/Chunk: the
+#    rows are DAL-written.
+#
+# 2. RoleShape's instancesGraph must NOT change yet. /v1/roles/roles serves 6
+#    today by reading urn:chorus:instances. Re-pointing the shape before the rows
+#    move serves 0 — that is the /domains=0 defect, manufactured on purpose.
+#
+# 3. The four bare-name rows in urn:chorus:ontology are NOT orphans, which is
+#    what I expected and checked. They carry 10-45 triples each and each has 6+
+#    inbound ownedBy / hasOwner edges from urn:chorus:framework, :documents and
+#    :skills. They ARE the bare owner names section 7 counts — the 26,542 edges
+#    the door rejects point HERE. Deleting them orphans thousands of edges.
+#    They get merged into principal-<name>, by the owner rename Silas holds,
+#    and only then does the ontology-graph copy go.
+#
+# Nothing staged, nothing written. The finding is the deliverable.
