@@ -18,6 +18,7 @@ pub enum Rule {
     Binary,
     Class,
     Module,
+    Neighbor,
     Unit,
     Card,
 }
@@ -29,6 +30,7 @@ impl Rule {
             Rule::Binary => "binary",
             Rule::Class => "class",
             Rule::Module => "module",
+            Rule::Neighbor => "neighbor",
             Rule::Unit => "unit",
             Rule::Card => "card",
         }
@@ -257,7 +259,10 @@ fn manifest_name(text: &str, key: &str) -> Option<String> {
     text.lines()
         .map(str::trim)
         .find(|l| l.starts_with(key))
-        .and_then(|l| l.split(&['"', '\''][..]).nth(1))
+        // The value is what follows the KEY. Splitting the whole line on the
+        // quote returns `name` for `"name": "clearing"` — every package.json in
+        // the tree read as the unit "name" until 2026-09-18.
+        .and_then(|l| l[key.len()..].split(&['"', '\''][..]).nth(1))
         .map(|n| n.trim().to_string())
         .filter(|n| !n.is_empty())
 }
@@ -396,11 +401,195 @@ pub fn place(
 }
 
 /// `place`, plus the unit the file declares itself part of (rule 4b, #4201).
+/// The quoted specs of a file's RELATIVE imports — `../src/coherence-check`,
+/// `./helpers`. #4201: a test that imports a source file is testing THAT file,
+/// and the source file names routes and classes the test itself never spells.
+pub fn relative_imports(content: &str) -> Vec<String> {
+    let mut out: Vec<String> = Vec::new();
+    for line in content.lines() {
+        let l = line.trim_start();
+        if l.starts_with("//") || l.starts_with("*") {
+            continue;
+        }
+        if !(l.contains("from ") || l.contains("require(") || l.contains("import(")) {
+            continue;
+        }
+        for q in ['\'', '"'] {
+            let mut it = l.split(q);
+            it.next();
+            while let Some(spec) = it.next() {
+                if spec.starts_with("./") || spec.starts_with("../") {
+                    if !out.contains(&spec.to_string()) {
+                        out.push(spec.to_string());
+                    }
+                }
+                if it.next().is_none() {
+                    break;
+                }
+            }
+        }
+    }
+    out
+}
+
+/// `spec` resolved against `from`'s directory, with the extensions a JS/TS
+/// import may omit. Returns candidates in probe order, not a proven file.
+pub fn resolve_relative(from: &str, spec: &str) -> Vec<String> {
+    let mut dir: Vec<&str> = from.split('/').collect();
+    dir.pop();
+    let mut parts: Vec<String> = dir.iter().map(|s| s.to_string()).collect();
+    for seg in spec.split('/') {
+        match seg {
+            "." | "" => {}
+            ".." => {
+                parts.pop();
+            }
+            other => parts.push(other.to_string()),
+        }
+    }
+    let base = parts.join("/");
+    let stem = base.strip_suffix(".js").unwrap_or(&base).to_string();
+    let mut out = vec![base.clone()];
+    for ext in [".ts", ".tsx", ".js", ".cjs", ".mjs", ".rs"] {
+        out.push(format!("{stem}{ext}"));
+    }
+    for idx in ["/index.ts", "/index.js"] {
+        out.push(format!("{stem}{idx}"));
+    }
+    out.dedup();
+    out
+}
+
+/// The four external rules read against one file's content — no unit, no card,
+/// no recursion. This is what the neighbour rule asks of an imported file.
+fn external_signal(content: &str, valid: &[String]) -> Option<Signal> {
+    let imports = import_lines(content);
+    for s in [
+        fire(Rule::Route, ROUTES, content, valid),
+        fire(Rule::Binary, BINARIES, content, valid),
+        fire(Rule::Class, CLASSES, content, valid),
+        fire(Rule::Module, MODULES, &imports, valid),
+    ]
+    .into_iter()
+    .flatten()
+    {
+        if !s.domain.is_empty() {
+            return Some(s);
+        }
+    }
+    None
+}
+
+/// #4201 — the file a test imports is the file it exercises. Reads each
+/// relative import target and takes the first single domain the external rules
+/// find there. One hop only: a neighbour's neighbours are not consulted.
+pub fn place_by_neighbor(
+    content: &str,
+    path: &str,
+    valid: &[String],
+    read: &dyn Fn(&str) -> Option<String>,
+) -> Option<Signal> {
+    let mut found: Vec<Signal> = Vec::new();
+    for spec in relative_imports(content) {
+        for cand in resolve_relative(path, &spec) {
+            let Some(text) = read(&cand) else { continue };
+            if let Some(s) = external_signal(&text, valid) {
+                if !found.iter().any(|f: &Signal| f.domain == s.domain) {
+                    found.push(Signal {
+                        rule: Rule::Neighbor,
+                        domain: s.domain,
+                        evidence: format!("{spec} ({})", s.evidence),
+                    });
+                }
+            }
+            break;
+        }
+    }
+    match found.len() {
+        0 => None,
+        1 => found.pop(),
+        _ => {
+            let ev = found
+                .iter()
+                .map(|h| format!("{}={}", h.evidence, h.domain))
+                .collect::<Vec<_>>()
+                .join(", ");
+            Some(Signal {
+                rule: Rule::Neighbor,
+                domain: String::new(),
+                evidence: ev,
+            })
+        }
+    }
+}
+
+/// The authored unit → domain rows (`roles/silas/ontology/unit-domain-4084.ttl`,
+/// #4084). Keyed on `launchdLabel`, so a crate matches only when the label is
+/// its plain name or `com.chorus.<name>` / `com.gathering.<name>`.
+pub fn unit_domain_rows(ttl: &str) -> Vec<(String, String)> {
+    let mut out: Vec<(String, String)> = Vec::new();
+    let mut label: Option<String> = None;
+    for line in ttl.lines() {
+        let l = line.trim();
+        if l.starts_with('#') {
+            continue;
+        }
+        if let Some(rest) = l.split("chorus:launchdLabel").nth(1) {
+            label = rest.split('"').nth(1).map(str::to_string);
+        }
+        if let Some(rest) = l.split("chorus:hasDomain").nth(1) {
+            if let Some(lb) = label.take() {
+                let dom = rest
+                    .trim()
+                    .trim_end_matches(&[' ', '.', ';'][..])
+                    .trim_start_matches("chorus:")
+                    .to_string();
+                if !dom.is_empty() {
+                    out.push((lb, dom));
+                }
+            }
+        }
+    }
+    out
+}
+
+/// `unit` looked up in the authored rows, allowing for the launchd prefix.
+fn unit_row_domain(unit: &str, rows: &[(String, String)], valid: &[String]) -> Option<Signal> {
+    for (label, dom) in rows {
+        let plain = label
+            .strip_prefix("com.chorus.")
+            .or_else(|| label.strip_prefix("com.gathering."))
+            .unwrap_or(label);
+        if (plain == unit || label == unit) && valid.iter().any(|v| v == dom) {
+            return Some(Signal {
+                rule: Rule::Unit,
+                domain: dom.clone(),
+                evidence: format!("{label} (authored)"),
+            });
+        }
+    }
+    None
+}
+
 pub fn place_in_unit(
     content: &str,
     unit: Option<&str>,
     valid: &[String],
     card_domain: &dyn Fn(u32) -> Option<String>,
+) -> Placement {
+    place_in_file(content, "", unit, &[], valid, card_domain, &|_| None)
+}
+
+/// The full rule set, including the neighbour rule, which needs the file's own
+/// path and a reader to follow a relative import.
+pub fn place_in_file(
+    content: &str,
+    path: &str,
+    unit: Option<&str>,
+    unit_rows: &[(String, String)],
+    valid: &[String],
+    card_domain: &dyn Fn(u32) -> Option<String>,
+    read: &dyn Fn(&str) -> Option<String>,
 ) -> Placement {
     let mut signals: Vec<Signal> = Vec::new();
     if let Some(s) = fire(Rule::Route, ROUTES, content, valid) {
@@ -418,9 +607,19 @@ pub fn place_in_unit(
     }
     // Only when nothing external was named: a file that imports a unit is
     // testing THAT unit, and must not be overridden by the crate it lives in.
+    // Only when nothing in this file named a domain: follow what it imports.
+    if signals.is_empty() {
+        if let Some(s) = place_by_neighbor(content, path, valid, read) {
+            signals.push(s);
+        }
+    }
     if signals.is_empty() {
         if let Some(u) = unit {
-            if let Some(s) = fire(Rule::Unit, UNITS, u, valid) {
+            // The code table carries Jeff's explicit rulings; the authored
+            // rows (#4084) carry everything else.
+            if let Some(s) = fire(Rule::Unit, UNITS, u, valid)
+                .or_else(|| unit_row_domain(u, unit_rows, valid))
+            {
                 signals.push(s);
             }
         }
@@ -663,5 +862,153 @@ mod tests_4201 {
     fn counts_render_the_five_numbers() {
         let c = TagCounts { read: 10, placed: 7, conflicts: 2, unplaced: 1 };
         assert_eq!(c.render(), "test files read=10 placed=7 conflicts=2 unplaced=1");
+    }
+    // ---- #4201 the neighbour rule ----
+
+    /// NEGATIVE PROOF. The 99 `platform/api/tests` files look like this: no
+    /// route string, no class name, no external unit — every signal lives in
+    /// the source file they import. Without the neighbour rule the file fires
+    /// nothing and lands on the `tests` fallback.
+    #[test]
+    fn a_test_takes_the_domain_of_the_source_file_it_imports() {
+        let test = "import { checkCoherence } from '../src/coherence-check';\n\
+                    describe('checkCoherence', () => { it('drifts', () => {}); });";
+        let src = "app.get('/api/chorus/context/roles', (req, res) => res.json(roles));";
+        let read = |p: &str| (p == "platform/api/src/coherence-check.ts").then(|| src.to_string());
+
+        // the guarded condition VIOLATED: no reader, the neighbour is unreadable
+        assert_eq!(
+            place_in_file(test, "platform/api/tests/coherence.test.ts", None, &[], &valid(), &no_card, &|_| None),
+            Placement::Unplaced,
+            "with no neighbour to read, this file must stay unplaced"
+        );
+        // and with the neighbour readable
+        let p = place_in_file(test, "platform/api/tests/coherence.test.ts", None, &[], &valid(), &no_card, &read);
+        assert_eq!(p.domain(), Some("roles"));
+    }
+
+    /// CONTROL: the file's own signal still wins. A neighbour must never
+    /// override a route the test itself spells.
+    #[test]
+    fn the_files_own_signal_beats_its_neighbor() {
+        let test = "import { x } from '../src/thing';\nrequest(app).get('/api/chorus/cards');";
+        let src = "app.get('/api/chorus/context/roles', h);";
+        let read = |_: &str| Some(src.to_string());
+        let p = place_in_file(test, "platform/api/tests/a.test.ts", None, &[], &valid(), &no_card, &read);
+        assert_eq!(p.domain(), Some("cards"));
+    }
+
+    /// CONTROL: two neighbours naming different domains is a conflict to read,
+    /// not a coin flip.
+    #[test]
+    fn two_neighbors_disagreeing_is_a_conflict() {
+        let test = "import a from '../src/a';\nimport b from '../src/b';";
+        let read = |p: &str| match p {
+            "x/src/a.ts" => Some("app.get('/api/chorus/cards', h);".to_string()),
+            "x/src/b.ts" => Some("app.get('/api/chorus/context/roles', h);".to_string()),
+            _ => None,
+        };
+        let p = place_in_file(test, "x/tests/t.test.ts", None, &[], &valid(), &no_card, &read);
+        assert!(matches!(p, Placement::Conflict { .. }), "got {p:?}");
+    }
+
+    /// CONTROL: one hop only. The neighbour's OWN imports are not followed —
+    /// otherwise a shared helper drags every test into one domain.
+    #[test]
+    fn the_hop_does_not_recurse() {
+        let test = "import { h } from './helper';";
+        let read = |p: &str| match p {
+            "x/tests/helper.ts" => Some("import { q } from '../src/deep';".to_string()),
+            "x/src/deep.ts" => Some("app.get('/api/chorus/cards', h);".to_string()),
+            _ => None,
+        };
+        assert_eq!(
+            place_in_file(test, "x/tests/t.test.ts", None, &[], &valid(), &no_card, &read),
+            Placement::Unplaced
+        );
+    }
+
+    #[test]
+    fn resolve_relative_walks_up_and_tries_the_extensions() {
+        let c = resolve_relative("platform/api/tests/a.test.ts", "../src/coherence-check");
+        assert!(c.contains(&"platform/api/src/coherence-check.ts".to_string()), "{c:?}");
+        let js = resolve_relative("a/b/t.ts", "./x.js");
+        assert!(js.contains(&"a/b/x.ts".to_string()), "{js:?}");
+    }
+
+    #[test]
+    fn relative_imports_ignores_packages_and_comments() {
+        let c = "// import { a } from '../src/commented';\n\
+                 import express from 'express';\n\
+                 const { b } = require('./real');\n";
+        assert_eq!(relative_imports(c), vec!["./real".to_string()]);
+    }
+    /// NEGATIVE PROOF for the authored rows. `clearing` is a crate, not a
+    /// LaunchAgent name, so the code table has never held it — 56 of its test
+    /// files sat unplaced. #4084 already authored `clearing → messages`; the
+    /// unit rule was simply not reading that file.
+    #[test]
+    fn the_unit_rule_reads_the_authored_rows() {
+        let ttl = "chorus:unitdomain-clearing a chorus:UnitDomainMapping ;\n    \
+                   chorus:launchdLabel \"com.chorus.clearing\" ;\n    \
+                   chorus:hasDomain chorus:messages .\n";
+        let rows = unit_domain_rows(ttl);
+        assert_eq!(rows, vec![("com.chorus.clearing".to_string(), "messages".to_string())]);
+        let mut v = valid();
+        v.push("messages".to_string());
+        let c = "describe('bridge', () => {});";
+
+        // the guarded condition VIOLATED: no authored rows to read
+        assert_eq!(
+            place_in_file(c, "directing/clearing/tests/a.test.ts", Some("clearing"), &[], &v, &no_card, &|_| None),
+            Placement::Unplaced,
+            "with no authored rows this file must stay unplaced"
+        );
+        let p = place_in_file(c, "directing/clearing/tests/a.test.ts", Some("clearing"), &rows, &v, &no_card, &|_| None);
+        assert_eq!(p.domain(), Some("messages"));
+    }
+
+    /// CONTROL: a unit with no authored row stays unplaced — the rule must not
+    /// guess from the nearest label.
+    #[test]
+    fn a_unit_with_no_authored_row_stays_unplaced() {
+        let rows = vec![("com.chorus.clearing".to_string(), "messages".to_string())];
+        assert_eq!(
+            place_in_file("x", "a/b.test.ts", Some("clearing-ui"), &rows, &valid(), &no_card, &|_| None),
+            Placement::Unplaced
+        );
+    }
+
+    /// CONTROL: Jeff's ruling in the code table wins over an authored row.
+    #[test]
+    fn the_code_table_beats_an_authored_row() {
+        let rows = vec![("com.chorus.hooks".to_string(), "logs".to_string()),
+                        ("chorus-hooks".to_string(), "logs".to_string())];
+        let p = place_in_file("x", "a/b.rs", Some("chorus-hooks"), &rows, &valid(), &no_card, &|_| None);
+        assert_eq!(p.domain(), Some("spine"));
+    }
+    /// NEGATIVE PROOF: a package.json name. `"name": "clearing"` split on the
+    /// quote yields `name`, so EVERY npm package in the tree declared the unit
+    /// "clearing"… no: the unit "name". Both the unit rule and the authored
+    /// rows then looked up a word that is not a unit.
+    #[test]
+    fn a_package_json_declares_its_name_not_the_word_name() {
+        let read = |p: &str| {
+            (p == "directing/clearing/package.json")
+                .then(|| "{\n  \"name\": \"clearing\",\n  \"version\": \"1.0.0\"\n}".to_string())
+        };
+        assert_eq!(
+            declared_unit("directing/clearing/tests/a.test.ts", &read),
+            Some("clearing".to_string())
+        );
+    }
+
+    /// CONTROL: the Cargo spelling still reads.
+    #[test]
+    fn a_cargo_toml_still_declares_its_name() {
+        let read = |p: &str| {
+            (p == "x/Cargo.toml").then(|| "[package]\nname = \"chorus-hooks\"\n".to_string())
+        };
+        assert_eq!(declared_unit("x/src/a.rs", &read), Some("chorus-hooks".to_string()));
     }
 }

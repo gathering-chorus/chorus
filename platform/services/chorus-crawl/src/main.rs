@@ -760,12 +760,20 @@ struct Parsed {
     tag_lines: Vec<String>,
 }
 
+/// The authored unit → domain rows, relative to the tree root (#4084).
+const UNIT_DOMAIN_TTL: &str = "roles/silas/ontology/unit-domain-4084.ttl";
+
 fn parse_cases(
     root: &str,
     test_files: &[&str],
     valid_domains: &[String],
     card_domain: &dyn Fn(u32) -> Option<String>,
 ) -> Parsed {
+    // #4084's authored unit → domain rows, read once per run.
+    let unit_rows = domain::unit_domain_rows(
+        &std::fs::read_to_string(format!("{root}/{UNIT_DOMAIN_TTL}")).unwrap_or_default(),
+    );
+    let unit_rows = &unit_rows[..];
     let mut p = Parsed {
         desired: Vec::new(),
         parsed_files: Vec::new(),
@@ -810,8 +818,15 @@ fn parse_cases(
         let unit = domain::declared_unit(path, &|p: &str| {
             std::fs::read_to_string(std::path::Path::new(&root).join(p)).ok()
         });
-        let placement =
-            domain::place_in_unit(&content, unit.as_deref(), valid_domains, card_domain);
+        let placement = domain::place_in_file(
+            &content,
+            path,
+            unit.as_deref(),
+            unit_rows,
+            valid_domains,
+            card_domain,
+            &|p: &str| std::fs::read_to_string(std::path::Path::new(&root).join(p)).ok(),
+        );
         p.tags.read += 1;
         match &placement {
             domain::Placement::Tagged { .. } => p.tags.placed += 1,
@@ -880,7 +895,18 @@ fn seam(args: &[String]) -> bool {
             // unit rule included, or it reports a file unplaced that the pass
             // places (seen 2026-09-17 on chorus-hooks).
             let unit = domain::declared_unit(&path, &|p: &str| std::fs::read_to_string(p).ok());
-            let placement = domain::place_in_unit(&content, unit.as_deref(), &valid, &|_| None);
+            let unit_rows = domain::unit_domain_rows(
+                &std::fs::read_to_string(UNIT_DOMAIN_TTL).unwrap_or_default(),
+            );
+            let placement = domain::place_in_file(
+                &content,
+                &path,
+                unit.as_deref(),
+                &unit_rows,
+                &valid,
+                &|_| None,
+                &|p: &str| std::fs::read_to_string(p).ok(),
+            );
             let concern = cases::file_class(&path, &content).concern;
             let covers = cases::covers_from(placement.domain(), concern);
             match domain::listing(&path, &placement) {
