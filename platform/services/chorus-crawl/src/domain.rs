@@ -721,6 +721,15 @@ pub fn place_in_file(
             signals.push(ud.clone());
         }
     }
+    // The file's OWN route, derived, when the tables found nothing in it. Same
+    // rule as the neighbour hop: exactly one live domain named, or silence.
+    // Fired BEFORE the import hop because a file that calls a route is more
+    // directly about it than the file it happens to import.
+    if signals.is_empty() {
+        if let Some(s) = route_segment_signal(content, valid) {
+            signals.push(s);
+        }
+    }
     // Only when nothing in this file named a domain: follow what it imports.
     if signals.is_empty() {
         if let Some(s) = place_by_neighbor(content, path, valid, read) {
@@ -1338,5 +1347,31 @@ mod tests_4201 {
             place_in_file(test, "a/tests/t.test.ts", None, &[], &v, &no_card, &read),
             Placement::Unplaced
         );
+    }
+    /// NEGATIVE PROOF: an integration test that calls a route the table has
+    /// never heard of. 172 of the unplaced files import nothing at all — they
+    /// reach the API over HTTP — so the neighbour hop cannot help them and the
+    /// hand-kept table is the only thing that could have.
+    #[test]
+    fn a_file_calling_one_unlisted_route_places_on_its_own() {
+        let v = valid();
+        // `deploys` is live and has no ROUTES row
+        let c = "const r = await fetch('http://localhost:3340/api/chorus/deploys/x');";
+        assert_eq!(
+            fire(Rule::Route, ROUTES, c, &v),
+            None,
+            "the table must genuinely not cover this — otherwise the proof is hollow"
+        );
+        assert_eq!(place(c, &v, &no_card).domain(), Some("deploys"));
+    }
+
+    /// CONTROL: it only speaks when nothing else did. A file that also calls a
+    /// LISTED route keeps the table's answer instead of gaining a second one.
+    #[test]
+    fn the_derived_route_never_competes_with_a_rule_that_fired() {
+        let v = valid();
+        let c = "await fetch('/api/chorus/cards');\nawait fetch('/api/chorus/deploys/x');";
+        let p = place(c, &v, &no_card);
+        assert_eq!(p.domain(), Some("cards"), "{p:?}");
     }
 }
