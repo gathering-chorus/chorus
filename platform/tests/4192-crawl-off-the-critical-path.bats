@@ -49,6 +49,31 @@ setup() {
   crawl=$(grep -n 'name: crawl-delta$' "$yml" | cut -d: -f1)
   [ -n "$accept" ]; [ -n "$crawl" ]
   [ "$crawl" -gt "$accept" ]
-  run grep -A 6 'name: crawl-delta$' "$yml"
+  # Read the STEP, not a fixed window. `grep -A 6` measured six lines and
+  # called that the step: adding a four-line comment to the step on 2026-09-18
+  # pushed `run:` out of view and reded this test with the workflow unchanged.
+  # awk from this step's name to the next one, however long it is.
+  run awk '/name: crawl-delta$/{f=1} f&&/^      - name: /&&!/crawl-delta/{exit} f' "$yml"
   has "crawl-detached.sh"
+}
+
+# NEGATIVE PROOF (#3734) for the change above: a window read cannot tell a step
+# that lost its `run:` from a step that merely grew a comment. The derived read
+# can — it still REDS when the line is actually gone.
+@test "NEGATIVE PROOF: the step read reds when run: is actually missing" {
+  yml="$BATS_TEST_TMPDIR/werk.yml"
+  { echo "      - name: crawl-delta"
+    echo "        continue-on-error: true"
+    echo "        env:"
+    for i in 1 2 3 4 5 6 7 8; do echo "          # padding line $i"; done
+    echo "          CHORUS_ROLE: kade"
+    echo "      - name: outcome"
+    echo "        run: bash crawl-detached.sh"
+  } > "$yml"
+  # the padding alone must not hide a present run: — and the next step's
+  # crawl-detached.sh must not be mistaken for this step's
+  run awk '/name: crawl-delta$/{f=1} f&&/^      - name: /&&!/crawl-delta/{exit} f' "$yml"
+  if grep -qF 'crawl-detached.sh' <<<"$output"; then
+    echo "read past the step boundary" >&2; return 1
+  fi
 }
