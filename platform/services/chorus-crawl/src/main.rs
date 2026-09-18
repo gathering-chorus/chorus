@@ -722,7 +722,10 @@ fn case_row_json(name: &str, row: &CaseRow) -> String {
 /// not a crate; its #[test] fns run under the including crate's names, so a row
 /// registered here is a name no lane can ever emit.
 fn registers_cases(path: &str) -> bool {
-    !path.contains("platform/services/shared/")
+    // #4201 — a file under tests/fixtures/ is DATA a test reads, not a suite.
+    // My two placement fixtures landed in the registry the run after I wrote
+    // them and moved the counts they exist to prove (read 1045 -> 1048).
+    !path.contains("platform/services/shared/") && !path.contains("/tests/fixtures/")
 }
 
 #[cfg(test)]
@@ -735,6 +738,14 @@ mod registers_cases_4131 {
     #[test]
     fn negative_proof_the_shared_source_dir_registers_no_cases_and_a_crate_does() {
         assert!(!registers_cases("platform/services/shared/scope_units.rs"));
+        // #4201 — fixture data, read by a proof, never run as a suite
+        assert!(!registers_cases(
+            "platform/services/chorus-crawl/tests/fixtures/route-cards-header-search.test.ts"
+        ));
+        assert!(
+            registers_cases("platform/services/chorus-crawl/tests/ac_fixtures_4201.rs"),
+            "control: the proof itself is a real suite and does register"
+        );
         assert!(
             registers_cases("platform/services/werk-test/src/lib.rs"),
             "control: a real crate's file does register"

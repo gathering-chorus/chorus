@@ -302,9 +302,31 @@ const MODULES: &[(&str, &str)] = &[
 /// Every hit a table makes, uncollapsed. `fire` folds several domains into one
 /// empty-domain signal, which hides WHICH rules agree — the plurality below
 /// needs to count them.
+/// True when `content` DEFINES `name` as its own type. #4201 — the class rule
+/// reads a graph class name anywhere in a file, and chorus-hooks declares its
+/// own `pub struct Commitment` (an autonomy commitment, nothing to do with the
+/// services registry's Commitment row). 31 of the 74 cases left covering
+/// `services` were that one file. A file that defines a name is that name's
+/// home, not a test of the graph class that happens to share it.
+fn defines_locally(content: &str, name: &str) -> bool {
+    content.lines().map(str::trim_start).any(|l| {
+        ["struct", "class", "interface", "enum", "type"].iter().any(|kw| {
+            let head = l.strip_prefix("pub ").unwrap_or(l);
+            let head = head.strip_prefix("export ").unwrap_or(head);
+            head.strip_prefix(kw)
+                .and_then(|r| r.strip_prefix(' '))
+                .map(|r| r.trim_start().starts_with(name))
+                .unwrap_or(false)
+        })
+    })
+}
+
 fn fire_all(rule: Rule, table: &[(&str, &str)], hay: &str, valid: &[String]) -> Vec<Signal> {
     let mut hits: Vec<Signal> = Vec::new();
     for (needle, dom) in table.iter().copied() {
+        if rule == Rule::Class && defines_locally(hay, needle) {
+            continue;
+        }
         if hay.contains(needle)
             && valid.iter().any(|v| v == dom)
             && !hits.iter().any(|h| h.domain == dom)
@@ -1057,5 +1079,24 @@ mod tests_4201 {
         // plurality: route, binary and module all name domains
         let many = "app.get('/api/athena/x');\nimport { a } from 'athena-make';\n                    const s: ValueStreamStep = q;\nconst bin = 'athena-make';";
         assert_eq!(place(many, &v, &no_card).domain(), Some("domains"));
+    }
+    /// NEGATIVE PROOF: chorus-hooks declares `pub struct Commitment` — its own
+    /// autonomy commitment, not the services registry's row. The class rule
+    /// read the word and tagged the file `services`, 31 cases of it.
+    #[test]
+    fn a_locally_defined_type_does_not_fire_the_class_rule() {
+        let defines = "pub struct Commitment {\n    pub id: String,\n}\n                       fn load(p: &Path) -> Vec<Commitment> { vec![] }";
+        assert_eq!(place(defines, &valid(), &no_card), Placement::Unplaced);
+        // and with the unit known, it falls to the unit rule as it should
+        let p = place_in_file(defines, "platform/services/chorus-hooks/src/x.rs",
+            Some("chorus-hooks"), &[], &valid(), &no_card, &|_| None);
+        assert_eq!(p.domain(), Some("spine"));
+    }
+
+    /// CONTROL: a file that USES the class without defining it still fires.
+    #[test]
+    fn using_a_class_it_does_not_define_still_fires() {
+        let uses = "const c: Commitment = await get('/x');\nexpect(c.id).toBe('a');";
+        assert_eq!(place(uses, &valid(), &no_card).domain(), Some("services"));
     }
 }
