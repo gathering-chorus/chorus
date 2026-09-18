@@ -828,33 +828,17 @@ chorus:gathering a chorus:Product ;
     # Gathering's hasDomain edges (music, photos, books, …) are declared in the
     # containment block below.
 
-chorus:chorusProduct a chorus:Product ;
-    rdfs:label "Chorus (Product)" ;
-    rdfs:comment "The coordination protocol — hooks, scripts, gates, dashboards, spine, shared memory index. The nervous system." ;
-    chorus:ownedBy chorus:principal-jeff ;
-    chorus:vision "A multi-agent/human team that builds a platform for building systems — coordination itself modeled, observable, improvable." ;
-    chorus:valueProposition "Three AI roles and one human work as a real team: shared memory, one board, one audit spine, gates at the right moments." ;
-    chorus:audience "Jeff and the three roles, and future teams adopting the method." ;
-    chorus:status "operating" ;
-    chorus:gaps "hasDesignDoc unfilled (no Document instances in graph). V1/V2 domain-layer convergence outstanding." ;
-    chorus:atStep chorus:Directing ;
-    chorus:hasDomain chorus:memory, chorus:knowledge, chorus:search .
+# #4187 — chorus:chorus merged into its short name 2026-09-18 and removed here.
+# The store merge alone did not hold: the next deploy re-created it from this
+# file. A merge is a SOURCE edit or it is temporary.
     # #3603: chorusProduct was typed here but UNTYPED in the live graph (drift).
     # Source is authoritative; the migration re-types it live. memory/knowledge/search
     # stay direct chorusProduct domains (cross-product capabilities, no child home).
 
 # Borg is its own product, incubating inside Chorus.
-chorus:borgProduct a chorus:Product ;
-    rdfs:label "Borg" ;
-    rdfs:comment "Reflection — the system sees itself. Heralds discover structure, observability surfaces health, the graph assimilates it. Incubating inside Chorus. Owner: Silas. PM: Wren." ;
-    chorus:ownedBy chorus:principal-silas ;
-    chorus:vision "A model-driven reflect cycle where monitor and alert are ontology domains whose contracts generate, the page renders a verdict not a readout, and the capability travels generatively to run with chorus off." ;
-    chorus:valueProposition "Borg's product isn't dashboards — it's Jeff's attention back: it surfaces the one thing that needs a person, calmly, to the owner, so no human is ever the first to notice a stall." ;
-    chorus:audience "The roles (to self-coordinate and catch a dark peer, flapping service, or drift before Jeff does) and Jeff (outcomes only — a calm board, or the single thing that needs him)." ;
-    chorus:status "building" ;
-    chorus:gaps "hasDesignDoc unfilled (no Document instances in graph). Probes were bespoke and lied, no liveness or crash-loop signal, alerts hand-routed, no Borg page. (Content folded from product-borg, retired dup — #3603.)" ;
-    chorus:atStep chorus:Proving ;
-    chorus:partOf chorus:chorusProduct .
+# #4187 — chorus:borg merged into its short name 2026-09-18 and removed here.
+# The store merge alone did not hold: the next deploy re-created it from this
+# file. A merge is a SOURCE edit or it is temporary.
     # #3603: Borg joins the Chorus child roster per Jeff (was partOf chorusStream
     # only). Its hasDomain edges are declared in the containment block below.
 
@@ -868,7 +852,7 @@ chorus:heralds-domain a chorus:SubDomain ;
     rdfs:comment "Discovery agents that scan surfaces and write to the instances graph. Five heralds: code, tests, pages, endpoints, services. The system seeing itself." ;
     chorus:ownedBy chorus:principal-kade ;
     chorus:primaryStep chorus:Reflecting ;
-    chorus:belongsTo chorus:borgProduct .
+    chorus:belongsTo chorus:borg .
 
 # --- Service Designs ---
 
@@ -884,7 +868,7 @@ chorus:chorus-api-service-design a chorus:ServiceDesign ;
 # "No subproducts — products are children of products" (DEC 2026-06-25). The five
 # live chorus:SubProduct instances (loom, clearing-product, quality-product,
 # athena-product, convergence-product) + phantom werk-product are RETIRED; each
-# survivor is re-authored as a typed chorus:Product, partOf chorus:chorusProduct,
+# survivor is re-authored as a typed chorus:Product, partOf chorus:chorus,
 # at the ProductShape floor. quality-product retires WITHOUT a successor (zero
 # domains, dead). Roster per Jeff (2026-07-03): Chorus → {Athena, Loom, Werk, Borg,
 # Clearing→{Spine, Pulse}, Convergence}; Gathering top-level. Senses: not a product
@@ -962,7 +946,7 @@ chorus:observability-domain a chorus:SubDomain ;
     rdfs:comment "The system seeing itself. Aggregated health lens: metrics, logs, dashboards, instrumentation, infrastructure, security, pulse (agent vital signs). The domain that makes Borg a product." ;
     chorus:ownedBy chorus:principal-silas ;
     chorus:primaryStep chorus:Proving ;
-    chorus:belongsTo chorus:borgProduct .
+    chorus:belongsTo chorus:borg .
 
 chorus:toolchain-domain a chorus:SubDomain ;
     rdfs:label "Toolchain" ;
@@ -1348,7 +1332,7 @@ chorus:observability-domain chorus:hasDomain chorus:time-domain .
 # (loom-policies, domains-domain, services-domain edges: on the product definitions above — #3603)
 
 # Borg has two domains: Observability and Heralds (DEC-2090)
-chorus:borgProduct chorus:hasDomain chorus:observability-domain, chorus:properties, chorus:security .   # #3587: repointed from security-domain → security (V2 canonical); security also has partOf borgProduct
+chorus:borg chorus:hasDomain chorus:observability-domain, chorus:properties, chorus:security .   # #3587: repointed from security-domain → security (V2 canonical); security also has partOf borgProduct
 # ^ chorus:properties wired via hasDomain (product→domain membership, what owl-api enumerates to
 # bind the domain API to its product) AS WELL AS partOf (single-parent ownership, #3450). Reciprocal
 # pair, same as observability (belongsTo + hasDomain). #3489: re-homed from observability → borg direct.
@@ -1372,12 +1356,12 @@ chorus:gathering chorus:hasDomain chorus:music-domain, chorus:photos-domain, cho
 # --- Product → Service consumption edges ---
 
 # observability-product consumes moved to borgProduct
-chorus:borgProduct chorus:consumes chorus:infrastructure-domain, chorus:logs-domain,
+chorus:borg chorus:consumes chorus:infrastructure-domain, chorus:logs-domain,
                                    chorus:alerts-monitors-domain, chorus:deploys-domain .
 
 # --- Product → Service provision edges ---
 
-chorus:chorusProduct chorus:provides chorus:observability-domain, chorus:infrastructure-domain,
+chorus:chorus chorus:provides chorus:observability-domain, chorus:infrastructure-domain,
                                      chorus:logs-domain, chorus:alerts-monitors-domain,
                                      chorus:deploys-domain, chorus:cards-service,
                                      chorus:skills-service, chorus:gates-service,
@@ -1388,12 +1372,12 @@ chorus:chorusProduct chorus:provides chorus:observability-domain, chorus:infrast
 # definition). The hasSubProduct edges and the SubProduct class are gone.
 
 # Borg heralds grouped as single subdomain (DEC-2090)
-chorus:borgProduct chorus:hasDomain chorus:heralds-domain .
+chorus:borg chorus:hasDomain chorus:heralds-domain .
 
 # --- Product → ServiceDesign ---
 
 chorus:gathering chorus:hasServiceDesign chorus:gathering-service-design .
-chorus:chorusProduct chorus:hasServiceDesign chorus:chorus-api-service-design .
+chorus:chorus chorus:hasServiceDesign chorus:chorus-api-service-design .
 
 # (#3603: athena-domain hasDomain edge is on athenaProduct's definition above.)
 
@@ -1493,7 +1477,7 @@ chorus:partOf a owl:ObjectProperty ;
 # Seed slice — coherent chains that resolve up to chorusStream. #3603: child
 # products carry partOf on their definitions; borgProduct re-parented
 # chorusStream→chorusProduct per Jeff's roster (partOf is functional — one parent).
-chorus:chorusProduct chorus:partOf chorus:chorusStream .
+chorus:chorus chorus:partOf chorus:chorusStream .
 # #4131 — `chorus:chorus` is the products-domain row every sub-product (werk,
 # gates-service, cards-service, borg...) climbs to; without a parent the chain
 # dead-ends at a Product and ownership-partof-chain.test.sh is red every night.
@@ -1503,8 +1487,8 @@ chorus:chorusProduct chorus:partOf chorus:chorusStream .
 # transaction, exactly like chorusProduct -> chorusStream one line up.
 chorus:chorus        chorus:partOf chorus:chorusStream .
 chorus:gathering     chorus:partOf chorus:chorusStream .
-chorus:observability-domain chorus:partOf chorus:borgProduct .
-chorus:infrastructure-domain chorus:partOf chorus:borgProduct .
+chorus:observability-domain chorus:partOf chorus:borg .
+chorus:infrastructure-domain chorus:partOf chorus:borg .
 chorus:gates-service chorus:partOf chorus:werk .
 chorus:cards-service chorus:partOf chorus:werk .
 
@@ -2532,7 +2516,7 @@ chorus:CommitmentShape a sh:NodeShape ;
 chorus:properties a owl:Class , chorus:Domain ;
     rdfs:label "properties" ;
     rdfs:comment "Config-as-data domain: service configuration + runtime properties governed as a registry (PropertyKey register-before-use). ADR-045 first worked example of domain-as-owl-class." ;
-    chorus:partOf chorus:borgProduct ;
+    chorus:partOf chorus:borg ;
     chorus:atStream chorus:chorusStream ;
     chorus:atStep chorus:Proving ;
     chorus:ownedBy chorus:principal-silas ;

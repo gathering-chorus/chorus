@@ -144,7 +144,7 @@ chorus:board a owl:Class, chorus:Domain ;
   chorus:comment "The team's work board — cards grouped into chunks and ordered for execution." ;
   chorus:purpose "Group work into committed chunks with deterministic ordering so roles run bigger units without colliding on loose cards." ;
   chorus:ownedBy chorus:principal-wren ;
-  chorus:partOf chorus:chorusProduct ;
+  chorus:partOf chorus:chorus ;
   chorus:atStep chorus:Directing ;
   chorus:atStream chorus:chorusStream ;
   chorus:status "building" ;
