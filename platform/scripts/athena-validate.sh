@@ -183,6 +183,41 @@ print(f"V1TOTAL={total}")
   fi
 fi
 
+# 7. #4187 — an ownedBy whose object is not an existing Principal. Jeff, relayed
+# by Silas 2026-09-18 10:12, after Kade measured 26,751 rejected owners (3% of
+# 840,786 edges) and 15 distinct owner names for about six actors. The door
+# compares the caller's principal to this object, so a row stamped with a name
+# the door does not know can never be written again — not even by the actor that
+# wrote it. Counted per owner name so the fix is a rename list, not a number.
+# A failed count is a violation, never a 0 — same rule as section 6.
+echo "7) ownedBy objects that are not a Principal (#4187 — the door can never write these):"
+OWN=$(Q "PREFIX c: <$NS> SELECT ?o (COUNT(*) AS ?n) WHERE { GRAPH ?g { ?s c:ownedBy ?o } FILTER(STRSTARTS(STR(?g), 'urn:chorus:')) FILTER NOT EXISTS { GRAPH ?pg { ?o a c:Principal } } } GROUP BY ?o ORDER BY DESC(?n)")
+if [ -z "$OWN" ]; then
+  echo "  ⚠️  owner-shape count FAILED — counted as a violation, never as 0"
+  echo "graph-issue|owner-not-principal|UNMEASURED|?|1"
+  BAD=$((BAD+1))
+else
+  NOWN=$(echo "$OWN" | python3 -c '
+import sys, json
+rows = json.load(sys.stdin)["results"]["bindings"]
+total = 0
+for b in rows:
+    o = b["o"]["value"].split("#")[-1].split("/")[-1]; n = int(b["n"]["value"])
+    total += n
+    print(f"  ⚠️  {o} {n}")
+    print(f"graph-issue|owner-not-principal|{o}|{n}")
+print(f"OWNTOTAL={total} NAMES={len(rows)}")
+' 2>/dev/null | tee /tmp/own-out.$$ | grep -o "OWNTOTAL=[0-9]*" | cut -d= -f2)
+  grep -v "^OWNTOTAL=" /tmp/own-out.$$; rm -f /tmp/own-out.$$
+  if [ -z "$NOWN" ]; then
+    echo "  ⚠️  owner-shape count unparseable — counted as a violation"; echo "graph-issue|owner-not-principal|UNMEASURED|?|1"; BAD=$((BAD+1))
+  elif [ "$NOWN" = "0" ]; then
+    echo "  ✅ every ownedBy object is a Principal the door knows"
+  else
+    echo "  ⚠️  $NOWN row(s) owned by a name that is not a Principal"; BAD=$((BAD+NOWN))
+  fi
+fi
+
 echo
 if [ "$BAD" = "0" ]; then
   echo "PROVEN CLEAN — no old/bad data in the instance graph."
