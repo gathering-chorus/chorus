@@ -86,10 +86,18 @@ export async function sparqlValues(q: string, fetchImpl: typeof fetch = fetch): 
     const body = (await res.json()) as {
       results?: { bindings?: Array<Record<string, { value?: string }>> };
     };
-    return (body.results?.bindings ?? []).map((row) => {
-      const first: { value?: string } | undefined = Object.values(row)[0];
-      return String(first?.value ?? '');
-    });
+    const bindings = body.results?.bindings ?? [];
+    const out: string[] = [];
+    for (const row of bindings) {
+      // #4220 — a row with no columns yields nothing rather than an empty
+      // string; indexing past the end is the case the optional chain used to
+      // cover, and the type system insisted it could not happen.
+      for (const cell of Object.values(row)) {
+        out.push(String(cell.value ?? ''));
+        break;
+      }
+    }
+    return out;
   } catch {
     return null;
   }
