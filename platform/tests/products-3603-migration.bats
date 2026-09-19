@@ -59,11 +59,17 @@ count() { # $1 = WHERE body -> prints integer
   # Was `-eq 8`, which reds on any deliberate addition and cannot say WHICH
   # product vanished. Naming the set keeps the disappearance proof and turns an
   # intentional change into a one-line edit that states what changed.
-  # #4187 2026-09-18: gathering joins the set. It was a real product that lived
-  # ONLY in the ontology graph, which is why /products served nine and not ten;
-  # rehoming it to urn:chorus:domains:products made it visible. A deliberate
-  # addition, stated here as the test was built to allow.
-  want="athena borg chorus clearing convergence gathering loom pulse spine werk"
+  # #4187 2026-09-18: gathering was added here on the reasoning that rehoming its
+  # row to urn:chorus:domains:products would make it visible. That was wrong, and
+  # it was not checked before the expectation was edited — rehoming fixed WHERE
+  # the row lives, not whether it passes the shape. gathering is missing docState
+  # and hasDesignDoc, both minCount 1 on ProductShape, so athena-make has never
+  # served it. Its own gaps field has said so since #3603: "hasDesignDoc unfilled
+  # (no Document instances in graph) — content domains predate the floor."
+  # Removed again 2026-09-19. It belongs back in this set the day it carries the
+  # two fields and not before; editing the expectation to match a wish is how a
+  # named-set guard stops being a guard.
+  want="athena borg chorus clearing convergence loom pulse spine werk"
   got="$(curl -sf --max-time 10 http://localhost:3360/products \
     | python3 -c 'import json,sys; d=json.load(sys.stdin).get("data",[]); print(" ".join(sorted(x.get("name","") for x in d)))' 2>/dev/null)"
   [ -n "$got" ] || skip "UNMEASURABLE: owl-api not answering"
