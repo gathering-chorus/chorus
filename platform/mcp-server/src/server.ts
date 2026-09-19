@@ -2426,7 +2426,7 @@ async function executeWerkVerb(
   extraEnv: Record<string, string>,
 ): Promise<{ content: Array<{ type: 'text'; text: string }> }> {
   const pathMod = require('path') as typeof import('path');
-  const binDir = process.env.CHORUS_BIN || pathMod.join(process.env.HOME || '', '.chorus/bin');
+  const binDir = chorusBinDir(pathMod);
   const binPath = pathMod.join(binDir, verb);
   const execFileP = promisify(execFile);
   let stdout: string; // assigned in both try and catch before first read
@@ -2497,29 +2497,61 @@ export function parseValidateSummary(stdout: string): { issues: number | null; s
   return { issues: Number.isFinite(n) ? n : null, state: m[2].trim() };
 }
 
-async function executeAthenaValidate(
-  args: string[], role: string,
-): Promise<{ content: Array<{ type: 'text'; text: string }> }> {
-  const pathMod = require('path') as typeof import('path');
-  const binDir = process.env.CHORUS_BIN || pathMod.join(process.env.HOME || '', '.chorus/bin');
+/** Where the signed chorus-* binaries are installed (#2734).
+ *
+ * This line was copy-pasted at five call sites and my #4187 change added a
+ * sixth, which tipped sonarjs/no-duplicate-string over its ratchet. One home
+ * for the literal, and the deploy location is stated once instead of six times.
+ */
+function chorusBinDir(pathMod: typeof import('path')): string {
+  return process.env.CHORUS_BIN || pathMod.join(process.env.HOME || '', '.chorus/bin');
+}
+
+/** Run the athena-validate binary and return its output with an exit code.
+ *
+ * Split out of executeAthenaValidate on 2026-09-19 (#4187): inlining it pushed
+ * that function over both the complexity and cognitive-complexity ratchets, and
+ * forced three useless pre-assignments. A child process that either returns
+ * output or throws a typed failure is its own unit of work.
+ *
+ * The distinction that matters: a NUMERIC code is the verb reporting a verdict
+ * (1 = dirty, 2 = unmeasured) and must be returned. A STRING code, or a kill,
+ * is the process failing to run at all, which is never a verdict and throws.
+ */
+async function runAthenaValidate(
+  bin: string, args: string[], role: string,
+): Promise<{ stdout: string; stderr: string; exitCode: number }> {
   const execFileP = promisify(execFile);
-  let stdout = ''; let stderr = ''; let exitCode = 0; let killed = false;
   try {
-    const r = await execFileP(pathMod.join(binDir, 'athena-validate'), args, {
+    const r = await execFileP(bin, args, {
       env: { ...process.env, DEPLOY_ROLE: role, CHORUS_ROLE: role, ATHENA_VALIDATE_NUDGE: '0',
         CHORUS_HOME: process.env.CHORUS_HOME || DEFAULT_CHORUS_HOME },
       timeout: VERB_TIMEOUT_MS, maxBuffer: 16 * 1024 * 1024,
     });
-    stdout = r.stdout || ''; stderr = r.stderr || '';
+    return { stdout: r.stdout || '', stderr: r.stderr || '', exitCode: 0 };
   } catch (err) {
     const e = err as NodeJS.ErrnoException & { code?: number | string; stdout?: string; stderr?: string; killed?: boolean; signal?: string | null };
-    stdout = e.stdout || ''; stderr = e.stderr || '';
-    exitCode = typeof e.code === 'number' ? e.code : 1;
-    killed = Boolean(e.killed || e.signal);
+    const stderrText = e.stderr || '';
+    const killed = Boolean(e.killed || e.signal);
     if (typeof e.code === 'string' || killed) {
-      throw new Error(`athena-validate-fail — reason=${killed ? 'killed after ' + VERB_TIMEOUT_MS + 'ms' : String(e.code)}${stderr.trim() ? ' stderr=' + stderr.trim().slice(0, 400) : ''}`);
+      const reason = killed ? `killed after ${VERB_TIMEOUT_MS}ms` : String(e.code);
+      const tail = stderrText.trim() ? ` stderr=${stderrText.trim().slice(0, 400)}` : '';
+      throw new Error(`athena-validate-fail — reason=${reason}${tail}`);
     }
+    return { stdout: e.stdout || '', stderr: stderrText, exitCode: typeof e.code === 'number' ? e.code : 1 };
   }
+}
+
+async function executeAthenaValidate(
+  args: string[], role: string,
+): Promise<{ content: Array<{ type: 'text'; text: string }> }> {
+  const pathMod = require('path') as typeof import('path');
+  const binDir = chorusBinDir(pathMod);
+  // The three `let ... = ''` initialisers this replaces were dead in every path:
+  // both branches assign before any read, which eslint counts as
+  // no-useless-assignment three times over. Running the child in its own helper
+  // gives one value back and leaves nothing to pre-seed.
+  const { stdout, exitCode } = await runAthenaValidate(pathMod.join(binDir, 'athena-validate'), args, role);
   const { issues, state } = parseValidateSummary(stdout);
   const verdict = exitCode === 2 || state === 'unreachable' ? 'unmeasured' : exitCode === 0 ? 'clean' : 'dirty';
   const report = stdout.split('\n').filter((l) => l.startsWith('graph-issue|') || l.startsWith('graph-summary|'));
@@ -2544,7 +2576,7 @@ async function executeRegisterFeedback(
   // the gather record's provenance is real (Kade+Silas catch: a role param lets
   // anyone register AS anyone). Mirrors werk-accept binding the accepter to the caller.
   const pathMod = require('path') as typeof import('path');
-  const binDir = process.env.CHORUS_BIN || pathMod.join(process.env.HOME || '', '.chorus/bin');
+  const binDir = chorusBinDir(pathMod);
   const binPath = pathMod.join(binDir, 'werk-demo');
   const execFileP = promisify(execFile);
   try {
@@ -2757,7 +2789,7 @@ function werkRunPaths() {
   const pathMod = require('path') as typeof import('path');
   const home = process.env.CHORUS_HOME || DEFAULT_CHORUS_HOME;
   const werkBase = process.env.CHORUS_WERK_BASE || '/Users/jeffbridwell/CascadeProjects/chorus-werk';
-  const binDir = process.env.CHORUS_BIN || pathMod.join(process.env.HOME || '', '.chorus/bin');
+  const binDir = chorusBinDir(pathMod);
   const scriptsDir = pathMod.join(home, 'platform', 'scripts');
   const workflow = pathMod.join(home, '.github', 'workflows', 'werk.yml');
   const actBin = process.env.CHORUS_ACT_BIN || 'act';
@@ -3022,7 +3054,7 @@ async function executeChorusWerkLandLocked(
   const pathMod = require('path') as typeof import('path');
   const home = process.env.CHORUS_HOME || DEFAULT_CHORUS_HOME;
   const werkBase = process.env.CHORUS_WERK_BASE || '/Users/jeffbridwell/CascadeProjects/chorus-werk';
-  const binDir = process.env.CHORUS_BIN || pathMod.join(process.env.HOME || '', '.chorus/bin');
+  const binDir = chorusBinDir(pathMod);
   const scriptsDir = pathMod.join(home, 'platform', 'scripts');
   const accepter = args.accepter || 'jeff';
   // #3193 — one-file pipeline: the land half is werk.yml's go-gated `land` job
