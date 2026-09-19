@@ -15,7 +15,7 @@ fn ranks(pairs: &[(&str, i64)]) -> Vec<(String, i64)> {
 }
 
 fn fixture_with_tree() -> RouteTable {
-    RouteTable { domain: String::new(), base_path: String::new(),
+    RouteTable { write_authority: String::new(), domain: String::new(), base_path: String::new(),
         class: "https://jeffbridwell.com/chorus#ValueStream".into(),
         fields: vec!["label|datatype:string".into(), "contains|edge:ValueStreamStep".into()],
         routes: {

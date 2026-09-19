@@ -37,6 +37,21 @@ chorus:expiresAt a owl:DatatypeProperty ;
     rdfs:domain chorus:Session ;
     rdfs:range xsd:string .
 
+# #4220 — A SESSION NEEDS AN END. Measured 2026-09-19: 31 rows, every one
+# sessionState=open, none ever closed, 21 already past their own expiresAt.
+# Without an end, "who is logged in" has no truthful answer and the rows only
+# accumulate — Jeff, on the login flow: "if this flow has bad data or unclear
+# semantic spec we will have issues".
+#
+# endedAt is the fact; sessionState=closed is the reading of it. They are
+# written together or not at all (the rule below), so a closed session always
+# says WHEN, and an open one never carries a false end.
+chorus:endedAt a owl:DatatypeProperty ;
+    rdfs:label "ended at" ;
+    rdfs:comment "When this session ended, ISO-8601 UTC. Absent while the session is open. A session that expired without being closed is ended-unclean: endedAt set, and the gap to expiresAt is the evidence. #4220." ;
+    rdfs:domain chorus:Session ;
+    rdfs:range xsd:string .
+
 chorus:sessionState a owl:DatatypeProperty ;
     rdfs:label "session state" ;
     rdfs:comment "open | closed. #4202." ;
@@ -64,7 +79,30 @@ chorus:SessionShape a sh:NodeShape ;
     sh:property chorus:SessionShape-issuedAt ;
     sh:property chorus:SessionShape-expiresAt ;
     sh:property chorus:SessionShape-sessionState ;
-    sh:property chorus:SessionShape-hostAccount .
+    sh:property chorus:SessionShape-hostAccount ;
+    sh:property chorus:SessionShape-endedAt ;
+    # #4220 — closed and endedAt travel together, in both directions. Without
+    # this the pair can disagree: a row marked closed with no time (when did it
+    # end?) or a row carrying an end while still reading open (is it live?).
+    # Either reading makes the count of who is logged in wrong, which is the
+    # whole reason the property exists.
+    sh:sparql chorus:SessionClosedNeedsEndedAt , chorus:SessionEndedAtNeedsClosed .
+
+chorus:SessionClosedNeedsEndedAt a sh:SPARQLConstraint ;
+    sh:message "a closed session must say when it ended (chorus:endedAt)" ;
+    sh:select """
+        SELECT $this WHERE {
+          $this <https://jeffbridwell.com/chorus#sessionState> "closed" .
+          FILTER NOT EXISTS { $this <https://jeffbridwell.com/chorus#endedAt> ?e }
+        }""" .
+
+chorus:SessionEndedAtNeedsClosed a sh:SPARQLConstraint ;
+    sh:message "a session with an endedAt is not open" ;
+    sh:select """
+        SELECT $this WHERE {
+          $this <https://jeffbridwell.com/chorus#endedAt> ?e ;
+                <https://jeffbridwell.com/chorus#sessionState> "open" .
+        }""" .
 chorus:SessionShape-label a sh:PropertyShape ;
     sh:path rdfs:label ; sh:minCount 1 .
 chorus:SessionShape-ownedBy a sh:PropertyShape ;
@@ -92,6 +130,9 @@ chorus:SessionShape-sessionState a sh:PropertyShape ;
     sh:pattern "^(open|closed)$" .
 chorus:SessionShape-hostAccount a sh:PropertyShape ;
     sh:path chorus:hostAccount ; sh:minCount 1 ; sh:maxCount 1 ; sh:datatype xsd:string .
+chorus:SessionShape-endedAt a sh:PropertyShape ;
+    # optional: an open session has no end yet
+    sh:path chorus:endedAt ; sh:maxCount 1 ; sh:datatype xsd:string .
 
 # A Principal may be bound to one host account. Optional: services and Jeff
 # are not bound today; the three role principals are bound when the account

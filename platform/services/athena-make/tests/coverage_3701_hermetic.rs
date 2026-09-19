@@ -972,10 +972,13 @@ fn write_lifecycle_create_replace_edge_delete() {
     let (c, _, b) = http("POST", "/domains", hdrs, "{\"name\":\"n2\",\"evil\":\"x\"}");
     assert_eq!(c, 422);
     assert!(b.contains("off-model property 'evil'"), "{}", b);
-    // CREATE that the DAL refuses on the floor → 422 shape-violation
+    // #4220 — the floor is refused AT THE DOOR now, before the DAL is called.
+    // It used to reach athena-model and come back "shape-violation"; the door
+    // has had the required list since #3468 and simply never read it. Same
+    // outcome, one round trip earlier, and the message names the property.
     let (c, _, b) = http("POST", "/domains", hdrs, "{\"name\":\"shapefail\",\"label\":\"L\"}");
     assert_eq!(c, 422);
-    assert!(b.contains("shape-violation"), "{}", b);
+    assert!(b.contains("'comment' is required by the shape"), "{}", b);
     // REPLACE ok (pulse ownedBy wren, exists)
     let (c, _, b) = http("PUT", "/domains/pulse", hdrs, "{\"comment\":\"rewritten\",\"label\":\"P2\"}");
     assert_eq!(c, 200, "{}", b);

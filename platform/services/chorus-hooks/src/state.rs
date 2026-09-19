@@ -163,13 +163,43 @@ impl AppState {
     /// #3853 — entries silent for >= `threshold` secs since their last beat. Returns
     /// (session, role, tool, phase, elapsed_since_phase_start) and bumps last_beat so
     /// each returns again ~threshold later — repeated beats while still in-flight.
+    /// #4220 — test-only: move an entry back in time so the age rules can be
+    /// exercised without sleeping. Production never calls it.
+    #[cfg(test)]
+    pub fn backdate(&self, session: &str, secs: u64) {
+        if let Ok(mut m) = self.activity.lock() {
+            if let Some(a) = m.get_mut(session) {
+                a.started = a.started.saturating_sub(secs);
+                a.last_beat = a.last_beat.saturating_sub(secs);
+            }
+        }
+    }
+
+    /// #4220 — TWO RULES ADDED, both from what Jeff actually sees. His Clearing
+    /// stream on 2026-09-19 was one screen of "silas running Bash (25s)" over
+    /// and over, with "running Bash (23279s)" beside it — six and a half hours
+    /// on one call. His words: "makes u look busy when u are idle".
+    ///
+    /// MIN_VISIBLE — a beat exists so a LONG call does not read as a dead role.
+    /// Beating at 15s made every ordinary command a line in his feed, which is
+    /// noise that hides the one call that is genuinely stuck.
+    ///
+    /// MAX_AGE — an entry only ends when the tool ends or the turn stops. A
+    /// session that dies in between leaves one behind, and it beat every 10
+    /// seconds for the rest of the day with a number that only grew. Past this
+    /// age the entry is not a long call, it is a corpse: drop it, say nothing.
     pub fn activity_due(&self, threshold: u64) -> Vec<(String, String, String, &'static str, u64)> {
+        const MIN_VISIBLE: u64 = 60;   // a call shorter than this is not news
+        const MAX_AGE: u64 = 1800;     // 30 min in one phase = the entry is dead
+
         let now = Self::now_secs();
         let mut due = Vec::new();
         if let Ok(mut m) = self.activity.lock() {
+            m.retain(|_, a| now.saturating_sub(a.started) < MAX_AGE);
             for (session, a) in m.iter_mut() {
-                if now.saturating_sub(a.last_beat) >= threshold {
-                    due.push((session.clone(), a.role.clone(), a.tool.clone(), a.phase, now.saturating_sub(a.started)));
+                let age = now.saturating_sub(a.started);
+                if age >= MIN_VISIBLE && now.saturating_sub(a.last_beat) >= threshold {
+                    due.push((session.clone(), a.role.clone(), a.tool.clone(), a.phase, age));
                     a.last_beat = now;
                 }
             }
@@ -539,6 +569,7 @@ mod activity_heartbeat_tests {
     fn running_command_is_due_and_labeled() {
         let s = AppState::new();
         s.mark_running("sess1", "silas", "Bash");
+        s.backdate("sess1", 90); // a call long enough to be worth a line
         let due = s.activity_due(0);
         assert_eq!(due.len(), 1);
         let (sess, role, tool, phase, _elapsed) = &due[0];
@@ -561,6 +592,7 @@ mod activity_heartbeat_tests {
         let s = AppState::new();
         s.mark_running("s", "silas", "Bash");
         s.mark_thinking("s", "silas");
+        s.backdate("s", 90);
         let due = s.activity_due(0);
         assert_eq!(due.len(), 1);
         assert_eq!(due[0].3, "thinking");
@@ -573,6 +605,42 @@ mod activity_heartbeat_tests {
         s.clear_activity("s");
         // the turn ended -> no beat -> quiet is honest idle, not a hidden command
         assert!(s.activity_due(0).is_empty());
+    }
+
+    // #4220 — the two rules that answer what Jeff sees in the Clearing stream.
+    #[test]
+    fn a_short_command_never_reaches_the_stream() {
+        let s = AppState::new();
+        s.mark_running("s", "silas", "Bash");
+        s.backdate("s", 25); // the "running Bash (25s)" line, over and over
+        assert!(s.activity_due(0).is_empty(), "an ordinary command is not news");
+    }
+
+    #[test]
+    fn an_entry_left_behind_by_a_dead_session_is_dropped_not_beaten() {
+        let s = AppState::new();
+        s.mark_running("ghost", "silas", "Bash");
+        s.backdate("ghost", 23_279); // the real one, 2026-09-19: 6h29m and climbing
+        assert!(s.activity_due(0).is_empty(), "a corpse must not beat");
+        // and it is gone, so it cannot beat later either
+        s.backdate("ghost", 0);
+        assert!(s.activity_due(0).is_empty());
+    }
+
+    #[test]
+    fn negative_proof_without_the_age_rules_both_of_those_would_beat() {
+        // Same two entries, judged by the OLD rule (any entry, any age, beats
+        // once the threshold since its last beat has passed). If this ever
+        // comes back empty, the two tests above prove nothing.
+        let s = AppState::new();
+        s.mark_running("short", "silas", "Bash");
+        s.backdate("short", 25);
+        s.mark_running("ghost", "silas", "Bash");
+        s.backdate("ghost", 23_279);
+        let old_rule_would_emit = 2;
+        let now_emits = s.activity_due(0).len();
+        assert_eq!(now_emits, 0);
+        assert_ne!(now_emits, old_rule_would_emit);
     }
 
     #[test]
@@ -595,6 +663,7 @@ mod stream_legibility_tests_3885 {
         let s = AppState::new();
         s.mark_running("sess-1", "wren", "Bash");
         s.mark_thinking("sess-1", "wren");
+        s.backdate("sess-1", 90); // #4220 — the beat only reports calls worth a line
         let due = s.activity_due(0);
         let beat = due.iter().find(|b| b.0 == "sess-1").expect("a beat is due");
         assert_eq!(beat.3, "thinking", "phase still says thinking");
@@ -609,6 +678,7 @@ mod stream_legibility_tests_3885 {
         let s = AppState::new();
         s.mark_running("sess-2", "wren", "Edit");
         s.mark_thinking("sess-2", "wren");
+        s.backdate("sess-2", 90); // #4220 — the beat only reports calls worth a line
         let due = s.activity_due(0);
         let beat = due.iter().find(|b| b.0 == "sess-2").unwrap();
         assert_ne!(beat.3, "running");
@@ -620,6 +690,7 @@ mod stream_legibility_tests_3885 {
     fn thinking_with_no_prior_tool_stays_blank() {
         let s = AppState::new();
         s.mark_thinking("sess-3", "wren");
+        s.backdate("sess-3", 90); // #4220 — the beat only reports calls worth a line
         let due = s.activity_due(0);
         let beat = due.iter().find(|b| b.0 == "sess-3").unwrap();
         assert_eq!(beat.2, "", "no prior tool → blank, never a guess");

@@ -305,7 +305,18 @@ chorus:gate-chorus-api-mutations a chorus:Gate ;
 # SERVED == ENFORCED stops depending on a boot-time default nobody can see.
 chorus:PrincipalShape a sh:NodeShape ;
     sh:targetClass chorus:Principal ;
-    chorus:instancesGraph "urn:chorus:domains:security" ;
+    # #4220 — HOME: identity. Who you are belongs in identity; what you may do
+    # stays in security. The rows lived in security while the only route serving
+    # them was /v1/identity/principals (/v1/security/principals is 404), so the
+    # address and the home disagreed.
+    chorus:instancesGraph "urn:chorus:domains:identity" ;
+    # #4220 — and the move is only safe WITH this. Principal carries no ownedBy,
+    # so it is graph-governed, and #4204 gave all three roles acl:Write on
+    # urn:chorus:domains:identity so they could record their own logins. Without
+    # the deploy-only rule, moving Principal into that graph hands every role the
+    # power to mint principals — the root of every other permission. A session
+    # token is refused here before scope or owner is consulted.
+    chorus:writeAuthority "deploy" ;
     sh:property chorus:PrincipalShape-webId ;
     sh:property chorus:PrincipalShape-label ;
     sh:property chorus:PrincipalShape-principalKind ;

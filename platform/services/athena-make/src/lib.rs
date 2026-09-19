@@ -311,6 +311,7 @@ pub struct RouteTable {
     pub tree_order: Option<String>, // #3660 — sibling rank property localname (chorus:treeOrder). None = unordered (label sort fallback).
     pub domain: String,          // #4158 — the domain that definesVocabulary this class; the first path segment
     pub base_path: String,       // #4158 — the generated collection path: /<domain>/<segment>. Derived, never hand-written.
+    pub write_authority: String, // #4220 — PROJECTED from chorus:writeAuthority on the SHAPE. "deploy" = only the model deploy may write this class; every session token is refused whatever its scope. Empty = the normal scope/owner rules.
     pub model_version: String,   // #3704/#3706 — PROJECTED from chorus:modelVersion on the class. "target"=reviewed-canonical, "legacy"=reviewed-strangled; transitional literals "v1"/"v2" persist until the review pass (v1≈legacy, v2≈claimed-current-unreviewed). ABSENT → "unclassified": nobody has reviewed the class, and it must never render as current (born-v2 removed 2026-07-30, Jeff's ruling).
 }
 
@@ -728,6 +729,19 @@ pub fn scope_allows(target_graph: &str, scope: &[String]) -> bool {
 /// with no owner field stays graph-governed: the token's scope must name the graph.
 pub fn row_owner_governed(fields: &[String]) -> bool {
     fields.iter().any(|f| f.split('|').next() == Some("ownedBy"))
+}
+
+/// #4220 — MAY A SESSION WRITE THIS CLASS AT ALL? Some rows are the root of
+/// authority rather than work product: a Principal says who exists, and every
+/// permission in the system hangs off one. Those are written by the model
+/// deploy. A token — any token, any scope, any owner — is refused.
+///
+/// This is not belt-and-braces over the scope check; it is the only thing
+/// standing between "Principal lives in the graph roles can write" and "a role
+/// can mint principals". Jeff, 2026-09-19: the login flow "allows and shapes
+/// core experience", so the row that defines who may log in is not session-writable.
+pub fn deploy_only(write_authority: &str) -> bool {
+    write_authority.eq_ignore_ascii_case("deploy")
 }
 
 /// Authentication alone is not write authority. A model Principal may exist
@@ -1226,6 +1240,24 @@ pub fn generate(class_local: &str) -> R<RouteTable> {
         ns = NS, g = ONTOLOGY_GRAPH, c = class
     );
     let model_version = select_v(&sparql_json(&mvq)?).into_iter().next().unwrap_or_else(|| "unclassified".to_string());
+
+    // #4220 — PROJECT chorus:writeAuthority from the shape. Some rows say who
+    // EXISTS: Principal, and later Credential. Those are written by the model
+    // deploy and by nothing else — a running role must never be able to create a
+    // principal, because "who exists" is the root of every other permission.
+    //
+    // Without this the classes are protected only by an accident of graph scope.
+    // Measured 2026-09-19: Principal carries no ownedBy, so it is graph-governed,
+    // and all three roles hold acl:Write on urn:chorus:domains:identity (from
+    // #4204, so they can record their own logins). Moving Principal into that
+    // graph — which is where it belongs, since /v1/identity/principals is already
+    // its address — would hand every role the power to mint principals. This
+    // annotation is what makes the move safe rather than a hole.
+    let waq = format!(
+        "PREFIX chorus: <{ns}> PREFIX sh: <http://www.w3.org/ns/shacl#> SELECT ?v WHERE {{ GRAPH <{g}> {{ ?sh sh:targetClass <{c}> ; chorus:writeAuthority ?v }} }} LIMIT 1",
+        ns = NS, g = ONTOLOGY_GRAPH, c = class
+    );
+    let write_authority = select_v(&sparql_json(&waq)?).into_iter().next().unwrap_or_default();
     routes.extend(tree_routes(&plural, &tree_edges));
         // #4158 — the routes artifact is the human-readable contract, so it states the
     // path the service actually advertises. Built above from the class plural;
@@ -1251,7 +1283,7 @@ pub fn generate(class_local: &str) -> R<RouteTable> {
             None => r,
         })
         .collect();
-Ok(RouteTable { domain: domain_of.clone().unwrap_or_default(), base_path, class, fields, routes, secured, mandatory, write_required, repo_target, exposure, instances_graph, tree_edges, tree_order, model_version })
+Ok(RouteTable { domain: domain_of.clone().unwrap_or_default(), base_path, class, fields, routes, secured, mandatory, write_required, repo_target, exposure, instances_graph, tree_edges, tree_order, write_authority, model_version })
 }
 
 /// #3660 — route emission for the tree read: ONE route iff the shape declares
@@ -2165,6 +2197,24 @@ fn verified_owner_projection(
 /// Purely prepare one create using exactly the checks/projections both routes
 /// need. This layer performs no existence reads: single and batch create both
 /// delegate identity conflict detection to the DAL's atomic `add-batch` path.
+/// #4220 — THE REQUIRED FLOOR, ENFORCED ON CREATE. `write_required` has been
+/// projected from every sh:minCount>=1 property since #3468 and then consulted
+/// by nothing: the door computed the floor and never stood on it.
+///
+/// What that cost, measured 2026-09-19: SessionShape requires a label and all 31
+/// live session rows lack one. The shape said the row was invalid; the write
+/// path stored it anyway. A constraint nothing enforces is a comment.
+///
+/// `label` and `name` are the write envelope (the DAL writes a label on every
+/// row, #4102), so they never count as missing. Returns the first missing
+/// property, or None when the body clears the floor.
+pub fn missing_required<'a>(required: &'a [String], present: &[&str]) -> Option<&'a str> {
+    required
+        .iter()
+        .map(|r| r.split('|').next().unwrap_or(r))
+        .find(|r| *r != "label" && *r != "name" && !present.contains(r))
+}
+
 fn prepare_create(body: &str, table: &RouteTable, caller_role: &str, landed_commit: &str) -> Result<PreparedCreate, CreatePrepareError> {
     let values = parse_create_object(body).map_err(|message| CreatePrepareError {
         tag: "validation",
@@ -2218,6 +2268,25 @@ fn prepare_create(body: &str, table: &RouteTable, caller_role: &str, landed_comm
             entity: name,
             message: format!("off-model property '{}' is not in the shape", bad),
         });
+    }
+
+    // #4220 — LAST of the body checks, deliberately. A body can be wrong in three
+    // ways: no name, a property the shape does not know, or a property the shape
+    // requires and the body omits. The first two are about what the caller sent;
+    // this one is about what the shape demands, and it is the least specific, so
+    // it reports last. Ordering it first made two existing tests report "missing
+    // required X" for bodies whose actual defect was an off-model property —
+    // a refusal that names the wrong thing is barely better than no refusal.
+    {
+        let present: Vec<&str> = values.keys().map(|k| k.as_str()).collect();
+        if let Some(missing) = missing_required(&table.write_required, &present) {
+            return Err(CreatePrepareError {
+                tag: "validation",
+                spine_result: "validation",
+                entity: name.clone(),
+                message: format!("'{}' is required by the shape and the body does not carry it", missing),
+            });
+        }
     }
 
     // The caller cannot self-select ownership. Remove any body-projected copy
@@ -2590,7 +2659,7 @@ mod bounds_closedshape_tests {
             class: "https://jeffbridwell.com/chorus#Document".into(),
             fields: vec!["docTitle".into(), "docHref".into(), "changedAt".into(), "changedIn".into(), "docState".into(), "ownedBy|edge:Role".into()],
             routes: vec![], secured: vec![], mandatory: vec![], write_required: vec![], repo_target: String::new(), exposure: vec![],
-            instances_graph: "urn:chorus:domains:documents".into(), tree_edges: vec![], tree_order: None, model_version: "unclassified".into(),
+            instances_graph: "urn:chorus:domains:documents".into(), tree_edges: vec![], tree_order: None, write_authority: String::new(), model_version: "unclassified".into(),
         };
         let req = prepare_create(r#"{"name":"d1","docTitle":"D","docHref":"/d.html"}"#, &table, "wren", "abc1234").unwrap();
         let get = |k: &str| req.fields.iter().find(|(f, _)| f == k).map(|(_, v)| v.clone());
@@ -2613,7 +2682,7 @@ mod bounds_closedshape_tests {
         let plain = RouteTable { domain: String::new(), base_path: String::new(),
             class: "https://jeffbridwell.com/chorus#Card".into(), fields: vec!["label".into()],
             routes: vec![], secured: vec![], mandatory: vec![], write_required: vec![], repo_target: String::new(), exposure: vec![],
-            instances_graph: "urn:chorus:instances".into(), tree_edges: vec![], tree_order: None, model_version: "unclassified".into(),
+            instances_graph: "urn:chorus:instances".into(), tree_edges: vec![], tree_order: None, write_authority: String::new(), model_version: "unclassified".into(),
         };
         assert!(write_stamps(&plain, "abc").is_empty());
     }
@@ -2676,6 +2745,7 @@ mod bounds_closedshape_tests {
             instances_graph: INSTANCES_GRAPH.to_string(),
             tree_edges: vec![],
             tree_order: None,
+            write_authority: String::new(),
             model_version: "unclassified".to_string(),
         };
         let req = prepare_create(
@@ -4375,7 +4445,7 @@ fn handle_inner(path: &str, table: &RouteTable, meta: &mut ReqMeta, authed: bool
     // GET /schema/domain
     if path.starts_with("/schema/") {
         meta.route = "schema".into();
-        let t = RouteTable { domain: table.domain.clone(), base_path: table.base_path.clone(), class: table.class.clone(), fields: table.fields.clone(), routes: table.routes.clone(), secured: table.secured.clone(), mandatory: table.mandatory.clone(), write_required: table.write_required.clone(), repo_target: table.repo_target.clone(), exposure: table.exposure.clone(), instances_graph: table.instances_graph.clone(), tree_edges: vec![], tree_order: None, model_version: table.model_version.clone() };
+        let t = RouteTable { domain: table.domain.clone(), base_path: table.base_path.clone(), class: table.class.clone(), fields: table.fields.clone(), routes: table.routes.clone(), secured: table.secured.clone(), mandatory: table.mandatory.clone(), write_required: table.write_required.clone(), repo_target: table.repo_target.clone(), exposure: table.exposure.clone(), instances_graph: table.instances_graph.clone(), tree_edges: vec![], tree_order: None, write_authority: String::new(), model_version: table.model_version.clone() };
         return (200, routes_json(&t));
     }
     // GET /openapi.json — the generated OpenAPI 3.1 spec (#3453, #3520). Another
@@ -5437,6 +5507,11 @@ pub fn serve(port: u16, tables: &[RouteTable]) -> R<()> {
                             if !target_graph.is_empty() && target_graph != effective_target {
                                 ((403u16, format!("{{ \"error\": \"out-of-scope\", \"message\": \"x-target-graph '{}' does not match this class's write graph '{}'\" }}", json_escape(&target_graph), json_escape(effective_target))),
                                  ReqMeta { route: "write-authz-graph-mismatch".into(), ..Default::default() })
+                            } else if deploy_only(&table.write_authority) {
+                                // #4220 — deploy-only class: refuse before scope or owner is
+                                // consulted, so no grant anywhere can open it.
+                                ((403u16, format!("{{ \"error\": \"deploy-only\", \"message\": \"'{}' is written by the model deploy, not by a session: who exists is not session-writable\" }}", json_escape(&table.class))),
+                                 ReqMeta { route: "write-authz-deploy-only".into(), ..Default::default() })
                             } else if !scope_allows(effective_target, &claims.scope) && !row_owner_governed(&table.fields) {
                                 // #4096 — an owned class is governed by the row's owner (checked in
                                 // handle_write); only an ownerless class needs the graph in scope.
@@ -5873,6 +5948,7 @@ mod tests {
             instances_graph: INSTANCES_GRAPH.to_string(),
             tree_edges: vec![],
             tree_order: None,
+            write_authority: String::new(),
             model_version: "unclassified".to_string(),
         };
         let (bare_code, _) = handle("/domains", &t);
@@ -6164,7 +6240,7 @@ mod tests {
             write_required: vec![],
             repo_target: String::new(),
             exposure: vec![],
-            instances_graph: INSTANCES_GRAPH.to_string(), tree_edges: vec![], tree_order: None, model_version: "unclassified".to_string(),
+            instances_graph: INSTANCES_GRAPH.to_string(), tree_edges: vec![], tree_order: None, write_authority: String::new(), model_version: "unclassified".to_string(),
         };
         let h = page_html(&t);
         // projection doctrine — the generated marker says regenerate, never hand-edit
@@ -6201,7 +6277,7 @@ mod tests {
             write_required: vec![],
             repo_target: String::new(),
             exposure: vec![],
-            instances_graph: INSTANCES_GRAPH.to_string(), tree_edges: vec![], tree_order: None, model_version: "unclassified".to_string(),
+            instances_graph: INSTANCES_GRAPH.to_string(), tree_edges: vec![], tree_order: None, write_authority: String::new(), model_version: "unclassified".to_string(),
         });
         assert!(svc.contains("id=\"bc-domain\">Service</span>"), "breadcrumb projects the class (Service)");
         assert!(!svc.contains(">Domain</span>"), "a Service page never hardcodes Domain in the breadcrumb");
@@ -6222,7 +6298,7 @@ mod tests {
     // === #3453 — serve the generated OpenAPI spec + human view ===
 
     fn openapi_fixture() -> RouteTable {
-        RouteTable { domain: String::new(), base_path: String::new(),
+        RouteTable { write_authority: String::new(), domain: String::new(), base_path: String::new(),
             class: format!("{}Domain", NS),
             fields: vec!["comment".into(), "label".into()],
             mandatory: vec!["label".into()], // #3520 — exercises the `required` projection
@@ -6370,7 +6446,7 @@ mod tests {
             fields: vec![], routes: vec![], secured: vec![], mandatory: vec![],
             write_required: vec![], repo_target: String::new(), exposure: vec![],
             instances_graph: format!("urn:chorus:domains:{}", domain),
-            tree_edges: vec![], tree_order: None, model_version: "unclassified".to_string(),
+            tree_edges: vec![], tree_order: None, write_authority: String::new(), model_version: "unclassified".to_string(),
         }
     }
 
@@ -6733,7 +6809,7 @@ mod tests {
             routes: vec![], secured: vec![], mandatory: vec![], write_required: vec![],
             repo_target: String::new(), exposure: vec![],
             instances_graph: "urn:chorus:domains:logs".into(),
-            tree_edges: vec![], tree_order: None, model_version: "unclassified".into(),
+            tree_edges: vec![], tree_order: None, write_authority: String::new(), model_version: "unclassified".into(),
         };
 
         // DECLARED (what #4209 lands): a typed edge to a Principal, no literal field.
@@ -6897,7 +6973,7 @@ mod tests {
             write_required: vec!["label".into(), "comment".into()],
             repo_target: String::new(),
             exposure: vec![],
-            instances_graph: INSTANCES_GRAPH.to_string(), tree_edges: vec![], tree_order: None, model_version: "unclassified".to_string(),
+            instances_graph: INSTANCES_GRAPH.to_string(), tree_edges: vec![], tree_order: None, write_authority: String::new(), model_version: "unclassified".to_string(),
         };
         assert_eq!(routes_json(&t), routes_json(&t));
         assert!(routes_json(&t).contains("\"generatedFrom\""));
@@ -6962,7 +7038,7 @@ mod tests {
             write_required: vec!["label".into(), "comment".into()],
             repo_target: String::new(),
             exposure: vec![],
-            instances_graph: INSTANCES_GRAPH.to_string(), tree_edges: vec![], tree_order: None, model_version: "unclassified".to_string(),
+            instances_graph: INSTANCES_GRAPH.to_string(), tree_edges: vec![], tree_order: None, write_authority: String::new(), model_version: "unclassified".to_string(),
         };
         let j = routes_json(&t);
         assert!(j.contains("\"mandatory\": [\"label\", \"comment\"]"),
@@ -6987,7 +7063,7 @@ mod tests {
 
     #[test]
     fn unknown_route_404s_and_teaches_routes() {
-        let t = RouteTable { domain: String::new(), base_path: String::new(), class: format!("{}Domain", NS), fields: vec![], routes: vec!["GET /domains".into()], secured: vec![], mandatory: vec![], write_required: vec![], repo_target: String::new(), exposure: vec![], instances_graph: INSTANCES_GRAPH.to_string(), tree_edges: vec![], tree_order: None, model_version: "unclassified".to_string() };
+        let t = RouteTable { domain: String::new(), base_path: String::new(), class: format!("{}Domain", NS), fields: vec![], routes: vec!["GET /domains".into()], secured: vec![], mandatory: vec![], write_required: vec![], repo_target: String::new(), exposure: vec![], instances_graph: INSTANCES_GRAPH.to_string(), tree_edges: vec![], tree_order: None, write_authority: String::new(), model_version: "unclassified".to_string() };
         let (code, body) = handle("/nope", &t);
         assert_eq!(code, 404);
         assert!(body.contains("GET /domains"));
@@ -7098,7 +7174,7 @@ mod tests {
             write_required: vec!["filePath".into(), "testName".into()],
             repo_target: String::new(),
             exposure: vec![],
-            instances_graph: "urn:chorus:domains:tests".to_string(), tree_edges: vec![], tree_order: None, model_version: "unclassified".to_string(),
+            instances_graph: "urn:chorus:domains:tests".to_string(), tree_edges: vec![], tree_order: None, write_authority: String::new(), model_version: "unclassified".to_string(),
         };
         let scope = vec![t.instances_graph.clone()];
         let ts = dal_skeleton_ts(&t, &scope);
@@ -7211,7 +7287,7 @@ mod dispatch_effective_3845 {
     use super::*;
 
     fn table(class: &str) -> RouteTable {
-        RouteTable { domain: String::new(), base_path: String::new(),
+        RouteTable { write_authority: String::new(), domain: String::new(), base_path: String::new(),
             class: format!("https://jeffbridwell.com/chorus#{class}"),
             fields: vec![],
             routes: vec![],
@@ -7450,5 +7526,74 @@ mod sparql_argv_4022 {
         let err = sparql_json_at("http://127.0.0.1:1/pods", &big).unwrap_err();
         assert!(err.starts_with("fuseki-query failed"), "expected an endpoint failure, got: {}", err);
         assert!(!err.contains("Argument list too long"), "{}", err);
+    }
+}
+
+#[cfg(test)]
+mod deploy_only_4220 {
+    use super::*;
+
+    #[test]
+    fn a_class_marked_deploy_is_not_session_writable() {
+        assert!(deploy_only("deploy"));
+        assert!(deploy_only("Deploy"));
+    }
+
+    #[test]
+    fn every_other_class_is_unaffected() {
+        // NEGATIVE PROOF: the guard has to distinguish the two states. If this
+        // ever passes with deploy_only("") true, every write in the API is dead.
+        assert!(!deploy_only(""));
+        assert!(!deploy_only("owner"));
+        assert!(!deploy_only("deployment"));
+    }
+
+    #[test]
+    fn the_refusal_precedes_scope_and_owner() {
+        // The order matters more than the predicate: a deploy-only class must be
+        // refused even for a caller who WOULD pass both other checks — a scope
+        // that names the graph and an owner that matches.
+        let fields = vec!["ownedBy|https://x#ownedBy".to_string()];
+        assert!(row_owner_governed(&fields));
+        assert!(authz_allows("silas", Some("silas")));
+        assert!(deploy_only("deploy"), "neither passing check may reach a deploy-only class");
+    }
+}
+
+#[cfg(test)]
+mod required_floor_4220 {
+    use super::*;
+
+    fn req() -> Vec<String> {
+        vec!["label".into(), "ownedBy".into(), "tokenId".into(), "hostAccount".into()]
+    }
+
+    #[test]
+    fn a_body_missing_a_required_property_is_named() {
+        let present = ["name", "ownedBy", "tokenId"];
+        assert_eq!(missing_required(&req(), &present), Some("hostAccount"));
+    }
+
+    #[test]
+    fn a_complete_body_clears_the_floor() {
+        let present = ["name", "ownedBy", "tokenId", "hostAccount"];
+        assert_eq!(missing_required(&req(), &present), None);
+    }
+
+    #[test]
+    fn label_and_name_are_the_envelope_not_the_floor() {
+        // the DAL writes a label on every row (#4102); requiring it in the body
+        // would refuse every create the door itself makes
+        let present = ["ownedBy", "tokenId", "hostAccount"];
+        assert_eq!(missing_required(&req(), &present), None);
+    }
+
+    #[test]
+    fn negative_proof_a_floor_that_matched_nothing_would_pass_the_same_body() {
+        // If this ever returns None for the incomplete body, the check is back to
+        // being the comment it was: projected, never stood on.
+        let incomplete = ["name", "ownedBy"];
+        assert!(missing_required(&req(), &incomplete).is_some());
+        assert_eq!(missing_required(&[], &incomplete), None, "an empty floor must refuse nothing");
     }
 }
