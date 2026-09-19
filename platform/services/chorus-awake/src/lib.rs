@@ -82,6 +82,118 @@ pub fn proof_line(role: &str, l: &Live, how: &str) -> String {
     format!("awake: {}  pid {}  tty {}  pane {}  registered {}  via {}", role, l.pid, l.tty, l.pane, reg, how)
 }
 
+/// #4215 — the spine binary, resolvable before the start block needs it.
+fn log_bin_for(root: &str) -> String {
+    envd("CHORUS_LOG_BIN", &format!("{}/platform/scripts/chorus-log", root))
+}
+
+/// #4215 — WHAT A LOGIN FAILURE COSTS. Jeff, 2026-09-19: "chorus-awake must be
+/// a non issue day to day — highly reliable and resilient."
+///
+/// Every login failure used to return 1, so the API being down, a slow curl, a
+/// shape complaint from the route, or an unwritable header file each meant the
+/// role did not exist that morning. That is backwards: the work chorus-awake
+/// protects is not the session ROW, it is Jeff having an engineer. On
+/// 2026-09-18 it cost him Kade for an hour.
+///
+/// Exactly one failure still refuses: the credential names a different
+/// principal. Starting on that would file Kade's work under Silas, and no
+/// amount of loudness undoes a wrong author. Everything else — no token, an
+/// unreadable or expired token, the API unreachable, a 5xx, a 422 — starts, and
+/// says plainly that the session is unrecorded.
+#[derive(Debug, PartialEq, Eq)]
+pub enum Start { Go, Degraded(String), Refuse(String) }
+
+pub fn login_posture(failure: Option<&str>, refuse_on_any: bool) -> Start {
+    match failure {
+        None => Start::Go,
+        // "wrong principal: the token names X not Y" — login_check's own words.
+        Some(w) if w.contains("wrong principal") => Start::Refuse(w.to_string()),
+        // refuse_on_any is the OLD behaviour, kept only so the negative proof can
+        // show the two postures differ on the same input.
+        Some(w) if refuse_on_any => Start::Refuse(w.to_string()),
+        Some(w) => Start::Degraded(w.to_string()),
+    }
+}
+
+/// #4215 — the already-awake decision, pure so it can be watched failing.
+/// Three inputs, three outcomes, and the point is that they are distinguishable:
+/// a mute session must not read the same as a talking one.
+#[derive(Debug, PartialEq, Eq)]
+pub enum Awake { Fresh, AlreadyAwake, ReplaceMute }
+
+pub fn awake_verdict(has_live_entry: bool, spoke_recently: bool, liveness_on: bool) -> Awake {
+    if !has_live_entry { return Awake::Fresh; }
+    if !liveness_on { return Awake::AlreadyAwake; }   // the OLD behaviour, kept only for the proof
+    if spoke_recently { Awake::AlreadyAwake } else { Awake::ReplaceMute }
+}
+
+/// #4215 — DID IT ANSWER? A registry entry and a live pid say a process exists,
+/// not that the session can respond. On 2026-09-18/19 Kade had both for over an
+/// hour while every one of his turns came back an API refusal; `chorus-awake`
+/// read the file, said "already awake", and did nothing. Jeff: "i cant
+/// communicate with him reliable" — and he was right that the check was the
+/// problem, not the role.
+///
+/// Liveness is the session's OWN most recent turn in the spine. A role that has
+/// spoken inside the window is awake; one that has not is treated as gone,
+/// whatever the file says. Reads the spine the same way pulse does — no new
+/// surface, no second source of truth.
+/// The machine's UTC offset in seconds, from `date +%z`. #4215 — returns None
+/// when it cannot be read, and an unknown offset must never end a session: the
+/// cost of guessing wrong is killing a role mid-turn.
+pub fn tz_offset_secs(z: &str) -> Option<i64> {
+    let z = z.trim();
+    if z.len() < 5 { return None; }
+    let sign = match z.as_bytes()[0] { b'+' => 1, b'-' => -1, _ => return None };
+    let h: i64 = z[1..3].parse().ok()?;
+    let m: i64 = z[3..5].parse().ok()?;
+    Some(sign * (h * 3600 + m * 60))
+}
+
+pub fn answered_recently(spine: &str, role: &str, within_secs: u64, now_secs: u64, tz_offset_secs: i64) -> bool {
+    // #4215 — the spine writes LOCAL time with no offset ("2026-09-19T07:33:01"),
+    // and now_secs is UTC. Reading one as the other put every Boston timestamp
+    // four hours in the past, so a role that had just answered read as mute and
+    // would have been ended mid-turn. The offset is passed in, not read here, so
+    // the test can prove both frames.
+    // lines are the spine's json; we want this role's reply/turn events only
+    for line in spine.lines().rev() {
+        if !line.contains(&format!("\"role\":\"{}\"", role)) { continue; }
+        if !(line.contains("reply.published") || line.contains("reply.emitted") || line.contains("agent.action")) { continue; }
+        if let Some(i) = line.find("\"timestamp\":\"") {
+            let t = &line[i + 13..];
+            if let Some(j) = t.find('"') {
+                if let Ok(when_local) = chrono_secs(&t[..j]) {
+                    let when = (when_local as i64 - tz_offset_secs).max(0) as u64;
+                    return now_secs.saturating_sub(when) <= within_secs;
+                }
+            }
+        }
+    }
+    false
+}
+
+/// Seconds from an ISO-8601 local stamp the spine writes (2026-09-19T07:33:01...).
+/// Self-contained: no chrono in this crate, and a wrong parse must read as "has
+/// not spoken" rather than silently passing the liveness check.
+pub fn chrono_secs(iso: &str) -> Result<u64, ()> {
+    let b = iso.as_bytes();
+    if b.len() < 19 { return Err(()); }
+    let num = |a: usize, z: usize| -> Result<u64, ()> { iso[a..z].parse::<u64>().map_err(|_| ()) };
+    let (y, mo, d) = (num(0,4)?, num(5,7)?, num(8,10)?);
+    let (h, mi, se) = (num(11,13)?, num(14,16)?, num(17,19)?);
+    // days since epoch, civil-from-days (Howard Hinnant's algorithm)
+    let y2 = if mo <= 2 { y as i64 - 1 } else { y as i64 };
+    let era = if y2 >= 0 { y2 } else { y2 - 399 } / 400;
+    let yoe = y2 - era * 400;
+    let mp = ((mo as i64 + 9) % 12) as i64;
+    let doy = (153 * mp + 2) / 5 + d as i64 - 1;
+    let doe = yoe * 365 + yoe / 4 - yoe / 100 + doy;
+    let days = era * 146097 + doe - 719468;
+    Ok((days * 86400 + (h * 3600 + mi * 60 + se) as i64) as u64)
+}
+
 /// Decide attach-vs-continue and name stale agents. `agents_json` is the raw
 /// output of `claude agents --json --cwd <role dir>`; `latest_session` is the
 /// id of the newest conversation file in the role's projects dir.
@@ -206,13 +318,23 @@ fn iso_utc(secs: u64) -> String {
 /// The Session row body for the generated identity API (the shape in
 /// session-4202.ttl).
 ///
-/// `name` is the BARE key — <role>-<jti tail>, no `session-` prefix. The mint
-/// adds the prefix itself (ADR-040) and refuses a name that already carries it:
-/// "double-prefix ... pass the bare name". Sending session-<role>-<tail> got a
-/// 422 on the first real login, after the route and the kind were both fixed.
-pub fn session_row(role: &str, l: &Login, host_account: &str) -> (String, Value) {
+/// `name` is the BARE key — <role>-<jti tail>-<start>, no `session-` prefix. The
+/// mint adds the prefix itself (ADR-040) and refuses a name that already carries
+/// it: "double-prefix ... pass the bare name". Sending session-<role>-<tail> got
+/// a 422 on the first real login, after the route and the kind were both fixed.
+///
+/// #4215 — `start` exists because the name was the jti tail ALONE, and the token
+/// is cached (~/.chorus/identity/<role>/token.cache). Two starts inside one
+/// token's life therefore minted the SAME name, the second collided with the row
+/// the first created, and the 409 stopped the role booting. 2026-09-18: Jeff ran
+/// `chorus-awake kade` four times, I deleted a live session row by hand and then
+/// cleared his token cache before it would start. A session is one START, not one
+/// token; the name has to say so. Passed in rather than read from the clock here
+/// so the unit test is deterministic.
+pub fn session_row(role: &str, l: &Login, host_account: &str, start: &str) -> (String, Value) {
     let tail: String = l.jti.chars().rev().take(8).collect::<Vec<_>>().into_iter().rev().collect();
-    let name = format!("{}-{}", role, tail.replace(|c: char| !c.is_ascii_alphanumeric(), "-"));
+    let safe = |x: &str| x.replace(|c: char| !c.is_ascii_alphanumeric(), "-");
+    let name = format!("{}-{}-{}", role, safe(&tail), safe(start));
     let body = serde_json::json!({
         "name": name,
         "label": format!("{} logged in {} on {}", role, iso_utc(l.iat), host_account),
@@ -287,15 +409,54 @@ pub fn run(args: &[String]) -> i32 {
         eprintln!("  end one of them (exit in its pane), then run again.");
         return 1;
     }
-    if let Some(l) = live.first() { println!("{}", proof_line(&role, l, "already awake")); return 0; }
+    // #4215 — "already awake" now has to be EARNED. A registry entry plus a live
+    // pid is what Kade had for over an hour while unable to answer anything, and
+    // this branch blessed it and did nothing. Ask the spine whether the session
+    // has spoken; if it has not, it is mute, and a mute session is ended and
+    // replaced rather than reported as fine.
+    //
+    // AWAKE_MUTE_SECS is the window. AWAKE_LIVENESS=0 disables the check — and
+    // exists so the negative proof can show the OLD behaviour (blessing a mute
+    // session) rather than only asserting the new one.
+    if let Some(l) = live.first() {
+        let mute_secs: u64 = envd("AWAKE_MUTE_SECS", "900").parse().unwrap_or(900);
+        let spine_path = envd("CHORUS_LOG_FILE", &format!("{}/.chorus/chorus.log", envd("HOME", "")));
+        let spine = fs::read_to_string(&spine_path).unwrap_or_default();
+        let now_secs = (now_ms() / 1000) as u64;
+        let liveness_on = envd("AWAKE_LIVENESS", "1") != "0";
+        let offset = sh("date", &["+%z"]).ok().as_deref().and_then(tz_offset_secs);
+        let spoke = match offset {
+            Some(o) => answered_recently(&spine, &role, mute_secs, now_secs, o),
+            // unknown offset: every timestamp would read hours stale. Leave the
+            // session alone and say why, rather than end a role on a guess.
+            None => { eprintln!("chorus-awake: could not read the local UTC offset — skipping the mute check"); true }
+        };
+        if awake_verdict(true, spoke, liveness_on) == Awake::AlreadyAwake {
+            println!("{}", proof_line(&role, l, "already awake"));
+            return 0;
+        }
+        eprintln!("chorus-awake: {} has a live session (pid {}) that has not spoken in {}s — MUTE, replacing it", role, l.pid, mute_secs);
+        eprintln!("  a pid and a registry entry are not an answer; ending it so a fresh conversation can start.");
+        let _ = sh(&claude, &["stop", &l.pid.to_string()]);
+        let _ = fs::remove_file(sessions_dir.join(format!("{}-{}.json", role, l.pid)));
+    }
 
-    // 2/7 — the real conversation. A failed read is not "none": refuse.
+    // 2/7 — the real conversation.
+    //
+    // #4215 — this used to refuse. The reasoning was sound in isolation: a failed
+    // read is not "none", and guessing "none" could start a second conversation
+    // beside a live one. But the cost is not symmetric. The wrong guess costs a
+    // duplicate pane Jeff can close; the refusal costs him the role entirely,
+    // which is the thing this card exists to stop. So: carry on with an empty
+    // list, which resolves to `claude -c` — the last conversation, the same thing
+    // Jeff does by hand when a role goes quiet — and say plainly that the list
+    // could not be read.
     let agents = match sh(&claude, &["agents", "--json", "--cwd", &role_dir]) {
         Ok(j) => j,
         Err(e) => {
-            eprintln!("chorus-awake: REFUSED — could not list {}'s background sessions (claude agents --json --cwd failed): {}", role, e.trim());
-            eprintln!("  nothing was started; without that list a detached conversation cannot be told from none.");
-            return 1;
+            eprintln!("chorus-awake: could not list {}'s background sessions: {}", role, e.trim());
+            eprintln!("  continuing with the last conversation (claude -c); a detached one may be left behind.");
+            String::from("[]")
         }
     };
     let projects = PathBuf::from(env::var("AWAKE_PROJECTS_DIR").unwrap_or_else(|_| projects_dir_for(&home, &role_dir).to_string_lossy().to_string()));
@@ -318,40 +479,114 @@ pub fn run(args: &[String]) -> i32 {
     // 8 — LOGIN before anything is started (#4202). No token → no session → nothing runs.
     let token_bin = envd("CHORUS_TOKEN_BIN", &format!("{}/platform/scripts/chorus-identity-token", root));
     let identity_dir = envd("CHORUS_IDENTITY_DIR", &format!("{}/.chorus/identity", home));
-    let token = match sh(&token_bin, &[&role]) {
-        Ok(t) => t.trim().to_string(),
-        Err(e) => { eprintln!("chorus-awake: REFUSED — no session for {}: {}", role, e.trim()); eprintln!("  nothing was started; a role that cannot log in does not run."); return 1; }
+    let refuse_on_any = envd("AWAKE_REFUSE_ON_LOGIN_FAILURE", "0") == "1";
+    let log_bin_early = log_bin_for(&root);
+    let mut degraded: Option<String> = None;
+
+    let token = sh(&token_bin, &[&role]).map(|t| t.trim().to_string());
+    let login = match &token {
+        Ok(t) => login_check(&role, t, (now_ms() / 1000) as u64),
+        Err(e) => Err(format!("no token: {}", e.trim())),
     };
-    let login = match login_check(&role, &token, (now_ms() / 1000) as u64) {
-        Ok(l) => l,
-        Err(why) => { eprintln!("chorus-awake: REFUSED — no session for {}: {}", role, why); eprintln!("  nothing was started; a role that cannot log in does not run."); return 1; }
+    let login = match login {
+        Ok(l) => Some(l),
+        Err(why) => match login_posture(Some(&why), refuse_on_any) {
+            Start::Refuse(w) => {
+                eprintln!("chorus-awake: REFUSED — {} for {}", w, role);
+                if w.contains("wrong principal") {
+                    eprintln!("  nothing was started; starting on another principal's credential would file this work as theirs.");
+                } else {
+                    eprintln!("  nothing was started (AWAKE_REFUSE_ON_LOGIN_FAILURE=1 — the pre-#4215 posture).");
+                }
+                return 1;
+            }
+            _ => {
+                eprintln!("chorus-awake: session NOT recorded for {} — {}", role, why);
+                eprintln!("  starting anyway: a login that cannot be written down must not decide whether you have an engineer.");
+                let _ = sh(&log_bin_early, &["session.login.degraded", &role, &format!("reason={}", why)]);
+                degraded = Some(why);
+                None
+            }
+        },
     };
-    let host_account = envd("USER", "unknown");
-    let (session_name, body) = session_row(&role, &login, &host_account);
-    // the row: POST through the security API with the token as a header FILE (0600), never an argv
-    let role_id_dir = PathBuf::from(&identity_dir).join(&role);
-    let _ = fs::create_dir_all(&role_id_dir);
-    let hdr = role_id_dir.join("session.hdr");
-    let body_path = role_id_dir.join("session.body");
-    if let Err(e) = write_private(&hdr, &format!("Authorization: Bearer {}\n", token)).and_then(|_| write_private(&body_path, &body.to_string())) {
-        eprintln!("chorus-awake: REFUSED — login not recorded for {}: cannot write {}: {}", role, hdr.display(), e); return 1;
+    let token = token.unwrap_or_default();
+    // #4215 — only write a Session row when there are claims to write. Without
+    // them the degrade was already announced above; the pane still starts.
+    let mut row_written = true;
+    if let Some(login) = login {
+        let host_account = envd("USER", "unknown");
+        let start_id = format!("{:x}", now_ms());
+        let (session_name, body) = session_row(&role, &login, &host_account, &start_id);
+        // the row: POST through the security API with the token as a header FILE (0600), never an argv
+        let role_id_dir = PathBuf::from(&identity_dir).join(&role);
+        let _ = fs::create_dir_all(&role_id_dir);
+        let hdr = role_id_dir.join("session.hdr");
+        let body_path = role_id_dir.join("session.body");
+        if let Err(e) = write_private(&hdr, &format!("Authorization: Bearer {}\n", token)).and_then(|_| write_private(&body_path, &body.to_string())) {
+            eprintln!("chorus-awake: REFUSED — login not recorded for {}: cannot write {}: {}", role, hdr.display(), e); return 1;
+        }
+        let api = envd("CHORUS_API_URL", "http://localhost:3360");
+        let curl = envd("AWAKE_CURL", "curl");
+        let url = format!("{}/v1/identity/sessions", api);
+        let hdr_arg = format!("@{}", hdr.display());
+        let body_arg = format!("@{}", body_path.display());
+        let code = sh(&curl, &["-s", "-o", "/dev/null", "-w", "%{http_code}", "--max-time", "10", "-X", "POST", "-H", "Content-Type: application/json", "-H", &hdr_arg, "--data-binary", &body_arg, &url]).map(|c| c.trim().to_string()).unwrap_or_else(|e| format!("curl failed: {}", e.trim()));
+        let _ = fs::remove_file(&hdr);
+        // #4215 — a 409 says the session name already exists. With a per-start name
+        // that should now be impossible, so a 409 here means something real: either a
+        // clock/name collision, or a row that is not ours. Ask WHOSE it is before
+        // refusing. "A login the API did not accept is not a login" is right; a login
+        // it accepted a moment ago, on a row we own, IS one — and reading that as a
+        // failure is what left Kade unreachable for an hour on 2026-09-18.
+        if code == "409" {
+            let get = format!("{}/v1/identity/sessions/{}", api, session_name);
+            let existing = sh(&curl, &["-s", "--max-time", "10", &get]).unwrap_or_default();
+            let mine = format!("principal-{}", role);
+            let owned_by_me = existing.contains(&format!("\"ownedBy\":\"{}\"", mine))
+                || existing.contains(&format!("\"ownedBy\": \"{}\"", mine))
+                || existing.contains(&mine);
+            if owned_by_me {
+                eprintln!("chorus-awake: session {} already open and owned by {} — reusing it", session_name, mine);
+            } else {
+                let owner = existing.split("ownedBy").nth(1).map(|t| t.chars().take(60).collect::<String>()).unwrap_or_else(|| "unknown".into());
+                eprintln!("chorus-awake: REFUSED — session {} exists and is NOT yours (ownedBy{})", session_name, owner);
+                eprintln!("  nothing was started; starting under someone else's session would log your work as theirs.");
+                return 1;
+            }
+        } else if !(code == "200" || code == "201") {
+            // #4215 — DEGRADE, DO NOT BLOCK. Jeff, 2026-09-19: "chorus-awake must be a
+            // non issue day to day — highly reliable and resilient."
+            //
+            // This branch used to refuse: "a login the security API did not accept is
+            // not a login." True as a sentence about authentication, wrong as a rule
+            // about starting: it made every hiccup in RECORDING the login stop the
+            // role existing. The identity was already proven before this point —
+            // login_check verified the token names this role and has not expired, and
+            // that check still refuses. What fails here is the bookkeeping write.
+            //
+            // So: start, and make the gap loud rather than silent. A role that runs
+            // with an unrecorded session is a visible gap; a role that never starts is
+            // an hour of Jeff's morning.
+            eprintln!("chorus-awake: session NOT recorded for {} — {} answered HTTP {}", role, url, code);
+            eprintln!("  starting anyway: the identity was verified before this write, and a bookkeeping");
+            eprintln!("  failure must not decide whether you have an engineer. Recorded as degraded.");
+            let _ = sh(&log_bin_for(&root), &["session.login.degraded", &role, &format!("http={}", code), &format!("session={}", session_name)]);
+            // #4215 — found in the live pair: the success line below printed
+            // "recorded yes" two lines under "session NOT recorded". A start line
+            // that contradicts the error above it is worse than no line at all.
+            row_written = false;
+        }
+        let _ = Command::new("bash").arg(&log_bin_early).args(["session.login", &role, &format!("webid={}", login.webid), &format!("jti={}", login.jti), &format!("session={}", session_name), &format!("host_account={}", host_account), &format!("expires_at={}", iso_utc(login.exp))]).output();
+        if row_written {
+            println!("login: {}  webid {}  jti {}  session {}  recorded yes", role, login.webid, login.jti, session_name);
+        } else {
+            println!("login: {}  webid {}  jti {}  session {}  recorded NO — the API refused the row (started UNAUTHENTICATED: any write this pane attempts will be refused)", role, login.webid, login.jti, session_name);
+        }
     }
-    let api = envd("CHORUS_API_URL", "http://localhost:3360");
-    let curl = envd("AWAKE_CURL", "curl");
-    let url = format!("{}/v1/identity/sessions", api);
-    let hdr_arg = format!("@{}", hdr.display());
-    let body_arg = format!("@{}", body_path.display());
-    let code = sh(&curl, &["-s", "-o", "/dev/null", "-w", "%{http_code}", "--max-time", "10", "-X", "POST", "-H", "Content-Type: application/json", "-H", &hdr_arg, "--data-binary", &body_arg, &url]).map(|c| c.trim().to_string()).unwrap_or_else(|e| format!("curl failed: {}", e.trim()));
-    let _ = fs::remove_file(&hdr);
-    if !(code == "200" || code == "201") {
-        eprintln!("chorus-awake: REFUSED — login not recorded for {}: {} answered HTTP {}", role, url, code);
-        eprintln!("  nothing was started; a login the security API did not accept is not a login.");
-        return 1;
+    if let Some(why) = &degraded {
+        println!("login: {}  recorded NO — {}  (started UNAUTHENTICATED: no session row, any write this pane attempts will be refused by the API)", role, why);
     }
-    let token_file = role_id_dir.join("token.cache");
-    let log_bin = envd("CHORUS_LOG_BIN", &format!("{}/platform/scripts/chorus-log", root));
-    let _ = Command::new("bash").arg(&log_bin).args(["session.login", &role, &format!("webid={}", login.webid), &format!("jti={}", login.jti), &format!("session={}", session_name), &format!("host_account={}", host_account), &format!("expires_at={}", iso_utc(login.exp))]).output();
-    println!("login: {}  webid {}  jti {}  session {}  recorded yes", role, login.webid, login.jti, session_name);
+    let token_file = PathBuf::from(&identity_dir).join(&role).join("token.cache");
 
     // 1 — the pane, then launch inside it.
     let launch = format!("cd '{}' && source '{}/platform/scripts/chorus-env-setup.sh' && export CHORUS_SESSION_TOKEN_FILE='{}' && {}", role_dir, root, token_file.display(), cmd);

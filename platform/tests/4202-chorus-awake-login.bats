@@ -44,6 +44,9 @@ EOS
   cat > "$T/bin/curl" <<EOS
 #!/bin/bash
 echo "curl \$*" >> "$T/curl.log"
+# the 409 branch re-reads the row with a plain GET (no -X POST): answer it with
+# the fixture body so the ownership decision can be exercised. #4215.
+case "\$*" in *"-X POST"*) ;; *) cat "$T/existing.json" 2>/dev/null; exit 0 ;; esac
 for a in "\$@"; do case "\$a" in @*) cp "\${a#@}" "$T/curl.body" ;; esac; done
 cat "$T/curl.status" 2>/dev/null || echo 201
 EOS
@@ -110,51 +113,134 @@ file_lacks() { ! grep -q -- "$2" "$1"; }
   file_lacks "$T/spine.log" "eyJhbGciOiJFUzI1NiJ9"
 }
 
-@test "NEGATIVE PROOF — no token → REFUSED naming 'no session', and NOTHING is started" {
+# ---- #4215 — the posture changed: a login failure must not cost Jeff the role ----
+#
+# Jeff, 2026-09-19: "chorus-awake must be a non issue day to day — highly
+# reliable and resilient." The four tests that used to live here asserted the
+# opposite contract — every login failure refuses — and that contract is what
+# left Kade unreachable for an hour on 2026-09-18. They are rewritten, not
+# deleted: the same inputs, the opposite expectation, except the one that still
+# refuses.
+#
+# `nostart` and `lacks` are simple commands. `! grep` and `[[ ]]` mid-block both
+# pass on bash 3.2 regardless of what they assert.
+nostart() { test ! -f "$T/tmux.log"; }
+started() { grep -q "send-keys -t chorus-kade" "$T/tmux.log"; }
+lacks()   { test -z "$(grep -F -- "$2" "$1" 2>/dev/null || true)"; }
+
+@test "#4215 no token → the role STARTS anyway, degraded and loud" {
   touch "$T/token-fail"
+  ( sleep 0.3; reg 781 %5 ) &
   run "$SCRIPT" kade
-  [ "$status" -eq 1 ]
-  out_has "REFUSED"
-  out_has "no session for kade"
+  out_has "session NOT recorded for kade"
   out_has "no credential for 'kade'"
-  [ ! -f "$T/tmux.log" ]
-  [ ! -f "$T/curl.log" ]
+  out_has "recorded NO"
+  out_has "UNAUTHENTICATED"
+  started
 }
 
-@test "NEGATIVE PROOF — a token for ANOTHER role's WebID is refused as 'wrong principal'; nothing started" {
+@test "#4215 a degraded login is on the spine as session.login.degraded" {
+  touch "$T/token-fail"
+  ( sleep 0.3; reg 782 %5 ) &
+  run "$SCRIPT" kade
+  grep -q "^session.login.degraded kade " "$T/spine.log"
+}
+
+@test "#4215 the security API refusing the row does NOT stop the start" {
+  echo 403 > "$T/curl.status"
+  ( sleep 0.3; reg 783 %5 ) &
+  run "$SCRIPT" kade
+  out_has "session NOT recorded for kade"
+  out_has "403"
+  started
+  # #4215 — found in the live pair: this line used to say "recorded yes" two
+  # lines under the error. A start line that contradicts the error above it is
+  # worse than no line.
+  out_has "recorded NO"
+  test -z "$(printf '%s' "$output" | grep -F "recorded yes" || true)"
+  grep -q "^session.login.degraded kade " "$T/spine.log"
+}
+
+@test "#4215 an expired token degrades: it is a stale credential, not someone else's" {
+  mk_token kade $(( $(date +%s) - 5 ))
+  ( sleep 0.3; reg 784 %5 ) &
+  run "$SCRIPT" kade
+  out_has "expired"
+  out_has "recorded NO"
+  out_has "UNAUTHENTICATED"
+  started
+}
+
+@test "#4215 a 409 on a row this principal owns is a login, not a failure — the role starts" {
+  echo 409 > "$T/curl.status"
+  printf '{"name":"kade-0001-x","ownedBy":"principal-kade","sessionState":"open"}' > "$T/existing.json"
+  ( sleep 0.3; reg 785 %5 ) &
+  run "$SCRIPT" kade
+  out_has "already open and owned by principal-kade"
+  out_has "reusing it"
+  started
+}
+
+@test "#4215 a 409 on ANOTHER principal's row still refuses, and says whose" {
+  echo 409 > "$T/curl.status"
+  printf '{"name":"kade-0001-x","ownedBy":"principal-silas","sessionState":"open"}' > "$T/existing.json"
+  run "$SCRIPT" kade
+  test "$status" -eq 1
+  out_has "REFUSED"
+  out_has "is NOT yours"
+  out_has "principal-silas"
+  nostart
+}
+
+@test "#4215 THE ONE REFUSAL — another role's WebID is refused and nothing is started" {
   mk_token silas
   run "$SCRIPT" kade
-  [ "$status" -eq 1 ]
+  test "$status" -eq 1
   out_has "REFUSED"
   out_has "wrong principal"
   out_has "silas"
-  [ ! -f "$T/tmux.log" ]
+  out_has "file this work as theirs"
+  nostart
 }
 
-@test "NEGATIVE PROOF — an expired token is not a login" {
-  mk_token kade $(( $(date +%s) - 5 ))
-  run "$SCRIPT" kade
-  [ "$status" -eq 1 ]
+@test "#4215 NEGATIVE PROOF — under the OLD posture the SAME input starts nothing" {
+  # AWAKE_REFUSE_ON_LOGIN_FAILURE=1 is the pre-#4215 behaviour, kept only so this
+  # proof can show the two differ on the input that cost Jeff an hour of Kade.
+  # If this test ever passes with a pane started, the degrade branch is dead code.
+  touch "$T/token-fail"
+  run env AWAKE_REFUSE_ON_LOGIN_FAILURE=1 "$SCRIPT" kade
+  test "$status" -eq 1
   out_has "REFUSED"
-  out_has "expired"
-  [ ! -f "$T/tmux.log" ]
+  out_has "pre-#4215 posture"
+  nostart
 }
 
-@test "NEGATIVE PROOF — the security API refuses the Session row → not logged in, nothing started" {
-  echo 403 > "$T/curl.status"
-  run "$SCRIPT" kade
-  [ "$status" -eq 1 ]
-  out_has "REFUSED"
-  out_has "login not recorded"
-  out_has "403"
-  [ ! -f "$T/tmux.log" ]
-  [ ! -f "$T/spine.log" ]
-}
-
-@test "idempotent: an already-awake role is not logged in again (nothing sent)" {
+@test "idempotent: a role that is awake AND talking is not logged in again (nothing sent)" {
+  # #4215 — a registry entry alone is no longer "awake": the entry outlives the
+  # conversation, which is how a mute Kade read as present. The role has to have
+  # SPOKEN, so this test writes a turn onto the spine. The mute case is the next
+  # test.
   reg 56344 %0
-  run "$SCRIPT" kade
-  [ "$status" -eq 0 ]
-  [ ! -f "$T/token.log" ]
-  [ ! -f "$T/curl.log" ]
+  printf '{"role":"kade","event":"reply.published","timestamp":"%s"}\n' "$(date '+%Y-%m-%dT%H:%M:%S')" > "$T/spine-read.log"
+  run env CHORUS_LOG_FILE="$T/spine-read.log" "$SCRIPT" kade
+  test "$status" -eq 0
+  test ! -f "$T/token.log"
+  test ! -f "$T/curl.log"
+}
+
+@test "#4215 a registered but MUTE session is replaced, not blessed" {
+  reg 56345 %0
+  printf '{"role":"kade","event":"reply.published","timestamp":"2026-01-01T00:00:00"}\n' > "$T/spine-read.log"
+  run env CHORUS_LOG_FILE="$T/spine-read.log" "$SCRIPT" kade
+  grep -q "stop 56345" "$T/claude.log"
+  test ! -f "$T/sessions/kade-56345.json"
+}
+
+@test "#4215 NEGATIVE PROOF — without the liveness check the same mute session is blessed" {
+  reg 56346 %0
+  printf '{"role":"kade","event":"reply.published","timestamp":"2026-01-01T00:00:00"}\n' > "$T/spine-read.log"
+  run env CHORUS_LOG_FILE="$T/spine-read.log" AWAKE_LIVENESS=0 "$SCRIPT" kade
+  test "$status" -eq 0
+  test -f "$T/sessions/kade-56346.json"
+  test -z "$(grep -F "stop 56346" "$T/claude.log" 2>/dev/null || true)"
 }

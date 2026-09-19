@@ -1,6 +1,6 @@
 // #4184 — the decision core, unit-tested with fixtures. The bats suite drives the
 // built binary with stub claude/tmux/ps for the integration proofs.
-use chorus_awake::{decide, parse_registry, proof_line, projects_dir_for, Live};
+use chorus_awake::{tz_offset_secs, answered_recently, awake_verdict, chrono_secs, Awake, decide, parse_registry, proof_line, projects_dir_for, Live, login_posture, Start};
 
 const NOW: u128 = 1_789_000_000_000;
 fn agent(id: &str, sid: &str, pid: &str, started_ago_h: f64, state: &str) -> String {
@@ -132,11 +132,14 @@ mod login_4202 {
     #[test]
     fn the_session_row_is_owned_by_the_principal_and_never_carries_the_token() {
         let l = login_check("kade", &tok(KADE, "abc-jti-0001", 1758124800, 1758125400), 1758124801).unwrap();
-        let (name, body) = session_row("kade", &l, "chorus-kade");
+        let (name, body) = session_row("kade", &l, "chorus-kade", "1a2b3c");
         // #4202 — the BARE name. The mint adds the `session-` prefix and refuses
         // a name that already carries it ("double-prefix ... pass the bare
         // name"), which is a 422 the first real login earned.
-        assert_eq!(name, "kade-jti-0001");
+        // #4215 — the name carries the START, not only the token. Two starts inside
+        // one cached token's life used to mint the same name and the second 409'd,
+        // which stopped the role booting at all.
+        assert_eq!(name, "kade-jti-0001-1a2b3c");
         assert_eq!(body["ownedBy"], "principal-kade");
         assert_eq!(body["tokenId"], "abc-jti-0001");
         assert_eq!(body["sessionState"], "open");
@@ -145,4 +148,136 @@ mod login_4202 {
         assert_eq!(body["expiresAt"], "2025-09-17T16:10:00Z");
         assert!(!body.to_string().contains("eyJ"));
     }
+
+    /// #4215 NEGATIVE PROOF — the whole defect was that this could NOT be true.
+    /// Same login, two starts: the names must differ, or the second collides with
+    /// the first's row and the role does not boot. Mutating session_row back to the
+    /// jti-only name makes this assertion fail, which is the point.
+    #[test]
+    fn two_starts_on_one_cached_token_get_different_session_names() {
+        let l = login_check("kade", &tok(KADE, "abc-jti-0001", 1758124800, 1758125400), 1758124801).unwrap();
+        let (first, _)  = session_row("kade", &l, "chorus-kade", "aaa111");
+        let (second, _) = session_row("kade", &l, "chorus-kade", "bbb222");
+        assert_ne!(first, second, "two starts on one token must not share a session name");
+        assert!(first.starts_with("kade-jti-0001-"), "{first}");
+        assert!(second.starts_with("kade-jti-0001-"), "{second}");
+    }
+}
+
+/// #4215 — a role is awake when it SPOKE, not when a file says so.
+#[test]
+fn a_session_that_has_not_spoken_is_not_awake_however_live_the_file_looks() {
+    let now = chrono_secs("2026-09-19T07:33:00").unwrap();
+    let spine = concat!(
+        "{\"timestamp\":\"2026-09-19T06:01:00\",\"event\":\"reply.published\",\"role\":\"kade\"}\n",
+        "{\"timestamp\":\"2026-09-19T07:32:00\",\"event\":\"reply.published\",\"role\":\"silas\"}\n");
+    // silas spoke a minute ago
+    assert!(answered_recently(spine, "silas", 600, now, 0));
+    // kade's last word was 92 minutes ago — the exact shape of the 2026-09-19
+    // fugue, where his pid and registry entry were both perfectly healthy
+    assert!(!answered_recently(spine, "kade", 600, now, 0));
+}
+
+/// #4215 NEGATIVE PROOF — an unparseable or absent stamp must read as NOT awake.
+/// A liveness check that treats "I could not tell" as "yes" is the shape that
+/// let a dead session look alive for an hour.
+#[test]
+fn unreadable_or_missing_activity_is_not_awake() {
+    let now = chrono_secs("2026-09-19T07:33:00").unwrap();
+    assert!(!answered_recently("", "kade", 600, now, 0));
+    assert!(!answered_recently("{\"timestamp\":\"not-a-date\",\"event\":\"reply.published\",\"role\":\"kade\"}", "kade", 600, now, 0));
+    // a heartbeat is not a reply: the process being alive is the thing we stopped trusting
+    assert!(!answered_recently("{\"timestamp\":\"2026-09-19T07:32:59\",\"event\":\"system.heartbeat\",\"role\":\"kade\"}", "kade", 600, now, 0));
+}
+
+/// #4215 — the branch ACTS on liveness: a mute session is replaced, not blessed.
+#[test]
+fn a_mute_session_is_replaced_and_a_talking_one_is_left_alone() {
+    assert_eq!(awake_verdict(true,  true,  true), Awake::AlreadyAwake);
+    assert_eq!(awake_verdict(true,  false, true), Awake::ReplaceMute);
+    assert_eq!(awake_verdict(false, false, true), Awake::Fresh);
+}
+
+/// #4215 NEGATIVE PROOF — with the check off, the SAME mute session reads as
+/// fine. That is exactly what shipped before today, and what left Kade with a
+/// healthy pid, a healthy registry entry and no way to answer for over an hour.
+#[test]
+fn without_the_liveness_check_the_same_mute_session_is_blessed() {
+    assert_eq!(awake_verdict(true, false, false), Awake::AlreadyAwake);
+    assert_ne!(awake_verdict(true, false, false), awake_verdict(true, false, true));
+}
+
+// ---- #4215 — a login failure must not be the reason a role does not run ----
+
+#[test]
+fn the_api_being_down_still_starts_the_role() {
+    // no token because chorus-identity-token could not reach the API
+    match login_posture(Some("no token: connection refused"), false) {
+        Start::Degraded(w) => assert!(w.contains("connection refused")),
+        other => panic!("the API being down must not stop a start, got {:?}", other),
+    }
+}
+
+#[test]
+fn a_shape_complaint_or_5xx_still_starts_the_role() {
+    for why in ["http=422 duplicate 'tokenId'", "http=500", "curl failed: timeout"] {
+        match login_posture(Some(why), false) {
+            Start::Degraded(_) => {}
+            other => panic!("{} must degrade, not refuse; got {:?}", why, other),
+        }
+    }
+}
+
+#[test]
+fn a_credential_naming_another_principal_still_refuses() {
+    // the ONE refusal: starting here would file kade's work under silas
+    let why = "wrong principal: the token names https://x/kade/profile/card#me not silas";
+    match login_posture(Some(why), false) {
+        Start::Refuse(w) => assert!(w.contains("wrong principal")),
+        other => panic!("a wrong-principal credential must refuse, got {:?}", other),
+    }
+}
+
+#[test]
+fn a_clean_login_is_just_go() {
+    assert_eq!(login_posture(None, false), Start::Go);
+}
+
+#[test]
+fn negative_proof_the_old_refuse_everything_posture_would_have_blocked_the_same_start() {
+    // The two postures must DIFFER on the input that cost Jeff an hour of Kade.
+    // If this ever passes with them equal, the degrade branch is decorative.
+    let why = "http=422 duplicate 'tokenId' across all session";
+    let now = login_posture(Some(why), false);
+    let before = login_posture(Some(why), true);
+    assert_eq!(before, Start::Refuse(why.to_string()));
+    assert_ne!(now, before);
+
+    // and the one real refusal is NOT the thing that changed
+    let wrong = "wrong principal: the token names kade not silas";
+    assert_eq!(login_posture(Some(wrong), false), login_posture(Some(wrong), true));
+}
+
+
+#[test]
+fn a_local_spine_stamp_is_not_four_hours_stale() {
+    // #4215 — the spine writes local time with no offset. Read as UTC it put
+    // every Boston stamp 4h in the past, which would have ended a role that had
+    // just answered.
+    let line = r#"{"role":"kade","event":"reply.published","timestamp":"2026-09-19T07:33:01"}"#;
+    let now_utc = 1_789_000_000u64; // irrelevant: we compute both frames below
+    let _ = now_utc;
+    let local_secs = chrono_secs("2026-09-19T07:33:01").unwrap();
+    let edt = -4 * 3600;
+    let now = local_secs + 4 * 3600 + 60; // one minute later, in UTC
+    assert!(answered_recently(line, "kade", 900, now, edt), "a stamp one minute old must read as recent");
+    assert!(!answered_recently(line, "kade", 900, now, 0), "reading local as UTC is what made it look mute");
+}
+
+#[test]
+fn an_unreadable_offset_is_none_and_a_readable_one_parses() {
+    assert_eq!(tz_offset_secs("-0400"), Some(-4 * 3600));
+    assert_eq!(tz_offset_secs("+0530"), Some(5 * 3600 + 1800));
+    assert_eq!(tz_offset_secs(""), None);
+    assert_eq!(tz_offset_secs("nonsense"), None);
 }

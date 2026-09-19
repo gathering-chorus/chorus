@@ -28,7 +28,7 @@ chorus:athena a chorus:Product ;
     rdfs:comment """Athena is the structural and query layer of Chorus — the canonical model of what exists in the team's product world (products, domains, services, value-streams) and the predicates that connect them.""" ;
     chorus:label """Athena""" ;
     rdfs:label """Athena""" ;
-    chorus:ownedBy chorus:role-wren ;
+    chorus:ownedBy chorus:principal-wren ;
     chorus:vision """One model of what exists, with the rules built in, from which the APIs and pages that describe it are generated rather than written.""" ;
     chorus:valueProposition """One queryable source of truth for the product world, with no back door that gives a different answer: every question about structure or impact resolves to a real entry in the model.""" ;
     chorus:audience """The people and agents who build inside the platform, the automated checks that gate their work, and anyone reading the generated pages to understand what the system is made of.""" ;
@@ -95,7 +95,7 @@ flowchart LR
     rdfs:label """Borg""" ;
     chorus:comment """Borg is the self-judgment product of Chorus, spanning Proving and Reflecting — the system seeing itself so no human has to be the eyes.""" ;
     rdfs:comment """Borg is the self-judgment product of Chorus, spanning Proving and Reflecting — the system seeing itself so no human has to be the eyes.""" ;
-    chorus:ownedBy chorus:role-silas ;
+    chorus:ownedBy chorus:principal-silas ;
     chorus:vision """A self-observing system whose monitors and alerts are generated from the model, whose front page is a verdict rather than a readout, and whose capability travels to any system it builds.""" ;
     chorus:valueProposition """Your attention back. Borg surfaces the one thing that needs a person, calmly, to the person who owns it, so nobody has to be the eyes.""" ;
     chorus:audience """The roles building the system, who use it to notice a peer gone dark or a service drifting before the owner does; and the owner, who consumes outcomes only.""" ;
@@ -145,7 +145,7 @@ chorus:chorus a chorus:Product ;
     rdfs:label """Chorus""" ;
     chorus:comment """The coordination protocol — hooks, scripts, gates, dashboards, spine, shared memory index. The nervous system.""" ;
     rdfs:comment """The coordination protocol — hooks, scripts, gates, dashboards, spine, shared memory index. The nervous system.""" ;
-    chorus:ownedBy chorus:role-wren ;   # #4096: was a string, not the role — the poster found it (a row nobody could sign)
+    chorus:ownedBy chorus:principal-wren ;   # #4096: was a string, not the role — the poster found it (a row nobody could sign)
     chorus:vision """A platform for building systems, worked by a small team of people and AI agents, where the way of building is itself modeled, observable and improvable.""" ;
     chorus:valueProposition """A repeatable, instrumented, legible method for forging software: shared memory, one board, one event log, and gates at the right moments, so the output arrives proven rather than claimed.""" ;
     chorus:audience """The team working inside it today, and any team that wants to compose people and agents into something that holds together without a person in the middle of every message.""" ;
@@ -218,7 +218,7 @@ chorus:clearing a chorus:Product ;
     rdfs:label """The Clearing""" ;
     chorus:comment """Multi-party real-time alignment — browser chat with Jeff and all three AI roles. Parent product of Spine and Pulse.""" ;
     rdfs:comment """Multi-party real-time alignment — browser chat with Jeff and all three AI roles. Parent product of Spine and Pulse.""" ;
-    chorus:ownedBy chorus:role-wren ;
+    chorus:ownedBy chorus:principal-wren ;
     chorus:vision """One place where the team and the running system meet: the board, the messages and the record in a single room, readable at a glance from any device.""" ;
     chorus:valueProposition """The owner manages by glancing instead of relaying: tiles show who is building what, the stream shows decisions and demos as they happen, alerts surface without checking terminals.""" ;
     chorus:audience """The owner, watching the team work in real time; the roles, coordinating with one another; and guests observing a session.""" ;
@@ -277,7 +277,7 @@ flowchart LR
     rdfs:label """Convergence""" ;
     chorus:comment """Cross-domain integration — ICDs, harvesters, data pipelines. The product whose job is making the many sources one graph.""" ;
     rdfs:comment """Cross-domain integration — ICDs, harvesters, data pipelines. The product whose job is making the many sources one graph.""" ;
-    chorus:ownedBy chorus:role-kade ;
+    chorus:ownedBy chorus:principal-kade ;
     chorus:vision """Every outside source enters through one governed path, mapped, reconciled and conformed to the canonical model before it lands, so nothing arrives unshaped.""" ;
     chorus:valueProposition """Integrations are declared before they are coded, and data lineage is a contract rather than an accident: every landed fact retraces to its source.""" ;
     chorus:audience """The people writing integrations, the model as the destination, and the contract gate as the enforcement point between them.""" ;
@@ -324,7 +324,7 @@ chorus:loom a chorus:Product ;
     rdfs:label """Loom""" ;
     chorus:comment """The operating-model and team-knowledge layer of Chorus — the team's persistent product memory at the Shaping step — carrying principles, practices, policies, decisions, roles, skills, and RCAs.""" ;
     rdfs:comment """The operating-model and team-knowledge layer of Chorus — the team's persistent product memory at the Shaping step — carrying principles, practices, policies, decisions, roles, skills, and RCAs.""" ;
-    chorus:ownedBy chorus:role-wren ;   # #4096: was role-jeff — a human principal resolves to no writing role, so nobody could write this row through the door; Loom is Wren's product (principles, practices, policies)
+    chorus:ownedBy chorus:principal-wren ;   # #4096: was role-jeff — a human principal resolves to no writing role, so nobody could write this row through the door; Loom is Wren's product (principles, practices, policies)
     chorus:vision """The team's operating model held as a coherent, validated model: every principle, practice, policy, decision, role and skill a real entry with a shape, and the loop from experience back to principle closed.""" ;
     chorus:valueProposition """Coordination without a switchboard: the rules of working are written down, enforced where actions happen, and fed back from experience, rather than remembered and relayed by one person.""" ;
     chorus:audience """The team, for whom Loom holds the persistent operating frame; and any team adopting the method, which receives a working normative model rather than a pile of documents.""" ;
@@ -374,7 +374,7 @@ chorus:pulse a chorus:Product ;
     rdfs:label """Pulse""" ;
     chorus:comment """The team's vital signs — who is working, on what, and what they are waiting on. A child product of The Clearing.""" ;
     rdfs:comment """The team's vital signs — who is working, on what, and what they are waiting on. A child product of The Clearing.""" ;
-    chorus:ownedBy chorus:role-wren ;
+    chorus:ownedBy chorus:principal-wren ;
     chorus:vision """The owner looks once and knows where the work stands: who is moving, who is stuck, and what is waiting on whom, read in a glance and never assembled by asking.""" ;
     chorus:valueProposition """The team's state made readable instead of askable: the roles watch each other through it rather than messaging to check, and the owner stops being the one who has to ask.""" ;
     chorus:audience """The owner first, on one screen with no interpretation required; the roles second, as the way they see each other without interrupting; alerting third, as a consumer of the same reading.""" ;
@@ -448,7 +448,7 @@ flowchart LR
     rdfs:label """Spine""" ;
     chorus:comment """Two layers, not one (Jeff 2026-09-01, EDA framing): EventType is curated vocabulary in the graph; SpineEvent is the log projected on read. Composes the events domain; the spine vocabulary domain shares its IRI (#1772) and cannot be linked until one side is renamed. Excludes logs (Silas, Proving) — a consumer, not a constituent.""" ;
     rdfs:comment """Two layers, not one (Jeff 2026-09-01, EDA framing): EventType is curated vocabulary in the graph; SpineEvent is the log projected on read. Composes the events domain; the spine vocabulary domain shares its IRI (#1772) and cannot be linked until one side is renamed. Excludes logs (Silas, Proving) — a consumer, not a constituent.""" ;
-    chorus:ownedBy chorus:role-wren ;
+    chorus:ownedBy chorus:principal-wren ;
     chorus:vision """A team that can replay its own history can improve deliberately: event types as a curated vocabulary, occurrences as an immutable stream, joined in both directions.""" ;
     chorus:valueProposition """The team's memory of what happened: an append-only record of everything that occurred and a catalogue of everything that can. Nothing is lost, anything recorded is reachable, what can happen is enumerated.""" ;
     chorus:audience """The owner, the roles, and every other product in the platform, all of which read it.""" ;
@@ -545,7 +545,7 @@ flowchart TB
     rdfs:label """Werk""" ;
     chorus:comment """The Chorus execution protocol that carries a unit of work from pulled to proven-and-accepted, across the Building and Proving steps.""" ;
     rdfs:comment """The Chorus execution protocol that carries a unit of work from pulled to proven-and-accepted, across the Building and Proving steps.""" ;
-    chorus:ownedBy chorus:role-kade ;
+    chorus:ownedBy chorus:principal-kade ;
     chorus:vision """Work that arrives proven rather than claimed: one trace from the moment a piece of work is picked up to the exact binary that is running, with a check at every step.""" ;
     chorus:valueProposition """Every piece of work that enters leaves as merged source with a coherent receipt, shown working before it lands and accepted by someone accountable, so a green result cannot lie.""" ;
     chorus:audience """The roles building the platform and the owner accepting the work. The external customer never touches Werk; what they buy is the trust it makes possible.""" ;

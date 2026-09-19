@@ -47,6 +47,11 @@ EOS
   export CLAUDE_BIN="$T/bin/claude" TMUX_BIN="$T/bin/tmux" AWAKE_PS="$T/bin/ps"
   export CHORUS_SESSIONS_DIR="$T/sessions" AWAKE_ROLE_DIR="$T/roles/kade" CHORUS_ROOT="$ROOT"
   export AWAKE_NO_ATTACH=1 AWAKE_WAIT=1
+  # #4215 — the mute check reads the spine. Point it at a fixture that says kade
+  # answered a moment ago, so "already awake" means the same thing on every box
+  # and at every hour instead of depending on what the real team said today.
+  printf '{"role":"kade","event":"reply.published","timestamp":"%s"}\n' "$(date '+%Y-%m-%dT%H:%M:%S')" > "$T/spine-read.log"
+  export CHORUS_LOG_FILE="$T/spine-read.log"
   mkdir -p "$T/projects"; export AWAKE_PROJECTS_DIR="$T/projects"
   unset TMUX
 }
@@ -142,12 +147,19 @@ EOS
   ! grep -qE "claude'? Enter|claude agents" "$T/tmux.log"
 }
 
-@test "NEGATIVE PROOF — the background-session list cannot be read → REFUSED, nothing sent (never guess -c)" {
+@test "#4215 the background-session list cannot be read → the role STARTS on the last conversation, loudly" {
+  # This test asserted the opposite until 2026-09-19: an unreadable list refused,
+  # "never guess -c". The guess costs a duplicate pane Jeff can close; the
+  # refusal costs him the role, which is the failure this card exists to end.
   touch "$T/agents-fail"
+  ( sleep 0.3; reg 91 %0 ) &
   run "$SCRIPT" kade
-  [ "$status" -eq 1 ]
-  [[ "$output" == *"REFUSED"*"could not list kade's background sessions"*"unknown option --cwd"* ]]
-  [ ! -f "$T/tmux.log" ]
+  printf '%s' "$output" | grep -q "could not list kade's background sessions"
+  printf '%s' "$output" | grep -q "unknown option --cwd"
+  printf '%s' "$output" | grep -q "continuing with the last conversation"
+  grep -q "claude -c" "$T/tmux.log"
+  # and it never pretends the list was read
+  test -z "$(printf '%s' "$output" | grep -F "already awake" || true)"
 }
 
 @test "NEGATIVE PROOF — an OLDER background helper is never attached when a newer conversation exists (first live run defect)" {
