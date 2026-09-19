@@ -512,6 +512,7 @@ pub fn run(args: &[String]) -> i32 {
     let token = token.unwrap_or_default();
     // #4215 — only write a Session row when there are claims to write. Without
     // them the degrade was already announced above; the pane still starts.
+    let mut row_written = true;
     if let Some(login) = login {
         let host_account = envd("USER", "unknown");
         let start_id = format!("{:x}", now_ms());
@@ -570,9 +571,17 @@ pub fn run(args: &[String]) -> i32 {
             eprintln!("  starting anyway: the identity was verified before this write, and a bookkeeping");
             eprintln!("  failure must not decide whether you have an engineer. Recorded as degraded.");
             let _ = sh(&log_bin_for(&root), &["session.login.degraded", &role, &format!("http={}", code), &format!("session={}", session_name)]);
+            // #4215 — found in the live pair: the success line below printed
+            // "recorded yes" two lines under "session NOT recorded". A start line
+            // that contradicts the error above it is worse than no line at all.
+            row_written = false;
         }
         let _ = Command::new("bash").arg(&log_bin_early).args(["session.login", &role, &format!("webid={}", login.webid), &format!("jti={}", login.jti), &format!("session={}", session_name), &format!("host_account={}", host_account), &format!("expires_at={}", iso_utc(login.exp))]).output();
-        println!("login: {}  webid {}  jti {}  session {}  recorded yes", role, login.webid, login.jti, session_name);
+        if row_written {
+            println!("login: {}  webid {}  jti {}  session {}  recorded yes", role, login.webid, login.jti, session_name);
+        } else {
+            println!("login: {}  webid {}  jti {}  session {}  recorded NO — the API refused the row (started UNAUTHENTICATED: any write this pane attempts will be refused)", role, login.webid, login.jti, session_name);
+        }
     }
     if let Some(why) = &degraded {
         println!("login: {}  recorded NO — {}  (started UNAUTHENTICATED: no session row, any write this pane attempts will be refused by the API)", role, why);

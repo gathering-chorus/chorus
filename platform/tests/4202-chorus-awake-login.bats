@@ -153,6 +153,11 @@ lacks()   { test -z "$(grep -F -- "$2" "$1" 2>/dev/null || true)"; }
   out_has "session NOT recorded for kade"
   out_has "403"
   started
+  # #4215 — found in the live pair: this line used to say "recorded yes" two
+  # lines under the error. A start line that contradicts the error above it is
+  # worse than no line.
+  out_has "recorded NO"
+  test -z "$(printf '%s' "$output" | grep -F "recorded yes" || true)"
   grep -q "^session.login.degraded kade " "$T/spine.log"
 }
 
