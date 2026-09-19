@@ -16,3 +16,13 @@
 {"version": "1.15.0", "bump": "minor", "verb": "shape", "target": "shape:roles/kade/ontology/domains-kade-3581.ttl", "by": "kade", "card": "#4157", "date": "2026-09-12"}
 {"version": "1.16.0", "bump": "minor", "verb": "shape", "target": "shape:roles/kade/ontology/domains-kade-3581.ttl", "by": "kade", "card": "#4157", "date": "2026-09-12"}
 {"version": "1.17.0", "bump": "minor", "verb": "property", "target": "property:roles/wren/ontology/priorities-3686.ttl", "by": "wren", "card": "", "date": "2026-09-16"}
+{"version": "1.18.0", "bump": "minor", "verb": "class", "target": "class:roles/kade/ontology/domains-kade-3581.ttl", "by": "kade", "card": "", "date": "2026-09-19"}
+{"version": "1.19.0", "bump": "minor", "verb": "class", "target": "class:roles/kade/ontology/domains-kade-3581.ttl", "by": "kade", "card": "", "date": "2026-09-19"}
+{"version": "1.20.0", "bump": "minor", "verb": "property", "target": "property:roles/kade/ontology/domains-kade-3581.ttl", "by": "kade", "card": "", "date": "2026-09-19"}
+{"version": "1.21.0", "bump": "minor", "verb": "property", "target": "property:roles/kade/ontology/domains-kade-3581.ttl", "by": "kade", "card": "", "date": "2026-09-19"}
+{"version": "1.22.0", "bump": "minor", "verb": "property", "target": "property:roles/kade/ontology/domains-kade-3581.ttl", "by": "kade", "card": "", "date": "2026-09-19"}
+{"version": "1.23.0", "bump": "minor", "verb": "property", "target": "property:roles/kade/ontology/domains-kade-3581.ttl", "by": "kade", "card": "", "date": "2026-09-19"}
+{"version": "1.24.0", "bump": "minor", "verb": "shape", "target": "shape:roles/kade/ontology/domains-kade-3581.ttl", "by": "kade", "card": "", "date": "2026-09-19"}
+{"version": "1.25.0", "bump": "minor", "verb": "shape", "target": "shape:roles/kade/ontology/domains-kade-3581.ttl", "by": "kade", "card": "", "date": "2026-09-19"}
+{"version": "1.26.0", "bump": "minor", "verb": "shape", "target": "shape:roles/kade/ontology/domains-kade-3581.ttl", "by": "kade", "card": "", "date": "2026-09-19"}
+{"version": "1.27.0", "bump": "minor", "verb": "shape", "target": "shape:roles/kade/ontology/domains-kade-3581.ttl", "by": "kade", "card": "", "date": "2026-09-19"}
