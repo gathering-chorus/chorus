@@ -45,7 +45,44 @@ use serde::Deserialize;
 pub const NS: &str = "https://jeffbridwell.com/chorus#";
 pub const INSTANCES_GRAPH: &str = "urn:chorus:instances";
 pub const ONTOLOGY_GRAPH: &str = "urn:chorus:ontology";
-pub const SECURITY_GRAPH: &str = "urn:chorus:domains:security";
+/// Where the Principal registry USED to be, and the fallback when the model
+/// cannot be read. #4220: Silas is moving Principal rows to the graph
+/// PrincipalShape declares (urn:chorus:domains:identity, where Session rows
+/// already live), and this constant made athena-model the one door of four that
+/// could not follow — athena-make, chorus-oidc and clearing all ask the model.
+/// Two rollbacks today came from that asymmetry.
+pub const SECURITY_GRAPH_DEFAULT: &str = "urn:chorus:domains:security";
+
+/// The query that asks the model where Principal rows live. Identical to
+/// chorus-oidc's, on purpose: four doors must answer alike.
+pub const PRINCIPAL_HOME_QUERY: &str = "PREFIX chorus: <https://jeffbridwell.com/chorus#> PREFIX sh: <http://www.w3.org/ns/shacl#> SELECT ?v WHERE { GRAPH <urn:chorus:ontology> { ?shape sh:targetClass chorus:Principal ; chorus:instancesGraph ?v } } LIMIT 1";
+
+/// Pure: pick the home from what the model answered. Anything unusable leaves
+/// the current answer alone — a door that cannot read the model must not
+/// silently start reading somewhere new.
+pub fn principal_home_from(rows: &[String], current: &str) -> String {
+    match rows.iter().find(|r| r.starts_with("urn:chorus:")) {
+        Some(g) => g.clone(),
+        None => current.to_string(),
+    }
+}
+
+/// The Principal registry's graph, ASKED OF THE MODEL once per process.
+pub fn security_graph_with(store: &dyn Store) -> String {
+    let current = std::env::var("CHORUS_SECURITY_GRAPH")
+        .unwrap_or_else(|_| SECURITY_GRAPH_DEFAULT.to_string());
+    match store.select_v(PRINCIPAL_HOME_QUERY) {
+        Ok(rows) => principal_home_from(&rows, &current),
+        Err(_) => current,
+    }
+}
+
+pub fn security_graph() -> String {
+    static RESOLVED: std::sync::OnceLock<String> = std::sync::OnceLock::new();
+    RESOLVED
+        .get_or_init(|| security_graph_with(&FusekiStore::new()))
+        .clone()
+}
 pub const FUSEKI: &str = "http://localhost:3030/pods";
 
 pub type R<T> = Result<T, String>;
@@ -639,6 +676,51 @@ fn create_only_stamp() -> String {
 }
 
 #[cfg(test)]
+mod principal_home_4220 {
+    use super::*;
+
+    struct Answers(Vec<String>);
+    impl Store for Answers {
+        fn ask(&self, _: &str) -> R<bool> { Ok(false) }
+        fn select_v(&self, _: &str) -> R<Vec<String>> { Ok(self.0.clone()) }
+        fn update(&self, _: &str) -> R<()> { Ok(()) }
+    }
+    struct Down;
+    impl Store for Down {
+        fn ask(&self, _: &str) -> R<bool> { Err("down".into()) }
+        fn select_v(&self, _: &str) -> R<Vec<String>> { Err("down".into()) }
+        fn update(&self, _: &str) -> R<()> { Err("down".into()) }
+    }
+
+    /// #4220 — athena-model was the one door of four that could not follow a
+    /// moved Principal registry: the graph was a constant in six places, so
+    /// Silas's move 502'd every write and rolled back twice today. It asks the
+    /// model now, exactly as chorus-oidc does.
+    #[test]
+    fn the_registry_graph_comes_from_the_model() {
+        let s = Answers(vec!["urn:chorus:domains:identity".into()]);
+        assert_eq!(security_graph_with(&s), "urn:chorus:domains:identity");
+    }
+
+    /// NEGATIVE PROOF: an unreadable model leaves the door where it was. A door
+    /// that cannot read the model must not silently start reading somewhere
+    /// new — that is how a registry gets split without anyone noticing.
+    #[test]
+    fn an_unreadable_model_leaves_the_door_where_it_was() {
+        assert_eq!(security_graph_with(&Down), SECURITY_GRAPH_DEFAULT);
+        let empty = Answers(vec![]);
+        assert_eq!(security_graph_with(&empty), SECURITY_GRAPH_DEFAULT);
+    }
+
+    /// And a junk answer is not a graph.
+    #[test]
+    fn a_non_graph_answer_is_ignored() {
+        let s = Answers(vec!["not-a-graph".into()]);
+        assert_eq!(security_graph_with(&s), SECURITY_GRAPH_DEFAULT);
+    }
+}
+
+#[cfg(test)]
 mod folds_are_writable_4214 {
     use super::*;
 
@@ -737,7 +819,7 @@ pub fn write_grants_for_webid(store: &dyn Store, webid: &str) -> R<Vec<String>> 
         "PREFIX chorus: <{ns}> PREFIX acl: <http://www.w3.org/ns/auth/acl#> \
          SELECT DISTINCT ?v WHERE {{ GRAPH <{g}> {{ ?perm a chorus:Permission ; chorus:agent ?p ; chorus:accessTo ?s ; chorus:mode ?m . FILTER(?m = acl:Write || STR(?m) = STR(acl:Write)) \
          ?p a chorus:Principal ; chorus:webId ?wid . FILTER(STR(?wid) = \"{w}\") BIND(STR(?s) AS ?v) }} }}",
-        ns = NS, g = SECURITY_GRAPH, w = webid
+        ns = NS, g = security_graph(), w = webid
     ))
 }
 
@@ -805,13 +887,13 @@ pub fn verify_identity(claim: Option<&str>, store: &dyn Store) -> R<Identity> {
     }
     let known = store.ask(&format!(
         "ASK {{ GRAPH <{g}> {{ <{ns}principal-{c}> a <{ns}Principal> }} }}",
-        g = SECURITY_GRAPH, ns = NS, c = claim
+        g = security_graph(), ns = NS, c = claim
     ))?;
     if !known {
         witness("model.refused", &[("reason", "identity-unknown"), ("claim", claim)]);
         return Err(format!(
             "identity-unknown: '{}' is not a registered chorus:Principal in <{}> — writes refuse (fail closed, #3651)",
-            claim, SECURITY_GRAPH
+            claim, security_graph()
         ));
     }
     Ok(Identity(claim.to_string()))
@@ -860,7 +942,7 @@ pub fn verify_identity_token(
     let claim = store
         .select_v(&format!(
             "PREFIX chorus: <{ns}> SELECT ?v WHERE {{ GRAPH <{g}> {{ ?p a chorus:Principal ; chorus:webId ?wid . FILTER(STR(?wid) = \"{w}\") BIND(REPLACE(STR(?p), '.*#principal-', '') AS ?v) }} }}",
-            ns = NS, g = SECURITY_GRAPH, w = webid
+            ns = NS, g = security_graph(), w = webid
         ))?
         .into_iter()
         .next();
@@ -880,7 +962,7 @@ pub fn verify_identity_token(
             witness("model.refused", &[("reason", "identity-webid-unregistered"), ("webid", &webid)]);
             Err(format!(
                 "identity-webid-unregistered: verified WebID <{}> owns no chorus:Principal in <{}> — writes refuse (fail closed, #3356)",
-                webid, SECURITY_GRAPH
+                webid, security_graph()
             ))
         }
     }
@@ -1042,17 +1124,17 @@ fn assert_dal_writable(graph: &str) -> R<()> {
     // permission somebody granted through the same door, revocable as a row,
     // instead of a graph nobody could write through any door. The ontology
     // graph stays DBA-only: the schema is athena-make's.
-    if graph == SECURITY_GRAPH && granted_write_graphs().iter().any(|g| g == SECURITY_GRAPH) {
+    if graph == security_graph() && granted_write_graphs().iter().any(|g| *g == security_graph()) {
         witness("model.write.permitted", &[("graph", graph), ("reason", "acl-authorization-row")]);
         return Ok(());
     }
-    if graph == ONTOLOGY_GRAPH || graph == SECURITY_GRAPH {
+    if graph == ONTOLOGY_GRAPH || graph == security_graph() {
         witness("model.refused", &[("graph", graph), ("reason", "graph-dba-only")]);
         return Err(format!(
             "graph-dba-only: <{}> is a DBA-path graph — the instances DAL is refused write \
              (per-graph authz, fail closed, #3356 AC4{})",
             graph,
-            if graph == SECURITY_GRAPH { "; #4183: a Permission row with acl:mode acl:Write for this graph opens it" } else { "" }
+            if graph == security_graph() { "; #4183: a Permission row with acl:mode acl:Write for this graph opens it" } else { "" }
         ));
     }
     Ok(())
@@ -3062,28 +3144,28 @@ mod tests {
     #[test]
     fn security_graph_refuses_without_a_permission_row() {
         set_granted_write_graphs(vec![]);
-        let e = assert_dal_writable(SECURITY_GRAPH).unwrap_err();
+        let e = assert_dal_writable(&security_graph()).unwrap_err();
         assert!(e.contains("graph-dba-only"), "{e}");
         assert!(e.contains("#4183"), "the refusal names the way in: {e}");
     }
 
     #[test]
     fn security_graph_opens_for_a_permission_holder() {
-        set_granted_write_graphs(vec![SECURITY_GRAPH.to_string()]);
-        assert!(assert_dal_writable(SECURITY_GRAPH).is_ok());
+        set_granted_write_graphs(vec![security_graph()]);
+        assert!(assert_dal_writable(&security_graph()).is_ok());
         set_granted_write_graphs(vec![]);
     }
 
     #[test]
     fn negative_proof_a_permission_for_another_graph_does_not_open_security() {
         set_granted_write_graphs(vec!["urn:chorus:domains:tests".to_string()]);
-        assert!(assert_dal_writable(SECURITY_GRAPH).is_err());
+        assert!(assert_dal_writable(&security_graph()).is_err());
         set_granted_write_graphs(vec![]);
     }
 
     #[test]
     fn negative_proof_the_ontology_graph_stays_shut_even_with_every_permission() {
-        set_granted_write_graphs(vec![SECURITY_GRAPH.to_string(), ONTOLOGY_GRAPH.to_string()]);
+        set_granted_write_graphs(vec![security_graph(), ONTOLOGY_GRAPH.to_string()]);
         let e = assert_dal_writable(ONTOLOGY_GRAPH).unwrap_err();
         assert!(e.contains("graph-dba-only"), "{e}");
         set_granted_write_graphs(vec![]);

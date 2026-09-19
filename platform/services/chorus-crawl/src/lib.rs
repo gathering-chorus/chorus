@@ -238,6 +238,37 @@ pub fn classify_with_head(rel: &str, has_rust_test_attr: bool, head: Option<&str
 }
 
 #[cfg(test)]
+mod log_domain_4222 {
+    use super::*;
+
+    fn doms() -> Vec<String> {
+        ["cicd", "messages", "monitors", "spine", "logs"].iter().map(|s| s.to_string()).collect()
+    }
+
+    #[test]
+    fn a_log_is_placed_by_the_job_that_writes_it_then_its_name() {
+        assert_eq!(log_domain("com.chorus.werk-sweep", "/x/werk-sweep.log", &doms()).as_deref(), Some("cicd"));
+        assert_eq!(log_domain("unmanaged", "/x/nudge-delivery.log", &doms()).as_deref(), Some("messages"));
+        assert_eq!(log_domain("unmanaged", "/x/heartbeat-probe.log", &doms()).as_deref(), Some("monitors"));
+    }
+
+    #[test]
+    fn negative_proof_a_log_naming_nothing_stays_unplaced() {
+        // 84 of 133 live rows are in this state. They must report as unplaced
+        // rather than take a default — the authored UnitDomainMapping is the
+        // answer for them, and a guess here would hide that it is missing.
+        assert_eq!(log_domain("unmanaged", "/x/watcher.log", &doms()), None);
+        assert_eq!(log_domain("unmanaged", "/x/chorus.log", &doms()), None);
+    }
+
+    #[test]
+    fn a_domain_the_model_lacks_is_never_invented() {
+        // "search" is a real domain but not in this caller's list: no tag.
+        assert_eq!(log_domain("unmanaged", "/x/embed-worker.log", &doms()), None);
+    }
+}
+
+#[cfg(test)]
 mod classify_4173 {
     use super::*;
 
@@ -2260,6 +2291,61 @@ pub struct LogFile {
     pub size: u64,
     /// mtime, seconds since the epoch
     pub written_secs: u64,
+}
+
+/// #4222 — the domain a log belongs to, read from the job that writes it and
+/// the name of the file itself. In that order: the launchd label is a fact the
+/// box asserts, the filename is what the author called it, and neither is the
+/// folder.
+///
+/// The word list is the API's own vocabulary for a domain — `werk` is the cicd
+/// surface, `nudge` is messages, `fuseki` is infrastructure. Measured against
+/// the live 133 rows on 2026-09-19: label and name together place 49. The rest
+/// stay unplaced and are reported; `UnitDomainMapping` is the authored answer
+/// for those, and it covers 6 today.
+pub fn log_domain(label: &str, path: &str, domains: &[String]) -> Option<String> {
+    const WORD: &[(&str, &str)] = &[
+        ("werk", "cicd"),
+        ("crawl", "code"),
+        ("embed", "search"),
+        ("reindex", "search"),
+        ("index", "search"),
+        ("eventloop", "monitors"),
+        ("heartbeat", "monitors"),
+        ("watchdog", "monitors"),
+        ("health", "monitors"),
+        ("clearing", "messages"),
+        ("nudge", "messages"),
+        ("bridge", "messages"),
+        ("fuseki", "infrastructure"),
+        ("backup", "infrastructure"),
+        ("athena", "knowledge"),
+        ("hooks", "spine"),
+        ("pulse", "spine"),
+        ("bdd", "tests"),
+        ("test", "tests"),
+        ("deploy", "deploys"),
+        ("oidc", "identity"),
+        ("harvest", "services"),
+        ("alert", "alerts"),
+    ];
+    let file = path.rsplit('/').next().unwrap_or(path);
+    let words: Vec<String> = format!("{label} {file}")
+        .split(|c: char| !c.is_ascii_alphanumeric())
+        .filter(|w| !w.is_empty())
+        .map(|w| w.to_ascii_lowercase())
+        .collect();
+    for w in &words {
+        if let Some(d) = domains.iter().find(|d| d.as_str() == w) {
+            return Some(d.clone());
+        }
+        if let Some((_, mapped)) = WORD.iter().find(|(k, _)| k == w) {
+            if let Some(d) = domains.iter().find(|d| d.as_str() == *mapped) {
+                return Some(d.clone());
+            }
+        }
+    }
+    None
 }
 
 /// A log file with no launchd job behind it: a script's or a service's own.
