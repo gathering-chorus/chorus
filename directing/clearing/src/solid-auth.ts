@@ -45,8 +45,67 @@ const ALLOW_TTL_MS = 60_000;
  * Env-overridable so the graph can move by configuration rather than by a
  * coordinated edit across four languages, which is the move that broke it.
  */
-export const ALLOW_SET_GRAPH =
+export const ALLOW_SET_GRAPH_DEFAULT =
   process.env.CHORUS_ALLOW_SET_GRAPH || 'urn:chorus:domains:security';
+
+/**
+ * #4220 — the graph is a MODEL fact. PrincipalShape declares where Principal
+ * rows live; this door asks the model instead of carrying its own default that
+ * has to be changed in lock-step with the Rust doors.
+ *
+ * On 2026-09-19 the rows moved and the Rust door kept reading the old graph:
+ * every authenticated write answered "authn-missing" until the move was rolled
+ * back. Three doors with three defaults is the same shape as the four hand
+ * edits described above, one layer of indirection later.
+ *
+ * primeAllowSetGraph() is called once at startup with a SPARQL runner. An
+ * unreadable model leaves the door exactly where it was — a store hiccup is not
+ * a relocation, the same distinction the TTL below draws for revocation.
+ */
+export const PRINCIPAL_HOME_QUERY =
+  'PREFIX chorus: <https://jeffbridwell.com/chorus#> PREFIX sh: <http://www.w3.org/ns/shacl#> ' +
+  'SELECT ?g WHERE { GRAPH <urn:chorus:ontology> { ?shape sh:targetClass chorus:Principal ; chorus:instancesGraph ?g } } LIMIT 1';
+
+let resolvedAllowSetGraph: string | null = null;
+
+/** Pure: pick the home from what the model answered; anything unusable keeps `current`. */
+export function principalHomeFrom(rows: string[], current: string): string {
+  const g = rows.find((r) => typeof r === 'string' && r.startsWith('urn:chorus:'));
+  return g ?? current;
+}
+
+/** #4220 — the default runner: the same Fuseki endpoint the allow-set reads. */
+export async function sparqlValues(q: string, fetchImpl: typeof fetch = fetch): Promise<string[] | null> {
+  try {
+    const res = await fetchImpl(`${FUSEKI_QUERY}?query=${encodeURIComponent(q)}`, {
+      headers: { Accept: 'application/sparql-results+json' },
+    });
+    if (!res.ok) return null;
+    const body: any = await res.json();
+    return (body?.results?.bindings ?? []).map((b: any) => Object.values(b)[0])
+      .map((v: any) => String(v?.value ?? ''));
+  } catch {
+    return null;
+  }
+}
+
+export async function primeAllowSetGraph(
+  query: (q: string) => Promise<string[] | null> = sparqlValues,
+): Promise<string> {
+  let rows: string[] | null = null;
+  try {
+    rows = await query(PRINCIPAL_HOME_QUERY);
+  } catch {
+    rows = null;
+  }
+  resolvedAllowSetGraph = principalHomeFrom(rows ?? [], ALLOW_SET_GRAPH_DEFAULT);
+  return resolvedAllowSetGraph;
+}
+
+/** What every reader below uses: the primed answer, else the default. */
+export function allowSetGraph(): string {
+  return resolvedAllowSetGraph ?? ALLOW_SET_GRAPH_DEFAULT;
+}
 
 /**
  * How long a previously-verified allow-set may keep serving while the store is
@@ -70,7 +129,7 @@ export const STALE_CEILING_MS = Number(
 /** Emitted at refresh and on degraded serves: the line missing on 2026-08-06,
  *  when two consumers read two graphs and no surface named its source. */
 export function graphProvenance(count: number, reason: string): string {
-  return `allow-set: ${count} principal webid(s) from <${ALLOW_SET_GRAPH}> (${reason})`;
+  return `allow-set: ${count} principal webid(s) from <${allowSetGraph()}> (${reason})`;
 }
 /**
  * #3669 (Wren, gemba catch) — MUST be scoped to the security graph the seam
@@ -82,7 +141,7 @@ export function graphProvenance(count: number, reason: string): string {
  */
 export const ALLOW_QUERY =
   'PREFIX chorus: <https://jeffbridwell.com/chorus#> ' +
-  `SELECT ?webid WHERE { GRAPH <${ALLOW_SET_GRAPH}> { ?p a chorus:Principal ; chorus:webId ?webid } }`;
+  `SELECT ?webid WHERE { GRAPH <${allowSetGraph()}> { ?p a chorus:Principal ; chorus:webId ?webid } }`;
 
 let allowCache: { at: number; set: Set<string> } | null = null;
 
@@ -143,7 +202,7 @@ export async function isWebIdAllowed(
  */
 export const PRINCIPAL_MAP_QUERY =
   'PREFIX chorus: <https://jeffbridwell.com/chorus#> ' +
-  `SELECT ?p ?webid WHERE { GRAPH <${ALLOW_SET_GRAPH}> { ?p a chorus:Principal ; chorus:webId ?webid } }`;
+  `SELECT ?p ?webid WHERE { GRAPH <${allowSetGraph()}> { ?p a chorus:Principal ; chorus:webId ?webid } }`;
 
 let principalCache: { at: number; map: Map<string, { id: string; name: string }> } | null = null;
 
