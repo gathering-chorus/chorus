@@ -289,7 +289,11 @@ pub fn serves_routes(path: &str) -> bool {
 /// Deterministic door name. Same shape as `log_row_name` and `stable_name`: a
 /// readable slug plus a digest of the EXACT key, so two rows that slug alike
 /// still get two rows (the collision that refused the first CodeFile batch).
-fn row_name(prefix: &str, key: &str) -> String {
+/// #4214 — the BARE name. The door mints the type prefix itself and refuses a
+/// name that already carries one ("double-prefix", 422, caught on the variant
+/// 2026-09-19 before any prod row). So this builds slug + digest and nothing
+/// else; `page:` / `endpoint:` is the DAL's to add.
+fn row_name(_prefix: &str, key: &str) -> String {
     let mut slug = String::new();
     let mut last_dash = false;
     for c in key.chars() {
@@ -312,7 +316,7 @@ fn row_name(prefix: &str, key: &str) -> String {
         h ^= *b as u64;
         h = h.wrapping_mul(0x0000_0100_0000_01b3);
     }
-    format!("{prefix}-{slug}-{:08x}", (h & 0xffff_ffff) as u32)
+    format!("{slug}-{:08x}", (h & 0xffff_ffff) as u32)
 }
 
 /// A page is keyed on its ROUTE, not its file: the route is what a person
@@ -428,15 +432,18 @@ pub fn created_names(
     actions: &[RowAction<PageRow>],
     endpoint_actions: &[RowAction<EndpointRow>],
 ) -> Vec<String> {
+    // Each line is "<kind> <name>". The name is bare now (the door mints the
+    // prefix), so the undo cannot tell a page from an endpoint by looking at it
+    // — it has to be told, and a rollback that guesses is not a rollback.
     let mut out: Vec<String> = Vec::new();
     for a in actions {
         if let RowAction::Post(r) = a {
-            out.push(page_row_name(&r.route));
+            out.push(format!("page {}", page_row_name(&r.route)));
         }
     }
     for a in endpoint_actions {
         if let RowAction::Post(r) = a {
-            out.push(endpoint_row_name(&r.http_method, &r.route_path));
+            out.push(format!("endpoint {}", endpoint_row_name(&r.http_method, &r.route_path)));
         }
     }
     out
@@ -640,7 +647,7 @@ mod desired_tests {
             RowAction::Delete { name: page_row_name("/athena/gone.html"), key: "/athena/gone.html".into() },
         ];
         let undo = created_names(&plan, &[]);
-        assert_eq!(undo, vec![page_row_name("/athena/new.html")]);
+        assert_eq!(undo, vec![format!("page {}", page_row_name("/athena/new.html"))]);
     }
 
     #[test]
@@ -654,10 +661,20 @@ mod desired_tests {
     }
 
     #[test]
+    fn negative_proof_a_row_name_carries_no_type_prefix() {
+        // The door mints `page:` / `endpoint:` and REFUSES a name that already
+        // has one — 422 double-prefix, caught on the variant. Restoring the
+        // prefix to row_name turns this red.
+        assert!(!page_row_name("/athena/x.html").starts_with("page-"), "{}", page_row_name("/athena/x.html"));
+        assert!(!endpoint_row_name("GET", "/api/x").starts_with("endpoint-"));
+        assert!(page_row_name("/athena/x.html").starts_with("athena-x-html-"));
+    }
+
+    #[test]
     fn the_undo_covers_endpoints_too_keyed_on_method_and_path() {
         let e = EndpointRow { path: "platform/api/src/server.ts".into(), route_path: "/api/x".into(), http_method: "POST".into() };
         let undo = created_names(&[], &[RowAction::Post(e)]);
-        assert_eq!(undo, vec![endpoint_row_name("POST", "/api/x")]);
+        assert_eq!(undo, vec![format!("endpoint {}", endpoint_row_name("POST", "/api/x"))]);
         assert_ne!(endpoint_row_name("POST", "/api/x"), endpoint_row_name("GET", "/api/x"));
     }
 
@@ -811,7 +828,8 @@ mod pages_4214 {
     #[test]
     fn the_same_key_answers_the_same_name_every_run() {
         assert_eq!(page_row_name("/athena/product.html"), page_row_name("/athena/product.html"));
-        assert!(page_row_name("/athena/product.html").starts_with("page-athena-product-html-"));
+        // bare, no type prefix — the door mints that (#4214, 422 double-prefix)
+        assert!(page_row_name("/athena/product.html").starts_with("athena-product-html-"));
     }
 
     #[test]

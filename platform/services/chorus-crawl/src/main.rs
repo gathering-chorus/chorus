@@ -576,8 +576,17 @@ fn run_undo(file: &str) -> i32 {
         }
     };
     let (mut gone, mut failed) = (0usize, Vec::new());
-    for name in &names {
-        let coll = if name.starts_with("endpoint-") { "Endpoint" } else { "Page" };
+    for line in &names {
+        // "<kind> <name>" — the kind is recorded because a bare name cannot say
+        // which fold it belongs to.
+        let (kind_word, name) = match line.split_once(' ') {
+            Some((k, n)) => (k, n),
+            None => {
+                failed.push(format!("{line}: malformed undo line, expected '<kind> <name>'"));
+                continue;
+            }
+        };
+        let coll = if kind_word == "endpoint" { "Endpoint" } else { "Page" };
         let path = match collection_for(&api, coll) {
             Ok(c) => format!("{c}/{name}"),
             Err(e) => {
