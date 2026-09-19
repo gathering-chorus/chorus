@@ -15,7 +15,7 @@
 chorus:service-identity a chorus:Service ;
     rdfs:label "Identity" ; chorus:label "Identity" ;
     chorus:overview "Who anyone is, human or agent — the one place identity is MINTED for the whole system. The CSS Solid pod on :3001 is the OIDC issuer (public door id.lightlifeurbangardens.com via the tunnel); the #3613 seam issues agents client-credential identities (ES256, JWKS published for consumers to verify with); the shared-session cookie key (~/.chorus/share-oidc.json) lets surfaces verify a browser session without re-asking. Everything downstream that decides permissions consumes this service's answers; nothing else may mint them." ;
-    chorus:ownedBy chorus:role-silas ;
+    chorus:ownedBy chorus:principal-silas ;
     chorus:status "operating" ;
     chorus:asIs "Live: CSS pod issues for jeff + all three role Principals (webIds reconciled #3726, reproducible from MODEL_SET); seam verification is deployed on chorus-api's envelope door; login on the gathering app performs the client-credentials grant server-side, spoofing the public issuer Host because Cloudflare 1010-blocks the direct call. Hard truths from the live walk: login FAILS HARD when :3001 is down (no fallback page, error render), and Identity is a single instance on one machine." ;
     chorus:toBe "Every participant on every public surface authenticates through this seam — the Clearing door included (#3669 lanes 2-3): agents via client-credentials with DPoP, humans via browser OIDC against id.lightlifeurbangardens.com, verified against the seam's JWKS everywhere. The Host-spoof workaround retired by fixing the tunnel path. Fail-closed stays, but fails LOUD: an identity outage renders as 'identity is down', never as a generic error page." ;

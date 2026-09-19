@@ -27,7 +27,7 @@ chorus:document-product-design-pulse a chorus:Document ;
     chorus:comment """What Pulse is FOR: Jeff looks once and knows whether his team is working, without asking anyone and without being lied to. Measured by how many times a day he has to ask — six on 2026-08-25.""" ;
     rdfs:comment """What Pulse is FOR: Jeff looks once and knows whether his team is working, without asking anyone and without being lied to. Measured by how many times a day he has to ask — six on 2026-08-25.""" ;
     chorus:hasDomain chorus:memory ;
-    chorus:ownedBy chorus:role-wren ;
+    chorus:ownedBy chorus:principal-wren ;
     chorus:hasProduct chorus:pulse .
 
 # #4045 — was chorus:doc-service-design-pulse (same iri-guard reason as above).
@@ -38,7 +38,7 @@ chorus:document-service-design-pulse a chorus:Document ;
     chorus:comment """How Pulse works and where it currently lies: an event-bus cache, not an aggregator (Silas, 2026-04-21); 1 of 8 #2442 items shipped; the state field wrong by construction at pulse.rs:162, which is why 129 declaration cards never fixed it.""" ;
     rdfs:comment """How Pulse works and where it currently lies: an event-bus cache, not an aggregator (Silas, 2026-04-21); 1 of 8 #2442 items shipped; the state field wrong by construction at pulse.rs:162, which is why 129 declaration cards never fixed it.""" ;
     chorus:hasDomain chorus:memory ;
-    chorus:ownedBy chorus:role-wren ;
+    chorus:ownedBy chorus:principal-wren ;
     chorus:hasProduct chorus:pulse .
 
 chorus:document-athena-product-design a chorus:Document ;
@@ -48,7 +48,7 @@ chorus:document-athena-product-design a chorus:Document ;
     chorus:comment """Migrated from urn:chorus:instances (#3558 recovery row). V1 athena-domain → knowledge.""" ;
     rdfs:comment """Migrated from urn:chorus:instances (#3558 recovery row). V1 athena-domain → knowledge.""" ;
     chorus:hasDomain chorus:knowledge ;
-    chorus:ownedBy chorus:role-wren .
+    chorus:ownedBy chorus:principal-wren .
 
 chorus:document-borg-product-design a chorus:Document ;
     chorus:docState """current""" ;
@@ -57,7 +57,7 @@ chorus:document-borg-product-design a chorus:Document ;
     chorus:comment """Migrated from urn:chorus:instances (#3558 recovery row). V1 observability-domain → alerts-monitors.""" ;
     rdfs:comment """Migrated from urn:chorus:instances (#3558 recovery row). V1 observability-domain → alerts-monitors.""" ;
     chorus:hasDomain chorus:alerts ;
-    chorus:ownedBy chorus:role-wren .
+    chorus:ownedBy chorus:principal-wren .
 
 chorus:document-chorus-as-platform a chorus:Document ;
     chorus:docState """current""" ;
@@ -66,7 +66,7 @@ chorus:document-chorus-as-platform a chorus:Document ;
     chorus:comment """Migrated from urn:chorus:instances (#3558 recovery row). V1 chorus-domain → domains.""" ;
     rdfs:comment """Migrated from urn:chorus:instances (#3558 recovery row). V1 chorus-domain → domains.""" ;
     chorus:hasDomain chorus:domains ;
-    chorus:ownedBy chorus:role-wren .
+    chorus:ownedBy chorus:principal-wren .
 
 chorus:document-clearing-value-stream-design a chorus:Document ;
     chorus:docState """current""" ;
@@ -75,7 +75,7 @@ chorus:document-clearing-value-stream-design a chorus:Document ;
     chorus:comment """Migrated from urn:chorus:instances (#3558 recovery row).""" ;
     rdfs:comment """Migrated from urn:chorus:instances (#3558 recovery row).""" ;
     chorus:hasDomain chorus:messages ;
-    chorus:ownedBy chorus:role-wren .
+    chorus:ownedBy chorus:principal-wren .
 
 chorus:document-convergence-value-stream-design a chorus:Document ;
     chorus:docState """current""" ;
@@ -84,7 +84,7 @@ chorus:document-convergence-value-stream-design a chorus:Document ;
     chorus:comment """Migrated from urn:chorus:instances (#3558 recovery row). V1 convergence-domain → integrations.""" ;
     rdfs:comment """Migrated from urn:chorus:instances (#3558 recovery row). V1 convergence-domain → integrations.""" ;
     chorus:hasDomain chorus:integrations ;
-    chorus:ownedBy chorus:role-wren .
+    chorus:ownedBy chorus:principal-wren .
 
 chorus:document-doc-service-design-spine a chorus:Document ;
     chorus:docState """current""" ;
@@ -93,7 +93,7 @@ chorus:document-doc-service-design-spine a chorus:Document ;
     chorus:comment """The event log finally has a design (#4044). Disambiguates the two senses of spine (value stream vs event log); names three measured gaps: reach (a fixed 4MB tail serves 3h17m of a 40-day 1.71GB log, so the Team Pulse range tabs are decorative), a second SDK-written log at platform/logs/chorus.log that no reader reads, and the MCP-tools-to-events correspondence we assert but never check.""" ;
     rdfs:comment """The event log finally has a design (#4044). Disambiguates the two senses of spine (value stream vs event log); names three measured gaps: reach (a fixed 4MB tail serves 3h17m of a 40-day 1.71GB log, so the Team Pulse range tabs are decorative), a second SDK-written log at platform/logs/chorus.log that no reader reads, and the MCP-tools-to-events correspondence we assert but never check.""" ;
     chorus:hasDomain chorus:spine ;
-    chorus:ownedBy chorus:role-wren ;
+    chorus:ownedBy chorus:principal-wren ;
     chorus:hasProduct chorus:spine .
 
 chorus:document-loom-subproduct-design a chorus:Document ;
@@ -103,7 +103,7 @@ chorus:document-loom-subproduct-design a chorus:Document ;
     chorus:comment """Migrated from urn:chorus:instances (#3558 recovery row).""" ;
     rdfs:comment """Migrated from urn:chorus:instances (#3558 recovery row).""" ;
     chorus:hasDomain chorus:principles ;
-    chorus:ownedBy chorus:role-wren .
+    chorus:ownedBy chorus:principal-wren .
 
 chorus:document-memory-architecture a chorus:Document ;
     chorus:docState """current""" ;
@@ -112,14 +112,14 @@ chorus:document-memory-architecture a chorus:Document ;
     chorus:comment """How the team remembers — session index, artifacts, recall layers.""" ;
     rdfs:comment """How the team remembers — session index, artifacts, recall layers.""" ;
     chorus:hasDomain chorus:memory ;
-    chorus:ownedBy chorus:role-wren .
+    chorus:ownedBy chorus:principal-wren .
 
 chorus:document-pipelines-design a chorus:Document ;
     chorus:docState """current""" ;
     chorus:docTitle """Pipelines — service design (design as data; this Document is the catalog pointer)""" ;
     chorus:docHref """/gathering-docs/ci-pipeline-service-design.html""" ;
     chorus:hasDomain chorus:pipelines ;
-    chorus:ownedBy chorus:role-kade .
+    chorus:ownedBy chorus:principal-kade .
 
 chorus:document-pulse-service-design-tobe a chorus:Document ;
     chorus:docState """current""" ;
@@ -128,7 +128,7 @@ chorus:document-pulse-service-design-tobe a chorus:Document ;
     chorus:comment """Migrated from urn:chorus:instances (#3558 recovery row).""" ;
     rdfs:comment """Migrated from urn:chorus:instances (#3558 recovery row).""" ;
     chorus:hasDomain chorus:memory ;
-    chorus:ownedBy chorus:role-wren .
+    chorus:ownedBy chorus:principal-wren .
 
 chorus:document-service-design-cards a chorus:Document ;
     chorus:docState """current""" ;
@@ -137,7 +137,7 @@ chorus:document-service-design-cards a chorus:Document ;
     chorus:comment """How the board works as a service — the cards CLI, its backing store, and the write paths every role uses.""" ;
     rdfs:comment """How the board works as a service — the cards CLI, its backing store, and the write paths every role uses.""" ;
     chorus:hasDomain chorus:cards ;
-    chorus:ownedBy chorus:role-wren .
+    chorus:ownedBy chorus:principal-wren .
 
 chorus:document-service-design-clearing a chorus:Document ;
     chorus:docState """current""" ;
@@ -146,7 +146,7 @@ chorus:document-service-design-clearing a chorus:Document ;
     chorus:comment """The Clearing as a service — multi-party chat, streams in, decisions out.""" ;
     rdfs:comment """The Clearing as a service — multi-party chat, streams in, decisions out.""" ;
     chorus:hasDomain chorus:messages ;
-    chorus:ownedBy chorus:role-wren ;
+    chorus:ownedBy chorus:principal-wren ;
     chorus:hasProduct chorus:clearing .
 
 chorus:document-service-design-nudge a chorus:Document ;
@@ -156,7 +156,7 @@ chorus:document-service-design-nudge a chorus:Document ;
     chorus:comment """Nudge delivery as a service — persist AND deliver, both paths every time (DEC-107).""" ;
     rdfs:comment """Nudge delivery as a service — persist AND deliver, both paths every time (DEC-107).""" ;
     chorus:hasDomain chorus:messages ;
-    chorus:ownedBy chorus:role-wren .
+    chorus:ownedBy chorus:principal-wren .
 
 chorus:document-service-design-streams a chorus:Document ;
     chorus:docState """current""" ;
@@ -165,7 +165,7 @@ chorus:document-service-design-streams a chorus:Document ;
     chorus:comment """The live stream feed as a service — spine, session, and log flow rendered watchable.""" ;
     rdfs:comment """The live stream feed as a service — spine, session, and log flow rendered watchable.""" ;
     chorus:hasDomain chorus:streams ;
-    chorus:ownedBy chorus:role-wren .
+    chorus:ownedBy chorus:principal-wren .
 
 chorus:document-spine-product-design a chorus:Document ;
     chorus:docState """current""" ;
@@ -174,7 +174,7 @@ chorus:document-spine-product-design a chorus:Document ;
     chorus:comment """What the spine IS as a product (#4045): three promises (nothing lost, anything recorded reachable, what can happen enumerable), and the EDA layering Jeff called for on 2026-09-01 — EventType as curated vocabulary in the graph, SpineEvent as the log projected on read, joined by ofType. Composes the events and spine domains; excludes logs.""" ;
     rdfs:comment """What the spine IS as a product (#4045): three promises (nothing lost, anything recorded reachable, what can happen enumerable), and the EDA layering Jeff called for on 2026-09-01 — EventType as curated vocabulary in the graph, SpineEvent as the log projected on read, joined by ofType. Composes the events and spine domains; excludes logs.""" ;
     chorus:hasDomain chorus:spine ;
-    chorus:ownedBy chorus:role-wren ;
+    chorus:ownedBy chorus:principal-wren ;
     chorus:hasProduct chorus:spine .
 
 chorus:document-werk-subproduct-design a chorus:Document ;
@@ -184,7 +184,7 @@ chorus:document-werk-subproduct-design a chorus:Document ;
     chorus:comment """Migrated from urn:chorus:instances (#3558 recovery row). V1 tests-domain → tests.""" ;
     rdfs:comment """Migrated from urn:chorus:instances (#3558 recovery row). V1 tests-domain → tests.""" ;
     chorus:hasDomain chorus:tests ;
-    chorus:ownedBy chorus:role-wren .
+    chorus:ownedBy chorus:principal-wren .
 
 # #4080 — werk's served hasDesignDoc pointed at werk-subproduct-design, a 920-byte
 # pointer stub retired 2026-07-12 (#3421). The real design is werk-product-design.html
@@ -197,5 +197,5 @@ chorus:document-werk-product-design a chorus:Document ;
     chorus:comment """Werk as a Product (Jeff, 2026-07-12, #3421): why pay not just prompt, the 12-verb family, the four domains, card-artifact coherence, the query-backwards model. Consolidates ten former werk docs.""" ;
     rdfs:comment """Werk as a Product (Jeff, 2026-07-12, #3421): why pay not just prompt, the 12-verb family, the four domains, card-artifact coherence, the query-backwards model. Consolidates ten former werk docs.""" ;
     chorus:hasDomain chorus:pipelines ;
-    chorus:ownedBy chorus:role-kade ;
+    chorus:ownedBy chorus:principal-kade ;
     chorus:hasProduct chorus:werk .

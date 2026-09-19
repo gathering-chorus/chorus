@@ -71,8 +71,18 @@ chorus:SessionShape-ownedBy a sh:PropertyShape ;
     # the Principal who logged in — the row's owner, as every row's owner is a Principal (#4196)
     sh:path chorus:ownedBy ; sh:minCount 1 ; sh:maxCount 1 ; sh:class chorus:Principal .
 chorus:SessionShape-tokenId a sh:PropertyShape ;
-    sh:path chorus:tokenId ; sh:minCount 1 ; sh:maxCount 1 ; sh:datatype xsd:string ;
-    chorus:uniqueGlobal true .
+    # #4215 — uniqueGlobal REMOVED 2026-09-19. A Session is one START, not one
+    # credential. The token is cached (~/.chorus/identity/<role>/token.cache) and
+    # lives about ten minutes, so "one token, one session" meant a role could not
+    # be restarted twice inside that window: the second start was refused 422
+    # "duplicate 'tokenId' across all session". On 2026-09-18 that left Kade
+    # unreachable for an hour — Jeff ran chorus-awake four times, and it started
+    # only after I deleted a live row and cleared his token cache by hand.
+    #
+    # Mine, written when I assumed a login and a start were one event. They are
+    # not: one login can back several starts. What must be unique is the SESSION,
+    # which its name already carries (<role>-<jti tail>-<start>).
+    sh:path chorus:tokenId ; sh:minCount 1 ; sh:maxCount 1 ; sh:datatype xsd:string .
 chorus:SessionShape-issuedAt a sh:PropertyShape ;
     sh:path chorus:issuedAt ; sh:minCount 1 ; sh:maxCount 1 ; sh:datatype xsd:string .
 chorus:SessionShape-expiresAt a sh:PropertyShape ;
