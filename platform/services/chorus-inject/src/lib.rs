@@ -245,13 +245,34 @@ pub fn b64_encode(data: &[u8]) -> String {
 /// send-keys Enter submits (#3352's pasted-newline-is-not-submit boundary).
 /// `do shell script` throws on nonzero rc, so a missing pane surfaces as an
 /// osascript error — loud, never a false "ok".
+/// Collapse a payload to a single line so tmux's raw paste cannot split it into
+/// one turn per newline. Runs of whitespace (newlines included) become a single
+/// space; leading/trailing whitespace is dropped.
+pub fn flatten_for_single_turn(text: &str) -> String {
+    text.split_whitespace().collect::<Vec<_>>().join(" ")
+}
+
 pub fn build_inject_tmux_script(pane: &str, text: &str) -> String {
     // Pane ids are tmux-internal (%N). Strip anything shell-meta as defense.
     let safe_pane: String = pane
         .chars()
         .filter(|c| c.is_ascii_alphanumeric() || matches!(*c, '%' | '.' | ':' | '-' | '_'))
         .collect();
-    let b64 = b64_encode(text.as_bytes());
+    // Measured 2026-09-19 against a live Claude Code pane: tmux `paste-buffer`
+    // without `-p` sends the bytes RAW, so every newline in the payload is an
+    // Enter. A five-line nudge therefore arrives as five separate turns, and the
+    // last line — having no trailing newline — sits unsent in the input box
+    // until Jeff presses Enter himself. That is the "nudge just sits there" he
+    // has reported since 2026-04-14.
+    //
+    // Two fixes work. `paste-buffer -p` (bracketed) delivers the whole payload
+    // as one unit — but Claude Code then wraps it in <pasted_content> and treats
+    // it as DATA rather than as an instruction, which is exactly what a nudge
+    // must not become. So the payload is flattened instead: one line in, one
+    // turn out, still an instruction. The cost is that a nudge can no longer
+    // carry a fenced block or a line break.
+    let flat = flatten_for_single_turn(text);
+    let b64 = b64_encode(flat.as_bytes());
     // #3841 — the buffer name must be UNIQUE PER DELIVERY.
     //
     // It used to be the constant `chorus-nudge`, and `paste-buffer -d` deletes
@@ -1081,5 +1102,48 @@ mod delivery_buffer_race_3841 {
             names.iter().all(|n| *n == names[0]),
             "every -b in one delivery must name the SAME buffer: {names:?}"
         );
+    }
+}
+
+#[cfg(test)]
+mod flatten_tests {
+    use super::{b64_encode, build_inject_tmux_script, flatten_for_single_turn};
+
+    /// NEGATIVE PROOF: the violated state is a payload that still carries a
+    /// newline into the script. Mutate `flatten_for_single_turn` to return
+    /// `text.to_string()` and this test goes RED — which is what proves it can
+    /// tell the two states apart.
+    #[test]
+    fn multiline_payload_reaches_tmux_as_one_line() {
+        let msg = "line one\n```\ncode\n```\nline five";
+        let flat = flatten_for_single_turn(msg);
+        assert!(
+            !flat.contains('\n'),
+            "a newline survives flattening, so tmux will split it into turns: {:?}",
+            flat
+        );
+        assert_eq!(flat, "line one ``` code ``` line five");
+    }
+
+    /// NEGATIVE PROOF: the script must carry the FLATTENED bytes, not the raw
+    /// ones. Mutate the b64 line back to `text.as_bytes()` and this goes RED.
+    #[test]
+    fn script_carries_the_flattened_payload_not_the_raw_one() {
+        let s = build_inject_tmux_script("%3", "alpha\nbeta");
+        assert!(
+            s.contains(&b64_encode(b"alpha beta")),
+            "script does not carry the flattened payload: {}",
+            s
+        );
+        assert!(
+            !s.contains(&b64_encode(b"alpha\nbeta")),
+            "script still carries the raw multi-line payload: {}",
+            s
+        );
+    }
+
+    #[test]
+    fn single_line_payload_is_unchanged() {
+        assert_eq!(flatten_for_single_turn("already one line"), "already one line");
     }
 }

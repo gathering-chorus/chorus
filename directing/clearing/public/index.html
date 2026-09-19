@@ -1211,8 +1211,32 @@ function renderMarkdown(text) {
   const lines = escaped.split('\n');
   const out = [];
   let inList = false;
+  // #4220 — Jeff, 2026-09-19, reading Clearing on his phone: "it comes to me as
+  // a big paragraph generally which makes it much harder for me to process."
+  //
+  // Two reasons it did. A fenced block had no case at all, so ``` and its
+  // contents fell through to the prose branch and merged into the sentence
+  // around it. And every prose line was joined with a literal "\n", which HTML
+  // collapses to a space — so the line structure written in the message was
+  // thrown away before it reached his screen. Only a BLANK line survived, as a
+  // single <br>.
+  let inCode = false;
+  let codeLines = [];
 
   for (const line of lines) {
+    // Fenced code blocks (``` ... ```)
+    if (line.trim().startsWith('```')) {
+      if (inCode) {
+        out.push('<pre style="background:rgba(255,255,255,0.06);border-radius:6px;padding:0.5em 0.7em;margin:0.4em 0;overflow-x:auto;font-size:0.82em;line-height:1.45;white-space:pre"><code>' + codeLines.join('\n') + '</code></pre>');
+        codeLines = [];
+        inCode = false;
+      } else {
+        if (inList) { out.push('</ul>'); inList = false; }
+        inCode = true;
+      }
+      continue;
+    }
+    if (inCode) { codeLines.push(line); continue; }
     // Headers
     if (line.match(/^#{1,3}\s+/)) {
       if (inList) { out.push('</ul>'); inList = false; }
@@ -1245,7 +1269,19 @@ function renderMarkdown(text) {
     out.push(inlineMd(line));
   }
   if (inList) out.push('</ul>');
-  return linkify(out.join('\n'));
+  // An unterminated fence still renders as a block rather than swallowing the tail.
+  if (inCode) out.push('<pre style="background:rgba(255,255,255,0.06);border-radius:6px;padding:0.5em 0.7em;margin:0.4em 0;overflow-x:auto;font-size:0.82em;line-height:1.45;white-space:pre"><code>' + codeLines.join('\n') + '</code></pre>');
+  // <br> between adjacent prose lines, so a line break written in the message is
+  // a line break on the phone. Block-level pieces (ul/pre/br/strong-as-block)
+  // already break on their own and must not get a second one.
+  const isBlock = (h) => /^<(ul|\/ul|li|pre|br|div|strong style="display:block)/.test(h);
+  const joined = out.reduce((acc, piece, i) => {
+    if (i === 0) return piece;
+    const prev = out[i - 1];
+    const sep = (isBlock(prev) || isBlock(piece)) ? '\n' : '<br>';
+    return acc + sep + piece;
+  }, '');
+  return linkify(joined);
 }
 
 /** Inline markdown: bold, italic, code, strikethrough */
