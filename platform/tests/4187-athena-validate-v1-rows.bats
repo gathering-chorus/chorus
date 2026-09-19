@@ -67,7 +67,15 @@ teardown() { [ -n "${STUB_PID:-}" ] && kill "$STUB_PID" 2>/dev/null; rm -rf "${T
   run env ATHENA_VALIDATE_NUDGE=0 ATHENA_VALIDATE_REPORT="$TMP/gv.txt" FUSEKI_QUERY="http://127.0.0.1:$PORT/query" bash "$SCRIPT"
   [ "$status" -eq 1 ]
   grep -q "^graph-issue|owner-not-principal|literal|crawler|5$" "$TMP/gv.txt"
-  grep -q "^graph-summary|5|dirty$" "$TMP/gv.txt"
+  # The summary TOTAL is deliberately not pinned to 5. It is the sum across every
+  # check in the sweep, so pinning it makes this test fail whenever an unrelated
+  # check is added - which is what happened on 2026-09-19. The two things this
+  # negative proof is actually about are that the violation is NAMED with its
+  # count (asserted above) and that the verdict flips to dirty, so those are what
+  # is asserted. A number that changes for reasons outside the behaviour under
+  # test is a brittle assert, not a stronger one.
+  grep -q "^graph-summary|[0-9]*|dirty$" "$TMP/gv.txt"
+  test -z "$(grep "^graph-summary|0|clean$" "$TMP/gv.txt" || true)"
 }
 
 @test "every ownedBy object being a Principal is clean, and the owner line says so" {

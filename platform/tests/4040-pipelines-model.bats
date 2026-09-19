@@ -36,12 +36,23 @@ sq() {
   [[ "$output" == *"yes"* || "$output" == *"true"* ]]
 }
 
-@test "AC2 PipelineShape + PipelineRunShape exist with instancesGraph declared" {
+# REWRITTEN 2026-09-19 (#4187). This required both shapes to carry SOME
+# instancesGraph pin. #4187 removed those pins: the pipelines domain claims
+# Pipeline, PipelineRun and PipelineStep, so the home is derived from the claim
+# and a pin is redundant. Requiring a pin now fails on a correct model.
+#
+# What still matters is that the shapes EXIST as node shapes - that is what the
+# rest of this file builds on - so that is what is checked, plus the absence of
+# a catch-all pin. Note the two `[[ ]]` asserts this replaces were also on
+# non-final lines, which bash 3.2 swallows: they could not have failed here.
+@test "AC2 PipelineShape + PipelineRunShape exist, with no v1 catch-all pin" {
   [ -f "$SHAPES" ]
-  run sq "$SHAPES" 'ASK { c:PipelineShape a <http://www.w3.org/ns/shacl#NodeShape> ; c:instancesGraph ?g }'
-  [[ "$output" == *"yes"* || "$output" == *"true"* ]]
-  run sq "$SHAPES" 'ASK { c:PipelineRunShape a <http://www.w3.org/ns/shacl#NodeShape> ; c:instancesGraph ?g }'
-  [[ "$output" == *"yes"* || "$output" == *"true"* ]]
+  run sq "$SHAPES" 'ASK { c:PipelineShape a <http://www.w3.org/ns/shacl#NodeShape> }'
+  test -n "$(printf '%s' "$output" | grep -iE 'yes|true' || true)"
+  run sq "$SHAPES" 'ASK { c:PipelineRunShape a <http://www.w3.org/ns/shacl#NodeShape> }'
+  test -n "$(printf '%s' "$output" | grep -iE 'yes|true' || true)"
+  run sq "$SHAPES" 'ASK { c:PipelineShape c:instancesGraph "urn:chorus:instances" }'
+  test -z "$(printf '%s' "$output" | grep -iE 'yes|true' || true)"
 }
 
 @test "AC2 pipelines-4040.ttl is in the MODEL_SET (never live-only, #3654)" {

@@ -11,15 +11,27 @@ TTL="$REPO_ROOT/roles/silas/ontology/chorus.ttl"
 DEPLOY="$REPO_ROOT/platform/scripts/athena-deploy-model.sh"
 HARVEST="$REPO_ROOT/platform/scripts/service-harvest-load.sh"
 
-@test "the Service shape declares its home as the services domain graph" {
-  python3 - "$TTL" <<'PY'
-import re, sys
-t = open(sys.argv[1]).read()
-i = t.index('chorus:ServiceShape a sh:NodeShape ;')
-blk = t[i:t.index(' .\n', i)]
-assert 'chorus:instancesGraph "urn:chorus:domains:services"' in blk, blk[:300]
-assert 'chorus:instancesGraph "urn:chorus:instances"' not in blk
-PY
+# REWRITTEN 2026-09-19. This asserted that ServiceShape PINS
+# chorus:instancesGraph to the services graph. That was the mechanism, not the
+# property: later on this same card the pin was deliberately removed, because
+# the services domain claims Service and athena-make's resolve_instances_graph
+# (lib.rs:899) derives the identical string from that claim. A redundant pin
+# reads like a decision, and that is how the stale catch-all pins survived long
+# enough to become this card. The guard now asserts the PROPERTY - Service's
+# home is the services graph - and that the catch-all pin is gone, which holds
+# whether the home is pinned or derived.
+@test "Service's home is the services domain graph, pinned or derived" {
+  run python3 "$BATS_TEST_DIRNAME/4187-service-home-check.py" "$TTL" home "$REPO_ROOT"
+  [ "$status" -eq 0 ]
+}
+
+# NEGATIVE PROOF for the rewrite above: the state the check exists to catch is a
+# Service with NO home at all - no pin and no claim - which athena-make REFUSES
+# (ADR-051 deleted the silent catch-all fallback). The fixture strips both
+# halves and the same check must report homeless.
+@test "NEGATIVE PROOF: a Service with no pin and no claim reads as homeless" {
+  run python3 "$BATS_TEST_DIRNAME/4187-service-home-check.py" "$TTL" homeless-fixture
+  [ "$status" -eq 0 ]
 }
 
 @test "the deployer seeds SERVICES_SET into the services domain graph by default" {
