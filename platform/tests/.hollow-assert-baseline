@@ -1,0 +1,8 @@
+# #4187 baseline, 2026-09-18. Three hollow-assert shapes, counted in THIS branch.
+# qv reaches 0 only when both halves land: the 3390 fixes here and the three in
+# 4125-source-delete-refused.bats on silas/#4213. bang is 35 here and 34 in his
+# werk because 4125's file does not exist in this branch; whoever lands second
+# reconciles it. Lowering any number must be a reviewable diff.
+qv=0
+bracket=160
+bang=35

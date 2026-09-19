@@ -131,11 +131,14 @@ test('a NEW exec timeout cannot be added without deciding about this class', () 
   // Bucket: converted in place — its catch names a kill as a kill
   // ("killed after 60000ms") and reports it as reason=scope-failed on the spine
   // and in the merge reply; it never fails the merge.
+  // #4187 added the eleventh: executeAthenaValidate (VERB_TIMEOUT_MS). Bucket:
+  // converted — a kill throws "athena-validate-fail — reason=killed after <ms>ms";
+  // exit 0/1/2 are the sweep's own answers and come back as content with the report.
   const src = readFileSync(join(__dirname, '..', 'src', 'server.ts'), 'utf8');
   const sites = (src.match(/timeout: [A-Za-z0-9_]+,?/g) || []).length;
   assert.equal(
     sites,
-    10,
+    11,
     'exec timeout sites changed — convert the new one to classifyExecFailure or add it to the unconverted list above',
   );
 });

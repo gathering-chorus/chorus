@@ -408,13 +408,13 @@ chorus:tests a owl:Class, chorus:Domain ;
     chorus:purpose "Make the system's tests a first-class queryable set, so any domain can ask for its tests and results and the runner/gates/proving consume them uniformly." ;
     chorus:definesVocabulary chorus:Test , chorus:TestResult , chorus:TestSuiteRun ;
     chorus:atStream chorus:chorusStream ;
-    chorus:partOf chorus:chorusProduct ;
+    chorus:partOf chorus:chorus ;
     chorus:atStep chorus:Building ;
     chorus:status "building" ;
     chorus:gaps "verbEvent typed emits not yet generated (owl-api code); run()/register() executor bodies are the hand seam; hasDesignDoc not yet a typed Document." ;
     chorus:hasDesignDoc "designing/docs/quality-service-design.html" .
 
-chorus:chorusProduct chorus:hasDomain chorus:tests .
+chorus:chorus chorus:hasDomain chorus:tests .
 
 chorus:hasRecordClass a owl:AnnotationProperty ;
     rdfs:label "has record class" ;

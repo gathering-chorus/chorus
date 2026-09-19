@@ -22,8 +22,17 @@ count() { # $1 = WHERE body -> prints integer
   [ "$(count '?s a chorus:SubProduct')" -eq 0 ]
 }
 
-@test "chorusProduct is a typed chorus:Product" {
-  [ "$(ask 'chorus:chorusProduct a chorus:Product')" = "True" ]
+# #4187 — chorusProduct and borgProduct were TWO names for products that already
+# existed as chorus:chorus and chorus:borg, and the store held both halves with
+# different predicates on each. They were unioned into the short names and
+# retired on 2026-09-18 (model-retirements.jsonl), so asserting chorusProduct
+# still exists asserts the duplicate we deliberately removed. The check that
+# earns its place now is the opposite one: the merge target is typed, and the
+# retired alias is gone.
+@test "the chorus product is chorus:chorus, and the chorusProduct alias is retired" {
+  [ "$(ask 'chorus:chorus a chorus:Product')" = "True" ]
+  [ "$(ask 'chorus:chorusProduct ?p ?o')" = "False" ]
+  [ "$(ask 'chorus:borgProduct ?p ?o')" = "False" ]
 }
 
 # #3915 — the `product-<slug>` IRIs this test asserted no longer exist: the
@@ -50,6 +59,16 @@ count() { # $1 = WHERE body -> prints integer
   # Was `-eq 8`, which reds on any deliberate addition and cannot say WHICH
   # product vanished. Naming the set keeps the disappearance proof and turns an
   # intentional change into a one-line edit that states what changed.
+  # #4187 2026-09-18: gathering was added here on the reasoning that rehoming its
+  # row to urn:chorus:domains:products would make it visible. That was wrong, and
+  # it was not checked before the expectation was edited — rehoming fixed WHERE
+  # the row lives, not whether it passes the shape. gathering is missing docState
+  # and hasDesignDoc, both minCount 1 on ProductShape, so athena-make has never
+  # served it. Its own gaps field has said so since #3603: "hasDesignDoc unfilled
+  # (no Document instances in graph) — content domains predate the floor."
+  # Removed again 2026-09-19. It belongs back in this set the day it carries the
+  # two fields and not before; editing the expectation to match a wish is how a
+  # named-set guard stops being a guard.
   want="athena borg chorus clearing convergence loom pulse spine werk"
   got="$(curl -sf --max-time 10 http://localhost:3360/products \
     | python3 -c 'import json,sys; d=json.load(sys.stdin).get("data",[]); print(" ".join(sorted(x.get("name","") for x in d)))' 2>/dev/null)"
@@ -60,8 +79,8 @@ count() { # $1 = WHERE body -> prints integer
 @test "NEGATIVE PROOF: the named-set check REDS when a product disappears" {
   # #3734 — the set comparison must be able to fail. Drop one name from the
   # served side and prove the same comparison rejects it.
-  want="athena borg chorus clearing convergence loom pulse spine werk"
-  got="athena borg chorus clearing convergence loom pulse spine"
+  want="athena borg chorus clearing convergence gathering loom pulse spine werk"
+  got="athena borg chorus clearing convergence gathering loom pulse spine"
   [ "$got" != "$want" ]
 }
 

@@ -579,7 +579,7 @@ if [ -f "$RETIREMENTS_FILE" ]; then
     _rparsed=$(printf '%s' "$_rentry" | python3 -c '
 import json, sys
 e = json.load(sys.stdin)
-print(e.get("subject_domain",""), e.get("object_class",""), e.get("retire_subject",""), e.get("graph",""), e.get("retire_graph",""), e.get("status","staged"), sep="\x1f")' 2>/dev/null) || {
+print(e.get("subject_domain",""), e.get("object_class",""), e.get("retire_subject",""), e.get("graph",""), e.get("retire_graph",""), e.get("status","staged"), e.get("retire_class",""), sep="\x1f")' 2>/dev/null) || {
       echo "athena-deploy-model: RETIREMENTS line $_rline is MALFORMED — refusing the deploy (fail-closed, #3752)" >&2
       "$CHORUS_LOG" model.deploy.failed "$ROLE" graph="$ONTOLOGY_GRAPH" reason="retirement-staging-malformed" line="$_rline" 2>/dev/null || true
       exit 1
@@ -588,7 +588,7 @@ print(e.get("subject_domain",""), e.get("object_class",""), e.get("retire_subjec
     # adjacent delimiters, silently shifting fields left past an empty one —
     # a claim entry became a subject retirement of its own graph name in the
     # first test run. A non-whitespace separator keeps empty fields empty.
-    IFS=$'\x1f' read -r _rdom _rcls _rsubj _rgraph _rwholegraph _rstatus <<< "$_rparsed"
+    IFS=$'\x1f' read -r _rdom _rcls _rsubj _rgraph _rwholegraph _rstatus _rclass <<< "$_rparsed"
 
     # #3788 — HONOUR THE STATUS. Until this existed the deploy read every line
     # and re-executed it, so `status` was decoration: an entry that had already
@@ -616,6 +616,113 @@ print(e.get("subject_domain",""), e.get("object_class",""), e.get("retire_subjec
     esac
 
     _rg="${_rgraph:-$ONTOLOGY_GRAPH}"
+
+    # -------------------------------------------------------------------------
+    # CLASS retirement (#4187). Every row of one class in one graph, in a single
+    # entry: {"retire_class":"<iri>","graph":"<graph>"}. It exists because the
+    # per-subject form could not express File (14,425 rows) and SourceFile (566)
+    # without 14,991 lines of JSONL, and the whole-graph form could not be used
+    # because that graph still holds rows we are keeping.
+    #
+    # A class delete is the most destructive entry in this file, so it is the
+    # most guarded (guards specified by Silas, 2026-09-18, as the condition of
+    # writing it in bash rather than waiting for the Rust port on #4205):
+    #
+    #   1. REFUSE IF SERVED. If athena-make serves a route for the class, the
+    #      model still claims it and something can read it. Unanswerable
+    #      athena-make refuses too — never a blind delete (the #3752 posture).
+    #   2. REFUSE ON ANY INBOUND EDGE from ANOTHER subject. If any row of the
+    #      class is the OBJECT of a triple anywhere in the store, something
+    #      points at it and deleting leaves a dangling edge; we have 11,029 of
+    #      those already. A row pointing at ITSELF is excluded and only that —
+    #      one File row's filePath holds its own IRI instead of a string, which
+    #      is malformed data, not a consumer. Narrow on purpose: broadening this
+    #      exclusion is how a guard gets loosened until it passes everything
+    #      (Silas, 2026-09-18).
+    #   3. THE COUNT IS THE PROOF. Count before, delete, count after, and refuse
+    #      to report success unless after is zero. A silent no-op and a
+    #      successful delete look identical without it — the defect class this
+    #      whole card has been about.
+    # -------------------------------------------------------------------------
+    if [ -n "$_rclass" ]; then
+      _cls_local="${_rclass##*#}"
+      _cls_plural="$(printf '%s' "$_cls_local" | tr '[:upper:]' '[:lower:]')s"
+
+      if [ -z "$_served_resp" ]; then
+        echo "athena-deploy-model: CLASS retirement $_cls_local — athena-make gave no route list; refusing to delete blind (#3752)" >&2
+        "$CHORUS_LOG" model.retirement.deferred "$ROLE" class="$_rclass" reason="serve-check-unanswered" line="$_rline" 2>/dev/null || true
+        continue
+      fi
+      # The served list is route paths, and a route is <domain>/<plural> — so a
+      # substring match on the plural cannot tell CodeFile's /code/files from a
+      # File route. It refused File on exactly that collision the first time this
+      # ran. Ask the MODEL instead: a class no domain claims cannot be mounted,
+      # and a claimed class must have its claim retired before its rows go.
+      _claimed=$(curl -sf ${FUSEKI_AUTH[@]+"${FUSEKI_AUTH[@]}"} --max-time 60 -H 'Accept: application/sparql-results+json' \
+        --data-urlencode "query=SELECT (COUNT(*) AS ?n) WHERE { GRAPH ?g { ?d <${NS_CHORUS}definesVocabulary> <$_rclass> } }" \
+        "$FUSEKI_QUERY" | python3 -c 'import sys,json;print(json.load(sys.stdin)["results"]["bindings"][0]["n"]["value"])' 2>/dev/null)
+      if [ -z "$_claimed" ]; then
+        echo "athena-deploy-model: CLASS retirement $_cls_local — the claim check did not answer; refusing (fail-closed)" >&2
+        "$CHORUS_LOG" model.retirement.deferred "$ROLE" class="$_rclass" reason="claim-check-unanswered" line="$_rline" 2>/dev/null || true
+        continue
+      fi
+      if [ "$_claimed" != "0" ]; then
+        echo "athena-deploy-model: REFUSED — $_claimed domain(s) claim $_cls_local in definesVocabulary; retire the claim first" >&2
+        "$CHORUS_LOG" model.deploy.failed "$ROLE" class="$_rclass" reason="class-retirement-claimed" claims="$_claimed" line="$_rline" 2>/dev/null || true
+        exit 1
+      fi
+
+      _inbound=$(curl -sf ${FUSEKI_AUTH[@]+"${FUSEKI_AUTH[@]}"} --max-time 120 -H 'Accept: application/sparql-results+json' \
+        --data-urlencode "query=SELECT (COUNT(*) AS ?n) WHERE { GRAPH <$_rg> { ?s a <$_rclass> } GRAPH ?g2 { ?x ?p ?s } FILTER(?p != <http://www.w3.org/1999/02/22-rdf-syntax-ns#type>) FILTER(?x != ?s) }" \
+        "$FUSEKI_QUERY" | python3 -c 'import sys,json;print(json.load(sys.stdin)["results"]["bindings"][0]["n"]["value"])' 2>/dev/null)
+      if [ -z "$_inbound" ]; then
+        echo "athena-deploy-model: CLASS retirement $_cls_local — the inbound-edge check did not answer; refusing (fail-closed)" >&2
+        "$CHORUS_LOG" model.retirement.deferred "$ROLE" class="$_rclass" reason="inbound-check-unanswered" line="$_rline" 2>/dev/null || true
+        continue
+      fi
+      if [ "$_inbound" != "0" ]; then
+        echo "athena-deploy-model: REFUSED — $_inbound triple(s) point at rows of $_cls_local; deleting would leave dangling edges" >&2
+        "$CHORUS_LOG" model.deploy.failed "$ROLE" class="$_rclass" reason="class-retirement-has-consumers" inbound="$_inbound" line="$_rline" 2>/dev/null || true
+        exit 1
+      fi
+
+      _cls_before=$(curl -sf ${FUSEKI_AUTH[@]+"${FUSEKI_AUTH[@]}"} --max-time 120 -H 'Accept: application/sparql-results+json' \
+        --data-urlencode "query=SELECT (COUNT(DISTINCT ?s) AS ?n) WHERE { GRAPH <$_rg> { ?s a <$_rclass> } }" \
+        "$FUSEKI_QUERY" | python3 -c 'import sys,json;print(json.load(sys.stdin)["results"]["bindings"][0]["n"]["value"])' 2>/dev/null)
+      if [ "${_cls_before:-0}" = "0" ]; then
+        echo "athena-deploy-model: class $_cls_local already absent from <$_rg> (idempotent — previously executed)"
+        continue
+      fi
+
+      _code=$(curl -s ${FUSEKI_AUTH[@]+"${FUSEKI_AUTH[@]}"} --max-time 300 -o /dev/null -w '%{http_code}' \
+        -X POST "$FUSEKI_UPDATE" --data-urlencode \
+        "update=DELETE { GRAPH <$_rg> { ?s ?p ?o } } WHERE { GRAPH <$_rg> { ?s a <$_rclass> ; ?p ?o } }")
+      case "$_code" in 200|204) : ;; *)
+        echo "athena-deploy-model: CLASS retirement $_cls_local — the store answered $_code on the delete" >&2
+        "$CHORUS_LOG" model.deploy.failed "$ROLE" class="$_rclass" reason="class-retirement-http-$_code" line="$_rline" 2>/dev/null || true
+        exit 1 ;;
+      esac
+
+      _cls_after=$(curl -sf ${FUSEKI_AUTH[@]+"${FUSEKI_AUTH[@]}"} --max-time 120 -H 'Accept: application/sparql-results+json' \
+        --data-urlencode "query=SELECT (COUNT(DISTINCT ?s) AS ?n) WHERE { GRAPH <$_rg> { ?s a <$_rclass> } }" \
+        "$FUSEKI_QUERY" | python3 -c 'import sys,json;print(json.load(sys.stdin)["results"]["bindings"][0]["n"]["value"])' 2>/dev/null)
+      if [ "${_cls_after:-x}" != "0" ]; then
+        # Name the survivors, not just the count (Silas, 2026-09-18): a delete
+        # that half-worked should say WHAT it left, or the next person re-runs
+        # it blind. Capped at ten so a large residue does not bury the refusal.
+        _surv=$(curl -sf ${FUSEKI_AUTH[@]+"${FUSEKI_AUTH[@]}"} --max-time 60 -H 'Accept: application/sparql-results+json' \
+          --data-urlencode "query=SELECT ?s WHERE { GRAPH <$_rg> { ?s a <$_rclass> } } LIMIT 10" \
+          "$FUSEKI_QUERY" | python3 -c 'import sys,json;print(" ".join(b["s"]["value"] for b in json.load(sys.stdin)["results"]["bindings"]))' 2>/dev/null)
+        echo "athena-deploy-model: CLASS retirement $_cls_local did NOT take — $_cls_before before, ${_cls_after:-unreadable} after" >&2
+        echo "athena-deploy-model:   survivors: ${_surv:-<could not be listed>}" >&2
+        "$CHORUS_LOG" model.deploy.failed "$ROLE" class="$_rclass" reason="class-retirement-did-not-take" before="$_cls_before" after="${_cls_after:-unreadable}" line="$_rline" 2>/dev/null || true
+        exit 1
+      fi
+      echo "athena-deploy-model: class retirement executed — $_cls_local removed from <$_rg> ($_cls_before rows)"
+      "$CHORUS_LOG" model.retirement.executed "$ROLE" graph="$_rg" target="class $_rclass" rows="$_cls_before" line="$_rline" 2>/dev/null || true
+      continue
+    fi
+
     if [ -n "$_rwholegraph" ]; then
       # WHOLE-GRAPH retirement (#3732): the ADR-051 Addendum II case — a graph
       # whose every subject is a retired duplicate (blank-node property lists
@@ -1248,7 +1355,7 @@ fi
 # cannot ask (#3726 — a blind verify never passes).
 # =============================================================================
 if [ -z "${TTL:-}" ]; then
-  SERVICES_GRAPH="${SERVICES_GRAPH:-urn:chorus:instances}"   # NOT domains:services — service-harvest-load.sh PUT-replaces that graph wholesale; co-tenants wiped every cycle (proven 2026-08-27)
+  SERVICES_GRAPH="${SERVICES_GRAPH:-urn:chorus:domains:services}"   # #4187 — the domain graph, the row's home (Jeff 09-13). Was urn:chorus:instances because service-harvest-load.sh PUT-replaced this graph wholesale (proven 2026-08-27); #4089 made the harvester replace only its own classes, so co-tenancy is safe again and the reason for the catch-all is gone.
   SERVICES_STAGING="${SERVICES_GRAPH}-staging-deploy"
   SERVICES_SET=(
     "$CHORUS_ROOT/designing/data/service-instances.ttl"

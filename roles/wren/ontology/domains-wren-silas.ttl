@@ -92,7 +92,7 @@ chorus:skills a owl:Class, chorus:Domain ;
 chorus:deploys a owl:Class, chorus:Domain ;
   rdfs:label "deploys" ; chorus:comment "How code gets running: deploy targets, rollback paths, freeze rules, and the deploy-invariance contract — same artifact reaches the same running state." ;
   chorus:purpose "Track how code reaches a running state — what shipped, where, the rollback path, and the invariance that proves a deploy is a deploy." ;
-  chorus:ownedBy chorus:principal-silas ; chorus:partOf chorus:borgProduct ;
+  chorus:ownedBy chorus:principal-silas ; chorus:partOf chorus:borg ;
   chorus:atStep chorus:Operating ; chorus:atStream chorus:chorusStream ;
   chorus:repoTarget "deploys" ;
   # #3982 — the supports edge. Jeff: "deploys are one domain that supports
@@ -148,7 +148,7 @@ chorus:deploys a owl:Class, chorus:Domain ;
 chorus:logs a owl:Class, chorus:Domain ;
   rdfs:label "logs" ; chorus:comment "Log aggregation and querying via Loki — structured observability." ;
   chorus:purpose "Aggregate and query the system's logs via Loki — structured runtime observability." ;
-  chorus:ownedBy chorus:principal-silas ; chorus:partOf chorus:borgProduct ;
+  chorus:ownedBy chorus:principal-silas ; chorus:partOf chorus:borg ;
   chorus:atStep chorus:Proving ; chorus:atStream chorus:chorusStream ;
   chorus:repoTarget "platform/api/src/handlers/logs-query.ts" ; chorus:definesVocabulary chorus:LogSource ;
   # #4084 — the row made whole (DomainShape: status, gaps, hasDesignDoc) and given its instances graph.
@@ -162,14 +162,15 @@ chorus:document-domain-design-logs a chorus:Document ;
   chorus:docHref """/athena/domain.html?d=logs""" ;
   chorus:comment """The logs domain's design is its rows (#4084): purpose and gaps on the Domain row; every log source a harvested LogSource row (unit, machine, path, Loki job, last written, status) carrying the domain it belongs to from the authored UnitDomainMapping rows. No hand-written design page.""" ;
   rdfs:comment """The logs domain's design is its rows (#4084).""" ;
-  chorus:hasDomain chorus:logs ; chorus:ownedBy chorus:principal-silas ; chorus:hasProduct chorus:borgProduct .
+  chorus:hasDomain chorus:logs ; chorus:ownedBy chorus:principal-silas ; chorus:hasProduct chorus:borg .
 
-# chorus:alerts-monitors — REMOVED #4085. Split into chorus:alerts and
-# chorus:monitors, both defined in roles/silas/ontology/alerts-4085.ttl with a
-# class, a SHACL floor and a design doc each. Jeff asked for the split three
-# times (2026-06-14, 2026-08-13, 2026-09-03). Removed here rather than left in
-# place because two definitions of one subject let the deploy pick whichever it
-# read last — the #3587 wipe and the #3735 stale-security row, same shape.
+chorus:alerts-monitors a owl:Class, chorus:Domain ;
+  rdfs:label "alerts-monitors" ; chorus:comment "Grafana dashboards, alert rules, and on-call signal management." ;
+  chorus:purpose "Watch the system — dashboards, alert rules, and the on-call signal that surfaces trouble." ;
+  chorus:ownedBy chorus:principal-silas ; chorus:partOf chorus:borg ;
+  chorus:atStep chorus:Proving ; chorus:atStream chorus:chorusStream ;
+  chorus:repoTarget "proving/domains/alerts" .
+  # FLAG: no clean owl:Class vocab (Gate/GateResult are gate-level, not alerts) — omitted, not faked.
 
 # chorus:security — REMOVED #3735 (Wren blessed 2026-08-02). It was a competing,
 # stale V1 definition (atStep Proving, ownedBy chorus:silas not role-silas,
@@ -182,7 +183,7 @@ chorus:document-domain-design-logs a chorus:Document ;
 chorus:time a owl:Class, chorus:Domain ;
   rdfs:label "time" ; chorus:comment "Scheduling, cron jobs, and time-based triggers for automated team work." ;
   chorus:purpose "Drive time-based work — scheduling, cron, and the triggers that run automated team tasks." ;
-  chorus:ownedBy chorus:principal-silas ; chorus:partOf chorus:borgProduct ;
+  chorus:ownedBy chorus:principal-silas ; chorus:partOf chorus:borg ;
   chorus:atStep chorus:Proving ; chorus:atStream chorus:chorusStream ;
   chorus:repoTarget "platform/launchagents" .
   # FLAG: no real owl:Class vocab (no chorus:Schedule class) — omitted, not faked.
@@ -190,7 +191,7 @@ chorus:time a owl:Class, chorus:Domain ;
 chorus:heralds a owl:Class, chorus:Domain ;
   rdfs:label "heralds" ; chorus:comment "Notification delivery — nudge routing, chorus-inject, and push delivery." ;
   chorus:purpose "Deliver notifications — nudge routing, chorus-inject, and push to the right terminal." ;
-  chorus:ownedBy chorus:principal-silas ; chorus:partOf chorus:borgProduct ;
+  chorus:ownedBy chorus:principal-silas ; chorus:partOf chorus:borg ;
   chorus:atStep chorus:Proving ; chorus:atStream chorus:chorusStream ;
   chorus:repoTarget "platform/services/chorus-inject" .
   # FLAG: no real owl:Class vocab (no chorus:Herald class) — omitted, not faked.
@@ -198,14 +199,14 @@ chorus:heralds a owl:Class, chorus:Domain ;
 chorus:toolchain a owl:Class, chorus:Domain ;
   rdfs:label "toolchain" ; chorus:comment "Development tools and their configuration — Claude Code, Node, Rust, git." ;
   chorus:purpose "Hold the team's development tools and their configuration — the toolchain it builds with." ;
-  chorus:ownedBy chorus:principal-silas ; chorus:partOf chorus:borgProduct ;
+  chorus:ownedBy chorus:principal-silas ; chorus:partOf chorus:borg ;
   chorus:atStep chorus:Proving ; chorus:atStream chorus:chorusStream ;
   chorus:repoTarget "toolchain" ; chorus:definesVocabulary chorus:Tool, chorus:ToolType .
 
 chorus:infrastructure a owl:Class, chorus:Domain ;
   rdfs:label "infrastructure" ; chorus:comment "Host machines, Docker, LaunchAgents — the physical substrate the team runs on." ;
   chorus:purpose "Hold the physical substrate the team runs on — host machines, stores, and LaunchAgents." ;
-  chorus:ownedBy chorus:principal-silas ; chorus:partOf chorus:borgProduct ;
+  chorus:ownedBy chorus:principal-silas ; chorus:partOf chorus:borg ;
   chorus:atStep chorus:Proving ; chorus:atStream chorus:chorusStream ;
   chorus:repoTarget "platform/apps" ; chorus:definesVocabulary chorus:Machine, chorus:PersistenceStore, chorus:UnitDomainMapping ;
   # #4084 — UnitDomainMapping is the authored unit → domain edge every harvester joins on (ADR-027); homed here because units are infrastructure.
@@ -214,7 +215,7 @@ chorus:infrastructure a owl:Class, chorus:Domain ;
 chorus:analytics a owl:Class, chorus:Domain ;
   rdfs:label "analytics" ; chorus:comment "Usage analytics and behavioral signals — attention, interaction patterns." ;
   chorus:purpose "Surface behavioral signal — attention, interaction patterns, and how the team actually works." ;
-  chorus:ownedBy chorus:principal-silas ; chorus:partOf chorus:borgProduct ;
+  chorus:ownedBy chorus:principal-silas ; chorus:partOf chorus:borg ;
   chorus:atStep chorus:Proving ; chorus:atStream chorus:chorusStream ;
   chorus:repoTarget "platform/api/src/handlers/chorus-attention-analytics.ts" .
   # FLAG: no clean owl:Class vocab (Metric is metrics-domain's) — omitted, not faked.
@@ -222,7 +223,7 @@ chorus:analytics a owl:Class, chorus:Domain ;
 chorus:metrics a owl:Class, chorus:Domain ;
   rdfs:label "metrics" ; chorus:comment "Quantitative measurements of system health — latency, cost, throughput." ;
   chorus:purpose "Measure system health quantitatively — latency, cost, throughput, and their trends." ;
-  chorus:ownedBy chorus:principal-silas ; chorus:partOf chorus:borgProduct ;
+  chorus:ownedBy chorus:principal-silas ; chorus:partOf chorus:borg ;
   chorus:atStep chorus:Proving ; chorus:atStream chorus:chorusStream ;
   chorus:repoTarget "platform/api/src/metrics.ts" ; chorus:definesVocabulary chorus:Metric .
 

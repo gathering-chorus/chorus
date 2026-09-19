@@ -18,7 +18,11 @@ set -uo pipefail
 FUSEKI="${FUSEKI_QUERY:-http://localhost:3030/pods/query}"
 G="urn:chorus:instances"
 NS="https://jeffbridwell.com/chorus#"
-Q() { curl -sf --max-time 20 -H "Accept: application/sparql-results+json" --data-urlencode "query=$1" "$FUSEKI" 2>/dev/null; }
+# #4187 — 20s was too tight. The owner-shape query (section 7) measured 13.8s
+# against the live store on 2026-09-18 and still came back UNMEASURED inside a
+# full run, because by then the store is warm with six earlier sweeps. A budget
+# that close to the measurement turns a real answer into a false violation.
+Q() { curl -sf --max-time "${ATHENA_VALIDATE_TIMEOUT:-60}" -H "Accept: application/sparql-results+json" --data-urlencode "query=$1" "$FUSEKI" 2>/dev/null; }
 count() { echo "$1" | python3 -c 'import sys,json; print(len(json.load(sys.stdin)["results"]["bindings"]))' 2>/dev/null || echo "?"; }
 rows()  { echo "$1" | python3 -c 'import sys,json;[print("    "+" ".join(v["value"].split("#")[-1] for v in b.values())) for b in json.load(sys.stdin)["results"]["bindings"][:8]]' 2>/dev/null; }
 
@@ -147,6 +151,115 @@ if [ "${GOVBAD:-0}" != "0" ]; then
     gs=$(echo "$r" | python3 -c 'import sys,json;print(", ".join(b["g"]["value"] for b in json.load(sys.stdin)["results"]["bindings"]))' 2>/dev/null)
     [ -n "$gs" ] && { echo "  $subj → $gs"; echo "graph-issue|one-home|$subj|$gs"; }
   done
+fi
+
+# 6. #4187 — rows still living in the two v1 graphs. Jeff, 2026-09-16 13:47:
+# "no more chorus:ontology or chorus:instances urns"; 13:58: "goal is to get and
+# stay at 0". A row's home is its domain graph (Jeff 09-13). Every typed subject
+# in urn:chorus:instances is a row; so is every subject in urn:chorus:ontology
+# whose type is not schema vocabulary (owl / rdfs / sh). Counted per class so the
+# burn-down is a table, not a number. A failed count is a violation, never a 0.
+echo "6) rows still in the v1 graphs (#4187 — the goal is 0 and stay at 0):"
+V1=$(Q "SELECT ?g ?c (COUNT(DISTINCT ?s) AS ?n) WHERE { VALUES ?g { <urn:chorus:instances> <urn:chorus:ontology> } GRAPH ?g { ?s a ?c } FILTER(!STRSTARTS(STR(?c), 'http://www.w3.org/2002/07/owl#') && !STRSTARTS(STR(?c), 'http://www.w3.org/ns/shacl#') && !STRSTARTS(STR(?c), 'http://www.w3.org/2000/01/rdf-schema#')) } GROUP BY ?g ?c ORDER BY ?g DESC(?n)")
+if [ -z "$V1" ]; then
+  echo "  ⚠️  v1-row count FAILED — counted as a violation, never as 0"
+  echo "graph-issue|v1-row|UNMEASURED|?|1"
+  BAD=$((BAD+1))
+else
+  NV1=$(echo "$V1" | python3 -c '
+import sys, json
+rows = json.load(sys.stdin)["results"]["bindings"]
+total = 0
+for b in rows:
+    g = b["g"]["value"]; c = b["c"]["value"].split("#")[-1].split("/")[-1]; n = int(b["n"]["value"])
+    total += n
+    print(f"  ⚠️  {g} {c} {n}")
+    print(f"graph-issue|v1-row|{g}|{c}|{n}")
+print(f"V1TOTAL={total}")
+' 2>/dev/null | tee /tmp/v1-rows-out.$$ | grep -o "V1TOTAL=[0-9]*" | cut -d= -f2)
+  grep -v "^V1TOTAL=" /tmp/v1-rows-out.$$; rm -f /tmp/v1-rows-out.$$
+  if [ -z "$NV1" ]; then
+    echo "  ⚠️  v1-row count unparseable — counted as a violation"; echo "graph-issue|v1-row|UNMEASURED|?|1"; BAD=$((BAD+1))
+  elif [ "$NV1" = "0" ]; then
+    echo "  ✅ both v1 graphs hold 0 rows"
+  else
+    echo "  ⚠️  $NV1 row(s) still in the v1 graphs"; BAD=$((BAD+NV1))
+  fi
+fi
+
+# 7. #4187 — an ownedBy whose object is not an existing Principal. Jeff, relayed
+# by Silas 2026-09-18 10:12, after Kade measured 26,751 rejected owners (3% of
+# 840,786 edges) and 15 distinct owner names for about six actors. The door
+# compares the caller's principal to this object, so a row stamped with a name
+# the door does not know can never be written again — not even by the actor that
+# wrote it. Counted per owner name so the fix is a rename list, not a number.
+# A failed count is a violation, never a 0 — same rule as section 6.
+echo "7) ownedBy objects that are not a Principal (#4187 — the door can never write these):"
+# Two different defects wear one symptom, so report them apart (measured
+# 2026-09-18: 26,554 literals, 209 IRIs). A literal breaks ownedBy's declared
+# rdfs:range outright; a Role IRI is a real node of the wrong class. The fix
+# differs, so the line has to.
+OWN=$(Q "PREFIX c: <$NS> SELECT ?kind ?o (COUNT(*) AS ?n) WHERE { GRAPH ?g { ?s c:ownedBy ?o } FILTER(STRSTARTS(STR(?g), 'urn:chorus:')) FILTER NOT EXISTS { GRAPH ?pg { ?o a c:Principal } } BIND(IF(isLiteral(?o), 'literal', 'iri') AS ?kind) } GROUP BY ?kind ?o ORDER BY DESC(?n)")
+if [ -z "$OWN" ]; then
+  echo "  ⚠️  owner-shape count FAILED — counted as a violation, never as 0"
+  echo "graph-issue|owner-not-principal|UNMEASURED|?|1"
+  BAD=$((BAD+1))
+else
+  NOWN=$(echo "$OWN" | python3 -c '
+import sys, json
+rows = json.load(sys.stdin)["results"]["bindings"]
+total = 0
+for b in rows:
+    o = b["o"]["value"].split("#")[-1].split("/")[-1]; n = int(b["n"]["value"])
+    k = b.get("kind", {}).get("value", "iri")
+    total += n
+    print(f"  ⚠️  {k:7s} {o} {n}")
+    print(f"graph-issue|owner-not-principal|{k}|{o}|{n}")
+print(f"OWNTOTAL={total} NAMES={len(rows)}")
+' 2>/dev/null | tee /tmp/own-out.$$ | grep -o "OWNTOTAL=[0-9]*" | cut -d= -f2)
+  grep -v "^OWNTOTAL=" /tmp/own-out.$$; rm -f /tmp/own-out.$$
+  if [ -z "$NOWN" ]; then
+    echo "  ⚠️  owner-shape count unparseable — counted as a violation"; echo "graph-issue|owner-not-principal|UNMEASURED|?|1"; BAD=$((BAD+1))
+  elif [ "$NOWN" = "0" ]; then
+    echo "  ✅ every ownedBy object is a Principal the door knows"
+  else
+    echo "  ⚠️  $NOWN row(s) owned by a name that is not a Principal"; BAD=$((BAD+NOWN))
+  fi
+fi
+
+# 8. #4187 — a class whose rows carry ownedBy but whose shape never says what an
+# owner is. Section 7 counts the bad rows; this counts the silence that lets them
+# in. Silas measured it 2026-09-18 after the owner rename refilled in four
+# minutes: 23 classes use ownedBy, 15 shapes declare it, and the rest accept
+# anything because the generated door enforces exactly what the shape states and
+# no more. Eleven shape edits fix today's set; this line is what stops the
+# twelfth. A failed count is a violation, never a 0.
+echo "8) classes whose rows carry ownedBy with no shape rule (#4187 — the door has nothing to enforce):"
+SIL=$(Q "PREFIX c: <$NS> PREFIX sh: <http://www.w3.org/ns/shacl#> SELECT ?cls (COUNT(DISTINCT ?s) AS ?n) WHERE { GRAPH ?g { ?s c:ownedBy ?o ; a ?cls } FILTER NOT EXISTS { GRAPH ?sg { ?sh sh:targetClass ?cls ; sh:property ?p . ?p sh:path c:ownedBy ; sh:class c:Principal } } } GROUP BY ?cls ORDER BY DESC(?n)")
+if [ -z "$SIL" ]; then
+  echo "  ⚠️  silent-shape count FAILED — counted as a violation, never as 0"
+  echo "graph-issue|owner-rule-missing|UNMEASURED|?|1"
+  BAD=$((BAD+1))
+else
+  NSIL=$(echo "$SIL" | python3 -c '
+import sys, json
+rows = json.load(sys.stdin)["results"]["bindings"]
+total = 0
+for b in rows:
+    c = b["cls"]["value"].split("#")[-1].split("/")[-1]; n = int(b["n"]["value"])
+    total += n
+    print(f"  ⚠️  {c} {n}")
+    print(f"graph-issue|owner-rule-missing|{c}|{n}")
+print(f"SILTOTAL={total} CLASSES={len(rows)}")
+' 2>/dev/null | tee /tmp/sil-out.$$ | grep -o "SILTOTAL=[0-9]*" | cut -d= -f2)
+  grep -v "^SILTOTAL=" /tmp/sil-out.$$; rm -f /tmp/sil-out.$$
+  if [ -z "$NSIL" ]; then
+    echo "  ⚠️  silent-shape count unparseable — counted as a violation"; echo "graph-issue|owner-rule-missing|UNMEASURED|?|1"; BAD=$((BAD+1))
+  elif [ "$NSIL" = "0" ]; then
+    echo "  ✅ every class that carries an owner has a shape that says what an owner is"
+  else
+    echo "  ⚠️  $NSIL row(s) in classes with no owner rule"; BAD=$((BAD+NSIL))
+  fi
 fi
 
 echo

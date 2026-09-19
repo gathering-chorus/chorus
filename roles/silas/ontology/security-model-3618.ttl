@@ -42,7 +42,7 @@ chorus:security a owl:Class, chorus:Domain ;
     chorus:comment "Who may touch what, provably. Authentication (identity), authorization (permissions), secrets custody, TCC/platform trust, and the live security posture — modeled, generated, attested." ;
     chorus:purpose "Protect Jeff's data from agent intrusion and agent error: every write surface carries a door, every door checks an unforgeable identity, every check is attestable from the graph." ;
     chorus:ownedBy chorus:principal-silas ;
-    chorus:partOf chorus:borgProduct ;
+    chorus:partOf chorus:borg ;
     chorus:atStep chorus:Operating ;
     chorus:atStream chorus:chorusStream ;
     chorus:repoTarget "platform/services/owl-api/src/auth.rs" ;
@@ -73,7 +73,7 @@ chorus:document-service-design-security a chorus:Document ;
     rdfs:comment """The security domain's design as a projection of the graph (#4064).""" ;
     chorus:hasDomain chorus:security ;
     chorus:ownedBy chorus:principal-silas ;
-    chorus:hasProduct chorus:borgProduct .
+    chorus:hasProduct chorus:borg .
 
 # ----------------------------------------------------------------------------
 # 2. THE CHILD — chorus:identity (authentication: who is this, provably)

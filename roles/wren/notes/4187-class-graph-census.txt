@@ -1,0 +1,152 @@
+EmitContract   urn:chorus:ontology=1
+Metric         urn:chorus:ontology=6
+Property       urn:chorus:ontology=8, urn:chorus:instances=1
+PropertyKey    urn:chorus:ontology=6
+Card           urn:chorus:instances=229, urn:chorus:domains:security=2
+Chunk          urn:chorus:instances=21
+ChunkMembership urn:chorus:instances=218
+Revision       urn:chorus:instances=9360
+File           urn:chorus:test-enrichment-86212=5, urn:chorus:test-enrichment-84377=5, urn:chorus:test-enrichment-65769=5, urn:chorus:test-enrichment-37666=5, urn:chorus:test-enrichment-11103=5, urn:chorus:instances=14425, urn:chorus:test-enrichment-65276=5, urn:chorus:test-enrichment-83191=5, urn:chorus:test-enrichment-17596=6, urn:chorus:test-enrichment-20086=5, urn:chorus:test-enrichment-44671=5, urn:chorus:test-enrichment-47720=5, urn:chorus:test-enrichment-19581=5, urn:chorus:test-enrichment-18393=6, urn:chorus:test-enrichment-80537=5, urn:chorus:test-enrichment-25446=5, urn:chorus:test-enrichment-47530=5, urn:chorus:test-enrichment-84767=5
+Product        urn:chorus:ontology=11, urn:chorus:instances=9
+Domain         urn:chorus:ontology=42
+Service        urn:chorus:instances=13
+Test           urn:chorus:domains:tests=8307, urn:chorus:instances=1
+Document       urn:chorus:documents=259, urn:chorus:ontology=4, urn:chorus:instances=12, urn:chorus:domains:documents=19
+Principal      urn:chorus:domains:security=12
+Commitment     urn:chorus:domains:services=77
+
+# measured 2026-09-18 02:50 Boston against http://localhost:3030/pods/query (read-only)
+#
+# THREE findings, none of which the per-class walk had on its list:
+#
+# 1. 17 graphs named urn:chorus:test-enrichment-<n> exist IN THE PROD STORE,
+#    holding 87 File rows between them. Test fixtures that were never torn down.
+#    They are not a home for anything; they are litter. Needs its own decision
+#    (delete vs. keep-as-evidence) from Jeff before anything is removed.
+#
+# 2. Two classes have SPLIT homes — rows of one class in two graphs at once:
+#      Property  8 in urn:chorus:ontology + 1 in urn:chorus:instances
+#      Product  11 in urn:chorus:ontology + 9 in urn:chorus:instances
+#      Card    229 in urn:chorus:instances + 2 in urn:chorus:domains:security
+#    A split home means the serve route reads one of the two and silently
+#    under-reports. This is the /domains=0 class of defect, already live.
+#
+# 3. Card/Chunk/ChunkMembership (468 rows) cannot move the way Service did.
+#    Service rows are seeded from MODEL_SET, so re-pointing the deployer moves
+#    them on the next deploy. Card rows are DAL-written from the Vikunja
+#    harvest, so the writer and the rows have to move together or the board
+#    serves 0. That sequencing belongs on its own card, not inside this walk.
+
+# CORRECTION, 2026-09-18 07:05. Finding 2 above was not a finding.
+# athena-validate's own gc-one-home-per-subject (ADR-051, wired in #4166) already
+# names all eight: spine, pulse, werk, convergence, chorus, loom, borg, athena —
+# each in urn:chorus:instances AND urn:chorus:ontology. Section 5 prints the two
+# graphs for each. I re-reported a check we already ship. Run the sweep before
+# calling anything new.
+#
+# What the sweep measures today (live, 07:05): 37,146 issues, 26,076 of them rows
+# still in the two v1 graphs.
+#
+# WHAT ACTUALLY BLOCKS THE REST OF THE WALK
+#
+# Thirteen domain graphs exist: alerts, code, documents, identity, infrastructure,
+# logs, practices, principles, roles, security, services, tests, values.
+#
+# The classes still to move have no domain graph to move INTO:
+#
+#   class          rows  where they are now      candidate home     owner
+#   EmitContract      1  urn:chorus:ontology     alerts? logs?      silas
+#   Metric            6  urn:chorus:ontology     alerts? logs?      silas
+#   Property          8  ontology + instances    none exists        silas
+#   PropertyKey       6  urn:chorus:ontology     none exists        silas
+#   Product          20  ontology + instances    none exists        wren
+#   ValueStream       3  urn:chorus:ontology     none exists        wren
+#   Step             48  urn:chorus:instances    none exists        wren
+#   Card            229  urn:chorus:instances    board? none exists wren
+#   Revision      9,360  urn:chorus:instances    follows its subject wren/kade
+#
+# Creating a domain graph is naming a domain, and naming a domain is Jeff's call,
+# not mine (2026-09-17: never mint beyond the ruling). So the walk stops here
+# until those homes are named. It does not stop because the work is hard; it
+# stops because the next step is a decision I do not get to make.
+
+# ROLE / AGENTROLE — measured 2026-09-18 10:30, and it does NOT move the way
+# Service did. Jeff put this class on the card at 18:32 on 09-17.
+#
+# 16 rows, 4 graphs, 3 types, 2 spellings:
+#   urn:chorus:domains:roles      role-abby-normal            Role
+#   urn:chorus:domains:security   role-nightly                Role
+#   urn:chorus:instances          role-{crawler,jeff,kade,nightly,silas,wren}  Role
+#                                 role-{kade,silas,wren}      AgentRole
+#                                 role-jeff                   HumanRole
+#   urn:chorus:ontology           {kade,silas,wren}           AgentRole
+#                                 jeff                        HumanRole
+#
+# HumanRole and AgentRole are both rdfs:subClassOf Role, so the doubled typing
+# in urn:chorus:instances is redundant, not contradictory.
+#
+# THREE THINGS BLOCK THE MOVE, all found by looking rather than assuming:
+#
+# 1. ROLES_SET seeds HATS, not Roles. athena-deploy-model.sh:834 says so in its
+#    own comment: "Roles still live in urn:chorus:instances until #4090 moves
+#    them, and stage_merge_set is a per-subject additive merge: staging a Role
+#    subject here would DELETE the rest of that Role row." So there is no set to
+#    re-point, and #4090 already exists for this. Same shape as Card/Chunk: the
+#    rows are DAL-written.
+#
+# 2. RoleShape's instancesGraph must NOT change yet. /v1/roles/roles serves 6
+#    today by reading urn:chorus:instances. Re-pointing the shape before the rows
+#    move serves 0 — that is the /domains=0 defect, manufactured on purpose.
+#
+# 3. The four bare-name rows in urn:chorus:ontology are NOT orphans, which is
+#    what I expected and checked. They carry 10-45 triples each and each has 6+
+#    inbound ownedBy / hasOwner edges from urn:chorus:framework, :documents and
+#    :skills. They ARE the bare owner names section 7 counts — the 26,542 edges
+#    the door rejects point HERE. Deleting them orphans thousands of edges.
+#    They get merged into principal-<name>, by the owner rename Silas holds,
+#    and only then does the ontology-graph copy go.
+#
+# Nothing staged, nothing written. The finding is the deliverable.
+
+# THE ACTUAL CAUSE, measured 2026-09-18 11:25. It is not nine missing graphs.
+#
+# athena-model already DERIVES the target graph from the model:
+#   athena-model/src/adr.rs:157  derived_placement(class, defining_domain)
+#     -> urn:chorus:domains:{defining_domain}
+# where defining_domain is the domain whose definesVocabulary claims the class.
+# An explicit chorus:instancesGraph that disagrees is an OVERRIDE, allowed only
+# with a stated reason (check_placement, same file).
+#
+# Ten of twelve classes ARE claimed by a domain, and every one carries a stale
+# override to the catch-all:
+#
+#   class            claimed by       declared instancesGraph
+#   Product          products         urn:chorus:instances
+#   ValueStream      value-streams    urn:chorus:instances
+#   Card             cards            urn:chorus:instances
+#   Chunk            board            urn:chorus:instances
+#   ChunkMembership  board            urn:chorus:instances
+#   Revision         products         urn:chorus:instances
+#   Property         properties       urn:chorus:ontology
+#   PropertyKey      properties       urn:chorus:ontology
+#   Metric           metrics          urn:chorus:ontology
+#   EmitContract     spine            urn:chorus:ontology
+#   Step             — no claim —     — none —
+#   File             — no claim —     urn:chorus:instances
+#
+# So the work is DELETE TEN LINES, not create nine graphs and move rows by hand.
+# The derivation already points at the right place; the pin is what overrides it.
+#
+# TWO THINGS TO SETTLE FIRST, neither of them mine alone:
+#
+# 1. check_placement has NO CALLER. grep across platform/services finds the
+#    function and its tests, and no run path. The rule is written and inert —
+#    which is exactly why ten shapes drifted from it without anything going red.
+#
+# 2. The pins are not arbitrary. #3686 added them because the generated SERVE
+#    route read the declared graph, and without the pin /cards served 0 — the
+#    /domains=0 defect. Removing a pin only works if the read path uses the same
+#    derivation as the write path. Verify that before deleting anything.
+#
+# 3. Revision is claimed by the PRODUCTS domain. A revision of a document is not
+#    a product thing. Worth a second look before its 9,360 rows follow the claim.

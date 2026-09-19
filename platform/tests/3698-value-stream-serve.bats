@@ -56,13 +56,28 @@ sq() {
 }
 
 # ── AC1 (hermetic): both value-stream shapes declare instancesGraph=instances ──
-@test "AC1 ValueStreamShape declares instancesGraph urn:chorus:instances" {
+# REWRITTEN 2026-09-19 (#4187). These two asserted that the shapes PIN
+# instancesGraph to the v1 catch-all. That was the correct world when #3698
+# landed and it is the world this card removes: the value-streams domain claims
+# both classes, so athena-make derives urn:chorus:domains:value-streams from the
+# claim (resolve_instances_graph, lib.rs:899) and a pin to the catch-all would
+# now send reads and writes to a graph the rows have left.
+#
+# The property worth guarding did not change - each shape has ONE home and it is
+# the value-streams graph - so that is what is asserted, and the catch-all pin is
+# asserted ABSENT. A test that says "declares the catch-all" can only ever hold
+# the old world in place.
+# The claim half is deliberately NOT asserted here: `sq` queries this file's own
+# TTL, and the value-streams domain makes its definesVocabulary claim in a
+# different file. Asserting it here would fail on a correct model - the same
+# too-narrow-reader mistake made once already today in 4187-service-home.
+@test "AC1 ValueStream's home is not the v1 catch-all" {
   run sq 'ASK { c:ValueStreamShape c:instancesGraph "urn:chorus:instances" }'
-  echo "$output" | grep -qi 'yes'
+  test -z "$(printf '%s' "$output" | grep -iE 'yes|true' || true)"
 }
-@test "AC1 StepShape declares instancesGraph urn:chorus:instances" {
+@test "AC1 Step's home is not the v1 catch-all" {
   run sq 'ASK { c:StepShape c:instancesGraph "urn:chorus:instances" }'
-  echo "$output" | grep -qi 'yes'
+  test -z "$(printf '%s' "$output" | grep -iE 'yes|true' || true)"
 }
 # Guard the category error the card AC made: value-stream is PURE ABox, so these
 # shapes must NOT point at the ontology graph (that is the punned Domain/Service case).

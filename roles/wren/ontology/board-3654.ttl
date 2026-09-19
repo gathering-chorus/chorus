@@ -97,7 +97,12 @@ chorus:ChunkMembership a owl:Class ;
 
 chorus:CardShape a sh:NodeShape ;
   sh:targetClass chorus:Card ;
-  chorus:instancesGraph "urn:chorus:instances" ;  # #3686: serve reads need the DAL home DECLARED — without it the generated route reads the wrong graph and serves 0 rows (the #3581/#3675 /domains=0 class)
+  # #4187 — the pin is GONE. #3686 added it because the serve route needed a
+  # declared home and urn:chorus:domains:cards did not exist. It does now, and
+  # holds all 229 rows (copied and verified 2026-09-18 11:39). athena-make's
+  # resolve_instances_graph falls through to urn:chorus:domains:<domain> from the
+  # cards domain's definesVocabulary, which is the derivation ADR-051 asks for —
+  # so read and write both follow the model instead of a hand-written override.
   sh:property [ sh:path rdfs:label ; sh:minCount 1 ; sh:datatype xsd:string ] ;
   # #4116 — a card row carries its owner, like every other row the door writes.
   # The write door refuses a node whose ownedBy is absent (authz_allows is
@@ -109,7 +114,8 @@ chorus:CardShape a sh:NodeShape ;
 
 chorus:ChunkShape a sh:NodeShape ;
   sh:targetClass chorus:Chunk ;
-  chorus:instancesGraph "urn:chorus:instances" ;  # #3686: same as CardShape
+  # #4187 — pin removed; the board domain claims Chunk, and all 21 rows are in
+  # urn:chorus:domains:board (copied and verified 2026-09-18 12:47).
   sh:property [ sh:path rdfs:label ; sh:minCount 1 ; sh:datatype xsd:string ] ;
   sh:property [ sh:path chorus:slug ; sh:minCount 1 ; sh:datatype xsd:string ; chorus:immutable true ] ;
   sh:property [ sh:path chorus:ownedBy ; sh:minCount 1 ; sh:class chorus:Principal ] ;
@@ -118,7 +124,8 @@ chorus:ChunkShape a sh:NodeShape ;
 
 chorus:ChunkMembershipShape a sh:NodeShape ;
   sh:targetClass chorus:ChunkMembership ;
-  chorus:instancesGraph "urn:chorus:instances" ;  # #3686: same as CardShape
+  # #4187 — pin removed; all 218 rows are in urn:chorus:domains:board
+  # (copied and verified 2026-09-18 12:47).
   sh:property [ sh:path chorus:inChunk ; sh:minCount 1 ; sh:class chorus:Chunk ] ;
   sh:property [ sh:path chorus:hasCard ; sh:minCount 1 ; sh:class chorus:Card ] ;
   sh:property [ sh:path chorus:rank ; sh:minCount 1 ; sh:datatype xsd:integer ; chorus:uniqueWithin chorus:inChunk ] .
@@ -137,7 +144,7 @@ chorus:board a owl:Class, chorus:Domain ;
   chorus:comment "The team's work board — cards grouped into chunks and ordered for execution." ;
   chorus:purpose "Group work into committed chunks with deterministic ordering so roles run bigger units without colliding on loose cards." ;
   chorus:ownedBy chorus:principal-wren ;
-  chorus:partOf chorus:chorusProduct ;
+  chorus:partOf chorus:chorus ;
   chorus:atStep chorus:Directing ;
   chorus:atStream chorus:chorusStream ;
   chorus:status "building" ;
