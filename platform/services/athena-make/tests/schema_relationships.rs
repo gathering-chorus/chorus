@@ -7,7 +7,7 @@
 use athena_make::{schema_set_json, RouteTable};
 
 fn table(class: &str, fields: Vec<&str>) -> RouteTable {
-    RouteTable { write_authority: String::new(), domain: String::new(), base_path: String::new(),
+    RouteTable { unbounded: vec![], write_authority: String::new(), domain: String::new(), base_path: String::new(),
         class: format!("https://jeffbridwell.com/chorus#{}", class),
         fields: fields.into_iter().map(|f| f.into()).collect(),
         routes: vec![],
