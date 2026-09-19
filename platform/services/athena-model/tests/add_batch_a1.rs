@@ -312,7 +312,11 @@ fn same_kind_shape_is_loaded_once_for_the_entire_batch() {
         .selects
         .borrow()
         .iter()
-        .filter(|q| q.contains("urn:chorus:ontology") && q.contains("targetClass"))
+        // #4220 — the principal-home lookup also reads the ontology graph and
+        // names a targetClass; it is not a shape load, so it is not what this
+        // count is about.
+        .filter(|q| q.contains("urn:chorus:ontology") && q.contains("targetClass")
+            && !q.contains("# athena-model principal home"))
         .count();
     assert_eq!(shape_selects, 6, "read_shape's six queries run once per distinct class, not once per entity");
     assert_eq!(store.updates.borrow().len(), 1);

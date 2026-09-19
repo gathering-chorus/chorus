@@ -55,13 +55,15 @@ pub const SECURITY_GRAPH_DEFAULT: &str = "urn:chorus:domains:security";
 
 /// The query that asks the model where Principal rows live. Identical to
 /// chorus-oidc's, on purpose: four doors must answer alike.
-pub const PRINCIPAL_HOME_QUERY: &str = "PREFIX chorus: <https://jeffbridwell.com/chorus#> PREFIX sh: <http://www.w3.org/ns/shacl#> SELECT ?v WHERE { GRAPH <urn:chorus:ontology> { ?shape sh:targetClass chorus:Principal ; chorus:instancesGraph ?v } } LIMIT 1";
+pub const PRINCIPAL_HOME_QUERY: &str = "# athena-model principal home\nPREFIX chorus: <https://jeffbridwell.com/chorus#> PREFIX sh: <http://www.w3.org/ns/shacl#> SELECT ?v WHERE { GRAPH <urn:chorus:ontology> { ?shape sh:targetClass chorus:Principal ; chorus:instancesGraph ?v } } LIMIT 1";
 
 /// Pure: pick the home from what the model answered. Anything unusable leaves
 /// the current answer alone — a door that cannot read the model must not
 /// silently start reading somewhere new.
 pub fn principal_home_from(rows: &[String], current: &str) -> String {
-    match rows.iter().find(|r| r.starts_with("urn:chorus:")) {
+    // A domain graph, not any urn: a fake or partial answer must not move the
+    // door. urn:chorus:instances is the catch-all, never a registry home.
+    match rows.iter().find(|r| r.starts_with("urn:chorus:domains:")) {
         Some(g) => g.clone(),
         None => current.to_string(),
     }
@@ -819,7 +821,7 @@ pub fn write_grants_for_webid(store: &dyn Store, webid: &str) -> R<Vec<String>> 
         "PREFIX chorus: <{ns}> PREFIX acl: <http://www.w3.org/ns/auth/acl#> \
          SELECT DISTINCT ?v WHERE {{ GRAPH <{g}> {{ ?perm a chorus:Permission ; chorus:agent ?p ; chorus:accessTo ?s ; chorus:mode ?m . FILTER(?m = acl:Write || STR(?m) = STR(acl:Write)) \
          ?p a chorus:Principal ; chorus:webId ?wid . FILTER(STR(?wid) = \"{w}\") BIND(STR(?s) AS ?v) }} }}",
-        ns = NS, g = security_graph(), w = webid
+        ns = NS, g = security_graph_with(store), w = webid
     ))
 }
 
@@ -887,13 +889,13 @@ pub fn verify_identity(claim: Option<&str>, store: &dyn Store) -> R<Identity> {
     }
     let known = store.ask(&format!(
         "ASK {{ GRAPH <{g}> {{ <{ns}principal-{c}> a <{ns}Principal> }} }}",
-        g = security_graph(), ns = NS, c = claim
+        g = security_graph_with(store), ns = NS, c = claim
     ))?;
     if !known {
         witness("model.refused", &[("reason", "identity-unknown"), ("claim", claim)]);
         return Err(format!(
             "identity-unknown: '{}' is not a registered chorus:Principal in <{}> — writes refuse (fail closed, #3651)",
-            claim, security_graph()
+            claim, security_graph_with(store)
         ));
     }
     Ok(Identity(claim.to_string()))
@@ -942,7 +944,7 @@ pub fn verify_identity_token(
     let claim = store
         .select_v(&format!(
             "PREFIX chorus: <{ns}> SELECT ?v WHERE {{ GRAPH <{g}> {{ ?p a chorus:Principal ; chorus:webId ?wid . FILTER(STR(?wid) = \"{w}\") BIND(REPLACE(STR(?p), '.*#principal-', '') AS ?v) }} }}",
-            ns = NS, g = security_graph(), w = webid
+            ns = NS, g = security_graph_with(store), w = webid
         ))?
         .into_iter()
         .next();
@@ -962,7 +964,7 @@ pub fn verify_identity_token(
             witness("model.refused", &[("reason", "identity-webid-unregistered"), ("webid", &webid)]);
             Err(format!(
                 "identity-webid-unregistered: verified WebID <{}> owns no chorus:Principal in <{}> — writes refuse (fail closed, #3356)",
-                webid, security_graph()
+                webid, security_graph_with(store)
             ))
         }
     }
@@ -1124,17 +1126,21 @@ fn assert_dal_writable(graph: &str) -> R<()> {
     // permission somebody granted through the same door, revocable as a row,
     // instead of a graph nobody could write through any door. The ontology
     // graph stays DBA-only: the schema is athena-make's.
-    if graph == security_graph() && granted_write_graphs().iter().any(|g| *g == security_graph()) {
+    // #4220 — the registry is protected wherever it is AND wherever it was.
+    // Guarding only the resolved graph would leave the old one writable during
+    // a move, which is precisely when rows are in both places.
+    let is_registry = graph == security_graph() || graph == SECURITY_GRAPH_DEFAULT;
+    if is_registry && granted_write_graphs().iter().any(|g| *g == graph) {
         witness("model.write.permitted", &[("graph", graph), ("reason", "acl-authorization-row")]);
         return Ok(());
     }
-    if graph == ONTOLOGY_GRAPH || graph == security_graph() {
+    if graph == ONTOLOGY_GRAPH || is_registry {
         witness("model.refused", &[("graph", graph), ("reason", "graph-dba-only")]);
         return Err(format!(
             "graph-dba-only: <{}> is a DBA-path graph — the instances DAL is refused write \
              (per-graph authz, fail closed, #3356 AC4{})",
             graph,
-            if graph == security_graph() { "; #4183: a Permission row with acl:mode acl:Write for this graph opens it" } else { "" }
+            if is_registry { "; #4183: a Permission row with acl:mode acl:Write for this graph opens it" } else { "" }
         ));
     }
     Ok(())
