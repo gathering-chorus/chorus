@@ -254,7 +254,9 @@ pub fn desired_rows(
             .collect();
         pages.extend(pages_in(src, &names));
     }
-    pages.sort_by(|a, b| a.route.cmp(&b.route));
+    // Same rule one fold over: a route is one Page row.
+    pages.sort_by(|a, b| (&a.route, &a.path).cmp(&(&b.route, &b.path)));
+    pages.dedup_by(|a, b| a.route == b.route);
 
     let mut endpoints: Vec<EndpointRow> = Vec::new();
     for p in paths.iter().filter(|p| serves_routes(p)) {
@@ -262,10 +264,14 @@ pub fn desired_rows(
             endpoints.extend(endpoints_in(p, &body));
         }
     }
+    // A row is keyed on METHOD + path, so two files declaring the same route are
+    // ONE row, not two. Deduping whole structs kept both (their `path` differs)
+    // and the door refused the batch: "duplicate entity name in request". First
+    // file wins, deterministically, because the list is sorted before the cut.
     endpoints.sort_by(|a, b| {
-        (&a.route_path, &a.http_method).cmp(&(&b.route_path, &b.http_method))
+        (&a.route_path, &a.http_method, &a.path).cmp(&(&b.route_path, &b.http_method, &b.path))
     });
-    endpoints.dedup();
+    endpoints.dedup_by(|a, b| a.route_path == b.route_path && a.http_method == b.http_method);
     (pages, endpoints, skipped)
 }
 
@@ -670,6 +676,31 @@ mod desired_tests {
         assert!(matches!(&plan[..], [_, RowAction::Delete { key, .. }] if key == "/athena/gone.html"));
         // and that single delete is a cleanup, not a wipe, so it proceeds
         assert!(!leg_mass_delete_refused(1, 2));
+    }
+
+
+    #[test]
+    fn negative_proof_one_route_declared_twice_is_one_row() {
+        // The door refused a real batch over this on 2026-09-19: two files
+        // declaring the same route produced two rows whose door NAME is
+        // identical, and a batch cannot carry the same name twice. Removing the
+        // dedup_by turns this red.
+        let paths = vec!["a/one.ts".to_string(), "a/two.ts".to_string()];
+        let read = |_: &str| Some("app.get('/api/same', h);".to_string());
+        let (_, endpoints, _) = desired_rows(&paths, &read, false);
+        assert_eq!(endpoints.len(), 1, "{endpoints:?}");
+        assert_eq!(endpoints[0].path, "a/one.ts", "first file wins, deterministically");
+        let names: std::collections::BTreeSet<String> =
+            endpoints.iter().map(|e| endpoint_row_name(&e.http_method, &e.route_path)).collect();
+        assert_eq!(names.len(), endpoints.len(), "every row name is unique");
+    }
+
+    #[test]
+    fn different_methods_on_one_path_stay_two_rows() {
+        let paths = vec!["a/one.ts".to_string()];
+        let read = |_: &str| Some("app.get('/api/x', h); app.post('/api/x', h);".to_string());
+        let (_, endpoints, _) = desired_rows(&paths, &read, false);
+        assert_eq!(endpoints.len(), 2, "{endpoints:?}");
     }
 
 }
