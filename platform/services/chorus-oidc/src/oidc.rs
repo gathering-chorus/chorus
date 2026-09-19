@@ -467,8 +467,56 @@ pub fn seam_auth_any(
 /// a coordinated edit across four languages — which is the move that caused the
 /// incident. `graph_provenance()` exists so a door can SAY where it read.
 pub fn allow_set_graph() -> String {
+    if let Some(g) = RESOLVED_ALLOW_GRAPH.get() {
+        return g.clone();
+    }
     std::env::var("CHORUS_ALLOW_SET_GRAPH")
         .unwrap_or_else(|_| "urn:chorus:domains:security".to_string())
+}
+
+/// #4220 — WHERE PRINCIPALS LIVE IS A MODEL FACT, NOT A CONFIG FACT.
+///
+/// On 2026-09-19 I moved the twelve Principal rows into the identity graph,
+/// which is where PrincipalShape now says they live and where the only route
+/// serving them already pointed. Every authenticated write in the system
+/// started answering "authn-missing" within a minute: this resolver was still
+/// reading the security graph, so no WebID resolved to a Principal and the door
+/// refused everyone. I rolled the rows back.
+///
+/// The comment above records the SAME incident from 2026-08-06 and prescribes
+/// "moved by configuration rather than a coordinated edit across four
+/// languages". Configuration is better than four edits and still wrong: it is
+/// three env vars in three deploys that must change in the same instant, and
+/// whichever one lags locks everybody out. The model already states the answer
+/// — PrincipalShape's chorus:instancesGraph — so the door asks it once at boot
+/// and every reader here follows.
+///
+/// Unreadable model → the default stands. An empty answer must never widen to
+/// "any graph" or narrow to none; it means keep reading where we read before.
+static RESOLVED_ALLOW_GRAPH: std::sync::OnceLock<String> = std::sync::OnceLock::new();
+
+pub const PRINCIPAL_HOME_QUERY: &str = "PREFIX chorus: <https://jeffbridwell.com/chorus#> PREFIX sh: <http://www.w3.org/ns/shacl#> SELECT ?g WHERE { GRAPH <urn:chorus:ontology> { ?shape sh:targetClass chorus:Principal ; chorus:instancesGraph ?g } } LIMIT 1";
+
+/// Pure: pick the home from what the model answered. `rows` is the select's
+/// values; anything unusable leaves the current answer alone.
+pub fn principal_home_from(rows: &[String], current: &str) -> String {
+    match rows.iter().find(|r| r.starts_with("urn:chorus:")) {
+        Some(g) => g.clone(),
+        None => current.to_string(),
+    }
+}
+
+/// Called once at boot, before the first token is verified. Returns the graph
+/// every reader in this process will use, and says so to the log.
+pub fn prime_allow_set_graph(query: impl Fn(&str) -> Option<String>) -> String {
+    let current = std::env::var("CHORUS_ALLOW_SET_GRAPH")
+        .unwrap_or_else(|_| "urn:chorus:domains:security".to_string());
+    let resolved = match query(PRINCIPAL_HOME_QUERY) {
+        Some(body) => principal_home_from(&crate::select_v(&body), &current),
+        None => current.clone(),
+    };
+    let _ = RESOLVED_ALLOW_GRAPH.set(resolved.clone());
+    resolved
 }
 
 /// What a door prints at startup and on every allow-set refresh. The missing
@@ -1392,5 +1440,35 @@ mod tests {
         assert_eq!(keys[0].0, "a");
         assert_eq!(keys[1].0, "b");
         assert_ne!(keys[0].1, keys[1].1, "each key got ITS OWN coordinates");
+    }
+}
+
+#[cfg(test)]
+mod allow_graph_from_model_4220 {
+    use super::*;
+
+    #[test]
+    fn the_model_answer_wins() {
+        let rows = vec!["urn:chorus:domains:identity".to_string()];
+        assert_eq!(principal_home_from(&rows, "urn:chorus:domains:security"), "urn:chorus:domains:identity");
+    }
+
+    #[test]
+    fn an_unreadable_model_leaves_the_door_where_it_was() {
+        // NEGATIVE PROOF of the failure that locked every write on 2026-09-19:
+        // an empty or unusable answer must NOT move the door, and must not
+        // resolve to nothing.
+        let none: Vec<String> = vec![];
+        assert_eq!(principal_home_from(&none, "urn:chorus:domains:security"), "urn:chorus:domains:security");
+        let junk = vec!["".to_string(), "not-a-graph".to_string()];
+        assert_eq!(principal_home_from(&junk, "urn:chorus:domains:security"), "urn:chorus:domains:security");
+    }
+
+    #[test]
+    fn priming_from_a_dead_store_keeps_the_default() {
+        let g = prime_allow_set_graph(|_| None);
+        assert_eq!(g, "urn:chorus:domains:security");
+        // and every reader agrees with what was primed
+        assert_eq!(allow_set_graph(), g);
     }
 }

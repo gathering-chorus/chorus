@@ -23,7 +23,14 @@ import { startRoom } from './buzz-room-wiring';
 import { ClearingChat } from './chat';
 import { lanAddress, bonjourHost, startupLanLines, detectIpDrift } from './lan-url';
 import { isLocalConnection, isTunneled } from './connection-auth';
-import { isWebIdAllowed, principalForWebId } from './solid-auth';
+import { isWebIdAllowed, principalForWebId, primeAllowSetGraph } from './solid-auth';
+
+// #4220 — ask the model where Principal rows live before the first sign-in is
+// judged. Three doors carrying three defaults is how a model move locked every
+// write on 2026-09-19; the shape is the single answer all of them follow.
+primeAllowSetGraph()
+  .then((g) => console.log(`clearing: principals resolve from <${g}> (model-declared)`))
+  .catch(() => {});
 import { resolveSenderIdentity } from './sender-identity';
 import {
   makePkce, makeState, signCookie, verifyCookie, safeReturnPath, buildAuthUrl,

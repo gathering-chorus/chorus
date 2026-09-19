@@ -5145,6 +5145,14 @@ pub fn serve(port: u16, tables: &[RouteTable]) -> R<()> {
     // on CSS-down-at-boot but never blocks boot.
     let css_issuer = std::env::var("CSS_ISSUER").unwrap_or_else(|_| "http://localhost:3001/".to_string());
     let jwks_url = format!("{}/.oidc/jwks", css_issuer.trim_end_matches('/'));
+    // #4220 — ask the model where Principals live BEFORE building the verifier,
+    // so every resolver below reads the same graph the shape declares. Without
+    // this the door reads a hardcoded default and a model move locks everyone
+    // out (measured 2026-09-19, and again on 2026-08-06 before that).
+    {
+        let home = oidc::prime_allow_set_graph(|q| sparql_json(q).ok());
+        eprintln!("athena-make: principals resolve from <{}> (model-declared)", home);
+    }
     let oidc_verifier = oidc::OidcVerifier::new(
         &css_issuer,
         // allow-set resolver: re-run lazily on the ALLOW_TTL cadence so a model
