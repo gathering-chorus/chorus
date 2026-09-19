@@ -59,6 +59,11 @@ pub enum TboxRefusal {
     /// would rip an API surface out from under its consumers in one motion;
     /// the sanctioned path is two steps (unserve, then retire).
     ClaimServed { class: String, route: String },
+    /// #4214 — the parent named by --subclass-of is not a declared class. A
+    /// dangling superclass is worse than none: every generator that walks
+    /// inheritance follows the edge to a class that binds nothing, and no
+    /// surface reports the dead end.
+    UnknownParent { class: String, parent: String },
     /// #3752 — no such claim exists in the LIVE store. A retire that exits 0
     /// on nothing would be the could-not-ask class in verb form.
     ClaimNotFound { domain: String, class: String },
@@ -76,6 +81,7 @@ impl TboxRefusal {
             Self::ShapeWithNoFloor { .. } => "shape-with-no-floor",
             Self::ClaimServed { .. } => "claim-served",
             Self::ClaimNotFound { .. } => "claim-not-found",
+            Self::UnknownParent { .. } => "unknown-parent",
         }
     }
 }
@@ -127,6 +133,13 @@ impl fmt::Display for TboxRefusal {
                  live API surface in one motion. Unserve first (retire the shape / stop \
                  generation), verify /{route} is gone, then retire the claim (#3752)."
             ),
+            Self::UnknownParent { class, parent } => write!(
+                f,
+                "'{class}' declares --subclass-of '{parent}', which is not a declared class in \
+                 the deploy set. A dangling superclass binds nothing and reports nothing: every \
+                 generator that walks inheritance follows it to a class that does not exist. \
+                 Declare the parent first, or name one that is already declared."
+            ),
             Self::ClaimNotFound { domain, class } => write!(
                 f,
                 "no live claim '{domain} definesVocabulary {class}' exists in the store — \
@@ -160,6 +173,10 @@ pub struct ClassSpec<'a> {
     pub comment: Option<&'a str>,
     pub claimed_by: Option<&'a str>,
     pub target_file: &'a str,
+    /// #4214 — the local name of the superclass, or None for a root class.
+    /// Optional because most classes have no parent; when present it is checked
+    /// against the declared set, never taken on trust.
+    pub subclass_of: Option<&'a str>,
 }
 
 pub struct PropertySpec<'a> {
@@ -200,10 +217,50 @@ fn manifest_check(file: &str, deploy_set: &BTreeSet<String>, out: &mut Vec<TboxR
     }
 }
 
+/// #4214 — every class local name DECLARED by the manifest files in the deploy
+/// set. Read from the files, not the store: this verb emits turtle for a
+/// manifest and must be runnable with no Fuseki up. A file the deploy set names
+/// but that cannot be read contributes nothing rather than failing the run —
+/// the parent check then refuses, which is the loud direction.
+pub fn declared_classes(deploy_set: &BTreeSet<String>) -> BTreeSet<String> {
+    let root = std::env::var("CHORUS_ROOT")
+        .unwrap_or_else(|_| "/Users/jeffbridwell/CascadeProjects/chorus".to_string());
+    let mut out = BTreeSet::new();
+    for rel in deploy_set {
+        let body = match std::fs::read_to_string(format!("{root}/{rel}")) {
+            Ok(b) => b,
+            Err(_) => continue,
+        };
+        out.extend(declared_classes_in(&body));
+    }
+    out
+}
+
+/// The parser, split out so it is testable without touching a filesystem.
+pub fn declared_classes_in(body: &str) -> BTreeSet<String> {
+    let mut out = BTreeSet::new();
+    for line in body.lines() {
+        let l = line.trim();
+        if l.starts_with('#') {
+            continue;
+        }
+        let Some(rest) = l.strip_prefix("chorus:") else { continue };
+        let Some((name, tail)) = rest.split_once(char::is_whitespace) else { continue };
+        if tail.trim_start().starts_with("a owl:Class") && is_upper_camel(name) {
+            out.insert(name.to_string());
+        }
+    }
+    out
+}
+
 /// Every refusal, never just the first. A caller who fixes one violation and
 /// resubmits into the next learns the shape one turn at a time; that is the
 /// opposite of legibility.
-pub fn check_class(spec: &ClassSpec, deploy_set: &BTreeSet<String>) -> Vec<TboxRefusal> {
+pub fn check_class(
+    spec: &ClassSpec,
+    deploy_set: &BTreeSet<String>,
+    declared: &BTreeSet<String>,
+) -> Vec<TboxRefusal> {
     let mut out = Vec::new();
     if looks_like_iri(spec.name) {
         out.push(TboxRefusal::CallerPassedIri { value: spec.name.into() });
@@ -226,6 +283,25 @@ pub fn check_class(spec: &ClassSpec, deploy_set: &BTreeSet<String>) -> Vec<TboxR
             out.push(TboxRefusal::CallerPassedIri { value: d.into() })
         }
         Some(_) => {}
+    }
+    // #4214 — the parent gets the SAME scrutiny as the name it sits above: a
+    // caller-typed IRI, a malformed local name, and a parent nothing declares
+    // are each refused. The last one is the negative proof this flag ships with.
+    if let Some(parent) = spec.subclass_of {
+        if looks_like_iri(parent) {
+            out.push(TboxRefusal::CallerPassedIri { value: parent.into() });
+        } else if !is_upper_camel(parent) {
+            out.push(TboxRefusal::MalformedLocalName {
+                name: parent.into(),
+                kind: "class",
+                why: "classes are UpperCamel with no punctuation",
+            });
+        } else if parent == spec.name || !declared.contains(parent) {
+            out.push(TboxRefusal::UnknownParent {
+                class: spec.name.into(),
+                parent: parent.into(),
+            });
+        }
     }
     manifest_check(spec.target_file, deploy_set, &mut out);
     out
@@ -304,12 +380,20 @@ fn esc(s: &str) -> String {
 
 pub fn class_turtle(spec: &ClassSpec) -> String {
     let claimed = spec.claimed_by.expect("checked");
+    // #4214 — the parent line, or nothing at all. A class with no --subclass-of
+    // emits exactly what it emitted before this flag existed.
+    let parent = match spec.subclass_of {
+        Some(p) => format!("    rdfs:subClassOf chorus:{p} ;\n"),
+        None => String::new(),
+    };
     format!(
-        "chorus:{name} a owl:Class ;\n    \
+        "chorus:{name} a owl:Class ;\n\
+         {parent}    \
          rdfs:label \"{name}\" ;\n    \
          rdfs:comment \"{comment}\" .\n\
          chorus:{domain} chorus:definesVocabulary chorus:{name} .\n",
         name = spec.name,
+        parent = parent,
         comment = esc(spec.comment.expect("checked")),
         domain = claimed,
     )
@@ -487,6 +571,116 @@ mod tests {
     fn ok_file() -> &'static str {
         "designing/data/x.ttl"
     }
+    /// #4214 — what the manifest files declare. CodeFile is the real anchor
+    /// Page and Endpoint inherit from; Widget deliberately is NOT here.
+    fn declared() -> BTreeSet<String> {
+        ["CodeFile".to_string(), "Domain".to_string()].into_iter().collect()
+    }
+
+    #[test]
+    fn a_declared_parent_is_emitted_as_subclassof() {
+        let spec = ClassSpec {
+            name: "Page",
+            comment: Some("a rendered page"),
+            claimed_by: Some("code"),
+            target_file: ok_file(),
+            subclass_of: Some("CodeFile"),
+        };
+        assert!(check_class(&spec, &manifest(), &declared()).is_empty());
+        let ttl = class_turtle(&spec);
+        assert!(ttl.contains("rdfs:subClassOf chorus:CodeFile ;"), "{ttl}");
+        assert!(ttl.contains("chorus:Page a owl:Class ;"), "{ttl}");
+    }
+
+    #[test]
+    fn no_parent_emits_no_subclassof_line() {
+        // The flag is additive: a class that does not use it emits exactly what
+        // it emitted before the flag existed.
+        let ttl = class_turtle(&ClassSpec {
+            name: "Widget",
+            comment: Some("x"),
+            claimed_by: Some("cards"),
+            target_file: ok_file(),
+            subclass_of: None,
+        });
+        assert!(!ttl.contains("subClassOf"), "{ttl}");
+    }
+
+    #[test]
+    fn negative_proof_an_undeclared_parent_is_refused() {
+        // THE negative proof for this flag: the guarded condition is VIOLATED —
+        // a parent nothing declares — and the check is shown to FAIL. A dangling
+        // superclass is what every inheritance-walking generator follows into
+        // nothing. Mutating the guard to `false` turns this test RED (run
+        // 2026-09-19 10:31), which is how we know it can separate the states.
+        let r = check_class(
+            &ClassSpec {
+                name: "Page",
+                comment: Some("a rendered page"),
+                claimed_by: Some("code"),
+                target_file: ok_file(),
+                subclass_of: Some("CodeFyle"),
+            },
+            &manifest(),
+            &declared(),
+        );
+        assert_eq!(r.len(), 1, "{r:?}");
+        assert_eq!(r[0].code(), "unknown-parent");
+        assert!(r[0].to_string().contains("CodeFyle"));
+    }
+
+    #[test]
+    fn a_class_cannot_be_its_own_parent() {
+        let r = check_class(
+            &ClassSpec {
+                name: "CodeFile",
+                comment: Some("x"),
+                claimed_by: Some("code"),
+                target_file: ok_file(),
+                subclass_of: Some("CodeFile"),
+            },
+            &manifest(),
+            &declared(),
+        );
+        assert_eq!(r[0].code(), "unknown-parent");
+    }
+
+    #[test]
+    fn a_caller_supplied_iri_parent_is_refused() {
+        // The parent gets the same ADR-040 treatment as the name above it.
+        for bad in ["chorus:CodeFile", "https://jeffbridwell.com/chorus#CodeFile"] {
+            let r = check_class(
+                &ClassSpec {
+                    name: "Page",
+                    comment: Some("x"),
+                    claimed_by: Some("code"),
+                    target_file: ok_file(),
+                    subclass_of: Some(bad),
+                },
+                &manifest(),
+                &declared(),
+            );
+            assert!(
+                r.iter().any(|x| matches!(x, TboxRefusal::CallerPassedIri { .. })),
+                "{bad} must be refused"
+            );
+        }
+    }
+
+    #[test]
+    fn declared_classes_reads_class_declarations_only() {
+        let body = concat!(
+            "chorus:CodeFile a owl:Class ;\n",
+            "    rdfs:label \"CodeFile\" .\n",
+            "# chorus:Commented a owl:Class .\n",
+            "chorus:filePath a owl:DatatypeProperty .\n",
+            "chorus:Page a owl:Class .\n",
+        );
+        let got = declared_classes_in(body);
+        assert!(got.contains("CodeFile") && got.contains("Page"), "{got:?}");
+        assert!(!got.contains("filePath"), "a property is not a class: {got:?}");
+        assert!(!got.contains("Commented"), "a comment is not a declaration: {got:?}");
+    }
 
     #[test]
     fn a_property_without_a_range_is_refused() {
@@ -546,8 +740,10 @@ mod tests {
                 comment: Some("a widget"),
                 claimed_by: None,
                 target_file: ok_file(),
-            },
+                    subclass_of: None,
+                },
             &manifest(),
+            &declared(),
         );
         assert!(matches!(r.as_slice(), [TboxRefusal::ClassUnclaimed { .. }]));
     }
@@ -562,8 +758,10 @@ mod tests {
                 comment: None,
                 claimed_by: Some("cards"),
                 target_file: ok_file(),
-            },
+                    subclass_of: None,
+                },
             &manifest(),
+            &declared(),
         );
         assert!(r.iter().any(|x| matches!(
             x,
@@ -580,9 +778,11 @@ mod tests {
                     comment: Some("x"),
                     claimed_by: Some("cards"),
                     target_file: ok_file(),
-                },
+                        subclass_of: None,
+                    },
                 &manifest(),
-            );
+            &declared(),
+        );
             assert!(
                 r.iter().any(|x| matches!(x, TboxRefusal::CallerPassedIri { .. })),
                 "{bad} must be refused"
@@ -598,8 +798,10 @@ mod tests {
                 comment: Some("x"),
                 claimed_by: Some("cards"),
                 target_file: "roles/wren/scratch.ttl",
-            },
+                    subclass_of: None,
+                },
             &manifest(),
+            &declared(),
         );
         assert!(r.iter().any(|x| matches!(x, TboxRefusal::NotInManifest { .. })));
     }
@@ -639,8 +841,11 @@ mod tests {
             comment: Some("a widget"),
             claimed_by: Some("cards"),
             target_file: ok_file(),
-        };
-        assert!(check_class(&spec, &manifest()).is_empty());
+                subclass_of: None,
+            };
+        assert!(check_class(&spec, &manifest(),
+            &declared(),
+        ).is_empty());
         assert!(class_turtle(&spec).contains("chorus:cards chorus:definesVocabulary chorus:Widget"));
     }
 
@@ -657,8 +862,10 @@ mod tests {
                 comment: Some("x"),
                 claimed_by: Some("cards"),
                 target_file: "anything.ttl",
-            },
+                    subclass_of: None,
+                },
             &empty,
+            &declared(),
         );
         assert!(r.is_empty(), "empty manifest must not fabricate a refusal");
     }

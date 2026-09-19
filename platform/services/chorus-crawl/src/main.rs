@@ -9,6 +9,7 @@
 //! server, or a clock.
 
 use chorus_crawl::cases::{self, CaseAction, CaseInGraph, CaseRow};
+use chorus_crawl::pages;
 use chorus_crawl::domain;
 use chorus_crawl::*;
 use std::collections::HashMap;
@@ -433,6 +434,118 @@ fn curl(
         ));
     }
     Ok(payload.to_string())
+}
+
+
+/// #4214 — the gathering checkout, whose absence makes two page sources a
+/// reported SKIP rather than an error (#3097).
+const GATHERING_ROOT: &str = "../jeff-bridwell-personal-site";
+
+/// A Page row as the door expects it: the parent CodeFile floor plus the two
+/// fields a page adds. `hasDomain` is present only when the rules placed it —
+/// an unplaced page is listed by name, never filed under a default.
+fn page_fields(row: &pages::PageRow, domain: Option<&str>) -> Vec<(String, String)> {
+    let mut f = vec![
+        ("name".to_string(), pages::page_row_name(&row.route)),
+        ("filePath".to_string(), row.path.clone()),
+        ("hasKind".to_string(), "code".to_string()),
+        ("route".to_string(), row.route.clone()),
+        ("pageType".to_string(), row.page_type.clone()),
+    ];
+    if let Some(d) = domain {
+        f.push(("hasDomain".to_string(), d.to_string()));
+    }
+    f
+}
+
+/// An Endpoint row: the same floor, keyed on method AND path together.
+fn endpoint_fields(row: &pages::EndpointRow, domain: Option<&str>) -> Vec<(String, String)> {
+    let mut f = vec![
+        (
+            "name".to_string(),
+            pages::endpoint_row_name(&row.http_method, &row.route_path),
+        ),
+        ("filePath".to_string(), row.path.clone()),
+        ("hasKind".to_string(), "code".to_string()),
+        ("routePath".to_string(), row.route_path.clone()),
+        ("httpMethod".to_string(), row.http_method.clone()),
+    ];
+    if let Some(d) = domain {
+        f.push(("hasDomain".to_string(), d.to_string()));
+    }
+    f
+}
+
+/// Every served row of one class as the planner wants it: the door name, the
+/// key the plan matches on, and the domain currently stored.
+fn rows_as_in_graph(
+    api: &str,
+    token: &str,
+    kind: &str,
+    key_field: &str,
+) -> Result<Vec<pages::InGraph>, String> {
+    let mut out = Vec::new();
+    for fields in fetch_rows(api, token, kind)? {
+        let get = |k: &str| -> String {
+            fields
+                .iter()
+                .find(|(f, _)| f == k)
+                .map(|(_, v)| v.clone())
+                .unwrap_or_default()
+        };
+        let name = get("name");
+        if name.is_empty() {
+            continue;
+        }
+        // An endpoint's key is method AND path: GET /x and POST /x are two rows.
+        let key = if kind == "Endpoint" {
+            format!("{} {}", get("httpMethod"), get(key_field))
+        } else {
+            get(key_field)
+        };
+        let domain = Some(get("hasDomain")).filter(|d| !d.is_empty());
+        out.push(pages::InGraph { name, key, domain, fields });
+    }
+    Ok(out)
+}
+
+/// One batch POST, shared by the page and endpoint legs.
+fn flush_batch(
+    batch: &mut Vec<String>,
+    ident: &std::cell::RefCell<Identity>,
+    api: &str,
+    coll: &str,
+    label: &str,
+    failed: &mut Vec<String>,
+    wrote: &mut usize,
+) {
+    if batch.is_empty() {
+        return;
+    }
+    let body = format!("[{}]", batch.join(","));
+    match write(ident, api, "POST", &format!("{coll}/batch"), Some(&body)) {
+        Ok(_) => *wrote += batch.len(),
+        Err(e) => failed.push(format!("{label} batch of {}: {e}", batch.len())),
+    }
+    batch.clear();
+}
+
+
+/// #4214 — the domain a page or endpoint belongs to, READ FROM ITS FILE by the
+/// same rules that place a CodeFile. Never the folder, never the name.
+fn place_row(
+    root: &str,
+    path: &str,
+    unit_rows: &[(String, String)],
+    valid_domains: &[String],
+    card_domain: &dyn Fn(u32) -> Option<String>,
+) -> Option<String> {
+    let read = |q: &str| std::fs::read_to_string(std::path::Path::new(root).join(q)).ok();
+    let content = read(path)?;
+    let unit = domain::declared_unit(path, &read);
+    domain::place_in_file(&content, path, unit.as_deref(), unit_rows, valid_domains, card_domain, &read)
+        .domain()
+        .map(str::to_string)
 }
 
 fn json_escape(s: &str) -> String {
@@ -1433,6 +1546,67 @@ fn main() {
         std::process::exit(if clean { 0 } else { 1 });
     }
 
+    // ── #4214: plan the UI-Pages and API-Contract folds. Deliberately ABOVE the
+    // dry-run return: the code, case and log legs all report their plan on a dry
+    // run, and a leg that can only be seen by writing cannot be previewed at all.
+    // Mine could not, which the first dry run against the variant showed.
+    let (want_pages, want_endpoints, page_plan, endpoint_plan, page_graph, endpoint_graph) = {
+        // #4201's authored unit rows, read here because planning now happens
+        // before the write section that used to own them.
+        let unit_rows = domain::unit_domain_rows(
+            &std::fs::read_to_string(format!("{root}/{UNIT_DOMAIN_TTL}")).unwrap_or_default(),
+        );
+        let gathering_present = std::path::Path::new(GATHERING_ROOT).is_dir();
+        let read_file = |q: &str| std::fs::read_to_string(std::path::Path::new(&root).join(q)).ok();
+        let (want_pages, want_endpoints, skipped) =
+            pages::desired_rows(&paths, &read_file, gathering_present);
+        for dir in &skipped {
+            println!("chorus-crawl: pages SKIPPED {dir} — that checkout is not present on this box");
+        }
+        let page_graph = rows_as_in_graph(&api, &token, "Page", "route").unwrap_or_default();
+        let endpoint_graph = rows_as_in_graph(&api, &token, "Endpoint", "routePath").unwrap_or_default();
+        let full = scope_was_full_walk(&scope) && read == TreeRead::Complete;
+        let mut page_plan = pages::plan_rows(
+            &want_pages,
+            &page_graph,
+            &|r: &pages::PageRow| r.route.clone(),
+            &|r: &pages::PageRow| place_row(&root, &r.path, &unit_rows, &valid_domains, &card_domain),
+            full,
+        );
+        let mut endpoint_plan = pages::plan_rows(
+            &want_endpoints,
+            &endpoint_graph,
+            &|r: &pages::EndpointRow| format!("{} {}", r.http_method, r.route_path),
+            &|r: &pages::EndpointRow| place_row(&root, &r.path, &unit_rows, &valid_domains, &card_domain),
+            full,
+        );
+        // #4022 + #4214 — absent must not mean delete, and the shared guard has a
+        // 100-row floor that a 63-row collection never reaches.
+        for (label, dels, have) in [
+            ("page", page_plan.iter().filter(|a| matches!(a, pages::RowAction::Delete { .. })).count(), page_graph.len()),
+            ("endpoint", endpoint_plan.iter().filter(|a| matches!(a, pages::RowAction::Delete { .. })).count(), endpoint_graph.len()),
+        ] {
+            if dels > 0 && (read != TreeRead::Complete || pages::leg_mass_delete_refused(dels, have)) {
+                eprintln!("chorus-crawl: {label} deletes REFUSED this run ({dels} of {have})");
+                if label == "page" {
+                    page_plan.retain(|a| !matches!(a, pages::RowAction::Delete { .. }));
+                } else {
+                    endpoint_plan.retain(|a| !matches!(a, pages::RowAction::Delete { .. }));
+                }
+            }
+        }
+        let pc = pages::counts(&page_plan);
+        let ec = pages::counts(&endpoint_plan);
+        println!(
+            "chorus-crawl: pages posted={} replaced={} unchanged={} deleted={} · endpoints posted={} replaced={} unchanged={} deleted={} · page files={} endpoint routes={} rows={}/{}{}",
+            pc.posted, pc.replaced, pc.unchanged, pc.deleted,
+            ec.posted, ec.replaced, ec.unchanged, ec.deleted,
+            want_pages.len(), want_endpoints.len(), page_graph.len(), endpoint_graph.len(),
+            wrote_nothing(dry_run, reconciling)
+        );
+        (want_pages, want_endpoints, page_plan, endpoint_plan, page_graph, endpoint_graph)
+    };
+
     if dry_run {
         return;
     }
@@ -1739,6 +1913,92 @@ fn main() {
             }
         }
         lflush(&mut lbatch, &mut failed, &mut wrote);
+    }
+
+    // ── #4214: write the folds. The plan was made above; this only performs it.
+    {
+        let _ = (&want_pages, &want_endpoints);
+        let page_coll = collection_for(&api, "Page");
+        let endpoint_coll = collection_for(&api, "Endpoint");
+        match (page_coll, endpoint_coll) {
+            (Ok(page_coll), Ok(endpoint_coll)) => {
+                let page_in_graph: HashMap<&str, &pages::InGraph> =
+                    page_graph.iter().map(|g| (g.name.as_str(), g)).collect();
+                let endpoint_in_graph: HashMap<&str, &pages::InGraph> =
+                    endpoint_graph.iter().map(|g| (g.name.as_str(), g)).collect();
+                let mut pbatch: Vec<String> = Vec::new();
+                for a in &page_plan {
+                    match a {
+                        pages::RowAction::Post(row) => {
+                            let d = place_row(&root, &row.path, &unit_rows, &valid_domains, &card_domain);
+                            let body = fields_json(&page_fields(row, d.as_deref()));
+                            if !batch_accepts(batch_bytes(&pbatch), body.len(), BATCH_BODY_BUDGET) || pbatch.len() >= 200 {
+                                flush_batch(&mut pbatch, ident, &api, &page_coll, "page", &mut failed, &mut wrote);
+                            }
+                            pbatch.push(body);
+                        }
+                        pages::RowAction::Replace { name, row } => {
+                            let d = place_row(&root, &row.path, &unit_rows, &valid_domains, &card_domain);
+                            let existing: &[(String, String)] = page_in_graph
+                                .get(name.as_str())
+                                .map(|g| g.fields.as_slice())
+                                .unwrap_or(&[]);
+                            let mut fields = merge_row(existing, &page_fields(row, d.as_deref()));
+                            if d.is_none() {
+                                fields.retain(|(k, _)| k != "hasDomain");
+                            }
+                            prefixes.apply(&mut fields);
+                            puts.push(PendingPut { kind: "page", label: row.route.clone(), path: format!("{page_coll}/{name}"), fields });
+                        }
+                        pages::RowAction::Delete { name, key } => {
+                            if let Err(e) = write(ident, &api, "DELETE", &format!("{page_coll}/{name}"), None) {
+                                failed.push(format!("delete page {key}: {e}"));
+                            }
+                        }
+                        pages::RowAction::Unchanged { .. } => {}
+                    }
+                }
+                flush_batch(&mut pbatch, ident, &api, &page_coll, "page", &mut failed, &mut wrote);
+
+                let mut ebatch: Vec<String> = Vec::new();
+                for a in &endpoint_plan {
+                    match a {
+                        pages::RowAction::Post(row) => {
+                            let d = place_row(&root, &row.path, &unit_rows, &valid_domains, &card_domain);
+                            let body = fields_json(&endpoint_fields(row, d.as_deref()));
+                            if !batch_accepts(batch_bytes(&ebatch), body.len(), BATCH_BODY_BUDGET) || ebatch.len() >= 200 {
+                                flush_batch(&mut ebatch, ident, &api, &endpoint_coll, "endpoint", &mut failed, &mut wrote);
+                            }
+                            ebatch.push(body);
+                        }
+                        pages::RowAction::Replace { name, row } => {
+                            let d = place_row(&root, &row.path, &unit_rows, &valid_domains, &card_domain);
+                            let existing: &[(String, String)] = endpoint_in_graph
+                                .get(name.as_str())
+                                .map(|g| g.fields.as_slice())
+                                .unwrap_or(&[]);
+                            let mut fields = merge_row(existing, &endpoint_fields(row, d.as_deref()));
+                            if d.is_none() {
+                                fields.retain(|(k, _)| k != "hasDomain");
+                            }
+                            prefixes.apply(&mut fields);
+                            puts.push(PendingPut { kind: "endpoint", label: format!("{} {}", row.http_method, row.route_path), path: format!("{endpoint_coll}/{name}"), fields });
+                        }
+                        pages::RowAction::Delete { name, key } => {
+                            if let Err(e) = write(ident, &api, "DELETE", &format!("{endpoint_coll}/{name}"), None) {
+                                failed.push(format!("delete endpoint {key}: {e}"));
+                            }
+                        }
+                        pages::RowAction::Unchanged { .. } => {}
+                    }
+                }
+                flush_batch(&mut ebatch, ident, &api, &endpoint_coll, "endpoint", &mut failed, &mut wrote);
+            }
+            (p, e) => {
+                if let Err(err) = p { eprintln!("chorus-crawl: Page leg SKIPPED — {err}"); }
+                if let Err(err) = e { eprintln!("chorus-crawl: Endpoint leg SKIPPED — {err}"); }
+            }
+        }
     }
 
     flush_puts(&mut puts, ident, &api, &mut prefixes, writers, &mut failed, &mut wrote);

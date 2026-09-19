@@ -20,7 +20,8 @@ chorus:code a owl:Class, chorus:Domain ;
   chorus:purpose "Keep the source trustworthy at rest — lint, type-check, and static-analysis ratchets that only tighten — so quality is enforced continuously, not audited after the fact." ;
   chorus:ownedBy chorus:principal-kade ; chorus:partOf chorus:chorusProduct ;
   chorus:atStep chorus:Building ; chorus:atStream chorus:chorusStream ;
-  chorus:repoTarget "platform/scripts/clippy-ratchet.sh" ; chorus:definesVocabulary chorus:CodeFile .
+  chorus:repoTarget "platform/scripts/clippy-ratchet.sh" ;
+  chorus:definesVocabulary chorus:CodeFile .
 
 chorus:pipelines a owl:Class, chorus:Domain ;
   rdfs:label "pipelines" ; chorus:comment "CI/CD and build orchestration — how code moves from commit to production. Parent of the cicd child domain (#3275)." ;
@@ -53,6 +54,19 @@ chorus:integrations a owl:Class, chorus:Domain ;
   chorus:repoTarget "convergence" .
   # FLAG: no real owl:Class vocab — omitted, not faked.
 
+# #4214 — Page and Endpoint are SUBCLASSES of CodeFile, not siblings. Jeff,
+# 2026-09-18 15:33: "these are special cases of Code so if anything they are
+# child classes." A page IS a file that renders a route; an endpoint IS a file
+# position that serves one. They inherit filePath, hasKind, hasDomain, ownedBy
+# and the code domain's home graph — athena-make resolves a shape through
+# rdfs:subClassOf*, so the parent's floor applies with no new code.
+#
+# They existed before this as 63 + 448 rows in the catch-all with two predicates
+# and no route, which is why the UI-Pages and API-Contract folds read 0 on every
+# domain page.
+
+# The shapes add only what the child carries. Everything else — filePath,
+# hasKind, hasDomain, ownedBy — comes from CodeFileShape through the subclass.
 chorus:CodeKind a owl:Class ;
     rdfs:label "CodeKind" ;
     rdfs:comment "What a source file is for: code, test, log, config, doc. Named individuals, never free strings (#4157)." .
@@ -108,4 +122,52 @@ chorus:CodeFileShape a sh:NodeShape ;
     # a migration nobody can verify through the door cannot be called done.
     sh:property [ sh:path chorus:ownedBy ; sh:class chorus:Principal ] ;
     chorus:instancesGraph "urn:chorus:domains:code" ;
+    chorus:generatedBy "athena-model" .
+
+chorus:Page a owl:Class ;
+    rdfs:subClassOf chorus:CodeFile ;
+    rdfs:label "Page" ;
+    rdfs:comment "A file that renders a route a person can open. The UI-Pages fold on a domain." .
+chorus:code chorus:definesVocabulary chorus:Page .
+
+chorus:Endpoint a owl:Class ;
+    rdfs:subClassOf chorus:CodeFile ;
+    rdfs:label "Endpoint" ;
+    rdfs:comment "A route an API serves, and the file that serves it. The API-Contract fold on a domain." .
+chorus:code chorus:definesVocabulary chorus:Endpoint .
+
+chorus:route a owl:DatatypeProperty ;
+    rdfs:label "route" ;
+    rdfs:comment "The URL a person opens to see this page." ;
+    rdfs:domain chorus:Page ;
+    rdfs:range xsd:string .
+
+chorus:pageType a owl:DatatypeProperty ;
+    rdfs:label "pageType" ;
+    rdfs:comment "What kind of surface the page is: athena, loom, ontology, doc, page." ;
+    rdfs:domain chorus:Page ;
+    rdfs:range xsd:string .
+
+chorus:routePath a owl:DatatypeProperty ;
+    rdfs:label "routePath" ;
+    rdfs:comment "The path this endpoint serves, as declared in the source file." ;
+    rdfs:domain chorus:Endpoint ;
+    rdfs:range xsd:string .
+
+chorus:httpMethod a owl:DatatypeProperty ;
+    rdfs:label "httpMethod" ;
+    rdfs:comment "The HTTP method this endpoint answers: GET, POST, PUT, DELETE." ;
+    rdfs:domain chorus:Endpoint ;
+    rdfs:range xsd:string .
+
+chorus:PageShape a sh:NodeShape ;
+    sh:targetClass chorus:Page ;
+    sh:property [ sh:path chorus:route ; sh:minCount 1 ; sh:datatype xsd:string ] ;
+    sh:property [ sh:path chorus:pageType ; sh:datatype xsd:string ] ;
+    chorus:generatedBy "athena-model" .
+
+chorus:EndpointShape a sh:NodeShape ;
+    sh:targetClass chorus:Endpoint ;
+    sh:property [ sh:path chorus:routePath ; sh:minCount 1 ; sh:datatype xsd:string ] ;
+    sh:property [ sh:path chorus:httpMethod ; sh:minCount 1 ; sh:datatype xsd:string ] ;
     chorus:generatedBy "athena-model" .

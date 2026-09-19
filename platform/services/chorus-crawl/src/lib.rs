@@ -12,6 +12,7 @@
 /// #4185 — test CASE rows: parsers, covers, the share gate, the case plan.
 pub mod cases;
 pub mod domain;
+pub mod pages;
 
 /// What a file is, from the model's served CodeKind individuals (#4157):
 /// code · config · doc · log · test, plus `data` (#4173). Never a free string.

@@ -179,13 +179,16 @@ fn run() -> Result<String, String> {
                     let name = get("--name").ok_or("class: --name <ClassLocal> is required")?;
                     let comment = get("--comment");
                     let claimed = get("--claimed-by");
+                    let parent = get("--subclass-of");
                     let spec = athena_model::tbox::ClassSpec {
                         name: &name,
                         comment: comment.as_deref(),
                         claimed_by: claimed.as_deref(),
                         target_file: &file,
+                        subclass_of: parent.as_deref(),
                     };
-                    let r = athena_model::tbox::check_class(&spec, &deploy_set);
+                    let declared = athena_model::tbox::declared_classes(&deploy_set);
+                    let r = athena_model::tbox::check_class(&spec, &deploy_set, &declared);
                     let ttl = if r.is_empty() { athena_model::tbox::class_turtle(&spec) } else { String::new() };
                     (r, ttl)
                 }
