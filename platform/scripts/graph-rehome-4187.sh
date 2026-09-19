@@ -25,7 +25,12 @@ CLASS="${1:?usage: graph-rehome-4187.sh <Class> <domain-slug> [--go|--prune]}"
 DOMAIN="${2:?usage: graph-rehome-4187.sh <Class> <domain-slug> [--go|--prune]}"
 MODE="${3:-}"
 NS="https://jeffbridwell.com/chorus#"
-SRC="urn:chorus:instances"; DST="urn:chorus:domains:${DOMAIN}"
+# #4216 — the SOURCE is overridable. This script was written for the v1 catch-all
+# (urn:chorus:instances), but the identical move is needed out of the SCHEMA graph
+# (urn:chorus:ontology), which is holding a few hundred real records mixed in with
+# the definitions. Same copy, same verify, same prune; only the graph read from
+# changes. Defaulting to the catch-all keeps every existing invocation identical.
+SRC="${REHOME_SRC:-urn:chorus:instances}"; DST="urn:chorus:domains:${DOMAIN}"
 QRY="${FUSEKI_QUERY:-http://localhost:3030/pods/query}"
 UPD="${FUSEKI_UPDATE:-http://localhost:3030/pods/update}"
 # fuseki-auth.sh exports FUSEKI_ADMIN_USER/_PASSWORD; accept either spelling.
