@@ -174,3 +174,36 @@ EOS
   grep -q -- "claude -c" "$T/tmux.log"
   [[ "$output" == *"via claude -c"* ]]
 }
+
+# ---- #4219 — turn the key, the car starts ----
+# Jeff, 2026-09-19: `chorus-awake kade` came up on a conversation the API had
+# refused 14 times, so every line he typed came back an error until he cleared
+# it by hand. "i just want it to work like turn a key to start the car."
+
+_poison() { printf '{"content":"API Error: safeguards flagged this message"}\n' >> "$T/projects/$1.jsonl"; }
+
+@test "#4219 a conversation ending in API refusals is NOT resumed — a fresh one starts" {
+  touch "$T/projects/dead-conv.jsonl"; _poison dead-conv
+  ( sleep 0.3; reg 71 %0 ) &
+  run "$SCRIPT" kade
+  printf '%s' "$output" | grep -q "ends in API refusals"
+  printf '%s' "$output" | grep -q "fresh conversation"
+  # the pane gets a plain claude, not -c
+  test -z "$(grep -F -- "claude -c" "$T/tmux.log" || true)"
+}
+
+@test "#4219 a healthy conversation is still resumed with -c" {
+  printf '{"type":"assistant","text":"fine"}\n' > "$T/projects/live-conv.jsonl"
+  ( sleep 0.3; reg 72 %0 ) &
+  run "$SCRIPT" kade
+  grep -q -- "claude -c" "$T/tmux.log"
+  test -z "$(printf '%s' "$output" | grep -F "ends in API refusals" || true)"
+}
+
+@test "#4219 NEGATIVE PROOF: with the check off, the SAME poisoned conversation is resumed" {
+  touch "$T/projects/dead-conv.jsonl"; _poison dead-conv
+  ( sleep 0.3; reg 73 %0 ) &
+  run env AWAKE_TRANSCRIPT_CHECK=0 "$SCRIPT" kade
+  grep -q -- "claude -c" "$T/tmux.log"
+  test -z "$(printf '%s' "$output" | grep -F "fresh conversation" || true)"
+}

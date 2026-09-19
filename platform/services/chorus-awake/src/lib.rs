@@ -240,6 +240,30 @@ pub fn latest_session_in(projects_dir: &Path) -> Option<String> {
     best.map(|(_, id)| id)
 }
 
+/// #4219 — IS THE LAST CONVERSATION STILL ALIVE? Jeff, 2026-09-19, after
+/// `chorus-awake kade` came up and could not answer: "i dont want to have to do
+/// this stuff as part of my jx"; "i just want it to work like turn a key to
+/// start the car".
+///
+/// chorus-awake resumed the newest conversation and never asked whether the API
+/// still accepts it. Kade's had 14 refusals in it (measured 08:52: 3,160 lines,
+/// 14 flagged); every turn Jeff typed came back as an error until he cleared it
+/// by hand. A start that registers, reports success and cannot say a word is
+/// the same shape as #4215's silent-degrade, one layer out.
+///
+/// Pure over the transcript tail so the test can hold both a poisoned and a
+/// healthy fixture. `window` is how many trailing lines count as "recent": one
+/// refusal in a long history is noise, refusals at the END mean the
+/// conversation is finished.
+pub fn transcript_is_poisoned(tail: &str, window: usize, threshold: usize) -> bool {
+    let lines: Vec<&str> = tail.lines().collect();
+    let start = lines.len().saturating_sub(window);
+    let hits = lines[start..].iter().filter(|l|
+        l.contains("safeguards flagged") || l.contains("reasoning_extraction")
+    ).count();
+    hits >= threshold
+}
+
 /// ~/.claude/projects/<role dir with '/' → '-'>
 pub fn projects_dir_for(home: &str, role_dir: &str) -> PathBuf {
     PathBuf::from(home).join(".claude").join("projects").join(role_dir.replace('/', "-"))
@@ -462,9 +486,28 @@ pub fn run(args: &[String]) -> i32 {
     let projects = PathBuf::from(env::var("AWAKE_PROJECTS_DIR").unwrap_or_else(|_| projects_dir_for(&home, &role_dir).to_string_lossy().to_string()));
     let latest = latest_session_in(&projects);
     let dec = decide(&agents, latest.as_deref(), stale_hours, now_ms());
-    let (cmd, how) = match &dec.attach {
-        Some(id) => (format!("{} attach {}", claude, id), format!("attach {} (the last conversation, detached in the background)", id)),
-        None => (format!("{} -c", claude), "claude -c (last conversation)".to_string()),
+    // #4219 — a conversation the API keeps refusing is not a conversation to
+    // resume. AWAKE_TRANSCRIPT_CHECK=0 disables this and exists for the
+    // negative proof: the same poisoned fixture must be resumed without it.
+    let check_on = envd("AWAKE_TRANSCRIPT_CHECK", "1") != "0";
+    let window: usize = envd("AWAKE_TRANSCRIPT_WINDOW", "40").parse().unwrap_or(40);
+    let threshold: usize = envd("AWAKE_TRANSCRIPT_REFUSALS", "1").parse().unwrap_or(1);
+    let poisoned = check_on && latest.as_deref().map(|id| {
+        let f = projects.join(format!("{}.jsonl", id));
+        let tail = fs::read_to_string(&f).unwrap_or_default();
+        transcript_is_poisoned(&tail, window, threshold)
+    }).unwrap_or(false);
+
+    let (cmd, how) = if poisoned {
+        let id = latest.clone().unwrap_or_default();
+        eprintln!("chorus-awake: the last conversation ({}) ends in API refusals — not resuming it", id);
+        eprintln!("  starting a FRESH conversation instead; turning the key has to start the car.");
+        (claude.clone(), format!("fresh conversation ({} ends in API refusals)", id))
+    } else {
+        match &dec.attach {
+            Some(id) => (format!("{} attach {}", claude, id), format!("attach {} (the last conversation, detached in the background)", id)),
+            None => (format!("{} -c", claude), "claude -c (last conversation)".to_string()),
+        }
     };
 
     // 5 — stale agents: named; ended only on request.
