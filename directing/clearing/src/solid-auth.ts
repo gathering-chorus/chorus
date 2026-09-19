@@ -81,9 +81,15 @@ export async function sparqlValues(q: string, fetchImpl: typeof fetch = fetch): 
       headers: { Accept: 'application/sparql-results+json' },
     });
     if (!res.ok) return null;
-    const body: any = await res.json();
-    return (body?.results?.bindings ?? []).map((b: any) => Object.values(b)[0])
-      .map((v: any) => String(v?.value ?? ''));
+    // typed rather than `any`: the lint ratchet is right that a SPARQL body is
+    // a known shape, and this one only ever needs the first value of each row.
+    const body = (await res.json()) as {
+      results?: { bindings?: Array<Record<string, { value?: string }>> };
+    };
+    return (body.results?.bindings ?? []).map((row) => {
+      const first = Object.values(row)[0];
+      return String(first?.value ?? '');
+    });
   } catch {
     return null;
   }
