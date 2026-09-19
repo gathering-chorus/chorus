@@ -1,0 +1,12 @@
+[package]
+name = "athena-validate"
+version = "0.1.0"
+edition = "2021"
+
+# Zero-dep blueprint (ADR-032 §1): std only; curl invoked as a subprocess, never
+# a code dependency. Same atomic-verb contract as its three athena-* siblings.
+[dependencies]
+
+[[bin]]
+name = "athena-validate"
+path = "src/main.rs"
