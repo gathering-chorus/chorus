@@ -2291,6 +2291,65 @@ fn print_graph_vs_project(
     let log_drift = reconcile_logs(&log_files, &log_rows, &on_disk);
     println!("chorus-crawl: {}", log_drift.report());
 
+    // #4214 — the folds, both directions. The classes shipped without this, so
+    // for one afternoon nothing proved that every page on disk had a row or that
+    // every row still had a file. Jeff caught it by asking the obvious question.
+    {
+        let read_file = |q: &str| std::fs::read_to_string(std::path::Path::new(root).join(q)).ok();
+        let tracked = tracked_files(root).unwrap_or_default();
+        let (want_pages, want_endpoints, _) = pages::desired_rows(
+            &tracked,
+            &read_file,
+            std::path::Path::new(GATHERING_ROOT).is_dir(),
+        );
+        for (kind, key_field, want) in [
+            (
+                "pages",
+                "route",
+                want_pages.iter().map(|r| r.route.clone()).collect::<Vec<_>>(),
+            ),
+            (
+                "endpoints",
+                "routePath",
+                want_endpoints
+                    .iter()
+                    .map(|r| format!("{} {}", r.http_method, r.route_path))
+                    .collect::<Vec<_>>(),
+            ),
+        ] {
+            let class = if kind == "pages" { "Page" } else { "Endpoint" };
+            match rows_as_in_graph(api, token, class, key_field) {
+                Err(e) => println!(
+                    "chorus-crawl: reconcile {kind}: UNMEASURED — cannot read {class} rows ({e})"
+                ),
+                Ok(rows) => {
+                    let have: Vec<String> = rows.iter().map(|r| r.key.clone()).collect();
+                    let missing: Vec<&String> = want.iter().filter(|k| !have.contains(k)).collect();
+                    let orphan: Vec<&String> = have.iter().filter(|k| !want.contains(k)).collect();
+                    if missing.is_empty() && orphan.is_empty() {
+                        println!(
+                            "chorus-crawl: reconcile {kind}: clean — {} in the tree, {} in the graph, same set",
+                            want.len(),
+                            have.len()
+                        );
+                    } else {
+                        println!(
+                            "chorus-crawl: reconcile {kind}: DRIFT — {} in the tree without a row, {} rows without a source",
+                            missing.len(),
+                            orphan.len()
+                        );
+                        for k in missing.iter().take(10) {
+                            println!("chorus-crawl:   no row for {k}");
+                        }
+                        for k in orphan.iter().take(10) {
+                            println!("chorus-crawl:   no source for {k}");
+                        }
+                    }
+                }
+            }
+        }
+    }
+
     // current: commits between the watermark and HEAD
     let lag = match watermark {
         Some(w) => sh(
