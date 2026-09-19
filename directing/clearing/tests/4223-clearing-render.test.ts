@@ -50,7 +50,6 @@ function loadRenderer(): (t: string) => string {
       };
     },
   };
-  // eslint-disable-next-line no-new-func
   return new Function('document', `${src}; return renderMarkdown;`)(document);
 }
 
