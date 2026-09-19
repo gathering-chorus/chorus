@@ -254,7 +254,9 @@ pub fn desired_rows(
             .collect();
         pages.extend(pages_in(src, &names));
     }
-    pages.sort_by(|a, b| a.route.cmp(&b.route));
+    // Same rule one fold over: a route is one Page row.
+    pages.sort_by(|a, b| (&a.route, &a.path).cmp(&(&b.route, &b.path)));
+    pages.dedup_by(|a, b| a.route == b.route);
 
     let mut endpoints: Vec<EndpointRow> = Vec::new();
     for p in paths.iter().filter(|p| serves_routes(p)) {
@@ -262,10 +264,14 @@ pub fn desired_rows(
             endpoints.extend(endpoints_in(p, &body));
         }
     }
+    // A row is keyed on METHOD + path, so two files declaring the same route are
+    // ONE row, not two. Deduping whole structs kept both (their `path` differs)
+    // and the door refused the batch: "duplicate entity name in request". First
+    // file wins, deterministically, because the list is sorted before the cut.
     endpoints.sort_by(|a, b| {
-        (&a.route_path, &a.http_method).cmp(&(&b.route_path, &b.http_method))
+        (&a.route_path, &a.http_method, &a.path).cmp(&(&b.route_path, &b.http_method, &b.path))
     });
-    endpoints.dedup();
+    endpoints.dedup_by(|a, b| a.route_path == b.route_path && a.http_method == b.http_method);
     (pages, endpoints, skipped)
 }
 
@@ -283,7 +289,11 @@ pub fn serves_routes(path: &str) -> bool {
 /// Deterministic door name. Same shape as `log_row_name` and `stable_name`: a
 /// readable slug plus a digest of the EXACT key, so two rows that slug alike
 /// still get two rows (the collision that refused the first CodeFile batch).
-fn row_name(prefix: &str, key: &str) -> String {
+/// #4214 — the BARE name. The door mints the type prefix itself and refuses a
+/// name that already carries one ("double-prefix", 422, caught on the variant
+/// 2026-09-19 before any prod row). So this builds slug + digest and nothing
+/// else; `page:` / `endpoint:` is the DAL's to add.
+fn row_name(_prefix: &str, key: &str) -> String {
     let mut slug = String::new();
     let mut last_dash = false;
     for c in key.chars() {
@@ -306,7 +316,7 @@ fn row_name(prefix: &str, key: &str) -> String {
         h ^= *b as u64;
         h = h.wrapping_mul(0x0000_0100_0000_01b3);
     }
-    format!("{prefix}-{slug}-{:08x}", (h & 0xffff_ffff) as u32)
+    format!("{slug}-{:08x}", (h & 0xffff_ffff) as u32)
 }
 
 /// A page is keyed on its ROUTE, not its file: the route is what a person
@@ -408,6 +418,35 @@ pub fn counts<T>(actions: &[RowAction<T>]) -> Counts {
         }
     }
     c
+}
+
+/// #4214 — the undo list for a run: the door names of the rows it CREATED.
+///
+/// Wren's blocking condition before this writer touches prod: a plan that can
+/// only go forward is not a plan. Rolling back means deleting exactly what the
+/// run added — never a row it replaced (that row existed before, and deleting
+/// it would turn an undo into data loss), and never one it deleted or left
+/// alone. So only Post contributes, and the test below proves the other three
+/// do not.
+pub fn created_names(
+    actions: &[RowAction<PageRow>],
+    endpoint_actions: &[RowAction<EndpointRow>],
+) -> Vec<String> {
+    // Each line is "<kind> <name>". The name is bare now (the door mints the
+    // prefix), so the undo cannot tell a page from an endpoint by looking at it
+    // — it has to be told, and a rollback that guesses is not a rollback.
+    let mut out: Vec<String> = Vec::new();
+    for a in actions {
+        if let RowAction::Post(r) = a {
+            out.push(format!("page {}", page_row_name(&r.route)));
+        }
+    }
+    for a in endpoint_actions {
+        if let RowAction::Post(r) = a {
+            out.push(format!("endpoint {}", endpoint_row_name(&r.http_method, &r.route_path)));
+        }
+    }
+    out
 }
 
 /// #4214 — is this served row one THIS writer could have produced?
@@ -596,6 +635,91 @@ mod desired_tests {
         assert_eq!(deleted, vec!["endpoint-authored"], "only rows from a source file are ours");
     }
 
+
+    #[test]
+    fn the_undo_list_holds_only_what_the_run_created() {
+        let made = PageRow { path: "platform/api/public/athena/new.html".into(), route: "/athena/new.html".into(), page_type: "athena".into() };
+        let touched = PageRow { path: "platform/api/public/athena/old.html".into(), route: "/athena/old.html".into(), page_type: "athena".into() };
+        let plan = vec![
+            RowAction::Post(made.clone()),
+            RowAction::Replace { name: page_row_name("/athena/old.html"), row: touched },
+            RowAction::Unchanged { key: "/athena/same.html".into() },
+            RowAction::Delete { name: page_row_name("/athena/gone.html"), key: "/athena/gone.html".into() },
+        ];
+        let undo = created_names(&plan, &[]);
+        assert_eq!(undo, vec![format!("page {}", page_row_name("/athena/new.html"))]);
+    }
+
+    #[test]
+    fn negative_proof_the_undo_never_names_a_row_that_existed_before() {
+        // The violation: an undo that deletes a REPLACED row. That row was in the
+        // graph before the run — deleting it is data loss wearing a rollback's
+        // name. Widening created_names to include Replace turns this red.
+        let touched = PageRow { path: "platform/api/public/athena/old.html".into(), route: "/athena/old.html".into(), page_type: "athena".into() };
+        let plan = vec![RowAction::Replace { name: page_row_name("/athena/old.html"), row: touched }];
+        assert!(created_names(&plan, &[]).is_empty(), "a replaced row is not ours to delete");
+    }
+
+    #[test]
+    fn negative_proof_a_row_name_carries_no_type_prefix() {
+        // The door mints `page:` / `endpoint:` and REFUSES a name that already
+        // has one — 422 double-prefix, caught on the variant. Restoring the
+        // prefix to row_name turns this red.
+        assert!(!page_row_name("/athena/x.html").starts_with("page-"), "{}", page_row_name("/athena/x.html"));
+        assert!(!endpoint_row_name("GET", "/api/x").starts_with("endpoint-"));
+        assert!(page_row_name("/athena/x.html").starts_with("athena-x-html-"));
+    }
+
+    #[test]
+    fn the_undo_covers_endpoints_too_keyed_on_method_and_path() {
+        let e = EndpointRow { path: "platform/api/src/server.ts".into(), route_path: "/api/x".into(), http_method: "POST".into() };
+        let undo = created_names(&[], &[RowAction::Post(e)]);
+        assert_eq!(undo, vec![format!("endpoint {}", endpoint_row_name("POST", "/api/x"))]);
+        assert_ne!(endpoint_row_name("POST", "/api/x"), endpoint_row_name("GET", "/api/x"));
+    }
+
+    #[test]
+    fn one_page_gone_from_the_source_deletes_exactly_that_one_row() {
+        // Wren's rehearsal C, as a fixture: a desired set one short. Exactly one
+        // row is planned for deletion, and it is the one that left.
+        let kept = PageRow { path: "platform/api/public/athena/kept.html".into(), route: "/athena/kept.html".into(), page_type: "athena".into() };
+        let rows = vec![
+            served(&page_row_name("/athena/kept.html"), "/athena/kept.html", Some("platform/api/public/athena/kept.html")),
+            served(&page_row_name("/athena/gone.html"), "/athena/gone.html", Some("platform/api/public/athena/gone.html")),
+        ];
+        let plan = plan_rows(&[kept], &rows, &|r: &PageRow| r.route.clone(), &|_| None, false);
+        let c = counts(&plan);
+        assert_eq!((c.deleted, c.posted), (1, 0), "{plan:?}");
+        assert!(matches!(&plan[..], [_, RowAction::Delete { key, .. }] if key == "/athena/gone.html"));
+        // and that single delete is a cleanup, not a wipe, so it proceeds
+        assert!(!leg_mass_delete_refused(1, 2));
+    }
+
+
+    #[test]
+    fn negative_proof_one_route_declared_twice_is_one_row() {
+        // The door refused a real batch over this on 2026-09-19: two files
+        // declaring the same route produced two rows whose door NAME is
+        // identical, and a batch cannot carry the same name twice. Removing the
+        // dedup_by turns this red.
+        let paths = vec!["a/one.ts".to_string(), "a/two.ts".to_string()];
+        let read = |_: &str| Some("app.get('/api/same', h);".to_string());
+        let (_, endpoints, _) = desired_rows(&paths, &read, false);
+        assert_eq!(endpoints.len(), 1, "{endpoints:?}");
+        assert_eq!(endpoints[0].path, "a/one.ts", "first file wins, deterministically");
+        let names: std::collections::BTreeSet<String> =
+            endpoints.iter().map(|e| endpoint_row_name(&e.http_method, &e.route_path)).collect();
+        assert_eq!(names.len(), endpoints.len(), "every row name is unique");
+    }
+
+    #[test]
+    fn different_methods_on_one_path_stay_two_rows() {
+        let paths = vec!["a/one.ts".to_string()];
+        let read = |_: &str| Some("app.get('/api/x', h); app.post('/api/x', h);".to_string());
+        let (_, endpoints, _) = desired_rows(&paths, &read, false);
+        assert_eq!(endpoints.len(), 2, "{endpoints:?}");
+    }
+
 }
 
 #[cfg(test)]
@@ -704,7 +828,8 @@ mod pages_4214 {
     #[test]
     fn the_same_key_answers_the_same_name_every_run() {
         assert_eq!(page_row_name("/athena/product.html"), page_row_name("/athena/product.html"));
-        assert!(page_row_name("/athena/product.html").starts_with("page-athena-product-html-"));
+        // bare, no type prefix — the door mints that (#4214, 422 double-prefix)
+        assert!(page_row_name("/athena/product.html").starts_with("athena-product-html-"));
     }
 
     #[test]

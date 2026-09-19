@@ -548,6 +548,64 @@ fn place_row(
         .map(str::to_string)
 }
 
+/// #4214 — perform the undo. Each name is deleted from whichever fold serves it;
+/// a name in neither is REPORTED, never silently counted as done.
+fn run_undo(file: &str) -> i32 {
+    let body = match std::fs::read_to_string(file) {
+        Ok(b) => b,
+        Err(e) => {
+            eprintln!("chorus-crawl: cannot read the undo list {file} ({e})");
+            return 2;
+        }
+    };
+    let names: Vec<&str> = body.lines().map(str::trim).filter(|l| !l.is_empty()).collect();
+    let api = std::env::var("CHORUS_OWL_API").unwrap_or_else(|_| "http://localhost:3360".to_string());
+    let root = std::env::var("CHORUS_ROOT").unwrap_or_else(|_| ".".to_string());
+    let role = match declared_role(std::env::var("CHORUS_ROLE").ok()) {
+        Ok(r) => r,
+        Err(why) => {
+            eprintln!("chorus-crawl: {why}");
+            return 2;
+        }
+    };
+    let ident = match Identity::open(&root, &role) {
+        Ok(i) => std::cell::RefCell::new(i),
+        Err(e) => {
+            eprintln!("chorus-crawl: {e} — an undo is a write and needs an identity");
+            return 2;
+        }
+    };
+    let (mut gone, mut failed) = (0usize, Vec::new());
+    for line in &names {
+        // "<kind> <name>" — the kind is recorded because a bare name cannot say
+        // which fold it belongs to.
+        let (kind_word, name) = match line.split_once(' ') {
+            Some((k, n)) => (k, n),
+            None => {
+                failed.push(format!("{line}: malformed undo line, expected '<kind> <name>'"));
+                continue;
+            }
+        };
+        let coll = if kind_word == "endpoint" { "Endpoint" } else { "Page" };
+        let path = match collection_for(&api, coll) {
+            Ok(c) => format!("{c}/{name}"),
+            Err(e) => {
+                failed.push(format!("{name}: {e}"));
+                continue;
+            }
+        };
+        match write(&ident, &api, "DELETE", &path, None) {
+            Ok(_) => gone += 1,
+            Err(e) => failed.push(format!("{name}: {e}")),
+        }
+    }
+    println!("chorus-crawl: undo — {} of {} row(s) deleted", gone, names.len());
+    for f in &failed {
+        println!("chorus-crawl: undo could NOT delete {f}");
+    }
+    if failed.is_empty() { 0 } else { 1 }
+}
+
 fn json_escape(s: &str) -> String {
     let mut o = String::with_capacity(s.len() + 8);
     for c in s.chars() {
@@ -1122,6 +1180,19 @@ fn main() {
         return;
     }
     let root = std::env::var("CHORUS_ROOT").unwrap_or_else(|_| ".".to_string());
+    // #4214 — `--undo <file>`: delete exactly the rows a previous run created,
+    // by the names that run recorded. Runs alone, writes nothing else, and says
+    // what it could not delete rather than reporting a clean sweep.
+    if let Some(i) = std::env::args().position(|a| a == "--undo") {
+        let file = match std::env::args().nth(i + 1) {
+            Some(f) => f,
+            None => {
+                eprintln!("chorus-crawl: --undo needs the undo list a run wrote");
+                std::process::exit(2);
+            }
+        };
+        std::process::exit(run_undo(&file));
+    }
     let dry_run = std::env::args().any(|a| a == "--dry-run");
     let reconciling = std::env::args().any(|a| a == "--reconcile");
 
@@ -1604,6 +1675,19 @@ fn main() {
             want_pages.len(), want_endpoints.len(), page_graph.len(), endpoint_graph.len(),
             wrote_nothing(dry_run, reconciling)
         );
+        // #4214 — the undo list, written BEFORE the run performs anything. Wren's
+        // condition: a plan that can only go forward is not a plan. This file is
+        // what `--undo <file>` deletes, and it names ONLY rows this run creates.
+        let undo = pages::created_names(&page_plan, &endpoint_plan);
+        if !undo.is_empty() {
+            let dir = format!("{}/.chorus/ops", std::env::var("HOME").unwrap_or_default());
+            let _ = std::fs::create_dir_all(&dir);
+            let path = format!("{dir}/crawl-folds-undo-{}.txt", now_secs());
+            match std::fs::write(&path, undo.join("\n") + "\n") {
+                Ok(()) => println!("chorus-crawl: undo list ({} row(s)) → {path}", undo.len()),
+                Err(e) => eprintln!("chorus-crawl: could not write the undo list ({e}) — refusing to write rows I cannot take back"),
+            }
+        }
         (want_pages, want_endpoints, page_plan, endpoint_plan, page_graph, endpoint_graph)
     };
 

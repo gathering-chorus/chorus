@@ -94,6 +94,13 @@ const KINDS: &[(&str, &str, bool)] = &[
     ("code-file", "CodeFile", false),
     ("code-kind", "CodeKind", false),
     ("language", "Language", false),
+    // #4214 — Page and Endpoint are subclasses of CodeFile and the generator
+    // serves their write routes, but the DAL allowlist is a separate list and it
+    // did not grow with the model. Jeff's own run on 2026-09-19 died here:
+    // "unknown-kind: 'page'", 502, after the model, the shapes, the routes and
+    // the crawler were all in place. Exactly the #3592 shape, one fold over.
+    ("page", "Page", false),
+    ("endpoint", "Endpoint", false),
     // #3592 (Kade, Jeff-driven card 2026-07-23) — Test's run-evidence kinds. Same
     // generate-vs-write drift #3522 named: TestResult/TestSuiteRun are modeled
     // classes with SHACL shapes and athena-make already generates their write routes,
@@ -628,6 +635,30 @@ fn create_only_stamp() -> String {
         // `date` is a required production utility; this branch retains the
         // old fail-soft behavior but cannot claim xsd:dateTime syntax.
         format!("epoch:{}.{}", clock.as_secs(), suffix)
+    }
+}
+
+#[cfg(test)]
+mod folds_are_writable_4214 {
+    use super::*;
+
+    /// NEGATIVE PROOF for the DAL allowlist. Jeff's own run on 2026-09-19 died
+    /// with `unknown-kind: 'page'` and HTTP 502 while the class, the shape, the
+    /// generated route and the crawler were all live — the allowlist is a
+    /// SEPARATE list and nothing failed when it did not grow with the model.
+    /// Deleting either KINDS line turns this red.
+    #[test]
+    fn page_and_endpoint_are_writable_kinds() {
+        assert_eq!(kind_entry("page").unwrap().1, "Page");
+        assert_eq!(kind_entry("endpoint").unwrap().1, "Endpoint");
+    }
+
+    /// The control: the list still refuses what it does not know, so the proof
+    /// above is not "everything passes".
+    #[test]
+    fn an_unknown_kind_is_still_refused() {
+        let e = kind_entry("pge").unwrap_err();
+        assert!(e.contains("unknown-kind"), "{e}");
     }
 }
 
