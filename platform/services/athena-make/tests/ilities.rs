@@ -9,7 +9,7 @@
 use athena_make::{adr040_check, effective_trace, openapi_json, RouteTable};
 
 fn table() -> RouteTable {
-    RouteTable { domain: String::new(), base_path: String::new(),
+    RouteTable { write_authority: String::new(), domain: String::new(), base_path: String::new(),
         class: "https://jeffbridwell.com/chorus#Domain".into(),
         fields: vec![
             "atStep|edge:ValueStreamStep".into(),
