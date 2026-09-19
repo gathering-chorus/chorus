@@ -304,6 +304,12 @@ pub struct RouteTable {
     pub secured: Vec<String>,    // #3414 — surfaces requiring auth, PROJECTED from the OWL annotation
     pub mandatory: Vec<String>,  // #3468 — the completeness FLOOR: properties at sh:severity sh:Violation, PROJECTED from the shape
     pub write_required: Vec<String>, // every sh:minCount>=1 property, including required edges; drives create contracts
+    /// #4222 — properties the shape does NOT cap: `sh:maxCount` absent means
+    /// many are allowed. The token builder never read maxCount, so every field
+    /// was emitted single-valued and a file could hold one domain when the
+    /// model said 1..n. Jeff, 2026-05-20 and again today: "a single file may be
+    /// tagged to 1..n domains."
+    pub unbounded: Vec<String>,
     pub repo_target: String,     // #3488 — repo land location for generated artifacts, from chorus:repoTarget (or class-keyed default)
     pub exposure: Vec<(String, String)>, // #3506/ADR-048 §3 — field localname → exposure level (public|internal|secret), PROJECTED from chorus:exposure. Unmarked = hidden (fail-closed).
     pub instances_graph: String, // #3570 — the kind's instance HOME graph (the domains.* spine): chorus:instancesGraph override, else urn:chorus:domains:<domain>, else urn:chorus:instances (back-compat). Threaded into every serve read.
@@ -1088,6 +1094,21 @@ pub fn generate(class_local: &str) -> R<RouteTable> {
     );
     let body = sparql_json(&q)?;
     let mut fields: Vec<String> = select_v(&body);
+    // #4222 — which of those properties the shape leaves UNCAPPED. Absent
+    // sh:maxCount means many are allowed; the schema has to say so or the door
+    // can only ever take one value for an edge the model calls 1..n.
+    let q_many = format!(
+        // EDGES only. 264 of 360 shape properties carry no maxCount, so absence
+        // alone cannot mean "many" — it mostly means nobody wrote it down, and
+        // treating it as many made filePath an array. An uncapped EDGE is the
+        // narrow case the model really does use for 1..n (hasDomain, ownedBy),
+        // and it is 58 properties rather than 264.
+        "PREFIX sh: <http://www.w3.org/ns/shacl#> PREFIX rdfs: <http://www.w3.org/2000/01/rdf-schema#> SELECT ?v WHERE {{ GRAPH <{g}> {{ <{c}> rdfs:subClassOf* ?tc . ?s sh:targetClass ?tc ; sh:property ?p . ?p sh:path ?path ; sh:class ?cl . FILTER(isIRI(?path)) FILTER NOT EXISTS {{ ?p sh:maxCount ?mc }} BIND(REPLACE(STR(?path), '.*#', '') AS ?v) }} }} ORDER BY ?v",
+        g = ONTOLOGY_GRAPH, c = class
+    );
+    let mut unbounded: Vec<String> = select_v(&sparql_json(&q_many)?);
+    unbounded.sort();
+    unbounded.dedup();
     fields.sort();
     fields.dedup();
     if fields.is_empty() {
@@ -1283,7 +1304,7 @@ pub fn generate(class_local: &str) -> R<RouteTable> {
             None => r,
         })
         .collect();
-Ok(RouteTable { domain: domain_of.clone().unwrap_or_default(), base_path, class, fields, routes, secured, mandatory, write_required, repo_target, exposure, instances_graph, tree_edges, tree_order, write_authority, model_version })
+Ok(RouteTable { domain: domain_of.clone().unwrap_or_default(), base_path, class, fields, routes, secured, mandatory, write_required, unbounded, repo_target, exposure, instances_graph, tree_edges, tree_order, write_authority, model_version })
 }
 
 /// #3660 — route emission for the tree read: ONE route iff the shape declares
@@ -2563,6 +2584,63 @@ pub fn json_top_level_keys(json: &str) -> Vec<String> {
 }
 
 #[cfg(test)]
+mod unbounded_edges_4222 {
+    use super::*;
+
+    fn table(fields: Vec<&str>, unbounded: Vec<&str>) -> RouteTable {
+        RouteTable {
+            unbounded: unbounded.into_iter().map(String::from).collect(),
+            write_authority: String::new(),
+            domain: String::new(),
+            base_path: "/code/files".into(),
+            class: "https://jeffbridwell.com/chorus#CodeFile".into(),
+            fields: fields.into_iter().map(String::from).collect(),
+            routes: vec![],
+            secured: vec![],
+            mandatory: vec![],
+            write_required: vec![],
+            repo_target: String::new(),
+            exposure: vec![],
+            instances_graph: "urn:chorus:domains:code".into(),
+            tree_edges: vec![],
+            tree_order: None,
+            model_version: String::new(),
+        }
+    }
+
+    /// NEGATIVE PROOF (#4222): a shape with no sh:maxCount says MANY are
+    /// allowed, and the generated schema said one. 102 files that genuinely
+    /// serve two or three domains were recorded as conflicts and tagged with
+    /// nothing. Dropping the `unbounded` branch in the emitter turns this red.
+    #[test]
+    fn an_uncapped_edge_is_an_array_in_the_schema() {
+        let t = table(vec!["filePath|datatype:string", "hasDomain|edge:Domain"], vec!["hasDomain"]);
+        let j = openapi_json(&t);
+        assert!(j.contains("\"hasDomain\": { \"type\": \"array\", \"items\": { \"$ref\": \"#/components/schemas/EdgeRef\" } }"), "read schema: {j}");
+        assert!(j.contains("\"hasDomain\": { \"type\": \"array\", \"items\": { \"type\": \"string\" } }"), "write schema: {j}");
+    }
+
+    /// The control that matters most: an UNCAPPED DATATYPE stays scalar. 264
+    /// of 360 properties carry no maxCount, so "absent means many" turned
+    /// filePath into an array — SHACL-correct and product-wrong. Only an
+    /// uncapped EDGE is treated as 1..n.
+    #[test]
+    fn an_uncapped_datatype_is_not_an_array() {
+        let t = table(vec!["filePath|datatype:string", "hasDomain|edge:Domain"], vec!["hasDomain"]);
+        let j = openapi_json(&t);
+        assert!(j.contains("\"filePath\": { \"type\": \"string\" }"), "{j}");
+    }
+
+    #[test]
+    fn a_capped_property_stays_single_valued() {
+        let t = table(vec!["filePath|datatype:string", "hasDomain|edge:Domain"], vec!["hasDomain"]);
+        let j = openapi_json(&t);
+        assert!(j.contains("\"filePath\": { \"type\": \"string\" }"), "{j}");
+        assert!(!j.contains("\"filePath\": { \"type\": \"array\""), "{j}");
+    }
+}
+
+#[cfg(test)]
 mod bounds_closedshape_tests {
     use super::*;
 
@@ -2655,7 +2733,7 @@ mod bounds_closedshape_tests {
     /// NEGATIVE PROOF: a body that tries to set a stamp is named and refused.
     #[test]
     fn the_door_stamps_the_write_and_refuses_a_body_stamp() {
-        let table = RouteTable { domain: String::new(), base_path: String::new(),
+        let table = RouteTable { unbounded: vec![], domain: String::new(), base_path: String::new(),
             class: "https://jeffbridwell.com/chorus#Document".into(),
             fields: vec!["docTitle".into(), "docHref".into(), "changedAt".into(), "changedIn".into(), "docState".into(), "ownedBy|edge:Role".into()],
             routes: vec![], secured: vec![], mandatory: vec![], write_required: vec![], repo_target: String::new(), exposure: vec![],
@@ -2679,7 +2757,7 @@ mod bounds_closedshape_tests {
         assert_eq!(version_stamp(&vt, Some("junk")), Some(("version".to_string(), "1".to_string())));
         assert_eq!(body_sets_a_stamp(r#"{"name":"d5","version":"9"}"#).as_deref(), Some("version"));
         // a class without the stamp fields gets none
-        let plain = RouteTable { domain: String::new(), base_path: String::new(),
+        let plain = RouteTable { unbounded: vec![], domain: String::new(), base_path: String::new(),
             class: "https://jeffbridwell.com/chorus#Card".into(), fields: vec!["label".into()],
             routes: vec![], secured: vec![], mandatory: vec![], write_required: vec![], repo_target: String::new(), exposure: vec![],
             instances_graph: "urn:chorus:instances".into(), tree_edges: vec![], tree_order: None, write_authority: String::new(), model_version: "unclassified".into(),
@@ -2730,7 +2808,7 @@ mod bounds_closedshape_tests {
 
     #[test]
     fn verified_owner_uses_the_shape_declared_edge_and_ignores_body_owner() {
-        let mut table = RouteTable { domain: String::new(), base_path: String::new(),
+        let mut table = RouteTable { unbounded: vec![], domain: String::new(), base_path: String::new(),
             class: format!("{}Domain", NS),
             fields: vec![
                 "comment|datatype:string".into(),
@@ -3203,11 +3281,18 @@ pub fn openapi_json(t: &RouteTable) -> String {
     ];
     for f in &t.fields {
         let (name, kind) = f.split_once('|').unwrap_or((f.as_str(), "plain"));
-        let schema = if kind.starts_with("edge:") {
+        let one = if kind.starts_with("edge:") {
             "{ \"$ref\": \"#/components/schemas/EdgeRef\" }".to_string()
         } else {
             // datatype:* and plain both serialize as JSON strings today
             "{ \"type\": \"string\" }".to_string()
+        };
+        // #4222 — uncapped in the shape means an array here. hasDomain has no
+        // sh:maxCount, so a file may carry every domain it serves.
+        let schema = if t.unbounded.iter().any(|u| u == name) {
+            format!("{{ \"type\": \"array\", \"items\": {one} }}")
+        } else {
+            one
         };
         props.push(format!("\"{}\": {}", name, schema));
     }
@@ -3220,7 +3305,13 @@ pub fn openapi_json(t: &RouteTable) -> String {
     for f in &t.fields {
         let (name, _) = f.split_once('|').unwrap_or((f.as_str(), "plain"));
         if name != "ownedBy" {
-            replace_props.push(format!("\"{}\": {{ \"type\": \"string\" }}", name));
+            // #4222 — a write body may carry many values for an uncapped property.
+            let v = if t.unbounded.iter().any(|u| u == name) {
+                "{ \"type\": \"array\", \"items\": { \"type\": \"string\" } }"
+            } else {
+                "{ \"type\": \"string\" }"
+            };
+            replace_props.push(format!("\"{}\": {}", name, v));
         }
     }
     replace_props.sort();
@@ -4445,7 +4536,7 @@ fn handle_inner(path: &str, table: &RouteTable, meta: &mut ReqMeta, authed: bool
     // GET /schema/domain
     if path.starts_with("/schema/") {
         meta.route = "schema".into();
-        let t = RouteTable { domain: table.domain.clone(), base_path: table.base_path.clone(), class: table.class.clone(), fields: table.fields.clone(), routes: table.routes.clone(), secured: table.secured.clone(), mandatory: table.mandatory.clone(), write_required: table.write_required.clone(), repo_target: table.repo_target.clone(), exposure: table.exposure.clone(), instances_graph: table.instances_graph.clone(), tree_edges: vec![], tree_order: None, write_authority: String::new(), model_version: table.model_version.clone() };
+        let t = RouteTable { unbounded: table.unbounded.clone(), domain: table.domain.clone(), base_path: table.base_path.clone(), class: table.class.clone(), fields: table.fields.clone(), routes: table.routes.clone(), secured: table.secured.clone(), mandatory: table.mandatory.clone(), write_required: table.write_required.clone(), repo_target: table.repo_target.clone(), exposure: table.exposure.clone(), instances_graph: table.instances_graph.clone(), tree_edges: vec![], tree_order: None, write_authority: String::new(), model_version: table.model_version.clone() };
         return (200, routes_json(&t));
     }
     // GET /openapi.json — the generated OpenAPI 3.1 spec (#3453, #3520). Another
@@ -5944,7 +6035,7 @@ mod tests {
     // codes from the same table, which is the whole defect.
     #[test]
     fn versioned_and_bare_paths_resolve_identically() {
-        let t = RouteTable { domain: String::new(), base_path: String::new(),
+        let t = RouteTable { unbounded: vec![], domain: String::new(), base_path: String::new(),
             class: format!("{}Domain", NS),
             fields: vec!["label|plain".into()],
             routes: vec!["GET /domains".into()],
@@ -6239,7 +6330,7 @@ mod tests {
     fn page_html_is_a_generated_projection_on_system_css() {
         // #3420: page_html emits the SHELL of the real Athena domain page anatomy on the
         // #3415 design system; the shared /js/domain-renderer.js fills the mount points.
-        let t = RouteTable { domain: String::new(), base_path: String::new(),
+        let t = RouteTable { unbounded: vec![], domain: String::new(), base_path: String::new(),
             class: format!("{}Domain", NS),
             fields: vec!["label|plain".into(), "status|datatype:string".into()],
             routes: vec!["GET /domains".into()],
@@ -6276,7 +6367,7 @@ mod tests {
         assert_eq!(page_html(&t), page_html(&t));
         // #3420 AC6 — the breadcrumb/title are CLASS-projected (the generalization path for
         // services/roles), not a hardcoded "Domain". Prove it with a different class.
-        let svc = page_html(&RouteTable { domain: String::new(), base_path: String::new(),
+        let svc = page_html(&RouteTable { unbounded: vec![], domain: String::new(), base_path: String::new(),
             class: format!("{}Service", NS),
             fields: vec![],
             routes: vec![],
@@ -6306,7 +6397,7 @@ mod tests {
     // === #3453 — serve the generated OpenAPI spec + human view ===
 
     fn openapi_fixture() -> RouteTable {
-        RouteTable { write_authority: String::new(), domain: String::new(), base_path: String::new(),
+        RouteTable { unbounded: vec![], write_authority: String::new(), domain: String::new(), base_path: String::new(),
             class: format!("{}Domain", NS),
             fields: vec!["comment".into(), "label".into()],
             mandatory: vec!["label".into()], // #3520 — exercises the `required` projection
@@ -6448,6 +6539,7 @@ mod tests {
 
     fn t4158(domain: &str, class_local: &str) -> RouteTable {
         RouteTable {
+            unbounded: vec![],
             domain: domain.to_string(),
             base_path: domain_path(domain, class_local),
             class: format!("{}{}", NS, class_local),
@@ -6811,6 +6903,7 @@ mod tests {
     #[test]
     fn a_silent_shape_still_stamps_a_literal_owner() {
         let table = |fields: Vec<String>| RouteTable {
+            unbounded: vec![],
             domain: String::new(), base_path: String::new(),
             class: "https://jeffbridwell.com/chorus#LogSource".into(),
             fields,
@@ -6972,7 +7065,7 @@ mod tests {
 
     #[test]
     fn routes_json_is_deterministic() {
-        let t = RouteTable { domain: String::new(), base_path: String::new(),
+        let t = RouteTable { unbounded: vec![], domain: String::new(), base_path: String::new(),
             class: format!("{}Domain", NS),
             fields: vec!["comment".into(), "label".into()],
             routes: vec!["GET /domains".into()],
@@ -7037,7 +7130,7 @@ mod tests {
     fn routes_json_publishes_the_mandatory_floor() {
         // AC4/AC5 — the floor is part of the published /schema contract so the page
         // meter sources completeness from the MODEL (severing the Athena-v1 dependency).
-        let t = RouteTable { domain: String::new(), base_path: String::new(),
+        let t = RouteTable { unbounded: vec![], domain: String::new(), base_path: String::new(),
             class: format!("{}Domain", NS),
             fields: vec!["label".into(), "comment".into()],
             routes: vec!["GET /domains".into()],
@@ -7071,7 +7164,7 @@ mod tests {
 
     #[test]
     fn unknown_route_404s_and_teaches_routes() {
-        let t = RouteTable { domain: String::new(), base_path: String::new(), class: format!("{}Domain", NS), fields: vec![], routes: vec!["GET /domains".into()], secured: vec![], mandatory: vec![], write_required: vec![], repo_target: String::new(), exposure: vec![], instances_graph: INSTANCES_GRAPH.to_string(), tree_edges: vec![], tree_order: None, write_authority: String::new(), model_version: "unclassified".to_string() };
+        let t = RouteTable { unbounded: vec![], domain: String::new(), base_path: String::new(), class: format!("{}Domain", NS), fields: vec![], routes: vec!["GET /domains".into()], secured: vec![], mandatory: vec![], write_required: vec![], repo_target: String::new(), exposure: vec![], instances_graph: INSTANCES_GRAPH.to_string(), tree_edges: vec![], tree_order: None, write_authority: String::new(), model_version: "unclassified".to_string() };
         let (code, body) = handle("/nope", &t);
         assert_eq!(code, 404);
         assert!(body.contains("GET /domains"));
@@ -7173,7 +7266,7 @@ mod tests {
     // shape/ontology graph (Silas's scope-trap). And it carries the new claims.
     #[test]
     fn dal_emit_scopes_to_instance_graph_and_mints_scoped_token() {
-        let t = RouteTable { domain: String::new(), base_path: String::new(),
+        let t = RouteTable { unbounded: vec![], domain: String::new(), base_path: String::new(),
             class: format!("{}Test", NS),
             fields: vec!["filePath|datatype:string".into()],
             routes: vec!["PUT /tests".into()],
@@ -7295,7 +7388,7 @@ mod dispatch_effective_3845 {
     use super::*;
 
     fn table(class: &str) -> RouteTable {
-        RouteTable { write_authority: String::new(), domain: String::new(), base_path: String::new(),
+        RouteTable { unbounded: vec![], write_authority: String::new(), domain: String::new(), base_path: String::new(),
             class: format!("https://jeffbridwell.com/chorus#{class}"),
             fields: vec![],
             routes: vec![],

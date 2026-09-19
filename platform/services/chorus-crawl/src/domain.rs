@@ -63,6 +63,33 @@ impl Placement {
             _ => None,
         }
     }
+
+    /// #4222 — EVERY domain the rules found, not just an agreed one.
+    ///
+    /// Jeff, 2026-05-20 and again 2026-09-19: "a single file may be tagged to
+    /// 1..n domains" — the repo does not divide cleanly along domain lines, so
+    /// a file that serves three of them is normal, not a defect. hasDomain has
+    /// no maxCount; the shape always allowed this. The writer did not, so 102
+    /// multi-domain files were recorded as conflicts and tagged with nothing —
+    /// we threw away the true answer because it had more than one part.
+    ///
+    /// Unplaced now means exactly one thing: no rule fired.
+    pub fn domains(&self) -> Vec<String> {
+        match self {
+            Placement::Tagged { domain, .. } => vec![domain.clone()],
+            Placement::Conflict { signals } => {
+                let mut out: Vec<String> = Vec::new();
+                for s in signals {
+                    if !out.contains(&s.domain) {
+                        out.push(s.domain.clone());
+                    }
+                }
+                out.sort();
+                out
+            }
+            Placement::Unplaced => Vec::new(),
+        }
+    }
 }
 
 // ── rule 1: the API route the file calls ─────────────────────────────────────
@@ -1373,5 +1400,46 @@ mod tests_4201 {
         let c = "await fetch('/api/chorus/cards');\nawait fetch('/api/chorus/deploys/x');";
         let p = place(c, &v, &no_card);
         assert_eq!(p.domain(), Some("cards"), "{p:?}");
+    }
+}
+
+#[cfg(test)]
+mod multi_domain_4222 {
+    use super::*;
+
+    fn sig(d: &str) -> Signal {
+        Signal { rule: Rule::Route, domain: d.to_string(), evidence: format!("/{d}") }
+    }
+
+    #[test]
+    fn a_file_serving_three_domains_reports_three() {
+        // #4222 — Jeff: "a single file may be tagged to 1..n domains". This was
+        // recorded as Conflict and tagged with NOTHING; 102 files live were in
+        // that state. The answer had more than one part, so we threw it away.
+        let p = Placement::Conflict { signals: vec![sig("code"), sig("tests"), sig("logs")] };
+        assert_eq!(p.domains(), vec!["code", "logs", "tests"]);
+    }
+
+    #[test]
+    fn one_domain_is_still_one() {
+        let p = Placement::Tagged { domain: "code".into(), signals: vec![sig("code")] };
+        assert_eq!(p.domains(), vec!["code"]);
+    }
+
+    #[test]
+    fn negative_proof_unplaced_means_no_rule_fired_and_nothing_else() {
+        // The guarded condition: "unplaced" must stop absorbing multi-domain
+        // files. Only a placement with no signals at all is empty. Making
+        // Conflict return an empty vec again turns this red.
+        assert!(Placement::Unplaced.domains().is_empty());
+        assert!(!Placement::Conflict { signals: vec![sig("code"), sig("tests")] }
+            .domains()
+            .is_empty());
+    }
+
+    #[test]
+    fn the_same_domain_named_twice_is_one_tag() {
+        let p = Placement::Conflict { signals: vec![sig("code"), sig("code"), sig("tests")] };
+        assert_eq!(p.domains(), vec!["code", "tests"]);
     }
 }

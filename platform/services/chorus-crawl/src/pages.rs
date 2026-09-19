@@ -420,6 +420,94 @@ pub fn counts<T>(actions: &[RowAction<T>]) -> Counts {
     c
 }
 
+/// #4222 — the domain an endpoint serves, read from its own route.
+///
+/// A route is the most honest signal an endpoint has: `/api/chorus/cards/:id`
+/// serves cards, and no file-content heuristic beats reading the path the API
+/// itself publishes. Two rules, in order, and nothing else:
+///
+///   1. any path segment that IS a domain name  → that domain
+///   2. `/api/athena/...`                        → knowledge
+///
+/// Rule 2 exists because athena is the knowledge surface: 171 of the 227
+/// untagged endpoints measured 2026-09-19 sit under it and name no domain of
+/// their own. An endpoint matching neither stays unplaced and is reported —
+/// the folder is never consulted, and no route gets a default.
+pub fn endpoint_domain(route_path: &str, domains: &[String]) -> Option<String> {
+    let segs: Vec<&str> = route_path
+        .split('/')
+        .filter(|s| !s.is_empty() && !s.starts_with(':'))
+        .collect();
+    if let Some(d) = segs.iter().find(|s| domains.iter().any(|d| d == *s)) {
+        return Some((*d).to_string());
+    }
+    if segs.first() == Some(&"api") && segs.get(1) == Some(&"athena") {
+        return domains.iter().find(|d| *d == "knowledge").cloned();
+    }
+    // A route segment that is the SINGULAR of a domain, or its obvious synonym.
+    // Measured against the live contract 2026-09-19: these eleven cover the
+    // remaining /api/chorus/* surface, and each is the name the API itself uses
+    // for a domain the model already has. Nothing here invents a domain.
+    const SYNONYM: &[(&str, &str)] = &[
+        ("domain", "domains"),
+        ("card", "cards"),
+        ("test", "tests"),
+        ("log", "logs"),
+        ("trace", "spine"),
+        ("pulse", "spine"),
+        ("sessions", "identity"),
+        ("health", "monitors"),
+        ("nightly", "tests"),
+        ("quality", "tests"),
+        ("cost", "analytics"),
+        ("pain", "rcas"),
+        ("hooks", "spine"),
+        ("catalog", "knowledge"),
+        ("context", "knowledge"),
+        ("nudge", "messages"),
+    ];
+    for s in &segs {
+        if let Some((_, d)) = SYNONYM.iter().find(|(k, _)| k == s) {
+            if let Some(hit) = domains.iter().find(|x| x == d) {
+                return Some(hit.clone());
+            }
+        }
+    }
+    None
+}
+
+/// #4222 — the domain a page renders, read from its own route.
+///
+/// Same discipline as `endpoint_domain`: the route is the fact, the folder is
+/// never consulted. A page whose route names a domain (or the API's word for
+/// one) gets it; `/athena/*` is the knowledge surface and `/loom/*` is
+/// principles, which is what those two prefixes mean in the product.
+/// Anything else stays unplaced and is reported by name.
+pub fn page_domain(route: &str, domains: &[String]) -> Option<String> {
+    let stem = route
+        .rsplit('/')
+        .next()
+        .unwrap_or("")
+        .trim_end_matches(".html");
+    // the page's own name first: /athena/domains.html is about domains
+    for word in stem.split('-') {
+        if let Some(d) = domains.iter().find(|d| d.as_str() == word) {
+            return Some(d.clone());
+        }
+        let plural = format!("{word}s");
+        if let Some(d) = domains.iter().find(|d| d.as_str() == plural) {
+            return Some(d.clone());
+        }
+    }
+    let prefix = route.split('/').nth(1).unwrap_or("");
+    let surface = match prefix {
+        "athena" => "knowledge",
+        "loom" => "principles",
+        _ => return None,
+    };
+    domains.iter().find(|d| d.as_str() == surface).cloned()
+}
+
 /// #4214 — the undo list for a run: the door names of the rows it CREATED.
 ///
 /// Wren's blocking condition before this writer touches prod: a plan that can
@@ -718,6 +806,59 @@ mod desired_tests {
         let read = |_: &str| Some("app.get('/api/x', h); app.post('/api/x', h);".to_string());
         let (_, endpoints, _) = desired_rows(&paths, &read, false);
         assert_eq!(endpoints.len(), 2, "{endpoints:?}");
+    }
+
+
+    fn doms() -> Vec<String> {
+        ["cards", "knowledge", "code", "logs"].iter().map(|s| s.to_string()).collect()
+    }
+
+    #[test]
+    fn an_endpoint_is_placed_by_the_route_it_serves() {
+        assert_eq!(endpoint_domain("/api/chorus/cards/:id", &doms()).as_deref(), Some("cards"));
+        assert_eq!(endpoint_domain("/api/athena/class-atlas", &doms()).as_deref(), Some("knowledge"));
+    }
+
+    #[test]
+    fn negative_proof_a_route_naming_no_domain_stays_unplaced() {
+        // The guarded condition: a route that names nothing must NOT get a
+        // default. Falling back to the first domain, or to the folder, is the
+        // #4201 failure this rule exists to avoid. Returning Some(..) here
+        // turns this red.
+        assert_eq!(endpoint_domain("/", &doms()), None);
+        assert_eq!(endpoint_domain("/api/proxy/thing", &doms()), None);
+    }
+
+    #[test]
+    fn a_route_segment_that_is_the_api_name_for_a_domain_places_it() {
+        let d: Vec<String> = ["spine", "domains", "knowledge"].iter().map(|s| s.to_string()).collect();
+        assert_eq!(endpoint_domain("/api/chorus/trace/:id", &d).as_deref(), Some("spine"));
+        assert_eq!(endpoint_domain("/api/chorus/domain/:name", &d).as_deref(), Some("domains"));
+    }
+
+    #[test]
+    fn a_domain_absent_from_the_model_is_never_invented() {
+        // "cards" is real, "widgets" is not — the rule can only name a domain
+        // the model already has.
+        assert_eq!(endpoint_domain("/api/chorus/widgets", &doms()), None);
+    }
+
+
+    #[test]
+    fn a_page_is_placed_by_its_own_name_then_its_surface() {
+        let d: Vec<String> = ["domains", "knowledge", "principles", "value-streams"]
+            .iter().map(|s| s.to_string()).collect();
+        assert_eq!(page_domain("/athena/domains.html", &d).as_deref(), Some("domains"));
+        assert_eq!(page_domain("/athena/class-atlas.html", &d).as_deref(), Some("knowledge"));
+        assert_eq!(page_domain("/loom/cookbook.html", &d).as_deref(), Some("principles"));
+    }
+
+    #[test]
+    fn negative_proof_a_page_outside_a_known_surface_stays_unplaced() {
+        // No default, no folder read. A page we cannot place is reported, the
+        // same rule the endpoint side follows.
+        let d: Vec<String> = ["domains", "knowledge"].iter().map(|s| s.to_string()).collect();
+        assert_eq!(page_domain("/something/else.html", &d), None);
     }
 
 }

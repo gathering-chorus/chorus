@@ -1641,14 +1641,16 @@ fn main() {
             &want_pages,
             &page_graph,
             &|r: &pages::PageRow| r.route.clone(),
-            &|r: &pages::PageRow| place_row(&root, &r.path, &unit_rows, &valid_domains, &card_domain),
+            &|r: &pages::PageRow| pages::page_domain(&r.route, &valid_domains)
+                .or_else(|| place_row(&root, &r.path, &unit_rows, &valid_domains, &card_domain)),
             full,
         );
         let mut endpoint_plan = pages::plan_rows(
             &want_endpoints,
             &endpoint_graph,
             &|r: &pages::EndpointRow| format!("{} {}", r.http_method, r.route_path),
-            &|r: &pages::EndpointRow| place_row(&root, &r.path, &unit_rows, &valid_domains, &card_domain),
+            &|r: &pages::EndpointRow| pages::endpoint_domain(&r.route_path, &valid_domains)
+                .or_else(|| place_row(&root, &r.path, &unit_rows, &valid_domains, &card_domain)),
             full,
         );
         // #4022 + #4214 — absent must not mean delete, and the shared guard has a
@@ -1963,6 +1965,11 @@ fn main() {
                 LogAction::Post(row) => {
                     let mut fields = vec![("name".to_string(), log_row_name(&row.path))];
                     fields.extend(row.owned_fields(&machine, observed));
+                    // #4222 — the domain the log belongs to, from the job that
+                    // writes it and the file's own name. No tag when neither says.
+                    if let Some(d) = log_domain(&row.launchd_label, &row.path, &valid_domains) {
+                        fields.push(("hasDomain".to_string(), d));
+                    }
                     let body = fields_json(&fields);
                     if !batch_accepts(batch_bytes(&lbatch), body.len(), BATCH_BODY_BUDGET) {
                         lflush(&mut lbatch, &mut failed, &mut wrote);
@@ -1977,7 +1984,11 @@ fn main() {
                         .get(name.as_str())
                         .map(|g| g.fields.as_slice())
                         .unwrap_or(&[]);
-                    let mut fields = merge_row(existing, &row.owned_fields(&machine, observed));
+                    let mut owned = row.owned_fields(&machine, observed);
+                    if let Some(d) = log_domain(&row.launchd_label, &row.path, &valid_domains) {
+                        owned.push(("hasDomain".to_string(), d));
+                    }
+                    let mut fields = merge_row(existing, &owned);
                     prefixes.apply(&mut fields);
                     puts.push(PendingPut {
                         kind: "log",
@@ -2014,7 +2025,8 @@ fn main() {
                 for a in &page_plan {
                     match a {
                         pages::RowAction::Post(row) => {
-                            let d = place_row(&root, &row.path, &unit_rows, &valid_domains, &card_domain);
+                            let d = pages::page_domain(&row.route, &valid_domains)
+                                .or_else(|| place_row(&root, &row.path, &unit_rows, &valid_domains, &card_domain));
                             let body = fields_json(&page_fields(row, d.as_deref()));
                             if !batch_accepts(batch_bytes(&pbatch), body.len(), BATCH_BODY_BUDGET) || pbatch.len() >= 200 {
                                 flush_batch(&mut pbatch, ident, &api, &page_coll, "page", &mut failed, &mut wrote);
@@ -2022,7 +2034,8 @@ fn main() {
                             pbatch.push(body);
                         }
                         pages::RowAction::Replace { name, row } => {
-                            let d = place_row(&root, &row.path, &unit_rows, &valid_domains, &card_domain);
+                            let d = pages::page_domain(&row.route, &valid_domains)
+                                .or_else(|| place_row(&root, &row.path, &unit_rows, &valid_domains, &card_domain));
                             let existing: &[(String, String)] = page_in_graph
                                 .get(name.as_str())
                                 .map(|g| g.fields.as_slice())
@@ -2048,7 +2061,10 @@ fn main() {
                 for a in &endpoint_plan {
                     match a {
                         pages::RowAction::Post(row) => {
-                            let d = place_row(&root, &row.path, &unit_rows, &valid_domains, &card_domain);
+                            // #4222 — an endpoint's own route is the better
+                            // signal; the file it sits in is the fallback.
+                            let d = pages::endpoint_domain(&row.route_path, &valid_domains)
+                                .or_else(|| place_row(&root, &row.path, &unit_rows, &valid_domains, &card_domain));
                             let body = fields_json(&endpoint_fields(row, d.as_deref()));
                             if !batch_accepts(batch_bytes(&ebatch), body.len(), BATCH_BODY_BUDGET) || ebatch.len() >= 200 {
                                 flush_batch(&mut ebatch, ident, &api, &endpoint_coll, "endpoint", &mut failed, &mut wrote);
@@ -2056,7 +2072,8 @@ fn main() {
                             ebatch.push(body);
                         }
                         pages::RowAction::Replace { name, row } => {
-                            let d = place_row(&root, &row.path, &unit_rows, &valid_domains, &card_domain);
+                            let d = pages::endpoint_domain(&row.route_path, &valid_domains)
+                                .or_else(|| place_row(&root, &row.path, &unit_rows, &valid_domains, &card_domain));
                             let existing: &[(String, String)] = endpoint_in_graph
                                 .get(name.as_str())
                                 .map(|g| g.fields.as_slice())
@@ -2290,6 +2307,65 @@ fn print_graph_vs_project(
     let on_disk = |p: &str| std::path::Path::new(p).is_file();
     let log_drift = reconcile_logs(&log_files, &log_rows, &on_disk);
     println!("chorus-crawl: {}", log_drift.report());
+
+    // #4214 — the folds, both directions. The classes shipped without this, so
+    // for one afternoon nothing proved that every page on disk had a row or that
+    // every row still had a file. Jeff caught it by asking the obvious question.
+    {
+        let read_file = |q: &str| std::fs::read_to_string(std::path::Path::new(root).join(q)).ok();
+        let tracked = tracked_files(root).unwrap_or_default();
+        let (want_pages, want_endpoints, _) = pages::desired_rows(
+            &tracked,
+            &read_file,
+            std::path::Path::new(GATHERING_ROOT).is_dir(),
+        );
+        for (kind, key_field, want) in [
+            (
+                "pages",
+                "route",
+                want_pages.iter().map(|r| r.route.clone()).collect::<Vec<_>>(),
+            ),
+            (
+                "endpoints",
+                "routePath",
+                want_endpoints
+                    .iter()
+                    .map(|r| format!("{} {}", r.http_method, r.route_path))
+                    .collect::<Vec<_>>(),
+            ),
+        ] {
+            let class = if kind == "pages" { "Page" } else { "Endpoint" };
+            match rows_as_in_graph(api, token, class, key_field) {
+                Err(e) => println!(
+                    "chorus-crawl: reconcile {kind}: UNMEASURED — cannot read {class} rows ({e})"
+                ),
+                Ok(rows) => {
+                    let have: Vec<String> = rows.iter().map(|r| r.key.clone()).collect();
+                    let missing: Vec<&String> = want.iter().filter(|k| !have.contains(k)).collect();
+                    let orphan: Vec<&String> = have.iter().filter(|k| !want.contains(k)).collect();
+                    if missing.is_empty() && orphan.is_empty() {
+                        println!(
+                            "chorus-crawl: reconcile {kind}: clean — {} in the tree, {} in the graph, same set",
+                            want.len(),
+                            have.len()
+                        );
+                    } else {
+                        println!(
+                            "chorus-crawl: reconcile {kind}: DRIFT — {} in the tree without a row, {} rows without a source",
+                            missing.len(),
+                            orphan.len()
+                        );
+                        for k in missing.iter().take(10) {
+                            println!("chorus-crawl:   no row for {k}");
+                        }
+                        for k in orphan.iter().take(10) {
+                            println!("chorus-crawl:   no source for {k}");
+                        }
+                    }
+                }
+            }
+        }
+    }
 
     // current: commits between the watermark and HEAD
     let lag = match watermark {
