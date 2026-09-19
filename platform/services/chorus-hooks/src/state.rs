@@ -663,6 +663,7 @@ mod stream_legibility_tests_3885 {
         let s = AppState::new();
         s.mark_running("sess-1", "wren", "Bash");
         s.mark_thinking("sess-1", "wren");
+        s.backdate("sess-1", 90); // #4220 — the beat only reports calls worth a line
         let due = s.activity_due(0);
         let beat = due.iter().find(|b| b.0 == "sess-1").expect("a beat is due");
         assert_eq!(beat.3, "thinking", "phase still says thinking");
@@ -677,6 +678,7 @@ mod stream_legibility_tests_3885 {
         let s = AppState::new();
         s.mark_running("sess-2", "wren", "Edit");
         s.mark_thinking("sess-2", "wren");
+        s.backdate("sess-2", 90); // #4220 — the beat only reports calls worth a line
         let due = s.activity_due(0);
         let beat = due.iter().find(|b| b.0 == "sess-2").unwrap();
         assert_ne!(beat.3, "running");
@@ -688,6 +690,7 @@ mod stream_legibility_tests_3885 {
     fn thinking_with_no_prior_tool_stays_blank() {
         let s = AppState::new();
         s.mark_thinking("sess-3", "wren");
+        s.backdate("sess-3", 90); // #4220 — the beat only reports calls worth a line
         let due = s.activity_due(0);
         let beat = due.iter().find(|b| b.0 == "sess-3").unwrap();
         assert_eq!(beat.2, "", "no prior tool → blank, never a guess");
