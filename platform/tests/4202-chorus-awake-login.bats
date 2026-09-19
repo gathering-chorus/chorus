@@ -134,7 +134,8 @@ lacks()   { test -z "$(grep -F -- "$2" "$1" 2>/dev/null || true)"; }
   run "$SCRIPT" kade
   out_has "session NOT recorded for kade"
   out_has "no credential for 'kade'"
-  out_has "started degraded"
+  out_has "recorded NO"
+  out_has "UNAUTHENTICATED"
   started
 }
 
@@ -160,7 +161,8 @@ lacks()   { test -z "$(grep -F -- "$2" "$1" 2>/dev/null || true)"; }
   ( sleep 0.3; reg 784 %5 ) &
   run "$SCRIPT" kade
   out_has "expired"
-  out_has "started degraded"
+  out_has "recorded NO"
+  out_has "UNAUTHENTICATED"
   started
 }
 
