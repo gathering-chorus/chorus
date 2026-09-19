@@ -1,6 +1,6 @@
 // #4184 — the decision core, unit-tested with fixtures. The bats suite drives the
 // built binary with stub claude/tmux/ps for the integration proofs.
-use chorus_awake::{tz_offset_secs, answered_recently, awake_verdict, chrono_secs, Awake, decide, parse_registry, proof_line, projects_dir_for, Live, login_posture, Start};
+use chorus_awake::{transcript_is_poisoned, tz_offset_secs, answered_recently, awake_verdict, chrono_secs, Awake, decide, parse_registry, proof_line, projects_dir_for, Live, login_posture, Start};
 
 const NOW: u128 = 1_789_000_000_000;
 fn agent(id: &str, sid: &str, pid: &str, started_ago_h: f64, state: &str) -> String {
@@ -280,4 +280,37 @@ fn an_unreadable_offset_is_none_and_a_readable_one_parses() {
     assert_eq!(tz_offset_secs("+0530"), Some(5 * 3600 + 1800));
     assert_eq!(tz_offset_secs(""), None);
     assert_eq!(tz_offset_secs("nonsense"), None);
+}
+
+// ---- #4219 — never resume a conversation the API has stopped accepting ----
+
+#[test]
+fn a_transcript_ending_in_refusals_is_poisoned() {
+    let t = "{\"type\":\"user\"}\n{\"content\":\"API Error: safeguards flagged this message\"}\n";
+    assert!(transcript_is_poisoned(t, 40, 1));
+}
+
+#[test]
+fn a_healthy_transcript_is_not_poisoned() {
+    let t = "{\"type\":\"user\"}\n{\"type\":\"assistant\",\"text\":\"on it\"}\n";
+    assert!(!transcript_is_poisoned(t, 40, 1));
+}
+
+#[test]
+fn one_old_refusal_far_back_is_noise_not_a_dead_conversation() {
+    // kade's real shape: refusals scattered through 3,160 lines. What decides is
+    // whether they are at the END — a conversation that recovered is resumable.
+    let mut t = String::from("{\"content\":\"API Error: reasoning_extraction\"}\n");
+    for _ in 0..100 { t.push_str("{\"type\":\"assistant\",\"text\":\"fine\"}\n"); }
+    assert!(!transcript_is_poisoned(&t, 40, 1), "an old refusal must not condemn a working conversation");
+}
+
+#[test]
+fn negative_proof_the_window_is_what_makes_the_two_differ() {
+    // Same transcript, two windows: if a wider window did not change the verdict
+    // the check is not reading position at all.
+    let mut t = String::from("{\"content\":\"safeguards flagged\"}\n");
+    for _ in 0..100 { t.push_str("{\"type\":\"assistant\"}\n"); }
+    assert!(!transcript_is_poisoned(&t, 40, 1));
+    assert!(transcript_is_poisoned(&t, 200, 1));
 }
