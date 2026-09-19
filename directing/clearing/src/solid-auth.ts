@@ -87,7 +87,7 @@ export async function sparqlValues(q: string, fetchImpl: typeof fetch = fetch): 
       results?: { bindings?: Array<Record<string, { value?: string }>> };
     };
     return (body.results?.bindings ?? []).map((row) => {
-      const first = Object.values(row)[0];
+      const first: { value?: string } | undefined = Object.values(row)[0];
       return String(first?.value ?? '');
     });
   } catch {
@@ -98,7 +98,7 @@ export async function sparqlValues(q: string, fetchImpl: typeof fetch = fetch): 
 export async function primeAllowSetGraph(
   query: (q: string) => Promise<string[] | null> = sparqlValues,
 ): Promise<string> {
-  let rows: string[] | null = null;
+  let rows: string[] | null;
   try {
     rows = await query(PRINCIPAL_HOME_QUERY);
   } catch {
