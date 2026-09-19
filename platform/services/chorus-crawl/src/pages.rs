@@ -410,6 +410,32 @@ pub fn counts<T>(actions: &[RowAction<T>]) -> Counts {
     c
 }
 
+/// #4214 — the undo list for a run: the door names of the rows it CREATED.
+///
+/// Wren's blocking condition before this writer touches prod: a plan that can
+/// only go forward is not a plan. Rolling back means deleting exactly what the
+/// run added — never a row it replaced (that row existed before, and deleting
+/// it would turn an undo into data loss), and never one it deleted or left
+/// alone. So only Post contributes, and the test below proves the other three
+/// do not.
+pub fn created_names(
+    actions: &[RowAction<PageRow>],
+    endpoint_actions: &[RowAction<EndpointRow>],
+) -> Vec<String> {
+    let mut out: Vec<String> = Vec::new();
+    for a in actions {
+        if let RowAction::Post(r) = a {
+            out.push(page_row_name(&r.route));
+        }
+    }
+    for a in endpoint_actions {
+        if let RowAction::Post(r) = a {
+            out.push(endpoint_row_name(&r.http_method, &r.route_path));
+        }
+    }
+    out
+}
+
 /// #4214 — is this served row one THIS writer could have produced?
 ///
 /// The walk only knows rows that come from a source file. athena-make's own
@@ -594,6 +620,56 @@ mod desired_tests {
             })
             .collect();
         assert_eq!(deleted, vec!["endpoint-authored"], "only rows from a source file are ours");
+    }
+
+
+    #[test]
+    fn the_undo_list_holds_only_what_the_run_created() {
+        let made = PageRow { path: "platform/api/public/athena/new.html".into(), route: "/athena/new.html".into(), page_type: "athena".into() };
+        let touched = PageRow { path: "platform/api/public/athena/old.html".into(), route: "/athena/old.html".into(), page_type: "athena".into() };
+        let plan = vec![
+            RowAction::Post(made.clone()),
+            RowAction::Replace { name: page_row_name("/athena/old.html"), row: touched },
+            RowAction::Unchanged { key: "/athena/same.html".into() },
+            RowAction::Delete { name: page_row_name("/athena/gone.html"), key: "/athena/gone.html".into() },
+        ];
+        let undo = created_names(&plan, &[]);
+        assert_eq!(undo, vec![page_row_name("/athena/new.html")]);
+    }
+
+    #[test]
+    fn negative_proof_the_undo_never_names_a_row_that_existed_before() {
+        // The violation: an undo that deletes a REPLACED row. That row was in the
+        // graph before the run — deleting it is data loss wearing a rollback's
+        // name. Widening created_names to include Replace turns this red.
+        let touched = PageRow { path: "platform/api/public/athena/old.html".into(), route: "/athena/old.html".into(), page_type: "athena".into() };
+        let plan = vec![RowAction::Replace { name: page_row_name("/athena/old.html"), row: touched }];
+        assert!(created_names(&plan, &[]).is_empty(), "a replaced row is not ours to delete");
+    }
+
+    #[test]
+    fn the_undo_covers_endpoints_too_keyed_on_method_and_path() {
+        let e = EndpointRow { path: "platform/api/src/server.ts".into(), route_path: "/api/x".into(), http_method: "POST".into() };
+        let undo = created_names(&[], &[RowAction::Post(e)]);
+        assert_eq!(undo, vec![endpoint_row_name("POST", "/api/x")]);
+        assert_ne!(endpoint_row_name("POST", "/api/x"), endpoint_row_name("GET", "/api/x"));
+    }
+
+    #[test]
+    fn one_page_gone_from_the_source_deletes_exactly_that_one_row() {
+        // Wren's rehearsal C, as a fixture: a desired set one short. Exactly one
+        // row is planned for deletion, and it is the one that left.
+        let kept = PageRow { path: "platform/api/public/athena/kept.html".into(), route: "/athena/kept.html".into(), page_type: "athena".into() };
+        let rows = vec![
+            served(&page_row_name("/athena/kept.html"), "/athena/kept.html", Some("platform/api/public/athena/kept.html")),
+            served(&page_row_name("/athena/gone.html"), "/athena/gone.html", Some("platform/api/public/athena/gone.html")),
+        ];
+        let plan = plan_rows(&[kept], &rows, &|r: &PageRow| r.route.clone(), &|_| None, false);
+        let c = counts(&plan);
+        assert_eq!((c.deleted, c.posted), (1, 0), "{plan:?}");
+        assert!(matches!(&plan[..], [_, RowAction::Delete { key, .. }] if key == "/athena/gone.html"));
+        // and that single delete is a cleanup, not a wipe, so it proceeds
+        assert!(!leg_mass_delete_refused(1, 2));
     }
 
 }
