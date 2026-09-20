@@ -237,6 +237,54 @@ pub fn delete_guard(live: Option<usize>, dumped: Option<usize>, target: &str) ->
     DeleteGuard::Proceed { backed_up: dumped }
 }
 
+/// #3536 AC2 / #3731 — the SHACL report. Report-only, never a gate: the model
+/// is mid-migration, so a hard gate would refuse every deploy.
+///
+/// Its three states must stay distinguishable. A crashed validator used to
+/// report "0 violation(s)" — migration-complete-by-crash, the could-not-ask
+/// class — and because of that, plus two parsing bugs (an extensionless temp
+/// file and a mid-stream BOM), this leg had never actually validated the model
+/// on any full deploy.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum ShaclReport {
+    Ran { violations: usize },
+    Crashed,
+    ValidatorAbsent,
+}
+
+impl ShaclReport {
+    /// What goes on the spine. `unknown` is NOT zero, and the two must never
+    /// print the same way.
+    pub fn violations_field(&self) -> String {
+        match self {
+            ShaclReport::Ran { violations } => violations.to_string(),
+            _ => "unknown".to_string(),
+        }
+    }
+    pub fn status_field(&self) -> &'static str {
+        match self {
+            ShaclReport::Ran { .. } => "ran",
+            ShaclReport::Crashed => "crashed",
+            ShaclReport::ValidatorAbsent => "absent",
+        }
+    }
+}
+
+/// Count violations in a validator report. Pure.
+pub fn shacl_violations(report: &str) -> usize {
+    report.lines().filter(|l| l.contains("sh:resultSeverity")).count()
+}
+
+/// Strip a UTF-8 BOM from the START of one member before it joins the union.
+/// Jena tolerates a BOM at the start of a file, so riot validated the offending
+/// file alone and nobody noticed; inside a concatenation the same three bytes
+/// land mid-stream and the whole union dies. Stripping per file, rather than
+/// fixing the one file that had it, is the difference between this recurring
+/// on the next authored .ttl and not.
+pub fn strip_bom(member: &str) -> &str {
+    member.strip_prefix('\u{feff}').unwrap_or(member)
+}
+
 /// #4125 — a source file may not author a Role as an owner.
 ///
 /// `chorus:ownedBy` is `a owl:ObjectProperty ; rdfs:range chorus:Principal`.
@@ -492,6 +540,83 @@ pub fn run_athena_deploy() -> Result<String, String> {
     emit_spine(&chorus_log, "model.deployed", &role,
         &[("graph", ontology.clone()), ("members", set.len().to_string())]);
 
+    // #3736 — stamp which commit this store was deployed from. Not decoration:
+    // the source-delete guard (#4125) reads deployedFromCommit to know what to
+    // diff the working tree against, so without the stamp that guard can never
+    // run. Caught by the graph diff against the bash, not by reading the code
+    // — it was the only real difference between the two, two triples.
+    let stamp_sha = run_git(&root, &["rev-parse", "HEAD"]).unwrap_or_else(|| "unknown".into());
+    let stamp_ts = Command::new("date").args(["-u", "+%Y-%m-%dT%H:%M:%SZ"]).output()
+        .map(|o| String::from_utf8_lossy(&o.stdout).trim().to_string()).unwrap_or_default();
+    let stamp = format!(
+        "DELETE WHERE {{ GRAPH <{ontology}> {{ <urn:chorus:model-deploy> ?p ?o }} }};\n\
+         INSERT DATA {{ GRAPH <{ontology}> {{ \
+         <urn:chorus:model-deploy> <urn:chorus:vocab#deployedFromCommit> \"{stamp_sha}\" ; \
+         <urn:chorus:vocab#deployedAt> \"{stamp_ts}\" . }} }}"
+    );
+    let scode = curl(&["-s", "-o", "/dev/null", "-w", "%{http_code}", "-X", "POST",
+        "-H", "Content-Type: application/sparql-update", "--data-binary", &stamp, &update])?;
+    if !ok_http(&scode) {
+        // #3736 — a deploy nobody can tie to a commit is unverifiable, so this
+        // fails loud rather than passing with the model already applied.
+        return Err(fail(&format!("stamp-write-failed-http-{scode}")));
+    }
+    println!("athena-deploy: stamped deployedFromCommit={stamp_sha}");
+
+    // #3752 — execute what `athena-model retire-claim` staged. Fail-closed at
+    // every ask, idempotent on absent, and every delete backed up first (AC3).
+    let retirements_file = env_or(
+        "RETIREMENTS_FILE",
+        &format!("{root}/designing/schemas/model-retirements.jsonl"),
+    );
+    if Path::new(&retirements_file).is_file() {
+        let text = std::fs::read_to_string(&retirements_file)
+            .map_err(|e| fail(&format!("retirements-unreadable:{e}")))?;
+        let ctx = StoreCtx {
+            gsp: gsp.clone(), query: query.clone(), update: update.clone(),
+            chorus_log: chorus_log.clone(), role: role.clone(),
+        };
+        for (i, line) in text.lines().enumerate() {
+            let n = i + 1;
+            let entry = match parse_retirement(line) {
+                Ok(Some(e)) => e,
+                Ok(None) => continue,
+                Err(why) => {
+                    return Err(fail(&format!("retirement-staging-malformed:line-{n}:{why}")));
+                }
+            };
+            run_retirement(&retirement_action(&entry, &ontology), n, &ctx)?;
+        }
+    }
+
+    // #3536 AC2 / #3731 — the SHACL report. Non-gating, three distinguishable
+    // states, full deploys only (SHACL_REPORT=1 is the test seam).
+    if sets_run(std::env::var("TTL").ok().as_deref())
+        || std::env::var("SHACL_REPORT").as_deref() == Ok("1")
+    {
+        let report = run_shacl_report(&root, &set);
+        match &report {
+            ShaclReport::Ran { violations } => println!(
+                "athena-deploy: SHACL report (V2 shapes, non-gating) — {violations} violation(s) \
+                 [migration-progress signal, not a gate]"
+            ),
+            ShaclReport::Crashed => eprintln!(
+                "athena-deploy: SHACL validator CRASHED — violations UNKNOWN, not 0 \
+                 (#3731; report-only, deploy continues)"
+            ),
+            ShaclReport::ValidatorAbsent => eprintln!(
+                "athena-deploy: SHACL report SKIPPED — validator not installed; model deployed \
+                 WITHOUT the V2-shape report (#3731; not a clean-run signal)"
+            ),
+        }
+        emit_spine(&chorus_log, "model.deploy.shacl", &role, &[
+            ("graph", ontology.clone()),
+            ("violations", report.violations_field()),
+            ("gating", "false".to_string()),
+            ("status", report.status_field().to_string()),
+        ]);
+    }
+
     // #4229 — then the eight domain sets, from the manifest. A TTL= partial
     // run deploys ONLY what it was given, the same gate the bash applies.
     let mut deployed: Vec<String> = Vec::new();
@@ -628,6 +753,153 @@ pub struct StoreCtx {
     pub update: String,
     pub chorus_log: String,
     pub role: String,
+}
+
+/// Build the BOM-stripped union and ask the validator. The union file must end
+/// in `.ttl` — Jena picks its parser from the extension, and an extensionless
+/// mktemp name killed every full deploy before it read a triple (#4085).
+fn run_shacl_report(root: &str, set: &[String]) -> ShaclReport {
+    let shacl_bin = env_or("SHACL_BIN", "shacl");
+    let available = Command::new("sh").arg("-c").arg(format!("command -v {shacl_bin}"))
+        .output().map(|o| o.status.success()).unwrap_or(false);
+    if !available {
+        return ShaclReport::ValidatorAbsent;
+    }
+    let union = std::env::temp_dir().join(format!("athena-deploy-union-{}.ttl", std::process::id()));
+    let mut body = String::new();
+    for m in set {
+        if let Ok(text) = std::fs::read_to_string(m) {
+            body.push_str(strip_bom(&text));
+            body.push('\n');
+        }
+    }
+    if std::fs::write(&union, body).is_err() {
+        return ShaclReport::Crashed;
+    }
+    let shapes = format!("{root}/roles/silas/ontology/chorus.ttl");
+    let out = Command::new(&shacl_bin)
+        .args(["validate", "--shapes", &shapes, "--data"])
+        .arg(&union)
+        .output();
+    let _ = std::fs::remove_file(&union);
+    match out {
+        Ok(o) if o.status.success() => ShaclReport::Ran {
+            violations: shacl_violations(&String::from_utf8_lossy(&o.stdout)),
+        },
+        _ => ShaclReport::Crashed,
+    }
+}
+
+/// Execute one decided retirement. Every delete asks `delete_guard` first, so
+/// subject and class retirement get the backup rule the bash gives only to
+/// whole-graph — AC3, and subject retirement is the leg #4216's 226 rows went
+/// through with nothing written down.
+fn run_retirement(action: &RetireAction, line: usize, ctx: &StoreCtx) -> Result<(), String> {
+    let refuse = |reason: String| -> String {
+        emit_spine(&ctx.chorus_log, "model.deploy.failed", &ctx.role,
+            &[("reason", reason.clone()), ("line", line.to_string())]);
+        format!("athena-deploy: retirement line {line} — {reason}")
+    };
+    match action {
+        RetireAction::Skip { status, target } => {
+            println!("athena-deploy: retirement line {line} is '{status}', not staged — skipping (#3788)");
+            emit_spine(&ctx.chorus_log, "model.retirement.skipped", &ctx.role, &[
+                ("line", line.to_string()), ("status", status.clone()), ("target", target.clone()),
+            ]);
+            Ok(())
+        }
+        RetireAction::Claim { domain, class } => {
+            // The claim form deletes one definesVocabulary triple; it removes
+            // no rows, so the backup rule does not apply to it.
+            let sparql = format!(
+                "DELETE WHERE {{ GRAPH ?g {{ <{domain}> <https://jeffbridwell.com/chorus#definesVocabulary> <{class}> }} }}"
+            );
+            let code = curl(&["-s", "-o", "/dev/null", "-w", "%{http_code}", "-X", "POST",
+                "-H", "Content-Type: application/sparql-update", "--data-binary", &sparql, &ctx.update])?;
+            if !ok_http(&code) {
+                return Err(refuse(format!("claim-retire-http-{code}")));
+            }
+            emit_spine(&ctx.chorus_log, "model.retirement.executed", &ctx.role,
+                &[("line", line.to_string()), ("target", format!("claim {class}"))]);
+            Ok(())
+        }
+        RetireAction::Subject { iri, graph } => guarded_delete(
+            ctx, line,
+            &format!("<{graph}> subject <{iri}>"),
+            &format!("SELECT (COUNT(*) AS ?n) WHERE {{ GRAPH <{graph}> {{ <{iri}> ?p ?o }} }}"),
+            &format!("CONSTRUCT {{ <{iri}> ?p ?o }} WHERE {{ GRAPH <{graph}> {{ <{iri}> ?p ?o }} }}"),
+            &format!("DELETE WHERE {{ GRAPH <{graph}> {{ <{iri}> ?p ?o }} }}"),
+        ),
+        RetireAction::Class { class, graph } => guarded_delete(
+            ctx, line,
+            &format!("<{graph}> class <{class}>"),
+            &format!("SELECT (COUNT(*) AS ?n) WHERE {{ GRAPH <{graph}> {{ ?s a <{class}> ; ?p ?o }} }}"),
+            &format!("CONSTRUCT {{ ?s ?p ?o }} WHERE {{ GRAPH <{graph}> {{ ?s a <{class}> ; ?p ?o }} }}"),
+            &format!("DELETE WHERE {{ GRAPH <{graph}> {{ ?s a <{class}> ; ?p ?o }} }}"),
+        ),
+        RetireAction::WholeGraph { graph } => guarded_delete(
+            ctx, line,
+            &format!("graph <{graph}>"),
+            &format!("SELECT (COUNT(*) AS ?n) WHERE {{ GRAPH <{graph}> {{ ?s ?p ?o }} }}"),
+            &format!("CONSTRUCT {{ ?s ?p ?o }} WHERE {{ GRAPH <{graph}> {{ ?s ?p ?o }} }}"),
+            &format!("DROP GRAPH <{graph}>"),
+        ),
+    }
+}
+
+/// Count, dump, check the dump against the count, then delete. The order is
+/// the whole rule: a delete that runs before its backup is verified has no
+/// restore path, which is what 2026-05-30 cost us.
+fn guarded_delete(
+    ctx: &StoreCtx, line: usize, target: &str,
+    count_q: &str, construct_q: &str, delete_q: &str,
+) -> Result<(), String> {
+    let refuse = |reason: String| -> String {
+        emit_spine(&ctx.chorus_log, "model.deploy.failed", &ctx.role,
+            &[("reason", reason.clone()), ("line", line.to_string())]);
+        format!("athena-deploy: retirement line {line} — {reason}")
+    };
+    let live = curl(&["-s", "--data-urlencode", &format!("query={count_q}"),
+        "-H", "Accept: text/csv", &ctx.query]).ok().and_then(|csv| verify_missing(&csv));
+    let dir = env_or("GRAPH_BACKUP_DIR", "/tmp/chorus-graph-retirements");
+    let _ = std::fs::create_dir_all(&dir);
+    let stamp = Command::new("date").args(["-u", "+%Y%m%dT%H%M%SZ"]).output()
+        .map(|o| String::from_utf8_lossy(&o.stdout).trim().to_string()).unwrap_or_default();
+    let safe: String = target.chars().map(|c| if c.is_ascii_alphanumeric() { c } else { '_' }).collect();
+    let backup = format!("{dir}/{safe}-{stamp}.nt");
+    let _ = curl(&["-s", "--data-urlencode", &format!("query={construct_q}"),
+        "-H", "Accept: application/n-triples", "-o", &backup, &ctx.query]);
+    let dumped = std::fs::read_to_string(&backup)
+        .map(|t| t.lines().filter(|l| !l.trim().is_empty()).count())
+        .ok();
+    match delete_guard(live, dumped, target) {
+        DeleteGuard::AlreadyAbsent => {
+            println!("athena-deploy: {target} already absent (idempotent — previously retired)");
+            Ok(())
+        }
+        DeleteGuard::Refuse(why) => Err(refuse(format!("retire-refused:{why}"))),
+        DeleteGuard::Proceed { backed_up } => {
+            let code = curl(&["-s", "-o", "/dev/null", "-w", "%{http_code}", "-X", "POST",
+                "-H", "Content-Type: application/sparql-update", "--data-binary", delete_q, &ctx.update])?;
+            if !ok_http(&code) {
+                return Err(refuse(format!("retire-delete-http-{code}")));
+            }
+            println!("athena-deploy: retired {target} ({backed_up} triple(s), backup {backup})");
+            emit_spine(&ctx.chorus_log, "model.retirement.executed", &ctx.role, &[
+                ("line", line.to_string()), ("target", target.to_string()),
+                ("rows", backed_up.to_string()), ("backup", backup.clone()),
+            ]);
+            Ok(())
+        }
+    }
+}
+
+fn run_git(root: &str, args: &[&str]) -> Option<String> {
+    let out = Command::new("git").arg("-C").arg(root).args(args).output().ok()?;
+    if !out.status.success() {
+        return None;
+    }
+    Some(String::from_utf8_lossy(&out.stdout).trim().to_string())
 }
 
 fn riot_available() -> bool {
