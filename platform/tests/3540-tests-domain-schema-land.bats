@@ -38,7 +38,7 @@ ROOT="$(cd "$BATS_TEST_DIRNAME/../.." && pwd)"
 # #3991 repoint, missed here: #3561 renamed chorus-model-deploy.sh →
 # athena-deploy-model.sh. The old path still resolved to nothing, so all eight
 # tests below failed on exit 127 (command not found) rather than on the schema.
-SCRIPT="$ROOT/platform/scripts/athena-deploy-model.sh"
+SCRIPT="$ROOT/platform/services/athena-deploy/target/release/athena-deploy"
 TTL="$ROOT/roles/kade/ontology/werk-domains.ttl"
 load test_helper   # test_graph_name (run-scoped throwaway graph)
 # per-RUN graph name: two pipelines (e.g. wren-4080 + silas-4084, 2026-09-03
@@ -131,36 +131,36 @@ teardown_file() {
 }
 
 @test "werk-domains.ttl deploys into the ontology graph (exit 0)" {
-  run env ONTOLOGY_GRAPH="$TEST_GRAPH" TTL="$TTL" bash "$SCRIPT"
+  run env ONTOLOGY_GRAPH="$TEST_GRAPH" TTL="$TTL" "$SCRIPT"
   [ "$status" -eq 0 ]
 }
 
 @test "TestEdgesShape requires pyramidLayer (minCount 1) after deploy" {
-  env ONTOLOGY_GRAPH="$TEST_GRAPH" TTL="$TTL" bash "$SCRIPT" >/dev/null 2>&1
+  env ONTOLOGY_GRAPH="$TEST_GRAPH" TTL="$TTL" "$SCRIPT" >/dev/null 2>&1
   run curl -s "$Q" --data-urlencode "query=$PFX ASK { GRAPH <$TEST_GRAPH> { chorus:TestEdgesShape sh:property [ sh:path chorus:pyramidLayer ; sh:minCount 1 ] } }" -H "Accept: application/sparql-results+json"
   [[ "${output// /}" == *'"boolean":true'* ]]
 }
 
 @test "TestEdgesShape requires covers (minCount 1) — the werk-test query edge" {
-  env ONTOLOGY_GRAPH="$TEST_GRAPH" TTL="$TTL" bash "$SCRIPT" >/dev/null 2>&1
+  env ONTOLOGY_GRAPH="$TEST_GRAPH" TTL="$TTL" "$SCRIPT" >/dev/null 2>&1
   run curl -s "$Q" --data-urlencode "query=$PFX ASK { GRAPH <$TEST_GRAPH> { chorus:TestEdgesShape sh:property [ sh:path chorus:covers ; sh:minCount 1 ] } }" -H "Accept: application/sparql-results+json"
   [[ "${output// /}" == *'"boolean":true'* ]]
 }
 
 @test "TestEdgesShape carries hermeticity as the optional finer axis (enum, no minCount)" {
-  env ONTOLOGY_GRAPH="$TEST_GRAPH" TTL="$TTL" bash "$SCRIPT" >/dev/null 2>&1
+  env ONTOLOGY_GRAPH="$TEST_GRAPH" TTL="$TTL" "$SCRIPT" >/dev/null 2>&1
   run curl -s "$Q" --data-urlencode "query=$PFX ASK { GRAPH <$TEST_GRAPH> { chorus:TestEdgesShape sh:property [ sh:path chorus:hermeticity ] } }" -H "Accept: application/sparql-results+json"
   [[ "${output// /}" == *'"boolean":true'* ]]
 }
 
 @test "TestEdgesShape carries testConcern — the orthogonal concern axis (@test-type api/ui/perf/security destination)" {
-  env ONTOLOGY_GRAPH="$TEST_GRAPH" TTL="$TTL" bash "$SCRIPT" >/dev/null 2>&1
+  env ONTOLOGY_GRAPH="$TEST_GRAPH" TTL="$TTL" "$SCRIPT" >/dev/null 2>&1
   run curl -s "$Q" --data-urlencode "query=$PFX ASK { GRAPH <$TEST_GRAPH> { chorus:TestEdgesShape sh:property [ sh:path chorus:testConcern ] } }" -H "Accept: application/sparql-results+json"
   [[ "${output// /}" == *'"boolean":true'* ]]
 }
 
 @test "pyramidLayer and testConcern are ORTHOGONAL — a Test carries both (e2e + security)" {
-  env ONTOLOGY_GRAPH="$TEST_GRAPH" TTL="$TTL" bash "$SCRIPT" >/dev/null 2>&1
+  env ONTOLOGY_GRAPH="$TEST_GRAPH" TTL="$TTL" "$SCRIPT" >/dev/null 2>&1
   # #3606 — assert the write LANDED. A swallowed 401 here plus residue in the
   # graph is indistinguishable from a healthy mint at the SELECT below.
   run _insert "chorus:test-3540-ortho a chorus:Test ; chorus:covers chorus:subdomain-tests-domain ; chorus:pyramidLayer \"e2e\" ; chorus:testConcern \"security\""
@@ -170,7 +170,7 @@ teardown_file() {
 }
 
 @test "a minted Test instance is queryable BY its covers edge (the #3190 contract)" {
-  env ONTOLOGY_GRAPH="$TEST_GRAPH" TTL="$TTL" bash "$SCRIPT" >/dev/null 2>&1
+  env ONTOLOGY_GRAPH="$TEST_GRAPH" TTL="$TTL" "$SCRIPT" >/dev/null 2>&1
   # mint a Test instance covering a known SubDomain, the way the #2818 tagging will
   run _insert "chorus:test-3540-probe a chorus:Test ; chorus:covers chorus:subdomain-tests-domain ; chorus:pyramidLayer \"integration\" ; chorus:hermeticity \"needs-stack\""
   [ "$status" -eq 0 ]

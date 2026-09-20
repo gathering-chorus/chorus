@@ -17,7 +17,7 @@ setup() {
   VSS="$REPO/designing/data/value-stream-step-instances.ttl"   # #3904 — the #3839 split
   # #3991 repoint, missed here: #3561 renamed chorus-model-deploy.sh →
   # athena-deploy-model.sh.
-  DEPLOY="$REPO/platform/scripts/athena-deploy-model.sh"
+  DEPLOY="$REPO/platform/services/athena-deploy/target/release/athena-deploy"
   OWL_URL="${OWL_URL:-http://localhost:3360}"
 }
 

@@ -8,7 +8,7 @@
 
 REPO_ROOT="$(cd "$BATS_TEST_DIRNAME/../.." && pwd)"
 TTL="$REPO_ROOT/roles/silas/ontology/chorus.ttl"
-DEPLOY="$REPO_ROOT/platform/scripts/athena-deploy-model.sh"
+DEPLOY="$REPO_ROOT/platform/services/athena-deploy/target/release/athena-deploy"
 HARVEST="$REPO_ROOT/platform/scripts/service-harvest-load.sh"
 
 # REWRITTEN 2026-09-19. This asserted that ServiceShape PINS

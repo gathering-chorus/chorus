@@ -13,7 +13,7 @@
 # still pointed at a throwaway graph below so even a broken seam cannot reach live.
 
 ROOT="$(cd "$BATS_TEST_DIRNAME/../.." && pwd)"
-SCRIPT="$ROOT/platform/scripts/athena-deploy-model.sh"
+SCRIPT="$ROOT/platform/services/athena-deploy/target/release/athena-deploy"
 
 setup() {
   WERK_DIR="$BATS_TEST_TMPDIR/chorus-werk/wren-4080"

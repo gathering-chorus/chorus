@@ -7,7 +7,7 @@
 # refuses to report success unless the row count actually reached zero.
 
 REPO="$(cd "$BATS_TEST_DIRNAME/../.." && pwd)"
-SCRIPT="$REPO/platform/scripts/athena-deploy-model.sh"
+SCRIPT="$REPO/platform/services/athena-deploy/target/release/athena-deploy"
 
 # $1 inbound-edge count · $2 rows before · $3 rows after · $4 how many domains CLAIM the class
 stub_start() {
@@ -75,7 +75,7 @@ run_deploy() {
       OWL_API_URL="http://127.0.0.1:$PORT" \
       ONTOLOGY_GRAPH="urn:chorus:bats-4187-ontology" \
       TTL="$TMP/empty.ttl" DEPLOY_TARGET=canonical ROLE=wren CHORUS_ROOT="$REPO" \
-      bash "$SCRIPT"
+      "$SCRIPT"
 }
 
 @test "#4187 a class with no consumers and no route is retired, and says how many rows" {
@@ -121,7 +121,7 @@ run_deploy() {
       OWL_API_URL="http://127.0.0.1:9" \
       ONTOLOGY_GRAPH="urn:chorus:bats-4187-ontology" \
       TTL="$TMP/empty.ttl" DEPLOY_TARGET=canonical ROLE=wren CHORUS_ROOT="$REPO" \
-      bash "$SCRIPT"
+      "$SCRIPT"
   echo "$output" | grep -q "refusing to delete blind"
   test -z "$(printf '%s' "$output" | grep -F "class retirement executed" || true)"
 }

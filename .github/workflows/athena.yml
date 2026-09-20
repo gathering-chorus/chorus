@@ -249,7 +249,7 @@ jobs:
   # merged are deployed, served, seeded and proven HERE, not inside werk-deploy.
   #   scope     which model / seed sources the landed diff touched (none → said out loud)
   #   validate  riot on every changed TTL; absent riot REFUSES (never a silent unvalidated deploy)
-  #   deploy    athena-deploy-model.sh — additive per-subject merge (+ INSTANCE_SET)
+  #   deploy    athena-deploy — additive per-subject merge (+ the 8 domain sets)
   #   serve     athena-serve — kickstart athena-make, wait for /health healthy (never launchd liveness)
   #   seed      athena-model seed --post through the door, as the land role, only after serve
   #   prove     store attests deployedFromCommit == landed; athena-validate as a RATCHET
@@ -351,7 +351,7 @@ jobs:
           source "${CHORUS_HOME}/platform/scripts/fuseki-auth.sh"
           CHORUS_ROOT="$ROOT" FUSEKI_GSP="$STORE/data" FUSEKI_QUERY="$STORE/query" FUSEKI_UPDATE="$STORE/update" \
             CHORUS_TRACE_ID="${CHORUS_TRACE_ID:-}" DEPLOY_ROLE="$ROLE" CHORUS_ROLE="$ROLE" \
-            bash "${CHORUS_HOME}/platform/scripts/athena-deploy-model.sh"
+            "$(command -v athena-deploy || echo "${CHORUS_HOME}/platform/services/athena-deploy/target/release/athena-deploy")"
 
       - name: serve
         # athena-make reads the shapes at boot, so a model change is served only after a

@@ -9,7 +9,7 @@
 # Isolation: every write targets urn:chorus:ontology-test-bats-4029 (wipe-guard scan).
 
 ROOT="$(cd "$BATS_TEST_DIRNAME/../.." && pwd)"
-SCRIPT="$ROOT/platform/scripts/athena-deploy-model.sh"
+SCRIPT="$ROOT/platform/services/athena-deploy/target/release/athena-deploy"
 load test_helper   # test_graph_name (run-scoped throwaway graph)
 # #4084 gave this a per-PROCESS suffix; bats forks per @test, so teardown dropped
 # a name that was never created and the real graphs leaked into the live store.
@@ -66,7 +66,7 @@ count() {
 # The assertions are on COUNTS, never on the script's exit code: with the cleanup
 # switched off the script may legitimately refuse its own post-merge verify (that
 # is the defect), and a refusal must not abort the test before the count is read.
-deploy() { env ONTOLOGY_GRAPH="$GRAPH" TTL="$TTL" "$@" bash "$SCRIPT" >> "$BATS_TEST_TMPDIR/deploy.log" 2>&1 || true; }
+deploy() { env ONTOLOGY_GRAPH="$GRAPH" TTL="$TTL" "$@" "$SCRIPT" >> "$BATS_TEST_TMPDIR/deploy.log" 2>&1 || true; }
 
 @test "deploy twice from the same source: the second count equals the first" {
   deploy; a=$(count)

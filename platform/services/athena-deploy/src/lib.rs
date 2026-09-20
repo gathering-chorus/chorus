@@ -92,9 +92,38 @@ pub fn count_trace_from_tail(trace: &str, spine: &str, chunk: usize, cap: usize)
 pub fn model_set(root: &str, ttl_override: Option<String>) -> Vec<String> {
     match ttl_override {
         Some(t) if !t.is_empty() => vec![t],
+        // #4229 — the FULL set the bash deploys, not the two-member stub. The
+        // stub is how this verb came to load 2 files where the bash loads 28
+        // into the ontology graph, and report success either way.
         _ => vec![
             format!("{root}/roles/silas/ontology/chorus.ttl"),
             format!("{root}/roles/kade/ontology/werk-domains.ttl"),
+            format!("{root}/roles/wren/ontology/domains-wren-silas.ttl"),
+            format!("{root}/roles/kade/ontology/domains-kade-3581.ttl"),
+            format!("{root}/roles/kade/ontology/domains-builds-decisions-rcas-4022.ttl"),
+            format!("{root}/designing/data/product-instances.ttl"),
+            format!("{root}/roles/silas/ontology/alerts-4085.ttl"),
+            format!("{root}/roles/wren/ontology/clearing-domains-3860.ttl"),
+            format!("{root}/roles/wren/ontology/memory-4010.ttl"),
+            format!("{root}/roles/wren/ontology/board-3654.ttl"),
+            format!("{root}/roles/wren/ontology/priorities-3686.ttl"),
+            format!("{root}/roles/wren/ontology/policies-4077.ttl"),
+            format!("{root}/roles/silas/ontology/governance-checks-3846.ttl"),
+            format!("{root}/roles/silas/ontology/security-model-3618.ttl"),
+            format!("{root}/roles/silas/ontology/security-3619-surfaces.ttl"),
+            format!("{root}/roles/silas/ontology/security-3619-surfaces-cards.ttl"),
+            format!("{root}/roles/silas/ontology/security-3619-surfaces-jobs.ttl"),
+            format!("{root}/roles/silas/ontology/security-3619-surfaces-wave2.ttl"),
+            format!("{root}/roles/silas/ontology/security-3619-surfaces-final.ttl"),
+            format!("{root}/roles/silas/ontology/nostr-credential-shape-3691.ttl"),
+            format!("{root}/roles/silas/ontology/session-4202.ttl"),
+            format!("{root}/roles/silas/ontology/graph-status-3733.ttl"),
+            format!("{root}/roles/wren/ontology/principles-3749.ttl"),
+            format!("{root}/roles/wren/ontology/values-shape-4006.ttl"),
+            format!("{root}/roles/kade/ontology/practices-3754.ttl"),
+            format!("{root}/designing/data/model-version.ttl"),
+            format!("{root}/roles/kade/ontology/pipelines-4040.ttl"),
+            format!("{root}/roles/wren/ontology/hats-4175.ttl"),
         ],
     }
 }
@@ -235,6 +264,84 @@ pub fn delete_guard(live: Option<usize>, dumped: Option<usize>, target: &str) ->
         ));
     }
     DeleteGuard::Proceed { backed_up: dumped }
+}
+
+/// The collection a class is served at, from its name. Pure.
+pub fn route_for_class(class: &str) -> String {
+    let c = class.trim().to_lowercase();
+    match c.as_str() {
+        "property" => "properties".to_string(),
+        "propertykey" => "propertykeys".to_string(),
+        _ if c.ends_with('y') => format!("{}ies", &c[..c.len() - 1]),
+        _ => format!("{c}s"),
+    }
+}
+
+/// Is that collection served RIGHT NOW, per athena-make's route list?
+///
+/// Matched anywhere in a collection path, never as a bare `/name`. Routes
+/// carry a version and a domain — Credential is at `/v1/security/credentials`
+/// and the discovery document holds no bare `/credentials` at all — so the old
+/// needle could never match and no staged claim could be refused for being
+/// served. The guard that exists to stop you retiring a live surface had gone
+/// vacuous, and this suite was red about it from #4166 while it read as noise.
+pub fn route_is_served(served_resp: &str, route: &str) -> bool {
+    let needle = format!("/{route}\"");
+    served_resp.match_indices(&needle).any(|(i, _)| {
+        served_resp[..i].rfind('"').map(|q| !served_resp[q + 1..i].contains(' ')).unwrap_or(false)
+    })
+}
+
+/// Did athena-make answer the route question at all? An unanswerable door must
+/// never read as "nothing is served".
+pub fn serve_check_answered(served_resp: &str) -> bool {
+    served_resp.contains("\"served\"")
+}
+
+/// #4125 — a subject deleted from source is NAMED, not silently kept.
+///
+/// The merge is per-subject additive: it deletes a STAGED subject's triples
+/// and re-inserts them. A subject removed from a source file is never in
+/// staging, so nothing touches it and it lives forever — nothing has ever left
+/// the graph by absence.
+///
+/// The obvious fix, deleting whatever is absent from staging, is the
+/// 2026-06-26 graph wipe: that is what RETIRE_ABSENT does, and it was turned
+/// off by default after a deploy whose staging lacked the 34 live domains
+/// retired them all. So absence drives a REFUSAL a human resolves by staging a
+/// retirement, never a delete.
+///
+/// A file's DECLARED subjects: `chorus:<local> a …` at the start of a line.
+/// A subject that appears only as an OBJECT is not this file's to retire.
+pub fn declared_subjects(ttl: &str) -> Vec<String> {
+    let mut out: Vec<String> = Vec::new();
+    for line in ttl.lines() {
+        let Some(rest) = line.strip_prefix("chorus:") else { continue };
+        let mut it = rest.split_whitespace();
+        let Some(name) = it.next() else { continue };
+        if it.next() != Some("a") {
+            continue;
+        }
+        if !name.chars().all(|c| c.is_ascii_alphanumeric() || c == '_' || c == '-') {
+            continue;
+        }
+        if !out.iter().any(|n| n == name) {
+            out.push(name.to_string());
+        }
+    }
+    out.sort();
+    out
+}
+
+/// Subjects present in the previously deployed version of a file and absent
+/// from the working copy. Pure, so the refusal has a test that does not need
+/// a store or a git history.
+pub fn vanished_subjects(previous: &str, current: &str) -> Vec<String> {
+    let now = declared_subjects(current);
+    declared_subjects(previous)
+        .into_iter()
+        .filter(|n| !now.contains(n))
+        .collect()
 }
 
 /// #3536 AC2 / #3731 — the SHACL report. Report-only, never a gate: the model
@@ -483,6 +590,60 @@ pub fn run_athena_deploy() -> Result<String, String> {
         return Err(fail(&format!("source-authors-role-owner:{}", offences.len())));
     }
 
+    // #4125 — a subject deleted from source is named, not silently kept.
+    // Compared against the commit the STORE says it was deployed from, not
+    // HEAD~1: the question is what this store has lost since it was last
+    // written, and only the store can answer it.
+    let prev = curl(&["-s", "--data-urlencode",
+        &format!("query=SELECT ?c WHERE {{ GRAPH <{ontology}> {{ <urn:chorus:model-deploy> \
+                  <urn:chorus:vocab#deployedFromCommit> ?c }} }}"),
+        "-H", "Accept: text/csv", &query])
+        .ok()
+        .and_then(|csv| csv.lines().next_back().map(|l| {
+            l.chars().filter(|c| c.is_ascii_hexdigit()).collect::<String>()
+        }))
+        .filter(|c| c.len() >= 7);
+    match prev {
+        None => println!(
+            "athena-deploy: no deployedFromCommit stamp in <{ontology}> — \
+             source-delete check SKIPPED (first deploy into this store)"
+        ),
+        Some(prev) if run_git(&root, &["cat-file", "-e", &format!("{prev}^{{commit}}")]).is_none() => {
+            eprintln!(
+                "athena-deploy: stamped commit {prev} is not in this tree — source-delete \
+                 check SKIPPED (shallow clone or rewritten history)"
+            );
+        }
+        Some(prev) => {
+            let mut gone: Vec<(String, String)> = Vec::new();
+            for ttl in &set {
+                let rel = ttl.strip_prefix(&format!("{root}/")).unwrap_or(ttl).to_string();
+                let Some(before) = run_git(&root, &["show", &format!("{prev}:{rel}")]) else {
+                    continue; // file is new since the stamp
+                };
+                let Ok(now) = std::fs::read_to_string(ttl) else { continue };
+                for name in vanished_subjects(&before, &now) {
+                    gone.push((name, rel.clone()));
+                }
+            }
+            if !gone.is_empty() {
+                eprintln!(
+                    "athena-deploy: REFUSED — {} subject(s) were deleted from source since \
+                     {prev} (#4125). Absence never deletes here; stage a retirement:",
+                    gone.len()
+                );
+                for (name, file) in gone.iter().take(5) {
+                    eprintln!("  chorus:{name}  (was declared in {file})");
+                }
+                eprintln!(
+                    "  -> athena-model retire-claim, then re-run this deploy; or restore the \
+                     subject to its file if the removal was accidental."
+                );
+                return Err(fail(&format!("source-deleted-subjects:{}", gone.len())));
+            }
+        }
+    }
+
     // Validate every member exists + is riot-valid (don't deploy a broken model).
     for ttl in &set {
         if !Path::new(ttl).exists() {
@@ -582,7 +743,11 @@ pub fn run_athena_deploy() -> Result<String, String> {
                 Ok(Some(e)) => e,
                 Ok(None) => continue,
                 Err(why) => {
-                    return Err(fail(&format!("retirement-staging-malformed:line-{n}:{why}")));
+                    eprintln!(
+                        "athena-deploy: RETIREMENTS line {n} is MALFORMED — refusing the deploy \
+                         (fail-closed, #3752): {why}"
+                    );
+                    return Err(fail(&format!("retirement-staging-malformed:line-{n}")));
                 }
             };
             run_retirement(&retirement_action(&entry, &ontology), n, &ctx)?;
@@ -809,19 +974,50 @@ fn run_retirement(action: &RetireAction, line: usize, ctx: &StoreCtx) -> Result<
             Ok(())
         }
         RetireAction::Claim { domain, class } => {
-            // The claim form deletes one definesVocabulary triple; it removes
-            // no rows, so the backup rule does not apply to it.
-            let sparql = format!(
-                "DELETE WHERE {{ GRAPH ?g {{ <{domain}> <https://jeffbridwell.com/chorus#definesVocabulary> <{class}> }} }}"
-            );
-            let code = curl(&["-s", "-o", "/dev/null", "-w", "%{http_code}", "-X", "POST",
-                "-H", "Content-Type: application/sparql-update", "--data-binary", &sparql, &ctx.update])?;
-            if !ok_http(&code) {
-                return Err(refuse(format!("claim-retire-http-{code}")));
+            if domain.is_empty() || class.is_empty() {
+                return Err(refuse("retirement-entry-empty".into()));
             }
-            emit_spine(&ctx.chorus_log, "model.retirement.executed", &ctx.role,
-                &[("line", line.to_string()), ("target", format!("claim {class}"))]);
-            Ok(())
+            // Serve-gate at EXECUTE time. The verb's own check runs at STAGE
+            // time, and a surface can come back up in between — Wren's window.
+            let owl = env_or("OWL_API_URL", "http://localhost:3360");
+            let served = curl(&["-s", "-m", "5", &format!("{owl}/__model_deploy_probe__")])
+                .unwrap_or_default();
+            if !serve_check_answered(&served) {
+                // #4080 — DEFER, do not die. This used to exit before the
+                // security set loaded, so a fresh werk store landed 0 Principal
+                // rows and every token was refused. Try again on the next
+                // deploy that can answer; the rest of this one proceeds.
+                eprintln!(
+                    "athena-deploy: RETIREMENT serve-check UNANSWERED (athena-make gave no \
+                     route list) — refusing to execute claim retirements blind (#3752)"
+                );
+                emit_spine(&ctx.chorus_log, "model.retirement.deferred", &ctx.role, &[
+                    ("reason", "retirement-serve-check-unanswered".to_string()),
+                    ("line", line.to_string()),
+                ]);
+                return Ok(());
+            }
+            let route = route_for_class(class);
+            if route_is_served(&served, &route) {
+                eprintln!(
+                    "athena-deploy: RETIREMENT REFUSED — class {class} is SERVED at /{route} \
+                     RIGHT NOW (surface came up since staging); unserve first (#3752)"
+                );
+                return Err(refuse("retirement-claim-served-at-execute".into()));
+            }
+            let base = "https://jeffbridwell.com/chorus#";
+            let (s_iri, p_iri, o_iri) = (
+                format!("{base}{domain}"),
+                format!("{base}definesVocabulary"),
+                format!("{base}{class}"),
+            );
+            let label = format!("claim {domain}->{class}");
+            let graph = env_or("ONTOLOGY_GRAPH", "urn:chorus:ontology");
+            ask_delete_verify(
+                ctx, line, &label, &graph,
+                &format!("ASK {{ GRAPH <{graph}> {{ <{s_iri}> <{p_iri}> <{o_iri}> }} }}"),
+                &format!("DELETE DATA {{ GRAPH <{graph}> {{ <{s_iri}> <{p_iri}> <{o_iri}> }} }}"),
+            )
         }
         RetireAction::Subject { iri, graph } => guarded_delete(
             ctx, line,
@@ -844,6 +1040,56 @@ fn run_retirement(action: &RetireAction, line: usize, ctx: &StoreCtx) -> Result<
             &format!("CONSTRUCT {{ ?s ?p ?o }} WHERE {{ GRAPH <{graph}> {{ ?s ?p ?o }} }}"),
             &format!("DROP GRAPH <{graph}>"),
         ),
+    }
+}
+
+/// Ask, delete, verify — the shape every retirement shares. A pre-ask that
+/// goes unanswered refuses rather than executing blind; already-absent is
+/// idempotent and noted; and the post-verify refuses if the triple is still
+/// there, so "executed but unverified" can never read as done.
+fn ask_delete_verify(
+    ctx: &StoreCtx, line: usize, label: &str, graph: &str, ask: &str, delete: &str,
+) -> Result<(), String> {
+    let refuse = |reason: String| -> String {
+        emit_spine(&ctx.chorus_log, "model.deploy.failed", &ctx.role,
+            &[("reason", reason.clone()), ("line", line.to_string())]);
+        format!("athena-deploy: retirement line {line} — {reason}")
+    };
+    let present = |resp: &str| -> Option<bool> {
+        if !resp.contains("\"boolean\"") {
+            return None;
+        }
+        Some(resp.replace(' ', "").contains("\"boolean\":true"))
+    };
+    let pre = curl(&["-s", "--data-urlencode", &format!("query={ask}"),
+        "-H", "Accept: application/sparql-results+json", &ctx.query]).unwrap_or_default();
+    match present(&pre) {
+        None => {
+            eprintln!("athena-deploy: RETIREMENT pre-ask unanswered for {label} — refusing a blind execute");
+            return Err(refuse("retirement-ask-unanswered".into()));
+        }
+        Some(false) => {
+            println!("athena-deploy: retirement {label} already absent from <{graph}> (idempotent — previously executed)");
+            return Ok(());
+        }
+        Some(true) => {}
+    }
+    let code = curl(&["-s", "-o", "/dev/null", "-w", "%{http_code}", "-X", "POST",
+        "-H", "Content-Type: application/sparql-update", "--data-binary", delete, &ctx.update])?;
+    if !ok_http(&code) {
+        return Err(refuse(format!("retirement-delete-http-{code}")));
+    }
+    let post = curl(&["-s", "--data-urlencode", &format!("query={ask}"),
+        "-H", "Accept: application/sparql-results+json", &ctx.query]).unwrap_or_default();
+    match present(&post) {
+        None => Err(refuse("retirement-verify-unanswered".into())),
+        Some(true) => Err(refuse("retirement-still-present".into())),
+        Some(false) => {
+            println!("athena-deploy: retirement executed — {label} removed from <{graph}>");
+            emit_spine(&ctx.chorus_log, "model.retirement.executed", &ctx.role,
+                &[("line", line.to_string()), ("target", label.to_string())]);
+            Ok(())
+        }
     }
 }
 
@@ -884,7 +1130,11 @@ fn guarded_delete(
             if !ok_http(&code) {
                 return Err(refuse(format!("retire-delete-http-{code}")));
             }
-            println!("athena-deploy: retired {target} ({backed_up} triple(s), backup {backup})");
+            if target.starts_with("graph ") {
+                println!("athena-deploy: graph retirement executed — {target} dropped ({backed_up} triple(s), backup {backup})");
+            } else {
+                println!("athena-deploy: retirement executed — {target} ({backed_up} triple(s), backup {backup})");
+            }
             emit_spine(&ctx.chorus_log, "model.retirement.executed", &ctx.role, &[
                 ("line", line.to_string()), ("target", target.to_string()),
                 ("rows", backed_up.to_string()), ("backup", backup.clone()),
@@ -963,11 +1213,16 @@ mod tests {
     }
 
     #[test]
-    fn model_set_default_is_the_two_member_set() {
+    fn model_set_default_is_the_whole_set_the_bash_deploys() {
+        // #4229 — was a two-member stub, which is how this verb loaded 2 files
+        // where the bash loads 28 and reported success either way.
         let s = model_set("/R", None);
-        assert_eq!(s.len(), 2);
+        assert_eq!(s.len(), 28, "the ontology set is 28 files");
         assert!(s[0].ends_with("/roles/silas/ontology/chorus.ttl"));
         assert!(s[1].ends_with("/roles/kade/ontology/werk-domains.ttl"));
+        // #3593 — the 34-domain sources must be in it or a deploy retires them.
+        assert!(s.iter().any(|m| m.ends_with("domains-wren-silas.ttl")));
+        assert!(s.iter().any(|m| m.ends_with("domains-kade-3581.ttl")));
     }
 
     #[test]
@@ -978,7 +1233,7 @@ mod tests {
 
     #[test]
     fn model_set_empty_override_falls_back_to_default() {
-        assert_eq!(model_set("/R", Some(String::new())).len(), 2);
+        assert_eq!(model_set("/R", Some(String::new())).len(), 28);
     }
 
     #[test]

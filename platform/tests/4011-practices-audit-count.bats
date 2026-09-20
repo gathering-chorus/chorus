@@ -12,7 +12,7 @@
 # a substring assert is the same weak shape. It extracts the query the script
 # actually runs and executes it against two fixtures whose answers must differ.
 
-SCRIPT="$BATS_TEST_DIRNAME/../scripts/athena-deploy-model.sh"
+SCRIPT="$BATS_TEST_DIRNAME/../services/athena-deploy/target/release/athena-deploy"
 
 setup() {
   TMP="$BATS_TEST_TMPDIR"
