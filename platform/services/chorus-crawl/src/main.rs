@@ -537,13 +537,19 @@ fn place_row(
     root: &str,
     path: &str,
     unit_rows: &[(String, String)],
+    dir_rows: &[(String, String)],
     valid_domains: &[String],
     card_domain: &dyn Fn(u32) -> Option<String>,
 ) -> Option<String> {
     let read = |q: &str| std::fs::read_to_string(std::path::Path::new(root).join(q)).ok();
     let content = read(path)?;
     let unit = domain::declared_unit(path, &read);
-    domain::place_in_file(&content, path, unit.as_deref(), unit_rows, valid_domains, card_domain, &read)
+    domain::place_in_file(
+                    &content,
+                    path,
+                    unit.as_deref(),
+                    unit_rows,
+                    dir_rows, valid_domains, card_domain, &read)
         .domain()
         .map(str::to_string)
 }
@@ -959,6 +965,10 @@ fn parse_cases(
     let unit_rows = domain::unit_domain_rows(
         &std::fs::read_to_string(format!("{root}/{UNIT_DOMAIN_TTL}")).unwrap_or_default(),
     );
+    let dir_rows = domain::surface_domain_rows(
+        &std::fs::read_to_string(format!("{root}/{SURFACE_DOMAIN_TTL}")).unwrap_or_default(),
+        "chorus:pathPrefix",
+    );
     let unit_rows = &unit_rows[..];
     let mut p = Parsed {
         desired: Vec::new(),
@@ -1005,10 +1015,11 @@ fn parse_cases(
             std::fs::read_to_string(std::path::Path::new(&root).join(p)).ok()
         });
         let placement = domain::place_in_file(
-            &content,
-            path,
-            unit.as_deref(),
-            unit_rows,
+                    &content,
+                    path,
+                    unit.as_deref(),
+                    unit_rows,
+                    &dir_rows,
             valid_domains,
             card_domain,
             &|p: &str| std::fs::read_to_string(std::path::Path::new(&root).join(p)).ok(),
@@ -1084,11 +1095,16 @@ fn seam(args: &[String]) -> bool {
             let unit_rows = domain::unit_domain_rows(
                 &std::fs::read_to_string(UNIT_DOMAIN_TTL).unwrap_or_default(),
             );
+            let dir_rows = domain::surface_domain_rows(
+                &std::fs::read_to_string(SURFACE_DOMAIN_TTL).unwrap_or_default(),
+                "chorus:pathPrefix",
+            );
             let placement = domain::place_in_file(
                 &content,
                 &path,
                 unit.as_deref(),
                 &unit_rows,
+                &dir_rows,
                 &valid,
                 &|_| None,
                 &|p: &str| std::fs::read_to_string(p).ok(),
@@ -1439,6 +1455,10 @@ fn main() {
         let unit_rows = domain::unit_domain_rows(
             &std::fs::read_to_string(format!("{root}/{UNIT_DOMAIN_TTL}")).unwrap_or_default(),
         );
+    let dir_rows = domain::surface_domain_rows(
+        &std::fs::read_to_string(format!("{root}/{SURFACE_DOMAIN_TTL}")).unwrap_or_default(),
+        "chorus:pathPrefix",
+    );
         let read_file = |q: &str| std::fs::read_to_string(std::path::Path::new(&root).join(q)).ok();
         let in_graph: std::collections::HashMap<&str, &InGraph> =
             graph.iter().map(|g| (g.path.as_str(), g)).collect();
@@ -1457,10 +1477,11 @@ fn main() {
             let Some(content) = read_file(path) else { continue };
             let unit = domain::declared_unit(path, &read_file);
             let want = domain::place_in_file(
-                &content,
-                path,
-                unit.as_deref(),
-                &unit_rows,
+                        &content,
+                        path,
+                        unit.as_deref(),
+                        &unit_rows,
+                        &dir_rows,
                 &valid_domains,
                 &card_domain,
                 &read_file,
@@ -1640,6 +1661,10 @@ fn main() {
         let unit_rows = domain::unit_domain_rows(
             &std::fs::read_to_string(format!("{root}/{UNIT_DOMAIN_TTL}")).unwrap_or_default(),
         );
+    let dir_rows = domain::surface_domain_rows(
+        &std::fs::read_to_string(format!("{root}/{SURFACE_DOMAIN_TTL}")).unwrap_or_default(),
+        "chorus:pathPrefix",
+    );
         let gathering_present = std::path::Path::new(GATHERING_ROOT).is_dir();
         let read_file = |q: &str| std::fs::read_to_string(std::path::Path::new(&root).join(q)).ok();
         let (want_pages, want_endpoints, skipped) =
@@ -1655,7 +1680,7 @@ fn main() {
             &page_graph,
             &|r: &pages::PageRow| r.route.clone(),
             &|r: &pages::PageRow| pages::page_domain(&r.route, &valid_domains)
-                .or_else(|| place_row(&root, &r.path, &unit_rows, &valid_domains, &card_domain)),
+                .or_else(|| place_row(&root, &r.path, &unit_rows, &dir_rows, &valid_domains, &card_domain)),
             full,
         );
         let mut endpoint_plan = pages::plan_rows(
@@ -1663,7 +1688,7 @@ fn main() {
             &endpoint_graph,
             &|r: &pages::EndpointRow| format!("{} {}", r.http_method, r.route_path),
             &|r: &pages::EndpointRow| pages::endpoint_domain(&r.route_path, &valid_domains, &route_rows)
-                .or_else(|| place_row(&root, &r.path, &unit_rows, &valid_domains, &card_domain)),
+                .or_else(|| place_row(&root, &r.path, &unit_rows, &dir_rows, &valid_domains, &card_domain)),
             full,
         );
         // #4022 + #4214 — absent must not mean delete, and the shared guard has a
@@ -1723,6 +1748,10 @@ fn main() {
     // #4201 — the authored unit rows, for tagging each code row's domain.
     let unit_rows = domain::unit_domain_rows(
         &std::fs::read_to_string(format!("{root}/{UNIT_DOMAIN_TTL}")).unwrap_or_default(),
+    );
+    let dir_rows = domain::surface_domain_rows(
+        &std::fs::read_to_string(format!("{root}/{SURFACE_DOMAIN_TTL}")).unwrap_or_default(),
+        "chorus:pathPrefix",
     );
     let mut wrote = 0usize;
     let mut failed: Vec<String> = Vec::new();
@@ -1816,6 +1845,7 @@ fn main() {
                         path,
                         unit.as_deref(),
                         &unit_rows,
+                        &dir_rows,
                         &valid_domains,
                         &card_domain,
                         &|q: &str| {
@@ -2050,7 +2080,7 @@ fn main() {
                     match a {
                         pages::RowAction::Post(row) => {
                             let d = pages::page_domain(&row.route, &valid_domains)
-                                .or_else(|| place_row(&root, &row.path, &unit_rows, &valid_domains, &card_domain));
+                                .or_else(|| place_row(&root, &row.path, &unit_rows, &dir_rows, &valid_domains, &card_domain));
                             let body = fields_json(&page_fields(row, d.as_deref()));
                             if !batch_accepts(batch_bytes(&pbatch), body.len(), BATCH_BODY_BUDGET) || pbatch.len() >= 200 {
                                 flush_batch(&mut pbatch, ident, &api, &page_coll, "page", &mut failed, &mut wrote);
@@ -2059,7 +2089,7 @@ fn main() {
                         }
                         pages::RowAction::Replace { name, row } => {
                             let d = pages::page_domain(&row.route, &valid_domains)
-                                .or_else(|| place_row(&root, &row.path, &unit_rows, &valid_domains, &card_domain));
+                                .or_else(|| place_row(&root, &row.path, &unit_rows, &dir_rows, &valid_domains, &card_domain));
                             let existing: &[(String, String)] = page_in_graph
                                 .get(name.as_str())
                                 .map(|g| g.fields.as_slice())
@@ -2088,7 +2118,7 @@ fn main() {
                             // #4222 — an endpoint's own route is the better
                             // signal; the file it sits in is the fallback.
                             let d = pages::endpoint_domain(&row.route_path, &valid_domains, &route_rows)
-                                .or_else(|| place_row(&root, &row.path, &unit_rows, &valid_domains, &card_domain));
+                                .or_else(|| place_row(&root, &row.path, &unit_rows, &dir_rows, &valid_domains, &card_domain));
                             let body = fields_json(&endpoint_fields(row, d.as_deref()));
                             if !batch_accepts(batch_bytes(&ebatch), body.len(), BATCH_BODY_BUDGET) || ebatch.len() >= 200 {
                                 flush_batch(&mut ebatch, ident, &api, &endpoint_coll, "endpoint", &mut failed, &mut wrote);
@@ -2097,7 +2127,7 @@ fn main() {
                         }
                         pages::RowAction::Replace { name, row } => {
                             let d = pages::endpoint_domain(&row.route_path, &valid_domains, &route_rows)
-                                .or_else(|| place_row(&root, &row.path, &unit_rows, &valid_domains, &card_domain));
+                                .or_else(|| place_row(&root, &row.path, &unit_rows, &dir_rows, &valid_domains, &card_domain));
                             let existing: &[(String, String)] = endpoint_in_graph
                                 .get(name.as_str())
                                 .map(|g| g.fields.as_slice())

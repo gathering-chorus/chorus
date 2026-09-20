@@ -745,3 +745,414 @@ chorus:logdomain-vikunja-log a chorus:UnitDomainMapping ;
     rdfs:label "vikunja.log → cards" ;
     chorus:logFileName "vikunja.log" ;
     chorus:hasDomain chorus:cards .
+
+# #4222 — AUTHORED directory → domain rows, the LAST rule consulted.
+#
+# Read only after every content rule and the file's own name have stayed silent,
+# and never before them: a file that says what it is outranks where it sits. These
+# 23 prefixes cover the 1,224 files that named nothing — an api test, a launchagent
+# plist, a screenshot directory. Each line is one judgement about what a package is
+# for, made once and reviewable, not a rule that guesses.
+#
+# Longest prefix wins, so platform/services/chorus-oidc beats platform/services.
+
+chorus:dirdomain-platform-api-tests a chorus:UnitDomainMapping ;
+    rdfs:label "platform/api/tests/ → services" ;
+    chorus:pathPrefix "platform/api/tests/" ;
+    chorus:hasDomain chorus:services .
+
+chorus:dirdomain-platform-api-src a chorus:UnitDomainMapping ;
+    rdfs:label "platform/api/src/ → services" ;
+    chorus:pathPrefix "platform/api/src/" ;
+    chorus:hasDomain chorus:services .
+
+chorus:dirdomain-platform-api-public a chorus:UnitDomainMapping ;
+    rdfs:label "platform/api/public/ → code" ;
+    chorus:pathPrefix "platform/api/public/" ;
+    chorus:hasDomain chorus:code .
+
+chorus:dirdomain-platform-api-views a chorus:UnitDomainMapping ;
+    rdfs:label "platform/api/views/ → code" ;
+    chorus:pathPrefix "platform/api/views/" ;
+    chorus:hasDomain chorus:code .
+
+chorus:dirdomain-building-products-convergence a chorus:UnitDomainMapping ;
+    rdfs:label "building/products/convergence/ → integrations" ;
+    chorus:pathPrefix "building/products/convergence/" ;
+    chorus:hasDomain chorus:integrations .
+
+chorus:dirdomain-designing-docs a chorus:UnitDomainMapping ;
+    rdfs:label "designing/docs/ → knowledge" ;
+    chorus:pathPrefix "designing/docs/" ;
+    chorus:hasDomain chorus:knowledge .
+
+chorus:dirdomain-platform-backups a chorus:UnitDomainMapping ;
+    rdfs:label "platform/backups/ → infrastructure" ;
+    chorus:pathPrefix "platform/backups/" ;
+    chorus:hasDomain chorus:infrastructure .
+
+chorus:dirdomain-roles-wren-claude a chorus:UnitDomainMapping ;
+    rdfs:label "roles/wren/.claude/ → roles" ;
+    chorus:pathPrefix "roles/wren/.claude/" ;
+    chorus:hasDomain chorus:roles .
+
+chorus:dirdomain-roles-kade-claude a chorus:UnitDomainMapping ;
+    rdfs:label "roles/kade/.claude/ → roles" ;
+    chorus:pathPrefix "roles/kade/.claude/" ;
+    chorus:hasDomain chorus:roles .
+
+chorus:dirdomain-roles-silas-claude a chorus:UnitDomainMapping ;
+    rdfs:label "roles/silas/.claude/ → roles" ;
+    chorus:pathPrefix "roles/silas/.claude/" ;
+    chorus:hasDomain chorus:roles .
+
+chorus:dirdomain-roles-silas-chorus a chorus:UnitDomainMapping ;
+    rdfs:label "roles/silas/chorus/ → roles" ;
+    chorus:pathPrefix "roles/silas/chorus/" ;
+    chorus:hasDomain chorus:roles .
+
+chorus:dirdomain-platform-workflows a chorus:UnitDomainMapping ;
+    rdfs:label "platform/workflows/ → cicd" ;
+    chorus:pathPrefix "platform/workflows/" ;
+    chorus:hasDomain chorus:cicd .
+
+chorus:dirdomain-platform-workflow-engine a chorus:UnitDomainMapping ;
+    rdfs:label "platform/workflow-engine/ → cicd" ;
+    chorus:pathPrefix "platform/workflow-engine/" ;
+    chorus:hasDomain chorus:cicd .
+
+chorus:dirdomain-platform-scripts-launchagents-canonical a chorus:UnitDomainMapping ;
+    rdfs:label "platform/scripts/launchagents-canonical/ → infrastructure" ;
+    chorus:pathPrefix "platform/scripts/launchagents-canonical/" ;
+    chorus:hasDomain chorus:infrastructure .
+
+chorus:dirdomain-platform-tests-fixtures a chorus:UnitDomainMapping ;
+    rdfs:label "platform/tests/fixtures/ → tests" ;
+    chorus:pathPrefix "platform/tests/fixtures/" ;
+    chorus:hasDomain chorus:tests .
+
+chorus:dirdomain-platform-tests-features a chorus:UnitDomainMapping ;
+    rdfs:label "platform/tests/features/ → tests" ;
+    chorus:pathPrefix "platform/tests/features/" ;
+    chorus:hasDomain chorus:tests .
+
+chorus:dirdomain-platform-scripts-tests a chorus:UnitDomainMapping ;
+    rdfs:label "platform/scripts/tests/ → tests" ;
+    chorus:pathPrefix "platform/scripts/tests/" ;
+    chorus:hasDomain chorus:tests .
+
+chorus:dirdomain-platform-apps a chorus:UnitDomainMapping ;
+    rdfs:label "platform/apps/ → products" ;
+    chorus:pathPrefix "platform/apps/" ;
+    chorus:hasDomain chorus:products .
+
+chorus:dirdomain-platform-security a chorus:UnitDomainMapping ;
+    rdfs:label "platform/security/ → security" ;
+    chorus:pathPrefix "platform/security/" ;
+    chorus:hasDomain chorus:security .
+
+chorus:dirdomain-platform-services-chorus-crawl a chorus:UnitDomainMapping ;
+    rdfs:label "platform/services/chorus-crawl/ → code" ;
+    chorus:pathPrefix "platform/services/chorus-crawl/" ;
+    chorus:hasDomain chorus:code .
+
+chorus:dirdomain-platform-services-properties-resolver a chorus:UnitDomainMapping ;
+    rdfs:label "platform/services/properties-resolver/ → properties" ;
+    chorus:pathPrefix "platform/services/properties-resolver/" ;
+    chorus:hasDomain chorus:properties .
+
+chorus:dirdomain-platform-services-chorus-oidc a chorus:UnitDomainMapping ;
+    rdfs:label "platform/services/chorus-oidc/ → identity" ;
+    chorus:pathPrefix "platform/services/chorus-oidc/" ;
+    chorus:hasDomain chorus:identity .
+
+chorus:dirdomain-platform-services-demo-fitness a chorus:UnitDomainMapping ;
+    rdfs:label "platform/services/demo-fitness/ → tests" ;
+    chorus:pathPrefix "platform/services/demo-fitness/" ;
+    chorus:hasDomain chorus:tests .
+
+chorus:dirdomain-proving-screenshots a chorus:UnitDomainMapping ;
+    rdfs:label "proving/screenshots/ → tests" ;
+    chorus:pathPrefix "proving/screenshots/" ;
+    chorus:hasDomain chorus:tests .
+
+chorus:dirdomain-platform-scripts a chorus:UnitDomainMapping ;
+    rdfs:label "platform/scripts/ → toolchain" ;
+    chorus:pathPrefix "platform/scripts/" ;
+    chorus:hasDomain chorus:toolchain .
+
+chorus:dirdomain-platform-tests a chorus:UnitDomainMapping ;
+    rdfs:label "platform/tests/ → tests" ;
+    chorus:pathPrefix "platform/tests/" ;
+    chorus:hasDomain chorus:tests .
+
+chorus:dirdomain-platform-skills a chorus:UnitDomainMapping ;
+    rdfs:label "platform/skills/ → skills" ;
+    chorus:pathPrefix "platform/skills/" ;
+    chorus:hasDomain chorus:skills .
+
+chorus:dirdomain-roles-wren a chorus:UnitDomainMapping ;
+    rdfs:label "roles/wren/ → roles" ;
+    chorus:pathPrefix "roles/wren/" ;
+    chorus:hasDomain chorus:roles .
+
+chorus:dirdomain-config-launchagents a chorus:UnitDomainMapping ;
+    rdfs:label "config/launchagents/ → infrastructure" ;
+    chorus:pathPrefix "config/launchagents/" ;
+    chorus:hasDomain chorus:infrastructure .
+
+chorus:dirdomain-docs-diagrams a chorus:UnitDomainMapping ;
+    rdfs:label "docs/diagrams/ → knowledge" ;
+    chorus:pathPrefix "docs/diagrams/" ;
+    chorus:hasDomain chorus:knowledge .
+
+chorus:dirdomain-platform-chorus-sdk a chorus:UnitDomainMapping ;
+    rdfs:label "platform/chorus-sdk/ → toolchain" ;
+    chorus:pathPrefix "platform/chorus-sdk/" ;
+    chorus:hasDomain chorus:toolchain .
+
+chorus:dirdomain-platform-config a chorus:UnitDomainMapping ;
+    rdfs:label "platform/config/ → infrastructure" ;
+    chorus:pathPrefix "platform/config/" ;
+    chorus:hasDomain chorus:infrastructure .
+
+chorus:dirdomain-llug a chorus:UnitDomainMapping ;
+    rdfs:label "llug/ → products" ;
+    chorus:pathPrefix "llug/" ;
+    chorus:hasDomain chorus:products .
+
+chorus:dirdomain-designing-reference a chorus:UnitDomainMapping ;
+    rdfs:label "designing/reference/ → knowledge" ;
+    chorus:pathPrefix "designing/reference/" ;
+    chorus:hasDomain chorus:knowledge .
+
+chorus:dirdomain-directing-clearing a chorus:UnitDomainMapping ;
+    rdfs:label "directing/clearing/ → messages" ;
+    chorus:pathPrefix "directing/clearing/" ;
+    chorus:hasDomain chorus:messages .
+
+chorus:dirdomain-github-workflows a chorus:UnitDomainMapping ;
+    rdfs:label ".github/workflows/ → cicd" ;
+    chorus:pathPrefix ".github/workflows/" ;
+    chorus:hasDomain chorus:cicd .
+
+chorus:dirdomain-platform-spikes a chorus:UnitDomainMapping ;
+    rdfs:label "platform/spikes/ → code" ;
+    chorus:pathPrefix "platform/spikes/" ;
+    chorus:hasDomain chorus:code .
+
+chorus:dirdomain-platform-state a chorus:UnitDomainMapping ;
+    rdfs:label "platform/state/ → infrastructure" ;
+    chorus:pathPrefix "platform/state/" ;
+    chorus:hasDomain chorus:infrastructure .
+
+chorus:dirdomain-platform-services-shared a chorus:UnitDomainMapping ;
+    rdfs:label "platform/services/shared/ → code" ;
+    chorus:pathPrefix "platform/services/shared/" ;
+    chorus:hasDomain chorus:code .
+
+chorus:dirdomain-platform-services-pulse-gather a chorus:UnitDomainMapping ;
+    rdfs:label "platform/services/pulse-gather/ → spine" ;
+    chorus:pathPrefix "platform/services/pulse-gather/" ;
+    chorus:hasDomain chorus:spine .
+
+chorus:dirdomain-roles-silas a chorus:UnitDomainMapping ;
+    rdfs:label "roles/silas/ → roles" ;
+    chorus:pathPrefix "roles/silas/" ;
+    chorus:hasDomain chorus:roles .
+
+chorus:dirdomain-roles-kade a chorus:UnitDomainMapping ;
+    rdfs:label "roles/kade/ → roles" ;
+    chorus:pathPrefix "roles/kade/" ;
+    chorus:hasDomain chorus:roles .
+
+chorus:dirdomain-building a chorus:UnitDomainMapping ;
+    rdfs:label "building/ → products" ;
+    chorus:pathPrefix "building/" ;
+    chorus:hasDomain chorus:products .
+
+chorus:dirdomain-platform-api a chorus:UnitDomainMapping ;
+    rdfs:label "platform/api/ → services" ;
+    chorus:pathPrefix "platform/api/" ;
+    chorus:hasDomain chorus:services .
+
+chorus:dirdomain-skills a chorus:UnitDomainMapping ;
+    rdfs:label "skills/ → skills" ;
+    chorus:pathPrefix "skills/" ;
+    chorus:hasDomain chorus:skills .
+
+chorus:dirdomain-knowledge a chorus:UnitDomainMapping ;
+    rdfs:label "knowledge/ → knowledge" ;
+    chorus:pathPrefix "knowledge/" ;
+    chorus:hasDomain chorus:knowledge .
+
+chorus:dirdomain-product-manager a chorus:UnitDomainMapping ;
+    rdfs:label "product-manager/ → roles" ;
+    chorus:pathPrefix "product-manager/" ;
+    chorus:hasDomain chorus:roles .
+
+
+chorus:dirdomain-data-athena a chorus:UnitDomainMapping ;
+    rdfs:label "data/athena/ → knowledge" ;
+    chorus:pathPrefix "data/athena/" ;
+    chorus:hasDomain chorus:knowledge .
+
+chorus:dirdomain-directing-vikunja a chorus:UnitDomainMapping ;
+    rdfs:label "directing/vikunja/ → cards" ;
+    chorus:pathPrefix "directing/vikunja/" ;
+    chorus:hasDomain chorus:cards .
+
+chorus:dirdomain-platform-assets a chorus:UnitDomainMapping ;
+    rdfs:label "platform/assets/ → identity" ;
+    chorus:pathPrefix "platform/assets/" ;
+    chorus:hasDomain chorus:identity .
+
+chorus:dirdomain-platform-launchagents a chorus:UnitDomainMapping ;
+    rdfs:label "platform/launchagents/ → infrastructure" ;
+    chorus:pathPrefix "platform/launchagents/" ;
+    chorus:hasDomain chorus:infrastructure .
+
+chorus:dirdomain-platform-launchd a chorus:UnitDomainMapping ;
+    rdfs:label "platform/launchd/ → infrastructure" ;
+    chorus:pathPrefix "platform/launchd/" ;
+    chorus:hasDomain chorus:infrastructure .
+
+chorus:dirdomain-platform-hooks a chorus:UnitDomainMapping ;
+    rdfs:label "platform/hooks/ → spine" ;
+    chorus:pathPrefix "platform/hooks/" ;
+    chorus:hasDomain chorus:spine .
+
+chorus:dirdomain-platform-logs a chorus:UnitDomainMapping ;
+    rdfs:label "platform/logs/ → logs" ;
+    chorus:pathPrefix "platform/logs/" ;
+    chorus:hasDomain chorus:logs .
+
+chorus:dirdomain-platform-pulse a chorus:UnitDomainMapping ;
+    rdfs:label "platform/pulse/ → messages" ;
+    chorus:pathPrefix "platform/pulse/" ;
+    chorus:hasDomain chorus:messages .
+
+chorus:dirdomain-platform-seeds a chorus:UnitDomainMapping ;
+    rdfs:label "platform/seeds/ → knowledge" ;
+    chorus:pathPrefix "platform/seeds/" ;
+    chorus:hasDomain chorus:knowledge .
+
+chorus:dirdomain-platform-services a chorus:UnitDomainMapping ;
+    rdfs:label "platform/services/ → code" ;
+    chorus:pathPrefix "platform/services/" ;
+    chorus:hasDomain chorus:code .
+
+chorus:dirdomain-github a chorus:UnitDomainMapping ;
+    rdfs:label ".github/ → cicd" ;
+    chorus:pathPrefix ".github/" ;
+    chorus:hasDomain chorus:cicd .
+
+chorus:dirdomain-platform-runbook-md a chorus:UnitDomainMapping ;
+    rdfs:label "platform/RUNBOOK.md → infrastructure" ;
+    chorus:pathPrefix "platform/RUNBOOK.md" ;
+    chorus:hasDomain chorus:infrastructure .
+
+chorus:dirdomain-coverage-denominator-baseline a chorus:UnitDomainMapping ;
+    rdfs:label ".coverage-denominator-baseline → tests" ;
+    chorus:pathPrefix ".coverage-denominator-baseline" ;
+    chorus:hasDomain chorus:tests .
+
+chorus:dirdomain-eslint-baseline-json a chorus:UnitDomainMapping ;
+    rdfs:label ".eslint-baseline.json → code" ;
+    chorus:pathPrefix ".eslint-baseline.json" ;
+    chorus:hasDomain chorus:code .
+
+chorus:dirdomain-gitattributes a chorus:UnitDomainMapping ;
+    rdfs:label ".gitattributes → toolchain" ;
+    chorus:pathPrefix ".gitattributes" ;
+    chorus:hasDomain chorus:toolchain .
+
+chorus:dirdomain-gitignore a chorus:UnitDomainMapping ;
+    rdfs:label ".gitignore → toolchain" ;
+    chorus:pathPrefix ".gitignore" ;
+    chorus:hasDomain chorus:toolchain .
+
+chorus:dirdomain-gitleaks-baseline-json a chorus:UnitDomainMapping ;
+    rdfs:label ".gitleaks-baseline.json → security" ;
+    chorus:pathPrefix ".gitleaks-baseline.json" ;
+    chorus:hasDomain chorus:security .
+
+chorus:dirdomain-mcp-json a chorus:UnitDomainMapping ;
+    rdfs:label ".mcp.json → toolchain" ;
+    chorus:pathPrefix ".mcp.json" ;
+    chorus:hasDomain chorus:toolchain .
+
+chorus:dirdomain-3830-roleless-refusal-md a chorus:UnitDomainMapping ;
+    rdfs:label "3830-roleless-refusal.md → cards" ;
+    chorus:pathPrefix "3830-roleless-refusal.md" ;
+    chorus:hasDomain chorus:cards .
+
+chorus:dirdomain-chain-builder-spec-md a chorus:UnitDomainMapping ;
+    rdfs:label "CHAIN-BUILDER-SPEC.md → knowledge" ;
+    chorus:pathPrefix "CHAIN-BUILDER-SPEC.md" ;
+    chorus:hasDomain chorus:knowledge .
+
+chorus:dirdomain-claude-md a chorus:UnitDomainMapping ;
+    rdfs:label "CLAUDE.md → practices" ;
+    chorus:pathPrefix "CLAUDE.md" ;
+    chorus:hasDomain chorus:practices .
+
+chorus:dirdomain-session-checkpoint-md a chorus:UnitDomainMapping ;
+    rdfs:label "SESSION-CHECKPOINT.md → roles" ;
+    chorus:pathPrefix "SESSION-CHECKPOINT.md" ;
+    chorus:hasDomain chorus:roles .
+
+chorus:dirdomain-team-protocol-md a chorus:UnitDomainMapping ;
+    rdfs:label "TEAM_PROTOCOL.md → practices" ;
+    chorus:pathPrefix "TEAM_PROTOCOL.md" ;
+    chorus:hasDomain chorus:practices .
+
+chorus:dirdomain-activity-md a chorus:UnitDomainMapping ;
+    rdfs:label "activity.md → spine" ;
+    chorus:pathPrefix "activity.md" ;
+    chorus:hasDomain chorus:spine .
+
+chorus:dirdomain-cclsp-json a chorus:UnitDomainMapping ;
+    rdfs:label "cclsp.json → toolchain" ;
+    chorus:pathPrefix "cclsp.json" ;
+    chorus:hasDomain chorus:toolchain .
+
+chorus:dirdomain-coverage-floors-yml a chorus:UnitDomainMapping ;
+    rdfs:label "coverage-floors.yml → tests" ;
+    chorus:pathPrefix "coverage-floors.yml" ;
+    chorus:hasDomain chorus:tests .
+
+chorus:dirdomain-jeff-preferences-json a chorus:UnitDomainMapping ;
+    rdfs:label "jeff-preferences.json → roles" ;
+    chorus:pathPrefix "jeff-preferences.json" ;
+    chorus:hasDomain chorus:roles .
+
+chorus:dirdomain-package-json a chorus:UnitDomainMapping ;
+    rdfs:label "package.json → toolchain" ;
+    chorus:pathPrefix "package.json" ;
+    chorus:hasDomain chorus:toolchain .
+
+chorus:dirdomain-package-lock-json a chorus:UnitDomainMapping ;
+    rdfs:label "package-lock.json → toolchain" ;
+    chorus:pathPrefix "package-lock.json" ;
+    chorus:hasDomain chorus:toolchain .
+
+chorus:dirdomain-playwright-config-cjs a chorus:UnitDomainMapping ;
+    rdfs:label "playwright.config.cjs → tests" ;
+    chorus:pathPrefix "playwright.config.cjs" ;
+    chorus:hasDomain chorus:tests .
+
+chorus:dirdomain-test-triage-md a chorus:UnitDomainMapping ;
+    rdfs:label "test-triage.md → tests" ;
+    chorus:pathPrefix "test-triage.md" ;
+    chorus:hasDomain chorus:tests .
+
+chorus:dirdomain-config-reply-hash-fixtures a chorus:UnitDomainMapping ;
+    rdfs:label "config/reply-hash-fixtures.json → messages" ;
+    chorus:pathPrefix "config/reply-hash-fixtures.json" ;
+    chorus:hasDomain chorus:messages .
+
+chorus:dirdomain-config-share-principals a chorus:UnitDomainMapping ;
+    rdfs:label "config/share-principals.txt → identity" ;
+    chorus:pathPrefix "config/share-principals.txt" ;
+    chorus:hasDomain chorus:identity .
