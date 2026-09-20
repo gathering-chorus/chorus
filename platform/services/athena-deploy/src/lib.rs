@@ -99,6 +99,13 @@ pub fn model_set(root: &str, ttl_override: Option<String>) -> Vec<String> {
     }
 }
 
+/// Does this run deploy the eight domain sets? The bash gates every one of
+/// them behind `[ -z "${TTL:-}" ]`: a single-file partial run deploys ONLY the
+/// file it was handed, and must not quietly re-stage thirteen others. Pure.
+pub fn sets_run(ttl_override: Option<&str>) -> bool {
+    !matches!(ttl_override.map(str::trim), Some(t) if !t.is_empty())
+}
+
 /// One TTL set staged into one domain graph. #4229 — the eight copies of this
 /// leg in athena-deploy-model.sh become eight rows of data and one
 /// implementation. Four of those copies were one verify and two refusals
@@ -293,9 +300,46 @@ pub fn run_athena_deploy() -> Result<String, String> {
 
     emit_spine(&chorus_log, "athena.deployed", &role,
         &[("graph", ontology.clone()), ("members", set.len().to_string())]);
+    // #3561 compatibility — everything watching the deploy reads the bash's
+    // names. Both pairs are emitted until every reader is repointed; dropping
+    // one at the swap is how a dashboard goes blind without anyone noticing.
+    emit_spine(&chorus_log, "model.deployed", &role,
+        &[("graph", ontology.clone()), ("members", set.len().to_string())]);
+
+    // #4229 — then the eight domain sets, from the manifest. A TTL= partial
+    // run deploys ONLY what it was given, the same gate the bash applies.
+    let mut deployed: Vec<String> = Vec::new();
+    if sets_run(std::env::var("TTL").ok().as_deref()) {
+        let manifest_path = env_or(
+            "DOMAIN_SET_MANIFEST",
+            &format!("{root}/platform/config/domain-set-manifest.txt"),
+        );
+        // A missing manifest is a REFUSAL. Treating it as "no sets" is how a
+        // run deploys 2 files where it was asked for 41 and reports success.
+        let text = std::fs::read_to_string(&manifest_path)
+            .map_err(|e| fail(&format!("domain-set-manifest-unreadable:{manifest_path}:{e}")))?;
+        let sets = parse_domain_sets(&text).map_err(|e| fail(&e))?;
+        let ctx = StoreCtx {
+            gsp: gsp.clone(),
+            query: query.clone(),
+            update: update.clone(),
+            chorus_log: chorus_log.clone(),
+            role: role.clone(),
+        };
+        for ds in &sets {
+            deployed.push(deploy_domain_set(ds, &root, &ctx)?);
+        }
+    }
+
     Ok(format!(
-        "athena-deploy: deployed {} model file(s) -> <{}> (additive merge, siblings preserved)",
-        set.len(), ontology
+        "athena-deploy: deployed {} model file(s) -> <{}> (additive merge, siblings preserved){}",
+        set.len(),
+        ontology,
+        if deployed.is_empty() {
+            String::new()
+        } else {
+            format!("\n  {}", deployed.join("\n  "))
+        }
     ))
 }
 

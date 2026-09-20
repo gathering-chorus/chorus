@@ -119,3 +119,21 @@ fn negative_proof_the_verify_can_tell_the_two_states_apart() {
     // stops holding, the verify has gone hollow again.
     assert_ne!(verify_missing("n\n0\n"), verify_missing("n\n41\n"));
 }
+
+// ---- the TTL= partial gate ----------------------------------------------
+use athena_deploy::sets_run;
+
+#[test]
+fn a_full_run_deploys_the_domain_sets() {
+    assert!(sets_run(None));
+    assert!(sets_run(Some("")));
+    assert!(sets_run(Some("   ")));
+}
+
+#[test]
+fn negative_proof_a_single_file_run_does_not_restage_the_other_thirteen() {
+    // The bash gates all eight sets behind [ -z "${TTL:-}" ]. Without this a
+    // one-file partial — the recovery path, and the way I deployed a single
+    // shape by hand this morning — would also re-stage every other set.
+    assert!(!sets_run(Some("/x/security-model-3618.ttl")));
+}
