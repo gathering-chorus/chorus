@@ -26,6 +26,7 @@ import urllib.request
 
 DOOR = os.environ.get("CHORUS_OWL_API", "http://localhost:3360")
 STATE = os.path.expanduser("~/.chorus/tagged-report.json")
+ROOT = os.environ.get("CHORUS_ROOT", os.path.expanduser("~/CascadeProjects/chorus"))
 HOME = "urn:chorus:domains:code"
 
 TYPES = [
@@ -42,7 +43,11 @@ def fetch(route):
     which is NOT zero, and must never read as a clean line."""
     with urllib.request.urlopen(f"{DOOR}/{route}?limit=1000000") as r:
         body = json.load(r)
-    return body.get("data") or [], body.get("servedFrom", "")
+    if "servedFrom" not in body:
+        # A door that does not say where it read is UNMEASURED, not clean.
+        # Defaulting to "" made MOVE silently zero and hid every misplacement.
+        return body.get("data") or [], None
+    return body.get("data") or [], body["servedFrom"]
 
 
 def prior():
@@ -66,6 +71,7 @@ def main():
     now = {}
     outstanding = 0
     rows = []
+    named = {}
 
     for route, edge, home in TYPES:
         try:
@@ -76,8 +82,17 @@ def main():
             continue
         total = len(data)
         feed = sum(1 for row in data if not row.get(edge))
-        move = 0 if served in ("", home) else total
-        weed = 0
+        if served is None:
+            print(f"UNMEASURED  {route:16} the door did not say which graph it served")
+            outstanding += 1
+            continue
+        move = 0 if served == home else total
+        weed = sum(
+            1
+            for row in data
+            if row.get("filePath")
+            and not os.path.exists(os.path.join(ROOT, row["filePath"]))
+        )
         now[route] = {"total": total, "feed": feed, "move": move, "weed": weed}
         p = was.get(route, {})
         acts = []
@@ -87,9 +102,25 @@ def main():
                 f"(served from {served.rsplit(':', 1)[1]}){arrow(move, p.get('move'))}"
             )
         if feed:
-            acts.append(f"FEED {feed} add correct domain tagging{arrow(feed, p.get('feed'))}")
+            acts.append(
+                f"FEED {feed} add correct domain tagging{arrow(feed, p.get('feed'))}"
+            )
+            named["FEED " + route] = [
+                r.get("filePath") or r.get("name", "?")
+                for r in data
+                if not r.get(edge)
+            ][:5]
         if weed:
-            acts.append(f"WEED {weed} delete, nothing in the tree behind them{arrow(weed, p.get('weed'))}")
+            acts.append(
+                f"WEED {weed} delete, nothing in the tree behind them"
+                f"{arrow(weed, p.get('weed'))}"
+            )
+            named["WEED " + route] = [
+                r["filePath"]
+                for r in data
+                if r.get("filePath")
+                and not os.path.exists(os.path.join(ROOT, r["filePath"]))
+            ][:5]
         rows.append(f"{route:16} {total:6}  " + ("  ·  ".join(acts) if acts else "clean"))
         outstanding += move + feed + weed
 
@@ -97,6 +128,9 @@ def main():
     for r in rows:
         print(r)
     print(f"{'TOTAL':16} {'':6}  outstanding {outstanding}")
+    # A count is not actionable. Name rows so the next person can start.
+    for label, examples in named.items():
+        print(f"  {label}: " + ", ".join(examples))
 
     try:
         os.makedirs(os.path.dirname(STATE), exist_ok=True)
