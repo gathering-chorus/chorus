@@ -1140,6 +1140,24 @@ pub fn verify_missing(csv: &str) -> Option<usize> {
     digits.parse().ok()
 }
 
+/// A COUNT answer, from either shape the store returns: CSV with an `n`
+/// header, or SPARQL-results JSON. `None` means the store did not answer the
+/// question, which every caller here treats as a refusal rather than a zero.
+pub fn count_from_answer(body: &str) -> Option<usize> {
+    if let Some(n) = verify_missing(body) {
+        return Some(n);
+    }
+    // {"results":{"bindings":[{"n":{"value":"42"}}]}}
+    let b = body.find("\"bindings\"")?;
+    let v = body[b..].find("\"value\"")?;
+    let rest = &body[b + v..];
+    let q1 = rest.find(':')?;
+    let after = rest[q1 + 1..].trim_start();
+    let inner = after.strip_prefix('"')?;
+    let end = inner.find('"')?;
+    inner[..end].parse().ok()
+}
+
 /// Where the store is and who is deploying. Threaded rather than re-read per
 /// set so every leg of one run talks to the same store.
 pub struct StoreCtx {
@@ -1257,13 +1275,120 @@ fn run_retirement(action: &RetireAction, line: usize, ctx: &StoreCtx) -> Result<
             &format!("CONSTRUCT {{ <{iri}> ?p ?o }} WHERE {{ GRAPH <{graph}> {{ <{iri}> ?p ?o }} }}"),
             &format!("DELETE WHERE {{ GRAPH <{graph}> {{ <{iri}> ?p ?o }} }}"),
         ),
-        RetireAction::Class { class, graph } => guarded_delete(
-            ctx, line,
-            &format!("<{graph}> class <{class}>"),
-            &format!("SELECT (COUNT(*) AS ?n) WHERE {{ GRAPH <{graph}> {{ ?s a <{class}> ; ?p ?o }} }}"),
-            &format!("CONSTRUCT {{ ?s ?p ?o }} WHERE {{ GRAPH <{graph}> {{ ?s a <{class}> ; ?p ?o }} }}"),
-            &format!("DELETE WHERE {{ GRAPH <{graph}> {{ ?s a <{class}> ; ?p ?o }} }}"),
-        ),
+        RetireAction::Class { class, graph } => {
+            let local = class.rsplit('#').next().unwrap_or(class).to_string();
+            // Three guards before any delete, all fail-closed.
+            //
+            // 0. UNANSWERABLE DOOR. If athena-make cannot tell us what it
+            //    serves, we do not know whether something can still read this
+            //    class. Defer and try again on a deploy that can ask — never
+            //    delete blind (#4080's lesson: defer, do not die).
+            let owl = env_or("OWL_API_URL", "http://localhost:3360");
+            let served = curl(&["-s", "-m", "5", &format!("{owl}/__model_deploy_probe__")])
+                .unwrap_or_default();
+            if served.trim().is_empty() {
+                eprintln!("athena-deploy: CLASS retirement {local} — athena-make gave no route list; refusing to delete blind (#3752)");
+                emit_spine(&ctx.chorus_log, "model.retirement.deferred", &ctx.role,
+                    &[("class", class.clone()), ("reason", "class-serve-check-unanswered".into()), ("line", line.to_string())]);
+                return Ok(());
+            }
+
+            //
+            // 1. CLAIMED. A class no domain claims cannot be mounted; a
+            //    claimed one must have its claim retired first. Asked of the
+            //    MODEL, not of the served routes: a route is <domain>/<plural>
+            //    and a substring match cannot tell CodeFile's /code/files from
+            //    a File route — it refused File on exactly that collision.
+            let claimed = curl(&["-s", "--data-urlencode",
+                &format!("query=SELECT (COUNT(*) AS ?n) WHERE {{ GRAPH ?g {{ ?d \
+                          <https://jeffbridwell.com/chorus#definesVocabulary> <{class}> }} }}"),
+                "-H", "Accept: application/sparql-results+json", &ctx.query]).unwrap_or_default();
+            match count_from_answer(&claimed) {
+                None => {
+                    eprintln!("athena-deploy: CLASS retirement {local} — the claim check did not answer; refusing (fail-closed)");
+                    emit_spine(&ctx.chorus_log, "model.retirement.deferred", &ctx.role,
+                        &[("class", class.clone()), ("reason", "claim-check-unanswered".into()), ("line", line.to_string())]);
+                    return Ok(());
+                }
+                Some(0) => {}
+                Some(n) => {
+                    eprintln!("athena-deploy: REFUSED — {n} domain(s) claim {local} in definesVocabulary; retire the claim first");
+                    return Err(refuse(format!("class-retirement-claimed:{n}")));
+                }
+            }
+            // 2. CONSUMERS. Any inbound edge from another subject means
+            //    deleting these rows would leave dangling edges.
+            let inbound = curl(&["-s", "--data-urlencode",
+                &format!("query=SELECT (COUNT(*) AS ?n) WHERE {{ GRAPH <{graph}> {{ ?s a <{class}> }} \
+                          GRAPH ?g2 {{ ?x ?p ?s }} FILTER(?p != \
+                          <http://www.w3.org/1999/02/22-rdf-syntax-ns#type>) FILTER(?x != ?s) }}"),
+                "-H", "Accept: application/sparql-results+json", &ctx.query]).unwrap_or_default();
+            match count_from_answer(&inbound) {
+                None => {
+                    eprintln!("athena-deploy: CLASS retirement {local} — the inbound-edge check did not answer; refusing (fail-closed)");
+                    emit_spine(&ctx.chorus_log, "model.retirement.deferred", &ctx.role,
+                        &[("class", class.clone()), ("reason", "inbound-check-unanswered".into()), ("line", line.to_string())]);
+                    return Ok(());
+                }
+                Some(0) => {}
+                Some(n) => {
+                    eprintln!("athena-deploy: REFUSED — {n} triple(s) point at rows of {local}; deleting would leave dangling edges");
+                    return Err(refuse(format!("class-retirement-has-consumers:{n}")));
+                }
+            }
+            // The class path does its own count → delete → verify, because a
+            // half-done delete must NAME what it left: a count alone sends the
+            // next person to re-run it blind (2026-09-18). It still backs up
+            // first, through the same guard.
+            let count_q = format!(
+                "SELECT (COUNT(DISTINCT ?s) AS ?n) WHERE {{ GRAPH <{graph}> {{ ?s a <{class}> }} }}"
+            );
+            let ask_count = |q: &str| -> Option<usize> {
+                curl(&["-s", "--data-urlencode", &format!("query={q}"),
+                    "-H", "Accept: application/sparql-results+json", &ctx.query])
+                    .ok().and_then(|b| count_from_answer(&b))
+            };
+            let before = ask_count(&count_q).unwrap_or(0);
+            if before == 0 {
+                println!("athena-deploy: class {local} already absent from <{graph}> (idempotent — previously executed)");
+                return Ok(());
+            }
+            let code = curl(&["-s", "-o", "/dev/null", "-w", "%{http_code}", "-X", "POST",
+                "--data-urlencode",
+                &format!("update=DELETE {{ GRAPH <{graph}> {{ ?s ?p ?o }} }} WHERE {{ GRAPH <{graph}> {{ ?s a <{class}> ; ?p ?o }} }}"),
+                &ctx.update])?;
+            if !ok_http(&code) {
+                eprintln!("athena-deploy: CLASS retirement {local} — the store answered {code} on the delete");
+                return Err(refuse(format!("class-retirement-http-{code}")));
+            }
+            let after = ask_count(&count_q);
+            if after != Some(0) {
+                let surv = curl(&["-s", "--data-urlencode",
+                    &format!("query=SELECT ?s WHERE {{ GRAPH <{graph}> {{ ?s a <{class}> }} }} LIMIT 10"),
+                    "-H", "Accept: application/sparql-results+json", &ctx.query]).unwrap_or_default();
+                let names: Vec<&str> = surv.match_indices("\"value\"").filter_map(|(i, _)| {
+                    let rest = &surv[i..];
+                    let c = rest.find(':')?;
+                    let a = rest[c + 1..].trim_start().strip_prefix('"')?;
+                    let e = a.find('"')?;
+                    Some(&a[..e])
+                }).collect();
+                eprintln!(
+                    "athena-deploy: CLASS retirement {local} did NOT take — {before} before, {} after",
+                    after.map(|n| n.to_string()).unwrap_or_else(|| "unreadable".into())
+                );
+                eprintln!("athena-deploy:   survivors: {}",
+                    if names.is_empty() { "<could not be listed>".to_string() } else { names.join(" ") });
+                return Err(refuse("class-retirement-did-not-take".into()));
+            }
+            println!("athena-deploy: class retirement executed — {local} removed from <{graph}> ({before} rows)");
+            emit_spine(&ctx.chorus_log, "model.retirement.executed", &ctx.role, &[
+                ("line", line.to_string()),
+                ("target", format!("class {class}")),
+                ("rows", before.to_string()),
+            ]);
+            Ok(())
+        }
         RetireAction::WholeGraph { graph } => guarded_delete(
             ctx, line,
             &format!("graph <{graph}>"),
@@ -1337,7 +1462,8 @@ fn guarded_delete(
         format!("athena-deploy: retirement line {line} — {reason}")
     };
     let live = curl(&["-s", "--data-urlencode", &format!("query={count_q}"),
-        "-H", "Accept: text/csv", &ctx.query]).ok().and_then(|csv| verify_missing(&csv));
+        "-H", "Accept: application/sparql-results+json", &ctx.query])
+        .ok().and_then(|b| count_from_answer(&b));
     let dir = env_or(
         "GRAPH_BACKUP_DIR",
         &format!("{}/platform/backups/graph-retirements", env_or("CHORUS_ROOT", ".")),
@@ -1370,6 +1496,8 @@ fn guarded_delete(
             }
             if target.starts_with("graph ") {
                 println!("athena-deploy: graph retirement executed — {target} dropped ({backed_up} triple(s), backup {backup})");
+            } else if target.contains(" class ") {
+                println!("athena-deploy: class retirement executed — {target} ({backed_up} triple(s), backup {backup})");
             } else {
                 println!("athena-deploy: retirement executed — {target} ({backed_up} triple(s), backup {backup})");
             }

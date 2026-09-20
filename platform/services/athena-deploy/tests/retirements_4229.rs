@@ -39,7 +39,7 @@ fn class_and_whole_graph_entries_are_their_own_kinds() {
 fn a_claim_entry_is_neither_a_subject_nor_a_graph() {
     let e = r(r#"{"subject_domain":"chorus","object_class":"Borg","status":"staged"}"#);
     assert_eq!(retirement_action(&e, "urn:o"),
-        RetireAction::Claim { domain: "chorus".into(), class: "Borg".into() });
+        RetireAction::Claim { domain: "chorus".into(), class: "Borg".into(), graph: "urn:o".into() });
 }
 
 #[test]
@@ -81,7 +81,10 @@ fn negative_proof_empty_fields_stay_empty() {
     // fields and shifted them left, turning a claim entry into a subject
     // retirement of its own graph name on the first test run.
     let e = r(r#"{"subject_domain":"","object_class":"","retire_subject":"","graph":"urn:g","status":"staged"}"#);
-    assert_eq!(retirement_action(&e, "urn:o"), RetireAction::Claim { domain: String::new(), class: String::new() });
+    assert_eq!(
+        retirement_action(&e, "urn:o"),
+        RetireAction::Claim { domain: String::new(), class: String::new(), graph: "urn:g".into() }
+    );
 }
 
 // ---- AC3: every delete path backs up first ------------------------------

@@ -144,7 +144,8 @@ run_deploy() {
 }
 
 @test "#4187 NEGATIVE PROOF: the exclusion is self-only — the query must carry FILTER(?x != ?s)" {
-  SCRIPT_SRC="$(cat "$SCRIPT")"
+  # #4229 — the verb is a binary; the query lives in its source.
+  SCRIPT_SRC="$(cat "$REPO/platform/services/athena-deploy/src/lib.rs")"
   echo "$SCRIPT_SRC" | grep -q 'FILTER(?x != ?s)'
   # and it must not have been widened to exclude a whole graph or predicate set
   test -z "$(printf '%s' "$SCRIPT_SRC" | grep -F 'FILTER(?g2 !=' || true)"
