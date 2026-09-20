@@ -62,6 +62,14 @@ impl Report {
 fn emit_spine(event: &str, fields: &[String]) {
     let home = std::env::var("CHORUS_HOME")
         .unwrap_or_else(|_| "/Users/jeffbridwell/CascadeProjects/chorus".to_string());
+    // ATHENA_VALIDATE_NUDGE=0 is what every test run sets, and it means "this is
+    // not a real run — do not reach a person". The spine is reaching a person:
+    // six membrane.violation events fired at 22:09 while the suites were green,
+    // because the emit I added writes a production surface from a test context.
+    // The membrane was right. Honour the same switch the bash used.
+    if std::env::var("ATHENA_VALIDATE_NUDGE").as_deref() == Ok("0") {
+        return;
+    }
     let log = format!("{home}/platform/scripts/chorus-log");
     if !std::path::Path::new(&log).is_file() {
         return;
