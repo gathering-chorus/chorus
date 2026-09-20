@@ -1595,4 +1595,37 @@ mod multi_domain_4222 {
         );
     }
 
+    /// #4222 — `place_by_tree` carries the exclusion ITSELF, not just its
+    /// caller. Wren's catch at the gate: the binary-file path in main.rs calls
+    /// this directly, so if the boundary only lived in `place_in_file` a
+    /// platform/ screenshot would be tree-tagged silently. Add "platform/" to
+    /// the TREE table and the first assert reds.
+    ///
+    /// Silas's question in the same review — pathological paths — is the rest:
+    /// a root-level file, an empty path and a bare name have no tree and must
+    /// answer None rather than picking the first entry.
+    #[test]
+    fn place_by_tree_excludes_source_and_survives_pathological_paths() {
+        let v = vec!["roles".to_string(), "tests".to_string(), "knowledge".to_string()];
+        for p in [
+            "platform/api/public/x.png",
+            "platform/scripts/chorus-werk",
+            "README.md",
+            "",
+            "/",
+            "rolesish/x.md",
+            "../roles/kade/x.md",
+        ] {
+            assert!(place_by_tree(p, &v).is_none(), "{p} must not take a tree");
+        }
+        // and the three it DOES claim still work through this entry point
+        for (p, want) in [
+            ("roles/kade/journal/x.md", "roles"),
+            ("proving/screenshots/a.png", "tests"),
+            ("designing/docs/x.html", "knowledge"),
+        ] {
+            assert_eq!(place_by_tree(p, &v).map(|s| s.domain).as_deref(), Some(want), "{p}");
+        }
+    }
+
 }
