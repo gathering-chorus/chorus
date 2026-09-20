@@ -8,6 +8,11 @@
 # with a test around it. Jeff, 2026-09-19: "this feels like a hack". So they live here,
 # beside the unit rows (#4084), where Wren and Silas correct them as data.
 #
+# OWNERSHIP: the rows are cross-role — routes and log files belong to the domains
+# Wren and Silas own, and either of them edits this file directly. It sits under
+# roles/kade/ontology/ only because #4222 was Kade's card; it belongs beside
+# unit-domain-4084.ttl and should move there when either of them next touches it.
+#
 # A route or log file with no row here is UNPLACED and reported by name. There is no
 # default and no fallback: an unmapped surface is a red, never a guess.
 

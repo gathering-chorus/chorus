@@ -1558,7 +1558,11 @@ mod multi_domain_4222 {
             &none,
             &noread,
         );
-        assert_ne!(spoken.domain(), Some("roles"), "a signal wins over the tree");
+        // #3734, caught by Silas at the gate: `assert_ne!(.., Some("roles"))`
+        // also passes when the answer is None, so it could not tell "the signal
+        // won" from "nothing placed it at all" — the two states this exists to
+        // separate. Assert the signal's own answer instead.
+        assert_eq!(spoken.domain(), Some("cards"), "a signal wins over the tree");
     }
 
 }
