@@ -601,7 +601,13 @@ jobs:
             # completed (land is LIVE), failed (the model did NOT deploy — say so),
             # still running at the deadline (UNMEASURED, never read as success).
             MODEL="ok"
-            if tail -400 "$HOME/.chorus/chorus.log" 2>/dev/null \
+            # Silas at the gate: with CARD_ID empty every grep below matches
+            # nothing, MODEL stays "ok", and a refused deploy is invisible —
+            # the same hollow shape this card exists to remove. An unknown card
+            # is UNMEASURED, never ok.
+            if [ -z "${CARD_ID:-}" ]; then
+              MODEL="unmeasured"
+            elif tail -400 "$HOME/.chorus/chorus.log" 2>/dev/null \
                  | grep -q "\"event\":\"athena.trigger.started\".*\"card_id\":\"${CARD_ID}\""; then
               MODEL="unmeasured"
               for _ in $(seq 60); do

@@ -34,7 +34,7 @@ verdict() { # <spine-log-contents> -> prints ok|failed|unmeasured
   {
     echo 'seq() { command seq 1 2; }'   # the deadline, compressed to 2 polls
     echo 'sleep() { :; }'
-    echo 'CARD_ID=4216'
+    echo "CARD_ID=${CARD-4216}"
     cat "$TMP/verdict.sh"
     echo 'echo "$MODEL"'
   } > "$TMP/run.sh"
@@ -68,6 +68,14 @@ got=$(verdict "$STARTED
 {\"event\":\"athena.deploy.failed\",\"card_id\":\"9999\",\"exit\":\"1\"}")
 [ "$got" = "unmeasured" ] && ok "another card's failure is not ours" \
   || bad "cross-card leak: read as '$got'"
+
+# 6. NEGATIVE PROOF — an empty CARD_ID matches nothing, so every poll silently
+# passes and a refused deploy reads as ok. Silas found this at the gate: it is
+# the same hollow shape the card exists to remove. Drop the guard and this reds.
+got=$(CARD="" verdict "$STARTED
+{\"event\":\"athena.deploy.failed\",\"card_id\":\"4216\",\"exit\":\"1\"}")
+[ "$got" = "unmeasured" ] && ok "empty CARD_ID → unmeasured, never ok" \
+  || bad "empty CARD_ID read as '$got' — a refused deploy would be invisible"
 
 echo "=== Results: $pass passed, $fail failed ==="
 [ $fail -eq 0 ]
