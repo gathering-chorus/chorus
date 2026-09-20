@@ -2808,15 +2808,31 @@ pub fn deploy_took(print_out: &str) -> bool {
         }
         JobKind::Scheduled => {
             let loaded = print_out.contains("state = ") || print_out.contains("program =");
+            // The kickstart that a deploy issues starts the job NOW, and a
+            // scheduled job can run for minutes (athena-validate sweeps the
+            // whole graph). While it runs, launchctl prints
+            // `last exit code = (never exited)`. Reading that as a failure
+            // re-creates the bug from the other side: the up-check times out
+            // at 15s and rolls back a deploy whose job is working correctly.
+            // Still running IS the deploy having taken.
+            let in_flight = print_out.contains("state = running");
             let last_exit_ok = match print_out
                 .lines()
                 .find(|l| l.trim_start().starts_with("last exit code ="))
             {
-                Some(l) => l.split('=').nth(1).map(|v| v.trim() == "0").unwrap_or(false),
+                // "(never exited)" is not a number and is not a failure —
+                // it is either never-run-since-load or running right now.
+                // Anything else — including a value this does not recognise —
+                // is a failure. A check that passes on what it cannot parse
+                // cannot separate the two states it exists to separate.
+                Some(l) => matches!(
+                    l.split('=').nth(1).map(str::trim),
+                    Some("0") | Some("(never exited)")
+                ),
                 // never run since load is not a failure: it is scheduled
                 None => true,
             };
-            loaded && last_exit_ok
+            loaded && (in_flight || last_exit_ok)
         }
     }
 }
