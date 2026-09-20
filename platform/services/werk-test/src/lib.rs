@@ -2610,6 +2610,37 @@ pub fn selected_needs_stack(
         .count()
 }
 
+/// #4238 — the count across EVERY lane, not just jest.
+///
+/// `selected_needs_stack` reads one lane's file list, so a card whose units are
+/// Rust crates or bats suites hands it an empty set and it falls back to the
+/// whole unit. That is how Silas's #4229 was told "498 needs-stack tests ran"
+/// when 75 did, and how he then told Jeff the six minutes were the integration
+/// lane. The fix is per-lane, because the lanes differ in kind:
+///
+/// - a TS package the jest lane NARROWED runs exactly the files it named
+/// - every other unit (cargo crate, bats suite) runs whole, so its needs-stack
+///   rows are all selected
+///
+/// `narrowed` is the packages the jest lane narrowed; `chosen` is the files it
+/// named inside them.
+pub fn needs_stack_in_selection(
+    rows: &[TestRow],
+    narrowed: &[String],
+    chosen: &std::collections::BTreeSet<String>,
+    in_units: &dyn Fn(&str) -> bool,
+) -> usize {
+    rows.iter()
+        .filter(|r| r.hermeticity == "needs-stack" && in_units(&r.file_path))
+        .filter(|r| {
+            match narrowed.iter().find(|p| r.file_path.starts_with(&format!("{p}/"))) {
+                Some(_) => chosen.contains(&r.file_path),
+                None => true,
+            }
+        })
+        .count()
+}
+
 /// #4236 — the integration line when the run selected no needs-stack test at
 /// all. Not a skip and not a failure to run: the diff simply covered none.
 pub fn integration_report_none_selected(registered_in_unit: usize) -> String {
@@ -4824,5 +4855,85 @@ mod selected_needs_stack_4236 {
         assert!(line.contains("none selected"), "{line}");
         assert!(line.contains("134"), "{line}");
         assert!(!line.contains("NOT run"), "{line}");
+    }
+}
+
+/// #4238 — the needs-stack count reads every lane, not just jest.
+#[cfg(test)]
+mod needs_stack_in_selection_4238 {
+    use super::{needs_stack_in_selection, TestRow};
+
+    fn ns(file: &str) -> TestRow {
+        TestRow {
+            file_path: file.to_string(),
+            covers: "x".to_string(),
+            pyramid_layer: "integration".to_string(),
+            hermeticity: "needs-stack".to_string(),
+            test_concern: String::new(),
+        }
+    }
+
+    fn everywhere(_f: &str) -> bool {
+        true
+    }
+
+    fn set(items: &[&str]) -> std::collections::BTreeSet<String> {
+        items.iter().map(|s| s.to_string()).collect()
+    }
+
+    /// NEGATIVE PROOF — Silas's #4229. His units were Rust crates and bats
+    /// suites, so the jest lane narrowed nothing and the old count fell back to
+    /// the whole unit: the plan line said 498 while 75 ran, and he took that
+    /// number to Jeff as the cause of the six minutes.
+    #[test]
+    fn a_card_with_no_jest_selection_counts_its_units_rows() {
+        let rows = vec![
+            ns("platform/services/athena-deploy/tests/a.rs"),
+            ns("platform/tests/4125-source-delete-refused.bats"),
+        ];
+        let narrowed: Vec<String> = Vec::new();
+        assert_eq!(
+            needs_stack_in_selection(&rows, &narrowed, &set(&[]), &everywhere),
+            2
+        );
+    }
+
+    /// A package the jest lane narrowed counts only the files it named — the
+    /// #4234 case, where one hermetic file was selected out of 134 rows.
+    #[test]
+    fn a_narrowed_package_counts_only_its_chosen_files() {
+        let rows = vec![
+            ns("directing/clearing/tests/a.test.ts"),
+            ns("directing/clearing/tests/b.test.ts"),
+        ];
+        let narrowed = vec!["directing/clearing".to_string()];
+        assert_eq!(
+            needs_stack_in_selection(&rows, &narrowed, &set(&[]), &everywhere),
+            0
+        );
+        assert_eq!(
+            needs_stack_in_selection(
+                &rows,
+                &narrowed,
+                &set(&["directing/clearing/tests/a.test.ts"]),
+                &everywhere
+            ),
+            1
+        );
+    }
+
+    /// The mixed card: one narrowed package plus a whole crate. The crate's row
+    /// counts, the package's unchosen row does not.
+    #[test]
+    fn a_mixed_card_counts_each_lane_by_its_own_rule() {
+        let rows = vec![
+            ns("directing/clearing/tests/a.test.ts"),
+            ns("platform/services/werk-test/tests/z.rs"),
+        ];
+        let narrowed = vec!["directing/clearing".to_string()];
+        assert_eq!(
+            needs_stack_in_selection(&rows, &narrowed, &set(&[]), &everywhere),
+            1
+        );
     }
 }

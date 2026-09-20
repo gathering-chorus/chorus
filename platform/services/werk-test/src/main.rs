@@ -293,16 +293,24 @@ fn run(args: &[String]) -> Result<i32, String> {
     // the lane did not narrow anything, so the unit's rows are the honest count.
     let chosen: std::collections::BTreeSet<String> =
         sel_details.iter().map(|d| d.file.clone()).collect();
+    // #4238 — which packages the jest lane NARROWED. Every other unit (cargo
+    // crate, bats suite) runs whole, so its needs-stack rows are all selected.
+    let narrowed: Vec<String> = match &jplan {
+        JestPlan::Selected(sels) => sels.iter().map(|s| s.package.clone()).collect(),
+        JestPlan::FullFallback { .. } => Vec::new(),
+    };
+    let narrows = |f: &str| narrowed.iter().any(|p| f.starts_with(&format!("{p}/")));
     let selected_ns: Vec<String> = ns_all
         .iter()
-        .filter(|f| in_units(f) && (chosen.is_empty() || chosen.contains(f.as_str())))
+        .filter(|f| in_units(f) && (!narrows(f) || chosen.contains(f.as_str())))
         .cloned()
         .collect();
     let registered_in_unit = rows.iter()
         .filter(|r| r.hermeticity == "needs-stack" && in_units(&r.file_path))
         .count();
     // count REGISTERED TESTS (rows), not files — the report must count what it names
-    let selected_ns_tests = werk_test::selected_needs_stack(&rows, &chosen, &in_units);
+    let selected_ns_tests =
+        werk_test::needs_stack_in_selection(&rows, &narrowed, &chosen, &in_units);
     if selected_ns_tests == 0 && registered_in_unit > 0 {
         println!("{}", werk_test::integration_report_none_selected(registered_in_unit));
     }
