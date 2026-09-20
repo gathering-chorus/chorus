@@ -1151,9 +1151,12 @@ mod pages_4214 {
     /// The authored rows as the crawler reads them: from the TTL, not from a
     /// table in this file. If the two ever drift, this is what notices.
     fn authored_routes() -> Vec<(String, String)> {
-        let ttl = std::fs::read_to_string(concat!(
-            env!("CARGO_MANIFEST_DIR"),
-            "/../../../roles/kade/ontology/surface-domain-4222.ttl"
+        // #4030 — read CARGO_MANIFEST_DIR at RUN time: the shared nightly
+        // target dir reuses one binary across werks, so a path baked in at
+        // compile time points at whichever werk happened to build it.
+        let ttl = std::fs::read_to_string(format!(
+            "{}/../../../roles/kade/ontology/surface-domain-4222.ttl",
+            std::env::var("CARGO_MANIFEST_DIR").unwrap_or_default()
         ))
         .expect("the authored surface rows must exist");
         let rows = crate::domain::surface_domain_rows(&ttl, "chorus:routePath");
