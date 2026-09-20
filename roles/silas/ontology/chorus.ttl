@@ -3125,3 +3125,119 @@ chorus:UnitDomainMappingShape a sh:NodeShape ;
     sh:property [ sh:path chorus:launchdLabel ; sh:minCount 1 ; sh:maxCount 1 ; sh:datatype xsd:string ; chorus:exposure chorus:public ] ;
     sh:property [ sh:path chorus:hasDomain    ; sh:minCount 1 ; sh:maxCount 1 ; sh:class chorus:Domain  ; chorus:exposure chorus:public ] ;
     sh:property [ sh:path rdfs:comment        ; sh:minCount 0 ; sh:maxCount 1 ; sh:datatype xsd:string ; chorus:exposure chorus:public ] .
+
+# #4216 — chorus:expresses returns to the schema. My instance append on 2026-09-20
+# carried this property declaration out with the Product rows; a property is schema,
+# not data. Found because platform/tests/3754-practice-shape.bats names the subject —
+# a test bound to a live row catching a move made wrongly.
+
+# =============================================================================
+# VALIDATION QUERIES (Phase 4) — SPARQL against this graph
+# =============================================================================
+#
+# Q1: Who owns domain X?
+# ----------------------
+# SELECT ?owner ?ownerLabel WHERE {
+#   chorus:loom-principles chorus:ownedBy ?owner .
+#   ?owner rdfs:label ?ownerLabel .
+# }
+# Expected: chorus:jeff, "Jeff"
+#
+# Q2: What services does product Y have?
+# ---------------------------------------
+# SELECT ?service ?serviceLabel WHERE {
+#   chorus:loom chorus:consumes ?service .   (#4071: served IRIs; product-* retired)
+#   ?service rdfs:label ?serviceLabel .
+# }
+# Expected: cards-service, skills-service, gates-service, spine-service,
+#           observability-service, infra-service
+#
+# Q3: What sub-products are impaired if service Z fails?
+# -------------------------------------------------------
+# SELECT ?product ?productLabel WHERE {
+#   ?product chorus:consumes chorus:cards-service .
+#   ?product rdfs:label ?productLabel .
+# }
+# Expected: chorus:loom ("Loom"), chorus:werk ("Werk"),
+#           chorus:clearing ("The Clearing")   (served IRIs since #4045)
+#
+# Q4: Full failure propagation — service → consumers → their owned domains
+# -------------------------------------------------------------------------
+# SELECT ?product ?productLabel ?domain ?domainLabel WHERE {
+#   ?product chorus:consumes chorus:spine-service .
+#   ?product rdfs:label ?productLabel .
+#   OPTIONAL {
+#     ?product chorus:hasDomain ?domain .
+#     ?domain rdfs:label ?domainLabel .
+#   }
+# }
+# Expected: Loom (with 7 LoomDomain children), Werk, Clearing
+#
+# Q5: Two-tier blast radius — which tier of service is down?
+# -----------------------------------------------------------
+# SELECT ?service ?serviceLabel ?tier WHERE {
+#   ?service rdfs:label ?serviceLabel .
+#   { ?service a chorus:InfrastructureService . BIND("visibility" AS ?tier) }
+#   UNION
+#   { ?service a chorus:ProtocolService . BIND("ability-to-work" AS ?tier) }
+# }
+# Expected: 5 infrastructure (visibility), 4 protocol (ability-to-work)
+#
+# Q6: Drift detection — declared vs actual dependencies
+# -------------------------------------------------------
+# Compare declared chorus:consumes edges against codebase imports.
+# Run per-product: extract imports/requires from source, compare to declared edges.
+#
+# SELECT ?product ?productLabel ?declared ?declaredLabel WHERE {
+#   ?product a chorus:Product .   # (SubProduct retired #3603)
+#   ?product rdfs:label ?productLabel .
+#   ?product chorus:consumes ?declared .
+#   ?declared rdfs:label ?declaredLabel .
+# }
+# ORDER BY ?productLabel
+#
+# Then compare against actual codebase dependencies (extracted by grep):
+#
+# Cards pilot validation (2026-04-10):
+#   Declared consumes: observability-service, infra-service
+#   Actual code deps:  Vikunja (localhost:3456) = cards-service itself (not a consumer)
+#                      Gathering app (localhost:3000) = blast-radius feature
+#                      chorus-sdk spine events = spine-service (UNDECLARED)
+#   DRIFT FOUND: cards-product should also consume spine-service
+#                (events.ts imports chorus-sdk, emits card.* spine events)
+#
+# Drift detection procedure:
+#   1. For each Product, list declared chorus:consumes edges (#3603)
+#   2. grep source code for localhost ports, service imports, SDK usage
+#   3. Map code deps to service URIs via port→service table:
+#      3456=cards-service, 3340=chorus-api, 3000=gathering-app,
+#      3100=grafana(observability), 3102=loki(logs), chorus-sdk=spine
+#   4. Diff declared vs actual. Undeclared = drift.
+#
+
+# =============================================================================
+# 11. PRACTICES MAPPING (#2348) — third leg of the Loom triangle
+# =============================================================================
+#
+# Every practice (skill, ritual, habit) traces upstream:
+#   chorus:expresses       Practice → Principle  (what principle the practice embodies)
+#   chorus:operationalizes Practice → Policy     (what policy the practice enacts, if any)
+#
+# Orphan practices flagged chorus:ceremonyRisk true — candidates for retirement
+# or for naming the missing principle.
+# Uncovered principles flagged chorus:abstract true — aspirational, not enacted.
+#
+# Rule of thumb:
+#   Principle without policy  = toothless
+#   Policy without principle  = arbitrary
+#   Practice without principle = ceremony
+#   Practice without policy    = voluntary (fine unless principle says "required")
+#   Principle without practice = abstract (aspirational, not enacted)
+
+# --- New object properties ---
+
+chorus:expresses a owl:ObjectProperty ;
+    rdfs:label "expresses" ;
+    rdfs:comment "A practice expresses (embodies, enacts) a principle. Practice → Principle. Counterpart to chorus:enforces (Policy → Principle) at the doing-layer." ;
+    rdfs:domain chorus:Practice ;
+    rdfs:range chorus:Principle .
