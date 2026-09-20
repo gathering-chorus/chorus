@@ -64,16 +64,6 @@ chorus:hasDomain-security-stmt a rdf:Statement ;
 # domain page renders this row (purpose, gaps, vocabulary, hosts) and the generated
 # service page renders the hosted Identity service's sections and its Commitment
 # rows. Authoring surface = these rows. docHref points at the generated page.
-chorus:document-service-design-security a chorus:Document ;
-    chorus:label """Service Design — Security""" ;
-    rdfs:label """Service Design — Security""" ;
-    chorus:docTitle """Service Design — Security""" ;
-    chorus:docHref """/athena/domain.html?d=security""" ;
-    chorus:comment """The security domain's design lives in the graph (#4064): purpose, gaps and vocabulary on the security and identity Domain rows, rendered by the generated domain page; overview / as-is / to-be / gaps / not-in-scope / path-to-close on the Identity Service row and every promise as a Commitment row, rendered by the generated service page. The 2026-05-01 hand-written design (#2659) was deleted, not rewritten.""" ;
-    rdfs:comment """The security domain's design as a projection of the graph (#4064).""" ;
-    chorus:hasDomain chorus:security ;
-    chorus:ownedBy chorus:principal-silas ;
-    chorus:hasProduct chorus:borg .
 
 # ----------------------------------------------------------------------------
 # 2. THE CHILD — chorus:identity (authentication: who is this, provably)

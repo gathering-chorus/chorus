@@ -113,14 +113,6 @@ chorus:monitors a owl:Class, chorus:Domain ;
 #    live as rows, not as prose in the page.
 # ---------------------------------------------------------------------------
 
-chorus:document-alerts-service-design a chorus:Document ;
-    chorus:docState "current" ;
-    chorus:docTitle "Alerts — Service Design" ;
-    chorus:docHref "/designing/docs/alerts-service-design.html" ;
-    chorus:comment "Authored by #4085 alongside the alerts/monitors split. Deliberately short — per #4064 a service's commitments are rows with a status and a card, not paragraphs here." ;
-    rdfs:comment "Authored by #4085 alongside the alerts/monitors split." ;
-    chorus:hasDomain chorus:alerts ;
-    chorus:ownedBy chorus:principal-silas .
 
 # ---------------------------------------------------------------------------
 # 5. The monitors half, modelled — not deferred. A domain that defines no class
@@ -162,11 +154,3 @@ chorus:MonitorShape a sh:NodeShape ;
     sh:property [ sh:path chorus:measures    ; sh:minCount 1 ; sh:datatype xsd:string ] ;
     sh:property [ sh:path chorus:hasDomain   ; sh:minCount 1 ; sh:class chorus:Domain ] .
 
-chorus:document-monitors-service-design a chorus:Document ;
-    chorus:docState "current" ;
-    chorus:docTitle "Monitors — Service Design" ;
-    chorus:docHref "/designing/docs/monitors-service-design.html" ;
-    chorus:comment "Authored by #4085 with the split. A monitor measures; an alert routes. Kept short per #4064." ;
-    rdfs:comment "Authored by #4085 with the split." ;
-    chorus:hasDomain chorus:monitors ;
-    chorus:ownedBy chorus:principal-silas .

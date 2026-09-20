@@ -1,0 +1,54 @@
+@prefix rdf:      <http://www.w3.org/1999/02/22-rdf-syntax-ns#> .
+@prefix rdfs:     <http://www.w3.org/2000/01/rdf-schema#> .
+@prefix acl:    <http://www.w3.org/ns/auth/acl#> .
+@prefix owl:      <http://www.w3.org/2002/07/owl#> .
+@prefix xsd:      <http://www.w3.org/2001/XMLSchema#> .
+@prefix dcterms:  <http://purl.org/dc/terms/> .
+@prefix sh:       <http://www.w3.org/ns/shacl#> .
+@prefix chorus:   <https://jeffbridwell.com/chorus#> .
+@prefix skos:     <http://www.w3.org/2004/02/skos/core#> .
+
+# Metric instances — moved out of roles/silas/ontology/chorus.ttl on 2026-09-20 (#4216).
+#
+# Jeff, 2026-09-20: "this is an anti pattern for loading data."
+#
+# chorus.ttl is in MODEL_SET, which loads into urn:chorus:ontology — the SCHEMA
+# graph. Instance rows authored there are re-created in the schema graph on every
+# model deploy, so pruning them can never hold: I deleted these earlier today and
+# they were back within the hour. The rows are not wrong; their home was.
+#
+# Here they ride the instance-seed manifest instead, so they land in their own
+# domain graph through the door, and the schema files go back to holding only
+# classes, properties and shapes.
+
+
+chorus:metric-werk-lead-time a chorus:Metric ;
+    chorus:metricKind "dora.leadTime" ;
+    chorus:spanStartEvent "card.pulled" ; chorus:spanEndEvent "card.accepted" ;
+    chorus:emittedAs "card.pulled", "card.accepted" .
+
+chorus:metric-werk-lead-build a chorus:Metric ;          # leg 1: build (pulled → demo presented)
+    chorus:metricKind "dora.leadTime" ;
+    chorus:spanStartEvent "card.pulled" ; chorus:spanEndEvent "demo.presented" ;
+    chorus:emittedAs "card.pulled", "demo.presented" ;
+    chorus:subSpanOf chorus:metric-werk-lead-time .
+
+chorus:metric-werk-lead-coordwait a chorus:Metric ;      # leg 2: coordination-wait — round-churn lives HERE
+    chorus:metricKind "dora.leadTime" ;
+    chorus:spanStartEvent "demo.presented" ; chorus:spanEndEvent "go" ;
+    chorus:emittedAs "demo.presented", "go" ;
+    chorus:subSpanOf chorus:metric-werk-lead-time .
+
+chorus:metric-werk-lead-land a chorus:Metric ;           # leg 3: land (go → accepted)
+    chorus:metricKind "dora.leadTime" ;
+    chorus:spanStartEvent "go" ; chorus:spanEndEvent "card.accepted" ;
+    chorus:emittedAs "go", "card.accepted" ;
+    chorus:subSpanOf chorus:metric-werk-lead-time .
+
+chorus:metric-werk-cfr a chorus:Metric ;
+    chorus:metricKind "dora.cfr" ;
+    chorus:emittedAs "werk.land.failed", "merge.refused" .
+
+chorus:metric-werk-liveness a chorus:Metric ;
+    chorus:metricKind "liveness" ;
+    chorus:emittedAs "werk.heartbeat" .

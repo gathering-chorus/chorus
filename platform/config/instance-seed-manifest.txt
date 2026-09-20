@@ -50,3 +50,9 @@ commitment:roles/kade/ontology/tests-commitments-4089.ttl
 #   principle:roles/wren/ontology/principles-instances-3749.ttl
 #   principle:roles/wren/ontology/principles-xp-4006.ttl
 #   practice:roles/kade/ontology/practices-3754-instances.ttl
+
+# #4216 — three classes whose rows were authored inside chorus.ttl and so
+# kept being re-created in the schema graph on every model deploy.
+metric:designing/data/metric-instances.ttl
+tool:designing/data/tool-instances.ttl
+tool-type:designing/data/tool-type-instances.ttl

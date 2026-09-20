@@ -62,6 +62,28 @@ case "$MODE" in
     echo "copy verified. Next: delete the shape's chorus:instancesGraph line, deploy, check the route, then --prune." ;;
   --prune)
     b=$(count "$DST"); [ "$b" != "0" ] || { echo "REFUSED: destination is empty, nothing was copied"; exit 1; }
+    # UNLOAD BEFORE DELETE (Jeff, 2026-09-20: "generally safer in all cases to
+    # unload and properly timestamp/uuid the unloads").
+    #
+    # This used to be something a person REMEMBERED to do, which means the next
+    # person would not. The dump runs the same WHERE as the DELETE below, as a
+    # CONSTRUCT, so what lands in the file is exactly what leaves the store and
+    # not a second query that can drift from it. The name carries the class, the
+    # UTC second and the pid, so two prunes in the same second cannot overwrite
+    # each other.
+    #
+    # A dump that did not land REFUSES the delete rather than warning about it:
+    # removing rows whose only copy failed to write is the one outcome this
+    # cannot risk.
+    DUMP_DIR="${CHORUS_HOME:-/Users/jeffbridwell/CascadeProjects/chorus}/platform/backups/graph-retirements"
+    mkdir -p "$DUMP_DIR"
+    DUMP="$DUMP_DIR/prune-${CLASS}-$(date -u +%Y%m%dT%H%M%SZ)-$$.nt"
+    curl -sf ${AUTH[@]+"${AUTH[@]}"} --max-time 300 -H 'Accept: application/n-triples' \
+      --data-urlencode "query=PREFIX c: <$NS> CONSTRUCT { ?s ?p ?o } WHERE { GRAPH <$SRC> { ?s a c:$CLASS ; ?p ?o } }" \
+      "$QRY" > "$DUMP" || { echo "REFUSED: the unload failed, nothing deleted"; exit 1; }
+    dumped=$(grep -c . "$DUMP" 2>/dev/null || echo 0)
+    [ "$dumped" != "0" ] || { echo "REFUSED: the unload wrote 0 triples, nothing deleted"; exit 1; }
+    echo "unloaded $dumped triple(s) to $DUMP"
     code=$(curl -s ${AUTH[@]+"${AUTH[@]}"} --max-time 300 -o /dev/null -w '%{http_code}' -X POST "$UPD" --data-urlencode \
       "update=PREFIX c: <$NS> DELETE { GRAPH <$SRC> { ?s ?p ?o } } WHERE { GRAPH <$SRC> { ?s a c:$CLASS ; ?p ?o } }")
     [ "$code" = "200" ] || [ "$code" = "204" ] || { echo "REFUSED: the store answered $code on the prune"; exit 1; }

@@ -157,12 +157,6 @@ chorus:logs a owl:Class, chorus:Domain ;
   chorus:gaps """Measured 2026-09-03: 78 launchd units declare a log path; none was a graph row until #4084. Two units log to /tmp (posture-capture, service-harvest) and one declares no StandardOutPath (buzz-tunnel), against ADR-023. Promtail ships 34 Loki jobs; units whose file is written but never shipped are the next finding the harvest surfaces. Bedroom units are harvested by service-harvest but their log files are not stat'd from Library yet (lastWrittenAt absent for bedroom rows).""" ;
   chorus:hasDesignDoc chorus:document-domain-design-logs .
 
-chorus:document-domain-design-logs a chorus:Document ;
-  chorus:label """Domain Design — Logs""" ; rdfs:label """Domain Design — Logs""" ; chorus:docTitle """Domain Design — Logs""" ;
-  chorus:docHref """/athena/domain.html?d=logs""" ;
-  chorus:comment """The logs domain's design is its rows (#4084): purpose and gaps on the Domain row; every log source a harvested LogSource row (unit, machine, path, Loki job, last written, status) carrying the domain it belongs to from the authored UnitDomainMapping rows. No hand-written design page.""" ;
-  rdfs:comment """The logs domain's design is its rows (#4084).""" ;
-  chorus:hasDomain chorus:logs ; chorus:ownedBy chorus:principal-silas ; chorus:hasProduct chorus:borg .
 
 chorus:alerts-monitors a owl:Class, chorus:Domain ;
   rdfs:label "alerts-monitors" ; chorus:comment "Grafana dashboards, alert rules, and on-call signal management." ;

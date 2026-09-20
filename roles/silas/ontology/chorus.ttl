@@ -719,51 +719,15 @@ chorus:ToolType a owl:Class ;
     rdfs:label "Tool Type" ;
     rdfs:comment "Classification of tools by function." .
 
-chorus:Sense a chorus:ToolType ;
-    rdfs:label "Sense" ;
-    rdfs:comment "Input capture — eyes, ears, voice." .
 
-chorus:Interaction a chorus:ToolType ;
-    rdfs:label "Interaction" ;
-    rdfs:comment "Multi-party coordination and alignment." .
 
-chorus:Memory a chorus:ToolType ;
-    rdfs:label "Memory" ;
-    rdfs:comment "Persistent shared context — indexes, searches, remembers." .
 
-chorus:Orchestration a chorus:ToolType ;
-    rdfs:label "Orchestration" ;
-    rdfs:comment "Sequences and tracks work across roles." .
 
-chorus:Analysis a chorus:ToolType ;
-    rdfs:label "Analysis" ;
-    rdfs:comment "Decomposes, examines, produces structured insight." .
 
 # --- Tool instances ---
 
-chorus:look a chorus:Tool ;
-    rdfs:label "/look" ;
-    rdfs:comment "Screen capture — Jeff shows, Chorus sees." ;
-    chorus:toolType chorus:Sense ;
-    chorus:vizLabel "eyes" ;
-    chorus:color "#22d3ee" ;
-    chorus:status "live" .
 
-chorus:listen a chorus:Tool ;
-    rdfs:label "/listen" ;
-    rdfs:comment "Voice transcription — speech to text via local whisper.cpp." ;
-    chorus:toolType chorus:Sense ;
-    chorus:vizLabel "ears" ;
-    chorus:color "#22d3ee" ;
-    chorus:status "live" .
 
-chorus:talk a chorus:Tool ;
-    rdfs:label "/talk" ;
-    rdfs:comment "Voice output — text to speech." ;
-    chorus:toolType chorus:Sense ;
-    chorus:vizLabel "voice" ;
-    chorus:color "#22d3ee" ;
-    chorus:status "planned" .
 
 # #3860 — the Tool typing MOVED off chorus:clearing. One IRI carried
 # chorus:Tool (label "/clearing", a route) AND chorus:Product (label "The
@@ -771,37 +735,9 @@ chorus:talk a chorus:Tool ;
 # a Tool named after its URL path (gc-one-home-per-subject flagged it). The
 # viz entry keeps its own IRI; the product keeps the bare one (ADR-040 bare
 # grain for products).
-chorus:clearing-tool a chorus:Tool ;
-    rdfs:label "/clearing" ;
-    rdfs:comment "Multi-party chat — Jeff + all roles in browser. Real-time alignment." ;
-    chorus:toolType chorus:Interaction ;
-    chorus:vizLabel "alignment" ;
-    chorus:color "#e6edf3" ;
-    chorus:status "live" .
 
-chorus:chorusTool a chorus:Tool ;
-    rdfs:label "/chorus" ;
-    rdfs:comment "Shared memory index — SQLite FTS5, 14k+ messages. Search, reconcile, remember." ;
-    chorus:toolType chorus:Memory ;
-    chorus:vizLabel "memory" ;
-    chorus:color "#c084fc" ;
-    chorus:status "live" .
 
-chorus:werk a chorus:Tool ;
-    rdfs:label "/werk" ;
-    rdfs:comment "Workflow engine — sequences decisions into steps across roles. IS the spine." ;
-    chorus:toolType chorus:Orchestration ;
-    chorus:vizLabel "the spine" ;
-    chorus:color "#fbbf24" ;
-    chorus:status "live" .
 
-chorus:borg a chorus:Tool ;
-    rdfs:label "Borg" ;
-    rdfs:comment "Codebase decomposition — structured assessment of code, architecture, tech debt." ;
-    chorus:toolType chorus:Analysis ;
-    chorus:vizLabel "decompose" ;
-    chorus:color "#f87171" ;
-    chorus:status "planned" .
 
 # =============================================================================
 # 4. PRODUCTS
@@ -2616,39 +2552,14 @@ chorus:MetricShape a sh:NodeShape ;
 # Kade-verified live, not invented. This block proves the ADR-046 vocabulary round-trips. ---
 
 # DORA lead-time, decomposed into three legs so round-churn surfaces as coordination-wait (leg 2).
-chorus:metric-werk-lead-time a chorus:Metric ;
-    chorus:metricKind "dora.leadTime" ;
-    chorus:spanStartEvent "card.pulled" ; chorus:spanEndEvent "card.accepted" ;
-    chorus:emittedAs "card.pulled", "card.accepted" .
 
-chorus:metric-werk-lead-build a chorus:Metric ;          # leg 1: build (pulled → demo presented)
-    chorus:metricKind "dora.leadTime" ;
-    chorus:spanStartEvent "card.pulled" ; chorus:spanEndEvent "demo.presented" ;
-    chorus:emittedAs "card.pulled", "demo.presented" ;
-    chorus:subSpanOf chorus:metric-werk-lead-time .
 
-chorus:metric-werk-lead-coordwait a chorus:Metric ;      # leg 2: coordination-wait — round-churn lives HERE
-    chorus:metricKind "dora.leadTime" ;
-    chorus:spanStartEvent "demo.presented" ; chorus:spanEndEvent "go" ;
-    chorus:emittedAs "demo.presented", "go" ;
-    chorus:subSpanOf chorus:metric-werk-lead-time .
 
-chorus:metric-werk-lead-land a chorus:Metric ;           # leg 3: land (go → accepted)
-    chorus:metricKind "dora.leadTime" ;
-    chorus:spanStartEvent "go" ; chorus:spanEndEvent "card.accepted" ;
-    chorus:emittedAs "go", "card.accepted" ;
-    chorus:subSpanOf chorus:metric-werk-lead-time .
 
 # Change-failure-rate — counts ONLY failureClass="change"; "tooling" excluded (pk-failureClass enum)
 # so today's land.failed tooling bugs never poison CFR. failureClass is emitted at the source (#3495).
-chorus:metric-werk-cfr a chorus:Metric ;
-    chorus:metricKind "dora.cfr" ;
-    chorus:emittedAs "werk.land.failed", "merge.refused" .
 
 # Liveness-as-emission — absence of werk.heartbeat IS the unhealthy signal (closes the absence leak).
-chorus:metric-werk-liveness a chorus:Metric ;
-    chorus:metricKind "liveness" ;
-    chorus:emittedAs "werk.heartbeat" .
 
 chorus:werk-emit-contract a chorus:EmitContract ;
     rdfs:label "werk Emit Contract (ADR-046 template — Kade #3495)" ;
