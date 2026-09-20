@@ -26,8 +26,8 @@ fn rows_group_into_sets_and_keep_their_order() {
 
 #[test]
 fn the_real_manifest_holds_the_eight_sets_the_bash_deploys() {
-    let path = concat!(env!("CARGO_MANIFEST_DIR"), "/../../config/domain-set-manifest.txt");
-    let text = std::fs::read_to_string(path).expect("the manifest ships with the verb");
+    let path = format!("{}/../../config/domain-set-manifest.txt", crate_dir());
+    let text = std::fs::read_to_string(&path).expect("the manifest ships with the verb");
     let sets = parse_domain_sets(&text).expect("the shipped manifest must parse");
     let names: Vec<&str> = sets.iter().map(|s| s.name.as_str()).collect();
     assert_eq!(names.len(), 8, "eight sets, got {names:?}");
@@ -43,9 +43,9 @@ fn the_real_manifest_holds_the_eight_sets_the_bash_deploys() {
 fn every_file_in_the_shipped_manifest_exists() {
     // A manifest naming a file that is not there would deploy nothing for that
     // set and, before this card, say success.
-    let root = concat!(env!("CARGO_MANIFEST_DIR"), "/../../..");
-    let path = concat!(env!("CARGO_MANIFEST_DIR"), "/../../config/domain-set-manifest.txt");
-    let sets = parse_domain_sets(&std::fs::read_to_string(path).unwrap()).unwrap();
+    let root = format!("{}/../../..", crate_dir());
+    let path = format!("{}/../../config/domain-set-manifest.txt", crate_dir());
+    let sets = parse_domain_sets(&std::fs::read_to_string(&path).unwrap()).unwrap();
     for s in &sets {
         for f in &s.files {
             let p = format!("{root}/{f}");
@@ -141,6 +141,14 @@ fn negative_proof_a_single_file_run_does_not_restage_the_other_thirteen() {
 // ---- #4125: a source file may not author a Role as an owner --------------
 use athena_deploy::role_owner_offences;
 
+// Read at run time, never at compile time: the nightly shares one target dir
+// across werks, so a binary built in one tree gets re-run in another. A baked-in
+// path would then read somebody else's files and report green about the wrong repo.
+fn crate_dir() -> String {
+    std::env::var("CARGO_MANIFEST_DIR").expect("cargo sets CARGO_MANIFEST_DIR when it runs a test")
+}
+
+
 #[test]
 fn an_ownedby_pointing_at_a_role_is_named_with_its_line() {
     let ttl = "chorus:thing a chorus:Card ;\n    chorus:ownedBy chorus:role-wren .\n";
@@ -168,7 +176,7 @@ fn a_commented_out_violation_is_not_a_violation() {
 fn the_shipped_model_files_are_clean_of_this_today() {
     // If this ever fails, a source file has re-authored the violation the
     // 2026-09-18 store fix could not hold against.
-    let root = concat!(env!("CARGO_MANIFEST_DIR"), "/../../..");
+    let root = format!("{}/../../..", crate_dir());
     for f in ["roles/silas/ontology/chorus.ttl", "roles/kade/ontology/werk-domains.ttl"] {
         let text = std::fs::read_to_string(format!("{root}/{f}")).expect(f);
         assert_eq!(role_owner_offences(f, &text), Vec::<String>::new());
