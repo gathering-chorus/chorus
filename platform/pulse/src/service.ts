@@ -17,12 +17,14 @@ import { bostonOffsetIso } from './boston-iso';
 
 // #3879 — spine events carry role/card fields beyond reply-gap's minimal shape.
 type SpineEvExt = SpineEv & { card?: number | string; card_id?: number | string };
-import { callerIsAuthorized, resolvePulseSecret } from './pulse-secret';
+import { callerIsAuthorized, resolvePulseSecret, secretsMatch } from './pulse-secret';
 import { Registry, Counter, Histogram, Gauge, collectDefaultMetrics } from 'prom-client';
 import { spawn } from 'child_process';
 import { appendFile, open as fsOpen } from 'fs/promises';
 import * as path from 'path';
 import * as os from 'os';
+import { LocalAgentSupervisor, preferAgentSupervisor, type AgentSupervisor } from './agent-supervisor';
+import { registerAgentInbox, reconcileAgentInbox } from './agent-inbox';
 
 const PORT = parseInt(process.env.MESSAGING_PORT || '3475');
 
@@ -160,8 +162,8 @@ function readEnvelope(body: { class?: unknown; expects?: unknown }, from: string
   };
 }
 
-function registerNudgeRoutes(app: Express, store: MessageStore, metrics: Metrics, worker?: DeliveryWorker): void {
-  app.post('/api/nudge', (req, res) => {
+function registerNudgeRoutes(app: Express, store: MessageStore, metrics: Metrics, worker: DeliveryWorker | undefined, supervisor: AgentSupervisor): void {
+  app.post('/api/nudge', async (req, res) => {
     // #3485 — only the MCP server is the canonical caller. The pre-#3485 gate
     // accepted any request carrying a guessable X-Chorus-MCP-Caller header;
     // now the caller must present the shared secret (the mcp-server reads the
@@ -174,13 +176,25 @@ function registerNudgeRoutes(app: Express, store: MessageStore, metrics: Metrics
         message: 'POST /api/nudge accepts only MCP-server calls. Use the chorus_nudge_message MCP tool from a Claude session.',
       });
     }
-    const { from, to, content, traceId: bodyTraceId } = req.body;
+    const { from, to, content, traceId: bodyTraceId, target_session_id: targetSessionId, source_session_id: sourceSessionId } = req.body;
     if (!from || !to || !content) return res.status(400).json({ error: 'from, to, content required' });
+    if (targetSessionId !== undefined && (typeof targetSessionId !== 'string' || !/^[A-Za-z0-9_-]{1,200}$/.test(targetSessionId))) return res.status(400).json({ error: 'invalid-target-session' });
+    if (sourceSessionId !== undefined) {
+      if (typeof sourceSessionId !== 'string' || !/^[A-Za-z0-9_-]{1,200}$/.test(sourceSessionId)) return res.status(400).json({ error: 'invalid-source-session' });
+      // Source attribution is an authenticated internal envelope, never a
+      // legacy caller claim or PULSE_ALLOW_DIRECT_POST shortcut.
+      const expected = resolvePulseSecret();
+      if (!expected || !secretsMatch(typeof providedSecret === 'string' ? providedSecret : undefined, expected)) return res.status(403).json({ error: 'source-session-unauthorized' });
+      try {
+        const bound = (await supervisor.sessions()).filter(s => s.session_id === sourceSessionId && s.role === from && ['idle', 'running', 'awaiting_approval'].includes(s.state));
+        if (bound.length !== 1) return res.status(403).json({ error: 'source-session-mismatch' });
+      } catch { return res.status(503).json({ error: 'source-session-unavailable' }); }
+    }
     const traceId = resolveTraceId(req.headers['x-chorus-trace-id'], bodyTraceId);
     const marked = markNudge(from, content);
     // #3335 Pattern 7 — drop an identical nudge re-posted within the dedup window.
     // The spine/store is not touched for a dup; the caller gets ok so a retry isn't an error.
-    if (seenRecently(dedupeKey(from, to, marked), Date.now(), recentNudges, DEDUP_WINDOW_MS)) {
+    if (seenRecently(dedupeKey(`${from}:${sourceSessionId ?? ''}`, `${to}:${targetSessionId ?? ''}`, marked), Date.now(), recentNudges, DEDUP_WINDOW_MS)) {
       log('info', 'nudge.deduped', { from, to, chars: marked.length, trace_id: traceId || undefined });
       return res.json({ ok: true, deduped: true });
     }
@@ -190,19 +204,26 @@ function registerNudgeRoutes(app: Express, store: MessageStore, metrics: Metrics
     // r2r + expects in (reply|decision|action), so an alert or a forgotten expects
     // can never trap — that's the safe-by-default Jeff chose.
     const { nudgeClass, expects } = readEnvelope(req.body, from);
-    const id = store.sendNudge(from, to, marked, traceId, nudgeClass, expects);
+    const id = store.sendNudge(from, to, marked, traceId, nudgeClass, expects, targetSessionId, sourceSessionId);
     metrics.nudgesReceived.labels(from, to).inc();
     log('info', 'nudge.stored', { id, from, to, chars: marked.length, trace_id: traceId || undefined });
     // #2727 AC2: enqueue for async delivery via worker. No-op if worker not wired (tests).
     if (worker) {
-      worker.enqueue({ id, from, to, content: marked, delivery_attempts: 0, trace_id: traceId || null }).catch(() => { /* worker handles its own state */ });
+      worker.enqueue({ id, from, to, content: marked, delivery_attempts: 0, trace_id: traceId || null, target_session_id: targetSessionId }).catch(() => { /* worker handles its own state */ });
     }
     // #3439 AC3: report WHERE this nudge resolved (the live session it targets, or
     // name-match fallback) so the caller/MCP can surface the real destination
     // instead of a blind "sent". Deterministic registry read; delivery stays async.
-    const resolved = describeTarget(to, resolveRoleTarget(to));
+    let resolved = targetSessionId ? `agent:${targetSessionId}` : `${to} [delivery queue]`;
+    if (!targetSessionId) {
+      try {
+        const sessions = (await supervisor.sessions()).filter(s => s.role === to && s.primary);
+        if (sessions.length === 1) resolved = `agent:${sessions[0].session_id}`;
+        else if (sessions.length === 0) resolved = describeTarget(to, resolveRoleTarget(to));
+      } catch { /* the durable queue remains authoritative while the daemon is unavailable */ }
+    }
     log('info', 'nudge.resolved', { id, from, to, resolved, trace_id: traceId || undefined });
-    res.json({ ok: true, id, traceId, resolved });
+    res.json({ ok: true, id, traceId, resolved, status: 'queued', persisted: true });
   });
 
   // #3700 — the drain: the target role's own turn-boundary hook (stop /
@@ -246,14 +267,15 @@ function registerJeffInputRoutes(app: Express, store: MessageStore, worker?: Del
         message: 'POST /api/jeff-input accepts only Clearing-server calls (X-Chorus-Clearing-Caller).',
       });
     }
-    const { to, content, traceId: bodyTraceId } = req.body;
+    const { to, content, traceId: bodyTraceId, target_session_id: targetSessionId } = req.body;
     if (!to || !content) return res.status(400).json({ error: 'to, content required' });
+    if (targetSessionId !== undefined && (typeof targetSessionId !== 'string' || !/^[A-Za-z0-9_-]{1,200}$/.test(targetSessionId))) return res.status(400).json({ error: 'invalid-target-session' });
     const headerTrace = req.headers['x-chorus-trace-id'];
     const traceId = (typeof headerTrace === 'string' ? headerTrace : undefined) || bodyTraceId || undefined;
-    const id = store.sendJeffInput(to, content, traceId);
+    const id = store.sendJeffInput(to, content, traceId, targetSessionId);
     log('info', 'jeff.input.stored', { id, to, chars: content.length, trace_id: traceId || undefined });
     if (worker) {
-      worker.enqueue({ id, from: 'jeff', to, content, delivery_attempts: 0, trace_id: traceId || null, kind: 'jeff-input' }).catch(() => { /* worker handles its own state */ });
+      worker.enqueue({ id, from: 'jeff', to, content, delivery_attempts: 0, trace_id: traceId || null, kind: 'jeff-input', target_session_id: targetSessionId }).catch(() => { /* worker handles its own state */ });
     }
     res.json({ ok: true, id, traceId });
   });
@@ -310,16 +332,17 @@ function registerStateAndQueryRoutes(app: Express, store: MessageStore): void {
   });
 }
 
-export function createApp(store: MessageStore, worker?: DeliveryWorker): Express {
+export function createApp(store: MessageStore, worker?: DeliveryWorker, agentSupervisor: AgentSupervisor = new LocalAgentSupervisor(), emit?: EmitSpine): Express {
   const app = express();
   app.use(express.json());
   const metrics = buildMetrics();
   registerRequestLogging(app, metrics);
   registerHealthMetricsRoutes(app, store, metrics);
-  registerNudgeRoutes(app, store, metrics, worker);
+  registerNudgeRoutes(app, store, metrics, worker, agentSupervisor);
   registerJeffInputRoutes(app, store, worker);
   registerChatRoutes(app, store);
   registerStateAndQueryRoutes(app, store);
+  registerAgentInbox(app, store, agentSupervisor, emit);
   return app;
 }
 
@@ -420,7 +443,7 @@ function buildRuntimeDeps(): { runInject: RunInject; emitSpine: EmitSpine; selfT
     proc.on('error', e => resolve({ rc: 127, stderr: e.message }));
   });
 
-  return { runInject, emitSpine, selfTest };
+  return { runInject: preferAgentSupervisor(runInject, new LocalAgentSupervisor()), emitSpine, selfTest };
 }
 
 // Run as a server only when this file is the process entrypoint. Tests import
@@ -457,7 +480,13 @@ if (require.main === module) {
     // and unrunnable off darwin (no chorus-inject binary, no TCC), so it can't
     // gate boot on Linux/CI. pulse only runs in prod on darwin, so prod
     // behavior is unchanged; non-darwin (CI hermetic boot) skips the probe.
-    if (process.platform === 'darwin') {
+    const supervisor = new LocalAgentSupervisor();
+    let allRolesEnrolled = false;
+    try {
+      const sessions = await supervisor.sessions();
+      allRolesEnrolled = ['wren', 'silas', 'kade'].every(role => sessions.some(s => s.role === role && s.primary));
+    } catch { /* retain the legacy startup probe until migration is known */ }
+    if (process.platform === 'darwin' && !allRolesEnrolled) {
       try {
         await worker.startupSmoke();
       } catch (e) {
@@ -465,7 +494,7 @@ if (require.main === module) {
         process.exit(1);
       }
     } else {
-      process.stderr.write(JSON.stringify({ event: 'startup.smoke.skipped', reason: 'non-darwin (no TCC)' }) + '\n');
+      process.stderr.write(JSON.stringify({ event: 'startup.smoke.skipped', reason: allRolesEnrolled ? 'all roles enrolled with agent supervisor' : 'non-darwin (no TCC)' }) + '\n');
     }
 
     if (process.env.PULSE_REQUEUE_ON_BOOT === '1') {
@@ -542,7 +571,16 @@ if (require.main === module) {
       process.stderr.write(JSON.stringify({ event: 'startup.wipdrift.watch', window_ms: 14400000 }) + '\n');
     }
 
-    const app = createApp(store, worker);
+    const app = createApp(store, worker, supervisor, emitSpine);
+    let reconciling = false;
+    const receiptsTimer = setInterval(() => {
+      if (reconciling) return;
+      reconciling = true;
+      void reconcileAgentInbox(store, supervisor, worker, emitSpine)
+        .catch(() => { /* persisted rows remain queued; next tick retries receipts */ })
+        .finally(() => { reconciling = false; });
+    }, 2000);
+    receiptsTimer.unref();
     app.listen(PORT, BIND_HOST, () => {
       process.stderr.write(JSON.stringify({ event: 'startup', port: PORT, bind: BIND_HOST, ...store.getStats() }) + '\n');
     });

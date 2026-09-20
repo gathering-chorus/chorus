@@ -202,6 +202,12 @@ export class MessageStore {
 
     this.db.exec('CREATE INDEX IF NOT EXISTS idx_messages_delivery ON messages(delivery_status, type)');
     this.migrateQueuedState(); // #3700
+    const agentCols = (this.db.prepare('PRAGMA table_info(messages)').all() as Array<{ name: string }>).map((c) => c.name);
+    for (const name of ['target_session_id', 'delivery_session_id', 'inbox_claim_session', 'source_session_id']) {
+      if (!agentCols.includes(name)) this.db.exec(`ALTER TABLE messages ADD COLUMN ${name} TEXT`);
+    }
+    if (!agentCols.includes('context_event_pending')) this.db.exec('ALTER TABLE messages ADD COLUMN context_event_pending INTEGER NOT NULL DEFAULT 0');
+    this.db.exec('CREATE INDEX IF NOT EXISTS idx_messages_source_session ON messages(source_session_id, id)');
     this.db.exec('CREATE INDEX IF NOT EXISTS idx_messages_trace_id ON messages(trace_id) WHERE trace_id IS NOT NULL');
   }
 
@@ -214,14 +220,16 @@ export class MessageStore {
     traceId?: string,
     nudgeClass: 'r2r' | 'a2r' = 'r2r',
     expects: 'none' | 'reply' | 'decision' | 'action' = 'none',
+    targetSessionId?: string,
+    sourceSessionId?: string,
   ): number {
     // #3403: every nudge carries an envelope. `class` = who's talking (peer vs
     // machine); `expects` = what's needed back. The gate only traps r2r + expects
     // != none, so an alert (a2r) or an ack/fyi (expects 'none') can never trap.
     const stmt = this.db.prepare(
-      'INSERT INTO messages (type, "from", "to", content, trace_id, nudge_class, nudge_expects) VALUES (\'nudge\', ?, ?, ?, ?, ?, ?)'
+      'INSERT INTO messages (type, "from", "to", content, trace_id, nudge_class, nudge_expects, target_session_id, source_session_id) VALUES (\'nudge\', ?, ?, ?, ?, ?, ?, ?, ?)'
     );
-    return Number(stmt.run(from, to, content, traceId ?? null, nudgeClass, expects).lastInsertRowid);
+    return Number(stmt.run(from, to, content, traceId ?? null, nudgeClass, expects, targetSessionId ?? null, sourceSessionId ?? null).lastInsertRowid);
   }
 
   // #3343 — Jeff's Clearing input rides the same delivery machinery as nudges
@@ -229,17 +237,11 @@ export class MessageStore {
   // stays RAW (no [nudge from] framing — that would strip Jeff's authority at
   // the receiving session), and type='jeff-input' keeps nudge queries/folds
   // from ever picking it up.
-  sendJeffInput(to: string, content: string, traceId?: string): number {
-    if (traceId) {
-      const stmt = this.db.prepare(
-        'INSERT INTO messages (type, "from", "to", content, trace_id) VALUES (\'jeff-input\', \'jeff\', ?, ?, ?)'
-      );
-      return Number(stmt.run(to, content, traceId).lastInsertRowid);
-    }
+  sendJeffInput(to: string, content: string, traceId?: string, targetSessionId?: string): number {
     const stmt = this.db.prepare(
-      'INSERT INTO messages (type, "from", "to", content) VALUES (\'jeff-input\', \'jeff\', ?, ?)'
+      'INSERT INTO messages (type, "from", "to", content, trace_id, target_session_id) VALUES (\'jeff-input\', \'jeff\', ?, ?, ?, ?)'
     );
-    return Number(stmt.run(to, content).lastInsertRowid);
+    return Number(stmt.run(to, content, traceId ?? null, targetSessionId ?? null).lastInsertRowid);
   }
 
   // #2727 AC1: delivery state surface. Worker drives transitions via
@@ -283,7 +285,7 @@ export class MessageStore {
    * the worker's scan redelivers. Returns how many were released. */
   drainQueued(role: string): number {
     const r = this.db.prepare(
-      'UPDATE messages SET delivery_status = \'pending\' WHERE delivery_status = \'queued\' AND "to" = ?'
+      'UPDATE messages SET delivery_status = \'pending\' WHERE delivery_status = \'queued\' AND "to" = ? AND delivery_session_id IS NULL AND last_delivery_error = \'target-busy\''
     ).run(role);
     return r.changes;
   }
@@ -302,20 +304,70 @@ export class MessageStore {
 
   // #3343: restart-requeue covers BOTH delivery kinds; `kind` tells the worker
   // which spine-event family to emit (jeff.input.* vs nudge.*).
-  getPendingDeliveries(): Array<{ id: number; from: string; to: string; content: string; delivery_attempts: number; created_at: string; trace_id: string | null; kind: 'nudge' | 'jeff-input' }> {
+  getPendingDeliveries(): Array<{ id: number; from: string; to: string; content: string; delivery_attempts: number; created_at: string; trace_id: string | null; kind: 'nudge' | 'jeff-input'; target_session_id: string | null; delivery_session_id: string | null; source_session_id: string | null }> {
     return this.db.prepare(
-      'SELECT id, "from" as "from", "to" as "to", content, delivery_attempts, created_at, trace_id, type as kind FROM messages WHERE delivery_status = \'pending\' AND type IN (\'nudge\', \'jeff-input\') ORDER BY id ASC'
-    ).all() as Array<{ id: number; from: string; to: string; content: string; delivery_attempts: number; created_at: string; trace_id: string | null; kind: 'nudge' | 'jeff-input' }>;
+      'SELECT id, "from" as "from", "to" as "to", content, delivery_attempts, created_at, trace_id, type as kind, target_session_id, delivery_session_id, source_session_id FROM messages WHERE delivery_status = \'pending\' AND type IN (\'nudge\', \'jeff-input\') ORDER BY id ASC'
+    ).all() as ReturnType<MessageStore['getPendingDeliveries']>;
   }
 
-  getDeliveryRecord(id: number): { delivery_status: string; delivered_at: string | null; last_delivery_error: string | null; delivery_attempts: number; trace_id: string | null } {
+  /** Admission is not delivery. Keep the original row and bind its recipient. */
+  markAgentQueued(id: number, session: string | null, reason: string): void {
+    this.db.prepare(`UPDATE messages SET delivery_status='queued', delivery_session_id=COALESCE(delivery_session_id, ?), last_delivery_error=?, delivery_attempts=delivery_attempts+1
+      WHERE id=? AND delivery_status IN ('pending','queued') AND (delivery_session_id IS NULL OR delivery_session_id=?)`)
+      .run(session, reason, id, session);
+  }
+
+  getAgentQueued(): Array<ReturnType<MessageStore['getPendingDeliveries']>[number] & { last_delivery_error: string }> {
+    return this.db.prepare(`SELECT id, "from", "to", content, delivery_attempts, created_at, trace_id, type as kind, target_session_id, delivery_session_id, source_session_id, last_delivery_error
+      FROM messages WHERE delivery_status='queued' AND last_delivery_error IN ('agent-busy','transport-accepted','uncertain','supervisor-unavailable') ORDER BY id LIMIT 1000`).all() as ReturnType<MessageStore['getAgentQueued']>;
+  }
+
+  /** Claims are durable and repeatable. A secondary gets only explicitly
+   * addressed messages, never another session's role-directed backlog. */
+  claimAgentInbox(role: string, session: string, primary: boolean, limit = 50): Array<{ id: number; from: string; content: string; kind: string; message_id: string }> {
+    return this.db.transaction(() => {
+      const rows = this.db.prepare(`SELECT id, "from", content, type as kind FROM messages
+        WHERE "to"=? AND type IN ('nudge','jeff-input')
+        AND (delivery_status='pending' OR (delivery_status='queued' AND last_delivery_error IN ('native-boundary','agent-busy','supervisor-unavailable')))
+        AND (target_session_id=? OR (target_session_id IS NULL AND ?=1))
+        AND (delivery_session_id IS NULL OR delivery_session_id=?)
+        AND (inbox_claim_session IS NULL OR inbox_claim_session=?) ORDER BY id LIMIT ?`)
+        .all(role, session, primary ? 1 : 0, session, session, limit) as Array<{ id: number; from: string; content: string; kind: string }>;
+      const claim = this.db.prepare(`UPDATE messages SET delivery_status='queued', last_delivery_error='native-boundary', delivery_session_id=?, inbox_claim_session=? WHERE id=?`);
+      for (const row of rows) claim.run(session, session, row.id);
+      return rows.map((row) => ({ ...row, message_id: `pulse:${row.id}`, kind: row.kind === 'jeff-input' ? 'human_input' : 'peer_message' }));
+    })();
+  }
+
+  /** Atomic, idempotent acknowledgement of context delivery, not peer reply. */
+  acknowledgeAgentInbox(role: string, session: string, ids: number[], primary = true): number {
+    return this.db.transaction(() => {
+      const lookup = this.db.prepare(`SELECT id, delivery_status FROM messages WHERE id=? AND "to"=? AND delivery_session_id=? AND inbox_claim_session=? AND (target_session_id=? OR (target_session_id IS NULL AND ?=1))`);
+      const rows = ids.map((id) => lookup.get(id, role, session, session, session, primary ? 1 : 0) as { id: number; delivery_status: string } | undefined);
+      if (rows.some((row) => !row || !['queued', 'delivered'].includes(row.delivery_status))) throw new Error('inbox-claim-mismatch');
+      const ack = this.db.prepare(`UPDATE messages SET delivery_status='delivered', delivered_at=datetime('now'), last_delivery_error=NULL, context_event_pending=1 WHERE id=? AND delivery_status='queued'`);
+      let changed = 0;
+      for (const id of ids) changed += ack.run(id).changes;
+      return changed;
+    })();
+  }
+
+  pendingContextEvents(): Array<{ id: number; from: string; to: string; kind: string; trace_id: string | null; delivery_session_id: string }> {
+    return this.db.prepare('SELECT id, "from", "to", type as kind, trace_id, delivery_session_id FROM messages WHERE context_event_pending=1 ORDER BY id LIMIT 1000').all() as ReturnType<MessageStore['pendingContextEvents']>;
+  }
+
+  markContextEventEmitted(id: number): void {
+    this.db.prepare('UPDATE messages SET context_event_pending=0 WHERE id=?').run(id);
+  }
+
+  getDeliveryRecord(id: number): { delivery_status: string; delivered_at: string | null; last_delivery_error: string | null; delivery_attempts: number; trace_id: string | null; inbox_claim_session: string | null } {
     const row = this.db.prepare(
-      'SELECT delivery_status, delivered_at, last_delivery_error, delivery_attempts, trace_id FROM messages WHERE id = ?'
+      'SELECT delivery_status, delivered_at, last_delivery_error, delivery_attempts, trace_id, inbox_claim_session FROM messages WHERE id = ?'
     ).get(id);
     if (!row) {
       throw new Error(`getDeliveryRecord: no row for id=${id}`);
     }
-    return row as { delivery_status: string; delivered_at: string | null; last_delivery_error: string | null; delivery_attempts: number; trace_id: string | null };
+    return row as ReturnType<MessageStore['getDeliveryRecord']>;
   }
 
   // #2664: getPendingNudges, recordDeliveryAttempt, getDeadLetters,

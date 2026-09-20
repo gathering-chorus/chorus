@@ -29,6 +29,7 @@ include!("../../shared/failure_class.rs");
 
 extern "C" {
     fn flock(fd: i32, operation: i32) -> i32;
+    fn kill(pid: i32, signal: i32) -> i32;
 }
 const LOCK_EX_NB: i32 = 0x02 | 0x04; // LOCK_EX | LOCK_NB
 const LOCK_UN: i32 = 0x08;
@@ -1181,7 +1182,7 @@ pub fn demo(card: u64, role: &str, home: &Path) -> R<DemoOutcome> {
     // now run in the headless path too. Skippable only in the unit/e2e suite,
     // which seeds its own gate results.
     let skip_gate_run = std::env::var("CHORUS_DEMO_SKIP_GATE_RUN").map(|v| v == "1").unwrap_or(false);
-    let gates_ran = !skip_gate_run && claude_available();
+    let gates_ran = !skip_gate_run && headless_available();
     if gates_ran {
         run_gates(home, role, card, &round, &trace);
     }
@@ -1265,7 +1266,7 @@ pub fn demo(card: u64, role: &str, home: &Path) -> R<DemoOutcome> {
         // the binary RUNS each peer's review itself (spawned headless claude -p,
         // recorded in-process) — peer review is a GATE, not a nudge we wait on. Only
         // in hosted CI with no claude do we fall back to the old send-the-nudge path.
-        if claude_available() {
+        if headless_available() {
             run_reviews(home, role, card, &round, &trace);
         } else {
             fire_gathers(home, role, card, &trace, &round);
@@ -1650,8 +1651,8 @@ fn claude_bin() -> Option<String> {
 /// Is the `claude` CLI resolvable at all? Gates can only self-run where a real
 /// claude binary exists (Jeff's machine, local `act`). On hosted CI (no auth,
 /// no binary) it is absent — we degrade rather than break the build (#3284).
-fn claude_available() -> bool {
-    claude_bin().is_some()
+fn headless_available() -> bool {
+    if gate_profile().is_some() { Path::new(&agent_bin()).is_file() } else { claude_bin().is_some() }
 }
 
 /// Unescape the JSON string-escapes claude emits (\" \\ \/ \n \r \t).
@@ -1918,6 +1919,104 @@ fn wait_for_memory_floor(home: &Path, role: &str, card: u64, label: &str, round:
     }
 }
 
+const GATE_OUTPUT_SCHEMA: &str = r#"{"type":"object","properties":{"result":{"type":"string","enum":["pass","fail","error"]},"findings":{"type":"string"}},"required":["result","findings"],"additionalProperties":false}"#;
+const REVIEW_OUTPUT_SCHEMA: &str = r#"{"type":"object","properties":{"result":{"type":"string","enum":["pass","concerns","block"]},"findings":{"type":"string"}},"required":["result","findings"],"additionalProperties":false}"#;
+
+fn agent_bin() -> String {
+    env::var("CHORUS_AGENT_BIN").unwrap_or_else(|_| format!("{}/.chorus/bin/chorus-agent", env::var("HOME").unwrap_or_default()))
+}
+
+fn gate_profile() -> Option<String> {
+    env::var("CHORUS_GATE_PROFILE").ok().filter(|s| !s.trim().is_empty())
+}
+
+/// Encode arbitrary prompt text without depending on a JSON crate.
+fn json_quote(text: &str) -> String {
+    let mut out = String::from("\"");
+    for c in text.chars() {
+        match c {
+            '"' => out.push_str("\\\""), '\\' => out.push_str("\\\\"),
+            '\n' => out.push_str("\\n"), '\r' => out.push_str("\\r"), '\t' => out.push_str("\\t"),
+            c if c < '\u{20}' => out.push_str(&format!("\\u{:04x}", c as u32)),
+            c => out.push(c),
+        }
+    }
+    out.push('"'); out
+}
+
+fn headless_job_request(profile: &str, input: &str, instructions: &str, schema: &str, model: Option<&str>, timeout: u64, trace: &str, revision: &str) -> String {
+    format!("{{\"version\":1,\"profile\":{},\"input\":{},\"instructions\":{},\"output_schema\":{},\"model\":{},\"timeout_secs\":{},\"trace_id\":{},\"input_revision\":{}}}",
+        json_quote(profile), json_quote(input), json_quote(instructions), schema,
+        model.map(json_quote).unwrap_or_else(|| "null".into()), timeout, json_quote(trace), json_quote(revision))
+}
+
+/// Drain both output pipes while writing input, then bound the whole process group.
+/// Retain at most 8 MiB per stream but keep draining after the cap to avoid deadlock.
+fn bounded_headless(mut command: Command, input: String, timeout: u64) -> R<String> {
+    use std::os::unix::process::CommandExt;
+    command.process_group(0).stdin(std::process::Stdio::piped()).stdout(std::process::Stdio::piped()).stderr(std::process::Stdio::piped());
+    let mut child = command.spawn().map_err(|e| format!("headless runner spawn failed: {e}"))?;
+    let pid = child.id() as i32;
+    let mut stdin = child.stdin.take().ok_or("runner stdin missing")?;
+    let writer = std::thread::spawn(move || stdin.write_all(input.as_bytes()));
+    fn drain(mut pipe: impl Read) -> Vec<u8> {
+        let mut kept = Vec::new(); let mut chunk = [0u8; 8192];
+        loop { match pipe.read(&mut chunk) {
+            Ok(0) | Err(_) => break,
+            Ok(n) => { let retain = n.min((8 * 1024 * 1024usize).saturating_sub(kept.len())); kept.extend_from_slice(&chunk[..retain]); }
+        }} kept
+    }
+    let stdout = child.stdout.take().ok_or("runner stdout missing")?;
+    let stderr = child.stderr.take().ok_or("runner stderr missing")?;
+    let output = std::thread::spawn(move || drain(stdout));
+    let diagnostics = std::thread::spawn(move || drain(stderr));
+    let started = Instant::now();
+    let status = loop {
+        match child.try_wait() {
+            Ok(Some(status)) => break Ok(status),
+            Ok(None) if started.elapsed() < Duration::from_secs(timeout) => sleep(Duration::from_millis(25)),
+            Ok(None) => break Err(format!("headless runner timed out after {timeout}s")),
+            Err(e) => break Err(format!("headless runner wait failed: {e}")),
+        }
+    };
+    // Descendants must not keep inherited pipes open after the runner exits.
+    unsafe { kill(-pid, 9); }
+    let _ = child.wait(); let _ = writer.join(); let _ = diagnostics.join();
+    let bytes = output.join().map_err(|_| "headless output reader failed")?;
+    if !status?.success() { return Err("headless runner failed (nonzero exit)".into()); }
+    if bytes.len() >= 8 * 1024 * 1024 { return Err("headless response exceeded size limit".into()); }
+    Ok(String::from_utf8_lossy(&bytes).into_owned())
+}
+
+fn headless_review(input: &str, instructions: &str, schema: &str, revision: &str) -> R<String> {
+    let timeout = env::var("CHORUS_GATE_TIMEOUT_SECS").ok().and_then(|v| v.parse::<u64>().ok()).unwrap_or(180).clamp(1, 3600);
+    let model = env::var("CHORUS_GATE_MODEL").ok();
+    let (mut command, payload) = if let Some(profile) = gate_profile() {
+        let mut command = Command::new(agent_bin()); command.args(["run", "--text"]);
+        let trace = env::var("CHORUS_TRACE_ID").unwrap_or_default();
+        let payload = headless_job_request(&profile, input, instructions, schema, model.as_deref(), timeout, &trace, revision);
+        (command, payload)
+    } else {
+        let bin = claude_bin().ok_or("claude binary not resolvable")?;
+        let mut command = Command::new(bin);
+        command.args(["-p", "--model", model.as_deref().unwrap_or("claude-sonnet-4-6"), "--permission-mode", "dontAsk", "--no-session-persistence", "--output-format", "text", "--disallowedTools", "Bash,Edit,Write,Glob,Grep,WebFetch,WebSearch,NotebookEdit,Task", "--system-prompt", instructions]);
+        (command, input.to_owned())
+    };
+    command.env("CHORUS_HEADLESS", "1").env_remove("CLAUDECODE");
+    // The configured runner enforces its own timeout; this outer bound also cleans up a wedged CLI.
+    bounded_headless(command, payload, timeout + 5)
+}
+
+pub fn parse_review_verdict(stdout: &str) -> (String, String) {
+    let (gate, findings) = parse_gate_verdict(stdout);
+    let raw = extract_json_str(stdout, "result").map(|s| json_unescape(&s));
+    let verdict = match raw.as_deref() {
+        Some("pass") => "pass", Some("block") | Some("fail") => "block", Some("concerns") => "concerns",
+        _ if gate == "pass" => "pass", _ if gate == "fail" => "block", _ => "concerns",
+    };
+    (verdict.to_string(), findings)
+}
+
 fn run_one_gate(home: &Path, role: &str, card: u64, gate: &str, round: &str) {
     if !wait_for_memory_floor(home, role, card, gate, round) {
         record_gate(home, role, card, gate, "error",
@@ -1975,93 +2074,10 @@ fn run_one_gate(home: &Path, role: &str, card: u64, gate: &str, round: &str) {
         base_ctx
     };
 
-    let model = env::var("CHORUS_GATE_MODEL").unwrap_or_else(|_| "claude-sonnet-4-6".to_string());
-    let bin = match claude_bin() {
-        Some(b) => b,
-        None => {
-            record_gate(home, role, card, gate, "error", "claude binary not resolvable", round);
-            return;
-        }
+    let stdout = match headless_review(&ctx, &sys, GATE_OUTPUT_SCHEMA, round) {
+        Ok(output) => output,
+        Err(error) => { record_gate(home, role, card, gate, "error", &error, round); return; }
     };
-    let child = Command::new(&bin)
-        // #3471 — mark the gate's claude -p as HEADLESS so chorus-hooks'
-        // owes_response_block (#3218 RESPOND-FIRST) exempts it. A headless gate has
-        // no peer to answer; without this the nudge-block deadlocks the gate's own
-        // shell → the 180s timeout / denied chorus-health that errored this card's
-        // product+ops gates. owes_response_block reads env::var("CHORUS_HEADLESS").is_ok()
-        // (any value), alongside GITHUB_ACTIONS/ACT — same exemption family.
-        .env("CHORUS_HEADLESS", "1")
-        .args([
-            "-p",
-            "--model", &model,
-            "--permission-mode", "dontAsk",
-            "--no-session-persistence",
-            "--output-format", "text",
-            "--disallowedTools", "Bash,Edit,Write,Glob,Grep,WebFetch,WebSearch,NotebookEdit,Task",
-            "--system-prompt", &sys,
-        ])
-        .stdin(std::process::Stdio::piped())
-        .stdout(std::process::Stdio::piped())
-        .stderr(std::process::Stdio::piped())
-        .spawn();
-    let mut child = match child {
-        Ok(c) => c,
-        Err(e) => {
-            record_gate(home, role, card, gate, "error", &format!("claude spawn failed: {}", e), round);
-            return;
-        }
-    };
-    if let Some(mut stdin) = child.stdin.take() {
-        let _ = stdin.write_all(ctx.as_bytes());
-        // stdin drops here → closed, so claude sees EOF and proceeds.
-    }
-    // #3443 (Silas's BOUNDED contract) — a hung model must NOT block the gate
-    // forever. Poll for exit up to CHORUS_GATE_TIMEOUT_SECS (default 180); on
-    // expiry, kill the child and record error-on-expiry (fail-LOUD, never green).
-    let timeout_secs: u64 = env::var("CHORUS_GATE_TIMEOUT_SECS")
-        .ok().and_then(|v| v.parse().ok()).unwrap_or(180);
-    let start = Instant::now();
-    let status = loop {
-        match child.try_wait() {
-            Ok(Some(st)) => break Some(st),
-            Ok(None) => {
-                if start.elapsed() >= Duration::from_secs(timeout_secs) {
-                    let _ = child.kill();
-                    let _ = child.wait();
-                    break None;
-                }
-                sleep(Duration::from_millis(200));
-            }
-            Err(e) => {
-                record_gate(home, role, card, gate, "error",
-                            &format!("claude wait failed: {}", e), round);
-                return;
-            }
-        }
-    };
-    let status = match status {
-        Some(s) => s,
-        None => {
-            record_gate(home, role, card, gate, "error",
-                        &format!("gate timed out after {}s — claude killed (bounded, fail-loud)", timeout_secs),
-                        round);
-            return;
-        }
-    };
-    let mut stdout = String::new();
-    if let Some(mut o) = child.stdout.take() {
-        let _ = o.read_to_string(&mut stdout);
-    }
-    let mut stderr = String::new();
-    if let Some(mut e) = child.stderr.take() {
-        let _ = e.read_to_string(&mut stderr);
-    }
-    if !status.success() {
-        record_gate(home, role, card, gate, "error",
-                    &format!("claude exit {:?}: {}", status.code(), stderr.chars().take(160).collect::<String>()),
-                    round);
-        return;
-    }
     let (result, findings) = parse_gate_verdict(&stdout);
     record_gate(home, role, card, gate, &result, &findings, round);
 }
@@ -2073,7 +2089,7 @@ fn run_one_gate(home: &Path, role: &str, card: u64, gate: &str, round: &str) {
 pub fn review_system_prompt(peer: &str, identity: &str) -> String {
     let id: String = identity.chars().take(40_000).collect();
     format!(
-        "You are {peer}. Your role identity (CLAUDE.md) follows. Review the peer's card + branch diff (provided next) AS {peer} WOULD — substantive, not a rubber stamp. Answer the four gather questions: (1) how does this impact your products, (2) how does it impact you and your domain, (3) are they over-building or under-planning, (4) does this strengthen the system or just please the room. Then END your reply with exactly one JSON line and nothing after it: {{\"result\":\"pass\",\"findings\":\"<your substance>\"}} — result is pass | concerns | block.\n\n=== {peer} identity (CLAUDE.md) ===\n{id}",
+        "You are {peer}. Your role identity follows. Review the peer's card + branch diff (provided next) AS {peer} WOULD — substantive, not a rubber stamp. Answer the four gather questions: (1) how does this impact your products, (2) how does it impact you and your domain, (3) are they over-building or under-planning, (4) does this strengthen the system or just please the room. Output ONLY one JSON object whose findings summarize your answers: {{\"result\":\"pass\",\"findings\":\"<your substance>\"}} — result is pass | concerns | block.\n\n=== {peer} identity ===\n{id}",
         peer = peer, id = id
     )
 }
@@ -2091,12 +2107,13 @@ fn run_one_review(home: &Path, role: &str, card: u64, peer: &str, round: &str) {
         return;
     }
     let _ = round; // verdict round/patch are stamped by record_gather_replied (current_round/current_patch_id)
-    let peer_md = home.join(format!("roles/{}/CLAUDE.md", peer));
+    let canonical = home.join(format!("roles/{}/AGENTS.md", peer));
+    let peer_md = if canonical.is_file() { canonical } else { home.join(format!("roles/{}/CLAUDE.md", peer)) };
     let identity = match fs::read_to_string(&peer_md) {
         Ok(s) => s,
         Err(e) => {
             record_gather_replied(home, role, card, peer, "error",
-                &format!("peer CLAUDE.md unreadable {}: {}", peer_md.display(), e));
+                &format!("peer identity unreadable {}: {}", peer_md.display(), e));
             return;
         }
     };
@@ -2119,89 +2136,12 @@ fn run_one_review(home: &Path, role: &str, card: u64, peer: &str, round: &str) {
         card, card_view, diff_capped
     );
 
-    let model = env::var("CHORUS_GATE_MODEL").unwrap_or_else(|_| "claude-sonnet-4-6".to_string());
-    let bin = match claude_bin() {
-        Some(b) => b,
-        None => {
-            record_gather_replied(home, role, card, peer, "error", "claude binary not resolvable");
-            return;
-        }
+    let stdout = match headless_review(&ctx, &sys, REVIEW_OUTPUT_SCHEMA, round) {
+        Ok(output) => output,
+        Err(error) => { record_gather_replied(home, role, card, peer, "error", &error); return; }
     };
-    let child = Command::new(&bin)
-        .env("CHORUS_HEADLESS", "1") // exempt the review's claude -p from RESPOND-FIRST (#3218/#3471)
-        .args([
-            "-p",
-            "--model", &model,
-            "--permission-mode", "dontAsk",
-            "--no-session-persistence",
-            "--output-format", "text",
-            "--disallowedTools", "Bash,Edit,Write,Glob,Grep,WebFetch,WebSearch,NotebookEdit,Task",
-            "--system-prompt", &sys,
-        ])
-        .stdin(std::process::Stdio::piped())
-        .stdout(std::process::Stdio::piped())
-        .stderr(std::process::Stdio::piped())
-        .spawn();
-    let mut child = match child {
-        Ok(c) => c,
-        Err(e) => {
-            record_gather_replied(home, role, card, peer, "error", &format!("claude spawn failed: {}", e));
-            return;
-        }
-    };
-    if let Some(mut stdin) = child.stdin.take() {
-        let _ = stdin.write_all(ctx.as_bytes());
-    }
-    let timeout_secs: u64 = env::var("CHORUS_GATE_TIMEOUT_SECS")
-        .ok().and_then(|v| v.parse().ok()).unwrap_or(180);
-    let start = Instant::now();
-    let status = loop {
-        match child.try_wait() {
-            Ok(Some(st)) => break Some(st),
-            Ok(None) => {
-                if start.elapsed() >= Duration::from_secs(timeout_secs) {
-                    let _ = child.kill();
-                    let _ = child.wait();
-                    break None;
-                }
-                sleep(Duration::from_millis(200));
-            }
-            Err(e) => {
-                record_gather_replied(home, role, card, peer, "error", &format!("claude wait failed: {}", e));
-                return;
-            }
-        }
-    };
-    let status = match status {
-        Some(s) => s,
-        None => {
-            record_gather_replied(home, role, card, peer, "error",
-                &format!("review timed out after {}s — claude killed (bounded, fail-loud)", timeout_secs));
-            return;
-        }
-    };
-    let mut stdout = String::new();
-    if let Some(mut o) = child.stdout.take() {
-        let _ = o.read_to_string(&mut stdout);
-    }
-    if !status.success() {
-        let mut stderr = String::new();
-        if let Some(mut e) = child.stderr.take() {
-            let _ = e.read_to_string(&mut stderr);
-        }
-        record_gather_replied(home, role, card, peer, "error",
-            &format!("claude exit {:?}: {}", status.code(), stderr.chars().take(160).collect::<String>()));
-        return;
-    }
-    // Reuse the gate verdict parser (same {result, findings} contract); map the
-    // gate vocabulary (pass|fail|error) onto the gather vocabulary (pass|block|concerns).
-    let (verdict, findings) = parse_gate_verdict(&stdout);
-    let v = match verdict.as_str() {
-        "pass" => "pass",
-        "fail" => "block",
-        _ => "concerns",
-    };
-    record_gather_replied(home, role, card, peer, v, &findings);
+    let (verdict, findings) = parse_review_verdict(&stdout);
+    record_gather_replied(home, role, card, peer, &verdict, &findings);
 }
 
 /// #3539 — run every peer review with NO reply recorded for THIS round, each as a
@@ -2498,6 +2438,41 @@ mod tests {
         let (checked, total) = ac_counts(v);
         assert_eq!(checked, 2);
         assert_eq!(total, 3);
+    }
+
+    #[test]
+    fn job_payload_preserves_prompt_and_omits_default_model() {
+        let payload = headless_job_request("local-eval", "line\n\"quoted\"", "sys", GATE_OUTPUT_SCHEMA, None, 30, "trace", "revision");
+        assert_eq!(extract_json_str(&payload, "profile").as_deref(), Some("local-eval"));
+        assert_eq!(json_unescape(&extract_json_str(&payload, "input").unwrap()), "line\n\"quoted\"");
+        assert!(payload.contains("\"model\":null"));
+        assert!(payload.contains("\"output_schema\":{\"type\":\"object\""));
+        assert_eq!(json_quote("\u{1}\t"), "\"\\u0001\\t\"");
+    }
+
+    #[test]
+    fn headless_runner_drains_pipes_while_writing_large_input() {
+        let mut command = Command::new("/bin/sh");
+        command.args(["-c", "dd if=/dev/zero bs=1024 count=128 2>/dev/null; dd if=/dev/zero bs=1024 count=128 >&2 2>/dev/null; cat >/dev/null; printf done"]);
+        let output = bounded_headless(command, "x".repeat(256 * 1024), 3).unwrap();
+        assert!(output.ends_with("done"));
+    }
+
+    #[test]
+    fn headless_runner_times_out_descendants() {
+        let mut command = Command::new("/bin/sh"); command.args(["-c", "sleep 30 & wait"]);
+        let start = Instant::now();
+        assert!(bounded_headless(command, String::new(), 1).unwrap_err().contains("timed out"));
+        assert!(start.elapsed() < Duration::from_secs(4));
+    }
+
+    #[test]
+    fn review_verdict_preserves_block_and_concerns() {
+        for verdict in ["pass", "concerns", "block"] {
+            let output = format!("{{\"result\":\"{}\",\"findings\":\"evidence\"}}", verdict);
+            assert_eq!(parse_review_verdict(&output), (verdict.to_string(), "evidence".to_string()));
+        }
+        assert_eq!(parse_review_verdict(r#"{"result":"fail","findings":"bad"}"#).0, "block");
     }
 
     // === #3443 AC1 — gate self-run parsing ===

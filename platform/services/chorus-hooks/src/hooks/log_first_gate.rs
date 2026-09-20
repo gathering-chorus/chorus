@@ -128,10 +128,11 @@ fn has_log_evidence(input: &HookInput, state: &AppState) -> bool {
 
         // Check 2: "Log evidence:" synthesis in assistant output
         // Must contain what the logs revealed, not just that logs were opened.
-        if !has_log_synthesis && lower.contains("assistant")
-            && (lower.contains("log evidence:") || lower.contains("logs show")
-                || lower.contains("log shows") || lower.contains("from the logs:")
-                || lower.contains("log output:") || lower.contains("the log reveals"))
+        let assistant = crate::session_cache::assistant_text(line).to_lowercase();
+        if !has_log_synthesis
+            && (assistant.contains("log evidence:") || assistant.contains("logs show")
+                || assistant.contains("log shows") || assistant.contains("from the logs:")
+                || assistant.contains("log output:") || assistant.contains("the log reveals"))
             {
                 has_log_synthesis = true;
             }

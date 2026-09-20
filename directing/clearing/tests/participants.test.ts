@@ -138,7 +138,7 @@ describe('Participants — getResponse (non-streaming)', () => {
       model: 'claude-haiku-4-5-20251001',
       max_tokens: 500,
       system: wren.systemPrompt,
-    }));
+    }), expect.objectContaining({ signal: expect.any(AbortSignal) }));
     expect(result.content).toBe('hello from wren');
     expect(result.inputTokens).toBe(42);
     expect(result.outputTokens).toBe(7);

@@ -388,3 +388,10 @@ describe('MessageRouter — getHiddenCount', () => {
 // #3852 — isToolCall / isSkillOutput tests removed with the functions. They
 // tested a text heuristic that no longer decides anything; folding reads
 // stop_reason. Keeping tests for deleted code is how a dead guard looks alive.
+
+test('a canonical terminal reply is not suppressed by identical earlier commentary', () => {
+  const router = new MessageRouter();
+  router.ingest({from:'wren',text:'Done',ts:'2026-09-20T10:00:00Z',type:'pm-thinking'});
+  router.ingest({from:'wren',text:'Done',ts:'2026-09-20T10:00:01Z',type:'role-response'});
+  expect(router.getRecent(10).map(message=>message.type)).toEqual(['pm-thinking','role-response']);
+});

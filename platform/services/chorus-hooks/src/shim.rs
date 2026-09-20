@@ -420,6 +420,7 @@ fn main() -> ExitCode {
     let args: Vec<String> = all_args.into_iter().skip(skip).collect();
 
     match cmd.as_str() {
+        "runtime-hook" => return chorus_hooks::runtime_hook::run(&args),
         // --- Core signal path ---
         "chorus-log" | "log" => return chorus_log::run(&args),
         "role-state" => return role_state::run(&args),
@@ -554,7 +555,11 @@ fn main() -> ExitCode {
     // registry entry regardless of how it went dark (boot, compaction,
     // sweep, hand-rm); marks busy at user-prompt-submit, clears + drains the
     // role's queued nudges at stop. Best-effort — never blocks the tool call.
-    commands::session_registry::heal_and_mark(&endpoint, &input);
+    // Native adapters are enrolled by chorus-agent, never by the Claude PID
+    // walker. The marker is produced by runtime-hook, not an enrollment grant.
+    let is_native = serde_json::from_str::<serde_json::Value>(&input).ok()
+        .is_some_and(|value| value.get("chorus_session_id").is_some());
+    if !is_native { commands::session_registry::heal_and_mark(&endpoint, &input); }
 
     // #2790 — in-process canonical_write_guard. The behavioral bug Jeff
     // named: "i default to wherever I was last cd'd, not to my werk by

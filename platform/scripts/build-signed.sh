@@ -42,6 +42,7 @@
 #   build-signed.sh chorus-hooks    → signs chorus-hook-shim as com.chorus.hook-shim
 #                                     AND chorus-hooks as com.chorus.hooks
 #   build-signed.sh chorus-inject   → signs chorus-inject as com.chorus.inject
+#   build-signed.sh chorus-agent    → signs/installs chorus-agent + chorus-agentd
 set -euo pipefail
 
 SIGNING_IDENTITY="${CHORUS_SIGNING_IDENTITY:-9086CB9855BC4642CA03D0B6415A50BD90B86AE3}"
@@ -97,6 +98,7 @@ resolve_crate() {
   case "$1" in
     chorus-hooks)  echo "$ROOT/platform/services/chorus-hooks|com.chorus.hook-shim|chorus-hook-shim" ;;
     chorus-inject) echo "$ROOT/platform/services/chorus-inject|com.chorus.inject|chorus-inject" ;;
+    chorus-agent)  echo "$ROOT/platform/services/chorus-agent|com.chorus.agent|chorus-agent" ;;
     *)             echo "" ;;
   esac
 }
@@ -104,7 +106,7 @@ resolve_crate() {
 if [ $# -eq 1 ]; then
   spec="$(resolve_crate "$1")"
   if [ -z "$spec" ]; then
-    echo "build-signed: unknown shortcut '$1' (known: chorus-hooks, chorus-inject)" >&2
+    echo "build-signed: unknown shortcut '$1' (known: chorus-hooks, chorus-inject, chorus-agent)" >&2
     exit 2
   fi
   IFS='|' read -r crate_dir identifier binary_name <<< "$spec"
@@ -113,7 +115,7 @@ elif [ $# -eq 3 ]; then
   identifier="$2"
   binary_name="$3"
 else
-  echo "Usage: build-signed.sh <chorus-hooks|chorus-inject>" >&2
+  echo "Usage: build-signed.sh <chorus-hooks|chorus-inject|chorus-agent>" >&2
   echo "   or: build-signed.sh <crate-dir> <identifier> <binary-name>" >&2
   exit 2
 fi
@@ -132,6 +134,21 @@ if [ ! -f "$binary" ]; then
   exit 1
 fi
 
+secondary_name=""
+secondary_identifier=""
+case "${1:-}" in
+  chorus-hooks) secondary_name="chorus-hooks"; secondary_identifier="com.chorus.hooks" ;;
+  chorus-agent) secondary_name="chorus-agentd"; secondary_identifier="com.chorus.agentd" ;;
+esac
+secondary_binary=""
+if [ -n "$secondary_name" ]; then
+  secondary_binary="$crate_dir/target/release/$secondary_name"
+  if [ ! -f "$secondary_binary" ]; then
+    echo "build-signed: secondary binary not produced: $secondary_binary" >&2
+    exit 1
+  fi
+fi
+
 # #3684 — codesign is macOS-only (TCC binds AppleEvents perms to the cdhash). On a
 # Linux CI runner there is no `codesign`, so the old unconditional call hard-failed
 # with "codesign: command not found" and broke the whole build (quality.yml RC1).
@@ -141,13 +158,9 @@ if [ "$(uname -s)" = "Darwin" ] && command -v codesign >/dev/null 2>&1; then
   echo "build-signed: codesign --force --sign $SIGNING_IDENTITY --identifier $identifier"
   codesign --force --sign "$SIGNING_IDENTITY" --identifier "$identifier" "$binary"
 
-  # chorus-hooks shortcut: also sign the second crate binary (chorus-hooks)
-  if [ "${1:-}" = "chorus-hooks" ]; then
-    HOOKS_BIN="$crate_dir/target/release/chorus-hooks"
-    if [ -f "$HOOKS_BIN" ]; then
-      codesign --force --sign "$SIGNING_IDENTITY" --identifier "com.chorus.hooks" "$HOOKS_BIN"
-      echo "build-signed: $(basename "$HOOKS_BIN") signed identifier=com.chorus.hooks"
-    fi
+  if [ -n "$secondary_binary" ]; then
+    codesign --force --sign "$SIGNING_IDENTITY" --identifier "$secondary_identifier" "$secondary_binary"
+    echo "build-signed: $secondary_name signed identifier=$secondary_identifier"
   fi
 else
   echo "build-signed: codesign SKIPPED (non-macOS or codesign absent — $(uname -s)); binary unsigned, build continues (#3684)"
@@ -165,9 +178,12 @@ fi
 emit_artifact_records() {
   local bin_path="$1" installed_name="$2"
   echo "build-signed: verify $installed_name"
-  codesign -dvvv "$bin_path" 2>&1 | grep -E "^Identifier=|^Authority=" | head -2
   local cdhash
-  cdhash=$(codesign -dvvv "$bin_path" 2>&1 | grep "^CDHash=" | head -1 | sed 's/^CDHash=//')
+  cdhash="unsigned"
+  if [ "$(uname -s)" = "Darwin" ] && command -v codesign >/dev/null 2>&1; then
+    codesign -dvvv "$bin_path" 2>&1 | grep -E "^Identifier=|^Authority=" | head -2
+    cdhash=$(codesign -dvvv "$bin_path" 2>&1 | grep "^CDHash=" | head -1 | sed 's/^CDHash=//')
+  fi
   echo "build-signed: cdhash=$cdhash"
 
   # Build-invariance evidence (#2775). cdhash is the binding identity (#2734);
@@ -209,8 +225,8 @@ emit_artifact_records "$binary" "$binary_name"
 
 # chorus-hooks shortcut: also emit + record for the second binary (closes the
 # secondary-binary gap that was a TODO before #2791).
-if [ "${1:-}" = "chorus-hooks" ] && [ -f "${HOOKS_BIN:-}" ]; then
-  emit_artifact_records "$HOOKS_BIN" "chorus-hooks"
+if [ -n "$secondary_binary" ]; then
+  emit_artifact_records "$secondary_binary" "$secondary_name"
 fi
 
 # Install to ~/.chorus/bin/ — the canonical deploy location (#2734).
@@ -229,8 +245,8 @@ else
   if [ -x "$INSTALL_SCRIPT" ]; then
     "$INSTALL_SCRIPT" "$binary" "$binary_name"
     # chorus-hooks shortcut also installs the second binary
-    if [ "${1:-}" = "chorus-hooks" ] && [ -f "${HOOKS_BIN:-}" ]; then
-      "$INSTALL_SCRIPT" "$HOOKS_BIN" "chorus-hooks"
+    if [ -n "$secondary_binary" ]; then
+      "$INSTALL_SCRIPT" "$secondary_binary" "$secondary_name"
     fi
   else
     echo "build-signed: WARN — chorus-bin-install not found; binary signed but not installed to ~/.chorus/bin/" >&2

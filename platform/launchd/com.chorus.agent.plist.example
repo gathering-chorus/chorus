@@ -1,0 +1,25 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<!-- Opt-in example only. Replace __HOME__ with the operator's absolute home,
+     review agent-profiles.json and install the signed pair with build-signed.sh
+     chorus-agent before explicitly installing/bootstrapping this LaunchAgent.
+     No credentials or role defaults belong in this file. -->
+<plist version="1.0">
+<dict>
+  <key>Label</key><string>com.chorus.agent</string>
+  <key>ProgramArguments</key>
+  <array><string>__HOME__/.chorus/bin/chorus-agentd</string></array>
+  <key>EnvironmentVariables</key>
+  <dict>
+    <key>CHORUS_AGENT_CONFIG</key><string>__HOME__/.chorus/agent-profiles.json</string>
+    <key>CHORUS_AGENT_STATE_DIR</key><string>__HOME__/.chorus</string>
+    <key>CHORUS_AGENT_SOCKET</key><string>__HOME__/.chorus/run/chorus-agent.sock</string>
+    <key>PATH</key><string>__HOME__/.chorus/bin:/usr/local/bin:/usr/bin:/bin</string>
+  </dict>
+  <key>RunAtLoad</key><true/>
+  <key>KeepAlive</key><true/>
+  <key>ThrottleInterval</key><integer>10</integer>
+  <key>StandardOutPath</key><string>__HOME__/.chorus/agentd.stdout.log</string>
+  <key>StandardErrorPath</key><string>__HOME__/.chorus/agentd.stderr.log</string>
+</dict>
+</plist>

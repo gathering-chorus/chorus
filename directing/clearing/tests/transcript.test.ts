@@ -90,10 +90,10 @@ describe('Transcript — token totals and cost', () => {
     expect(t.getEstimatedCost()).toBeCloseTo(15.0, 4);
   });
 
-  test('getEstimatedCost() falls back to haiku for unknown model', () => {
+  test('getEstimatedCost() reports unknown for an unpriced model', () => {
     const t = new Transcript('unknown-model-nonexistent');
     t.add('jeff', 'a', { input: 1_000_000, output: 0 });
-    expect(t.getEstimatedCost()).toBeCloseTo(0.8, 4);
+    expect(t.getEstimatedCost()).toBeNull();
   });
 
   test('getEstimatedCost() is zero on empty transcript', () => {

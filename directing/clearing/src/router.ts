@@ -39,15 +39,7 @@ export class MessageRouter extends EventEmitter {
     // ("test" matched "end-to-end bridge test" as substring). Only exact match now.
     const recent = this.messages.slice(-10);
     const normText = classified.text.replace(/^@(wren|silas|kade)\s+/i, '').trim();
-    for (const prev of recent) {
-      if (prev.from !== classified.from) continue;
-      if (prev.text === classified.text) return; // exact match
-      // Exact match after stripping @mentions (#1706)
-      const prevNorm = prev.text.replace(/^@(wren|silas|kade)\s+/i, '').trim();
-      if (normText && prevNorm && normText === prevNorm) {
-        return; // @mention-stripped exact duplicate
-      }
-    }
+    if (recent.some(prev => this.isDuplicate(prev,classified,normText))) return;
 
     this.messages.push(classified);
 
@@ -57,6 +49,15 @@ export class MessageRouter extends EventEmitter {
     }
 
     this.emit('message', classified);
+  }
+
+  private isDuplicate(prev: ChannelMessage, next: ChannelMessage, normText: string): boolean {
+    if (prev.from !== next.from) return false;
+    // An explicit terminal reply is not a duplicate of earlier commentary.
+    if (next.type === ROLE_RESPONSE && prev.type === 'pm-thinking') return false;
+    if (prev.text === next.text) return true;
+    const prevNorm = prev.text.replace(/^@(wren|silas|kade)\s+/i, '').trim();
+    return !!normText && normText === prevNorm;
   }
 
   /** Get recent messages (visible only by default) */

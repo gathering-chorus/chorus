@@ -24,6 +24,7 @@ import { execFile, spawn } from 'child_process';
 import { existsSync } from 'fs';
 import { promisify } from 'util';
 import { z } from 'zod';
+import { authorizeAgentTool, currentAgentIdentity, requestEnvironment, withAgentIdentity, type AgentIdentity } from './request-identity';
 import { resolveShimPath } from './shim-path';
 import { resolveCardsPath } from './cards-path';
 import { resolvePulseSecret } from './pulse-secret';
@@ -62,6 +63,7 @@ import {
 const NudgeInput = z.object({
   to: z.enum(['silas', 'wren', 'kade', 'jeff']).describe('Target role'),
   message: z.string().min(1).describe('Message text the recipient sees'),
+  target_session_id: z.string().regex(/^[A-Za-z0-9_-]{1,200}$/).optional().describe('Explicit enrolled session; omitted selects the role primary'),
   // #3403 — what the sender needs back. Default 'none' (fyi/ack, never traps).
   // 'reply'/'decision'/'action' make the recipient owe a response (gated).
   expects: z.enum(['none', 'reply', 'decision', 'action']).optional().describe('What you need back; set reply/decision/action to require a response'),
@@ -108,7 +110,7 @@ export type SpawnFn = (
  *  spawning a binary (the principles tools call existing Athena REST). Default
  *  is the runtime's globalThis.fetch (Node 18+).
  */
-export type FetchImpl = (url: string, init?: { method?: string; headers?: Record<string, string>; body?: string; signal?: AbortSignal }) => Promise<{
+export type FetchImpl = (url: string, init?: { method?: string; headers?: Record<string, string>; body?: string; signal?: AbortSignal; redirect?: 'error' }) => Promise<{
   ok: boolean;
   status?: number;
   json: () => Promise<unknown>;
@@ -116,6 +118,10 @@ export type FetchImpl = (url: string, init?: { method?: string; headers?: Record
 }>;
 
 export interface McpServerDeps {
+  /** Verified per-request actor from the HTTP transport, never process state. */
+  identity?: AgentIdentity;
+  /** Long-lived stdio sessions reverify identity before each tool call. */
+  authenticate?: () => Promise<AgentIdentity>;
   execFileAsync?: ExecFileAsync;
   shimPath?: string;
   cardsPath?: string;
@@ -432,7 +438,7 @@ const SUBDOMAINS_GET_TOOL_DEF = {
 const NUDGE_TOOL_DEF = {
   name: 'chorus_nudge_message',
   description:
-    'Send a message to another Chorus role. Delivered to the role\'s active session best-effort within ~3s. Use this to coordinate work, ask a question, or notify of a state change. Do NOT use for batch broadcasts or non-actionable status — those belong on chorus-log. The sender is read from request context.',
+    'Queue a message to another Chorus role or an explicitly named enrolled session. Native sessions receive queued context at their next safe boundary; transport admission is not delivery. Use this to coordinate work, ask a question, or notify of a state change. The sender is read from request context.',
   inputSchema: {
     type: 'object',
     properties: {
@@ -446,6 +452,7 @@ const NUDGE_TOOL_DEF = {
         minLength: 1,
         description: 'Message text the recipient sees',
       },
+      target_session_id: { type: 'string', pattern: '^[A-Za-z0-9_-]{1,200}$', description: 'Explicit enrolled session; omitted selects the role primary' },
       expects: {
         type: 'string',
         enum: ['none', 'reply', 'decision', 'action'],
@@ -695,7 +702,7 @@ const CARDS_ADD_TOOL_DEF = {
 const CARD_ADD_JEFF_TOOL_DEF = {
   name: 'chorus_card_add_jeff',
   description:
-    'Use this ONLY when invoked by the `/card` skill on Jeff\'s direct request. Files a Jeff-attributed card by spawning `cards add` with DEPLOY_ROLE=jeff hardcoded — bouncer\'s isAgent check returns false, card lands directly with no approval-ask payload (it still needs the Experience+AC floor; #3293 removed --quick). The /card skill invocation IS the authorization. Do NOT use for agent-initiated cards (own observation, peer follow-on, demo seed) — use chorus_cards_add instead so the bouncer\'s six-section gate fires and Jeff sees the proposal. Do NOT call this to bypass a bouncer refusal on your own work; the bouncer is intentional. (#2996 retires the old natural-language detector + freshness-marker path in favor of this single typed tool.)',
+    'Create a Jeff-attributed card at Jeff\'s explicit request. Verified sessions require Jeff\'s authenticated identity; invoking a skill does not elevate an agent\'s identity. The card still needs Experience and acceptance criteria. For agent-initiated cards, use chorus_cards_add so the normal proposal gate applies.',
   inputSchema: {
     type: 'object',
     properties: {
@@ -2364,7 +2371,7 @@ async function executeServiceLifecycle(
   let failure: { killed?: boolean; signal?: string | null; code?: number | string | null } | undefined;
   try {
     const result = await execFileP('bash', [scriptPath, verb, service], {
-      env: { ...process.env, DEPLOY_ROLE: role, CHORUS_ROLE: role },
+      env: { ...requestEnvironment(), DEPLOY_ROLE: role, CHORUS_ROLE: role },
       timeout: LIFECYCLE_TIMEOUT_MS,
       maxBuffer: 1024 * 1024,
     });
@@ -2393,25 +2400,6 @@ async function executeServiceLifecycle(
 // {ok, stdout, stderr, exit} on success or throwing a typed-refusal-shaped
 // error on non-zero exit. Parses reason= markers from stderr/stdout so the
 // refusal taxonomy on the tool def remains meaningful at the caller side.
-/// #4202 — the session's token, if this pane has one.
-///
-/// Exported so the two states can be told apart in a test: a real token rides
-/// along, and anything else — no file, no path, a truncated or non-JWT body —
-/// yields nothing at all. Substituting a plausible value here would recreate
-/// the thing this replaces, where the caller's typed role name WAS the identity.
-export function sessionTokenEnv(tokenFile: string | undefined): Record<string, string> {
-  if (!tokenFile) return {};
-  try {
-    const fsMod = require('fs') as typeof import('fs');
-    const tok = fsMod.readFileSync(tokenFile, 'utf-8').trim();
-    return tok.split('.').length === 3 && tok.length > 0
-      ? { CHORUS_IDENTITY_TOKEN: tok }
-      : {};
-  } catch {
-    return {};
-  }
-}
-
 async function executeWerkVerb(
   // #3561 — the athena family joins the same exec path. These are verbs in
   // ~/.chorus/bin exactly like werk-*, and were reachable ONLY by a role shelling
@@ -2433,22 +2421,14 @@ async function executeWerkVerb(
   let stderr: string;
   let exitCode = 0;
   let failure: { killed?: boolean; signal?: string | null; code?: number | string | null } | undefined;
-  // #4202 — the caller's identity comes from the session this server runs in,
-  // not from the `role` argument. That argument is typed by whoever called the
-  // tool, so a verb trusting it lets any caller write as any role; athena-model
-  // refuses env-trust for exactly that reason (#3687), and with no token
-  // attached here it refused every governed write through MCP. The session's
-  // token file is written at login and named by CHORUS_SESSION_TOKEN_FILE.
-  // When it is absent nothing is invented — the verb runs tokenless and fails
-  // closed, which is the honest state of a pane that never logged in.
-  const sessionEnv = sessionTokenEnv(process.env.CHORUS_SESSION_TOKEN_FILE);
+  // Credentials come from this authenticated request, never the shared
+  // daemon's token file. requestEnvironment also scrubs the legacy lane.
   try {
     const result = await execFileP(binPath, args, {
       env: {
-        ...process.env,
+        ...requestEnvironment(),
         DEPLOY_ROLE: role,
         CHORUS_ROLE: role,
-        ...sessionEnv,
         CHORUS_HOME: process.env.CHORUS_HOME || DEFAULT_CHORUS_HOME,
         CHORUS_WERK_BASE: process.env.CHORUS_WERK_BASE || '/Users/jeffbridwell/CascadeProjects/chorus-werk',
         // #3320 — name the invoker so werk-deploy can detect the self-deploy case
@@ -2524,7 +2504,7 @@ async function runAthenaValidate(
   const execFileP = promisify(execFile);
   try {
     const r = await execFileP(bin, args, {
-      env: { ...process.env, DEPLOY_ROLE: role, CHORUS_ROLE: role, ATHENA_VALIDATE_NUDGE: '0',
+      env: { ...requestEnvironment(), DEPLOY_ROLE: role, CHORUS_ROLE: role, ATHENA_VALIDATE_NUDGE: '0',
         CHORUS_HOME: process.env.CHORUS_HOME || DEFAULT_CHORUS_HOME },
       timeout: VERB_TIMEOUT_MS, maxBuffer: 16 * 1024 * 1024,
     });
@@ -2585,7 +2565,7 @@ async function executeRegisterFeedback(
       ['gather', String(args.card_id), peer, 'replied', args.verdict, args.substance],
       {
         env: {
-          ...process.env,
+          ...requestEnvironment(),
           DEPLOY_ROLE: peer,
           CHORUS_ROLE: peer,
           CHORUS_HOME: process.env.CHORUS_HOME || DEFAULT_CHORUS_HOME,
@@ -2642,7 +2622,7 @@ async function executeChorusEnvUp(
 // #3279 — runner env shared by both halves of the split pipeline.
 function werkRunnerEnv(home: string, werkBase: string, role: string, runnerPath: string) {
   return {
-    ...process.env,
+    ...requestEnvironment(),
     CHORUS_HOME: home,
     CHORUS_WERK_BASE: werkBase,
     DEPLOY_ROLE: role,
@@ -2973,7 +2953,7 @@ async function triggerAthenaOnLand(
   const scopeBin = pathMod.join(binDir, 'athena-deploy');
   let scope: string;
   try {
-    const r = await execFileP(scopeBin, ['scope', home, `${landedCommit}^..${landedCommit}`], { env: process.env, timeout: 60_000, maxBuffer: 4 * 1024 * 1024 });
+    const r = await execFileP(scopeBin, ['scope', home, `${landedCommit}^..${landedCommit}`], { env: requestEnvironment(), timeout: 60_000, maxBuffer: 4 * 1024 * 1024 });
     scope = (r.stdout || '').trim();
   } catch (err) {
     const e = err as NodeJS.ErrnoException & { stderr?: string; killed?: boolean; signal?: string | null };
@@ -3193,7 +3173,7 @@ export async function executeNudge(
   // isError is part of the contract, not a cast: a TS caller must be able to
   // tell a refusal from a send without parsing the text (Silas + Kade, #3818).
 ): Promise<{ content: Array<{ type: 'text'; text: string }>; isError?: boolean }> {
-  const { to, message, expects } = args;
+  const { to, message, expects, target_session_id } = args;
 
   // #3818 — the word cap, enforced BEFORE anything is recorded or sent.
   //
@@ -3255,8 +3235,10 @@ export async function executeNudge(
     // indistinguishable from the change never happening.
     logEvent('error', 'mcp.nudge.transport_unknown', { from, to, unknown: unknown.join(',') });
   }
+  const sourceIdentity = currentAgentIdentity();
   const { result, attempts } = await sendVia(chosen, {
-    from, to, content: message, traceId, expects: expects ?? 'none',
+    from, to, content: message, traceId, expects: expects ?? 'none', ...(target_session_id ? { target_session_id } : {}),
+    ...(sourceIdentity?.mode === 'verified' && sourceIdentity.sessionId ? { source_session_id: sourceIdentity.sessionId } : {}),
   });
   if (!result.ok) {
     for (const a of attempts) {
@@ -3266,8 +3248,8 @@ export async function executeNudge(
     throw new Error(result.error);
   }
   const dest = result.resolved;
-  logEvent('info', 'mcp.nudge.delivered', { from, to, trace_id: traceId, resolved: dest });
-  return { content: [{ type: 'text', text: `nudge sent: ${from} → ${dest} (trace=${traceId})` }] };
+  logEvent('info', 'mcp.nudge.queued', { from, to, trace_id: traceId, resolved: dest });
+  return { content: [{ type: 'text', text: `nudge sent to delivery queue: ${from} → ${dest} (trace=${traceId})` }] };
 }
 
 // #2652 (AC8) — cards execute helpers. Each spawns the cards bash CLI with
@@ -3283,7 +3265,7 @@ async function execCardsCli(
   toolName: string,
 ): Promise<string> {
   const env = {
-    ...process.env,
+    ...requestEnvironment(),
     DEPLOY_ROLE: from,
     CHORUS_CARDS_ORIGIN: 'mcp',
   } as NodeJS.ProcessEnv;
@@ -3463,8 +3445,20 @@ async function executeCardsView(
  * Caller passes a context-resolver that returns the sender role for a request
  * (read from header / env / session map). Keeps server module pure.
  */
-export function buildMcpServer(getCallerRole: () => string, deps: McpServerDeps = {}): Server {
-  const execFileAsync: ExecFileAsync = deps.execFileAsync ?? (promisify(execFile) as unknown as ExecFileAsync);
+export function buildMcpServer(resolveCallerRole: () => string, deps: McpServerDeps = {}): Server {
+  // All legacy helpers asking for the caller must see the current verified
+  // request, including stdio token rotation and cross-builder acceptance.
+  const getCallerRole = () => currentAgentIdentity()?.role ?? deps.identity?.role ?? resolveCallerRole();
+  const rawExec: ExecFileAsync = deps.execFileAsync ?? (promisify(execFile) as unknown as ExecFileAsync);
+  const execFileAsync: ExecFileAsync = (file, args, opts) => {
+    const env = requestEnvironment(opts.env ?? process.env);
+    // Explicit operation attribution can differ from actor identity (e.g. a
+    // verified human targeting a role). The dispatcher checked that authority.
+    for (const key of ['DEPLOY_ROLE', 'CHORUS_ROLE']) {
+      if (opts.env?.[key] !== undefined) env[key] = opts.env[key];
+    }
+    return rawExec(file, args, { ...opts, env });
+  };
   // #3458 — the detached act spawn + run-state dir, injectable for tests (default
   // to the real spawn / live RUNS_DIR). chorus_werk no longer routes the act run
   // through execFileAsync; it spawns detached, so the test seam lives here.
@@ -3476,8 +3470,17 @@ export function buildMcpServer(getCallerRole: () => string, deps: McpServerDeps 
   // delete in this card's later commits.
   void (deps.shimPath ?? resolveShimPath());
   const cardsPath = deps.cardsPath ?? resolveCardsPath();
-  const fetchImpl: FetchImpl = deps.fetchImpl ?? (globalThis.fetch as unknown as FetchImpl);
-  const apiBase = deps.apiBase ?? 'http://localhost:3340';
+  const apiBase = deps.apiBase ?? process.env.CHORUS_API_URL ?? 'http://localhost:3340';
+  const rawFetch: FetchImpl = deps.fetchImpl ?? (globalThis.fetch as unknown as FetchImpl);
+  const fetchImpl: FetchImpl = (url, init) => {
+    // Only the existing API trust origin gets the caller's bearer. Loki, Pulse,
+    // arbitrary tool URLs, redirects, and model providers must not receive it.
+    const identity = currentAgentIdentity() ?? deps.identity;
+    if (identity?.mode === 'verified' && new URL(url).origin === new URL(apiBase).origin) {
+      return rawFetch(url, { ...init, redirect: 'error', headers: { ...init?.headers, Authorization: `Bearer ${identity.token}` } });
+    }
+    return rawFetch(url, init);
+  };
   const boardReader: BoardReader = deps.boardReader ?? defaultBoardReader(fetchImpl, apiBase);
   const emitSpineEvent: SpineEmitter = deps.emitSpineEvent ?? defaultSpineEmitter();
   // #3182 — repo root resolved DIRECTLY (env → __dirname), no longer via the
@@ -3578,12 +3581,26 @@ export function buildMcpServer(getCallerRole: () => string, deps: McpServerDeps 
   // 1-per-case; refactoring would mean a name-keyed lookup object losing the
   // per-case zod parsing branches. Acceptable concentration of complexity.
   server.setRequestHandler(CallToolRequestSchema, async (req) => {
-    const from = getCallerRole();
+    const identity = await deps.authenticate?.() ?? deps.identity ?? { mode: 'legacy-claude' as const, role: getCallerRole() };
+    return withAgentIdentity(identity, async () => {
+    const from = identity.role;
     // #3000 — wrap the per-tool dispatch in try/catch + isError check so
     // every error path emits a typed mcp.tool.error spine event. Closes
     // the "MCP errors vaporize behind the boundary" gap named 2026-05-18.
     const errorToolName = req.params.name;
     const errorTraceId = mintTraceIdV7();
+    // Policy refusals are expected caller outcomes, not daemon failures that
+    // should nudge operations. Never include credentials in the audit record.
+    try {
+      authorizeAgentTool(identity, req.params.name, req.params.arguments);
+    } catch (err) {
+      emitSpineEvent('mcp.authorization.refused', {
+        from, tool: req.params.name,
+        reason: err instanceof Error ? err.message : 'authorization-refused',
+        ...(identity.mode === 'verified' ? { principal: identity.principal, session_id: identity.sessionId } : {}),
+      });
+      throw err;
+    }
     try {
       // cog-override: MCP tool-dispatch switch — one branch per tool by construction; pre-existing, not in #3173 scope
       const result = await (async () => { switch (req.params.name) {
@@ -3634,6 +3651,7 @@ export function buildMcpServer(getCallerRole: () => string, deps: McpServerDeps 
         try {
           // process.execPath = the node running THIS daemon — bare 'node' ENOENTs under launchd PATH
           const { stdout } = await execFileP(process.execPath, [cli, '--hours', h, '--html', htmlOut], {
+            env: requestEnvironment(),
             timeout: 120000, maxBuffer: 16 * 1024 * 1024,
           });
           return { content: [{ type: 'text' as const, text: stdout }] };
@@ -4152,6 +4170,7 @@ export function buildMcpServer(getCallerRole: () => string, deps: McpServerDeps 
       });
       throw err; // preserve caller-visible error
     }
+    });
   });
 
   return server;

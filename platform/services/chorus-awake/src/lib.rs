@@ -411,10 +411,54 @@ fn sh(bin: &str, args: &[&str]) -> Result<String, String> {
 
 fn now_ms() -> u128 { SystemTime::now().duration_since(UNIX_EPOCH).map(|d| d.as_millis()).unwrap_or(0) }
 
+/// Explicit profile selection opts a role into the runtime supervisor. Missing
+/// config keeps the existing Claude launch path; invalid config never guesses.
+pub fn configured_runtime_profile(role: &str, explicit: Option<&str>, config: Option<&str>) -> Result<Option<String>, String> {
+    if let Some(profile) = explicit {
+        if profile.trim().is_empty() { return Err("CHORUS_AGENT_PROFILE cannot be empty".into()); }
+        return Ok(Some(profile.to_string()));
+    }
+    let config = match config { Some(text) => serde_json::from_str::<Value>(text).map_err(|e|format!("invalid agent profiles config: {e}"))?, None => return Ok(None) };
+    match config.get("roles").and_then(|roles|roles.get(role)) {
+        None | Some(Value::Null) => Ok(None),
+        Some(Value::String(profile)) if !profile.trim().is_empty() => Ok(Some(profile.clone())),
+        _ => Err(format!("agent profile for {role} must be a nonempty string")),
+    }
+}
+
+fn runtime_dispatch(role: &str, home: &str) -> Result<Option<i32>, String> {
+    let state = env::var("CHORUS_AGENT_STATE_DIR").unwrap_or_else(|_|format!("{home}/.chorus"));
+    let config_path = env::var("CHORUS_AGENT_CONFIG").unwrap_or_else(|_|format!("{state}/agent-profiles.json"));
+    let explicit = env::var("CHORUS_AGENT_PROFILE").ok();
+    let config = if explicit.is_some() { None } else {
+        match fs::read_to_string(&config_path) {
+            Ok(text) => Some(text),
+            Err(error) if error.kind() == std::io::ErrorKind::NotFound => None,
+            Err(error) => return Err(format!("cannot read {config_path}: {error}")),
+        }
+    };
+    let profile = match configured_runtime_profile(role, explicit.as_deref(), config.as_deref())? { Some(profile) => profile, None => return Ok(None) };
+    let bin = envd("CHORUS_AGENT_BIN", &format!("{home}/.chorus/bin/chorus-agent"));
+    let mut command = Command::new(&bin);
+    command.args(["launch", role, "--profile", &profile]);
+    // Only an explicitly provided awake workspace overrides the configured
+    // role anchor. Never pass the caller's incidental cwd or a latest session.
+    if let Ok(cwd) = env::var("AWAKE_ROLE_DIR") { command.args(["--cwd", &cwd]); }
+    let status = command.status().map_err(|e|format!("cannot launch runtime supervisor {bin}: {e}"))?;
+    // Once a role opts in, a failed login/start remains a failure. Falling back
+    // to Claude could start a second, differently authenticated conversation.
+    Ok(Some(status.code().unwrap_or(1)))
+}
+
 /// The whole verb. Returns the exit code; prints the proof line or the refusal.
 pub fn run(args: &[String]) -> i32 {
     let role = match args.first() { Some(r) if ROLES.contains(&r.as_str()) => r.clone(), Some(r) => { eprintln!("chorus-awake: unknown role '{}' (wren | silas | kade)", r); return 2; } None => { eprintln!("usage: chorus-awake <role>   (wren | silas | kade)"); return 2; } };
     let home = envd("HOME", "/tmp");
+    match runtime_dispatch(&role, &home) {
+        Ok(Some(code)) => return code,
+        Ok(None) => {},
+        Err(error) => { eprintln!("chorus-awake: REFUSED — {error}"); return 1; }
+    }
     let root = env::var("CHORUS_ROOT").ok().or_else(|| env::current_exe().ok().and_then(|p| p.ancestors().nth(6).map(|a| a.to_string_lossy().to_string()))).unwrap_or_else(|| format!("{}/CascadeProjects/chorus", home));
     let role_dir = envd("AWAKE_ROLE_DIR", &format!("{}/roles/{}", root, role));
     let sessions_dir = PathBuf::from(envd("CHORUS_SESSIONS_DIR", &format!("{}/.chorus/sessions", home)));

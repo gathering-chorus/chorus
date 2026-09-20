@@ -916,6 +916,7 @@ pub async fn check(input: &HookInput, state: &AppState) -> HookResponse {
     // #3147 — one inject_id spans this prompt's request + response events (the pairing
     // key). Minted inline now; migrates to the span Kade's emit_request() will return.
     let session_id = input.session_id.as_deref().unwrap_or("unknown");
+    let legacy_memory = crate::session_cache::legacy_memory_allowed(session_id);
     let inject_id = format!("inj-{}-{}", role_name, chrono::Utc::now().timestamp_nanos_opt().unwrap_or(0));
 
     // #3048: push BOTH the manifest (orientation: pulse + endpoints + nudges) AND
@@ -927,11 +928,17 @@ pub async fn check(input: &HookInput, state: &AppState) -> HookResponse {
     let manifest_block = {
         let (health, team_wip, role_wip, card) = parse_pulse_orientation(&role_name);
         let envelope = build_manifest_envelope(&role_name, card.as_deref(), &health, team_wip, role_wip);
-        let log_path_str = crate::shared::state_paths::chorus_log_file();
-        let log_path = std::path::Path::new(&log_path_str);
-        crate::hooks::nudge_poll::augment_envelope_with_nudges(
-            &role_name, &envelope, log_path, 50_000, 10,
-        )
+        if crate::session_cache::is_enrolled(session_id) {
+            // Native boundary delivery claims and acknowledges messages for the
+            // exact session; the global role fold would duplicate or misroute.
+            envelope
+        } else {
+            let log_path_str = crate::shared::state_paths::chorus_log_file();
+            let log_path = std::path::Path::new(&log_path_str);
+            crate::hooks::nudge_poll::augment_envelope_with_nudges(
+                &role_name, &envelope, log_path, 50_000, 10,
+            )
+        }
     };
 
     // #3854 — the cap belongs at WRITE time, not only at stop time: the Stop
@@ -984,7 +991,7 @@ pub async fn check(input: &HookInput, state: &AppState) -> HookResponse {
     let request_calls: Vec<(&str, String, bool)> = vec![
         ("chorus", build_search_url(&query, card_tag.as_deref()), true),
         ("chorus-semantic", build_semantic_url(prompt, card_tag.as_deref()), true),
-        ("memory", keywords.join(" "), true),
+        ("memory", keywords.join(" "), legacy_memory),
         ("pulse", "snapshot".to_string(), true),
         ("spine", "recent-8".to_string(), true),
         ("athena", role_name.clone(), true),
@@ -1014,7 +1021,7 @@ pub async fn check(input: &HookInput, state: &AppState) -> HookResponse {
         let r3 = role_name.clone();
         let t_chorus = tokio::task::spawn_blocking(move || cached_query_chorus_hybrid(&r1, &kw1, &q1, tag1.as_deref()));
         let t_semantic = tokio::task::spawn_blocking(move || cached_query_chorus_semantic(&rs, &ps, tags.as_deref()));
-        let t_memory = tokio::task::spawn_blocking(move || scan_memory(&kw2));
+        let t_memory = tokio::task::spawn_blocking(move || if legacy_memory { scan_memory(&kw2) } else { Vec::new() });
         let t_pulse = tokio::task::spawn_blocking(read_pulse_snapshot);
         let t_spine = tokio::task::spawn_blocking(|| query_recent_spine(8));
         let t_athena = tokio::task::spawn_blocking(move || cached_query_athena_domain(&r3));

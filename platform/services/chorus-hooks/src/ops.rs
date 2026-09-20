@@ -2,14 +2,14 @@
 //!
 //! Subcommands:
 //!   errors    — Defect polling: query Loki for error patterns, dedup, auto-card
-//!   health    — Health agent: pre-fetch system state, claude reasoning, act on findings
+//!   health    — Health agent: pre-fetch system state, model reasoning, act on findings
 //!   all       — Run errors first, then health (health self-throttles to every 3rd invocation)
 //!   status    — Show current state for both subsystems
 //!   dry-run   — Show what each subsystem would do, don't act
 
 use std::collections::HashMap;
 use std::fs;
-use std::io::Write;
+use std::io::{Read, Write};
 use std::path::{Path, PathBuf};
 use std::process::{Command, ExitCode, Output};
 use std::sync::mpsc;
@@ -98,17 +98,41 @@ impl CommandRunner for RealCommandRunner {
         args: &[&str],
         stdin_data: &[u8],
     ) -> std::io::Result<Output> {
+        use std::os::unix::process::CommandExt;
         let mut child = Command::new(bin)
-            .args(args)
+            .args(args).process_group(0)
             .stdin(std::process::Stdio::piped())
             .stdout(std::process::Stdio::piped())
             .stderr(std::process::Stdio::null())
-            .env_remove("CLAUDECODE")
+            .env("CHORUS_HEADLESS", "1").env_remove("CLAUDECODE")
             .spawn()?;
-        if let Some(ref mut stdin) = child.stdin {
-            let _ = stdin.write_all(stdin_data);
-        }
-        child.wait_with_output()
+        let pid = child.id() as i32;
+        let input = stdin_data.to_vec();
+        let mut stdin = child.stdin.take().expect("piped stdin");
+        let writer = thread::spawn(move || stdin.write_all(&input));
+        let mut stdout = child.stdout.take().expect("piped stdout");
+        let reader = thread::spawn(move || {
+            let mut kept = Vec::new(); let mut buffer = [0u8; 8192];
+            loop { match stdout.read(&mut buffer) {
+                Ok(0) | Err(_) => break,
+                Ok(n) => { let retain = n.min((8 * 1024 * 1024usize).saturating_sub(kept.len())); kept.extend_from_slice(&buffer[..retain]); }
+            }} kept
+        });
+        let timeout = std::env::var("CHORUS_OPS_TIMEOUT_SECS").ok().and_then(|s| s.parse::<u64>().ok()).unwrap_or(180).clamp(1, 3600) + 5;
+        let start = std::time::Instant::now();
+        let status = loop {
+            match child.try_wait() {
+                Ok(Some(status)) => break Ok(status),
+                Ok(None) if start.elapsed() < Duration::from_secs(timeout) => thread::sleep(Duration::from_millis(25)),
+                Ok(None) => break Err(std::io::Error::new(std::io::ErrorKind::TimedOut, "headless agent timed out")),
+                Err(error) => break Err(error),
+            }
+        };
+        unsafe { libc::kill(-pid, libc::SIGKILL); }
+        let _ = child.wait(); let _ = writer.join();
+        let stdout = reader.join().map_err(|_| std::io::Error::other("agent output reader failed"))?;
+        if stdout.len() >= 8 * 1024 * 1024 { return Err(std::io::Error::other("agent output exceeded size limit")); }
+        Ok(Output { status: status?, stdout, stderr: Vec::new() })
     }
 }
 
@@ -203,6 +227,9 @@ pub(crate) struct Config {
     subcommand: String,
     window: String,
     model: String,
+    model_explicit: bool,
+    profile: Option<String>,
+    agent_bin: PathBuf,
     budget: String,
     verbose: bool,
     dry_run: bool,
@@ -228,6 +255,9 @@ fn parse_args(args: &[String]) -> Result<Config, String> {
         subcommand: String::new(),
         window: DEFAULT_WINDOW.to_string(),
         model: DEFAULT_MODEL.to_string(),
+        model_explicit: false,
+        profile: std::env::var("CHORUS_OPS_PROFILE").ok().filter(|s| !s.trim().is_empty()),
+        agent_bin: std::env::var("CHORUS_AGENT_BIN").map(PathBuf::from).unwrap_or_else(|_| PathBuf::from(&home).join(".chorus/bin/chorus-agent")),
         budget: DEFAULT_BUDGET.to_string(),
         verbose: false,
         dry_run: false,
@@ -259,6 +289,7 @@ fn parse_args(args: &[String]) -> Result<Config, String> {
             "--model" => {
                 i += 1;
                 config.model = args.get(i).cloned().ok_or("--model requires a value")?;
+                config.model_explicit = true;
             }
             "--budget" => {
                 i += 1;
@@ -319,7 +350,7 @@ Usage: chorus-ops {defects|errors|health|all|status|dry-run} [options]
 
 Subcommands:
   defects|errors      Poll Loki for defects, dedup, auto-card
-  health              Health agent (claude reasoning)
+  health              Health agent (model reasoning)
   all                 Both (health self-throttles to every 3rd run)
   status              Show current state
   dry-run             Dry run both subsystems
@@ -1177,6 +1208,29 @@ pub(crate) fn run_claude_agent<C: CommandRunner>(
 ) -> Result<String, String> {
     let json_schema = r#"{"type":"object","properties":{"status":{"type":"string"},"findings":{"type":"array","items":{"type":"object","properties":{"id":{"type":"string"},"severity":{"type":"string"},"category":{"type":"string"},"title":{"type":"string"},"description":{"type":"string"},"action":{"type":"string"},"is_repeat":{"type":"boolean"}},"required":["id","severity","category","title","description","action","is_repeat"]}},"summary":{"type":"string"}},"required":["status","findings","summary"]}"#;
 
+    if let Some(profile) = &config.profile {
+        // Cost ceilings are provider-specific. The job profile owns portable token
+        // and time ceilings; never inject the legacy Claude model into another provider.
+        let schema: serde_json::Value = serde_json::from_str(json_schema).map_err(|e| e.to_string())?;
+        let timeout = std::env::var("CHORUS_OPS_TIMEOUT_SECS").ok().and_then(|s| s.parse::<u64>().ok()).unwrap_or(180).clamp(1, 3600);
+        let request = serde_json::json!({
+            "version":1,"profile":profile,"input":context_json,"instructions":system_prompt,
+            "output_schema":schema,"model":if config.model_explicit { Some(config.model.as_str()) } else { None },
+            "timeout_secs":timeout,"trace_id":std::env::var("CHORUS_TRACE_ID").ok()
+        });
+        let output = cmd.run_with_stdin(&config.agent_bin, &["run", "--text"], request.to_string().as_bytes());
+        return match output {
+            Ok(out) if out.status.success() => {
+                let raw = String::from_utf8(out.stdout).map_err(|_| "agent response is not UTF-8")?;
+                // The runner validates the schema before --text writes the payload.
+                let value: serde_json::Value = serde_json::from_str(&raw).map_err(|e| format!("agent JSON parse failed: {e}"))?;
+                Ok(serde_json::json!({"structured_output":value}).to_string())
+            }
+            Ok(out) => Err(format!("agent job failed (exit code {:?})", out.status.code())),
+            Err(e) => Err(format!("agent job spawn failed: {e}")),
+        };
+    }
+
     let args = [
         "-p",
         "--model",
@@ -1381,8 +1435,9 @@ pub(crate) fn do_health_post_prefetch<C: CommandRunner>(
 
     if config.verbose {
         log_msg(&format!(
-            "Phase 2: Calling claude -p (model={}, budget={})",
-            config.model, config.budget
+            "Phase 2: Calling health model (profile={}, model={}, legacy USD budget={})",
+            config.profile.as_deref().unwrap_or("legacy-claude"),
+            if config.profile.is_some() && !config.model_explicit { "profile default" } else { &config.model }, config.budget
         ));
     }
 
@@ -1417,7 +1472,7 @@ pub(crate) fn do_health_post_prefetch<C: CommandRunner>(
 
     if response_raw.len() < 10 {
         log_msg(&format!(
-            "ERROR: Claude response too small ({} bytes)",
+            "ERROR: Agent response too small ({} bytes)",
             response_raw.len()
         ));
         let status_arg = "status=error".to_string();
@@ -1755,6 +1810,9 @@ pub fn run(args: &[String]) -> ExitCode {
                 subcommand: "dry-run".to_string(),
                 window: config.window.clone(),
                 model: config.model.clone(),
+                model_explicit: config.model_explicit,
+                profile: config.profile.clone(),
+                agent_bin: config.agent_bin.clone(),
                 budget: config.budget.clone(),
                 verbose: config.verbose,
                 dry_run: true,
@@ -2561,6 +2619,9 @@ mod orchestrator_tests {
             subcommand: "errors".to_string(),
             window: "5m".to_string(),
             model: "haiku".to_string(),
+            model_explicit: false,
+            profile: None,
+            agent_bin: PathBuf::from("/fake/chorus-agent"),
             budget: "0.05".to_string(),
             verbose: false,
             dry_run: false,
@@ -3357,6 +3418,34 @@ mod orchestrator_tests {
             self.stdin.borrow_mut().push(stdin_data.to_vec());
             self.inner.run(bin, args)
         }
+    }
+
+    #[test]
+    fn profile_job_uses_schema_and_profile_model_without_claude_flags() {
+        let mut config = test_config(); config.profile = Some("health-model".into());
+        let cmd = StdinCapturingRunner::from_output(r#"{"status":"ok","findings":[],"summary":"green"}"#);
+        let output = run_claude_agent(&config, "context", "instructions", &cmd).unwrap();
+        assert_eq!(parse_agent_response(&output).unwrap().2, "green");
+        let calls = cmd.inner.calls.borrow();
+        assert_eq!(calls[0].0, PathBuf::from("/fake/chorus-agent"));
+        assert_eq!(calls[0].1, vec!["run", "--text"]);
+        let request: serde_json::Value = serde_json::from_slice(&cmd.stdin.borrow()[0]).unwrap();
+        assert_eq!(request["profile"], "health-model"); assert!(request["model"].is_null());
+        assert_eq!(request["input"], "context"); assert_eq!(request["instructions"], "instructions");
+        assert_eq!(request["output_schema"]["required"], serde_json::json!(["status","findings","summary"]));
+        assert!(request.get("budget").is_none());
+    }
+
+    #[test]
+    fn profile_job_forwards_explicit_model_and_fails_on_runner_error() {
+        let mut config = test_config(); config.profile = Some("health-model".into());
+        config.model_explicit = true; config.model = "local-model".into();
+        let cmd = StdinCapturingRunner::from_output(r#"{"status":"ok","findings":[],"summary":"green"}"#);
+        run_claude_agent(&config, "ctx", "sys", &cmd).unwrap();
+        let request: serde_json::Value = serde_json::from_slice(&cmd.stdin.borrow()[0]).unwrap();
+        assert_eq!(request["model"], "local-model");
+        let failed = StdinCapturingRunner::from_results(vec![Ok(Output {status:ExitStatus::from_raw(256),stdout:Vec::new(),stderr:Vec::new()})]);
+        assert!(run_claude_agent(&config, "ctx", "sys", &failed).unwrap_err().contains("agent job failed"));
     }
 
     #[test]

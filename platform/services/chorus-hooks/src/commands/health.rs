@@ -141,7 +141,7 @@ pub fn cruft_scan() -> ExitCode {
     out.push('\n');
 
     // Memory file sizes
-    out.push_str("## Memory Files (>10KB)\n");
+    out.push_str("## Legacy Claude Automatic Memory Files (>10KB)\n");
     let mem_dir = "/Users/jeffbridwell/.claude/projects/-Users-jeffbridwell-CascadeProjects/memory";
     if let Ok(entries) = fs::read_dir(mem_dir) {
         for entry in entries.flatten() {
