@@ -33,12 +33,15 @@ rows() { arq --results csv --query "$T/q.rq" "$@" 2>/dev/null | tail -n +2 | gre
   # which is three more rows — not drift. The count is asserted, not floored, so a row
   # vanishing still goes red.
   #
+  # 47 since #4229 (2026-09-20): permission-kade-pipelines, on Jeff's go — he
+  # owns 120 of that graph's 130 rows and could not write it, so the live
+  # PipelineRun check 403'd for everyone.
   # 46 since #4222 (2026-09-20): permission-kade-logs. The crawler writes LogSource
   # and runs as kade, so under Jeff's 09-17 ruling those rows are kade's and the
   # grant was the missing member of the set — 133 PUTs were 403ing without it.
   # Named here on purpose: bumping this number is a decision, not a rubber stamp.
   run grep -c "a chorus:Permission" "$PERMS"
-  test "$output" -eq 46
+  test "$output" -eq 47
 }
 
 @test "the scope query grants from Permission rows joined to real principals" {
