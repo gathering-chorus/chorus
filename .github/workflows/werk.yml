@@ -321,7 +321,15 @@ jobs:
         if: ${{ always() && steps.provenround.outputs.skip_prove != 'true' }}
         continue-on-error: true
         run: |
-          BIN="${CHORUS_HOME}/platform/services/demo-fitness/target/release/demo-fitness"
+          # #4227 — the WERK's build first. This step ran canonical's binary,
+          # so a card that changes demo-fitness could never see its own change
+          # in its own run: #4227's run printed the old wording and the old
+          # count while the new binary sat built in the werk. Canonical stays
+          # as the fallback for a card that did not touch this crate.
+          WERKDIR="${CHORUS_WERK_BASE:-/Users/jeffbridwell/CascadeProjects/chorus-werk}/${ROLE}-${CARD_ID}"
+          BIN="${WERKDIR}/platform/services/demo-fitness/target/release/demo-fitness"
+          [ -x "$BIN" ] || BIN="${CHORUS_WERK_BASE:-/Users/jeffbridwell/CascadeProjects/chorus-werk}/${ROLE}-bin/demo-fitness"
+          [ -x "$BIN" ] || BIN="${CHORUS_HOME}/platform/services/demo-fitness/target/release/demo-fitness"
           [ -x "$BIN" ] || BIN="$(command -v demo-fitness || true)"
           if [ -z "$BIN" ] || [ ! -x "$BIN" ]; then
             echo "demo-fitness: UNMEASURED — binary not built; this run says nothing about demo coverage"

@@ -68,6 +68,10 @@ pub enum SmokeKind {
     /// POST a JSON-RPC initialize body, expect 200 + result.protocolVersion.
     /// Mirrors v1 chorus-deploy's wait_for_mcp_ready_at.
     McpInitialize,
+    /// #4227 — chorus-hooks has no port. It answers on a unix socket, so the
+    /// smoke is "the socket file exists and accepts a connection". A file-exists
+    /// check alone would pass on a socket left behind by a dead daemon.
+    UnixSocket,
 }
 
 #[derive(Debug, Clone)]
@@ -81,6 +85,10 @@ pub enum ProgramArgsTemplate {
     /// as an argument, not an env, and the werk pipeline installs the built
     /// binary into the role's bin slot, not the crate's target dir.
     WerkBin { binary: String, args: Vec<String> },
+    /// #4227 — a deploy-werk artifact that takes NO --port. chorus-hooks binds
+    /// a unix socket, not a port; appending --port would make it exit on an
+    /// unknown argument.
+    WerkBinBare { binary: String },
 }
 
 /// #4022 — where deploy-werk installs a werk's built binaries.
@@ -190,7 +198,45 @@ pub fn env_services() -> Vec<EnvService> {
             smoke_path: "/health".to_string(),
             smoke_kind: SmokeKind::HttpGet,
         },
+        // #4227 — the werk's own hooks daemon. Until this, a demo had never run
+        // one: every hook in a session talked to the single prod daemon, so a
+        // card that changed a guard, a gate or the write scrubber could not be
+        // shown working before it landed. It has no port — it answers on a unix
+        // socket, and its socket and singleton lock move together with
+        // CHORUS_HOOKS_RUN_DIR, which is what makes a second daemon possible.
+        EnvService {
+            name: "chorus-hooks".to_string(),
+            kind: EnvServiceKind::RustService,
+            // No port. These are never read; the port_env below is empty, which
+            // is what tells generate_plist this service does not bind one.
+            silas_port: 0,
+            kade_port: 0,
+            wren_port: 0,
+            source_dir_rel: "platform/services/chorus-hooks".to_string(),
+            program_args_template: ProgramArgsTemplate::WerkBinBare {
+                binary: "chorus-hooks".to_string(),
+            },
+            port_env: String::new(),
+            smoke_path: String::new(),
+            smoke_kind: SmokeKind::UnixSocket,
+        },
     ]
+}
+
+/// #4227 — where a role's variant hooks daemon keeps its socket and its
+/// singleton lock. Both live in one directory by design (chorus-hooks
+/// state_paths::run_dir_from), which is exactly why a second daemon could
+/// never start before: on the shared path it loses the flock and exits.
+/// Under the werk, so env_down takes it with the rest of the demo.
+pub fn hooks_run_dir(werk_root: &str) -> String {
+    format!("{}/.chorus-demo/hooks-run", werk_root.trim_end_matches('/'))
+}
+
+/// #4227 — the socket a variant hooks daemon answers on. Mirrors
+/// chorus-hooks' own state_paths::hook_socket_durable() against that dir;
+/// the two must agree or the smoke waits on a path nothing is serving.
+pub fn hooks_socket_path(werk_root: &str) -> String {
+    format!("{}/chorus-hooks.sock", hooks_run_dir(werk_root))
 }
 
 /// #4075 — the port one env service listens on for a role, by name. The
@@ -264,6 +310,13 @@ pub fn clearing_env_prod_leak(env: &[(String, String)]) -> Option<String> {
 pub fn env_ports_collide(services: &[EnvService]) -> Option<(String, u16)> {
     let mut seen = std::collections::HashMap::new();
     for s in services {
+        // #4227 — a service with no port env binds none (chorus-hooks answers
+        // on a unix socket). Its three zeros are not a collision, and reading
+        // them as one would make this gate fire on a healthy env forever —
+        // which is how a gate stops being read.
+        if s.port_env.is_empty() {
+            continue;
+        }
         for p in [s.silas_port, s.kade_port, s.wren_port] {
             if let Some(prev) = seen.insert(p, s.name.clone()) {
                 return Some((format!("{} vs {}", prev, s.name), p));
@@ -377,6 +430,9 @@ pub fn generate_plist(
         ProgramArgsTemplate::Rust { binary } => {
             vec![format!("{}/target/release/{}", working_dir, binary)]
         }
+        ProgramArgsTemplate::WerkBinBare { binary } => {
+            vec![format!("{}/{}", werk_bin_dir(role), binary)]
+        }
         ProgramArgsTemplate::WerkBin { binary, args } => {
             let mut v = vec![format!("{}/{}", werk_bin_dir(role), binary)];
             v.extend(args.iter().cloned());
@@ -395,12 +451,18 @@ pub fn generate_plist(
     // Env vars: the port env (so the service binds to the role's port), plus
     // any extras the caller wants (e.g., CHORUS_API_SCHEDULED_JOBS=off for
     // werk-api variants — hole 2 of Wren's review).
-    let mut env_pairs = vec![
-        (svc.port_env.as_str(), port.to_string()),
+    // #4227 — an empty port_env means the service has no port (chorus-hooks
+    // answers on a unix socket). Writing an empty key would produce a plist
+    // with a blank env name, which launchd accepts and nothing can read.
+    let mut env_pairs: Vec<(&str, String)> = Vec::new();
+    if !svc.port_env.is_empty() {
+        env_pairs.push((svc.port_env.as_str(), port.to_string()));
+    }
+    env_pairs.extend(vec![
         ("CHORUS_ROLE", role.to_string()),
         ("CHORUS_API_ENV", "werk".to_string()),
         ("CHORUS_ROOT", werk_root.to_string()),
-    ];
+    ]);
     // The Fuseki admin credential every variant needs to WRITE to its own store.
     // Without it a reload answers 401 and the service turns that into a 500 —
     // which reads as the variant being broken rather than unauthenticated.
@@ -480,6 +542,20 @@ pub fn werk_root_for(role: &str, card: Option<u64>, werk_base: &str) -> R<String
 /// GET because the protocol is POST-only).
 fn wait_for_smoke(url: &str, kind: &SmokeKind, timeout: Duration) -> R<()> {
     let start = Instant::now();
+    // #4227 — for a socket service `url` is the socket PATH. Connecting is the
+    // check: a socket file left behind by a dead daemon still exists on disk,
+    // so a file-exists test would call a corpse healthy.
+    if let SmokeKind::UnixSocket = kind {
+        loop {
+            if std::os::unix::net::UnixStream::connect(url).is_ok() {
+                return Ok(());
+            }
+            if start.elapsed() >= timeout {
+                return Err(format!("smoke {} (unix socket) timed out after {:?}", url, timeout));
+            }
+            sleep(Duration::from_millis(250));
+        }
+    }
     let init_body = r#"{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"2024-11-05","capabilities":{},"clientInfo":{"name":"werk-deploy-smoke","version":"1.0"}}}"#;
     loop {
         let out = match kind {
@@ -500,6 +576,7 @@ fn wait_for_smoke(url: &str, kind: &SmokeKind, timeout: Duration) -> R<()> {
                     url,
                 ])
                 .output(),
+            SmokeKind::UnixSocket => unreachable!("handled above"),
         };
         if let Ok(o) = out {
             if o.status.success() {
@@ -544,7 +621,8 @@ fn build_service_dist(svc: &EnvService, werk_root: &str, role: &str) -> R<()> {
                 .map(|_| ())
                 .map_err(|e| format!("env_up: cargo build in {} failed: {}", svc_dir, e))
         }
-        ProgramArgsTemplate::WerkBin { ref binary, .. } => {
+        ProgramArgsTemplate::WerkBinBare { ref binary }
+        | ProgramArgsTemplate::WerkBin { ref binary, .. } => {
             // #4022 — deploy-werk already built + installed the binary into the
             // role's bin slot; env_up only refuses loudly if it is not there.
             let bin = format!("{}/{}", werk_bin_dir(role), binary);
@@ -665,6 +743,8 @@ pub fn env_up(role: &str, werk_root: &str, canonical_root: &str, card: u64, trac
         let chorus_home = std::env::var("CHORUS_HOME")
             .unwrap_or_else(|_| "/Users/jeffbridwell/CascadeProjects/chorus".to_string());
         let clearing_port_s = env_port_for("clearing", role)?.to_string();
+        let hooks_run = hooks_run_dir(werk_root);
+        let home_dir = std::env::var("HOME").unwrap_or_else(|_| "/Users/jeffbridwell".to_string());
         let clearing_owned = clearing_extra_env(role, &demo_store_dir, &css_issuer, &variant_path)?;
         if svc.name == "clearing" {
             if let Some(leak) = clearing_env_prod_leak(&clearing_owned) {
@@ -726,6 +806,16 @@ pub fn env_up(role: &str, werk_root: &str, canonical_root: &str, card: u64, trac
             // writes ONLY werk-local files: its spine and message store live
             // under the werk's .chorus-demo, never /tmp/bridge-messages.json or
             // ~/.chorus/chorus.log (#3615 membrane). Sign-in is the real one.
+            // #4227 — the one value that lets a second daemon exist: its
+            // socket AND its singleton lock move together into the werk. HOME
+            // is carried because chorus-hooks refuses to start without one
+            // rather than fall back to /tmp (#3631), and launchd hands a plist
+            // no inherited environment.
+            "chorus-hooks" => vec![
+                ("CHORUS_HOOKS_RUN_DIR", hooks_run.as_str()),
+                ("HOME", home_dir.as_str()),
+                ("PATH", variant_path.as_str()),
+            ],
             "clearing" => clearing_owned.iter().map(|(k, v)| (k.as_str(), v.as_str())).collect(),
             _ => vec![],
         };
@@ -771,7 +861,11 @@ pub fn env_up(role: &str, werk_root: &str, canonical_root: &str, card: u64, trac
         }
 
         // Phase 3: smoke. Both services advertise a known endpoint.
-        let url = format!("http://localhost:{}{}", port, svc.smoke_path);
+        // #4227 — a socket service is smoked at its socket path, not a URL.
+        let url = match svc.smoke_kind {
+            SmokeKind::UnixSocket => hooks_socket_path(werk_root),
+            _ => format!("http://localhost:{}{}", port, svc.smoke_path),
+        };
         let port_s = port.to_string();
         if let Err(e) = wait_for_smoke(&url, &svc.smoke_kind, smoke_timeout()) {
             // #3215: a smoke fail is the per-service truth Borg needs — emit

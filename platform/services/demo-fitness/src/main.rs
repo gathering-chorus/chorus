@@ -32,7 +32,22 @@ fn main() {
         }
     };
 
-    let f = demo_fitness::measure(&out, &role);
+    // A verb is owned when the werk has built its own copy, because that is
+    // the binary the variant's athena-make calls (CHORUS_MODEL_BIN). Asking
+    // launchd about it can only ever answer "missing" — it never runs.
+    let werk_base = env_or(
+        "CHORUS_WERK_BASE",
+        "/Users/jeffbridwell/CascadeProjects/chorus-werk",
+    );
+    let own_verbs: Vec<String> = demo_fitness::TARGET
+        .iter()
+        .filter(|(_, k)| *k == demo_fitness::Piece::Verb)
+        .map(|(n, _)| *n)
+        .filter(|n| std::path::Path::new(&demo_fitness::verb_bin_path(n, &role, &werk_base)).is_file())
+        .map(|n| n.to_string())
+        .collect();
+
+    let f = demo_fitness::measure(&out, &role, &own_verbs);
     let prev = std::fs::read_to_string(&series_path)
         .ok()
         .and_then(|s| demo_fitness::previous_own(&s));
