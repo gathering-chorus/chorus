@@ -882,9 +882,16 @@ pub fn place_in_file(
             .any(|c| c.domain == s.domain)
             .then_some(s.domain)
     };
+    // #4222 — a role's brief or a design page that MENTIONS six domains is not
+    // six-domained; it is role state, or a design page, that talks about them.
+    // In the non-source trees the tree breaks the tie, after every content rule
+    // has had its say and failed to agree. Never in `platform/`: there a tie is
+    // a real ambiguity and stays reported.
+    let by_tree = || place_by_tree(path, valid).map(|s| s.domain);
     match one_domain(&signals)
         .or_else(|| plurality(&signals))
         .or_else(by_unit)
+        .or_else(by_tree)
     {
         Some(domain) => Placement::Tagged { domain, signals },
         None => Placement::Conflict { signals },
@@ -1563,6 +1570,29 @@ mod multi_domain_4222 {
         // won" from "nothing placed it at all" — the two states this exists to
         // separate. Assert the signal's own answer instead.
         assert_eq!(spoken.domain(), Some("cards"), "a signal wins over the tree");
+    }
+
+    /// #4222 — a conflicted role file takes its tree; a conflicted source file
+    /// does not. NEGATIVE PROOF of the boundary: the same content, two paths,
+    /// two answers. Drop the `platform/` exclusion and the second assert reds.
+    #[test]
+    fn a_tie_breaks_to_the_tree_outside_source_and_never_inside_it() {
+        let v = vec!["roles".to_string(), "cards".to_string(), "spine".to_string()];
+        let none = |_: u32| None;
+        let noread = |_: &str| None;
+        // names two domains equally — a genuine tie
+        let content = "calls /api/chorus/cards and /api/chorus/trace\n";
+
+        let role_file =
+            place_in_file(content, "roles/wren/briefs/x.md", None, &[], &v, &none, &noread);
+        assert_eq!(role_file.domain(), Some("roles"), "a tie in roles/ takes the tree");
+
+        let source =
+            place_in_file(content, "platform/api/src/x.ts", None, &[], &v, &none, &noread);
+        assert!(
+            matches!(source, Placement::Conflict { .. }),
+            "a tie in platform/ stays a reported conflict, got {source:?}"
+        );
     }
 
 }
