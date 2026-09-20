@@ -84,3 +84,38 @@ fn negative_proof_one_set_cannot_target_two_graphs() {
 fn an_empty_manifest_is_no_sets_not_an_error() {
     assert_eq!(parse_domain_sets("# only a comment\n\n").unwrap(), Vec::<DomainSet>::new());
 }
+
+// ---- the verify the Rust verb did not have -------------------------------
+// The old check was ASK { graph is non-empty }, which passes even when the
+// merge dropped every staged subject. These cover the replacement: how many
+// staged subjects are ABSENT afterwards, and what happens when the store does
+// not answer at all.
+use athena_deploy::verify_missing;
+
+#[test]
+fn zero_absent_subjects_is_a_clean_merge() {
+    assert_eq!(verify_missing("n\n0\n"), Some(0));
+}
+
+#[test]
+fn absent_subjects_are_counted_not_rounded_away() {
+    assert_eq!(verify_missing("n\n7\n"), Some(7));
+    assert_eq!(verify_missing("n\n\"12\"\n"), Some(12));
+}
+
+#[test]
+fn negative_proof_an_unanswered_verify_is_not_a_pass() {
+    // #3726 single-request-truth: a blind verify that passes is worse than no
+    // verify. Anything that is not the store answering the question must come
+    // back None, which the caller turns into a refusal.
+    for not_an_answer in ["", "\n", "<html>502 Bad Gateway</html>", "error\n1\n", "0\n"] {
+        assert_eq!(verify_missing(not_an_answer), None, "{not_an_answer:?} must not read as an answer");
+    }
+}
+
+#[test]
+fn negative_proof_the_verify_can_tell_the_two_states_apart() {
+    // The old ASK-non-empty could not: both of these were "true". If this ever
+    // stops holding, the verify has gone hollow again.
+    assert_ne!(verify_missing("n\n0\n"), verify_missing("n\n41\n"));
+}

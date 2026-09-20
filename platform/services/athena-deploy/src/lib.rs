@@ -299,6 +299,107 @@ pub fn run_athena_deploy() -> Result<String, String> {
     ))
 }
 
+/// #4229 — the ONE set leg, carrying every refusal `stage_merge_set()` makes
+/// plus the two that four of the bash's copies were missing. The bash wrote
+/// this eight times; here it runs once per manifest row.
+///
+/// Order matters and is the bash's: validate every file BEFORE touching the
+/// store, so a broken member cannot leave a half-loaded staging graph behind.
+pub fn deploy_domain_set(set: &DomainSet, root: &str, ctx: &StoreCtx) -> Result<String, String> {
+    let staging = format!("{}-staging-deploy", set.graph);
+    let fail = |reason: &str| -> String {
+        emit_spine(&ctx.chorus_log, "model.deploy.failed", &ctx.role,
+            &[("graph", set.graph.clone()), ("reason", reason.to_string())]);
+        format!("athena-deploy: {} — {reason}", set.name)
+    };
+
+    // 1 + 2 — every member exists and parses, before any write.
+    for f in &set.files {
+        let path = format!("{}/{}", root.trim_end_matches('/'), f);
+        if !Path::new(&path).exists() {
+            return Err(fail(&format!("{}-ttl-not-found:{f}", set.name)));
+        }
+        if riot_available() {
+            let ok = Command::new("riot").arg("--validate").arg(&path)
+                .output().map(|o| o.status.success()).unwrap_or(false);
+            if !ok {
+                return Err(fail(&format!("riot-invalid-{}:{f}", set.name)));
+            }
+        }
+    }
+
+    // 3 — a staging graph left by a previous run is not a base to build on.
+    let _ = curl(&["-s", "-X", "DELETE", "-o", "/dev/null", &format!("{}?graph={staging}", ctx.gsp)]);
+    for f in &set.files {
+        let path = format!("{}/{}", root.trim_end_matches('/'), f);
+        let code = curl(&["-s", "-o", "/dev/null", "-w", "%{http_code}", "-X", "POST",
+            "-H", "Content-Type: text/turtle", "--data-binary", &format!("@{path}"),
+            &format!("{}?graph={staging}", ctx.gsp)])?;
+        if !ok_http(&code) {
+            if code == "401" && fuseki_auth().is_empty() {
+                return Err(fail(&format!("{}-staging-http-401-no-credential", set.name)));
+            }
+            return Err(fail(&format!("{}-staging-http-{code}", set.name)));
+        }
+    }
+
+    // 4 — per-subject additive merge, one transaction. Siblings survive.
+    let sparql = merge_sparql(&staging, &set.graph);
+    let mcode = curl(&["-s", "-o", "/dev/null", "-w", "%{http_code}", "-X", "POST",
+        "-H", "Content-Type: application/sparql-update", "--data-binary", &sparql, &ctx.update])?;
+    if !ok_http(&mcode) {
+        let _ = curl(&["-s", "-X", "DELETE", "-o", "/dev/null", &format!("{}?graph={staging}", ctx.gsp)]);
+        return Err(fail(&format!("{}-merge-http-{mcode}", set.name)));
+    }
+
+    // 5 + 6 — the verify the Rust verb did not have: how many staged subjects
+    // are ABSENT from the live graph after the merge. "The graph is non-empty"
+    // passes even when the merge dropped every subject, which is a check that
+    // cannot tell the two states it exists to separate (#3734). Asked BEFORE
+    // staging is dropped, and an unanswered question is a refusal, never a pass.
+    let resp = curl(&["-s", "--data-urlencode",
+        &format!("query=SELECT (COUNT(DISTINCT ?s) AS ?n) WHERE {{ GRAPH <{staging}> {{ ?s ?p ?o }} \
+                  FILTER NOT EXISTS {{ GRAPH <{}> {{ ?s ?q ?r }} }} }}", set.graph),
+        "-H", "Accept: text/csv", &ctx.query])?;
+    let _ = curl(&["-s", "-X", "DELETE", "-o", "/dev/null", &format!("{}?graph={staging}", ctx.gsp)]);
+    let missing = match verify_missing(&resp) {
+        Some(n) => n,
+        None => return Err(fail(&format!("{}-verify-unanswered", set.name))),
+    };
+    if missing != 0 {
+        return Err(fail(&format!("{}-verify-missing-{missing}", set.name)));
+    }
+
+    emit_spine(&ctx.chorus_log, "model.deployed", &ctx.role,
+        &[("graph", set.graph.clone()), ("files", set.files.len().to_string())]);
+    Ok(format!("{}: {} file(s) -> <{}>", set.name, set.files.len(), set.graph))
+}
+
+/// Read the verify answer. `None` means the store did not answer the question
+/// — which the bash calls `verify-unanswered` and refuses on, because a blind
+/// verify that passes is worse than no verify (#3726). A CSV whose first line
+/// is not the `n` header is not an answer.
+pub fn verify_missing(csv: &str) -> Option<usize> {
+    let mut lines = csv.lines().filter(|l| !l.trim().is_empty());
+    let header = lines.next()?.trim();
+    if header != "n" {
+        return None;
+    }
+    let last = lines.next_back().or_else(|| Some(""))?;
+    let digits: String = last.chars().filter(|c| c.is_ascii_digit()).collect();
+    digits.parse().ok()
+}
+
+/// Where the store is and who is deploying. Threaded rather than re-read per
+/// set so every leg of one run talks to the same store.
+pub struct StoreCtx {
+    pub gsp: String,
+    pub query: String,
+    pub update: String,
+    pub chorus_log: String,
+    pub role: String,
+}
+
 fn riot_available() -> bool {
     Command::new("sh").arg("-c").arg("command -v riot")
         .output().map(|o| o.status.success()).unwrap_or(false)
