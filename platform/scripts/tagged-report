@@ -1,0 +1,50 @@
+#!/usr/bin/env python3
+"""#4222 — one report: is every row of every type tagged with its domain?
+
+Each type carries its domain on ITS OWN edge — Test uses chorus:covers (typed
+to Domain, required by TestEdgesShape), the rest use chorus:hasDomain. Reading
+one property for all five was how this report said tests were 0% tagged on
+2026-09-19 when they were 100%.
+
+Read-only. Prints one line per type, DONE or NOT, and exits non-zero while any
+type is short.
+"""
+import json
+import sys
+import urllib.request
+
+DOOR = "http://localhost:3360"
+TYPES = [
+    ("code/files", "hasDomain"),
+    ("tests/tests", "covers"),
+    ("logs/sources", "hasDomain"),
+    ("code/pages", "hasDomain"),
+    ("code/endpoints", "hasDomain"),
+]
+
+
+def rows(route):
+    with urllib.request.urlopen(f"{DOOR}/{route}?limit=1000000") as r:
+        return json.load(r).get("data") or []
+
+
+def main():
+    short = 0
+    for route, edge in TYPES:
+        try:
+            data = rows(route)
+        except Exception as e:  # a door that cannot answer is NOT a pass
+            print(f"NOT   {route:16} unreadable: {e}")
+            short += 1
+            continue
+        total = len(data)
+        tagged = sum(1 for row in data if row.get(edge))
+        done = total > 0 and tagged == total
+        if not done:
+            short += 1
+        print(f"{'DONE' if done else 'NOT ':4}  {route:16} {tagged}/{total}  via {edge}")
+    return 1 if short else 0
+
+
+if __name__ == "__main__":
+    sys.exit(main())
