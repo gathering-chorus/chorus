@@ -56,6 +56,11 @@ pub const V1_ROW: Check = Check {
     question: "is any row still in the catch-all or the schema graph",
     query: r#"SELECT ?s ?c WHERE {
   VALUES ?g { <urn:chorus:instances> <urn:chorus:ontology> }
+  # #4239 — this check names its two graphs, so it would sweep them whatever the
+  # scope said. A check that ignores the scope silently is worse than no scope:
+  # it makes a scoped run look like a whole-store run. Scoped elsewhere, this
+  # check correctly has nothing to say.
+  FILTER(STRSTARTS(STR(?g), "urn:chorus:"))
   GRAPH ?g { ?s a ?c }
   FILTER(!STRSTARTS(STR(?c), "http://www.w3.org/2002/07/owl#")
       && !STRSTARTS(STR(?c), "http://www.w3.org/ns/shacl#")

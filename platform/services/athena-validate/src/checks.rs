@@ -79,6 +79,7 @@ SELECT ?s ?cls ?path WHERE {
     FILTER(?mc > 0)
   }
   GRAPH ?g { ?s a ?cls }
+  FILTER(STRSTARTS(STR(?g), "urn:chorus:"))   # #4239 — honour the scope
   FILTER(?g != <urn:chorus:ontology>)
   FILTER NOT EXISTS { GRAPH ?g2 { ?s ?path ?v } }
 }"#,

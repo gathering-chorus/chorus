@@ -54,6 +54,43 @@ fn short(iri: &str) -> String {
 }
 
 /// Run one check. Any failure to execute is Unmeasured, with the reason.
+/// #4239 — the graph scope every store check reads.
+///
+/// Unset means what it has always meant: every `urn:chorus:` graph. Set, it
+/// narrows the sweep to graphs under that prefix, which is what lets a fixture
+/// check two rows without reading the whole store (531s of one card's 873s) and
+/// what lets a role ask "is THIS domain clean" while fixing it.
+///
+/// It is applied here, in the one place a check's query is executed, rather than
+/// in each query. Four queries carry the prefix today; a fifth added later would
+/// otherwise be scoped by whoever remembered, which is how a check ends up
+/// honouring a flag in some paths and ignoring it in others.
+pub fn graph_scope() -> String {
+    std::env::var("ATHENA_VALIDATE_GRAPH").unwrap_or_else(|_| "urn:chorus:".into())
+}
+
+/// Substitute the scope into a check's query. The prefix appears only as a
+/// quoted literal inside STRSTARTS; the angle-bracket IRIs (`<urn:chorus:instances>`)
+/// name specific graphs a check is ABOUT and are deliberately left alone.
+fn scoped(query: &str) -> String {
+    let scope = graph_scope();
+    if scope == "urn:chorus:" {
+        return query.to_string();
+    }
+    // #4239, measured not assumed. Two attempts, both run against a fixture graph
+    // holding one untyped row:
+    //
+    //   prefix filter      13 lines, 287s — finds the violation, saves no time.
+    //                      Fuseki walks every graph and filters afterwards.
+    //   bind GRAPH <exact>  3 lines,   0s — fast, and it MISSED the violation it
+    //                      was pointed at. Clean in zero seconds is the answer a
+    //                      broken check gives.
+    //
+    // So the prefix form ships and the fast form does not. A scope that reports
+    // clean because it stopped looking is the defect this crate exists to prevent.
+    query.replace("\"urn:chorus:\"", &format!("\"{scope}\""))
+}
+
 pub fn run(check: &Check) -> (Verdict, Vec<Finding>) {
     if check.query.is_empty() {
         return (
@@ -68,7 +105,7 @@ pub fn run(check: &Check) -> (Verdict, Vec<Finding>) {
         .arg("-H")
         .arg("Accept: text/csv")
         .arg("--data-urlencode")
-        .arg(format!("query={}", check.query))
+        .arg(format!("query={}", scoped(check.query)))
         .arg(query_endpoint())
         .output();
 

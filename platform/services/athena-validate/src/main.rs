@@ -98,6 +98,16 @@ fn main() {
     let mut total = 0usize;
     let mut unmeasured = 0usize;
 
+    // #4239 — say what was looked at, first line, always. A clean run against one
+    // graph and a clean run against the store are the same word otherwise, and the
+    // second is the only one that means the graph is clean.
+    let scope = store::graph_scope();
+    report.line(format!(
+        "graph-scope|{}|{}",
+        scope,
+        if scope == "urn:chorus:" { "every chorus graph" } else { "SCOPED — not the whole store" }
+    ));
+
     // The store checks.
     let mut store_checks = ported::all();
     store_checks.push(&COMPLETENESS);
