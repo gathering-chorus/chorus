@@ -6,7 +6,7 @@
 #
 #  1. WHAT IS SERVED. 28 principles, every one carrying principleKind, split
 #     14 pc / 14 xp; 5 values, each with at least one expressedBy edge.
-#  2. WHAT IS REFUSED. The dangling-edge gate added to athena-deploy-model.sh —
+#  2. WHAT IS REFUSED. The dangling-edge gate, now in athena-deploy —
 #     run against a fixture value whose expressedBy points at an IRI no
 #     Principle occupies, it must EXIT NON-ZERO. Without that case the gate is
 #     a line of shell nobody has ever seen fail, which is the hollow-gate shape
@@ -73,7 +73,7 @@ teardown() {
 # NEGATIVE PROOF — the dangling-edge condition must be DETECTABLE. A fixture
 # value pointing at an IRI no Principle occupies is loaded to a throwaway graph
 # and the gate's own query is asked against it: it must report 1, not 0. If this
-# reads 0, the query in athena-deploy-model.sh cannot see the state it exists to
+# reads 0, the query in athena-deploy cannot see the state it exists to
 # refuse, and every "gate passed" line it prints is meaningless.
 @test "the dangling-edge query REDS on a value pointing at a non-principle" {
   # The write door needs the #3566 credential — a bare POST 401s, and a test that

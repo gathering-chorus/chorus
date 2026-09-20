@@ -36,7 +36,7 @@ ROOT="$(cd "$BATS_TEST_DIRNAME/../.." && pwd)"
 # shellcheck source=/dev/null
 . "$ROOT/platform/scripts/fuseki-auth.sh" 2>/dev/null || true
 # #3991 repoint, missed here: #3561 renamed chorus-model-deploy.sh →
-# athena-deploy-model.sh. The old path still resolved to nothing, so all eight
+# the model deploy. The old path still resolved to nothing, so all eight
 # tests below failed on exit 127 (command not found) rather than on the schema.
 SCRIPT="$ROOT/platform/services/athena-deploy/target/release/athena-deploy"
 TTL="$ROOT/roles/kade/ontology/werk-domains.ttl"

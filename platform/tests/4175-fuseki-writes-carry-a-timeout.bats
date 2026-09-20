@@ -67,8 +67,14 @@ writes_without_timeout() {
 @test "#4175 the timeout is overridable, not hard-coded" {
   # A deliberately long deploy must have a way through that is not deleting the
   # guard. Every timed call reads the same knob.
-  run grep -rhoE '\-\-max-time "\$\{FUSEKI_WRITE_TIMEOUT:-[0-9]+\}"' \
-    "$ROOT/platform/scripts/athena-deploy-model.sh"
+  # #4229 — the deploy is a Rust verb now, and the knob is read once at the one
+  # door rather than spelled at every call site, which is the stronger form of
+  # the same rule: no call site can forget it.
+  SRC="$ROOT/platform/services/athena-deploy/src/lib.rs"
+  run grep -c 'env_or("FUSEKI_WRITE_TIMEOUT", "120")' "$SRC"
   [ "$status" -eq 0 ]
-  [ -n "$output" ]
+  [ "$output" -ge 1 ]
+  # and it is applied to the call, not just read
+  run grep -c '"--max-time", &timeout' "$SRC"
+  [ "$output" -ge 1 ]
 }

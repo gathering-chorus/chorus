@@ -21,7 +21,7 @@
 ROOT="$(cd "$BATS_TEST_DIRNAME/../.." && pwd)"
 # shellcheck source=/dev/null
 . "$ROOT/platform/scripts/fuseki-auth.sh" 2>/dev/null || true
-# #3991: repointed — #3561 renamed chorus-model-deploy.sh → athena-deploy-model.sh
+# #3991: repointed — #3561 renamed chorus-model-deploy.sh, and #4229 merged it into athena-deploy
 # and this suite kept exit-127ing on the dead path (guard-target-deleted class).
 SCRIPT="$ROOT/platform/services/athena-deploy/target/release/athena-deploy"
 TTL="$ROOT/roles/kade/ontology/werk-domains.ttl"

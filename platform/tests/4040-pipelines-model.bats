@@ -56,7 +56,7 @@ sq() {
 }
 
 @test "AC2 pipelines-4040.ttl is in the MODEL_SET (never live-only, #3654)" {
-  grep -q 'pipelines-4040.ttl' "$REPO/platform/scripts/athena-deploy-model.sh"
+  grep -q 'pipelines-4040.ttl' "$REPO/platform/services/athena-deploy/src/lib.rs"
 }
 
 # ── AC3: exactly the two real instances, with real steps ──

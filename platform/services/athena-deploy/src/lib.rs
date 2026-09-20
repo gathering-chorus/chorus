@@ -151,7 +151,7 @@ pub enum RetireAction {
     /// allow-set the doors read. Only `staged` executes.
     Skip { status: String, target: String },
     /// One definesVocabulary triple, re-checked against the live served routes.
-    Claim { domain: String, class: String },
+    Claim { domain: String, class: String, graph: String },
     /// Every triple of one subject.
     Subject { iri: String, graph: String },
     /// Every row of one class in one graph (#4187).
@@ -222,7 +222,11 @@ pub fn retirement_action(r: &Retirement, default_graph: &str) -> RetireAction {
     if !r.retire_subject.is_empty() {
         return RetireAction::Subject { iri: r.retire_subject.clone(), graph };
     }
-    RetireAction::Claim { domain: r.subject_domain.clone(), class: r.object_class.clone() }
+    RetireAction::Claim {
+        domain: r.subject_domain.clone(),
+        class: r.object_class.clone(),
+        graph,
+    }
 }
 
 /// AC3 — may this delete proceed? Every delete path in the deploy unloads
@@ -296,6 +300,33 @@ pub fn route_is_served(served_resp: &str, route: &str) -> bool {
 /// never read as "nothing is served".
 pub fn serve_check_answered(served_resp: &str) -> bool {
     served_resp.contains("\"served\"")
+}
+
+/// #4080 — a bare run from INSIDE A WERK must not default to prod.
+///
+/// On 2026-09-03 a hand run from a werk wrote the live ontology graph because
+/// these defaults are prod. The pipeline's env-up passes the werk store and the
+/// canonical land runs from canonical; a role at a werk shell gets neither and
+/// lands on prod silently. Refuse: name the store, or say canonical on purpose.
+///
+/// A test that names its own throwaway graph is not a prod write and passes —
+/// only the LIVE graph is refused, or the guard would block every fixture and
+/// be switched off. Pure: the four inputs are the whole decision.
+pub fn werk_target_refused(
+    in_werk: bool,
+    fuseki_gsp_set: bool,
+    deploy_target: Option<&str>,
+    ontology_graph: &str,
+) -> bool {
+    in_werk
+        && !fuseki_gsp_set
+        && deploy_target != Some("canonical")
+        && ontology_graph == "urn:chorus:ontology"
+}
+
+/// Is this path inside a werk?
+pub fn path_in_werk(path: &str) -> bool {
+    path.contains("/chorus-werk/")
 }
 
 /// #3536 — RETIRE_ABSENT. Deploys never truncate by default.
@@ -563,7 +594,15 @@ fn fuseki_auth() -> Vec<String> {
 /// forget it — the same "one place owns the credential" rule `fuseki-auth.sh`
 /// states for the bash writers.
 fn curl(args: &[&str]) -> Result<String, String> {
+    // #4175 — EVERY Fuseki call carries a timeout, applied here at the one door
+    // so no call site can forget it. On 2026-09-14 a compaction held the write
+    // lock from 15:01 and a bare DELETE sat for 32 minutes, taking a test run
+    // with it; reads answered in 0.011s the whole time. An unbounded write
+    // turns "someone else holds the lock" into a hang nobody can read, instead
+    // of a failure in seconds that names itself. Overridable, never absent.
+    let timeout = env_or("FUSEKI_WRITE_TIMEOUT", "120");
     let out = Command::new("curl")
+        .args(["--max-time", &timeout])
         .args(fuseki_auth())
         .args(args)
         .output()
@@ -590,6 +629,27 @@ pub fn run_athena_deploy() -> Result<String, String> {
     let role = std::env::var("DEPLOY_ROLE")
         .or_else(|_| std::env::var("CHORUS_ROLE"))
         .unwrap_or_else(|_| "system".to_string());
+    // #4080 — refuse a bare werk run before anything else touches the store.
+    let cwd = std::env::current_dir().map(|p| p.display().to_string()).unwrap_or_default();
+    let in_werk = path_in_werk(&root) || path_in_werk(&cwd);
+    if werk_target_refused(
+        in_werk,
+        std::env::var("FUSEKI_GSP").is_ok(),
+        std::env::var("DEPLOY_TARGET").ok().as_deref(),
+        &ontology,
+    ) {
+        eprintln!(
+            "athena-deploy: REFUSED — running inside a werk with no FUSEKI_GSP set; the default \
+             is PROD (localhost:3030/pods). Set FUSEKI_GSP/FUSEKI_QUERY/FUSEKI_UPDATE to the werk \
+             store (werk-<role>), or DEPLOY_TARGET=canonical to write prod on purpose (#4080)."
+        );
+        std::process::exit(78);
+    }
+    if std::env::var("ATHENA_DEPLOY_TARGET_CHECK_ONLY").as_deref() == Ok("1") {
+        println!("target-check: ok gsp={}", std::env::var("FUSEKI_GSP").unwrap_or_else(|_| "<default pods>".into()));
+        std::process::exit(0);
+    }
+
     let ttl_override = std::env::var("TTL").ok();
     let set = model_set(&root, ttl_override);
     let staging = format!("{ontology}-staging-deploy");
@@ -732,21 +792,58 @@ pub fn run_athena_deploy() -> Result<String, String> {
         }
     }
 
+    // #3536 — RETIRE_ABSENT. Opt-in only, and even opted in the empty-staging
+    // guard runs first: retire deletes live domain subjects ABSENT from
+    // staging, so zero domains in staging would delete every live domain.
+    // That is the 2026-06-26 wipe, and this is its last backstop.
+    let mut retire_clause = String::new();
+    if retire_absent_on(std::env::var("RETIRE_ABSENT").ok().as_deref()) {
+        let c = "https://jeffbridwell.com/chorus#";
+        let staged = curl(&["-s", "--data-urlencode",
+            &format!("query=SELECT (COUNT(DISTINCT ?s) AS ?n) WHERE {{ GRAPH <{staging}> \
+                      {{ ?s a ?t . FILTER(?t IN (<{c}Domain>, <{c}SubDomain>)) }} }}"),
+            "-H", "Accept: text/csv", &query]).unwrap_or_default();
+        if let Err(why) = retire_guard_allows(verify_missing(&staged)) {
+            eprintln!("athena-deploy: {why}");
+            let _ = curl(&["-s", "-X", "DELETE", "-o", "/dev/null", &format!("{gsp}?graph={staging}")]);
+            return Err(fail("retire-guard-empty-staging"));
+        }
+        retire_clause = format!(
+            "DELETE {{ GRAPH <{ontology}> {{ ?s ?p ?o }} }} WHERE {{ GRAPH <{ontology}> \
+             {{ ?s a <{c}Domain> ; ?p ?o }} FILTER NOT EXISTS {{ GRAPH <{staging}> {{ ?s ?q ?r }} }} }} ; "
+        );
+    }
+
     // Step 2: additive merge (delete-staged-subjects-then-insert), one transaction.
-    let sparql = merge_sparql(&staging, &ontology);
+    let sparql = format!("{retire_clause}{}", merge_sparql(&staging, &ontology));
     let mcode = curl(&["-s", "-o", "/dev/null", "-w", "%{http_code}", "-X", "POST",
         "-H", "Content-Type: application/sparql-update", "--data-binary", &sparql, &update])?;
-    let _ = curl(&["-s", "-X", "DELETE", "-o", "/dev/null", &format!("{gsp}?graph={staging}")]);
     if !ok_http(&mcode) {
+        let _ = curl(&["-s", "-X", "DELETE", "-o", "/dev/null", &format!("{gsp}?graph={staging}")]);
         return Err(fail(&format!("merge-http-{mcode}")));
     }
 
-    // Step 3: verify the graph is non-empty (proof, not assumption).
-    let body = curl(&["-s", "--data-urlencode",
-        &format!("query=ASK {{ GRAPH <{ontology}> {{ ?s ?p ?o }} }}"),
-        "-H", "Accept: application/sparql-results+json", &query])?;
-    if !body.replace(' ', "").contains("\"boolean\":true") {
-        return Err(fail("verify-empty"));
+    // Step 3 — verify. NOT "is the graph non-empty": that passes even when the
+    // merge dropped every staged subject, and it cannot fail against a dead
+    // query endpoint either. Ask how many staged subjects are ABSENT after the
+    // merge, before staging is dropped, and refuse on an unanswered question
+    // (#3726 single-request-truth, #3731 fail-closed).
+    let vresp = curl(&["-s", "--data-urlencode",
+        &format!("query=SELECT (COUNT(DISTINCT ?s) AS ?n) WHERE {{ GRAPH <{staging}> {{ ?s ?p ?o }} \
+                  FILTER NOT EXISTS {{ GRAPH <{ontology}> {{ ?s ?q ?r }} }} }}"),
+        "-H", "Accept: text/csv", &query]).unwrap_or_default();
+    let verdict = verify_missing(&vresp);
+    let _ = curl(&["-s", "-X", "DELETE", "-o", "/dev/null", &format!("{gsp}?graph={staging}")]);
+    match verdict {
+        None => {
+            eprintln!(
+                "athena-deploy: VERIFY could not ask <{ontology}> — refusing to pass a blind \
+                 verify (#3726 single-request-truth)"
+            );
+            return Err(fail("verify-unanswered"));
+        }
+        Some(0) => {}
+        Some(n) => return Err(fail(&format!("verify-missing-{n}"))),
     }
 
     emit_spine(&chorus_log, "athena.deployed", &role,
@@ -1029,7 +1126,7 @@ fn run_retirement(action: &RetireAction, line: usize, ctx: &StoreCtx) -> Result<
             ]);
             Ok(())
         }
-        RetireAction::Claim { domain, class } => {
+        RetireAction::Claim { domain, class, graph } => {
             if domain.is_empty() || class.is_empty() {
                 return Err(refuse("retirement-entry-empty".into()));
             }
@@ -1067,8 +1164,9 @@ fn run_retirement(action: &RetireAction, line: usize, ctx: &StoreCtx) -> Result<
                 format!("{base}definesVocabulary"),
                 format!("{base}{class}"),
             );
+            // The entry's OWN graph, not the ontology graph: a claim is a
+            // triple in whatever graph the staging line names.
             let label = format!("claim {domain}->{class}");
-            let graph = env_or("ONTOLOGY_GRAPH", "urn:chorus:ontology");
             ask_delete_verify(
                 ctx, line, &label, &graph,
                 &format!("ASK {{ GRAPH <{graph}> {{ <{s_iri}> <{p_iri}> <{o_iri}> }} }}"),
@@ -1163,7 +1261,10 @@ fn guarded_delete(
     };
     let live = curl(&["-s", "--data-urlencode", &format!("query={count_q}"),
         "-H", "Accept: text/csv", &ctx.query]).ok().and_then(|csv| verify_missing(&csv));
-    let dir = env_or("GRAPH_BACKUP_DIR", "/tmp/chorus-graph-retirements");
+    let dir = env_or(
+        "GRAPH_BACKUP_DIR",
+        &format!("{}/platform/backups/graph-retirements", env_or("CHORUS_ROOT", ".")),
+    );
     let _ = std::fs::create_dir_all(&dir);
     let stamp = Command::new("date").args(["-u", "+%Y%m%dT%H%M%SZ"]).output()
         .map(|o| String::from_utf8_lossy(&o.stdout).trim().to_string()).unwrap_or_default();
@@ -1176,7 +1277,11 @@ fn guarded_delete(
         .ok();
     match delete_guard(live, dumped, target) {
         DeleteGuard::AlreadyAbsent => {
-            println!("athena-deploy: {target} already absent (idempotent — previously retired)");
+            if target.starts_with("graph ") {
+                println!("athena-deploy: {target} already empty (idempotent — previously retired)");
+            } else {
+                println!("athena-deploy: {target} already absent (idempotent — previously retired)");
+            }
             Ok(())
         }
         DeleteGuard::Refuse(why) => Err(refuse(format!("retire-refused:{why}"))),

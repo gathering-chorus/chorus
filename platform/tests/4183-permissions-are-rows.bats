@@ -71,7 +71,7 @@ TTL
 }
 
 @test "return gate — the security deploy set carries the rows file and not the literals file" {
-  D="$ROOT/platform/scripts/athena-deploy-model.sh"
+  D="$ROOT/platform/services/athena-deploy/src/lib.rs"
   grep -q 'permissions-4183.ttl' "$D"
   ! grep -E '^\s*"\$CHORUS_ROOT/roles/silas/ontology/security-scopes-3689.ttl"' "$D"
 }
