@@ -20,7 +20,7 @@
 
 setup() {
   ROOT="${CHORUS_ROOT:-$(cd "$BATS_TEST_DIRNAME/../.." && pwd)}"   # #3904: derive, never hardcode a /Users path
-  DEPLOY="$ROOT/platform/scripts/athena-deploy-model.sh"
+  DEPLOY="$ROOT/platform/services/athena-deploy/target/release/athena-deploy"
 }
 
 @test "the recovery path exists where the incident runbook says it does" {

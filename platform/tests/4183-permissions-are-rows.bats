@@ -15,8 +15,12 @@ OLD_SCOPES="$ROOT/roles/silas/ontology/security-scopes-3689.ttl"
 setup() {
   command -v arq >/dev/null 2>&1 || skip "arq (Jena) not installed — this suite is UNMEASURED here, not green"
   [ -f "$RQ" ] && [ -f "$PERMS" ] && [ -f "$PRINCIPALS" ] || skip "model files missing"
-  # the .rq names the security GRAPH; offline the files are the default graph
-  Q="$(sed 's/GRAPH <urn:chorus:domains:security> //' "$RQ")"
+  # The .rq names its graphs; offline the files are the default graph, so every
+  # GRAPH clause has to come off. #4224 split principals into their own graph
+  # (urn:chorus:principal-home) and this stripped only the security one, so the
+  # second clause matched nothing and the query answered 0 for every grant —
+  # a harness that could no longer see what it was asserting.
+  Q="$(sed -E 's/GRAPH <urn:chorus:[a-z:-]+> //g' "$RQ")"
   T="$(mktemp -d)"; printf '%s\n' "$Q" > "$T/q.rq"
 }
 teardown() { rm -rf "$T"; }
@@ -28,8 +32,16 @@ rows() { arq --results csv --query "$T/q.rq" "$@" 2>/dev/null | tail -n +2 | gre
   # out of the security graph into identity and opened that graph to the three roles,
   # which is three more rows — not drift. The count is asserted, not floored, so a row
   # vanishing still goes red.
+  #
+  # 47 since #4229 (2026-09-20): permission-kade-pipelines, on Jeff's go — he
+  # owns 120 of that graph's 130 rows and could not write it, so the live
+  # PipelineRun check 403'd for everyone.
+  # 46 since #4222 (2026-09-20): permission-kade-logs. The crawler writes LogSource
+  # and runs as kade, so under Jeff's 09-17 ruling those rows are kade's and the
+  # grant was the missing member of the set — 133 PUTs were 403ing without it.
+  # Named here on purpose: bumping this number is a decision, not a rubber stamp.
   run grep -c "a chorus:Permission" "$PERMS"
-  test "$output" -eq 45
+  test "$output" -eq 47
 }
 
 @test "the scope query grants from Permission rows joined to real principals" {
@@ -71,7 +83,9 @@ TTL
 }
 
 @test "return gate — the security deploy set carries the rows file and not the literals file" {
-  D="$ROOT/platform/scripts/athena-deploy-model.sh"
-  grep -q 'permissions-4183.ttl' "$D"
-  ! grep -E '^\s*"\$CHORUS_ROOT/roles/silas/ontology/security-scopes-3689.ttl"' "$D"
+  # #4229 - the security set is a manifest row now, not a bash array.
+  MAN="$ROOT/platform/config/domain-set-manifest.txt"
+  grep -q "permissions-4183.ttl" "$MAN"
+  # NEGATIVE PROOF: the literals file must not have come back with it.
+  test -z "$(grep -F "security-scopes-3689.ttl" "$MAN" || true)"
 }

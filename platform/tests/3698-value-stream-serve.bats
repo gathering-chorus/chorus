@@ -14,9 +14,9 @@ load test_helper
 setup() {
   REPO="$(cd "$BATS_TEST_DIRNAME/../.." && pwd)"
   CT="$REPO/roles/silas/ontology/chorus.ttl"
-  # #3991: repointed — #3561 renamed chorus-model-deploy.sh → athena-deploy-model.sh;
+  # #3991: repointed — #3561 renamed chorus-model-deploy.sh, and #4229 merged it into athena-deploy;
   # grep -c against the dead path failed both AC2 checks vacuously.
-  DEPLOY="$REPO/platform/scripts/athena-deploy-model.sh"
+  DEPLOY="$REPO/platform/services/athena-deploy/target/release/athena-deploy"
   OWL_URL="${OWL_URL:-http://localhost:3360}"
   FUSEKI_QUERY="${FUSEKI_QUERY:-http://localhost:3030/pods/query}"
 }

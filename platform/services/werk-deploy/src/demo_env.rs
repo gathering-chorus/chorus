@@ -213,7 +213,16 @@ pub fn env_services() -> Vec<EnvService> {
             kade_port: 0,
             wren_port: 0,
             source_dir_rel: "platform/services/chorus-hooks".to_string(),
-            program_args_template: ProgramArgsTemplate::WerkBinBare {
+            // #4227 follow-on — built from the WERK's own source, not taken
+            // from the role's bin slot. deploy-werk builds only the crates a
+            // card CHANGED, so a card that does not touch chorus-hooks found
+            // whatever was last left in the slot: Kade's #4228 got a Sep 17
+            // binary with no run-dir override, which fell back to prod's path,
+            // lost the singleton lock and exited. My own run passed only
+            // because my card happened to change this crate. The Rust template
+            // cargo-builds the crate in the werk before the plist points at it,
+            // so the variant always runs the card's source.
+            program_args_template: ProgramArgsTemplate::Rust {
                 binary: "chorus-hooks".to_string(),
             },
             port_env: String::new(),
@@ -237,6 +246,45 @@ pub fn hooks_run_dir(werk_root: &str) -> String {
 /// the two must agree or the smoke waits on a path nothing is serving.
 pub fn hooks_socket_path(werk_root: &str) -> String {
     format!("{}/chorus-hooks.sock", hooks_run_dir(werk_root))
+}
+
+/// #4227 follow-on — does this role's built chorus-hooks understand the run-dir
+/// override? Returns the refusal to make when it does not. Read from the binary
+/// rather than from a version or a date: the binary is what runs.
+pub fn hooks_binary_too_old(svc: &EnvService, werk_root: &str) -> Option<String> {
+    if svc.name != "chorus-hooks" {
+        return None;
+    }
+    let bin = format!(
+        "{}/{}/target/release/chorus-hooks",
+        werk_root.trim_end_matches('/'),
+        svc.source_dir_rel
+    );
+    if !Path::new(&bin).is_file() {
+        return None; // build_service_dist already refuses, with its own message
+    }
+    if binary_mentions(&bin, "CHORUS_HOOKS_RUN_DIR") {
+        return None;
+    }
+    Some(format!(
+        "env_up: {} does not carry the hooks run-dir override (#4227), so it \
+         cannot keep its socket and lock inside the werk. Started as-is it would \
+         lose the singleton lock to the live daemon and exit, and the smoke would \
+         time out after 120s saying nothing. The werk's target dir is stale — \
+         rebuild the crate, or rebase this werk onto origin/main.",
+        bin
+    ))
+}
+
+/// Is this string present in the binary? A plain byte scan — the override's name
+/// is a literal in the daemon that honours it and absent from one that does not.
+fn binary_mentions(path: &str, needle: &str) -> bool {
+    match fs::read(path) {
+        Ok(bytes) => bytes
+            .windows(needle.len())
+            .any(|w| w == needle.as_bytes()),
+        Err(_) => false,
+    }
 }
 
 /// #4075 — the port one env service listens on for a role, by name. The
@@ -685,6 +733,15 @@ pub fn env_up(role: &str, werk_root: &str, canonical_root: &str, card: u64, trac
         // Surfacing per-service so a failure points at exactly which service
         // failed to build, not "env_up failed."
         build_service_dist(&svc, werk_root, role)?;
+        // #4227 follow-on — a werk that branched before the run-dir override
+        // landed builds a chorus-hooks that cannot honour it. That daemon falls
+        // back to prod's path, loses the singleton flock to the live daemon and
+        // exits, so the variant socket never appears and the smoke burns 120s
+        // before saying "timed out" — which names neither the cause nor the
+        // fix. Kade's #4228 round died that way. Ask the binary first.
+        if let Some(why) = hooks_binary_too_old(&svc, werk_root) {
+            return Err(why);
+        }
 
         // Phase 2: generate plist + bootstrap launchd unit.
         let port = svc.port_for(role)?;

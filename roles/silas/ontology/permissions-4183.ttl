@@ -398,3 +398,15 @@ chorus:permission-kade-identity a chorus:Permission ;
     chorus:accessTo "urn:chorus:domains:identity"^^xsd:anyURI ;
     chorus:mode acl:Write ;
     chorus:ownedBy chorus:principal-kade .
+
+# #4229 — kade writes the pipelines graph. Measured by Wren 2026-09-20: he owns
+# 120 of its 130 rows and could not write it, so the live PipelineRun check
+# 403'd for everyone. He already holds Write on cards, catalog, icd, identity
+# and logs; this is the missing member of that set, not a widening of it.
+# Jeff's go, 2026-09-20 16:54.
+chorus:permission-kade-pipelines a chorus:Permission ;
+    rdfs:label "kade may write urn:chorus:domains:pipelines" ;
+    chorus:agent chorus:principal-kade ;
+    chorus:accessTo "urn:chorus:domains:pipelines"^^xsd:anyURI ;
+    chorus:mode acl:Write ;
+    chorus:ownedBy chorus:principal-kade .

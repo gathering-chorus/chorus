@@ -21,9 +21,9 @@
 ROOT="$(cd "$BATS_TEST_DIRNAME/../.." && pwd)"
 # shellcheck source=/dev/null
 . "$ROOT/platform/scripts/fuseki-auth.sh" 2>/dev/null || true
-# #3991: repointed — #3561 renamed chorus-model-deploy.sh → athena-deploy-model.sh
+# #3991: repointed — #3561 renamed chorus-model-deploy.sh, and #4229 merged it into athena-deploy
 # and this suite kept exit-127ing on the dead path (guard-target-deleted class).
-SCRIPT="$ROOT/platform/scripts/athena-deploy-model.sh"
+SCRIPT="$ROOT/platform/services/athena-deploy/target/release/athena-deploy"
 TTL="$ROOT/roles/kade/ontology/werk-domains.ttl"
 TEST_GRAPH="urn:chorus:ontology-test-bats-3550"
 Q="http://localhost:3030/pods/query"
@@ -67,21 +67,21 @@ plant_sibling() {
 
 @test "deploying a domain does NOT clobber a sibling's live triples (#3529 regression)" {
   plant_sibling
-  env ONTOLOGY_GRAPH="$TEST_GRAPH" TTL="$TTL" bash "$SCRIPT" >/dev/null 2>&1
+  env ONTOLOGY_GRAPH="$TEST_GRAPH" TTL="$TTL" "$SCRIPT" >/dev/null 2>&1
   run curl -s "$Q" --data-urlencode "query=$PFX ASK { GRAPH <$TEST_GRAPH> { chorus:vs-step-sibling-3550 chorus:stepOrder 7 ; chorus:inStream chorus:vs-werk } }" -H "Accept: application/sparql-results+json"
   [[ "${output// /}" == *'"boolean":true'* ]]
 }
 
 @test "deploying a domain still lands its OWN shape (additive merge works)" {
   plant_sibling
-  env ONTOLOGY_GRAPH="$TEST_GRAPH" TTL="$TTL" bash "$SCRIPT" >/dev/null 2>&1
+  env ONTOLOGY_GRAPH="$TEST_GRAPH" TTL="$TTL" "$SCRIPT" >/dev/null 2>&1
   run curl -s "$Q" --data-urlencode "query=$PFX $SHPFX ASK { GRAPH <$TEST_GRAPH> { chorus:TestEdgesShape sh:property [ sh:path chorus:hermeticity ] } }" -H "Accept: application/sparql-results+json"
   [[ "${output// /}" == *'"boolean":true'* ]]
 }
 
 @test "re-deploying the SAME domain is idempotent (subject not duplicated)" {
-  env ONTOLOGY_GRAPH="$TEST_GRAPH" TTL="$TTL" bash "$SCRIPT" >/dev/null 2>&1
-  env ONTOLOGY_GRAPH="$TEST_GRAPH" TTL="$TTL" bash "$SCRIPT" >/dev/null 2>&1
+  env ONTOLOGY_GRAPH="$TEST_GRAPH" TTL="$TTL" "$SCRIPT" >/dev/null 2>&1
+  env ONTOLOGY_GRAPH="$TEST_GRAPH" TTL="$TTL" "$SCRIPT" >/dev/null 2>&1
   # pyramidLayer is declared `a owl:DatatypeProperty` exactly once after two deploys
   run curl -s "$Q" --data-urlencode "query=$PFX SELECT (COUNT(*) AS ?n) WHERE { GRAPH <$TEST_GRAPH> { chorus:pyramidLayer a ?t } }" -H "Accept: application/sparql-results+json"
   [[ "${output// /}" == *'"value":"1"'* ]]

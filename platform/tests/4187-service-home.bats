@@ -8,7 +8,7 @@
 
 REPO_ROOT="$(cd "$BATS_TEST_DIRNAME/../.." && pwd)"
 TTL="$REPO_ROOT/roles/silas/ontology/chorus.ttl"
-DEPLOY="$REPO_ROOT/platform/scripts/athena-deploy-model.sh"
+DEPLOY="$REPO_ROOT/platform/services/athena-deploy/target/release/athena-deploy"
 HARVEST="$REPO_ROOT/platform/scripts/service-harvest-load.sh"
 
 # REWRITTEN 2026-09-19. This asserted that ServiceShape PINS
@@ -35,12 +35,14 @@ HARVEST="$REPO_ROOT/platform/scripts/service-harvest-load.sh"
 }
 
 @test "the deployer seeds SERVICES_SET into the services domain graph by default" {
-  python3 - "$DEPLOY" <<'PY'
-import sys
-s = open(sys.argv[1]).read()
-assert 'SERVICES_GRAPH="${SERVICES_GRAPH:-urn:chorus:domains:services}"' in s
-assert 'SERVICES_GRAPH="${SERVICES_GRAPH:-urn:chorus:instances}"' not in s
-PY
+  # #4229 - the set is a manifest row now, not a shell variable. Same question:
+  # services land in their own domain graph, never the catch-all.
+  MAN="$BATS_TEST_DIRNAME/../config/domain-set-manifest.txt"
+  run grep -c "^services|urn:chorus:domains:services|" "$MAN"
+  [ "$output" -ge 1 ]
+  # NEGATIVE PROOF: and no row of any set may point at the catch-all.
+  run grep -c "|urn:chorus:instances|" "$MAN"
+  [ "$output" -eq 0 ]
 }
 
 @test "NEGATIVE PROOF of the precondition — the harvester replaces its own classes, never the whole graph" {

@@ -69,5 +69,10 @@ TTL
 }
 
 @test "the shape is IN the deploy set — declared is not deployed (#3691's whole lesson)" {
-  grep -q "nostr-credential-shape-3691.ttl" "$ROOT/platform/scripts/athena-deploy-model.sh"
+  # Read THIS tree's source, not CHORUS_ROOT's. prove-live sets CHORUS_ROOT to
+  # canonical, so a card that adds a file to the deploy set was asking whether
+  # the change it had not landed yet was already landed — red until it landed,
+  # green only afterwards, which tells you nothing either way.
+  SRC="$(cd "$BATS_TEST_DIRNAME/.." && pwd)/services/athena-deploy/src/lib.rs"
+  grep -q "nostr-credential-shape-3691.ttl" "$SRC"
 }

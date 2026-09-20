@@ -1,0 +1,39 @@
+# domain-set-manifest (#4229) — the eight TTL sets a model deploy stages into
+# their domain graphs, as data.
+#
+# Read by athena-deploy. It replaces eight copies of one leg in
+# athena-deploy-model.sh — the five hand-rolled ones were ~430 lines between
+# them, and four were one verify and two refusals weaker than the others
+# because later fixes only reached some copies. As data, there is one
+# implementation and eight rows, so that cannot happen again.
+#
+# One line per file:
+#   <set>|<graph>|<path relative to CHORUS_ROOT>
+# A set with several files repeats the set and graph. Order within a set is
+# the order they stage, which matters where one file's rows reference
+# another's.
+#
+# The ontology set (chorus.ttl + werk-domains.ttl → urn:chorus:ontology) is NOT
+# here: it is the schema, it carries the retirement and RETIRE_ABSENT legs, and
+# it stays explicit in the verb.
+
+security|urn:chorus:domains:security|roles/silas/ontology/identity-principals-3613.ttl
+security|urn:chorus:domains:security|roles/silas/ontology/permissions-4183.ttl
+security|urn:chorus:domains:security|roles/silas/ontology/security-posture-3729.ttl
+
+code-vocab|urn:chorus:domains:code|designing/data/code-vocab.ttl
+
+roles|urn:chorus:domains:roles|roles/wren/ontology/hats-instances-4175.ttl
+roles|urn:chorus:domains:roles|roles/wren/ontology/hats-appointments-4175.ttl
+
+infrastructure|urn:chorus:domains:infrastructure|roles/silas/ontology/unit-domain-4084.ttl
+
+principles|urn:chorus:domains:principles|roles/wren/ontology/principles-instances-3749.ttl
+principles|urn:chorus:domains:principles|roles/wren/ontology/principles-xp-4006.ttl
+principles|urn:chorus:domains:principles|roles/wren/ontology/principles-rhymes-4006.ttl
+
+values|urn:chorus:domains:values|roles/wren/ontology/values-4006.ttl
+
+services|urn:chorus:domains:services|designing/data/service-instances.ttl
+
+practices|urn:chorus:domains:practices|roles/kade/ontology/practices-3754-instances.ttl

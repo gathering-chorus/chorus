@@ -8,7 +8,7 @@
 # #3593 — resolve the script + model UNDER TEST beside this test file (the werk during a
 # werk run), NOT via CHORUS_ROOT (which points at canonical and would test the unedited
 # tree). A test exercises the code it ships with.
-SCRIPT="$BATS_TEST_DIRNAME/athena-deploy-model.sh"
+SCRIPT="$BATS_TEST_DIRNAME/../services/athena-deploy/target/release/athena-deploy"
 ROOT="$(cd "$BATS_TEST_DIRNAME/../.." && pwd)"
 TTL="$ROOT/roles/silas/ontology/chorus.ttl"
 TEST_GRAPH="urn:chorus:ontology-test-bats-3509"
@@ -91,24 +91,24 @@ teardown_file() {
 }
 
 @test "chorus-model-deploy loads chorus.ttl into the ontology graph (exit 0)" {
-  run env ONTOLOGY_GRAPH="$TEST_GRAPH" TTL="$TTL" bash "$SCRIPT"
+  run env ONTOLOGY_GRAPH="$TEST_GRAPH" TTL="$TTL" "$SCRIPT"
   [ "$status" -eq 0 ]
 }
 
 @test "all 4 primitive shapes + StepShape are queryable after deploy" {
-  env ONTOLOGY_GRAPH="$TEST_GRAPH" TTL="$TTL" bash "$SCRIPT" >/dev/null 2>&1
+  env ONTOLOGY_GRAPH="$TEST_GRAPH" TTL="$TTL" "$SCRIPT" >/dev/null 2>&1
   run curl -s "$Q" --data-urlencode "query=PREFIX chorus: <https://jeffbridwell.com/chorus#> PREFIX sh: <http://www.w3.org/ns/shacl#> SELECT (COUNT(DISTINCT ?s) AS ?n) WHERE { GRAPH <$TEST_GRAPH> { ?s a sh:NodeShape . FILTER(?s IN (chorus:ProductShape,chorus:DomainShape,chorus:ServiceShape,chorus:ValueStreamShape,chorus:StepShape)) } }" -H "Accept: application/sparql-results+json"
   [[ "${output// /}" == *'"value":"5"'* ]]
 }
 
 @test "DomainShape carries chorus:purpose (the capability) after deploy" {
-  env ONTOLOGY_GRAPH="$TEST_GRAPH" TTL="$TTL" bash "$SCRIPT" >/dev/null 2>&1
+  env ONTOLOGY_GRAPH="$TEST_GRAPH" TTL="$TTL" "$SCRIPT" >/dev/null 2>&1
   run curl -s "$Q" --data-urlencode "query=PREFIX chorus: <https://jeffbridwell.com/chorus#> PREFIX sh: <http://www.w3.org/ns/shacl#> ASK { GRAPH <$TEST_GRAPH> { chorus:DomainShape sh:property [ sh:path chorus:purpose ] } }" -H "Accept: application/sparql-results+json"
   [[ "${output// /}" == *'"boolean":true'* ]]
 }
 
 @test "#3736 a successful deploy stamps deployedFromCommit == repo HEAD (single-request truth)" {
-  env ONTOLOGY_GRAPH="$TEST_GRAPH" TTL="$TTL" bash "$SCRIPT" >/dev/null 2>&1
+  env ONTOLOGY_GRAPH="$TEST_GRAPH" TTL="$TTL" "$SCRIPT" >/dev/null 2>&1
   head_sha="$(git -C "$CHORUS_ROOT" rev-parse HEAD)"
   run curl -s "$Q" --data-urlencode "query=SELECT ?c WHERE { GRAPH <$TEST_GRAPH> { <urn:chorus:model-deploy> <urn:chorus:vocab#deployedFromCommit> ?c } }" -H "Accept: text/csv"
   echo "stamp query: $output"
@@ -138,14 +138,14 @@ teardown_file() {
     --data-binary @"$TT" "$GSP?graph=$RG" -o /dev/null
   RF="$BATS_TEST_TMPDIR/ret.jsonl"
   printf '{"subject_domain":"testdom","object_class":"TestClaimX","graph":"%s"}\n' "$RG" > "$RF"
-  run env ONTOLOGY_GRAPH="$TEST_GRAPH" TTL="$TTL" RETIREMENTS_FILE="$RF" bash "$SCRIPT"
+  run env ONTOLOGY_GRAPH="$TEST_GRAPH" TTL="$TTL" RETIREMENTS_FILE="$RF" "$SCRIPT"
   echo "output: $output"
   [ "$status" -eq 0 ]
   echo "$output" | grep -q "retirement executed .* claim testdom->TestClaimX"
   run curl -s "$Q" --data-urlencode "query=ASK { GRAPH <$RG> { <https://jeffbridwell.com/chorus#testdom> <https://jeffbridwell.com/chorus#definesVocabulary> <https://jeffbridwell.com/chorus#TestClaimX> } }" -H "Accept: application/sparql-results+json"
   [[ "${output// /}" == *'"boolean":false'* ]]
   # idempotent rerun: already-absent is noted, never an error
-  run env ONTOLOGY_GRAPH="$TEST_GRAPH" TTL="$TTL" RETIREMENTS_FILE="$RF" bash "$SCRIPT"
+  run env ONTOLOGY_GRAPH="$TEST_GRAPH" TTL="$TTL" RETIREMENTS_FILE="$RF" "$SCRIPT"
   [ "$status" -eq 0 ]
   echo "$output" | grep -q "already absent"
   curl -s --max-time "${FUSEKI_WRITE_TIMEOUT:-120}" "${FUSEKI_AUTH[@]+"${FUSEKI_AUTH[@]}"}" -X DELETE "$GSP?graph=$RG" -o /dev/null 2>/dev/null || true
@@ -154,7 +154,7 @@ teardown_file() {
 @test "#3752 NEGATIVE PROOF: malformed staging line REFUSES the deploy" {
   RF="$BATS_TEST_TMPDIR/bad.jsonl"
   printf 'this is not json\n' > "$RF"
-  run env ONTOLOGY_GRAPH="$TEST_GRAPH" TTL="$TTL" RETIREMENTS_FILE="$RF" bash "$SCRIPT"
+  run env ONTOLOGY_GRAPH="$TEST_GRAPH" TTL="$TTL" RETIREMENTS_FILE="$RF" "$SCRIPT"
   [ "$status" -eq 1 ]
   echo "$output" | grep -q "MALFORMED"
 }
@@ -164,7 +164,7 @@ teardown_file() {
   # must refuse AT EXECUTE regardless of what the store says.
   RF="$BATS_TEST_TMPDIR/served.jsonl"
   printf '{"subject_domain":"testdom","object_class":"Credential","graph":"%s"}\n' "${TEST_GRAPH}-sv" > "$RF"
-  run env ONTOLOGY_GRAPH="$TEST_GRAPH" TTL="$TTL" RETIREMENTS_FILE="$RF" bash "$SCRIPT"
+  run env ONTOLOGY_GRAPH="$TEST_GRAPH" TTL="$TTL" RETIREMENTS_FILE="$RF" "$SCRIPT"
   echo "output: $output"
   [ "$status" -eq 1 ]
   echo "$output" | grep -q "SERVED at /credentials RIGHT NOW"
@@ -182,7 +182,7 @@ teardown_file() {
     --data-binary @"$TT" "$GSP?graph=$RG" -o /dev/null
   RF="$BATS_TEST_TMPDIR/noapi.jsonl"
   printf '{"subject_domain":"testdom","object_class":"TestClaimX","graph":"%s"}\n' "$RG" > "$RF"
-  run env ONTOLOGY_GRAPH="$TEST_GRAPH" TTL="$TTL" RETIREMENTS_FILE="$RF" OWL_API_URL="http://localhost:1" bash "$SCRIPT"
+  run env ONTOLOGY_GRAPH="$TEST_GRAPH" TTL="$TTL" RETIREMENTS_FILE="$RF" OWL_API_URL="http://localhost:1" "$SCRIPT"
   echo "output: $output"
   [ "$status" -eq 0 ]
   echo "$output" | grep -q "serve-check UNANSWERED"
@@ -190,7 +190,7 @@ teardown_file() {
   run curl -s "$Q" --data-urlencode "query=ASK { GRAPH <$RG> { <https://jeffbridwell.com/chorus#testdom> <https://jeffbridwell.com/chorus#definesVocabulary> <https://jeffbridwell.com/chorus#TestClaimX> } }" -H "Accept: application/sparql-results+json"
   [[ "${output// /}" == *'"boolean":true'* ]]
   # and the same staging line WITH an answering serve-check does retire it (so the deferral above is the unanswered path, not the harness)
-  run env ONTOLOGY_GRAPH="$TEST_GRAPH" TTL="$TTL" RETIREMENTS_FILE="$RF" bash "$SCRIPT"
+  run env ONTOLOGY_GRAPH="$TEST_GRAPH" TTL="$TTL" RETIREMENTS_FILE="$RF" "$SCRIPT"
   [ "$status" -eq 0 ]
   echo "$output" | grep -q "retirement executed .* claim testdom->TestClaimX"
   curl -s --max-time "${FUSEKI_WRITE_TIMEOUT:-120}" "${FUSEKI_AUTH[@]+"${FUSEKI_AUTH[@]}"}" -X DELETE "$GSP?graph=$RG" -o /dev/null 2>/dev/null || true
@@ -205,7 +205,7 @@ teardown_file() {
   curl -s --max-time "${FUSEKI_WRITE_TIMEOUT:-120}" "${FUSEKI_AUTH[@]+"${FUSEKI_AUTH[@]}"}" -X PUT -H 'Content-Type: text/turtle' --data-binary @"$TT" "$GSP?graph=$RG" -o /dev/null
   RF="$BATS_TEST_TMPDIR/g.jsonl"
   printf '{"retire_graph":"%s","reason":"bats fixture","by":"silas","card":"3732"}\n' "$RG" > "$RF"
-  run env ONTOLOGY_GRAPH="$TEST_GRAPH" TTL="$TTL" RETIREMENTS_FILE="$RF" bash "$SCRIPT"
+  run env ONTOLOGY_GRAPH="$TEST_GRAPH" TTL="$TTL" RETIREMENTS_FILE="$RF" "$SCRIPT"
   echo "output: $output"
   [ "$status" -eq 0 ]
   echo "$output" | grep -q "graph retirement executed"
@@ -214,7 +214,7 @@ teardown_file() {
   [[ "$output" == *"0"* ]]
   ls "$CHORUS_ROOT/platform/backups/graph-retirements/" | grep -q "dropme"
   # idempotent
-  run env ONTOLOGY_GRAPH="$TEST_GRAPH" TTL="$TTL" RETIREMENTS_FILE="$RF" bash "$SCRIPT"
+  run env ONTOLOGY_GRAPH="$TEST_GRAPH" TTL="$TTL" RETIREMENTS_FILE="$RF" "$SCRIPT"
   [ "$status" -eq 0 ]
   echo "$output" | grep -q "already empty"
 }
@@ -228,7 +228,7 @@ teardown_file() {
   printf '{"retire_graph":"%s","reason":"backup will fail","by":"silas","card":"3732"}\n' "$RG" > "$RF"
   # Backup dir is unwritable → no backup file → refuse (data must survive).
   UNWRITABLE="$BATS_TEST_TMPDIR/ro"; mkdir -p "$UNWRITABLE"; chmod 500 "$UNWRITABLE"
-  run env ONTOLOGY_GRAPH="$TEST_GRAPH" TTL="$TTL" RETIREMENTS_FILE="$RF" GRAPH_BACKUP_DIR="$UNWRITABLE/nested" bash "$SCRIPT"
+  run env ONTOLOGY_GRAPH="$TEST_GRAPH" TTL="$TTL" RETIREMENTS_FILE="$RF" GRAPH_BACKUP_DIR="$UNWRITABLE/nested" "$SCRIPT"
   echo "output: $output"
   [ "$status" -eq 1 ]
   echo "$output" | grep -q "no verified restore path"
@@ -240,7 +240,7 @@ teardown_file() {
 
 @test "an invalid TTL is refused fail-loud (exit 1, no deploy)" {
   badttl="$(mktemp)"; printf 'this is not @@ valid turtle .\n' > "$badttl"
-  run env ONTOLOGY_GRAPH="${TEST_GRAPH}-bad" TTL="$badttl" bash "$SCRIPT"
+  run env ONTOLOGY_GRAPH="${TEST_GRAPH}-bad" TTL="$badttl" "$SCRIPT"
   rm -f "$badttl"
   [ "$status" -eq 1 ]
 }
@@ -248,7 +248,7 @@ teardown_file() {
 # --- #3731: could-not-ask must never read as success (three fail-open guards) ---
 
 @test "#3731 NEGATIVE PROOF: verify against a dead query endpoint FAILS CLOSED (was: 0-missing blank-pass)" {
-  run env ONTOLOGY_GRAPH="$TEST_GRAPH" TTL="$TTL" FUSEKI_QUERY="http://localhost:9/dead" bash "$SCRIPT"
+  run env ONTOLOGY_GRAPH="$TEST_GRAPH" TTL="$TTL" FUSEKI_QUERY="http://localhost:9/dead" "$SCRIPT"
   echo "output: $output"
   [ "$status" -eq 1 ]
   echo "$output" | grep -q "could not ask"
@@ -257,7 +257,7 @@ teardown_file() {
 @test "#3731 NEGATIVE PROOF: SHACL validator crash reports UNKNOWN, never 0 violations (non-gating)" {
   fake="$BATS_TEST_TMPDIR/bin"; mkdir -p "$fake"
   printf '#!/bin/sh\nexit 3\n' > "$fake/shacl-crash"; chmod +x "$fake/shacl-crash"
-  run env ONTOLOGY_GRAPH="$TEST_GRAPH" TTL="$TTL" SHACL_REPORT=1 SHACL_BIN="$fake/shacl-crash" bash "$SCRIPT"
+  run env ONTOLOGY_GRAPH="$TEST_GRAPH" TTL="$TTL" SHACL_REPORT=1 SHACL_BIN="$fake/shacl-crash" "$SCRIPT"
   echo "output: $output"
   [ "$status" -eq 0 ]   # report stays non-gating — the deploy itself is fine
   echo "$output" | grep -q "CRASHED — violations UNKNOWN"
@@ -265,20 +265,20 @@ teardown_file() {
 }
 
 @test "#3731 NEGATIVE PROOF: absent shacl is an explicit skip, not a clean-run lookalike" {
-  run env ONTOLOGY_GRAPH="$TEST_GRAPH" TTL="$TTL" SHACL_REPORT=1 SHACL_BIN="/nonexistent-shacl-3731" bash "$SCRIPT"
+  run env ONTOLOGY_GRAPH="$TEST_GRAPH" TTL="$TTL" SHACL_REPORT=1 SHACL_BIN="/nonexistent-shacl-3731" "$SCRIPT"
   [ "$status" -eq 0 ]
   echo "$output" | grep -q "SHACL report SKIPPED"
 }
 
 @test "#3731 NEGATIVE PROOF: absent riot REFUSES the deploy (was: silent unvalidated deploy)" {
-  run env ONTOLOGY_GRAPH="$TEST_GRAPH" TTL="$TTL" RIOT_BIN="/nonexistent-riot-3731" bash "$SCRIPT"
+  run env ONTOLOGY_GRAPH="$TEST_GRAPH" TTL="$TTL" RIOT_BIN="/nonexistent-riot-3731" "$SCRIPT"
   echo "output: $output"
   [ "$status" -eq 1 ]
   echo "$output" | grep -q "REFUSING — riot"
 }
 
 @test "#3731 absent riot + explicit ALLOW_UNVALIDATED=1 proceeds LOUDLY (not a clean run)" {
-  run env ONTOLOGY_GRAPH="$TEST_GRAPH" TTL="$TTL" RIOT_BIN="/nonexistent-riot-3731" ALLOW_UNVALIDATED=1 bash "$SCRIPT"
+  run env ONTOLOGY_GRAPH="$TEST_GRAPH" TTL="$TTL" RIOT_BIN="/nonexistent-riot-3731" ALLOW_UNVALIDATED=1 "$SCRIPT"
   echo "output: $output"
   [ "$status" -eq 0 ]
   echo "$output" | grep -q "deploying UNVALIDATED TTL"
@@ -300,7 +300,7 @@ EOF
 @prefix chorus: <https://jeffbridwell.com/chorus#> .
 chorus:domainKeep a chorus:Domain ; chorus:purpose "keep" .
 EOF
-  env ONTOLOGY_GRAPH="$G" TTL="$keep" RETIRE_ABSENT=1 bash "$SCRIPT" >/dev/null 2>&1
+  env ONTOLOGY_GRAPH="$G" TTL="$keep" RETIRE_ABSENT=1 "$SCRIPT" >/dev/null 2>&1
   rm -f "$pre" "$keep"
   # present domain kept
   run curl -s "$Q" --data-urlencode "query=PREFIX chorus: <https://jeffbridwell.com/chorus#> ASK { GRAPH <$G> { chorus:domainKeep a chorus:Domain } }" -H "Accept: application/sparql-results+json"
@@ -328,7 +328,7 @@ EOF
 chorus:domainKeep a chorus:Domain ; chorus:purpose "keep" .
 EOF
   # TTL= override + no RETIRE_ABSENT → gate defaults OFF; domainGone must SURVIVE
-  env ONTOLOGY_GRAPH="$G" TTL="$keep" bash "$SCRIPT" >/dev/null 2>&1
+  env ONTOLOGY_GRAPH="$G" TTL="$keep" "$SCRIPT" >/dev/null 2>&1
   rm -f "$pre" "$keep"
   run curl -s "$Q" --data-urlencode "query=PREFIX chorus: <https://jeffbridwell.com/chorus#> ASK { GRAPH <$G> { chorus:domainGone a chorus:Domain } }" -H "Accept: application/sparql-results+json"
   [[ "${output// /}" == *'"boolean":true'* ]]
@@ -336,17 +336,23 @@ EOF
 }
 
 @test "#3593 MODEL_SET includes the 34-domain sources (domains-wren-silas + domains-kade-3581)" {
-  run grep -cE 'domains-wren-silas\.ttl|domains-kade-3581\.ttl' "$SCRIPT"
+  # #4229 — the set moved from a bash array into the verb's source; the
+  # question is the same one, asked where the answer now lives.
+  SRC="$BATS_TEST_DIRNAME/../services/athena-deploy/src/lib.rs"
+  run grep -cE 'domains-wren-silas\.ttl|domains-kade-3581\.ttl' "$SRC"
   [ "$output" -ge 2 ]
 }
 
 # --- #3536: stop-truncating primitive (default-off flip + empty-staging backstop) ---
 
 @test "#3536 RETIRE_ABSENT defaults OFF — no truncate-by-default (the 06-26 wipe root)" {
-  run grep -cE 'RETIRE_ABSENT:-0' "$SCRIPT"
+  # #4229 — the rule moved into retire_absent_on(), which has its own unit
+  # tests including a negative proof that "true"/"yes"/"on" do NOT enable it.
+  SRC="$BATS_TEST_DIRNAME/../services/athena-deploy/src/lib.rs"
+  run grep -c 'Some("1")' "$SRC"
   [ "$output" -ge 1 ]
-  # the old default-1-on-full-deploy form must be gone
-  run grep -cE 'RETIRE_ABSENT:-\$\(\[ -z' "$SCRIPT"
+  # the old default-on-full-deploy form must not exist anywhere in the verb
+  run grep -c 'RETIRE_ABSENT:-\$' "$SRC"
   [ "$output" -eq 0 ]
 }
 
@@ -363,7 +369,7 @@ EOF
 @prefix chorus: <https://jeffbridwell.com/chorus#> .
 chorus:someInst a chorus:Test ; chorus:purpose "not a domain" .
 EOF
-  run env ONTOLOGY_GRAPH="$G" TTL="$nodom" RETIRE_ABSENT=1 bash "$SCRIPT"
+  run env ONTOLOGY_GRAPH="$G" TTL="$nodom" RETIRE_ABSENT=1 "$SCRIPT"
   rm -f "$pre" "$nodom"
   # guard REFUSES (exit non-zero)
   [ "$status" -ne 0 ]
@@ -389,7 +395,7 @@ EOF
   curl -s --max-time "${FUSEKI_WRITE_TIMEOUT:-120}" -X POST -H 'Content-Type: text/turtle' --data-binary "@$pre" "$GSP?graph=$G" >/dev/null
   rm -f "$pre"
   # deploy the REAL model (chorus.ttl) into the test graph
-  env ONTOLOGY_GRAPH="$G" TTL="$TTL" bash "$SCRIPT" >/dev/null 2>&1
+  env ONTOLOGY_GRAPH="$G" TTL="$TTL" "$SCRIPT" >/dev/null 2>&1
   # AC5a — DomainShape's 11 sh:property attrs are RESTORED (the wipe is undone)
   run curl -s "$Q" --data-urlencode "query=PREFIX chorus: <https://jeffbridwell.com/chorus#> PREFIX sh: <http://www.w3.org/ns/shacl#> SELECT (COUNT(?pp) AS ?n) WHERE { GRAPH <$G> { chorus:DomainShape sh:property ?pp } }" -H "Accept: application/sparql-results+json"
   [[ "${output// /}" == *'"value":"11"'* ]]

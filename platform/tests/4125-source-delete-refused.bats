@@ -27,7 +27,7 @@
 #   test -z "$(printf '%s' "$output" | grep -F "X" || true)"
 # which is a simple command and fails wherever it sits.
 
-SCRIPT="$(cd "$BATS_TEST_DIRNAME/../scripts" && pwd)/athena-deploy-model.sh"
+SCRIPT="$(cd "$BATS_TEST_DIRNAME/../services/athena-deploy/target/release" && pwd)/athena-deploy"
 Q="http://localhost:3030/pods/query"
 GSP="http://localhost:3030/pods/data"
 GRAPH="urn:chorus:ontology-test-bats-4125"
@@ -81,7 +81,7 @@ teardown() {
 
 _deploy() {
   env ONTOLOGY_GRAPH="$GRAPH" TTL="$TTL_PATH" CHORUS_ROOT="$REPO" \
-      RETIREMENTS_FILE="$RF" DEPLOY_ROLE=silas "$@" bash "$SCRIPT"
+      RETIREMENTS_FILE="$RF" DEPLOY_ROLE=silas "$@" "$SCRIPT"
 }
 
 _live_count() {
