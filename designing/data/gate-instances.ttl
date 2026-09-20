@@ -124,3 +124,13 @@ chorus:gate-design-wip-ready a chorus:Gate ;
     rdfs:label "Design gate (WIP-ready)" ;
     rdfs:comment "Inline check in /pull Step 4.5 — blocks type:new or type:enhance pulls when domain lifecycle.wip is not pass. #1396 origin." ;
     chorus:implementedIn "~/.claude/skills/pull/SKILL.md:step-4.5" .
+
+# #4216 — appended 2026-09-20. These rows were still authored in a MODEL_SET file
+# (the first sweep checked the wrong file list and reported zero, which is the
+# hollow-check shape this card is full of), so they were still being re-created in
+# urn:chorus:ontology on every model deploy.
+
+chorus:gate-chorus-api-mutations a chorus:Gate ;
+    rdfs:label "chorus-api mutation gate" ;
+    rdfs:comment "The generated envelope on chorus-api mutation routes: Bearer required, scope checked, attempt/refuse/allow spine events. Bypass env vars: none (by design). #3618." ;
+    chorus:ownerRole chorus:role-silas .

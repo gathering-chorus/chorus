@@ -217,10 +217,7 @@ chorus:servedBy a owl:ObjectProperty ;
 
 
 
-chorus:gate-chorus-api-mutations a chorus:Gate ;
-    rdfs:label "chorus-api mutation gate" ;
-    rdfs:comment "The generated envelope on chorus-api mutation routes: Bearer required, scope checked, attempt/refuse/allow spine events. Bypass env vars: none (by design). #3618." ;
-    chorus:ownerRole chorus:role-silas .
+
 
 # Principals for the first class's consumers (creds deployed BEFORE the flip):
 # #3773 — the three worker individuals MOVED OUT of this file.

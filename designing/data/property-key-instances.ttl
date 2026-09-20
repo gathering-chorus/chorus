@@ -65,3 +65,33 @@ chorus:pk-failureClass a chorus:PropertyKey ;
     chorus:appliesToClass chorus:Metric ; chorus:keyValueType "string" ;
     chorus:allowedValue "change", "tooling" ;
     chorus:lifecycleEnabled false .
+
+# #4216 — appended 2026-09-20. These rows were still authored in a MODEL_SET file
+# (the first sweep checked the wrong file list and reported zero, which is the
+# hollow-check shape this card is full of), so they were still being re-created in
+# urn:chorus:ontology on every model deploy.
+
+# =============================================================================
+# #3838 — responseWordCap: the cap is DATA, not a constant.
+#
+# Jeff, 2026-08-12: "make a word prompt attribute under roles that the attribute
+# should be set via a property from the properties domain. That way, if we need
+# to change it in the future, we don't have to make another code change."
+#
+# So the Role does not carry the NUMBER. It carries nothing — the number lives
+# as a chorus:Property in the properties domain, resolved through the #3437
+# cascade. Changing the team's cap is a property edit; changing one role's cap
+# is a property edit at a narrower scope. Neither is a deploy.
+#
+# The PropertyKey below is the registry entry that makes the key writable at
+# all: ADR-044 register-before-use — a chorus:Property whose propertyKey does
+# not resolve to a registered PropertyKey is refused at the door.
+# =============================================================================
+
+chorus:pk-responseWordCap a chorus:PropertyKey ;
+    rdfs:label "responseWordCap" ;
+    chorus:keyName "response.word.cap" ;
+    chorus:appliesToClass chorus:Role ;
+    chorus:propertyKind "datatype" ;
+    chorus:lifecycleEnabled "false" ;
+    rdfs:comment "Maximum words in a role's response to Jeff. Read from the properties cascade at send time, never compiled in. A role-scoped Property overrides the broader default; absent a value the enforcement point must REFUSE to cap rather than invent a number — a silent default is how a governed value becomes a constant again." .
