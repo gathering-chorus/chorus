@@ -110,7 +110,12 @@ let principalHome: Promise<string> | null = null;
 function resolvePrincipalHome(): Promise<string> {
   principalHome ??= athenaSparqlQuery(PRINCIPAL_HOME_QUERY)
     .then((res) => {
-      const rows = ((res as { results?: { bindings?: Array<Record<string, { value?: string }>> } })
+      // #3721 — SPARQL omits an unbound variable from the row entirely, so the
+      // cell really can be absent; typing it non-optional is what makes the
+      // guard below look redundant to the linter. The guard is right.
+      const rows = ((res as {
+        results?: { bindings?: Array<Record<string, { value?: string } | undefined>> };
+      })
         .results?.bindings ?? [])
         .map((b) => b.g?.value ?? '')
         .filter((g) => g.startsWith('urn:chorus:'));
