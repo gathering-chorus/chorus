@@ -822,11 +822,13 @@ pub fn place_by_file_name(path: &str, valid: &[String]) -> Option<Signal> {
         ("role", "roles"),
         ("roles", "roles"),
         ("domain", "domains"),
-        ("page", "code"),
-        ("pages", "code"),
-        ("endpoint", "code"),
-        ("endpoints", "code"),
-        ("crawl", "code"),
+        // page / pages / endpoint / endpoints / crawl are NOT here. Silas and
+        // Wren both stopped the round on it and they were right: those words
+        // name a TYPE of thing, not a domain, and mapping them to `code` would
+        // have answered "what kind of artifact is this" when the question was
+        // "which domain does it belong to". A file named discover-pages-athena
+        // stays unplaced and gets reported, which is a question we can answer
+        // later rather than a wrong answer we would never look at again.
         ("rca", "rcas"),
         ("backup", "infrastructure"),
         ("fuseki", "infrastructure"),
