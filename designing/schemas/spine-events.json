@@ -2879,6 +2879,18 @@
         "reason": "Typed failure reason (ttl-not-found | riot-invalid | staging-load-http-<code> | merge-http-<code> | verify-empty)"
       }
     },
+    "athena.trigger.started": {
+      "vertebra": "operations",
+      "source": "werk",
+      "description": "#4228 — a land has SPAWNED the detached model deploy. Emitted since the handoff was built and never registered, because the pre-commit check only reads events a diff touches and nobody edited this line. It is the start of a pair: every one of these is answered by athena.deploy.completed or athena.deploy.failed, and a start with no answer means the deploy is still running or died without reporting.",
+      "fields": {
+        "card_id": "The card whose land spawned it",
+        "landedCommit": "The sha the deploy will make live",
+        "files": "Model/seed files in scope",
+        "pid": "The detached child's pid",
+        "log": "The child's own log file"
+      }
+    },
     "athena.deploy.completed": {
       "vertebra": "operations",
       "source": "werk",
