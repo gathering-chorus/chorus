@@ -26,7 +26,7 @@ import urllib.request
 
 DOOR = os.environ.get("CHORUS_OWL_API", "http://localhost:3360")
 STATE = os.path.expanduser("~/.chorus/tagged-report.json")
-ROOT = os.environ.get("CHORUS_ROOT", os.path.expanduser("~/CascadeProjects/chorus"))
+ROOT = os.environ.get("CHORUS_ROOT", "")
 HOME = "urn:chorus:domains:code"
 
 TYPES = [
@@ -82,6 +82,9 @@ def main():
             continue
         total = len(data)
         feed = sum(1 for row in data if not row.get(edge))
+        if not ROOT or not os.path.isdir(ROOT):
+            print("UNMEASURED  CHORUS_ROOT is unset or not a directory — WEED cannot be read")
+            return 1
         if served is None:
             print(f"UNMEASURED  {route:16} the door did not say which graph it served")
             outstanding += 1
@@ -122,12 +125,13 @@ def main():
                 and not os.path.exists(os.path.join(ROOT, r["filePath"]))
             ][:5]
         rows.append(f"{route:16} {total:6}  " + ("  ·  ".join(acts) if acts else "clean"))
-        outstanding += move + feed + weed
+        if move or feed or weed:
+            outstanding += 1
 
     print("type               rows  what to do (vs previous run)")
     for r in rows:
         print(r)
-    print(f"{'TOTAL':16} {'':6}  outstanding {outstanding}")
+    print(f"{'TOTAL':16} {'':6}  {outstanding} type(s) need action")
     # A count is not actionable. Name rows so the next person can start.
     for label, examples in named.items():
         print(f"  {label}: " + ", ".join(examples))
