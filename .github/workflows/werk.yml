@@ -312,6 +312,23 @@ jobs:
           post pending
           if chorus-mcp-call.sh "${ROLE}" werk-deploy "$(printf '{"role":"%s","card_id":%s,"env_up":true}' "${ROLE}" "${CARD_ID}")"; then post success; else post failure; exit 1; fi
 
+      - name: demo-fitness
+        # #4225 — how much of Chorus this demo actually runs, printed on every
+        # run and appended to a series so the number can move. Jeff, 2026-09-20:
+        # "if prod is 100% chorus running and demo is 25% chorus running u can
+        # see how that contributes to quality issues". Never blocking: it
+        # measures the rehearsal, it does not judge the change.
+        if: ${{ always() && steps.provenround.outputs.skip_prove != 'true' }}
+        continue-on-error: true
+        run: |
+          BIN="${CHORUS_HOME}/platform/services/demo-fitness/target/release/demo-fitness"
+          [ -x "$BIN" ] || BIN="$(command -v demo-fitness || true)"
+          if [ -z "$BIN" ] || [ ! -x "$BIN" ]; then
+            echo "demo-fitness: UNMEASURED — binary not built; this run says nothing about demo coverage"
+            exit 0
+          fi
+          "$BIN" "${ROLE}"
+
       - name: prove-live
         id: prove_live
         # #4102 — the card's own integration bats, run against the card's VARIANT,

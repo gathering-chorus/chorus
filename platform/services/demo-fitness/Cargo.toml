@@ -1,0 +1,18 @@
+[package]
+name = "demo-fitness"
+version = "0.1.0"
+edition = "2021"
+
+# #4225 — how much of Chorus a demo actually runs. Self-contained: ZERO
+# dependencies, std only, same blueprint as pair-heartbeat and the werk verbs.
+# Read-only: it lists services and writes one line to its own series file. It
+# never starts, stops or deploys anything.
+[dependencies]
+
+[lib]
+name = "demo_fitness"
+path = "src/lib.rs"
+
+[[bin]]
+name = "demo-fitness"
+path = "src/main.rs"
