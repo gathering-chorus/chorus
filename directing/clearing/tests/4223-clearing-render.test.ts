@@ -111,24 +111,42 @@ describe('#4220 Clearing renders like Claude Code, not like one paragraph', () =
  * to catch — `white-space:pre` on the block — and was watched go RED against the
  * shipped file before the style changed.
  */
-describe('#4230 — fenced blocks wrap instead of cropping', () => {
+describe('#4234 — fenced blocks scroll sideways instead of wrapping', () => {
   const render = loadRenderer();
-  const longLine = 'graph-summary|40904|dirty row-missing-required-field 16161 v1-row 15862 owner-not-principal 6783';
+  const longLine = 'row-missing-required-field 16161 v1-row 15862 owner-not-principal 6783';
   const html = render('```\n' + longLine + '\n```');
+  const preTag = html.slice(html.indexOf('<pre'), html.indexOf('>', html.indexOf('<pre')) + 1);
 
   it('renders the fence as a <pre> block', () => {
     expect(html).toContain('<pre');
     expect(html).toContain(longLine);
   });
 
-  it('the block wraps: white-space is pre-wrap, never bare pre', () => {
-    const pre = html.slice(html.indexOf('<pre'), html.indexOf('>', html.indexOf('<pre')) + 1);
-    expect(pre).toContain('white-space:pre-wrap');
-    expect(/white-space:pre(?!-wrap)/.test(pre)).toBe(false);
+  /**
+   * Jeff, 2026-09-20: "the wrap on the others is not legible i dont know where
+   * one row ends and the next begins" then "a horizontal scroll is better".
+   * A row stays on ONE line; the block scrolls.
+   */
+  it('a row stays on one line — white-space is pre, never pre-wrap', () => {
+    expect(/white-space:pre(?!-wrap)/.test(preTag)).toBe(true);
+    expect(preTag).not.toContain('pre-wrap');
+    expect(preTag).not.toContain('overflow-wrap:anywhere');
   });
 
-  it('a long unbroken token still breaks rather than overflowing', () => {
-    const pre = html.slice(html.indexOf('<pre'), html.indexOf('>', html.indexOf('<pre')) + 1);
-    expect(pre).toContain('overflow-wrap:anywhere');
+  it('the block owns a sideways scroll that a thumb can reach', () => {
+    expect(preTag).toContain('overflow-x:auto');
+    expect(preTag).toContain('-webkit-overflow-scrolling:touch');
+  });
+
+  /**
+   * NEGATIVE PROOF (#3734): the phone rule `.msg { overflow-x: hidden }` is what
+   * made the old scroll unreachable — the block was scrollable in principle and
+   * clipped in practice. Assert against the shipped stylesheet, not the markup.
+   */
+  it('the message row does not clip the block', () => {
+    const { readFileSync } = require('fs');
+    const { join } = require('path');
+    const page = readFileSync(join(__dirname, '..', 'public', 'index.html'), 'utf8');
+    expect(/\.msg \{[^}]*overflow-x:\s*hidden/.test(page)).toBe(false);
   });
 });
