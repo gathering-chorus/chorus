@@ -1468,13 +1468,29 @@ fn main() {
             let Some(g) = in_graph.get(path.as_str()) else {
                 continue;
             };
-            let held = g
-                .other
-                .iter()
-                .find(|(k, _)| k == "hasDomain")
-                .map(|(_, v)| v.as_str())
-                .unwrap_or("");
-            let Some(content) = read_file(path) else { continue };
+            // #4222 — an unreadable file (image, binary) never reached the
+            // restate pass, so 362 PNGs whose sha never moves could never pick
+            // up a rule: they are Unchanged forever. Same path chain here.
+            let Some(content) = read_file(path) else {
+                let want_path: Vec<String> = domain::place_by_file_name(path, &valid_domains)
+                    .or_else(|| domain::place_by_tree(path, &valid_domains))
+                    .or_else(|| domain::place_by_dir(path, &valid_domains, &dir_rows))
+                    .map(|s| vec![s.domain])
+                    .unwrap_or_default();
+                let mut held_path: Vec<String> = g
+                    .other
+                    .iter()
+                    .filter(|(k, _)| k == "hasDomain")
+                    .map(|(_, v)| v.clone())
+                    .collect();
+                held_path.sort();
+                held_path.dedup();
+                if want_path != held_path {
+                    restated += 1;
+                    *a = Action::Replace { path: path.clone() };
+                }
+                continue;
+            };
             let unit = domain::declared_unit(path, &read_file);
             let want = domain::place_in_file(
                         &content,
@@ -1486,8 +1502,18 @@ fn main() {
                 &card_domain,
                 &read_file,
             );
-            let want = want.domain().unwrap_or("");
-            if want != held {
+            // #4222 — the stored value may now be a set. Compare sets, not one
+            // string, or every multi-domain row restates on every run.
+            let want_set = want.domains();
+            let mut held_set: Vec<String> = g
+                .other
+                .iter()
+                .filter(|(k, _)| k == "hasDomain")
+                .map(|(_, v)| v.clone())
+                .collect();
+            held_set.sort();
+            held_set.dedup();
+            if want_set != held_set {
                 restated += 1;
                 *a = Action::Replace { path: path.clone() };
             }
@@ -1831,7 +1857,14 @@ fn main() {
                 // with no hasDomain at all. Silent, and invisible in the counts.
                 let text = std::fs::read_to_string(std::path::Path::new(&root).join(path));
                 if text.is_err() {
-                    if let Some(s) = domain::place_by_tree(path, &valid_domains) {
+                    // #4222 — the SAME path chain a readable file gets: its own
+                    // name, then the tree, then the authored directory rows.
+                    // place_by_tree alone covers only three trees, so 362 images
+                    // under platform/ and designing/ still carried nothing.
+                    if let Some(s) = domain::place_by_file_name(path, &valid_domains)
+                        .or_else(|| domain::place_by_tree(path, &valid_domains))
+                        .or_else(|| domain::place_by_dir(path, &valid_domains, &dir_rows))
+                    {
                         owned.push(("hasDomain".to_string(), s.domain));
                     }
                 }
@@ -1852,9 +1885,7 @@ fn main() {
                             std::fs::read_to_string(std::path::Path::new(&root).join(q)).ok()
                         },
                     );
-                    if let Some(d) = placement.domain() {
-                        owned.push(("hasDomain".to_string(), d.to_string()));
-                    }
+                    owned.extend(domain_fields(&placement));
                 }
                 let mut fields = merge_row(existing, &owned);
                 let name = stable_name(path);
@@ -2512,10 +2543,49 @@ fn scope_was_full_walk(scope: &Scope) -> bool {
 }
 
 /// A flat field map as a JSON object body.
+/// #4222 — the hasDomain fields a row carries: EVERY domain the rules found.
+///
+/// Pure, so the choice between "one answer" and "all of them" is testable. The
+/// write site used `.domain()`, which returns None the moment two rules
+/// disagree — 217 files that genuinely serve several domains were stored with
+/// no domain at all rather than with all of theirs.
+fn domain_fields(placement: &chorus_crawl::domain::Placement) -> Vec<(String, String)> {
+    placement
+        .domains()
+        .into_iter()
+        .map(|d| ("hasDomain".to_string(), d))
+        .collect()
+}
+
+/// #4222 — a key repeated in `fields` is written as a JSON array, so a row can
+/// carry every domain the rules found. Jeff: "its 1.n - period". The CodeFile
+/// shape has minCount 1 and no maxCount, so 1..n was always legal in the store;
+/// only this writer flattened it to one and dropped the rest.
 fn fields_json(fields: &[(String, String)]) -> String {
-    let body: Vec<String> = fields
+    let mut order: Vec<&str> = Vec::new();
+    for (k, _) in fields {
+        if !order.contains(&k.as_str()) {
+            order.push(k.as_str());
+        }
+    }
+    let body: Vec<String> = order
         .iter()
-        .map(|(k, v)| format!("\"{}\":\"{}\"", json_escape(k), json_escape(v)))
+        .map(|k| {
+            let vals: Vec<&String> = fields
+                .iter()
+                .filter(|(fk, _)| fk == k)
+                .map(|(_, v)| v)
+                .collect();
+            if vals.len() == 1 {
+                format!("\"{}\":\"{}\"", json_escape(k), json_escape(vals[0]))
+            } else {
+                let items: Vec<String> = vals
+                    .iter()
+                    .map(|v| format!("\"{}\"", json_escape(v)))
+                    .collect();
+                format!("\"{}\":[{}]", json_escape(k), items.join(","))
+            }
+        })
         .collect();
     format!("{{{}}}", body.join(","))
 }
@@ -2569,5 +2639,106 @@ mod failure_classes_4201 {
             failure_classes(&failed),
             vec![("(no route in line) -> HTTP ?".to_string(), 1)]
         );
+    }
+}
+
+/// #4222 — 1..n domains, end to end through the writer.
+///
+/// Jeff, after the fourth time: "its 1.n - period". The store always allowed it
+/// (CodeFile's hasDomain is minCount 1, no maxCount) and a live PUT with four
+/// domains returned 200. These pin the two places that flattened it.
+#[cfg(test)]
+mod multi_domain_4222 {
+    use super::fields_json;
+    use chorus_crawl::merge_row;
+
+    fn f(pairs: &[(&str, &str)]) -> Vec<(String, String)> {
+        pairs
+            .iter()
+            .map(|(k, v)| (k.to_string(), v.to_string()))
+            .collect()
+    }
+
+    /// NEGATIVE PROOF: with the old one-value-per-key writer this body was
+    /// `{"hasDomain":"tests"}` — three of the four domains silently dropped.
+    #[test]
+    fn a_repeated_key_is_written_as_an_array() {
+        let body = fields_json(&f(&[
+            ("filePath", "a.rs"),
+            ("hasDomain", "code"),
+            ("hasDomain", "logs"),
+            ("hasDomain", "tests"),
+        ]));
+        assert_eq!(body, r#"{"filePath":"a.rs","hasDomain":["code","logs","tests"]}"#);
+    }
+
+    /// One value still writes a plain string — the 6,000 single-domain rows
+    /// must not change shape.
+    #[test]
+    fn one_value_stays_a_string() {
+        let body = fields_json(&f(&[("hasDomain", "code")]));
+        assert_eq!(body, r#"{"hasDomain":"code"}"#);
+    }
+
+    /// NEGATIVE PROOF: the old merge kept the first slot and overwrote it, so a
+    /// row that used to be `logs` and is now `code`+`tests` came out as one
+    /// value. All the caller's values replace all the stored ones.
+    #[test]
+    fn a_multi_valued_key_replaces_every_stored_value() {
+        let out = merge_row(
+            &f(&[("filePath", "a.rs"), ("hasDomain", "logs")]),
+            &f(&[("hasDomain", "code"), ("hasDomain", "tests")]),
+        );
+        let domains: Vec<&str> = out
+            .iter()
+            .filter(|(k, _)| k == "hasDomain")
+            .map(|(_, v)| v.as_str())
+            .collect();
+        assert_eq!(domains, vec!["code", "tests"]);
+        assert!(out.iter().any(|(k, v)| k == "filePath" && v == "a.rs"));
+    }
+
+    /// A single supplied value still overwrites in place, one slot.
+    #[test]
+    fn a_single_valued_key_still_overwrites_in_place() {
+        let out = merge_row(
+            &f(&[("hasDomain", "logs")]),
+            &f(&[("hasDomain", "code")]),
+        );
+        assert_eq!(out, f(&[("hasDomain", "code")]));
+    }
+
+    /// NEGATIVE PROOF: with `.domain()` at the write site a conflicted file
+    /// contributed NO hasDomain field at all. This is the 217-file case.
+    #[test]
+    fn a_conflicted_file_contributes_every_domain_it_serves() {
+        use chorus_crawl::domain::{Placement, Rule, Signal};
+        let sig = |d: &str| Signal {
+            rule: Rule::Route,
+            domain: d.to_string(),
+            evidence: format!("route {d}"),
+        };
+        let p = Placement::Conflict {
+            signals: vec![sig("tests"), sig("code"), sig("logs")],
+        };
+        assert_eq!(
+            super::domain_fields(&p),
+            f(&[
+                ("hasDomain", "code"),
+                ("hasDomain", "logs"),
+                ("hasDomain", "tests"),
+            ])
+        );
+    }
+
+    /// An agreed placement is still exactly one field.
+    #[test]
+    fn an_agreed_file_contributes_one_domain() {
+        use chorus_crawl::domain::Placement;
+        let p = Placement::Tagged {
+            domain: "code".to_string(),
+            signals: vec![],
+        };
+        assert_eq!(super::domain_fields(&p), f(&[("hasDomain", "code")]));
     }
 }

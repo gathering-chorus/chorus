@@ -1464,7 +1464,22 @@ pub fn merge_row(
         .filter(|(k, v)| !SERVER_OWNED.contains(&k.as_str()) && !v.is_empty())
         .cloned()
         .collect();
+    // #4222 — a key the caller supplies more than once is multi-valued: every
+    // existing value of that key is dropped and all the new ones are kept, so a
+    // file can carry every domain it serves. A key supplied once keeps the old
+    // single-slot behaviour.
+    let mut multi: Vec<&str> = Vec::new();
+    for (i, (k, _)) in owned.iter().enumerate() {
+        if owned.iter().skip(i + 1).any(|(ok, _)| ok == k) && !multi.contains(&k.as_str()) {
+            multi.push(k.as_str());
+        }
+    }
+    out.retain(|(k, _)| !multi.contains(&k.as_str()));
     for (k, v) in owned {
+        if multi.contains(&k.as_str()) {
+            out.push((k.clone(), v.clone()));
+            continue;
+        }
         match out.iter_mut().find(|(ek, _)| ek == k) {
             Some(slot) => slot.1 = v.clone(),
             None => out.push((k.clone(), v.clone())),
