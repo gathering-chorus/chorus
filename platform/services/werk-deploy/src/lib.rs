@@ -2765,6 +2765,62 @@ fn wait_for_health(url: &str, timeout: Duration) -> R<()> {
     }
 }
 
+/// #4226 — IS THIS JOB SUPPOSED TO KEEP RUNNING?
+///
+/// Wren's #4167 merged and was rolled straight back: athena-validate is a
+/// StartCalendarInterval job that runs at 07:00 and exits, and the liveness
+/// floor below waited fifteen seconds for a pid that will never exist. No
+/// scheduled agent could ever pass it, so any card deploying one is stuck at
+/// accept.
+///
+/// A daemon's success is a live process. A scheduled job's success is a clean
+/// exit. Asking both the same question is a check that cannot tell "never
+/// started" from "already finished" — the same shape that cost the team three
+/// separate mornings this week.
+///
+/// Pure over `launchctl print` output so both readings can be tested.
+#[derive(Debug, PartialEq, Eq, Clone, Copy)]
+pub enum JobKind {
+    /// RunAtLoad / KeepAlive — expected to stay up.
+    Daemon,
+    /// StartCalendarInterval / StartInterval — expected to run and exit.
+    Scheduled,
+}
+
+pub fn job_kind(print_out: &str) -> JobKind {
+    let has = |k: &str| print_out.contains(k);
+    if has("StartCalendarInterval") || has("StartInterval") || has("com.apple.launchd.calendarinterval") {
+        JobKind::Scheduled
+    } else {
+        JobKind::Daemon
+    }
+}
+
+/// Did the deploy take? Daemon: running with a pid. Scheduled: the plist is
+/// loaded and the last run exited 0. A scheduled job that exited NON-zero is
+/// still a failure — the point is to stop reading "finished" as "dead", not to
+/// stop reading failures.
+pub fn deploy_took(print_out: &str) -> bool {
+    match job_kind(print_out) {
+        JobKind::Daemon => {
+            print_out.contains("state = running")
+                && print_out.lines().any(|l| l.trim_start().starts_with("pid ="))
+        }
+        JobKind::Scheduled => {
+            let loaded = print_out.contains("state = ") || print_out.contains("program =");
+            let last_exit_ok = match print_out
+                .lines()
+                .find(|l| l.trim_start().starts_with("last exit code ="))
+            {
+                Some(l) => l.split('=').nth(1).map(|v| v.trim() == "0").unwrap_or(false),
+                // never run since load is not a failure: it is scheduled
+                None => true,
+            };
+            loaded && last_exit_ok
+        }
+    }
+}
+
 /// #3132 — launchd LIVENESS floor: after a kickstart, poll `launchctl print
 /// gui/<uid>/<svc>` until the job reports a running pid, or fail. This is the
 /// universal "did the restart take" check for a service that did NOT self-declare a
@@ -2780,9 +2836,8 @@ fn wait_for_liveness(svc: &str, timeout: Duration) -> R<()> {
             // A live job prints `state = running` and a `pid = <n>`. A crash-looping
             // one prints `state = spawn scheduled`/`waiting` with no pid, or a
             // nonzero `last exit code`. Require a pid + running to pass.
-            let running = out.contains("state = running");
-            let has_pid = out.lines().any(|l| l.trim_start().starts_with("pid ="));
-            if running && has_pid {
+            // #4226 — a scheduled job answers a different question than a daemon.
+            if deploy_took(&out) {
                 return Ok(());
             }
             last = out;
