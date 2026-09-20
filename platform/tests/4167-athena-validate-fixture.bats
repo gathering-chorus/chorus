@@ -40,7 +40,9 @@ setup_file() {
 }
 
 teardown_file() {
-  curl -s "${FUSEKI_AUTH[@]+"${FUSEKI_AUTH[@]}"}" -X POST "$UPD" \
+  # #4175 — every Fuseki write carries a timeout, including a teardown: an
+  # unbounded one hangs the whole run when the store's write lock is held.
+  curl -s --max-time "${FUSEKI_WRITE_TIMEOUT:-120}" "${FUSEKI_AUTH[@]+"${FUSEKI_AUTH[@]}"}" -X POST "$UPD" \
     --data-urlencode "update=DROP SILENT GRAPH <$FIXTURE_GRAPH>" >/dev/null 2>&1 || true
 }
 
@@ -53,7 +55,7 @@ _auth() { . "$ROOT/platform/scripts/fuseki-auth.sh" 2>/dev/null || true; }
 
 _load_dirty() {
   _auth
-  curl -sf "${FUSEKI_AUTH[@]+"${FUSEKI_AUTH[@]}"}" -X POST "$UPD" --data-urlencode \
+  curl -sf --max-time "${FUSEKI_WRITE_TIMEOUT:-120}" "${FUSEKI_AUTH[@]+"${FUSEKI_AUTH[@]}"}" -X POST "$UPD" --data-urlencode \
     "update=DROP SILENT GRAPH <$FIXTURE_GRAPH> ;
      INSERT DATA { GRAPH <$FIXTURE_GRAPH> {
        <${NS}fixture-row-a> a <${NS}Skill> ; <${NS}hasDomain> <${NS}fixture-nowhere> .
@@ -63,7 +65,7 @@ _load_dirty() {
 
 _load_clean() {
   _auth
-  curl -sf "${FUSEKI_AUTH[@]+"${FUSEKI_AUTH[@]}"}" -X POST "$UPD" --data-urlencode \
+  curl -sf --max-time "${FUSEKI_WRITE_TIMEOUT:-120}" "${FUSEKI_AUTH[@]+"${FUSEKI_AUTH[@]}"}" -X POST "$UPD" --data-urlencode \
     "update=DROP SILENT GRAPH <$FIXTURE_GRAPH> ;
      INSERT DATA { GRAPH <$FIXTURE_GRAPH> {
        <${NS}fixture-row-c> a <${NS}Skill> ; <${NS}label> \"complete and connected\" .
