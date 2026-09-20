@@ -2879,6 +2879,18 @@
         "reason": "Typed failure reason (ttl-not-found | riot-invalid | staging-load-http-<code> | merge-http-<code> | verify-empty)"
       }
     },
+    "athena.deploy.completed": {
+      "vertebra": "operations",
+      "source": "werk",
+      "description": "#4228 — the detached model deploy a land spawned has EXITED, with its code. Before this the only event was athena.trigger.started, so a deploy that refused was invisible and the land printed \"merged + deployed + LIVE\" over it (Wren's #4216). The land waits for this, or for athena.deploy.failed, before claiming the store carries the card's model changes.",
+      "fields": {
+        "card_id": "The card whose land spawned the deploy",
+        "landedCommit": "The sha the deploy was asked to make live",
+        "exit": "The child's exit code (0 here; non-zero emits athena.deploy.failed)",
+        "signal": "The signal that killed the child, empty when it exited normally",
+        "log": "The child's own log file, which carries the refusal text"
+      }
+    },
     "deploy.stale": {
       "vertebra": "operations",
       "source": "werk",
