@@ -99,6 +99,71 @@ pub fn model_set(root: &str, ttl_override: Option<String>) -> Vec<String> {
     }
 }
 
+/// One TTL set staged into one domain graph. #4229 — the eight copies of this
+/// leg in athena-deploy-model.sh become eight rows of data and one
+/// implementation. Four of those copies were one verify and two refusals
+/// weaker than the others, because later fixes only reached some of them;
+/// data cannot drift from itself that way.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct DomainSet {
+    pub name: String,
+    pub graph: String,
+    /// CHORUS_ROOT-relative, in staging order.
+    pub files: Vec<String>,
+}
+
+/// Parse the domain-set manifest. Pure.
+///
+/// A malformed line is a REFUSAL, never a skip: a deploy that quietly drops a
+/// row from its own manifest is the silent-miss class this card exists to end
+/// (the Rust verb deployed 2 files while the bash deployed 41, and said
+/// success). Blank lines and `#` comments are the only things ignored.
+pub fn parse_domain_sets(text: &str) -> Result<Vec<DomainSet>, String> {
+    let mut out: Vec<DomainSet> = Vec::new();
+    for (i, raw) in text.lines().enumerate() {
+        let line = raw.split('#').next().unwrap_or("").trim();
+        if line.is_empty() {
+            continue;
+        }
+        let parts: Vec<&str> = line.split('|').map(str::trim).collect();
+        if parts.len() != 3 || parts.iter().any(|p| p.is_empty()) {
+            return Err(format!(
+                "domain-set-manifest line {}: expected <set>|<graph>|<path>, got {:?}",
+                i + 1,
+                line
+            ));
+        }
+        let (name, graph, path) = (parts[0], parts[1], parts[2]);
+        if !graph.starts_with("urn:") {
+            return Err(format!(
+                "domain-set-manifest line {}: {:?} is not a graph IRI",
+                i + 1,
+                graph
+            ));
+        }
+        match out.iter_mut().find(|s| s.name == name) {
+            Some(existing) => {
+                if existing.graph != graph {
+                    return Err(format!(
+                        "domain-set-manifest line {}: set {:?} already targets <{}>, cannot also target <{}>",
+                        i + 1,
+                        name,
+                        existing.graph,
+                        graph
+                    ));
+                }
+                existing.files.push(path.to_string());
+            }
+            None => out.push(DomainSet {
+                name: name.to_string(),
+                graph: graph.to_string(),
+                files: vec![path.to_string()],
+            }),
+        }
+    }
+    Ok(out)
+}
+
 /// The additive-merge update: DELETE only the triples whose SUBJECT is (re)defined
 /// in staging, then INSERT staging — one transaction. Touches only the deploying
 /// domain's own subjects; leaves every sibling's triples intact. Pure — unit-tested.
