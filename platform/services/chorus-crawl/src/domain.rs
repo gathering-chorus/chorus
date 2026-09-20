@@ -711,6 +711,41 @@ pub fn place_in_unit(
 
 /// The full rule set, including the neighbour rule, which needs the file's own
 /// path and a reader to follow a relative import.
+
+/// #4222 — the tree a file lives in, for the trees that are NOT source.
+///
+/// 4,665 of 6,244 CodeFile rows carried no domain on 2026-09-19. Every rule
+/// above reads the file's CONTENT — a route it calls, a class it asserts, a
+/// unit it belongs to — and a journal entry, a brief or a design page names
+/// none of those, so they all stayed silent. 3,462 of the untagged rows are in
+/// three trees that are not code at all:
+///
+///   roles/     2,636   a role's own state: journals, briefs, notes, state files
+///   proving/     454   the proving harness: flows, fixtures, alert checks
+///   designing/   372   design pages and service designs
+///
+/// For those trees the directory IS the fact, the same way the route is the
+/// fact for an endpoint. It is deliberately NOT applied to `platform/`: that is
+/// source, a source file can belong to more than one domain, and a folder rule
+/// there would overwrite a real answer with a coarse one. Jeff, 2026-09-19:
+/// "be careful about code / a single file may be tagged to 1.n domains".
+///
+/// Only consulted when every content rule stayed silent, so it can never
+/// override a signal the file actually carries.
+pub fn place_by_tree(path: &str, valid: &[String]) -> Option<Signal> {
+    const TREE: &[(&str, &str)] = &[
+        ("roles/", "roles"),
+        ("proving/", "tests"),
+        ("designing/", "knowledge"),
+    ];
+    let (prefix, domain) = TREE.iter().find(|(p, _)| path.starts_with(p))?;
+    valid.contains(&(*domain).to_string()).then(|| Signal {
+        rule: Rule::Unit,
+        domain: (*domain).to_string(),
+        evidence: format!("tree {prefix}"),
+    })
+}
+
 pub fn place_in_file(
     content: &str,
     path: &str,
@@ -772,6 +807,12 @@ pub fn place_in_file(
             {
                 signals.push(s);
             }
+        }
+    }
+    // #4222 — last, and only for the non-source trees: the directory.
+    if signals.is_empty() {
+        if let Some(s) = place_by_tree(path, valid) {
+            signals.push(s);
         }
     }
     for card in header_cards(content) {
@@ -1442,4 +1483,47 @@ mod multi_domain_4222 {
         let p = Placement::Conflict { signals: vec![sig("code"), sig("code"), sig("tests")] };
         assert_eq!(p.domains(), vec!["code", "tests"]);
     }
+    /// #4222 — a file in a non-source tree that names nothing takes its tree.
+    #[test]
+    fn a_role_journal_that_names_nothing_takes_its_tree() {
+        let v = vec!["roles".to_string(), "tests".to_string(), "knowledge".to_string()];
+        let none = |_: u32| None;
+        let noread = |_: &str| None;
+        for (path, want) in [
+            ("roles/kade/journal/2026-09-19.md", "roles"),
+            ("proving/flows/clearing-ui.spec.cjs", "tests"),
+            ("designing/docs/werk-product-design.html", "knowledge"),
+        ] {
+            let got = place_in_file("nothing here\n", path, None, &[], &v, &none, &noread);
+            assert_eq!(got.domain(), Some(want), "{path}");
+        }
+    }
+
+    /// NEGATIVE PROOF, two states this must separate.
+    ///
+    /// 1. `platform/` is source and is NOT covered: a folder rule there would
+    ///    overwrite a real per-file answer with a coarse one.
+    /// 2. The tree never overrides a signal the file actually carries.
+    #[test]
+    fn the_tree_rule_touches_neither_source_nor_a_file_that_speaks() {
+        let v = vec!["roles".to_string(), "tests".to_string(), "cards".to_string()];
+        let none = |_: u32| None;
+        let noread = |_: &str| None;
+
+        let src = place_in_file("nothing here\n", "platform/api/src/x.ts", None, &[], &v, &none, &noread);
+        assert_eq!(src.domain(), None, "platform/ is source — no tree rule");
+
+        // a role file that DOES name a domain keeps its own answer
+        let spoken = place_in_file(
+            "calls /api/chorus/cards\n",
+            "roles/kade/notes/x.md",
+            None,
+            &[],
+            &v,
+            &none,
+            &noread,
+        );
+        assert_ne!(spoken.domain(), Some("roles"), "a signal wins over the tree");
+    }
+
 }
