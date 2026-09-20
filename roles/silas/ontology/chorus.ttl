@@ -58,33 +58,13 @@ chorus:AgentRole a owl:Class ;
     rdfs:label "Agent Role" ;
     rdfs:comment "Filled by an AI agent. Persistent across sessions via state files and memory." .
 
-chorus:jeff a chorus:HumanRole ;
-    rdfs:label "Jeff" ;
-    rdfs:comment "Owner. Judgment, direction, meaning. Jeff is the emotional center of the team — sets tone, defines role structure, assigns ownership. Working hours flexible. Vertical scope: all. Two products: Gathering (personal infrastructure) and Chorus (team coordination)." ;
-    chorus:domain "directs" ;
-    chorus:color "#e6edf3" ;
-    chorus:channelName "#all-gathering" .
 
-chorus:wren a chorus:AgentRole ;
-    rdfs:label "Wren" ;
-    rdfs:comment "Product Manager. Value first, ship small, have a position. Owns briefs, decisions, skills, board ops. Moderates multi-role interactions, detects interaction patterns, captures demo seeds. 6am-8pm Boston. Emoji: feather." ;
-    chorus:domain "product" ;
-    chorus:color "#4ade80" ;
-    chorus:channelName "#wren" .
 
-chorus:silas a chorus:AgentRole ;
-    rdfs:label "Silas" ;
-    rdfs:comment "Architect. Structural integrity, cross-project coherence, infrastructure health. Owns scripts, hooks, monitoring, deploy tooling, cross-machine ops. Maintains ontology, LaunchAgents, Fuseki. 6am-8pm Boston." ;
-    chorus:domain "architecture" ;
-    chorus:color "#60a5fa" ;
-    chorus:channelName "#silas" .
 
-chorus:kade a chorus:AgentRole ;
-    rdfs:label "Kade" ;
-    rdfs:comment "Engineer. Clean, tested, maintainable code matching architectural intent. Owns src, views, tests, routes, handlers, SPARQL services, build pipeline. Feeds back when reality diverges from product/architecture decisions. 6am-8pm Boston." ;
-    chorus:domain "engineering" ;
-    chorus:color "#fb923c" ;
-    chorus:channelName "#kade" .
+
+
+
+
 
 # =============================================================================
 # MODEL-VERSION CONVENTION (#3704) — v1/v2 as DECLARED DATA, not tribal knowledge.
@@ -125,104 +105,29 @@ chorus:Vertebra a owl:Class ;
     chorus:supersededBy chorus:ValueStreamStep ;
     rdfs:seeAlso chorus:ValueStreamStep .
 
-chorus:Shaping a chorus:Vertebra ;
-    rdfs:label "Shaping" ;
-    rdfs:comment "Defining the operating model — principles, practices, roles, skills, metrics. The meta layer that governs how everything else works. Loom lives here." ;
-    chorus:stageOrder 1 ;
-    chorus:nextStage chorus:Directing ;
-    chorus:stageOrder 0 ;
-    chorus:exitArtifactType chorus:Decision ;
-    chorus:belongsTo chorus:chorusStream .
 
-chorus:Directing a chorus:Vertebra ;
-    rdfs:label "Directing" ;
-    rdfs:comment "Jeff expresses intent, direction, or feedback. Entry: human initiative. Exit: card on board." ;
-    chorus:stageOrder 2 ;
-    chorus:nextStage chorus:Designing ;
-    chorus:previousStage chorus:Shaping ;
-    chorus:exitArtifactType chorus:Card ;
-    chorus:belongsTo chorus:chorusStream .
 
-chorus:Designing a chorus:Vertebra ;
-    rdfs:label "Designing" ;
-    rdfs:comment "Product framing (Wren) + architectural design (Silas). Exit: build-ready brief." ;
-    chorus:stageOrder 3 ;
-    chorus:nextStage chorus:Building ;
-    chorus:previousStage chorus:Directing ;
-    chorus:exitArtifactType chorus:Brief ;
-    chorus:belongsTo chorus:chorusStream .
 
-chorus:Building a chorus:Vertebra ;
-    rdfs:label "Building" ;
-    rdfs:comment "Implementation by Kade. Exit: shipped code with visual proof." ;
-    chorus:stageOrder 4 ;
-    chorus:nextStage chorus:Proving ;
-    chorus:previousStage chorus:Designing ;
-    chorus:exitArtifactType chorus:Commit ;
-    chorus:belongsTo chorus:chorusStream .
 
-chorus:Proving a chorus:Vertebra ;
-    rdfs:label "Proving" ;
-    rdfs:comment "Validation. UX verified, architecture sound, no regressions. Feeds back to Directing." ;
-    chorus:stageOrder 5 ;
-    chorus:previousStage chorus:Building ;
-    chorus:feedsInto chorus:Directing ;
-    chorus:exitArtifactType chorus:Signal ;
-    chorus:belongsTo chorus:chorusStream .
 
-# --- Personal value stream steps (Gathering product) -------------------------
 
-chorus:Sowing a chorus:Vertebra ;
-    rdfs:label "Sowing" ;
-    rdfs:comment "Planting seeds — capturing raw inputs, interests, and intentions that may grow into something." ;
-    chorus:stageOrder 10 ;
-    chorus:nextStage chorus:Growing ;
-    chorus:belongsTo chorus:gatheringStream .
 
-chorus:Growing a chorus:Vertebra ;
-    rdfs:label "Growing" ;
-    rdfs:comment "Nurturing what was sown — enriching, connecting, and developing raw material into structured knowledge." ;
-    chorus:stageOrder 11 ;
-    chorus:nextStage chorus:Practicing ;
-    chorus:previousStage chorus:Sowing ;
-    chorus:belongsTo chorus:gatheringStream .
 
-chorus:Practicing a chorus:Vertebra ;
-    rdfs:label "Practicing" ;
-    rdfs:comment "Applying knowledge — putting gathered material into active use, building habits and routines." ;
-    chorus:stageOrder 12 ;
-    chorus:nextStage chorus:Harvesting ;
-    chorus:previousStage chorus:Growing ;
-    chorus:belongsTo chorus:gatheringStream .
 
-chorus:Harvesting a chorus:Vertebra ;
-    rdfs:label "Harvesting" ;
-    rdfs:comment "Collecting the yield — extracting value from what was grown and practiced. Photos, music, notes, documents flow through here." ;
-    chorus:stageOrder 13 ;
-    chorus:nextStage chorus:Reflecting ;
-    chorus:previousStage chorus:Practicing ;
-    chorus:belongsTo chorus:gatheringStream .
 
-chorus:Reflecting a chorus:Vertebra ;
-    rdfs:label "Reflecting" ;
-    rdfs:comment "Looking back — reviewing what was harvested, finding patterns, feeding insights back into the next sowing cycle." ;
-    chorus:stageOrder 14 ;
-    chorus:previousStage chorus:Harvesting ;
-    chorus:feedsInto chorus:Sowing ;
-    chorus:belongsTo chorus:gatheringStream .
 
-# --- Life value stream steps (placeholder — Jeff defines later) ---------------
 
-chorus:lifeStream a chorus:ValueStream ;
-    rdfs:label "Life" ;
-    rdfs:comment "DEPRECATED (v1, #3697). The Life stream + its Tending step migrate to the ValueStreamStep grammar in #3705. Retired with the Vertebra ABox in #3702." ;
-    owl:deprecated true .
 
-chorus:Tending a chorus:Vertebra ;
-    rdfs:label "Tending" ;
-    rdfs:comment "Placeholder step for the Life value stream. Jeff will define the full sequence." ;
-    chorus:stageOrder 20 ;
-    chorus:belongsTo chorus:lifeStream .
+
+
+
+
+
+
+
+
+
+
 
 # --- Operating (parallel category, not a sequential vertebra) ----------------
 
@@ -230,11 +135,7 @@ chorus:EventCategory a owl:Class ;
     rdfs:label "Event Category" ;
     rdfs:comment "A classification of spine events that runs parallel to the value stream rather than as a sequential stage." .
 
-chorus:Operating a chorus:EventCategory ;
-    rdfs:label "Operating" ;
-    rdfs:comment "Infrastructure health, deploys, disk monitoring, container lifecycle, and system resilience. Crosscuts all vertebrae — the substrate the value stream runs on." ;
-    chorus:color "#f3f4f6" ;
-    chorus:crosscuts chorus:Shaping, chorus:Directing, chorus:Designing, chorus:Building, chorus:Proving .
+
 
 # =============================================================================
 # 2b. VALUE STREAMS (from product ontology)
@@ -244,15 +145,9 @@ chorus:ValueStream a owl:Class ;
     rdfs:label "Value Stream" ;
     rdfs:comment "A named flow of value from signal to outcome. Stable — when a value stream changes, the product has fundamentally changed." .
 
-chorus:gatheringStream a chorus:ValueStream ;
-    rdfs:label "Gathering (Stream)" ;
-    rdfs:comment "DEPRECATED (v1, #3697). The v1 comment 'Spark → Capture → …' never matched its actual Vertebra steps (Sowing/Growing/Practicing/Harvesting/Reflecting) — drift (b). Superseded by the gathering ValueStream authored in the ValueStreamStep grammar by #3705 (which fixes the comment there). Retired with the Vertebra ABox in #3702." ;
-    owl:deprecated true .
 
-chorus:chorusStream a chorus:ValueStream ;
-    rdfs:label "Chorus" ;
-    rdfs:comment "DEPRECATED (v1, #3697). Superseded by chorus:value-stream-chorus (ValueStreamStep grammar, live in urn:chorus:instances) — which correctly runs Shaping → Directing → Designing → Building → Proving → Reflecting (6 steps; v1 stopped at Proving). Retired with the Vertebra ABox in #3702." ;
-    owl:deprecated true .
+
+
 
 # =============================================================================
 # 2c. DOMAINS (three types — from #1845 chat insight)
@@ -699,13 +594,9 @@ chorus:Machine a owl:Class ;
     rdfs:label "Machine" ;
     rdfs:comment "Physical hardware that hosts services." .
 
-chorus:library a chorus:Machine ;
-    rdfs:label "Library" ;
-    rdfs:comment "M1 MacBook Air. Primary development machine. 192.168.86.36." .
 
-chorus:bedroom a chorus:Machine ;
-    rdfs:label "Bedroom" ;
-    rdfs:comment "M2 Pro Mac Mini. Data services, harvesting, bulk ops. 192.168.86.242." .
+
+
 
 # =============================================================================
 # 3. TOOLS
@@ -719,51 +610,15 @@ chorus:ToolType a owl:Class ;
     rdfs:label "Tool Type" ;
     rdfs:comment "Classification of tools by function." .
 
-chorus:Sense a chorus:ToolType ;
-    rdfs:label "Sense" ;
-    rdfs:comment "Input capture — eyes, ears, voice." .
 
-chorus:Interaction a chorus:ToolType ;
-    rdfs:label "Interaction" ;
-    rdfs:comment "Multi-party coordination and alignment." .
 
-chorus:Memory a chorus:ToolType ;
-    rdfs:label "Memory" ;
-    rdfs:comment "Persistent shared context — indexes, searches, remembers." .
 
-chorus:Orchestration a chorus:ToolType ;
-    rdfs:label "Orchestration" ;
-    rdfs:comment "Sequences and tracks work across roles." .
 
-chorus:Analysis a chorus:ToolType ;
-    rdfs:label "Analysis" ;
-    rdfs:comment "Decomposes, examines, produces structured insight." .
 
 # --- Tool instances ---
 
-chorus:look a chorus:Tool ;
-    rdfs:label "/look" ;
-    rdfs:comment "Screen capture — Jeff shows, Chorus sees." ;
-    chorus:toolType chorus:Sense ;
-    chorus:vizLabel "eyes" ;
-    chorus:color "#22d3ee" ;
-    chorus:status "live" .
 
-chorus:listen a chorus:Tool ;
-    rdfs:label "/listen" ;
-    rdfs:comment "Voice transcription — speech to text via local whisper.cpp." ;
-    chorus:toolType chorus:Sense ;
-    chorus:vizLabel "ears" ;
-    chorus:color "#22d3ee" ;
-    chorus:status "live" .
 
-chorus:talk a chorus:Tool ;
-    rdfs:label "/talk" ;
-    rdfs:comment "Voice output — text to speech." ;
-    chorus:toolType chorus:Sense ;
-    chorus:vizLabel "voice" ;
-    chorus:color "#22d3ee" ;
-    chorus:status "planned" .
 
 # #3860 — the Tool typing MOVED off chorus:clearing. One IRI carried
 # chorus:Tool (label "/clearing", a route) AND chorus:Product (label "The
@@ -771,37 +626,9 @@ chorus:talk a chorus:Tool ;
 # a Tool named after its URL path (gc-one-home-per-subject flagged it). The
 # viz entry keeps its own IRI; the product keeps the bare one (ADR-040 bare
 # grain for products).
-chorus:clearing-tool a chorus:Tool ;
-    rdfs:label "/clearing" ;
-    rdfs:comment "Multi-party chat — Jeff + all roles in browser. Real-time alignment." ;
-    chorus:toolType chorus:Interaction ;
-    chorus:vizLabel "alignment" ;
-    chorus:color "#e6edf3" ;
-    chorus:status "live" .
 
-chorus:chorusTool a chorus:Tool ;
-    rdfs:label "/chorus" ;
-    rdfs:comment "Shared memory index — SQLite FTS5, 14k+ messages. Search, reconcile, remember." ;
-    chorus:toolType chorus:Memory ;
-    chorus:vizLabel "memory" ;
-    chorus:color "#c084fc" ;
-    chorus:status "live" .
 
-chorus:werk a chorus:Tool ;
-    rdfs:label "/werk" ;
-    rdfs:comment "Workflow engine — sequences decisions into steps across roles. IS the spine." ;
-    chorus:toolType chorus:Orchestration ;
-    chorus:vizLabel "the spine" ;
-    chorus:color "#fbbf24" ;
-    chorus:status "live" .
 
-chorus:borg a chorus:Tool ;
-    rdfs:label "Borg" ;
-    rdfs:comment "Codebase decomposition — structured assessment of code, architecture, tech debt." ;
-    chorus:toolType chorus:Analysis ;
-    chorus:vizLabel "decompose" ;
-    chorus:color "#f87171" ;
-    chorus:status "planned" .
 
 # =============================================================================
 # 4. PRODUCTS
@@ -815,54 +642,12 @@ chorus:ServiceDesign a owl:Class ;
     rdfs:label "Service Design" ;
     rdfs:comment "Architectural blueprint for a service — interfaces, contracts, dependencies, deployment model." .
 
-chorus:gathering a chorus:Product ;
-    rdfs:label "Gathering" ;
-    rdfs:comment "Personal infrastructure — SOLID pods, knowledge graph, collections, Self domain. The product the spine builds." ;
-    chorus:ownedBy chorus:principal-jeff ;
-    chorus:vision "Jeff's life — collections, property, garden, stories, Self — as one personal knowledge graph with agency." ;
-    chorus:valueProposition "One queryable home for everything Jeff gathers, owned by him, served from his own infrastructure." ;
-    chorus:audience "Jeff, and family and friends where he chooses to share." ;
-    chorus:status "operating" ;
-    chorus:gaps "hasDesignDoc unfilled (no Document instances in graph). #3603 brought this to the ProductShape floor — content domains predate the floor." ;
-    chorus:atStep chorus:Operating .
-    # Gathering's hasDomain edges (music, photos, books, …) are declared in the
-    # containment block below.
 
-# #4187 — chorus:chorus merged into its short name 2026-09-18 and removed here.
-# The store merge alone did not hold: the next deploy re-created it from this
-# file. A merge is a SOURCE edit or it is temporary.
-    # #3603: chorusProduct was typed here but UNTYPED in the live graph (drift).
-    # Source is authoritative; the migration re-types it live. memory/knowledge/search
-    # stay direct chorusProduct domains (cross-product capabilities, no child home).
+    
 
-# Borg is its own product, incubating inside Chorus.
-# #4187 — chorus:borg merged into its short name 2026-09-18 and removed here.
-# The store merge alone did not hold: the next deploy re-created it from this
-# file. A merge is a SOURCE edit or it is temporary.
-    # #3603: Borg joins the Chorus child roster per Jeff (was partOf chorusStream
-    # only). Its hasDomain edges are declared in the containment block below.
 
-# --- Borg Features (discover heralds) ---
-# Each herald scans a surface and writes to the instances graph.
 
-# DEC-2090: Five discover heralds grouped under one "Heralds" subdomain of Borg.
 
-chorus:heralds-domain a chorus:SubDomain ;
-    rdfs:label "Heralds" ;
-    rdfs:comment "Discovery agents that scan surfaces and write to the instances graph. Five heralds: code, tests, pages, endpoints, services. The system seeing itself." ;
-    chorus:ownedBy chorus:principal-kade ;
-    chorus:primaryStep chorus:Reflecting ;
-    chorus:belongsTo chorus:borg .
-
-# --- Service Designs ---
-
-chorus:gathering-service-design a chorus:ServiceDesign ;
-    rdfs:label "Gathering App" ;
-    rdfs:comment "Personal knowledge graph — TypeScript/Express, SOLID pods, Fuseki SPARQL, LaunchAgent deploy on Library." .
-
-chorus:chorus-api-service-design a chorus:ServiceDesign ;
-    rdfs:label "Chorus API" ;
-    rdfs:comment "Team coordination API — TypeScript/Express at localhost:3340. Board, Athena, spine, messaging, search." .
 
 # --- Products (Chorus children) — #3603 V1 SubProduct retire ---
 # "No subproducts — products are children of products" (DEC 2026-06-25). The five
@@ -927,367 +712,95 @@ chorus:pulse a owl:Class ;
     chorus:ownedBy chorus:principal-wren ;   # #4175 — was role-silas; the store said role-wren and Silas ruled the store right 2026-09-14 ("coordination state, not observation"). Found by #4175's appointment check on its first real run.
     chorus:atStep chorus:Directing ; chorus:atStream chorus:chorusStream ;
     chorus:repoTarget "platform/pulse" .
-    # FLAG: no real owl:Class vocab (no chorus:Heartbeat class) — omitted, not faked.
+    
 
-# quality-product RETIRED (#3603) — zero domains, no successor. Quality lives as
-# gates/tests capabilities consumed by other products, not as a product.
 
-    # FLAG (#3603): V1 werk-product's hasDomain listed spine-service — a SERVICE
-    # misfiled as a domain. Dropped; consumes edges carry it.
 
-# observability-product absorbed into Borg (DEC-2090 consolidation) — observability is a Borg capability
 
-# --- Borg Domains — DEC-2090 restructure ---
-# Observability is THE domain of Borg. Everything else is a subdomain of it.
-# Heralds is a separate domain (discovery agents).
 
-chorus:observability-domain a chorus:SubDomain ;
-    rdfs:label "Observability" ;
-    rdfs:comment "The system seeing itself. Aggregated health lens: metrics, logs, dashboards, instrumentation, infrastructure, security, pulse (agent vital signs). The domain that makes Borg a product." ;
-    chorus:ownedBy chorus:principal-silas ;
-    chorus:primaryStep chorus:Proving ;
-    chorus:belongsTo chorus:borg .
 
-chorus:toolchain-domain a chorus:SubDomain ;
-    rdfs:label "Toolchain" ;
-    rdfs:comment "Engines the system uses — Fuseki, Node, Prometheus, MySQL, Ollama. Versions, configs, known issues." ;
-    chorus:ownedBy chorus:principal-silas ;
-    chorus:primaryStep chorus:Operating ;
-    chorus:belongsTo chorus:observability-domain .
 
-chorus:infrastructure-domain a chorus:SubDomain ;
-    rdfs:label "Infrastructure" ;
-    rdfs:comment "Where engines run. Three surfaces: compute (services, processes), storage (databases, volumes), network (ports, tunnels, routes). Today: home cloud." ;
-    chorus:ownedBy chorus:principal-silas ;
-    chorus:primaryStep chorus:Operating ;
-    chorus:belongsTo chorus:observability-domain .
 
-chorus:version-control-domain a chorus:SubDomain ;
-    rdfs:label "Version Control" ;
-    rdfs:comment "How code is versioned across its full lifecycle: branch, commit, push, pull, rebase, merge, tag. Adapter is git driven by the zero-dep Rust verb binaries (werk-commit/push/merge/sync/unpull); checks run inside the verbs; werks are ephemeral per-card worktrees (#2913). Refined in kade/ontology/werk-domains.ttl (#3340)." ;
-    chorus:ownedBy chorus:principal-kade ;
-    chorus:primaryStep chorus:Building ;
-    chorus:belongsTo chorus:observability-domain .
 
-chorus:build-domain a chorus:SubDomain ;
-    rdfs:label "Build" ;
-    rdfs:comment "Source → artifact. Build is invariant: same source commit produces the same artifact, every machine, every time. Adapter is build-signed.sh + chorus-bin-install; verification is the build-invariance contract test (test-build-invariance.sh) which builds the same target twice from a clean tree at the same commit and asserts identical sha256." ;
-    chorus:ownedBy chorus:principal-silas ;
-    chorus:primaryStep chorus:Building ;
-    chorus:belongsTo chorus:observability-domain .
 
-chorus:deploys-domain a chorus:SubDomain ;
-    rdfs:label "Deploys" ;
-    rdfs:comment "How code gets running. app-state.sh, bind mounts vs full deploys, rollback paths, freeze rules, deploy targets. Deploy is invariant: same artifact reaches the same running state. Verified by the deploy-invariance contract test (test-deploy-invariance.sh) which installs the same artifact twice and asserts identical cdhash + on-disk sha256." ;
-    chorus:ownedBy chorus:principal-silas ;
-    chorus:primaryStep chorus:Operating ;
-    chorus:belongsTo chorus:observability-domain .
 
-chorus:pipelines-domain a chorus:SubDomain ;
-    rdfs:label "Pipelines" ;
-    rdfs:comment "End-to-end release flow. Four stages: Pre-Commit (write-scrubber, lint, sensitive-path), Pre-Push (git-queue lock, rebase, conflict), Deploy (app-state.sh, bind mounts, rollback), Health Verify (deep-health, smoke-check, liveness)." ;
-    chorus:ownedBy chorus:principal-silas ;
-    chorus:primaryStep chorus:Operating ;
-    chorus:belongsTo chorus:observability-domain .
-# DEC-2090: pipeline stages (pre-commit, pre-push, deploy, health-verify) flattened into Pipelines comment. Stages are lifecycle phases, not domains.
 
-chorus:alerts-monitors-domain a chorus:SubDomain ;
-    rdfs:label "Alerts & Monitors" ;
-    rdfs:comment "What's watched and what fires. Alert coverage is to failure modes what test coverage is to code paths." ;
-    chorus:ownedBy chorus:principal-silas ;
-    chorus:primaryStep chorus:Proving ;
-    chorus:belongsTo chorus:observability-domain .
 
-# operating-model-product absorbed into Loom (DEC-2090 consolidation) — skills/gates are Loom capabilities
 
-# actor-bdd-product absorbed into Athena (DEC-2090 consolidation) — domain modeling is an Athena capability
 
-chorus:athena-domain a chorus:SubDomain ;
-    rdfs:label "Athena" ;
-    rdfs:comment "CMDB visibility — API endpoints, UI pages, SPARQL queries that surface the canonical model." ;
-    chorus:ownedBy chorus:principal-wren ;
-    chorus:primaryStep chorus:Designing ;
-    chorus:runsOn chorus:library .
 
-# --- Loom Domains (governance concepts) ---
 
-chorus:loom-principles a chorus:SubDomain ;
-    rdfs:label "Principles" ;
-    rdfs:comment "Shared values that explain why. Stable. Patterns derive from principles." ;
-    chorus:ownedBy chorus:principal-wren ;
-    chorus:primaryStep chorus:Shaping .
 
-chorus:loom-practices a chorus:SubDomain ;
-    rdfs:label "Practices" ;
-    rdfs:comment "Repeatable disciplines that apply across domains." ;
-    chorus:ownedBy chorus:principal-wren ;
-    chorus:primaryStep chorus:Shaping .
 
-chorus:loom-decisions a chorus:SubDomain ;
-    rdfs:label "Decisions" ;
-    rdfs:comment "DEC-NNN — governing choices that constrain future behavior." ;
-    chorus:ownedBy chorus:principal-wren ;
-    chorus:primaryStep chorus:Shaping .
 
-chorus:loom-rcas a chorus:SubDomain ;
-    rdfs:label "RCAs" ;
-    rdfs:comment "Root cause analyses — post-incident learning." ;
-    chorus:ownedBy chorus:principal-silas ;
-    chorus:primaryStep chorus:Proving .
 
-chorus:loom-metrics a chorus:SubDomain ;
-    rdfs:label "Metrics" ;
-    rdfs:comment "Team and system health metrics — cost, velocity, quality." ;
-    chorus:ownedBy chorus:principal-wren ;
-    chorus:primaryStep chorus:Shaping .
 
-chorus:loom-analytics a chorus:SubDomain ;
-    rdfs:label "Analytics" ;
-    rdfs:comment "Usage trends, value stream analysis, pattern detection." ;
-    chorus:ownedBy chorus:principal-wren ;
-    chorus:primaryStep chorus:Shaping .
 
-# --- DEC-2090: Old shared services removed. Canonical versions live under Borg/Observability. ---
-# infra-service → infrastructure-domain (under observability-domain)
-# logs-service → logs-domain (new, under observability-domain)
-# alerts-service → alerts-monitors-domain (under observability-domain)
-# deploys-service → deploys-domain (under observability-domain)
 
-chorus:logs-domain a chorus:SubDomain ;
-    rdfs:label "Logs" ;
-    rdfs:comment "Loki log aggregation. Structured logging pipeline." ;
-    chorus:ownedBy chorus:principal-silas ;
-    chorus:primaryStep chorus:Proving ;
-    chorus:belongsTo chorus:observability-domain .
 
-chorus:cards-service a chorus:SubDomain ;
-    rdfs:label "Cards (Service)" ;
-    rdfs:comment "Vikunja board + board-ts CLI. Coordination primitive — all three roles stall if broken." ;
-    chorus:ownedBy chorus:principal-wren ;
-    chorus:primaryStep chorus:Directing ;
-    chorus:runsOn chorus:library .
 
-chorus:skills-service a chorus:SubDomain ;
-    rdfs:label "Skills" ;
-    rdfs:comment "Slash-command skills. 36 skills, symlinked to all roles." ;
-    chorus:ownedBy chorus:principal-wren ;
-    chorus:primaryStep chorus:Shaping ;
-    chorus:runsOn chorus:library .
 
-chorus:gates-service a chorus:SubDomain ;
-    rdfs:label "Gates" ;
-    rdfs:comment "PreToolUse/PostToolUse hooks — Rust binary. Quality enforcement." ;
-    chorus:ownedBy chorus:principal-silas ;
-    chorus:primaryStep chorus:Building ;
-    chorus:runsOn chorus:library .
 
-chorus:spine-service a chorus:SubDomain ;
-    rdfs:label "Spine" ;
-    rdfs:comment "Event bus — chorus-log.sh, spine-events.json. Vertical integration across all layers." ;
-    chorus:ownedBy chorus:principal-silas ;
-    chorus:primaryStep chorus:Shaping ;
-    chorus:runsOn chorus:library .
 
-# --- Cross-cutting infrastructure sub-domains ---
 
-# --- properties RETIRED as a SubDomain here (#3489 / ADR-045): collapsed into the
-# punned domain-class chorus:properties (owl:Class + chorus:Domain) defined below in
-# the ADR-045 section. partOf borgProduct directly (a first-class config-as-data domain,
-# no longer nested under observability). Edges repointed; blast-radius(Properties-domain) → ∅. ---
 
-# #3587 — chorus:security-domain RETIRED (first V1→V2 retirement). Consolidated into
-# chorus:security-trust (the bare-name V2 canonical from #3581; superset vocab = these 4
-# classes + TrustMetric). The 29 inbound consumes + borgProduct hasDomain were repointed.
-# #3618 — chorus:security-trust RENAMED → chorus:security (second rename; "trust" carried
-# no meaning the definition didn't). All refs in this file now use chorus:security; the
-# live-graph migration (44 triples) rides security-3618-migrate.sh through the door.
-# #3584's GLOBAL fixes (chorus:exposure + chorus:repoTarget declarations,
-# chorus:ownedBy on the 4 security class shapes) are NOT domain-specific and are retained below.
 
-chorus:time-domain a chorus:SubDomain ;
-    rdfs:label "Time" ;
-    rdfs:comment "Timestamp conversion, timezone consistency, display formatting. One conversion point — Boston time for Jeff, UTC for storage." ;
-    chorus:ownedBy chorus:principal-silas ;
-    chorus:primaryStep chorus:Proving ;
-    chorus:runsOn chorus:library, chorus:bedroom .
 
-# --- Roles domain — operating model (#1904) ---
 
-chorus:roles-domain a chorus:SubDomain ;
-    rdfs:label "Roles" ;
-    rdfs:comment "Three AI roles and one human coordinate across two products. Identity, state, permissions, and communication — the operating model everything else is shaped around." ;
-    chorus:ownedBy chorus:principal-wren ;
-    chorus:primaryStep chorus:Shaping ;
-    chorus:runsOn chorus:library, chorus:bedroom ;
-    chorus:contains chorus:jeff, chorus:wren, chorus:silas, chorus:kade .
-# --- Role sub-domains removed (#1962) — Identity, State, Permissions, Communication are sections within Roles domain page, not separate sub-domains. ---
 
-# --- Tests/Commits/Pipelines removed (#1962) — inventory sections on domain pages, not separate sub-domains. ---
 
-chorus:code-domain a chorus:SubDomain ;
-    rdfs:label "Code" ;
-    rdfs:comment "Source code, build artifacts, TypeScript/Rust compilation." ;
-    chorus:ownedBy chorus:principal-kade ;
-    chorus:primaryStep chorus:Building .
 
-chorus:tests-domain a chorus:SubDomain ;
-    rdfs:label "Tests" ;
-    rdfs:comment "Test files, coverage, pyramid, validity (#3324 taxonomy). Least graph-ready werk domain — per-test identity is the ingestion prerequisite (see kade/ontology/werk-domains.ttl #3340)." ;
-    chorus:ownedBy chorus:principal-kade ;
-    chorus:primaryStep chorus:Building .
 
-chorus:messages-domain a chorus:SubDomain ;
-    rdfs:label "Messages" ;
-    rdfs:comment "Bridge messaging, nudge delivery, inter-role communication." ;
-    chorus:ownedBy chorus:principal-silas ;
-    chorus:primaryStep chorus:Proving .
 
-chorus:streams-domain a chorus:SubDomain ;
-    rdfs:label "Streams" ;
-    rdfs:comment "Event streams, spine event flow, Loki log streams." ;
-    chorus:ownedBy chorus:principal-silas ;
-    chorus:primaryStep chorus:Proving .
 
-# pulse-domain absorbed into Borg (DEC-2090 consolidation) — pulse instrumentation is a Borg capability
 
-chorus:knowledge-domain a chorus:SubDomain ;
-    rdfs:label "Knowledge" ;
-    rdfs:comment "Chorus index, doc catalog, semantic search." ;
-    chorus:ownedBy chorus:principal-wren ;
-    chorus:primaryStep chorus:Designing .
 
-# pulse-metrics-domain folded into observability-domain (DEC-2090). Pulse is an aspect of observability, not its own domain.
 
-chorus:integrations-domain a chorus:SubDomain ;
-    rdfs:label "Integrations" ;
-    rdfs:comment "ICDs, cross-domain data contracts, harvester interfaces." ;
-    chorus:ownedBy chorus:principal-wren ;
-    chorus:primaryStep chorus:Designing .
 
-chorus:loom-policies a chorus:SubDomain ;
-    rdfs:label "Policies" ;
-    rdfs:comment "Team policies — working hours, WIP limits, response windows." ;
-    chorus:ownedBy chorus:principal-wren ;
-    chorus:primaryStep chorus:Shaping .
 
-# toolschain-domain removed — duplicate of toolchain-domain (DEC-2090)
 
-chorus:domains-domain a chorus:SubDomain ;
-    rdfs:label "Domains" ;
-    rdfs:comment "Domain definitions, BDD specs, domain context files." ;
-    chorus:ownedBy chorus:principal-wren ;
-    chorus:primaryStep chorus:Designing .
 
-chorus:services-domain a chorus:SubDomain ;
-    rdfs:label "Services" ;
-    rdfs:comment "Service definitions, service registry, service design docs." ;
-    chorus:ownedBy chorus:principal-wren ;
-    chorus:primaryStep chorus:Designing .
 
-chorus:chorus-domain a chorus:SubDomain ;
-    rdfs:label "Chorus (Domain)" ;
-    rdfs:comment "The coordination protocol itself — skills, hooks, gates, spine, dashboards." ;
-    chorus:ownedBy chorus:principal-silas ;
-    chorus:primaryStep chorus:Proving .
 
-chorus:convergence-domain a chorus:SubDomain ;
-    rdfs:label "Convergence (Domain)" ;
-    rdfs:comment "Cross-domain integration patterns, ICD enforcement, data pipeline contracts." ;
-    chorus:ownedBy chorus:principal-wren ;
-    chorus:primaryStep chorus:Designing .
 
-# --- Gathering content domains (#1864) — Personal value stream ---
 
-chorus:music-domain a chorus:SubDomain ;
-    rdfs:label "Music" ;
-    rdfs:comment "Music library, album reviews, listening history, playlists." ;
-    chorus:ownedBy chorus:principal-jeff ;
-    chorus:primaryStep chorus:Harvesting ;
-    chorus:belongsTo chorus:gatheringStream .
 
-chorus:photos-domain a chorus:SubDomain ;
-    rdfs:label "Photos" ;
-    rdfs:comment "Photo library, albums, metadata enrichment, semantic search." ;
-    chorus:ownedBy chorus:principal-jeff ;
-    chorus:primaryStep chorus:Harvesting ;
-    chorus:belongsTo chorus:gatheringStream .
 
-chorus:books-domain a chorus:SubDomain ;
-    rdfs:label "Books" ;
-    rdfs:comment "Book collection, reading history, notes, reviews." ;
-    chorus:ownedBy chorus:principal-jeff ;
-    chorus:primaryStep chorus:Harvesting ;
-    chorus:belongsTo chorus:gatheringStream .
 
-chorus:notes-domain a chorus:SubDomain ;
-    rdfs:label "Notes" ;
-    rdfs:comment "Personal notes, journal entries, captured thoughts." ;
-    chorus:ownedBy chorus:principal-jeff ;
-    chorus:primaryStep chorus:Harvesting ;
-    chorus:belongsTo chorus:gatheringStream .
 
-chorus:documents-domain a chorus:SubDomain ;
-    rdfs:label "Documents" ;
-    rdfs:comment "Document metadata, iCloud imports, Drive routing." ;
-    chorus:ownedBy chorus:principal-jeff ;
-    chorus:primaryStep chorus:Harvesting ;
-    chorus:belongsTo chorus:gatheringStream .
 
-chorus:blog-domain a chorus:SubDomain ;
-    rdfs:label "Blog" ;
-    rdfs:comment "WordPress blog content, posts, categories." ;
-    chorus:ownedBy chorus:principal-jeff ;
-    chorus:primaryStep chorus:Practicing ;
-    chorus:belongsTo chorus:gatheringStream .
 
-chorus:seeds-domain a chorus:SubDomain ;
-    rdfs:label "Seeds" ;
-    rdfs:comment "SMS-captured seeds, glimmers, intentions — raw inputs." ;
-    chorus:ownedBy chorus:principal-wren ;
-    chorus:primaryStep chorus:Sowing ;
-    chorus:belongsTo chorus:gatheringStream .
 
-chorus:property-domain a chorus:SubDomain ;
-    rdfs:label "Property" ;
-    rdfs:comment "Home, garden, zones, beds, plantings, maintenance." ;
-    chorus:ownedBy chorus:principal-jeff ;
-    chorus:primaryStep chorus:Growing ;
-    chorus:belongsTo chorus:gatheringStream .
 
-chorus:people-domain a chorus:SubDomain ;
-    rdfs:label "People" ;
-    rdfs:comment "Relationships, social connections, interaction patterns." ;
-    chorus:ownedBy chorus:principal-jeff ;
-    chorus:primaryStep chorus:Reflecting ;
-    chorus:belongsTo chorus:gatheringStream .
 
-chorus:social-domain a chorus:SubDomain ;
-    rdfs:label "Social" ;
-    rdfs:comment "Social media presence, external connections." ;
-    chorus:ownedBy chorus:principal-jeff ;
-    chorus:primaryStep chorus:Practicing ;
-    chorus:belongsTo chorus:gatheringStream .
 
-chorus:sexuality-domain a chorus:SubDomain ;
-    rdfs:label "Sexuality" ;
-    rdfs:comment "Intimate self-knowledge, practices, reflection." ;
-    chorus:ownedBy chorus:principal-jeff ;
-    chorus:primaryStep chorus:Reflecting ;
-    chorus:belongsTo chorus:gatheringStream .
 
-chorus:stories-domain a chorus:SubDomain ;
-    rdfs:label "Stories" ;
-    rdfs:comment "Personal narratives, family stories, oral history." ;
-    chorus:ownedBy chorus:principal-jeff ;
-    chorus:primaryStep chorus:Reflecting ;
-    chorus:belongsTo chorus:gatheringStream .
 
-chorus:video-domain a chorus:SubDomain ;
-    rdfs:label "Video" ;
-    rdfs:comment "Video library, home movies, captures." ;
-    chorus:ownedBy chorus:principal-jeff ;
-    chorus:primaryStep chorus:Harvesting ;
-    chorus:belongsTo chorus:gatheringStream .
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 
 # --- Wire domains to value streams via builtBy (#1864) ---
 
@@ -1581,28 +1094,13 @@ chorus:Override a chorus:GateResult ;
     rdfs:label "Override" ;
     rdfs:comment "Gate failed but Jeff overrode. Tracked for trust metrics." .
 
-chorus:DirectionGate a chorus:Gate ;
-    rdfs:label "Direction Gate" ;
-    chorus:fromStage chorus:Directing ;
-    chorus:toStage chorus:Designing ;
-    chorus:gatekeeper chorus:role-jeff .
 
-chorus:DesignGate a chorus:Gate ;
-    rdfs:label "Design Gate" ;
-    chorus:fromStage chorus:Designing ;
-    chorus:toStage chorus:Building ;
-    chorus:gatekeeper chorus:role-silas .
 
-chorus:BuildGate a chorus:Gate ;
-    rdfs:label "Build Gate" ;
-    chorus:fromStage chorus:Building ;
-    chorus:toStage chorus:Proving ;
-    chorus:gatekeeper chorus:role-kade .
 
-chorus:ProvingGate a chorus:Gate ;
-    rdfs:label "Proving Gate" ;
-    chorus:fromStage chorus:Proving ;
-    chorus:gatekeeper chorus:role-jeff .
+
+
+
+
 
 # =============================================================================
 # 8. WORKFLOWS
@@ -2133,93 +1631,30 @@ chorus:PropertyKeyShape a sh:NodeShape ;
         sh:datatype xsd:boolean ;
     ] .
 
-# --- registry seed: the three-shapes proof (ADR-044 — enum-scalar / lifecycle-toggle / typed-edge) ---
-chorus:pk-testType a chorus:PropertyKey ;
-    chorus:keyName "testType" ; chorus:propertyKind "datatype" ;
-    chorus:appliesToClass chorus:Test ; chorus:keyValueType "string" ;
-    chorus:allowedValue "unit", "integration", "api", "ui", "perf", "security", "e2e", "bdd" ;
-    chorus:lifecycleEnabled false .
 
-chorus:pk-gateEnforced a chorus:PropertyKey ;
-    chorus:keyName "gate.enforced" ; chorus:propertyKind "datatype" ;
-    chorus:appliesToClass chorus:Service ; chorus:keyValueType "bool" ;
-    chorus:lifecycleEnabled true .
 
-chorus:pk-covers a chorus:PropertyKey ;
-    chorus:keyName "covers" ; chorus:propertyKind "object" ;
-    chorus:appliesToClass chorus:Test ; chorus:edgeTargetClass chorus:Domain ;
-    chorus:hubProjected true ; chorus:lifecycleEnabled false .
 
-# --- Property instances (proof: the generated /borg/properties Property surface serves real
-# rows → committed→Fuseki→generated→served round-trip, #3489 AC5). Datatype-arm carriers
-# (propertyValue, no propertyValueRef → PropertyCarrierShape xone arm 1). register-before-use:
-# each propertyKey resolves to a registered PropertyKey above. ---
-chorus:prop-cards-gate-enforced a chorus:Property ;
-    chorus:propertyKey "gate.enforced" ;
-    chorus:propertyValue "true" ;
-    chorus:propertyValueType "bool" ;
-    chorus:propertyScope "instance" .
+
+
+
+
 chorus:cards-service chorus:hasProperty chorus:prop-cards-gate-enforced .
 
-chorus:prop-pipeline-test-type a chorus:Property ;
-    chorus:propertyKey "testType" ;
-    chorus:propertyValue "integration" ;
-    chorus:propertyValueType "string" ;
-    chorus:propertyScope "instance" .
 
-# --- #3845 leg A — word-cap Properties: the first REAL cascade data. Until these
-# rows, the whole graph held two instance-scope Properties and the #3437 resolver
-# had never run against anything but its own fixtures. Values are the ENFORCED
-# live numbers (Jeff 2026-08-11: 100-word response cap; 50-word nudge cap) — the
-# governed value replaces the compiled-in constant, it does not invent a new one.
-# Role-scoped now; the broader team-wide default lands with the ownership-walk
-# chain (Wren's effective_response leg), where a narrower scope has something to
-# override. register-before-use: pk-responseWordCap (priorities-3686.ttl) +
-# pk-nudgeWordCap below. ---
-chorus:pk-nudgeWordCap a chorus:PropertyKey ;
-    rdfs:label "nudgeWordCap" ;
-    chorus:keyName "nudge.word.cap" ;
-    chorus:appliesToClass chorus:Role ;
-    chorus:propertyKind "datatype" ;
-    chorus:keyValueType "int" ;
-    chorus:lifecycleEnabled false ;
-    rdfs:comment "Maximum words in a role-to-role nudge. Same contract as pk-responseWordCap: read from the cascade at send time, never compiled in; absent a value the gate must refuse to cap rather than invent a number." .
 
-chorus:prop-role-silas-response-word-cap a chorus:Property ;
-    chorus:propertyKey "response.word.cap" ;
-    chorus:propertyValue "100" ;
-    chorus:propertyValueType "int" ;
-    chorus:propertyScope "role" .
 
-chorus:prop-role-wren-response-word-cap a chorus:Property ;
-    chorus:propertyKey "response.word.cap" ;
-    chorus:propertyValue "100" ;
-    chorus:propertyValueType "int" ;
-    chorus:propertyScope "role" .
 
-chorus:prop-role-kade-response-word-cap a chorus:Property ;
-    chorus:propertyKey "response.word.cap" ;
-    chorus:propertyValue "100" ;
-    chorus:propertyValueType "int" ;
-    chorus:propertyScope "role" .
 
-chorus:prop-role-silas-nudge-word-cap a chorus:Property ;
-    chorus:propertyKey "nudge.word.cap" ;
-    chorus:propertyValue "50" ;
-    chorus:propertyValueType "int" ;
-    chorus:propertyScope "role" .
 
-chorus:prop-role-wren-nudge-word-cap a chorus:Property ;
-    chorus:propertyKey "nudge.word.cap" ;
-    chorus:propertyValue "50" ;
-    chorus:propertyValueType "int" ;
-    chorus:propertyScope "role" .
 
-chorus:prop-role-kade-nudge-word-cap a chorus:Property ;
-    chorus:propertyKey "nudge.word.cap" ;
-    chorus:propertyValue "50" ;
-    chorus:propertyValueType "int" ;
-    chorus:propertyScope "role" .
+
+
+
+
+
+
+
+
 
 # --- properties as a Domain — ADR-045 worked example (domain-as-owl-class) ---
 # PUNNING (OWL 2 DL): chorus:properties is BOTH an owl:Class (class-facet — what owl-api
@@ -2592,14 +2027,7 @@ chorus:hasThreshold a owl:ObjectProperty ;
     rdfs:comment "A Metric's SLO bound is a config Property (thresholds-as-properties = SLO-as-code) — changing an SLO is a model write, not a code change. Ties ADR-046 to the properties domain. ADR-046." ;
     rdfs:domain chorus:Metric ; rdfs:range chorus:Property .
 
-# failureClass is a GOVERNED registry enum (config-as-data) — emitted at the source by werk
-# (#3495), not post-hoc classified. CFR counts only 'change'; 'tooling' is excluded so today's
-# land.failed bugs never poison the change-failure-rate.
-chorus:pk-failureClass a chorus:PropertyKey ;
-    chorus:keyName "failureClass" ; chorus:propertyKind "datatype" ;
-    chorus:appliesToClass chorus:Metric ; chorus:keyValueType "string" ;
-    chorus:allowedValue "change", "tooling" ;
-    chorus:lifecycleEnabled false .
+
 
 chorus:EmitContractShape a sh:NodeShape ;
     sh:targetClass chorus:EmitContract ;
@@ -2610,52 +2038,7 @@ chorus:MetricShape a sh:NodeShape ;
     sh:property [ sh:path chorus:metricKind ; sh:minCount 1 ; sh:maxCount 1 ; sh:datatype xsd:string ] ;
     sh:property [ sh:path chorus:emittedAs ; sh:minCount 1 ; sh:datatype xsd:string ] .
 
-# --- ADR-046 PROOF / TEMPLATE: the DORA four-key metrics over the live werk spine.
-# Kade authors werk's EmitContract (#3495) by pointing the werk service's chorus:emits at this
-# (or a refined copy). Every metric is COMPUTED from its emittedAs spine events — names are
-# Kade-verified live, not invented. This block proves the ADR-046 vocabulary round-trips. ---
 
-# DORA lead-time, decomposed into three legs so round-churn surfaces as coordination-wait (leg 2).
-chorus:metric-werk-lead-time a chorus:Metric ;
-    chorus:metricKind "dora.leadTime" ;
-    chorus:spanStartEvent "card.pulled" ; chorus:spanEndEvent "card.accepted" ;
-    chorus:emittedAs "card.pulled", "card.accepted" .
-
-chorus:metric-werk-lead-build a chorus:Metric ;          # leg 1: build (pulled → demo presented)
-    chorus:metricKind "dora.leadTime" ;
-    chorus:spanStartEvent "card.pulled" ; chorus:spanEndEvent "demo.presented" ;
-    chorus:emittedAs "card.pulled", "demo.presented" ;
-    chorus:subSpanOf chorus:metric-werk-lead-time .
-
-chorus:metric-werk-lead-coordwait a chorus:Metric ;      # leg 2: coordination-wait — round-churn lives HERE
-    chorus:metricKind "dora.leadTime" ;
-    chorus:spanStartEvent "demo.presented" ; chorus:spanEndEvent "go" ;
-    chorus:emittedAs "demo.presented", "go" ;
-    chorus:subSpanOf chorus:metric-werk-lead-time .
-
-chorus:metric-werk-lead-land a chorus:Metric ;           # leg 3: land (go → accepted)
-    chorus:metricKind "dora.leadTime" ;
-    chorus:spanStartEvent "go" ; chorus:spanEndEvent "card.accepted" ;
-    chorus:emittedAs "go", "card.accepted" ;
-    chorus:subSpanOf chorus:metric-werk-lead-time .
-
-# Change-failure-rate — counts ONLY failureClass="change"; "tooling" excluded (pk-failureClass enum)
-# so today's land.failed tooling bugs never poison CFR. failureClass is emitted at the source (#3495).
-chorus:metric-werk-cfr a chorus:Metric ;
-    chorus:metricKind "dora.cfr" ;
-    chorus:emittedAs "werk.land.failed", "merge.refused" .
-
-# Liveness-as-emission — absence of werk.heartbeat IS the unhealthy signal (closes the absence leak).
-chorus:metric-werk-liveness a chorus:Metric ;
-    chorus:metricKind "liveness" ;
-    chorus:emittedAs "werk.heartbeat" .
-
-chorus:werk-emit-contract a chorus:EmitContract ;
-    rdfs:label "werk Emit Contract (ADR-046 template — Kade #3495)" ;
-    rdfs:comment "The Building value-stream's observability declaration: DORA lead-time (decomposed), CFR (failureClass-gated), liveness. Kade refines + attaches to the werk service. ADR-046 / #3495." ;
-    chorus:declaresMetric chorus:metric-werk-lead-time, chorus:metric-werk-lead-build,
-        chorus:metric-werk-lead-coordwait, chorus:metric-werk-lead-land,
-        chorus:metric-werk-cfr, chorus:metric-werk-liveness .
 
 chorus:derivedFrom a owl:ObjectProperty ;
     rdfs:label "derived from" ;
@@ -2699,88 +2082,33 @@ chorus:implementedIn a owl:ObjectProperty ;
     rdfs:domain [ owl:unionOf ( chorus:Skill chorus:Gate ) ] ;
     rdfs:range xsd:string .
 
-# --- Policies (5 from existing CLAUDE.md + team-architecture.md rules; binary, operationally enforced) ---
 
-chorus:policy-working-hours a chorus:Policy ;
-    rdfs:label "Working window 6am–8pm Boston" ;
-    rdfs:comment "Default working window is 6am–8pm Boston time. Jeff's direction always overrides: do not question off-hour requests, do not ask Jeff about working-hour boundaries. The window is for self-initiated agent work when no direction has been given; when direction exists, execute it regardless of clock." ;
-    chorus:derivedFrom chorus:principle-protect-attention .
 
-chorus:policy-no-raw-process-kill a chorus:Policy ;
-    rdfs:label "No raw process killing" ;
-    rdfs:comment "Never `kill` PIDs directly, local or remote. Use launchctl kickstart for LaunchAgents, app-state.sh for the Gathering app lifecycle. LaunchAgent changes route through Silas." ;
-    chorus:derivedFrom chorus:principle-services-reliable-bounded-idempotent .
 
-chorus:policy-response-window-60s a chorus:Policy ;
-    rdfs:label "60-second pair heartbeat" ;
-    rdfs:comment "If your pair partner completes an AC item, you respond within 60 seconds. If you can't, emit a status (thinking, blocked on X). Silence = stall. DEC-1571 Attention Contract." ;
-    chorus:derivedFrom chorus:principle-protect-attention .
 
-chorus:policy-no-self-acp a chorus:Policy ;
-    rdfs:label "No self-accept on code cards" ;
-    rdfs:comment "Only Wren or Jeff can accept. The builder CANNOT mark their own code card Done. DEC-048 Proving Gate." ;
-    chorus:derivedFrom chorus:principle-services-reliable-bounded-idempotent .
 
-chorus:policy-chorus-search-first a chorus:Policy ;
-    rdfs:label "Chorus search before filesystem" ;
-    rdfs:comment "Search order: Chorus (/chorus search) → codebase graph → filesystem (Grep/Glob). Guard hook enforces. DEC-074." ;
-    chorus:derivedFrom chorus:principle-services-reliable-bounded-idempotent .
 
-# --- Policies (9 materialized 2026-04-22 for dangling practice→policy refs; #2348 sub-spike 3C) ---
 
-chorus:policy-tdd-gate a chorus:Policy ;
-    rdfs:label "TDD required before code" ;
-    rdfs:comment "Every code card must have failing tests (red) before production code is written. Enforced by tdd_gate.rs PreToolUse hook. DEC-1674." ;
-    chorus:derivedFrom chorus:principle-quality-at-source,
-                       chorus:principle-speed-and-quality-correlate .
 
-chorus:policy-demo-gate a chorus:Policy ;
-    rdfs:label "No accept without demo" ;
-    rdfs:comment "A code card cannot be marked Done without demo evidence. Builder cannot self-accept. DEC-048 Proving Gate. Enforced by demo_gate.rs hook and werk-accept (the GO step of chorus_werk)." ;
-    chorus:derivedFrom chorus:principle-apply-self-regulation-and-accept-feedback,
-                       chorus:principle-no-dark-work .
 
-chorus:policy-accept-gate a chorus:Policy ;
-    rdfs:label "Accept = Done + spine + commit + push" ;
-    rdfs:comment "An acceptance must complete all four: move card to Done, emit card.accepted spine event, commit changes via git-queue, push. Partial acceptance is not acceptance. Enforced by werk-accept (the GO step of chorus_werk; GO=accept, #3311)." ;
-    chorus:derivedFrom chorus:principle-artifacts,
-                       chorus:principle-no-dark-work .
 
-chorus:policy-handoff-logger a chorus:Policy ;
-    rdfs:label "Every cross-role handoff logged" ;
-    rdfs:comment "Briefs, nudges, gate-passes, and acceptances across roles must log to activity.md. If it's a handoff, it's traceable. Enforced by role discipline + future handoff-gate hook (not yet materialized)." ;
-    chorus:derivedFrom chorus:principle-artifacts,
-                       chorus:principle-no-dark-work .
 
-chorus:policy-demo-provenance a chorus:Policy ;
-    rdfs:label "Demo evidence is an artifact" ;
-    rdfs:comment "Every demo produces a durable artifact (brief file or card comment) identifying what was shown, by whom, when. Verbal-only demos do not satisfy the demo gate. Enforced by demo_gate.rs hook reading comments/briefs — #2177 migrates fully to card comments." ;
-    chorus:derivedFrom chorus:principle-artifacts,
-                       chorus:principle-no-dark-work .
 
-chorus:policy-nudge-blast-radius a chorus:Policy ;
-    rdfs:label "Nudge requires WIP context" ;
-    rdfs:comment "A nudge targeting a role carries the card context (WIP id if present, reason for interruption). Cross-domain nudges surface a warning. DEC-107 dual-path persist+deliver is the mechanism; blast-radius is the discipline around when it fires." ;
-    chorus:derivedFrom chorus:principle-protect-attention,
-                       chorus:principle-focus-is-infrastructure .
 
-chorus:policy-pair-enforcement a chorus:Policy ;
-    rdfs:label "Pair has navigator + driver, not spectators" ;
-    rdfs:comment "A /pair session has exactly one navigator and one driver. Navigator scopes; driver implements. Rotation checkpoints enforce turn-taking. Partner silence > 60s = stall signal (see policy-response-window-60s for the heartbeat). Enforced by /pair skill state + future pair-heartbeat-check skill (#2317)." ;
-    chorus:derivedFrom chorus:principle-comprehension-is-the-rate-limit,
-                       chorus:principle-integrate-rather-than-segregate .
 
-chorus:policy-icd-write-gate a chorus:Policy ;
-    rdfs:label "No harvester without ICD provider" ;
-    rdfs:comment "A harvester service file (harvest-*.sh, *-harvester.service.ts) cannot be written if the domain has no ICD provider section in urn:gathering:icd/current. Populate the ICD first, then code. DEC-095. Enforced by icd-gate-hook.sh PreToolUse hook." ;
-    chorus:derivedFrom chorus:principle-services-reliable-bounded-idempotent,
-                       chorus:principle-no-dark-work .
 
-chorus:policy-quality-gate a chorus:Policy ;
-    rdfs:label "Quality gate required before demo" ;
-    rdfs:comment "Quality gate (hooks pass, no regression, no console.log in production code) must pass before /demo is called on a code card. Kade-owned. Enforced by /gate-quality skill + quality_gate.rs hook integration." ;
-    chorus:derivedFrom chorus:principle-quality-at-source,
-                       chorus:principle-produce-no-waste .
+
+
+
+
+
+
+
+
+
+
+
+
 
 # --- 12 Principles (7 from team-architecture.md + 5 from 2026-04-17 session) ---
 
@@ -3164,116 +2492,7 @@ chorus:chorusTool chorus:indexes chorus:gathering .
 chorus:gathering chorus:outputOf chorus:Building, chorus:Proving .
 chorus:gathering chorus:inputTo chorus:Capturing .
 
-# =============================================================================
-# VALIDATION QUERIES (Phase 4) — SPARQL against this graph
-# =============================================================================
-#
-# Q1: Who owns domain X?
-# ----------------------
-# SELECT ?owner ?ownerLabel WHERE {
-#   chorus:loom-principles chorus:ownedBy ?owner .
-#   ?owner rdfs:label ?ownerLabel .
-# }
-# Expected: chorus:jeff, "Jeff"
-#
-# Q2: What services does product Y have?
-# ---------------------------------------
-# SELECT ?service ?serviceLabel WHERE {
-#   chorus:loom chorus:consumes ?service .   (#4071: served IRIs; product-* retired)
-#   ?service rdfs:label ?serviceLabel .
-# }
-# Expected: cards-service, skills-service, gates-service, spine-service,
-#           observability-service, infra-service
-#
-# Q3: What sub-products are impaired if service Z fails?
-# -------------------------------------------------------
-# SELECT ?product ?productLabel WHERE {
-#   ?product chorus:consumes chorus:cards-service .
-#   ?product rdfs:label ?productLabel .
-# }
-# Expected: chorus:loom ("Loom"), chorus:werk ("Werk"),
-#           chorus:clearing ("The Clearing")   (served IRIs since #4045)
-#
-# Q4: Full failure propagation — service → consumers → their owned domains
-# -------------------------------------------------------------------------
-# SELECT ?product ?productLabel ?domain ?domainLabel WHERE {
-#   ?product chorus:consumes chorus:spine-service .
-#   ?product rdfs:label ?productLabel .
-#   OPTIONAL {
-#     ?product chorus:hasDomain ?domain .
-#     ?domain rdfs:label ?domainLabel .
-#   }
-# }
-# Expected: Loom (with 7 LoomDomain children), Werk, Clearing
-#
-# Q5: Two-tier blast radius — which tier of service is down?
-# -----------------------------------------------------------
-# SELECT ?service ?serviceLabel ?tier WHERE {
-#   ?service rdfs:label ?serviceLabel .
-#   { ?service a chorus:InfrastructureService . BIND("visibility" AS ?tier) }
-#   UNION
-#   { ?service a chorus:ProtocolService . BIND("ability-to-work" AS ?tier) }
-# }
-# Expected: 5 infrastructure (visibility), 4 protocol (ability-to-work)
-#
-# Q6: Drift detection — declared vs actual dependencies
-# -------------------------------------------------------
-# Compare declared chorus:consumes edges against codebase imports.
-# Run per-product: extract imports/requires from source, compare to declared edges.
-#
-# SELECT ?product ?productLabel ?declared ?declaredLabel WHERE {
-#   ?product a chorus:Product .   # (SubProduct retired #3603)
-#   ?product rdfs:label ?productLabel .
-#   ?product chorus:consumes ?declared .
-#   ?declared rdfs:label ?declaredLabel .
-# }
-# ORDER BY ?productLabel
-#
-# Then compare against actual codebase dependencies (extracted by grep):
-#
-# Cards pilot validation (2026-04-10):
-#   Declared consumes: observability-service, infra-service
-#   Actual code deps:  Vikunja (localhost:3456) = cards-service itself (not a consumer)
-#                      Gathering app (localhost:3000) = blast-radius feature
-#                      chorus-sdk spine events = spine-service (UNDECLARED)
-#   DRIFT FOUND: cards-product should also consume spine-service
-#                (events.ts imports chorus-sdk, emits card.* spine events)
-#
-# Drift detection procedure:
-#   1. For each Product, list declared chorus:consumes edges (#3603)
-#   2. grep source code for localhost ports, service imports, SDK usage
-#   3. Map code deps to service URIs via port→service table:
-#      3456=cards-service, 3340=chorus-api, 3000=gathering-app,
-#      3100=grafana(observability), 3102=loki(logs), chorus-sdk=spine
-#   4. Diff declared vs actual. Undeclared = drift.
-#
 
-# =============================================================================
-# 11. PRACTICES MAPPING (#2348) — third leg of the Loom triangle
-# =============================================================================
-#
-# Every practice (skill, ritual, habit) traces upstream:
-#   chorus:expresses       Practice → Principle  (what principle the practice embodies)
-#   chorus:operationalizes Practice → Policy     (what policy the practice enacts, if any)
-#
-# Orphan practices flagged chorus:ceremonyRisk true — candidates for retirement
-# or for naming the missing principle.
-# Uncovered principles flagged chorus:abstract true — aspirational, not enacted.
-#
-# Rule of thumb:
-#   Principle without policy  = toothless
-#   Policy without principle  = arbitrary
-#   Practice without principle = ceremony
-#   Practice without policy    = voluntary (fine unless principle says "required")
-#   Principle without practice = abstract (aspirational, not enacted)
-
-# --- New object properties ---
-
-chorus:expresses a owl:ObjectProperty ;
-    rdfs:label "expresses" ;
-    rdfs:comment "A practice expresses (embodies, enacts) a principle. Practice → Principle. Counterpart to chorus:enforces (Policy → Principle) at the doing-layer." ;
-    rdfs:domain chorus:Practice ;
-    rdfs:range chorus:Principle .
 
 chorus:operationalizes a owl:ObjectProperty ;
     rdfs:label "operationalizes" ;
@@ -3314,296 +2533,107 @@ chorus:abstract a owl:DatatypeProperty ;
 chorus:principle-use-edges-and-value-the-marginal
     chorus:abstract true .
 
-# --- Expanded contains edges (additive) ---
 
-# #3754 — loom-practices membership emptied with practice v1; v2 members are
-# authored in roles/kade/ontology/practices-3754-instances.ttl.
 
-# =============================================================================
-# SKILLS, GATES, ROLE + PRACTICE EDGES
-# =============================================================================
-# #2348 sub-spikes 1+2 merged 2026-04-22. Wren drafted, Silas reviewed.
-#
-# Vocabulary:
-#   chorus:Skill          — named invocable procedure (/<slug>)
-#   chorus:UtilitySkill   — utility skills (not practice-owned)
-#   chorus:hasSkill       — Role|Practice → Skill
-#   chorus:hasGate        — Role|Practice → Gate
-#   chorus:authorizedBy   — Skill|Gate → Role|Practice (inverse)
-#   chorus:implementedIn  — Skill|Gate → file path (xsd:string, for now)
-#
-# Orphan queries:
-#   Gates without authority:
-#     SELECT ?g WHERE { ?g a chorus:Gate .
-#                       FILTER NOT EXISTS { [] chorus:hasGate ?g } }
-#   Skills without practice (excluding utilities):
-#     SELECT ?s WHERE { ?s a chorus:Skill .
-#                       FILTER NOT EXISTS { ?s a chorus:UtilitySkill }
-#                       FILTER NOT EXISTS { [] chorus:hasSkill ?s } }
-# =============================================================================
 
-# --- Skill instances — practice-enacting (32) ---
 
-chorus:skill-pull a chorus:Skill ;
-    rdfs:label "/pull" ;
-    rdfs:comment "Single engineering entry point. Validate → preflight → WIP check → domain context → design gate → TDD readiness → move + declare + signal." ;
-    chorus:implementedIn "~/.claude/skills/pull/SKILL.md" .
 
-chorus:skill-demo a chorus:Skill ;
-    rdfs:label "/demo" ;
-    rdfs:comment "Proving gate — smoke check, prep summary, signal to Wren, builder cannot self-accept." ;
-    chorus:implementedIn "~/.claude/skills/demo/SKILL.md" .
 
-chorus:skill-close a chorus:Skill ;
-    rdfs:label "/close" ;
-    rdfs:comment "Session close-out — Hard 5 (journal, board audit, activity log, next-session, commit)." ;
-    chorus:implementedIn "~/.claude/skills/close/SKILL.md" .
 
-chorus:skill-reboot a chorus:Skill ;
-    rdfs:label "/reboot" ;
-    rdfs:comment "Save memory, write next-session.md, commit, exit cleanly. Fires on context-rising alert." ;
-    chorus:implementedIn "~/.claude/skills/reboot/SKILL.md" .
 
-chorus:skill-jdi a chorus:Skill ;
-    rdfs:label "/jdi" ;
-    rdfs:comment "Just do it — delegates to /pull with the obvious next card." ;
-    chorus:implementedIn "~/.claude/skills/jdi/SKILL.md" .
 
-chorus:skill-gate-product a chorus:Skill ;
-    rdfs:label "/gate-product" ;
-    rdfs:comment "Product gate — AC complete, demo evidence, domain visibility, spine contract. Wren only." ;
-    chorus:implementedIn "~/.claude/skills/gate-product/SKILL.md" .
 
-chorus:skill-gate-arch a chorus:Skill ;
-    rdfs:label "/gate-arch" ;
-    rdfs:comment "Architecture gate — system fit, namespace, ICD, domain boundaries. Silas only." ;
-    chorus:implementedIn "~/.claude/skills/gate-arch/SKILL.md" .
 
-chorus:skill-gate-ops a chorus:Skill ;
-    rdfs:label "/gate-ops" ;
-    rdfs:comment "Operations gate — deploy safety, health checks, log flow, rollback. Silas only." ;
-    chorus:implementedIn "~/.claude/skills/gate-ops/SKILL.md" .
 
-chorus:skill-gate-code a chorus:Skill ;
-    rdfs:label "/gate-code" ;
-    rdfs:comment "Code gate — tests green, build clean, no new warnings. Kade only." ;
-    chorus:implementedIn "~/.claude/skills/gate-code/SKILL.md" .
 
-chorus:skill-gate-quality a chorus:Skill ;
-    rdfs:label "/gate-quality" ;
-    rdfs:comment "Quality gate — hooks pass, no regression, no console.log in production code. Kade only." ;
-    chorus:implementedIn "~/.claude/skills/gate-quality/SKILL.md" .
 
-chorus:skill-nudge a chorus:Skill ;
-    rdfs:label "/nudge" ;
-    rdfs:comment "Persist + deliver message to another role's active terminal. Dual-path (API + osascript) always fires. DEC-107." ;
-    chorus:implementedIn "~/.claude/skills/nudge/SKILL.md" .
 
-chorus:skill-chat a chorus:Skill ;
-    rdfs:label "/chat" ;
-    rdfs:comment "Lightweight two-role chat — direct terminal channel between roles." ;
-    chorus:implementedIn "~/.claude/skills/chat/SKILL.md" .
 
-chorus:skill-clearing a chorus:Skill ;
-    rdfs:label "/clearing" ;
-    rdfs:comment "Multi-party browser chat with Jeff and all three AI roles. DECISION: prefix auto-captured." ;
-    chorus:implementedIn "~/.claude/skills/clearing/SKILL.md" .
 
-chorus:skill-pair a chorus:Skill ;
-    rdfs:label "/pair" ;
-    rdfs:comment "Strong-style pair session — navigator scope loop, work-mode detection, rotation checkpoints." ;
-    chorus:implementedIn "~/.claude/skills/pair/SKILL.md" .
 
-chorus:skill-gemba a chorus:Skill ;
-    rdfs:label "/gemba" ;
-    rdfs:comment "Live observation of a role working — tail session + spine events." ;
-    chorus:implementedIn "~/.claude/skills/gemba/SKILL.md" .
 
-chorus:skill-gemba-tick a chorus:Skill ;
-    rdfs:label "/gemba-tick" ;
-    rdfs:comment "Gemba observation loop tick — cron-invoked." ;
-    chorus:implementedIn "~/.claude/skills/gemba-tick/SKILL.md" .
 
-chorus:skill-retro a chorus:Skill ;
-    rdfs:label "/retro" ;
-    rdfs:comment "Team retrospective with data-driven template." ;
-    chorus:implementedIn "~/.claude/skills/retro/SKILL.md" .
 
-chorus:skill-werk a chorus:Skill ;
-    rdfs:label "/werk" ;
-    rdfs:comment "Work state dashboard — current board, WIP, next, gates." ;
-    chorus:implementedIn "~/.claude/skills/werk/SKILL.md" .
 
-chorus:skill-sb a chorus:Skill ;
-    rdfs:label "/sb" ;
-    rdfs:comment "Scan board — quick board state summary." ;
-    chorus:implementedIn "~/.claude/skills/sb/SKILL.md" .
 
-chorus:skill-ab a chorus:Skill ;
-    rdfs:label "/ab" ;
-    rdfs:comment "Analyze board — shape and flow of work, patterns and concerns." ;
-    chorus:implementedIn "~/.claude/skills/ab/SKILL.md" .
 
-chorus:skill-flow a chorus:Skill ;
-    rdfs:label "/flow" ;
-    rdfs:comment "Board sweep and work proposal — read board, tail active roles, propose what to pull." ;
-    chorus:implementedIn "~/.claude/skills/flow/SKILL.md" .
 
-chorus:skill-board-sweep a chorus:Skill ;
-    rdfs:label "/board-sweep" ;
-    rdfs:comment "Board coherence sweep — find and fix untagged, duplicate, stale cards." ;
-    chorus:implementedIn "~/.claude/skills/board-sweep/SKILL.md" .
 
-chorus:skill-pipeline a chorus:Skill ;
-    rdfs:label "/pipeline" ;
-    rdfs:comment "Orchestrate a multi-card pipeline — Wren drives, roles nudge back on completion." ;
-    chorus:implementedIn "~/.claude/skills/pipeline/SKILL.md" .
 
-chorus:skill-golfball a chorus:Skill ;
-    rdfs:label "/golfball" ;
-    rdfs:comment "Pre-sequence scan for fix/swat cards in a domain before building new features." ;
-    chorus:implementedIn "~/.claude/skills/golfball/SKILL.md" .
 
-chorus:skill-chorus a chorus:Skill ;
-    rdfs:label "/chorus" ;
-    rdfs:comment "Query the shared memory index — Slack + Claude sessions + artifacts." ;
-    chorus:implementedIn "~/.claude/skills/chorus/SKILL.md" .
 
-chorus:skill-lw a chorus:Skill ;
-    rdfs:label "/lw" ; rdfs:comment "Look at Wren's terminal." ;
-    chorus:implementedIn "~/.claude/skills/lw/SKILL.md" .
 
-chorus:skill-ls a chorus:Skill ;
-    rdfs:label "/ls" ; rdfs:comment "Look at Silas's terminal." ;
-    chorus:implementedIn "~/.claude/skills/ls/SKILL.md" .
 
-chorus:skill-lk a chorus:Skill ;
-    rdfs:label "/lk" ; rdfs:comment "Look at Kade's terminal." ;
-    chorus:implementedIn "~/.claude/skills/lk/SKILL.md" .
 
-chorus:skill-lc a chorus:Skill ;
-    rdfs:label "/lc" ; rdfs:comment "Look at Chrome — screenshot Jeff's frontmost Chrome tab." ;
-    chorus:implementedIn "~/.claude/skills/lc/SKILL.md" .
 
-chorus:skill-lm a chorus:Skill ;
-    rdfs:label "/lm" ; rdfs:comment "Look at me — latest posture/sentiment score." ;
-    chorus:implementedIn "~/.claude/skills/lm/SKILL.md" .
 
-chorus:skill-look a chorus:Skill ;
-    rdfs:label "/look" ; rdfs:comment "Capture Jeff's screen for visual context sharing." ;
-    chorus:implementedIn "~/.claude/skills/look/SKILL.md" .
 
-# --- UtilitySkill instances (7) — skills without a specific practice owner ---
 
-chorus:skill-ot a chorus:UtilitySkill ;
-    rdfs:label "/ot" ; rdfs:comment "Open in tab — open file or URL in role's own Chrome window." ;
-    chorus:implementedIn "~/.claude/skills/ot/SKILL.md" .
 
-chorus:skill-share a chorus:UtilitySkill ;
-    rdfs:label "/share" ; rdfs:comment "Export any localhost page as shareable PDF + PNG." ;
-    chorus:implementedIn "~/.claude/skills/share/SKILL.md" .
 
-chorus:skill-listen a chorus:UtilitySkill ;
-    rdfs:label "/listen" ; rdfs:comment "Voice input capture." ;
-    chorus:implementedIn "~/.claude/skills/listen/SKILL.md" .
 
-chorus:skill-simplify a chorus:UtilitySkill ;
-    rdfs:label "/simplify" ;
-    rdfs:comment "Review changed code for reuse, quality, efficiency; fix issues found." ;
-    chorus:implementedIn "~/.claude/skills/simplify/SKILL.md" .
 
-chorus:skill-cs a chorus:UtilitySkill ;
-    rdfs:label "/cs" ; rdfs:comment "Check seeds — read what Jeff sent, act on it." ;
-    chorus:implementedIn "~/.claude/skills/cs/SKILL.md" .
 
-chorus:skill-interrupt a chorus:UtilitySkill ;
-    rdfs:label "/interrupt" ; rdfs:comment "Break into a role's active session." ;
-    chorus:implementedIn "~/.claude/skills/interrupt/SKILL.md" .
 
-chorus:skill-chat-tick a chorus:UtilitySkill ;
-    rdfs:label "/chat-tick" ;
-    rdfs:comment "Chat observation loop tick — cron-invoked, reads new chat lines since last check." ;
-    chorus:implementedIn "~/.claude/skills/chat-tick/SKILL.md" .
 
-# --- Gate instances (13) — domain gates + hook gates + pipeline-step gates ---
 
-chorus:gate-product a chorus:Gate ;
-    rdfs:subClassOf chorus:ProvingGate ;
-    rdfs:label "gate:product" ;
-    rdfs:comment "Verify AC complete, demo evidence, domain visibility, spine contract." ;
-    chorus:implementedIn "~/.claude/skills/gate-product/SKILL.md" .
 
-chorus:gate-arch a chorus:Gate ;
-    rdfs:subClassOf chorus:DesignGate ;
-    rdfs:label "gate:arch" ;
-    rdfs:comment "Verify system fit, namespace conventions, ICD consistency, domain boundaries." ;
-    chorus:implementedIn "~/.claude/skills/gate-arch/SKILL.md" .
 
-chorus:gate-ops a chorus:Gate ;
-    rdfs:subClassOf chorus:ProvingGate ;
-    rdfs:label "gate:ops" ;
-    rdfs:comment "Verify deploy safety, health checks, log flow, rollback path. Fires at deploy, not code-complete." ;
-    chorus:implementedIn "~/.claude/skills/gate-ops/SKILL.md" .
 
-chorus:gate-code a chorus:Gate ;
-    rdfs:subClassOf chorus:BuildGate ;
-    rdfs:label "gate:code" ;
-    rdfs:comment "Verify tests green, build clean, no new warnings." ;
-    chorus:implementedIn "~/.claude/skills/gate-code/SKILL.md" .
 
-chorus:gate-quality a chorus:Gate ;
-    rdfs:subClassOf chorus:BuildGate ;
-    rdfs:label "gate:quality" ;
-    rdfs:comment "Verify hooks pass, no regression, no console.log in production code." ;
-    chorus:implementedIn "~/.claude/skills/gate-quality/SKILL.md" .
 
-chorus:gate-demo a chorus:Gate ;
-    rdfs:subClassOf chorus:ProvingGate ;
-    rdfs:label "demo-gate hook" ;
-    rdfs:comment "PreToolUse hook — blocks cards Done when demo evidence missing. DEC-048 enforcement." ;
-    chorus:implementedIn "platform/services/chorus-hooks/src/gates/demo_gate.rs" .
 
-chorus:gate-write-scrubber a chorus:Gate ;
-    rdfs:subClassOf chorus:BuildGate ;
-    rdfs:label "write-scrubber hook" ;
-    rdfs:comment "PreToolUse hook — blocks writes of credentials to shared files." ;
-    chorus:implementedIn "platform/services/chorus-hooks/src/gates/write_scrubber.rs" .
 
-chorus:gate-tdd a chorus:Gate ;
-    rdfs:subClassOf chorus:BuildGate ;
-    rdfs:label "tdd_gate hook" ;
-    rdfs:comment "PreToolUse hook — enforces test-first discipline. DEC-1674." ;
-    chorus:implementedIn "platform/services/chorus-hooks/src/gates/tdd_gate.rs" .
 
-chorus:gate-icd-write a chorus:Gate ;
-    rdfs:subClassOf chorus:DesignGate ;
-    rdfs:label "icd-gate hook" ;
-    rdfs:comment "PreToolUse hook — blocks harvester writes without matching ICD provider. DEC-095." ;
-    chorus:implementedIn "platform/services/chorus-hooks/src/gates/icd_gate.rs" .
 
-chorus:gate-chorus-search-first a chorus:Gate ;
-    rdfs:subClassOf chorus:DirectionGate ;
-    rdfs:label "memory-first search gate" ;
-    rdfs:comment "PreToolUse hook — blocks filesystem grep/find without prior Chorus index query. DEC-074." ;
-    chorus:implementedIn "platform/services/chorus-hooks/src/gates/chorus_search_gate.rs" .
 
-chorus:gate-stop-the-line a chorus:Gate ;
-    rdfs:subClassOf chorus:BuildGate ;
-    rdfs:label "stop-the-line PostToolUse" ;
-    rdfs:comment "PostToolUse hook — blocks turn when tool errors; forces resolve/card/defer. #2145 implementation pending." ;
-    chorus:implementedIn "platform/services/chorus-hooks/src/gates/stop_the_line.rs" .
 
-chorus:gate-fuseki-health a chorus:Gate ;
-    rdfs:subClassOf chorus:BuildGate ;
-    rdfs:label "Fuseki health" ;
-    rdfs:comment "Inline check in /pull Step 4 — blocks pull if Fuseki :3030 is not 200. #2033 origin." ;
-    chorus:implementedIn "~/.claude/skills/pull/SKILL.md:step-4" .
 
-chorus:gate-design-wip-ready a chorus:Gate ;
-    rdfs:subClassOf chorus:DesignGate ;
-    rdfs:label "Design gate (WIP-ready)" ;
-    rdfs:comment "Inline check in /pull Step 4.5 — blocks type:new or type:enhance pulls when domain lifecycle.wip is not pass. #1396 origin." ;
-    chorus:implementedIn "~/.claude/skills/pull/SKILL.md:step-4.5" .
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 
 # --- Role authorization edges ---
 
@@ -3691,13 +2721,9 @@ chorus:Writer a owl:Class ;
     rdfs:label "Writer" ;
     rdfs:comment "Discriminator for chorus:writeOwner. Closed enum at this card; if a third writer ever lands (e.g. inference engine, human-curated overlay), it gets its own instance here and the validator's allow-list grows." .
 
-chorus:crawler a chorus:Writer ;
-    rdfs:label "crawler" ;
-    rdfs:comment "Structural-base writer. Owns predicates derived directly from filesystem state (path, sha, mtime, frontmatter values). Replaces-on-write per (class, identifier) tuple every crawl run." .
 
-chorus:enrichment a chorus:Writer ;
-    rdfs:label "enrichment" ;
-    rdfs:comment "Derived/decorative writer. Owns predicates produced by analysis, cross-references, computed metadata. Runs after the crawler; reads the crawler's structural-base, writes its own predicates without overlap." .
+
+
 
 # Concrete Hydratable: chorus:File — minimum at this card per #2827 AC §B.
 # chorus:Test joined the registry in #3811 (the "follows incrementally" leg,

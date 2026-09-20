@@ -1,0 +1,79 @@
+@prefix rdf:      <http://www.w3.org/1999/02/22-rdf-syntax-ns#> .
+@prefix rdfs:     <http://www.w3.org/2000/01/rdf-schema#> .
+@prefix acl:    <http://www.w3.org/ns/auth/acl#> .
+@prefix owl:      <http://www.w3.org/2002/07/owl#> .
+@prefix xsd:      <http://www.w3.org/2001/XMLSchema#> .
+@prefix dcterms:  <http://purl.org/dc/terms/> .
+@prefix sh:       <http://www.w3.org/ns/shacl#> .
+@prefix chorus:   <https://jeffbridwell.com/chorus#> .
+@prefix skos:     <http://www.w3.org/2004/02/skos/core#> .
+
+# Tool instances — moved out of roles/silas/ontology/chorus.ttl on 2026-09-20 (#4216).
+#
+# Jeff, 2026-09-20: "this is an anti pattern for loading data."
+#
+# chorus.ttl is in MODEL_SET, which loads into urn:chorus:ontology — the SCHEMA
+# graph. Instance rows authored there are re-created in the schema graph on every
+# model deploy, so pruning them can never hold: I deleted these earlier today and
+# they were back within the hour. The rows are not wrong; their home was.
+#
+# Here they ride the instance-seed manifest instead, so they land in their own
+# domain graph through the door, and the schema files go back to holding only
+# classes, properties and shapes.
+
+
+chorus:look a chorus:Tool ;
+    rdfs:label "/look" ;
+    rdfs:comment "Screen capture — Jeff shows, Chorus sees." ;
+    chorus:toolType chorus:Sense ;
+    chorus:vizLabel "eyes" ;
+    chorus:color "#22d3ee" ;
+    chorus:status "live" .
+
+chorus:listen a chorus:Tool ;
+    rdfs:label "/listen" ;
+    rdfs:comment "Voice transcription — speech to text via local whisper.cpp." ;
+    chorus:toolType chorus:Sense ;
+    chorus:vizLabel "ears" ;
+    chorus:color "#22d3ee" ;
+    chorus:status "live" .
+
+chorus:talk a chorus:Tool ;
+    rdfs:label "/talk" ;
+    rdfs:comment "Voice output — text to speech." ;
+    chorus:toolType chorus:Sense ;
+    chorus:vizLabel "voice" ;
+    chorus:color "#22d3ee" ;
+    chorus:status "planned" .
+
+chorus:clearing-tool a chorus:Tool ;
+    rdfs:label "/clearing" ;
+    rdfs:comment "Multi-party chat — Jeff + all roles in browser. Real-time alignment." ;
+    chorus:toolType chorus:Interaction ;
+    chorus:vizLabel "alignment" ;
+    chorus:color "#e6edf3" ;
+    chorus:status "live" .
+
+chorus:chorusTool a chorus:Tool ;
+    rdfs:label "/chorus" ;
+    rdfs:comment "Shared memory index — SQLite FTS5, 14k+ messages. Search, reconcile, remember." ;
+    chorus:toolType chorus:Memory ;
+    chorus:vizLabel "memory" ;
+    chorus:color "#c084fc" ;
+    chorus:status "live" .
+
+chorus:werk a chorus:Tool ;
+    rdfs:label "/werk" ;
+    rdfs:comment "Workflow engine — sequences decisions into steps across roles. IS the spine." ;
+    chorus:toolType chorus:Orchestration ;
+    chorus:vizLabel "the spine" ;
+    chorus:color "#fbbf24" ;
+    chorus:status "live" .
+
+chorus:borg a chorus:Tool ;
+    rdfs:label "Borg" ;
+    rdfs:comment "Codebase decomposition — structured assessment of code, architecture, tech debt." ;
+    chorus:toolType chorus:Analysis ;
+    chorus:vizLabel "decompose" ;
+    chorus:color "#f87171" ;
+    chorus:status "planned" .

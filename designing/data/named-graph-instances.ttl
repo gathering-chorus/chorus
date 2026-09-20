@@ -1,0 +1,59 @@
+@prefix rdf:      <http://www.w3.org/1999/02/22-rdf-syntax-ns#> .
+@prefix rdfs:     <http://www.w3.org/2000/01/rdf-schema#> .
+@prefix acl:    <http://www.w3.org/ns/auth/acl#> .
+@prefix owl:      <http://www.w3.org/2002/07/owl#> .
+@prefix xsd:      <http://www.w3.org/2001/XMLSchema#> .
+@prefix dcterms:  <http://purl.org/dc/terms/> .
+@prefix sh:       <http://www.w3.org/ns/shacl#> .
+@prefix chorus:   <https://jeffbridwell.com/chorus#> .
+@prefix skos:     <http://www.w3.org/2004/02/skos/core#> .
+
+# #4216 — moved out of the MODEL_SET schema files on 2026-09-20.
+#
+# MODEL_SET loads into urn:chorus:ontology, the SCHEMA graph, so a row authored
+# in one of those files was re-created there on every model deploy and no prune
+# could hold — four classes pruned this morning were back within the hour.
+#
+# The test for what belongs here, settled with Kade on 2026-09-20: does the row
+# carry data beyond its own name? These do. Bare names of a closed set (Pass /
+# Fail / Override, the handoff and interaction vocabularies) are schema and stay.
+#
+# Via the seed manifest these load through the DAL, which resolves each row's
+# home from its shape, so they land in their own domain graph.
+
+
+# ── the registry ─────────────────────────────────────────────────────────────
+
+chorus:graph-ontology a chorus:NamedGraph ;
+    chorus:graphIri "urn:chorus:ontology" ;
+    chorus:graphStatus "sanctioned" .
+
+chorus:graph-instances a chorus:NamedGraph ;
+    chorus:graphIri "urn:chorus:instances" ;
+    chorus:graphStatus "sanctioned" .
+
+chorus:graph-documents a chorus:NamedGraph ;
+    chorus:graphIri "urn:chorus:documents" ;
+    chorus:graphStatus "sanctioned" .
+
+chorus:graph-skills a chorus:NamedGraph ;
+    chorus:graphIri "urn:chorus:skills" ;
+    chorus:graphStatus "sanctioned" .
+
+chorus:graph-gates a chorus:NamedGraph ;
+    chorus:graphIri "urn:chorus:gates" ;
+    chorus:graphStatus "sanctioned" .
+
+chorus:graph-framework a chorus:NamedGraph ;
+    chorus:graphIri "urn:chorus:framework" ;
+    chorus:graphStatus "sanctioned" .
+
+chorus:graph-domains a chorus:NamedGraph ;
+    chorus:graphIri "urn:chorus:domains:*" ;
+    chorus:graphStatus "sanctioned" .
+
+# Test-ephemeral families, from the live 2026-08-02 audit (previously matched
+# by name shape; now declared).
+chorus:graph-verbs-sandbox a chorus:NamedGraph ;
+    chorus:graphIri "urn:chorus:verbs-sandbox" ;
+    chorus:graphStatus "test-ephemeral" .

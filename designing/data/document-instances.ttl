@@ -199,3 +199,48 @@ chorus:document-werk-product-design a chorus:Document ;
     chorus:hasDomain chorus:pipelines ;
     chorus:ownedBy chorus:principal-kade ;
     chorus:hasProduct chorus:werk .
+
+# #4216 — moved out of the MODEL_SET schema files (alerts-4085.ttl,
+# domains-wren-silas.ttl, security-model-3618.ttl) on 2026-09-20.
+#
+# They were authored inside files that MODEL_SET loads into
+# urn:chorus:ontology, so every model deploy re-created them in the
+# schema graph. Pruning them could never hold: the source kept writing
+# them back, which is the loop this card exists to end. Here they ride
+# the instance-seed manifest and land in their own domain graph.
+
+chorus:document-alerts-service-design a chorus:Document ;
+    chorus:docState "current" ;
+    chorus:docTitle "Alerts — Service Design" ;
+    chorus:docHref "/designing/docs/alerts-service-design.html" ;
+    chorus:comment "Authored by #4085 alongside the alerts/monitors split. Deliberately short — per #4064 a service's commitments are rows with a status and a card, not paragraphs here." ;
+    rdfs:comment "Authored by #4085 alongside the alerts/monitors split." ;
+    chorus:hasDomain chorus:alerts ;
+    chorus:ownedBy chorus:principal-silas .
+
+chorus:document-monitors-service-design a chorus:Document ;
+    chorus:docState "current" ;
+    chorus:docTitle "Monitors — Service Design" ;
+    chorus:docHref "/designing/docs/monitors-service-design.html" ;
+    chorus:comment "Authored by #4085 with the split. A monitor measures; an alert routes. Kept short per #4064." ;
+    rdfs:comment "Authored by #4085 with the split." ;
+    chorus:hasDomain chorus:monitors ;
+    chorus:ownedBy chorus:principal-silas .
+
+chorus:document-domain-design-logs a chorus:Document ;
+  chorus:label """Domain Design — Logs""" ; rdfs:label """Domain Design — Logs""" ; chorus:docTitle """Domain Design — Logs""" ;
+  chorus:docHref """/athena/domain.html?d=logs""" ;
+  chorus:comment """The logs domain's design is its rows (#4084): purpose and gaps on the Domain row; every log source a harvested LogSource row (unit, machine, path, Loki job, last written, status) carrying the domain it belongs to from the authored UnitDomainMapping rows. No hand-written design page.""" ;
+  rdfs:comment """The logs domain's design is its rows (#4084).""" ;
+  chorus:hasDomain chorus:logs ; chorus:ownedBy chorus:principal-silas ; chorus:hasProduct chorus:borg .
+
+chorus:document-service-design-security a chorus:Document ;
+    chorus:label """Service Design — Security""" ;
+    rdfs:label """Service Design — Security""" ;
+    chorus:docTitle """Service Design — Security""" ;
+    chorus:docHref """/athena/domain.html?d=security""" ;
+    chorus:comment """The security domain's design lives in the graph (#4064): purpose, gaps and vocabulary on the security and identity Domain rows, rendered by the generated domain page; overview / as-is / to-be / gaps / not-in-scope / path-to-close on the Identity Service row and every promise as a Commitment row, rendered by the generated service page. The 2026-05-01 hand-written design (#2659) was deleted, not rewritten.""" ;
+    rdfs:comment """The security domain's design as a projection of the graph (#4064).""" ;
+    chorus:hasDomain chorus:security ;
+    chorus:ownedBy chorus:principal-silas ;
+    chorus:hasProduct chorus:borg .

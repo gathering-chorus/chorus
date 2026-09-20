@@ -1,0 +1,43 @@
+@prefix rdf:      <http://www.w3.org/1999/02/22-rdf-syntax-ns#> .
+@prefix rdfs:     <http://www.w3.org/2000/01/rdf-schema#> .
+@prefix acl:    <http://www.w3.org/ns/auth/acl#> .
+@prefix owl:      <http://www.w3.org/2002/07/owl#> .
+@prefix xsd:      <http://www.w3.org/2001/XMLSchema#> .
+@prefix dcterms:  <http://purl.org/dc/terms/> .
+@prefix sh:       <http://www.w3.org/ns/shacl#> .
+@prefix chorus:   <https://jeffbridwell.com/chorus#> .
+@prefix skos:     <http://www.w3.org/2004/02/skos/core#> .
+
+# ToolType instances — moved out of roles/silas/ontology/chorus.ttl on 2026-09-20 (#4216).
+#
+# Jeff, 2026-09-20: "this is an anti pattern for loading data."
+#
+# chorus.ttl is in MODEL_SET, which loads into urn:chorus:ontology — the SCHEMA
+# graph. Instance rows authored there are re-created in the schema graph on every
+# model deploy, so pruning them can never hold: I deleted these earlier today and
+# they were back within the hour. The rows are not wrong; their home was.
+#
+# Here they ride the instance-seed manifest instead, so they land in their own
+# domain graph through the door, and the schema files go back to holding only
+# classes, properties and shapes.
+
+
+chorus:Sense a chorus:ToolType ;
+    rdfs:label "Sense" ;
+    rdfs:comment "Input capture — eyes, ears, voice." .
+
+chorus:Interaction a chorus:ToolType ;
+    rdfs:label "Interaction" ;
+    rdfs:comment "Multi-party coordination and alignment." .
+
+chorus:Memory a chorus:ToolType ;
+    rdfs:label "Memory" ;
+    rdfs:comment "Persistent shared context — indexes, searches, remembers." .
+
+chorus:Orchestration a chorus:ToolType ;
+    rdfs:label "Orchestration" ;
+    rdfs:comment "Sequences and tracks work across roles." .
+
+chorus:Analysis a chorus:ToolType ;
+    rdfs:label "Analysis" ;
+    rdfs:comment "Decomposes, examines, produces structured insight." .

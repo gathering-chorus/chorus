@@ -1,0 +1,75 @@
+@prefix rdf:      <http://www.w3.org/1999/02/22-rdf-syntax-ns#> .
+@prefix rdfs:     <http://www.w3.org/2000/01/rdf-schema#> .
+@prefix acl:    <http://www.w3.org/ns/auth/acl#> .
+@prefix owl:      <http://www.w3.org/2002/07/owl#> .
+@prefix xsd:      <http://www.w3.org/2001/XMLSchema#> .
+@prefix dcterms:  <http://purl.org/dc/terms/> .
+@prefix sh:       <http://www.w3.org/ns/shacl#> .
+@prefix chorus:   <https://jeffbridwell.com/chorus#> .
+@prefix skos:     <http://www.w3.org/2004/02/skos/core#> .
+
+# #4216 — moved out of the MODEL_SET schema files on 2026-09-20.
+#
+# MODEL_SET loads into urn:chorus:ontology, the SCHEMA graph, so a row authored
+# in one of those files was re-created there on every model deploy and no prune
+# could hold — four classes pruned this morning were back within the hour.
+#
+# The test for what belongs here, settled with Kade on 2026-09-20: does the row
+# carry data beyond its own name? These do. Bare names of a closed set (Pass /
+# Fail / Override, the handoff and interaction vocabularies) are schema and stay.
+#
+# Via the seed manifest these load through the DAL, which resolves each row's
+# home from its shape, so they land in their own domain graph.
+
+
+# --- Property instances (proof: the generated /borg/properties Property surface serves real
+# rows → committed→Fuseki→generated→served round-trip, #3489 AC5). Datatype-arm carriers
+# (propertyValue, no propertyValueRef → PropertyCarrierShape xone arm 1). register-before-use:
+# each propertyKey resolves to a registered PropertyKey above. ---
+chorus:prop-cards-gate-enforced a chorus:Property ;
+    chorus:propertyKey "gate.enforced" ;
+    chorus:propertyValue "true" ;
+    chorus:propertyValueType "bool" ;
+    chorus:propertyScope "instance" .
+
+chorus:prop-pipeline-test-type a chorus:Property ;
+    chorus:propertyKey "testType" ;
+    chorus:propertyValue "integration" ;
+    chorus:propertyValueType "string" ;
+    chorus:propertyScope "instance" .
+
+chorus:prop-role-silas-response-word-cap a chorus:Property ;
+    chorus:propertyKey "response.word.cap" ;
+    chorus:propertyValue "100" ;
+    chorus:propertyValueType "int" ;
+    chorus:propertyScope "role" .
+
+chorus:prop-role-wren-response-word-cap a chorus:Property ;
+    chorus:propertyKey "response.word.cap" ;
+    chorus:propertyValue "100" ;
+    chorus:propertyValueType "int" ;
+    chorus:propertyScope "role" .
+
+chorus:prop-role-kade-response-word-cap a chorus:Property ;
+    chorus:propertyKey "response.word.cap" ;
+    chorus:propertyValue "100" ;
+    chorus:propertyValueType "int" ;
+    chorus:propertyScope "role" .
+
+chorus:prop-role-silas-nudge-word-cap a chorus:Property ;
+    chorus:propertyKey "nudge.word.cap" ;
+    chorus:propertyValue "50" ;
+    chorus:propertyValueType "int" ;
+    chorus:propertyScope "role" .
+
+chorus:prop-role-wren-nudge-word-cap a chorus:Property ;
+    chorus:propertyKey "nudge.word.cap" ;
+    chorus:propertyValue "50" ;
+    chorus:propertyValueType "int" ;
+    chorus:propertyScope "role" .
+
+chorus:prop-role-kade-nudge-word-cap a chorus:Property ;
+    chorus:propertyKey "nudge.word.cap" ;
+    chorus:propertyValue "50" ;
+    chorus:propertyValueType "int" ;
+    chorus:propertyScope "role" .

@@ -29,41 +29,21 @@ chorus:graphIri a owl:DatatypeProperty ;
     rdfs:range xsd:string ;
     rdfs:comment "The graph's IRI as a literal key. A prefix wildcard ends with ':*' (exactly one scheme: urn:chorus:domains:*) — anything fancier belongs in the model as its own row, not in a regex." .
 
-# ── the registry ─────────────────────────────────────────────────────────────
 
-chorus:graph-ontology a chorus:NamedGraph ;
-    chorus:graphIri "urn:chorus:ontology" ;
-    chorus:graphStatus "sanctioned" .
 
-chorus:graph-instances a chorus:NamedGraph ;
-    chorus:graphIri "urn:chorus:instances" ;
-    chorus:graphStatus "sanctioned" .
 
-chorus:graph-documents a chorus:NamedGraph ;
-    chorus:graphIri "urn:chorus:documents" ;
-    chorus:graphStatus "sanctioned" .
 
-chorus:graph-skills a chorus:NamedGraph ;
-    chorus:graphIri "urn:chorus:skills" ;
-    chorus:graphStatus "sanctioned" .
 
-chorus:graph-gates a chorus:NamedGraph ;
-    chorus:graphIri "urn:chorus:gates" ;
-    chorus:graphStatus "sanctioned" .
 
-chorus:graph-framework a chorus:NamedGraph ;
-    chorus:graphIri "urn:chorus:framework" ;
-    chorus:graphStatus "sanctioned" .
 
-chorus:graph-domains a chorus:NamedGraph ;
-    chorus:graphIri "urn:chorus:domains:*" ;
-    chorus:graphStatus "sanctioned" .
 
-# Test-ephemeral families, from the live 2026-08-02 audit (previously matched
-# by name shape; now declared).
-chorus:graph-verbs-sandbox a chorus:NamedGraph ;
-    chorus:graphIri "urn:chorus:verbs-sandbox" ;
-    chorus:graphStatus "test-ephemeral" .
+
+
+
+
+
+
+
 
 # NOTE deliberately absent: urn:chorus:domain:tests (SINGULAR typo). It stays
 # UNCLASSIFIED so the readout keeps naming it until it is retired — registering

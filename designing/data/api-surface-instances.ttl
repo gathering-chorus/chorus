@@ -1,0 +1,309 @@
+@prefix rdf:      <http://www.w3.org/1999/02/22-rdf-syntax-ns#> .
+@prefix rdfs:     <http://www.w3.org/2000/01/rdf-schema#> .
+@prefix acl:    <http://www.w3.org/ns/auth/acl#> .
+@prefix owl:      <http://www.w3.org/2002/07/owl#> .
+@prefix xsd:      <http://www.w3.org/2001/XMLSchema#> .
+@prefix dcterms:  <http://purl.org/dc/terms/> .
+@prefix sh:       <http://www.w3.org/ns/shacl#> .
+@prefix chorus:   <https://jeffbridwell.com/chorus#> .
+@prefix skos:     <http://www.w3.org/2004/02/skos/core#> .
+
+# #4216 — moved out of the MODEL_SET schema files on 2026-09-20.
+#
+# Those files load into urn:chorus:ontology, the SCHEMA graph, so rows authored
+# in them were re-created there on every model deploy and no prune could hold.
+# Each row here carries data beyond its own name, which is the test that makes it
+# an instance; via the seed manifest it lands in its own domain graph.
+
+
+# ============================================================================
+# #3619 Class A wave — secure the zero-caller mutation endpoints.
+# Verified 0 live callers (Loki 7d + last-hour + source grep, 2026-07-07).
+# Same securedBy gate as #3618 (gate-chorus-api-mutations). cards/* EXCLUDED
+# from this wave — board write path, Wren's domain, needs her round-trip check.
+# Busy families (index/subdomains/discover/validate/reload) are the
+# credential-then-flip work, NOT here.
+# ============================================================================
+@prefix chorus: <https://jeffbridwell.com/chorus#> .
+@prefix rdfs: <http://www.w3.org/2000/01/rdf-schema#> .
+
+# #4130 — the principles write door. principles-api.test.sh's negative proof
+# (a POST with no identity is refused 401) read 200 on every run: these three
+# routes were never in this table, so the envelope gated nothing — the
+# open-by-construction class #3977 measured (59 undeclared routes). Scope is
+# the principles home graph; Wren's principal holds it (security-scopes-3689.ttl).
+chorus:surface-principles-create a chorus:APISurface ;
+    rdfs:label "chorus-api principles create (loom-principles write door)" ;
+    chorus:securedBy chorus:gate-chorus-api-mutations ;
+    chorus:httpMethod "POST" ;
+    chorus:pathPrefix "/api/athena/subdomains/loom-principles/principles" ;
+    chorus:requiresScope "urn:chorus:domains:principles" ;
+    chorus:servedBy chorus:services .
+
+chorus:surface-principles-update a chorus:APISurface ;
+    rdfs:label "chorus-api principles update (loom-principles write door)" ;
+    chorus:securedBy chorus:gate-chorus-api-mutations ;
+    chorus:httpMethod "PUT" ;
+    chorus:pathPrefix "/api/athena/subdomains/loom-principles/principles" ;
+    chorus:requiresScope "urn:chorus:domains:principles" ;
+    chorus:servedBy chorus:services .
+
+chorus:surface-principles-delete a chorus:APISurface ;
+    rdfs:label "chorus-api principles delete (loom-principles write door)" ;
+    chorus:securedBy chorus:gate-chorus-api-mutations ;
+    chorus:httpMethod "DELETE" ;
+    chorus:pathPrefix "/api/athena/subdomains/loom-principles/principles" ;
+    chorus:requiresScope "urn:chorus:domains:principles" ;
+    chorus:servedBy chorus:services .
+
+chorus:surface-alert-write a chorus:APISurface ;
+    rdfs:label "chorus-api alert write (zero-caller)" ;
+    chorus:securedBy chorus:gate-chorus-api-mutations ;
+    chorus:httpMethod "POST" ;
+    chorus:pathPrefix "/api/chorus/alert" ;
+    chorus:requiresScope "urn:chorus:ops" ;
+    chorus:servedBy chorus:services .
+
+chorus:surface-open-write a chorus:APISurface ;
+    rdfs:label "chorus-api open write (zero-caller)" ;
+    chorus:securedBy chorus:gate-chorus-api-mutations ;
+    chorus:httpMethod "POST" ;
+    chorus:pathPrefix "/api/chorus/open" ;
+    chorus:requiresScope "urn:chorus:ops" ;
+    chorus:servedBy chorus:services .
+
+chorus:surface-pulse-write a chorus:APISurface ;
+    rdfs:label "chorus-api pulse write (zero-caller)" ;
+    chorus:securedBy chorus:gate-chorus-api-mutations ;
+    chorus:httpMethod "POST" ;
+    chorus:pathPrefix "/api/chorus/pulse" ;
+    chorus:requiresScope "urn:chorus:ops" ;
+    chorus:servedBy chorus:services .
+
+chorus:surface-role-state-write a chorus:APISurface ;
+    rdfs:label "chorus-api role-state write (zero-caller)" ;
+    chorus:securedBy chorus:gate-chorus-api-mutations ;
+    chorus:httpMethod "POST" ;
+    chorus:pathPrefix "/api/chorus/role-state" ;
+    chorus:requiresScope "urn:chorus:ops" ;
+    chorus:servedBy chorus:services .
+
+chorus:surface-voice-write a chorus:APISurface ;
+    rdfs:label "chorus-api voice write (zero-caller)" ;
+    chorus:securedBy chorus:gate-chorus-api-mutations ;
+    chorus:httpMethod "POST" ;
+    chorus:pathPrefix "/api/chorus/voice/" ;
+    chorus:requiresScope "urn:chorus:ops" ;
+    chorus:servedBy chorus:services .
+
+chorus:surface-catalog-writes a chorus:APISurface ;
+    rdfs:label "chorus-api catalog writes (zero-caller)" ;
+    chorus:securedBy chorus:gate-chorus-api-mutations ;
+    chorus:httpMethod "POST" ;
+    chorus:pathPrefix "/api/chorus/catalog/" ;
+    chorus:requiresScope "urn:chorus:catalog" ;
+    chorus:servedBy chorus:services .
+
+chorus:surface-icd-writes a chorus:APISurface ;
+    rdfs:label "chorus-api ICD domain writes (zero-caller)" ;
+    chorus:securedBy chorus:gate-chorus-api-mutations ;
+    chorus:httpMethod "POST" ;
+    chorus:pathPrefix "/api/icd/domains/" ;
+    chorus:requiresScope "urn:chorus:icd" ;
+    chorus:servedBy chorus:services .
+
+# #3619 — FINAL wave: lock every remaining mutation endpoint. Zero
+# unauthenticated mutation surface on chorus-api (AC4 done-state). Callers
+# token-wired in THIS branch: SDK maybeFireTrace, shim role-state bridge,
+# mcp doc-catalog, heartbeat-probe index poke, and the 6 integration suites
+# (tests/lib/service-token). Athena UI browser writes 401 until the session
+# bridge exists — default-deny is correct (anonymous write refused, not
+# silently accepted). Deduped to one surface per (method, path-prefix, scope);
+# the envelope matches by prefix so subdomains/* collapses to method-keyed rows.
+@prefix chorus: <https://jeffbridwell.com/chorus#> .
+@prefix rdfs: <http://www.w3.org/2000/01/rdf-schema#> .
+
+chorus:surface-post-api-chorus-index a chorus:APISurface ;
+    rdfs:label "chorus-api POST /api/chorus/index (prefix surface)" ;
+    chorus:securedBy chorus:gate-chorus-api-mutations ;
+    chorus:httpMethod "POST" ;
+    chorus:pathPrefix "/api/chorus/index" ;
+    chorus:requiresScope "urn:chorus:index" ;
+    chorus:servedBy chorus:services .
+
+chorus:surface-post-api-athena-subdomains a chorus:APISurface ;
+    rdfs:label "chorus-api POST /api/athena/subdomains (prefix surface)" ;
+    chorus:securedBy chorus:gate-chorus-api-mutations ;
+    chorus:httpMethod "POST" ;
+    chorus:pathPrefix "/api/athena/subdomains" ;
+    chorus:requiresScope "urn:chorus:domains:code" ;
+    chorus:servedBy chorus:services .
+
+chorus:surface-delete-api-athena-subdomains a chorus:APISurface ;
+    rdfs:label "chorus-api DELETE /api/athena/subdomains (prefix surface)" ;
+    chorus:securedBy chorus:gate-chorus-api-mutations ;
+    chorus:httpMethod "DELETE" ;
+    chorus:pathPrefix "/api/athena/subdomains" ;
+    chorus:requiresScope "urn:chorus:domains:code" ;
+    chorus:servedBy chorus:services .
+
+chorus:surface-put-api-athena-subdomains a chorus:APISurface ;
+    rdfs:label "chorus-api PUT /api/athena/subdomains (prefix surface)" ;
+    chorus:securedBy chorus:gate-chorus-api-mutations ;
+    chorus:httpMethod "PUT" ;
+    chorus:pathPrefix "/api/athena/subdomains" ;
+    chorus:requiresScope "urn:chorus:domains:code" ;
+    chorus:servedBy chorus:services .
+
+chorus:surface-post-api-athena-reload a chorus:APISurface ;
+    rdfs:label "chorus-api POST /api/athena/reload (prefix surface)" ;
+    chorus:securedBy chorus:gate-chorus-api-mutations ;
+    chorus:httpMethod "POST" ;
+    chorus:pathPrefix "/api/athena/reload" ;
+    chorus:requiresScope "urn:chorus:domains:code" ;
+    chorus:servedBy chorus:services .
+
+chorus:surface-post-api-chorus-trace a chorus:APISurface ;
+    rdfs:label "chorus-api POST /api/chorus/trace (prefix surface)" ;
+    chorus:securedBy chorus:gate-chorus-api-mutations ;
+    chorus:httpMethod "POST" ;
+    chorus:pathPrefix "/api/chorus/trace" ;
+    chorus:requiresScope "urn:chorus:ops" ;
+    chorus:servedBy chorus:services .
+
+chorus:surface-post-api-doc-catalog-add a chorus:APISurface ;
+    rdfs:label "chorus-api POST /api/doc-catalog/add (prefix surface)" ;
+    chorus:securedBy chorus:gate-chorus-api-mutations ;
+    chorus:httpMethod "POST" ;
+    chorus:pathPrefix "/api/doc-catalog/add" ;
+    chorus:requiresScope "urn:chorus:ops" ;
+    chorus:servedBy chorus:services .
+
+# ============================================================================
+# #3619 Class A wave 2 — four more zero-caller mutation endpoints.
+# Verified 0 live callers (Loki 7d, 2026-07-07 15:55): chorus/rca,
+# chorus/spine-event (spine writes go through chorus-log CLI, not HTTP),
+# doc-catalog/link, and the icd provider-sections PUT that wave 1's
+# POST-only surface missed. Same securedBy gate as #3618.
+# NOT here: chorus/trace (26.5k/wk — busiest mutation endpoint, Class B),
+# doc-catalog/add (chorus-mcp tool caller, credential first).
+# ============================================================================
+@prefix chorus: <https://jeffbridwell.com/chorus#> .
+@prefix rdfs: <http://www.w3.org/2000/01/rdf-schema#> .
+
+chorus:surface-rca-write a chorus:APISurface ;
+    rdfs:label "chorus-api rca write (zero-caller)" ;
+    chorus:securedBy chorus:gate-chorus-api-mutations ;
+    chorus:httpMethod "POST" ;
+    chorus:pathPrefix "/api/chorus/rca" ;
+    chorus:requiresScope "urn:chorus:ops" ;
+    chorus:servedBy chorus:services .
+
+chorus:surface-spine-event-write a chorus:APISurface ;
+    rdfs:label "chorus-api spine-event write (zero HTTP callers — spine flows via chorus-log CLI)" ;
+    chorus:securedBy chorus:gate-chorus-api-mutations ;
+    chorus:httpMethod "POST" ;
+    chorus:pathPrefix "/api/chorus/spine-event" ;
+    chorus:requiresScope "urn:chorus:ops" ;
+    chorus:servedBy chorus:services .
+
+chorus:surface-doc-catalog-link-write a chorus:APISurface ;
+    rdfs:label "chorus-api doc-catalog link write (zero-caller)" ;
+    chorus:securedBy chorus:gate-chorus-api-mutations ;
+    chorus:httpMethod "POST" ;
+    chorus:pathPrefix "/api/doc-catalog/link" ;
+    chorus:requiresScope "urn:chorus:ops" ;
+    chorus:servedBy chorus:services .
+
+chorus:surface-icd-put-writes a chorus:APISurface ;
+    rdfs:label "chorus-api ICD provider-sections PUT (zero-caller — wave-1 surface was POST-only)" ;
+    chorus:securedBy chorus:gate-chorus-api-mutations ;
+    chorus:httpMethod "PUT" ;
+    chorus:pathPrefix "/api/icd/domains/" ;
+    chorus:requiresScope "urn:chorus:icd" ;
+    chorus:servedBy chorus:services .
+
+# #3619 — lock discover-code / discover-tests / validate / embed.
+# Live-caller check 2026-07-07: Loki 4h = 0 hits on all four; the 7d counts
+# (248/199/204/2) trace to test suites running against their OWN app instance
+# (tests/lib/test-app boots with an empty surface table, unaffected by live
+# locks) and nightly bursts. Same securedBy gate as #3618.
+@prefix chorus: <https://jeffbridwell.com/chorus#> .
+@prefix rdfs: <http://www.w3.org/2000/01/rdf-schema#> .
+
+chorus:surface-discover-code-write a chorus:APISurface ;
+    rdfs:label "chorus-api athena discover-code write" ;
+    chorus:securedBy chorus:gate-chorus-api-mutations ;
+    chorus:httpMethod "POST" ;
+    chorus:pathPrefix "/api/athena/discover-code" ;
+    chorus:requiresScope "urn:chorus:domains:code" ;
+    chorus:servedBy chorus:services .
+
+chorus:surface-discover-tests-write a chorus:APISurface ;
+    rdfs:label "chorus-api athena discover-tests write" ;
+    chorus:securedBy chorus:gate-chorus-api-mutations ;
+    chorus:httpMethod "POST" ;
+    chorus:pathPrefix "/api/athena/discover-tests" ;
+    chorus:requiresScope "urn:chorus:domains:code" ;
+    chorus:servedBy chorus:services .
+
+chorus:surface-validate-write a chorus:APISurface ;
+    rdfs:label "chorus-api athena validate write" ;
+    chorus:securedBy chorus:gate-chorus-api-mutations ;
+    chorus:httpMethod "POST" ;
+    chorus:pathPrefix "/api/athena/validate" ;
+    chorus:requiresScope "urn:chorus:ops" ;
+    chorus:servedBy chorus:services .
+
+chorus:surface-embed-write a chorus:APISurface ;
+    rdfs:label "chorus-api embed write" ;
+    chorus:securedBy chorus:gate-chorus-api-mutations ;
+    chorus:httpMethod "POST" ;
+    chorus:pathPrefix "/api/chorus/embed" ;
+    chorus:requiresScope "urn:chorus:index" ;
+    chorus:servedBy chorus:services .
+
+# #3619 — lock the cards/* mutation endpoints. Verified no callers:
+# source grep = zero non-server references to /api/cards; Loki 7d = one
+# 400 from silas's own 2026-07-07 13:14 session test. The cards CLI writes
+# Vikunja directly (#2544 HTTP wrapper unused). One prefix surface covers
+# add/move/done/tag/set/view (all POST /api/cards/*).
+@prefix chorus: <https://jeffbridwell.com/chorus#> .
+@prefix rdfs: <http://www.w3.org/2000/01/rdf-schema#> .
+
+chorus:surface-cards-writes a chorus:APISurface ;
+    rdfs:label "chorus-api cards writes (zero-caller — CLI writes Vikunja direct)" ;
+    chorus:securedBy chorus:gate-chorus-api-mutations ;
+    chorus:httpMethod "POST" ;
+    chorus:pathPrefix "/api/cards/" ;
+    chorus:requiresScope "urn:chorus:cards" ;
+    chorus:servedBy chorus:services .
+
+# ----------------------------------------------------------------------------
+# 5. FIRST SECURED CLASS — instances (discover/index system writers, AC4)
+#    Consumers: crawler-index, reindex-worker, embed-worker LaunchAgents.
+# ----------------------------------------------------------------------------
+
+# FIRST FLIP = zero-caller surfaces only (verified live 2026-07-07 via Loki, 7d):
+#   /api/chorus/reindex 0, /api/athena/discover-pages 0, /api/athena/discover-endpoints 0.
+# The busy siblings (index 13k/wk, discover-code 248, discover-tests 199, embed 2)
+# have live callers that must be credentialed BEFORE their gate flips — deferred
+# to #3619 (deploy-before-require, one caller at a time). This keeps #3618's flip
+# a real live proof with ZERO breakage.
+chorus:surface-discover-writes a chorus:APISurface ;
+    rdfs:label "chorus-api discover writes (zero-caller)" ;
+    rdfs:comment "discover-pages + discover-endpoints — zero live callers (Loki 7d). First flip. #3618." ;
+    chorus:securedBy chorus:gate-chorus-api-mutations ;
+    chorus:httpMethod "POST" ;
+    chorus:pathPrefix "/api/athena/discover-pages", "/api/athena/discover-endpoints" ;
+    chorus:requiresScope "urn:chorus:domains:code" ;
+    chorus:servedBy chorus:services .
+
+chorus:surface-index-writes a chorus:APISurface ;
+    rdfs:label "chorus-api reindex write (zero-caller)" ;
+    rdfs:comment "reindex only — zero live callers (Loki 7d). index (13k/wk) + embed deferred to #3619. First flip. #3618." ;
+    chorus:securedBy chorus:gate-chorus-api-mutations ;
+    chorus:httpMethod "POST" ;
+    chorus:pathPrefix "/api/chorus/reindex" ;
+    chorus:requiresScope "urn:chorus:index" ;
+    chorus:servedBy chorus:services .

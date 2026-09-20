@@ -1,0 +1,132 @@
+@prefix rdf:      <http://www.w3.org/1999/02/22-rdf-syntax-ns#> .
+@prefix rdfs:     <http://www.w3.org/2000/01/rdf-schema#> .
+@prefix acl:    <http://www.w3.org/ns/auth/acl#> .
+@prefix owl:      <http://www.w3.org/2002/07/owl#> .
+@prefix xsd:      <http://www.w3.org/2001/XMLSchema#> .
+@prefix dcterms:  <http://purl.org/dc/terms/> .
+@prefix sh:       <http://www.w3.org/ns/shacl#> .
+@prefix chorus:   <https://jeffbridwell.com/chorus#> .
+@prefix skos:     <http://www.w3.org/2004/02/skos/core#> .
+
+# #4216 — moved out of the MODEL_SET schema files on 2026-09-20.
+#
+# MODEL_SET loads into urn:chorus:ontology, the SCHEMA graph, so a row authored
+# in one of those files was re-created there on every model deploy and no prune
+# could hold — four classes pruned this morning were back within the hour.
+#
+# The test for what belongs here, settled with Kade on 2026-09-20: does the row
+# carry data beyond its own name? These do. Bare names of a closed set (Pass /
+# Fail / Override, the handoff and interaction vocabularies) are schema and stay.
+#
+# Via the seed manifest these load through the DAL, which resolves each row's
+# home from its shape, so they land in their own domain graph.
+
+
+# --- Policies (5 from existing CLAUDE.md + team-architecture.md rules; binary, operationally enforced) ---
+
+chorus:policy-working-hours a chorus:Policy ;
+    rdfs:label "Working window 6am–8pm Boston" ;
+    rdfs:comment "Default working window is 6am–8pm Boston time. Jeff's direction always overrides: do not question off-hour requests, do not ask Jeff about working-hour boundaries. The window is for self-initiated agent work when no direction has been given; when direction exists, execute it regardless of clock." ;
+    chorus:derivedFrom chorus:principle-protect-attention .
+
+chorus:policy-no-raw-process-kill a chorus:Policy ;
+    rdfs:label "No raw process killing" ;
+    rdfs:comment "Never `kill` PIDs directly, local or remote. Use launchctl kickstart for LaunchAgents, app-state.sh for the Gathering app lifecycle. LaunchAgent changes route through Silas." ;
+    chorus:derivedFrom chorus:principle-services-reliable-bounded-idempotent .
+
+chorus:policy-response-window-60s a chorus:Policy ;
+    rdfs:label "60-second pair heartbeat" ;
+    rdfs:comment "If your pair partner completes an AC item, you respond within 60 seconds. If you can't, emit a status (thinking, blocked on X). Silence = stall. DEC-1571 Attention Contract." ;
+    chorus:derivedFrom chorus:principle-protect-attention .
+
+chorus:policy-no-self-acp a chorus:Policy ;
+    rdfs:label "No self-accept on code cards" ;
+    rdfs:comment "Only Wren or Jeff can accept. The builder CANNOT mark their own code card Done. DEC-048 Proving Gate." ;
+    chorus:derivedFrom chorus:principle-services-reliable-bounded-idempotent .
+
+chorus:policy-chorus-search-first a chorus:Policy ;
+    rdfs:label "Chorus search before filesystem" ;
+    rdfs:comment "Search order: Chorus (/chorus search) → codebase graph → filesystem (Grep/Glob). Guard hook enforces. DEC-074." ;
+    chorus:derivedFrom chorus:principle-services-reliable-bounded-idempotent .
+
+# --- Policies (9 materialized 2026-04-22 for dangling practice→policy refs; #2348 sub-spike 3C) ---
+
+chorus:policy-tdd-gate a chorus:Policy ;
+    rdfs:label "TDD required before code" ;
+    rdfs:comment "Every code card must have failing tests (red) before production code is written. Enforced by tdd_gate.rs PreToolUse hook. DEC-1674." ;
+    chorus:derivedFrom chorus:principle-quality-at-source,
+                       chorus:principle-speed-and-quality-correlate .
+
+chorus:policy-demo-gate a chorus:Policy ;
+    rdfs:label "No accept without demo" ;
+    rdfs:comment "A code card cannot be marked Done without demo evidence. Builder cannot self-accept. DEC-048 Proving Gate. Enforced by demo_gate.rs hook and werk-accept (the GO step of chorus_werk)." ;
+    chorus:derivedFrom chorus:principle-apply-self-regulation-and-accept-feedback,
+                       chorus:principle-no-dark-work .
+
+chorus:policy-accept-gate a chorus:Policy ;
+    rdfs:label "Accept = Done + spine + commit + push" ;
+    rdfs:comment "An acceptance must complete all four: move card to Done, emit card.accepted spine event, commit changes via git-queue, push. Partial acceptance is not acceptance. Enforced by werk-accept (the GO step of chorus_werk; GO=accept, #3311)." ;
+    chorus:derivedFrom chorus:principle-artifacts,
+                       chorus:principle-no-dark-work .
+
+chorus:policy-handoff-logger a chorus:Policy ;
+    rdfs:label "Every cross-role handoff logged" ;
+    rdfs:comment "Briefs, nudges, gate-passes, and acceptances across roles must log to activity.md. If it's a handoff, it's traceable. Enforced by role discipline + future handoff-gate hook (not yet materialized)." ;
+    chorus:derivedFrom chorus:principle-artifacts,
+                       chorus:principle-no-dark-work .
+
+chorus:policy-demo-provenance a chorus:Policy ;
+    rdfs:label "Demo evidence is an artifact" ;
+    rdfs:comment "Every demo produces a durable artifact (brief file or card comment) identifying what was shown, by whom, when. Verbal-only demos do not satisfy the demo gate. Enforced by demo_gate.rs hook reading comments/briefs — #2177 migrates fully to card comments." ;
+    chorus:derivedFrom chorus:principle-artifacts,
+                       chorus:principle-no-dark-work .
+
+chorus:policy-nudge-blast-radius a chorus:Policy ;
+    rdfs:label "Nudge requires WIP context" ;
+    rdfs:comment "A nudge targeting a role carries the card context (WIP id if present, reason for interruption). Cross-domain nudges surface a warning. DEC-107 dual-path persist+deliver is the mechanism; blast-radius is the discipline around when it fires." ;
+    chorus:derivedFrom chorus:principle-protect-attention,
+                       chorus:principle-focus-is-infrastructure .
+
+chorus:policy-pair-enforcement a chorus:Policy ;
+    rdfs:label "Pair has navigator + driver, not spectators" ;
+    rdfs:comment "A /pair session has exactly one navigator and one driver. Navigator scopes; driver implements. Rotation checkpoints enforce turn-taking. Partner silence > 60s = stall signal (see policy-response-window-60s for the heartbeat). Enforced by /pair skill state + future pair-heartbeat-check skill (#2317)." ;
+    chorus:derivedFrom chorus:principle-comprehension-is-the-rate-limit,
+                       chorus:principle-integrate-rather-than-segregate .
+
+chorus:policy-icd-write-gate a chorus:Policy ;
+    rdfs:label "No harvester without ICD provider" ;
+    rdfs:comment "A harvester service file (harvest-*.sh, *-harvester.service.ts) cannot be written if the domain has no ICD provider section in urn:gathering:icd/current. Populate the ICD first, then code. DEC-095. Enforced by icd-gate-hook.sh PreToolUse hook." ;
+    chorus:derivedFrom chorus:principle-services-reliable-bounded-idempotent,
+                       chorus:principle-no-dark-work .
+
+chorus:policy-quality-gate a chorus:Policy ;
+    rdfs:label "Quality gate required before demo" ;
+    rdfs:comment "Quality gate (hooks pass, no regression, no console.log in production code) must pass before /demo is called on a code card. Kade-owned. Enforced by /gate-quality skill + quality_gate.rs hook integration." ;
+    chorus:derivedFrom chorus:principle-quality-at-source,
+                       chorus:principle-produce-no-waste .
+
+# #4216 — appended 2026-09-20. These rows were still authored in a MODEL_SET file
+# (the first sweep checked the wrong file list and reported zero, which is the
+# hollow-check shape this card is full of), so they were still being re-created in
+# urn:chorus:ontology on every model deploy.
+
+@prefix chorus: <https://jeffbridwell.com/chorus#> .
+@prefix owl:    <http://www.w3.org/2002/07/owl#> .
+@prefix rdfs:   <http://www.w3.org/2000/01/rdf-schema#> .
+@prefix xsd:    <http://www.w3.org/2001/XMLSchema#> .
+
+# =============================================================================
+# English-only policy (#4077) — Jeff, 2026-09-02: "i think we need an english
+# only policy" / "we have a policy domain" / "use english not ainglish".
+#
+# Jeff, same evening, on a banned-word list as the enforcement: "not sure a
+# banned word list is poiesis" — "take it out". A list is a fence, not the
+# making; it can only catch words that already failed once. So this policy has
+# NO word list and NO gate. It is the rule, derived from its principle, read by
+# every role at session start with the rest of the policies domain.
+# =============================================================================
+
+chorus:policy-english-only a chorus:Policy ;
+    rdfs:label "English only" ;
+    rdfs:comment "A reply to Jeff uses words a colleague with no context would follow. Name the specific file, service, count or person; never a name the team coined, never a borrowed architecture word standing in for the thing. If the specific thing cannot be named, say so. Enforced by reading, not by a filter: Jeff says \"ainglish\" and the reply is rewritten in that turn." ;
+    chorus:derivedFrom chorus:principle-comprehension-is-the-rate-limit .
