@@ -944,6 +944,10 @@ struct Parsed {
 
 /// The authored unit → domain rows, relative to the tree root (#4084).
 const UNIT_DOMAIN_TTL: &str = "roles/silas/ontology/unit-domain-4084.ttl";
+/// #4222 — the authored route → domain and log-file → domain rows. Beside the
+/// unit rows, for the same reason: a mapping only a build can change is not a
+/// model. An unmapped surface is reported unplaced, never defaulted.
+const SURFACE_DOMAIN_TTL: &str = "roles/kade/ontology/surface-domain-4222.ttl";
 
 fn parse_cases(
     root: &str,
@@ -1503,6 +1507,15 @@ fn main() {
     }
     let cc = cases::case_counts(&case_actions);
 
+    // #4222 — the authored surface rows, read once. Two keys, one file:
+    // `chorus:routePath` for an endpoint, `chorus:logFileName` for a log file.
+    // A missing file is not a default — it is zero rows, and every surface that
+    // needed one is reported unplaced by name.
+    let surface_ttl =
+        std::fs::read_to_string(format!("{root}/{SURFACE_DOMAIN_TTL}")).unwrap_or_default();
+    let route_rows = domain::surface_domain_rows(&surface_ttl, "chorus:routePath");
+    let log_file_rows = domain::surface_domain_rows(&surface_ttl, "chorus:logFileName");
+
     // #4199 — the log leg: every log file the box writes has a LogSource row.
     // A full pass refreshes the rows it owns; a delta adds and retires only.
     let log_files = box_log_files(&root);
@@ -1649,7 +1662,7 @@ fn main() {
             &want_endpoints,
             &endpoint_graph,
             &|r: &pages::EndpointRow| format!("{} {}", r.http_method, r.route_path),
-            &|r: &pages::EndpointRow| pages::endpoint_domain(&r.route_path, &valid_domains)
+            &|r: &pages::EndpointRow| pages::endpoint_domain(&r.route_path, &valid_domains, &route_rows)
                 .or_else(|| place_row(&root, &r.path, &unit_rows, &valid_domains, &card_domain)),
             full,
         );
@@ -1967,7 +1980,7 @@ fn main() {
                     fields.extend(row.owned_fields(&machine, observed));
                     // #4222 — the domain the log belongs to, from the job that
                     // writes it and the file's own name. No tag when neither says.
-                    if let Some(d) = log_domain(&row.launchd_label, &row.path, &valid_domains) {
+                    if let Some(d) = log_domain(&row.launchd_label, &row.path, &valid_domains, &log_file_rows) {
                         fields.push(("hasDomain".to_string(), d));
                     }
                     let body = fields_json(&fields);
@@ -1985,7 +1998,7 @@ fn main() {
                         .map(|g| g.fields.as_slice())
                         .unwrap_or(&[]);
                     let mut owned = row.owned_fields(&machine, observed);
-                    if let Some(d) = log_domain(&row.launchd_label, &row.path, &valid_domains) {
+                    if let Some(d) = log_domain(&row.launchd_label, &row.path, &valid_domains, &log_file_rows) {
                         owned.push(("hasDomain".to_string(), d));
                     }
                     let mut fields = merge_row(existing, &owned);
@@ -2063,7 +2076,7 @@ fn main() {
                         pages::RowAction::Post(row) => {
                             // #4222 — an endpoint's own route is the better
                             // signal; the file it sits in is the fallback.
-                            let d = pages::endpoint_domain(&row.route_path, &valid_domains)
+                            let d = pages::endpoint_domain(&row.route_path, &valid_domains, &route_rows)
                                 .or_else(|| place_row(&root, &row.path, &unit_rows, &valid_domains, &card_domain));
                             let body = fields_json(&endpoint_fields(row, d.as_deref()));
                             if !batch_accepts(batch_bytes(&ebatch), body.len(), BATCH_BODY_BUDGET) || ebatch.len() >= 200 {
@@ -2072,7 +2085,7 @@ fn main() {
                             ebatch.push(body);
                         }
                         pages::RowAction::Replace { name, row } => {
-                            let d = pages::endpoint_domain(&row.route_path, &valid_domains)
+                            let d = pages::endpoint_domain(&row.route_path, &valid_domains, &route_rows)
                                 .or_else(|| place_row(&root, &row.path, &unit_rows, &valid_domains, &card_domain));
                             let existing: &[(String, String)] = endpoint_in_graph
                                 .get(name.as_str())

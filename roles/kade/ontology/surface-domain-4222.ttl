@@ -1,0 +1,747 @@
+@prefix chorus: <https://jeffbridwell.com/chorus#> .
+@prefix rdfs: <http://www.w3.org/2000/01/rdf-schema#> .
+
+# #4222 — AUTHORED route → domain and log-file → domain rows.
+#
+# These were 146 constants compiled into chorus-crawl. They are guesses, and a guess
+# that only Kade can change, only by a build and a land, is not a model — it is a hack
+# with a test around it. Jeff, 2026-09-19: "this feels like a hack". So they live here,
+# beside the unit rows (#4084), where Wren and Silas correct them as data.
+#
+# OWNERSHIP: the rows are cross-role — routes and log files belong to the domains
+# Wren and Silas own, and either of them edits this file directly. It sits under
+# roles/kade/ontology/ only because #4222 was Kade's card; it belongs beside
+# unit-domain-4084.ttl and should move there when either of them next touches it.
+#
+# A route or log file with no row here is UNPLACED and reported by name. There is no
+# default and no fallback: an unmapped surface is a red, never a guess.
+
+chorus:routedomain-root a chorus:UnitDomainMapping ;
+    rdfs:label "/ → products" ;
+    chorus:routePath "/" ;
+    chorus:hasDomain chorus:products .
+
+chorus:routedomain-api-chorus-attention-analytics a chorus:UnitDomainMapping ;
+    rdfs:label "/api/chorus/attention-analytics → analytics" ;
+    chorus:routePath "/api/chorus/attention-analytics" ;
+    chorus:hasDomain chorus:analytics .
+
+chorus:routedomain-api-chorus-card-story-id a chorus:UnitDomainMapping ;
+    rdfs:label "/api/chorus/card-story/:id → cards" ;
+    chorus:routePath "/api/chorus/card-story/:id" ;
+    chorus:hasDomain chorus:cards .
+
+chorus:routedomain-api-chorus-codebase-topology a chorus:UnitDomainMapping ;
+    rdfs:label "/api/chorus/codebase/topology → code" ;
+    chorus:routePath "/api/chorus/codebase/topology" ;
+    chorus:hasDomain chorus:code .
+
+chorus:routedomain-api-chorus-conversation a chorus:UnitDomainMapping ;
+    rdfs:label "/api/chorus/conversation → messages" ;
+    chorus:routePath "/api/chorus/conversation" ;
+    chorus:hasDomain chorus:messages .
+
+chorus:routedomain-api-chorus-crawl-domain a chorus:UnitDomainMapping ;
+    rdfs:label "/api/chorus/crawl/:domain → code" ;
+    chorus:routePath "/api/chorus/crawl/:domain" ;
+    chorus:hasDomain chorus:code .
+
+chorus:routedomain-api-chorus-disk a chorus:UnitDomainMapping ;
+    rdfs:label "/api/chorus/disk → infrastructure" ;
+    chorus:routePath "/api/chorus/disk" ;
+    chorus:hasDomain chorus:infrastructure .
+
+chorus:routedomain-api-chorus-domain-story-domain a chorus:UnitDomainMapping ;
+    rdfs:label "/api/chorus/domain-story/:domain → domains" ;
+    chorus:routePath "/api/chorus/domain-story/:domain" ;
+    chorus:hasDomain chorus:domains .
+
+chorus:routedomain-api-chorus-fitness-summary a chorus:UnitDomainMapping ;
+    rdfs:label "/api/chorus/fitness/summary → metrics" ;
+    chorus:routePath "/api/chorus/fitness/summary" ;
+    chorus:hasDomain chorus:metrics .
+
+chorus:routedomain-api-chorus-freshness a chorus:UnitDomainMapping ;
+    rdfs:label "/api/chorus/freshness → metrics" ;
+    chorus:routePath "/api/chorus/freshness" ;
+    chorus:hasDomain chorus:metrics .
+
+chorus:routedomain-api-chorus-harvest a chorus:UnitDomainMapping ;
+    rdfs:label "/api/chorus/harvest → integrations" ;
+    chorus:routePath "/api/chorus/harvest" ;
+    chorus:hasDomain chorus:integrations .
+
+chorus:routedomain-api-chorus-jeff-posture-strip a chorus:UnitDomainMapping ;
+    rdfs:label "/api/chorus/jeff/posture/strip → roles" ;
+    chorus:routePath "/api/chorus/jeff/posture/strip" ;
+    chorus:hasDomain chorus:roles .
+
+chorus:routedomain-api-chorus-patterns-summary a chorus:UnitDomainMapping ;
+    rdfs:label "/api/chorus/patterns/summary → analytics" ;
+    chorus:routePath "/api/chorus/patterns/summary" ;
+    chorus:hasDomain chorus:analytics .
+
+chorus:routedomain-api-chorus-perf a chorus:UnitDomainMapping ;
+    rdfs:label "/api/chorus/perf → metrics" ;
+    chorus:routePath "/api/chorus/perf" ;
+    chorus:hasDomain chorus:metrics .
+
+chorus:routedomain-api-chorus-reconcile a chorus:UnitDomainMapping ;
+    rdfs:label "/api/chorus/reconcile → code" ;
+    chorus:routePath "/api/chorus/reconcile" ;
+    chorus:hasDomain chorus:code .
+
+chorus:routedomain-api-chorus-refs a chorus:UnitDomainMapping ;
+    rdfs:label "/api/chorus/refs → knowledge" ;
+    chorus:routePath "/api/chorus/refs" ;
+    chorus:hasDomain chorus:knowledge .
+
+chorus:routedomain-api-chorus-reprompt-analytics a chorus:UnitDomainMapping ;
+    rdfs:label "/api/chorus/reprompt-analytics → analytics" ;
+    chorus:routePath "/api/chorus/reprompt-analytics" ;
+    chorus:hasDomain chorus:analytics .
+
+chorus:routedomain-api-chorus-security-fitness a chorus:UnitDomainMapping ;
+    rdfs:label "/api/chorus/security-fitness → security" ;
+    chorus:routePath "/api/chorus/security-fitness" ;
+    chorus:hasDomain chorus:security .
+
+chorus:routedomain-api-chorus-seed-media-filename a chorus:UnitDomainMapping ;
+    rdfs:label "/api/chorus/seed-media/:filename → memory" ;
+    chorus:routePath "/api/chorus/seed-media/:filename" ;
+    chorus:hasDomain chorus:memory .
+
+chorus:routedomain-api-chorus-seeds a chorus:UnitDomainMapping ;
+    rdfs:label "/api/chorus/seeds → memory" ;
+    chorus:routePath "/api/chorus/seeds" ;
+    chorus:hasDomain chorus:memory .
+
+chorus:routedomain-api-chorus-self a chorus:UnitDomainMapping ;
+    rdfs:label "/api/chorus/self → roles" ;
+    chorus:routePath "/api/chorus/self" ;
+    chorus:hasDomain chorus:roles .
+
+chorus:routedomain-api-chorus-stats a chorus:UnitDomainMapping ;
+    rdfs:label "/api/chorus/stats → metrics" ;
+    chorus:routePath "/api/chorus/stats" ;
+    chorus:hasDomain chorus:metrics .
+
+chorus:routedomain-api-chorus-test-run-latest a chorus:UnitDomainMapping ;
+    rdfs:label "/api/chorus/test-run/latest → tests" ;
+    chorus:routePath "/api/chorus/test-run/latest" ;
+    chorus:hasDomain chorus:tests .
+
+chorus:routedomain-api-chorus-ui-pages a chorus:UnitDomainMapping ;
+    rdfs:label "/api/chorus/ui-pages → code" ;
+    chorus:routePath "/api/chorus/ui-pages" ;
+    chorus:hasDomain chorus:code .
+
+chorus:routedomain-api-chorus-voice-analytics a chorus:UnitDomainMapping ;
+    rdfs:label "/api/chorus/voice-analytics → analytics" ;
+    chorus:routePath "/api/chorus/voice-analytics" ;
+    chorus:hasDomain chorus:analytics .
+
+chorus:routedomain-api-chorus-werk-activity a chorus:UnitDomainMapping ;
+    rdfs:label "/api/chorus/werk/activity → cicd" ;
+    chorus:routePath "/api/chorus/werk/activity" ;
+    chorus:hasDomain chorus:cicd .
+
+chorus:routedomain-api-doc-catalog a chorus:UnitDomainMapping ;
+    rdfs:label "/api/doc-catalog → knowledge" ;
+    chorus:routePath "/api/doc-catalog" ;
+    chorus:hasDomain chorus:knowledge .
+
+chorus:routedomain-api-doc-catalog-add a chorus:UnitDomainMapping ;
+    rdfs:label "/api/doc-catalog/add → knowledge" ;
+    chorus:routePath "/api/doc-catalog/add" ;
+    chorus:hasDomain chorus:knowledge .
+
+chorus:routedomain-api-doc-catalog-link a chorus:UnitDomainMapping ;
+    rdfs:label "/api/doc-catalog/link → knowledge" ;
+    chorus:routePath "/api/doc-catalog/link" ;
+    chorus:hasDomain chorus:knowledge .
+
+chorus:routedomain-api-doc-catalog-tags a chorus:UnitDomainMapping ;
+    rdfs:label "/api/doc-catalog/tags → knowledge" ;
+    chorus:routePath "/api/doc-catalog/tags" ;
+    chorus:hasDomain chorus:knowledge .
+
+chorus:routedomain-api-doc-catalog-tree a chorus:UnitDomainMapping ;
+    rdfs:label "/api/doc-catalog/tree → knowledge" ;
+    chorus:routePath "/api/doc-catalog/tree" ;
+    chorus:hasDomain chorus:knowledge .
+
+chorus:routedomain-api-doc-inventory a chorus:UnitDomainMapping ;
+    rdfs:label "/api/doc-inventory → knowledge" ;
+    chorus:routePath "/api/doc-inventory" ;
+    chorus:hasDomain chorus:knowledge .
+
+chorus:routedomain-api-loom-analytics a chorus:UnitDomainMapping ;
+    rdfs:label "/api/loom-analytics → analytics" ;
+    chorus:routePath "/api/loom-analytics" ;
+    chorus:hasDomain chorus:analytics .
+
+chorus:routedomain-api-loom-metrics a chorus:UnitDomainMapping ;
+    rdfs:label "/api/loom-metrics → metrics" ;
+    chorus:routePath "/api/loom-metrics" ;
+    chorus:hasDomain chorus:metrics .
+
+chorus:routedomain-api-photos a chorus:UnitDomainMapping ;
+    rdfs:label "/api/photos → products" ;
+    chorus:routePath "/api/photos" ;
+    chorus:hasDomain chorus:products .
+
+chorus:routedomain-api-photos-count a chorus:UnitDomainMapping ;
+    rdfs:label "/api/photos/count → products" ;
+    chorus:routePath "/api/photos/count" ;
+    chorus:hasDomain chorus:products .
+
+chorus:routedomain-api-photos-set a chorus:UnitDomainMapping ;
+    rdfs:label "/api/photos/set → products" ;
+    chorus:routePath "/api/photos/set" ;
+    chorus:hasDomain chorus:products .
+
+chorus:routedomain-api-playlists a chorus:UnitDomainMapping ;
+    rdfs:label "/api/playlists → products" ;
+    chorus:routePath "/api/playlists" ;
+    chorus:hasDomain chorus:products .
+
+chorus:routedomain-api-playlists-add a chorus:UnitDomainMapping ;
+    rdfs:label "/api/playlists/add → products" ;
+    chorus:routePath "/api/playlists/add" ;
+    chorus:hasDomain chorus:products .
+
+chorus:routedomain-api-playlists-remove a chorus:UnitDomainMapping ;
+    rdfs:label "/api/playlists/remove → products" ;
+    chorus:routePath "/api/playlists/remove" ;
+    chorus:hasDomain chorus:products .
+
+chorus:routedomain-api-proxy-image a chorus:UnitDomainMapping ;
+    rdfs:label "/api/proxy/image → products" ;
+    chorus:routePath "/api/proxy/image" ;
+    chorus:hasDomain chorus:products .
+
+chorus:routedomain-api-proxy-video a chorus:UnitDomainMapping ;
+    rdfs:label "/api/proxy/video → products" ;
+    chorus:routePath "/api/proxy/video" ;
+    chorus:hasDomain chorus:products .
+
+chorus:routedomain-api-video-tags a chorus:UnitDomainMapping ;
+    rdfs:label "/api/video-tags → products" ;
+    chorus:routePath "/api/video-tags" ;
+    chorus:hasDomain chorus:products .
+
+chorus:routedomain-api-videos a chorus:UnitDomainMapping ;
+    rdfs:label "/api/videos → products" ;
+    chorus:routePath "/api/videos" ;
+    chorus:hasDomain chorus:products .
+
+chorus:routedomain-api-videos-list a chorus:UnitDomainMapping ;
+    rdfs:label "/api/videos/list → products" ;
+    chorus:routePath "/api/videos/list" ;
+    chorus:hasDomain chorus:products .
+
+chorus:routedomain-api-werk-activity a chorus:UnitDomainMapping ;
+    rdfs:label "/api/werk/activity → cicd" ;
+    chorus:routePath "/api/werk/activity" ;
+    chorus:hasDomain chorus:cicd .
+
+chorus:routedomain-api-werk-schema a chorus:UnitDomainMapping ;
+    rdfs:label "/api/werk/schema → cicd" ;
+    chorus:routePath "/api/werk/schema" ;
+    chorus:hasDomain chorus:cicd .
+
+chorus:routedomain-borg-assessment a chorus:UnitDomainMapping ;
+    rdfs:label "/borg-assessment → analytics" ;
+    chorus:routePath "/borg-assessment" ;
+    chorus:hasDomain chorus:analytics .
+
+chorus:routedomain-chorus a chorus:UnitDomainMapping ;
+    rdfs:label "/chorus → products" ;
+    chorus:routePath "/chorus" ;
+    chorus:hasDomain chorus:products .
+
+chorus:routedomain-chorus-model-data a chorus:UnitDomainMapping ;
+    rdfs:label "/chorus-model-data → domains" ;
+    chorus:routePath "/chorus-model-data" ;
+    chorus:hasDomain chorus:domains .
+
+chorus:routedomain-chorus-system a chorus:UnitDomainMapping ;
+    rdfs:label "/chorus/system → services" ;
+    chorus:routePath "/chorus/system" ;
+    chorus:hasDomain chorus:services .
+
+chorus:routedomain-clearing a chorus:UnitDomainMapping ;
+    rdfs:label "/clearing → messages" ;
+    chorus:routePath "/clearing" ;
+    chorus:hasDomain chorus:messages .
+
+chorus:routedomain-flow a chorus:UnitDomainMapping ;
+    rdfs:label "/flow → value-streams" ;
+    chorus:routePath "/flow" ;
+    chorus:hasDomain chorus:value-streams .
+
+chorus:routedomain-harvest-manifests a chorus:UnitDomainMapping ;
+    rdfs:label "/harvest-manifests → integrations" ;
+    chorus:routePath "/harvest-manifests" ;
+    chorus:hasDomain chorus:integrations .
+
+chorus:routedomain-harvesting-convergence a chorus:UnitDomainMapping ;
+    rdfs:label "/harvesting/convergence → integrations" ;
+    chorus:routePath "/harvesting/convergence" ;
+    chorus:hasDomain chorus:integrations .
+
+chorus:routedomain-harvesting-icd a chorus:UnitDomainMapping ;
+    rdfs:label "/harvesting/icd → integrations" ;
+    chorus:routePath "/harvesting/icd" ;
+    chorus:hasDomain chorus:integrations .
+
+chorus:routedomain-harvesting-mapper a chorus:UnitDomainMapping ;
+    rdfs:label "/harvesting/mapper → integrations" ;
+    chorus:routePath "/harvesting/mapper" ;
+    chorus:hasDomain chorus:integrations .
+
+chorus:routedomain-loom a chorus:UnitDomainMapping ;
+    rdfs:label "/loom → principles" ;
+    chorus:routePath "/loom" ;
+    chorus:hasDomain chorus:principles .
+
+chorus:routedomain-loom-role a chorus:UnitDomainMapping ;
+    rdfs:label "/loom/:role → principles" ;
+    chorus:routePath "/loom/:role" ;
+    chorus:hasDomain chorus:principles .
+
+chorus:routedomain-model-data a chorus:UnitDomainMapping ;
+    rdfs:label "/model-data → domains" ;
+    chorus:routePath "/model-data" ;
+    chorus:hasDomain chorus:domains .
+
+chorus:routedomain-ontology-views-domain a chorus:UnitDomainMapping ;
+    rdfs:label "/ontology-views/:domain → domains" ;
+    chorus:routePath "/ontology-views/:domain" ;
+    chorus:hasDomain chorus:domains .
+
+chorus:routedomain-test-run a chorus:UnitDomainMapping ;
+    rdfs:label "/test-run → tests" ;
+    chorus:routePath "/test-run" ;
+    chorus:hasDomain chorus:tests .
+
+chorus:routedomain-werk a chorus:UnitDomainMapping ;
+    rdfs:label "/werk → cicd" ;
+    chorus:routePath "/werk" ;
+    chorus:hasDomain chorus:cicd .
+
+chorus:routedomain-x a chorus:UnitDomainMapping ;
+    rdfs:label "/x → products" ;
+    chorus:routePath "/x" ;
+    chorus:hasDomain chorus:products .
+
+chorus:routedomain-api-chorus-alert a chorus:UnitDomainMapping ;
+    rdfs:label "/api/chorus/alert → alerts" ;
+    chorus:routePath "/api/chorus/alert" ;
+    chorus:hasDomain chorus:alerts .
+
+chorus:routedomain-api-chorus-embed a chorus:UnitDomainMapping ;
+    rdfs:label "/api/chorus/embed → search" ;
+    chorus:routePath "/api/chorus/embed" ;
+    chorus:hasDomain chorus:search .
+
+chorus:routedomain-api-chorus-index a chorus:UnitDomainMapping ;
+    rdfs:label "/api/chorus/index → search" ;
+    chorus:routePath "/api/chorus/index" ;
+    chorus:hasDomain chorus:search .
+
+chorus:routedomain-api-chorus-open a chorus:UnitDomainMapping ;
+    rdfs:label "/api/chorus/open → toolchain" ;
+    chorus:routePath "/api/chorus/open" ;
+    chorus:hasDomain chorus:toolchain .
+
+chorus:routedomain-api-chorus-rca a chorus:UnitDomainMapping ;
+    rdfs:label "/api/chorus/rca → rcas" ;
+    chorus:routePath "/api/chorus/rca" ;
+    chorus:hasDomain chorus:rcas .
+
+chorus:routedomain-api-chorus-reindex a chorus:UnitDomainMapping ;
+    rdfs:label "/api/chorus/reindex → search" ;
+    chorus:routePath "/api/chorus/reindex" ;
+    chorus:hasDomain chorus:search .
+
+chorus:routedomain-api-chorus-role-state a chorus:UnitDomainMapping ;
+    rdfs:label "/api/chorus/role-state → roles" ;
+    chorus:routePath "/api/chorus/role-state" ;
+    chorus:hasDomain chorus:roles .
+
+chorus:routedomain-api-chorus-spine-event a chorus:UnitDomainMapping ;
+    rdfs:label "/api/chorus/spine-event → spine" ;
+    chorus:routePath "/api/chorus/spine-event" ;
+    chorus:hasDomain chorus:spine .
+
+chorus:routedomain-api-chorus-voice-role a chorus:UnitDomainMapping ;
+    rdfs:label "/api/chorus/voice/:role → messages" ;
+    chorus:routePath "/api/chorus/voice/:role" ;
+    chorus:hasDomain chorus:messages .
+
+chorus:routedomain-sparql-read a chorus:UnitDomainMapping ;
+    rdfs:label "/sparql-read → knowledge" ;
+    chorus:routePath "/sparql-read" ;
+    chorus:hasDomain chorus:knowledge .
+
+chorus:logdomain-chorus-log a chorus:UnitDomainMapping ;
+    rdfs:label "chorus.log → spine" ;
+    chorus:logFileName "chorus.log" ;
+    chorus:hasDomain chorus:spine .
+
+chorus:logdomain-buzz-tunnel-err-log a chorus:UnitDomainMapping ;
+    rdfs:label "buzz-tunnel.err.log → integrations" ;
+    chorus:logFileName "buzz-tunnel.err.log" ;
+    chorus:hasDomain chorus:integrations .
+
+chorus:logdomain-watcher-log a chorus:UnitDomainMapping ;
+    rdfs:label "watcher.log → monitors" ;
+    chorus:logFileName "watcher.log" ;
+    chorus:hasDomain chorus:monitors .
+
+chorus:logdomain-building-pipeline-log a chorus:UnitDomainMapping ;
+    rdfs:label "building-pipeline.log → builds" ;
+    chorus:logFileName "building-pipeline.log" ;
+    chorus:hasDomain chorus:builds .
+
+chorus:logdomain-caddy-log a chorus:UnitDomainMapping ;
+    rdfs:label "caddy.log → infrastructure" ;
+    chorus:logFileName "caddy.log" ;
+    chorus:hasDomain chorus:infrastructure .
+
+chorus:logdomain-caddy-stderr-log a chorus:UnitDomainMapping ;
+    rdfs:label "caddy-stderr.log → infrastructure" ;
+    chorus:logFileName "caddy-stderr.log" ;
+    chorus:hasDomain chorus:infrastructure .
+
+chorus:logdomain-caddy-stdout-log a chorus:UnitDomainMapping ;
+    rdfs:label "caddy-stdout.log → infrastructure" ;
+    chorus:logFileName "caddy-stdout.log" ;
+    chorus:hasDomain chorus:infrastructure .
+
+chorus:logdomain-edge-caddy-log a chorus:UnitDomainMapping ;
+    rdfs:label "edge-caddy.log → infrastructure" ;
+    chorus:logFileName "edge-caddy.log" ;
+    chorus:hasDomain chorus:infrastructure .
+
+chorus:logdomain-edge-caddy-access-log a chorus:UnitDomainMapping ;
+    rdfs:label "edge-caddy-access.log → infrastructure" ;
+    chorus:logFileName "edge-caddy-access.log" ;
+    chorus:hasDomain chorus:infrastructure .
+
+chorus:logdomain-chorus-api-log a chorus:UnitDomainMapping ;
+    rdfs:label "chorus-api.log → services" ;
+    chorus:logFileName "chorus-api.log" ;
+    chorus:hasDomain chorus:services .
+
+chorus:logdomain-chorus-mcp-log a chorus:UnitDomainMapping ;
+    rdfs:label "chorus-mcp.log → toolchain" ;
+    chorus:logFileName "chorus-mcp.log" ;
+    chorus:hasDomain chorus:toolchain .
+
+chorus:logdomain-chorus-ops-log a chorus:UnitDomainMapping ;
+    rdfs:label "chorus-ops.log → services" ;
+    chorus:logFileName "chorus-ops.log" ;
+    chorus:hasDomain chorus:services .
+
+chorus:logdomain-chorus-shim-debug-log a chorus:UnitDomainMapping ;
+    rdfs:label "chorus-shim-debug.log → spine" ;
+    chorus:logFileName "chorus-shim-debug.log" ;
+    chorus:hasDomain chorus:spine .
+
+chorus:logdomain-shim-wrapper-log a chorus:UnitDomainMapping ;
+    rdfs:label "shim-wrapper.log → spine" ;
+    chorus:logFileName "shim-wrapper.log" ;
+    chorus:hasDomain chorus:spine .
+
+chorus:logdomain-context-cache-5min-err a chorus:UnitDomainMapping ;
+    rdfs:label "context-cache-5min.err → knowledge" ;
+    chorus:logFileName "context-cache-5min.err" ;
+    chorus:hasDomain chorus:knowledge .
+
+chorus:logdomain-context-cache-5min-log a chorus:UnitDomainMapping ;
+    rdfs:label "context-cache-5min.log → knowledge" ;
+    chorus:logFileName "context-cache-5min.log" ;
+    chorus:hasDomain chorus:knowledge .
+
+chorus:logdomain-context-cache-daily-err a chorus:UnitDomainMapping ;
+    rdfs:label "context-cache-daily.err → knowledge" ;
+    chorus:logFileName "context-cache-daily.err" ;
+    chorus:hasDomain chorus:knowledge .
+
+chorus:logdomain-context-cache-daily-log a chorus:UnitDomainMapping ;
+    rdfs:label "context-cache-daily.log → knowledge" ;
+    chorus:logFileName "context-cache-daily.log" ;
+    chorus:hasDomain chorus:knowledge .
+
+chorus:logdomain-context-cache-hourly-err a chorus:UnitDomainMapping ;
+    rdfs:label "context-cache-hourly.err → knowledge" ;
+    chorus:logFileName "context-cache-hourly.err" ;
+    chorus:hasDomain chorus:knowledge .
+
+chorus:logdomain-context-cache-hourly-log a chorus:UnitDomainMapping ;
+    rdfs:label "context-cache-hourly.log → knowledge" ;
+    chorus:logFileName "context-cache-hourly.log" ;
+    chorus:hasDomain chorus:knowledge .
+
+chorus:logdomain-context-cache-weekly-log a chorus:UnitDomainMapping ;
+    rdfs:label "context-cache-weekly.log → knowledge" ;
+    chorus:logFileName "context-cache-weekly.log" ;
+    chorus:hasDomain chorus:knowledge .
+
+chorus:logdomain-context-cache-5min-err-log a chorus:UnitDomainMapping ;
+    rdfs:label "context-cache-5min-err.log → knowledge" ;
+    chorus:logFileName "context-cache-5min-err.log" ;
+    chorus:hasDomain chorus:knowledge .
+
+chorus:logdomain-context-cache-hourly-err-log a chorus:UnitDomainMapping ;
+    rdfs:label "context-cache-hourly-err.log → knowledge" ;
+    chorus:logFileName "context-cache-hourly-err.log" ;
+    chorus:hasDomain chorus:knowledge .
+
+chorus:logdomain-cruft-scan-log a chorus:UnitDomainMapping ;
+    rdfs:label "cruft-scan.log → infrastructure" ;
+    chorus:logFileName "cruft-scan.log" ;
+    chorus:hasDomain chorus:infrastructure .
+
+chorus:logdomain-disk-trend-log a chorus:UnitDomainMapping ;
+    rdfs:label "disk-trend.log → infrastructure" ;
+    chorus:logFileName "disk-trend.log" ;
+    chorus:hasDomain chorus:infrastructure .
+
+chorus:logdomain-tmp-reaper-log a chorus:UnitDomainMapping ;
+    rdfs:label "tmp-reaper.log → infrastructure" ;
+    chorus:logFileName "tmp-reaper.log" ;
+    chorus:hasDomain chorus:infrastructure .
+
+chorus:logdomain-restore-drill-log a chorus:UnitDomainMapping ;
+    rdfs:label "restore-drill.log → infrastructure" ;
+    chorus:logFileName "restore-drill.log" ;
+    chorus:hasDomain chorus:infrastructure .
+
+chorus:logdomain-cloudflared-log a chorus:UnitDomainMapping ;
+    rdfs:label "cloudflared.log → infrastructure" ;
+    chorus:logFileName "cloudflared.log" ;
+    chorus:hasDomain chorus:infrastructure .
+
+chorus:logdomain-tm-thin-log a chorus:UnitDomainMapping ;
+    rdfs:label "tm-thin.log → infrastructure" ;
+    chorus:logFileName "tm-thin.log" ;
+    chorus:hasDomain chorus:infrastructure .
+
+chorus:logdomain-mysql-log a chorus:UnitDomainMapping ;
+    rdfs:label "mysql.log → infrastructure" ;
+    chorus:logFileName "mysql.log" ;
+    chorus:hasDomain chorus:infrastructure .
+
+chorus:logdomain-mysqld-exporter-log a chorus:UnitDomainMapping ;
+    rdfs:label "mysqld-exporter.log → infrastructure" ;
+    chorus:logFileName "mysqld-exporter.log" ;
+    chorus:hasDomain chorus:infrastructure .
+
+chorus:logdomain-graph-hydrate-log a chorus:UnitDomainMapping ;
+    rdfs:label "graph-hydrate.log → domains" ;
+    chorus:logFileName "graph-hydrate.log" ;
+    chorus:hasDomain chorus:domains .
+
+chorus:logdomain-owl-api-log a chorus:UnitDomainMapping ;
+    rdfs:label "owl-api.log → domains" ;
+    chorus:logFileName "owl-api.log" ;
+    chorus:hasDomain chorus:domains .
+
+chorus:logdomain-jeff-input-monitor-log a chorus:UnitDomainMapping ;
+    rdfs:label "jeff-input-monitor.log → messages" ;
+    chorus:logFileName "jeff-input-monitor.log" ;
+    chorus:hasDomain chorus:messages .
+
+chorus:logdomain-messaging-log a chorus:UnitDomainMapping ;
+    rdfs:label "messaging.log → messages" ;
+    chorus:logFileName "messaging.log" ;
+    chorus:hasDomain chorus:messages .
+
+chorus:logdomain-mcp-config-herald-log a chorus:UnitDomainMapping ;
+    rdfs:label "mcp-config-herald.log → heralds" ;
+    chorus:logFileName "mcp-config-herald.log" ;
+    chorus:hasDomain chorus:heralds .
+
+chorus:logdomain-nightly-coverage-log a chorus:UnitDomainMapping ;
+    rdfs:label "nightly-coverage.log → tests" ;
+    chorus:logFileName "nightly-coverage.log" ;
+    chorus:hasDomain chorus:tests .
+
+chorus:logdomain-nightly-suites-log a chorus:UnitDomainMapping ;
+    rdfs:label "nightly-suites.log → tests" ;
+    chorus:logFileName "nightly-suites.log" ;
+    chorus:hasDomain chorus:tests .
+
+chorus:logdomain-product-membrane-log a chorus:UnitDomainMapping ;
+    rdfs:label "product-membrane.log → tests" ;
+    chorus:logFileName "product-membrane.log" ;
+    chorus:hasDomain chorus:tests .
+
+chorus:logdomain-perf-baseline-nightly-log a chorus:UnitDomainMapping ;
+    rdfs:label "perf-baseline-nightly.log → metrics" ;
+    chorus:logFileName "perf-baseline-nightly.log" ;
+    chorus:hasDomain chorus:metrics .
+
+chorus:logdomain-perf-baseline-log a chorus:UnitDomainMapping ;
+    rdfs:label "perf-baseline.log → metrics" ;
+    chorus:logFileName "perf-baseline.log" ;
+    chorus:hasDomain chorus:metrics .
+
+chorus:logdomain-prometheus-log a chorus:UnitDomainMapping ;
+    rdfs:label "prometheus.log → metrics" ;
+    chorus:logFileName "prometheus.log" ;
+    chorus:hasDomain chorus:metrics .
+
+chorus:logdomain-posture-capture-log a chorus:UnitDomainMapping ;
+    rdfs:label "posture-capture.log → roles" ;
+    chorus:logFileName "posture-capture.log" ;
+    chorus:hasDomain chorus:roles .
+
+chorus:logdomain-role-state-reconciler-log a chorus:UnitDomainMapping ;
+    rdfs:label "role-state-reconciler.log → roles" ;
+    chorus:logFileName "role-state-reconciler.log" ;
+    chorus:hasDomain chorus:roles .
+
+chorus:logdomain-share-guard-log a chorus:UnitDomainMapping ;
+    rdfs:label "share-guard.log → security" ;
+    chorus:logFileName "share-guard.log" ;
+    chorus:hasDomain chorus:security .
+
+chorus:logdomain-share-guard-path-log a chorus:UnitDomainMapping ;
+    rdfs:label "share-guard-path.log → security" ;
+    chorus:logFileName "share-guard-path.log" ;
+    chorus:hasDomain chorus:security .
+
+chorus:logdomain-css-log a chorus:UnitDomainMapping ;
+    rdfs:label "css.log → identity" ;
+    chorus:logFileName "css.log" ;
+    chorus:hasDomain chorus:identity .
+
+chorus:logdomain-alertmanager-log a chorus:UnitDomainMapping ;
+    rdfs:label "alertmanager.log → alerts" ;
+    chorus:logFileName "alertmanager.log" ;
+    chorus:hasDomain chorus:alerts .
+
+chorus:logdomain-blackbox-exporter-log a chorus:UnitDomainMapping ;
+    rdfs:label "blackbox-exporter.log → monitors" ;
+    chorus:logFileName "blackbox-exporter.log" ;
+    chorus:hasDomain chorus:monitors .
+
+chorus:logdomain-grafana-log a chorus:UnitDomainMapping ;
+    rdfs:label "grafana.log → monitors" ;
+    chorus:logFileName "grafana.log" ;
+    chorus:hasDomain chorus:monitors .
+
+chorus:logdomain-node-exporter-err a chorus:UnitDomainMapping ;
+    rdfs:label "node-exporter.err → monitors" ;
+    chorus:logFileName "node-exporter.err" ;
+    chorus:hasDomain chorus:monitors .
+
+chorus:logdomain-node-exporter-log a chorus:UnitDomainMapping ;
+    rdfs:label "node-exporter.log → monitors" ;
+    chorus:logFileName "node-exporter.log" ;
+    chorus:hasDomain chorus:monitors .
+
+chorus:logdomain-node-exporter-host-log a chorus:UnitDomainMapping ;
+    rdfs:label "node-exporter-host.log → monitors" ;
+    chorus:logFileName "node-exporter-host.log" ;
+    chorus:hasDomain chorus:monitors .
+
+chorus:logdomain-blockverse-log a chorus:UnitDomainMapping ;
+    rdfs:label "blockverse.log → products" ;
+    chorus:logFileName "blockverse.log" ;
+    chorus:hasDomain chorus:products .
+
+chorus:logdomain-blockverse-debug-log a chorus:UnitDomainMapping ;
+    rdfs:label "blockverse-debug.log → products" ;
+    chorus:logFileName "blockverse-debug.log" ;
+    chorus:hasDomain chorus:products .
+
+chorus:logdomain-gathering-app-log a chorus:UnitDomainMapping ;
+    rdfs:label "gathering-app.log → products" ;
+    chorus:logFileName "gathering-app.log" ;
+    chorus:hasDomain chorus:products .
+
+chorus:logdomain-wordpress-log a chorus:UnitDomainMapping ;
+    rdfs:label "wordpress.log → products" ;
+    chorus:logFileName "wordpress.log" ;
+    chorus:hasDomain chorus:products .
+
+chorus:logdomain-wordpress-debug-log a chorus:UnitDomainMapping ;
+    rdfs:label "wordpress-debug.log → products" ;
+    chorus:logFileName "wordpress-debug.log" ;
+    chorus:hasDomain chorus:products .
+
+chorus:logdomain-codebase-graph-watcher-log a chorus:UnitDomainMapping ;
+    rdfs:label "codebase-graph-watcher.log → code" ;
+    chorus:logFileName "codebase-graph-watcher.log" ;
+    chorus:hasDomain chorus:code .
+
+chorus:logdomain-daily-review-ops-log a chorus:UnitDomainMapping ;
+    rdfs:label "daily-review-ops.log → practices" ;
+    chorus:logFileName "daily-review-ops.log" ;
+    chorus:hasDomain chorus:practices .
+
+chorus:logdomain-daily-review-quality-log a chorus:UnitDomainMapping ;
+    rdfs:label "daily-review-quality.log → practices" ;
+    chorus:logFileName "daily-review-quality.log" ;
+    chorus:hasDomain chorus:practices .
+
+chorus:logdomain-daily-review-summary-log a chorus:UnitDomainMapping ;
+    rdfs:label "daily-review-summary.log → practices" ;
+    chorus:logFileName "daily-review-summary.log" ;
+    chorus:hasDomain chorus:practices .
+
+chorus:logdomain-daily-signal-scan-log a chorus:UnitDomainMapping ;
+    rdfs:label "daily-signal-scan.log → practices" ;
+    chorus:logFileName "daily-signal-scan.log" ;
+    chorus:hasDomain chorus:practices .
+
+chorus:logdomain-standards-surface-log a chorus:UnitDomainMapping ;
+    rdfs:label "standards-surface.log → practices" ;
+    chorus:logFileName "standards-surface.log" ;
+    chorus:hasDomain chorus:practices .
+
+chorus:logdomain-lance-maintain-err a chorus:UnitDomainMapping ;
+    rdfs:label "lance-maintain.err → search" ;
+    chorus:logFileName "lance-maintain.err" ;
+    chorus:hasDomain chorus:search .
+
+chorus:logdomain-lance-maintain-log a chorus:UnitDomainMapping ;
+    rdfs:label "lance-maintain.log → search" ;
+    chorus:logFileName "lance-maintain.log" ;
+    chorus:hasDomain chorus:search .
+
+chorus:logdomain-log-rotate-log a chorus:UnitDomainMapping ;
+    rdfs:label "log-rotate.log → logs" ;
+    chorus:logFileName "log-rotate.log" ;
+    chorus:hasDomain chorus:logs .
+
+chorus:logdomain-log-sync-log a chorus:UnitDomainMapping ;
+    rdfs:label "log-sync.log → logs" ;
+    chorus:logFileName "log-sync.log" ;
+    chorus:hasDomain chorus:logs .
+
+chorus:logdomain-promtail-log a chorus:UnitDomainMapping ;
+    rdfs:label "promtail.log → logs" ;
+    chorus:logFileName "promtail.log" ;
+    chorus:hasDomain chorus:logs .
+
+chorus:logdomain-loki-tunnel-bedroom-log a chorus:UnitDomainMapping ;
+    rdfs:label "loki-tunnel-bedroom.log → logs" ;
+    chorus:logFileName "loki-tunnel-bedroom.log" ;
+    chorus:hasDomain chorus:logs .
+
+chorus:logdomain-seed-probe-log a chorus:UnitDomainMapping ;
+    rdfs:label "seed-probe.log → memory" ;
+    chorus:logFileName "seed-probe.log" ;
+    chorus:hasDomain chorus:memory .
+
+chorus:logdomain-vikunja-log a chorus:UnitDomainMapping ;
+    rdfs:label "vikunja.log → cards" ;
+    chorus:logFileName "vikunja.log" ;
+    chorus:hasDomain chorus:cards .

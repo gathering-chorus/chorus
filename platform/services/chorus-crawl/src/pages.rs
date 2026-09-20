@@ -433,84 +433,11 @@ pub fn counts<T>(actions: &[RowAction<T>]) -> Counts {
 /// untagged endpoints measured 2026-09-19 sit under it and name no domain of
 /// their own. An endpoint matching neither stays unplaced and is reported —
 /// the folder is never consulted, and no route gets a default.
-pub(crate) const ROUTE: &[(&str, &str)] = &[
-    ("/", "products"),
-    ("/api/chorus/attention-analytics", "analytics"),
-    ("/api/chorus/card-story/:id", "cards"),
-    ("/api/chorus/codebase/topology", "code"),
-    ("/api/chorus/conversation", "messages"),
-    ("/api/chorus/crawl/:domain", "code"),
-    ("/api/chorus/disk", "infrastructure"),
-    ("/api/chorus/domain-story/:domain", "domains"),
-    ("/api/chorus/fitness/summary", "metrics"),
-    ("/api/chorus/freshness", "metrics"),
-    ("/api/chorus/harvest", "integrations"),
-    ("/api/chorus/jeff/posture/strip", "roles"),
-    ("/api/chorus/patterns/summary", "analytics"),
-    ("/api/chorus/perf", "metrics"),
-    ("/api/chorus/reconcile", "code"),
-    ("/api/chorus/refs", "knowledge"),
-    ("/api/chorus/reprompt-analytics", "analytics"),
-    ("/api/chorus/security-fitness", "security"),
-    ("/api/chorus/seed-media/:filename", "memory"),
-    ("/api/chorus/seeds", "memory"),
-    ("/api/chorus/self", "roles"),
-    ("/api/chorus/stats", "metrics"),
-    ("/api/chorus/test-run/latest", "tests"),
-    ("/api/chorus/ui-pages", "code"),
-    ("/api/chorus/voice-analytics", "analytics"),
-    ("/api/chorus/werk/activity", "cicd"),
-    ("/api/doc-catalog", "knowledge"),
-    ("/api/doc-catalog/add", "knowledge"),
-    ("/api/doc-catalog/link", "knowledge"),
-    ("/api/doc-catalog/tags", "knowledge"),
-    ("/api/doc-catalog/tree", "knowledge"),
-    ("/api/doc-inventory", "knowledge"),
-    ("/api/loom-analytics", "analytics"),
-    ("/api/loom-metrics", "metrics"),
-    ("/api/photos", "products"),
-    ("/api/photos/count", "products"),
-    ("/api/photos/set", "products"),
-    ("/api/playlists", "products"),
-    ("/api/playlists/add", "products"),
-    ("/api/playlists/remove", "products"),
-    ("/api/proxy/image", "products"),
-    ("/api/proxy/video", "products"),
-    ("/api/video-tags", "products"),
-    ("/api/videos", "products"),
-    ("/api/videos/list", "products"),
-    ("/api/werk/activity", "cicd"),
-    ("/api/werk/schema", "cicd"),
-    ("/borg-assessment", "analytics"),
-    ("/chorus", "products"),
-    ("/chorus-model-data", "domains"),
-    ("/chorus/system", "services"),
-    ("/clearing", "messages"),
-    ("/flow", "value-streams"),
-    ("/harvest-manifests", "integrations"),
-    ("/harvesting/convergence", "integrations"),
-    ("/harvesting/icd", "integrations"),
-    ("/harvesting/mapper", "integrations"),
-    ("/loom", "principles"),
-    ("/loom/:role", "principles"),
-    ("/model-data", "domains"),
-    ("/ontology-views/:domain", "domains"),
-    ("/test-run", "tests"),
-    ("/werk", "cicd"),
-    ("/x", "products"),
-    ("/api/chorus/alert", "alerts"),
-    ("/api/chorus/embed", "search"),
-    ("/api/chorus/index", "search"),
-    ("/api/chorus/open", "toolchain"),
-    ("/api/chorus/rca", "rcas"),
-    ("/api/chorus/reindex", "search"),
-    ("/api/chorus/role-state", "roles"),
-    ("/api/chorus/spine-event", "spine"),
-    ("/api/chorus/voice/:role", "messages"),
-    ("/sparql-read", "knowledge"),
-];
-
-pub fn endpoint_domain(route_path: &str, domains: &[String]) -> Option<String> {
+pub fn endpoint_domain(
+    route_path: &str,
+    domains: &[String],
+    authored: &[(String, String)],
+) -> Option<String> {
     let segs: Vec<&str> = route_path
         .split('/')
         .filter(|s| !s.is_empty() && !s.starts_with(':'))
@@ -550,16 +477,15 @@ pub fn endpoint_domain(route_path: &str, domains: &[String]) -> Option<String> {
             }
         }
     }
-    // #4222 — the remainder, assigned by hand against the live contract on
-    // 2026-09-19. These are the 75 routes no segment rule reaches: their path
-    // names a product word (`/api/photos`), a surface (`/clearing`), or nothing
-    // at all (`/x`). A guess written down and reviewable beats a row with no
-    // domain, and each line is one claim Wren and Silas can accept or correct.
-    //
-    // The whole route is the key, so a rename does not silently keep the old
-    // answer — the route drops out of the table and the run reports it unplaced.
-    if let Some((_, d)) = ROUTE.iter().find(|(k, _)| *k == route_path) {
-        if let Some(hit) = domains.iter().find(|x| x == d) {
+    // #4222 — the remainder, from the AUTHORED rows in
+    // roles/kade/ontology/surface-domain-4222.ttl: the 74 routes no segment
+    // rule reaches, because their path names a product word (`/api/photos`), a
+    // surface (`/clearing`) or nothing at all (`/x`). They lived as constants
+    // in this file until Jeff called that what it was; they are data now, and
+    // Wren and Silas correct them in the graph. No row, no domain: the route is
+    // reported unplaced rather than given a default.
+    if let Some((_, d)) = authored.iter().find(|(k, _)| k == route_path) {
+        if let Some(hit) = domains.iter().find(|x| *x == d) {
             return Some(hit.clone());
         }
     }
@@ -905,8 +831,8 @@ mod desired_tests {
 
     #[test]
     fn an_endpoint_is_placed_by_the_route_it_serves() {
-        assert_eq!(endpoint_domain("/api/chorus/cards/:id", &doms()).as_deref(), Some("cards"));
-        assert_eq!(endpoint_domain("/api/athena/class-atlas", &doms()).as_deref(), Some("knowledge"));
+        assert_eq!(endpoint_domain("/api/chorus/cards/:id", &doms(), &[]).as_deref(), Some("cards"));
+        assert_eq!(endpoint_domain("/api/athena/class-atlas", &doms(), &[]).as_deref(), Some("knowledge"));
     }
 
     #[test]
@@ -915,22 +841,22 @@ mod desired_tests {
         // default. Falling back to the first domain, or to the folder, is the
         // #4201 failure this rule exists to avoid. Returning Some(..) here
         // turns this red.
-        assert_eq!(endpoint_domain("/", &doms()), None);
-        assert_eq!(endpoint_domain("/api/proxy/thing", &doms()), None);
+        assert_eq!(endpoint_domain("/", &doms(), &[]), None);
+        assert_eq!(endpoint_domain("/api/proxy/thing", &doms(), &[]), None);
     }
 
     #[test]
     fn a_route_segment_that_is_the_api_name_for_a_domain_places_it() {
         let d: Vec<String> = ["spine", "domains", "knowledge"].iter().map(|s| s.to_string()).collect();
-        assert_eq!(endpoint_domain("/api/chorus/trace/:id", &d).as_deref(), Some("spine"));
-        assert_eq!(endpoint_domain("/api/chorus/domain/:name", &d).as_deref(), Some("domains"));
+        assert_eq!(endpoint_domain("/api/chorus/trace/:id", &d, &[]).as_deref(), Some("spine"));
+        assert_eq!(endpoint_domain("/api/chorus/domain/:name", &d, &[]).as_deref(), Some("domains"));
     }
 
     #[test]
     fn a_domain_absent_from_the_model_is_never_invented() {
         // "cards" is real, "widgets" is not — the rule can only name a domain
         // the model already has.
-        assert_eq!(endpoint_domain("/api/chorus/widgets", &doms()), None);
+        assert_eq!(endpoint_domain("/api/chorus/widgets", &doms(), &[]), None);
     }
 
 
@@ -1202,10 +1128,11 @@ mod pages_4214 {
     #[test]
     fn every_hand_assigned_route_places() {
         let domains = all_domains();
-        for (route, want) in super::ROUTE {
+        let authored = authored_routes();
+        for (route, want) in &authored {
             assert_eq!(
-                endpoint_domain(route, &domains).as_deref(),
-                Some(*want),
+                endpoint_domain(route, &domains, &authored).as_deref(),
+                Some(want.as_str()),
                 "{route} must place in {want}"
             );
         }
@@ -1216,9 +1143,22 @@ mod pages_4214 {
     #[test]
     fn a_route_no_rule_reaches_stays_unplaced() {
         let domains = all_domains();
-        assert_eq!(endpoint_domain("/api/zzz/not-a-thing", &domains), None);
+        assert_eq!(endpoint_domain("/api/zzz/not-a-thing", &domains, &[]), None);
         // and a near-miss of a real entry is NOT the entry
-        assert_eq!(endpoint_domain("/api/photos/nope", &domains), None);
+        assert_eq!(endpoint_domain("/api/photos/nope", &domains, &[]), None);
+    }
+
+    /// The authored rows as the crawler reads them: from the TTL, not from a
+    /// table in this file. If the two ever drift, this is what notices.
+    fn authored_routes() -> Vec<(String, String)> {
+        let ttl = std::fs::read_to_string(concat!(
+            env!("CARGO_MANIFEST_DIR"),
+            "/../../../roles/kade/ontology/surface-domain-4222.ttl"
+        ))
+        .expect("the authored surface rows must exist");
+        let rows = crate::domain::surface_domain_rows(&ttl, "chorus:routePath");
+        assert!(!rows.is_empty(), "the authored file must carry route rows");
+        rows
     }
 
     fn all_domains() -> Vec<String> {

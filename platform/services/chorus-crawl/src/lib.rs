@@ -247,24 +247,25 @@ mod log_domain_4222 {
 
     #[test]
     fn a_log_is_placed_by_the_job_that_writes_it_then_its_name() {
-        assert_eq!(log_domain("com.chorus.werk-sweep", "/x/werk-sweep.log", &doms()).as_deref(), Some("cicd"));
-        assert_eq!(log_domain("unmanaged", "/x/nudge-delivery.log", &doms()).as_deref(), Some("messages"));
-        assert_eq!(log_domain("unmanaged", "/x/heartbeat-probe.log", &doms()).as_deref(), Some("monitors"));
+        assert_eq!(log_domain("com.chorus.werk-sweep", "/x/werk-sweep.log", &doms(), &[]).as_deref(), Some("cicd"));
+        assert_eq!(log_domain("unmanaged", "/x/nudge-delivery.log", &doms(), &[]).as_deref(), Some("messages"));
+        assert_eq!(log_domain("unmanaged", "/x/heartbeat-probe.log", &doms(), &[]).as_deref(), Some("monitors"));
     }
 
     #[test]
     fn negative_proof_a_log_naming_nothing_stays_unplaced() {
-        // 84 of 133 live rows are in this state. They must report as unplaced
-        // rather than take a default — the authored UnitDomainMapping is the
-        // answer for them, and a guess here would hide that it is missing.
-        assert_eq!(log_domain("unmanaged", "/x/watcher.log", &doms()), None);
-        assert_eq!(log_domain("unmanaged", "/x/chorus.log", &doms()), None);
+        // #4222 — the two files this used to name (watcher.log, chorus.log) are
+        // now assigned by hand in LOG_FILE_DOMAIN, so they are no longer the
+        // unplaced case. The rule they encoded still holds for everything the
+        // table does NOT name: no default, no guess, report it by name.
+        assert_eq!(log_domain("unmanaged", "/x/zzz-unknown.log", &doms(), &[]), None);
+        assert_eq!(log_domain("unmanaged", "/x/quux.out", &doms(), &[]), None);
     }
 
     #[test]
     fn a_domain_the_model_lacks_is_never_invented() {
         // "search" is a real domain but not in this caller's list: no tag.
-        assert_eq!(log_domain("unmanaged", "/x/embed-worker.log", &doms()), None);
+        assert_eq!(log_domain("unmanaged", "/x/embed-worker.log", &doms(), &[]), None);
     }
 }
 
@@ -2303,7 +2304,12 @@ pub struct LogFile {
 /// the live 133 rows on 2026-09-19: label and name together place 49. The rest
 /// stay unplaced and are reported; `UnitDomainMapping` is the authored answer
 /// for those, and it covers 6 today.
-pub fn log_domain(label: &str, path: &str, domains: &[String]) -> Option<String> {
+pub fn log_domain(
+    label: &str,
+    path: &str,
+    domains: &[String],
+    authored: &[(String, String)],
+) -> Option<String> {
     const WORD: &[(&str, &str)] = &[
         ("werk", "cicd"),
         ("crawl", "code"),
@@ -2330,6 +2336,16 @@ pub fn log_domain(label: &str, path: &str, domains: &[String]) -> Option<String>
         ("alert", "alerts"),
     ];
     let file = path.rsplit('/').next().unwrap_or(path);
+    // #4222 — the AUTHORED rows in roles/kade/ontology/surface-domain-4222.ttl:
+    // the 72 log files whose name carries no word any rule knows (`caddy.log`,
+    // `tm-thin.log`, `css.log`). Checked FIRST, because an authored assignment
+    // beats an incidental word match — `log-rotate.log` is logs, not a rotate
+    // rule. No row, no domain: the source reports unplaced, never a default.
+    if let Some((_, d)) = authored.iter().find(|(k, _)| k == file) {
+        if let Some(hit) = domains.iter().find(|x| *x == d) {
+            return Some(hit.clone());
+        }
+    }
     let words: Vec<String> = format!("{label} {file}")
         .split(|c: char| !c.is_ascii_alphanumeric())
         .filter(|w| !w.is_empty())
@@ -2655,4 +2671,51 @@ mod plan_domain_4201 {
         });
         assert!(matches!(acts.as_slice(), [Action::Unchanged { .. }]), "{acts:?}");
     }
+    /// #4222 — every log file the hand table claims, placed. The fixture is the
+    /// 72 sources that carried no domain on 2026-09-19; rename one and it drops
+    /// out of the table, so this goes red rather than keeping a stale answer.
+    #[test]
+    fn every_hand_assigned_log_file_places() {
+        let domains = log_domains_fixture();
+        let authored = authored_logs();
+        for (file, want) in &authored {
+            assert_eq!(
+                super::log_domain("", &format!("/var/log/{file}"), &domains, &authored).as_deref(),
+                Some(want.as_str()),
+                "{file} must place in {want}"
+            );
+        }
+    }
+
+    /// NEGATIVE PROOF. A log file no rule reaches stays unplaced and is named.
+    #[test]
+    fn a_log_file_no_rule_reaches_stays_unplaced() {
+        let domains = log_domains_fixture();
+        assert_eq!(super::log_domain("", "/var/log/zzz-nothing.log", &log_domains_fixture(), &[]), None);
+        assert_eq!(super::log_domain("", "/var/log/quux.out", &log_domains_fixture(), &[]), None);
+    }
+
+    fn authored_logs() -> Vec<(String, String)> {
+        let ttl = std::fs::read_to_string(concat!(
+            env!("CARGO_MANIFEST_DIR"),
+            "/../../../roles/kade/ontology/surface-domain-4222.ttl"
+        ))
+        .expect("the authored surface rows must exist");
+        let rows = crate::domain::surface_domain_rows(&ttl, "chorus:logFileName");
+        assert!(!rows.is_empty(), "the authored file must carry log rows");
+        rows
+    }
+
+    fn log_domains_fixture() -> Vec<String> {
+        [
+            "alerts", "builds", "cards", "cicd", "code", "domains", "heralds", "identity",
+            "infrastructure", "integrations", "knowledge", "logs", "memory", "messages",
+            "metrics", "monitors", "practices", "products", "roles", "search", "security",
+            "services", "spine", "tests", "toolchain",
+        ]
+        .iter()
+        .map(|s| s.to_string())
+        .collect()
+    }
+
 }
