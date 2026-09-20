@@ -97,3 +97,38 @@ describe('#4220 Clearing renders like Claude Code, not like one paragraph', () =
     expect(out).not.toContain('</strong><br>');
   });
 });
+
+/**
+ * #4230 — Jeff, 2026-09-20: "right side of readouts in courier is cropped".
+ *
+ * #4223 made fenced blocks render as <pre>. They were styled `white-space: pre`
+ * with `overflow-x: auto`, so on a phone a line wider than the screen ran off
+ * the right edge into a scrollbar inside an already-scrolling page. Every count
+ * and every path we send him rides in a fence, so the half of a message that
+ * carries the evidence was the half he could not read.
+ *
+ * NEGATIVE PROOF (#3734): the assertion is written against the state it exists
+ * to catch — `white-space:pre` on the block — and was watched go RED against the
+ * shipped file before the style changed.
+ */
+describe('#4230 — fenced blocks wrap instead of cropping', () => {
+  const render = loadRenderer();
+  const longLine = 'graph-summary|40904|dirty row-missing-required-field 16161 v1-row 15862 owner-not-principal 6783';
+  const html = render('```\n' + longLine + '\n```');
+
+  it('renders the fence as a <pre> block', () => {
+    expect(html).toContain('<pre');
+    expect(html).toContain(longLine);
+  });
+
+  it('the block wraps: white-space is pre-wrap, never bare pre', () => {
+    const pre = html.slice(html.indexOf('<pre'), html.indexOf('>', html.indexOf('<pre')) + 1);
+    expect(pre).toContain('white-space:pre-wrap');
+    expect(/white-space:pre(?!-wrap)/.test(pre)).toBe(false);
+  });
+
+  it('a long unbroken token still breaks rather than overflowing', () => {
+    const pre = html.slice(html.indexOf('<pre'), html.indexOf('>', html.indexOf('<pre')) + 1);
+    expect(pre).toContain('overflow-wrap:anywhere');
+  });
+});
