@@ -1227,7 +1227,7 @@ function renderMarkdown(text) {
     // Fenced code blocks (``` ... ```)
     if (line.trim().startsWith('```')) {
       if (inCode) {
-        out.push('<pre style="background:rgba(255,255,255,0.06);border-radius:6px;padding:0.5em 0.7em;margin:0.4em 0;overflow-x:auto;font-size:0.82em;line-height:1.45;white-space:pre"><code>' + codeLines.join('\n') + '</code></pre>');
+        out.push('<pre style="background:rgba(255,255,255,0.06);border-radius:6px;padding:0.5em 0.7em;margin:0.4em 0;overflow-x:auto;font-size:0.82em;line-height:1.45;white-space:pre-wrap;overflow-wrap:anywhere;word-break:break-word"><code>' + codeLines.join('\n') + '</code></pre>');
         codeLines = [];
         inCode = false;
       } else {
@@ -1270,7 +1270,7 @@ function renderMarkdown(text) {
   }
   if (inList) out.push('</ul>');
   // An unterminated fence still renders as a block rather than swallowing the tail.
-  if (inCode) out.push('<pre style="background:rgba(255,255,255,0.06);border-radius:6px;padding:0.5em 0.7em;margin:0.4em 0;overflow-x:auto;font-size:0.82em;line-height:1.45;white-space:pre"><code>' + codeLines.join('\n') + '</code></pre>');
+  if (inCode) out.push('<pre style="background:rgba(255,255,255,0.06);border-radius:6px;padding:0.5em 0.7em;margin:0.4em 0;overflow-x:auto;font-size:0.82em;line-height:1.45;white-space:pre-wrap;overflow-wrap:anywhere;word-break:break-word"><code>' + codeLines.join('\n') + '</code></pre>');
   // <br> between adjacent prose lines, so a line break written in the message is
   // a line break on the phone. Block-level pieces (ul/pre/br/strong-as-block)
   // already break on their own and must not get a second one.
