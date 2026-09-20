@@ -732,6 +732,41 @@ pub fn place_in_unit(
 ///
 /// Only consulted when every content rule stayed silent, so it can never
 /// override a signal the file actually carries.
+
+/// #4222 — the authored surface rows: route → domain and log file → domain.
+///
+/// Same file shape as `unit_domain_rows` (#4084) and the same reason. These
+/// began as 146 constants inside chorus-crawl; a mapping only one role can
+/// change, and only through a build and a land, is not a model. `key_pred` is
+/// the predicate that identifies the surface — `chorus:routePath` for an
+/// endpoint, `chorus:logFileName` for a log file.
+pub fn surface_domain_rows(ttl: &str, key_pred: &str) -> Vec<(String, String)> {
+    let mut out: Vec<(String, String)> = Vec::new();
+    let mut key: Option<String> = None;
+    for line in ttl.lines() {
+        let l = line.trim();
+        if l.starts_with('#') {
+            continue;
+        }
+        if let Some(rest) = l.split(key_pred).nth(1) {
+            key = rest.split('"').nth(1).map(str::to_string);
+        }
+        if let Some(rest) = l.split("chorus:hasDomain").nth(1) {
+            if let Some(k) = key.take() {
+                let dom = rest
+                    .trim()
+                    .trim_end_matches(&[' ', '.', ';'][..])
+                    .trim_start_matches("chorus:")
+                    .to_string();
+                if !dom.is_empty() {
+                    out.push((k, dom));
+                }
+            }
+        }
+    }
+    out
+}
+
 pub fn place_by_tree(path: &str, valid: &[String]) -> Option<Signal> {
     const TREE: &[(&str, &str)] = &[
         ("roles/", "roles"),

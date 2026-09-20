@@ -247,9 +247,9 @@ mod log_domain_4222 {
 
     #[test]
     fn a_log_is_placed_by_the_job_that_writes_it_then_its_name() {
-        assert_eq!(log_domain("com.chorus.werk-sweep", "/x/werk-sweep.log", &doms()).as_deref(), Some("cicd"));
-        assert_eq!(log_domain("unmanaged", "/x/nudge-delivery.log", &doms()).as_deref(), Some("messages"));
-        assert_eq!(log_domain("unmanaged", "/x/heartbeat-probe.log", &doms()).as_deref(), Some("monitors"));
+        assert_eq!(log_domain("com.chorus.werk-sweep", "/x/werk-sweep.log", &doms(), &[]).as_deref(), Some("cicd"));
+        assert_eq!(log_domain("unmanaged", "/x/nudge-delivery.log", &doms(), &[]).as_deref(), Some("messages"));
+        assert_eq!(log_domain("unmanaged", "/x/heartbeat-probe.log", &doms(), &[]).as_deref(), Some("monitors"));
     }
 
     #[test]
@@ -258,14 +258,14 @@ mod log_domain_4222 {
         // now assigned by hand in LOG_FILE_DOMAIN, so they are no longer the
         // unplaced case. The rule they encoded still holds for everything the
         // table does NOT name: no default, no guess, report it by name.
-        assert_eq!(log_domain("unmanaged", "/x/zzz-unknown.log", &doms()), None);
-        assert_eq!(log_domain("unmanaged", "/x/quux.out", &doms()), None);
+        assert_eq!(log_domain("unmanaged", "/x/zzz-unknown.log", &doms(), &[]), None);
+        assert_eq!(log_domain("unmanaged", "/x/quux.out", &doms(), &[]), None);
     }
 
     #[test]
     fn a_domain_the_model_lacks_is_never_invented() {
         // "search" is a real domain but not in this caller's list: no tag.
-        assert_eq!(log_domain("unmanaged", "/x/embed-worker.log", &doms()), None);
+        assert_eq!(log_domain("unmanaged", "/x/embed-worker.log", &doms(), &[]), None);
     }
 }
 
@@ -2304,82 +2304,12 @@ pub struct LogFile {
 /// the live 133 rows on 2026-09-19: label and name together place 49. The rest
 /// stay unplaced and are reported; `UnitDomainMapping` is the authored answer
 /// for those, and it covers 6 today.
-pub(crate) const LOG_FILE_DOMAIN: &[(&str, &str)] = &[
-    ("chorus.log", "spine"),
-    ("buzz-tunnel.err.log", "integrations"),
-    ("watcher.log", "monitors"),
-    ("building-pipeline.log", "builds"),
-    ("caddy.log", "infrastructure"),
-    ("caddy-stderr.log", "infrastructure"),
-    ("caddy-stdout.log", "infrastructure"),
-    ("edge-caddy.log", "infrastructure"),
-    ("edge-caddy-access.log", "infrastructure"),
-    ("chorus-api.log", "services"),
-    ("chorus-mcp.log", "toolchain"),
-    ("chorus-ops.log", "services"),
-    ("chorus-shim-debug.log", "spine"),
-    ("shim-wrapper.log", "spine"),
-    ("context-cache-5min.err", "knowledge"),
-    ("context-cache-5min.log", "knowledge"),
-    ("context-cache-daily.err", "knowledge"),
-    ("context-cache-daily.log", "knowledge"),
-    ("context-cache-hourly.err", "knowledge"),
-    ("context-cache-hourly.log", "knowledge"),
-    ("context-cache-weekly.log", "knowledge"),
-    ("context-cache-5min-err.log", "knowledge"),
-    ("context-cache-hourly-err.log", "knowledge"),
-    ("cruft-scan.log", "infrastructure"),
-    ("disk-trend.log", "infrastructure"),
-    ("tmp-reaper.log", "infrastructure"),
-    ("restore-drill.log", "infrastructure"),
-    ("cloudflared.log", "infrastructure"),
-    ("tm-thin.log", "infrastructure"),
-    ("mysql.log", "infrastructure"),
-    ("mysqld-exporter.log", "infrastructure"),
-    ("graph-hydrate.log", "domains"),
-    ("owl-api.log", "domains"),
-    ("jeff-input-monitor.log", "messages"),
-    ("messaging.log", "messages"),
-    ("mcp-config-herald.log", "heralds"),
-    ("nightly-coverage.log", "tests"),
-    ("nightly-suites.log", "tests"),
-    ("product-membrane.log", "tests"),
-    ("perf-baseline-nightly.log", "metrics"),
-    ("perf-baseline.log", "metrics"),
-    ("prometheus.log", "metrics"),
-    ("posture-capture.log", "roles"),
-    ("role-state-reconciler.log", "roles"),
-    ("share-guard.log", "security"),
-    ("share-guard-path.log", "security"),
-    ("css.log", "identity"),
-    ("alertmanager.log", "alerts"),
-    ("blackbox-exporter.log", "monitors"),
-    ("grafana.log", "monitors"),
-    ("node-exporter.err", "monitors"),
-    ("node-exporter.log", "monitors"),
-    ("node-exporter-host.log", "monitors"),
-    ("blockverse.log", "products"),
-    ("blockverse-debug.log", "products"),
-    ("gathering-app.log", "products"),
-    ("wordpress.log", "products"),
-    ("wordpress-debug.log", "products"),
-    ("codebase-graph-watcher.log", "code"),
-    ("daily-review-ops.log", "practices"),
-    ("daily-review-quality.log", "practices"),
-    ("daily-review-summary.log", "practices"),
-    ("daily-signal-scan.log", "practices"),
-    ("standards-surface.log", "practices"),
-    ("lance-maintain.err", "search"),
-    ("lance-maintain.log", "search"),
-    ("log-rotate.log", "logs"),
-    ("log-sync.log", "logs"),
-    ("promtail.log", "logs"),
-    ("loki-tunnel-bedroom.log", "logs"),
-    ("seed-probe.log", "memory"),
-    ("vikunja.log", "cards"),
-];
-
-pub fn log_domain(label: &str, path: &str, domains: &[String]) -> Option<String> {
+pub fn log_domain(
+    label: &str,
+    path: &str,
+    domains: &[String],
+    authored: &[(String, String)],
+) -> Option<String> {
     const WORD: &[(&str, &str)] = &[
         ("werk", "cicd"),
         ("crawl", "code"),
@@ -2405,15 +2335,14 @@ pub fn log_domain(label: &str, path: &str, domains: &[String]) -> Option<String>
         ("harvest", "services"),
         ("alert", "alerts"),
     ];
-    // #4222 — the remainder, assigned by hand against the live contract on
-    // 2026-09-19: the 74 log files whose name carries no word any rule knows
-    // (`caddy.log`, `tm-thin.log`, `css.log`). The whole file name is the key,
-    // so a rename drops out of the table and the source reports unplaced rather
-    // than keeping a stale answer. Checked FIRST: an explicit assignment beats
-    // an incidental word match (`log-rotate.log` is logs, not a rotate rule).
     let file = path.rsplit('/').next().unwrap_or(path);
-    if let Some((_, d)) = LOG_FILE_DOMAIN.iter().find(|(k, _)| *k == file) {
-        if let Some(hit) = domains.iter().find(|x| x == d) {
+    // #4222 — the AUTHORED rows in roles/kade/ontology/surface-domain-4222.ttl:
+    // the 72 log files whose name carries no word any rule knows (`caddy.log`,
+    // `tm-thin.log`, `css.log`). Checked FIRST, because an authored assignment
+    // beats an incidental word match — `log-rotate.log` is logs, not a rotate
+    // rule. No row, no domain: the source reports unplaced, never a default.
+    if let Some((_, d)) = authored.iter().find(|(k, _)| k == file) {
+        if let Some(hit) = domains.iter().find(|x| *x == d) {
             return Some(hit.clone());
         }
     }
@@ -2748,10 +2677,11 @@ mod plan_domain_4201 {
     #[test]
     fn every_hand_assigned_log_file_places() {
         let domains = log_domains_fixture();
-        for (file, want) in super::LOG_FILE_DOMAIN {
+        let authored = authored_logs();
+        for (file, want) in &authored {
             assert_eq!(
-                super::log_domain("", &format!("/var/log/{file}"), &domains).as_deref(),
-                Some(*want),
+                super::log_domain("", &format!("/var/log/{file}"), &domains, &authored).as_deref(),
+                Some(want.as_str()),
                 "{file} must place in {want}"
             );
         }
@@ -2761,8 +2691,19 @@ mod plan_domain_4201 {
     #[test]
     fn a_log_file_no_rule_reaches_stays_unplaced() {
         let domains = log_domains_fixture();
-        assert_eq!(super::log_domain("", "/var/log/zzz-nothing.log", &domains), None);
-        assert_eq!(super::log_domain("", "/var/log/quux.out", &domains), None);
+        assert_eq!(super::log_domain("", "/var/log/zzz-nothing.log", &log_domains_fixture(), &[]), None);
+        assert_eq!(super::log_domain("", "/var/log/quux.out", &log_domains_fixture(), &[]), None);
+    }
+
+    fn authored_logs() -> Vec<(String, String)> {
+        let ttl = std::fs::read_to_string(concat!(
+            env!("CARGO_MANIFEST_DIR"),
+            "/../../../roles/kade/ontology/surface-domain-4222.ttl"
+        ))
+        .expect("the authored surface rows must exist");
+        let rows = crate::domain::surface_domain_rows(&ttl, "chorus:logFileName");
+        assert!(!rows.is_empty(), "the authored file must carry log rows");
+        rows
     }
 
     fn log_domains_fixture() -> Vec<String> {
