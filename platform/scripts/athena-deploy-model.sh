@@ -341,6 +341,12 @@ if [ "${DEPLOY_BNODE_CLEANUP:-1}" = "1" ]; then
   done
 fi
 # =============================================================================
+# #4229 (Kade, 2026-09-20) — set BEFORE the source-delete guard reads it at
+# line ~407. It was assigned 164 lines later, so the guard grepped an empty
+# path: every already-staged retirement read as unstaged and the deploy
+# refused. Blocked his #4222 and Wren's land.
+RETIREMENTS_FILE="${RETIREMENTS_FILE:-$CHORUS_ROOT/designing/schemas/model-retirements.jsonl}"
+
 # #4125 — A SUBJECT DELETED FROM SOURCE IS NAMED, NOT SILENTLY KEPT.
 #
 # The merge below is PER-SUBJECT ADDITIVE: it deletes a STAGED subject's triples
@@ -568,7 +574,6 @@ esac
 # and deploy — that window refuses loudly here, and an unanswerable athena-make
 # refuses too, never a blind delete).
 # =============================================================================
-RETIREMENTS_FILE="${RETIREMENTS_FILE:-$CHORUS_ROOT/designing/schemas/model-retirements.jsonl}"
 OWL_API_URL="${OWL_API_URL:-http://localhost:3360}"
 if [ -f "$RETIREMENTS_FILE" ]; then
   _served_resp=$(curl -s -m 5 "$OWL_API_URL/__model_deploy_probe__" 2>/dev/null || true)

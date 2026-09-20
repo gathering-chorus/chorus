@@ -336,17 +336,23 @@ EOF
 }
 
 @test "#3593 MODEL_SET includes the 34-domain sources (domains-wren-silas + domains-kade-3581)" {
-  run grep -cE 'domains-wren-silas\.ttl|domains-kade-3581\.ttl' "$SCRIPT"
+  # #4229 — the set moved from a bash array into the verb's source; the
+  # question is the same one, asked where the answer now lives.
+  SRC="$BATS_TEST_DIRNAME/../services/athena-deploy/src/lib.rs"
+  run grep -cE 'domains-wren-silas\.ttl|domains-kade-3581\.ttl' "$SRC"
   [ "$output" -ge 2 ]
 }
 
 # --- #3536: stop-truncating primitive (default-off flip + empty-staging backstop) ---
 
 @test "#3536 RETIRE_ABSENT defaults OFF — no truncate-by-default (the 06-26 wipe root)" {
-  run grep -cE 'RETIRE_ABSENT:-0' "$SCRIPT"
+  # #4229 — the rule moved into retire_absent_on(), which has its own unit
+  # tests including a negative proof that "true"/"yes"/"on" do NOT enable it.
+  SRC="$BATS_TEST_DIRNAME/../services/athena-deploy/src/lib.rs"
+  run grep -c 'Some("1")' "$SRC"
   [ "$output" -ge 1 ]
-  # the old default-1-on-full-deploy form must be gone
-  run grep -cE 'RETIRE_ABSENT:-\$\(\[ -z' "$SCRIPT"
+  # the old default-on-full-deploy form must not exist anywhere in the verb
+  run grep -c 'RETIRE_ABSENT:-\$' "$SRC"
   [ "$output" -eq 0 ]
 }
 

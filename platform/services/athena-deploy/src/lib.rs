@@ -298,6 +298,39 @@ pub fn serve_check_answered(served_resp: &str) -> bool {
     served_resp.contains("\"served\"")
 }
 
+/// #3536 — RETIRE_ABSENT. Deploys never truncate by default.
+///
+/// "Stop truncating our data" (Jeff, 2026-06-30), after a deploy whose staging
+/// lacked the 34 live domains retired every one of them — the 2026-06-26 wipe.
+/// It is opt-in, and even opted in the empty-staging guard below is the last
+/// backstop.
+pub fn retire_absent_on(env_value: Option<&str>) -> bool {
+    matches!(env_value.map(str::trim), Some("1"))
+}
+
+/// #3536 — the empty-staging guard. Retire DELETEs live domain subjects absent
+/// from staging, so ZERO domains in staging would delete EVERY live domain.
+///
+/// A count against LIVE cannot be used: retiring N domains legitimately makes
+/// staging = live − N, so "staging < live" wrongly blocks all retirement — TDD
+/// caught that. The only safe question is whether staging has any domains at
+/// all, and an unanswered count is a refusal, never a zero.
+pub fn retire_guard_allows(staged_domains: Option<usize>) -> Result<(), String> {
+    match staged_domains {
+        None => Err(
+            "REFUSING retire — could not count staging's domain subjects; \
+             an unanswered count is not zero and not a licence to delete"
+                .to_string(),
+        ),
+        Some(0) => Err(
+            "REFUSING retire — staging has 0 domain subjects (empty/incomplete \
+             staging would delete ALL live domains; #3536 guard)"
+                .to_string(),
+        ),
+        Some(_) => Ok(()),
+    }
+}
+
 /// #4125 — a subject deleted from source is NAMED, not silently kept.
 ///
 /// The merge is per-subject additive: it deletes a STAGED subject's triples
@@ -644,13 +677,36 @@ pub fn run_athena_deploy() -> Result<String, String> {
         }
     }
 
+    // #3731 — an ABSENT validator used to mean every file deployed unvalidated
+    // with output identical to a clean run (fail-open hole 3). Refuse loudly,
+    // with one explicit escape whose output cannot be mistaken for a clean run.
+    let riot_here = riot_available();
+    if !riot_here {
+        if std::env::var("ALLOW_UNVALIDATED").as_deref() == Ok("1") {
+            eprintln!(
+                "athena-deploy: WARNING — riot NOT INSTALLED, deploying UNVALIDATED TTL \
+                 (ALLOW_UNVALIDATED=1 set; #3731). This is not a clean run."
+            );
+            emit_spine(&chorus_log, "model.deploy.unvalidated", &role,
+                &[("graph", ontology.clone()), ("reason", "riot-absent-allowed".to_string())]);
+        } else {
+            eprintln!(
+                "athena-deploy: REFUSING — riot (Jena) not installed; cannot validate the model \
+                 before deploy. Install jena, or set ALLOW_UNVALIDATED=1 to proceed loudly \
+                 (#3731 fail-closed)."
+            );
+            return Err(fail("riot-absent"));
+        }
+    }
+
     // Validate every member exists + is riot-valid (don't deploy a broken model).
     for ttl in &set {
         if !Path::new(ttl).exists() {
             return Err(fail(&format!("ttl-not-found:{ttl}")));
         }
-        if riot_available() {
-            let status = Command::new("riot").arg("--validate").arg(ttl)
+        if riot_here {
+            let riot_bin = env_or("RIOT_BIN", "riot");
+            let status = Command::new(&riot_bin).arg("--validate").arg(ttl)
                 .output().map(|o| o.status.success()).unwrap_or(false);
             if !status {
                 return Err(fail(&format!("riot-invalid:{ttl}")));
@@ -1153,7 +1209,8 @@ fn run_git(root: &str, args: &[&str]) -> Option<String> {
 }
 
 fn riot_available() -> bool {
-    Command::new("sh").arg("-c").arg("command -v riot")
+    let riot_bin = env_or("RIOT_BIN", "riot");
+    Command::new("sh").arg("-c").arg(format!("command -v {riot_bin}"))
         .output().map(|o| o.status.success()).unwrap_or(false)
 }
 
