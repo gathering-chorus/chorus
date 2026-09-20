@@ -36,7 +36,13 @@ fn ac3_route_says_cards_header_card_says_search_yields_one_conflict_line() {
 
     // The header card is what makes this a conflict rather than a plain tag,
     // so the fixture must actually carry one the rule can read.
-    let p = place_in_file(&content, path, None, &[], &valid(), &card_domain, &|_| None);
+    let p = place_in_file(
+        &content,
+        path,
+        None,
+        &[],
+        &[],
+        &valid(), &card_domain, &|_| None);
     assert_eq!(p.domain(), None, "a file two rules read differently must not be tagged");
 
     let line = listing(path, &p).expect("a conflict prints a line");
@@ -63,7 +69,13 @@ fn ac4_a_card_number_under_platform_tests_is_unplaced_never_services() {
     // Renamed to a name that states nothing, so the fixture tests what it says.
     let path = "platform/tests/4201-number-only.bats";
 
-    let p = place_in_file(&content, path, None, &[], &valid(), &no_domain, &|_| None);
+    let p = place_in_file(
+        &content,
+        path,
+        None,
+        &[],
+        &[],
+        &valid(), &no_domain, &|_| None);
     assert_eq!(p, Placement::Unplaced, "got {p:?}");
     let line = listing(path, &p).expect("an unplaced file prints a line");
     assert_eq!(line, format!("unplaced {path}: no rule fired"));
@@ -82,6 +94,7 @@ fn ac4_control_the_same_file_tags_when_its_card_has_a_domain() {
         // same rename as above, same reason
         "platform/tests/4201-number-only.bats",
         None,
+        &[],
         &[],
         &valid(),
         &card_domain,

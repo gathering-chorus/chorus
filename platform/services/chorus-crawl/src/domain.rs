@@ -706,7 +706,7 @@ pub fn place_in_unit(
     valid: &[String],
     card_domain: &dyn Fn(u32) -> Option<String>,
 ) -> Placement {
-    place_in_file(content, "", unit, &[], valid, card_domain, &|_| None)
+    place_in_file(content, "", unit, &[], &[], valid, card_domain, &|_| None)
 }
 
 /// The full rule set, including the neighbour rule, which needs the file's own
@@ -859,6 +859,31 @@ pub fn place_by_file_name(path: &str, valid: &[String]) -> Option<Signal> {
     None
 }
 
+
+/// #4222 — the AUTHORED directory rows, the last rule consulted.
+///
+/// After every content rule and the file's own name have stayed silent, what is
+/// left is 1,224 files that name nothing: an api test, a launchagent plist, a
+/// screenshot. For those the package they belong to is the only fact available,
+/// and it is a judgement someone made once — which is why the rows live in
+/// roles/kade/ontology/surface-domain-4222.ttl beside the route and log rows,
+/// not in this file.
+///
+/// LONGEST PREFIX WINS. `platform/services/chorus-oidc/` is identity even
+/// though `platform/services/` is not listed; a shorter prefix must never
+/// shadow a more specific one.
+pub fn place_by_dir(path: &str, valid: &[String], authored: &[(String, String)]) -> Option<Signal> {
+    let (prefix, domain) = authored
+        .iter()
+        .filter(|(p, _)| path.starts_with(p.as_str()))
+        .max_by_key(|(p, _)| p.len())?;
+    valid.contains(domain).then(|| Signal {
+        rule: Rule::Unit,
+        domain: domain.clone(),
+        evidence: format!("dir {prefix}"),
+    })
+}
+
 pub fn place_by_tree(path: &str, valid: &[String]) -> Option<Signal> {
     const TREE: &[(&str, &str)] = &[
         ("roles/", "roles"),
@@ -878,6 +903,7 @@ pub fn place_in_file(
     path: &str,
     unit: Option<&str>,
     unit_rows: &[(String, String)],
+    dir_rows: &[(String, String)],
     valid: &[String],
     card_domain: &dyn Fn(u32) -> Option<String>,
     read: &dyn Fn(&str) -> Option<String>,
@@ -946,6 +972,12 @@ pub fn place_in_file(
     // #4222 — last, and only for the non-source trees: the directory.
     if signals.is_empty() {
         if let Some(s) = place_by_tree(path, valid) {
+            signals.push(s);
+        }
+    }
+    // #4222 — and last of all, the authored package rows.
+    if signals.is_empty() {
+        if let Some(s) = place_by_dir(path, valid, dir_rows) {
             signals.push(s);
         }
     }
@@ -1229,12 +1261,12 @@ mod tests_4201 {
 
         // the guarded condition VIOLATED: no reader, the neighbour is unreadable
         assert_eq!(
-            place_in_file(test, "platform/api/tests/coherence.test.ts", None, &[], &valid(), &no_card, &|_| None),
+            place_in_file(test, "platform/api/tests/coherence.test.ts", None, &[], &[], &valid(), &no_card, &|_| None),
             Placement::Unplaced,
             "with no neighbour to read, this file must stay unplaced"
         );
         // and with the neighbour readable
-        let p = place_in_file(test, "platform/api/tests/coherence.test.ts", None, &[], &valid(), &no_card, &read);
+        let p = place_in_file(test, "platform/api/tests/coherence.test.ts", None, &[], &[], &valid(), &no_card, &read);
         assert_eq!(p.domain(), Some("roles"));
     }
 
@@ -1245,7 +1277,7 @@ mod tests_4201 {
         let test = "import { x } from '../src/thing';\nrequest(app).get('/api/chorus/cards');";
         let src = "app.get('/api/chorus/context/roles', h);";
         let read = |_: &str| Some(src.to_string());
-        let p = place_in_file(test, "platform/api/tests/a.test.ts", None, &[], &valid(), &no_card, &read);
+        let p = place_in_file(test, "platform/api/tests/a.test.ts", None, &[], &[], &valid(), &no_card, &read);
         assert_eq!(p.domain(), Some("cards"));
     }
 
@@ -1259,7 +1291,7 @@ mod tests_4201 {
             "x/src/b.ts" => Some("app.get('/api/chorus/context/roles', h);".to_string()),
             _ => None,
         };
-        let p = place_in_file(test, "x/tests/t.test.ts", None, &[], &valid(), &no_card, &read);
+        let p = place_in_file(test, "x/tests/t.test.ts", None, &[], &[], &valid(), &no_card, &read);
         assert!(matches!(p, Placement::Conflict { .. }), "got {p:?}");
     }
 
@@ -1274,7 +1306,7 @@ mod tests_4201 {
             _ => None,
         };
         assert_eq!(
-            place_in_file(test, "x/tests/t.test.ts", None, &[], &valid(), &no_card, &read),
+            place_in_file(test, "x/tests/t.test.ts", None, &[], &[], &valid(), &no_card, &read),
             Placement::Unplaced
         );
     }
@@ -1311,11 +1343,11 @@ mod tests_4201 {
 
         // the guarded condition VIOLATED: no authored rows to read
         assert_eq!(
-            place_in_file(c, "directing/clearing/tests/a.test.ts", Some("clearing"), &[], &v, &no_card, &|_| None),
+            place_in_file(c, "directing/clearing/tests/a.test.ts", Some("clearing"), &[], &[], &v, &no_card, &|_| None),
             Placement::Unplaced,
             "with no authored rows this file must stay unplaced"
         );
-        let p = place_in_file(c, "directing/clearing/tests/a.test.ts", Some("clearing"), &rows, &v, &no_card, &|_| None);
+        let p = place_in_file(c, "directing/clearing/tests/a.test.ts", Some("clearing"), &rows, &[], &v, &no_card, &|_| None);
         assert_eq!(p.domain(), Some("messages"));
     }
 
@@ -1325,7 +1357,7 @@ mod tests_4201 {
     fn a_unit_with_no_authored_row_stays_unplaced() {
         let rows = vec![("com.chorus.clearing".to_string(), "messages".to_string())];
         assert_eq!(
-            place_in_file("x", "a/b.test.ts", Some("clearing-ui"), &rows, &valid(), &no_card, &|_| None),
+            place_in_file("x", "a/b.test.ts", Some("clearing-ui"), &rows, &[], &valid(), &no_card, &|_| None),
             Placement::Unplaced
         );
     }
@@ -1335,7 +1367,7 @@ mod tests_4201 {
     fn the_code_table_beats_an_authored_row() {
         let rows = vec![("com.chorus.hooks".to_string(), "logs".to_string()),
                         ("chorus-hooks".to_string(), "logs".to_string())];
-        let p = place_in_file("x", "a/b.rs", Some("chorus-hooks"), &rows, &valid(), &no_card, &|_| None);
+        let p = place_in_file("x", "a/b.rs", Some("chorus-hooks"), &rows, &[], &valid(), &no_card, &|_| None);
         assert_eq!(p.domain(), Some("spine"));
     }
     /// NEGATIVE PROOF: a package.json name. `"name": "clearing"` split on the
@@ -1388,7 +1420,7 @@ mod tests_4201 {
         assert_eq!(place(defines, &valid(), &no_card), Placement::Unplaced);
         // and with the unit known, it falls to the unit rule as it should
         let p = place_in_file(defines, "platform/services/chorus-hooks/src/x.rs",
-            Some("chorus-hooks"), &[], &valid(), &no_card, &|_| None);
+            Some("chorus-hooks"), &[], &[], &valid(), &no_card, &|_| None);
         assert_eq!(p.domain(), Some("spine"));
     }
 
@@ -1413,12 +1445,12 @@ mod tests_4201 {
         let path = "directing/clearing/tests/server-unit.test.ts";
 
         // ambiguous neighbour: the unit rule decides, and gets it right
-        let p = place_in_file(test, path, Some("clearing"), &rows, &v, &no_card,
+        let p = place_in_file(test, path, Some("clearing"), &rows, &[], &v, &no_card,
             &|q: &str| (q == "directing/clearing/src/server.ts").then(|| many.to_string()));
         assert_eq!(p.domain(), Some("messages"), "{p:?}");
 
         // control: a neighbour that IS about one domain still speaks, and wins
-        let p = place_in_file(test, path, Some("clearing"), &rows, &v, &no_card,
+        let p = place_in_file(test, path, Some("clearing"), &rows, &[], &v, &no_card,
             &|q: &str| (q == "directing/clearing/src/server.ts").then(|| one.to_string()));
         assert_eq!(p.domain(), Some("domains"), "{p:?}");
     }
@@ -1438,7 +1470,7 @@ mod tests_4201 {
 
         // control: a file that IS an athena crate tags domains, off the unit
         let p = place_in_file("fn main() {}", "platform/services/athena-make/src/lib.rs",
-            Some("athena-make"), &[], &v, &no_card, &|_| None);
+            Some("athena-make"), &[], &[], &v, &no_card, &|_| None);
         assert_eq!(p.domain(), Some("domains"));
     }
     /// NEGATIVE PROOF: the unit breaks a tie but can never invent one.
@@ -1457,14 +1489,14 @@ mod tests_4201 {
         );
         // the unit is one of the candidates: it decides
         let p = place_in_file(tied, "platform/services/athena-make/tests/c.rs",
-            Some("athena-make"), &[], &valid(), &no_card, &|_| None);
+            Some("athena-make"), &[], &[], &valid(), &no_card, &|_| None);
         assert_eq!(p.domain(), Some("domains"));
         // the unit is NOT among the candidates: the mentions are someone
         // else's names in chorus-hooks' own test, so the unit replaces them.
         // (Before the mention-vs-unit precedence landed this was a conflict;
         // the conflict was the file being read as a test of what it names.)
         let p = place_in_file(tied, "platform/services/chorus-hooks/tests/c.rs",
-            Some("chorus-hooks"), &[], &valid(), &no_card, &|_| None);
+            Some("chorus-hooks"), &[], &[], &valid(), &no_card, &|_| None);
         assert_eq!(p.domain(), Some("spine"), "{p:?}");
     }
     /// The three crates added 2026-09-18, each proved by the state that made
@@ -1475,7 +1507,7 @@ mod tests_4201 {
         let c = "const out = execSync(`${CLI} add --title x`);\nexpect(out).toContain('ok');";
         assert_eq!(place(c, &valid(), &no_card), Placement::Unplaced, "control: no signal in the file");
         let p = place_in_file(c, "directing/products/cards/tests/a.test.ts",
-            Some("cards"), &[], &valid(), &no_card, &|_| None);
+            Some("cards"), &[], &[], &valid(), &no_card, &|_| None);
         assert_eq!(p.domain(), Some("cards"));
     }
     /// NEGATIVE PROOF: one incidental mention outranked the crate the test
@@ -1491,12 +1523,12 @@ mod tests_4201 {
         let c = "expect(stubHits).toEqual(['/api/chorus/domain/chorus']);";
 
         // with no unit domain to weigh it against, the mention still decides
-        let p = place_in_file(c, "x/t.test.ts", None, &[], &v, &no_card, &|_| None);
+        let p = place_in_file(c, "x/t.test.ts", None, &[], &[], &v, &no_card, &|_| None);
         assert_eq!(p.domain(), Some("domains"), "control: the rule still fires alone");
 
         // inside a unit that declares one, the unit is the subject
         let p = place_in_file(c, "directing/clearing/tests/t.test.ts",
-            Some("clearing"), &rows, &v, &no_card, &|_| None);
+            Some("clearing"), &rows, &[], &v, &no_card, &|_| None);
         assert_eq!(p.domain(), Some("messages"));
     }
 
@@ -1509,7 +1541,7 @@ mod tests_4201 {
         let rows = vec![("com.chorus.clearing".to_string(), "messages".to_string())];
         let c = "await request(app).post('/api/chorus/nudge');";
         let p = place_in_file(c, "directing/clearing/tests/t.test.ts",
-            Some("clearing"), &rows, &v, &no_card, &|_| None);
+            Some("clearing"), &rows, &[], &v, &no_card, &|_| None);
         assert_eq!(p.domain(), Some("messages"));
         match p {
             Placement::Tagged { signals, .. } => {
@@ -1535,10 +1567,10 @@ mod tests_4201 {
 
         // the guarded condition: without the derivation, nothing fires
         assert_eq!(
-            place_in_file(test, "a/tests/t.test.ts", None, &[], &v, &no_card, &|_| None),
+            place_in_file(test, "a/tests/t.test.ts", None, &[], &[], &v, &no_card, &|_| None),
             Placement::Unplaced
         );
-        let p = place_in_file(test, "a/tests/t.test.ts", None, &[], &v, &no_card, &read);
+        let p = place_in_file(test, "a/tests/t.test.ts", None, &[], &[], &v, &no_card, &read);
         assert_eq!(p.domain(), Some("deploys"));
     }
 
@@ -1553,7 +1585,7 @@ mod tests_4201 {
         let src = "app.get('/api/chorus/deploys/x', h);\napp.get('/api/chorus/cicd/y', h);";
         let read = |_: &str| Some(src.to_string());
         assert_eq!(
-            place_in_file(test, "a/tests/t.test.ts", None, &[], &v, &no_card, &read),
+            place_in_file(test, "a/tests/t.test.ts", None, &[], &[], &v, &no_card, &read),
             Placement::Unplaced
         );
     }
@@ -1635,7 +1667,7 @@ mod multi_domain_4222 {
             ("proving/flows/clearing-ui.spec.cjs", "tests"),
             ("designing/docs/werk-product-design.html", "knowledge"),
         ] {
-            let got = place_in_file("nothing here\n", path, None, &[], &v, &none, &noread);
+            let got = place_in_file("nothing here\n", path, None, &[], &[], &v, &none, &noread);
             assert_eq!(got.domain(), Some(want), "{path}");
         }
     }
@@ -1651,7 +1683,7 @@ mod multi_domain_4222 {
         let none = |_: u32| None;
         let noread = |_: &str| None;
 
-        let src = place_in_file("nothing here\n", "platform/api/src/x.ts", None, &[], &v, &none, &noread);
+        let src = place_in_file("nothing here\n", "platform/api/src/x.ts", None, &[], &[], &v, &none, &noread);
         assert_eq!(src.domain(), None, "platform/ is source — no tree rule");
 
         // a role file that DOES name a domain keeps its own answer
@@ -1659,6 +1691,7 @@ mod multi_domain_4222 {
             "calls /api/chorus/cards\n",
             "roles/kade/notes/x.md",
             None,
+            &[],
             &[],
             &v,
             &none,
@@ -1683,11 +1716,11 @@ mod multi_domain_4222 {
         let content = "calls /api/chorus/cards and /api/chorus/trace\n";
 
         let role_file =
-            place_in_file(content, "roles/wren/briefs/x.md", None, &[], &v, &none, &noread);
+            place_in_file(content, "roles/wren/briefs/x.md", None, &[], &[], &v, &none, &noread);
         assert_eq!(role_file.domain(), Some("roles"), "a tie in roles/ takes the tree");
 
         let source =
-            place_in_file(content, "platform/api/src/x.ts", None, &[], &v, &none, &noread);
+            place_in_file(content, "platform/api/src/x.ts", None, &[], &[], &v, &none, &noread);
         assert!(
             matches!(source, Placement::Conflict { .. }),
             "a tie in platform/ stays a reported conflict, got {source:?}"
@@ -1763,6 +1796,51 @@ mod multi_domain_4222 {
         // and a name with nothing but the word test places nothing
         assert!(place_by_file_name("platform/api/tests/foo.test.ts", &v).is_none());
         assert!(place_by_file_name("platform/api/src/zzz.ts", &v).is_none());
+    }
+
+    /// #4222 — the authored package rows, longest prefix wins.
+    #[test]
+    fn a_package_takes_the_domain_its_authored_row_states() {
+        let v = vec!["services".to_string(), "identity".to_string(), "tests".to_string()];
+        let rows: Vec<(String, String)> = vec![
+            ("platform/api/".into(), "services".into()),
+            ("platform/services/chorus-oidc/".into(), "identity".into()),
+        ];
+        assert_eq!(
+            place_by_dir("platform/api/src/x.ts", &v, &rows).map(|s| s.domain).as_deref(),
+            Some("services"),
+        );
+        // LONGEST PREFIX WINS — the specific row beats nothing at all, and would
+        // beat a shorter one for the same path.
+        assert_eq!(
+            place_by_dir("platform/services/chorus-oidc/src/a.rs", &v, &rows)
+                .map(|s| s.domain)
+                .as_deref(),
+            Some("identity"),
+        );
+    }
+
+    /// NEGATIVE PROOF, two states it must separate.
+    ///
+    /// 1. A shorter prefix must NOT shadow a longer one. Swap max_by_key for
+    ///    `find` and this reds — chorus-oidc would answer `services`.
+    /// 2. A path no row covers answers None. No first-row default.
+    #[test]
+    fn the_shortest_prefix_never_wins_and_an_uncovered_path_is_none() {
+        let v = vec!["services".to_string(), "identity".to_string()];
+        let rows: Vec<(String, String)> = vec![
+            ("platform/".into(), "services".into()),
+            ("platform/services/chorus-oidc/".into(), "identity".into()),
+        ];
+        assert_eq!(
+            place_by_dir("platform/services/chorus-oidc/src/a.rs", &v, &rows)
+                .map(|s| s.domain)
+                .as_deref(),
+            Some("identity"),
+            "the longer prefix must win",
+        );
+        assert!(place_by_dir("roles/kade/x.md", &v, &rows).is_none());
+        assert!(place_by_dir("platform/api/x.ts", &v, &[]).is_none());
     }
 
 }
