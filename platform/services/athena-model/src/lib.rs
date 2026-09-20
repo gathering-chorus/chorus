@@ -111,7 +111,7 @@ const KINDS: &[(&str, &str, bool)] = &[
     ("gate", "Gate", false),
     ("decision", "Decision", false),
     ("document", "Document", false),
-    ("revision", "Revision", false),   // #4102 — a prior version of a row, kept by the door at replace
+    ("version", "Version", false),     // #4102 — a prior version of a row, kept at replace; named Version by Jeff on #4211 (2026-09-20)
     // #4202 — Session: one login of a Principal, written by chorus-awake before
     // a role's first turn. The class and its shape deployed, the route served,
     // and the write still 502'd "unknown-kind: session" — a row the model knows

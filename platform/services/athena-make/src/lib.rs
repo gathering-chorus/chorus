@@ -2342,7 +2342,7 @@ fn prepare_create(body: &str, table: &RouteTable, caller_role: &str, landed_comm
         }
     }
     // #4101 — stamps from the write; a document with no declared word is a draft
-    fields.retain(|(f, _)| f != "changedAt" && f != "changedIn" && f != "version");
+    fields.retain(|(f, _)| f != "changedAt" && f != "changedIn" && f != "writeCount");
     fields.extend(write_stamps(table, landed_commit));
     fields.extend(version_stamp(table, None));
     if table.fields.iter().any(|f| f.split('|').next() == Some("docState")) && !fields.iter().any(|(f, _)| f == "docState") {
@@ -2750,12 +2750,12 @@ mod bounds_closedshape_tests {
         assert_eq!(body_sets_a_stamp(r#"{"name":"d3","changedIn":"deadbeef"}"#).as_deref(), Some("changedIn"));
         assert_eq!(body_sets_a_stamp(r#"{"name":"d3","docTitle":"x"}"#), None);
         // version: 1 on create, previous + 1 on replace, only where the shape carries it
-        let mut vt = table.clone(); vt.fields.push("version".into());
+        let mut vt = table.clone(); vt.fields.push("writeCount".into());
         let v1 = prepare_create(r#"{"name":"d4","docTitle":"D","docHref":"/d.html"}"#, &vt, "wren", "").unwrap();
-        assert_eq!(v1.fields.iter().find(|(f, _)| f == "version").map(|(_, v)| v.as_str()), Some("1"));
-        assert_eq!(version_stamp(&vt, Some("7")), Some(("version".to_string(), "8".to_string())));
-        assert_eq!(version_stamp(&vt, Some("junk")), Some(("version".to_string(), "1".to_string())));
-        assert_eq!(body_sets_a_stamp(r#"{"name":"d5","version":"9"}"#).as_deref(), Some("version"));
+        assert_eq!(v1.fields.iter().find(|(f, _)| f == "writeCount").map(|(_, v)| v.as_str()), Some("1"));
+        assert_eq!(version_stamp(&vt, Some("7")), Some(("writeCount".to_string(), "8".to_string())));
+        assert_eq!(version_stamp(&vt, Some("junk")), Some(("writeCount".to_string(), "1".to_string())));
+        assert_eq!(body_sets_a_stamp(r#"{"name":"d5","writeCount":"9"}"#).as_deref(), Some("writeCount"));
         // a class without the stamp fields gets none
         let plain = RouteTable { unbounded: vec![], domain: String::new(), base_path: String::new(),
             class: "https://jeffbridwell.com/chorus#Card".into(), fields: vec!["label".into()],
@@ -2885,15 +2885,15 @@ pub fn write_stamps(table: &RouteTable, landed_commit: &str) -> Vec<(String, Str
 }
 
 pub fn body_sets_a_stamp(body: &str) -> Option<String> {
-    json_top_level_keys(body).into_iter().find(|k| k == "changedAt" || k == "changedIn" || k == "version")
+    json_top_level_keys(body).into_iter().find(|k| k == "changedAt" || k == "changedIn" || k == "writeCount")
 }
 
 /// #4101 — the version a person can say: the row's write count. `previous` is the
 /// row's current version (None on create). Only for classes whose shape carries it.
 pub fn version_stamp(table: &RouteTable, previous: Option<&str>) -> Option<(String, String)> {
-    if !table.fields.iter().any(|f| f.split('|').next() == Some("version")) { return None; }
+    if !table.fields.iter().any(|f| f.split('|').next() == Some("writeCount")) { return None; }
     let next = previous.and_then(|v| v.trim().parse::<u64>().ok()).unwrap_or(0) + 1;
-    Some(("version".to_string(), next.to_string()))
+    Some(("writeCount".to_string(), next.to_string()))
 }
 
 fn query_version(class: &str, entity: &str, instances_graph: &str) -> Option<String> {
@@ -2984,7 +2984,7 @@ fn build_revision(table: &RouteTable, name: &str, caller_role: &str) -> R<Prepar
     let mut fields: Vec<(String, String)> = vec![
         ("label".to_string(), format!("{}/{} v{}", plural, name, prev)),
         ("ofRow".to_string(), format!("{}/{}", plural, name)),
-        ("version".to_string(), prev),
+        ("writeCount".to_string(), prev),
         ("snapshot".to_string(), data),
     ];
     for k in ["changedAt", "changedIn"] {
@@ -2995,8 +2995,8 @@ fn build_revision(table: &RouteTable, name: &str, caller_role: &str) -> R<Prepar
     // for a Revision that is the home of chorus:Revision, which is also the graph
     // /revisions reads — so a document's history is served by the same route as a
     // product's, whatever graph the row itself lives in.
-    let rev_graph = class_instances_graph(&format!("{}Revision", NS))?;
-    Ok(PreparedCreate { kind: "revision".to_string(), name: rev_name, fields, edges, graph: rev_graph })
+    let rev_graph = class_instances_graph(&format!("{}Version", NS))?;
+    Ok(PreparedCreate { kind: "version".to_string(), name: rev_name, fields, edges, graph: rev_graph })
 }
 
 pub fn handle_write(method: &str, path: &str, body: &str, table: &RouteTable, caller_role: &str, token: &str) -> (u16, String) {
@@ -3047,7 +3047,7 @@ pub fn handle_write_stamped(method: &str, path: &str, body: &str, table: &RouteT
             "write body {} bytes exceeds {}-byte cap", body.len(), MAX_WRITE_BYTES));
     }
     // #4102 — revisions are written by the door at replace, never by a caller
-    if table.class.ends_with("#Revision") {
+    if table.class.ends_with("#Version") {
         return write_resp("validation", "revisions are kept by the door when a row is replaced; they cannot be written directly");
     }
     // #4101 — the stamps are the door's, never the body's
@@ -3156,7 +3156,7 @@ pub fn handle_write_stamped(method: &str, path: &str, body: &str, table: &RouteT
             // semantic rather than athena-make's prior partial-update (a competing impl).
             let kind = kind_of_class(class_local);
             let (mut fields, mut owner_edges) = verified_owner_projection(table, caller_role);
-            fields.extend(props.iter().filter(|(field, _)| field != "ownedBy" && field != "changedAt" && field != "changedIn" && field != "version").cloned());
+            fields.extend(props.iter().filter(|(field, _)| field != "ownedBy" && field != "changedAt" && field != "changedIn" && field != "writeCount").cloned());
             fields.extend(write_stamps(table, landed_commit));   // #4101
             let prev = query_version(&table.class, name, &table.instances_graph);
             // #4102 — one commit, one version: a second post from the same land is
