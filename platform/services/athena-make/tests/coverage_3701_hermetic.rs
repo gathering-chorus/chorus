@@ -239,12 +239,14 @@ fn rows_for(q: &str) -> Vec<String> {
     if q.contains("chorus:instancesGraph") {
         return if q.contains("#Domain>") {
             vec![s("urn:test:instances")]
-        } else if q.contains("#Revision>") {
-            // #4102 — a replace keeps the version it displaces, and the Revision
-            // it writes needs the home graph of chorus:Revision. Without this row
+        } else if q.contains("#Version>") {
+            // #4102 — a replace keeps the version it displaces, and the Version row
+            // it writes needs the home graph of chorus:Version. Without this row
             // the fixture's model has no home for the class, so the door refuses
             // every replace fail-closed (it will not silently drop a version).
-            vec![s("urn:chorus:instances")]
+            // #4211 — the class was chorus:Revision until Jeff named it Version on
+            // 2026-09-20; its home moved from the v1 catch-all to the provenance graph.
+            vec![s("urn:chorus:domains:provenance")]
         } else if q.contains("#TestResult>") {
             vec![s("urn:chorus:domains:tests")]
         } else if q.contains("#Child>") || q.contains("#Lonely>")
