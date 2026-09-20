@@ -650,8 +650,32 @@ pub const PRINCIPAL_SCOPE_QUERY_TEMPLATE: &str =
 /// the TypeScript door can read it at runtime, so the graph is substituted here
 /// rather than templated in the file: a .rq with a placeholder would be invalid
 /// SPARQL and could not be validated by anything that parses it.
+/// #4224 — PRINCIPALS AND PERMISSIONS DO NOT SHARE A HOME.
+///
+/// The template used to hold both classes inside ONE `GRAPH` clause, and this
+/// function swapped that one graph for the resolved principal home. On
+/// 2026-09-19 the twelve Principal rows moved to `urn:chorus:domains:identity`
+/// while the 46 Permission rows stayed in `urn:chorus:domains:security`: the
+/// join then asked identity for Permissions, found none, and every governed
+/// write in the system refused for four minutes (427 failed crawler writes).
+///
+/// The template now names the two graphs separately. Permissions are read from
+/// the security graph, which is where PermissionShape says they live. Principals
+/// are read from `PRINCIPAL_HOME_MARKER`, a graph that exists nowhere, and this
+/// function is the only thing that turns it into a real one. An unsubstituted
+/// marker therefore resolves zero grants and the door fails closed — the safe
+/// direction, and the one a reader can see in the query text.
+pub const PRINCIPAL_HOME_MARKER: &str = "urn:chorus:principal-home";
+
 pub fn principal_scope_query() -> String {
-    PRINCIPAL_SCOPE_QUERY_TEMPLATE.replace("urn:chorus:domains:security", &allow_set_graph())
+    principal_scope_query_for(&allow_set_graph())
+}
+
+/// The substitution as a pure function of the home, so a test can ask what the
+/// query looks like for a home that is NOT the default without touching the
+/// process-wide resolved graph.
+pub fn principal_scope_query_for(home: &str) -> String {
+    PRINCIPAL_SCOPE_QUERY_TEMPLATE.replace(PRINCIPAL_HOME_MARKER, home)
 }
 
 /// None = graph unreachable (caller fails closed); Some(empty) = reachable and
@@ -1413,6 +1437,60 @@ mod tests {
         let m = got.expect("reachable");
         assert_eq!(m, vec![(wren_webid(), vec!["urn:chorus:domains:tests".to_string(), "urn:chorus:ontology".to_string()])]);
         assert_eq!(resolve_principal_scopes(|_| None), None, "unreachable is DISTINCT from empty");
+    }
+
+    // -----------------------------------------------------------------------
+    // #4224 — the scope query reads TWO graphs. Permissions from the security
+    // graph, Principals from wherever the model says Principals live. On
+    // 2026-09-19 those were the same graph, then they weren't, and one clause
+    // holding both classes took every governed write down.
+    // -----------------------------------------------------------------------
+
+    /// NEGATIVE PROOF. The fixture is the state that broke prod: a principal
+    /// home that is NOT the security graph. Collapse the two clauses back into
+    /// one — substitute the security literal as the old code did, or move the
+    /// Permission triples under the home clause — and this goes red.
+    #[test]
+    fn permissions_read_from_security_and_principals_from_a_different_home() {
+        let home = "urn:chorus:domains:identity";
+        let q = principal_scope_query_for(home);
+        assert_ne!(home, "urn:chorus:domains:security", "the fixture must be the split case");
+
+        let sec = q
+            .find("GRAPH <urn:chorus:domains:security>")
+            .expect("permissions are read from the security graph");
+        let hom = q
+            .find(&format!("GRAPH <{home}>"))
+            .expect("principals are read from the resolved home");
+        assert_ne!(sec, hom, "two graph clauses, not one");
+
+        // Each class sits under its own graph: the Permission triples appear
+        // between the security clause and the home clause, the Principal
+        // triples after the home clause. Merging them moves one of these.
+        let perm = q.find("chorus:Permission").expect("asks Permission");
+        let prin = q.find("chorus:Principal").expect("asks Principal");
+        assert!(sec < perm && perm < hom, "Permission belongs to the security clause");
+        assert!(hom < prin, "Principal belongs to the home clause");
+    }
+
+    /// NEGATIVE PROOF. The marker must resolve nowhere until a door substitutes
+    /// it. If someone "fixes" the template by writing a real graph in place of
+    /// the marker, an un-primed door silently reads that graph instead of
+    /// failing closed — so the template carrying the marker is itself the check.
+    #[test]
+    fn the_unsubstituted_marker_is_not_a_real_graph_and_never_survives() {
+        assert!(
+            PRINCIPAL_SCOPE_QUERY_TEMPLATE.contains(PRINCIPAL_HOME_MARKER),
+            "the shipped template names the marker, not a graph"
+        );
+        assert!(
+            !PRINCIPAL_HOME_MARKER.starts_with("urn:chorus:domains:"),
+            "the marker must not look like a domain graph that could hold rows"
+        );
+        for home in ["urn:chorus:domains:security", "urn:chorus:domains:identity"] {
+            let q = principal_scope_query_for(home);
+            assert!(!q.contains(PRINCIPAL_HOME_MARKER), "substitution leaves no marker for {home}");
+        }
     }
 
 

@@ -28,6 +28,25 @@ export type VerifyResult =
   | { ok: true; webId: string; scope: string[] }
   | { ok: false; reason: 'hs256-retired' | 'invalid' };
 
+/**
+ * #4224 — the graph Principals live in is a model fact, and the canonical query
+ * (src/sparql/principal-scope.rq) names it with a marker rather than a real
+ * graph. Permissions are read from the security graph, where PermissionShape
+ * says they live; Principals from wherever PrincipalShape points. On 2026-09-19
+ * both classes shared one GRAPH clause, the Principal rows moved to
+ * urn:chorus:domains:identity, and every governed write refused until the rows
+ * were moved back by hand.
+ *
+ * Substituting the marker is the ONLY thing that turns it into a real graph, so
+ * a door that forgets resolves nothing and fails closed instead of reading the
+ * wrong graph.
+ */
+export const PRINCIPAL_HOME_MARKER = 'urn:chorus:principal-home';
+
+export function scopeQueryFor(template: string, home: string): string {
+  return template.split(PRINCIPAL_HOME_MARKER).join(home);
+}
+
 export interface IdentityVerifierDeps {
   /** Logical CSS issuer the token's iss must equal (env CSS_ISSUER). */
   issuer: string;
@@ -40,7 +59,7 @@ export interface IdentityVerifierDeps {
    *  webId→scopes allow-set in one query, exactly like the Rust door's
    *  resolve_principal_scopes; no per-webId query is hand-written here any more,
    *  so the two doors cannot drift. */
-  scopeQuery: string;
+  scopeQuery: string | (() => Promise<string>);
   /** SPARQL query against the pods dataset (security graph lives there). */
   sparql: (query: string) => Promise<unknown>;
   nowSecs: () => number;
@@ -217,7 +236,14 @@ export function createIdentityVerifier(deps: IdentityVerifierDeps): (token: stri
     const now = deps.nowSecs();
     if (!allow || allow.expires <= now) {
       try {
-        const res = (await deps.sparql(deps.scopeQuery)) as SparqlBindings;
+        // #4224 — the query text is resolved per refresh, not frozen at
+        // construction: the graph Principals live in is a model fact the door
+        // reads at boot, and a string captured before that read would pin the
+        // wrong graph. A resolver that throws fails closed like any other
+        // unanswerable model.
+        const scopeQuery =
+          typeof deps.scopeQuery === 'function' ? await deps.scopeQuery() : deps.scopeQuery;
+        const res = (await deps.sparql(scopeQuery)) as SparqlBindings;
         allow = { map: parseAllowSet(res), expires: now + ttl };
       } catch {
         // fail closed: an unanswerable model is NO grants, and the failure is
