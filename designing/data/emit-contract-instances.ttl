@@ -1,0 +1,45 @@
+@prefix rdf:      <http://www.w3.org/1999/02/22-rdf-syntax-ns#> .
+@prefix rdfs:     <http://www.w3.org/2000/01/rdf-schema#> .
+@prefix acl:    <http://www.w3.org/ns/auth/acl#> .
+@prefix owl:      <http://www.w3.org/2002/07/owl#> .
+@prefix xsd:      <http://www.w3.org/2001/XMLSchema#> .
+@prefix dcterms:  <http://purl.org/dc/terms/> .
+@prefix sh:       <http://www.w3.org/ns/shacl#> .
+@prefix chorus:   <https://jeffbridwell.com/chorus#> .
+@prefix skos:     <http://www.w3.org/2004/02/skos/core#> .
+
+# #4216 — moved out of the MODEL_SET schema files on 2026-09-20.
+#
+# MODEL_SET loads into urn:chorus:ontology, the SCHEMA graph, so a row authored
+# in one of those files was re-created there on every model deploy and no prune
+# could hold — four classes pruned this morning were back within the hour.
+#
+# The test for what belongs here, settled with Kade on 2026-09-20: does the row
+# carry data beyond its own name? These do. Bare names of a closed set (Pass /
+# Fail / Override, the handoff and interaction vocabularies) are schema and stay.
+#
+# Via the seed manifest these load through the DAL, which resolves each row's
+# home from its shape, so they land in their own domain graph.
+
+
+# --- ADR-046 PROOF / TEMPLATE: the DORA four-key metrics over the live werk spine.
+# Kade authors werk's EmitContract (#3495) by pointing the werk service's chorus:emits at this
+# (or a refined copy). Every metric is COMPUTED from its emittedAs spine events — names are
+# Kade-verified live, not invented. This block proves the ADR-046 vocabulary round-trips. ---
+
+# DORA lead-time, decomposed into three legs so round-churn surfaces as coordination-wait (leg 2).
+
+
+
+
+# Change-failure-rate — counts ONLY failureClass="change"; "tooling" excluded (pk-failureClass enum)
+# so today's land.failed tooling bugs never poison CFR. failureClass is emitted at the source (#3495).
+
+# Liveness-as-emission — absence of werk.heartbeat IS the unhealthy signal (closes the absence leak).
+
+chorus:werk-emit-contract a chorus:EmitContract ;
+    rdfs:label "werk Emit Contract (ADR-046 template — Kade #3495)" ;
+    rdfs:comment "The Building value-stream's observability declaration: DORA lead-time (decomposed), CFR (failureClass-gated), liveness. Kade refines + attaches to the werk service. ADR-046 / #3495." ;
+    chorus:declaresMetric chorus:metric-werk-lead-time, chorus:metric-werk-lead-build,
+        chorus:metric-werk-lead-coordwait, chorus:metric-werk-lead-land,
+        chorus:metric-werk-cfr, chorus:metric-werk-liveness .

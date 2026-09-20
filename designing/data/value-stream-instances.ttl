@@ -1,5 +1,6 @@
 @prefix chorus: <https://jeffbridwell.com/chorus#> .
 @prefix rdfs:   <http://www.w3.org/2000/01/rdf-schema#> .
+@prefix owl:      <http://www.w3.org/2002/07/owl#> .
 
 # #3522 — COMPLETE ValueStreamStep instances (type + label + wiring). athena-deploy is
 # delete-subjects-then-insert, so each subject must carry its FULL definition or the
@@ -88,3 +89,33 @@ chorus:value-stream-gathering a chorus:ValueStream ;
         chorus:value-stream-step-gathering-practicing, chorus:value-stream-step-gathering-tending,
         chorus:value-stream-step-gathering-harvesting, chorus:value-stream-step-gathering-reflecting,
         chorus:value-stream-step-gathering-connecting .
+
+# #4216 — moved out of the MODEL_SET schema files on 2026-09-20.
+#
+# MODEL_SET loads into urn:chorus:ontology, the SCHEMA graph, so a row authored
+# in one of those files was re-created there on every model deploy and no prune
+# could hold — four classes pruned this morning were back within the hour.
+#
+# The test for what belongs here, settled with Kade on 2026-09-20: does the row
+# carry data beyond its own name? These do. Bare names of a closed set (Pass /
+# Fail / Override, the handoff and interaction vocabularies) are schema and stay.
+#
+# Via the seed manifest these load through the DAL, which resolves each row's
+# home from its shape, so they land in their own domain graph.
+
+# --- Life value stream steps (placeholder — Jeff defines later) ---------------
+
+chorus:lifeStream a chorus:ValueStream ;
+    rdfs:label "Life" ;
+    rdfs:comment "DEPRECATED (v1, #3697). The Life stream + its Tending step migrate to the ValueStreamStep grammar in #3705. Retired with the Vertebra ABox in #3702." ;
+    owl:deprecated true .
+
+chorus:gatheringStream a chorus:ValueStream ;
+    rdfs:label "Gathering (Stream)" ;
+    rdfs:comment "DEPRECATED (v1, #3697). The v1 comment 'Spark → Capture → …' never matched its actual Vertebra steps (Sowing/Growing/Practicing/Harvesting/Reflecting) — drift (b). Superseded by the gathering ValueStream authored in the ValueStreamStep grammar by #3705 (which fixes the comment there). Retired with the Vertebra ABox in #3702." ;
+    owl:deprecated true .
+
+chorus:chorusStream a chorus:ValueStream ;
+    rdfs:label "Chorus" ;
+    rdfs:comment "DEPRECATED (v1, #3697). Superseded by chorus:value-stream-chorus (ValueStreamStep grammar, live in urn:chorus:instances) — which correctly runs Shaping → Directing → Designing → Building → Proving → Reflecting (6 steps; v1 stopped at Proving). Retired with the Vertebra ABox in #3702." ;
+    owl:deprecated true .

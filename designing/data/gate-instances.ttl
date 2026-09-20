@@ -1,0 +1,126 @@
+@prefix rdf:      <http://www.w3.org/1999/02/22-rdf-syntax-ns#> .
+@prefix rdfs:     <http://www.w3.org/2000/01/rdf-schema#> .
+@prefix acl:    <http://www.w3.org/ns/auth/acl#> .
+@prefix owl:      <http://www.w3.org/2002/07/owl#> .
+@prefix xsd:      <http://www.w3.org/2001/XMLSchema#> .
+@prefix dcterms:  <http://purl.org/dc/terms/> .
+@prefix sh:       <http://www.w3.org/ns/shacl#> .
+@prefix chorus:   <https://jeffbridwell.com/chorus#> .
+@prefix skos:     <http://www.w3.org/2004/02/skos/core#> .
+
+# #4216 — moved out of the MODEL_SET schema files on 2026-09-20.
+#
+# MODEL_SET loads into urn:chorus:ontology, the SCHEMA graph, so a row authored
+# in one of those files was re-created there on every model deploy and no prune
+# could hold — four classes pruned this morning were back within the hour.
+#
+# The test for what belongs here, settled with Kade on 2026-09-20: does the row
+# carry data beyond its own name? These do. Bare names of a closed set (Pass /
+# Fail / Override, the handoff and interaction vocabularies) are schema and stay.
+#
+# Via the seed manifest these load through the DAL, which resolves each row's
+# home from its shape, so they land in their own domain graph.
+
+
+chorus:DirectionGate a chorus:Gate ;
+    rdfs:label "Direction Gate" ;
+    chorus:fromStage chorus:Directing ;
+    chorus:toStage chorus:Designing ;
+    chorus:gatekeeper chorus:role-jeff .
+
+chorus:DesignGate a chorus:Gate ;
+    rdfs:label "Design Gate" ;
+    chorus:fromStage chorus:Designing ;
+    chorus:toStage chorus:Building ;
+    chorus:gatekeeper chorus:role-silas .
+
+chorus:BuildGate a chorus:Gate ;
+    rdfs:label "Build Gate" ;
+    chorus:fromStage chorus:Building ;
+    chorus:toStage chorus:Proving ;
+    chorus:gatekeeper chorus:role-kade .
+
+chorus:ProvingGate a chorus:Gate ;
+    rdfs:label "Proving Gate" ;
+    chorus:fromStage chorus:Proving ;
+    chorus:gatekeeper chorus:role-jeff .
+
+# --- Gate instances (13) — domain gates + hook gates + pipeline-step gates ---
+
+chorus:gate-product a chorus:Gate ;
+    rdfs:subClassOf chorus:ProvingGate ;
+    rdfs:label "gate:product" ;
+    rdfs:comment "Verify AC complete, demo evidence, domain visibility, spine contract." ;
+    chorus:implementedIn "~/.claude/skills/gate-product/SKILL.md" .
+
+chorus:gate-arch a chorus:Gate ;
+    rdfs:subClassOf chorus:DesignGate ;
+    rdfs:label "gate:arch" ;
+    rdfs:comment "Verify system fit, namespace conventions, ICD consistency, domain boundaries." ;
+    chorus:implementedIn "~/.claude/skills/gate-arch/SKILL.md" .
+
+chorus:gate-ops a chorus:Gate ;
+    rdfs:subClassOf chorus:ProvingGate ;
+    rdfs:label "gate:ops" ;
+    rdfs:comment "Verify deploy safety, health checks, log flow, rollback path. Fires at deploy, not code-complete." ;
+    chorus:implementedIn "~/.claude/skills/gate-ops/SKILL.md" .
+
+chorus:gate-code a chorus:Gate ;
+    rdfs:subClassOf chorus:BuildGate ;
+    rdfs:label "gate:code" ;
+    rdfs:comment "Verify tests green, build clean, no new warnings." ;
+    chorus:implementedIn "~/.claude/skills/gate-code/SKILL.md" .
+
+chorus:gate-quality a chorus:Gate ;
+    rdfs:subClassOf chorus:BuildGate ;
+    rdfs:label "gate:quality" ;
+    rdfs:comment "Verify hooks pass, no regression, no console.log in production code." ;
+    chorus:implementedIn "~/.claude/skills/gate-quality/SKILL.md" .
+
+chorus:gate-demo a chorus:Gate ;
+    rdfs:subClassOf chorus:ProvingGate ;
+    rdfs:label "demo-gate hook" ;
+    rdfs:comment "PreToolUse hook — blocks cards Done when demo evidence missing. DEC-048 enforcement." ;
+    chorus:implementedIn "platform/services/chorus-hooks/src/gates/demo_gate.rs" .
+
+chorus:gate-write-scrubber a chorus:Gate ;
+    rdfs:subClassOf chorus:BuildGate ;
+    rdfs:label "write-scrubber hook" ;
+    rdfs:comment "PreToolUse hook — blocks writes of credentials to shared files." ;
+    chorus:implementedIn "platform/services/chorus-hooks/src/gates/write_scrubber.rs" .
+
+chorus:gate-tdd a chorus:Gate ;
+    rdfs:subClassOf chorus:BuildGate ;
+    rdfs:label "tdd_gate hook" ;
+    rdfs:comment "PreToolUse hook — enforces test-first discipline. DEC-1674." ;
+    chorus:implementedIn "platform/services/chorus-hooks/src/gates/tdd_gate.rs" .
+
+chorus:gate-icd-write a chorus:Gate ;
+    rdfs:subClassOf chorus:DesignGate ;
+    rdfs:label "icd-gate hook" ;
+    rdfs:comment "PreToolUse hook — blocks harvester writes without matching ICD provider. DEC-095." ;
+    chorus:implementedIn "platform/services/chorus-hooks/src/gates/icd_gate.rs" .
+
+chorus:gate-chorus-search-first a chorus:Gate ;
+    rdfs:subClassOf chorus:DirectionGate ;
+    rdfs:label "memory-first search gate" ;
+    rdfs:comment "PreToolUse hook — blocks filesystem grep/find without prior Chorus index query. DEC-074." ;
+    chorus:implementedIn "platform/services/chorus-hooks/src/gates/chorus_search_gate.rs" .
+
+chorus:gate-stop-the-line a chorus:Gate ;
+    rdfs:subClassOf chorus:BuildGate ;
+    rdfs:label "stop-the-line PostToolUse" ;
+    rdfs:comment "PostToolUse hook — blocks turn when tool errors; forces resolve/card/defer. #2145 implementation pending." ;
+    chorus:implementedIn "platform/services/chorus-hooks/src/gates/stop_the_line.rs" .
+
+chorus:gate-fuseki-health a chorus:Gate ;
+    rdfs:subClassOf chorus:BuildGate ;
+    rdfs:label "Fuseki health" ;
+    rdfs:comment "Inline check in /pull Step 4 — blocks pull if Fuseki :3030 is not 200. #2033 origin." ;
+    chorus:implementedIn "~/.claude/skills/pull/SKILL.md:step-4" .
+
+chorus:gate-design-wip-ready a chorus:Gate ;
+    rdfs:subClassOf chorus:DesignGate ;
+    rdfs:label "Design gate (WIP-ready)" ;
+    rdfs:comment "Inline check in /pull Step 4.5 — blocks type:new or type:enhance pulls when domain lifecycle.wip is not pass. #1396 origin." ;
+    chorus:implementedIn "~/.claude/skills/pull/SKILL.md:step-4.5" .

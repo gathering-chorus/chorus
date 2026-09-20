@@ -1,0 +1,202 @@
+@prefix rdf:      <http://www.w3.org/1999/02/22-rdf-syntax-ns#> .
+@prefix rdfs:     <http://www.w3.org/2000/01/rdf-schema#> .
+@prefix acl:    <http://www.w3.org/ns/auth/acl#> .
+@prefix owl:      <http://www.w3.org/2002/07/owl#> .
+@prefix xsd:      <http://www.w3.org/2001/XMLSchema#> .
+@prefix dcterms:  <http://purl.org/dc/terms/> .
+@prefix sh:       <http://www.w3.org/ns/shacl#> .
+@prefix chorus:   <https://jeffbridwell.com/chorus#> .
+@prefix skos:     <http://www.w3.org/2004/02/skos/core#> .
+
+# #4216 — moved out of the MODEL_SET schema files on 2026-09-20.
+#
+# MODEL_SET loads into urn:chorus:ontology, the SCHEMA graph, so a row authored
+# in one of those files was re-created there on every model deploy and no prune
+# could hold — four classes pruned this morning were back within the hour.
+#
+# The test for what belongs here, settled with Kade on 2026-09-20: does the row
+# carry data beyond its own name? These do. Bare names of a closed set (Pass /
+# Fail / Override, the handoff and interaction vocabularies) are schema and stay.
+#
+# Via the seed manifest these load through the DAL, which resolves each row's
+# home from its shape, so they land in their own domain graph.
+
+
+# --- Expanded contains edges (additive) ---
+
+# #3754 — loom-practices membership emptied with practice v1; v2 members are
+# authored in roles/kade/ontology/practices-3754-instances.ttl.
+
+# =============================================================================
+# SKILLS, GATES, ROLE + PRACTICE EDGES
+# =============================================================================
+# #2348 sub-spikes 1+2 merged 2026-04-22. Wren drafted, Silas reviewed.
+#
+# Vocabulary:
+#   chorus:Skill          — named invocable procedure (/<slug>)
+#   chorus:UtilitySkill   — utility skills (not practice-owned)
+#   chorus:hasSkill       — Role|Practice → Skill
+#   chorus:hasGate        — Role|Practice → Gate
+#   chorus:authorizedBy   — Skill|Gate → Role|Practice (inverse)
+#   chorus:implementedIn  — Skill|Gate → file path (xsd:string, for now)
+#
+# Orphan queries:
+#   Gates without authority:
+#     SELECT ?g WHERE { ?g a chorus:Gate .
+#                       FILTER NOT EXISTS { [] chorus:hasGate ?g } }
+#   Skills without practice (excluding utilities):
+#     SELECT ?s WHERE { ?s a chorus:Skill .
+#                       FILTER NOT EXISTS { ?s a chorus:UtilitySkill }
+#                       FILTER NOT EXISTS { [] chorus:hasSkill ?s } }
+# =============================================================================
+
+# --- Skill instances — practice-enacting (32) ---
+
+chorus:skill-pull a chorus:Skill ;
+    rdfs:label "/pull" ;
+    rdfs:comment "Single engineering entry point. Validate → preflight → WIP check → domain context → design gate → TDD readiness → move + declare + signal." ;
+    chorus:implementedIn "~/.claude/skills/pull/SKILL.md" .
+
+chorus:skill-demo a chorus:Skill ;
+    rdfs:label "/demo" ;
+    rdfs:comment "Proving gate — smoke check, prep summary, signal to Wren, builder cannot self-accept." ;
+    chorus:implementedIn "~/.claude/skills/demo/SKILL.md" .
+
+chorus:skill-close a chorus:Skill ;
+    rdfs:label "/close" ;
+    rdfs:comment "Session close-out — Hard 5 (journal, board audit, activity log, next-session, commit)." ;
+    chorus:implementedIn "~/.claude/skills/close/SKILL.md" .
+
+chorus:skill-reboot a chorus:Skill ;
+    rdfs:label "/reboot" ;
+    rdfs:comment "Save memory, write next-session.md, commit, exit cleanly. Fires on context-rising alert." ;
+    chorus:implementedIn "~/.claude/skills/reboot/SKILL.md" .
+
+chorus:skill-jdi a chorus:Skill ;
+    rdfs:label "/jdi" ;
+    rdfs:comment "Just do it — delegates to /pull with the obvious next card." ;
+    chorus:implementedIn "~/.claude/skills/jdi/SKILL.md" .
+
+chorus:skill-gate-product a chorus:Skill ;
+    rdfs:label "/gate-product" ;
+    rdfs:comment "Product gate — AC complete, demo evidence, domain visibility, spine contract. Wren only." ;
+    chorus:implementedIn "~/.claude/skills/gate-product/SKILL.md" .
+
+chorus:skill-gate-arch a chorus:Skill ;
+    rdfs:label "/gate-arch" ;
+    rdfs:comment "Architecture gate — system fit, namespace, ICD, domain boundaries. Silas only." ;
+    chorus:implementedIn "~/.claude/skills/gate-arch/SKILL.md" .
+
+chorus:skill-gate-ops a chorus:Skill ;
+    rdfs:label "/gate-ops" ;
+    rdfs:comment "Operations gate — deploy safety, health checks, log flow, rollback. Silas only." ;
+    chorus:implementedIn "~/.claude/skills/gate-ops/SKILL.md" .
+
+chorus:skill-gate-code a chorus:Skill ;
+    rdfs:label "/gate-code" ;
+    rdfs:comment "Code gate — tests green, build clean, no new warnings. Kade only." ;
+    chorus:implementedIn "~/.claude/skills/gate-code/SKILL.md" .
+
+chorus:skill-gate-quality a chorus:Skill ;
+    rdfs:label "/gate-quality" ;
+    rdfs:comment "Quality gate — hooks pass, no regression, no console.log in production code. Kade only." ;
+    chorus:implementedIn "~/.claude/skills/gate-quality/SKILL.md" .
+
+chorus:skill-nudge a chorus:Skill ;
+    rdfs:label "/nudge" ;
+    rdfs:comment "Persist + deliver message to another role's active terminal. Dual-path (API + osascript) always fires. DEC-107." ;
+    chorus:implementedIn "~/.claude/skills/nudge/SKILL.md" .
+
+chorus:skill-chat a chorus:Skill ;
+    rdfs:label "/chat" ;
+    rdfs:comment "Lightweight two-role chat — direct terminal channel between roles." ;
+    chorus:implementedIn "~/.claude/skills/chat/SKILL.md" .
+
+chorus:skill-clearing a chorus:Skill ;
+    rdfs:label "/clearing" ;
+    rdfs:comment "Multi-party browser chat with Jeff and all three AI roles. DECISION: prefix auto-captured." ;
+    chorus:implementedIn "~/.claude/skills/clearing/SKILL.md" .
+
+chorus:skill-pair a chorus:Skill ;
+    rdfs:label "/pair" ;
+    rdfs:comment "Strong-style pair session — navigator scope loop, work-mode detection, rotation checkpoints." ;
+    chorus:implementedIn "~/.claude/skills/pair/SKILL.md" .
+
+chorus:skill-gemba a chorus:Skill ;
+    rdfs:label "/gemba" ;
+    rdfs:comment "Live observation of a role working — tail session + spine events." ;
+    chorus:implementedIn "~/.claude/skills/gemba/SKILL.md" .
+
+chorus:skill-gemba-tick a chorus:Skill ;
+    rdfs:label "/gemba-tick" ;
+    rdfs:comment "Gemba observation loop tick — cron-invoked." ;
+    chorus:implementedIn "~/.claude/skills/gemba-tick/SKILL.md" .
+
+chorus:skill-retro a chorus:Skill ;
+    rdfs:label "/retro" ;
+    rdfs:comment "Team retrospective with data-driven template." ;
+    chorus:implementedIn "~/.claude/skills/retro/SKILL.md" .
+
+chorus:skill-werk a chorus:Skill ;
+    rdfs:label "/werk" ;
+    rdfs:comment "Work state dashboard — current board, WIP, next, gates." ;
+    chorus:implementedIn "~/.claude/skills/werk/SKILL.md" .
+
+chorus:skill-sb a chorus:Skill ;
+    rdfs:label "/sb" ;
+    rdfs:comment "Scan board — quick board state summary." ;
+    chorus:implementedIn "~/.claude/skills/sb/SKILL.md" .
+
+chorus:skill-ab a chorus:Skill ;
+    rdfs:label "/ab" ;
+    rdfs:comment "Analyze board — shape and flow of work, patterns and concerns." ;
+    chorus:implementedIn "~/.claude/skills/ab/SKILL.md" .
+
+chorus:skill-flow a chorus:Skill ;
+    rdfs:label "/flow" ;
+    rdfs:comment "Board sweep and work proposal — read board, tail active roles, propose what to pull." ;
+    chorus:implementedIn "~/.claude/skills/flow/SKILL.md" .
+
+chorus:skill-board-sweep a chorus:Skill ;
+    rdfs:label "/board-sweep" ;
+    rdfs:comment "Board coherence sweep — find and fix untagged, duplicate, stale cards." ;
+    chorus:implementedIn "~/.claude/skills/board-sweep/SKILL.md" .
+
+chorus:skill-pipeline a chorus:Skill ;
+    rdfs:label "/pipeline" ;
+    rdfs:comment "Orchestrate a multi-card pipeline — Wren drives, roles nudge back on completion." ;
+    chorus:implementedIn "~/.claude/skills/pipeline/SKILL.md" .
+
+chorus:skill-golfball a chorus:Skill ;
+    rdfs:label "/golfball" ;
+    rdfs:comment "Pre-sequence scan for fix/swat cards in a domain before building new features." ;
+    chorus:implementedIn "~/.claude/skills/golfball/SKILL.md" .
+
+chorus:skill-chorus a chorus:Skill ;
+    rdfs:label "/chorus" ;
+    rdfs:comment "Query the shared memory index — Slack + Claude sessions + artifacts." ;
+    chorus:implementedIn "~/.claude/skills/chorus/SKILL.md" .
+
+chorus:skill-lw a chorus:Skill ;
+    rdfs:label "/lw" ; rdfs:comment "Look at Wren's terminal." ;
+    chorus:implementedIn "~/.claude/skills/lw/SKILL.md" .
+
+chorus:skill-ls a chorus:Skill ;
+    rdfs:label "/ls" ; rdfs:comment "Look at Silas's terminal." ;
+    chorus:implementedIn "~/.claude/skills/ls/SKILL.md" .
+
+chorus:skill-lk a chorus:Skill ;
+    rdfs:label "/lk" ; rdfs:comment "Look at Kade's terminal." ;
+    chorus:implementedIn "~/.claude/skills/lk/SKILL.md" .
+
+chorus:skill-lc a chorus:Skill ;
+    rdfs:label "/lc" ; rdfs:comment "Look at Chrome — screenshot Jeff's frontmost Chrome tab." ;
+    chorus:implementedIn "~/.claude/skills/lc/SKILL.md" .
+
+chorus:skill-lm a chorus:Skill ;
+    rdfs:label "/lm" ; rdfs:comment "Look at me — latest posture/sentiment score." ;
+    chorus:implementedIn "~/.claude/skills/lm/SKILL.md" .
+
+chorus:skill-look a chorus:Skill ;
+    rdfs:label "/look" ; rdfs:comment "Capture Jeff's screen for visual context sharing." ;
+    chorus:implementedIn "~/.claude/skills/look/SKILL.md" .

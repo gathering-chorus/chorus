@@ -1,0 +1,31 @@
+@prefix rdf:      <http://www.w3.org/1999/02/22-rdf-syntax-ns#> .
+@prefix rdfs:     <http://www.w3.org/2000/01/rdf-schema#> .
+@prefix acl:    <http://www.w3.org/ns/auth/acl#> .
+@prefix owl:      <http://www.w3.org/2002/07/owl#> .
+@prefix xsd:      <http://www.w3.org/2001/XMLSchema#> .
+@prefix dcterms:  <http://purl.org/dc/terms/> .
+@prefix sh:       <http://www.w3.org/ns/shacl#> .
+@prefix chorus:   <https://jeffbridwell.com/chorus#> .
+@prefix skos:     <http://www.w3.org/2004/02/skos/core#> .
+
+# #4216 — moved out of the MODEL_SET schema files on 2026-09-20.
+#
+# MODEL_SET loads into urn:chorus:ontology, the SCHEMA graph, so a row authored
+# in one of those files was re-created there on every model deploy and no prune
+# could hold — four classes pruned this morning were back within the hour.
+#
+# The test for what belongs here, settled with Kade on 2026-09-20: does the row
+# carry data beyond its own name? These do. Bare names of a closed set (Pass /
+# Fail / Override, the handoff and interaction vocabularies) are schema and stay.
+#
+# Via the seed manifest these load through the DAL, which resolves each row's
+# home from its shape, so they land in their own domain graph.
+
+
+chorus:library a chorus:Machine ;
+    rdfs:label "Library" ;
+    rdfs:comment "M1 MacBook Air. Primary development machine. 192.168.86.36." .
+
+chorus:bedroom a chorus:Machine ;
+    rdfs:label "Bedroom" ;
+    rdfs:comment "M2 Pro Mac Mini. Data services, harvesting, bulk ops. 192.168.86.242." .

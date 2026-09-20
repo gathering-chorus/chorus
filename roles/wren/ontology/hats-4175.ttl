@@ -233,75 +233,15 @@ chorus:label a owl:DatatypeProperty ;
     rdfs:label "label" ;
     rdfs:comment "The row's display name as served by the generated API — the writable twin of rdfs:label, which the store holds but the door does not accept on a write. Every row-bearing shape carries both." .
 
-# =============================================================================
-# THE LAYERS CANNOT BE CROSSED — as GovernanceCheck rows (#3846 / ADR-058), not
-# as new verb code. A rule that is data can be added by a model write; a rule in
-# a script needs a deploy. Each row carries provenRedOn/provenRedRows: the
-# #3734 negative proof recorded AS DATA, and athena-validate refuses to gate on
-# a check that has never gone red.
-#
-# Proven red 2026-09-14 against tests/fixtures/hats-4175-violations.ttl — a
-# fixture graph holding one instance of each violation plus one compliant row
-# of the same shape, so every check is shown to separate the two states rather
-# than merely to fire.
-# =============================================================================
 
-chorus:adr-054 a chorus:ADR ;
-    rdfs:label "ADR-054 — the authN / authZ seam" ;
-    rdfs:comment "Role identity (Silas, the security domain) vs role authorization (Wren, the roles domain), and giving the roles domain its own home. Declared here because the hat checks cite it and a check must name its law; roles/silas/adr/ADR-054-role-identity-authz-seam.md is the prose." .
 
-chorus:gc-hat-layer-matches-attachment a chorus:GovernanceCheck ;
-    rdfs:label "a hat attaches only at its own layer" ;
-    chorus:boundTo chorus:adr-054 ;
-    chorus:checkSeverity "block" ;
-    chorus:provenRedOn "2026-09-14" ;
-    chorus:provenRedRows 2 ;
-    chorus:checkQuery """PREFIX c: <https://jeffbridwell.com/chorus#>
-SELECT ?s ?hat ?layer ?why WHERE {
-  { ?s c:appointedHat ?hat . ?hat c:hatLayer ?layer . FILTER(?layer != "per-product")
-    BIND("standing hat on an appointment — a standing hat anchors to the role, not to a product/domain/service" AS ?why) }
-  UNION
-  { ?s c:heldStandingBy ?who . ?s c:hatLayer ?layer . FILTER(?layer != "standing")
-    BIND(?s AS ?hat)
-    BIND("per-product hat given a standing seat — a per-product hat is meaningless without an anchor" AS ?why) }
-}""" .
 
-chorus:gc-appointment-has-anchor a chorus:GovernanceCheck ;
-    rdfs:label "a per-product hat has an anchor" ;
-    chorus:boundTo chorus:adr-054 ;
-    chorus:checkSeverity "block" ;
-    chorus:provenRedOn "2026-09-14" ;
-    chorus:provenRedRows 1 ;
-    chorus:checkQuery """PREFIX c: <https://jeffbridwell.com/chorus#>
-SELECT ?s ?hat WHERE {
-  ?s a c:Appointment ; c:appointedHat ?hat .
-  FILTER NOT EXISTS { ?s c:overAnchor ?a }
-}""" .
 
-chorus:gc-appointed-hat-is-declared a chorus:GovernanceCheck ;
-    rdfs:label "a hat is a declared row, never a free string" ;
-    chorus:boundTo chorus:adr-054 ;
-    chorus:checkSeverity "block" ;
-    chorus:provenRedOn "2026-09-14" ;
-    chorus:provenRedRows 2 ;
-    chorus:checkQuery """PREFIX c: <https://jeffbridwell.com/chorus#>
-SELECT ?s ?hat WHERE {
-  { ?s c:appointedHat ?hat } UNION { ?s c:heldStandingBy ?who . BIND(?s AS ?hat) }
-  FILTER NOT EXISTS { ?hat a c:Hat }
-}""" .
 
-chorus:gc-appointee-is-the-owner a chorus:GovernanceCheck ;
-    rdfs:label "an appointment never contradicts ownedBy" ;
-    chorus:boundTo chorus:adr-054 ;
-    chorus:checkSeverity "block" ;
-    chorus:provenRedOn "2026-09-14" ;
-    chorus:provenRedRows 1 ;
-    chorus:checkQuery """PREFIX c: <https://jeffbridwell.com/chorus#>
-SELECT ?s ?appointee ?owner ?anchor WHERE {
-  ?s a c:Appointment ; c:appointee ?appointee ; c:overAnchor ?anchor .
-  ?anchor c:ownedBy ?owner .
-  FILTER(?appointee != ?owner)
-}""" .
+
+
+
+
 
 # =============================================================================
 # WHAT THIS RETIRES — named, not left implicit.

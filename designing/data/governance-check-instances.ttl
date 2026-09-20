@@ -1,0 +1,141 @@
+@prefix rdf:      <http://www.w3.org/1999/02/22-rdf-syntax-ns#> .
+@prefix rdfs:     <http://www.w3.org/2000/01/rdf-schema#> .
+@prefix acl:    <http://www.w3.org/ns/auth/acl#> .
+@prefix owl:      <http://www.w3.org/2002/07/owl#> .
+@prefix xsd:      <http://www.w3.org/2001/XMLSchema#> .
+@prefix dcterms:  <http://purl.org/dc/terms/> .
+@prefix sh:       <http://www.w3.org/ns/shacl#> .
+@prefix chorus:   <https://jeffbridwell.com/chorus#> .
+@prefix skos:     <http://www.w3.org/2004/02/skos/core#> .
+
+# #4216 — moved out of the MODEL_SET schema files on 2026-09-20.
+#
+# MODEL_SET loads into urn:chorus:ontology, the SCHEMA graph, so a row authored
+# in one of those files was re-created there on every model deploy and no prune
+# could hold — four classes pruned this morning were back within the hour.
+#
+# The test for what belongs here, settled with Kade on 2026-09-20: does the row
+# carry data beyond its own name? These do. Bare names of a closed set (Pass /
+# Fail / Override, the handoff and interaction vocabularies) are schema and stay.
+#
+# Via the seed manifest these load through the DAL, which resolves each row's
+# home from its shape, so they land in their own domain graph.
+
+
+# ---------------------------------------------------------------------------
+# Check 1 — one home per subject (ADR-051 instance-home discipline).
+# Proven red 2026-08-14: pulse, clearing, borg, werk typed in both graphs.
+# ---------------------------------------------------------------------------
+chorus:gc-one-home-per-subject a chorus:GovernanceCheck ;
+    rdfs:label "one home per subject" ;
+    chorus:boundTo chorus:adr-051 ;
+    chorus:checkSeverity "block" ;
+    chorus:provenRedOn "2026-08-14" ;
+    chorus:provenRedRows 4 ;
+    chorus:checkQuery """SELECT DISTINCT ?s WHERE {
+  GRAPH <urn:chorus:ontology>  { ?s a ?t1 }
+  GRAPH <urn:chorus:instances> { ?s a ?t2 }
+}""" ;
+    rdfs:comment "A subject carries rdf:type in more than one home graph. Every reader that joins within one graph silently sees half the subject (the 2026-08-14 /effective 404 class). Violators found at authoring: pulse, clearing, borg, werk." .
+
+# ---------------------------------------------------------------------------
+# Check 2 — edge follows node (steward ruling 2026-08-14, Silas+Wren).
+# Proven red 2026-08-14: role-{silas,wren,kade} — 6 word-cap hasProperty
+# edges asserted in urn:chorus:ontology while the subjects' pinned home is
+# urn:chorus:instances (RoleShape). #3876 moves them; this check flipping
+# GREEN on its land is #3876's acceptance proof.
+# ---------------------------------------------------------------------------
+chorus:gc-edge-follows-node a chorus:GovernanceCheck ;
+    rdfs:label "edge follows node" ;
+    chorus:boundTo chorus:adr-058 ;
+    chorus:checkSeverity "block" ;
+    chorus:provenRedOn "2026-08-14" ;
+    chorus:provenRedRows 3 ;
+    chorus:checkQuery """SELECT DISTINCT ?s ?ge WHERE {
+  GRAPH ?ge { ?s <https://jeffbridwell.com/chorus#hasProperty> ?p }
+  GRAPH ?gt { ?s a ?t }
+  FILTER(?ge != ?gt)
+  FILTER NOT EXISTS { GRAPH ?ge { ?s a ?t2 } }
+}""" ;
+    rdfs:comment "An outgoing edge asserted in a graph where its subject carries no typing — the edge lives outside the node's home, so a home-graph walk cannot see it. Co-location (gate.enforced) is the special case where node-home equals property-home; this check encodes the general rule." .
+
+# ---------------------------------------------------------------------------
+# #3896 — every step of an AUTOMATED stream names its implementation.
+# Jeff 2026-08-15: HTML, OWL, and code served three vocabularies for the
+# athena stream; the graph's six steps named nothing that runs. The rule this
+# check makes data: a step of a stream that is wired (or being wired) into act
+# MUST carry chorus:implementedBy naming the invocable that runs it. Absence
+# on OTHER streams is fine — an unautomated step is visibly provisional
+# (volatility, Jeff's cut), which is why this lives here and not as a
+# sh:minCount on StepShape (that would refuse every human-stream step).
+# Automated streams are enumerated in the query; wiring a new stream into act
+# adds it to the VALUES row — a model write, never a deploy.
+chorus:gc-step-implemented a chorus:GovernanceCheck ;
+    rdfs:label "automated-stream steps name their implementation" ;
+    chorus:boundTo chorus:adr-058 ;   # the verb-family ADR; its 08-15 addendum carries the #3896 ruling
+    chorus:checkSeverity "block" ;
+    chorus:provenRedOn "2026-08-15" ;
+    chorus:provenRedRows 15 ;
+    chorus:checkQuery """SELECT ?s WHERE {
+  GRAPH <urn:chorus:instances> {
+    ?s a <https://jeffbridwell.com/chorus#ValueStreamStep> ;
+       <https://jeffbridwell.com/chorus#inStream> ?st .
+    VALUES ?st { <https://jeffbridwell.com/chorus#value-stream-athena>
+                 <https://jeffbridwell.com/chorus#value-stream-werk> }
+    FILTER NOT EXISTS { ?s <https://jeffbridwell.com/chorus#implementedBy> ?i }
+  }
+}""" ;
+    rdfs:comment "A step in an automated stream (athena, werk) without implementedBy. Proven red 2026-08-15 against the live store: 15 rows (all 6 athena + all 9 werk steps). This check flipping GREEN is #3896's acceptance proof — found-15-then, now-0." .
+
+chorus:gc-hat-layer-matches-attachment a chorus:GovernanceCheck ;
+    rdfs:label "a hat attaches only at its own layer" ;
+    chorus:boundTo chorus:adr-054 ;
+    chorus:checkSeverity "block" ;
+    chorus:provenRedOn "2026-09-14" ;
+    chorus:provenRedRows 2 ;
+    chorus:checkQuery """PREFIX c: <https://jeffbridwell.com/chorus#>
+SELECT ?s ?hat ?layer ?why WHERE {
+  { ?s c:appointedHat ?hat . ?hat c:hatLayer ?layer . FILTER(?layer != "per-product")
+    BIND("standing hat on an appointment — a standing hat anchors to the role, not to a product/domain/service" AS ?why) }
+  UNION
+  { ?s c:heldStandingBy ?who . ?s c:hatLayer ?layer . FILTER(?layer != "standing")
+    BIND(?s AS ?hat)
+    BIND("per-product hat given a standing seat — a per-product hat is meaningless without an anchor" AS ?why) }
+}""" .
+
+chorus:gc-appointment-has-anchor a chorus:GovernanceCheck ;
+    rdfs:label "a per-product hat has an anchor" ;
+    chorus:boundTo chorus:adr-054 ;
+    chorus:checkSeverity "block" ;
+    chorus:provenRedOn "2026-09-14" ;
+    chorus:provenRedRows 1 ;
+    chorus:checkQuery """PREFIX c: <https://jeffbridwell.com/chorus#>
+SELECT ?s ?hat WHERE {
+  ?s a c:Appointment ; c:appointedHat ?hat .
+  FILTER NOT EXISTS { ?s c:overAnchor ?a }
+}""" .
+
+chorus:gc-appointed-hat-is-declared a chorus:GovernanceCheck ;
+    rdfs:label "a hat is a declared row, never a free string" ;
+    chorus:boundTo chorus:adr-054 ;
+    chorus:checkSeverity "block" ;
+    chorus:provenRedOn "2026-09-14" ;
+    chorus:provenRedRows 2 ;
+    chorus:checkQuery """PREFIX c: <https://jeffbridwell.com/chorus#>
+SELECT ?s ?hat WHERE {
+  { ?s c:appointedHat ?hat } UNION { ?s c:heldStandingBy ?who . BIND(?s AS ?hat) }
+  FILTER NOT EXISTS { ?hat a c:Hat }
+}""" .
+
+chorus:gc-appointee-is-the-owner a chorus:GovernanceCheck ;
+    rdfs:label "an appointment never contradicts ownedBy" ;
+    chorus:boundTo chorus:adr-054 ;
+    chorus:checkSeverity "block" ;
+    chorus:provenRedOn "2026-09-14" ;
+    chorus:provenRedRows 1 ;
+    chorus:checkQuery """PREFIX c: <https://jeffbridwell.com/chorus#>
+SELECT ?s ?appointee ?owner ?anchor WHERE {
+  ?s a c:Appointment ; c:appointee ?appointee ; c:overAnchor ?anchor .
+  ?anchor c:ownedBy ?owner .
+  FILTER(?appointee != ?owner)
+}""" .

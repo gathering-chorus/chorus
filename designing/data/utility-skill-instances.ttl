@@ -1,0 +1,55 @@
+@prefix rdf:      <http://www.w3.org/1999/02/22-rdf-syntax-ns#> .
+@prefix rdfs:     <http://www.w3.org/2000/01/rdf-schema#> .
+@prefix acl:    <http://www.w3.org/ns/auth/acl#> .
+@prefix owl:      <http://www.w3.org/2002/07/owl#> .
+@prefix xsd:      <http://www.w3.org/2001/XMLSchema#> .
+@prefix dcterms:  <http://purl.org/dc/terms/> .
+@prefix sh:       <http://www.w3.org/ns/shacl#> .
+@prefix chorus:   <https://jeffbridwell.com/chorus#> .
+@prefix skos:     <http://www.w3.org/2004/02/skos/core#> .
+
+# #4216 — moved out of the MODEL_SET schema files on 2026-09-20.
+#
+# MODEL_SET loads into urn:chorus:ontology, the SCHEMA graph, so a row authored
+# in one of those files was re-created there on every model deploy and no prune
+# could hold — four classes pruned this morning were back within the hour.
+#
+# The test for what belongs here, settled with Kade on 2026-09-20: does the row
+# carry data beyond its own name? These do. Bare names of a closed set (Pass /
+# Fail / Override, the handoff and interaction vocabularies) are schema and stay.
+#
+# Via the seed manifest these load through the DAL, which resolves each row's
+# home from its shape, so they land in their own domain graph.
+
+
+# --- UtilitySkill instances (7) — skills without a specific practice owner ---
+
+chorus:skill-ot a chorus:UtilitySkill ;
+    rdfs:label "/ot" ; rdfs:comment "Open in tab — open file or URL in role's own Chrome window." ;
+    chorus:implementedIn "~/.claude/skills/ot/SKILL.md" .
+
+chorus:skill-share a chorus:UtilitySkill ;
+    rdfs:label "/share" ; rdfs:comment "Export any localhost page as shareable PDF + PNG." ;
+    chorus:implementedIn "~/.claude/skills/share/SKILL.md" .
+
+chorus:skill-listen a chorus:UtilitySkill ;
+    rdfs:label "/listen" ; rdfs:comment "Voice input capture." ;
+    chorus:implementedIn "~/.claude/skills/listen/SKILL.md" .
+
+chorus:skill-simplify a chorus:UtilitySkill ;
+    rdfs:label "/simplify" ;
+    rdfs:comment "Review changed code for reuse, quality, efficiency; fix issues found." ;
+    chorus:implementedIn "~/.claude/skills/simplify/SKILL.md" .
+
+chorus:skill-cs a chorus:UtilitySkill ;
+    rdfs:label "/cs" ; rdfs:comment "Check seeds — read what Jeff sent, act on it." ;
+    chorus:implementedIn "~/.claude/skills/cs/SKILL.md" .
+
+chorus:skill-interrupt a chorus:UtilitySkill ;
+    rdfs:label "/interrupt" ; rdfs:comment "Break into a role's active session." ;
+    chorus:implementedIn "~/.claude/skills/interrupt/SKILL.md" .
+
+chorus:skill-chat-tick a chorus:UtilitySkill ;
+    rdfs:label "/chat-tick" ;
+    rdfs:comment "Chat observation loop tick — cron-invoked, reads new chat lines since last check." ;
+    chorus:implementedIn "~/.claude/skills/chat-tick/SKILL.md" .
