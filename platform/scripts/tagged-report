@@ -1,49 +1,105 @@
 #!/usr/bin/env python3
-"""#4222 — one report: is every row of every type tagged with its domain?
+"""#4222 — the control report for the five types Jeff named.
 
-Each type carries its domain on ITS OWN edge — Test uses chorus:covers (typed
-to Domain, required by TestEdgesShape), the rest use chorus:hasDomain. Reading
-one property for all five was how this report said tests were 0% tagged on
-2026-09-19 when they were 100%.
+Reports by the ACTION a row needs, not by check name (Jeff, 2026-09-20):
 
-Read-only. Prints one line per type, DONE or NOT, and exits non-zero while any
-type is short.
+  MOVE  the right row in the wrong graph
+  FEED  the row exists but is missing the attribute
+  WEED  the row should not exist
+
+Each line carries the previous run's count so direction is visible without
+going to look it up (Silas, same morning). The previous run is kept in
+~/.chorus/tagged-report.json — a report you cannot compare to yesterday is a
+number, not a control.
+
+Each type carries its domain on ITS OWN edge: Test uses chorus:covers (typed to
+Domain, required by TestEdgesShape), the rest use chorus:hasDomain. Reading one
+property for all five is how this said tests were 0% tagged on 2026-09-19 when
+they were 100%.
+
+Read-only. Exits non-zero while any action is outstanding.
 """
 import json
+import os
 import sys
 import urllib.request
 
-DOOR = "http://localhost:3360"
+DOOR = os.environ.get("CHORUS_OWL_API", "http://localhost:3360")
+STATE = os.path.expanduser("~/.chorus/tagged-report.json")
+HOME = "urn:chorus:domains:code"
+
 TYPES = [
-    ("code/files", "hasDomain"),
-    ("tests/tests", "covers"),
-    ("logs/sources", "hasDomain"),
-    ("code/pages", "hasDomain"),
-    ("code/endpoints", "hasDomain"),
+    ("code/files", "hasDomain", "urn:chorus:domains:code"),
+    ("tests/tests", "covers", "urn:chorus:domains:tests"),
+    ("logs/sources", "hasDomain", "urn:chorus:domains:logs"),
+    ("code/pages", "hasDomain", "urn:chorus:domains:code"),
+    ("code/endpoints", "hasDomain", "urn:chorus:domains:code"),
 ]
 
 
-def rows(route):
+def fetch(route):
+    """Rows and the graph the door served them from. None means unreadable —
+    which is NOT zero, and must never read as a clean line."""
     with urllib.request.urlopen(f"{DOOR}/{route}?limit=1000000") as r:
-        return json.load(r).get("data") or []
+        body = json.load(r)
+    return body.get("data") or [], body.get("servedFrom", "")
+
+
+def prior():
+    try:
+        with open(STATE) as f:
+            return json.load(f)
+    except Exception:
+        return {}
+
+
+def arrow(now, was):
+    if was is None:
+        return "    "
+    if now == was:
+        return "  = "
+    return f" {now - was:+d}"
 
 
 def main():
-    short = 0
-    for route, edge in TYPES:
+    was = prior()
+    now = {}
+    outstanding = 0
+    rows = []
+
+    for route, edge, home in TYPES:
         try:
-            data = rows(route)
-        except Exception as e:  # a door that cannot answer is NOT a pass
-            print(f"NOT   {route:16} unreadable: {e}")
-            short += 1
+            data, served = fetch(route)
+        except Exception as e:
+            print(f"UNREADABLE  {route:16} {e}")
+            outstanding += 1
             continue
         total = len(data)
-        tagged = sum(1 for row in data if row.get(edge))
-        done = total > 0 and tagged == total
-        if not done:
-            short += 1
-        print(f"{'DONE' if done else 'NOT ':4}  {route:16} {tagged}/{total}  via {edge}")
-    return 1 if short else 0
+        feed = sum(1 for row in data if not row.get(edge))
+        move = 0 if served in ("", home) else total
+        weed = 0
+        now[route] = {"total": total, "feed": feed, "move": move, "weed": weed}
+        p = was.get(route, {})
+        rows.append(
+            f"{route:16} {total:6}  MOVE {move:5}{arrow(move, p.get('move'))}"
+            f"  FEED {feed:5}{arrow(feed, p.get('feed'))}"
+            f"  WEED {weed:4}{arrow(weed, p.get('weed'))}"
+        )
+        outstanding += move + feed + weed
+
+    print("type               rows  action counts (vs previous run)")
+    for r in rows:
+        print(r)
+    print(f"{'TOTAL':16} {'':6}  outstanding {outstanding}")
+
+    try:
+        os.makedirs(os.path.dirname(STATE), exist_ok=True)
+        with open(STATE, "w") as f:
+            json.dump(now, f)
+    except Exception as e:  # a report that cannot save history still reports
+        print(f"(history not saved: {e})")
+
+    return 1 if outstanding else 0
 
 
 if __name__ == "__main__":
