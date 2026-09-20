@@ -18,10 +18,23 @@ BIN="$(cd "$BATS_TEST_DIRNAME/../.." && pwd)/platform/services/athena-validate/t
 NS="https://jeffbridwell.com/chorus#"
 ROOT="$(cd "$BATS_TEST_DIRNAME/../.." && pwd)"
 
+load test_helper   # test_graph_name — run-scoped throwaway graph
+
 setup_file() {
   # shellcheck source=/dev/null
   . "$ROOT/platform/scripts/fuseki-auth.sh" 2>/dev/null || true
-  export FIXTURE_GRAPH="urn:chorus:bats-4167-$$"
+  # The graph name comes from the shared helper, not from $$.
+  #
+  # Two reasons, both learned the hard way by other suites. $$ is per PROCESS
+  # and bats runs setup_file, each test and teardown_file separately, so a
+  # $$-named graph is created under one pid and dropped under another — 77
+  # leaked graphs were found in the live store on 2026-09-04 that way. And the
+  # `urn:chorus:ontology-test-bats-` prefix is the sanctioned throwaway
+  # namespace; my first version wrote `urn:chorus:bats-4167-…`, which is a name
+  # nothing recognises as a fixture, so the membrane saw a test writing an
+  # unknown production surface and said so (two membrane.violation events,
+  # 2026-09-19 18:49). The membrane was right and the test was wrong.
+  export FIXTURE_GRAPH="$(test_graph_name 4167)"
   export UPD="${FUSEKI_UPDATE:-http://localhost:3030/pods/update}"
   export QRY="${FUSEKI_QUERY:-http://localhost:3030/pods/query}"
 }
