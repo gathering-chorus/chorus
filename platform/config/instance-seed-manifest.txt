@@ -76,3 +76,4 @@ emit-contract:designing/data/emit-contract-instances.ttl
 event-category:designing/data/event-category-instances.ttl
 named-graph:designing/data/named-graph-instances.ttl
 governance-check:designing/data/governance-check-instances.ttl
+api-surface:designing/data/api-surface-instances.ttl

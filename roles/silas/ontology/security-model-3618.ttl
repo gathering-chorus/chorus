@@ -213,34 +213,9 @@ chorus:servedBy a owl:ObjectProperty ;
     rdfs:domain chorus:APISurface ;
     rdfs:range chorus:Service .
 
-# ----------------------------------------------------------------------------
-# 5. FIRST SECURED CLASS — instances (discover/index system writers, AC4)
-#    Consumers: crawler-index, reindex-worker, embed-worker LaunchAgents.
-# ----------------------------------------------------------------------------
 
-# FIRST FLIP = zero-caller surfaces only (verified live 2026-07-07 via Loki, 7d):
-#   /api/chorus/reindex 0, /api/athena/discover-pages 0, /api/athena/discover-endpoints 0.
-# The busy siblings (index 13k/wk, discover-code 248, discover-tests 199, embed 2)
-# have live callers that must be credentialed BEFORE their gate flips — deferred
-# to #3619 (deploy-before-require, one caller at a time). This keeps #3618's flip
-# a real live proof with ZERO breakage.
-chorus:surface-discover-writes a chorus:APISurface ;
-    rdfs:label "chorus-api discover writes (zero-caller)" ;
-    rdfs:comment "discover-pages + discover-endpoints — zero live callers (Loki 7d). First flip. #3618." ;
-    chorus:securedBy chorus:gate-chorus-api-mutations ;
-    chorus:httpMethod "POST" ;
-    chorus:pathPrefix "/api/athena/discover-pages", "/api/athena/discover-endpoints" ;
-    chorus:requiresScope "urn:chorus:domains:code" ;
-    chorus:servedBy chorus:services .
 
-chorus:surface-index-writes a chorus:APISurface ;
-    rdfs:label "chorus-api reindex write (zero-caller)" ;
-    rdfs:comment "reindex only — zero live callers (Loki 7d). index (13k/wk) + embed deferred to #3619. First flip. #3618." ;
-    chorus:securedBy chorus:gate-chorus-api-mutations ;
-    chorus:httpMethod "POST" ;
-    chorus:pathPrefix "/api/chorus/reindex" ;
-    chorus:requiresScope "urn:chorus:index" ;
-    chorus:servedBy chorus:services .
+
 
 chorus:gate-chorus-api-mutations a chorus:Gate ;
     rdfs:label "chorus-api mutation gate" ;
