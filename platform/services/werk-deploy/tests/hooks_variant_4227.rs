@@ -83,3 +83,44 @@ fn negative_proof_the_collision_gate_still_catches_a_real_one() {
     c.silas_port = api_wren;
     assert_eq!(env_ports_collide(&svcs).map(|(_, p)| p), Some(api_wren));
 }
+
+// ---- #4227 follow-on: an old binary must refuse fast, not time out --------
+// Kade's #4228 round died here: his werk predates the override, so his daemon
+// lost the lock to the live one and exited, and the smoke burned 120s before
+// reporting a timeout that named neither the cause nor the fix.
+use std::fs;
+
+fn with_hooks_bin(dir: &std::path::Path, role: &str, body: &[u8]) {
+    let slot = dir.join(format!("{role}-bin"));
+    fs::create_dir_all(&slot).unwrap();
+    fs::write(slot.join("chorus-hooks"), body).unwrap();
+}
+
+#[test]
+fn a_hooks_binary_that_understands_the_override_is_accepted() {
+    let tmp = std::env::temp_dir().join(format!("4227-ok-{}", std::process::id()));
+    with_hooks_bin(&tmp, "silas", b"\x7fELF ... CHORUS_HOOKS_RUN_DIR ... rest");
+    std::env::set_var("CHORUS_WERK_BASE", &tmp);
+    assert_eq!(hooks_binary_too_old(&hooks(), "silas"), None);
+    std::env::remove_var("CHORUS_WERK_BASE");
+    let _ = fs::remove_dir_all(&tmp);
+}
+
+#[test]
+fn negative_proof_a_binary_built_before_the_override_is_refused_by_name() {
+    // Without this the check would accept everything and we would be back to
+    // the 120s timeout. The refusal must also say what to do about it.
+    let tmp = std::env::temp_dir().join(format!("4227-old-{}", std::process::id()));
+    with_hooks_bin(&tmp, "kade", b"\x7fELF ... an older daemon ... rest");
+    std::env::set_var("CHORUS_WERK_BASE", &tmp);
+    let why = hooks_binary_too_old(&hooks(), "kade").expect("must refuse");
+    assert!(why.contains("Rebase"), "the refusal has to name the fix: {why}");
+    std::env::remove_var("CHORUS_WERK_BASE");
+    let _ = fs::remove_dir_all(&tmp);
+}
+
+#[test]
+fn the_check_only_speaks_for_chorus_hooks() {
+    let api = env_services().into_iter().find(|s| s.name == "chorus-api").unwrap();
+    assert_eq!(hooks_binary_too_old(&api, "kade"), None);
+}
