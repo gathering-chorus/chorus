@@ -870,3 +870,108 @@ chorus:dirdomain-platform-services-demo-fitness a chorus:UnitDomainMapping ;
     rdfs:label "platform/services/demo-fitness/ → tests" ;
     chorus:pathPrefix "platform/services/demo-fitness/" ;
     chorus:hasDomain chorus:tests .
+
+chorus:dirdomain-proving-screenshots a chorus:UnitDomainMapping ;
+    rdfs:label "proving/screenshots/ → tests" ;
+    chorus:pathPrefix "proving/screenshots/" ;
+    chorus:hasDomain chorus:tests .
+
+chorus:dirdomain-platform-scripts a chorus:UnitDomainMapping ;
+    rdfs:label "platform/scripts/ → toolchain" ;
+    chorus:pathPrefix "platform/scripts/" ;
+    chorus:hasDomain chorus:toolchain .
+
+chorus:dirdomain-platform-tests a chorus:UnitDomainMapping ;
+    rdfs:label "platform/tests/ → tests" ;
+    chorus:pathPrefix "platform/tests/" ;
+    chorus:hasDomain chorus:tests .
+
+chorus:dirdomain-platform-skills a chorus:UnitDomainMapping ;
+    rdfs:label "platform/skills/ → skills" ;
+    chorus:pathPrefix "platform/skills/" ;
+    chorus:hasDomain chorus:skills .
+
+chorus:dirdomain-roles-wren a chorus:UnitDomainMapping ;
+    rdfs:label "roles/wren/ → roles" ;
+    chorus:pathPrefix "roles/wren/" ;
+    chorus:hasDomain chorus:roles .
+
+chorus:dirdomain-config-launchagents a chorus:UnitDomainMapping ;
+    rdfs:label "config/launchagents/ → infrastructure" ;
+    chorus:pathPrefix "config/launchagents/" ;
+    chorus:hasDomain chorus:infrastructure .
+
+chorus:dirdomain-docs-diagrams a chorus:UnitDomainMapping ;
+    rdfs:label "docs/diagrams/ → knowledge" ;
+    chorus:pathPrefix "docs/diagrams/" ;
+    chorus:hasDomain chorus:knowledge .
+
+chorus:dirdomain-platform-chorus-sdk a chorus:UnitDomainMapping ;
+    rdfs:label "platform/chorus-sdk/ → toolchain" ;
+    chorus:pathPrefix "platform/chorus-sdk/" ;
+    chorus:hasDomain chorus:toolchain .
+
+chorus:dirdomain-platform-config a chorus:UnitDomainMapping ;
+    rdfs:label "platform/config/ → infrastructure" ;
+    chorus:pathPrefix "platform/config/" ;
+    chorus:hasDomain chorus:infrastructure .
+
+chorus:dirdomain-llug a chorus:UnitDomainMapping ;
+    rdfs:label "llug/ → products" ;
+    chorus:pathPrefix "llug/" ;
+    chorus:hasDomain chorus:products .
+
+chorus:dirdomain-designing-reference a chorus:UnitDomainMapping ;
+    rdfs:label "designing/reference/ → knowledge" ;
+    chorus:pathPrefix "designing/reference/" ;
+    chorus:hasDomain chorus:knowledge .
+
+chorus:dirdomain-directing-clearing a chorus:UnitDomainMapping ;
+    rdfs:label "directing/clearing/ → messages" ;
+    chorus:pathPrefix "directing/clearing/" ;
+    chorus:hasDomain chorus:messages .
+
+chorus:dirdomain-github-workflows a chorus:UnitDomainMapping ;
+    rdfs:label ".github/workflows/ → cicd" ;
+    chorus:pathPrefix ".github/workflows/" ;
+    chorus:hasDomain chorus:cicd .
+
+chorus:dirdomain-platform-spikes a chorus:UnitDomainMapping ;
+    rdfs:label "platform/spikes/ → code" ;
+    chorus:pathPrefix "platform/spikes/" ;
+    chorus:hasDomain chorus:code .
+
+chorus:dirdomain-platform-state a chorus:UnitDomainMapping ;
+    rdfs:label "platform/state/ → infrastructure" ;
+    chorus:pathPrefix "platform/state/" ;
+    chorus:hasDomain chorus:infrastructure .
+
+chorus:dirdomain-platform-services-shared a chorus:UnitDomainMapping ;
+    rdfs:label "platform/services/shared/ → code" ;
+    chorus:pathPrefix "platform/services/shared/" ;
+    chorus:hasDomain chorus:code .
+
+chorus:dirdomain-platform-services-pulse-gather a chorus:UnitDomainMapping ;
+    rdfs:label "platform/services/pulse-gather/ → spine" ;
+    chorus:pathPrefix "platform/services/pulse-gather/" ;
+    chorus:hasDomain chorus:spine .
+
+chorus:dirdomain-roles-silas a chorus:UnitDomainMapping ;
+    rdfs:label "roles/silas/ → roles" ;
+    chorus:pathPrefix "roles/silas/" ;
+    chorus:hasDomain chorus:roles .
+
+chorus:dirdomain-roles-kade a chorus:UnitDomainMapping ;
+    rdfs:label "roles/kade/ → roles" ;
+    chorus:pathPrefix "roles/kade/" ;
+    chorus:hasDomain chorus:roles .
+
+chorus:dirdomain-building a chorus:UnitDomainMapping ;
+    rdfs:label "building/ → products" ;
+    chorus:pathPrefix "building/" ;
+    chorus:hasDomain chorus:products .
+
+chorus:dirdomain-platform-api a chorus:UnitDomainMapping ;
+    rdfs:label "platform/api/ → services" ;
+    chorus:pathPrefix "platform/api/" ;
+    chorus:hasDomain chorus:services .
