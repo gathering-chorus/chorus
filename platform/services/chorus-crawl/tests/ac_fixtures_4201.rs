@@ -16,7 +16,12 @@ fn valid() -> Vec<String> {
 }
 
 fn fixture(name: &str) -> String {
-    let p = format!("{}/tests/fixtures/{name}", env!("CARGO_MANIFEST_DIR"));
+    // #4167 — run time, not compile time. The nightly shares one cargo target
+    // dir across every werk, so a binary compiled in werk A is reused in werk B
+    // and a baked-in path points at a tree that may already be torn down. That
+    // is the #4030 guard's whole subject, and this line was failing it.
+    let root = std::env::var("CARGO_MANIFEST_DIR").expect("CARGO_MANIFEST_DIR is set by cargo at run time");
+    let p = format!("{root}/tests/fixtures/{name}");
     std::fs::read_to_string(&p).unwrap_or_else(|e| panic!("fixture {p}: {e}"))
 }
 

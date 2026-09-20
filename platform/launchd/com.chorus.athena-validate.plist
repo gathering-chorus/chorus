@@ -6,8 +6,7 @@
   <string>com.chorus.athena-validate</string>
   <key>ProgramArguments</key>
   <array>
-    <string>/bin/bash</string>
-    <string>/Users/jeffbridwell/CascadeProjects/chorus/platform/scripts/athena-validate.sh</string>
+    <string>/Users/jeffbridwell/.chorus/bin/athena-validate</string>
   </array>
   <key>EnvironmentVariables</key>
   <dict>

@@ -336,7 +336,11 @@ mod scope_refusal_4169 {
             "platform/api/public/borg/graph-validate.html",
             "platform/api/public/borg/graph-validate.txt",
             "platform/launchd/com.chorus.athena-validate.plist",
-            "platform/scripts/athena-validate.sh",
+            // #4167 — platform/scripts/athena-validate.sh was the fourth entry and
+            // is now deleted. It is NOT replaced here by the crate: a Rust unit is
+            // real code and SHOULD widen a card, which is the opposite of what
+            // this list asserts. Listing it would have made the assertion false
+            // and the test hollow in the same line.
         ] {
             assert!(scope_irrelevant(f), "{} should not widen a card", f);
         }
