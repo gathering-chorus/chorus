@@ -17,15 +17,41 @@
 //! The point is a number that moves: 4 of 6 today, and the missing two named,
 //! so werk-deploy has something to improve against instead of an argument.
 
-/// The services a demo must run its own copy of.
-pub const TARGET: [&str; 6] = [
-    "chorus-api",
-    "chorus-mcp",
-    "athena-make",
-    "athena-model",
-    "chorus-hooks",
-    "clearing",
+/// How a demo can own a piece of Chorus. The two are not the same question,
+/// and asking the wrong one is how this check first reported athena-model.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Piece {
+    /// A long-running service. Owned when the role's variant is running.
+    Daemon,
+    /// A verb: runs, does one thing, exits. athena-model is one —
+    /// `add | add-batch | delete | set | link | unlink`, called by athena-make
+    /// for every write. It is never "running", so a process check can only ever
+    /// report it missing. Owned when the werk has built its own copy of the
+    /// binary, because that is the copy the variant's athena-make will call.
+    Verb,
+}
+
+/// The pieces of Chorus a demo must own its own copy of.
+pub const TARGET: [(&str, Piece); 6] = [
+    ("chorus-api", Piece::Daemon),
+    ("chorus-mcp", Piece::Daemon),
+    ("athena-make", Piece::Daemon),
+    ("athena-model", Piece::Verb),
+    ("chorus-hooks", Piece::Daemon),
+    ("clearing", Piece::Daemon),
 ];
+
+/// The piece kind for a target name, or None if it is not a target.
+pub fn piece_of(service: &str) -> Option<Piece> {
+    TARGET.iter().find(|(n, _)| *n == service).map(|(_, k)| *k)
+}
+
+/// Where deploy-werk installs a werk's built binaries — the same slot
+/// werk-deploy's demo_env::werk_bin_dir writes to. A verb is owned when its
+/// binary is here, because CHORUS_MODEL_BIN on the variant points at this copy.
+pub fn verb_bin_path(service: &str, role: &str, werk_base: &str) -> String {
+    format!("{}/{}-bin/{}", werk_base, role, service)
+}
 
 /// The launchd label a variant copy carries: com.chorus.<short>.werk.<role>.
 /// The "chorus-" prefix is stripped because that is what werk-deploy writes
@@ -75,12 +101,18 @@ impl Fitness {
 /// "shared" counts only prod services that are actually up and are NOT variant
 /// copies — the things a demo borrows. A demo borrowing the store is by design;
 /// a demo borrowing athena-model is the gap this number exists to show.
-pub fn measure(launchctl_list: &str, role: &str) -> Fitness {
+/// `own_verbs` is the verb binaries the werk has built its own copy of — the
+/// caller looks at the filesystem, this stays pure.
+pub fn measure(launchctl_list: &str, role: &str, own_verbs: &[String]) -> Fitness {
     let running = running_labels(launchctl_list);
     let mut own = Vec::new();
     let mut missing = Vec::new();
-    for s in TARGET {
-        if running.iter().any(|l| l == &variant_label(s, role)) {
+    for (s, kind) in TARGET {
+        let owned = match kind {
+            Piece::Daemon => running.iter().any(|l| l == &variant_label(s, role)),
+            Piece::Verb => own_verbs.iter().any(|v| v == s),
+        };
+        if owned {
             own.push(s.to_string());
         } else {
             missing.push(s.to_string());
@@ -106,7 +138,7 @@ pub fn report(f: &Fitness, prev: Option<usize>) -> String {
         None => String::new(),
     };
     format!(
-        "demo-fitness {}: {} of {} target services running{}\n  own     : {}\n  MISSING : {}\n  shared  : {} prod service(s), incl. the store\n",
+        "demo-fitness {}: {} of {} target pieces owned{}\n  own     : {}\n  MISSING : {}\n  shared  : {} prod service(s), incl. the store\n",
         f.role,
         f.own.len(),
         f.target_total(),

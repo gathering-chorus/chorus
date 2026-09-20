@@ -118,7 +118,32 @@ pub fn hook_socket_durable() -> String {
 /// world-writable path this fix exists to abandon; better to refuse to start
 /// than to silently run the guard daemon's socket in a world-writable dir.
 pub fn hook_run_dir() -> String {
-    let home = std::env::var("HOME").expect(
+    run_dir_from(
+        std::env::var("CHORUS_HOOKS_RUN_DIR").ok().as_deref(),
+        std::env::var("HOME").ok().as_deref(),
+    )
+}
+
+/// The rule, pure so it is testable without touching the process environment.
+///
+/// #4227 — a demo has never had its own hooks daemon, because the socket and
+/// the singleton lock both hang off one fixed path: a second instance loses the
+/// flock and exits. An override moves BOTH together, so a card's variant gets
+/// its own socket and its own lock from one value and can run beside prod's.
+/// No override is prod, unchanged.
+///
+/// The override must be an absolute path. A relative one would put the control
+/// socket wherever the daemon happened to be started from — the world-writable
+/// class #3631 abandoned — so it is refused rather than quietly resolved.
+pub fn run_dir_from(override_dir: Option<&str>, home: Option<&str>) -> String {
+    if let Some(dir) = override_dir.map(str::trim).filter(|d| !d.is_empty()) {
+        assert!(
+            dir.starts_with('/'),
+            "chorus-hooks: CHORUS_HOOKS_RUN_DIR must be an absolute path, got {dir:?}",
+        );
+        return dir.trim_end_matches('/').to_string();
+    }
+    let home = home.expect(
         "chorus-hooks: HOME unset — refusing to fall back to world-writable /tmp \
          for the control socket/pidfile (#3631). Set HOME in the LaunchAgent env.",
     );

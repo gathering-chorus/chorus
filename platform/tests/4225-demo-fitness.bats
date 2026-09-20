@@ -23,16 +23,31 @@ setup() {
     'LIST' > "$BATS_TEST_TMPDIR/lc-full"
   grep -v "clearing.werk.kade" "$BATS_TEST_TMPDIR/lc-full" > "$BATS_TEST_TMPDIR/lc-degraded"
   chmod +x "$BATS_TEST_TMPDIR/lc-full" "$BATS_TEST_TMPDIR/lc-degraded"
+  # #4227 — the verb answer is a fixture too. athena-model is not a service;
+  # it is owned when the werk built its own copy of the binary. Pointing
+  # CHORUS_WERK_BASE at an empty tmp dir keeps that answer out of this box's
+  # real bin slot, which already holds one and would make every reading 5.
+  WERKBASE="$BATS_TEST_TMPDIR/werk"
+  mkdir -p "$WERKBASE/kade-bin"
 }
 
 run_fitness() {
-  DEMO_FITNESS_LAUNCHCTL="$1" DEMO_FITNESS_SERIES="$SERIES" "$BIN" kade
+  DEMO_FITNESS_LAUNCHCTL="$1" DEMO_FITNESS_SERIES="$SERIES" \
+    CHORUS_WERK_BASE="$WERKBASE" "$BIN" kade
+}
+
+# The same run with the verb binary present in the werk's bin slot.
+run_fitness_with_verb() {
+  cp "$BIN" "$WERKBASE/kade-bin/athena-model"
+  DEMO_FITNESS_LAUNCHCTL="$1" DEMO_FITNESS_SERIES="$SERIES" \
+    CHORUS_WERK_BASE="$WERKBASE" "$BIN" kade
+  rm -f "$WERKBASE/kade-bin/athena-model"
 }
 
 @test "#4225 counts what the variant started and what it borrowed from prod" {
   run run_fitness "$BATS_TEST_TMPDIR/lc-full"
   echo "$output"
-  printf '%s' "$output" | grep -q "4 of 6 target services"
+  printf '%s' "$output" | grep -q "4 of 6 target pieces"
   printf '%s' "$output" | grep -q "MISSING : athena-model chorus-hooks"
   printf '%s' "$output" | grep -q "shared  : 3 prod service"
 }
@@ -40,7 +55,7 @@ run_fitness() {
 @test "#4225 NEGATIVE PROOF: stop one variant service and the count drops" {
   run run_fitness "$BATS_TEST_TMPDIR/lc-degraded"
   echo "$output"
-  printf '%s' "$output" | grep -q "3 of 6 target services"
+  printf '%s' "$output" | grep -q "3 of 6 target pieces"
   printf '%s' "$output" | grep -q "MISSING : athena-model chorus-hooks clearing"
   test -z "$(printf '%s' "$output" | grep -F '4 of 6' || true)"
 }
@@ -51,4 +66,16 @@ run_fitness() {
   test "$(grep -c . "$SERIES")" -eq 2
   run run_fitness "$BATS_TEST_TMPDIR/lc-full"
   printf '%s' "$output" | grep -q "(prev 3)"
+}
+
+@test "#4227 a verb counts by its binary, and the same run without it does not" {
+  run run_fitness_with_verb "$BATS_TEST_TMPDIR/lc-full"
+  echo "$output"
+  printf '%s' "$output" | grep -q "5 of 6 target pieces"
+  printf '%s' "$output" | grep -q "own     : chorus-api chorus-mcp athena-make athena-model"
+  # NEGATIVE PROOF: identical launchctl output, binary removed, count drops.
+  run run_fitness "$BATS_TEST_TMPDIR/lc-full"
+  echo "$output"
+  printf '%s' "$output" | grep -q "4 of 6 target pieces"
+  printf '%s' "$output" | grep -q "MISSING : athena-model chorus-hooks"
 }
