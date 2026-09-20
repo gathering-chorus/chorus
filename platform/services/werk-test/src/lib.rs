@@ -2588,6 +2588,36 @@ pub fn needs_stack_files(rows: &[TestRow]) -> std::collections::BTreeSet<String>
         .collect()
 }
 
+/// #4236 — the needs-stack tests THIS RUN SELECTED.
+///
+/// Wren's #4234 printed two lines that could not both be true: "134 needs-stack
+/// test(s) ran with the live stack" and "0 ran of 134 — a lane dropped the
+/// tier". Her diff selected one Clearing file that is not a needs-stack test;
+/// both counts came from every needs-stack row in the unit. The numerator
+/// counted the selection and the denominator counted the unit, so the gate
+/// could never agree with itself.
+///
+/// `selected` is the run's chosen files. Empty means the selection lane did not
+/// narrow anything (a full run), and the unit's rows are the honest count.
+pub fn selected_needs_stack(
+    rows: &[TestRow],
+    selected: &std::collections::BTreeSet<String>,
+    in_units: &dyn Fn(&str) -> bool,
+) -> usize {
+    rows.iter()
+        .filter(|r| r.hermeticity == "needs-stack" && in_units(&r.file_path))
+        .filter(|r| selected.is_empty() || selected.contains(&r.file_path))
+        .count()
+}
+
+/// #4236 — the integration line when the run selected no needs-stack test at
+/// all. Not a skip and not a failure to run: the diff simply covered none.
+pub fn integration_report_none_selected(registered_in_unit: usize) -> String {
+    format!(
+        "integration: none selected — the diff covers no needs-stack test (the unit registers {registered_in_unit})"
+    )
+}
+
 /// #3919 — the live-stack verdict from named probes. Down services are NAMED
 /// in the error; the caller renders the typed SKIPPED state from it.
 pub fn stack_verdict(probes: &[(&str, bool)]) -> Result<(), String> {
@@ -4706,4 +4736,93 @@ mod ui_flows_verdict_4154 {
 /// disk — the shape that let "no *.test.ts files" fail a cucumber package.
 pub fn npm_test_runner_script_is_node_test(script: &str) -> bool {
     script.contains("--test")
+}
+
+/// #4236 — the integration count comes from the selection, both halves.
+#[cfg(test)]
+mod selected_needs_stack_4236 {
+    use super::{integration_report_none_selected, selected_needs_stack, TestRow};
+
+    fn ns(file: &str) -> TestRow {
+        TestRow {
+            file_path: file.to_string(),
+            covers: "x".to_string(),
+            pyramid_layer: "integration".to_string(),
+            hermeticity: "needs-stack".to_string(),
+            test_concern: String::new(),
+        }
+    }
+
+    fn hermetic(file: &str) -> TestRow {
+        TestRow { hermeticity: "hermetic".to_string(), ..ns(file) }
+    }
+
+    fn in_clearing(f: &str) -> bool {
+        f.starts_with("directing/clearing/")
+    }
+
+    /// NEGATIVE PROOF — Wren's #4234, exactly. The old count filtered on the
+    /// unit alone and returned 134 while the run had selected one hermetic
+    /// file; the two lines then read "134 ran" and "0 ran of 134".
+    #[test]
+    fn a_selection_that_names_no_needs_stack_test_counts_zero() {
+        let rows = vec![
+            ns("directing/clearing/tests/a.test.ts"),
+            ns("directing/clearing/tests/b.test.ts"),
+            hermetic("directing/clearing/tests/4223-clearing-render.test.ts"),
+        ];
+        let chosen: std::collections::BTreeSet<String> =
+            ["directing/clearing/tests/4223-clearing-render.test.ts".to_string()]
+                .into_iter()
+                .collect();
+        assert_eq!(selected_needs_stack(&rows, &chosen, &in_clearing), 0);
+        // the unit still registers two — that is the number the new line names
+        let unit = rows
+            .iter()
+            .filter(|r| r.hermeticity == "needs-stack" && in_clearing(&r.file_path))
+            .count();
+        assert_eq!(unit, 2);
+    }
+
+    /// A selection that DOES name one counts exactly that one, not the unit.
+    #[test]
+    fn a_selection_that_names_one_counts_one() {
+        let rows = vec![
+            ns("directing/clearing/tests/a.test.ts"),
+            ns("directing/clearing/tests/b.test.ts"),
+        ];
+        let chosen: std::collections::BTreeSet<String> =
+            ["directing/clearing/tests/a.test.ts".to_string()].into_iter().collect();
+        assert_eq!(selected_needs_stack(&rows, &chosen, &in_clearing), 1);
+    }
+
+    /// An empty selection is a full run, not "nothing selected".
+    #[test]
+    fn an_empty_selection_counts_the_unit() {
+        let rows = vec![
+            ns("directing/clearing/tests/a.test.ts"),
+            ns("directing/clearing/tests/b.test.ts"),
+        ];
+        let chosen = std::collections::BTreeSet::new();
+        assert_eq!(selected_needs_stack(&rows, &chosen, &in_clearing), 2);
+    }
+
+    /// A file outside the run's units never counts, selected or not.
+    #[test]
+    fn a_file_outside_the_units_never_counts() {
+        let rows = vec![ns("platform/api/tests/z.test.ts")];
+        let chosen: std::collections::BTreeSet<String> =
+            ["platform/api/tests/z.test.ts".to_string()].into_iter().collect();
+        assert_eq!(selected_needs_stack(&rows, &chosen, &in_clearing), 0);
+    }
+
+    /// The none-selected line names the unit's count so the reader can tell
+    /// "the diff covers none" from "the unit has none".
+    #[test]
+    fn the_none_selected_line_names_the_units_count() {
+        let line = integration_report_none_selected(134);
+        assert!(line.contains("none selected"), "{line}");
+        assert!(line.contains("134"), "{line}");
+        assert!(!line.contains("NOT run"), "{line}");
+    }
 }

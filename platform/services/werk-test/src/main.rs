@@ -289,11 +289,23 @@ fn run(args: &[String]) -> Result<i32, String> {
         TestUnit::TsPackage(p) => f.starts_with(&format!("{}/", p)),
         TestUnit::BatsSuite(_) => false,
     });
-    let selected_ns: Vec<String> = ns_all.iter().filter(|f| in_units(f)).cloned().collect();
-    // count REGISTERED TESTS (rows), not files — the report must count what it names
-    let selected_ns_tests = rows.iter()
+    // #4236 — both numbers come from the SELECTION. An empty selection means
+    // the lane did not narrow anything, so the unit's rows are the honest count.
+    let chosen: std::collections::BTreeSet<String> =
+        sel_details.iter().map(|d| d.file.clone()).collect();
+    let selected_ns: Vec<String> = ns_all
+        .iter()
+        .filter(|f| in_units(f) && (chosen.is_empty() || chosen.contains(f.as_str())))
+        .cloned()
+        .collect();
+    let registered_in_unit = rows.iter()
         .filter(|r| r.hermeticity == "needs-stack" && in_units(&r.file_path))
         .count();
+    // count REGISTERED TESTS (rows), not files — the report must count what it names
+    let selected_ns_tests = werk_test::selected_needs_stack(&rows, &chosen, &in_units);
+    if selected_ns_tests == 0 && registered_in_unit > 0 {
+        println!("{}", werk_test::integration_report_none_selected(registered_in_unit));
+    }
     let stack = if selected_ns.is_empty() { werk_test::StackState::Up } else { stack_state_now() };
     let stack_down: Option<String> = stack_down_of(&stack);
     // #4102 — the werk lane never set RUN_INTEGRATION, so every bats
