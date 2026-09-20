@@ -473,6 +473,95 @@ pub fn endpoint_domain(route_path: &str, domains: &[String]) -> Option<String> {
             }
         }
     }
+    // #4222 — the remainder, assigned by hand against the live contract on
+    // 2026-09-19. These are the 75 routes no segment rule reaches: their path
+    // names a product word (`/api/photos`), a surface (`/clearing`), or nothing
+    // at all (`/x`). A guess written down and reviewable beats a row with no
+    // domain, and each line is one claim Wren and Silas can accept or correct.
+    //
+    // The whole route is the key, so a rename does not silently keep the old
+    // answer — the route drops out of the table and the run reports it unplaced.
+    const ROUTE: &[(&str, &str)] = &[
+        ("/", "products"),
+        ("/api/chorus/attention-analytics", "analytics"),
+        ("/api/chorus/card-story/:id", "cards"),
+        ("/api/chorus/codebase/topology", "code"),
+        ("/api/chorus/conversation", "messages"),
+        ("/api/chorus/crawl/:domain", "code"),
+        ("/api/chorus/disk", "infrastructure"),
+        ("/api/chorus/domain-story/:domain", "domains"),
+        ("/api/chorus/fitness/summary", "metrics"),
+        ("/api/chorus/freshness", "metrics"),
+        ("/api/chorus/harvest", "integrations"),
+        ("/api/chorus/jeff/posture/strip", "roles"),
+        ("/api/chorus/patterns/summary", "analytics"),
+        ("/api/chorus/perf", "metrics"),
+        ("/api/chorus/reconcile", "code"),
+        ("/api/chorus/refs", "knowledge"),
+        ("/api/chorus/reprompt-analytics", "analytics"),
+        ("/api/chorus/security-fitness", "security"),
+        ("/api/chorus/seed-media/:filename", "memory"),
+        ("/api/chorus/seeds", "memory"),
+        ("/api/chorus/self", "roles"),
+        ("/api/chorus/stats", "metrics"),
+        ("/api/chorus/test-run/latest", "tests"),
+        ("/api/chorus/ui-pages", "code"),
+        ("/api/chorus/voice-analytics", "analytics"),
+        ("/api/chorus/werk/activity", "cicd"),
+        ("/api/doc-catalog", "knowledge"),
+        ("/api/doc-catalog/add", "knowledge"),
+        ("/api/doc-catalog/link", "knowledge"),
+        ("/api/doc-catalog/tags", "knowledge"),
+        ("/api/doc-catalog/tree", "knowledge"),
+        ("/api/doc-inventory", "knowledge"),
+        ("/api/loom-analytics", "analytics"),
+        ("/api/loom-metrics", "metrics"),
+        ("/api/photos", "products"),
+        ("/api/photos/count", "products"),
+        ("/api/photos/set", "products"),
+        ("/api/playlists", "products"),
+        ("/api/playlists/add", "products"),
+        ("/api/playlists/remove", "products"),
+        ("/api/proxy/image", "products"),
+        ("/api/proxy/video", "products"),
+        ("/api/video-tags", "products"),
+        ("/api/videos", "products"),
+        ("/api/videos/list", "products"),
+        ("/api/werk/activity", "cicd"),
+        ("/api/werk/schema", "cicd"),
+        ("/borg-assessment", "analytics"),
+        ("/chorus", "products"),
+        ("/chorus-model-data", "domains"),
+        ("/chorus/system", "services"),
+        ("/clearing", "messages"),
+        ("/flow", "value-streams"),
+        ("/harvest-manifests", "integrations"),
+        ("/harvesting/convergence", "integrations"),
+        ("/harvesting/icd", "integrations"),
+        ("/harvesting/mapper", "integrations"),
+        ("/loom", "principles"),
+        ("/loom/:role", "principles"),
+        ("/model-data", "domains"),
+        ("/ontology-views/:domain", "domains"),
+        ("/test-run", "tests"),
+        ("/werk", "cicd"),
+        ("/x", "products"),
+        ("/api/chorus/alert", "alerts"),
+        ("/api/chorus/embed", "search"),
+        ("/api/chorus/index", "search"),
+        ("/api/chorus/open", "toolchain"),
+        ("/api/chorus/rca", "rcas"),
+        ("/api/chorus/reindex", "search"),
+        ("/api/chorus/role-state", "roles"),
+        ("/api/chorus/spine-event", "spine"),
+        ("/api/chorus/voice/:role", "messages"),
+        ("/sparql-read", "knowledge"),
+    ];
+    if let Some((_, d)) = ROUTE.iter().find(|(k, _)| *k == route_path) {
+        if let Some(hit) = domains.iter().find(|x| x == d) {
+            return Some(hit.clone());
+        }
+    }
     None
 }
 
@@ -1106,4 +1195,110 @@ mod pages_4214 {
         assert_ne!(HOME_GRAPH, "urn:chorus:instances");
         assert_ne!(HOME_GRAPH, "urn:chorus:ontology");
     }
+    /// #4222 — every route the hand table claims, placed. The fixture is the 74
+    /// routes that carried no domain on 2026-09-19; if one is renamed the table
+    /// no longer matches it and this goes red rather than keeping a stale answer.
+    #[test]
+    fn every_hand_assigned_route_places() {
+        let domains = all_domains();
+        for (route, want) in HAND_ROUTES {
+            assert_eq!(
+                endpoint_domain(route, &domains).as_deref(),
+                Some(*want),
+                "{route} must place in {want}"
+            );
+        }
+    }
+
+    /// NEGATIVE PROOF. A route no rule reaches stays unplaced and is reported by
+    /// name. Give the table a catch-all and this goes green when it must not.
+    #[test]
+    fn a_route_no_rule_reaches_stays_unplaced() {
+        let domains = all_domains();
+        assert_eq!(endpoint_domain("/api/zzz/not-a-thing", &domains), None);
+        // and a near-miss of a real entry is NOT the entry
+        assert_eq!(endpoint_domain("/api/photos/nope", &domains), None);
+    }
+
+    fn all_domains() -> Vec<String> {
+        ["alerts", "analytics", "cards", "cicd", "code", "domains", "infrastructure", "integrations", "knowledge", "memory", "messages", "metrics", "principles", "products", "rcas", "roles", "search", "security", "services", "spine", "tests", "toolchain", "value-streams"].iter().map(|s| s.to_string()).collect()
+    }
+
+    const HAND_ROUTES: &[(&str, &str)] = &[
+        ("/", "products"),
+        ("/api/chorus/attention-analytics", "analytics"),
+        ("/api/chorus/card-story/:id", "cards"),
+        ("/api/chorus/codebase/topology", "code"),
+        ("/api/chorus/conversation", "messages"),
+        ("/api/chorus/crawl/:domain", "code"),
+        ("/api/chorus/disk", "infrastructure"),
+        ("/api/chorus/domain-story/:domain", "domains"),
+        ("/api/chorus/fitness/summary", "metrics"),
+        ("/api/chorus/freshness", "metrics"),
+        ("/api/chorus/harvest", "integrations"),
+        ("/api/chorus/jeff/posture/strip", "roles"),
+        ("/api/chorus/patterns/summary", "analytics"),
+        ("/api/chorus/perf", "metrics"),
+        ("/api/chorus/reconcile", "code"),
+        ("/api/chorus/refs", "knowledge"),
+        ("/api/chorus/reprompt-analytics", "analytics"),
+        ("/api/chorus/security-fitness", "security"),
+        ("/api/chorus/seed-media/:filename", "memory"),
+        ("/api/chorus/seeds", "memory"),
+        ("/api/chorus/self", "roles"),
+        ("/api/chorus/stats", "metrics"),
+        ("/api/chorus/test-run/latest", "tests"),
+        ("/api/chorus/ui-pages", "code"),
+        ("/api/chorus/voice-analytics", "analytics"),
+        ("/api/chorus/werk/activity", "cicd"),
+        ("/api/doc-catalog", "knowledge"),
+        ("/api/doc-catalog/add", "knowledge"),
+        ("/api/doc-catalog/link", "knowledge"),
+        ("/api/doc-catalog/tags", "knowledge"),
+        ("/api/doc-catalog/tree", "knowledge"),
+        ("/api/doc-inventory", "knowledge"),
+        ("/api/loom-analytics", "analytics"),
+        ("/api/loom-metrics", "metrics"),
+        ("/api/photos", "products"),
+        ("/api/photos/count", "products"),
+        ("/api/photos/set", "products"),
+        ("/api/playlists", "products"),
+        ("/api/playlists/add", "products"),
+        ("/api/playlists/remove", "products"),
+        ("/api/proxy/image", "products"),
+        ("/api/proxy/video", "products"),
+        ("/api/video-tags", "products"),
+        ("/api/videos", "products"),
+        ("/api/videos/list", "products"),
+        ("/api/werk/activity", "cicd"),
+        ("/api/werk/schema", "cicd"),
+        ("/borg-assessment", "analytics"),
+        ("/chorus", "products"),
+        ("/chorus-model-data", "domains"),
+        ("/chorus/system", "services"),
+        ("/clearing", "messages"),
+        ("/flow", "value-streams"),
+        ("/harvest-manifests", "integrations"),
+        ("/harvesting/convergence", "integrations"),
+        ("/harvesting/icd", "integrations"),
+        ("/harvesting/mapper", "integrations"),
+        ("/loom", "principles"),
+        ("/loom/:role", "principles"),
+        ("/model-data", "domains"),
+        ("/ontology-views/:domain", "domains"),
+        ("/test-run", "tests"),
+        ("/werk", "cicd"),
+        ("/x", "products"),
+        ("/api/chorus/alert", "alerts"),
+        ("/api/chorus/embed", "search"),
+        ("/api/chorus/index", "search"),
+        ("/api/chorus/open", "toolchain"),
+        ("/api/chorus/rca", "rcas"),
+        ("/api/chorus/reindex", "search"),
+        ("/api/chorus/role-state", "roles"),
+        ("/api/chorus/spine-event", "spine"),
+        ("/api/chorus/voice/:role", "messages"),
+        ("/sparql-read", "knowledge"),
+    ];
+
 }
