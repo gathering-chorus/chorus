@@ -99,6 +99,169 @@ pub fn model_set(root: &str, ttl_override: Option<String>) -> Vec<String> {
     }
 }
 
+/// #3752 — one staged retirement, as the JSONL carries it. The verb that
+/// stages these never touches the store; this is the write boundary.
+#[derive(Debug, Clone, PartialEq, Eq, Default)]
+pub struct Retirement {
+    pub subject_domain: String,
+    pub object_class: String,
+    pub retire_subject: String,
+    pub graph: String,
+    pub retire_graph: String,
+    pub retire_class: String,
+    pub status: String,
+}
+
+/// What a retirement line asks the deploy to do.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum RetireAction {
+    /// #3788 — not `staged`. Until this existed every deploy re-executed every
+    /// line, so `status` was decoration: ten entries fired as intended on
+    /// 2026-08-06, the records were restored from backup, and seven fired
+    /// AGAIN during that card's land, removing every person and agent from the
+    /// allow-set the doors read. Only `staged` executes.
+    Skip { status: String, target: String },
+    /// One definesVocabulary triple, re-checked against the live served routes.
+    Claim { domain: String, class: String },
+    /// Every triple of one subject.
+    Subject { iri: String, graph: String },
+    /// Every row of one class in one graph (#4187).
+    Class { class: String, graph: String },
+    /// A whole graph, backed up and verified first (#3732).
+    WholeGraph { graph: String },
+}
+
+/// Read one JSONL line. `Ok(None)` is a blank line. A line that is present but
+/// unreadable is an ERROR, never a skip: fail-closed, #3752. The bash pays for
+/// this with a python subprocess per line and a \x1f separator, because TAB
+/// collapsed empty fields and turned a claim entry into a subject retirement
+/// of its own graph name on the first test run.
+pub fn parse_retirement(line: &str) -> Result<Option<Retirement>, String> {
+    let t = line.trim();
+    if t.is_empty() {
+        return Ok(None);
+    }
+    let field = |key: &str| -> Result<String, String> {
+        let pat = format!("\"{key}\"");
+        let Some(k) = t.find(&pat) else { return Ok(String::new()) };
+        let rest = &t[k + pat.len()..];
+        let Some(colon) = rest.find(':') else {
+            return Err(format!("key {key:?} has no value"));
+        };
+        let after = rest[colon + 1..].trim_start();
+        if !after.starts_with('"') {
+            return Err(format!("key {key:?} is not a string"));
+        }
+        let body = &after[1..];
+        let end = body.find('"').ok_or_else(|| format!("key {key:?} is unterminated"))?;
+        Ok(body[..end].to_string())
+    };
+    if !t.starts_with('{') || !t.ends_with('}') {
+        return Err("line is not a JSON object".to_string());
+    }
+    let status = field("status")?;
+    Ok(Some(Retirement {
+        subject_domain: field("subject_domain")?,
+        object_class: field("object_class")?,
+        retire_subject: field("retire_subject")?,
+        graph: field("graph")?,
+        retire_graph: field("retire_graph")?,
+        retire_class: field("retire_class")?,
+        status: if status.is_empty() { "staged".into() } else { status },
+    }))
+}
+
+/// Decide what one entry does. Pure, so the #3788 lockout has a test.
+pub fn retirement_action(r: &Retirement, default_graph: &str) -> RetireAction {
+    if r.status != "staged" {
+        let target = if !r.retire_subject.is_empty() {
+            r.retire_subject.clone()
+        } else if !r.retire_graph.is_empty() {
+            r.retire_graph.clone()
+        } else {
+            "claim".to_string()
+        };
+        return RetireAction::Skip { status: r.status.clone(), target };
+    }
+    let graph = if r.graph.is_empty() { default_graph.to_string() } else { r.graph.clone() };
+    if !r.retire_graph.is_empty() {
+        return RetireAction::WholeGraph { graph: r.retire_graph.clone() };
+    }
+    if !r.retire_class.is_empty() {
+        return RetireAction::Class { class: r.retire_class.clone(), graph };
+    }
+    if !r.retire_subject.is_empty() {
+        return RetireAction::Subject { iri: r.retire_subject.clone(), graph };
+    }
+    RetireAction::Claim { domain: r.subject_domain.clone(), class: r.object_class.clone() }
+}
+
+/// AC3 — may this delete proceed? Every delete path in the deploy unloads
+/// first and REFUSES if the dump failed or landed short.
+///
+/// The bash applies this to whole-graph retirement only (#3732). Subject and
+/// class retirement — the leg #4216's 226 rows went through — issue their
+/// DELETE with no backup at all. One rule, all three.
+///
+/// `live` is what the store says is there; `dumped` is what the CONSTRUCT
+/// actually wrote. Nothing live is idempotent, not an error: a retirement that
+/// already ran has nothing to delete.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum DeleteGuard {
+    /// Nothing to delete — already retired.
+    AlreadyAbsent,
+    /// Backed up and verified; the delete may run.
+    Proceed { backed_up: usize },
+    /// Refuse, with the reason to put on the spine.
+    Refuse(String),
+}
+
+pub fn delete_guard(live: Option<usize>, dumped: Option<usize>, target: &str) -> DeleteGuard {
+    let Some(live) = live else {
+        // The store did not answer the count. A blind delete is never allowed
+        // — the same rule as a blind verify (#3726/#3732).
+        return DeleteGuard::Refuse(format!(
+            "could not count {target} — refusing a blind delete"
+        ));
+    };
+    if live == 0 {
+        return DeleteGuard::AlreadyAbsent;
+    }
+    let dumped = dumped.unwrap_or(0);
+    if dumped < live {
+        return DeleteGuard::Refuse(format!(
+            "backup holds {dumped} line(s) for {live} live triple(s) in {target}; \
+             no verified restore path, NOT deleting"
+        ));
+    }
+    DeleteGuard::Proceed { backed_up: dumped }
+}
+
+/// #4125 — a source file may not author a Role as an owner.
+///
+/// `chorus:ownedBy` is `a owl:ObjectProperty ; rdfs:range chorus:Principal`.
+/// A store fix cannot hold while the source authors the violation: the bad
+/// owners were taken to 0 on 2026-09-18 and the next three deploys put 208
+/// back, because a deploy re-creates whatever the source says. So the refusal
+/// belongs where the source enters the store.
+///
+/// Scoped to the `ownedBy` predicate ONLY. `chorus:role-<name>` is legitimate
+/// elsewhere — holdsRole, appointedHat — and a guard that cannot tell those
+/// two apart is the #3734 shape again. Returns one line per offending file.
+pub fn role_owner_offences(file_label: &str, ttl: &str) -> Vec<String> {
+    let mut out = Vec::new();
+    for (i, line) in ttl.lines().enumerate() {
+        let code = line.split('#').next().unwrap_or("");
+        if let Some(pos) = code.find("ownedBy") {
+            let rest = code[pos + "ownedBy".len()..].trim_start();
+            if rest.starts_with("chorus:role-") {
+                out.push(format!("{file_label}:{}: {}", i + 1, code.trim()));
+            }
+        }
+    }
+    out
+}
+
 /// Does this run deploy the eight domain sets? The bash gates every one of
 /// them behind `[ -z "${TTL:-}" ]`: a single-file partial run deploys ONLY the
 /// file it was handed, and must not quietly re-stage thirteen others. Pure.
@@ -248,6 +411,29 @@ pub fn run_athena_deploy() -> Result<String, String> {
             &[("graph", ontology.clone()), ("reason", reason.to_string())]);
         format!("athena-deploy: {reason}")
     };
+
+    // #4125 — refuse before any write if a source authors a Role as an owner.
+    let mut offences: Vec<String> = Vec::new();
+    for ttl in &set {
+        if let Ok(text) = std::fs::read_to_string(ttl) {
+            let label = ttl.strip_prefix(&format!("{root}/")).unwrap_or(ttl);
+            offences.extend(role_owner_offences(label, &text));
+        }
+    }
+    if !offences.is_empty() {
+        eprintln!(
+            "athena-deploy: REFUSED — a source file authors a Role as an owner (#4125). \
+             chorus:ownedBy ranges over chorus:Principal:"
+        );
+        for o in offences.iter().take(5) {
+            eprintln!("  {o}");
+        }
+        eprintln!(
+            "  -> change chorus:role-<name> to chorus:principal-<name> on the ownedBy line only; \
+             other chorus:role-* uses (holdsRole, appointedHat) are fine and untouched."
+        );
+        return Err(fail(&format!("source-authors-role-owner:{}", offences.len())));
+    }
 
     // Validate every member exists + is riot-valid (don't deploy a broken model).
     for ttl in &set {

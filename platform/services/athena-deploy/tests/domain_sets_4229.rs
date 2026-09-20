@@ -137,3 +137,40 @@ fn negative_proof_a_single_file_run_does_not_restage_the_other_thirteen() {
     // shape by hand this morning — would also re-stage every other set.
     assert!(!sets_run(Some("/x/security-model-3618.ttl")));
 }
+
+// ---- #4125: a source file may not author a Role as an owner --------------
+use athena_deploy::role_owner_offences;
+
+#[test]
+fn an_ownedby_pointing_at_a_role_is_named_with_its_line() {
+    let ttl = "chorus:thing a chorus:Card ;\n    chorus:ownedBy chorus:role-wren .\n";
+    let hits = role_owner_offences("f.ttl", ttl);
+    assert_eq!(hits.len(), 1);
+    assert!(hits[0].starts_with("f.ttl:2:"), "{hits:?}");
+}
+
+#[test]
+fn negative_proof_the_guard_leaves_the_other_role_uses_alone() {
+    // 24 legitimate chorus:role-* uses exist on holdsRole and appointedHat. A
+    // guard that cannot tell those from an ownedBy violation is the #3734
+    // shape — it would refuse every deploy forever and get switched off.
+    let ttl = "chorus:p chorus:holdsRole chorus:role-wren ;\n    chorus:appointedHat chorus:role-kade ;\n    chorus:ownedBy chorus:principal-wren .\n";
+    assert_eq!(role_owner_offences("f.ttl", ttl), Vec::<String>::new());
+}
+
+#[test]
+fn a_commented_out_violation_is_not_a_violation() {
+    let ttl = "# chorus:ownedBy chorus:role-wren was here\nchorus:x a chorus:Card .\n";
+    assert_eq!(role_owner_offences("f.ttl", ttl), Vec::<String>::new());
+}
+
+#[test]
+fn the_shipped_model_files_are_clean_of_this_today() {
+    // If this ever fails, a source file has re-authored the violation the
+    // 2026-09-18 store fix could not hold against.
+    let root = concat!(env!("CARGO_MANIFEST_DIR"), "/../../..");
+    for f in ["roles/silas/ontology/chorus.ttl", "roles/kade/ontology/werk-domains.ttl"] {
+        let text = std::fs::read_to_string(format!("{root}/{f}")).expect(f);
+        assert_eq!(role_owner_offences(f, &text), Vec::<String>::new());
+    }
+}
