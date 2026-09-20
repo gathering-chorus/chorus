@@ -71,7 +71,9 @@ TTL
 }
 
 @test "return gate — the security deploy set carries the rows file and not the literals file" {
-  D="$ROOT/platform/services/athena-deploy/src/lib.rs"
-  grep -q 'permissions-4183.ttl' "$D"
-  ! grep -E '^\s*"\$CHORUS_ROOT/roles/silas/ontology/security-scopes-3689.ttl"' "$D"
+  # #4229 - the security set is a manifest row now, not a bash array.
+  MAN="$ROOT/platform/config/domain-set-manifest.txt"
+  grep -q "permissions-4183.ttl" "$MAN"
+  # NEGATIVE PROOF: the literals file must not have come back with it.
+  test -z "$(grep -F "security-scopes-3689.ttl" "$MAN" || true)"
 }
