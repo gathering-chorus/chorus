@@ -1795,7 +1795,18 @@ fn main() {
                 // imports still cannot be placed: the module has no domain
                 // either. Read from the file, never the folder; silence when
                 // the rules cannot agree, exactly as for a test.
-                if let Ok(content) = std::fs::read_to_string(std::path::Path::new(&root).join(path))
+                // #4222 — a file we cannot read AS TEXT still has a path, and for
+                // the non-source trees the path is the fact. 261 screenshots and
+                // other binaries carried no domain for exactly this reason: the
+                // read failed, so nothing below ever ran and the row was written
+                // with no hasDomain at all. Silent, and invisible in the counts.
+                let text = std::fs::read_to_string(std::path::Path::new(&root).join(path));
+                if text.is_err() {
+                    if let Some(s) = domain::place_by_tree(path, &valid_domains) {
+                        owned.push(("hasDomain".to_string(), s.domain));
+                    }
+                }
+                if let Ok(content) = text
                 {
                     let unit = domain::declared_unit(path, &|q: &str| {
                         std::fs::read_to_string(std::path::Path::new(&root).join(q)).ok()

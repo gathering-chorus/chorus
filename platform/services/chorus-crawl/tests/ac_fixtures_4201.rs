@@ -55,7 +55,13 @@ fn ac4_a_card_number_under_platform_tests_is_unplaced_never_services() {
     // The card in the header resolves to NO domain — a card number alone is
     // not a signal. If it resolved, the card rule would legitimately tag it.
     let no_domain = |_: u32| None;
-    let path = "platform/tests/4201-card-number-only.bats";
+    // #4222 — the path was "4201-card-number-only.bats". That name contains the
+    // word "card", and the file-name rule added on #4222 reads a file's own
+    // name, so the fixture started resolving to `cards` — for a reason #4201
+    // never intended to test. The AC here is that a CARD NUMBER alone is not a
+    // signal and the folder never speaks; neither claim involves the word.
+    // Renamed to a name that states nothing, so the fixture tests what it says.
+    let path = "platform/tests/4201-number-only.bats";
 
     let p = place_in_file(&content, path, None, &[], &valid(), &no_domain, &|_| None);
     assert_eq!(p, Placement::Unplaced, "got {p:?}");
@@ -73,7 +79,8 @@ fn ac4_control_the_same_file_tags_when_its_card_has_a_domain() {
     let card_domain = |n: u32| (n == 4201).then(|| "tests".to_string());
     let p = place_in_file(
         &content,
-        "platform/tests/4201-card-number-only.bats",
+        // same rename as above, same reason
+        "platform/tests/4201-number-only.bats",
         None,
         &[],
         &valid(),
