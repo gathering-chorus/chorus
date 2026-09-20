@@ -1,49 +1,149 @@
 #!/usr/bin/env python3
-"""#4222 — one report: is every row of every type tagged with its domain?
+"""#4222 — the control report for the five types Jeff named.
 
-Each type carries its domain on ITS OWN edge — Test uses chorus:covers (typed
-to Domain, required by TestEdgesShape), the rest use chorus:hasDomain. Reading
-one property for all five was how this report said tests were 0% tagged on
-2026-09-19 when they were 100%.
+Reports by the ACTION a row needs, not by check name (Jeff, 2026-09-20):
 
-Read-only. Prints one line per type, DONE or NOT, and exits non-zero while any
-type is short.
+  MOVE  the right row in the wrong graph
+  FEED  the row exists but is missing the attribute
+  WEED  the row should not exist
+
+Each line carries the previous run's count so direction is visible without
+going to look it up (Silas, same morning). The previous run is kept in
+~/.chorus/tagged-report.json — a report you cannot compare to yesterday is a
+number, not a control.
+
+Each type carries its domain on ITS OWN edge: Test uses chorus:covers (typed to
+Domain, required by TestEdgesShape), the rest use chorus:hasDomain. Reading one
+property for all five is how this said tests were 0% tagged on 2026-09-19 when
+they were 100%.
+
+Read-only. Exits non-zero while any action is outstanding.
 """
 import json
+import os
 import sys
 import urllib.request
 
-DOOR = "http://localhost:3360"
+DOOR = os.environ.get("CHORUS_OWL_API", "http://localhost:3360")
+STATE = os.path.expanduser("~/.chorus/tagged-report.json")
+ROOT = os.environ.get("CHORUS_ROOT", "")
+HOME = "urn:chorus:domains:code"
+
 TYPES = [
-    ("code/files", "hasDomain"),
-    ("tests/tests", "covers"),
-    ("logs/sources", "hasDomain"),
-    ("code/pages", "hasDomain"),
-    ("code/endpoints", "hasDomain"),
+    ("code/files", "hasDomain", "urn:chorus:domains:code"),
+    ("tests/tests", "covers", "urn:chorus:domains:tests"),
+    ("logs/sources", "hasDomain", "urn:chorus:domains:logs"),
+    ("code/pages", "hasDomain", "urn:chorus:domains:code"),
+    ("code/endpoints", "hasDomain", "urn:chorus:domains:code"),
 ]
 
 
-def rows(route):
+def fetch(route):
+    """Rows and the graph the door served them from. None means unreadable —
+    which is NOT zero, and must never read as a clean line."""
     with urllib.request.urlopen(f"{DOOR}/{route}?limit=1000000") as r:
-        return json.load(r).get("data") or []
+        body = json.load(r)
+    if "servedFrom" not in body:
+        # A door that does not say where it read is UNMEASURED, not clean.
+        # Defaulting to "" made MOVE silently zero and hid every misplacement.
+        return body.get("data") or [], None
+    return body.get("data") or [], body["servedFrom"]
+
+
+def prior():
+    try:
+        with open(STATE) as f:
+            return json.load(f)
+    except Exception:
+        return {}
+
+
+def arrow(now, was):
+    if was is None:
+        return "    "
+    if now == was:
+        return "  = "
+    return f" {now - was:+d}"
 
 
 def main():
-    short = 0
-    for route, edge in TYPES:
+    was = prior()
+    now = {}
+    outstanding = 0
+    rows = []
+    named = {}
+
+    for route, edge, home in TYPES:
         try:
-            data = rows(route)
-        except Exception as e:  # a door that cannot answer is NOT a pass
-            print(f"NOT   {route:16} unreadable: {e}")
-            short += 1
+            data, served = fetch(route)
+        except Exception as e:
+            print(f"UNREADABLE  {route:16} {e}")
+            outstanding += 1
             continue
         total = len(data)
-        tagged = sum(1 for row in data if row.get(edge))
-        done = total > 0 and tagged == total
-        if not done:
-            short += 1
-        print(f"{'DONE' if done else 'NOT ':4}  {route:16} {tagged}/{total}  via {edge}")
-    return 1 if short else 0
+        feed = sum(1 for row in data if not row.get(edge))
+        if not ROOT or not os.path.isdir(ROOT):
+            print("UNMEASURED  CHORUS_ROOT is unset or not a directory — WEED cannot be read")
+            return 1
+        if served is None:
+            print(f"UNMEASURED  {route:16} the door did not say which graph it served")
+            outstanding += 1
+            continue
+        move = 0 if served == home else total
+        weed = sum(
+            1
+            for row in data
+            if row.get("filePath")
+            and not os.path.exists(os.path.join(ROOT, row["filePath"]))
+        )
+        now[route] = {"total": total, "feed": feed, "move": move, "weed": weed}
+        p = was.get(route, {})
+        acts = []
+        if move:
+            acts.append(
+                f"MOVE {move} into the {home.rsplit(':', 1)[1]} graph "
+                f"(served from {served.rsplit(':', 1)[1]}){arrow(move, p.get('move'))}"
+            )
+        if feed:
+            acts.append(
+                f"FEED {feed} add correct domain tagging{arrow(feed, p.get('feed'))}"
+            )
+            named["FEED " + route] = [
+                r.get("filePath") or r.get("name", "?")
+                for r in data
+                if not r.get(edge)
+            ][:5]
+        if weed:
+            acts.append(
+                f"WEED {weed} delete, nothing in the tree behind them"
+                f"{arrow(weed, p.get('weed'))}"
+            )
+            named["WEED " + route] = [
+                r["filePath"]
+                for r in data
+                if r.get("filePath")
+                and not os.path.exists(os.path.join(ROOT, r["filePath"]))
+            ][:5]
+        rows.append(f"{route:16} {total:6}  " + ("  ·  ".join(acts) if acts else "clean"))
+        if move or feed or weed:
+            outstanding += 1
+
+    print("type               rows  what to do (vs previous run)")
+    for r in rows:
+        print(r)
+    print(f"{'TOTAL':16} {'':6}  {outstanding} type(s) need action")
+    # A count is not actionable. Name rows so the next person can start.
+    for label, examples in named.items():
+        print(f"  {label}: " + ", ".join(examples))
+
+    try:
+        os.makedirs(os.path.dirname(STATE), exist_ok=True)
+        with open(STATE, "w") as f:
+            json.dump(now, f)
+    except Exception as e:  # a report that cannot save history still reports
+        print(f"(history not saved: {e})")
+
+    return 1 if outstanding else 0
 
 
 if __name__ == "__main__":

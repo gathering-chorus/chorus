@@ -235,6 +235,19 @@ chorus:permission-kade-tests a chorus:Permission ;
     chorus:mode acl:Write ;
     chorus:ownedBy chorus:principal-silas .
 
+# #4222 — the crawler writes CodeFile, Test AND LogSource, and runs as kade per
+# Jeff's 2026-09-17 ruling (principals own services; a service's rows belong to
+# the principal it runs as). kade held Write on code and tests but not logs, so
+# every nightly pass lost its log leg: PUT /logs/sources x133 -> 403, measured
+# 2026-09-20 07:33. Under the ruling those rows are kade's, so this is the
+# missing member of the set, not a widening of it.
+chorus:permission-kade-logs a chorus:Permission ;
+    rdfs:label "kade may write urn:chorus:domains:logs" ;
+    chorus:agent chorus:principal-kade ;
+    chorus:accessTo "urn:chorus:domains:logs"^^xsd:anyURI ;
+    chorus:mode acl:Write ;
+    chorus:ownedBy chorus:principal-silas .
+
 chorus:permission-kade-ops a chorus:Permission ;
     rdfs:label "kade may write urn:chorus:ops" ;
     chorus:agent chorus:principal-kade ;
