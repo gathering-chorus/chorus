@@ -2998,6 +2998,22 @@ async function triggerAthenaOnLand(
   const child = spawn(actBin, athenaActArgs(args, workflow), {
     env: werkRunnerEnv(home, werkBase, role, runnerPath), detached: true, stdio: ['ignore', fd, fd],
   });
+  // #4228 — the child stays detached (a slow model deploy must not hold the act
+  // run open), but this process DOES listen for its exit. Before today nothing
+  // did: the only event was athena.trigger.started, so a deploy that refused
+  // — Wren's #4216, source-delete-unretired, exit 1 — was invisible and the
+  // land printed "merged + deployed + LIVE" over it. She then ticked an AC from
+  // a store that never changed. Detaching is fine; not reading the exit is not.
+  child.on('exit', (code, signal) => {
+    const ok = code === 0;
+    void appendChorusLog(ok ? 'athena.deploy.completed' : 'athena.deploy.failed', role, {
+      card_id: cardId,
+      landedCommit,
+      exit: String(code ?? -1),
+      signal: signal ?? '',
+      log,
+    });
+  });
   child.unref();
   fsMod.closeSync(fd);
   await appendChorusLog('athena.trigger.started', role, { card_id: cardId, landedCommit, files, pid: child.pid ?? 0, log });

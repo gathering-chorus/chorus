@@ -596,7 +596,34 @@ jobs:
         # Tell the truth about the terminal state — landed (proven) vs presented (not proven).
         run: |
           if [ "${{ steps.demo.outputs.proven }}" = "true" ]; then
-            if [ "${SYNC_OK:-0}" = "1" ]; then
+            # #4228 — the model deploy runs detached. Wait a bounded time for its
+            # verdict before claiming LIVE. Three outcomes, three sentences:
+            # completed (land is LIVE), failed (the model did NOT deploy — say so),
+            # still running at the deadline (UNMEASURED, never read as success).
+            MODEL="ok"
+            # Silas at the gate: with CARD_ID empty every grep below matches
+            # nothing, MODEL stays "ok", and a refused deploy is invisible —
+            # the same hollow shape this card exists to remove. An unknown card
+            # is UNMEASURED, never ok.
+            if [ -z "${CARD_ID:-}" ]; then
+              MODEL="unmeasured"
+            elif tail -400 "$HOME/.chorus/chorus.log" 2>/dev/null \
+                 | grep -q "\"event\":\"athena.trigger.started\".*\"card_id\":\"${CARD_ID}\""; then
+              MODEL="unmeasured"
+              for _ in $(seq 60); do
+                TAIL=$(tail -400 "$HOME/.chorus/chorus.log" 2>/dev/null)
+                case "$TAIL" in
+                  *'"event":"athena.deploy.failed"'*"\"card_id\":\"${CARD_ID}\""*) MODEL="failed"; break ;;
+                  *'"event":"athena.deploy.completed"'*"\"card_id\":\"${CARD_ID}\""*) MODEL="ok"; break ;;
+                esac
+                sleep 2
+              done
+            fi
+            if [ "$MODEL" = "failed" ]; then
+              echo "::error ::[NOT LIVE] #${CARD_ID} merged + accepted, but the model deploy REFUSED — the store does not carry this card's model changes. Read ~/.chorus/werk-runs/athena-${CARD_ID}-canonical-*.log and re-deploy before ticking any AC that reads the store." >&2
+            elif [ "$MODEL" = "unmeasured" ]; then
+              echo "::error ::[UNMEASURED] #${CARD_ID} merged + accepted, but the model deploy had not finished after 120s. Its outcome is unknown — do NOT read this as live. Check athena-${CARD_ID}-canonical-*.log." >&2
+            elif [ "${SYNC_OK:-0}" = "1" ]; then
               echo "[landed] #${CARD_ID} merged + deployed + LIVE, accepted by ${ACCEPTER} (GO=accept)."
             else
               echo "[accepted, NOT yet live] #${CARD_ID} merged + accepted, but canonical did NOT ff-sync — run 'werk-sync recover'." >&2
