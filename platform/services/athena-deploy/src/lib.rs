@@ -329,6 +329,44 @@ pub fn path_in_werk(path: &str) -> bool {
     path.contains("/chorus-werk/")
 }
 
+/// #4029 — the blank-node cleanup, and it is the whole reason the graph grew.
+///
+/// The merge deletes a staged subject's OWN triples before re-inserting, but a
+/// shape body is a blank-node tree (`sh:property [ … ]`) whose nodes get a
+/// fresh identity on every load: nothing in staging ever matched the old ones,
+/// so every deploy left the previous bodies behind and added new ones — 92
+/// deploys, roughly +880 triples each, 5,230 to 77,770.
+///
+/// Two parts. First delete the blank-node trees hanging off staged subjects,
+/// deepest first — a leaf must go before the node pointing at it, or the next
+/// level's pattern no longer matches. Then sweep blank nodes nothing points
+/// at: bodies orphaned by EARLIER deploys are unreachable from any subject, so
+/// the walk cannot find them, and a blank node with no parent is garbage here
+/// by definition. Six passes each, because removing a parent orphans children.
+pub fn bnode_cleanup(staging: &str, ontology: &str, depth: usize, sweeps: usize) -> String {
+    let mut out = String::new();
+    for d in (1..=depth).rev() {
+        let mut chain = String::from("?s ?p0 ?b1 .");
+        let mut filt = String::from("isBlank(?b1)");
+        for i in 2..=d {
+            chain.push_str(&format!(" ?b{} ?p{} ?b{} .", i - 1, i - 1, i));
+            filt.push_str(&format!(" && isBlank(?b{i})"));
+        }
+        out.push_str(&format!(
+            "DELETE {{ GRAPH <{ontology}> {{ ?b{d} ?pl ?ol }} }} WHERE {{ GRAPH <{staging}> \
+             {{ ?s ?sp ?so }} GRAPH <{ontology}> {{ {chain} ?b{d} ?pl ?ol FILTER({filt}) }} }} ; "
+        ));
+    }
+    for _ in 0..sweeps {
+        out.push_str(&format!(
+            "DELETE {{ GRAPH <{ontology}> {{ ?ob ?op ?oo }} }} WHERE {{ GRAPH <{ontology}> \
+             {{ ?ob ?op ?oo FILTER(isBlank(?ob)) FILTER NOT EXISTS {{ GRAPH <{ontology}> \
+             {{ ?ox ?oy ?ob }} }} }} }} ; "
+        ));
+    }
+    out
+}
+
 /// #3536 — RETIRE_ABSENT. Deploys never truncate by default.
 ///
 /// "Stop truncating our data" (Jeff, 2026-06-30), after a deploy whose staging
@@ -696,6 +734,9 @@ pub fn run_athena_deploy() -> Result<String, String> {
             l.chars().filter(|c| c.is_ascii_hexdigit()).collect::<String>()
         }))
         .filter(|c| c.len() >= 7);
+    // DEPLOY_SOURCE_DELETE_CHECK=0 disables the guard — only so the negative
+    // proof can show what it catches: a green deploy with the row still live.
+    let prev = if env_or("DEPLOY_SOURCE_DELETE_CHECK", "1") == "1" { prev } else { None };
     match prev {
         None => println!(
             "athena-deploy: no deployedFromCommit stamp in <{ontology}> — \
@@ -708,6 +749,19 @@ pub fn run_athena_deploy() -> Result<String, String> {
             );
         }
         Some(prev) => {
+            let staged_for_retirement: Vec<String> = std::fs::read_to_string(env_or(
+                "RETIREMENTS_FILE",
+                &format!("{root}/designing/schemas/model-retirements.jsonl"),
+            ))
+            .map(|t| {
+                t.lines()
+                    .filter_map(|l| parse_retirement(l).ok().flatten())
+                    .filter(|r| r.status == "staged")
+                    .map(|r| r.retire_subject)
+                    .filter(|s| !s.is_empty())
+                    .collect()
+            })
+            .unwrap_or_default();
             let mut gone: Vec<(String, String)> = Vec::new();
             for ttl in &set {
                 let rel = ttl.strip_prefix(&format!("{root}/")).unwrap_or(ttl).to_string();
@@ -716,6 +770,14 @@ pub fn run_athena_deploy() -> Result<String, String> {
                 };
                 let Ok(now) = std::fs::read_to_string(ttl) else { continue };
                 for name in vanished_subjects(&before, &now) {
+                    // Already staged for retirement? The retirement leg above
+                    // removes it; reporting it here would refuse a deploy for
+                    // work that is already done, and the guard would be
+                    // switched off rather than obeyed.
+                    let iri = format!("https://jeffbridwell.com/chorus#{name}");
+                    if staged_for_retirement.contains(&iri) {
+                        continue;
+                    }
                     gone.push((name, rel.clone()));
                 }
             }
@@ -729,8 +791,9 @@ pub fn run_athena_deploy() -> Result<String, String> {
                     eprintln!("  chorus:{name}  (was declared in {file})");
                 }
                 eprintln!(
-                    "  -> athena-model retire-claim, then re-run this deploy; or restore the \
-                     subject to its file if the removal was accidental."
+                    "  -> stage it: athena-model retire-subject <iri> --card <id>, then re-run \
+                     this deploy; or restore the subject to its file if the removal was \
+                     accidental."
                 );
                 return Err(fail(&format!("source-deleted-subjects:{}", gone.len())));
             }
@@ -815,7 +878,14 @@ pub fn run_athena_deploy() -> Result<String, String> {
     }
 
     // Step 2: additive merge (delete-staged-subjects-then-insert), one transaction.
-    let sparql = format!("{retire_clause}{}", merge_sparql(&staging, &ontology));
+    // DEPLOY_BNODE_CLEANUP=0 disables it — only so the negative proof can
+    // show the growth it prevents.
+    let bnodes = if env_or("DEPLOY_BNODE_CLEANUP", "1") == "1" {
+        bnode_cleanup(&staging, &ontology, 6, 6)
+    } else {
+        String::new()
+    };
+    let sparql = format!("{retire_clause}{bnodes}{}", merge_sparql(&staging, &ontology));
     let mcode = curl(&["-s", "-o", "/dev/null", "-w", "%{http_code}", "-X", "POST",
         "-H", "Content-Type: application/sparql-update", "--data-binary", &sparql, &update])?;
     if !ok_http(&mcode) {
@@ -1043,8 +1113,15 @@ pub fn deploy_domain_set(set: &DomainSet, root: &str, ctx: &StoreCtx) -> Result<
         return Err(fail(&format!("{}-verify-missing-{missing}", set.name)));
     }
 
-    emit_spine(&ctx.chorus_log, "model.deployed", &ctx.role,
-        &[("graph", set.graph.clone()), ("files", set.files.len().to_string())]);
+    // The SET NAME rides the event, so the spine stays queryable by it. In the
+    // bash each set's messages were a copy, and the practices block said
+    // "principles" throughout — the copy bug #4011 exists to catch. One
+    // implementation reading a name from data cannot make that mistake.
+    emit_spine(&ctx.chorus_log, "model.deployed", &ctx.role, &[
+        ("graph", set.graph.clone()),
+        ("set", set.name.clone()),
+        ("files", set.files.len().to_string()),
+    ]);
     Ok(format!("{}: {} file(s) -> <{}>", set.name, set.files.len(), set.graph))
 }
 
