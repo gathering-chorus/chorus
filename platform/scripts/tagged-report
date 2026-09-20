@@ -80,14 +80,20 @@ def main():
         weed = 0
         now[route] = {"total": total, "feed": feed, "move": move, "weed": weed}
         p = was.get(route, {})
-        rows.append(
-            f"{route:16} {total:6}  MOVE {move:5}{arrow(move, p.get('move'))}"
-            f"  FEED {feed:5}{arrow(feed, p.get('feed'))}"
-            f"  WEED {weed:4}{arrow(weed, p.get('weed'))}"
-        )
+        acts = []
+        if move:
+            acts.append(
+                f"MOVE {move} into the {home.rsplit(':', 1)[1]} graph "
+                f"(served from {served.rsplit(':', 1)[1]}){arrow(move, p.get('move'))}"
+            )
+        if feed:
+            acts.append(f"FEED {feed} add correct domain tagging{arrow(feed, p.get('feed'))}")
+        if weed:
+            acts.append(f"WEED {weed} delete, nothing in the tree behind them{arrow(weed, p.get('weed'))}")
+        rows.append(f"{route:16} {total:6}  " + ("  ·  ".join(acts) if acts else "clean"))
         outstanding += move + feed + weed
 
-    print("type               rows  action counts (vs previous run)")
+    print("type               rows  what to do (vs previous run)")
     for r in rows:
         print(r)
     print(f"{'TOTAL':16} {'':6}  outstanding {outstanding}")
