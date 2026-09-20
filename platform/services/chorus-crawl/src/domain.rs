@@ -767,6 +767,96 @@ pub fn surface_domain_rows(ttl: &str, key_pred: &str) -> Vec<(String, String)> {
     out
 }
 
+
+/// #4222 — the file's OWN NAME, when nothing in its content named a domain.
+///
+/// 1,022 files under `platform/` carried no domain: the content rules look for
+/// a route called, a class asserted or a crate declared, and `access-log.ts`,
+/// `cost-summary.ts` and `cors-origin.ts` do none of those while saying plainly
+/// what they are about. The name is the file's own word, not its folder's —
+/// which is the distinction Jeff drew when he warned that one source file can
+/// belong to several domains. A name that matches nothing stays unplaced.
+///
+/// `test` and `tests` are DELIBERATELY not mapped. A test's domain is what it
+/// tests, never "tests" — mapping the word would have tagged 133 api tests as
+/// the tests domain and buried the thing they actually cover.
+pub fn place_by_file_name(path: &str, valid: &[String]) -> Option<Signal> {
+    const NAME: &[(&str, &str)] = &[
+        ("log", "logs"),
+        ("logs", "logs"),
+        ("cost", "analytics"),
+        ("cors", "security"),
+        ("auth", "security"),
+        ("authn", "security"),
+        ("authz", "security"),
+        ("card", "cards"),
+        ("cards", "cards"),
+        ("sparql", "domains"),
+        ("athena", "domains"),
+        ("shape", "domains"),
+        ("ontology", "domains"),
+        ("nudge", "messages"),
+        ("message", "messages"),
+        ("clearing", "messages"),
+        ("spine", "spine"),
+        ("pulse", "spine"),
+        ("hook", "spine"),
+        ("werk", "cicd"),
+        ("deploy", "deploys"),
+        ("build", "builds"),
+        ("alert", "alerts"),
+        ("health", "monitors"),
+        ("probe", "monitors"),
+        ("watchdog", "monitors"),
+        ("principal", "identity"),
+        ("identity", "identity"),
+        ("session", "identity"),
+        ("search", "search"),
+        ("index", "search"),
+        ("embed", "search"),
+        ("seed", "memory"),
+        ("memory", "memory"),
+        ("catalog", "knowledge"),
+        ("doc", "knowledge"),
+        ("docs", "knowledge"),
+        ("role", "roles"),
+        ("roles", "roles"),
+        ("domain", "domains"),
+        ("page", "code"),
+        ("pages", "code"),
+        ("endpoint", "code"),
+        ("endpoints", "code"),
+        ("crawl", "code"),
+        ("rca", "rcas"),
+        ("backup", "infrastructure"),
+        ("fuseki", "infrastructure"),
+    ];
+    let base = path.rsplit('/').next().unwrap_or(path);
+    for word in base
+        .split(|c: char| !c.is_ascii_alphanumeric())
+        .filter(|w| !w.is_empty())
+        .map(|w| w.to_ascii_lowercase())
+    {
+        if let Some(d) = valid.iter().find(|d| **d == word) {
+            return Some(Signal {
+                rule: Rule::Unit,
+                domain: d.clone(),
+                evidence: format!("name {word}"),
+            });
+        }
+        if let Some((_, mapped)) = NAME.iter().find(|(k, _)| *k == word) {
+            if let Some(d) = valid.iter().find(|x| *x == mapped) {
+                return Some(Signal {
+                    rule: Rule::Unit,
+                    domain: d.clone(),
+                    evidence: format!("name {word}"),
+                });
+            }
+        }
+    }
+    None
+}
+
 pub fn place_by_tree(path: &str, valid: &[String]) -> Option<Signal> {
     const TREE: &[(&str, &str)] = &[
         ("roles/", "roles"),
@@ -842,6 +932,13 @@ pub fn place_in_file(
             {
                 signals.push(s);
             }
+        }
+    }
+    // #4222 — the file's own name, before the tree: a name is the file's, a
+    // directory is only where it sits.
+    if signals.is_empty() {
+        if let Some(s) = place_by_file_name(path, valid) {
+            signals.push(s);
         }
     }
     // #4222 — last, and only for the non-source trees: the directory.
@@ -1626,6 +1723,44 @@ mod multi_domain_4222 {
         ] {
             assert_eq!(place_by_tree(p, &v).map(|s| s.domain).as_deref(), Some(want), "{p}");
         }
+    }
+
+    /// #4222 — the file's own name places it when its content says nothing.
+    #[test]
+    fn a_source_file_takes_the_domain_its_own_name_states() {
+        let v = vec![
+            "logs".to_string(), "analytics".to_string(), "security".to_string(),
+            "cards".to_string(), "tests".to_string(),
+        ];
+        for (p, want) in [
+            ("platform/api/src/access-log.ts", "logs"),
+            ("platform/api/src/cost-summary.ts", "analytics"),
+            ("platform/api/src/cors-origin.ts", "security"),
+            ("platform/api/src/cards-path.ts", "cards"),
+        ] {
+            assert_eq!(place_by_file_name(p, &v).map(|s| s.domain).as_deref(), Some(want), "{p}");
+        }
+    }
+
+    /// NEGATIVE PROOF, two states it must separate.
+    ///
+    /// 1. A test is about what it TESTS. Map the word `test` and 133 api tests
+    ///    land in the tests domain, burying the domain they actually cover — so
+    ///    the word must not resolve, even though `tests` is a real domain.
+    /// 2. A name that states nothing stays unplaced; no first-entry default.
+    #[test]
+    fn the_word_test_never_places_and_a_silent_name_stays_unplaced() {
+        let v = vec!["tests".to_string(), "security".to_string(), "logs".to_string()];
+        // the file's OTHER word still wins — this is a security test, not a tests test
+        assert_eq!(
+            place_by_file_name("platform/api/tests/cors-coverage.test.ts", &v)
+                .map(|s| s.domain)
+                .as_deref(),
+            Some("security"),
+        );
+        // and a name with nothing but the word test places nothing
+        assert!(place_by_file_name("platform/api/tests/foo.test.ts", &v).is_none());
+        assert!(place_by_file_name("platform/api/src/zzz.ts", &v).is_none());
     }
 
 }
