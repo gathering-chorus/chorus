@@ -20,7 +20,7 @@ use std::{
     path::PathBuf,
     sync::{
         atomic::{AtomicBool, Ordering},
-        Arc,
+        Arc, RwLock,
     },
     time::Duration,
 };
@@ -33,9 +33,11 @@ struct TurnControl {
 }
 
 pub struct Supervisor {
-    pub config: Config,
+    config: RwLock<Config>,
+    config_file: PathBuf,
     pub store: Mutex<Store>,
     workers: Mutex<HashMap<String, Arc<Worker>>>,
+    observations: RwLock<HashMap<String, Arc<AtomicBool>>>,
     cancels: Mutex<HashMap<String, TurnControl>>,
     lifecycle: Mutex<()>,
     jobs: Arc<Semaphore>,
@@ -45,6 +47,14 @@ pub struct Supervisor {
 }
 impl Supervisor {
     pub fn new(config: Config, store: Store, identity_url: String) -> Result<Arc<Self>> {
+        Self::new_with_config_path(config, store, identity_url, config::config_path())
+    }
+    pub fn new_with_config_path(
+        config: Config,
+        store: Store,
+        identity_url: String,
+        config_file: PathBuf,
+    ) -> Result<Arc<Self>> {
         let url = reqwest::Url::parse(&identity_url).map_err(|_| "invalid identity URL")?;
         if !matches!(url.host_str(), Some("127.0.0.1" | "localhost" | "[::1]"))
             && url.scheme() != "https"
@@ -53,9 +63,11 @@ impl Supervisor {
         }
         let jobs = Arc::new(Semaphore::new(config.max_concurrent_jobs));
         Ok(Arc::new(Self {
-            config,
+            config: RwLock::new(config),
+            config_file,
             store: Mutex::new(store),
             workers: Mutex::new(HashMap::new()),
+            observations: RwLock::new(HashMap::new()),
             cancels: Mutex::new(HashMap::new()),
             lifecycle: Mutex::new(()),
             jobs,
@@ -67,6 +79,54 @@ impl Supervisor {
             identity_url,
             accepting: AtomicBool::new(true),
         }))
+    }
+    /// Reload an operator-owned snapshot without interrupting existing sessions.
+    /// The caller must atomically write the configured file before using the UDS endpoint.
+    pub async fn reload_config(&self, candidate: Config) -> Result<Value> {
+        config::validate(&candidate)?;
+        let _transition = self.lifecycle.lock().await;
+        if !self.accepting.load(Ordering::SeqCst) {
+            return Err("supervisor admissions are paused".into());
+        }
+        let current = self.config_snapshot();
+        if candidate.max_concurrent_jobs != current.max_concurrent_jobs {
+            return Err("concurrency changes require a drained supervisor restart".into());
+        }
+        let store = self.store.lock().await;
+        for session in store.sessions.values().filter(|s| s.live()) {
+            let replacement = candidate.profiles.get(&session.profile);
+            if replacement.is_none_or(|p| config::hash(p) != session.profile_hash) {
+                return Err(format!("profile {} is bound to live session {}; create a new profile and hand off before replacing it", session.profile, session.session_id));
+            }
+            if candidate.role_workspaces.get(&session.role)
+                != current.role_workspaces.get(&session.role)
+            {
+                return Err(format!("role workspace is bound to live session {}; stop and reconcile before changing it", session.session_id));
+            }
+            if session.card.is_some() && candidate.worktree_base != current.worktree_base {
+                return Err(format!("worktree base is bound to live card session {}; stop and reconcile before changing it", session.session_id));
+            }
+        }
+        *self
+            .config
+            .write()
+            .expect("profile configuration lock poisoned") = candidate;
+        Ok(
+            json!({"ok":true,"version":VERSION,"reloaded":true,"sessions_preserved":store.sessions.values().filter(|s|s.live()).count()}),
+        )
+    }
+    pub async fn public_status(&self, session: &Session) -> Value {
+        let mut value = session.public();
+        let mut blockers = session.switch_blockers();
+        if self.cancels.lock().await.contains_key(&session.session_id) {
+            blockers.push("previous turn is still stopping; wait for cleanup".into());
+        }
+        if !self.accepting.load(Ordering::SeqCst) {
+            blockers.push("supervisor admissions are paused".into());
+        }
+        value["switch_ready"] = json!(blockers.is_empty());
+        value["switch_blockers"] = json!(blockers);
+        value
     }
     pub async fn authenticate(&self, file: &str, role: &str) -> Result<Identity> {
         let path = PathBuf::from(file);
@@ -133,8 +193,14 @@ impl Supervisor {
         }
         Ok(())
     }
-    fn profile(&self, name: &str) -> Result<Profile> {
+    pub fn config_snapshot(&self) -> Config {
         self.config
+            .read()
+            .expect("profile configuration lock poisoned")
+            .clone()
+    }
+    fn profile(&self, name: &str) -> Result<Profile> {
+        self.config_snapshot()
             .profiles
             .get(name)
             .cloned()
@@ -154,6 +220,7 @@ impl Supervisor {
         if !["wren", "silas", "kade", "jeff"].contains(&request.role.as_str()) {
             return Err("unknown role".into());
         }
+        let config = self.config_snapshot();
         let profile = self.profile(&request.profile)?;
         if profile.no_tools {
             return Err("inference profiles cannot enroll interactive sessions".into());
@@ -164,8 +231,7 @@ impl Supervisor {
             return Err("workspace must be a directory".into());
         }
         if let Some(card) = request.card {
-            let base = self
-                .config
+            let base = config
                 .worktree_base
                 .as_ref()
                 .ok_or("card enrollment requires operator worktree_base")?;
@@ -176,7 +242,7 @@ impl Supervisor {
             {
                 return Err("card workspace must match explicit role/card worktree binding".into());
             }
-        } else if let Some(anchor) = self.config.role_workspaces.get(&request.role) {
+        } else if let Some(anchor) = config.role_workspaces.get(&request.role) {
             if std::fs::canonicalize(anchor).map_err(|_| "role anchor unavailable")? != cwd {
                 return Err("non-card session must use configured role anchor".into());
             }
@@ -204,7 +270,7 @@ impl Supervisor {
             let store = self.store.lock().await;
             if store.sessions.values().any(|s| {
                 s.live()
-                    && self.config.profiles.get(&s.profile).is_some_and(|other| {
+                    && config.profiles.get(&s.profile).is_some_and(|other| {
                         other.runtime == Runtime::Opencode && other.endpoint == profile.endpoint
                     })
             }) {
@@ -267,6 +333,7 @@ impl Supervisor {
             card: request.card,
             primary: request.primary,
             state: State::Idle,
+            cleanly_detached: false,
             created_at: crate::now(),
             heartbeat: crate::now(),
             profile_hash: config::hash(&profile),
@@ -294,6 +361,15 @@ impl Supervisor {
     }
     fn event_sink(self: &Arc<Self>, id: String, turn: Option<String>) -> execution::EventSink {
         let (tx, mut rx) = mpsc::channel::<Value>(256);
+        let active = Arc::new(AtomicBool::new(true));
+        if let Some(previous) = self
+            .observations
+            .write()
+            .expect("observation lock poisoned")
+            .insert(id.clone(), active.clone())
+        {
+            previous.store(false, Ordering::SeqCst);
+        }
         let app = self.clone();
         tokio::spawn(async move {
             while let Some(raw) = rx.recv().await {
@@ -308,7 +384,7 @@ impl Supervisor {
                     .map(str::to_owned)
                     .or_else(|| turn.clone());
                 event.tool_call_id = raw["tool_call_id"].as_str().map(str::to_owned);
-                if let Err(error) = app.record_event(event).await {
+                if let Err(error) = app.record_observation(event, Some(&active)).await {
                     eprintln!("agent event persistence failed: {error}");
                     if let Some(control) = app.cancels.lock().await.get_mut(&id) {
                         if let Some(cancel) = control.cancel.take() {
@@ -368,7 +444,15 @@ impl Supervisor {
         }
     }
     pub async fn record_event(&self, event: Event) -> Result<Event> {
+        self.record_observation(event, None).await
+    }
+    async fn record_observation(&self, event: Event, active: Option<&AtomicBool>) -> Result<Event> {
         let mut store = self.store.lock().await;
+        // A stopped/replaced worker may still have buffered events. Check its epoch
+        // under the same store lock used to commit detach so it cannot resurrect state.
+        if active.is_some_and(|active| !active.load(Ordering::SeqCst)) {
+            return Ok(event);
+        }
         let mut session = store.get(&event.session_id)?;
         if let Some(native) = &event.native_session_id {
             if session
@@ -435,6 +519,14 @@ impl Supervisor {
         }
         if !s.live() {
             return Err("session has stopped".into());
+        }
+        if s.message_receipts
+            .values()
+            .any(|receipt| receipt == "uncertain")
+        {
+            return Err(
+                "session has uncertain delivery; reconcile it before submitting new work".into(),
+            );
         }
         if s.mode == Mode::Native {
             return Ok(json!({"status":"queued","reason":"native_boundary","persisted":false}));
@@ -608,12 +700,115 @@ impl Supervisor {
         if session.mode == Mode::Managed
             && !matches!(session.runtime, Runtime::Claude | Runtime::Codex)
         {
+            if let Some(worker) = self.workers.lock().await.remove(id) {
+                worker.stop().await;
+            }
             self.start_worker(&session, true).await?;
         }
+        let mut store = self.store.lock().await;
+        session = store.get(id)?;
+        session.cleanly_detached = false;
         session.state = State::Idle;
         session.heartbeat = crate::now();
-        self.store.lock().await.update(session.clone())?;
+        store.update(session.clone())?;
         Ok(session)
+    }
+    pub async fn enqueue_context(&self, id: &str, text: String) -> Result<Value> {
+        let _transition = self.lifecycle.lock().await;
+        let session = self.store.lock().await.get(id)?;
+        self.auth_session(&session).await?;
+        if self.cancels.lock().await.contains_key(id) {
+            return Err("context requires an idle session with no turn cleanup".into());
+        }
+        let mut store = self.store.lock().await;
+        let mut session = store.get(id)?;
+        if session.state != State::Idle {
+            return Err("context requires an idle session with no turn cleanup".into());
+        }
+        if text.trim().is_empty()
+            || text.len()
+                + session
+                    .pending_context
+                    .iter()
+                    .map(|s| s.len() + 2)
+                    .sum::<usize>()
+                > MAX_INPUT_BYTES / 2
+        {
+            return Err("context must be nonempty and fit the pending context budget".into());
+        }
+        let event = store.append(store::event(id, "context.enqueued", json!({"text":text})))?;
+        session.apply_event(&event)?;
+        store.update(session)?;
+        Ok(json!({"ok":true,"session_id":id,"status":"context_queued","model_called":false}))
+    }
+    /// Close an operator-owned transport without releasing its role lease or history.
+    pub async fn disconnect(&self, id: &str) -> Result<Value> {
+        let _transition = self.lifecycle.lock().await;
+        let original = self.store.lock().await.get(id)?;
+        self.auth_session(&original).await?;
+        if !original.live() {
+            return Err("session has stopped".into());
+        }
+        if original.mode == Mode::Native && original.state != State::Idle {
+            return Err("finish native work using its client controls before disconnecting".into());
+        }
+        let completion = {
+            let mut controls = self.cancels.lock().await;
+            controls.get_mut(id).map(|control| {
+                if let Some(cancel) = control.cancel.take() {
+                    let _ = cancel.send(());
+                }
+                control.finished.clone()
+            })
+        };
+        let settled = original.switch_blockers().is_empty() && completion.is_none();
+        if let Some(mut completion) = completion {
+            if !*completion.borrow() {
+                if !matches!(
+                    tokio::time::timeout(Duration::from_secs(8), completion.changed()).await,
+                    Ok(Ok(()))
+                ) || !*completion.borrow()
+                {
+                    return Err(
+                        "turn is still stopping; session and lease retained for reconciliation"
+                            .into(),
+                    );
+                }
+            }
+        }
+        if let Some(worker) = self.workers.lock().await.remove(id) {
+            if !settled {
+                let _ = worker
+                    .request(
+                        "cancel",
+                        json!({"native_session_id":original.native_session_id}),
+                        5,
+                    )
+                    .await;
+            }
+            worker.stop().await;
+        }
+        let mut store = self.store.lock().await;
+        if let Some(active) = self
+            .observations
+            .write()
+            .expect("observation lock poisoned")
+            .remove(id)
+        {
+            active.store(false, Ordering::SeqCst);
+        }
+        let mut session = store.get(id)?;
+        let clean = settled
+            && session.last_event_sequence == original.last_event_sequence
+            && session.switch_blockers().is_empty();
+        let event = store.append(store::event(
+            id,
+            "session.detached",
+            json!({"clean":clean,"reason":"operator_transport_closed"}),
+        ))?;
+        session.apply_event(&event)?;
+        store.update(session.clone())?;
+        Ok(session.public())
     }
     pub async fn stop(&self, id: &str, terminate: bool) -> Result<Value> {
         let _transition = self.lifecycle.lock().await;
@@ -767,13 +962,18 @@ pub fn router(app: App) -> Router {
             "/health",
             get(|| async { Json(json!({"ok":true,"version":VERSION})) }),
         )
+        .route("/v1/config", get(config_status))
+        .route("/v1/config/reload", post(reload))
         .route("/v1/sessions", get(list).post(start))
         .route("/v1/sessions/{id}", get(status))
         .route("/v1/sessions/{id}/send", post(send))
         .route("/v1/sessions/{id}/resume", post(resume))
         .route("/v1/sessions/{id}/cancel", post(cancel))
         .route("/v1/sessions/{id}/stop", post(stop))
+        .route("/v1/sessions/{id}/disconnect", post(disconnect))
+        .route("/v1/sessions/{id}/context", post(context))
         .route("/v1/sessions/{id}/handoff", post(handoff))
+        .route("/v1/sessions/{id}/switch", post(switch))
         .route("/v1/sessions/{id}/boundary", post(boundary))
         .route("/v1/sessions/{id}/ack", post(ack))
         .route("/v1/sessions/{id}/approve", post(approve))
@@ -787,16 +987,41 @@ pub fn router(app: App) -> Router {
         .layer(DefaultBodyLimit::max(MAX_INPUT_BYTES))
         .with_state(app)
 }
-async fn list(AxState(app): AxState<App>) -> Json<Value> {
+async fn config_status(AxState(app): AxState<App>) -> Json<Value> {
+    let config = app.config_snapshot();
+    let profiles = config.profiles.iter().map(|(name, p)| (name.clone(), json!({
+        "runtime":p.runtime,"mode":p.mode,"model":p.model,"enforcement":p.enforcement,
+        "approved_gaps":p.approved_gaps,"no_tools":p.no_tools,"profile_hash":config::hash(p)
+    }))).collect::<serde_json::Map<_,_>>();
     Json(
-        json!({"version":VERSION,"sessions":app.store.lock().await.sessions.values().map(Session::public).collect::<Vec<_>>()}),
+        json!({"version":VERSION,"profiles":profiles,"roles":config.roles,"role_workspaces":config.role_workspaces,"worktree_base":config.worktree_base,"max_concurrent_jobs":config.max_concurrent_jobs}),
     )
+}
+async fn reload(AxState(app): AxState<App>) -> ApiResult {
+    let candidate = config::read(&app.config_file).map_err(error)?;
+    result(app.reload_config(candidate).await)
+}
+async fn list(AxState(app): AxState<App>) -> Json<Value> {
+    let sessions = app
+        .store
+        .lock()
+        .await
+        .sessions
+        .values()
+        .cloned()
+        .collect::<Vec<_>>();
+    let mut statuses = Vec::new();
+    for session in sessions {
+        statuses.push(app.public_status(&session).await);
+    }
+    Json(json!({"version":VERSION,"sessions":statuses}))
 }
 async fn start(AxState(app): AxState<App>, Json(req): Json<StartRequest>) -> ApiResult {
     result(app.start(req).await.map(|s| s.public()))
 }
 async fn status(AxState(app): AxState<App>, Path(id): Path<String>) -> ApiResult {
-    result(app.store.lock().await.get(&id).map(|s| s.public()))
+    let session = app.store.lock().await.get(&id).map_err(error)?;
+    Ok(Json(app.public_status(&session).await))
 }
 async fn send(
     AxState(app): AxState<App>,
@@ -813,6 +1038,21 @@ async fn cancel(AxState(app): AxState<App>, Path(id): Path<String>) -> ApiResult
 }
 async fn stop(AxState(app): AxState<App>, Path(id): Path<String>) -> ApiResult {
     result(app.stop(&id, true).await)
+}
+async fn disconnect(AxState(app): AxState<App>, Path(id): Path<String>) -> ApiResult {
+    result(app.disconnect(&id).await)
+}
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+struct ContextRequest {
+    text: String,
+}
+async fn context(
+    AxState(app): AxState<App>,
+    Path(id): Path<String>,
+    Json(req): Json<ContextRequest>,
+) -> ApiResult {
+    result(app.enqueue_context(&id, req.text).await)
 }
 async fn approve(
     AxState(app): AxState<App>,
@@ -1085,7 +1325,42 @@ async fn handoff(
     Json(request): Json<HandoffRequest>,
 ) -> ApiResult {
     let _transition = app.lifecycle.lock().await;
-    if app.cancels.lock().await.contains_key(&id) {
+    handoff_reserved(&app, &id, request).await
+}
+async fn switch(
+    AxState(app): AxState<App>,
+    Path(id): Path<String>,
+    Json(request): Json<SwitchRequest>,
+) -> ApiResult {
+    let _transition = app.lifecycle.lock().await;
+    let old = app.store.lock().await.get(&id).map_err(error)?;
+    let replacement = StartRequest {
+        version: VERSION,
+        profile: request.profile,
+        role: old.role,
+        cwd: old.cwd,
+        credential_file: request
+            .credential_file
+            .or(old.credential_file)
+            .ok_or_else(|| error("session credential unavailable".into()))?,
+        primary: old.primary,
+        card: old.card,
+        parent_session_id: old.parent_session_id,
+        native_session_id: None,
+        model: None,
+    };
+    handoff_reserved(
+        &app,
+        &id,
+        HandoffRequest {
+            replacement,
+            context: request.context,
+        },
+    )
+    .await
+}
+async fn handoff_reserved(app: &App, id: &str, request: HandoffRequest) -> ApiResult {
+    if app.cancels.lock().await.contains_key(id) {
         return Err(error(
             "previous turn is still stopping; reconcile before handoff".into(),
         ));
@@ -1096,12 +1371,11 @@ async fn handoff(
         ));
     }
     let mut req = request.replacement;
-    let old = app.store.lock().await.get(&id).map_err(error)?;
+    let old = app.store.lock().await.get(id).map_err(error)?;
     app.auth_session(&old).await.map_err(error)?;
-    if old.state != State::Idle {
-        return Err(error(
-            "handoff requires idle session; cancel and reconcile first".into(),
-        ));
+    let blockers = old.switch_blockers();
+    if !blockers.is_empty() {
+        return Err(error(format!("handoff refused: {}", blockers.join("; "))));
     }
     if req.role != old.role {
         return Err(error("handoff cannot change role".into()));
@@ -1111,14 +1385,43 @@ async fn handoff(
             "cross-session handoff starts a fresh native conversation".into(),
         ));
     }
+    let replacement_identity = app
+        .authenticate(&req.credential_file, &req.role)
+        .await
+        .map_err(error)?;
+    if replacement_identity.principal != old.principal {
+        return Err(error(
+            "handoff cannot change authenticated principal".into(),
+        ));
+    }
+    let context_bytes = old
+        .pending_context
+        .iter()
+        .map(|s| s.len() + 2)
+        .sum::<usize>()
+        + request.context.len();
+    if context_bytes > MAX_INPUT_BYTES / 2 {
+        return Err(error(
+            "pending context plus handoff exceeds context envelope budget".into(),
+        ));
+    }
     // Reserve the old session before probing/starting the replacement; send cannot race it.
     {
         let mut store = app.store.lock().await;
-        if store.get(&id).map_err(error)?.state != State::Idle {
-            return Err(error("session changed during handoff".into()));
+        let current = store.get(id).map_err(error)?;
+        if current.state != old.state
+            || current.cleanly_detached != old.cleanly_detached
+            || current.last_event_sequence != old.last_event_sequence
+            || current.pending_context != old.pending_context
+            || current.message_receipts != old.message_receipts
+        {
+            return Err(error(
+                "session changed during handoff; inspect current status and retry".into(),
+            ));
         }
         let mut draining = old.clone();
         draining.state = State::Disconnected;
+        draining.cleanly_detached = false;
         store.update(draining).map_err(error)?;
     }
     req.primary = false;
@@ -1131,7 +1434,7 @@ async fn handoff(
     };
     {
         let mut store = app.store.lock().await;
-        let current = store.get(&id).map_err(error)?;
+        let current = store.get(id).map_err(error)?;
         if current.state != State::Disconnected
             || current.last_event_sequence != old.last_event_sequence
         {
@@ -1144,17 +1447,65 @@ async fn handoff(
     old_stopped.primary = false;
     old_stopped.state = State::Stopped;
     new.primary = old.primary;
-    new.pending_context = vec![format!(
+    new.pending_context = old.pending_context.clone();
+    new.pending_context.push(format!(
         "Chorus handoff from session {}. Native history is not transferred.\n{}",
         old.session_id, request.context
-    )];
+    ));
     {
         let mut store = app.store.lock().await;
         store.handoff(old_stopped, new.clone()).map_err(error)?;
         store.append(store::event(&new.session_id,"session.handoff",json!({"from_session_id":id,"open_message_receipts":old.message_receipts,"card":old.card,"history":"fresh_native_conversation"}))).map_err(error)?;
     }
-    if let Some(worker) = app.workers.lock().await.remove(&id) {
+    if let Some(worker) = app.workers.lock().await.remove(id) {
         worker.stop().await;
     }
     Ok(Json(new.public()))
+}
+
+#[cfg(test)]
+mod observation_tests {
+    use super::*;
+
+    #[tokio::test]
+    async fn replaced_worker_cannot_apply_buffered_events_to_resumed_session() {
+        let dir = tempfile::tempdir().unwrap();
+        let config: Config = serde_json::from_value(json!({"version":1,"profiles":{}})).unwrap();
+        let app = Supervisor::new(
+            config,
+            Store::open(dir.path().into()).unwrap(),
+            "http://127.0.0.1:1/unused".into(),
+        )
+        .unwrap();
+        let session: Session = serde_json::from_value(json!({
+            "version":1,"session_id":"epoch-test","principal":"wren","role":"wren","profile":"fake",
+            "runtime":"opencode","runtime_version":"fixture","adapter_version":"fixture","mode":"managed",
+            "enforcement":"trusted","capabilities":{},"cwd":"/tmp","primary":true,"state":"idle",
+            "created_at":"fixture","heartbeat":"fixture","profile_hash":"fixture"
+        })).unwrap();
+        app.store.lock().await.insert(session).unwrap();
+        let old = app.event_sink("epoch-test".into(), None);
+        let store = app.store.lock().await;
+        old.send(json!({"type":"turn.started"})).await.unwrap();
+        let replacement = app.event_sink("epoch-test".into(), None);
+        replacement
+            .send(json!({"type":"message.delta","data":{"text":"new worker"}}))
+            .await
+            .unwrap();
+        drop(store);
+        tokio::time::timeout(Duration::from_secs(1), async {
+            loop {
+                let store = app.store.lock().await;
+                if !store.events("epoch-test", 0).unwrap().is_empty() {
+                    assert_eq!(store.get("epoch-test").unwrap().state, State::Idle);
+                    assert_eq!(store.events("epoch-test", 0).unwrap().len(), 1);
+                    break;
+                }
+                drop(store);
+                tokio::task::yield_now().await;
+            }
+        })
+        .await
+        .unwrap();
+    }
 }

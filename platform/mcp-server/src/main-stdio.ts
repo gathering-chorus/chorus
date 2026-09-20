@@ -14,9 +14,9 @@
 import { StdioServerTransport } from '@modelcontextprotocol/sdk/server/stdio.js';
 import { execFileSync } from 'child_process';
 import { resolve } from 'path';
-import { buildMcpServer } from './server';
+import { buildMcpServer, type McpServerDeps } from './server';
 import { readFileSync } from 'fs';
-import { authenticateAgentRequest, apiIdentityVerifier, apiSessionVerifier, identityMode } from './request-identity';
+import { authenticateAgentRequest, apiIdentityVerifier, apiSessionVerifier, identityMode, type AgentIdentity } from './request-identity';
 import { pinProfileBinding } from './stdio-session-binding';
 
 // #3020 — operational visibility. A stdio session has no daemon and no port, so
@@ -68,6 +68,30 @@ export function buildStdioServer(
   return buildMcpServer(() => resolved, deps);
 }
 
+/** Profile-bound OpenCode MCP may initialize before session enrollment. Tool
+ * discovery has no business effects; every tool call still resolves and pins
+ * the unique enrolled session and verifies its rotating CSS credential. */
+export async function buildAuthenticatedStdioServer(
+  authenticate: () => Promise<AgentIdentity>,
+  role?: string,
+  profileBinding = false,
+  deps: Omit<McpServerDeps, 'identity' | 'authenticate'> = {},
+): Promise<ReturnType<typeof buildMcpServer>> {
+  if (profileBinding) {
+    // Syntactic role validation happens synchronously during construction. The
+    // role is only an assertion until request authentication proves identity.
+    return buildStdioServer(role, { ...deps, authenticate: async () => {
+      const identity = await authenticate();
+      if (identity.mode !== 'verified' || identity.role !== role || !identity.sessionId) {
+        throw new Error('profile-binding-identity-mismatch');
+      }
+      return identity;
+    } });
+  }
+  const identity = await authenticate();
+  return buildStdioServer(identity.role, { ...deps, identity, authenticate });
+}
+
 async function main(): Promise<void> {
   const auth = {
     mode: identityMode(process.env.CHORUS_MCP_IDENTITY_MODE),
@@ -81,6 +105,7 @@ async function main(): Promise<void> {
     const tokenFile = process.env.CHORUS_SESSION_TOKEN_FILE;
     // This is a per-session stdio subprocess, not the shared HTTP daemon.
     // Reread a rotated token and reverify it for every tool request.
+    // eslint-disable-next-line security/detect-non-literal-fs-filename -- Operator-owned credential reference supplied by the launcher, never a tool argument; the resulting token is verified per request.
     const token = tokenFile ? readFileSync(tokenFile, 'utf8').trim() : process.env.CHORUS_IDENTITY_TOKEN;
     const binding = await resolveBinding?.();
     const identity = await authenticateAgentRequest({
@@ -91,8 +116,7 @@ async function main(): Promise<void> {
     if (binding && (identity.mode !== 'verified' || identity.principal !== binding.principal || identity.role !== binding.role)) throw new Error('profile-binding-identity-mismatch');
     return identity;
   };
-  const identity = await authenticate();
-  const server = buildStdioServer(identity.role, { identity, authenticate });
+  const server = await buildAuthenticatedStdioServer(authenticate, process.env.CHORUS_ROLE, !!profile);
   const transport = new StdioServerTransport();
 
   // operational visibility: TEARDOWN. Every started event needs a matching

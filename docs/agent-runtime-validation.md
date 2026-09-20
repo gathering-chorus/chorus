@@ -8,25 +8,35 @@ installed runtime conformance attestation, or multi-day canary was performed.
 
 | Area | Verified result |
 | --- | --- |
-| `chorus-agent` | 23 tests: bounded workers/jobs, private provenance, process-group cancellation, shared concurrency locks, identity, leases, message dedupe, journal replay, handoff recovery, UDS/Pulse claim/ack, managed ingress, human approval refusal |
-| MCP | 286 tests across 16 suites; TypeScript build |
+| `chorus-agent` | 34 tests: original bounded-worker, identity, lease and journal coverage plus atomic reload, workspace-preserving switch, clean disconnect/reopen, durable context and retired-worker event refusal |
+| MCP | 288 tests across 16 suites; TypeScript build; cold profile-bound discovery and authenticated tool invocation |
 | Pulse | 209 tests across 20 suites; TypeScript build |
 | API | 2,045 passed / 14 skipped, 218 passed suites / 2 skipped; TypeScript build |
 | Clearing | 190 targeted provider, canonical-history, transcript, participant, reply and router tests; TypeScript build; targeted ESLint |
-| Runtime workers | 10 deterministic HTTP/ACP/provider tests; TypeScript build; targeted ESLint |
+| Runtime workers | 12 deterministic HTTP/ACP/provider tests; TypeScript build; targeted ESLint; private Basic authentication and exact V2 beta version pins |
 | Native policy/runtime unit tests | 14 passed |
 | Native hook CLI acceptance | 6 passed, including multi-path denials, Unicode delivery, missing enrollment and broken-output/no-ack |
 | SessionCache / memory / log gates | 8 / 16 / 8 passed |
 | Session response debt | 21 passed, including sibling-session separation and missing evidence |
-| `chorus-awake` | 32 passed, including configured dispatch and no fallback after supervisor failure |
+| `chorus-awake` | 34 passed, including exact setup-profile dispatch and no fallback after supervisor failure |
 | `werk-demo` | 77 library tests, including profile routing, pipe saturation and descendant timeout |
 | Ops analysis | 147 passed when run serially |
-| Configuration / build fixtures / baseline | 13 Python tests with Node available; no skips |
+| Configuration / operator setup / build fixtures / baseline | 64 Python tests with Node available; no skips; temporary homes, fake OpenCode processes and LaunchAgent fixtures |
 | Repository hygiene | `git diff --check`, new-crate rustfmt check, JSON parsing, workflow YAML parsing |
 
 The ops suite has process-global `CHORUS_OPS_LOCK` fixtures that interfere when
 run in parallel; the full serial run passed. The API integration skips are the
 repository's existing opt-in/live-service tests, not hidden test failures.
+
+The operator follow-up reran the changed supervisor, launcher, MCP, worker and
+Python suites. Unchanged API/Pulse/Clearing/gate/ops results above are from the
+initial migration validation. Operator tests cover config and custom-setting
+preservation, role-account refusal, atomic credential renewal, deferred MCP
+enrollment, handoff failure without replay, streaming while idle, multiline
+Unicode input, approvals, owned-process cleanup and explicit service activation.
+Node service tests execute only temporary wrappers with a fake Node binary; they
+verify runtime/checkout alignment without invoking launchctl. No installed Chorus
+binaries, runtime profiles or LaunchAgents were created on the contributor Mac.
 
 ## Reproduce core checks
 

@@ -1,8 +1,32 @@
 /* eslint-disable security/detect-object-injection -- API credential names must pass the environment identifier guard before lookup. */
 import { isAbsolute } from 'node:path';
 import { randomUUID } from 'node:crypto';
+import { open } from 'node:fs/promises';
+import { constants } from 'node:fs';
 import { setTimeout as delay } from 'node:timers/promises';
 import { AdapterError, deadline, Emit, Json, required, Runtime } from './types';
+
+/** Reopen on every request so an atomic operator credential rotation takes effect. */
+async function readPrivatePassword(filename: string): Promise<string> {
+  if (!isAbsolute(filename)) throw new AdapterError('configuration','OpenCode password_file must be absolute');
+  let file;
+  try {
+    // eslint-disable-next-line security/detect-non-literal-fs-filename -- Operator-owned absolute reference; no symlinks, regular-file/owner/mode checks and bounded reads follow on this same descriptor.
+    file=await open(filename,constants.O_RDONLY|constants.O_NOFOLLOW|constants.O_NONBLOCK);
+    const metadata=await file.stat();
+    if (!metadata.isFile() || metadata.uid!==process.getuid?.() || (metadata.mode&0o077)!==0 || metadata.size>4096) throw Error();
+    const bytes=Buffer.alloc(4097); const {bytesRead}=await file.read(bytes,0,bytes.length,0);
+    return decodePassword(bytes.subarray(0,bytesRead));
+  } catch { throw new AdapterError('configuration','OpenCode password_file must be a private regular file owned by the service account'); }
+  finally { await file?.close(); }
+}
+
+function decodePassword(bytes: Buffer): string {
+  const password=new TextDecoder('utf-8',{fatal:true}).decode(bytes).trim();
+  const hasControl=[...password].some(character=>character.charCodeAt(0)<32 || character.charCodeAt(0)===127);
+  if (!password || bytes.length>4096 || hasControl) throw Error();
+  return password;
+}
 
 interface SessionState { state: string; turn?: string; messageID?: string; noTools: boolean; seen: Map<string,string>; approvals: Set<string>; }
 /** HTTP contract pinned to OpenCode V2 docs 2026-09-20; deliberately rejects V1.
@@ -19,15 +43,27 @@ export class OpenCodeRuntime implements Runtime {
     if (!['http:','https:'].includes(url.protocol) || url.username || url.password) throw new AdapterError('configuration','Invalid OpenCode endpoint');
     this.endpoint = endpoint.replace(/\/$/,''); this.config = params.config || this.config;
   }
+  private async authorization(): Promise<string | undefined> {
+    if (this.config.password_file) {
+      if (this.config.api_key_env) throw new AdapterError('configuration','Choose one OpenCode server authentication method');
+      const username=this.config.username || 'opencode';
+      if (username!=='opencode') throw new AdapterError('configuration','OpenCode Basic authentication requires username opencode');
+      const password=await readPrivatePassword(required(this.config.password_file,'password_file'));
+      return `Basic ${Buffer.from(`${username}:${password}`).toString('base64')}`;
+    }
+    if (this.config.api_key_env) {
+      const name=required(this.config.api_key_env,'api_key_env');
+      if (!/^[A-Za-z_][A-Za-z0-9_]*$/.test(name) || !process.env[name]) throw new AdapterError('configuration','Missing OpenCode credential environment reference');
+      return `Bearer ${process.env[name]}`;
+    }
+    return undefined;
+  }
   private async api(route: string, method = 'GET', body?: Json, timeoutMs = deadline(this.config)): Promise<Json> {
     const headers: Record<string,string> = {'content-type':'application/json'};
-    if (this.config.api_key_env) {
-      const name = required(this.config.api_key_env,'api_key_env');
-      if (!/^[A-Za-z_][A-Za-z0-9_]*$/.test(name) || !process.env[name]) throw new AdapterError('configuration','Missing OpenCode credential environment reference');
-      headers.authorization = `Bearer ${process.env[name]}`;
-    }
+    const authorization=await this.authorization();
+    if (authorization) headers.authorization=authorization;
     let response: Response;
-    try { response = await this.fetcher(`${this.endpoint}${route}`, {method,headers,body:body ? JSON.stringify(body) : undefined,signal:AbortSignal.timeout(timeoutMs)}); }
+    try { response = await this.fetcher(`${this.endpoint}${route}`, {method,headers,redirect:'error',body:body ? JSON.stringify(body) : undefined,signal:AbortSignal.timeout(timeoutMs)}); }
     catch (error) { throw new AdapterError((error as Error).name === 'TimeoutError' ? 'timeout' : 'network','OpenCode request failed'); }
     if (!response.ok) { await response.body?.cancel(); throw new AdapterError(response.status === 401 || response.status === 403 ? 'authentication' : 'runtime',`OpenCode returned HTTP ${response.status}`); }
     if (response.status === 204) return {};
@@ -36,8 +72,13 @@ export class OpenCodeRuntime implements Runtime {
   async probe(params: Json) {
     this.configure(params);
     const info = await this.api('/api/info');
-    if (typeof info.version !== 'string' || !/^2\./.test(info.version)) throw new AdapterError('unsupported_version','Expected OpenCode V2 server info');
-    if (this.config.expected_version && info.version !== this.config.expected_version) throw new AdapterError('unsupported_version','OpenCode version differs from pinned configuration');
+    const expected=required(this.config.expected_version,'expected_version');
+    // V2 preview releases use 0.0.0-beta.*. The API contract and exact operator
+    // pin identify compatibility; the executable's numeric major does not.
+    if (info.version!==expected) throw new AdapterError('unsupported_version','OpenCode version differs from pinned configuration');
+    if (!Number.isSafeInteger(info.pid) || info.pid<=0 || !Array.isArray(info.urls) || !info.paths || typeof info.paths!=='object') {
+      throw new AdapterError('unsupported_version','Expected the pinned OpenCode V2 server-info contract');
+    }
     return {runtime:'opencode',runtime_version:info.version,protocol:'opencode-v2-2026-09-20',capabilities:{resume:true,autonomous_wake:true,mid_turn_steering:false,cancellation:true,structured_output:false,before_tool:false,history_recovery:false,no_tools:true,context_boundaries:[],gaps:['Tool telemetry is projected snapshots, not a complete durable event stream','Pre-tool interception requires a separately verified plugin','Session permissions do not provide filesystem isolation','Version compatibility is experimental; pin expected_version']},native:info};
   }
   private state(session: string): SessionState {

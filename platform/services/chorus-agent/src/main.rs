@@ -153,11 +153,16 @@ async fn run() -> Result<Value> {
     }
     if matches!(verb, "help" | "--help" | "-h") {
         return Ok(
-            json!({"usage":"chorus-agent launch <role> [--profile name] [--cwd path]; start|register|run (JSON stdin); status [session]; resume|cancel|stop|events <session>; send|handoff|approve <session> (JSON stdin); doctor [profile]; serve via chorus-agentd","version":VERSION}),
+            json!({"usage":"chorus-agent launch <role> [--profile name] [--cwd path]; start|register|run (JSON stdin); status [session]; resume|cancel|stop|disconnect|events <session>; send|context|handoff|switch|approve <session> (JSON stdin); reload; profiles; doctor [profile]; serve via chorus-agentd","version":VERSION}),
         );
     }
     if verb == "doctor" {
         let c = config::read(&config::config_path())?;
+        if let Some(name) = args.get(1) {
+            if !c.profiles.contains_key(name) {
+                return Err(format!("unknown operator profile: {name}"));
+            }
+        }
         let mut reports = serde_json::Map::new();
         for (name, profile) in &c.profiles {
             if args.get(1).is_some_and(|id| id != name) {
@@ -216,14 +221,16 @@ async fn run() -> Result<Value> {
         }
     }
     let (method, path, body) = match verb {
+        "reload" => ("POST", "/v1/config/reload".into(), Some(json!({}))),
+        "profiles" => ("GET", "/v1/config".into(), None),
         "start" | "register" => ("POST", "/v1/sessions".into(), Some(input()?)),
         "status" if id.is_empty() => ("GET", "/v1/sessions".into(), None),
         "status" => ("GET", format!("/v1/sessions/{id}"), None),
         "events" => ("GET", format!("/v1/sessions/{id}/events"), None),
-        "send" | "handoff" | "approve" if !id.is_empty() => {
+        "send" | "context" | "handoff" | "switch" | "approve" if !id.is_empty() => {
             ("POST", format!("/v1/sessions/{id}/{verb}"), Some(input()?))
         }
-        "resume" | "cancel" | "stop" if !id.is_empty() => {
+        "resume" | "cancel" | "stop" | "disconnect" if !id.is_empty() => {
             ("POST", format!("/v1/sessions/{id}/{verb}"), Some(json!({})))
         }
         _ => return Err("unknown operation or missing session ID; use --help".into()),

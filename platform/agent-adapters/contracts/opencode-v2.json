@@ -1,7 +1,9 @@
 {
   "contract": "opencode-v2-2026-09-20",
   "source": "https://opencode.ai/v2/docs/api",
-  "major_version": 2,
+  "api_generation": 2,
+  "runtime_version_policy": "exact expected_version pin; V2 beta versions may use 0.0.0-beta.*",
+  "authentication": "HTTP Basic username opencode and owner-private password_file; Bearer env for existing gateway deployments",
   "response_envelope": "data",
   "routes": {
     "info": "GET /api/info",

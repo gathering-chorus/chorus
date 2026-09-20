@@ -42,6 +42,10 @@ pub fn read(path: &Path) -> Result<Config> {
     let bytes = std::fs::read(path).map_err(|e| format!("read operator profiles: {e}"))?;
     let c: Config =
         serde_json::from_slice(&bytes).map_err(|e| format!("invalid operator profiles: {e}"))?;
+    validate(&c)?;
+    Ok(c)
+}
+pub fn validate(c: &Config) -> Result<()> {
     if c.version != VERSION {
         return Err("unsupported profile schema major".into());
     }
@@ -56,7 +60,7 @@ pub fn read(path: &Path) -> Result<Config> {
             return Err(format!("role references missing profile {p}"));
         }
     }
-    Ok(c)
+    Ok(())
 }
 pub fn validate_profile(p: &Profile) -> Result<()> {
     if p.timeout_secs == 0 || p.timeout_secs > 86400 {

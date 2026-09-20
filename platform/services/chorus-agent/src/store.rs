@@ -106,6 +106,7 @@ impl Store {
                 Err(_) => corrupt = true,
             }
             if corrupt {
+                s.cleanly_detached = false;
                 s.state = State::Failed;
                 s.capabilities
                     .gaps

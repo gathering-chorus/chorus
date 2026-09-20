@@ -393,3 +393,143 @@ fn profile_configuration_rejects_protocol_and_secret_confusion() {
     let request: Value = json!({"replacement":{"version":1,"profile":"test","role":"wren","cwd":"/tmp","credential_file":"/tmp/credential"},"context":"obligations"});
     assert!(serde_json::from_value::<HandoffRequest>(request).is_ok());
 }
+
+#[tokio::test]
+async fn reload_rejects_live_profile_and_binding_changes_atomically() {
+    let f = fixture("native").await;
+    let s = f.app.start(start(&f)).await.unwrap();
+    let original = f.app.config_snapshot();
+    for state in [State::Idle, State::Disconnected, State::Failed] {
+        let mut session = s.clone();
+        session.state = state;
+        f.app.store.lock().await.update(session).unwrap();
+        let mut changed = original.clone();
+        changed.profiles.get_mut("test").unwrap().model = Some("changed".into());
+        assert!(f
+            .app
+            .reload_config(changed)
+            .await
+            .unwrap_err()
+            .contains("live session"));
+        let mut changed = original.clone();
+        changed
+            .role_workspaces
+            .insert("wren".into(), "/tmp/new-anchor".into());
+        assert!(f
+            .app
+            .reload_config(changed)
+            .await
+            .unwrap_err()
+            .contains("role workspace"));
+        assert_eq!(
+            config::hash(&f.app.config_snapshot().profiles["test"]),
+            s.profile_hash
+        );
+    }
+    let mut session = s.clone();
+    session.card = Some(42);
+    f.app.store.lock().await.update(session).unwrap();
+    let mut changed = original.clone();
+    changed.worktree_base = Some("/tmp/other-base".into());
+    assert!(f
+        .app
+        .reload_config(changed)
+        .await
+        .unwrap_err()
+        .contains("worktree base"));
+    f.app.stop(&s.session_id, true).await.unwrap();
+    let mut changed = original.clone();
+    changed.profiles.get_mut("test").unwrap().model = Some("now-allowed".into());
+    f.app.reload_config(changed).await.unwrap();
+    assert_eq!(
+        f.app.config_snapshot().profiles["test"].model.as_deref(),
+        Some("now-allowed")
+    );
+}
+
+#[tokio::test]
+async fn reload_rejects_invalid_snapshot_and_concurrency_without_partial_changes() {
+    let f = fixture("native").await;
+    let original = f.app.config_snapshot();
+    let mut invalid = original.clone();
+    invalid.version = 2;
+    assert!(f
+        .app
+        .reload_config(invalid)
+        .await
+        .unwrap_err()
+        .contains("major"));
+    let mut invalid = original.clone();
+    invalid.roles.insert("wren".into(), "absent".into());
+    assert!(f
+        .app
+        .reload_config(invalid)
+        .await
+        .unwrap_err()
+        .contains("missing profile"));
+    let mut invalid = original.clone();
+    invalid.profiles.get_mut("test").unwrap().timeout_secs = 0;
+    assert!(f
+        .app
+        .reload_config(invalid)
+        .await
+        .unwrap_err()
+        .contains("timeout_secs"));
+    let mut invalid = original.clone();
+    invalid.max_concurrent_jobs = 2;
+    assert!(f
+        .app
+        .reload_config(invalid)
+        .await
+        .unwrap_err()
+        .contains("restart"));
+    assert_eq!(
+        serde_json::to_value(f.app.config_snapshot()).unwrap(),
+        serde_json::to_value(original).unwrap()
+    );
+}
+
+#[test]
+fn doctor_refuses_unknown_profile_without_executing_runtime() {
+    let dir = tempfile::tempdir().unwrap();
+    let config = dir.path().join("profiles.json");
+    fs::write(&config, r#"{"version":1,"profiles":{}}"#).unwrap();
+    let result = std::process::Command::new(env!("CARGO_BIN_EXE_chorus-agent"))
+        .args(["doctor", "absent"])
+        .env("CHORUS_AGENT_CONFIG", config)
+        .output()
+        .unwrap();
+    assert!(!result.status.success());
+    assert!(String::from_utf8_lossy(&result.stderr).contains("unknown operator profile: absent"));
+}
+
+#[tokio::test]
+async fn interrupted_disconnect_is_uncertain_and_never_becomes_a_clean_switch() {
+    let f = fixture("managed").await;
+    let executable = f._dir.path().join("fake-codex");
+    fs::write(&executable, "#!/bin/sh\nif [ \"$1\" = '--version' ]; then echo 'fixture-codex 1'; exit 0; fi\ncat >/dev/null\nsleep 30\n").unwrap();
+    let session = f.app.start(start(&f)).await.unwrap();
+    f.app
+        .send(&session.session_id, send("pulse:interrupted", "work"))
+        .await
+        .unwrap();
+    let detached = f.app.disconnect(&session.session_id).await.unwrap();
+    assert_eq!(detached["state"], "disconnected");
+    assert_eq!(detached["cleanly_detached"], false);
+    let session = f.app.store.lock().await.get(&session.session_id).unwrap();
+    assert_eq!(session.message_receipts["pulse:interrupted"], "uncertain");
+    assert!(session.primary);
+    assert!(!session.switch_blockers().is_empty());
+    let mut superficially_idle = session.clone();
+    superficially_idle.state = State::Idle;
+    f.app.store.lock().await.update(superficially_idle).unwrap();
+    assert!(f
+        .app
+        .send(&session.session_id, send("operator:new", "more work"))
+        .await
+        .unwrap_err()
+        .contains("uncertain"));
+    f.app.store.lock().await.update(session.clone()).unwrap();
+    let detached = f.app.disconnect(&session.session_id).await.unwrap();
+    assert_eq!(detached["cleanly_detached"], false);
+}

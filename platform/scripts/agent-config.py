@@ -161,7 +161,7 @@ def endpoint_provider(profiles, name, runtime):
         raise ValueError("provider.model_id must name the actual endpoint model")
     if profile.get("model") not in (None, "chorus-endpoint/coder"):
         raise ValueError("profile.model must be chorus-endpoint/coder; put endpoint model in provider.model_id")
-    config = {"env": [key], "package": "@opencode/ai/providers/" + ("responses" if protocol == "openai-responses" else "openai-compatible"),
+    config = {"env": [key], "package": "@opencode/ai/providers/" + ("openai-compatible/responses" if protocol == "openai-responses" else "openai-compatible"),
               "settings": {"baseURL": endpoint}, "models": {"coder": {"modelID": model}}}
     return {**selected, "config": config, "native_model": "chorus-endpoint/coder"}
 

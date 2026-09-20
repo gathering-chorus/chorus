@@ -46,6 +46,9 @@ async fn fixture() -> Fixture {
     let address = identity.local_addr().unwrap();
     let identity_task = tokio::spawn(async move {
         let router = axum::Router::new().route("/verify", axum::routing::post(|headers: axum::http::HeaderMap| async move {
+            if headers.get("authorization").and_then(|s| s.to_str().ok()) == Some("Bearer different-principal-token") {
+                return (axum::http::StatusCode::OK, axum::Json(json!({"principal":"https://identity.test/other-wren", "role":"wren", "scopes":[]})));
+            }
             if headers.get("authorization").and_then(|s| s.to_str().ok()) != Some("Bearer boundary-fixture-token") {
                 return (axum::http::StatusCode::UNAUTHORIZED, axum::Json(json!({"error":"invalid"})));
             }
@@ -54,10 +57,13 @@ async fn fixture() -> Fixture {
         axum::serve(identity, router).await.unwrap();
     });
     let config: Config = serde_json::from_value(json!({"version":1,"profiles":{"native":{"runtime":"codex","mode":"native","enforcement":"trusted","approved_gaps":["filesystem isolation and hook coverage require deployment conformance"],"executable":executable,"timeout_secs":5}},"role_workspaces":{"wren":dir.path()},"max_concurrent_jobs":2})).unwrap();
-    let app = Supervisor::new(
+    let config_file = dir.path().join("agent-profiles.json");
+    store::atomic_json(&config_file, &config).unwrap();
+    let app = Supervisor::new_with_config_path(
         config,
         Store::open(dir.path().join("state")).unwrap(),
         format!("http://{address}/verify"),
+        config_file,
     )
     .unwrap();
     let socket = dir.path().join("supervisor.sock");
@@ -381,5 +387,294 @@ async fn resume_cannot_reacquire_native_conversation_already_owned_by_replacemen
             .filter(|s| s.live() && s.native_session_id.as_deref() == Some("native-original"))
             .count(),
         1
+    );
+}
+
+#[tokio::test]
+async fn operator_reload_uses_configured_file_and_preserves_live_sessions() {
+    let f = fixture().await;
+    let session = f.app.start(f.start.clone()).await.unwrap();
+    let path = f._dir.path().join("agent-profiles.json");
+    let mut candidate = f.app.config_snapshot();
+    let mut next = candidate.profiles["native"].clone();
+    next.model = Some("fixture-new-model".into());
+    candidate.profiles.insert("next".into(), next);
+    candidate.roles.insert("wren".into(), "next".into());
+    store::atomic_json(&path, &candidate).unwrap();
+    let (status, body) = post(&f, "/v1/config/reload", json!({})).await;
+    assert_eq!(status, 200, "{body}");
+    assert_eq!(body["sessions_preserved"], 1);
+    let state = f.app.store.lock().await.get(&session.session_id).unwrap();
+    assert_eq!(state.profile, "native");
+    assert_eq!(state.state, State::Idle);
+    assert!(state.primary);
+    let loaded: Value = f
+        .client
+        .get("http://localhost/v1/config")
+        .send()
+        .await
+        .unwrap()
+        .json()
+        .await
+        .unwrap();
+    assert_eq!(loaded["roles"]["wren"], "next");
+    assert_eq!(loaded["profiles"]["next"]["model"], "fixture-new-model");
+    assert!(loaded["profiles"]["native"].get("executable").is_none());
+    assert!(loaded["profiles"]["native"].get("adapter_config").is_none());
+    candidate.profiles.remove("native");
+    store::atomic_json(&path, &candidate).unwrap();
+    let (status, body) = post(&f, "/v1/config/reload", json!({})).await;
+    assert_eq!(status, 400);
+    assert!(body["error"]["message"]
+        .as_str()
+        .unwrap()
+        .contains("live session"));
+    assert!(f.app.config_snapshot().profiles.contains_key("native"));
+    fs::write(&path, "{broken").unwrap();
+    assert_eq!(post(&f, "/v1/config/reload", json!({})).await.0, 400);
+    assert_eq!(f.app.config_snapshot().roles["wren"], "next");
+}
+
+#[tokio::test]
+async fn operator_switch_preserves_card_lease_context_and_credential_without_replaying_history() {
+    let f = fixture().await;
+    let worktree = f._dir.path().join("wren-42");
+    fs::create_dir(&worktree).unwrap();
+    let mut config = f.app.config_snapshot();
+    config.worktree_base = Some(f._dir.path().to_string_lossy().into());
+    let mut next = config.profiles["native"].clone();
+    next.model = Some("new-model".into());
+    config.profiles.insert("next".into(), next);
+    f.app.reload_config(config).await.unwrap();
+    let mut start = f.start.clone();
+    start.cwd = worktree.to_string_lossy().into();
+    start.card = Some(42);
+    let original = f.app.start(start).await.unwrap();
+    {
+        let mut store = f.app.store.lock().await;
+        let mut old = store.get(&original.session_id).unwrap();
+        old.pending_context
+            .push("earlier undelivered obligation".into());
+        store.update(old).unwrap();
+    }
+    let (code, new) = post(&f, &format!("/v1/sessions/{}/switch", original.session_id), json!({"profile":"next","context":"New handoff: finish card 42; evidence stays in its worktree."})).await;
+    assert_eq!(code, 200, "{new}");
+    assert_eq!(new["cwd"], original.cwd);
+    assert_eq!(new["card"], 42);
+    assert_eq!(new["role"], original.role);
+    assert_eq!(new["principal"], original.principal);
+    assert_eq!(new["primary"], true);
+    assert_eq!(new["model"], "new-model");
+    assert!(new["native_session_id"].is_null());
+    assert!(new.get("credential_file").is_none());
+    let store = f.app.store.lock().await;
+    let old = store.get(&original.session_id).unwrap();
+    assert_eq!(old.state, State::Stopped);
+    assert!(!old.primary);
+    let replacement = store.get(new["session_id"].as_str().unwrap()).unwrap();
+    assert_eq!(replacement.credential_file, original.credential_file);
+    assert_eq!(replacement.pending_context.len(), 2);
+    assert_eq!(
+        replacement.pending_context[0],
+        "earlier undelivered obligation"
+    );
+    assert!(replacement.pending_context[1].contains("finish card 42"));
+}
+
+#[tokio::test]
+async fn operator_switch_reports_busy_and_uncertain_states_and_preserves_failed_probe_lease() {
+    let f = fixture().await;
+    let mut config = f.app.config_snapshot();
+    let mut unavailable = config.profiles["native"].clone();
+    unavailable.executable = Some(
+        f._dir
+            .path()
+            .join("uninstalled-runtime")
+            .to_string_lossy()
+            .into(),
+    );
+    config.profiles.insert("unavailable".into(), unavailable);
+    f.app.reload_config(config).await.unwrap();
+    let original = f.app.start(f.start.clone()).await.unwrap();
+    for state in [
+        State::Running,
+        State::AwaitingApproval,
+        State::Disconnected,
+        State::Failed,
+        State::Idle,
+    ] {
+        let mut s = original.clone();
+        s.state = state.clone();
+        if state == State::Idle {
+            s.message_receipts
+                .insert("pulse:uncertain".into(), "uncertain".into());
+        }
+        f.app.store.lock().await.update(s).unwrap();
+        let status: Value = f
+            .client
+            .get(format!(
+                "http://localhost/v1/sessions/{}",
+                original.session_id
+            ))
+            .send()
+            .await
+            .unwrap()
+            .json()
+            .await
+            .unwrap();
+        assert_eq!(status["switch_ready"], false);
+        assert!(!status["switch_blockers"].as_array().unwrap().is_empty());
+        let (code, _) = post(
+            &f,
+            &format!("/v1/sessions/{}/switch", original.session_id),
+            json!({"profile":"native","context":"finish obligations"}),
+        )
+        .await;
+        assert_eq!(code, 400, "state {state:?}");
+        assert_eq!(f.app.store.lock().await.sessions.len(), 1);
+        assert!(
+            f.app
+                .store
+                .lock()
+                .await
+                .get(&original.session_id)
+                .unwrap()
+                .primary
+        );
+    }
+    f.app.store.lock().await.update(original.clone()).unwrap();
+    let (code, _) = post(
+        &f,
+        &format!("/v1/sessions/{}/switch", original.session_id),
+        json!({"profile":"unavailable","context":"finish obligations"}),
+    )
+    .await;
+    assert_eq!(code, 400);
+    let preserved = f.app.store.lock().await.get(&original.session_id).unwrap();
+    assert_eq!(preserved.state, State::Idle);
+    assert!(preserved.primary);
+    assert_eq!(f.app.store.lock().await.sessions.len(), 1);
+}
+
+#[tokio::test]
+async fn operator_switch_cannot_replace_the_authenticated_principal() {
+    let f = fixture().await;
+    let original = f.app.start(f.start.clone()).await.unwrap();
+    let alternate = f._dir.path().join("alternate-token");
+    fs::write(&alternate, "different-principal-token").unwrap();
+    fs::set_permissions(&alternate, fs::Permissions::from_mode(0o600)).unwrap();
+    let (code, body) = post(
+        &f,
+        &format!("/v1/sessions/{}/switch", original.session_id),
+        json!({"profile":"native","context":"retain obligations","credential_file":alternate}),
+    )
+    .await;
+    assert_eq!(code, 400);
+    assert!(body["error"]["message"]
+        .as_str()
+        .unwrap()
+        .contains("principal"));
+    let store = f.app.store.lock().await;
+    assert_eq!(store.sessions.len(), 1);
+    let old = store.get(&original.session_id).unwrap();
+    assert!(old.primary);
+    assert_eq!(old.state, State::Idle);
+}
+
+#[tokio::test]
+async fn clean_operator_disconnect_can_resume_or_switch_without_releasing_lease() {
+    let f = fixture().await;
+    let original = f.app.start(f.start.clone()).await.unwrap();
+    let route = format!("/v1/sessions/{}", original.session_id);
+    let (code, detached) = post(&f, &format!("{route}/disconnect"), json!({})).await;
+    assert_eq!(code, 200, "{detached}");
+    assert_eq!(detached["cleanly_detached"], true);
+    assert_eq!(detached["state"], "disconnected");
+    assert_eq!(detached["primary"], true);
+    let status: Value = f
+        .client
+        .get(format!("http://localhost{route}"))
+        .send()
+        .await
+        .unwrap()
+        .json()
+        .await
+        .unwrap();
+    assert_eq!(status["switch_ready"], true);
+    let recovered = Store::open(f.app.store.lock().await.root.clone()).unwrap();
+    assert!(
+        recovered
+            .get(&original.session_id)
+            .unwrap()
+            .cleanly_detached
+    );
+    let (code, resumed) = post(&f, &format!("{route}/resume"), json!({})).await;
+    assert_eq!(code, 200, "{resumed}");
+    assert_eq!(resumed["cleanly_detached"], false);
+    assert_eq!(resumed["native_session_id"], "native-original");
+    assert_eq!(
+        post(&f, &format!("{route}/disconnect"), json!({})).await.0,
+        200
+    );
+    let (code, switched) = post(&f, &format!("{route}/switch"), json!({"profile":"native","context":"Retain explicit obligations after closing the old terminal."})).await;
+    assert_eq!(code, 200, "{switched}");
+    assert_ne!(switched["session_id"], original.session_id);
+    assert!(switched["native_session_id"].is_null());
+}
+
+#[tokio::test]
+async fn initial_handoff_context_is_durable_bounded_and_does_not_start_a_turn() {
+    let f = fixture().await;
+    let original = f.app.start(f.start.clone()).await.unwrap();
+    let route = format!("/v1/sessions/{}/context", original.session_id);
+    let (code, queued) = post(
+        &f,
+        &route,
+        json!({"text":"Legacy obligation: finish card 42 🌍\nEvidence in its worktree."}),
+    )
+    .await;
+    assert_eq!(code, 200, "{queued}");
+    assert_eq!(queued["model_called"], false);
+    let store = f.app.store.lock().await;
+    let session = store.get(&original.session_id).unwrap();
+    assert_eq!(session.state, State::Idle);
+    assert_eq!(session.pending_context.len(), 1);
+    assert!(session.message_receipts.is_empty());
+    assert_eq!(
+        store
+            .events(&original.session_id, 0)
+            .unwrap()
+            .iter()
+            .filter(|e| e.event_type == "context.enqueued")
+            .count(),
+        1
+    );
+    let root = store.root.clone();
+    drop(store);
+    let reopened = Store::open(root).unwrap();
+    assert_eq!(
+        reopened.get(&original.session_id).unwrap().pending_context,
+        session.pending_context
+    );
+    assert_eq!(post(&f, &route, json!({"text":" "})).await.0, 400);
+    assert_eq!(
+        post(&f, &route, json!({"text":"x".repeat(MAX_INPUT_BYTES/2)}))
+            .await
+            .0,
+        400
+    );
+    f.app
+        .record_event(store::event(
+            &original.session_id,
+            "turn.started",
+            json!({}),
+        ))
+        .await
+        .unwrap();
+    assert_eq!(
+        post(&f, &route, json!({"text":"do not inject mid-turn"}))
+            .await
+            .0,
+        400
     );
 }

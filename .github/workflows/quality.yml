@@ -258,8 +258,10 @@ jobs:
         run: |
           cargo build --locked --bins
           cargo test --locked
-      - name: Verify runtime configuration renderer
+      - name: Verify runtime configuration and isolated operator setup
         run: python3 -m unittest discover -s platform/scripts/tests -p 'test_agent_*.py'
+      - name: Verify setup-aware role launcher
+        run: cargo test --locked --manifest-path platform/services/chorus-awake/Cargo.toml
 
   mcp-description-shape:
     name: MCP tool description shape (#2475)

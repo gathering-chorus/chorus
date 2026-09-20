@@ -6,6 +6,11 @@ Claude deployment stays in place until an operator selects and validates a new
 profile. These changes do not assert that the team Macs have been inventoried,
 reconfigured, or certified.
 
+For the guided install, provider setup, and role-switch workflow on an existing
+deployment, start with the [operator quickstart](operator-agent-quickstart.md).
+The lower-level commands below remain available for integration development and
+custom deployment wiring.
+
 ## Components and ownership
 
 ```mermaid

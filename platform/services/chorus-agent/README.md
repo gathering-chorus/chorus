@@ -44,14 +44,29 @@ explicit `run --text` path and an attached native client. Error status is nonzer
 | `doctor [profile]` | Version/capability probes; no model task. This is not a coding certification or proof of provider authentication. |
 | `launch role [--profile name] [--cwd path]` | Enroll one primary; attach a native CLI or leave a managed session ready for input. Requires `CHORUS_SESSION_TOKEN_FILE`. |
 | `start` / `register` | Enroll a JSON `StartRequest`; managed Claude/Codex start their process on first send. |
-| `status [id]` / `events id` | Inspect public state or a cursor page of normalized events. |
+| `status [id]` / `events id` | Inspect public state, switch readiness/blockers, or a cursor page of normalized events. |
+| `profiles` | Inspect loaded profile metadata and role defaults without exposing adapter configuration or credential paths. |
+| `reload` | Validate and load the configured profile file without restarting sessions. Refuses changes to live profiles, role/card workspace bindings, or the concurrency limit. |
 | `send id` | Submit typed input with a stable message ID. Native/busy `queued,persisted:false` is a refusal of immediate delivery: use Pulse for durable queuing. |
 | `resume id` | Resume this exact native conversation. Managed adapters resume their handles; native Claude/Codex attach their CLI. Other native clients reconnect in their own UI. |
 | `cancel id` | Cancel an owned managed turn. Native client cancellation must use client controls. |
 | `stop id` | Release the registration/lease and stop owned workers. It does not kill an independently owned native app. |
-| `handoff id` | JSON `{replacement: StartRequest, context: string}`; idle only, same role, fresh native conversation. Context must describe task state, evidence and open obligations. |
+| `disconnect id` | Stop the owned transport, retaining the role lease, native history, and receipts. An intentional idle detach can switch directly; interrupted delivery remains uncertain. |
+| `context id` | JSON `{text}`; durably queue initial handoff context while idle, without starting a model turn. |
+| `handoff id` | JSON `{replacement: StartRequest, context: string}`; idle or cleanly detached only, same role/principal, fresh native conversation. Context must describe task state, evidence and open obligations. |
+| `switch id` | JSON `{profile,context,credential_file?}`; preserves role, card, worktree, parent and credential reference; transfers the primary lease and any undelivered handoff context. Busy or uncertain sessions are refused. |
 | `approve id` | JSON `{credential_file,request_id,decision?,option_id?}`; requires verified human identity and a pending managed permission request. |
 | `run [--text]` | Run a JSON no-tools job, schema-validate output, record provenance. Shared file locks bound concurrent CLI jobs. |
+
+The operator setup frontend uses `switch` and `reload`; callers do not need to
+reconstruct session records. Add a new profile before switching and retain the old
+profile until its session stops. Editing a profile in place while it is live is
+refused, including disconnected and failed sessions that still hold a lease.
+Changing a default affects future admissions only. Reload does not cancel work,
+release leases, or resume conversations. OpenCode replacements require a distinct
+server endpoint while the previous session is live. Native clients remain owned
+by their client process: close the old client and attach the replacement through
+its supported boundary; switching registration does not remotely control a UI.
 
 Example start request (paths are explicit; there is no shell expansion in JSON):
 
@@ -84,6 +99,12 @@ Example bounded job:
   into the audit record. Detailed data stays with the workload owner.
 - `chorus.log`: best-effort operational projections of session events and bounded
   job outcomes. The detailed session journal is authoritative.
+
+An intentional idle `disconnect` records `cleanly_detached:true`, so closing the
+operator terminal does not force a throwaway resume before switching profiles.
+Only this explicit checkpoint enables detached handoff; crashes and interrupted
+turns do not qualify. Resume preserves the exact native ID and clears the flag.
+Uncertain receipts prevent new work until the operator reconciles the prior run.
 
 Daemon restart marks live sessions disconnected and retains their primary lease.
 Explicit resume reconciles them; it never replays an uncertain mutating input.

@@ -130,6 +130,9 @@ pub struct Session {
     pub card: Option<u64>,
     pub primary: bool,
     pub state: State,
+    /// True only after an intentional idle detach, never inferred from a crash.
+    #[serde(default)]
+    pub cleanly_detached: bool,
     pub created_at: String,
     pub heartbeat: String,
     pub profile_hash: String,
@@ -157,6 +160,31 @@ impl Session {
         value.as_object_mut().unwrap().remove("pending_context");
         value
     }
+    /// A handoff cannot imply that an uncertain business operation succeeded or failed.
+    pub fn switch_blockers(&self) -> Vec<String> {
+        let mut blockers = Vec::new();
+        if self.state != State::Idle
+            && !(self.state == State::Disconnected && self.cleanly_detached)
+        {
+            blockers.push(format!(
+                "session is {}; finish or cancel work and reconcile before switching",
+                serde_json::to_value(&self.state).unwrap().as_str().unwrap()
+            ));
+        }
+        if !self.pending_approvals.is_empty() {
+            blockers.push("session has unresolved approvals".into());
+        }
+        if self
+            .message_receipts
+            .values()
+            .any(|r| matches!(r.as_str(), "transport_accepted" | "uncertain"))
+        {
+            blockers.push(
+                "session has pending or uncertain delivery; reconcile before switching".into(),
+            );
+        }
+        blockers
+    }
     // Failed/disconnected conversations retain their lease until explicit release.
     pub fn live(&self) -> bool {
         self.state != State::Stopped
@@ -176,8 +204,23 @@ impl Session {
             self.native_session_id = Some(native.clone());
         }
         self.heartbeat = event.timestamp.clone();
+        self.cleanly_detached = false;
         match event.event_type.as_str() {
             _ if self.state == State::Stopped => {}
+            "session.detached" => {
+                self.state = State::Disconnected;
+                self.cleanly_detached = event.data["clean"] == true;
+                for receipt in self.message_receipts.values_mut() {
+                    if receipt == "transport_accepted" {
+                        *receipt = "uncertain".into();
+                    }
+                }
+            }
+            "context.enqueued" => {
+                if let Some(text) = event.data["text"].as_str() {
+                    self.pending_context.push(text.into());
+                }
+            }
             "turn.started" => self.state = State::Running,
             "approval.required" => {
                 self.state = State::AwaitingApproval;
@@ -225,6 +268,14 @@ impl Session {
 pub struct HandoffRequest {
     pub replacement: StartRequest,
     pub context: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct SwitchRequest {
+    pub profile: String,
+    pub context: String,
+    pub credential_file: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

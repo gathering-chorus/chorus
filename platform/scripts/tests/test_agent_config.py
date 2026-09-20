@@ -111,7 +111,7 @@ class AgentConfigTests(unittest.TestCase):
         self.assertEqual(binding["package"],"@opencode/ai/providers/openai-compatible")
         document["profiles"]["endpoint"]["provider"]["protocol"]="openai-responses"
         profiles.write_text(json.dumps(document))
-        self.assertEqual(CONFIG.endpoint_provider(profiles,"endpoint","opencode")["config"]["package"],"@opencode/ai/providers/responses")
+        self.assertEqual(CONFIG.endpoint_provider(profiles,"endpoint","opencode")["config"]["package"],"@opencode/ai/providers/openai-compatible/responses")
         document["profiles"]["endpoint"]["provider"]["api_key"]="must-not-embed"
         profiles.write_text(json.dumps(document))
         with self.assertRaises(ValueError):
@@ -128,7 +128,8 @@ class AgentConfigTests(unittest.TestCase):
         self.assertFalse(server["disabled"])
         self.assertNotIn("enabled", server)
         plugin = (opencode / ".opencode/plugins/chorus/index.js").read_text()
-        self.assertIn('Plugin.define', plugin)
+        self.assertIn('export default {', plugin)
+        self.assertNotIn('from "@opencode/plugin"', plugin)
         self.assertIn('ctx.tool.hook("execute.before"', plugin)
         self.assertIn('"/v1/native-binding"', plugin)
         self.assertNotIn('ctx.location.directory', plugin)
@@ -138,11 +139,8 @@ class AgentConfigTests(unittest.TestCase):
         if not node:
             self.skipTest("Node required for generated OpenCode plugin conformance fixture")
         out = self.render("opencode")
-        package = out / "node_modules/@opencode/plugin"
-        package.mkdir(parents=True)
-        (package / "package.json").write_text('{"type":"module","exports":"./index.js"}')
-        (package / "index.js").write_text('export const Plugin = { define: value => value };')
-        (out / "package.json").write_text('{"type":"module"}')
+        # No package.json or node_modules: deployment bundles contain only the
+        # generated plugin, and OpenCode accepts its default {id, setup} object.
         # The fixture controls every external boundary: SDK registration, UDS,
         # and policy process. No installed runtime or live daemon is contacted.
         shim = out / "policy.py"
