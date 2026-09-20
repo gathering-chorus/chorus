@@ -74,7 +74,7 @@ app.use(makeRequestOpMiddleware());
 // this mutable ref without re-mounting; empty until loaded = gates nothing.
 import { securityEnvelope, type SecuredSurface } from './security-envelope';
 import { projectSecuredSurfaces } from './security-surfaces-emit';
-import { createIdentityVerifier } from './es256-identity';
+import { createIdentityVerifier, scopeQueryFor } from './es256-identity';
 let SECURED_SURFACES: SecuredSurface[] = [];
 // #3719 — ES256 identity + model-resolved scope (chorus:hasScope) replaces the
 // HS256 shared secret. sparql is lazy-bound to athenaSparqlQuery (declared
@@ -91,10 +91,41 @@ const CSS_ISSUER = process.env.CSS_ISSUER ?? 'https://id.lightlifeurbangardens.c
 const PRINCIPAL_SCOPE_QUERY = fs
   .readFileSync(path.resolve(__dirname, 'sparql', 'principal-scope.rq'), 'utf-8')
   .trim();
+// #4224 — WHERE PRINCIPALS LIVE IS A MODEL FACT, AND THIS DOOR MUST READ THE
+// SAME ONE THE RUST DOOR READS. The query names two graphs: Permissions in the
+// security graph, Principals in a marker graph that exists nowhere until it is
+// substituted here. Left alone the marker resolves no grants and every scoped
+// write fails closed — which is the safe direction, and why the marker is not
+// spelled as a real graph.
+//
+// Resolved once, lazily, on the first allow-set refresh (the shape query needs
+// athenaSparqlQuery, which is not callable at module load). An unreadable model
+// leaves the default standing rather than widening to any graph.
+const DEFAULT_PRINCIPAL_HOME =
+  process.env.CHORUS_ALLOW_SET_GRAPH ?? 'urn:chorus:domains:security';
+const PRINCIPAL_HOME_QUERY =
+  'PREFIX chorus: <https://jeffbridwell.com/chorus#> PREFIX sh: <http://www.w3.org/ns/shacl#> ' +
+  'SELECT ?g WHERE { GRAPH <urn:chorus:ontology> { ?shape sh:targetClass chorus:Principal ; chorus:instancesGraph ?g } } LIMIT 1';
+let principalHome: Promise<string> | null = null;
+function resolvePrincipalHome(): Promise<string> {
+  principalHome ??= athenaSparqlQuery(PRINCIPAL_HOME_QUERY)
+    .then((res) => {
+      const rows = ((res as { results?: { bindings?: Array<Record<string, { value?: string }>> } })
+        .results?.bindings ?? [])
+        .map((b) => b.g?.value ?? '')
+        .filter((g) => g.startsWith('urn:chorus:'));
+      const home = rows[0] ?? DEFAULT_PRINCIPAL_HOME;
+      console.log(`chorus-api: principals resolve from <${home}> (model-declared)`);
+      return home;
+    })
+    .catch(() => DEFAULT_PRINCIPAL_HOME);
+  return principalHome;
+}
 const verifyIdentity = createIdentityVerifier({
   issuer: CSS_ISSUER,
   jwksUrl: process.env.CHORUS_JWKS_URL ?? `${CSS_ISSUER.replace(/\/+$/, '')}/.oidc/jwks`,
-  scopeQuery: PRINCIPAL_SCOPE_QUERY,
+  scopeQuery: async () =>
+    scopeQueryFor(PRINCIPAL_SCOPE_QUERY, await resolvePrincipalHome()),
   sparql: (q: string) => athenaSparqlQuery(q),
   nowSecs: () => Math.floor(Date.now() / 1000),
 });
