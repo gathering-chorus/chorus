@@ -975,3 +975,184 @@ chorus:dirdomain-platform-api a chorus:UnitDomainMapping ;
     rdfs:label "platform/api/ → services" ;
     chorus:pathPrefix "platform/api/" ;
     chorus:hasDomain chorus:services .
+
+chorus:dirdomain-skills a chorus:UnitDomainMapping ;
+    rdfs:label "skills/ → skills" ;
+    chorus:pathPrefix "skills/" ;
+    chorus:hasDomain chorus:skills .
+
+chorus:dirdomain-knowledge a chorus:UnitDomainMapping ;
+    rdfs:label "knowledge/ → knowledge" ;
+    chorus:pathPrefix "knowledge/" ;
+    chorus:hasDomain chorus:knowledge .
+
+chorus:dirdomain-product-manager a chorus:UnitDomainMapping ;
+    rdfs:label "product-manager/ → roles" ;
+    chorus:pathPrefix "product-manager/" ;
+    chorus:hasDomain chorus:roles .
+
+
+chorus:dirdomain-data-athena a chorus:UnitDomainMapping ;
+    rdfs:label "data/athena/ → knowledge" ;
+    chorus:pathPrefix "data/athena/" ;
+    chorus:hasDomain chorus:knowledge .
+
+chorus:dirdomain-directing-vikunja a chorus:UnitDomainMapping ;
+    rdfs:label "directing/vikunja/ → cards" ;
+    chorus:pathPrefix "directing/vikunja/" ;
+    chorus:hasDomain chorus:cards .
+
+chorus:dirdomain-platform-assets a chorus:UnitDomainMapping ;
+    rdfs:label "platform/assets/ → identity" ;
+    chorus:pathPrefix "platform/assets/" ;
+    chorus:hasDomain chorus:identity .
+
+chorus:dirdomain-platform-launchagents a chorus:UnitDomainMapping ;
+    rdfs:label "platform/launchagents/ → infrastructure" ;
+    chorus:pathPrefix "platform/launchagents/" ;
+    chorus:hasDomain chorus:infrastructure .
+
+chorus:dirdomain-platform-launchd a chorus:UnitDomainMapping ;
+    rdfs:label "platform/launchd/ → infrastructure" ;
+    chorus:pathPrefix "platform/launchd/" ;
+    chorus:hasDomain chorus:infrastructure .
+
+chorus:dirdomain-platform-hooks a chorus:UnitDomainMapping ;
+    rdfs:label "platform/hooks/ → spine" ;
+    chorus:pathPrefix "platform/hooks/" ;
+    chorus:hasDomain chorus:spine .
+
+chorus:dirdomain-platform-logs a chorus:UnitDomainMapping ;
+    rdfs:label "platform/logs/ → logs" ;
+    chorus:pathPrefix "platform/logs/" ;
+    chorus:hasDomain chorus:logs .
+
+chorus:dirdomain-platform-pulse a chorus:UnitDomainMapping ;
+    rdfs:label "platform/pulse/ → messages" ;
+    chorus:pathPrefix "platform/pulse/" ;
+    chorus:hasDomain chorus:messages .
+
+chorus:dirdomain-platform-seeds a chorus:UnitDomainMapping ;
+    rdfs:label "platform/seeds/ → knowledge" ;
+    chorus:pathPrefix "platform/seeds/" ;
+    chorus:hasDomain chorus:knowledge .
+
+chorus:dirdomain-platform-services a chorus:UnitDomainMapping ;
+    rdfs:label "platform/services/ → code" ;
+    chorus:pathPrefix "platform/services/" ;
+    chorus:hasDomain chorus:code .
+
+chorus:dirdomain-github a chorus:UnitDomainMapping ;
+    rdfs:label ".github/ → cicd" ;
+    chorus:pathPrefix ".github/" ;
+    chorus:hasDomain chorus:cicd .
+
+chorus:dirdomain-platform-runbook-md a chorus:UnitDomainMapping ;
+    rdfs:label "platform/RUNBOOK.md → infrastructure" ;
+    chorus:pathPrefix "platform/RUNBOOK.md" ;
+    chorus:hasDomain chorus:infrastructure .
+
+chorus:dirdomain-coverage-denominator-baseline a chorus:UnitDomainMapping ;
+    rdfs:label ".coverage-denominator-baseline → tests" ;
+    chorus:pathPrefix ".coverage-denominator-baseline" ;
+    chorus:hasDomain chorus:tests .
+
+chorus:dirdomain-eslint-baseline-json a chorus:UnitDomainMapping ;
+    rdfs:label ".eslint-baseline.json → code" ;
+    chorus:pathPrefix ".eslint-baseline.json" ;
+    chorus:hasDomain chorus:code .
+
+chorus:dirdomain-gitattributes a chorus:UnitDomainMapping ;
+    rdfs:label ".gitattributes → toolchain" ;
+    chorus:pathPrefix ".gitattributes" ;
+    chorus:hasDomain chorus:toolchain .
+
+chorus:dirdomain-gitignore a chorus:UnitDomainMapping ;
+    rdfs:label ".gitignore → toolchain" ;
+    chorus:pathPrefix ".gitignore" ;
+    chorus:hasDomain chorus:toolchain .
+
+chorus:dirdomain-gitleaks-baseline-json a chorus:UnitDomainMapping ;
+    rdfs:label ".gitleaks-baseline.json → security" ;
+    chorus:pathPrefix ".gitleaks-baseline.json" ;
+    chorus:hasDomain chorus:security .
+
+chorus:dirdomain-mcp-json a chorus:UnitDomainMapping ;
+    rdfs:label ".mcp.json → toolchain" ;
+    chorus:pathPrefix ".mcp.json" ;
+    chorus:hasDomain chorus:toolchain .
+
+chorus:dirdomain-3830-roleless-refusal-md a chorus:UnitDomainMapping ;
+    rdfs:label "3830-roleless-refusal.md → cards" ;
+    chorus:pathPrefix "3830-roleless-refusal.md" ;
+    chorus:hasDomain chorus:cards .
+
+chorus:dirdomain-chain-builder-spec-md a chorus:UnitDomainMapping ;
+    rdfs:label "CHAIN-BUILDER-SPEC.md → knowledge" ;
+    chorus:pathPrefix "CHAIN-BUILDER-SPEC.md" ;
+    chorus:hasDomain chorus:knowledge .
+
+chorus:dirdomain-claude-md a chorus:UnitDomainMapping ;
+    rdfs:label "CLAUDE.md → practices" ;
+    chorus:pathPrefix "CLAUDE.md" ;
+    chorus:hasDomain chorus:practices .
+
+chorus:dirdomain-session-checkpoint-md a chorus:UnitDomainMapping ;
+    rdfs:label "SESSION-CHECKPOINT.md → roles" ;
+    chorus:pathPrefix "SESSION-CHECKPOINT.md" ;
+    chorus:hasDomain chorus:roles .
+
+chorus:dirdomain-team-protocol-md a chorus:UnitDomainMapping ;
+    rdfs:label "TEAM_PROTOCOL.md → practices" ;
+    chorus:pathPrefix "TEAM_PROTOCOL.md" ;
+    chorus:hasDomain chorus:practices .
+
+chorus:dirdomain-activity-md a chorus:UnitDomainMapping ;
+    rdfs:label "activity.md → spine" ;
+    chorus:pathPrefix "activity.md" ;
+    chorus:hasDomain chorus:spine .
+
+chorus:dirdomain-cclsp-json a chorus:UnitDomainMapping ;
+    rdfs:label "cclsp.json → toolchain" ;
+    chorus:pathPrefix "cclsp.json" ;
+    chorus:hasDomain chorus:toolchain .
+
+chorus:dirdomain-coverage-floors-yml a chorus:UnitDomainMapping ;
+    rdfs:label "coverage-floors.yml → tests" ;
+    chorus:pathPrefix "coverage-floors.yml" ;
+    chorus:hasDomain chorus:tests .
+
+chorus:dirdomain-jeff-preferences-json a chorus:UnitDomainMapping ;
+    rdfs:label "jeff-preferences.json → roles" ;
+    chorus:pathPrefix "jeff-preferences.json" ;
+    chorus:hasDomain chorus:roles .
+
+chorus:dirdomain-package-json a chorus:UnitDomainMapping ;
+    rdfs:label "package.json → toolchain" ;
+    chorus:pathPrefix "package.json" ;
+    chorus:hasDomain chorus:toolchain .
+
+chorus:dirdomain-package-lock-json a chorus:UnitDomainMapping ;
+    rdfs:label "package-lock.json → toolchain" ;
+    chorus:pathPrefix "package-lock.json" ;
+    chorus:hasDomain chorus:toolchain .
+
+chorus:dirdomain-playwright-config-cjs a chorus:UnitDomainMapping ;
+    rdfs:label "playwright.config.cjs → tests" ;
+    chorus:pathPrefix "playwright.config.cjs" ;
+    chorus:hasDomain chorus:tests .
+
+chorus:dirdomain-test-triage-md a chorus:UnitDomainMapping ;
+    rdfs:label "test-triage.md → tests" ;
+    chorus:pathPrefix "test-triage.md" ;
+    chorus:hasDomain chorus:tests .
+
+chorus:dirdomain-config-reply-hash-fixtures a chorus:UnitDomainMapping ;
+    rdfs:label "config/reply-hash-fixtures.json → messages" ;
+    chorus:pathPrefix "config/reply-hash-fixtures.json" ;
+    chorus:hasDomain chorus:messages .
+
+chorus:dirdomain-config-share-principals a chorus:UnitDomainMapping ;
+    rdfs:label "config/share-principals.txt → identity" ;
+    chorus:pathPrefix "config/share-principals.txt" ;
+    chorus:hasDomain chorus:identity .
