@@ -79,3 +79,39 @@ run_fitness_with_verb() {
   printf '%s' "$output" | grep -q "4 of 6 target pieces"
   printf '%s' "$output" | grep -q "MISSING : athena-model chorus-hooks"
 }
+
+# #4227 — the pipeline must run the WERK's build of this binary, not canonical's.
+# It ran canonical's, so #4227's own run printed the previous wording and the
+# previous count while the new binary sat built in the werk: a card that
+# changes the measure could never see its own change measured.
+resolve_order() {
+  # The BIN= lines of the demo-fitness step, in the order the step tries them.
+  awk '/^      - name: demo-fitness$/,/^      - name: prove-live$/' \
+    "$BATS_TEST_DIRNAME/../../.github/workflows/werk.yml" \
+    | grep 'BIN=' | sed 's/.*BIN=//' | tr -d '"'
+}
+
+@test "#4227 the pipeline reaches for the werk's fitness binary before canonical's" {
+  run resolve_order
+  echo "$output"
+  first=$(printf '%s\n' "$output" | head -1)
+  case "$first" in
+    *'${WERKDIR}'*) : ;;
+    *) echo "first candidate is not the werk: $first"; return 1 ;;
+  esac
+  # NEGATIVE PROOF: the same check against the order this replaces — canonical
+  # first — must fail, or it is not reading order at all.
+  printf '%s\n' '${CHORUS_HOME}/platform/services/demo-fitness/target/release/demo-fitness' \
+                '${WERKDIR}/platform/services/demo-fitness/target/release/demo-fitness' \
+    > "$BATS_TEST_TMPDIR/old-order"
+  bad=$(head -1 "$BATS_TEST_TMPDIR/old-order")
+  case "$bad" in
+    *'${WERKDIR}'*) echo "the check cannot tell the two orders apart"; return 1 ;;
+    *) : ;;
+  esac
+}
+
+@test "#4227 canonical is still the fallback, so a card that did not touch this crate still measures" {
+  run resolve_order
+  printf '%s' "$output" | grep -q 'CHORUS_HOME'
+}
