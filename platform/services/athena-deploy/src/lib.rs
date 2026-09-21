@@ -1144,6 +1144,18 @@ pub fn run_athena_deploy() -> Result<String, String> {
 
         // The blind spot, counted. Reported beside the collisions so the number
         // that CAN go to zero is never read as "nothing repeats anywhere".
+        // #4254 — how many terms name nothing that exists yet. Counted from
+        // skos:exactMatch, never from a hand-written marker: a marker nothing
+        // reads is a comment (Wren, 2026-09-21).
+        let ungrounded = ungrounded_concepts(&vocab_files);
+        eprintln!(
+            "athena-deploy: vocabulary terms naming nothing in the model: {} (#4254, reported)",
+            ungrounded.len()
+        );
+        for u in ungrounded.iter().take(20) {
+            eprintln!("  {u}");
+        }
+
         let repeats = cross_scheme_repeats(&vocab_files);
         eprintln!(
             "athena-deploy: vocabulary cross-scheme repeats: {} (#4254, reported not judged — \
@@ -1819,7 +1831,12 @@ pub fn duplicate_concept_labels(files: &[(String, String)]) -> Vec<String> {
                 flush(&subject, subject_line, &scheme, &mut pending, &mut claims);
                 subject = trimmed.split_whitespace().next().unwrap_or("").to_string();
                 subject_line = i + 1;
-                is_concept = trimmed.contains("skos:Concept");
+                // "skos:ConceptScheme" CONTAINS "skos:Concept", so a bare substring
+                // test counts the three scheme titles as terms — a check matching
+                // the negation of its own rule, the #3725 shape. Caught by
+                // a_scheme_is_not_a_term, not by reading it.
+                is_concept = trimmed.contains("skos:Concept")
+                    && !trimmed.contains("skos:ConceptScheme");
                 scheme.clear();
             }
             if !is_concept {
@@ -1886,7 +1903,12 @@ pub fn cross_scheme_repeats(files: &[(String, String)]) -> Vec<String> {
                         by_word.entry(w).or_default().insert(scheme.clone());
                     }
                 }
-                is_concept = trimmed.contains("skos:Concept");
+                // "skos:ConceptScheme" CONTAINS "skos:Concept", so a bare substring
+                // test counts the three scheme titles as terms — a check matching
+                // the negation of its own rule, the #3725 shape. Caught by
+                // a_scheme_is_not_a_term, not by reading it.
+                is_concept = trimmed.contains("skos:Concept")
+                    && !trimmed.contains("skos:ConceptScheme");
                 scheme.clear();
             }
             if !is_concept {
@@ -1915,4 +1937,69 @@ pub fn cross_scheme_repeats(files: &[(String, String)]) -> Vec<String> {
             format!("\"{word}\" in {}", schemes.into_iter().collect::<Vec<_>>().join(" and "))
         })
         .collect()
+}
+
+/// #4254 — a concept that points at nothing in the model.
+///
+/// Wren's ask, 2026-09-21: "a marker nothing reads is a comment." The file had
+/// a `PROPOSED` note on the one term that names no existing class, and nothing
+/// anywhere read it, so it was documentation pretending to be a control.
+///
+/// This counts instead of reading the note: a concept with no
+/// `skos:exactMatch` names nothing that exists today. That is mechanical, so
+/// the count cannot drift from the file the way a hand-written marker can, and
+/// a term that gets a real class later stops being counted without anyone
+/// remembering to delete a comment.
+///
+/// REPORTED, not refused — a proposed term is how a rename starts, and
+/// refusing them would mean the vocabulary could never name anything we have
+/// not already built.
+pub fn ungrounded_concepts(files: &[(String, String)]) -> Vec<String> {
+    let mut out = Vec::new();
+    for (label, text) in files {
+        let mut subject = String::new();
+        let mut is_concept = false;
+        let mut grounded = false;
+        let mut pref = String::new();
+
+        let finish = |subject: &str, is_concept: bool, grounded: bool, pref: &str, out: &mut Vec<String>| {
+            if is_concept && !grounded && !subject.is_empty() {
+                let word = if pref.is_empty() { subject } else { pref };
+                out.push(format!("\"{word}\" ({subject} in {label}) names nothing in the model"));
+            }
+        };
+
+        for raw in text.lines() {
+            let code = raw.split('#').next().unwrap_or("");
+            let trimmed = code.trim();
+            if trimmed.is_empty() {
+                continue;
+            }
+            if !code.starts_with(char::is_whitespace) && trimmed.contains(':') {
+                finish(&subject, is_concept, grounded, &pref, &mut out);
+                subject = trimmed.split_whitespace().next().unwrap_or("").to_string();
+                // "skos:ConceptScheme" CONTAINS "skos:Concept", so a bare substring
+                // test counts the three scheme titles as terms — a check matching
+                // the negation of its own rule, the #3725 shape. Caught by
+                // a_scheme_is_not_a_term, not by reading it.
+                is_concept = trimmed.contains("skos:Concept")
+                    && !trimmed.contains("skos:ConceptScheme");
+                grounded = false;
+                pref.clear();
+            }
+            if !is_concept {
+                continue;
+            }
+            if trimmed.starts_with("skos:exactMatch") {
+                grounded = true;
+            }
+            if let Some(rest) = trimmed.strip_prefix("skos:prefLabel") {
+                if let Some(w) = rest.split('"').nth(1) {
+                    pref = w.to_string();
+                }
+            }
+        }
+        finish(&subject, is_concept, grounded, &pref, &mut out);
+    }
+    out
 }

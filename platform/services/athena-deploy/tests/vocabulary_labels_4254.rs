@@ -234,3 +234,82 @@ vocab:machine a skos:Concept ;
 "#;
     assert!(cross_scheme_repeats(&f(ttl)).is_empty());
 }
+
+// --- ungrounded terms: the marker nobody read, turned into a count ---------
+
+use athena_deploy::ungrounded_concepts;
+
+/// The authored file. Named, not counted — "stage" is the one term that names
+/// nothing existing, and it says so in its own note.
+#[test]
+fn only_the_proposed_term_names_nothing_in_the_model() {
+    let d = std::env::var("CARGO_MANIFEST_DIR").expect("cargo sets CARGO_MANIFEST_DIR");
+    let path = format!("{d}/../../../roles/silas/ontology/vocabulary-identity-4254.ttl");
+    let text = std::fs::read_to_string(&path).unwrap_or_else(|e| panic!("{path}: {e}"));
+    let mut out = ungrounded_concepts(&f(&text));
+    out.sort();
+    // NAMED, not counted. Two terms name nothing that exists: the class ruling
+    // 1 proposes, and the everyday word for what a nudge is delivered to —
+    // the model has chorus:Session for the login sense and nothing for this.
+    assert_eq!(out.len(), 2, "ungrounded set changed: {out:?}");
+    assert!(out.iter().any(|o| o.contains("vocab:stage")), "{out:?}");
+    assert!(out.iter().any(|o| o.contains("vocab:terminal-session")), "{out:?}");
+}
+
+/// NEGATIVE PROOF. A concept WITH an exactMatch must not be counted — if it
+/// were, the number would be "how many concepts are there" wearing another
+/// name, and could never go down.
+#[test]
+fn a_concept_with_an_exactmatch_is_not_counted() {
+    let ttl = r#"
+vocab:service a skos:Concept ;
+    skos:inScheme vocab:identity ;
+    skos:prefLabel "service" ;
+    skos:exactMatch chorus:principalKind .
+"#;
+    assert!(ungrounded_concepts(&f(ttl)).is_empty());
+}
+
+/// NEGATIVE PROOF. A concept WITHOUT one must be counted, and named by its
+/// preferred word rather than its IRI, so the report is readable by a person.
+#[test]
+fn a_concept_with_no_exactmatch_is_counted_and_named() {
+    let ttl = r#"
+vocab:stage a skos:Concept ;
+    skos:inScheme vocab:governance ;
+    skos:prefLabel "stage" .
+"#;
+    let out = ungrounded_concepts(&f(ttl));
+    assert_eq!(out.len(), 1, "{out:?}");
+    assert!(out[0].contains("\"stage\""), "{}", out[0]);
+    assert!(out[0].contains("vocab:stage"), "{}", out[0]);
+}
+
+/// A PROPOSED note is not what makes a term proposed — the missing edge is.
+/// Counting the note instead would let a comment and the data disagree, which
+/// is the state this replaced.
+#[test]
+fn the_note_is_not_what_decides_it() {
+    let ttl = r#"
+vocab:a a skos:Concept ;
+    skos:inScheme vocab:identity ;
+    skos:prefLabel "a" ;
+    skos:note "PROPOSED, not agreed." ;
+    skos:exactMatch chorus:Something .
+"#;
+    assert!(
+        ungrounded_concepts(&f(ttl)).is_empty(),
+        "a PROPOSED note on a grounded term must not count"
+    );
+}
+
+/// A ConceptScheme is not a term and must never be counted as an ungrounded
+/// one — three scheme titles would otherwise read as three proposed words.
+#[test]
+fn a_scheme_is_not_a_term() {
+    let ttl = r#"
+vocab:identity a skos:ConceptScheme ;
+    skos:prefLabel "Chorus identity vocabulary" .
+"#;
+    assert!(ungrounded_concepts(&f(ttl)).is_empty());
+}

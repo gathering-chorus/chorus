@@ -28,8 +28,9 @@
 #
 # WHICH WORD IS THE PREFERRED ONE — Wren's rule, and the one I got wrong first.
 #
-#   The prefLabel is the word the MODEL already uses: the spelling a query
-#   would match today, not a nicer or more readable one.
+#   The prefLabel is the word the MODEL already uses — or the DATA. A value
+#   that 15 rows carry is as real as a class name; grounded means a query
+#   would match the spelling today, not that a nicer word exists.
 #
 # My first pass authored "expiry", "permission mode", "credential record",
 # "owner" and "host". Each was a seventh word for something that already had
@@ -238,6 +239,7 @@ vocab:terminal-session a skos:Concept ;
     skos:prefLabel "session" ;
     skos:altLabel "pane" ;
     skos:definition "A running Claude Code process with a terminal we can reach — what a nudge is delivered to." ;
+    skos:note "PROPOSED, not agreed. The model has chorus:Session for the login sense and nothing at all for this one, so the word we use every day for the thing a nudge is delivered to names nothing." ;
     dcterms:description "HOMONYM of the identity sense. Running, registered and reachable are three different states of this thing and only the middle one is ever checked — which is how three of Jeff's messages were marked permanently failed while the role was working." .
 
 vocab:host a skos:Concept ;
@@ -246,4 +248,5 @@ vocab:host a skos:Concept ;
     skos:altLabel "host" ;
     skos:altLabel "box" ;
     skos:definition "A physical machine we run on. Two of them: Library and Bedroom." ;
+    skos:exactMatch chorus:Machine ;
     dcterms:description "The code harvest found three senses of host — the machine, an HTTP Host header, and a hosting relationship. Only the machine is named here; the other two are not our words to control." .
