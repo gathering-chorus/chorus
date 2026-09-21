@@ -54,20 +54,24 @@ def bare(v):
 keep = {k: bare(v) for k, v in r.items() if k not in drop and v not in ("", None, [])}
 keep["gaps"] = (r.get("gaps") or "") + " (bats-4102 touched)"
 print(json.dumps(keep))')"
+  # #4265 — a DISTINCT commit per run, not HEAD. The door's rule is one commit
+  # one version (#4102), so a second run under the same HEAD is the same change
+  # and correctly keeps nothing — which made this case fail for the opposite
+  # reason to the one it is testing. It needs a new land, so it mints one.
   # #4265 — this PUT sent no X-Landed-Commit while every other write in the file
   # does. Two consequences, both real: the door stamps changedIn "unknown" (which
   # 4101 then reports as a bad row), and a write with no land looks like the same
   # land as the one before it, so the version it should have kept is swallowed.
-  run curl -s --max-time "${FUSEKI_WRITE_TIMEOUT:-120}" -o "$BATS_TEST_TMPDIR/put" -w '%{http_code}' -X PUT "$OWL_URL/products/spine" -H "Authorization: Bearer $TOK" -H 'Content-Type: application/json' -H "X-Landed-Commit: $(git -C "$ROOT" rev-parse HEAD)" -d "$body"
+  run curl -s --max-time "${FUSEKI_WRITE_TIMEOUT:-120}" -o "$BATS_TEST_TMPDIR/put" -w '%{http_code}' -X PUT "$OWL_URL/products/spine" -H "Authorization: Bearer $TOK" -H 'Content-Type: application/json' -H "X-Landed-Commit: $(openssl rand -hex 20)" -d "$body"
   [ "$output" = "200" ] || { cat "$BATS_TEST_TMPDIR/put"; false; }
   after="$(revisions_of products/spine)"
   n="$(printf '%s' "$after" | python3 -c 'import sys,json; print(len(json.load(sys.stdin)))')"
   [ "$n" -eq $((before + 1)) ] || { echo "revisions before=$before after=$n"; false; }
   printf '%s' "$after" | python3 -c '
 import sys, json
-revs = json.load(sys.stdin); r = max(revs, key=lambda x: int(x.get("version") or 0))
+revs = json.load(sys.stdin); r = max(revs, key=lambda x: int(x.get("writeCount") or x.get("version") or 0))
 snap = json.loads(r["snapshot"]); assert snap.get("promise"), "snapshot carries the full row"
-assert r["ofRow"] == "products/spine" and str(r["version"]).isdigit()'
+assert r["ofRow"] == "products/spine" and str(r.get("writeCount") or r.get("version")).isdigit()'
 }
 
 @test "AC2 (retrievable by Loom): the newest revision's snapshot differs from the row now in exactly the touched field" {
@@ -75,7 +79,7 @@ assert r["ofRow"] == "products/spine" and str(r["version"]).isdigit()'
   now="$(curl -sf "$OWL_URL/products" | python3 -c 'import sys,json; rows=json.load(sys.stdin)["data"]; print(json.dumps([x for x in rows if x["name"]=="spine"][0]))')"
   revisions_of products/spine | python3 -c '
 import sys, json
-revs = json.load(sys.stdin); r = max(revs, key=lambda x: int(x.get("version") or 0)); snap = json.loads(r["snapshot"]); now = json.loads(sys.argv[1])
+revs = json.load(sys.stdin); r = max(revs, key=lambda x: int(x.get("writeCount") or x.get("version") or 0)); snap = json.loads(r["snapshot"]); now = json.loads(sys.argv[1])
 skip = {"version","changedAt","changedIn","modified","created","name","iri","type"}
 diff = [k for k in set(snap) | set(now) if k not in skip and str(snap.get(k,"")) != str(now.get(k,""))]
 print("changed:", sorted(diff))
@@ -217,7 +221,7 @@ print(json.dumps(keep))' "$1" "$2"
 restore_row() {  # $1 = product name
   put_product "$1" "$(product_body "$1" restored)" "$(git -C "$ROOT" rev-parse HEAD)" >/dev/null
 }
-product_version() { curl -sf "$OWL_URL/products" | python3 -c 'import sys,json; rows=json.load(sys.stdin)["data"]; print([x for x in rows if x["name"]==sys.argv[1]][0].get("version") or "0")' "$1"; }
+product_version() { curl -sf "$OWL_URL/products" | python3 -c 'import sys,json; rows=json.load(sys.stdin)["data"]; r=[x for x in rows if x["name"]==sys.argv[1]][0]; print(r.get("writeCount") or r.get("version") or "0")' "$1"; }
 put_product() {  # $1 = name, $2 = body, $3 = commit stamp ("" for a hand write)
   if [ -n "$3" ]; then
     curl -s --max-time "${FUSEKI_WRITE_TIMEOUT:-120}" -o /dev/null -w '%{http_code}' -X PUT "$OWL_URL/products/$1" -H "Authorization: Bearer $TOK" \

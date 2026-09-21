@@ -2913,12 +2913,30 @@ pub fn version_stamp(table: &RouteTable, previous: Option<&str>) -> Option<(Stri
     Some(("writeCount".to_string(), next.to_string()))
 }
 
+/// #4265 — reads chorus:writeCount, and FALLS BACK to the retired
+/// chorus:version. #4211 renamed the predicate (a property called version,
+/// beside a class called Version, reads as the same thing and is not — it
+/// counts writes), but this query was not renamed with it: it matched nothing,
+/// version_stamp computed 0+1 on every write, and every row stayed at
+/// writeCount 1 forever. The revision name is minted from that number, so each
+/// replace also OVERWROTE the previous version row instead of adding one —
+/// products/spine sat at 372 versions through a dozen writes on 2026-09-21.
+///
+/// Reading the new name ALONE would be the same bug pointed the other way.
+/// Measured that day: 16,185 of 17,015 Version rows still carry chorus:version
+/// and only 829 carry chorus:writeCount, so a writeCount-only reader is blind
+/// to 95% of the history it exists to order. Both are read until the rows are
+/// migrated; that migration is its own card, and when it lands the fallback
+/// arm stops matching anything and can be deleted.
 fn query_version(class: &str, entity: &str, instances_graph: &str) -> Option<String> {
-    let q = format!(
-        "PREFIX chorus: <{ns}> SELECT ?v WHERE {{ GRAPH <{g}> {{ <{s}> chorus:version ?v }} }}",
-        ns = NS, g = instances_graph, s = entity_subject(class, entity)
-    );
-    sparql_json(&q).ok().and_then(|b| select_v(&b).into_iter().next())
+    let read = |pred: &str| {
+        let q = format!(
+            "PREFIX chorus: <{ns}> SELECT ?v WHERE {{ GRAPH <{g}> {{ <{s}> {pred} ?v }} }}",
+            ns = NS, g = instances_graph, s = entity_subject(class, entity), pred = pred
+        );
+        sparql_json(&q).ok().and_then(|b| select_v(&b).into_iter().next())
+    };
+    read("chorus:writeCount").or_else(|| read("chorus:version"))
 }
 
 /// #4102 — the commit the row's CURRENT version was written in (the #4101 stamp).
