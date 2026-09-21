@@ -19,7 +19,18 @@ live() {
   [ "${RUN_INTEGRATION:-}" = "true" ] || skip "integration (live owl-api serve) — RUN_INTEGRATION=true to run"
   curl -sf --max-time 5 "$OWL_URL/health" >/dev/null || skip "owl-api absent (#3528)"
 }
-rows() { curl -sf --max-time 10 "$OWL_URL/$1" | python3 -c 'import sys,json; d=json.load(sys.stdin); print(json.dumps(d if isinstance(d,list) else d.get("data",[])))'; }
+# #4265 — Jeff, 2026-09-21: "we are trying to test chorus not gathering." The
+# gathering product is the Gathering app's row, authored by Jeff, not written
+# through our door; holding it to our stamps made this suite report a red we
+# would never fix. Scope: rows this team owns, i.e. ownedBy a principal-*.
+rows() { curl -sf --max-time 10 "$OWL_URL/$1" | python3 -c '
+import sys, json
+d = json.load(sys.stdin); rows = d if isinstance(d, list) else d.get("data", [])
+def ours(r):
+    o = r.get("ownedBy")
+    o = o[0] if isinstance(o, list) and o else o
+    return str(o or "").startswith("principal-")
+print(json.dumps([r for r in rows if ours(r)]))'; }
 
 @test "AC1: every product and document served carries changedAt (UTC ISO) and changedIn (a commit, never 'unknown' after a land)" {
   live
@@ -40,7 +51,9 @@ print(sys.argv[1], "rows", len(rows), "bad", bad); sys.exit(1 if bad or not rows
     rows "$k" | python3 -c '
 import sys, json
 rows = json.load(sys.stdin); ok = {"draft","current","superseded","retired"}
-bad = [(r.get("name"), r.get("docState"), r.get("version")) for r in rows if r.get("docState") not in ok or not str(r.get("version","")).isdigit()]
+# #4265 — the stamp is chorus:writeCount since #4211 renamed it; reading
+# r["version"] measured a field the door has never written.
+bad = [(r.get("name"), r.get("docState"), r.get("writeCount")) for r in rows if r.get("docState") not in ok or not str(r.get("writeCount","")).isdigit()]
 print(sys.argv[1], "bad", bad); sys.exit(1 if bad or not rows else 0)' "$k"
   done
 }
