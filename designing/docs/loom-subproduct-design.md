@@ -59,12 +59,12 @@ The operating-model / team-knowledge layer of Chorus — "the team's persistent 
 - **`partOf`** — neither declared nor used. Phantom concept.
 - `dependsOn`, `expresses` — declared without `rdfs:domain`/`rdfs:range`.
 - **`framework.ttl` runs a parallel vocabulary** — `fw:Domain owl:equivalentClass chorus:Domain`, plus `fw:ownedBy` / `fw:dependsOn` with no `owl:equivalentProperty` bridge to the `chorus:` versions. The same real-world domains are modeled twice (`fw:photos` and `chorus:photos-domain`).
-- **`SubDomain` is the spine of the instance graph** — ~45 instances, the `rdfs:range` of `hasActor`/`hasScenario`/`hasContract`/`hasPage`/`hasPipeline`, and the target of the `DocumentShape` SHACL constraint. It is *not* vestigial — which is exactly why the as-is/to-be refactor to remove it is expensive.
+- ~~**`SubDomain` is the spine of the instance graph**~~ — **RETIRED 2026-09-21 (#4237).** This paragraph was the load-bearing statement that removing SubDomain would be expensive, and it was read that way for months. Three of its four claims had stopped being true: `DocumentShape` was repointed to `chorus:Domain` by #4010; the ~45 instances were de-seeded by #4216 and served nothing (`/api/athena/subdomains` returned count 0); and the properties cited are `rdfs:domain`, not `rdfs:range` — they constrain subjects and are non-validating in OWL. The class was `rdfs:subClassOf chorus:Domain`, so its 49 rows already were Domains by the model's own reasoning. They were retyped in place (990 statements to 941, exactly the 49 type triples) and the class deleted. What it actually cost: two SHACL edges on `AuthBoundaryShape`, which had made AuthBoundary uncreatable since #3509.
 - `Decision` and `RCA` are **not OWL classes** — `loom-decisions` and `loom-rcas` hold (or would hold) instances of undeclared types.
 
 ## The SHACL
 
-15 shapes across 4 files. Loom's **skeleton is constrained** — `ProductDomainShape`, `SubProductParentShape`, `SubProductDomainShape`, `SubDomainParentShape`, `SubDomainInstancesShape` enforce structural minimums (a SubProduct must have ≥1 parent and ≥1 domain; a SubDomain must have a parent).
+15 shapes across 4 files. Loom's **skeleton is constrained** — `ProductDomainShape` enforces a structural minimum. The other four named here — `SubProductParentShape`, `SubProductDomainShape`, `SubDomainParentShape`, `SubDomainInstancesShape` — were **deleted by #4237 on 2026-09-21**: each targeted a retired class (`SubProduct` by #3603, `SubDomain` by #3509), matched zero nodes, and had been passing vacuously for months.
 
 Loom's **substance is not constrained:**
 - `Domain` (the class) has no shape.

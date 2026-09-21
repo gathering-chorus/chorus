@@ -64,42 +64,16 @@ const CHECKS: Check[] = [
           FILTER NOT EXISTS { ?node chorus:hasServiceDesign ?sd }
         }}`,
   },
-  {
-    name: 'SubProduct must have parent Product',
-    severity: 'violation',
-    query: `PREFIX chorus: <https://jeffbridwell.com/chorus#> PREFIX rdfs: <http://www.w3.org/2000/01/rdf-schema#>
-        SELECT ?node ?label WHERE { GRAPH <urn:chorus:ontology> {
-          ?node a chorus:SubProduct . OPTIONAL { ?node rdfs:label ?label }
-          FILTER NOT EXISTS { ?parent chorus:hasSubProduct ?node }
-        }}`,
-  },
-  {
-    name: 'SubProduct must have SubDomain',
-    severity: 'violation',
-    query: `PREFIX chorus: <https://jeffbridwell.com/chorus#> PREFIX rdfs: <http://www.w3.org/2000/01/rdf-schema#>
-        SELECT ?node ?label WHERE { GRAPH <urn:chorus:ontology> {
-          ?node a chorus:SubProduct . OPTIONAL { ?node rdfs:label ?label }
-          FILTER NOT EXISTS { ?node chorus:hasDomain ?d }
-        }}`,
-  },
-  {
-    name: 'SubDomain must have parent',
-    severity: 'violation',
-    query: `PREFIX chorus: <https://jeffbridwell.com/chorus#> PREFIX rdfs: <http://www.w3.org/2000/01/rdf-schema#>
-        SELECT ?node ?label WHERE { GRAPH <urn:chorus:ontology> {
-          ?node a chorus:SubDomain . OPTIONAL { ?node rdfs:label ?label }
-          FILTER NOT EXISTS { ?parent chorus:hasDomain ?node }
-        }}`,
-  },
-  {
-    name: 'SubDomain has no instances (incomplete)',
-    severity: 'warning',
-    query: `PREFIX chorus: <https://jeffbridwell.com/chorus#> PREFIX rdfs: <http://www.w3.org/2000/01/rdf-schema#>
-        SELECT ?node ?label WHERE { GRAPH <urn:chorus:ontology> {
-          ?node a chorus:SubDomain . OPTIONAL { ?node rdfs:label ?label }
-          FILTER NOT EXISTS { ?node chorus:contains ?i }
-        }}`,
-  },
+  // Four rules sat here and all four are DELETED by #4237, 2026-09-21 — the runtime
+  // mirror of the four shapes removed from sparql/shapes.ttl:
+  //   SubProduct must have parent Product · SubProduct must have SubDomain
+  //   SubDomain must have parent          · SubDomain has no instances
+  //
+  // Every one queried GRAPH <urn:chorus:ontology> for `a chorus:SubProduct` or
+  // `a chorus:SubDomain`. SubProduct has had zero rows anywhere since #3603, and the
+  // 49 SubDomain rows lived in their own domain graphs, never this one. So all four
+  // matched zero nodes in every reachable state: they reported clean without ever
+  // being able to report anything else, and the validate run counted them as passes.
   // --- CatalogDoc shape (#2554) — runtime mirror of chorus:CatalogDocShape in shapes.ttl ---
   {
     name: 'CatalogDoc must have catalogHref',

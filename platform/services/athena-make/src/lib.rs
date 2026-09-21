@@ -3487,6 +3487,13 @@ pub fn tests_manifest(t: &RouteTable) -> String {
     for s in &t.secured {
         security.push(format!("{{ \"id\": \"secured-401 {s}\", \"method\": \"GET\", \"path\": \"{s}\", \"auth\": \"none\", \"expectStatus\": 401 }}", s = json_escape(s)));
     }
+    // #4237 — the rest of Jeff's refusal list. unauthenticated / malformed name /
+    // incomplete body were already here; a caller who IS authenticated but does not
+    // own the row, and a body carrying a property the shape never declared, were not.
+    // The second one is the lossy-write class: PUT silently drops off-shape props,
+    // so nothing ever told us the door had eaten a field.
+    security.push(format!("{{ \"id\": \"wrong-owner-403\", \"method\": \"PUT\", \"path\": \"{p}/:name\", \"auth\": \"other-owner\", \"expectStatus\": 403 }}", p = json_escape(&p)));
+    security.push(format!("{{ \"id\": \"undeclared-field-422\", \"method\": \"POST\", \"path\": \"{p}\", \"auth\": \"owner\", \"body\": \"{{\\\"notInTheShape\\\":\\\"x\\\"}}\", \"expectStatus\": 422 }}", p = json_escape(&p)));
     // #3467 finish — CONSTRAINT-enforcement cases, derived from the shape's fields:
     // a strict-datatype field gets a bad value → 422 (sh:datatype); an edge points at
     // a wrong-typed target → 422 (sh:class edge-target-type). These ASSERT the DAL
@@ -3513,10 +3520,75 @@ pub fn tests_manifest(t: &RouteTable) -> String {
             ));
         }
     }
+    // #4237 — the QUARTET: create, read, update, delete, per endpoint, in order.
+    //
+    // Jeff, 2026-09-20: "the api must apply all data types shacl etc that defines
+    // rhe contract general pattern is create update get delete per endpoint".
+    //
+    // Two properties make this different from the conformance list above. First it
+    // covers PUT and DELETE, which were never generated at all. Second the create
+    // step READS ITS ROW BACK and compares the write-required fields one by one —
+    // a status code says the door answered, a read-back says it kept what it was
+    // given. #4167 found the store holding five hasDomain edges while the API
+    // returned none; no status assertion can see that.
+    //
+    // The whole quartet runs against a throwaway subject it deletes, and refuses to
+    // run if it cannot clean up — a generated write case must never leave a row.
+    let throwaway = format!("zz-generated-{}-probe", class.to_lowercase());
+    // Take the paths from the ROUTE TABLE, not from a reconstructed "/{plural}".
+    // The generated routes carry a base path (`/domains/domains`, not `/domains`),
+    // so a rebuilt string would emit a quartet against a URL the API does not
+    // serve — cases that 404 forever and get read as "the door refused", which is
+    // the hollow-check shape this card exists to kill. If the model declares no
+    // route for a verb, no case is emitted for it: absent, never invented.
+    // No segment-depth arithmetic here: the base path varies by class
+    // (`/domains/domains` vs `/domains`), and a depth rule silently emitted no
+    // create case for the shallow shape. The only thing that identifies the
+    // collection route is that it names no subject; the item route is the one
+    // ending in `/:name`. Sub-resource routes (`/:name/partof`) end in the edge
+    // name, so they are excluded by the same test.
+    let route_path = |verb: &str, with_name: bool| -> Option<String> {
+        t.routes.iter().find_map(|r| {
+            let rest = r.strip_prefix(verb)?.trim();
+            if with_name {
+                if rest.ends_with("/:name") { Some(rest.to_string()) } else { None }
+            } else if !rest.contains(":name") && !rest.ends_with("/batch") {
+                Some(rest.to_string())
+            } else {
+                None
+            }
+        })
+    };
+    let collection = route_path("POST", false);
+    let item_get   = route_path("GET", true);
+    let item_put   = route_path("PUT", true);
+    let item_del   = route_path("DELETE", true);
+    let with_subject = |r: &Option<String>| r.as_ref().map(|x| x.replace(":name", &throwaway));
+    let read_back = if t.write_required.is_empty() {
+        // NEGATIVE-PROOF guard: comparing zero fields passes for every response.
+        // Say the read-back is absent rather than emit a check that cannot fail.
+        "\"readBack\": null, \"readBackSkipped\": \"the shape declares no write-required field to compare\"".to_string()
+    } else {
+        format!("\"readBack\": {{ \"compareFields\": [{}] }}", arr(&t.write_required))
+    };
+    let mut quartet: Vec<String> = vec![];
+    if let Some(c) = &collection {
+        quartet.push(format!("{{ \"step\": \"create\", \"method\": \"POST\", \"path\": \"{c}\", \"auth\": \"owner\", \"expectStatus\": 201, {rb} }}", c = json_escape(c), rb = read_back));
+    }
+    if let Some(r) = with_subject(&item_get) {
+        quartet.push(format!("{{ \"step\": \"read\", \"method\": \"GET\", \"path\": \"{r}\", \"expectStatus\": 200 }}", r = json_escape(&r)));
+    }
+    if let Some(r) = with_subject(&item_put) {
+        quartet.push(format!("{{ \"step\": \"update\", \"method\": \"PUT\", \"path\": \"{r}\", \"auth\": \"owner\", \"expectStatus\": 200, {rb} }}", r = json_escape(&r), rb = read_back));
+    }
+    if let Some(r) = with_subject(&item_del) {
+        quartet.push(format!("{{ \"step\": \"delete\", \"method\": \"DELETE\", \"path\": \"{r}\", \"auth\": \"owner\", \"expectStatus\": 204 }}", r = json_escape(&r)));
+    }
     format!(
-        "{{\n  \"class\": \"{class}\",\n  \"plural\": \"{plural}\",\n  \"unit\": {{ \"routes\": [{routes}], \"mandatory\": [{mandatory}], \"secured\": [{secured}] }},\n  \"conformance\": [\n    {conf}\n  ],\n  \"security\": [\n    {sec}\n  ],\n  \"constraints\": [\n    {cons}\n  ]\n}}\n",
+        "{{\n  \"class\": \"{class}\",\n  \"plural\": \"{plural}\",\n  \"unit\": {{ \"routes\": [{routes}], \"mandatory\": [{mandatory}], \"secured\": [{secured}] }},\n  \"quartet\": {{ \"throwawaySubject\": \"{throwaway}\", \"refuseIfNoCleanup\": true, \"steps\": [\n    {quart}\n  ] }},\n  \"conformance\": [\n    {conf}\n  ],\n  \"security\": [\n    {sec}\n  ],\n  \"constraints\": [\n    {cons}\n  ]\n}}\n",
         class = json_escape(&class), plural = json_escape(&plural),
         routes = arr(&t.routes), mandatory = arr(&t.mandatory), secured = arr(&t.secured),
+        throwaway = json_escape(&throwaway), quart = quartet.join(",\n    "),
         conf = conformance.join(",\n    "), sec = security.join(",\n    "), cons = constraints.join(",\n    ")
     )
 }

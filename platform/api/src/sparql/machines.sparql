@@ -1,7 +1,8 @@
 PREFIX chorus: <https://jeffbridwell.com/chorus#>
 PREFIX rdfs: <http://www.w3.org/2000/01/rdf-schema#>
 SELECT ?machine ?label ?ip ?role ?service ?serviceLabel WHERE {
-  GRAPH <urn:chorus:ontology> {
+  # #4237 — was urn:chorus:ontology, the SCHEMA graph. Machine rows live here (measured 2026-09-21).
+  GRAPH <urn:chorus:domains:infrastructure> {
     ?machine a chorus:Machine .
     OPTIONAL { ?machine rdfs:label ?label }
     OPTIONAL { ?machine chorus:ipAddress ?ip }

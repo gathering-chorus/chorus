@@ -14,9 +14,15 @@ fn fixture() -> RouteTable {
             "partOf|edge:Product".into(),     // an edge → target-type is enforced
         ],
         routes: vec![
+            // #4237 — the fixture now declares the full verb set, because a real
+            // generated class does (Domain carries PUT and DELETE). The quartet is
+            // read OFF this list, so a fixture missing them was asserting against a
+            // route table no class actually has.
             "GET /domains".into(),
             "GET /domains/:name".into(),
             "POST /domains".into(),
+            "PUT /domains/:name".into(),
+            "DELETE /domains/:name".into(),
             "POST /domains/:name/partof".into(),
             "GET /schema/domain".into(),
         ],
@@ -105,4 +111,94 @@ fn every_generated_mcp_name_obeys_adr031_grain() {
         );
         assert!(resource.ends_with('s'), "resource must be pluralized: '{}'", n);
     }
+}
+
+// --- #4237 — the quartet per endpoint -------------------------------------
+//
+// Jeff, 2026-09-20: "the api must apply all data types shacl etc that defines
+// rhe contract general pattern is create update get delete per endpoint".
+//
+// Before this, the manifest emitted GET conformance plus four security cases and
+// two constraint cases. Nothing for PUT. Nothing for DELETE. Nothing that wrote a
+// row and read it back. A status code says the door answered; only a read-back
+// says it kept what it was given — that is the class #4167 found, where the store
+// held five hasDomain edges and the API returned none.
+//
+// These tests are the shape of the contract, asserted on the projection, not on a
+// live server: the manifest is a pure function of the RouteTable.
+
+#[test]
+fn quartet_emits_a_case_for_every_verb() {
+    let m = tests_manifest(&fixture());
+    assert!(m.contains("\"quartet\""), "manifest carries a quartet block");
+    for id in ["create", "read", "update", "delete"] {
+        assert!(m.contains(&format!("\"step\": \"{id}\"")), "quartet is missing the {id} step");
+    }
+    assert!(m.contains("\"method\": \"PUT\""), "no PUT case — update was never generated");
+    assert!(m.contains("\"method\": \"DELETE\""), "no DELETE case — delete was never generated");
+}
+
+#[test]
+fn the_write_reads_its_row_back_field_by_field() {
+    let m = tests_manifest(&fixture());
+    assert!(m.contains("\"readBack\""), "the create step must read its row back");
+    // every write-required field is compared, not just the status code
+    assert!(m.contains("\"compareFields\""), "read-back must name the fields it compares");
+    assert!(m.contains("label") && m.contains("comment"), "write-required fields are compared");
+}
+
+#[test]
+fn the_quartet_cleans_up_after_itself() {
+    let m = tests_manifest(&fixture());
+    assert!(m.contains("\"throwawaySubject\""), "the quartet works on a throwaway subject");
+    assert!(m.contains("\"refuseIfNoCleanup\": true"),
+        "a generated write case that cannot clean up must refuse to run, not leave a row");
+}
+
+#[test]
+fn the_refusal_set_is_generated_from_the_shape() {
+    let m = tests_manifest(&fixture());
+    // Jeff's list: unauthenticated, wrong owner, malformed name, incomplete body,
+    // undeclared field, wrong datatype.
+    for refusal in [
+        "unauth-create-401",
+        "wrong-owner-403",
+        "injection-name-400",
+        "incomplete-create-422",
+        "undeclared-field-422",
+    ] {
+        assert!(m.contains(refusal), "refusal case missing: {refusal}");
+    }
+    // the wrong-datatype refusal already existed as a constraint case
+    assert!(m.contains("datatype-reject"), "datatype refusal missing");
+}
+
+#[test]
+fn negative_proof_a_class_with_no_write_required_fields_emits_no_hollow_readback() {
+    // If a class declares nothing required, a read-back that compares zero fields
+    // would pass for every response — a green that cannot go red. The generator
+    // must say so rather than emit an empty comparison.
+    let mut t = fixture();
+    t.write_required = vec![];
+    t.mandatory = vec![];
+    let m = tests_manifest(&t);
+    assert!(m.contains("\"readBack\": null") || m.contains("\"readBackSkipped\""),
+        "with no required fields the read-back must be explicitly absent, never an empty compare");
+    assert!(!m.contains("\"compareFields\": []"),
+        "an empty compareFields list is a hollow check and must not be emitted");
+}
+
+#[test]
+fn no_case_is_invented_for_a_verb_the_model_does_not_declare() {
+    // The quartet takes its paths from the route table. A class whose model
+    // declares no DELETE must produce no delete case — not a case against a
+    // guessed URL, which would 404 forever and read as "the door refused it".
+    // That is the hollow-check shape: a red that means nothing and a green that
+    // means less.
+    let mut t = fixture();
+    t.routes.retain(|r| !r.starts_with("DELETE "));
+    let m = tests_manifest(&t);
+    assert!(!m.contains("\"step\": \"delete\""),
+        "a delete case was emitted for a class with no DELETE route");
+    assert!(m.contains("\"step\": \"create\""), "the rest of the quartet still stands");
 }

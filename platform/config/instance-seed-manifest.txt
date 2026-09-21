@@ -60,7 +60,6 @@ tool-type:designing/data/tool-type-instances.ttl
 # #4216 — classes dispositioned with Kade on 2026-09-20. Each row carries data
 # beyond its own name, so it is an instance and belongs in a domain graph, not
 # in the schema file that MODEL_SET loads into urn:chorus:ontology.
-sub-domain:designing/data/sub-domain-instances.ttl
 skill:designing/data/skill-instances.ttl
 gate:designing/data/gate-instances.ttl
 policy:designing/data/policy-instances.ttl
