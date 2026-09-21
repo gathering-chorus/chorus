@@ -427,12 +427,20 @@ chorus:APISurfaceShape a sh:NodeShape ;
     sh:targetClass chorus:APISurface ;
     sh:property [ sh:path rdfs:label ; sh:minCount 1 ] ;
     sh:property [ sh:path chorus:servedBy ; sh:minCount 1 ] ;
-    chorus:instancesGraph "urn:chorus:ontology" ;
+    # #4256 — ruling A (Jeff, 2026-09-21): the declared home follows the rows.
+    # Every one of these seven classes declared urn:chorus:ontology while not a
+    # single row lived there, so the door served 0 of 29. Rows first, declaration
+    # second — the opposite order is what left seven classes unservable.
+    chorus:instancesGraph "urn:chorus:domains:security" ;
     chorus:generatedBy "athena-model" .
 
 chorus:GateShape a sh:NodeShape ;
     sh:targetClass chorus:Gate ;
     sh:property [ sh:path rdfs:label ; sh:minCount 1 ] ;
     sh:property [ sh:path chorus:ownerRole ; sh:minCount 1 ] ;
-    chorus:instancesGraph "urn:chorus:ontology" ;
+    # #4256 — ruling A (Jeff, 2026-09-21): the declared home follows the rows.
+    # Every one of these seven classes declared urn:chorus:ontology while not a
+    # single row lived there, so the door served 0 of 29. Rows first, declaration
+    # second — the opposite order is what left seven classes unservable.
+    chorus:instancesGraph "urn:chorus:domains:security" ;
     chorus:generatedBy "athena-model" .
