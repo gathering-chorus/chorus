@@ -836,6 +836,18 @@ pub fn run_athena_deploy() -> Result<String, String> {
                     .collect()
             })
             .unwrap_or_default();
+            // #4256 — the question is "is this subject still DECLARED anywhere
+            // in the model set", not "is it still in the file it used to be in".
+            // Per-file comparison cannot tell a deletion from a move: #4250
+            // moved nine property declarations between files and this guard
+            // read all nine as deleted, refused the land's deploy, and left the
+            // store on the pre-#4250 model for a day. Build the union first.
+            let mut declared_now: Vec<String> = Vec::new();
+            for ttl in &set {
+                if let Ok(now) = std::fs::read_to_string(ttl) {
+                    declared_now.extend(declared_subjects(&now));
+                }
+            }
             let mut gone: Vec<(String, String)> = Vec::new();
             for ttl in &set {
                 let rel = ttl.strip_prefix(&format!("{root}/")).unwrap_or(ttl).to_string();
@@ -844,6 +856,10 @@ pub fn run_athena_deploy() -> Result<String, String> {
                 };
                 let Ok(now) = std::fs::read_to_string(ttl) else { continue };
                 for name in vanished_subjects(&before, &now) {
+                    // Moved to a sibling file in the same set, not deleted.
+                    if declared_now.contains(&name) {
+                        continue;
+                    }
                     // Already staged for retirement? The retirement leg above
                     // removes it; reporting it here would refuse a deploy for
                     // work that is already done, and the guard would be
