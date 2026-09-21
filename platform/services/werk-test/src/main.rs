@@ -355,6 +355,9 @@ fn run(args: &[String]) -> Result<i32, String> {
         || std::env::var("WERK_TEST_FULL").map(|v| v == "1").unwrap_or(false);
     let ui_check = werk_test::ui_plan(ui_fired, ui_set.len());
     let mut any_failed = false;
+    // #4265 — suites that scored nothing, named in the summary so an
+    // UNMEASURED run can never be read as a clean one.
+    let mut unmeasured: Vec<String> = Vec::new();
     let mut failed_count: usize = 0;
     // #3592 — every executed case, keyed to the registered identity, plus the
     // loud counter for cargo cases that can't be joined unambiguously.
@@ -424,7 +427,21 @@ fn run(args: &[String]) -> Result<i32, String> {
                 all_cases.extend(cases);
                 ok
             }
-            (CheckKind::Bats, Some(TestUnit::BatsSuite(s))) => run_bats(&werk, s),
+            (CheckKind::Bats, Some(TestUnit::BatsSuite(s))) => {
+                // #4265 — a bats suite can report UNMEASURED (exit 2): it ran,
+                // found its subject unserved, and scored nothing. It must not
+                // read as a pass — the line says UNMEASURED and the run is not
+                // green on its account — and it must not read as a failure,
+                // because nothing was shown broken.
+                match run_bats(&werk, s) {
+                    BatsOutcome::Pass => true,
+                    BatsOutcome::Unmeasured => {
+                        unmeasured.push(target.to_string());
+                        true
+                    }
+                    BatsOutcome::Fail => false,
+                }
+            }
             (CheckKind::ClippyRatchet, None) => run_clippy_ratchet(&werk),
             (CheckKind::LintRatchet, None) => werk_test::run_lint_ratchet(&werk),
             (CheckKind::DocCoherence, None) => run_doc_coherence(&werk),
@@ -432,7 +449,10 @@ fn run(args: &[String]) -> Result<i32, String> {
         };
         unit_costs.push((format!("{}:{}", check.kind.label(), target),
             check_started.elapsed().as_secs_f64()));
-        println!("   {}:{} … {}", check.kind.label(), target, if ok { "ok" } else { "FAIL" });
+        let verdict = if unmeasured.last().map(|u| u == target).unwrap_or(false) {
+            "UNMEASURED"
+        } else if ok { "ok" } else { "FAIL" };
+        println!("   {}:{} … {}", check.kind.label(), target, verdict);
         if !ok {
             any_failed = true;
             failed_count += 1;
@@ -497,6 +517,12 @@ fn run(args: &[String]) -> Result<i32, String> {
                       .max_by(|a, b| a.1.partial_cmp(&b.1).unwrap_or(std::cmp::Ordering::Equal))
                       .map(|(n, _)| n.as_str()).unwrap_or(""))]);
         }
+    }
+    // #4265 — an unmeasured suite is reported before the verdict, so a run
+    // that proved nothing about a suite cannot be read as having passed it.
+    if !unmeasured.is_empty() {
+        println!("   UNMEASURED: {} suite(s) scored nothing — {}",
+                 unmeasured.len(), unmeasured.join(", "));
     }
     let outcome = gate_outcome(units.len(), any_failed, self_mod);
     let execution_duration_ms = started_at.elapsed().as_millis();
@@ -1298,7 +1324,14 @@ fn run_bats_cases(werk: &str, suite: &str) -> (bool, Vec<(String, String)>, Stri
 /// Run one bats suite. The suite gets its own world (#3528/#3615): CHORUS_LOG_FILE
 /// points into a per-run tempdir so a suite that emits to the spine cannot write
 /// the production log from a build context.
-fn run_bats(werk: &str, suite: &str) -> bool {
+/// #4265 — a bats suite may report that it measured NOTHING. Exit 2 is that
+/// signal: the suite ran, found its subject unserved, and declined to score.
+/// It is not a pass (nothing was proven) and not a fail (nothing was broken),
+/// so it gets its own outcome instead of being folded into either.
+#[derive(PartialEq)]
+enum BatsOutcome { Pass, Fail, Unmeasured }
+
+fn run_bats(werk: &str, suite: &str) -> BatsOutcome {
     let tmp = std::env::temp_dir().join(format!("werk-test-bats-{}", std::process::id()));
     let _ = std::fs::create_dir_all(&tmp);
     // #4004 — a .sh suite is EXECUTED by bash, never handed to bats. run_bats_cases
@@ -1312,7 +1345,7 @@ fn run_bats(werk: &str, suite: &str) -> bool {
     // #4106 — same rule on the werk lane: a `*.test.sh` whose shebang says bats
     // is a bats suite.
     let runner = werk_test::suite_runner(&format!("{}/{}", werk, suite));
-    status_ok(
+    bats_outcome(
         Command::new(runner)
             .arg(suite)
             .current_dir(werk)
@@ -2049,6 +2082,18 @@ fn status_ok(cmd: &mut Command) -> bool {
     cmd.status().map(|s| s.success()).unwrap_or(false)
 }
 
+/// #4265 — read a bats suite's exit code as a three-way outcome. 0 pass,
+/// 2 unmeasured, anything else fail. A suite that cannot be launched at all
+/// is a FAIL, never unmeasured: a missing runner must not read as "nothing to
+/// measure".
+fn bats_outcome(cmd: &mut Command) -> BatsOutcome {
+    match cmd.status() {
+        Ok(s) if s.success() => BatsOutcome::Pass,
+        Ok(s) if s.code() == Some(2) => BatsOutcome::Unmeasured,
+        _ => BatsOutcome::Fail,
+    }
+}
+
 /// Emit a typed test event to the ONE spine via chorus-log (subprocess, so the
 /// verb stays zero-dep per ADR-032 §6). Best-effort: never affects the gate.
 /// #3621 — takes the event name: test.started / test.completed are emitted on
@@ -2652,4 +2697,28 @@ fn read_loadavg() -> Option<f64> {
             let tail = t.rsplit("load average").next().unwrap_or("");
             werk_test::parse_loadavg(tail.trim_start_matches('s').trim_start_matches(':'))
         }))
+}
+
+#[cfg(test)]
+mod bats_unmeasured_4265 {
+    use super::{bats_outcome, BatsOutcome};
+    use std::process::Command;
+
+    fn exiting(code: i32) -> BatsOutcome {
+        bats_outcome(Command::new("sh").arg("-c").arg(format!("exit {}", code)))
+    }
+
+    #[test]
+    fn exit_two_is_unmeasured_and_nothing_else_is() {
+        assert!(exiting(0) == BatsOutcome::Pass);
+        assert!(exiting(2) == BatsOutcome::Unmeasured);
+
+        // NEGATIVE PROOF (#3734): the codes this must NOT swallow. A suite that
+        // fails, and a suite whose runner cannot even be launched, both stay
+        // FAIL — otherwise "unmeasured" becomes a way to make a red disappear,
+        // which is the exact thing the hold exists to avoid.
+        assert!(exiting(1) == BatsOutcome::Fail);
+        assert!(exiting(70) == BatsOutcome::Fail);
+        assert!(bats_outcome(&mut Command::new("/nonexistent/bats")) == BatsOutcome::Fail);
+    }
 }
