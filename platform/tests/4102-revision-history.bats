@@ -114,12 +114,25 @@ for same in ("promise", "vision", "structure", "audience"):
   done
 }
 
-@test "AC1: the model declares Revision, its shape and its claim on the products domain" {
+@test "AC1: the model declares Version, its shape and its claim on the provenance domain" {
+  # #4265 — this case still named Revision and still expected the products
+  # domain to claim it. #4211 renamed the class to Version on 09-20, and it was
+  # deliberately NOT left on products (547 of 15,630 rows revise a product, so
+  # it was never a products class). provenance claims it as of today.
   ttl="$ROOT/roles/silas/ontology/chorus.ttl"
-  grep -q '^chorus:Revision a owl:Class' "$ttl"
-  awk '/^chorus:RevisionShape a sh:NodeShape/,/ \.$/' "$ttl" | grep -q 'sh:path chorus:snapshot'
-  awk '/^chorus:RevisionShape a sh:NodeShape/,/ \.$/' "$ttl" | grep -q 'sh:path chorus:ofRow'
-  grep -q 'chorus:definesVocabulary chorus:Product, chorus:Revision' "$ROOT/roles/wren/ontology/domains-wren-silas.ttl"
+  grep -q '^chorus:Version a owl:Class' "$ttl"
+  awk '/^chorus:VersionShape a sh:NodeShape/,/ \.$/' "$ttl" | grep -q 'sh:path chorus:snapshot'
+  awk '/^chorus:VersionShape a sh:NodeShape/,/ \.$/' "$ttl" | grep -q 'sh:path chorus:ofRow'
+  grep -q 'chorus:definesVocabulary chorus:Version' "$ttl"
+}
+
+@test "AC1 NEGATIVE PROOF (#3734): the retired Revision spelling declares nothing" {
+  # If this ever passes vacuously the case above is measuring a file that no
+  # longer names either class. Revision must be GONE, not merely un-grepped.
+  ttl="$ROOT/roles/silas/ontology/chorus.ttl"
+  ! grep -q '^chorus:Revision a owl:Class' "$ttl"
+  ! grep -q '^chorus:RevisionShape a sh:NodeShape' "$ttl"
+  grep -q '^chorus:Version a owl:Class' "$ttl"
 }
 
 @test "AC4: a document replaced through the door keeps a Revision, and the document page carries the History fold" {
