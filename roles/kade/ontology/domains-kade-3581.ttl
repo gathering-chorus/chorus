@@ -156,8 +156,7 @@ chorus:routePath a owl:DatatypeProperty ;
 
 chorus:httpMethod a owl:DatatypeProperty ;
     rdfs:label "httpMethod" ;
-    rdfs:comment "The HTTP method this endpoint answers: GET, POST, PUT, DELETE." ;
-    rdfs:domain chorus:Endpoint ;
+    rdfs:comment "The HTTP verb: GET, POST, PUT, DELETE, PATCH. No rdfs:domain — shared across Endpoint 712, APISurface 29 and Contract. On an APISurface it is the mutation verb the envelope gates; reads stay open (#3618). #4250." ;
     rdfs:range xsd:string .
 
 chorus:PageShape a sh:NodeShape ;

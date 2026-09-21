@@ -238,9 +238,6 @@ chorus:contractDescription a owl:DatatypeProperty ;
     rdfs:comment "What this contract endpoint does." ;
     rdfs:domain chorus:Contract .
 
-chorus:httpMethod a owl:DatatypeProperty ;
-    rdfs:label "HTTP method" ;
-    rdfs:domain chorus:Contract .
 
 # --- Pages (#1923) ---
 
@@ -331,14 +328,13 @@ chorus:hasCodeFile a owl:ObjectProperty ;
     rdfs:domain chorus:SubDomain ;
     rdfs:range chorus:CodeFile .
 
-chorus:filePath a owl:DatatypeProperty ;
-    rdfs:label "file path" ;
-    rdfs:domain chorus:CodeFile .
 
 chorus:fileType a owl:DatatypeProperty ;
     rdfs:label "file type" ;
     rdfs:comment "ts, js, rs, sh, etc." ;
-    rdfs:domain chorus:CodeFile .
+    rdfs:domain chorus:CodeFile ;
+    rdfs:range xsd:string ;
+    chorus:writeOwner chorus:crawler .
 
 # --- Services (#1924) ---
 
@@ -496,11 +492,6 @@ chorus:hasValueStreamStep a owl:ObjectProperty ;
 # automated: VISIBLY provisional (Jeff: volatility drops as steps get implemented).
 # Enforcement is gc-step-implemented (ADR-058 registry): a step of an AUTOMATED
 # stream (athena, werk) without implementedBy is a rows-are-violations red.
-chorus:implementedBy a owl:DatatypeProperty ;
-    rdfs:label "implemented by" ;
-    rdfs:comment "The invocable implementation (binary or script name) that runs this value-stream step. A verb rename updates this value; the step label (the WORK) survives it." ;
-    rdfs:domain chorus:ValueStreamStep ;
-    rdfs:range xsd:string .
 
 # #3902 — the vocabulary's semantic version. DECLARED at the pen (athena-model
 # bumps it on every TBox write: retire=MAJOR, additive=MINOR; ledger at
@@ -518,11 +509,6 @@ chorus:hasValueStream a owl:ObjectProperty ;
     rdfs:domain chorus:ValueStreamStep ;
     rdfs:range chorus:ValueStream .
 
-chorus:hasDomain a owl:ObjectProperty ;
-    rdfs:label "has domain" ;
-    rdfs:comment "This document relates to this domain. 1:N — a cross-cutting doc may tag multiple domains." ;
-    rdfs:domain chorus:Document ;
-    rdfs:range chorus:SubDomain .
 
 chorus:hasOwner a owl:ObjectProperty ;
     rdfs:label "has owner" ;
@@ -1218,7 +1204,7 @@ chorus:severityIfLeaked a owl:DatatypeProperty ;
     rdfs:domain chorus:Credential ;
     rdfs:range xsd:string .
 
-chorus:source a owl:DatatypeProperty ;
+chorus:credentialSource a owl:DatatypeProperty ;
     rdfs:label "source" ;
     rdfs:comment "Where the credential lives at runtime: 'env-var' | 'plist' | 'keychain' | 'fuseki' | 'external'. Names the surface, not the value." ;
     rdfs:domain chorus:Credential ;
@@ -1510,7 +1496,17 @@ chorus:PropertyShape a sh:NodeShape ;
         sh:path chorus:propertyScope ;
         sh:minCount 1 ;
         sh:datatype xsd:string ;
-    ] .
+    ] ;
+    # #3845 — propertyValueType is MANDATORY: the /effective fetch's graph pattern
+    # requires it, so a Property written without it is silently invisible to the
+    # cascade — the door must refuse what the resolver cannot see.
+    sh:property [
+        sh:path chorus:propertyValueType ;
+        sh:minCount 1 ;
+        sh:datatype xsd:string ;
+    ] ;
+    chorus:instancesGraph "urn:chorus:ontology" ;
+    chorus:generatedBy "athena-model" .
 
 # --- PropertyKey registry — config-as-data governance (ADR-044) ---
 # A property key is a REGISTERED, governed vocabulary, not a free-text field.
@@ -1580,11 +1576,6 @@ chorus:propertyValueRef a owl:ObjectProperty ;
     rdfs:comment "object-key value: an IRI to a node of the key's edgeTargetClass. The only carrier that works for object keys — sh:class needs a real node, the edge must be SPARQL-traversable. Carrier-matches-kind: a Property has propertyValue (datatype) XOR propertyValueRef (object). ADR-044 Decision 3." ;
     rdfs:domain chorus:Property .
 
-chorus:expiresAt a owl:DatatypeProperty ;
-    rdfs:label "expires at" ;
-    rdfs:comment "Instance-level: this value expires at T (only when the key.lifecycleEnabled). ADR-044 Decision 4." ;
-    rdfs:domain chorus:Property ;
-    rdfs:range xsd:dateTime .
 
 chorus:sourceCard a owl:DatatypeProperty ;
     rdfs:label "source card" ;
@@ -1629,7 +1620,9 @@ chorus:PropertyKeyShape a sh:NodeShape ;
         sh:path chorus:lifecycleEnabled ;
         sh:maxCount 1 ;
         sh:datatype xsd:boolean ;
-    ] .
+    ] ;
+    chorus:instancesGraph "urn:chorus:ontology" ;
+    chorus:generatedBy "athena-model" .
 
 
 
@@ -1762,11 +1755,8 @@ chorus:VersionShape a sh:NodeShape ;
     sh:property [ sh:path chorus:changedIn    ; sh:maxCount 1 ; sh:datatype xsd:string ] ;
     sh:property [ sh:path chorus:ownedBy      ; sh:minCount 1 ; sh:class chorus:Principal ] .
 chorus:overview           a owl:DatatypeProperty ; rdfs:label "overview" ; rdfs:range xsd:string .
-chorus:asIs               a owl:DatatypeProperty ; rdfs:label "as-is" ; rdfs:range xsd:string .
-chorus:toBe               a owl:DatatypeProperty ; rdfs:label "to-be" ; rdfs:range xsd:string .
 chorus:implementationPlan a owl:DatatypeProperty ; rdfs:label "implementation plan" ; rdfs:range xsd:string .
 chorus:pathToClose        a owl:DatatypeProperty ; rdfs:label "path to close" ; rdfs:range xsd:string .
-chorus:notInScope         a owl:DatatypeProperty ; rdfs:label "not in scope" ; rdfs:range xsd:string .
 chorus:gaps               a owl:DatatypeProperty ; rdfs:label "gaps" ; rdfs:range xsd:string .
 
 # --- object props absent from v0.3.0 ---
@@ -2033,12 +2023,16 @@ chorus:hasThreshold a owl:ObjectProperty ;
 
 chorus:EmitContractShape a sh:NodeShape ;
     sh:targetClass chorus:EmitContract ;
-    sh:property [ sh:path chorus:declaresMetric ; sh:minCount 1 ; sh:class chorus:Metric ] .
+    sh:property [ sh:path chorus:declaresMetric ; sh:minCount 1 ; sh:class chorus:Metric ] ;
+    chorus:instancesGraph "urn:chorus:ontology" ;
+    chorus:generatedBy "athena-model" .
 
 chorus:MetricShape a sh:NodeShape ;
     sh:targetClass chorus:Metric ;
     sh:property [ sh:path chorus:metricKind ; sh:minCount 1 ; sh:maxCount 1 ; sh:datatype xsd:string ] ;
-    sh:property [ sh:path chorus:emittedAs ; sh:minCount 1 ; sh:datatype xsd:string ] .
+    sh:property [ sh:path chorus:emittedAs ; sh:minCount 1 ; sh:datatype xsd:string ] ;
+    chorus:instancesGraph "urn:chorus:ontology" ;
+    chorus:generatedBy "athena-model" .
 
 
 
@@ -2191,9 +2185,7 @@ chorus:Facilitating a chorus:InteractionMode ;
 
 chorus:hasDomain a owl:ObjectProperty ;
     rdfs:label "has domain" ;
-    rdfs:comment "True containment — a product has this domain as a constituent part. Loom hasDomain Principles." ;
-    rdfs:domain chorus:Product ;
-    rdfs:range chorus:Domain .
+    rdfs:comment "True containment — the subject has this domain as a constituent part. Loom hasDomain Principles; a Document tags the domains it relates to. No rdfs:domain and no rdfs:range — shared across Document 321, Endpoint 264, Product 91, UnitDomainMapping 87, Skill 37, Page 20, SubDomain 1, and the two earlier declarations disagreed about whether the object is a Domain or a SubDomain (#4250)." .
 
 # chorus:hasSubProduct RETIRED (#3603) — containment is chorus:partOf child→parent.
 
@@ -2381,9 +2373,6 @@ chorus:evaluatedBy a owl:ObjectProperty ;
     rdfs:domain chorus:StageTransition ;
     rdfs:range chorus:Gate .
 
-chorus:result a owl:ObjectProperty ;
-    rdfs:domain chorus:StageTransition ;
-    rdfs:range chorus:GateResult .
 
 chorus:bouncedTo a owl:ObjectProperty ;
     rdfs:domain chorus:BounceBack ;
@@ -2439,8 +2428,6 @@ chorus:channelName a owl:DatatypeProperty ;
     rdfs:domain chorus:Role ;
     rdfs:range xsd:string .
 
-chorus:cardId a owl:DatatypeProperty ;
-    rdfs:range xsd:string .
 
 chorus:blastRadius a owl:DatatypeProperty ;
     rdfs:range xsd:string .
@@ -2749,12 +2736,6 @@ chorus:File a owl:Class ;
     rdfs:comment "A file on disk in the chorus tree. Hydrated by the crawler from CHORUS_ROOT walk. The chorus:File class is the first concrete Hydratable; its predicates demonstrate the writeOwner contract." ;
     chorus:hydratesFromSource "**/*" .
 
-chorus:filePath a owl:DatatypeProperty ;
-    rdfs:label "file path" ;
-    rdfs:comment "Absolute path of the file under CHORUS_ROOT. Identity predicate for chorus:File." ;
-    rdfs:domain chorus:File ;
-    rdfs:range xsd:string ;
-    chorus:writeOwner chorus:crawler .
 
 chorus:fileSha a owl:DatatypeProperty ;
     rdfs:label "file sha" ;
@@ -2816,36 +2797,6 @@ chorus:FileShape a sh:NodeShape ;
     sh:property [ sh:path chorus:fileDependsOn    ; sh:class chorus:Domain ] ;
     sh:property [ sh:path chorus:stale            ; sh:datatype xsd:boolean ] .
 
-chorus:EmitContractShape a sh:NodeShape ;
-    sh:targetClass chorus:EmitContract ;
-    sh:property [ sh:path chorus:declaresMetric ; sh:minCount 1 ] ;
-    chorus:instancesGraph "urn:chorus:ontology" ;
-    chorus:generatedBy "athena-model" .
-
-chorus:MetricShape a sh:NodeShape ;
-    sh:targetClass chorus:Metric ;
-    sh:property [ sh:path chorus:metricKind ; sh:minCount 1 ] ;
-    sh:property [ sh:path chorus:emittedAs ; sh:minCount 1 ] ;
-    chorus:instancesGraph "urn:chorus:ontology" ;
-    chorus:generatedBy "athena-model" .
-
-chorus:PropertyShape a sh:NodeShape ;
-    sh:targetClass chorus:Property ;
-    sh:property [ sh:path chorus:propertyKey ; sh:minCount 1 ] ;
-    sh:property [ sh:path chorus:propertyValue ; sh:minCount 1 ] ;
-    # #3845 — propertyValueType is MANDATORY: the /effective fetch's graph pattern
-    # requires it, so a Property written without it is silently invisible to the
-    # cascade — the door must refuse what the resolver cannot see.
-    sh:property [ sh:path chorus:propertyValueType ; sh:minCount 1 ] ;
-    chorus:instancesGraph "urn:chorus:ontology" ;
-    chorus:generatedBy "athena-model" .
-
-chorus:PropertyKeyShape a sh:NodeShape ;
-    sh:targetClass chorus:PropertyKey ;
-    sh:property [ sh:path chorus:keyName ; sh:minCount 1 ] ;
-    sh:property [ sh:path chorus:propertyKind ; sh:minCount 1 ] ;
-    chorus:instancesGraph "urn:chorus:ontology" ;
-    chorus:generatedBy "athena-model" .
 
 # =====================================================================
 # #3870 — Services-domain runtime vocabulary (ServiceInstance/ScheduledJob)
@@ -2917,11 +2868,6 @@ chorus:deployedCommit a owl:DatatypeProperty ;
     rdfs:domain chorus:ServiceInstance ;
     rdfs:range xsd:string .
 
-chorus:cdhash a owl:DatatypeProperty ;
-    rdfs:label "cdhash" ;
-    rdfs:comment "Code-directory hash of the installed binary (the identity macOS TCC actually trusts, #2734). From binary.deployed; lets drift between installed and running binaries be asked as a query." ;
-    rdfs:domain chorus:ServiceInstance ;
-    rdfs:range xsd:string .
 
 chorus:binaryPath a owl:DatatypeProperty ;
     rdfs:label "binary path" ;

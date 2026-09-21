@@ -86,8 +86,8 @@ chorus:provenance a owl:AnnotationProperty ;
 
 # --- shared instance properties (the jsonl witness fields, modeled) ---------
 chorus:cardId a owl:DatatypeProperty ;
-    rdfs:range xsd:integer ;
-    rdfs:comment "The card a record belongs to. Shared across event classes; no rdfs:domain on purpose." .
+    rdfs:range xsd:string ;
+    rdfs:comment "The card a record belongs to. Shared across event classes; no rdfs:domain on purpose. Range is string, not integer: every live row is a string — TestResult 22167, TestSuiteRun 1206 (#4250)." .
 chorus:ts a owl:DatatypeProperty ;
     rdfs:range xsd:dateTime ;
     rdfs:comment "Event timestamp (witness ts, ms epoch normalized to xsd:dateTime at ingest). DAL also stamps dcterms:created/modified + dcterms:creator on every write (audit envelope — core vocab)." .
@@ -188,8 +188,9 @@ chorus:hasReviewVerdict a owl:ObjectProperty ;
 chorus:hasDemoVerdict a owl:ObjectProperty ;
     rdfs:domain chorus:Card ; rdfs:range chorus:DemoVerdict .
 chorus:cdhash a owl:DatatypeProperty ;
-    rdfs:domain chorus:Deployment ; rdfs:range xsd:string ;
-    rdfs:comment "The signed binary identity that survives TCC; the deployed==running discriminator." .
+    rdfs:label "cdhash" ;
+    rdfs:comment "Code-directory hash of the installed binary (the identity macOS TCC actually trusts, #2734). From binary.deployed; lets drift between installed and running binaries be asked as a query. No rdfs:domain — shared by ServiceInstance and Deployment, the deployed==running discriminator (#4250)." ;
+    rdfs:range xsd:string .
 
 # =============================================================================
 # DOMAIN: version-control
@@ -262,7 +263,8 @@ chorus:SourceFile a owl:Class ;
 chorus:filePath a owl:DatatypeProperty ;
     rdfs:label "file path" ;
     rdfs:range xsd:string ;
-    rdfs:comment "Repo-relative path. On SourceFile it IS the identity; on Test it is half the identity (filePath + testName); on QualityFinding it locates the finding. Deliberately no rdfs:domain — shared across the file-anchored classes." .
+    chorus:writeOwner chorus:crawler ;
+    rdfs:comment "Repo-relative path. On SourceFile it IS the identity; on Test it is half the identity (filePath + testName); on QualityFinding it locates the finding. Deliberately no rdfs:domain — shared across the file-anchored classes: CodeFile 6294, Test 8691, TestResult 40513, Endpoint 713, SourceFile 1019, Page 83 (#4250)." .
 
 chorus:testName a owl:DatatypeProperty ;
     rdfs:label "test name" ;

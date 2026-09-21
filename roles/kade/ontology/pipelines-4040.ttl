@@ -35,8 +35,8 @@ chorus:executor a owl:DatatypeProperty ;
 
 chorus:implementedBy a owl:DatatypeProperty ;
     rdfs:label "implemented by" ;
-    rdfs:comment "The mechanism that runs the step (verb, script, service)." ;
-    rdfs:domain chorus:PipelineStep .
+    rdfs:comment "The invocable implementation (binary or script name) that runs a step. A verb rename updates this value; the step label (the WORK) survives it. No rdfs:domain — shared across ValueStreamStep 26 and PipelineStep 18 (#4250)." ;
+    rdfs:range xsd:string .
 
 chorus:forPipeline a owl:ObjectProperty ;
     rdfs:label "for pipeline" ;

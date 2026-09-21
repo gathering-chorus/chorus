@@ -47,7 +47,12 @@ count_hardcoded() {
 # resolution, they often keep target/release/ as a fallback, which still
 # counts (the file matches the grep). Lower the baseline only when a file
 # stops referencing target/release/ entirely.
-BASELINE=25  # 26→25: #3556 switched to git grep (tracked-only) — the prior grep -r count included an untracked referrer
+BASELINE=26  # 25→26 (#4250): werk-deploy demo_env.rs hooks_binary_too_old() reads the
+             # WERK's own freshly built chorus-hooks to check it carries the run-dir
+             # override (#4227). That one must NOT resolve through PATH — PATH finds the
+             # INSTALLED binary, which is the single thing the check cannot trust.
+             # 26→25 before that: #3556 switched to git grep (tracked-only) — the prior
+             # grep -r count included an untracked referrer
 
 current=$(count_hardcoded)
 

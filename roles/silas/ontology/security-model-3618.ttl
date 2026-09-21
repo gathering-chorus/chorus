@@ -195,11 +195,6 @@ chorus:requiresScope a owl:DatatypeProperty ;
     rdfs:domain chorus:APISurface ;
     rdfs:range xsd:string .
 
-chorus:httpMethod a owl:DatatypeProperty ;
-    rdfs:label "http method" ;
-    rdfs:comment "The mutation verb this surface gates: POST | PUT | DELETE | PATCH. The envelope is mutation-only; reads stay open. #3618." ;
-    rdfs:domain chorus:APISurface ;
-    rdfs:range xsd:string .
 
 chorus:pathPrefix a owl:DatatypeProperty ;
     rdfs:label "path prefix" ;
