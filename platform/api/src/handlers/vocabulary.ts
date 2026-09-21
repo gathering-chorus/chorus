@@ -44,40 +44,66 @@ export interface VocabBinding {
 
 const local = (v: string | undefined): string => String(v || '').split(/[#/]/).pop() || '';
 
+/** Upsert the scheme this row belongs to. Split out of buildVocabulary to keep
+ *  it under the complexity ratchet — the fold does three jobs and each one is
+ *  easier to read alone. */
+function upsertScheme(schemes: Map<string, Scheme>, row: VocabBinding, schemeId: string): Scheme {
+  const scheme = schemes.get(schemeId) ?? {
+    id: schemeId,
+    prefLabel: row.schemeLabel?.value || schemeId,
+    terms: [],
+  };
+  if (!scheme.description && row.schemeDesc?.value) scheme.description = row.schemeDesc.value;
+  schemes.set(schemeId, scheme);
+  return scheme;
+}
+
+/** A concept arrives once per OPTIONAL combination, so every row repeats these
+ *  fields and only the first one carrying each should win. Split out of
+ *  upsertTerm to keep both under the complexity ratchet. */
+function takeFirstValues(term: Term, row: VocabBinding): void {
+  const def = row.def?.value;
+  if (def && !term.definition) term.definition = def;
+
+  const match = row.match?.value;
+  if (match && !term.exactMatch) term.exactMatch = local(match);
+
+  const note = row.note?.value;
+  if (note && !term.note) term.note = note;
+
+  const alt = row.alt?.value;
+  if (alt && !term.altLabels.includes(alt)) term.altLabels.push(alt);
+}
+
+/** Merge one row into its term. */
+function upsertTerm(terms: Map<string, Term>, scheme: Scheme, row: VocabBinding, id: string): void {
+  const key = `${scheme.id}/${id}`;
+  const existing = terms.get(key);
+  const term: Term = existing ?? {
+    id,
+    scheme: scheme.id,
+    prefLabel: row.pref?.value || id,
+    altLabels: [],
+  };
+
+  takeFirstValues(term, row);
+
+  if (!existing) {
+    scheme.terms.push(term);
+    terms.set(key, term);
+  }
+}
+
 export function buildVocabulary(rows: VocabBinding[]): Vocabulary {
   const schemes = new Map<string, Scheme>();
   const terms = new Map<string, Term>();
 
   for (const row of rows) {
-    const conceptIri = row.concept?.value;
-    const schemeIri = row.scheme?.value;
-    if (!conceptIri || !schemeIri) continue;
-
-    const schemeId = local(schemeIri);
-    const scheme = schemes.get(schemeId) ?? {
-      id: schemeId,
-      prefLabel: row.schemeLabel?.value || schemeId,
-      ...(row.schemeDesc?.value ? { description: row.schemeDesc.value } : {}),
-      terms: [],
-    };
-    if (!scheme.description && row.schemeDesc?.value) scheme.description = row.schemeDesc.value;
-    schemes.set(schemeId, scheme);
-
-    const id = local(conceptIri);
-    const key = `${schemeId}/${id}`;
-    const term = terms.get(key) ?? {
-      id,
-      scheme: schemeId,
-      prefLabel: row.pref?.value || id,
-      altLabels: [],
-    };
-    if (row.def?.value && !term.definition) term.definition = row.def.value;
-    if (row.match?.value && !term.exactMatch) term.exactMatch = local(row.match.value);
-    if (row.note?.value && !term.note) term.note = row.note.value;
-    const alt = row.alt?.value;
-    if (alt && !term.altLabels.includes(alt)) term.altLabels.push(alt);
-    if (!terms.has(key)) scheme.terms.push(term);
-    terms.set(key, term);
+    // A concept with no scheme cannot be scoped, so it is dropped rather than
+    // pooled with everything else — pooling would invent collisions.
+    if (!row.concept?.value || !row.scheme?.value) continue;
+    const scheme = upsertScheme(schemes, row, local(row.scheme.value));
+    upsertTerm(terms, scheme, row, local(row.concept.value));
   }
 
   for (const s of schemes.values()) {
@@ -89,6 +115,8 @@ export function buildVocabulary(rows: VocabBinding[]): Vocabulary {
   return {
     schemes: [...schemes.values()].sort((a, b) => a.prefLabel.localeCompare(b.prefLabel)),
     termCount: all.length,
+    // NAMED, not counted: "which terms have no definition" is a worklist, and
+    // a number alone cannot be worked.
     withoutDefinition: all.filter((t) => !t.definition).map((t) => t.prefLabel).sort(),
   };
 }
