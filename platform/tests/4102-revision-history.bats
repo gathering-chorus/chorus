@@ -39,7 +39,7 @@ revisions_of() { curl -sf --max-time 10 "$OWL_URL/versions?limit=100000" | pytho
   body="$(printf '%s' "$row" | python3 -c '
 import sys, json
 r = json.load(sys.stdin)
-drop = ("name","version","changedAt","changedIn","modified","created","ownedBy","label","iri")
+drop = ("name","version","writeCount","changedAt","changedIn","modified","created","ownedBy","label","iri")
 # a read serves edge targets MINTED (chorus:value-stream-step-directing); the
 # write mint adds the kind prefix itself (ADR-040 Rule 0), so a body echoing a
 # read must hand back the bare name or the door refuses it double-prefixed.
@@ -54,7 +54,11 @@ def bare(v):
 keep = {k: bare(v) for k, v in r.items() if k not in drop and v not in ("", None, [])}
 keep["gaps"] = (r.get("gaps") or "") + " (bats-4102 touched)"
 print(json.dumps(keep))')"
-  run curl -s --max-time "${FUSEKI_WRITE_TIMEOUT:-120}" -o "$BATS_TEST_TMPDIR/put" -w '%{http_code}' -X PUT "$OWL_URL/products/spine" -H "Authorization: Bearer $TOK" -H 'Content-Type: application/json' -d "$body"
+  # #4265 — this PUT sent no X-Landed-Commit while every other write in the file
+  # does. Two consequences, both real: the door stamps changedIn "unknown" (which
+  # 4101 then reports as a bad row), and a write with no land looks like the same
+  # land as the one before it, so the version it should have kept is swallowed.
+  run curl -s --max-time "${FUSEKI_WRITE_TIMEOUT:-120}" -o "$BATS_TEST_TMPDIR/put" -w '%{http_code}' -X PUT "$OWL_URL/products/spine" -H "Authorization: Bearer $TOK" -H 'Content-Type: application/json' -H "X-Landed-Commit: $(git -C "$ROOT" rev-parse HEAD)" -d "$body"
   [ "$output" = "200" ] || { cat "$BATS_TEST_TMPDIR/put"; false; }
   after="$(revisions_of products/spine)"
   n="$(printf '%s' "$after" | python3 -c 'import sys,json; print(len(json.load(sys.stdin)))')"
@@ -153,7 +157,7 @@ for same in ("promise", "vision", "structure", "audience"):
   body="$(printf '%s' "$row" | python3 -c '
 import sys, json
 r = json.load(sys.stdin)
-drop = ("name","version","changedAt","changedIn","modified","created","ownedBy","iri","creator","label")
+drop = ("name","version","writeCount","changedAt","changedIn","modified","created","ownedBy","iri","creator","label")
 def bare(v):
     if isinstance(v, list): return [bare(x) for x in v]
     if isinstance(v, str):
@@ -193,7 +197,7 @@ product_body() {  # $1 = product name, $2 = marker text
 import sys, json
 rows = json.load(sys.stdin)["data"]
 r = [x for x in rows if x["name"] == sys.argv[1]][0]
-drop = ("name","version","changedAt","changedIn","modified","created","ownedBy","label","iri")
+drop = ("name","version","writeCount","changedAt","changedIn","modified","created","ownedBy","label","iri")
 def bare(v):
     if isinstance(v, list): return [bare(x) for x in v]
     if isinstance(v, str):
