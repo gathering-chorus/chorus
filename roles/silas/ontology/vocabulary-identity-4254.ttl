@@ -26,6 +26,25 @@
 #     runtime     what runs, and where
 #     governance  what refuses
 #
+# WHICH WORD IS THE PREFERRED ONE — Wren's rule, and the one I got wrong first.
+#
+#   The prefLabel is the word the MODEL already uses: the spelling a query
+#   would match today, not a nicer or more readable one.
+#
+# My first pass authored "expiry", "permission mode", "credential record",
+# "owner" and "host". Each was a seventh word for something that already had
+# six, invented inside the file whose only job is to stop that. They are
+# altLabels now and the model's spelling is preferred: expiresAt · mode ·
+# KeyRegistryEntry · ownedBy · Machine · Role · Gate · roleKind · Credential ·
+# Session.
+#
+# "stage" is the deliberate exception — ruling 1 splits the four stage names
+# out of Gate into a class that does not exist yet, so there is no model
+# spelling to defer to. It is marked proposed rather than agreed.
+#
+# A concept never carries an altLabel equal to its own prefLabel; the report
+# reads that as one word claimed twice, and it is right to.
+#
 # A word that answers two of those is TWO concepts, never one concept with an
 # altLabel — an altLabel claims the two words mean the same thing, and these
 # do not. `agent` and `session` are each two entries for exactly that reason.
@@ -99,7 +118,8 @@ vocab:launch-agent a skos:Concept ;
 
 vocab:agent-credential a skos:Concept ;
     skos:inScheme vocab:identity ;
-    skos:prefLabel "role credential" ;
+    skos:prefLabel "Credential" ;
+    skos:altLabel "role credential" ;
     skos:altLabel "per-agent credential" ;
     skos:definition "The client credential a role signs in with, at ~/.chorus/identity/<role>/cred.json, owner-only 0600." ;
     skos:exactMatch chorus:Credential ;
@@ -120,7 +140,7 @@ vocab:governance a skos:ConceptScheme ;
 
 vocab:role a skos:Concept ;
     skos:inScheme vocab:identity ;
-    skos:prefLabel "role" ;
+    skos:prefLabel "Role" ;
     skos:altLabel "AgentRole" ;
     skos:altLabel "HumanRole" ;
     skos:definition "A hat a principal holds. Silas, Wren and Kade are roles held by agents; Jeff holds one held by a person." ;
@@ -131,8 +151,8 @@ vocab:role a skos:Concept ;
 
 vocab:role-kind a skos:Concept ;
     skos:inScheme vocab:identity ;
-    skos:prefLabel "role kind" ;
-    skos:altLabel "roleKind" ;
+    skos:prefLabel "roleKind" ;
+    skos:altLabel "role kind" ;
     skos:definition "Whether a role is held by an agent or a person. Two values: agent, human." ;
     skos:exactMatch chorus:roleKind ;
     dcterms:description "Ruling 3. Three values are live today — agent 3, human 1, automation 2 — and 'automation' appears in no declared enum. Those two rows describe services, and the word for a service is service." .
@@ -141,7 +161,8 @@ vocab:role-kind a skos:Concept ;
 
 vocab:owner a skos:Concept ;
     skos:inScheme vocab:identity ;
-    skos:prefLabel "owner" ;
+    skos:prefLabel "ownedBy" ;
+    skos:altLabel "owner" ;
     skos:altLabel "ownerRole" ;
     skos:altLabel "hasOwner" ;
     skos:definition "The principal a thing belongs to. Ranges over Principal, never over Role — a role is a hat, and a hat cannot own." ;
@@ -152,8 +173,8 @@ vocab:owner a skos:Concept ;
 
 vocab:permission-mode a skos:Concept ;
     skos:inScheme vocab:identity ;
-    skos:prefLabel "permission mode" ;
-    skos:altLabel "mode" ;
+    skos:prefLabel "mode" ;
+    skos:altLabel "permission mode" ;
     skos:definition "What a permission allows: acl:Read or acl:Write, always as an IRI." ;
     skos:exactMatch chorus:mode ;
     dcterms:description "Ruling 5. 47 values are acl: IRIs and one is the string Write. A string that looks like an IRI is not one, and no query matching the IRI will ever find it." .
@@ -162,8 +183,8 @@ vocab:permission-mode a skos:Concept ;
 
 vocab:expiry a skos:Concept ;
     skos:inScheme vocab:identity ;
-    skos:prefLabel "expiry" ;
-    skos:altLabel "expiresAt" ;
+    skos:prefLabel "expiresAt" ;
+    skos:altLabel "expiry" ;
     skos:definition "The time something stops being valid. 37 rows today, all on Session." ;
     skos:exactMatch chorus:expiresAt ;
     dcterms:description "Ruling 7. Four declarations exist — domain Session and domain Property, range xsd:dateTime and xsd:string — for one idea. The Property sense (a property value's lifecycle, ADR-044) has zero rows." .
@@ -175,8 +196,8 @@ vocab:expiry a skos:Concept ;
 
 vocab:credential-record a skos:Concept ;
     skos:inScheme vocab:identity ;
-    skos:prefLabel "credential record" ;
-    skos:altLabel "KeyRegistryEntry" ;
+    skos:prefLabel "KeyRegistryEntry" ;
+    skos:altLabel "credential record" ;
     skos:definition "The row describing a credential — its key id, its type, and the principal it belongs to. Five rows today, all typed KeyRegistryEntry." ;
     skos:exactMatch chorus:KeyRegistryEntry ;
     dcterms:description "Ruling 8, HALF-ANSWERED on purpose. chorus:Credential has been declared since #2659 and has zero rows; KeyRegistryEntry has the five. One of the two survives — Jeff's ruling says not both — and this row names the idea without choosing the class." .
@@ -185,7 +206,7 @@ vocab:credential-record a skos:Concept ;
 
 vocab:gate a skos:Concept ;
     skos:inScheme vocab:governance ;
-    skos:prefLabel "gate" ;
+    skos:prefLabel "Gate" ;
     skos:altLabel "guard" ;
     skos:altLabel "bouncer" ;
     skos:altLabel "door" ;
@@ -196,6 +217,7 @@ vocab:gate a skos:Concept ;
 vocab:stage a skos:Concept ;
     skos:inScheme vocab:governance ;
     skos:prefLabel "stage" ;
+    skos:note "PROPOSED, not agreed. The only preferred word here that is not the model's spelling, because ruling 1 splits these four out of Gate into a class that does not exist yet." ;
     skos:definition "A step of the werk a card moves through — build, design, direction, proving. A place in the pipeline, not a check." ;
     dcterms:description "Ruling 1's other half. BuildGate, DesignGate, DirectionGate and ProvingGate are typed Gate and are stage names, so the class means two things at once. They move to their own class on the follow-on." .
 
@@ -205,7 +227,8 @@ vocab:stage a skos:Concept ;
 
 vocab:login-session a skos:Concept ;
     skos:inScheme vocab:identity ;
-    skos:prefLabel "session" ;
+    skos:prefLabel "Session" ;
+    skos:altLabel "login session" ;
     skos:definition "A principal's signed-in period — it has a start, an expiry, and the credential it was opened with." ;
     skos:exactMatch chorus:Session ;
     dcterms:description "The identity sense. Do NOT use for a terminal session; that is the runtime one." .
@@ -219,8 +242,8 @@ vocab:terminal-session a skos:Concept ;
 
 vocab:host a skos:Concept ;
     skos:inScheme vocab:runtime ;
-    skos:prefLabel "host" ;
-    skos:altLabel "machine" ;
+    skos:prefLabel "Machine" ;
+    skos:altLabel "host" ;
     skos:altLabel "box" ;
     skos:definition "A physical machine we run on. Two of them: Library and Bedroom." ;
     dcterms:description "The code harvest found three senses of host — the machine, an HTTP Host header, and a hosting relationship. Only the machine is named here; the other two are not our words to control." .
