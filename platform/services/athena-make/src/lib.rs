@@ -3595,6 +3595,34 @@ pub fn tests_manifest(t: &RouteTable) -> String {
     // serve — cases that 404 forever and get read as "the door refused", which is
     // the hollow-check shape this card exists to kill. If the model declares no
     // route for a verb, no case is emitted for it: absent, never invented.
+    // #4267 — say which required fields are EDGES and what class each points at.
+    //
+    // Without this the manifest names ten fields to send and gives a runner no
+    // way to tell `label` from `atStep`. A runner fills both with a made-up
+    // string, the door answers 422 unknown-target, and the create case can never
+    // pass — which is exactly why no one has ever demonstrated a full cycle on a
+    // generated API. The kind is not new information: `fields` has carried
+    // `atStep|edge:ValueStreamStep` alongside `comment|datatype:string` all
+    // along. It simply was never projected into the test manifest.
+    //
+    // An edge needs a real subject of its target class, so the manifest says the
+    // class and the runner resolves one from the live collection. A manifest that
+    // invented a target would be back where it started.
+    let kind_of = |name: &str| -> Option<String> {
+        t.fields.iter().find_map(|f| {
+            let (n, rest) = f.split_once('|')?;
+            if n != name { return None; }
+            Some(match rest.strip_prefix("edge:") {
+                Some(target) => format!("{{ \"field\": \"{n}\", \"kind\": \"edge\", \"targetClass\": \"{t}\" }}",
+                    n = json_escape(n), t = json_escape(target)),
+                None => format!("{{ \"field\": \"{n}\", \"kind\": \"literal\" }}", n = json_escape(n)),
+            })
+        })
+    };
+    let required_kinds = t.write_required.iter()
+        .map(|f| kind_of(f).unwrap_or_else(|| format!("{{ \"field\": \"{f}\", \"kind\": \"literal\" }}", f = json_escape(f))))
+        .collect::<Vec<_>>().join(", ");
+
     let read_back = if t.write_required.is_empty() {
         // NEGATIVE-PROOF guard: comparing zero fields passes for every response.
         // Say the read-back is absent rather than emit a check that cannot fail.
@@ -3616,11 +3644,12 @@ pub fn tests_manifest(t: &RouteTable) -> String {
         quartet.push(format!("{{ \"step\": \"delete\", \"method\": \"DELETE\", \"path\": \"{r}\", \"auth\": \"owner\", \"expectStatus\": 204 }}", r = json_escape(&r)));
     }
     format!(
-        "{{\n  \"class\": \"{class}\",\n  \"plural\": \"{plural}\",\n  \"unit\": {{ \"routes\": [{routes}], \"mandatory\": [{mandatory}], \"secured\": [{secured}] }},\n  \"quartet\": {{ \"throwawaySubject\": \"{throwaway}\", \"refuseIfNoCleanup\": true, \"steps\": [\n    {quart}\n  ] }},\n  \"conformance\": [\n    {conf}\n  ],\n  \"security\": [\n    {sec}\n  ],\n  \"constraints\": [\n    {cons}\n  ]\n}}\n",
+        "{{\n  \"class\": \"{class}\",\n  \"plural\": \"{plural}\",\n  \"unit\": {{ \"routes\": [{routes}], \"mandatory\": [{mandatory}], \"secured\": [{secured}] }},\n  \"requiredFields\": [{required_kinds}],\n  \"quartet\": {{ \"throwawaySubject\": \"{throwaway}\", \"refuseIfNoCleanup\": true, \"steps\": [\n    {quart}\n  ] }},\n  \"conformance\": [\n    {conf}\n  ],\n  \"security\": [\n    {sec}\n  ],\n  \"constraints\": [\n    {cons}\n  ]\n}}\n",
         class = json_escape(&class), plural = json_escape(&plural),
         routes = arr(&t.routes), mandatory = arr(&t.mandatory), secured = arr(&t.secured),
         throwaway = json_escape(&throwaway), quart = quartet.join(",\n    "),
-        conf = conformance.join(",\n    "), sec = security.join(",\n    "), cons = constraints.join(",\n    ")
+        conf = conformance.join(",\n    "), sec = security.join(",\n    "), cons = constraints.join(",\n    "),
+        required_kinds = required_kinds
     )
 }
 
