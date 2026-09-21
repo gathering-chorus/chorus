@@ -23,6 +23,18 @@ setup() {
 }
 live() {
   [ "${RUN_INTEGRATION:-}" = "true" ] || skip "integration (live owl-api serve) — RUN_INTEGRATION=true to run"
+  # #4265 — this suite WRITES: it replaces products/spine and a document to prove
+  # a version is kept. Run from a werk against canonical :3360 it edits Jeff's
+  # live rows, and it did twice on 2026-09-21 (bats4102same71493 at 17:09,
+  # bats4102b9728 at 18:06), each time leaving a red 4101 then had to report.
+  # The pipeline runs this file in the pre-deploy test leg, where OWL_URL still
+  # defaults to canonical — so the refusal lives here, not in the runner.
+  case "$OWL_URL" in
+    *:3360*)
+      if [ -n "${CHORUS_ROOT:-}" ] && [ "${CHORUS_ROOT}" != "${CHORUS_HOME:-/Users/jeffbridwell/CascadeProjects/chorus}" ]; then
+        skip "refusing canonical :3360 from a werk — this suite writes; point OWL_URL at the variant"
+      fi ;;
+  esac
   curl -sf --max-time 5 "$OWL_URL/health" >/dev/null || skip "owl-api absent (#3528)"
   TOK="$("$ROOT/platform/scripts/chorus-identity-token" wren 2>/dev/null)"
   [ -n "$TOK" ] || skip "no identity token for wren"
@@ -52,7 +64,11 @@ def bare(v):
         return n
     return v
 keep = {k: bare(v) for k, v in r.items() if k not in drop and v not in ("", None, [])}
-keep["gaps"] = (r.get("gaps") or "") + " (bats-4102 touched)"
+# #4265 — strip any marker a previous run left before appending, the way
+# product_body already does. Appending blind made this suite non-idempotent:
+# run one passed, left "(bats-4102 touched)" in the row, and run two compared
+# a snapshot that already carried it — 9/9 then 5/9 with no code change.
+keep["gaps"] = (r.get("gaps") or "").split(" (bats-4102")[0] + " (bats-4102 touched)"
 print(json.dumps(keep))')"
   # #4265 — a DISTINCT commit per run, not HEAD. The door's rule is one commit
   # one version (#4102), so a second run under the same HEAD is the same change
