@@ -53,7 +53,15 @@ import sys, json
 rows = json.load(sys.stdin); ok = {"draft","current","superseded","retired"}
 # #4265 — the stamp is chorus:writeCount since #4211 renamed it; reading
 # r["version"] measured a field the door has never written.
-bad = [(r.get("name"), r.get("docState"), r.get("writeCount")) for r in rows if r.get("docState") not in ok or not str(r.get("writeCount","")).isdigit()]
+# #4265 — writeCount counts writes THROUGH THE DOOR. A row authored once and
+# never replaced has written zero times, so an absent stamp is 0, not a
+# missing field. Requiring a digit on every row demanded a rewrite that never
+# happened. A PRESENT stamp must still be a number — a non-numeric one (the
+# "bats4102same71493" class) is still bad.
+def count_ok(r):
+    w = r.get("writeCount")
+    return w in (None, "") or str(w).isdigit()
+bad = [(r.get("name"), r.get("docState"), r.get("writeCount")) for r in rows if r.get("docState") not in ok or not count_ok(r)]
 print(sys.argv[1], "bad", bad); sys.exit(1 if bad or not rows else 0)' "$k"
   done
 }
