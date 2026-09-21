@@ -105,6 +105,27 @@ chorus:Vertebra a owl:Class ;
     chorus:supersededBy chorus:ValueStreamStep ;
     rdfs:seeAlso chorus:ValueStreamStep .
 
+# #4265 (Silas's diagnosis, Kade's keystroke) — the v1 stream individuals. They
+# are the objects of six live chorus:builtBy edges and were never declared
+# anywhere: not in this file, not in any commit, not in any graph in the store.
+# A test asking whether they are deprecated could only ever read "no". Declared
+# here and marked, so the grammar's v1 set is complete and retirable rather
+# than half-absent.
+chorus:chorusStream a chorus:ValueStream ;
+    rdfs:label "Chorus stream (v1)" ;
+    owl:deprecated true ;
+    rdfs:comment "v1 stream individual, superseded by the ValueStreamStep/inStream grammar (#3697). Kept declared because six chorus:builtBy edges still point at it; retire the edges first." .
+
+chorus:gatheringStream a chorus:ValueStream ;
+    rdfs:label "Gathering stream (v1)" ;
+    owl:deprecated true ;
+    rdfs:comment "v1 stream individual, superseded by #3697. See chorus:chorusStream." .
+
+chorus:lifeStream a chorus:ValueStream ;
+    rdfs:label "Life stream (v1)" ;
+    owl:deprecated true ;
+    rdfs:comment "v1 stream individual, superseded by #3697. See chorus:chorusStream." .
+
 
 
 

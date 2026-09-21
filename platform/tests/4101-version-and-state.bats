@@ -81,6 +81,10 @@ print(sys.argv[1], "bad", bad); sys.exit(1 if bad or not rows else 0)' "$k"
   done
   for shape in ProductShape ServiceShape DocumentShape; do
     awk "/^chorus:$shape a sh:NodeShape/,/ \\.\$/" "$ttl" | grep -q 'sh:path chorus:docState.*"draft" "current" "superseded" "retired"' || { echo "$shape lacks docState"; false; }
-    awk "/^chorus:$shape a sh:NodeShape/,/ \\.\$/" "$ttl" | grep -q 'sh:path chorus:version' || { echo "$shape lacks version"; false; }
+    # #4265 — was 'sh:path chorus:version'. #4211 renamed that stamp to
+    # chorus:writeCount (declared; chorus:version is declared nowhere), so the
+    # assertion named a property the model had already retired. All three shapes
+    # carry writeCount, verified 2026-09-21.
+    awk "/^chorus:$shape a sh:NodeShape/,/ \\.\$/" "$ttl" | grep -q 'sh:path chorus:writeCount' || { echo "$shape lacks writeCount"; false; }
   done
 }

@@ -5,7 +5,13 @@
 # no instancesGraph, so the ADR-051 fallback resolved to an empty domain graph
 # and the collection served rows=0 (Jeff: "instances seems 100% empty").
 # After the declaration lands + model deploy, every one must serve its rows AND
-# say so in provenance: servedFrom == generatedFrom.graph == urn:chorus:ontology.
+# say so in provenance via servedFrom.
+#
+# #4265 — this asserted servedFrom == generatedFrom.graph. They are DIFFERENT
+# fields: servedFrom is where the ROWS live, generatedFrom is where the SHAPE
+# lives (it carries a shape name and version beside the graph). Reading them as
+# one source has now been filed as a defect three times — Wren 06-23, Silas
+# 07-08, me today — so the misreading is recorded here rather than re-derived.
 #
 # RED before the model deploy, GREEN after — the transition is the evidence.
 # (The DETECTOR for future undeclared tenancy is Silas's #3765 SERVED column —
@@ -47,15 +53,22 @@ for line in $CASES; do
   body=$(curl -sf "$OWL$served_route") || { echo "FAIL $cls — $OWL$served_route unreachable"; fails=$((fails+1)); continue; }
   rows=$(printf '%s' "$body" | python3 -c "import json,sys; print(len(json.load(sys.stdin).get('data',[])))")
   served=$(printf '%s' "$body" | python3 -c "import json,sys; print(json.load(sys.stdin).get('servedFrom',''))")
-  gen=$(printf '%s' "$body" | python3 -c "import json,sys; print(json.load(sys.stdin).get('generatedFrom',{}).get('graph',''))")
-  if [ "$rows" -lt "$min" ]; then
-    echo "FAIL $cls — rows=$rows < floor $min (servedFrom=$served)"; fails=$((fails+1))
-  elif [ "$served" != "urn:chorus:ontology" ]; then
-    echo "FAIL $cls — servedFrom=$served, expected urn:chorus:ontology"; fails=$((fails+1))
-  elif [ "$served" != "$gen" ]; then
-    echo "FAIL $cls — servedFrom=$served != generatedFrom.graph=$gen (provenance split)"; fails=$((fails+1))
+  # #4265 — two assertions removed here, both instance-data (Jeff, 2026-09-21:
+  # "if a test tests data instance i dont think it belongs here like counts or
+  # specific names or values"):
+  #   1. the per-class row floors (25, 18, ...) were a snapshot of one sweep
+  #   2. servedFrom == "urn:chorus:ontology" was pinned to where rows lived in
+  #      August. A row's home is its own domain graph (Jeff, 2026-09-03), so the
+  #      classes now serve from domains:security / domains:spine and this read
+  #      as broken while the model was doing exactly what it was told.
+  # What survives is behaviour: the collection serves SOMETHING, and its
+  # provenance agrees with itself. That cannot be made green by moving a row.
+  if [ "$rows" -eq 0 ]; then
+    echo "FAIL $cls — serves no rows at all (servedFrom=$served)"; fails=$((fails+1))
+  elif [ -z "$served" ]; then
+    echo "FAIL $cls — serves $rows rows and will not say from where (servedFrom empty)"; fails=$((fails+1))
   else
-    echo "ok   $cls — rows=$rows servedFrom=$served (== generatedFrom.graph)"
+    echo "ok   $cls — rows=$rows servedFrom=$served"
   fi
 done
 

@@ -1258,7 +1258,12 @@ fn run_bats_cases(werk: &str, suite: &str) -> (bool, Vec<(String, String)>, Stri
             // and needs explicit authority) kept reporting "0 pass, 1 fail".
             // Two scorers, one taught. Both must agree or the fix is invisible.
             let refused = code == Some(3);
-            let ok = success || refused;
+            // #4265 — rc=2 + the suite's own "UNMEASURED" is the same shape as
+            // rc=3: the suite declined to measure. It scored as a failure, so
+            // two suites that correctly refuse to write to production were red
+            // every night for doing the right thing.
+            let unmeasured = werk_test::self_declared_unmeasured(code, &text);
+            let ok = success || refused || unmeasured;
             if !ok {
                 // #4065 — the failing suite's own last lines go to STDOUT, each
                 // prefixed with the suite path, so nightly-suites.sh's per-unit
@@ -1275,6 +1280,12 @@ fn run_bats_cases(werk: &str, suite: &str) -> (bool, Vec<(String, String)>, Stri
             if refused && cases.is_empty() {
                 cases.push((
                     format!("SELF-REFUSED rc=3 — {} declined to run here", suite),
+                    "skip".to_string(),
+                ));
+            }
+            if unmeasured && cases.is_empty() {
+                cases.push((
+                    format!("UNMEASURED rc=2 — {} measured nothing here", suite),
                     "skip".to_string(),
                 ));
             }

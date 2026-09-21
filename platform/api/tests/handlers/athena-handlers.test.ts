@@ -14,17 +14,9 @@ import {
   type AthenaHealthDeps,
 } from '../../src/handlers/athena-health';
 import {
-  fetchAthenaSubdomains,
-  type AthenaSubdomainsDeps,
-} from '../../src/handlers/athena-subdomains';
-import {
   fetchAthenaOwners,
   type AthenaOwnersDeps,
 } from '../../src/handlers/athena-owners';
-import {
-  fetchAthenaSubdomainDetail,
-  type AthenaSubdomainDetailDeps,
-} from '../../src/handlers/athena-subdomain-detail';
 import {
   fetchAthenaSubdomainCompleteness,
   type AthenaCompletenessDeps,
@@ -79,58 +71,6 @@ describe('fetchAthenaHealth', () => {
   });
 });
 
-// ── fetchAthenaSubdomains ──
-
-describe('fetchAthenaSubdomains', () => {
-  const baseDeps: AthenaSubdomainsDeps = { sparql: emptySparql, loadQuery };
-
-  test('returns 200 with empty data array when no bindings', async () => {
-    const r = await fetchAthenaSubdomains(baseDeps, {});
-    expect(r.status).toBe(200);
-    const body = r.body as any;
-    expect(Array.isArray(body.data)).toBe(true);
-    expect(body._meta.source).toBe('athena');
-    expect(body._meta.count).toBe(0);
-  });
-
-  test('maps bindings to subdomain objects', async () => {
-    const deps: AthenaSubdomainsDeps = {
-      sparql: async () => ({
-        results: {
-          bindings: [{
-            sd: { value: 'urn:gathering:domain/cards-service' },
-            label: { value: 'Cards Service' },
-            ownerLabel: { value: 'Wren' },
-            stepLabel: { value: 'Directing' },
-          }],
-        },
-      }),
-      loadQuery,
-    };
-    const r = await fetchAthenaSubdomains(deps, {});
-    expect(r.status).toBe(200);
-    const body = r.body as any;
-    expect(body.data.length).toBe(1);
-    expect(body.data[0].label).toBe('Cards Service');
-    expect(body.data[0].owner).toBe('Wren');
-    expect(body.data[0].step).toBe('Directing');
-    expect(body._meta.count).toBe(1);
-  });
-
-  test('returns 500 envelope when SPARQL throws', async () => {
-    const deps: AthenaSubdomainsDeps = { sparql: throwingSparql, loadQuery };
-    const r = await fetchAthenaSubdomains(deps, {});
-    expect(r.status).toBe(500);
-    expect((r.body as any)._meta.error).toBe(true);
-  });
-});
-
-// fetchAthenaProducts RETIRED (#3603) — athena-make :3360/products is the product API.
-
-// fetchAthenaSteps RETIRED (#3702) — athena-make /valuestreams is the value-stream API.
-
-// ── fetchAthenaOwners ──
-
 describe('fetchAthenaOwners', () => {
   test('returns 200 with array data and athena source', async () => {
     const deps: AthenaOwnersDeps = { sparql: emptySparql, loadQuery };
@@ -143,43 +83,6 @@ describe('fetchAthenaOwners', () => {
 });
 
 // ── fetchAthenaSubdomainDetail ──
-
-describe('fetchAthenaSubdomainDetail', () => {
-  function baseDeps(overrides: Partial<AthenaSubdomainDetailDeps> = {}): AthenaSubdomainDetailDeps {
-    return { sparql: emptySparql as any, loadQuery, ...overrides };
-  }
-
-  test('returns 404 when subdomain not found (empty bindings)', async () => {
-    const r = await fetchAthenaSubdomainDetail(baseDeps(), 'nonexistent');
-    expect(r.status).toBe(404);
-    const body = r.body as any;
-    expect(body.data.error).toContain('not found');
-    expect(body.data.suggestion).toBeDefined();
-  });
-
-  test('returns 200 with mapped data when binding present', async () => {
-    const deps = baseDeps({
-      sparql: async () => ({
-        results: {
-          bindings: [{
-            sd: { value: 'urn:gathering:domain/cards-service' },
-            label: { value: 'Cards Service' },
-            ownerLabel: { value: 'Wren' },
-            stepLabel: { value: 'Directing' },
-          }],
-        },
-      }),
-    });
-    const r = await fetchAthenaSubdomainDetail(deps, 'cards-service');
-    expect(r.status).toBe(200);
-    const body = r.body as any;
-    expect(body._meta.query_name).toBe('subdomain-detail');
-    expect(body.data.label).toBe('Cards Service');
-    expect(body.data.owner).toBe('Wren');
-  });
-});
-
-// ── fetchAthenaSubdomainCompleteness ──
 
 describe('fetchAthenaSubdomainCompleteness', () => {
   test('returns 404 for unknown subdomain (empty bindings)', async () => {

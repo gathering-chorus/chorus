@@ -64,7 +64,7 @@ function defaultEnvelope(name: string, data: unknown, durationMs: number, extra:
 }
 
 function buildMetaQuery(sdUri: string): string {
-  return `PREFIX chorus: <https://jeffbridwell.com/chorus#> PREFIX rdfs: <http://www.w3.org/2000/01/rdf-schema#> SELECT ?label ?comment ?ownerLabel ?stepLabel (COUNT(DISTINCT ?consumed) AS ?consumesCount) (COUNT(DISTINCT ?consumer) AS ?consumedByCount) WHERE { GRAPH <urn:chorus:ontology> { <${sdUri}> a chorus:SubDomain . OPTIONAL { <${sdUri}> rdfs:label ?label } OPTIONAL { <${sdUri}> rdfs:comment ?comment } OPTIONAL { <${sdUri}> chorus:ownedBy ?owner . ?owner rdfs:label ?ownerLabel } OPTIONAL { <${sdUri}> chorus:primaryStep ?step . ?step rdfs:label ?stepLabel } OPTIONAL { <${sdUri}> chorus:consumes ?consumed } OPTIONAL { ?consumer chorus:consumes <${sdUri}> } } } GROUP BY ?label ?comment ?ownerLabel ?stepLabel`;
+  return `PREFIX chorus: <https://jeffbridwell.com/chorus#> PREFIX rdfs: <http://www.w3.org/2000/01/rdf-schema#> SELECT ?label ?comment ?ownerLabel ?stepLabel (COUNT(DISTINCT ?consumed) AS ?consumesCount) (COUNT(DISTINCT ?consumer) AS ?consumedByCount) WHERE { GRAPH <urn:chorus:domains:domains> { <${sdUri}> a chorus:Domain . OPTIONAL { <${sdUri}> rdfs:label ?label } OPTIONAL { <${sdUri}> rdfs:comment ?comment } OPTIONAL { <${sdUri}> chorus:ownedBy ?owner } OPTIONAL { <${sdUri}> chorus:primaryStep ?step } OPTIONAL { <${sdUri}> chorus:consumes ?consumed } OPTIONAL { ?consumer chorus:consumes <${sdUri}> } } OPTIONAL { GRAPH ?og { ?owner rdfs:label ?ownerLabel } } OPTIONAL { GRAPH ?sg { ?step rdfs:label ?stepLabel } } } GROUP BY ?label ?comment ?ownerLabel ?stepLabel`;
 }
 
 function buildCountQuery(sdUri: string, predicate: string): string {

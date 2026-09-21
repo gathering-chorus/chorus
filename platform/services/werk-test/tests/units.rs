@@ -3,7 +3,7 @@
 //! escape, and the advisory→blocking gate decision.
 use werk_test::{
     affected_units, check_plan, expired_cases, gate_outcome, is_self_modifying,
-    failed_emits_missing_message, level_for_event, parse_quarantine_rows, quarantine_report,
+    failed_emits_missing_message, level_for_event, self_declared_unmeasured, parse_quarantine_rows, quarantine_report,
     spine_args, unit_failure_message, CheckKind, GateOutcome, PlannedCheck,
     Quarantined, TestUnit,
 };
@@ -1438,4 +1438,29 @@ fn the_message_gate_catches_an_emit_without_one() {
             &[("check", "cargo"), ("message", msg.as_str())]);
     "#;
     assert!(failed_emits_missing_message(good).is_empty());
+}
+
+// --- #4265: a suite that declares UNMEASURED is not a failure ---
+
+#[test]
+fn rc2_with_the_declaration_is_unmeasured() {
+    assert!(self_declared_unmeasured(
+        Some(2),
+        "UNMEASURED: API_BASE is the production chorus-api.\nNot a red — nothing was measured.",
+    ));
+}
+
+// NEGATIVE PROOF — both halves are required. An rc=2 with no declaration is
+// still a failure, and the declaration alone does not excuse a real failing
+// exit. Without these two the check could not tell a refusing suite from a
+// broken one, which is the whole distinction it exists to make.
+#[test]
+fn rc2_without_the_declaration_is_still_a_failure() {
+    assert!(!self_declared_unmeasured(Some(2), "3 tests, 1 failed"));
+}
+
+#[test]
+fn the_declaration_alone_does_not_excuse_a_failing_exit() {
+    assert!(!self_declared_unmeasured(Some(1), "UNMEASURED appears in this text"));
+    assert!(!self_declared_unmeasured(None, "UNMEASURED appears in this text"));
 }

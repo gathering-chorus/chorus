@@ -49,32 +49,12 @@ describeIntegration('retired product endpoints (#3603)', () => {
   });
 });
 
-describeIntegration('GET /api/athena/subdomains', () => {
-  test('returns 31 subdomains with owner and step', async () => {
-    const res = await fetch(`${API}/api/athena/subdomains`);
-    expect(res.status).toBe(200);
-    const body = await res.json();
-    expect(body._meta.count).toBeGreaterThanOrEqual(40);
-    for (const sd of body.data) {
-      expect(sd.label).toBeDefined();
-      expect(sd.owner).toBeDefined();
-      expect(sd.step).toBeDefined();
-    }
-  });
-
-  test('filters by owner', async () => {
-    // Count threshold dropped from 5 to 1 — graph owner distribution drifted
-    // (kade owns 3 now). Filter correctness (owner == kade for every row) is
-    // still asserted; only the arbitrary "should have at least N" is relaxed.
-    const res = await fetch(`${API}/api/athena/subdomains?owner=kade`);
-    expect(res.status).toBe(200);
-    const body = await res.json();
-    expect(body._meta.count).toBeGreaterThanOrEqual(1);
-    for (const sd of body.data) {
-      expect(sd.owner.toLowerCase()).toBe('kade');
-    }
-  });
-});
+// #4265 — DELETED: the list, owner-filter and step-filter cases asserted
+// chorus:SubDomain itself. The class is retired (#4216/#4237) and the routes'
+// query files (subdomains.sparql, subdomain-detail.sparql) were deleted with
+// it, so these 500'd on ENOENT. Wren's call 2026-09-21: don't bring them back
+// as "returns 88 domains" — that is the count-the-data shape Jeff called
+// brittle. The list surface is GET :3360/domains/domains.
 
 describeIntegration('GET /api/athena/subdomains/:id/blast-radius', () => {
   test('cards-service blast-radius returns a consumers array', async () => {
@@ -114,111 +94,14 @@ describeIntegration('GET /api/athena/owners', () => {
 
 // ── #1860: Data-driven filter tests against spreadsheet counts ──
 
-describeIntegration('GET /api/athena/subdomains — owner filters', () => {
-  // Count thresholds relaxed — distribution drifted post-restructure.
-  // Filter correctness is still asserted per row below.
-  test.each([
-    ['wren', 1],
-    ['silas', 1],
-    ['kade', 1],
-    ['jeff', 1],
-  ])('owner=%s returns >= %i subdomains', async (owner, minExpected) => {
-    const res = await fetch(`${API}/api/athena/subdomains?owner=${owner}`);
-    expect(res.status).toBe(200);
-    const body = await res.json();
-    expect(body._meta.count).toBeGreaterThanOrEqual(minExpected);
-    for (const sd of body.data) {
-      expect(sd.owner.toLowerCase()).toBe(owner);
-    }
-  });
-});
-
-describeIntegration('GET /api/athena/subdomains — step filters', () => {
-  // Count thresholds relaxed post-restructure. Filter-returns-at-least-one
-  // is the invariant; exact counts are data-dependent.
-  test.each([
-    ['building', 1],
-    ['proving', 1],
-    ['shaping', 1],
-    ['designing', 1],
-    ['directing', 1],
-  ])('step=%s returns >= %i subdomains', async (step, minExpected) => {
-    const res = await fetch(`${API}/api/athena/subdomains?step=${step}`);
-    expect(res.status).toBe(200);
-    const body = await res.json();
-    expect(body._meta.count).toBeGreaterThanOrEqual(minExpected);
-  });
-});
-
-describeIntegration('GET /api/athena/subdomains/:id — detail endpoint', () => {
-  test('cards-service returns owner, step, consumedBy', async () => {
-    const res = await fetch(`${API}/api/athena/subdomains/cards-service`);
-    expect(res.status).toBe(200);
-    const body = await res.json();
-    expect(body._meta.query_name).toBe('subdomain-detail');
-    expect(body.data.label).toBe('Cards (Service)');
-    expect(body.data.owner).toBe('Wren');
-    expect(body.data.step).toBe('Directing');
-    // #4079: the ">= 3 consumers" here counted live-only product rows that #4071 retired;
-    // the model holds no Service->Service consumes edges yet (a model gap, not this
-    // route's defect). Assert the shape the page renders, not a spring snapshot.
-    expect(Array.isArray(body.data.consumedBy)).toBe(true);
-  });
-
-  test('detail includes consumes (dependencies) array', async () => {
-    const res = await fetch(`${API}/api/athena/subdomains/cards-service`);
-    expect(res.status).toBe(200);
-    const body = await res.json();
-    expect(Array.isArray(body.data.consumes)).toBe(true);
-  });
-
-  test('nonexistent returns 404 with suggestion', async () => {
-    const res = await fetch(`${API}/api/athena/subdomains/nonexistent`);
-    expect(res.status).toBe(404);
-    const body = await res.json();
-    expect(body.data.error).toContain('not found');
-    expect(body.data.suggestion).toBeDefined();
-  });
-
-  // #1901 — Collection pattern: domains contain typed instances via chorus:contains
-  test('loom-principles contains Principle instances via chorus:contains', async () => {
-    const res = await fetch(`${API}/api/athena/subdomains/loom-principles`);
-    expect(res.status).toBe(200);
-    const body = await res.json();
-    expect(Array.isArray(body.data.instances)).toBe(true);
-    // #4079: the ">= 7 with label and comment" assertions counted a spring model: chorus:contains
-    // edges from the domain to rdfs-labelled rows. Principles are now served by athena-make
-    // (chorus:loom-principles-principle-*) and practices link through chorus:expresses, so the
-    // hand-coded detail route lists what the ontology graph still holds. Assert the shape the
-    // page renders; the count belongs to the model's own surface.
-    for (const inst of body.data.instances) expect(inst.label).toBeDefined();
-  });
-
-  test('loom-practices contains Practice instances via chorus:contains', async () => {
-    const res = await fetch(`${API}/api/athena/subdomains/loom-practices`);
-    expect(res.status).toBe(200);
-    const body = await res.json();
-    expect(Array.isArray(body.data.instances)).toBe(true);
-    // #4079: the ">= 7 with label and comment" assertions counted a spring model: chorus:contains
-    // edges from the domain to rdfs-labelled rows. Principles are now served by athena-make
-    // (chorus:loom-principles-principle-*) and practices link through chorus:expresses, so the
-    // hand-coded detail route lists what the ontology graph still holds. Assert the shape the
-    // page renders; the count belongs to the model's own surface.
-    for (const inst of body.data.instances) {
-      expect(inst.label).toBeDefined();
-      expect(inst.comment).toBeDefined();
-      expect(inst.type).toBe('Practice');
-    }
-  });
-
-  test('domain without instances returns empty instances array', async () => {
-    const res = await fetch(`${API}/api/athena/subdomains/cards-service`);
-    expect(res.status).toBe(200);
-    const body = await res.json();
-    expect(Array.isArray(body.data.instances)).toBe(true);
-    expect(body.data.instances.length).toBe(0);
-  });
-});
+// #4265 — DELETED with the list cases above: step filters and the whole
+// :id detail block (detail, consumes, 404-with-suggestion, the two loom
+// contains cases, empty-instances). All read subdomain-detail.sparql, which
+// was deleted with the class. Wren measured the replacement 2026-09-21:
+// GET :3360/domains/domains/<id> serves iri, label, comment only — owner,
+// step, consumes and consumedBy are no longer exposed, so repointing these
+// would assert fields nobody serves. The lost four are content, not tests;
+// Wren is naming that separately.
 
 describeIntegration('GET /api/athena/machines', () => {
   test('returns machines with labels', async () => {
@@ -621,4 +504,3 @@ describeIntegration('GET /api/athena/subdomains/:id/completeness', () => {
 });
 
 // #1868 — Code discovery: auto-populate code files per domain from filesystem
-// #1869 — Tests sub-domain graph: test coverage mapping

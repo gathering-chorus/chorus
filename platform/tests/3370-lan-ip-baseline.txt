@@ -53,3 +53,10 @@ platform/services/chorus-hooks/src/hooks/buzz_reply_test.rs:3
 #   rejects a lookalike (192.168.86.36.evil.example). Fixture data, not a pin —
 #   nothing goes dark if a machine changes address, because nothing calls these.
 platform/api/tests/cors-origin-2436.test.ts:3
+# #4265 — the machine registry. These two addresses are the DATA: a Machine row
+# recording where the machine is, in an rdfs:comment beside its label. The
+# ratchet exists to stop code pinning an address it should look up; this file IS
+# the place to look it up, so a pin here is the opposite of the defect. Baselined
+# at 2 rather than excluded, so adding a third machine still has to be a decision
+# somebody makes on purpose.
+designing/data/machine-instances.ttl:2

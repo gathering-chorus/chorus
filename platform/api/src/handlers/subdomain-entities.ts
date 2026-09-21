@@ -71,7 +71,12 @@ async function subdomainExists(
   deps: DomainFacetDeps,
   sdUri: string,
 ): Promise<boolean> {
-  const query = `PREFIX chorus: <https://jeffbridwell.com/chorus#> SELECT ?s WHERE { GRAPH <urn:chorus:ontology> { <${sdUri}> a chorus:SubDomain } } LIMIT 1`;
+  // #4265 — the gate asked the ontology graph for a chorus:SubDomain. SubDomain
+  // is retired: the rows are chorus:Domain in urn:chorus:domains:domains (88 of
+  // them, cards-service among them), so every per-domain facet route answered
+  // 404 for a domain that exists. Measured 2026-09-21: ontology holds 41 Domain
+  // rows (the class declarations), the domains graph holds the 88 instances.
+  const query = `PREFIX chorus: <https://jeffbridwell.com/chorus#> SELECT ?s WHERE { GRAPH <urn:chorus:domains:domains> { <${sdUri}> a chorus:Domain } } LIMIT 1`;
   const result = await deps.sparql(query);
   return result.results.bindings.length > 0;
 }

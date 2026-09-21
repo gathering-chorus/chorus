@@ -78,9 +78,10 @@ check "visible on Athena canonical principles list" "1" "$([ "$N" -gt 0 ] && ech
 N=$(curl -sL "$READ_URL_LOOM_REDIRECT" | grep -c "$TEST_LABEL")
 check "visible via /api/loom/principles 308 redirect" "1" "$([ "$N" -gt 0 ] && echo 1 || echo 0)"
 
-# 4. Athena subdomain detail surfaces it (cross-graph UNION read)
-N=$(curl -s "$READ_URL_ATHENA_DETAIL" | grep -c "$TEST_LABEL")
-check "visible on /api/athena/subdomains/loom-principles" "1" "$([ "$N" -gt 0 ] && echo 1 || echo 0)"
+# 4. DELETED #4265 — read /api/athena/subdomains/loom-principles, which 500s:
+# SubDomain was retired (#4216/#4237) and subdomain-detail.sparql was deleted
+# with it. Visibility of a written principle is already proven by step 3 against
+# the canonical read, so nothing is lost but the dead route.
 
 # 5. PUT updates idempotently
 UPDATED_LABEL="${TEST_LABEL} updated"
@@ -112,14 +113,11 @@ check "Loom GET Location points to canonical Athena path" "$READ_URL_CANONICAL" 
 # detail query UNIONs both graphs so the subdomain page surfaces 27 contained
 # Principle instances. When SubDomain migrates last under #2469, this test is
 # the canary that the read path didn't break.
-INSTANCE_COUNT=$(curl -s "$READ_URL_ATHENA_DETAIL" | python3 -c "
-import json, sys
-insts = json.load(sys.stdin)['data'].get('instances', [])
-principles = [i for i in insts if i.get('type') == 'Principle']
-print(len(principles))
-" 2>/dev/null || echo 0)
-check "cross-graph UNION returns >=27 Principle instances on subdomain detail (floor)" "1" \
-  "$([ "$INSTANCE_COUNT" -ge 27 ] && echo 1 || echo 0)"
+# DELETED #4265 — two reasons, either alone sufficient. It read the retired
+# subdomain detail route, and it asserted a floor of 27 Principle instances:
+# Jeff, 2026-09-21, "if a test tests data instance i dont think it belongs here
+# like counts or specific names or values". A floor like that goes red the day
+# somebody retires a principle on purpose.
 
 # 9. chorus:order propagates to API → page render. Permaculture parents must come
 # back as the first 14 entries of the principles list, ordered 1..14 by chorus:order.

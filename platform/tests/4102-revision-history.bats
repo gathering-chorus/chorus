@@ -109,12 +109,25 @@ for same in ("promise", "vision", "structure", "audience"):
   done
 }
 
-@test "AC1: the model declares Revision, its shape and its claim on the products domain" {
+# #4265 (Silas's diagnosis, 2026-09-21) — this named chorus:Revision, which is
+# declared in no TTL and no graph. #4211 renamed the class to chorus:Version and
+# moved its rows to the provenance domain; the class moved and 16,186 rows kept
+# the old type, so the test read "the model is broken" when the truth was "the
+# name changed". Declaring Revision again would have resurrected what #4211
+# retired. Asks about the class that exists.
+@test "AC1: the model declares Version and its shape" {
   ttl="$ROOT/roles/silas/ontology/chorus.ttl"
-  grep -q '^chorus:Revision a owl:Class' "$ttl"
-  awk '/^chorus:RevisionShape a sh:NodeShape/,/ \.$/' "$ttl" | grep -q 'sh:path chorus:snapshot'
-  awk '/^chorus:RevisionShape a sh:NodeShape/,/ \.$/' "$ttl" | grep -q 'sh:path chorus:ofRow'
-  grep -q 'chorus:definesVocabulary chorus:Product, chorus:Revision' "$ROOT/roles/wren/ontology/domains-wren-silas.ttl"
+  grep -q '^chorus:Version a owl:Class' "$ttl"
+  awk '/^chorus:VersionShape a sh:NodeShape/,/ \.$/' "$ttl" | grep -q 'sh:path chorus:snapshot'
+  awk '/^chorus:VersionShape a sh:NodeShape/,/ \.$/' "$ttl" | grep -q 'sh:path chorus:ofRow'
+  awk '/^chorus:VersionShape a sh:NodeShape/,/ \.$/' "$ttl" | grep -q 'chorus:instancesGraph "urn:chorus:domains:provenance"'
+}
+
+# NEGATIVE PROOF — the awk range reads the shape it names and not the next one.
+# A range expression that matched the whole file would pass every sh:path above.
+@test "AC1 NEGATIVE PROOF: the shape range does not match a path the shape lacks" {
+  ttl="$ROOT/roles/silas/ontology/chorus.ttl"
+  ! awk '/^chorus:VersionShape a sh:NodeShape/,/ \.$/' "$ttl" | grep -q 'sh:path chorus:noSuchPath'
 }
 
 @test "AC4: a document replaced through the door keeps a Revision, and the document page carries the History fold" {
