@@ -1108,6 +1108,52 @@ pub fn run_athena_deploy() -> Result<String, String> {
         let text = std::fs::read_to_string(&manifest_path)
             .map_err(|e| fail(&format!("domain-set-manifest-unreadable:{manifest_path}:{e}")))?;
         let sets = parse_domain_sets(&text).map_err(|e| fail(&e))?;
+
+        // #4254 — one word, one concept, per scheme. Runs over every file in
+        // every set, because the two concepts claiming one word usually sit in
+        // two roles' files, the way #4250's duplicate properties did.
+        //
+        // REPORTS, never refuses. Jeff, 2026-09-21: non-blocking until the
+        // vocabulary stabilises — we start from colliding words, so a refusal
+        // on day one would stop every deploy and take the nightly with it. The
+        // count it prints IS the trigger for the card that flips it to a
+        // refusal: when the count reaches zero, the guard can bite.
+        let mut vocab_files: Vec<(String, String)> = Vec::new();
+        for ds in &sets {
+            for f in &ds.files {
+                let path = format!("{root}/{f}");
+                if let Ok(text) = std::fs::read_to_string(&path) {
+                    vocab_files.push((f.clone(), text));
+                }
+            }
+        }
+        let collisions = duplicate_concept_labels(&vocab_files);
+        eprintln!(
+            "athena-deploy: vocabulary label collisions: {} (#4254, reporting only)",
+            collisions.len()
+        );
+        for c in collisions.iter().take(20) {
+            eprintln!("  {c}");
+        }
+        if !collisions.is_empty() {
+            eprintln!(
+                "  -> one skos:prefLabel per idea per scheme. A word that genuinely means \
+                 two things belongs in two schemes; otherwise one of the two is renamed."
+            );
+        }
+
+        // The blind spot, counted. Reported beside the collisions so the number
+        // that CAN go to zero is never read as "nothing repeats anywhere".
+        let repeats = cross_scheme_repeats(&vocab_files);
+        eprintln!(
+            "athena-deploy: vocabulary cross-scheme repeats: {} (#4254, reported not judged — \
+             not part of the refusal trigger)",
+            repeats.len()
+        );
+        for r in repeats.iter().take(20) {
+            eprintln!("  {r}");
+        }
+
         let ctx = StoreCtx {
             gsp: gsp.clone(),
             query: query.clone(),
@@ -1712,4 +1758,161 @@ mod tests {
         assert!(ok_http("200") && ok_http("201") && ok_http("204"));
         assert!(!ok_http("500") && !ok_http("000") && !ok_http("404"));
     }
+}
+
+/// #4254 — one word, one concept, per scheme.
+///
+/// A controlled vocabulary is only controlled if a second concept cannot
+/// quietly claim a label a first one already holds. SKOS makes `prefLabel`
+/// unique PER CONCEPT SCHEME, which is the scope this uses: "agent" as a
+/// principal kind and "agent" as a launchd unit are two schemes and two
+/// concepts, and that is legal. Both inside one scheme is the defect.
+///
+/// REPORTS, never refuses. Jeff, 2026-09-21: non-blocking until the vocabulary
+/// stabilises. We start from colliding words — a refusal on day one would stop
+/// every deploy and take the nightly with it. The count it prints is the
+/// trigger for the card that flips it to a refusal: when the count reaches
+/// zero, the guard can bite.
+///
+/// prefLabel and altLabel are both claims on a word, so both are compared, and
+/// the report says which kind each one is. Matching is case-insensitive:
+/// "LaunchAgent" and "launchagent" are the same claim on the same word.
+pub fn duplicate_concept_labels(files: &[(String, String)]) -> Vec<String> {
+    use std::collections::BTreeMap;
+
+    // (scheme, lowercased label) -> ["vocab:agent (prefLabel) at file:12", ...]
+    let mut claims: BTreeMap<(String, String), Vec<String>> = BTreeMap::new();
+
+    for (label_file, text) in files {
+        let mut subject = String::new();
+        let mut subject_line = 0usize;
+        let mut is_concept = false;
+        let mut scheme = String::new();
+        let mut pending: Vec<(String, String, usize)> = Vec::new(); // (kind, label, line)
+
+        let flush = |subject: &str,
+                         subject_line: usize,
+                         scheme: &str,
+                         pending: &mut Vec<(String, String, usize)>,
+                         claims: &mut BTreeMap<(String, String), Vec<String>>| {
+            if subject.is_empty() || scheme.is_empty() {
+                pending.clear();
+                return;
+            }
+            for (kind, word, line) in pending.drain(..) {
+                let at = if line == 0 { subject_line } else { line };
+                claims
+                    .entry((scheme.to_string(), word.to_lowercase()))
+                    .or_default()
+                    .push(format!("{subject} ({kind}) at {label_file}:{at}"));
+            }
+        };
+
+        for (i, raw) in text.lines().enumerate() {
+            let code = raw.split('#').next().unwrap_or("");
+            let trimmed = code.trim();
+            if trimmed.is_empty() {
+                continue;
+            }
+            // A new subject starts at column 0 with a prefixed name.
+            if !code.starts_with(char::is_whitespace) && trimmed.contains(':') {
+                flush(&subject, subject_line, &scheme, &mut pending, &mut claims);
+                subject = trimmed.split_whitespace().next().unwrap_or("").to_string();
+                subject_line = i + 1;
+                is_concept = trimmed.contains("skos:Concept");
+                scheme.clear();
+            }
+            if !is_concept {
+                continue;
+            }
+            if let Some(rest) = trimmed.strip_prefix("skos:inScheme") {
+                scheme = rest
+                    .trim()
+                    .trim_end_matches(&[';', '.'][..])
+                    .trim()
+                    .to_string();
+            }
+            for kind in ["skos:prefLabel", "skos:altLabel"] {
+                if let Some(rest) = trimmed.strip_prefix(kind) {
+                    if let Some(word) = rest.split('"').nth(1) {
+                        pending.push((
+                            kind.trim_start_matches("skos:").to_string(),
+                            word.to_string(),
+                            i + 1,
+                        ));
+                    }
+                }
+            }
+        }
+        flush(&subject, subject_line, &scheme, &mut pending, &mut claims);
+    }
+
+    claims
+        .into_iter()
+        .filter(|(_, at)| at.len() > 1)
+        .map(|((scheme, word), at)| {
+            format!("\"{word}\" claimed {} times in {scheme} — {}", at.len(), at.join(", "))
+        })
+        .collect()
+}
+
+/// #4254 — the cost of scoping the report within a scheme, made visible.
+///
+/// The report above cannot see across a scheme boundary, so every boundary is
+/// a place it is blind by construction. This counts the words that repeat
+/// ACROSS schemes: `agent` in identity and in runtime, `session` in both.
+///
+/// REPORTED, never judged, and NOT part of the refusal trigger. A legitimate
+/// homonym and a term filed in the wrong scheme look identical to a machine —
+/// only a person can tell them apart — so a guard here could not distinguish
+/// its two states and would be the #3734 shape. Wren's call, 2026-09-21.
+pub fn cross_scheme_repeats(files: &[(String, String)]) -> Vec<String> {
+    use std::collections::{BTreeMap, BTreeSet};
+    let mut by_word: BTreeMap<String, BTreeSet<String>> = BTreeMap::new();
+
+    for (_, text) in files {
+        let mut scheme = String::new();
+        let mut is_concept = false;
+        let mut pending: Vec<String> = Vec::new();
+        for raw in text.lines() {
+            let code = raw.split('#').next().unwrap_or("");
+            let trimmed = code.trim();
+            if trimmed.is_empty() {
+                continue;
+            }
+            if !code.starts_with(char::is_whitespace) && trimmed.contains(':') {
+                for w in pending.drain(..) {
+                    if !scheme.is_empty() {
+                        by_word.entry(w).or_default().insert(scheme.clone());
+                    }
+                }
+                is_concept = trimmed.contains("skos:Concept");
+                scheme.clear();
+            }
+            if !is_concept {
+                continue;
+            }
+            if let Some(rest) = trimmed.strip_prefix("skos:inScheme") {
+                scheme = rest.trim().trim_end_matches(&[';', '.'][..]).trim().to_string();
+            }
+            if let Some(rest) = trimmed.strip_prefix("skos:prefLabel") {
+                if let Some(w) = rest.split('"').nth(1) {
+                    pending.push(w.to_lowercase());
+                }
+            }
+        }
+        for w in pending {
+            if !scheme.is_empty() {
+                by_word.entry(w).or_default().insert(scheme.clone());
+            }
+        }
+    }
+
+    by_word
+        .into_iter()
+        .filter(|(_, schemes)| schemes.len() > 1)
+        .map(|(word, schemes)| {
+            format!("\"{word}\" in {}", schemes.into_iter().collect::<Vec<_>>().join(" and "))
+        })
+        .collect()
 }

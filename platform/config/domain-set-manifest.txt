@@ -37,3 +37,5 @@ values|urn:chorus:domains:values|roles/wren/ontology/values-4006.ttl
 services|urn:chorus:domains:services|designing/data/service-instances.ttl
 
 practices|urn:chorus:domains:practices|roles/kade/ontology/practices-3754-instances.ttl
+
+vocabulary|urn:chorus:domains:vocabulary|roles/silas/ontology/vocabulary-identity-4254.ttl

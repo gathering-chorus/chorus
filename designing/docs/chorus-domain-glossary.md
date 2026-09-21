@@ -4,6 +4,15 @@
 
 **Scope:** Chorus product domains only. Gathering-only domains out of scope.
 
+**The identity words have moved (#4254, 2026-09-21).** Who acts, what they hold, and
+how we reach them — person, agent, service, role credential, and the runtime sense of
+*agent* — are now rows in `urn:chorus:domains:vocabulary`, served at
+`/athena/vocabulary.html`. That page is generated from the store and filters as you
+type across the preferred word, every variant it replaces, and the definition, so
+searching a word we retired finds the word we agreed. It is the source; this file is
+not. The rest of this glossary still waits on the sign-off named above, which is why
+those words left it.
+
 **Sources:** chorus-product-tree.md (2026-05-14/16), athena-product-design.html (2026-05-15), chorus-service-design.html (2026-04-11/18), chorus-pulse-tobe.html, ADRs 024 / 028 / 031 / 032 / 095, all role CLAUDE.md files, TEAM_PROTOCOL.md, live Athena subdomain registry.
 
 **Open meta-decision (Jeff, 2026-05-28):** Werk is the team's universal protocol for moving any unit of work through state across all five value-streams (Shaping / Designing / Directing / Building / Proving), not a Building-step subproduct. Glossary entries below need to be reread under that reframe. The Werk entry already reflects it; Spine and most others probably do too. Flagged at the bottom.
@@ -156,6 +165,7 @@
   - Access control — AC is part of security; security is broader
   - Privacy — Security includes privacy; security is broader
 - **Canonical sub-terms:** Pre-commit hooks (write-scrubber), session boundaries, permission model (AllowList in settings.json), CVE tracking, audit trail (activity.md, spine events, git history).
+- **The identity vocabulary:** `/athena/vocabulary.html` — principal kinds, role kinds, credentials and their variants, live from the store rather than restated here. Eight collisions in these words were ruled on by Jeff on 2026-09-21 (#4254).
 - **Citations:** borg-service-design.md (cross-cutting section); CLAUDE.md Data Safety sections.
 - **Conflicts surfaced:** No security-service-design.html. Implementation live; formal threat model + per-layer risk assessment fragmentary.
 

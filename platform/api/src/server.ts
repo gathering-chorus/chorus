@@ -39,6 +39,7 @@ import { CHORUS_ROOT } from './lib/chorus-paths';
 import { modelRelationshipsHandler, SparqlSelectResponse } from './handlers/athena-model-relationships';
 import { buildTestRunReport, lastRunSuites, renderStoredRun, renderTestRun, StoredRun, TEST_RUN_CSS } from './handlers/test-run-report';
 import { classAtlasHandler } from './handlers/class-atlas';
+import { vocabularyHandler } from './handlers/vocabulary';
 import { parseNightlyLog, renderNightlyPage } from './handlers/nightly-report';
 import { parseAllRuns, findRun, buildReadout, renderReadoutText } from './handlers/nightly-readout';
 import { fetchLoomAnalytics, LoomCardRow } from './handlers/loom-analytics';
@@ -332,6 +333,7 @@ app.get('/api/athena/model-relationships', modelRelationshipsHandler());
 // #3992 — the Class Atlas data: classes + attributes + SHACL multiplicities +
 // object edges + subclass edges, grouped per domain, one SPARQL round trip.
 app.get('/api/athena/class-atlas', classAtlasHandler());
+app.get('/api/athena/vocabulary', vocabularyHandler());
 
 // #3724 — THE OWL ITSELF, per domain. Jeff, 2026-08-03: "i want to be able to
 // see the owl for each domain."
