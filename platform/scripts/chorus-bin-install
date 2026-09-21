@@ -210,6 +210,48 @@ fi
 
 echo "chorus-bin-install: installed $NAME → $DEST (cdhash=$CDHASH commit=$COMMIT card=$CARD_ID target=$TARGET)"
 
+# #4251 — a SCHEDULED job that runs this binary must be reloaded too.
+#
+# On 2026-09-21 the 03:00 nightly never launched: the #4247 land replaced
+# ~/.chorus/bin/werk-test-bin at 21:10, launchd still held the previous code
+# signature for com.chorus.nightly-suites, and refused to start it
+# (OS_REASON_CODESIGNING). The kickstart block below could not have caught it —
+# it derives the unit name from the binary name, and this unit is named after
+# the job, not the binary.
+#
+# So: find every LaunchAgent whose plist names this destination path, and
+# reload it. bootout+bootstrap, never kickstart — kickstart would RUN the
+# nightly at deploy time, which is a different bug. Failure is loud, not fatal.
+# Skipped with the same CHORUS_BIN_NO_KICKSTART escape the fixtures use.
+if [ "$TARGET" = "canonical" ] && [ -z "${CHORUS_BIN_NO_KICKSTART:-}" ]; then
+  UID_N=$(id -u)
+  AGENT_DIR="${CHORUS_BIN_AGENT_DIR:-$HOME/Library/LaunchAgents}"
+  if [ -d "$AGENT_DIR" ]; then
+    for plist in "$AGENT_DIR"/*.plist; do
+      [ -e "$plist" ] || continue
+      grep -q "$DEST" "$plist" 2>/dev/null || continue
+      LABEL="$(basename "$plist" .plist)"
+      # a job the kickstart block below already owns needs no second reload
+      [ "$LABEL" = "com.chorus.$NAME" ] && continue
+      [ "$LABEL" = "com.chorus.${NAME#chorus-}" ] && continue
+      launchctl print "gui/$UID_N/$LABEL" >/dev/null 2>&1 || continue
+      RELOAD_RESULT="ok"
+      if launchctl bootout "gui/$UID_N/$LABEL" >/dev/null 2>&1 &&
+         launchctl bootstrap "gui/$UID_N" "$plist" >/dev/null 2>&1; then
+        echo "chorus-bin-install: reloaded $LABEL (it runs $DEST; launchd now holds the installed signature)"
+      else
+        RELOAD_RESULT="failed"
+        echo "chorus-bin-install: WARNING — $LABEL runs $DEST and could NOT be reloaded; launchd still holds the PREVIOUS signature and the job may refuse to start" >&2
+      fi
+      if [ -n "${CHORUS_BIN_SPINE_LOG:-}" ]; then
+        echo "binary.job.reloaded | $ROLE binary=$NAME unit=$LABEL result=$RELOAD_RESULT" >> "$CHORUS_BIN_SPINE_LOG"
+      elif command -v chorus-log >/dev/null 2>&1; then
+        chorus-log binary.job.reloaded "$ROLE" "binary=$NAME" "unit=$LABEL" "result=$RELOAD_RESULT" >/dev/null 2>&1 || true
+      fi
+    done
+  fi
+fi
+
 # #3845 groundhog-day class — a canonical install must not leave a stale process
 # serving. If a LaunchAgent com.chorus.<name> is loaded and running, the process
 # it carries predates the binary we just installed BY CONSTRUCTION; kickstart it

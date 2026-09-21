@@ -45,6 +45,25 @@ fn env_or(k: &str, d: &str) -> String {
     std::env::var(k).ok().filter(|v| !v.trim().is_empty()).unwrap_or_else(|| d.to_string())
 }
 
+/// #4251 — launchd's own words for why the job last exited, when it has any.
+/// Best-effort: a missing or unreadable answer is None, never a guess.
+fn launchd_exit_reason() -> Option<String> {
+    let uid = Command::new("id").arg("-u").output().ok()?;
+    let uid = String::from_utf8_lossy(&uid.stdout).trim().to_string();
+    let out = Command::new("launchctl")
+        .arg("print")
+        .arg(format!("gui/{uid}/com.chorus.nightly-suites"))
+        .output()
+        .ok()?;
+    let text = String::from_utf8_lossy(&out.stdout);
+    let line = text.lines().find(|l| l.contains("last exit reason"))?;
+    let reason = line.split('=').nth(1)?.trim();
+    if reason.is_empty() || reason == "0" {
+        return None;
+    }
+    Some(format!("launchd {reason}"))
+}
+
 fn now_stamp() -> String {
     let out = Command::new("date").arg("+%Y-%m-%dT%H:%M:%S").output().ok();
     out.map(|o| String::from_utf8_lossy(&o.stdout).trim().to_string()).unwrap_or_default()
@@ -563,12 +582,38 @@ pub fn run_mode(args: &[String]) -> Option<Result<i32, String>> {
                 return Some(Ok(1));
             }
         };
-        let age = meta.modified().ok().and_then(|m| m.elapsed().ok()).map(|d| d.as_secs()).unwrap_or(0);
-        if age > 93600 {
-            println!("SUITE|meta|{}|silas|fail|0 pass, 1 fail (nightly log STALE — {}s old > 26h; the 03:00 run did not write)", log, age);
-            return Some(Ok(1));
+        let _ = &meta;
+        let body = std::fs::read_to_string(&log).unwrap_or_default();
+        // #4251 — staleness is "has a run finished since the last scheduled
+        // slot", read from the job's own plist. The old check was the LOG's
+        // mtime against 26h: on 2026-09-21 a 21:11 hand run had written the
+        // file, so the mtime was fresh, the 03:00 job had never launched, and
+        // the readout showed the night before's four reds as that morning's.
+        let plist = format!(
+            "{}/Library/LaunchAgents/com.chorus.nightly-suites.plist",
+            std::env::var("HOME").unwrap_or_default()
+        );
+        let slots = werk_test::nightly_run::slots_from_plist(
+            &std::fs::read_to_string(&plist).unwrap_or_default(),
+        );
+        let rows = last_run_rows(&body);
+        if !slots.is_empty() {
+            let reds = rows.iter().filter(|l| l.contains("|fail|")).count();
+            let summary = format!("{} red", reds);
+            let reason = launchd_exit_reason();
+            if let Some(line) = werk_test::nightly_run::unmeasured_since_slot(
+                &now_stamp(),
+                &slots,
+                werk_test::nightly_run::last_complete_stamp(&body).as_deref(),
+                &summary,
+                reason.as_deref(),
+            ) {
+                // REPLACES the counts — a stale total must never read as current.
+                println!("{}", line);
+                return Some(Ok(1));
+            }
         }
-        for l in last_run_rows(&std::fs::read_to_string(&log).unwrap_or_default()) {
+        for l in rows {
             println!("{}", l);
         }
         return Some(Ok(0));

@@ -1164,3 +1164,330 @@ mod one_unit_4247 {
         );
     }
 }
+
+/// #4251 — the most recent scheduled slot at or before `now`, as an ISO stamp.
+///
+/// Both are `YYYY-MM-DDTHH:MM:SS` local, which compares lexicographically. If
+/// today's slot has not arrived yet, the answer is yesterday's — so a readout
+/// at 02:00 is measured against the 03:00 slot of the night before, not one
+/// that has not happened.
+///
+/// Slots are (hour, minute) from the job's own schedule. Deliberately NOT an
+/// hours threshold: Wren, 2026-09-21, "an hours threshold is another
+/// uncommented 86400 — the schedule already answers it".
+pub fn last_slot_before(now: &str, slots: &[(u32, u32)]) -> Option<String> {
+    let (date, time) = now.split_once('T')?;
+    let mut today: Vec<String> = slots
+        .iter()
+        .map(|(h, m)| format!("{date}T{h:02}:{m:02}:00"))
+        .collect();
+    today.sort();
+    if let Some(s) = today.iter().rev().find(|s| s.as_str() <= now) {
+        return Some(s.clone());
+    }
+    // none today yet — the last one is the latest slot of the previous day
+    let prev = previous_day(date)?;
+    let mut y: Vec<String> = slots
+        .iter()
+        .map(|(h, m)| format!("{prev}T{h:02}:{m:02}:00"))
+        .collect();
+    y.sort();
+    let _ = time;
+    y.pop()
+}
+
+/// `YYYY-MM-DD` minus one day. Local dates only; no timezone maths, because
+/// the stamps compared here are all written by the same `date` call.
+fn previous_day(date: &str) -> Option<String> {
+    let mut p = date.split('-');
+    let (y, m, d) = (
+        p.next()?.parse::<i32>().ok()?,
+        p.next()?.parse::<u32>().ok()?,
+        p.next()?.parse::<u32>().ok()?,
+    );
+    let leap = |y: i32| (y % 4 == 0 && y % 100 != 0) || y % 400 == 0;
+    let days = |y: i32, m: u32| match m {
+        1 | 3 | 5 | 7 | 8 | 10 | 12 => 31,
+        4 | 6 | 9 | 11 => 30,
+        2 if leap(y) => 29,
+        2 => 28,
+        _ => 0,
+    };
+    let (y, m, d) = if d > 1 {
+        (y, m, d - 1)
+    } else if m > 1 {
+        (y, m - 1, days(y, m - 1))
+    } else {
+        (y - 1, 12, 31)
+    };
+    if d == 0 {
+        return None;
+    }
+    Some(format!("{y:04}-{m:02}-{d:02}"))
+}
+
+/// #4251 — the line that REPLACES the counts when no run has finished since
+/// the last scheduled slot.
+///
+/// On 2026-09-21 the 03:00 job never launched (launchd held a stale code
+/// signature after a 21:10 deploy) and the 06:05 readout replayed the 21:11
+/// run as if it were the night's. Jeff read four reds as today's. A stale
+/// readout that looks fresh is worse than no readout.
+///
+/// `last_complete` is the stamp of the most recent `RUN|complete|`, if any.
+/// Returns None when a run HAS completed since the slot — the counts stand.
+pub fn unmeasured_since_slot(
+    now: &str,
+    slots: &[(u32, u32)],
+    last_complete: Option<&str>,
+    last_summary: &str,
+    reason: Option<&str>,
+) -> Option<String> {
+    let slot = last_slot_before(now, slots)?;
+    if let Some(c) = last_complete {
+        if c >= slot.as_str() {
+            return None;
+        }
+    }
+    let slot_hm = slot.split('T').nth(1).unwrap_or("").get(..5).unwrap_or("");
+    let mut line = format!("UNMEASURED — no run since the {slot_hm} slot");
+    match last_complete {
+        Some(c) => line.push_str(&format!("\nlast completed: {c}, {last_summary}")),
+        None => line.push_str("\nlast completed: never"),
+    }
+    if let Some(r) = reason {
+        line.push_str(&format!("\nreason: {r}"));
+    }
+    Some(line)
+}
+
+/// #4251 — a readout with no run since its slot says so, in place of counts.
+#[cfg(test)]
+mod unmeasured_since_slot_4251 {
+    use super::{last_slot_before, unmeasured_since_slot};
+
+    const NIGHTLY: &[(u32, u32)] = &[(3, 0)];
+
+    /// NEGATIVE PROOF — 2026-09-21 exactly. The 03:00 job never launched and
+    /// the 06:05 readout replayed the 21:11 run as the night's; Jeff read four
+    /// reds as today's.
+    #[test]
+    fn a_morning_with_no_run_since_the_slot_is_unmeasured() {
+        let line = unmeasured_since_slot(
+            "2026-09-21T06:05:00",
+            NIGHTLY,
+            Some("2026-09-20T22:00:55"),
+            "4 red",
+            Some("launchd OS_REASON_CODESIGNING"),
+        )
+        .expect("must be unmeasured");
+        assert!(line.starts_with("UNMEASURED — no run since the 03:00 slot"), "{line}");
+        assert!(line.contains("last completed: 2026-09-20T22:00:55, 4 red"), "{line}");
+        assert!(line.contains("reason: launchd OS_REASON_CODESIGNING"), "{line}");
+    }
+
+    /// A run that finished after the slot is measured — the counts stand and
+    /// no line is produced.
+    #[test]
+    fn a_run_after_the_slot_is_measured() {
+        assert_eq!(
+            unmeasured_since_slot(
+                "2026-09-21T06:05:00",
+                NIGHTLY,
+                Some("2026-09-21T04:12:00"),
+                "0 red",
+                None
+            ),
+            None
+        );
+    }
+
+    /// Before today's slot, the measure is LAST night's slot — a 02:00 reader
+    /// is not told a 03:00 run is missing when 03:00 has not arrived.
+    #[test]
+    fn before_todays_slot_the_measure_is_last_nights() {
+        assert_eq!(
+            last_slot_before("2026-09-21T02:00:00", NIGHTLY).as_deref(),
+            Some("2026-09-20T03:00:00")
+        );
+        assert_eq!(
+            unmeasured_since_slot(
+                "2026-09-21T02:00:00",
+                NIGHTLY,
+                Some("2026-09-20T04:00:00"),
+                "0 red",
+                None
+            ),
+            None
+        );
+    }
+
+    /// Never having run is its own state, not a missing line.
+    #[test]
+    fn a_log_with_no_completed_run_says_never() {
+        let line = unmeasured_since_slot("2026-09-21T06:05:00", NIGHTLY, None, "", None)
+            .expect("must be unmeasured");
+        assert!(line.contains("last completed: never"), "{line}");
+    }
+
+    /// Month and year boundaries: the previous day is real arithmetic, not a
+    /// subtraction on the day field.
+    #[test]
+    fn the_previous_day_crosses_month_and_year() {
+        assert_eq!(
+            last_slot_before("2026-03-01T02:00:00", NIGHTLY).as_deref(),
+            Some("2026-02-28T03:00:00")
+        );
+        assert_eq!(
+            last_slot_before("2024-03-01T02:00:00", NIGHTLY).as_deref(),
+            Some("2024-02-29T03:00:00")
+        );
+        assert_eq!(
+            last_slot_before("2026-01-01T02:00:00", NIGHTLY).as_deref(),
+            Some("2025-12-31T03:00:00")
+        );
+    }
+
+    /// Two slots a day: the measure is the most recent one passed.
+    #[test]
+    fn two_slots_measure_against_the_later_one() {
+        let slots = &[(6, 0), (13, 30)];
+        assert_eq!(
+            last_slot_before("2026-09-21T14:00:00", slots).as_deref(),
+            Some("2026-09-21T13:30:00")
+        );
+        assert_eq!(
+            last_slot_before("2026-09-21T07:00:00", slots).as_deref(),
+            Some("2026-09-21T06:00:00")
+        );
+    }
+}
+
+/// #4251 — the job's own schedule, read from its launchd plist.
+///
+/// The schedule is the source of truth for "when should a run have happened".
+/// Hardcoding it here would be the same uncommented constant in a second
+/// place, and it would drift the first time the slot moves.
+///
+/// Handles both shapes launchd accepts: a single `StartCalendarInterval` dict,
+/// and an array of them. A plist with no Hour key yields no slots, and the
+/// caller then makes no claim about staleness.
+pub fn slots_from_plist(xml: &str) -> Vec<(u32, u32)> {
+    // Tag scan, not line parsing: launchd plists are written both one-key-per
+    // -line and all on one line, and the first version of this read only the
+    // first shape — it returned no slots for the array form and would have
+    // made the readout silently claim nothing.
+    #[derive(Clone, Copy)]
+    enum Tok {
+        Hour(u32),
+        Minute(u32),
+    }
+    let mut toks: Vec<Tok> = Vec::new();
+    let mut rest = xml;
+    while let Some(i) = rest.find("<key>") {
+        let after = &rest[i + 5..];
+        let Some(j) = after.find("</key>") else { break };
+        let key = &after[..j];
+        let tail = &after[j + 6..];
+        if key == "Hour" || key == "Minute" {
+            if let Some(a) = tail.find("<integer>") {
+                let v = &tail[a + 9..];
+                if let Some(b) = v.find("</integer>") {
+                    if let Ok(n) = v[..b].trim().parse::<u32>() {
+                        toks.push(if key == "Hour" { Tok::Hour(n) } else { Tok::Minute(n) });
+                    }
+                }
+            }
+        }
+        rest = tail;
+    }
+    let mut out: Vec<(u32, u32)> = Vec::new();
+    let mut cur: Option<(u32, u32)> = None;
+    for t in toks {
+        match t {
+            Tok::Hour(h) => {
+                if let Some(c) = cur.take() {
+                    out.push(c);
+                }
+                cur = Some((h, 0));
+            }
+            Tok::Minute(m) => {
+                if let Some(c) = cur.as_mut() {
+                    c.1 = m;
+                }
+            }
+        }
+    }
+    if let Some(c) = cur {
+        out.push(c);
+    }
+    out.sort();
+    out.dedup();
+    out
+}
+
+/// #4251 — the stamp of the most recent completed run in a nightly log.
+pub fn last_complete_stamp(log: &str) -> Option<String> {
+    log.lines()
+        .rev()
+        .find(|l| l.starts_with("RUN|complete|"))
+        .and_then(|l| l.split('|').nth(2))
+        .map(str::to_string)
+}
+
+/// #4251 — the schedule comes from the job's plist, not a constant.
+#[cfg(test)]
+mod slots_from_plist_4251 {
+    use super::{last_complete_stamp, slots_from_plist};
+
+    const ONE: &str = r#"<dict>
+  <key>StartCalendarInterval</key>
+  <dict>
+    <key>Hour</key><integer>3</integer>
+    <key>Minute</key><integer>0</integer>
+  </dict>
+</dict>"#;
+
+    const TWO: &str = r#"<dict>
+  <key>StartCalendarInterval</key>
+  <array>
+    <dict><key>Hour</key><integer>6</integer><key>Minute</key><integer>0</integer></dict>
+    <dict><key>Hour</key><integer>13</integer><key>Minute</key><integer>30</integer></dict>
+  </array>
+</dict>"#;
+
+    #[test]
+    fn a_single_interval_reads() {
+        assert_eq!(slots_from_plist(ONE), vec![(3, 0)]);
+    }
+
+    #[test]
+    fn an_array_of_intervals_reads_all_of_them() {
+        assert_eq!(slots_from_plist(TWO), vec![(6, 0), (13, 30)]);
+    }
+
+    /// NEGATIVE PROOF: a plist with no schedule yields NO slots, so the caller
+    /// makes no staleness claim at all. Defaulting to 03:00 here would invent
+    /// a schedule the job does not have and call every run late.
+    #[test]
+    fn no_schedule_yields_no_slots() {
+        assert!(slots_from_plist("<dict><key>Label</key><string>x</string></dict>").is_empty());
+        assert!(slots_from_plist("").is_empty());
+    }
+
+    /// An hour with no minute is on the hour, not dropped.
+    #[test]
+    fn an_hour_without_a_minute_is_on_the_hour() {
+        assert_eq!(
+            slots_from_plist("<dict><key>Hour</key><integer>4</integer></dict>"),
+            vec![(4, 0)]
+        );
+    }
+
+    #[test]
+    fn the_last_completed_run_is_the_one_read() {
+        let log = "RUN|start|2026-09-20T03:00:03|pid=1\nRUN|complete|2026-09-20T04:10:00|suites=2\nRUN|start|2026-09-20T21:11:21|pid=2\nRUN|complete|2026-09-20T22:00:55|suites=424\n";
+        assert_eq!(last_complete_stamp(log).as_deref(), Some("2026-09-20T22:00:55"));
+        assert_eq!(last_complete_stamp("RUN|start|2026-09-20T03:00:03|pid=1\n"), None);
+    }
+}
