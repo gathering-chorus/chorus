@@ -1,4 +1,6 @@
 /**
+ * @test-type: unit — the http-looking strings are fixture data: every dep is an
+ * injected stub, no socket is opened and no store is read.
  * subdomain-entities handlers — unit tests (#2180).
  *
  * Four list-GET handlers sharing one implementation. Tests prove
@@ -60,7 +62,7 @@ function sparqlStub(opts: {
   throwOn?: 'exists' | 'list';
 }): (q: string) => Promise<SparqlResult> {
   return async (q: string) => {
-    const isCheck = q.includes('SELECT ?s WHERE') && q.includes('chorus:SubDomain');
+    const isCheck = q.includes('SELECT ?s WHERE') && q.includes('chorus:Domain');
     if (isCheck) {
       if (opts.throwOn === 'exists') throw new Error('fuseki down');
       return {
@@ -779,7 +781,7 @@ describe('updateSubdomainPriorArt (PUT)', () => {
 describe('per-kind envelope wiring', () => {
   test('services envelope has services[] key', async () => {
     const d = deps({
-      sparql: async (q) => (q.includes('chorus:SubDomain')
+      sparql: async (q) => (q.includes('chorus:Domain')
         ? { results: { bindings: [{ s: { value: 'exists' } }] } }
         : { results: { bindings: [{ svc: { value: 'https://j.c/c#s1' } }] } }),
     });
@@ -790,7 +792,7 @@ describe('per-kind envelope wiring', () => {
 
   test('pipeline envelope has pipelines[] key', async () => {
     const d = deps({
-      sparql: async (q) => (q.includes('chorus:SubDomain')
+      sparql: async (q) => (q.includes('chorus:Domain')
         ? { results: { bindings: [{ s: { value: 'exists' } }] } }
         : { results: { bindings: [{ pipe: { value: 'https://j.c/c#p1' } }] } }),
     });
@@ -801,7 +803,7 @@ describe('per-kind envelope wiring', () => {
 
   test('logs envelope has logs[] key', async () => {
     const d = deps({
-      sparql: async (q) => (q.includes('chorus:SubDomain')
+      sparql: async (q) => (q.includes('chorus:Domain')
         ? { results: { bindings: [{ s: { value: 'exists' } }] } }
         : { results: { bindings: [{ log: { value: 'https://j.c/c#l1' } }] } }),
     });
@@ -812,7 +814,7 @@ describe('per-kind envelope wiring', () => {
 
   test('gaps envelope has gaps[] key', async () => {
     const d = deps({
-      sparql: async (q) => (q.includes('chorus:SubDomain')
+      sparql: async (q) => (q.includes('chorus:Domain')
         ? { results: { bindings: [{ s: { value: 'exists' } }] } }
         : { results: { bindings: [{ gap: { value: 'https://j.c/c#g1' } }] } }),
     });
