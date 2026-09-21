@@ -81,7 +81,12 @@ echo ""
 echo "--- Socket ---"
 DEBUG=$(curl -s "$BRIDGE/api/debug" 2>/dev/null)
 CLIENTS=$(echo "$DEBUG" | python3 -c "import json,sys; print(json.load(sys.stdin).get('connectedClients',0))" 2>/dev/null)
-check "At least 1 WebSocket client connected" "$([ "$CLIENTS" -ge 1 ] 2>/dev/null && echo true || echo false)"
+# #4255 — "is anyone attached right now" is not a property of the bridge. This
+# assertion passed or failed depending on whether a browser happened to be open
+# when the suite ran: three runs on 2026-09-20/21 gave three different answers.
+# What IS testable is that the bridge REPORTS its client count.
+check "bridge reports a client count" "$([ -n "$CLIENTS" ] && [ "$CLIENTS" -ge 0 ] 2>/dev/null && echo true || echo false)"
+echo "   (clients attached right now: ${CLIENTS:-unknown} — reported, not asserted)"
 
 # 7. All 3 role sessions discovered
 echo ""
@@ -89,13 +94,27 @@ echo "--- Session Discovery ---"
 SESSIONS=$(echo "$DEBUG" | python3 -c "import json,sys; print(json.load(sys.stdin).get('sessionCount',0))" 2>/dev/null)
 check "3 role sessions discovered" "$([ "$SESSIONS" -ge 3 ] 2>/dev/null && echo true || echo false)"
 
-# 8. Graceful restart works
+# 8. Graceful restart
+#
+# #4255 — this used to POST /api/restart to the LIVE Clearing and assert it came
+# back. Running the test restarted the room the team talks in, and the result
+# depended on who was connected at that second. Jeff, 2026-09-20: a test that
+# mutates prod cannot tell "bridge broken" from "nobody was attached".
+#
+# Restarting is real behaviour and worth covering — but against a bridge the
+# test starts and owns, not this one. Opt in with CLEARING_RESTART_TEST=1 and a
+# BRIDGE that is not the live port.
 echo ""
 echo "--- Restart ---"
-RESTART=$(curl -s -X POST "$BRIDGE/api/restart" 2>/dev/null)
-sleep 3
-POST_STATUS=$(curl -s -o /dev/null -w "%{http_code}" "$BRIDGE" 2>/dev/null)
-check "Graceful restart returns 200 after" "$([ "$POST_STATUS" = "200" ] && echo true || echo false)"
+if [ "${CLEARING_RESTART_TEST:-}" = "1" ] && [ "$BRIDGE" != "http://localhost:3470" ]; then
+  RESTART=$(curl -s -X POST "$BRIDGE/api/restart" 2>/dev/null)
+  sleep 3
+  POST_STATUS=$(curl -s -o /dev/null -w "%{http_code}" "$BRIDGE" 2>/dev/null)
+  check "Graceful restart returns 200 after" "$([ "$POST_STATUS" = "200" ] && echo true || echo false)"
+else
+  echo "   SKIPPED — restart is not exercised against the live bridge (#4255)."
+  echo "   Set CLEARING_RESTART_TEST=1 with BRIDGE pointed at a test instance."
+fi
 
 # Summary
 echo ""
