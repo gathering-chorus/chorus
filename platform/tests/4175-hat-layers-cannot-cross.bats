@@ -25,7 +25,10 @@ ROOT="$BATS_TEST_DIRNAME/../.."
 # file loads into the schema graph, so every deploy re-created them). The test
 # kept reading the old path and failed on an empty file rather than on a
 # violation — a test that cannot tell "no checks" from "no breaches".
-MODEL="$ROOT/designing/data/governance-check-instances.ttl"
+# The TBox — hats, layers, property definitions.
+MODEL="$ROOT/roles/wren/ontology/hats-4175.ttl"
+# The checks themselves, which #4216 moved out of the TBox file.
+CHECKS="$ROOT/designing/data/governance-check-instances.ttl"
 ROWS="$ROOT/roles/wren/ontology/hats-instances-4175.ttl"
 FIXTURE="$ROOT/platform/tests/fixtures/hats-4175-violations.ttl"
 CORE="$ROOT/roles/silas/ontology/chorus.ttl"
@@ -38,7 +41,7 @@ setup() {
 
 # Prints "<check-name> <claimed-red-rows>" per registered check.
 checks() {
-  python3 - "$MODEL" <<'PY'
+  python3 - "$CHECKS" <<'PY'
 import re, sys
 # #4255 — split on the SUBJECT boundary first, then read inside that block.
 # The old pattern scanned from the name to the first `""" .` ANYWHERE after it,
@@ -56,7 +59,7 @@ PY
 }
 
 query_of() {
-  python3 - "$MODEL" "$1" <<'PY'
+  python3 - "$CHECKS" "$1" <<'PY'
 import re, sys
 t = open(sys.argv[1]).read()
 names = [(m.start(), m.group(1)) for m in re.finditer(r'chorus:(gc-[a-z-]+) a chorus:GovernanceCheck', t)]
