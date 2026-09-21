@@ -69,8 +69,25 @@ FUSEKI_QUERY_URL="${FUSEKI_QUERY:-http://localhost:3030/pods/sparql}"
   printf '%s' "$output" | grep -q "$declared"
 }
 
-@test "#4220 NEGATIVE PROOF — the door would fail if it named a different graph" {
-  # The check above can only mean something if a wrong graph name fails it.
+@test "#4220 NEGATIVE PROOF — the door does NOT name the graph it used to hardcode" {
+  # The code gate caught my first attempt: it grepped for
+  # urn:chorus:domains:not-a-real-home, a string that could never appear
+  # whatever the door did, so it proved nothing. The real failure this guards
+  # is the ONE that actually happened — the door naming urn:chorus:domains:identity
+  # while PrincipalShape declares security. That is a plausible wrong answer,
+  # it was the literal the test asserted until today, and if the door regressed
+  # to it this assertion fails.
+  declared="$(curl -s --max-time 10 --data-urlencode \
+    'query=PREFIX chorus: <https://jeffbridwell.com/chorus#> PREFIX sh: <http://www.w3.org/ns/shacl#> SELECT ?g WHERE { GRAPH <urn:chorus:ontology> { ?s sh:targetClass chorus:Principal ; chorus:instancesGraph ?g } } LIMIT 1' \
+    -H 'Accept: text/csv' "$FUSEKI_QUERY_URL" | tail -1 | tr -d '\r')"
+  [ -n "$declared" ] || skip "model unreadable here — UNMEASURED, not green"
+  # the wrong-but-plausible candidate: whichever of the two the model did NOT pick
+  if [ "$declared" = "urn:chorus:domains:identity" ]; then
+    wrong="urn:chorus:domains:security"
+  else
+    wrong="urn:chorus:domains:identity"
+  fi
   run curl -s --max-time 10 "$API/v1/identity/principals"
-  ! printf '%s' "$output" | grep -q "urn:chorus:domains:not-a-real-home"
+  printf '%s' "$output" | grep -q "$declared"
+  ! printf '%s' "$output" | grep -q "$wrong"
 }
