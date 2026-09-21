@@ -30,7 +30,7 @@ export interface SparqlBindingsResult {
   results: { bindings: SparqlNodeBinding[] };
 }
 
-interface Check {
+export interface Check {
   name: string;
   severity: 'violation' | 'warning';
   query: string;
@@ -117,6 +117,12 @@ export interface AthenaValidateDeps {
   sparql: (query: string) => Promise<SparqlBindingsResult>;
   now?: () => number;
   timestamp?: () => string;
+  /** #4237 — the check list, injectable. The warning-severity path used to be
+   * covered by a test that leaned on whichever real rule happened to carry
+   * severity 'warning'; when this card deleted that rule (it targeted the retired
+   * chorus:SubDomain) the test went red without anything being broken. A test of
+   * the binding should bring its own rule, not depend on the rule set of the day. */
+  checks?: Check[];
 }
 
 export async function fetchAthenaValidate(deps: AthenaValidateDeps): Promise<FetchResult> {
@@ -127,7 +133,7 @@ export async function fetchAthenaValidate(deps: AthenaValidateDeps): Promise<Fet
   try {
     const violations: Entry[] = [];
     const warnings: Entry[] = [];
-    for (const check of CHECKS) {
+    for (const check of (deps.checks ?? CHECKS)) {
       const result = await deps.sparql(check.query);
       for (const b of result.results.bindings) {
         const node = b.label?.value ?? b.node.value.replace(CHORUS_PREFIX, '');
