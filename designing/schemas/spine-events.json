@@ -2541,6 +2541,20 @@
         "reason": "fetch-failed | zero-rows"
       }
     },
+    "testcase.failed": {
+      "vertebra": "building",
+      "source": "werk",
+      "description": "Werk test runner \u2014 one event per failing TEST CASE (#4255). test.failed names the unit and the check; this names the file and the case, so Loki can answer which test failed, not only that a unit went red. Jeff, 2026-09-21: \"i thought they had our logging standards integrated it feels like they dont\".",
+      "fields": {
+        "trace_id": "Werk trace join key",
+        "role": "Acting role",
+        "file": "Test file path, repo-relative",
+        "case": "Test case name as the framework reports it",
+        "unit": "Unit the case ran in (crate / package / suite)",
+        "level": "error — the severity required by the Structured Logging Contract, derived from the event name",
+        "message": "Human-readable sentence: which case failed, in which file"
+      }
+    },
     "test.failed": {
       "vertebra": "building",
       "source": "werk",
@@ -2549,7 +2563,9 @@
         "trace_id": "Werk trace join key",
         "role": "Acting role",
         "check": "Check kind (cargo-test | tsc | jest | clippy-ratchet | doc-coherence)",
-        "unit": "Unit the check ran against (crate / package / workspace)"
+        "unit": "Unit the check ran against (crate / package / workspace)",
+        "level": "error — the severity required by the Structured Logging Contract, derived from the event name",
+        "message": "Human-readable sentence: which unit failed which check"
       }
     },
     "demo.memory.deferred": {

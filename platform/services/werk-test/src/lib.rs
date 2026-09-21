@@ -452,10 +452,66 @@ pub fn spine_args(event: &str, role: &str, card: &str, trace: &str, extras: &[(&
         format!("card={}", card),
         format!("trace={}", trace),
     ];
+    // #4255 — a failure logs at `level: error`. This is derived from the event
+    // name at the ONE place every werk-test emit passes through, so a *.failed
+    // event added later cannot be born at info by omission. An explicit
+    // `level=` in extras still wins.
+    if level_for_event(event) == "error" && !extras.iter().any(|(k, _)| *k == "level") {
+        v.push("level=error".to_string());
+    }
     for (k, val) in extras {
         v.push(format!("{}={}", k, val));
     }
     v
+}
+
+/// #4255 gate — every `emit_spine("<something>.failed", ...)` in the runner's
+/// own source must carry a `message`. `level` is derived from the event name so
+/// it cannot be forgotten; `message` cannot be derived, so it is checked here.
+/// Returns the event name of each emit that is missing one — empty means clean.
+///
+/// Scans from each `emit_spine(` to the call's closing `);`, so a multi-line
+/// call reads as one unit.
+pub fn failed_emits_missing_message(src: &str) -> Vec<String> {
+    let mut missing = Vec::new();
+    let mut rest = src;
+    while let Some(i) = rest.find("emit_spine(") {
+        let after = &rest[i + "emit_spine(".len()..];
+        let end = after.find(");").map(|e| e + 2).unwrap_or(after.len());
+        let call = &after[..end];
+        // the event name is the first string literal in the call
+        let event = call
+            .split_once('"')
+            .and_then(|(_, r)| r.split_once('"').map(|(e, _)| e.to_string()));
+        if let Some(ev) = event {
+            if ev.ends_with(".failed") && !call.contains("(\"message\"") {
+                missing.push(ev);
+            }
+        }
+        rest = &after[end..];
+    }
+    missing
+}
+
+/// #4255 — the sentence that rides a failed unit's spine event. The contract
+/// requires `message`; before this the event named a check and a unit and left
+/// a reader to guess what the words meant.
+pub fn unit_failure_message(check: &str, unit: &str) -> String {
+    format!("{} unit {} failed its checks", check, unit)
+}
+
+/// #4255 — the severity a spine event carries, from its name. The Structured
+/// Logging Contract (roles/silas/system-architecture.md) requires `level` to be
+/// one of info|warn|error, but `error` was not in chorus-log's allowed set, so
+/// every failure the runner emitted was written as info: 24h of the spine held
+/// 2,536 failure-shaped events — 1,552 info, 976 warn, zero error. Deriving it
+/// here means the name and the severity cannot drift apart.
+pub fn level_for_event(event: &str) -> &'static str {
+    if event.ends_with(".failed") {
+        "error"
+    } else {
+        "info"
+    }
 }
 
 /// #3621 — the canonical wide `test.completed` field set, emitted on EVERY run.

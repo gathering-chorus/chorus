@@ -3,7 +3,8 @@
 //! escape, and the advisory→blocking gate decision.
 use werk_test::{
     affected_units, check_plan, expired_cases, gate_outcome, is_self_modifying,
-    parse_quarantine_rows, quarantine_report, spine_args, CheckKind, GateOutcome, PlannedCheck,
+    failed_emits_missing_message, level_for_event, parse_quarantine_rows, quarantine_report,
+    spine_args, unit_failure_message, CheckKind, GateOutcome, PlannedCheck,
     Quarantined, TestUnit,
 };
 
@@ -309,6 +310,8 @@ fn spine_args_builds_event_role_card_trace_and_extras() {
             "kade".to_string(),
             "card=3190".to_string(),
             "trace=abc-123".to_string(),
+            // #4255 — derived from the event name, ahead of the extras.
+            "level=error".to_string(),
             "check=cargo-test".to_string(),
             "unit=werk-merge".to_string(),
         ]
@@ -1378,4 +1381,61 @@ Error: Cannot find module '@playwright/test'\n";
 
     // and an empty/silent runner is a crash too, not an empty selection
     assert_eq!(PlaywrightNoSummary::Crashed, classify_playwright_no_summary(""));
+}
+
+// --- #4255: a failure logs as a failure (Structured Logging Contract) ---
+
+#[test]
+fn failed_event_carries_level_error() {
+    let got = spine_args("testcase.failed", "kade", "4255", "t", &[("case", "x")]);
+    assert!(got.contains(&"level=error".to_string()), "got {:?}", got);
+}
+
+// NEGATIVE PROOF for the derivation: a non-failure event must NOT be stamped
+// error. If level_for_event ever returned "error" unconditionally, the test
+// above would still pass and this one would fail.
+#[test]
+fn non_failure_event_is_not_stamped_error() {
+    let got = spine_args("test.completed", "kade", "4255", "t", &[("verdict", "pass")]);
+    assert!(!got.contains(&"level=error".to_string()), "got {:?}", got);
+    assert_eq!(level_for_event("test.completed"), "info");
+}
+
+#[test]
+fn explicit_level_wins_over_the_derived_one() {
+    let got = spine_args("test.failed", "kade", "4255", "t", &[("level", "warn")]);
+    assert!(!got.contains(&"level=error".to_string()), "got {:?}", got);
+    assert!(got.contains(&"level=warn".to_string()), "got {:?}", got);
+}
+
+#[test]
+fn unit_failure_message_names_check_and_unit() {
+    let m = unit_failure_message("cargo", "werk-test");
+    assert!(m.contains("cargo"), "{}", m);
+    assert!(m.contains("werk-test"), "{}", m);
+}
+
+// #4255 gate: every `.failed` emit in the runner's source carries a message.
+#[test]
+fn every_failed_emit_in_main_carries_a_message() {
+    let src = include_str!("../src/main.rs");
+    let missing = failed_emits_missing_message(src);
+    assert!(missing.is_empty(), "these emits have no message: {:?}", missing);
+}
+
+// NEGATIVE PROOF for that gate: a fixture that VIOLATES it is caught. Without
+// this, the gate could be incapable of going red and nobody would know.
+#[test]
+fn the_message_gate_catches_an_emit_without_one() {
+    let bad = r#"
+        emit_spine("test.failed", &role, &card, &trace, &[("check", "cargo")]);
+        emit_spine("test.completed", &role, &card, &trace, &[("verdict", "pass")]);
+    "#;
+    assert_eq!(failed_emits_missing_message(bad), vec!["test.failed".to_string()]);
+
+    let good = r#"
+        emit_spine("test.failed", &role, &card, &trace,
+            &[("check", "cargo"), ("message", msg.as_str())]);
+    "#;
+    assert!(failed_emits_missing_message(good).is_empty());
 }
