@@ -310,6 +310,10 @@ pub struct RouteTable {
     /// model said 1..n. Jeff, 2026-05-20 and again today: "a single file may be
     /// tagged to 1..n domains."
     pub unbounded: Vec<String>,
+    /// #4267 — `<field>|<value>` for every property the shape constrains with
+    /// sh:in. The DAL enforces these; until this card nothing published them, so
+    /// a generated create could not produce a legal value for an enum field.
+    pub allowed_values: Vec<String>,
     pub repo_target: String,     // #3488 — repo land location for generated artifacts, from chorus:repoTarget (or class-keyed default)
     pub exposure: Vec<(String, String)>, // #3506/ADR-048 §3 — field localname → exposure level (public|internal|secret), PROJECTED from chorus:exposure. Unmarked = hidden (fail-closed).
     pub instances_graph: String, // #3570 — the kind's instance HOME graph (the domains.* spine): chorus:instancesGraph override, else urn:chorus:domains:<domain>, else urn:chorus:instances (back-compat). Threaded into every serve read.
@@ -1109,6 +1113,19 @@ pub fn generate(class_local: &str) -> R<RouteTable> {
     let mut unbounded: Vec<String> = select_v(&sparql_json(&q_many)?);
     unbounded.sort();
     unbounded.dedup();
+    // #4267 — the values a constrained literal is ALLOWED to take (sh:in).
+    // athena-model has read this since it was written and refuses anything else
+    // ("shape-violation: 'x' not in sh:in [...]"), but nothing projected it, so a
+    // generated create had no way to know that docState means current|stale, or
+    // that pyramidLayer is one of five words. Six classes answered 422 on every
+    // create for that reason alone. Same query the DAL uses, same graph.
+    let q_in = format!(
+        "PREFIX sh: <http://www.w3.org/ns/shacl#> PREFIX rdf: <http://www.w3.org/1999/02/22-rdf-syntax-ns#> PREFIX rdfs: <http://www.w3.org/2000/01/rdf-schema#> SELECT ?v WHERE {{ GRAPH <{g}> {{ <{c}> rdfs:subClassOf* ?tc . ?s sh:targetClass ?tc ; sh:property ?p . ?p sh:path ?path ; sh:in ?list . ?list rdf:rest*/rdf:first ?val . BIND(CONCAT(REPLACE(STR(?path), '.*#', ''), '|', STR(?val)) AS ?v) }} }} ORDER BY ?v",
+        g = ONTOLOGY_GRAPH, c = class
+    );
+    let mut allowed_values: Vec<String> = select_v(&sparql_json(&q_in)?);
+    allowed_values.sort();
+    allowed_values.dedup();
     fields.sort();
     fields.dedup();
     if fields.is_empty() {
@@ -1304,7 +1321,7 @@ pub fn generate(class_local: &str) -> R<RouteTable> {
             None => r,
         })
         .collect();
-Ok(RouteTable { domain: domain_of.clone().unwrap_or_default(), base_path, class, fields, routes, secured, mandatory, write_required, unbounded, repo_target, exposure, instances_graph, tree_edges, tree_order, write_authority, model_version })
+Ok(RouteTable { domain: domain_of.clone().unwrap_or_default(), base_path, class, fields, routes, secured, mandatory, write_required, unbounded, allowed_values, repo_target, exposure, instances_graph, tree_edges, tree_order, write_authority, model_version })
 }
 
 /// #3660 — route emission for the tree read: ONE route iff the shape declares
@@ -2598,7 +2615,7 @@ mod unbounded_edges_4222 {
             routes: vec![],
             secured: vec![],
             mandatory: vec![],
-            write_required: vec![],
+            write_required: vec![], allowed_values: vec![],
             repo_target: String::new(),
             exposure: vec![],
             instances_graph: "urn:chorus:domains:code".into(),
@@ -2736,7 +2753,7 @@ mod bounds_closedshape_tests {
         let table = RouteTable { unbounded: vec![], domain: String::new(), base_path: String::new(),
             class: "https://jeffbridwell.com/chorus#Document".into(),
             fields: vec!["docTitle".into(), "docHref".into(), "changedAt".into(), "changedIn".into(), "docState".into(), "ownedBy|edge:Role".into()],
-            routes: vec![], secured: vec![], mandatory: vec![], write_required: vec![], repo_target: String::new(), exposure: vec![],
+            routes: vec![], secured: vec![], mandatory: vec![], write_required: vec![], allowed_values: vec![], repo_target: String::new(), exposure: vec![],
             instances_graph: "urn:chorus:domains:documents".into(), tree_edges: vec![], tree_order: None, write_authority: String::new(), model_version: "unclassified".into(),
         };
         let req = prepare_create(r#"{"name":"d1","docTitle":"D","docHref":"/d.html"}"#, &table, "wren", "abc1234").unwrap();
@@ -2759,7 +2776,7 @@ mod bounds_closedshape_tests {
         // a class without the stamp fields gets none
         let plain = RouteTable { unbounded: vec![], domain: String::new(), base_path: String::new(),
             class: "https://jeffbridwell.com/chorus#Card".into(), fields: vec!["label".into()],
-            routes: vec![], secured: vec![], mandatory: vec![], write_required: vec![], repo_target: String::new(), exposure: vec![],
+            routes: vec![], secured: vec![], mandatory: vec![], write_required: vec![], allowed_values: vec![], repo_target: String::new(), exposure: vec![],
             instances_graph: "urn:chorus:instances".into(), tree_edges: vec![], tree_order: None, write_authority: String::new(), model_version: "unclassified".into(),
         };
         assert!(write_stamps(&plain, "abc").is_empty());
@@ -2817,7 +2834,7 @@ mod bounds_closedshape_tests {
             routes: vec![],
             secured: vec![],
             mandatory: vec![],
-            write_required: vec![],
+            write_required: vec![], allowed_values: vec![],
             repo_target: String::new(),
             exposure: vec![],
             instances_graph: INSTANCES_GRAPH.to_string(),
@@ -3615,7 +3632,20 @@ pub fn tests_manifest(t: &RouteTable) -> String {
             Some(match rest.strip_prefix("edge:") {
                 Some(target) => format!("{{ \"field\": \"{n}\", \"kind\": \"edge\", \"targetClass\": \"{t}\" }}",
                     n = json_escape(n), t = json_escape(target)),
-                None => format!("{{ \"field\": \"{n}\", \"kind\": \"literal\" }}", n = json_escape(n)),
+                None => {
+                    // #4267 — a constrained literal publishes the values it may take.
+                    let vals: Vec<String> = t.allowed_values.iter()
+                        .filter_map(|av| av.split_once('|'))
+                        .filter(|(f, _)| *f == n)
+                        .map(|(_, v)| format!("\"{}\"", json_escape(v)))
+                        .collect();
+                    if vals.is_empty() {
+                        format!("{{ \"field\": \"{n}\", \"kind\": \"literal\" }}", n = json_escape(n))
+                    } else {
+                        format!("{{ \"field\": \"{n}\", \"kind\": \"literal\", \"allowedValues\": [{v}] }}",
+                            n = json_escape(n), v = vals.join(", "))
+                    }
+                }
             })
         })
     };
@@ -3628,7 +3658,22 @@ pub fn tests_manifest(t: &RouteTable) -> String {
         // Say the read-back is absent rather than emit a check that cannot fail.
         "\"readBack\": null, \"readBackSkipped\": \"the shape declares no write-required field to compare\"".to_string()
     } else {
-        format!("\"readBack\": {{ \"compareFields\": [{}] }}", arr(&t.write_required))
+        // #4267 — a field the DOOR decides is not a field the CALLER can be
+        // checked on. `ownedBy` is set to the authenticated caller on create
+        // (lib.rs ~2993, the whole point of #4096 row-ownership), and changedAt /
+        // changedIn / writeCount are stamped from the write itself and refused
+        // outright in a body. Comparing them asks "did the door keep what I sent"
+        // about values the door is documented to overwrite, so the answer is
+        // always no and the case can never pass however well the API works.
+        // Everything the caller actually authors is still compared.
+        let door_stamped = |f: &&String| !matches!(f.as_str(),
+            "ownedBy" | "changedAt" | "changedIn" | "writeCount" | "created" | "modified");
+        let comparable: Vec<String> = t.write_required.iter().filter(door_stamped).cloned().collect();
+        if comparable.is_empty() {
+            "\"readBack\": null, \"readBackSkipped\": \"every write-required field on this class is stamped by the door; nothing the caller sends can be compared\"".to_string()
+        } else {
+            format!("\"readBack\": {{ \"compareFields\": [{}] }}", arr(&comparable))
+        }
     };
     let mut quartet: Vec<String> = vec![];
     if let Some(c) = &collection {
@@ -3641,7 +3686,17 @@ pub fn tests_manifest(t: &RouteTable) -> String {
         quartet.push(format!("{{ \"step\": \"update\", \"method\": \"PUT\", \"path\": \"{r}\", \"auth\": \"owner\", \"expectStatus\": 200, {rb} }}", r = json_escape(&r), rb = read_back));
     }
     if let Some(r) = with_subject(&item_del) {
-        quartet.push(format!("{{ \"step\": \"delete\", \"method\": \"DELETE\", \"path\": \"{r}\", \"auth\": \"owner\", \"expectStatus\": 204 }}", r = json_escape(&r)));
+        // #4267 — 200, not 204, and the model is what settles it. Two artifacts
+        // are generated from one route table: the OpenAPI document declares
+        // 200/201/401/403/404/409/422/502 for a delete and never 204, and the
+        // generated handler answers `write_resp("ok", "deleted <name> (via DAL)")`
+        // — a body, which 204 is not allowed to carry (ADR-047: every response
+        // carries the envelope). The test manifest alone said 204, so the suite
+        // called eight working deletes broken. Changing the expectation here is
+        // not bending a test to the code: it is making the two projections of the
+        // same model agree, and `manifest_delete_matches_openapi` below fails if
+        // they ever diverge again.
+        quartet.push(format!("{{ \"step\": \"delete\", \"method\": \"DELETE\", \"path\": \"{r}\", \"auth\": \"owner\", \"expectStatus\": 200 }}", r = json_escape(&r)));
     }
     format!(
         "{{\n  \"class\": \"{class}\",\n  \"plural\": \"{plural}\",\n  \"unit\": {{ \"routes\": [{routes}], \"mandatory\": [{mandatory}], \"secured\": [{secured}] }},\n  \"requiredFields\": [{required_kinds}],\n  \"quartet\": {{ \"throwawaySubject\": \"{throwaway}\", \"refuseIfNoCleanup\": true, \"steps\": [\n    {quart}\n  ] }},\n  \"conformance\": [\n    {conf}\n  ],\n  \"security\": [\n    {sec}\n  ],\n  \"constraints\": [\n    {cons}\n  ]\n}}\n",
@@ -4668,7 +4723,7 @@ fn handle_inner(path: &str, table: &RouteTable, meta: &mut ReqMeta, authed: bool
     // GET /schema/domain
     if path.starts_with("/schema/") {
         meta.route = "schema".into();
-        let t = RouteTable { unbounded: table.unbounded.clone(), domain: table.domain.clone(), base_path: table.base_path.clone(), class: table.class.clone(), fields: table.fields.clone(), routes: table.routes.clone(), secured: table.secured.clone(), mandatory: table.mandatory.clone(), write_required: table.write_required.clone(), repo_target: table.repo_target.clone(), exposure: table.exposure.clone(), instances_graph: table.instances_graph.clone(), tree_edges: vec![], tree_order: None, write_authority: String::new(), model_version: table.model_version.clone() };
+        let t = RouteTable { unbounded: table.unbounded.clone(), allowed_values: table.allowed_values.clone(), domain: table.domain.clone(), base_path: table.base_path.clone(), class: table.class.clone(), fields: table.fields.clone(), routes: table.routes.clone(), secured: table.secured.clone(), mandatory: table.mandatory.clone(), write_required: table.write_required.clone(), repo_target: table.repo_target.clone(), exposure: table.exposure.clone(), instances_graph: table.instances_graph.clone(), tree_edges: vec![], tree_order: None, write_authority: String::new(), model_version: table.model_version.clone() };
         return (200, routes_json(&t));
     }
     // GET /openapi.json — the generated OpenAPI 3.1 spec (#3453, #3520). Another
@@ -5841,6 +5896,68 @@ pub fn serve(port: u16, tables: &[RouteTable]) -> R<()> {
 
 #[cfg(test)]
 mod tests {
+
+    /// #4267 — two artifacts, one model: the OpenAPI document and the test
+    /// manifest are both projected from the same RouteTable, so a delete cannot
+    /// mean 200 in one and 204 in the other. It did, for as long as anyone had
+    /// run the manifest, and the suite called eight working deletes broken.
+    ///
+    /// NEGATIVE PROOF is the second half: the same assertion is run against a
+    /// manifest whose delete case has been rewritten to 204. If this check could
+    /// not tell the two apart it would pass there too, and it would be worth
+    /// nothing.
+    #[test]
+    fn manifest_delete_matches_openapi() {
+        let t = RouteTable {
+            class: format!("{}Widget", NS),
+            fields: vec!["label|datatype:string".into()],
+            routes: vec![
+                "GET /things/widgets".into(),
+                "GET /things/widgets/:name".into(),
+                "POST /things/widgets".into(),
+                "PUT /things/widgets/:name".into(),
+                "DELETE /things/widgets/:name".into(),
+            ],
+            secured: vec![], mandatory: vec!["label".into()],
+            write_required: vec!["label".into()], allowed_values: vec![],
+            unbounded: vec![], repo_target: String::new(), exposure: vec![],
+            instances_graph: "urn:chorus:domains:things".into(),
+            tree_edges: vec![], tree_order: None,
+            domain: "things".into(), base_path: "/things/widgets".into(),
+            write_authority: String::new(), model_version: String::new(),
+        };
+        let manifest = tests_manifest(&t);
+        let api = openapi_json(&t);
+
+        // The delete case says what the OpenAPI document says.
+        let delete_case = manifest
+            .split("\"step\": \"delete\"")
+            .nth(1)
+            .expect("the manifest emits a delete case for a class with a DELETE route");
+        let expect = delete_case
+            .split("\"expectStatus\":")
+            .nth(1)
+            .and_then(|r| r.trim_start().split(|c: char| !c.is_ascii_digit()).next())
+            .expect("the delete case carries an expectStatus")
+            .to_string();
+        assert_eq!(expect, "200", "manifest delete expectation");
+        assert!(api.contains("\"200\""), "the OpenAPI document declares 200");
+        assert!(!api.contains("\"204\""), "the OpenAPI document never declares 204");
+
+        // NEGATIVE PROOF — the violating state, built by hand and checked to FAIL.
+        let violating = manifest.replace(
+            "\"step\": \"delete\", \"method\": \"DELETE\", \"path\": \"/things/widgets/zz-generated-widget-probe\", \"auth\": \"owner\", \"expectStatus\": 200",
+            "\"step\": \"delete\", \"method\": \"DELETE\", \"path\": \"/things/widgets/zz-generated-widget-probe\", \"auth\": \"owner\", \"expectStatus\": 204",
+        );
+        assert_ne!(violating, manifest, "the negative fixture must actually differ — otherwise this proves nothing");
+        let bad = violating
+            .split("\"step\": \"delete\"").nth(1).unwrap()
+            .split("\"expectStatus\":").nth(1).unwrap()
+            .trim_start().split(|c: char| !c.is_ascii_digit()).next().unwrap()
+            .to_string();
+        assert_eq!(bad, "204", "the fixture really is in the state the check exists to catch");
+        assert_ne!(bad, expect, "the check separates the two states");
+    }
     /// #4177 NEGATIVE PROOF — the two-kind label that kept /principles 404 for a day is
     /// refused by name, and the one-kind pair (the fix) is accepted. The fixture is the
     /// exact pair the live door logged on 2026-09-17: 'datatype:string' vs 'plain'.
@@ -6173,7 +6290,7 @@ mod tests {
             routes: vec!["GET /domains".into()],
             secured: vec![],
             mandatory: vec![],
-            write_required: vec![],
+            write_required: vec![], allowed_values: vec![],
             repo_target: String::new(),
             exposure: vec![],
             instances_graph: INSTANCES_GRAPH.to_string(),
@@ -6468,7 +6585,7 @@ mod tests {
             routes: vec!["GET /domains".into()],
             secured: vec![],
             mandatory: vec![],
-            write_required: vec![],
+            write_required: vec![], allowed_values: vec![],
             repo_target: String::new(),
             exposure: vec![],
             instances_graph: INSTANCES_GRAPH.to_string(), tree_edges: vec![], tree_order: None, write_authority: String::new(), model_version: "unclassified".to_string(),
@@ -6505,7 +6622,7 @@ mod tests {
             routes: vec![],
             secured: vec![],
             mandatory: vec![],
-            write_required: vec![],
+            write_required: vec![], allowed_values: vec![],
             repo_target: String::new(),
             exposure: vec![],
             instances_graph: INSTANCES_GRAPH.to_string(), tree_edges: vec![], tree_order: None, write_authority: String::new(), model_version: "unclassified".to_string(),
@@ -6533,7 +6650,7 @@ mod tests {
             class: format!("{}Domain", NS),
             fields: vec!["comment".into(), "label".into()],
             mandatory: vec!["label".into()], // #3520 — exercises the `required` projection
-            write_required: vec!["label".into()],
+            write_required: vec!["label".into()], allowed_values: vec![],
             repo_target: String::new(),
             exposure: vec![],
             instances_graph: INSTANCES_GRAPH.to_string(),
@@ -6676,7 +6793,7 @@ mod tests {
             base_path: domain_path(domain, class_local),
             class: format!("{}{}", NS, class_local),
             fields: vec![], routes: vec![], secured: vec![], mandatory: vec![],
-            write_required: vec![], repo_target: String::new(), exposure: vec![],
+            write_required: vec![], allowed_values: vec![], repo_target: String::new(), exposure: vec![],
             instances_graph: format!("urn:chorus:domains:{}", domain),
             tree_edges: vec![], tree_order: None, write_authority: String::new(), model_version: "unclassified".to_string(),
         }
@@ -7039,7 +7156,7 @@ mod tests {
             domain: String::new(), base_path: String::new(),
             class: "https://jeffbridwell.com/chorus#LogSource".into(),
             fields,
-            routes: vec![], secured: vec![], mandatory: vec![], write_required: vec![],
+            routes: vec![], secured: vec![], mandatory: vec![], write_required: vec![], allowed_values: vec![],
             repo_target: String::new(), exposure: vec![],
             instances_graph: "urn:chorus:domains:logs".into(),
             tree_edges: vec![], tree_order: None, write_authority: String::new(), model_version: "unclassified".into(),
@@ -7203,7 +7320,7 @@ mod tests {
             routes: vec!["GET /domains".into()],
             secured: vec!["/schema/domain".into()],
             mandatory: vec!["label".into(), "comment".into()],
-            write_required: vec!["label".into(), "comment".into()],
+            write_required: vec!["label".into(), "comment".into()], allowed_values: vec![],
             repo_target: String::new(),
             exposure: vec![],
             instances_graph: INSTANCES_GRAPH.to_string(), tree_edges: vec![], tree_order: None, write_authority: String::new(), model_version: "unclassified".to_string(),
@@ -7268,7 +7385,7 @@ mod tests {
             routes: vec!["GET /domains".into()],
             secured: vec![],
             mandatory: vec!["label".into(), "comment".into()],
-            write_required: vec!["label".into(), "comment".into()],
+            write_required: vec!["label".into(), "comment".into()], allowed_values: vec![],
             repo_target: String::new(),
             exposure: vec![],
             instances_graph: INSTANCES_GRAPH.to_string(), tree_edges: vec![], tree_order: None, write_authority: String::new(), model_version: "unclassified".to_string(),
@@ -7296,7 +7413,7 @@ mod tests {
 
     #[test]
     fn unknown_route_404s_and_teaches_routes() {
-        let t = RouteTable { unbounded: vec![], domain: String::new(), base_path: String::new(), class: format!("{}Domain", NS), fields: vec![], routes: vec!["GET /domains".into()], secured: vec![], mandatory: vec![], write_required: vec![], repo_target: String::new(), exposure: vec![], instances_graph: INSTANCES_GRAPH.to_string(), tree_edges: vec![], tree_order: None, write_authority: String::new(), model_version: "unclassified".to_string() };
+        let t = RouteTable { unbounded: vec![], domain: String::new(), base_path: String::new(), class: format!("{}Domain", NS), fields: vec![], routes: vec!["GET /domains".into()], secured: vec![], mandatory: vec![], write_required: vec![], allowed_values: vec![], repo_target: String::new(), exposure: vec![], instances_graph: INSTANCES_GRAPH.to_string(), tree_edges: vec![], tree_order: None, write_authority: String::new(), model_version: "unclassified".to_string() };
         let (code, body) = handle("/nope", &t);
         assert_eq!(code, 404);
         assert!(body.contains("GET /domains"));
@@ -7404,7 +7521,7 @@ mod tests {
             routes: vec!["PUT /tests".into()],
             secured: vec!["/schema/test".into()],
             mandatory: vec!["filePath".into(), "testName".into()],
-            write_required: vec!["filePath".into(), "testName".into()],
+            write_required: vec!["filePath".into(), "testName".into()], allowed_values: vec![],
             repo_target: String::new(),
             exposure: vec![],
             instances_graph: "urn:chorus:domains:tests".to_string(), tree_edges: vec![], tree_order: None, write_authority: String::new(), model_version: "unclassified".to_string(),
@@ -7526,7 +7643,7 @@ mod dispatch_effective_3845 {
             routes: vec![],
             secured: vec![],
             mandatory: vec![],
-            write_required: vec![],
+            write_required: vec![], allowed_values: vec![],
             repo_target: String::new(),
             exposure: vec![],
             instances_graph: format!("urn:chorus:test:{}", class.to_lowercase()),

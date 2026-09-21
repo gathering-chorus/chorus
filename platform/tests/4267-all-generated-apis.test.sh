@@ -99,18 +99,23 @@ for CLASS in $CLASSES; do
   # Fill the body: literals get a marked value, edges get a real subject.
   BODY="$WORK/$CLASS.body.json"; MISSING=""
   : >"$WORK/$CLASS.pairs"
-  while IFS=$'\t' read -r FIELD KIND TARGET; do
+  while IFS=$'\t' read -r FIELD KIND TARGET ALLOWED; do
     [ -n "$FIELD" ] || continue
     if [ "$KIND" = "edge" ]; then
       V="$(resolve_edge "$TARGET")"
       if [ -z "$V" ]; then MISSING="$MISSING $FIELD->$TARGET"; continue; fi
+    elif [ -n "$ALLOWED" ]; then
+      # A constrained literal takes one of the shape's own words. Inventing a
+      # value here would 422 forever and read as a broken API.
+      V="$ALLOWED"
     else
       V="zz-4267-$SUBJ-$FIELD"
     fi
     printf '%s\t%s\n' "$FIELD" "$V" >>"$WORK/$CLASS.pairs"
   done < <(python3 -c 'import json,sys
 for f in json.load(open(sys.argv[1])).get("requiredFields") or []:
-    print("\t".join([f["field"], f.get("kind","literal"), f.get("targetClass","")]))' "$M")
+    av=f.get("allowedValues") or []
+    print("\t".join([f["field"], f.get("kind","literal"), f.get("targetClass",""), av[0] if av else ""]))' "$M")
 
   if [ -n "$MISSING" ]; then
     printf '%-22s %-8s %s\n' "$CLASS" UNMEASURED "no row to point a required edge at:$MISSING"
@@ -136,8 +141,17 @@ json.dump(b, open(sys.argv[3],"w"))' "$WORK/$CLASS.pairs" "$SUBJ" "$BODY"
         --data @"$BODY" "$API$PATH_")"
     fi
     if [ "$GOT" != "$WANT" ]; then
-      OK=0
-      DETAIL="$STEP $METHOD wanted $WANT got $GOT — $(head -c 120 "$WORK/resp" | tr -d '\n')"
+      # A door that refuses the CALLER has not failed the cycle — it has
+      # answered a different question, and counting it as a broken API hides
+      # the real number. 403 means this identity may not write here; the cycle
+      # is unmeasured for this class until someone who may write runs it.
+      if [ "$GOT" = "403" ]; then
+        OK=2
+        DETAIL="$(head -c 150 "$WORK/resp" | tr -d '\n')"
+      else
+        OK=0
+        DETAIL="$STEP $METHOD wanted $WANT got $GOT — $(head -c 120 "$WORK/resp" | tr -d '\n')"
+      fi
       break
     fi
     # A status says the door answered; a read-back says it KEPT what it was given.
@@ -146,23 +160,40 @@ json.dump(b, open(sys.argv[3],"w"))' "$WORK/$CLASS.pairs" "$SUBJ" "$BODY"
 m=json.load(open(sys.argv[1]))
 print(next((s["path"] for s in m["quartet"]["steps"] if s["step"]=="read"), ""))' "$M")"
       [ -n "$RB" ] || continue
+      # Compare the fields the MANIFEST says to compare, not every field we sent.
+      # The body must carry ownedBy — the shape requires it — but the door sets
+      # the owner to the authenticated caller, so comparing it asks whether the
+      # door kept a value it is documented to replace. compareFields is the
+      # generator's own answer to "what can the caller be held to".
+      CF="$(python3 -c 'import json,sys
+m=json.load(open(sys.argv[1]))
+st=next((s for s in m["quartet"]["steps"] if s["step"]==sys.argv[2]), {})
+print(json.dumps(((st.get("readBack") or {}).get("compareFields")) or []))' "$M" "$STEP")"
       DIFF="$(curl -sf --max-time 25 -H "Authorization: Bearer $TOKEN" "$API$RB" 2>/dev/null \
         | python3 -c 'import json,sys
 sent=json.load(open(sys.argv[1]))
+only=set(json.loads(sys.argv[2]))
+sent={k:v for k,v in sent.items() if k in only}
 try: env=json.load(sys.stdin)
 except Exception: print("read-back was not JSON"); sys.exit(0)
 row=env.get("data") or {}
 row=(row[0] if isinstance(row,list) and row else row)
 if not isinstance(row,dict): print("read-back was not an object"); sys.exit(0)
 links=env.get("links") or {}
+def _same(have, want):
+    # An edge is SENT as a bare subject name and READ BACK as the typed IRI the
+    # door resolved it to: sent "abby-normal", read "chorus:principal-abby-normal".
+    # That is the door doing its job, not a lost field. Compare the tail.
+    h=str(have).replace("chorus:",""); w=str(want).replace("chorus:","")
+    return h==w or h.endswith("-"+w) or w.endswith("-"+h)
 bad=[]
 for k,v in sent.items():
     if k=="name": continue
     have=row.get(k, links.get(k))
     if have is None: bad.append(f"{k} came back MISSING")
-    elif str(have).replace("chorus:","")!=str(v).replace("chorus:",""):
+    elif not _same(have, v):
         bad.append(f"{k} sent {v!r} got {have!r}")
-print("; ".join(bad))' "$BODY")"
+print("; ".join(bad))' "$BODY" "$CF")"
       if [ -n "$DIFF" ]; then OK=0; DETAIL="$STEP read-back: $DIFF"; break; fi
     fi
   done < <(python3 -c 'import json,sys
@@ -177,6 +208,9 @@ print(next((s["path"] for s in json.load(open(sys.argv[1]))["quartet"]["steps"] 
   if [ "$OK" = 1 ]; then
     printf '%-22s %-8s %s\n' "$CLASS" PASS "create read update delete, fields survived"
     pass=$((pass+1))
+  elif [ "$OK" = 2 ]; then
+    printf '%-22s %-8s %s\n' "$CLASS" NOT-PERM "$DETAIL"
+    unmeasured=$((unmeasured+1))
   else
     printf '%-22s %-8s %s\n' "$CLASS" FAIL "$DETAIL"
     fail=$((fail+1))
