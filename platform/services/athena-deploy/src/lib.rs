@@ -583,6 +583,22 @@ pub struct DomainSet {
     pub graph: String,
     /// CHORUS_ROOT-relative, in staging order.
     pub files: Vec<String>,
+    /// #4254 — replace the live graph instead of merging into it.
+    ///
+    /// Merge is the default and must stay the default: every other set shares
+    /// its graph with rows nobody in that set authored, so delete-by-absence
+    /// there would silently retire another role's work.
+    ///
+    /// A set opts in only when it OWNS its graph outright. The vocabulary graph
+    /// is written by exactly two files and nothing else, and for a graph like
+    /// that delete-by-absence is safe by construction — and is the only way a
+    /// term removed from source actually leaves the STORE, since the merge
+    /// keeps siblings and a concept would survive after its class is gone (the
+    /// #4250 ghost). Wren's call, 2026-09-21.
+    ///
+    /// Guarded at parse time: flagging a graph that another set also targets is
+    /// a refusal, because that is the 2026-08-28 wipe with a config switch.
+    pub replace: bool,
 }
 
 /// Parse the domain-set manifest. Pure.
@@ -599,13 +615,27 @@ pub fn parse_domain_sets(text: &str) -> Result<Vec<DomainSet>, String> {
             continue;
         }
         let parts: Vec<&str> = line.split('|').map(str::trim).collect();
-        if parts.len() != 3 || parts.iter().any(|p| p.is_empty()) {
+        if !(3..=4).contains(&parts.len()) || parts.iter().take(3).any(|p| p.is_empty()) {
             return Err(format!(
-                "domain-set-manifest line {}: expected <set>|<graph>|<path>, got {:?}",
+                "domain-set-manifest line {}: expected <set>|<graph>|<path>[|replace], got {:?}",
                 i + 1,
                 line
             ));
         }
+        // An unknown 4th column is a REFUSAL, never a shrug. A typo silently
+        // read as merge would leave delete-by-absence off on a set that asked
+        // for it, and nothing anywhere would say so.
+        let replace = match parts.get(3).copied() {
+            None | Some("") => false,
+            Some("replace") => true,
+            Some(other) => {
+                return Err(format!(
+                    "domain-set-manifest line {}: 4th column must be `replace` or absent, got {:?}",
+                    i + 1,
+                    other
+                ))
+            }
+        };
         let (name, graph, path) = (parts[0], parts[1], parts[2]);
         if !graph.starts_with("urn:") {
             return Err(format!(
@@ -626,14 +656,52 @@ pub fn parse_domain_sets(text: &str) -> Result<Vec<DomainSet>, String> {
                     ));
                 }
                 existing.files.push(path.to_string());
+                // Every line of a set must agree about replace. One line saying
+                // replace and another not is not a preference, it is two
+                // contradictory claims about whether the graph may be emptied.
+                if existing.replace != replace {
+                    return Err(format!(
+                        "domain-set-manifest line {}: set {:?} disagrees with itself about \
+                         `replace` — every line of one set must say the same thing",
+                        i + 1,
+                        name
+                    ));
+                }
             }
             None => out.push(DomainSet {
                 name: name.to_string(),
                 graph: graph.to_string(),
                 files: vec![path.to_string()],
+                replace,
             }),
         }
     }
+
+    // #4254 — replace is only safe when ONE set writes that graph. Flagging a
+    // shared graph would drop every co-tenant's rows on the next deploy, which
+    // is the 2026-08-28 ontology wipe with a config switch in front of it. The
+    // guard is here, at parse, so the refusal happens before any write.
+    for s in &out {
+        if !s.replace {
+            continue;
+        }
+        let co: Vec<&str> = out
+            .iter()
+            .filter(|o| o.graph == s.graph && o.name != s.name)
+            .map(|o| o.name.as_str())
+            .collect();
+        if !co.is_empty() {
+            return Err(format!(
+                "domain-set-manifest: set {:?} asks to REPLACE <{}>, but {} also target(s) it — \
+                 replacing a shared graph deletes the other set(s)' rows. Drop the flag, or give \
+                 this set a graph nothing else writes.",
+                s.name,
+                s.graph,
+                co.join(", ")
+            ));
+        }
+    }
+
     Ok(out)
 }
 
@@ -1231,6 +1299,22 @@ pub fn deploy_domain_set(set: &DomainSet, root: &str, ctx: &StoreCtx) -> Result<
                 return Err(fail(&format!("{}-staging-http-401-no-credential", set.name)));
             }
             return Err(fail(&format!("{}-staging-http-{code}", set.name)));
+        }
+    }
+
+    // #4254 — a set that OWNS its graph replaces it. Everything already in the
+    // live graph goes, so a term removed from source actually leaves the STORE
+    // rather than surviving the merge as a ghost. Only reachable for a set the
+    // parse guard has confirmed is the sole writer of this graph.
+    if set.replace {
+        let dcode = curl(&["-s", "-o", "/dev/null", "-w", "%{http_code}", "-X", "DELETE",
+            &format!("{}?graph={}", ctx.gsp, set.graph)])?;
+        // 404 is "already absent", which is the state we wanted. Anything else
+        // failing is a REFUSAL: replacing means the old rows must be gone, and
+        // continuing on a failed delete would merge into them instead.
+        if !ok_http(&dcode) && dcode != "404" {
+            let _ = curl(&["-s", "-X", "DELETE", "-o", "/dev/null", &format!("{}?graph={staging}", ctx.gsp)]);
+            return Err(fail(&format!("{}-replace-delete-http-{dcode}", set.name)));
         }
     }
 

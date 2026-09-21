@@ -20,6 +20,9 @@ export interface Term {
   definition?: string;
   /** The class or property this word names, when it names one. */
   exactMatch?: string;
+  /** The full IRI behind exactMatch — the namespace decides whether a missing
+   *  definition is our gap or someone else's vocabulary. Not rendered. */
+  exactMatchIri?: string;
   note?: string;
 }
 export interface Scheme { id: string; prefLabel: string; description?: string; terms: Term[] }
@@ -44,6 +47,12 @@ export interface VocabBinding {
 
 const local = (v: string | undefined): string => String(v || '').split(/[#/]/).pop() || '';
 
+/** Is this a term the model is expected to define? A concept with no
+ *  exactMatch at all is ours by default — it is one of the hand-authored
+ *  ones. */
+const isOurs = (iri: string | undefined): boolean =>
+  iri === undefined || iri.startsWith('https://jeffbridwell.com/');
+
 /** Upsert the scheme this row belongs to. Split out of buildVocabulary to keep
  *  it under the complexity ratchet — the fold does three jobs and each one is
  *  easier to read alone. */
@@ -66,7 +75,10 @@ function takeFirstValues(term: Term, row: VocabBinding): void {
   if (def && !term.definition) term.definition = def;
 
   const match = row.match?.value;
-  if (match && !term.exactMatch) term.exactMatch = local(match);
+  if (match && !term.exactMatch) {
+    term.exactMatch = local(match);
+    term.exactMatchIri = match;
+  }
 
   const note = row.note?.value;
   if (note && !term.note) term.note = note;
@@ -117,7 +129,16 @@ export function buildVocabulary(rows: VocabBinding[]): Vocabulary {
     termCount: all.length,
     // NAMED, not counted: "which terms have no definition" is a worklist, and
     // a number alone cannot be worked.
-    withoutDefinition: all.filter((t) => !t.definition).map((t) => t.prefLabel).sort(),
+    //
+    // rdfs:label and rdfs:comment are somebody else's vocabulary — we are never
+    // going to define them, so leaving them in puts permanent entries in a list
+    // whose whole purpose is that it can reach zero. Same exclusion the
+    // generator applies to its ungrounded list; one rule in two places is how
+    // two numbers drift apart.
+    withoutDefinition: all
+      .filter((t) => !t.definition && isOurs(t.exactMatchIri))
+      .map((t) => t.prefLabel)
+      .sort(),
   };
 }
 

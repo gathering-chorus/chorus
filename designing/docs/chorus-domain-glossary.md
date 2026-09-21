@@ -4,14 +4,17 @@
 
 **Scope:** Chorus product domains only. Gathering-only domains out of scope.
 
-**The identity words have moved (#4254, 2026-09-21).** Who acts, what they hold, and
-how we reach them — person, agent, service, role credential, and the runtime sense of
-*agent* — are now rows in `urn:chorus:domains:vocabulary`, served at
-`/athena/vocabulary.html`. That page is generated from the store and filters as you
-type across the preferred word, every variant it replaces, and the definition, so
-searching a word we retired finds the word we agreed. It is the source; this file is
-not. The rest of this glossary still waits on the sign-off named above, which is why
-those words left it.
+**The words live at `/athena/vocabulary.html` now (#4254, 2026-09-21).** Every class
+the model declares and every attribute a shape constrains is a term on that page — 265
+of them as this was written — and each definition is the `rdfs:comment` the model
+already carried. Nothing there is written by hand except the collisions, where one idea
+had several spellings and Jeff ruled which word wins. The page filters as you type
+across the preferred word, every variant it replaces, and the definition, so searching a
+word we retired finds the word we agreed.
+
+It is generated from the store on every load, so it cannot drift from the model. This
+file can, and did: it has sat since June waiting for the sign-off its own header asks
+for. Treat the page as the source and this file as history.
 
 **Sources:** chorus-product-tree.md (2026-05-14/16), athena-product-design.html (2026-05-15), chorus-service-design.html (2026-04-11/18), chorus-pulse-tobe.html, ADRs 024 / 028 / 031 / 032 / 095, all role CLAUDE.md files, TEAM_PROTOCOL.md, live Athena subdomain registry.
 

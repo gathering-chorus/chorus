@@ -96,7 +96,11 @@ function renderTerm(t, q) {
   const def = t.definition
     ? '<div class="vdef">' + hi(t.definition, q) + '</div>'
     : '<div class="vnodef">no definition yet</div>';
-  const match = t.exactMatch ? '<span class="vmatch">' + vesc(t.exactMatch) + '</span>' : '';
+  // A generated term's exactMatch IS its preferred word, so rendering both put
+  // the same string twice on every row — "ownedBy ... ownedBy". Show it only
+  // when it says something the label does not.
+  const showMatch = t.exactMatch && t.exactMatch.toLowerCase() !== t.prefLabel.toLowerCase();
+  const match = showMatch ? '<span class="vmatch">' + vesc(t.exactMatch) + '</span>' : '';
   const note = t.note ? '<div class="vnote">' + vesc(t.note) + '</div>' : '';
   return '<div class="vterm"><div class="vhead"><span class="vlabel">' + hi(t.prefLabel, q) + '</span>'
     + alts + match + '</div>' + def + note + '</div>';

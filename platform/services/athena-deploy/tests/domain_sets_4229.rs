@@ -44,7 +44,7 @@ fn the_real_manifest_holds_every_set_the_deploy_stages() {
         assert!(expected.contains(got), "{got} is in the manifest and not in this test");
     }
     let files: usize = sets.iter().map(|s| s.files.len()).sum();
-    assert_eq!(files, 14, "13 files across the original eight sets, plus the vocabulary");
+    assert_eq!(files, 15, "13 files across the original eight sets, plus the vocabulary set's two");
 }
 
 #[test]

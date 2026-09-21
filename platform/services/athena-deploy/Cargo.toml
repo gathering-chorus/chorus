@@ -5,8 +5,13 @@ edition = "2021"
 
 # Zero-dep blueprint (ADR-032 §1): std only; curl, riot, chorus-log invoked as
 # subprocesses, never code dependencies. Same atomic-verb contract as werk-*.
+default-run = "athena-deploy"
 [dependencies]
 
 [[bin]]
 name = "athena-deploy"
 path = "src/main.rs"
+
+[[bin]]
+name = "vocab-gen"
+path = "src/bin/vocab-gen.rs"
