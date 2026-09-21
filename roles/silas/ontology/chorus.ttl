@@ -165,10 +165,15 @@ chorus:CollectionDomain a owl:Class ;
 # chorus:SubProduct RETIRED (#3603) — "no subproducts — products are children of
 # products" (DEC 2026-06-25). Former instances re-authored as typed chorus:Product.
 
-chorus:SubDomain a owl:Class ;
-    rdfs:subClassOf chorus:Domain ;
-    rdfs:label "Sub-Domain" ;
-    rdfs:comment "A sub-domain within a product's domain. Matches the Sub Domain column in Jeff's spreadsheet. (SubProduct retired #3603.)" .
+# chorus:SubDomain — DELETED by #4237, 2026-09-21. Jeff ruled retire on 2026-06-19
+# (#3509), but #3509 never removed this declaration; four later cards cited it as
+# retired and each fixed only its own edge, so the class outlived its own
+# retirement by three months. It was rdfs:subClassOf chorus:Domain, so its 49 rows
+# already WERE Domains by the model's own reasoning — the class carried a label and
+# nothing else. Rows retyped in place (49 gained a:Domain, then lost a:SubDomain;
+# 990 statements to 941, exactly the 49 type triples and nothing else). Unloaded
+# first to platform/backups/graph-retirements/4237-subdomain-{rows,strays}-*.nt.
+# Re-adding it means re-opening that ruling, not fixing an omission.
 
 # =============================================================================
 # 2c2. DOMAIN COMPLETENESS — Actors, Scenarios, Contracts (#1899)
@@ -188,17 +193,17 @@ chorus:Contract a owl:Class ;
 
 chorus:hasActor a owl:ObjectProperty ;
     rdfs:label "has actor" ;
-    rdfs:domain chorus:SubDomain ;
+    rdfs:domain chorus:Domain ;
     rdfs:range chorus:Actor .
 
 chorus:hasScenario a owl:ObjectProperty ;
     rdfs:label "has scenario" ;
-    rdfs:domain chorus:SubDomain ;
+    rdfs:domain chorus:Domain ;
     rdfs:range chorus:Scenario .
 
 chorus:hasContract a owl:ObjectProperty ;
     rdfs:label "has contract" ;
-    rdfs:domain chorus:SubDomain ;
+    rdfs:domain chorus:Domain ;
     rdfs:range chorus:Contract .
 
 chorus:actorRole a owl:DatatypeProperty ;
@@ -247,7 +252,7 @@ chorus:Page a owl:Class ;
 
 chorus:hasPage a owl:ObjectProperty ;
     rdfs:label "has page" ;
-    rdfs:domain chorus:SubDomain ;
+    rdfs:domain chorus:Domain ;
     rdfs:range chorus:Page .
 
 chorus:pageRoute a owl:DatatypeProperty ;
@@ -271,7 +276,7 @@ chorus:Integration a owl:Class ;
 
 chorus:hasIntegration a owl:ObjectProperty ;
     rdfs:label "has integration" ;
-    rdfs:domain chorus:SubDomain ;
+    rdfs:domain chorus:Domain ;
     rdfs:range chorus:Integration .
 
 chorus:integrationSource a owl:DatatypeProperty ;
@@ -295,7 +300,7 @@ chorus:PersistenceStore a owl:Class ;
 
 chorus:hasPersistence a owl:ObjectProperty ;
     rdfs:label "has persistence" ;
-    rdfs:domain chorus:SubDomain ;
+    rdfs:domain chorus:Domain ;
     rdfs:range chorus:PersistenceStore .
 
 chorus:storeType a owl:DatatypeProperty ;
@@ -325,7 +330,7 @@ chorus:CodeFile a owl:Class ;
 
 chorus:hasCodeFile a owl:ObjectProperty ;
     rdfs:label "has code file" ;
-    rdfs:domain chorus:SubDomain ;
+    rdfs:domain chorus:Domain ;
     rdfs:range chorus:CodeFile .
 
 
@@ -344,7 +349,7 @@ chorus:Service a owl:Class ;
 
 chorus:hasService a owl:ObjectProperty ;
     rdfs:label "has service" ;
-    rdfs:domain chorus:SubDomain ;
+    rdfs:domain chorus:Domain ;
     rdfs:range chorus:Service .
 
 chorus:serviceType a owl:DatatypeProperty ;
@@ -373,7 +378,7 @@ chorus:Pipeline a owl:Class ;
 
 chorus:hasPipeline a owl:ObjectProperty ;
     rdfs:label "has pipeline" ;
-    rdfs:domain chorus:SubDomain ;
+    rdfs:domain chorus:Domain ;
     rdfs:range chorus:Pipeline .
 
 chorus:pipelineSource a owl:DatatypeProperty ;
@@ -405,7 +410,7 @@ chorus:LogSource a owl:Class ;
 
 chorus:hasLogSource a owl:ObjectProperty ;
     rdfs:label "has log source" ;
-    rdfs:domain chorus:SubDomain ;
+    rdfs:domain chorus:Domain ;
     rdfs:range chorus:LogSource .
 
 chorus:logSourceLocation a owl:DatatypeProperty ;
@@ -430,7 +435,7 @@ chorus:Gap a owl:Class ;
 
 chorus:hasGap a owl:ObjectProperty ;
     rdfs:label "has gap" ;
-    rdfs:domain chorus:SubDomain ;
+    rdfs:domain chorus:Domain ;
     rdfs:range chorus:Gap .
 
 chorus:gapType a owl:DatatypeProperty ;
@@ -452,6 +457,23 @@ chorus:gapSeverity a owl:DatatypeProperty ;
 chorus:Document a owl:Class ;
     rdfs:label "Document" ;
     rdfs:comment "A doc-catalog entry — service design, ADR, research note, artifact. Tagged by product, value stream step, domain, and role. All tags are 1:N." .
+
+# #4237, 2026-09-21 — DECLARED, not deleted. The #4237 targetClass gate found four
+# SHACL shapes in platform/api/src/sparql/shapes.ttl (#2554) targeting
+# chorus:CatalogDoc, a class declared in no TTL — so they matched nothing and had
+# been vacuous passes, the same shape as the SubProduct and SubDomain shapes this
+# card removed.
+#
+# The difference: those two classes were retired and their shapes were residue.
+# This one is the opposite — the feature is live (handlers/catalog-curation.ts:169
+# writes `<uri> a chorus:CatalogDoc`) and the shape says something true; the
+# declaration was simply never written. Deleting the shapes would have hidden a
+# real gap. Measured 2026-09-21: 0 CatalogDoc rows and 0 catalogHref triples, so
+# the writer has never successfully landed one — which is the thing to look at
+# next, and is now visible instead of masked by a check that could not fail.
+chorus:CatalogDoc a owl:Class ;
+    rdfs:label "Catalog Doc" ;
+    rdfs:comment "A doc-catalog entry as the curation API writes it: catalogHref plus the product / subproduct / role tags. Distinct from chorus:Document, which is the authored doc-catalog row; this is the curated projection (#2554)." .
 
 chorus:docHref a owl:DatatypeProperty ;
     rdfs:label "href" ;
@@ -969,8 +991,8 @@ chorus:roles-domain chorus:consumes chorus:time-domain .
 chorus:partOf a owl:ObjectProperty ;
     rdfs:label "part of" ;
     rdfs:comment "Single-parent ownership: the one node this node belongs to, one level up. Functional (at most one per node) — the ownership chain is the transitive walk. Used identically across Service/Domain/Product. #3450, SubProduct retired #3603." ;
-    rdfs:domain [ owl:unionOf ( chorus:Service chorus:SubDomain chorus:Domain chorus:Product ) ] ;
-    rdfs:range [ owl:unionOf ( chorus:SubDomain chorus:Domain chorus:Product chorus:ValueStream ) ] ;
+    rdfs:domain [ owl:unionOf ( chorus:Service chorus:Domain chorus:Product ) ] ;
+    rdfs:range [ owl:unionOf ( chorus:Domain chorus:Product chorus:ValueStream ) ] ;
     a owl:FunctionalProperty .
 
 # Seed slice — coherent chains that resolve up to chorusStream. #3603: child
@@ -1221,7 +1243,7 @@ chorus:subject a owl:ObjectProperty ;
     owl:deprecated true ;   # #4183 — replaced by acl:agent / acl:mode / acl:accessTo; 0 rows ever carried it
     rdfs:comment "The actor (role or sub-domain) the permission applies to." ;
     rdfs:domain chorus:Permission ;
-    rdfs:range [ owl:unionOf ( chorus:Role chorus:SubDomain ) ] .
+    rdfs:range [ owl:unionOf ( chorus:Role chorus:Domain ) ] .
 
 chorus:action a owl:DatatypeProperty ;
     rdfs:label "action" ;
@@ -1284,13 +1306,13 @@ chorus:betweenDomainA a owl:ObjectProperty ;
     rdfs:label "between domain a" ;
     rdfs:comment "One side of the auth boundary. The boundary is symmetric in declaration but the direction of trust may not be — see chorus:checkType." ;
     rdfs:domain chorus:AuthBoundary ;
-    rdfs:range chorus:SubDomain .
+    rdfs:range chorus:Domain .
 
 chorus:betweenDomainB a owl:ObjectProperty ;
     rdfs:label "between domain b" ;
     rdfs:comment "The other side of the auth boundary." ;
     rdfs:domain chorus:AuthBoundary ;
-    rdfs:range chorus:SubDomain .
+    rdfs:range chorus:Domain .
 
 chorus:checkType a owl:DatatypeProperty ;
     rdfs:label "check type" ;
@@ -1416,12 +1438,17 @@ chorus:AuthBoundaryShape a sh:NodeShape ;
     sh:property [
         sh:path chorus:betweenDomainA ;
         sh:minCount 1 ;
-        sh:class chorus:SubDomain ;
+        # #4237 — was chorus:SubDomain. Same unsatisfiable-edge defect #4010 fixed
+        # on DocumentShape: the generator maps the edge to kind 'sub-domain', the
+        # DAL has no such kind, so the create failed closed and no AuthBoundary
+        # could ever be made. SubDomain was declared rdfs:subClassOf chorus:Domain,
+        # so nothing narrows here — the constraint says what it always meant.
+        sh:class chorus:Domain ;
     ] ;
     sh:property [
         sh:path chorus:betweenDomainB ;
         sh:minCount 1 ;
-        sh:class chorus:SubDomain ;
+        sh:class chorus:Domain ;
     ] ;
     sh:property [
         sh:path chorus:checkType ;
@@ -1449,7 +1476,7 @@ chorus:Property a owl:Class ;
 chorus:hasProperty a owl:ObjectProperty ;
     rdfs:label "has property" ;
     rdfs:comment "Attaches a config Property to any structural node it configures — uniform across the model. Effective value resolves by specificity (Service > Domain > Product > ValueStream/Step), nearest override wins. #3433." ;
-    rdfs:domain [ owl:unionOf ( chorus:ValueStream chorus:ValueStreamStep chorus:Product chorus:Domain chorus:SubDomain chorus:Service ) ] ;
+    rdfs:domain [ owl:unionOf ( chorus:ValueStream chorus:ValueStreamStep chorus:Product chorus:Domain chorus:Service ) ] ;
     rdfs:range chorus:Property .
 
 chorus:propertyKey a owl:DatatypeProperty ;
@@ -1857,7 +1884,14 @@ chorus:DomainShape a sh:NodeShape ;
     sh:property [ sh:path chorus:diagram         ; sh:minCount 0 ; sh:datatype xsd:string ] ;   # #4094 — repeatable mermaid source, %% caption first line
     sh:property [ sh:path chorus:publishesPreAuth ; sh:maxCount 1 ; sh:datatype xsd:string ] ;   # #3777 — opt-in publication to the pre-auth sign-in page. OPTIONAL by design: absent means NOT published, so fail-closed comes from the data model rather than from generator code a later edit could soften.
     sh:targetClass chorus:Domain ;
-    chorus:instancesGraph "urn:chorus:ontology" ;   # #3581: serve the punned Domain class-individuals from the ontology graph where they LIVE (not the empty urn:chorus:instances default) — fixes owl-api /domains=0. Steward call A (Silas, 2026-06-25); mirrors TestShape:instancesGraph.
+    # #4237, 2026-09-21 — was "urn:chorus:ontology". #3581 pointed it there because
+    # that is where the rows LIVED; today they do not. Jeff, 2026-09-03: no rows in
+    # the ontology graph, every row in its own domain graph. All 90 Domain rows now
+    # sit in urn:chorus:domains:domains (49 retyped from the retired SubDomain, 41
+    # moved out of the schema graph, 941 statements before and after), so the
+    # declaration and the store agree again and the generated route reads the graph
+    # the model names. Verified live: Domain rows in urn:chorus:ontology = 0.
+    chorus:instancesGraph "urn:chorus:domains:domains" ;
     sh:property [ sh:path rdfs:label               ; sh:minCount 1 ; sh:datatype xsd:string ] ;
     sh:property [ sh:path rdfs:comment             ; sh:minCount 1 ; sh:datatype xsd:string ] ;
     sh:property [ sh:path chorus:ownedBy           ; sh:minCount 1 ; sh:class chorus:Principal ] ;

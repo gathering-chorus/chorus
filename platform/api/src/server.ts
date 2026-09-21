@@ -3341,7 +3341,8 @@ app.post('/api/athena/subdomains/:id/persistence', async (req: Request, res: Res
 // Extracted to handlers/subdomain-entities.ts (#2180). Four list-GETs share
 // fetchSubdomainEntities + spec — same subdomainExists check, same shape.
 import {
-  fetchSubdomainServicesList,
+  // fetchSubdomainServicesList removed by #4237 with the shadowed registration
+  // that was its only caller.
   fetchSubdomainPipelineList,
   fetchSubdomainLogsList,
   fetchSubdomainGapsList,
@@ -3377,10 +3378,13 @@ const subdomainWriteDeps = () => ({
   sparqlUpdate: athenaSparqlUpdate,
 });
 
-app.get('/api/athena/subdomains/:id/services', async (req: Request, res: Response) => {
-  const r = await fetchSubdomainServicesList(domainFacetDeps(), req.params.id);
-  res.status(r.status).json(r.body);
-});
+// GET /api/athena/subdomains/:id/services was registered HERE a second time
+// (#1924), after the #2066 registration ~130 lines above. Express serves the
+// first match, so this one never ran — and it was the only caller of
+// fetchSubdomainServicesList, whose subdomainExists() gate required
+// `a chorus:SubDomain`. #4237 deleted that class, so the shadowed handler could
+// only ever have 404'd anyway. Removed rather than left: a second registration of
+// a live path is a trap for whoever edits the first one next.
 
 // POST /api/athena/subdomains/:id/services — add service to subdomain (#1924)
 app.post('/api/athena/subdomains/:id/services', async (req: Request, res: Response) => {

@@ -28,32 +28,23 @@ chorus:ProductServiceDesignShape a sh:NodeShape ;
     sh:message "Product must have at least one ServiceDesign"
   ] .
 
-chorus:SubProductParentShape a sh:NodeShape ;
-  sh:targetClass chorus:SubProduct ;
-  sh:property [
-    sh:path [ sh:inversePath chorus:hasSubProduct ] ;
-    sh:minCount 1 ;
-    sh:severity sh:Violation ;
-    sh:message "SubProduct must have at least one parent Product"
-  ] .
-
-chorus:SubProductDomainShape a sh:NodeShape ;
-  sh:targetClass chorus:SubProduct ;
-  sh:property [
-    sh:path chorus:hasDomain ;
-    sh:minCount 1 ;
-    sh:severity sh:Violation ;
-    sh:message "SubProduct must have at least one SubDomain"
-  ] .
-
-chorus:SubDomainParentShape a sh:NodeShape ;
-  sh:targetClass chorus:SubDomain ;
-  sh:property [
-    sh:path [ sh:inversePath chorus:hasDomain ] ;
-    sh:minCount 1 ;
-    sh:severity sh:Violation ;
-    sh:message "SubDomain must have at least one parent"
-  ] .
+# Four shapes stood here and all four are DELETED by #4237, 2026-09-21:
+# SubProductParentShape, SubProductDomainShape, SubDomainParentShape,
+# SubDomainInstancesShape.
+#
+# Both classes were already retired in the model — chorus:SubProduct by #3603,
+# chorus:SubDomain by #3509 in ruling and by this card in fact. The shapes outlived
+# them. Each targeted a class with zero rows and queried urn:chorus:ontology, a
+# graph that held none of either, so all four were vacuous passes: they could not
+# go red in any state the system could reach. SubProductDomainShape was the clearest
+# tell — it required "at least one SubDomain" from a class that no longer existed,
+# naming a second class that no longer existed.
+#
+# Measured before deleting, 2026-09-21 09:42: SubProduct rows 0, inbound edges 0,
+# hasSubProduct edges 0, in every graph.
+#
+# A shape that targets a retired class reports health it never measured. If either
+# class returns, its shape comes back with it — do not restore these alone.
 
 # --- CatalogDoc shape (#2554) ---
 
@@ -87,10 +78,3 @@ chorus:CatalogDocShape a sh:NodeShape ;
 
 # --- Soft constraint (warning) ---
 
-chorus:SubDomainInstancesShape a sh:NodeShape ;
-  sh:targetClass chorus:SubDomain ;
-  sh:property [
-    sh:path chorus:contains ;
-    sh:severity sh:Warning ;
-    sh:message "SubDomain has no instances (incomplete)"
-  ] .

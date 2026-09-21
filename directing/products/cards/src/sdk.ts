@@ -576,22 +576,36 @@ type AddOpts = {
 // 2026-05-01). Add Quality if/when it becomes a tagged surface.
 const VALID_SUBPRODUCTS = new Set(['athena', 'loom', 'werk', 'borg', 'convergence', 'clearing']);
 
-// #2652 AC1 — subdomain closed list sourced LIVE from Athena. Cached per
-// process lifetime to keep validation fast; refresh on cache-miss.
+// #2652 AC1 — closed list sourced LIVE from Athena. Cached per process lifetime
+// to keep validation fast; refresh on cache-miss.
+//
+// #4237, 2026-09-21 — reads athena-make's generated Domain route, not
+// chorus-api's /api/athena/subdomains. chorus:SubDomain is retired (Jeff's ruling
+// 2026-06-19, carried out on this card) and that route had been serving count 0,
+// so this closed list was EMPTY and every --subdomain value was refused with
+// "Athena reports 0 valid subdomains". The axis was not validating, it was
+// rejecting everything.
+//
+// It points at :3360 because chorus-api has no /api/athena/domains route — I
+// checked before changing it, having just spent the morning on routes aimed at
+// things that were not there. Verified 2026-09-21: :3360/domains/domains serves
+// 88 rows.
 let SUBDOMAIN_CACHE: Set<string> | null = null;
 async function fetchSubdomainSet(): Promise<Set<string>> {
   if (SUBDOMAIN_CACHE) return SUBDOMAIN_CACHE;
   try {
-    const resp = await fetch('http://localhost:3340/api/athena/subdomains');
+    const resp = await fetch('http://localhost:3360/domains/domains');
     if (!resp.ok) throw new Error(`status ${resp.status}`);
-    const body = await resp.json() as { data?: Array<{ id: string }> };
-    const ids = (body.data || []).map((r) => r.id);
+    // The generated route keys rows by `name`, not `id` — checked the live payload
+    // rather than assuming the old shape carried over.
+    const body = await resp.json() as { data?: Array<{ name?: string; id?: string }> };
+    const ids = (body.data || []).map((r) => r.name ?? r.id).filter((x): x is string => !!x);
     SUBDOMAIN_CACHE = new Set(ids);
     return SUBDOMAIN_CACHE;
   } catch (err) {
     // If Athena is unreachable at validation time, fail closed: refuse-at-source
     // means we'd rather block the add than let an unvalidated subdomain land.
-    throw new Error(`subdomain validation requires Athena (localhost:3340/api/athena/subdomains): ${err instanceof Error ? err.message : String(err)}`, { cause: err });
+    throw new Error(`domain validation requires athena-make (localhost:3360/domains/domains): ${err instanceof Error ? err.message : String(err)}`, { cause: err });
   }
 }
 

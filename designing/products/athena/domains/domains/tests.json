@@ -1,25 +1,35 @@
 {
   "class": "Domain",
   "plural": "domains",
-  "unit": { "routes": ["GET /domains", "GET /domains/:name", "GET /domains/:name/contains", "GET /domains/:name/partof", "GET /domains/:name/has-child", "GET /domains/:name/completeness", "GET /schema/domain", "POST /domains", "PUT /domains/:name", "DELETE /domains/:name", "POST /domains/:name/partof", "DELETE /domains/:name/partof", "POST /domains/:name/contains", "DELETE /domains/:name/contains", "POST /domains/:name/has-child", "DELETE /domains/:name/has-child"], "mandatory": ["comment", "gaps", "label", "status"], "secured": ["/schema/domain"] },
+  "unit": { "routes": ["GET /domains/domains", "GET /domains/domains/:name", "GET /domains/domains/:name/contains", "GET /domains/domains/:name/partof", "GET /domains/domains/:name/has-child", "GET /domains/domains/:name/completeness", "GET /schema/domain", "POST /domains/domains", "POST /domains/domains/batch", "PUT /domains/domains/:name", "DELETE /domains/domains/:name", "POST /domains/domains/:name/partof", "DELETE /domains/domains/:name/partof", "POST /domains/domains/:name/contains", "DELETE /domains/domains/:name/contains", "POST /domains/domains/:name/has-child", "DELETE /domains/domains/:name/has-child"], "mandatory": ["comment", "gaps", "label", "purpose", "status"], "secured": [] },
+  "quartet": { "throwawaySubject": "zz-generated-domain-probe", "refuseIfNoCleanup": true, "steps": [
+    { "step": "create", "method": "POST", "path": "/domains/domains", "auth": "owner", "expectStatus": 201, "readBack": { "compareFields": ["atStep", "atStream", "comment", "definesVocabulary", "gaps", "hasDesignDoc", "label", "ownedBy", "purpose", "status"] } },
+    { "step": "read", "method": "GET", "path": "/domains/domains/zz-generated-domain-probe", "expectStatus": 200 },
+    { "step": "update", "method": "PUT", "path": "/domains/domains/zz-generated-domain-probe", "auth": "owner", "expectStatus": 200, "readBack": { "compareFields": ["atStep", "atStream", "comment", "definesVocabulary", "gaps", "hasDesignDoc", "label", "ownedBy", "purpose", "status"] } },
+    { "step": "delete", "method": "DELETE", "path": "/domains/domains/zz-generated-domain-probe", "auth": "owner", "expectStatus": 204 }
+  ] },
   "conformance": [
-    { "id": "conform GET /domains", "method": "GET", "path": "/domains", "expectStatus": 200 },
-    { "id": "conform GET /domains/:name", "method": "GET", "path": "/domains/:name", "expectStatus": 200 },
-    { "id": "conform GET /domains/:name/contains", "method": "GET", "path": "/domains/:name/contains", "expectStatus": 200 },
-    { "id": "conform GET /domains/:name/partof", "method": "GET", "path": "/domains/:name/partof", "expectStatus": 200 },
-    { "id": "conform GET /domains/:name/has-child", "method": "GET", "path": "/domains/:name/has-child", "expectStatus": 200 },
-    { "id": "conform GET /domains/:name/completeness", "method": "GET", "path": "/domains/:name/completeness", "expectStatus": 200 },
+    { "id": "conform GET /domains/domains", "method": "GET", "path": "/domains/domains", "expectStatus": 200 },
+    { "id": "conform GET /domains/domains/:name", "method": "GET", "path": "/domains/domains/:name", "expectStatus": 200 },
+    { "id": "conform GET /domains/domains/:name/contains", "method": "GET", "path": "/domains/domains/:name/contains", "expectStatus": 200 },
+    { "id": "conform GET /domains/domains/:name/partof", "method": "GET", "path": "/domains/domains/:name/partof", "expectStatus": 200 },
+    { "id": "conform GET /domains/domains/:name/has-child", "method": "GET", "path": "/domains/domains/:name/has-child", "expectStatus": 200 },
+    { "id": "conform GET /domains/domains/:name/completeness", "method": "GET", "path": "/domains/domains/:name/completeness", "expectStatus": 200 },
     { "id": "conform GET /schema/domain", "method": "GET", "path": "/schema/domain", "expectStatus": 200 }
   ],
   "security": [
     { "id": "unauth-create-401", "method": "POST", "path": "/domains", "auth": "none", "expectStatus": 401 },
     { "id": "injection-name-400", "method": "GET", "path": "/domains/bad%20name", "auth": "none", "expectStatus": 400 },
     { "id": "incomplete-create-422", "method": "POST", "path": "/domains", "auth": "owner", "body": "{}", "expectStatus": 422 },
-    { "id": "secured-401 /schema/domain", "method": "GET", "path": "/schema/domain", "auth": "none", "expectStatus": 401 }
+    { "id": "wrong-owner-403", "method": "PUT", "path": "/domains/:name", "auth": "other-owner", "expectStatus": 403 },
+    { "id": "undeclared-field-422", "method": "POST", "path": "/domains", "auth": "owner", "body": "{\"notInTheShape\":\"x\"}", "expectStatus": 422 }
   ],
   "constraints": [
     { "id": "edge-target-type-reject atStep", "check": "edge-target-type", "edge": "atStep", "targetClass": "ValueStreamStep", "method": "POST", "path": "/domains/:name/atstep", "targetOfWrongType": true, "expectStatus": 422 },
+    { "id": "edge-target-type-reject atStream", "check": "edge-target-type", "edge": "atStream", "targetClass": "ValueStream", "method": "POST", "path": "/domains/:name/atstream", "targetOfWrongType": true, "expectStatus": 422 },
+    { "id": "edge-target-type-reject definesVocabulary", "check": "edge-target-type", "edge": "definesVocabulary", "targetClass": "Class", "method": "POST", "path": "/domains/:name/definesvocabulary", "targetOfWrongType": true, "expectStatus": 422 },
     { "id": "edge-target-type-reject hasDesignDoc", "check": "edge-target-type", "edge": "hasDesignDoc", "targetClass": "Document", "method": "POST", "path": "/domains/:name/hasdesigndoc", "targetOfWrongType": true, "expectStatus": 422 },
-    { "id": "edge-target-type-reject ownedBy", "check": "edge-target-type", "edge": "ownedBy", "targetClass": "Role", "method": "POST", "path": "/domains/:name/ownedby", "targetOfWrongType": true, "expectStatus": 422 }
+    { "id": "edge-target-type-reject ownedBy", "check": "edge-target-type", "edge": "ownedBy", "targetClass": "Principal", "method": "POST", "path": "/domains/:name/ownedby", "targetOfWrongType": true, "expectStatus": 422 },
+    { "id": "datatype-reject ownerSequence", "check": "datatype", "field": "ownerSequence", "xsd": "integer", "method": "POST", "path": "/domains", "badValue": "not-a-integer", "expectStatus": 422 }
   ]
 }

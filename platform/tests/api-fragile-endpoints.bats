@@ -9,44 +9,23 @@ load test_helper
 CHORUS_API="http://localhost:3340"
 APP_API="http://localhost:3000"
 
-# --- AC 1: Athena subdomain list ---
+# --- Athena subdomain tests: DELETED by #4237, 2026-09-21 ---
+#
+# Four tests lived here asserting /api/athena/subdomains served a non-empty list,
+# a detail document for chorus-domain, a 404 for an unknown id, and completeness
+# inside five seconds. All four went red in the nightly, and Kade triaged them to
+# this card rather than fixing them in his own.
+#
+# They are not fixed, they are retired: chorus:SubDomain is gone. Jeff ruled retire
+# on 2026-06-19 (#3509) and this card carried it out — 49 rows retyped chorus:Domain
+# and the class deleted from the model. A test asserting a retired class still
+# serves is a test that would have to be un-fixed later.
+#
+# What replaces them: the generated quartet in designing/products/*/domains/*/
+# tests.json, executed by platform/tests/4237-generated-api-quartet.test.sh. It
+# covers the same endpoints for every class the model declares, including Domain,
+# and asserts the contract the shape defines rather than a row count.
 
-@test "GET /api/athena/subdomains returns 200 with array" {
-  result=$(curl -sf "$CHORUS_API/api/athena/subdomains" 2>/dev/null)
-  [ $? -eq 0 ]
-  # Response must be JSON with a data array
-  count=$(echo "$result" | python3 -c "import json,sys; d=json.load(sys.stdin); print(len(d.get('data', d) if isinstance(d.get('data', d), list) else []))" 2>/dev/null)
-  [ "$count" -gt 0 ]
-}
-
-# --- AC 2: Athena subdomain detail ---
-
-@test "GET /api/athena/subdomains/:id returns 200 with sections" {
-  result=$(curl -sf "$CHORUS_API/api/athena/subdomains/chorus-domain" 2>/dev/null)
-  [ $? -eq 0 ]
-  # Response must have data with an id field
-  has_id=$(echo "$result" | python3 -c "import json,sys; d=json.load(sys.stdin); print('yes' if d.get('data',{}).get('id') or d.get('id') else 'no')" 2>/dev/null)
-  [ "$has_id" = "yes" ]
-}
-
-@test "GET /api/athena/subdomains/:id returns 404 for unknown domain" {
-  http_code=$(curl -s -o /dev/null -w "%{http_code}" "$CHORUS_API/api/athena/subdomains/nonexistent-domain-xyz" 2>/dev/null)
-  [ "$http_code" = "404" ] || [ "$http_code" = "400" ]
-}
-
-# --- AC 3: Athena completeness returns within 5s ---
-
-@test "GET /api/athena/subdomains/:id/completeness returns within 5s" {
-  start=$(date +%s)
-  result=$(curl -sf --max-time 5 "$CHORUS_API/api/athena/subdomains/chorus-domain/completeness" 2>/dev/null)
-  end=$(date +%s)
-  elapsed=$((end - start))
-  [ $? -eq 0 ]
-  [ "$elapsed" -le 5 ]
-  # Response must have lifecycle data
-  has_lifecycle=$(echo "$result" | python3 -c "import json,sys; d=json.load(sys.stdin); print('yes' if d.get('data',{}).get('lifecycle') else 'no')" 2>/dev/null)
-  [ "$has_lifecycle" = "yes" ]
-}
 
 # --- AC 4: Seed webhook returns 200 with valid Twilio payload ---
 

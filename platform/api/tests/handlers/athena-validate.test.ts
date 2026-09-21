@@ -1,3 +1,5 @@
+// @test-type: unit — every dependency is injected (sparql, now, timestamp, and
+// since #4237 the check list itself). No service, no store, no clock.
 /**
  * athena-validate handler — unit tests (#2180).
  *
@@ -77,11 +79,17 @@ describe('fetchAthenaValidate (#2180)', () => {
   });
 
   test('warning-severity binding lands in warnings[] and leaves valid=true', async () => {
+    // #4237 — this test used to reach for whichever real rule carried severity
+    // 'warning', which was "SubDomain has no instances". That rule targeted a
+    // retired class and was deleted with it, and the test went red although
+    // nothing about the binding had changed. It now brings its own rule: what is
+    // under test is that a warning lands in warnings[] and does not sink valid,
+    // not which rules happen to exist today.
     const r = await fetchAthenaValidate(deps({
+      checks: [{ name: 'a warning rule', severity: 'warning', query: 'ASK-WARN' }],
       sparql: async (query) => {
-        // Only the warning-severity check has "no instances" constraint wording
-        if (query.includes('chorus:contains')) {
-          return binding('https://jeffbridwell.com/chorus#empty-subdomain');
+        if (query === 'ASK-WARN') {
+          return binding('https://jeffbridwell.com/chorus#some-node');
         }
         return emptyResult();
       },

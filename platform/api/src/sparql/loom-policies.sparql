@@ -1,7 +1,8 @@
 PREFIX chorus: <https://jeffbridwell.com/chorus#>
 PREFIX rdfs: <http://www.w3.org/2000/01/rdf-schema#>
 SELECT ?policy ?label ?comment ?surface ?principle ?principleLabel WHERE {
-  GRAPH <urn:chorus:ontology> {
+  # #4237 — was urn:chorus:ontology, the SCHEMA graph. Policy rows live here (measured 2026-09-21).
+  GRAPH <urn:chorus:domains:policies> {
     ?policy a chorus:Policy .
     OPTIONAL { ?policy rdfs:label ?label }
     OPTIONAL { ?policy rdfs:comment ?comment }
