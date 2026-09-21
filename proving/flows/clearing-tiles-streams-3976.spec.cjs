@@ -217,15 +217,25 @@ test.describe('#3976 the streams pane renders the beats', () => {
     const rows = await res.json();
     expect(Array.isArray(rows), 'stream returns an array').toBeTruthy();
 
+    // #4255 — zero beats is UNMEASURED, not a failure. This assertion could not
+    // tell "the parser dropped them" from "no role happened to be working in the
+    // last window", so it went red on a quiet minute and told us nothing about
+    // the parser. What IS testable without a live worker: the stream answers,
+    // and every beat it DOES carry is attributed and says what it says.
     const activity = rows.filter((r) => r.type === 'activity');
-    expect(
-      activity.length,
-      'the pane carries running/thinking beats — zero means the parser dropped them again',
-    ).toBeGreaterThan(0);
+    if (activity.length === 0) {
+      test.info().annotations.push({
+        type: 'unmeasured',
+        description:
+          'no activity beats in the window — the parser is not exercised by this run (#4255)',
+      });
+      return;
+    }
 
-    const sample = activity[0];
-    expect(sample.role, 'a beat is attributed').toBeTruthy();
-    expect(sample.text, 'a beat says running or thinking').toMatch(/running|thinking/i);
+    for (const beat of activity) {
+      expect(beat.role, 'a beat is attributed').toBeTruthy();
+      expect(beat.text, 'a beat says running or thinking').toMatch(/running|thinking/i);
+    }
   });
 });
 

@@ -436,12 +436,17 @@ fn run(args: &[String]) -> Result<i32, String> {
         if !ok {
             any_failed = true;
             failed_count += 1;
+            let msg = werk_test::unit_failure_message(check.kind.label(), target);
             emit_spine(
                 "test.failed",
                 &role,
                 &card,
                 &trace,
-                &[("check", check.kind.label()), ("unit", target)],
+                &[
+                    ("check", check.kind.label()),
+                    ("unit", target),
+                    ("message", msg.as_str()),
+                ],
             );
         }
     }
@@ -459,8 +464,9 @@ fn run(args: &[String]) -> Result<i32, String> {
                 Some(false) => {
                     any_failed = true;
                     failed_count += 1;
+                    let msg = werk_test::unit_failure_message(kind.label(), "workspace");
                     emit_spine("test.failed", &role, &card, &trace,
-                        &[("check", kind.label()), ("unit", "workspace")]);
+                        &[("check", kind.label()), ("unit", "workspace"), ("message", msg.as_str())]);
                 }
                 // #4154 — nothing ran and nothing crashed: typed, visible, not red.
                 None => emit_spine("test.unmeasured", &role, &card, &trace,
@@ -701,6 +707,30 @@ fn run_nightly(args: &[String]) -> Result<i32, String> {
         // compared; the census below reads this same line.
         for (c, _) in &joined {
             println!("nightly-case|{}|{}|{}", c.file_path, c.test_name, c.result);
+            // #4255 — a FAILING case becomes an event, not just a line in a file
+            // on this box. Jeff, 2026-09-21: "i thought they had our logging
+            // standards integrated it feels like they dont". The runner emitted
+            // test.failed per UNIT with no case name and no reason, so Loki
+            // could say a unit went red and never which test or why.
+            if c.result == "fail" {
+                // #4255 — `message` is required by the Structured Logging
+                // Contract and the runner was not carrying one, so Loki held a
+                // failure with no sentence in it. `level` rides from the event
+                // name (spine_args).
+                let msg = format!("{} failed in {}", c.test_name, c.file_path);
+                emit_spine(
+                    "testcase.failed",
+                    &mint_role,
+                    &card,
+                    &trace,
+                    &[
+                        ("file", c.file_path.as_str()),
+                        ("case", c.test_name.as_str()),
+                        ("unit", unit),
+                        ("message", msg.as_str()),
+                    ],
+                );
+            }
         }
         println!("nightly-stored|{}|{} of {}", unit, stored, joined.len());
     };
@@ -812,8 +842,9 @@ fn run_nightly(args: &[String]) -> Result<i32, String> {
         if !ok {
             any_failed = true;
             failed_count += 1;
+            let msg = werk_test::unit_failure_message("cargo", c);
             emit_spine("test.failed", &role, &card, &trace,
-                &[("check", "cargo"), ("unit", c)]);
+                &[("check", "cargo"), ("unit", c), ("message", msg.as_str())]);
         }
     }
 
@@ -902,7 +933,9 @@ fn run_nightly(args: &[String]) -> Result<i32, String> {
         if !ok {
             any_failed = true;
             failed_count += 1;
-            emit_spine("test.failed", &role, &card, &trace, &[("check", "npm"), ("unit", p)]);
+            let msg = werk_test::unit_failure_message("npm", p);
+            emit_spine("test.failed", &role, &card, &trace,
+                &[("check", "npm"), ("unit", p), ("message", msg.as_str())]);
         }
     }
 
@@ -1004,7 +1037,9 @@ fn run_nightly(args: &[String]) -> Result<i32, String> {
         if !ok {
             any_failed = true;
             failed_count += 1;
-            emit_spine("test.failed", &role, &card, &trace, &[("check", "bats"), ("unit", b)]);
+            let msg = werk_test::unit_failure_message("bats", b);
+            emit_spine("test.failed", &role, &card, &trace,
+                &[("check", "bats"), ("unit", b), ("message", msg.as_str())]);
         }
     }
     if werk_test::security_rows(&rows).is_empty() {

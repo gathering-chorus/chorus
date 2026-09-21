@@ -168,7 +168,11 @@ flow_health() {
 
   # Extract WIP section (lines between "WIP (N):" and next status header)
   local wip_section
-  wip_section=$(echo "$board_output" | sed -n '/^WIP /,/^[A-Z]/p' | grep -E '^\s+\d+' | grep -iv '\[defect\]')
+  # #4255 — an EMPTY section is a real state, not a failure. Under `set -e`
+  # a grep that matches nothing returns 1 and killed the whole scan: on
+  # 2026-09-21 the board had nothing in Next, the script died at line 183, and
+  # five of its own AC tests failed on a report it never finished writing.
+  wip_section=$(echo "$board_output" | sed -n '/^WIP /,/^[A-Z]/p' | grep -E '^\s+\d+' | grep -iv '\[defect\]' || true)
   local wip_count
   wip_count=$(echo "$wip_section" | grep -cE '^\s+\d+' || true)
   wip_count=${wip_count//[^0-9]/}
@@ -180,7 +184,7 @@ flow_health() {
 
   # Extract Next section
   local next_section
-  next_section=$(echo "$board_output" | sed -n '/^Next /,/^[A-Z]/p' | grep -E '^\s+\d+' | grep -iv '\[defect\]')
+  next_section=$(echo "$board_output" | sed -n '/^Next /,/^[A-Z]/p' | grep -E '^\s+\d+' | grep -iv '\[defect\]' || true)
   local next_count
   next_count=$(echo "$next_section" | grep -cE '^\s+\d+' || true)
   next_count=${next_count//[^0-9]/}
@@ -208,7 +212,7 @@ golfball_detection() {
   board_output=$(bash "$CARDS" list 2>/dev/null)
   # Extract only WIP + Next sections
   local active_cards
-  active_cards=$(echo "$board_output" | sed -n '/^WIP /,/^[A-Z]/p; /^Next /,/^[A-Z]/p' | grep -E '^\s+\d+')
+  active_cards=$(echo "$board_output" | sed -n '/^WIP /,/^[A-Z]/p; /^Next /,/^[A-Z]/p' | grep -E '^\s+\d+' || true)
   local domains_with_new
   domains_with_new=$(echo "$active_cards" | grep -E 'type:new|type:enhance' | grep -oE 'domain:\w+' | sort -u)
   for domain in $domains_with_new; do
@@ -254,6 +258,10 @@ main() {
       > /dev/null 2>&1 || true
     [ -x "$CHORUS_LOG" ] && "$CHORUS_LOG" daily.signal.completed kade 2>/dev/null &
   fi
+  # #4255 — the function's LAST command was the dry-run test itself, so a
+  # dry run returned 1 and the script exited 1 with the report fully written.
+  # The exit code said "the scan failed" when the scan had succeeded.
+  return 0
 }
 
 main

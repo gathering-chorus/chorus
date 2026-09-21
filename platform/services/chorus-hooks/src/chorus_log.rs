@@ -129,7 +129,7 @@ fn emit(args: &[String], silent: bool) -> ExitCode {
             continue;
         }
         // Handle --level <value> (previous was --level, this is the value)
-        if ["info", "warn", "critical"].contains(&kv.as_str())
+        if ["info", "warn", "error", "critical"].contains(&kv.as_str())
             && args.iter().skip(2).any(|a| a == "--level")
             && !kv.contains('=')
         {
@@ -211,9 +211,13 @@ fn emit(args: &[String], silent: bool) -> ExitCode {
         display.push_str(&format!(" trace={}", trace));
     }
 
-    // Validate level
-    if !["info", "warn", "critical"].contains(&level.as_str()) {
-        eprintln!("Invalid level '{}' — use info, warn, or critical", level);
+    // Validate level. #4255 — `error` was NOT in this set, so every caller that
+    // asked for it was silently downgraded to info: 24h of the spine held 2,536
+    // failure-shaped events, 1,552 info and 976 warn, zero error. The contract
+    // (roles/silas/system-architecture.md, Structured Logging Contract) names
+    // info|warn|error; the substrate could not emit the third one.
+    if !["info", "warn", "error", "critical"].contains(&level.as_str()) {
+        eprintln!("Invalid level '{}' — use info, warn, error, or critical", level);
         level = "info".to_string();
     }
 
@@ -573,6 +577,31 @@ mod tests {
         let json = extract_json_object(&line, "test.level.kv").unwrap();
         let parsed: serde_json::Value = serde_json::from_str(&json).unwrap();
         assert_eq!(parsed["level"], "warn");
+    }
+
+    // #4255 — `error` reaches the log as `error`. Before this card the allowed
+    // set was info|warn|critical, so this call was downgraded to info and the
+    // failure read as routine. NEGATIVE PROOF: the assertion below is on the
+    // written level, not on the absence of a crash — revert the allowed-set
+    // change and this test reads "info" and fails.
+    #[test]
+    fn level_error_is_written_not_downgraded() {
+        run(&["test.level.error".into(), "kade".into(), "level=error".into()]);
+        let line = find_event_line("test.level.error").expect("event in log");
+        let json = extract_json_object(&line, "test.level.error").unwrap();
+        let parsed: serde_json::Value = serde_json::from_str(&json).unwrap();
+        assert_eq!(parsed["level"], "error");
+    }
+
+    // #4255 — an unknown level still falls back to info. The fix widened the
+    // set by exactly one word; it did not make the validator accept anything.
+    #[test]
+    fn unknown_level_still_falls_back_to_info() {
+        run(&["test.level.bogus".into(), "kade".into(), "level=catastrophe".into()]);
+        let line = find_event_line("test.level.bogus").expect("event in log");
+        let json = extract_json_object(&line, "test.level.bogus").unwrap();
+        let parsed: serde_json::Value = serde_json::from_str(&json).unwrap();
+        assert_eq!(parsed["level"], "info");
     }
 
     #[test]

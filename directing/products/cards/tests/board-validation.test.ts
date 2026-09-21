@@ -43,6 +43,22 @@ beforeAll(async () => {
 
 function skip() { return !INTEGRATION_ENABLED || !canConnect; }
 
+/**
+ * #4255 — the move tests MUTATE Jeff's real board.
+ *
+ * They used to grab whatever card happened to sit in Won't Do, move it to
+ * another bucket, assert, and move it back. Three runs on 2026-09-20/21 gave
+ * three different answers because the card they grabbed changed with the
+ * board, and one run read back "garden-observability" where a status belonged.
+ *
+ * A test may not pick a live card at random and move it. It runs only when the
+ * operator names a disposable card, and it says so plainly when it does not.
+ */
+const MUTABLE_CARD = process.env.CARDS_MUTABLE_TEST_INDEX;
+function skipMutating() {
+  return skip() || !MUTABLE_CARD;
+}
+
 // ── move() ──
 
 describe('move: persistence verification', () => {
@@ -50,26 +66,36 @@ describe('move: persistence verification', () => {
   let testCard: BoardTask | undefined;
 
   beforeAll(async () => {
-    if (skip()) return;
-    // Find a Won't Do card to use as test subject (safe to move around)
+    if (skipMutating()) {
+      if (!skip() && !MUTABLE_CARD) {
+        // Loud, not silent: the tier is NOT covered this run, and why.
+        console.warn(
+          'board-validation: move tests SKIPPED — set CARDS_MUTABLE_TEST_INDEX ' +
+          'to a disposable card index. They will not move a live card chosen at random (#4255).'
+        );
+      }
+      return;
+    }
     const all = await client.list();
-    testCard = all.find(t => t.status === "Won't Do" && t.title.includes('test') || t.title.includes('Test'));
+    testCard = all.find(t => String(t.index) === MUTABLE_CARD);
     if (!testCard) {
-      // Fall back to any Won't Do card
-      testCard = all.find(t => t.status === "Won't Do");
+      throw new Error(
+        `board-validation: CARDS_MUTABLE_TEST_INDEX=${MUTABLE_CARD} is not on the board — ` +
+        'refusing to substitute another card (#4255).'
+      );
     }
   });
 
   afterAll(async () => {
     // Restore card to original status
-    if (skip() || !testCard) return;
+    if (skipMutating() || !testCard) return;
     try {
       await client.move(testCard.index, 'wont-do');
     } catch { /* best effort restore */ }
   });
 
   test('move persists in Vikunja API', async () => {
-    if (skip() || !testCard) return;
+    if (skipMutating() || !testCard) return;
     // Move to Next (small bucket, under 50 cap — verifiable via bucket view)
     await client.move(testCard.index, 'next');
     // Verify via bucket view — Next is always <50 so the card will be visible
@@ -85,7 +111,7 @@ describe('move: persistence verification', () => {
   });
 
   test('move cache invalidation — list() reflects new status after move', async () => {
-    if (skip() || !testCard) return;
+    if (skipMutating() || !testCard) return;
     // Move to Ideas (small bucket, verifiable)
     await client.move(testCard.index, 'ideas');
     const all = await client.list();
