@@ -1798,6 +1798,33 @@ chorus:ofRow           a owl:DatatypeProperty ; rdfs:label "ofRow" ; rdfs:range 
     rdfs:comment "The row this revision belongs to, as <plural>/<name> (products/spine). #4102." .
 chorus:snapshot        a owl:DatatypeProperty ; rdfs:label "snapshot" ; rdfs:range xsd:string ;
     rdfs:comment "The replaced version's full data as one JSON object, every property, for field-by-field diffs. #4102." .
+# --- provenance: the domain that owns version history (#4265) ---
+#
+# Jeff, #4211: "i like having a provenance domain". The class existed and 16,993
+# rows were migrated into urn:chorus:domains:provenance, but no domain CLAIMED
+# chorus:Version — and athena-make serves exactly the claimed classes, so
+# /versions and /revisions both 404'd and #4102's whole suite tested a route
+# that has never existed.
+#
+# The IRI was taken: chorus:provenance was an owl:AnnotationProperty carrying
+# "how this row was written". Silas ruled on 2026-09-21 — rename the property to
+# chorus:writeOrigin (184 rows migrated, verified 184 -> 0 / 0 -> 184) and keep
+# this IRI for the domain, because a domain's slug must match its graph and a
+# property and a domain sharing one IRI is the #4237 shape that broke prod today.
+chorus:provenance a owl:Class, chorus:Domain ;
+    rdfs:label "provenance" ;
+    rdfs:comment "Version history — what a row looked like before it was replaced, so two versions can be diffed field by field." ;
+    chorus:comment "Version history — what a row looked like before it was replaced." ;
+    chorus:purpose "Keep every replaced version of a row, so a human can see what changed without re-reading the whole document." ;
+    chorus:ownedBy chorus:principal-wren ; chorus:partOf chorus:chorus ;
+    chorus:atStep chorus:Directing ; chorus:atStream chorus:chorusStream ;
+    chorus:repoTarget "platform/services/athena-make" ;
+    chorus:definesVocabulary chorus:Version .
+
+# The parent product: athena already holds domains, products, services and
+# value-streams — the model-about-the-model surfaces. Version history is one of them.
+chorus:athena chorus:hasDomain chorus:provenance .
+
 chorus:VersionShape a sh:NodeShape ;
     sh:targetClass chorus:Version ;
     # #4211 — provenance is a domain (Jeff, 2026-09-18: "i like having a provenance domain"),
