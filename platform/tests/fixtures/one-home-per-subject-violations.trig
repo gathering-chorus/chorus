@@ -1,0 +1,38 @@
+# #4256 negative-proof fixture for chorus:gc-one-home-per-subject (#3734).
+#
+# The check asks for subjects that carry rdf:type in BOTH urn:chorus:ontology
+# and urn:chorus:instances. It claimed provenRedRows 4 from the 2026-08-14
+# authoring sweep, but no fixture in the tree could make it red: the hats
+# fixture is a single flat graph, and a flat graph cannot satisfy a query that
+# names two. So the check passed green because nothing could turn it red.
+#
+# Four violating subjects, matching the four the 08-14 sweep named, each paired
+# with a compliant subject of the same shape that lives in ONE graph only — so
+# a query that matches on shape rather than on the violation fails here.
+
+@prefix chorus: <https://jeffbridwell.com/chorus#> .
+@prefix rdfs:   <http://www.w3.org/2000/01/rdf-schema#> .
+
+GRAPH <urn:chorus:ontology> {
+  chorus:pulse    a chorus:Product ; rdfs:label "pulse" .
+  chorus:clearing a chorus:Product ; rdfs:label "clearing" .
+  chorus:borg     a chorus:Product ; rdfs:label "borg" .
+  chorus:werk     a chorus:Product ; rdfs:label "werk" .
+  # compliant: typed here and nowhere else
+  chorus:onlyInOntology a chorus:Product ; rdfs:label "only in ontology" .
+}
+
+GRAPH <urn:chorus:instances> {
+  chorus:pulse    a chorus:Product .
+  chorus:clearing a chorus:Product .
+  chorus:borg     a chorus:Product .
+  chorus:werk     a chorus:Product .
+  # compliant: typed here and nowhere else
+  chorus:onlyInInstances a chorus:Product ; rdfs:label "only in instances" .
+  # compliant: mentioned in ontology but NOT typed there, so not a second home
+  chorus:mentionedNotTyped a chorus:Product ; rdfs:label "mentioned, not typed" .
+}
+
+GRAPH <urn:chorus:ontology> {
+  chorus:mentionedNotTyped rdfs:comment "referenced without rdf:type" .
+}

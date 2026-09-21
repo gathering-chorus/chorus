@@ -80,6 +80,13 @@ ask() { # $1 = WHERE body -> prints "True"/"False"
   [ "$(ask 'chorus:PrincipalShape sh:targetClass chorus:Principal')" = "True" ]
 }
 
-@test "live: borgProduct hasDomain repointed to security" {
-  [ "$(ask 'chorus:borgProduct chorus:hasDomain chorus:security')" = "True" ]
+@test "live: the borg product hasDomain repointed to security" {
+  # #4256 — this asked for chorus:borgProduct, an IRI that no longer exists.
+  # The IRI convergence (chorus.ttl:652) renamed it to chorus:borg, which does
+  # carry hasDomain security along with twelve more. Asserting a ghost IRI is
+  # a check that can only ever fail, and it failed every night for weeks.
+  [ "$(ask 'chorus:borg a chorus:Product')" = "True" ]
+  [ "$(ask 'chorus:borg chorus:hasDomain chorus:security')" = "True" ]
+  # and the old spelling must stay gone, or the rename has been undone
+  [ "$(ask 'chorus:borgProduct ?p ?o')" = "False" ]
 }

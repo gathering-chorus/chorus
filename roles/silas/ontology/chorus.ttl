@@ -1532,7 +1532,11 @@ chorus:PropertyShape a sh:NodeShape ;
         sh:minCount 1 ;
         sh:datatype xsd:string ;
     ] ;
-    chorus:instancesGraph "urn:chorus:ontology" ;
+    # #4256 — ruling A (Jeff, 2026-09-21): the declared home follows the rows.
+    # Every one of these seven classes declared urn:chorus:ontology while not a
+    # single row lived there, so the door served 0 of 9. Rows first, declaration
+    # second — the opposite order is what left seven classes unservable.
+    chorus:instancesGraph "urn:chorus:domains:properties" ;
     chorus:generatedBy "athena-model" .
 
 # --- PropertyKey registry — config-as-data governance (ADR-044) ---
@@ -1648,7 +1652,11 @@ chorus:PropertyKeyShape a sh:NodeShape ;
         sh:maxCount 1 ;
         sh:datatype xsd:boolean ;
     ] ;
-    chorus:instancesGraph "urn:chorus:ontology" ;
+    # #4256 — ruling A (Jeff, 2026-09-21): the declared home follows the rows.
+    # Every one of these seven classes declared urn:chorus:ontology while not a
+    # single row lived there, so the door served 0 of 6. Rows first, declaration
+    # second — the opposite order is what left seven classes unservable.
+    chorus:instancesGraph "urn:chorus:domains:properties" ;
     chorus:generatedBy "athena-model" .
 
 
@@ -1891,6 +1899,12 @@ chorus:DomainShape a sh:NodeShape ;
     # moved out of the schema graph, 941 statements before and after), so the
     # declaration and the store agree again and the generated route reads the graph
     # the model names. Verified live: Domain rows in urn:chorus:ontology = 0.
+    # #4256 — agreeing with the above, and adding the one thing it does not say:
+    # the punned owl:Class declarations STAY in the ontology graph. Moving those
+    # out with the rows is what took prod athena-make down at 09:38 today, and
+    # what brought it back was copying the 68 definesVocabulary claims into the
+    # schema graph. The rows move; the class declarations and the vocabulary
+    # claims do not.
     chorus:instancesGraph "urn:chorus:domains:domains" ;
     sh:property [ sh:path rdfs:label               ; sh:minCount 1 ; sh:datatype xsd:string ] ;
     sh:property [ sh:path rdfs:comment             ; sh:minCount 1 ; sh:datatype xsd:string ] ;
@@ -2058,14 +2072,22 @@ chorus:hasThreshold a owl:ObjectProperty ;
 chorus:EmitContractShape a sh:NodeShape ;
     sh:targetClass chorus:EmitContract ;
     sh:property [ sh:path chorus:declaresMetric ; sh:minCount 1 ; sh:class chorus:Metric ] ;
-    chorus:instancesGraph "urn:chorus:ontology" ;
+    # #4256 — ruling A (Jeff, 2026-09-21): the declared home follows the rows.
+    # Every one of these seven classes declared urn:chorus:ontology while not a
+    # single row lived there, so the door served 0 of 1. Rows first, declaration
+    # second — the opposite order is what left seven classes unservable.
+    chorus:instancesGraph "urn:chorus:domains:spine" ;
     chorus:generatedBy "athena-model" .
 
 chorus:MetricShape a sh:NodeShape ;
     sh:targetClass chorus:Metric ;
     sh:property [ sh:path chorus:metricKind ; sh:minCount 1 ; sh:maxCount 1 ; sh:datatype xsd:string ] ;
     sh:property [ sh:path chorus:emittedAs ; sh:minCount 1 ; sh:datatype xsd:string ] ;
-    chorus:instancesGraph "urn:chorus:ontology" ;
+    # #4256 — ruling A (Jeff, 2026-09-21): the declared home follows the rows.
+    # Every one of these seven classes declared urn:chorus:ontology while not a
+    # single row lived there, so the door served 0 of 6. Rows first, declaration
+    # second — the opposite order is what left seven classes unservable.
+    chorus:instancesGraph "urn:chorus:domains:metrics" ;
     chorus:generatedBy "athena-model" .
 
 

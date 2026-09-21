@@ -65,7 +65,11 @@ chorus:GovernanceCheckShape a sh:NodeShape ;
     sh:property [ sh:path chorus:checkQuery ; sh:minCount 1 ; sh:datatype xsd:string ] ;
     sh:property [ sh:path chorus:checkSeverity ; sh:minCount 1 ; sh:datatype xsd:string ] ;
     sh:property [ sh:path chorus:boundTo ; sh:minCount 1 ] ;
-    chorus:instancesGraph "urn:chorus:ontology" ;
+    # #4256 — ruling A (Jeff, 2026-09-21): the declared home follows the rows.
+    # Every one of these seven classes declared urn:chorus:ontology while not a
+    # single row lived there, so the door served 0 of 7. Rows first, declaration
+    # second — the opposite order is what left seven classes unservable.
+    chorus:instancesGraph "urn:chorus:domains:domains" ;
     chorus:generatedBy "athena-model" .
 
 

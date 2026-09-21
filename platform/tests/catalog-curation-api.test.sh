@@ -17,7 +17,12 @@ API_BASE="${API_BASE:-http://localhost:3340}"
 if [ "$API_BASE" = "http://localhost:3340" ] && [ "${CHORUS_ALLOW_PROD_TEST:-0}" != "1" ]; then
   echo "REFUSED: API_BASE is the production chorus-api. Point it at a werk variant," >&2
   echo "  or set CHORUS_ALLOW_PROD_TEST=1 to write test rows into the live store." >&2
-  exit 1
+  # #4256 — rc=3 is the runner's SELF-REFUSAL code (#4016/#4065): the suite
+  # declined to run here, which is neither pass nor fail. It exited 1 before,
+  # so a suite doing exactly the right thing — refusing to write test rows into
+  # the live store — was counted red every night and reported to Jeff as a
+  # product failure. The membrane working is not a red.
+  exit 3
 fi
 TAGS_URL="$API_BASE/api/chorus/catalog/tags"
 LINEAGE_URL="$API_BASE/api/chorus/catalog/lineage"

@@ -20,6 +20,8 @@ setup() {
   chmod 600 "$HDR"
 }
 
+FUSEKI_QUERY_URL="${FUSEKI_QUERY:-http://localhost:3030/pods/sparql}"
+
 @test "#4220 a session may NOT create a Principal — who exists is deploy-only" {
   run curl -s --max-time 10 -X POST -H 'Content-Type: application/json' -H "@$HDR" \
     --data '{"name":"bats-4220-principal","label":"p","principalKind":"agent","canSignIn":"false"}' \
@@ -53,6 +55,39 @@ setup() {
 }
 
 @test "#4220 the door names the graph the MODEL declares, not a built-in" {
+  # #4256 — this asserted the literal string "urn:chorus:domains:identity",
+  # which is the built-in it exists to forbid. #4226 moved PrincipalShape's
+  # instancesGraph to security (the home follows the rows: all 12 Principals
+  # are there), and the test went red while the door was doing exactly what
+  # the title asks. Ask the model what it declares, then require the door to
+  # agree with THAT.
+  declared="$(curl -s --max-time 10 --data-urlencode \
+    'query=PREFIX chorus: <https://jeffbridwell.com/chorus#> PREFIX sh: <http://www.w3.org/ns/shacl#> SELECT ?g WHERE { GRAPH <urn:chorus:ontology> { ?s sh:targetClass chorus:Principal ; chorus:instancesGraph ?g } } LIMIT 1' \
+    -H 'Accept: text/csv' "$FUSEKI_QUERY_URL" | tail -1 | tr -d '\r')"
+  [ -n "$declared" ] || skip "model unreadable here — UNMEASURED, not green"
   run curl -s --max-time 10 "$API/v1/identity/principals"
-  printf '%s' "$output" | grep -q "urn:chorus:domains:identity"
+  printf '%s' "$output" | grep -q "$declared"
+}
+
+@test "#4220 NEGATIVE PROOF — the door does NOT name the graph it used to hardcode" {
+  # The code gate caught my first attempt: it grepped for
+  # urn:chorus:domains:not-a-real-home, a string that could never appear
+  # whatever the door did, so it proved nothing. The real failure this guards
+  # is the ONE that actually happened — the door naming urn:chorus:domains:identity
+  # while PrincipalShape declares security. That is a plausible wrong answer,
+  # it was the literal the test asserted until today, and if the door regressed
+  # to it this assertion fails.
+  declared="$(curl -s --max-time 10 --data-urlencode \
+    'query=PREFIX chorus: <https://jeffbridwell.com/chorus#> PREFIX sh: <http://www.w3.org/ns/shacl#> SELECT ?g WHERE { GRAPH <urn:chorus:ontology> { ?s sh:targetClass chorus:Principal ; chorus:instancesGraph ?g } } LIMIT 1' \
+    -H 'Accept: text/csv' "$FUSEKI_QUERY_URL" | tail -1 | tr -d '\r')"
+  [ -n "$declared" ] || skip "model unreadable here — UNMEASURED, not green"
+  # the wrong-but-plausible candidate: whichever of the two the model did NOT pick
+  if [ "$declared" = "urn:chorus:domains:identity" ]; then
+    wrong="urn:chorus:domains:security"
+  else
+    wrong="urn:chorus:domains:identity"
+  fi
+  run curl -s --max-time 10 "$API/v1/identity/principals"
+  printf '%s' "$output" | grep -q "$declared"
+  ! printf '%s' "$output" | grep -q "$wrong"
 }

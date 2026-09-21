@@ -69,7 +69,14 @@ MODEL="$ROOT/roles/silas/ontology/chorus.ttl"
 RQ="$ROOT/platform/api/src/sparql/principal-scope.rq"
 arq_rows() {
   command -v arq >/dev/null 2>&1 || skip "arq (Jena) not installed — UNMEASURED here, not green"
-  local q; q="$(sed 's/GRAPH <urn:chorus:domains:security> //' "$RQ")"
+  # #4256 — the query names TWO graphs: Permissions in the security graph and
+  # Principals in the urn:chorus:principal-home MARKER, which server.ts:110
+  # substitutes at runtime from PrincipalShape's instancesGraph and which
+  # exists nowhere in the store. Stripping only the first left the marker
+  # standing, so arq matched nothing and all three cases below returned 0 —
+  # including the NEGATIVE PROOF, which passed for the wrong reason.
+  local q; q="$(sed -e 's/GRAPH <urn:chorus:domains:security> //' \
+                    -e 's/GRAPH <urn:chorus:principal-home> //' "$RQ")"
   printf '%s\n' "$q" > "$T/q.rq"
   arq --results csv --query "$T/q.rq" --data "$T/rows.ttl" 2>/dev/null | tail -n +2 | grep -c . || true
 }
@@ -93,6 +100,14 @@ TTL
 @test "an authored row (mode as the acl IRI) still grants" {
   fixture 'acl:Write'
   n=$(arq_rows); rm -rf "$T"
+  [ "$n" -eq 1 ]
+}
+
+@test "the negative proof below cannot pass vacuously — a Write row grants 1" {
+  # #4256: tests 8, 9 and 10 all returned 0 for a day because an unsubstituted
+  # graph marker made arq match nothing, and 10 read that as "correctly denied".
+  # This asserts the query can answer at all, so a zero in 10 means Read.
+  fixture 'acl:Write'; n=$(arq_rows); rm -rf "$T"
   [ "$n" -eq 1 ]
 }
 
