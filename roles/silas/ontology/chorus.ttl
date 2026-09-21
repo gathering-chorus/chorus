@@ -1496,7 +1496,17 @@ chorus:PropertyShape a sh:NodeShape ;
         sh:path chorus:propertyScope ;
         sh:minCount 1 ;
         sh:datatype xsd:string ;
-    ] .
+    ] ;
+    # #3845 — propertyValueType is MANDATORY: the /effective fetch's graph pattern
+    # requires it, so a Property written without it is silently invisible to the
+    # cascade — the door must refuse what the resolver cannot see.
+    sh:property [
+        sh:path chorus:propertyValueType ;
+        sh:minCount 1 ;
+        sh:datatype xsd:string ;
+    ] ;
+    chorus:instancesGraph "urn:chorus:ontology" ;
+    chorus:generatedBy "athena-model" .
 
 # --- PropertyKey registry — config-as-data governance (ADR-044) ---
 # A property key is a REGISTERED, governed vocabulary, not a free-text field.
@@ -1610,7 +1620,9 @@ chorus:PropertyKeyShape a sh:NodeShape ;
         sh:path chorus:lifecycleEnabled ;
         sh:maxCount 1 ;
         sh:datatype xsd:boolean ;
-    ] .
+    ] ;
+    chorus:instancesGraph "urn:chorus:ontology" ;
+    chorus:generatedBy "athena-model" .
 
 
 
@@ -2011,12 +2023,16 @@ chorus:hasThreshold a owl:ObjectProperty ;
 
 chorus:EmitContractShape a sh:NodeShape ;
     sh:targetClass chorus:EmitContract ;
-    sh:property [ sh:path chorus:declaresMetric ; sh:minCount 1 ; sh:class chorus:Metric ] .
+    sh:property [ sh:path chorus:declaresMetric ; sh:minCount 1 ; sh:class chorus:Metric ] ;
+    chorus:instancesGraph "urn:chorus:ontology" ;
+    chorus:generatedBy "athena-model" .
 
 chorus:MetricShape a sh:NodeShape ;
     sh:targetClass chorus:Metric ;
     sh:property [ sh:path chorus:metricKind ; sh:minCount 1 ; sh:maxCount 1 ; sh:datatype xsd:string ] ;
-    sh:property [ sh:path chorus:emittedAs ; sh:minCount 1 ; sh:datatype xsd:string ] .
+    sh:property [ sh:path chorus:emittedAs ; sh:minCount 1 ; sh:datatype xsd:string ] ;
+    chorus:instancesGraph "urn:chorus:ontology" ;
+    chorus:generatedBy "athena-model" .
 
 
 
@@ -2781,36 +2797,6 @@ chorus:FileShape a sh:NodeShape ;
     sh:property [ sh:path chorus:fileDependsOn    ; sh:class chorus:Domain ] ;
     sh:property [ sh:path chorus:stale            ; sh:datatype xsd:boolean ] .
 
-chorus:EmitContractShape a sh:NodeShape ;
-    sh:targetClass chorus:EmitContract ;
-    sh:property [ sh:path chorus:declaresMetric ; sh:minCount 1 ] ;
-    chorus:instancesGraph "urn:chorus:ontology" ;
-    chorus:generatedBy "athena-model" .
-
-chorus:MetricShape a sh:NodeShape ;
-    sh:targetClass chorus:Metric ;
-    sh:property [ sh:path chorus:metricKind ; sh:minCount 1 ] ;
-    sh:property [ sh:path chorus:emittedAs ; sh:minCount 1 ] ;
-    chorus:instancesGraph "urn:chorus:ontology" ;
-    chorus:generatedBy "athena-model" .
-
-chorus:PropertyShape a sh:NodeShape ;
-    sh:targetClass chorus:Property ;
-    sh:property [ sh:path chorus:propertyKey ; sh:minCount 1 ] ;
-    sh:property [ sh:path chorus:propertyValue ; sh:minCount 1 ] ;
-    # #3845 — propertyValueType is MANDATORY: the /effective fetch's graph pattern
-    # requires it, so a Property written without it is silently invisible to the
-    # cascade — the door must refuse what the resolver cannot see.
-    sh:property [ sh:path chorus:propertyValueType ; sh:minCount 1 ] ;
-    chorus:instancesGraph "urn:chorus:ontology" ;
-    chorus:generatedBy "athena-model" .
-
-chorus:PropertyKeyShape a sh:NodeShape ;
-    sh:targetClass chorus:PropertyKey ;
-    sh:property [ sh:path chorus:keyName ; sh:minCount 1 ] ;
-    sh:property [ sh:path chorus:propertyKind ; sh:minCount 1 ] ;
-    chorus:instancesGraph "urn:chorus:ontology" ;
-    chorus:generatedBy "athena-model" .
 
 # =====================================================================
 # #3870 — Services-domain runtime vocabulary (ServiceInstance/ScheduledJob)

@@ -97,3 +97,4 @@ fn the_shipped_model_files_are_clean_of_this_today() {
     assert!(files.len() >= 5, "found only {} ttl files — the walk is wrong", files.len());
     assert_eq!(duplicate_property_declarations(&files), Vec::<String>::new());
 }
+
