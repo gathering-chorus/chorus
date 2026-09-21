@@ -3479,68 +3479,12 @@ pub fn tests_manifest(t: &RouteTable) -> String {
                 r = json_escape(r), path = json_escape(path))
         })
         .collect();
-    let mut security: Vec<String> = vec![
-        format!("{{ \"id\": \"unauth-create-401\", \"method\": \"POST\", \"path\": \"{p}\", \"auth\": \"none\", \"expectStatus\": 401 }}", p = json_escape(&p)),
-        format!("{{ \"id\": \"injection-name-400\", \"method\": \"GET\", \"path\": \"{p}/bad%20name\", \"auth\": \"none\", \"expectStatus\": 400 }}", p = json_escape(&p)),
-        format!("{{ \"id\": \"incomplete-create-422\", \"method\": \"POST\", \"path\": \"{p}\", \"auth\": \"owner\", \"body\": \"{{}}\", \"expectStatus\": 422 }}", p = json_escape(&p)),
-    ];
-    for s in &t.secured {
-        security.push(format!("{{ \"id\": \"secured-401 {s}\", \"method\": \"GET\", \"path\": \"{s}\", \"auth\": \"none\", \"expectStatus\": 401 }}", s = json_escape(s)));
-    }
-    // #4237 — the rest of Jeff's refusal list. unauthenticated / malformed name /
-    // incomplete body were already here; a caller who IS authenticated but does not
-    // own the row, and a body carrying a property the shape never declared, were not.
-    // The second one is the lossy-write class: PUT silently drops off-shape props,
-    // so nothing ever told us the door had eaten a field.
-    security.push(format!("{{ \"id\": \"wrong-owner-403\", \"method\": \"PUT\", \"path\": \"{p}/:name\", \"auth\": \"other-owner\", \"expectStatus\": 403 }}", p = json_escape(&p)));
-    security.push(format!("{{ \"id\": \"undeclared-field-422\", \"method\": \"POST\", \"path\": \"{p}\", \"auth\": \"owner\", \"body\": \"{{\\\"notInTheShape\\\":\\\"x\\\"}}\", \"expectStatus\": 422 }}", p = json_escape(&p)));
-    // #3467 finish — CONSTRAINT-enforcement cases, derived from the shape's fields:
-    // a strict-datatype field gets a bad value → 422 (sh:datatype); an edge points at
-    // a wrong-typed target → 422 (sh:class edge-target-type). These ASSERT the DAL
-    // enforcement that makes the write surface constraint-safe (not just well-formed).
-    let strict_xsd = |x: &str| matches!(x,
-        "integer" | "int" | "long" | "short" | "byte" | "nonNegativeInteger" | "positiveInteger"
-        | "nonPositiveInteger" | "negativeInteger" | "unsignedInt" | "unsignedLong" | "unsignedShort"
-        | "decimal" | "double" | "float" | "boolean");
-    let mut constraints: Vec<String> = vec![];
-    for f in &t.fields {
-        let (name, kind) = f.split_once('|').unwrap_or((f.as_str(), "plain"));
-        if let Some(xsd) = kind.strip_prefix("datatype:") {
-            if strict_xsd(xsd) {
-                constraints.push(format!(
-                    "{{ \"id\": \"datatype-reject {name}\", \"check\": \"datatype\", \"field\": \"{name}\", \"xsd\": \"{xsd}\", \"method\": \"POST\", \"path\": \"{p}\", \"badValue\": \"not-a-{xsd}\", \"expectStatus\": 422 }}",
-                    name = json_escape(name), xsd = json_escape(xsd), p = json_escape(&p)
-                ));
-            }
-        } else if let Some(cls) = kind.strip_prefix("edge:") {
-            let seg = name.to_lowercase();
-            constraints.push(format!(
-                "{{ \"id\": \"edge-target-type-reject {name}\", \"check\": \"edge-target-type\", \"edge\": \"{name}\", \"targetClass\": \"{cls}\", \"method\": \"POST\", \"path\": \"{p}/:name/{seg}\", \"targetOfWrongType\": true, \"expectStatus\": 422 }}",
-                name = json_escape(name), cls = json_escape(cls), p = json_escape(&p), seg = json_escape(&seg)
-            ));
-        }
-    }
-    // #4237 — the QUARTET: create, read, update, delete, per endpoint, in order.
-    //
-    // Jeff, 2026-09-20: "the api must apply all data types shacl etc that defines
-    // rhe contract general pattern is create update get delete per endpoint".
-    //
-    // Two properties make this different from the conformance list above. First it
-    // covers PUT and DELETE, which were never generated at all. Second the create
-    // step READS ITS ROW BACK and compares the write-required fields one by one —
-    // a status code says the door answered, a read-back says it kept what it was
-    // given. #4167 found the store holding five hasDomain edges while the API
-    // returned none; no status assertion can see that.
-    //
-    // The whole quartet runs against a throwaway subject it deletes, and refuses to
-    // run if it cannot clean up — a generated write case must never leave a row.
+    // Defined here rather than beside the quartet: the refusal cases below need
+    // the same substitution, and a manifest that carries ":name" in one block and
+    // a real subject in another teaches every consumer two conventions.
     let throwaway = format!("zz-generated-{}-probe", class.to_lowercase());
-    // Take the paths from the ROUTE TABLE, not from a reconstructed "/{plural}".
-    // The generated routes carry a base path (`/domains/domains`, not `/domains`),
-    // so a rebuilt string would emit a quartet against a URL the API does not
-    // serve — cases that 404 forever and get read as "the door refused", which is
-    // the hollow-check shape this card exists to kill. If the model declares no
-    // route for a verb, no case is emitted for it: absent, never invented.
+    let with_subject = |r: &Option<String>| r.as_ref().map(|x| x.replace(":name", &throwaway));
+
     // No segment-depth arithmetic here: the base path varies by class
     // (`/domains/domains` vs `/domains`), and a depth rule silently emitted no
     // create case for the shallow shape. The only thing that identifies the
@@ -3563,7 +3507,94 @@ pub fn tests_manifest(t: &RouteTable) -> String {
     let item_get   = route_path("GET", true);
     let item_put   = route_path("PUT", true);
     let item_del   = route_path("DELETE", true);
-    let with_subject = |r: &Option<String>| r.as_ref().map(|x| x.replace(":name", &throwaway));
+
+    // Fall back to the plural only when the model declares no collection route at
+    // all; then there is nothing to address and the case is honest about it.
+    let coll: &str = collection.as_deref().unwrap_or(&p);
+    let mut security: Vec<String> = vec![
+        // #4237 follow-up (Kade, cold-eyes on the land): these five read the ROUTE
+        // TABLE, like the quartet. They used to be built from "/{plural}", which
+        // for Domain is /domains while the served route is /domains/domains — so
+        // every refusal case addressed a path the API does not have. A security
+        // case that routes to 404 cannot go red on a real authz failure, and
+        // cannot go green either: it measures the router, not the door.
+        format!("{{ \"id\": \"unauth-create-401\", \"method\": \"POST\", \"path\": \"{p}\", \"auth\": \"none\", \"expectStatus\": 401 }}", p = json_escape(coll)),
+        format!("{{ \"id\": \"injection-name-400\", \"method\": \"GET\", \"path\": \"{p}/bad%20name\", \"auth\": \"none\", \"expectStatus\": 400 }}", p = json_escape(coll)),
+        format!("{{ \"id\": \"incomplete-create-422\", \"method\": \"POST\", \"path\": \"{p}\", \"auth\": \"owner\", \"body\": \"{{}}\", \"expectStatus\": 422 }}", p = json_escape(coll)),
+    ];
+    for s in &t.secured {
+        security.push(format!("{{ \"id\": \"secured-401 {s}\", \"method\": \"GET\", \"path\": \"{s}\", \"auth\": \"none\", \"expectStatus\": 401 }}", s = json_escape(s)));
+    }
+    // #4237 — the rest of Jeff's refusal list. unauthenticated / malformed name /
+    // incomplete body were already here; a caller who IS authenticated but does not
+    // own the row, and a body carrying a property the shape never declared, were not.
+    // The second one is the lossy-write class: PUT silently drops off-shape props,
+    // so nothing ever told us the door had eaten a field.
+    // Substitute the subject HERE, as the quartet does. Leaving ":name" in the
+    // manifest makes every consumer learn a substitution convention, and a runner
+    // that forgets it sends a literal ":name" to the door and reads the 404 as a
+    // refusal. One convention: a manifest carries real paths.
+    if let Some(item) = with_subject(&item_put) {
+        security.push(format!("{{ \"id\": \"wrong-owner-403\", \"method\": \"PUT\", \"path\": \"{r}\", \"auth\": \"other-owner\", \"expectStatus\": 403 }}", r = json_escape(&item)));
+    }
+    security.push(format!("{{ \"id\": \"undeclared-field-422\", \"method\": \"POST\", \"path\": \"{p}\", \"auth\": \"owner\", \"body\": \"{{\\\"notInTheShape\\\":\\\"x\\\"}}\", \"expectStatus\": 422 }}", p = json_escape(coll)));
+    // #3467 finish — CONSTRAINT-enforcement cases, derived from the shape's fields:
+    // a strict-datatype field gets a bad value → 422 (sh:datatype); an edge points at
+    // a wrong-typed target → 422 (sh:class edge-target-type). These ASSERT the DAL
+    // enforcement that makes the write surface constraint-safe (not just well-formed).
+    let strict_xsd = |x: &str| matches!(x,
+        "integer" | "int" | "long" | "short" | "byte" | "nonNegativeInteger" | "positiveInteger"
+        | "nonPositiveInteger" | "negativeInteger" | "unsignedInt" | "unsignedLong" | "unsignedShort"
+        | "decimal" | "double" | "float" | "boolean");
+    let mut constraints: Vec<String> = vec![];
+    for f in &t.fields {
+        let (name, kind) = f.split_once('|').unwrap_or((f.as_str(), "plain"));
+        if let Some(xsd) = kind.strip_prefix("datatype:") {
+            if strict_xsd(xsd) {
+                // #4259 — same fix as the refusals: the declared collection route,
+                // not "/{plural}". A datatype case posted to a path the API does not
+                // serve 404s, and a 404 is not a 422, so the case reports a failure
+                // that has nothing to do with the datatype it claims to test.
+                constraints.push(format!(
+                    "{{ \"id\": \"datatype-reject {name}\", \"check\": \"datatype\", \"field\": \"{name}\", \"xsd\": \"{xsd}\", \"method\": \"POST\", \"path\": \"{p}\", \"badValue\": \"not-a-{xsd}\", \"expectStatus\": 422 }}",
+                    name = json_escape(name), xsd = json_escape(xsd), p = json_escape(coll)
+                ));
+            }
+        } else if let Some(cls) = kind.strip_prefix("edge:") {
+            let seg = name.to_lowercase();
+            // #4259 — the constraint cases carried the same defect as the refusal
+            // cases: built from "/{plural}" and left with a literal ":name". Kade
+            // named the security block; this one had it too, and my own test found
+            // it. Read the declared item route and substitute the subject.
+            let edge_path = with_subject(&item_get)
+                .map(|base| format!("{base}/{seg}"))
+                .unwrap_or_else(|| format!("{p}/{throwaway}/{seg}"));
+            constraints.push(format!(
+                "{{ \"id\": \"edge-target-type-reject {name}\", \"check\": \"edge-target-type\", \"edge\": \"{name}\", \"targetClass\": \"{cls}\", \"method\": \"POST\", \"path\": \"{ep}\", \"targetOfWrongType\": true, \"expectStatus\": 422 }}",
+                name = json_escape(name), cls = json_escape(cls), ep = json_escape(&edge_path)
+            ));
+        }
+    }
+    // #4237 — the QUARTET: create, read, update, delete, per endpoint, in order.
+    //
+    // Jeff, 2026-09-20: "the api must apply all data types shacl etc that defines
+    // rhe contract general pattern is create update get delete per endpoint".
+    //
+    // Two properties make this different from the conformance list above. First it
+    // covers PUT and DELETE, which were never generated at all. Second the create
+    // step READS ITS ROW BACK and compares the write-required fields one by one —
+    // a status code says the door answered, a read-back says it kept what it was
+    // given. #4167 found the store holding five hasDomain edges while the API
+    // returned none; no status assertion can see that.
+    //
+    // The whole quartet runs against a throwaway subject it deletes, and refuses to
+    // run if it cannot clean up — a generated write case must never leave a row.
+    // Take the paths from the ROUTE TABLE, not from a reconstructed "/{plural}".
+    // The generated routes carry a base path (`/domains/domains`, not `/domains`),
+    // so a rebuilt string would emit a quartet against a URL the API does not
+    // serve — cases that 404 forever and get read as "the door refused", which is
+    // the hollow-check shape this card exists to kill. If the model declares no
+    // route for a verb, no case is emitted for it: absent, never invented.
     let read_back = if t.write_required.is_empty() {
         // NEGATIVE-PROOF guard: comparing zero fields passes for every response.
         // Say the read-back is absent rather than emit a check that cannot fail.
