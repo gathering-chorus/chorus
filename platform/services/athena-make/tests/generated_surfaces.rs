@@ -202,3 +202,78 @@ fn no_case_is_invented_for_a_verb_the_model_does_not_declare() {
         "a delete case was emitted for a class with no DELETE route");
     assert!(m.contains("\"step\": \"create\""), "the rest of the quartet still stands");
 }
+
+// --- #4259 — refusals address a real route, or are not emitted ------------
+//
+// Kade, cold-eyes on #4237's land: the five refusal cases were built from
+// "/{plural}" while the quartet read the route table, so for Domain they
+// addressed /domains and the served route is /domains/domains. A security case
+// pointing at a path the API does not have measures the router, not the door —
+// it cannot go red on a real authz failure and cannot go green either.
+//
+// My own proof missed it because the loopback stub answered any path. These two
+// tests are what that stub could not be.
+
+// Extract the "path" value of each refusal case, exactly — not by substring.
+// My first cut of these tests asserted !contains("\"path\": \"/domains/bad%20name\"")
+// and that string IS a substring of "/domains/domains/bad%20name", so the test
+// failed against a generator that was already correct. A substring assertion
+// cannot tell a path from a path that ends with it — the same defect these tests
+// exist to catch, in the test.
+fn refusal_paths(manifest: &str) -> Vec<(String, String)> {
+    let mut out = vec![];
+    for line in manifest.lines() {
+        let l = line.trim();
+        if !l.starts_with("{ \"id\"") { continue; }
+        let id = l.split("\"id\": \"").nth(1).and_then(|r| r.split('"').next()).unwrap_or("").to_string();
+        if id.starts_with("conform ") { continue; }
+        let path = l.split("\"path\": \"").nth(1).and_then(|r| r.split('"').next()).unwrap_or("").to_string();
+        out.push((id, path));
+    }
+    out
+}
+
+#[test]
+fn every_refusal_case_addresses_a_declared_route() {
+    let m = tests_manifest(&fixture());
+    let paths = refusal_paths(&m);
+    for id in ["unauth-create-401", "injection-name-400", "incomplete-create-422", "undeclared-field-422"] {
+        assert!(paths.iter().any(|(i, _)| i == id), "refusal case missing: {id}");
+    }
+    for (id, path) in &paths {
+        assert!(!path.contains(":name"), "refusal {id} carries an unsubstituted :name path: {path}");
+    }
+}
+
+#[test]
+fn refusals_follow_the_base_path_not_the_plural() {
+    let mut t = fixture();
+    t.routes = vec![
+        "GET /domains/domains".into(),
+        "GET /domains/domains/:name".into(),
+        "POST /domains/domains".into(),
+        "PUT /domains/domains/:name".into(),
+        "DELETE /domains/domains/:name".into(),
+    ];
+    let m = tests_manifest(&t);
+    for (id, path) in refusal_paths(&m) {
+        // secured-401 cases address a declared secured SURFACE (/schema/domain),
+        // which is a real route and deliberately outside the resource base path.
+        // Excluded by what it is, not by name-matching the one in this fixture.
+        if id.starts_with("secured-401 ") { continue; }
+        assert!(path.starts_with("/domains/domains"),
+            "refusal {id} addresses {path}, outside the declared base path /domains/domains");
+    }
+}
+
+#[test]
+fn negative_proof_no_wrong_owner_case_without_a_declared_put() {
+    // If the model declares no PUT, emitting wrong-owner-403 against a guessed
+    // path produces a case that 404s forever and reads as "the door refused".
+    let mut t = fixture();
+    t.routes.retain(|r| !r.starts_with("PUT "));
+    let m = tests_manifest(&t);
+    assert!(!m.contains("wrong-owner-403"),
+        "a wrong-owner case was emitted for a class with no PUT route");
+    assert!(m.contains("unauth-create-401"), "the rest of the refusal set still stands");
+}

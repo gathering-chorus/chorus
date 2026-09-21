@@ -18,18 +18,18 @@
     { "id": "conform GET /schema/domain", "method": "GET", "path": "/schema/domain", "expectStatus": 200 }
   ],
   "security": [
-    { "id": "unauth-create-401", "method": "POST", "path": "/domains", "auth": "none", "expectStatus": 401 },
-    { "id": "injection-name-400", "method": "GET", "path": "/domains/bad%20name", "auth": "none", "expectStatus": 400 },
-    { "id": "incomplete-create-422", "method": "POST", "path": "/domains", "auth": "owner", "body": "{}", "expectStatus": 422 },
-    { "id": "wrong-owner-403", "method": "PUT", "path": "/domains/:name", "auth": "other-owner", "expectStatus": 403 },
-    { "id": "undeclared-field-422", "method": "POST", "path": "/domains", "auth": "owner", "body": "{\"notInTheShape\":\"x\"}", "expectStatus": 422 }
+    { "id": "unauth-create-401", "method": "POST", "path": "/domains/domains", "auth": "none", "expectStatus": 401 },
+    { "id": "injection-name-400", "method": "GET", "path": "/domains/domains/bad%20name", "auth": "none", "expectStatus": 400 },
+    { "id": "incomplete-create-422", "method": "POST", "path": "/domains/domains", "auth": "owner", "body": "{}", "expectStatus": 422 },
+    { "id": "wrong-owner-403", "method": "PUT", "path": "/domains/domains/zz-generated-domain-probe", "auth": "other-owner", "expectStatus": 403 },
+    { "id": "undeclared-field-422", "method": "POST", "path": "/domains/domains", "auth": "owner", "body": "{\"notInTheShape\":\"x\"}", "expectStatus": 422 }
   ],
   "constraints": [
-    { "id": "edge-target-type-reject atStep", "check": "edge-target-type", "edge": "atStep", "targetClass": "ValueStreamStep", "method": "POST", "path": "/domains/:name/atstep", "targetOfWrongType": true, "expectStatus": 422 },
-    { "id": "edge-target-type-reject atStream", "check": "edge-target-type", "edge": "atStream", "targetClass": "ValueStream", "method": "POST", "path": "/domains/:name/atstream", "targetOfWrongType": true, "expectStatus": 422 },
-    { "id": "edge-target-type-reject definesVocabulary", "check": "edge-target-type", "edge": "definesVocabulary", "targetClass": "Class", "method": "POST", "path": "/domains/:name/definesvocabulary", "targetOfWrongType": true, "expectStatus": 422 },
-    { "id": "edge-target-type-reject hasDesignDoc", "check": "edge-target-type", "edge": "hasDesignDoc", "targetClass": "Document", "method": "POST", "path": "/domains/:name/hasdesigndoc", "targetOfWrongType": true, "expectStatus": 422 },
-    { "id": "edge-target-type-reject ownedBy", "check": "edge-target-type", "edge": "ownedBy", "targetClass": "Principal", "method": "POST", "path": "/domains/:name/ownedby", "targetOfWrongType": true, "expectStatus": 422 },
-    { "id": "datatype-reject ownerSequence", "check": "datatype", "field": "ownerSequence", "xsd": "integer", "method": "POST", "path": "/domains", "badValue": "not-a-integer", "expectStatus": 422 }
+    { "id": "edge-target-type-reject atStep", "check": "edge-target-type", "edge": "atStep", "targetClass": "ValueStreamStep", "method": "POST", "path": "/domains/domains/zz-generated-domain-probe/atstep", "targetOfWrongType": true, "expectStatus": 422 },
+    { "id": "edge-target-type-reject atStream", "check": "edge-target-type", "edge": "atStream", "targetClass": "ValueStream", "method": "POST", "path": "/domains/domains/zz-generated-domain-probe/atstream", "targetOfWrongType": true, "expectStatus": 422 },
+    { "id": "edge-target-type-reject definesVocabulary", "check": "edge-target-type", "edge": "definesVocabulary", "targetClass": "Class", "method": "POST", "path": "/domains/domains/zz-generated-domain-probe/definesvocabulary", "targetOfWrongType": true, "expectStatus": 422 },
+    { "id": "edge-target-type-reject hasDesignDoc", "check": "edge-target-type", "edge": "hasDesignDoc", "targetClass": "Document", "method": "POST", "path": "/domains/domains/zz-generated-domain-probe/hasdesigndoc", "targetOfWrongType": true, "expectStatus": 422 },
+    { "id": "edge-target-type-reject ownedBy", "check": "edge-target-type", "edge": "ownedBy", "targetClass": "Principal", "method": "POST", "path": "/domains/domains/zz-generated-domain-probe/ownedby", "targetOfWrongType": true, "expectStatus": 422 },
+    { "id": "datatype-reject ownerSequence", "check": "datatype", "field": "ownerSequence", "xsd": "integer", "method": "POST", "path": "/domains/domains", "badValue": "not-a-integer", "expectStatus": 422 }
   ]
 }
