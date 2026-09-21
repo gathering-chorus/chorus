@@ -37,3 +37,12 @@ values|urn:chorus:domains:values|roles/wren/ontology/values-4006.ttl
 services|urn:chorus:domains:services|designing/data/service-instances.ttl
 
 practices|urn:chorus:domains:practices|roles/kade/ontology/practices-3754-instances.ttl
+
+# The ONLY set flagged `replace` (#4254). It is allowed because these two files
+# are the only writers of this graph — one generated, one hand-authored — so
+# delete-by-absence is safe by construction, and it is the only way a term
+# removed from the source actually leaves the STORE rather than surviving the
+# merge as a ghost. parse_domain_sets REFUSES the flag on any graph a second
+# set also targets; security, principles and roles could never take it.
+vocabulary|urn:chorus:domains:vocabulary|roles/silas/ontology/vocabulary-identity-4254.ttl|replace
+vocabulary|urn:chorus:domains:vocabulary|roles/silas/ontology/vocabulary-generated-4254.ttl|replace

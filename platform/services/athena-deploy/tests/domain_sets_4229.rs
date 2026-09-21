@@ -25,18 +25,26 @@ fn rows_group_into_sets_and_keep_their_order() {
 }
 
 #[test]
-fn the_real_manifest_holds_the_eight_sets_the_bash_deploys() {
+fn the_real_manifest_holds_every_set_the_deploy_stages() {
+    // Named, not counted. A bare `== 8` pinned a historical number, so adding
+    // a set went red for the wrong reason (#4254 added `vocabulary`) while a
+    // silently DROPPED set could hide behind a silently added one. Every set
+    // is named here, and an unnamed one is still a red — it just has to be
+    // added to this list deliberately.
     let path = format!("{}/../../config/domain-set-manifest.txt", crate_dir());
     let text = std::fs::read_to_string(&path).expect("the manifest ships with the verb");
     let sets = parse_domain_sets(&text).expect("the shipped manifest must parse");
     let names: Vec<&str> = sets.iter().map(|s| s.name.as_str()).collect();
-    assert_eq!(names.len(), 8, "eight sets, got {names:?}");
-    for want in ["security", "code-vocab", "roles", "infrastructure",
-                 "principles", "values", "services", "practices"] {
+    let expected = ["security", "code-vocab", "roles", "infrastructure",
+                    "principles", "values", "services", "practices", "vocabulary"];
+    for want in expected {
         assert!(names.contains(&want), "{want} missing from {names:?}");
     }
+    for got in &names {
+        assert!(expected.contains(got), "{got} is in the manifest and not in this test");
+    }
     let files: usize = sets.iter().map(|s| s.files.len()).sum();
-    assert_eq!(files, 13, "the bash names 13 files across these eight sets");
+    assert_eq!(files, 15, "13 files across the original eight sets, plus the vocabulary set's two");
 }
 
 #[test]

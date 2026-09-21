@@ -583,6 +583,22 @@ pub struct DomainSet {
     pub graph: String,
     /// CHORUS_ROOT-relative, in staging order.
     pub files: Vec<String>,
+    /// #4254 — replace the live graph instead of merging into it.
+    ///
+    /// Merge is the default and must stay the default: every other set shares
+    /// its graph with rows nobody in that set authored, so delete-by-absence
+    /// there would silently retire another role's work.
+    ///
+    /// A set opts in only when it OWNS its graph outright. The vocabulary graph
+    /// is written by exactly two files and nothing else, and for a graph like
+    /// that delete-by-absence is safe by construction — and is the only way a
+    /// term removed from source actually leaves the STORE, since the merge
+    /// keeps siblings and a concept would survive after its class is gone (the
+    /// #4250 ghost). Wren's call, 2026-09-21.
+    ///
+    /// Guarded at parse time: flagging a graph that another set also targets is
+    /// a refusal, because that is the 2026-08-28 wipe with a config switch.
+    pub replace: bool,
 }
 
 /// Parse the domain-set manifest. Pure.
@@ -599,13 +615,27 @@ pub fn parse_domain_sets(text: &str) -> Result<Vec<DomainSet>, String> {
             continue;
         }
         let parts: Vec<&str> = line.split('|').map(str::trim).collect();
-        if parts.len() != 3 || parts.iter().any(|p| p.is_empty()) {
+        if !(3..=4).contains(&parts.len()) || parts.iter().take(3).any(|p| p.is_empty()) {
             return Err(format!(
-                "domain-set-manifest line {}: expected <set>|<graph>|<path>, got {:?}",
+                "domain-set-manifest line {}: expected <set>|<graph>|<path>[|replace], got {:?}",
                 i + 1,
                 line
             ));
         }
+        // An unknown 4th column is a REFUSAL, never a shrug. A typo silently
+        // read as merge would leave delete-by-absence off on a set that asked
+        // for it, and nothing anywhere would say so.
+        let replace = match parts.get(3).copied() {
+            None | Some("") => false,
+            Some("replace") => true,
+            Some(other) => {
+                return Err(format!(
+                    "domain-set-manifest line {}: 4th column must be `replace` or absent, got {:?}",
+                    i + 1,
+                    other
+                ))
+            }
+        };
         let (name, graph, path) = (parts[0], parts[1], parts[2]);
         if !graph.starts_with("urn:") {
             return Err(format!(
@@ -626,14 +656,52 @@ pub fn parse_domain_sets(text: &str) -> Result<Vec<DomainSet>, String> {
                     ));
                 }
                 existing.files.push(path.to_string());
+                // Every line of a set must agree about replace. One line saying
+                // replace and another not is not a preference, it is two
+                // contradictory claims about whether the graph may be emptied.
+                if existing.replace != replace {
+                    return Err(format!(
+                        "domain-set-manifest line {}: set {:?} disagrees with itself about \
+                         `replace` — every line of one set must say the same thing",
+                        i + 1,
+                        name
+                    ));
+                }
             }
             None => out.push(DomainSet {
                 name: name.to_string(),
                 graph: graph.to_string(),
                 files: vec![path.to_string()],
+                replace,
             }),
         }
     }
+
+    // #4254 — replace is only safe when ONE set writes that graph. Flagging a
+    // shared graph would drop every co-tenant's rows on the next deploy, which
+    // is the 2026-08-28 ontology wipe with a config switch in front of it. The
+    // guard is here, at parse, so the refusal happens before any write.
+    for s in &out {
+        if !s.replace {
+            continue;
+        }
+        let co: Vec<&str> = out
+            .iter()
+            .filter(|o| o.graph == s.graph && o.name != s.name)
+            .map(|o| o.name.as_str())
+            .collect();
+        if !co.is_empty() {
+            return Err(format!(
+                "domain-set-manifest: set {:?} asks to REPLACE <{}>, but {} also target(s) it — \
+                 replacing a shared graph deletes the other set(s)' rows. Drop the flag, or give \
+                 this set a graph nothing else writes.",
+                s.name,
+                s.graph,
+                co.join(", ")
+            ));
+        }
+    }
+
     Ok(out)
 }
 
@@ -1108,6 +1176,64 @@ pub fn run_athena_deploy() -> Result<String, String> {
         let text = std::fs::read_to_string(&manifest_path)
             .map_err(|e| fail(&format!("domain-set-manifest-unreadable:{manifest_path}:{e}")))?;
         let sets = parse_domain_sets(&text).map_err(|e| fail(&e))?;
+
+        // #4254 — one word, one concept, per scheme. Runs over every file in
+        // every set, because the two concepts claiming one word usually sit in
+        // two roles' files, the way #4250's duplicate properties did.
+        //
+        // REPORTS, never refuses. Jeff, 2026-09-21: non-blocking until the
+        // vocabulary stabilises — we start from colliding words, so a refusal
+        // on day one would stop every deploy and take the nightly with it. The
+        // count it prints IS the trigger for the card that flips it to a
+        // refusal: when the count reaches zero, the guard can bite.
+        let mut vocab_files: Vec<(String, String)> = Vec::new();
+        for ds in &sets {
+            for f in &ds.files {
+                let path = format!("{root}/{f}");
+                if let Ok(text) = std::fs::read_to_string(&path) {
+                    vocab_files.push((f.clone(), text));
+                }
+            }
+        }
+        let collisions = duplicate_concept_labels(&vocab_files);
+        eprintln!(
+            "athena-deploy: vocabulary label collisions: {} (#4254, reporting only)",
+            collisions.len()
+        );
+        for c in collisions.iter().take(20) {
+            eprintln!("  {c}");
+        }
+        if !collisions.is_empty() {
+            eprintln!(
+                "  -> one skos:prefLabel per idea per scheme. A word that genuinely means \
+                 two things belongs in two schemes; otherwise one of the two is renamed."
+            );
+        }
+
+        // The blind spot, counted. Reported beside the collisions so the number
+        // that CAN go to zero is never read as "nothing repeats anywhere".
+        // #4254 — how many terms name nothing that exists yet. Counted from
+        // skos:exactMatch, never from a hand-written marker: a marker nothing
+        // reads is a comment (Wren, 2026-09-21).
+        let ungrounded = ungrounded_concepts(&vocab_files);
+        eprintln!(
+            "athena-deploy: vocabulary terms naming nothing in the model: {} (#4254, reported)",
+            ungrounded.len()
+        );
+        for u in ungrounded.iter().take(20) {
+            eprintln!("  {u}");
+        }
+
+        let repeats = cross_scheme_repeats(&vocab_files);
+        eprintln!(
+            "athena-deploy: vocabulary cross-scheme repeats: {} (#4254, reported not judged — \
+             not part of the refusal trigger)",
+            repeats.len()
+        );
+        for r in repeats.iter().take(20) {
+            eprintln!("  {r}");
+        }
+
         let ctx = StoreCtx {
             gsp: gsp.clone(),
             query: query.clone(),
@@ -1173,6 +1299,22 @@ pub fn deploy_domain_set(set: &DomainSet, root: &str, ctx: &StoreCtx) -> Result<
                 return Err(fail(&format!("{}-staging-http-401-no-credential", set.name)));
             }
             return Err(fail(&format!("{}-staging-http-{code}", set.name)));
+        }
+    }
+
+    // #4254 — a set that OWNS its graph replaces it. Everything already in the
+    // live graph goes, so a term removed from source actually leaves the STORE
+    // rather than surviving the merge as a ghost. Only reachable for a set the
+    // parse guard has confirmed is the sole writer of this graph.
+    if set.replace {
+        let dcode = curl(&["-s", "-o", "/dev/null", "-w", "%{http_code}", "-X", "DELETE",
+            &format!("{}?graph={}", ctx.gsp, set.graph)])?;
+        // 404 is "already absent", which is the state we wanted. Anything else
+        // failing is a REFUSAL: replacing means the old rows must be gone, and
+        // continuing on a failed delete would merge into them instead.
+        if !ok_http(&dcode) && dcode != "404" {
+            let _ = curl(&["-s", "-X", "DELETE", "-o", "/dev/null", &format!("{}?graph={staging}", ctx.gsp)]);
+            return Err(fail(&format!("{}-replace-delete-http-{dcode}", set.name)));
         }
     }
 
@@ -1712,4 +1854,236 @@ mod tests {
         assert!(ok_http("200") && ok_http("201") && ok_http("204"));
         assert!(!ok_http("500") && !ok_http("000") && !ok_http("404"));
     }
+}
+
+/// #4254 — one word, one concept, per scheme.
+///
+/// A controlled vocabulary is only controlled if a second concept cannot
+/// quietly claim a label a first one already holds. SKOS makes `prefLabel`
+/// unique PER CONCEPT SCHEME, which is the scope this uses: "agent" as a
+/// principal kind and "agent" as a launchd unit are two schemes and two
+/// concepts, and that is legal. Both inside one scheme is the defect.
+///
+/// REPORTS, never refuses. Jeff, 2026-09-21: non-blocking until the vocabulary
+/// stabilises. We start from colliding words — a refusal on day one would stop
+/// every deploy and take the nightly with it. The count it prints is the
+/// trigger for the card that flips it to a refusal: when the count reaches
+/// zero, the guard can bite.
+///
+/// prefLabel and altLabel are both claims on a word, so both are compared, and
+/// the report says which kind each one is. Matching is case-insensitive:
+/// "LaunchAgent" and "launchagent" are the same claim on the same word.
+pub fn duplicate_concept_labels(files: &[(String, String)]) -> Vec<String> {
+    use std::collections::BTreeMap;
+
+    // (scheme, lowercased label) -> ["vocab:agent (prefLabel) at file:12", ...]
+    let mut claims: BTreeMap<(String, String), Vec<String>> = BTreeMap::new();
+
+    for (label_file, text) in files {
+        let mut subject = String::new();
+        let mut subject_line = 0usize;
+        let mut is_concept = false;
+        let mut scheme = String::new();
+        let mut pending: Vec<(String, String, usize)> = Vec::new(); // (kind, label, line)
+
+        let flush = |subject: &str,
+                         subject_line: usize,
+                         scheme: &str,
+                         pending: &mut Vec<(String, String, usize)>,
+                         claims: &mut BTreeMap<(String, String), Vec<String>>| {
+            if subject.is_empty() || scheme.is_empty() {
+                pending.clear();
+                return;
+            }
+            for (kind, word, line) in pending.drain(..) {
+                let at = if line == 0 { subject_line } else { line };
+                claims
+                    .entry((scheme.to_string(), word.to_lowercase()))
+                    .or_default()
+                    .push(format!("{subject} ({kind}) at {label_file}:{at}"));
+            }
+        };
+
+        for (i, raw) in text.lines().enumerate() {
+            let code = raw.split('#').next().unwrap_or("");
+            let trimmed = code.trim();
+            if trimmed.is_empty() {
+                continue;
+            }
+            // A new subject starts at column 0 with a prefixed name.
+            if !code.starts_with(char::is_whitespace) && trimmed.contains(':') {
+                flush(&subject, subject_line, &scheme, &mut pending, &mut claims);
+                subject = trimmed.split_whitespace().next().unwrap_or("").to_string();
+                subject_line = i + 1;
+                // "skos:ConceptScheme" CONTAINS "skos:Concept", so a bare substring
+                // test counts the three scheme titles as terms — a check matching
+                // the negation of its own rule, the #3725 shape. Caught by
+                // a_scheme_is_not_a_term, not by reading it.
+                is_concept = trimmed.contains("skos:Concept")
+                    && !trimmed.contains("skos:ConceptScheme");
+                scheme.clear();
+            }
+            if !is_concept {
+                continue;
+            }
+            if let Some(rest) = trimmed.strip_prefix("skos:inScheme") {
+                scheme = rest
+                    .trim()
+                    .trim_end_matches(&[';', '.'][..])
+                    .trim()
+                    .to_string();
+            }
+            for kind in ["skos:prefLabel", "skos:altLabel"] {
+                if let Some(rest) = trimmed.strip_prefix(kind) {
+                    if let Some(word) = rest.split('"').nth(1) {
+                        pending.push((
+                            kind.trim_start_matches("skos:").to_string(),
+                            word.to_string(),
+                            i + 1,
+                        ));
+                    }
+                }
+            }
+        }
+        flush(&subject, subject_line, &scheme, &mut pending, &mut claims);
+    }
+
+    claims
+        .into_iter()
+        .filter(|(_, at)| at.len() > 1)
+        .map(|((scheme, word), at)| {
+            format!("\"{word}\" claimed {} times in {scheme} — {}", at.len(), at.join(", "))
+        })
+        .collect()
+}
+
+/// #4254 — the cost of scoping the report within a scheme, made visible.
+///
+/// The report above cannot see across a scheme boundary, so every boundary is
+/// a place it is blind by construction. This counts the words that repeat
+/// ACROSS schemes: `agent` in identity and in runtime, `session` in both.
+///
+/// REPORTED, never judged, and NOT part of the refusal trigger. A legitimate
+/// homonym and a term filed in the wrong scheme look identical to a machine —
+/// only a person can tell them apart — so a guard here could not distinguish
+/// its two states and would be the #3734 shape. Wren's call, 2026-09-21.
+pub fn cross_scheme_repeats(files: &[(String, String)]) -> Vec<String> {
+    use std::collections::{BTreeMap, BTreeSet};
+    let mut by_word: BTreeMap<String, BTreeSet<String>> = BTreeMap::new();
+
+    for (_, text) in files {
+        let mut scheme = String::new();
+        let mut is_concept = false;
+        let mut pending: Vec<String> = Vec::new();
+        for raw in text.lines() {
+            let code = raw.split('#').next().unwrap_or("");
+            let trimmed = code.trim();
+            if trimmed.is_empty() {
+                continue;
+            }
+            if !code.starts_with(char::is_whitespace) && trimmed.contains(':') {
+                for w in pending.drain(..) {
+                    if !scheme.is_empty() {
+                        by_word.entry(w).or_default().insert(scheme.clone());
+                    }
+                }
+                // "skos:ConceptScheme" CONTAINS "skos:Concept", so a bare substring
+                // test counts the three scheme titles as terms — a check matching
+                // the negation of its own rule, the #3725 shape. Caught by
+                // a_scheme_is_not_a_term, not by reading it.
+                is_concept = trimmed.contains("skos:Concept")
+                    && !trimmed.contains("skos:ConceptScheme");
+                scheme.clear();
+            }
+            if !is_concept {
+                continue;
+            }
+            if let Some(rest) = trimmed.strip_prefix("skos:inScheme") {
+                scheme = rest.trim().trim_end_matches(&[';', '.'][..]).trim().to_string();
+            }
+            if let Some(rest) = trimmed.strip_prefix("skos:prefLabel") {
+                if let Some(w) = rest.split('"').nth(1) {
+                    pending.push(w.to_lowercase());
+                }
+            }
+        }
+        for w in pending {
+            if !scheme.is_empty() {
+                by_word.entry(w).or_default().insert(scheme.clone());
+            }
+        }
+    }
+
+    by_word
+        .into_iter()
+        .filter(|(_, schemes)| schemes.len() > 1)
+        .map(|(word, schemes)| {
+            format!("\"{word}\" in {}", schemes.into_iter().collect::<Vec<_>>().join(" and "))
+        })
+        .collect()
+}
+
+/// #4254 — a concept that points at nothing in the model.
+///
+/// Wren's ask, 2026-09-21: "a marker nothing reads is a comment." The file had
+/// a `PROPOSED` note on the one term that names no existing class, and nothing
+/// anywhere read it, so it was documentation pretending to be a control.
+///
+/// This counts instead of reading the note: a concept with no
+/// `skos:exactMatch` names nothing that exists today. That is mechanical, so
+/// the count cannot drift from the file the way a hand-written marker can, and
+/// a term that gets a real class later stops being counted without anyone
+/// remembering to delete a comment.
+///
+/// REPORTED, not refused — a proposed term is how a rename starts, and
+/// refusing them would mean the vocabulary could never name anything we have
+/// not already built.
+pub fn ungrounded_concepts(files: &[(String, String)]) -> Vec<String> {
+    let mut out = Vec::new();
+    for (label, text) in files {
+        let mut subject = String::new();
+        let mut is_concept = false;
+        let mut grounded = false;
+        let mut pref = String::new();
+
+        let finish = |subject: &str, is_concept: bool, grounded: bool, pref: &str, out: &mut Vec<String>| {
+            if is_concept && !grounded && !subject.is_empty() {
+                let word = if pref.is_empty() { subject } else { pref };
+                out.push(format!("\"{word}\" ({subject} in {label}) names nothing in the model"));
+            }
+        };
+
+        for raw in text.lines() {
+            let code = raw.split('#').next().unwrap_or("");
+            let trimmed = code.trim();
+            if trimmed.is_empty() {
+                continue;
+            }
+            if !code.starts_with(char::is_whitespace) && trimmed.contains(':') {
+                finish(&subject, is_concept, grounded, &pref, &mut out);
+                subject = trimmed.split_whitespace().next().unwrap_or("").to_string();
+                // "skos:ConceptScheme" CONTAINS "skos:Concept", so a bare substring
+                // test counts the three scheme titles as terms — a check matching
+                // the negation of its own rule, the #3725 shape. Caught by
+                // a_scheme_is_not_a_term, not by reading it.
+                is_concept = trimmed.contains("skos:Concept")
+                    && !trimmed.contains("skos:ConceptScheme");
+                grounded = false;
+                pref.clear();
+            }
+            if !is_concept {
+                continue;
+            }
+            if trimmed.starts_with("skos:exactMatch") {
+                grounded = true;
+            }
+            if let Some(rest) = trimmed.strip_prefix("skos:prefLabel") {
+                if let Some(w) = rest.split('"').nth(1) {
+                    pref = w.to_string();
+                }
+            }
+        }
+        finish(&subject, is_concept, grounded, &pref, &mut out);
+    }
+    out
 }

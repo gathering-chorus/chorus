@@ -1,0 +1,150 @@
+<!DOCTYPE html>
+<html lang="en"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Vocabulary — Athena</title>
+<script>/* #4024 — the mount resolver every Chorus page carries (#3798): the page must
+   know its own mount (llug.com/chorus) before any root-absolute src/href/fetch. */
+(function(){var m=document.querySelector('meta[name="chorus-base"]'),b=m&&m.getAttribute('content')||null;
+if(b===null){var p=(location&&location.pathname)||'';b=(p==='/chorus'||p.indexOf('/chorus/')===0)?'/chorus':'';}
+b=b.replace(/\/+$/,'');window.CHORUS_BASE=b;
+window.basePath=function(x){if(!x)return b||'/';if(/^[a-z]+:\/\//i.test(x)||x.indexOf('//')===0)return x;
+return b+(x.charAt(0)==='/'?x:'/'+x);};
+var s=document.createElement('script');s.src=window.basePath('/js/base-path.js');document.head.appendChild(s);}());</script>
+<!-- #4254 — the controlled vocabulary, generated from urn:chorus:domains:vocabulary
+     on every load. Jeff asked for a searchable page rather than another markdown
+     glossary: the last one sat since June waiting for a signature nothing could
+     depend on. Nothing here is hardcoded — a concept authored into the TTL and
+     deployed appears on the next load, and a term that loses its definition shows
+     as a gap rather than disappearing. -->
+<link rel="stylesheet" href="athena-flow.css"><script src="athena-flow.js"></script><script>mountJourneyNav('vocabulary');</script>
+<style>
+  .vfind{display:flex;gap:10px;align-items:center;margin:14px 0 6px;flex-wrap:wrap}
+  .vfind input{flex:1;min-width:240px;font:14px system-ui,sans-serif;padding:9px 12px;
+    border:1px solid var(--line,#cdd5de);border-radius:3px;background:var(--panel,#fff);color:inherit}
+  .vfind input:focus{outline:none;border-color:#0d6a89;box-shadow:0 0 0 2px rgba(13,106,137,.13)}
+  .vcount{font:400 12px system-ui,sans-serif;color:var(--muted,#8a94a3);white-space:nowrap}
+  .vsch{border:1px solid var(--line,#d8dee6);border-radius:4px;background:var(--panel,#fff);
+    margin-bottom:18px;overflow:hidden}
+  .vsch h2{font:600 13px ui-monospace,Menlo,monospace;padding:9px 13px;margin:0;
+    border-bottom:1px solid var(--line,#e6eaef);background:var(--hover,#f6f8fa)}
+  .vsch h2 small{font-weight:400;color:var(--muted,#8a94a3);margin-left:8px}
+  .vsch .vdesc{padding:9px 13px;border-bottom:1px solid var(--line,#e6eaef);
+    font:12.5px system-ui,sans-serif;color:var(--muted,#5b6675);line-height:1.5}
+  .vterm{padding:11px 13px;border-bottom:1px solid #f2f5f7}
+  .vterm:last-child{border-bottom:0}
+  .vhead{display:flex;gap:9px;align-items:baseline;flex-wrap:wrap}
+  .vlabel{font:600 14px ui-monospace,Menlo,monospace}
+  .valt{display:inline-block;background:#eef1f5;color:#5b6675;border-radius:3px;
+    padding:1px 6px;margin:1px 3px 1px 0;font:11.5px ui-monospace,Menlo,monospace}
+  .vmatch{font:11.5px ui-monospace,Menlo,monospace;color:var(--muted,#8a94a3);margin-left:auto}
+  .vdef{font:13px system-ui,sans-serif;color:var(--muted,#3f4a57);margin-top:4px;
+    max-width:74ch;line-height:1.5}
+  .vnodef{font:italic 12px system-ui,sans-serif;color:#a8442a;margin-top:4px}
+  .vnote{font:11.5px system-ui,sans-serif;color:var(--muted,#8a94a3);margin-top:4px;max-width:74ch;line-height:1.5}
+  .vstatus{font:400 12.5px system-ui,sans-serif;color:var(--muted,#5b6675);padding:14px}
+  .vstatus.err{color:#a8226b;font-weight:600}
+  .vgap{font:12.5px system-ui,sans-serif;color:#a8442a;margin:0 0 14px}
+  mark{background:#fdf0a8;color:inherit;padding:0 1px;border-radius:2px}
+</style>
+</head>
+<body>
+<main style="max-width:920px;margin:0 auto;padding:16px">
+<h1 style="font:300 26px system-ui,sans-serif;margin:6px 0 2px">Vocabulary</h1>
+<p style="font:400 13px system-ui,sans-serif;color:var(--muted,#5b6675);max-width:74ch;line-height:1.55;margin:4px 0 0">
+One preferred word per idea, and every variant it replaces listed beside it, so
+searching the word you remember finds the word we agreed. A word that genuinely
+means two things lives in two <b>schemes</b> — <code>agent</code> is a principal
+here and a launchd unit there, and those are two entries on purpose. Live from
+<code>urn:chorus:domains:vocabulary</code>.</p>
+
+<div class="vfind">
+  <input id="q" type="search" autocomplete="off" spellcheck="false"
+         placeholder="Type to filter — label, variant, or definition">
+  <span class="vcount" id="count"></span>
+</div>
+<p class="vgap" id="gap"></p>
+<div id="out" class="vstatus">Loading the vocabulary…</div>
+</main>
+<script>
+// athena-flow.js already declares `esc` at global scope, so this page's
+// helper is named apart from it — a second `const esc` is a page-wide
+// SyntaxError and nothing renders at all.
+const vesc = (s) => String(s).replace(/[&<>"]/g, (c) => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
+
+// Highlight the matched run, on the escaped text, so a term containing "<"
+// cannot smuggle markup through the highlighter.
+function hi(text, needle) {
+  const safe = vesc(text);
+  if (!needle) return safe;
+  const i = safe.toLowerCase().indexOf(needle.toLowerCase());
+  if (i < 0) return safe;
+  return safe.slice(0, i) + '<mark>' + safe.slice(i, i + needle.length) + '</mark>' + safe.slice(i + needle.length);
+}
+
+// The card's words: filter across label, variant and definition. A term matches
+// if the typed text appears in ANY of the three — typing "worker" finds
+// "service", which is the whole point of carrying the variants.
+function matches(term, q) {
+  if (!q) return true;
+  const n = q.toLowerCase();
+  return term.prefLabel.toLowerCase().includes(n)
+    || term.altLabels.some((a) => a.toLowerCase().includes(n))
+    || String(term.definition || '').toLowerCase().includes(n);
+}
+
+function renderTerm(t, q) {
+  const alts = t.altLabels.map((a) => '<span class="valt">' + hi(a, q) + '</span>').join('');
+  const def = t.definition
+    ? '<div class="vdef">' + hi(t.definition, q) + '</div>'
+    : '<div class="vnodef">no definition yet</div>';
+  // A generated term's exactMatch IS its preferred word, so rendering both put
+  // the same string twice on every row — "ownedBy ... ownedBy". Show it only
+  // when it says something the label does not.
+  const showMatch = t.exactMatch && t.exactMatch.toLowerCase() !== t.prefLabel.toLowerCase();
+  const match = showMatch ? '<span class="vmatch">' + vesc(t.exactMatch) + '</span>' : '';
+  const note = t.note ? '<div class="vnote">' + vesc(t.note) + '</div>' : '';
+  return '<div class="vterm"><div class="vhead"><span class="vlabel">' + hi(t.prefLabel, q) + '</span>'
+    + alts + match + '</div>' + def + note + '</div>';
+}
+
+let DATA = null;
+
+function render() {
+  const q = document.getElementById('q').value.trim();
+  const out = document.getElementById('out');
+  let shown = 0;
+  const html = DATA.schemes.map((s) => {
+    const terms = s.terms.filter((t) => matches(t, q));
+    shown += terms.length;
+    if (!terms.length) return '';
+    return '<div class="vsch"><h2>' + vesc(s.prefLabel) + '<small>' + terms.length + ' term'
+      + (terms.length === 1 ? '' : 's') + '</small></h2>'
+      + (s.description ? '<div class="vdesc">' + vesc(s.description) + '</div>' : '')
+      + terms.map((t) => renderTerm(t, q)).join('') + '</div>';
+  }).join('');
+  out.className = '';
+  out.innerHTML = html || '<div class="vstatus">Nothing matches “' + vesc(q) + '”.</div>';
+  document.getElementById('count').textContent =
+    q ? shown + ' of ' + DATA.termCount + ' terms' : DATA.termCount + ' terms';
+}
+
+fetch(window.basePath('/api/athena/vocabulary'))
+  .then((r) => r.json())
+  .then((d) => {
+    // storeReachable is checked, not assumed: an empty page must be able to say
+    // "we could not ask" rather than "there are no terms".
+    if (!d.storeReachable) throw new Error(d.error || 'store-unreachable');
+    DATA = d;
+    const gap = document.getElementById('gap');
+    gap.textContent = d.withoutDefinition.length
+      ? d.withoutDefinition.length + ' term(s) carry no definition: ' + d.withoutDefinition.join(', ')
+      : '';
+    render();
+    document.getElementById('q').addEventListener('input', render);
+  })
+  .catch((e) => {
+    const out = document.getElementById('out');
+    out.className = 'vstatus err';
+    out.textContent = 'Could not read the vocabulary: ' + e.message;
+  });
+</script>
+</body></html>
