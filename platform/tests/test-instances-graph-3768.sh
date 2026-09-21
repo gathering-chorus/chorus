@@ -24,9 +24,27 @@ Property|properties|2
 PropertyKey|propertykeys|4
 "
 
+# #4256 — the routes were hardcoded bare (/emitcontracts), but athena-make
+# serves every class under its domain prefix (/v1/spine/emitcontracts). Four
+# cases read "unreachable" and two read rows=0 against a route that is not the
+# one being served. Ask discovery where the class lives; a route that moves
+# can then never make this suite lie in either direction.
+DISCOVERY=$(curl -sf "$OWL/" || echo '{}')
+collection_of() {
+  printf '%s' "$DISCOVERY" | python3 -c "
+import json,sys
+try: d=json.load(sys.stdin)
+except Exception: print(''); raise SystemExit
+print(next((p.get('collection','') for p in d.get('primitives',[]) if p.get('kind')=='$1'), ''))"
+}
+
 for line in $CASES; do
   cls="${line%%|*}"; rest="${line#*|}"; route="${rest%%|*}"; min="${rest##*|}"
-  body=$(curl -sf "$OWL/$route") || { echo "FAIL $cls — $OWL/$route unreachable"; fails=$((fails+1)); continue; }
+  served_route="$(collection_of "$cls")"
+  if [ -z "$served_route" ]; then
+    echo "FAIL $cls — not served at all (absent from $OWL/ discovery)"; fails=$((fails+1)); continue
+  fi
+  body=$(curl -sf "$OWL$served_route") || { echo "FAIL $cls — $OWL$served_route unreachable"; fails=$((fails+1)); continue; }
   rows=$(printf '%s' "$body" | python3 -c "import json,sys; print(len(json.load(sys.stdin).get('data',[])))")
   served=$(printf '%s' "$body" | python3 -c "import json,sys; print(json.load(sys.stdin).get('servedFrom',''))")
   gen=$(printf '%s' "$body" | python3 -c "import json,sys; print(json.load(sys.stdin).get('generatedFrom',{}).get('graph',''))")
