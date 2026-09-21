@@ -411,6 +411,8 @@ fn read_registry(ctx: &Ctx) -> (HashMap<String, String>, Vec<(String, String)>) 
 struct LaneResult {
     rows: Vec<SuiteRow>,
     rc: i32,
+    /// #4247 — (filePath, testName, result) for every case the lane reported.
+    cases: Vec<(String, String, String)>,
 }
 
 fn run_runner(ctx: &Ctx, box_over_load: bool) -> LaneResult {
@@ -428,7 +430,7 @@ fn run_runner(ctx: &Ctx, box_over_load: bool) -> LaneResult {
         Err(e) => {
             let row = SuiteRow::new("runner", "werk-test-nightly", "silas", "fail", &format!("0 pass, 1 fail (runner could not start: {} — runner lanes DID NOT RUN, #3920/#3974)", e));
             ctx.append_log(&row.line());
-            return LaneResult { rows: vec![row], rc: 127 };
+            return LaneResult { rows: vec![row], rc: 127, cases: Vec::new() };
         }
     };
     let stdout = child.stdout.take().unwrap();
@@ -444,6 +446,8 @@ fn run_runner(ctx: &Ctx, box_over_load: bool) -> LaneResult {
     });
     let mut rows = Vec::new();
     let mut lane_text = String::new();
+    // #4247 — the run's own per-test record, read from the lane's own output.
+    let mut cases: Vec<(String, String, String)> = Vec::new();
     let mut nudged: std::collections::HashSet<String> = std::collections::HashSet::new();
     for line in BufReader::new(stdout).lines().flatten() {
         if stop_requested() {
@@ -455,6 +459,9 @@ fn run_runner(ctx: &Ctx, box_over_load: bool) -> LaneResult {
         }
         lane_text.push_str(&line);
         lane_text.push('\n');
+        if let Some(c) = werk_test::nightly_run::parse_case_line(&line) {
+            cases.push(c);
+        }
         // #4168 — the existence probe is the werk's own tree, resolved from the
         // run's root. A relative path is joined to root; an absolute one is
         // taken as given (the app_root units arrive absolute).
@@ -498,16 +505,47 @@ fn run_runner(ctx: &Ctx, box_over_load: bool) -> LaneResult {
         let slice = unit_slice(&lane_text, unit).join("\n");
         ctx.write_fail_log(r, &format!("{}\n# full lane output: {}\n", slice, lane_path));
     }
-    LaneResult { rows, rc }
+    LaneResult { rows, rc, cases }
 }
 
 // ───────────────────────── phase 3: the census, from the run's own record ─────────────────────────
 
-// #4154 — the census (registry minus what ran, "reconcile|tests-domain" row) is
-// gone. It was a second crawler inside the runner: the graph's registry is the
-// crawler's to keep current (ADR-033), and 33 of the 37 red rows on 2026-09-12
-// 06:00 were this row reporting files a land had deleted. The runner reads the
-// graph and runs what is there; nothing here counts what it did not run.
+// #4154 — the census as a RED ROW is gone, and stays gone. It was a second
+// crawler inside the runner: the graph's registry is the crawler's to keep
+// current (ADR-033), and 33 of the 37 red rows on 2026-09-12 06:00 were that
+// row reporting files a land had deleted.
+//
+// #4247 brings back only the REPORT, never the verdict. Jeff, 2026-09-20:
+// "rather than stating everything in a different unit of measure can we be
+// consistent" — the run said "31 red" (suites) beside "8,537 ran" (tests) and
+// the 154 registered tests with no result were nameless, inferred by matching
+// two lists. These lines name them and count in one unit. They are written to
+// the log and the spine; no SuiteRow is built, so a stale registry can report
+// a gap without turning the night red.
+fn report_no_result(ctx: &Ctx, registered: &[(String, String)], cases: &[(String, String, String)]) {
+    if registered.is_empty() {
+        ctx.append_log("RUN|tally|registry unreadable — the run cannot say what it did not run");
+        return;
+    }
+    let tally = werk_test::nightly_run::registered_test_tally(registered, cases);
+    ctx.append_log(&format!("RUN|tally|{}", tally));
+    eprintln!("nightly: {}", tally);
+    let missing = werk_test::nightly_run::tests_with_no_result(registered, cases);
+    for (f, n) in missing.iter().take(200) {
+        ctx.append_log(&format!("nightly-no-result|{}|{}", f, n));
+    }
+    if missing.len() > 200 {
+        ctx.append_log(&format!("nightly-no-result|… {} more", missing.len() - 200));
+    }
+    ctx.spine(
+        "nightly.tests.no_result",
+        &[
+            ("registered".into(), registered.len().to_string()),
+            ("ran".into(), cases.len().to_string()),
+            ("no_result".into(), missing.len().to_string()),
+        ],
+    );
+}
 
 // ───────────────────────── the run ─────────────────────────
 
@@ -630,7 +668,7 @@ fn run_locked(ctx: &mut Ctx, _args: &[String]) -> Result<i32, String> {
     if !ctx.append_log(&format!("RUN|start|{}|pid={}", now_stamp(), std::process::id())) {
         eprintln!("nightly: WARNING — cannot append to {}; this run's results reach NOBODY", ctx.log);
     }
-    let (owners, _registered) = read_registry(ctx);
+    let (owners, registered) = read_registry(ctx);
     ctx.owners = owners;
     let mut rows: Vec<SuiteRow> = Vec::new();
     let push = |ctx: &Ctx, r: SuiteRow, rows: &mut Vec<SuiteRow>| {
@@ -660,7 +698,9 @@ fn run_locked(ctx: &mut Ctx, _args: &[String]) -> Result<i32, String> {
         std::process::exit(if sig == 2 { 130 } else { 143 });
     }
     rows.extend(lane.rows.iter().cloned());
-    // census from the run's own record — registry read once, above
+    // #4247 — the census from the run's own record, in one unit, before the
+    // completion line so a reader sees the tally with the run it belongs to.
+    report_no_result(ctx, &registered, &lane.cases);
     ctx.append_log(&format!("RUN|complete|{}|suites={}", now_stamp(), rows.len()));
     // the tail: summary, record, per-row events, nudges, readout
     ctx.spine("nightly.run.summary", &run_summary_fields(&rows));
