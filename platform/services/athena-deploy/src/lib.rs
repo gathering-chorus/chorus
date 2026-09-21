@@ -519,6 +519,52 @@ pub fn role_owner_offences(file_label: &str, ttl: &str) -> Vec<String> {
     out
 }
 
+/// #4250 — one property, one declaration. A property declared twice is not an
+/// override: RDF reads two `rdfs:domain` statements as an intersection, so
+/// `chorus:filePath` declared on CodeFile and again on File came to mean "only
+/// on something that is both", and the writeOwner sat on whichever copy you
+/// did not read.
+///
+/// It never surfaced as itself. It surfaced as four unrelated reds in three
+/// suites: the hydration validator said a predicate had no writeOwner,
+/// athena-make refused to generate EmitContract, Metric, Property and
+/// PropertyKey ("two shapes disagree about one property"), and the
+/// instances-graph suite then 404'd on those four routes. Nine properties were
+/// in this state before this card. The tenth must fail here, at the deploy,
+/// named — not next week in a suite that cannot say why.
+///
+/// Takes every file in the set at once, because the two declarations are
+/// usually in two different roles' files. Comments are stripped first so a
+/// commented-out declaration is not an offence. Returns one line per property
+/// that is declared more than once, naming every file and line.
+pub fn duplicate_property_declarations(files: &[(String, String)]) -> Vec<String> {
+    use std::collections::BTreeMap;
+    let mut seen: BTreeMap<String, Vec<String>> = BTreeMap::new();
+    for (label, text) in files {
+        for (i, line) in text.lines().enumerate() {
+            let code = line.split('#').next().unwrap_or("").trim_end();
+            let Some(rest) = code.strip_prefix("chorus:") else { continue };
+            let Some((name, tail)) = rest.split_once(' ') else { continue };
+            let tail = tail.trim_start();
+            if !(tail.starts_with("a owl:DatatypeProperty")
+                || tail.starts_with("a owl:ObjectProperty"))
+            {
+                continue;
+            }
+            if name.is_empty() || !name.chars().all(|c| c.is_ascii_alphanumeric() || c == '-') {
+                continue;
+            }
+            seen.entry(name.to_string())
+                .or_default()
+                .push(format!("{label}:{}", i + 1));
+        }
+    }
+    seen.into_iter()
+        .filter(|(_, at)| at.len() > 1)
+        .map(|(name, at)| format!("chorus:{name} declared {} times — {}", at.len(), at.join(", ")))
+        .collect()
+}
+
 /// Does this run deploy the eight domain sets? The bash gates every one of
 /// them behind `[ -z "${TTL:-}" ]`: a single-file partial run deploys ONLY the
 /// file it was handed, and must not quietly re-stage thirteen others. Pure.
@@ -719,6 +765,33 @@ pub fn run_athena_deploy() -> Result<String, String> {
              other chorus:role-* uses (holdsRole, appointedHat) are fine and untouched."
         );
         return Err(fail(&format!("source-authors-role-owner:{}", offences.len())));
+    }
+
+    // #4250 — one property, one declaration. Cross-file, so it runs over the
+    // whole set rather than per file.
+    let mut loaded: Vec<(String, String)> = Vec::new();
+    for ttl in &set {
+        if let Ok(text) = std::fs::read_to_string(ttl) {
+            let label = ttl.strip_prefix(&format!("{root}/")).unwrap_or(ttl).to_string();
+            loaded.push((label, text));
+        }
+    }
+    let dupes = duplicate_property_declarations(&loaded);
+    if !dupes.is_empty() {
+        eprintln!(
+            "athena-deploy: REFUSED — a property is declared more than once (#4250). \
+             Two rdfs:domain statements intersect, they do not override, and athena-make \
+             will refuse to generate the class rather than pick a winner:"
+        );
+        for d in dupes.iter().take(10) {
+            eprintln!("  {d}");
+        }
+        eprintln!(
+            "  -> keep ONE declaration. Drop rdfs:domain when the property is genuinely \
+             shared across classes, and put its range and writeOwner on that one. If the \
+             two mean different things, they are a name collision: rename one."
+        );
+        return Err(fail(&format!("duplicate-property-declaration:{}", dupes.len())));
     }
 
     // #4125 — a subject deleted from source is named, not silently kept.
