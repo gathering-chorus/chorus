@@ -330,7 +330,18 @@ fn run(args: &[String]) -> Result<i32, String> {
         emit_spine("test.integration.unmeasurable", &role, &card, &trace,
             &[("count", &selected_ns_tests.to_string()), ("saw", u)]);
     } else {
-        println!("{}", werk_test::integration_report(selected_ns_tests, stack_down.as_deref()));
+        // #4251 — when the stack is UP there is no plan line. It claimed a
+        // count before any lane had decided what to run, and was wrong three
+        // different ways in two days: 134 "ran" when one file was selected
+        // (#4236), 498 when 75 ran (#4238), 532 when 109 ran (this card). The
+        // measured line after the run is the only honest one. The typed SKIP
+        // and UNMEASURABLE states below still print — they are real states the
+        // run knows before it starts, not predictions of what will run.
+        if stack_down.is_some() {
+            println!("{}", werk_test::integration_report(selected_ns_tests, stack_down.as_deref()));
+        } else if selected_ns_tests == 0 {
+            println!("{}", werk_test::integration_report(0, None));
+        }
         if let Some(down) = &stack_down {
             emit_spine("test.integration.skipped", &role, &card, &trace,
                 &[("count", &selected_ns_tests.to_string()), ("stack_down", down)]);

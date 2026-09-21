@@ -4937,3 +4937,47 @@ mod needs_stack_in_selection_4238 {
         );
     }
 }
+
+/// #4251 — no plan line when the stack is up.
+#[cfg(test)]
+mod no_plan_line_4251 {
+    use super::{integration_measured_report, integration_report};
+
+    /// NEGATIVE PROOF — the three wrong plan lines, in order. Each claimed a
+    /// count before any lane had decided what to run:
+    ///   #4234  "134 needs-stack test(s) ran"  — one file was selected
+    ///   #4229  "498 … ran"                    — 75 ran
+    ///   #4251  "532 … ran"                    — 109 ran
+    /// The word "ran" in a line printed BEFORE the run is the defect; a count
+    /// there cannot be right except by luck.
+    #[test]
+    fn the_plan_line_claimed_ran_before_anything_ran() {
+        let line = integration_report(532, None);
+        assert!(line.contains("ran"), "{line}");
+        assert!(line.contains("532"), "{line}");
+        // the measured line, after the run, says what actually happened
+        assert_eq!(
+            integration_measured_report(532, 109),
+            "integration: 109 ran of 532 registered needs-stack test(s) (live stack)"
+        );
+    }
+
+    /// The states the run DOES know before it starts still print: a down stack
+    /// is a fact, not a prediction.
+    #[test]
+    fn a_down_stack_is_still_announced_up_front() {
+        let line = integration_report(12, Some("fuseki"));
+        assert!(line.contains("SKIPPED"), "{line}");
+        assert!(line.contains("fuseki"), "{line}");
+        assert!(line.contains("12"), "{line}");
+    }
+
+    /// Zero registered is its own explicit state, never silence (#3443).
+    #[test]
+    fn zero_registered_is_still_said_out_loud() {
+        assert_eq!(
+            integration_report(0, None),
+            "integration: none registered needs-stack for this diff"
+        );
+    }
+}
