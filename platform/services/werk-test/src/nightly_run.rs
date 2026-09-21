@@ -258,16 +258,82 @@ pub fn json_rows(json: &str, a: &str, b: &str) -> Vec<(String, String)> {
         .collect()
 }
 
-/// `nightly-case|filePath|testName` — one per case the runner joined and
-/// posted this run. The census below is the registry minus these, computed
+/// `nightly-case|filePath|testName|result` — one per case the runner joined
+/// and posted this run. The census below is the registry minus these, computed
 /// here from the run's own record instead of a 27-page walk of the ledger.
-pub fn parse_case_line(line: &str) -> Option<(String, String)> {
+///
+/// #4247 — the result is the fourth field. Without it the log recorded a
+/// result per SUITE and an identity per TEST, so "31 red" and "8,537 ran" were
+/// different nouns: not comparable, not addable, not trendable. A line written
+/// before this carries three fields; it parses with an empty result, which the
+/// census reports as unmeasured rather than passing.
+pub fn parse_case_line(line: &str) -> Option<(String, String, String)> {
     let rest = line.strip_prefix("nightly-case|")?;
-    let (f, n) = rest.split_once('|')?;
-    if f.is_empty() || n.is_empty() {
+    // A test name may itself contain '|' (jest it-names do). So: the file is
+    // the first field, and the result is the LAST field only when it is a
+    // verdict word. Anything else is part of the name, with no result.
+    let (f, rest) = rest.split_once('|')?;
+    if f.is_empty() || rest.is_empty() {
         return None;
     }
-    Some((f.to_string(), n.to_string()))
+    let verdict = |w: &str| matches!(w, "pass" | "fail" | "skip");
+    match rest.rsplit_once('|') {
+        Some((n, r)) if verdict(r) && !n.is_empty() => {
+            Some((f.to_string(), n.to_string(), r.to_string()))
+        }
+        _ => Some((f.to_string(), rest.to_string(), String::new())),
+    }
+}
+
+/// #4247 — every registered test with NO result in this run, by name.
+///
+/// A registered test that silently does not run reads exactly like one that
+/// passed. On 2026-09-20 the gap was 154 of 8,691 and nothing in the run named
+/// one of them; the number had to be inferred by matching two lists on
+/// file-and-name, so a renamed test looked like a test that never ran.
+///
+/// `registered` is (filePath, testName) from the registry; `ran` is what the
+/// run's own `nightly-case` lines reported. The answer is in the same unit as
+/// both inputs: the registered test.
+pub fn tests_with_no_result(
+    registered: &[(String, String)],
+    ran: &[(String, String, String)],
+) -> Vec<(String, String)> {
+    let seen: std::collections::HashSet<(&str, &str)> = ran
+        .iter()
+        .map(|(f, n, _)| (f.as_str(), n.as_str()))
+        .collect();
+    let mut out: Vec<(String, String)> = registered
+        .iter()
+        .filter(|(f, n)| !seen.contains(&(f.as_str(), n.as_str())))
+        .cloned()
+        .collect();
+    out.sort();
+    out.dedup();
+    out
+}
+
+/// #4247 — the run's counts, all in one unit: the registered test.
+///
+/// Suites stay a separate line labelled as suites. Jeff, 2026-09-20: "rather
+/// than stating everything in a different unit of measure can we be consistent".
+pub fn registered_test_tally(
+    registered: &[(String, String)],
+    ran: &[(String, String, String)],
+) -> String {
+    let no_result = tests_with_no_result(registered, ran).len();
+    let failed = ran.iter().filter(|(_, _, r)| r == "fail").count();
+    let passed = ran.iter().filter(|(_, _, r)| r == "pass").count();
+    let unmeasured = ran.len() - failed - passed;
+    format!(
+        "registered {} · ran {} · passed {} · failed {} · unmeasured {} · no result {}",
+        registered.len(),
+        ran.len(),
+        passed,
+        failed,
+        unmeasured,
+        no_result
+    )
 }
 
 /// coverage-floors.yml: `ts:` / `rust:` sections, `  <rel>: <floor>` entries,
@@ -1011,4 +1077,90 @@ mod crawl_line_4180 {
         assert!(!line.contains("clean"), "{line}");
     }
 }
+}
+
+/// #4247 — one unit for test reporting: the registered test.
+#[cfg(test)]
+mod one_unit_4247 {
+    use super::{parse_case_line, registered_test_tally, tests_with_no_result};
+
+    fn reg(pairs: &[(&str, &str)]) -> Vec<(String, String)> {
+        pairs.iter().map(|(f, n)| (f.to_string(), n.to_string())).collect()
+    }
+
+    fn ran(triples: &[(&str, &str, &str)]) -> Vec<(String, String, String)> {
+        triples
+            .iter()
+            .map(|(f, n, r)| (f.to_string(), n.to_string(), r.to_string()))
+            .collect()
+    }
+
+    /// NEGATIVE PROOF — the 2026-09-20 case. A registered test that silently
+    /// does not run read exactly like one that passed; the gap (154 of 8,691)
+    /// was nameless and had to be inferred by matching two lists.
+    #[test]
+    fn a_registered_test_that_never_ran_is_named() {
+        let registered = reg(&[("a.rs", "one"), ("a.rs", "two"), ("b.bats", "three")]);
+        let ran = ran(&[("a.rs", "one", "pass"), ("b.bats", "three", "fail")]);
+        assert_eq!(
+            tests_with_no_result(&registered, &ran),
+            reg(&[("a.rs", "two")])
+        );
+    }
+
+    /// Nothing missing is an empty list, not a silence.
+    #[test]
+    fn a_full_run_names_nothing() {
+        let registered = reg(&[("a.rs", "one")]);
+        let ran = ran(&[("a.rs", "one", "pass")]);
+        assert!(tests_with_no_result(&registered, &ran).is_empty());
+    }
+
+    /// NEGATIVE PROOF — a three-field line (written before this card) parses
+    /// with an EMPTY result and is counted unmeasured, never as a pass.
+    #[test]
+    fn a_line_without_a_result_is_unmeasured_not_passed() {
+        assert_eq!(
+            parse_case_line("nightly-case|a.rs|one"),
+            Some(("a.rs".into(), "one".into(), String::new()))
+        );
+        let line = registered_test_tally(&reg(&[("a.rs", "one")]), &ran(&[("a.rs", "one", "")]));
+        assert!(line.contains("unmeasured 1"), "{line}");
+        assert!(line.contains("passed 0"), "{line}");
+    }
+
+    /// The four-field line carries its verdict.
+    #[test]
+    fn a_line_with_a_result_carries_it() {
+        assert_eq!(
+            parse_case_line("nightly-case|a.rs|one|fail"),
+            Some(("a.rs".into(), "one".into(), "fail".into()))
+        );
+    }
+
+    /// NEGATIVE PROOF — a jest it-name may contain '|'. Splitting left-to-right
+    /// cut the name in half and called the rest the result ("b pair|pass").
+    /// The result is the last field ONLY when it is a verdict word.
+    #[test]
+    fn a_pipe_in_the_test_name_keeps_the_name_and_the_result() {
+        assert_eq!(
+            parse_case_line("nightly-case|a.rs|reads a|b pair|pass"),
+            Some(("a.rs".into(), "reads a|b pair".into(), "pass".into()))
+        );
+        assert_eq!(
+            parse_case_line("nightly-case|a.rs|reads a|b pair"),
+            Some(("a.rs".into(), "reads a|b pair".into(), String::new()))
+        );
+    }
+
+    /// Every count in the tally is the same unit — the registered test.
+    #[test]
+    fn the_tally_speaks_one_unit() {
+        let registered = reg(&[("a.rs", "one"), ("a.rs", "two"), ("b.bats", "three")]);
+        let ran = ran(&[("a.rs", "one", "pass"), ("b.bats", "three", "fail")]);
+        assert_eq!(
+            registered_test_tally(&registered, &ran),
+            "registered 3 · ran 2 · passed 1 · failed 1 · unmeasured 0 · no result 1"
+        );
+    }
 }

@@ -685,8 +685,11 @@ fn run_nightly(args: &[String]) -> Result<i32, String> {
         unregistered_total.fetch_add(unregistered, Ordering::SeqCst);
         // #4145 — the run's own record of what it posted, one line per case,
         // so the census is "registry minus these" and never a ledger walk.
+        // #4247 — the result rides with the identity. Without it the log had a
+        // result per SUITE and an identity per TEST, two units that cannot be
+        // compared; the census below reads this same line.
         for (c, _) in &joined {
-            println!("nightly-case|{}|{}", c.file_path, c.test_name);
+            println!("nightly-case|{}|{}|{}", c.file_path, c.test_name, c.result);
         }
         println!("nightly-stored|{}|{} of {}", unit, stored, joined.len());
     };
