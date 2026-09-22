@@ -128,6 +128,17 @@ pub fn scope_unit_names(
                 }
             }
         }
+        // #4270 — coverage-floors.yml is a repo-root DATA file that werk-test
+        // reads at nightly time (nightly_all.rs NIGHTLY_COVERAGE_FLOORS) to
+        // decide the coverage and denominator rows. It is not prose and not a
+        // schedule: change it and a test verdict changes, so it must RUN
+        // something rather than be waved through as irrelevant. It scopes to
+        // the crate that reads it. Editing it refused #4270's run outright,
+        // which is the gate working — the file simply had no owner.
+        if f == "coverage-floors.yml" {
+            names.insert("werk-test".to_string());
+            continue;
+        }
         // #4000 — proving/flows is LANE-handled, not unit-built: the #3920 ui
         // lane already fires on these paths (ui_lane_fires), so a specs-only
         // diff scopes to the well-known "ui-flows" name instead of forcing
@@ -403,5 +414,40 @@ mod scope_refusal_4169 {
         let ScopeVerdict::Full(r) = empty else { panic!("expected FULL") };
         assert_eq!(r, "empty-diff");
         assert!(!full_reason_is_data_defect(&r));
+    }
+}
+
+#[cfg(test)]
+mod coverage_floors_scope_4270 {
+    use super::*;
+
+    fn u(name: &str, dir: &str) -> ScopeUnit {
+        ScopeUnit { name: name.to_string(), dir: dir.to_string() }
+    }
+
+    /// Editing the floors file changes a test VERDICT, so it must run the crate
+    /// that reads it — not be waved through, and not refuse the whole card.
+    #[test]
+    fn the_floors_file_scopes_to_the_crate_that_reads_it() {
+        let units = vec![u("werk-test", "platform/services/werk-test")];
+        let v = scope_unit_names(&["coverage-floors.yml".to_string()], &units, &[], false);
+        assert!(v == ScopeVerdict::Scoped(vec!["werk-test".to_string()]), "got {:?}", v);
+    }
+
+    /// NEGATIVE PROOF: the mapping is for THIS file, not for root yml in
+    /// general. Another unowned root data file must still refuse by name, or
+    /// this rule would have quietly turned every unmapped path into a pass.
+    #[test]
+    fn another_unowned_root_file_still_refuses_by_name() {
+        let units = vec![u("werk-test", "platform/services/werk-test")];
+        let v = scope_unit_names(&["something-else.yml".to_string()], &units, &[], false);
+        assert!(v == ScopeVerdict::Full("unmapped:something-else.yml".to_string()), "got {:?}", v);
+    }
+
+    /// And it is NOT irrelevant — a floors change that ran nothing would be the
+    /// same silence the #4173 comment warns about for test suites.
+    #[test]
+    fn the_floors_file_is_not_waved_through_as_irrelevant() {
+        assert!(!scope_irrelevant("coverage-floors.yml"));
     }
 }
