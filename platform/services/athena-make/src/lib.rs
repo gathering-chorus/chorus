@@ -3651,6 +3651,21 @@ pub fn tests_manifest(t: &RouteTable) -> String {
                 Some(target) => format!("{{ \"field\": \"{n}\", \"kind\": \"edge\", \"targetClass\": \"{t}\" }}",
                     n = json_escape(n), t = json_escape(target)),
                 None => {
+                    // #4269 — and its DATATYPE. The shape has carried
+                    // `roleSequence|datatype:integer` all along; the manifest did
+                    // not pass it on, so a runner filling every literal with a
+                    // word sent "zz" where an integer was required and reported
+                    // the door's correct refusal as an API failure. Three of the
+                    // 54 classes failed for that reason on 2026-09-21.
+                    let dt = t.fields.iter().find_map(|f| {
+                        let (n2, rest) = f.split_once('|')?;
+                        if n2 != n { return None; }
+                        rest.strip_prefix("datatype:").map(|d| d.to_string())
+                    });
+                    let dt_json = match &dt {
+                        Some(d) => format!(", \"datatype\": \"{}\"", json_escape(d)),
+                        None => String::new(),
+                    };
                     // #4267 — a constrained literal publishes the values it may take.
                     let vals: Vec<String> = t.allowed_values.iter()
                         .filter_map(|av| av.split_once('|'))
@@ -3658,10 +3673,10 @@ pub fn tests_manifest(t: &RouteTable) -> String {
                         .map(|(_, v)| format!("\"{}\"", json_escape(v)))
                         .collect();
                     if vals.is_empty() {
-                        format!("{{ \"field\": \"{n}\", \"kind\": \"literal\" }}", n = json_escape(n))
+                        format!("{{ \"field\": \"{n}\", \"kind\": \"literal\"{dt} }}", n = json_escape(n), dt = dt_json)
                     } else {
-                        format!("{{ \"field\": \"{n}\", \"kind\": \"literal\", \"allowedValues\": [{v}] }}",
-                            n = json_escape(n), v = vals.join(", "))
+                        format!("{{ \"field\": \"{n}\", \"kind\": \"literal\"{dt}, \"allowedValues\": [{v}] }}",
+                            n = json_escape(n), dt = dt_json, v = vals.join(", "))
                     }
                 }
             })
