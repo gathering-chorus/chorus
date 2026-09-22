@@ -19,6 +19,10 @@ setup() {
   export NIGHTLY_PS="$BATS_TEST_TMPDIR/ps-none"
   mkdir -p "$T/root/platform/scripts" "$T/root/platform/tests" "$T/fail"
   touch "$T/root/platform/tests/a.bats"
+  # #4271 — emit_pipeline_run skips silently without a token; the PipelineRun
+  # proofs below need the POST to actually happen.
+  printf '#!/bin/bash\necho stub-token\n' > "$T/root/platform/scripts/chorus-identity-token"
+  chmod +x "$T/root/platform/scripts/chorus-identity-token"
   cat > "$T/runner.sh" <<'EOS'
 #!/bin/bash
 echo "nightly-plan|bats|platform/tests/a.bats"
@@ -53,6 +57,9 @@ class H(http.server.BaseHTTPRequestHandler):
         b = json.dumps(body).encode()
         s.send_response(200); s.send_header("Content-Length", str(len(b))); s.end_headers(); s.wfile.write(b)
     def do_POST(s):
+        n = int(s.headers.get("Content-Length") or 0)
+        body = s.rfile.read(n).decode() if n else ""
+        open(T + "/posts.txt", "a").write(s.path + " " + body.replace("\n", " ") + "\n")
         s.send_response(201); s.end_headers()
     def log_message(s, *a): pass
 srv = socketserver.TCPServer(("127.0.0.1", 0), H)
@@ -173,4 +180,47 @@ EOS
   [ "$status" -eq 0 ]
   [[ "$output$stderr" == *"REFUSED"* ]] || grep -q "REFUSED" <<< "$output"
   [ ! -f "$T/nightly.log" ]
+}
+
+# #4271 item 2 — one joinable run id. The graph row and the log run must carry
+# the same id. As shipped the PipelineRun name was built at EMIT time, which is
+# when the run finished: 2026-09-22 is RUN|start|2026-09-22T03:00:03 in the log
+# and nightly-2026-09-22t03-49-08 in the graph. Two rows, one run, no join.
+#
+# The stub runner here sleeps so start and completion land in DIFFERENT seconds.
+# Without that sleep both stamps are the same second and the check passes while
+# the defect is fully present — a gate that cannot reach red.
+slow_runner() {
+  cat > "$T/runner-slow.sh" <<'EOS'
+#!/bin/bash
+sleep 2
+echo "nightly-unit|bats|platform/tests/a.bats|pass|2 pass, 0 fail"
+EOS
+  chmod +x "$T/runner-slow.sh"
+}
+
+@test "#4271: the PipelineRun name carries the log's RUN|start id, not the time the run finished" {
+  slow_runner
+  RUNNER="$T/runner-slow.sh" run run_all
+  [ "$status" -eq 0 ]
+  started=$(grep '^RUN|start|' "$T/nightly.log" | head -1 | cut -d'|' -f3)
+  completed=$(grep '^RUN|complete|' "$T/nightly.log" | head -1 | cut -d'|' -f3)
+  # the premise of this proof: the two stamps differ, so the check can go red
+  [ -n "$started" ] && [ -n "$completed" ] && [ "$started" != "$completed" ]
+  grep -q '^/pipelineruns ' "$T/posts.txt"
+  name=$(grep '^/pipelineruns ' "$T/posts.txt" | head -1 | sed 's/.*"name":"\([^"]*\)".*/\1/')
+  [ "$name" = "nightly-${started//:/-}" ]
+  [ "$name" != "nightly-${completed//:/-}" ]
+}
+
+@test "#4271 NEGATIVE PROOF: a PipelineRun stamped at completion does not resolve to the run in the log" {
+  slow_runner
+  RUNNER="$T/runner-slow.sh" run run_all
+  started=$(grep '^RUN|start|' "$T/nightly.log" | head -1 | cut -d'|' -f3)
+  name=$(grep '^/pipelineruns ' "$T/posts.txt" | head -1 | sed 's/.*"name":"\([^"]*\)".*/\1/')
+  # recover the id from the name the way a reader joining the two would, and
+  # require it to name a run that is actually in the log
+  recovered=$(printf '%s' "$name" | sed 's/^nightly-//; s/^\(..........\)[tT]/\1T/' | awk -F'T' '{gsub(/-/,":",$2); print $1 "T" $2}')
+  [ "$recovered" = "$started" ]
+  grep -q "^RUN|start|$recovered|" "$T/nightly.log"
 }
