@@ -13,7 +13,7 @@ fn table(class: &str, fields: Vec<&str>) -> RouteTable {
         routes: vec![],
         secured: vec![],
         mandatory: vec!["label".into()],
-        write_required: vec!["label".into()],
+        write_required: vec!["label".into()], allowed_values: vec![],
         repo_target: format!("generated/{}", class.to_lowercase()),
         exposure: vec![],
         instances_graph: "urn:chorus:instances".into(),
