@@ -731,8 +731,21 @@ fn run_nightly(args: &[String]) -> Result<i32, String> {
         // #4247 — the result rides with the identity. Without it the log had a
         // result per SUITE and an identity per TEST, two units that cannot be
         // compared; the census below reads this same line.
-        for (c, _) in &joined {
-            println!("nightly-case|{}|{}|{}", c.file_path, c.test_name, c.result);
+        for (c, _, registered) in &joined {
+            // #4271 — four fields now. The case's own name is its identity; the
+            // registered row it answers for is a SUFFIX of that name, so the
+            // line carries the suffix's byte LENGTH rather than a second copy
+            // of the name. A second copy is a second record of one fact, and
+            // two records that must agree is the defect this card exists to
+            // kill. A name cannot be swallowed by the split because digits
+            // cannot, and an old three-field line still parses.
+            println!(
+                "nightly-case|{}|{}|{}|{}",
+                c.file_path,
+                c.test_name,
+                c.result,
+                werk_test::nightly_run::registered_suffix_len(&c.test_name, registered)
+            );
             // #4255 — a FAILING case becomes an event, not just a line in a file
             // on this box. Jeff, 2026-09-21: "i thought they had our logging
             // standards integrated it feels like they dont". The runner emitted
@@ -2175,7 +2188,7 @@ fn post_test_results(
     role: &str,
     card: &str,
     trace: &str,
-    joined: &[(CaseResult, String)],
+    joined: &[(CaseResult, String, String)],
     run_epoch_ms: u128,
     idx_base: usize,
 ) -> usize {
@@ -2222,7 +2235,7 @@ fn post_test_results(
         .iter()
         .take(MAX_POSTS)
         .enumerate()
-        .map(|(i, (c, of_test))| {
+        .map(|(i, (c, of_test, _registered))| {
             // #4033 — names are testresult-<card>-<ts>-<idx>; with the per-unit
             // store (#4030) every unit restarted i at 0 under the run's shared
             // ts, so unit two's names were unit one's and the store answered

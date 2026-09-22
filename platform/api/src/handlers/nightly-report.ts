@@ -12,6 +12,49 @@ export type NightlyRow = {
   summary: string;
 };
 
+/** #4271 — the run's own count of TEST CASES, read verbatim from its RUN|tally
+ *  line. Suites and tests are two units; the readout stated only the first, so
+ *  the graph's "17 failed of 421" (suites) and the log's "51 failed of 9,417"
+ *  (cases) had no common surface. Numbers are absent when the run could not
+ *  take the reading — never zero, because zero is a measurement. */
+export type NightlyTally = {
+  /** the line exactly as the run wrote it */
+  text: string;
+  registered?: number;
+  ran?: number;
+  passed?: number;
+  failed?: number;
+  unmeasured?: number;
+  noResult?: number;
+};
+
+/** Read one `RUN|tally|…` body. The runner writes
+ *  "registered N · ran N · passed N · failed N · unmeasured N · no result N",
+ *  or a sentence when the registry was unreadable — which yields the text and
+ *  no numbers, so a caller can tell "could not measure" from "measured zero".
+ */
+export function parseTally(body: string): NightlyTally {
+  // Segments are "<label> <number>", separated by '·'. Read as data, not with
+  // a regex built from a label: a non-literal RegExp is a lint the ratchet
+  // refuses, and splitting is both simpler and cheaper to read.
+  const seen = new Map<string, number>();
+  for (const seg of body.split('·')) {
+    const parts = seg.trim().split(/\s+/);
+    const n = Number(parts.pop());
+    const label = parts.join(' ');
+    if (label && Number.isInteger(n)) seen.set(label, n);
+  }
+  return {
+    text: body,
+    registered: seen.get('registered'),
+    ran: seen.get('ran'),
+    passed: seen.get('passed'),
+    failed: seen.get('failed'),
+    unmeasured: seen.get('unmeasured'),
+    noResult: seen.get('no result'),
+  };
+}
+
 export type NightlyRun = {
   startedAt: string;
   completedAt?: string;
@@ -21,6 +64,9 @@ export type NightlyRun = {
   stoppedAt?: string;
   stoppedDetail?: string;
   rows: NightlyRow[];
+  /** #4271 — the run's test-grain tally, verbatim. Absent when the run wrote
+   *  no tally line; the readout then reports the test grain as unmeasured. */
+  tally?: NightlyTally;
   /** #4009 — liveness. A run that never completed is either working or wedged,
    *  and the page could not tell them apart: on 2026-08-25 a lane sat silent
    *  for 38 minutes while a human was told three different things about it.
@@ -28,6 +74,21 @@ export type NightlyRun = {
   quietForMs?: number;
   lastRowAt?: string;
 };
+
+/** One `SUITE|kind|path|owner|status|summary` row, or null for any other line.
+ *  The summary may itself contain '|', so it takes everything after field 5. */
+function parseSuiteLine(l: string): NightlyRow | null {
+  if (!l.startsWith('SUITE|')) return null;
+  const parts = l.split('|');
+  if (parts.length < 6) return null;
+  return {
+    kind: parts[1],
+    path: parts[2],
+    owner: parts[3],
+    status: parts[4],
+    summary: parts.slice(5).join('|'),
+  };
+}
 
 /** Parse the LAST run block (RUN|start … RUN|complete) from the nightly log. */
 export function parseNightlyLog(text: string): NightlyRun | null {
@@ -52,19 +113,14 @@ export function parseNightlyLog(text: string): NightlyRun | null {
       run.stoppedDetail = l.split('|')[3] ?? '';
       break;
     }
-    if (l.startsWith('SUITE|')) {
-      // summary may itself contain '|'-free text; split into 6 parts max.
-      const parts = l.split('|');
-      if (parts.length >= 6) {
-        run.rows.push({
-          kind: parts[1],
-          path: parts[2],
-          owner: parts[3],
-          status: parts[4],
-          summary: parts.slice(5).join('|'),
-        });
-      }
+    // #4271 — the tally is kept alongside SUITE rows. The parser used to drop
+    // it, so the readout never had the test grain to state.
+    if (l.startsWith('RUN|tally|')) {
+      run.tally = parseTally(l.slice('RUN|tally|'.length));
+      continue;
     }
+    const row = parseSuiteLine(l);
+    if (row) run.rows.push(row);
   }
   // #4009 — how long has this run been silent? Rows carry no timestamps, so the
   // honest source is the log file's own last write, supplied by the caller.

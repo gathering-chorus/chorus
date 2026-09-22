@@ -267,7 +267,7 @@ pub fn json_rows(json: &str, a: &str, b: &str) -> Vec<(String, String)> {
 /// different nouns: not comparable, not addable, not trendable. A line written
 /// before this carries three fields; it parses with an empty result, which the
 /// census reports as unmeasured rather than passing.
-pub fn parse_case_line(line: &str) -> Option<(String, String, String)> {
+pub fn parse_case_line(line: &str) -> Option<(String, String, String, String)> {
     let rest = line.strip_prefix("nightly-case|")?;
     // A test name may itself contain '|' (jest it-names do). So: the file is
     // the first field, and the result is the LAST field only when it is a
@@ -277,11 +277,31 @@ pub fn parse_case_line(line: &str) -> Option<(String, String, String)> {
         return None;
     }
     let verdict = |w: &str| matches!(w, "pass" | "fail" | "skip");
+    // #4271 — the four-field shape: <name>|<verdict>|<regLen>. Digits cannot be
+    // swallowed by the split the way a name can, and the verdict check in the
+    // middle rules out a name that merely ends in "|123". A three-field line
+    // (every line written before this) still parses, with the case answering
+    // for the registered row of its own name.
+    if let Some((head, tail)) = rest.rsplit_once('|') {
+        if !tail.is_empty() && tail.bytes().all(|b| b.is_ascii_digit()) {
+            if let Some((name, r)) = head.rsplit_once('|') {
+                if verdict(r) && !name.is_empty() {
+                    let len: usize = tail.parse().unwrap_or(0);
+                    // refuse, never guess: a length that does not land on a
+                    // boundary of the name yields NO join key, which counts as
+                    // a case that answers for no registered row — a visible
+                    // state, not a phantom never-ran against the registry.
+                    let reg = registered_from_suffix_len(name, len).unwrap_or_default();
+                    return Some((f.to_string(), name.to_string(), r.to_string(), reg));
+                }
+            }
+        }
+    }
     match rest.rsplit_once('|') {
         Some((n, r)) if verdict(r) && !n.is_empty() => {
-            Some((f.to_string(), n.to_string(), r.to_string()))
+            Some((f.to_string(), n.to_string(), r.to_string(), n.to_string()))
         }
-        _ => Some((f.to_string(), rest.to_string(), String::new())),
+        _ => Some((f.to_string(), rest.to_string(), String::new(), rest.to_string())),
     }
 }
 
@@ -297,11 +317,16 @@ pub fn parse_case_line(line: &str) -> Option<(String, String, String)> {
 /// both inputs: the registered test.
 pub fn tests_with_no_result(
     registered: &[(String, String)],
-    ran: &[(String, String, String)],
+    ran: &[(String, String, String, String)],
 ) -> Vec<(String, String)> {
+    // #4271 — joined on the REGISTERED name a case answers for, not on the
+    // case's own name. The two differ for every case a `describe.each` block
+    // generates; matching on the case name would read all 8,749 registered
+    // tests as never-ran.
     let seen: std::collections::HashSet<(&str, &str)> = ran
         .iter()
-        .map(|(f, n, _)| (f.as_str(), n.as_str()))
+        .filter(|(_, _, _, reg)| !reg.is_empty())
+        .map(|(f, _, _, reg)| (f.as_str(), reg.as_str()))
         .collect();
     let mut out: Vec<(String, String)> = registered
         .iter()
@@ -319,11 +344,11 @@ pub fn tests_with_no_result(
 /// than stating everything in a different unit of measure can we be consistent".
 pub fn registered_test_tally(
     registered: &[(String, String)],
-    ran: &[(String, String, String)],
+    ran: &[(String, String, String, String)],
 ) -> String {
     let no_result = tests_with_no_result(registered, ran).len();
-    let failed = ran.iter().filter(|(_, _, r)| r == "fail").count();
-    let passed = ran.iter().filter(|(_, _, r)| r == "pass").count();
+    let failed = ran.iter().filter(|(_, _, r, _)| r == "fail").count();
+    let passed = ran.iter().filter(|(_, _, r, _)| r == "pass").count();
     let unmeasured = ran.len() - failed - passed;
     format!(
         "registered {} · ran {} · passed {} · failed {} · unmeasured {} · no result {}",
@@ -498,6 +523,66 @@ pub fn notify_messages(rows: &[SuiteRow], security_owner: &str, crawl: &str) -> 
     out
 }
 
+/// #4271 — the byte length of the registered name inside the case's own name.
+/// The registered name is a suffix of the emitted name by construction (an
+/// exact join makes them equal; the suffix join requires `ends_with`), so the
+/// line carries this number instead of a second copy of the name. 0 means the
+/// case answers for no registered row.
+pub fn registered_suffix_len(test_name: &str, registered: &str) -> usize {
+    if !registered.is_empty() && test_name.ends_with(registered) {
+        registered.len()
+    } else {
+        0
+    }
+}
+
+/// The registered name a `nightly-case` line's suffix length points at, or
+/// None when the length does not land on a boundary of the name. It REFUSES
+/// rather than guessing: a length that slices mid-name would hand the census a
+/// join key no registry row holds, which reads as a phantom never-ran.
+pub fn registered_from_suffix_len(test_name: &str, len: usize) -> Option<String> {
+    if len == 0 || len > test_name.len() {
+        return None;
+    }
+    let start = test_name.len() - len;
+    if !test_name.is_char_boundary(start) {
+        return None;
+    }
+    Some(test_name[start..].to_string())
+}
+
+/// #4271 — the PipelineRun row's name, built from the run's START stamp so it
+/// carries the same id the log brackets the run with (`RUN|start|<stamp>`).
+///
+/// It used to be built at emit time, which is the moment the run FINISHED: the
+/// 2026-09-22 run is `RUN|start|2026-09-22T03:00:03` in the log and
+/// `nightly-2026-09-22t03-49-08` in the graph. Two rows about one run with no
+/// shared key, so no reader could check the graph's counts against the log's.
+pub fn pipeline_run_name(started_at: &str) -> String {
+    format!("nightly-{}", started_at.replace(':', "-"))
+}
+
+/// The inverse: the log runId a PipelineRun name points at, or None when the
+/// name is not one this runner minted. Case-insensitive on the date separator
+/// because the store lowercases names on the way in.
+pub fn run_id_from_pipeline_run_name(name: &str) -> Option<String> {
+    let rest = name.strip_prefix("nightly-")?;
+    let (date, time) = rest.split_once(['t', 'T'])?;
+    if date.len() != 10 || time.len() != 8 {
+        return None;
+    }
+    Some(format!("{}T{}", date, time.replace('-', ":")))
+}
+
+/// #4271 — rows the summary's per-status fields did not account for. Suites
+/// minus the sum of every emitted count. Zero is the only honest answer once
+/// the buckets are derived from the rows; a non-zero means a row's verdict
+/// reached the log and reached no field, which is how the 2026-09-22 03:00 run
+/// reported 430 suites across fields summing to 422.
+pub fn uncounted_rows(suites: usize, counted: usize) -> usize {
+    suites.saturating_sub(counted)
+}
+
 /// The `nightly.run.summary` spine fields, the wrapper's `emit_run_summary`.
 pub fn run_summary_fields(rows: &[SuiteRow]) -> Vec<(String, String)> {
     let count = |s: &str| rows.iter().filter(|r| r.status == s).count();
@@ -506,27 +591,97 @@ pub fn run_summary_fields(rows: &[SuiteRow]) -> Vec<(String, String)> {
     owners.sort_unstable();
     owners.dedup();
     let csv: Vec<String> = owners.iter().map(|o| format!("{}={}", o, rows.iter().filter(|r| r.status == "fail" && r.owner == *o).count())).collect();
-    vec![
-        ("suites".into(), rows.len().to_string()),
-        ("passed".into(), count("pass").to_string()),
-        ("failed".into(), failed.to_string()),
-        ("skipped".into(), count("skip").to_string()),
-        ("unmeasurable".into(), count("unmeasurable").to_string()),
-        // #4168 — counted on its own axis; deliberately NOT folded into failed,
-        // so zero_red stays true on a run whose only non-pass rows are stale.
-        ("stale".into(), count("stale").to_string()),
-        ("red_by_owner".into(), if csv.is_empty() { "none".into() } else { csv.join(";") }),
-        ("zero_red".into(), (failed == 0).to_string()),
-    ]
+    // The three fields Loki and the readout have always keyed on keep their
+    // names and their places. Everything else is DERIVED from the rows (#4271):
+    // a hand-written list named two statuses the rows never carry and left the
+    // two they do ("unmeasured", "slow") in no field at all, so the summary
+    // read 430 suites across fields summing to 422 and nothing looked wrong.
+    let mut f = vec![
+        ("suites".to_string(), rows.len().to_string()),
+        ("passed".to_string(), count("pass").to_string()),
+        ("failed".to_string(), failed.to_string()),
+        ("skipped".to_string(), count("skip").to_string()),
+    ];
+    let mut counted = count("pass") + failed + count("skip");
+    // #4168 — stale is counted on its own axis and deliberately NOT folded into
+    // failed, so zero_red stays true on a run whose only non-pass rows are
+    // stale. It now arrives through the same derivation as every other status.
+    let mut rest: Vec<&str> = rows
+        .iter()
+        .map(|r| r.status.as_str())
+        .filter(|s| !matches!(*s, "pass" | "fail" | "skip"))
+        .collect();
+    rest.sort_unstable();
+    rest.dedup();
+    for status in rest {
+        let n = count(status);
+        counted += n;
+        f.push((status.to_string(), n.to_string()));
+    }
+    f.push(("uncounted".to_string(), uncounted_rows(rows.len(), counted).to_string()));
+    f.push(("red_by_owner".to_string(), if csv.is_empty() { "none".into() } else { csv.join(";") }));
+    f.push(("zero_red".to_string(), (failed == 0).to_string()));
+    f
 }
 
 /// The pipeline-run record body (`emit_pipeline_run`): outcome and counts.
-pub fn pipeline_run_body(rows: &[SuiteRow], name: &str, trace: &str, duration_ms: u128) -> String {
+/// #4271 — the lane's own count of results it wrote: `nightly-stored|run|<n> of <m>`.
+/// The `run` roll-up only; a per-unit line is one unit's slice, and summing
+/// those plus the roll-up double-counts (18,834 for a 9,417-case night).
+pub fn parse_run_stored_line(line: &str) -> Option<usize> {
+    let rest = line.strip_prefix("nightly-stored|run|")?;
+    rest.split(" of ").next()?.trim().parse().ok()
+}
+
+/// The test grain for a run's PipelineRun row, or None when there is no
+/// reading to report. Absence is not zero (#3734): a night that measured
+/// nothing must omit the fields, not claim 0 failures.
+pub fn run_test_counts(
+    cases: &[(String, String, String, String)],
+    stored: Option<usize>,
+) -> Option<RunTestCounts> {
+    if cases.is_empty() {
+        return None;
+    }
+    let stored = stored?;
+    Some(RunTestCounts {
+        run: cases.len(),
+        failed: cases.iter().filter(|(_, _, r, _)| r == "fail").count(),
+        stored,
+    })
+}
+
+/// #4271 — the test-grain numbers a run measured, if it measured any. `None`
+/// means no reading: the fields are OMITTED, never sent as zero. A zero is a
+/// measurement and "0 tests failed" on an unmeasured night reads as green.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct RunTestCounts {
+    pub run: usize,
+    pub failed: usize,
+    pub stored: usize,
+}
+
+/// The pipeline-run record body (`emit_pipeline_run`): outcome and counts.
+///
+/// #4271 — suites and tests are two units and now have two sets of names. The
+/// row used to send `testsRun` / `testsFailed` / `testsStored` and put SUITE
+/// counts in all three: the 2026-09-22 03:00 row reads testsRun 421,
+/// testsFailed 17, testsStored 430 for a night that ran 9,417 cases, failed 51
+/// and stored 9,417 results. `testsStored` is RETIRED rather than repaired
+/// (Kade, 07:28) — 134 rows already carry it meaning suites and no reader can
+/// date the change, so the old name keeps its old meaning as history.
+pub fn pipeline_run_body(
+    rows: &[SuiteRow],
+    name: &str,
+    trace: &str,
+    duration_ms: u128,
+    tests: Option<RunTestCounts>,
+) -> String {
     let failed = rows.iter().filter(|r| r.status == "fail").count();
     let passed = rows.iter().filter(|r| r.status == "pass").count();
     let outcome = if failed == 0 { "green" } else { "red" };
-    format!(
-        "{{\"name\":\"{}\",\"forPipeline\":\"pipeline-cicd\",\"traceId\":\"{}\",\"runOutcome\":\"{}\",\"runDurationMs\":\"{}\",\"testsRun\":\"{}\",\"testsFailed\":\"{}\",\"testsStored\":\"{}\"}}",
+    let mut body = format!(
+        "{{\"name\":\"{}\",\"forPipeline\":\"pipeline-cicd\",\"traceId\":\"{}\",\"runOutcome\":\"{}\",\"runDurationMs\":\"{}\",\"suitesRun\":\"{}\",\"suitesFailed\":\"{}\",\"suitesTotal\":\"{}\"",
         name,
         trace,
         outcome,
@@ -534,7 +689,15 @@ pub fn pipeline_run_body(rows: &[SuiteRow], name: &str, trace: &str, duration_ms
         passed + failed,
         failed,
         rows.len()
-    )
+    );
+    if let Some(t) = tests {
+        body.push_str(&format!(
+            ",\"testsRun\":\"{}\",\"testsFailed\":\"{}\",\"resultsStored\":\"{}\"",
+            t.run, t.failed, t.stored
+        ));
+    }
+    body.push('}');
+    body
 }
 
 /// The per-row `test.suite.result` fields (`emit_suite_results`), with the
@@ -880,6 +1043,104 @@ mod nightly_run_4145 {
         assert_eq!(row.status, "fail");
     }
 
+    // #4271 — the graph row and the log run must share one id. A reader who
+    // has the PipelineRun must be able to find the run in the log, and vice
+    // versa, without guessing which of two timestamps was meant.
+    #[test]
+    fn the_pipeline_run_name_carries_the_log_runid() {
+        let log = "RUN|start|2026-09-22T03:00:03|pid=10432\nSUITE|bats|a.bats|kade|pass|1 pass, 0 fail\nRUN|complete|2026-09-22T03:49:08|suites=430\n";
+        let started = log.lines().next().unwrap().split('|').nth(2).unwrap();
+        let name = super::pipeline_run_name(started);
+        assert_eq!(name, "nightly-2026-09-22T03-00-03");
+        assert_eq!(
+            super::run_id_from_pipeline_run_name(&name).as_deref(),
+            Some("2026-09-22T03:00:03"),
+            "the name round-trips back to the id the log brackets the run with"
+        );
+        // the store lowercases names on the way in; the join must survive that
+        assert_eq!(
+            super::run_id_from_pipeline_run_name(&name.to_lowercase()).as_deref(),
+            Some("2026-09-22T03:00:03")
+        );
+    }
+
+    // NEGATIVE PROOF (#3734): the name the runner actually emitted on
+    // 2026-09-22 — built at completion — must FAIL to join. Without this the
+    // round-trip above passes for any self-consistent pair of stamps and says
+    // nothing about whether the right stamp was chosen.
+    #[test]
+    fn negative_proof_a_completion_stamped_name_does_not_join_the_log_run() {
+        let log_run_id = "2026-09-22T03:00:03";
+        let as_shipped = format!("nightly-{}", "2026-09-22T03:49:08".replace(':', "-"));
+        assert_eq!(as_shipped, "nightly-2026-09-22T03-49-08", "this is the row in the graph today");
+        assert_ne!(
+            super::run_id_from_pipeline_run_name(&as_shipped).as_deref(),
+            Some(log_run_id),
+            "a completion-stamped name must not resolve to the run's log id"
+        );
+        assert_eq!(super::pipeline_run_name(log_run_id), "nightly-2026-09-22T03-00-03");
+    }
+
+    // A name this runner did not mint must say so rather than inventing an id.
+    #[test]
+    fn negative_proof_a_foreign_name_yields_no_runid() {
+        assert_eq!(super::run_id_from_pipeline_run_name("werk-4271-run-2"), None);
+        assert_eq!(super::run_id_from_pipeline_run_name("nightly-nonsense"), None);
+        assert_eq!(super::run_id_from_pipeline_run_name("nightly-2026-09-22T03-00"), None);
+    }
+
+    // #4271 — every row the run produced must reach a counted field. The
+    // 2026-09-22 03:00 run reported 430 suites while nightly.run.summary's
+    // fields summed to 422: run_summary_fields hand-listed "unmeasurable" and
+    // "stale", which no row that night carried, and the 7 rows verdicted
+    // "unmeasured" plus the 1 verdicted "slow" landed in no field at all. Both
+    // hand-listed fields read 0, so nothing looked wrong.
+    //
+    // This is the run's own status set, verbatim.
+    #[test]
+    fn every_status_the_run_produced_reaches_a_counted_field() {
+        let rows = vec![
+            SuiteRow::new("bats", "a.bats", "kade", "pass", "1 pass, 0 fail"),
+            SuiteRow::new("bats", "b.bats", "kade", "fail", "0 pass, 1 fail"),
+            SuiteRow::new("bats", "c.bats", "kade", "skip", "skipped"),
+            SuiteRow::new("perf", "d.sh", "silas", "slow", "0 pass, 1 fail"),
+            SuiteRow::new("coverage", "e", "wren", "unmeasured", "0 pass, 0 fail (UNMEASURED)"),
+        ];
+        let fields = run_summary_fields(&rows);
+        let get = |k: &str| fields.iter().find(|(f, _)| f == k).map(|(_, v)| v.clone()).unwrap_or_default();
+        assert_eq!(get("suites"), "5");
+        assert_eq!(get("slow"), "1", "a slow row must be counted, not vanish: {:?}", fields);
+        assert_eq!(get("unmeasured"), "1", "an unmeasured row must be counted, not vanish: {:?}", fields);
+        assert_eq!(get("uncounted"), "0", "every row reached a field: {:?}", fields);
+    }
+
+    // NEGATIVE PROOF (#3734) for the check above: a status the code has never
+    // seen must still land in a field and still leave uncounted at 0. A field
+    // list that is hand-written cannot satisfy this — which is exactly the
+    // state that produced the 430-vs-422 gap.
+    #[test]
+    fn negative_proof_a_status_no_one_hand_listed_is_still_counted() {
+        let rows = vec![
+            SuiteRow::new("bats", "a.bats", "kade", "pass", "1 pass, 0 fail"),
+            SuiteRow::new("bats", "z.bats", "kade", "wedged", "0 pass, 0 fail (a verdict word nobody listed)"),
+        ];
+        let fields = run_summary_fields(&rows);
+        let get = |k: &str| fields.iter().find(|(f, _)| f == k).map(|(_, v)| v.clone()).unwrap_or_default();
+        assert_eq!(get("wedged"), "1", "an unlisted status must get its own field: {:?}", fields);
+        assert_eq!(get("uncounted"), "0", "and must not leave rows uncounted: {:?}", fields);
+    }
+
+    // The uncounted field must be able to say something other than 0, or it is
+    // a hollow gate. Summing the emitted per-status counts against the suite
+    // total is the arithmetic it performs; this pins that arithmetic.
+    #[test]
+    fn negative_proof_uncounted_is_reachable() {
+        let counted = 422usize;
+        let suites = 430usize;
+        assert_eq!(super::uncounted_rows(suites, counted), 8, "the 2026-09-22 03:00 gap, in the arithmetic uncounted uses");
+        assert_eq!(super::uncounted_rows(430, 430), 0);
+    }
+
     // #4168 AC2 — stale rows are counted and named in their own words, never
     // folded into the red total and never silently dropped either.
     #[test]
@@ -1050,8 +1311,53 @@ mod nightly_run_4145 {
         let f = run_summary_fields(&rows);
         assert!(f.contains(&("red_by_owner".to_string(), "wren=1".to_string())));
         assert!(f.contains(&("zero_red".to_string(), "false".to_string())));
-        let body = pipeline_run_body(&rows, "nightly-x", "t", 5);
-        assert!(body.contains("\"runOutcome\":\"red\"") && body.contains("\"testsRun\":\"2\"") && body.contains("\"testsStored\":\"3\""));
+        let body = pipeline_run_body(&rows, "nightly-x", "t", 5, None);
+        assert!(body.contains("\"runOutcome\":\"red\""));
+        // #4271 — suite counts live under SUITE names now
+        assert!(body.contains("\"suitesRun\":\"2\""), "{body}");
+        assert!(body.contains("\"suitesFailed\":\"1\""), "{body}");
+        assert!(body.contains("\"suitesTotal\":\"3\""), "{body}");
+    }
+
+    // #4271 — the row lied in one unit. testsRun/testsFailed/testsStored all
+    // carried SUITE counts: the 2026-09-22 03:00 row says testsRun 421 and
+    // testsFailed 17 for a night that ran 9,417 cases and failed 51, and
+    // testsStored said 430 when 9,417 results were stored.
+    //
+    // Kade's ruling, 07:28: retire testsStored rather than repair its meaning.
+    // 134 rows already carry it meaning suites and no reader can date the
+    // change, so the old name keeps its old meaning as history.
+    #[test]
+    fn the_body_states_suites_and_tests_under_their_own_names() {
+        let rows = vec![
+            SuiteRow::new("bats", "a", "wren", "fail", "0 pass, 1 fail"),
+            SuiteRow::new("bats", "b", "kade", "pass", "1 pass, 0 fail"),
+        ];
+        let body = pipeline_run_body(&rows, "n", "t", 5, Some(super::RunTestCounts { run: 9417, failed: 51, stored: 9417 }));
+        for want in [
+            "\"suitesRun\":\"2\"",
+            "\"suitesFailed\":\"1\"",
+            "\"suitesTotal\":\"2\"",
+            "\"testsRun\":\"9417\"",
+            "\"testsFailed\":\"51\"",
+            "\"resultsStored\":\"9417\"",
+        ] {
+            assert!(body.contains(want), "missing {want} in {body}");
+        }
+        assert!(!body.contains("testsStored"), "the retired name must not be written again: {body}");
+    }
+
+    // NEGATIVE PROOF (#3734) — a run with no test-grain reading must OMIT the
+    // test fields, never send zero. Zero is a measurement; absence is not, and
+    // "0 tests failed" on a night nothing was measured reads as green.
+    #[test]
+    fn negative_proof_no_tally_omits_the_test_fields_rather_than_sending_zero() {
+        let rows = vec![SuiteRow::new("bats", "a", "kade", "pass", "1 pass, 0 fail")];
+        let body = pipeline_run_body(&rows, "n", "t", 5, None);
+        assert!(body.contains("\"suitesRun\":\"1\""), "the suite grain is still there: {body}");
+        assert!(!body.contains("testsRun"), "no tests reading, no testsRun field: {body}");
+        assert!(!body.contains("testsFailed"), "{body}");
+        assert!(!body.contains("resultsStored"), "{body}");
     }
 
 #[cfg(test)]
@@ -1102,10 +1408,19 @@ mod one_unit_4247 {
         pairs.iter().map(|(f, n)| (f.to_string(), n.to_string())).collect()
     }
 
-    fn ran(triples: &[(&str, &str, &str)]) -> Vec<(String, String, String)> {
+    /// A case answering for the registered row of its own name — the ordinary
+    /// shape. `ran_as` below is the `describe.each` shape, where the two differ.
+    fn ran(triples: &[(&str, &str, &str)]) -> Vec<(String, String, String, String)> {
         triples
             .iter()
-            .map(|(f, n, r)| (f.to_string(), n.to_string(), r.to_string()))
+            .map(|(f, n, r)| (f.to_string(), n.to_string(), r.to_string(), n.to_string()))
+            .collect()
+    }
+
+    fn ran_as(quads: &[(&str, &str, &str, &str)]) -> Vec<(String, String, String, String)> {
+        quads
+            .iter()
+            .map(|(f, n, r, g)| (f.to_string(), n.to_string(), r.to_string(), g.to_string()))
             .collect()
     }
 
@@ -1136,7 +1451,7 @@ mod one_unit_4247 {
     fn a_line_without_a_result_is_unmeasured_not_passed() {
         assert_eq!(
             parse_case_line("nightly-case|a.rs|one"),
-            Some(("a.rs".into(), "one".into(), String::new()))
+            Some(("a.rs".into(), "one".into(), String::new(), "one".into()))
         );
         let line = registered_test_tally(&reg(&[("a.rs", "one")]), &ran(&[("a.rs", "one", "")]));
         assert!(line.contains("unmeasured 1"), "{line}");
@@ -1148,7 +1463,7 @@ mod one_unit_4247 {
     fn a_line_with_a_result_carries_it() {
         assert_eq!(
             parse_case_line("nightly-case|a.rs|one|fail"),
-            Some(("a.rs".into(), "one".into(), "fail".into()))
+            Some(("a.rs".into(), "one".into(), "fail".into(), "one".into()))
         );
     }
 
@@ -1159,11 +1474,81 @@ mod one_unit_4247 {
     fn a_pipe_in_the_test_name_keeps_the_name_and_the_result() {
         assert_eq!(
             parse_case_line("nightly-case|a.rs|reads a|b pair|pass"),
-            Some(("a.rs".into(), "reads a|b pair".into(), "pass".into()))
+            Some(("a.rs".into(), "reads a|b pair".into(), "pass".into(), "reads a|b pair".into()))
         );
         assert_eq!(
             parse_case_line("nightly-case|a.rs|reads a|b pair"),
-            Some(("a.rs".into(), "reads a|b pair".into(), String::new()))
+            Some(("a.rs".into(), "reads a|b pair".into(), String::new(), "reads a|b pair".into()))
+        );
+    }
+
+    /// #4271 — the four-field line: identity, verdict, and the BYTE LENGTH of
+    /// the registered name inside that identity. 42 cases generated by one
+    /// `describe.each` block all answer for the one registered row, and each
+    /// keeps the name it ran under.
+    #[test]
+    fn a_dynamic_case_line_carries_its_identity_and_its_join_key() {
+        let line = "nightly-case|cards.test.ts|matrix add P1 runs without throwing|pass|21";
+        assert_eq!(
+            parse_case_line(line),
+            Some((
+                "cards.test.ts".into(),
+                "matrix add P1 runs without throwing".into(),
+                "pass".into(),
+                "runs without throwing".into()
+            ))
+        );
+        // and the census joins on the registered row, so ONE registration is
+        // answered for by all of its generated cases
+        let registered = reg(&[("cards.test.ts", "runs without throwing")]);
+        let ran = ran_as(&[
+            ("cards.test.ts", "matrix add P1 runs without throwing", "pass", "runs without throwing"),
+            ("cards.test.ts", "matrix add P2 runs without throwing", "pass", "runs without throwing"),
+        ]);
+        assert!(tests_with_no_result(&registered, &ran).is_empty(), "the registered row DID run");
+        assert!(registered_test_tally(&registered, &ran).contains("ran 2"), "and two cases ran");
+    }
+
+    /// NEGATIVE PROOF (#3734) — matching the census on the case's OWN name is
+    /// the phantom Kade flagged: every generated case would answer for nothing
+    /// and the registered row would read as never-ran. This pins that the join
+    /// uses the fourth field, by showing the wrong join's result is different.
+    #[test]
+    fn negative_proof_joining_on_the_case_name_would_report_the_row_as_never_ran() {
+        let registered = reg(&[("cards.test.ts", "runs without throwing")]);
+        let as_emitted = ran_as(&[("cards.test.ts", "matrix add P1 runs without throwing", "pass", "runs without throwing")]);
+        let joined_on_case_name = ran(&[("cards.test.ts", "matrix add P1 runs without throwing", "pass")]);
+        assert!(tests_with_no_result(&registered, &as_emitted).is_empty());
+        assert_eq!(
+            tests_with_no_result(&registered, &joined_on_case_name),
+            reg(&[("cards.test.ts", "runs without throwing")]),
+            "joining on the case name reports the row as never-ran — the state this field exists to prevent"
+        );
+    }
+
+    /// NEGATIVE PROOF — a length that does not land on a character boundary of
+    /// the name must REFUSE, yielding no join key, never a sliced one. A sliced
+    /// key names no registry row and reads as a phantom never-ran.
+    #[test]
+    fn negative_proof_a_suffix_length_that_misses_a_boundary_refuses() {
+        // "é" is two bytes; a length of 1 lands inside it
+        let line = "nightly-case|a.rs|caf\u{e9}|pass|1";
+        let (_, name, result, reg_name) = parse_case_line(line).expect("the line still parses");
+        assert_eq!(result, "pass");
+        assert_eq!(name, "caf\u{e9}");
+        assert_eq!(reg_name, "", "no join key rather than a sliced one");
+        // control: a length that DOES land on a boundary resolves
+        let ok = "nightly-case|a.rs|suite saves the file|pass|14";
+        assert_eq!(parse_case_line(ok).unwrap().3, "saves the file");
+    }
+
+    /// A name that merely ENDS in a pipe-digit run is not a suffix length.
+    #[test]
+    fn negative_proof_a_name_ending_in_pipe_digits_is_not_read_as_a_length() {
+        assert_eq!(
+            parse_case_line("nightly-case|a.rs|exits with code|127"),
+            Some(("a.rs".into(), "exits with code|127".into(), String::new(), "exits with code|127".into())),
+            "no verdict before the digits, so the digits are part of the name"
         );
     }
 

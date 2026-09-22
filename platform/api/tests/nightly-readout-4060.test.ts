@@ -171,3 +171,71 @@ describe('/nightly page — a partial run has no verdict', () => {
     expect(renderNightlyPage(done[0])).toContain('ALL GREEN');
   });
 });
+
+// #4271 — the readout stated ONE grain. Jeff, 2026-09-22: the graph said
+// "17 failed of 421" and the log said "51 failed of 9,417" for the same run,
+// and nothing said which unit either was counting. The readout only ever knew
+// the suite grain: buildReadout computes from the SUITE rows, and the run's
+// own RUN|tally line was dropped by the parser before it ever got there.
+//
+// The tally comes through VERBATIM. The readout never recomputes a test
+// number — a third computation of the test grain is the defect again.
+const RUN_WITH_TALLY = [
+  'RUN|start|2026-09-22T03:00:03|pid=10432',
+  'SUITE|bats|platform/tests/a.bats|kade|pass|2 pass, 0 fail',
+  'SUITE|bats|platform/tests/b.bats|wren|fail|0 pass, 1 fail',
+  'RUN|tally|registered 8749 · ran 9417 · passed 9320 · failed 51 · unmeasured 46 · no result 40',
+  'RUN|complete|2026-09-22T03:49:08|suites=2',
+].join('\n');
+
+const RUN_NO_TALLY = [
+  'RUN|start|2026-09-21T03:00:03|pid=1',
+  'SUITE|bats|platform/tests/a.bats|kade|pass|2 pass, 0 fail',
+  'RUN|complete|2026-09-21T03:40:03|suites=1',
+].join('\n');
+
+describe('#4271 — the readout carries both grains, each labelled', () => {
+  it('reads the run\'s own tally and states tests beside suites', () => {
+    const runs = parseAllRuns(RUN_WITH_TALLY);
+    const r = buildReadout(runs[0], null, runs);
+    expect(r.tests).not.toBeNull();
+    expect(r.tests).toMatchObject({ registered: 8749, ran: 9417, passed: 9320, failed: 51, noResult: 40 });
+    const text = renderReadoutText(r, 'http://x');
+    expect(text).toContain('2 suites');
+    expect(text).toContain('9,417 tests');
+    expect(text).toContain('51 red');
+  });
+
+  it('takes the numbers VERBATIM from the tally — it never recomputes them', () => {
+    // a tally that disagrees with the suite rows is still reported as written:
+    // the readout's job is to state the run's record, not to audit it
+    const odd = RUN_WITH_TALLY.replace('failed 51', 'failed 7');
+    const runs = parseAllRuns(odd);
+    const r = buildReadout(runs[0], null, runs);
+    expect(r.tests?.failed).toBe(7);
+    expect(r.failed).toBe(1); // the suite grain is untouched by it
+  });
+
+  // NEGATIVE PROOF (#3734): absent is not zero. A run that measured no tests
+  // must say so. "0 tests failed" on an unmeasured night reads as green, which
+  // is the whole class of defect this card exists to close.
+  it('NEGATIVE PROOF: a run with no tally reports the test grain ABSENT, never 0', () => {
+    const runs = parseAllRuns(RUN_NO_TALLY);
+    const r = buildReadout(runs[0], null, runs);
+    expect(r.tests).toBeNull();
+    const text = renderReadoutText(r, 'http://x');
+    expect(text).toContain('tests not measured');
+    expect(text).not.toMatch(/\b0 tests\b/);
+  });
+
+  // And a tally the runner could not compute is absent too, not zero.
+  it('NEGATIVE PROOF: an unreadable registry reports absent, not a row of zeroes', () => {
+    const unreadable = RUN_WITH_TALLY.replace(
+      /RUN\|tally\|.*/,
+      'RUN|tally|registry unreadable — the run cannot say what it did not run',
+    );
+    const r = buildReadout(parseAllRuns(unreadable)[0], null, []);
+    expect(r.tests).toBeNull();
+    expect(renderReadoutText(r, 'http://x')).toContain('tests not measured');
+  });
+});
