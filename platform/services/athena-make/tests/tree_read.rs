@@ -29,7 +29,7 @@ fn fixture_with_tree() -> RouteTable {
         },
         secured: vec![],
         mandatory: vec![],
-        write_required: vec![],
+        write_required: vec![], allowed_values: vec![],
         repo_target: "generated/valuestream".into(),
         exposure: vec![],
         instances_graph: "urn:chorus:instances".into(),
