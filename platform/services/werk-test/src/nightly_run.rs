@@ -625,12 +625,63 @@ pub fn run_summary_fields(rows: &[SuiteRow]) -> Vec<(String, String)> {
 }
 
 /// The pipeline-run record body (`emit_pipeline_run`): outcome and counts.
-pub fn pipeline_run_body(rows: &[SuiteRow], name: &str, trace: &str, duration_ms: u128) -> String {
+/// #4271 — the lane's own count of results it wrote: `nightly-stored|run|<n> of <m>`.
+/// The `run` roll-up only; a per-unit line is one unit's slice, and summing
+/// those plus the roll-up double-counts (18,834 for a 9,417-case night).
+pub fn parse_run_stored_line(line: &str) -> Option<usize> {
+    let rest = line.strip_prefix("nightly-stored|run|")?;
+    rest.split(" of ").next()?.trim().parse().ok()
+}
+
+/// The test grain for a run's PipelineRun row, or None when there is no
+/// reading to report. Absence is not zero (#3734): a night that measured
+/// nothing must omit the fields, not claim 0 failures.
+pub fn run_test_counts(
+    cases: &[(String, String, String, String)],
+    stored: Option<usize>,
+) -> Option<RunTestCounts> {
+    if cases.is_empty() {
+        return None;
+    }
+    let stored = stored?;
+    Some(RunTestCounts {
+        run: cases.len(),
+        failed: cases.iter().filter(|(_, _, r, _)| r == "fail").count(),
+        stored,
+    })
+}
+
+/// #4271 — the test-grain numbers a run measured, if it measured any. `None`
+/// means no reading: the fields are OMITTED, never sent as zero. A zero is a
+/// measurement and "0 tests failed" on an unmeasured night reads as green.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct RunTestCounts {
+    pub run: usize,
+    pub failed: usize,
+    pub stored: usize,
+}
+
+/// The pipeline-run record body (`emit_pipeline_run`): outcome and counts.
+///
+/// #4271 — suites and tests are two units and now have two sets of names. The
+/// row used to send `testsRun` / `testsFailed` / `testsStored` and put SUITE
+/// counts in all three: the 2026-09-22 03:00 row reads testsRun 421,
+/// testsFailed 17, testsStored 430 for a night that ran 9,417 cases, failed 51
+/// and stored 9,417 results. `testsStored` is RETIRED rather than repaired
+/// (Kade, 07:28) — 134 rows already carry it meaning suites and no reader can
+/// date the change, so the old name keeps its old meaning as history.
+pub fn pipeline_run_body(
+    rows: &[SuiteRow],
+    name: &str,
+    trace: &str,
+    duration_ms: u128,
+    tests: Option<RunTestCounts>,
+) -> String {
     let failed = rows.iter().filter(|r| r.status == "fail").count();
     let passed = rows.iter().filter(|r| r.status == "pass").count();
     let outcome = if failed == 0 { "green" } else { "red" };
-    format!(
-        "{{\"name\":\"{}\",\"forPipeline\":\"pipeline-cicd\",\"traceId\":\"{}\",\"runOutcome\":\"{}\",\"runDurationMs\":\"{}\",\"testsRun\":\"{}\",\"testsFailed\":\"{}\",\"testsStored\":\"{}\"}}",
+    let mut body = format!(
+        "{{\"name\":\"{}\",\"forPipeline\":\"pipeline-cicd\",\"traceId\":\"{}\",\"runOutcome\":\"{}\",\"runDurationMs\":\"{}\",\"suitesRun\":\"{}\",\"suitesFailed\":\"{}\",\"suitesTotal\":\"{}\"",
         name,
         trace,
         outcome,
@@ -638,7 +689,15 @@ pub fn pipeline_run_body(rows: &[SuiteRow], name: &str, trace: &str, duration_ms
         passed + failed,
         failed,
         rows.len()
-    )
+    );
+    if let Some(t) = tests {
+        body.push_str(&format!(
+            ",\"testsRun\":\"{}\",\"testsFailed\":\"{}\",\"resultsStored\":\"{}\"",
+            t.run, t.failed, t.stored
+        ));
+    }
+    body.push('}');
+    body
 }
 
 /// The per-row `test.suite.result` fields (`emit_suite_results`), with the
@@ -1252,8 +1311,53 @@ mod nightly_run_4145 {
         let f = run_summary_fields(&rows);
         assert!(f.contains(&("red_by_owner".to_string(), "wren=1".to_string())));
         assert!(f.contains(&("zero_red".to_string(), "false".to_string())));
-        let body = pipeline_run_body(&rows, "nightly-x", "t", 5);
-        assert!(body.contains("\"runOutcome\":\"red\"") && body.contains("\"testsRun\":\"2\"") && body.contains("\"testsStored\":\"3\""));
+        let body = pipeline_run_body(&rows, "nightly-x", "t", 5, None);
+        assert!(body.contains("\"runOutcome\":\"red\""));
+        // #4271 — suite counts live under SUITE names now
+        assert!(body.contains("\"suitesRun\":\"2\""), "{body}");
+        assert!(body.contains("\"suitesFailed\":\"1\""), "{body}");
+        assert!(body.contains("\"suitesTotal\":\"3\""), "{body}");
+    }
+
+    // #4271 — the row lied in one unit. testsRun/testsFailed/testsStored all
+    // carried SUITE counts: the 2026-09-22 03:00 row says testsRun 421 and
+    // testsFailed 17 for a night that ran 9,417 cases and failed 51, and
+    // testsStored said 430 when 9,417 results were stored.
+    //
+    // Kade's ruling, 07:28: retire testsStored rather than repair its meaning.
+    // 134 rows already carry it meaning suites and no reader can date the
+    // change, so the old name keeps its old meaning as history.
+    #[test]
+    fn the_body_states_suites_and_tests_under_their_own_names() {
+        let rows = vec![
+            SuiteRow::new("bats", "a", "wren", "fail", "0 pass, 1 fail"),
+            SuiteRow::new("bats", "b", "kade", "pass", "1 pass, 0 fail"),
+        ];
+        let body = pipeline_run_body(&rows, "n", "t", 5, Some(super::RunTestCounts { run: 9417, failed: 51, stored: 9417 }));
+        for want in [
+            "\"suitesRun\":\"2\"",
+            "\"suitesFailed\":\"1\"",
+            "\"suitesTotal\":\"2\"",
+            "\"testsRun\":\"9417\"",
+            "\"testsFailed\":\"51\"",
+            "\"resultsStored\":\"9417\"",
+        ] {
+            assert!(body.contains(want), "missing {want} in {body}");
+        }
+        assert!(!body.contains("testsStored"), "the retired name must not be written again: {body}");
+    }
+
+    // NEGATIVE PROOF (#3734) — a run with no test-grain reading must OMIT the
+    // test fields, never send zero. Zero is a measurement; absence is not, and
+    // "0 tests failed" on a night nothing was measured reads as green.
+    #[test]
+    fn negative_proof_no_tally_omits_the_test_fields_rather_than_sending_zero() {
+        let rows = vec![SuiteRow::new("bats", "a", "kade", "pass", "1 pass, 0 fail")];
+        let body = pipeline_run_body(&rows, "n", "t", 5, None);
+        assert!(body.contains("\"suitesRun\":\"1\""), "the suite grain is still there: {body}");
+        assert!(!body.contains("testsRun"), "no tests reading, no testsRun field: {body}");
+        assert!(!body.contains("testsFailed"), "{body}");
+        assert!(!body.contains("resultsStored"), "{body}");
     }
 
 #[cfg(test)]

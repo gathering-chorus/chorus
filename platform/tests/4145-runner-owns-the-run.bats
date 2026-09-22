@@ -18,7 +18,15 @@ setup() {
   printf '#!/bin/bash\necho "  PID  PPID ELAPSED COMMAND"\n' > "$BATS_TEST_TMPDIR/ps-none"; chmod +x "$BATS_TEST_TMPDIR/ps-none"
   export NIGHTLY_PS="$BATS_TEST_TMPDIR/ps-none"
   mkdir -p "$T/root/platform/scripts" "$T/root/platform/tests" "$T/fail"
-  touch "$T/root/platform/tests/a.bats"
+  # #4168/#4271 (kade) — every unit the fixture's runner reports must EXIST in
+  # the fixture root. #4168 added the stale-registry probe over
+  # PATH_SHAPED_KINDS (bats, shell, security, perf): a path-shaped unit that is
+  # not in the repo is reported "stale", not with its verdict. p.sh and z.sh
+  # were never created, so the perf row came back stale instead of slow and the
+  # shell row stale instead of fail — three cases in this file have been red
+  # since #4168 for that reason alone, and the runner was right every time.
+  touch "$T/root/platform/tests/a.bats" "$T/root/platform/tests/p.sh" \
+        "$T/root/platform/scripts/z.sh"
   # #4271 — emit_pipeline_run skips silently without a token; the PipelineRun
   # proofs below need the POST to actually happen.
   printf '#!/bin/bash\necho stub-token\n' > "$T/root/platform/scripts/chorus-identity-token"

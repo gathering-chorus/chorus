@@ -435,6 +435,10 @@ struct LaneResult {
     /// block generates N cases from one registered row, so identity and join
     /// key are two facts, carried together on the line.
     cases: Vec<(String, String, String, String)>,
+    /// #4271 — results the lane actually wrote to the ledger, from its own
+    /// `nightly-stored|run|<n> of <m>` line. None when the lane never said,
+    /// and the PipelineRun then omits the test grain rather than sending 0.
+    stored: Option<usize>,
 }
 
 fn run_runner(ctx: &Ctx, box_over_load: bool) -> LaneResult {
@@ -452,7 +456,7 @@ fn run_runner(ctx: &Ctx, box_over_load: bool) -> LaneResult {
         Err(e) => {
             let row = SuiteRow::new("runner", "werk-test-nightly", "silas", "fail", &format!("0 pass, 1 fail (runner could not start: {} — runner lanes DID NOT RUN, #3920/#3974)", e));
             ctx.append_log(&row.line());
-            return LaneResult { rows: vec![row], rc: 127, cases: Vec::new() };
+            return LaneResult { rows: vec![row], rc: 127, cases: Vec::new(), stored: None };
         }
     };
     let stdout = child.stdout.take().unwrap();
@@ -470,6 +474,7 @@ fn run_runner(ctx: &Ctx, box_over_load: bool) -> LaneResult {
     let mut lane_text = String::new();
     // #4247 — the run's own per-test record, read from the lane's own output.
     let mut cases: Vec<(String, String, String, String)> = Vec::new();
+    let mut stored: Option<usize> = None;
     let mut nudged: std::collections::HashSet<String> = std::collections::HashSet::new();
     for line in BufReader::new(stdout).lines().flatten() {
         if stop_requested() {
@@ -483,6 +488,9 @@ fn run_runner(ctx: &Ctx, box_over_load: bool) -> LaneResult {
         lane_text.push('\n');
         if let Some(c) = werk_test::nightly_run::parse_case_line(&line) {
             cases.push(c);
+        }
+        if let Some(n) = werk_test::nightly_run::parse_run_stored_line(&line) {
+            stored = Some(n);
         }
         // #4168 — the existence probe is the werk's own tree, resolved from the
         // run's root. A relative path is joined to root; an absolute one is
@@ -527,7 +535,7 @@ fn run_runner(ctx: &Ctx, box_over_load: bool) -> LaneResult {
         let slice = unit_slice(&lane_text, unit).join("\n");
         ctx.write_fail_log(r, &format!("{}\n# full lane output: {}\n", slice, lane_path));
     }
-    LaneResult { rows, rc, cases }
+    LaneResult { rows, rc, cases, stored }
 }
 
 // ───────────────────────── phase 3: the census, from the run's own record ─────────────────────────
@@ -756,7 +764,13 @@ fn run_locked(ctx: &mut Ctx, _args: &[String]) -> Result<i32, String> {
     ctx.append_log(&format!("RUN|complete|{}|suites={}", now_stamp(), rows.len()));
     // the tail: summary, record, per-row events, nudges, readout
     ctx.spine("nightly.run.summary", &run_summary_fields(&rows));
-    emit_pipeline_run(ctx, &rows, t0.elapsed().as_millis(), &started_at);
+    emit_pipeline_run(
+        ctx,
+        &rows,
+        t0.elapsed().as_millis(),
+        &started_at,
+        werk_test::nightly_run::run_test_counts(&lane.cases, lane.stored),
+    );
     for r in &rows {
         let reason = if r.status == "fail" {
             let p = format!("{}/{}", ctx.fail_dir, fail_log_name(&r.kind, &r.path));
@@ -791,7 +805,13 @@ fn run_locked(ctx: &mut Ctx, _args: &[String]) -> Result<i32, String> {
     Ok(0)
 }
 
-fn emit_pipeline_run(ctx: &Ctx, rows: &[SuiteRow], duration_ms: u128, started_at: &str) {
+fn emit_pipeline_run(
+    ctx: &Ctx,
+    rows: &[SuiteRow],
+    duration_ms: u128,
+    started_at: &str,
+    tests: Option<werk_test::nightly_run::RunTestCounts>,
+) {
     let tok = Command::new(format!("{}/platform/scripts/chorus-identity-token", ctx.root))
         .arg(env_or("NIGHTLY_PIPELINE_ROLE", "wren"))
         .output()
@@ -803,7 +823,7 @@ fn emit_pipeline_run(ctx: &Ctx, rows: &[SuiteRow], duration_ms: u128, started_at
         return;
     };
     let name = werk_test::nightly_run::pipeline_run_name(started_at);
-    let body = pipeline_run_body(rows, &name, &env_or("CHORUS_TRACE_ID", &format!("nightly-{}", epoch())), duration_ms);
+    let body = pipeline_run_body(rows, &name, &env_or("CHORUS_TRACE_ID", &format!("nightly-{}", epoch())), duration_ms, tests);
     let o = Command::new("curl")
         .args(["-s", "--max-time", "10", "-o", "/dev/null", "-w", "%{http_code}", "-X", "POST"])
         .arg(format!("{}/pipelineruns", ctx.owlapi))
