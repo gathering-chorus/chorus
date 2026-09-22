@@ -220,18 +220,80 @@ const KINDS: &[(&str, &str, bool)] = &[
     ("property-key", "PropertyKey", false),
 ];
 
+/// #4268 — the kinds a write may use, DERIVED from the model rather than typed.
+///
+/// athena-make generates a write route for every class the model serves. This
+/// layer checked the kind against the table above, which is maintained by hand,
+/// so a class could be served and unwritable at the same time. Measured
+/// 2026-09-21: 54 classes served, 43 in the table, and 14 of the 27 failing
+/// create/read/update/delete cycles were this one error. The table has been
+/// grown a name at a time by #3522, #4089, #4157, #4202 and #4214 — five cards,
+/// one defect. Jeff hit it himself on 2026-09-19: "unknown-kind: 'page'".
+///
+/// The derivation asks the model which classes a domain claims (the same
+/// `definesVocabulary` the generator reads to decide what to serve) and maps
+/// each to its kebab kind with the SAME rule the generator uses, so the two
+/// cannot disagree. The hand table stays as the override list: it carries
+/// `bare_grain`, which is not derivable, and it keeps working when the store is
+/// unreachable.
+fn derive_kind(class_local: &str) -> String {
+    // Identical to athena-make's kind_of_class: a dash before each capital.
+    // APISurface becomes a-p-i-surface — ugly, and the generator already emits
+    // exactly that, so matching it is the point.
+    let mut out = String::new();
+    for (i, c) in class_local.chars().enumerate() {
+        if c.is_ascii_uppercase() {
+            if i > 0 { out.push('-'); }
+            out.push(c.to_ascii_lowercase());
+        } else {
+            out.push(c);
+        }
+    }
+    out
+}
+
+fn served_kinds() -> &'static Vec<(String, String)> {
+    static SERVED: std::sync::OnceLock<Vec<(String, String)>> = std::sync::OnceLock::new();
+    SERVED.get_or_init(|| {
+        let store = FusekiStore::new();
+        let q = format!(
+            "PREFIX c: <{ns}> SELECT ?v WHERE {{ GRAPH <{g}> {{ ?d c:definesVocabulary ?cl . BIND(REPLACE(STR(?cl), '.*#', '') AS ?v) }} }}",
+            ns = NS, g = ONTOLOGY_GRAPH
+        );
+        match store.select_v(&q) {
+            Ok(rows) => {
+                let mut out: Vec<(String, String)> = rows
+                    .into_iter()
+                    .filter(|c| !c.is_empty())
+                    .map(|c| (derive_kind(&c), c))
+                    .collect();
+                out.sort();
+                out.dedup();
+                out
+            }
+            // Store unreachable: fall back to the hand table alone rather than
+            // refusing every write. A derivation that fails closed here would
+            // turn a store blip into "nothing is writable".
+            Err(_) => Vec::new(),
+        }
+    })
+}
+
 fn kind_entry(kind: &str) -> R<(&'static str, &'static str, bool)> {
-    KINDS
-        .iter()
-        .find(|(k, _, _)| *k == kind)
-        .copied()
-        .ok_or_else(|| {
-            format!(
-                "unknown-kind: '{}' — ADR-040 kinds: {}",
-                kind,
-                KINDS.iter().map(|(k, _, _)| *k).collect::<Vec<_>>().join(", ")
-            )
-        })
+    if let Some(hit) = KINDS.iter().find(|(k, _, _)| *k == kind).copied() {
+        return Ok(hit);
+    }
+    // Not in the hand table — ask the model. A served class is a writable class.
+    if let Some((_, class)) = served_kinds().iter().find(|(k, _)| k == kind) {
+        let leaked: &'static str = Box::leak(class.clone().into_boxed_str());
+        let kind_leaked: &'static str = Box::leak(kind.to_string().into_boxed_str());
+        return Ok((kind_leaked, leaked, false));
+    }
+    Err(format!(
+        "unknown-kind: '{}' — not in the hand table and no domain claims a class that mints it. Known: {}",
+        kind,
+        KINDS.iter().map(|(k, _, _)| *k).collect::<Vec<_>>().join(", ")
+    ))
 }
 
 /// Deterministic kebab normalization. Lowercases, maps runs of non-alphanumerics
@@ -3189,9 +3251,32 @@ mod tests {
 
     #[test]
     fn unknown_kind_refused_with_the_kind_list() {
-        let e = mint("vertebra", "proving").unwrap_err();
-        assert!(e.starts_with("unknown-kind"));
+        // #4268 — this case used to mint "vertebra" and expect a refusal. It
+        // passed for the wrong reason: the spine domain CLAIMS chorus:Vertebra,
+        // so the model serves a write route for it and the DAL refused a class
+        // the system offers. Deriving the kinds from the model turned that
+        // refusal into an acceptance and this test red — which is the fix
+        // working, not breaking. Pick a name no domain claims.
+        let e = mint("not-a-class-any-domain-claims", "proving").unwrap_err();
+        assert!(e.starts_with("unknown-kind"), "{e}");
         assert!(e.contains("value-stream-step"), "refusal teaches the right kind");
+    }
+
+    /// #4268 NEGATIVE PROOF — the derivation must actually widen what is
+    /// accepted, or the change is decoration. `vertebra` is claimed by the spine
+    /// domain and is NOT in the hand table; before this card it was refused.
+    #[test]
+    fn a_claimed_class_absent_from_the_hand_table_is_mintable() {
+        assert!(
+            !KINDS.iter().any(|(k, _, _)| *k == "vertebra"),
+            "vertebra must NOT be in the hand table or this proves nothing"
+        );
+        match mint("vertebra", "proving") {
+            Ok(iri) => assert!(iri.ends_with("vertebra-proving"), "{iri}"),
+            // The store is how the class is discovered; with no store there is
+            // nothing to discover and the refusal is honest, not a regression.
+            Err(e) => assert!(e.starts_with("unknown-kind"), "{e}"),
+        }
     }
 
     #[test]
