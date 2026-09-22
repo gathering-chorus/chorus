@@ -55,6 +55,22 @@ chorus:testsFailed a owl:DatatypeProperty ;
     rdfs:label "tests failed" ; rdfs:domain chorus:PipelineRun ; rdfs:range xsd:integer .
 chorus:testsStored a owl:DatatypeProperty ;
     rdfs:label "tests stored" ; rdfs:domain chorus:PipelineRun ; rdfs:range xsd:integer .
+# #4272 — suites and tests are different nouns, and all three names above were
+# carrying SUITE counts. #4271 split them in the writer; these are the
+# declarations that half needed and never got (the edit was written in a werk
+# that was torn down before it reached a commit).
+chorus:suitesRun a owl:DatatypeProperty ;
+    rdfs:label "suites run" ; rdfs:domain chorus:PipelineRun ; rdfs:range xsd:integer .
+chorus:suitesFailed a owl:DatatypeProperty ;
+    rdfs:label "suites failed" ; rdfs:domain chorus:PipelineRun ; rdfs:range xsd:integer .
+chorus:suitesTotal a owl:DatatypeProperty ;
+    rdfs:label "suites total" ; rdfs:domain chorus:PipelineRun ; rdfs:range xsd:integer .
+# resultsStored, NOT a re-meaning of testsStored: 134 rows already carry that
+# name meaning suites, and a reader cannot date the meaning of a name that
+# changed underneath it. The old name is retired in the writer and keeps its
+# history; this is the new one.
+chorus:resultsStored a owl:DatatypeProperty ;
+    rdfs:label "results stored" ; rdfs:domain chorus:PipelineRun ; rdfs:range xsd:integer .
 chorus:triplesWritten a owl:DatatypeProperty ;
     rdfs:label "triples written" ;
     rdfs:comment "athena's own number — triples a run landed in the store." ;
@@ -87,5 +103,15 @@ chorus:PipelineRunShape a sh:NodeShape ;
     sh:property [ sh:path chorus:runDurationMs ] ;
     sh:property [ sh:path chorus:testsRun ] ;
     sh:property [ sh:path chorus:testsFailed ] ;
-    sh:property [ sh:path chorus:testsStored ] ;
+    # #4272 — the writer (nightly_run.rs:684) sends these; the store declared
+    # none of them, so the 08:05 run's emit was REFUSED 422 and wrote no row.
+    sh:property [ sh:path chorus:suitesRun ] ;
+    sh:property [ sh:path chorus:suitesFailed ] ;
+    sh:property [ sh:path chorus:suitesTotal ] ;
+    sh:property [ sh:path chorus:resultsStored ] ;
+    # chorus:testsStored's sh:property is GONE from here: no run writes it
+    # again. The property declaration above stays, because 134 rows carry it.
+    # NOTE: the deploy MERGES sh:property blank nodes and never removes a
+    # dropped one (#4250), so its block survives in urn:chorus:ontology as a
+    # ghost until an explicit delete. Do not report it as retired from the model.
     sh:property [ sh:path chorus:triplesWritten ] .
