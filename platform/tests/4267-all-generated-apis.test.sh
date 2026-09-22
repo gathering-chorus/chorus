@@ -99,7 +99,7 @@ for CLASS in $CLASSES; do
   # Fill the body: literals get a marked value, edges get a real subject.
   BODY="$WORK/$CLASS.body.json"; MISSING=""
   : >"$WORK/$CLASS.pairs"
-  while IFS=$'\t' read -r FIELD KIND TARGET ALLOWED; do
+  while IFS=$'\t' read -r FIELD KIND TARGET ALLOWED DTYPE; do
     [ -n "$FIELD" ] || continue
     if [ "$KIND" = "edge" ]; then
       V="$(resolve_edge "$TARGET")"
@@ -109,13 +109,23 @@ for CLASS in $CLASSES; do
       # value here would 422 forever and read as a broken API.
       V="$ALLOWED"
     else
-      V="zz-4267-$SUBJ-$FIELD"
+      # #4269 — send a value of the DECLARED type. Sending a word where the shape
+      # says integer makes the door refuse correctly and the suite report it as a
+      # product failure, which is the one thing a check must never do.
+      case "$DTYPE" in
+        integer|int|long|decimal|float|double) V="1" ;;
+        boolean)                                V="true" ;;
+        date)                                   V="2026-01-01" ;;
+        dateTime)                               V="2026-01-01T00:00:00Z" ;;
+        anyURI)                                 V="urn:chorus:zz-4267" ;;
+        *)                                      V="zz-4267-$SUBJ-$FIELD" ;;
+      esac
     fi
     printf '%s\t%s\n' "$FIELD" "$V" >>"$WORK/$CLASS.pairs"
   done < <(python3 -c 'import json,sys
 for f in json.load(open(sys.argv[1])).get("requiredFields") or []:
     av=f.get("allowedValues") or []
-    print("\t".join([f["field"], f.get("kind","literal"), f.get("targetClass",""), av[0] if av else ""]))' "$M")
+    print("\t".join([f["field"], f.get("kind","literal"), f.get("targetClass",""), av[0] if av else "", f.get("datatype","")]))' "$M")
 
   if [ -n "$MISSING" ]; then
     printf '%-22s %-8s %s\n' "$CLASS" UNMEASURED "no row to point a required edge at:$MISSING"
@@ -148,6 +158,13 @@ json.dump(b, open(sys.argv[3],"w"))' "$WORK/$CLASS.pairs" "$SUBJ" "$BODY"
       if [ "$GOT" = "403" ]; then
         OK=2
         DETAIL="$(head -c 150 "$WORK/resp" | tr -d '\n')"
+      elif [ "$GOT" = "422" ] && grep -q "zz-4267\|unknown-target" "$WORK/resp" 2>/dev/null; then
+        # #4269 — the door refused a value THIS RUNNER invented: a placeholder
+        # that is not a legal value, or an edge pointed at a row we made up. The
+        # API behaved correctly. Calling that a product failure is a lie about
+        # which of the two states we are in, so it reports UNMEASURED.
+        OK=2
+        DETAIL="runner input rejected, not a product failure: $(head -c 120 "$WORK/resp" | tr -d '\n')"
       else
         OK=0
         DETAIL="$STEP $METHOD wanted $WANT got $GOT — $(head -c 120 "$WORK/resp" | tr -d '\n')"
