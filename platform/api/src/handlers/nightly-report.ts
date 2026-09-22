@@ -12,6 +12,42 @@ export type NightlyRow = {
   summary: string;
 };
 
+/** #4271 — the run's own count of TEST CASES, read verbatim from its RUN|tally
+ *  line. Suites and tests are two units; the readout stated only the first, so
+ *  the graph's "17 failed of 421" (suites) and the log's "51 failed of 9,417"
+ *  (cases) had no common surface. Numbers are absent when the run could not
+ *  take the reading — never zero, because zero is a measurement. */
+export type NightlyTally = {
+  /** the line exactly as the run wrote it */
+  text: string;
+  registered?: number;
+  ran?: number;
+  passed?: number;
+  failed?: number;
+  unmeasured?: number;
+  noResult?: number;
+};
+
+/** Read one `RUN|tally|…` body. The runner writes
+ *  "registered N · ran N · passed N · failed N · unmeasured N · no result N",
+ *  or a sentence when the registry was unreadable — which yields the text and
+ *  no numbers, so a caller can tell "could not measure" from "measured zero".
+ */
+export function parseTally(body: string): NightlyTally {
+  const t: NightlyTally = { text: body };
+  const num = (label: string): number | undefined => {
+    const m = body.match(new RegExp(`${label}\\s+(\\d+)`));
+    return m ? Number(m[1]) : undefined;
+  };
+  t.registered = num('registered');
+  t.ran = num('ran');
+  t.passed = num('passed');
+  t.failed = num('failed');
+  t.unmeasured = num('unmeasured');
+  t.noResult = num('no result');
+  return t;
+}
+
 export type NightlyRun = {
   startedAt: string;
   completedAt?: string;
@@ -21,6 +57,9 @@ export type NightlyRun = {
   stoppedAt?: string;
   stoppedDetail?: string;
   rows: NightlyRow[];
+  /** #4271 — the run's test-grain tally, verbatim. Absent when the run wrote
+   *  no tally line; the readout then reports the test grain as unmeasured. */
+  tally?: NightlyTally;
   /** #4009 — liveness. A run that never completed is either working or wedged,
    *  and the page could not tell them apart: on 2026-08-25 a lane sat silent
    *  for 38 minutes while a human was told three different things about it.
@@ -51,6 +90,12 @@ export function parseNightlyLog(text: string): NightlyRun | null {
       run.stoppedAt = l.split('|')[2];
       run.stoppedDetail = l.split('|')[3] ?? '';
       break;
+    }
+    if (l.startsWith('RUN|tally|')) {
+      // #4271 — kept alongside SUITE rows. The parser used to drop it, so the
+      // readout never had the test grain to state.
+      run.tally = parseTally(l.slice('RUN|tally|'.length));
+      continue;
     }
     if (l.startsWith('SUITE|')) {
       // summary may itself contain '|'-free text; split into 6 parts max.

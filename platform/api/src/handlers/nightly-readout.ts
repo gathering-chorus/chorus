@@ -13,7 +13,7 @@
 // run". The record is the log nightly-suites.sh writes (RUN|start … RUN|
 // complete blocks with SUITE| rows); every past run is still in it (#3709
 // appends, never truncates), so history is the same file read fully.
-import { parseNightlyLog, displayPath, type NightlyRun, type NightlyRow } from './nightly-report';
+import { parseNightlyLog, displayPath, type NightlyRun, type NightlyRow, type NightlyTally } from './nightly-report';
 
 export type NightlyRunRecord = NightlyRun & { runId: string };
 
@@ -37,6 +37,11 @@ export type Readout = {
   skipped: number;
   /** rows whose status is none of pass/fail/skip: produced no parseable output */
   silent: number;
+  /** #4271 — the TEST grain, verbatim from the run's own RUN|tally line, or
+   *  null when the run took no reading. Everything above this line counts
+   *  SUITES. The readout never recomputes a test number: a third computation
+   *  of this grain is the disagreement the card exists to end. */
+  tests: NightlyTally | null;
   reds: RedSuite[];
   redByOwner: Record<string, number>;
   /** #4073 — how many reds of each label; the zero-red bar measures product-broke */
@@ -184,6 +189,9 @@ export function buildReadout(run: NightlyRunRecord, prev: NightlyRunRecord | nul
     failed: reds.length,
     skipped: countStatus(rows, 'skip'),
     silent: rows.filter((r) => !['pass', 'fail', 'skip'].includes(r.status)).length,
+    // a tally line with no numbers in it (the runner's "registry unreadable"
+    // sentence) is NOT a reading — absent, never a row of zeroes
+    tests: run.tally && run.tally.ran !== undefined ? run.tally : null,
     reds,
     redByOwner,
     byLabel,
@@ -201,7 +209,21 @@ function headLine(r: Readout): string {
     r.skipped ? `, ${r.skipped} skipped` : '',
     r.silent ? `, ${r.silent} no output` : '',
   ].join('');
-  return `nightly ${when} took ${r.durationMin ?? '?'} min: ${r.suites} suites, ${r.failed} red${extras}`;
+  // #4271 — both grains on the line, each named. Jeff, 2026-09-22: the graph
+  // said 17 of 421 and the log said 51 of 9,417 for one run and neither said
+  // which unit it meant.
+  return `nightly ${when} took ${r.durationMin ?? '?'} min: ${r.suites} suites, ${r.failed} red${extras} · ${testGrain(r)}`;
+}
+
+/** #4271 — the test grain, stated in tests. "not measured" when the run took
+ *  no reading: absent is not zero, and "0 tests failed" on an unmeasured night
+ *  reads as green. */
+function testGrain(r: Readout): string {
+  const t = r.tests;
+  if (!t || t.ran === undefined) return 'tests not measured';
+  const n = (v: number | undefined) => (v === undefined ? '?' : v.toLocaleString('en-US'));
+  const gap = t.noResult ? `, ${n(t.noResult)} registered with no result` : '';
+  return `${n(t.ran)} tests, ${n(t.failed)} red${gap}`;
 }
 
 /** #4073 — the split line: "4 red: 2 product broke, 1 test wrong, 1 unmeasured". */
