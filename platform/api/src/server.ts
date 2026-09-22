@@ -2739,8 +2739,6 @@ import { fetchAthenaOwners } from './handlers/athena-owners';
 import { fetchAthenaMachines } from './handlers/athena-machines';
 import { fetchLoomPolicies } from './handlers/loom-policies';
 import { fetchLoomPrinciples } from './handlers/loom-principles';
-import { fetchAthenaSubdomains } from './handlers/athena-subdomains';
-import { fetchAthenaSubdomainDetail } from './handlers/athena-subdomain-detail';
 import { fetchAthenaBlastRadius } from './handlers/athena-blast-radius';
 import { fetchAthenaSubdomainCards } from './handlers/athena-subdomain-cards';
 import { fetchAthenaSubdomainCode } from './handlers/athena-subdomain-code';
@@ -2804,14 +2802,11 @@ app.get('/api/athena/blast-radius/:iri', (req: Request, res: Response) => {
 // SubProduct is gone from the model; athena-make :3360/products (generated from
 // chorus:ProductShape) is the only product serving surface.
 
-// GET /api/athena/subdomains — list sub-domains with owner, step. Filter: ?owner, ?step
-app.get('/api/athena/subdomains', async (req: Request, res: Response) => {
-  const r = await fetchAthenaSubdomains(
-    { sparql: athenaSparqlQuery, loadQuery: loadSparql, envelope: athenaEnvelope },
-    { owner: req.query.owner as string | undefined, step: req.query.step as string | undefined },
-  );
-  res.status(r.status).json(r.body);
-});
+// #4265/#4237 — GET /api/athena/subdomains and /api/athena/subdomains/:id RETIRED.
+// #4237 deleted subdomains.sparql and subdomain-detail.sparql because they read a
+// class that no longer exists; the handlers kept loading them by name and the two
+// routes 500'd on every call. Wren's call (2026-09-21): retire, don't restore —
+// callers get 404. The per-facet /subdomains/:id/<facet> routes are untouched.
 
 // GET /api/athena/subdomains/:id/blast-radius — what breaks if this sub-domain fails
 app.get('/api/athena/subdomains/:id/blast-radius', async (req: Request, res: Response) => {
@@ -2822,14 +2817,6 @@ app.get('/api/athena/subdomains/:id/blast-radius', async (req: Request, res: Res
   res.status(r.status).json(r.body);
 });
 
-// GET /api/athena/subdomains/:id — single sub-domain detail
-app.get('/api/athena/subdomains/:id', async (req: Request, res: Response) => {
-  const r = await fetchAthenaSubdomainDetail(
-    { sparql: athenaSparqlQuery, loadQuery: loadSparql, envelope: athenaEnvelope },
-    req.params.id,
-  );
-  res.status(r.status).json(r.body);
-});
 
 // #3702 — v1 value-stream surface retired. The Vertebra/primaryStep spine model is
 // gone; athena-make :3360/valuestreams (proxied at /owl/valuestreams) is the only path.

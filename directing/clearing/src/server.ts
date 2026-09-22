@@ -28,9 +28,11 @@ import { isWebIdAllowed, principalForWebId, primeAllowSetGraph } from './solid-a
 // #4220 — ask the model where Principal rows live before the first sign-in is
 // judged. Three doors carrying three defaults is how a model move locked every
 // write on 2026-09-19; the shape is the single answer all of them follow.
-primeAllowSetGraph()
-  .then((g) => console.log(`clearing: principals resolve from <${g}> (model-declared)`))
-  .catch(() => {});
+// #4265 — the resolved-graph line used to print from this .then(). It resolves
+// after Jest tears the suite down, so the whole run exited 1 with zero failing
+// cases ("Cannot log after tests are done"). The prime still runs; the log is
+// gone, because a startup note is not worth a red run.
+primeAllowSetGraph().catch(() => {});
 import { resolveSenderIdentity } from './sender-identity';
 import {
   makePkce, makeState, signCookie, verifyCookie, safeReturnPath, buildAuthUrl,

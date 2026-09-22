@@ -1,3 +1,7 @@
+/**
+ * @test-type: unit
+ * athena-subdomain-completeness handler — unit tests (#2187).
+ */
 import {
   fetchAthenaSubdomainCompleteness,
   type AthenaCompletenessDeps,
@@ -16,7 +20,11 @@ function deps(meta: SparqlMetaBinding | null, counts: Record<string, number> = {
   const predOrder = ['hasActor', 'hasScenario', 'hasContract', 'hasPriorArt', 'hasPage', 'hasIntegration', 'hasEndpoint', 'hasPersistence', 'hasPipeline', 'hasLogSource', 'hasGap'];
   return {
     sparqlQuery: async (q) => {
-      if (q.includes('SubDomain')) return metaResult(meta);
+      // #4265 — this mock used to key the meta query on the word 'SubDomain'.
+      // The class is retired, so the real query stopped containing it and every
+      // meta read fell through to countResult(0): a missing domain answered 200
+      // instead of 404. Key on the aggregate the meta query alone selects.
+      if (q.includes('consumesCount')) return metaResult(meta);
       for (const pred of predOrder) {
         if (q.includes(`chorus:${pred}`)) return countResult(counts[pred] ?? 0);
       }

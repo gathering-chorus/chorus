@@ -17,7 +17,7 @@ export function createSubdomainResolver(deps: SubdomainResolverDeps): (name: str
     // #2485 — substrate-class subdomains (loom-*, etc.) ARE the canonical ids;
     // they don't take a -domain or -service suffix. Probe the bare name first
     // before assuming it needs one.
-    const bareCheck = `PREFIX chorus: <https://jeffbridwell.com/chorus#> ASK { GRAPH <urn:chorus:ontology> { <https://jeffbridwell.com/chorus#${lower}> a chorus:SubDomain } }`;
+    const bareCheck = `PREFIX chorus: <https://jeffbridwell.com/chorus#> ASK { GRAPH <urn:chorus:domains:domains> { <https://jeffbridwell.com/chorus#${lower}> a chorus:Domain } }`;
     try {
       const bare = await deps.sparql(bareCheck);
       if (bare.boolean) return lower;
@@ -26,7 +26,7 @@ export function createSubdomainResolver(deps: SubdomainResolverDeps): (name: str
     }
     const domainId = `${lower}-domain`;
     const svcId = `${lower}-service`;
-    const checkQuery = `PREFIX chorus: <https://jeffbridwell.com/chorus#> ASK { GRAPH <urn:chorus:ontology> { <https://jeffbridwell.com/chorus#${domainId}> a chorus:SubDomain } }`;
+    const checkQuery = `PREFIX chorus: <https://jeffbridwell.com/chorus#> ASK { GRAPH <urn:chorus:domains:domains> { <https://jeffbridwell.com/chorus#${domainId}> a chorus:Domain } }`;
     try {
       const result = await deps.sparql(checkQuery);
       if (result.boolean) return domainId;

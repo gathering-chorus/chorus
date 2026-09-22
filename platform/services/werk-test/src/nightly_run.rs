@@ -369,8 +369,14 @@ pub fn coverage_row(rel: &str, owner: &str, floor: u32, rc: i32, pct: Option<f64
     let (status, summary) = match (rc, pct) {
         (0, Some(p)) if p >= floor as f64 => ("pass", format!("1 pass, 0 fail (coverage {}% >= floor {}%)", trim_pct(p), floor)),
         (0, Some(p)) => ("fail", format!("0 pass, 1 fail (coverage {}% < floor {}%)", trim_pct(p), floor)),
-        (0, None) => ("fail", format!("0 pass, 1 fail (coverage ran but produced NO summary artifact — expected floor {}%, got nothing)", floor)),
-        (rc, _) => ("fail", format!("0 pass, 1 fail (coverage run errored rc={} — floor {}%, no clean measurement)", rc, floor)),
+        // #4265 — a run that never produced a number is UNMEASURED, not a
+        // failure. Scoring it "fail" made a coverage job that crashed
+        // indistinguishable from one that measured and came in under floor,
+        // and Jeff asked for exactly that distinction today: "76 fail" is not
+        // 76 failures if some of them never answered. Below-floor stays fail
+        // (the arm above) — that is the state this check exists to catch.
+        (0, None) => ("unmeasured", format!("0 pass, 0 fail (UNMEASURED — coverage ran but produced NO summary artifact; floor {}% not evaluated)", floor)),
+        (rc, _) => ("unmeasured", format!("0 pass, 0 fail (UNMEASURED — coverage run errored rc={}; floor {}% not evaluated, nothing measured)", rc, floor)),
     };
     SuiteRow::new("coverage", rel, owner, status, &summary)
 }
@@ -960,9 +966,17 @@ mod nightly_run_4145 {
     #[test]
     fn coverage_rows_keep_the_four_outcomes() {
         assert!(coverage_row("a", "kade", 80, 0, Some(80.5)).line().ends_with("pass|1 pass, 0 fail (coverage 80.5% >= floor 80%)"));
+        // NEGATIVE PROOF: a real measurement below the floor is still a FAIL.
+        // If this ever reads unmeasured, the check can no longer catch the one
+        // state it exists for and #4265's change went too far.
         assert!(coverage_row("a", "kade", 80, 0, Some(79.0)).status == "fail");
+        // #4265 — never measured is not the same as measured-and-bad.
+        assert!(coverage_row("a", "kade", 80, 0, None).status == "unmeasured");
         assert!(coverage_row("a", "kade", 80, 0, None).summary.contains("NO summary artifact"));
+        assert!(coverage_row("a", "kade", 80, 124, None).status == "unmeasured");
         assert!(coverage_row("a", "kade", 80, 124, None).summary.contains("rc=124"));
+        // and an unmeasured row must not claim a pass either
+        assert!(coverage_row("a", "kade", 80, 124, None).summary.contains("0 pass, 0 fail"));
     }
 
     #[test]

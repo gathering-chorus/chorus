@@ -55,33 +55,56 @@ count() { # $1 = WHERE body -> prints integer
   [ "$(ask 'chorus:spine a chorus:Product')" = "True" ]
 }
 
-@test "#3915: the served products are exactly the named set (a silent disappearance still reds)" {
-  # Was `-eq 8`, which reds on any deliberate addition and cannot say WHICH
-  # product vanished. Naming the set keeps the disappearance proof and turns an
-  # intentional change into a one-line edit that states what changed.
-  # #4187 2026-09-18: gathering was added here on the reasoning that rehoming its
-  # row to urn:chorus:domains:products would make it visible. That was wrong, and
-  # it was not checked before the expectation was edited — rehoming fixed WHERE
-  # the row lives, not whether it passes the shape. gathering is missing docState
-  # and hasDesignDoc, both minCount 1 on ProductShape, so athena-make has never
-  # served it. Its own gaps field has said so since #3603: "hasDesignDoc unfilled
-  # (no Document instances in graph) — content domains predate the floor."
-  # Removed again 2026-09-19. It belongs back in this set the day it carries the
-  # two fields and not before; editing the expectation to match a wish is how a
-  # named-set guard stops being a guard.
-  want="athena borg chorus clearing convergence loom pulse spine werk"
-  got="$(curl -sf --max-time 10 http://localhost:3360/products \
-    | python3 -c 'import json,sys; d=json.load(sys.stdin).get("data",[]); print(" ".join(sorted(x.get("name","") for x in d)))' 2>/dev/null)"
-  [ -n "$got" ] || skip "UNMEASURABLE: owl-api not answering"
-  [ "$got" = "$want" ]
+# #4265 — the named set is gone, and so is the fixture beside it. Jeff,
+# 2026-09-21: "if a test tests data instance i dont think it belongs here like
+# counts or specific names or values". This case held a literal list of ten
+# product names and went red today because `gathering` finally passed the shape
+# and started being served — reality improved and the test called it a break.
+# Its own comment records the same list being edited on 09-18 and again on
+# 09-19. A guard that needs editing whenever the data changes is a copy of the
+# data, not a guard.
+#
+# What survives is what the collection must always do: serve typed rows that
+# each carry a name, and never serve a name we retired. The retirement check is
+# the case below and is unchanged.
+@test "#4265: every served product is a named row (no anonymous or empty rows)" {
+  body="$(curl -sf --max-time 10 http://localhost:3360/products)" || skip "UNMEASURABLE: owl-api not answering"
+  run python3 -c '
+import json,sys
+d = json.loads(sys.argv[1]).get("data", [])
+if not d:
+    print("served nothing at all"); sys.exit(1)
+bad = [x for x in d if not x.get("name")]
+if bad:
+    print("rows with no name: %d of %d" % (len(bad), len(d))); sys.exit(1)
+print("ok %d named rows" % len(d))
+' "$body"
+  [ "$status" -eq 0 ] || { echo "$output"; false; }
 }
 
-@test "NEGATIVE PROOF: the named-set check REDS when a product disappears" {
-  # #3734 — the set comparison must be able to fail. Drop one name from the
-  # served side and prove the same comparison rejects it.
-  want="athena borg chorus clearing convergence gathering loom pulse spine werk"
-  got="athena borg chorus clearing convergence gathering loom pulse spine"
-  [ "$got" != "$want" ]
+# NEGATIVE PROOF (#3734) — the check above must reject the states it names.
+# An empty collection and a row without a name each have to fail it, or it is
+# green for every payload including a broken one.
+@test "NEGATIVE PROOF: the named-row check rejects an empty set and an unnamed row" {
+  run python3 -c '
+import json,sys
+d = json.loads(sys.argv[1]).get("data", [])
+if not d: print("served nothing at all"); sys.exit(1)
+bad = [x for x in d if not x.get("name")]
+if bad: print("rows with no name"); sys.exit(1)
+print("ok")
+' '{"data": []}'
+  [ "$status" -ne 0 ]
+
+  run python3 -c '
+import json,sys
+d = json.loads(sys.argv[1]).get("data", [])
+if not d: print("served nothing at all"); sys.exit(1)
+bad = [x for x in d if not x.get("name")]
+if bad: print("rows with no name"); sys.exit(1)
+print("ok")
+' '{"data": [{"name": "athena"}, {"label": "no name here"}]}'
+  [ "$status" -ne 0 ]
 }
 
 @test "quality-product and the product-borg dup are retired (gone)" {

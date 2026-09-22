@@ -80,10 +80,15 @@ _query() { curl -s -G --max-time 8 -u "${FU}:${FP}" "$FUSEKI" --data-urlencode "
 
 echo "=== authz coverage — under-privileged (valid identity, missing scope) probes ($(TZ=America/New_York date '+%Y-%m-%d %H:%M')) ==="
 
-# --- the declared-secured surface set, from the model (GRAPH urn:chorus:ontology) ---
+# --- the declared-secured surface set, from the model ---
+# #4265 — this pinned GRAPH <urn:chorus:ontology> and read 0 rows, so the whole
+# report said DEGRADED and nobody chased it. The 29 APISurface rows with a
+# requiresScope live in urn:chorus:domains:security: a row's home is its own
+# domain graph (Jeff, 2026-09-03). GRAPH ?g asks the model rather than a
+# location, so the next move does not blind the security report again.
 SURF_QUERY='PREFIX chorus: <https://jeffbridwell.com/chorus#>
 SELECT ?method ?pathPrefix ?requiresScope WHERE {
-  GRAPH <urn:chorus:ontology> { ?s a chorus:APISurface ; chorus:requiresScope ?requiresScope .
+  GRAPH ?g { ?s a chorus:APISurface ; chorus:requiresScope ?requiresScope .
              OPTIONAL { ?s chorus:httpMethod ?method } OPTIONAL { ?s chorus:pathPrefix ?pathPrefix } } }'
 rows=$(_query "$SURF_QUERY" | python3 -c "import json,sys
 try:

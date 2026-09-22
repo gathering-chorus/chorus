@@ -69,7 +69,9 @@ function buildFacetQuery(sdUri: string, spec: FacetSpec): string {
 }
 
 const EXISTS_QUERY = (sdUri: string) =>
-  `PREFIX chorus: <https://jeffbridwell.com/chorus#> SELECT ?s WHERE { GRAPH <urn:chorus:ontology> { <${sdUri}> a chorus:SubDomain } } LIMIT 1`;
+  // #4265 — SubDomain is retired; the rows are chorus:Domain in the domains
+  // graph. Asking the ontology graph for a SubDomain 404'd every live domain.
+  `PREFIX chorus: <https://jeffbridwell.com/chorus#> SELECT ?s WHERE { GRAPH <urn:chorus:domains:domains> { <${sdUri}> a chorus:Domain } } LIMIT 1`;
 
 export async function fetchAthenaFacet(
   deps: AthenaFacetDeps,

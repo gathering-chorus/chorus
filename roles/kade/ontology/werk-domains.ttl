@@ -77,9 +77,21 @@ chorus:mintKey a owl:AnnotationProperty ;
     rdfs:label "mint key" ;
     rdfs:comment "The (ordered) property list the DAL mints this class's instance IRIs from (ADR-040 Rule 0 + Level-3a composite keys). Declared in the owner's extension; read from the graph, never a code registry." .
 
-chorus:provenance a owl:AnnotationProperty ;
-    rdfs:label "provenance" ;
-    rdfs:comment "authored (domains API, CRUD+SHACL) | derived-crawl (crawler reads files/configs) | derived-sweep (crawler sweeps witnesses) | derived-computed (at query time). Derived classes get NO write endpoints in the generated API." .
+# RENAMED from chorus:provenance on #4265. The IRI was needed for the
+# provenance DOMAIN (Jeff, #4211: "i like having a provenance domain"), and
+# VersionShape already pins urn:chorus:domains:provenance as its home — a
+# domain's slug must match its graph, so the domain could not move and this
+# had to. Punning the two was the other option and is the #4237 shape: a
+# subject that is both a property and a domain row, where deleting one takes
+# the other's declaration with it.
+#
+# The name is not a euphemism. Every live value — deploy 164, derived-sweep 14,
+# migrated 2, derived-computed 1, measured 2026-09-21 — answers "how did this
+# row come to be written", which is a write origin, not provenance in the
+# broader sense the domain now carries.
+chorus:writeOrigin a owl:AnnotationProperty ;
+    rdfs:label "write origin" ;
+    rdfs:comment "How a row came to be written: authored (domains API, CRUD+SHACL) | derived-crawl (crawler reads files/configs) | derived-sweep (crawler sweeps witnesses) | derived-computed (at query time) | deploy (staged by a model deploy) | migrated (moved by a migration). Derived classes get NO write endpoints in the generated API. Renamed from chorus:provenance on #4265." .
 
 # =============================================================================
 # SHARED SPINE — classes every domain references
@@ -102,7 +114,7 @@ chorus:result a owl:DatatypeProperty ;
 
 chorus:VerbRun a owl:Class ;
     chorus:mintKey ("traceId" "verb" "ts") ;
-    chorus:provenance "derived-sweep" ;
+    chorus:writeOrigin "derived-sweep" ;
     rdfs:label "Verb Run" ;
     rdfs:comment "One execution of a werk verb binary for a card: started/completed/refused, with trace, role, exit disposition. THE atom of werk observability." ;
     chorus:dataSource "spine: <verb>.started/.completed/.refused + ops/logs/werk-<verb>.jsonl (one line per run, shared trace)" ;
@@ -110,7 +122,7 @@ chorus:VerbRun a owl:Class ;
 
 chorus:TypedRefusal a owl:Class ;
     chorus:mintKey ("traceId" "verb" "ts") ;
-    chorus:provenance "derived-sweep" ;
+    chorus:writeOrigin "derived-sweep" ;
     rdfs:label "Typed Refusal" ;
     rdfs:comment "A verb's typed refusal: reason drawn from that verb's taxonomy (e.g. no-werk, wrong-status, no-open-pr, gates-missing, no-ac, dirty-floor-inputs, ceremony-rejected)." ;
     chorus:dataSource "jsonl witnesses: *.refused events with reason field; spine mirror" ;
@@ -118,7 +130,7 @@ chorus:TypedRefusal a owl:Class ;
 
 chorus:Witness a owl:Class ;
     chorus:mintKey ("verb") ;
-    chorus:provenance "derived-crawl" ;
+    chorus:writeOrigin "derived-crawl" ;
     rdfs:label "Witness" ;
     rdfs:comment "An append-only jsonl evidence stream owned by one verb (ops/logs/werk-<verb>.jsonl). The durable record a resume/recovery reads." ;
     chorus:dataSource "filesystem: ops/logs/*.jsonl (file-per-verb)" ;
@@ -144,7 +156,7 @@ chorus:traceId a owl:DatatypeProperty ;
 
 chorus:PipelineRun a owl:Class ;
     chorus:mintKey ("traceId" "job") ;
-    chorus:provenance "derived-sweep" ;
+    chorus:writeOrigin "derived-sweep" ;
     rdfs:label "Pipeline Run" ;
     rdfs:comment "One act dispatch of werk.yml for a card: the prove job (go!=true) or the land job (go=true). Brackets a set of VerbRuns under one trace." ;
     chorus:dataSource "ops/logs/werk.jsonl: werk.started/werk.landed/werk.land.failed; act job tags" ;
@@ -152,7 +164,7 @@ chorus:PipelineRun a owl:Class ;
 
 chorus:GateResult a owl:Class ;
     chorus:mintKey ("cardId" "gate" "ts") ;
-    chorus:provenance "derived-sweep" ;
+    chorus:writeOrigin "derived-sweep" ;
     rdfs:label "Gate Result" ;
     rdfs:comment "One recorded demo gate (product|code|quality|arch|ops): pass/fail + findings. Five required to present (#3284)." ;
     chorus:dataSource "ops/logs/werk-demo.jsonl: demo.gate.result {gate, result, findings}" ;
@@ -160,7 +172,7 @@ chorus:GateResult a owl:Class ;
 
 chorus:ReviewVerdict a owl:Class ;
     chorus:mintKey ("cardId" "ts") ;
-    chorus:provenance "derived-sweep" ;
+    chorus:writeOrigin "derived-sweep" ;
     rdfs:label "Review Verdict" ;
     rdfs:comment "The cold-eyes review outcome (#3193): floor findings (review.floor) + agent verdict (review.verdict pass|fail with specific findings). Anti-ceremony-guarded at the recorder." ;
     chorus:dataSource "ops/logs/werk-review.jsonl: review.floor / review.verdict / review.refused" ;
@@ -168,7 +180,7 @@ chorus:ReviewVerdict a owl:Class ;
 
 chorus:DemoVerdict a owl:Class ;
     chorus:mintKey ("cardId" "ts") ;
-    chorus:provenance "derived-sweep" ;
+    chorus:writeOrigin "derived-sweep" ;
     rdfs:label "Demo Verdict" ;
     rdfs:comment "The human decision of record: pass/fail + prover + decision (go). GO=accept (#3311) — this verdict is what werk-accept finalizes against." ;
     chorus:dataSource "ops/logs/werk-demo.jsonl: demo.verdict {verdict, prover, decision}" ;
@@ -176,7 +188,7 @@ chorus:DemoVerdict a owl:Class ;
 
 chorus:Deployment a owl:Class ;
     chorus:mintKey ("binary" "cdhash") ;
-    chorus:provenance "derived-sweep" ;
+    chorus:writeOrigin "derived-sweep" ;
     chorus:dataSource "spine: binary.deployed {binary, cdhash, commit, role}; deploy.cdhash.matched; deploy.detached" ;
     chorus:ingestionStatus "ingestible" ;
     rdfs:comment "EXTENDS the canonical chorus:Deployment: a werk deploy event carries cdhash proof that deployed==running (#3222/#3232). Target: werk slot or canonical." .
@@ -199,7 +211,7 @@ chorus:cdhash a owl:DatatypeProperty ;
 
 chorus:WerkSlot a owl:Class ;
     chorus:mintKey ("role" "cardId") ;
-    chorus:provenance "derived-sweep" ;
+    chorus:writeOrigin "derived-sweep" ;
     rdfs:label "Werk Slot" ;
     rdfs:comment "An ephemeral per-card worktree (chorus-werk/<role>-<card>/, branch <role>/<card>), born on pull, removed on accept (#2913). Never branch-swapped in place." ;
     chorus:dataSource "spine: card.pulled / card.unpulled / card.branch.closed; chorus-werk status CLI" ;
@@ -207,7 +219,7 @@ chorus:WerkSlot a owl:Class ;
 
 chorus:MergeEvent a owl:Class ;
     chorus:mintKey ("cardId" "sha") ;
-    chorus:provenance "derived-sweep" ;
+    chorus:writeOrigin "derived-sweep" ;
     rdfs:label "Merge Event" ;
     rdfs:comment "A squash-merge to main: PR resolved by HEAD oid (#3175), content-verified, idempotent on already-landed (#3336). Carries the approval {accepter, what, when} (#3297)." ;
     chorus:dataSource "ops/logs/werk-merge.jsonl: merge.approved / merge.idempotent / merge.refused; gh PR record" ;
@@ -215,7 +227,7 @@ chorus:MergeEvent a owl:Class ;
 
 chorus:ConflictHold a owl:Class ;
     chorus:mintKey ("cardId" "ts") ;
-    chorus:provenance "derived-sweep" ;
+    chorus:writeOrigin "derived-sweep" ;
     rdfs:label "Conflict Hold" ;
     rdfs:comment "A rebase conflict held for in-verb resolution (#3304): markers in the werk, disposition held → continued|aborted." ;
     chorus:dataSource "ops/logs/werk-commit.jsonl: rebase.conflict.held; spine commit.conflict {disposition}" ;
@@ -223,7 +235,7 @@ chorus:ConflictHold a owl:Class ;
 
 chorus:RecoveryAction a owl:Class ;
     chorus:mintKey ("ts" "kind") ;
-    chorus:provenance "derived-sweep" ;
+    chorus:writeOrigin "derived-sweep" ;
     rdfs:label "Recovery Action" ;
     rdfs:comment "A canonical repair/recover or an unpull: the recovery-is-verbs surface (werk-sync #3300, werk-unpull #3299)." ;
     chorus:dataSource "spine: canonical.repaired / recovery.stashed / recovery.completed / card.unpulled" ;
@@ -236,7 +248,7 @@ chorus:RecoveryAction a owl:Class ;
 
 chorus:CardDiff a owl:Class ;
     chorus:mintKey ("cardId" "sha") ;
-    chorus:provenance "derived-computed" ;
+    chorus:writeOrigin "derived-computed" ;
     rdfs:label "Card Diff" ;
     rdfs:comment "The merge-base diff of a card's werk vs origin/main (survives squash): changed files, changed units (crates/services), removed public symbols. Computed identically by deploy/review (the deploy_canonical commands)." ;
     chorus:dataSource "review.floor {files_changed}; werk-deploy unit discovery; derivable on demand from git" ;
@@ -244,7 +256,7 @@ chorus:CardDiff a owl:Class ;
 
 chorus:QualityFinding a owl:Class ;
     chorus:mintKey ("cardId" "ts" "kind") ;
-    chorus:provenance "derived-sweep" ;
+    chorus:writeOrigin "derived-sweep" ;
     rdfs:label "Quality Finding" ;
     rdfs:comment "An objective code-quality signal on a card: floor findings (unchecked AC, src-without-test, removed-pub-symbol survivor check), lint/complexity refusals at commit, cog-override uses." ;
     chorus:dataSource "review.floor findings; pre-commit refusal events; cog.override.used audit events" ;
@@ -254,7 +266,7 @@ chorus:QualityFinding a owl:Class ;
 
 chorus:SourceFile a owl:Class ;
     chorus:mintKey ("filePath") ;
-    chorus:provenance "derived-crawl" ;
+    chorus:writeOrigin "derived-crawl" ;
     rdfs:label "Source File" ;
     rdfs:comment "ONE source file with durable identity: its repo-relative path (the IRI mint key per ADR-040 Rule 0: (SourceFile, path)). The crawler-lane noun the code domain joins through — CardDiff names paths, QualityFinding points at file:line, BlastRadius resolves symbols to files." ;
     chorus:dataSource "crawler code-files collector (exists today, writes path-classified instances); also derivable from any CardDiff" ;
@@ -294,7 +306,7 @@ chorus:inFile a owl:ObjectProperty ;
 # registry section, the ONE file resolve_registry() reads. Stated once, there.
 chorus:Test a owl:Class ;
     chorus:mintKey ("filePath" "testName") ;
-    chorus:provenance "derived-crawl" ;
+    chorus:writeOrigin "derived-crawl" ;
     rdfs:label "Test" ;
     rdfs:comment "ONE test with durable identity (chorus:filePath + chorus:testName), a pyramid layer (unit|integration|e2e|bdd), a validity class from the #3324 taxonomy (valid | asserts-retired-behavior | passes-by-definition | integration-not-gated), and domain tags (#2818)." ;
     chorus:dataSource "crawler cycle → tag-tests-domain.py (#3811): full clear+insert regenerate per run, add/change/delete all reconciled; results land per-land via werk-test wire-back (#3774)" ;
@@ -302,7 +314,7 @@ chorus:Test a owl:Class ;
 
 chorus:TestSuiteRun a owl:Class ;
     chorus:mintKey ("cardId" "ts") ;
-    chorus:provenance "derived-sweep" ;
+    chorus:writeOrigin "derived-sweep" ;
     rdfs:label "Test Suite Run" ;
     rdfs:comment "A suite execution for a card (pipeline test step) or nightly (com.chorus.nightly-suites): pass/fail at suite grain." ;
     chorus:dataSource "ops/logs/werk-demo.jsonl: demo.test_result {result} per card; nightly reporter (NOT TRUSTED until #3272/#3273)" ;
@@ -310,7 +322,7 @@ chorus:TestSuiteRun a owl:Class ;
 
 chorus:TestResult a owl:Class ;
     chorus:mintKey ("filePath" "testName" "runTs") ;
-    chorus:provenance "derived-sweep" ;
+    chorus:writeOrigin "derived-sweep" ;
     rdfs:label "Test Result" ;
     rdfs:comment "One Test's outcome in one run — the grain werk-test and flake-quarantine (#2530) need. Requires Test identity first." ;
     chorus:dataSource "NONE TODAY — depends on chorus:Test identity + a per-test result emission path" ;

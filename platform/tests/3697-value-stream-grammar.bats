@@ -117,3 +117,13 @@ q() {
   run q "$CT" 'ASK { c:lifeStream owl:deprecated true }'
   echo "$output" | grep -qi 'yes'
 }
+
+# #4265 NEGATIVE PROOF — the three cases above went red for two years' worth of
+# runs because the individuals were never declared, and a green here would look
+# identical whether the file marks them or the query is simply wrong. A stream
+# the file does NOT declare must read as not deprecated; if this one ever says
+# yes, the assertion is matching something other than the deprecation.
+@test "AC1 NEGATIVE PROOF an undeclared stream is not reported deprecated" {
+  run q "$CT" 'ASK { c:noSuchStream owl:deprecated true }'
+  echo "$output" | grep -qi 'no'
+}

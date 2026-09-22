@@ -25,6 +25,8 @@ setup() {
   REPO="$(cd "$BATS_TEST_DIRNAME/../.." && pwd)"
   ROLES_TTL="$REPO/roles/wren/ontology/role-instances-3838.ttl"
   SHAPE_TTL="$REPO/roles/wren/ontology/priorities-3686.ttl"
+  # #4265 — the PropertyKey registry's home since the row moved out of the shape file.
+  KEYS_TTL="$REPO/designing/data/property-key-instances.ttl"
   SEC_TTL="$REPO/roles/silas/ontology/security-model-3618.ttl"
   TMP="$BATS_TEST_TMPDIR"
 }
@@ -88,9 +90,26 @@ PFX='PREFIX chorus: <https://jeffbridwell.com/chorus#> PREFIX sh: <http://www.w3
   [ "${n:-0}" -ge 3 ] || { echo "RoleShape requires only $n properties" >&2; return 1; }
 }
 
-@test "RoleShape pins its instances graph" {
+# #4265 — this asserted RoleShape pins chorus:instancesGraph "urn:chorus:instances".
+# Two things make that expectation wrong now. Wren's #4187 REMOVED the pin on
+# 2026-09-18 on purpose — the roles domain claims Role, AgentRole and HumanRole,
+# so the home DERIVES from the model — and urn:chorus:instances is the catch-all
+# Jeff ruled against on 2026-09-03. Measured 2026-09-21: 11 Role-family rows sit
+# in the catch-all as copies of the domains:roles rows, so re-adding the pin
+# would have made the copies canonical. Wren owns that cleanup (#4187).
+# The question worth asking is the one below: a claimed class must NOT carry a
+# pin, because the claim is what says where the rows live.
+@test "RoleShape does not pin a graph — the roles domain claims Role, so the home derives" {
   g=$(q "$SHAPE_TTL" "$PFX SELECT ?g WHERE { chorus:RoleShape chorus:instancesGraph ?g }")
-  [ "$g" = "urn:chorus:instances" ] || { echo "RoleShape instancesGraph = '${g:-<none>}'" >&2; return 1; }
+  [ -z "$g" ] || { echo "RoleShape still pins instancesGraph = '$g' — the claim should decide, not a pin" >&2; return 1; }
+}
+
+# NEGATIVE PROOF — the query above must be able to SEE a pin when one is there,
+# or "no pin" and "my SELECT is wrong" look identical. A shape in this same file
+# that does carry one reads back its value.
+@test "NEGATIVE PROOF: the pin query reads a pin that IS present" {
+  g=$(q "$REPO/roles/wren/ontology/hats-4175.ttl" "$PFX SELECT ?g WHERE { ?s chorus:instancesGraph ?g } LIMIT 1")
+  [ -n "$g" ] || { echo "pin query read nothing from a file that declares one" >&2; return 1; }
 }
 
 @test "NEGATIVE PROOF: a shape without an instances-graph pin is detectable" {
@@ -204,8 +223,19 @@ TTL
 
 # ------------------------------------------------------- the word cap ---
 
+# #4265 (Silas's diagnosis) — this greppped priorities-3686.ttl. The key is
+# real and registered; it MOVED to designing/data/property-key-instances.ttl,
+# and the check could not tell "the cap became a constant again" from "the row
+# lives in another file now". It asks the model instead of a filename: parse
+# the authored key registry and ASK for the row. Hermetic — no store, no box.
 @test "the response word cap is registered as a property key, not a constant" {
-  grep -q "chorus:pk-responseWordCap a chorus:PropertyKey" "$SHAPE_TTL"
-  grep -q 'chorus:keyName "response.word.cap"' "$SHAPE_TTL"
-  grep -q "chorus:appliesToClass chorus:Role" "$SHAPE_TTL"
+  run q "$KEYS_TTL" "$PFX"' ASK { chorus:pk-responseWordCap a chorus:PropertyKey ; chorus:keyName "response.word.cap" ; chorus:appliesToClass chorus:Role }'
+  echo "$output" | grep -qi 'true'
+}
+
+# NEGATIVE PROOF — a key that is NOT registered must read no, or the ASK above
+# is green for a reason other than the row being there.
+@test "NEGATIVE PROOF: an unregistered key is not reported as a property key" {
+  run q "$KEYS_TTL" "$PFX"' ASK { chorus:pk-noSuchCap a chorus:PropertyKey }'
+  echo "$output" | grep -qi 'false'
 }

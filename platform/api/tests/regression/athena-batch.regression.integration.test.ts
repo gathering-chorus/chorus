@@ -63,8 +63,20 @@ describe('#2208 data regression — athena batch', () => {
     await assertGolden('athena-blast-radius', stripVolatile(r.body));
   });
 
+  // #4237 repointed machines.sparql from the SCHEMA graph to
+  // urn:chorus:domains:infrastructure, where the Machine rows actually live.
+  // The fixture still loads into urn:chorus:ontology for every other handler
+  // here, so this one query found nothing in its own fixture and the golden
+  // read as a regression. Give machines a store in the graph its query names
+  // — the fixture content is unchanged, only which graph it lands in.
+  const machinesDeps = {
+    sparql: makeSparqlFromTtl(FIXTURE_TTL, 'urn:chorus:domains:infrastructure'),
+    loadQuery,
+    envelope,
+  };
+
   test('/api/athena/machines', async () => {
-    const r = await fetchAthenaMachines(deps);
+    const r = await fetchAthenaMachines(machinesDeps);
     expect(r.status).toBe(200);
     await assertGolden('athena-machines', stripVolatile(r.body));
   });

@@ -372,6 +372,7 @@ jobs:
             exit 1
           }
           rc=0
+          unmeasured=""
           for f in $FILES; do
             [ -f "$WERK/$f" ] || continue
             echo "-- $f"
@@ -385,8 +386,24 @@ jobs:
             # emit to the live spine) and the membrane honors it before any test
             # marker — so a bats suite inherited "prod" here and its emits went live
             # even with a test spine set (2026-09-10 12:35, run 4). A suite is a test.
-            ( cd "$WERK" && CHORUS_CONTEXT=test CHORUS_LOG_FILE="$W/spine.log" CHORUS_SESSIONS_DIR="$W/sessions" CARDS_BRIEFS_ROOT="$W/briefs" bats "$f" ) || rc=1
+            src=0
+            ( cd "$WERK" && CHORUS_CONTEXT=test CHORUS_LOG_FILE="$W/spine.log" CHORUS_SESSIONS_DIR="$W/sessions" CARDS_BRIEFS_ROOT="$W/briefs" bats "$f" ) || src=$?
+            # #4265 — exit 2 is a suite saying it measured NOTHING (its subject is
+            # unserved), the same signal werk-test reads. It is not a pass and it
+            # is not a failure, so it is named here and carried out of the leg
+            # rather than folded into rc. Every other non-zero stays BLOCKING —
+            # a suite that fails, or a runner that will not start, must not be
+            # able to buy silence by exiting 2's neighbours.
+            if [ "$src" -eq 2 ]; then
+              echo "prove-live: UNMEASURED $f — the suite scored nothing"
+              unmeasured="${unmeasured} $f"
+            elif [ "$src" -ne 0 ]; then
+              rc=1
+            fi
           done
+          if [ -n "${unmeasured}" ]; then
+            echo "prove-live: UNMEASURED suites (proved nothing, did not fail):${unmeasured}"
+          fi
           echo "prove-live: rc=$rc (BLOCKING — an AC that needs the live door is proven here or not at all)"
           exit "$rc"
 

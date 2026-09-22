@@ -5,7 +5,7 @@
 //!   - every subject SHACL-validated via read_shape(class); ONE violating
 //!     subject rejects the WHOLE batch (fail-closed, all-or-nothing INSERT)
 //!   - existing subject: dcterms:created preserved (write() pattern),
-//!     modified bumped, chorus:provenance "migrated" stamped
+//!     modified bumped, chorus:writeOrigin "migrated" stamped
 //!   - idempotent: re-running the same input is a semantic no-op (identical
 //!     DELETE-WHERE + INSERT DATA)
 //!   - same identity gate + assert_dal_writable as write() (identity-less

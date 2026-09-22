@@ -500,6 +500,19 @@ pub fn unit_failure_message(check: &str, unit: &str) -> String {
     format!("{} unit {} failed its checks", check, unit)
 }
 
+/// #4265 — a suite that exits 2 AND says UNMEASURED in its own output is
+/// declaring "nothing was measured here", the same family as the rc=3
+/// self-refusal (#4016). Two suites already do this: the generated-API quartet
+/// refuses to write to production, and declared-home refuses a prod target.
+/// Scoring them as failures put reds on the board for runs that never happened
+/// — Jeff, 2026-09-02: a box-dependent test reports UNMEASURED, never red.
+///
+/// The exit code alone is NOT enough — a suite can exit 2 for its own reasons.
+/// Both halves are required; the negative proof beside this tests exactly that.
+pub fn self_declared_unmeasured(code: Option<i32>, text: &str) -> bool {
+    code == Some(2) && text.contains("UNMEASURED")
+}
+
 /// #4255 — the severity a spine event carries, from its name. The Structured
 /// Logging Contract (roles/silas/system-architecture.md) requires `level` to be
 /// one of info|warn|error, but `error` was not in chorus-log's allowed set, so
