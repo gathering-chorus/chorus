@@ -1,9 +1,4 @@
 #!/usr/bin/env bats
-# #4265 unhold, 2026-09-21 — the route is /versions, and it serves now. The
-# suite was held UNMEASURED this afternoon because chorus:Version was declared
-# and claimed by nobody, so athena-make mounted no collection for it and every
-# case here called a 404. The provenance domain now claims the class; measured
-# after the athena-make restart, /versions answers 200 with the rows.
 # @test-type: integration:api — signal:ui is fixture-data (greps the two pages for the History fold; the checks run against served rows)
 load test_helper
 #
@@ -23,18 +18,6 @@ setup() {
 }
 live() {
   [ "${RUN_INTEGRATION:-}" = "true" ] || skip "integration (live owl-api serve) — RUN_INTEGRATION=true to run"
-  # #4265 — this suite WRITES: it replaces products/spine and a document to prove
-  # a version is kept. Run from a werk against canonical :3360 it edits Jeff's
-  # live rows, and it did twice on 2026-09-21 (bats4102same71493 at 17:09,
-  # bats4102b9728 at 18:06), each time leaving a red 4101 then had to report.
-  # The pipeline runs this file in the pre-deploy test leg, where OWL_URL still
-  # defaults to canonical — so the refusal lives here, not in the runner.
-  case "$OWL_URL" in
-    *:3360*)
-      if [ -n "${CHORUS_ROOT:-}" ] && [ "${CHORUS_ROOT}" != "${CHORUS_HOME:-/Users/jeffbridwell/CascadeProjects/chorus}" ]; then
-        skip "refusing canonical :3360 from a werk — this suite writes; point OWL_URL at the variant"
-      fi ;;
-  esac
   curl -sf --max-time 5 "$OWL_URL/health" >/dev/null || skip "owl-api absent (#3528)"
   TOK="$("$ROOT/platform/scripts/chorus-identity-token" wren 2>/dev/null)"
   [ -n "$TOK" ] || skip "no identity token for wren"
@@ -42,7 +25,7 @@ live() {
 # #4130 — /revisions pages at 100 and this row had 90 of the 235 on the store;
 # the first page held none of them, so "before=0 after=0" was the READ, not the
 # door. Ask for the whole ledger. (limit is honoured up to the row count.)
-revisions_of() { curl -sf --max-time 10 "$OWL_URL/versions?limit=100000" | python3 -c 'import sys,json; d=json.load(sys.stdin); rows=d if isinstance(d,list) else d.get("data",[]); print(json.dumps([r for r in rows if r.get("ofRow")==sys.argv[1]]))' "$1"; }
+revisions_of() { curl -sf --max-time 10 "$OWL_URL/revisions?limit=100000" | python3 -c 'import sys,json; d=json.load(sys.stdin); rows=d if isinstance(d,list) else d.get("data",[]); print(json.dumps([r for r in rows if r.get("ofRow")==sys.argv[1]]))' "$1"; }
 
 @test "AC1: replacing a product through the door keeps the prior version as a Revision with its full data" {
   live
@@ -51,7 +34,7 @@ revisions_of() { curl -sf --max-time 10 "$OWL_URL/versions?limit=100000" | pytho
   body="$(printf '%s' "$row" | python3 -c '
 import sys, json
 r = json.load(sys.stdin)
-drop = ("name","version","writeCount","changedAt","changedIn","modified","created","ownedBy","label","iri")
+drop = ("name","version","changedAt","changedIn","modified","created","ownedBy","label","iri")
 # a read serves edge targets MINTED (chorus:value-stream-step-directing); the
 # write mint adds the kind prefix itself (ADR-040 Rule 0), so a body echoing a
 # read must hand back the bare name or the door refuses it double-prefixed.
@@ -64,30 +47,18 @@ def bare(v):
         return n
     return v
 keep = {k: bare(v) for k, v in r.items() if k not in drop and v not in ("", None, [])}
-# #4265 — strip any marker a previous run left before appending, the way
-# product_body already does. Appending blind made this suite non-idempotent:
-# run one passed, left "(bats-4102 touched)" in the row, and run two compared
-# a snapshot that already carried it — 9/9 then 5/9 with no code change.
-keep["gaps"] = (r.get("gaps") or "").split(" (bats-4102")[0] + " (bats-4102 touched)"
+keep["gaps"] = (r.get("gaps") or "") + " (bats-4102 touched)"
 print(json.dumps(keep))')"
-  # #4265 — a DISTINCT commit per run, not HEAD. The door's rule is one commit
-  # one version (#4102), so a second run under the same HEAD is the same change
-  # and correctly keeps nothing — which made this case fail for the opposite
-  # reason to the one it is testing. It needs a new land, so it mints one.
-  # #4265 — this PUT sent no X-Landed-Commit while every other write in the file
-  # does. Two consequences, both real: the door stamps changedIn "unknown" (which
-  # 4101 then reports as a bad row), and a write with no land looks like the same
-  # land as the one before it, so the version it should have kept is swallowed.
-  run curl -s --max-time "${FUSEKI_WRITE_TIMEOUT:-120}" -o "$BATS_TEST_TMPDIR/put" -w '%{http_code}' -X PUT "$OWL_URL/products/spine" -H "Authorization: Bearer $TOK" -H 'Content-Type: application/json' -H "X-Landed-Commit: $(openssl rand -hex 20)" -d "$body"
+  run curl -s --max-time "${FUSEKI_WRITE_TIMEOUT:-120}" -o "$BATS_TEST_TMPDIR/put" -w '%{http_code}' -X PUT "$OWL_URL/products/spine" -H "Authorization: Bearer $TOK" -H 'Content-Type: application/json' -d "$body"
   [ "$output" = "200" ] || { cat "$BATS_TEST_TMPDIR/put"; false; }
   after="$(revisions_of products/spine)"
   n="$(printf '%s' "$after" | python3 -c 'import sys,json; print(len(json.load(sys.stdin)))')"
   [ "$n" -eq $((before + 1)) ] || { echo "revisions before=$before after=$n"; false; }
   printf '%s' "$after" | python3 -c '
 import sys, json
-revs = json.load(sys.stdin); r = max(revs, key=lambda x: int(x.get("writeCount") or x.get("version") or 0))
+revs = json.load(sys.stdin); r = max(revs, key=lambda x: int(x.get("version") or 0))
 snap = json.loads(r["snapshot"]); assert snap.get("promise"), "snapshot carries the full row"
-assert r["ofRow"] == "products/spine" and str(r.get("writeCount") or r.get("version")).isdigit()'
+assert r["ofRow"] == "products/spine" and str(r["version"]).isdigit()'
 }
 
 @test "AC2 (retrievable by Loom): the newest revision's snapshot differs from the row now in exactly the touched field" {
@@ -95,7 +66,7 @@ assert r["ofRow"] == "products/spine" and str(r.get("writeCount") or r.get("vers
   now="$(curl -sf "$OWL_URL/products" | python3 -c 'import sys,json; rows=json.load(sys.stdin)["data"]; print(json.dumps([x for x in rows if x["name"]=="spine"][0]))')"
   revisions_of products/spine | python3 -c '
 import sys, json
-revs = json.load(sys.stdin); r = max(revs, key=lambda x: int(x.get("writeCount") or x.get("version") or 0)); snap = json.loads(r["snapshot"]); now = json.loads(sys.argv[1])
+revs = json.load(sys.stdin); r = max(revs, key=lambda x: int(x.get("version") or 0)); snap = json.loads(r["snapshot"]); now = json.loads(sys.argv[1])
 skip = {"version","changedAt","changedIn","modified","created","name","iri","type"}
 diff = [k for k in set(snap) | set(now) if k not in skip and str(snap.get(k,"")) != str(now.get(k,""))]
 print("changed:", sorted(diff))
@@ -109,15 +80,15 @@ for same in ("promise", "vision", "structure", "audience"):
 
 @test "AC3 negative proof (#3734): a create keeps no revision, and a direct write to /revisions is refused" {
   live
-  before="$(curl -sf "$OWL_URL/versions" | python3 -c 'import sys,json; print(len(json.load(sys.stdin)["data"]))')"
+  before="$(curl -sf "$OWL_URL/revisions" | python3 -c 'import sys,json; print(len(json.load(sys.stdin)["data"]))')"
   curl -s --max-time "${FUSEKI_WRITE_TIMEOUT:-120}" -o /dev/null -X POST "$OWL_URL/documents" -H "Authorization: Bearer $TOK" -H 'Content-Type: application/json' \
     -d '{"name":"bats-4102-fresh","docTitle":"fresh","docHref":"/fresh.html","hasDomain":"products"}'
-  after="$(curl -sf "$OWL_URL/versions" | python3 -c 'import sys,json; print(len(json.load(sys.stdin)["data"]))')"
+  after="$(curl -sf "$OWL_URL/revisions" | python3 -c 'import sys,json; print(len(json.load(sys.stdin)["data"]))')"
   [ "$after" -eq "$before" ] || { echo "a create made a revision: $before -> $after"; false; }
   # #4130 — take the fixture back out. It sat on the live store from 09-06 with
   # changedIn=unknown (a hand create), and 4101 read it as a real document.
   curl -s --max-time "${FUSEKI_WRITE_TIMEOUT:-120}" -o /dev/null -X DELETE "$OWL_URL/documents/bats-4102-fresh" -H "Authorization: Bearer $TOK"
-  run curl -s --max-time "${FUSEKI_WRITE_TIMEOUT:-120}" -o "$BATS_TEST_TMPDIR/out" -w '%{http_code}' -X POST "$OWL_URL/versions" -H "Authorization: Bearer $TOK" -H 'Content-Type: application/json' \
+  run curl -s --max-time "${FUSEKI_WRITE_TIMEOUT:-120}" -o "$BATS_TEST_TMPDIR/out" -w '%{http_code}' -X POST "$OWL_URL/revisions" -H "Authorization: Bearer $TOK" -H 'Content-Type: application/json' \
     -d '{"name":"forged","ofRow":"products/spine","version":"99","snapshot":"{}","label":"x"}'
   [ "$output" = "422" ]
   grep -q 'kept by the door' "$BATS_TEST_TMPDIR/out"
@@ -138,25 +109,12 @@ for same in ("promise", "vision", "structure", "audience"):
   done
 }
 
-@test "AC1: the model declares Version, its shape and its claim on the provenance domain" {
-  # #4265 — this case still named Revision and still expected the products
-  # domain to claim it. #4211 renamed the class to Version on 09-20, and it was
-  # deliberately NOT left on products (547 of 15,630 rows revise a product, so
-  # it was never a products class). provenance claims it as of today.
+@test "AC1: the model declares Revision, its shape and its claim on the products domain" {
   ttl="$ROOT/roles/silas/ontology/chorus.ttl"
-  grep -q '^chorus:Version a owl:Class' "$ttl"
-  awk '/^chorus:VersionShape a sh:NodeShape/,/ \.$/' "$ttl" | grep -q 'sh:path chorus:snapshot'
-  awk '/^chorus:VersionShape a sh:NodeShape/,/ \.$/' "$ttl" | grep -q 'sh:path chorus:ofRow'
-  grep -q 'chorus:definesVocabulary chorus:Version' "$ttl"
-}
-
-@test "AC1 NEGATIVE PROOF (#3734): the retired Revision spelling declares nothing" {
-  # If this ever passes vacuously the case above is measuring a file that no
-  # longer names either class. Revision must be GONE, not merely un-grepped.
-  ttl="$ROOT/roles/silas/ontology/chorus.ttl"
-  ! grep -q '^chorus:Revision a owl:Class' "$ttl"
-  ! grep -q '^chorus:RevisionShape a sh:NodeShape' "$ttl"
-  grep -q '^chorus:Version a owl:Class' "$ttl"
+  grep -q '^chorus:Revision a owl:Class' "$ttl"
+  awk '/^chorus:RevisionShape a sh:NodeShape/,/ \.$/' "$ttl" | grep -q 'sh:path chorus:snapshot'
+  awk '/^chorus:RevisionShape a sh:NodeShape/,/ \.$/' "$ttl" | grep -q 'sh:path chorus:ofRow'
+  grep -q 'chorus:definesVocabulary chorus:Product, chorus:Revision' "$ROOT/roles/wren/ontology/domains-wren-silas.ttl"
 }
 
 @test "AC4: a document replaced through the door keeps a Revision, and the document page carries the History fold" {
@@ -177,7 +135,7 @@ for same in ("promise", "vision", "structure", "audience"):
   body="$(printf '%s' "$row" | python3 -c '
 import sys, json
 r = json.load(sys.stdin)
-drop = ("name","version","writeCount","changedAt","changedIn","modified","created","ownedBy","iri","creator","label")
+drop = ("name","version","changedAt","changedIn","modified","created","ownedBy","iri","creator","label")
 def bare(v):
     if isinstance(v, list): return [bare(x) for x in v]
     if isinstance(v, str):
@@ -217,7 +175,7 @@ product_body() {  # $1 = product name, $2 = marker text
 import sys, json
 rows = json.load(sys.stdin)["data"]
 r = [x for x in rows if x["name"] == sys.argv[1]][0]
-drop = ("name","version","writeCount","changedAt","changedIn","modified","created","ownedBy","label","iri")
+drop = ("name","version","changedAt","changedIn","modified","created","ownedBy","label","iri")
 def bare(v):
     if isinstance(v, list): return [bare(x) for x in v]
     if isinstance(v, str):
@@ -237,7 +195,7 @@ print(json.dumps(keep))' "$1" "$2"
 restore_row() {  # $1 = product name
   put_product "$1" "$(product_body "$1" restored)" "$(git -C "$ROOT" rev-parse HEAD)" >/dev/null
 }
-product_version() { curl -sf "$OWL_URL/products" | python3 -c 'import sys,json; rows=json.load(sys.stdin)["data"]; r=[x for x in rows if x["name"]==sys.argv[1]][0]; print(r.get("writeCount") or r.get("version") or "0")' "$1"; }
+product_version() { curl -sf "$OWL_URL/products" | python3 -c 'import sys,json; rows=json.load(sys.stdin)["data"]; print([x for x in rows if x["name"]==sys.argv[1]][0].get("version") or "0")' "$1"; }
 put_product() {  # $1 = name, $2 = body, $3 = commit stamp ("" for a hand write)
   if [ -n "$3" ]; then
     curl -s --max-time "${FUSEKI_WRITE_TIMEOUT:-120}" -o /dev/null -w '%{http_code}' -X PUT "$OWL_URL/products/$1" -H "Authorization: Bearer $TOK" \

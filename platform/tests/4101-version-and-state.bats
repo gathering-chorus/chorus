@@ -19,18 +19,7 @@ live() {
   [ "${RUN_INTEGRATION:-}" = "true" ] || skip "integration (live owl-api serve) — RUN_INTEGRATION=true to run"
   curl -sf --max-time 5 "$OWL_URL/health" >/dev/null || skip "owl-api absent (#3528)"
 }
-# #4265 — Jeff, 2026-09-21: "we are trying to test chorus not gathering." The
-# gathering product is the Gathering app's row, authored by Jeff, not written
-# through our door; holding it to our stamps made this suite report a red we
-# would never fix. Scope: rows this team owns, i.e. ownedBy a principal-*.
-rows() { curl -sf --max-time 10 "$OWL_URL/$1" | python3 -c '
-import sys, json
-d = json.load(sys.stdin); rows = d if isinstance(d, list) else d.get("data", [])
-def ours(r):
-    o = r.get("ownedBy")
-    o = o[0] if isinstance(o, list) and o else o
-    return str(o or "").startswith("principal-")
-print(json.dumps([r for r in rows if ours(r)]))'; }
+rows() { curl -sf --max-time 10 "$OWL_URL/$1" | python3 -c 'import sys,json; d=json.load(sys.stdin); print(json.dumps(d if isinstance(d,list) else d.get("data",[])))'; }
 
 @test "AC1: every product and document served carries changedAt (UTC ISO) and changedIn (a commit, never 'unknown' after a land)" {
   live
@@ -51,17 +40,7 @@ print(sys.argv[1], "rows", len(rows), "bad", bad); sys.exit(1 if bad or not rows
     rows "$k" | python3 -c '
 import sys, json
 rows = json.load(sys.stdin); ok = {"draft","current","superseded","retired"}
-# #4265 — the stamp is chorus:writeCount since #4211 renamed it; reading
-# r["version"] measured a field the door has never written.
-# #4265 — writeCount counts writes THROUGH THE DOOR. A row authored once and
-# never replaced has written zero times, so an absent stamp is 0, not a
-# missing field. Requiring a digit on every row demanded a rewrite that never
-# happened. A PRESENT stamp must still be a number — a non-numeric one (the
-# "bats4102same71493" class) is still bad.
-def count_ok(r):
-    w = r.get("writeCount")
-    return w in (None, "") or str(w).isdigit()
-bad = [(r.get("name"), r.get("docState"), r.get("writeCount")) for r in rows if r.get("docState") not in ok or not count_ok(r)]
+bad = [(r.get("name"), r.get("docState"), r.get("version")) for r in rows if r.get("docState") not in ok or not str(r.get("version","")).isdigit()]
 print(sys.argv[1], "bad", bad); sys.exit(1 if bad or not rows else 0)' "$k"
   done
 }
@@ -102,10 +81,6 @@ print(sys.argv[1], "bad", bad); sys.exit(1 if bad or not rows else 0)' "$k"
   done
   for shape in ProductShape ServiceShape DocumentShape; do
     awk "/^chorus:$shape a sh:NodeShape/,/ \\.\$/" "$ttl" | grep -q 'sh:path chorus:docState.*"draft" "current" "superseded" "retired"' || { echo "$shape lacks docState"; false; }
-    # #4265 — was 'sh:path chorus:version'. #4211 renamed that stamp to
-    # chorus:writeCount (declared; chorus:version is declared nowhere), so the
-    # assertion named a property the model had already retired. All three shapes
-    # carry writeCount, verified 2026-09-21.
-    awk "/^chorus:$shape a sh:NodeShape/,/ \\.\$/" "$ttl" | grep -q 'sh:path chorus:writeCount' || { echo "$shape lacks writeCount"; false; }
+    awk "/^chorus:$shape a sh:NodeShape/,/ \\.\$/" "$ttl" | grep -q 'sh:path chorus:version' || { echo "$shape lacks version"; false; }
   done
 }
