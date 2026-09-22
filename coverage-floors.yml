@@ -36,6 +36,19 @@ rust:
   # crate; the bar itself (85, set by #3701) is unchanged.
   platform/services/athena-make: 85    # was owl-api (#3701 bar), renamed by #3561
 
+  # #4270 (Jeff, 2026-09-22: "i dont want to raise it") — the denominator
+  # ratchet drifted 20 -> 26 because six crates shipped between 09-15 and
+  # 09-20 with no floor. Rather than move the baseline, each gets one, set at
+  # the line coverage it ACTUALLY has today (measured with cargo llvm-cov,
+  # 2026-09-22 06:30) so nothing here claims coverage that does not exist.
+  # These are floors to hold and then raise, not targets already met.
+  platform/services/chorus-crawl: 68        # measured 68.88%
+  platform/services/demo-fitness: 61        # measured 61.70% (lib 97.75%, main.rs 0%)
+  platform/services/chorus-awake: 41        # measured 41.52%
+  platform/services/athena-serve: 33        # measured 33.33%
+  platform/services/chorus-principal: 18    # measured 18.20%
+  platform/services/athena-validate: 59      # measured 59.16% (main.rs 0%, ported.rs 100%)
+
 # When this file changes:
 # - The enforcing automation (run_coverage() in platform/scripts/nightly-suites.sh —
 #   folded there from the retired nightly-coverage.sh by #3527, orphan removed #3734)

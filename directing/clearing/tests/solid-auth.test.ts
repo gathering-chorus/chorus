@@ -1,4 +1,8 @@
-// @test-type: security
+// @test-type: unit:security
+// #4270 — was "security" alone, which is a CONCERN not a layer, so the gate read
+// it as no declaration. The file's own header says these are deterministic unit
+// tests of our policy with the verifier mocked: unit is the layer, security the
+// concern. It only surfaced now because nobody had touched this file since.
 /**
  * #3669 lane 2 — Solid-OIDC identity at the Clearing door.
  *
@@ -14,7 +18,7 @@ jest.mock('@solid/access-token-verifier', () => ({
   createSolidTokenVerifier: () => mockVerify,
 }));
 
-import { isWebIdAllowed, authenticateSolid, _resetAllowCache, invalidateAllowCache, ALLOW_SET_GRAPH, ALLOW_QUERY, STALE_CEILING_MS } from '../src/solid-auth';
+import { isWebIdAllowed, authenticateSolid, _resetAllowCache, invalidateAllowCache, allowSetGraph, ALLOW_QUERY, STALE_CEILING_MS } from '../src/solid-auth';
 
 const WREN = 'http://localhost:3001/wren/profile/card#me';
 const STRANGER = 'http://localhost:3001/mallory/profile/card#me';
@@ -180,7 +184,10 @@ describe('#3785 — one graph name, bounded staleness', () => {
   });
 
   test('the allow-set query is scoped to the ONE declared graph', async () => {
-    expect(ALLOW_QUERY).toContain(`GRAPH <${ALLOW_SET_GRAPH}>`);
+    // #4270 — #4220 renamed the constant to a resolver function (the graph is
+    // read from the model at boot); the test kept importing the old name, so this
+    // whole file stopped COMPILING and its 40 cases reported no result for days.
+    expect(ALLOW_QUERY).toContain(`GRAPH <${allowSetGraph()}>`);
   });
 
   test('NEGATIVE PROOF: an unscoped query would be a self-mint hole, and is not what we ship', async () => {
