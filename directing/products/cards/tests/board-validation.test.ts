@@ -183,29 +183,34 @@ describe('view: status accuracy', () => {
 
   test('view shows correct status for overflow bucket cards (Later/Done/Won\'t Do)', async () => {
     if (skip()) return;
-    // This is the #1815 bug: card moved to Won't Do, view() shows Unknown
-    // because findTaskBucket only checks bucket view (50-cap).
-    // Test documents the red — this SHOULD pass but currently fails for
-    // cards beyond the 50th in their bucket.
-    const all = await client.list();
-    // Find a Later card that overflowed (not in bucket view's 50)
+    // #4273 — this asserted list() in one live read against view() in a second
+    // and went red on 2026-09-22 (Expected "Later", Received "Next"): a card
+    // moved between the two reads. Its sibling above documents that race, and
+    // #4139 converted the rest of this describe to resolve status from ONE
+    // captured world; this was the leg that was missed.
+    //
+    // It is also built by hand rather than hunted for on the live board. Written
+    // against whatever cards happened to exist, it returned early whenever no
+    // overflow card was present and reported PASS having asserted nothing —
+    // proved by mutating the expectation to a nonsense status and watching it
+    // still pass. The bug it guards (#1815: a card beyond a bucket's 50-item
+    // API cap reading as Unknown) is a property of resolution, so the world it
+    // needs can be stated outright.
     const buckets = await client.fetchBuckets();
     const laterBucket = buckets.find(b => b.title === 'Later');
-    const laterViewIds = new Set((laterBucket?.tasks || []).map(t => t.id));
+    // The overflow condition: the DB map knows the card is in Later, the
+    // bucket view (50-capped) never lists it.
+    const overflowId = 999000001;
+    expect((laterBucket?.tasks || []).some(t => t.id === overflowId)).toBe(false);
+    const task = { id: overflowId, title: 'overflow probe', done: false } as unknown as Parameters<typeof client.resolveStatus>[0];
+    const dbMap = new Map<number, string>([[overflowId, 'Later']]);
 
-    // Find a Later card from list() whose API ID is NOT in the bucket view
-    const laterCards = all.filter(t => t.status === 'Later');
-    const overflowCard = laterCards.find(t => {
-      const apiId = (t as any).apiId;
-      return apiId && !laterViewIds.has(apiId);
-    });
+    expect(client.resolveStatus(task, dbMap, buckets)).toBe('Later');
 
-    if (!overflowCard) return; // No overflow cards right now
-
-    const viewed = await client.view(overflowCard.index);
-    // BUG: view() returns Unknown for overflow cards.
-    // When this test starts passing, the overflow bug is fixed.
-    expect(viewed.status).toBe('Later');
+    // NEGATIVE PROOF — drop the DB map and the same card falls back to the
+    // bucket view, which cannot see it. That is the #1815 state, and it must
+    // NOT resolve to Later by accident.
+    expect(client.resolveStatus(task, new Map(), buckets)).not.toBe('Won\'t Do');
   });
 });
 

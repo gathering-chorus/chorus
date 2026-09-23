@@ -2518,8 +2518,8 @@ function chorusBinDir(pathMod: typeof import('path')): string {
  * (1 = dirty, 2 = unmeasured) and must be returned. A STRING code, or a kill,
  * is the process failing to run at all, which is never a verdict and throws.
  */
-async function runAthenaValidate(
-  bin: string, args: string[], role: string,
+async function runAthenaVerb(
+  bin: string, args: string[], role: string, label = 'athena-validate',
 ): Promise<{ stdout: string; stderr: string; exitCode: number }> {
   const execFileP = promisify(execFile);
   try {
@@ -2536,22 +2536,37 @@ async function runAthenaValidate(
     if (typeof e.code === 'string' || killed) {
       const reason = killed ? `killed after ${VERB_TIMEOUT_MS}ms` : String(e.code);
       const tail = stderrText.trim() ? ` stderr=${stderrText.trim().slice(0, 400)}` : '';
-      throw new Error(`athena-validate-fail — reason=${reason}${tail}`);
+      throw new Error(`${label}-fail — reason=${reason}${tail}`);
     }
     return { stdout: e.stdout || '', stderr: stderrText, exitCode: typeof e.code === 'number' ? e.code : 1 };
   }
 }
 
-async function executeAthenaValidate(
+/** #4273 — run the athena verb the CALLER NAMED.
+ *
+ * The four athena tools shared a dispatch arm whose body called this function
+ * with athena-validate hardcoded, so athena-model / athena-make /
+ * athena-deploy over MCP all ran the sweep instead. Measured 2026-09-22: a
+ * `athena-model delete` returned {"verb":"athena-validate","issues":45132} and
+ * deleted nothing. The verb name is now a parameter, and only athena-validate
+ * gets the verdict parsing (its three-answer contract is its own, #4187).
+ */
+async function executeAthenaVerb(
+  verb: 'athena-model' | 'athena-make' | 'athena-deploy' | 'athena-validate',
   args: string[], role: string,
 ): Promise<{ content: Array<{ type: 'text'; text: string }> }> {
   const pathMod = require('path') as typeof import('path');
   const binDir = chorusBinDir(pathMod);
+  if (verb !== 'athena-validate') {
+    const r = await runAthenaVerb(pathMod.join(binDir, verb), args, role, verb);
+    return mcpJson({ ok: r.exitCode === 0, verb, role, exit: r.exitCode,
+      tail: (r.stdout + r.stderr).trim().split('\n').slice(-12).join('\n') });
+  }
   // The three `let ... = ''` initialisers this replaces were dead in every path:
   // both branches assign before any read, which eslint counts as
   // no-useless-assignment three times over. Running the child in its own helper
   // gives one value back and leaves nothing to pre-seed.
-  const { stdout, exitCode } = await runAthenaValidate(pathMod.join(binDir, 'athena-validate'), args, role);
+  const { stdout, exitCode } = await runAthenaVerb(pathMod.join(binDir, 'athena-validate'), args, role);
   const { issues, state } = parseValidateSummary(stdout);
   const verdict = exitCode === 2 || state === 'unreachable' ? 'unmeasured' : exitCode === 0 ? 'clean' : 'dirty';
   const report = stdout.split('\n').filter((l) => l.startsWith('graph-issue|') || l.startsWith('graph-summary|'));
@@ -3820,7 +3835,7 @@ export function buildMcpServer(getCallerRole: () => string, deps: McpServerDeps 
         // #4187 — a red sweep is the sweep's ANSWER, not a tool failure. Before this,
         // exit 1 threw "work-fail exit=1" and the report (the gap list Jeff asked for)
         // was lost with it (measured 2026-09-16 14:03: the tool exits 1 with no report).
-        return await executeAthenaValidate(parsed.data.args, parsed.data.role);
+        return await executeAthenaVerb(req.params.name as 'athena-model' | 'athena-make' | 'athena-deploy' | 'athena-validate', parsed.data.args, parsed.data.role);
       }
       case 'werk-pull': {
         const parsed = PullCardInput.safeParse(req.params.arguments);
