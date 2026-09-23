@@ -1,9 +1,13 @@
+// @test-type: bdd — cucumber step definitions; the feature files are the tests
 import { Given, When, Then, After } from '@cucumber/cucumber';
 import { execSync } from 'child_process';
+import * as path from 'path';
 import * as assert from 'assert';
 import * as fs from 'fs';
 
-const CHAT_SH = '/Users/jeffbridwell/CascadeProjects/chorus/platform/scripts/chat.sh';
+// #4278 — resolve from the tree under test, never a pinned canonical path
+// (#3369 class: the pin made in-werk runs test the UNFIXED main copy).
+const CHAT_SH = `${process.env.CHORUS_ROOT || path.resolve(__dirname, '../../../..')}/platform/scripts/chat.sh`;
 
 let chatId = '';
 let lastOutput = '';

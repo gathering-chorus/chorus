@@ -1,3 +1,4 @@
+// @test-type: bdd — cucumber step definitions; the feature files are the tests
 import { Given, When, Then, After } from '@cucumber/cucumber';
 import { execSync } from 'child_process';
 import * as assert from 'assert';
@@ -81,6 +82,10 @@ When('Jeff loads the LAN URL without auth', function () {
   lastResponse = curl(LAN, '-L');
 });
 
+Then('the page does not return 200', function () {
+  assert.notStrictEqual(lastResponse.status, 200, `the shut door served the room: ${lastResponse.body.slice(0, 120)}`);
+});
+
 Then('the page returns {int}', function (expectedStatus: number) {
   assert.strictEqual(
     lastResponse.status,
@@ -110,23 +115,34 @@ When('Jeff enters the name {string} via the public URL with token auth', functio
 });
 
 When('Jeff enters the name {string} via LAN', function (name: string) {
+  // #4278 — /api/message requires a caller identity since #3966; the bridge
+  // token is the identity a role carries. Anonymous got 401 (2026-09-23).
   const r = curlPost(
     `${LAN}/api/message`,
     JSON.stringify({ from: name, text: `[e2e-identity] ${name} joined` }),
-    ''
+    `-H "Authorization: Bearer ${authToken}"`
   );
   nameAccepted = r.status === 200;
   lastResponse = r;
 });
 
 When('Jeff enters the name {string} via localhost', function (name: string) {
+  // #4278 — /api/message requires a caller identity since #3966; the bridge
+  // token is the identity a role carries. Anonymous got 401 (2026-09-23).
   const r = curlPost(
     `${LOCAL}/api/message`,
     JSON.stringify({ from: name, text: `[e2e-identity] ${name} joined` }),
-    ''
+    `-H "Authorization: Bearer ${authToken}"`
   );
   nameAccepted = r.status === 200;
   lastResponse = r;
+});
+
+Then('the door does not admit the name', function () {
+  // 401 from the host, or a redirect away from the room (308 to the site on
+  // 2026-09-23) — either way the token did not get in. 200 would be the defect.
+  assert.notStrictEqual(lastResponse.status, 200, `the shut door answered 200: ${lastResponse.body.slice(0, 120)}`);
+  assert.ok(!nameAccepted, 'the name must not be accepted through a shut door');
 });
 
 Then('the name is accepted', function () {
@@ -150,7 +166,7 @@ When('Jeff sends a message {string} via the API from LAN', function (label: stri
   lastResponse = curlPost(
     `${LAN}/api/message`,
     JSON.stringify({ from: 'jeff', text: probeMarker }),
-    ''
+    `-H "Authorization: Bearer ${authToken}"` // #4278 — identity is required since #3966
   );
   assert.strictEqual(lastResponse.status, 200, `POST failed: ${lastResponse.status} ${lastResponse.body}`);
 });
@@ -160,7 +176,7 @@ When('Jeff sends a message {string} via the API from localhost', function (label
   lastResponse = curlPost(
     `${LOCAL}/api/message`,
     JSON.stringify({ from: 'jeff', text: probeMarker }),
-    ''
+    `-H "Authorization: Bearer ${authToken}"` // #4278 — identity is required since #3966
   );
   assert.strictEqual(lastResponse.status, 200, `POST failed: ${lastResponse.status} ${lastResponse.body}`);
 });
@@ -170,7 +186,10 @@ When('Jeff sends a message {string} via the API from localhost', function (label
 Then('the message {string} appears in the message feed', function (_label: string) {
   let found = false;
   for (let i = 0; i < 5; i++) {
-    const r = curl(`${LOCAL}/api/messages`);
+    // #4278 — identity is required, and [e2e-…] probes classify as hidden
+    // (visible:false) by design so a test never reads as a message to Jeff;
+    // the feed must be asked for hidden rows to see its own probe.
+    const r = curl(`${LOCAL}/api/messages?includeHidden=1&limit=2000`, `-H "Authorization: Bearer ${authToken}"`);
     if (r.body.includes(probeMarker)) {
       found = true;
       break;

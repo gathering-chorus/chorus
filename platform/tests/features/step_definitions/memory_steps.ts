@@ -1,3 +1,4 @@
+// @test-type: bdd — cucumber step definitions; the feature files are the tests
 import { Given, When, Then, After } from '@cucumber/cucumber';
 import { execSync } from 'child_process';
 import * as assert from 'assert';
@@ -6,7 +7,7 @@ import * as assert from 'assert';
 let lastResponse = { status: 0, body: '' };
 let thread: Array<{ speaker: string; text: string; time: string }> = [];
 
-const API = 'http://localhost:3340';
+const API = process.env.CHORUS_API_URL || 'http://localhost:3340'; // #4278 — overridable so a werk variant can be the subject
 
 function curl(url: string): { status: number; body: string } {
   try {
@@ -244,9 +245,44 @@ Then('the response contains RDF triples from Fuseki for that domain', function (
   assert.ok(crawlResult.rdf.count >= 0, 'RDF count missing');
 });
 
+// #4278 — measured against an independent source, not against the calendar.
+// The old assert (`spine.length > 0`) went red whenever no card in the domain
+// had moved in Loki's 24h window — a quiet day, not a broken crawl — and would
+// have stayed GREEN on an active day even when the crawl dropped every event
+// (the `card` vs `card_id` read, 0 for every domain). Now: count the card.*
+// lines in Loki for the crawl's own card set and require the crawl to return
+// exactly that many. Negative proof: point the parser back at `card` on a day
+// with activity → Loki says N>0, crawl says 0 → red.
+const LOKI = process.env.CHORUS_LOKI_URL || 'http://localhost:3102';
+const SPINE_LOG = process.env.CHORUS_SPINE_LOG || `${process.env.HOME}/.chorus/chorus.log`;
+function lokiCardEventCount(cardIndexes: Set<number>): number {
+  const now = Math.floor(Date.now() / 1000);
+  const q = `{filename="${SPINE_LOG}"} |= "\\"event\\":\\"card."`;
+  const url = `${LOKI}/loki/api/v1/query_range?query=${encodeURIComponent(q)}&start=${now - 86400}&end=${now}&limit=1000`;
+  const r = curl(url);
+  assert.strictEqual(r.status, 200, `Loki not answering at ${LOKI}: status ${r.status}`);
+  let n = 0;
+  for (const stream of JSON.parse(r.body).data?.result || []) {
+    for (const [, line] of stream.values || []) {
+      try {
+        const e = JSON.parse(line);
+        if (!String(e.event || '').startsWith('card.')) continue;
+        if (cardIndexes.has(parseInt(e.card_id || e.card || '0', 10))) n++;
+      } catch { /* malformed line — the crawl skips it too */ }
+    }
+  }
+  return n;
+}
+
 Then('the response contains spine events for cards in that domain', function () {
   assert.ok(Array.isArray(crawlResult.spine), 'Response missing spine array');
-  assert.ok(crawlResult.spine.length > 0, 'No spine events found');
+  const ids = new Set<number>((crawlResult.cards || []).map((c: any) => c.index));
+  const expected = lokiCardEventCount(ids);
+  assert.strictEqual(crawlResult.spine.length, expected,
+    `crawl returned ${crawlResult.spine.length} spine event(s); Loki holds ${expected} card.* line(s) for this domain's ${ids.size} cards in 24h`);
+  for (const e of crawlResult.spine) {
+    assert.ok(ids.has(e.card), `spine event ${e.event} names card ${e.card}, not in this domain`);
+  }
 });
 
 Then('all sources are linked into a single connected subgraph', function () {
@@ -343,10 +379,22 @@ Then('related domains are ranked by connection strength', function () {
   }
 });
 
-Then('{string} appears as a related domain — seed photo delivery', function (expected: string) {
+// #4278 — was a hard-coded `"photos"` expectation. Related domains are tallied
+// from the sampled conversation mentions (#3055: the 100 oldest of a bounded
+// FTS scan), so which domains appear is a property of the index content, not of
+// the crawler; on 2026-09-23 prod's seeds sample named ideas/chorus/music/books
+// and no photos, and the step was red with the product working. The product
+// rule is: every related domain is named in a returned mention. Negative proof:
+// inject a domain the mentions never name → red.
+Then('every related domain is named in a returned conversation mention', function () {
   const related = crawlResult.related || [];
-  const found = related.find((r: any) => r.domain === expected);
-  assert.ok(found, `"${expected}" not in related: ${related.map((r: any) => r.domain)}`);
+  const texts: string[] = (crawlResult.mentions || []).map((m: any) => String(m.text || '').toLowerCase());
+  assert.ok(texts.length > 0, 'No mentions returned to derive related domains from');
+  for (const r of related) {
+    const named = texts.some((t) => t.includes(r.domain.toLowerCase()) || t.includes(`domain:${r.domain.toLowerCase()}`));
+    assert.ok(named, `related domain "${r.domain}" (strength ${r.strength}) is named in none of the ${texts.length} mentions`);
+    assert.ok(r.strength >= 1 && r.strength <= texts.length, `strength ${r.strength} for "${r.domain}" outside 1..${texts.length}`);
+  }
 });
 
 Then('the response includes a trust score or health summary', function () {
