@@ -269,9 +269,9 @@ function notFinishedLine(run: NightlyRun): string {
 
 /** Kinds that are a unit of code (the runner names the tool) → their layer.
  *  Lane kinds (coverage, security, perf, ui, bdd, …) ARE the type. */
-const KIND_LAYER: Record<string, string> = {
-  cargo: 'unit', npm: 'unit', 'app-eslint': 'lint', 'coverage-denominator': 'coverage',
-};
+const KIND_LAYER = new Map<string, string>([
+  ['cargo', 'unit'], ['npm', 'unit'], ['app-eslint', 'lint'], ['coverage-denominator', 'coverage'],
+]);
 const FILE_KINDS = new Set(['shell', 'bats']);
 const LAYERS = new Set(['unit', 'integration', 'bdd', 'e2e', 'contract', 'fitness', 'smoke']);
 
@@ -282,7 +282,7 @@ export type ReadFile = (path: string) => string | null;
  *  gate's grammar); the tool name is NOT a layer. A file with no declaration
  *  is named `undeclared (<tool>)` so it can never pose as one. */
 export function suiteType(row: { kind: string; path: string }, readFile: ReadFile): string {
-  if (!FILE_KINDS.has(row.kind)) return KIND_LAYER[row.kind] ?? row.kind;
+  if (!FILE_KINDS.has(row.kind)) return KIND_LAYER.get(row.kind) ?? row.kind;
   const text = readFile(row.path);
   const declared = text === null ? null : parseDeclaration(text);
   return declared && LAYERS.has(declared) ? declared : `undeclared (${row.kind})`;
@@ -340,32 +340,29 @@ export function failingCasesQuery(run: { startedAt: string; completedAt?: string
 /** Fuseki CSV → cases grouped by suite path. Handles quoted fields (a case
  *  name may carry commas) and the \r Fuseki ends lines with. */
 export function parseFailingCases(csv: string): CasesBySuite {
-  const out: CasesBySuite = {};
+  const out = new Map<string, CaseRow[]>();
   const lines = csv.split('\n').map((l) => l.replace(/\r$/, '')).filter((l) => l !== '');
   for (const line of lines.slice(1)) {
     const cells = csvCells(line);
     if (cells.length < 3) continue;
     const [fp, tn, res] = cells;
-    (out[fp] ??= []).push({ name: tn, result: res });
+    const list = out.get(fp) ?? [];
+    list.push({ name: tn, result: res });
+    out.set(fp, list);
   }
-  return out;
+  return Object.fromEntries(out);
 }
 
 function csvCells(line: string): string[] {
+  // one cell per match: a quoted field (doubled quotes inside) or a bare run to the next comma
   const cells: string[] = [];
-  let cur = '';
-  let quoted = false;
-  for (let i = 0; i < line.length; i++) {
-    const ch = line[i];
-    if (quoted) {
-      if (ch === '"' && line[i + 1] === '"') { cur += '"'; i++; }
-      else if (ch === '"') quoted = false;
-      else cur += ch;
-    } else if (ch === '"') quoted = true;
-    else if (ch === ',') { cells.push(cur); cur = ''; }
-    else cur += ch;
+  const re = /"((?:[^"]|"")*)"|([^,]*)/g;
+  let m: RegExpExecArray | null;
+  while ((m = re.exec(line)) !== null) {
+    cells.push(m[0].startsWith('"') ? m[1].replace(/""/g, '"') : m[2]);
+    if (line.charAt(re.lastIndex) === ',') re.lastIndex += 1;
+    else break;
   }
-  cells.push(cur);
   return cells;
 }
 
@@ -387,13 +384,18 @@ export async function fetchFailingCases(
 // ---------------------------------------------------------------------------
 // the page
 
-const PILL: Record<string, string> = { fail: 'red', pass: 'green', skip: 'amber', slow: 'amber' };
-const pillClass = (status: string): string => PILL[status] ?? 'unm';
+const PILL = new Map<string, string>([['fail', 'red'], ['pass', 'green'], ['skip', 'amber'], ['slow', 'amber']]);
+const pillClass = (status: string): string => PILL.get(status) ?? 'unm';
 
 function suiteLine(r: NightlyRow): string {
   return `<li class="suite ${esc(r.status)}"><span class="pill ${pillClass(r.status)}">${esc(r.status)}</span>`
     + `<span class="kind">${esc(r.kind)}</span><span class="path">${esc(displayPath(r.path))}</span>`
     + `<span class="owner">${esc(r.owner)}</span><span class="sum">${esc(oneDecimal(r.summary))}</span></li>`;
+}
+
+/** lookup without a computed member access (the object-injection lint) */
+function casesFor(cases: CasesBySuite | undefined, p: string): CaseRow[] | undefined {
+  return cases ? Object.entries(cases).find(([k]) => k === p)?.[1] : undefined;
 }
 
 function caseList(cases: CaseRow[] | undefined, r: NightlyRow): string {
@@ -406,7 +408,7 @@ function caseList(cases: CaseRow[] | undefined, r: NightlyRow): string {
 function redFold(r: NightlyRow, o: NightlyPageOpts | undefined): string {
   const hit = o?.readout?.reds?.find((x) => x.suite === displayPath(r.path));
   const label = hit?.label ?? '';
-  const cases = o?.cases?.[r.path] ?? o?.cases?.[displayPath(r.path)];
+  const cases = casesFor(o?.cases, r.path) ?? casesFor(o?.cases, displayPath(r.path));
   return `<details class="red" open><summary><span class="pill red">fail</span><span class="kind">${esc(r.kind)}</span>`
     + `<span class="path">${esc(displayPath(r.path))}</span><span class="label ${esc(label)}">${labelText(label)}</span>`
     + `<span class="sum">${esc(r.owner)} · ${esc(oneDecimal(r.summary))}</span></summary><ul class="cases">${caseList(cases, r)}</ul></details>`;
@@ -474,7 +476,7 @@ export function renderNightlyPage(run: NightlyRun | null, opts?: NightlyPageOpts
   }
   const reds = run.rows.filter((r) => r.status === 'fail');
   const { verdict } = runVerdict(run, reds.length);
-  const typeOf = opts?.typeOf ?? ((r: NightlyRow) => KIND_LAYER[r.kind] ?? r.kind);
+  const typeOf = opts?.typeOf ?? ((r: NightlyRow) => KIND_LAYER.get(r.kind) ?? r.kind);
   const groups = groupByType(run.rows, typeOf).map((g) => typeFold(g, opts)).join('');
   const body = `
   ${renderBanner(run, opts)}
