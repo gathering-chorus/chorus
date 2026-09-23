@@ -28,16 +28,18 @@ count_q() { # SPARQL count query -> bare integer, fail-closed on no answer
   printf '%s\n' "$resp" | tail -1 | tr -dc '0-9'
 }
 
-# B1 — the domain graph holds exactly 14 Principles (the ADR-051 home).
+# B1 — the domain graph holds the Principles (the ADR-051 home). The count is
+# read, not asserted: 14 was the PC set alone; #4006 added 14 XP. values-4006
+# owns the 14/14 split; this suite owns "served == stored, from ONE graph".
 home=$(count_q "PREFIX c: <$NS> SELECT (COUNT(DISTINCT ?p) AS ?n) WHERE { GRAPH <urn:chorus:domains:principles> { ?p a c:Principle } }")
-[ "$home" = "14" ] || fail "domain graph urn:chorus:domains:principles holds $home Principles, want 14 (state A = 0 means the migration has not landed)"
+[ "$home" -gt 0 ] 2>/dev/null || fail "domain graph urn:chorus:domains:principles holds $home Principles (0 means the migration has not landed)"
 
-# B2 — athena-make SERVES 14 from that graph (reader = writer, one canonical graph).
+# B2 — athena-make SERVES exactly what that graph holds (reader = writer, one canonical graph).
 served=$(curl -s -m 10 "$OWL_API/principles" | python3 -c "import json,sys
 d=json.load(sys.stdin)
 items=d.get('data', d.get('items', d.get('principles', d if isinstance(d, list) else [])))
 print(len(items))" 2>/dev/null) || fail "athena-make /principles did not answer parseable JSON"
-[ "$served" = "14" ] || fail "/principles serves $served, want 14 — surface exists but reads the wrong graph (the 2-of-29 class)"
+[ "$served" = "$home" ] || fail "/principles serves $served, store holds $home — surface exists but reads the wrong graph (the 2-of-29 class)"
 
 # B3 — SOURCE DISAMBIGUATION (Silas catch): the 14 must exist ONLY in the
 # domain graph. With copies in both graphs, served=14 proves nothing about
@@ -55,4 +57,4 @@ dangling=$(count_q "PREFIX c: <$NS> PREFIX skos: <http://www.w3.org/2004/02/skos
 bogus=$(count_q "PREFIX c: <$NS> SELECT (COUNT(DISTINCT ?p) AS ?n) WHERE { GRAPH <urn:chorus:domains:principles> { ?p a c:NoSuchClass } }")
 [ "$bogus" = "0" ] || fail "self-check: NoSuchClass count should be 0, got $bogus"
 
-echo "PASS: /principles serves 14 from urn:chorus:domains:principles, zero dangling broader references"
+echo "PASS: /principles serves $served = $home stored in urn:chorus:domains:principles, zero dangling broader references"

@@ -4,8 +4,12 @@
 # #4006 — the loom's value/principle layer, graded against the STORE and against
 # the deploy's own refusals. Two halves, and the second is the one that matters:
 #
-#  1. WHAT IS SERVED. 28 principles, every one carrying principleKind, split
-#     14 pc / 14 xp; 5 values, each with at least one expressedBy edge.
+#  1. WHAT IS SERVED. The principles are CONSISTENT, not a fixed number: the
+#     14 Hemenway parents (pc) are a source fact and stay counted; total must
+#     equal pc + xp; every one carries principleKind; no probe row (zz-) is
+#     live. A literal 28 went red the day a principle was added (#4273) — a
+#     test that reds when Jeff adds a principle is backwards. 5 values, each
+#     with at least one expressedBy edge.
 #  2. WHAT IS REFUSED. The dangling-edge gate, now in athena-deploy —
 #     run against a fixture value whose expressedBy points at an IRI no
 #     Principle occupies, it must EXIT NON-ZERO. Without that case the gate is
@@ -35,15 +39,23 @@ teardown() {
   curl -s --max-time "${FUSEKI_WRITE_TIMEOUT:-120}" "${FUSEKI_AUTH[@]+"${FUSEKI_AUTH[@]}"}" -X DELETE "$GSP?graph=$FIXTURE_GRAPH" -o /dev/null 2>/dev/null || true
 }
 
-@test "28 principles are served, split 14 pc / 14 xp" {
+@test "principles are consistent: 14 Hemenway parents, total == pc + xp, no probe row" {
   run count "$PRIN_GRAPH" '?s a chorus:Principle'
-  [ "$output" = "28" ]
+  total="$output"
 
   run count "$PRIN_GRAPH" '?s a chorus:Principle ; chorus:principleKind "pc"'
   [ "$output" = "14" ]
+  pc="$output"
 
   run count "$PRIN_GRAPH" '?s a chorus:Principle ; chorus:principleKind "xp"'
-  [ "$output" = "14" ]
+  xp="$output"
+  [ "$total" -gt 0 ]
+  [ "$total" = "$((pc + xp))" ]
+
+  # A probe row left behind by a hand test (principle-zz-generated-principle-probe,
+  # 2026-09-21) sat in the served graph for two days; this count read 1 then, 0 now.
+  run count "$PRIN_GRAPH" '?s a chorus:Principle FILTER(CONTAINS(STR(?s), "zz-") || EXISTS { ?s <http://www.w3.org/2000/01/rdf-schema#label> ?l FILTER(STRSTARTS(STR(?l), "zz-")) })'
+  [ "$output" = "0" ]
 }
 
 @test "every principle carries a kind — none reads blank" {

@@ -4311,6 +4311,20 @@ pub fn page_html(t: &RouteTable) -> String {
 /// `contains`, ~80 files on the cards domain) as duplicate JSON keys — malformed
 /// JSON. links also drops the per-edge label lookup (#3354): a link is a traversal
 /// ref, the label lives on the target — fewer queries, ADR-conformant.
+/// #4273 — one JSON member per scalar key: a single value stays a string, a
+/// repeated value becomes an array. Same rule the edge fold below applies to
+/// links; before this the item route emitted the key once per value.
+fn scalar_json_parts(scalars: &std::collections::BTreeMap<String, Vec<String>>) -> Vec<String> {
+    scalars.iter().map(|(k, vals)| {
+        if vals.len() == 1 {
+            format!("\"{}\": \"{}\"", json_escape(k), json_escape(&vals[0]))
+        } else {
+            let arr = vals.iter().map(|v| format!("\"{}\"", json_escape(v))).collect::<Vec<_>>().join(", ");
+            format!("\"{}\": [{}]", json_escape(k), arr)
+        }
+    }).collect()
+}
+
 fn entity_json(class: &str, name: &str, exposure: &[(String, String)], authed: bool, instances_graph: &str) -> R<(String, String)> {
     let subject = entity_subject(class, name);
     let q = format!(
@@ -4332,6 +4346,13 @@ fn entity_json(class: &str, name: &str, exposure: &[(String, String)], authed: b
     let level_of = |k: &str| exposure.iter().find(|(f, _)| f == k).map(|(_, l)| l.as_str());
     let mut data_parts = vec![format!("\"iri\": \"{}\"", json_escape(&subject))];
     let mut links: std::collections::BTreeMap<String, Vec<String>> = std::collections::BTreeMap::new();
+    // #4273 — scalars accumulate like links do. This pushed one `"key": "v"`
+    // per binding, so a multi-valued literal (chorus:diagram on a product,
+    // two mermaid sources) came out as a DUPLICATE JSON key and every parser
+    // kept the last one: the list route served spine's 2 diagrams, the item
+    // route served 1, and 4094-product-diagrams was red on the read side
+    // after the store held both.
+    let mut scalars: std::collections::BTreeMap<String, Vec<String>> = std::collections::BTreeMap::new();
     for rowv in prs {
         let (p, o) = match rowv.split_once('|') { Some((a, b)) => (a.to_string(), b.to_string()), None => continue };
         let key = p.rsplit(['#', '/']).next().unwrap_or(&p).to_string();
@@ -4344,13 +4365,11 @@ fn entity_json(class: &str, name: &str, exposure: &[(String, String)], authed: b
             if enforced && !field_exposed(level_of(&key), authed) {
                 continue;
             }
-            if o.starts_with("http") && o.contains('#') {
-                data_parts.push(format!("\"{}\": \"{}\"", json_escape(&key), json_escape(o.rsplit('#').next().unwrap_or(&o))));
-            } else {
-                data_parts.push(format!("\"{}\": \"{}\"", json_escape(&key), json_escape(&o)));
-            }
+            let v = if o.starts_with("http") && o.contains('#') { o.rsplit('#').next().unwrap_or(&o).to_string() } else { o };
+            scalars.entry(key).or_default().push(v);
         }
     }
+    data_parts.extend(scalar_json_parts(&scalars));
     let data = format!("{{ {} }}", data_parts.join(", "));
     let mut link_parts: Vec<String> = Vec::new();
     for (k, vals) in &links {
@@ -7978,5 +7997,34 @@ mod required_floor_4220 {
         let incomplete = ["name", "ownedBy"];
         assert!(missing_required(&req(), &incomplete).is_some());
         assert_eq!(missing_required(&[], &incomplete), None, "an empty floor must refuse nothing");
+    }
+}
+
+#[cfg(test)]
+mod item_route_multi_valued_4273 {
+    use super::{parse_create_object, scalar_json_parts};
+    use std::collections::BTreeMap;
+
+    #[test]
+    fn a_repeated_scalar_is_one_key_with_an_array() {
+        let mut m = BTreeMap::new();
+        m.insert("diagram".to_string(), vec!["%% a".to_string(), "%% b".to_string()]);
+        m.insert("label".to_string(), vec!["spine".to_string()]);
+        let parts = scalar_json_parts(&m);
+        assert_eq!(parts, vec![r#""diagram": ["%% a", "%% b"]"#.to_string(), r#""label": "spine""#.to_string()]);
+        // round-trip through the crate's own object parser: one key, two values
+        let doc = parse_create_object(&format!("{{ {} }}", parts.join(", "))).expect("valid object");
+        assert_eq!(doc["diagram"].len(), 2);
+        assert_eq!(doc["label"], vec!["spine"]);
+    }
+
+    /// NEGATIVE PROOF (#3734): the shape this replaces — the key emitted once
+    /// per value — does not survive a parse with both values, so the check
+    /// above separates the two states.
+    #[test]
+    fn the_old_fold_cannot_carry_two_values() {
+        let old = r#"{ "diagram": "%% a", "diagram": "%% b" }"#;
+        let kept = parse_create_object(old).map(|d| d.get("diagram").map(|v| v.len()).unwrap_or(0)).unwrap_or(0);
+        assert_ne!(kept, 2, "a duplicate key never yields both values (got {kept})");
     }
 }
