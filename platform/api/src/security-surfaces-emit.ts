@@ -27,9 +27,21 @@ export interface EmitDeps {
 
 const NS = 'https://jeffbridwell.com/chorus#';
 
+// #4273 — THE GRAPH THIS NAMES IS THE WHOLE GATE. The 29 APISurface rows
+// carrying securedBy live in <urn:chorus:domains:security> (a row's home is
+// its own domain graph); this query pinned <urn:chorus:ontology>, matched
+// nothing, and chorus-api logged `security.envelope.loaded surfaces=0` on
+// every boot while CHORUS_SECURITY_ENVELOPE_ENABLE=1 — the gate switched on
+// and holding nothing. An unauthenticated POST wrote a row into the live
+// principles graph on 2026-09-21 through that hole.
+//
+// Pinned, not `GRAPH ?g`: a fixture graph that happened to carry an
+// APISurface would otherwise mount or move a live gate.
+const SURFACE_GRAPH = 'urn:chorus:domains:security';
+
 const SURFACE_QUERY = `PREFIX chorus: <${NS}>
 SELECT ?surface ?method ?pathPrefix ?requiresScope WHERE {
-  GRAPH <urn:chorus:ontology> {
+  GRAPH <${SURFACE_GRAPH}> {
     ?surface a chorus:APISurface ;
              chorus:securedBy ?gate .
     OPTIONAL { ?surface chorus:httpMethod ?method }
@@ -63,4 +75,4 @@ export async function projectSecuredSurfaces(deps: EmitDeps): Promise<SecuredSur
   return out;
 }
 
-export { SURFACE_QUERY };
+export { SURFACE_QUERY, SURFACE_GRAPH };

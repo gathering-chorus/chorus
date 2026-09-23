@@ -214,7 +214,12 @@ golfball_detection() {
   local active_cards
   active_cards=$(echo "$board_output" | sed -n '/^WIP /,/^[A-Z]/p; /^Next /,/^[A-Z]/p' | grep -E '^\s+\d+' || true)
   local domains_with_new
-  domains_with_new=$(echo "$active_cards" | grep -E 'type:new|type:enhance' | grep -oE 'domain:\w+' | sort -u)
+  # #4273 — the same empty-is-a-real-state bug #4255 fixed at line 174, one
+  # section further down. A board whose active cards are all type:fix (the
+  # 2026-09-22 board) makes this grep match nothing, return 1, and under
+  # `set -e` kill the scan — five of this script's own AC tests then fail on a
+  # report it never finished writing. No new/enhance card is not a failure.
+  domains_with_new=$(echo "$active_cards" | grep -E 'type:new|type:enhance' | grep -oE 'domain:\w+' | sort -u || true)
   for domain in $domains_with_new; do
     local fixes
     fixes=$(echo "$active_cards" | grep "$domain" | grep -E 'type:fix|type:swat' | grep -cE '^\s+\d+' || true)

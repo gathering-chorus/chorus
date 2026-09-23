@@ -6,7 +6,11 @@
 # Ontology classes + properties
 chorus:Product a owl:Class ; rdfs:label "Product" .
 chorus:SubProduct a owl:Class ; rdfs:label "Sub-product" .
-chorus:SubDomain a owl:Class ; rdfs:label "Sub-domain" .
+# #4273 — SubDomain is retired (#4265): the live rows are chorus:Domain and the
+# handlers ask <urn:chorus:domains:domains> for them. A fixture still typing
+# these rows SubDomain made every facet handler 404 and put 7 cases in the
+# 2026-09-22 nightly as "product broke" when the product was the fixed side.
+chorus:Domain a owl:Class ; rdfs:label "Domain" .
 chorus:Service a owl:Class ; rdfs:label "Service" .
 chorus:Persistence a owl:Class ; rdfs:label "Persistence" .
 chorus:Vertebra a owl:Class ; rdfs:label "Step" .
@@ -57,7 +61,7 @@ chorus:demo-subproduct-b a chorus:SubProduct ;
   chorus:ownedBy chorus:role-silas ;
   chorus:hasDomain chorus:demo-gamma-domain .
 
-chorus:demo-alpha-domain a chorus:SubDomain ;
+chorus:demo-alpha-domain a chorus:Domain ;
   rdfs:label "Alpha" ;
   rdfs:comment "First demo sub-domain." ;
   chorus:ownedBy chorus:role-wren ;
@@ -65,12 +69,12 @@ chorus:demo-alpha-domain a chorus:SubDomain ;
   chorus:hasService chorus:demo-alpha-service-reader ;
   chorus:hasPersistence chorus:demo-alpha-store .
 
-chorus:demo-beta-domain a chorus:SubDomain ;
+chorus:demo-beta-domain a chorus:Domain ;
   rdfs:label "Beta" ;
   chorus:ownedBy chorus:role-wren ;
   chorus:primaryStep chorus:building .
 
-chorus:demo-gamma-domain a chorus:SubDomain ;
+chorus:demo-gamma-domain a chorus:Domain ;
   rdfs:label "Gamma" ;
   chorus:ownedBy chorus:role-silas ;
   chorus:primaryStep chorus:building .

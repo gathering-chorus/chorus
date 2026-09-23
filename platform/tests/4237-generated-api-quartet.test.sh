@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # @test-type: integration — walks the generated manifests against a live API and
-# CREATES, UPDATES and DELETES a throwaway row. Refuses production (exit 2,
+# CREATES, UPDATES and DELETES a throwaway row. Refuses production (exit 3  # #4273 — SELF-REFUSED: werk-only suite declined to run here (rc=3 is the runner's skip-with-reason, rc=2 means the measurement itself failed),
 # UNMEASURED) and refuses to run at all without an owner identity, because a
 # refusal case measured anonymously measures nothing.
 # #4237 — RUN the generated API test manifests.
@@ -33,7 +33,7 @@ if [ "$API_BASE" = "http://localhost:3340" ] && [ "${CHORUS_ALLOW_PROD_TEST:-0}"
   echo "UNMEASURED: API_BASE is the production chorus-api." >&2
   echo "  This suite CREATES, UPDATES and DELETES rows. Point it at a werk variant." >&2
   echo "  Not a red — nothing was measured." >&2
-  exit 2
+  exit 3  # #4273 — SELF-REFUSED: werk-only suite declined to run here (rc=3 is the runner's skip-with-reason, rc=2 means the measurement itself failed)
 fi
 
 # Resolve from this file, never $CHORUS_ROOT: CHORUS_ROOT points at canonical, so
@@ -85,7 +85,7 @@ OTHER_TOKEN="$(token_for "$OTHER_ROLE" || true)"
 if [ -z "$OWNER_TOKEN" ] && [ "${ALLOW_ANON_QUARTET:-0}" != "1" ]; then
   echo "UNMEASURED: no owner identity token (tried $TOKEN_BIN $OWNER_ROLE)." >&2
   echo "  Without it every request is anonymous and the refusal cases are meaningless." >&2
-  exit 2
+  exit 3  # #4273 — SELF-REFUSED: werk-only suite declined to run here (rc=3 is the runner's skip-with-reason, rc=2 means the measurement itself failed)
 fi
 
 auth_header() {

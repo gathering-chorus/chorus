@@ -66,8 +66,8 @@ DANGLING=$(count_query 'PREFIX chorus: <https://jeffbridwell.com/chorus#> PREFIX
 check "every specialization edge resolves to a real parent (${EDGES} edge(s))" "0" "$DANGLING"
 
 # 3. Every Hemenway parent has label + comment + source
-COMPLETE=$(count_query 'PREFIX chorus: <https://jeffbridwell.com/chorus#> PREFIX rdfs: <http://www.w3.org/2000/01/rdf-schema#> PREFIX dcterms: <http://purl.org/dc/terms/> SELECT (COUNT(?p) AS ?n) WHERE { GRAPH <urn:chorus:domains:principles> { ?p a chorus:Principle ; chorus:isPermacultureParent true ; rdfs:label ?l ; rdfs:comment ?c ; dcterms:source ?s } }')
-check "all 14 parents have label+comment+source" "14" "$COMPLETE"
+COMPLETE=$(count_query 'PREFIX chorus: <https://jeffbridwell.com/chorus#> PREFIX rdfs: <http://www.w3.org/2000/01/rdf-schema#> SELECT (COUNT(?p) AS ?n) WHERE { GRAPH <urn:chorus:domains:principles> { ?p a chorus:Principle ; chorus:isPermacultureParent true ; rdfs:label ?l ; rdfs:comment ?c ; chorus:source ?s } }')
+check "all 14 parents have label+comment+source (chorus:source — #4273: the check asked for dcterms:source, which the model never used)" "14" "$COMPLETE"
 
 # 4. riot validation
 if riot --validate "$TTL" >/dev/null 2>&1; then

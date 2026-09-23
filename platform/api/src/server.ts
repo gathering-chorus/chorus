@@ -2722,6 +2722,18 @@ projectSecuredSurfaces({ sparql: (q: string) => athenaSparqlQuery(q) })
   .then((table) => {
     SECURED_SURFACES = table;
     execFile(CHORUS_LOG, ['security.envelope.loaded', 'silas', `surfaces=${table.length}`], () => {});
+    // #4273 — AN EMPTY TABLE IS THE OPEN STATE, AND IT USED TO COME UP QUIET.
+    // The gate ran enabled-and-empty all day on 2026-09-22 (four boots logging
+    // surfaces=0 at info) because the loader read the wrong graph. Zero rows
+    // while the envelope is enabled is never a legitimate state: it says every
+    // write route is ungated. Say so where a human and an alert can both see it.
+    if (table.length === 0 && process.env.CHORUS_SECURITY_ENVELOPE_ENABLE === '1') {
+      process.stderr.write(
+        '[security-envelope] ENABLED WITH ZERO SURFACES — every write route is ungated. ' +
+        'Surfaces are read from <urn:chorus:domains:security>; check that the APISurface rows are there.\n',
+      );
+      execFile(CHORUS_LOG, ['security.envelope.empty', 'silas', 'surfaces=0', 'enabled=1'], () => {});
+    }
   })
   .catch((err: unknown) => {
     const msg = err instanceof Error ? err.message : String(err);

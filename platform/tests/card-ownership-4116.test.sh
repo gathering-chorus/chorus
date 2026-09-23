@@ -22,7 +22,10 @@ set -u
 # baked into the file (hardcoded-path-guard, Kade 2026-09-07).
 ROOT="${CHORUS_ROOT:-$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)}"
 QUERY="${FUSEKI_QUERY:-http://localhost:3030/pods/query}"
-GRAPH="${CARD_GRAPH:-urn:chorus:instances}"
+# #4273 — card rows live in their domain graph (230 on 2026-09-23, all owned);
+# urn:chorus:instances held 14 stale duplicates, so scoring it reported on rows
+# the product no longer serves.
+GRAPH="${CARD_GRAPH:-urn:chorus:domains:cards}"
 NS="https://jeffbridwell.com/chorus#"
 
 # score <live-csv> <declared-csv>
@@ -126,12 +129,15 @@ self_test || exit 1
 # ── the real run ─────────────────────────────────────────────────────────────
 tmp=$(mktemp -d); trap 'rm -rf "$tmp"' EXIT
 
+# Owners are principals since 2026-09-17 (Jeff: principals own things), so the
+# owner name is what follows principal- or role-; STRAFTER on "role-" alone read
+# every principal-owned row as unowned (0/230 on a fully-owned graph, #4273).
 # ?own is the role name in either storage form; ?form says WHICH form, because
 # CardShape declares sh:class chorus:Role — a bare literal owner is off-shape.
 # The door writes the literal form whenever the deployed shape does not declare
 # ownedBy as an edge (verified_owner_projection), so this is the drift to catch,
 # not a cosmetic difference.
-Q="PREFIX chorus: <${NS}> SELECT ?card ?own ?form WHERE { GRAPH <${GRAPH}> { ?c a chorus:Card . BIND(STRAFTER(STR(?c), \"card-\") AS ?card) OPTIONAL { ?c chorus:ownedBy ?o . BIND(IF(isIRI(?o), STRAFTER(STR(?o), \"role-\"), STR(?o)) AS ?own) BIND(IF(isIRI(?o), \"iri\", \"literal\") AS ?form) } } }"
+Q="PREFIX chorus: <${NS}> SELECT ?card ?own ?form WHERE { GRAPH <${GRAPH}> { ?c a chorus:Card . BIND(STRAFTER(STR(?c), \"card-\") AS ?card) OPTIONAL { ?c chorus:ownedBy ?o . BIND(IF(isIRI(?o), REPLACE(STRAFTER(STR(?o), \"#\"), \"^(principal|role)-\", \"\"), STR(?o)) AS ?own) BIND(IF(isIRI(?o), \"iri\", \"literal\") AS ?form) } } }"
 if ! curl -sf -G "$QUERY" --data-urlencode "query=$Q" -H "Accept: text/csv" -o "$tmp/raw"; then
   # A box with no store has not proven the product broken — it has measured
   # nothing. Say so out loud and leave the verdict to the self-test above,
@@ -145,8 +151,8 @@ tail -n +2 "$tmp/raw" | sed 's/\r$//' | tr -d '"' | awk -F, 'NF{printf "%s,%s,%s
 # The declaration spans lines in the .ttl (subject on one, ownedBy on the next),
 # so tr the whitespace out first rather than grepping line by line.
 cat "$ROOT"/roles/*/ontology/*.ttl 2>/dev/null | tr '\n' ' ' \
-  | grep -oE 'chorus:card-[0-9]+ a chorus:Card ;[^.]*chorus:ownedBy chorus:role-[a-z]+' \
-  | sed -E 's/chorus:card-([0-9]+).*role-([a-z]+)/\1,\2/' | sort -u > "$tmp/declared"
+  | grep -oE 'chorus:card-[0-9]+ a chorus:Card ;[^.]*chorus:ownedBy chorus:(principal|role)-[a-z]+' \
+  | sed -E 's/chorus:card-([0-9]+).*(principal|role)-([a-z]+)/\1,\3/' | sort -u > "$tmp/declared"
 
 echo "#4116 card ownership — graph ${GRAPH}"
 score "$tmp/live" "$tmp/declared"
