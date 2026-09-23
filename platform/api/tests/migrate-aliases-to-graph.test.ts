@@ -1,3 +1,4 @@
+// @test-type: unit
 // #2516 — Tests for the alias-graph migration's pure logic.
 // Verifies deriveAliases produces the canonical triple set that
 // preserves current buildAliasMap behavior at migration time.
@@ -5,7 +6,7 @@
 import { deriveAliases } from '../scripts/migrate-aliases-to-graph';
 
 describe('deriveAliases', () => {
-  it('skips generic-base SubDomains', () => {
+  it('skips generic-base domains (was SubDomains — class retired #4265/#4274)', () => {
     const pairs = deriveAliases([
       { id: 'code-domain', label: 'code' },
       { id: 'time-domain', label: 'time' },
@@ -17,7 +18,7 @@ describe('deriveAliases', () => {
     expect(aliases).toContain('photos');
   });
 
-  it('emits singular alias for plural -s subdomains', () => {
+  it('emits singular alias for plural -s domains', () => {
     const pairs = deriveAliases([{ id: 'photos-domain', label: 'photos' }]);
     expect(pairs).toContainEqual(['photo', 'photos-domain']);
     expect(pairs).toContainEqual(['photos', 'photos-domain']);
@@ -61,9 +62,9 @@ describe('deriveAliases', () => {
     expect(propertyPairs).toContainEqual(['property', 'property-domain']);
   });
 
-  it('produces 72 pairs against the current 48-subdomain set (golden count)', () => {
+  it('produces 72 pairs against the current 48-domain set (golden count)', () => {
     // Lightweight golden — exact list is tested via spot-checks above; here we
-    // pin the total to catch silent drift if a SubDomain adds/removes.
+    // pin the total to catch silent drift if a Domain adds/removes.
     const fixture = [
       'alerts-monitors-domain', 'athena-domain', 'blog-domain', 'books-domain',
       'cards-service', 'chorus-domain', 'code-domain', 'commits-domain',

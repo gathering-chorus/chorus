@@ -118,8 +118,9 @@ DEC_GRAPH_COUNT=$(count_query "PREFIX chorus: <https://jeffbridwell.com/chorus#>
 check "ADR count in graph = ADR file count" "$ADR_COUNT" "$ADR_GRAPH_COUNT"
 check "DEC count in graph = DEC source count" "$DEC_COUNT" "$DEC_GRAPH_COUNT"
 
-# 6. API endpoint round-trip: /api/athena/subdomains/loom-decisions/decisions returns expected count
-API_COUNT=$(curl -s "$API_URL/api/athena/subdomains/loom-decisions/decisions" | python3 -c "import json,sys;d=json.load(sys.stdin);print(d.get('_meta',{}).get('count','?'))" 2>/dev/null)
+# 6. API endpoint round-trip — #4274: /api/athena/subdomains/loom-decisions/decisions is gone
+# with chorus:SubDomain (#4265). When Decision is modelled, the read is athena-make :3360/decisions.
+API_COUNT=$(curl -s "$API_URL/api/athena/decisions-not-yet-modelled/loom-decisions/decisions" | python3 -c "import json,sys;d=json.load(sys.stdin);print(d.get('_meta',{}).get('count','?'))" 2>/dev/null)
 check "API endpoint count = graph instance count" "$GRAPH_DEC_COUNT" "$API_COUNT"
 
 # 7. Loom redirect: /api/loom/decisions returns 308
@@ -132,7 +133,7 @@ check "/loom/decisions.html returns 200" "200" "$PAGE_STATUS"
 
 # 9. Closing AC demo target: ADR-026 §a-d retrievable via API (pre-MCP probe).
 # This asserts the demo path is real before Move 5's chorus_decisions_get tool ships.
-ADR026_BODY_LEN=$(curl -s "$API_URL/api/athena/subdomains/loom-decisions/decisions" | python3 -c "
+ADR026_BODY_LEN=$(curl -s "$API_URL/api/athena/decisions-not-yet-modelled/loom-decisions/decisions" | python3 -c "
 import json, sys
 d = json.load(sys.stdin)
 for x in d.get('data',{}).get('decisions',[]):

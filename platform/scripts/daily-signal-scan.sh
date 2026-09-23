@@ -178,8 +178,13 @@ flow_health() {
   wip_count=${wip_count//[^0-9]/}
   : "${wip_count:=0}"
   echo "- **WIP:** ${wip_count} cards"
+  # #4274 — `[ -n "$line" ] && echo` leaves the loop's exit status at 1 when the
+  # LAST line is empty, and under `set -euo pipefail` that ends the scan. With
+  # WIP at 0 (2026-09-23 06:41, right after #4273 was accepted) five of this
+  # script's own AC tests failed on a report it never finished. An empty
+  # section is a state to print, not a reason to stop.
   echo "$wip_section" | while read -r line; do
-    [ -n "$line" ] && echo "  - $line"
+    if [ -n "$line" ]; then echo "  - $line"; fi
   done
 
   # Extract Next section
@@ -192,7 +197,7 @@ flow_health() {
   if [ "$next_count" -gt 0 ]; then
     echo "- **Next queue:** ${next_count} cards"
     echo "$next_section" | head -5 | while read -r line; do
-      [ -n "$line" ] && echo "  - $line"
+      if [ -n "$line" ]; then echo "  - $line"; fi
     done
   else
     echo "- **Next queue:** empty"

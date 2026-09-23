@@ -31,7 +31,8 @@ const DEFAULT_ENDPOINT = 'http://localhost:3030/pods/sparql';
 export const DEFAULT_QUERIES = [
   { name: 'health', path: '/api/athena/health', description: 'Ontology health — triple count, endpoint status' },
   // #3603: products/subproducts retired — athena-make :3360/products is the product API.
-  { name: 'subdomains', path: '/api/athena/subdomains', description: 'List sub-domains with owner, step. Filter: ?owner, ?step' },
+  // #4274: the subdomains list route is gone with chorus:SubDomain (#4265) — the health
+  // page stopped advertising a path that 404s. Domains are served by athena-make :3360/domains.
   { name: 'blast-radius', path: '/api/athena/subdomains/:id/blast-radius', description: 'Which sub-products consume a given sub-domain' },
   // #3702: v1 steps retired (410) — athena-make :3360/valuestreams is the stream API.
   { name: 'owners', path: '/api/athena/owners', description: 'Owners with sub-domain counts' },

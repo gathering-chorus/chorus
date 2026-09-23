@@ -13,12 +13,12 @@ import {
 
 const TTL = `@prefix chorus: <https://jeffbridwell.com/chorus#> .
 
-chorus:photos-domain a chorus:SubDomain ;
+chorus:photos-domain a chorus:Domain ;
     rdfs:label "Photos. With a period inside." ;
     chorus:ownedBy chorus:silas ;
     chorus:partOf chorus:gathering .
 
-chorus:music-domain a chorus:SubDomain ;
+chorus:music-domain a chorus:Domain ;
     chorus:ownedBy chorus:wren ;
     chorus:partOf chorus:gathering .
 `;
@@ -34,28 +34,35 @@ describe('findBlockTerminator', () => {
   });
 
   it('returns -1 when no terminator exists', () => {
-    expect(findBlockTerminator('chorus:x a chorus:SubDomain ;\n  chorus:ownedBy chorus:kade ;', 0)).toBe(-1);
+    expect(findBlockTerminator('chorus:x a chorus:Domain ;\n  chorus:ownedBy chorus:kade ;', 0)).toBe(-1);
   });
 });
 
+// #4274: fixtures type chorus:Domain — chorus:SubDomain is retired (#4265) and the
+// live rows this patcher edits are Domain rows.
 describe('patchTtlOwner', () => {
   it('rewrites ownedBy only inside the target block', () => {
     const patched = patchTtlOwner(TTL, 'photos-domain', 'kade');
     expect(patched).not.toBeNull();
-    expect(patched!).toContain('chorus:ownedBy chorus:kade ;');
+    expect(patched!).toContain('chorus:ownedBy chorus:principal-kade ;'); // #4274: owners are principals
     // music block untouched
     expect(patched!).toContain('chorus:ownedBy chorus:wren ;');
     expect(patched!).not.toContain('chorus:ownedBy chorus:silas ;');
   });
 
-  it('returns null for a missing subdomain block', () => {
+  it('returns null for a missing domain block', () => {
     expect(patchTtlOwner(TTL, 'garden-domain', 'kade')).toBeNull();
+  });
+
+  it('returns null for a block typed chorus:SubDomain — the class is retired (#4265/#4274)', () => {
+    const retired = TTL.replace('chorus:photos-domain a chorus:Domain', 'chorus:photos-domain a chorus:SubDomain');
+    expect(patchTtlOwner(retired, 'photos-domain', 'kade')).toBeNull();
   });
 
   // #4113 — ported from athena-owner-write.integration.test.ts, whose live
   // block flipped prod ownership and wrote canonical chorus.ttl (retired).
   it('returns null when the block has no ownedBy line; nothing to patch', () => {
-    const noOwner = `chorus:naked-domain a chorus:SubDomain ;
+    const noOwner = `chorus:naked-domain a chorus:Domain ;
     rdfs:label "Naked" ;
     chorus:primaryStep chorus:Shaping .
 `;
@@ -98,7 +105,7 @@ describe('setSubdomainOwner', () => {
     expect(d.calls).not.toContain('write');
   });
 
-  it('200: SPARQL fires before TTL write; update targets the ontology graph', async () => {
+  it('200: SPARQL fires before TTL write; update targets the domain graph with a principal owner', async () => {
     const d = fakeDeps();
     const r = await setSubdomainOwner(d, { subdomainId: 'photos-domain', body: { owner: 'KADE ' } }); // normalized
     expect(r.status).toBe(200);
@@ -107,7 +114,9 @@ describe('setSubdomainOwner', () => {
     const update = d.calls[d.calls.indexOf('sparql') + 1];
     expect(update).toContain('chorus:ownedBy');
     expect(update).toContain('photos-domain');
-    expect(d.written[0]).toContain('chorus:ownedBy chorus:kade ;');
+    expect(update).toContain('urn:chorus:domains:domains'); // #4274: not urn:chorus:ontology
+    expect(update).toContain('chorus#principal-kade');
+    expect(d.written[0]).toContain('chorus:ownedBy chorus:principal-kade ;');
   });
 
   it('500 when SPARQL rejects — disk is never touched (ordering contract)', async () => {

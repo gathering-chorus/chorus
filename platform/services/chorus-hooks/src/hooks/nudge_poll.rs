@@ -447,48 +447,50 @@ mod tests {
     /// NEGATIVE PROOF (#3734) for the ratio check itself: a pass that IS
     /// superlinear over the same fixture must be caught. Without this, a
     /// green above proves only that the assert ran.
+    ///
+    /// #4274 — measured in WORK, not on the clock. Three prior repairs
+    /// (#3949, #4130) each widened a wall-clock guard and the proof still went
+    /// red under llvm-cov on 2026-09-23: the "quadratic" pass ran in 14.9ms
+    /// against a 2.0ms reference, 7.4x, under the 12x budget. Eighteen million
+    /// short `contains` calls are only ~15ms on this box, so the ratio was
+    /// never the 100x the old comment promised — it tracked box speed, which
+    /// is the class #4163 named (a verdict that measures disk, not the
+    /// contract). Counting the operations both passes perform is exact on
+    /// every box: the reference visits each of the 50k lines once; the
+    /// superlinear pass visits the prefix before each of 6,000 lines, ~18M
+    /// visits, 360x the reference. `within_ratio` gets those counts as
+    /// synthetic durations (1ns per visit) and must refuse. The clock never
+    /// enters, so coverage instrumentation and load cannot compress it.
     #[test]
     fn the_ratio_budget_catches_a_superlinear_pass() {
         let log = fixture_path("latency-50k-negative");
         synthetic_50k(&log);
-
-        // #4130 — the proof was red on main under load (Silas, 2026-09-09
-        // 09:02, load 8.6; the 03:00 nightly too). The 10ms guard below only
-        // covers the reference side: a reference inflated to 8ms is still
-        // "sane", and a 2,000-line quadratic pass is only ~10-20x a 2ms scan,
-        // so under load the ratio compressed below BUDGET_FACTOR and the
-        // violation read as within budget. Two load-robust moves: the
-        // reference is the MIN of three scans (load can only add time, never
-        // remove it), and the superlinear pass is made unmistakably so
-        // (6,000 prefixes: ~9x the work, ~100x the reference on an idle box,
-        // still >12x with the reference at its 10ms ceiling).
-        let reference = (0..3).map(|_| reference_scan(&log)).min().expect("three scans");
-        // #3949 — on a loaded box the REFERENCE inflates (2.0ms measured as
-        // more), compressing the quadratic pass's ratio under BUDGET_FACTOR
-        // and failing this proof spuriously (04:44 nightly, load class). A
-        // wall-clock ratio proof is only meaningful when the baseline itself
-        // was measured sanely: if reference exceeds 5x its idle envelope,
-        // the box is the variable — UNMEASURABLE, not red (#3753).
-        if reference > Duration::from_millis(10) {
-            eprintln!("UNMEASURABLE: reference scan {reference:?} — loaded box, ratio proof skipped (#3753)");
-            return;
-        }
-        let t = Instant::now();
-        // Deliberately quadratic-ish: re-scan a prefix of the file per line.
         let raw = fs::read_to_string(&log).expect("read fixture");
         let lines: Vec<&str> = raw.lines().collect();
+
+        // the reference pass: one visit per line
+        let reference_visits = lines.len() as u64;
+        // the superlinear pass: the same shape as the retired wall-clock
+        // version — re-scan the prefix before each of the first 6,000 lines —
+        // counted, not timed
+        let mut superlinear_visits = 0u64;
         let mut hits = 0usize;
         for (i, _) in lines.iter().enumerate().take(6_000) {
+            superlinear_visits += i as u64;
             hits += lines[..i].iter().filter(|l| l.contains("nudge.emitted")).count();
         }
         std::hint::black_box(hits);
-        let actual = t.elapsed();
 
+        assert!(superlinear_visits > reference_visits * 100, "the fixture must make the pass unmistakably superlinear: {superlinear_visits} vs {reference_visits}");
+        let reference = Duration::from_nanos(reference_visits);
+        let actual = Duration::from_nanos(superlinear_visits);
         assert!(
             !within_ratio(reference, actual, BUDGET_FACTOR),
-            "the budget must FAIL on a superlinear pass ({actual:?} vs {reference:?} reference) — \
+            "the budget must FAIL on a superlinear pass ({superlinear_visits} visits vs {reference_visits} reference) — \
              a check that cannot go red on the state it guards is not a check"
         );
+        // control: the same counts at the reference's own scale stay within budget
+        assert!(within_ratio(reference, Duration::from_nanos(reference_visits * 2), BUDGET_FACTOR));
     }
 
     /// The floor exists so timer noise on a fast machine cannot make the bound

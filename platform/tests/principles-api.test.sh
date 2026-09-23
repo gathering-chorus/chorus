@@ -1,4 +1,5 @@
 #!/usr/bin/env bash
+# @test-type: integration — reads the live store
 # Live tests for #2314: principles API (POST/PUT/DELETE) round-trip.
 # Verifies CRUD lands in instances graph and is visible on all three surfaces:
 # Athena canonical, Athena subdomain detail, and the Loom 308 redirect.
@@ -24,7 +25,7 @@ AUTH=(-H "Authorization: Bearer $TOKEN")
 WRITE_URL="${PRINCIPLES_WRITE_URL:-$API_BASE/api/athena/subdomains/loom-principles/principles}"
 READ_URL_CANONICAL="$API_BASE/api/athena/subdomains/loom-principles/principles"
 READ_URL_LOOM_REDIRECT="$API_BASE/api/loom/principles"
-READ_URL_ATHENA_DETAIL="$API_BASE/api/athena/subdomains/loom-principles"
+# #4274: READ_URL_ATHENA_DETAIL (the subdomain detail route) removed — unused since #4265 deleted step 4; the route 404s.
 
 pass=0; fail=0
 check() {

@@ -96,7 +96,25 @@ WRITERS=(
 residue_graphs() {
   curl -s "${FUSEKI_AUTH[@]+"${FUSEKI_AUTH[@]}"}" "http://localhost:3030/pods/query" \
     --data-urlencode 'query=SELECT DISTINCT ?g WHERE { GRAPH ?g { ?s ?p ?o } FILTER(STRSTARTS(STR(?g), "urn:chorus:ontology-test-bats-")) }' \
-    -H "Accept: text/csv" 2>/dev/null | tail -n +2 | tr -d '[:space:]"' | tr ',' '\n'
+    -H "Accept: text/csv" 2>/dev/null | tail -n +2 | tr -d '[:space:]"' | tr ',' '\n' | not_in_flight
+}
+
+# #4274 — a graph is IN FLIGHT, not residue, while the bats run that made it is
+# still alive. bats creates ${BATS_TMPDIR}/bats-run-<id> at start and removes it
+# at exit; the helper bakes that id into the graph name (…-<suite>-bats-run-<id>).
+# The 06:41 run on 2026-09-23 read 4167's graph as residue after a 45s resample
+# because that suite runs for minutes. The run dir is the tell, not the clock.
+# RESIDUE_RUN_DIR_BASE is the test seam.
+not_in_flight() {
+  local base="${RESIDUE_RUN_DIR_BASE:-${BATS_TMPDIR:-${TMPDIR:-/tmp}}}"
+  while IFS= read -r g; do
+    [ -n "$g" ] || continue
+    local id="${g##*-bats-run-}"
+    if [ "$id" != "$g" ] && [ -d "$base/bats-run-$id" ]; then
+      continue
+    fi
+    printf '%s\n' "$g"
+  done
 }
 
 @test "NEGATIVE PROOF: the residue scan sees a leftover graph when one exists" {
@@ -122,4 +140,20 @@ residue_graphs() {
 
   [ "$n" != "0" ]
   [ -n "$n" ]
+}
+
+@test "#4274: a graph whose bats run dir still exists is in flight, not residue" {
+  local base; base="$(mktemp -d)"
+  mkdir -p "$base/bats-run-abc123"
+  run bash -c "$(declare -f not_in_flight); RESIDUE_RUN_DIR_BASE='$base' not_in_flight" <<< $'urn:chorus:ontology-test-bats-4167-bats-run-abc123\nurn:chorus:ontology-test-bats-4125-bats-run-gone99'
+  [ "$status" -eq 0 ]
+  [ "$output" = "urn:chorus:ontology-test-bats-4125-bats-run-gone99" ]
+  rm -rf "$base"
+}
+
+@test "NEGATIVE PROOF (#4274): with no run dir the same graph is still residue" {
+  local base; base="$(mktemp -d)"
+  run bash -c "$(declare -f not_in_flight); RESIDUE_RUN_DIR_BASE='$base' not_in_flight" <<< 'urn:chorus:ontology-test-bats-4167-bats-run-abc123'
+  [ "$output" = "urn:chorus:ontology-test-bats-4167-bats-run-abc123" ]
+  rm -rf "$base"
 }

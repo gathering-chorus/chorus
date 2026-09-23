@@ -132,7 +132,7 @@ describe('fetchAthenaSubdomainCompleteness (#2187)', () => {
     const r = await fetchAthenaSubdomainCompleteness({
       sparqlQuery: async (q) => {
         calls++;
-        if (q.includes('SubDomain')) return metaResult({ label: { value: 'X' } });
+        if (q.includes('consumesCount')) return metaResult({ label: { value: 'X' } }); // #4274: keyed like deps() above — the query no longer says SubDomain
         return countResult(0);
       },
     }, 'x');
