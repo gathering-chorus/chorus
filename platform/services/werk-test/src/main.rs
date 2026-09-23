@@ -1062,6 +1062,13 @@ fn run_nightly(args: &[String]) -> Result<i32, String> {
             println!("{}", werk_test::nightly_lane_line_refused(kind, b));
             continue;
         }
+        // #4273 — every case skipped: the suite ran and declined each one with
+        // a reason. Say so as a skip, not as "produced no parseable output".
+        if werk_test::is_all_skipped(&cases) {
+            let reason = werk_test::first_skip_reason(&text).unwrap_or_else(|| "no reason given".to_string());
+            println!("{}", werk_test::nightly_lane_line_all_skipped(kind, b, cases.len(), &reason));
+            continue;
+        }
         // #4131 — a .sh declared security (test-security-scan.sh) folds under the
         // security lane but still prints shell counts; parsed as TAP it read 0/0.
         let (passed, case_failed) = if cases.is_empty() && (kind == "shell" || b.ends_with(".sh")) {

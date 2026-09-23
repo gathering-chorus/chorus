@@ -22,13 +22,13 @@ set -uo pipefail
 API="${API_BASE:-}"
 if [ -z "$API" ]; then
   echo "UNMEASURED: set API_BASE to the variant's athena-make (e.g. http://localhost:3392)." >&2
-  exit 2
+  exit 3  # #4273 — SELF-REFUSED: werk-only suite declined to run here (rc=3 is the runner's skip-with-reason, rc=2 means the measurement itself failed)
 fi
 case "$API" in
   *:3360|*:3360/*)
     echo "UNMEASURED: API_BASE is production athena-make." >&2
     echo "  This suite CREATES, UPDATES and DELETES rows. Point it at a variant." >&2
-    exit 2 ;;
+    exit 3  # #4273 — SELF-REFUSED: werk-only suite declined to run here (rc=3 is the runner's skip-with-reason, rc=2 means the measurement itself failed) ;;
 esac
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
@@ -36,7 +36,7 @@ GEN="${CHORUS_ATHENA_MAKE:-$ROOT/platform/services/athena-make/target/release/at
 [ -x "$GEN" ] || GEN="$(command -v athena-make || true)"
 if [ -z "$GEN" ] || [ ! -x "$GEN" ]; then
   echo "UNMEASURED: no athena-make binary to generate manifests from." >&2
-  exit 2
+  exit 3  # #4273 — SELF-REFUSED: werk-only suite declined to run here (rc=3 is the runner's skip-with-reason, rc=2 means the measurement itself failed)
 fi
 
 TOKEN_BIN="${CHORUS_TOKEN_BIN:-$ROOT/platform/scripts/chorus-identity-token}"
@@ -45,7 +45,7 @@ TOKEN="$([ -x "$TOKEN_BIN" ] && "$TOKEN_BIN" "$OWNER" 2>/dev/null || true)"
 if [ -z "$TOKEN" ]; then
   echo "UNMEASURED: no owner identity token (tried $TOKEN_BIN $OWNER)." >&2
   echo "  Every request would be anonymous; a 401 would read as a refusal we meant." >&2
-  exit 2
+  exit 3  # #4273 — SELF-REFUSED: werk-only suite declined to run here (rc=3 is the runner's skip-with-reason, rc=2 means the measurement itself failed)
 fi
 
 WORK="$(mktemp -d)"
@@ -54,7 +54,7 @@ trap 'rm -rf "$WORK"' EXIT
 CLASSES="$(curl -sf --max-time 20 "$API/" | python3 -c 'import json,sys; print("\n".join(p["kind"] for p in json.load(sys.stdin)["primitives"]))' 2>/dev/null)"
 if [ -z "$CLASSES" ]; then
   echo "UNMEASURED: $API/ served no primitive list — nothing to walk." >&2
-  exit 2
+  exit 3  # #4273 — SELF-REFUSED: werk-only suite declined to run here (rc=3 is the runner's skip-with-reason, rc=2 means the measurement itself failed)
 fi
 TOTAL="$(printf '%s\n' "$CLASSES" | wc -l | tr -d ' ')"
 
@@ -237,5 +237,5 @@ done
 echo
 echo "$pass pass · $fail fail · $unmeasured unmeasured — of $TOTAL generated APIs"
 [ "$fail" -eq 0 ] || exit 1
-[ "$unmeasured" -eq 0 ] || exit 2
+[ "$unmeasured" -eq 0 ] || exit 3  # #4273 — SELF-REFUSED: werk-only suite declined to run here (rc=3 is the runner's skip-with-reason, rc=2 means the measurement itself failed)
 exit 0

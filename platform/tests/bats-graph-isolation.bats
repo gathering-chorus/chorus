@@ -71,10 +71,32 @@ WRITERS=(
         --data-urlencode 'query=SELECT (COUNT(DISTINCT ?g) AS ?n) WHERE { GRAPH ?g { ?s ?p ?o } FILTER(STRSTARTS(STR(?g), "urn:chorus:ontology-test-bats-")) }' \
         -H "Accept: text/csv" 2>/dev/null | tail -1 | tr -d '[:space:]')"
   [ -n "$n" ] || skip "store did not answer the residue query"
-  [ "$n" = "0" ] || {
-    echo "$n leftover urn:chorus:ontology-test-bats-* graphs in the live store"
-    false
-  }
+  # #4273 — the nightly runs 93 units in a pool, and three sibling suites
+  # (4080, 4125, 4167) create urn:chorus:ontology-test-bats-* graphs that
+  # their teardown_file drops. Sampled once, this check read a sibling's graph
+  # mid-flight as residue (03:00 on 2026-09-23: red here, 0 by hand at 05:55).
+  # Residue is a graph that is STILL there after the sibling had time to tear
+  # down: sample again, and red only on the graphs present both times.
+  if [ "$n" != "0" ]; then
+    local first second
+    first="$(residue_graphs)"
+    sleep "${RESIDUE_RESAMPLE_SECS:-45}"
+    second="$(residue_graphs)"
+    local persisted
+    persisted="$(comm -12 <(printf '%s\n' "$first" | sort) <(printf '%s\n' "$second" | sort))"
+    [ -z "$persisted" ] || {
+      echo "leftover urn:chorus:ontology-test-bats-* graphs still in the live store after ${RESIDUE_RESAMPLE_SECS:-45}s:"
+      echo "$persisted"
+      false
+    }
+  fi
+}
+
+# the residue graph NAMES, one per line (#4273) — so a red names its culprit
+residue_graphs() {
+  curl -s "${FUSEKI_AUTH[@]+"${FUSEKI_AUTH[@]}"}" "http://localhost:3030/pods/query" \
+    --data-urlencode 'query=SELECT DISTINCT ?g WHERE { GRAPH ?g { ?s ?p ?o } FILTER(STRSTARTS(STR(?g), "urn:chorus:ontology-test-bats-")) }' \
+    -H "Accept: text/csv" 2>/dev/null | tail -n +2 | tr -d '[:space:]"' | tr ',' '\n'
 }
 
 @test "NEGATIVE PROOF: the residue scan sees a leftover graph when one exists" {

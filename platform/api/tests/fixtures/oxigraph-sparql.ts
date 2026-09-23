@@ -58,6 +58,28 @@ function termToBinding(t: OxigraphTerm): SparqlBindingValue {
   return out;
 }
 
+/** #4273 — load one fixture into SEVERAL named graphs.
+ *
+ * The handlers no longer all read one graph: #4265 moved domain rows to
+ * <urn:chorus:domains:domains> while envelopes and vocabulary stay in
+ * <urn:chorus:ontology>. A fixture seeded into only one of them 404s half the
+ * suite, which is what put 7 subdomain-batch cases in the 2026-09-22 nightly.
+ */
+export function loadStoreFromTtlGraphs(ttlPath: string, graphNames: string[]): OxigraphStore {
+  const store = new oxigraph.Store();
+  const ttl = fs.readFileSync(path.resolve(ttlPath), 'utf-8');
+  for (const g of graphNames) {
+    store.load(ttl, { format: 'text/turtle', to_graph_name: oxigraph.namedNode(g) });
+  }
+  return store;
+}
+
+export function makeSparqlFromTtlGraphs(
+  ttlPath: string, graphNames: string[],
+): (query: string) => Promise<SparqlBindingsResult> {
+  return makeSparqlFromStore(loadStoreFromTtlGraphs(ttlPath, graphNames));
+}
+
 export function loadStoreFromTtl(ttlPath: string, graphName?: string): OxigraphStore {
   const store = new oxigraph.Store();
   const ttl = fs.readFileSync(path.resolve(ttlPath), 'utf-8');

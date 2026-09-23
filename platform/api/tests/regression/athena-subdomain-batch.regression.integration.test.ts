@@ -1,3 +1,4 @@
+// @test-type: integration — oxigraph-backed handler batch: reads fixture + golden files from disk
 /**
  * #2208 — Regression coverage for the remaining 11 athena handlers.
  *
@@ -27,7 +28,7 @@ import {
   fetchAthenaSubdomainPersistence,
   fetchAthenaSubdomainPriorArt,
 } from '../../src/handlers/athena-subdomain-facets';
-import { makeSparqlFromTtl } from '../fixtures/oxigraph-sparql';
+import { makeSparqlFromTtlGraphs } from '../fixtures/oxigraph-sparql';
 
 const FIXTURE_TTL = path.join(__dirname, '..', 'fixtures', 'athena-minimal.ttl');
 const SD_ID = 'demo-alpha-domain';
@@ -63,7 +64,10 @@ async function assertGolden(name: string, actual: unknown): Promise<void> {
 }
 
 describe('#2208 regression — subdomain handler batch (11 handlers)', () => {
-  const sparql = makeSparqlFromTtl(FIXTURE_TTL, 'urn:chorus:ontology');
+  // #4273 — the facet handlers ask <urn:chorus:domains:domains> for a
+  // chorus:Domain (#4265); envelopes and vocabulary still read the ontology
+  // graph. Seeding only the latter 404'd every facet.
+  const sparql = makeSparqlFromTtlGraphs(FIXTURE_TTL, ['urn:chorus:ontology', 'urn:chorus:domains:domains']);
   const deps = { sparql, loadQuery, envelope, now: () => 1_000_000 };
 
   // Pure-sparql handlers

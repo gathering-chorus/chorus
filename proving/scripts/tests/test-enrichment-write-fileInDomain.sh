@@ -18,9 +18,14 @@ FAIL=0
 p() { PASS=$((PASS+1)); echo "  PASS: $*"; }
 f() { FAIL=$((FAIL+1)); echo "  FAIL: $*"; }
 
-CHORUS_ROOT="${CHORUS_ROOT:-/Users/jeffbridwell/CascadeProjects/chorus-werk/kade}"
+CHORUS_ROOT="${CHORUS_ROOT:-$(cd "$(dirname "${BASH_SOURCE[0]}")/../../.." && pwd)}"
 ENRICH="$CHORUS_ROOT/platform/scripts/enrichment-write-fileInDomain.sh"
 FUSEKI_BASE="${FUSEKI_BASE:-http://localhost:3030/pods}"
+# #4273 — Fuseki 401s a bare write, and both DROPs below were bare with the
+# response swallowed: 27 test-enrichment-* graphs (484 triples) sat in the prod
+# store on 2026-09-23, one per run since #3566 fixed only the seed. The
+# credential is sourced HERE so the pre-run drop and the EXIT cleanup carry it.
+source "$CHORUS_ROOT/platform/scripts/fuseki-auth.sh"
 TEST_GRAPH="urn:chorus:test-enrichment-$$"
 TEST_DB=$(mktemp -t enrich.XXXXXX.db)
 
@@ -61,17 +66,25 @@ done
 mkdir -p "$FIXTURE/platform/scripts"
 cp "$CHORUS_ROOT/platform/scripts/fuseki-auth.sh" "$FIXTURE/platform/scripts/fuseki-auth.sh"
 
+# drop_test_graph: the DROP must be seen to succeed. A refused drop is a graph
+# left in the prod store, and this suite's own red under #4237 was exactly that.
+drop_test_graph() {
+  local code
+  code=$(curl -s "${FUSEKI_AUTH[@]+"${FUSEKI_AUTH[@]}"}" -o /dev/null -w '%{http_code}' \
+    -X POST -H 'Content-Type: application/sparql-update' \
+    --data-binary "DROP SILENT GRAPH <$TEST_GRAPH>" "$FUSEKI_BASE/update")
+  case "$code" in
+    2*) return 0 ;;
+    *) echo "  FAIL: DROP GRAPH <$TEST_GRAPH> refused by the store — HTTP $code — the graph is LEAKED into prod"; return 1 ;;
+  esac
+}
 cleanup() {
-  curl -s -X POST -H 'Content-Type: application/sparql-update' \
-    --data-binary "DROP SILENT GRAPH <$TEST_GRAPH>" \
-    "$FUSEKI_BASE/update" >/dev/null 2>&1
+  drop_test_graph || FAIL=$((FAIL+1))
   rm -rf "$FIXTURE_BASE" "$TEST_DB"
 }
 trap cleanup EXIT
 
-curl -s -X POST -H 'Content-Type: application/sparql-update' \
-  --data-binary "DROP SILENT GRAPH <$TEST_GRAPH>" \
-  "$FUSEKI_BASE/update" >/dev/null 2>&1
+drop_test_graph || f "pre-run drop refused"
 
 echo "=== #2844 enrichment writer integration ==="
 
@@ -102,7 +115,6 @@ SEED_INSERT="$SEED_INSERT } }"
 # write looked identical to a successful one and only the count check three
 # lines later said anything. Carry the credential, and let the status code be
 # seen: a seed that cannot write must say so itself.
-source "$CHORUS_ROOT/platform/scripts/fuseki-auth.sh"
 SEED_CODE=$(curl -s "${FUSEKI_AUTH[@]+"${FUSEKI_AUTH[@]}"}" -o /dev/null -w '%{http_code}' \
   -X POST -H 'Content-Type: application/sparql-update' \
   --data-binary "$SEED_INSERT" "$FUSEKI_BASE/update")

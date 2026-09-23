@@ -49,7 +49,10 @@ cls() { printf '%s' "$2" > "$BATS_TEST_TMPDIR/$1"; "$BIN" --classify "$BATS_TEST
   # without running is tracked, and a dry run over the tree counts it.
   cd "$BATS_TEST_DIRNAME/../.."
   git ls-files --error-unmatch proving/flows/clearing-base-path-3872.spec.cjs >/dev/null
-  run env CHORUS_ROOT="$PWD" "$BIN" --dry-run
+  # #4273 — chorus-crawl refuses to run with CHORUS_ROLE unset (#4178: it will
+  # not write as an invented principal). The nightly plist runs it as kade;
+  # this test only passed in shells that already exported a role.
+  run env CHORUS_ROOT="$PWD" CHORUS_ROLE=kade "$BIN" --dry-run
   [ "$status" -eq 0 ]
   has "cases posted="
   # files that yield no runnable case (#4106) are REPORTED on their own line, not silent

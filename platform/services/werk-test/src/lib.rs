@@ -3085,6 +3085,36 @@ pub fn is_self_refused(cases: &[(String, String)]) -> bool {
 /// parenthesised reason so nightly-suites.sh's UNMEASURED remap (#4009/#4013)
 /// leaves it alone. Same vocabulary as `nightly_lane_line`; the wrapper counts
 /// `skip` rows as skipped (#3557), never as red and never as green.
+/// #4273 — a bats suite whose EVERY case said `# skip` ran and declined each
+/// one (not built here, canonical store, no variant). It is not the rc=3
+/// marker (`is_self_refused` stays exact — see its tests), but it is the same
+/// state for the reader: nothing passed, nothing failed, and the suite said
+/// why. Left alone it folded to a bare "0 pass, 0 fail" and the UNMEASURED
+/// remap called it "suite produced no parseable output" — six suites a night
+/// on 2026-09-22/23, each of which had printed a reason on every line.
+pub fn is_all_skipped(cases: &[(String, String)]) -> bool {
+    !cases.is_empty() && cases.iter().all(|(_, r)| r == "skip") && !is_self_refused(cases)
+}
+
+/// The first `# skip <reason>` a bats run printed, for the lane line.
+pub fn first_skip_reason(tap: &str) -> Option<String> {
+    tap.lines().find_map(|l| {
+        let at = l.find(" # skip")?;
+        let r = l[at + " # skip".len()..].trim();
+        Some(if r.is_empty() { "no reason given".to_string() } else { r.to_string() })
+    })
+}
+
+/// Lane line for an all-skipped suite: verdict `skip`, a parenthesised state
+/// (so the UNMEASURED remap leaves it alone), the count and the suite's own
+/// reason — a skipped row must say what it would have needed.
+pub fn nightly_lane_line_all_skipped(kind: &str, unit: &str, skipped: usize, reason: &str) -> String {
+    format!(
+        "nightly-unit|{}|{}|skip|0 pass, 0 fail, {} skipped (ALL SKIPPED — {})",
+        kind, unit, skipped, reason
+    )
+}
+
 pub fn nightly_lane_line_refused(kind: &str, unit: &str) -> String {
     format!(
         "nightly-unit|{}|{}|skip|0 pass, 0 fail (SELF-REFUSED rc=3 — suite declined to run here)",
@@ -3523,6 +3553,30 @@ mod nightly_via_runner_3920 {
         let (p2, f2, s2) = case_counts(["pass", "fail", "skip"].into_iter());
         assert_eq!((p2, f2, s2), (1, 1, 1));
         assert!(nightly_lane_line_with_skips("npm", "x", true, p2, f2, s2, 0).contains("|fail|"));
+    }
+
+    #[test]
+    fn an_all_skipped_bats_suite_is_a_skip_with_its_reason_4273() {
+        let c = |r: &str| ("x".to_string(), r.to_string());
+        let all = vec![c("skip"), c("skip"), c("skip")];
+        assert!(is_all_skipped(&all));
+        let line = nightly_lane_line_all_skipped("bats", "platform/tests/4225-demo-fitness.bats", 3, "demo-fitness not built");
+        assert_eq!(line, "nightly-unit|bats|platform/tests/4225-demo-fitness.bats|skip|0 pass, 0 fail, 3 skipped (ALL SKIPPED — demo-fitness not built)");
+        // the parenthesised state is what keeps the UNMEASURED remap off it
+        assert!(line.contains('(') && line.contains(')'));
+        assert_eq!(first_skip_reason("1..2\nok 1 a # skip demo-fitness not built at /x\nok 2 b # skip demo-fitness not built at /x\n").as_deref(), Some("demo-fitness not built at /x"));
+    }
+
+    #[test]
+    fn all_skipped_negative_proofs_4273() {
+        // NEGATIVE PROOF (#3734): the check must separate the states it exists for.
+        let c = |r: &str| ("x".to_string(), r.to_string());
+        assert!(!is_all_skipped(&[]), "no cases is UNMEASURED, not all-skipped");
+        assert!(!is_all_skipped(&[c("skip"), c("pass")]), "one pass means the suite measured something");
+        assert!(!is_all_skipped(&[c("skip"), c("fail")]), "one fail is a red, never a skip");
+        let refused = vec![("SELF-REFUSED rc=3 — x declined to run here".to_string(), "skip".to_string())];
+        assert!(!is_all_skipped(&refused), "the rc=3 marker keeps its own lane");
+        assert!(first_skip_reason("ok 1 handles # in a path\n").is_none(), "a # inside a name is not a directive");
     }
 
     #[test]
