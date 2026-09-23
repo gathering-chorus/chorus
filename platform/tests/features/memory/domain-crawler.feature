@@ -1,3 +1,4 @@
+# @test-type: bdd — cucumber feature; runs against the live chorus-api and Loki
 @memory @e2e
 Feature: Domain crawler
   A role asks "tell me about the seeds domain" and gets a connected
@@ -8,12 +9,10 @@ Feature: Domain crawler
     Given the Chorus API is running on port 3340
     And Fuseki is running on port 3030
 
-  # @pending: depends on chorus.log having recent card.* spine events for
-  # seeds-domain cards. The seeds cards on the board (85 of them) sit in Later
-  # without recent state transitions, so the spine filter (cards∩spine) is
-  # empty. Not a handler gap — a data-state precondition. Will pass naturally
-  # once any seeds card moves through WIP/Done while this branch is current.
-  @crawler @core @pending
+  # #4278: the spine step counts card.* lines in Loki for this domain's cards
+  # and requires the crawl to return exactly that many — 0 on a quiet day is a
+  # pass, a dropped read on an active day is a red. No calendar precondition.
+  @crawler @core
   Scenario: Crawl a domain and return a connected subgraph
     When a role crawls the "seeds" domain
     Then the response contains cards tagged with that domain
@@ -64,7 +63,7 @@ Feature: Domain crawler
     When a role crawls the "seeds" domain
     Then the response includes domains that share cards or conversations
     And related domains are ranked by connection strength
-    And "photos" appears as a related domain — seed photo delivery
+    And every related domain is named in a returned conversation mention
 
   @crawler @code-scan
   Scenario: Crawler scans actual codebase for domain files
