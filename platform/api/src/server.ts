@@ -40,7 +40,7 @@ import { modelRelationshipsHandler, SparqlSelectResponse } from './handlers/athe
 import { buildTestRunReport, lastRunSuites, renderStoredRun, renderTestRun, StoredRun, TEST_RUN_CSS } from './handlers/test-run-report';
 import { classAtlasHandler } from './handlers/class-atlas';
 import { vocabularyHandler } from './handlers/vocabulary';
-import { parseNightlyLog, renderNightlyPage } from './handlers/nightly-report';
+import { parseNightlyLog, renderNightlyPage, suiteType, fetchFailingCases, type FetchLike } from './handlers/nightly-report';
 import { parseAllRuns, findRun, buildReadout, renderReadoutText } from './handlers/nightly-readout';
 import { fetchLoomAnalytics, LoomCardRow } from './handlers/loom-analytics';
 
@@ -575,7 +575,14 @@ app.get('/api/chorus/nightly/runs/:id', (req: Request, res: Response) => {
   res.json(found.readout);
 });
 
-app.get('/nightly', (req: Request, res: Response) => {
+// #4277 — the declared type of a file-backed suite is read from the tree the
+// run ran against (canonical). Missing file → null → "undeclared (<tool>)".
+const nightlySuiteType = (r: { kind: string; path: string }): string =>
+  suiteType(r, (p) => {
+    const root = process.env.CHORUS_ROOT || path.resolve(__dirname, '../../..');
+    try { return fs.readFileSync(path.isAbsolute(p) ? p : path.join(root, p), 'utf8').slice(0, 4096); } catch { return null; }
+  });
+app.get('/nightly', async (req: Request, res: Response) => {
   const { text, quietForMs } = readNightlyLog();
   const wanted = typeof req.query.run === 'string' && req.query.run ? req.query.run : 'latest';
   const found = readoutFor(wanted);
@@ -588,7 +595,13 @@ app.get('/nightly', (req: Request, res: Response) => {
   // #4009 — the log's own mtime is the only honest "when did this run last
   // say anything". Only meaningful for the newest run.
   if (found.run === found.runs[found.runs.length - 1]) found.run.quietForMs = quietForMs;
-  res.type('html').send(renderNightlyPage(found.run, { readout: found.readout, history: found.runs }));
+  // #4277 — the failing cases are the run's own TestResult rows; one bounded
+  // store read per page, and a store that does not answer yields none.
+  const fuseki = process.env.FUSEKI_QUERY || 'http://localhost:3030/pods/query';
+  const cases = await fetchFailingCases(found.run, fuseki, fetch as unknown as FetchLike);
+  res.type('html').send(renderNightlyPage(found.run, {
+    readout: found.readout, history: found.runs, cases, typeOf: nightlySuiteType,
+  }));
 });
 app.get('/harvest-manifests', sendChorusPage('harvest-manifests.html'));
 app.get('/loom', sendChorusPage('loom.html'));

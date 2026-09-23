@@ -769,10 +769,15 @@ fn run_locked(ctx: &mut Ctx, _args: &[String]) -> Result<i32, String> {
     // Jeff, 2026-09-23: "issues like this illustrate why i want api and ui runs
     // and bdd and perf too in our nightly runs." Each lane reports UNMEASURED
     // when it could not measure, never pass.
-    push(ctx, leg_ui(ctx), &mut rows);
-    push(ctx, leg_bdd(ctx), &mut rows);
-    push(ctx, leg_daemons(ctx, &daemons_at_start, &sample_daemons()), &mut rows);
-    push(ctx, leg_duration(run_clock.elapsed().as_secs()), &mut rows);
+    // #4277 — under the hermetic seam (NIGHTLY_LEGS_NOOP) these lanes stay
+    // off like the others: a fixture run must not launch Playwright, cucumber
+    // or launchctl, and 4145's row count reads the runner's rows alone.
+    if std::env::var("NIGHTLY_LEGS_NOOP").is_err() {
+        push(ctx, leg_ui(ctx), &mut rows);
+        push(ctx, leg_bdd(ctx), &mut rows);
+        push(ctx, leg_daemons(ctx, &daemons_at_start, &sample_daemons()), &mut rows);
+        push(ctx, leg_duration(run_clock.elapsed().as_secs()), &mut rows);
+    }
     // #4247 — the census from the run's own record, in one unit, before the
     // completion line so a reader sees the tally with the run it belongs to.
     report_no_result(ctx, &registered, &lane.cases);
@@ -1019,7 +1024,10 @@ fn leg_daemons(
 }
 
 fn leg_duration(secs: u64) -> SuiteRow {
-    let budget: u64 = env_or("NIGHTLY_RUN_BUDGET_S", "3600").parse().unwrap_or(3600);
+    // #4277 — the budget is a regression guard, so it sits above the measured
+    // run, not at a wish: the two full runs of 2026-09-23 took 67 and 71 min
+    // (4033s, 4252s) and the first budget (3600s) went red on a normal night.
+    let budget: u64 = env_or("NIGHTLY_RUN_BUDGET_S", "5400").parse().unwrap_or(5400);
     let (status, summary) = duration_verdict(secs, budget);
     SuiteRow::new("perf", "nightly:duration", "kade", status, &summary)
 }

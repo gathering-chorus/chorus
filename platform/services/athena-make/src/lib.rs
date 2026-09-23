@@ -1416,6 +1416,7 @@ pub fn write_status(outcome: &str) -> (u16, &'static str) {
         "conflict" => (409, "conflict"),             // e.g. 2nd parent on single-valued partOf
         "validation" => (422, "validation"),         // malformed / shape violation
         "not-found" => (404, "not-found"),           // entity/edge target absent
+        "unavailable" => (503, "unavailable"),       // #4277: the store did not answer the owner read — retry, never a refusal
         _ => (501, "not-implemented"),               // generated, execution not yet wired (no fail-open)
     }
 }
@@ -1484,6 +1485,41 @@ pub fn edge_is_single_valued(edge: &str) -> bool {
 /// coverage). Pure + unit-tested.
 pub fn authz_allows(caller_role: &str, owned_by: Option<&str>) -> bool {
     matches!(owned_by, Some(o) if !o.is_empty() && o == caller_role)
+}
+
+/// #4277 — the owner check names its state. `query_owned_by` folded three
+/// states into one `None`: the store did not answer, the row is not there,
+/// the row has no owner. All three came back 403 "not this row's owner
+/// (ownedBy absent)". On 2026-09-23 15:35:41 kade created a row and 237 ms
+/// later kade's own DELETE of it was refused that way under load; the row
+/// stayed, and the next two owners' creates hit 409. A refusal that cannot
+/// tell "not you" from "not there" from "could not look" is the defect class
+/// of #4196 req 6. This is the one decision, pure, so each state is pinned.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum OwnerVerdict {
+    Allow,
+    /// the row exists and its owner is not the caller (None = row has no owner)
+    NotOwner(Option<String>),
+    NotFound,
+    /// the store did not answer the owner read — a 503, never a 403
+    Unavailable(String),
+}
+
+pub fn owner_verdict(
+    caller_role: &str,
+    read: Result<Option<String>, String>,
+    exists: impl FnOnce() -> Result<bool, String>,
+) -> OwnerVerdict {
+    match read {
+        Err(e) => OwnerVerdict::Unavailable(e),
+        Ok(Some(o)) if !o.is_empty() && o == caller_role => OwnerVerdict::Allow,
+        Ok(Some(o)) => OwnerVerdict::NotOwner(Some(o)),
+        Ok(None) => match exists() {
+            Err(e) => OwnerVerdict::Unavailable(e),
+            Ok(false) => OwnerVerdict::NotFound,
+            Ok(true) => OwnerVerdict::NotOwner(None),
+        },
+    }
 }
 
 /// Extract a JSON string field by key: { "<key>": "<value>" }. Minimal zero-dep;
@@ -2134,14 +2170,27 @@ pub fn served_name(class: &str, subject: &str) -> String {
 }
 
 fn query_owned_by(class: &str, entity: &str, instances_graph: &str) -> Option<String> {
+    read_owned_by(class, entity, instances_graph).ok().flatten()
+}
+
+/// #4277 — the owner read with its failure kept: Err when the store did not
+/// answer, Ok(None) when the row has no ownedBy (or is not there).
+fn read_owned_by(class: &str, entity: &str, instances_graph: &str) -> Result<Option<String>, String> {
     let q = format!(
         "PREFIX chorus: <{ns}> SELECT ?v WHERE {{ GRAPH <{g}> {{ <{s}> chorus:ownedBy ?o . BIND(REPLACE(STR(?o), '.*[#/]', '') AS ?v) }} }}",
         ns = NS, g = instances_graph, s = entity_subject(class, entity)
     );
-    sparql_json(&q)
-        .ok()
-        .and_then(|b| select_v(&b).into_iter().next())
-        .map(|owner| normalize_owned_role(&owner))
+    let body = sparql_json(&q)?;
+    Ok(select_v(&body).into_iter().next().map(|owner| normalize_owned_role(&owner)))
+}
+
+/// #4277 — existence with its failure kept, for the owner verdict.
+fn entity_exists_res(class: &str, entity: &str, instances_graph: &str) -> Result<bool, String> {
+    let q = format!(
+        "SELECT ?v WHERE {{ GRAPH <{g}> {{ <{s}> ?p ?o . BIND('y' AS ?v) }} }} LIMIT 1",
+        g = instances_graph, s = entity_subject(class, entity)
+    );
+    sparql_json(&q).map(|b| !select_v(&b).is_empty())
 }
 
 /// Model Role instances are minted as `role-<name>`, while verified claims
@@ -3102,11 +3151,25 @@ pub fn handle_write_stamped(method: &str, path: &str, body: &str, table: &RouteT
             return write_resp("validation", "invalid entity name");
         }
         // AC3 authZ — only the owning role writes this node's edges (fail-closed).
-        let owned = query_owned_by(&table.class, e, &table.instances_graph);
-        if !authz_allows(caller_role, owned.as_deref()) {
-            emit_write_spine(caller_role, method, e, "", "authz");
-            // #4196 req 6 — name the owner that holds the row and the Permission row that would open it.
-            return write_resp("authz", &format!("not this row's owner (ownedBy {}); {}", owned.as_deref().unwrap_or("absent"), row_that_would_open(caller_role, &table.instances_graph)));
+        // #4277 — the verdict names its state: a store that did not answer is
+        // 503 (retry), a missing row is 404, and only a row held by someone
+        // else is 403. The old fold sent all three as "ownedBy absent".
+        match owner_verdict(caller_role, read_owned_by(&table.class, e, &table.instances_graph),
+                            || entity_exists_res(&table.class, e, &table.instances_graph)) {
+            OwnerVerdict::Allow => {}
+            OwnerVerdict::Unavailable(err) => {
+                emit_write_spine(caller_role, method, e, "", "unavailable");
+                return write_resp("unavailable", &format!("could not read the row's owner — the store did not answer ({}); retry, this is not a refusal", err));
+            }
+            OwnerVerdict::NotFound => {
+                emit_write_spine(caller_role, method, e, "", "not-found");
+                return write_resp("not-found", &format!("no such row '{}' to write", e));
+            }
+            OwnerVerdict::NotOwner(owned) => {
+                emit_write_spine(caller_role, method, e, "", "authz");
+                // #4196 req 6 — name the owner that holds the row and the Permission row that would open it.
+                return write_resp("authz", &format!("not this row's owner (ownedBy {}); {}", owned.as_deref().unwrap_or("absent — the row has no owner"), row_that_would_open(caller_role, &table.instances_graph)));
+            }
         }
     }
     match &op {
@@ -7255,6 +7318,28 @@ mod tests {
         assert!(authz_allows("wren", Some("wren")));
         assert!(!authz_allows("wren", Some("silas")));
         assert!(!authz_allows("wren", None));        // absent ownedBy → FAIL-CLOSED
+    }
+
+    // #4277 — each of the four states is its own verdict. NEGATIVE PROOF for
+    // the 2026-09-23 defect: a store that did not answer is never "not owner".
+    #[test]
+    fn owner_verdict_names_its_state() {
+        use super::{owner_verdict, OwnerVerdict};
+        let ok = |v: bool| move || Ok(v);
+        assert_eq!(owner_verdict("kade", Ok(Some("kade".into())), ok(true)), OwnerVerdict::Allow);
+        assert_eq!(owner_verdict("kade", Ok(Some("wren".into())), ok(true)), OwnerVerdict::NotOwner(Some("wren".into())));
+        assert_eq!(owner_verdict("kade", Ok(None), ok(true)), OwnerVerdict::NotOwner(None));
+        assert_eq!(owner_verdict("kade", Ok(None), ok(false)), OwnerVerdict::NotFound);
+        let v = owner_verdict("kade", Err("timeout".into()), || panic!("existence is not asked when the owner read failed"));
+        assert_eq!(v, OwnerVerdict::Unavailable("timeout".into()));
+        assert!(!matches!(v, OwnerVerdict::NotOwner(_)), "a failed read must never read as a refusal");
+        assert_eq!(owner_verdict("kade", Ok(None), || Err("timeout".into())), OwnerVerdict::Unavailable("timeout".into()));
+    }
+
+    #[test]
+    fn unavailable_is_503_not_403() {
+        assert_eq!(super::write_status("unavailable").0, 503);
+        assert_eq!(super::write_status("authz").0, 403);
     }
 
     // #4196 — an owner is a Principal; the three live spellings of one user
