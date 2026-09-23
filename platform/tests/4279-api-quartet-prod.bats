@@ -37,11 +37,16 @@ gate_reason() {
 setup_file() {
   export RUN_ID
   RUN_ID="${NIGHTLY_RUN_ID:-${QUARTET_RUN_ID:-$(date -u +%Y%m%dT%H%M%SZ)}}"
-  RUN_ID="$(printf '%s' "$RUN_ID" | tr -c 'A-Za-z0-9' '-' | tr -s '-' | sed 's/^-//; s/-$//')"
+  # #4282 — lowercase too: the DAL slugs what it writes; a capital in the run id
+  # (date -u's T and Z) made every read-back 404 and left 126 rows behind.
+  RUN_ID="$(printf '%s' "$RUN_ID" | tr 'A-Z' 'a-z' | tr -c 'a-z0-9' '-' | tr -s '-' | sed 's/^-//; s/-$//')"
   export GATE; GATE="$(gate_reason)"
   [ -z "$GATE" ] || return 0
   for owner in $OWNERS; do
-    API_BASE="$API" CHORUS_CONTEXT=prod QUARTET_PROD=1 QUARTET_RUN_ID="$RUN_ID" CHORUS_ROLE="$owner" \
+    # #4282 — each owner walks under its own run id (<runId>-<pid>-<owner>), so
+    # three walks never share a subject name: a delete the store has not shown
+    # yet (the 14:34 nightly, 2026-09-23) can no longer read as "already exists".
+    API_BASE="$API" CHORUS_CONTEXT=prod QUARTET_PROD=1 QUARTET_RUN_ID="$RUN_ID-$$-$owner" CHORUS_ROLE="$owner" \
       bash "$RUNNER" >"$BATS_FILE_TMPDIR/$owner.out" 2>&1 || true
   done
 }
@@ -77,12 +82,13 @@ owner_case() { # $1 owner
   [ -z "$GATE" ] || skip "$GATE"
   # shellcheck disable=SC1091
   [ -r "$ROOT/platform/scripts/fuseki-auth.sh" ] && source "$ROOT/platform/scripts/fuseki-auth.sh" 2>/dev/null
-  # the rows as the DOOR names them: <kind-slug>-zz-probe-<runId>-<class>
+  # the rows as the DOOR names them: <kind-slug>-zz-probe-<runId>-<pid>-<owner>-<class>
   vals="$(curl -sf --max-time 20 "$API/" | python3 -c 'import json,sys,re
-rid=sys.argv[1]
+rid,pid,owners=sys.argv[1],sys.argv[2],sys.argv[3].split()
 for p in json.load(sys.stdin)["primitives"]:
     k=p["kind"]; slug=re.sub(r"(?<!^)(?=[A-Z])","-",k).lower()
-    print("<https://jeffbridwell.com/chorus#%s>" % (("%s-zz-probe-%s-%s" % (slug, rid, k.lower()))[:140]))' "$RUN_ID" | tr '\n' ' ')"
+    for o in owners:
+        print("<https://jeffbridwell.com/chorus#%s>" % (("%s-zz-probe-%s-%s-%s-%s" % (slug, rid, pid, o, k.lower()))[:140]))' "$RUN_ID" "$$" "$OWNERS" | tr '\n' ' ')"
   [ -n "$vals" ] || { echo "no class list from $API/ — residue not measurable"; return 1; }
   left="$(curl -s --max-time 60 "${FUSEKI_AUTH[@]+"${FUSEKI_AUTH[@]}"}" -G "$QUERY" \
     --data-urlencode "query=SELECT DISTINCT ?g ?s WHERE { VALUES ?s { $vals } GRAPH ?g { ?s ?p ?o } }" \
