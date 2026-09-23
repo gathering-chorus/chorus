@@ -735,6 +735,12 @@ fn run_locked(ctx: &mut Ctx, _args: &[String]) -> Result<i32, String> {
         ctx.append_log(&r.line());
         rows.push(r);
     };
+    // #4278 — sample every com.chorus.* agent's pid at the start; the same
+    // sample at the end tells whether one died under the run. On 2026-09-23
+    // launchd SIGTERMed chorus-hooks twice inside the nightly (10:01, 10:09)
+    // and 424 unit suites said pass.
+    let daemons_at_start = sample_daemons();
+    let run_clock = Instant::now();
     if std::env::var("NIGHTLY_LEGS_NOOP").is_err() {
         if let Some(r) = leg_lint(ctx) {
             push(ctx, r, &mut rows);
@@ -758,6 +764,15 @@ fn run_locked(ctx: &mut Ctx, _args: &[String]) -> Result<i32, String> {
         std::process::exit(if sig == 2 { 130 } else { 143 });
     }
     rows.extend(lane.rows.iter().cloned());
+    // #4278 — the production lanes: browser flows against the live surfaces,
+    // the bdd features, and two perf lines (agents steady? run within budget?).
+    // Jeff, 2026-09-23: "issues like this illustrate why i want api and ui runs
+    // and bdd and perf too in our nightly runs." Each lane reports UNMEASURED
+    // when it could not measure, never pass.
+    push(ctx, leg_ui(ctx), &mut rows);
+    push(ctx, leg_bdd(ctx), &mut rows);
+    push(ctx, leg_daemons(ctx, &daemons_at_start, &sample_daemons()), &mut rows);
+    push(ctx, leg_duration(run_clock.elapsed().as_secs()), &mut rows);
     // #4247 — the census from the run's own record, in one unit, before the
     // completion line so a reader sees the tally with the run it belongs to.
     report_no_result(ctx, &registered, &lane.cases);
@@ -856,5 +871,310 @@ fn deliver_readout(ctx: &Ctx) {
     } else {
         eprintln!("nightly: readout UNAVAILABLE — {} answered HTTP {}; nudging jeff without numbers", ctx.api, code);
         ctx.nudge("jeff", &format!("nightly finished but its readout could not be built ({} answered HTTP {}). No numbers until the api answers: {}/nightly", ctx.api, code, ctx.api));
+    }
+}
+
+// ───────────────────────────── #4278 — production lanes ─────────────────────────────
+//
+// UI (Playwright), bdd (cucumber-js), and two perf lines (agent uptime across
+// the run, run duration vs budget). The pure parsers below are what the unit
+// tests prove; the legs are thin shells around a seam command so a fixture
+// can stand in for the real tool.
+
+/// Counts from cucumber-js's `summary` formatter:
+/// `35 scenarios (2 failed, 3 undefined, 30 passed)` / `162 steps (…)`.
+#[derive(Debug, Default, PartialEq, Clone)]
+pub struct CukeCounts {
+    pub scenarios: usize,
+    pub passed: usize,
+    pub failed: usize,
+    pub undefined: usize,
+    pub skipped: usize,
+    pub pending: usize,
+    pub steps: usize,
+}
+
+pub fn parse_cucumber_summary(out: &str) -> Option<CukeCounts> {
+    let mut c = CukeCounts::default();
+    let mut saw = false;
+    for raw in out.lines() {
+        // strip ANSI colour: ESC [ … m
+        let mut l = String::new();
+        let mut in_esc = false;
+        for ch in raw.chars() {
+            if ch == '\u{1b}' { in_esc = true; continue; }
+            if in_esc { if ch == 'm' { in_esc = false; } continue; }
+            l.push(ch);
+        }
+        let l = l.trim();
+        let (total, rest, is_scn) = if let Some(i) = l.find(" scenarios (") {
+            (l[..i].trim().parse::<usize>().ok(), &l[i + " scenarios (".len()..], true)
+        } else if let Some(i) = l.find(" scenario (") {
+            (l[..i].trim().parse::<usize>().ok(), &l[i + " scenario (".len()..], true)
+        } else if let Some(i) = l.find(" steps (") {
+            (l[..i].trim().parse::<usize>().ok(), &l[i + " steps (".len()..], false)
+        } else if let Some(i) = l.find(" step (") {
+            (l[..i].trim().parse::<usize>().ok(), &l[i + " step (".len()..], false)
+        } else { continue };
+        let Some(total) = total else { continue };
+        saw = true;
+        if is_scn { c.scenarios = total; } else { c.steps = total; continue; }
+        for part in rest.trim_end_matches(')').split(',') {
+            let w: Vec<&str> = part.trim().split_whitespace().collect();
+            if w.len() != 2 { continue; }
+            let n: usize = match w[0].parse() { Ok(n) => n, Err(_) => continue };
+            match w[1] {
+                "passed" => c.passed = n,
+                "failed" => c.failed = n,
+                "undefined" => c.undefined = n,
+                "skipped" => c.skipped = n,
+                "pending" => c.pending = n,
+                _ => {}
+            }
+        }
+    }
+    if saw { Some(c) } else { None }
+}
+
+/// The bdd verdict: undefined steps mean the feature could not be measured
+/// (a scenario that skips every step is not a pass); a failed scenario is red;
+/// zero scenarios is nothing measured.
+pub fn cucumber_verdict(c: Option<&CukeCounts>) -> (&'static str, String) {
+    match c {
+        None => ("unmeasured", "0 pass, 0 fail (UNMEASURED — cucumber-js produced no summary)".into()),
+        Some(c) if c.scenarios == 0 => ("unmeasured", "0 pass, 0 fail (UNMEASURED — no scenarios selected)".into()),
+        Some(c) if c.undefined > 0 => ("unmeasured", format!(
+            "0 pass, 0 fail (UNMEASURED — {} of {} scenarios have undefined steps; {} steps)", c.undefined, c.scenarios, c.steps)),
+        Some(c) if c.failed > 0 => ("fail", format!("{} pass, {} fail ({} scenarios, {} steps)", c.passed, c.failed, c.scenarios, c.steps)),
+        Some(c) => ("pass", format!("{} pass, 0 fail ({} scenarios, {} steps, {} skipped)", c.passed, c.scenarios, c.steps, c.skipped)),
+    }
+}
+
+/// `launchctl list` rows for com.chorus.* → label → pid (None when '-').
+pub fn parse_launchctl(out: &str) -> std::collections::BTreeMap<String, Option<u32>> {
+    let mut m = std::collections::BTreeMap::new();
+    for l in out.lines() {
+        let cols: Vec<&str> = l.split('\t').collect();
+        if cols.len() < 3 || !cols[2].starts_with("com.chorus.") { continue; }
+        m.insert(cols[2].trim().to_string(), cols[0].trim().parse::<u32>().ok());
+    }
+    m
+}
+
+/// Agents that were running at the start and are not the same process at the
+/// end — restarted (pid changed) or gone (no pid). Agents that were not running
+/// at the start are not this line's business (a one-shot job is allowed to run).
+pub fn daemon_restarts(
+    start: &std::collections::BTreeMap<String, Option<u32>>,
+    end: &std::collections::BTreeMap<String, Option<u32>>,
+) -> Vec<String> {
+    let mut out = Vec::new();
+    for (label, pid0) in start {
+        let Some(p0) = pid0 else { continue };
+        match end.get(label).copied().flatten() {
+            Some(p1) if p1 == *p0 => {}
+            Some(p1) => out.push(format!("{} restarted (pid {} → {})", label, p0, p1)),
+            None => out.push(format!("{} gone (was pid {})", label, p0)),
+        }
+    }
+    out
+}
+
+/// Run duration against its budget. kind=perf, so the page folds a fail to
+/// "slow (speed, not breakage)" (#4136) — over budget is a perf red, not a
+/// product red.
+pub fn duration_verdict(secs: u64, budget_secs: u64) -> (&'static str, String) {
+    if secs <= budget_secs {
+        ("pass", format!("1 pass, 0 fail (run took {}s, budget {}s)", secs, budget_secs))
+    } else {
+        ("fail", format!("0 pass, 1 fail (run took {}s, over the {}s budget by {}s)", secs, budget_secs, secs - budget_secs))
+    }
+}
+
+fn sample_daemons() -> std::collections::BTreeMap<String, Option<u32>> {
+    let cmd = env_or("NIGHTLY_LAUNCHCTL", "launchctl list");
+    let out = Command::new("bash").arg("-c").arg(&cmd).output()
+        .map(|o| String::from_utf8_lossy(&o.stdout).into_owned()).unwrap_or_default();
+    parse_launchctl(&out)
+}
+
+fn leg_daemons(
+    _ctx: &Ctx,
+    start: &std::collections::BTreeMap<String, Option<u32>>,
+    end: &std::collections::BTreeMap<String, Option<u32>>,
+) -> SuiteRow {
+    let steady = start.values().filter(|p| p.is_some()).count();
+    if steady == 0 {
+        return SuiteRow::new("perf", "daemons:com.chorus.*", "silas", "unmeasured",
+            "0 pass, 0 fail (UNMEASURED — launchctl listed no running com.chorus.* agent at run start)");
+    }
+    let restarts = daemon_restarts(start, end);
+    if restarts.is_empty() {
+        SuiteRow::new("perf", "daemons:com.chorus.*", "silas", "pass",
+            &format!("1 pass, 0 fail ({} agents kept their pid across the run)", steady))
+    } else {
+        SuiteRow::new("perf", "daemons:com.chorus.*", "silas", "fail",
+            &format!("0 pass, 1 fail ({} of {} agents did not survive the run: {})", restarts.len(), steady, restarts.join("; ")))
+    }
+}
+
+fn leg_duration(secs: u64) -> SuiteRow {
+    let budget: u64 = env_or("NIGHTLY_RUN_BUDGET_S", "3600").parse().unwrap_or(3600);
+    let (status, summary) = duration_verdict(secs, budget);
+    SuiteRow::new("perf", "nightly:duration", "kade", status, &summary)
+}
+
+fn leg_ui(ctx: &Ctx) -> SuiteRow {
+    let path = "proving/flows";
+    let cmd = env_or("NIGHTLY_PLAYWRIGHT_CMD", "npx --no-install playwright test --reporter=line");
+    let mut c = Command::new("bash");
+    c.arg("-c").arg(&cmd).current_dir(&ctx.root)
+        .env("CHORUS_CONTEXT", "")
+        .env("CLEARING_URL", env_or("CLEARING_URL", "http://localhost:3470"));
+    let (rc, out) = run_capped(c, Duration::from_secs(1800));
+    let owner = ctx.owner(path);
+    match werk_test::parse_playwright_summary(&out) {
+        None => SuiteRow::new("ui", path, &owner, "unmeasured", &format!(
+            "0 pass, 0 fail (UNMEASURED — playwright produced no summary, rc={}: {})", rc,
+            out.lines().rev().find(|l| !l.trim().is_empty()).unwrap_or("").trim().chars().take(120).collect::<String>())),
+        Some((passed, failed)) if failed > 0 || rc != 0 => {
+            let first = werk_test::playwright_failure_lines(&out).into_iter().take(3).collect::<Vec<_>>().join("; ");
+            SuiteRow::new("ui", path, &owner, "fail", &format!("{} pass, {} fail (rc={}) {}", passed, failed, rc, first))
+        }
+        Some((passed, _)) => {
+            let skipped = werk_test::parse_playwright_skipped(&out);
+            SuiteRow::new("ui", path, &owner, "pass", &format!("{} pass, 0 fail ({} skipped)", passed, skipped))
+        }
+    }
+}
+
+fn leg_bdd(ctx: &Ctx) -> SuiteRow {
+    let path = "platform/tests/features";
+    let dir = format!("{}/platform/tests", ctx.root);
+    if !Path::new(&format!("{}/node_modules/.bin/cucumber-js", dir)).exists()
+        && std::env::var("NIGHTLY_CUCUMBER_CMD").is_err()
+    {
+        return SuiteRow::new("bdd", path, "kade", "unmeasured",
+            "0 pass, 0 fail (UNMEASURED — platform/tests/node_modules/.bin/cucumber-js is not installed)");
+    }
+    let cmd = env_or("NIGHTLY_CUCUMBER_CMD", "npx --no-install cucumber-js --format summary");
+    let mut c = Command::new("bash");
+    c.arg("-c").arg(&cmd).current_dir(&dir).env("CHORUS_CONTEXT", "");
+    let (_rc, out) = run_capped(c, Duration::from_secs(1800));
+    let counts = parse_cucumber_summary(&out);
+    let (status, summary) = cucumber_verdict(counts.as_ref());
+    SuiteRow::new("bdd", path, &ctx.owner(path), status, &summary)
+}
+
+#[cfg(test)]
+mod lanes_4278 {
+    use super::*;
+
+    #[test]
+    fn cucumber_summary_parses_every_bucket() {
+        let out = "35 scenarios (2 failed, 3 undefined, 30 passed)\n162 steps (2 failed, 6 undefined, 150 passed, 4 skipped)\n0m01.2s\n";
+        let c = parse_cucumber_summary(out).unwrap();
+        assert_eq!((c.scenarios, c.passed, c.failed, c.undefined, c.steps), (35, 30, 2, 3, 162));
+        // ANSI colour, as the real formatter prints it
+        let ansi = "35 scenarios (\u{1b}[36m35 skipped\u{1b}[39m)\n162 steps (\u{1b}[36m162 skipped\u{1b}[39m)\n";
+        let c = parse_cucumber_summary(ansi).unwrap();
+        assert_eq!((c.scenarios, c.skipped, c.steps), (35, 35, 162));
+    }
+
+    #[test]
+    fn bdd_verdict_separates_pass_fail_and_unmeasured() {
+        let ok = CukeCounts { scenarios: 35, passed: 35, steps: 162, ..Default::default() };
+        assert_eq!(cucumber_verdict(Some(&ok)).0, "pass");
+        let red = CukeCounts { scenarios: 35, passed: 33, failed: 2, steps: 162, ..Default::default() };
+        assert_eq!(cucumber_verdict(Some(&red)).0, "fail");
+        // NEGATIVE PROOF (#3734): a feature whose steps are undefined must not read as pass
+        let undef = CukeCounts { scenarios: 35, passed: 30, undefined: 5, steps: 162, ..Default::default() };
+        let (v, s) = cucumber_verdict(Some(&undef));
+        assert_eq!(v, "unmeasured");
+        assert!(s.contains("5 of 35 scenarios have undefined steps"), "{s}");
+        assert_eq!(cucumber_verdict(None).0, "unmeasured");
+        assert_eq!(cucumber_verdict(Some(&CukeCounts::default())).0, "unmeasured");
+    }
+
+    #[test]
+    fn launchctl_rows_and_restarts() {
+        let start = parse_launchctl("17630\t0\tcom.chorus.api\n-\t0\tcom.chorus.index-artifacts\n5020\t0\tcom.chorus.hooks\n99\t0\tcom.gathering.app\n");
+        assert_eq!(start.len(), 3, "only com.chorus.* rows: {start:?}");
+        assert_eq!(start["com.chorus.api"], Some(17630));
+        assert_eq!(start["com.chorus.index-artifacts"], None);
+        // steady
+        let same = start.clone();
+        assert!(daemon_restarts(&start, &same).is_empty());
+        // NEGATIVE PROOF: the 2026-09-23 shape — hooks restarted, api steady
+        let end = parse_launchctl("17630\t0\tcom.chorus.api\n-\t0\tcom.chorus.index-artifacts\n79676\t0\tcom.chorus.hooks\n");
+        let r = daemon_restarts(&start, &end);
+        assert_eq!(r, vec!["com.chorus.hooks restarted (pid 5020 → 79676)".to_string()]);
+        // gone entirely
+        let gone = parse_launchctl("17630\t0\tcom.chorus.api\n-\t0\tcom.chorus.hooks\n");
+        assert_eq!(daemon_restarts(&start, &gone), vec!["com.chorus.hooks gone (was pid 5020)".to_string()]);
+        // a one-shot that was not running at the start is not a restart
+        let started_later = parse_launchctl("17630\t0\tcom.chorus.api\n4242\t0\tcom.chorus.index-artifacts\n5020\t0\tcom.chorus.hooks\n");
+        assert!(daemon_restarts(&start, &started_later).is_empty());
+    }
+
+    #[test]
+    fn duration_is_a_perf_line_with_a_budget() {
+        assert_eq!(duration_verdict(3420, 3600).0, "pass");
+        // NEGATIVE PROOF: over budget reads fail (the page folds perf fail to slow)
+        let (v, s) = duration_verdict(4020, 3600);
+        assert_eq!(v, "fail");
+        assert!(s.contains("over the 3600s budget by 420s"), "{s}");
+    }
+
+    fn ctx_for(root: &str) -> Ctx {
+        Ctx {
+            root: root.to_string(), app_root: root.to_string(), home: root.to_string(),
+            log: format!("{}/nightly.log", root), fail_dir: format!("{}/fails", root),
+            lockdir: format!("{}/lock.d", root), role: "kade".into(), run_id: "test".into(),
+            owlapi: "http://localhost:1".into(), api: "http://localhost:1".into(),
+            ops_nudge: "/usr/bin/true".into(), no_nudge: true, owners: HashMap::new(),
+        }
+    }
+
+    #[test]
+    fn ui_leg_reads_the_seam_command_and_never_passes_on_silence() {
+        let dir = std::env::temp_dir().join(format!("lanes-4278-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let ctx = ctx_for(dir.to_str().unwrap());
+        // a run with a failure: the leg must be red and carry the case
+        std::env::set_var("NIGHTLY_PLAYWRIGHT_CMD", "printf '  \\u2718  1 [chromium] \\u203a login-journey.spec.cjs:9:3 \\u203a signs in\\n  1 failed\\n  94 passed (1.2m)\\n'; exit 1");
+        let r = leg_ui(&ctx);
+        assert_eq!(r.status, "fail", "{}", r.summary);
+        // NEGATIVE PROOF: no summary at all is UNMEASURED, not pass
+        std::env::set_var("NIGHTLY_PLAYWRIGHT_CMD", "printf 'Error: no tests found\\n'; exit 1");
+        let r = leg_ui(&ctx);
+        assert_eq!(r.status, "unmeasured", "{}", r.summary);
+        // a clean run passes with its count
+        std::env::set_var("NIGHTLY_PLAYWRIGHT_CMD", "printf '  95 passed (2.0m)\\n'; exit 0");
+        let r = leg_ui(&ctx);
+        assert_eq!(r.status, "pass", "{}", r.summary);
+        assert!(r.summary.starts_with("95 pass, 0 fail"), "{}", r.summary);
+        std::env::remove_var("NIGHTLY_PLAYWRIGHT_CMD");
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn bdd_leg_reads_the_seam_command() {
+        let dir = std::env::temp_dir().join(format!("lanes-4278-bdd-{}", std::process::id()));
+        std::fs::create_dir_all(dir.join("platform/tests")).unwrap();
+        let ctx = ctx_for(dir.to_str().unwrap());
+        std::env::set_var("NIGHTLY_CUCUMBER_CMD", "printf '35 scenarios (35 passed)\\n162 steps (162 passed)\\n'");
+        let r = leg_bdd(&ctx);
+        assert_eq!(r.status, "pass", "{}", r.summary);
+        // NEGATIVE PROOF: a planted failing scenario reds the lane
+        std::env::set_var("NIGHTLY_CUCUMBER_CMD", "printf '35 scenarios (1 failed, 34 passed)\\n162 steps (1 failed, 161 passed)\\n'; exit 1");
+        let r = leg_bdd(&ctx);
+        assert_eq!(r.status, "fail", "{}", r.summary);
+        std::env::remove_var("NIGHTLY_CUCUMBER_CMD");
+        // with no seam and no cucumber-js installed under the root: UNMEASURED, named
+        let r = leg_bdd(&ctx);
+        assert_eq!(r.status, "unmeasured", "{}", r.summary);
+        assert!(r.summary.contains("cucumber-js is not installed"), "{}", r.summary);
+        let _ = std::fs::remove_dir_all(&dir);
     }
 }
