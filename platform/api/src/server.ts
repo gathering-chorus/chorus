@@ -1345,7 +1345,12 @@ app.get('/api/chorus/crawl/:domain', async (req: Request, res: Response) => {
       readFile: (p, enc) => fs.readFileSync(p, enc),
       exists: (p) => fs.existsSync(p),
       readdir: (p) => fs.readdirSync(p),
-      chorusLogPath: path.resolve(__dirname, '../../logs/chorus.log'),
+      // #4278 — this path is ONLY the Loki `filename=` label the spine query
+      // selects on. It pointed at platform/logs/chorus.log, a 183 KB rotated
+      // copy (chorus.log.1.gz beside it); Loki labels the spine as
+      // ~/.chorus/chorus.log, so every crawl answered spine=0 (bdd
+      // domain-crawler.feature, 2026-09-23: cards 85, spine 0).
+      chorusLogPath: process.env.CHORUS_SPINE_LOG || path.join(os.homedir(), '.chorus', 'chorus.log'),
       memoryDir: path.join(os.homedir(), '.claude/projects/-Users-jeffbridwell-CascadeProjects/memory'),
       // shared-observability is a sibling of the chorus checkout (#3197 —
       // CHORUS_ROOT is now always the chorus dir, so the path is unambiguous).

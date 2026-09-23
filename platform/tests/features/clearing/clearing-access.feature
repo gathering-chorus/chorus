@@ -1,3 +1,4 @@
+# @test-type: bdd — Gherkin scenarios for Clearing access, run by cucumber-js
 @clearing @e2e
 Feature: Clearing access paths
   Jeff accesses the Clearing from three environments.
@@ -19,15 +20,17 @@ Feature: Clearing access paths
     Given the Clearing is running on port 3470
     And the auth token is read from ~/.chorus/bridge-auth-token
 
+  # #4278 — the public host admits a signed-in Solid session only (#3966); a
+  # bridge token, as cookie or Bearer, answers 401 (measured 2026-09-23 12:33:
+  # anon 401 · cookie 401 · bearer 401). Jeff's real journey through that door
+  # is the sign-in, proven by proving/flows/login-journey.spec.cjs; what this
+  # scenario can honestly prove from a role's shell is that the door is shut.
   @public @iphone
-  Scenario: Jeff via public URL on iPhone (wifi or 5G)
+  Scenario: Jeff via public URL on iPhone (wifi or 5G) — the door is shut to anything but a signed-in session
     When Jeff loads "https://clearing.lightlifeurbangardens.com" with token cookie
-    Then the page returns 200
-    And the page contains "The Clearing"
+    Then the page does not return 200
     When Jeff enters the name "jeff" via the public URL with token auth
-    Then the name is accepted
-    When Jeff sends a message "public-probe" via the API with token auth
-    Then the message "public-probe" appears in the message feed
+    Then the door does not admit the name
 
   @lan @iphone
   Scenario: Jeff via LAN URL on iPhone wifi

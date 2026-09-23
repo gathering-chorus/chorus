@@ -94,8 +94,21 @@ cmd_say() {
   else
     other="$role1"
   fi
-  if [ -z "$CHAT_DRY_RUN" ]; then
-    "$SCRIPT_DIR/nudge" "$other" "${role}: replied in chat ${chat_id}" 2>/dev/null || true
+  # #4278 — the bash `nudge` this called was retired by #2804 and deleted; the
+  # `|| true` hid that, so chat.sh persisted and never delivered (bdd
+  # chat-flow.feature "real delivery", 2026-09-23). Delivery is the MCP nudge
+  # (DEC-107: persist AND deliver), reached from bash through chorus-mcp-call.sh,
+  # and the outcome is printed so a caller can tell delivered from dry-run.
+  if [ -n "$CHAT_DRY_RUN" ]; then
+    echo "DRY-RUN: no delivery to ${other}"
+  else
+    local payload
+    payload="$(printf '{"to":"%s","message":"%s: replied in chat %s","expects":"none"}' "$other" "$role" "$chat_id")"
+    if "$SCRIPT_DIR/chorus-mcp-call.sh" "$role" chorus_nudge_message "$payload" >/dev/null 2>&1; then
+      echo "DELIVERED to ${other}"
+    else
+      echo "DELIVERY FAILED to ${other} (chorus-mcp-call.sh rc=$?)"
+    fi
   fi
 
   # Write tick marker on first say — signals role to register cron tick if not running.

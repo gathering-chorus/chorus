@@ -1,3 +1,4 @@
+// @test-type: bdd — cucumber step definitions; the feature files are the tests
 import { Given, When, Then, After } from '@cucumber/cucumber';
 import { execSync } from 'child_process';
 import * as assert from 'assert';
@@ -6,7 +7,7 @@ import * as assert from 'assert';
 let lastResponse = { status: 0, body: '' };
 let thread: Array<{ speaker: string; text: string; time: string }> = [];
 
-const API = 'http://localhost:3340';
+const API = process.env.CHORUS_API_URL || 'http://localhost:3340'; // #4278 — overridable so a werk variant can be the subject
 
 function curl(url: string): { status: number; body: string } {
   try {
