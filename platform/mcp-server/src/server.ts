@@ -2518,8 +2518,12 @@ function chorusBinDir(pathMod: typeof import('path')): string {
  * (1 = dirty, 2 = unmeasured) and must be returned. A STRING code, or a kill,
  * is the process failing to run at all, which is never a verdict and throws.
  */
+// #4273 — one spelling of the sweep verb's name for the dispatch path (the
+// lint ratchet counts a third literal as a duplicate).
+const ATHENA_VALIDATE = 'athena-validate';
+
 async function runAthenaVerb(
-  bin: string, args: string[], role: string, label = 'athena-validate',
+  bin: string, args: string[], role: string, label = ATHENA_VALIDATE,
 ): Promise<{ stdout: string; stderr: string; exitCode: number }> {
   const execFileP = promisify(execFile);
   try {
@@ -2557,7 +2561,7 @@ async function executeAthenaVerb(
 ): Promise<{ content: Array<{ type: 'text'; text: string }> }> {
   const pathMod = require('path') as typeof import('path');
   const binDir = chorusBinDir(pathMod);
-  if (verb !== 'athena-validate') {
+  if (verb !== ATHENA_VALIDATE) {
     const r = await runAthenaVerb(pathMod.join(binDir, verb), args, role, verb);
     return mcpJson({ ok: r.exitCode === 0, verb, role, exit: r.exitCode,
       tail: (r.stdout + r.stderr).trim().split('\n').slice(-12).join('\n') });
@@ -2566,7 +2570,7 @@ async function executeAthenaVerb(
   // both branches assign before any read, which eslint counts as
   // no-useless-assignment three times over. Running the child in its own helper
   // gives one value back and leaves nothing to pre-seed.
-  const { stdout, exitCode } = await runAthenaVerb(pathMod.join(binDir, 'athena-validate'), args, role);
+  const { stdout, exitCode } = await runAthenaVerb(pathMod.join(binDir, ATHENA_VALIDATE), args, role);
   const { issues, state } = parseValidateSummary(stdout);
   const verdict = exitCode === 2 || state === 'unreachable' ? 'unmeasured' : exitCode === 0 ? 'clean' : 'dirty';
   const report = stdout.split('\n').filter((l) => l.startsWith('graph-issue|') || l.startsWith('graph-summary|'));
