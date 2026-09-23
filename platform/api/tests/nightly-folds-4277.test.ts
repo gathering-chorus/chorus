@@ -80,6 +80,12 @@ describe('#4277 the page', () => {
     expect(green).not.toMatch(/<details[^>]*\bopen\b/);
     expect(green).not.toContain('fire wrote NO evidence');
   });
+  it('a shell suite whose only stored row is the suite itself is not shown as a case', () => {
+    const own = { 'proving/scripts/tests/alert-fires-carry-evidence.test.sh': [{ name: 'alert-fires-carry-evidence.test.sh', result: 'fail' }] };
+    const page = renderNightlyPage(parseNightlyLog(RUN_ONE_RED), { cases: own, typeOf });
+    expect(page).toContain('no case rows recorded');
+    expect(page).not.toMatch(/class="case fail"/);
+  });
   it('a red suite the store has no case rows for says so instead of showing nothing', () => {
     const page = renderNightlyPage(parseNightlyLog(RUN_ONE_RED), { cases: {}, typeOf });
     expect(page).toContain('no case rows recorded');

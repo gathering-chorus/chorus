@@ -398,8 +398,16 @@ function casesFor(cases: CasesBySuite | undefined, p: string): CaseRow[] | undef
   return cases ? Object.entries(cases).find(([k]) => k === p)?.[1] : undefined;
 }
 
+/** A shell suite records ONE result row named for the file — that is the
+ *  suite's own verdict, not a case inside it. Showing it as a case would
+ *  print the suite's name twice and tell the reader nothing new. */
+function isSuiteOwnRow(cases: CaseRow[], r: NightlyRow): boolean {
+  const file = r.path.split('/').pop() ?? r.path;
+  return cases.length === 1 && cases[0].name === file;
+}
+
 function caseList(cases: CaseRow[] | undefined, r: NightlyRow): string {
-  if (!cases || cases.length === 0) {
+  if (!cases || cases.length === 0 || isSuiteOwnRow(cases, r)) {
     return `<li class="case none">no case rows recorded for this suite — the summary is all the run wrote: ${esc(oneDecimal(r.summary))}</li>`;
   }
   return cases.map((c) => `<li class="case ${esc(c.result)}"><span class="m">${esc(c.result)}</span><span>${esc(c.name)}</span></li>`).join('');
@@ -494,11 +502,12 @@ function page(title: string, body: string): string {
   :root { --bg:#f6f7f9; --panel:#fff; --fg:#1b1d22; --mut:#646b78; --line:#e1e4ea; --red:#c0392b; --red-bg:#fbeae7; --green:#1e7d32; --green-bg:#e8f3ea; --amber:#8a6d1a; --amber-bg:#f7f0dc; --unm:#5b4fa8; --unm-bg:#ebe8f7; --accent:#1f5f8b; }
   @media (prefers-color-scheme: dark) { :root { --bg:#141619; --panel:#1c1f24; --fg:#e9ebef; --mut:#9aa2b1; --line:#2b2f37; --red:#ff6b5e; --red-bg:#3a1f1c; --green:#5dd879; --green-bg:#1b3021; --amber:#e3c05a; --amber-bg:#3a3117; --unm:#a99cf2; --unm-bg:#26223d; --accent:#7fb3dc; } }
   body { background:var(--bg); color:var(--fg); font:15px/1.5 -apple-system,system-ui,sans-serif; max-width:64rem; margin:0 auto; padding:1.5rem 16px 3rem; display:flex; flex-direction:column; gap:1rem; }
-  .banner { background:var(--panel); border:1px solid var(--line); border-left:6px solid var(--mut); border-radius:10px; padding:1rem 1.25rem; display:grid; grid-template-columns:1fr auto; gap:.25rem 1.5rem; align-items:baseline; }
+  .banner { background:var(--panel); border:1px solid var(--line); border-left:6px solid var(--mut); border-radius:10px; padding:1rem 1.25rem; display:grid; grid-template-columns:minmax(0,1fr) auto; gap:.25rem 1.5rem; align-items:baseline; min-width:0; }
+  .banner > * { min-width:0; overflow-wrap:anywhere; }
   .banner.red { border-left-color:var(--red); } .banner.green { border-left-color:var(--green); } .banner.partial, .banner.empty { border-left-color:var(--amber); }
   .verdict { font-size:1.7rem; font-weight:700; }
   .banner.red .verdict { color:var(--red); } .banner.green .verdict { color:var(--green); } .banner.partial .verdict { color:var(--amber); }
-  .when { color:var(--mut); font-family:ui-monospace,monospace; font-size:.85rem; text-align:right; }
+  .when { color:var(--mut); font-family:ui-monospace,monospace; font-size:.85rem; text-align:right; max-width:22rem; }
   .state { grid-column:1/-1; color:var(--amber); font-weight:600; }
   .counts { grid-column:1/-1; display:flex; flex-wrap:wrap; gap:.35rem 1.25rem; color:var(--mut); font-variant-numeric:tabular-nums; }
   .counts .u { color:var(--fg); font-weight:600; }
@@ -513,18 +522,19 @@ function page(title: string, body: string): string {
   details.group > summary::before, details.sub > summary::before { content:""; width:.5rem; height:.5rem; border-right:2px solid var(--mut); border-bottom:2px solid var(--mut); transform:rotate(-45deg); }
   details.group[open] > summary::before, details.sub[open] > summary::before { transform:rotate(45deg); }
   details.sub { border-top:1px solid var(--line); } details.sub > summary { padding-left:1.5rem; font-weight:500; }
-  summary .n { font-variant-numeric:tabular-nums; min-width:3ch; text-align:right; } summary .lbl { flex:1; } summary .hint { color:var(--mut); font-weight:400; font-size:.85rem; }
+  summary .n { font-variant-numeric:tabular-nums; min-width:3ch; text-align:right; } summary .lbl { flex:1; } summary .hint { color:var(--mut); font-weight:400; font-size:.85rem; min-width:0; }
   .pill { font-size:.7rem; font-weight:700; letter-spacing:.06em; text-transform:uppercase; padding:.1rem .45rem; border-radius:999px; white-space:nowrap; }
   .pill.red { background:var(--red-bg); color:var(--red); } .pill.green { background:var(--green-bg); color:var(--green); } .pill.amber { background:var(--amber-bg); color:var(--amber); } .pill.unm { background:var(--unm-bg); color:var(--unm); }
   ul.suites { border-top:1px solid var(--line); margin:0; padding:0; list-style:none; }
-  li.suite, details.red > summary { display:grid; grid-template-columns:auto 5.5rem minmax(0,1fr) auto; gap:.25rem 1rem; padding:.45rem 1rem; border-bottom:1px solid var(--line); align-items:baseline; }
+  li.suite, details.red > summary { display:grid; grid-template-columns:auto 5.5rem minmax(0,1fr) minmax(0,auto); gap:.25rem 1rem; padding:.45rem 1rem; border-bottom:1px solid var(--line); align-items:baseline; }
+  li.suite > *, details.red > summary > * { min-width:0; }
   li.suite:last-child { border-bottom:0; }
   details.red { border-top:1px solid var(--line); } details.red > summary { background:var(--red-bg); } details.red > summary .path { font-weight:600; }
   .kind { color:var(--mut); font-size:.8rem; font-family:ui-monospace,monospace; }
   .path { font-family:ui-monospace,monospace; font-size:.85rem; overflow-wrap:anywhere; }
-  .owner { color:var(--mut); font-size:.8rem; white-space:nowrap; }
+  .owner { color:var(--mut); font-size:.8rem; }
   .sum { grid-column:2/-1; color:var(--mut); font-size:.85rem; overflow-wrap:anywhere; }
-  .label { font-size:.7rem; font-weight:700; letter-spacing:.05em; white-space:nowrap; }
+  .label { font-size:.7rem; font-weight:700; letter-spacing:.05em; }
   .label.product-broke { color:var(--red); } .label.test-wrong { color:var(--amber); } .label.unmeasured { color:var(--unm); }
   ul.cases { margin:0; padding:.25rem 1rem .6rem 3rem; list-style:none; display:flex; flex-direction:column; gap:.2rem; }
   .case { display:flex; gap:.6rem; align-items:baseline; font-size:.9rem; overflow-wrap:anywhere; }
