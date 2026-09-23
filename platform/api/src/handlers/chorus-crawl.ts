@@ -241,7 +241,11 @@ function parseSpineLine(line: string, cardIds: Set<number>): SpineEntry | null {
   try {
     const parsed = JSON.parse(line);
     if (!parsed.event || !parsed.event.startsWith('card.')) return null;
-    const cardId = parseInt(parsed.card || '0', 10);
+    // #4278 — the spine writes the card as `card_id` (every card.* line in
+    // Loki today: {"event":"card.demo.started","card_id":"4278",…}); this
+    // read `card`, parsed 0, and matched no domain — spine was 0 for every
+    // domain regardless of the Loki label. `card` kept for older lines.
+    const cardId = parseInt(parsed.card_id || parsed.card || '0', 10);
     if (!cardIds.has(cardId)) return null;
     return { timestamp: parsed.timestamp, event: parsed.event, role: parsed.role, card: cardId };
   } catch { return null; /* skip malformed */ }

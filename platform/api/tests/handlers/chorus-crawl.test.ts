@@ -401,3 +401,49 @@ describe('fetchCrawl — OWL bucket (#3606)', () => {
     expect(owl.relationships).toContain('https://x#MusicTrack');
   });
 });
+
+// #4278 — the spine's card.* lines carry `card_id`, not `card`. The reader took
+// `card`, parsed 0, and matched no domain: spine was 0 for every crawl even with
+// the right Loki label. Fixture lines are the real shape from Loki on 2026-09-23.
+describe('#4278 spine lines carry card_id', () => {
+  const lokiBody = (lines: string[]) => JSON.stringify({ data: { result: [{ values: lines.map((l, i) => [String(1790180000000000000 + i), l]) }] } });
+  const realLine = '{"timestamp":"2026-09-23T12:57:06.157-0400","event":"card.demo.started","role":"kade","card_id":"4278","product":"Chorus"}';
+  const otherDomainLine = '{"timestamp":"2026-09-23T12:48:32.671-0400","event":"card.demo.started","role":"wren","card_id":"99926"}';
+
+  async function crawlWith(lines: string[]) {
+    const fetchFn = (async (url: string) => {
+      if (String(url).includes('/loki/api/v1/query_range') && String(url).includes('filename%3D')) {
+        return { ok: true, json: async () => JSON.parse(lokiBody(lines)) } as unknown as Response;
+      }
+      return { ok: false, json: async () => ({}) } as unknown as Response;
+    }) as unknown as import('../../src/handlers/chorus-crawl').FetchFn;
+    return fetchCrawl('seeds', {
+      db: null,
+      getBoardCards: () => [{ id: '4278', title: 'the card', status: 'WIP', owner: 'kade', tags: 'domain:seeds' }],
+      fetchFn,
+      athenaSparqlQuery: async () => ({ results: { bindings: [] } }),
+      execAsync: async () => ({ stdout: '', stderr: '' }),
+      readFile: () => '',
+      exists: () => false,
+      readdir: () => [],
+      chorusLogPath: '/Users/jeffbridwell/.chorus/chorus.log',
+      memoryDir: '/nope',
+      alertDir: '/nope',
+      lokiBaseUrl: 'http://loki.test',
+    } as any);
+  }
+
+  test('a real card_id line for a domain card lands in spine', async () => {
+    const r = await crawlWith([realLine]);
+    expect(r.status).toBe(200);
+    expect((r.body as any).spine.map((e: any) => e.card)).toEqual([4278]);
+  });
+
+  test('NEGATIVE PROOF: a line for a card outside the domain is dropped, and the old `card`-only read would drop everything', async () => {
+    const r = await crawlWith([otherDomainLine]);
+    expect((r.body as any).spine).toHaveLength(0);
+    // the pre-fix shape: no card_id and no card → 0 → never a domain card
+    const r2 = await crawlWith(['{"event":"card.demo.started","role":"kade","timestamp":"t"}']);
+    expect((r2.body as any).spine).toHaveLength(0);
+  });
+});
