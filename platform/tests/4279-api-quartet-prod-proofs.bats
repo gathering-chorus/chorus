@@ -24,13 +24,13 @@ setup() {
 
 @test "the residue query finds a planted leftover row and not an absent one" {
   G="urn:chorus:test:4279-fixture-$$"; RID="proof-$$"
-  code="$(curl -s "${FUSEKI_AUTH[@]+"${FUSEKI_AUTH[@]}"}" -o /dev/null -w '%{http_code}' -X POST -H 'Content-Type: application/sparql-update' \
+  code="$(curl -s --max-time 60 "${FUSEKI_AUTH[@]+"${FUSEKI_AUTH[@]}"}" -o /dev/null -w '%{http_code}' -X POST -H 'Content-Type: application/sparql-update' \
     --data-binary "INSERT DATA { GRAPH <$G> { <https://jeffbridwell.com/chorus#test-result-zz-probe-$RID-planted> <https://jeffbridwell.com/chorus#label> \"planted\" } }" "$UPDATE")"
   case "$code" in 2*) ;; *) echo "could not plant the fixture row (HTTP $code)"; return 1 ;; esac
   left="$(curl -s --max-time 60 "${FUSEKI_AUTH[@]+"${FUSEKI_AUTH[@]}"}" -G "$QUERY" \
     --data-urlencode "query=SELECT DISTINCT ?g ?s WHERE { VALUES ?s { <https://jeffbridwell.com/chorus#test-result-zz-probe-$RID-planted> <https://jeffbridwell.com/chorus#test-result-zz-probe-$RID-absent> } GRAPH ?g { ?s ?p ?o } }" \
     -H 'Accept: text/csv' 2>/dev/null | tail -n +2 | tr -d '\r')"
-  curl -s "${FUSEKI_AUTH[@]+"${FUSEKI_AUTH[@]}"}" -o /dev/null -X POST -H 'Content-Type: application/sparql-update' --data-binary "DROP SILENT GRAPH <$G>" "$UPDATE"
+  curl -s --max-time 60 "${FUSEKI_AUTH[@]+"${FUSEKI_AUTH[@]}"}" -o /dev/null -X POST -H 'Content-Type: application/sparql-update' --data-binary "DROP SILENT GRAPH <$G>" "$UPDATE"
   echo "found: $left"
   echo "$left" | grep -q "zz-probe-$RID-planted"
   ! echo "$left" | grep -q "zz-probe-$RID-absent"

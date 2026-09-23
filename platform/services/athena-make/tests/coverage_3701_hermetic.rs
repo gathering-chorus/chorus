@@ -371,7 +371,8 @@ fn rows_for(q: &str) -> Vec<String> {
     }
     if q.contains("?p ?o . BIND('y'") {
         // entity_exists
-        for e in ["pulse", "hasparent", "borg", "dalboom", "testresult-existing"] {
+        // #4277 — "orphan" exists with no ownedBy; "ghost" does not exist at all
+        for e in ["pulse", "hasparent", "borg", "dalboom", "testresult-existing", "orphan"] {
             if q.contains(&format!("#{e}>")) {
                 return vec![s("y")];
             }
@@ -989,10 +990,16 @@ fn write_lifecycle_create_replace_edge_delete() {
     let (c, _, b) = http("PUT", "/domains/pulse", hdrs, "{}");
     assert_eq!(c, 422);
     assert!(b.contains("at least one shape property"), "{}", b);
-    // REPLACE a node with no ownedBy on record → 403 fail-closed
+    // #4277 — the owner check names its state (2026-09-23: kade's own delete
+    // came back 403 "ownedBy absent" while the store was not answering, and the
+    // row stayed). A row that EXISTS with no ownedBy → 403 fail-closed, named.
+    let (c, _, b) = http("PUT", "/domains/orphan", hdrs, "{\"comment\":\"x\"}");
+    assert_eq!(c, 403, "{}", b);
+    assert!(b.contains("not this row's owner (ownedBy absent — the row has no owner)") && b.contains("chorus:agent principal-"), "{}", b);
+    // A row that is not there at all → 404, never a refusal about ownership.
     let (c, _, b) = http("PUT", "/domains/ghost", hdrs, "{\"comment\":\"x\"}");
-    assert_eq!(c, 403);
-    assert!(b.contains("not this row's owner") && b.contains("chorus:agent principal-"), "{}", b);
+    assert_eq!(c, 404, "{}", b);
+    assert!(b.contains("no such row 'ghost'"), "{}", b);
     // REPLACE owned-but-absent → 404
     let (c, _, b) = http("PUT", "/domains/phantom", hdrs, "{\"comment\":\"x\"}");
     assert_eq!(c, 404);

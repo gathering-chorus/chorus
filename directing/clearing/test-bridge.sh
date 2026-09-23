@@ -41,13 +41,13 @@ print(len(noise))
 check "No XML tags in visible messages" "$([ "$XML_NOISE" = "0" ] && echo true || echo false)"
 
 # 3. No file paths in visible messages
-PATH_NOISE=$(echo "$MESSAGES" | python3 -c "
-import json,sys
-msgs = json.load(sys.stdin)
-noise = [m for m in msgs if '/Users/jeffbridwell/' in m.get('text','') and m.get('visible',False)]
-print(len(noise))
-" 2>/dev/null)
-check "No raw file paths in visible messages" "$([ "$PATH_NOISE" = "0" ] && echo true || echo false)"
+# #4277 — the "no raw file paths in visible messages" check is retired: it
+# contradicted proving/flows/clearing-ui.spec.cjs ("a reply that quotes a
+# filesystem path reaches Jeff's room"), which posts exactly such a message on
+# every nightly to prove the router does NOT hide real replies. Both ran in the
+# 2026-09-23 14:34 nightly and this one went red on the other's canary. A path
+# in a real reply is content; machinery is caught by name in the router.
+echo "  SKIP: raw-path check retired (#4277) — a reply quoting a path is content, see clearing-ui.spec.cjs"
 
 # 4. No tool metadata suffixes
 TOOL_NOISE=$(echo "$MESSAGES" | python3 -c "
