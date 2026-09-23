@@ -136,7 +136,9 @@ describeIntegration('GET /api/athena/machines', () => {
 
 describeIntegration('_meta envelope', () => {
   test('all endpoints include query_name, duration_ms, cached', async () => {
-    const endpoints = ['health', 'subdomains', 'owners', 'machines']; // products/subproducts retired #3603; steps retired #3702
+    // #4274: 'subdomains' (the list route) retired — gone with chorus:SubDomain (#4265);
+    // Jeff 2026-09-23 "we are retiring subdomains". The /:id/* facets still serve and keep their tests.
+    const endpoints = ['health', 'owners', 'machines']; // products/subproducts retired #3603; steps retired #3702
     for (const ep of endpoints) {
       const res = await fetch(`${API}/api/athena/${ep}`);
       const body = await res.json();

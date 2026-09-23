@@ -1,4 +1,5 @@
 #!/usr/bin/env bats
+# @test-type: integration — reads the live store
 # Tests for daily-signal-scan.sh (#2088)
 # What Jeff sees: a brief ready by 6am with codebase weather, trust verification,
 # backlog coherence, and golfball detection. No session required.
@@ -40,4 +41,18 @@ SCRIPT="$(cd "$(dirname "$BATS_TEST_FILENAME")/../scripts" && pwd)/daily-signal-
   bash "$SCRIPT" --dry-run --output /tmp/test-daily-signal.md 2>/dev/null
   grep -q "Flow Health\|WIP\|Now queue" /tmp/test-daily-signal.md
   rm -f /tmp/test-daily-signal.md
+}
+
+# #4274 — the shape that killed the scan on an empty section, shown to fail
+# under the script's own `set -euo pipefail`, and the replacement shown to pass.
+@test "NEGATIVE PROOF (#4274): '[ -n ] && echo' as a loop body ends the scan on an empty section" {
+  run bash -c 'set -euo pipefail; echo "" | while read -r line; do [ -n "$line" ] && echo "  - $line"; done; echo reached'
+  [ "$status" -ne 0 ]
+  [[ "$output" != *reached* ]]
+}
+
+@test "#4274: the if-form prints nothing for an empty section and the scan continues" {
+  run bash -c 'set -euo pipefail; echo "" | while read -r line; do if [ -n "$line" ]; then echo "  - $line"; fi; done; echo reached'
+  [ "$status" -eq 0 ]
+  [ "$output" = "reached" ]
 }

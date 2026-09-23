@@ -1,5 +1,6 @@
+// @test-type: integration:api — hits the running API
 /**
- * @test-type: api
+ * (test-type moved to line 1 — #4274: a bare concern is not a layer)
  *
  * Observability domain population tests — #1963
  *
@@ -92,23 +93,12 @@ describe('AC5: Observability gaps', () => {
   });
 });
 
-// AC6: Sub-domains populated with children
-describe('AC6: Observability sub-domains as children', () => {
-
-  let harness: TestApp;
-
-  beforeAll(async () => { harness = await startTestApp(); });
-  afterAll(async () => { if (harness) await harness.close(); });
-  test('observability-domain returns a domains array', async () => {
-    // #3559: was "has > 0 children" (data-coupled). Contract: the endpoint
-    // returns a domains array. The graph structure (which children exist) is a
-    // data question, not a code one — and it has drifted before (#1870).
-    const res = await fetch(`${harness.baseUrl}/api/athena/subdomains/observability-domain`);
-    expect(res.status).toBe(200);
-    const body = await res.json();
-    expect(Array.isArray(body.data.domains)).toBe(true);
-  });
-});
+// AC6 (Sub-domains populated with children) — RETIRED #4274. It fetched the
+// subdomain DETAIL route, GET /api/athena/subdomains/observability-domain, which
+// went with chorus:SubDomain (#4265; subdomain-detail.sparql deleted) and 404s.
+// Jeff 2026-09-23: "we are retiring subdomains". A domain's children are a model
+// question answered at athena-make (:3360/domains/domains/<id>), not here. The
+// completeness facets above still serve and keep their tests.
 
 // Bonus: observability-product collapsed — no longer a SubProduct.
 // Structural (a node was removed), not data-volume — kept as-is.

@@ -1,3 +1,4 @@
+// @test-type: integration — hits the running API/store
 /**
  * Deploys sub-domain graph tests — #1873
  *
@@ -11,25 +12,12 @@ import { startTestApp, type TestApp } from './lib/test-app';
 // #1873 AC1-AC4 originally asserted deploy-target child subdomains
 // (gathering-deploy, chorus-api-deploy, launchagents-deploy) under
 // deploys-domain, plus their individual completeness + consume edges.
-// Those targets never survived the graph restructure. Dropping the
-// data-dependent assertions and keeping only the deploys-domain shape check
-// until the data is reloaded. Intent preserved: deploys-domain is addressable
-// and returns the standard detail envelope with consumes and domains arrays.
-describe('Deploys detail returns shape', () => {
-
-  let harness: TestApp;
-
-  beforeAll(async () => { harness = await startTestApp(); });
-  afterAll(async () => { if (harness) await harness.close(); });
-  test('deploys-domain is addressable and returns detail envelope', async () => {
-    const res = await fetch(`${harness.baseUrl}/api/athena/subdomains/deploys-domain`);
-    expect(res.status).toBe(200);
-    const body = await res.json();
-    expect(body._meta.query_name).toBe('subdomain-detail');
-    expect(Array.isArray(body.data.domains)).toBe(true);
-    expect(Array.isArray(body.data.consumes)).toBe(true);
-  });
-});
+// Those targets never survived the graph restructure. The shape check that
+// replaced them ('deploys-domain is addressable and returns detail envelope')
+// is RETIRED by #4274: it fetched the subdomain DETAIL route, which went with
+// chorus:SubDomain (#4265; subdomain-detail.sparql deleted) and 404s. Jeff
+// 2026-09-23: "we are retiring subdomains". deploys-domain as a row is served
+// by athena-make (:3360/domains/domains/deploys-domain).
 
 // AC5: Query "what deploys affect the spine?" returns results
 describe('AC5: Spine impact query', () => {

@@ -1,17 +1,23 @@
 /**
- * POST /api/athena/subdomains/:id/owner — re-assign owner of a SubDomain (#2508).
+ * POST /api/athena/subdomains/:id/owner — re-assign owner of a Domain (#2508).
  *
- * Owner is in the ontology graph (urn:chorus:ontology), seeded from
- * roles/silas/ontology/chorus.ttl. So the write must:
- *   1. Patch chorus.ttl on disk so reload preserves the change
- *   2. DELETE/INSERT the chorus:ownedBy triple in the live ontology graph
+ * #4274: chorus:SubDomain is retired (#4265). The rows this writes are
+ * chorus:Domain rows in urn:chorus:domains:domains (89 on 2026-09-23, every
+ * one owned by a chorus:principal-*), so the block match, the graph and the
+ * owner IRI follow the live model. The write still:
+ *   1. Patches the TTL on disk so reload preserves the change
+ *   2. DELETE/INSERTs the chorus:ownedBy triple in the live domain graph
  *
- * Replace-semantics (not append): one owner per subdomain.
+ * Replace-semantics (not append): one owner per domain.
+ *
+ * Flag (not this card): this is a v1 side door — it edits a TTL file by
+ * regex and writes SPARQL around athena-model. It has no UI caller. It
+ * belongs in the next retirement with the 19 facet routes.
  */
 import type { FetchResult } from './codebase-topology';
 
 const CHORUS_PREFIX = 'https://jeffbridwell.com/chorus#';
-const ONTOLOGY_GRAPH = 'urn:chorus:ontology';
+const DOMAIN_GRAPH = 'urn:chorus:domains:domains';
 
 const VALID_ID = /^[a-z0-9][a-z0-9._-]*$/i;
 const VALID_OWNERS = new Set(['jeff', 'wren', 'silas', 'kade']);
@@ -103,13 +109,14 @@ export function findBlockTerminator(ttl: string, startIdx: number): number {
 }
 
 /**
- * Patch the chorus:ownedBy line within a specific SubDomain block in chorus.ttl.
- * Returns the patched content, or null if the subdomain block isn't found.
+ * Patch the chorus:ownedBy line within a specific Domain block in the TTL.
+ * Returns the patched content, or null if the domain block isn't found. A
+ * block typed chorus:SubDomain is NOT found: the class is retired (#4265).
  */
 export function patchTtlOwner(ttl: string, subdomainId: string, owner: string): string | null {
   // subdomainId is sanitized upstream via VALID_ID; safe in regex.
   // eslint-disable-next-line security/detect-non-literal-regexp
-  const blockStart = new RegExp(`^chorus:${subdomainId}\\s+a\\s+chorus:SubDomain\\s*;`, 'm');
+  const blockStart = new RegExp(`^chorus:${subdomainId}\\s+a\\s+chorus:Domain\\s*;`, 'm');
   const startMatch = blockStart.exec(ttl);
   if (!startMatch) return null;
 
@@ -118,9 +125,11 @@ export function patchTtlOwner(ttl: string, subdomainId: string, owner: string): 
   if (blockEndIdx === -1) return null;
 
   const block = ttl.slice(blockStartIdx, blockEndIdx);
-  const ownerLineRe = /(\s+chorus:ownedBy\s+)chorus:[a-z]+(\s*;)/;
+  // Owners are principals (chorus:principal-<who>); the bare chorus:<who> form is
+  // read so a v1 line still patches, but is never written back.
+  const ownerLineRe = /(\s+chorus:ownedBy\s+)chorus:(?:principal-)?[a-z]+(\s*;)/;
   if (!ownerLineRe.test(block)) return null;
-  const newBlock = block.replace(ownerLineRe, `$1chorus:${owner}$2`);
+  const newBlock = block.replace(ownerLineRe, `$1chorus:principal-${owner}$2`);
   return ttl.slice(0, blockStartIdx) + newBlock + ttl.slice(blockEndIdx);
 }
 
@@ -141,7 +150,7 @@ export async function setSubdomainOwner(
   }
 
   const subjectUri = `${CHORUS_PREFIX}${sub}`;
-  const ownerUri = `${CHORUS_PREFIX}${owner}`;
+  const ownerUri = `${CHORUS_PREFIX}principal-${owner}`;
 
   // 1. Read TTL + compute patch in memory (no disk write yet).
   //    Resolves the 404-or-not check without mutating anything.
@@ -155,16 +164,16 @@ export async function setSubdomainOwner(
 
   const patched = patchTtlOwner(ttl, sub, owner);
   if (patched === null) {
-    return { status: 404, body: { error: `SubDomain '${sub}' not found in ontology TTL` } };
+    return { status: 404, body: { error: `Domain '${sub}' not found in ontology TTL` } };
   }
 
   // 2. SPARQL update first (gate:arch — Silas): if Fuseki rejects, disk is untouched.
   //    OPTIONAL on the WHERE clause (gate:code — Kade): handles the no-existing-owner case.
   //    Without OPTIONAL, WHERE matches 0 rows, both DELETE and INSERT no-op silently.
   const update = `PREFIX chorus: <${CHORUS_PREFIX}>
-    DELETE { GRAPH <${ONTOLOGY_GRAPH}> { <${subjectUri}> chorus:ownedBy ?o } }
-    INSERT { GRAPH <${ONTOLOGY_GRAPH}> { <${subjectUri}> chorus:ownedBy <${ownerUri}> } }
-    WHERE  { OPTIONAL { GRAPH <${ONTOLOGY_GRAPH}> { <${subjectUri}> chorus:ownedBy ?o } } }`;
+    DELETE { GRAPH <${DOMAIN_GRAPH}> { <${subjectUri}> chorus:ownedBy ?o } }
+    INSERT { GRAPH <${DOMAIN_GRAPH}> { <${subjectUri}> chorus:ownedBy <${ownerUri}> } }
+    WHERE  { OPTIONAL { GRAPH <${DOMAIN_GRAPH}> { <${subjectUri}> chorus:ownedBy ?o } } }`;
 
   try {
     await deps.sparqlUpdate(update);
