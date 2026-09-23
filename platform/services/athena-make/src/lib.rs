@@ -3764,11 +3764,25 @@ pub fn tests_manifest(t: &RouteTable) -> String {
         // Everything the caller actually authors is still compared.
         let door_stamped = |f: &&String| !matches!(f.as_str(),
             "ownedBy" | "changedAt" | "changedIn" | "writeCount" | "created" | "modified");
-        let comparable: Vec<String> = t.write_required.iter().filter(door_stamped).cloned().collect();
+        // #4282 — a field the READ hides is not a field a read-back can check.
+        // On an annotated shape (ADR-048 §3) a `secret` field and an unmarked
+        // field are both withheld by entity_json's fail-closed gate, so
+        // Service.implementationPlan (secret) and Service.docState (unmarked)
+        // came back MISSING under every owner and the quartet read as a broken
+        // API. The caller still has to SEND them; the manifest now names them as
+        // hidden instead of asking for them back.
+        // Edges are never gated: entity_json serves every edge under `links`
+        // whatever the shape says, so only a literal can be hidden.
+        let is_edge = |f: &str| t.fields.iter().any(|d| d.split('|').next() == Some(f) && d.contains("|edge:"));
+        let read_hidden = |f: &&String| !is_edge(f) && !t.exposure.is_empty()
+            && !t.exposure.iter().any(|(k, l)| k == *f && (l == "public" || l == "internal"));
+        let hidden: Vec<String> = t.write_required.iter().filter(door_stamped).filter(read_hidden).cloned().collect();
+        let comparable: Vec<String> = t.write_required.iter().filter(door_stamped).filter(|f| !read_hidden(f)).cloned().collect();
+        let hidden_part = if hidden.is_empty() { String::new() } else { format!(", \"readBackHidden\": [{}]", arr(&hidden)) };
         if comparable.is_empty() {
-            "\"readBack\": null, \"readBackSkipped\": \"every write-required field on this class is stamped by the door; nothing the caller sends can be compared\"".to_string()
+            format!("\"readBack\": null, \"readBackSkipped\": \"every write-required field on this class is stamped by the door or hidden on read; nothing the caller sends can be compared\"{}", hidden_part)
         } else {
-            format!("\"readBack\": {{ \"compareFields\": [{}] }}", arr(&comparable))
+            format!("\"readBack\": {{ \"compareFields\": [{}]{} }}", arr(&comparable), hidden_part)
         }
     };
     let mut quartet: Vec<String> = vec![];
@@ -6011,6 +6025,57 @@ pub fn serve(port: u16, tables: &[RouteTable]) -> R<()> {
 
 #[cfg(test)]
 mod tests {
+    use super::*;
+
+    fn widget_table(write_required: &[&str], exposure: &[(&str, &str)]) -> RouteTable {
+        RouteTable {
+            class: format!("{}Widget", NS),
+            fields: write_required.iter().map(|f| format!("{f}|datatype:string")).collect(),
+            routes: vec![
+                "GET /things/widgets".into(),
+                "GET /things/widgets/:name".into(),
+                "POST /things/widgets".into(),
+                "PUT /things/widgets/:name".into(),
+                "DELETE /things/widgets/:name".into(),
+            ],
+            secured: vec![], mandatory: write_required.iter().map(|f| f.to_string()).collect(),
+            write_required: write_required.iter().map(|f| f.to_string()).collect(), allowed_values: vec![],
+            unbounded: vec![], repo_target: String::new(),
+            exposure: exposure.iter().map(|(f, l)| (f.to_string(), l.to_string())).collect(),
+            instances_graph: "urn:chorus:domains:things".into(),
+            tree_edges: vec![], tree_order: None,
+            domain: "things".into(), base_path: "/things/widgets".into(),
+            write_authority: String::new(), model_version: String::new(),
+        }
+    }
+
+    /// #4282 — NEGATIVE PROOF: a field the read hides (secret, or unmarked on an
+    /// annotated shape) must not be asked for on read-back. Service's
+    /// implementationPlan (secret) and docState (unmarked) came back MISSING
+    /// under every owner on 2026-09-23 and the quartet read as a broken API.
+    /// Dropping the `read_hidden` filter in tests_manifest turns this red.
+    #[test]
+    fn read_hidden_fields_are_named_not_compared() {
+        let mut t = widget_table(&["label", "implementationPlan", "docState"], &[("label", "public"), ("implementationPlan", "secret")]);
+        // an unmarked EDGE is still compared: edges are served under links, never gated
+        t.fields.push("hasDesignDoc|edge:Document".into());
+        t.write_required.push("hasDesignDoc".into());
+        let m = tests_manifest(&t);
+        let create = m.split("\"step\": \"create\"").nth(1).and_then(|s| s.split("\"step\": \"read\"").next()).unwrap_or("");
+        assert!(create.contains("\"compareFields\": [\"label\", \"hasDesignDoc\"]"), "{create}");
+        assert!(create.contains("\"readBackHidden\": [\"implementationPlan\", \"docState\"]"), "{create}");
+    }
+
+    /// The control: a shape with NO exposure annotations compares everything
+    /// (entity_json passes everything on an unannotated shape — migration-safe).
+    #[test]
+    fn an_unannotated_shape_compares_every_authored_field() {
+        let t = widget_table(&["label", "docState"], &[]);
+        let m = tests_manifest(&t);
+        assert!(m.contains("\"compareFields\": [\"label\", \"docState\"]"), "{m}");
+        assert!(!m.contains("readBackHidden"), "{m}");
+    }
+
 
     /// #4267 — two artifacts, one model: the OpenAPI document and the test
     /// manifest are both projected from the same RouteTable, so a delete cannot

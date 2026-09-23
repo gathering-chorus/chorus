@@ -104,7 +104,9 @@ const KINDS: &[(&str, &str, bool)] = &[
     ("value-stream", "ValueStream", false),
     ("value-stream-step", "ValueStreamStep", false),
     ("service", "Service", false),
-    ("principle", "Principle", false),
+    // #4282 — bare, matching the 28 authored rows and athena-make's read side (#4114);
+    // prefixed here meant every principle written through the door could not be read back.
+    ("principle", "Principle", true),
     ("practice", "Practice", false),
     ("policy", "Policy", false),
     ("skill", "Skill", false),
@@ -3193,7 +3195,7 @@ mod tests {
             mint("commitment", "ledger-cross-foots").unwrap(),
             format!("{}commitment-ledger-cross-foots", NS)
         );
-        assert_eq!(mint("principle", "be direct").unwrap(), format!("{}principle-be-direct", NS));
+        assert_eq!(mint("principle", "be direct").unwrap(), format!("{}be-direct", NS)); // #4282 bare
         // #4040 — the pipelines domain's kinds (the fifth generate-vs-write drift)
         assert_eq!(mint("pipeline", "cicd").unwrap(), format!("{}pipeline-cicd", NS));
         assert_eq!(

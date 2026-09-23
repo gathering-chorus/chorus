@@ -42,7 +42,11 @@ esac
 # names a fixed throwawaySubject; a fixed name is how the 09-21 probe row was
 # left behind and only found two days later. A run-scoped name makes any
 # leftover attributable to the run that made it.
-RUN_ID="${QUARTET_RUN_ID:-}"
+# #4282 — lowercase: the DAL slugs the name it writes (T205342Z → t205342z) while
+# the door reads and deletes by the literal path, so one capital letter in a run
+# id turned every create into a 404 read-back and a leftover row (16:53 run:
+# 126 rows across three owners). A probe name is a slug, always.
+RUN_ID="$(printf '%s' "${QUARTET_RUN_ID:-}" | tr 'A-Z' 'a-z')"
 RESIDUE_QUERY="${FUSEKI_QUERY:-http://localhost:3030/pods/query}"
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
@@ -130,7 +134,13 @@ PYR
   # Fill the body: literals get a marked value, edges get a real subject.
   BODY="$WORK/$CLASS.body.json"; MISSING=""
   : >"$WORK/$CLASS.pairs"
-  while IFS=$'\t' read -r FIELD KIND TARGET ALLOWED DTYPE; do
+  # #4282 — fields are joined with '|', not tabs. A tab is whitespace to `read`,
+  # so consecutive tabs collapse: a literal field with no targetClass read its
+  # allowed value as TARGET and its datatype as ALLOWED, and the runner sent the
+  # word "string" to a field constrained to pc|xp. Thirteen classes reported
+  # "runner input rejected" for that reason alone; the generator had published
+  # the allowed values since #4267.
+  while IFS='|' read -r FIELD KIND TARGET ALLOWED DTYPE; do
     [ -n "$FIELD" ] || continue
     if [ "$KIND" = "edge" ]; then
       V="$(resolve_edge "$TARGET")"
@@ -144,7 +154,10 @@ PYR
       # says integer makes the door refuse correctly and the suite report it as a
       # product failure, which is the one thing a check must never do.
       case "$DTYPE" in
-        integer|int|long|decimal|float|double) V="1" ;;
+        # #4282 — a run-unique number, never "1": Chunk.roleSequence is unique
+        # within its owner and ChunkMembership.rank within its chunk
+        # (chorus:uniqueWithin), so "1" collided with a real row every run.
+        integer|int|long|decimal|float|double) V="$((900000 + ($$ % 90000) + RANDOM % 1000))" ;;
         boolean)                                V="true" ;;
         date)                                   V="2026-01-01" ;;
         dateTime)                               V="2026-01-01T00:00:00Z" ;;
@@ -156,7 +169,7 @@ PYR
   done < <(python3 -c 'import json,sys
 for f in json.load(open(sys.argv[1])).get("requiredFields") or []:
     av=f.get("allowedValues") or []
-    print("\t".join([f["field"], f.get("kind","literal"), f.get("targetClass",""), av[0] if av else "", f.get("datatype","")]))' "$M")
+    print("|".join([f["field"], f.get("kind","literal"), f.get("targetClass",""), av[0] if av else "", f.get("datatype","")]))' "$M")
 
   if [ -n "$MISSING" ]; then
     printf '%-22s %-8s %s\n' "$CLASS" UNMEASURED "no row to point a required edge at:$MISSING"
@@ -236,7 +249,10 @@ print(next((s["path"] for s in m["quartet"]["steps"] if s["step"]=="read"), ""))
 m=json.load(open(sys.argv[1]))
 st=next((s for s in m["quartet"]["steps"] if s["step"]==sys.argv[2]), {})
 print(json.dumps(((st.get("readBack") or {}).get("compareFields")) or []))' "$M" "$STEP")"
-      curl -sf --max-time 25 -H "Authorization: Bearer $TOKEN" "$API$RB" >"$WORK/readback" 2>/dev/null || : >"$WORK/readback"
+      # #4282 — keep the read-back's status: "read-back was not JSON" said nothing
+      # about WHY; a 404 a second after a 201 is a different finding from a 500.
+      RB_CODE="$(curl -s --max-time 25 -o "$WORK/readback" -w '%{http_code}' -H "Authorization: Bearer $TOKEN" "$API$RB" 2>/dev/null || echo 000)"
+      case "$RB_CODE" in 2*) ;; *) OK=0; DETAIL="$STEP read-back GET $RB got $RB_CODE — $(head -c 160 "$WORK/readback" | tr -d '\n')"; break ;; esac
       # #4279 — the door names the row (kind-slug + subject); the residue check
       # below must look for THAT IRI, not the bare subject we sent. The first cut
       # looked for chorus#<subject> and could never find a leftover.
@@ -261,7 +277,10 @@ def _same(have, want):
     # door resolved it to: sent "abby-normal", read "chorus:principal-abby-normal".
     # That is the door doing its job, not a lost field. Compare the tail.
     h=str(have).replace("chorus:",""); w=str(want).replace("chorus:","")
-    return h==w or h.endswith("-"+w) or w.endswith("-"+h)
+    # #4282 — a value that is an IRI (Permission.mode: acl#Append) is served by
+    # its local name. Same value, shorter spelling: compare the last segment.
+    tail=lambda x: x.rsplit("#",1)[-1].rsplit("/",1)[-1]
+    return h==w or h.endswith("-"+w) or w.endswith("-"+h) or tail(h)==tail(w)
 bad=[]
 for k,v in sent.items():
     if k=="name": continue
