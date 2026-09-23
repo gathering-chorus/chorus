@@ -205,24 +205,11 @@ export type NightlyPageOpts = {
     };
   };
   history?: { runId: string; completed: boolean; rows: NightlyRow[] }[];
+  /** #4277 — failing cases per suite path, from the run's TestResult rows */
+  cases?: CasesBySuite;
+  /** #4277 — the type a suite ran as (declared header for file suites) */
+  typeOf?: (r: NightlyRow) => string;
 };
-
-function renderReadoutBanner(o: NightlyPageOpts | undefined): string {
-  const r = o?.readout;
-  if (!r) return '';
-  const c = r.changes;
-  const dur = r.durationMin === null ? 'duration unknown (run never completed)' : `${r.durationMin} min`;
-  const delta = c.previousRunId === null
-    ? 'since last run: no earlier run to compare'
-    : `since <a href="/nightly?run=${esc(c.previousRunId)}">${esc(c.previousRunId)}</a>: ` +
-      `${c.newlyRed.length} new red · ${c.fixed.length} fixed · ${c.stillRed.length} still red` +
-      (c.gone.length ? ` · ${c.gone.length} no longer run` : '');
-  const detail = [
-    ...c.newlyRed.map((x) => `<li class="new">new: ${esc(x.owner)} ${esc(x.suite)}</li>`),
-    ...c.fixed.map((x) => `<li class="fixed">fixed: ${esc(x.owner)} ${esc(x.suite)}</li>`),
-  ].join('');
-  return `<div class="banner readout"><span>took ${esc(dur)}</span>${splitLine(r)}<span>${delta}</span>${detail ? `<ul class="delta">${detail}</ul>` : ''}</div>`;
-}
 
 /** #4073 — "4 red: 2 product broke, 1 test wrong, 1 unmeasured", derived from
  *  run history. Empty when the readout carries no split (older callers). */
@@ -238,14 +225,6 @@ function labelText(label: string): string {
   return label === 'unmeasured' ? 'UNMEASURED' : '';
 }
 
-/** the label cell for a red row; blank for non-red rows */
-function labelCell(o: NightlyPageOpts | undefined, r: NightlyRow): string {
-  if (r.status !== 'fail') return '<td class="lbl"></td>';
-  const hit = o?.readout?.reds?.find((x) => x.suite === displayPath(r.path));
-  const label = hit?.label ?? '';
-  return `<td class="lbl ${esc(label)}">${labelText(label)}</td>`;
-}
-
 function renderHistory(o: NightlyPageOpts | undefined, current: string): string {
   const h = o?.history;
   if (!h || h.length < 1) return '';
@@ -255,7 +234,8 @@ function renderHistory(o: NightlyPageOpts | undefined, current: string): string 
     const cls = run.runId === current ? ' class="cur"' : '';
     return `<li${cls}><a href="/nightly?run=${esc(run.runId)}">${esc(run.runId)}</a> <span class="hl">${esc(label)}</span></li>`;
   }).join('');
-  return `<details class="history"><summary>${h.length} recorded run(s) — open any</summary><ul>${items}</ul></details>`;
+  // #4277 — history is the LAST fold on the page, after every suite.
+  return `<details class="history"><summary><span class="lbl">${h.length} recorded runs</span><span class="hint">open any</span></summary><ul>${items}</ul></details>`;
 }
 
 /** #4063/#4073 — the run's verdict and banner class, pulled out so
@@ -269,18 +249,222 @@ function runVerdict(run: NightlyRun, reds: number): { verdict: string; cls: stri
   return reds === 0 ? { verdict: 'ALL GREEN', cls: 'green' } : { verdict: `${reds} RED SUITES`, cls: 'red' };
 }
 
-/** The not-finished banner: STOPPED (#4035), NO OUTPUT (#4009 wedged), or
- *  RUNNING. Empty for a completed run. */
-function notFinishedBanner(run: NightlyRun): string {
+/** The not-finished line: STOPPED (#4035), NO OUTPUT (#4009 wedged), or
+ *  RUNNING. Empty for a completed run. #4277 — a line INSIDE the one banner,
+ *  not a second banner above it (two grey bars said the same thing twice). */
+function notFinishedLine(run: NightlyRun): string {
   if (run.completed) return '';
   if (run.stoppedAt) {
-    return `<div class="banner partial">STOPPED at ${esc(run.stoppedAt)}${run.stoppedDetail ? ' (' + esc(run.stoppedDetail) + ')' : ''} — not a full night; the suites below ran before the stop.</div>`;
+    return `<span class="state">STOPPED at ${esc(run.stoppedAt)}${run.stoppedDetail ? ' (' + esc(run.stoppedDetail) + ')' : ''} — not a full night.</span>`;
   }
   const quiet = run.quietForMs ?? 0;
   const mins = Math.round(quiet / 60000);
   return quietVerdict(run, quiet) === 'quiet'
-    ? `<div class="banner partial">NO OUTPUT for ${mins} min — this run started ${esc(run.startedAt)} and has emitted nothing since. Treat it as wedged, not slow.</div>`
-    : `<div class="banner partial">RUNNING — started ${esc(run.startedAt)}, last result ${mins} min ago. ${run.rows.length} suite(s) so far; not a full night yet.</div>`;
+    ? `<span class="state">NO OUTPUT for ${mins} min — started ${esc(run.startedAt)} and nothing since. Treat it as wedged, not slow.</span>`
+    : `<span class="state">RUNNING — started ${esc(run.startedAt)}, last result ${mins} min ago.</span>`;
+}
+
+// ---------------------------------------------------------------------------
+// #4277 — suites folded by TEST TYPE, in the order the run executed them.
+
+/** Kinds that are a unit of code (the runner names the tool) → their layer.
+ *  Lane kinds (coverage, security, perf, ui, bdd, …) ARE the type. */
+const KIND_LAYER: Record<string, string> = {
+  cargo: 'unit', npm: 'unit', 'app-eslint': 'lint', 'coverage-denominator': 'coverage',
+};
+const FILE_KINDS = new Set(['shell', 'bats']);
+const LAYERS = new Set(['unit', 'integration', 'bdd', 'e2e', 'contract', 'fitness', 'smoke']);
+
+export type ReadFile = (path: string) => string | null;
+
+/** #4277 — the type a suite ran AS. File-backed suites (shell, bats) declare
+ *  it in their leading comment (`@test-type: <layer>[:concern]`, the #3442
+ *  gate's grammar); the tool name is NOT a layer. A file with no declaration
+ *  is named `undeclared (<tool>)` so it can never pose as one. */
+export function suiteType(row: { kind: string; path: string }, readFile: ReadFile): string {
+  if (!FILE_KINDS.has(row.kind)) return KIND_LAYER[row.kind] ?? row.kind;
+  const text = readFile(row.path);
+  const declared = text === null ? null : parseDeclaration(text);
+  return declared && LAYERS.has(declared) ? declared : `undeclared (${row.kind})`;
+}
+
+/** The layer from a file's leading comment block, or null. Mirrors
+ *  gate-test-type's honored-only-in-the-header rule: once real code starts,
+ *  the search stops. */
+export function parseDeclaration(content: string): string | null {
+  for (const raw of content.split('\n').slice(0, 40)) {
+    const line = raw.trim();
+    if (line === '' || line.startsWith('#!')) continue;
+    if (!/^(\/\/|#|\/\*|\*)/.test(line)) return null;
+    const m = /^(?:\/\/|#|\*|\/\*)\s*@test-type:\s*([a-z0-9-]+)/i.exec(line);
+    if (m) return m[1].toLowerCase();
+  }
+  return null;
+}
+
+export function groupByType<T extends { kind: string; path: string }>(
+  rows: T[], typeOf: (r: T) => string,
+): { type: string; rows: T[] }[] {
+  const groups: { type: string; rows: T[] }[] = [];
+  for (const r of rows) {
+    const t = typeOf(r);
+    let g = groups.find((x) => x.type === t);
+    if (!g) { g = { type: t, rows: [] }; groups.push(g); }
+    g.rows.push(r);
+  }
+  return groups;
+}
+
+/** #4277 — "72.53210748305766%" → "72.5%". A percentage is a reading, not a
+ *  hash; one decimal is what a person compares against a floor. */
+export function oneDecimal(summary: string): string {
+  return summary.replace(/(\d+)\.(\d+)%/g, (_m, i: string, f: string) => `${Number(`${i}.${f}`).toFixed(1)}%`);
+}
+
+// ---------------------------------------------------------------------------
+// #4277 — failing cases, read from the TestResult rows the runner writes.
+
+export type CaseRow = { name: string; result: string };
+export type CasesBySuite = Record<string, CaseRow[]>;
+
+/** One query per page, bounded to the run's own window (the #4015 lesson: an
+ *  unbounded ?ts counted 190k historical rows). Passes are excluded server-side
+ *  so the page parses only what it shows. */
+export function failingCasesQuery(run: { startedAt: string; completedAt?: string }): string {
+  const ended = run.completedAt ?? '9999';
+  return 'PREFIX c: <https://jeffbridwell.com/chorus#> SELECT ?fp ?tn ?res WHERE { GRAPH <urn:chorus:domains:tests> {'
+    + ' ?r a c:TestResult ; c:runTs ?ts ; c:filePath ?fp ; c:testName ?tn ; c:result ?res'
+    + ` FILTER(STR(?ts) >= "${run.startedAt}" && STR(?ts) <= "${ended}") FILTER(?res != "pass") } } ORDER BY ?fp`;
+}
+
+/** Fuseki CSV → cases grouped by suite path. Handles quoted fields (a case
+ *  name may carry commas) and the \r Fuseki ends lines with. */
+export function parseFailingCases(csv: string): CasesBySuite {
+  const out: CasesBySuite = {};
+  const lines = csv.split('\n').map((l) => l.replace(/\r$/, '')).filter((l) => l !== '');
+  for (const line of lines.slice(1)) {
+    const cells = csvCells(line);
+    if (cells.length < 3) continue;
+    const [fp, tn, res] = cells;
+    (out[fp] ??= []).push({ name: tn, result: res });
+  }
+  return out;
+}
+
+function csvCells(line: string): string[] {
+  const cells: string[] = [];
+  let cur = '';
+  let quoted = false;
+  for (let i = 0; i < line.length; i++) {
+    const ch = line[i];
+    if (quoted) {
+      if (ch === '"' && line[i + 1] === '"') { cur += '"'; i++; }
+      else if (ch === '"') quoted = false;
+      else cur += ch;
+    } else if (ch === '"') quoted = true;
+    else if (ch === ',') { cells.push(cur); cur = ''; }
+    else cur += ch;
+  }
+  cells.push(cur);
+  return cells;
+}
+
+export type FetchLike = (url: string, init?: { headers?: Record<string, string>; signal?: AbortSignal }) => Promise<{ ok: boolean; text(): Promise<string> }>;
+
+/** The store read the route makes. A store that does not answer yields no
+ *  cases (the page then says "no case rows recorded"), never a fabricated list. */
+export async function fetchFailingCases(
+  run: { startedAt: string; completedAt?: string }, fuseki: string, fetchFn: FetchLike,
+): Promise<CasesBySuite> {
+  try {
+    const r = await fetchFn(`${fuseki}?query=${encodeURIComponent(failingCasesQuery(run))}`, {
+      headers: { Accept: 'text/csv' }, signal: AbortSignal.timeout(20000) });
+    if (!r.ok) return {};
+    return parseFailingCases(await r.text());
+  } catch { return {}; }
+}
+
+// ---------------------------------------------------------------------------
+// the page
+
+const PILL: Record<string, string> = { fail: 'red', pass: 'green', skip: 'amber', slow: 'amber' };
+const pillClass = (status: string): string => PILL[status] ?? 'unm';
+
+function suiteLine(r: NightlyRow): string {
+  return `<li class="suite ${esc(r.status)}"><span class="pill ${pillClass(r.status)}">${esc(r.status)}</span>`
+    + `<span class="kind">${esc(r.kind)}</span><span class="path">${esc(displayPath(r.path))}</span>`
+    + `<span class="owner">${esc(r.owner)}</span><span class="sum">${esc(oneDecimal(r.summary))}</span></li>`;
+}
+
+function caseList(cases: CaseRow[] | undefined, r: NightlyRow): string {
+  if (!cases || cases.length === 0) {
+    return `<li class="case none">no case rows recorded for this suite — the summary is all the run wrote: ${esc(oneDecimal(r.summary))}</li>`;
+  }
+  return cases.map((c) => `<li class="case ${esc(c.result)}"><span class="m">${esc(c.result)}</span><span>${esc(c.name)}</span></li>`).join('');
+}
+
+function redFold(r: NightlyRow, o: NightlyPageOpts | undefined): string {
+  const hit = o?.readout?.reds?.find((x) => x.suite === displayPath(r.path));
+  const label = hit?.label ?? '';
+  const cases = o?.cases?.[r.path] ?? o?.cases?.[displayPath(r.path)];
+  return `<details class="red" open><summary><span class="pill red">fail</span><span class="kind">${esc(r.kind)}</span>`
+    + `<span class="path">${esc(displayPath(r.path))}</span><span class="label ${esc(label)}">${labelText(label)}</span>`
+    + `<span class="sum">${esc(r.owner)} · ${esc(oneDecimal(r.summary))}</span></summary><ul class="cases">${caseList(cases, r)}</ul></details>`;
+}
+
+function statusFold(rows: NightlyRow[], status: string, hint: string): string {
+  if (rows.length === 0) return '';
+  return `<details class="sub"><summary><span class="pill ${pillClass(status)}">${esc(status)}</span><span class="n">${rows.length}</span>`
+    + `<span class="lbl">${esc(status)}</span><span class="hint">${hint}</span></summary><ul class="suites">${rows.map(suiteLine).join('')}</ul></details>`;
+}
+
+function typeFold(g: { type: string; rows: NightlyRow[] }, o: NightlyPageOpts | undefined): string {
+  const by = (st: string) => g.rows.filter((r) => r.status === st);
+  const reds = by('fail');
+  const other = g.rows.filter((r) => !['fail', 'slow', 'skip', 'pass'].includes(r.status));
+  const state = reds.length ? `<span class="pill red">${reds.length} red</span>` : '<span class="pill green">green</span>';
+  const inner = reds.map((r) => redFold(r, o)).join('')
+    + statusFold(by('slow'), 'slow', 'speed, not breakage')
+    + statusFold(other, 'unmeasured', 'the check could not take a reading — not a pass')
+    + statusFold(by('skip'), 'skip', 'typed skips')
+    + statusFold(by('pass'), 'pass', 'one line each');
+  return `<details class="group"${reds.length ? ' open' : ''}><summary>${state}<span class="n">${g.rows.length}</span>`
+    + `<span class="lbl">${esc(g.type)}</span></summary>${inner}</details>`;
+}
+
+function renderBanner(run: NightlyRun, o: NightlyPageOpts | undefined): string {
+  const reds = run.rows.filter((r) => r.status === 'fail').length;
+  const counts = (st: string) => run.rows.filter((r) => r.status === st).length;
+  const other = run.rows.filter((r) => !['pass', 'fail', 'skip', 'slow'].includes(r.status)).length;
+  const t = run.tally;
+  const { verdict, cls } = runVerdict(run, reds);
+  const r = o?.readout;
+  const dur = r ? (r.durationMin === null ? ' · duration unknown (run never completed)' : ` · took ${r.durationMin} min`) : '';
+  const tests = t
+    ? `<span><span class="u">tests</span> ${n(t.passed)} passed · ${n(t.failed)} failed · ${n(t.unmeasured)} unmeasured · ${n(t.noResult)} no result · ${n(t.ran)} ran of ${n(t.registered)} registered</span>`
+    : '<span><span class="u">tests</span> unmeasured — the run wrote no tally line</span>';
+  return `<div class="banner ${cls}">
+  <div class="verdict">${verdict}</div>
+  <div class="when">${esc(run.startedAt)}${run.completedAt ? ' → ' + esc(run.completedAt.slice(11)) : ''}${dur}</div>
+  ${notFinishedLine(run)}
+  <div class="counts"><span><span class="u">suites</span> ${counts('pass')} passed · ${reds} failed · ${counts('slow')} slow · ${other} unmeasured · ${counts('skip')} skipped</span>${tests}</div>
+  ${r ? `<div class="split">${splitLine(r)}${deltaLine(r)}</div>` : ''}
+</div>`;
+}
+
+const n = (v: number | undefined): string => (v === undefined ? '?' : v.toLocaleString('en-US'));
+
+function deltaLine(r: NonNullable<NightlyPageOpts['readout']>): string {
+  const c = r.changes;
+  if (c.previousRunId === null) return '<span class="d">since last run: no earlier run to compare</span>';
+  const detail = [
+    ...c.newlyRed.map((x) => `<li class="new">new: ${esc(x.owner)} ${esc(x.suite)}</li>`),
+    ...c.fixed.map((x) => `<li class="fixed">fixed: ${esc(x.owner)} ${esc(x.suite)}</li>`),
+  ].join('');
+  return `<span class="d">since <a href="/nightly?run=${esc(c.previousRunId)}">${esc(c.previousRunId)}</a>: `
+    + `<span class="new">${c.newlyRed.length} new red</span> · <span class="fx">${c.fixed.length} fixed</span> · ${c.stillRed.length} still red`
+    + (c.gone.length ? ` · ${c.gone.length} no longer run` : '') + '</span>'
+    + (detail ? `<ul class="delta">${detail}</ul>` : '');
 }
 
 /** Render the run as the one-look report page. */
@@ -289,50 +473,14 @@ export function renderNightlyPage(run: NightlyRun | null, opts?: NightlyPageOpts
     return page('Nightly', '<div class="banner empty">No nightly run recorded yet — first run lands at 03:00.</div>');
   }
   const reds = run.rows.filter((r) => r.status === 'fail');
-  const skips = run.rows.filter((r) => r.status === 'skip');
-  const greens = run.rows.filter((r) => r.status === 'pass');
-  // #4136 — 'slow' is a perf row over its budget: speed, not breakage. It never
-  // joins the red count; it gets its own count and its own place in the table.
-  const slows = run.rows.filter((r) => r.status === 'slow');
-  // A suite that reported neither pass, fail nor skip produced no parseable
-  // output. It was silently absent from the counts, so 317 suites rendered as
-  // 314 and three red-or-green-unknown suites read as nothing at all.
-  const silent = run.rows.filter(
-    (r) => !['pass', 'fail', 'skip'].includes(r.status),
-  );
-  const tests = tallyTests(run.rows);
-  // #4063 — a run that has not completed has NO verdict yet. On 2026-09-02
-  // 13:5x the 13:30 run was 13 suites in and the page bannered "ALL GREEN,
-  // 12 passed / 13 total" (Silas): the green was computed over whichever
-  // subset had reported — the vacuous-pass class. Partial = IN PROGRESS, in
-  // amber, with "so far" on every count; green is only ever said of a whole
-  // night.
-  const { verdict, cls } = runVerdict(run, reds.length);
-  const partial = notFinishedBanner(run);
-  const row = (r: NightlyRow) => `
-    <tr class="${esc(r.status)}">
-      <td class="st">${esc(r.status)}</td>${labelCell(opts, r)}
-      <td class="kind">${esc(r.kind)}</td>
-      <td class="path">${esc(displayPath(r.path))}</td>
-      <td>${esc(r.owner)}</td>
-      <td class="sum">${esc(r.summary)}</td>
-    </tr>`;
-  const ordered = [...reds, ...slows, ...silent, ...skips, ...greens];
+  const { verdict } = runVerdict(run, reds.length);
+  const typeOf = opts?.typeOf ?? ((r: NightlyRow) => KIND_LAYER[r.kind] ?? r.kind);
+  const groups = groupByType(run.rows, typeOf).map((g) => typeFold(g, opts)).join('');
   const body = `
-  ${partial}
-  <div class="banner ${cls}">
-    <span class="verdict">${verdict}</span>
-    <span class="counts">SUITES: ${greens.length} passed · ${reds.length} failed${slows.length ? ' · ' + slows.length + ' slow (speed, not breakage)' : ''} · ${skips.length} skipped${silent.length ? ' · ' + silent.length + ' produced no output' : ''} · ${run.rows.length} total</span>
-    <span class="counts">TESTS: ${tests.passed} passed · ${tests.failed} failed${tests.unparsed ? ' (' + tests.unparsed + ' suite(s) report no test counts)' : ''}</span>
-    <span class="when">${esc(run.startedAt)}${run.completedAt ? ' → ' + esc(run.completedAt) : ''}</span>
-  </div>
-  ${renderReadoutBanner(opts)}
+  ${renderBanner(run, opts)}
+  ${groups}
   ${renderHistory(opts, run.startedAt)}
-  <table>
-    <thead><tr><th></th><th>means</th><th>tier</th><th>suite</th><th>owner</th><th>result</th></tr></thead>
-    <tbody>${ordered.map(row).join('')}</tbody>
-  </table>
-  <p class="prov">cargo tier runs via <code>werk-test --nightly</code> — registry selection, nextest, typed needs-stack skips (#3920). Page renders the run record verbatim; it holds no verdict of its own.</p>`;
+  <p class="prov">Suites in the order the run executed them; the page renders the record the run wrote (<code>werk-test --nightly</code>) and never re-derives a verdict. Failing cases are the run's own TestResult rows.</p>`;
   return page(`Nightly — ${verdict}`, body);
 }
 
@@ -341,35 +489,48 @@ function page(title: string, body: string): string {
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>${esc(title)}</title>
 <style>
-  :root { --bg:#fff; --fg:#1a1a1a; --mut:#667; --red:#c0392b; --green:#1e7d32; --amber:#8a6d1a; --line:#e5e5ea; }
-  @media (prefers-color-scheme: dark) { :root { --bg:#131316; --fg:#eee; --mut:#99a; --red:#ff6b5e; --green:#5dd879; --amber:#e3c05a; --line:#2a2a30; } }
-  body { background:var(--bg); color:var(--fg); font:15px/1.5 -apple-system,system-ui,sans-serif; max-width:70rem; margin:2rem auto; padding:0 1rem; }
-  .banner { padding:1rem 1.25rem; border-radius:10px; margin-bottom:1rem; display:flex; gap:1rem; align-items:baseline; flex-wrap:wrap; }
-  .banner.green { background:color-mix(in srgb, var(--green) 12%, transparent); }
-  .banner.red { background:color-mix(in srgb, var(--red) 12%, transparent); }
-  .banner.partial, .banner.empty { background:color-mix(in srgb, var(--amber) 14%, transparent); }
-  .banner.readout { background:color-mix(in srgb, var(--mut) 10%, transparent); flex-direction:column; gap:.25rem; }
-  .banner.readout ul.delta { margin:.25rem 0 0; padding-left:1.25rem; }
-  .banner.readout li.new { color:var(--red); } .banner.readout li.fixed { color:var(--green); }
-  details.history { margin-bottom:1rem; color:var(--mut); }
-  details.history ul { columns:2; padding-left:1.25rem; margin:.5rem 0 0; }
-  details.history li.cur { font-weight:700; color:var(--fg); }
-  .hl { font-size:.85rem; }
+  :root { --bg:#f6f7f9; --panel:#fff; --fg:#1b1d22; --mut:#646b78; --line:#e1e4ea; --red:#c0392b; --red-bg:#fbeae7; --green:#1e7d32; --green-bg:#e8f3ea; --amber:#8a6d1a; --amber-bg:#f7f0dc; --unm:#5b4fa8; --unm-bg:#ebe8f7; --accent:#1f5f8b; }
+  @media (prefers-color-scheme: dark) { :root { --bg:#141619; --panel:#1c1f24; --fg:#e9ebef; --mut:#9aa2b1; --line:#2b2f37; --red:#ff6b5e; --red-bg:#3a1f1c; --green:#5dd879; --green-bg:#1b3021; --amber:#e3c05a; --amber-bg:#3a3117; --unm:#a99cf2; --unm-bg:#26223d; --accent:#7fb3dc; } }
+  body { background:var(--bg); color:var(--fg); font:15px/1.5 -apple-system,system-ui,sans-serif; max-width:64rem; margin:0 auto; padding:1.5rem 16px 3rem; display:flex; flex-direction:column; gap:1rem; }
+  .banner { background:var(--panel); border:1px solid var(--line); border-left:6px solid var(--mut); border-radius:10px; padding:1rem 1.25rem; display:grid; grid-template-columns:1fr auto; gap:.25rem 1.5rem; align-items:baseline; }
+  .banner.red { border-left-color:var(--red); } .banner.green { border-left-color:var(--green); } .banner.partial, .banner.empty { border-left-color:var(--amber); }
+  .verdict { font-size:1.7rem; font-weight:700; }
+  .banner.red .verdict { color:var(--red); } .banner.green .verdict { color:var(--green); } .banner.partial .verdict { color:var(--amber); }
+  .when { color:var(--mut); font-family:ui-monospace,monospace; font-size:.85rem; text-align:right; }
+  .state { grid-column:1/-1; color:var(--amber); font-weight:600; }
+  .counts { grid-column:1/-1; display:flex; flex-wrap:wrap; gap:.35rem 1.25rem; color:var(--mut); font-variant-numeric:tabular-nums; }
+  .counts .u { color:var(--fg); font-weight:600; }
+  .split { grid-column:1/-1; display:flex; flex-wrap:wrap; gap:.5rem 1rem; align-items:baseline; font-size:.9rem; }
+  .split .d { color:var(--mut); } .split .new, .new { color:var(--red); } .split .fx, .fixed { color:var(--green); }
   .split b { color:var(--fg); }
-  td.lbl { font-size:.75rem; font-weight:700; white-space:nowrap; }
-  td.lbl.product-broke { color:var(--red); } td.lbl.test-wrong { color:var(--amber); } td.lbl.unmeasured { color:var(--mut); }
-  .verdict { font-size:1.6rem; font-weight:700; }
-  .banner.green .verdict { color:var(--green); } .banner.red .verdict { color:var(--red); }
-  .counts, .when { color:var(--mut); }
-  table { width:100%; border-collapse:collapse; }
-  th { text-align:left; color:var(--mut); font-weight:600; padding:.4rem .5rem; border-bottom:1px solid var(--line); }
-  td { padding:.35rem .5rem; border-bottom:1px solid var(--line); vertical-align:top; }
-  tr.fail .st { color:var(--red); font-weight:700; }
-  tr.pass .st { color:var(--green); }
-  tr.skip .st { color:var(--amber); }
-  .path { font-family:ui-monospace,monospace; font-size:.85rem; word-break:break-all; }
-  .sum { color:var(--mut); }
-  .prov { color:var(--mut); font-size:.85rem; margin-top:1.25rem; }
-  code { font-family:ui-monospace,monospace; }
+  ul.delta { margin:0; padding-left:1.25rem; flex-basis:100%; }
+  details.group, details.history { background:var(--panel); border:1px solid var(--line); border-radius:10px; }
+  details.group > summary, details.history > summary, details.sub > summary, details.red > summary { list-style:none; cursor:pointer; }
+  details > summary::-webkit-details-marker { display:none; }
+  details.group > summary, details.history > summary, details.sub > summary { display:flex; align-items:center; gap:.75rem; padding:.7rem 1rem; font-weight:600; }
+  details.group > summary::before, details.sub > summary::before { content:""; width:.5rem; height:.5rem; border-right:2px solid var(--mut); border-bottom:2px solid var(--mut); transform:rotate(-45deg); }
+  details.group[open] > summary::before, details.sub[open] > summary::before { transform:rotate(45deg); }
+  details.sub { border-top:1px solid var(--line); } details.sub > summary { padding-left:1.5rem; font-weight:500; }
+  summary .n { font-variant-numeric:tabular-nums; min-width:3ch; text-align:right; } summary .lbl { flex:1; } summary .hint { color:var(--mut); font-weight:400; font-size:.85rem; }
+  .pill { font-size:.7rem; font-weight:700; letter-spacing:.06em; text-transform:uppercase; padding:.1rem .45rem; border-radius:999px; white-space:nowrap; }
+  .pill.red { background:var(--red-bg); color:var(--red); } .pill.green { background:var(--green-bg); color:var(--green); } .pill.amber { background:var(--amber-bg); color:var(--amber); } .pill.unm { background:var(--unm-bg); color:var(--unm); }
+  ul.suites { border-top:1px solid var(--line); margin:0; padding:0; list-style:none; }
+  li.suite, details.red > summary { display:grid; grid-template-columns:auto 5.5rem minmax(0,1fr) auto; gap:.25rem 1rem; padding:.45rem 1rem; border-bottom:1px solid var(--line); align-items:baseline; }
+  li.suite:last-child { border-bottom:0; }
+  details.red { border-top:1px solid var(--line); } details.red > summary { background:var(--red-bg); } details.red > summary .path { font-weight:600; }
+  .kind { color:var(--mut); font-size:.8rem; font-family:ui-monospace,monospace; }
+  .path { font-family:ui-monospace,monospace; font-size:.85rem; overflow-wrap:anywhere; }
+  .owner { color:var(--mut); font-size:.8rem; white-space:nowrap; }
+  .sum { grid-column:2/-1; color:var(--mut); font-size:.85rem; overflow-wrap:anywhere; }
+  .label { font-size:.7rem; font-weight:700; letter-spacing:.05em; white-space:nowrap; }
+  .label.product-broke { color:var(--red); } .label.test-wrong { color:var(--amber); } .label.unmeasured { color:var(--unm); }
+  ul.cases { margin:0; padding:.25rem 1rem .6rem 3rem; list-style:none; display:flex; flex-direction:column; gap:.2rem; }
+  .case { display:flex; gap:.6rem; align-items:baseline; font-size:.9rem; overflow-wrap:anywhere; }
+  .case .m { font-family:ui-monospace,monospace; font-size:.8rem; min-width:3.5ch; font-weight:700; }
+  .case.fail .m { color:var(--red); } .case.skip .m { color:var(--amber); } .case.none { color:var(--mut); font-style:italic; }
+  details.history { color:var(--mut); } details.history ul { columns:2; padding-left:1.25rem; margin:.25rem 1rem 1rem; } details.history li.cur { font-weight:700; color:var(--fg); }
+  details.history a { color:var(--accent); text-decoration:none; font-family:ui-monospace,monospace; font-size:.85rem; } .hl { font-size:.85rem; }
+  .prov { color:var(--mut); font-size:.8rem; margin:0; } code { font-family:ui-monospace,monospace; }
+  @media (max-width:640px) { .banner { grid-template-columns:1fr; } .when { text-align:left; } li.suite, details.red > summary { grid-template-columns:auto 1fr; } .sum { grid-column:1/-1; } ul.cases { padding-left:1rem; } details.history ul { columns:1; } }
 </style></head><body>${body}</body></html>`;
 }

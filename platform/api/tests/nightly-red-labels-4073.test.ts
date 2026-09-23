@@ -94,10 +94,11 @@ describe('/nightly page carries the split', () => {
     const runs = parseAllRuns(LOG);
     const html = renderNightlyPage(runs[2], { readout: buildReadout(runs[2], runs[1], runs), history: runs });
     expect(html).toContain('2 red:</b> 1 product broke · 1 test wrong · 0 unmeasured');
-    expect(html).toMatch(/td class="lbl test-wrong">TEST WRONG<\/td>/);
-    expect(html).toMatch(/td class="lbl product-broke">PRODUCT BROKE<\/td>/);
+    // #4277 — the label rides the red suite's fold summary, not a table cell
+    expect(html).toMatch(/class="label test-wrong">TEST WRONG</);
+    expect(html).toMatch(/class="label product-broke">PRODUCT BROKE</);
     // NEGATIVE PROOF: a green row carries no label
-    expect((html.match(/td class="lbl"><\/td>/g) || []).length).toBe(1);
+    expect((html.match(/class="label [a-z-]+">/g) || []).length).toBe(2); // only the two reds carry a label
   });
 });
 
