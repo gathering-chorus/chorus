@@ -75,8 +75,9 @@ var s=document.createElement('script');s.src=window.basePath('/js/base-path.js')
 <details class="fold" open><summary>Vocabulary (definesVocabulary) <span class="src">the classes this domain owns &mdash; each is a generated API</span></summary><div class="body">
 ${vocab.length ? `<table><tr><th>Class</th><th>Generated collection</th></tr>${vocabRows}</table>` : '<div class="empty">no vocabulary yet</div>'}</div></details>
 ${e.hasDesignDoc ? `<details class="fold" open><summary>Design doc <span class="src">chorus:hasDesignDoc</span></summary><div class="body"><p><a class="edge" href="/${esc(e.hasDesignDoc)}">${esc(e.hasDesignDoc)}</a></p></div></details>` : ''}
-${e.gaps ? `<details class="fold" open><summary>Gaps <span class="src">chorus:gaps &mdash; honest, from the model</span></summary><div class="body"><p>${esc(e.gaps)}</p></div></details>` : ''}
+<details class="fold" open><summary>Gaps <span class="src">chorus:gaps from the model &middot; gap rows from the graph</span></summary><div class="body">${e.gaps ? `<p>${esc(e.gaps)}</p>` : '<p class="empty">the model names no gap for this domain</p>'}<div id="gaps-facet"></div></div></details>
 <div id="mfold-slot"></div>
+<div id="model-facets"></div>
 <div id="facets"><p class="empty">loading the materialized view (cards, code, alerts, &hellip;)&hellip;</p></div>
 ${srcNote(`GET /domains/${esc(d)} + the materialized facet endpoints (/api/athena/subdomains, /api/chorus/domain)`)}`;
     // #3757 — the shared model fold, compact: the ground-level what-is-this
@@ -95,7 +96,16 @@ ${srcNote(`GET /domains/${esc(d)} + the materialized facet endpoints (/api/athen
 async function renderFacets(d) {
   // #4093 — one renderer (facets.js); this page draws every facet
   const fid = await resolveFacetId(d);
-  await renderFacetTables(document.getElementById('facets'), fid);
+  // #4285 — Jeff, 2026-09-24: ONE Gaps section (the model's text and the
+  // graph's gap rows together), and Actors + Scenarios belong with the Model,
+  // not at the bottom under the operational folds.
+  const withModel = ['Actors', 'Scenarios'];
+  const withGaps = ['Gaps & Status'];
+  await Promise.all([
+    renderFacetTables(document.getElementById('gaps-facet'), fid, { only: withGaps, heading: () => 'from the graph' }),
+    renderFacetTables(document.getElementById('model-facets'), fid, { only: withModel }),
+    renderFacetTables(document.getElementById('facets'), fid, { except: withModel.concat(withGaps) }),
+  ]);
 }
 </script>
 </body></html>

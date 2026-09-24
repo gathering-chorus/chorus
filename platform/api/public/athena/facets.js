@@ -62,7 +62,9 @@ async function renderFacetTables(el, fid, opts) {
     const more = items.length > 40 ? `<p class="empty">…and ${items.length - 40} more</p>` : '';
     return `<div class="tbl"><table><tr>${head}</tr>${rows}</table></div>${more}`;   // #4084: Jeff on his phone: the Logs table ran off the right edge; the fold scrolls its own table now
   }
-  const CHOSEN = opts.only ? opts.only.map(t => FACETS.find(f => f.t === t)).filter(Boolean) : FACETS;
+  // #4285 — `except` lets a page mount some folds elsewhere (Actors/Scenarios by the Model, gaps in the Gaps fold)
+  const CHOSEN = opts.only ? opts.only.map(t => FACETS.find(f => f.t === t)).filter(Boolean)
+    : opts.except ? FACETS.filter(f => !opts.except.includes(f.t)) : FACETS;
   const bodies = await Promise.all(CHOSEN.map(f =>
     fetch(f.u).then(r => r.ok ? r.json() : null).catch(() => null)));
   el.innerHTML = CHOSEN.map((f, i) => {
