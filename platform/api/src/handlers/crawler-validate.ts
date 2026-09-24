@@ -155,7 +155,8 @@ body{margin:0;padding:24px 16px 48px;background:var(--bg);color:var(--ink);font:
 main{max-width:1100px;margin:0 auto}h1{font-size:24px;margin:0 0 4px}h2{font-size:16px;margin:28px 0 8px}
 .sub{color:var(--muted);margin:0 0 18px;max-width:78ch}
 .banner{padding:12px 14px;border-radius:6px;margin:0 0 16px}.banner.green{background:var(--green-bg);color:var(--green)}.banner.red{background:var(--red-bg);color:var(--red)}
-table{border-collapse:collapse;width:100%}th,td{text-align:left;vertical-align:top;padding:8px 8px;border-bottom:1px solid var(--rule)}th{font-size:12px;letter-spacing:.06em;text-transform:uppercase;color:var(--muted)}
+table{border-collapse:collapse;width:100%;table-layout:fixed}.banner,td,code{overflow-wrap:anywhere;min-width:0}
+table.rows th:nth-child(1){width:11%}table.rows th:nth-child(2){width:13%}table.rows th:nth-child(3),table.rows th:nth-child(4){width:9%}table.rows th:nth-child(5){width:12%}th,td{text-align:left;vertical-align:top;padding:8px 8px;border-bottom:1px solid var(--rule)}th{font-size:12px;letter-spacing:.06em;text-transform:uppercase;color:var(--muted)}
 td.n{text-align:right;font-variant-numeric:tabular-nums}
 .pill{display:inline-block;padding:2px 9px;border-radius:999px;font-family:ui-monospace,Menlo,monospace;font-size:12px;white-space:nowrap}
 .pill.green{background:var(--green-bg);color:var(--green)}.pill.red{background:var(--red-bg);color:var(--red)}.pill.amber{background:var(--amber-bg);color:var(--amber)}
