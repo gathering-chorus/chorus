@@ -50,6 +50,11 @@ impl Store for IdStore {
             }
             return Ok(vec![]);
         }
+        if sparql.contains("definesVocabulary") {
+            // #4187 — the fixture kind is claimed; the DAL derives its home
+            // from the claim and no longer defaults to urn:chorus:instances.
+            return Ok(vec!["domains".to_string()]);
+        }
         Ok(vec![])
     }
     fn update(&self, s: &str) -> R<()> {
@@ -280,12 +285,13 @@ fn dal_refuses_write_to_the_security_graph() {
 
 #[test]
 fn dal_allows_instance_and_domain_graphs() {
-    // The DAL's actual lane: the default instances graph and any domain graph.
+    // The DAL's actual lane: the derived domain home and any explicit domain graph.
     let s = IdStore::with(&["kade"]);
     let id = verify_identity(Some("kade"), &s).unwrap();
-    // default (None → urn:chorus:instances)
+    // #4187 — default (None → the defining domain's graph, never urn:chorus:instances)
     write(&s, &WriteReq { kind: "domain".into(), name: "a".into(), ..Default::default() }, &id)
-        .expect("instances graph writes");
+        .expect("derived domain-graph writes");
+    assert!(s.updates.borrow().last().map(|u| u.contains("urn:chorus:domains:domains")).unwrap_or(false), "routed to the defining domain's graph");
     // an explicit domain graph
     write(
         &s,

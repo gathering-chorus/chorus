@@ -47,7 +47,10 @@ chorus:domains a owl:Class, chorus:Domain ;
   chorus:purpose "Hold the canonical structural model of the system — products, domains, services and their edges." ;
   chorus:ownedBy chorus:principal-wren ; chorus:partOf chorus:product-athena ;
   chorus:atStep chorus:Designing ; chorus:atStream chorus:chorusStream ;
-  chorus:repoTarget "designing/domains" ; chorus:definesVocabulary chorus:Domain, chorus:SubDomain, chorus:CollectionDomain .
+  chorus:repoTarget "designing/domains" ;
+  # #4187 — NamedGraph rows (8, graph-status-3733) already live in urn:chorus:domains:domains;
+  # the claim makes that home derivable, so the seeder needs no default bucket.
+  chorus:definesVocabulary chorus:Domain, chorus:SubDomain, chorus:CollectionDomain, chorus:NamedGraph .
 
 
 chorus:services a owl:Class, chorus:Domain ;

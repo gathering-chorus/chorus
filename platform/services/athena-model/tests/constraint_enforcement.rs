@@ -69,6 +69,10 @@ impl Store for Cfg {
             Ok(self.unique_within.iter().map(|(p, q)| format!("{}|{}", p, q)).collect())
         } else if sparql.contains("uniqueGlobal") {
             Ok(self.unique_global.clone())
+        } else if sparql.contains("definesVocabulary") {
+            // #4187 — the fixture's kinds are claimed by a domain; the DAL derives
+            // the home graph from the claim instead of defaulting to instances.
+            Ok(vec!["tests".to_string()])
         } else {
             Ok(vec![])
         }
