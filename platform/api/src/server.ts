@@ -1129,7 +1129,6 @@ const OPS_NUDGE = path.join(CHORUS_ROOT, 'platform/scripts/ops-nudge');
 import {
   createDbOpener,
   createSearchEventEmitter,
-  createAlertFilesReader,
   crashAlert,
 } from './server-helpers';
 const getDb = createDbOpener<Database.Database>({
@@ -1411,12 +1410,6 @@ import {
   fetchDomainInfra,
 } from './handlers/domain-facets';
 
-// readAlertFiles moved to src/server-helpers.ts (#2205 wave 12).
-// (createAlertFilesReader + crashAlert imported at line 247.)
-const readAlertFiles = createAlertFilesReader({
-  fs,
-  alertsDir: path.join(REPO_ROOT, 'proving/domains/alerts'),
-});
 const domainFacetDeps = () => ({
   sparql: athenaSparqlQuery,
   resolveSubdomainId,
@@ -1430,7 +1423,7 @@ app.get('/api/chorus/domain/:name/tests', async (req: Request, res: Response) =>
 
 // GET /api/chorus/domain/:name/alerts — alert rules for a domain (#2060 AC3)
 app.get('/api/chorus/domain/:name/alerts', async (req: Request, res: Response) => {
-  const r = await fetchDomainAlerts({ ...domainFacetDeps(), readAlertFiles }, req.params.name);
+  const r = await fetchDomainAlerts(domainFacetDeps(), req.params.name);
   res.status(r.status).json(r.body);
 });
 

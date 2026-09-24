@@ -42,7 +42,7 @@ async function renderFacetTables(el, fid, opts) {
     // domain edge; the query is shown in the fold so a zero is 'no rows for this domain', never a lookup miss.
     { t: 'Logs', u: OWL + '/logs/sources?limit=500', k: 'items', graph: true, filter: r => tail(r.hasDomain || (r.links && r.links.hasDomain) || '') === dname,
       cols: ['launchdLabel', 'logStatus', 'lokiJob', 'lastWrittenAt', 'logPath'], src: 'chorus:LogSource · hasDomain = ' + dname },
-    { t: 'Alerts', u: DOM + fid + '/alerts', k: 'alerts', cols: ['name', 'description', 'severity'] },
+    { t: 'Alerts', u: DOM + fid + '/alerts', k: 'alerts', cols: ['name', 'file', 'source'] },   // #4285: rows from the alerts graph
     { t: 'Integration', u: ATHENA + fid + '/integrations', k: 'integrations', cols: ['label', 'source', 'status'] },
     { t: 'Actors', u: ATHENA + fid + '/actors', k: 'actors', cols: ['label', 'role', 'action'] },
     { t: 'Scenarios', u: ATHENA + fid + '/scenarios', k: 'scenarios', cols: ['label', 'given', 'when', 'then'] },
@@ -80,10 +80,16 @@ async function renderFacetTables(el, fid, opts) {
       const items = unwrap(b, f.k, f.alt);
       const rows = f.filter ? items.filter(f.filter) : items;
       count = rows.length;
-      inner = count ? table(rows, f.cols) : `<div class="empty">no ${f.t.toLowerCase()} for this domain</div>`;
+      // #4285 — a zero names the graph that was asked, so "0" can never mean
+      // "the page asked the wrong graph" without saying so.
+      const askedGraph = b && b._meta && b._meta.graph ? ` &middot; graph asked: <code>${esc(b._meta.graph)}</code>` : '';
+      inner = count ? table(rows, f.cols) : `<div class="empty">no ${f.t.toLowerCase()} for this domain${askedGraph}</div>`;
     }
     const heading = opts.heading ? opts.heading(f.t) : f.t;
+    // #4285 — the Tests fold lists FILES; the store counts CASES. Say both.
+    const total = b && b.data && typeof b.data.total === 'number' ? b.data.total : null;
+    const countTxt = f.k === 'tests' && total !== null && total !== count ? `${count} files &middot; ${total} cases` : String(count);
     const srcTxt = f.graph ? esc(f.src) + ' &middot; graph' : (opts.src ? opts.src : 'materialized &middot; live');
-    return `<details class="fold"${count ? ' open' : ''}><summary>${esc(heading)} (${count}) <span class="src">${srcTxt}</span></summary><div class="body">${inner}</div></details>`;
+    return `<details class="fold"${count ? ' open' : ''}><summary>${esc(heading)} (${countTxt}) <span class="src">${srcTxt}</span></summary><div class="body">${inner}</div></details>`;
   }).join('');
 }

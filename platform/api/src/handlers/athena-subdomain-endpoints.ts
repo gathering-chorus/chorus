@@ -6,6 +6,8 @@
  * response field name `endpoints`.
  */
 import type { FetchResult } from './codebase-topology';
+import { resolveDomainIdentity } from './domain-identity';
+import { CODE_GRAPH } from './athena-subdomain-code';
 
 export interface SparqlEndpointBinding {
   method: { value: string };
@@ -39,10 +41,11 @@ export async function fetchAthenaSubdomainEndpoints(
   const now = deps.now ?? Date.now;
   const envelope = deps.envelope ?? defaultEnvelope;
   const start = now();
-  const sdUri = `${CHORUS_PREFIX}${id}`;
+  const sdUri = `${CHORUS_PREFIX}${resolveDomainIdentity(id).primary}`;
 
   try {
-    const query = `PREFIX chorus: <https://jeffbridwell.com/chorus#> PREFIX rdfs: <http://www.w3.org/2000/01/rdf-schema#> SELECT ?method ?routePath ?filePath WHERE { GRAPH <urn:chorus:instances> { <${sdUri}> chorus:hasEndpoint ?ep . ?ep a chorus:Endpoint ; chorus:httpMethod ?method ; chorus:routePath ?routePath ; chorus:filePath ?filePath . } } ORDER BY ?method ?routePath`;
+    // #4285 — Endpoint rows live in the code graph and point AT the domain.
+    const query = `PREFIX chorus: <https://jeffbridwell.com/chorus#> PREFIX rdfs: <http://www.w3.org/2000/01/rdf-schema#> SELECT ?method ?routePath ?filePath WHERE { GRAPH <${CODE_GRAPH}> { ?ep a chorus:Endpoint ; chorus:hasDomain <${sdUri}> ; chorus:httpMethod ?method ; chorus:routePath ?routePath ; chorus:filePath ?filePath . } } ORDER BY ?method ?routePath`;
     const result = await deps.sparql(query);
     const endpoints = result.results.bindings.map((b) => ({
       method: b.method.value,
@@ -55,7 +58,7 @@ export async function fetchAthenaSubdomainEndpoints(
     }, {});
     return {
       status: 200,
-      body: envelope('subdomain-services', { subdomain: id, endpoints, byMethod }, now() - start, { count: endpoints.length }),
+      body: envelope('subdomain-services', { subdomain: id, endpoints, byMethod }, now() - start, { count: endpoints.length, graph: CODE_GRAPH }),
     };
   } catch (err) {
     const message = err instanceof Error ? err.message : String(err);
