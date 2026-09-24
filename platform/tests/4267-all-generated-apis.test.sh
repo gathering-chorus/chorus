@@ -60,6 +60,23 @@ fi
 TOKEN_BIN="${CHORUS_TOKEN_BIN:-$ROOT/platform/scripts/chorus-identity-token}"
 OWNER="${CHORUS_ROLE:-wren}"
 TOKEN="$([ -x "$TOKEN_BIN" ] && "$TOKEN_BIN" "$OWNER" 2>/dev/null || true)"
+# #4283 — one TestResult per API per owner, recorded through the API itself so
+# /nightly and the store name the endpoint. Only on the production walk (the
+# nightly's 4279 lane); werk-only walks record nothing (QUARTET_RECORD=0).
+source "$ROOT/platform/tests/lib/quartet-record.sh"
+[ "${QUARTET_PROD:-}" = "1" ] || QUARTET_RECORD=0
+OF_TEST=""
+if [ "${QUARTET_RECORD:-1}" != "0" ]; then
+  [ -n "${FUSEKI_AUTH+x}" ] || [ ! -r "$ROOT/platform/scripts/fuseki-auth.sh" ] || source "$ROOT/platform/scripts/fuseki-auth.sh" 2>/dev/null || true
+  OF_TEST="$(curl -s --max-time 20 "${FUSEKI_AUTH[@]+"${FUSEKI_AUTH[@]}"}" -G "${FUSEKI_QUERY:-http://localhost:3030/pods/query}" \
+    --data-urlencode "query=PREFIX c: <https://jeffbridwell.com/chorus#> SELECT ?t WHERE { GRAPH <urn:chorus:domains:tests> { ?t a c:Test ; c:filePath \"platform/tests/4279-api-quartet-prod.bats\" ; c:testName ?n FILTER(STRSTARTS(?n, \"$OWNER: quartet\")) } } LIMIT 1" \
+    -H 'Accept: text/csv' 2>/dev/null | tail -n +2 | tr -d '\r' | head -1)"
+fi
+# verdict line + record, one call (#4283)
+emit() { # class verdict detail
+  printf '%-22s %-8s %s\n' "$1" "$2" "$3"
+  quartet_record "$API" "$TOKEN" "$OWNER" "$1" "$2" "$3" "$OF_TEST"
+}
 if [ -z "$TOKEN" ]; then
   echo "UNMEASURED: no owner identity token (tried $TOKEN_BIN $OWNER)." >&2
   echo "  Every request would be anonymous; a 401 would read as a refusal we meant." >&2
@@ -102,12 +119,13 @@ printf '%-22s %-8s %s\n' CLASS RESULT DETAIL
 printf '%-22s %-8s %s\n' "----------------------" "--------" "------"
 
 for CLASS in $CLASSES; do
+  [ -z "${QUARTET_ONLY_CLASS:-}" ] || [ "$CLASS" = "$QUARTET_ONLY_CLASS" ] || continue  # #4283 by-hand probe
   # #4279 — QUARTET_ONLY=<Class> runs one class, for reading a single red by hand
   # instead of re-walking 55 against production.
   if [ -n "${QUARTET_ONLY:-}" ] && [ "$CLASS" != "$QUARTET_ONLY" ]; then continue; fi
   M="$WORK/$CLASS.json"
   if ! "$GEN" generate-tests --class "$CLASS" >"$M" 2>/dev/null || [ ! -s "$M" ]; then
-    printf '%-22s %-8s %s\n' "$CLASS" UNMEASURED "the generator emitted no manifest"
+    emit "$CLASS" UNMEASURED "the generator emitted no manifest"
     unmeasured=$((unmeasured+1)); continue
   fi
 
@@ -127,7 +145,7 @@ PYR
   SUBJ="$(python3 -c 'import json,sys; print(json.load(open(sys.argv[1]))["quartet"]["throwawaySubject"])' "$M" 2>/dev/null)"
   REQ="$(python3 -c 'import json,sys; print(json.dumps(json.load(open(sys.argv[1])).get("requiredFields") or []))' "$M" 2>/dev/null)"
   if [ "$REQ" = "[]" ]; then
-    printf '%-22s %-8s %s\n' "$CLASS" UNMEASURED "manifest carries no requiredFields — regenerate with #4267 athena-make"
+    emit "$CLASS" UNMEASURED "manifest carries no requiredFields — regenerate with #4267 athena-make"
     unmeasured=$((unmeasured+1)); continue
   fi
 
@@ -172,7 +190,7 @@ for f in json.load(open(sys.argv[1])).get("requiredFields") or []:
     print("|".join([f["field"], f.get("kind","literal"), f.get("targetClass",""), av[0] if av else "", f.get("datatype","")]))' "$M")
 
   if [ -n "$MISSING" ]; then
-    printf '%-22s %-8s %s\n' "$CLASS" UNMEASURED "no row to point a required edge at:$MISSING"
+    emit "$CLASS" UNMEASURED "no row to point a required edge at:$MISSING"
     unmeasured=$((unmeasured+1)); continue
   fi
 
@@ -313,13 +331,13 @@ print(next((s["path"] for s in json.load(open(sys.argv[1]))["quartet"]["steps"] 
   fi
 
   if [ "$OK" = 1 ]; then
-    printf '%-22s %-8s %s\n' "$CLASS" PASS "create read update delete, fields survived, no residue"
+    emit "$CLASS" PASS "create read update delete, fields survived, no residue"
     pass=$((pass+1))
   elif [ "$OK" = 2 ]; then
-    printf '%-22s %-8s %s\n' "$CLASS" NOT-PERM "$DETAIL"
+    emit "$CLASS" NOT-PERM "$DETAIL"
     unmeasured=$((unmeasured+1))
   else
-    printf '%-22s %-8s %s\n' "$CLASS" FAIL "$DETAIL"
+    emit "$CLASS" FAIL "$DETAIL"
     fail=$((fail+1))
   fi
 done

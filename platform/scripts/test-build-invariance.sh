@@ -58,7 +58,10 @@ build_and_capture() {
   echo "test-build-invariance: $label — cargo clean + build" >&2
   (cd "$CRATE_DIR" && cargo clean -p "$TARGET" >/dev/null 2>&1 || true)
   local out cdhash sha
-  out=$(cd "$CHORUS_HOME" && bash platform/scripts/build-signed.sh "$SHORTCUT" 2>&1)
+  # #4283 — invariance reads the cdhash from the build's stdout; it never needed
+  # the install, and the install kickstarted the production hooks daemon twice
+  # per nightly (build-signed → chorus-bin-install → launchd, by unit name).
+  out=$(cd "$CHORUS_HOME" && BUILD_SKIP_INSTALL=1 bash platform/scripts/build-signed.sh "$SHORTCUT" 2>&1)
   echo "$out" >&2
   cdhash=$(echo "$out" | grep -oE "build-signed: cdhash=[a-f0-9]+" | head -1 | sed 's/^build-signed: cdhash=//')
   sha=$(echo "$out" | grep -oE "build-signed: sha256=[a-f0-9]+" | head -1 | sed 's/^build-signed: sha256=//')

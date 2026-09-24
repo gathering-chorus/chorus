@@ -147,6 +147,22 @@ if [ -n "${BATS_TEST_DIRNAME:-}${BATS_TEST_TMPDIR:-}" ] && [ "$TARGET" = "canoni
   fi
 fi
 
+# #4283 — launchd is GLOBAL, $HOME is not. A fixture that installs into a temp
+# $HOME still named the production unit (com.chorus.hooks) and kickstarted it:
+# every nightly, test-build-invariance.sh (two builds) and
+# 3993-signed-install-gate.bats (two installs) each restarted the production
+# hooks daemon twice — the 2026-09-23 double kills at 14:55/15:05 and
+# 18:50/18:59, placed by writeback count in both runs, and reproduced by hand
+# at 02:34 on 09-24 by running 3993 alone. So: launchd is touched ONLY when
+# $HOME is the real home. CHORUS_BIN_REAL_HOME is the proof seam.
+REAL_HOME="${CHORUS_BIN_REAL_HOME:-$(eval echo "~$(id -un)")}"
+if [ "$HOME" = "$REAL_HOME" ]; then
+  LAUNCHD_ALLOWED=1
+else
+  LAUNCHD_ALLOWED=""
+  echo "chorus-bin-install: fixture home ($HOME) — launchd is left untouched (#4283)"
+fi
+
 # #3993 — SIGNATURE GATE for TCC/launchd-constrained binaries. 2026-08-23:
 # pipeline legs installed unsigned chorus-hooks builds into canonical six
 # times; each install's kickstart hit launchd's constraint → SIGKILL "Code
@@ -223,7 +239,7 @@ echo "chorus-bin-install: installed $NAME → $DEST (cdhash=$CDHASH commit=$COMM
 # reload it. bootout+bootstrap, never kickstart — kickstart would RUN the
 # nightly at deploy time, which is a different bug. Failure is loud, not fatal.
 # Skipped with the same CHORUS_BIN_NO_KICKSTART escape the fixtures use.
-if [ "$TARGET" = "canonical" ] && [ -z "${CHORUS_BIN_NO_KICKSTART:-}" ]; then
+if [ "$TARGET" = "canonical" ] && [ -z "${CHORUS_BIN_NO_KICKSTART:-}" ] && [ -n "$LAUNCHD_ALLOWED" ]; then
   UID_N=$(id -u)
   AGENT_DIR="${CHORUS_BIN_AGENT_DIR:-$HOME/Library/LaunchAgents}"
   if [ -d "$AGENT_DIR" ]; then
@@ -235,6 +251,28 @@ if [ "$TARGET" = "canonical" ] && [ -z "${CHORUS_BIN_NO_KICKSTART:-}" ]; then
       [ "$LABEL" = "com.chorus.$NAME" ] && continue
       [ "$LABEL" = "com.chorus.${NAME#chorus-}" ] && continue
       launchctl print "gui/$UID_N/$LABEL" >/dev/null 2>&1 || continue
+      # #4283 — never boot out a job that is RUNNING or SCHEDULED. On 2026-09-23
+      # 14:07 this loop booted out com.chorus.nightly-suites mid-run (Wren's
+      # nightly died at 121/286) and the bootstrap back failed, leaving the
+      # agent unloaded. A scheduled job execs the installed path fresh at its
+      # next start, so it needs no reload; a running job is left to finish.
+      # Both are named in the output and on the spine, never silently skipped.
+      LIVE_PID="$(launchctl print "gui/$UID_N/$LABEL" 2>/dev/null | sed -n 's/^[[:space:]]*pid = \([0-9][0-9]*\).*/\1/p' | head -1)"
+      SKIP_WHY=""
+      if [ -n "$LIVE_PID" ]; then
+        SKIP_WHY="running (pid $LIVE_PID)"
+      elif grep -q "StartCalendarInterval" "$plist" 2>/dev/null; then
+        SKIP_WHY="scheduled"
+      fi
+      if [ -n "$SKIP_WHY" ]; then
+        echo "chorus-bin-install: $LABEL runs $DEST and is $SKIP_WHY — left alone; it starts on the installed binary at its next launch (#4283)"
+        if [ -n "${CHORUS_BIN_SPINE_LOG:-}" ]; then
+          echo "binary.job.reloaded | $ROLE binary=$NAME unit=$LABEL result=skipped-${SKIP_WHY%% *}" >> "$CHORUS_BIN_SPINE_LOG"
+        elif command -v chorus-log >/dev/null 2>&1; then
+          chorus-log binary.job.reloaded "$ROLE" "binary=$NAME" "unit=$LABEL" "result=skipped-${SKIP_WHY%% *}" >/dev/null 2>&1 || true
+        fi
+        continue
+      fi
       RELOAD_RESULT="ok"
       if launchctl bootout "gui/$UID_N/$LABEL" >/dev/null 2>&1 &&
          launchctl bootstrap "gui/$UID_N" "$plist" >/dev/null 2>&1; then
@@ -259,7 +297,7 @@ fi
 # installs never touch live units (the demo env manages its own). Failure is
 # LOUD (spine event + stderr), not fatal — the install itself succeeded.
 # Override for fixtures: CHORUS_BIN_NO_KICKSTART=1.
-if [ "$TARGET" = "canonical" ] && [ -z "${CHORUS_BIN_NO_KICKSTART:-}" ]; then
+if [ "$TARGET" = "canonical" ] && [ -z "${CHORUS_BIN_NO_KICKSTART:-}" ] && [ -n "$LAUNCHD_ALLOWED" ]; then
   # Unit naming is not uniform: owl-api runs as com.chorus.owl-api but
   # chorus-hooks runs as com.chorus.hooks — try the name as-is, then with the
   # chorus- prefix stripped.
