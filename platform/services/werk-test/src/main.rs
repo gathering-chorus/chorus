@@ -805,7 +805,9 @@ fn run_nightly(args: &[String]) -> Result<i32, String> {
     let sec_units = werk_test::security_units(&rows);
     let perf_units = werk_test::perf_units(&rows);
     let bats_kind = |b: &str| -> &'static str {
-        if perf_units.contains(b) { "perf" } else if sec_units.contains(b) { "security" } else if b.ends_with(".sh") { "shell" } else { "bats" }
+        if perf_units.contains(b) { "perf" } else if sec_units.contains(b) { "security" } else if b.ends_with(".sh") { "shell" }
+        // #4292 — the two new file suites carry their own kind on the report
+        else if werk_test::is_feature_suite(b) { "bdd" } else if werk_test::is_unittest_suite(b) { "py" } else { "bats" }
     };
     // #4030 AC4 — the PLAN, printed before any lane runs. A planned unit that
     // never produces its `nightly-unit|` line is folded by nightly-suites.sh
@@ -1254,12 +1256,40 @@ fn run_bats_cases(werk: &str, suite: &str) -> (bool, Vec<(String, String)>, Stri
     // bash (the shell tier's suites). Shell output is summary-grain (counted
     // in the lane line via parse_shell_counts); TAP suites get per-case rows.
     // #4106 — the shebang decides, not the extension (see `runner_for`).
-    let mut cmd = {
+    let suite_slug: String = suite.chars()
+        .map(|c| if c.is_ascii_alphanumeric() { c } else { '-' }).collect();
+    // #4292 — a feature runs alone under cucumber (from the package dir, so
+    // its profile and step definitions load) and reports each scenario via
+    // the JSON report; a unittest file runs under `python3 -m unittest -v`
+    // from its own dir. Every other file suite keeps bats/bash.
+    let (mut cmd, dir) = if werk_test::is_feature_suite(suite) {
+        let rel = suite.strip_prefix("platform/tests/").unwrap_or(suite).to_string();
+        let json = tmp.join(format!("cuke-{}.json", suite_slug));
+        let cfg = tmp.join(format!("cuke-{}.config.js", suite_slug));
+        let _ = std::fs::write(&cfg, werk_test::cuke_single_file_config(
+            &format!("{}/platform/tests/cucumber.js", werk), &rel));
+        let mut c = Command::new("bash");
+        c.arg("-c")
+            .arg(r#"npx --no-install cucumber-js --config "$4" --format "json:$2" --format summary; rc=$?; node -e "$3" "$2" "$1"; exit $rc"#)
+            .arg("cuke")
+            .arg(&rel)
+            .arg(json.to_string_lossy().into_owned())
+            .arg(werk_test::CUKE_FLATTEN_JS)
+            // cucumber joins cwd + --config even when absolute, so hand it a
+            // path relative to the package dir it runs from
+            .arg(werk_test::relative_from(&format!("{}/platform/tests", werk), &cfg.to_string_lossy()));
+        (c, format!("{}/platform/tests", werk))
+    } else if werk_test::is_unittest_suite(suite) {
+        let (d, file) = suite.rsplit_once('/').unwrap_or((".", suite));
+        let mut c = Command::new("python3");
+        c.args(["-m", "unittest", "-v", file.trim_end_matches(".py")]);
+        (c, format!("{}/{}", werk, d))
+    } else {
         let mut c = Command::new(werk_test::suite_runner(&format!("{}/{}", werk, suite)));
         c.arg(suite);
-        c
+        (c, werk.to_string())
     };
-    cmd.current_dir(werk).env("CHORUS_CONTEXT", "");
+    cmd.current_dir(&dir).env("CHORUS_CONTEXT", "");
     apply_suite_world(&mut cmd, werk);
     // #4022 / TD-028 — suite output goes to a FILE and the runner waits on
     // CHILD EXIT with a deadline, never on pipe-EOF. Twice today a finished
@@ -1267,8 +1297,6 @@ fn run_bats_cases(werk: &str, suite: &str) -> (bool, Vec<(String, String)>, Stri
     // bats wedge) inherited the output pipe and hung the run for as long as
     // anyone let it; a file leaves nothing to hold, and a suite that outlives
     // its budget is killed and scored failed, loudly.
-    let suite_slug: String = suite.chars()
-        .map(|c| if c.is_ascii_alphanumeric() { c } else { '-' }).collect();
     let out_path = tmp.join(format!("suite-{}.out", suite_slug));
     // #4035 — the UNIT cap, never the wrapper's LANE vocabulary. nightly-suites.sh
     // env-prefixes NIGHTLY_SUITE_TIMEOUT=<lane cap, 7200s> onto the werk-test
@@ -1295,7 +1323,7 @@ fn run_bats_cases(werk: &str, suite: &str) -> (bool, Vec<(String, String)>, Stri
                     "\nSUITE TIMED OUT after {}s — killed by the runner (deadline is child-exit, not pipe-EOF)\n",
                     timeout_secs));
                 eprintln!("!! {} timed out after {}s — killed", suite, timeout_secs);
-                return (false, werk_test::parse_bats_cases(&text), text);
+                return (false, werk_test::parse_file_suite_cases(suite, &text), text);
             }
             // #4016 — rc=3 is a suite's SELF-REFUSAL ("I must not run here"),
             // not a failure. nightly-suites.sh learned this in #4004; this
@@ -1322,7 +1350,7 @@ fn run_bats_cases(werk: &str, suite: &str) -> (bool, Vec<(String, String)>, Stri
                     println!("{} | {}", suite, line);
                 }
             }
-            let mut cases = werk_test::parse_bats_cases(&text);
+            let mut cases = werk_test::parse_file_suite_cases(suite, &text);
             if refused && cases.is_empty() {
                 cases.push((
                     format!("SELF-REFUSED rc=3 — {} declined to run here", suite),

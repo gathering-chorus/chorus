@@ -1256,7 +1256,9 @@ fn main() {
         std::process::exit(run_undo(&file));
     }
     let dry_run = std::env::args().any(|a| a == "--dry-run");
-    let reconciling = std::env::args().any(|a| a == "--reconcile");
+    // #4292 — `--validate` is the crawler-validate control's name for the
+    // same read-only pass (#4290); the nightly lane calls it by that name.
+    let reconciling = std::env::args().any(|a| a == "--reconcile" || a == "--validate");
 
     let head = match head_commit(&root) {
         Ok(h) => h,

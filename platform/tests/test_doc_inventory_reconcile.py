@@ -1,4 +1,5 @@
 #!/usr/bin/env python3
+# @test-type: unit — hermetic unittest; the nightly runs it per case with python3 -m unittest (#4292)
 """Tests for doc-inventory-reconcile.py — catalog-path resolution + bucketing.
 
 AC drift note: AC2 frames this as a 'round-trip test for the 10-col tsv'. The

@@ -272,7 +272,8 @@ function notFinishedLine(run: NightlyRun): string {
 const KIND_LAYER = new Map<string, string>([
   ['cargo', 'unit'], ['npm', 'unit'], ['app-eslint', 'lint'], ['coverage-denominator', 'coverage'],
 ]);
-const FILE_KINDS = new Set(['shell', 'bats']);
+// #4292 — py (unittest files) joins the file suites that declare their own type
+const FILE_KINDS = new Set(['shell', 'bats', 'py']);
 const LAYERS = new Set(['unit', 'integration', 'bdd', 'e2e', 'contract', 'fitness', 'smoke']);
 
 export type ReadFile = (path: string) => string | null;
