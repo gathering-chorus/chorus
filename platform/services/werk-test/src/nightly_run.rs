@@ -1224,6 +1224,20 @@ mod nightly_run_4145 {
         );
     }
 
+    /// #4286 — the chorus-principal floor sits at the measured LOW, not 0.2 pt
+    /// under a measurement that moves with the box (18.20 / 16.96 / 18.20 on
+    /// unchanged code, 2026-09-23/24). Reads the real floors file so a hand
+    /// edit back up re-fails here before it re-fails the nightly.
+    #[test]
+    fn chorus_principal_floor_covers_the_measured_low() {
+        let yaml = std::fs::read_to_string(concat!(env!("CARGO_MANIFEST_DIR"), "/../../../coverage-floors.yml")).unwrap();
+        let floor = parse_floors(&yaml).into_iter().find(|(_, rel, _)| rel == "platform/services/chorus-principal").map(|(_, _, f)| f).expect("chorus-principal has a floor");
+        let measured_low = 16.959669079627716;
+        assert_eq!(coverage_row("platform/services/chorus-principal", "silas", floor, 0, Some(measured_low)).status, "pass", "floor {} must cover the measured low", floor);
+        // NEGATIVE PROOF: one point above the low, the same measurement is red.
+        assert_eq!(coverage_row("platform/services/chorus-principal", "silas", floor + 1, 0, Some(measured_low)).status, "fail");
+        assert_eq!(coverage_row("platform/services/chorus-principal", "silas", 18, 0, Some(measured_low)).status, "fail", "the 03:04 red reproduces at the old floor");
+    }
     #[test]
     fn coverage_rows_keep_the_four_outcomes() {
         assert!(coverage_row("a", "kade", 80, 0, Some(80.5)).line().ends_with("pass|1 pass, 0 fail (coverage 80.5% >= floor 80%)"));
