@@ -1,5 +1,5 @@
 # @test-type: bdd — cucumber feature; runs against the live chorus-api and Loki
-@memory @e2e
+@memory @live
 Feature: Domain crawler
   A role asks "tell me about the seeds domain" and gets a connected
   subgraph — cards, RDF triples, conversations, spine events, domain
