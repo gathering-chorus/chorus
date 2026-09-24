@@ -1743,6 +1743,7 @@ mod scope_vcs_metadata_4173 {
     fn git_metadata_never_widens_a_card_to_the_whole_tree() {
         assert!(scope_irrelevant(".gitignore"));
         assert!(scope_irrelevant("platform/.gitattributes"));
+        assert!(scope_irrelevant(".metadata_never_index")); // #4285: a Spotlight marker, not a build input
         let units = vec![ScopeUnit { name: "werk-test".into(), dir: "platform/services/werk-test".into() }];
         let changed = vec![".gitignore".to_string(), "platform/services/werk-test/src/lib.rs".to_string()];
         assert_eq!(
