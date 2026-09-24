@@ -1,0 +1,20 @@
+# #4293 negative-proof fixture: each layer check must go RED on this data.
+@prefix c: <https://jeffbridwell.com/chorus#> .
+c:layer-foundation a c:Layer ; c:layerRank 0 .
+c:layer-build      a c:Layer ; c:layerRank 1 .
+c:layer-capability a c:Layer ; c:layerRank 2 .
+c:infrastructure a c:Domain ; c:inLayer c:layer-foundation .
+c:time           a c:Domain ; c:inLayer c:layer-foundation .
+c:logs           a c:Domain ; c:inLayer c:layer-foundation .
+c:security       a c:Domain ; c:inLayer c:layer-foundation .
+c:builds         a c:Domain ; c:inLayer c:layer-build .
+c:toolchain      a c:Domain ; c:inLayer c:layer-build .
+c:alerts         a c:Domain ; c:inLayer c:layer-capability .
+c:orphan         a c:Domain .
+# foundation domain leaning on a capability domain            -> never-points-up
+c:logs c:dependsOn c:alerts .
+# a service hosted by a foundation domain leaning upward       -> never-points-up (service clause)
+c:time c:hosts c:service-clock-sync .
+c:service-clock-sync a c:Service ; c:dependsOn c:alerts .
+# a capability domain needing the build layer at runtime       -> no-runtime-edge-into-build
+c:alerts c:dependsOn c:builds .

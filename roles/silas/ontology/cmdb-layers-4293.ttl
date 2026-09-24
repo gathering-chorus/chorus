@@ -1,0 +1,92 @@
+# ============================================================================
+# #4293 — the CMDB tiers: three Layer rows, and the layer every Silas domain sits in.
+#
+# Jeff, 2026-09-24 16:04: "the tagging on domains and relationships of domains and
+# products and services is not explicit enough ... security and logs and infra may
+# be foundational dependencies"; 17:23: "these edges are very cmdbish".
+#
+# A Layer groups domains by what they may depend on (chorus:Layer, chorus:inLayer,
+# chorus:layerRank are declared in chorus.ttl):
+#   foundation (rank 0)  infrastructure -> time -> logs -> security + identity,
+#                        acyclic in that order (Kade's review: identity writes to
+#                        the spine, so security sits above logs)
+#   build      (rank 1)  what every domain is generated and shipped with: the
+#                        model and the werk domains. A build-time dependency,
+#                        never a runtime one (ADR-061).
+#   capability (rank 2)  every other domain.
+# Depending on a lower layer is implicit; chorus:dependsOn (typed by #4289) names
+# only what is beyond it. Design + reviews: the "Silas Domains: Dependencies" doc.
+#
+# This file carries only Silas-owned domains. The other teams' domains get their
+# layer on their own cards; DomainShape keeps inLayer at minCount 0 until then.
+# ============================================================================
+
+@prefix chorus: <https://jeffbridwell.com/chorus#> .
+@prefix rdfs: <http://www.w3.org/2000/01/rdf-schema#> .
+@prefix xsd:  <http://www.w3.org/2001/XMLSchema#> .
+
+# --- the three layers ---------------------------------------------------------
+
+chorus:layer-foundation a chorus:Layer ;
+    rdfs:label "foundation" ;
+    rdfs:comment "The four runtime foundations every domain stands on: infrastructure, time, logs, security and identity, in that dependency order. A foundation domain, or a service it hosts, may depend only on foundation domains below it." ;
+    chorus:layerRank 0 ;
+    chorus:ownedBy chorus:principal-silas .
+
+chorus:layer-build a chorus:Layer ;
+    rdfs:label "build" ;
+    rdfs:comment "What every domain is generated, built and shipped with: the model and the werk domains. Every domain depends on this layer at build time; a runtime dependsOn edge into it is refused (ADR-061: the graph is a build-time source)." ;
+    chorus:layerRank 1 ;
+    chorus:ownedBy chorus:principal-silas .
+
+chorus:layer-capability a chorus:Layer ;
+    rdfs:label "capability" ;
+    rdfs:comment "Every domain that is neither a runtime foundation nor part of the build: the capabilities products are composed of." ;
+    chorus:layerRank 2 ;
+    chorus:ownedBy chorus:principal-silas .
+
+# --- Silas's domains: foundation ----------------------------------------------
+
+chorus:infrastructure chorus:inLayer chorus:layer-foundation .
+chorus:time           chorus:inLayer chorus:layer-foundation .
+chorus:logs           chorus:inLayer chorus:layer-foundation .
+chorus:security       chorus:inLayer chorus:layer-foundation .
+chorus:identity       chorus:inLayer chorus:layer-foundation .
+
+# --- Silas's domains: build ----------------------------------------------------
+
+chorus:builds    chorus:inLayer chorus:layer-build .
+chorus:deploys   chorus:inLayer chorus:layer-build .
+chorus:toolchain chorus:inLayer chorus:layer-build .
+
+# --- Silas's domains: capability ----------------------------------------------
+
+chorus:alerts     chorus:inLayer chorus:layer-capability .
+chorus:monitors   chorus:inLayer chorus:layer-capability .
+chorus:metrics    chorus:inLayer chorus:layer-capability .
+chorus:analytics  chorus:inLayer chorus:layer-capability .
+chorus:properties chorus:inLayer chorus:layer-capability .
+
+# --- hosting moves from twin rows to the domain itself -------------------------
+# The Loki service row was hosted by the logs-domain twin and the observability
+# service by the alerts-monitors-domain twin. The domain the product actually
+# composes hosts them now; the twin rows retire in the same card.
+
+chorus:logs   chorus:hosts chorus:logs-domain-service-loki .
+chorus:alerts chorus:hosts chorus:service-observability .
+
+# --- explicit dependencies ------------------------------------------------------
+# Inside the foundation the order is stated edge by edge (it is the thing the layer
+# rule leans on). Above it, only what is beyond the foundation is written; depending
+# on the foundation itself is implied by inLayer. chorus:dependsOn is typed by #4289
+# (range Domain | Service | Skill, acyclic within a class).
+
+chorus:time     chorus:dependsOn chorus:infrastructure .
+chorus:logs     chorus:dependsOn chorus:infrastructure , chorus:time .
+chorus:security chorus:dependsOn chorus:infrastructure , chorus:time , chorus:logs .
+chorus:identity chorus:dependsOn chorus:security .
+
+chorus:alerts    chorus:dependsOn chorus:metrics , chorus:monitors .
+chorus:analytics chorus:dependsOn chorus:metrics .
+chorus:builds    chorus:dependsOn chorus:toolchain .
+chorus:deploys   chorus:dependsOn chorus:builds .

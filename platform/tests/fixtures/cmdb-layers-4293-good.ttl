@@ -1,0 +1,19 @@
+# #4293 fixture: the same shape with every edge allowed; each layer check must be GREEN.
+@prefix c: <https://jeffbridwell.com/chorus#> .
+c:layer-foundation a c:Layer ; c:layerRank 0 .
+c:layer-build      a c:Layer ; c:layerRank 1 .
+c:layer-capability a c:Layer ; c:layerRank 2 .
+c:infrastructure a c:Domain ; c:inLayer c:layer-foundation .
+c:time           a c:Domain ; c:inLayer c:layer-foundation .
+c:logs           a c:Domain ; c:inLayer c:layer-foundation .
+c:security       a c:Domain ; c:inLayer c:layer-foundation .
+c:builds         a c:Domain ; c:inLayer c:layer-build .
+c:toolchain      a c:Domain ; c:inLayer c:layer-build .
+c:alerts         a c:Domain ; c:inLayer c:layer-capability .
+c:orphan         a c:Domain ; c:inLayer c:layer-capability .
+c:security c:dependsOn c:logs .        # foundation -> foundation, same rank
+c:logs     c:dependsOn c:time .
+c:alerts   c:dependsOn c:logs .        # capability -> foundation, down
+c:builds   c:dependsOn c:toolchain .   # build -> build, inside the layer
+c:time c:hosts c:service-clock .
+c:service-clock a c:Service ; c:dependsOn c:infrastructure .

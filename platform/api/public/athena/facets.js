@@ -74,10 +74,20 @@ async function renderFacetTables(el, fid, opts) {
       const dd = (b && b.data) || {};
       const dir = dd.direct || { consumes: [], consumedBy: [] };
       count = (dir.consumes || []).length + (dir.consumedBy || []).length;
-      inner = count
+      // #4293 — the CMDB half: which layer the domain sits in and which services it
+      // hosts, shown even when it has no explicit dependency (a foundation domain
+      // with none is still a fact worth reading).
+      const layerLine = dd.layer
+        ? `<div style="margin-bottom:6px"><span class="lbl">layer</span> <span class="chip">${esc(dd.layer.label || dd.layer.id)}</span></div>`
+        : '<div style="margin-bottom:6px"><span class="lbl">layer</span> <span class="empty">none recorded</span></div>';
+      const hostsLine = (dd.hosts || []).length
+        ? `<div style="margin-bottom:6px"><span class="lbl">hosts</span> ${dd.hosts.map(x => `<span class="chip">${esc(x.label || x.id)}</span>`).join('')}</div>`
+        : '';
+      const failed = b && b._meta && b._meta.error ? `<div class="empty">could not read dependencies: ${esc(b._meta.message || 'store error')}</div>` : '';
+      inner = layerLine + hostsLine + failed + (count
         ? `<div><span class="lbl">depends on</span> ${(dir.consumes || []).map(x => `<a class="chip" href="domain.html?d=${encodeURIComponent(String(x.id || x).replace(/-domain$/, ''))}">${esc(x.label || x.id || x)}</a>`).join('') || '<span class="empty">none</span>'}</div>
            <div style="margin-top:6px"><span class="lbl">consumed by</span> ${(dir.consumedBy || []).map(x => `<a class="chip" href="domain.html?d=${encodeURIComponent(String(x.id || x).replace(/-domain$/, ''))}">${esc(x.label || x.id || x)}</a>`).join('') || '<span class="empty">none</span>'}</div>`
-        : '<div class="empty">none recorded</div>';
+        : '<div class="empty">no dependencies recorded</div>');
     } else {
       const items = unwrap(b, f.k, f.alt);
       const rows = f.filter ? items.filter(f.filter) : items;
