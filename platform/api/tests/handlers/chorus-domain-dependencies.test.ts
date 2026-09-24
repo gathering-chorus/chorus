@@ -1,3 +1,4 @@
+// @test-type: unit — stubs the store; no Fuseki, no live service.
 /**
  * chorus-domain-dependencies handler — unit tests (#2188).
  */
@@ -49,20 +50,17 @@ function deps(over: Partial<ChorusDomainDependenciesDeps> = {}): ChorusDomainDep
 }
 
 describe('fetchChorusDomainDependencies (#2188)', () => {
-  test('consumes query reads from urn:chorus:instances (graph-split: writes go there per ADR-025)', async () => {
-    // #2683 receipt: consumes-edges are POSTed to urn:chorus:instances
-    // by /api/athena/subdomains/:id/consumes; this query previously read
-    // urn:chorus:ontology and returned empty for every domain.
-    const queries: string[] = [];
-    const sparql = (async (q: string) => {
-      queries.push(q);
-      return { results: { bindings: [] } };
-    }) as ChorusDomainDependenciesDeps['sparql'];
-    await fetchChorusDomainDependencies(deps({ sparql }), 'commits');
-    const consumesQuery = queries.find((q) => q.includes('chorus:consumes'));
-    expect(consumesQuery).toBeDefined();
-    expect(consumesQuery).toContain('urn:chorus:instances');
-    expect(consumesQuery).not.toMatch(/GRAPH\s+<urn:chorus:ontology>\s*\{[^}]*chorus:consumes/);
+  test('#4293 — the direct query reads dependsOn from every graph, never pinned to urn:chorus:instances', async () => {
+    // #2683 pinned this read to urn:chorus:instances. No domain edge lives there, so
+    // every domain page said "none recorded" (measured 2026-09-24). #4293 reads
+    // dependsOn (and legacy Domain->Domain consumes) from whichever graph holds it.
+    const seen: string[] = [];
+    const sparql = (async (q: string) => { seen.push(q); return { results: { bindings: [] } }; }) as ChorusDomainDependenciesDeps['sparql'];
+    await fetchChorusDomainDependencies(deps({ sparql }), 'photos');
+    const directQuery = seen.find((q) => q.includes('chorus:dependsOn'));
+    expect(directQuery).toBeDefined();
+    expect(directQuery).toContain('GRAPH ?g');
+    expect(directQuery).not.toContain('urn:chorus:instances');
   });
 
   test('both queries empty → zeros', async () => {

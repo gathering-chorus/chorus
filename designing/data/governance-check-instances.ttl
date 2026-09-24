@@ -139,3 +139,57 @@ SELECT ?s ?appointee ?owner ?anchor WHERE {
   ?anchor c:ownedBy ?owner .
   FILTER(?appointee != ?owner)
 }""" .
+
+# ---------------------------------------------------------------------------
+# #4293 — the CMDB layers (Jeff 2026-09-24: "security and logs and infra may be
+# foundational dependencies"; "these edges are very cmdbish"). Layer, inLayer and
+# layerRank are declared in chorus.ttl; the rows are in cmdb-layers-4293.ttl.
+# Kade's review (17:10): the rule is only real with inLayer required and a negative
+# proof. All three were shown red on the #4293 fixture
+# (platform/tests/fixtures/cmdb-layers-4293-bad.ttl) by platform/tests/4293-cmdb-layers.test.sh,
+# and green on the matching good fixture.
+# ---------------------------------------------------------------------------
+chorus:gc-layer-never-points-up a chorus:GovernanceCheck ;
+    rdfs:label "a dependency never points to a higher layer" ;
+    chorus:boundTo chorus:adr-041 ;
+    chorus:checkSeverity "block" ;
+    chorus:provenRedOn "2026-09-24" ;
+    chorus:provenRedRows 2 ;
+    chorus:checkQuery """PREFIX c: <https://jeffbridwell.com/chorus#>
+SELECT ?s ?o ?fromRank ?toRank WHERE {
+  { ?s c:dependsOn ?o . ?s c:inLayer ?ls . }
+  UNION
+  { ?d c:hosts ?s . ?s c:dependsOn ?o . ?d c:inLayer ?ls . }
+  ?ls c:layerRank ?fromRank .
+  ?o c:inLayer ?lo . ?lo c:layerRank ?toRank .
+  FILTER(?toRank > ?fromRank)
+}""" ;
+    rdfs:comment "A domain, or a service a domain hosts, depends on a domain in a higher-ranked layer. The foundation may lean only on the foundation; the service clause is Kade's: without it a foundation service that needs a capability domain would pass." .
+
+chorus:gc-no-runtime-edge-into-build a chorus:GovernanceCheck ;
+    rdfs:label "nothing depends on the build layer at runtime" ;
+    chorus:boundTo chorus:adr-041 ;
+    chorus:checkSeverity "block" ;
+    chorus:provenRedOn "2026-09-24" ;
+    chorus:provenRedRows 1 ;
+    chorus:checkQuery """PREFIX c: <https://jeffbridwell.com/chorus#>
+SELECT ?s ?o WHERE {
+  { ?s c:dependsOn ?o . FILTER NOT EXISTS { ?s c:inLayer c:layer-build } }
+  UNION
+  { ?d c:hosts ?s . ?s c:dependsOn ?o . FILTER NOT EXISTS { ?d c:inLayer c:layer-build } }
+  ?o c:inLayer c:layer-build .
+}""" ;
+    rdfs:comment "Every domain is generated and shipped with the build layer (the model, werk); none may need it running. A dependsOn edge into it from outside it is the ADR-061 violation: the graph read at runtime." .
+
+chorus:gc-domain-has-a-layer a chorus:GovernanceCheck ;
+    rdfs:label "every domain sits in a layer" ;
+    chorus:boundTo chorus:adr-041 ;
+    chorus:checkSeverity "warn" ;
+    chorus:provenRedOn "2026-09-24" ;
+    chorus:provenRedRows 1 ;
+    chorus:checkQuery """PREFIX c: <https://jeffbridwell.com/chorus#>
+SELECT ?s WHERE {
+  ?s a c:Domain .
+  FILTER NOT EXISTS { ?s c:inLayer ?l }
+}""" ;
+    rdfs:comment "A domain with no layer says nothing and so passes both rules above (Kade: the hollow gate). warn while the other teams' domains take their layer on their own cards; becomes block, and DomainShape inLayer minCount 1, when this returns 0 live." .

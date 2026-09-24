@@ -371,7 +371,9 @@ chorus:Service a owl:Class ;
 chorus:hasService a owl:ObjectProperty ;
     rdfs:label "has service" ;
     rdfs:domain chorus:Domain ;
-    rdfs:range chorus:Service .
+    rdfs:range chorus:Service ;
+    owl:deprecated true ;
+    rdfs:comment "RETIRED (#4293, 2026-09-24): 0 uses; chorus:hosts is the one Domain -> Service edge. Kept declared only so an old read does not fail; nothing may write it." .
 
 chorus:serviceType a owl:DatatypeProperty ;
     rdfs:label "type" ;
@@ -1849,6 +1851,33 @@ chorus:hasDesignDoc  a owl:ObjectProperty ; rdfs:label "has design doc" ; rdfs:r
 chorus:hosts         a owl:ObjectProperty ; rdfs:label "hosts" ; rdfs:domain chorus:Domain ; rdfs:range chorus:Service ;
     rdfs:comment "Domain hosts Service (1:* from Domain). Inverse drives the Service 'exactly one hosting Domain' constraint." .
 
+# --- layers (#4293, 2026-09-24) — the CMDB's tiers. Jeff 16:04: "security and logs and
+# infra may be foundational dependencies"; 17:23: "these edges are very cmdbish".
+# A Layer groups domains by what they may depend on. layer-foundation holds the four
+# runtime foundations (infrastructure -> time -> logs -> security+identity, acyclic in
+# that order); layer-build holds what every domain is generated and shipped with (the
+# model, werk) — a build-time dependency, never a runtime one (ADR-061); every other
+# domain sits in layer-capability. Depending on a layer below is implicit; an explicit
+# chorus:dependsOn names only what is beyond it. Design + reviews: the "Silas Domains:
+# Dependencies" doc (Kade DE, Wren COS, 17:10-17:15).
+chorus:Layer a owl:Class ;
+    rdfs:label "Layer" ;
+    rdfs:comment "A tier of domains ordered by dependency: a domain may depend on its own layer's lower members and on every layer below, never on a layer above. Foundation (runtime), build (build-time only), capability (everything else)." .
+chorus:inLayer a owl:ObjectProperty , owl:FunctionalProperty ;
+    rdfs:label "in layer" ; rdfs:domain chorus:Domain ; rdfs:range chorus:Layer ;
+    rdfs:comment "The one layer a domain sits in (#4293). Required on every Domain once all rows carry it; until then minCount 0 on DomainShape and the ratchet is an AC of #4293." .
+chorus:layerRank a owl:DatatypeProperty ;
+    rdfs:label "layer rank" ; rdfs:domain chorus:Layer ; rdfs:range xsd:integer ;
+    rdfs:comment "Order of layers, lowest first (foundation 0, build 1, capability 2). A dependsOn edge from a domain to a domain in a higher-ranked layer is refused." .
+
+chorus:LayerShape a sh:NodeShape ;
+    sh:targetClass chorus:Layer ;
+    chorus:instancesGraph "urn:chorus:domains:domains" ;
+    sh:property [ sh:path rdfs:label       ; sh:minCount 1 ; sh:maxCount 1 ; sh:datatype xsd:string ] ;
+    sh:property [ sh:path rdfs:comment     ; sh:minCount 1 ; sh:datatype xsd:string ] ;
+    sh:property [ sh:path chorus:ownedBy   ; sh:minCount 1 ; sh:class chorus:Principal ] ;
+    sh:property [ sh:path chorus:layerRank ; sh:minCount 1 ; sh:maxCount 1 ; sh:datatype xsd:integer ] .
+
 # --- value-stream step layer (ADR-040 class grain + ADR-041 §value-stream-layer) ---
 chorus:ValueStreamStep a owl:Class ; rdfs:label "Value Stream Step" ;
     rdfs:comment "A step in a value stream (ADR-040 canonical class). AS-IS nickname: chorus:Vertebra (Jeff 2026-06-19 — a nickname, not a real class). The live Shaping/Directing/Designing/Building/Proving reconcile to this." .
@@ -1964,7 +1993,10 @@ chorus:DomainShape a sh:NodeShape ;
     sh:property [ sh:path chorus:status            ; sh:minCount 1 ; sh:in ( "exploring" "building" "operating" "retiring" ) ] ;
     sh:property [ sh:path chorus:gaps              ; sh:minCount 1 ; sh:datatype xsd:string ] ;
     sh:property [ sh:path chorus:hasDesignDoc      ; sh:minCount 1 ; sh:class chorus:Document ] ;
-    sh:property [ sh:path [ sh:inversePath chorus:hasDomain ] ; sh:minCount 1 ; sh:maxCount 1 ; sh:class chorus:Product ] .  # exactly one parent Product
+    sh:property [ sh:path chorus:inLayer ; sh:minCount 0 ; sh:maxCount 1 ; sh:class chorus:Layer ] ;   # #4293 — ratchets to minCount 1 once every domain row carries a layer
+    sh:property [ sh:path chorus:hosts ; sh:minCount 0 ; sh:class chorus:Service ] ;   # #4293 — served, so a domain page shows the services it hosts
+    sh:property [ sh:path chorus:dependsOn ; sh:minCount 0 ] ;   # #4293 — served; the range (Domain | Service | Skill) is typed by #4289
+    sh:property [ sh:path [ sh:inversePath chorus:hasDomain ] ; sh:minCount 1 ; sh:class chorus:Product ] .  # at least one composing Product; #4288 (ADR-041 amended 2026-09-24): a domain two products share lives once, so no maxCount
 
 # --- ServiceShape (ADR-029 service-design template form; the most-ready primitive — 50+ designs to ingest) ---
 chorus:ServiceShape a sh:NodeShape ;
