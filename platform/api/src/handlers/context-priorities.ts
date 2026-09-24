@@ -106,7 +106,7 @@ export async function fetchContextPriorities(
   // the catch-all read here served zero chunks once they moved.
   // One walk query: the role's chunks + (optionally) their ranked memberships.
   // Sorting happens HERE — arrival order is not a contract.
-  const walk = `PREFIX chorus: <${NS}> SELECT ?chunkLabel ?roleSeq ?loomSeq ?rank ?cardIri ?cardLabel WHERE { GRAPH <urn:chorus:domains:board> { ?chunk a chorus:Chunk ; chorus:ownedBy chorus:role-${r} ; chorus:roleSequence ?roleSeq ; chorus:label ?chunkLabel . OPTIONAL { ?chunk chorus:loomSequence ?loomSeq } OPTIONAL { ?m a chorus:ChunkMembership ; chorus:inChunk ?chunk ; chorus:rank ?rank ; chorus:hasCard ?cardIri . ?cardIri chorus:label ?cardLabel } } }`;
+  const walk = `PREFIX chorus: <${NS}> SELECT ?chunkLabel ?roleSeq ?loomSeq ?rank ?cardIri ?cardLabel WHERE { GRAPH <urn:chorus:domains:board> { ?chunk a chorus:Chunk ; chorus:ownedBy chorus:principal-${r} ; chorus:roleSequence ?roleSeq ; chorus:label ?chunkLabel . OPTIONAL { ?chunk chorus:loomSequence ?loomSeq } OPTIONAL { ?m a chorus:ChunkMembership ; chorus:inChunk ?chunk ; chorus:rank ?rank ; chorus:hasCard ?cardIri . ?cardIri chorus:label ?cardLabel } } }`;
   const res = await deps.sparql.query(walk);
   const bindings = res.results?.bindings ?? [];
 
