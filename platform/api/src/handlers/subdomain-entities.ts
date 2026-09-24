@@ -44,13 +44,10 @@ function buildListQuery(sdUri: string, spec: EntitySpec): string {
   const selectVars = [spec.entityVar, ...spec.optionalFields.map((f) => f.outputKey)]
     .map((v) => `?${v}`)
     .join(' ');
-  // #4113 — read every graph the kind can live in, not just the catch-all.
-  const graphs = spec.homeGraph && spec.homeGraph !== 'urn:chorus:instances'
-    ? [spec.homeGraph, 'urn:chorus:instances']
-    : ['urn:chorus:instances'];
-  const blocks = graphs
-    .map((g) => `{ GRAPH <${g}> { <${sdUri}> ${spec.hasPredicate} ?${spec.entityVar} . ${optionals} } }`)
-    .join(' UNION ');
+  // #4187 — read the kind's home graph; a kind with no home reads the
+  // domain-graph family. Never the retired catch-all.
+  const home = spec.homeGraph ?? `urn:chorus:domains:${sdUri.replace(/^.*#/, '').replace(/-domain$/i, '').toLowerCase()}`;
+  const blocks = `{ GRAPH <${home}> { <${sdUri}> ${spec.hasPredicate} ?${spec.entityVar} . ${optionals} } }`;
   return `PREFIX chorus: <https://jeffbridwell.com/chorus#> PREFIX rdfs: <http://www.w3.org/2000/01/rdf-schema#> SELECT ${selectVars} WHERE { ${blocks} }`;
 }
 
@@ -126,24 +123,32 @@ export async function fetchSubdomainEntities(
   }
 }
 
-// #4113 — the graph a kind writes to, and the set a kind reads from.
-const CATCH_ALL_GRAPH = 'urn:chorus:instances';
-const homeOf = (spec: { homeGraph?: string }): string => spec.homeGraph ?? CATCH_ALL_GRAPH;
+// #4113 / #4187 — the graph a kind writes to. The catch-all is retired: a kind
+// with no declared home is REFUSED, never bucketed (the row would be invisible
+// to every fold, the #3581 zero-rows class).
+// A kind with a declared home (Page → code, Pipeline → pipelines) writes there;
+// a domain page's own facets (Scenario, Contract, Actor, Integration, Persistence,
+// Gap, PriorArt, Service, LogSource) live in the DOMAIN'S OWN graph — a row's home
+// is its domain's graph (Jeff, 09-13).
+const domainGraphOf = (subdomainId: string): string =>
+  `urn:chorus:domains:${subdomainId.replace(/-domain$/i, '').toLowerCase()}`;
+const homeOf = (spec: { homeGraph?: string }, subdomainId: string): string =>
+  spec.homeGraph ?? domainGraphOf(subdomainId);
 /**
  * #4113 — which graphs a SECTION's rows can be in. Keyed by section name because the
  * delete route is addressed by section, not by spec. Principles moved home; everything
  * else is still catch-all only.
  */
-const SECTION_HOME_GRAPH: Record<string, string> = { principles: 'urn:chorus:domains:principles' };
-const ENTITY_GRAPHS_FOR_SECTION = (section: string): string[] => {
-  const home = SECTION_HOME_GRAPH[section];
-  return home && home !== CATCH_ALL_GRAPH ? [home, CATCH_ALL_GRAPH] : [CATCH_ALL_GRAPH];
+const SECTION_HOME_GRAPH: Record<string, string> = {
+  principles: 'urn:chorus:domains:principles',
+  pages: 'urn:chorus:domains:code',      // #4187
+  pipeline: 'urn:chorus:domains:pipelines', // #4187
 };
-/** Rows written before #4113 are in the catch-all; new ones are in the home. Read both. */
-const readGraphsOf = (spec: { homeGraph?: string }): string[] =>
-  spec.homeGraph && spec.homeGraph !== CATCH_ALL_GRAPH
-    ? [spec.homeGraph, CATCH_ALL_GRAPH]
-    : [CATCH_ALL_GRAPH];
+const ENTITY_GRAPHS_FOR_SECTION = (section: string, subdomainId: string): string[] =>
+  [SECTION_HOME_GRAPH[section] ?? domainGraphOf(subdomainId)];
+/** #4187 — a kind's rows are read from its home only; the catch-all is retired. */
+const readGraphsOf = (spec: { homeGraph?: string }, subdomainId: string): string[] =>
+  [homeOf(spec, subdomainId)];
 
 // --- POST create: shared write-path ---
 //
@@ -257,7 +262,7 @@ export async function createSubdomainEntity(
       .filter(Boolean)
       .join(' ');
 
-    const update = `${SPARQL_PREFIXES} INSERT DATA { GRAPH <${homeOf(spec)}> { <${entityUri}> a ${spec.typeClass} ; rdfs:label "${escapeLiteral(label)}" . <${sdUri}> ${spec.hasPredicate} <${entityUri}> . ${propTriples} } }`;
+    const update = `${SPARQL_PREFIXES} INSERT DATA { GRAPH <${homeOf(spec, subdomainId)}> { <${entityUri}> a ${spec.typeClass} ; rdfs:label "${escapeLiteral(label)}" . <${sdUri}> ${spec.hasPredicate} <${entityUri}> . ${propTriples} } }`;
 
     await deps.sparqlUpdate(update);
 
@@ -297,6 +302,7 @@ export const createServiceSpec: CreateEntitySpec = {
 };
 
 export const createPipelineSpec: CreateEntitySpec = {
+  homeGraph: 'urn:chorus:domains:pipelines', // #4187
   envelopeName: 'subdomain-pipeline-create',
   uriSegment: 'pipeline',
   typeClass: 'chorus:Pipeline',
@@ -335,6 +341,7 @@ export const createGapSpec: CreateEntitySpec = {
 };
 
 export const createPageSpec: CreateEntitySpec = {
+  homeGraph: 'urn:chorus:domains:code', // #4187
   envelopeName: 'subdomain-page-create',
   uriSegment: 'page',
   typeClass: 'chorus:Page',
@@ -437,7 +444,7 @@ export async function updateSubdomainEntity(
     const sdUri = `https://jeffbridwell.com/chorus#${subdomainId}`;
     const entityUri = `https://jeffbridwell.com/chorus#${entityId}`;
 
-    const deleteQuery = readGraphsOf(spec)
+    const deleteQuery = readGraphsOf(spec, subdomainId)
       .map((g) => `${SPARQL_PREFIXES} DELETE { GRAPH <${g}> { <${entityUri}> ?p ?o . } } WHERE { GRAPH <${g}> { <${entityUri}> ?p ?o . } }`)
       .join(' ; ');
     await deps.sparqlUpdate(deleteQuery);
@@ -453,7 +460,7 @@ export async function updateSubdomainEntity(
       .filter(Boolean)
       .join(' ');
 
-    const insert = `${SPARQL_PREFIXES} INSERT DATA { GRAPH <${homeOf(spec)}> { <${entityUri}> a ${spec.typeClass} ; rdfs:label "${escapeLiteral(label)}" . <${sdUri}> ${spec.hasPredicate} <${entityUri}> . ${propTriples} } }`;
+    const insert = `${SPARQL_PREFIXES} INSERT DATA { GRAPH <${homeOf(spec, subdomainId)}> { <${entityUri}> a ${spec.typeClass} ; rdfs:label "${escapeLiteral(label)}" . <${sdUri}> ${spec.hasPredicate} <${entityUri}> . ${propTriples} } }`;
     await deps.sparqlUpdate(insert);
 
     const responseData: Record<string, unknown> = {
@@ -486,6 +493,7 @@ export const updateServiceSpec: UpdateEntitySpec = {
   propertyMap: createServiceSpec.propertyMap,
 };
 export const updatePipelineSpec: UpdateEntitySpec = {
+  homeGraph: 'urn:chorus:domains:pipelines', // #4187
   envelopeName: 'pipeline-update',
   typeClass: 'chorus:Pipeline',
   hasPredicate: 'chorus:hasPipeline',
@@ -504,6 +512,7 @@ export const updateGapSpec: UpdateEntitySpec = {
   propertyMap: createGapSpec.propertyMap,
 };
 export const updatePageSpec: UpdateEntitySpec = {
+  homeGraph: 'urn:chorus:domains:code', // #4187
   envelopeName: 'page-update',
   typeClass: 'chorus:Page',
   hasPredicate: 'chorus:hasPage',
@@ -576,7 +585,7 @@ export async function deleteSubdomainEntity(
     // #4113 — delete from every graph this kind can live in. Rows created before the
     // home-graph fix are in the catch-all; new ones are in the domain graph. Deleting
     // from only one leaves the other behind, which reads as "delete did nothing".
-    const update = ENTITY_GRAPHS_FOR_SECTION(section)
+    const update = ENTITY_GRAPHS_FOR_SECTION(section, subdomainId)
       .map((g) => `${SPARQL_PREFIXES} DELETE { GRAPH <${g}> { <${entityUri}> ?p ?o . <${sdUri}> chorus:${sectionMeta.hasProperty} <${entityUri}> . } } WHERE { GRAPH <${g}> { <${entityUri}> ?p ?o . } }`)
       .join(' ; ');
     await deps.sparqlUpdate(update);
@@ -628,6 +637,7 @@ export const fetchSubdomainServicesList = (deps: DomainFacetDeps, id: string) =>
 // --- Pipelines: chorus:hasPipeline → {label, source, harvester, icd, status, last_run} ---
 
 export const pipelineSpec: EntitySpec = {
+  homeGraph: 'urn:chorus:domains:pipelines', // #4187
   envelopeName: 'subdomain-pipeline',
   resultsKey: 'pipelines',
   hasPredicate: 'chorus:hasPipeline',

@@ -4180,12 +4180,13 @@ pub fn effective_fetch_query(node_iri: &str, instances_graph: &str) -> String {
         // this path existed. This is NOT a union: each block names the home the
         // rule assigns it, so a misplaced triple still fails loudly.
         "SELECT ?v WHERE {{ \
-           GRAPH <{ng}> {{ \
+           GRAPH ?ng {{ \
              VALUES ?ownerClass {{ <{ns}Role> <{ns}Service> <{ns}Domain> <{ns}Product> <{ns}ValueStreamStep> <{ns}ValueStream> }} \
              <{node}> (<{ns}partOf>|<{ns}memberOf>|<{ns}atStep>|<{ns}ownedBy>)* ?owner . \
              ?owner a ?ownerClass . \
              ?owner <{ns}hasProperty> ?prop . \
            }} \
+           FILTER(STRSTARTS(STR(?ng), \"{ng}\")) \
            GRAPH <{g}> {{ \
              ?prop <{ns}propertyKey> ?key . \
              ?prop <{ns}propertyValue> ?value . \
@@ -4194,21 +4195,20 @@ pub fn effective_fetch_query(node_iri: &str, instances_graph: &str) -> String {
            BIND(CONCAT(STR(?owner), \"|\", STR(?ownerClass), \"|\", STR(?prop), \"|\", STR(?key), \"|\", STR(?vtype), \"|\", STR(?value)) AS ?v) \
          }}",
         g = instances_graph,
-        // #3876 — the NODE's home. Named separately from the Property's home
-        // above. Today every cascade scope (Role, Service, Domain, Product,
-        // Step, Stream) is an individual pinned to instances, so this is a
-        // constant; it is a parameter-shaped constant rather than an inlined
-        // string so that when a shape moves its pin, the fix is one call site
-        // and not a hunt through a format literal.
+        // #4187 — the NODE's home is its DOMAIN graph now (Role → domains:roles,
+        // Service → domains:services, Step/Stream → domains:value-streams, ...);
+        // the catch-all is retired and holds none of them. The cascade walks
+        // the domain-graph family, never urn:chorus:instances.
         ng = NODE_HOME_GRAPH,
         ns = NS,
         node = node_iri
     )
 }
 
-/// #3876 — where cascade scope individuals live. RoleShape pins it; the other
-/// five scope shapes agree today. Kept named so the coupling is visible.
-pub const NODE_HOME_GRAPH: &str = "urn:chorus:instances";
+/// #3876 / #4187 — where cascade scope individuals live: the domain-graph
+/// family (prefix). Was the retired catch-all, which held none of them after
+/// 2026-09-24 and would have served every effective property as unset.
+pub const NODE_HOME_GRAPH: &str = "urn:chorus:domains:";
 
 /// #3435 — shape the effective-config response from a node's already-fetched rows.
 /// The handler's pure core (it adds only the live `sparql_json` fetch): build the

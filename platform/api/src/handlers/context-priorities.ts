@@ -102,9 +102,11 @@ export async function fetchContextPriorities(
     return { status: 400, body: { error: `unknown role '${role}' — one of ${ROLES.join('/')}` } };
   }
 
+  // #4187 — Chunk/ChunkMembership live in urn:chorus:domains:board (21 + 218 rows);
+  // the catch-all read here served zero chunks once they moved.
   // One walk query: the role's chunks + (optionally) their ranked memberships.
   // Sorting happens HERE — arrival order is not a contract.
-  const walk = `PREFIX chorus: <${NS}> SELECT ?chunkLabel ?roleSeq ?loomSeq ?rank ?cardIri ?cardLabel WHERE { GRAPH <urn:chorus:instances> { ?chunk a chorus:Chunk ; chorus:ownedBy chorus:role-${r} ; chorus:roleSequence ?roleSeq ; chorus:label ?chunkLabel . OPTIONAL { ?chunk chorus:loomSequence ?loomSeq } OPTIONAL { ?m a chorus:ChunkMembership ; chorus:inChunk ?chunk ; chorus:rank ?rank ; chorus:hasCard ?cardIri . ?cardIri chorus:label ?cardLabel } } }`;
+  const walk = `PREFIX chorus: <${NS}> SELECT ?chunkLabel ?roleSeq ?loomSeq ?rank ?cardIri ?cardLabel WHERE { GRAPH <urn:chorus:domains:board> { ?chunk a chorus:Chunk ; chorus:ownedBy chorus:role-${r} ; chorus:roleSequence ?roleSeq ; chorus:label ?chunkLabel . OPTIONAL { ?chunk chorus:loomSequence ?loomSeq } OPTIONAL { ?m a chorus:ChunkMembership ; chorus:inChunk ?chunk ; chorus:rank ?rank ; chorus:hasCard ?cardIri . ?cardIri chorus:label ?cardLabel } } }`;
   const res = await deps.sparql.query(walk);
   const bindings = res.results?.bindings ?? [];
 
@@ -220,7 +222,7 @@ async function readOwnedLevel(
  *  there is no generated read for rolePriority yet — labeled, not hidden. */
 async function readRolePriority(deps: ContextPrioritiesDeps): Promise<RolePriorityLevel> {
   const source = 'sparql (residual — Role collection route shadowed by the roles domain page collision)';
-  const q = `PREFIX chorus: <${NS}> SELECT ?role ?pri WHERE { GRAPH <urn:chorus:instances> { ?s chorus:rolePriority ?pri . BIND(REPLACE(STR(?s), ".*#role-", "") AS ?role) } }`;
+  const q = `PREFIX chorus: <${NS}> SELECT ?role ?pri WHERE { GRAPH <urn:chorus:domains:roles> { ?s chorus:rolePriority ?pri . BIND(REPLACE(STR(?s), ".*#role-", "") AS ?role) } }`;
   try {
     const res = await deps.sparql.query(q);
     const ranks = (res.results?.bindings ?? [])

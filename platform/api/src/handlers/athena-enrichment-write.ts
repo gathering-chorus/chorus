@@ -14,7 +14,10 @@
 import type { FetchResult } from './codebase-topology';
 
 const CHORUS_PREFIX = 'https://jeffbridwell.com/chorus#';
-const INSTANCES_GRAPH = 'urn:chorus:instances';
+// #4187 — a domain's facet rows (Service, Persistence and their edges) live in the
+// DOMAIN'S OWN graph; the catch-all is retired as a write target.
+const domainGraph = (subdomainId: string): string =>
+  `urn:chorus:domains:${subdomainId.replace(/-domain$/i, '').toLowerCase()}`;
 
 const VALID_ID = /^[a-z0-9][a-z0-9._-]*$/i;
 const VALID_EDGE = new Set(['reads', 'writes', 'consumes']);
@@ -58,12 +61,13 @@ interface EdgeRequest {
 
 async function writeDescription(
   deps: AthenaEnrichmentDeps,
+  subdomainId: string,
   subjectUri: string,
   description: string,
 ): Promise<FetchResult> {
   const escaped = escLiteral(description);
   const update = `PREFIX rdfs: <http://www.w3.org/2000/01/rdf-schema#>
-    INSERT DATA { GRAPH <${INSTANCES_GRAPH}> {
+    INSERT DATA { GRAPH <${domainGraph(subdomainId)}> {
       <${subjectUri}> rdfs:comment "${escaped}" .
     } }`;
 
@@ -91,7 +95,7 @@ export async function fetchAthenaServiceDescription(
   if (typeof description !== 'string' || description.trim().length === 0) {
     return { status: 400, body: { error: 'body.description is required' } };
   }
-  return writeDescription(deps, serviceUri(sub, ent), description);
+  return writeDescription(deps, sub, serviceUri(sub, ent), description);
 }
 
 export async function fetchAthenaPersistenceDescription(
@@ -107,7 +111,7 @@ export async function fetchAthenaPersistenceDescription(
   if (typeof description !== 'string' || description.trim().length === 0) {
     return { status: 400, body: { error: 'body.description is required' } };
   }
-  return writeDescription(deps, storeUri(sub, ent), description);
+  return writeDescription(deps, sub, storeUri(sub, ent), description);
 }
 
 export async function fetchAthenaServiceEdge(
@@ -130,7 +134,7 @@ export async function fetchAthenaServiceEdge(
   const targetUri = req.predicate === 'consumes' ? serviceUri(sub, target) : storeUri(sub, target);
 
   const update = `PREFIX chorus: <${CHORUS_PREFIX}>
-    INSERT DATA { GRAPH <${INSTANCES_GRAPH}> {
+    INSERT DATA { GRAPH <${domainGraph(sub)}> {
       <${subjectUri}> chorus:${req.predicate} <${targetUri}> .
     } }`;
 

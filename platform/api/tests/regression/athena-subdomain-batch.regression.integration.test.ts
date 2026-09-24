@@ -67,7 +67,8 @@ describe('#2208 regression — subdomain handler batch (11 handlers)', () => {
   // #4273 — the facet handlers ask <urn:chorus:domains:domains> for a
   // chorus:Domain (#4265); envelopes and vocabulary still read the ontology
   // graph. Seeding only the latter 404'd every facet.
-  const sparql = makeSparqlFromTtlGraphs(FIXTURE_TTL, ['urn:chorus:ontology', 'urn:chorus:domains:domains']);
+  // #4187 — section rows (hasPersistence, hasService …) live in the domain's own graph
+  const sparql = makeSparqlFromTtlGraphs(FIXTURE_TTL, ['urn:chorus:ontology', 'urn:chorus:domains:domains', 'urn:chorus:domains:demo-alpha']);
   const deps = { sparql, loadQuery, envelope, now: () => 1_000_000 };
 
   // Pure-sparql handlers

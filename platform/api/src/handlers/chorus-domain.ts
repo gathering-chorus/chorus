@@ -153,7 +153,7 @@ async function buildSparqlSections(
            (GROUP_CONCAT(DISTINCT ?writeLabel; separator="||") AS ?writes)
            (GROUP_CONCAT(DISTINCT ?consumesLabel; separator="||") AS ?consumes)
     WHERE {
-      GRAPH <urn:chorus:instances> {
+      GRAPH ?g {
         <${sdUri}> chorus:${pred} ?e .
         OPTIONAL { ?e rdfs:label ?label }
         OPTIONAL { ?e rdfs:comment ?commentRaw }
@@ -162,6 +162,8 @@ async function buildSparqlSections(
         OPTIONAL { ?e chorus:writes ?writeTarget . ?writeTarget rdfs:label ?writeLabel }
         OPTIONAL { ?e chorus:consumes ?consumesTarget . ?consumesTarget rdfs:label ?consumesLabel }
       }
+      # #4187 — domain graphs only; the catch-all is retired
+      FILTER(STRSTARTS(STR(?g), "urn:chorus:domains:"))
     }
     GROUP BY ?e ?label
     LIMIT 20
