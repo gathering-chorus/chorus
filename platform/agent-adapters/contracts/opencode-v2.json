@@ -1,0 +1,26 @@
+{
+  "contract": "opencode-v2-2026-09-20",
+  "source": "https://opencode.ai/v2/docs/api",
+  "api_generation": 2,
+  "runtime_version_policy": "exact expected_version pin; V2 beta versions may use 0.0.0-beta.*",
+  "authentication": "HTTP Basic username opencode and owner-private password_file; Bearer env for existing gateway deployments",
+  "response_envelope": "data",
+  "routes": {
+    "info": "GET /api/info",
+    "create": "POST /api/session",
+    "get": "GET /api/session/{sessionID}",
+    "active": "GET /api/session/active",
+    "prompt": "POST /api/session/{sessionID}/prompt",
+    "context": "GET /api/session/{sessionID}/context",
+    "permissions": "GET /api/session/{sessionID}/permission",
+    "permission_reply": "POST /api/session/{sessionID}/permission/{requestID}/reply",
+    "interrupt": "POST /api/session/{sessionID}/interrupt?resume=false"
+  },
+  "create_fields": ["location", "model", "agent", "permissions"],
+  "model_fields": ["providerID", "id"],
+  "prompt_fields": ["id", "text", "delivery", "resume"],
+  "permission_reply_field": "decision",
+  "permission_reply_values": ["once", "always", "reject"],
+  "telemetry": "projected-snapshots",
+  "experimental": true
+}

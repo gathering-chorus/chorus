@@ -88,12 +88,12 @@ jobs:
       # Type-aware ESLint rules (no-floating-promises et al.) need every
       # subpackage's deps installed for type resolution. Without per-package
       # node_modules, the type analyzer mis-fires false positives. Install
-      # all 7 active TS packages + root before linting.
+      # all active TS packages + root before linting.
       - name: Install (root)
         run: npm ci --no-audit --no-fund
       - name: Install (subpackages)
         run: |
-          for pkg in directing/clearing directing/products/cards platform/api platform/chorus-sdk platform/pulse platform/tests platform/workflow-engine; do
+          for pkg in directing/clearing directing/products/cards platform/api platform/chorus-sdk platform/pulse platform/tests platform/workflow-engine platform/agent-adapters; do
             (cd "$pkg" && npm ci --no-audit --no-fund)
           done
       - name: Run lint ratchet
@@ -163,6 +163,8 @@ jobs:
     # Point it at the checkout so committed fixtures (data/athena/tree.json) resolve.
     env:
       CHORUS_ROOT: ${{ github.workspace }}
+      CHORUS_LOG_FILE: ${{ runner.temp }}/chorus-unit-tests.log
+      CHORUS_AGENT_STATE_DIR: ${{ runner.temp }}/chorus-unit-agent-state
     # DEC-2525 REQUIRED CHECK #1 — hermetic jest only.
     # The *.integration.test.ts suffix is excluded by per-package jest
     # configs (#2524 convention). Adding a required check here requires
@@ -214,6 +216,52 @@ jobs:
         # tests (hermeticity rule 5 — order-independent). Available in jest 30+.
         # See /docs/designing/test-categorization.html.
         run: npx jest --forceExit --passWithNoTests --randomize
+
+  agent-contract-tests:
+    name: Agent supervisor and provider contracts
+    runs-on: ubuntu-latest
+    # Preserve the existing schedule/manual cost policy. These fixtures call no
+    # paid provider and require no installed coding-agent runtime or credentials.
+    if: github.event_name == 'schedule' || github.event_name == 'workflow_dispatch'
+    timeout-minutes: 15
+    env:
+      CHORUS_ROOT: ${{ github.workspace }}
+      CHORUS_AGENT_STATE_DIR: ${{ runner.temp }}/chorus-agent-contracts
+      CHORUS_LOG_FILE: ${{ runner.temp }}/chorus-clearing-contracts.log
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          toolchain: '1.97.1'
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: platform/services/chorus-agent
+      # The API worker imports the canonical Clearing transport build.
+      - name: Install and build shared text transport
+        working-directory: directing/clearing
+        run: |
+          npm ci --no-audit --no-fund
+          npm run build
+      - name: Verify provider wire formats and canonical conversation recovery
+        working-directory: directing/clearing
+        run: npx jest --runInBand tests/text-generation.test.ts tests/canonical-sessions.test.ts
+      - name: Install and test runtime workers
+        working-directory: platform/agent-adapters
+        run: |
+          npm ci --no-audit --no-fund
+          npm test
+      - name: Build and test supervisor (Unix process, socket, and lock fixtures)
+        working-directory: platform/services/chorus-agent
+        run: |
+          cargo build --locked --bins
+          cargo test --locked
+      - name: Verify runtime configuration and isolated operator setup
+        run: python3 -m unittest discover -s platform/scripts/tests -p 'test_agent_*.py'
+      - name: Verify setup-aware role launcher
+        run: cargo test --locked --manifest-path platform/services/chorus-awake/Cargo.toml
 
   mcp-description-shape:
     name: MCP tool description shape (#2475)

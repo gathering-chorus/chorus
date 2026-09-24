@@ -197,6 +197,68 @@ pub fn owes_response(role: &str, db_path: &str) -> Option<(String, String)> {
     format_drain_block(role, &owed).map(|block| (block, debt_key))
 }
 
+/// Native context delivery and replies carry verified Chorus session IDs.
+/// Another conversation in the same role cannot clear this session's debt,
+/// and a claim that has not reached context is not yet a response obligation.
+fn unanswered_for_session(conn: &Connection, role: &str, session_id: &str) -> rusqlite::Result<Vec<PendingNudge>> {
+    let mut stmt = conn.prepare(
+        r#"SELECT id, "from", content, trace_id FROM messages
+           WHERE "to" = ?1 AND type = 'nudge' AND "from" != ?1
+             AND "from" IN ('wren', 'silas', 'kade', 'jeff')
+             AND nudge_class = 'r2r' AND nudge_expects IN ('reply', 'decision', 'action')
+             AND delivery_session_id = ?2 AND delivery_status = 'delivered'
+             AND created_at > COALESCE(
+                 (SELECT MAX(created_at) FROM messages
+                  WHERE "from" = ?1 AND type = 'nudge' AND source_session_id = ?2), '')
+           ORDER BY created_at ASC, id ASC LIMIT ?3"#,
+    )?;
+    let rows = stmt.query_map(rusqlite::params![role, session_id, DRAIN_CAP as i64], |r| {
+        Ok(PendingNudge { id: r.get(0)?, from: r.get(1)?, content: r.get(2)?, trace_id: r.get(3)? })
+    })?;
+    rows.collect()
+}
+
+/// Evidence failures are explicit. Do not create a missing database or confuse
+/// an old schema, unreadable file, or locked database with a proven empty debt.
+/// Unlike the legacy terminal path this applies to headless enrolled runtimes,
+/// which receive messages and send replies through their authenticated MCP.
+pub fn owes_response_for_session(role: &str, db_path: &str, session_id: &str) -> Result<Option<(String, String)>, String> {
+    let conn = Connection::open_with_flags(db_path, rusqlite::OpenFlags::SQLITE_OPEN_READ_ONLY)
+        .map_err(|e| e.to_string())?;
+    conn.busy_timeout(Duration::from_millis(50)).map_err(|e| e.to_string())?;
+    let owed = unanswered_for_session(&conn, role, session_id).map_err(|e| e.to_string())?;
+    Ok(owed.first().and_then(|first| format_drain_block(role, &owed).map(|block| (block, first.id.to_string()))))
+}
+
+pub struct ResponseDebt {
+    pub owed: Option<(String, String)>,
+    pub refusal_scope: String,
+    pub advisory: Option<String>,
+}
+
+/// The registry selects this path, not an untrusted runtime field in a hook.
+/// An unavailable query is an advisory, never an unbounded block or a claimed
+/// zero balance. The existing refusal caps continue to bound known debts.
+pub fn response_debt(role: &str, db_path: &str, session_id: Option<&str>) -> ResponseDebt {
+    if let Some(sid) = session_id.filter(|sid| crate::session_cache::is_enrolled(sid)) {
+        session_response_debt(role, sid, owes_response_for_session(role, db_path, sid))
+    } else {
+        ResponseDebt { owed: owes_response(role, db_path), refusal_scope: role.into(), advisory: None }
+    }
+}
+
+fn session_response_debt(role: &str, sid: &str, result: Result<Option<(String, String)>, String>) -> ResponseDebt {
+    let refusal_scope = format!("{role}:{sid}");
+    match result {
+        Ok(owed) => ResponseDebt { owed, refusal_scope, advisory: None },
+        Err(error) => {
+            let advisory = format!("Chorus response-debt evidence unavailable for session {sid}: {error}. Reply obligations could not be checked; this advisory does not mean they are cleared.");
+            tracing::warn!(role, session_id = sid, error, "nudge.gate.evidence_unavailable");
+            ResponseDebt { owed: None, refusal_scope, advisory: Some(advisory) }
+        }
+    }
+}
+
 // --- #3672: the gate must never trap ---------------------------------------
 //
 // 2026-07-23, twice in one day: a role owed a reply, its session had no
@@ -329,6 +391,71 @@ mod tests {
     /// Insert an OUTBOUND nudge from `role` (a reply) at `created_at`.
     fn reply(conn: &Connection, role: &str, to: &str, created_at: &str) {
         insert(conn, "nudge", role, to, &format!("reply-{created_at}"), created_at);
+    }
+
+    fn session_schema(conn: &Connection) {
+        conn.execute_batch("ALTER TABLE messages ADD COLUMN delivery_session_id TEXT;
+            ALTER TABLE messages ADD COLUMN source_session_id TEXT;").unwrap();
+    }
+
+    #[test]
+    fn session_debt_requires_context_ack_and_exact_recipient_session() {
+        let conn = setup_db();
+        session_schema(&conn);
+        for (content, sid, status) in [("mine", "one", "delivered"), ("other", "two", "delivered"), ("claimed", "one", "claimed"), ("pending", "one", "pending")] {
+            insert(&conn, "nudge", "wren", "silas", content, "2026-06-13 10:00:05");
+            conn.execute("UPDATE messages SET delivery_session_id=?1, delivery_status=?2 WHERE content=?3", rusqlite::params![sid,status,content]).unwrap();
+        }
+        let owed = unanswered_for_session(&conn, "silas", "one").unwrap();
+        assert_eq!(owed.len(), 1);
+        assert_eq!(owed[0].content, "mine");
+        assert!(unanswered_for_session(&conn, "kade", "one").unwrap().is_empty());
+    }
+
+    #[test]
+    fn only_same_session_reply_clears_session_debt() {
+        let conn = setup_db();
+        session_schema(&conn);
+        insert(&conn, "nudge", "wren", "silas", "mine", "2026-06-13 10:00:05");
+        conn.execute("UPDATE messages SET delivery_session_id='one', delivery_status='delivered'", []).unwrap();
+        reply(&conn, "silas", "wren", "2026-06-13 10:00:06");
+        conn.execute("UPDATE messages SET source_session_id='two' WHERE \"from\"='silas'", []).unwrap();
+        assert_eq!(unanswered_for_session(&conn, "silas", "one").unwrap().len(), 1);
+        conn.execute("UPDATE messages SET source_session_id=NULL WHERE \"from\"='silas'", []).unwrap();
+        assert_eq!(unanswered_for_session(&conn, "silas", "one").unwrap().len(), 1);
+        conn.execute("UPDATE messages SET source_session_id='one' WHERE \"from\"='silas'", []).unwrap();
+        assert!(unanswered_for_session(&conn, "silas", "one").unwrap().is_empty());
+    }
+
+    #[test]
+    fn missing_session_schema_is_explicit_unavailable_evidence() {
+        let conn = setup_db();
+        let result = unanswered_for_session(&conn, "silas", "one");
+        assert!(result.is_err());
+        let status = session_response_debt("silas", "one", Err(result.unwrap_err().to_string()));
+        assert!(status.advisory.unwrap().contains("does not mean they are cleared"));
+        assert_eq!(status.refusal_scope, "silas:one");
+        let dir = tempfile::tempdir().unwrap();
+        let missing = dir.path().join("messages.db");
+        assert!(owes_response_for_session("silas", missing.to_str().unwrap(), "one").is_err());
+        assert!(!missing.exists(), "the read-only gate never creates a database");
+    }
+
+    #[test]
+    fn session_debt_counters_are_separate_and_remain_bounded() {
+        let one = "counter-test:one";
+        let two = "counter-test:two";
+        reset_refusals(one); reset_refusals(two);
+        for expected in 0..=PRETOOL_REFUSAL_CAP {
+            let count = note_refusal("pre", one, "42");
+            assert_eq!(count, expected);
+            assert_eq!(gate_decision(false, count, PRETOOL_REFUSAL_CAP),
+                if expected < PRETOOL_REFUSAL_CAP {GateDecision::Refuse} else {GateDecision::Degrade});
+        }
+        assert_eq!(note_refusal("pre", two, "42"), 0);
+        reset_refusals(two);
+        assert_eq!(note_refusal("pre", one, "42"), PRETOOL_REFUSAL_CAP + 1);
+        reset_refusals(one);
     }
 
     #[test]

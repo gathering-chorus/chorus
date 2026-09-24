@@ -4,9 +4,12 @@
 
 set -e
 
-# Set up node from nvm
-export NVM_DIR="$HOME/.nvm"
-[ -s "$NVM_DIR/nvm.sh" ] && \. "$NVM_DIR/nvm.sh"
+# Keep the explicit deployment runtime and PATH when provided.
+# Existing installations without an override retain their nvm selection.
+if [ -z "${CHORUS_NODE_BIN:-}" ]; then
+  export NVM_DIR="$HOME/.nvm"
+  [ -s "$NVM_DIR/nvm.sh" ] && \. "$NVM_DIR/nvm.sh"
+fi
 
 # #3197 — source the ONE env file. CHORUS_ROOT/HOME/WERK_BASE/BIN come from here,
 # the single source, and land in process.env so the node app reads them — instead
@@ -17,4 +20,4 @@ source "$(dirname "${BASH_SOURCE[0]}")/chorus-env-setup.sh"
 MCP_DIR="${CHORUS_MCP_DIR:-/Users/jeffbridwell/CascadeProjects/chorus/platform/mcp-server}"
 
 cd "$MCP_DIR"
-exec node dist/main.js
+exec "${CHORUS_NODE_BIN:-node}" dist/main.js

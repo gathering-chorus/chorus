@@ -418,9 +418,10 @@ async fn pre_tool_use_inner(
     // session's hands. 2026-07-23: two roles fully paralyzed by the unbounded
     // variant — a bare post-crash session has no MCP attach, and blocking its
     // Bash blocks the very reply the gate demands.
-    if let Some((block, debt_key)) =
-        hooks::nudge_drain::owes_response(role.as_str(), &shared::state_paths::messages_db())
-    {
+    let debt = hooks::nudge_drain::response_debt(
+        role.as_str(), &shared::state_paths::messages_db(), input.session_id.as_deref(),
+    );
+    if let Some((block, debt_key)) = &debt.owed {
         let bash_cmd = if tool == "Bash" {
             input.get_tool_input_str("command")
         } else {
@@ -430,7 +431,7 @@ async fn pre_tool_use_inner(
         let refusals = if is_reply {
             0
         } else {
-            hooks::nudge_drain::note_refusal("pre", role.as_str(), &debt_key)
+            hooks::nudge_drain::note_refusal("pre", &debt.refusal_scope, &debt_key)
         };
         match hooks::nudge_drain::gate_decision(
             is_reply,
@@ -471,8 +472,8 @@ async fn pre_tool_use_inner(
                 // This IS the reply — sending it clears the debt.
             }
         }
-    } else {
-        hooks::nudge_drain::reset_refusals(role.as_str());
+    } else if debt.advisory.is_none() {
+        hooks::nudge_drain::reset_refusals(&debt.refusal_scope);
     }
 
     // #3625 AC2 — memory-pressure guard on subagent spawns. Refuses Task/Agent
@@ -753,7 +754,10 @@ async fn pre_tool_use_inner(
     }
 
     trace!(hook = "pre_tool_use", phase = "respond", %tool, role = role.as_str(), "allow (no guard triggered)");
-    ("none".into(), HookResponse::allow())
+    let response = debt.advisory.map(|advisory| HookResponse::allow_with_message(
+        &serde_json::json!({"hookSpecificOutput":{"hookEventName":"PreToolUse","additionalContext":advisory}}).to_string(),
+    )).unwrap_or_else(HookResponse::allow);
+    ("none".into(), response)
 }
 
 /// PostToolUse — telemetry + handoff logger + observer
@@ -1233,16 +1237,19 @@ async fn stop_hook(
     // owed, block the stop so the agent replies before idling. Bounded: replying
     // advances the agent's newest-outbound, so the next Stop owes nothing — one
     // continuation clears it, never a trap.
+    let mut debt_advisory = None;
     if response.exit_code == 0 && response.stdout.is_none() {
         let role = format!("{:?}", input.role()).to_lowercase();
-        if let Some((block, debt_key)) =
-            hooks::nudge_drain::owes_response(&role, &shared::state_paths::messages_db())
-        {
+        let debt = hooks::nudge_drain::response_debt(
+            &role, &shared::state_paths::messages_db(), input.session_id.as_deref(),
+        );
+        debt_advisory = debt.advisory;
+        if let Some((block, debt_key)) = debt.owed {
             // #3672 — bounded in code, not in a docstring: this block re-fired 125
             // times on 2026-07-23 against a session whose reply transport was
             // gate-blocked. STOP_REFUSAL_CAP blocks per debt, then the turn may
             // end with the debt on the spine instead of a fire loop.
-            let refusals = hooks::nudge_drain::note_refusal("stop", &role, &debt_key);
+            let refusals = hooks::nudge_drain::note_refusal("stop", &debt.refusal_scope, &debt_key);
             match hooks::nudge_drain::gate_decision(
                 false,
                 refusals,
@@ -1268,8 +1275,8 @@ async fn stop_hook(
                     .await;
                 }
             }
-        } else {
-            hooks::nudge_drain::reset_refusals(&role);
+        } else if debt_advisory.is_none() {
+            hooks::nudge_drain::reset_refusals(&debt.refusal_scope);
         }
     }
 
@@ -1358,6 +1365,12 @@ async fn stop_hook(
                     response = HookResponse::warn_stderr(&warn);
                 }
             }
+        }
+    }
+
+    if response.exit_code == 0 && response.stdout.is_none() {
+        if let Some(advisory) = debt_advisory {
+            response.stdout = Some(serde_json::json!({"hookSpecificOutput":{"hookEventName":"Stop","additionalContext":advisory}}).to_string());
         }
     }
 

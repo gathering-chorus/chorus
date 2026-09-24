@@ -14,6 +14,7 @@
 import fs from 'fs';
 import path from 'path';
 import { MessageRouter } from './router';
+import { CanonicalOptions, CanonicalSessions } from './canonical-sessions';
 import { EmitSpine, makeSpineEmitter, renderedEvent } from './reply-delivery';
 
 // #2167: env-configurable so tests can point at a fixture directory.
@@ -68,6 +69,7 @@ export class SessionTailer {
   private router: MessageRouter;
   private sessions: Map<string, SessionState> = new Map();
   private timer: NodeJS.Timeout | null = null;
+  private canonical: CanonicalSessions;
   // Debounce: buffer last assistant message per role, emit after 3s quiet (#1720)
   private pendingAssistant: Map<string, { text: string; ts: string; timer: NodeJS.Timeout }> = new Map();
   // #3772 — the return path. After a jeff-input lands in a role's session, the
@@ -81,12 +83,13 @@ export class SessionTailer {
   private awaitingReply: Set<string> = new Set();
   private replyCandidate: Map<string, { text: string; ts: string; timer: NodeJS.Timeout }> = new Map();
 
-  constructor(router: MessageRouter, emitRendered?: EmitSpine) {
+  constructor(router: MessageRouter, emitRendered?: EmitSpine, canonicalOptions?: CanonicalOptions) {
     this.router = router;
     // #3864 — reply-delivery correlation: stamp reply.rendered on the spine
     // for every promoted role reply, same content hash as chorus-hooks'
     // reply.emitted. Injectable for tests; defaults to the chorus-api pulse door.
     this.emitRendered = emitRendered ?? makeSpineEmitter();
+    this.canonical = new CanonicalSessions(router,this.emitRendered,canonicalOptions);
   }
 
   private emitRendered: EmitSpine;
@@ -94,6 +97,7 @@ export class SessionTailer {
   start(): void {
     // Find current session files — start from EOF, only show NEW messages
     for (const role of ROLES) {
+      if (this.canonical.poll(role)) continue;
       const sessionFile = this.findSessionFile(role);
       if (sessionFile) {
         try {
@@ -119,11 +123,14 @@ export class SessionTailer {
   }
 
   getSessionCount(): number {
-    return this.sessions.size;
+    return this.sessions.size + this.canonical.count();
   }
 
   stop(): void {
     if (this.timer) clearInterval(this.timer);
+    this.canonical.stop();
+    for (const pending of this.pendingAssistant.values()) clearTimeout(pending.timer);
+    for (const candidate of this.replyCandidate.values()) clearTimeout(candidate.timer);
     for (const state of this.sessions.values()) {
       if (state.watcher) state.watcher.close();
     }
@@ -131,6 +138,9 @@ export class SessionTailer {
 
   /** Read new entries for a specific role — called by fs.watch or poll */
   private readNewEntries(role: string): void {
+    if (this.canonical.poll(role)) {
+      this.sessions.get(role)?.watcher?.close(); this.sessions.delete(role); return;
+    }
     const state = this.sessions.get(role);
     if (!state) return;
 
@@ -148,11 +158,8 @@ export class SessionTailer {
       const bytesRead = fs.readSync(fd, buf, 0, readSize, state.offset);
       fs.closeSync(fd);
 
-      const data = buf.toString('utf-8', 0, bytesRead);
-      const rawLines = data.split('\n');
-      const lastComplete = data.endsWith('\n');
-      const completeLines = lastComplete ? rawLines.filter(Boolean) : rawLines.slice(0, -1).filter(Boolean);
-      const consumedBytes = lastComplete ? bytesRead : data.lastIndexOf('\n') + 1;
+      const consumedBytes = buf.subarray(0,bytesRead).lastIndexOf(10) + 1;
+      const completeLines = buf.toString('utf-8',0,consumedBytes).split('\n').filter(Boolean);
 
       state.offset += consumedBytes;
 
@@ -221,6 +228,12 @@ export class SessionTailer {
 
   private poll(): void {
     for (const role of ROLES) {
+      if (this.canonical.poll(role)) {
+        this.sessions.get(role)?.watcher?.close(); this.sessions.delete(role);
+        const pending=this.pendingAssistant.get(role); if (pending) clearTimeout(pending.timer); this.pendingAssistant.delete(role);
+        const candidate=this.replyCandidate.get(role); if (candidate) clearTimeout(candidate.timer); this.replyCandidate.delete(role);
+        this.awaitingReply.delete(role); continue;
+      }
       if (!this.rebindSession(role)) continue;
       // Fallback read for anything fs.watch missed
       this.readNewEntries(role);

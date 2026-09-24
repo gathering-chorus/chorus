@@ -28,6 +28,8 @@ export type NudgePayload = {
   content: string;
   traceId: string;
   expects: string;
+  target_session_id?: string;
+  source_session_id?: string;
 };
 
 export interface NudgeTransport {
@@ -92,6 +94,8 @@ export class PulseTransport implements NudgeTransport {
           content: p.content,
           traceId: p.traceId,
           expects: p.expects,
+          ...(p.target_session_id ? { target_session_id: p.target_session_id } : {}),
+          ...(p.source_session_id ? { source_session_id: p.source_session_id } : {}),
         }),
         signal: ctrl.signal,
       });

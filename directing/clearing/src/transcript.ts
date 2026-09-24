@@ -12,7 +12,7 @@ export interface ChatMessage {
   sender: string;
   content: string;
   timestamp: number;
-  tokens?: { input: number; output: number };
+  tokens?: { input: number | null; output: number | null };
 }
 
 export interface Decision {
@@ -35,8 +35,8 @@ export interface SessionSummary {
   ended: string;
   participants: string[];
   model: string;
-  totalTokens: { input: number; output: number };
-  estimatedCost: number;
+  totalTokens: { input: number | null; output: number | null };
+  estimatedCost: number | null;
   messageCount: number;
   decisionCount: number;
 }
@@ -63,7 +63,7 @@ export class Transcript {
     this.model = model;
   }
 
-  add(sender: string, content: string, tokens?: { input: number; output: number }): ChatMessage {
+  add(sender: string, content: string, tokens?: { input: number | null; output: number | null }): ChatMessage {
     const msg: ChatMessage = {
       id: String(this.nextId++),
       sender,
@@ -86,19 +86,21 @@ export class Transcript {
     this.lastSavePath = null;
   }
 
-  getTotalTokens(): { input: number; output: number } {
-    return this.messages.reduce(
-      (acc, m) => ({
-        input: acc.input + (m.tokens?.input || 0),
-        output: acc.output + (m.tokens?.output || 0),
-      }),
-      { input: 0, output: 0 }
-    );
+  getTotalTokens(): { input: number | null; output: number | null } {
+    let input: number | null = 0;
+    let output: number | null = 0;
+    for (const message of this.messages) {
+      if (!message.tokens) continue;
+      input = input === null || message.tokens.input === null ? null : input + message.tokens.input;
+      output = output === null || message.tokens.output === null ? null : output + message.tokens.output;
+    }
+    return { input, output };
   }
 
-  getEstimatedCost(): number {
+  getEstimatedCost(): number | null {
     const tokens = this.getTotalTokens();
-    const costs = MODEL_COSTS[this.model] ?? { input: 0.80, output: 4.00 };
+    const costs = MODEL_COSTS[this.model];
+    if (!costs || tokens.input === null || tokens.output === null) return null;
     return (tokens.input * costs.input + tokens.output * costs.output) / 1_000_000;
   }
 

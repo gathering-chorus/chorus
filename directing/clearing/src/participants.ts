@@ -1,4 +1,4 @@
-import Anthropic from '@anthropic-ai/sdk';
+import { TextGenerationClient, TextResult } from './text-generation';
 import { ChatMessage } from './transcript';
 
 export interface Role {
@@ -8,11 +8,7 @@ export interface Role {
   systemPrompt: string;
 }
 
-export interface RoleResponse {
-  content: string;
-  inputTokens: number;
-  outputTokens: number;
-}
+export type RoleResponse = TextResult;
 
 // Shared grounding rules injected into every role's system prompt.
 // These prevent hallucination by declaring what roles CAN'T do and
@@ -20,7 +16,7 @@ export interface RoleResponse {
 const GROUNDING_RULES = `
 ## Grounding Rules (CRITICAL)
 
-You are running as a lightweight Haiku model in a group chat. You have NO access to:
+You are running as a text-only model in a group chat. You have NO access to:
 - The codebase, files, or terminal
 - The kanban board or workflow engine
 - The Chorus index or any database
@@ -53,7 +49,7 @@ This is a TEAM CONVERSATION — think basketball, not a panel interview. Everyon
 
 ## Nudge Bridge (one exception to "no tools")
 
-The Clearing server watches your responses for nudge commands. You CAN send a message to any role's active Claude Code terminal session by writing this on its own line in your response:
+The Clearing server watches your responses for nudge commands. You CAN send a message to any role's active agent session by writing this on its own line in your response:
 
 /nudge <role> <message>
 
@@ -143,21 +139,19 @@ The guest can see everything you say. Act accordingly.
 `;
 
 export class Participants {
-  private client: Anthropic;
+  private client: TextGenerationClient;
   private model: string;
   private maxTokens: number;
   private roles: Role[];
-  private activeStream: ReturnType<Anthropic['messages']['stream']> | null = null;
+  private activeRequests = new Set<AbortController>();
 
   abort(): void {
-    if (this.activeStream) {
-      this.activeStream.abort();
-      this.activeStream = null;
-    }
+    for (const controller of this.activeRequests) controller.abort();
+    this.activeRequests.clear();
   }
 
   constructor(model: string, maxTokens: number, sessionContext?: string, guestMode?: boolean) {
-    this.client = new Anthropic();
+    this.client = new TextGenerationClient();
     this.model = model;
     this.maxTokens = maxTokens;
 
@@ -213,10 +207,15 @@ export class Participants {
   ): Promise<RoleResponse> {
     const formattedTranscript = this.formatTranscript(messages, role.name);
 
-    if (onToken) {
-      return this.getStreamingResponse(role, formattedTranscript, onToken);
-    }
-    return this.getFullResponse(role, formattedTranscript);
+    const controller = new AbortController();
+    this.activeRequests.add(controller);
+    try {
+      return await this.client.generate({
+        model: this.model, maxTokens: this.maxTokens, system: role.systemPrompt,
+        input: `Here is the conversation so far:\n\n${formattedTranscript}\n\nRespond as ${role.name}. Stay concise.`,
+        signal: controller.signal, onToken,
+      });
+    } finally { this.activeRequests.delete(controller); }
   }
 
   private formatTranscript(messages: ChatMessage[], currentRole: string): string {
@@ -230,62 +229,4 @@ export class Participants {
       .join('\n\n');
   }
 
-  private async getStreamingResponse(
-    role: Role,
-    transcript: string,
-    onToken: (token: string) => void
-  ): Promise<RoleResponse> {
-    const stream = this.activeStream = this.client.messages.stream({
-      model: this.model,
-      max_tokens: this.maxTokens,
-      system: role.systemPrompt,
-      messages: [
-        {
-          role: 'user',
-          content: `Here is the conversation so far:\n\n${transcript}\n\nRespond as ${role.name}. Stay concise.`,
-        },
-      ],
-    });
-
-    let content = '';
-
-    stream.on('text', (text) => {
-      content += text;
-      onToken(text);
-    });
-
-    const finalMessage = await stream.finalMessage();
-    this.activeStream = null;
-
-    return {
-      content,
-      inputTokens: finalMessage.usage.input_tokens,
-      outputTokens: finalMessage.usage.output_tokens,
-    };
-  }
-
-  private async getFullResponse(role: Role, transcript: string): Promise<RoleResponse> {
-    const response = await this.client.messages.create({
-      model: this.model,
-      max_tokens: this.maxTokens,
-      system: role.systemPrompt,
-      messages: [
-        {
-          role: 'user',
-          content: `Here is the conversation so far:\n\n${transcript}\n\nRespond as ${role.name}. Stay concise.`,
-        },
-      ],
-    });
-
-    const content = response.content
-      .filter((block): block is Anthropic.TextBlock => block.type === 'text')
-      .map((block) => block.text)
-      .join('');
-
-    return {
-      content,
-      inputTokens: response.usage.input_tokens,
-      outputTokens: response.usage.output_tokens,
-    };
-  }
 }

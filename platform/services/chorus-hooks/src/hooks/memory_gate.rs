@@ -218,9 +218,10 @@ fn scan_session_for_synthesis(input: &HookInput, state: &AppState) -> (bool, boo
 
         // Check for synthesis in assistant output —
         // assistant messages contain reasoning that references what was found
-        if !has_synthesis && lower.contains("assistant") {
+        if !has_synthesis {
+            let assistant = crate::session_cache::assistant_text(line).to_lowercase();
             for marker in SYNTHESIS_MARKERS {
-                if lower.contains(marker) {
+                if assistant.contains(marker) {
                     has_synthesis = true;
                     break;
                 }

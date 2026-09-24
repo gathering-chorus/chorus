@@ -8,6 +8,11 @@ import express, { Application, Request, Response } from 'express';
 import { mountMcpEndpoint } from './transport';
 import { execFileSync } from 'child_process';
 import { executeNudge, type FetchImpl, type NudgeArgs } from './server';
+import { clearDaemonIdentityEnvironment } from './request-identity';
+
+// This is the shared HTTP service. A role's credential can enter only through
+// an authenticated request, including when operators launch it from a pane.
+clearDaemonIdentityEnvironment(process.env);
 
 // #3000 — process-level error capture. Emit mcp.process.error to spine
 // before exit so a crash is observable to ops, not silent. Uses sync exec

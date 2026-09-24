@@ -1,0 +1,86 @@
+{
+  "version": 1,
+  "max_concurrent_jobs": 3,
+  "roles": {},
+  "role_workspaces": {
+    "wren": "__CHORUS_ROOT__/roles/wren",
+    "silas": "__CHORUS_ROOT__/roles/silas",
+    "kade": "__CHORUS_ROOT__/roles/kade"
+  },
+  "worktree_base": "__CHORUS_WERK_BASE__",
+  "profiles": {
+    "claude-native": {
+      "runtime": "claude", "mode": "native", "enforcement": "trusted",
+      "approved_gaps": ["filesystem isolation and hook coverage require deployment conformance"],
+      "executable": "__CLAUDE_BIN__", "timeout_secs": 180
+    },
+    "claude-managed": {
+      "runtime": "claude", "mode": "managed", "enforcement": "trusted",
+      "approved_gaps": ["filesystem isolation and hook coverage require deployment conformance"],
+      "executable": "__CLAUDE_BIN__", "timeout_secs": 900
+    },
+    "codex-native": {
+      "runtime": "codex", "mode": "native", "enforcement": "trusted",
+      "approved_gaps": ["filesystem isolation and hook coverage require deployment conformance"],
+      "executable": "__CODEX_BIN__", "timeout_secs": 180
+    },
+    "codex-managed": {
+      "runtime": "codex", "mode": "managed", "enforcement": "trusted",
+      "approved_gaps": ["filesystem isolation and hook coverage require deployment conformance"],
+      "executable": "__CODEX_BIN__", "timeout_secs": 900
+    },
+    "opencode-wren-chat": {
+      "runtime": "opencode", "mode": "managed", "enforcement": "trusted",
+      "approved_gaps": [
+        "Tool telemetry is projected snapshots, not a complete durable event stream",
+        "Pre-tool interception requires a separately verified plugin",
+        "Session permissions do not provide filesystem isolation",
+        "Version compatibility is experimental; pin expected_version"
+      ],
+      "worker": "__NODE_BIN__", "worker_args": ["__CHORUS_ROOT__/platform/agent-adapters/dist/worker.js", "--runtime", "opencode"],
+      "endpoint": "http://127.0.0.1:4096", "model": "chorus-endpoint/coder", "timeout_secs": 900,
+      "provider": {"protocol": "openai-chat", "base_url": "https://gateway.example.com/v1", "api_key_env": "CODING_MODEL_KEY", "model_id": "__CODING_MODEL__"},
+      "adapter_config": {"expected_version": "__TESTED_OPENCODE_V2_VERSION__", "timeout_ms": 900000}
+    },
+    "opencode-kade-responses": {
+      "runtime": "opencode", "mode": "managed", "enforcement": "trusted",
+      "approved_gaps": [
+        "Tool telemetry is projected snapshots, not a complete durable event stream",
+        "Pre-tool interception requires a separately verified plugin",
+        "Session permissions do not provide filesystem isolation",
+        "Version compatibility is experimental; pin expected_version"
+      ],
+      "worker": "__NODE_BIN__", "worker_args": ["__CHORUS_ROOT__/platform/agent-adapters/dist/worker.js", "--runtime", "opencode"],
+      "endpoint": "http://127.0.0.1:4097", "model": "chorus-endpoint/coder", "timeout_secs": 900,
+      "provider": {"protocol": "openai-responses", "base_url": "https://gateway.example.com/v1", "api_key_env": "CODING_MODEL_KEY", "model_id": "__CODING_MODEL__"},
+      "adapter_config": {"expected_version": "__TESTED_OPENCODE_V2_VERSION__", "timeout_ms": 900000}
+    },
+    "gemini-managed": {
+      "runtime": "gemini", "mode": "managed", "enforcement": "trusted",
+      "approved_gaps": [
+        "ACP does not guarantee pre-tool interception or filesystem isolation",
+        "No-tools jobs are unsupported",
+        "Resume requires the agent loadSession capability; history replay may be incomplete"
+      ],
+      "executable": "__GEMINI_BIN__", "worker": "__NODE_BIN__",
+      "worker_args": ["__CHORUS_ROOT__/platform/agent-adapters/dist/worker.js", "--runtime", "gemini"],
+      "timeout_secs": 900,
+      "adapter_config": {
+        "timeout_ms": 900000,
+        "mcp_servers": [{"name": "chorus-api", "command": "__NODE_BIN__", "args": ["__CHORUS_ROOT__/platform/mcp-server/dist/main-stdio.js"], "env": []}]
+      }
+    },
+    "gate-chat": {
+      "runtime": "external", "mode": "managed", "enforcement": "trusted", "no_tools": true,
+      "worker": "__NODE_BIN__", "worker_args": ["__CHORUS_ROOT__/platform/agent-adapters/dist/worker.js", "--runtime", "api"],
+      "provider": {"protocol": "openai-chat", "base_url": "https://gateway.example.com/v1", "api_key_env": "REVIEW_MODEL_KEY"},
+      "model": "__REVIEW_MODEL__", "max_output_tokens": 4096, "timeout_secs": 180
+    },
+    "ops-responses": {
+      "runtime": "external", "mode": "managed", "enforcement": "trusted", "no_tools": true,
+      "worker": "__NODE_BIN__", "worker_args": ["__CHORUS_ROOT__/platform/agent-adapters/dist/worker.js", "--runtime", "api"],
+      "provider": {"protocol": "openai-responses", "base_url": "https://gateway.example.com/v1", "api_key_env": "OPS_MODEL_KEY"},
+      "model": "__OPS_MODEL__", "max_output_tokens": 4096, "timeout_secs": 120
+    }
+  }
+}

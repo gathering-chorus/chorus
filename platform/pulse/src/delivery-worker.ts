@@ -23,8 +23,8 @@ import { MessageStore } from './store';
 // #3125: `deferred` signals the target is a host osascript can't reach
 // safely (VS Code) — runInject declined to push and the nudge should be
 // handed to the inbox/fold instead of surfaced or failed.
-export type InjectResult = { rc: number; stderr: string; deferred?: boolean; deferReason?: string; target?: string };
-export type RunInject = (to: string, content: string, from?: string) => Promise<InjectResult>;
+export type InjectResult = { rc: number; stderr: string; deferred?: boolean; deferReason?: string; target?: string; agentSessionId?: string; agentReceipt?: 'queued' | 'transport_accepted' | 'context_delivered' | 'uncertain' };
+export type RunInject = (to: string, content: string, from?: string, messageId?: string, options?: { kind?: 'nudge' | 'jeff-input'; targetSessionId?: string }) => Promise<InjectResult>;
 
 /**
  * #3439 — map a spawned chorus-inject's exit into an InjectResult. The VS Code
@@ -56,6 +56,8 @@ export interface DeliveryRow {
   // so the nudge fold (emitted − surfaced − surface.failed) never sees a
   // surfaced with no matching emitted. Absent = 'nudge' (all pre-#3343 callers).
   kind?: 'nudge' | 'jeff-input';
+  target_session_id?: string | null;
+  delivery_session_id?: string | null;
 }
 
 // #3343 — spine-event family per delivery kind. Pure so the mapping is pinned
@@ -224,7 +226,9 @@ export class DeliveryWorker {
       attempt,
       reason: result.deferReason || 'inbox',
     });
-    if (result.deferReason === 'target-busy') {
+    if (result.agentSessionId || ['supervisor-unavailable', 'native-boundary', 'agent-busy', 'transport-accepted', 'uncertain'].includes(result.deferReason ?? '')) {
+      this.store.markAgentQueued(row.id, result.agentSessionId ?? row.delivery_session_id ?? null, result.deferReason ?? 'uncertain');
+    } else if (result.deferReason === 'target-busy') {
       this.store.markQueued(row.id, 'target-busy');
     } else if (result.deferReason?.startsWith('undelivered-')) {
       this.store.markFailed(row.id, result.deferReason);
@@ -234,14 +238,19 @@ export class DeliveryWorker {
   }
 
   private async deliverOne(row: DeliveryRow): Promise<void> {
+    const existing = this.store.getDeliveryRecord(row.id);
+    if (['delivered', 'failed'].includes(existing.delivery_status) || existing.inbox_claim_session) return;
+    if (existing.delivery_status === 'queued' && ['transport-accepted', 'uncertain', 'native-boundary'].includes(existing.last_delivery_error ?? '')) return;
     const maxAttempts = this.backoffMs.length + 1;
     // #3343 — event family follows the delivery kind (jeff.input.* vs nudge.*).
     const prefix = eventPrefix(row.kind);
 
-    if (!(await this.announceOrSuppress(row))) return;
+    if (existing.delivery_attempts === 0 && !(await this.announceOrSuppress(row))) return;
 
     for (let attempt = 1; attempt <= maxAttempts; attempt++) {
-      const result = await this.runInject(row.to, row.content, row.from);
+      const result = await this.runInject(row.to, row.content, row.from, `pulse:${row.id}`, {
+        kind: row.kind, targetSessionId: row.target_session_id ?? row.delivery_session_id ?? undefined,
+      });
       const classified = classifyInjectResult(result);
 
       // #2765 — trace_id propagated to every spine event in lifecycle

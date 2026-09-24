@@ -13,8 +13,11 @@
 import { execFileSync } from 'child_process';
 import * as os from 'os';
 import * as path from 'path';
+import { currentAgentIdentity, requestEnvironment } from './request-identity';
 
 export function mintServiceToken(): string | null {
+  const caller = currentAgentIdentity();
+  if (caller) return caller.mode === 'verified' ? caller.token : null;
   const role = process.env.CHORUS_ROLE || process.env.DEPLOY_ROLE || 'chorus-sdk';
   const bin =
     process.env.CHORUS_IDENTITY_TOKEN_BIN ||
@@ -25,7 +28,7 @@ export function mintServiceToken(): string | null {
     // fs.* calls and never fired on this execFileSync. Rationale kept as a plain
     // comment — `bin` is env CHORUS_IDENTITY_TOKEN_BIN (operator-set) or the
     // fixed repo script path; no user input reaches it.
-    const out = execFileSync(bin, [role], { timeout: 8000, stdio: ['ignore', 'pipe', 'ignore'] })
+    const out = execFileSync(bin, [role], { env: requestEnvironment(), timeout: 8000, stdio: ['ignore', 'pipe', 'ignore'] })
       .toString('utf-8')
       .trim();
     return out.split('.').length === 3 ? out : null;

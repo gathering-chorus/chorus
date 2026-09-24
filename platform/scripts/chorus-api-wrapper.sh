@@ -39,4 +39,5 @@ export CSS_ISSUER="${CSS_ISSUER:-https://id.lightlifeurbangardens.com/}"
 
 cd "$API_DIR"
 
-exec /Users/jeffbridwell/.nvm/versions/node/v20.11.1/bin/node dist/server.js
+# Explicit deployment selection keeps the runtime aligned with native dependencies.
+exec "${CHORUS_NODE_BIN:-/Users/jeffbridwell/.nvm/versions/node/v20.11.1/bin/node}" dist/server.js

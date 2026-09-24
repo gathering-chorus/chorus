@@ -27,6 +27,7 @@ import { buildMcpServer, executeNudge, type FetchImpl, type NudgeArgs } from './
 import { execFile } from 'child_process';
 import { promisify } from 'util';
 import { randomUUID } from 'crypto';
+import { authenticateAgentRequest, apiIdentityVerifier, apiSessionVerifier, identityMode, AgentAuthError, type AgentIdentity, type AgentAuthDeps } from './request-identity';
 
 // #3000 — transport-level error capture. Emit typed mcp.transport.error
 // spine events on non-2xx /mcp responses + connection-level failures.
@@ -113,21 +114,30 @@ async function notifyTransportError(fields: Record<string, unknown>): Promise<vo
   }
 }
 
-function resolveCallerRole(req: Request): string {
-  const headerRole = req.header('X-Chorus-Role');
-  if (headerRole && /^(silas|wren|kade|jeff)$/.test(headerRole)) {
-    return headerRole;
+export function mountMcpEndpoint(app: Application, auth?: AgentAuthDeps): void {
+  const deps = auth ?? {
+    mode: identityMode(process.env.CHORUS_MCP_IDENTITY_MODE),
+    verify: apiIdentityVerifier(process.env.CHORUS_API_URL || 'http://localhost:3340'),
+    session: apiSessionVerifier(process.env.CHORUS_API_URL || 'http://localhost:3340'),
+    legacyRole: process.env.CHORUS_ROLE,
+  };
+  async function authenticate(req: Request, res: Response): Promise<AgentIdentity | null> {
+    try {
+      return await authenticateAgentRequest({
+        authorization: req.header('Authorization'),
+        sessionId: req.header('X-Chorus-Session-Id'),
+        role: req.header('X-Chorus-Role'),
+      }, deps);
+    } catch (err) {
+      const failure = err instanceof AgentAuthError ? err : new AgentAuthError(503, 'identity-unavailable');
+      res.status(failure.status).json({ jsonrpc: '2.0', id: req.body?.id ?? null, error: { code: -32001, message: failure.reason } });
+      return null;
+    }
   }
-  const envRole = process.env.CHORUS_ROLE;
-  if (envRole && /^(silas|wren|kade|jeff)$/.test(envRole)) {
-    return envRole;
-  }
-  return 'unknown';
-}
-
-export function mountMcpEndpoint(app: Application): void {
   app.post('/mcp', async (req: Request, res: Response) => {
-    const callerRole = resolveCallerRole(req);
+    const identity = await authenticate(req, res);
+    if (!identity) return;
+    const callerRole = identity.role;
     // #3008 — emit Mcp-Session-Id response header per MCP HTTP+SSE spec so
     // spec-conformant clients (chorus-hooks mcp_client.rs:65-68 requires it
     // on initialize and errors "no session id header" when absent) get the
@@ -165,7 +175,7 @@ export function mountMcpEndpoint(app: Application): void {
     });
     try {
       const transport = new StreamableHTTPServerTransport({});
-      const server = buildMcpServer(() => callerRole);
+      const server = buildMcpServer(() => callerRole, { identity });
       await server.connect(transport);
       await transport.handleRequest(req, res, req.body);
     } catch (err) {
@@ -189,19 +199,21 @@ export function mountMcpEndpoint(app: Application): void {
   // transport (same shape as POST). For Chorus's request/response tool-call
   // workload, no client today depends on SSE notifications.
   app.get('/mcp', async (req: Request, res: Response) => {
-    const callerRole = resolveCallerRole(req);
+    const identity = await authenticate(req, res);
+    if (!identity) return;
+    const callerRole = identity.role;
     // #3008 — same header treatment as POST. GET /mcp opens an SSE
     // notification stream; spec-conformant clients expect the session-id
     // here too.
     res.setHeader('Mcp-Session-Id', randomUUID());
     const transport = new StreamableHTTPServerTransport({});
-    const server = buildMcpServer(() => callerRole);
+    const server = buildMcpServer(() => callerRole, { identity });
     await server.connect(transport);
     await transport.handleRequest(req, res);
   });
 
-  // eslint-disable-next-line @typescript-eslint/require-await -- Express handler signature, no async work needed
-  app.delete('/mcp', async (_req: Request, res: Response) => {
+  app.delete('/mcp', async (req: Request, res: Response) => {
+    if (!(await authenticate(req, res))) return;
     // Stateless: no session state to delete. 204 No Content preserves the
     // contract clients expect.
     res.status(204).end();

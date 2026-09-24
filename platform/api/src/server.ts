@@ -77,6 +77,8 @@ app.use(makeRequestOpMiddleware());
 import { securityEnvelope, type SecuredSurface } from './security-envelope';
 import { projectSecuredSurfaces } from './security-surfaces-emit';
 import { createIdentityVerifier, scopeQueryFor } from './es256-identity';
+import { verifyAgentIdentity } from './handlers/agent-identity';
+import { mountAgentSessions } from './handlers/agent-sessions';
 let SECURED_SURFACES: SecuredSurface[] = [];
 // #3719 — ES256 identity + model-resolved scope (chorus:hasScope) replaces the
 // HS256 shared secret. sparql is lazy-bound to athenaSparqlQuery (declared
@@ -1321,6 +1323,18 @@ async function roleForWebId(webId: string): Promise<string | null> {
   }
   return null;
 }
+// The MCP gateway and local agent broker share this identity door. Verification
+// is unconditional; the staged security-envelope flag does not disable it.
+app.post('/api/chorus/identity/verify', async (req: Request, res: Response) => {
+  const result = await verifyAgentIdentity(req.headers.authorization ?? '', {
+    verify: verifyIdentity,
+    roleForWebId,
+  });
+  res.setHeader('Cache-Control', 'no-store');
+  res.status(result.status).json(result.body);
+});
+mountAgentSessions(app, { verify: verifyIdentity, roleForWebId });
+
 app.get('/api/nudge/:role/pending', async (req: Request, res: Response) => {
   const d = await decideNudgePending(
     { role: req.params.role, authorization: req.headers.authorization ?? '' },
