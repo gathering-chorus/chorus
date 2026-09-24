@@ -22,7 +22,7 @@ fn usage() -> String {
        athena-model unlink --kind <kind> --name <name> --edge prop=kind:name\n\
        athena-model seed   (--kind <kind> --ttl <file>)... [--graph <g>] [--provenance migrated] [--base <iri>]\n\
                     --kind/--ttl repeat as pairs; several kinds load as ONE transaction (#3839)\n\
-       athena-model seed --deploy   built-in instance manifest -> urn:chorus:instances, output-verified (#3895)\n\
+       athena-model seed --deploy   built-in instance manifest -> each kind's domain graph (#4187), output-verified (#3895)\n\
        athena-model mint   --kind <kind> --name <name>\n\
        athena-model kinds"
         .to_string()
@@ -572,9 +572,8 @@ fn run() -> Result<String, String> {
                         return Err(format!("seed --deploy: manifest TTL not found: {}", f));
                     }
                 }
-                if graph.is_none() {
-                    graph = Some("urn:chorus:instances".into());
-                }
+                // #4187 — no default graph: each kind's home is resolved by
+                // deploy_home (explicit --graph, shape pin, or defining domain).
                 provenance = "deploy".into();
             }
             if pairs.is_empty() || pairs.iter().any(|(k, t)| k.is_empty() || t.is_empty()) {
@@ -689,10 +688,9 @@ fn run() -> Result<String, String> {
                 // declared instancesGraph), else the legacy bucket. One batch per
                 // home, in manifest order, so an earlier home's subjects are in
                 // the store when a later home's edges point at them.
-                let default_home = graph.as_deref().unwrap_or("urn:chorus:instances");
                 let mut homes: Vec<String> = Vec::new();
                 for (k, _) in &parsed {
-                    homes.push(deploy_home(&store, k, default_home)?);
+                    homes.push(deploy_home(&store, k, graph.as_deref())?);
                 }
                 // ONE batch (referential integrity spans homes, #3839), each
                 // group written to its own home; verify per home afterwards.

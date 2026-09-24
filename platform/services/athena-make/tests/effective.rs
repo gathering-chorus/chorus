@@ -1,3 +1,4 @@
+// @test-type: unit — pure functions of the effective-config read: query shape, row parsing, coercion
 // #3435 — effective-config read substrate (config-as-data).
 // propertyValueType coercion: a Property's string-encoded value is coerced ONCE
 // to its typed JSON form per propertyValueType (string | int | bool | json | list).
@@ -163,11 +164,17 @@ fn fetch_query_reads_instances_via_hasproperty_no_projection() {
 
 #[test]
 fn fetch_query_is_node_scoped_one_round_trip() {
-    let q = effective_fetch_query("https://jeffbridwell.com/chorus#node1", "urn:chorus:instances");
+    // the second argument is the PROPERTY's home (the table's instancesGraph); #4187
+    let q = effective_fetch_query("https://jeffbridwell.com/chorus#node1", "urn:chorus:domains:properties");
     // anchored on the node IRI — fetches THAT node's properties
     assert!(q.contains("https://jeffbridwell.com/chorus#node1"));
-    // fetches the FULL property set — key-selection is pure code, NOT a SPARQL filter
-    assert!(!q.contains("FILTER"), "key must be resolved in pure code, not filtered in SPARQL");
+    // fetches the FULL property set — key-selection is pure code, NOT a SPARQL filter.
+    // (#4187: the query does carry a FILTER, on the GRAPH name — the domain-graph
+    // family — never on ?key or ?value.)
+    assert!(!q.contains("?key ") || !q.contains("FILTER(?key") , "key must be resolved in pure code, not filtered in SPARQL");
+    assert!(!q.contains("FILTER(?key") && !q.contains("FILTER(?value") && !q.contains("FILTER(STR(?key"), "no FILTER on key or value: {q}");
+    // the node block walks the domain-graph family, not the retired catch-all
+    assert!(q.contains("urn:chorus:domains:") && !q.contains("urn:chorus:instances"), "{q}");
 }
 
 #[test]

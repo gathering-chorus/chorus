@@ -1,3 +1,4 @@
+// @test-type: integration — oxigraph-backed golden of /api/chorus/domain/:name; fixture rows in the domain's own graph (#4187)
 /**
  * #2208 — Data-driven regression for /api/chorus/domain/:name (hot path for
  * envelope enrichment — #2178). Exercises the SPARQL-section fallback path
@@ -6,7 +7,7 @@
 import * as fs from 'fs';
 import * as path from 'path';
 import { fetchChorusDomain, type ChorusDomainDeps } from '../../src/handlers/chorus-domain';
-import { makeSparqlFromTtl } from '../fixtures/oxigraph-sparql';
+import { makeSparqlFromTtl, makeSparqlFromTtlGraphs } from '../fixtures/oxigraph-sparql';
 
 const FIXTURE_TTL = path.join(__dirname, '..', 'fixtures', 'athena-minimal.ttl');
 const GOLDEN_PATH = path.join(__dirname, 'golden', 'chorus-domain-demo-alpha.json');
@@ -18,17 +19,16 @@ const domainRegistry = {
 
 describe('#2208 data regression — /api/chorus/domain/:name', () => {
   test('alpha → response matches golden (SPARQL-section fallback path)', async () => {
-    const sparql = makeSparqlFromTtl(FIXTURE_TTL, 'urn:chorus:ontology');
+    // #4187 — the fixture's section rows live where real ones do: the domain's
+    // own graph (urn:chorus:domains:demo-alpha). The schema half stays in ontology.
+    const sparql = makeSparqlFromTtlGraphs(FIXTURE_TTL, ['urn:chorus:ontology', 'urn:chorus:domains:demo-alpha']);
 
     const deps: ChorusDomainDeps = {
       domainRegistry,
       getCards: () => [],
       readDomainHtml: () => null,
       fetchCompleteness: async (sdId) => sdId === 'demo-alpha-domain' ? { percentage: 50, present: [], missing: [], lifecycle: {} } : null,
-      // chorus-domain expects sparql results to reach instances graph; our fixture loads into ontology graph.
-      // Wrap the sparql to query both graphs by stripping GRAPH <urn:chorus:instances> → <urn:chorus:ontology>
-      // so the same fixture exercises the query shapes.
-      sparql: async (query) => sparql(query.replace(/urn:chorus:instances/g, 'urn:chorus:ontology')),
+      sparql,
     };
 
     const r = await fetchChorusDomain(deps, 'demo-alpha');

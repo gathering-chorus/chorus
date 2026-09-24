@@ -56,6 +56,13 @@ const COUNT_PREDS = [
   ['gapCount', 'hasGap'],
 ] as const;
 
+/** #4187 — the class each count predicate counts, read by hasDomain in its domain graph. */
+const COUNT_CLASS: Record<string, string> = {
+  hasActor: 'Actor', hasScenario: 'Scenario', hasContract: 'Contract', hasPriorArt: 'PriorArt',
+  hasPage: 'Page', hasIntegration: 'Integration', hasEndpoint: 'Endpoint', hasPersistence: 'Persistence',
+  hasPipeline: 'Pipeline', hasLogSource: 'LogSource', hasGap: 'Gap',
+};
+
 function defaultEnvelope(name: string, data: unknown, durationMs: number, extra: Record<string, unknown> = {}) {
   return {
     _meta: { source: 'athena', query_name: name, duration_ms: durationMs, ...extra },
@@ -68,13 +75,16 @@ function buildMetaQuery(sdUri: string): string {
 }
 
 function buildCountQuery(sdUri: string, predicate: string): string {
-  // #2485 — prior-art counts BOTH hand-authored chorus:hasPriorArt AND ADRs
-  // surfaced via chorus:Decision + decisionType="ADR" + chorus:hasDomain.
-  // Other predicates use the simple count.
-  if (predicate === 'hasPriorArt') {
-    return `PREFIX chorus: <https://jeffbridwell.com/chorus#> SELECT (COUNT(DISTINCT ?e) AS ?n) WHERE { GRAPH <urn:chorus:instances> { { <${sdUri}> chorus:hasPriorArt ?e } UNION { ?e a chorus:Decision ; chorus:decisionType "ADR" ; chorus:hasDomain <${sdUri}> } } }`;
-  }
-  return `PREFIX chorus: <https://jeffbridwell.com/chorus#> SELECT (COUNT(DISTINCT ?e) AS ?n) WHERE { GRAPH <urn:chorus:instances> { <${sdUri}> chorus:${predicate} ?e } }`;
+  // #4187 — rows live in their DOMAIN graphs and point AT the domain
+  // (hasDomain); the inverse hasX edges that discover-* wrote into the catch-all
+  // are gone with it. Count the class by hasDomain, plus any hand-authored
+  // inverse edge, across the domain-graph family — never urn:chorus:instances.
+  const cls = COUNT_CLASS[predicate];
+  const byClass = cls ? `{ GRAPH ?g { ?e a chorus:${cls} ; chorus:hasDomain <${sdUri}> } } UNION ` : '';
+  const adr = predicate === 'hasPriorArt'
+    ? ` UNION { GRAPH ?g { ?e a chorus:Decision ; chorus:decisionType "ADR" ; chorus:hasDomain <${sdUri}> } }`
+    : '';
+  return `PREFIX chorus: <https://jeffbridwell.com/chorus#> SELECT (COUNT(DISTINCT ?e) AS ?n) WHERE { ${byClass}{ GRAPH ?g { <${sdUri}> chorus:${predicate} ?e } }${adr} FILTER(STRSTARTS(STR(?g), "urn:chorus:domains:")) }`;
 }
 
 function buildSections(b: SparqlMetaResult['results']['bindings'][number], counts: Record<string, number>): Record<string, boolean> {

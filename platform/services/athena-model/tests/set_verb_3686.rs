@@ -39,6 +39,9 @@ impl Store for Cfg {
             Ok(self.unique_global.clone())
         } else if sparql.contains("sh:datatype") {
             Ok(self.datatypes.iter().map(|(p, d)| format!("{}|{}", p, d)).collect())
+        } else if sparql.contains("definesVocabulary") {
+            // #4187 — the fixture kind is claimed; set resolves its home from the claim
+            Ok(vec!["tests".to_string()])
         } else if sparql.contains("ownedBy") {
             Ok(self.partition_target.iter().cloned().collect())
         } else {

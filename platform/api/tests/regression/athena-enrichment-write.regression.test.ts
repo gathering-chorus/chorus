@@ -1,3 +1,4 @@
+// @test-type: unit — oxigraph in-memory store, no service; a round-trip through the enrichment write handler and the chorus-domain read
 /**
  * #2206 — round-trip regression for envelope enrichment POST endpoints.
  *
@@ -20,7 +21,8 @@ function buildStore() {
   const oxigraph = require('oxigraph');
   const store = new oxigraph.Store();
   const ttl = fs.readFileSync(FIXTURE_TTL, 'utf-8');
-  store.load(ttl, { format: 'text/turtle', to_graph_name: oxigraph.namedNode('urn:chorus:instances') });
+  // #4187 — the domain's facet rows live in the domain's own graph, not the retired catch-all
+  store.load(ttl, { format: 'text/turtle', to_graph_name: oxigraph.namedNode('urn:chorus:domains:demo-alpha') });
   // Also load ontology graph so domain queries work
   store.load(ttl, { format: 'text/turtle', to_graph_name: oxigraph.namedNode('urn:chorus:ontology') });
   return store;
@@ -61,7 +63,7 @@ describe('#2206 round-trip — POST description appears in GET domain response',
     const check = await sparql(`
       PREFIX rdfs: <http://www.w3.org/2000/01/rdf-schema#>
       SELECT ?comment WHERE {
-        GRAPH <urn:chorus:instances> {
+        GRAPH <urn:chorus:domains:demo-alpha> {
           <https://jeffbridwell.com/chorus#demo-alpha-domain-service-new-probe> rdfs:comment ?comment .
         }
       }
@@ -82,7 +84,7 @@ describe('#2206 round-trip — POST description appears in GET domain response',
     store.update(`
       PREFIX chorus: <https://jeffbridwell.com/chorus#>
       PREFIX rdfs: <http://www.w3.org/2000/01/rdf-schema#>
-      INSERT DATA { GRAPH <urn:chorus:instances> {
+      INSERT DATA { GRAPH <urn:chorus:domains:demo-alpha> {
         <https://jeffbridwell.com/chorus#demo-alpha-domain-store-extra-cache> a chorus:Persistence ;
           rdfs:label "Extra Cache" .
         <https://jeffbridwell.com/chorus#demo-alpha-domain> chorus:hasPersistence <https://jeffbridwell.com/chorus#demo-alpha-domain-store-extra-cache> .

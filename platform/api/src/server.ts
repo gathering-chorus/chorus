@@ -1822,8 +1822,8 @@ app.get('/api/chorus/context/coverage', async (req: Request, res: Response) => {
     {
       sparql: _athena,
       fetchDomainFiles: async (d: string) => {
-        const domainSuffix = d.endsWith('-domain') || d.endsWith('-service') ? d : `${d}-domain`;
-        const query = `PREFIX chorus: <https://jeffbridwell.com/chorus#> SELECT ?filePath WHERE { GRAPH <urn:chorus:instances> { <https://jeffbridwell.com/chorus#${domainSuffix}> chorus:hasCodeFile ?file . ?file chorus:filePath ?filePath . } }`;
+        
+        const query = `PREFIX chorus: <https://jeffbridwell.com/chorus#> SELECT ?filePath WHERE { GRAPH <urn:chorus:domains:code> { ?f a chorus:CodeFile ; chorus:hasDomain <https://jeffbridwell.com/chorus#${d.replace(/-domain$/, '')}> ; chorus:filePath ?filePath } }`; // #4187 — by hasDomain in the code graph, not the catch-all's inverse edge
         try {
           const result = await athenaSparqlQuery(query);
           return result.results.bindings.map((b: SparqlBinding) => b.filePath.value as string);
@@ -2695,7 +2695,6 @@ app.use(['/api/loom', '/api/chorus'], (req: Request, res: Response, next: NextFu
 });
 
 const ATHENA_GRAPH = 'urn:chorus:ontology';
-const ATHENA_INSTANCES = 'urn:chorus:instances';
 // #4058 — the athena read/write endpoints follow CHORUS_FUSEKI like the two
 // query sites above do, so a werk variant (env-up sets CHORUS_FUSEKI to the
 // werk's own dataset, #4047) resolves the security envelope's surface table and
@@ -2920,19 +2919,13 @@ app.get('/api/athena/subdomains/:id/code', async (req: Request, res: Response) =
 });
 
 // POST /api/athena/subdomains/:id/code — add code file to subdomain (#1868)
-app.post('/api/athena/subdomains/:id/code', async (req: Request, res: Response) => {
-  const start = Date.now();
-  try {
-    const { label, path: filePath, type: fileType, description } = req.body || {};
-    if (!filePath && !label) return res.status(400).json(athenaEnvelope('subdomain-code-create', { error: 'Missing required field: path or label' }, Date.now() - start, { error: true }));
-    const sdUri = `https://jeffbridwell.com/chorus#${req.params.id}`;
-    const name = label || filePath;
-    const fileId = `${req.params.id}-code-${name.replace(/[/.]/g, '-').toLowerCase()}`;
-    const fileUri = `https://jeffbridwell.com/chorus#${fileId}`;
-    const update = `PREFIX chorus: <https://jeffbridwell.com/chorus#> PREFIX rdfs: <http://www.w3.org/2000/01/rdf-schema#> INSERT DATA { GRAPH <urn:chorus:instances> { <${fileUri}> a chorus:CodeFile ; rdfs:label "${name.replace(/"/g, '\\"')}" . <${sdUri}> chorus:hasCodeFile <${fileUri}> . ${filePath ? `<${fileUri}> chorus:filePath "${filePath.replace(/"/g, '\\"')}" .` : ''} ${fileType ? `<${fileUri}> chorus:fileType "${fileType}" .` : ''} ${description ? `<${fileUri}> rdfs:comment "${description.replace(/"/g, '\\"')}" .` : ''} } }`;
-    await athenaSparqlUpdate(update);
-    res.json(athenaEnvelope('subdomain-code-create', { subdomain: req.params.id, uri: fileUri, label: name, path: filePath || null, type: fileType || null, description: description || null }, Date.now() - start));
-  } catch (err: unknown) { res.status(500).json(athenaEnvelope('subdomain-code-create', { error: errMsg(err) }, Date.now() - start, { error: true })); }
+// #4187 — RETIRED: this route wrote urn:chorus:instances, the catch-all this
+// card empties. CodeFile rows are written by chorus-crawl into urn:chorus:domains:code
+app.post('/api/athena/subdomains/:id/code', (_req: Request, res: Response) => {
+  res.status(410).json(athenaEnvelope('subdomain-code-create', {
+    error: 'retired',
+    message: 'POST /api/athena/subdomains/:id/code was retired by #4187: CodeFile rows are written by chorus-crawl into urn:chorus:domains:code',
+  }, 0, { error: true, retired_by: 4187 }));
 });
 
 // POST /api/athena/discover-code — RETIRED by #4154 (2026-09-12). It walked the
@@ -2943,10 +2936,6 @@ app.post('/api/athena/subdomains/:id/code', async (req: Request, res: Response) 
 
 // discover-tests moved to src/discover-tests.ts (#2205 wave 24).
 import { createDiscoverTests } from './discover-tests';
-import { scanLoomHtml } from './discover-pages-loom';
-import { scanAthenaHtml } from './discover-pages-athena';
-import { scanEjsViews, scanDocHtml, type PageEntry } from './discover-pages-gathering';
-import { parseChorusApiRoutes } from './discover-endpoints-chorus-api';
 const _discoverTests = createDiscoverTests({
   sparqlClient: { query: (q: string) => athenaSparqlQuery(q), update: (u: string) => athenaSparqlUpdate(u) },
   fs, path,
@@ -2987,101 +2976,22 @@ app.get('/api/chorus/tests', async (_req: Request, res: Response) => {
 });
 
 // POST /api/athena/discover-pages — auto-discover UI pages per domain from filesystem (#2065)
-const DISCOVER_PAGES_GENERIC_BASES = new Set(['services', 'service', 'domains', 'domain', 'code', 'loom', 'time', 'streams', 'stream', 'messages', 'message', 'policies', 'policy']);
 
 // #2627: domain IDs hoisted to consts (each was duplicated 5-33x; the
 // chorus-domain literal hit 33 occurrences, which is the textbook
 // agent-inlining pattern the no-duplicate-string rule catches).
-const D_BLOG = 'blog-domain';
-const D_SOCIAL = 'social-domain';
-const D_SEEDS = 'seeds-domain';
-const D_CHORUS = 'chorus-domain';
-const D_PROPERTY = 'property-domain';
-const D_IDEAS = 'ideas-domain';
-const D_DOCS = 'documents-domain';
 
-const DISCOVER_PAGES_ALIAS_OVERRIDES: Record<string, string> = {
-  blog: D_BLOG, wordpress: D_BLOG,
-  social: D_SOCIAL, socialpost: D_SOCIAL,
-  seed: D_SEEDS, seeds: D_SEEDS,
-  'self-ai': 'sexuality-domain', ontology: 'convergence-domain',
-  chorus: D_CHORUS, werk: D_CHORUS, flow: D_CHORUS,
-  garden: D_PROPERTY, gardening: D_PROPERTY,
-};
 
-async function buildPageAliasMap(): Promise<Record<string, string>> {
-  const sdQuery = 'PREFIX chorus: <https://jeffbridwell.com/chorus#> PREFIX rdfs: <http://www.w3.org/2000/01/rdf-schema#> SELECT ?sd ?label WHERE { GRAPH <urn:chorus:ontology> { ?sd a chorus:SubDomain ; rdfs:label ?label } }';
-  const sdResult = await athenaSparqlQuery(sdQuery);
-  const domains = sdResult.results.bindings.map((b: SparqlBinding) => ({
-    id: b.sd.value.split('#').pop() as string,
-  }));
-  const aliasToId: Record<string, string> = {};
-  for (const d of domains) {
-    const base = d.id.replace(/-(domain|service)$/, '');
-    if (DISCOVER_PAGES_GENERIC_BASES.has(base)) continue;
-    aliasToId[base] = d.id;
-    if (base.endsWith('s') && !base.endsWith('ss')) {
-      if (base.endsWith('ies')) aliasToId[base.replace(/ies$/, 'y')] = d.id;
-      else aliasToId[base.replace(/s$/, '')] = d.id;
-    }
-  }
-  return { ...aliasToId, ...DISCOVER_PAGES_ALIAS_OVERRIDES };
-}
 
-app.post('/api/athena/discover-pages', async (_req: Request, res: Response) => {
-  const start = Date.now();
-  try {
-    const aliasToId = await buildPageAliasMap();
-    // #3097 — env-driven, not a hardcoded sibling path: chorus-api must not break
-    // when gathering relocates or is absent (the readers below already guard
-    // existsSync, so an absent root yields empty entries, never a throw).
-    const GATHERING_ROOT = gatheringRepoRoot;
-    // #2485 Move 6 — scan chorus/platform/api/public/loom/ for loom-* subdomain pages.
-    const validSubdomainIds = new Set<string>(Object.values(aliasToId));
-    const loomEntries = scanLoomHtml(path.join(REPO_ROOT, 'platform/api/public/loom'), validSubdomainIds);
-    // #2041 — scan chorus/platform/api/public/athena/ for athena-domain pages.
-    const athenaEntries = scanAthenaHtml(path.join(REPO_ROOT, 'platform/api/public/athena'), validSubdomainIds);
-    const entries: PageEntry[] = [
-      ...scanEjsViews(path.join(GATHERING_ROOT, 'views'), aliasToId),
-      ...scanDocHtml(path.join(GATHERING_ROOT, 'public/gathering-docs'), aliasToId),
-      ...loomEntries,
-      ...athenaEntries,
-    ];
-
-    // 4. Clear existing page data and repopulate
-    const clearQuery = 'DELETE WHERE { GRAPH <urn:chorus:instances> { ?p a <https://jeffbridwell.com/chorus#Page> ; ?prop ?val . ?sd <https://jeffbridwell.com/chorus#hasPage> ?p . } }';
-    await athenaSparqlUpdate(clearQuery);
-
-    // 5. Write to graph in batches
-    const batchSize = 50;
-    let written = 0;
-    for (let i = 0; i < entries.length; i += batchSize) {
-      const batch = entries.slice(i, i + batchSize);
-      const triples = batch.map(e => {
-        const pageId = `page-${e.path.replace(/[/.]/g, '-').toLowerCase()}`;
-        const pageUri = `https://jeffbridwell.com/chorus#${pageId}`;
-        const sdUri = `https://jeffbridwell.com/chorus#${e.domainId}`;
-        return `<${pageUri}> a chorus:Page ; rdfs:label "${e.route.replace(/"/g, '\\"')}" ; chorus:filePath "${e.path.replace(/"/g, '\\"')}" ; chorus:pageType "${e.pageType}" ; chorus:route "${e.route.replace(/"/g, '\\"')}" . <${sdUri}> chorus:hasPage <${pageUri}> .`;
-      }).join('\n');
-      const insert = `PREFIX chorus: <https://jeffbridwell.com/chorus#> PREFIX rdfs: <http://www.w3.org/2000/01/rdf-schema#> INSERT DATA { GRAPH <urn:chorus:instances> { ${triples} } }`;
-      await athenaSparqlUpdate(insert);
-      written += batch.length;
-    }
-
-    // 6. Summary by domain
-    const byDomain: Record<string, number> = {};
-    for (const e of entries) { byDomain[e.domainId] = (byDomain[e.domainId] || 0) + 1; }
-
-    res.json(athenaEnvelope('discover-pages', {
-      total_pages: entries.length,
-      total_domains: Object.keys(byDomain).length,
-      by_domain: byDomain,
-      entries,
-      written,
-    }, Date.now() - start, { count: entries.length }));
-  } catch (err: unknown) {
-    res.status(500).json(athenaEnvelope('discover-pages', { error: errMsg(err) }, Date.now() - start, { error: true }));
-  }
+// #4187 — RETIRED. discover-pages scanned views on disk and INSERTed Page rows
+// into urn:chorus:instances, the catch-all this card empties; chorus-crawl
+// writes Page rows into urn:chorus:domains:code (pages.rs) and the folds read
+// them there by hasDomain (#4285). A caller is told where the rows live.
+app.post('/api/athena/discover-pages', (_req: Request, res: Response) => {
+  res.status(410).json(athenaEnvelope('discover-pages', {
+    error: 'retired',
+    message: 'POST /api/athena/discover-pages was retired by #4187: Page rows are written by chorus-crawl into urn:chorus:domains:code; read them at GET /api/athena/subdomains/<domain>/pages',
+  }, 0, { error: true, retired_by: 4187 }));
 });
 
 // GET /api/athena/subdomains/:id/pages — pages for a domain (#2065)
@@ -3090,169 +3000,21 @@ app.get('/api/athena/subdomains/:id/pages', async (req: Request, res: Response) 
   res.status(r.status).json(r.body);
 });
 
-type EndpointEntry = { method: string; path: string; handler: string; domainId: string };
 
-const DISCOVER_ENDPOINTS_HANDLER_OVERRIDES: Record<string, string> = {
-  bookHandler: 'books-domain', bookUploadHandler: 'books-domain',
-  seedHandler: D_SEEDS, socialpostHandler: D_SOCIAL,
-  personHandler: 'people-domain', collectionHandler: D_BLOG,
-  glimmerHandler: 'glimmers-domain', ideaProjectHandler: D_IDEAS,
-  codebaseGraphHandler: D_CHORUS, dashboardHandler: D_CHORUS,
-  flowHandler: D_CHORUS, werkHandler: D_CHORUS,
-  ontologyViewHandler: 'convergence-domain', galleryHandler: 'gallery-domain',
-  gardenHandler: D_PROPERTY, icdHandler: 'convergence-domain',
-  docCatalogHandler: D_DOCS, docsHandler: D_DOCS,
-  documentHandler: D_DOCS, accessDashboardHandler: D_CHORUS,
-  aclHandler: D_CHORUS, sessionReplayHandler: D_CHORUS,
-  staticPageHandler: D_CHORUS, linkInferenceHandler: 'knowledge-domain',
-  knowledgeGraphHandler: 'knowledge-domain', selfDomainHandler: 'self-domain',
-  selfAiHandler: 'sexuality-domain', sexualityHandler: 'sexuality-domain',
-  cookingHandler: 'cooking-domain', fitnessFunctionsHandler: D_CHORUS,
-  intentionHandler: D_IDEAS, notesHandler: 'notes-domain',
-  noteHandler: 'notes-domain', readingHandler: 'reading-domain',
-  storiesHandler: 'stories-domain', storyHandler: 'stories-domain',
-  watchingHandler: 'watching-domain', todoHandler: D_IDEAS,
-  groupHandler: 'people-domain', qualityHandler: D_CHORUS,
-  rolesHandler: 'roles-domain', skillsHandler: 'skills-service',
-  teamHandler: D_CHORUS, briefsHandler: D_CHORUS,
-  cardsHandler: 'cards-service', costHandler: D_CHORUS,
-  hooksHandler: D_CHORUS, decisionsHandler: D_CHORUS,
-  gardeningHandler: D_PROPERTY, webhookHandler: D_SEEDS,
-  userHandler: D_CHORUS, aboutHandler: D_CHORUS,
-  aboutProfileHandler: D_CHORUS, homeHandler: D_CHORUS,
-  loginHandler: D_CHORUS, callbackHandler: D_CHORUS,
-  profileHandler: D_CHORUS, logoutHandler: D_CHORUS,
-};
 
-const DISCOVER_ENDPOINTS_ROUTE_PREFIXES: Record<string, string> = {
-  '/api/books': 'books-domain', '/books': 'books-domain',
-  '/api/music': 'music-domain', '/music': 'music-domain',
-  '/api/photos': 'photos-domain', '/photos': 'photos-domain',
-  '/api/property': D_PROPERTY, '/property': D_PROPERTY,
-  '/api/seed': D_SEEDS,
-  '/api/glimmers': 'glimmers-domain',
-  '/api/ideas': D_IDEAS,
-  '/api/collections': D_BLOG, '/blog': D_BLOG,
-  '/api/search': 'search-domain', '/search': 'search-domain',
-  '/api/gallery': 'gallery-domain', '/gallery': 'gallery-domain',
-  '/api/documents': D_DOCS, '/documents': D_DOCS,
-  '/api/codebase': D_CHORUS,
-  '/api/dashboard': D_CHORUS, '/dashboard': D_CHORUS,
-  '/api/admin': D_CHORUS,
-  '/api/icd': 'convergence-domain',
-  '/api/chorus': D_CHORUS,
-  '/api/athena': D_CHORUS,
-  '/cooking': 'cooking-domain', '/notes': 'notes-domain',
-  '/reading': 'reading-domain', '/stories': 'stories-domain',
-  '/watching': 'watching-domain', '/todo': D_IDEAS,
-  '/gardening': D_PROPERTY, '/people': 'people-domain',
-  '/socialposts': D_SOCIAL, '/self': 'self-domain',
-  '/sexuality': 'sexuality-domain', '/api/sessions': D_CHORUS,
-  '/api/roles': 'roles-domain',
-};
 
-async function buildHandlerToDomain(): Promise<Record<string, string>> {
-  const sdQuery = 'PREFIX chorus: <https://jeffbridwell.com/chorus#> PREFIX rdfs: <http://www.w3.org/2000/01/rdf-schema#> SELECT ?sd ?label WHERE { GRAPH <urn:chorus:ontology> { ?sd a chorus:SubDomain ; rdfs:label ?label } }';
-  const sdResult = await athenaSparqlQuery(sdQuery);
-  const domains = sdResult.results.bindings.map((b: SparqlBinding) => ({ id: b.sd.value.split('#').pop() as string }));
-  const map: Record<string, string> = {};
-  for (const d of domains) {
-    const base = d.id.replace(/-(domain|service)$/, '');
-    map[base + 'Handler'] = d.id;
-    if (base.endsWith('s') && !base.endsWith('ss')) {
-      const singular = base.endsWith('ies') ? base.replace(/ies$/, 'y') : base.replace(/s$/, '');
-      map[singular + 'Handler'] = d.id;
-    }
-  }
-  return { ...map, ...DISCOVER_ENDPOINTS_HANDLER_OVERRIDES };
-}
 
-function resolveEndpointDomain(handlerName: string | null, routePath: string, handlerToDomain: Record<string, string>): string | null {
-  if (handlerName && handlerToDomain[handlerName]) return handlerToDomain[handlerName];
-  for (const [prefix, did] of Object.entries(DISCOVER_ENDPOINTS_ROUTE_PREFIXES)) {
-    if (routePath.startsWith(prefix)) return did;
-  }
-  return null;
-}
 
-function parseAppRoutes(appContent: string, handlerToDomain: Record<string, string>): EndpointEntry[] {
-  const entries: EndpointEntry[] = [];
-  const routeRegex = /app\.(get|post|put|delete|patch)\s*\(\s*['"`]([^'"`]+)['"`]/gi;
-  let match;
-  while ((match = routeRegex.exec(appContent)) !== null) {
-    const method = match[1].toUpperCase();
-    const routePath = match[2];
-    const lineEnd = appContent.indexOf('\n', match.index);
-    const lineContent = appContent.substring(match.index, lineEnd > 0 ? lineEnd : match.index + 200);
-    const handlerMatch = lineContent.match(/(\w+Handler)\.\w+/);
-    const handlerName = handlerMatch ? handlerMatch[1] : null;
-    const domainId = resolveEndpointDomain(handlerName, routePath, handlerToDomain);
-    if (!domainId) continue;
-    entries.push({
-      method,
-      path: routePath,
-      handler: handlerName ? `gathering/src/handlers/${handlerName.replace(/Handler$/, '')}.handler.ts` : 'gathering/src/app.ts',
-      domainId,
-    });
-  }
-  return entries;
-}
 
-async function writeEndpointsInBatches(entries: EndpointEntry[]): Promise<number> {
-  const batchSize = 50;
-  let written = 0;
-  for (let i = 0; i < entries.length; i += batchSize) {
-    const batch = entries.slice(i, i + batchSize);
-    const triples = batch.map((e) => {
-      const epId = `endpoint-${e.method.toLowerCase()}-${e.path.replace(/[/.:]/g, '-').toLowerCase()}`;
-      const epUri = `https://jeffbridwell.com/chorus#${epId}`;
-      const sdUri = `https://jeffbridwell.com/chorus#${e.domainId}`;
-      return `<${epUri}> a chorus:Endpoint ; rdfs:label "${e.method} ${e.path.replace(/"/g, '\\"')}" ; chorus:httpMethod "${e.method}" ; chorus:routePath "${e.path.replace(/"/g, '\\"')}" ; chorus:filePath "${e.handler.replace(/"/g, '\\"')}" . <${sdUri}> chorus:hasEndpoint <${epUri}> .`;
-    }).join('\n');
-    const insert = `PREFIX chorus: <https://jeffbridwell.com/chorus#> PREFIX rdfs: <http://www.w3.org/2000/01/rdf-schema#> INSERT DATA { GRAPH <urn:chorus:instances> { ${triples} } }`;
-    await athenaSparqlUpdate(insert);
-    written += batch.length;
-  }
-  return written;
-}
-
-app.post('/api/athena/discover-endpoints', async (_req: Request, res: Response) => {
-  const start = Date.now();
-  try {
-    const handlerToDomain = await buildHandlerToDomain();
-    // #3097 — env-driven, not a hardcoded sibling path (existsSync-guarded below).
-    const GATHERING_ROOT = gatheringRepoRoot;
-    const appTsPath = path.join(GATHERING_ROOT, 'src/app.ts');
-    const gatheringEntries = fs.existsSync(appTsPath)
-      ? parseAppRoutes(fs.readFileSync(appTsPath, 'utf-8'), handlerToDomain)
-      : [];
-    // #2485 Move 8 — also scan chorus-api's own server.ts so loom-*, chorus-domain
-    // get hasEndpoint edges for the routes they actually own.
-    const validSubdomainIds = new Set<string>(Object.values(handlerToDomain));
-    const chorusApiSrc = path.join(REPO_ROOT, 'platform/api/src/server.ts');
-    const chorusEntries = fs.existsSync(chorusApiSrc)
-      ? parseChorusApiRoutes(fs.readFileSync(chorusApiSrc, 'utf-8'), validSubdomainIds)
-      : [];
-    const entries = [...gatheringEntries, ...chorusEntries];
-
-    const clearQuery = 'DELETE WHERE { GRAPH <urn:chorus:instances> { ?ep a <https://jeffbridwell.com/chorus#Endpoint> ; ?p ?o . ?sd <https://jeffbridwell.com/chorus#hasEndpoint> ?ep . } }';
-    await athenaSparqlUpdate(clearQuery);
-    const written = await writeEndpointsInBatches(entries);
-
-    const byDomain: Record<string, number> = {};
-    for (const e of entries) byDomain[e.domainId] = (byDomain[e.domainId] || 0) + 1;
-
-    res.json(athenaEnvelope('discover-endpoints', {
-      total_endpoints: entries.length,
-      total_domains: Object.keys(byDomain).length,
-      by_domain: byDomain,
-      entries,
-      written,
-    }, Date.now() - start, { count: entries.length }));
-  } catch (err: unknown) {
-    res.status(500).json(athenaEnvelope('discover-endpoints', { error: errMsg(err) }, Date.now() - start, { error: true }));
-  }
+// #4187 — RETIRED with discover-pages (above): it INSERTed Endpoint rows into
+// the catch-all with its own IRI scheme (448 rows, none of them the crawler's).
+app.post('/api/athena/discover-endpoints', (_req: Request, res: Response) => {
+  res.status(410).json(athenaEnvelope('discover-endpoints', {
+    error: 'retired',
+    message: 'POST /api/athena/discover-endpoints was retired by #4187: Endpoint rows are written by chorus-crawl into urn:chorus:domains:code; read them at GET /api/athena/subdomains/<domain>/services',
+  }, 0, { error: true, retired_by: 4187 }));
 });
+
 
 // GET /api/athena/subdomains/:id/services — API endpoints for a domain (#2066)
 app.get('/api/athena/subdomains/:id/services', async (req: Request, res: Response) => {
@@ -3523,6 +3285,17 @@ app.post('/api/athena/subdomains/:id/actors', async (req: Request, res: Response
 // handlers/subdomain-entities.ts::deleteSubdomainEntity (#2180). The
 // section→class/predicate table (ENTITY_SECTIONS) now lives in the
 // handler module too.
+// #4187 — registered BEFORE the generic :section/:entityId delete, which would otherwise
+// answer 400 'Unknown section: consumes' for this path.
+// #4187 — RETIRED: this route wrote urn:chorus:instances, the catch-all this
+// card empties. the consumes edge lives on the SubDomain row in urn:chorus:domains:domains and is written through athena-make
+app.delete('/api/athena/subdomains/:id/consumes/:targetId', (_req: Request, res: Response) => {
+  res.status(410).json(athenaEnvelope('subdomain-consumes-remove', {
+    error: 'retired',
+    message: 'DELETE /api/athena/subdomains/:id/consumes/:targetId was retired by #4187: the consumes edge lives on the SubDomain row in urn:chorus:domains:domains and is written through athena-make',
+  }, 0, { error: true, retired_by: 4187 }));
+});
+
 app.delete('/api/athena/subdomains/:id/:section/:entityId', async (req: Request, res: Response) => {
   const r = await deleteSubdomainEntity(subdomainWriteDeps(), req.params.id, req.params.section, req.params.entityId);
   if (r.status === 204) { res.status(204).send(); return; }
@@ -3618,99 +3391,36 @@ app.get('/api/athena/subdomains/:id/completeness', async (req: Request, res: Res
 });
 
 // POST /api/athena/subdomains — create a new SubDomain
-app.post('/api/athena/subdomains', async (req: Request, res: Response) => {
-  const start = Date.now();
-  try {
-    const { id, label, owner, step, comment } = req.body || {};
-    if (!id || !label) {
-      return res.status(400).json(athenaEnvelope('subdomain-create', {
-        error: 'Missing required fields: id, label',
-        example: { id: 'my-domain', label: 'My Domain', owner: 'Wren', step: 'Building', comment: 'Description' },
-      }, Date.now() - start, { error: true }));
-    }
-    const uri = `https://jeffbridwell.com/chorus#${id}`;
-    const ownerMap: Record<string, string> = { wren: 'chorus:wren', silas: 'chorus:silas', kade: 'chorus:kade', jeff: 'chorus:jeff' };
-    const stepMap: Record<string, string> = {
-      capturing: 'chorus:capturing', shaping: 'chorus:shaping', designing: 'chorus:designing',
-      building: 'chorus:building', proving: 'chorus:proving', directing: 'chorus:directing',
-    };
-    let triples = `<${uri}> a chorus:SubDomain ; rdfs:label "${label}"`;
-    if (owner && ownerMap[owner.toLowerCase()]) triples += ` ; chorus:ownedBy ${ownerMap[owner.toLowerCase()]}`;
-    if (step && stepMap[step.toLowerCase()]) triples += ` ; chorus:primaryStep ${stepMap[step.toLowerCase()]}`;
-    if (comment) triples += ` ; rdfs:comment "${comment.replace(/"/g, '\\"')}"`;
-    triples += ' .';
-    const update = `PREFIX chorus: <https://jeffbridwell.com/chorus#>\nPREFIX rdfs: <http://www.w3.org/2000/01/rdf-schema#>\nINSERT DATA { GRAPH <${ATHENA_INSTANCES}> { ${triples} } }`;
-    await athenaSparqlUpdate(update);
-    res.status(201).json(athenaEnvelope('subdomain-create', { uri, id, label, owner: owner || null, step: step || null, comment: comment || null }, Date.now() - start));
-  } catch (err: unknown) {
-    res.status(500).json(athenaEnvelope('subdomain-create', { error: errMsg(err) }, Date.now() - start, { error: true }));
-  }
+// #4187 — RETIRED: this route wrote urn:chorus:instances, the catch-all this
+// card empties. SubDomain rows live in urn:chorus:domains:domains and are written through athena-make (POST :3360/domains/subdomains)
+app.post('/api/athena/subdomains', (_req: Request, res: Response) => {
+  res.status(410).json(athenaEnvelope('subdomain-create', {
+    error: 'retired',
+    message: 'POST /api/athena/subdomains was retired by #4187: SubDomain rows live in urn:chorus:domains:domains and are written through athena-make (POST :3360/domains/subdomains)',
+  }, 0, { error: true, retired_by: 4187 }));
 });
 
 // PUT /api/athena/subdomains/:id — update SubDomain properties
-app.put('/api/athena/subdomains/:id', async (req: Request, res: Response) => {
-  const start = Date.now();
-  try {
-    const uri = `https://jeffbridwell.com/chorus#${req.params.id}`;
-    const { label, owner, step, comment } = req.body || {};
-    if (!label && !owner && !step && !comment) {
-      return res.status(400).json(athenaEnvelope('subdomain-update', {
-        error: 'No fields to update. Provide at least one of: label, owner, step, comment',
-      }, Date.now() - start, { error: true }));
-    }
-    const ownerMap: Record<string, string> = { wren: 'chorus:wren', silas: 'chorus:silas', kade: 'chorus:kade', jeff: 'chorus:jeff' };
-    const stepMap: Record<string, string> = {
-      capturing: 'chorus:capturing', shaping: 'chorus:shaping', designing: 'chorus:designing',
-      building: 'chorus:building', proving: 'chorus:proving', directing: 'chorus:directing',
-    };
-    const deletes: string[] = [];
-    const inserts: string[] = [];
-    if (label) { deletes.push(`<${uri}> rdfs:label ?oldLabel .`); inserts.push(`<${uri}> rdfs:label "${label}" .`); }
-    if (owner && ownerMap[owner.toLowerCase()]) { deletes.push(`<${uri}> chorus:ownedBy ?oldOwner .`); inserts.push(`<${uri}> chorus:ownedBy ${ownerMap[owner.toLowerCase()]} .`); }
-    if (step && stepMap[step.toLowerCase()]) { deletes.push(`<${uri}> chorus:primaryStep ?oldStep .`); inserts.push(`<${uri}> chorus:primaryStep ${stepMap[step.toLowerCase()]} .`); }
-    if (comment) { deletes.push(`<${uri}> rdfs:comment ?oldComment .`); inserts.push(`<${uri}> rdfs:comment "${comment.replace(/"/g, '\\"')}" .`); }
-    const update = `PREFIX chorus: <https://jeffbridwell.com/chorus#>\nPREFIX rdfs: <http://www.w3.org/2000/01/rdf-schema#>\nWITH <${ATHENA_INSTANCES}>\nDELETE { ${deletes.join(' ')} }\nINSERT { ${inserts.join(' ')} }\nWHERE { <${uri}> a chorus:SubDomain . ${deletes.map(d => `OPTIONAL { ${d} }`).join(' ')} }`;
-    await athenaSparqlUpdate(update);
-    res.json(athenaEnvelope('subdomain-update', { uri, id: req.params.id, updated: { label, owner, step, comment } }, Date.now() - start));
-  } catch (err: unknown) {
-    res.status(500).json(athenaEnvelope('subdomain-update', { error: errMsg(err) }, Date.now() - start, { error: true }));
-  }
+// #4187 — RETIRED: this route wrote urn:chorus:instances, the catch-all this
+// card empties. SubDomain rows live in urn:chorus:domains:domains and are written through athena-make (PUT :3360/domains/subdomains/<name>)
+app.put('/api/athena/subdomains/:id', (_req: Request, res: Response) => {
+  res.status(410).json(athenaEnvelope('subdomain-update', {
+    error: 'retired',
+    message: 'PUT /api/athena/subdomains/:id was retired by #4187: SubDomain rows live in urn:chorus:domains:domains and are written through athena-make (PUT :3360/domains/subdomains/<name>)',
+  }, 0, { error: true, retired_by: 4187 }));
 });
 
 // POST /api/athena/subdomains/:id/consumes — add consumption edge
-app.post('/api/athena/subdomains/:id/consumes', async (req: Request, res: Response) => {
-  const start = Date.now();
-  try {
-    const { targetId } = req.body || {};
-    if (!targetId) {
-      return res.status(400).json(athenaEnvelope('subdomain-consumes-add', {
-        error: 'Missing required field: targetId',
-        example: { targetId: 'security-domain' },
-      }, Date.now() - start, { error: true }));
-    }
-    const sourceUri = `https://jeffbridwell.com/chorus#${req.params.id}`;
-    const targetUri = `https://jeffbridwell.com/chorus#${targetId}`;
-    const update = `PREFIX chorus: <https://jeffbridwell.com/chorus#>\nINSERT DATA { GRAPH <${ATHENA_INSTANCES}> { <${sourceUri}> chorus:consumes <${targetUri}> . } }`;
-    await athenaSparqlUpdate(update);
-    res.status(201).json(athenaEnvelope('subdomain-consumes-add', { source: req.params.id, target: targetId }, Date.now() - start));
-  } catch (err: unknown) {
-    res.status(500).json(athenaEnvelope('subdomain-consumes-add', { error: errMsg(err) }, Date.now() - start, { error: true }));
-  }
+// #4187 — RETIRED: this route wrote urn:chorus:instances, the catch-all this
+// card empties. the consumes edge lives on the SubDomain row in urn:chorus:domains:domains and is written through athena-make
+app.post('/api/athena/subdomains/:id/consumes', (_req: Request, res: Response) => {
+  res.status(410).json(athenaEnvelope('subdomain-consumes-add', {
+    error: 'retired',
+    message: 'POST /api/athena/subdomains/:id/consumes was retired by #4187: the consumes edge lives on the SubDomain row in urn:chorus:domains:domains and is written through athena-make',
+  }, 0, { error: true, retired_by: 4187 }));
 });
 
 // DELETE /api/athena/subdomains/:id/consumes/:targetId — remove consumption edge
-app.delete('/api/athena/subdomains/:id/consumes/:targetId', async (req: Request, res: Response) => {
-  const start = Date.now();
-  try {
-    const sourceUri = `https://jeffbridwell.com/chorus#${req.params.id}`;
-    const targetUri = `https://jeffbridwell.com/chorus#${req.params.targetId}`;
-    const update = `PREFIX chorus: <https://jeffbridwell.com/chorus#>\nDELETE DATA { GRAPH <${ATHENA_INSTANCES}> { <${sourceUri}> chorus:consumes <${targetUri}> . } }`;
-    await athenaSparqlUpdate(update);
-    res.json(athenaEnvelope('subdomain-consumes-remove', { source: req.params.id, target: req.params.targetId }, Date.now() - start));
-  } catch (err: unknown) {
-    res.status(500).json(athenaEnvelope('subdomain-consumes-remove', { error: errMsg(err) }, Date.now() - start, { error: true }));
-  }
-});
 
 // POST /api/athena/reload — redeploy the MODEL SET into this api's store.
 //

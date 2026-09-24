@@ -1222,10 +1222,18 @@ fn assert_instance_graph(graph: &str) -> R<()> {
         .strip_prefix("urn:chorus:domains:")
         .map(|local| normalize_slug(local).map(|normalized| normalized == local).unwrap_or(false))
         .unwrap_or(false);
-    if graph != INSTANCES_GRAPH && !domain_home {
+    // #4187 — the v1 catch-all is retired as a WRITE TARGET. Rows live in their
+    // domain graph; a caller naming the bucket is told which graph to use.
+    if graph == INSTANCES_GRAPH {
+        witness("model.refused", &[("graph", graph), ("reason", "graph-retired")]);
+        return Err(
+            "graph-retired: urn:chorus:instances is no longer a write target — omit --graph and the DAL derives urn:chorus:domains:<domain> from the domain that definesVocabulary the class (#4187)".to_string(),
+        );
+    }
+    if !domain_home {
         witness("model.refused", &[("graph", graph), ("reason", "graph-not-instance-home")]);
         return Err(format!(
-            "graph-not-instance-home: <{}> is not urn:chorus:instances or a safe urn:chorus:domains:<name> instance graph",
+            "graph-not-instance-home: <{}> is not a safe urn:chorus:domains:<name> instance graph",
             graph
         ));
     }
@@ -1244,6 +1252,45 @@ pub fn defining_domain_of(store: &dyn Store, class_iri: &str) -> Option<String> 
         ns = NS, g = ONTOLOGY_GRAPH, c = class_iri
     );
     store.select_v(&q).ok()?.into_iter().next()
+}
+
+/// #4187 — a kind's instance HOME graph, the one rule for every DAL write.
+///
+/// Order: the caller's explicit graph; else the shape's single `chorus:instancesGraph`
+/// pin; else `urn:chorus:domains:<domain>` from the domain that `definesVocabulary`
+/// the class — the same derivation athena-make has used since #3570; else REFUSE.
+///
+/// WHY: five write paths fell back to `urn:chorus:instances` when no graph was
+/// given, and `seed --deploy` defaulted every ownerless manifest kind there. #4187
+/// emptied the catch-all on 09-18 and every land since re-seeded 99 rows into it
+/// (measured 2026-09-24: 563 rows back, 7 kinds from the seed manifest). The
+/// model already named each class's home; the DAL just never asked it.
+pub fn instance_home(store: &dyn Store, kind: &str, explicit: Option<&str>) -> R<String> {
+    if let Some(g) = explicit.map(str::trim).filter(|g| !g.is_empty()) {
+        return Ok(g.to_string());
+    }
+    let class = class_iri(kind)?;
+    let pins = instances_graph_pins(store, &class)?;
+    match pins.as_slice() {
+        [one] => return Ok(one.clone()),
+        [] => {}
+        many => {
+            return Err(format!(
+                "{} declares {} instancesGraph pins ({}) — one home per class",
+                class, many.len(), many.join(", ")
+            ))
+        }
+    }
+    match defining_domain_of(store, &class) {
+        Some(domain) => Ok(format!("urn:chorus:domains:{}", domain)),
+        None => {
+            witness("model.refused", &[("kind", kind), ("reason", "no-instance-home")]);
+            Err(format!(
+                "no-instance-home: no domain definesVocabulary {} and its shape declares no chorus:instancesGraph — land the model first (ADR-051); nothing falls back to urn:chorus:instances",
+                class
+            ))
+        }
+    }
 }
 
 #[derive(Debug)]
@@ -1482,12 +1529,24 @@ fn plan_writes<'a>(
 ) -> Result<(Vec<PlannedWrite<'a>>, Vec<UniquenessCandidate<'a>>), WritePlanError> {
     let mut plans: Vec<PlannedWrite<'a>> = Vec::with_capacity(reqs.len());
     let mut claimed: BTreeMap<String, String> = BTreeMap::new();
+    // #4187 — a kind's derived home is read once per batch, like its shape.
+    let mut homes: BTreeMap<String, String> = BTreeMap::new();
 
     for req in reqs {
         let identity = format!("{}:{}", req.kind, req.name);
         let class = class_iri(&req.kind).map_err(|e| WritePlanError::for_req(req, e))?;
         let (subject, turtle) = to_turtle(req).map_err(|e| WritePlanError::for_req(req, e))?;
-        let graph = req.graph.clone().unwrap_or_else(|| INSTANCES_GRAPH.to_string());
+        let graph = match req.graph.as_deref() {
+            Some(g) => g.to_string(),
+            None => match homes.get(&req.kind) {
+                Some(g) => g.clone(),
+                None => {
+                    let g = instance_home(store, &req.kind, None).map_err(|e| WritePlanError::for_req(req, e))?;
+                    homes.insert(req.kind.clone(), g.clone());
+                    g
+                }
+            },
+        };
         assert_instance_graph(&graph).map_err(|e| WritePlanError::for_req(req, e))?;
         if let Some(first) = claimed.insert(subject.clone(), identity.clone()) {
             witness(
@@ -2149,7 +2208,8 @@ pub fn set_field(
             return Err(format!("shape-violation: '{}' not in sh:in {:?} for {}", value, allowed, prop));
         }
     }
-    let g = graph.unwrap_or(INSTANCES_GRAPH);
+    let home = instance_home(store, kind, graph)?;
+    let g = home.as_str();
     // Uniqueness (#3681 idiom, self-excluding). Partition value comes from the
     // subject's OWN partition edge in the store — fail-closed if absent.
     if let Some(part) = shape.unique_within.get(prop) {
@@ -2215,8 +2275,9 @@ pub fn delete_entity(store: &dyn Store, kind: &str, name: &str, graph: Option<&s
         witness("model.refused", &[("kind", kind), ("name", name), ("reason", "not-found")]);
         return Err(format!("not-found: <{}> does not exist", subject));
     }
-    // #3647 — delete from the class's declared home (or legacy default).
-    let g = graph.unwrap_or(INSTANCES_GRAPH);
+    // #3647 / #4187 — delete from the class's home: explicit, pinned, or derived.
+    let home = instance_home(store, kind, graph)?;
+    let g = home.as_str();
     assert_dal_writable(g)?; // #3356 AC4
     store.update(&format!(
         "DELETE WHERE {{ GRAPH <{g}> {{ <{s}> ?p ?o }} }}",
@@ -2263,7 +2324,8 @@ pub fn add_edge_keeping(store: &dyn Store, kind: &str, name: &str, prop: &str, t
             return Err(format!("unknown-endpoint: <{}> does not exist — referential integrity, fail-closed", iri));
         }
     }
-    let g = graph.unwrap_or(INSTANCES_GRAPH); // #3647 — declared home or legacy default
+    let home = instance_home(store, kind, graph)?; // #3647 / #4187 — explicit, pinned, or derived home
+    let g = home.as_str();
     assert_dal_writable(g)?; // #3356 AC4
     let edge_block = format!(
         "INSERT DATA {{ GRAPH <{g}> {{ <{s}> <{ns}{p}> <{t}> }} }}",
@@ -2287,7 +2349,8 @@ pub fn remove_edge_keeping(store: &dyn Store, kind: &str, name: &str, prop: &str
     check_property_local(prop)?;
     let subject = mint(kind, name)?;
     let target = mint(tkind, tname)?;
-    let g = graph.unwrap_or(INSTANCES_GRAPH); // #3647 — declared home or legacy default
+    let home = instance_home(store, kind, graph)?; // #3647 / #4187 — explicit, pinned, or derived home
+    let g = home.as_str();
     assert_dal_writable(g)?; // #3356 AC4
     let edge_block = format!(
         "DELETE DATA {{ GRAPH <{g}> {{ <{s}> <{ns}{p}> <{t}> }} }}",
@@ -2430,17 +2493,10 @@ pub fn content_hash(props: &[(String, String)]) -> String {
 /// shape that declared a per-domain home — CommitmentShape → the services
 /// graph — was written where nothing served it: the #3581 zero-rows class.)
 /// Two pins is a modelling error and is refused, never averaged.
-pub fn deploy_home(store: &dyn Store, kind: &str, default: &str) -> R<String> {
-    let class = class_iri(kind)?;
-    let pins = instances_graph_pins(store, &class)?;
-    match pins.as_slice() {
-        [] => Ok(default.to_string()),
-        [one] => Ok(one.clone()),
-        many => Err(format!(
-            "seed --deploy: {} declares {} instancesGraph pins ({}) — one home per class",
-            class, many.len(), many.join(", ")
-        )),
-    }
+pub fn deploy_home(store: &dyn Store, kind: &str, explicit: Option<&str>) -> R<String> {
+    // #4187 — no legacy bucket: explicit --graph, else the pin, else the
+    // defining domain, else refuse. See instance_home.
+    instance_home(store, kind, explicit).map_err(|e| format!("seed --deploy: {}", e))
 }
 
 /// #4089 — group manifest entries by home graph, FIRST-SEEN ORDER preserved on
@@ -2460,8 +2516,9 @@ pub fn deploy_partitions(homes: &[String]) -> Vec<(String, Vec<usize>)> {
 }
 
 fn instances_graph_pins(store: &dyn Store, class: &str) -> R<Vec<String>> {
+    // "# athena-model instance home" marks this as a home lookup, not a shape load
     store.select_v(&format!(
-        "PREFIX sh: <http://www.w3.org/ns/shacl#> PREFIX chorus: <{ns}> SELECT ?v WHERE {{ GRAPH <{g}> {{ ?s sh:targetClass <{c}> ; chorus:instancesGraph ?v }} }}",
+        "# athena-model instance home\nPREFIX sh: <http://www.w3.org/ns/shacl#> PREFIX chorus: <{ns}> SELECT ?v WHERE {{ GRAPH <{g}> {{ ?s sh:targetClass <{c}> ; chorus:instancesGraph ?v }} }}",
         ns = NS, g = ONTOLOGY_GRAPH, c = class
     ))
 }
@@ -2754,21 +2811,17 @@ pub fn seed_multi_at(
     let g: &str = match graph.or(homes.and_then(|h| h.first().map(|s| s.as_str()))) {
         Some(explicit) => explicit,
         None => {
+            // #4187 — one rule for the home: the shape's pin, else the graph of
+            // the domain that definesVocabulary the class (instance_home). A kind
+            // no domain claims is refused, never guessed at.
             let mut pins: Vec<String> = Vec::new();
             for gr in groups {
-                let class = class_iri(gr.kind)?;
-                let p = instances_graph_pins(store, &class)?;
-                if p.is_empty() {
-                    witness("model.seed.refused", &[("class", class.as_str()), ("reason", "no-instances-graph-pin")]);
-                    return Err(format!(
-                        "seed: no --graph given and the shape for <{}> declares no chorus:instancesGraph — refusing to guess a default (the zero-rows class: written, and read by nothing)",
-                        class
-                    ));
-                }
-                for v in p {
-                    if !pins.contains(&v) {
-                        pins.push(v);
-                    }
+                let home = instance_home(store, gr.kind, None).map_err(|e| {
+                    witness("model.seed.refused", &[("kind", gr.kind), ("reason", "no-instance-home")]);
+                    format!("seed: {}", e)
+                })?;
+                if !pins.contains(&home) {
+                    pins.push(home);
                 }
             }
             if pins.len() != 1 {
@@ -3391,6 +3444,8 @@ mod tests {
         unique_within: Vec<String>,
         update_error: Option<String>,
         proof_missing: bool,
+        /// #4187 — the domain that definesVocabulary every kind (None = unclaimed)
+        domain: Option<String>,
         pub updates: std::cell::RefCell<Vec<String>>,
     }
     impl Store for StubStore {
@@ -3428,6 +3483,8 @@ mod tests {
                 Ok(self.required.clone())
             } else if sparql.contains("uniqueWithin") {
                 Ok(self.unique_within.clone())
+            } else if sparql.contains("definesVocabulary") {
+                Ok(self.domain.clone().into_iter().collect())
             } else {
                 Ok(vec![])
             }
@@ -3452,6 +3509,7 @@ mod tests {
             unique_within: Vec::new(),
             update_error: None,
             proof_missing: false,
+            domain: Some("tests".into()),
             updates: Default::default(),
         }
     }
@@ -3673,7 +3731,59 @@ mod tests {
         let ups = store.updates.borrow();
         assert_eq!(ups.len(), 1);
         assert!(ups[0].contains("DELETE WHERE"), "idempotent replace-subject");
-        assert!(ups[0].contains(INSTANCES_GRAPH), "casing-routed to instances graph");
+        assert!(ups[0].contains("urn:chorus:domains:tests"), "#4187 — routed to the defining domain's graph: {}", ups[0]);
+        assert!(!ups[0].contains(INSTANCES_GRAPH), "nothing falls back to the legacy bucket");
+    }
+
+    /// #4187 NEGATIVE PROOF: a kind no domain claims is REFUSED, and nothing is
+    /// written — not to the catch-all, not anywhere. Restoring the old
+    /// `unwrap_or(INSTANCES_GRAPH)` in plan_writes turns this red.
+    #[test]
+    fn write_with_no_graph_and_no_defining_domain_is_refused_not_bucketed() {
+        let target = format!("{}value-stream-step-proving", NS);
+        let mut store = stub(&[target.as_str()], &[]);
+        store.domain = None;
+        let req = WriteReq {
+            kind: "domain".into(),
+            name: "tests".into(),
+            edges: vec![("atStep".into(), "value-stream-step".into(), "proving".into())],
+            ..Default::default()
+        };
+        let err = write(&store, &req, &tid()).unwrap_err();
+        assert!(err.contains("no-instance-home"), "{err}");
+        assert!(store.updates.borrow().is_empty(), "a refused write issues no update");
+    }
+
+    /// #4187 NEGATIVE PROOF: naming the retired bucket explicitly is refused and
+    /// nothing is written. Deleting the `graph == INSTANCES_GRAPH` arm in
+    /// assert_instance_graph turns this red.
+    #[test]
+    fn write_naming_the_retired_catch_all_is_refused() {
+        let store = stub(&[], &[]);
+        let req = WriteReq {
+            kind: "domain".into(),
+            name: "tests".into(),
+            graph: Some(INSTANCES_GRAPH.into()),
+            ..Default::default()
+        };
+        let err = write(&store, &req, &tid()).unwrap_err();
+        assert!(err.contains("graph-retired"), "{err}");
+        assert!(err.contains("urn:chorus:domains:<domain>"), "the refusal names the graph to use: {err}");
+        assert!(store.updates.borrow().is_empty(), "a refused write issues no update");
+    }
+
+    /// #4187 — the seeder resolves the same way: no --graph and no pin → the
+    /// defining domain's graph, never urn:chorus:instances; unclaimed → refused.
+    #[test]
+    fn deploy_home_derives_from_the_defining_domain_and_refuses_unclaimed() {
+        let store = stub(&[], &[]);
+        assert_eq!(deploy_home(&store, "value-stream-step", None).unwrap(), "urn:chorus:domains:tests");
+        assert_eq!(deploy_home(&store, "value-stream-step", Some("urn:chorus:domains:value-streams")).unwrap(), "urn:chorus:domains:value-streams");
+        let mut unclaimed = stub(&[], &[]);
+        unclaimed.domain = None;
+        let err = deploy_home(&unclaimed, "value-stream-step", None).unwrap_err();
+        assert!(err.contains("no-instance-home"), "{err}");
+        assert!(!err.contains("falls back to urn:chorus:instances —"), "{err}");
     }
 
     #[test]
@@ -3750,7 +3860,7 @@ mod tests {
         let ups = store.updates.borrow();
         assert_eq!(ups.len(), 1);
         assert!(ups[0].contains("DELETE WHERE"), "wholesale subject delete");
-        assert!(ups[0].contains(INSTANCES_GRAPH), "routed to instances graph");
+        assert!(ups[0].contains("urn:chorus:domains:tests"), "#4187 — routed to the defining domain's graph: {}", ups[0]);
     }
 
     #[test]
@@ -3884,10 +3994,10 @@ mod webid_uniqueness_3838 {
             fields,
             more_values: vec![],
             edges: vec![],
-            // urn:chorus:instances, NOT the security graph. See the module note:
-            // the security graph is DBA-path only and the DAL refuses it outright,
-            // so the uniqueness primitive is proven here on a graph the DAL owns.
-            graph: Some("urn:chorus:instances".into()),
+            // a domain graph the DAL owns, NOT the security graph. See the module
+            // note: the security graph is DBA-path only and the DAL refuses it
+            // outright. (#4187: urn:chorus:instances is retired as a target too.)
+            graph: Some("urn:chorus:domains:identity".into()),
         }
     }
 

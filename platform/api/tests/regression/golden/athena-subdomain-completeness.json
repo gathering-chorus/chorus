@@ -3,7 +3,7 @@
     "source": "athena",
     "query_name": "subdomain-completeness",
     "graph": "urn:chorus:ontology",
-    "count": 4,
+    "count": 5,
     "total": 16
   },
   "data": {
@@ -22,7 +22,7 @@
       "pages": false,
       "integrations": false,
       "services": false,
-      "persistence": false,
+      "persistence": true,
       "pipeline": false,
       "logs": false,
       "gaps": false,
@@ -32,7 +32,8 @@
       "label",
       "comment",
       "owner",
-      "step"
+      "step",
+      "persistence"
     ],
     "missing": [
       "actors",
@@ -42,13 +43,12 @@
       "pages",
       "integrations",
       "services",
-      "persistence",
       "pipeline",
       "logs",
       "gaps",
       "edges"
     ],
-    "percentage": 25,
+    "percentage": 31,
     "lifecycle": {
       "create": {
         "required": [

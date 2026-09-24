@@ -88,6 +88,11 @@ impl Store for BatchStore {
         if sparql.contains("sh:minCount") {
             return Ok(self.required.clone());
         }
+        if sparql.contains("definesVocabulary") {
+            // #4187 — every fixture kind is claimed by a domain; the DAL derives
+            // the home graph from that claim and no longer defaults to instances.
+            return Ok(vec!["tests".to_string()]);
+        }
         if sparql.contains("sh:datatype") {
             let mut rows = self
                 .datatypes
@@ -316,7 +321,9 @@ fn same_kind_shape_is_loaded_once_for_the_entire_batch() {
         // names a targetClass; it is not a shape load, so it is not what this
         // count is about.
         .filter(|q| q.contains("urn:chorus:ontology") && q.contains("targetClass")
-            && !q.contains("# athena-model principal home"))
+            && !q.contains("# athena-model principal home")
+            // #4187 — the instance-home pin lookup reads the same graph once per kind
+            && !q.contains("# athena-model instance home"))
         .count();
     assert_eq!(shape_selects, 6, "read_shape's six queries run once per distinct class, not once per entity");
     assert_eq!(store.updates.borrow().len(), 1);
