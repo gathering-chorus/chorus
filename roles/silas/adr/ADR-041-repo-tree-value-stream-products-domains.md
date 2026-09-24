@@ -1,6 +1,6 @@
 # ADR-041: Repo Tree — Value Stream → Products → Domains
 
-**Status:** Accepted — 2026-06-13 (Silas, SA). Landed via #3372 (Kade + Wren design-review converged; Jeff GO 2026-06-13).
+**Status:** Accepted — 2026-06-13 (Silas, SA). Landed via #3372 (Kade + Wren design-review converged; Jeff GO 2026-06-13). **Amended 2026-09-24 (#4288, Jeff): domains, services and skills are peers of products under the value-stream step; see the Amendment section — it supersedes §1's nested tree.**
 **Card:** #3372 (authors this + ADR-042 together — Jeff: "we need both, they can be in one card").
 **Inputs:** Kade's `chorus-project-structure.html` (the worked tree, DE-hat session 2026-06-12 ~08:53–09:25) · Wren's `#3371` (directing-branch redraw) + `athena-product-design.html` (10-section template + value-stream OWL) · the 3-role convergence threads.
 **Builds on:** ADR-040 (IRI-formation — the IRIs this tree mirrors) · DEC-1816 (top-level peers-not-nesting, superseded for the product layer by this ADR) · `#2640`/`#2913` (role-directory-IS-session-start, preserved here).
@@ -18,7 +18,7 @@ Framing (Kade's, kept): **Chorus is "Backstage for agents," one generation deepe
 
 ## Decision
 
-### 1. Three levels, value-stream at the top
+### 1. Three levels, value-stream at the top — four peers under each step (amended 2026-09-24)
 
 ```
 chorus/
@@ -27,33 +27,32 @@ chorus/
 │                                                     (products/domains/skills/services .md)
 │                                                     CI: catalog == graph == tree
 │
-├── shaping/products/loom/domains/
-│       principles · practices · policies · decisions · roles ·
-│       skills(framework) · analytics · metrics
+├── <step>/                                          ← shaping · designing · directing · building · proving
+│   ├── products/<product>/     the COMPOSITION: which domains, services, skills this product is made of;
+│   │                           its pages, its product-level tests. Never the parts themselves.
+│   ├── domains/<domain>/       the model (OWL+SHACL+tree.json) and the code athena-make generates from it.
+│   │                           ONE home per domain; a domain two products share lives here once.
+│   ├── services/<service>/     implemented units (binaries, daemons, launch scripts)
+│   └── skills/<skill>/         reusable procedures (/verbs), usable by more than one product
 │
-├── designing/products/athena/domains/
-│       domains(the model: OWL+SHACL+tree.json) · services(design corpus) ·
-│       knowledge(doc corpus, doc-catalog) · domain-context
-│
-├── directing/products/
-│   └── clearing/                                    ← THE coordination product (Wren)
-│       ├── domains/  cards · priorities · messages · heralds · senses
-│       ├── pulse/domains/   working-memory  (the hot state: messages·streams·alerts·cards registers)
-│       └── spine/domains/   events · memory(long-term: index, search) · time
-│
-├── building/products/
-│   ├── werk/domains/
-│   │     version-control · cicd · builds · deploys · pipelines ·
-│   │     toolchain · code · tests
-│   └── convergence/domains/   integrations(ICD, NiFi, MCP gateway) · pods⚠
-│
-├── proving/products/borg/domains/
-│       gates · alerts-monitors · logs · rcas · properties ·
-│       security-trust · infrastructure
+├── shaping/     products: loom            domains: principles · practices · policies · decisions · roles ·
+│                                                    analytics · metrics        skills: the framework skills
+├── designing/   products: athena          domains: domains(the model) · services(design corpus) ·
+│                                                    knowledge(doc corpus, doc-catalog) · domain-context
+├── directing/   products: clearing ⊃ pulse ⊃ spine (child products, §2)
+│                                          domains: cards · priorities · messages · heralds · senses ·
+│                                                    working-memory · events · memory · time
+├── building/    products: werk · convergence
+│                                          domains: version-control · cicd · builds · deploys · pipelines ·
+│                                                    toolchain · code · tests · integrations · pods⚠
+├── proving/     products: borg            domains: gates · alerts-monitors · logs · rcas · properties ·
+│                                                    security-trust · infrastructure
 │
 ├── lib/                                             ← minimal, shrink-only ratchet
 └── roles/{wren,silas,kade}/                         ← session-start anchor ONLY
 ```
+
+The original 2026-06-13 tree nested `domains/` under each product (`<step>/products/<product>/domains/<domain>`). That shape is superseded by the Amendment below; the step → product and product → domain *assignments* above are unchanged, only the folder where a domain lives moved up one level.
 
 **Five value-stream steps only:** shaping, designing, directing, building, proving. **Operating is not a step** — it folds into proving (Jeff, 2026-03-27: "operations are part of proving — deploys, builds, test runs"). v1's "Operating" domains split by side: build-side verbs (builds, toolchain, pipelines, cicd) → `building/werk`; run-side (deploys, infrastructure, alerts-monitors, logs) → `proving/borg`. Convergence builds integration fabric → `building`.
 
@@ -101,6 +100,24 @@ The tree mirrors the graph, and the graph's value-stream layer is the schema: `V
 3. Move-cards execute as lifts, each retiring its source; fan-out legs land their generated chunks directly in the new homes.
 4. The **tree-vs-graph CI check** — the #3354 conformance-walker pattern applied to the filesystem — lands in the crawler-rewrite leg (Silas) so enforcement has a named owner and vehicle, not just an aspiration: the crawler walks the graph, the check compares it to the tree. **Attrition-direction tolerance (Kade's review):** during the fan-out both half-states exist transiently (a dir staged before its graph node; a generated node before its dir), so the HARD-fail is scoped to the direction that matters — *every GENERATED domain must have its directory* — while the reverse (dir-without-node) stays ADVISORY until a "tree complete" milestone. Same lesson as #3376: an in-progress state must not read as broken.
 
+## Amendment 2026-09-24 — peers, not nesting (#4288)
+
+**Jeff, 2026-09-24 10:24–10:38:** "i feel like athena-make is our path to make our repo work /chorus/<vs step>/products/<product> i think domains and services are peers of products" · "> 1 product may depend on a single domain i think skills may be another child of vs step" · "update the adr".
+
+**Why the change.** Two products can depend on one domain (Jeff, 2026-05-14: "a product is a composition of domains and implemented services"). Under the nested tree that domain would need a copy or a symlink, and §4's first rule forbids both. So the domain is a peer of the product, and the product folder holds the composition, not the parts. Skills have the same shape — reusable across products — so they are a fourth peer.
+
+**Decision.**
+1. Under each value-stream step there are exactly four children: `products/<product>`, `domains/<domain>`, `services/<service>`, `skills/<skill>`. Nothing nests under a product except what belongs to that product alone (its pages, its composition file, its product-level tests).
+2. A domain has ONE home, `<step>/domains/<domain>/`, holding its model and the code athena-make generates from it. A product names the domains it is composed of in the graph (`partOf` / `hasChild` edges) and the catalog renders that; the folder never repeats it.
+3. The tree is a build-time projection of the model (ADR-061, 2026-09-24): `athena-make generate-target` computes the path from the class's chain, `RepoKind` gains `Skill` with collection `skills`, and the chain is step → kind → name — no product segment above a domain. A file outside its projected path is drift the crawler reports (#4287), not a domain it guesses.
+4. Child products (§2: clearing ⊃ pulse ⊃ spine) stay products; their domains live under the step's `domains/`, not under the child product.
+
+**What this retires.** The nested `products/<p>/domains/<d>` shape; any tree-vs-graph check (§6.4) that assumed it; the `roles/kade/ontology/surface-domain-4222.ttl` directory rows that encode product-nested paths, on the move-card that relocates each domain.
+
+**What it does not change.** §4's rules (one home, attrition not bulk rewrite, generated catalogs never symlinks, roles orthogonal, minimal lib, model-churn = repo-churn) and §6's sequencing all stand; the move-cards under §6.3 now lift each domain to `<step>/domains/<domain>/`.
+
+**Open, decided on the first move-card:** whether `services/` holds every implemented unit or only those not owned by a single domain (a domain's own generated API lives with the domain; a shared daemon such as chorus-hooks lives in `services/`).
+
 ## Consequences
 
 - The fan-out starts landing into final homes immediately — no rework, no second migration.
@@ -110,4 +127,4 @@ The tree mirrors the graph, and the graph's value-stream layer is the schema: `V
 
 ## Status note
 
-Proposed. ADR-042 (security) is its sibling from #3372. Both reviewed-converged by Kade + Wren on the inputs; final acceptance Jeff's.
+Accepted 2026-06-13; amended 2026-09-24 (#4288). Originally: Proposed. ADR-042 (security) is its sibling from #3372. Both reviewed-converged by Kade + Wren on the inputs; final acceptance Jeff's.
