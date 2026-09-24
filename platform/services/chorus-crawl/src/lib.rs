@@ -2737,3 +2737,237 @@ mod plan_domain_4201 {
     }
 
 }
+
+// ─────────────────────────── #4290 crawler-validate ───────────────────────────
+//
+// The control report. Jeff, 2026-09-24: "its our data quality control for
+// crawler - git and graph in tight synch on all domains generated from crawler
+// - not just tests"; "its not an ad hoc query its a control report that shows
+// gaps in both directions"; "kinda like wren has athena-validate this is
+// crawler-validate". One row per crawler-generated domain, the set in git (or
+// on the box) and the set in the graph, and the NAMES each side lacks. Kept per
+// run so the trend shows; a nightly lane reads it red on any gap.
+
+/// One control row. `measured == false` means the graph side could not be read:
+/// that row is never clean, because a check that looked at nothing cannot say
+/// clean (#3734).
+#[derive(Debug, Default, Clone, PartialEq, Eq)]
+pub struct ValidateRow {
+    pub domain: String,
+    pub class: String,
+    pub tree: usize,
+    pub graph: usize,
+    /// in git / on the box, and the graph has no row
+    pub missing: Vec<String>,
+    /// a row whose source is gone from git, or present with the wrong content
+    pub stale: Vec<String>,
+    /// #4290 — files in git that are NOT counted, each with its reason: a file
+    /// under tests/ that contains no test at all. Listed so the exclusion is
+    /// seen, never silent (AC2); every other test file with no row is a gap.
+    pub excluded: Vec<String>,
+    pub measured: bool,
+}
+
+/// The kept record of one validate pass.
+#[derive(Debug, Default, Clone, PartialEq, Eq)]
+pub struct ValidateRecord {
+    pub ts: String,
+    pub head: String,
+    pub head_time: String,
+    pub watermark: String,
+    /// when the scheduled crawl last wrote its log (its mtime, UTC) — AC1's
+    /// "last crawl time"; empty when no crawl log is on this box
+    pub crawled_at: String,
+    pub rows: Vec<ValidateRow>,
+}
+
+impl ValidateRow {
+    pub fn gaps(&self) -> usize {
+        self.missing.len() + self.stale.len()
+    }
+    pub fn is_clean(&self) -> bool {
+        self.measured && self.gaps() == 0
+    }
+    /// The machine line the nightly lane reads, one per row.
+    pub fn line(&self) -> String {
+        format!(
+            "VALIDATE|{}|{}|tree={}|graph={}|missing={}|stale={}|{}",
+            self.domain,
+            self.class,
+            self.tree,
+            self.graph,
+            self.missing.len(),
+            self.stale.len(),
+            if self.measured { "measured" } else { "UNMEASURED" }
+        )
+    }
+}
+
+impl ValidateRecord {
+    /// Clean = every row measured and 0/0. An empty record is not clean.
+    pub fn is_clean(&self) -> bool {
+        !self.rows.is_empty() && self.rows.iter().all(|r| r.is_clean())
+    }
+    pub fn gaps(&self) -> usize {
+        self.rows.iter().map(|r| r.gaps()).sum()
+    }
+    pub fn lines(&self) -> Vec<String> {
+        self.rows.iter().map(|r| r.line()).collect()
+    }
+    pub fn to_json(&self) -> String {
+        let rows: Vec<String> = self
+            .rows
+            .iter()
+            .map(|r| {
+                format!(
+                    "{{\"domain\":{},\"class\":{},\"tree\":{},\"graph\":{},\"missing\":[{}],\"stale\":[{}],\"excluded\":[{}],\"measured\":{}}}",
+                    jstr(&r.domain),
+                    jstr(&r.class),
+                    r.tree,
+                    r.graph,
+                    r.missing.iter().map(|s| jstr(s)).collect::<Vec<_>>().join(","),
+                    r.stale.iter().map(|s| jstr(s)).collect::<Vec<_>>().join(","),
+                    r.excluded.iter().map(|s| jstr(s)).collect::<Vec<_>>().join(","),
+                    r.measured
+                )
+            })
+            .collect();
+        format!(
+            "{{\"ts\":{},\"head\":{},\"headTime\":{},\"watermark\":{},\"crawledAt\":{},\"clean\":{},\"gaps\":{},\"rows\":[{}]}}\n",
+            jstr(&self.ts),
+            jstr(&self.head),
+            jstr(&self.head_time),
+            jstr(&self.watermark),
+            jstr(&self.crawled_at),
+            self.is_clean(),
+            self.gaps(),
+            rows.join(",")
+        )
+    }
+}
+
+fn jstr(s: &str) -> String {
+    let mut o = String::with_capacity(s.len() + 2);
+    o.push('"');
+    for c in s.chars() {
+        match c {
+            '"' => o.push_str("\\\""),
+            '\\' => o.push_str("\\\\"),
+            '\n' => o.push_str("\\n"),
+            '\r' => o.push_str("\\r"),
+            '\t' => o.push_str("\\t"),
+            c if (c as u32) < 0x20 => o.push_str(&format!("\\u{:04x}", c as u32)),
+            c => o.push(c),
+        }
+    }
+    o.push('"');
+    o
+}
+
+/// Where the records are kept: `CHORUS_VALIDATE_DIR`, else ~/.chorus/crawler-validate.
+pub fn validate_dir() -> String {
+    std::env::var("CHORUS_VALIDATE_DIR").unwrap_or_else(|_| {
+        format!(
+            "{}/.chorus/crawler-validate",
+            std::env::var("HOME").unwrap_or_else(|_| "/tmp".into())
+        )
+    })
+}
+
+/// Keep the record: `<ts>.json` for the trend and `latest.json` for the page.
+/// Returns the path of the kept file.
+pub fn write_validate_record(dir: &str, rec: &ValidateRecord) -> Result<String, String> {
+    std::fs::create_dir_all(dir).map_err(|e| format!("{dir}: {e}"))?;
+    let stamp: String = rec
+        .ts
+        .chars()
+        .map(|c| if c.is_ascii_alphanumeric() { c } else { '-' })
+        .collect();
+    let json = rec.to_json();
+    let kept = format!("{dir}/{stamp}.json");
+    std::fs::write(&kept, &json).map_err(|e| format!("{kept}: {e}"))?;
+    let latest = format!("{dir}/latest.json");
+    std::fs::write(&latest, &json).map_err(|e| format!("{latest}: {e}"))?;
+    Ok(kept)
+}
+
+#[cfg(test)]
+mod crawler_validate_4290 {
+    use super::*;
+
+    fn row(domain: &str, missing: &[&str], stale: &[&str], measured: bool) -> ValidateRow {
+        ValidateRow {
+            domain: domain.into(),
+            class: "X".into(),
+            tree: 10,
+            graph: 10,
+            missing: missing.iter().map(|s| s.to_string()).collect(),
+            stale: stale.iter().map(|s| s.to_string()).collect(),
+            excluded: Vec::new(),
+            measured,
+        }
+    }
+
+    /// NEGATIVE PROOF (#3734): the state the report exists to catch — one file
+    /// in git with no row and one row whose file git no longer has. The record
+    /// is not clean, and BOTH names are in the kept JSON and the lane line
+    /// carries both counts.
+    #[test]
+    fn a_missing_file_and_a_stale_row_are_red_and_both_are_named() {
+        let rec = ValidateRecord {
+            ts: "2026-09-24T17:00:00Z".into(),
+            rows: vec![
+                row("code", &[], &[], true),
+                row("tests", &["platform/tests/new.test.sh"], &["platform/tests/gone.bats"], true),
+            ],
+            ..Default::default()
+        };
+        assert!(!rec.is_clean());
+        assert_eq!(rec.gaps(), 2);
+        let json = rec.to_json();
+        assert!(json.contains("\"platform/tests/new.test.sh\""), "{json}");
+        assert!(json.contains("\"platform/tests/gone.bats\""), "{json}");
+        assert!(json.contains("\"clean\":false"), "{json}");
+        assert_eq!(
+            rec.lines()[1],
+            "VALIDATE|tests|X|tree=10|graph=10|missing=1|stale=1|measured"
+        );
+    }
+
+    /// Control: every row measured and 0/0 is clean, and says so.
+    #[test]
+    fn all_rows_zero_and_measured_is_clean() {
+        let rec = ValidateRecord {
+            rows: vec![row("code", &[], &[], true), row("tests", &[], &[], true)],
+            ..Default::default()
+        };
+        assert!(rec.is_clean());
+        assert!(rec.to_json().contains("\"clean\":true"));
+    }
+
+    /// NEGATIVE PROOF: a row the graph could not answer for has 0/0 and is
+    /// still NOT clean — zero gaps over nothing read is the hollow gate.
+    #[test]
+    fn an_unmeasured_row_is_never_clean_even_at_zero_gaps() {
+        let rec = ValidateRecord { rows: vec![row("logs", &[], &[], false)], ..Default::default() };
+        assert!(!rec.is_clean());
+        assert!(rec.lines()[0].ends_with("|UNMEASURED"));
+        assert!(!ValidateRecord::default().is_clean(), "an empty record is not clean");
+    }
+
+    #[test]
+    fn the_record_is_kept_twice_and_the_name_is_the_stamp() {
+        let dir = std::env::temp_dir().join(format!("cv-4290-{}", std::process::id()));
+        let rec = ValidateRecord {
+            ts: "2026-09-24T17:00:00Z".into(),
+            rows: vec![row("code", &["a \"q\".rs"], &[], true)],
+            ..Default::default()
+        };
+        let kept = write_validate_record(dir.to_str().unwrap(), &rec).unwrap();
+        assert!(kept.ends_with("/2026-09-24T17-00-00Z.json"), "{kept}");
+        let latest = std::fs::read_to_string(dir.join("latest.json")).unwrap();
+        assert_eq!(latest, std::fs::read_to_string(&kept).unwrap());
+        assert!(latest.contains("a \\\"q\\\".rs"), "escaped: {latest}");
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+}

@@ -41,6 +41,7 @@ import { buildTestRunReport, lastRunSuites, renderStoredRun, renderTestRun, Stor
 import { classAtlasHandler } from './handlers/class-atlas';
 import { vocabularyHandler } from './handlers/vocabulary';
 import { parseNightlyLog, renderNightlyPage, suiteType, fetchFailingCases, type FetchLike } from './handlers/nightly-report';
+import { readRecords, renderCrawlerValidatePage, validateDir } from './handlers/crawler-validate';
 import { parseAllRuns, findRun, buildReadout, renderReadoutText } from './handlers/nightly-readout';
 import { fetchLoomAnalytics, LoomCardRow } from './handlers/loom-analytics';
 
@@ -602,6 +603,25 @@ app.get('/nightly', async (req: Request, res: Response) => {
   res.type('html').send(renderNightlyPage(found.run, {
     readout: found.readout, history: found.runs, cases, typeOf: nightlySuiteType,
   }));
+});
+// #4290 — crawler-validate: the control report of git vs graph, both
+// directions, every crawler-generated domain. Records are kept by the
+// crawler's own reconcile; this page and its JSON read them.
+app.get('/crawler-validate', (_req: Request, res: Response) => {
+  const history = readRecords(validateDir());
+  const latest = history.length ? history[history.length - 1] : null;
+  res.type('html').send(renderCrawlerValidatePage(latest, history));
+});
+app.get('/api/crawler/validate', (_req: Request, res: Response) => {
+  const history = readRecords(validateDir());
+  const latest = history.length ? history[history.length - 1] : null;
+  res.json({
+    data: {
+      latest,
+      history: history.map((h) => ({ ts: h.ts, head: h.head, clean: h.clean, gaps: h.gaps })),
+    },
+    _meta: { timestamp: bostonNow(), dir: validateDir(), records: history.length },
+  });
 });
 app.get('/harvest-manifests', sendChorusPage('harvest-manifests.html'));
 app.get('/loom', sendChorusPage('loom.html'));
