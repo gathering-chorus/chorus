@@ -46,7 +46,7 @@ rust:
   platform/services/demo-fitness: 61        # measured 61.70% (lib 97.75%, main.rs 0%)
   platform/services/chorus-awake: 41        # measured 41.52%
   platform/services/athena-serve: 33        # measured 33.33%
-  platform/services/chorus-principal: 18    # measured 18.20%
+  platform/services/chorus-principal: 16    # measured low 16.96% (03:04 09-24, 40 min post-reboot); 18.20% at 13:37/14:34/18:36 09-23 and by hand 04:03 09-24, crate unchanged since 09-18 (#4286, Jeff 09-24 06:30 "fix the red")
   platform/services/athena-validate: 59      # measured 59.16% (main.rs 0%, ported.rs 100%)
 
 # When this file changes:
