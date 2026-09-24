@@ -116,17 +116,19 @@ fn a_key_only_the_farther_scope_sets_still_resolves() {
 
 #[test]
 fn the_fetch_walks_ancestry_not_just_the_node() {
-    let q = athena_make::effective_fetch_query("https://x#role-wren", "urn:chorus:instances");
-    assert!(q.contains("urn:chorus:instances"), "must read the live instances graph");
+    // #4187 — the second argument is the PROPERTY's home; the node ancestry is
+    // walked across the domain-graph family, never the retired catch-all.
+    let q = athena_make::effective_fetch_query("https://x#role-wren", "urn:chorus:domains:properties");
+    assert!(q.contains("urn:chorus:domains:") && !q.contains("urn:chorus:instances"), "must read the domain graphs: {}", q);
     assert!(q.contains("https://x#role-wren"), "anchored on the node");
     // zero-or-more containment hops: the node ITSELF plus its ancestors.
     assert!(q.contains('*'), "ancestry walk must be a zero-or-more path: {}", q);
-    assert!(!q.contains("FILTER"), "key-selection stays in pure code");
+    assert!(!q.contains("FILTER(?key") && !q.contains("FILTER(?value"), "key-selection stays in pure code: {}", q);
 }
 
 #[test]
 fn the_fetch_row_has_six_fields_matching_the_parser() {
-    let q = athena_make::effective_fetch_query("https://x#role-wren", "urn:chorus:instances");
+    let q = athena_make::effective_fetch_query("https://x#role-wren", "urn:chorus:domains:properties");
     // Five separators = six fields = owner|class|prop|key|type|value.
     let seps = q.matches("\"|\"").count();
     assert_eq!(seps, 5, "row must carry owner+class before the property fields: {}", q);
