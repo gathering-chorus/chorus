@@ -742,6 +742,9 @@ fn run_locked(ctx: &mut Ctx, _args: &[String]) -> Result<i32, String> {
     let daemons_at_start = sample_daemons();
     let run_clock = Instant::now();
     if std::env::var("NIGHTLY_LEGS_NOOP").is_err() {
+        // #4290 — first, because it is the prerequisite for everything that
+        // reads the graph: is the graph what git is, on every crawler domain?
+        push(ctx, leg_crawler_validate(ctx), &mut rows);
         if let Some(r) = leg_lint(ctx) {
             push(ctx, r, &mut rows);
         }
@@ -1023,6 +1026,127 @@ fn leg_daemons(
     }
 }
 
+/// #4290 — crawler-validate: the crawler's own read-only reconcile, both
+/// directions, every crawler-generated domain, as a nightly lane. Jeff,
+/// 2026-09-24: "its our data quality control for crawler - git and graph in
+/// tight synch on all domains generated from crawler"; "its not an ad hoc
+/// query its a control report that shows gaps in both directions". The lane
+/// reads the VALIDATE| lines the crawler prints (one per domain) and is red
+/// on any gap, UNMEASURED when a domain could not be read or no lines came.
+fn leg_crawler_validate(ctx: &Ctx) -> SuiteRow {
+    let bin = env_or(
+        "NIGHTLY_CRAWL_BIN",
+        &format!("{}/.chorus/bin/chorus-crawl", env_or("HOME", "/tmp")),
+    );
+    let path = "chorus-crawl --reconcile";
+    if !Path::new(&bin).is_file() {
+        return SuiteRow::new(
+            "crawler-validate",
+            path,
+            "kade",
+            "unmeasured",
+            &format!("0 pass, 0 fail (UNMEASURED — no crawler binary at {bin})"),
+        );
+    }
+    let mut c = Command::new(&bin);
+    c.arg("--reconcile")
+        .env("CHORUS_ROOT", &ctx.root)
+        .env("CHORUS_ROLE", env_or("NIGHTLY_CRAWL_ROLE", "kade"))
+        .current_dir(&ctx.root);
+    let (rc, out) = run_capped(c, Duration::from_secs(1200));
+    let (status, summary) = crawler_validate_verdict(rc, &out);
+    let row = SuiteRow::new("crawler-validate", path, "kade", status, &summary);
+    if status != "pass" {
+        ctx.write_fail_log(&row, &out);
+    }
+    row
+}
+
+/// One parsed `VALIDATE|domain|class|tree=|graph=|missing=|stale=|measured` line.
+struct ValidateLine {
+    domain: String,
+    class: String,
+    missing: usize,
+    stale: usize,
+    measured: bool,
+}
+
+fn parse_validate_lines(out: &str) -> Vec<ValidateLine> {
+    out.lines()
+        .filter_map(|l| {
+            let f: Vec<&str> = l.trim().strip_prefix("VALIDATE|")?.split('|').collect();
+            if f.len() < 7 {
+                return None;
+            }
+            let num = |s: &str, k: &str| s.strip_prefix(k).and_then(|v| v.parse::<usize>().ok());
+            Some(ValidateLine {
+                domain: f[0].to_string(),
+                class: f[1].to_string(),
+                missing: num(f[4], "missing=")?,
+                stale: num(f[5], "stale=")?,
+                measured: f[6] == "measured",
+            })
+        })
+        .collect()
+}
+
+/// pass = every domain measured and 0/0 and the crawler exited 0; fail = any
+/// gap; unmeasured = a domain the graph could not answer for, or no lines at
+/// all (a clean verdict over nothing read is the hollow gate, #3734).
+fn crawler_validate_verdict(rc: i32, out: &str) -> (&'static str, String) {
+    let rows = parse_validate_lines(out);
+    if rows.is_empty() {
+        return (
+            "unmeasured",
+            format!("0 pass, 0 fail (UNMEASURED — the crawler printed no VALIDATE rows, rc={rc})"),
+        );
+    }
+    let detail: Vec<String> = rows
+        .iter()
+        .map(|r| {
+            if r.measured {
+                format!("{} {}/{}", r.domain, r.missing, r.stale)
+            } else {
+                format!("{} UNMEASURED", r.domain)
+            }
+        })
+        .collect();
+    let unread: Vec<String> = rows
+        .iter()
+        .filter(|r| !r.measured)
+        .map(|r| format!("{} ({})", r.domain, r.class))
+        .collect();
+    if !unread.is_empty() {
+        return (
+            "unmeasured",
+            format!(
+                "0 pass, 0 fail (UNMEASURED — {} row(s) the graph could not answer for: {})",
+                unread.len(),
+                unread.join(", ")
+            ),
+        );
+    }
+    let gaps: usize = rows.iter().map(|r| r.missing + r.stale).sum();
+    if gaps == 0 && rc == 0 {
+        (
+            "pass",
+            format!(
+                "1 pass, 0 fail ({} domain rows, git = graph both ways: {})",
+                rows.len(),
+                detail.join(" · ")
+            ),
+        )
+    } else {
+        (
+            "fail",
+            format!(
+                "0 pass, 1 fail ({gaps} gap(s) git↔graph as missing/stale: {}; rc={rc})",
+                detail.join(" · ")
+            ),
+        )
+    }
+}
+
 fn leg_duration(secs: u64) -> SuiteRow {
     // #4277 — the budget is a regression guard, so it sits above the measured
     // run, not at a wish: the two full runs of 2026-09-23 took 67 and 71 min
@@ -1123,6 +1247,46 @@ mod lanes_4278 {
         // a one-shot that was not running at the start is not a restart
         let started_later = parse_launchctl("17630\t0\tcom.chorus.api\n4242\t0\tcom.chorus.index-artifacts\n5020\t0\tcom.chorus.hooks\n");
         assert!(daemon_restarts(&start, &started_later).is_empty());
+    }
+
+    /// #4290 NEGATIVE PROOF (#3734): the lane must go red on the state it
+    /// exists to catch — one file in git without a row and one row without a
+    /// file — and must name the domain with its two counts.
+    #[test]
+    fn crawler_validate_is_red_on_a_missing_file_and_a_stale_row() {
+        let out = "chorus-crawl: reconcile: clean\nVALIDATE|code|CodeFile|tree=6310|graph=6310|missing=0|stale=0|measured\nVALIDATE|tests|Test (files)|tree=1094|graph=1094|missing=1|stale=1|measured\n";
+        let (v, s) = crawler_validate_verdict(1, out);
+        assert_eq!(v, "fail");
+        assert!(s.contains("2 gap(s)"), "{s}");
+        assert!(s.contains("tests 1/1"), "{s}");
+        assert!(s.contains("code 0/0"), "{s}");
+    }
+
+    /// Control: every row 0/0, measured, rc 0 → pass, and the pass line still
+    /// carries the rows so a reader sees what was compared.
+    #[test]
+    fn crawler_validate_passes_only_when_every_row_is_zero_both_ways() {
+        let out = "VALIDATE|code|CodeFile|tree=6310|graph=6310|missing=0|stale=0|measured\nVALIDATE|tests|Test (files)|tree=1094|graph=1094|missing=0|stale=0|measured\n";
+        let (v, s) = crawler_validate_verdict(0, out);
+        assert_eq!(v, "pass");
+        assert!(s.contains("2 domain rows"), "{s}");
+        // rc 1 with zero gaps is not a pass either: the crawler saw something the lines did not carry
+        assert_eq!(crawler_validate_verdict(1, out).0, "fail");
+    }
+
+    /// NEGATIVE PROOF: zero gaps over a domain the graph could not answer for
+    /// is UNMEASURED, never pass; and no VALIDATE lines at all is UNMEASURED
+    /// even at rc 0 (a deleted or renamed check must fail loudly).
+    #[test]
+    fn crawler_validate_never_passes_on_nothing_read() {
+        let out = "VALIDATE|code|CodeFile|tree=6310|graph=6310|missing=0|stale=0|measured\nVALIDATE|logs|LogSource|tree=133|graph=0|missing=0|stale=0|UNMEASURED\n";
+        let (v, s) = crawler_validate_verdict(0, out);
+        assert_eq!(v, "unmeasured");
+        assert!(s.contains("logs (LogSource)"), "{s}");
+        let (v, s) = crawler_validate_verdict(0, "chorus-crawl: reconcile: clean — the graph matches the tree\n");
+        assert_eq!(v, "unmeasured");
+        assert!(s.contains("no VALIDATE rows"), "{s}");
+        assert_eq!(parse_validate_lines("VALIDATE|x|y|tree=a|graph=1|missing=z|stale=0|measured").len(), 0, "a malformed line is not a row");
     }
 
     #[test]

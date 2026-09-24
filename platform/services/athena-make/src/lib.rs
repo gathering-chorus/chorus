@@ -2364,22 +2364,19 @@ fn prepare_create(body: &str, table: &RouteTable, caller_role: &str, landed_comm
     // it reports last. Ordering it first made two existing tests report "missing
     // required X" for bodies whose actual defect was an off-model property —
     // a refusal that names the wrong thing is barely better than no refusal.
-    {
-        let present: Vec<&str> = values.keys().map(|k| k.as_str()).collect();
-        if let Some(missing) = missing_required(&table.write_required, &present) {
-            return Err(CreatePrepareError {
-                tag: "validation",
-                spine_result: "validation",
-                entity: name.clone(),
-                message: format!("'{}' is required by the shape and the body does not carry it", missing),
-            });
-        }
-    }
-
+    // #4290 — the required floor is checked AFTER the owner projection below,
+    // against what the door actually set. It used to run here on body keys
+    // alone, while ownedBy is stripped from the body and injected by the door
+    // after this point — so every class whose shape requires ownedBy refused
+    // every create (the nightly crawl's LogSource 422s, measured 2026-09-24).
     // The caller cannot self-select ownership. Remove any body-projected copy
     // and inject the role resolved from the verified token exactly once, in the
     // field/edge representation declared by this class's shape.
     let (mut fields, mut edges) = verified_owner_projection(table, caller_role);
+    // what the door set for the owner: counted only when non-empty, so a
+    // caller with no verified role still fails the floor (Silas, 09-24)
+    let owner_set = fields.iter().any(|(k, v)| k == "ownedBy" && !v.is_empty())
+        || edges.iter().any(|(k, _, v)| k == "ownedBy" && !v.is_empty());
     for field in &table.fields {
         let (property, annotation) = field.split_once('|').unwrap_or((field.as_str(), "plain"));
         let Some(vals) = values.get(property) else { continue };
@@ -2405,6 +2402,28 @@ fn prepare_create(body: &str, table: &RouteTable, caller_role: &str, landed_comm
         } else {
             fields.push((property.to_string(), value.clone()));
         }
+        }
+    }
+    // #4220 — LAST of the body checks, deliberately (see the note above the
+    // owner projection for why it now sits here). Present = what the body
+    // carried, minus any body ownedBy (never honoured), plus the owner the
+    // door set from the verified token.
+    {
+        let mut present: Vec<&str> = values
+            .keys()
+            .map(|k| k.as_str())
+            .filter(|k| *k != "ownedBy")
+            .collect();
+        if owner_set {
+            present.push("ownedBy");
+        }
+        if let Some(missing) = missing_required(&table.write_required, &present) {
+            return Err(CreatePrepareError {
+                tag: "validation",
+                spine_result: "validation",
+                entity: name.clone(),
+                message: format!("'{}' is required by the shape and the body does not carry it", missing),
+            });
         }
     }
     // #4101 — stamps from the write; a document with no declared word is a draft
@@ -2929,6 +2948,41 @@ mod bounds_closedshape_tests {
         .expect_err("invalid edge target local names are client validation errors");
         assert_eq!(invalid.tag, "validation");
         assert!(invalid.message.contains("edge 'partOf'"));
+    }
+
+    /// #4290 — the required floor counts the owner the DOOR set, not the body.
+    /// Before: `ownedBy` required by the shape refused every create, because the
+    /// check ran on body keys and the body's ownedBy is stripped.
+    #[test]
+    fn required_owner_is_satisfied_by_the_verified_caller_not_the_body() {
+        let table = |fields: Vec<&str>| RouteTable { unbounded: vec![], domain: String::new(), base_path: String::new(),
+            class: format!("{}LogSource", NS),
+            fields: fields.into_iter().map(String::from).collect(),
+            routes: vec![], secured: vec![], mandatory: vec![],
+            write_required: vec!["logPath".into(), "ownedBy".into()], allowed_values: vec![],
+            repo_target: String::new(), exposure: vec![],
+            instances_graph: INSTANCES_GRAPH.to_string(), tree_edges: vec![], tree_order: None,
+            write_authority: String::new(), model_version: "unclassified".to_string(),
+        };
+        for t in [table(vec!["logPath|datatype:string", "ownedBy|edge:Principal"]),
+                  table(vec!["logPath|datatype:string", "ownedBy|datatype:string"])] {
+            // the 2026-09-24 crawl body: no ownedBy, verified caller → created
+            let ok = prepare_create(r#"{"name":"l1","logPath":"/x.log"}"#, &t, "kade", "")
+                .expect("the door sets the owner, the floor must see it");
+            assert!(ok.fields.iter().any(|(k, v)| k == "ownedBy" && v == "kade")
+                || ok.edges.iter().any(|(k, _, v)| k == "ownedBy" && v == "kade"));
+            // NEGATIVE PROOF: another required field missing still refuses
+            let e = prepare_create(r#"{"name":"l2"}"#, &t, "kade", "").expect_err("logPath is required");
+            assert!(e.message.contains("'logPath' is required"), "{}", e.message);
+            // NEGATIVE PROOF: no verified role → the owner is not set → refused,
+            // and a body ownedBy does not stand in for it
+            let e = prepare_create(r#"{"name":"l3","logPath":"/x.log","ownedBy":"attacker"}"#, &t, "", "")
+                .expect_err("an unverified caller must not pass the floor");
+            assert!(e.message.contains("'ownedBy' is required"), "{}", e.message);
+            // body ownedBy is still ignored for a verified caller
+            let r = prepare_create(r#"{"name":"l4","logPath":"/x.log","ownedBy":"attacker"}"#, &t, "kade", "").unwrap();
+            assert!(!r.fields.iter().any(|(_, v)| v == "attacker") && !r.edges.iter().any(|(_, _, v)| v == "attacker"));
+        }
     }
 }
 

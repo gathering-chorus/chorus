@@ -628,6 +628,48 @@ fn json_escape(s: &str) -> String {
     o
 }
 
+/// #4290 — the name the door serves for the row at `path`, if it serves one.
+fn served_name_for(graph: &[InGraph], path: &str) -> Option<String> {
+    graph
+        .iter()
+        .find(|g| g.path == path)?
+        .other
+        .iter()
+        .find(|(k, v)| k == "name" && !v.is_empty())
+        .map(|(_, v)| v.clone())
+}
+
+#[cfg(test)]
+mod served_name_4290 {
+    use super::*;
+
+    fn row(path: &str, name: Option<&str>) -> InGraph {
+        InGraph {
+            path: path.into(),
+            sha: String::new(),
+            other: name.map(|n| vec![("name".to_string(), n.to_string())]).unwrap_or_default(),
+        }
+    }
+
+    /// NEGATIVE PROOF: the 2026-09-23 probe row — its served name is not the
+    /// name this crawler mints from its path. Deleting by stable_name was the
+    /// nightly 404; the served name is the one the door addresses.
+    #[test]
+    fn a_row_another_writer_minted_is_deleted_by_its_served_name() {
+        let path = "zz-4267-zz-probe-20260923T193502Z-codefile-filePath";
+        let g = [row(path, Some("zz-probe-20260923t193502z-codefile"))];
+        assert_eq!(served_name_for(&g, path).as_deref(), Some("zz-probe-20260923t193502z-codefile"));
+        assert_ne!(stable_name(path), "zz-probe-20260923t193502z-codefile", "the minted name is the one that 404'd");
+    }
+
+    #[test]
+    fn no_served_name_falls_back_to_none() {
+        assert_eq!(served_name_for(&[row("a.rs", None)], "a.rs"), None);
+        assert_eq!(served_name_for(&[row("a.rs", Some(""))], "a.rs"), None);
+        assert_eq!(served_name_for(&[], "a.rs"), None);
+    }
+}
+
 /// A CodeFile row as the generated door expects it. `name` is a stable key
 /// derived from the path, so a re-walk addresses the same row rather than
 /// minting a second one.
@@ -1672,6 +1714,7 @@ fn main() {
             &head,
             wm_file.as_deref(),
             &parsed.no_case_buckets,
+            &parsed.no_case,
             &parsed.tags,
         );
         std::process::exit(if clean { 0 } else { 1 });
@@ -1903,7 +1946,12 @@ fn main() {
                 });
             }
             Action::Delete { path } => {
-                let name = stable_name(path);
+                // #4290 — address the row by the name the door SERVES for it,
+                // not the name this crawler would have minted. A row another
+                // writer created (the 09-23 quartet probe) has a different
+                // name, so stable_name(path) 404'd every night, the run went
+                // red and the watermark held. The report named it first.
+                let name = served_name_for(&graph, path).unwrap_or_else(|| stable_name(path));
                 if let Err(e) = write(ident, &api, "DELETE", &format!("{coll}/{name}"), None) {
                     failed.push(format!("delete {path}: {e}"));
                 }
@@ -2233,7 +2281,8 @@ fn main() {
                     &head,
                     Some(&head),
                     &parsed.no_case_buckets,
-            &parsed.tags,
+                    &parsed.no_case,
+                    &parsed.tags,
                 );
             }
             (Err(e), _) | (_, Err(e)) => println!(
@@ -2369,6 +2418,7 @@ fn print_graph_vs_project(
     head: &str,
     watermark: Option<&str>,
     no_case_buckets: &[&str],
+    no_case: &[String],
     tags: &domain::TagCounts,
 ) -> bool {
     let drift = reconcile(disk, graph);
@@ -2378,6 +2428,7 @@ fn print_graph_vs_project(
 
     // logs: what the box writes vs what the logs domain holds (the same walk the log leg writes from)
     let log_files: Vec<String> = box_log_files(root).into_iter().map(|f| f.path).collect();
+    let mut logs_measured = true;
     let log_rows: Vec<String> = match fetch_rows(api, token, "LogSource") {
         Ok(rows) => rows
             .into_iter()
@@ -2386,6 +2437,7 @@ fn print_graph_vs_project(
             .collect(),
         Err(e) => {
             println!("chorus-crawl: reconcile logs: UNMEASURED — cannot read LogSource rows ({e})");
+            logs_measured = false;
             Vec::new()
         }
     };
@@ -2393,6 +2445,8 @@ fn print_graph_vs_project(
     let log_drift = reconcile_logs(&log_files, &log_rows, &on_disk);
     println!("chorus-crawl: {}", log_drift.report());
 
+    // #4290 — the fold rows of the control record, filled by the loop below.
+    let mut fold_rows: Vec<chorus_crawl::ValidateRow> = Vec::new();
     // #4214 — the folds, both directions. The classes shipped without this, so
     // for one afternoon nothing proved that every page on disk had a row or that
     // every row still had a file. Jeff caught it by asking the obvious question.
@@ -2421,13 +2475,35 @@ fn print_graph_vs_project(
         ] {
             let class = if kind == "pages" { "Page" } else { "Endpoint" };
             match rows_as_in_graph(api, token, class, key_field) {
-                Err(e) => println!(
-                    "chorus-crawl: reconcile {kind}: UNMEASURED — cannot read {class} rows ({e})"
-                ),
+                Err(e) => {
+                    println!(
+                        "chorus-crawl: reconcile {kind}: UNMEASURED — cannot read {class} rows ({e})"
+                    );
+                    fold_rows.push(chorus_crawl::ValidateRow {
+                        domain: kind.to_string(),
+                        class: class.to_string(),
+                        tree: want.len(),
+                        graph: 0,
+                        missing: Vec::new(),
+                        stale: Vec::new(),
+                        excluded: Vec::new(),
+                        measured: false,
+                    });
+                }
                 Ok(rows) => {
                     let have: Vec<String> = rows.iter().map(|r| r.key.clone()).collect();
                     let missing: Vec<&String> = want.iter().filter(|k| !have.contains(k)).collect();
                     let orphan: Vec<&String> = have.iter().filter(|k| !want.contains(k)).collect();
+                    fold_rows.push(chorus_crawl::ValidateRow {
+                        domain: kind.to_string(),
+                        class: class.to_string(),
+                        tree: want.len(),
+                        graph: have.len(),
+                        missing: missing.iter().map(|s| s.to_string()).collect(),
+                        stale: orphan.iter().map(|s| s.to_string()).collect(),
+                        excluded: Vec::new(),
+                        measured: true,
+                    });
                     if missing.is_empty() && orphan.is_empty() {
                         println!(
                             "chorus-crawl: reconcile {kind}: clean — {} in the tree, {} in the graph, same set",
@@ -2535,7 +2611,114 @@ fn print_graph_vs_project(
         tag_unplaced: tags.unplaced,
     };
     println!("chorus-crawl: {}", line.render());
-    drift.is_clean() && case_drift.is_clean() && log_drift.is_clean() && line.is_clean()
+
+    // #4290 — the control record: one row per crawler-generated domain, both
+    // directions, names on both sides, kept per run. The nightly lane reads
+    // the VALIDATE| lines; the /crawler-validate page reads the kept JSON.
+    let case_files_in_graph = {
+        let mut v: Vec<&str> = case_graph.iter().map(|g| g.file.as_str()).collect();
+        v.sort_unstable();
+        v.dedup();
+        v.len()
+    };
+    let mut rows = vec![
+        chorus_crawl::ValidateRow {
+            domain: "code".into(),
+            class: "CodeFile".into(),
+            tree: disk.iter().filter(|f| f.classified).count(),
+            graph: graph.len(),
+            missing: drift.missing_from_graph.clone(),
+            stale: drift
+                .missing_from_tree
+                .iter()
+                .cloned()
+                .chain(drift.stale_sha.iter().map(|p| format!("{p} (stale sha)")))
+                .collect(),
+            excluded: Vec::new(),
+            measured: true,
+        },
+        chorus_crawl::ValidateRow {
+            domain: "tests".into(),
+            class: "Test (files)".into(),
+            tree: test_files.len(),
+            graph: case_files_in_graph,
+            // a test file in git with no row is a gap whether the crawler
+            // could not extract its cases or simply never wrote them — the
+            // bucket says which (#4199). The one exception is a file that
+            // holds no test at all (bucket no-tests): listed, not counted.
+            missing: case_drift
+                .files_without_rows
+                .iter()
+                .cloned()
+                .chain(
+                    no_case
+                        .iter()
+                        .zip(no_case_buckets.iter())
+                        .filter(|(_, b)| **b != "no-tests")
+                        .map(|(f, b)| format!("{f} (no case extracted: {b})")),
+                )
+                .collect(),
+            excluded: no_case
+                .iter()
+                .zip(no_case_buckets.iter())
+                .filter(|(_, b)| **b == "no-tests")
+                .map(|(f, _)| format!("{f} (contains no test)"))
+                .collect(),
+            stale: case_drift.rows_without_file.clone(),
+            measured: true,
+        },
+        chorus_crawl::ValidateRow {
+            domain: "tests".into(),
+            class: "Test (cases)".into(),
+            tree: desired.len(),
+            graph: case_graph.len(),
+            missing: case_drift.cases_without_rows.clone(),
+            stale: case_drift.rows_without_case.clone(),
+            excluded: Vec::new(),
+            measured: true,
+        },
+        chorus_crawl::ValidateRow {
+            domain: "logs".into(),
+            class: "LogSource".into(),
+            tree: log_files.len(),
+            graph: log_rows.len(),
+            missing: log_drift.files_without_rows.clone(),
+            stale: log_drift.rows_without_files.clone(),
+            excluded: Vec::new(),
+            measured: logs_measured,
+        },
+    ];
+    rows.extend(fold_rows);
+    let rec = chorus_crawl::ValidateRecord {
+        ts: sh("date", &["-u", "+%Y-%m-%dT%H:%M:%SZ"], root).unwrap_or_default().trim().to_string(),
+        head: head.to_string(),
+        head_time: sh("git", &["show", "-s", "--format=%cI", head], root).unwrap_or_default().trim().to_string(),
+        watermark: watermark.unwrap_or("").to_string(),
+        crawled_at: std::fs::metadata(&crawl_log)
+            .and_then(|m| m.modified())
+            .ok()
+            .and_then(|t| t.duration_since(std::time::UNIX_EPOCH).ok())
+            .and_then(|d| {
+                sh("date", &["-u", "-r", &d.as_secs().to_string(), "+%Y-%m-%dT%H:%M:%SZ"], root).ok()
+            })
+            .map(|s| s.trim().to_string())
+            .unwrap_or_default(),
+        rows,
+    };
+    for l in rec.lines() {
+        println!("{l}");
+    }
+    let dir = chorus_crawl::validate_dir();
+    match chorus_crawl::write_validate_record(&dir, &rec) {
+        Ok(kept) => println!(
+            "chorus-crawl: validate {} — {} gap(s) across {} row(s) → {kept}",
+            if rec.is_clean() { "clean" } else { "DRIFT" },
+            rec.gaps(),
+            rec.rows.len()
+        ),
+        Err(e) => println!("chorus-crawl: validate record NOT kept ({e}) — the page will not see this run"),
+    }
+    drift.is_clean() && case_drift.is_clean() && log_drift.is_clean() && line.is_clean() && rec.is_clean()
 }
 
 fn scope_was_full_walk(scope: &Scope) -> bool {
