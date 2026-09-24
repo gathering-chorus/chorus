@@ -48,70 +48,59 @@ export interface ChorusDomainDependenciesDeps {
   now?: () => number;
 }
 
-export async function fetchChorusDomainDependencies(
-  deps: ChorusDomainDependenciesDeps,
-  name: string,
-): Promise<FetchResult> {
-  const now = deps.now ?? Date.now;
-  const start = now();
+type Entry = { id: string; label: string };
+const localOf = (iri: string): string => iri.split('#').pop() || '';
 
-  try {
-    const sdId = await deps.resolveSubdomainId(name);
-    const sdUri = `https://jeffbridwell.com/chorus#${sdId}`;
+/** #4293 — dependsOn both ways from every graph, plus the legacy Domain->Domain consumes until #4289 migrates them. */
+async function readDirect(deps: ChorusDomainDependenciesDeps, sdUri: string): Promise<{ consumes: Entry[]; consumedBy: Entry[] }> {
+  const q = `PREFIX chorus: <https://jeffbridwell.com/chorus#> PREFIX rdfs: <http://www.w3.org/2000/01/rdf-schema#>
+SELECT ?dir ?other (SAMPLE(?l) AS ?label) WHERE {
+  { { GRAPH ?g { <${sdUri}> chorus:dependsOn ?other } } UNION { GRAPH ?g { <${sdUri}> chorus:consumes ?other . ?other a chorus:Domain } } BIND("consumes" AS ?dir) }
+  UNION
+  { { GRAPH ?g { ?other chorus:dependsOn <${sdUri}> } } UNION { GRAPH ?g { ?other chorus:consumes <${sdUri}> . ?other a chorus:Domain } } BIND("consumedBy" AS ?dir) }
+  OPTIONAL { GRAPH ?lg { ?other rdfs:label ?l } }
+} GROUP BY ?dir ?other ORDER BY ?other`;
+  const rows = ((await deps.sparql(q)) as BindingsOf<DirectBinding>).results.bindings;
+  const out = { consumes: [] as Entry[], consumedBy: [] as Entry[] };
+  for (const b of rows) {
+    const id = localOf(b.other.value);
+    const list = b.dir.value === 'consumes' ? out.consumes : out.consumedBy;
+    if (!list.some((e) => e.id === id)) list.push({ id, label: b.label?.value || id });
+  }
+  return out;
+}
 
-    const directQuery = `PREFIX chorus: <https://jeffbridwell.com/chorus#> PREFIX rdfs: <http://www.w3.org/2000/01/rdf-schema#>
-SELECT DISTINCT ?dir ?other WHERE {
-  { GRAPH ?g { <${sdUri}> chorus:dependsOn ?other } BIND("consumes" AS ?dir) }
-  UNION { GRAPH ?g { ?other chorus:dependsOn <${sdUri}> } BIND("consumedBy" AS ?dir) }
-  UNION { GRAPH ?g { <${sdUri}> chorus:consumes ?other . ?other a chorus:Domain } BIND("consumes" AS ?dir) }
-  UNION { GRAPH ?g { ?other chorus:consumes <${sdUri}> . ?other a chorus:Domain } BIND("consumedBy" AS ?dir) }
-}`;
-    const labelOf = async (iris: string[]): Promise<Map<string, string>> => {
-      const out = new Map<string, string>();
-      if (!iris.length) return out;
-      const values = iris.map((i) => `<${i}>`).join(' ');
-      const q = `PREFIX rdfs: <http://www.w3.org/2000/01/rdf-schema#> SELECT ?other (SAMPLE(?l) AS ?label) WHERE { VALUES ?other { ${values} } OPTIONAL { GRAPH ?g { ?other rdfs:label ?l } } } GROUP BY ?other`;
-      const r = (await deps.sparql(q)) as BindingsOf<DirectBinding>;
-      for (const b of r.results.bindings) if (b.label?.value) out.set(b.other.value, b.label.value);
-      return out;
-    };
-    const directResult = (await deps.sparql(directQuery)) as BindingsOf<DirectBinding>;
-    const labels = await labelOf([...new Set(directResult.results.bindings.map((b) => b.other.value))]);
-    const consumes: Array<{ id: string; label: string }> = [];
-    const consumedBy: Array<{ id: string; label: string }> = [];
-    for (const b of directResult.results.bindings) {
-      const id = b.other.value.split('#').pop() || '';
-      const entry = { id, label: labels.get(b.other.value) || id };
-      const list = b.dir.value === 'consumes' ? consumes : consumedBy;
-      if (!list.some((e) => e.id === id)) list.push(entry);
-    }
-
-    // #4293 — the layer and the hosted services, from whichever graph holds them.
-    const layerQuery = `PREFIX chorus: <https://jeffbridwell.com/chorus#> PREFIX rdfs: <http://www.w3.org/2000/01/rdf-schema#>
+/** #4293 — the one layer the domain sits in, or null. */
+async function readLayer(deps: ChorusDomainDependenciesDeps, sdUri: string): Promise<{ id: string; label: string; rank: number | null } | null> {
+  const q = `PREFIX chorus: <https://jeffbridwell.com/chorus#> PREFIX rdfs: <http://www.w3.org/2000/01/rdf-schema#>
 SELECT ?layer (SAMPLE(?l) AS ?layerLabel) (SAMPLE(?r) AS ?rank) WHERE {
   GRAPH ?g { <${sdUri}> chorus:inLayer ?layer }
   OPTIONAL { GRAPH ?h { ?layer rdfs:label ?l } }
   OPTIONAL { GRAPH ?h2 { ?layer chorus:layerRank ?r } }
 } GROUP BY ?layer`;
-    const layerRows = ((await deps.sparql(layerQuery)) as BindingsOf<LayerBinding>).results.bindings;
-    const layer = layerRows.length
-      ? {
-          id: layerRows[0].layer.value.split('#').pop() || '',
-          label: layerRows[0].layerLabel?.value || layerRows[0].layer.value.split('#').pop() || '',
-          rank: layerRows[0].rank ? Number(layerRows[0].rank.value) : null,
-        }
-      : null;
-    const hostsQuery = `PREFIX chorus: <https://jeffbridwell.com/chorus#> PREFIX rdfs: <http://www.w3.org/2000/01/rdf-schema#>
+  const rows = ((await deps.sparql(q)) as BindingsOf<LayerBinding>).results.bindings;
+  if (rows.length === 0) return null;
+  const b = rows[0];
+  const id = localOf(b.layer.value);
+  return { id, label: b.layerLabel?.value || id, rank: b.rank ? Number(b.rank.value) : null };
+}
+
+/** #4293 — the services the domain hosts. */
+async function readHosts(deps: ChorusDomainDependenciesDeps, sdUri: string): Promise<Entry[]> {
+  const q = `PREFIX chorus: <https://jeffbridwell.com/chorus#> PREFIX rdfs: <http://www.w3.org/2000/01/rdf-schema#>
 SELECT ?svc (SAMPLE(?l) AS ?svcLabel) WHERE {
   GRAPH ?g { <${sdUri}> chorus:hosts ?svc }
   OPTIONAL { GRAPH ?h { ?svc rdfs:label ?l } }
 } GROUP BY ?svc ORDER BY ?svc`;
-    const hosts = ((await deps.sparql(hostsQuery)) as BindingsOf<HostsBinding>).results.bindings.map((b) => {
-      const id = b.svc.value.split('#').pop() || '';
-      return { id, label: b.svcLabel?.value || id };
-    });
+  return ((await deps.sparql(q)) as BindingsOf<HostsBinding>).results.bindings.map((b) => {
+    const id = localOf(b.svc.value);
+    return { id, label: b.svcLabel?.value || id };
+  });
+}
 
-    const sharedQuery = `PREFIX borg: <urn:borg:ontology/>
+/** Domains sharing a borg:Environment with this one. */
+async function readShared(deps: ChorusDomainDependenciesDeps, sdUri: string): Promise<Array<{ domain: string; label: string; sharedVia: string[] }>> {
+  const q = `PREFIX borg: <urn:borg:ontology/>
 PREFIX chorus: <https://jeffbridwell.com/chorus#>
 PREFIX rdfs: <http://www.w3.org/2000/01/rdf-schema#>
 SELECT ?otherDomain ?otherLabel ?envName WHERE {
@@ -123,26 +112,36 @@ SELECT ?otherDomain ?otherLabel ?envName WHERE {
   }
   OPTIONAL { GRAPH <urn:chorus:ontology> { ?otherDomain rdfs:label ?otherLabel } }
 }`;
-    const sharedResult = (await deps.sparql(sharedQuery)) as BindingsOf<SharedBinding>;
+  const sharedMap = new Map<string, { domain: string; label: string; sharedVia: string[] }>();
+  for (const b of ((await deps.sparql(q)) as BindingsOf<SharedBinding>).results.bindings) {
+    const domId = localOf(b.otherDomain.value);
+    const entry = sharedMap.get(domId) || { domain: domId, label: b.otherLabel?.value || domId, sharedVia: [] };
+    sharedMap.set(domId, entry);
+    if (!entry.sharedVia.includes(b.envName.value)) entry.sharedVia.push(b.envName.value);
+  }
+  return Array.from(sharedMap.values());
+}
 
-    const sharedMap = new Map<string, { domain: string; label: string; sharedVia: string[] }>();
-    for (const b of sharedResult.results.bindings) {
-      const domId = b.otherDomain.value.split('#').pop() || '';
-      const label = b.otherLabel?.value || domId;
-      const env = b.envName.value;
-      if (!sharedMap.has(domId)) sharedMap.set(domId, { domain: domId, label, sharedVia: [] });
-      const entry = sharedMap.get(domId)!;
-      if (!entry.sharedVia.includes(env)) entry.sharedVia.push(env);
-    }
-    const shared = Array.from(sharedMap.values());
-
+export async function fetchChorusDomainDependencies(
+  deps: ChorusDomainDependenciesDeps,
+  name: string,
+): Promise<FetchResult> {
+  const now = deps.now ?? Date.now;
+  const start = now();
+  try {
+    const sdId = await deps.resolveSubdomainId(name);
+    const sdUri = `https://jeffbridwell.com/chorus#${sdId}`;
+    const direct = await readDirect(deps, sdUri);
+    const shared = await readShared(deps, sdUri);
+    const layer = await readLayer(deps, sdUri);
+    const hosts = await readHosts(deps, sdUri);
     return {
       status: 200,
       body: deps.envelope(
         'domain-dependencies',
-        { subdomain: sdId, direct: { consumes, consumedBy }, shared, layer, hosts },
+        { subdomain: sdId, direct, shared, layer, hosts },
         now() - start,
-        { direct_count: consumes.length + consumedBy.length, shared_count: shared.length, graph: 'all (GRAPH ?g)' },
+        { direct_count: direct.consumes.length + direct.consumedBy.length, shared_count: shared.length, graph: 'all (GRAPH ?g)' },
       ),
     };
   } catch (err) {
