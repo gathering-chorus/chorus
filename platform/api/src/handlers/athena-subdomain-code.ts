@@ -76,9 +76,11 @@ export async function fetchAthenaSubdomainCode(
     const allFiles: CodeFile[] = result.results.bindings.map((b) => {
       const filePath = b.filePath?.value;
       const extType = filePath ? deps.extname(filePath).replace(/^\./, '') : '';
+      // #4285 — hasKind is an IRI (chorus#code-kind-config); show the kind word
+      const kind = b.fileType?.value ? fallbackId(b.fileType.value).replace(/^code-kind-/, '') : '';
       return {
         path: filePath ?? b.label?.value ?? fallbackId(b.file.value),
-        type: b.fileType?.value ?? (extType !== '' ? extType : 'unknown'),
+        type: kind !== '' ? kind : (extType !== '' ? extType : 'unknown'),
         description: b.description?.value ?? null,
       };
     });

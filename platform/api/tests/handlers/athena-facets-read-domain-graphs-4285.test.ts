@@ -38,6 +38,12 @@ describe('#4285 Code fold', () => {
     expect(body.data.files.length + body.data.tests.length).toBe(3);
     expect(body._meta.count).toBe(3);
   });
+  it('a hasKind IRI renders as its kind word, not the IRI', async () => {
+    const r = recorder([{ file: v('https://jeffbridwell.com/chorus#codefile-x'), filePath: v('CLAUDE.md'), fileType: v('https://jeffbridwell.com/chorus#code-kind-doc') }]);
+    const res = await fetchAthenaSubdomainCode({ sparql: r.sparql as never, extname: (p) => p.slice(p.lastIndexOf('.')), now: () => 0 }, 'tests');
+    const body = res.body as { data: { files: Array<{ type: string }> } };
+    expect(body.data.files[0].type).toBe('doc');
+  });
   it('a domain with no rows answers 0 and still names the graph it asked (so the page can say so)', async () => {
     const r = recorder([]);
     const res = await fetchAthenaSubdomainCode({ sparql: r.sparql as never, extname: () => '', now: () => 0 }, 'nothing');
