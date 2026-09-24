@@ -150,64 +150,47 @@ export async function fetchDomainServices(
 
 // --- alerts: filesystem scan of proving/domains/alerts/*.yml ---
 
-export interface AlertFile {
-  file: string;
-  content: string;
-}
+/** #4285 — where Alert rows live */
+export const ALERTS_GRAPH = 'urn:chorus:domains:alerts';
 
-export interface DomainAlertsDeps extends DomainFacetDeps {
-  readAlertFiles: () => AlertFile[];
-}
+interface DomainAlertEntry { name: string; file: string; source: string; route: string }
 
-type DomainAlertEntry = { file: string; name: string; description: string; severity: string; schedule: string };
-
-function alertMatches(file: string, content: string, tokens: string[]): boolean {
-  const lower = content.toLowerCase();
-  const fileLower = file.toLowerCase();
-  return tokens.some((t) => lower.includes(t) || fileLower.includes(t));
-}
-
-function parseDomainAlert(file: string, content: string): DomainAlertEntry {
-  return {
-    file,
-    name: content.match(/^name:\s*(.+)/m)?.[1]?.trim() || file.replace('.yml', ''),
-    description: content.match(/^description:\s*(.+)/m)?.[1]?.trim() || '',
-    severity: content.match(/^severity:\s*(.+)/m)?.[1]?.trim() || 'unknown',
-    schedule: content.match(/^schedule:\s*"?(.+?)"?\s*$/m)?.[1]?.trim() || '',
-  };
-}
-
-function collectDomainAlerts(deps: DomainAlertsDeps, tokens: string[]): DomainAlertEntry[] {
-  const alerts: DomainAlertEntry[] = [];
-  for (const { file, content } of deps.readAlertFiles()) {
-    if (alertMatches(file, content, tokens)) alerts.push(parseDomainAlert(file, content));
-  }
-  return alerts;
-}
-
+// #4285 — the Alerts fold reads Alert rows from the graph by hasDomain. Before
+// this it scanned proving/domains/alerts/*.yml for the domain's name and
+// answered 0 for tests while the store held 6 rows (harvested from the alert
+// scripts and YAML). A zero here now means the graph has zero.
 export async function fetchDomainAlerts(
-  deps: DomainAlertsDeps,
+  deps: DomainFacetDeps,
   subdomainName: string,
 ): Promise<FetchResult> {
   const now = deps.now ?? Date.now;
   const start = now();
+  const identity = resolveDomainIdentity(subdomainName);
+  const sdUri = `https://jeffbridwell.com/chorus#${identity.primary}`;
   try {
     const sdId = await deps.resolveSubdomainId(subdomainName);
-    const identity = resolveDomainIdentity(subdomainName);
-    const alerts = collectDomainAlerts(deps, identity.alertFileTokens);
+    const query = `PREFIX chorus: <https://jeffbridwell.com/chorus#> SELECT ?name ?alertFile ?alertSource ?alertRoute WHERE { GRAPH <${ALERTS_GRAPH}> { ?a a chorus:Alert ; chorus:hasDomain <${sdUri}> ; chorus:label ?name . OPTIONAL { ?a chorus:alertFile ?alertFile } OPTIONAL { ?a chorus:alertSource ?alertSource } OPTIONAL { ?a chorus:alertRoute ?alertRoute } } } ORDER BY ?name`;
+    const result = await deps.sparql(query);
+    const rows = (result as { results?: { bindings?: Array<Record<string, { value?: string } | undefined>> } }).results?.bindings ?? [];
+    const alerts: DomainAlertEntry[] = rows.map((b) => ({
+      name: b.name?.value ?? '',
+      file: b.alertFile?.value ?? '',
+      source: b.alertSource?.value ?? '',
+      route: b.alertRoute?.value ?? '',
+    }));
     return {
       status: 200,
-      body: deps.envelope('domain-alerts', { subdomain: sdId, domainLabel: identity.primary, alerts }, now() - start, { count: alerts.length }),
+      body: deps.envelope('domain-alerts', { subdomain: sdId, domainLabel: identity.primary, alerts }, now() - start, { count: alerts.length, graph: ALERTS_GRAPH }),
     };
-  } catch {
+  } catch (err) {
+    const message = err instanceof Error ? err.message : String(err);
     return {
       status: 200,
-      body: deps.envelope('domain-alerts', { subdomain: subdomainName, alerts: [] }, now() - start, { count: 0 }),
+      body: deps.envelope('domain-alerts', { subdomain: subdomainName, alerts: [], error: message }, now() - start, { count: 0, graph: ALERTS_GRAPH, error: true }),
     };
   }
 }
 
-// --- radius: outward neighborhood walk (#2028) ---
 
 export async function fetchDomainRadius(
   deps: DomainFacetDeps,

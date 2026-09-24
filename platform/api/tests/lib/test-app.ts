@@ -37,6 +37,11 @@ import type { AddressInfo } from 'net';
 
 // #3379 — the on-demand index/embed/reindex routes spawn detached workers;
 // tests must never fire real passes against live ~/.chorus state.
+// #4285 — route tests are hermetic: the store is an unreachable port, so a
+// route that reads Fuseki (the /nightly page's failing-cases read, #4277)
+// fails fast with connection refused instead of waiting on the live store
+// under load (the full suite went red on this test at load 41 on 09-24).
+process.env.FUSEKI_QUERY = process.env.FUSEKI_QUERY || 'http://127.0.0.1:9/pods/query';
 process.env.CHORUS_EMBED_WORKER_SCRIPT = '/usr/bin/true';
 process.env.CHORUS_REINDEX_WORKER_SCRIPT = '/usr/bin/true';
 

@@ -5,6 +5,7 @@
  * file as test or source by path pattern, groups counts by type.
  */
 import type { FetchResult } from './codebase-topology';
+import { resolveDomainIdentity } from './domain-identity';
 
 export interface SparqlCodeBinding {
   file: { value: string };
@@ -33,6 +34,8 @@ interface CodeFile {
 }
 
 const CHORUS_PREFIX = 'https://jeffbridwell.com/chorus#';
+/** #4285 — where CodeFile / Endpoint / Page rows live */
+export const CODE_GRAPH = 'urn:chorus:domains:code';
 
 function defaultEnvelope(name: string, data: unknown, durationMs: number, extra: Record<string, unknown> = {}) {
   return {
@@ -61,17 +64,23 @@ export async function fetchAthenaSubdomainCode(
   const now = deps.now ?? Date.now;
   const envelope = deps.envelope ?? defaultEnvelope;
   const start = now();
-  const sdUri = `${CHORUS_PREFIX}${id}`;
+  // the domain IRI is the bare name (chorus#tests), whatever id form the page sends
+  const sdUri = `${CHORUS_PREFIX}${resolveDomainIdentity(id).primary}`;
 
   try {
-    const query = `PREFIX chorus: <https://jeffbridwell.com/chorus#> PREFIX rdfs: <http://www.w3.org/2000/01/rdf-schema#> SELECT ?file ?label ?filePath ?fileType ?description WHERE { GRAPH <urn:chorus:instances> { <${sdUri}> chorus:hasCodeFile ?file . OPTIONAL { ?file rdfs:label ?label } OPTIONAL { ?file chorus:filePath ?filePath } OPTIONAL { ?file chorus:fileType ?fileType } OPTIONAL { ?file rdfs:comment ?description } } }`;
+    // #4285 — CodeFile rows live in the code graph and point AT the domain
+    // (hasDomain); the inverse hasCodeFile edge in urn:chorus:instances is the
+    // retired model and answered 0 for every domain (tests: 626 rows unseen).
+    const query = `PREFIX chorus: <https://jeffbridwell.com/chorus#> PREFIX rdfs: <http://www.w3.org/2000/01/rdf-schema#> SELECT ?file ?label ?filePath ?fileType ?description WHERE { GRAPH <${CODE_GRAPH}> { ?file a chorus:CodeFile ; chorus:hasDomain <${sdUri}> . OPTIONAL { ?file rdfs:label ?label } OPTIONAL { ?file chorus:filePath ?filePath } OPTIONAL { ?file chorus:hasKind ?fileType } OPTIONAL { ?file rdfs:comment ?description } } } ORDER BY ?filePath`;
     const result = await deps.sparql(query);
     const allFiles: CodeFile[] = result.results.bindings.map((b) => {
       const filePath = b.filePath?.value;
       const extType = filePath ? deps.extname(filePath).replace(/^\./, '') : '';
+      // #4285 — hasKind is an IRI (chorus#code-kind-config); show the kind word
+      const kind = b.fileType?.value ? fallbackId(b.fileType.value).replace(/^code-kind-/, '') : '';
       return {
         path: filePath ?? b.label?.value ?? fallbackId(b.file.value),
-        type: b.fileType?.value ?? (extType !== '' ? extType : 'unknown'),
+        type: kind !== '' ? kind : (extType !== '' ? extType : 'unknown'),
         description: b.description?.value ?? null,
       };
     });
@@ -87,7 +96,7 @@ export async function fetchAthenaSubdomainCode(
         'subdomain-code',
         { subdomain: id, files: source, tests, byType },
         now() - start,
-        { count: allFiles.length, source_count: source.length, test_count: tests.length },
+        { count: allFiles.length, source_count: source.length, test_count: tests.length , graph: CODE_GRAPH },
       ),
     };
   } catch (err) {

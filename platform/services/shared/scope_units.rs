@@ -55,9 +55,13 @@ pub fn scope_irrelevant(f: &str) -> bool {
     // .gitignore decides what git TRACKS, never what a build or test produces.
     // It was the second unmapped path in this card's diff (the first, a runtime
     // watermark, belonged in .gitignore — which is how the two met).
+    // #4285 — .metadata_never_index is the same kind of file: it tells
+    // Spotlight what NOT to index (a fresh werk's npm install set off a
+    // mdworker storm at load 41 on 2026-09-24 because worktrees lacked it).
+    // It decides nothing about any build or test output.
     let vcs = matches!(
         f.rsplit('/').next().unwrap_or(f),
-        ".gitignore" | ".gitattributes" | ".gitmodules"
+        ".gitignore" | ".gitattributes" | ".gitmodules" | ".metadata_never_index"
     );
     ext || dir || vcs || f.contains("/public/")
 }
