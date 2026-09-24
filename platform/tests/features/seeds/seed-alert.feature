@@ -1,4 +1,5 @@
-@seed @alert @wip
+# @test-type: bdd — steps simulate the alert decision; no live service is called
+@seed @alert
 Feature: Seed failure alerting
   When a seed write fails, Jeff sees an alert on the Bridge
   within 60 seconds. The system catches the problem before
