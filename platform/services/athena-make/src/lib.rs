@@ -2274,9 +2274,12 @@ fn verified_owner_projection(
                 caller_role.to_string(),
             )],
         ),
+        // #4294 — a shape that says nothing about ownedBy still gets the model's
+        // answer: ownedBy's rdfs:range is chorus:Principal. The literal this
+        // branch used to write is what left 6,368 rows owned by a bare name.
         None => (
-            vec![("ownedBy".to_string(), caller_role.to_string())],
             Vec::new(),
+            vec![("ownedBy".to_string(), kind_of_class("Principal"), caller_role.to_string())],
         ),
     }
 }
@@ -2931,12 +2934,10 @@ mod bounds_closedshape_tests {
             "wren",
             "",
         )
-        .expect("legacy literal owner projection");
-        assert_eq!(
-            legacy.fields,
-            vec![("ownedBy".into(), "wren".into()), ("comment".into(), "ok".into())],
-        );
-        assert!(legacy.edges.is_empty());
+        .expect("silent-shape owner projection");
+        // #4294 — a shape silent on ownedBy gets the model's range: a Principal edge, never a literal.
+        assert_eq!(legacy.fields, vec![("comment".into(), "ok".into())]);
+        assert_eq!(legacy.edges, vec![("ownedBy".into(), kind_of_class("Principal"), "wren".into())]);
 
         table.fields.push("partOf|edge:Domain".into());
         let invalid = prepare_create(
@@ -7402,11 +7403,12 @@ mod tests {
         assert!(fields.iter().all(|(p, _)| p != "ownedBy"), "declared shape still wrote a literal: {fields:?}");
         assert_eq!(edges, vec![("ownedBy".to_string(), kind_of_class("Principal"), "kade".to_string())]);
 
-        // SILENT (the violated condition): the fallback branch, a bare string of the caller.
+        // SILENT: the shape says nothing about ownedBy; the model does (#4294) —
+        // a Principal edge, never the bare string that left 6,368 literal owners.
         let silent = table(vec!["launchdLabel".into()]);
         let (fields, edges) = verified_owner_projection(&silent, "kade");
-        assert!(edges.is_empty(), "silent shape minted an edge it never declared: {edges:?}");
-        assert_eq!(fields, vec![("ownedBy".to_string(), "kade".to_string())]);
+        assert!(fields.iter().all(|(p, _)| p != "ownedBy"), "silent shape still wrote a literal: {fields:?}");
+        assert_eq!(edges, vec![("ownedBy".to_string(), kind_of_class("Principal"), "kade".to_string())]);
 
         // a shape naming a Role is the third state — the source of the 209 role-* owners.
         let role_shaped = table(vec!["ownedBy|edge:Role".into()]);
