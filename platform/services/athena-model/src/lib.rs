@@ -44,6 +44,12 @@ use serde::Deserialize;
 
 pub const NS: &str = "https://jeffbridwell.com/chorus#";
 pub const INSTANCES_GRAPH: &str = "urn:chorus:instances";
+/// #4291 — rdfs:label. The model defines chorus:label as "the writable twin of
+/// rdfs:label … Every row-bearing shape carries both" (hats-4175.ttl) and ADR-028
+/// says every record declares rdfs:label. The DAL wrote only the twin, so 33 shapes
+/// that require rdfs:label failed every row it wrote (18,232 Version rows on
+/// 2026-09-24). Every label the DAL writes, it now writes under both names.
+pub const RDFS_LABEL: &str = "http://www.w3.org/2000/01/rdf-schema#label";
 pub const ONTOLOGY_GRAPH: &str = "urn:chorus:ontology";
 /// Where the Principal registry USED to be, and the fallback when the model
 /// cannot be read. #4220: Silas is moving Principal rows to the graph
@@ -668,6 +674,9 @@ pub fn to_turtle(req: &WriteReq) -> R<(String, String)> {
     for (prop, val) in &req.fields {
         check_property_local(prop)?;
         lines.push(format!("    <{}{}> \"{}\"", NS, prop, esc(val)));
+        if prop == "label" {
+            lines.push(format!("    <{}> \"{}\"", RDFS_LABEL, esc(val))); // #4291 — the twin
+        }
     }
     for (prop, val) in &req.more_values {
         check_property_local(prop)?;
@@ -2008,7 +2017,10 @@ fn commit_writes(
         let label = if plan.req.fields.contains_key("label") {
             String::new()
         } else {
-            format!("<{}> <{}label> \"{}\" .\n", plan.subject, NS, esc(&plan.req.name))
+            format!(
+                "<{s}> <{ns}label> \"{v}\" .\n<{s}> <{r}> \"{v}\" .\n", // #4291 — both names
+                s = plan.subject, ns = NS, r = RDFS_LABEL, v = esc(&plan.req.name)
+            )
         };
         let created = created_by_subject.get(&plan.subject).unwrap_or(&now);
         let stamps = format!(
@@ -2257,9 +2269,18 @@ pub fn set_field(
     // Single-predicate replace + the modified stamp — never `?p ?o` on the subject.
     const DCT: &str = "http://purl.org/dc/terms/";
     let now = now_iso();
+    // #4291 — setting the label sets its twin too, so the two names never diverge.
+    let twin = if prop == "label" {
+        format!(
+            " ;\nDELETE WHERE {{ GRAPH <{g}> {{ <{s}> <{r}> ?o }} }} ;\nINSERT DATA {{ GRAPH <{g}> {{ <{s}> <{r}> \"{v}\" }} }}",
+            g = g, s = subject, r = RDFS_LABEL, v = esc(value)
+        )
+    } else {
+        String::new()
+    };
     store.update(&format!(
-        "DELETE WHERE {{ GRAPH <{g}> {{ <{s}> <{ns}{p}> ?o }} }} ;\nDELETE WHERE {{ GRAPH <{g}> {{ <{s}> <{d}modified> ?o }} }} ;\nINSERT DATA {{ GRAPH <{g}> {{ <{s}> <{ns}{p}> \"{v}\" . <{s}> <{d}modified> \"{m}\" }} }}",
-        g = g, s = subject, ns = NS, p = prop, v = esc(value), d = DCT, m = esc(&now)
+        "DELETE WHERE {{ GRAPH <{g}> {{ <{s}> <{ns}{p}> ?o }} }} ;\nDELETE WHERE {{ GRAPH <{g}> {{ <{s}> <{d}modified> ?o }} }} ;\nINSERT DATA {{ GRAPH <{g}> {{ <{s}> <{ns}{p}> \"{v}\" . <{s}> <{d}modified> \"{m}\" }} }}{twin}",
+        g = g, s = subject, ns = NS, p = prop, v = esc(value), d = DCT, m = esc(&now), twin = twin
     ))?;
     witness("model.set", &[("kind", kind), ("name", name), ("iri", subject.as_str()), ("field", prop), ("value", value)]);
     Ok(subject)
@@ -3130,6 +3151,7 @@ pub fn seed_multi_at(
                 if !has_label {
                     let local = iri.strip_prefix(NS).unwrap_or(iri);
                     body.push_str(&format!("{} <{}label> \"{}\" . ", subject_term, NS, esc(local)));
+                    body.push_str(&format!("{} <{}> \"{}\" . ", subject_term, RDFS_LABEL, esc(local))); // #4291
                 }
             } else {
                 let _ = (has_type, has_label);
@@ -3714,6 +3736,47 @@ mod tests {
         let e = write(&store, &req, &tid()).unwrap_err();
         assert!(e.starts_with("unknown-target"), "{}", e);
         assert!(store.updates.borrow().is_empty(), "nothing written on refusal");
+    }
+
+    /// #4291 NEGATIVE PROOF: every label the DAL writes lands under BOTH names —
+    /// chorus:label (the writable twin) and rdfs:label (what 33 shapes require,
+    /// ADR-028). Removing the twin line from to_turtle / the autofill / set_field
+    /// turns the matching case red.
+    #[test]
+    fn a_label_is_written_under_both_names_given_autofilled_and_set() {
+        let target = format!("{}value-stream-step-proving", NS);
+        let rdfs = format!("<{}>", RDFS_LABEL);
+        // given in the body
+        let store = stub(&[target.as_str()], &[]);
+        let mut req = WriteReq { kind: "domain".into(), name: "tests".into(), ..Default::default() };
+        req.fields.insert("label".into(), "Tests".into());
+        write(&store, &req, &tid()).unwrap();
+        let u = store.updates.borrow()[0].clone();
+        assert!(u.contains(&format!("<{}label> \"Tests\"", NS)) && u.contains(&format!("{} \"Tests\"", rdfs)), "given: {u}");
+        // autofilled from the name
+        let store = stub(&[target.as_str()], &[]);
+        let req = WriteReq { kind: "domain".into(), name: "tests".into(), ..Default::default() };
+        write(&store, &req, &tid()).unwrap();
+        let u = store.updates.borrow()[0].clone();
+        assert!(u.contains(&format!("<{}label> \"tests\"", NS)) && u.contains(&format!("{} \"tests\"", rdfs)), "autofilled: {u}");
+        // set --field label=
+        let subj = format!("{}tests", NS);
+        let store = stub(&[subj.as_str()], &[]);
+        set_field(&store, "domain", "tests", "label", "Renamed", None, &tid()).unwrap();
+        let u = store.updates.borrow().last().cloned().unwrap_or_default();
+        assert!(u.contains(&format!("<{}label> \"Renamed\"", NS)) && u.contains(&format!("{} \"Renamed\"", rdfs)), "set: {u}");
+    }
+
+    /// #4291 NEGATIVE PROOF: a Version whose shape requires writeCount is refused
+    /// when the write omits it, and nothing is written. Deleting the required-field
+    /// check in plan_writes turns this red.
+    #[test]
+    fn a_version_without_write_count_is_refused() {
+        let store = stub(&[], &["writeCount"]);
+        let req = WriteReq { kind: "version".into(), name: "zz-4291-v1".into(), ..Default::default() };
+        let err = write(&store, &req, &tid()).unwrap_err();
+        assert!(err.contains("requires 'writeCount'"), "{err}");
+        assert!(store.updates.borrow().is_empty(), "a refused write issues no update");
     }
 
     #[test]
