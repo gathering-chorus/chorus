@@ -46,3 +46,20 @@
 		format json
 	}
 }
+
+# #4296 — chorusconsulting.ai: Jeff's public consulting page. Static files
+# only, on its own port and its own tunnel hostname, so nothing else on this
+# box is reachable through it. Served straight from the canonical checkout:
+# a landed change to the page is live with no deploy step.
+:3491 {
+	root * /Users/jeffbridwell/CascadeProjects/chorus/designing/sites/chorusconsulting.ai
+	file_server
+
+	log {
+		output file /Users/jeffbridwell/Library/Logs/Gathering/chorusconsulting-access.log {
+			roll_size 10mb
+			roll_keep 5
+		}
+		format json
+	}
+}

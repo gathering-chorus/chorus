@@ -1,0 +1,356 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Chorus Consulting | Technology for Local Businesses</title>
+
+    <meta property="og:type" content="website">
+    <meta property="og:url" content="https://chorusconsulting.ai/">
+    <meta property="og:title" content="Chorus Consulting">
+    <meta property="og:description" content="High-value technology consulting for small businesses in the Boston area. A few clients at a time. Plain answers. Your data stays yours.">
+    <meta name="description" content="Chorus Consulting — technology design, build, and support for small local businesses. Roslindale, Jamaica Plain, Hyde Park, Boston.">
+
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Cormorant+Garamond:wght@400;500;600&family=Open+Sans:wght@300;400;500&display=swap" rel="stylesheet">
+    <style>
+        :root {
+            --slate-dark: #2c3e50;
+            --slate-medium: #94a3b8;
+            --slate-light: #475569;
+            --amber: #b45309;
+            --cream: #1e293b;
+            --warm-gray: #64748b;
+            --white: #0f172a;
+            --bg: #ffffff;
+            --surface: #f8fafc;
+            --card-bg: #f1f5f9;
+            --border: #e2e8f0;
+        }
+
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+
+        body {
+            font-family: 'Open Sans', sans-serif;
+            background: var(--bg);
+            color: var(--cream);
+            min-height: 100vh;
+        }
+
+        .container { max-width: 1000px; margin: 0 auto; padding: 1rem 2rem; }
+
+        .hero {
+            text-align: center;
+            padding: 2.5rem 1rem 1rem;
+        }
+
+        .hero h1 {
+            font-family: 'Cormorant Garamond', serif;
+            font-size: 3.5rem;
+            font-weight: 400;
+            letter-spacing: 0.08em;
+            color: var(--white);
+            line-height: 1.1;
+            margin-bottom: 0.25rem;
+        }
+
+        .hero h1 span { color: var(--amber); }
+
+        .tagline {
+            font-size: 1rem;
+            font-weight: 300;
+            letter-spacing: 0.2em;
+            text-transform: uppercase;
+            color: var(--slate-light);
+            margin-bottom: 2rem;
+        }
+
+        .intro {
+            max-width: 650px;
+            margin: 0 auto 2rem;
+            font-size: 1.05rem;
+            font-weight: 300;
+            line-height: 1.7;
+            text-align: center;
+        }
+
+        .how {
+            display: flex;
+            gap: 1.5rem;
+            margin: 2rem 0;
+            flex-wrap: wrap;
+        }
+
+        .how-step {
+            flex: 1;
+            min-width: 250px;
+            padding: 1.25rem;
+            background: var(--card-bg);
+            border: 1px solid var(--border);
+            border-radius: 8px;
+            text-align: center;
+        }
+
+        .how-step .number {
+            font-family: 'Cormorant Garamond', serif;
+            font-size: 2rem;
+            color: var(--amber);
+            margin-bottom: 0.25rem;
+        }
+
+        .how-step h3 {
+            font-family: 'Cormorant Garamond', serif;
+            font-size: 1.3rem;
+            font-weight: 500;
+            color: var(--white);
+            margin-bottom: 0.5rem;
+        }
+
+        .how-step p {
+            font-size: 0.85rem;
+            font-weight: 300;
+            line-height: 1.6;
+            color: var(--slate-light);
+        }
+
+        .section {
+            padding: 1.5rem;
+            background: var(--surface);
+            border: 1px solid var(--border);
+            border-radius: 8px;
+            margin: 1.5rem 0;
+        }
+
+        .section h2 {
+            font-family: 'Cormorant Garamond', serif;
+            font-size: 1.4rem;
+            font-weight: 400;
+            color: var(--white);
+            margin-bottom: 1rem;
+        }
+
+        .section p {
+            font-size: 0.9rem;
+            font-weight: 300;
+            line-height: 1.7;
+            color: var(--cream);
+            margin-bottom: 0.75rem;
+        }
+
+        .principles {
+            display: flex;
+            gap: 1.5rem;
+            margin: 1.5rem 0;
+            flex-wrap: wrap;
+            justify-content: center;
+        }
+
+        .principle {
+            text-align: center;
+            padding: 1rem;
+            flex: 1;
+            min-width: 200px;
+        }
+
+        .principle h3 {
+            font-family: 'Cormorant Garamond', serif;
+            font-size: 1.2rem;
+            font-weight: 500;
+            color: var(--amber);
+            margin-bottom: 0.25rem;
+        }
+
+        .principle p {
+            font-size: 0.85rem;
+            font-weight: 300;
+            color: var(--slate-light);
+        }
+
+        .who-list {
+            display: flex;
+            gap: 1rem;
+            flex-wrap: wrap;
+            margin-top: 1rem;
+        }
+
+        .who-item {
+            font-size: 0.85rem;
+            font-weight: 300;
+            color: var(--slate-light);
+            padding: 0.4rem 0.8rem;
+            border: 1px solid var(--border);
+            border-radius: 4px;
+            background: var(--card-bg);
+        }
+
+        .promise {
+            text-align: center;
+            padding: 1.25rem;
+            font-style: italic;
+            font-size: 1.1rem;
+            color: var(--cream);
+            max-width: 600px;
+            margin: 1.5rem auto;
+            line-height: 1.6;
+        }
+
+        .promise strong {
+            color: var(--amber);
+            font-style: normal;
+        }
+
+        .contact {
+            text-align: center;
+            padding: 1.5rem;
+            border-top: 1px solid var(--border);
+            margin-top: 2rem;
+        }
+
+        .contact h2 {
+            font-family: 'Cormorant Garamond', serif;
+            font-size: 1.3rem;
+            font-weight: 400;
+            color: var(--white);
+            margin-bottom: 0.75rem;
+        }
+
+        .contact a {
+            color: var(--amber);
+            text-decoration: none;
+        }
+
+        .contact a:hover { text-decoration: underline; }
+
+        .contact .location {
+            margin-top: 0.5rem;
+            color: var(--slate-light);
+            font-size: 0.85rem;
+        }
+
+        footer {
+            text-align: center;
+            padding: 1rem;
+            font-size: 0.75rem;
+            color: var(--slate-medium);
+        }
+
+        @media print {
+            @page { size: letter; margin: 0.75in 1in; }
+            html { zoom: 1; }
+            body { min-height: auto; background: #ffffff; -webkit-print-color-adjust: exact; }
+            .container { padding: 0.15rem 1rem; }
+            .hero { padding: 0.3rem 0.25rem 0.15rem; }
+            .hero h1 { font-size: 2rem; }
+            .tagline { margin-bottom: 0.2rem; font-size: 0.7rem; }
+            .intro { margin: 0 auto 0.3rem; font-size: 0.7rem; line-height: 1.4; max-width: 100%; }
+            .how { margin: 0.4rem 0; gap: 0.4rem; flex-direction: row !important; flex-wrap: nowrap !important; }
+            .how-step { padding: 0.3rem; }
+            .how-step .number { font-size: 1rem; margin-bottom: 0; }
+            .how-step h3 { font-size: 0.85rem; margin-bottom: 0.1rem; }
+            .how-step p { font-size: 0.6rem; line-height: 1.3; }
+            .section { padding: 0.3rem 0.5rem; margin: 0.2rem 0; }
+            .section h2 { font-size: 0.9rem; margin-bottom: 0.2rem; }
+            .section p { margin-bottom: 0.15rem; font-size: 0.65rem; line-height: 1.4; }
+            .principles { margin: 0.4rem 0; gap: 0.5rem; flex-direction: row !important; flex-wrap: nowrap !important; }
+            .principle { padding: 0.2rem; }
+            .principle h3 { font-size: 0.8rem; }
+            .principle p { font-size: 0.6rem; }
+            .who-list { margin-top: 0.25rem; gap: 0.2rem; }
+            .who-item { font-size: 0.6rem; padding: 0.15rem 0.4rem; }
+            .promise { padding: 0.15rem 0.5rem; font-size: 0.75rem; margin: 0.2rem auto; }
+            .contact { padding: 0.25rem; margin-top: 0.2rem; border-top-width: 0.5px; }
+            .contact h2 { font-size: 0.85rem; margin-bottom: 0.15rem; }
+            .contact .location { font-size: 0.6rem; }
+            footer { padding: 0.1rem; font-size: 0.55rem; }
+        }
+
+        @media (max-width: 768px) {
+            .hero h1 { font-size: 2.5rem; }
+            .how { flex-direction: row !important; }
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <section class="hero">
+            <h1><span>Chorus</span> Consulting</h1>
+            <p class="tagline">Technology help for small businesses, from someone who's done it at scale</p>
+        </section>
+
+        <p class="intro">
+            You run the business. I make the technology around it work for you: the booking, the customer list, the website, the spreadsheet only one person understands.
+        </p>
+
+        <section class="section">
+            <h2>What I Do</h2>
+            <div class="who-list">
+                <span class="who-item">Learn how your business runs and show you what to fix first</span>
+                <span class="who-item">Get the tools you already pay for working together</span>
+                <span class="who-item">Build a simple, fast website people can find</span>
+                <span class="who-item">Write the plan: what to change, in what order, what it costs</span>
+                <span class="who-item">Stay on call, monthly, for whatever comes next</span>
+            </div>
+        </section>
+
+
+        <section class="section">
+            <h2>How I Work</h2>
+            <p>I start with the whole picture before the details. How does work move through your business, where does it get stuck, what do you keep doing by hand? I draw it out, often on paper, so we're both looking at the same thing.</p>
+            <p>Then I change one thing at a time. Try it, see what happens, adjust. Small steps you can watch beat a big project you have to trust.</p>
+            <p>And I'll tell you what I actually think, including when the answer is "you don't need new technology for this."</p>
+        </section>
+        <div class="how">
+            <div class="how-step">
+                <div class="number">1</div>
+                <h3>Listen</h3>
+                <p>We sit down and I learn how your business actually runs: what you track, what slips, what you wish you didn't have to do. Mostly I listen and take notes.</p>
+            </div>
+            <div class="how-step">
+                <div class="number">2</div>
+                <h3>Show</h3>
+                <p>Before you commit to anything, I show you a small working example of what better could look like, plus a plain plan with costs.</p>
+            </div>
+            <div class="how-step">
+                <div class="number">3</div>
+                <h3>Build &amp; Stay</h3>
+                <p>We do the work in small steps you can see. Afterwards I stay on call, monthly, so it keeps working as your business changes.</p>
+            </div>
+        </div>
+
+        <section class="section">
+            <h2>Who I Am</h2>
+            <p>I'm Jeff Bridwell. I spent 25 years as an enterprise architect and engineering leader, running organizations of 100+ people at Staples and CVS Health. I know what good technology feels like when it works, and what it costs when it doesn't.</p>
+            <p>Now I live in Roslindale and work with a few local businesses at a time. I also design gardens with my neighbors, and I build my own small AI team, which is where the name Chorus comes from.</p>
+        </section>
+
+
+        <section class="section">
+            <h2>Working Together</h2>
+            <div class="who-list">
+                <span class="who-item">The first conversation is free, at your place or over coffee</span>
+                <span class="who-item">We start with one small piece, priced up front, so you can see how I work</span>
+                <span class="who-item">You see progress as it happens, not at the end</span>
+                <span class="who-item">Monthly support if you want it, no long contracts</span>
+                <span class="who-item">Everything I make for you is yours to keep</span>
+            </div>
+        </section>
+
+        <div class="promise">
+            <strong>A few clients at a time. Plain answers. Your data stays yours.</strong>
+        </div>
+
+        <section class="contact">
+            <h2>Let's Talk</h2>
+            <p><a href="mailto:jeffbridwell@gmail.com">jeffbridwell@gmail.com</a></p>
+            <div class="location">
+                Roslindale, Jamaica Plain, Hyde Park &amp; Greater Boston
+            </div>
+        </section>
+    </div>
+
+    <footer>
+        &copy; 2026 Chorus Consulting
+    </footer>
+</body>
+</html>
