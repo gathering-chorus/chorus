@@ -54,12 +54,21 @@ usage() { sed -n '2,30p' "${BASH_SOURCE[0]}" | sed 's/^# \{0,1\}//'; exit 2; }
 
 # --- reads (anon; only writes need the credential) ---------------------------
 
-# Every chunk owned by a role, as "slug<TAB>roleSequence", ordinal ascending.
+# Every chunk owned by a role, as "slug<TAB>roleSequence<TAB>loomSequence",
+# ordinal ascending. loomSequence is empty when the chunk has none.
+# #4307 — the loom ordinal is read here so a rewrite can carry it: athena-model
+# add replaces the row, and a write without it erased Jeff's loom order.
 chunks_for_role() {
   local role="$1"
-  local q="PREFIX chorus: <$NS> SELECT ?slug ?rseq WHERE { GRAPH <urn:chorus:domains:board> { ?ch a chorus:Chunk ; chorus:ownedBy chorus:principal-${role} ; chorus:slug ?slug ; chorus:roleSequence ?rseq } } ORDER BY ?rseq"
+  local q="PREFIX chorus: <$NS> SELECT ?slug ?rseq ?lseq WHERE { GRAPH <urn:chorus:domains:board> { ?ch a chorus:Chunk ; chorus:ownedBy chorus:principal-${role} ; chorus:slug ?slug ; chorus:roleSequence ?rseq . OPTIONAL { ?ch chorus:loomSequence ?lseq } } } ORDER BY ?rseq"
   curl -s "$FUSEKI_QUERY" --data-urlencode "query=$q" -H "Accept: text/csv" 2>/dev/null \
-    | tail -n +2 | tr -d '\r' | awk -F, 'NF>=2 && $1!=""{print $1"\t"$2}'
+    | tail -n +2 | tr -d '\r' | awk -F, 'NF>=2 && $1!=""{print $1"\t"$2"\t"$3}'
+}
+
+# The loomSequence field for a chunk, as athena-model args (nothing if none).
+loom_args() {  # loom_args <existing> <slug>
+  local l; l="$(printf '%s\n' "$1" | awk -F'\t' -v s="$2" '$1==s{print $3}')"
+  [ -n "$l" ] && printf '%s\n' "--field" "loomSequence=$l"
 }
 
 # Card ids in a chunk, as "cardId<TAB>rank", ordinal ascending.
@@ -140,9 +149,11 @@ rerank_chunks() {
   # ordinal in play.
   local i=1
   for slug in "${order[@]}"; do
-    write "park chunk $slug → $((PARK_OFFSET + i))" \
+    local -a loom=(); while IFS= read -r a; do [ -n "$a" ] && loom+=("$a"); done < <(loom_args "$existing" "$slug")
+    write "park chunk $slug → $((PARK_OFFSET + i)) ${loom[*]-}" \
       --kind chunk --name "$slug" --field "slug=$slug" --field "label=$slug" \
-      --field "roleSequence=$((PARK_OFFSET + i))" --edge "ownedBy=role:$role" \
+      --field "roleSequence=$((PARK_OFFSET + i))" --edge "ownedBy=principal:$role" \
+      ${loom[@]+"${loom[@]}"} \
       || { parked_abort "$role chunks" "${order[@]}"; }
     i=$((i+1))
   done
@@ -150,9 +161,11 @@ rerank_chunks() {
   # Phase two: the order Jeff asked for.
   i=1
   for slug in "${order[@]}"; do
-    write "chunk $slug → roleSequence $i" \
+    local -a loom=(); while IFS= read -r a; do [ -n "$a" ] && loom+=("$a"); done < <(loom_args "$existing" "$slug")
+    write "chunk $slug → roleSequence $i ${loom[*]-}" \
       --kind chunk --name "$slug" --field "slug=$slug" --field "label=$slug" \
-      --field "roleSequence=$i" --edge "ownedBy=role:$role" \
+      --field "roleSequence=$i" --edge "ownedBy=principal:$role" \
+      ${loom[@]+"${loom[@]}"} \
       || { parked_abort "$role chunks" "${order[@]}"; }
     i=$((i+1))
   done
