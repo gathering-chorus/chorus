@@ -42,6 +42,10 @@ export type Readout = {
    *  SUITES. The readout never recomputes a test number: a third computation
    *  of this grain is the disagreement the card exists to end. */
   tests: NightlyTally | null;
+  /** #4155 — the run's errors and exceptions, verbatim from its RUN|errors
+   *  line (counted by the runner from its own per-case reason lines), or null
+   *  when the run wrote none. Never recomputed here, same rule as `tests`. */
+  errors: string | null;
   reds: RedSuite[];
   redByOwner: Record<string, number>;
   /** #4073 — how many reds of each label; the zero-red bar measures product-broke */
@@ -192,6 +196,7 @@ export function buildReadout(run: NightlyRunRecord, prev: NightlyRunRecord | nul
     // a tally line with no numbers in it (the runner's "registry unreadable"
     // sentence) is NOT a reading — absent, never a row of zeroes
     tests: run.tally && run.tally.ran !== undefined ? run.tally : null,
+    errors: run.errors ?? null,
     reds,
     redByOwner,
     byLabel,
@@ -246,6 +251,9 @@ function deltaLines(c: Readout['changes']): string[] {
 
 export function renderReadoutText(r: Readout, baseUrl: string): string {
   const lines: string[] = [headLine(r)];
+  // #4155 — the count Jeff asks for after every run, from the run's own line;
+  // an old run with no line says so rather than reading as zero
+  if (r.completed) lines.push(`errors: ${r.errors ?? 'not measured — the run wrote no errors line'}`);
   if (r.failed > 0) {
     const owners = Object.entries(r.redByOwner).sort((a, b) => b[1] - a[1]).map(([o, n]) => `${o} ${n}`).join(', ');
     lines.push(labelLine(r), `red by owner: ${owners}`,

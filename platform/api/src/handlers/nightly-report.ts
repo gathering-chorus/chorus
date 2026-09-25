@@ -67,6 +67,9 @@ export type NightlyRun = {
   /** #4271 — the run's test-grain tally, verbatim. Absent when the run wrote
    *  no tally line; the readout then reports the test grain as unmeasured. */
   tally?: NightlyTally;
+  /** #4155 — the run's error counts, verbatim from its RUN|errors line
+   *  (failed cases, exceptions, http, assertions, other). */
+  errors?: string;
   /** #4009 — liveness. A run that never completed is either working or wedged,
    *  and the page could not tell them apart: on 2026-08-25 a lane sat silent
    *  for 38 minutes while a human was told three different things about it.
@@ -117,6 +120,10 @@ export function parseNightlyLog(text: string): NightlyRun | null {
     // it, so the readout never had the test grain to state.
     if (l.startsWith('RUN|tally|')) {
       run.tally = parseTally(l.slice('RUN|tally|'.length));
+      continue;
+    }
+    if (l.startsWith('RUN|errors|')) {
+      run.errors = l.slice('RUN|errors|'.length);
       continue;
     }
     const row = parseSuiteLine(l);
@@ -325,7 +332,8 @@ export function oneDecimal(summary: string): string {
 // ---------------------------------------------------------------------------
 // #4277 — failing cases, read from the TestResult rows the runner writes.
 
-export type CaseRow = { name: string; result: string };
+/** #4155 — `reason` is why a failed case failed, from its result row. */
+export type CaseRow = { name: string; result: string; reason?: string };
 export type CasesBySuite = Record<string, CaseRow[]>;
 
 /** One query per page, bounded to the run's own window (the #4015 lesson: an
@@ -333,8 +341,9 @@ export type CasesBySuite = Record<string, CaseRow[]>;
  *  so the page parses only what it shows. */
 export function failingCasesQuery(run: { startedAt: string; completedAt?: string }): string {
   const ended = run.completedAt ?? '9999';
-  return 'PREFIX c: <https://jeffbridwell.com/chorus#> SELECT ?fp ?tn ?res WHERE { GRAPH <urn:chorus:domains:tests> {'
+  return 'PREFIX c: <https://jeffbridwell.com/chorus#> SELECT ?fp ?tn ?res ?why WHERE { GRAPH <urn:chorus:domains:tests> {'
     + ' ?r a c:TestResult ; c:runTs ?ts ; c:filePath ?fp ; c:testName ?tn ; c:result ?res'
+    + ' OPTIONAL { ?r c:failureReason ?why }'
     + ` FILTER(STR(?ts) >= "${run.startedAt}" && STR(?ts) <= "${ended}") FILTER(?res != "pass") } } ORDER BY ?fp`;
 }
 
@@ -346,9 +355,9 @@ export function parseFailingCases(csv: string): CasesBySuite {
   for (const line of lines.slice(1)) {
     const cells = csvCells(line);
     if (cells.length < 3) continue;
-    const [fp, tn, res] = cells;
+    const [fp, tn, res, why] = cells;
     const list = out.get(fp) ?? [];
-    list.push({ name: tn, result: res });
+    list.push(why ? { name: tn, result: res, reason: why } : { name: tn, result: res });
     out.set(fp, list);
   }
   return Object.fromEntries(out);
@@ -396,7 +405,14 @@ function suiteLine(r: NightlyRow): string {
 
 /** lookup without a computed member access (the object-injection lint) */
 function casesFor(cases: CasesBySuite | undefined, p: string): CaseRow[] | undefined {
-  return cases ? Object.entries(cases).find(([k]) => k === p)?.[1] : undefined;
+  if (!cases) return undefined;
+  const own = Object.entries(cases).find(([k]) => k === p)?.[1];
+  if (own) return own;
+  // #4155 — a package or crate suite (npm, cargo) is a directory; its cases
+  // are stored under their test files inside it. Before this an npm red
+  // showed "no case rows" while its TypeErrors sat in the store.
+  const under = Object.entries(cases).filter(([k]) => k.startsWith(p + '/')).flatMap(([, v]) => v);
+  return under.length ? under : undefined;
 }
 
 /** A shell suite records ONE result row named for the file — that is the
@@ -407,11 +423,18 @@ function isSuiteOwnRow(cases: CaseRow[], r: NightlyRow): boolean {
   return cases.length === 1 && cases[0].name === file;
 }
 
+/** #4155 — why the case failed, under its name. */
+function whyLine(c: CaseRow): string {
+  return c.reason ? `<span class="why">${esc(c.reason)}</span>` : '';
+}
+
 function caseList(cases: CaseRow[] | undefined, r: NightlyRow): string {
   if (!cases || cases.length === 0 || isSuiteOwnRow(cases, r)) {
-    return `<li class="case none">no case rows recorded for this suite — the summary is all the run wrote: ${esc(oneDecimal(r.summary))}</li>`;
+    // a shell suite's own row still carries its reason — its last lines
+    const own = cases && cases.length === 1 ? whyLine(cases[0]) : '';
+    return `<li class="case none">no case rows recorded for this suite — the summary is all the run wrote: ${esc(oneDecimal(r.summary))}${own}</li>`;
   }
-  return cases.map((c) => `<li class="case ${esc(c.result)}"><span class="m">${esc(c.result)}</span><span>${esc(c.name)}</span></li>`).join('');
+  return cases.map((c) => `<li class="case ${esc(c.result)}"><span class="m">${esc(c.result)}</span><span>${esc(c.name)}${whyLine(c)}</span></li>`).join('');
 }
 
 function redFold(r: NightlyRow, o: NightlyPageOpts | undefined): string {
@@ -470,11 +493,15 @@ function renderBanner(run: NightlyRun, o: NightlyPageOpts | undefined): string {
   const tests = t
     ? `<span><span class="u">tests</span> ${n(t.passed)} passed · ${n(t.failed)} failed · ${n(t.unmeasured)} unmeasured · ${n(t.noResult)} no result · ${n(t.ran)} ran of ${n(t.registered)} registered</span>`
     : '<span><span class="u">tests</span> unmeasured — the run wrote no tally line</span>';
+  // #4155 — errors and exceptions as the run counted them from its own reason lines
+  const errs = run.errors
+    ? `<span><span class="u">errors</span> ${esc(run.errors)}</span>`
+    : '<span><span class="u">errors</span> unmeasured — the run wrote no errors line</span>';
   return `<div class="banner ${cls}">
   <div class="verdict">${verdict}</div>
   <div class="when">${esc(run.startedAt)}${run.completedAt ? ' → ' + esc(run.completedAt.slice(11)) : ''}${dur}</div>
   ${notFinishedLine(run)}
-  <div class="counts"><span><span class="u">suites</span> ${counts('pass')} passed · ${reds} failed · ${counts('slow')} slow · ${other} unmeasured · ${counts('skip')} skipped</span>${tests}</div>
+  <div class="counts"><span><span class="u">suites</span> ${counts('pass')} passed · ${reds} failed · ${counts('slow')} slow · ${other} unmeasured · ${counts('skip')} skipped</span>${tests}${errs}</div>
   ${r ? `<div class="split">${splitLine(r)}${deltaLine(r)}</div>` : ''}
 </div>`;
 }
@@ -539,6 +566,7 @@ function page(title: string, body: string): string {
   details.group > summary::before, details.sub > summary::before { content:""; width:.5rem; height:.5rem; border-right:2px solid var(--mut); border-bottom:2px solid var(--mut); transform:rotate(-45deg); }
   details.group[open] > summary::before, details.sub[open] > summary::before { transform:rotate(45deg); }
   details.sub { border-top:1px solid var(--line); } details.sub > summary { padding-left:1.5rem; font-weight:500; }
+  .case .why { display:block; color:var(--mut); font-size:.85rem; white-space:normal; overflow-wrap:anywhere; }
   summary .n { font-variant-numeric:tabular-nums; min-width:3ch; text-align:right; } summary .lbl { flex:1; } summary .hint { color:var(--mut); font-weight:400; font-size:.85rem; min-width:0; }
   .pill { font-size:.7rem; font-weight:700; letter-spacing:.06em; text-transform:uppercase; padding:.1rem .45rem; border-radius:999px; white-space:nowrap; }
   .pill.red { background:var(--red-bg); color:var(--red); } .pill.green { background:var(--green-bg); color:var(--green); } .pill.amber { background:var(--amber-bg); color:var(--amber); } .pill.unm { background:var(--unm-bg); color:var(--unm); }
