@@ -4,7 +4,7 @@
 // their failing cases, history last. Hermetic: renderer + pure helpers; the
 // store read is a fetchFn seam; the declared-type read is a readFile seam.
 import {
-  parseNightlyLog, renderNightlyPage, suiteType, groupByType, oneDecimal,
+  parseNightlyLog, renderNightlyPage, suiteType, groupByType, oneDecimal, typeCounts,
   failingCasesQuery, parseFailingCases,
 } from '../src/handlers/nightly-report';
 
@@ -57,6 +57,19 @@ describe('#4277 type groups in run order', () => {
     const run = parseNightlyLog(RUN_ONE_RED)!;
     expect(groupByType(run.rows, typeOf).map((g) => g.type))
       .toEqual(['lint', 'coverage', 'unit', 'integration', 'undeclared (bats)']);
+  });
+});
+
+describe('#4160 per-type counts', () => {
+  it('each type fold sums its suites\' pass and fail counts', () => {
+    const run = parseNightlyLog(RUN_ONE_RED)!;
+    const unit = groupByType(run.rows, typeOf).find((g) => g.type === 'unit')!;
+    expect(typeCounts(unit.rows)).toEqual({ pass: 135, fail: 0 });
+    const page = renderNightlyPage(run, { cases: {}, typeOf });
+    expect(page).toContain('<span class="lbl">integration</span><span class="hint">0 pass · 1 fail</span>');
+  });
+  it('negative proof: a summary without counts adds nothing, it is never read as a pass', () => {
+    expect(typeCounts([{ summary: 'UNMEASURED — no output' }, { summary: '3 pass, 1 fail' }])).toEqual({ pass: 3, fail: 1 });
   });
 });
 

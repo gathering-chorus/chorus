@@ -3010,6 +3010,285 @@ pub fn integration_measured_report(registered: usize, executed: usize) -> String
     }
 }
 
+/// #4160 — the order the nightly runs test types in: Jeff's note of
+/// 2026-09-12 (coverage, lint, security, unit, integration, ui, perf) with the
+/// types it did not name slotted where they belong. `unclassified` runs last.
+pub const STAGE_ORDER: [&str; 13] = [
+    "coverage", "lint", "smoke", "security", "unit", "contract", "integration",
+    "fitness", "bdd", "e2e", "ui", "perf", "unclassified",
+];
+
+/// #4160 — stages the outer legs already cover (coverage, lint, eslint, smoke
+/// run before the runner; daemons + duration are perf lines after it). An
+/// empty runner stage for one of these is not "absent".
+pub const LEG_COVERED_STAGES: [&str; 4] = ["coverage", "lint", "smoke", "perf"];
+
+/// #4160 — a row's test type, from #4162's testType as the fetch split it
+/// (concern ui/perf/security, else layer), `unclassified` when neither.
+pub fn row_type(r: &TestRow) -> &str {
+    if !r.test_concern.is_empty() {
+        &r.test_concern
+    } else if !r.pyramid_layer.is_empty() {
+        &r.pyramid_layer
+    } else {
+        "unclassified"
+    }
+}
+
+/// #4160 — the stage a file suite (bats/sh/feature/py) runs in: the type its
+/// registered rows carry; a file with no typed row falls back on its kind
+/// (.feature is bdd, a unittest file is unit), else `unclassified`.
+pub fn file_suite_stage(suite: &str, rows: &[TestRow]) -> String {
+    let typed = rows
+        .iter()
+        .filter(|r| r.file_path == suite)
+        .map(row_type)
+        .find(|t| *t != "unclassified");
+    match typed {
+        Some(t) => t.to_string(),
+        None if is_feature_suite(suite) => "bdd".to_string(),
+        None if is_unittest_suite(suite) => "unit".to_string(),
+        None => "unclassified".to_string(),
+    }
+}
+
+/// #4160 — a crate's integration-test binaries (`tests/<stem>.rs`) whose rows
+/// are typed something other than unit, as (stem, type). They run in their
+/// own type's stage; the crate's unit run excludes them.
+pub fn crate_binary_types(krate: &str, rows: &[TestRow]) -> Vec<(String, String)> {
+    let prefix = format!("platform/services/{}/tests/", krate);
+    let mut out: Vec<(String, String)> = Vec::new();
+    for r in rows {
+        let Some(stem) = r.file_path.strip_prefix(&prefix).and_then(|x| x.strip_suffix(".rs")) else { continue };
+        if stem.contains('/') {
+            continue;
+        }
+        let t = row_type(r);
+        if t == "unit" || t == "unclassified" {
+            continue;
+        }
+        if !out.iter().any(|(s, _)| s == stem) {
+            out.push((stem.to_string(), t.to_string()));
+        }
+    }
+    out.sort();
+    out
+}
+
+/// #4160 — one stage's work: cargo items are `crate` (its unit run) or
+/// `crate#stem` (one typed test binary); npm items are `pkg` or
+/// `pkg#integration` (a jest package's integration project run apart).
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct StagePlan {
+    pub stage: &'static str,
+    pub cargo: Vec<String>,
+    pub npm: Vec<String>,
+    pub files: Vec<String>,
+}
+
+impl StagePlan {
+    pub fn is_empty(&self) -> bool {
+        self.cargo.is_empty() && self.npm.is_empty() && self.files.is_empty()
+    }
+}
+
+/// #4160 — every unit placed in its type's stage, stages in STAGE_ORDER.
+/// `split_pkgs` are jest packages with a hermetic/integration project pair;
+/// their integration run is planned only when `integration_on` (the stack is
+/// up). `security_pkgs` are packages whose rows are typed security.
+pub fn plan_stages(
+    crates: &[String],
+    ts_pkgs: &[String],
+    files: &[String],
+    rows: &[TestRow],
+    split_pkgs: &[String],
+    security_pkgs: &std::collections::BTreeSet<String>,
+    integration_on: bool,
+) -> Vec<StagePlan> {
+    let mut plans: Vec<StagePlan> = STAGE_ORDER
+        .iter()
+        .map(|s| StagePlan { stage: s, cargo: Vec::new(), npm: Vec::new(), files: Vec::new() })
+        .collect();
+    let at = |plans: &mut Vec<StagePlan>, t: &str| -> usize {
+        plans.iter().position(|p| p.stage == t).unwrap_or(plans.len() - 1)
+    };
+    for c in crates {
+        let i = at(&mut plans, "unit");
+        plans[i].cargo.push(c.clone());
+        for (stem, t) in crate_binary_types(c, rows) {
+            let i = at(&mut plans, &t);
+            plans[i].cargo.push(format!("{}#{}", c, stem));
+        }
+    }
+    for p in ts_pkgs {
+        let t = if security_pkgs.contains(p) { "security" } else { "unit" };
+        let i = at(&mut plans, t);
+        plans[i].npm.push(p.clone());
+        if split_pkgs.contains(p) && integration_on {
+            let i = at(&mut plans, "integration");
+            plans[i].npm.push(format!("{}#integration", p));
+        }
+    }
+    for f in files {
+        let t = file_suite_stage(f, rows);
+        let i = at(&mut plans, &t);
+        plans[i].files.push(f.clone());
+    }
+    plans
+}
+
+/// #4160 — a runner stage with nothing registered, said out loud: never a
+/// green row, never silence (AC5).
+pub fn nightly_stage_absent_line(stage: &str) -> String {
+    format!(
+        "nightly-unit|{}|stage:{}|skip|0 pass, 0 fail (ABSENT — no registered {} tests this run)",
+        stage, stage, stage
+    )
+}
+
+/// #4160 — the ui lane's verdict from playwright's output (was nightly_all's
+/// leg_ui; the ui lane now runs inside the runner, in its type's stage).
+/// No summary is UNMEASURED, never pass.
+pub fn ui_lane_verdict(rc: i32, out: &str) -> (&'static str, String) {
+    match parse_playwright_summary(out) {
+        None => ("unmeasured", format!(
+            "0 pass, 0 fail (UNMEASURED — playwright produced no summary, rc={}: {})", rc,
+            out.lines().rev().find(|l| !l.trim().is_empty()).unwrap_or("").trim().chars().take(120).collect::<String>())),
+        Some((passed, failed)) if failed > 0 || rc != 0 => {
+            let first = playwright_failure_lines(out).into_iter().take(3).collect::<Vec<_>>().join("; ");
+            ("fail", format!("{} pass, {} fail (rc={}) {}", passed, failed, rc, first))
+        }
+        Some((passed, _)) => ("pass", format!("{} pass, 0 fail ({} skipped)", passed, parse_playwright_skipped(out))),
+    }
+}
+
+/// #4160 — nextest restricted to the named test binaries (`--test <stem>`),
+/// plus the usual quarantine exclusions.
+pub fn nextest_run_args_bins(quarantined: &[&str], bins: &[&str], threads: Option<usize>) -> Vec<String> {
+    let mut v = nextest_run_args_threads(quarantined, &[], threads);
+    for b in bins {
+        v.push("--test".to_string());
+        v.push(b.to_string());
+    }
+    v
+}
+
+#[cfg(test)]
+mod stages_4160 {
+    use super::*;
+
+    fn row(fp: &str, layer: &str, concern: &str) -> TestRow {
+        TestRow { file_path: fp.into(), covers: "tests".into(), pyramid_layer: layer.into(),
+            hermeticity: String::new(), test_concern: concern.into() }
+    }
+
+    /// NEGATIVE PROOF (AC5): rows registered out of type order still plan in
+    /// Jeff's order — perf and security first in the registry, security then
+    /// unit then … then perf in the plan.
+    #[test]
+    fn out_of_order_rows_plan_in_spec_order() {
+        let rows = vec![
+            row("platform/tests/p.bats", "", "perf"),
+            row("platform/tests/s.bats", "", "security"),
+            row("platform/tests/u.bats", "unit", ""),
+            row("platform/tests/i.bats", "integration", ""),
+            row("platform/tests/features/seeds/x.feature", "bdd", ""),
+        ];
+        let files: Vec<String> = rows.iter().map(|r| r.file_path.clone()).collect();
+        let plan = plan_stages(&[], &[], &files, &rows, &[], &Default::default(), true);
+        let order: Vec<&str> = plan.iter().filter(|p| !p.is_empty()).map(|p| p.stage).collect();
+        assert_eq!(order, vec!["security", "unit", "integration", "bdd", "perf"]);
+        // every stage is present in the plan, empty or not, in STAGE_ORDER
+        assert_eq!(plan.iter().map(|p| p.stage).collect::<Vec<_>>(), STAGE_ORDER.to_vec());
+    }
+
+    /// NEGATIVE PROOF (AC5): an empty stage is ABSENT, a skip line that says
+    /// so — not a pass, not a missing row.
+    #[test]
+    fn an_empty_stage_says_absent_not_pass() {
+        let l = nightly_stage_absent_line("security");
+        assert!(l.starts_with("nightly-unit|security|stage:security|skip|"), "{l}");
+        assert!(l.contains("ABSENT"), "{l}");
+        assert!(!l.contains("|pass|"), "{l}");
+    }
+
+    /// AC1: a crate's typed test binaries run in their own stage; its unit run stays in unit.
+    #[test]
+    fn crate_binaries_run_in_their_own_type_stage() {
+        let rows = vec![
+            row("platform/services/athena-make/src/lib.rs", "unit", ""),
+            row("platform/services/athena-make/tests/live_serve.rs", "integration", ""),
+            row("platform/services/athena-make/tests/sec.rs", "", "security"),
+            row("platform/services/athena-make/tests/units.rs", "unit", ""),
+        ];
+        let plan = plan_stages(&["athena-make".to_string()], &[], &[], &rows, &[], &Default::default(), true);
+        let get = |s: &str| plan.iter().find(|p| p.stage == s).unwrap().cargo.clone();
+        assert_eq!(get("unit"), vec!["athena-make"]);
+        assert_eq!(get("integration"), vec!["athena-make#live_serve"]);
+        assert_eq!(get("security"), vec!["athena-make#sec"]);
+    }
+
+    /// AC3: platform/api runs twice — hermetic in unit, its integration project
+    /// in integration — and the integration run is not planned with the stack down.
+    #[test]
+    fn a_split_jest_package_runs_unit_and_integration_apart() {
+        let pk = vec!["platform/api".to_string(), "platform/pulse".to_string()];
+        let split = vec!["platform/api".to_string()];
+        let plan = plan_stages(&[], &pk, &[], &[], &split, &Default::default(), true);
+        let get = |s: &str| plan.iter().find(|p| p.stage == s).unwrap().npm.clone();
+        assert_eq!(get("unit"), vec!["platform/api", "platform/pulse"]);
+        assert_eq!(get("integration"), vec!["platform/api#integration"]);
+        let down = plan_stages(&[], &pk, &[], &[], &split, &Default::default(), false);
+        assert!(down.iter().find(|p| p.stage == "integration").unwrap().npm.is_empty());
+    }
+
+    #[test]
+    fn file_suites_fall_back_by_kind_then_unclassified() {
+        assert_eq!(file_suite_stage("platform/tests/features/a/b.feature", &[]), "bdd");
+        assert_eq!(file_suite_stage("platform/tests/test_x.py", &[]), "unit");
+        assert_eq!(file_suite_stage("platform/tests/y.bats", &[]), "unclassified");
+    }
+
+    /// (moved with the ui lane from nightly_all's lanes_4278 test)
+    #[test]
+    fn ui_verdict_fails_on_a_failure_and_never_passes_on_silence() {
+        let out = "  \u{2718}  1 [chromium] \u{203a} login-journey.spec.cjs:9:3 \u{203a} signs in\n  1 failed\n  94 passed (1.2m)\n";
+        assert_eq!(ui_lane_verdict(1, out).0, "fail");
+        // NEGATIVE PROOF: no summary at all is UNMEASURED, not pass
+        assert_eq!(ui_lane_verdict(1, "Error: no tests found\n").0, "unmeasured");
+        let (v, s) = ui_lane_verdict(0, "  95 passed (2.0m)\n");
+        assert_eq!(v, "pass");
+        assert!(s.starts_with("95 pass, 0 fail"), "{s}");
+    }
+
+    #[test]
+    fn staged_items_print_under_their_stage() {
+        assert_eq!(stage_item_label("integration", "cargo", "chorus-crawl#live_serve"),
+            ("integration".to_string(), "platform/services/chorus-crawl/tests/live_serve.rs".to_string()));
+        assert_eq!(stage_item_label("integration", "npm", "platform/api#integration"),
+            ("integration".to_string(), "platform/api".to_string()));
+        assert_eq!(stage_item_label("unit", "cargo", "chorus-crawl"), ("cargo".to_string(), "chorus-crawl".to_string()));
+    }
+
+    /// AC3 — platform/api's two projects run as two rows: the unit stage
+    /// names hermetic, the integration stage names integration.
+    #[test]
+    fn a_staged_jest_run_names_its_project() {
+        assert_eq!(jest_project_args_for(true, true, Some("hermetic")), vec!["--selectProjects", "hermetic"]);
+        assert_eq!(jest_project_args_for(true, true, Some("integration")), vec!["--selectProjects", "integration"]);
+        // NEGATIVE PROOF: unstaged keeps #4139's rule — flag on is both projects at once
+        assert!(jest_project_args_for(true, true, None).is_empty());
+        // a package with no projects never gets a --selectProjects it would ignore
+        assert!(jest_project_args_for(false, true, Some("hermetic")).is_empty());
+    }
+
+    #[test]
+    fn nextest_bins_selects_named_binaries() {
+        let a = nextest_run_args_bins(&[], &["live_serve"], None);
+        assert!(a.windows(2).any(|w| w[0] == "--test" && w[1] == "live_serve"), "{a:?}");
+    }
+}
+
 /// #4139 — jest project selection. platform/api declares `hermetic` and
 /// `integration` projects; bare jest runs both, and the integration project
 /// without RUN_INTEGRATION fails 150 cases (#4111). #4111's answer was to
@@ -3021,6 +3300,28 @@ pub fn jest_project_args(has_hermetic_project: bool, run_integration: bool) -> V
         vec!["--selectProjects".to_string(), "hermetic".to_string()]
     } else {
         Vec::new()
+    }
+}
+
+/// #4160 — a staged run names its project: the unit stage runs `hermetic`,
+/// the integration stage runs `integration`, each as its own row. A package
+/// with no projects ignores the name (bare jest is its whole suite).
+pub fn jest_project_args_for(has_hermetic_project: bool, run_integration: bool, project: Option<&str>) -> Vec<String> {
+    match project {
+        Some(p) if has_hermetic_project => vec!["--selectProjects".to_string(), p.to_string()],
+        _ => jest_project_args(has_hermetic_project, run_integration),
+    }
+}
+
+/// #4160 — the (kind, unit) a stage item prints under, on its plan line and
+/// its unit line alike, so the never-ran fold joins the two. A typed crate
+/// binary is named by its file and filed under its stage; a package's
+/// integration run is the package under the `integration` kind.
+pub fn stage_item_label(stage: &str, lane: &str, item: &str) -> (String, String) {
+    match (lane, item.split_once('#')) {
+        ("cargo", Some((c, stem))) => (stage.to_string(), format!("platform/services/{}/tests/{}.rs", c, stem)),
+        (_, Some((p, _))) => (stage.to_string(), p.to_string()),
+        (l, None) => (l.to_string(), item.to_string()),
     }
 }
 
