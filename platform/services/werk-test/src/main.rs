@@ -809,28 +809,46 @@ fn run_nightly(args: &[String]) -> Result<i32, String> {
         // #4292 — the two new file suites carry their own kind on the report
         else if werk_test::is_feature_suite(b) { "bdd" } else if werk_test::is_unittest_suite(b) { "py" } else { "bats" }
     };
+    // #4160 — the run goes by TEST TYPE, in Jeff's order (2026-09-12):
+    // coverage, lint, smoke (the outer legs), then security, unit, contract,
+    // integration, fitness, bdd, e2e, ui, perf. Each unit sits in the stage its
+    // registered testType names: a crate's typed test binaries leave its unit
+    // run for their own stage, and platform/api's integration project runs as
+    // its own row. The three tool pools (cargo, then npm, then files) ran every
+    // type mixed in tool order; that is what this replaces.
+    let integration_on = stack_down.is_none();
+    let split_pkgs: Vec<String> = ts_pkgs.iter()
+        .filter(|p| jest_has_hermetic_project(&format!("{}/{}", root, p)))
+        .cloned().collect();
+    let security_pkgs: std::collections::BTreeSet<String> = ts_pkgs.iter()
+        .filter(|p| sec_units.contains(*p)).cloned().collect();
+    let stages = werk_test::plan_stages(&crates, &ts_pkgs, &bats_suites, &rows, &split_pkgs, &security_pkgs, integration_on);
+    let legs_noop = std::env::var("NIGHTLY_LEGS_NOOP").is_ok();
+    let npm_kind_of = |p: &str| -> &'static str { if security_pkgs.contains(p) { "security" } else { "npm" } };
     // #4030 AC4 — the PLAN, printed before any lane runs. A planned unit that
     // never produces its `nightly-unit|` line is folded by nightly-suites.sh
     // into a red NEVER RAN row (`never_ran_units`): a run killed at a cap can
     // no longer report only the units it got to and read as "3 red".
-    for c in &crates {
-        println!("{}", werk_test::nightly_plan_line("cargo", c));
+    for sp in &stages {
+        for c in &sp.cargo {
+            let (k, u) = werk_test::stage_item_label(sp.stage, "cargo", c);
+            println!("{}", werk_test::nightly_plan_line(&k, &u));
+        }
+        for p in &sp.npm {
+            let (k, u) = werk_test::stage_item_label(sp.stage, npm_kind_of(p), p);
+            println!("{}", werk_test::nightly_plan_line(&k, &u));
+        }
+        for b in &sp.files {
+            println!("{}", werk_test::nightly_plan_line(bats_kind(b), b));
+        }
+        if sp.stage == "ui" && !legs_noop {
+            println!("{}", werk_test::nightly_plan_line("ui", "proving/flows"));
+        }
     }
-    for p in &ts_pkgs {
-        let k = if sec_units.contains(p) { "security" } else { "npm" };
-        println!("{}", werk_test::nightly_plan_line(k, p));
-    }
-    for b in &bats_suites {
-        println!("{}", werk_test::nightly_plan_line(bats_kind(b), b));
-    }
-    // #4022 — the cargo lane was 24 serial `cargo nextest` invocations against
-    // an already-warm shared target dir; pool them. cargo's own flock still
-    // serializes any cold BUILD, so contention degrades to the old timing,
-    // never to corruption. Worker count is deliberately smaller than the bats
-    // pool — nextest is internally parallel, so crates multiply CPU.
     // #4022 — load-aware widths: each lane gets a share of the box, and no pool
     // takes a new unit while the 1-minute load is over cap (2× cores). Env
-    // overrides keep the old knobs; the defaults are the box's.
+    // overrides keep the old knobs; the defaults are the box's. nextest and
+    // jest are internally parallel, so their pools stay narrower than bats.
     let budget = werk_test::cpu_budget();
     let (cw_default, nextest_threads, nw_default, jest_workers, bats_default) = werk_test::lane_widths(budget);
     let cap: f64 = std::env::var("NIGHTLY_LOAD_CAP").ok().and_then(|v| v.parse().ok())
@@ -858,50 +876,16 @@ fn run_nightly(args: &[String]) -> Result<i32, String> {
             Vec::new()
         }
     };
-    let cargo_root = root.clone();
-    let (cargo_results, cargo_waits) = werk_test::run_pool_gated(&crates, cargo_workers, cap, read_loadavg, gate_wait, gate_tick, |c| {
-        let ns_bins = ns_bins_for(c);
-        let ns_refs: Vec<&str> = ns_bins.iter().map(|s| s.as_str()).collect();
-        let (ok, cases) = run_cargo(&cargo_root, c, &q_names, &ns_refs);
-        // #4030 AC3 — join + store THIS crate's cases now, in the worker
-        let crate_dir = format!("platform/services/{}", c);
-        let mut matched: Vec<CaseResult> = Vec::new();
-        for (path, result) in &cases {
-            match werk_test::match_cargo_case_path(path, &crate_dir, &rows, &row_names) {
-                Some(fp) => matched.push(CaseResult { file_path: fp, test_name: werk_test::nextest_bare_name(path).to_string(), result: result.clone() }),
-                None => { unmatched_cargo.fetch_add(1, Ordering::SeqCst); }
-            }
-        }
-        store_unit(c, &matched);
-        ((ok, cases), ns_bins.len())
-    });
-    for (c, ((ok, cases), ns_len)) in cargo_results {
-        let c = &c;
-        // #4078 — a skipped case is not a failure
-        let (passed, case_failed, case_skipped) = werk_test::case_counts(cases.iter().map(|(_, r)| r.as_str()));
-        println!("{}", werk_test::nightly_lane_line_with_skips("cargo", c, ok, passed, case_failed, case_skipped, ns_len));
-        if !ok {
-            any_failed = true;
-            failed_count += 1;
-            let msg = werk_test::unit_failure_message("cargo", c);
-            emit_spine("test.failed", &role, &card, &trace,
-                &[("check", "cargo"), ("unit", c), ("message", msg.as_str())]);
-        }
-    }
-
     // #3559/#3974 — platform/api's INTEGRATION jest project is only
     // constructed under RUN_INTEGRATION=true; the nightly sets it from the
     // live stack probe so integration tests run with the stack and are
-    // typed-absent without it — the wrapper's old per-package env is retired.
-    if stack_down.is_none() {
+    // typed-absent without it.
+    if integration_on {
         std::env::set_var("RUN_INTEGRATION", "true");
     }
-    // #4022 — npm lane pooled at 2: jest is internally parallel, so two
-    // concurrent packages already saturate; more just multiplies load (the
-    // 6-worker take pegged the box to 194).
     let npm_workers: usize = std::env::var("NIGHTLY_NPM_WORKERS").ok()
         .and_then(|v| v.parse().ok()).unwrap_or(nw_default);
-    // (#4152: read here, above the npm lane; the bats lane below uses the same list)
+    // (#4152: one isolation list for the npm and file lanes)
     let iso_conf = std::fs::read_to_string(
         Path::new(&root).join("platform/scripts/nightly-isolation.conf"))
         .unwrap_or_default();
@@ -909,190 +893,241 @@ fn run_nightly(args: &[String]) -> Result<i32, String> {
         .map(|l| l.trim().to_string())
         .filter(|l| !l.is_empty() && !l.starts_with('#'))
         .collect();
-    let npm_root = root.clone();
-    // #4152 — a package named in nightly-isolation.conf runs ALONE after the
-    // pool, the rule the bats lane already has. directing/products/cards
-    // mutates the live board and reads Vikunja's SQLite; beside another jest
-    // package it saw "database is locked" and read a stale status (the
-    // 2026-09-12 red). Plan order is kept: pool first, alone after.
-    let npm_plan = werk_test::plan_parallel_units(&ts_pkgs, &|u| explicit_iso.iter().any(|e| e == u));
-    println!("-- #4152 npm plan: {} packages fan out across {} workers, {} alone: {} --",
-        npm_plan.parallel.len(), npm_workers, npm_plan.serialized.len(), npm_plan.serialized.join(","));
-    let run_pkg = |p: &str| {
-        let (ok, cases) = run_jest_with(&npm_root, p, Some(jest_workers));
-        // #4030 AC3 — stored the moment the package finishes (foreign-file
-        // cases included: they join by their own file path)
-        store_unit(p, &cases);
-        (ok, cases)
-    };
-    let (mut npm_results, mut npm_waits) = werk_test::run_pool_gated(&npm_plan.parallel, npm_workers, cap, read_loadavg, gate_wait, gate_tick, run_pkg);
-    let (alone_results, alone_waits) = werk_test::run_pool_gated(&npm_plan.serialized, 1, cap, read_loadavg, gate_wait, gate_tick, run_pkg);
-    npm_results.extend(alone_results);
-    npm_waits += alone_waits;
-    for (p, (ok, cases)) in npm_results {
-        let p = &p;
-        let pkg_ns: Vec<String> = if stack_down.is_some() {
-            ns_all.iter().filter(|f| f.starts_with(&format!("{}/", p))).cloned().collect()
-        } else { Vec::new() };
-        // #4004 — attribute each case to the package its FILE lives in, not to
-        // the package the runner happened to invoke. Kade read "cards 7 fail /
-        // clearing 1 fail" and found the failing cases were
-        // platform/api/tests/*.integration.test.ts: jest's rootDir can reach
-        // past the package dir, so another package's results land on this row
-        // (the nightly claimed 609 tests for cards; cards alone runs 529 green).
-        // A count under the wrong name sends the wrong owner hunting through a
-        // suite that is not red.
-        let (mine, foreign): (Vec<_>, Vec<_>) = cases
-            .into_iter()
-            .partition(|c| werk_test::package_owns_case(p, &c.file_path));
-        if !foreign.is_empty() {
-            let mut owners: Vec<&str> = foreign
-                .iter()
-                .map(|c| c.file_path.rsplit_once('/').map(|(d, _)| d).unwrap_or("?"))
-                .collect();
-            owners.sort_unstable();
-            owners.dedup();
-            println!(
-                "!! jest:{} ran {} case(s) whose files live OUTSIDE it ({}) — not counted on this row",
-                p, foreign.len(), owners.join(", ")
-            );
-        }
-        if mine.is_empty() && !foreign.is_empty() {
-            // never let a package read as simply empty when its row ran nothing of its own
-            println!("!! jest:{} produced NO cases of its own — every result came from elsewhere", p);
-        }
-        let cases = mine;
-        // #4078 — a skipped case is not a failure (clearing's "1 fail" was 1 skip)
-        let (passed, case_failed, case_skipped) = werk_test::case_counts(cases.iter().map(|c| c.result.as_str()));
-        let npm_kind = if werk_test::security_units(&rows).contains(p) { "security" } else { "npm" };
-        // #4063 — name every failed case before the fold line, so a red row
-        // points at a test, not at a count.
-        for l in werk_test::failed_case_lines(&format!("jest:{}", p), &cases) {
-            println!("{}", l);
-        }
-        println!("{}", werk_test::nightly_lane_line_with_skips(npm_kind, p, ok, passed, case_failed, case_skipped, pkg_ns.len()));
-        if !ok {
-            any_failed = true;
-            failed_count += 1;
-            let msg = werk_test::unit_failure_message("npm", p);
-            emit_spine("test.failed", &role, &card, &trace,
-                &[("check", "npm"), ("unit", p), ("message", msg.as_str())]);
-        }
-    }
+    let bats_workers: usize = std::env::var("NIGHTLY_SUITE_WORKERS").ok()
+        .and_then(|v| v.parse().ok())
+        .unwrap_or(bats_default);
 
-    // #4030 AC3 — one bats runner for the three pools: run, then store now.
+    // #4030 AC3 — one bats runner for the file pools: run, then store now.
     let run_bats_stored = |werk: &str, b: &str| -> (bool, Vec<(String, String)>, String) {
-        // #4126 — Jeff, 2026-09-08: "do we ever find the bottleneck b4 tuning".
-        // We never have. The runner recorded what each unit DID and never how
-        // long it took, so "which units cost the hour" has never been
-        // answerable and every parallelism change — including the one I made
-        // this morning — was a guess. One timestamp per unit ends that.
-        //
-        // It also separates two states the report could not tell apart: a slow
-        // unit and a wedged one look identical from outside, because the pool
-        // counter only moves on completion. A unit that names its own seconds
-        // is visibly slow; a unit that never prints is visibly stuck.
+        // #4126 — one timestamp per unit: a slow unit names its own seconds,
+        // a wedged one never prints.
         let unit_started = std::time::Instant::now();
         let r = run_bats_cases(werk, b);
         let unit_ms = unit_started.elapsed().as_millis();
         let mut cases: Vec<CaseResult> = r.1.iter()
             .map(|(n, res)| CaseResult { file_path: b.to_string(), test_name: n.clone(), result: res.clone() })
             .collect();
-        // #4063 — a shell suite (test-*.sh) prints summary counts, not TAP
-        // cases, so nothing of it ever reached the ledger: 113 registered
-        // shell tests read "never ran" every night while running every
-        // night. The registry holds one test per script, named by the file;
-        // store that one verdict.
-        // #4131 — the registry holds ONE test per .sh named by the file (its
-        // identity, tag-tests-domain.py). A bats-shaped .sh emits its TAP cases
-        // and never that name, so eight scripts that ran every night were
-        // "never ran" to the reconcile (LANE SILENT 11 on 2026-09-09). Record the
-        // file-level verdict alongside the cases so the ledger cross-foots.
+        // #4063/#4131 — the registry holds ONE test per .sh named by the file;
+        // record the file-level verdict alongside any TAP cases so the ledger
+        // cross-foots.
         if b.ends_with(".sh") || bats_kind(b) == "shell" {
             let ident = b.rsplit('/').next().unwrap_or(b);
             if !cases.iter().any(|c| c.test_name == ident) {
                 cases.push(werk_test::shell_suite_case(b, r.0));
             }
         }
-        // #3953 already timed the CARD path (unit_costs → unit_cost_report,
-        // main.rs:301) but only there, and only when the budget blows. The
-        // nightly path never had it, which is why the slowest units in a
-        // 45-minute run have never been nameable. Same idea, the other path,
-        // printed unconditionally — a cost you only see when you are already
-        // over budget cannot tell you what to fix before you get there.
         println!("nightly-elapsed|{}|{}|{}ms", bats_kind(b), b, unit_ms);
         store_unit(b, &cases);
         r
     };
-    // #4022 — the lane's suites are independent subprocesses; fan them out.
-    // A suite is serialized when a registered file of its is needs-stack or it
-    // is named in the isolation conf (a suite that mutates the shared stack
-    // must never overlap anything). Report order stays the plan's order —
-    // run_pool returns input order regardless of completion order.
-    let plan = werk_test::plan_parallel_units(&bats_suites,
-        &|u| werk_test::unit_is_isolated(u, &rows, &explicit_iso));
-    let workers: usize = std::env::var("NIGHTLY_SUITE_WORKERS").ok()
-        .and_then(|v| v.parse().ok())
-        .unwrap_or(bats_default);
-    // #4022 second cut — the serialized tail was 50 suites at width 1. Only
-    // conf-listed MUTATORS truly need to run alone; needs-stack READERS
-    // (probes, health checks) overlap each other safely at width 2.
-    let (stack_readers, mutators) = werk_test::split_serialized(&plan.serialized, &explicit_iso);
-    println!("-- #4022 parallel plan: {} suites fan out across {} workers, {} stack-readers at 2, {} mutators alone --",
-        plan.parallel.len(), workers, stack_readers.len(), mutators.len());
-    let pool_root = root.clone();
-    let (mut lane_results, bats_waits): (Vec<(String, (bool, Vec<(String, String)>, String))>, usize) =
-        werk_test::run_pool_gated(&plan.parallel, workers, cap, read_loadavg, gate_wait, gate_tick, |b| run_bats_stored(&pool_root, b));
-    let reader_root = root.clone();
-    let (reader_results, reader_waits) =
-        werk_test::run_pool_gated(&stack_readers, 2, cap, read_loadavg, gate_wait, gate_tick, |b| run_bats_stored(&reader_root, b));
-    lane_results.extend(reader_results);
-    println!("-- #4022 load gate: held {} time(s) at load > {:.0} (cargo {}, npm {}, bats {}) --",
-        cargo_waits + npm_waits + bats_waits + reader_waits, cap, cargo_waits, npm_waits, bats_waits + reader_waits);
-    for b in &mutators {
-        lane_results.push((b.clone(), run_bats_stored(&root, b)));
-    }
-    for (b, (ok, cases, text)) in lane_results {
-        let b = &b;
-        let kind = bats_kind(b);
-        // #4065 — a suite that DECLINED to run (rc=3, e.g. test-product-membrane
-        // refusing to boot out live agents unattended, #4004) is neither pass
-        // nor fail. Its one synthetic "skip" case used to count as a FAIL here,
-        // so the row read "pass | 0 pass, 1 fail" — the reporter contradiction
-        // #3753 flagged every night. It is now its own verdict: skip.
-        if werk_test::is_self_refused(&cases) {
-            println!("{}", werk_test::nightly_lane_line_refused(kind, b));
+    let (mut cargo_waits, mut npm_waits, mut bats_waits) = (0usize, 0usize, 0usize);
+
+    for sp in &stages {
+        let stage = sp.stage;
+        let ui_here = stage == "ui" && !legs_noop;
+        if sp.is_empty() && !ui_here {
+            // AC5 — a type with nothing registered says so; the outer legs own
+            // coverage, lint, smoke and the perf ratchet.
+            if !werk_test::LEG_COVERED_STAGES.contains(&stage) {
+                println!("{}", werk_test::nightly_stage_absent_line(stage));
+            }
             continue;
         }
-        // #4273 — every case skipped: the suite ran and declined each one with
-        // a reason. Say so as a skip, not as "produced no parseable output".
-        if werk_test::is_all_skipped(&cases) {
-            let reason = werk_test::first_skip_reason(&text).unwrap_or_else(|| "no reason given".to_string());
-            println!("{}", werk_test::nightly_lane_line_all_skipped(kind, b, cases.len(), &reason));
-            continue;
+        println!("-- #4160 stage {}: {} cargo, {} npm, {} file suite(s){} --",
+            stage, sp.cargo.len(), sp.npm.len(), sp.files.len(), if ui_here { ", playwright" } else { "" });
+
+        // ── cargo: `crate` is its unit run, `crate#stem` one typed binary ──
+        let cargo_root = root.clone();
+        let (cargo_results, waits) = werk_test::run_pool_gated(&sp.cargo, cargo_workers, cap, read_loadavg, gate_wait, gate_tick, |item| {
+            let ns_bins = ns_bins_for(item.split('#').next().unwrap_or(item));
+            let (c, stem) = match item.split_once('#') {
+                Some((c, s)) => (c, Some(s)),
+                None => (item, None),
+            };
+            let typed: Vec<String> = werk_test::crate_binary_types(c, &rows).into_iter().map(|(s, _)| s).collect();
+            let (ok, cases, ns_len) = match stem {
+                // a needs-stack binary with the stack down: typed skip, never run
+                Some(s) if ns_bins.iter().any(|b| b == s) => (true, Vec::new(), 1),
+                Some(s) => {
+                    let (ok, cases) = run_cargo_sel(&cargo_root, c, &q_names, &[], &[s]);
+                    (ok, cases, 0)
+                }
+                None => {
+                    let mut excl: Vec<&str> = ns_bins.iter().map(|s| s.as_str()).collect();
+                    excl.extend(typed.iter().map(|s| s.as_str()));
+                    let (ok, cases) = run_cargo_sel(&cargo_root, c, &q_names, &excl, &[]);
+                    (ok, cases, ns_bins.iter().filter(|b| !typed.contains(b)).count())
+                }
+            };
+            // #4030 AC3 — join + store THIS unit's cases now, in the worker
+            let crate_dir = format!("platform/services/{}", c);
+            let mut matched: Vec<CaseResult> = Vec::new();
+            for (path, result) in &cases {
+                match werk_test::match_cargo_case_path(path, &crate_dir, &rows, &row_names) {
+                    Some(fp) => matched.push(CaseResult { file_path: fp, test_name: werk_test::nextest_bare_name(path).to_string(), result: result.clone() }),
+                    None => { unmatched_cargo.fetch_add(1, Ordering::SeqCst); }
+                }
+            }
+            store_unit(item, &matched);
+            (ok, cases, ns_len, stem.is_none() && !typed.is_empty())
+        });
+        cargo_waits += waits;
+        for (item, (ok, cases, ns_len, moved)) in cargo_results {
+            let (kind, unit) = werk_test::stage_item_label(stage, "cargo", &item);
+            if ok && cases.is_empty() && moved && ns_len == 0 {
+                println!("nightly-unit|{}|{}|skip|0 pass, 0 fail (no unit tests of its own — its typed test binaries ran in their own stages)", kind, unit);
+                continue;
+            }
+            // #4078 — a skipped case is not a failure
+            let (passed, case_failed, case_skipped) = werk_test::case_counts(cases.iter().map(|(_, r)| r.as_str()));
+            println!("{}", werk_test::nightly_lane_line_with_skips(&kind, &unit, ok, passed, case_failed, case_skipped, ns_len));
+            if !ok {
+                any_failed = true;
+                failed_count += 1;
+                let msg = werk_test::unit_failure_message("cargo", &unit);
+                emit_spine("test.failed", &role, &card, &trace,
+                    &[("check", "cargo"), ("unit", &unit), ("message", msg.as_str())]);
+            }
         }
-        // #4131 — a .sh declared security (test-security-scan.sh) folds under the
-        // security lane but still prints shell counts; parsed as TAP it read 0/0.
-        let (passed, case_failed) = if cases.is_empty() && (kind == "shell" || b.ends_with(".sh")) {
-            // shell suites report summary counts, not TAP cases
-            werk_test::parse_shell_counts(&text)
-                .unwrap_or(if ok { (1, 0) } else { (0, 1) })
-        } else {
-            (cases.iter().filter(|(_, r)| r == "pass").count(),
-             cases.iter().filter(|(_, r)| r != "pass" && r != "skip").count())
+
+        // ── npm: `pkg` (hermetic when it has projects), `pkg#integration` ──
+        // #4152 — a package named in nightly-isolation.conf runs ALONE after
+        // the pool (directing/products/cards reads Vikunja's SQLite and saw
+        // "database is locked" beside another jest package).
+        let npm_plan = werk_test::plan_parallel_units(&sp.npm,
+            &|u| explicit_iso.iter().any(|e| e == u.split('#').next().unwrap_or(u)));
+        let npm_root = root.clone();
+        let run_pkg = |item: &str| {
+            let (p, project) = match item.split_once('#') {
+                Some((p, proj)) => (p, Some(proj)),
+                None if split_pkgs.iter().any(|s| s == item) => (item, Some("hermetic")),
+                None => (item, None),
+            };
+            let (ok, cases) = run_jest_project(&npm_root, p, Some(jest_workers), project);
+            // #4030 AC3 — stored the moment the package finishes
+            store_unit(item, &cases);
+            (ok, cases)
         };
-        println!("{}", werk_test::nightly_lane_line(kind, b, ok, passed, case_failed, 0));
-        if !ok {
-            any_failed = true;
-            failed_count += 1;
-            let msg = werk_test::unit_failure_message("bats", b);
-            emit_spine("test.failed", &role, &card, &trace,
-                &[("check", "bats"), ("unit", b), ("message", msg.as_str())]);
+        let (mut npm_results, w1) = werk_test::run_pool_gated(&npm_plan.parallel, npm_workers, cap, read_loadavg, gate_wait, gate_tick, run_pkg);
+        let (alone_results, w2) = werk_test::run_pool_gated(&npm_plan.serialized, 1, cap, read_loadavg, gate_wait, gate_tick, run_pkg);
+        npm_results.extend(alone_results);
+        npm_waits += w1 + w2;
+        for (item, (ok, cases)) in npm_results {
+            let p = item.split('#').next().unwrap_or(&item).to_string();
+            let (kind, unit) = werk_test::stage_item_label(stage, npm_kind_of(&p), &item);
+            let pkg_ns: Vec<String> = if stack_down.is_some() {
+                ns_all.iter().filter(|f| f.starts_with(&format!("{}/", p))).cloned().collect()
+            } else { Vec::new() };
+            // #4004 — attribute each case to the package its FILE lives in:
+            // jest's rootDir can reach past the package dir.
+            let (mine, foreign): (Vec<_>, Vec<_>) = cases
+                .into_iter()
+                .partition(|c| werk_test::package_owns_case(&p, &c.file_path));
+            if !foreign.is_empty() {
+                let mut owners: Vec<&str> = foreign
+                    .iter()
+                    .map(|c| c.file_path.rsplit_once('/').map(|(d, _)| d).unwrap_or("?"))
+                    .collect();
+                owners.sort_unstable();
+                owners.dedup();
+                println!(
+                    "!! jest:{} ran {} case(s) whose files live OUTSIDE it ({}) — not counted on this row",
+                    item, foreign.len(), owners.join(", ")
+                );
+            }
+            if mine.is_empty() && !foreign.is_empty() {
+                println!("!! jest:{} produced NO cases of its own — every result came from elsewhere", item);
+            }
+            let cases = mine;
+            let (passed, case_failed, case_skipped) = werk_test::case_counts(cases.iter().map(|c| c.result.as_str()));
+            // #4063 — name every failed case before the fold line
+            for l in werk_test::failed_case_lines(&format!("jest:{}", item), &cases) {
+                println!("{}", l);
+            }
+            println!("{}", werk_test::nightly_lane_line_with_skips(&kind, &unit, ok, passed, case_failed, case_skipped, pkg_ns.len()));
+            if !ok {
+                any_failed = true;
+                failed_count += 1;
+                let msg = werk_test::unit_failure_message("npm", &item);
+                emit_spine("test.failed", &role, &card, &trace,
+                    &[("check", "npm"), ("unit", &item), ("message", msg.as_str())]);
+            }
+        }
+
+        // ── file suites (bats / sh / feature / py) ──
+        // #4022 — independent subprocesses fan out; needs-stack READERS overlap
+        // at 2; conf-listed MUTATORS run alone. Report order is the plan's.
+        let plan = werk_test::plan_parallel_units(&sp.files,
+            &|u| werk_test::unit_is_isolated(u, &rows, &explicit_iso));
+        let (stack_readers, mutators) = werk_test::split_serialized(&plan.serialized, &explicit_iso);
+        if !sp.files.is_empty() {
+            println!("-- #4022 parallel plan ({}): {} suites fan out across {} workers, {} stack-readers at 2, {} mutators alone --",
+                stage, plan.parallel.len(), bats_workers, stack_readers.len(), mutators.len());
+        }
+        let pool_root = root.clone();
+        let (mut lane_results, w1): (Vec<(String, (bool, Vec<(String, String)>, String))>, usize) =
+            werk_test::run_pool_gated(&plan.parallel, bats_workers, cap, read_loadavg, gate_wait, gate_tick, |b| run_bats_stored(&pool_root, b));
+        let reader_root = root.clone();
+        let (reader_results, w2) =
+            werk_test::run_pool_gated(&stack_readers, 2, cap, read_loadavg, gate_wait, gate_tick, |b| run_bats_stored(&reader_root, b));
+        lane_results.extend(reader_results);
+        bats_waits += w1 + w2;
+        for b in &mutators {
+            lane_results.push((b.clone(), run_bats_stored(&root, b)));
+        }
+        for (b, (ok, cases, text)) in lane_results {
+            let b = &b;
+            let kind = bats_kind(b);
+            // #4065 — a suite that DECLINED to run (rc=3) is its own verdict
+            if werk_test::is_self_refused(&cases) {
+                println!("{}", werk_test::nightly_lane_line_refused(kind, b));
+                continue;
+            }
+            // #4273 — every case skipped, with a reason: a skip, not "no output"
+            if werk_test::is_all_skipped(&cases) {
+                let reason = werk_test::first_skip_reason(&text).unwrap_or_else(|| "no reason given".to_string());
+                println!("{}", werk_test::nightly_lane_line_all_skipped(kind, b, cases.len(), &reason));
+                continue;
+            }
+            // #4131 — shell suites report summary counts, not TAP cases
+            let (passed, case_failed) = if cases.is_empty() && (kind == "shell" || b.ends_with(".sh")) {
+                werk_test::parse_shell_counts(&text)
+                    .unwrap_or(if ok { (1, 0) } else { (0, 1) })
+            } else {
+                (cases.iter().filter(|(_, r)| r == "pass").count(),
+                 cases.iter().filter(|(_, r)| r != "pass" && r != "skip").count())
+            };
+            println!("{}", werk_test::nightly_lane_line(kind, b, ok, passed, case_failed, 0));
+            if !ok {
+                any_failed = true;
+                failed_count += 1;
+                let msg = werk_test::unit_failure_message("bats", b);
+                emit_spine("test.failed", &role, &card, &trace,
+                    &[("check", "bats"), ("unit", b), ("message", msg.as_str())]);
+            }
+        }
+
+        // ── ui: the playwright flows (was an outer leg, #4278) ──
+        if ui_here {
+            let cmd = std::env::var("NIGHTLY_PLAYWRIGHT_CMD")
+                .unwrap_or_else(|_| "npx --no-install playwright test --reporter=line".to_string());
+            let mut c = Command::new("bash");
+            c.arg("-c").arg(&cmd).current_dir(&root)
+                .env("CHORUS_CONTEXT", "")
+                .env("CLEARING_URL", std::env::var("CLEARING_URL").unwrap_or_else(|_| "http://localhost:3470".to_string()));
+            let (rc, out) = werk_test::run_capped(c, std::time::Duration::from_secs(1800));
+            let (verdict, summary) = werk_test::ui_lane_verdict(rc, &out);
+            println!("nightly-unit|ui|proving/flows|{}|{}", verdict, summary);
+            if verdict == "fail" {
+                any_failed = true;
+                failed_count += 1;
+                emit_spine("test.failed", &role, &card, &trace,
+                    &[("check", "ui"), ("unit", "proving/flows"), ("message", "ui flows failed in proving/flows")]);
+            }
         }
     }
-    if werk_test::security_rows(&rows).is_empty() {
-        println!("security-lane: none registered testConcern=security — explicit absence (#3443/#3922)");
-    }
+    println!("-- #4022 load gate: held {} time(s) at load > {:.0} (cargo {}, npm {}, bats {}) --",
+        cargo_waits + npm_waits + bats_waits, cap, cargo_waits, npm_waits, bats_waits);
     // #4139 — the measured integration line: what ran, after it ran
     if stack_down.is_none() && ns_total > 0 {
         println!("{}", werk_test::integration_measured_report(ns_total, executed_ns.load(Ordering::SeqCst)));
@@ -1617,6 +1652,14 @@ fn nextest_gate(werk: &str) -> &'static Result<(), String> {
 
 /// gate; an empty quarantine set leaves the invocation byte-identical.
 fn run_cargo(werk: &str, name: &str, quarantined: &[&str], ns_bins: &[&str]) -> (bool, Vec<(String, String)>) {
+    run_cargo_sel(werk, name, quarantined, ns_bins, &[])
+}
+
+/// #4160 — the nightly's staged cargo run: `only_bins` non-empty runs just
+/// those test binaries (a typed binary in its own stage); otherwise the crate
+/// runs minus `exclude_bins`. A unit run whose every binary moved to another
+/// stage may have nothing left, which is a fact, not a failure.
+fn run_cargo_sel(werk: &str, name: &str, quarantined: &[&str], exclude_bins: &[&str], only_bins: &[&str]) -> (bool, Vec<(String, String)>) {
     let dir = format!("{}/platform/services/{}", werk, name);
     if !Path::new(&format!("{}/Cargo.toml", dir)).is_file() {
         return (true, Vec::new());
@@ -1628,7 +1671,11 @@ fn run_cargo(werk: &str, name: &str, quarantined: &[&str], ns_bins: &[&str]) -> 
     // #4022 — each crate gets its share of the CPU budget (see lane_widths);
     // NIGHTLY_NEXTEST_THREADS is set by the nightly lane, absent for card runs.
     let threads = std::env::var("NIGHTLY_NEXTEST_THREADS").ok().and_then(|v| v.parse().ok());
-    let mut args: Vec<String> = werk_test::nextest_run_args_threads(quarantined, ns_bins, threads);
+    let mut args: Vec<String> = if only_bins.is_empty() {
+        werk_test::nextest_run_args_threads(quarantined, exclude_bins, threads)
+    } else {
+        werk_test::nextest_run_args_bins(quarantined, only_bins, threads)
+    };
     // #3955 — the ONE nextest config (pin + serial-e2e groups) lives at the werk
     // root; per-crate runs resolve config from the CRATE dir, so pass it
     // explicitly or the serial-e2e grouping silently never applies.
@@ -1733,6 +1780,12 @@ fn run_jest(werk: &str, pkg: &str) -> (bool, Vec<CaseResult>) {
 /// #4022 — jest with its share of the CPU budget (`--maxWorkers N`); None keeps
 /// jest's default (a worker per core), which is what pegged the box.
 fn run_jest_with(werk: &str, pkg: &str, max_workers: Option<usize>) -> (bool, Vec<CaseResult>) {
+    run_jest_project(werk, pkg, max_workers, None)
+}
+
+/// #4160 — jest with a named project: the nightly's unit stage runs
+/// `hermetic`, its integration stage runs `integration`, as two rows.
+fn run_jest_project(werk: &str, pkg: &str, max_workers: Option<usize>, project: Option<&str>) -> (bool, Vec<CaseResult>) {
     let pkg_dir = format!("{}/{}", werk, pkg);
     if !ensure_ts_deps(werk, pkg) {
         eprintln!("!! jest:{} CHANGED but deps unavailable — FAIL LOUD", pkg);
@@ -1768,7 +1821,7 @@ fn run_jest_with(werk: &str, pkg: &str, max_workers: Option<usize>) -> (bool, Ve
     // hermetic only. #4111 selected hermetic always and dropped platform/api's
     // 266 integration tests from the nightly (09-08 → 09-10, lane read green).
     let run_integration = std::env::var("RUN_INTEGRATION").map(|v| v == "true").unwrap_or(false);
-    for a in werk_test::jest_project_args(jest_has_hermetic_project(&pkg_dir), run_integration) {
+    for a in werk_test::jest_project_args_for(jest_has_hermetic_project(&pkg_dir), run_integration, project) {
         cmd.arg(a);
     }
     if let Some(n) = max_workers {

@@ -429,6 +429,21 @@ function statusFold(rows: NightlyRow[], status: string, hint: string): string {
     + `<span class="lbl">${esc(status)}</span><span class="hint">${hint}</span></summary><ul class="suites">${rows.map(suiteLine).join('')}</ul></details>`;
 }
 
+/** #4160 — a type's test counts, summed from its suites' own summaries
+ *  ("N pass, M fail"). A summary with no counts adds nothing: the fold shows
+ *  what the run measured, never a guess. */
+export function typeCounts(rows: { summary: string }[]): { pass: number; fail: number } {
+  let pass = 0;
+  let fail = 0;
+  for (const r of rows) {
+    const m = /(\d+) pass, (\d+) fail/.exec(r.summary);
+    if (!m) continue;
+    pass += Number(m[1]);
+    fail += Number(m[2]);
+  }
+  return { pass, fail };
+}
+
 function typeFold(g: { type: string; rows: NightlyRow[] }, o: NightlyPageOpts | undefined): string {
   const by = (st: string) => g.rows.filter((r) => r.status === st);
   const reds = by('fail');
@@ -439,8 +454,9 @@ function typeFold(g: { type: string; rows: NightlyRow[] }, o: NightlyPageOpts | 
     + statusFold(other, 'unmeasured', 'the check could not take a reading — not a pass')
     + statusFold(by('skip'), 'skip', 'typed skips')
     + statusFold(by('pass'), 'pass', 'one line each');
+  const t = typeCounts(g.rows);
   return `<details class="group"${reds.length ? ' open' : ''}><summary>${state}<span class="n">${g.rows.length}</span>`
-    + `<span class="lbl">${esc(g.type)}</span></summary>${inner}</details>`;
+    + `<span class="lbl">${esc(g.type)}</span><span class="hint">${n(t.pass)} pass · ${n(t.fail)} fail</span></summary>${inner}</details>`;
 }
 
 function renderBanner(run: NightlyRun, o: NightlyPageOpts | undefined): string {

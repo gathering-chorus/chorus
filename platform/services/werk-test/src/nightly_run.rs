@@ -185,7 +185,8 @@ pub fn fold_unit_line(
     // means what Jeff needs it to mean. Only kinds whose UNIT IS a repo path
     // are probed — a cargo crate name or an npm package dir is not a file, and
     // probing them would mark every unit stale.
-    if PATH_SHAPED_KINDS.contains(&kind) && !exists(&path) {
+    // #4160 — `stage:<type>` is a stage's absence line, never a file
+    if PATH_SHAPED_KINDS.contains(&kind) && !unit.starts_with("stage:") && !exists(&path) {
         let row = SuiteRow::new(
             kind,
             &path,
@@ -982,6 +983,19 @@ mod nightly_run_4145 {
         assert_eq!(row.line(), "SUITE|bats|platform/tests/x.bats|kade|pass|3 pass, 0 fail");
         assert!(!contradiction);
         assert_eq!(parse_suite_line(&row.line()).unwrap(), row);
+    }
+
+    /// #4160 — a stage with nothing registered folds as a skip, not as a
+    /// stale file: `stage:security` is not a path. NEGATIVE PROOF: a real
+    /// missing security file still reads stale.
+    #[test]
+    fn a_stage_absence_line_is_a_skip_not_a_stale_file() {
+        let gone = |_: &str| false;
+        let line = crate::nightly_stage_absent_line("security");
+        let (row, _) = fold_unit_line(&line, &owner_stub, false, &gone).unwrap();
+        assert_eq!(row.status, "skip", "{}", row.summary);
+        let (row, _) = fold_unit_line("nightly-unit|security|platform/tests/gone.bats|pass|1 pass, 0 fail", &owner_stub, false, &gone).unwrap();
+        assert_eq!(row.status, "stale");
     }
 
     #[test]

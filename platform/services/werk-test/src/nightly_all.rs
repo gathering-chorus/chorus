@@ -745,16 +745,18 @@ fn run_locked(ctx: &mut Ctx, _args: &[String]) -> Result<i32, String> {
         // #4290 — first, because it is the prerequisite for everything that
         // reads the graph: is the graph what git is, on every crawler domain?
         push(ctx, leg_crawler_validate(ctx), &mut rows);
-        if let Some(r) = leg_lint(ctx) {
-            push(ctx, r, &mut rows);
-        }
+        // #4160 — Jeff's order (2026-09-12): coverage, then lint (eslint is
+        // lint), then smoke; the runner then runs security → … → perf.
         for r in leg_coverage(ctx) {
             push(ctx, r, &mut rows);
         }
-        if let Some(r) = leg_smoke(ctx) {
+        if let Some(r) = leg_lint(ctx) {
             push(ctx, r, &mut rows);
         }
         if let Some(r) = leg_app_eslint(ctx) {
+            push(ctx, r, &mut rows);
+        }
+        if let Some(r) = leg_smoke(ctx) {
             push(ctx, r, &mut rows);
         }
     }
@@ -776,7 +778,8 @@ fn run_locked(ctx: &mut Ctx, _args: &[String]) -> Result<i32, String> {
     // off like the others: a fixture run must not launch Playwright, cucumber
     // or launchctl, and 4145's row count reads the runner's rows alone.
     if std::env::var("NIGHTLY_LEGS_NOOP").is_err() {
-        push(ctx, leg_ui(ctx), &mut rows);
+        // #4160 — the ui lane runs INSIDE the runner now, in its type's
+        // stage (after e2e, before perf), so its row arrives with the runner's.
         // #4292 — bdd is no longer one summary row here: each feature runs
         // in the runner's file-suite lane and stores one result per scenario.
         push(ctx, leg_daemons(ctx, &daemons_at_start, &sample_daemons()), &mut rows);
@@ -1091,29 +1094,6 @@ fn leg_duration(secs: u64) -> SuiteRow {
     SuiteRow::new("perf", "nightly:duration", "kade", status, &summary)
 }
 
-fn leg_ui(ctx: &Ctx) -> SuiteRow {
-    let path = "proving/flows";
-    let cmd = env_or("NIGHTLY_PLAYWRIGHT_CMD", "npx --no-install playwright test --reporter=line");
-    let mut c = Command::new("bash");
-    c.arg("-c").arg(&cmd).current_dir(&ctx.root)
-        .env("CHORUS_CONTEXT", "")
-        .env("CLEARING_URL", env_or("CLEARING_URL", "http://localhost:3470"));
-    let (rc, out) = run_capped(c, Duration::from_secs(1800));
-    let owner = ctx.owner(path);
-    match werk_test::parse_playwright_summary(&out) {
-        None => SuiteRow::new("ui", path, &owner, "unmeasured", &format!(
-            "0 pass, 0 fail (UNMEASURED — playwright produced no summary, rc={}: {})", rc,
-            out.lines().rev().find(|l| !l.trim().is_empty()).unwrap_or("").trim().chars().take(120).collect::<String>())),
-        Some((passed, failed)) if failed > 0 || rc != 0 => {
-            let first = werk_test::playwright_failure_lines(&out).into_iter().take(3).collect::<Vec<_>>().join("; ");
-            SuiteRow::new("ui", path, &owner, "fail", &format!("{} pass, {} fail (rc={}) {}", passed, failed, rc, first))
-        }
-        Some((passed, _)) => {
-            let skipped = werk_test::parse_playwright_skipped(&out);
-            SuiteRow::new("ui", path, &owner, "pass", &format!("{} pass, 0 fail ({} skipped)", passed, skipped))
-        }
-    }
-}
 
 
 #[cfg(test)]
@@ -1202,26 +1182,5 @@ mod lanes_4278 {
         }
     }
 
-    #[test]
-    fn ui_leg_reads_the_seam_command_and_never_passes_on_silence() {
-        let dir = std::env::temp_dir().join(format!("lanes-4278-{}", std::process::id()));
-        std::fs::create_dir_all(&dir).unwrap();
-        let ctx = ctx_for(dir.to_str().unwrap());
-        // a run with a failure: the leg must be red and carry the case
-        std::env::set_var("NIGHTLY_PLAYWRIGHT_CMD", "printf '  \\u2718  1 [chromium] \\u203a login-journey.spec.cjs:9:3 \\u203a signs in\\n  1 failed\\n  94 passed (1.2m)\\n'; exit 1");
-        let r = leg_ui(&ctx);
-        assert_eq!(r.status, "fail", "{}", r.summary);
-        // NEGATIVE PROOF: no summary at all is UNMEASURED, not pass
-        std::env::set_var("NIGHTLY_PLAYWRIGHT_CMD", "printf 'Error: no tests found\\n'; exit 1");
-        let r = leg_ui(&ctx);
-        assert_eq!(r.status, "unmeasured", "{}", r.summary);
-        // a clean run passes with its count
-        std::env::set_var("NIGHTLY_PLAYWRIGHT_CMD", "printf '  95 passed (2.0m)\\n'; exit 0");
-        let r = leg_ui(&ctx);
-        assert_eq!(r.status, "pass", "{}", r.summary);
-        assert!(r.summary.starts_with("95 pass, 0 fail"), "{}", r.summary);
-        std::env::remove_var("NIGHTLY_PLAYWRIGHT_CMD");
-        let _ = std::fs::remove_dir_all(&dir);
-    }
 
 }
