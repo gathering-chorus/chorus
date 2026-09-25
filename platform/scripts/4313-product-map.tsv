@@ -1,0 +1,172 @@
+# #4313 — each document that pointed at #gatheringProduct / #akashaProduct, and its product.
+# Decided by reading each one (Jeff 16:50: "look at each doc some may belong to chorus").
+# product: chorus | gathering | both | none (consulting work, no Chorus/Gathering product)
+https://jeffbridwell.com/chorus#doc/gathering-chorus.html	both	gathering-chorus.html	Gathering + Chorus | Open Platform for Personal Knowledge & Team Coordination
+https://jeffbridwell.com/chorus#doc/gathering-docs%2Fdefinition-of-done.html	both	gathering-docs/definition-of-done.html	Definition of Done — Gathering &amp; Chorus
+https://jeffbridwell.com/chorus#doc/gathering-docs%2Fdomain-index.html	both	gathering-docs/domain-index.html	Domain Index — Gathering &amp; Chorus
+https://jeffbridwell.com/chorus#doc/v1-acceptance-criteria.html	both	v1-acceptance-criteria.html	V1 Acceptance Criteria — Gathering + Chorus
+https://jeffbridwell.com/chorus#doc/doc-catalog.html	chorus	doc-catalog.html	Doc Catalog — Chorus
+https://jeffbridwell.com/chorus#doc/docs%2Fadr%2FDEC-093.md	chorus	docs/adr/DEC-093.md	
+https://jeffbridwell.com/chorus#doc/dpor-report.html	chorus	dpor-report.html	Chorus Playbook — DPOR Diagnostic Report
+https://jeffbridwell.com/chorus#doc/gathering-docs%2Factor-diagram-nudge.html	chorus	gathering-docs/actor-diagram-nudge.html	Nudge — Actor Diagram
+https://jeffbridwell.com/chorus#doc/gathering-docs%2Fathena-cmdb-view.html	chorus	gathering-docs/athena-cmdb-view.html	CMDB — Products & Domains
+https://jeffbridwell.com/chorus#doc/gathering-docs%2Fathena-service-design.html	chorus	gathering-docs/athena-service-design.html	
+https://jeffbridwell.com/chorus#doc/gathering-docs%2Fawareness-service-design.html	chorus	gathering-docs/awareness-service-design.html	Shared Awareness — Service Design
+https://jeffbridwell.com/chorus#doc/gathering-docs%2Fax.html	chorus	gathering-docs/ax.html	AX — Agent Experience
+https://jeffbridwell.com/chorus#doc/gathering-docs%2Fbdd-seeds.html	chorus	gathering-docs/bdd-seeds.html	BDD — Seed Pipeline
+https://jeffbridwell.com/chorus#doc/gathering-docs%2Fblockverse-shared-awareness.html	chorus	gathering-docs/blockverse-shared-awareness.html	Reports from the Blockverse — Shared Awareness
+https://jeffbridwell.com/chorus#doc/gathering-docs%2Fboard-triage.html	chorus	gathering-docs/board-triage.html	Board Triage &mdash; Possible / Viable / Worth It
+https://jeffbridwell.com/chorus#doc/gathering-docs%2Fborg-mitosis.html	chorus	gathering-docs/borg-mitosis.html	Borg Mitosis — How Chorus Reproduces Across Products
+https://jeffbridwell.com/chorus#doc/gathering-docs%2Fc4-convergence-tier.html	chorus	gathering-docs/c4-convergence-tier.html	C4 — Convergence Tier Architecture
+https://jeffbridwell.com/chorus#doc/gathering-docs%2Fcadence-analysis.html	chorus	gathering-docs/cadence-analysis.html	Team Work Cadences — Wren #1397
+https://jeffbridwell.com/chorus#doc/gathering-docs%2Fcard-type-spec.html	chorus	gathering-docs/card-type-spec.html	Card Type Specification
+https://jeffbridwell.com/chorus#doc/gathering-docs%2Fcheat-sheet.html	chorus	gathering-docs/cheat-sheet.html	Chorus Command Card
+https://jeffbridwell.com/chorus#doc/gathering-docs%2Fchorus-context-diagram-v2.html	chorus	gathering-docs/chorus-context-diagram-v2.html	Chorus Reference Model
+https://jeffbridwell.com/chorus#doc/gathering-docs%2Fchorus-distribution-assessment.html	chorus	gathering-docs/chorus-distribution-assessment.html	Chorus — State of the System
+https://jeffbridwell.com/chorus#doc/gathering-docs%2Fchorus-domain-decomposition.html	chorus	gathering-docs/chorus-domain-decomposition.html	Chorus Domain Decomposition — Synthesis
+https://jeffbridwell.com/chorus#doc/gathering-docs%2Fchorus-domain-map-v2.html	chorus	gathering-docs/chorus-domain-map-v2.html	Chorus Domain Map v2 — Reference Model + Quality Contract
+https://jeffbridwell.com/chorus#doc/gathering-docs%2Fchorus-domain-map-v3.html	chorus	gathering-docs/chorus-domain-map-v3.html	Chorus Domain Map v3 — Sub-products, Domains, Services
+https://jeffbridwell.com/chorus#doc/gathering-docs%2Fchorus-hook-architecture.html	chorus	gathering-docs/chorus-hook-architecture.html	Chorus Hook Architecture
+https://jeffbridwell.com/chorus#doc/gathering-docs%2Fchorus-instance-explorer.html	chorus	gathering-docs/chorus-instance-explorer.html	Chorus Ontology
+https://jeffbridwell.com/chorus#doc/gathering-docs%2Fchorus-repo-structure.html	chorus	gathering-docs/chorus-repo-structure.html	Chorus Repo Structure &mdash; April 2026
+https://jeffbridwell.com/chorus#doc/gathering-docs%2Fchorus-service-design.html	chorus	gathering-docs/chorus-service-design.html	Chorus — Service Design
+https://jeffbridwell.com/chorus#doc/gathering-docs%2Fchorus-spine.html	chorus	gathering-docs/chorus-spine.html	The Chorus Spine — Value Stream Architecture
+https://jeffbridwell.com/chorus#doc/gathering-docs%2Fchorus-standards.html	chorus	gathering-docs/chorus-standards.html	Chorus Standards Surface
+https://jeffbridwell.com/chorus#doc/gathering-docs%2Fchorus-value-stream-deep-dive.html	chorus	gathering-docs/chorus-value-stream-deep-dive.html	Chorus Value Stream Deep Dive — Domain Model Analysis
+https://jeffbridwell.com/chorus#doc/gathering-docs%2Fchorus-wardley.html	chorus	gathering-docs/chorus-wardley.html	Wardley Map — Chorus
+https://jeffbridwell.com/chorus#doc/gathering-docs%2Fclaude-hooks.html	chorus	gathering-docs/claude-hooks.html	Claude Code Hooks — Lifecycle Reference
+https://jeffbridwell.com/chorus#doc/gathering-docs%2Fclearing-service-design.html	chorus	gathering-docs/clearing-service-design.html	Service Design — The Clearing
+https://jeffbridwell.com/chorus#doc/gathering-docs%2Fcrawler-service-design.html	chorus	gathering-docs/crawler-service-design.html	Crawler — Service Design
+https://jeffbridwell.com/chorus#doc/gathering-docs%2Fdemo-plan-1641.html	chorus	gathering-docs/demo-plan-1641.html	Demo Plan — #1641 webMethods Reverse Engineering
+https://jeffbridwell.com/chorus#doc/gathering-docs%2Fdesign-gate-definitions.html	chorus	gathering-docs/design-gate-definitions.html	Card Completion Pipeline
+https://jeffbridwell.com/chorus#doc/gathering-docs%2Fdomain-blog.html	chorus	gathering-docs/domain-blog.html	Domain — Blog
+https://jeffbridwell.com/chorus#doc/gathering-docs%2Fdomain-chorus.html	chorus	gathering-docs/domain-chorus.html	Domain — Chorus
+https://jeffbridwell.com/chorus#doc/gathering-docs%2Fdomain-context-awareness.html	chorus	gathering-docs/domain-context-awareness.html	Shared Awareness — Chorus Capability
+https://jeffbridwell.com/chorus#doc/gathering-docs%2Fdomain-context-observability.html	chorus	gathering-docs/domain-context-observability.html	Observability — Chorus Domain
+https://jeffbridwell.com/chorus#doc/gathering-docs%2Fdomain-context-seeds.html	chorus	gathering-docs/domain-context-seeds.html	Domain Context: Seeds
+https://jeffbridwell.com/chorus#doc/gathering-docs%2Fdomain-cooking.html	chorus	gathering-docs/domain-cooking.html	Domain — Cooking
+https://jeffbridwell.com/chorus#doc/gathering-docs%2Fdomain-detail.html	chorus	gathering-docs/domain-detail.html	
+https://jeffbridwell.com/chorus#doc/gathering-docs%2Fdomain-gallery.html	chorus	gathering-docs/domain-gallery.html	Domain — Gallery
+https://jeffbridwell.com/chorus#doc/gathering-docs%2Fdomain-glimmers.html	chorus	gathering-docs/domain-glimmers.html	Domain — Glimmers
+https://jeffbridwell.com/chorus#doc/gathering-docs%2Fdomain-ideas.html	chorus	gathering-docs/domain-ideas.html	Domain — Ideas
+https://jeffbridwell.com/chorus#doc/gathering-docs%2Fdomain-infrastructure.html	chorus	gathering-docs/domain-infrastructure.html	Domain — Infrastructure
+https://jeffbridwell.com/chorus#doc/gathering-docs%2Fdomain-knowledge-graph.html	chorus	gathering-docs/domain-knowledge-graph.html	Domain — Knowledge Graph
+https://jeffbridwell.com/chorus#doc/gathering-docs%2Fdomain-loom.html	chorus	gathering-docs/domain-loom.html	Domain — Loom
+https://jeffbridwell.com/chorus#doc/gathering-docs%2Fdomain-mockup-cards.html	chorus	gathering-docs/domain-mockup-cards.html	Cards — Domain View
+https://jeffbridwell.com/chorus#doc/gathering-docs%2Fdomain-notes.html	chorus	gathering-docs/domain-notes.html	Domain — Notes
+https://jeffbridwell.com/chorus#doc/gathering-docs%2Fdomain-observability.html	chorus	gathering-docs/domain-observability.html	Domain — Observability
+https://jeffbridwell.com/chorus#doc/gathering-docs%2Fdomain-policy.html	chorus	gathering-docs/domain-policy.html	
+https://jeffbridwell.com/chorus#doc/gathering-docs%2Fdomain-property.html	chorus	gathering-docs/domain-property.html	Domain — Property
+https://jeffbridwell.com/chorus#doc/gathering-docs%2Fdomain-rcas.html	chorus	gathering-docs/domain-rcas.html	
+https://jeffbridwell.com/chorus#doc/gathering-docs%2Fdomain-reading.html	chorus	gathering-docs/domain-reading.html	Domain — Reading
+https://jeffbridwell.com/chorus#doc/gathering-docs%2Fdomain-roles.html	chorus	gathering-docs/domain-roles.html	
+https://jeffbridwell.com/chorus#doc/gathering-docs%2Fdomain-search.html	chorus	gathering-docs/domain-search.html	Domain — Search
+https://jeffbridwell.com/chorus#doc/gathering-docs%2Fdomain-seeds.html	chorus	gathering-docs/domain-seeds.html	Domain — Seeds
+https://jeffbridwell.com/chorus#doc/gathering-docs%2Fdomain-social.html	chorus	gathering-docs/domain-social.html	Domain — Social
+https://jeffbridwell.com/chorus#doc/gathering-docs%2Fdomain-stories.html	chorus	gathering-docs/domain-stories.html	Domain — Stories
+https://jeffbridwell.com/chorus#doc/gathering-docs%2Fdomain-template-proposal.html	chorus	gathering-docs/domain-template-proposal.html	
+https://jeffbridwell.com/chorus#doc/gathering-docs%2Fdomain-watching.html	chorus	gathering-docs/domain-watching.html	Domain — Watching
+https://jeffbridwell.com/chorus#doc/gathering-docs%2Fframework-service-design.html	chorus	gathering-docs/framework-service-design.html	Framework — Service Design
+https://jeffbridwell.com/chorus#doc/gathering-docs%2Fgemba-as-is.md	chorus	gathering-docs/gemba-as-is.md	
+https://jeffbridwell.com/chorus#doc/gathering-docs%2Fgenome-visualization.html	chorus	gathering-docs/genome-visualization.html	Chorus Genome — DNA / Expression Model
+https://jeffbridwell.com/chorus#doc/gathering-docs%2Fgood-borg-print.html	chorus	gathering-docs/good-borg-print.html	Being a Good Borg — What It Means to Borg
+https://jeffbridwell.com/chorus#doc/gathering-docs%2Fharness-engineering-chorus.html	chorus	gathering-docs/harness-engineering-chorus.html	Harness Engineering Applied to Chorus
+https://jeffbridwell.com/chorus#doc/gathering-docs%2Fhomeostasis-research.html	chorus	gathering-docs/homeostasis-research.html	Homeostasis Across Scales
+https://jeffbridwell.com/chorus#doc/gathering-docs%2Finfrastructure-service-design.html	chorus	gathering-docs/infrastructure-service-design.html	Infrastructure — Service Design (chorus)
+https://jeffbridwell.com/chorus#doc/gathering-docs%2Finteraction-architecture.html	chorus	gathering-docs/interaction-architecture.html	Interaction Architecture — Three Layers
+https://jeffbridwell.com/chorus#doc/gathering-docs%2Finteraction-pattern-history.html	chorus	gathering-docs/interaction-pattern-history.html	Interaction Pattern History
+https://jeffbridwell.com/chorus#doc/gathering-docs%2Fkade-role.html	chorus	gathering-docs/kade-role.html	
+https://jeffbridwell.com/chorus#doc/gathering-docs%2Flog-relatedness.html	chorus	gathering-docs/log-relatedness.html	Log Relatedness — OWL-style Graph
+https://jeffbridwell.com/chorus#doc/gathering-docs%2Flog-topology.html	chorus	gathering-docs/log-topology.html	Chorus Log Topology
+https://jeffbridwell.com/chorus#doc/gathering-docs%2Floom-service-design.html	chorus	gathering-docs/loom-service-design.html	Loom — Service Design
+https://jeffbridwell.com/chorus#doc/gathering-docs%2Fnext-sequence.html	chorus	gathering-docs/next-sequence.html	Next Queue — Sequenced Slices
+https://jeffbridwell.com/chorus#doc/gathering-docs%2Fobservability-service-design.html	chorus	gathering-docs/observability-service-design.html	Observability — Service Design
+https://jeffbridwell.com/chorus#doc/gathering-docs%2Fobserving-value.html	chorus	gathering-docs/observing-value.html	Observing Value — Session Notes
+https://jeffbridwell.com/chorus#doc/gathering-docs%2Fontology-migration-pattern.md	chorus	gathering-docs/ontology-migration-pattern.md	
+https://jeffbridwell.com/chorus#doc/gathering-docs%2Foperating-model.html	chorus	gathering-docs/operating-model.html	Operating Model
+https://jeffbridwell.com/chorus#doc/gathering-docs%2Forg-design.html	chorus	gathering-docs/org-design.html	Chorus Organizational Architecture
+https://jeffbridwell.com/chorus#doc/gathering-docs%2Forigin-analysis.html	chorus	gathering-docs/origin-analysis.html	Reflective vs Reactive — Card Origin Analysis
+https://jeffbridwell.com/chorus#doc/gathering-docs%2Fpair-flow-sequence.html	chorus	gathering-docs/pair-flow-sequence.html	Pair Flow — Sequence Diagram
+https://jeffbridwell.com/chorus#doc/gathering-docs%2Fproduct-view.html	chorus	gathering-docs/product-view.html	Products — Athena
+https://jeffbridwell.com/chorus#doc/gathering-docs%2Fprotocol-stack.html	chorus	gathering-docs/protocol-stack.html	Chorus Protocol Stack — Five Layers of Team Coordination
+https://jeffbridwell.com/chorus#doc/gathering-docs%2Fpulse-service-design.html	chorus	gathering-docs/pulse-service-design.html	Pulse — Service Design
+https://jeffbridwell.com/chorus#doc/gathering-docs%2Fquality-service.html	chorus	gathering-docs/quality-service.html	Quality Service — Test Pyramid
+https://jeffbridwell.com/chorus#doc/gathering-docs%2Fresearch-actor-bdd-agents.html	chorus	gathering-docs/research-actor-bdd-agents.html	Actor-Driven BDD for Agent Coordination — Research Position
+https://jeffbridwell.com/chorus#doc/gathering-docs%2Froles-domain-design.html	chorus	gathering-docs/roles-domain-design.html	
+https://jeffbridwell.com/chorus#doc/gathering-docs%2Fseed-pipeline-criteria.md	chorus	gathering-docs/seed-pipeline-criteria.md	
+https://jeffbridwell.com/chorus#doc/gathering-docs%2Fseeds-service-design.html	chorus	gathering-docs/seeds-service-design.html	Seeds — Service Design
+https://jeffbridwell.com/chorus#doc/gathering-docs%2Fsequence-demo.html	chorus	gathering-docs/sequence-demo.html	/demo — Sequence Diagram
+https://jeffbridwell.com/chorus#doc/gathering-docs%2Fsequence-nudge.html	chorus	gathering-docs/sequence-nudge.html	/nudge — Sequence Diagram
+https://jeffbridwell.com/chorus#doc/gathering-docs%2Fsequence-pipeline.html	chorus	gathering-docs/sequence-pipeline.html	/pipeline — Sequence Diagram
+https://jeffbridwell.com/chorus#doc/gathering-docs%2Fservice-design-knowledge.html	chorus	gathering-docs/service-design-knowledge.html	
+https://jeffbridwell.com/chorus#doc/gathering-docs%2Fservice-design-page.html	chorus	gathering-docs/service-design-page.html	Service Design — Chorus
+https://jeffbridwell.com/chorus#doc/gathering-docs%2Fservice-design-pulse.html	chorus	gathering-docs/service-design-pulse.html	Service Design — Pulse
+https://jeffbridwell.com/chorus#doc/gathering-docs%2Fsilas-role.html	chorus	gathering-docs/silas-role.html	
+https://jeffbridwell.com/chorus#doc/gathering-docs%2Fskill-lifecycle.html	chorus	gathering-docs/skill-lifecycle.html	Chorus — Skill Lifecycle and Dependencies
+https://jeffbridwell.com/chorus#doc/gathering-docs%2Fspine-observability.html	chorus	gathering-docs/spine-observability.html	Spine Observability — WF-057 Stories Collection Debrief
+https://jeffbridwell.com/chorus#doc/gathering-docs%2Fstep-detail.html	chorus	gathering-docs/step-detail.html	
+https://jeffbridwell.com/chorus#doc/gathering-docs%2Fsystem-model-thinking.html	chorus	gathering-docs/system-model-thinking.html	System Model — Wren's Thinking | Jeff Bridwell
+https://jeffbridwell.com/chorus#doc/gathering-docs%2Fteam-reliability-analysis.html	chorus	gathering-docs/team-reliability-analysis.html	Chorus Team Reliability Analysis
+https://jeffbridwell.com/chorus#doc/gathering-docs%2Fvalue-stream-design.html	chorus	gathering-docs/value-stream-design.html	Value Stream — Shaping → Designing → Building → Proving
+https://jeffbridwell.com/chorus#doc/gathering-docs%2Fvalue-stream.html	chorus	gathering-docs/value-stream.html	Value Stream — Athena
+https://jeffbridwell.com/chorus#doc/gathering-docs%2Fwerk-process.html	chorus	gathering-docs/werk-process.html	Werk — Process — RETIRED
+https://jeffbridwell.com/chorus#doc/gemba-analysis.html	chorus	gemba-analysis.html	Gemba — As-Is Flow Analysis
+https://jeffbridwell.com/chorus#doc/model-data-hub.html	chorus	model-data-hub.html	Model + Data
+https://jeffbridwell.com/chorus#doc/ontology-value-stream-research.html	chorus	ontology-value-stream-research.html	Ontology Research — Value Stream Binding + Public Ontologies
+https://jeffbridwell.com/chorus#doc/system%2Fdocs%2FICD_COMPARE_NOTES.html	chorus	system/docs/ICD_COMPARE_NOTES.html	ICD Compare — Notes (RDF-rendered)
+https://jeffbridwell.com/chorus#doc/system%2Fdocs%2FIDEA_PROJECT_LIFECYCLE.md	chorus	system/docs/IDEA_PROJECT_LIFECYCLE.md	Idea / Project Lifecycle + Sharing Model
+https://jeffbridwell.com/chorus#doc/system%2Fdocs%2FSYSTEM_MODEL.md	chorus	system/docs/SYSTEM_MODEL.md	System Model: Ideate, Think, Reflect, Build
+https://jeffbridwell.com/chorus#doc/voice-analytics.html	chorus	voice-analytics.html	Jeff's Voice — Analytics
+https://jeffbridwell.com/chorus#doc/basement-garden.html	gathering	basement-garden.html	Basement Garden Consultation — Light Life Urban Gardens
+https://jeffbridwell.com/chorus#doc/concept-enrichment.html	gathering	concept-enrichment.html	Concept Enrichment — The Feeling Layer
+https://jeffbridwell.com/chorus#doc/docs%2FGATHERING_VISION.md	gathering	docs/GATHERING_VISION.md	Gathering — Vision Synthesis
+https://jeffbridwell.com/chorus#doc/docs%2FPRODUCT_VISION.md	gathering	docs/PRODUCT_VISION.md	Product Vision: Personal Knowledge Graph with Agency
+https://jeffbridwell.com/chorus#doc/docs%2FSYSTEM_ARCHITECTURE.md	gathering	docs/SYSTEM_ARCHITECTURE.md	System Architecture
+https://jeffbridwell.com/chorus#doc/docs%2Farchitect%2Fmerge-specification-photos.html	gathering	docs/architect/merge-specification-photos.html	
+https://jeffbridwell.com/chorus#doc/docs%2Farchitect%2Fnifi-photos-flow-spec.md	gathering	docs/architect/nifi-photos-flow-spec.md	
+https://jeffbridwell.com/chorus#doc/docs%2Farchitect%2Fphoto-serving-model.md	gathering	docs/architect/photo-serving-model.md	Canonical Photo Serving Model
+https://jeffbridwell.com/chorus#doc/docs%2Farchitect%2Fphotos-source-diff.html	gathering	docs/architect/photos-source-diff.html	Photos Source Diff — Three-Source Comparison
+https://jeffbridwell.com/chorus#doc/docs%2Farchitect%2Fphotos-source-richness-comparison.html	gathering	docs/architect/photos-source-richness-comparison.html	Photos Source Richness Comparison
+https://jeffbridwell.com/chorus#doc/docs%2Farchitect%2Fphotos-source-richness-scorecard.md	gathering	docs/architect/photos-source-richness-scorecard.md	Photos Source Richness Scorecard
+https://jeffbridwell.com/chorus#doc/docs%2Ffuseki-rebuild-diagram.html	gathering	docs/fuseki-rebuild-diagram.html	Fuseki Rebuild — What Actually Happened
+https://jeffbridwell.com/chorus#doc/flow-map.html	gathering	flow-map.html	Gathering — End-to-End Flow Map
+https://jeffbridwell.com/chorus#doc/garden-observability.html	gathering	garden-observability.html	Garden Observability — Conceptual Model
+https://jeffbridwell.com/chorus#doc/gathering-docs%2Fbackup-strategy.html	gathering	gathering-docs/backup-strategy.html	Backup Strategy — Home Cloud
+https://jeffbridwell.com/chorus#doc/gathering-docs%2Fdomain-books.html	gathering	gathering-docs/domain-books.html	Domain — Books
+https://jeffbridwell.com/chorus#doc/gathering-docs%2Fdomain-music.html	gathering	gathering-docs/domain-music.html	Domain — Music
+https://jeffbridwell.com/chorus#doc/gathering-docs%2Fdomain-people.html	gathering	gathering-docs/domain-people.html	Domain — People
+https://jeffbridwell.com/chorus#doc/gathering-docs%2Fdomain-photos.html	gathering	gathering-docs/domain-photos.html	Domain — Photos
+https://jeffbridwell.com/chorus#doc/gathering-docs%2Fdomain-self.html	gathering	gathering-docs/domain-self.html	Domain — Self
+https://jeffbridwell.com/chorus#doc/gathering-docs%2Fgarden-setup-flow.html	gathering	gathering-docs/garden-setup-flow.html	Garden Setup Flow — Gathering
+https://jeffbridwell.com/chorus#doc/gathering-docs%2Fgathering-positioning.html	gathering	gathering-docs/gathering-positioning.html	Gathering — Product Topology
+https://jeffbridwell.com/chorus#doc/gathering-docs%2Fgathering-roadmap.html	gathering	gathering-docs/gathering-roadmap.html	Gathering Roadmap &mdash; Domain Topology
+https://jeffbridwell.com/chorus#doc/gathering-docs%2Fhome-cloud.html	gathering	gathering-docs/home-cloud.html	Home Cloud — Infrastructure &amp; Service Topology
+https://jeffbridwell.com/chorus#doc/gathering-docs%2Fowl-design-assessment.html	gathering	gathering-docs/owl-design-assessment.html	OWL Design Assessment — Gathering Ontology
+https://jeffbridwell.com/chorus#doc/gathering-docs%2Fposture-strip.html	gathering	gathering-docs/posture-strip.html	Posture Timelapse — Film Strip
+https://jeffbridwell.com/chorus#doc/gathering-docs%2Fself-portrait.html	gathering	gathering-docs/self-portrait.html	The Self-Portrait — Jeff as Architecture Diagram
+https://jeffbridwell.com/chorus#doc/gathering-docs%2Ftech-stack.html	gathering	gathering-docs/tech-stack.html	Gathering Tech Stack — Architecture & Code Structure
+https://jeffbridwell.com/chorus#doc/harvest-scope.html	gathering	harvest-scope.html	Harvest Scope — Live AC Dashboard
+https://jeffbridwell.com/chorus#doc/lightlife.html	gathering	lightlife.html	Light Life Urban Gardens | Roslindale, MA
+https://jeffbridwell.com/chorus#doc/operations.html	gathering	operations.html	Operations | Gathering
+https://jeffbridwell.com/chorus#doc/self-ontology-sketch.html	gathering	self-ontology-sketch.html	Self Domain Ontology — From Jeff's Sketch (Spring 2024)
+https://jeffbridwell.com/chorus#doc/self-relationships.html	gathering	self-relationships.html	People &amp; Relationships — Self Domain
+https://jeffbridwell.com/chorus#doc/system%2Fdocs%2FARCHITECTURE_PATTERNS.html	gathering	system/docs/ARCHITECTURE_PATTERNS.html	
+https://jeffbridwell.com/chorus#doc/system%2Fdocs%2FBOOK_CATALOG_WORKFLOW.md	gathering	system/docs/BOOK_CATALOG_WORKFLOW.md	Book Catalog Workflow
+https://jeffbridwell.com/chorus#doc/system%2Fdocs%2FGALLERY-REFACTORING.md	gathering	system/docs/GALLERY-REFACTORING.md	Gallery Refactoring Plan
+https://jeffbridwell.com/chorus#doc/system%2Fdocs%2FGATHERING_README.md	gathering	system/docs/GATHERING_README.md	
+https://jeffbridwell.com/chorus#doc/system%2Fdocs%2FGATHERING_VISION.md	gathering	system/docs/GATHERING_VISION.md	Gathering — Vision Synthesis
+https://jeffbridwell.com/chorus#doc/system%2Fdocs%2FHEIDEGGER_GATHERING_RESEARCH.md	gathering	system/docs/HEIDEGGER_GATHERING_RESEARCH.md	Heidegger's Versammlung and the Philosophy of Gathering
+https://jeffbridwell.com/chorus#doc/system%2Fdocs%2FPHOTOS_DOMAIN_ARCHITECTURE.html	gathering	system/docs/PHOTOS_DOMAIN_ARCHITECTURE.html	
+https://jeffbridwell.com/chorus#doc/system%2Fdocs%2FSITE_MAP.md	gathering	system/docs/SITE_MAP.md	Gathering Site Map
+https://jeffbridwell.com/chorus#doc/system%2Fdocs%2FSTYLE_GUIDE.md	gathering	system/docs/STYLE_GUIDE.md	
+https://jeffbridwell.com/chorus#doc/value-stream-render.html	gathering	value-stream-render.html	Gathering Value Stream & Domain Map
+https://jeffbridwell.com/chorus#doc/akasha%2Fabout.html	none	akasha/about.html	About Anthe Kelley — Akasha Studio Founder | E-RYT-500, Reiki Master, Acupuncturist
+https://jeffbridwell.com/chorus#doc/akasha%2Fcontact.html	none	akasha/contact.html	Contact — Akasha Studio | Roslindale, MA Yoga &amp; Healing Arts
+https://jeffbridwell.com/chorus#doc/akasha%2Findex.html	none	akasha/index.html	Chorus
+https://jeffbridwell.com/chorus#doc/akasha%2Fproposal.html	none	akasha/proposal.html	Akasha Studio — Web Presence Proposal | Bridwell Consulting
+https://jeffbridwell.com/chorus#doc/akasha%2Fschedule.html	none	akasha/schedule.html	Class Schedule — Akasha Studio | Yoga &amp; Meditation Classes in Roslindale
+https://jeffbridwell.com/chorus#doc/akasha%2Fservices.html	none	akasha/services.html	Services — Athena
+https://jeffbridwell.com/chorus#doc/akasha%2Fsite.html	none	akasha/site.html	Akasha Studio — Yoga, Acupuncture &amp; Healing Arts in Roslindale &amp; Jamaica Plain
+https://jeffbridwell.com/chorus#doc/akasha%2Fvalue-stream.html	none	akasha/value-stream.html	Value Stream — Athena
+https://jeffbridwell.com/chorus#doc/business-plan.html	none	business-plan.html	Bridwell Consulting LLC | Business Plan
+https://jeffbridwell.com/chorus#doc/wardley-map.html	none	wardley-map.html	Bridwell Consulting | Wardley Map
