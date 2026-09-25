@@ -413,8 +413,13 @@ chorus:GateShape a sh:NodeShape ;
     sh:property chorus:GateShape-ownerRole .
 chorus:GateShape-label a sh:PropertyShape ;
     sh:path rdfs:label ; sh:minCount 1 .
+# #4316 — optional since 2026-09-25. Required here, it refused every stage gate
+# at the seed (DirectionGate, DesignGate, BuildGate, ProvingGate carry a
+# gatekeeper, not an owner role): 34 Gate rows in the seed files have none.
+# Ruling 6 (vocabulary-identity-4254) retires ownerRole for ownedBy on its own
+# card; until then a Gate may carry it and need not.
 chorus:GateShape-ownerRole a sh:PropertyShape ;
-    sh:path chorus:ownerRole ; sh:minCount 1 .
+    sh:path chorus:ownerRole ; sh:maxCount 1 .
 
 # NOTE: Credential/Permission/SecurityProbe/AuthBoundary already have LIVE
 # NodeShapes in chorus.ttl (6/7 triples each, loaded pre-door). This card is
@@ -437,7 +442,9 @@ chorus:APISurfaceShape a sh:NodeShape ;
 chorus:GateShape a sh:NodeShape ;
     sh:targetClass chorus:Gate ;
     sh:property [ sh:path rdfs:label ; sh:minCount 1 ] ;
-    sh:property [ sh:path chorus:ownerRole ; sh:minCount 1 ] ;
+    # #4316 — optional (see GateShape-ownerRole above): required here, it refused
+    # the four stage gates at the seed.
+    sh:property [ sh:path chorus:ownerRole ; sh:maxCount 1 ] ;
     # #4256 — ruling A (Jeff, 2026-09-21): the declared home follows the rows.
     # Every one of these seven classes declared urn:chorus:ontology while not a
     # single row lived there, so the door served 0 of 29. Rows first, declaration
