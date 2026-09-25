@@ -12,14 +12,15 @@ fn agent(id: &str, sid: &str, pid: &str, started_ago_h: f64, state: &str) -> Str
 fn registry_entry_parses_and_proof_line_reads_like_the_spec() {
     let l = parse_registry(r#"{"role":"kade","pid":56344,"tty":"/dev/ttys004","host":"tmux","tmux":"%0","registered_at":"1"}"#).unwrap();
     assert_eq!(l, Live { pid: 56344, tty: "/dev/ttys004".into(), host: "tmux".into(), pane: "%0".into() });
-    assert_eq!(proof_line("kade", &l, "already awake"), "awake: kade  pid 56344  tty /dev/ttys004  pane %0  registered yes  via already awake");
+    assert_eq!(proof_line("kade", &l, "logged in", "already awake"), "awake: kade  pid 56344  tty /dev/ttys004  pane %0  logged in  via already awake");
+    assert_eq!(proof_line("kade", &l, "", "x"), "awake: kade  pid 56344  tty /dev/ttys004  pane %0  NOT logged in  via x", "no login word is never read as fine");
     assert!(parse_registry(r#"{"role":"kade","tty":"/dev/ttys004"}"#).is_none(), "no pid is not a session");
 }
 
 #[test]
 fn non_tmux_host_is_named_in_the_line_because_nudges_need_a_pane() {
     let l = parse_registry(r#"{"pid":1,"tty":"/dev/ttys001","host":"vscode"}"#).unwrap();
-    assert!(proof_line("wren", &l, "x").contains("yes-but-host=vscode"));
+    assert!(proof_line("wren", &l, "logged in", "x").contains("host=vscode (nudges need tmux)"));
     assert_eq!(l.pane, "-");
 }
 

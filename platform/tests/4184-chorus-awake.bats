@@ -53,7 +53,9 @@ EOS
   printf '{"role":"kade","event":"reply.published","timestamp":"%s"}\n' "$(date '+%Y-%m-%dT%H:%M:%S')" > "$T/spine-read.log"
   export CHORUS_LOG_FILE="$T/spine-read.log"
   mkdir -p "$T/projects"; export AWAKE_PROJECTS_DIR="$T/projects"
-  unset TMUX
+  unset TMUX CLAUDECODE
+  # #4295: no live service probes from a unit world; no background retry left running
+  export AWAKE_SERVICES=none AWAKE_NO_RETRY=1
 }
 
 reg() { # reg <pid> [pane]
@@ -71,8 +73,10 @@ reg() { # reg <pid> [pane]
   reg 56344 %0
   run "$SCRIPT" kade
   [ "$status" -eq 0 ]
-  [[ "$output" == *"awake: kade  pid 56344"*"pane %0  registered yes  via already awake" ]]
-  [ ! -f "$T/tmux.log" ]
+  # #4295 — the line names the login, never "registered yes"; nothing is LAUNCHED
+  # (the tmux bar is set, so tmux is called, but no keys are sent)
+  printf '%s' "$output" | grep -qF "awake: kade  pid 56344  tty /dev/ttys004  pane %0  logged in  via already awake"
+  test -z "$(grep -F send-keys "$T/tmux.log" 2>/dev/null || true)"
   [ ! -f "$T/claude.log" ]
   run "$SCRIPT" kade
   [ "$status" -eq 0 ]
@@ -97,7 +101,7 @@ reg() { # reg <pid> [pane]
   grep -q "tmux new-session -d -s chorus-kade" "$T/tmux.log"
   grep -q "send-keys -t chorus-kade" "$T/tmux.log"
   grep -q -- "$T/bin/claude -c" "$T/tmux.log"
-  [[ "$output" == *"pid 777"*"pane %5  registered yes  via claude -c"* ]]
+  printf '%s' "$output" | grep -qF "pane %5  logged in  via claude -c"
 }
 
 @test "NEGATIVE PROOF — a detached background conversation is ATTACHED, never restarted with -c" {

@@ -60,7 +60,9 @@ EOS
   export CHORUS_IDENTITY_DIR="$T/identity" CHORUS_API_URL="http://stub:1"
   export CHORUS_SESSIONS_DIR="$T/sessions" AWAKE_ROLE_DIR="$T/roles/kade" CHORUS_ROOT="$ROOT"
   export AWAKE_PROJECTS_DIR="$T/projects" AWAKE_NO_ATTACH=1 AWAKE_WAIT=1 USER=unit-account
-  unset TMUX
+  unset TMUX CLAUDECODE
+  # #4295: no live service probes from a unit world; no background retry left running
+  export AWAKE_SERVICES=none AWAKE_NO_RETRY=1
   mk_token kade
 }
 
@@ -132,10 +134,11 @@ lacks()   { test -z "$(grep -F -- "$2" "$1" 2>/dev/null || true)"; }
   touch "$T/token-fail"
   ( sleep 0.3; reg 781 %5 ) &
   run "$SCRIPT" kade
-  out_has "session NOT recorded for kade"
+  # #4295 — the words changed: a failed sign-in says it is PENDING and handles
+  # itself, not "UNAUTHENTICATED ... any write will be refused" at Jeff
+  out_has "login: kade  pending"
   out_has "no credential for 'kade'"
-  out_has "recorded NO"
-  out_has "UNAUTHENTICATED"
+  out_has "logs itself in"
   started
 }
 
@@ -150,14 +153,14 @@ lacks()   { test -z "$(grep -F -- "$2" "$1" 2>/dev/null || true)"; }
   echo 403 > "$T/curl.status"
   ( sleep 0.3; reg 783 %5 ) &
   run "$SCRIPT" kade
-  out_has "session NOT recorded for kade"
+  out_has "login: kade  pending"
   out_has "403"
   started
   # #4215 — found in the live pair: this line used to say "recorded yes" two
   # lines under the error. A start line that contradicts the error above it is
   # worse than no line.
-  out_has "recorded NO"
   test -z "$(printf '%s' "$output" | grep -F "recorded yes" || true)"
+  test -z "$(printf '%s' "$output" | grep -F " logged in " || true)"
   grep -q "^session.login.degraded kade " "$T/spine.log"
 }
 
@@ -166,8 +169,7 @@ lacks()   { test -z "$(grep -F -- "$2" "$1" 2>/dev/null || true)"; }
   ( sleep 0.3; reg 784 %5 ) &
   run "$SCRIPT" kade
   out_has "expired"
-  out_has "recorded NO"
-  out_has "UNAUTHENTICATED"
+  out_has "login: kade  pending"
   started
 }
 
@@ -220,7 +222,10 @@ lacks()   { test -z "$(grep -F -- "$2" "$1" 2>/dev/null || true)"; }
   # conversation, which is how a mute Kade read as present. The role has to have
   # SPOKEN, so this test writes a turn onto the spine. The mute case is the next
   # test.
+  # #4295 — and its login is on file for THIS pid; without that it is logged in
+  # (4295-role-login.bats holds that case).
   reg 56344 %0
+  printf '{"state":"recorded","session":"kade-x-1","pid":56344}' > "$T/identity/kade/login.json"
   printf '{"role":"kade","event":"reply.published","timestamp":"%s"}\n' "$(date '+%Y-%m-%dT%H:%M:%S')" > "$T/spine-read.log"
   run env CHORUS_LOG_FILE="$T/spine-read.log" "$SCRIPT" kade
   test "$status" -eq 0

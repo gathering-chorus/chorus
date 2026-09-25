@@ -1,0 +1,35 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+    <key>Label</key>
+    <string>com.chorus.roles-up</string>
+    <!-- #4295 — Jeff, 2026-09-25: "if u can automate all of that that is very
+         helpful for me"; "i dont want a swat on every reboot". At login this
+         waits for identity :3001, chorus-api :3340 and athena-make :3360 (3 min
+         bound), starts Wren, Kade and Silas logged in (a login that cannot happen
+         yet retries on its own), sends ONE notification line, and opens the
+         windows: VS Code on the chorus folder for Wren, a Terminal window each
+         for Silas and Kade. A role already running is logged in if it is not,
+         never started twice. Runs once per login: no KeepAlive. -->
+    <key>ProgramArguments</key>
+    <array>
+        <string>/Users/jeffbridwell/.chorus/bin/chorus-awake</string>
+        <string>up</string>
+        <string>--windows</string>
+    </array>
+    <key>EnvironmentVariables</key>
+    <dict>
+        <key>CHORUS_ROOT</key>
+        <string>/Users/jeffbridwell/CascadeProjects/chorus</string>
+        <key>PATH</key>
+        <string>/Users/jeffbridwell/.chorus/bin:/Users/jeffbridwell/.local/bin:/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin</string>
+    </dict>
+    <key>RunAtLoad</key>
+    <true/>
+    <key>StandardOutPath</key>
+    <string>/Users/jeffbridwell/Library/Logs/Gathering/roles-up.log</string>
+    <key>StandardErrorPath</key>
+    <string>/Users/jeffbridwell/Library/Logs/Gathering/roles-up.log</string>
+</dict>
+</plist>
