@@ -16,6 +16,8 @@ It is generated from the store on every load, so it cannot drift from the model.
 file can, and did: it has sat since June waiting for the sign-off its own header asks
 for. Treat the page as the source and this file as history.
 
+**Business words (2026-09-25, #4306):** chorus-domain-glossary.html now carries the business section (Chorus Consulting, the offer, how AI is used, what "Chorus" means) in the words of chorusconsulting.ai, and the 10 products as the live model describes them. This file stays as the 05-28 term-by-term history.
+
 **Sources:** chorus-product-tree.md (2026-05-14/16), athena-product-design.html (2026-05-15), chorus-service-design.html (2026-04-11/18), chorus-pulse-tobe.html, ADRs 024 / 028 / 031 / 032 / 095, all role CLAUDE.md files, TEAM_PROTOCOL.md, live Athena subdomain registry.
 
 **Open meta-decision (Jeff, 2026-05-28):** Werk is the team's universal protocol for moving any unit of work through state across all five value-streams (Shaping / Designing / Directing / Building / Proving), not a Building-step subproduct. Glossary entries below need to be reread under that reframe. The Werk entry already reflects it; Spine and most others probably do too. Flagged at the bottom.
