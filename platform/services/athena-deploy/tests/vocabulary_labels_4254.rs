@@ -248,12 +248,12 @@ fn only_the_proposed_term_names_nothing_in_the_model() {
     let text = std::fs::read_to_string(&path).unwrap_or_else(|e| panic!("{path}: {e}"));
     let mut out = ungrounded_concepts(&f(&text));
     out.sort();
-    // NAMED, not counted. Two terms name nothing that exists: the class ruling
-    // 1 proposes, and the everyday word for what a nudge is delivered to —
-    // the model has chorus:Session for the login sense and nothing for this.
-    assert_eq!(out.len(), 2, "ungrounded set changed: {out:?}");
+    // NAMED, not counted. One term names nothing that exists: the class ruling
+    // 1 proposes. #4302 grounded the other — the everyday word for what a nudge
+    // is delivered to is now chorus:SessionRun — so it must NOT come back.
+    assert_eq!(out.len(), 1, "ungrounded set changed: {out:?}");
     assert!(out.iter().any(|o| o.contains("vocab:stage")), "{out:?}");
-    assert!(out.iter().any(|o| o.contains("vocab:terminal-session")), "{out:?}");
+    assert!(!out.iter().any(|o| o.contains("vocab:terminal-session")), "#4302 grounded terminal-session: {out:?}");
 }
 
 /// NEGATIVE PROOF. A concept WITH an exactMatch must not be counted — if it
