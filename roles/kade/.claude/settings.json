@@ -21,6 +21,17 @@
           }
         ]
       }
+    ],
+    "SessionEnd": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "/Users/jeffbridwell/.chorus/bin/chorus-awake off kade --from-exit",
+            "timeout": 15
+          }
+        ]
+      }
     ]
   }
 }

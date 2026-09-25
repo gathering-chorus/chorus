@@ -37,6 +37,8 @@
 //!   AWAKE_NO_ATTACH=1 (do not hand the terminal to the pane)
 //!   CHORUS_TOKEN_BIN  AWAKE_CURL  CHORUS_LOG_BIN  CHORUS_IDENTITY_DIR  CHORUS_API_URL
 
+pub mod lifecycle;
+
 use serde_json::Value;
 use std::env;
 use std::fs;
@@ -77,9 +79,12 @@ pub fn parse_registry(json: &str) -> Option<Live> {
 }
 
 /// The one line Jeff reads. `how` says which path was taken.
-pub fn proof_line(role: &str, l: &Live, how: &str) -> String {
-    let reg = if l.host == "tmux" { "yes".to_string() } else { format!("yes-but-host={} (nudges need tmux)", l.host) };
-    format!("awake: {}  pid {}  tty {}  pane {}  registered {}  via {}", role, l.pid, l.tty, l.pane, reg, how)
+/// #4295 — the line carries the LOGIN, not "registered yes": on 2026-09-25
+/// "registered yes" printed over two sessions that had no login at all.
+pub fn proof_line(role: &str, l: &Live, login: &str, how: &str) -> String {
+    let host = if l.host == "tmux" { String::new() } else { format!("  host={} (nudges need tmux)", l.host) };
+    let login = if login.is_empty() { "NOT logged in" } else { login };
+    format!("awake: {}  pid {}  tty {}  pane {}  {}{}  via {}", role, l.pid, l.tty, l.pane, login, host, how)
 }
 
 /// #4215 — the spine binary, resolvable before the start block needs it.
@@ -355,10 +360,24 @@ fn iso_utc(secs: u64) -> String {
 /// cleared his token cache before it would start. A session is one START, not one
 /// token; the name has to say so. Passed in rather than read from the clock here
 /// so the unit test is deterministic.
+/// lowercase, anything not a letter or digit becomes one dash, no dash at the ends
+pub fn slug(x: &str) -> String {
+    let mut out = String::new();
+    for c in x.chars() {
+        if c.is_ascii_alphanumeric() { out.push(c.to_ascii_lowercase()); }
+        else if !out.ends_with('-') { out.push('-'); }
+    }
+    out.trim_matches('-').to_string()
+}
+
 pub fn session_row(role: &str, l: &Login, host_account: &str, start: &str) -> (String, Value) {
     let tail: String = l.jti.chars().rev().take(8).collect::<Vec<_>>().into_iter().rev().collect();
-    let safe = |x: &str| x.replace(|c: char| !c.is_ascii_alphanumeric(), "-");
-    let name = format!("{}-{}-{}", role, safe(&tail), safe(start));
+    // #4295 — the name is written the way the DAL stores it (lowercase, one dash,
+    // none at the ends). It slugs what it is given, so the live login on
+    // 2026-09-25 sent silas-3U01z2C--1a0d90f31b5, was stored as
+    // silas-3u01z2c-1a0d90f31b5, and every read by the sent name answered 404:
+    // `off` could never have closed it.
+    let name = slug(&format!("{}-{}-{}", role, tail, start));
     let body = serde_json::json!({
         "name": name,
         "label": format!("{} logged in {} on {}", role, iso_utc(l.iat), host_account),
@@ -411,128 +430,124 @@ fn sh(bin: &str, args: &[&str]) -> Result<String, String> {
 
 fn now_ms() -> u128 { SystemTime::now().duration_since(UNIX_EPOCH).map(|d| d.as_millis()).unwrap_or(0) }
 
-/// The whole verb. Returns the exit code; prints the proof line or the refusal.
-pub fn run(args: &[String]) -> i32 {
-    let role = match args.first() { Some(r) if ROLES.contains(&r.as_str()) => r.clone(), Some(r) => { eprintln!("chorus-awake: unknown role '{}' (wren | silas | kade)", r); return 2; } None => { eprintln!("usage: chorus-awake <role>   (wren | silas | kade)"); return 2; } };
-    let home = envd("HOME", "/tmp");
-    let root = env::var("CHORUS_ROOT").ok().or_else(|| env::current_exe().ok().and_then(|p| p.ancestors().nth(6).map(|a| a.to_string_lossy().to_string()))).unwrap_or_else(|| format!("{}/CascadeProjects/chorus", home));
-    let role_dir = envd("AWAKE_ROLE_DIR", &format!("{}/roles/{}", root, role));
-    let sessions_dir = PathBuf::from(envd("CHORUS_SESSIONS_DIR", &format!("{}/.chorus/sessions", home)));
-    let claude = envd("CLAUDE_BIN", &format!("{}/.local/bin/claude", home));
-    let tmux = envd("TMUX_BIN", "tmux");
-    let ps = envd("AWAKE_PS", "ps");
-    let wait: u64 = envd("AWAKE_WAIT", "20").parse().unwrap_or(20);
-    let stale_hours: f64 = envd("AWAKE_STALE_HOURS", "24").parse().unwrap_or(24.0);
-    let tmux_session = format!("chorus-{}", role);
+// ------------------------------------------------------ the verbs (#4295)
 
-    // 1/4/6 — registry first: one live → say so and stop; two → refuse.
-    let live = live_entries(&sessions_dir, &role, &ps);
-    if live.len() >= 2 {
-        eprintln!("chorus-awake: REFUSED — {} live sessions for {}; one role, one session:", live.len(), role);
-        for l in &live { eprintln!("  pid {}  tty {}  host {}  pane {}", l.pid, l.tty, l.host, l.pane); }
-        eprintln!("  end one of them (exit in its pane), then run again.");
-        return 1;
+/// Everything a verb reads from the world, resolved once. Every field has an
+/// env override so the tests bring their own world (#3528).
+struct Ctx {
+    home: String,
+    root: String,
+    sessions_dir: PathBuf,
+    claude: String,
+    tmux: String,
+    ps: String,
+    wait: u64,
+    stale_hours: f64,
+    identity_dir: String,
+    token_bin: String,
+    api: String,
+    curl: String,
+    log_bin: String,
+    probe: String,
+    services: Vec<(String, String)>,
+    service_wait: u64,
+}
+
+impl Ctx {
+    fn from_env() -> Ctx {
+        let home = envd("HOME", "/tmp");
+        let root = env::var("CHORUS_ROOT").ok().or_else(|| env::current_exe().ok().and_then(|p| p.ancestors().nth(6).map(|a| a.to_string_lossy().to_string()))).unwrap_or_else(|| format!("{}/CascadeProjects/chorus", home));
+        Ctx {
+            sessions_dir: PathBuf::from(envd("CHORUS_SESSIONS_DIR", &format!("{}/.chorus/sessions", home))),
+            claude: envd("CLAUDE_BIN", &format!("{}/.local/bin/claude", home)),
+            tmux: envd("TMUX_BIN", "tmux"),
+            ps: envd("AWAKE_PS", "ps"),
+            wait: envd("AWAKE_WAIT", "20").parse().unwrap_or(20),
+            stale_hours: envd("AWAKE_STALE_HOURS", "24").parse().unwrap_or(24.0),
+            identity_dir: envd("CHORUS_IDENTITY_DIR", &format!("{}/.chorus/identity", home)),
+            token_bin: envd("CHORUS_TOKEN_BIN", &format!("{}/platform/scripts/chorus-identity-token", root)),
+            api: envd("CHORUS_API_URL", "http://localhost:3360"),
+            curl: envd("AWAKE_CURL", "curl"),
+            log_bin: log_bin_for(&root),
+            probe: envd("AWAKE_PROBE_BIN", "curl"),
+            services: lifecycle::parse_services(&envd("AWAKE_SERVICES", lifecycle::DEFAULT_SERVICES)),
+            service_wait: envd("AWAKE_SERVICE_WAIT", "180").parse().unwrap_or(180),
+            home,
+            root,
+        }
     }
-    // #4215 — "already awake" now has to be EARNED. A registry entry plus a live
-    // pid is what Kade had for over an hour while unable to answer anything, and
-    // this branch blessed it and did nothing. Ask the spine whether the session
-    // has spoken; if it has not, it is mute, and a mute session is ended and
-    // replaced rather than reported as fine.
-    //
-    // AWAKE_MUTE_SECS is the window. AWAKE_LIVENESS=0 disables the check — and
-    // exists so the negative proof can show the OLD behaviour (blessing a mute
-    // session) rather than only asserting the new one.
-    if let Some(l) = live.first() {
+    /// AWAKE_ROLE_DIR is the single-role override the #4184/#4202 suites use;
+    /// AWAKE_ROLES_BASE serves `up`, which starts all three.
+    fn role_dir(&self, role: &str) -> String {
+        if let Ok(d) = env::var("AWAKE_ROLE_DIR") { return d; }
+        if let Ok(b) = env::var("AWAKE_ROLES_BASE") { return format!("{}/{}", b, role); }
+        format!("{}/roles/{}", self.root, role)
+    }
+    fn state_path(&self, role: &str) -> PathBuf { PathBuf::from(&self.identity_dir).join(role).join("login.json") }
+    fn read_state(&self, role: &str) -> LoginState {
+        fs::read_to_string(self.state_path(role)).map(|t| lifecycle::parse_login_state(&t)).unwrap_or(LoginState::Unknown)
+    }
+    fn write_state(&self, role: &str, st: &LoginState) {
+        let p = self.state_path(role);
+        if let Some(d) = p.parent() { let _ = fs::create_dir_all(d); }
+        let _ = write_private(&p, &lifecycle::login_state_json(st, &iso_utc(now_ms() as u64 / 1000)));
+    }
+    fn spine(&self, args: &[&str]) { let _ = sh(&self.log_bin, args); }
+    fn tmux_session(role: &str) -> String { format!("chorus-{}", role) }
+    fn has_tmux(&self, role: &str) -> bool { sh(&self.tmux, &["has-session", "-t", &Ctx::tmux_session(role)]).is_ok() }
+    fn set_bar(&self, role: &str, word: &str) {
+        let s = Ctx::tmux_session(role);
+        if !self.has_tmux(role) { return; }
+        let _ = sh(&self.tmux, &["set-option", "-t", &s, "status-right-length", "60"]);
+        let _ = sh(&self.tmux, &["set-option", "-t", &s, "status-right", &lifecycle::tmux_status_right(word)]);
+    }
+    fn answered(&self, role: &str) -> bool {
         let mute_secs: u64 = envd("AWAKE_MUTE_SECS", "900").parse().unwrap_or(900);
-        let spine_path = envd("CHORUS_LOG_FILE", &format!("{}/.chorus/chorus.log", envd("HOME", "")));
-        let spine = fs::read_to_string(&spine_path).unwrap_or_default();
-        let now_secs = (now_ms() / 1000) as u64;
-        let liveness_on = envd("AWAKE_LIVENESS", "1") != "0";
-        let offset = sh("date", &["+%z"]).ok().as_deref().and_then(tz_offset_secs);
-        let spoke = match offset {
-            Some(o) => answered_recently(&spine, &role, mute_secs, now_secs, o),
-            // unknown offset: every timestamp would read hours stale. Leave the
-            // session alone and say why, rather than end a role on a guess.
-            None => { eprintln!("chorus-awake: could not read the local UTC offset — skipping the mute check"); true }
-        };
-        if awake_verdict(true, spoke, liveness_on) == Awake::AlreadyAwake {
-            println!("{}", proof_line(&role, l, "already awake"));
-            return 0;
-        }
-        eprintln!("chorus-awake: {} has a live session (pid {}) that has not spoken in {}s — MUTE, replacing it", role, l.pid, mute_secs);
-        eprintln!("  a pid and a registry entry are not an answer; ending it so a fresh conversation can start.");
-        let _ = sh(&claude, &["stop", &l.pid.to_string()]);
-        let _ = fs::remove_file(sessions_dir.join(format!("{}-{}.json", role, l.pid)));
-    }
-
-    // 2/7 — the real conversation.
-    //
-    // #4215 — this used to refuse. The reasoning was sound in isolation: a failed
-    // read is not "none", and guessing "none" could start a second conversation
-    // beside a live one. But the cost is not symmetric. The wrong guess costs a
-    // duplicate pane Jeff can close; the refusal costs him the role entirely,
-    // which is the thing this card exists to stop. So: carry on with an empty
-    // list, which resolves to `claude -c` — the last conversation, the same thing
-    // Jeff does by hand when a role goes quiet — and say plainly that the list
-    // could not be read.
-    let agents = match sh(&claude, &["agents", "--json", "--cwd", &role_dir]) {
-        Ok(j) => j,
-        Err(e) => {
-            eprintln!("chorus-awake: could not list {}'s background sessions: {}", role, e.trim());
-            eprintln!("  continuing with the last conversation (claude -c); a detached one may be left behind.");
-            String::from("[]")
-        }
-    };
-    let projects = PathBuf::from(env::var("AWAKE_PROJECTS_DIR").unwrap_or_else(|_| projects_dir_for(&home, &role_dir).to_string_lossy().to_string()));
-    let latest = latest_session_in(&projects);
-    let dec = decide(&agents, latest.as_deref(), stale_hours, now_ms());
-    // #4219 — a conversation the API keeps refusing is not a conversation to
-    // resume. AWAKE_TRANSCRIPT_CHECK=0 disables this and exists for the
-    // negative proof: the same poisoned fixture must be resumed without it.
-    let check_on = envd("AWAKE_TRANSCRIPT_CHECK", "1") != "0";
-    let window: usize = envd("AWAKE_TRANSCRIPT_WINDOW", "40").parse().unwrap_or(40);
-    let threshold: usize = envd("AWAKE_TRANSCRIPT_REFUSALS", "1").parse().unwrap_or(1);
-    let poisoned = check_on && latest.as_deref().map(|id| {
-        let f = projects.join(format!("{}.jsonl", id));
-        let tail = fs::read_to_string(&f).unwrap_or_default();
-        transcript_is_poisoned(&tail, window, threshold)
-    }).unwrap_or(false);
-
-    let (cmd, how) = if poisoned {
-        let id = latest.clone().unwrap_or_default();
-        eprintln!("chorus-awake: the last conversation ({}) ends in API refusals — not resuming it", id);
-        eprintln!("  starting a FRESH conversation instead; turning the key has to start the car.");
-        (claude.clone(), format!("fresh conversation ({} ends in API refusals)", id))
-    } else {
-        match &dec.attach {
-            Some(id) => (format!("{} attach {}", claude, id), format!("attach {} (the last conversation, detached in the background)", id)),
-            None => (format!("{} -c", claude), "claude -c (last conversation)".to_string()),
-        }
-    };
-
-    // 5 — stale agents: named; ended only on request.
-    if !dec.stale.is_empty() {
-        if envd("AWAKE_END_STALE", "0") == "1" {
-            for id in &dec.stale { match sh(&claude, &["rm", id]) { Ok(_) => println!("ended stale agent {}", id), Err(e) => eprintln!("could not end {}: {}", id, e.trim()) } }
-        } else {
-            println!("stale: {} background agent(s) for {} older than {}h ({}); AWAKE_END_STALE=1 ends them", dec.stale.len(), role, stale_hours, dec.stale.join(","));
+        let spine = fs::read_to_string(envd("CHORUS_LOG_FILE", &format!("{}/.chorus/chorus.log", self.home))).unwrap_or_default();
+        match sh("date", &["+%z"]).ok().as_deref().and_then(tz_offset_secs) {
+            Some(o) => answered_recently(&spine, role, mute_secs, now_ms() as u64 / 1000, o),
+            None => true,
         }
     }
+}
 
-    // 8 — LOGIN before anything is started (#4202). No token → no session → nothing runs.
-    let token_bin = envd("CHORUS_TOKEN_BIN", &format!("{}/platform/scripts/chorus-identity-token", root));
-    let identity_dir = envd("CHORUS_IDENTITY_DIR", &format!("{}/.chorus/identity", home));
+use lifecycle::{Came, LoginState};
+
+fn mmss(s: u64) -> String { format!("{}:{:02}", s / 60, s % 60) }
+
+/// Wait for identity, chorus-api and athena-make to answer, with the countdown
+/// on one line. Err names the first one still not answering at the bound.
+fn wait_for_services(ctx: &Ctx, bound: u64, show: bool) -> Result<(), String> {
+    let start = std::time::Instant::now();
+    let mut drew = false;
+    for (name, url) in &ctx.services {
+        loop {
+            let code = sh(&ctx.probe, &["-s", "-o", "/dev/null", "-w", "%{http_code}", "--max-time", "2", url]).unwrap_or_default();
+            if lifecycle::is_answering(&code) { break; }
+            let el = start.elapsed().as_secs();
+            if el >= bound {
+                if drew { eprintln!(); }
+                return Err(format!("{} not answering after {}", name, mmss(bound)));
+            }
+            if show { eprint!("\r{}   ", lifecycle::countdown_line(name, url, el, bound)); drew = true; }
+            std::thread::sleep(Duration::from_secs(1));
+        }
+    }
+    if drew { eprintln!(); }
+    Ok(())
+}
+
+/// The login (#4202, #4215): token, principal check, Session row. Ok is
+/// Recorded or Pending; Err is a refusal (wrong principal), already printed.
+fn do_login(ctx: &Ctx, role: &str) -> Result<LoginState, ()> {
     let refuse_on_any = envd("AWAKE_REFUSE_ON_LOGIN_FAILURE", "0") == "1";
-    let log_bin_early = log_bin_for(&root);
-    let mut degraded: Option<String> = None;
-
-    let token = sh(&token_bin, &[&role]).map(|t| t.trim().to_string());
+    let token = sh(&ctx.token_bin, &[role]).map(|t| t.trim().to_string());
     let login = match &token {
-        Ok(t) => login_check(&role, t, (now_ms() / 1000) as u64),
+        Ok(t) => login_check(role, t, (now_ms() / 1000) as u64),
         Err(e) => Err(format!("no token: {}", e.trim())),
     };
     let login = match login {
-        Ok(l) => Some(l),
+        Ok(l) => l,
         Err(why) => match login_posture(Some(&why), refuse_on_any) {
             Start::Refuse(w) => {
                 eprintln!("chorus-awake: REFUSED — {} for {}", w, role);
@@ -541,131 +556,428 @@ pub fn run(args: &[String]) -> i32 {
                 } else {
                     eprintln!("  nothing was started (AWAKE_REFUSE_ON_LOGIN_FAILURE=1 — the pre-#4215 posture).");
                 }
-                return 1;
+                return Err(());
             }
             _ => {
-                eprintln!("chorus-awake: session NOT recorded for {} — {}", role, why);
-                eprintln!("  starting anyway: a login that cannot be written down must not decide whether you have an engineer.");
-                let _ = sh(&log_bin_early, &["session.login.degraded", &role, &format!("reason={}", why)]);
-                degraded = Some(why);
-                None
+                ctx.spine(&["session.login.degraded", role, &format!("reason={}", why)]);
+                return Ok(LoginState::Pending { why, pid: None });
             }
         },
     };
     let token = token.unwrap_or_default();
-    // #4215 — only write a Session row when there are claims to write. Without
-    // them the degrade was already announced above; the pane still starts.
-    let mut row_written = true;
-    if let Some(login) = login {
-        let host_account = envd("USER", "unknown");
-        let start_id = format!("{:x}", now_ms());
-        let (session_name, body) = session_row(&role, &login, &host_account, &start_id);
-        // the row: POST through the security API with the token as a header FILE (0600), never an argv
-        let role_id_dir = PathBuf::from(&identity_dir).join(&role);
-        let _ = fs::create_dir_all(&role_id_dir);
-        let hdr = role_id_dir.join("session.hdr");
-        let body_path = role_id_dir.join("session.body");
-        if let Err(e) = write_private(&hdr, &format!("Authorization: Bearer {}\n", token)).and_then(|_| write_private(&body_path, &body.to_string())) {
-            eprintln!("chorus-awake: REFUSED — login not recorded for {}: cannot write {}: {}", role, hdr.display(), e); return 1;
-        }
-        let api = envd("CHORUS_API_URL", "http://localhost:3360");
-        let curl = envd("AWAKE_CURL", "curl");
-        let url = format!("{}/v1/identity/sessions", api);
-        let hdr_arg = format!("@{}", hdr.display());
-        let body_arg = format!("@{}", body_path.display());
-        let code = sh(&curl, &["-s", "-o", "/dev/null", "-w", "%{http_code}", "--max-time", "10", "-X", "POST", "-H", "Content-Type: application/json", "-H", &hdr_arg, "--data-binary", &body_arg, &url]).map(|c| c.trim().to_string()).unwrap_or_else(|e| format!("curl failed: {}", e.trim()));
-        let _ = fs::remove_file(&hdr);
-        // #4215 — a 409 says the session name already exists. With a per-start name
-        // that should now be impossible, so a 409 here means something real: either a
-        // clock/name collision, or a row that is not ours. Ask WHOSE it is before
-        // refusing. "A login the API did not accept is not a login" is right; a login
-        // it accepted a moment ago, on a row we own, IS one — and reading that as a
-        // failure is what left Kade unreachable for an hour on 2026-09-18.
-        if code == "409" {
-            let get = format!("{}/v1/identity/sessions/{}", api, session_name);
-            let existing = sh(&curl, &["-s", "--max-time", "10", &get]).unwrap_or_default();
-            let mine = format!("principal-{}", role);
-            let owned_by_me = existing.contains(&format!("\"ownedBy\":\"{}\"", mine))
-                || existing.contains(&format!("\"ownedBy\": \"{}\"", mine))
-                || existing.contains(&mine);
-            if owned_by_me {
-                eprintln!("chorus-awake: session {} already open and owned by {} — reusing it", session_name, mine);
-            } else {
-                let owner = existing.split("ownedBy").nth(1).map(|t| t.chars().take(60).collect::<String>()).unwrap_or_else(|| "unknown".into());
-                eprintln!("chorus-awake: REFUSED — session {} exists and is NOT yours (ownedBy{})", session_name, owner);
-                eprintln!("  nothing was started; starting under someone else's session would log your work as theirs.");
-                return 1;
-            }
-        } else if !(code == "200" || code == "201") {
-            // #4215 — DEGRADE, DO NOT BLOCK. Jeff, 2026-09-19: "chorus-awake must be a
-            // non issue day to day — highly reliable and resilient."
-            //
-            // This branch used to refuse: "a login the security API did not accept is
-            // not a login." True as a sentence about authentication, wrong as a rule
-            // about starting: it made every hiccup in RECORDING the login stop the
-            // role existing. The identity was already proven before this point —
-            // login_check verified the token names this role and has not expired, and
-            // that check still refuses. What fails here is the bookkeeping write.
-            //
-            // So: start, and make the gap loud rather than silent. A role that runs
-            // with an unrecorded session is a visible gap; a role that never starts is
-            // an hour of Jeff's morning.
-            eprintln!("chorus-awake: session NOT recorded for {} — {} answered HTTP {}", role, url, code);
-            eprintln!("  starting anyway: the identity was verified before this write, and a bookkeeping");
-            eprintln!("  failure must not decide whether you have an engineer. Recorded as degraded.");
-            let _ = sh(&log_bin_for(&root), &["session.login.degraded", &role, &format!("http={}", code), &format!("session={}", session_name)]);
-            // #4215 — found in the live pair: the success line below printed
-            // "recorded yes" two lines under "session NOT recorded". A start line
-            // that contradicts the error above it is worse than no line at all.
-            row_written = false;
-        }
-        let _ = Command::new("bash").arg(&log_bin_early).args(["session.login", &role, &format!("webid={}", login.webid), &format!("jti={}", login.jti), &format!("session={}", session_name), &format!("host_account={}", host_account), &format!("expires_at={}", iso_utc(login.exp))]).output();
-        if row_written {
-            println!("login: {}  webid {}  jti {}  session {}  recorded yes", role, login.webid, login.jti, session_name);
+    let host_account = envd("USER", "unknown");
+    let start_id = format!("{:x}", now_ms());
+    let (session_name, body) = session_row(role, &login, &host_account, &start_id);
+    // the row: POST through the security API with the token as a header FILE (0600), never an argv
+    let role_id_dir = PathBuf::from(&ctx.identity_dir).join(role);
+    let _ = fs::create_dir_all(&role_id_dir);
+    let hdr = role_id_dir.join("session.hdr");
+    let body_path = role_id_dir.join("session.body");
+    if let Err(e) = write_private(&hdr, &format!("Authorization: Bearer {}\n", token)).and_then(|_| write_private(&body_path, &body.to_string())) {
+        return Ok(LoginState::Pending { why: format!("cannot write {}: {}", hdr.display(), e), pid: None });
+    }
+    let url = format!("{}/v1/identity/sessions", ctx.api);
+    let hdr_arg = format!("@{}", hdr.display());
+    let body_arg = format!("@{}", body_path.display());
+    let answer = sh(&ctx.curl, &["-s", "-w", "\n%{http_code}", "--max-time", "10", "-X", "POST", "-H", "Content-Type: application/json", "-H", &hdr_arg, "--data-binary", &body_arg, &url]).unwrap_or_else(|e| format!("curl failed: {}", e.trim()));
+    let _ = fs::remove_file(&hdr);
+    let (reply, code) = match answer.trim_end().rsplit_once('\n') { Some((b, c)) => (b.to_string(), c.trim().to_string()), None => (String::new(), answer.trim().to_string()) };
+    // #4295 — the stored name is the one the API hands back, not the one sent
+    let session_name = stored_name(&reply).unwrap_or(session_name);
+    // #4215 — a 409 on a per-start name means something real: ask WHOSE row it is.
+    if code == "409" {
+        let get = format!("{}/v1/identity/sessions/{}", ctx.api, session_name);
+        let existing = sh(&ctx.curl, &["-s", "--max-time", "10", &get]).unwrap_or_default();
+        let mine = format!("principal-{}", role);
+        if existing.contains(&mine) {
+            eprintln!("chorus-awake: session {} already open and owned by {} — reusing it", session_name, mine);
         } else {
-            println!("login: {}  webid {}  jti {}  session {}  recorded NO — the API refused the row (started UNAUTHENTICATED: any write this pane attempts will be refused)", role, login.webid, login.jti, session_name);
+            let owner = existing.split("ownedBy").nth(1).map(|t| t.chars().take(60).collect::<String>()).unwrap_or_else(|| "unknown".into());
+            eprintln!("chorus-awake: REFUSED — session {} exists and is NOT yours (ownedBy{})", session_name, owner);
+            eprintln!("  nothing was started; starting under someone else's session would log your work as theirs.");
+            return Err(());
+        }
+    } else if !(code == "200" || code == "201") {
+        // #4215 — degrade, do not block: the identity was verified above; what
+        // failed is the bookkeeping write, and #4295 retries it on its own.
+        ctx.spine(&["session.login.degraded", role, &format!("http={}", code), &format!("session={}", session_name)]);
+        return Ok(LoginState::Pending { why: format!("the identity API answered HTTP {}", code), pid: None });
+    }
+    // #4295 — keep the full row: closing it is a whole-row PUT
+    let mut saved = body.clone();
+    saved["name"] = Value::String(session_name.clone());
+    let _ = write_private(&role_id_dir.join("session.row.json"), &saved.to_string());
+    ctx.spine(&["session.login", role, &format!("webid={}", login.webid), &format!("jti={}", login.jti), &format!("session={}", session_name), &format!("host_account={}", host_account), &format!("expires_at={}", iso_utc(login.exp))]);
+    println!("login: {}  webid {}  jti {}  session {}  recorded yes", role, login.webid, login.jti, session_name);
+    Ok(LoginState::Recorded { session: session_name, pid: None })
+}
+
+/// The row name the API stored, from its create reply (data.name).
+fn stored_name(reply: &str) -> Option<String> {
+    let v: Value = serde_json::from_str(reply).ok()?;
+    v.get("data").and_then(|d| d.get("name")).and_then(|n| n.as_str()).filter(|n| !n.is_empty()).map(String::from)
+}
+
+/// Services first (bounded, counted down), then the login. A service still
+/// down at the bound is a PENDING login, never a refusal to start.
+fn login_after_services(ctx: &Ctx, role: &str, bound: u64) -> Result<LoginState, ()> {
+    match wait_for_services(ctx, bound, true) {
+        Ok(()) => do_login(ctx, role),
+        Err(why) => { ctx.spine(&["session.login.degraded", role, &format!("reason={}", why)]); Ok(LoginState::Pending { why, pid: None }) }
+    }
+}
+
+fn pending_line(role: &str, why: &str) -> String {
+    format!("login: {}  pending — {}. {} is starting and logs itself in when that answers; nothing for you to do.", role, why, role)
+}
+
+/// A pending login keeps trying in the background, so Jeff never has to.
+fn spawn_retry(role: &str) {
+    if envd("AWAKE_NO_RETRY", "0") == "1" { return; }
+    if let Ok(me) = env::current_exe() {
+        let _ = Command::new(me).args(["relogin", role]).stdin(std::process::Stdio::null()).stdout(std::process::Stdio::null()).stderr(std::process::Stdio::null()).spawn();
+    }
+}
+
+fn came_of(st: &LoginState) -> Came {
+    match st { LoginState::Recorded { .. } => Came::LoggedIn, LoginState::Pending { why, .. } => Came::Pending(why.clone()), _ => Came::Pending("no login".into()) }
+}
+
+fn attach_to(ctx: &Ctx, role: &str) {
+    let s = Ctx::tmux_session(role);
+    if env::var("TMUX").is_ok() { let _ = sh(&ctx.tmux, &["switch-client", "-t", &s]); }
+    else { let _ = Command::new(&ctx.tmux).args(["attach", "-t", &s]).status(); }
+}
+
+/// `on <role>`: start it logged in, or, when it is already running, make sure
+/// THIS session is logged in and go to its window. Never a second copy.
+fn on(ctx: &Ctx, role: &str, attach: bool) -> Result<Came, (i32, String)> {
+    let tmux_session = Ctx::tmux_session(role);
+    let role_dir = ctx.role_dir(role);
+
+    // 1/4/6 — registry first: one live → check it; two → refuse.
+    let live = live_entries(&ctx.sessions_dir, role, &ctx.ps);
+    if live.len() >= 2 {
+        eprintln!("chorus-awake: REFUSED — {} live sessions for {}; one role, one session:", live.len(), role);
+        for l in &live { eprintln!("  pid {}  tty {}  host {}  pane {}", l.pid, l.tty, l.host, l.pane); }
+        eprintln!("  run `chorus-principal off {}` to end both, then `chorus-principal on {}`.", role, role);
+        return Err((1, format!("{} live sessions", live.len())));
+    }
+    if let Some(l) = live.first() {
+        let liveness_on = envd("AWAKE_LIVENESS", "1") != "0";
+        if awake_verdict(true, ctx.answered(role), liveness_on) == Awake::AlreadyAwake {
+            // #4295 — "already awake" is earned by a login too, not only a pid.
+            let st = ctx.read_state(role);
+            let st = match &st {
+                LoginState::Recorded { .. } if lifecycle::login_belongs_to(&st, l.pid) => st.with_pid(l.pid),
+                _ => {
+                    println!("{} is running without a login; logging it in now", role);
+                    match login_after_services(ctx, role, ctx.service_wait) { Ok(s) => s.with_pid(l.pid), Err(()) => return Err((1, "login refused".into())) }
+                }
+            };
+            ctx.write_state(role, &st);
+            if let LoginState::Pending { why, .. } = &st { println!("{}", pending_line(role, why)); spawn_retry(role); }
+            let word = lifecycle::login_word(&st, Some(l.pid));
+            ctx.set_bar(role, word);
+            println!("{}", proof_line(role, l, word, "already awake"));
+            if attach { attach_to(ctx, role); }
+            return Ok(came_of(&st));
+        }
+        let mute_secs: u64 = envd("AWAKE_MUTE_SECS", "900").parse().unwrap_or(900);
+        eprintln!("chorus-awake: {} has a live session (pid {}) that has not spoken in {}s — MUTE, replacing it", role, l.pid, mute_secs);
+        eprintln!("  a pid and a registry entry are not an answer; ending it so a fresh conversation can start.");
+        let _ = sh(&ctx.claude, &["stop", &l.pid.to_string()]);
+        let _ = fs::remove_file(ctx.sessions_dir.join(format!("{}-{}.json", role, l.pid)));
+    }
+
+    // 2/7 — the real conversation (#4215: an unreadable list continues, never refuses).
+    let agents = match sh(&ctx.claude, &["agents", "--json", "--cwd", &role_dir]) {
+        Ok(j) => j,
+        Err(e) => {
+            eprintln!("chorus-awake: could not list {}'s background sessions: {}", role, e.trim());
+            eprintln!("  continuing with the last conversation (claude -c); a detached one may be left behind.");
+            String::from("[]")
+        }
+    };
+    let projects = PathBuf::from(env::var("AWAKE_PROJECTS_DIR").unwrap_or_else(|_| projects_dir_for(&ctx.home, &role_dir).to_string_lossy().to_string()));
+    let latest = latest_session_in(&projects);
+    let dec = decide(&agents, latest.as_deref(), ctx.stale_hours, now_ms());
+    // #4219 — a conversation the API keeps refusing is not one to resume.
+    let check_on = envd("AWAKE_TRANSCRIPT_CHECK", "1") != "0";
+    let window: usize = envd("AWAKE_TRANSCRIPT_WINDOW", "40").parse().unwrap_or(40);
+    let threshold: usize = envd("AWAKE_TRANSCRIPT_REFUSALS", "1").parse().unwrap_or(1);
+    let poisoned = check_on && latest.as_deref().map(|id| {
+        let tail = fs::read_to_string(projects.join(format!("{}.jsonl", id))).unwrap_or_default();
+        transcript_is_poisoned(&tail, window, threshold)
+    }).unwrap_or(false);
+    let (cmd, how) = if poisoned {
+        let id = latest.clone().unwrap_or_default();
+        eprintln!("chorus-awake: the last conversation ({}) ends in API refusals — not resuming it", id);
+        eprintln!("  starting a FRESH conversation instead; turning the key has to start the car.");
+        (ctx.claude.clone(), format!("fresh conversation ({} ends in API refusals)", id))
+    } else {
+        match &dec.attach {
+            Some(id) => (format!("{} attach {}", ctx.claude, id), format!("attach {} (the last conversation, detached in the background)", id)),
+            None => (format!("{} -c", ctx.claude), "claude -c (last conversation)".to_string()),
+        }
+    };
+    // 5 — stale agents: named; ended only on request.
+    if !dec.stale.is_empty() {
+        if envd("AWAKE_END_STALE", "0") == "1" {
+            for id in &dec.stale { match sh(&ctx.claude, &["rm", id]) { Ok(_) => println!("ended stale agent {}", id), Err(e) => eprintln!("could not end {}: {}", id, e.trim()) } }
+        } else {
+            println!("stale: {} background agent(s) for {} older than {}h ({}); AWAKE_END_STALE=1 ends them", dec.stale.len(), role, ctx.stale_hours, dec.stale.join(","));
         }
     }
-    if let Some(why) = &degraded {
-        println!("login: {}  recorded NO — {}  (started UNAUTHENTICATED: no session row, any write this pane attempts will be refused by the API)", role, why);
-    }
-    let token_file = PathBuf::from(&identity_dir).join(&role).join("token.cache");
+
+    // 8 — LOGIN before anything is started (#4202), after the services answer (#4295).
+    let st = match login_after_services(ctx, role, ctx.service_wait) { Ok(s) => s, Err(()) => return Err((1, "login refused".into())) };
+    ctx.write_state(role, &st);
+    if let LoginState::Pending { why, .. } = &st { println!("{}", pending_line(role, why)); }
+    let token_file = PathBuf::from(&ctx.identity_dir).join(role).join("token.cache");
 
     // 1 — the pane, then launch inside it.
-    let launch = format!("cd '{}' && source '{}/platform/scripts/chorus-env-setup.sh' && export CHORUS_SESSION_TOKEN_FILE='{}' && {}", role_dir, root, token_file.display(), cmd);
-    let no_attach = envd("AWAKE_NO_ATTACH", "0") == "1";
-    let in_own_pane = env::var("TMUX").is_ok() && sh(&tmux, &["display-message", "-p", "#S"]).map(|s| s.trim() == tmux_session).unwrap_or(false);
-    if in_own_pane && !no_attach {
-        // we ARE the pane: run it here in the foreground; the line prints when it exits
+    let launch = format!("cd '{}' && source '{}/platform/scripts/chorus-env-setup.sh' && export CHORUS_SESSION_TOKEN_FILE='{}' && {}", role_dir, ctx.root, token_file.display(), cmd);
+    let in_own_pane = env::var("TMUX").is_ok() && sh(&ctx.tmux, &["display-message", "-p", "#S"]).map(|s| s.trim() == tmux_session).unwrap_or(false);
+    if in_own_pane && attach {
         println!("awake: {}  starting here via {}", role, how);
         let _ = Command::new("bash").arg("-c").arg(&launch).status();
-        if let Some(l) = live_entries(&sessions_dir, &role, &ps).first() { println!("{}", proof_line(&role, l, &how)); }
-        return 0;
+        return Ok(came_of(&st));
     }
-    if sh(&tmux, &["has-session", "-t", &tmux_session]).is_err() {
-        if let Err(e) = sh(&tmux, &["new-session", "-d", "-s", &tmux_session, "-c", &role_dir]) { eprintln!("chorus-awake: tmux new-session failed: {}", e); return 1; }
+    if !ctx.has_tmux(role) {
+        if let Err(e) = sh(&ctx.tmux, &["new-session", "-d", "-s", &tmux_session, "-c", &role_dir]) { eprintln!("chorus-awake: tmux new-session failed: {}", e); return Err((1, format!("tmux new-session failed: {}", e.trim()))); }
     }
-    if let Err(e) = sh(&tmux, &["send-keys", "-t", &tmux_session, &launch, "Enter"]) { eprintln!("chorus-awake: tmux send-keys failed: {}", e); return 1; }
+    if let Err(e) = sh(&ctx.tmux, &["send-keys", "-t", &tmux_session, &launch, "Enter"]) { eprintln!("chorus-awake: tmux send-keys failed: {}", e); return Err((1, format!("tmux send-keys failed: {}", e.trim()))); }
 
     // 3 — prove it: wait for a live tmux-hosted registry entry.
-    let found: Option<Live>;
-    let mut i = 0u64;
-    loop {
-        let f = live_entries(&sessions_dir, &role, &ps).into_iter().next();
-        if f.is_some() || i >= wait { found = f; break; }
+    let mut found: Option<Live> = None;
+    for i in 0..=ctx.wait {
+        found = live_entries(&ctx.sessions_dir, role, &ctx.ps).into_iter().next();
+        if found.is_some() || i == ctx.wait { break; }
         std::thread::sleep(Duration::from_secs(1));
-        i += 1;
     }
     let Some(l) = found else {
-        eprintln!("awake: {}  registered NO after {}s  via {} — look at the pane: {} attach -t {}", role, wait, how, tmux, tmux_session);
-        return 1;
+        eprintln!("awake: {}  registered NO after {}s  via {} — look at the pane: {} attach -t {}", role, ctx.wait, how, ctx.tmux, tmux_session);
+        return Err((1, format!("did not register in {}s", ctx.wait)));
     };
-    println!("{}", proof_line(&role, &l, &how));
+    let st = st.with_pid(l.pid);
+    ctx.write_state(role, &st);
+    if matches!(st, LoginState::Pending { .. }) { spawn_retry(role); }
+    let word = lifecycle::login_word(&st, Some(l.pid));
+    ctx.set_bar(role, word);
+    println!("{}", proof_line(role, &l, word, &how));
+    if attach { attach_to(ctx, role); }
+    Ok(came_of(&st))
+}
 
-    // hand the terminal to the pane unless told not to
-    if !no_attach {
-        if env::var("TMUX").is_ok() { let _ = sh(&tmux, &["switch-client", "-t", &tmux_session]); }
-        else { let _ = Command::new(&tmux).args(["attach", "-t", &tmux_session]).status(); }
+/// `relogin <role>` — the background retry a pending login starts. Ends when
+/// the login is recorded, when the role is gone, or at AWAKE_RETRY_SECS.
+fn relogin(ctx: &Ctx, role: &str) -> i32 {
+    let total: u64 = envd("AWAKE_RETRY_SECS", "1800").parse().unwrap_or(1800);
+    let every: u64 = envd("AWAKE_RETRY_EVERY", "10").parse().unwrap_or(10).max(1);
+    let start = std::time::Instant::now();
+    loop {
+        let Some(l) = live_entries(&ctx.sessions_dir, role, &ctx.ps).into_iter().next() else { return 0 };
+        let st = ctx.read_state(role);
+        if matches!(st, LoginState::Recorded { .. }) && lifecycle::login_belongs_to(&st, l.pid) { return 0; }
+        if matches!(st, LoginState::Closed) { return 0; }
+        if wait_for_services(ctx, 0, false).is_ok() {
+            match do_login(ctx, role) {
+                Ok(LoginState::Recorded { session, .. }) => {
+                    let st = LoginState::Recorded { session: session.clone(), pid: Some(l.pid) };
+                    ctx.write_state(role, &st);
+                    ctx.set_bar(role, "logged in");
+                    ctx.spine(&["session.login.recovered", role, &format!("session={}", session), &format!("after_secs={}", start.elapsed().as_secs())]);
+                    return 0;
+                }
+                Ok(_) => {}
+                Err(()) => return 1,
+            }
+        }
+        if start.elapsed().as_secs() >= total {
+            ctx.spine(&["session.login.gave_up", role, &format!("after_secs={}", total)]);
+            return 1;
+        }
+        std::thread::sleep(Duration::from_secs(every));
+    }
+}
+
+/// Close the Session row: read it, write sessionState=closed + endedAt back.
+fn close_row(ctx: &Ctx, role: &str, session: &str) -> Result<(), String> {
+    let token = sh(&ctx.token_bin, &[role]).map_err(|e| format!("no token: {}", e.trim()))?;
+    let role_id_dir = PathBuf::from(&ctx.identity_dir).join(role);
+    let _ = fs::create_dir_all(&role_id_dir);
+    let hdr = role_id_dir.join("session.hdr");
+    let body_path = role_id_dir.join("session.body");
+    write_private(&hdr, &format!("Authorization: Bearer {}\n", token.trim()))?;
+    let url = format!("{}/v1/identity/sessions/{}", ctx.api, session);
+    let hdr_arg = format!("@{}", hdr.display());
+    let ended = iso_utc(now_ms() as u64 / 1000);
+    // the row saved at login; else the listing (the single-row GET lacks name/ownedBy)
+    let saved = fs::read_to_string(role_id_dir.join("session.row.json")).unwrap_or_default();
+    let row = lifecycle::closed_row(&saved, session, &ended).or_else(|| {
+        let list = sh(&ctx.curl, &["-s", "--max-time", "10", "-H", &hdr_arg, &format!("{}/v1/identity/sessions?limit=1000", ctx.api)]).unwrap_or_default();
+        lifecycle::closed_row(&list, session, &ended)
+    });
+    let result = match row {
+        None => Err(format!("session {} not found", session)),
+        Some(row) => {
+            write_private(&body_path, &row.to_string())?;
+            let body_arg = format!("@{}", body_path.display());
+            let code = sh(&ctx.curl, &["-s", "-o", "/dev/null", "-w", "%{http_code}", "--max-time", "10", "-X", "PUT", "-H", "Content-Type: application/json", "-H", &hdr_arg, "--data-binary", &body_arg, &url]).map(|c| c.trim().to_string()).unwrap_or_default();
+            if code == "200" || code == "201" || code == "204" { Ok(()) } else { Err(format!("the identity API answered HTTP {}", code)) }
+        }
+    };
+    let _ = fs::remove_file(&hdr);
+    result
+}
+
+/// `off <role>` — end the role and close its login. `--from-exit` is the
+/// SessionEnd hook after /exit: the session is already ending, so only the
+/// login is closed, and /clear (a new conversation, same session) is ignored.
+fn off(ctx: &Ctx, role: &str, from_exit: bool) -> i32 {
+    if from_exit {
+        let mut input = String::new();
+        let _ = std::io::Read::read_to_string(&mut std::io::stdin(), &mut input);
+        let reason = serde_json::from_str::<Value>(&input).ok().and_then(|v| v.get("reason").and_then(|r| r.as_str()).map(String::from)).unwrap_or_default();
+        if !lifecycle::exit_reason_logs_out(&reason) { return 0; }
+    }
+    let st = ctx.read_state(role);
+    let closed = match &st {
+        LoginState::Recorded { session, .. } => Some((session.clone(), close_row(ctx, role, session))),
+        _ => None,
+    };
+    ctx.write_state(role, &LoginState::Closed);
+    let how = if from_exit { "exit" } else { "off" };
+    let session = closed.as_ref().map(|(s, _)| s.as_str()).unwrap_or("");
+    ctx.spine(&["session.logout", role, &format!("session={}", session), &format!("how={}", how)]);
+    if !from_exit {
+        let live = live_entries(&ctx.sessions_dir, role, &ctx.ps);
+        if ctx.has_tmux(role) { let _ = sh(&ctx.tmux, &["kill-session", "-t", &Ctx::tmux_session(role)]); }
+        for l in &live { let _ = fs::remove_file(ctx.sessions_dir.join(format!("{}-{}.json", role, l.pid))); }
+        if live.is_empty() && closed.is_none() { println!("{} off (it was not running)", role); return 0; }
+    }
+    match closed {
+        Some((s, Ok(()))) => println!("{} off: login closed (session {})", role, s),
+        Some((s, Err(why))) => println!("{} off: stopped; the login row {} could not be closed ({}), and it expires on its own", role, s, why),
+        None => println!("{} off: stopped; it had no recorded login to close", role),
     }
     0
+}
+
+fn status(ctx: &Ctx) -> i32 {
+    for role in ROLES {
+        let live = live_entries(&ctx.sessions_dir, role, &ctx.ps);
+        let pid = live.first().map(|l| l.pid);
+        let answering = pid.is_some() && ctx.answered(role);
+        println!("{}", lifecycle::status_line(role, pid, &ctx.read_state(role), answering));
+        if live.len() >= 2 { println!("       {} live sessions: `chorus-principal off {}` ends both", live.len(), role); }
+    }
+    0
+}
+
+/// Open the windows from Jeff's layout, each on its role: Wren in VS Code's
+/// terminal (a folder-open task), Silas and Kade in a Terminal window each.
+/// A role that already has a window attached gets no second one.
+fn open_windows(ctx: &Ctx) {
+    let principal = envd("CHORUS_PRINCIPAL_BIN", &format!("{}/.chorus/bin/chorus-principal", ctx.home));
+    let osa = envd("AWAKE_OSASCRIPT", "osascript");
+    let attached = |role: &str| sh(&ctx.tmux, &["list-clients", "-t", &Ctx::tmux_session(role)]).map(|o| !o.trim().is_empty()).unwrap_or(false);
+    // Wren: VS Code
+    if !attached("wren") {
+        let dir = PathBuf::from(envd("AWAKE_VSCODE_DIR", &format!("{}/.vscode", ctx.root)));
+        let tasks = dir.join("tasks.json");
+        match fs::read_to_string(&tasks) {
+            Ok(t) if t.contains("on wren") => {}
+            Ok(_) => eprintln!("chorus-awake: {} exists without the wren task; not changing it. The task is:\n{}", tasks.display(), lifecycle::vscode_tasks_json(&principal)),
+            Err(_) => { let _ = fs::create_dir_all(&dir); let _ = fs::write(&tasks, lifecycle::vscode_tasks_json(&principal)); }
+        }
+        // VS Code asks once before running a folder-open task; this answers it
+        // in the workspace so Jeff never sees the prompt.
+        let settings = dir.join("settings.json");
+        let current = fs::read_to_string(&settings).unwrap_or_else(|_| "{}".into());
+        match serde_json::from_str::<Value>(&current) {
+            Ok(Value::Object(mut m)) if !m.contains_key("task.allowAutomaticTasks") => {
+                m.insert("task.allowAutomaticTasks".into(), Value::String("on".into()));
+                let _ = fs::write(&settings, serde_json::to_string_pretty(&Value::Object(m)).unwrap_or_default() + "\n");
+            }
+            Ok(_) => {}
+            Err(_) => eprintln!("chorus-awake: {} is not plain JSON; add \"task.allowAutomaticTasks\": \"on\" by hand", settings.display()),
+        }
+        let _ = sh(&envd("AWAKE_OPEN", "open"), &["-a", "Visual Studio Code", &ctx.root]);
+    }
+    for role in ["silas", "kade"] {
+        if attached(role) { continue; }
+        let script = format!("tell application \"Terminal\" to do script \"{} on {}\"", principal, role);
+        let _ = sh(&osa, &["-e", &script]);
+    }
+}
+
+/// `up [--windows]` — after a reboot: all three roles, logged in, one line.
+fn up(ctx: &mut Ctx, windows: bool) -> i32 {
+    // services are waited for ONCE, with the countdown; each role after that probes once
+    if let Err(why) = wait_for_services(ctx, ctx.service_wait, true) { eprintln!("chorus-awake: {}", why); }
+    ctx.service_wait = 0;
+    let mut results = Vec::new();
+    for role in ["wren", "kade", "silas"] {
+        let came = match on(ctx, role, false) { Ok(c) => c, Err((_, why)) => Came::NotStarted(why) };
+        results.push((role.to_string(), came));
+    }
+    let line = lifecycle::summary_line(&results);
+    println!("{}", line);
+    ctx.spine(&["roles.up", "system", &format!("summary={}", line)]);
+    let note = format!("display notification \"{}\" with title \"Chorus\"", line.replace('"', "'"));
+    let _ = sh(&envd("AWAKE_OSASCRIPT", "osascript"), &["-e", &note]);
+    if windows { open_windows(ctx); }
+    if results.iter().any(|(_, c)| matches!(c, Came::NotStarted(_))) { 1 } else { 0 }
+}
+
+/// Refuse a verb run from an agent session for another role (#4295).
+fn caller_refusal(role: &str, verb: &str) -> Option<String> {
+    let in_agent = env::var("CLAUDECODE").map(|v| !v.is_empty()).unwrap_or(false);
+    let caller = env::var("CHORUS_ROLE").ok().filter(|r| !r.is_empty());
+    lifecycle::caller_may_act(in_agent, caller.as_deref(), role, verb).err()
+}
+
+const USAGE: &str = "usage: chorus-awake on|off|status|up|relogin [role]   (wren | silas | kade)
+  on <role>      start it logged in, or log in the running one and go to its window
+  off <role>     stop it and close its login
+  status         one line per role: running, logged in, answering
+  up [--windows] all three after a reboot, one summary line; --windows opens VS Code and two Terminal windows
+  <role>         same as on";
+
+/// The whole command. Returns the exit code.
+pub fn run(args: &[String]) -> i32 {
+    let mut ctx = Ctx::from_env();
+    let verb = args.first().map(String::as_str).unwrap_or("");
+    let role_arg = |i: usize| -> Result<String, i32> {
+        match args.get(i) {
+            Some(r) if ROLES.contains(&r.as_str()) => Ok(r.clone()),
+            Some(r) => { eprintln!("chorus-awake: unknown role '{}' (wren | silas | kade)", r); Err(2) }
+            None => { eprintln!("{}", USAGE); Err(2) }
+        }
+    };
+    match verb {
+        "status" => status(&ctx),
+        "up" => {
+            if let Some(why) = caller_refusal("all roles", "start") { eprintln!("chorus-awake: REFUSED — {}", why); return 2; }
+            up(&mut ctx, args.iter().any(|a| a == "--windows"))
+        }
+        "relogin" => match role_arg(1) { Ok(r) => relogin(&ctx, &r), Err(c) => c },
+        "off" => match role_arg(1) {
+            Ok(r) => {
+                if let Some(why) = caller_refusal(&r, "stop") { eprintln!("chorus-awake: REFUSED — {}", why); return 2; }
+                off(&ctx, &r, args.iter().any(|a| a == "--from-exit"))
+            }
+            Err(c) => c,
+        },
+        "on" | "wren" | "silas" | "kade" => {
+            let r = if verb == "on" { match role_arg(1) { Ok(r) => r, Err(c) => return c } } else { verb.to_string() };
+            if let Some(why) = caller_refusal(&r, "start") { eprintln!("chorus-awake: REFUSED — {}", why); eprintln!("  nothing was started."); return 2; }
+            let attach = envd("AWAKE_NO_ATTACH", "0") != "1";
+            match on(&ctx, &r, attach) { Ok(_) => 0, Err((c, _)) => c }
+        }
+        "" => { eprintln!("{}", USAGE); 2 }
+        other => { eprintln!("chorus-awake: unknown role '{}' (wren | silas | kade)", other); 2 }
+    }
 }
