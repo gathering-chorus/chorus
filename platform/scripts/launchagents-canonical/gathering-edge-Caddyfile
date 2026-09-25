@@ -51,7 +51,9 @@
 # only, on its own port and its own tunnel hostname, so nothing else on this
 # box is reachable through it. Served straight from the canonical checkout:
 # a landed change to the page is live with no deploy step.
-:3491 {
+# Port 3520, NOT 349x: 3490-3499 are the werk-variant ports (Silas's #4295
+# run died on EADDRINUSE when this block briefly held 3491).
+:3520 {
 	root * /Users/jeffbridwell/CascadeProjects/chorus/designing/sites/chorusconsulting.ai
 	file_server
 
