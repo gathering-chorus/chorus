@@ -165,3 +165,63 @@ describe('#3683 /sup — role validation', () => {
     expect(r.status).toBe(400);
   });
 });
+
+// #4301 — Jeff 2026-09-25 10:24 on /sup silas: "that readout is a bug". Every
+// chunk read "no cards ranked yet" and no domains/products showed, for all three
+// roles. Two causes, each pinned here against the shape the live store has today.
+describe('#4301 /sup reads the graphs and owner form the store actually holds', () => {
+  // A stub that answers like Fuseki: card titles exist ONLY in the cards graph,
+  // so a walk that asks for them inside the board graph gets no rows back for
+  // the ranked cards (the OPTIONAL fails whole) — exactly the live symptom.
+  function storeLikeSparql() {
+    return {
+      query: async (q: string) => {
+        if (!q.includes('roleSequence')) return { results: { bindings: [] } };
+        const labelsFromCardsGraph = /GRAPH\s*<urn:chorus:domains:cards>\s*\{[^}]*chorus:label\s*\?cardLabel/.test(q);
+        const row = (o: Record<string, string>) =>
+          Object.fromEntries(Object.entries(o).map(([k, v]) => [k, { value: v }]));
+        const chunk = { chunkLabel: 'security', roleSeq: '1' };
+        if (!labelsFromCardsGraph) return { results: { bindings: [row(chunk)] } };
+        return {
+          results: {
+            bindings: [
+              row({ ...chunk, rank: '1', cardIri: `${NS}card-4302`, cardLabel: 'Login ER step 1' }),
+              row({ ...chunk, rank: '2', cardIri: `${NS}card-4301` }), // title missing from the cards graph
+            ],
+          },
+        };
+      },
+    };
+  }
+  const liveDeps = () => ({
+    sparql: storeLikeSparql(),
+    readPulse: () => pulseFixture,
+    owl: async (path: string) =>
+      path.startsWith('/domains')
+        ? { data: [{ name: 'security', label: 'security', ownedBy: 'principal-silas' }, { name: 'athena', label: 'Athena', ownedBy: 'principal-wren' }] }
+        : path.startsWith('/products')
+          ? { data: [{ name: 'chorus', label: 'Chorus', ownedBy: 'principal-silas' }] }
+          : { data: [] },
+  });
+  type Body = { data: { chunks: Array<{ chunk: string; cards: Array<{ id: number; title: string; rank: number }> }>; domains: { unordered: string[] }; products: { unordered: string[] } } };
+
+  it('ranked cards come back under their chunk, titles read from the cards graph', async () => {
+    const r = await fetchContextPriorities(liveDeps(), URL_, 'silas');
+    const sec = (r.body as Body).data.chunks.find((c) => c.chunk === 'security');
+    expect(sec?.cards.map((c) => c.id)).toEqual([4302, 4301]);
+    expect(sec?.cards[0].title).toBe('Login ER step 1');
+  });
+
+  it('a card whose title cannot be found shows as its id, never dropped or blank', async () => {
+    const r = await fetchContextPriorities(liveDeps(), URL_, 'silas');
+    const sec = (r.body as Body).data.chunks.find((c) => c.chunk === 'security');
+    expect(sec?.cards.find((c) => c.id === 4301)?.title).toBe('#4301');
+  });
+
+  it('domains and products owned as principal-<role> are the role\'s', async () => {
+    const r = await fetchContextPriorities(liveDeps(), URL_, 'silas');
+    const d = (r.body as Body).data;
+    expect(d.domains.unordered).toEqual(['security']);
+    expect(d.products.unordered).toEqual(['Chorus']);
+  });
+});

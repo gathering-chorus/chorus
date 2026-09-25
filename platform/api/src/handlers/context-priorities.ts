@@ -104,9 +104,13 @@ export async function fetchContextPriorities(
 
   // #4187 — Chunk/ChunkMembership live in urn:chorus:domains:board (21 + 218 rows);
   // the catch-all read here served zero chunks once they moved.
+  // #4301 — card titles live in urn:chorus:domains:cards, not the board graph.
+  // Asking for them inside the board graph failed the membership OPTIONAL whole,
+  // so every chunk read "no cards ranked yet" for all three roles. The title is
+  // its own OPTIONAL: a card with no title shows as its id, never dropped.
   // One walk query: the role's chunks + (optionally) their ranked memberships.
   // Sorting happens HERE — arrival order is not a contract.
-  const walk = `PREFIX chorus: <${NS}> SELECT ?chunkLabel ?roleSeq ?loomSeq ?rank ?cardIri ?cardLabel WHERE { GRAPH <urn:chorus:domains:board> { ?chunk a chorus:Chunk ; chorus:ownedBy chorus:principal-${r} ; chorus:roleSequence ?roleSeq ; chorus:label ?chunkLabel . OPTIONAL { ?chunk chorus:loomSequence ?loomSeq } OPTIONAL { ?m a chorus:ChunkMembership ; chorus:inChunk ?chunk ; chorus:rank ?rank ; chorus:hasCard ?cardIri . ?cardIri chorus:label ?cardLabel } } }`;
+  const walk = `PREFIX chorus: <${NS}> SELECT ?chunkLabel ?roleSeq ?loomSeq ?rank ?cardIri ?cardLabel WHERE { GRAPH <urn:chorus:domains:board> { ?chunk a chorus:Chunk ; chorus:ownedBy chorus:principal-${r} ; chorus:roleSequence ?roleSeq ; chorus:label ?chunkLabel . OPTIONAL { ?chunk chorus:loomSequence ?loomSeq } OPTIONAL { ?m a chorus:ChunkMembership ; chorus:inChunk ?chunk ; chorus:rank ?rank ; chorus:hasCard ?cardIri } } OPTIONAL { GRAPH <urn:chorus:domains:cards> { ?cardIri chorus:label ?cardLabel } } }`;
   const res = await deps.sparql.query(walk);
   const bindings = res.results?.bindings ?? [];
 
@@ -140,7 +144,7 @@ export async function fetchContextPriorities(
       const id = vikunjaId(cardIri);
       if (id !== null) {
         sequencedIds.add(id);
-        chunk.cards.push({ id, title: val('cardLabel') ?? '', rank: Number(rank) });
+        chunk.cards.push({ id, title: val('cardLabel') || `#${id}`, rank: Number(rank) });
       }
     }
   }
@@ -201,7 +205,8 @@ async function readOwnedLevel(
   }
   const mine = rows.filter((row) => {
     const o = typeof row.ownedBy === 'string' ? (row.ownedBy as string).toLowerCase() : '';
-    return o === role || o === `role-${role}`;
+    // #4301 — #4294 made every owner a principal: the live rows say principal-<role>.
+    return o === role || o === `role-${role}` || o === `principal-${role}`;
   });
   const named = (row: Record<string, unknown>): string =>
     (typeof row.label === 'string' && row.label) || (typeof row.name === 'string' && row.name) || '';
