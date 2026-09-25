@@ -105,8 +105,3 @@ chorus:value-stream-gathering a chorus:ValueStream ;
 
 # --- Life value stream steps (placeholder — Jeff defines later) ---------------
 
-chorus:value-stream-life a chorus:ValueStream ;
-    rdfs:label "Life" ;
-    rdfs:comment "DEPRECATED (v1, #3697). The Life stream + its Tending step migrate to the ValueStreamStep grammar in #3705. Retired with the Vertebra ABox in #3702." ;
-    owl:deprecated true .
-

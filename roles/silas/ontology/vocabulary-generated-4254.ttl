@@ -490,7 +490,7 @@ vocab:gen-atStep a skos:Concept ;
 vocab:gen-atStream a skos:Concept ;
     skos:inScheme vocab:model-attributes ;
     skos:prefLabel "atStream" ;
-    skos:definition "Domain -> its ValueStream (value-stream-chorus | value-stream-gathering | value-stream-life). Required (with atStep) because steps are SHARED across streams, so atStep alone is ambiguous. ADR-045 §4." ;
+    skos:definition "Domain -> its ValueStream (value-stream-chorus | value-stream-gathering). Required (with atStep) because steps are SHARED across streams, so atStep alone is ambiguous. ADR-045 §4." ;
     skos:exactMatch <https://jeffbridwell.com/chorus#atStream> .
 
 vocab:gen-audience a skos:Concept ;
