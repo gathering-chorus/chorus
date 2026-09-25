@@ -59,7 +59,10 @@ if [ "${RESEED:-0}" != "1" ]; then
   # Without it the newcomer ordinal was computed from only those chunks that
   # still have open cards, so a role whose top chunk had emptied got a duplicate
   # handed to it and the projection refused its own write.
-  Q='PREFIX chorus: <https://jeffbridwell.com/chorus#> SELECT ?slug ?cid ?rank ?rseq ?own WHERE { GRAPH <urn:chorus:instances> { { ?ch a chorus:Chunk ; chorus:slug ?slug ; chorus:roleSequence ?rseq . OPTIONAL { ?ch chorus:ownedBy ?ownIri . BIND(STRAFTER(STR(?ownIri), "role-") AS ?own) } } UNION { ?m a chorus:ChunkMembership ; chorus:inChunk ?c2 ; chorus:rank ?rank ; chorus:hasCard ?card . ?c2 chorus:slug ?slug . BIND(STRAFTER(STR(?card), "card-") AS ?cid) } } }'
+  # #4301 — chunks and memberships live in the board graph since #4187, and
+  # owners are principal-<role> since #4294. Reading urn:chorus:instances saw no
+  # declared order, so a run would have renumbered all 175 memberships.
+  Q='PREFIX chorus: <https://jeffbridwell.com/chorus#> SELECT ?slug ?cid ?rank ?rseq ?own WHERE { GRAPH <urn:chorus:domains:board> { { ?ch a chorus:Chunk ; chorus:slug ?slug ; chorus:roleSequence ?rseq . OPTIONAL { ?ch chorus:ownedBy ?ownIri . BIND(REPLACE(STR(?ownIri), "^.*#(principal|role)-", "") AS ?own) } } UNION { ?m a chorus:ChunkMembership ; chorus:inChunk ?c2 ; chorus:rank ?rank ; chorus:hasCard ?card . ?c2 chorus:slug ?slug . BIND(STRAFTER(STR(?card), "card-") AS ?cid) } } }'
   existing="$(curl -s "http://localhost:3030/pods/query" --data-urlencode "query=$Q" -H "Accept: text/csv" 2>/dev/null | tail -n +2)"
 fi
 

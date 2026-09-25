@@ -57,7 +57,7 @@ usage() { sed -n '2,30p' "${BASH_SOURCE[0]}" | sed 's/^# \{0,1\}//'; exit 2; }
 # Every chunk owned by a role, as "slug<TAB>roleSequence", ordinal ascending.
 chunks_for_role() {
   local role="$1"
-  local q="PREFIX chorus: <$NS> SELECT ?slug ?rseq WHERE { GRAPH <urn:chorus:instances> { ?ch a chorus:Chunk ; chorus:ownedBy chorus:role-${role} ; chorus:slug ?slug ; chorus:roleSequence ?rseq } } ORDER BY ?rseq"
+  local q="PREFIX chorus: <$NS> SELECT ?slug ?rseq WHERE { GRAPH <urn:chorus:domains:board> { ?ch a chorus:Chunk ; chorus:ownedBy chorus:principal-${role} ; chorus:slug ?slug ; chorus:roleSequence ?rseq } } ORDER BY ?rseq"
   curl -s "$FUSEKI_QUERY" --data-urlencode "query=$q" -H "Accept: text/csv" 2>/dev/null \
     | tail -n +2 | tr -d '\r' | awk -F, 'NF>=2 && $1!=""{print $1"\t"$2}'
 }
@@ -65,7 +65,7 @@ chunks_for_role() {
 # Card ids in a chunk, as "cardId<TAB>rank", ordinal ascending.
 cards_in_chunk() {
   local slug="$1"
-  local q="PREFIX chorus: <$NS> SELECT ?cid ?rank WHERE { GRAPH <urn:chorus:instances> { ?m a chorus:ChunkMembership ; chorus:inChunk ?ch ; chorus:rank ?rank ; chorus:hasCard ?card . ?ch chorus:slug \"$slug\" . BIND(STRAFTER(STR(?card), \"card-\") AS ?cid) } } ORDER BY ?rank"
+  local q="PREFIX chorus: <$NS> SELECT ?cid ?rank WHERE { GRAPH <urn:chorus:domains:board> { ?m a chorus:ChunkMembership ; chorus:inChunk ?ch ; chorus:rank ?rank ; chorus:hasCard ?card . ?ch chorus:slug \"$slug\" . BIND(STRAFTER(STR(?card), \"card-\") AS ?cid) } } ORDER BY ?rank"
   curl -s "$FUSEKI_QUERY" --data-urlencode "query=$q" -H "Accept: text/csv" 2>/dev/null \
     | tail -n +2 | tr -d '\r' | awk -F, 'NF>=2 && $1!=""{print $1"\t"$2}'
 }
