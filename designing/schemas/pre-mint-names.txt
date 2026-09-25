@@ -1,0 +1,27 @@
+# Pre-mint names — rows whose IRIs predate the ADR-040 mint table (#4316).
+#
+# The seed's IRI guard enforces the mint convention for every kind in
+# athena-model's hand table (bare slug, or <kind>-slug). These rows were named
+# before that convention and are referenced across the model, so the seed
+# accepts them BY NAME, here, and nothing else: a new row with a pre-mint name
+# is refused. Each line is kind:local. The list only shrinks — a rename removes
+# its line (and stages the old IRI's retirement), nothing adds one.
+emit-contract:werk-emit-contract
+gate:BuildGate
+gate:DesignGate
+gate:DirectionGate
+gate:ProvingGate
+property-key:pk-covers
+property-key:pk-failureClass
+property-key:pk-gateEnforced
+property-key:pk-nudgeWordCap
+property-key:pk-responseWordCap
+property-key:pk-testType
+property:prop-cards-gate-enforced
+property:prop-pipeline-test-type
+property:prop-role-kade-nudge-word-cap
+property:prop-role-kade-response-word-cap
+property:prop-role-silas-nudge-word-cap
+property:prop-role-silas-response-word-cap
+property:prop-role-wren-nudge-word-cap
+property:prop-role-wren-response-word-cap

@@ -2721,6 +2721,42 @@ pub fn parse_ntriples(nt: &str) -> R<Vec<(String, String, String)>> {
 /// slug; prefixed kinds: `<kind>-slug`). The mint table stays the single
 /// authority — a subject the mint could never produce is refused.
 fn seed_iri_ok(kind: &str, subject_term: &str) -> R<String> {
+    seed_iri_ok_with(kind, subject_term, &kind_entry, pre_mint_names())
+}
+
+/// #4316 — the rows named before the mint table, accepted by name only.
+/// designing/schemas/pre-mint-names.txt, one `kind:local` per line.
+fn pre_mint_names() -> &'static [String] {
+    static NAMES: std::sync::OnceLock<Vec<String>> = std::sync::OnceLock::new();
+    NAMES.get_or_init(|| {
+        let root = std::env::var("CHORUS_ROOT")
+            .unwrap_or_else(|_| "/Users/jeffbridwell/CascadeProjects/chorus".to_string());
+        std::fs::read_to_string(format!("{root}/designing/schemas/pre-mint-names.txt"))
+            .map(|t| {
+                t.lines()
+                    .map(str::trim)
+                    .filter(|l| !l.is_empty() && !l.starts_with('#'))
+                    .map(String::from)
+                    .collect()
+            })
+            .unwrap_or_default()
+    })
+}
+
+/// #4316 — the kind is resolved the way every other write resolves it
+/// (`kind_entry`: the hand table, then the classes domains claim). The mint
+/// convention (bare slug / `<kind>-slug`) is enforced for hand-table kinds only:
+/// the table is what carries a kind's grain, and a kind known only by its claim
+/// has none to check against. Those rows keep their pre-mint names (tool's
+/// chorus:look, vertebra's chorus:Shaping) and the seed says how many, per kind,
+/// so the grandfathered set is visible and shrinks on purpose. A kind nobody
+/// claims, and a subject outside the namespace, are still refused.
+fn seed_iri_ok_with(
+    kind: &str,
+    subject_term: &str,
+    lookup: &dyn Fn(&str) -> R<(&'static str, &'static str, bool)>,
+    pre_mint: &[String],
+) -> R<String> {
     if !is_iri_term(subject_term) {
         return Err(format!("seed: iri-guard — '{}' is not a well-formed IRI term", subject_term));
     }
@@ -2728,11 +2764,11 @@ fn seed_iri_ok(kind: &str, subject_term: &str) -> R<String> {
     let local = iri
         .strip_prefix(NS)
         .ok_or_else(|| format!("seed: iri-guard — <{}> is outside the chorus namespace {}", iri, NS))?;
-    let (_, _, bare) = KINDS
-        .iter()
-        .find(|(k, _, _)| *k == kind)
-        .ok_or_else(|| format!("unknown-kind: '{}'", kind))?;
-    let convention_ok = if *bare {
+    let (_, _, bare) = lookup(kind)?;
+    if !KINDS.iter().any(|(k, _, _)| *k == kind) {
+        return Ok(iri.to_string());
+    }
+    let convention_ok = if bare {
         !local.is_empty()
             && local.chars().all(|c| c.is_ascii_lowercase() || c.is_ascii_digit() || c == '-')
     } else {
@@ -2741,7 +2777,7 @@ fn seed_iri_ok(kind: &str, subject_term: &str) -> R<String> {
             .map(|rest| !rest.is_empty())
             .unwrap_or(false)
     };
-    if !convention_ok {
+    if !convention_ok && !pre_mint.iter().any(|n| *n == format!("{kind}:{local}")) {
         return Err(format!(
             "seed: iri-guard — <{}> does not match the '{}' kind convention (ADR-040 mint table)",
             iri, kind
@@ -3000,6 +3036,13 @@ pub fn seed_multi_at(
 
         if let Some((class, shape)) = &class_and_shape {
             let class = class.as_str();
+            // #4316 — said every run, so the grandfathered names stay visible.
+            if !KINDS.iter().any(|(k, _, _)| k == kind) && !order.is_empty() {
+                eprintln!(
+                    "seed: {kind}: {} row(s) keep pre-mint names (claimed kind, not in the mint table; #4316)",
+                    order.len()
+                );
+            }
             for subject_term in order {
                 let iri = seed_iri_ok(kind, subject_term)?;
                 let props = &by_subject[subject_term];
@@ -5275,5 +5318,66 @@ mod post_rows_4096 {
         let c = calls.borrow();
         assert!(c.iter().any(|l| l == "PUT http://api/products/old tok-kade"), "{c:?}");
         assert!(c.iter().any(|l| l == "POST http://api/products tok-wren"), "{c:?}");
+    }
+}
+
+// #4316 — the seed's IRI guard and the rest of the DAL must agree on what a kind
+// is. seed_iri_ok read the hand table KINDS only, so a class a domain claims
+// (tool, by toolchain) was "unknown-kind" at the seed while kind_entry() — the
+// write path — already accepted it. Every model land's seed step stopped there.
+#[cfg(test)]
+mod seed_guard_4316 {
+    use super::*;
+
+    const NSX: &str = "https://jeffbridwell.com/chorus#";
+    fn term(local: &str) -> String { format!("<{NSX}{local}>") }
+    // a claimed kind as kind_entry() resolves it when the store says toolchain claims Tool
+    fn claims(kind: &str) -> R<(&'static str, &'static str, bool)> {
+        match kind {
+            "tool" => Ok(("tool", "Tool", false)),
+            _ => kind_entry(kind),
+        }
+    }
+    fn nothing_claimed(kind: &str) -> R<(&'static str, &'static str, bool)> {
+        KINDS.iter().find(|(k, _, _)| *k == kind).copied().ok_or_else(|| format!("unknown-kind: '{}'", kind))
+    }
+
+    #[test]
+    fn a_claimed_kind_is_known_to_the_seed_guard() {
+        assert!(!KINDS.iter().any(|(k, _, _)| *k == "tool"), "tool must NOT be in the hand table or this proves nothing");
+        // the live rows are bare and pre-date the mint table: chorus:look, chorus:listen
+        let got = seed_iri_ok_with("tool", &term("look"), &claims, &[]);
+        assert_eq!(got.as_deref(), Ok(format!("{NSX}look").as_str()));
+    }
+
+    #[test]
+    fn negative_proof_a_kind_nobody_claims_is_still_refused() {
+        let e = seed_iri_ok_with("not-a-kind-anyone-claims", &term("x"), &nothing_claimed, &[]).unwrap_err();
+        assert!(e.starts_with("unknown-kind"), "{e}");
+    }
+
+    #[test]
+    fn negative_proof_a_mint_table_kind_keeps_its_convention() {
+        // the lifeStream case from 2026-09-25: a hand-table kind with a pre-mint name is still refused
+        let e = seed_iri_ok_with("value-stream", &term("lifeStream"), &claims, &[]).unwrap_err();
+        assert!(e.contains("does not match the 'value-stream' kind convention"), "{e}");
+    }
+
+    #[test]
+    fn a_listed_pre_mint_name_is_accepted_and_only_that_name() {
+        let listed = vec!["gate:BuildGate".to_string()];
+        assert!(seed_iri_ok_with("gate", &term("BuildGate"), &claims, &listed).is_ok());
+        // NEGATIVE PROOF: the same kind, an unlisted pre-mint name, is still refused
+        let e = seed_iri_ok_with("gate", &term("NewGate"), &claims, &listed).unwrap_err();
+        assert!(e.contains("does not match the 'gate' kind convention"), "{e}");
+        // and the listing is per kind: gate's name does not excuse another kind
+        let e = seed_iri_ok_with("policy", &term("BuildGate"), &claims, &listed).unwrap_err();
+        assert!(e.contains("'policy' kind convention"), "{e}");
+    }
+
+    #[test]
+    fn negative_proof_a_claimed_kind_outside_the_namespace_is_refused() {
+        let e = seed_iri_ok_with("tool", "<https://example.com/look>", &claims, &[]).unwrap_err();
+        assert!(e.contains("outside the chorus namespace"), "{e}");
     }
 }
