@@ -1,7 +1,7 @@
 #!/bin/bash
 # @test-type: unit — the installer against a fake launchctl; no live agent is touched
 # #4283 — chorus-bin-install must never boot out a job that is running or
-# scheduled. On 2026-09-23 14:07 it booted out com.chorus.nightly-suites
+# running (and, since #4292, reloads an idle scheduled one). On 2026-09-23 14:07 it booted out com.chorus.nightly-suites
 # mid-run and the bootstrap back failed. Three fixtures, one fake launchctl
 # that records every call: a running job and a scheduled job are left alone
 # (NEGATIVE PROOFS: no bootout call), an idle kept-alive job is reloaded
@@ -59,11 +59,18 @@ check "running job: no bootout call"        '! grep -q "^bootout .*com.chorus.ni
 check "running job: named as left alone"    'echo "$out" | grep -q "com.chorus.nightly-x .* is running (pid 4242) — left alone"'
 check "running job: spine says skipped"     'grep -q "unit=com.chorus.nightly-x result=skipped-running" "$CHORUS_BIN_SPINE_LOG"'
 
-# 2. a SCHEDULED job (calendar) is left alone even when idle
+# 2. #4292 NEGATIVE PROOF: an IDLE scheduled job IS reloaded. Left alone, launchd
+#    kept the old signature and killed the 2026-09-25 03:00 nightly at spawn
+#    (OS_REASON_CODESIGNING). Reverting to "skip scheduled" turns these red.
 rm -f "$T/agents"/*.plist "$FAKE_CALLS" "$CHORUS_BIN_SPINE_LOG"; plist com.chorus.nightly-y "<key>StartCalendarInterval</key><dict><key>Hour</key><integer>3</integer></dict>"
 out="$(FAKE_PIDS="com.chorus.nightly-y=" bash "$INSTALL" "$T/candidate" chorus-frob 2>&1)"
-check "scheduled job: no bootout call"      '! grep -q "^bootout .*com.chorus.nightly-y" "$FAKE_CALLS"'
-check "scheduled job: named as scheduled"   'echo "$out" | grep -q "com.chorus.nightly-y .* is scheduled — left alone"'
+check "idle scheduled job: bootout called"   'grep -q "^bootout .*com.chorus.nightly-y" "$FAKE_CALLS"'
+check "idle scheduled job: bootstrap called" 'grep -q "^bootstrap .*com.chorus.nightly-y.plist" "$FAKE_CALLS"'
+check "idle scheduled job: spine says ok"    'grep -q "unit=com.chorus.nightly-y result=ok" "$CHORUS_BIN_SPINE_LOG"'
+# 2b. a scheduled job that is RUNNING is still left alone
+rm -f "$T/agents"/*.plist "$FAKE_CALLS" "$CHORUS_BIN_SPINE_LOG"; plist com.chorus.nightly-y "<key>StartCalendarInterval</key><dict><key>Hour</key><integer>3</integer></dict>"
+out="$(FAKE_PIDS="com.chorus.nightly-y=5151" bash "$INSTALL" "$T/candidate" chorus-frob 2>&1)"
+check "running scheduled job: no bootout"    '! grep -q "^bootout .*com.chorus.nightly-y" "$FAKE_CALLS"'
 
 # 3. CONTROL: an idle kept-alive job is still reloaded (bootout + bootstrap)
 rm -f "$T/agents"/*.plist "$FAKE_CALLS" "$CHORUS_BIN_SPINE_LOG"; plist com.chorus.daemon-z "<key>KeepAlive</key><true/>"
