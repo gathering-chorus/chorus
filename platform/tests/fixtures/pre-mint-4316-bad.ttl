@@ -1,0 +1,6 @@
+@prefix c: <https://jeffbridwell.com/chorus#> .
+# two pre-mint names -> the debt check counts 2
+c:BuildGate a c:Gate .
+c:prop-role-silas-nudge-word-cap a c:Property .
+c:gate-review a c:Gate .
+c:property-key-covers a c:PropertyKey .

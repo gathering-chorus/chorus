@@ -193,3 +193,23 @@ SELECT ?s WHERE {
   FILTER NOT EXISTS { ?s c:inLayer ?l }
 }""" ;
     rdfs:comment "A domain with no layer says nothing and so passes both rules above (Kade: the hollow gate). warn while the other teams' domains take their layer on their own cards; becomes block, and DomainShape inLayer minCount 1, when this returns 0 live." .
+
+# #4316 — the pre-mint names are DEBT, counted, not silently allowed (Wren's ask,
+# 2026-09-25 18:21). The seed accepts the rows in designing/schemas/pre-mint-names.txt
+# by name; this check counts them in the store so the number is on athena-validate's
+# report every run and goes down as each is renamed (with its retirement line).
+# ADR-040's mint convention, applied to the four kinds that carry pre-mint names.
+chorus:gc-pre-mint-names a chorus:GovernanceCheck ;
+    rdfs:label "rows named before the mint table (debt, counting down)" ;
+    chorus:boundTo chorus:adr-058 ;
+    chorus:checkSeverity "warn" ;
+    chorus:provenRedOn "2026-09-25" ;
+    chorus:provenRedRows 19 ;
+    chorus:checkQuery """PREFIX c: <https://jeffbridwell.com/chorus#>
+SELECT DISTINCT ?s WHERE {
+  VALUES (?cls ?prefix) { (c:Gate "gate-") (c:Property "property-") (c:PropertyKey "property-key-") (c:EmitContract "emit-contract-") }
+  ?s a ?cls .
+  FILTER(STRSTARTS(STR(?s), "https://jeffbridwell.com/chorus#"))
+  FILTER(!STRSTARTS(STRAFTER(STR(?s), "#"), ?prefix))
+}""" ;
+    rdfs:comment "Each row is a Gate, Property, PropertyKey or EmitContract whose IRI predates ADR-040's <kind>-slug convention (19 live on 2026-09-25: 4 gates, 8 properties, 6 property keys, 1 emit contract). The seed accepts exactly these by name (pre-mint-names.txt); renaming one removes its line and stages its retirement. warn, never block: it measures debt, it does not refuse." .
