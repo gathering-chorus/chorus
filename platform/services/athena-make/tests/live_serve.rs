@@ -1,9 +1,11 @@
+// @test-type: integration — needs-stack: spawns athena-make against the live Fuseki
 //! #3506 / ADR-047 AC2+AC5 — LIVE serve-loop proof. Spawns the real binary on a
 //! scratch port against running Fuseki, smokes the serve-loop contract (discovery
 //! root, enveloped collections across primitives, ETag→304, served-OpenAPI-
 //! everywhere), then kills the child (Rust child.kill(), not a shell kill).
-//! `#[ignore]`d: needs Fuseki on localhost:3030/pods. Run:
-//!   cargo test --test live_serve -- --ignored --nocapture
+//! Needs Fuseki on localhost:3030/pods. #4292 — no longer `#[ignore]`d: the
+//! nightly runs it with the stack up and skips it, typed, when the stack is
+//! down (#3919 needs-stack binaries).
 
 use std::process::{Child, Command, Stdio};
 use std::time::Duration;
@@ -33,7 +35,6 @@ impl Drop for Killer {
 }
 
 #[test]
-#[ignore]
 fn live_serve_loop_contract() {
     let port = 3897u16;
     let base = format!("http://127.0.0.1:{}", port);
@@ -50,7 +51,9 @@ fn live_serve_loop_contract() {
 
     // wait for ready
     let mut ready = false;
-    for _ in 0..60 {
+    // #4292 — startup now generates ~56 APIs from the live model; measured
+    // ready after 6-10s on 2026-09-25, so the old 6s budget failed every time.
+    for _ in 0..300 {
         std::thread::sleep(Duration::from_millis(100));
         let (_, b) = curl(&format!("{}/health", base), &[]);
         if b.contains("\"ok\": true") {
@@ -83,7 +86,7 @@ fn live_serve_loop_contract() {
     // 3) entity read on the cards domain — real data, enveloped
     let (eh, eb) = curl(&format!("{}/domains/cards", base), &[]);
     assert!(eb.contains("\"kind\": \"Domain\""), "cards entity kind: {}", eb);
-    assert!(eb.contains("\"creator\""), "cards entity real data: {}", eb);
+    assert!(eb.contains("\"purpose\""), "cards entity real data: {}", eb);
 
     // 4) ETag → 304 conditional GET (commit env makes the tag live)
     let etag = eh

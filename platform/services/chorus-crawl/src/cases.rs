@@ -427,14 +427,23 @@ pub struct FileClass {
     pub declared: bool,
 }
 
+/// #4292 — the `@test-type:` header line itself names `needs-stack`.
+fn header_says_needs_stack(content: &str) -> bool {
+    content
+        .lines()
+        .take(40)
+        .any(|l| l.contains("@test-type:") && l.contains("needs-stack"))
+}
+
 pub fn file_class(path: &str, content: &str) -> FileClass {
     let (h_layer, hermeticity, h_concern) = classify_case(path, content);
     match declared(content) {
         // authored wins on BOTH axes it declares; hermeticity stays heuristic
-        // (the header has no such axis)
+        // unless the header line says `needs-stack` (#4292: a test that reads
+        // Fuseki through a library call has no exec signal to infer from)
         Some((layer, concern)) => FileClass {
             layer,
-            hermeticity,
+            hermeticity: if header_says_needs_stack(content) { "needs-stack" } else { hermeticity },
             concern: concern.or(h_concern),
             declared: true,
         },
@@ -1364,6 +1373,16 @@ mod cases_4185 {
         // NEGATIVE PROOF: a feature outside the lane's directory mints nothing
         assert!(case_names("designing/docs/z.feature", "Feature: f\n  Scenario: s\n").is_empty());
         assert_eq!(no_case_bucket("designing/docs/z.feature", "Feature: f"), "no-lane");
+    }
+
+    /// #4292 — a declared header that says needs-stack is believed; without it
+    /// a library-call live test reads hermetic (no exec signal).
+    #[test]
+    fn a_header_that_says_needs_stack_is_believed() {
+        let live = "// @test-type: integration — needs-stack: reads Fuseki\n#[test]\nfn t() {}\n";
+        assert_eq!(file_class("x/tests/live.rs", live).hermeticity, "needs-stack");
+        let plain = "// @test-type: integration — reads a tmpdir\n#[test]\nfn t() {}\n";
+        assert_eq!(file_class("x/tests/plain.rs", plain).hermeticity, "hermetic");
     }
 
     /// #4292 — unittest cases as Class.method; pytest style and helpers mint nothing.

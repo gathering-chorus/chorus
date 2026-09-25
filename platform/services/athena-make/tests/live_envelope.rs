@@ -1,13 +1,14 @@
+// @test-type: integration — needs-stack: reads the live ontology in Fuseki (localhost:3030/pods)
 //! #3506 / ADR-047 — LIVE proof: the envelope wraps a REAL primitive read against
-//! the running Fuseki, not just a unit fixture. Marked `#[ignore]` so the default
-//! suite stays hermetic; run with `cargo test --test live_envelope -- --ignored`
-//! against Fuseki on localhost:3030/pods. This is the ADR's prove-one-first bar:
-//! one primitive, real data, through the contract.
+//! the running Fuseki, not just a unit fixture. This is the ADR's prove-one-first
+//! bar: one primitive, real data, through the contract.
+//! #4292 — no longer `#[ignore]`d (an ignored test never ran and never had a
+//! row): the nightly runs it with the stack up and skips it, typed, when the
+//! stack is down (#3919 needs-stack binaries).
 
 use athena_make::{generate, handle};
 
 #[test]
-#[ignore]
 fn live_envelope_wraps_real_domain_cards() {
     // generate the Domain RouteTable from the live ontology shape
     let table = generate("Domain").expect("DomainShape must be in urn:chorus:ontology");
@@ -20,7 +21,7 @@ fn live_envelope_wraps_real_domain_cards() {
         "\"apiVersion\": \"v1\"",
         "\"kind\": \"Domain\"",
         "\"id\": \"chorus:cards\"",
-        "\"self\": \"/v1/domains/cards\"",
+        "\"self\": \"/v1/domains/domains/cards\"", // #4158: domain-scoped paths
         "\"generatedFrom\":",
         "\"graph\": \"urn:chorus:ontology\"",
         "\"shape\": \"chorus:DomainShape\"",
@@ -32,6 +33,6 @@ fn live_envelope_wraps_real_domain_cards() {
         assert!(body.contains(needle), "live envelope missing `{}`:\n{}", needle, body);
     }
     // and the data slot carries the cards domain's REAL fields (not a fixture)
-    assert!(body.contains("\"creator\""), "data must carry real entity fields:\n{}", body);
+    assert!(body.contains("\"purpose\""), "data must carry real entity fields:\n{}", body);
     assert!(body.contains("\"iri\""), "data carries the entity iri:\n{}", body);
 }
