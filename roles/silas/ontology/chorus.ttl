@@ -111,20 +111,10 @@ chorus:Vertebra a owl:Class ;
 # A test asking whether they are deprecated could only ever read "no". Declared
 # here and marked, so the grammar's v1 set is complete and retirable rather
 # than half-absent.
-chorus:chorusStream a chorus:ValueStream ;
-    rdfs:label "Chorus stream (v1)" ;
-    owl:deprecated true ;
-    rdfs:comment "v1 stream individual, superseded by the ValueStreamStep/inStream grammar (#3697). Kept declared because six chorus:builtBy edges still point at it; retire the edges first." .
-
-chorus:gatheringStream a chorus:ValueStream ;
-    rdfs:label "Gathering stream (v1)" ;
-    owl:deprecated true ;
-    rdfs:comment "v1 stream individual, superseded by #3697. See chorus:chorusStream." .
-
-chorus:lifeStream a chorus:ValueStream ;
+chorus:value-stream-life a chorus:ValueStream ;
     rdfs:label "Life stream (v1)" ;
     owl:deprecated true ;
-    rdfs:comment "v1 stream individual, superseded by #3697. See chorus:chorusStream." .
+    rdfs:comment "v1 stream individual, superseded by #3697. See chorus:value-stream-chorus." .
 
 
 
@@ -741,7 +731,7 @@ chorus:pulse a owl:Class ;
     chorus:comment "Agent vital signs — heartbeats, declared role states, andon, nudge-delivery health." ;
     chorus:purpose "Carry the team's vital signs — heartbeats, declared states, and delivery health — so liveness is observable, not assumed." ;
     chorus:ownedBy chorus:principal-wren ;   # #4175 — was role-silas; the store said role-wren and Silas ruled the store right 2026-09-14 ("coordination state, not observation"). Found by #4175's appointment check on its first real run.
-    chorus:atStep chorus:Directing ; chorus:atStream chorus:chorusStream ;
+    chorus:atStep chorus:Directing ; chorus:atStream chorus:value-stream-chorus ;
     chorus:repoTarget "platform/pulse" .
     
 
@@ -836,28 +826,28 @@ chorus:pulse a owl:Class ;
 # --- Wire domains to value streams via builtBy (#1864) ---
 
 # Chorus domains → chorusStream
-chorus:code-domain chorus:builtBy chorus:chorusStream .
-chorus:gates-service chorus:builtBy chorus:chorusStream .
-chorus:toolchain-domain chorus:builtBy chorus:chorusStream .
-chorus:domains-domain chorus:builtBy chorus:chorusStream .
-chorus:services-domain chorus:builtBy chorus:chorusStream .
-chorus:chorus-domain chorus:builtBy chorus:chorusStream .
-chorus:convergence-domain chorus:builtBy chorus:chorusStream .
+chorus:code-domain chorus:builtBy chorus:value-stream-chorus .
+chorus:gates-service chorus:builtBy chorus:value-stream-chorus .
+chorus:toolchain-domain chorus:builtBy chorus:value-stream-chorus .
+chorus:domains-domain chorus:builtBy chorus:value-stream-chorus .
+chorus:services-domain chorus:builtBy chorus:value-stream-chorus .
+chorus:chorus-domain chorus:builtBy chorus:value-stream-chorus .
+chorus:convergence-domain chorus:builtBy chorus:value-stream-chorus .
 
 # Gathering domains → gatheringStream
-chorus:music-domain chorus:builtBy chorus:gatheringStream .
-chorus:photos-domain chorus:builtBy chorus:gatheringStream .
-chorus:books-domain chorus:builtBy chorus:gatheringStream .
-chorus:notes-domain chorus:builtBy chorus:gatheringStream .
-chorus:documents-domain chorus:builtBy chorus:gatheringStream .
-chorus:blog-domain chorus:builtBy chorus:gatheringStream .
-chorus:seeds-domain chorus:builtBy chorus:gatheringStream .
-chorus:property-domain chorus:builtBy chorus:gatheringStream .
-chorus:people-domain chorus:builtBy chorus:gatheringStream .
-chorus:social-domain chorus:builtBy chorus:gatheringStream .
-chorus:sexuality-domain chorus:builtBy chorus:gatheringStream .
-chorus:stories-domain chorus:builtBy chorus:gatheringStream .
-chorus:video-domain chorus:builtBy chorus:gatheringStream .
+chorus:music-domain chorus:builtBy chorus:value-stream-gathering .
+chorus:photos-domain chorus:builtBy chorus:value-stream-gathering .
+chorus:books-domain chorus:builtBy chorus:value-stream-gathering .
+chorus:notes-domain chorus:builtBy chorus:value-stream-gathering .
+chorus:documents-domain chorus:builtBy chorus:value-stream-gathering .
+chorus:blog-domain chorus:builtBy chorus:value-stream-gathering .
+chorus:seeds-domain chorus:builtBy chorus:value-stream-gathering .
+chorus:property-domain chorus:builtBy chorus:value-stream-gathering .
+chorus:people-domain chorus:builtBy chorus:value-stream-gathering .
+chorus:social-domain chorus:builtBy chorus:value-stream-gathering .
+chorus:sexuality-domain chorus:builtBy chorus:value-stream-gathering .
+chorus:stories-domain chorus:builtBy chorus:value-stream-gathering .
+chorus:video-domain chorus:builtBy chorus:value-stream-gathering .
 
 # --- Wire domains into products (hasDomain) ---
 
@@ -1021,7 +1011,7 @@ chorus:partOf a owl:ObjectProperty ;
 # Seed slice — coherent chains that resolve up to chorusStream. #3603: child
 # products carry partOf on their definitions; borgProduct re-parented
 # chorusStream→chorusProduct per Jeff's roster (partOf is functional — one parent).
-chorus:chorus chorus:partOf chorus:chorusStream .
+chorus:chorus chorus:partOf chorus:value-stream-chorus .
 # #4131 — `chorus:chorus` is the products-domain row every sub-product (werk,
 # gates-service, cards-service, borg...) climbs to; without a parent the chain
 # dead-ends at a Product and ownership-partof-chain.test.sh is red every night.
@@ -1029,8 +1019,8 @@ chorus:chorus chorus:partOf chorus:chorusStream .
 # target it does not serve (chorusStream is a ValueStream, not a product row —
 # measured 2026-09-09, 422 unknown-endpoint). So the edge rides the schema
 # transaction, exactly like chorusProduct -> chorusStream one line up.
-chorus:chorus        chorus:partOf chorus:chorusStream .
-chorus:gathering     chorus:partOf chorus:chorusStream .
+chorus:chorus        chorus:partOf chorus:value-stream-chorus .
+chorus:gathering     chorus:partOf chorus:value-stream-chorus .
 chorus:observability-domain chorus:partOf chorus:borg .
 chorus:infrastructure-domain chorus:partOf chorus:borg .
 chorus:gates-service chorus:partOf chorus:werk .
@@ -1721,7 +1711,7 @@ chorus:definesVocabulary a owl:ObjectProperty ;
 
 chorus:atStream a owl:ObjectProperty ;
     rdfs:label "at stream" ;
-    rdfs:comment "Domain -> its ValueStream (chorusStream | gatheringStream | lifeStream). Required (with atStep) because steps are SHARED across streams, so atStep alone is ambiguous. ADR-045 §4." ;
+    rdfs:comment "Domain -> its ValueStream (value-stream-chorus | value-stream-gathering | value-stream-life). Required (with atStep) because steps are SHARED across streams, so atStep alone is ambiguous. ADR-045 §4." ;
     rdfs:domain chorus:Domain ;
     rdfs:range chorus:ValueStream .
 
@@ -1819,7 +1809,7 @@ chorus:provenance a owl:Class, chorus:Domain ;
     chorus:comment "Version history — what a row looked like before it was replaced." ;
     chorus:purpose "Keep every replaced version of a row, so a human can see what changed without re-reading the whole document." ;
     chorus:ownedBy chorus:principal-wren ; chorus:partOf chorus:chorus ;
-    chorus:atStep chorus:Directing ; chorus:atStream chorus:chorusStream ;
+    chorus:atStep chorus:Directing ; chorus:atStream chorus:value-stream-chorus ;
     chorus:repoTarget "platform/services/athena-make" ;
     chorus:definesVocabulary chorus:Version .
 
@@ -2077,7 +2067,7 @@ chorus:properties a owl:Class , chorus:Domain ;
     rdfs:label "properties" ;
     rdfs:comment "Config-as-data domain: service configuration + runtime properties governed as a registry (PropertyKey register-before-use). ADR-045 first worked example of domain-as-owl-class." ;
     chorus:partOf chorus:borg ;
-    chorus:atStream chorus:chorusStream ;
+    chorus:atStream chorus:value-stream-chorus ;
     chorus:atStep chorus:Proving ;
     chorus:ownedBy chorus:principal-silas ;
     chorus:runsOn chorus:library, chorus:bedroom ;

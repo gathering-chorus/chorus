@@ -44,7 +44,7 @@ chorus:security a owl:Class, chorus:Domain ;
     chorus:ownedBy chorus:principal-silas ;
     chorus:partOf chorus:borg ;
     chorus:atStep chorus:Operating ;
-    chorus:atStream chorus:chorusStream ;
+    chorus:atStream chorus:value-stream-chorus ;
     chorus:repoTarget "platform/services/owl-api/src/auth.rs" ;
     chorus:instancesGraph "urn:chorus:domains:security" ;
     chorus:definesVocabulary chorus:Credential, chorus:Permission,
@@ -76,7 +76,7 @@ chorus:identity a owl:Class, chorus:Domain ;
     chorus:ownedBy chorus:principal-silas ;
     chorus:partOf chorus:security ;
     chorus:atStep chorus:Operating ;
-    chorus:atStream chorus:chorusStream ;
+    chorus:atStream chorus:value-stream-chorus ;
     chorus:repoTarget "platform/services/owl-api/src/auth.rs" ;
     chorus:instancesGraph "urn:chorus:domains:security" ;
     chorus:definesVocabulary chorus:Principal, chorus:KeyRegistryEntry ;

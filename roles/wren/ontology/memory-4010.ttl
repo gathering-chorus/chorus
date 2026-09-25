@@ -62,7 +62,7 @@ chorus:memory a owl:Class, chorus:Domain ;
     chorus:comment "Persistent context across sessions — indexed sessions and artifacts." ;
     chorus:purpose "Keep persistent context across sessions — indexed sessions, artifacts, and recall." ;
     chorus:ownedBy chorus:principal-wren ; chorus:partOf chorus:chorus ;
-    chorus:atStep chorus:Directing ; chorus:atStream chorus:chorusStream ;
+    chorus:atStep chorus:Directing ; chorus:atStream chorus:value-stream-chorus ;
     chorus:repoTarget "platform/api/src/index-worker.ts" ;
     chorus:definesVocabulary chorus:Memory, chorus:ShortTermMemory, chorus:LongTermMemory .
 
@@ -71,7 +71,7 @@ chorus:knowledge a owl:Class, chorus:Domain ;
     chorus:comment "Structured facts about the team, products, and their history." ;
     chorus:purpose "Hold structured, queryable facts about the team, its products, and their history." ;
     chorus:ownedBy chorus:principal-wren ; chorus:partOf chorus:chorus ;
-    chorus:atStep chorus:Directing ; chorus:atStream chorus:chorusStream ;
+    chorus:atStep chorus:Directing ; chorus:atStream chorus:value-stream-chorus ;
     chorus:repoTarget "knowledge" ;
     # #4040 (Wren's call 2026-08-31 16:22): Document claimed here — the docs
     # surface — so /documents mounts and hasDesignDoc floors become meetable

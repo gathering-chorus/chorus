@@ -29,7 +29,7 @@ chorus:Shaping a chorus:Vertebra ;
     chorus:nextStage chorus:Directing ;
     chorus:stageOrder 0 ;
     chorus:exitArtifactType chorus:Decision ;
-    chorus:belongsTo chorus:chorusStream .
+    chorus:belongsTo chorus:value-stream-chorus .
 
 chorus:Directing a chorus:Vertebra ;
     rdfs:label "Directing" ;
@@ -38,7 +38,7 @@ chorus:Directing a chorus:Vertebra ;
     chorus:nextStage chorus:Designing ;
     chorus:previousStage chorus:Shaping ;
     chorus:exitArtifactType chorus:Card ;
-    chorus:belongsTo chorus:chorusStream .
+    chorus:belongsTo chorus:value-stream-chorus .
 
 chorus:Designing a chorus:Vertebra ;
     rdfs:label "Designing" ;
@@ -47,7 +47,7 @@ chorus:Designing a chorus:Vertebra ;
     chorus:nextStage chorus:Building ;
     chorus:previousStage chorus:Directing ;
     chorus:exitArtifactType chorus:Brief ;
-    chorus:belongsTo chorus:chorusStream .
+    chorus:belongsTo chorus:value-stream-chorus .
 
 chorus:Building a chorus:Vertebra ;
     rdfs:label "Building" ;
@@ -56,7 +56,7 @@ chorus:Building a chorus:Vertebra ;
     chorus:nextStage chorus:Proving ;
     chorus:previousStage chorus:Designing ;
     chorus:exitArtifactType chorus:Commit ;
-    chorus:belongsTo chorus:chorusStream .
+    chorus:belongsTo chorus:value-stream-chorus .
 
 chorus:Proving a chorus:Vertebra ;
     rdfs:label "Proving" ;
@@ -65,7 +65,7 @@ chorus:Proving a chorus:Vertebra ;
     chorus:previousStage chorus:Building ;
     chorus:feedsInto chorus:Directing ;
     chorus:exitArtifactType chorus:Signal ;
-    chorus:belongsTo chorus:chorusStream .
+    chorus:belongsTo chorus:value-stream-chorus .
 
 # --- Personal value stream steps (Gathering product) -------------------------
 
@@ -74,7 +74,7 @@ chorus:Sowing a chorus:Vertebra ;
     rdfs:comment "Planting seeds — capturing raw inputs, interests, and intentions that may grow into something." ;
     chorus:stageOrder 10 ;
     chorus:nextStage chorus:Growing ;
-    chorus:belongsTo chorus:gatheringStream .
+    chorus:belongsTo chorus:value-stream-gathering .
 
 chorus:Growing a chorus:Vertebra ;
     rdfs:label "Growing" ;
@@ -82,7 +82,7 @@ chorus:Growing a chorus:Vertebra ;
     chorus:stageOrder 11 ;
     chorus:nextStage chorus:Practicing ;
     chorus:previousStage chorus:Sowing ;
-    chorus:belongsTo chorus:gatheringStream .
+    chorus:belongsTo chorus:value-stream-gathering .
 
 chorus:Practicing a chorus:Vertebra ;
     rdfs:label "Practicing" ;
@@ -90,7 +90,7 @@ chorus:Practicing a chorus:Vertebra ;
     chorus:stageOrder 12 ;
     chorus:nextStage chorus:Harvesting ;
     chorus:previousStage chorus:Growing ;
-    chorus:belongsTo chorus:gatheringStream .
+    chorus:belongsTo chorus:value-stream-gathering .
 
 chorus:Harvesting a chorus:Vertebra ;
     rdfs:label "Harvesting" ;
@@ -98,7 +98,7 @@ chorus:Harvesting a chorus:Vertebra ;
     chorus:stageOrder 13 ;
     chorus:nextStage chorus:Reflecting ;
     chorus:previousStage chorus:Practicing ;
-    chorus:belongsTo chorus:gatheringStream .
+    chorus:belongsTo chorus:value-stream-gathering .
 
 chorus:Reflecting a chorus:Vertebra ;
     rdfs:label "Reflecting" ;
@@ -106,10 +106,10 @@ chorus:Reflecting a chorus:Vertebra ;
     chorus:stageOrder 14 ;
     chorus:previousStage chorus:Harvesting ;
     chorus:feedsInto chorus:Sowing ;
-    chorus:belongsTo chorus:gatheringStream .
+    chorus:belongsTo chorus:value-stream-gathering .
 
 chorus:Tending a chorus:Vertebra ;
     rdfs:label "Tending" ;
     rdfs:comment "Placeholder step for the Life value stream. Jeff will define the full sequence." ;
     chorus:stageOrder 20 ;
-    chorus:belongsTo chorus:lifeStream .
+    chorus:belongsTo chorus:value-stream-life .
