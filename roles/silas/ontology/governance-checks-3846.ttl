@@ -27,6 +27,13 @@
 # Adding a future rule = a model write (this registry), never a deploy.
 # ============================================================================
 
+# #4302 — THE CLAIM THAT WAS MISSING. The shape below puts rows in
+# urn:chorus:domains:domains, but no domain claimed the class, so since the seed
+# manifest listed governance-check (09-21) every model land failed its seed leg:
+# "unknown-kind: 'governance-check' — no domain claims a class that mints it".
+# The home is the domain whose graph the shape already names (ADR-051): domains.
+chorus:domains chorus:definesVocabulary chorus:GovernanceCheck .
+
 chorus:GovernanceCheck a owl:Class ;
     rdfs:label "Governance Check" ;
     rdfs:comment "A machine-checkable rule derived from an ADR / decision / practice. checkQuery is a SPARQL SELECT whose ROWS ARE VIOLATIONS (empty result = compliant). athena-validate runs every registered check and reports each violation with the governing document cited. Register-before-run: a check must have demonstrably found a real violation (live store or committed fixture) before it may gate — a check that cannot go red is not a check (#3734)." .

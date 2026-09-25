@@ -46,3 +46,5 @@ practices|urn:chorus:domains:practices|roles/kade/ontology/practices-3754-instan
 # set also targets; security, principles and roles could never take it.
 vocabulary|urn:chorus:domains:vocabulary|roles/silas/ontology/vocabulary-identity-4254.ttl|replace
 vocabulary|urn:chorus:domains:vocabulary|roles/silas/ontology/vocabulary-generated-4254.ttl|replace
+# #4302 — the #4293 Layer rows and domain edges are rows, served from the domains graph.
+domains|urn:chorus:domains:domains|roles/silas/ontology/cmdb-layers-4293.ttl

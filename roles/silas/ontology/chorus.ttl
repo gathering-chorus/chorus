@@ -2978,8 +2978,7 @@ chorus:launchdLabel a owl:DatatypeProperty ;
 
 chorus:onMachine a owl:ObjectProperty ;
     rdfs:label "on machine" ;
-    rdfs:comment "Which machine runs the instance. Range chorus:Machine — the class exists (chorus.ttl:637) with chorus:library / chorus:bedroom already typed." ;
-    rdfs:domain chorus:ServiceInstance ;
+    rdfs:comment "Which machine a thing runs on: a ServiceInstance, or the Presence of a session run (#4302). Range chorus:Machine — the class exists (chorus.ttl:637) with chorus:library / chorus:bedroom already typed. No rdfs:domain since #4302: two classes share the one concept, and a domain would type every Presence as a ServiceInstance." ;
     rdfs:range chorus:Machine .
 
 chorus:listensOn a owl:DatatypeProperty ;

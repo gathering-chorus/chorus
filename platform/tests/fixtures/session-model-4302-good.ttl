@@ -1,0 +1,9 @@
+@prefix c: <https://jeffbridwell.com/chorus#> .
+@prefix rdfs: <http://www.w3.org/2000/01/rdf-schema#> .
+@prefix dcterms: <http://purl.org/dc/terms/> .
+# #4302 — every rule satisfied: a live session with a role, a chain of two runs, one presence proven by a delivery; and a closed session from before this card with no role or run, which the open-session rules must leave alone.
+c:s1 a c:Session ; rdfs:label "s1" ; c:ownedBy c:principal-silas ; c:tokenId "t" ; c:issuedAt "2026-09-25T14:00:00Z" ; c:expiresAt "2026-09-25T14:10:00Z" ; c:sessionState "open" ; c:hostAccount "jeffbridwell" ; c:actsAs c:role-silas ; c:startedAt "2026-09-25T14:00:00Z" .
+c:r0 a c:SessionRun ; rdfs:label "r0" ; rdfs:comment "fixture" ; dcterms:created "2026-09-25T14:00:00Z" ; dcterms:creator "silas" ; dcterms:modified "2026-09-25T14:00:00Z" ; c:runOf c:s1 ; c:startedAt "2026-09-25T14:00:00Z" ; c:conversationId "conv-r0" ; c:ownedBy c:principal-silas ; c:runEndedAt "2026-09-25T14:03:00Z" ; c:endReason "refusal" .
+c:r1 a c:SessionRun ; rdfs:label "r1" ; rdfs:comment "fixture" ; dcterms:created "2026-09-25T14:00:00Z" ; dcterms:creator "silas" ; dcterms:modified "2026-09-25T14:00:00Z" ; c:runOf c:s1 ; c:startedAt "2026-09-25T14:00:00Z" ; c:conversationId "conv-r1" ; c:ownedBy c:principal-silas ; c:previousRun c:r0 .
+c:p1 a c:Presence ; rdfs:label "p1" ; rdfs:comment "fixture" ; dcterms:created "2026-09-25T14:00:00Z" ; dcterms:creator "silas" ; dcterms:modified "2026-09-25T14:00:00Z" ; c:ownedBy c:principal-silas ; c:presenceOf c:r1 ; c:pane "%1" ; c:tty "/dev/ttys005" ; c:hostAccount "jeffbridwell" ; c:onMachine c:library ; c:reachability "reachable" ; c:lastDeliveredAt "2026-09-25T14:05:00Z" .
+c:s0 a c:Session ; rdfs:label "s0" ; c:ownedBy c:principal-silas ; c:tokenId "t" ; c:issuedAt "2026-09-25T14:00:00Z" ; c:expiresAt "2026-09-25T14:10:00Z" ; c:sessionState "closed" ; c:hostAccount "jeffbridwell" ; c:endedAt "2026-09-25T15:00:00Z" .

@@ -239,7 +239,8 @@ vocab:terminal-session a skos:Concept ;
     skos:prefLabel "session" ;
     skos:altLabel "pane" ;
     skos:definition "A running Claude Code process with a terminal we can reach — what a nudge is delivered to." ;
-    skos:note "PROPOSED, not agreed. The model has chorus:Session for the login sense and nothing at all for this one, so the word we use every day for the thing a nudge is delivered to names nothing." ;
+    skos:exactMatch chorus:SessionRun ;
+    skos:note "#4302 (2026-09-25, Jeff + Wren + Kade): now modeled. A SessionRun is one process inside a login Session; where it can be reached is its Presence, proven by a delivery." ;
     dcterms:description "HOMONYM of the identity sense. Running, registered and reachable are three different states of this thing and only the middle one is ever checked — which is how three of Jeff's messages were marked permanently failed while the role was working." .
 
 vocab:host a skos:Concept ;
