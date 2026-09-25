@@ -51,9 +51,10 @@ expect "$TMP/bad.tsv" pD ReachableNeedsADelivery
 expect "$TMP/bad.tsv" pD PresenceShape-comment
 expect "$TMP/bad.tsv" rE EndedRunSaysWhy
 expect "$TMP/bad.tsv" rF SessionRunShape-ownedBy
+expect "$TMP/bad.tsv" rG StampedByTheDal
 n=$(grep -c . "$TMP/bad.tsv")
-if [ "$n" = "7" ]; then echo "PASS bad fixture has exactly the 7 violations it was built with"; pass=$((pass+1));
-else echo "FAIL bad fixture: $n violations, want 7:"; cat "$TMP/bad.tsv"; fail=$((fail+1)); fi
+if [ "$n" = "8" ]; then echo "PASS bad fixture has exactly the 8 violations it was built with"; pass=$((pass+1));
+else echo "FAIL bad fixture: $n violations, want 8:"; cat "$TMP/bad.tsv"; fail=$((fail+1)); fi
 
 echo "=== Results: $pass passed, $fail failed ==="
 [ "$fail" -eq 0 ]
