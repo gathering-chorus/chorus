@@ -564,7 +564,7 @@ fn run(args: &[String]) -> Result<i32, String> {
     }
     // #4015 — same rule on the card path as on the nightly: a run whose evidence
     // did not survive has not proven anything, so it must not exit clean.
-    let stored = post_test_results(&role, &card, &trace, &joined, run_epoch_ms, 0);
+    let stored = post_test_results(&role, &card, &trace, &joined, run_epoch_ms, 0, &|_| String::new());
     let lost = werk_test::results_lost(joined.len(), stored);
     if lost > 0 {
         println!(
@@ -709,11 +709,40 @@ fn run_nightly(args: &[String]) -> Result<i32, String> {
     if withheld {
         println!("!! werk nightly: results will NOT be written to the prod test ledger — root {} is a werk; set OWL_API_TESTRESULTS to the werk's store to write (#4063)", root);
     }
-    let store_unit = |unit: &str, cases: &[CaseResult]| {
+    // #4155 — `reasons` are (file, case, text) as the runner read them; a
+    // failed case takes its own, else its file's (a suite that died before
+    // any case ran), else the unit's (an empty file and case name).
+    let store_unit = |unit: &str, cases: &[CaseResult], reasons: &[(String, String, String)]| {
         if cases.is_empty() {
             return;
         }
+        let reason_of = |c: &CaseResult| -> String {
+            if c.result != "fail" {
+                return String::new();
+            }
+            reasons.iter()
+                .find(|(f, n, _)| *f == c.file_path && *n == c.test_name)
+                .or_else(|| reasons.iter().find(|(f, n, _)| *f == c.file_path && n.is_empty()))
+                .or_else(|| reasons.iter().find(|(f, n, _)| f.is_empty() && n.is_empty()))
+                .map(|(_, _, r)| r.clone())
+                .unwrap_or_default()
+        };
         executed_ns.fetch_add(cases.iter().filter(|c| ns_all.contains(&c.file_path)).count(), Ordering::SeqCst);
+        // #4155 — the reason, as its own line, the moment the case fails,
+        // for every failed case: a werk run that withholds its ledger writes
+        // and a case the registry does not know still say why they failed.
+        // The log keeps the line, Loki gets it on the event below, the graph
+        // gets it on the result row.
+        let whys: std::collections::HashMap<(String, String), (String, String)> = cases
+            .iter()
+            .filter(|c| c.result == "fail")
+            .map(|c| {
+                let why = werk_test::why::why_line(&c.file_path, &c.test_name, &reason_of(c));
+                println!("{}", why);
+                let (_, _, kind, reason) = werk_test::why::parse_why_line(&why).unwrap_or_default();
+                ((c.file_path.clone(), c.test_name.clone()), (kind, reason))
+            })
+            .collect();
         if withheld {
             withheld_total.fetch_add(cases.len(), Ordering::SeqCst);
             println!("nightly-withheld|{}|{} (werk root, prod ledger untouched)", unit, cases.len());
@@ -723,7 +752,7 @@ fn run_nightly(args: &[String]) -> Result<i32, String> {
         // #4033 — claim this unit's slice of the run's index space first, so
         // concurrent units never mint the same name (fetch_add is the claim).
         let idx_base = werk_test::claim_index_base(&expected_total, joined.len());
-        let stored = post_test_results(&mint_role, &card, &trace, &joined, run_epoch_ms, idx_base);
+        let stored = post_test_results(&mint_role, &card, &trace, &joined, run_epoch_ms, idx_base, &reason_of);
         stored_total.fetch_add(stored, Ordering::SeqCst);
         unregistered_total.fetch_add(unregistered, Ordering::SeqCst);
         // #4145 — the run's own record of what it posted, one line per case,
@@ -752,11 +781,12 @@ fn run_nightly(args: &[String]) -> Result<i32, String> {
             // test.failed per UNIT with no case name and no reason, so Loki
             // could say a unit went red and never which test or why.
             if c.result == "fail" {
+                let (kind, reason) = whys.get(&(c.file_path.clone(), c.test_name.clone())).cloned().unwrap_or_default();
                 // #4255 — `message` is required by the Structured Logging
                 // Contract and the runner was not carrying one, so Loki held a
                 // failure with no sentence in it. `level` rides from the event
                 // name (spine_args).
-                let msg = format!("{} failed in {}", c.test_name, c.file_path);
+                let msg = format!("{} failed in {}: {}", c.test_name, c.file_path, reason);
                 emit_spine(
                     "testcase.failed",
                     &mint_role,
@@ -766,6 +796,8 @@ fn run_nightly(args: &[String]) -> Result<i32, String> {
                         ("file", c.file_path.as_str()),
                         ("case", c.test_name.as_str()),
                         ("unit", unit),
+                        ("failure_kind", kind.as_str()),
+                        ("reason", reason.as_str()),
                         ("message", msg.as_str()),
                     ],
                 );
@@ -917,7 +949,15 @@ fn run_nightly(args: &[String]) -> Result<i32, String> {
             }
         }
         println!("nightly-elapsed|{}|{}|{}ms", bats_kind(b), b, unit_ms);
-        store_unit(b, &cases);
+        // #4155 — TAP comment lines per failed case; the unit's last lines
+        // for a suite that prints no per-case reason (a shell suite, a
+        // feature, a unittest file)
+        let mut reasons: Vec<(String, String, String)> = werk_test::why::bats_case_reasons(&r.2)
+            .into_iter().map(|(n, t)| (b.to_string(), n, t)).collect();
+        if !r.0 {
+            reasons.push((b.to_string(), String::new(), werk_test::why::tail_reason(&r.2, 4)));
+        }
+        store_unit(b, &cases, &reasons);
         r
     };
     let (mut cargo_waits, mut npm_waits, mut bats_waits) = (0usize, 0usize, 0usize);
@@ -945,30 +985,43 @@ fn run_nightly(args: &[String]) -> Result<i32, String> {
                 None => (item, None),
             };
             let typed: Vec<String> = werk_test::crate_binary_types(c, &rows).into_iter().map(|(s, _)| s).collect();
-            let (ok, cases, ns_len) = match stem {
+            let (ok, cases, ns_len, text) = match stem {
                 // a needs-stack binary with the stack down: typed skip, never run
-                Some(s) if ns_bins.iter().any(|b| b == s) => (true, Vec::new(), 1),
+                Some(s) if ns_bins.iter().any(|b| b == s) => (true, Vec::new(), 1, String::new()),
                 Some(s) => {
-                    let (ok, cases) = run_cargo_sel(&cargo_root, c, &q_names, &[], &[s]);
-                    (ok, cases, 0)
+                    let (ok, cases, text) = run_cargo_sel(&cargo_root, c, &q_names, &[], &[s]);
+                    (ok, cases, 0, text)
                 }
                 None => {
                     let mut excl: Vec<&str> = ns_bins.iter().map(|s| s.as_str()).collect();
                     excl.extend(typed.iter().map(|s| s.as_str()));
-                    let (ok, cases) = run_cargo_sel(&cargo_root, c, &q_names, &excl, &[]);
-                    (ok, cases, ns_bins.iter().filter(|b| !typed.contains(b)).count())
+                    let (ok, cases, text) = run_cargo_sel(&cargo_root, c, &q_names, &excl, &[]);
+                    (ok, cases, ns_bins.iter().filter(|b| !typed.contains(b)).count(), text)
                 }
             };
             // #4030 AC3 — join + store THIS unit's cases now, in the worker
             let crate_dir = format!("platform/services/{}", c);
+            // #4155 — each failed case's panic block, keyed the way the case
+            // is stored; the crate's tail when nextest printed none
+            let panics = werk_test::why::nextest_case_reasons(&text);
+            let mut reasons: Vec<(String, String, String)> = Vec::new();
             let mut matched: Vec<CaseResult> = Vec::new();
             for (path, result) in &cases {
                 match werk_test::match_cargo_case_path(path, &crate_dir, &rows, &row_names) {
-                    Some(fp) => matched.push(CaseResult { file_path: fp, test_name: werk_test::nextest_bare_name(path).to_string(), result: result.clone() }),
+                    Some(fp) => {
+                        let bare = werk_test::nextest_bare_name(path).to_string();
+                        if let Some(r) = werk_test::why::reason_for_nextest_path(&panics, path) {
+                            reasons.push((fp.clone(), bare.clone(), r.to_string()));
+                        }
+                        matched.push(CaseResult { file_path: fp, test_name: bare, result: result.clone() });
+                    }
                     None => { unmatched_cargo.fetch_add(1, Ordering::SeqCst); }
                 }
             }
-            store_unit(item, &matched);
+            if !ok {
+                reasons.push((String::new(), String::new(), werk_test::why::tail_reason(&text, 4)));
+            }
+            store_unit(item, &matched, &reasons);
             (ok, cases, ns_len, stem.is_none() && !typed.is_empty())
         });
         cargo_waits += waits;
@@ -1003,9 +1056,9 @@ fn run_nightly(args: &[String]) -> Result<i32, String> {
                 None if split_pkgs.iter().any(|s| s == item) => (item, Some("hermetic")),
                 None => (item, None),
             };
-            let (ok, cases) = run_jest_project(&npm_root, p, Some(jest_workers), project);
+            let (ok, cases, reasons) = run_jest_project(&npm_root, p, Some(jest_workers), project);
             // #4030 AC3 — stored the moment the package finishes
-            store_unit(item, &cases);
+            store_unit(item, &cases, &reasons);
             (ok, cases)
         };
         let (mut npm_results, w1) = werk_test::run_pool_gated(&npm_plan.parallel, npm_workers, cap, read_loadavg, gate_wait, gate_tick, run_pkg);
@@ -1652,21 +1705,24 @@ fn nextest_gate(werk: &str) -> &'static Result<(), String> {
 
 /// gate; an empty quarantine set leaves the invocation byte-identical.
 fn run_cargo(werk: &str, name: &str, quarantined: &[&str], ns_bins: &[&str]) -> (bool, Vec<(String, String)>) {
-    run_cargo_sel(werk, name, quarantined, ns_bins, &[])
+    let (ok, cases, _) = run_cargo_sel(werk, name, quarantined, ns_bins, &[]);
+    (ok, cases)
 }
 
 /// #4160 — the nightly's staged cargo run: `only_bins` non-empty runs just
 /// those test binaries (a typed binary in its own stage); otherwise the crate
 /// runs minus `exclude_bins`. A unit run whose every binary moved to another
 /// stage may have nothing left, which is a fact, not a failure.
-fn run_cargo_sel(werk: &str, name: &str, quarantined: &[&str], exclude_bins: &[&str], only_bins: &[&str]) -> (bool, Vec<(String, String)>) {
+/// #4155 — the output text comes back too, so each failed case's panic
+/// block can be read as its reason.
+fn run_cargo_sel(werk: &str, name: &str, quarantined: &[&str], exclude_bins: &[&str], only_bins: &[&str]) -> (bool, Vec<(String, String)>, String) {
     let dir = format!("{}/platform/services/{}", werk, name);
     if !Path::new(&format!("{}/Cargo.toml", dir)).is_file() {
-        return (true, Vec::new());
+        return (true, Vec::new(), String::new());
     }
     if let Err(reason) = nextest_gate(werk) {
         eprintln!("REFUSED cargo lane for {}: {}", name, reason);
-        return (false, Vec::new());
+        return (false, Vec::new(), format!("REFUSED cargo lane: {}", reason));
     }
     // #4022 — each crate gets its share of the CPU budget (see lane_widths);
     // NIGHTLY_NEXTEST_THREADS is set by the nightly lane, absent for card runs.
@@ -1705,9 +1761,10 @@ fn run_cargo_sel(werk: &str, name: &str, quarantined: &[&str], exclude_bins: &[&
                 eprintln!("{}", lines[start..].join("\n"));
             }
             // #4063 — full nextest paths: the module chain resolves same-named fns
-            (ok, werk_test::parse_nextest_case_paths(&text))
+            let cases = werk_test::parse_nextest_case_paths(&text);
+            (ok, cases, text)
         }
-        Err(_) => (false, Vec::new()),
+        Err(e) => (false, Vec::new(), format!("cargo could not start: {}", e)),
     }
 }
 
@@ -1780,23 +1837,26 @@ fn run_jest(werk: &str, pkg: &str) -> (bool, Vec<CaseResult>) {
 /// #4022 — jest with its share of the CPU budget (`--maxWorkers N`); None keeps
 /// jest's default (a worker per core), which is what pegged the box.
 fn run_jest_with(werk: &str, pkg: &str, max_workers: Option<usize>) -> (bool, Vec<CaseResult>) {
-    run_jest_project(werk, pkg, max_workers, None)
+    let (ok, cases, _) = run_jest_project(werk, pkg, max_workers, None);
+    (ok, cases)
 }
 
 /// #4160 — jest with a named project: the nightly's unit stage runs
 /// `hermetic`, its integration stage runs `integration`, as two rows.
-fn run_jest_project(werk: &str, pkg: &str, max_workers: Option<usize>, project: Option<&str>) -> (bool, Vec<CaseResult>) {
+/// #4155 — returns each failed case's reason (file, case, text) with the cases.
+fn run_jest_project(werk: &str, pkg: &str, max_workers: Option<usize>, project: Option<&str>) -> (bool, Vec<CaseResult>, Vec<(String, String, String)>) {
     let pkg_dir = format!("{}/{}", werk, pkg);
     if !ensure_ts_deps(werk, pkg) {
         eprintln!("!! jest:{} CHANGED but deps unavailable — FAIL LOUD", pkg);
-        return (false, Vec::new());
+        return (false, Vec::new(), vec![(String::new(), String::new(), format!("jest:{} deps unavailable", pkg))]);
     }
     let jest = format!("{}/node_modules/.bin/jest", pkg_dir);
     if !Path::new(&jest).exists() {
         // #3974 — a package without jest runs its OWN runner (mcp-server:
         // node:test via npm test). The old `return true` here was a silent
         // vacuous green for every non-jest package.
-        return run_npm_test(werk, pkg);
+        let (ok, cases) = run_npm_test(werk, pkg);
+        return (ok, cases, Vec::new());
     }
     let mut cmd = Command::new(&jest);
     // #3918 — test child: cleared (see child_context).
@@ -1843,10 +1903,15 @@ fn run_jest_project(werk: &str, pkg: &str, max_workers: Option<usize>, project: 
                 for l in werk_test::nightly_run::jest_failure_why(&stdout, pkg, &|f| rel_path(f, werk)) {
                     println!("{}", l);
                 }
-                (ok, jest_cases_via_jq(stdout.as_bytes(), werk))
+                let mut reasons = jest_reasons_via_jq(stdout.as_bytes(), werk);
+                if !ok && stdout.trim().is_empty() {
+                    // jest died before writing its report: the stderr tail is the reason
+                    reasons.push((String::new(), String::new(), werk_test::why::tail_reason(&stderr, 4)));
+                }
+                (ok, jest_cases_via_jq(stdout.as_bytes(), werk), reasons)
             }
         }
-        None => (false, Vec::new()),
+        None => (false, Vec::new(), vec![(String::new(), String::new(), format!("jest:{} killed at its unit cap", pkg))]),
     }
 }
 
@@ -2129,6 +2194,14 @@ fn jest_cases_via_jq(json: &[u8], werk: &str) -> Vec<CaseResult> {
         .collect()
 }
 
+/// #4155 — each failed jest case's reason, paths made werk-relative.
+fn jest_reasons_via_jq(json: &[u8], werk: &str) -> Vec<(String, String, String)> {
+    werk_test::why::jest_reasons(json)
+        .into_iter()
+        .map(|(f, n, r)| (rel_path(&f, werk), n, r))
+        .collect()
+}
+
 /// `clippy-ratchet.sh` — workspace-wide per-lint ratchet (counts only decrease).
 fn run_clippy_ratchet(werk: &str) -> bool {
     let script = format!("{}/platform/scripts/clippy-ratchet.sh", werk);
@@ -2284,6 +2357,7 @@ fn post_test_results(
     joined: &[(CaseResult, String, String)],
     run_epoch_ms: u128,
     idx_base: usize,
+    reason_of: &dyn Fn(&CaseResult) -> String,
 ) -> usize {
     let writeback_started = std::time::Instant::now();
     let endpoint = std::env::var("OWL_API_TESTRESULTS_BATCH")
@@ -2333,8 +2407,11 @@ fn post_test_results(
             // store (#4030) every unit restarted i at 0 under the run's shared
             // ts, so unit two's names were unit one's and the store answered
             // 409 for the whole chunk. idx_base makes idx run-unique.
-            test_result_payload(
-                &c.file_path, &c.test_name, &c.result, of_test, card, role, trace, ts, idx_base + i)
+            // #4155 — a failed case's result row carries why it failed
+            werk_test::with_failure_reason(
+                &test_result_payload(
+                    &c.file_path, &c.test_name, &c.result, of_test, card, role, trace, ts, idx_base + i),
+                &reason_of(c))
         })
         .collect();
     let packed = werk_test::chunk_json_payloads(&payloads, werk_test::TESTRESULT_BATCH_MAX_BYTES);

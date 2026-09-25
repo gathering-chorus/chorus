@@ -439,6 +439,9 @@ struct LaneResult {
     /// `nightly-stored|run|<n> of <m>` line. None when the lane never said,
     /// and the PipelineRun then omits the test grain rather than sending 0.
     stored: Option<usize>,
+    /// #4155 — (file, case, kind, reason) for every failed case, from the
+    /// lane's own `nightly-why` lines.
+    whys: Vec<(String, String, String, String)>,
 }
 
 fn run_runner(ctx: &Ctx, box_over_load: bool) -> LaneResult {
@@ -456,7 +459,7 @@ fn run_runner(ctx: &Ctx, box_over_load: bool) -> LaneResult {
         Err(e) => {
             let row = SuiteRow::new("runner", "werk-test-nightly", "silas", "fail", &format!("0 pass, 1 fail (runner could not start: {} — runner lanes DID NOT RUN, #3920/#3974)", e));
             ctx.append_log(&row.line());
-            return LaneResult { rows: vec![row], rc: 127, cases: Vec::new(), stored: None };
+            return LaneResult { rows: vec![row], rc: 127, cases: Vec::new(), stored: None, whys: Vec::new() };
         }
     };
     let stdout = child.stdout.take().unwrap();
@@ -475,6 +478,7 @@ fn run_runner(ctx: &Ctx, box_over_load: bool) -> LaneResult {
     // #4247 — the run's own per-test record, read from the lane's own output.
     let mut cases: Vec<(String, String, String, String)> = Vec::new();
     let mut stored: Option<usize> = None;
+    let mut whys: Vec<(String, String, String, String)> = Vec::new();
     let mut nudged: std::collections::HashSet<String> = std::collections::HashSet::new();
     for line in BufReader::new(stdout).lines().flatten() {
         if stop_requested() {
@@ -491,6 +495,11 @@ fn run_runner(ctx: &Ctx, box_over_load: bool) -> LaneResult {
         }
         if let Some(n) = werk_test::nightly_run::parse_run_stored_line(&line) {
             stored = Some(n);
+        }
+        // #4155 — a failed case's reason goes into the run's log as it arrives
+        if let Some(w) = werk_test::why::parse_why_line(&line) {
+            ctx.append_log(&line);
+            whys.push(w);
         }
         // #4168 — the existence probe is the werk's own tree, resolved from the
         // run's root. A relative path is joined to root; an absolute one is
@@ -535,7 +544,7 @@ fn run_runner(ctx: &Ctx, box_over_load: bool) -> LaneResult {
         let slice = unit_slice(&lane_text, unit).join("\n");
         ctx.write_fail_log(r, &format!("{}\n# full lane output: {}\n", slice, lane_path));
     }
-    LaneResult { rows, rc, cases, stored }
+    LaneResult { rows, rc, cases, stored, whys }
 }
 
 // ───────────────────────── phase 3: the census, from the run's own record ─────────────────────────
@@ -788,6 +797,9 @@ fn run_locked(ctx: &mut Ctx, _args: &[String]) -> Result<i32, String> {
     // #4247 — the census from the run's own record, in one unit, before the
     // completion line so a reader sees the tally with the run it belongs to.
     report_no_result(ctx, &registered, &lane.cases);
+    // #4155 — errors and exceptions as counts from the run's own reason lines
+    let errors = werk_test::why::error_counts_line(&lane.whys);
+    ctx.append_log(&format!("RUN|errors|{}", errors));
     ctx.append_log(&format!("RUN|complete|{}|suites={}", now_stamp(), rows.len()));
     // the tail: summary, record, per-row events, nudges, readout
     ctx.spine("nightly.run.summary", &run_summary_fields(&rows));
@@ -823,8 +835,15 @@ fn run_locked(ctx: &mut Ctx, _args: &[String]) -> Result<i32, String> {
         let crawl_log = env_or("CRAWL_NIGHTLY_LOG", &format!("{}/Library/Logs/Chorus/crawl-nightly.log", env_or("HOME", "/tmp")));
         let crawl_text = std::fs::read_to_string(&crawl_log).ok();
         let crawl = crawl_line(crawl_text.as_deref());
-        for (to, msg) in notify_messages(&rows, &sec_owner, &crawl) {
-            ctx.nudge(&to, &msg);
+        let msgs = notify_messages(&rows, &sec_owner, &crawl);
+        let last_kade = msgs.iter().rposition(|(to, _)| to == "kade");
+        for (i, (to, msg)) in msgs.iter().enumerate() {
+            // #4155 — the summary nudge carries the run's error counts
+            if Some(i) == last_kade {
+                ctx.nudge(to, &format!("{} — {}", msg, errors));
+            } else {
+                ctx.nudge(to, msg);
+            }
         }
         deliver_readout(ctx);
     }

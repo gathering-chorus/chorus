@@ -57,9 +57,10 @@
     dcterms:creator "Kade (Engineer)" ;
     dcterms:date "2026-06-11" ;
     # #3925 — semver from here on (#3902 discipline): MINOR = additive shape
-    # change. This bump: TestResultShape gains runTs + cardId (minCount 0).
+    # change. 0.3.0: TestResultShape gains runTs + cardId (minCount 0).
+    # 0.4.0 (#4155): TestResultShape gains failureReason (optional).
     # The old "-converged-<date>" suffix form is retired; dcterms:date carries dates.
-    owl:versionInfo "0.3.0" ;
+    owl:versionInfo "0.4.0" ;
     rdfs:seeAlso <https://jeffbridwell.com/chorus> ;
     rdfs:comment "Query-backwards refinement of Kade's four werk domains. Generator input for owl-api (model-5). Sources: the #3339-reconciled service designs + the live witness/spine vocabulary." .
 
@@ -338,6 +339,11 @@ chorus:testType a owl:DatatypeProperty ;
     rdfs:domain chorus:Test ; rdfs:range xsd:string ;
     rdfs:comment "What kind of proving a test is — the ONE field for it (#4162). The word the model already uses: every test file's `@test-type:` header, now carried onto its row; CDEvents names the same thing testCase.type. Values: coverage | lint | smoke | security | unit | integration | contract | e2e | bdd | ui | perf | fitness, or unclassified when nothing declares or infers it (never empty, never a guessed default). Jeff's run order (2026-09-12 note: coverage, lint, security, unit, integration, ui, perf) reads this field. Whether a test needs the live stack is hermeticity, a separate question, so a unit-level security test loses nothing by being typed security." .
 
+chorus:failureReason a owl:DatatypeProperty ;
+    rdfs:label "failure reason" ;
+    rdfs:domain chorus:TestResult ; rdfs:range xsd:string ;
+    rdfs:comment "Why a failed case failed, as the runner read it the moment it failed (#4155): the exception and its message, the HTTP status a service answered, or the assertion's expected and received. CDEvents names the same thing testCaseRun.finished reason. Present on failed results only; a pass carries none (absence is typed, never an empty string)." .
+
 chorus:pyramidLayer a owl:DatatypeProperty ;
     owl:deprecated true ;
     rdfs:domain chorus:Test ; rdfs:range xsd:string ;
@@ -582,7 +588,9 @@ chorus:TestResultShape a sh:NodeShape ;
     sh:property [ sh:path chorus:runTs ; sh:datatype xsd:string ] ;
     # cardId optional BY DESIGN, not by migration: a nightly run has no card.
     # Absence is typed (key omitted), never an empty string.
-    sh:property [ sh:path chorus:cardId ; sh:datatype xsd:string ]  .
+    sh:property [ sh:path chorus:cardId ; sh:datatype xsd:string ] ;
+    # #4155 — why a failed case failed; optional, failed results only.
+    sh:property [ sh:path chorus:failureReason ; sh:datatype xsd:string ]  .
 
 chorus:TestEdgesShape a sh:NodeShape ;
     sh:targetClass chorus:Test ;

@@ -16,6 +16,7 @@
 //! is unit-tested with no subprocess; the git-diff + runners wire on top.
 
 pub mod nightly_run;
+pub mod why;
 pub type R<T> = Result<T, String>;
 
 /// Known TS packages with their own jest config + node_modules (matches #3397's
@@ -3282,6 +3283,17 @@ mod stages_4160 {
         assert!(jest_project_args_for(false, true, Some("hermetic")).is_empty());
     }
 
+    /// #4155 — the reason rides on the failed case's result row, escaped;
+    /// a passing case's row is unchanged.
+    #[test]
+    fn a_failed_result_row_carries_its_reason() {
+        let p = test_result_payload("a.test.ts", "t", "fail", "test-a", "", "system", "", 1787264000000, 0);
+        let with = with_failure_reason(&p, "TypeError: \"x\" is undefined");
+        assert!(with.ends_with(r#","failureReason":"TypeError: \"x\" is undefined"}"#), "{with}");
+        // NEGATIVE PROOF: no reason, no key
+        assert_eq!(with_failure_reason(&p, ""), p);
+    }
+
     #[test]
     fn nextest_bins_selects_named_binaries() {
         let a = nextest_run_args_bins(&[], &["live_serve"], None);
@@ -3301,6 +3313,15 @@ pub fn jest_project_args(has_hermetic_project: bool, run_integration: bool) -> V
     } else {
         Vec::new()
     }
+}
+
+/// #4155 — a failed case's result row carries why it failed. An empty reason
+/// adds nothing: absence is typed (key omitted), never "".
+pub fn with_failure_reason(payload: &str, reason: &str) -> String {
+    if reason.is_empty() || !payload.ends_with('}') {
+        return payload.to_string();
+    }
+    format!("{},\"failureReason\":\"{}\"}}", &payload[..payload.len() - 1], json_escape(reason))
 }
 
 /// #4160 — a staged run names its project: the unit stage runs `hermetic`,
