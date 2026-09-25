@@ -1168,8 +1168,9 @@ fn testresult_batch_reuses_auth_prepares_all_and_delegates_one_exact_ndjson_call
     assert_eq!(code, 201, "{}", body);
     assert!(body.contains("created 2 testresults via one DAL batch (ownedBy wren)"), "{}", body);
 
-    let line_a = r#"{"kind":"test-result","name":"tr-batch-a","fields":{"ownedBy":"wren","filePath":"platform/a.rs","result":"pass","testName":"keeps },{ and \"quoted\""},"more_values":[],"edges":[["ofTest","test","test-a"]],"graph":"urn:chorus:domains:tests"}"#;
-    let line_b = r#"{"kind":"test-result","name":"tr-batch-b","fields":{"ownedBy":"wren","filePath":"platform/b.rs","result":"fail","testName":"second"},"more_values":[],"edges":[["ofTest","test","test-b"]],"graph":"urn:chorus:domains:tests"}"#;
+    // #4294 — the owner is a Principal edge, never a literal field.
+    let line_a = r#"{"kind":"test-result","name":"tr-batch-a","fields":{"filePath":"platform/a.rs","result":"pass","testName":"keeps },{ and \"quoted\""},"more_values":[],"edges":[["ownedBy","principal","wren"],["ofTest","test","test-a"]],"graph":"urn:chorus:domains:tests"}"#;
+    let line_b = r#"{"kind":"test-result","name":"tr-batch-b","fields":{"filePath":"platform/b.rs","result":"fail","testName":"second"},"more_values":[],"edges":[["ownedBy","principal","wren"],["ofTest","test","test-b"]],"graph":"urn:chorus:domains:tests"}"#;
     let expected = format!("ARGV\tadd-batch\nTOKEN\t{}\nSTDIN\n{}\n{}\nEND\n", tok, line_a, line_b);
     let log = testresult_batches(&w);
     assert_eq!(log, expected, "exact argv/stdin contract; one ARGV marker means one DAL process");

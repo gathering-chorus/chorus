@@ -155,7 +155,7 @@ while IFS=$'\t' read -r kind a b c d; do
   case "$kind" in
     CHUNK)
       args=(--kind chunk --name "$a" --field "label=$a" --field "slug=$a" \
-            --field "roleSequence=$c" --edge "ownedBy=role:$b")
+            --field "roleSequence=$c" --edge "ownedBy=principal:$b")
       [ "$d" = "loom=1" ] && args+=(--field "loomSequence=1")
       run "chunk $a (owner=$b seq=$c ${d:-})" "${args[@]}" ;;
     CARD)
@@ -164,7 +164,7 @@ while IFS=$'\t' read -r kind a b c d; do
       # ever write again. Fail loud rather than mint an unwritable row.
       [ -n "$c" ] || { echo "REFUSED: card $a has no owner in the board listing" >&2; R=$((R+1)); continue; }
       run "card $a (owner=$c)" --kind card --name "$a" --field "label=$b" \
-          --edge "ownedBy=role:$c" ;;
+          --edge "ownedBy=principal:$c" ;;  # #4294 — a principal owns a row, never a role
     MEMBER)
       run "membership $a#$c → card $b" --kind chunkmembership --name "$a-$b" \
           --field "rank=$c" --edge "inChunk=chunk:$a" --edge "hasCard=card:$b" ;;

@@ -1615,6 +1615,26 @@ fn plan_writes<'a>(
                 ),
             ));
         }
+        // #4294 — ownedBy is an object property with rdfs:range chorus:Principal
+        // (the model, whatever a class's shape says or omits). A literal owner
+        // ("kade") or an owner that is not a Principal (role-jeff) is refused:
+        // 6,368 rows carried one on 2026-09-24 because a silent shape let the
+        // literal through.
+        let bad_owner = if req.fields.contains_key("ownedBy") {
+            Some("ownedBy is an object property (rdfs:range chorus:Principal): supply it as an edge to a principal, not a literal".to_string())
+        } else {
+            req.edges
+                .iter()
+                .find(|(prop, tkind, _)| prop == "ownedBy" && tkind != "principal")
+                .map(|(_, tkind, tname)| format!("ownedBy must point at a Principal (rdfs:range chorus:Principal), not a {} ({})", tkind, tname))
+        };
+        if let Some(message) = bad_owner {
+            witness(
+                "model.refused",
+                &[("kind", req.kind.as_str()), ("name", req.name.as_str()), ("reason", "owner-not-principal")],
+            );
+            return Err(WritePlanError::for_req(req, format!("owner-not-principal: {}", message)));
+        }
         if let Some(prop) = req
             .edges
             .iter()
@@ -2197,6 +2217,11 @@ pub fn set_field(
     graph: Option<&str>,
     _id: &Identity,
 ) -> R<String> {
+    // #4294 — set writes a literal; ownedBy is never one (rdfs:range chorus:Principal).
+    if prop == "ownedBy" {
+        witness("model.refused", &[("kind", kind), ("name", name), ("reason", "owner-not-principal")]);
+        return Err("owner-not-principal: ownedBy is an object property (rdfs:range chorus:Principal): use link --edge ownedBy=principal:<name>, not set".to_string());
+    }
     check_property_local(prop)?; // same camelCase law (ADR-040 Level 4) for field local-names
     let subject = mint(kind, name)?;
     if !store.ask(&format!("ASK {{ GRAPH ?g {{ <{}> ?p ?o }} }}", subject))? {
@@ -2336,6 +2361,14 @@ pub fn add_edge(store: &dyn Store, kind: &str, name: &str, prop: &str, tkind: &s
 /// history that says the row never moved.
 #[allow(clippy::too_many_arguments)]
 pub fn add_edge_keeping(store: &dyn Store, kind: &str, name: &str, prop: &str, tkind: &str, tname: &str, graph: Option<&str>, id: &Identity, revision: Option<&WriteReq>) -> R<String> {
+    // #4294 — the link verb is a second door onto ownedBy; same rule as plan_writes.
+    if prop == "ownedBy" && tkind != "principal" {
+        witness("model.refused", &[("kind", kind), ("name", name), ("reason", "owner-not-principal")]);
+        return Err(format!(
+            "owner-not-principal: ownedBy must point at a Principal (rdfs:range chorus:Principal), not a {} ({})",
+            tkind, tname
+        ));
+    }
     check_property_local(prop)?;
     let subject = mint(kind, name)?;
     let target = mint(tkind, tname)?;
@@ -3730,7 +3763,7 @@ mod tests {
         let req = WriteReq {
             kind: "role".into(),
             name: "test-z".into(),
-            edges: vec![("ownedBy".into(), "role".into(), "nonexistent-q".into())],
+            edges: vec![("ownedBy".into(), "principal".into(), "nonexistent-q".into())],
             ..Default::default()
         };
         let e = write(&store, &req, &tid()).unwrap_err();
@@ -3777,6 +3810,37 @@ mod tests {
         let err = write(&store, &req, &tid()).unwrap_err();
         assert!(err.contains("requires 'writeCount'"), "{err}");
         assert!(store.updates.borrow().is_empty(), "a refused write issues no update");
+    }
+
+    /// #4294 NEGATIVE PROOF: an owner that is not a Principal is refused and
+    /// nothing is written — a literal ("kade") or an edge to a Role. Deleting the
+    /// owner-not-principal check in plan_writes turns both red; a principal edge
+    /// passes.
+    #[test]
+    fn an_owner_that_is_not_a_principal_is_refused() {
+        let store = stub(&[], &[]);
+        let mut literal = WriteReq { kind: "policy".into(), name: "zz-4294-a".into(), ..Default::default() };
+        literal.fields.insert("ownedBy".into(), "kade".into());
+        let err = write(&store, &literal, &tid()).unwrap_err();
+        assert!(err.contains("owner-not-principal"), "{err}");
+        let role = WriteReq {
+            kind: "policy".into(),
+            name: "zz-4294-b".into(),
+            edges: vec![("ownedBy".into(), "role".into(), "jeff".into())],
+            ..Default::default()
+        };
+        let err = write(&store, &role, &tid()).unwrap_err();
+        assert!(err.contains("owner-not-principal") && err.contains("role"), "{err}");
+        assert!(store.updates.borrow().is_empty(), "a refused write issues no update");
+        let target = format!("{}principal-kade", NS);
+        let ok_store = stub(&[target.as_str()], &[]);
+        let good = WriteReq {
+            kind: "policy".into(),
+            name: "zz-4294-c".into(),
+            edges: vec![("ownedBy".into(), "principal".into(), "kade".into())],
+            ..Default::default()
+        };
+        write(&ok_store, &good, &tid()).expect("a principal owner passes");
     }
 
     #[test]

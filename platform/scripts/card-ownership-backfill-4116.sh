@@ -60,12 +60,12 @@ while read -r cid; do
       U=$((U+1)); continue ;;
   esac
   if [ "$DRY" = "1" ]; then
-    echo "DRY: card-$cid -> role-$owner ($src)"; W=$((W+1)); continue
+    echo "DRY: card-$cid -> principal-$owner ($src)"; W=$((W+1)); continue
   fi
-  if out="$("$AM" link --kind card --name "$cid" --edge "ownedBy=role:$owner" 2>&1)"; then
+  if out="$("$AM" link --kind card --name "$cid" --edge "ownedBy=principal:$owner" 2>&1)"; then
     W=$((W+1))
   else
-    echo "REFUSED card-$cid -> role-$owner ($src): $out" >&2
+    echo "REFUSED card-$cid -> principal-$owner ($src): $out" >&2
     R=$((R+1))
   fi
 done < "$tmp/unowned"
