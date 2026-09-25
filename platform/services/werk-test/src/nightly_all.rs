@@ -777,7 +777,8 @@ fn run_locked(ctx: &mut Ctx, _args: &[String]) -> Result<i32, String> {
     // or launchctl, and 4145's row count reads the runner's rows alone.
     if std::env::var("NIGHTLY_LEGS_NOOP").is_err() {
         push(ctx, leg_ui(ctx), &mut rows);
-        push(ctx, leg_bdd(ctx), &mut rows);
+        // #4292 — bdd is no longer one summary row here: each feature runs
+        // in the runner's file-suite lane and stores one result per scenario.
         push(ctx, leg_daemons(ctx, &daemons_at_start, &sample_daemons()), &mut rows);
         push(ctx, leg_duration(run_clock.elapsed().as_secs()), &mut rows);
     }
@@ -889,74 +890,8 @@ fn deliver_readout(ctx: &Ctx) {
 // tests prove; the legs are thin shells around a seam command so a fixture
 // can stand in for the real tool.
 
-/// Counts from cucumber-js's `summary` formatter:
-/// `35 scenarios (2 failed, 3 undefined, 30 passed)` / `162 steps (…)`.
-#[derive(Debug, Default, PartialEq, Clone)]
-pub struct CukeCounts {
-    pub scenarios: usize,
-    pub passed: usize,
-    pub failed: usize,
-    pub undefined: usize,
-    pub skipped: usize,
-    pub pending: usize,
-    pub steps: usize,
-}
 
-pub fn parse_cucumber_summary(out: &str) -> Option<CukeCounts> {
-    let mut c = CukeCounts::default();
-    let mut saw = false;
-    for raw in out.lines() {
-        // strip ANSI colour: ESC [ … m
-        let mut l = String::new();
-        let mut in_esc = false;
-        for ch in raw.chars() {
-            if ch == '\u{1b}' { in_esc = true; continue; }
-            if in_esc { if ch == 'm' { in_esc = false; } continue; }
-            l.push(ch);
-        }
-        let l = l.trim();
-        let (total, rest, is_scn) = if let Some(i) = l.find(" scenarios (") {
-            (l[..i].trim().parse::<usize>().ok(), &l[i + " scenarios (".len()..], true)
-        } else if let Some(i) = l.find(" scenario (") {
-            (l[..i].trim().parse::<usize>().ok(), &l[i + " scenario (".len()..], true)
-        } else if let Some(i) = l.find(" steps (") {
-            (l[..i].trim().parse::<usize>().ok(), &l[i + " steps (".len()..], false)
-        } else if let Some(i) = l.find(" step (") {
-            (l[..i].trim().parse::<usize>().ok(), &l[i + " step (".len()..], false)
-        } else { continue };
-        let Some(total) = total else { continue };
-        saw = true;
-        if is_scn { c.scenarios = total; } else { c.steps = total; continue; }
-        for part in rest.trim_end_matches(')').split(',') {
-            let w: Vec<&str> = part.trim().split_whitespace().collect();
-            if w.len() != 2 { continue; }
-            let n: usize = match w[0].parse() { Ok(n) => n, Err(_) => continue };
-            match w[1] {
-                "passed" => c.passed = n,
-                "failed" => c.failed = n,
-                "undefined" => c.undefined = n,
-                "skipped" => c.skipped = n,
-                "pending" => c.pending = n,
-                _ => {}
-            }
-        }
-    }
-    if saw { Some(c) } else { None }
-}
 
-/// The bdd verdict: undefined steps mean the feature could not be measured
-/// (a scenario that skips every step is not a pass); a failed scenario is red;
-/// zero scenarios is nothing measured.
-pub fn cucumber_verdict(c: Option<&CukeCounts>) -> (&'static str, String) {
-    match c {
-        None => ("unmeasured", "0 pass, 0 fail (UNMEASURED — cucumber-js produced no summary)".into()),
-        Some(c) if c.scenarios == 0 => ("unmeasured", "0 pass, 0 fail (UNMEASURED — no scenarios selected)".into()),
-        Some(c) if c.undefined > 0 => ("unmeasured", format!(
-            "0 pass, 0 fail (UNMEASURED — {} of {} scenarios have undefined steps; {} steps)", c.undefined, c.scenarios, c.steps)),
-        Some(c) if c.failed > 0 => ("fail", format!("{} pass, {} fail ({} scenarios, {} steps)", c.passed, c.failed, c.scenarios, c.steps)),
-        Some(c) => ("pass", format!("{} pass, 0 fail ({} scenarios, {} steps, {} skipped)", c.passed, c.scenarios, c.steps, c.skipped)),
-    }
-}
 
 /// `launchctl list` rows for com.chorus.* → label → pid (None when '-').
 pub fn parse_launchctl(out: &str) -> std::collections::BTreeMap<String, Option<u32>> {
@@ -1038,7 +973,7 @@ fn leg_crawler_validate(ctx: &Ctx) -> SuiteRow {
         "NIGHTLY_CRAWL_BIN",
         &format!("{}/.chorus/bin/chorus-crawl", env_or("HOME", "/tmp")),
     );
-    let path = "chorus-crawl --reconcile";
+    let path = "chorus-crawl --validate";
     if !Path::new(&bin).is_file() {
         return SuiteRow::new(
             "crawler-validate",
@@ -1049,7 +984,7 @@ fn leg_crawler_validate(ctx: &Ctx) -> SuiteRow {
         );
     }
     let mut c = Command::new(&bin);
-    c.arg("--reconcile")
+    c.arg("--validate")
         .env("CHORUS_ROOT", &ctx.root)
         .env("CHORUS_ROLE", env_or("NIGHTLY_CRAWL_ROLE", "kade"))
         .current_dir(&ctx.root);
@@ -1180,53 +1115,12 @@ fn leg_ui(ctx: &Ctx) -> SuiteRow {
     }
 }
 
-fn leg_bdd(ctx: &Ctx) -> SuiteRow {
-    let path = "platform/tests/features";
-    let dir = format!("{}/platform/tests", ctx.root);
-    if !Path::new(&format!("{}/node_modules/.bin/cucumber-js", dir)).exists()
-        && std::env::var("NIGHTLY_CUCUMBER_CMD").is_err()
-    {
-        return SuiteRow::new("bdd", path, "kade", "unmeasured",
-            "0 pass, 0 fail (UNMEASURED — platform/tests/node_modules/.bin/cucumber-js is not installed)");
-    }
-    let cmd = env_or("NIGHTLY_CUCUMBER_CMD", "npx --no-install cucumber-js --format summary");
-    let mut c = Command::new("bash");
-    c.arg("-c").arg(&cmd).current_dir(&dir).env("CHORUS_CONTEXT", "");
-    let (_rc, out) = run_capped(c, Duration::from_secs(1800));
-    let counts = parse_cucumber_summary(&out);
-    let (status, summary) = cucumber_verdict(counts.as_ref());
-    SuiteRow::new("bdd", path, &ctx.owner(path), status, &summary)
-}
 
 #[cfg(test)]
 mod lanes_4278 {
     use super::*;
 
-    #[test]
-    fn cucumber_summary_parses_every_bucket() {
-        let out = "35 scenarios (2 failed, 3 undefined, 30 passed)\n162 steps (2 failed, 6 undefined, 150 passed, 4 skipped)\n0m01.2s\n";
-        let c = parse_cucumber_summary(out).unwrap();
-        assert_eq!((c.scenarios, c.passed, c.failed, c.undefined, c.steps), (35, 30, 2, 3, 162));
-        // ANSI colour, as the real formatter prints it
-        let ansi = "35 scenarios (\u{1b}[36m35 skipped\u{1b}[39m)\n162 steps (\u{1b}[36m162 skipped\u{1b}[39m)\n";
-        let c = parse_cucumber_summary(ansi).unwrap();
-        assert_eq!((c.scenarios, c.skipped, c.steps), (35, 35, 162));
-    }
 
-    #[test]
-    fn bdd_verdict_separates_pass_fail_and_unmeasured() {
-        let ok = CukeCounts { scenarios: 35, passed: 35, steps: 162, ..Default::default() };
-        assert_eq!(cucumber_verdict(Some(&ok)).0, "pass");
-        let red = CukeCounts { scenarios: 35, passed: 33, failed: 2, steps: 162, ..Default::default() };
-        assert_eq!(cucumber_verdict(Some(&red)).0, "fail");
-        // NEGATIVE PROOF (#3734): a feature whose steps are undefined must not read as pass
-        let undef = CukeCounts { scenarios: 35, passed: 30, undefined: 5, steps: 162, ..Default::default() };
-        let (v, s) = cucumber_verdict(Some(&undef));
-        assert_eq!(v, "unmeasured");
-        assert!(s.contains("5 of 35 scenarios have undefined steps"), "{s}");
-        assert_eq!(cucumber_verdict(None).0, "unmeasured");
-        assert_eq!(cucumber_verdict(Some(&CukeCounts::default())).0, "unmeasured");
-    }
 
     #[test]
     fn launchctl_rows_and_restarts() {
@@ -1330,23 +1224,4 @@ mod lanes_4278 {
         let _ = std::fs::remove_dir_all(&dir);
     }
 
-    #[test]
-    fn bdd_leg_reads_the_seam_command() {
-        let dir = std::env::temp_dir().join(format!("lanes-4278-bdd-{}", std::process::id()));
-        std::fs::create_dir_all(dir.join("platform/tests")).unwrap();
-        let ctx = ctx_for(dir.to_str().unwrap());
-        std::env::set_var("NIGHTLY_CUCUMBER_CMD", "printf '35 scenarios (35 passed)\\n162 steps (162 passed)\\n'");
-        let r = leg_bdd(&ctx);
-        assert_eq!(r.status, "pass", "{}", r.summary);
-        // NEGATIVE PROOF: a planted failing scenario reds the lane
-        std::env::set_var("NIGHTLY_CUCUMBER_CMD", "printf '35 scenarios (1 failed, 34 passed)\\n162 steps (1 failed, 161 passed)\\n'; exit 1");
-        let r = leg_bdd(&ctx);
-        assert_eq!(r.status, "fail", "{}", r.summary);
-        std::env::remove_var("NIGHTLY_CUCUMBER_CMD");
-        // with no seam and no cucumber-js installed under the root: UNMEASURED, named
-        let r = leg_bdd(&ctx);
-        assert_eq!(r.status, "unmeasured", "{}", r.summary);
-        assert!(r.summary.contains("cucumber-js is not installed"), "{}", r.summary);
-        let _ = std::fs::remove_dir_all(&dir);
-    }
 }

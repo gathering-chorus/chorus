@@ -251,18 +251,20 @@ if [ "$TARGET" = "canonical" ] && [ -z "${CHORUS_BIN_NO_KICKSTART:-}" ] && [ -n 
       [ "$LABEL" = "com.chorus.$NAME" ] && continue
       [ "$LABEL" = "com.chorus.${NAME#chorus-}" ] && continue
       launchctl print "gui/$UID_N/$LABEL" >/dev/null 2>&1 || continue
-      # #4283 — never boot out a job that is RUNNING or SCHEDULED. On 2026-09-23
-      # 14:07 this loop booted out com.chorus.nightly-suites mid-run (Wren's
-      # nightly died at 121/286) and the bootstrap back failed, leaving the
-      # agent unloaded. A scheduled job execs the installed path fresh at its
-      # next start, so it needs no reload; a running job is left to finish.
-      # Both are named in the output and on the spine, never silently skipped.
+      # #4283 — never boot out a job that is RUNNING. On 2026-09-23 14:07 this
+      # loop booted out com.chorus.nightly-suites mid-run (Wren's nightly died
+      # at 121/286). A running job is left to finish, named in the output and
+      # on the spine.
+      # #4292 — an IDLE scheduled job is reloaded like any idle job. #4283 also
+      # skipped those, on the belief that a calendar job execs the installed
+      # path fresh at its next start. It does not: launchd holds the signature
+      # it recorded at load, so the 2026-09-25 03:00 nightly was killed at spawn
+      # (last exit reason OS_REASON_CODESIGNING, "needs LWCR update") after the
+      # #4290 land swapped werk-test-bin at 17:43. No nightly ran that night.
       LIVE_PID="$(launchctl print "gui/$UID_N/$LABEL" 2>/dev/null | sed -n 's/^[[:space:]]*pid = \([0-9][0-9]*\).*/\1/p' | head -1)"
       SKIP_WHY=""
       if [ -n "$LIVE_PID" ]; then
         SKIP_WHY="running (pid $LIVE_PID)"
-      elif grep -q "StartCalendarInterval" "$plist" 2>/dev/null; then
-        SKIP_WHY="scheduled"
       fi
       if [ -n "$SKIP_WHY" ]; then
         echo "chorus-bin-install: $LABEL runs $DEST and is $SKIP_WHY — left alone; it starts on the installed binary at its next launch (#4283)"

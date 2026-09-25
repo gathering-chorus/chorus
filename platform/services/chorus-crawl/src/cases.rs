@@ -427,14 +427,23 @@ pub struct FileClass {
     pub declared: bool,
 }
 
+/// #4292 — the `@test-type:` header line itself names `needs-stack`.
+fn header_says_needs_stack(content: &str) -> bool {
+    content
+        .lines()
+        .take(40)
+        .any(|l| l.contains("@test-type:") && l.contains("needs-stack"))
+}
+
 pub fn file_class(path: &str, content: &str) -> FileClass {
     let (h_layer, hermeticity, h_concern) = classify_case(path, content);
     match declared(content) {
         // authored wins on BOTH axes it declares; hermeticity stays heuristic
-        // (the header has no such axis)
+        // unless the header line says `needs-stack` (#4292: a test that reads
+        // Fuseki through a library call has no exec signal to infer from)
         Some((layer, concern)) => FileClass {
             layer,
-            hermeticity,
+            hermeticity: if header_says_needs_stack(content) { "needs-stack" } else { hermeticity },
             concern: concern.or(h_concern),
             declared: true,
         },
@@ -693,6 +702,17 @@ pub fn case_names(path: &str, content: &str) -> Vec<String> {
         jest_case_names(content)
     } else if path.ends_with(".sh") {
         vec![b.to_string()]
+    } else if path.ends_with(".feature") && path.starts_with(BDD_LANE_DIR) {
+        // #4292 — the scenarios the bdd lane actually runs, by the name
+        // cucumber reports them under. Only files in the lane's directory;
+        // a scenario the default profile excludes (@wip, @e2e) is not run,
+        // so it is not registered (#4106: never a name no runner emits).
+        feature_scenario_names(content)
+    } else if b.starts_with("test_") && b.ends_with(".py") {
+        // #4292 — unittest cases as `Class.test_method`, the identity the
+        // python lane reports (`python3 -m unittest -v`). A file with no
+        // unittest.TestCase class yields nothing: no lane runs pytest style.
+        unittest_case_names(content)
     } else if b.ends_with(".spec.cjs") || b.ends_with(".spec.mjs") {
         // #4185 — a playwright spec is ONE case named by its file: that is the
         // identity the ui lane stores and quarantines by (werk-test lib.rs,
@@ -703,6 +723,83 @@ pub fn case_names(path: &str, content: &str) -> Vec<String> {
     } else {
         Vec::new()
     }
+}
+
+/// #4292 — the directory the bdd lane runs cucumber over (platform/tests is
+/// the cucumber package; its default profile reads features/**).
+pub const BDD_LANE_DIR: &str = "platform/tests/features/";
+
+/// The tags the cucumber default profile excludes (platform/tests/cucumber.js:
+/// `not @e2e and not @wip` unless RUN_INTEGRATION is set).
+const CUKE_EXCLUDED: [&str; 2] = ["@wip", "@e2e"];
+
+fn tag_line_excludes(line: &str) -> bool {
+    line.split_whitespace().any(|t| CUKE_EXCLUDED.contains(&t))
+}
+
+/// Scenario and Scenario Outline names in file order, deduplicated (an
+/// outline's examples all report under the outline's name), skipping any
+/// scenario whose own tags or whose feature's tags the default profile
+/// excludes.
+pub fn feature_scenario_names(source: &str) -> Vec<String> {
+    let mut out: Vec<String> = Vec::new();
+    let mut feature_off = false;
+    let mut pending_tags_off = false;
+    for line in source.lines() {
+        let t = line.trim();
+        if t.starts_with('@') {
+            pending_tags_off |= tag_line_excludes(t);
+            continue;
+        }
+        if t.starts_with("Feature:") {
+            feature_off = pending_tags_off;
+            pending_tags_off = false;
+            continue;
+        }
+        let name = t
+            .strip_prefix("Scenario Outline:")
+            .or_else(|| t.strip_prefix("Scenario Template:"))
+            .or_else(|| t.strip_prefix("Scenario:"))
+            .or_else(|| t.strip_prefix("Example:"));
+        if let Some(n) = name {
+            let n = n.trim().to_string();
+            if !feature_off && !pending_tags_off && !n.is_empty() && !out.contains(&n) {
+                out.push(n);
+            }
+            pending_tags_off = false;
+        } else if !t.is_empty() && !t.starts_with('#') {
+            // a tag line only binds to the scenario directly below it
+            pending_tags_off = false;
+        }
+    }
+    out
+}
+
+/// `Class.test_method` for every test method of every class that derives a
+/// unittest TestCase (directly: `(unittest.TestCase)` or `(TestCase)`).
+pub fn unittest_case_names(source: &str) -> Vec<String> {
+    let mut out = Vec::new();
+    let mut class: Option<String> = None;
+    for line in source.lines() {
+        if let Some(rest) = line.strip_prefix("class ") {
+            class = rest.split_once('(').and_then(|(name, bases)| {
+                bases.contains("TestCase").then(|| name.trim().to_string())
+            });
+            continue;
+        }
+        if !line.starts_with(' ') && !line.starts_with('\t') && !line.trim().is_empty() {
+            class = None;
+            continue;
+        }
+        let Some(c) = &class else { continue };
+        let t = line.trim_start();
+        if let Some(rest) = t.strip_prefix("def test").or_else(|| t.strip_prefix("async def test")) {
+            if let Some((tail, _)) = rest.split_once('(') {
+                out.push(format!("{c}.test{tail}"));
+            }
+        }
+    }
+    out
 }
 
 /// #4199 — WHY a test file yields no runnable case. The morning line counts
@@ -719,6 +816,12 @@ pub fn no_case_bucket(path: &str, content: &str) -> &'static str {
             return "ignored-only";
         }
         return "no-tests";
+    }
+    // #4292 — a feature in the lane's directory whose every scenario the
+    // default profile excludes (@wip, @e2e) is switched off, exactly like a
+    // .rs whose every test is #[ignore]d: nothing to run.
+    if path.ends_with(".feature") && path.starts_with(BDD_LANE_DIR) {
+        return "ignored-only";
     }
     if path.ends_with(".py") || path.ends_with(".feature") {
         return "no-lane";
@@ -1255,6 +1358,45 @@ mod cases_4185 {
             vec!["a plain name that does match"]
         );
     }
+    /// #4292 — the scenarios cucumber's default profile runs, by name.
+    #[test]
+    fn feature_scenarios_are_registered_by_name_and_switched_off_ones_are_not() {
+        let src = "@seed\nFeature: seeds\n  Scenario: a seed lands\n    Given x\n\n  @wip @gap-1\n  Scenario: not yet\n    Given y\n\n  Scenario Outline: each kind <k>\n    Given <k>\n    Examples:\n      | k |\n      | a |\n";
+        assert_eq!(
+            case_names("platform/tests/features/seeds/x.feature", src),
+            vec!["a seed lands".to_string(), "each kind <k>".to_string()]
+        );
+        // NEGATIVE PROOF: a feature switched off at feature level mints nothing
+        let off = "@memory @e2e\nFeature: recall\n  Scenario: remembers\n    Given z\n";
+        assert!(case_names("platform/tests/features/memory/y.feature", off).is_empty());
+        assert_eq!(no_case_bucket("platform/tests/features/memory/y.feature", off), "ignored-only");
+        // NEGATIVE PROOF: a feature outside the lane's directory mints nothing
+        assert!(case_names("designing/docs/z.feature", "Feature: f\n  Scenario: s\n").is_empty());
+        assert_eq!(no_case_bucket("designing/docs/z.feature", "Feature: f"), "no-lane");
+    }
+
+    /// #4292 — a declared header that says needs-stack is believed; without it
+    /// a library-call live test reads hermetic (no exec signal).
+    #[test]
+    fn a_header_that_says_needs_stack_is_believed() {
+        let live = "// @test-type: integration — needs-stack: reads Fuseki\n#[test]\nfn t() {}\n";
+        assert_eq!(file_class("x/tests/live.rs", live).hermeticity, "needs-stack");
+        let plain = "// @test-type: integration — reads a tmpdir\n#[test]\nfn t() {}\n";
+        assert_eq!(file_class("x/tests/plain.rs", plain).hermeticity, "hermetic");
+    }
+
+    /// #4292 — unittest cases as Class.method; pytest style and helpers mint nothing.
+    #[test]
+    fn unittest_classes_register_class_dot_method() {
+        let src = "import unittest\n\nclass PathTests(unittest.TestCase):\n    def test_a(self):\n        pass\n    def helper(self):\n        pass\n\ndef test_top():\n    pass\n\nclass Other(TestCase):\n    def test_b(self): pass\n";
+        assert_eq!(
+            case_names("platform/tests/test_x.py", src),
+            vec!["PathTests.test_a".to_string(), "Other.test_b".to_string()]
+        );
+        // NEGATIVE PROOF (#4106): a pytest-style file no lane runs mints nothing
+        assert!(case_names("platform/tests/test_y.py", "def test_top():\n    assert 1\n").is_empty());
+    }
+
     #[test]
     fn negative_proof_a_kind_with_no_extractor_and_no_lane_mints_nothing() {
         assert!(case_names("helper.py", "def helper():\n    return 1\n").is_empty());
@@ -1496,6 +1638,22 @@ mod cases_4185 {
             case: case.into(),
             fields: r.owned_fields(),
         }
+    }
+
+    /// #4292 NEGATIVE PROOF: a scenario added to a run feature with no row yet
+    /// is named by the reconcile, so crawler-validate's tests row goes red and
+    /// says which scenario.
+    #[test]
+    fn a_new_scenario_with_no_row_is_named_by_the_reconcile() {
+        let f = "platform/tests/features/seeds/seed-media.feature";
+        let src = "Feature: seeds\n  Scenario: old one\n  Scenario: brand new one\n";
+        let desired: Vec<CaseRow> = case_names(f, src).iter().map(|c| row(f, c)).collect();
+        let d = reconcile_cases(&desired, &[f.to_string()], &[g("t-old", f, "old one")]);
+        assert_eq!(d.cases_without_rows, vec![format!("{f} :: brand new one")]);
+        assert!(!d.is_clean());
+        // control: once the row exists the file is clean
+        let d = reconcile_cases(&desired, &[f.to_string()], &[g("t-old", f, "old one"), g("t-new", f, "brand new one")]);
+        assert!(d.is_clean(), "{d:?}");
     }
     fn s(v: &[&str]) -> Vec<String> {
         v.iter().map(|x| x.to_string()).collect()

@@ -704,6 +704,13 @@ pub fn unit_of_path(path: &str) -> Option<TestUnit> {
     if is_shell_suite(path) {
         return Some(TestUnit::BatsSuite(path.to_string()));
     }
+    // #4292 — two more file suites, resolved before the package loop so
+    // platform/tests (the cucumber package) never swallows them: a .feature
+    // in the bdd lane's directory runs alone under cucumber, and a unittest
+    // file runs under `python3 -m unittest`. Both report per case.
+    if is_feature_suite(path) || is_unittest_suite(path) {
+        return Some(TestUnit::BatsSuite(path.to_string()));
+    }
     for pkg in TS_PACKAGES {
         if path.starts_with(&format!("{}/", pkg)) {
             return Some(TestUnit::TsPackage((*pkg).to_string()));
@@ -733,6 +740,196 @@ pub fn suite_runner(path: &str) -> &'static str {
         .and_then(|c| c.lines().next().map(|l| l.to_string()))
         .unwrap_or_default();
     runner_for(&first, path)
+}
+
+/// #4292 — a cucumber feature the bdd lane runs (the package's features dir).
+pub fn is_feature_suite(path: &str) -> bool {
+    path.starts_with("platform/tests/features/") && path.ends_with(".feature")
+}
+
+/// #4292 — a python unittest file (`test_*.py`).
+pub fn is_unittest_suite(path: &str) -> bool {
+    let name = path.rsplit('/').next().unwrap_or(path);
+    name.starts_with("test_") && name.ends_with(".py")
+}
+
+/// #4292 — node, reading cucumber's JSON report (argv[1]) and printing one
+/// `CUKE|<pass|fail|skip>|<scenario name>` line per scenario run. A scenario
+/// with any failed, undefined, ambiguous or pending step is a fail; one whose
+/// steps were all skipped is a skip.
+pub const CUKE_FLATTEN_JS: &str = r#"const r=JSON.parse(require('fs').readFileSync(process.argv[1],'utf8'));const only=process.argv[2];for(const f of r){if(only&&f.uri!==only)continue;for(const e of (f.elements||[])){if(e.type!=='scenario')continue;const st=(e.steps||[]).map(s=>s.result&&s.result.status);const v=st.some(x=>['failed','undefined','ambiguous','pending'].includes(x))?'fail':st.length&&st.every(x=>x==='skipped')?'skip':'pass';console.log('CUKE|'+v+'|'+e.name)}}"#;
+
+/// #4292 — cucumber-js 10 MERGES a CLI feature path with the profile's
+/// `paths`, so `cucumber-js one.feature` ran all five features (measured:
+/// 35 scenarios for a 3-scenario file). The per-file run gets a config that
+/// is the package's default profile with `paths` narrowed to the one file.
+pub fn cuke_single_file_config(package_config: &str, rel: &str) -> String {
+    format!(
+        "const b=require({}).default;module.exports={{default:{{...b,paths:[{}]}}}};\n",
+        js_str(package_config),
+        js_str(rel)
+    )
+}
+
+/// #4292 — `to` (absolute) as a path relative to `from` (absolute): enough
+/// `..` to reach `/`, then `to` without its leading slash. cucumber-js
+/// joins its cwd onto --config even when the path is absolute (measured:
+/// it looked for <cwd>/private/tmp/... ).
+pub fn relative_from(from: &str, to: &str) -> String {
+    let depth = from.trim_end_matches('/').split('/').filter(|p| !p.is_empty()).count();
+    format!("{}{}", "../".repeat(depth), to.trim_start_matches('/'))
+}
+
+fn js_str(s: &str) -> String {
+    let mut o = String::from("'");
+    for c in s.chars() {
+        match c {
+            '\'' => o.push_str("\\'"),
+            '\\' => o.push_str("\\\\"),
+            '\n' => o.push_str("\\n"),
+            c => o.push(c),
+        }
+    }
+    o.push('\'');
+    o
+}
+
+/// #4292 — the `CUKE|` lines as (scenario name, result).
+pub fn parse_cuke_lines(out: &str) -> Vec<(String, String)> {
+    out.lines()
+        .filter_map(|l| {
+            let rest = l.trim().strip_prefix("CUKE|")?;
+            let (v, name) = rest.split_once('|')?;
+            (!name.is_empty() && ["pass", "fail", "skip"].contains(&v))
+                .then(|| (name.to_string(), v.to_string()))
+        })
+        .collect()
+}
+
+/// #4292 — `python3 -m unittest -v` output as (`Class.test_method`, result).
+/// Python 3.11+ prints `test_a (mod.Class.test_a) ... ok`; older prints
+/// `test_a (mod.Class) ... ok`; a docstring puts the verdict on the next line.
+pub fn parse_unittest_cases(out: &str) -> Vec<(String, String)> {
+    let mut cases = Vec::new();
+    let mut pending: Option<String> = None;
+    for line in out.lines() {
+        let (head, verdict) = match line.split_once(" ... ") {
+            Some((h, v)) => (Some(h), Some(v)),
+            None => (Some(line), None),
+        };
+        let name = head.and_then(|h| {
+            let (method, rest) = h.trim().split_once(" (")?;
+            let dotted = rest.split(')').next()?;
+            let parts: Vec<&str> = dotted.split('.').collect();
+            let class = if parts.last() == Some(&method) && parts.len() >= 2 {
+                parts[parts.len() - 2]
+            } else {
+                parts.last()?
+            };
+            method.starts_with("test").then(|| format!("{class}.{method}"))
+        });
+        let (name, verdict) = match (name, verdict) {
+            (Some(n), Some(v)) => (n, v),
+            (Some(n), None) => {
+                pending = Some(n);
+                continue;
+            }
+            (None, Some(v)) => match pending.take() {
+                Some(n) => (n, v),
+                None => continue,
+            },
+            (None, None) => continue,
+        };
+        let v = verdict.trim();
+        let result = if v == "ok" || v.starts_with("expected failure") {
+            "pass"
+        } else if v.starts_with("skipped") {
+            "skip"
+        } else {
+            "fail"
+        };
+        cases.push((name, result.to_string()));
+    }
+    cases
+}
+
+/// #4292 — a file suite's cases, parsed by what ran it.
+pub fn parse_file_suite_cases(suite: &str, out: &str) -> Vec<(String, String)> {
+    if is_feature_suite(suite) {
+        parse_cuke_lines(out)
+    } else if is_unittest_suite(suite) {
+        parse_unittest_cases(out)
+    } else {
+        parse_bats_cases(out)
+    }
+}
+
+#[cfg(test)]
+mod file_suites_4292 {
+    use super::*;
+
+    #[test]
+    fn features_and_unittest_files_are_file_suites_not_the_cucumber_package() {
+        assert_eq!(
+            unit_of_path("platform/tests/features/seeds/seed-media.feature"),
+            Some(TestUnit::BatsSuite("platform/tests/features/seeds/seed-media.feature".into()))
+        );
+        assert_eq!(
+            unit_of_path("platform/tests/test_photo_pipeline_auth.py"),
+            Some(TestUnit::BatsSuite("platform/tests/test_photo_pipeline_auth.py".into()))
+        );
+        // control: a step definition still belongs to the package
+        assert_eq!(
+            unit_of_path("platform/tests/features/step_definitions/x.ts"),
+            Some(TestUnit::TsPackage("platform/tests".into()))
+        );
+        assert!(!is_feature_suite("designing/docs/chorus-search.feature"));
+    }
+
+    #[test]
+    fn relative_from_climbs_to_root_then_descends() {
+        assert_eq!(relative_from("/a/b/c", "/tmp/x/cfg.js"), "../../../tmp/x/cfg.js");
+        assert_eq!(relative_from("/a/b/c/", "/tmp/cfg.js"), "../../../tmp/cfg.js");
+    }
+
+    #[test]
+    fn a_single_feature_config_narrows_paths_and_keeps_the_profile() {
+        let c = cuke_single_file_config("/x/platform/tests/cucumber.js", "features/seeds/it's.feature");
+        assert_eq!(c, "const b=require('/x/platform/tests/cucumber.js').default;module.exports={default:{...b,paths:['features/seeds/it\\'s.feature']}};\n");
+    }
+
+    #[test]
+    fn cuke_lines_carry_scenario_name_and_verdict() {
+        let out = "3 scenarios (3 passed)\nCUKE|pass|a seed lands\nCUKE|fail|each kind <k>\nCUKE|skip|later\nCUKE|odd|x\nnoise\n";
+        assert_eq!(
+            parse_cuke_lines(out),
+            vec![
+                ("a seed lands".to_string(), "pass".to_string()),
+                ("each kind <k>".to_string(), "fail".to_string()),
+                ("later".to_string(), "skip".to_string()),
+            ]
+        );
+        // NEGATIVE PROOF: no CUKE lines (the flattener never ran) is no cases, never a pass
+        assert!(parse_cuke_lines("3 scenarios (3 passed)\n").is_empty());
+    }
+
+    #[test]
+    fn unittest_verbose_output_is_class_dot_method() {
+        let out = "test_a (test_x.PathTests.test_a) ... ok\n\
+test_b (test_x.PathTests) ... FAIL\n\
+test_c (test_x.Other.test_c)\nChecks the thing. ... ERROR\n\
+test_d (test_x.Other.test_d) ... skipped 'no fuseki'\n\
+----------------------------------------------------------------------\nRan 4 tests\n";
+        assert_eq!(
+            parse_unittest_cases(out),
+            vec![
+                ("PathTests.test_a".to_string(), "pass".to_string()),
+                ("PathTests.test_b".to_string(), "fail".to_string()),
+                ("Other.test_c".to_string(), "fail".to_string()),
+                ("Other.test_d".to_string(), "skip".to_string()),
+            ]
+        );
+    }
 }
 
 /// #4106 — is this path a shell test suite? Both naming conventions in the

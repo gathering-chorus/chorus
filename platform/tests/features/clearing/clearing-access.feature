@@ -1,5 +1,5 @@
 # @test-type: bdd — Gherkin scenarios for Clearing access, run by cucumber-js
-@clearing @e2e
+@clearing @live
 Feature: Clearing access paths
   Jeff accesses the Clearing from three environments.
   Each path must load, authenticate, accept a name, send a message,
@@ -15,6 +15,12 @@ Feature: Clearing access paths
   # right shape is to scope this feature to clearing-API behavior and let
   # nudge delivery be tested elsewhere (chorus-hooks/tests/nudge_suite.rs,
   # gated behind RUN_INTEGRATION per #2614).
+
+  # #4292 — on in the nightly (@e2e → @live). Its two probes post as "jeff"
+  # with an [e2e-test] marker; the Clearing hides that marker from Jeff's
+  # room (router.ts isMachineryEcho) and POST /api/message only stores and
+  # broadcasts, it forwards nothing to a role session. 3 of 3 passed live
+  # on 2026-09-25 06:50.
 
   Background:
     Given the Clearing is running on port 3470

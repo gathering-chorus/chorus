@@ -1230,7 +1230,10 @@ mod nightly_run_4145 {
     /// edit back up re-fails here before it re-fails the nightly.
     #[test]
     fn chorus_principal_floor_covers_the_measured_low() {
-        let yaml = std::fs::read_to_string(concat!(env!("CARGO_MANIFEST_DIR"), "/../../../coverage-floors.yml")).unwrap();
+        // #4292 — run-time, not compile-time: the 4030 guard refuses env!() (a shared
+        // nightly target dir reuses binaries across werks).
+        let dir = std::env::var("CARGO_MANIFEST_DIR").expect("cargo test sets CARGO_MANIFEST_DIR");
+        let yaml = std::fs::read_to_string(format!("{dir}/../../../coverage-floors.yml")).unwrap();
         let floor = parse_floors(&yaml).into_iter().find(|(_, rel, _)| rel == "platform/services/chorus-principal").map(|(_, _, f)| f).expect("chorus-principal has a floor");
         let measured_low = 16.959669079627716;
         assert_eq!(coverage_row("platform/services/chorus-principal", "silas", floor, 0, Some(measured_low)).status, "pass", "floor {} must cover the measured low", floor);

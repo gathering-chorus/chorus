@@ -1,4 +1,5 @@
 #!/usr/bin/env python3
+# @test-type: unit — hermetic unittest; the nightly runs it per case with python3 -m unittest (#4292)
 """Tests for doc-inventory-classify.py — 3-signal precedence + bucket coverage."""
 import sys
 sys.dont_write_bytecode = True  # avoid __pycache__ pollution next to the loaded script

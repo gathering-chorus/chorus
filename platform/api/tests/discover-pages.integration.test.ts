@@ -23,18 +23,24 @@ describe('#4187 — the discovery writers are retired', () => {
   beforeAll(async () => { harness = await startTestApp(); });
   afterAll(async () => { if (harness) await harness.close(); });
 
-  for (const [route, home] of [
-    ['/api/athena/discover-pages', '/pages'],
-    ['/api/athena/discover-endpoints', '/services'],
-  ] as const) {
-    test(`POST ${route} answers 410 and names the crawler's graph and the read route`, async () => {
-      const res = await fetch(`${harness.baseUrl}${route}`, { method: 'POST' });
-      expect(res.status).toBe(410);
-      const body = await res.json();
-      expect(body.data.error).toBe('retired');
-      expect(body.data.message).toContain('urn:chorus:domains:code');
-      expect(body.data.message).toContain(home);
-      expect(body._meta.retired_by).toBe(4187);
-    }, 30_000);
-  }
+  // #4292 — one literal name per case. A name built at run time
+  // (`POST ${route} ...`) cannot be read by the crawler, so these cases had no
+  // Test row and their results joined nothing (crawler-validate, #4290).
+  const hit = async (route: string) => {
+    const res = await fetch(`${harness.baseUrl}${route}`, { method: 'POST' });
+    const body = await res.json();
+    return { status: res.status, error: body.data.error, retiredBy: body._meta.retired_by, message: String(body.data.message) };
+  };
+  test("POST /api/athena/discover-pages answers 410 and names the crawler's graph and the read route", async () => {
+    const r = await hit('/api/athena/discover-pages');
+    expect(r).toMatchObject({ status: 410, error: 'retired', retiredBy: 4187 });
+    expect(r.message).toContain('urn:chorus:domains:code');
+    expect(r.message).toContain('/pages');
+  }, 30_000);
+  test("POST /api/athena/discover-endpoints answers 410 and names the crawler's graph and the read route", async () => {
+    const r = await hit('/api/athena/discover-endpoints');
+    expect(r).toMatchObject({ status: 410, error: 'retired', retiredBy: 4187 });
+    expect(r.message).toContain('urn:chorus:domains:code');
+    expect(r.message).toContain('/services');
+  }, 30_000);
 });
