@@ -36,8 +36,8 @@
 #
 # CORE ATTRIBUTES (Jeff 15:35, "5 yes"): every new class requires label,
 # comment, ownedBy (a Principal), created, creator and modified. The DAL stamps
-# the last three on every write; the shapes now require them, so a row written
-# around the DAL fails.
+# the last three on every write; StampedByTheDal requires them (#4312: as a rule,
+# because as fields athena-make refused to serve the classes).
 #
 # Channel, Message (messages, Wren's) and Context, Conversation (memory,
 # Wren's) are this card's other half, per ADR-041 and ADR-054.
@@ -181,24 +181,37 @@ chorus:OpenSessionHasOneLiveRun a sh:SPARQLConstraint ;
           FILTER (?live != 1)
         }""" .
 
+# #4312 — THE DAL STAMP IS A RULE, NOT A FIELD. The first cut declared
+# dcterms:created / creator / modified as property shapes, and athena-make
+# refused to serve both classes: it names a field by what follows the last '#'
+# of its path, so a dcterms path (no '#') is a field called
+# "http://purl.org/dc/terms/created", which fails ADR-040's camelCase rule. The
+# fields are not caller input anyway: the DAL stamps all three on every write.
+# So the requirement stays and moves here, where it gates without becoming a
+# field anyone is asked to send.
+chorus:StampedByTheDal a sh:SPARQLConstraint ;
+    sh:message "a row carries the DAL's stamp: dcterms:created, dcterms:creator and dcterms:modified" ;
+    sh:select """
+        SELECT $this WHERE {
+          FILTER ( NOT EXISTS { $this <http://purl.org/dc/terms/created> ?a }
+                || NOT EXISTS { $this <http://purl.org/dc/terms/creator> ?b }
+                || NOT EXISTS { $this <http://purl.org/dc/terms/modified> ?c } )
+        }""" .
+
 # --- SessionRun ---------------------------------------------------------------
 
 chorus:SessionRunShape a sh:NodeShape ;
     sh:targetClass chorus:SessionRun ;
     chorus:instancesGraph "urn:chorus:domains:identity" ;
     sh:property chorus:SessionRunShape-label , chorus:SessionRunShape-comment , chorus:SessionRunShape-ownedBy ,
-                chorus:SessionRunShape-created , chorus:SessionRunShape-creator , chorus:SessionRunShape-modified ,
                 chorus:SessionRunShape-runOf , chorus:SessionRunShape-previousRun , chorus:SessionRunShape-startedAt ,
                 chorus:SessionRunShape-runEndedAt , chorus:SessionRunShape-endReason , chorus:SessionRunShape-conversationId ;
-    sh:sparql chorus:LiveRunHasOnePresence , chorus:EndedRunSaysWhy .
+    sh:sparql chorus:LiveRunHasOnePresence , chorus:EndedRunSaysWhy , chorus:StampedByTheDal .
 
 chorus:SessionRunShape-label a sh:PropertyShape ; sh:path rdfs:label ; sh:minCount 1 .
 chorus:SessionRunShape-comment a sh:PropertyShape ; sh:path rdfs:comment ; sh:minCount 1 .
 chorus:SessionRunShape-ownedBy a sh:PropertyShape ;
     sh:path chorus:ownedBy ; sh:minCount 1 ; sh:maxCount 1 ; sh:class chorus:Principal .
-chorus:SessionRunShape-created a sh:PropertyShape ; sh:path dcterms:created ; sh:minCount 1 .
-chorus:SessionRunShape-creator a sh:PropertyShape ; sh:path dcterms:creator ; sh:minCount 1 .
-chorus:SessionRunShape-modified a sh:PropertyShape ; sh:path dcterms:modified ; sh:minCount 1 .
 chorus:SessionRunShape-runOf a sh:PropertyShape ;
     sh:path chorus:runOf ; sh:minCount 1 ; sh:maxCount 1 ; sh:class chorus:Session .
 chorus:SessionRunShape-previousRun a sh:PropertyShape ;
@@ -241,19 +254,15 @@ chorus:PresenceShape a sh:NodeShape ;
     sh:targetClass chorus:Presence ;
     chorus:instancesGraph "urn:chorus:domains:identity" ;
     sh:property chorus:PresenceShape-label , chorus:PresenceShape-comment , chorus:PresenceShape-ownedBy ,
-                chorus:PresenceShape-created , chorus:PresenceShape-creator , chorus:PresenceShape-modified ,
                 chorus:PresenceShape-presenceOf , chorus:PresenceShape-pane , chorus:PresenceShape-tty ,
                 chorus:PresenceShape-hostAccount , chorus:PresenceShape-onMachine ,
                 chorus:PresenceShape-reachability , chorus:PresenceShape-lastDeliveredAt ;
-    sh:sparql chorus:ReachableNeedsADelivery .
+    sh:sparql chorus:ReachableNeedsADelivery , chorus:StampedByTheDal .
 
 chorus:PresenceShape-label a sh:PropertyShape ; sh:path rdfs:label ; sh:minCount 1 .
 chorus:PresenceShape-comment a sh:PropertyShape ; sh:path rdfs:comment ; sh:minCount 1 .
 chorus:PresenceShape-ownedBy a sh:PropertyShape ;
     sh:path chorus:ownedBy ; sh:minCount 1 ; sh:maxCount 1 ; sh:class chorus:Principal .
-chorus:PresenceShape-created a sh:PropertyShape ; sh:path dcterms:created ; sh:minCount 1 .
-chorus:PresenceShape-creator a sh:PropertyShape ; sh:path dcterms:creator ; sh:minCount 1 .
-chorus:PresenceShape-modified a sh:PropertyShape ; sh:path dcterms:modified ; sh:minCount 1 .
 chorus:PresenceShape-presenceOf a sh:PropertyShape ;
     sh:path chorus:presenceOf ; sh:minCount 1 ; sh:maxCount 1 ; sh:class chorus:SessionRun .
 chorus:PresenceShape-pane a sh:PropertyShape ; sh:path chorus:pane ; sh:maxCount 1 ; sh:datatype xsd:string .

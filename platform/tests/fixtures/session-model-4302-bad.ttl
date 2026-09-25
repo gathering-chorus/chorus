@@ -1,7 +1,7 @@
 @prefix c: <https://jeffbridwell.com/chorus#> .
 @prefix rdfs: <http://www.w3.org/2000/01/rdf-schema#> .
 @prefix dcterms: <http://purl.org/dc/terms/> .
-# #4302 negative proof: seven violations, one per rule (and two core attributes).
+# #4302 negative proof: eight violations, one per rule (and two core attributes, and the DAL stamp).
 # sA open, no live run                       -> OpenSessionHasOneLiveRun
 c:sA a c:Session ; rdfs:label "sA" ; c:ownedBy c:principal-silas ; c:tokenId "t" ; c:issuedAt "2026-09-25T14:00:00Z" ; c:expiresAt "2026-09-25T14:10:00Z" ; c:sessionState "open" ; c:hostAccount "jeffbridwell" ; c:actsAs c:role-silas ; c:startedAt "2026-09-25T14:00:00Z" .
 # sB open, no role                           -> OpenSessionActsAsARole
@@ -19,3 +19,5 @@ c:pD a c:Presence ; rdfs:label "pD" ; dcterms:created "2026-09-25T14:00:00Z" ; d
 c:rE a c:SessionRun ; rdfs:label "rE" ; rdfs:comment "fixture" ; dcterms:created "2026-09-25T14:00:00Z" ; dcterms:creator "silas" ; dcterms:modified "2026-09-25T14:00:00Z" ; c:runOf c:sC ; c:startedAt "2026-09-25T14:00:00Z" ; c:conversationId "conv-rE" ; c:ownedBy c:principal-silas ; c:runEndedAt "2026-09-25T14:02:00Z" .
 # rF has no owner                            -> ownedBy minCount
 c:rF a c:SessionRun ; rdfs:label "rF" ; rdfs:comment "fixture" ; dcterms:created "2026-09-25T14:00:00Z" ; dcterms:creator "silas" ; dcterms:modified "2026-09-25T14:00:00Z" ; c:runOf c:sD ; c:startedAt "2026-09-25T14:00:00Z" ; c:conversationId "conv-rF" ; c:runEndedAt "2026-09-25T14:01:00Z" ; c:endReason "crash" .
+# #4312 rG has no DAL stamp (no dcterms:created)  -> StampedByTheDal
+c:rG a c:SessionRun ; rdfs:label "rG" ; rdfs:comment "fixture" ; dcterms:creator "silas" ; dcterms:modified "2026-09-25T14:00:00Z" ; c:runOf c:sD ; c:startedAt "2026-09-25T14:00:00Z" ; c:conversationId "conv-rG" ; c:ownedBy c:principal-silas ; c:runEndedAt "2026-09-25T14:01:00Z" ; c:endReason "exit" .
