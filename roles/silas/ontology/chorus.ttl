@@ -111,35 +111,6 @@ chorus:Vertebra a owl:Class ;
 # A test asking whether they are deprecated could only ever read "no". Declared
 # here and marked, so the grammar's v1 set is complete and retirable rather
 # than half-absent.
-chorus:value-stream-life a chorus:ValueStream ;
-    rdfs:label "Life stream (v1)" ;
-    owl:deprecated true ;
-    rdfs:comment "v1 stream individual, superseded by #3697. See chorus:value-stream-chorus." .
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
 # --- Operating (parallel category, not a sequential vertebra) ----------------
 
 chorus:EventCategory a owl:Class ;
@@ -1711,7 +1682,7 @@ chorus:definesVocabulary a owl:ObjectProperty ;
 
 chorus:atStream a owl:ObjectProperty ;
     rdfs:label "at stream" ;
-    rdfs:comment "Domain -> its ValueStream (value-stream-chorus | value-stream-gathering | value-stream-life). Required (with atStep) because steps are SHARED across streams, so atStep alone is ambiguous. ADR-045 §4." ;
+    rdfs:comment "Domain -> its ValueStream (value-stream-chorus | value-stream-gathering). Required (with atStep) because steps are SHARED across streams, so atStep alone is ambiguous. ADR-045 §4." ;
     rdfs:domain chorus:Domain ;
     rdfs:range chorus:ValueStream .
 

@@ -110,6 +110,6 @@ chorus:Reflecting a chorus:Vertebra ;
 
 chorus:Tending a chorus:Vertebra ;
     rdfs:label "Tending" ;
-    rdfs:comment "Placeholder step for the Life value stream. Jeff will define the full sequence." ;
+    rdfs:comment "Tending in the Gathering value stream. The Gathering domain docs call this the Life value stream (Jeff 2026-09-25: \"life value stream is gathering for sure\")." ;
     chorus:stageOrder 20 ;
-    chorus:belongsTo chorus:value-stream-life .
+    chorus:belongsTo chorus:value-stream-gathering .
