@@ -10,7 +10,8 @@
 # (UNMEASURED), never passes.
 
 ROOT="$(cd "$(dirname "$BATS_TEST_FILENAME")/../.." && pwd)"
-API="${TEST_DOOR_API:-http://localhost:3360}"
+# the pipeline sets OWL_URL to the variant door (prove-live), whose store carries the card's model
+API="${TEST_DOOR_API:-${OWL_URL:-http://localhost:3360}}"
 
 setup() {
   curl -sf --max-time 5 "$API/health" >/dev/null 2>&1 || skip "UNMEASURED — $API not answering"
