@@ -93,5 +93,5 @@ chorus:pk-responseWordCap a chorus:PropertyKey ;
     chorus:keyName "response.word.cap" ;
     chorus:appliesToClass chorus:Role ;
     chorus:propertyKind "datatype" ;
-    chorus:lifecycleEnabled "false" ;
+    chorus:lifecycleEnabled false ;
     rdfs:comment "Maximum words in a role's response to Jeff. Read from the properties cascade at send time, never compiled in. A role-scoped Property overrides the broader default; absent a value the enforcement point must REFUSE to cap rather than invent a number — a silent default is how a governed value becomes a constant again." .
