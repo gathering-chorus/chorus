@@ -457,7 +457,7 @@ chorus:tests a owl:Class, chorus:Domain ;
     chorus:ownedBy chorus:principal-kade ;
     chorus:purpose "Make the system's tests a first-class queryable set, so any domain can ask for its tests and results and the runner/gates/proving consume them uniformly." ;
     chorus:definesVocabulary chorus:Test , chorus:TestResult , chorus:TestSuiteRun ;
-    chorus:atStream chorus:chorusStream ;
+    chorus:atStream chorus:value-stream-chorus ;
     chorus:partOf chorus:chorus ;
     chorus:atStep chorus:Building ;
     chorus:status "building" ;

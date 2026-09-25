@@ -146,7 +146,7 @@ chorus:board a owl:Class, chorus:Domain ;
   chorus:ownedBy chorus:principal-wren ;
   chorus:partOf chorus:chorus ;
   chorus:atStep chorus:Directing ;
-  chorus:atStream chorus:chorusStream ;
+  chorus:atStream chorus:value-stream-chorus ;
   chorus:status "building" ;
   chorus:repoTarget "platform/services/cards" ;
   chorus:definesVocabulary chorus:Chunk, chorus:ChunkMembership ;

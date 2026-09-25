@@ -19,7 +19,7 @@ chorus:decisions a owl:Class, chorus:Domain ;
   rdfs:label "decisions" ; chorus:comment "Decision log with context, rationale, and tradeoffs recorded." ;
   chorus:purpose "Record the team's decisions with their context, rationale, and tradeoffs — the why behind the system." ;
   chorus:ownedBy chorus:principal-wren ; chorus:partOf chorus:product-loom ;
-  chorus:atStep chorus:Shaping ; chorus:atStream chorus:chorusStream ;
+  chorus:atStep chorus:Shaping ; chorus:atStream chorus:value-stream-chorus ;
   chorus:repoTarget "designing/decisions" .
   # FLAG: no real owl:Class vocab (no chorus:Decision/ADR class) — definesVocabulary omitted, not faked.
 
@@ -27,7 +27,7 @@ chorus:rcas a owl:Class, chorus:Domain ;
   rdfs:label "rcas" ; chorus:comment "Root cause analyses — what broke, why, and what changed as a result." ;
   chorus:purpose "Hold root-cause analyses — what broke, why, and what changed so it doesn't recur." ;
   chorus:ownedBy chorus:principal-wren ; chorus:partOf chorus:product-loom ;
-  chorus:atStep chorus:Shaping ; chorus:atStream chorus:chorusStream ;
+  chorus:atStep chorus:Shaping ; chorus:atStream chorus:value-stream-chorus ;
   chorus:repoTarget "loom/rcas" .
   # FLAG: no real owl:Class vocab (no chorus:RCA class) — omitted, not faked.
 
@@ -36,7 +36,7 @@ chorus:builds a owl:Class, chorus:Domain ;
   rdfs:label "builds" ; chorus:comment "Build artifacts, Rust binary signing, and cdhash provenance." ;
   chorus:purpose "Account for build artifacts — binary signing, cdhash provenance, and what's actually deployed." ;
   chorus:ownedBy chorus:principal-silas ; chorus:partOf chorus:borg ;
-  chorus:atStep chorus:Proving ; chorus:atStream chorus:chorusStream ;
+  chorus:atStep chorus:Proving ; chorus:atStream chorus:value-stream-chorus ;
   chorus:repoTarget "builds" .
   # FLAG: no real owl:Class vocab (no chorus:Build class) — omitted, not faked.
 
@@ -46,7 +46,7 @@ chorus:domains a owl:Class, chorus:Domain ;
   rdfs:label "domains" ; chorus:comment "The canonical product/domain/service structural model — this tree." ;
   chorus:purpose "Hold the canonical structural model of the system — products, domains, services and their edges." ;
   chorus:ownedBy chorus:principal-wren ; chorus:partOf chorus:product-athena ;
-  chorus:atStep chorus:Designing ; chorus:atStream chorus:chorusStream ;
+  chorus:atStep chorus:Designing ; chorus:atStream chorus:value-stream-chorus ;
   chorus:repoTarget "designing/domains" ;
   # #4187 — NamedGraph rows (8, graph-status-3733) already live in urn:chorus:domains:domains;
   # the claim makes that home derivable, so the seeder needs no default bucket.
@@ -57,7 +57,7 @@ chorus:services a owl:Class, chorus:Domain ;
   rdfs:label "services" ; chorus:comment "Service definitions, interfaces, and ownership within the product model." ;
   chorus:purpose "Define the system's services — their interfaces, ownership, and place in the product model." ;
   chorus:ownedBy chorus:principal-wren ; chorus:partOf chorus:product-athena ;
-  chorus:atStep chorus:Designing ; chorus:atStream chorus:chorusStream ;
+  chorus:atStep chorus:Designing ; chorus:atStream chorus:value-stream-chorus ;
   chorus:repoTarget "designing/services" ; chorus:definesVocabulary chorus:Service, chorus:ServiceDesign .
 
 # ── chorus-service (Directing, ownedBy wren, partOf chorusProduct) ────────────
@@ -66,7 +66,7 @@ chorus:search a owl:Class, chorus:Domain ;
   rdfs:label "search" ; chorus:comment "Semantic retrieval across all indexed team knowledge and session history." ;
   chorus:purpose "Provide semantic retrieval across all the team's indexed knowledge and session history." ;
   chorus:ownedBy chorus:principal-wren ; chorus:partOf chorus:chorus ;
-  chorus:atStep chorus:Directing ; chorus:atStream chorus:chorusStream ;
+  chorus:atStep chorus:Directing ; chorus:atStream chorus:value-stream-chorus ;
   chorus:repoTarget "platform/api/src/handlers/chorus-search.ts" .
   # FLAG: no real owl:Class vocab (no chorus:Search class) — omitted, not faked.
 
@@ -76,7 +76,7 @@ chorus:spine a owl:Class, chorus:Domain ;
   rdfs:label "spine" ; chorus:comment "The audit trail — structured log of all team activity and state changes." ;
   chorus:purpose "Be the system's audit trail — the structured event log of all activity and state changes." ;
   chorus:ownedBy chorus:principal-wren ; chorus:partOf chorus:product-spine ;
-  chorus:atStep chorus:Directing ; chorus:atStream chorus:chorusStream ;
+  chorus:atStep chorus:Directing ; chorus:atStream chorus:value-stream-chorus ;
   chorus:repoTarget "platform/api/src/spine-event-write.ts" ; chorus:definesVocabulary chorus:Vertebra, chorus:EmitContract, chorus:EventCategory .
 
 
