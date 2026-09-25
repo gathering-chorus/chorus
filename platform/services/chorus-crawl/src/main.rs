@@ -887,6 +887,24 @@ fn existing_log_rows(api: &str, token: &str) -> Result<Vec<LogInGraph>, String> 
     Ok(out)
 }
 
+/// #4310 — the TestResult names whose `ofTest` is this case. A read against the
+/// store (reads are anonymous); the deletes still go through the door.
+fn results_of_case(case_name: &str) -> Result<Vec<String>, String> {
+    let url = std::env::var("FUSEKI_QUERY")
+        .unwrap_or_else(|_| "http://localhost:3030/pods/query".to_string());
+    let q = cases::results_of_case_query(case_name);
+    let out = Command::new("curl")
+        .args(["-s", "-f", "--max-time", "60", "-H", "Accept: text/csv", "--data-urlencode"])
+        .arg(format!("query={q}"))
+        .arg(&url)
+        .output()
+        .map_err(|e| format!("curl: {e}"))?;
+    if !out.status.success() {
+        return Err(format!("results query failed ({})", out.status));
+    }
+    Ok(cases::result_names_from_csv(&String::from_utf8_lossy(&out.stdout)))
+}
+
 /// Every row of one served class, as flat field maps — paged by the door's own
 /// `links.next`, to exhaustion (see the note on existing_rows' first cut).
 fn fetch_rows(api: &str, token: &str, kind: &str) -> Result<Vec<Vec<(String, String)>>, String> {
@@ -2050,10 +2068,35 @@ fn main() {
                     });
                 }
                 CaseAction::Delete { name, file, case } => {
-                    if let Err(e) =
-                        write(ident, &api, "DELETE", &format!("{case_coll}/{name}"), None)
-                    {
-                        failed.push(format!("delete case {file} :: {case}: {e}"));
+                    // #4310 — a case's results go first, through the same door.
+                    // Deleting only the Test left 746 TestResults pointing at 103
+                    // missing tests (2026-09-25). If the lookup or any result
+                    // delete fails, the case stays, so nothing dangles.
+                    // #4185 reworks case writes/deletes here: keep this cascade.
+                    match results_of_case(&name) {
+                        Ok(results) => {
+                            let res_coll = collection_for(&api, "TestResult");
+                            let mut all_gone = true;
+                            for r in &results {
+                                let del = res_coll.as_ref().map_err(|e| e.clone()).and_then(|c| {
+                                    write(ident, &api, "DELETE", &format!("{c}/{r}"), None)
+                                });
+                                if let Err(e) = del {
+                                    all_gone = false;
+                                    failed.push(format!("delete result {r} of {file} :: {case}: {e}"));
+                                }
+                            }
+                            if all_gone {
+                                if let Err(e) =
+                                    write(ident, &api, "DELETE", &format!("{case_coll}/{name}"), None)
+                                {
+                                    failed.push(format!("delete case {file} :: {case}: {e}"));
+                                }
+                            }
+                        }
+                        Err(e) => failed.push(format!(
+                            "delete case {file} :: {case}: results lookup failed, case kept: {e}"
+                        )),
                     }
                 }
                 CaseAction::Unchanged { .. } => {}
