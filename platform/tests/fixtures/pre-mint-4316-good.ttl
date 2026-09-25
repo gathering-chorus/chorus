@@ -1,0 +1,6 @@
+@prefix c: <https://jeffbridwell.com/chorus#> .
+# every row follows <kind>-slug -> 0
+c:gate-review a c:Gate .
+c:property-role-silas-nudge-word-cap a c:Property .
+c:property-key-covers a c:PropertyKey .
+c:emit-contract-werk a c:EmitContract .

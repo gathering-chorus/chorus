@@ -12,6 +12,7 @@ ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 MANIFEST="$ROOT/platform/config/instance-seed-manifest.txt"
 MODEL_SET_SRC="$ROOT/platform/services/athena-deploy/src/lib.rs"
 KINDS_SRC="$ROOT/platform/services/athena-model/src/lib.rs"
+PRE_MINT="$ROOT/designing/schemas/pre-mint-names.txt"   # #4316 — the same list the seed guard reads
 TMP="$(mktemp -d)"; trap 'rm -rf "$TMP"' EXIT
 pass=0; fail=0
 
@@ -35,12 +36,37 @@ class_of() { # governance-check -> GovernanceCheck; a-p-i-surface -> APISurface 
 
 kinds=$(grep -vE '^\s*(#|$)' "$MANIFEST" | cut -d: -f1 | sort -u)
 [ -n "$kinds" ] || { echo "FAIL: no kinds read from $MANIFEST"; exit 1; }
-for k in $kinds; do
+# #4316 — the seed's IRI guard is checked row by row, not only kind by kind:
+# this test passed on 2026-09-25 while the guard refused 'tool', because the
+# guard read the hand table only. Now: a kind must be in the table or claimed,
+# every subject must be in the chorus namespace, and a HAND-TABLE kind's
+# subjects must follow its mint convention (bare slug, or <kind>-slug). Claimed
+# kinds keep their pre-mint names (seed_iri_ok_with, athena-model lib.rs).
+awk '/^const KINDS: /{on=1; next} on && /^\];/{exit} on' "$KINDS_SRC" \
+  | grep -oE '^\s*\("[a-z0-9-]+", *"[A-Za-z]+", *(true|false)' | tr -d ' "(' > "$TMP/table"
+while IFS=: read -r k f; do
+  [ -n "$k" ] || continue
   c=$(class_of "$k")
-  if grep -qx "$k" "$TMP/hand"; then echo "PASS $k is in the hand table"; pass=$((pass+1))
-  elif grep -qx "$c" "$TMP/claimed"; then echo "PASS $k is claimed ($c)"; pass=$((pass+1))
-  else echo "FAIL $k: no hand-table entry and no domain claims $c — the seed leg will refuse it"; fail=$((fail+1)); fi
-done
+  entry=$(grep "^$k," "$TMP/table" || true)
+  if [ -z "$entry" ] && ! grep -qx "$c" "$TMP/claimed"; then
+    echo "FAIL $k: no hand-table entry and no domain claims $c — the seed leg will refuse it"; fail=$((fail+1)); continue
+  fi
+  bad=0
+  subs=$(riot --output=ntriples "$ROOT/$f" 2>/dev/null | awk -v C="<https://jeffbridwell.com/chorus#$c>" '$2=="<http://www.w3.org/1999/02/22-rdf-syntax-ns#type>" && $3==C {print $1}' | sort -u)
+  for s in $subs; do
+    case "$s" in "<https://jeffbridwell.com/chorus#"*) ;; *) echo "FAIL $k: $s is outside the chorus namespace"; bad=$((bad+1)); continue ;; esac
+    [ -n "$entry" ] || continue
+    local_name=${s#<https://jeffbridwell.com/chorus#}; local_name=${local_name%>}
+    grep -qx "$k:$local_name" "$PRE_MINT" && continue   # named before the mint table, listed by name
+    if [ "${entry##*,}" = "true" ]; then
+      printf '%s' "$local_name" | grep -qE '^[a-z0-9-]+$' || { echo "FAIL $k: $s breaks the bare-slug convention"; bad=$((bad+1)); }
+    else
+      case "$local_name" in "$k-"?*) ;; *) echo "FAIL $k: $s does not start with $k-"; bad=$((bad+1)) ;; esac
+    fi
+  done
+  label="claimed, pre-mint names kept"; [ -n "$entry" ] && label="mint table"
+  if [ "$bad" -eq 0 ]; then echo "PASS $k ($label): $(printf '%s\n' "$subs" | grep -c .) row(s)"; pass=$((pass+1)); else fail=$((fail+1)); fi
+done < <(grep -vE '^\s*(#|$)' "$MANIFEST")
 
 echo "=== Results: $pass passed, $fail failed ==="
 [ "$fail" -eq 0 ]
