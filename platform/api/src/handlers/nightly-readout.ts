@@ -10,9 +10,9 @@
 // give the same answer by construction, not by discipline.
 //
 // Units are Jeff's: minutes, suites, owners, and "what changed since last
-// run". The record is the log nightly-suites.sh writes (RUN|start … RUN|
-// complete blocks with SUITE| rows); every past run is still in it (#3709
-// appends, never truncates), so history is the same file read fully.
+// run". #4156 — the record is the graph rows the run wrote (nightly-graph.ts
+// turns them into runs); parseAllRuns below reads the log format and stays for
+// the tests' fixtures and the one-time backfill, and no route calls it.
 import { parseNightlyLog, displayPath, type NightlyRun, type NightlyRow, type NightlyTally } from './nightly-report';
 
 export type NightlyRunRecord = NightlyRun & { runId: string };

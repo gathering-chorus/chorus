@@ -40,9 +40,10 @@ import { modelRelationshipsHandler, SparqlSelectResponse } from './handlers/athe
 import { buildTestRunReport, lastRunSuites, renderStoredRun, renderTestRun, StoredRun, TEST_RUN_CSS } from './handlers/test-run-report';
 import { classAtlasHandler } from './handlers/class-atlas';
 import { vocabularyHandler } from './handlers/vocabulary';
-import { parseNightlyLog, renderNightlyPage, suiteType, fetchFailingCases, type FetchLike } from './handlers/nightly-report';
+import { renderNightlyPage, suiteType, fetchFailingCases, type FetchLike } from './handlers/nightly-report';
+import { loadRunsFromGraph, fusekiCsv } from './handlers/nightly-graph';
 import { readRecords, renderCrawlerValidatePage, validateDir } from './handlers/crawler-validate';
-import { parseAllRuns, findRun, buildReadout, renderReadoutText } from './handlers/nightly-readout';
+import { findRun, buildReadout, renderReadoutText, type NightlyRunRecord } from './handlers/nightly-readout';
 import { fetchLoomAnalytics, LoomCardRow } from './handlers/loom-analytics';
 
 /** Extract a string message from an unknown error. #2463 wave 1: replaces `catch (err: any)` + `err.message`. */
@@ -538,25 +539,26 @@ app.get('/test-run', async (_req: Request, res: Response) => {
 // the same object, and nightly-suites.sh delivers the text form to Jeff by
 // nudge when a run finishes. A role asked "was last night green" reads this
 // route (`nightly-suites.sh --readout`), so two roles give the same numbers.
-function readNightlyLog(): { text: string; quietForMs: number } {
-  const logPath = process.env.NIGHTLY_LOG_PATH
-    || path.join(os.homedir(), 'Library/Logs/Chorus/nightly-suites.log');
-  try {
-    return { text: fs.readFileSync(logPath, 'utf8'), quietForMs: Date.now() - fs.statSync(logPath).mtimeMs };
-  } catch { return { text: '', quietForMs: 0 }; }
-}
+// #4156 — the runs come from the graph rows the run wrote (TestSuiteRun per
+// SUITE row, PipelineRun for the tail). Nothing here reads nightly-suites.log:
+// a store that does not answer is a 503, never a quiet fallback to the file.
+const NIGHTLY_UNREAD = 'the nightly run record could not be read from the graph (the store did not answer); '
+  + 'refusing to report numbers from anywhere else';
+const nightlyFuseki = (): string => process.env.FUSEKI_QUERY || 'http://localhost:3030/pods/query';
+const nightlyRuns = (): Promise<NightlyRunRecord[] | null> => loadRunsFromGraph(fusekiCsv(nightlyFuseki()));
 
-function readoutFor(runId: string) {
-  const runs = parseAllRuns(readNightlyLog().text);
+function readoutFor(runs: NightlyRunRecord[], runId: string) {
   const run = findRun(runs, runId);
   if (!run) return null;
   const idx = runs.indexOf(run);
   return { runs, run, readout: buildReadout(run, idx > 0 ? runs[idx - 1] : null, runs) };
 }
 
-app.get('/api/chorus/nightly/runs', (_req: Request, res: Response) => {
-  const runs = parseAllRuns(readNightlyLog().text);
+app.get('/api/chorus/nightly/runs', async (_req: Request, res: Response) => {
+  const runs = await nightlyRuns();
+  if (!runs) { res.status(503).json({ error: NIGHTLY_UNREAD }); return; }
   res.json({
+    source: 'graph',
     runs: [...runs].reverse().map((r) => ({
       runId: r.runId, startedAt: r.startedAt, completedAt: r.completedAt ?? null, completed: r.completed,
       suites: r.rows.length, failed: r.rows.filter((x) => x.status === 'fail').length,
@@ -564,9 +566,11 @@ app.get('/api/chorus/nightly/runs', (_req: Request, res: Response) => {
   });
 });
 
-app.get('/api/chorus/nightly/runs/:id', (req: Request, res: Response) => {
-  const found = readoutFor(String(req.params.id));
-  if (!found) { res.status(404).json({ error: `no recorded nightly run ${req.params.id}` }); return; }
+app.get('/api/chorus/nightly/runs/:id', async (req: Request, res: Response) => {
+  const runs = await nightlyRuns();
+  if (!runs) { res.status(503).json({ error: NIGHTLY_UNREAD }); return; }
+  const found = readoutFor(runs, String(req.params.id));
+  if (!found) { res.status(404).json({ error: `no nightly run ${req.params.id} in the graph` }); return; }
   if (req.query.format === 'text') {
     // the link points at THIS host — a werk variant links its own page, not prod's
     const base = process.env.CHORUS_API_PUBLIC_URL || `${req.protocol}://${req.get('host')}`;
@@ -584,22 +588,18 @@ const nightlySuiteType = (r: { kind: string; path: string }): string =>
     try { return fs.readFileSync(path.isAbsolute(p) ? p : path.join(root, p), 'utf8').slice(0, 4096); } catch { return null; }
   });
 app.get('/nightly', async (req: Request, res: Response) => {
-  const { text, quietForMs } = readNightlyLog();
+  const runs = await nightlyRuns();
+  if (!runs) { res.status(503).type('text').send(NIGHTLY_UNREAD + '\n'); return; }
   const wanted = typeof req.query.run === 'string' && req.query.run ? req.query.run : 'latest';
-  const found = readoutFor(wanted);
+  const found = readoutFor(runs, wanted);
   if (!found) {
-    if (wanted !== 'latest') { res.status(404).type('html').send(renderNightlyPage(null)); return; }
-    // no run yet — honest empty state
-    res.type('html').send(renderNightlyPage(parseNightlyLog(text)));
+    // an unknown run is a 404; no run at all is the honest empty state
+    res.status(wanted !== 'latest' ? 404 : 200).type('html').send(renderNightlyPage(null, { missingRun: wanted }));
     return;
   }
-  // #4009 — the log's own mtime is the only honest "when did this run last
-  // say anything". Only meaningful for the newest run.
-  if (found.run === found.runs[found.runs.length - 1]) found.run.quietForMs = quietForMs;
   // #4277 — the failing cases are the run's own TestResult rows; one bounded
   // store read per page, and a store that does not answer yields none.
-  const fuseki = process.env.FUSEKI_QUERY || 'http://localhost:3030/pods/query';
-  const cases = await fetchFailingCases(found.run, fuseki, fetch as unknown as FetchLike);
+  const cases = await fetchFailingCases(found.run, nightlyFuseki(), fetch as unknown as FetchLike);
   res.type('html').send(renderNightlyPage(found.run, {
     readout: found.readout, history: found.runs, cases, typeOf: nightlySuiteType,
   }));

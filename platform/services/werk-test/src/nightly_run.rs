@@ -347,19 +347,41 @@ pub fn registered_test_tally(
     registered: &[(String, String)],
     ran: &[(String, String, String, String)],
 ) -> String {
-    let no_result = tests_with_no_result(registered, ran).len();
+    tally_counts(registered, ran).line()
+}
+
+/// #4156 — the tally as numbers, so the run record in the graph carries the
+/// same six the log line states. One computation, two renderings.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct TallyCounts {
+    pub registered: usize,
+    pub ran: usize,
+    pub passed: usize,
+    pub failed: usize,
+    pub unmeasured: usize,
+    pub no_result: usize,
+}
+
+impl TallyCounts {
+    pub fn line(&self) -> String {
+        format!(
+            "registered {} · ran {} · passed {} · failed {} · unmeasured {} · no result {}",
+            self.registered, self.ran, self.passed, self.failed, self.unmeasured, self.no_result
+        )
+    }
+}
+
+pub fn tally_counts(registered: &[(String, String)], ran: &[(String, String, String, String)]) -> TallyCounts {
     let failed = ran.iter().filter(|(_, _, r, _)| r == "fail").count();
     let passed = ran.iter().filter(|(_, _, r, _)| r == "pass").count();
-    let unmeasured = ran.len() - failed - passed;
-    format!(
-        "registered {} · ran {} · passed {} · failed {} · unmeasured {} · no result {}",
-        registered.len(),
-        ran.len(),
+    TallyCounts {
+        registered: registered.len(),
+        ran: ran.len(),
         passed,
         failed,
-        unmeasured,
-        no_result
-    )
+        unmeasured: ran.len() - failed - passed,
+        no_result: tests_with_no_result(registered, ran).len(),
+    }
 }
 
 /// coverage-floors.yml: `ts:` / `rust:` sections, `  <rel>: <floor>` entries,
@@ -678,9 +700,20 @@ pub fn pipeline_run_body(
     duration_ms: u128,
     tests: Option<RunTestCounts>,
 ) -> String {
+    pipeline_run_body_with(rows, name, trace, duration_ms, tests, None)
+}
+
+fn pipeline_run_body_with(
+    rows: &[SuiteRow],
+    name: &str,
+    trace: &str,
+    duration_ms: u128,
+    tests: Option<RunTestCounts>,
+    outcome: Option<&str>,
+) -> String {
     let failed = rows.iter().filter(|r| r.status == "fail").count();
     let passed = rows.iter().filter(|r| r.status == "pass").count();
-    let outcome = if failed == 0 { "green" } else { "red" };
+    let outcome = outcome.unwrap_or(if failed == 0 { "green" } else { "red" });
     let mut body = format!(
         "{{\"name\":\"{}\",\"forPipeline\":\"pipeline-cicd\",\"traceId\":\"{}\",\"runOutcome\":\"{}\",\"runDurationMs\":\"{}\",\"suitesRun\":\"{}\",\"suitesFailed\":\"{}\",\"suitesTotal\":\"{}\"",
         name,
@@ -699,6 +732,186 @@ pub fn pipeline_run_body(
     }
     body.push('}');
     body
+}
+
+/// #4156 — the run record's tail: what the page and the readout read from the
+/// graph instead of the log. Every field is optional on the shape; a reading
+/// the run did not take is omitted, never sent as zero.
+#[derive(Debug, Clone, Default)]
+pub struct RunRecord {
+    /// the run's id: its start stamp, the same runTs its suite rows carry
+    pub run_ts: String,
+    pub completed_at: String,
+    /// "stopped" when a person or agent-state ended the run; else derived
+    pub outcome: Option<String>,
+    pub tally: Option<TallyCounts>,
+    pub errors: Option<crate::why::ErrorCounts>,
+}
+
+/// `pipeline_run_body` plus the #4156 run record fields.
+pub fn pipeline_run_record_body(
+    rows: &[SuiteRow],
+    name: &str,
+    trace: &str,
+    duration_ms: u128,
+    tests: Option<RunTestCounts>,
+    rec: &RunRecord,
+) -> String {
+    let mut body = pipeline_run_body_with(rows, name, trace, duration_ms, tests, rec.outcome.as_deref());
+    body.pop();
+    body.push_str(&format!(",\"runTs\":\"{}\"", crate::json_escape(&rec.run_ts)));
+    if !rec.completed_at.is_empty() {
+        body.push_str(&format!(",\"runCompletedAt\":\"{}\"", crate::json_escape(&rec.completed_at)));
+    }
+    if let Some(t) = rec.tally {
+        body.push_str(&format!(
+            ",\"testsRegistered\":\"{}\",\"testsPassed\":\"{}\",\"testsUnmeasured\":\"{}\",\"testsNoResult\":\"{}\"",
+            t.registered, t.passed, t.unmeasured, t.no_result
+        ));
+        if tests.is_none() {
+            body.push_str(&format!(",\"testsRun\":\"{}\",\"testsFailed\":\"{}\"", t.ran, t.failed));
+        }
+    }
+    if let Some(e) = rec.errors {
+        body.push_str(&format!(
+            ",\"failedCaseCount\":\"{}\",\"exceptionCount\":\"{}\",\"httpErrorCount\":\"{}\",\"assertionFailureCount\":\"{}\",\"otherErrorCount\":\"{}\"",
+            e.failed_cases, e.exceptions, e.http, e.assertions, e.other
+        ));
+    }
+    body.push('}');
+    body
+}
+
+/// #4156 — one nightly suite row as a TestSuiteRun, written the moment the row
+/// lands. The name is lower-case because the store lowercases names on the way
+/// in and reads by the literal path (#4263: one capital = 201 then 404).
+pub fn suite_row_payload(run_ts: &str, order: usize, row: &SuiteRow, ts_ms: u128) -> String {
+    format!(
+        "{{\"name\":\"{}\",\"runTs\":\"{}\",\"suiteOrder\":\"{}\",\"suiteKind\":\"{}\",\"filePath\":\"{}\",\"suiteOwner\":\"{}\",\"result\":\"{}\",\"suiteSummary\":\"{}\",\"ts\":\"{}\"}}",
+        suite_row_name(run_ts, order),
+        crate::json_escape(run_ts),
+        order,
+        crate::json_escape(&row.kind),
+        crate::json_escape(&row.path),
+        crate::json_escape(&row.owner),
+        crate::json_escape(&row.status),
+        crate::json_escape(&row.summary),
+        ts_ms
+    )
+}
+
+/// #4156 — does this run write its record to the graph? A werk-rooted run
+/// never writes the team's store (#3722) unless the caller names a store with
+/// OWLAPI; NIGHTLY_GRAPH_ROWS=0 turns it off anywhere.
+pub fn graph_rows_enabled(root: &str, flag: Option<&str>, owlapi: Option<&str>) -> bool {
+    if flag == Some("0") {
+        return false;
+    }
+    !root.contains("/chorus-werk/") || owlapi.map(|v| !v.is_empty()).unwrap_or(false)
+}
+
+/// #4156 — a run as the log recorded it, for the one-time backfill of runs
+/// that ran before the runner wrote its rows to the graph.
+#[derive(Debug, Clone, Default)]
+pub struct LoggedRun {
+    pub record: RunRecord,
+    pub rows: Vec<SuiteRow>,
+    /// the run reached RUN|complete or RUN|stopped; a run cut off mid-flight
+    /// gets its suite rows and no record, which the page reads as unfinished
+    pub ended: bool,
+}
+
+/// The last `n` runs in a nightly log, oldest first.
+pub fn logged_runs(log: &str, n: usize) -> Vec<LoggedRun> {
+    let mut runs: Vec<LoggedRun> = Vec::new();
+    for line in log.lines() {
+        if let Some(rest) = line.strip_prefix("RUN|start|") {
+            let ts = rest.split('|').next().unwrap_or("").to_string();
+            runs.push(LoggedRun { record: RunRecord { run_ts: ts, ..Default::default() }, ..Default::default() });
+            continue;
+        }
+        let Some(run) = runs.last_mut() else { continue };
+        if run.ended {
+            continue;
+        }
+        if let Some(row) = parse_suite_line(line) {
+            run.rows.push(row);
+        } else if let Some(rest) = line.strip_prefix("RUN|tally|") {
+            run.record.tally = parse_tally_line(rest);
+        } else if let Some(rest) = line.strip_prefix("RUN|errors|") {
+            run.record.errors = parse_errors_line(rest);
+        } else if let Some(rest) = line.strip_prefix("RUN|complete|") {
+            run.record.completed_at = rest.split('|').next().unwrap_or("").to_string();
+            run.ended = true;
+        } else if let Some(rest) = line.strip_prefix("RUN|stopped|") {
+            run.record.completed_at = rest.split('|').next().unwrap_or("").to_string();
+            run.record.outcome = Some("stopped".into());
+            run.ended = true;
+        }
+    }
+    let skip = runs.len().saturating_sub(n);
+    runs.into_iter().skip(skip).collect()
+}
+
+fn labelled_counts(body: &str) -> HashMap<String, usize> {
+    body.split('·')
+        .filter_map(|seg| {
+            let mut parts: Vec<&str> = seg.split_whitespace().collect();
+            let n = parts.pop()?.parse::<usize>().ok()?;
+            Some((parts.join(" "), n))
+        })
+        .collect()
+}
+
+/// `registered N · ran N · …`; None for the "registry unreadable" sentence.
+pub fn parse_tally_line(body: &str) -> Option<TallyCounts> {
+    let m = labelled_counts(body);
+    Some(TallyCounts {
+        registered: *m.get("registered")?,
+        ran: *m.get("ran")?,
+        passed: *m.get("passed")?,
+        failed: *m.get("failed")?,
+        unmeasured: *m.get("unmeasured")?,
+        no_result: *m.get("no result")?,
+    })
+}
+
+/// `failed cases N · exceptions N · http N · assertions N · other N`.
+pub fn parse_errors_line(body: &str) -> Option<crate::why::ErrorCounts> {
+    let m = labelled_counts(body);
+    Some(crate::why::ErrorCounts {
+        failed_cases: *m.get("failed cases")?,
+        exceptions: *m.get("exceptions")?,
+        http: *m.get("http")?,
+        assertions: *m.get("assertions")?,
+        other: *m.get("other")?,
+    })
+}
+
+/// Seconds between two `YYYY-MM-DDTHH:MM:SS` stamps on the same clock, or 0.
+pub fn stamp_gap_secs(from: &str, to: &str) -> u64 {
+    fn secs(s: &str) -> Option<i64> {
+        let (d, t) = s.split_once('T')?;
+        let mut dp = d.split('-').map(|x| x.parse::<i64>().ok());
+        let (y, mo, da) = (dp.next()??, dp.next()??, dp.next()??);
+        let mut tp = t.split(':').map(|x| x.parse::<i64>().ok());
+        let (h, mi, se) = (tp.next()??, tp.next()??, tp.next()??);
+        // days from civil (Howard Hinnant)
+        let y2 = if mo <= 2 { y - 1 } else { y };
+        let era = y2.div_euclid(400);
+        let yoe = y2 - era * 400;
+        let doy = (153 * (if mo > 2 { mo - 3 } else { mo + 9 }) + 2) / 5 + da - 1;
+        let doe = yoe * 365 + yoe / 4 - yoe / 100 + doy;
+        Some((era * 146097 + doe) * 86400 + h * 3600 + mi * 60 + se)
+    }
+    match (secs(from), secs(to)) {
+        (Some(a), Some(b)) if b >= a => (b - a) as u64,
+        _ => 0,
+    }
+}
+
+pub fn suite_row_name(run_ts: &str, order: usize) -> String {
+    format!("nightly-suite-{}-{}", run_ts.replace(':', "-").to_ascii_lowercase(), order)
 }
 
 /// The per-row `test.suite.result` fields (`emit_suite_results`), with the
@@ -1431,6 +1644,107 @@ mod crawl_line_4180 {
 }
 
 /// #4247 — one unit for test reporting: the registered test.
+#[cfg(test)]
+mod graph_record_4156 {
+    use super::*;
+
+    fn row(status: &str, summary: &str) -> SuiteRow {
+        SuiteRow::new("bats", "platform/tests/a.bats", "principal-kade", status, summary)
+    }
+
+    #[test]
+    fn a_suite_row_carries_everything_the_log_line_did() {
+        let p = suite_row_payload("2026-09-25T15:37:59", 7, &row("fail", "1 pass, 1 fail (\"x\" | y)"), 1790365000000);
+        for want in [
+            r#""name":"nightly-suite-2026-09-25t15-37-59-7""#,
+            r#""runTs":"2026-09-25T15:37:59""#,
+            r#""suiteOrder":"7""#,
+            r#""suiteKind":"bats""#,
+            r#""filePath":"platform/tests/a.bats""#,
+            r#""suiteOwner":"principal-kade""#,
+            r#""result":"fail""#,
+            r#""suiteSummary":"1 pass, 1 fail (\"x\" | y)""#,
+        ] {
+            assert!(p.contains(want), "missing {want} in {p}");
+        }
+        // the name is lower-case: the store lowercases on the way in
+        assert_eq!(suite_row_name("2026-09-25T15:37:59", 7), suite_row_name("2026-09-25T15:37:59", 7).to_ascii_lowercase());
+    }
+
+    #[test]
+    fn the_run_record_carries_tally_errors_and_its_id() {
+        let rec = RunRecord {
+            run_ts: "2026-09-25T15:37:59".into(),
+            completed_at: "2026-09-25T16:40:01".into(),
+            outcome: None,
+            tally: Some(TallyCounts { registered: 10, ran: 9, passed: 7, failed: 1, unmeasured: 1, no_result: 1 }),
+            errors: Some(crate::why::ErrorCounts { failed_cases: 1, exceptions: 1, http: 0, assertions: 0, other: 0 }),
+        };
+        let b = pipeline_run_record_body(&[row("fail", "")], "nightly-x", "t", 5, None, &rec);
+        for want in [
+            r#""runOutcome":"red""#, r#""runTs":"2026-09-25T15:37:59""#, r#""runCompletedAt":"2026-09-25T16:40:01""#,
+            r#""testsRegistered":"10""#, r#""testsRun":"9""#, r#""testsPassed":"7""#, r#""testsFailed":"1""#,
+            r#""testsUnmeasured":"1""#, r#""testsNoResult":"1""#, r#""failedCaseCount":"1""#, r#""exceptionCount":"1""#,
+        ] {
+            assert!(b.contains(want), "missing {want} in {b}");
+        }
+        assert!(b.ends_with('}') && b.matches('{').count() == 1, "one flat object: {b}");
+    }
+
+    /// NEGATIVE PROOF — a reading the run did not take is absent, never zero;
+    /// a stopped run says stopped, not red or green.
+    #[test]
+    fn no_reading_no_field_and_a_stop_is_a_stop() {
+        let rec = RunRecord { run_ts: "r".into(), completed_at: "c".into(), outcome: Some("stopped".into()), tally: None, errors: None };
+        let b = pipeline_run_record_body(&[row("pass", "")], "n", "t", 5, None, &rec);
+        assert!(b.contains(r#""runOutcome":"stopped""#), "{b}");
+        for absent in ["testsRegistered", "testsRun", "failedCaseCount", "exceptionCount"] {
+            assert!(!b.contains(absent), "{absent} must be absent: {b}");
+        }
+    }
+
+    const LOG: &str = "RUN|start|2026-09-24T03:00:00|pid=1\n\
+SUITE|cargo|platform/services/x|silas|fail|1 pass, 1 fail\n\
+SUITE|bats|platform/tests/a.bats|kade|pass|bats: 1 passed, 0 failed\n\
+RUN|tally|registered 10 · ran 9 · passed 7 · failed 1 · unmeasured 1 · no result 1\n\
+RUN|errors|failed cases 1 · exceptions 0 · http 1 · assertions 0 · other 0\n\
+RUN|complete|2026-09-24T04:01:05|suites=2\n\
+RUN|start|2026-09-25T15:37:59|pid=2\n\
+SUITE|lint|/chorus|kade|pass|1 pass, 0 fail\n\
+RUN|tally|registry unreadable — the run cannot say what it did not run\n";
+
+    #[test]
+    fn the_backfill_reads_each_run_as_the_log_wrote_it() {
+        let runs = logged_runs(LOG, 10);
+        assert_eq!(runs.len(), 2);
+        let a = &runs[0];
+        assert!(a.ended);
+        assert_eq!(a.record.run_ts, "2026-09-24T03:00:00");
+        assert_eq!(a.record.completed_at, "2026-09-24T04:01:05");
+        assert_eq!(a.rows.len(), 2);
+        assert_eq!(a.record.tally.unwrap().no_result, 1);
+        assert_eq!(a.record.errors.unwrap().http, 1);
+        assert_eq!(stamp_gap_secs(&a.record.run_ts, &a.record.completed_at), 3665);
+        // a run cut off mid-flight: rows, no record, no invented tally
+        let b = &runs[1];
+        assert!(!b.ended);
+        assert_eq!(b.rows.len(), 1);
+        assert!(b.record.tally.is_none(), "the unreadable-registry sentence is not a reading");
+        // only the last n
+        assert_eq!(logged_runs(LOG, 1)[0].record.run_ts, "2026-09-25T15:37:59");
+    }
+
+    #[test]
+    fn a_werk_run_writes_no_prod_graph_rows() {
+        assert!(graph_rows_enabled("/Users/j/CascadeProjects/chorus", None, None));
+        // NEGATIVE PROOF: a werk root is off unless it names a store
+        assert!(!graph_rows_enabled("/Users/j/CascadeProjects/chorus-werk/kade-4156", None, None));
+        assert!(!graph_rows_enabled("/Users/j/CascadeProjects/chorus-werk/kade-4156", None, Some("")));
+        assert!(graph_rows_enabled("/Users/j/CascadeProjects/chorus-werk/kade-4156", None, Some("http://localhost:3364")));
+        assert!(!graph_rows_enabled("/Users/j/CascadeProjects/chorus", Some("0"), None));
+    }
+}
+
 #[cfg(test)]
 mod one_unit_4247 {
     use super::{parse_case_line, registered_test_tally, tests_with_no_result};

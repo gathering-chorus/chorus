@@ -76,6 +76,33 @@ chorus:triplesWritten a owl:DatatypeProperty ;
     rdfs:comment "athena's own number — triples a run landed in the store." ;
     rdfs:domain chorus:PipelineRun ; rdfs:range xsd:integer .
 
+# #4156 — the rest of the run record, so the page and the readout read the
+# run from here and not from the log. runTs is the run's id: the start stamp
+# its suite rows carry too.
+chorus:runCompletedAt a owl:DatatypeProperty ;
+    rdfs:label "completed at" ; rdfs:domain chorus:PipelineRun ; rdfs:range xsd:string ;
+    rdfs:comment "When the run wrote its last line (local clock, same form as runTs). With runOutcome 'stopped' it is when the run was stopped." .
+chorus:testsRegistered a owl:DatatypeProperty ;
+    rdfs:label "tests registered" ; rdfs:domain chorus:PipelineRun ; rdfs:range xsd:integer .
+chorus:testsPassed a owl:DatatypeProperty ;
+    rdfs:label "tests passed" ; rdfs:domain chorus:PipelineRun ; rdfs:range xsd:integer .
+chorus:testsUnmeasured a owl:DatatypeProperty ;
+    rdfs:label "tests unmeasured" ; rdfs:domain chorus:PipelineRun ; rdfs:range xsd:integer .
+chorus:testsNoResult a owl:DatatypeProperty ;
+    rdfs:label "tests with no result" ; rdfs:domain chorus:PipelineRun ; rdfs:range xsd:integer ;
+    rdfs:comment "Registered tests the run produced no result for." .
+chorus:failedCaseCount a owl:DatatypeProperty ;
+    rdfs:label "failed cases" ; rdfs:domain chorus:PipelineRun ; rdfs:range xsd:integer ;
+    rdfs:comment "Failed cases the run read a reason for (#4155), one per case." .
+chorus:exceptionCount a owl:DatatypeProperty ;
+    rdfs:label "exceptions" ; rdfs:domain chorus:PipelineRun ; rdfs:range xsd:integer .
+chorus:httpErrorCount a owl:DatatypeProperty ;
+    rdfs:label "http errors" ; rdfs:domain chorus:PipelineRun ; rdfs:range xsd:integer .
+chorus:assertionFailureCount a owl:DatatypeProperty ;
+    rdfs:label "assertion failures" ; rdfs:domain chorus:PipelineRun ; rdfs:range xsd:integer .
+chorus:otherErrorCount a owl:DatatypeProperty ;
+    rdfs:label "other errors" ; rdfs:domain chorus:PipelineRun ; rdfs:range xsd:integer .
+
 # ── Shapes ──────────────────────────────────────────────────────────────────
 # Home graph: urn:chorus:domains:pipelines, derived from the domain's own
 # definesVocabulary claim (#4187). These three carried a chorus:instancesGraph
@@ -114,4 +141,17 @@ chorus:PipelineRunShape a sh:NodeShape ;
     # NOTE: the deploy MERGES sh:property blank nodes and never removes a
     # dropped one (#4250), so its block survives in urn:chorus:ontology as a
     # ghost until an explicit delete. Do not report it as retired from the model.
-    sh:property [ sh:path chorus:triplesWritten ] .
+    sh:property [ sh:path chorus:triplesWritten ] ;
+    # #4156 — the run record the page reads. All optional: a run that could
+    # not take a reading omits the field, never sends a zero.
+    sh:property [ sh:path chorus:runTs ; sh:datatype xsd:string ] ;
+    sh:property [ sh:path chorus:runCompletedAt ] ;
+    sh:property [ sh:path chorus:testsRegistered ] ;
+    sh:property [ sh:path chorus:testsPassed ] ;
+    sh:property [ sh:path chorus:testsUnmeasured ] ;
+    sh:property [ sh:path chorus:testsNoResult ] ;
+    sh:property [ sh:path chorus:failedCaseCount ] ;
+    sh:property [ sh:path chorus:exceptionCount ] ;
+    sh:property [ sh:path chorus:httpErrorCount ] ;
+    sh:property [ sh:path chorus:assertionFailureCount ] ;
+    sh:property [ sh:path chorus:otherErrorCount ] .

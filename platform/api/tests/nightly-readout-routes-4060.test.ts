@@ -1,10 +1,14 @@
 // @test-type: unit — signal:api is fixture-data (in-process harness on an ephemeral port, no live :3340)
 // #4060 — the readout is SERVED, so the nudge, the page and any role read one
-// source. Hermetic: the in-process harness on an ephemeral port, the log is a
-// fixture file the test owns (NIGHTLY_LOG_PATH seam, #3528 — never ~/Library).
+// source. #4156 — that source is the graph rows the run wrote. Hermetic: the
+// in-process harness on an ephemeral port, and a stand-in store answering the
+// page's queries with the rows this log fixture's runs would have written.
+// NIGHTLY_LOG_PATH points at a file that does not exist: the routes must not
+// need it.
 import fs from 'fs';
 import os from 'os';
 import path from 'path';
+import { graphFromLog, fakeStore } from './lib/nightly-graph-fixture';
 
 const LOG = [
   'RUN|start|2026-09-01T03:00:05|pid=1',
@@ -19,14 +23,18 @@ const LOG = [
 ].join('\n');
 
 let app: import('./lib/test-app').TestApp;
+let store: { url: string; close(): Promise<void> };
 beforeAll(async () => {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'nightly-4060-'));
-  process.env.NIGHTLY_LOG_PATH = path.join(dir, 'nightly-suites.log');
-  fs.writeFileSync(process.env.NIGHTLY_LOG_PATH, LOG);
+  // #4156 NEGATIVE PROOF — the log is renamed away; every route below still
+  // answers, from the graph
+  process.env.NIGHTLY_LOG_PATH = path.join(dir, 'nightly-suites.log.renamed-away');
+  store = await fakeStore(graphFromLog(LOG));
+  process.env.FUSEKI_QUERY = store.url;
   const { startTestApp } = await import('./lib/test-app');
   app = await startTestApp();
 });
-afterAll(async () => { await app.close(); });
+afterAll(async () => { await app.close(); await store.close(); });
 
 describe('GET /api/chorus/nightly/runs', () => {
   it('lists every recorded run, newest first, with its verdict', async () => {

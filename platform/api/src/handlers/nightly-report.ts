@@ -1,8 +1,10 @@
 // #3920 — /nightly: the rendered viewing surface for the nightly run.
 // One page answering "was the night green?" — verdict first, reds on top,
-// typed skips counted, killed runs named PARTIAL. Reads the same log
-// nightly-suites.sh writes (RUN|/SUITE| lines): the page renders the record,
+// typed skips counted, killed runs named PARTIAL. The page renders the record,
 // it never re-derives verdicts (one verdict vocabulary, #3920 fold).
+// #4156 — the record is the graph rows the run wrote (nightly-graph.ts turns
+// them into NightlyRun). parseNightlyLog below stays for the tests' log-format
+// fixtures and the runner's own round-trip; no route reads the log.
 
 export type NightlyRow = {
   kind: string;
@@ -216,6 +218,8 @@ export type NightlyPageOpts = {
   cases?: CasesBySuite;
   /** #4277 — the type a suite ran as (declared header for file suites) */
   typeOf?: (r: NightlyRow) => string;
+  /** #4156 — the run asked for when the graph holds no rows for it */
+  missingRun?: string;
 };
 
 /** #4073 — "4 red: 2 product broke, 1 test wrong, 1 unmeasured", derived from
@@ -363,7 +367,7 @@ export function parseFailingCases(csv: string): CasesBySuite {
   return Object.fromEntries(out);
 }
 
-function csvCells(line: string): string[] {
+export function csvCells(line: string): string[] {
   // one cell per match: a quoted field (doubled quotes inside) or a bare run to the next comma
   const cells: string[] = [];
   const re = /"((?:[^"]|"")*)"|([^,]*)/g;
@@ -524,7 +528,12 @@ function deltaLine(r: NonNullable<NightlyPageOpts['readout']>): string {
 /** Render the run as the one-look report page. */
 export function renderNightlyPage(run: NightlyRun | null, opts?: NightlyPageOpts): string {
   if (!run) {
-    return page('Nightly', '<div class="banner empty">No nightly run recorded yet — first run lands at 03:00.</div>');
+    // #4156 — the page reads the graph only. No rows is said, never filled in
+    // from the log.
+    const wanted = opts?.missingRun && opts.missingRun !== 'latest' ? opts.missingRun : '';
+    return page('Nightly', wanted
+      ? `<div class="banner empty">No rows for nightly run ${esc(wanted)} in the graph — the page shows only what the run wrote there.</div>`
+      : '<div class="banner empty">No nightly run in the graph yet — the next run writes its rows as each suite lands.</div>');
   }
   const reds = run.rows.filter((r) => r.status === 'fail');
   const { verdict } = runVerdict(run, reds.length);
