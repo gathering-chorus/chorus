@@ -1290,8 +1290,62 @@ pub fn parse_count_object(json: &str) -> Result<Vec<(String, usize)>, String> {
     Ok(out)
 }
 
+/// #4310 — a Test row's results go with it. The case Delete removed the Test
+/// and left every TestResult whose required `ofTest` named it: 746 results
+/// pointed at 103 missing tests on 2026-09-25, all of them this crawler's
+/// deletes. The query finds a case's results by that edge; the caller deletes
+/// them through the same door before it deletes the case.
+pub fn results_of_case_query(case_name: &str) -> String {
+    let safe: String = case_name
+        .chars()
+        .filter(|c| c.is_ascii_alphanumeric() || *c == '-' || *c == '_' || *c == '.')
+        .collect();
+    format!(
+        "PREFIX chorus: <https://jeffbridwell.com/chorus#> SELECT ?r WHERE {{ GRAPH <urn:chorus:domains:tests> {{ ?r chorus:ofTest <https://jeffbridwell.com/chorus#{safe}> }} }}"
+    )
+}
+
+/// Result row names out of the query's CSV answer (header first). A result's
+/// IRI is `…#test-result-<name>`; the door addresses it by `<name>`.
+pub fn result_names_from_csv(csv: &str) -> Vec<String> {
+    csv.lines()
+        .skip(1)
+        .filter_map(|l| {
+            let iri = l.trim().trim_matches('"');
+            iri.rsplit_once("#test-result-").map(|(_, n)| n.to_string())
+        })
+        .filter(|n| !n.is_empty())
+        .collect()
+}
+
 #[cfg(test)]
 mod cases_4185 {
+    // #4310 — a deleted case must take its results with it.
+    #[test]
+    fn a_case_query_asks_for_results_by_their_oftest_edge() {
+        let q = results_of_case_query("test-a-bats-one-1a2b");
+        assert!(q.contains("chorus:ofTest <https://jeffbridwell.com/chorus#test-a-bats-one-1a2b>"));
+        assert!(q.contains("GRAPH <urn:chorus:domains:tests>"));
+    }
+
+    #[test]
+    fn a_case_name_cannot_break_out_of_the_query() {
+        let q = results_of_case_query("x> } DROP ALL { <y");
+        assert!(!q.contains('}') || q.matches('}').count() == 2);
+        assert!(!q.contains("DROP ALL"));
+    }
+
+    #[test]
+    fn result_names_come_from_the_iri_the_store_answers_with() {
+        let csv = "r\nhttps://jeffbridwell.com/chorus#test-result-testresult-1-2\nhttps://jeffbridwell.com/chorus#test-result-testresult-3-4\n";
+        assert_eq!(result_names_from_csv(csv), vec!["testresult-1-2", "testresult-3-4"]);
+    }
+
+    #[test]
+    fn an_empty_answer_means_no_results_to_delete() {
+        assert!(result_names_from_csv("r\n").is_empty());
+    }
+
     use super::*;
 
     // ── the authored header (#3924, ported from 3924-declared-wins.bats) ──
