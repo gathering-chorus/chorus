@@ -1,0 +1,21 @@
+@prefix c: <https://jeffbridwell.com/chorus#> .
+@prefix rdfs: <http://www.w3.org/2000/01/rdf-schema#> .
+@prefix dcterms: <http://purl.org/dc/terms/> .
+# #4302 negative proof: seven violations, one per rule (and two core attributes).
+# sA open, no live run                       -> OpenSessionHasOneLiveRun
+c:sA a c:Session ; rdfs:label "sA" ; c:ownedBy c:principal-silas ; c:tokenId "t" ; c:issuedAt "2026-09-25T14:00:00Z" ; c:expiresAt "2026-09-25T14:10:00Z" ; c:sessionState "open" ; c:hostAccount "jeffbridwell" ; c:actsAs c:role-silas ; c:startedAt "2026-09-25T14:00:00Z" .
+# sB open, no role                           -> OpenSessionActsAsARole
+c:sB a c:Session ; rdfs:label "sB" ; c:ownedBy c:principal-silas ; c:tokenId "t" ; c:issuedAt "2026-09-25T14:00:00Z" ; c:expiresAt "2026-09-25T14:10:00Z" ; c:sessionState "open" ; c:hostAccount "jeffbridwell" ; c:startedAt "2026-09-25T14:00:00Z" .
+c:rB a c:SessionRun ; rdfs:label "rB" ; rdfs:comment "fixture" ; dcterms:created "2026-09-25T14:00:00Z" ; dcterms:creator "silas" ; dcterms:modified "2026-09-25T14:00:00Z" ; c:runOf c:sB ; c:startedAt "2026-09-25T14:00:00Z" ; c:conversationId "conv-rB" ; c:ownedBy c:principal-silas .
+c:pB a c:Presence ; rdfs:label "pB" ; rdfs:comment "fixture" ; dcterms:created "2026-09-25T14:00:00Z" ; dcterms:creator "silas" ; dcterms:modified "2026-09-25T14:00:00Z" ; c:ownedBy c:principal-silas ; c:presenceOf c:rB ; c:pane "%1" ; c:tty "/dev/ttys005" ; c:hostAccount "jeffbridwell" ; c:onMachine c:library ; c:reachability "reachable" ; c:lastDeliveredAt "2026-09-25T14:05:00Z" .
+# rC live with no presence                   -> LiveRunHasOnePresence
+c:sC a c:Session ; rdfs:label "sC" ; c:ownedBy c:principal-silas ; c:tokenId "t" ; c:issuedAt "2026-09-25T14:00:00Z" ; c:expiresAt "2026-09-25T14:10:00Z" ; c:sessionState "open" ; c:hostAccount "jeffbridwell" ; c:actsAs c:role-silas ; c:startedAt "2026-09-25T14:00:00Z" .
+c:rC a c:SessionRun ; rdfs:label "rC" ; rdfs:comment "fixture" ; dcterms:created "2026-09-25T14:00:00Z" ; dcterms:creator "silas" ; dcterms:modified "2026-09-25T14:00:00Z" ; c:runOf c:sC ; c:startedAt "2026-09-25T14:00:00Z" ; c:conversationId "conv-rC" ; c:ownedBy c:principal-silas .
+# pD reachable with no delivery, no comment  -> ReachableNeedsADelivery + comment minCount
+c:sD a c:Session ; rdfs:label "sD" ; c:ownedBy c:principal-silas ; c:tokenId "t" ; c:issuedAt "2026-09-25T14:00:00Z" ; c:expiresAt "2026-09-25T14:10:00Z" ; c:sessionState "open" ; c:hostAccount "jeffbridwell" ; c:actsAs c:role-silas ; c:startedAt "2026-09-25T14:00:00Z" .
+c:rD a c:SessionRun ; rdfs:label "rD" ; rdfs:comment "fixture" ; dcterms:created "2026-09-25T14:00:00Z" ; dcterms:creator "silas" ; dcterms:modified "2026-09-25T14:00:00Z" ; c:runOf c:sD ; c:startedAt "2026-09-25T14:00:00Z" ; c:conversationId "conv-rD" ; c:ownedBy c:principal-silas .
+c:pD a c:Presence ; rdfs:label "pD" ; dcterms:created "2026-09-25T14:00:00Z" ; dcterms:creator "silas" ; dcterms:modified "2026-09-25T14:00:00Z" ; c:ownedBy c:principal-silas ; c:presenceOf c:rD ; c:pane "%1" ; c:tty "/dev/ttys005" ; c:hostAccount "jeffbridwell" ; c:onMachine c:library ; c:reachability "reachable" .
+# rE ended with no reason                    -> EndedRunSaysWhy
+c:rE a c:SessionRun ; rdfs:label "rE" ; rdfs:comment "fixture" ; dcterms:created "2026-09-25T14:00:00Z" ; dcterms:creator "silas" ; dcterms:modified "2026-09-25T14:00:00Z" ; c:runOf c:sC ; c:startedAt "2026-09-25T14:00:00Z" ; c:conversationId "conv-rE" ; c:ownedBy c:principal-silas ; c:runEndedAt "2026-09-25T14:02:00Z" .
+# rF has no owner                            -> ownedBy minCount
+c:rF a c:SessionRun ; rdfs:label "rF" ; rdfs:comment "fixture" ; dcterms:created "2026-09-25T14:00:00Z" ; dcterms:creator "silas" ; dcterms:modified "2026-09-25T14:00:00Z" ; c:runOf c:sD ; c:startedAt "2026-09-25T14:00:00Z" ; c:conversationId "conv-rF" ; c:runEndedAt "2026-09-25T14:01:00Z" ; c:endReason "crash" .

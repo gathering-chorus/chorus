@@ -36,7 +36,9 @@ fn the_real_manifest_holds_every_set_the_deploy_stages() {
     let sets = parse_domain_sets(&text).expect("the shipped manifest must parse");
     let names: Vec<&str> = sets.iter().map(|s| s.name.as_str()).collect();
     let expected = ["security", "code-vocab", "roles", "infrastructure",
-                    "principles", "values", "services", "practices", "vocabulary"];
+                    "principles", "values", "services", "practices", "vocabulary",
+                    // #4302 — the #4293 Layer rows and domain edges, served from the domains graph
+                    "domains"];
     for want in expected {
         assert!(names.contains(&want), "{want} missing from {names:?}");
     }
@@ -44,7 +46,7 @@ fn the_real_manifest_holds_every_set_the_deploy_stages() {
         assert!(expected.contains(got), "{got} is in the manifest and not in this test");
     }
     let files: usize = sets.iter().map(|s| s.files.len()).sum();
-    assert_eq!(files, 15, "13 files across the original eight sets, plus the vocabulary set's two");
+    assert_eq!(files, 16, "13 files across the original eight sets, the vocabulary set's two, and the domains set's one (#4302)");
 }
 
 #[test]

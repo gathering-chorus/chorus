@@ -1,0 +1,4 @@
+@prefix c: <https://jeffbridwell.com/chorus#> .
+c:principal-silas a c:Principal .
+c:role-silas a c:Role .
+c:library a c:Machine .

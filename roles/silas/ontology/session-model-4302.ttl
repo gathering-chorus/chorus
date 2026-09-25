@@ -1,0 +1,277 @@
+@prefix chorus:  <https://jeffbridwell.com/chorus#> .
+@prefix owl:     <http://www.w3.org/2002/07/owl#> .
+@prefix rdfs:    <http://www.w3.org/2000/01/rdf-schema#> .
+@prefix sh:      <http://www.w3.org/ns/shacl#> .
+@prefix xsd:     <http://www.w3.org/2001/XMLSchema#> .
+@prefix dcterms: <http://purl.org/dc/terms/> .
+
+# #4302 — Login ER step 1, the identity part: what a session is.
+#
+# Settled 2026-09-25 14:12–15:35 with Jeff, Wren and Kade (notebook:
+# https://claude.ai/artifact/D1haAfYc3JPWZrXthWJ6cY). Jeff's words:
+#   "a session starts with a login and ends with a logout right?"
+#   "the rebuild prompt — in a nushell — is what session domain is in chorus"
+#   "why not its important to know the principal and session"
+#
+#   Session     one principal in one role, from login to logout (exists, #4202)
+#   SessionRun  one Claude process inside it; a restart or a fresh conversation
+#               after a refusal is a new run, linked to the one before
+#   Presence    where a run can be reached: proven by a delivery that landed,
+#               not by a pid or a registry file (Kade: "running or registered
+#               doesn't count")
+#
+# EDGES POINT UP, not down. A run points at its session and a presence at its
+# run. The write API replaces a whole row on PUT and refuses an edge whose
+# target does not exist yet, so a Session that listed its runs would need
+# rewriting on every restart, and could not be written before its first run.
+# Pointing up, the order is the order things happen: login, session, run,
+# presence.
+#
+# THE OPEN-SESSION RULES are SPARQL constraints, not minCounts. 85 Session rows
+# exist from before this card, 80 of them past their expiry and still reading
+# open; they have no role, run or presence and nobody can honestly invent one.
+# The rules bind every session that is open NOW: step 2 (seed) closes the
+# expired ones, and from then on a live session with no role, run or presence
+# is a violation, not a gap.
+#
+# CORE ATTRIBUTES (Jeff 15:35, "5 yes"): every new class requires label,
+# comment, ownedBy (a Principal), created, creator and modified. The DAL stamps
+# the last three on every write; the shapes now require them, so a row written
+# around the DAL fails.
+#
+# Channel, Message (messages, Wren's) and Context, Conversation (memory,
+# Wren's) are this card's other half, per ADR-041 and ADR-054.
+
+chorus:identity chorus:definesVocabulary chorus:SessionRun , chorus:Presence .
+
+# --- classes ------------------------------------------------------------------
+
+chorus:SessionRun a owl:Class ;
+    rdfs:label "Session run" ;
+    rdfs:comment "One Claude Code process inside a Session: started by chorus-principal on (or up), ended by a restart, a refusal recovery, an exit or a crash. Each run has its own conversation and points at the run before it, so a session reads as a chain from login to logout. #4302." ;
+    chorus:adoptedFrom "prov:Activity" .
+
+chorus:Presence a owl:Class ;
+    rdfs:label "Presence" ;
+    rdfs:comment "Where a running SessionRun can be reached: machine, account, tmux pane and tty, and the last time a delivery to it actually landed. Reachable is proven by a delivery, never by a pid or a registry file: on 2026-09-20 three of Jeff's messages died while the role was running and registered. #4302." .
+
+# --- properties ---------------------------------------------------------------
+
+chorus:runOf a owl:ObjectProperty ;
+    rdfs:label "run of" ;
+    rdfs:comment "The Session this run belongs to. #4302." ;
+    rdfs:domain chorus:SessionRun ;
+    rdfs:range chorus:Session .
+
+chorus:previousRun a owl:ObjectProperty ;
+    rdfs:label "previous run" ;
+    rdfs:comment "The run this one replaced inside the same session. Absent on a session's first run. The link a restart used to leave unrecorded (Wren, 10:23 on 2026-09-25). #4302." ;
+    rdfs:domain chorus:SessionRun ;
+    rdfs:range chorus:SessionRun .
+
+chorus:presenceOf a owl:ObjectProperty ;
+    rdfs:label "presence of" ;
+    rdfs:comment "The run this presence belongs to. One per run. #4302." ;
+    rdfs:domain chorus:Presence ;
+    rdfs:range chorus:SessionRun .
+
+chorus:actsAs a owl:ObjectProperty ;
+    rdfs:label "acts as" ;
+    rdfs:comment "The role a session acts in. A principal can hold several roles (holdsRole); a session acts in exactly one. #4302." ;
+    rdfs:domain chorus:Session ;
+    rdfs:range chorus:Role .
+
+chorus:startedAt a owl:DatatypeProperty ;
+    rdfs:label "started at" ;
+    rdfs:comment "When a session (the login) or a run (the process) started, ISO-8601 UTC. #4302." ;
+    chorus:adoptedFrom "prov:startedAtTime" ;
+    rdfs:range xsd:string .
+
+chorus:lastSeenAt a owl:DatatypeProperty ;
+    rdfs:label "last seen at" ;
+    rdfs:comment "The last turn a session took, ISO-8601 UTC. Idle is the gap from now; a quiet session is idle, not gone. The activity axis the Login ER had no field for. #4302." ;
+    rdfs:domain chorus:Session ;
+    rdfs:range xsd:string .
+
+chorus:runEndedAt a owl:DatatypeProperty ;
+    rdfs:label "run ended at" ;
+    rdfs:comment "When a run ended, ISO-8601 UTC. Absent while the run is live. #4302." ;
+    chorus:adoptedFrom "prov:endedAtTime" ;
+    rdfs:domain chorus:SessionRun ;
+    rdfs:range xsd:string .
+
+chorus:endReason a owl:DatatypeProperty ;
+    rdfs:label "end reason" ;
+    rdfs:comment "Why a run ended: exit (/exit), logout (off), restart, refusal (the conversation was refused and a fresh one started), crash. #4302." ;
+    rdfs:domain chorus:SessionRun ;
+    rdfs:range xsd:string .
+
+chorus:conversationId a owl:DatatypeProperty ;
+    rdfs:label "conversation id" ;
+    rdfs:comment "The Claude Code conversation this run writes (the transcript's id). The Conversation class itself is memory's (Wren); this is the key it will join on. #4302." ;
+    rdfs:domain chorus:SessionRun ;
+    rdfs:range xsd:string .
+
+chorus:pane a owl:DatatypeProperty ;
+    rdfs:label "pane" ;
+    rdfs:comment "The tmux pane a run is in, e.g. %1. #4302." ;
+    rdfs:domain chorus:Presence ;
+    rdfs:range xsd:string .
+
+chorus:tty a owl:DatatypeProperty ;
+    rdfs:label "tty" ;
+    rdfs:comment "The terminal device of the pane, e.g. /dev/ttys005. #4302." ;
+    rdfs:domain chorus:Presence ;
+    rdfs:range xsd:string .
+
+# chorus:onMachine is reused from chorus.ttl (ServiceInstance already had it); its
+# rdfs:domain was dropped there so one concept serves both classes.
+
+chorus:reachability a owl:DatatypeProperty ;
+    rdfs:label "reachability" ;
+    rdfs:comment "reachable | unreachable | unknown. reachable only when a delivery has landed (lastDeliveredAt); a live pid with no delivery is unknown. #4302." ;
+    rdfs:domain chorus:Presence ;
+    rdfs:range xsd:string .
+
+chorus:lastDeliveredAt a owl:DatatypeProperty ;
+    rdfs:label "last delivered at" ;
+    rdfs:comment "The last time a message to this presence was confirmed delivered, ISO-8601 UTC. The evidence behind reachable. #4302." ;
+    rdfs:domain chorus:Presence ;
+    rdfs:range xsd:string .
+
+chorus:writtenInSession a owl:ObjectProperty ;
+    rdfs:label "written in session" ;
+    rdfs:comment "The session a row or event was written in. The principal owns the row (ownedBy); the session is the writer, so Check can trace a bad row to the turn and the memory it started from. Declared here; step 3 makes writers carry it. #4302." ;
+    chorus:adoptedFrom "prov:wasGeneratedBy" ;
+    rdfs:range chorus:Session .
+
+# --- Session grows (additive; issuedAt, expiresAt, hostAccount stay, ADR-059) ---
+
+chorus:SessionShape
+    sh:property chorus:SessionShape-actsAs ;
+    sh:property chorus:SessionShape-startedAt ;
+    sh:property chorus:SessionShape-lastSeenAt ;
+    sh:sparql chorus:OpenSessionActsAsARole , chorus:OpenSessionHasOneLiveRun .
+
+chorus:SessionShape-actsAs a sh:PropertyShape ;
+    sh:path chorus:actsAs ; sh:maxCount 1 ; sh:class chorus:Role .
+chorus:SessionShape-startedAt a sh:PropertyShape ;
+    sh:path chorus:startedAt ; sh:maxCount 1 ; sh:datatype xsd:string .
+chorus:SessionShape-lastSeenAt a sh:PropertyShape ;
+    sh:path chorus:lastSeenAt ; sh:maxCount 1 ; sh:datatype xsd:string .
+
+chorus:OpenSessionActsAsARole a sh:SPARQLConstraint ;
+    sh:message "an open session must say which role it acts as (chorus:actsAs) and when it started (chorus:startedAt)" ;
+    sh:select """
+        SELECT $this WHERE {
+          $this <https://jeffbridwell.com/chorus#sessionState> "open" .
+          FILTER ( NOT EXISTS { $this <https://jeffbridwell.com/chorus#actsAs> ?r }
+                || NOT EXISTS { $this <https://jeffbridwell.com/chorus#startedAt> ?s } )
+        }""" .
+
+chorus:OpenSessionHasOneLiveRun a sh:SPARQLConstraint ;
+    sh:message "an open session has exactly one live run (a run of it with no runEndedAt)" ;
+    sh:select """
+        SELECT $this WHERE {
+          $this <https://jeffbridwell.com/chorus#sessionState> "open" .
+          { SELECT $this (COUNT(?run) AS ?live) WHERE {
+              OPTIONAL { ?run <https://jeffbridwell.com/chorus#runOf> $this .
+                         FILTER NOT EXISTS { ?run <https://jeffbridwell.com/chorus#runEndedAt> ?e } }
+            } GROUP BY $this }
+          FILTER (?live != 1)
+        }""" .
+
+# --- SessionRun ---------------------------------------------------------------
+
+chorus:SessionRunShape a sh:NodeShape ;
+    sh:targetClass chorus:SessionRun ;
+    chorus:instancesGraph "urn:chorus:domains:identity" ;
+    sh:property chorus:SessionRunShape-label , chorus:SessionRunShape-comment , chorus:SessionRunShape-ownedBy ,
+                chorus:SessionRunShape-created , chorus:SessionRunShape-creator , chorus:SessionRunShape-modified ,
+                chorus:SessionRunShape-runOf , chorus:SessionRunShape-previousRun , chorus:SessionRunShape-startedAt ,
+                chorus:SessionRunShape-runEndedAt , chorus:SessionRunShape-endReason , chorus:SessionRunShape-conversationId ;
+    sh:sparql chorus:LiveRunHasOnePresence , chorus:EndedRunSaysWhy .
+
+chorus:SessionRunShape-label a sh:PropertyShape ; sh:path rdfs:label ; sh:minCount 1 .
+chorus:SessionRunShape-comment a sh:PropertyShape ; sh:path rdfs:comment ; sh:minCount 1 .
+chorus:SessionRunShape-ownedBy a sh:PropertyShape ;
+    sh:path chorus:ownedBy ; sh:minCount 1 ; sh:maxCount 1 ; sh:class chorus:Principal .
+chorus:SessionRunShape-created a sh:PropertyShape ; sh:path dcterms:created ; sh:minCount 1 .
+chorus:SessionRunShape-creator a sh:PropertyShape ; sh:path dcterms:creator ; sh:minCount 1 .
+chorus:SessionRunShape-modified a sh:PropertyShape ; sh:path dcterms:modified ; sh:minCount 1 .
+chorus:SessionRunShape-runOf a sh:PropertyShape ;
+    sh:path chorus:runOf ; sh:minCount 1 ; sh:maxCount 1 ; sh:class chorus:Session .
+chorus:SessionRunShape-previousRun a sh:PropertyShape ;
+    sh:path chorus:previousRun ; sh:maxCount 1 ; sh:class chorus:SessionRun .
+chorus:SessionRunShape-startedAt a sh:PropertyShape ;
+    sh:path chorus:startedAt ; sh:minCount 1 ; sh:maxCount 1 ; sh:datatype xsd:string .
+chorus:SessionRunShape-runEndedAt a sh:PropertyShape ;
+    sh:path chorus:runEndedAt ; sh:maxCount 1 ; sh:datatype xsd:string .
+chorus:SessionRunShape-endReason a sh:PropertyShape ;
+    sh:path chorus:endReason ; sh:maxCount 1 ; sh:datatype xsd:string ;
+    sh:pattern "^(exit|logout|restart|refusal|crash)$" .
+chorus:SessionRunShape-conversationId a sh:PropertyShape ;
+    sh:path chorus:conversationId ; sh:minCount 1 ; sh:maxCount 1 ; sh:datatype xsd:string .
+
+chorus:LiveRunHasOnePresence a sh:SPARQLConstraint ;
+    sh:message "a live run (no runEndedAt) has exactly one Presence" ;
+    sh:select """
+        SELECT $this WHERE {
+          FILTER NOT EXISTS { $this <https://jeffbridwell.com/chorus#runEndedAt> ?e }
+          { SELECT $this (COUNT(?p) AS ?n) WHERE {
+              OPTIONAL { ?p <https://jeffbridwell.com/chorus#presenceOf> $this }
+            } GROUP BY $this }
+          FILTER (?n != 1)
+        }""" .
+
+chorus:EndedRunSaysWhy a sh:SPARQLConstraint ;
+    sh:message "an ended run says why it ended (chorus:endReason), and a reason means it ended" ;
+    sh:select """
+        SELECT $this WHERE {
+          { $this <https://jeffbridwell.com/chorus#runEndedAt> ?e .
+            FILTER NOT EXISTS { $this <https://jeffbridwell.com/chorus#endReason> ?r } }
+          UNION
+          { $this <https://jeffbridwell.com/chorus#endReason> ?r .
+            FILTER NOT EXISTS { $this <https://jeffbridwell.com/chorus#runEndedAt> ?e } }
+        }""" .
+
+# --- Presence -----------------------------------------------------------------
+
+chorus:PresenceShape a sh:NodeShape ;
+    sh:targetClass chorus:Presence ;
+    chorus:instancesGraph "urn:chorus:domains:identity" ;
+    sh:property chorus:PresenceShape-label , chorus:PresenceShape-comment , chorus:PresenceShape-ownedBy ,
+                chorus:PresenceShape-created , chorus:PresenceShape-creator , chorus:PresenceShape-modified ,
+                chorus:PresenceShape-presenceOf , chorus:PresenceShape-pane , chorus:PresenceShape-tty ,
+                chorus:PresenceShape-hostAccount , chorus:PresenceShape-onMachine ,
+                chorus:PresenceShape-reachability , chorus:PresenceShape-lastDeliveredAt ;
+    sh:sparql chorus:ReachableNeedsADelivery .
+
+chorus:PresenceShape-label a sh:PropertyShape ; sh:path rdfs:label ; sh:minCount 1 .
+chorus:PresenceShape-comment a sh:PropertyShape ; sh:path rdfs:comment ; sh:minCount 1 .
+chorus:PresenceShape-ownedBy a sh:PropertyShape ;
+    sh:path chorus:ownedBy ; sh:minCount 1 ; sh:maxCount 1 ; sh:class chorus:Principal .
+chorus:PresenceShape-created a sh:PropertyShape ; sh:path dcterms:created ; sh:minCount 1 .
+chorus:PresenceShape-creator a sh:PropertyShape ; sh:path dcterms:creator ; sh:minCount 1 .
+chorus:PresenceShape-modified a sh:PropertyShape ; sh:path dcterms:modified ; sh:minCount 1 .
+chorus:PresenceShape-presenceOf a sh:PropertyShape ;
+    sh:path chorus:presenceOf ; sh:minCount 1 ; sh:maxCount 1 ; sh:class chorus:SessionRun .
+chorus:PresenceShape-pane a sh:PropertyShape ; sh:path chorus:pane ; sh:maxCount 1 ; sh:datatype xsd:string .
+chorus:PresenceShape-tty a sh:PropertyShape ; sh:path chorus:tty ; sh:maxCount 1 ; sh:datatype xsd:string .
+chorus:PresenceShape-hostAccount a sh:PropertyShape ;
+    sh:path chorus:hostAccount ; sh:minCount 1 ; sh:maxCount 1 ; sh:datatype xsd:string .
+chorus:PresenceShape-onMachine a sh:PropertyShape ;
+    sh:path chorus:onMachine ; sh:maxCount 1 ; sh:class chorus:Machine .
+chorus:PresenceShape-reachability a sh:PropertyShape ;
+    sh:path chorus:reachability ; sh:minCount 1 ; sh:maxCount 1 ; sh:datatype xsd:string ;
+    sh:pattern "^(reachable|unreachable|unknown)$" .
+chorus:PresenceShape-lastDeliveredAt a sh:PropertyShape ;
+    sh:path chorus:lastDeliveredAt ; sh:maxCount 1 ; sh:datatype xsd:string .
+
+chorus:ReachableNeedsADelivery a sh:SPARQLConstraint ;
+    sh:message "reachable is proven by a delivery: a presence marked reachable must carry lastDeliveredAt" ;
+    sh:select """
+        SELECT $this WHERE {
+          $this <https://jeffbridwell.com/chorus#reachability> "reachable" .
+          FILTER NOT EXISTS { $this <https://jeffbridwell.com/chorus#lastDeliveredAt> ?d }
+        }""" .
