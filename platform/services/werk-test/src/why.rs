@@ -272,17 +272,33 @@ pub fn parse_why_line(line: &str) -> Option<(String, String, String, String)> {
 /// A case counts once: nextest prints a failed case's FAIL line twice (live
 /// and in its summary), so one failure reaches the log as two why lines.
 pub fn error_counts_line(whys: &[(String, String, String, String)]) -> String {
+    error_counts(whys).line()
+}
+
+/// #4156 — the counts as numbers, for the run record in the graph.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub struct ErrorCounts {
+    pub failed_cases: usize,
+    pub exceptions: usize,
+    pub http: usize,
+    pub assertions: usize,
+    pub other: usize,
+}
+
+impl ErrorCounts {
+    pub fn line(&self) -> String {
+        format!(
+            "failed cases {} · exceptions {} · http {} · assertions {} · other {}",
+            self.failed_cases, self.exceptions, self.http, self.assertions, self.other
+        )
+    }
+}
+
+pub fn error_counts(whys: &[(String, String, String, String)]) -> ErrorCounts {
     let mut seen = std::collections::HashSet::new();
     let whys: Vec<&(String, String, String, String)> = whys.iter().filter(|w| seen.insert((w.0.as_str(), w.1.as_str()))).collect();
     let n = |k: &str| whys.iter().filter(|w| w.2 == k).count();
-    format!(
-        "failed cases {} · exceptions {} · http {} · assertions {} · other {}",
-        whys.len(),
-        n("exception"),
-        n("http"),
-        n("assertion"),
-        n("error")
-    )
+    ErrorCounts { failed_cases: whys.len(), exceptions: n("exception"), http: n("http"), assertions: n("assertion"), other: n("error") }
 }
 
 #[cfg(test)]

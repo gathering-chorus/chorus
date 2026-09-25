@@ -14,7 +14,7 @@ use std::time::{Duration, Instant};
 
 use werk_test::nightly_run::{crawl_line, json_rows, 
     coverage_row, denominator_row, fail_log_name, fold_unit_line, last_run_rows, load_verdict,
-    notify_messages, owner_for, owner_map, parse_floors, pipeline_run_body, run_summary_fields,
+    notify_messages, owner_for, owner_map, parse_floors, run_summary_fields,
     suite_result_fields, unit_slice, SuiteRow,
 };
 use std::sync::atomic::{AtomicBool, AtomicI32, Ordering};
@@ -64,6 +64,15 @@ fn launchd_exit_reason() -> Option<String> {
     Some(format!("launchd {reason}"))
 }
 
+fn mint_token(root: &str, role: &str) -> Option<String> {
+    Command::new(format!("{}/platform/scripts/chorus-identity-token", root))
+        .arg(role)
+        .output()
+        .ok()
+        .map(|o| String::from_utf8_lossy(&o.stdout).trim().to_string())
+        .filter(|t| !t.is_empty())
+}
+
 fn now_stamp() -> String {
     let out = Command::new("date").arg("+%Y-%m-%dT%H:%M:%S").output().ok();
     out.map(|o| String::from_utf8_lossy(&o.stdout).trim().to_string()).unwrap_or_default()
@@ -87,6 +96,22 @@ struct Ctx {
     ops_nudge: String,
     no_nudge: bool,
     owners: HashMap<String, String>,
+    /// #4156 — the graph side of the run record: every SUITE row also lands
+    /// as a TestSuiteRun the moment it is written, and the page reads those.
+    graph: GraphRows,
+}
+
+/// #4156 — where suite rows go in the graph, and the run they belong to.
+#[derive(Default)]
+struct GraphRows {
+    /// off for a werk-rooted run (#3722: a werk never writes prod) and for
+    /// NIGHTLY_GRAPH_ROWS=0
+    enabled: bool,
+    run_ts: std::cell::RefCell<String>,
+    order: std::cell::Cell<usize>,
+    token: std::cell::RefCell<Option<String>>,
+    written: std::cell::Cell<usize>,
+    failed: std::cell::Cell<usize>,
 }
 
 impl Ctx {
@@ -98,6 +123,56 @@ impl Ctx {
             Ok(mut f) => writeln!(f, "{}", line).is_ok(),
             Err(_) => false,
         }
+    }
+    /// #4156 — one SUITE row: the log line, and the same row in the graph.
+    fn record_row(&self, row: &SuiteRow) {
+        self.append_log(&row.line());
+        if !self.graph.enabled {
+            return;
+        }
+        let order = self.graph.order.get() + 1;
+        self.graph.order.set(order);
+        let ts = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).map(|d| d.as_millis()).unwrap_or(0);
+        let body = werk_test::nightly_run::suite_row_payload(&self.graph.run_ts.borrow(), order, row, ts);
+        if self.post_graph("testsuiteruns", &env_or("WERK_NIGHTLY_MINT_ROLE", "nightly"), &body, &self.graph.token) {
+            self.graph.written.set(self.graph.written.get() + 1);
+        } else {
+            self.graph.failed.set(self.graph.failed.get() + 1);
+        }
+    }
+    /// POST one row through athena-make.
+    fn post_graph(&self, collection: &str, role: &str, body: &str, cache: &std::cell::RefCell<Option<String>>) -> bool {
+        self.send_graph("POST", collection, role, body, cache).starts_with('2')
+    }
+    /// One write through athena-make; answers the HTTP code. A 401 re-mints
+    /// once: a token minted at the start of an hour-long run can expire
+    /// before its last row.
+    fn send_graph(&self, method: &str, path: &str, role: &str, body: &str, cache: &std::cell::RefCell<Option<String>>) -> String {
+        let mut code = String::new();
+        for attempt in 0..2 {
+            if attempt == 1 || cache.borrow().is_none() {
+                *cache.borrow_mut() = mint_token(&self.root, role);
+            }
+            let Some(tok) = cache.borrow().clone() else {
+                return "no-token".into();
+            };
+            code = Command::new("curl")
+                .args(["-s", "--max-time", "10", "-o", "/dev/null", "-w", "%{http_code}", "-X", method])
+                .arg(format!("{}/{}", self.owlapi, path))
+                .arg("-H")
+                .arg(format!("Authorization: Bearer {}", tok))
+                .args(["-H", "Content-Type: application/json", "-d", body])
+                .output()
+                .map(|o| String::from_utf8_lossy(&o.stdout).trim().to_string())
+                .unwrap_or_default();
+            if code != "401" {
+                break;
+            }
+        }
+        if !code.starts_with('2') && code != "409" {
+            eprintln!("nightly: graph {} /{} REFUSED HTTP {}", method, path, code);
+        }
+        code
     }
     fn spine(&self, event: &str, fields: &[(String, String)]) {
         let bin = env_or("CHORUS_LOG_BIN", &format!("{}/platform/scripts/chorus-log", self.root));
@@ -519,7 +594,7 @@ fn run_runner(ctx: &Ctx, box_over_load: bool) -> LaneResult {
             }
             // append ONLY: under launchd stdout is the log itself, so a println
             // here doubled every row (400 duplicates on the 2026-09-11 19:16 run)
-            ctx.append_log(&row.line());
+            ctx.record_row(&row);
             rows.push(row);
         } else {
             println!("{}", line);
@@ -535,7 +610,7 @@ fn run_runner(ctx: &Ctx, box_over_load: bool) -> LaneResult {
     if rows.is_empty() {
         let reason = err_text.lines().last().unwrap_or("no output").to_string();
         let row = SuiteRow::new("runner", "werk-test-nightly", "silas", "fail", &format!("0 pass, 1 fail (runner produced no unit results rc={} — {})", rc, reason));
-        ctx.append_log(&row.line());
+        ctx.record_row(&row);
         rows.push(row);
     }
     // per-unit failure detail (#4004): this unit's slice, not the whole lane
@@ -561,12 +636,17 @@ fn run_runner(ctx: &Ctx, box_over_load: bool) -> LaneResult {
 // two lists. These lines name them and count in one unit. They are written to
 // the log and the spine; no SuiteRow is built, so a stale registry can report
 // a gap without turning the night red.
-fn report_no_result(ctx: &Ctx, registered: &[(String, String)], cases: &[(String, String, String, String)]) {
+fn report_no_result(
+    ctx: &Ctx,
+    registered: &[(String, String)],
+    cases: &[(String, String, String, String)],
+) -> Option<werk_test::nightly_run::TallyCounts> {
     if registered.is_empty() {
         ctx.append_log("RUN|tally|registry unreadable — the run cannot say what it did not run");
-        return;
+        return None;
     }
-    let tally = werk_test::nightly_run::registered_test_tally(registered, cases);
+    let counts = werk_test::nightly_run::tally_counts(registered, cases);
+    let tally = counts.line();
     ctx.append_log(&format!("RUN|tally|{}", tally));
     eprintln!("nightly: {}", tally);
     let missing = werk_test::nightly_run::tests_with_no_result(registered, cases);
@@ -584,6 +664,7 @@ fn report_no_result(ctx: &Ctx, registered: &[(String, String)], cases: &[(String
             ("no_result".into(), missing.len().to_string()),
         ],
     );
+    Some(counts)
 }
 
 // ───────────────────────── the run ─────────────────────────
@@ -687,6 +768,14 @@ pub fn run_all(args: &[String]) -> Result<i32, String> {
         ops_nudge: env_or("OPS_NUDGE", &format!("{}/platform/scripts/ops-nudge", root)),
         no_nudge: std::env::var("NIGHTLY_NO_NUDGE").map(|v| v == "1").unwrap_or(false),
         owners: HashMap::new(),
+        graph: GraphRows {
+            enabled: werk_test::nightly_run::graph_rows_enabled(
+                &root,
+                std::env::var("NIGHTLY_GRAPH_ROWS").ok().as_deref(),
+                std::env::var("OWLAPI").ok().as_deref(),
+            ),
+            ..Default::default()
+        },
         root: root.clone(),
         home,
     };
@@ -696,7 +785,12 @@ pub fn run_all(args: &[String]) -> Result<i32, String> {
             ctx.log = format!("/tmp/nightly-{}.log", Path::new(&ctx.root).file_name().map(|s| s.to_string_lossy().into_owned()).unwrap_or_default());
         }
         ctx.no_nudge = true;
-        eprintln!("nightly: WERK RUN — isolated to {}, team nudge suppressed (#3722)", ctx.log);
+        eprintln!("nightly: WERK RUN — isolated to {}, team nudge suppressed, graph rows {} (#3722)", ctx.log, if ctx.graph.enabled { "to the named store" } else { "off" });
+    }
+    // #4156 — one-time: the runs that ran before the runner wrote its rows
+    if let Some(i) = args.iter().position(|a| a == "--backfill-graph") {
+        let n = args.get(i + 1).and_then(|v| v.parse::<usize>().ok()).unwrap_or(14);
+        return Ok(backfill_graph(&ctx, n));
     }
     if let Err(why) = acquire_lock(&ctx.lockdir) {
         eprintln!("nightly-suites: REFUSED — {} — one run at a time (single-flight, #3597/#4008), lock {}", why, ctx.lockdir);
@@ -734,6 +828,7 @@ fn run_locked(ctx: &mut Ctx, _args: &[String]) -> Result<i32, String> {
     // the graph's PipelineRun is named from it, so the two rows join. It used
     // to be re-read at emit time, i.e. when the run FINISHED.
     let started_at = now_stamp();
+    *ctx.graph.run_ts.borrow_mut() = started_at.clone();
     if !ctx.append_log(&format!("RUN|start|{}|pid={}", started_at, std::process::id())) {
         eprintln!("nightly: WARNING — cannot append to {}; this run's results reach NOBODY", ctx.log);
     }
@@ -741,7 +836,7 @@ fn run_locked(ctx: &mut Ctx, _args: &[String]) -> Result<i32, String> {
     ctx.owners = owners;
     let mut rows: Vec<SuiteRow> = Vec::new();
     let push = |ctx: &Ctx, r: SuiteRow, rows: &mut Vec<SuiteRow>| {
-        ctx.append_log(&r.line());
+        ctx.record_row(&r);
         rows.push(r);
     };
     // #4278 — sample every com.chorus.* agent's pid at the start; the same
@@ -773,7 +868,14 @@ fn run_locked(ctx: &mut Ctx, _args: &[String]) -> Result<i32, String> {
     let lane = run_runner(ctx, !over);
     if stop_requested() {
         let sig = STOP_SIGNAL.load(Ordering::SeqCst);
-        ctx.append_log(&format!("RUN|stopped|{}|signal={} pid={}", now_stamp(), if sig == 2 { "INT" } else { "TERM" }, std::process::id()));
+        let stopped_at = now_stamp();
+        ctx.append_log(&format!("RUN|stopped|{}|signal={} pid={}", stopped_at, if sig == 2 { "INT" } else { "TERM" }, std::process::id()));
+        // #4156 — the graph says the run was stopped, so the page does too
+        rows.extend(lane.rows.iter().cloned());
+        let rec = werk_test::nightly_run::RunRecord {
+            run_ts: started_at.clone(), completed_at: stopped_at, outcome: Some("stopped".into()), tally: None, errors: None,
+        };
+        emit_pipeline_run(ctx, &rows, t0.elapsed().as_millis(), &started_at, None, &rec);
         let _ = std::fs::remove_dir_all(&ctx.lockdir);
         std::process::exit(if sig == 2 { 130 } else { 143 });
     }
@@ -796,11 +898,20 @@ fn run_locked(ctx: &mut Ctx, _args: &[String]) -> Result<i32, String> {
     }
     // #4247 — the census from the run's own record, in one unit, before the
     // completion line so a reader sees the tally with the run it belongs to.
-    report_no_result(ctx, &registered, &lane.cases);
+    let tally = report_no_result(ctx, &registered, &lane.cases);
     // #4155 — errors and exceptions as counts from the run's own reason lines
-    let errors = werk_test::why::error_counts_line(&lane.whys);
+    let error_counts = werk_test::why::error_counts(&lane.whys);
+    let errors = error_counts.line();
     ctx.append_log(&format!("RUN|errors|{}", errors));
-    ctx.append_log(&format!("RUN|complete|{}|suites={}", now_stamp(), rows.len()));
+    let completed_at = now_stamp();
+    ctx.append_log(&format!("RUN|complete|{}|suites={}", completed_at, rows.len()));
+    if ctx.graph.enabled {
+        eprintln!("nightly: graph suite rows — {} written, {} failed (#4156)", ctx.graph.written.get(), ctx.graph.failed.get());
+        ctx.spine("nightly.graph.rows", &[("written".into(), ctx.graph.written.get().to_string()), ("failed".into(), ctx.graph.failed.get().to_string())]);
+    }
+    let rec = werk_test::nightly_run::RunRecord {
+        run_ts: started_at.clone(), completed_at, outcome: None, tally, errors: Some(error_counts),
+    };
     // the tail: summary, record, per-row events, nudges, readout
     ctx.spine("nightly.run.summary", &run_summary_fields(&rows));
     emit_pipeline_run(
@@ -809,6 +920,7 @@ fn run_locked(ctx: &mut Ctx, _args: &[String]) -> Result<i32, String> {
         t0.elapsed().as_millis(),
         &started_at,
         werk_test::nightly_run::run_test_counts(&lane.cases, lane.stored),
+        &rec,
     );
     for r in &rows {
         let reason = if r.status == "fail" {
@@ -857,33 +969,70 @@ fn emit_pipeline_run(
     duration_ms: u128,
     started_at: &str,
     tests: Option<werk_test::nightly_run::RunTestCounts>,
+    rec: &werk_test::nightly_run::RunRecord,
 ) {
-    let tok = Command::new(format!("{}/platform/scripts/chorus-identity-token", ctx.root))
-        .arg(env_or("NIGHTLY_PIPELINE_ROLE", "wren"))
-        .output()
-        .ok()
-        .map(|o| String::from_utf8_lossy(&o.stdout).trim().to_string())
-        .filter(|t| !t.is_empty());
-    let Some(tok) = tok else {
-        eprintln!("nightly: pipeline-run emit SKIPPED — no identity token minted");
+    // #4156 — a werk-rooted run writes no prod run record either (#3722)
+    if !ctx.graph.enabled {
+        eprintln!("nightly: pipeline-run emit SKIPPED — graph rows off for this run");
         return;
-    };
+    }
     let name = werk_test::nightly_run::pipeline_run_name(started_at);
-    let body = pipeline_run_body(rows, &name, &env_or("CHORUS_TRACE_ID", &format!("nightly-{}", epoch())), duration_ms, tests);
-    let o = Command::new("curl")
-        .args(["-s", "--max-time", "10", "-o", "/dev/null", "-w", "%{http_code}", "-X", "POST"])
-        .arg(format!("{}/pipelineruns", ctx.owlapi))
-        .arg("-H")
-        .arg(format!("Authorization: Bearer {}", tok))
-        .args(["-H", "Content-Type: application/json", "-d", &body])
-        .output();
-    let code = o.map(|o| String::from_utf8_lossy(&o.stdout).trim().to_string()).unwrap_or_default();
+    let trace = env_or("CHORUS_TRACE_ID", &format!("nightly-{}", epoch()));
+    let body = werk_test::nightly_run::pipeline_run_record_body(rows, &name, &trace, duration_ms, tests, rec);
     let failed = rows.iter().filter(|r| r.status == "fail").count();
-    if code.starts_with('2') {
+    let token = std::cell::RefCell::new(None);
+    if ctx.post_graph("pipelineruns", &env_or("NIGHTLY_PIPELINE_ROLE", "wren"), &body, &token) {
         eprintln!("nightly: pipeline-run recorded ({}, {} suites, {} failed)", if failed == 0 { "green" } else { "red" }, rows.len(), failed);
     } else {
-        eprintln!("nightly: pipeline-run emit REFUSED HTTP {}", code);
+        eprintln!("nightly: pipeline-run emit REFUSED or no token");
     }
+}
+
+/// #4156 — write the last `n` logged runs to the graph the way the runner now
+/// writes a run: a TestSuiteRun per SUITE row, and the run record on its
+/// PipelineRun (replaced, since the old emit wrote one without the tail).
+/// Re-runnable: a row already there answers 409 and is left alone.
+fn backfill_graph(ctx: &Ctx, n: usize) -> i32 {
+    if !ctx.graph.enabled {
+        eprintln!("backfill: REFUSED — graph rows are off for this root (a werk writes no prod rows, #3722)");
+        return 1;
+    }
+    let log = std::fs::read_to_string(&ctx.log).unwrap_or_default();
+    let runs = werk_test::nightly_run::logged_runs(&log, n);
+    let suite_role = env_or("WERK_NIGHTLY_MINT_ROLE", "nightly");
+    let run_role = env_or("NIGHTLY_PIPELINE_ROLE", "wren");
+    let (suite_tok, run_tok) = (std::cell::RefCell::new(None), std::cell::RefCell::new(None));
+    let mut failed = 0usize;
+    for run in &runs {
+        let (mut wrote, mut had) = (0usize, 0usize);
+        for (i, row) in run.rows.iter().enumerate() {
+            let body = werk_test::nightly_run::suite_row_payload(&run.record.run_ts, i + 1, row, 0);
+            match ctx.send_graph("POST", "testsuiteruns", &suite_role, &body, &suite_tok).as_str() {
+                c if c.starts_with('2') => wrote += 1,
+                "409" => had += 1,
+                _ => failed += 1,
+            }
+        }
+        let mut record = String::from("no record (the run never ended)");
+        if run.ended {
+            let name = werk_test::nightly_run::pipeline_run_name(&run.record.run_ts);
+            let secs = werk_test::nightly_run::stamp_gap_secs(&run.record.run_ts, &run.record.completed_at);
+            let tests = run.record.tally.map(|t| werk_test::nightly_run::RunTestCounts { run: t.ran, failed: t.failed, stored: t.ran });
+            let body = werk_test::nightly_run::pipeline_run_record_body(&run.rows, &name, &format!("backfill-{}", name), secs as u128 * 1000, tests, &run.record);
+            let put = ctx.send_graph("PUT", &format!("pipelineruns/{}", name.to_ascii_lowercase()), &run_role, &body, &run_tok);
+            record = if put.starts_with('2') {
+                "record replaced".into()
+            } else if ctx.post_graph("pipelineruns", &run_role, &body, &run_tok) {
+                "record written".into()
+            } else {
+                failed += 1;
+                format!("record REFUSED (PUT {})", put)
+            };
+        }
+        println!("backfill {} — {} suite rows written, {} already there, {}", run.record.run_ts, wrote, had, record);
+    }
+    println!("backfill: {} run(s), {} write(s) failed", runs.len(), failed);
+    if failed == 0 { 0 } else { 1 }
 }
 
 fn deliver_readout(ctx: &Ctx) {
@@ -1198,6 +1347,7 @@ mod lanes_4278 {
             lockdir: format!("{}/lock.d", root), role: "kade".into(), run_id: "test".into(),
             owlapi: "http://localhost:1".into(), api: "http://localhost:1".into(),
             ops_nudge: "/usr/bin/true".into(), no_nudge: true, owners: HashMap::new(),
+            graph: GraphRows::default(),
         }
     }
 

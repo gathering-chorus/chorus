@@ -59,8 +59,11 @@
     # #3925 — semver from here on (#3902 discipline): MINOR = additive shape
     # change. 0.3.0: TestResultShape gains runTs + cardId (minCount 0).
     # 0.4.0 (#4155): TestResultShape gains failureReason (optional).
+    # 0.5.0 (#4156): TestSuiteRunShape carries the nightly's suite rows
+    # (runTs, suiteOrder, suiteKind, filePath, suiteOwner, suiteSummary);
+    # cardId is optional, because a nightly suite has no card.
     # The old "-converged-<date>" suffix form is retired; dcterms:date carries dates.
-    owl:versionInfo "0.4.0" ;
+    owl:versionInfo "0.5.0" ;
     rdfs:seeAlso <https://jeffbridwell.com/chorus> ;
     rdfs:comment "Query-backwards refinement of Kade's four werk domains. Generator input for owl-api (model-5). Sources: the #3339-reconciled service designs + the live witness/spine vocabulary." .
 
@@ -317,7 +320,7 @@ chorus:TestSuiteRun a owl:Class ;
     chorus:mintKey ("cardId" "ts") ;
     chorus:writeOrigin "derived-sweep" ;
     rdfs:label "Test Suite Run" ;
-    rdfs:comment "A suite execution for a card (pipeline test step) or nightly (com.chorus.nightly-suites): pass/fail at suite grain." ;
+    rdfs:comment "A suite execution for a card (pipeline test step) or nightly (com.chorus.nightly-suites): pass/fail at suite grain. A nightly row is one SUITE line of the run, written the moment the suite lands and joined to its PipelineRun by runTs; the /nightly page and the morning readout render from these rows (#4156)." ;
     chorus:dataSource "ops/logs/werk-demo.jsonl: demo.test_result {result} per card; nightly reporter (NOT TRUSTED until #3272/#3273)" ;
     chorus:ingestionStatus "ingestible" .
 
@@ -333,6 +336,26 @@ chorus:covers a owl:ObjectProperty ;
     rdfs:label "covers" ;
     rdfs:domain chorus:Test ; rdfs:range chorus:SubDomain ;
     rdfs:comment "Test → the domain/unit it proves. THE edge werk-test queries (which-tests-for-which-card = card's changed units → covering tests). Populated by #2818 tagging." .
+
+# #4156 — a nightly suite row, as the run wrote it. The log line was
+# SUITE|kind|path|owner|status|summary; path rides chorus:filePath and status
+# rides chorus:result, the words the model already has for them.
+chorus:suiteKind a owl:DatatypeProperty ;
+    rdfs:label "suite kind" ;
+    rdfs:domain chorus:TestSuiteRun ; rdfs:range xsd:string ;
+    rdfs:comment "The lane or tool that produced a nightly suite row: cargo, npm, bats, shell, lint, coverage, ui, perf, a stage name. What ran it, not what kind of proving it is (that is chorus:testType on the Test)." .
+chorus:suiteOwner a owl:DatatypeProperty ;
+    rdfs:label "suite owner" ;
+    rdfs:domain chorus:TestSuiteRun ; rdfs:range xsd:string ;
+    rdfs:comment "The role or principal the run attributed the suite to (the owner map read from the model at run start). The name the red nudge went to." .
+chorus:suiteSummary a owl:DatatypeProperty ;
+    rdfs:label "suite summary" ;
+    rdfs:domain chorus:TestSuiteRun ; rdfs:range xsd:string ;
+    rdfs:comment "The suite's one-line result as the runner wrote it, e.g. '135 pass, 0 fail' or '0 pass, 0 fail (UNMEASURED — …)'. Rendered verbatim; never re-derived." .
+chorus:suiteOrder a owl:DatatypeProperty ;
+    rdfs:label "suite order" ;
+    rdfs:domain chorus:TestSuiteRun ; rdfs:range xsd:integer ;
+    rdfs:comment "Position of the suite in its run, from 1, in the order the rows landed. The page folds by type in run order, so the order is data, not an accident of the query." .
 
 chorus:testType a owl:DatatypeProperty ;
     rdfs:label "test type" ;
@@ -560,9 +583,19 @@ chorus:TestSuiteRunShape a sh:NodeShape ;
     # serve-read and the DAL write target can never drift. Matches werk-test's
     # x-target-graph and the tests domain's resolved home.
     chorus:instancesGraph "urn:chorus:domains:tests" ;
-    sh:property [ sh:path chorus:cardId ; sh:minCount 1 ] ;
+    # #4156 — cardId optional: a card run has one, a nightly suite row has
+    # none (typed absence, key omitted, as on TestResult).
+    sh:property [ sh:path chorus:cardId ; sh:datatype xsd:string ] ;
     sh:property [ sh:path chorus:ts ; sh:minCount 1 ] ;
-    sh:property [ sh:path chorus:result ; sh:minCount 1 ]  .
+    sh:property [ sh:path chorus:result ; sh:minCount 1 ] ;
+    # #4156 — the nightly suite row. Optional here because card rows carry
+    # none of it; the runner sends all six on every nightly row.
+    sh:property [ sh:path chorus:runTs ; sh:datatype xsd:string ] ;
+    sh:property [ sh:path chorus:suiteOrder ] ;
+    sh:property [ sh:path chorus:suiteKind ; sh:datatype xsd:string ] ;
+    sh:property [ sh:path chorus:filePath ; sh:datatype xsd:string ] ;
+    sh:property [ sh:path chorus:suiteOwner ; sh:datatype xsd:string ] ;
+    sh:property [ sh:path chorus:suiteSummary ; sh:datatype xsd:string ]  .
 
 chorus:TestResultShape a sh:NodeShape ;
     sh:targetClass chorus:TestResult ;
