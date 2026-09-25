@@ -1,13 +1,13 @@
 #!/usr/bin/env bats
 # @test-type: integration
 # 3540-tests-domain-schema-land.bats (#3540) — the tests-domain shape (Test /
-# TestResult / covers / pyramidLayer / hermeticity, authored on kade/2818)
+# TestResult / covers / testType (was pyramidLayer, #4162) / hermeticity, authored on kade/2818)
 # LANDS into the live model graph and is queryable + instance-mintable.
 #
 # This is the schema-land foundation Kade's #2818 tagging populates against and
 # #3190's grep→graph selection queries. The contract under test:
 #   1. werk-domains.ttl deploys cleanly into the ontology graph (exit 0).
-#   2. TestEdgesShape carries the REQUIRED axes (pyramidLayer minCount 1, covers
+#   2. TestEdgesShape carries the REQUIRED axes (testType minCount 1, covers
 #      minCount 1) and the OPTIONAL finer axis (hermeticity, enum-if-present).
 #   3. A minted Test instance is queryable BY ITS covers edge — the exact query
 #      werk-test (#3190) runs: card's changed SubDomain -> covering Tests.
@@ -126,7 +126,7 @@ teardown_file() {
 @test "NEGATIVE PROOF: with the graph cleared and no deploy, the shape ASK is FALSE" {
   _drop_test_graph
   [ "$(_graph_triples)" = "0" ]
-  run curl -s "${FUSEKI_AUTH[@]+"${FUSEKI_AUTH[@]}"}" "$Q" --data-urlencode "query=$PFX ASK { GRAPH <$TEST_GRAPH> { chorus:TestEdgesShape sh:property [ sh:path chorus:pyramidLayer ; sh:minCount 1 ] } }" -H "Accept: application/sparql-results+json"
+  run curl -s "${FUSEKI_AUTH[@]+"${FUSEKI_AUTH[@]}"}" "$Q" --data-urlencode "query=$PFX ASK { GRAPH <$TEST_GRAPH> { chorus:TestEdgesShape sh:property [ sh:path chorus:testType ; sh:minCount 1 ] } }" -H "Accept: application/sparql-results+json"
   [[ "${output// /}" == *'"boolean":false'* ]]
 }
 
@@ -135,9 +135,9 @@ teardown_file() {
   [ "$status" -eq 0 ]
 }
 
-@test "TestEdgesShape requires pyramidLayer (minCount 1) after deploy" {
+@test "TestEdgesShape requires testType (minCount 1) after deploy (#4162 — the one field for what kind of proving)" {
   env ONTOLOGY_GRAPH="$TEST_GRAPH" TTL="$TTL" "$SCRIPT" >/dev/null 2>&1
-  run curl -s "$Q" --data-urlencode "query=$PFX ASK { GRAPH <$TEST_GRAPH> { chorus:TestEdgesShape sh:property [ sh:path chorus:pyramidLayer ; sh:minCount 1 ] } }" -H "Accept: application/sparql-results+json"
+  run curl -s "$Q" --data-urlencode "query=$PFX ASK { GRAPH <$TEST_GRAPH> { chorus:TestEdgesShape sh:property [ sh:path chorus:testType ; sh:minCount 1 ] } }" -H "Accept: application/sparql-results+json"
   [[ "${output// /}" == *'"boolean":true'* ]]
 }
 
@@ -153,26 +153,26 @@ teardown_file() {
   [[ "${output// /}" == *'"boolean":true'* ]]
 }
 
-@test "TestEdgesShape carries testConcern — the orthogonal concern axis (@test-type api/ui/perf/security destination)" {
+@test "#4162: TestEdgesShape serves neither retired field (pyramidLayer, testConcern)" {
   env ONTOLOGY_GRAPH="$TEST_GRAPH" TTL="$TTL" "$SCRIPT" >/dev/null 2>&1
-  run curl -s "$Q" --data-urlencode "query=$PFX ASK { GRAPH <$TEST_GRAPH> { chorus:TestEdgesShape sh:property [ sh:path chorus:testConcern ] } }" -H "Accept: application/sparql-results+json"
-  [[ "${output// /}" == *'"boolean":true'* ]]
+  run curl -s "$Q" --data-urlencode "query=$PFX ASK { GRAPH <$TEST_GRAPH> { chorus:TestEdgesShape sh:property ?b . ?b sh:path ?p . FILTER(?p IN (chorus:pyramidLayer, chorus:testConcern)) } }" -H "Accept: application/sparql-results+json"
+  [[ "${output// /}" == *'"boolean":false'* ]]
 }
 
-@test "pyramidLayer and testConcern are ORTHOGONAL — a Test carries both (e2e + security)" {
+@test "#4162: a Test carries one testType, and whether it needs the stack is hermeticity" {
   env ONTOLOGY_GRAPH="$TEST_GRAPH" TTL="$TTL" "$SCRIPT" >/dev/null 2>&1
   # #3606 — assert the write LANDED. A swallowed 401 here plus residue in the
   # graph is indistinguishable from a healthy mint at the SELECT below.
-  run _insert "chorus:test-3540-ortho a chorus:Test ; chorus:covers chorus:subdomain-tests-domain ; chorus:pyramidLayer \"e2e\" ; chorus:testConcern \"security\""
+  run _insert "chorus:test-3540-ortho a chorus:Test ; chorus:covers chorus:subdomain-tests-domain ; chorus:testType \"security\" ; chorus:hermeticity \"needs-stack\""
   [ "$status" -eq 0 ]
-  run curl -s "$Q" --data-urlencode "query=$PFX SELECT ?t WHERE { GRAPH <$TEST_GRAPH> { ?t chorus:pyramidLayer \"e2e\" ; chorus:testConcern \"security\" } }" -H "Accept: application/sparql-results+json"
+  run curl -s "$Q" --data-urlencode "query=$PFX SELECT ?t WHERE { GRAPH <$TEST_GRAPH> { ?t chorus:testType \"security\" ; chorus:hermeticity \"needs-stack\" } }" -H "Accept: application/sparql-results+json"
   [[ "$output" == *'test-3540-ortho'* ]]
 }
 
 @test "a minted Test instance is queryable BY its covers edge (the #3190 contract)" {
   env ONTOLOGY_GRAPH="$TEST_GRAPH" TTL="$TTL" "$SCRIPT" >/dev/null 2>&1
   # mint a Test instance covering a known SubDomain, the way the #2818 tagging will
-  run _insert "chorus:test-3540-probe a chorus:Test ; chorus:covers chorus:subdomain-tests-domain ; chorus:pyramidLayer \"integration\" ; chorus:hermeticity \"needs-stack\""
+  run _insert "chorus:test-3540-probe a chorus:Test ; chorus:covers chorus:subdomain-tests-domain ; chorus:testType \"integration\" ; chorus:hermeticity \"needs-stack\""
   [ "$status" -eq 0 ]
   # query the way werk-test will: which Tests cover this SubDomain?
   run curl -s "$Q" --data-urlencode "query=$PFX SELECT ?t WHERE { GRAPH <$TEST_GRAPH> { ?t a chorus:Test ; chorus:covers chorus:subdomain-tests-domain } }" -H "Accept: application/sparql-results+json"

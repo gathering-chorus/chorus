@@ -930,7 +930,27 @@ pub struct CaseRow {
     pub in_file: String,
 }
 
+/// #4162 — the fields a Test row no longer carries. The API refuses them as
+/// off-model; a replace strips any the served row still has.
+pub const RETIRED_TEST_FIELDS: [&str; 2] = ["pyramidLayer", "testConcern"];
+
+/// #4162 — the ONE answer to "what kind of proving is this": the declared
+/// concern when it is a kind of proving (ui, perf, security), else the layer,
+/// else `unclassified` — never empty, never a guessed default. `api` is not a
+/// kind of proving (it restated covers) and falls through to the layer.
+pub fn test_type(layer: &str, concern: Option<&str>) -> String {
+    match concern {
+        Some(c @ ("ui" | "perf" | "security")) => c.to_string(),
+        _ if !layer.trim().is_empty() => layer.to_string(),
+        _ => "unclassified".to_string(),
+    }
+}
+
 impl CaseRow {
+    pub fn test_type(&self) -> String {
+        test_type(&self.layer, self.concern.as_deref())
+    }
+
     /// The fields the crawler OWNS on a Test row. Everything else the row
     /// carries (quarantine, validityClass) is a person's and is preserved.
     pub fn owned_fields(&self) -> Vec<(String, String)> {
@@ -938,15 +958,12 @@ impl CaseRow {
             ("filePath".to_string(), self.file.clone()),
             ("testName".to_string(), self.case.clone()),
             ("inFile".to_string(), self.in_file.clone()),
-            ("pyramidLayer".to_string(), self.layer.clone()),
+            ("testType".to_string(), self.test_type()),
             ("hermeticity".to_string(), self.hermeticity.clone()),
         ];
         // #4201 — an unplaced or conflicted file carries NO covers, never a guess
         if !self.covers.is_empty() {
             v.push(("covers".to_string(), self.covers.clone()));
-        }
-        if let Some(c) = &self.concern {
-            v.push(("testConcern".to_string(), c.clone()));
         }
         v
     }
@@ -1031,13 +1048,14 @@ fn same_target(served_value: &str, want: &str) -> bool {
 }
 
 /// Does the served row already say what this run would write? Compared on the
-/// owned fields only; an absent testConcern and an empty one are the same.
+/// owned fields only. #4162 — a row still carrying a retired field does NOT
+/// match, so the next pass rewrites it with testType (the migration).
 pub fn row_matches(row: &CaseRow, g: &CaseInGraph) -> bool {
     same_target(&served(&g.fields, "inFile"), &row.in_file)
         && same_target(&served(&g.fields, "covers"), &row.covers)
-        && served(&g.fields, "pyramidLayer") == row.layer
+        && served(&g.fields, "testType") == row.test_type()
         && served(&g.fields, "hermeticity") == row.hermeticity
-        && served(&g.fields, "testConcern") == row.concern.clone().unwrap_or_default()
+        && RETIRED_TEST_FIELDS.iter().all(|f| served(&g.fields, f).is_empty())
 }
 
 /// The whole decision for case rows, pure.
@@ -1358,6 +1376,43 @@ mod cases_4185 {
             vec!["a plain name that does match"]
         );
     }
+    /// #4162 — one field; concern ui/perf/security wins, api falls through,
+    /// nothing declared is `unclassified`, never empty.
+    #[test]
+    fn test_type_is_one_answer_and_never_empty() {
+        assert_eq!(test_type("unit", Some("security")), "security");
+        assert_eq!(test_type("integration", Some("ui")), "ui");
+        assert_eq!(test_type("integration", Some("perf")), "perf");
+        assert_eq!(test_type("integration", Some("api")), "integration");
+        assert_eq!(test_type("bdd", None), "bdd");
+        assert_eq!(test_type("", None), "unclassified");
+        assert_eq!(test_type("  ", Some("api")), "unclassified");
+    }
+
+    /// #4162 NEGATIVE PROOF: a served row still carrying pyramidLayer or
+    /// testConcern does not match, so the crawler rewrites it; the owned
+    /// fields never carry either retired name.
+    #[test]
+    fn a_row_with_a_retired_field_is_rewritten_and_never_written() {
+        let row = CaseRow {
+            file: "a.bats".into(), case: "c".into(), covers: "tests".into(),
+            layer: "unit".into(), hermeticity: "hermetic".into(), concern: Some("security".into()),
+            in_file: "file-a".into(),
+        };
+        let owned = row.owned_fields();
+        assert!(owned.iter().any(|(k, v)| k == "testType" && v == "security"));
+        assert!(!owned.iter().any(|(k, _)| RETIRED_TEST_FIELDS.contains(&k.as_str())));
+        let g = |extra: Vec<(&str, &str)>| {
+            let mut f: Vec<(String, String)> = vec![("inFile".into(), "file-a".into()), ("covers".into(), "tests".into()),
+                ("testType".into(), "security".into()), ("hermeticity".into(), "hermetic".into())];
+            f.extend(extra.into_iter().map(|(k, v)| (k.to_string(), v.to_string())));
+            CaseInGraph { name: "t".into(), file: "a.bats".into(), case: "c".into(), fields: f }
+        };
+        assert!(row_matches(&row, &g(vec![])), "control: the migrated row matches");
+        assert!(!row_matches(&row, &g(vec![("pyramidLayer", "unit")])));
+        assert!(!row_matches(&row, &g(vec![("testConcern", "security")])));
+    }
+
     /// #4292 — the scenarios cucumber's default profile runs, by name.
     #[test]
     fn feature_scenarios_are_registered_by_name_and_switched_off_ones_are_not() {

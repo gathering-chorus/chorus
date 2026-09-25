@@ -2173,7 +2173,12 @@ fn fetch_test_rows() -> (Vec<TestRow>, Vec<String>, Vec<String>, &'static str) {
     // argv-exec'd subprocesses (a hostile char in the endpoint can't become shell).
     // The jq filter emits one TSV row PER covers value, so a multi-valued covers
     // (array in a future TestShape) fans out instead of being dropped silently.
-    let jq_filter = r#".data[] | .filePath as $f | .pyramidLayer as $l | .testName as $n | .name as $e | .hermeticity as $h | .testConcern as $tc | (.covers | if type=="array" then .[] else . end) as $c | [$f,$c,($l // ""),($n // ""),($e // ""),($h // ""),($tc // "")] | @tsv"#;
+    // #4162 — one field, testType, says what kind of proving a row is. The
+    // lanes still select on two columns (layer: unit/integration/…, concern:
+    // ui/perf/security), so the jq splits testType into them. A row the
+    // crawler has not rewritten yet still carries the retired pair; it is
+    // read as-is until the crawler's next pass migrates it.
+    let jq_filter = r#".data[] | .filePath as $f | (.testType // "") as $tt | (if ($tt | IN("ui","perf","security")) then "" elif $tt != "" then $tt else (.pyramidLayer // "") end) as $l | .testName as $n | .name as $e | .hermeticity as $h | (if ($tt | IN("ui","perf","security")) then $tt elif $tt != "" then "" else (.testConcern // "") end) as $tc | (.covers | if type=="array" then .[] else . end) as $c | [$f,$c,($l // ""),($n // ""),($e // ""),($h // ""),($tc // "")] | @tsv"#;
     let curl = Command::new("curl")
         .args(["-sf", "--max-time", "10", &endpoint])
         .output();

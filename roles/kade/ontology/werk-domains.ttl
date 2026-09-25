@@ -333,9 +333,15 @@ chorus:covers a owl:ObjectProperty ;
     rdfs:domain chorus:Test ; rdfs:range chorus:SubDomain ;
     rdfs:comment "Test → the domain/unit it proves. THE edge werk-test queries (which-tests-for-which-card = card's changed units → covering tests). Populated by #2818 tagging." .
 
-chorus:pyramidLayer a owl:DatatypeProperty ;
+chorus:testType a owl:DatatypeProperty ;
+    rdfs:label "test type" ;
     rdfs:domain chorus:Test ; rdfs:range xsd:string ;
-    rdfs:comment "unit | integration | e2e | bdd — declarative, replacing filename inference (quality design gap 7)." .
+    rdfs:comment "What kind of proving a test is — the ONE field for it (#4162). The word the model already uses: every test file's `@test-type:` header, now carried onto its row; CDEvents names the same thing testCase.type. Values: coverage | lint | smoke | security | unit | integration | contract | e2e | bdd | ui | perf | fitness, or unclassified when nothing declares or infers it (never empty, never a guessed default). Jeff's run order (2026-09-12 note: coverage, lint, security, unit, integration, ui, perf) reads this field. Whether a test needs the live stack is hermeticity, a separate question, so a unit-level security test loses nothing by being typed security." .
+
+chorus:pyramidLayer a owl:DatatypeProperty ;
+    owl:deprecated true ;
+    rdfs:domain chorus:Test ; rdfs:range xsd:string ;
+    rdfs:comment "RETIRED by #4162 (2026-09-25) — folded into chorus:testType. Declared only so the deploy does not read its removal as an unstaged delete; no shape serves it and the API refuses it as off-model." .
 
 chorus:verifiedBy a owl:ObjectProperty ;
     rdfs:label "verified by" ;
@@ -351,8 +357,9 @@ chorus:hermeticity a owl:DatatypeProperty ;
     rdfs:comment "hermetic (no live deps) | needs-stack (live Fuseki/app/db) — makes the hermetic-by-default / integration-gated-explicitly principle queryable instead of filename-inferred. The finer second axis to pyramidLayer; absent from any external test ontology (OSLC QM / EARL model results + cases, not isolation) — uniquely ours. (#3540 carried from #2818.)" .
 
 chorus:testConcern a owl:DatatypeProperty ;
+    owl:deprecated true ;
     rdfs:domain chorus:Test ; rdfs:range xsd:string ;
-    rdfs:comment "api | ui | perf | security — the CONCERN axis (what-aspect-is-tested), ORTHOGONAL to pyramidLayer (where-in-the-pyramid). Destination for @test-type's category values as @test-type retires (#3540): unit/integration/e2e/bdd→pyramidLayer, api/ui/perf/security→testConcern. Optional — a test has exactly one pyramidLayer but zero-or-one concern (an e2e security test = pyramidLayer:e2e + testConcern:security). #3540 selection reads pyramidLayer ONLY; testConcern is for future 'run all security tests' queries. (Kade #2818 taxonomy ruling.)" .
+    rdfs:comment "RETIRED by #4162 (2026-09-25) — ui, perf and security moved into chorus:testType; api is retired (it restated covers). Was: api | ui | perf | security — the CONCERN axis (what-aspect-is-tested), ORTHOGONAL to pyramidLayer (where-in-the-pyramid). Destination for @test-type's category values as @test-type retires (#3540): unit/integration/e2e/bdd→pyramidLayer, api/ui/perf/security→testConcern. Optional — a test has exactly one pyramidLayer but zero-or-one concern (an e2e security test = pyramidLayer:e2e + testConcern:security). #3540 selection reads pyramidLayer ONLY; testConcern is for future 'run all security tests' queries. (Kade #2818 taxonomy ruling.)" .
 
 # --- quarantine (#2530, absorbed into #2819) --------------------------------
 # DISTINCT from validityClass (#3324): validityClass asks "is this test
@@ -581,13 +588,12 @@ chorus:TestEdgesShape a sh:NodeShape ;
     sh:targetClass chorus:Test ;
     sh:property [ sh:path chorus:inFile ; sh:minCount 1 ; sh:class chorus:CodeFile ] ;   # #4185 — the crawler's CodeFile row, not the unserved SourceFile
     sh:property [ sh:path chorus:covers ; sh:minCount 1 ; sh:class chorus:Domain ] ;          # #2819 — covers a real Domain (was SubDomain/V1); THIS is the cross-domain join target
-    sh:property [ sh:path chorus:pyramidLayer ; sh:minCount 1 ; sh:in ( "unit" "integration" "e2e" "contract" "fitness" "smoke" "bdd" ) ] ;
+    # #4162 — ONE field for what kind of proving (was pyramidLayer + testConcern).
+    sh:property [ sh:path chorus:testType ; sh:minCount 1 ; sh:in ( "coverage" "lint" "smoke" "security" "unit" "integration" "contract" "e2e" "bdd" "ui" "perf" "fitness" "unclassified" ) ] ;
     # validityClass + hermeticity: enum-if-present (NO minCount — ingestion mints identity
     # before the tagging pass classifies; a freshly-crawled Test is legitimately untagged).
     sh:property [ sh:path chorus:validityClass ; sh:in ( "valid" "asserts-retired-behavior" "passes-by-definition" "integration-not-gated" ) ] ;
     sh:property [ sh:path chorus:hermeticity ; sh:in ( "hermetic" "needs-stack" ) ] ;
-    # testConcern (#3540): the orthogonal CONCERN axis, optional (a test may have no concern).
-    sh:property [ sh:path chorus:testConcern ; sh:in ( "api" "ui" "perf" "security" ) ] ;
     # quarantine (#2530): the three props served + carried; optional (most tests aren't held).
     # Conditional requirement (reason+until iff quarantined) lives in QuarantineShape below.
     sh:property [ sh:path chorus:quarantined ; sh:datatype xsd:boolean ] ;

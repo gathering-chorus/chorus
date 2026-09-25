@@ -85,6 +85,9 @@ export interface QualityScan {
 
 interface DomainTestRow {
   filePath?: string;
+  /** #4162 — the one field for what kind of proving a test is. */
+  testType?: string;
+  /** retired by #4162; read only until the crawler rewrites the row */
   pyramidLayer?: string;
   hermeticity?: string;
   covers?: string;
@@ -161,7 +164,7 @@ function buildLayer(meta: { key: string; name: string; color: string }, layerRow
 function buildScan(rows: DomainTestRow[], generatedFrom: GeneratedFrom | null): QualityScan {
   const byLayer = new Map<string, DomainTestRow[]>();
   for (const row of rows) {
-    const key = row.pyramidLayer || 'unclassified';
+    const key = row.testType || row.pyramidLayer || 'unclassified';
     const list = byLayer.get(key) || [];
     list.push(row);
     byLayer.set(key, list);
