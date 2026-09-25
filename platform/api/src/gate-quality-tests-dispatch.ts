@@ -14,6 +14,9 @@ export interface TestRecord {
   /** The Domain this test covers — the join key (chorus:covers → Domain). */
   covers: string;
   filePath?: string;
+  /** #4162 — what kind of proving; replaces pyramidLayer + testConcern. */
+  testType?: string;
+  /** retired by #4162; read only until the crawler rewrites the row */
   pyramidLayer?: string;
   hermeticity?: string;
 }

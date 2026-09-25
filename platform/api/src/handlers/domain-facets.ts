@@ -52,7 +52,7 @@ export async function fetchDomainTests(
     let total = 0;
     try {
       const covers = `https://jeffbridwell.com/chorus#${domain}`;
-      const rq = `PREFIX chorus: <https://jeffbridwell.com/chorus#> SELECT ?f ?l (COUNT(?t) AS ?n) WHERE { GRAPH <urn:chorus:domains:tests> { ?t a chorus:Test ; chorus:covers <${covers}> ; chorus:filePath ?f . OPTIONAL { ?t chorus:pyramidLayer ?l } } } GROUP BY ?f ?l ORDER BY ?f`;
+      const rq = `PREFIX chorus: <https://jeffbridwell.com/chorus#> SELECT ?f ?l (COUNT(?t) AS ?n) WHERE { GRAPH <urn:chorus:domains:tests> { ?t a chorus:Test ; chorus:covers <${covers}> ; chorus:filePath ?f . OPTIONAL { ?t chorus:testType ?tt } OPTIONAL { ?t chorus:pyramidLayer ?pl } BIND(COALESCE(?tt, ?pl) AS ?l) } } GROUP BY ?f ?l ORDER BY ?f`; // #4162 — testType, the retired pyramidLayer only until the crawler rewrites the row
       const rr = await deps.sparql(rq);
       // only rows shaped like the registry answer count (a binding with no ?f is not a test)
       const rows = ((rr as { results?: { bindings?: Array<{ f?: { value?: string }; l?: { value?: string }; n?: { value?: string } }> } }).results?.bindings ?? [])

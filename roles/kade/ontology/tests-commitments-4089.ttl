@@ -31,9 +31,15 @@ chorus:commitment-tests-declared-layer-at-commit a chorus:Commitment ;
     chorus:status "closed" ; chorus:ownedBy chorus:principal-kade ; chorus:ofService chorus:service-tests ; chorus:probe "platform/scripts/test-gate-test-type-negative.sh" .
 
 chorus:commitment-tests-two-axes-never-merged a chorus:Commitment ;
-    rdfs:label "Layer and concern are two axes, never one enum" ;
-    chorus:statement "pyramidLayer (unit / integration / e2e / bdd / contract / fitness / smoke) and testConcern (api / ui / perf / security) stay separate properties; a concern alone is refused, because a file can be unit AND security." ;
+    rdfs:label "One field says what kind of proving a test is (was: two axes, never merged)" ;
+    chorus:statement "Every registered Test carries exactly one testType (coverage / lint / smoke / security / unit / integration / contract / e2e / bdd / ui / perf / fitness / unclassified). Whether it needs the live stack is hermeticity, a separate field. Until 2026-09-25 this commitment said the opposite: pyramidLayer and testConcern stayed two properties." ;
     chorus:sourceDoc "designing/docs/test-runner-service-design.html" ; chorus:sourceQuote "Two axes, never merged … a concern alone is refused — one merged enum rebuilds the ambiguity Jeff named. Shipped in #3912." ;
+    # #4162 (2026-09-25) SUPERSEDES this: one field, chorus:testType. Measured the
+    # day it was decided: testConcern was on 686 of 8,960 rows and 92% of those
+    # only restated covers; the ui lane selecting by it handed two bash suites to
+    # playwright and folded a red with no code broken (09-13 run 77). "unit AND
+    # security" is kept by hermeticity, the separate needs-the-stack field.
+    # Jeff 2026-09-25: "u own the domain do what u think is right and best for the long term".
     chorus:status "closed" ; chorus:ownedBy chorus:principal-kade ; chorus:ofService chorus:service-tests .
 
 chorus:commitment-tests-header-enters-the-graph a chorus:Commitment ;

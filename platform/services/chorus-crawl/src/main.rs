@@ -2035,10 +2035,8 @@ fn main() {
                         .map(|g| g.fields.as_slice())
                         .unwrap_or(&[]);
                     let mut fields = merge_row(existing, &row.owned_fields());
-                    // testConcern is OPTIONAL: an absent one must not survive as the old value
-                    if row.concern.is_none() {
-                        fields.retain(|(k, _)| k != "testConcern");
-                    }
+                    // #4162 — the retired fields never survive a rewrite (the migration)
+                    fields.retain(|(k, _)| !cases::RETIRED_TEST_FIELDS.contains(&k.as_str()));
                     // #4201 — an untagged file must not keep a folder-era covers
                     if row.covers.is_empty() {
                         fields.retain(|(k, _)| k != "covers");
