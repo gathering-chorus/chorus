@@ -131,6 +131,15 @@ mod login_4202 {
     }
 
     #[test]
+    fn the_session_name_is_the_one_the_dal_stores() {
+        // #4295 — live 2026-09-25: sent silas-3U01z2C--1a0d90f31b5, stored silas-3u01z2c-1a0d90f31b5
+        let l = login_check("silas", &tok("https://id.lightlifeurbangardens.com/silas/profile/card#me", "XoHOD4cSCW-P03U01z2C-", 1, 99_999_999_999), 2).unwrap();
+        let (name, _) = session_row("silas", &l, "jeffbridwell", "1a0d90f31b5");
+        assert_eq!(name, "silas-3u01z2c-1a0d90f31b5");
+        assert_eq!(chorus_awake::slug("A--b__C-"), "a-b-c");
+    }
+
+    #[test]
     fn the_session_row_is_owned_by_the_principal_and_never_carries_the_token() {
         let l = login_check("kade", &tok(KADE, "abc-jti-0001", 1758124800, 1758125400), 1758124801).unwrap();
         let (name, body) = session_row("kade", &l, "chorus-kade", "1a2b3c");

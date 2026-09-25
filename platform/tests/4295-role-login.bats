@@ -111,6 +111,8 @@ state_is() { grep -q "\"state\":\"$2\"" "$T/identity/$1/login.json"; }
   out_lacks "registered yes"
   state_is silas recorded
   grep -q "set-option -t chorus-silas status-right  logged in |" "$T/tmux.log"
+  # the full row is kept so `off` can close it
+  grep -q '"ownedBy":"principal-silas"' "$T/identity/silas/session.row.json"
 }
 
 @test "on: a RUNNING role with no login is logged in, not blessed (the 09:45 case)" {
@@ -214,12 +216,15 @@ state_is() { grep -q "\"state\":\"$2\"" "$T/identity/$1/login.json"; }
 @test "off: stops the role and closes its login row" {
   running silas 901
   printf '{"state":"recorded","session":"silas-x-1","pid":901}' > "$T/identity/silas/login.json"
-  printf '{"data":{"name":"silas-x-1","ownedBy":"principal-silas","sessionState":"open","endedAt":""}}' > "$T/row.json"
+  printf '{"name":"silas-x-1","ownedBy":"principal-silas","tokenId":"t1","sessionState":"open","endedAt":""}' > "$T/identity/silas/session.row.json"
   run "$SCRIPT" off silas
   test "$status" -eq 0
   out_has "silas off: login closed (session silas-x-1)"
   grep -q -- "-X PUT" "$T/curl.log"
   grep -q '"sessionState":"closed"' "$T/curl.body"
+  # the PUT replaces the whole row: the owner and token must ride along
+  grep -q '"ownedBy":"principal-silas"' "$T/curl.body"
+  grep -q '"tokenId":"t1"' "$T/curl.body"
   grep -q "kill-session -t chorus-silas" "$T/tmux.log"
   state_is silas closed
   grep -q "^session.logout silas session=silas-x-1 how=off" "$T/spine.log"
@@ -229,7 +234,7 @@ state_is() { grep -q "\"state\":\"$2\"" "$T/identity/$1/login.json"; }
 @test "off: a row that cannot be closed still stops the role and says the row expires" {
   running silas 902
   printf '{"state":"recorded","session":"silas-x-2","pid":902}' > "$T/identity/silas/login.json"
-  printf '{"error":"not-found"}' > "$T/row.json"
+  printf '{"data":[{"name":"someone-else","ownedBy":"principal-kade","tokenId":"k"}]}' > "$T/row.json"
   run "$SCRIPT" off silas
   test "$status" -eq 0
   out_has "could not be closed"
@@ -239,7 +244,7 @@ state_is() { grep -q "\"state\":\"$2\"" "$T/identity/$1/login.json"; }
 @test "/exit logs out; the pane is not killed (it is already ending)" {
   running silas 903
   printf '{"state":"recorded","session":"silas-x-3","pid":903}' > "$T/identity/silas/login.json"
-  printf '{"data":{"name":"silas-x-3","ownedBy":"principal-silas","sessionState":"open"}}' > "$T/row.json"
+  printf '{"data":[{"name":"silas-x-3","ownedBy":"principal-silas","tokenId":"t3","sessionState":"open"}]}' > "$T/row.json"
   run bash -c "echo '{\"reason\":\"prompt_input_exit\"}' | CLAUDECODE=1 CHORUS_ROLE=silas '$SCRIPT' off silas --from-exit"
   test "$status" -eq 0
   state_is silas closed

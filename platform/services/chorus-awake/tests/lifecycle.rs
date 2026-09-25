@@ -113,13 +113,25 @@ fn exit_logs_out_and_clear_does_not() {
 
 #[test]
 fn closing_a_row_writes_its_end_and_keeps_everything_else() {
-    let existing = r#"{"apiVersion":"v1","data":{"name":"silas-x-1","ownedBy":"principal-silas","sessionState":"open","endedAt":"","tokenId":"t"}}"#;
-    let row = closed_row(existing, "2026-09-25T18:00:00Z").unwrap();
+    let saved = r#"{"name":"silas-x-1","ownedBy":"principal-silas","sessionState":"open","endedAt":"","tokenId":"t","label":"l"}"#;
+    let row = closed_row(saved, "silas-x-1", "2026-09-25T18:00:00Z").unwrap();
     assert_eq!(row["sessionState"], "closed");
     assert_eq!(row["endedAt"], "2026-09-25T18:00:00Z");
     assert_eq!(row["ownedBy"], "principal-silas");
-    assert_eq!(row["name"], "silas-x-1");
-    assert!(closed_row(r#"{"error":"not-found"}"#, "t").is_none(), "an error body is not a row to close");
+    assert_eq!(row["tokenId"], "t");
+    let list = r#"{"data":[{"name":"other","ownedBy":"principal-kade","tokenId":"k"},{"name":"silas-x-1","ownedBy":"principal-silas","tokenId":"t"}]}"#;
+    assert_eq!(closed_row(list, "silas-x-1", "e").unwrap()["ownedBy"], "principal-silas", "the listing is searched by name");
+    assert!(closed_row(r#"{"error":"not-found"}"#, "silas-x-1", "t").is_none());
+}
+
+#[test]
+fn negative_proof_the_single_row_get_is_not_a_row_to_put_back() {
+    // live 2026-09-25: the GET carries iri/label[]/created but no name and no ownedBy;
+    // a PUT built from it would drop the owner (the API answered 422 on a partial PUT)
+    let get = r#"{"data":{"iri":"x","label":["a","a"],"sessionState":"open","tokenId":"t"}}"#;
+    assert!(closed_row(get, "silas-x-1", "e").is_none());
+    let wrong_owner_missing = r#"{"name":"silas-x-1","tokenId":"t"}"#;
+    assert!(closed_row(wrong_owner_missing, "silas-x-1", "e").is_none(), "no ownedBy, no PUT");
 }
 
 #[test]

@@ -360,10 +360,24 @@ fn iso_utc(secs: u64) -> String {
 /// cleared his token cache before it would start. A session is one START, not one
 /// token; the name has to say so. Passed in rather than read from the clock here
 /// so the unit test is deterministic.
+/// lowercase, anything not a letter or digit becomes one dash, no dash at the ends
+pub fn slug(x: &str) -> String {
+    let mut out = String::new();
+    for c in x.chars() {
+        if c.is_ascii_alphanumeric() { out.push(c.to_ascii_lowercase()); }
+        else if !out.ends_with('-') { out.push('-'); }
+    }
+    out.trim_matches('-').to_string()
+}
+
 pub fn session_row(role: &str, l: &Login, host_account: &str, start: &str) -> (String, Value) {
     let tail: String = l.jti.chars().rev().take(8).collect::<Vec<_>>().into_iter().rev().collect();
-    let safe = |x: &str| x.replace(|c: char| !c.is_ascii_alphanumeric(), "-");
-    let name = format!("{}-{}-{}", role, safe(&tail), safe(start));
+    // #4295 — the name is written the way the DAL stores it (lowercase, one dash,
+    // none at the ends). It slugs what it is given, so the live login on
+    // 2026-09-25 sent silas-3U01z2C--1a0d90f31b5, was stored as
+    // silas-3u01z2c-1a0d90f31b5, and every read by the sent name answered 404:
+    // `off` could never have closed it.
+    let name = slug(&format!("{}-{}-{}", role, tail, start));
     let body = serde_json::json!({
         "name": name,
         "label": format!("{} logged in {} on {}", role, iso_utc(l.iat), host_account),
@@ -565,8 +579,11 @@ fn do_login(ctx: &Ctx, role: &str) -> Result<LoginState, ()> {
     let url = format!("{}/v1/identity/sessions", ctx.api);
     let hdr_arg = format!("@{}", hdr.display());
     let body_arg = format!("@{}", body_path.display());
-    let code = sh(&ctx.curl, &["-s", "-o", "/dev/null", "-w", "%{http_code}", "--max-time", "10", "-X", "POST", "-H", "Content-Type: application/json", "-H", &hdr_arg, "--data-binary", &body_arg, &url]).map(|c| c.trim().to_string()).unwrap_or_else(|e| format!("curl failed: {}", e.trim()));
+    let answer = sh(&ctx.curl, &["-s", "-w", "\n%{http_code}", "--max-time", "10", "-X", "POST", "-H", "Content-Type: application/json", "-H", &hdr_arg, "--data-binary", &body_arg, &url]).unwrap_or_else(|e| format!("curl failed: {}", e.trim()));
     let _ = fs::remove_file(&hdr);
+    let (reply, code) = match answer.trim_end().rsplit_once('\n') { Some((b, c)) => (b.to_string(), c.trim().to_string()), None => (String::new(), answer.trim().to_string()) };
+    // #4295 — the stored name is the one the API hands back, not the one sent
+    let session_name = stored_name(&reply).unwrap_or(session_name);
     // #4215 — a 409 on a per-start name means something real: ask WHOSE row it is.
     if code == "409" {
         let get = format!("{}/v1/identity/sessions/{}", ctx.api, session_name);
@@ -586,9 +603,19 @@ fn do_login(ctx: &Ctx, role: &str) -> Result<LoginState, ()> {
         ctx.spine(&["session.login.degraded", role, &format!("http={}", code), &format!("session={}", session_name)]);
         return Ok(LoginState::Pending { why: format!("the identity API answered HTTP {}", code), pid: None });
     }
+    // #4295 — keep the full row: closing it is a whole-row PUT
+    let mut saved = body.clone();
+    saved["name"] = Value::String(session_name.clone());
+    let _ = write_private(&role_id_dir.join("session.row.json"), &saved.to_string());
     ctx.spine(&["session.login", role, &format!("webid={}", login.webid), &format!("jti={}", login.jti), &format!("session={}", session_name), &format!("host_account={}", host_account), &format!("expires_at={}", iso_utc(login.exp))]);
     println!("login: {}  webid {}  jti {}  session {}  recorded yes", role, login.webid, login.jti, session_name);
     Ok(LoginState::Recorded { session: session_name, pid: None })
+}
+
+/// The row name the API stored, from its create reply (data.name).
+fn stored_name(reply: &str) -> Option<String> {
+    let v: Value = serde_json::from_str(reply).ok()?;
+    v.get("data").and_then(|d| d.get("name")).and_then(|n| n.as_str()).filter(|n| !n.is_empty()).map(String::from)
 }
 
 /// Services first (bounded, counted down), then the login. A service still
@@ -785,8 +812,14 @@ fn close_row(ctx: &Ctx, role: &str, session: &str) -> Result<(), String> {
     write_private(&hdr, &format!("Authorization: Bearer {}\n", token.trim()))?;
     let url = format!("{}/v1/identity/sessions/{}", ctx.api, session);
     let hdr_arg = format!("@{}", hdr.display());
-    let existing = sh(&ctx.curl, &["-s", "--max-time", "10", "-H", &hdr_arg, &url]).unwrap_or_default();
-    let result = match lifecycle::closed_row(&existing, &iso_utc(now_ms() as u64 / 1000)) {
+    let ended = iso_utc(now_ms() as u64 / 1000);
+    // the row saved at login; else the listing (the single-row GET lacks name/ownedBy)
+    let saved = fs::read_to_string(role_id_dir.join("session.row.json")).unwrap_or_default();
+    let row = lifecycle::closed_row(&saved, session, &ended).or_else(|| {
+        let list = sh(&ctx.curl, &["-s", "--max-time", "10", "-H", &hdr_arg, &format!("{}/v1/identity/sessions?limit=1000", ctx.api)]).unwrap_or_default();
+        lifecycle::closed_row(&list, session, &ended)
+    });
+    let result = match row {
         None => Err(format!("session {} not found", session)),
         Some(row) => {
             write_private(&body_path, &row.to_string())?;
