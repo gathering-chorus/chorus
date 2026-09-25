@@ -544,8 +544,8 @@ app.get('/test-run', async (_req: Request, res: Response) => {
 // a store that does not answer is a 503, never a quiet fallback to the file.
 const NIGHTLY_UNREAD = 'the nightly run record could not be read from the graph (the store did not answer); '
   + 'refusing to report numbers from anywhere else';
-const nightlyRuns = (): Promise<NightlyRunRecord[] | null> =>
-  loadRunsFromGraph(fusekiCsv(process.env.FUSEKI_QUERY || 'http://localhost:3030/pods/query'));
+const nightlyFuseki = (): string => process.env.FUSEKI_QUERY || 'http://localhost:3030/pods/query';
+const nightlyRuns = (): Promise<NightlyRunRecord[] | null> => loadRunsFromGraph(fusekiCsv(nightlyFuseki()));
 
 function readoutFor(runs: NightlyRunRecord[], runId: string) {
   const run = findRun(runs, runId);
@@ -589,7 +589,7 @@ const nightlySuiteType = (r: { kind: string; path: string }): string =>
   });
 app.get('/nightly', async (req: Request, res: Response) => {
   const runs = await nightlyRuns();
-  if (!runs) { res.status(503).type('text/plain').send(NIGHTLY_UNREAD + '\n'); return; }
+  if (!runs) { res.status(503).type('text').send(NIGHTLY_UNREAD + '\n'); return; }
   const wanted = typeof req.query.run === 'string' && req.query.run ? req.query.run : 'latest';
   const found = readoutFor(runs, wanted);
   if (!found) {
@@ -599,8 +599,7 @@ app.get('/nightly', async (req: Request, res: Response) => {
   }
   // #4277 — the failing cases are the run's own TestResult rows; one bounded
   // store read per page, and a store that does not answer yields none.
-  const fuseki = process.env.FUSEKI_QUERY || 'http://localhost:3030/pods/query';
-  const cases = await fetchFailingCases(found.run, fuseki, fetch as unknown as FetchLike);
+  const cases = await fetchFailingCases(found.run, nightlyFuseki(), fetch as unknown as FetchLike);
   res.type('html').send(renderNightlyPage(found.run, {
     readout: found.readout, history: found.runs, cases, typeOf: nightlySuiteType,
   }));

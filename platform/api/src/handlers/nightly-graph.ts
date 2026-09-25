@@ -51,7 +51,7 @@ export function csvRecords(csv: string): Record<string, string>[] {
   const head = csvCells(lines[0]);
   return lines.slice(1).map((l) => {
     const cells = csvCells(l);
-    return Object.fromEntries(head.map((h, i) => [h, cells[i] ?? '']));
+    return Object.fromEntries(head.map((h, i) => [h, cells.slice(i, i + 1).join('')]));
   });
 }
 
@@ -81,9 +81,9 @@ function tallyOf(rec: Record<string, string>): NightlyTally | undefined {
 function errorsOf(rec: Record<string, string>): string | undefined {
   const fc = num(rec.failedCaseCount);
   if (fc === undefined) return undefined;
-  const s = (k: string) => String(num(rec[k]) ?? 0);
-  return `failed cases ${fc} · exceptions ${s('exceptionCount')} · http ${s('httpErrorCount')}`
-    + ` · assertions ${s('assertionFailureCount')} · other ${s('otherErrorCount')}`;
+  const s = (v: string | undefined) => String(num(v) ?? 0);
+  return `failed cases ${fc} · exceptions ${s(rec.exceptionCount)} · http ${s(rec.httpErrorCount)}`
+    + ` · assertions ${s(rec.assertionFailureCount)} · other ${s(rec.otherErrorCount)}`;
 }
 
 /** Rows + records → runs, oldest first (the order the readout's history wants).
@@ -95,7 +95,7 @@ export function runsFromGraph(suiteCsv: string, recordCsv: string, nowMs: number
   for (const r of csvRecords(suiteCsv)) {
     const run = byRun.get(r.runTs) ?? { rows: [], lastMs: 0 };
     run.rows.push({
-      order: num(r.order) ?? 0, kind: r.kind, path: r.fp, owner: r.owner, status: r.res, summary: r.sum ?? '',
+      order: num(r.order) ?? 0, kind: r.kind, path: r.fp, owner: r.owner, status: r.res, summary: r.sum,
     });
     run.lastMs = Math.max(run.lastMs, tsMs(r.ts));
     byRun.set(r.runTs, run);
