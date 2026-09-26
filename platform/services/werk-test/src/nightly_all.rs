@@ -391,25 +391,37 @@ fn leg_coverage(ctx: &Ctx) -> Vec<SuiteRow> {
     rows
 }
 
+/// #4318 — the crates the denominator counts: every crate the registry names
+/// AND every crate on disk. The registry alone is only as whole as the last
+/// crawl: on 2026-09-25 16:38 a partial registry saw 18 of 29 crates, the
+/// ratchet wrote a baseline of 10 unconfigured, and the next full reading of
+/// 20 went red as "a crate shipped without a floor" when none had.
+pub fn denominator_crates(registry: &[String], disk: &[String]) -> Vec<String> {
+    let mut c: Vec<String> = registry.iter().chain(disk.iter()).cloned().collect();
+    c.sort();
+    c.dedup();
+    c
+}
+
 fn leg_denominator(ctx: &Ctx, floors_yaml: &str) -> Option<SuiteRow> {
     let services = format!("{}/platform/services", ctx.root);
     if !Path::new(&services).is_dir() {
         return None;
     }
     let configured: Vec<String> = parse_floors(floors_yaml).into_iter().filter(|(_, r, _)| r.starts_with("platform/services/")).map(|(_, r, _)| r).collect();
-    let mut crates: Vec<String> = ctx.owners.keys().filter_map(|f| f.strip_prefix("platform/services/")).filter_map(|r| r.split('/').next()).map(String::from).collect();
-    crates.sort();
-    crates.dedup();
-    if crates.is_empty() {
-        eprintln!("coverage-denominator: source=glob-fallback (registry unreachable — LOUD, #3974)");
-        if let Ok(rd) = std::fs::read_dir(&services) {
-            for e in rd.flatten() {
-                if e.path().join("Cargo.toml").is_file() {
-                    crates.push(e.file_name().to_string_lossy().to_string());
-                }
+    let registry: Vec<String> = ctx.owners.keys().filter_map(|f| f.strip_prefix("platform/services/")).filter_map(|r| r.split('/').next()).map(String::from).collect();
+    if registry.is_empty() {
+        eprintln!("coverage-denominator: registry unreachable — counting crates on disk only (LOUD, #3974)");
+    }
+    let mut disk: Vec<String> = Vec::new();
+    if let Ok(rd) = std::fs::read_dir(&services) {
+        for e in rd.flatten() {
+            if e.path().join("Cargo.toml").is_file() {
+                disk.push(e.file_name().to_string_lossy().to_string());
             }
         }
     }
+    let crates = denominator_crates(&registry, &disk);
     let present: Vec<String> = crates.into_iter().filter(|c| Path::new(&format!("{}/{}/Cargo.toml", services, c)).is_file()).collect();
     if present.is_empty() {
         return None;
@@ -1188,7 +1200,13 @@ fn leg_crawler_validate(ctx: &Ctx) -> SuiteRow {
         );
     }
     let mut c = Command::new(&bin);
-    c.arg("--validate")
+    // #4318 — Jeff's note, line one: "prereq: all tests current + in graph".
+    // The validate ran at 03:00 against a graph the crawler only refreshes at
+    // 04:30, so any file changed during the day read as a gap (2026-09-26: 2
+    // log files). The run now crawls first — a full pass writes, then
+    // validates — so it checks a current graph. A run that writes no prod
+    // rows (a werk, #3722) validates only.
+    c.args(crawler_args(ctx.graph.enabled))
         .env("CHORUS_ROOT", &ctx.root)
         .env("CHORUS_ROLE", env_or("NIGHTLY_CRAWL_ROLE", "kade"))
         .current_dir(&ctx.root);
@@ -1199,6 +1217,13 @@ fn leg_crawler_validate(ctx: &Ctx) -> SuiteRow {
         ctx.write_fail_log(&row, &out);
     }
     row
+}
+
+/// #4318 — the crawler's arguments for the nightly's first leg: a full pass
+/// (write, then validate) when the run may write the graph, validate-only
+/// when it may not.
+pub fn crawler_args(may_write: bool) -> Vec<&'static str> {
+    if may_write { Vec::new() } else { vec!["--validate"] }
 }
 
 /// One parsed `VALIDATE|domain|class|tree=|graph=|missing=|stale=|measured` line.
@@ -1296,6 +1321,47 @@ fn leg_duration(secs: u64, holds: usize) -> SuiteRow {
 }
 
 
+
+#[cfg(test)]
+mod crawl_first_4318 {
+    use super::*;
+
+    #[test]
+    fn the_team_run_crawls_before_it_validates() {
+        assert!(crawler_args(true).is_empty(), "a full pass: write, then validate");
+    }
+
+    /// NEGATIVE PROOF — a run that may not write prod (a werk) never crawls.
+    #[test]
+    fn a_werk_run_only_validates() {
+        assert_eq!(crawler_args(false), vec!["--validate"]);
+    }
+}
+
+#[cfg(test)]
+mod denominator_4318 {
+    use super::*;
+
+    fn v(xs: &[&str]) -> Vec<String> {
+        xs.iter().map(|s| s.to_string()).collect()
+    }
+
+    #[test]
+    fn a_partial_registry_does_not_shrink_the_denominator() {
+        let disk = v(&["a", "b", "c", "d"]);
+        assert_eq!(denominator_crates(&v(&["a", "b"]), &disk), disk);
+        assert_eq!(denominator_crates(&[], &disk), disk);
+    }
+
+    /// NEGATIVE PROOF — the registry alone (the rule this replaces) loses the
+    /// crates a partial crawl did not see.
+    #[test]
+    fn the_registry_alone_undercounts() {
+        let registry_only = denominator_crates(&v(&["a", "b"]), &[]);
+        assert_eq!(registry_only.len(), 2);
+        assert_ne!(registry_only.len(), denominator_crates(&v(&["a", "b"]), &v(&["a", "b", "c", "d"])).len());
+    }
+}
 
 #[cfg(test)]
 mod duration_4318 {

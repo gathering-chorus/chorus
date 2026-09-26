@@ -27,7 +27,10 @@ setup() {
   # appease a guard, which is how a guard loses its meaning.
   local homes; homes=$(ls /Users 2>/dev/null | grep -vE '^(Shared|Guest)$' | paste -sd'|' -)
   [ -n "$homes" ] || homes="$(basename "$HOME")"
-  bad=$(grep -rlE "/Users/($homes)/" platform/tests/ 2>/dev/null \
+  # #4318 — -I skips binaries and __pycache__ is excluded: python's compiled
+  # .pyc files record the absolute path of their source, are gitignored build
+  # output, and went red on 2026-09-26 as "test files" that hardcode a path.
+  bad=$(grep -rlIE --exclude-dir=__pycache__ "/Users/($homes)/" platform/tests/ 2>/dev/null \
           | grep -v 'features/step_definitions/' \
           | grep -v 'node_modules/' \
           | grep -v 'fixtures/' \
