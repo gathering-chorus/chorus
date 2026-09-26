@@ -650,3 +650,31 @@ chorus:NoSecretInACredential a sh:SPARQLConstraint ;
           FILTER (isLiteral(?v))
           FILTER (REGEX(STR(?v), "(^|[^A-Za-z0-9])eyJ[A-Za-z0-9_-]{10,}") || REGEX(STR(?v), "nsec1") || REGEX(STR(?v), "(^|[^0-9a-f])[0-9a-f]{64}([^0-9a-f]|$)"))
         }""" .
+
+# =============================================================================
+# #4324 — an ADR is a row. The governance checks each name the ADR they enforce
+# (boundTo adr-041 / 051 / 054 / 058), and no such row existed: the seed refused
+# every model land from 09-26 06:30 on ("boundTo → adr-051 exists neither in the
+# store nor in this batch"). The decisions domain had no class at all
+# (domains-builds-decisions-rcas-4022.ttl: "no chorus:Decision/ADR class").
+# The file stays the record; the row names it, so a check can say which decision
+# it enforces and a reader can get from the rule to the reason.
+# =============================================================================
+
+chorus:decisions chorus:definesVocabulary chorus:ADR .
+
+chorus:ADR a owl:Class ;
+    rdfs:label "ADR" ;
+    rdfs:comment "An architecture decision record: one decision with its context, rationale and trade-offs. The markdown file is the record; this row names it (filePath) so other rows can point at the decision they enforce (boundTo). #4324." .
+
+chorus:ADRShape a sh:NodeShape ;
+    sh:targetClass chorus:ADR ;
+    chorus:instancesGraph "urn:chorus:domains:decisions" ;
+    sh:property chorus:ADRShape-label , chorus:ADRShape-comment , chorus:ADRShape-ownedBy , chorus:ADRShape-filePath .
+chorus:ADRShape-label a sh:PropertyShape ; sh:path rdfs:label ; sh:minCount 1 .
+chorus:ADRShape-comment a sh:PropertyShape ; sh:path chorus:comment ; sh:maxCount 1 ; sh:datatype xsd:string .
+chorus:ADRShape-ownedBy a sh:PropertyShape ;
+    sh:path chorus:ownedBy ; sh:minCount 1 ; sh:maxCount 1 ; sh:class chorus:Principal .
+chorus:ADRShape-filePath a sh:PropertyShape ;
+    sh:path chorus:filePath ; sh:minCount 1 ; sh:maxCount 1 ; sh:datatype xsd:string ;
+    sh:pattern "^roles/[a-z]+/adr/ADR-[0-9]{3}.*[.]md$" .

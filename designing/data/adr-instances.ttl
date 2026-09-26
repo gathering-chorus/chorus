@@ -1,0 +1,29 @@
+@prefix chorus: <https://jeffbridwell.com/chorus#> .
+@prefix rdfs:   <http://www.w3.org/2000/01/rdf-schema#> .
+
+# #4324 — the four ADRs the governance checks are bound to (governance-check-instances.ttl
+# boundTo). The file is the record; the row names it. Owned by the principal who wrote them.
+
+chorus:adr-041 a chorus:ADR ;
+    rdfs:label "ADR-041: Repo Tree — Value Stream → Products → Domains" ;
+    chorus:comment "Where things live in the repo: value stream, then products, then domains." ;
+    chorus:ownedBy chorus:principal-silas ;
+    chorus:filePath "roles/silas/adr/ADR-041-repo-tree-value-stream-products-domains.md" .
+
+chorus:adr-051 a chorus:ADR ;
+    rdfs:label "ADR-051: Instance placement — per-domain named graphs, declared on the shape, no default" ;
+    chorus:comment "Every row lives in its domain's named graph, declared on its shape." ;
+    chorus:ownedBy chorus:principal-silas ;
+    chorus:filePath "roles/silas/adr/ADR-051-instance-placement-per-domain-graphs.md" .
+
+chorus:adr-054 a chorus:ADR ;
+    rdfs:label "ADR-054: The authN / authZ seam — role identity vs role authorization" ;
+    chorus:comment "Identity (Silas) and authorization (Wren) are separate concerns with one seam between them." ;
+    chorus:ownedBy chorus:principal-silas ;
+    chorus:filePath "roles/silas/adr/ADR-054-role-identity-authz-seam.md" .
+
+chorus:adr-058 a chorus:ADR ;
+    rdfs:label "ADR-058: The athena verb family and governance as checkable data" ;
+    chorus:comment "The athena verbs, and governance rules written as data a check can run." ;
+    chorus:ownedBy chorus:principal-silas ;
+    chorus:filePath "roles/silas/adr/ADR-058-athena-verb-family-and-governance-checks.md" .
