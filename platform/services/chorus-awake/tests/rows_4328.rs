@@ -188,8 +188,11 @@ fn a_prompt_is_jeff_unless_it_is_the_wake_line_or_the_harness() {
 #[test]
 fn jeff_attending_writes_who_and_when_on_the_session() {
     let s = json!({"name": "wren-login-1", "actsAs": "wren"});
-    let a = attended_session(s, "principal-jeff", "2026-09-26T18:40:00Z").unwrap();
-    assert_eq!(a["attendedBy"], "principal-jeff");
+    let a = attended_session(s.clone(), "jeff", "2026-09-26T18:40:00Z").unwrap();
+    assert_eq!(a["attendedBy"], "jeff");
+    // #4346 NEGATIVE PROOF: the API refuses "principal-jeff" (double-prefix,
+    // 422); a prefixed name must still go out bare
+    assert_eq!(attended_session(s, "principal-jeff", "t").unwrap()["attendedBy"], "jeff");
     assert_eq!(a["lastAttendedAt"], "2026-09-26T18:40:00Z");
     assert!(attended_session(json!({}), "principal-jeff", "t").is_none(), "no name, no PUT");
 }

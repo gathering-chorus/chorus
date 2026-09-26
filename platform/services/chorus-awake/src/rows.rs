@@ -184,10 +184,14 @@ pub fn speaker(hook_input: &str) -> Speaker {
     Speaker::Jeff
 }
 
-/// Jeff spoke to this session now: say so on the session. One PUT.
+/// Jeff spoke to this session now: say so on the session. One PUT. The edge
+/// goes as the bare name: the API adds "principal-" itself and refuses a
+/// value that already has it (#4346: 16:40 on 09-26, "double-prefix:
+/// 'principal-jeff' already starts with 'principal-'", 422 on every turn).
 pub fn attended_session(mut session: Value, principal: &str, now: &str) -> Option<Value> {
     session.get("name")?;
-    session["attendedBy"] = Value::String(principal.into());
+    let bare = principal.strip_prefix("principal-").unwrap_or(principal);
+    session["attendedBy"] = Value::String(bare.into());
     session["lastAttendedAt"] = Value::String(now.into());
     Some(session)
 }

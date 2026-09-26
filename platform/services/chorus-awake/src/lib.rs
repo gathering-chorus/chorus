@@ -975,7 +975,7 @@ fn seen_write(ctx: &Ctx, role: &str, conv: &str, flag: &str) -> i32 {
         } else { s }
     });
     // #4339 — a prompt from Jeff: the session records who attended it and when
-    let session = if flag == "jeff" { session.and_then(|s| rows::attended_session(s, "principal-jeff", &now)) } else { session };
+    let session = if flag == "jeff" { session.and_then(|s| rows::attended_session(s, "jeff", &now)) } else { session };
     if let Some(s) = session.clone().and_then(|s| rows::seen_session(s, &now)) { put_row(ctx, role, "identity/sessions", "session", &s); }
     // ... and no run: this running session gets its run, presence and boot context now
     let run_live = read_row(ctx, role, "run").map(|r| r.get("runEndedAt").and_then(|e| e.as_str()).unwrap_or("").is_empty()).unwrap_or(false);
