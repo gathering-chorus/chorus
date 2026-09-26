@@ -217,3 +217,42 @@ has() { printf '%s' "$1" | grep -qF -- "$2"; }
   run "$SCRIPT" status
   out_has "store: session silas-s1 open, acts as role-silas, since 2026-09-26T09:00:00Z, last seen 2026-09-26T09:05:00Z"
 }
+
+# 09-26 08:55 — `on` launched `claude attach <id>`, which never registers (its
+# SessionStart fired long ago): "registered NO after 20s", and no window opened.
+attach_world() {
+  touch "$T/no-register"
+  cat > "$T/bin/tmux2" <<EOS
+#!/bin/bash
+case "\$1" in list-panes) echo "%9 /dev/ttys009 700"; exit 0 ;; esac
+exec "$T/bin/tmux" "\$@"
+EOS
+  printf '#!/bin/bash\n[ "$2" = 700 ] && echo "${PANE_CHILD:-701}"\nexit 0\n' > "$T/bin/pgrep"
+  cat > "$T/bin/ps2" <<EOS
+#!/bin/bash
+if [ "\$1" = "-o" ]; then echo "\${PANE_CMD:-/h/.local/bin/claude attach bda5f062}"; exit 0; fi
+grep -qx "\$2" "$T/alive-pids"
+EOS
+  chmod +x "$T/bin/tmux2" "$T/bin/pgrep" "$T/bin/ps2"
+  echo 701 >> "$T/alive-pids"
+  export TMUX_BIN="$T/bin/tmux2" AWAKE_PGREP="$T/bin/pgrep" AWAKE_PS="$T/bin/ps2"
+}
+
+@test "an attached session that never registers is registered from its pane, and comes up logged in" {
+  attach_world
+  run "$SCRIPT" on kade
+  test "$status" -eq 0
+  out_has "pane %9  logged in"
+  grep -q '"pid":701' "$T/sessions/kade-701.json"
+  grep -q "session.registered.from_pane kade" "$T/spine.log"
+  has "$(body POST identity_presences)" '"pane":"%9"'
+}
+
+@test "NEGATIVE PROOF: a pane running no claude is not registered, and still says registered NO" {
+  attach_world
+  export PANE_CMD="-zsh"
+  run "$SCRIPT" on kade
+  test "$status" -ne 0
+  out_has "registered NO"
+  test ! -e "$T/sessions/kade-701.json"
+}

@@ -763,6 +763,11 @@ fn on(ctx: &Ctx, role: &str, attach: bool) -> Result<Came, (i32, String)> {
         if found.is_some() || i == ctx.wait { break; }
         std::thread::sleep(Duration::from_secs(1));
     }
+    // #4328 — `claude attach <id>` joins a background session whose SessionStart
+    // fired long ago, so it never registers; 09-26 08:55 Kade and Wren both came
+    // up running and "registered NO", with no window. The pane itself is the
+    // proof: its claude process, tty and pane id are written as the entry.
+    let found = found.or_else(|| register_from_pane(ctx, role));
     let Some(l) = found else {
         eprintln!("awake: {}  registered NO after {}s  via {} — look at the pane: {} attach -t {}", role, ctx.wait, how, ctx.tmux, tmux_session);
         return Err((1, format!("did not register in {}s", ctx.wait)));
@@ -933,6 +938,24 @@ fn sweep(ctx: &Ctx) -> i32 {
     ctx.spine(&["session.sweep", &format!("closed={}", closed), &format!("failed={}", failed)]);
     println!("sweep: {} expired session(s) closed, {} not closed", closed, failed);
     if failed > 0 { 1 } else { 0 }
+}
+
+/// The claude process running in the role's pane, written into the registry
+/// the way the SessionStart hook writes it. None when the pane runs no claude.
+fn register_from_pane(ctx: &Ctx, role: &str) -> Option<Live> {
+    let out = sh(&ctx.tmux, &["list-panes", "-t", &Ctx::tmux_session(role), "-F", "#{pane_id} #{pane_tty} #{pane_pid}"]).ok()?;
+    let mut it = out.lines().next()?.split_whitespace();
+    let (pane, tty, shell_pid) = (it.next()?.to_string(), it.next()?.to_string(), it.next()?.to_string());
+    let pgrep = envd("AWAKE_PGREP", "pgrep");
+    let kids = sh(&pgrep, &["-P", &shell_pid]).unwrap_or_default();
+    let pid = kids.lines().filter_map(|k| k.trim().parse::<u64>().ok()).find(|k| {
+        sh(&ctx.ps, &["-o", "command=", "-p", &k.to_string()]).map(|c| c.contains("claude")).unwrap_or(false)
+    })?;
+    let entry = serde_json::json!({"role": role, "pid": pid, "tty": tty, "host": "tmux", "tmux": pane, "source": "chorus-awake (attach, #4328)"});
+    let _ = fs::create_dir_all(&ctx.sessions_dir);
+    fs::write(ctx.sessions_dir.join(format!("{}-{}.json", role, pid)), entry.to_string()).ok()?;
+    ctx.spine(&["session.registered.from_pane", role, &format!("pid={}", pid), &format!("pane={}", pane)]);
+    parse_registry(&entry.to_string())
 }
 
 /// `relogin <role>` — the background retry a pending login starts. Ends when
