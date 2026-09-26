@@ -134,3 +134,23 @@ pub fn session_at(principal: &str, at: &str, sessions: &Value) -> Option<String>
     c.sort_by_key(|r| s(r, "startedAt"));
     c.last().map(|r| s(r, "name"))
 }
+
+fn epoch(iso: &str) -> Option<i64> {
+    let p = |a: usize, b: usize| iso.get(a..b)?.parse::<i64>().ok();
+    let (y, mo, d, h, mi, se) = (p(0,4)?, p(5,7)?, p(8,10)?, p(11,13)?, p(14,16)?, p(17,19)?);
+    let y2 = if mo <= 2 { y - 1 } else { y };
+    let era = y2.div_euclid(400); let yoe = y2 - era * 400;
+    let doy = (153 * (if mo > 2 { mo - 3 } else { mo + 9 }) + 2) / 5 + d - 1;
+    let days = era * 146097 + yoe * 365 + yoe / 4 - yoe / 100 + doy - 719468;
+    Some(days * 86400 + h * 3600 + mi * 60 + se)
+}
+
+/// Seconds from `from` to `to` (both ISO-8601 UTC); None if either is malformed.
+pub fn age_secs(from: &str, to: &str) -> Option<i64> { Some(epoch(to)? - epoch(from)?) }
+
+/// The prompts that can be this message arriving: received at or after it was
+/// sent, within `window` seconds. Kade's review of #4340: without the window a
+/// 200-prompt log makes any old short prompt a false "truncated".
+pub fn received_for(log: &[(String, String)], sent_at: &str, window: i64) -> Vec<String> {
+    log.iter().filter(|(at, _)| age_secs(sent_at, at).map(|d| (0..=window).contains(&d)).unwrap_or(false)).map(|(_, t)| t.clone()).collect()
+}

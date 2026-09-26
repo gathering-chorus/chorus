@@ -962,10 +962,11 @@ fn log_received(ctx: &Ctx, role: &str, hook_input: &str) {
     let _ = write_private(&path, &(lines[keep..].join("\n") + "\n"));
 }
 
-fn received_texts(ctx: &Ctx, role: &str) -> Vec<String> {
+/// (at, text) of every prompt the role received, from the seen hook's log.
+fn received_log(ctx: &Ctx, role: &str) -> Vec<(String, String)> {
     let path = PathBuf::from(&ctx.identity_dir).join(role).join("received.jsonl");
     fs::read_to_string(path).unwrap_or_default().lines()
-        .filter_map(|l| serde_json::from_str::<Value>(l).ok()?.get("text")?.as_str().map(String::from)).collect()
+        .filter_map(|l| { let v: Value = serde_json::from_str(l).ok()?; Some((v.get("at")?.as_str()?.to_string(), v.get("text")?.as_str()?.to_string())) }).collect()
 }
 
 fn api_list(ctx: &Ctx, route: &str) -> Value {
@@ -1006,7 +1007,8 @@ fn project_messages(ctx: &Ctx) -> i32 {
         let to_p = msgs::principal_of(&src.to, &principals);
         let presence = to_p.as_deref().and_then(|p| msgs::presence_at(p, &at, &runs, &presences));
         let recv_role = src.to.trim_start_matches("principal-");
-        let received = if ROLES.contains(&recv_role) { received_texts(ctx, recv_role) } else { vec![] };
+        // Kade's review: only prompts that arrived after this message was sent, within 10 minutes
+        let received = if ROLES.contains(&recv_role) { msgs::received_for(&received_log(ctx, recv_role), &msgs::iso(&src.created_at), 600) } else { vec![] };
         let outcome = msgs::outcome(src, &received);
         let message_name = match &known {
             Some(k) => k.get("message").and_then(|m| m.as_str()).unwrap_or("").to_string(),
@@ -1037,7 +1039,8 @@ fn project_messages(ctx: &Ctx) -> i32 {
         if src.id > new_mark { new_mark = src.id; }
         // keep it open while the outcome can still change
         if let Some(o) = state.get_mut("open").and_then(|o| o.as_object_mut()) { o.remove(&key); }
-        if matches!(outcome.as_str(), "pending" | "queued") && !delivery_name.is_empty() {
+        let young = msgs::age_secs(&msgs::iso(&src.created_at), &iso_utc(now_ms() as u64 / 1000)).map(|a| a < 600).unwrap_or(false);
+        if (matches!(outcome.as_str(), "pending" | "queued") || (outcome == "delivered" && young)) && !delivery_name.is_empty() {
             if state.get("open").is_none() { state["open"] = serde_json::json!({}); }
             state["open"][&key] = serde_json::json!({"message": message_name, "delivery": delivery_name, "outcome": outcome});
         }

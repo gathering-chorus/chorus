@@ -80,7 +80,7 @@ lacks() { test -z "$(printf '%s' "$1" | grep -F -- "$2" || true)"; }
 }
 
 @test "a message that reached the pane cut short is recorded as truncated" {
-  printf '{"at":"x","text":"5 Buzz is then: add one Channel row"}\n' > "$T/identity/silas/received.jsonl"
+  printf '{"at":"2026-09-26T16:45:33Z","text":"5 Buzz is then: add one Channel row"}\n' > "$T/identity/silas/received.jsonl"
   run "$SCRIPT" project-messages
   d=$(one POST-messages_deliveries 'message 501')
   has "$d" '"deliveryOutcome":"truncated"'
@@ -88,7 +88,7 @@ lacks() { test -z "$(printf '%s' "$1" | grep -F -- "$2" || true)"; }
 }
 
 @test "NEGATIVE PROOF: the same message received whole is delivered, not truncated" {
-  python3 -c 'import json;print(json.dumps({"at":"x","text":json.load(open("'"$T"'/messages.json"))[0]["content"]}))' > "$T/identity/silas/received.jsonl"
+  python3 -c 'import json;print(json.dumps({"at":"2026-09-26T16:45:33Z","text":json.load(open("'"$T"'/messages.json"))[0]["content"]}))' > "$T/identity/silas/received.jsonl"
   run "$SCRIPT" project-messages
   d=$(one POST-messages_deliveries 'message 501')
   has "$d" '"deliveryOutcome":"delivered"'
@@ -108,4 +108,10 @@ lacks() { test -z "$(printf '%s' "$1" | grep -F -- "$2" || true)"; }
   for i in $(seq 1 205); do echo "{\"session_id\":\"c\",\"prompt\":\"p$i\"}" | AWAKE_SEEN_EVERY=999999 "$SCRIPT" seen wren; done
   test "$(wc -l < "$T/identity/wren/received.jsonl" | tr -d ' ')" -eq 200
   tail -1 "$T/identity/wren/received.jsonl" | grep -qF '"text":"p205"'
+}
+
+@test "NEGATIVE PROOF: a short prompt from before the message was sent never marks it truncated" {
+  printf '{"at":"2026-09-26T16:40:00Z","text":"5 Buzz is then: add one Channel row"}\n' > "$T/identity/silas/received.jsonl"
+  run "$SCRIPT" project-messages
+  has "$(one POST-messages_deliveries 'message 501')" '"deliveryOutcome":"delivered"'
 }

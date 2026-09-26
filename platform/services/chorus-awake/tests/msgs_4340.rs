@@ -92,3 +92,16 @@ fn a_cut_message_is_found_even_when_the_pane_joined_its_lines() {
     let s = src("nudge", "wren", "silas", "5 Keep Channel as data.\n  Buzz is then: add one Channel row, add pubkeys to Principals.\n  Step 0: messages live in messages.db", "delivered");
     assert_eq!(outcome(&s, &[" as data. Buzz is then: add one Channel row, add pubkeys to Principals. Step 0: messages live in messages.db".into()]), "truncated");
 }
+
+#[test]
+fn only_prompts_received_after_the_message_and_soon_after_can_be_it() {
+    let log = vec![
+        ("2026-09-26T16:40:00Z".to_string(), "an older prompt".to_string()),
+        ("2026-09-26T16:45:33Z".to_string(), "the cut arrival".to_string()),
+        ("2026-09-26T17:30:00Z".to_string(), "much later".to_string()),
+    ];
+    assert_eq!(received_for(&log, "2026-09-26T16:45:32Z", 600), vec!["the cut arrival".to_string()]);
+    // negative proof: with no window every old prompt would be a candidate
+    assert_eq!(received_for(&log, "2026-09-26T16:00:00Z", 100_000).len(), 3);
+    assert_eq!(age_secs("2026-09-26T23:59:50Z", "2026-09-27T00:00:10Z"), Some(20));
+}
