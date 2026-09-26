@@ -1,0 +1,9 @@
+@prefix c: <https://jeffbridwell.com/chorus#> .
+@prefix rdfs: <http://www.w3.org/2000/01/rdf-schema#> .
+@prefix dcterms: <http://purl.org/dc/terms/> .
+# #4323 — every rule kept: a run's boot context, its conversation, a nudge channel, and a message sent over it.
+c:cx1 a c:Context ; rdfs:label "cx1" ; rdfs:comment "fixture" ; dcterms:created "2026-09-26T08:00:00Z" ; dcterms:creator "silas" ; dcterms:modified "2026-09-26T08:00:00Z" ; c:ownedBy c:principal-silas ; c:contextOf c:r1 ; c:contextKind "boot" .
+c:cv1 a c:Conversation ; rdfs:label "cv1" ; rdfs:comment "fixture" ; dcterms:created "2026-09-26T08:00:00Z" ; dcterms:creator "silas" ; dcterms:modified "2026-09-26T08:00:00Z" ; c:ownedBy c:principal-silas ; c:conversationOf c:r1 ; c:conversationId "conv-r1" .
+c:ch1 a c:Channel ; rdfs:label "ch1" ; rdfs:comment "fixture" ; dcterms:created "2026-09-26T08:00:00Z" ; dcterms:creator "silas" ; dcterms:modified "2026-09-26T08:00:00Z" ; c:ownedBy c:principal-silas ; c:channelKind "nudge" .
+c:m1 a c:Message ; rdfs:label "m1" ; c:sentBy c:role-silas ; c:sentTo c:role-silas ; c:overChannel c:ch1 .
+c:m0 a c:Message ; rdfs:label "m0, sent before #4323, names no channel" ; c:sentBy c:role-silas ; c:sentTo c:role-silas .
