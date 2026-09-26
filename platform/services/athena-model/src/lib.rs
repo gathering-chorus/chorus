@@ -102,6 +102,9 @@ const KINDS: &[(&str, &str, bool)] = &[
     // (kind, class local name, bare_grain)
     ("product", "Product", true),
     ("domain", "Domain", true),
+    // #4325 — DomainShape names sh:class chorus:Layer (#4293); a class an edge
+    // requires must be creatable through the DAL (4237-no-edge-to-retired-class)
+    ("layer", "Layer", false),
     ("role", "Role", false),
     // #3522 (Wren, Jeff-authorized 2026-06-20) — ValueStream is a generated athena-make
     // surface + SHACL shape but was missing from the DAL mint-allowlist (the

@@ -52,6 +52,10 @@ chorus:time           chorus:inLayer chorus:layer-foundation .
 chorus:logs           chorus:inLayer chorus:layer-foundation .
 chorus:security       chorus:inLayer chorus:layer-foundation .
 chorus:identity       chorus:inLayer chorus:layer-foundation .
+# #4325 — provenance is Wren's domain and sits here by her call (2026-09-26 13:35):
+# athena-make stamps it on every write, so every domain stands on it and none is
+# composed from it. Above identity, which gives it the creator it stamps.
+chorus:provenance     chorus:inLayer chorus:layer-foundation .
 
 # --- Silas's domains: build ----------------------------------------------------
 

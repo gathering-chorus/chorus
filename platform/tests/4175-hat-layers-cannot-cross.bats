@@ -32,6 +32,8 @@ CHECKS="$ROOT/designing/data/governance-check-instances.ttl"
 ROWS="$ROOT/roles/wren/ontology/hats-instances-4175.ttl"
 FIXTURE="$ROOT/platform/tests/fixtures/hats-4175-violations.ttl"
 CORE="$ROOT/roles/silas/ontology/chorus.ttl"
+# #4325 — the layer edges live in their own file (#4293); the real model is both
+LAYERS="$ROOT/roles/silas/ontology/cmdb-layers-4293.ttl"
 
 setup() {
   command -v arq >/dev/null 2>&1 || skip "arq (Jena) not installed"
@@ -95,7 +97,7 @@ rows_against() {  # $1=check $2..=data files
 
 @test "#4175 GREEN — every hat check returns zero rows against the real model" {
   while read -r chk _; do
-    n="$(rows_against "$chk" "$MODEL" "$ROWS" "$CORE")"
+    n="$(rows_against "$chk" "$MODEL" "$ROWS" "$CORE" "$LAYERS")"
     [ "$n" -eq 0 ] || { echo "$chk fired on the real model with $n row(s)"; return 1; }
   done < <(checks)
 }
