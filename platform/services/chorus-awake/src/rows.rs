@@ -76,6 +76,29 @@ pub fn conversation_row(role: &str, run: &str, conversation: &str) -> Option<Val
     }))
 }
 
+/// #4344 — the three credential files a role holds, as Credential rows: what
+/// kind, where held, what it grants, when it last changed. Never a value: the
+/// file is named, not read. `mtimes` is (file name, ISO mtime) for the files
+/// that exist.
+pub fn credential_rows(role: &str, identity_dir: &str, mtimes: &[(String, String)]) -> Vec<Value> {
+    let kinds = [("cred.json", "css-client", "the CSS client it signs in with"),
+                 ("nostr.json", "nostr-key", "its nostr keypair (the public half is a KeyRegistryEntry)"),
+                 ("token.cache", "access-token", "the current 10-minute access token")];
+    kinds.iter().filter_map(|(file, kind, what)| {
+        let (_, at) = mtimes.iter().find(|(f, _)| f == file)?;
+        Some(json!({
+            "name": format!("{}-{}", role, kind),
+            "label": format!("{} {}", role, kind),
+            "comment": format!("{}'s {}: {}. Held in {}; the value never enters the store. #4344.", role, kind, what, file),
+            "ownedBy": format!("principal-{}", role),
+            "credentialKind": kind,
+            "source": format!("{}/{}/{}", identity_dir, role, file),
+            "scope": "urn:chorus:identity",
+            "rotatedAt": at,
+        }))
+    }).collect()
+}
+
 /// The session row as a login writes it now: #4202's row plus who it acts as
 /// and when it started.
 pub fn with_role_and_start(mut session: Value, role: &str, started: &str) -> Value {

@@ -145,3 +145,14 @@ fn a_login_saved_before_the_bare_name_fix_is_sent_back_bare_4343() {
     // negative proof: an already-bare role is left alone
     assert_eq!(seen_session(json!({"name":"s","actsAs":"kade"}), "t").unwrap()["actsAs"], "kade");
 }
+
+#[test]
+fn credential_rows_4344_name_the_file_never_the_value() {
+    let m = vec![("cred.json".to_string(), "2026-07-23T21:47:00Z".to_string()), ("token.cache".to_string(), "2026-09-26T19:44:00Z".to_string())];
+    let r = credential_rows("silas", "~/.chorus/identity", &m);
+    assert_eq!(r.len(), 2, "only the files that exist");
+    assert_eq!(r[0]["credentialKind"], "css-client");
+    assert_eq!(r[0]["source"], "~/.chorus/identity/silas/cred.json");
+    assert_eq!(r[1]["rotatedAt"], "2026-09-26T19:44:00Z");
+    assert!(r.iter().all(|c| c.get("secret").is_none() && c.get("value").is_none()));
+}

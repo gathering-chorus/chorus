@@ -551,3 +551,44 @@ chorus:DeliveredNeedsAPresence a sh:SPARQLConstraint ;
 chorus:PresenceShape sh:property chorus:PresenceShape-reachableOver .
 chorus:PresenceShape-reachableOver a sh:PropertyShape ;
     sh:path chorus:reachableOver ; sh:class chorus:Channel .
+
+# =============================================================================
+# #4344 — credentials are rows, not just files. The Login ER (09-20): "Credential
+# is an empty table while every login succeeds; the real credentials are files".
+# Each role holds three files under ~/.chorus/identity/<role>/: cred.json (the
+# CSS client it signs in with), nostr.json (its nostr keypair), token.cache (the
+# current 10-minute access token). A Credential row names one of them: what kind,
+# where it is held (source = the file path), what it grants (scope), when it
+# last changed. Never the value: NoSecretInACredential refuses any field that
+# looks like one.
+# =============================================================================
+
+chorus:credentialKind a owl:DatatypeProperty ;
+    rdfs:label "credential kind" ;
+    rdfs:comment "css-client | nostr-key | access-token. #4344." ;
+    rdfs:domain chorus:Credential ; rdfs:range xsd:string .
+chorus:rotatedAt a owl:DatatypeProperty ;
+    rdfs:label "rotated at" ;
+    rdfs:comment "When the credential last changed (the file's modification time), ISO-8601 UTC. #4344." ;
+    rdfs:domain chorus:Credential ; rdfs:range xsd:string .
+
+chorus:CredentialShape sh:property chorus:CredentialShape-credentialKind , chorus:CredentialShape-rotatedAt , chorus:CredentialShape-comment ;
+    sh:sparql chorus:NoSecretInACredential .
+chorus:CredentialShape-credentialKind a sh:PropertyShape ;
+    sh:path chorus:credentialKind ; sh:maxCount 1 ; sh:datatype xsd:string ;
+    sh:pattern "^(css-client|nostr-key|access-token)$" .
+# a comment is a core attribute of every class (Jeff 09-25, "5 yes"); the shape had none,
+# so the service refused it as off-model (live 15:52)
+chorus:CredentialShape-comment a sh:PropertyShape ;
+    sh:path chorus:comment ; sh:maxCount 1 ; sh:datatype xsd:string .
+chorus:CredentialShape-rotatedAt a sh:PropertyShape ;
+    sh:path chorus:rotatedAt ; sh:maxCount 1 ; sh:datatype xsd:string .
+
+chorus:NoSecretInACredential a sh:SPARQLConstraint ;
+    sh:message "a credential row names where a secret is held, never the secret: no token (eyJ…), no nsec, no 64-hex key in any field" ;
+    sh:select """
+        SELECT $this WHERE {
+          $this ?p ?v .
+          FILTER (isLiteral(?v))
+          FILTER (REGEX(STR(?v), "(^|[^A-Za-z0-9])eyJ[A-Za-z0-9_-]{10,}") || REGEX(STR(?v), "nsec1") || REGEX(STR(?v), "(^|[^0-9a-f])[0-9a-f]{64}([^0-9a-f]|$)"))
+        }""" .
