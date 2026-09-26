@@ -1,5 +1,6 @@
 #!/usr/bin/env bats
-# @test-type: integration — reads a live service, skip-if-absent in CI
+# @test-type: integration:ui — reads a live service, skip-if-absent in CI
+# @domain: domains — the product domain this suite guards (#4334)
 load test_helper
 # operating-model.bats — Tests for Operating Model page (#1759)
 # What Jeff sees: a view of every domain, its services, ownership, gates,

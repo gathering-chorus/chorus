@@ -1,5 +1,6 @@
 #!/usr/bin/env bats
-# @test-type: integration — auto-classified (#3528 sweep); service-hitting=integration(skip-if-absent), static-guard=unit
+# @test-type: unit — auto-classified (#3528 sweep); service-hitting=integration(skip-if-absent), static-guard=unit
+# @domain: monitors — the product domain this suite guards (#4334)
 load test_helper
 # 3369-deep-health-resilience.bats — Tests for #3369
 # What Jeff sees: the 6am window runs clean — daily-signal-scan completes instead

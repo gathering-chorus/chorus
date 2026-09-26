@@ -1,5 +1,6 @@
 #!/usr/bin/env bats
 # @test-type: integration — live athena-make + its store (RUN_INTEGRATION=true).
+# @domain: code — the product domain this suite guards (#4334)
 # #4157 — the code domain is served and writable through the generated API.
 # Runs in prove-live against the werk variant (OWL_URL) and by hand against any
 # athena-make (ATHENA_MAKE_URL). Routes are the bare collections: discovery

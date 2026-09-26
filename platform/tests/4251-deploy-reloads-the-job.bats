@@ -1,5 +1,6 @@
 #!/usr/bin/env bats
 # @test-type: unit — reads the installer's text and exercises the plist finder against fixture plists in a tmpdir; no launchctl, no live job
+# @domain: deploys — the product domain this suite guards (#4334)
 # #4251 — a deploy that replaces a binary a launchd job runs must reload that
 # job. On 2026-09-21 the 03:00 nightly never launched: the #4247 land replaced
 # werk-test-bin at 21:10, launchd held the previous code signature for

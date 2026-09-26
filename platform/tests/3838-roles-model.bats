@@ -1,5 +1,6 @@
 #!/usr/bin/env bats
-# @test-type: unit — greps and parses TTL files in the repo plus fixtures it writes to BATS_TEST_TMPDIR; no store, no service, no network.
+# @test-type: contract — greps and parses TTL files in the repo plus fixtures it writes to BATS_TEST_TMPDIR; no store, no service, no network.
+# @domain: roles — the product domain this suite guards (#4334)
 # #3838 — the roles model must be able to describe a role.
 #
 # Three defects this guards, each verified live on 2026-08-12 before the fix:

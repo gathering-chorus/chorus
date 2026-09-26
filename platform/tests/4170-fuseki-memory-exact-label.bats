@@ -1,5 +1,6 @@
 #!/usr/bin/env bats
-# @test-type: contract
+# @test-type: unit
+# @domain: services — the product domain this suite guards (#4334)
 # 4170 — the fuseki-memory check must read the store, not a sibling.
 #
 # It selected the first service whose label CONTAINS "fuseki". Four match; the

@@ -1,5 +1,6 @@
 #!/usr/bin/env bats
 # @test-type: integration
+# @domain: security — the product domain this suite guards (#4334)
 # #3618 — two test surfaces, per DEC-1674 red-first:
 #   A. SCRIPT SHAPE (runs pre-apply): security-3618-migrate.sh generate emits a
 #      well-formed door batch — 4-field lines, DEL sweep covers security-trust,

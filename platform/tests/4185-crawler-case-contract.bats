@@ -1,5 +1,6 @@
 #!/usr/bin/env bats
 # @test-type: contract
+# @domain: tests — the product domain this suite guards (#4334)
 # retirement-gate: absence-guard
 # #4185 — the model and the tree agree with the crawler's case pass.
 #

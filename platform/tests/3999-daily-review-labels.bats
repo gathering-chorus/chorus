@@ -1,5 +1,6 @@
 #!/usr/bin/env bats
 # @test-type: unit — hermetic: fixture nightly log + stubbed ops-nudge/chorus-log; no real I/O
+# @domain: tests — the product domain this suite guards (#4334)
 # #3999 — daily-review must label from parseable results; "BUILD BROKE" only when
 # there is truly no test output. Positive fixtures are the EXACT captured lines
 # from the 2026-08-24 06:05 fourth-strike mislabel (never hand-typed).

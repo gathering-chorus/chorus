@@ -1,5 +1,6 @@
 #!/usr/bin/env bats
 # @test-type: unit — sources only the wrapper function; fixture minter + fixture DAL, no live service
+# @domain: identity — the product domain this suite guards (#4334)
 # #3837 — the athena-model() shell wrapper minted via `command chorus-identity-token`,
 # a bare-name lookup. The minter lives in platform/scripts, which role shells do
 # not put on PATH, so the lookup was exit 127, the wrapper passed an EMPTY token,

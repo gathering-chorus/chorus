@@ -1,5 +1,6 @@
 #!/usr/bin/env bats
 # @test-type: integration — writes and drops its OWN throwaway graph; never the live ones.
+# @domain: knowledge — the product domain this suite guards (#4334)
 #
 # #4167 AC7 — the check can reach BOTH states.
 #

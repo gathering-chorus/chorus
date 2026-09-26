@@ -1,5 +1,6 @@
 #!/usr/bin/env bats
 # @test-type: unit — pure bash semantics, no services, no fs beyond BATS_TEST_TMPDIR
+# @domain: tests — the product domain this suite guards (#4334)
 #
 # #4004 — 28 of 34 nightly reds were ONE bash gotcha, not 28 problems.
 # `((PASS++))` evaluates to the value BEFORE the increment, so the first time a

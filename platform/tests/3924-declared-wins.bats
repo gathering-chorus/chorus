@@ -4,6 +4,7 @@
 # asserts, third home — the seams are the binary's own (--names-of, --covers-of,
 # --check-shares, --classify), no store, no network.
 # @test-type: unit — hermetic: imports the tagger's pure functions, no store
+# @domain: tests — the product domain this suite guards (#4334)
 #
 # #3924 — the AUTHORED @test-type header beats the path/content heuristic.
 # The header was enforced at commit (#3442) and then thrown away at ingest;

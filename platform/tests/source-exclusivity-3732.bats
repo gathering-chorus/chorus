@@ -1,5 +1,6 @@
 #!/usr/bin/env bats
 # @test-type: integration — queries the live store; RUN_INTEGRATION-gated (TEST.md two-mode contract)
+# @domain: knowledge — the product domain this suite guards (#4334)
 load test_helper
 # source-exclusivity-3732.bats — ADR-051 Addendum II, the enforcing check.
 #

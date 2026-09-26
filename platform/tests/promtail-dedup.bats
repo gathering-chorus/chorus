@@ -1,5 +1,6 @@
 #!/usr/bin/env bats
 # @test-type: integration — auto-classified (#3528 sweep); service-hitting=integration(skip-if-absent), static-guard=unit
+# @domain: logs — the product domain this suite guards (#4334)
 load test_helper
 # promtail-dedup.bats — verify no duplicate Promtail streams in Loki (#1986)
 # What Jeff sees: Loki queries return one stream per log file, not duplicates.

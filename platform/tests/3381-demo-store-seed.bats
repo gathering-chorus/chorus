@@ -1,5 +1,6 @@
 #!/usr/bin/env bats
 # @test-type: integration — exercises the real demo-store-seed.sh against a
+# @domain: pipelines — the product domain this suite guards (#4334)
 # synthetic source db (hermetic; never reads prod ~/.chorus/index.db).
 # #3381 D1(b) — the seed must (1) replicate prod's full schema so the variant
 # boots against every table, and (2) BOUND the data so it never copies prod's

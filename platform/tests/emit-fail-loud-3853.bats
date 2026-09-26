@@ -1,5 +1,6 @@
 #!/usr/bin/env bats
 # @test-type: unit
+# @domain: spine — the product domain this suite guards (#4334)
 # #3853 — the spine emit must FAIL LOUD, never swallow. Negative proof (#3734):
 # point the emit at an unwritable target and prove it exits non-zero. Before the
 # fix, `let _ = f.write_all(...)` discarded the error and returned SUCCESS — a

@@ -1,5 +1,6 @@
 #!/usr/bin/env bats
-# @test-type: integration — operational; live services, skip-if-absent in CI
+# @test-type: unit — operational; live services, skip-if-absent in CI
+# @domain: infrastructure — the product domain this suite guards (#4334)
 load test_helper
 # bedroom-health.bats — Tests for #1853
 # What Jeff sees: Bedroom disk/memory issues go undetected because health check only runs manually

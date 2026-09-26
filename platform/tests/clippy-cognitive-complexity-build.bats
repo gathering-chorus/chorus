@@ -1,5 +1,6 @@
 #!/usr/bin/env bats
 # @test-type: integration — runs a real cargo clippy compile
+# @domain: code — the product domain this suite guards (#4334)
 # #3710 — split out of clippy-cognitive-complexity.bats. That file declares
 # itself a hermetic source guard and its other cases are (they grep Cargo.toml
 # and the ratchet baseline). These two shell out to `cargo clippy`, which needs a

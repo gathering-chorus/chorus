@@ -1,5 +1,6 @@
 #!/usr/bin/env bats
 # @test-type: unit — validates TTL files with Jena's shacl CLI; no store, no network.
+# @domain: principles — the product domain this suite guards (#4334)
 #
 # #4186 — Jeff, 2026-09-16: "use principles, the class and shacl is shallow". The
 # shape now requires what every live row already carries (both readings, source,

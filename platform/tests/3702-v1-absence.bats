@@ -1,5 +1,6 @@
 #!/usr/bin/env bats
 # @test-type: integration — hermetic absence guards (grep/file) + one live 410 check
+# @domain: value-streams — the product domain this suite guards (#4334)
 # (skip only when chorus-api is absent, #3528).
 # retirement-gate: absence-guard — this test NAMES deleted surfaces to assert they
 # stay gone; the #3598 gate skips marker-declared absence-guards (#3702).

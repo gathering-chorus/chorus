@@ -1,5 +1,6 @@
 #!/usr/bin/env bats
 # @test-type: integration:security - reads the real repo history via git; fixtures bring their own repos.
+# @domain: security — the product domain this suite guards (#4334)
 #
 # The card's verdict is "no history rewrite needed: all 35 baselined findings
 # are the pre-#3611 stock credential, dead since rotation." A verdict written

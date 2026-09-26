@@ -1,5 +1,6 @@
 #!/usr/bin/env bats
-# @test-type: integration — runs the real semgrep ruleset over seeded fixtures; hermetic (no network, no live service)
+# @test-type: integration:security — runs the real semgrep ruleset over seeded fixtures; hermetic (no network, no live service)
+# @domain: security — the product domain this suite guards (#4334)
 # #3981 — the security-scan spike must be PROVEN to catch a real finding, not
 # just run (#3734). The seeded fixtures ARE the proof: the vuln fixture carries
 # the exact #3980 caller-supplied-`from` pattern and must FAIL the scan; the

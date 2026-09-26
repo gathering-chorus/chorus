@@ -1,5 +1,6 @@
 #!/usr/bin/env bats
 # @test-type: contract
+# @domain: knowledge — the product domain this suite guards (#4334)
 # 4166 — athena-validate must RUN without anyone typing it, and its answer must
 # reach a person.
 #

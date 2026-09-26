@@ -1,5 +1,6 @@
 #!/usr/bin/env bats
 # @test-type: unit — signal is fixture-data: a stub SPARQL endpoint and a stub
+# @domain: knowledge — the product domain this suite guards (#4334)
 # athena-make answer the guards; no live store, no writes to production.
 # #4187 — the class-retirement form of the retirement list. A class delete is the
 # most destructive entry in the file, so the guards are the feature: it refuses a

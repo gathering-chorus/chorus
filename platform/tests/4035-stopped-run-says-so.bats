@@ -1,5 +1,6 @@
 #!/usr/bin/env bats
 # @test-type: integration — drives the built werk-test binary with a stub runner that sleeps; signals it; no live service
+# @domain: tests — the product domain this suite guards (#4334)
 #
 # #4035 → #4145: a stop mid-run writes `RUN|stopped|<ts>|signal=… pid=…`, reaps
 # the runner child, frees the lock, exits 143 (TERM) / 130 (INT). The page

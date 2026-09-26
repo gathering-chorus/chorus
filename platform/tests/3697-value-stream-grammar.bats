@@ -1,5 +1,6 @@
 #!/usr/bin/env bats
-# @test-type: unit — static hermetic guard: parses the committed TTL with arq, no live service.
+# @test-type: contract — static hermetic guard: parses the committed TTL with arq, no live service.
+# @domain: value-streams — the product domain this suite guards (#4334)
 load test_helper
 #
 # #3697 — value-stream grammar reconcile. What Jeff sees: asking "what are the value

@@ -1,5 +1,6 @@
 #!/usr/bin/env bats
 # @test-type: integration — operational; live services, skip-if-absent in CI
+# @domain: alerts — the product domain this suite guards (#4334)
 load test_helper
 # alert-delivery.bats — E2E alert delivery test (#2274)
 # What Jeff sees: when an alert fires, it actually reaches the people who need it.

@@ -1,5 +1,6 @@
 #!/usr/bin/env bats
 # @test-type: unit — arq over a TriG fixture on disk; no service, no store, no network
+# @domain: knowledge — the product domain this suite guards (#4334)
 # #4256 — chorus:gc-one-home-per-subject had no negative proof.
 #
 # Kade found it: the check claims chorus:provenRedRows 4 from the 2026-08-14

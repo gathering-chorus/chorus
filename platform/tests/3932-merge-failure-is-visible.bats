@@ -1,5 +1,6 @@
 #!/usr/bin/env bats
 # @test-type: unit — hermetic: extracts the real step body from werk.yml and runs it
+# @domain: cicd — the product domain this suite guards (#4334)
 # against a stubbed verb on PATH. No services, no network, no $HOME.
 #
 # #3932 — a failing merge step must PRINT why.

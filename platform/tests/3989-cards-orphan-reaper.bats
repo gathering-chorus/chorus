@@ -1,5 +1,6 @@
 #!/usr/bin/env bats
 # @test-type: unit — hermetic: snapshot tests bring their own ps world; the live
+# @domain: cards — the product domain this suite guards (#4334)
 # test spawns and reaps only its own procs under $BATS_TEST_TMPDIR
 # #3989 — cards-orphan-reaper: negative proof + selectivity.
 #

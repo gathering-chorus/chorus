@@ -1,5 +1,6 @@
 #!/usr/bin/env bats
-# @test-type: integration — hits service/remote/sibling, skip-if-absent in CI
+# @test-type: unit — hits service/remote/sibling, skip-if-absent in CI
+# @domain: search — the product domain this suite guards (#4334)
 load test_helper
 # index-crawler-snapshots.bats — #3068 resilience.
 # What the team sees: com.chorus.crawler-index must SURVIVE a transient chorus-api

@@ -1,5 +1,6 @@
 #!/usr/bin/env bats
 # @test-type: unit — hermetic source guard
+# @domain: security — the product domain this suite guards (#4334)
 load test_helper
 # inject-lock.bats — verify chorus-inject/src/main.rs is locked from edits (#2030)
 # The nudge injection code was changed 3 times, breaking auto-submit each time.

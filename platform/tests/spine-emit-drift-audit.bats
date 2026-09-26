@@ -1,5 +1,6 @@
 #!/usr/bin/env bats
-# @test-type: unit — static source/shape guard, hermetic
+# @test-type: fitness — static source/shape guard, hermetic
+# @domain: spine — the product domain this suite guards (#4334)
 # spine-emit-drift-audit.bats — #2630 wave 2
 #
 # Catches the failure pattern Jeff named 2026-04-30 morning: 12 done-briefs

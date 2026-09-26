@@ -1,5 +1,6 @@
 #!/usr/bin/env bats
-# @test-type: integration — auto-classified (#3528 sweep); service-hitting=integration(skip-if-absent), static-guard=unit
+# @test-type: unit — auto-classified (#3528 sweep); service-hitting=integration(skip-if-absent), static-guard=unit
+# @domain: knowledge — the product domain this suite guards (#4334)
 load test_helper
 # Tests for #2300: Reference model page
 # What Jeff sees: the context diagram is THE reference model — renders, has narrative, layers described.

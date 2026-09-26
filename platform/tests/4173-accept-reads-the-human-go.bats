@@ -1,5 +1,6 @@
 #!/usr/bin/env bats
 # @test-type: contract
+# @domain: cicd — the product domain this suite guards (#4334)
 # #4173 — the already-landed accept gate must read JEFF'S GO, not its own output.
 #
 # werk.yml's already-landed retry grepped the witness for "demo.decision".

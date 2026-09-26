@@ -1,5 +1,6 @@
 #!/usr/bin/env bats
 # @test-type: unit
+# @domain: infrastructure — the product domain this suite guards (#4334)
 # Subject: the boot-herd audit (launchagent-boot-audit.sh) and the canonical
 # plists it guards. #4027 named the class: an interval agent with RunAtLoad=true
 # fires at boot on top of every service. 18 of them put the Library at load 527.

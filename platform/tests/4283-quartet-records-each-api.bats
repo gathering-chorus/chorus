@@ -1,5 +1,6 @@
 #!/usr/bin/env bats
 # @test-type: unit — a stub API captures the posts; nothing live is touched
+# @domain: tests — the product domain this suite guards (#4334)
 # #4283 — one TestResult row per generated API per owner. NEGATIVE PROOF: a
 # walk with one failing class produces exactly one failing row naming it.
 

@@ -1,5 +1,6 @@
 #!/usr/bin/env bats
 # @test-type: unit
+# @domain: knowledge — the product domain this suite guards (#4334)
 # #3799 AC1 — the compact success check must verify RECLAIM, not just that the
 # Jena task set .finished (a failed/no-op compact finishes too). Negative proof
 # (#3734): a compact that leaves the store the SAME size is a FAILURE, and the

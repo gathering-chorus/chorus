@@ -1,4 +1,6 @@
 #!/usr/bin/env bats
+# @test-type: integration — what it proves (#4334)
+# @domain: roles — the product domain this suite guards (#4334)
 # claudemd-gen output path resolution — #2150
 # Ensures output paths in manifest.json resolve to real directories
 # under chorus root, catching the messages/→designing/ layout drift.

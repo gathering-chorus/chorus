@@ -1,5 +1,6 @@
 #!/usr/bin/env bats
-# @test-type: unit — hermetic CLI validation-path runs (dummy token, dead board URL); no live service
+# @test-type: unit:security — hermetic CLI validation-path runs (dummy token, dead board URL); no live service
+# @domain: security — the product domain this suite guards (#4334)
 # #3682 — guest-cannot-authorize, enforced in code (ADR-054 norm → mechanism).
 #
 # The door: an authorization-bearing action (cards add with DEPLOY_ROLE=jeff —

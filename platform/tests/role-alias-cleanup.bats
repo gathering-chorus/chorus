@@ -1,5 +1,6 @@
 #!/usr/bin/env bats
 # @test-type: fitness — greps platform/scripts for a retired directory name; no
+# @domain: roles — the product domain this suite guards (#4334)
 # service, no store, no network. (#4179: the file had no declaration at all and
 # the gate only grades a test file when it changes, so this went unnoticed since
 # #1843 — the same shape as a check that is never run.)

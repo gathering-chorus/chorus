@@ -4,6 +4,7 @@
 # asserts, third home — the seams are the binary's own (--names-of, --covers-of,
 # --check-shares, --classify), no store, no network.
 # @test-type: unit — hermetic. Uses the tagger's --names-of seam (#4022): one
+# @domain: tests — the product domain this suite guards (#4334)
 # file in, the case names the registry WOULD hold out, no store, no network.
 #
 # #4106 — a registered test must be a test that can actually run. Three ways

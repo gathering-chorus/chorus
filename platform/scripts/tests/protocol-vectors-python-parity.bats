@@ -1,5 +1,6 @@
 #!/usr/bin/env bats
 # @test-type: unit
+# @domain: roles — the product domain this suite guards (#4334)
 # #2311 — Python side of the cross-language parity contract.
 #
 # The Rust hook's sibling test asserts identical digests. Any canonicalization

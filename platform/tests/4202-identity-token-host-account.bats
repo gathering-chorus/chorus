@@ -1,5 +1,6 @@
 #!/usr/bin/env bats
 # @test-type: unit — drives platform/scripts/chorus-identity-token with a fixture credential; no CSS (the mint endpoint is a dead port).
+# @domain: identity — the product domain this suite guards (#4334)
 #
 # #4202 — a role's credential bound to a macOS account is usable only by a
 # process running as that account. Asserts are simple commands (bash 3.2 `[[`).

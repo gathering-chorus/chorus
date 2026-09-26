@@ -1,5 +1,6 @@
 #!/usr/bin/env bats
 # @test-type: unit — signal from fixture servers on ephemeral localhost ports;
+# @domain: monitors — the product domain this suite guards (#4334)
 # no live service consulted.
 #
 # #3948 — the endpoint probe stops lying in both directions. Six false

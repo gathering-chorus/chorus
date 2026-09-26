@@ -1,5 +1,6 @@
 #!/usr/bin/env bats
 # @test-type: unit
+# @domain: roles — the product domain this suite guards (#4334)
 # #3288 — Werk version derives from ONE source: version-ledger.json.
 #
 # AC covered by this file (hermetic — every test builds its own fixture

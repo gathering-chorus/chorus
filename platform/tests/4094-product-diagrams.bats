@@ -1,5 +1,6 @@
 #!/usr/bin/env bats
 # @test-type: integration:api — signal:ui is fixture-data (the file greps product.html for the Flows chapter; the checks are against the served /products rows)
+# @domain: products — the product domain this suite guards (#4334)
 load test_helper
 #
 # #4094 — the diagrams a design carries come into the graph with the words. Jeff,

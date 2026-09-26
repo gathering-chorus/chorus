@@ -1,4 +1,6 @@
 #!/usr/bin/env bats
+# @test-type: integration — what it proves (#4334)
+# @domain: deploys — the product domain this suite guards (#4334)
 # deploy-daemon-card.sh wrapper — #2925 (original) reworked by #2927.
 #
 # #2927 contract: one verb sequences chorus-werk-sync → per-unit deploy_<unit>

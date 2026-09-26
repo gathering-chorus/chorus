@@ -1,5 +1,6 @@
 #!/usr/bin/env bats
 # @test-type: e2e — full-flow end-to-end
+# @domain: spine — the product domain this suite guards (#4334)
 load test_helper
 # 2193-emitters-e2e — source-shape + smoke assertions for #2193 semantic
 # spine emitters that live in bash (commit.landed, test.delta) and the

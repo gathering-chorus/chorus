@@ -1,4 +1,6 @@
 #!/usr/bin/env bats
+# @test-type: unit — what it proves (#4334)
+# @domain: pipelines — the product domain this suite guards (#4334)
 # #3016 — werk chorus-mcp daemon: teardown (chorus-werk) + .mcp.json endpoint
 # templating. Companion to chorus-env-setup.bats (CHORUS_MCP_PORT resolution)
 # and the chorus-deploy --target werk chorus-mcp path.

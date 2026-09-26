@@ -1,5 +1,6 @@
 #!/usr/bin/env bats
 # @test-type: integration — operational; live services, skip-if-absent in CI
+# @domain: messages — the product domain this suite guards (#4334)
 load test_helper
 # nudge-health.bats — Tests for nudge health check (#1847)
 # What Jeff sees: macOS notifications saying "3 role(s) unreachable"

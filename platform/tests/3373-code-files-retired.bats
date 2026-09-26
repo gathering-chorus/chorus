@@ -1,4 +1,6 @@
 #!/usr/bin/env bats
+# @test-type: unit — what it proves (#4334)
+# @domain: code — the product domain this suite guards (#4334)
 # #3373 retirement gate — /api/chorus/domain/:domain/code-files is RETIRED
 # (deprecated by #2060, zero non-test consumers at deletion). Structural
 # memory: this gate fails if the route or its handler reappears.

@@ -21,6 +21,8 @@ pub enum Rule {
     Neighbor,
     Unit,
     Card,
+    /// #4334 — the file's own `@domain:` header. The author's word; it wins.
+    Declared,
 }
 
 impl Rule {
@@ -33,6 +35,7 @@ impl Rule {
             Rule::Neighbor => "neighbor",
             Rule::Unit => "unit",
             Rule::Card => "card",
+            Rule::Declared => "declared",
         }
     }
 }
@@ -898,6 +901,51 @@ pub fn place_by_tree(path: &str, valid: &[String]) -> Option<Signal> {
     })
 }
 
+/// #4334 — a test file states the product domain it guards in a header,
+/// next to its `@test-type:`: `# @domain: messages` (also `//` and `*`
+/// comment forms), in the first 2,000 characters. The first such line
+/// decides. Jeff, 2026-09-26: "decompose these into types and domains
+/// properly". The path rules had filed 142 of 267 bats suites under `tests`
+/// itself, the unplaced home, because nothing in them named a domain.
+pub fn declared_domain(content: &str) -> Option<String> {
+    let head: String = content.chars().take(2000).collect();
+    for line in head.lines() {
+        let t = line.trim_start();
+        let t = t
+            .strip_prefix("//")
+            .or_else(|| t.strip_prefix('#'))
+            .or_else(|| t.strip_prefix('*'));
+        let Some(t) = t else { continue };
+        let t = t.trim_start();
+        const TAG: &str = "@domain:";
+        if t.len() < TAG.len() || !t.is_char_boundary(TAG.len()) || !t[..TAG.len()].eq_ignore_ascii_case(TAG) {
+            continue;
+        }
+        let word: String = t[TAG.len()..]
+            .trim_start()
+            .chars()
+            .take_while(|c| c.is_ascii_alphanumeric() || *c == '-')
+            .collect::<String>()
+            .to_ascii_lowercase();
+        if !word.is_empty() {
+            return Some(word);
+        }
+    }
+    None
+}
+
+/// #4334 — the bats suites with no `@domain:` header: the validate names them,
+/// so a new suite can never quietly land under `tests` again.
+pub fn undeclared_bats(files: &[String], read: &dyn Fn(&str) -> Option<String>) -> (usize, Vec<String>) {
+    let bats: Vec<&String> = files.iter().filter(|f| f.ends_with(".bats")).collect();
+    let missing = bats
+        .iter()
+        .filter(|f| read(f).map(|c| declared_domain(&c).is_none()).unwrap_or(true))
+        .map(|f| f.to_string())
+        .collect();
+    (bats.len(), missing)
+}
+
 pub fn place_in_file(
     content: &str,
     path: &str,
@@ -908,6 +956,17 @@ pub fn place_in_file(
     card_domain: &dyn Fn(u32) -> Option<String>,
     read: &dyn Fn(&str) -> Option<String>,
 ) -> Placement {
+    // #4334 — the author's header wins over every rule below. A header naming
+    // a domain the store does not hold is ignored here (the rules decide) and
+    // reported by the validate as an unknown declared domain.
+    if let Some(d) = declared_domain(content) {
+        if valid.iter().any(|v| *v == d) {
+            return Placement::Tagged {
+                domain: d.clone(),
+                signals: vec![Signal { rule: Rule::Declared, domain: d, evidence: "@domain header".to_string() }],
+            };
+        }
+    }
     let mut signals: Vec<Signal> = Vec::new();
     signals.extend(fire_all(Rule::Route, ROUTES, content, valid));
     signals.extend(fire_all(Rule::Binary, BINARIES, content, valid));
@@ -1066,6 +1125,57 @@ pub fn listing(path: &str, p: &Placement) -> Option<String> {
                 .join(" vs ")
         )),
         Placement::Unplaced => Some(format!("unplaced {path}: no rule fired")),
+    }
+}
+
+#[cfg(test)]
+mod declared_domain_4334 {
+    use super::*;
+
+    fn valid() -> Vec<String> {
+        ["messages", "tests", "cicd"].iter().map(|s| s.to_string()).collect()
+    }
+
+    #[test]
+    fn the_header_is_read_in_every_comment_form() {
+        assert_eq!(declared_domain("#!/usr/bin/env bats\n# @test-type: unit\n# @domain: messages\n").as_deref(), Some("messages"));
+        assert_eq!(declared_domain("// @domain: cicd\n").as_deref(), Some("cicd"));
+        assert_eq!(declared_domain(" * @Domain:  Tests — why\n").as_deref(), Some("tests"));
+        assert_eq!(declared_domain("# @domain:\n"), None);
+    }
+
+    #[test]
+    fn the_header_wins_over_what_the_file_mentions() {
+        // a bats file that curls a cicd route but guards messages
+        let content = "# @domain: messages\nrun curl localhost:3340/api/werk/runs\n";
+        let p = place_in_file(content, "platform/tests/x.bats", None, &[], &[], &valid(), &|_| None, &|_| None);
+        assert_eq!(p.domain(), Some("messages"));
+    }
+
+    #[test]
+    fn the_validate_names_every_bats_suite_without_a_header() {
+        let files: Vec<String> = ["a.bats", "b.bats", "c.sh"].iter().map(|s| s.to_string()).collect();
+        let read = |f: &str| match f {
+            "a.bats" => Some("# @domain: cicd\n".to_string()),
+            "b.bats" => Some("# nothing here\n".to_string()),
+            _ => Some(String::new()),
+        };
+        let (n, missing) = undeclared_bats(&files, &read);
+        assert_eq!(n, 2, "only .bats files count");
+        assert_eq!(missing, vec!["b.bats".to_string()]);
+    }
+
+    /// NEGATIVE PROOF — without the header, the same file is placed by the
+    /// rules (or not at all), never by a header that is not there; and a
+    /// header naming a domain the store does not hold does not win.
+    #[test]
+    fn no_header_or_an_unknown_one_falls_back_to_the_rules() {
+        let bare = "run echo hello\n";
+        let p = place_in_file(bare, "platform/tests/x.bats", None, &[], &[], &valid(), &|_| None, &|_| None);
+        assert_ne!(p.domain(), Some("messages"));
+        let unknown = "# @domain: nowhere\nrun echo hello\n";
+        let p = place_in_file(unknown, "platform/tests/x.bats", None, &[], &[], &valid(), &|_| None, &|_| None);
+        assert_ne!(p.domain(), Some("nowhere"));
     }
 }
 

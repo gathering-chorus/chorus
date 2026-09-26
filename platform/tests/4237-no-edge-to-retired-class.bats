@@ -1,5 +1,6 @@
 #!/usr/bin/env bats
-# @test-type: unit — static guards over the model file, the kinds table, the shapes
+# @test-type: fitness — static guards over the model file, the kinds table, the shapes
+# @domain: knowledge — the product domain this suite guards (#4334)
 # file and the .sparql files. No service, no store: it reads what is checked in, so
 # it answers the same in a werk, on canonical and in the nightly.
 # #4237 — an edge may not be constrained to a class the DAL cannot mint.

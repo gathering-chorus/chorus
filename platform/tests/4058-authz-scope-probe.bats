@@ -1,5 +1,6 @@
 #!/usr/bin/env bats
-# @test-type: unit
+# @test-type: unit:security
+# @domain: security — the product domain this suite guards (#4334)
 # 4058-authz-scope-probe.bats — proofs for authz-scope-probe.sh (#4058 AC2/AC3).
 #
 # The probe is a check that gates a demo verdict, so it ships with NEGATIVE

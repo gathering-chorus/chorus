@@ -1,5 +1,6 @@
 #!/usr/bin/env bats
-# @test-type: integration — hits service/remote/sibling, skip-if-absent in CI
+# @test-type: unit — hits service/remote/sibling, skip-if-absent in CI
+# @domain: code — the product domain this suite guards (#4334)
 load test_helper
 # execsync-audit.bats — Tests for execSync audit (#1999)
 # What Jeff sees: app hangs for 797s because execSync blocks the event loop.

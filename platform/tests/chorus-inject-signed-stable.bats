@@ -1,5 +1,6 @@
 #!/usr/bin/env bats
 # @test-type: integration — runs a real cargo build + codesign
+# @domain: builds — the product domain this suite guards (#4334)
 # #3710 — retiered from "unit — hermetic source guard", which it never was: each
 # case shells out to build-signed.sh, which compiles the crate and codesigns the
 # result. That needs a Rust toolchain and, for the assertion to MEAN anything, a

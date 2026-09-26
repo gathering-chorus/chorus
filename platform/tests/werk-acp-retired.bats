@@ -1,5 +1,6 @@
 #!/usr/bin/env bats
 # @test-type: unit — static source/shape guard, hermetic
+# @domain: pipelines — the product domain this suite guards (#4334)
 # werk-acp-retired.bats — #3219
 #
 # Asserts that the werk-acp composition verb, its MCP thin-skin (chorus_acp),

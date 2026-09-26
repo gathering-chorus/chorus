@@ -1,5 +1,6 @@
 #!/usr/bin/env bats
-# @test-type: unit — exercises the installer's refusal path; the REAL-home case never writes
+# @test-type: unit:security — exercises the installer's refusal path; the REAL-home case never writes
+# @domain: cicd — the product domain this suite guards (#4334)
 # #3997 — test-context boundary on chorus-bin-install: a bats-run caller with the
 # REAL user's $HOME may never install into canonical ~/.chorus/bin (the
 # 2026-08-23 six-lockout class: a signing test deploying werk builds to prod).

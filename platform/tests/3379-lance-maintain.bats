@@ -1,4 +1,6 @@
 #!/usr/bin/env bats
+# @test-type: unit — what it proves (#4334)
+# @domain: search — the product domain this suite guards (#4334)
 # 3379-lance-maintain.bats — Tests for #3379
 # What Jeff sees: the API never wedges because lance fragments never regrow —
 # maintainTable runs nightly OFF-PROCESS (the #3085 reindex-worker pattern),

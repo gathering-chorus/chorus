@@ -1,5 +1,6 @@
 #!/usr/bin/env bats
 # @test-type: contract
+# @domain: code — the product domain this suite guards (#4334)
 # #4180 — "the nightly ran" must be a check that can go red.
 #
 # #4178 landed com.chorus.crawl-nightly.plist in the repo and reported the

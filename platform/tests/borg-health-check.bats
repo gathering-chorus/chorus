@@ -1,5 +1,6 @@
 #!/usr/bin/env bats
 # @test-type: integration — operational; live services, skip-if-absent in CI
+# @domain: monitors — the product domain this suite guards (#4334)
 load test_helper
 # Tests for borg-health-check.sh (#2124)
 # What Jeff sees: /borg/* pages return 200 even when the data path is broken.

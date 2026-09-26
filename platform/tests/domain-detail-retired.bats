@@ -1,4 +1,6 @@
 #!/usr/bin/env bats
+# @test-type: unit — what it proves (#4334)
+# @domain: domains — the product domain this suite guards (#4334)
 # #3351 retirement gate — the old hand-built Athena domain page is retired.
 # The generated page (platform/api/public/domain.html + js/domain-renderer.js) supersedes it.
 # This gate fails if the retired surface (or a link to it) comes back — structural memory,

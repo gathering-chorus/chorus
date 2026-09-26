@@ -4,6 +4,7 @@
 # asserts, third home — the seams are the binary's own (--names-of, --covers-of,
 # --check-shares, --classify), no store, no network.
 # @test-type: unit — hermetic: fixture files in $BATS_TEST_TMPDIR, the tagger's
+# @domain: tests — the product domain this suite guards (#4334)
 # --names-of / --check-shares seams, no store.
 #
 # #4022 — 594 results per nightly had no registered identity and the census

@@ -1,5 +1,6 @@
 #!/usr/bin/env bats
 # @test-type: unit — sources the helper in a subshell; no Fuseki, no live service, brings its own world.
+# @domain: security — the product domain this suite guards (#4334)
 # #3566 LOCK — the script-side write door (fuseki-auth.sh): empty unless FUSEKI_ADMIN_PASSWORD
 # is set (current behavior preserved), and bash-3.2 + `set -u` safe (the empty-array crash this guards).
 

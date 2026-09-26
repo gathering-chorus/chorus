@@ -1,5 +1,6 @@
 #!/usr/bin/env bats
 # @test-type: unit — static source/shape guard, hermetic
+# @domain: cicd — the product domain this suite guards (#4334)
 load test_helper
 # CI service design — shape regression
 # Per Wren 2026-04-30: doc should lead with "Local layers (0-2) vs CI (3)"

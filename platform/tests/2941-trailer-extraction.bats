@@ -1,4 +1,6 @@
 #!/usr/bin/env bats
+# @test-type: unit — what it proves (#4334)
+# @domain: spine — the product domain this suite guards (#4334)
 # DRAFT — gap closure (2): trailer extraction in build-signed.sh + deploy-daemon-card.sh.
 # Lives in platform/tests/2941-trailer-extraction.bats (or absorbed into 2931-failure-traps.bats).
 #

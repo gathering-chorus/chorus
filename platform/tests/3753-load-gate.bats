@@ -1,5 +1,6 @@
 #!/usr/bin/env bats
 # @test-type: unit — hermetic: load is stubbed via NIGHTLY_LOAD_STUB, log/lock
+# @domain: tests — the product domain this suite guards (#4334)
 # paths live under $BATS_TEST_TMPDIR; no real suites run (defer window 0).
 # #3753 — nightly load gate: negative proof (#3734) both directions.
 #

@@ -1,5 +1,6 @@
 #!/usr/bin/env bats
 # @test-type: unit — stub SPARQL endpoint on a scratch port + stub writer; no live
+# @domain: cards — the product domain this suite guards (#4334)
 # Fuseki, no minted token, no real writes.
 # #3897 — chorus-rerank: declared chunk/card order, and the refusals that keep it honest.
 #

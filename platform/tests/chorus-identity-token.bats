@@ -1,5 +1,6 @@
 #!/usr/bin/env bats
-# @test-type: integration — hermetic (own tmpdir identity dir + fake creds, no live CSS, no ~/.chorus) but shells the reader subprocess + probes a dead port, so integration not unit.
+# @test-type: unit — hermetic (own tmpdir identity dir + fake creds, no live CSS, no ~/.chorus) but shells the reader subprocess + probes a dead port, so integration not unit.
+# @domain: identity — the product domain this suite guards (#4334)
 # #3690 — chorus-identity-token reader logic, hermetic (own identity dir, no live
 # CSS, no ~/.chorus). The mint's forwarded-header contract is proven separately
 # by the LIVE end-to-end (chorus-model resolving principal-silas). Here: role

@@ -1,5 +1,6 @@
 #!/usr/bin/env bats
 # @test-type: unit — hermetic source guard
+# @domain: policies — the product domain this suite guards (#4334)
 load test_helper
 # standards-gen.bats — Tests for generate-standards-surface.sh
 # Card #2266: Standards surface shows hardcoded data instead of live counts

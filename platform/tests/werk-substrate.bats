@@ -1,5 +1,6 @@
 #!/usr/bin/env bats
 # @test-type: unit — hermetic source guard
+# @domain: pipelines — the product domain this suite guards (#4334)
 load test_helper
 # werk-substrate.bats — #2598 substrate uniformity
 # What Jeff sees: all three roles execute the same way for build/deploy/check.

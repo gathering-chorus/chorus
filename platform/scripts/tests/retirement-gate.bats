@@ -1,5 +1,6 @@
 #!/usr/bin/env bats
 # @test-type: unit
+# @domain: tests — the product domain this suite guards (#4334)
 # #3598 — Retirement gate contract. Deleting a surface (script/gate/hook/source)
 # must delete-or-repoint its referencing tests in the SAME change. The gate
 # scans for test files that still reference a just-deleted file; if found, it

@@ -1,5 +1,6 @@
 #!/usr/bin/env bats
 # @test-type: unit — hermetic source guard
+# @domain: cards — the product domain this suite guards (#4334)
 load test_helper
 # ac-autocheck.bats — verify demoCard auto-checks AC items (#2017)
 #

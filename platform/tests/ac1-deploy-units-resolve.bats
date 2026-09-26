@@ -1,4 +1,6 @@
 #!/usr/bin/env bats
+# @test-type: unit — what it proves (#4334)
+# @domain: deploys — the product domain this suite guards (#4334)
 # #2927 AC1 — Unit resolution.
 # Default = git diff origin/main introspection. --units <list> overrides.
 # Tests cover the pure resolution functions (no shell-out to git in this file;

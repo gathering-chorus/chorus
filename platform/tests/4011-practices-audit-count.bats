@@ -1,5 +1,6 @@
 #!/usr/bin/env bats
 # @test-type: unit — reads the verb's source and its manifest; no store, no services
+# @domain: knowledge — the product domain this suite guards (#4334)
 #
 # #4011 caught a copy-paste bug: the PRACTICES_SET block in the bash deploy was
 # copied from PRINCIPLES_SET and still said "principles" in its messages, its

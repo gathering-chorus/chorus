@@ -1,4 +1,6 @@
 #!/usr/bin/env bats
+# @test-type: contract — what it proves (#4334)
+# @domain: metrics — the product domain this suite guards (#4334)
 # hooks-metrics-api.bats — Tests for /api/chorus/hooks/metrics endpoint (#2277)
 # What Jeff sees: gate enforcement data available as a queryable API, not awk on a log file.
 

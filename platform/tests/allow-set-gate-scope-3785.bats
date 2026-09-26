@@ -1,5 +1,6 @@
 #!/usr/bin/env bats
 # @test-type: unit — asserts the gate's scope patterns still match real files;
+# @domain: security — the product domain this suite guards (#4334)
 # no service, store or credential is exercised.
 #
 # #3785 — the allow-set gate is SCOPED, and this is the canary for that scope.

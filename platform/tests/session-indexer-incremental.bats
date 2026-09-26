@@ -1,5 +1,6 @@
 #!/usr/bin/env bats
 # @test-type: integration — needs ~/.chorus/scripts/chorus-index.sh (not in-repo)
+# @domain: memory — the product domain this suite guards (#4334)
 # #3710 — retiered. Everything else here IS hermetic (it builds its own DB and
 # projects dir), but the script under test lives ONLY at
 # ~/.chorus/scripts/chorus-index.sh — 34KB, executable, and not under version

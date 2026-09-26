@@ -1,5 +1,6 @@
 #!/usr/bin/env bats
-# @test-type: unit
+# @test-type: unit:security
+# @domain: security — the product domain this suite guards (#4334)
 # 4058 — a surface may not require a scope no principal holds.
 #
 # WHY THIS EXISTS. From 2026-07-08 the security model declared surfaces requiring

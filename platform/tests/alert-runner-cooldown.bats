@@ -1,5 +1,6 @@
 #!/usr/bin/env bats
-# @test-type: integration — operational; live services, skip-if-absent in CI
+# @test-type: unit — operational; live services, skip-if-absent in CI
+# @domain: alerts — the product domain this suite guards (#4334)
 load test_helper
 # alert-runner-cooldown.bats — Tests for #1861
 # What Jeff sees: 3 alerts firing every 5-10 min despite cooldown files existing

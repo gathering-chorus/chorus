@@ -1,5 +1,6 @@
 #!/usr/bin/env bats
-# @test-type: unit — hermetic: fake binaries in $BATS_TEST_TMPDIR, spine via CHORUS_BIN_SPINE_LOG
+# @test-type: unit:security — hermetic: fake binaries in $BATS_TEST_TMPDIR, spine via CHORUS_BIN_SPINE_LOG
+# @domain: cicd — the product domain this suite guards (#4334)
 # #3993 — signed-install gate: chorus-bin-install must REFUSE an unsigned
 # chorus-hooks/chorus-inject/chorus-hook-shim bound for canonical (launchd
 # SIGKILLs them on spawn → team-wide lockout, 6x on 2026-08-23), keeping the

@@ -1,4 +1,6 @@
 #!/usr/bin/env bats
+# @test-type: unit:ui — what it proves (#4334)
+# @domain: knowledge — the product domain this suite guards (#4334)
 # C4 diagram verification — #1991
 
 HTML="$BATS_TEST_DIRNAME/chorus-c4.html"

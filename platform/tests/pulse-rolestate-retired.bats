@@ -1,5 +1,6 @@
 #!/usr/bin/env bats
 # @test-type: unit — static source/shape guard, hermetic
+# @domain: roles — the product domain this suite guards (#4334)
 # pulse-rolestate-retired.bats — #2632
 #
 # Asserts that the pulse role-state HTTP endpoint and its store wrapper

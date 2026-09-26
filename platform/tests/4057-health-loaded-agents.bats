@@ -1,5 +1,6 @@
 #!/usr/bin/env bats
 # @test-type: unit
+# @domain: services — the product domain this suite guards (#4334)
 # 4057 — deep-health measures LOADED AGENTS, not log files.
 #
 # WHY THIS EXISTS. On 2026-09-01 health said "warning, 28" and 20 of those were

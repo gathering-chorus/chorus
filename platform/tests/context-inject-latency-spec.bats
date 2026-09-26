@@ -1,5 +1,6 @@
 #!/usr/bin/env bats
-# @test-type: integration — measures live latency against the running daemon
+# @test-type: integration:perf — measures live latency against the running daemon
+# @domain: memory — the product domain this suite guards (#4334)
 # #3710 — retiered. This spec times real requests through the chorus-hooks unix
 # socket at ~/.chorus/run/chorus-hooks.sock and compares warm-vs-cold latency.
 # That needs the daemon RUNNING; it was declared a "static source/shape guard,

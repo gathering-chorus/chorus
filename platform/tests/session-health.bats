@@ -1,5 +1,6 @@
 #!/usr/bin/env bats
-# @test-type: integration — operational; live services, skip-if-absent in CI
+# @test-type: unit — operational; live services, skip-if-absent in CI
+# @domain: memory — the product domain this suite guards (#4334)
 load test_helper
 # session-health.bats — Tests for session health monitoring (#2271)
 # What Jeff sees: sessions degrade silently. These tests prove the system

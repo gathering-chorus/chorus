@@ -1,5 +1,6 @@
 #!/usr/bin/env bats
 # @test-type: unit — hermetic. Brings its own world (#3528): every probe points
+# @domain: monitors — the product domain this suite guards (#4334)
 # at a closed loopback port, logs/plists/state/nudge/spine are all seams into
 # $BATS_TEST_TMPDIR, HOME is the tmpdir. No live host, no ~/.chorus.
 #

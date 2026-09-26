@@ -1,5 +1,6 @@
 #!/usr/bin/env bats
-# @test-type: security — asserts the DAL gate on the instance-seed path.
+# @test-type: unit:security — asserts the DAL gate on the instance-seed path.
+# @domain: security — the product domain this suite guards (#4334)
 #
 # #3895 — the counterpart to recovery-path-ungated-3785.bats. That file proves
 # the RECOVERY path (chorus-model-deploy.sh) never gates on identity. This file

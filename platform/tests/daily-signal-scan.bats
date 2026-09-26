@@ -1,5 +1,6 @@
 #!/usr/bin/env bats
 # @test-type: integration — reads the live store
+# @domain: analytics — the product domain this suite guards (#4334)
 # Tests for daily-signal-scan.sh (#2088)
 # What Jeff sees: a brief ready by 6am with codebase weather, trust verification,
 # backlog coherence, and golfball detection. No session required.

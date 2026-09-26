@@ -1,5 +1,6 @@
 #!/usr/bin/env bats
 # @test-type: integration — drives the built chorus-awake binary (Rust, #4184) with stub claude, stub tmux, stub ps and a temp session registry; no live tmux, no live claude.
+# @domain: roles — the product domain this suite guards (#4334)
 #
 # #4184 — Jeff: "a standard script to start each of u that initalizes u and
 # makes sure i do the steps". Every outside thing is stubbed and RECORDS its

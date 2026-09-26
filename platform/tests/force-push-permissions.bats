@@ -1,4 +1,6 @@
 #!/usr/bin/env bats
+# @test-type: integration — what it proves (#4334)
+# @domain: security — the product domain this suite guards (#4334)
 # #2926 — force-push permissions: allow force-with-lease on role branches,
 # deny force on main. Replaces the broad Bash(git push --force*) deny that
 # blocked post-rebase role-branch pushes (hit on wren/2924 rebase 2026-05-15).

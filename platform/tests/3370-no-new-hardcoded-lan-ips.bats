@@ -1,5 +1,6 @@
 #!/usr/bin/env bats
-# @test-type: unit — static repo grep, no live service
+# @test-type: fitness — static repo grep, no live service
+# @domain: infrastructure — the product domain this suite guards (#4334)
 # 3370-no-new-hardcoded-lan-ips.bats — regression guard (#3370)
 # What Jeff sees: a machine can change address (DHCP drift, hub unplugged —
 # the 2026-06-12 incident) and nothing goes silently dark, because no NEW

@@ -1,5 +1,6 @@
 #!/usr/bin/env bats
 # @test-type: e2e — full-flow end-to-end
+# @domain: cards — the product domain this suite guards (#4334)
 load test_helper
 # gate-spine-vikunja-e2e.bats — #2324 zone (c) + #2428 sentinel rework
 #

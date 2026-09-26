@@ -1,4 +1,6 @@
 #!/usr/bin/env bats
+# @test-type: e2e — what it proves (#4334)
+# @domain: spine — the product domain this suite guards (#4334)
 # #2941 AC4 — end-to-end trace propagation: commit-trailer → build event →
 # (would-be) deploy event share one trace_id.
 #

@@ -1,5 +1,6 @@
 #!/usr/bin/env bats
 # @test-type: unit — hermetic source guard: greps this repo's own scripts
+# @domain: tests — the product domain this suite guards (#4334)
 #
 # #3930 — the retirement gate for the hand-maintained TS package lists.
 #

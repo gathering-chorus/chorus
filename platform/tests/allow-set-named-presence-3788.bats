@@ -1,5 +1,6 @@
 #!/usr/bin/env bats
 # @test-type: integration:security — asserts the gate's verdict against fixture
+# @domain: security — the product domain this suite guards (#4334)
 # graphs in a live store; no credential is exercised beyond the store's own read
 # auth. (#4175: was "@test-type: security", which is a CONCERN and not a layer,
 # so the gate read it as no declaration at all. It went unnoticed because the

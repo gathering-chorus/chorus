@@ -1,5 +1,6 @@
 #!/usr/bin/env bats
 # @test-type: integration — deploys two throwaway graphs into the werk store; needs Fuseki
+# @domain: deploys — the product domain this suite guards (#4334)
 
 # #4254 — the behaviour half of the `replace` flag, which the parser tests
 # cannot reach. They prove the guard refuses the wrong manifests; these prove

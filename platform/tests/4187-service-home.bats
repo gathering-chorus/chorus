@@ -1,5 +1,6 @@
 #!/usr/bin/env bats
 # @test-type: contract — reads the model file and the deployer; no store, no writes
+# @domain: services — the product domain this suite guards (#4334)
 # #4187 — Service rows live in urn:chorus:domains:services, the domain graph, not
 # the v1 catch-all. The shape declares it (the door reads and writes where the
 # shape says) and the deployer seeds SERVICES_SET there. The reason they ever

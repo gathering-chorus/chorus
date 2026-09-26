@@ -1,5 +1,6 @@
 #!/usr/bin/env bats
 # @test-type: integration — operational; live services, skip-if-absent in CI
+# @domain: monitors — the product domain this suite guards (#4334)
 load test_helper
 # dashboard-health.bats — Tests for dashboard content validation (#2278)
 # What Jeff sees: empty Grafana panels look like "everything fine" when data source is broken.

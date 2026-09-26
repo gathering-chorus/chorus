@@ -1,5 +1,6 @@
 #!/usr/bin/env bats
 # @test-type: unit — reads a test source file; no live service
+# @domain: tests — the product domain this suite guards (#4334)
 #
 # #4142 — platform/api's integration tier READS the live door. 27 of the
 # 2026-09-11 13:01 run's 44 reds were POST/PUT/DELETE tests writing to the

@@ -1,5 +1,6 @@
 #!/usr/bin/env bats
 # @test-type: unit — drives watcher-lock-check.sh against a temp lock and log
+# @domain: memory — the product domain this suite guards (#4334)
 # session-watcher.bats — Tests for chorus-watch-sessions.sh lockfile behavior
 # Card #2227: stuck lockfile blocks all indexing permanently
 #

@@ -1,5 +1,6 @@
 #!/usr/bin/env bats
 # @test-type: integration — posts real probes to the live bridge (:3475); skip-if-absent
+# @domain: alerts — the product domain this suite guards (#4334)
 # #3968 — alert-delivery-test's bridge probe presents the BRIDGE_TOKEN (#3966
 # closed anonymous posts). Negative proof per #3734: with no token the check
 # FAILS with the real 401 — proving the gate can still distinguish the two

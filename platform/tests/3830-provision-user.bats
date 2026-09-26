@@ -1,5 +1,6 @@
 #!/usr/bin/env bats
 # @test-type: contract
+# @domain: identity — the product domain this suite guards (#4334)
 # #3830 — chorus-principal. Every test here is a REFUSAL, because the card is
 # about the states a half-provisioned user can be left in, and each refusal is
 # one of them made unreachable.

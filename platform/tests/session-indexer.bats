@@ -1,5 +1,6 @@
 #!/usr/bin/env bats
 # @test-type: integration — reads the live index.db read-only
+# @domain: memory — the product domain this suite guards (#4334)
 # session-indexer.bats — Tests for session indexer role attribution (#2269)
 # What Jeff sees: "how many times did I say slow down?" returns zero because
 # his messages are indexed under the session role, not as jeff.

@@ -1,5 +1,6 @@
 #!/usr/bin/env bats
-# @test-type: ui
+# @test-type: unit:ui
+# @domain: version-control — the product domain this suite guards (#4334)
 # Test: rendered HTML for the version-control service design contains the
 # mermaid loader so that ```mermaid``` blocks render visually as diagrams,
 # not as code text.

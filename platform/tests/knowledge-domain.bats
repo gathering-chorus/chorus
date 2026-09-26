@@ -1,5 +1,6 @@
 #!/usr/bin/env bats
-# @test-type: integration — hits live chorus-api on :3340 (reads + authenticated writes)
+# @test-type: contract — hits live chorus-api on :3340 (reads + authenticated writes)
+# @domain: knowledge — the product domain this suite guards (#4334)
 # knowledge-domain.bats — Tests for knowledge domain (#1905)
 # What Jeff sees: roles rediscover decisions from last week because the system
 # doesn't surface relevant docs when entering a domain. After the fix:

@@ -1,5 +1,6 @@
 #!/usr/bin/env bats
 # @test-type: integration
+# @domain: tests — the product domain this suite guards (#4334)
 # 3540-tests-domain-schema-land.bats (#3540) — the tests-domain shape (Test /
 # TestResult / covers / testType (was pyramidLayer, #4162) / hermeticity, authored on kade/2818)
 # LANDS into the live model graph and is queryable + instance-mintable.

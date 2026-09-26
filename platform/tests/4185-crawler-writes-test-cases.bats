@@ -1,5 +1,6 @@
 #!/usr/bin/env bats
 # @test-type: integration
+# @domain: tests — the product domain this suite guards (#4334)
 # #4185 — the crawler writes, updates and deletes test CASE rows.
 #
 # Jeff, 2026-09-16: "to me the crawler writes and updates tests graph data."

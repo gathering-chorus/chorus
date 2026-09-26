@@ -1,5 +1,6 @@
 #!/usr/bin/env bats
 # @test-type: unit — signal is fixture-data: arq/generated files only; no live store, no $HOME, no network
+# @domain: services — the product domain this suite guards (#4334)
 # #3870 — service harvester: launchctl snapshot → ServiceInstance/ScheduledJob
 # TTL. Written RED-FIRST against the not-yet-existing generator (pair order).
 # Hermetic: fixture snapshot in, TTL out — no launchctl, no Fuseki, no $HOME.

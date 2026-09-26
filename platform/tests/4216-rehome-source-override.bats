@@ -1,5 +1,6 @@
 #!/usr/bin/env bats
 # @test-type: unit — reads the script text; no store, no writes.
+# @domain: knowledge — the product domain this suite guards (#4334)
 # #4216 — the rehome tool must be able to read from the SCHEMA graph.
 #
 # graph-rehome-4187.sh was written for the v1 catch-all and hardcoded

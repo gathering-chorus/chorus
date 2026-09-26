@@ -1,5 +1,6 @@
 #!/usr/bin/env bats
 # @test-type: unit — hermetic: fixture pin + fixture werk repo; no services.
+# @domain: cicd — the product domain this suite guards (#4334)
 #
 # #3956 — a flake costs the flake, not the pipeline. werk-resume-check decides
 # per leg: CARRY (prior pass, same tree), RUN (no proof / not resuming), or

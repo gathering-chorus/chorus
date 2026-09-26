@@ -1,5 +1,6 @@
 #!/usr/bin/env bats
 # @test-type: integration — creates the in-memory test dataset in the running Fuseki
+# @domain: tests — the product domain this suite guards (#4334)
 #
 # #4332 — the dataset bats suites write to is never /pods. These prove the
 # helper every writing suite now loads (lib/test-store.sh): it hands out a

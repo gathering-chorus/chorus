@@ -1,5 +1,6 @@
 #!/usr/bin/env bats
-# @test-type: integration — the API quartet against PRODUCTION, once per owner.
+# @test-type: e2e — the API quartet against PRODUCTION, once per owner.
+# @domain: knowledge — the product domain this suite guards (#4334)
 #
 # #4279 — Jeff, 2026-09-23: "i want it as a production test in the 3am nightly,
 # not werk-only." Ruling B (10:48): run once per owner, as each principal

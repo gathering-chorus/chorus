@@ -1,5 +1,6 @@
 #!/usr/bin/env bats
 # @test-type: unit
+# @domain: spine — the product domain this suite guards (#4334)
 # #4195 — an athena run is one trace that is only athena. Three proofs on the file and
 # the binary, no live stack: (1) the land job mints its own trace by path-resolved
 # chorus-log and swallows no emit; (2) prove-trace refuses a run that left fewer

@@ -1,5 +1,6 @@
 #!/usr/bin/env bats
 # @test-type: contract
+# @domain: code — the product domain this suite guards (#4334)
 # #4178, re-aimed by #4210 on 2026-09-18 — the scheduled pass must present the
 # principal that OWNS the rows.
 #

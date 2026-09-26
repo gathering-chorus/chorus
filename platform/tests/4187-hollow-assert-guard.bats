@@ -1,5 +1,6 @@
 #!/usr/bin/env bats
 # @test-type: unit
+# @domain: tests — the product domain this suite guards (#4334)
 # #4187 — THE HOLLOW-ASSERT GUARD. Two shapes, one guard, because we found the
 # first today and the second is already in 91 of 223 suites and would otherwise
 # be rediscovered in a month (Wren, 2026-09-18).

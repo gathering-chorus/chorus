@@ -1,5 +1,6 @@
 #!/usr/bin/env bats
 # @test-type: unit
+# @domain: spine — the product domain this suite guards (#4334)
 # #3628 AC4 — deploy-completeness guard, red-first per DEC-1674.
 #
 # The failure class this pins: #3619 landed token-wired src/emit.ts +

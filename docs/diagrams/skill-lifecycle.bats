@@ -1,4 +1,6 @@
 #!/usr/bin/env bats
+# @test-type: unit:ui — what it proves (#4334)
+# @domain: skills — the product domain this suite guards (#4334)
 # Skill lifecycle diagram verification — #1997
 
 HTML="$BATS_TEST_DIRNAME/skill-lifecycle.html"

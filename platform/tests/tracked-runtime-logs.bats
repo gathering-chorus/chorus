@@ -1,5 +1,6 @@
 #!/usr/bin/env bats
 # @test-type: unit — reads the git index and the ignore rules; no service, no network
+# @domain: version-control — the product domain this suite guards (#4334)
 # Subject: runtime artifacts must never be tracked in this repo.
 #
 # ADR-041: logs are runtime, not source. #3388 took the big log directories out

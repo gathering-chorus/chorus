@@ -1,5 +1,6 @@
 #!/usr/bin/env bats
 # @test-type: integration — deploys a fixture TTL into a THROWAWAY graph on the live Fuseki (skip-if-absent)
+# @domain: knowledge — the product domain this suite guards (#4334)
 # #4029 — the model deploy re-inserted every shape body on every run: a shape body is a
 # blank-node tree, blank nodes get a fresh identity per load, the merge only deleted a
 # staged subject's own triples, so 92 deploys took urn:chorus:ontology 5,230 → 77,770

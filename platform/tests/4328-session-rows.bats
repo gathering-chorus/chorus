@@ -1,5 +1,6 @@
 #!/usr/bin/env bats
 # @test-type: integration — drives the built chorus-awake and chorus-principal binaries with stub tmux, claude, ps, token-minter, curl, service probe, osascript and open; no live services, no live panes.
+# @domain: identity — the product domain this suite guards (#4334)
 #
 # #4328 — Jeff 2026-09-26 08:29: "is ur session better now?" It was not: the
 # model had landed and nothing wrote it. A login now writes its session (acts

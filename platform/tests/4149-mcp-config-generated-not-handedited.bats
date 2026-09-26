@@ -1,5 +1,6 @@
 #!/usr/bin/env bats
-# @test-type: contract
+# @test-type: unit
+# @domain: roles — the product domain this suite guards (#4334)
 # 4149 — the role MCP config is GENERATED, and the generator is the only writer.
 #
 # What went wrong (2026-09-12/13). #4149 hand-edited a grafana block into all
