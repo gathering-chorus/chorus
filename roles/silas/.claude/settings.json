@@ -31,6 +31,17 @@
           }
         ]
       }
+    ],
+    "UserPromptSubmit": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "/Users/jeffbridwell/.chorus/bin/chorus-awake seen silas",
+            "timeout": 5
+          }
+        ]
+      }
     ]
   }
 }

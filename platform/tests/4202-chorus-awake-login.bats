@@ -47,7 +47,9 @@ echo "curl \$*" >> "$T/curl.log"
 # the 409 branch re-reads the row with a plain GET (no -X POST): answer it with
 # the fixture body so the ownership decision can be exercised. #4215.
 case "\$*" in *"-X POST"*) ;; *) cat "$T/existing.json" 2>/dev/null; exit 0 ;; esac
-for a in "\$@"; do case "\$a" in @*) cp "\${a#@}" "$T/curl.body" ;; esac; done
+# #4328 — a login now also POSTs its run, presence and context; keep the SESSION body
+
+for a in "\$@"; do case "\$a" in @*session.body) cp "\${a#@}" "$T/curl.body" ;; esac; done
 cat "$T/curl.status" 2>/dev/null || echo 201
 EOS
   cat > "$T/bin/chorus-log" <<EOS
