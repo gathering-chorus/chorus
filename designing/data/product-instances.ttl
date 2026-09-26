@@ -609,6 +609,7 @@ Chorus · Werk · rewritten for readers outside the team 2026-09-03""" ;
 chorus:gathering a chorus:Product ;
     rdfs:label "Gathering" ;
     rdfs:comment "Personal infrastructure — SOLID pods, knowledge graph, collections, Self domain. The product the spine builds." ;
+    chorus:comment "Personal infrastructure — SOLID pods, knowledge graph, collections, Self domain. The product the spine builds." ;   # #4324: the seed reads the chorus: field
     chorus:ownedBy chorus:principal-jeff ;
     chorus:vision "Jeff's life — collections, property, garden, stories, Self — as one personal knowledge graph with agency." ;
     chorus:valueProposition "One queryable home for everything Jeff gathers, owned by him, served from his own infrastructure." ;

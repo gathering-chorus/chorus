@@ -62,7 +62,7 @@ chorus:chorusTool a chorus:Tool ;
     chorus:color "#c084fc" ;
     chorus:status "live" .
 
-chorus:werk a chorus:Tool ;
+chorus:tool-werk a chorus:Tool ;   # #4324: chorus:werk is the Product row; one IRI, one kind
     rdfs:label "/werk" ;
     rdfs:comment "Workflow engine — sequences decisions into steps across roles. IS the spine." ;
     chorus:toolType chorus:Orchestration ;
@@ -70,7 +70,7 @@ chorus:werk a chorus:Tool ;
     chorus:color "#fbbf24" ;
     chorus:status "live" .
 
-chorus:borg a chorus:Tool ;
+chorus:tool-borg a chorus:Tool ;   # #4324: chorus:borg is the Product row; one IRI, one kind
     rdfs:label "Borg" ;
     rdfs:comment "Codebase decomposition — structured assessment of code, architecture, tech debt." ;
     chorus:toolType chorus:Analysis ;
