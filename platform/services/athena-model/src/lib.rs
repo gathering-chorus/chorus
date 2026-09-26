@@ -4917,6 +4917,16 @@ fn name_from_local(local: &str, kind: Option<&str>) -> String {
     }
 }
 
+/// #4324 — the kind an edge's predicate names, so its target's name is not a
+/// guess. Without it `version-control` lost `version-` (a kind since #4211).
+fn edge_kind(predicate: &str) -> Option<&'static str> {
+    match predicate {
+        "hasDomain" | "covers" => Some("domain"),
+        "hasProduct" => Some("product"),
+        _ => None,
+    }
+}
+
 /// Turn one group's triples (riot N-Triples) into API rows, subject order kept.
 /// Pure — the unit tests below are the door's own negative proofs.
 pub fn post_rows(kind: &str, triples: &[(String, String, String)]) -> R<Vec<PostRow>> {
@@ -4945,7 +4955,7 @@ pub fn post_rows(kind: &str, triples: &[(String, String, String)]) -> R<Vec<Post
             if *p == rdf_type { continue; }
             let key = iri_local(p).to_string();
             let val = if is_iri_term(o) {
-                let target = name_from_local(iri_local(o), None);
+                let target = name_from_local(iri_local(o), edge_kind(&key));
                 let route = match key.as_str() { "partOf" => Some("partof"), "contains" => Some("contains"), "hasChild" => Some("has-child"), _ => None };
                 if let Some(r) = route {
                     if !structural.iter().any(|(rr, t)| rr == r && *t == target) { structural.push((r.to_string(), target)); }
@@ -5193,6 +5203,23 @@ mod post_rows_4096 {
         assert!(r.body.contains("\"atStep\":\"directing\""), "longest prefixed kind wins: {}", r.body);
         assert!(r.body.contains("\"diagram\":[\"%% one\\nflowchart TD\",\"%% two\\nflowchart LR\"]"), "{}", r.body);
         assert!(!r.body.contains("ownedBy"), "the owner signs; it is not a body field: {}", r.body);
+    }
+
+    /// #4324 — an edge to a bare-kind row keeps its whole name. `version` joined the
+    /// kinds on 09-20 (#4211), and the prefix guess then cut `version-control` to
+    /// `control`: werk's product row was refused 422 at every model land's post leg.
+    /// The predicate names the target's kind, so the guess never runs for it.
+    #[test]
+    fn a_domain_edge_keeps_a_name_that_starts_with_a_kind() {
+        let tr = vec![
+            t(&format!("<{C}werk>"), &format!("<{C}ownedBy>"), &format!("<{C}principal-kade>")),
+            t(&format!("<{C}werk>"), &format!("<{C}hasDomain>"), &format!("<{C}version-control>")),
+            t(&format!("<{C}werk>"), &format!("<{C}hasDomain>"), &format!("<{C}property-domain>")),
+            t(&format!("<{C}werk>"), &format!("<{C}hasDesignDoc>"), &format!("<{C}document-werk-product-design>")),
+        ];
+        let rows = post_rows("product", &tr).unwrap();
+        assert!(rows[0].body.contains("\"hasDomain\":[\"version-control\",\"property-domain\"]"), "{}", rows[0].body);
+        assert!(rows[0].body.contains("\"hasDesignDoc\":\"werk-product-design\""), "other edges still strip their kind: {}", rows[0].body);
     }
 
     /// partOf / contains / hasChild are not body fields (the API's closed shape
