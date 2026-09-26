@@ -184,6 +184,8 @@ sq() {
     *:3360*) skip "refuses to write to the canonical store — point OWL_URL at a variant" ;;
   esac
   curl -sf --max-time 5 "$OWL_URL/health" >/dev/null || skip "owl-api absent (#3528)"
+  source "$BATS_TEST_DIRNAME/lib/test-store.sh"
+  variant_shares_prod "$OWL_URL" && skip "UNMEASURED — the variant at $OWL_URL writes the production store (#4334)"
   [ "$(curl -s --max-time 5 -o /dev/null -w '%{http_code}' "$OWL_URL/pipelineruns")" = "200" ] \
     || skip "route not deployed yet"
   TOK="$("$REPO/platform/scripts/chorus-identity-token" kade 2>/dev/null)"

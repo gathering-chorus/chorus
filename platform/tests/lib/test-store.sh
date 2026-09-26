@@ -56,3 +56,17 @@ assert_not_prod() {
   esac
   return 0
 }
+
+# True when the variant at $1 answers from the production store. Today a werk
+# variant's athena-make has no CHORUS_FUSEKI of its own, so it reads and writes
+# /pods (measured 2026-09-26: prove-live's 4185 run posted 3 rows into prod and
+# only the mass-delete guard stopped it deleting 6,371). The tell: it serves
+# crawled CodeFile rows, which only the production store holds — the crawler
+# runs against prod. A suite that writes must report UNMEASURED here, never
+# write. (#4334)
+variant_shares_prod() {
+  local n
+  n=$(curl -s --max-time 20 "$1/code/files?limit=1" \
+    | python3 -c 'import sys,json; print(len(json.load(sys.stdin).get("data",[])))' 2>/dev/null)
+  [ "${n:-0}" -gt 0 ]
+}

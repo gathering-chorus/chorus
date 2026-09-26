@@ -27,6 +27,8 @@ setup() {
   REPO="$(cd "$BATS_TEST_DIRNAME/../.." && pwd)"
   OWL_URL="${OWL_URL:-}"
   case "$OWL_URL" in ""|*:3360*) skip "refuses to write to the canonical store — point OWL_URL at a werk variant" ;; esac
+  source "$BATS_TEST_DIRNAME/lib/test-store.sh"
+  variant_shares_prod "$OWL_URL" && skip "UNMEASURED — the variant at $OWL_URL writes the production store; this suite needs one of its own (#4334)"
   BIN="${CHORUS_CRAWL_BIN:-$REPO/platform/services/chorus-crawl/target/release/chorus-crawl}"
   [ -x "$BIN" ] || BIN="$REPO/platform/services/chorus-crawl/target/debug/chorus-crawl"
   [ -x "$BIN" ] || skip "chorus-crawl not built at $BIN"
