@@ -108,8 +108,7 @@ chorus:endReason a owl:DatatypeProperty ;
 
 chorus:conversationId a owl:DatatypeProperty ;
     rdfs:label "conversation id" ;
-    rdfs:comment "The Claude Code conversation this run writes (the transcript's id). The Conversation class itself is memory's (Wren); this is the key it will join on. #4302." ;
-    rdfs:domain chorus:SessionRun ;
+    rdfs:comment "The Claude Code conversation id (the transcript's id). A SessionRun carries it, and so does the Conversation row that run wrote; it is the key the two join on. rdfs:domain dropped by #4323 so both classes share one property. #4302." ;
     rdfs:range xsd:string .
 
 chorus:pane a owl:DatatypeProperty ;
@@ -284,3 +283,134 @@ chorus:ReachableNeedsADelivery a sh:SPARQLConstraint ;
           $this <https://jeffbridwell.com/chorus#reachability> "reachable" .
           FILTER NOT EXISTS { $this <https://jeffbridwell.com/chorus#lastDeliveredAt> ?d }
         }""" .
+
+# =============================================================================
+# #4323 — Login ER step 1, the other half: what a run was given, what it said,
+# and how it is reached. Carded by Wren (memory and messages are her domains);
+# Jeff moved it to Silas 2026-09-26 07:32. Same rules as the half above:
+#
+#   Context       what a run was given: the boot envelope at login, then what
+#                 each prompt injected. Memory's (ADR-054).
+#   Conversation  what a run said: the Claude Code transcript, by id. Memory's.
+#   Channel       a way a message reaches a principal: terminal, nudge, clearing.
+#                 Messages' (beside Message).
+#
+# Edges point up again. A Context and a Conversation point at the run they
+# belong to, never the run at them, so the run can be written first and a PUT
+# of the run never has to list what it collected. A Message points at the
+# Channel it went over. Jeff 2026-09-25: "i hope that context can be linked to
+# principal and fast and easy to query" — every row here carries ownedBy (the
+# principal) and one edge to its run, so "what was silas given this morning"
+# is two hops: principal → runs → contexts.
+#
+# Core attributes as above: label, comment, ownedBy, and the DAL's stamp.
+# =============================================================================
+
+chorus:memory chorus:definesVocabulary chorus:Context , chorus:Conversation .
+chorus:messages chorus:definesVocabulary chorus:Channel .
+
+# --- classes ------------------------------------------------------------------
+
+chorus:Context a owl:Class ;
+    rdfs:label "Context" ;
+    rdfs:comment "What a SessionRun was given: the boot envelope chorus-principal injects at login (kind boot), or what a prompt hook injected on one turn (kind prompt). One row per injection, pointing at its run. #4323." .
+
+chorus:Conversation a owl:Class ;
+    rdfs:label "Conversation" ;
+    rdfs:comment "What a SessionRun said: one Claude Code transcript, named by its conversationId. A run writes exactly one; a restart or a refusal recovery is a new run with a new conversation. #4323." ;
+    chorus:adoptedFrom "prov:Entity" .
+
+chorus:Channel a owl:Class ;
+    rdfs:label "Channel" ;
+    rdfs:comment "A way a message reaches a principal: terminal (typed into the tmux pane), nudge (the messages API), clearing (the group chat). A Message names the channel it went over, so a delivery that failed on one channel is visible against the others. #4323." .
+
+# --- properties ---------------------------------------------------------------
+
+chorus:contextOf a owl:ObjectProperty ;
+    rdfs:label "context of" ;
+    rdfs:comment "The run this context was given to. #4323." ;
+    rdfs:domain chorus:Context ;
+    rdfs:range chorus:SessionRun .
+
+chorus:contextKind a owl:DatatypeProperty ;
+    rdfs:label "context kind" ;
+    rdfs:comment "boot (the login envelope) or prompt (one turn's injection). #4323." ;
+    rdfs:domain chorus:Context ;
+    rdfs:range xsd:string .
+
+chorus:conversationOf a owl:ObjectProperty ;
+    rdfs:label "conversation of" ;
+    rdfs:comment "The run that wrote this conversation. #4323." ;
+    rdfs:domain chorus:Conversation ;
+    rdfs:range chorus:SessionRun .
+
+chorus:channelKind a owl:DatatypeProperty ;
+    rdfs:label "channel kind" ;
+    rdfs:comment "terminal, nudge or clearing: the three ways a principal is reached today. A new channel is a model change, not a free string. #4323." ;
+    rdfs:domain chorus:Channel ;
+    rdfs:range xsd:string .
+
+chorus:overChannel a owl:ObjectProperty ;
+    rdfs:label "over channel" ;
+    rdfs:comment "The channel a message went over. #4323." ;
+    rdfs:domain chorus:Message ;
+    rdfs:range chorus:Channel .
+
+# --- Context ------------------------------------------------------------------
+
+chorus:ContextShape a sh:NodeShape ;
+    sh:targetClass chorus:Context ;
+    chorus:instancesGraph "urn:chorus:domains:memory" ;
+    sh:property chorus:ContextShape-label , chorus:ContextShape-comment , chorus:ContextShape-ownedBy ,
+                chorus:ContextShape-contextOf , chorus:ContextShape-contextKind ;
+    sh:sparql chorus:StampedByTheDal .
+
+chorus:ContextShape-label a sh:PropertyShape ; sh:path rdfs:label ; sh:minCount 1 .
+chorus:ContextShape-comment a sh:PropertyShape ; sh:path rdfs:comment ; sh:minCount 1 .
+chorus:ContextShape-ownedBy a sh:PropertyShape ;
+    sh:path chorus:ownedBy ; sh:minCount 1 ; sh:maxCount 1 ; sh:class chorus:Principal .
+chorus:ContextShape-contextOf a sh:PropertyShape ;
+    sh:path chorus:contextOf ; sh:minCount 1 ; sh:maxCount 1 ; sh:class chorus:SessionRun .
+chorus:ContextShape-contextKind a sh:PropertyShape ;
+    sh:path chorus:contextKind ; sh:minCount 1 ; sh:maxCount 1 ; sh:datatype xsd:string ;
+    sh:pattern "^(boot|prompt)$" .
+
+# --- Conversation -------------------------------------------------------------
+
+chorus:ConversationShape a sh:NodeShape ;
+    sh:targetClass chorus:Conversation ;
+    chorus:instancesGraph "urn:chorus:domains:memory" ;
+    sh:property chorus:ConversationShape-label , chorus:ConversationShape-comment , chorus:ConversationShape-ownedBy ,
+                chorus:ConversationShape-conversationOf , chorus:ConversationShape-conversationId ;
+    sh:sparql chorus:StampedByTheDal .
+
+chorus:ConversationShape-label a sh:PropertyShape ; sh:path rdfs:label ; sh:minCount 1 .
+chorus:ConversationShape-comment a sh:PropertyShape ; sh:path rdfs:comment ; sh:minCount 1 .
+chorus:ConversationShape-ownedBy a sh:PropertyShape ;
+    sh:path chorus:ownedBy ; sh:minCount 1 ; sh:maxCount 1 ; sh:class chorus:Principal .
+chorus:ConversationShape-conversationOf a sh:PropertyShape ;
+    sh:path chorus:conversationOf ; sh:minCount 1 ; sh:maxCount 1 ; sh:class chorus:SessionRun .
+chorus:ConversationShape-conversationId a sh:PropertyShape ;
+    sh:path chorus:conversationId ; sh:minCount 1 ; sh:maxCount 1 ; sh:datatype xsd:string .
+
+# --- Channel ------------------------------------------------------------------
+
+chorus:ChannelShape a sh:NodeShape ;
+    sh:targetClass chorus:Channel ;
+    chorus:instancesGraph "urn:chorus:domains:messages" ;
+    sh:property chorus:ChannelShape-label , chorus:ChannelShape-comment , chorus:ChannelShape-ownedBy ,
+                chorus:ChannelShape-channelKind ;
+    sh:sparql chorus:StampedByTheDal .
+
+chorus:ChannelShape-label a sh:PropertyShape ; sh:path rdfs:label ; sh:minCount 1 .
+chorus:ChannelShape-comment a sh:PropertyShape ; sh:path rdfs:comment ; sh:minCount 1 .
+chorus:ChannelShape-ownedBy a sh:PropertyShape ;
+    sh:path chorus:ownedBy ; sh:minCount 1 ; sh:maxCount 1 ; sh:class chorus:Principal .
+chorus:ChannelShape-channelKind a sh:PropertyShape ;
+    sh:path chorus:channelKind ; sh:minCount 1 ; sh:maxCount 1 ; sh:datatype xsd:string ;
+    sh:pattern "^(terminal|nudge|clearing)$" .
+
+# Message grows one optional edge (additive; existing rows carry none).
+chorus:MessageShape sh:property chorus:MessageShape-overChannel .
+chorus:MessageShape-overChannel a sh:PropertyShape ;
+    sh:path chorus:overChannel ; sh:maxCount 1 ; sh:class chorus:Channel .
