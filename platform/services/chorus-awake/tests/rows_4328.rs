@@ -52,7 +52,8 @@ fn the_boot_context_points_at_its_run() {
 #[test]
 fn the_session_says_its_role_and_start() {
     let s = with_role_and_start(json!({"name":"session-silas-x","tokenId":"j"}), "silas", "2026-09-26T09:00:00Z");
-    assert_eq!(s["actsAs"], "role-silas");
+    // the bare role name: the API adds "role-" and refuses a name that has it (422, live 09-26)
+    assert_eq!(s["actsAs"], "silas");
     assert_eq!(s["startedAt"], "2026-09-26T09:00:00Z");
     assert_eq!(s["tokenId"], "j", "the rest of the row is kept for the whole-row PUT");
 }
@@ -104,4 +105,23 @@ fn the_sweep_closes_only_dead_open_sessions() {
     ]}).to_string();
     let names: Vec<String> = expired_open(&listing, "2026-09-26T09:00:00Z", &["live-login".to_string()]).iter().map(|r| r["name"].as_str().unwrap().to_string()).collect();
     assert_eq!(names, vec!["dead"]);
+}
+
+#[test]
+fn a_listing_row_is_made_putable() {
+    // live 09-26 09:31: the sweep's 86 PUTs all answered 422 "off-model property 'status'"
+    let r = putable(json!({"name":"s","status":"","actsAs":"","tokenId":"j","sessionState":"open"}));
+    assert!(r.get("status").is_none());
+    assert!(r.get("actsAs").is_none(), "an empty edge is dropped, not sent as a name");
+    assert_eq!(r["tokenId"], "j");
+    assert_eq!(r["sessionState"], "open");
+}
+
+#[test]
+fn a_closed_row_from_the_listing_carries_no_status() {
+    let listing = json!({"data":[{"name":"s1","status":"","tokenId":"j","ownedBy":"principal-kade","sessionState":"open","actsAs":""}]}).to_string();
+    let c = chorus_awake::lifecycle::closed_row(&listing, "s1", "2026-09-26T10:00:00Z").unwrap();
+    assert!(c.get("status").is_none());
+    assert!(c.get("actsAs").is_none());
+    assert_eq!(c["sessionState"], "closed");
 }

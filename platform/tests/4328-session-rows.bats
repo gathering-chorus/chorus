@@ -113,7 +113,7 @@ has() { printf '%s' "$1" | grep -qF -- "$2"; }
 @test "login writes the session with its role and start, then a run, a presence and a boot context" {
   run "$SCRIPT" on silas
   test "$status" -eq 0
-  s=$(body POST identity_sessions); has "$s" '"actsAs":"role-silas"'; has "$s" '"startedAt":"20'
+  s=$(body POST identity_sessions); has "$s" '"actsAs":"silas"'; has "$s" '"startedAt":"20'
   r=$(body POST identity_sessionruns); has "$r" '"runOf":"session-silas-'; has "$r" '"ownedBy":"principal-silas"'
   p=$(body POST identity_presences); has "$p" '"presenceOf":"sessionrun-silas-run-'; has "$p" '"reachability":"unknown"'
   c=$(body POST memory_contexts); has "$c" '"contextKind":"boot"'; has "$c" '"contextOf":"sessionrun-silas-run-'
@@ -182,10 +182,12 @@ has() { printf '%s' "$1" | grep -qF -- "$2"; }
 @test "sweep closes an expired open session and leaves the live login alone" {
   run "$SCRIPT" on silas
   live=$(python3 -c 'import json,sys;print(json.load(open(sys.argv[1]))["name"])' "$T/identity/silas/session.row.json")
-  printf '{"data":[{"name":"session-kade-dead","sessionState":"open","expiresAt":"2026-09-01T00:10:00Z","tokenId":"j","ownedBy":"principal-kade"},{"name":"%s","sessionState":"open","expiresAt":"2026-09-01T00:10:00Z","tokenId":"j","ownedBy":"principal-silas"}]}' "$live" > "$T/row.json"
+  printf '{"data":[{"name":"session-kade-dead","status":"","actsAs":"","sessionState":"open","expiresAt":"2026-09-01T00:10:00Z","tokenId":"j","ownedBy":"principal-kade"},{"name":"%s","sessionState":"open","expiresAt":"2026-09-01T00:10:00Z","tokenId":"j","ownedBy":"principal-silas"}]}' "$live" > "$T/row.json"
   run "$SCRIPT" sweep
   test "$status" -eq 0
   out_has "1 expired session(s) closed"
+  # the listing's "status" and empty fields never reach the PUT (live 09-26: 86 x 422)
+  test -z "$(grep -F '"status"' "$T"/bodies/*PUT-identity_sessions_session-kade-dead.json || true)"
   has "$(cat "$T"/bodies/*PUT-identity_sessions_session-kade-dead.json)" '"sessionState":"closed"'
   test -z "$(ls "$T/bodies" | grep -F "PUT-identity_sessions_$live" || true)"
 }
@@ -195,7 +197,7 @@ has() { printf '%s' "$1" | grep -qF -- "$2"; }
   printf '{"state":"recorded","session":"silas-old-1","pid":5150}' > "$T/identity/silas/login.json"
   printf '{"name":"silas-old-1","tokenId":"j","ownedBy":"principal-silas","sessionState":"open","issuedAt":"2026-09-25T14:54:06Z"}' > "$T/identity/silas/session.row.json"
   echo '{"session_id":"conv-7","prompt":"hi"}' | AWAKE_SEEN_SYNC=1 "$SCRIPT" seen silas
-  s=$(body PUT identity_sessions_silas-old-1); has "$s" '"actsAs":"role-silas"'; has "$s" '"startedAt":"2026-09-25T14:54:06Z"'
+  s=$(body PUT identity_sessions_silas-old-1); has "$s" '"actsAs":"silas"'; has "$s" '"startedAt":"2026-09-25T14:54:06Z"'
   r=$(body POST identity_sessionruns); has "$r" '"runOf":"silas-old-1"'; has "$r" '"conversationId":"conv-7"'
   has "$(body POST identity_presences)" '"presenceOf":"sessionrun-silas-run-'
   has "$(body POST memory_contexts)" '"contextKind":"boot"'

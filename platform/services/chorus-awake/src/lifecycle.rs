@@ -167,6 +167,7 @@ pub fn closed_row(source: &str, session: &str, ended_at: &str) -> Option<Value> 
         _ if named(&v) => v.clone(),
         _ => return None,
     };
+    let mut row = crate::rows::putable(row);
     let o = row.as_object_mut()?;
     for k in ["tokenId", "ownedBy"] { o.get(k)?; }
     o.insert("sessionState".into(), Value::String("closed".into()));
