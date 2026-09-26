@@ -724,7 +724,14 @@ fn on(ctx: &Ctx, role: &str, attach: bool) -> Result<Came, (i32, String)> {
         (ctx.claude.clone(), format!("fresh conversation ({} ends in API refusals)", id))
     } else {
         match &dec.attach {
-            Some(id) => (format!("{} attach {}", ctx.claude, id), format!("attach {} (the last conversation, detached in the background)", id)),
+            // #4337 — never attach. A background session runs in the daemon's
+            // pre-warmed process, which carries whichever role's env started the
+            // daemon (09-26: Kade ran as Wren). Stop it (the conversation is kept)
+            // and resume it here, in a process started from this role's pane.
+            Some(id) => {
+                let _ = sh(&ctx.claude, &["stop", id]);
+                (format!("{} --resume {}", ctx.claude, id), format!("resumed {} in its own pane (its background copy stopped)", id))
+            }
             None => (format!("{} -c", ctx.claude), "claude -c (last conversation)".to_string()),
         }
     };
@@ -744,7 +751,9 @@ fn on(ctx: &Ctx, role: &str, attach: bool) -> Result<Came, (i32, String)> {
     let token_file = PathBuf::from(&ctx.identity_dir).join(role).join("token.cache");
 
     // 1 — the pane, then launch inside it.
-    let launch = format!("cd '{}' && source '{}/platform/scripts/chorus-env-setup.sh' && export CHORUS_SESSION_TOKEN_FILE='{}' && {}", role_dir, ctx.root, token_file.display(), cmd);
+    // #4337 — CLAUDE_CODE_DISABLE_AGENT_VIEW=1: no on-demand daemon, no warm
+    // spares, no exit handoff to the background (the role settings say the same)
+    let launch = format!("cd '{}' && source '{}/platform/scripts/chorus-env-setup.sh' && export CHORUS_SESSION_TOKEN_FILE='{}' CHORUS_ROLE='{}' CLAUDE_CODE_DISABLE_AGENT_VIEW=1 && {}", role_dir, ctx.root, token_file.display(), role, cmd);
     let in_own_pane = env::var("TMUX").is_ok() && sh(&ctx.tmux, &["display-message", "-p", "#S"]).map(|s| s.trim() == tmux_session).unwrap_or(false);
     if in_own_pane && attach {
         println!("awake: {}  starting here via {}", role, how);
@@ -772,6 +781,12 @@ fn on(ctx: &Ctx, role: &str, attach: bool) -> Result<Came, (i32, String)> {
         eprintln!("awake: {}  registered NO after {}s  via {} — look at the pane: {} attach -t {}", role, ctx.wait, how, ctx.tmux, tmux_session);
         return Err((1, format!("did not register in {}s", ctx.wait)));
     };
+    // #4337 — a process carrying another role's env is not this role logged in
+    if let Some(other) = process_role(ctx, l.pid).filter(|r| r != role) {
+        eprintln!("awake: {}  WRONG ROLE — pid {} runs as {} (CHORUS_ROLE={}); not logged in. Run: chorus-principal off {} && chorus-principal on {}", role, l.pid, other, other, role, role);
+        ctx.spine(&["session.wrong_role", role, &format!("pid={}", l.pid), &format!("carries={}", other)]);
+        return Err((1, format!("pid {} carries {}", l.pid, other)));
+    }
     let st = st.with_pid(l.pid);
     ctx.write_state(role, &st);
     if let LoginState::Recorded { session, .. } = &st { record_run(ctx, role, session, &l, &conversation); }
@@ -940,6 +955,20 @@ fn sweep(ctx: &Ctx) -> i32 {
     if failed > 0 { 1 } else { 0 }
 }
 
+/// Ids of the role's background sessions (`claude agents --json --cwd <role dir>`).
+fn background_ids(ctx: &Ctx, role: &str) -> Vec<String> {
+    let out = sh(&ctx.claude, &["agents", "--json", "--cwd", &ctx.role_dir(role)]).unwrap_or_default();
+    let v: Value = serde_json::from_str(&out).unwrap_or(Value::Null);
+    v.as_array().map(|a| a.iter().filter(|s| s.get("kind").and_then(|k| k.as_str()) == Some("background"))
+        .filter_map(|s| s.get("id").or_else(|| s.get("sessionId")).and_then(|x| x.as_str()).map(String::from)).collect()).unwrap_or_default()
+}
+
+/// The CHORUS_ROLE a running process carries, read from its environment.
+fn process_role(ctx: &Ctx, pid: u64) -> Option<String> {
+    let out = sh(&ctx.ps, &["eww", "-o", "command=", "-p", &pid.to_string()]).ok()?;
+    rows::env_value(&out, "CHORUS_ROLE")
+}
+
 /// The claude process running in the role's pane, written into the registry
 /// the way the SessionStart hook writes it. None when the pane runs no claude.
 fn register_from_pane(ctx: &Ctx, role: &str) -> Option<Live> {
@@ -1043,6 +1072,10 @@ fn off(ctx: &Ctx, role: &str, from_exit: bool) -> i32 {
     let session = closed.as_ref().map(|(s, _)| s.as_str()).unwrap_or("");
     ctx.spine(&["session.logout", role, &format!("session={}", session), &format!("how={}", how)]);
     if !from_exit {
+        // #4337 — a background copy of the conversation outlives the pane and is
+        // what the next `on` tripped over (09-26: `claude -c` refused, "running in
+        // the background"); off ends it too, the conversation is kept
+        for id in background_ids(ctx, role) { let _ = sh(&ctx.claude, &["stop", &id]); }
         let live = live_entries(&ctx.sessions_dir, role, &ctx.ps);
         if ctx.has_tmux(role) { let _ = sh(&ctx.tmux, &["kill-session", "-t", &Ctx::tmux_session(role)]); }
         for l in &live { let _ = fs::remove_file(ctx.sessions_dir.join(format!("{}-{}.json", role, l.pid))); }
