@@ -24,6 +24,9 @@ EOS
 #!/bin/bash
 m=""; b=""; for a in "\$@"; do case "\$a" in POST|PUT) m="\$a" ;; @*.body) b="\${a#@}" ;; esac; done
 url="\${@: -1}"
+if [ -n "\$m" ] && grep -qE '"(sentBy|sentTo)":"principal-|"deliveryOf":"message-|"actsAs":"role-' "\$b"; then
+  printf '{"error":"validation","message":"double-prefix"}\n422\n'; exit 0
+fi
 if [ -n "\$m" ]; then
   n=\$(ls "$T/bodies" | wc -l | tr -d ' '); route=\$(echo "\$url" | sed -E 's#.*/v1/##; s#/#_#g')
   cp "\$b" "$T/bodies/\$(printf %03d \$n)-\$m-\$route.json"
@@ -68,9 +71,9 @@ lacks() { test -z "$(printf '%s' "$1" | grep -F -- "$2" || true)"; }
   run "$SCRIPT" project-messages
   test "$status" -eq 0
   m=$(one POST-messages_messages '"sourceId":"501"')
-  has "$m" '"sentBy":"principal-wren"'; has "$m" '"sentTo":"principal-silas"'; has "$m" '"sentInSession":"wren-s1"'; has "$m" '"overChannel":"nudge"'
+  has "$m" '"sentBy":"wren"'; has "$m" '"sentTo":"silas"'; has "$m" '"sentInSession":"wren-s1"'; has "$m" '"overChannel":"nudge"'
   d=$(one POST-messages_deliveries 'message 501')
-  has "$d" '"deliveredTo":"silas-presence-b"'; has "$d" '"deliveryOf":"message-src-501"'
+  has "$d" '"deliveredTo":"silas-presence-b"'; has "$d" '"deliveryOf":"src-501"'
 }
 
 @test "an alert from a machine keeps its sender as provenance, with no principal" {
@@ -114,4 +117,23 @@ lacks() { test -z "$(printf '%s' "$1" | grep -F -- "$2" || true)"; }
   printf '{"at":"2026-09-26T16:40:00Z","text":"5 Buzz is then: add one Channel row"}\n' > "$T/identity/silas/received.jsonl"
   run "$SCRIPT" project-messages
   has "$(one POST-messages_deliveries 'message 501')" '"deliveryOutcome":"delivered"'
+}
+
+@test "NEGATIVE PROOF: the stub refuses a double prefix the way the service does, so a prefixed edge cannot pass here" {
+  printf '{"name":"x","sentBy":"principal-wren"}' > "$T/probe.body"
+  run "$T/bin/curl" -s -X POST --data-binary "@$T/probe.body" http://stub:3360/v1/messages/messages
+  printf '%s' "$output" | grep -q 422
+}
+
+@test "a message the service refused is tried again on the next pass, never skipped by the watermark" {
+  # the stub refuses message 502 once (a timeout on the live run, 09-26 14:27, lost message 40169)
+  sed -i '' 's/"content":"chorus-health: fuseki-memory"/"content":"chorus-health: fuseki-memory","sentBy_bad":1/' "$T/messages.json"
+  cat > "$T/bin/curl.orig" < "$T/bin/curl"
+  { echo '#!/bin/bash'; echo 'for a in "$@"; do case "$a" in @*.body) b="${a#@}";; esac; done'; echo "if [ -n \"\$b\" ] && grep -q '\"sourceId\":\"502\"' \"\$b\" && [ ! -f $T/refused-once ]; then touch $T/refused-once; printf '\\n000\\n'; exit 0; fi"; echo "exec $T/bin/curl.orig \"\$@\""; } > "$T/bin/curl"
+  chmod +x "$T/bin/curl" "$T/bin/curl.orig"
+  run "$SCRIPT" project-messages
+  out_503=$(ls "$T/bodies" | grep -c POST-messages_messages)
+  test -z "$(grep -lF '"sourceId":"502"' "$T"/bodies/*POST-messages_messages.json 2>/dev/null || true)"
+  run "$SCRIPT" project-messages
+  grep -lqF '"sourceId":"502"' "$T"/bodies/*POST-messages_messages.json
 }

@@ -11,8 +11,9 @@ fn principals() -> Vec<String> { ["jeff", "kade", "silas", "wren", "bridge"].ite
 #[test]
 fn a_peer_message_names_its_sender_and_recipient_as_principals() {
     let m = message_row(&src("nudge", "wren", "principal-silas", "hi", "delivered"), &principals(), Some("wren-0tl9e4s2"));
-    assert_eq!(m["sentBy"], "principal-wren");
-    assert_eq!(m["sentTo"], "principal-silas", "messages.db writes both kade and principal-kade");
+    // bare names: the service adds "principal-" and refuses a double prefix (422, live 09-26 14:20)
+    assert_eq!(m["sentBy"], "wren");
+    assert_eq!(m["sentTo"], "silas", "messages.db writes both kade and principal-kade");
     assert_eq!(m["senderName"], "wren");
     assert_eq!(m["sentInSession"], "wren-0tl9e4s2");
     assert_eq!(m["sentAt"], "2026-09-26T17:16:35Z");
@@ -71,7 +72,7 @@ fn the_delivery_lands_on_the_presence_that_was_live_then() {
 fn a_delivery_row_carries_where_and_how() {
     let s = src("nudge", "wren", "silas", "hi", "delivered");
     let d = delivery_row(&s, "message-src-40158", Some("silas-presence-b"), "delivered");
-    assert_eq!(d["deliveryOf"], "message-src-40158");
+    assert_eq!(d["deliveryOf"], "src-40158", "the kind prefix a create reply carries is taken off");
     assert_eq!(d["deliveredTo"], "silas-presence-b");
     assert_eq!(d["deliveredAt"], "2026-09-26T17:16:36Z");
     let f = delivery_row(&Src { error: "no-window".into(), ..src("nudge", "wren", "kade", "hi", "failed") }, "m", None, "failed");
