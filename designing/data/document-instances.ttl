@@ -228,6 +228,7 @@ chorus:document-monitors-service-design a chorus:Document ;
     chorus:ownedBy chorus:principal-silas .
 
 chorus:document-domain-design-logs a chorus:Document ;
+    chorus:docState "current" ;
   chorus:label """Domain Design — Logs""" ; rdfs:label """Domain Design — Logs""" ; chorus:docTitle """Domain Design — Logs""" ;
   chorus:docHref """/athena/domain.html?d=logs""" ;
   chorus:comment """The logs domain's design is its rows (#4084): purpose and gaps on the Domain row; every log source a harvested LogSource row (unit, machine, path, Loki job, last written, status) carrying the domain it belongs to from the authored UnitDomainMapping rows. No hand-written design page.""" ;
@@ -235,6 +236,7 @@ chorus:document-domain-design-logs a chorus:Document ;
   chorus:hasDomain chorus:logs ; chorus:ownedBy chorus:principal-silas ; chorus:hasProduct chorus:borg .
 
 chorus:document-service-design-security a chorus:Document ;
+    chorus:docState "current" ;
     chorus:label """Service Design — Security""" ;
     rdfs:label """Service Design — Security""" ;
     chorus:docTitle """Service Design — Security""" ;

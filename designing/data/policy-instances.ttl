@@ -27,7 +27,7 @@
 chorus:policy-working-hours a chorus:Policy ;
     rdfs:label "Working window 6am–8pm Boston" ;
     rdfs:comment "Default working window is 6am–8pm Boston time. Jeff's direction always overrides: do not question off-hour requests, do not ask Jeff about working-hour boundaries. The window is for self-initiated agent work when no direction has been given; when direction exists, execute it regardless of clock." ;
-    chorus:derivedFrom chorus:principle-protect-attention .
+    chorus:derivedFrom chorus:hemenway-biological-renewable-resources .
 
 chorus:policy-no-raw-process-kill a chorus:Policy ;
     rdfs:label "No raw process killing" ;
@@ -37,7 +37,7 @@ chorus:policy-no-raw-process-kill a chorus:Policy ;
 chorus:policy-response-window-60s a chorus:Policy ;
     rdfs:label "60-second pair heartbeat" ;
     rdfs:comment "If your pair partner completes an AC item, you respond within 60 seconds. If you can't, emit a status (thinking, blocked on X). Silence = stall. DEC-1571 Attention Contract." ;
-    chorus:derivedFrom chorus:principle-protect-attention .
+    chorus:derivedFrom chorus:hemenway-biological-renewable-resources .
 
 chorus:policy-no-self-acp a chorus:Policy ;
     rdfs:label "No self-accept on code cards" ;
@@ -84,7 +84,7 @@ chorus:policy-demo-provenance a chorus:Policy ;
 chorus:policy-nudge-blast-radius a chorus:Policy ;
     rdfs:label "Nudge requires WIP context" ;
     rdfs:comment "A nudge targeting a role carries the card context (WIP id if present, reason for interruption). Cross-domain nudges surface a warning. DEC-107 dual-path persist+deliver is the mechanism; blast-radius is the discipline around when it fires." ;
-    chorus:derivedFrom chorus:principle-protect-attention,
+    chorus:derivedFrom chorus:hemenway-biological-renewable-resources,
                        chorus:principle-focus-is-infrastructure .
 
 chorus:policy-pair-enforcement a chorus:Policy ;
