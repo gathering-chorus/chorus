@@ -49,8 +49,11 @@ load test_helper   # test_graph_name (run-scoped throwaway graph)
 # store 2026-09-04). test_graph_name is run-scoped: unique per run, identical
 # across the run's processes. See bats-graph-isolation.bats.
 TEST_GRAPH="$(test_graph_name 3540)"
-Q="http://localhost:3030/pods/query"
-GSP="http://localhost:3030/pods/data"
+# #4332 — writes go to the test dataset, never /pods (lib/test-store.sh)
+. "$BATS_TEST_DIRNAME/lib/test-store.sh"
+test_store || TEST_STORE_DOWN="$TEST_STORE_WHY"
+Q="${FUSEKI_QUERY:-}"
+GSP="${FUSEKI_GSP:-}"
 PFX='PREFIX chorus: <https://jeffbridwell.com/chorus#> PREFIX sh: <http://www.w3.org/ns/shacl#>'
 
 # #3606 — RESIDUE IS THE FALSE-GREEN MECHANISM, and this suite had it.
@@ -95,7 +98,7 @@ _drop_test_graph() {
 _insert() {
   local code
   code="$(curl -s -o /dev/null -w '%{http_code}' "${FUSEKI_AUTH[@]+"${FUSEKI_AUTH[@]}"}" \
-    -X POST "http://localhost:3030/pods/update" \
+    -X POST "${FUSEKI_UPDATE:?no test store}" \
     --data-urlencode "update=$PFX INSERT DATA { GRAPH <$TEST_GRAPH> { $1 } }" 2>/dev/null)"
   case "$code" in
     2*) return 0 ;;
@@ -106,6 +109,7 @@ _insert() {
 }
 
 setup_file() {
+  [ -z "${TEST_STORE_DOWN:-}" ] || skip "UNMEASURED: $TEST_STORE_DOWN"
   _drop_test_graph || exit 1
 }
 

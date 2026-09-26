@@ -200,7 +200,7 @@ cmd_start() {
   spine_emit service.start.started "service=$label" "pre_pid=$pre_pid" "pre_cdhash=$pre_cdhash"
   echo "Starting $label..."
   # Clear suppress markers immediately — a failed start should not leave alerts dark
-  rm -f "/tmp/deploy-in-progress-${label}.marker" "/tmp/chorus-alert-suppress"
+  rm -f "/tmp/deploy-in-progress-${label}.marker" "${CHORUS_ALERT_SUPPRESS_FILE:-/tmp/chorus-alert-suppress}"
   # #3750 — kickstart only works on a LOADED agent. After a stop (bootout) the
   # agent is unloaded, so start must BOOTSTRAP the plist; kickstart remains the
   # path for a loaded-but-dead agent.
@@ -245,7 +245,7 @@ cmd_stop() {
   spine_emit service.stop.started "service=$label" "pre_pid=$pre_pid" "pre_cdhash=$pre_cdhash"
   echo "Stopping $label..."
   # Write deploy suppression marker — prevents deep-health alerts during restart window
-  echo $(( $(date +%s) + 90 )) > "/tmp/chorus-alert-suppress"
+  echo $(( $(date +%s) + 90 )) > "${CHORUS_ALERT_SUPPRESS_FILE:-/tmp/chorus-alert-suppress}"
   touch "/tmp/deploy-in-progress-${label}.marker"
   local pid
   pid=$(launchctl list "$label" 2>/dev/null | grep '"PID"' | grep -o '[0-9]*')

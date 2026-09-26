@@ -1,4 +1,5 @@
 #!/usr/bin/env bats
+# @test-type: unit — drives watcher-lock-check.sh against a temp lock and log
 # session-watcher.bats — Tests for chorus-watch-sessions.sh lockfile behavior
 # Card #2227: stuck lockfile blocks all indexing permanently
 #
@@ -6,8 +7,12 @@
 # a crashed index run left a lockfile that permanently blocks future indexing.
 
 WATCHER_SCRIPT="$HOME/.chorus/scripts/chorus-watch-sessions.sh"
-LOCKFILE="$HOME/.chorus/watcher.lock"
-LOGFILE="$HOME/.chorus/watcher.log"
+# #4332 — a per-run lock and log. This suite used to delete the live
+# ~/.chorus/watcher.lock in setup and teardown (dropping a running index's
+# lock mid-run) and append to the live watcher.log. The helper takes both
+# paths as arguments, so the test never needs the real ones.
+LOCKFILE="${BATS_RUN_TMPDIR:-/tmp}/watcher-test-$$.lock"
+LOGFILE="${BATS_RUN_TMPDIR:-/tmp}/watcher-test-$$.log"
 
 # Extract the watcher's lock-check logic so we can test it in isolation.
 # The watcher's while-loop does:

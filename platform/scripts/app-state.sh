@@ -16,7 +16,8 @@ set -e
 SCRIPT_DIR="$( cd "$( dirname "${BASH_SOURCE[0]}" )" &> /dev/null && pwd )"
 PROJECT_ROOT="$( cd "$SCRIPT_DIR/.." &> /dev/null && pwd )"
 LOGS_DIR="$PROJECT_ROOT/logs"
-SUPPRESS_FILE="/tmp/chorus-alert-suppress"
+# #4332 — overridable so a test never touches the real suppress file
+SUPPRESS_FILE="${CHORUS_ALERT_SUPPRESS_FILE:-/tmp/chorus-alert-suppress}"
 
 # LaunchAgent labels
 APP_LABEL="com.gathering.app"

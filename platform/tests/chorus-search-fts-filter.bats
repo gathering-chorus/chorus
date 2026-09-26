@@ -1,4 +1,5 @@
 #!/usr/bin/env bats
+# @test-type: integration — reads the live search index and the live api (read-only since #4332)
 # chorus-search-fts-filter.bats — #2323
 # What Jeff sees: chorus search returns real content, not its own telemetry.
 # Queries for "wren last session shipped friction decisions" and
@@ -63,15 +64,8 @@ print(bad)
 
 # --- AC: new spine events are filtered on ingest (not just at purge time) ---
 
-@test "post-fix: running indexer does not add rows where event IS search.query.executed" {
-  # Check the actual event field, not substring — same reasoning as test 1.
-  local before after
-  before=$(sqlite3 "$INDEX_DB" "SELECT COUNT(*) FROM messages WHERE source='spine' AND substr(content,1,1)='{' AND json_extract(content, '\$.event') = 'search.query.executed'")
-  # Run a search to generate at least one search.query.executed event
-  curl -s "http://localhost:3340/api/chorus/search?q=bats-probe-$(date +%s)&limit=1" >/dev/null
-  sleep 2
-  bash "$INDEXER" spine >/dev/null 2>&1 || true
-  sleep 1
-  after=$(sqlite3 "$INDEX_DB" "SELECT COUNT(*) FROM messages WHERE source='spine' AND substr(content,1,1)='{' AND json_extract(content, '\$.event') = 'search.query.executed'")
-  [ "$after" -eq 0 ]
-}
+# #4332 — the "running indexer does not add rows" case is gone. It fired a
+# search at the live api (a real search.query.executed on the spine) and then
+# ran the production indexer against the live ~/.chorus/index.db from inside
+# a test. The same invariant is checked read-only by the first case in this
+# file; the indexer run against a fixture DB belongs to #4336.

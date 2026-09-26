@@ -34,7 +34,8 @@ WARNINGS=()
 now=$(date +%s)
 
 # --- 0. Alert suppression check (#2305) ---
-SUPPRESS_FILE="/tmp/chorus-alert-suppress"
+# #4332 — overridable so a test never touches the real suppress file
+SUPPRESS_FILE="${CHORUS_ALERT_SUPPRESS_FILE:-/tmp/chorus-alert-suppress}"
 if [ -f "$SUPPRESS_FILE" ]; then
   expiry=$(cat "$SUPPRESS_FILE" 2>/dev/null || echo 0)
   if [ "$expiry" -gt "$now" ] 2>/dev/null; then

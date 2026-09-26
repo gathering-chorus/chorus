@@ -25,6 +25,9 @@ GSP="http://localhost:3030/pods/data"
 PRIN_GRAPH="urn:chorus:domains:principles"
 VAL_GRAPH="urn:chorus:domains:values"
 FIXTURE_GRAPH="urn:chorus:test:values-4006-fixture"
+# #4332 — the fixture goes to the test dataset, never /pods (lib/test-store.sh).
+# The consistency checks below still READ the real graphs on /pods.
+. "$BATS_TEST_DIRNAME/lib/test-store.sh"
 
 count() { # $1 = graph, $2 = WHERE body
   curl -s --max-time 10 "$EP" --data-urlencode \
@@ -36,7 +39,10 @@ count() { # $1 = graph, $2 = WHERE body
 teardown() {
   # shellcheck disable=SC1091
   source "${CHORUS_ROOT:-$(cd "$BATS_TEST_DIRNAME/../.." && pwd)}/platform/scripts/fuseki-auth.sh" 2>/dev/null || true
-  curl -s --max-time "${FUSEKI_WRITE_TIMEOUT:-120}" "${FUSEKI_AUTH[@]+"${FUSEKI_AUTH[@]}"}" -X DELETE "$GSP?graph=$FIXTURE_GRAPH" -o /dev/null 2>/dev/null || true
+  if [ -n "${TEST_STORE:-}" ]; then
+    curl -s --max-time 30 "${FUSEKI_AUTH[@]+"${FUSEKI_AUTH[@]}"}" -X DELETE "$TEST_STORE/data?graph=$FIXTURE_GRAPH" -o /dev/null 2>/dev/null || true
+    curl -s --max-time 30 "${FUSEKI_AUTH[@]+"${FUSEKI_AUTH[@]}"}" -X DELETE "$TEST_STORE/data?graph=$PRIN_GRAPH" -o /dev/null 2>/dev/null || true
+  fi
 }
 
 @test "principles are consistent: 14 Hemenway parents, total == pc + xp, no probe row" {
@@ -93,6 +99,18 @@ teardown() {
   # passing for the wrong reason. So the load is asserted before the query runs.
   # shellcheck disable=SC1091
   source "${CHORUS_ROOT:-$(cd "$BATS_TEST_DIRNAME/../.." && pwd)}/platform/scripts/fuseki-auth.sh" 2>/dev/null || true
+  # #4332 — the whole negative proof runs in the test dataset: one principle
+  # that exists, one value pointing at it, one value pointing at nothing.
+  # The query must count exactly the dangling one.
+  test_store || skip "UNMEASURED: $TEST_STORE_WHY"
+  GSP="$FUSEKI_GSP"; EP="$FUSEKI_QUERY"
+  assert_not_prod "$GSP"
+  code=$(printf '%s\n' \
+    '@prefix chorus: <https://jeffbridwell.com/chorus#> .' \
+    'chorus:xp-real-principle-4006 a chorus:Principle .' \
+    | curl -s -o /dev/null -w '%{http_code}' "${FUSEKI_AUTH[@]+"${FUSEKI_AUTH[@]}"}" \
+        -X PUT -H 'Content-Type: text/turtle' --data-binary @- "$GSP?graph=$PRIN_GRAPH")
+  [ "$code" = "200" ] || [ "$code" = "201" ] || [ "$code" = "204" ]
   code=$(printf '%s\n' \
     '@prefix chorus: <https://jeffbridwell.com/chorus#> .' \
     '@prefix rdfs: <http://www.w3.org/2000/01/rdf-schema#> .' \
@@ -100,14 +118,17 @@ teardown() {
     '    rdfs:label "Fixture" ;' \
     '    rdfs:comment "Points at a principle that does not exist." ;' \
     '    chorus:expressedBy chorus:xp-no-such-principle-4006 .' \
+    'chorus:xp-value-fixture-ok-4006 a chorus:Value ;' \
+    '    rdfs:label "Fixture ok" ;' \
+    '    chorus:expressedBy chorus:xp-real-principle-4006 .' \
     | curl -s -o /dev/null -w '%{http_code}' "${FUSEKI_AUTH[@]+"${FUSEKI_AUTH[@]}"}" \
-        -X POST -H 'Content-Type: text/turtle' --data-binary @- "$GSP?graph=$FIXTURE_GRAPH")
+        -X PUT -H 'Content-Type: text/turtle' --data-binary @- "$GSP?graph=$FIXTURE_GRAPH")
   [ "$code" = "200" ] || [ "$code" = "201" ] || [ "$code" = "204" ]
 
   # And the fixture really is in there — a 2xx on an empty body would still
   # leave the graph empty, and an empty graph reads 0 dangling.
   run count "$FIXTURE_GRAPH" '?s a chorus:Value'
-  [ "$output" = "1" ]
+  [ "$output" = "2" ]
 
   dangling=$(curl -s --max-time 10 "$EP" --data-urlencode \
     "query=PREFIX chorus: <$NS> SELECT (COUNT(DISTINCT ?t) AS ?c) WHERE { GRAPH <$FIXTURE_GRAPH> { ?v chorus:expressedBy ?t } FILTER NOT EXISTS { GRAPH <$PRIN_GRAPH> { ?t a chorus:Principle } } }" \

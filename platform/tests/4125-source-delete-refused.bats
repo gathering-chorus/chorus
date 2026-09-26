@@ -28,8 +28,11 @@
 # which is a simple command and fails wherever it sits.
 
 SCRIPT="$(cd "$BATS_TEST_DIRNAME/../services/athena-deploy/target/release" && pwd)/athena-deploy"
-Q="http://localhost:3030/pods/query"
-GSP="http://localhost:3030/pods/data"
+# #4332 — writes go to the test dataset, never /pods (lib/test-store.sh)
+. "$BATS_TEST_DIRNAME/lib/test-store.sh"
+test_store || TEST_STORE_DOWN="$TEST_STORE_WHY"
+Q="${FUSEKI_QUERY:-}"
+GSP="${FUSEKI_GSP:-}"
 GRAPH="urn:chorus:ontology-test-bats-4125"
 
 # shellcheck source=/dev/null
@@ -57,6 +60,7 @@ _write_ttl() {
 }
 
 setup() {
+  [ -z "${TEST_STORE_DOWN:-}" ] || skip "UNMEASURED: $TEST_STORE_DOWN"
   REPO="$BATS_TEST_TMPDIR/fixture-repo"
   mkdir -p "$REPO/roles/silas/ontology" "$REPO/platform/scripts"
   # The script sources $CHORUS_ROOT/platform/scripts/fuseki-auth.sh, and CHORUS_ROOT is
