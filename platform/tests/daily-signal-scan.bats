@@ -57,3 +57,12 @@ SCRIPT="$(cd "$(dirname "$BATS_TEST_FILENAME")/../scripts" && pwd)/daily-signal-
   [ "$status" -eq 0 ]
   [ "$output" = "reached" ]
 }
+
+# #4334 — an unreadable board ended the brief under `set -e`. The scan must
+# finish and say the section was not measured.
+@test "#4334: an unreadable board still finishes the brief and says flow health was not measured" {
+  out="$BATS_TEST_TMPDIR/signal.md"
+  run env DAILY_SIGNAL_CARDS=/usr/bin/false bash "$SCRIPT" --dry-run --output "$out"
+  [ "$status" -eq 0 ]
+  grep -q "flow health not measured" "$out"
+}
