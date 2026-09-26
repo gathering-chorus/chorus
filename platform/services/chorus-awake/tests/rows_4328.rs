@@ -135,3 +135,13 @@ fn conversation_row_4342_only_for_a_known_transcript() {
     assert!(conversation_row("silas", "r", "pending").is_none());
     assert!(conversation_row("silas", "r", "").is_none());
 }
+
+#[test]
+fn a_login_saved_before_the_bare_name_fix_is_sent_back_bare_4343() {
+    // live 09-26: Wren's session saved at 11:06 said role-wren; every seen PUT answered 422
+    let old = json!({"name":"wren-s","actsAs":"role-wren","tokenId":"j","ownedBy":"principal-wren"});
+    assert_eq!(seen_session(old.clone(), "t").unwrap()["actsAs"], "wren");
+    assert_eq!(putable(old)["actsAs"], "wren");
+    // negative proof: an already-bare role is left alone
+    assert_eq!(seen_session(json!({"name":"s","actsAs":"kade"}), "t").unwrap()["actsAs"], "kade");
+}

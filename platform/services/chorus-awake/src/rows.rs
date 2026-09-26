@@ -99,8 +99,9 @@ pub fn ended_run(mut run: Value, ended: &str, reason: &str) -> Option<Value> {
 }
 
 /// The session with this turn's time. One PUT, never a new row.
-pub fn seen_session(mut session: Value, now: &str) -> Option<Value> {
+pub fn seen_session(session: Value, now: &str) -> Option<Value> {
     session.get("name")?;
+    let mut session = bare_role(session);
     session["lastSeenAt"] = Value::String(now.into());
     Some(session)
 }
@@ -147,7 +148,17 @@ pub fn seen_due(last_write_secs: Option<u64>, now_secs: u64, every_secs: u64, de
 /// A row as the listing returns it, made fit to PUT back: the listing adds
 /// "status" (not in any shape; 422 "off-model property") and reports every
 /// absent field as "" (an empty edge is refused as a name). Both go.
+/// #4343 — actsAs as the bare role name, whatever form a row was saved in. A
+/// login saved before the fix carries "role-wren"; sent back, every PUT is a 422.
+pub fn bare_role(mut row: Value) -> Value {
+    if let Some(a) = row.get("actsAs").and_then(|a| a.as_str()).and_then(|a| a.strip_prefix("role-")).map(String::from) {
+        row["actsAs"] = Value::String(a);
+    }
+    row
+}
+
 pub fn putable(mut row: Value) -> Value {
+    row = bare_role(row);
     if let Some(o) = row.as_object_mut() {
         o.remove("status");
         o.retain(|_, v| !matches!(v, Value::String(s) if s.is_empty()));
