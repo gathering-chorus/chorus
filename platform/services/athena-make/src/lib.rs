@@ -4446,6 +4446,17 @@ pub fn page_html(t: &RouteTable) -> String {
 /// #4273 — one JSON member per scalar key: a single value stays a string, a
 /// repeated value becomes an array. Same rule the edge fold below applies to
 /// links; before this the item route emitted the key once per value.
+/// #4318 — one value per field per distinct value. The twin-label rule (#4291)
+/// writes every label under chorus:label AND rdfs:label; both local names are
+/// `label`, so the item read served `"label": ["x", "x"]` and every create
+/// read-back in the api quartet (4279) failed for 33 classes. The same value
+/// twice is one value; two different values still make an array (#4273).
+fn push_distinct(vals: &mut Vec<String>, v: String) {
+    if !vals.contains(&v) {
+        vals.push(v);
+    }
+}
+
 fn scalar_json_parts(scalars: &std::collections::BTreeMap<String, Vec<String>>) -> Vec<String> {
     scalars.iter().map(|(k, vals)| {
         if vals.len() == 1 {
@@ -4498,7 +4509,7 @@ fn entity_json(class: &str, name: &str, exposure: &[(String, String)], authed: b
                 continue;
             }
             let v = if o.starts_with("http") && o.contains('#') { o.rsplit('#').next().unwrap_or(&o).to_string() } else { o };
-            scalars.entry(key).or_default().push(v);
+            push_distinct(scalars.entry(key).or_default(), v);
         }
     }
     data_parts.extend(scalar_json_parts(&scalars));
@@ -8208,8 +8219,36 @@ mod required_floor_4220 {
 
 #[cfg(test)]
 mod item_route_multi_valued_4273 {
-    use super::{parse_create_object, scalar_json_parts};
+    use super::{parse_create_object, push_distinct, scalar_json_parts};
     use std::collections::BTreeMap;
+
+    /// #4318 — a label written under both chorus:label and rdfs:label reads
+    /// back as one string; two different values stay an array.
+    #[test]
+    fn the_twin_label_reads_back_as_one_value() {
+        let mut label = Vec::new();
+        push_distinct(&mut label, "spine".to_string()); // chorus:label
+        push_distinct(&mut label, "spine".to_string()); // rdfs:label
+        let mut diagram = Vec::new();
+        push_distinct(&mut diagram, "%% a".to_string());
+        push_distinct(&mut diagram, "%% b".to_string());
+        let mut m = BTreeMap::new();
+        m.insert("label".to_string(), label);
+        m.insert("diagram".to_string(), diagram);
+        assert_eq!(
+            scalar_json_parts(&m),
+            vec![r#""diagram": ["%% a", "%% b"]"#.to_string(), r#""label": "spine""#.to_string()]
+        );
+    }
+
+    /// NEGATIVE PROOF (#3734): accumulating without the distinct check is the
+    /// state 4279 saw — the same label twice, served as an array.
+    #[test]
+    fn without_distinct_the_twin_label_is_an_array() {
+        let mut m = BTreeMap::new();
+        m.insert("label".to_string(), vec!["spine".to_string(), "spine".to_string()]);
+        assert_eq!(scalar_json_parts(&m), vec![r#""label": ["spine", "spine"]"#.to_string()]);
+    }
 
     #[test]
     fn a_repeated_scalar_is_one_key_with_an_array() {

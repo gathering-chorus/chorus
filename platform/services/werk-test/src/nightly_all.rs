@@ -391,25 +391,37 @@ fn leg_coverage(ctx: &Ctx) -> Vec<SuiteRow> {
     rows
 }
 
+/// #4318 — the crates the denominator counts: every crate the registry names
+/// AND every crate on disk. The registry alone is only as whole as the last
+/// crawl: on 2026-09-25 16:38 a partial registry saw 18 of 29 crates, the
+/// ratchet wrote a baseline of 10 unconfigured, and the next full reading of
+/// 20 went red as "a crate shipped without a floor" when none had.
+pub fn denominator_crates(registry: &[String], disk: &[String]) -> Vec<String> {
+    let mut c: Vec<String> = registry.iter().chain(disk.iter()).cloned().collect();
+    c.sort();
+    c.dedup();
+    c
+}
+
 fn leg_denominator(ctx: &Ctx, floors_yaml: &str) -> Option<SuiteRow> {
     let services = format!("{}/platform/services", ctx.root);
     if !Path::new(&services).is_dir() {
         return None;
     }
     let configured: Vec<String> = parse_floors(floors_yaml).into_iter().filter(|(_, r, _)| r.starts_with("platform/services/")).map(|(_, r, _)| r).collect();
-    let mut crates: Vec<String> = ctx.owners.keys().filter_map(|f| f.strip_prefix("platform/services/")).filter_map(|r| r.split('/').next()).map(String::from).collect();
-    crates.sort();
-    crates.dedup();
-    if crates.is_empty() {
-        eprintln!("coverage-denominator: source=glob-fallback (registry unreachable — LOUD, #3974)");
-        if let Ok(rd) = std::fs::read_dir(&services) {
-            for e in rd.flatten() {
-                if e.path().join("Cargo.toml").is_file() {
-                    crates.push(e.file_name().to_string_lossy().to_string());
-                }
+    let registry: Vec<String> = ctx.owners.keys().filter_map(|f| f.strip_prefix("platform/services/")).filter_map(|r| r.split('/').next()).map(String::from).collect();
+    if registry.is_empty() {
+        eprintln!("coverage-denominator: registry unreachable — counting crates on disk only (LOUD, #3974)");
+    }
+    let mut disk: Vec<String> = Vec::new();
+    if let Ok(rd) = std::fs::read_dir(&services) {
+        for e in rd.flatten() {
+            if e.path().join("Cargo.toml").is_file() {
+                disk.push(e.file_name().to_string_lossy().to_string());
             }
         }
     }
+    let crates = denominator_crates(&registry, &disk);
     let present: Vec<String> = crates.into_iter().filter(|c| Path::new(&format!("{}/{}/Cargo.toml", services, c)).is_file()).collect();
     if present.is_empty() {
         return None;
@@ -503,6 +515,8 @@ fn read_registry(ctx: &Ctx) -> (HashMap<String, String>, Vec<(String, String)>) 
 // ───────────────────────── phase 2: the runner, streamed ─────────────────────────
 
 struct LaneResult {
+    /// #4318 — how often the lane waited on the load gate
+    gate_holds: usize,
     rows: Vec<SuiteRow>,
     rc: i32,
     /// #4247 — (filePath, testName, result) for every case the lane reported.
@@ -534,7 +548,7 @@ fn run_runner(ctx: &Ctx, box_over_load: bool) -> LaneResult {
         Err(e) => {
             let row = SuiteRow::new("runner", "werk-test-nightly", "silas", "fail", &format!("0 pass, 1 fail (runner could not start: {} — runner lanes DID NOT RUN, #3920/#3974)", e));
             ctx.append_log(&row.line());
-            return LaneResult { rows: vec![row], rc: 127, cases: Vec::new(), stored: None, whys: Vec::new() };
+            return LaneResult { gate_holds: 0, rows: vec![row], rc: 127, cases: Vec::new(), stored: None, whys: Vec::new() };
         }
     };
     let stdout = child.stdout.take().unwrap();
@@ -619,7 +633,7 @@ fn run_runner(ctx: &Ctx, box_over_load: bool) -> LaneResult {
         let slice = unit_slice(&lane_text, unit).join("\n");
         ctx.write_fail_log(r, &format!("{}\n# full lane output: {}\n", slice, lane_path));
     }
-    LaneResult { rows, rc, cases, stored, whys }
+    LaneResult { gate_holds: gate_holds(&lane_text), rows, rc, cases, stored, whys }
 }
 
 // ───────────────────────── phase 3: the census, from the run's own record ─────────────────────────
@@ -894,7 +908,7 @@ fn run_locked(ctx: &mut Ctx, _args: &[String]) -> Result<i32, String> {
         // #4292 — bdd is no longer one summary row here: each feature runs
         // in the runner's file-suite lane and stores one result per scenario.
         push(ctx, leg_daemons(ctx, &daemons_at_start, &sample_daemons()), &mut rows);
-        push(ctx, leg_duration(run_clock.elapsed().as_secs()), &mut rows);
+        push(ctx, leg_duration(run_clock.elapsed().as_secs(), lane.gate_holds), &mut rows);
     }
     // #4247 — the census from the run's own record, in one unit, before the
     // completion line so a reader sees the tally with the run it belongs to.
@@ -1097,6 +1111,37 @@ pub fn daemon_restarts(
 /// Run duration against its budget. kind=perf, so the page folds a fail to
 /// "slow (speed, not breakage)" (#4136) — over budget is a perf red, not a
 /// product red.
+/// #4318 — the load-gate waits a lane reported: each pool's heartbeat carries
+/// its running count (`-- pool heartbeat: 82/209 done, 2 in flight, 432 gate
+/// hold(s) --`), so the run's total is the sum of each pool's last count.
+pub fn gate_holds(lane_text: &str) -> usize {
+    let mut per_pool: std::collections::HashMap<String, usize> = std::collections::HashMap::new();
+    for l in lane_text.lines() {
+        let Some(rest) = l.trim().strip_prefix("-- pool heartbeat: ") else { continue };
+        let pool = rest.split(" done").next().and_then(|d| d.split('/').nth(1)).unwrap_or("").to_string();
+        let holds = rest
+            .split(", ")
+            .find_map(|seg| seg.strip_suffix(" gate hold(s) --").and_then(|n| n.trim().parse::<usize>().ok()));
+        if let Some(h) = holds {
+            let e = per_pool.entry(pool).or_insert(0);
+            *e = (*e).max(h);
+        }
+    }
+    per_pool.values().sum()
+}
+
+/// The duration verdict, and why a long run was long when the run knows:
+/// a run that waited on the load gate says so, in words the readout files
+/// under the machine's condition rather than a product break.
+pub fn duration_verdict_with_load(secs: u64, budget_secs: u64, holds: usize) -> (&'static str, String) {
+    let (status, summary) = duration_verdict(secs, budget_secs);
+    if status == "fail" && holds > 0 {
+        let s = summary.trim_end_matches(')').to_string();
+        return (status, format!("{}; {} load-gate waits — the box was under load)", s, holds));
+    }
+    (status, summary)
+}
+
 pub fn duration_verdict(secs: u64, budget_secs: u64) -> (&'static str, String) {
     if secs <= budget_secs {
         ("pass", format!("1 pass, 0 fail (run took {}s, budget {}s)", secs, budget_secs))
@@ -1155,7 +1200,13 @@ fn leg_crawler_validate(ctx: &Ctx) -> SuiteRow {
         );
     }
     let mut c = Command::new(&bin);
-    c.arg("--validate")
+    // #4318 — Jeff's note, line one: "prereq: all tests current + in graph".
+    // The validate ran at 03:00 against a graph the crawler only refreshes at
+    // 04:30, so any file changed during the day read as a gap (2026-09-26: 2
+    // log files). The run now crawls first — a full pass writes, then
+    // validates — so it checks a current graph. A run that writes no prod
+    // rows (a werk, #3722) validates only.
+    c.args(crawler_args(ctx.graph.enabled))
         .env("CHORUS_ROOT", &ctx.root)
         .env("CHORUS_ROLE", env_or("NIGHTLY_CRAWL_ROLE", "kade"))
         .current_dir(&ctx.root);
@@ -1166,6 +1217,13 @@ fn leg_crawler_validate(ctx: &Ctx) -> SuiteRow {
         ctx.write_fail_log(&row, &out);
     }
     row
+}
+
+/// #4318 — the crawler's arguments for the nightly's first leg: a full pass
+/// (write, then validate) when the run may write the graph, validate-only
+/// when it may not.
+pub fn crawler_args(may_write: bool) -> Vec<&'static str> {
+    if may_write { Vec::new() } else { vec!["--validate"] }
 }
 
 /// One parsed `VALIDATE|domain|class|tree=|graph=|missing=|stale=|measured` line.
@@ -1253,16 +1311,93 @@ fn crawler_validate_verdict(rc: i32, out: &str) -> (&'static str, String) {
     }
 }
 
-fn leg_duration(secs: u64) -> SuiteRow {
+fn leg_duration(secs: u64, holds: usize) -> SuiteRow {
     // #4277 — the budget is a regression guard, so it sits above the measured
     // run, not at a wish: the two full runs of 2026-09-23 took 67 and 71 min
     // (4033s, 4252s) and the first budget (3600s) went red on a normal night.
     let budget: u64 = env_or("NIGHTLY_RUN_BUDGET_S", "5400").parse().unwrap_or(5400);
-    let (status, summary) = duration_verdict(secs, budget);
+    let (status, summary) = duration_verdict_with_load(secs, budget, holds);
     SuiteRow::new("perf", "nightly:duration", "kade", status, &summary)
 }
 
 
+
+#[cfg(test)]
+mod crawl_first_4318 {
+    use super::*;
+
+    #[test]
+    fn the_team_run_crawls_before_it_validates() {
+        assert!(crawler_args(true).is_empty(), "a full pass: write, then validate");
+    }
+
+    /// NEGATIVE PROOF — a run that may not write prod (a werk) never crawls.
+    #[test]
+    fn a_werk_run_only_validates() {
+        assert_eq!(crawler_args(false), vec!["--validate"]);
+    }
+}
+
+#[cfg(test)]
+mod denominator_4318 {
+    use super::*;
+
+    fn v(xs: &[&str]) -> Vec<String> {
+        xs.iter().map(|s| s.to_string()).collect()
+    }
+
+    #[test]
+    fn a_partial_registry_does_not_shrink_the_denominator() {
+        let disk = v(&["a", "b", "c", "d"]);
+        assert_eq!(denominator_crates(&v(&["a", "b"]), &disk), disk);
+        assert_eq!(denominator_crates(&[], &disk), disk);
+    }
+
+    /// NEGATIVE PROOF — the registry alone (the rule this replaces) loses the
+    /// crates a partial crawl did not see.
+    #[test]
+    fn the_registry_alone_undercounts() {
+        let registry_only = denominator_crates(&v(&["a", "b"]), &[]);
+        assert_eq!(registry_only.len(), 2);
+        assert_ne!(registry_only.len(), denominator_crates(&v(&["a", "b"]), &v(&["a", "b", "c", "d"])).len());
+    }
+}
+
+#[cfg(test)]
+mod duration_4318 {
+    use super::*;
+
+    const LANE: &str = "-- pool heartbeat: 8/29 done, 2 in flight, 5 gate hold(s) --\n\
+-- pool heartbeat: 12/29 done, 2 in flight, 140 gate hold(s) --\n\
+x\n\
+-- pool heartbeat: 82/209 done, 2 in flight, 432 gate hold(s) --\n\
+-- pool heartbeat: 0/1 done, 1 in flight, 0 gate hold(s) --\n";
+
+    #[test]
+    fn holds_are_each_pools_last_count_summed() {
+        assert_eq!(gate_holds(LANE), 140 + 432);
+        assert_eq!(gate_holds("no heartbeats here"), 0);
+    }
+
+    #[test]
+    fn a_long_run_that_waited_on_load_says_so() {
+        let (st, s) = duration_verdict_with_load(10140, 5400, 572);
+        assert_eq!(st, "fail", "still red: the run was over budget");
+        assert!(s.contains("572 load-gate waits — the box was under load"), "{s}");
+        assert!(s.ends_with(')'), "{s}");
+    }
+
+    /// NEGATIVE PROOF — a long run with no waits is not blamed on load, and a
+    /// run inside budget carries no load note.
+    #[test]
+    fn no_waits_no_load_story() {
+        let (_, s) = duration_verdict_with_load(10140, 5400, 0);
+        assert!(!s.contains("under load"), "{s}");
+        let (st, s) = duration_verdict_with_load(3000, 5400, 99);
+        assert_eq!(st, "pass");
+        assert!(!s.contains("under load"), "{s}");
+    }
+}
 
 #[cfg(test)]
 mod lanes_4278 {

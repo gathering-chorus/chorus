@@ -138,7 +138,7 @@ pub fn owner_map<'a>(
 ) -> HashMap<String, String> {
     let own: HashMap<&str, &str> = domains
         .filter(|(n, o)| !n.is_empty() && !o.is_empty())
-        .map(|(n, o)| (n, o.strip_prefix("role-").unwrap_or(o)))
+        .map(|(n, o)| (n, owner_role(o)))
         .collect();
     let mut m = HashMap::new();
     for (fp, cov) in tests {
@@ -147,6 +147,15 @@ pub fn owner_map<'a>(
         }
     }
     m
+}
+
+/// #4318 — one name per role. Domain owners were `role-kade` and are now the
+/// Principal `principal-kade` (#4201). The runner stripped only the first
+/// prefix, so on 2026-09-25 five of Kade's reds were owned by
+/// "principal-kade": the readout split Kade across two names and the
+/// end-of-run nudge, addressed to that name, reached no one.
+pub fn owner_role(owner: &str) -> &str {
+    owner.strip_prefix("principal-").or_else(|| owner.strip_prefix("role-")).unwrap_or(owner)
 }
 
 pub fn owner_for(path: &str, map: &HashMap<String, String>, chorus_root: &str, app_root: &str) -> String {
@@ -1644,6 +1653,30 @@ mod crawl_line_4180 {
 }
 
 /// #4247 — one unit for test reporting: the registered test.
+#[cfg(test)]
+mod owner_names_4318 {
+    use super::*;
+
+    #[test]
+    fn a_principal_owner_and_a_role_owner_are_the_same_role() {
+        let m = owner_map(
+            [("platform/tests/a.bats", "tests"), ("platform/tests/b.bats", "cicd")].into_iter(),
+            [("tests", "principal-kade"), ("cicd", "role-kade")].into_iter(),
+        );
+        assert_eq!(m.get("platform/tests/a.bats").map(String::as_str), Some("kade"));
+        assert_eq!(m.get("platform/tests/b.bats").map(String::as_str), Some("kade"));
+    }
+
+    /// NEGATIVE PROOF — the rule this replaces (strip "role-" only) leaves
+    /// the principal's name, the one the 09-25 nudge was addressed to.
+    #[test]
+    fn stripping_role_only_leaves_principal_kade() {
+        assert_eq!("principal-kade".strip_prefix("role-").unwrap_or("principal-kade"), "principal-kade");
+        assert_eq!(owner_role("principal-kade"), "kade");
+        assert_eq!(owner_role("silas"), "silas", "a bare name is left alone");
+    }
+}
+
 #[cfg(test)]
 mod graph_record_4156 {
     use super::*;

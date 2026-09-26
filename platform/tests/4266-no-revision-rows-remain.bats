@@ -73,11 +73,15 @@ store_is_up() {
   test "$n" -gt 0
 }
 
-@test "NEGATIVE PROOF: the catch-all query sees rows that really are in the catch-all" {
+@test "NEGATIVE PROOF: the catch-all query shape sees Version rows in a graph that holds them" {
   store_is_up || skip "UNMEASURED: store unreachable"
-  # The catch-all is not empty — other classes still live there. If this reads 0,
-  # the graph name is wrong and the catch-all check above proves nothing.
-  n="$(ask 'SELECT (COUNT(*) AS ?n) WHERE { GRAPH <urn:chorus:instances> { ?s ?p ?o } }')"
-  echo "triples in urn:chorus:instances = $n (must be > 0 or the graph name is wrong)"
+  # #4318 — this used to count ANY triple in the catch-all and required > 0.
+  # #4187 retired the catch-all and it is empty now, so the proof went red for
+  # a correct store. The check it guards asks "a Version row in graph G?";
+  # the proof is that the SAME query with G = the graph that holds the
+  # history finds them. If the shape could not see a Version row in a named
+  # graph, the zero above would be vacuous.
+  n="$(ask 'PREFIX c: <https://jeffbridwell.com/chorus#> SELECT (COUNT(DISTINCT ?s) AS ?n) WHERE { GRAPH <urn:chorus:domains:provenance> { ?s a c:Version } }')"
+  echo "same query shape, G = provenance: $n (must be > 0 or the catch-all zero is vacuous)"
   test "$n" -gt 0
 }
