@@ -139,30 +139,41 @@ EOS
   test -z "$(grep -x "claude stop x1" "$T/claude.log" || true)"
 }
 
-wrong_env() {  # ps that answers `eww` with the given CHORUS_ROLE
+wrong_env() {  # ps answering `eww`: CHORUS_ROLE=$1 on the first look, $2 (default: $1) after
+  printf '%s\n%s\n' "$1" "${2:-$1}" > "$T/env-seq"
   cat > "$T/bin/ps3" <<EOS
 #!/bin/bash
-if [ "\$1" = "eww" ]; then echo "/h/.local/bin/claude -c PWD=/x CHORUS_ROLE=$1 TERM=xterm"; exit 0; fi
+if [ "\$1" = "eww" ]; then r=\$(head -1 "$T/env-seq"); [ \$(wc -l < "$T/env-seq") -gt 1 ] && sed -i '' 1d "$T/env-seq"; echo "/h/.local/bin/claude -c PWD=/x CHORUS_ROLE=\$r TERM=xterm"; exit 0; fi
 grep -qx "\$2" "$T/alive-pids"
 EOS
   chmod +x "$T/bin/ps3"; export AWAKE_PS="$T/bin/ps3"
 }
 
-@test "a process carrying another role is refused as WRONG ROLE, never 'logged in'" {
-  wrong_env wren
+@test "a process carrying another role is repaired by on itself: that pane ends and the role starts again, logged in" {
+  wrong_env wren kade
   run "$SCRIPT" on kade
-  test "$status" -ne 0
-  out_has "WRONG ROLE"
-  out_has "runs as wren"
-  out_has "Run: chorus-principal off kade && chorus-principal on kade"
-  out_lacks "logged in  via"
+  test "$status" -eq 0
+  out_has "runs as wren, not kade — ending that pane and starting kade again"
+  grep -q "kill-session -t chorus-kade" "$T/tmux.log"
+  out_has "logged in"
   grep -q "session.wrong_role kade" "$T/spine.log"
 }
 
-@test "NEGATIVE PROOF: the same check passes a process that carries its own role" {
+@test "still wrong after one restart: refused as WRONG ROLE with ONE next command, never 'logged in'" {
+  wrong_env wren wren
+  run "$SCRIPT" on kade
+  test "$status" -ne 0
+  out_has "WRONG ROLE"
+  out_has "Next: chorus-principal on kade"
+  out_lacks "&&"
+  out_lacks "logged in  via"
+}
+
+@test "NEGATIVE PROOF: a process that carries its own role is neither restarted nor refused" {
   wrong_env kade
   run "$SCRIPT" on kade
   test "$status" -eq 0
   out_has "logged in"
   out_lacks "WRONG ROLE"
+  test -z "$(grep -F "kill-session" "$T/tmux.log" || true)"
 }

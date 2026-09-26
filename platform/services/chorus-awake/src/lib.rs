@@ -783,8 +783,19 @@ fn on(ctx: &Ctx, role: &str, attach: bool) -> Result<Came, (i32, String)> {
     };
     // #4337 — a process carrying another role's env is not this role logged in
     if let Some(other) = process_role(ctx, l.pid).filter(|r| r != role) {
-        eprintln!("awake: {}  WRONG ROLE — pid {} runs as {} (CHORUS_ROLE={}); not logged in. Run: chorus-principal off {} && chorus-principal on {}", role, l.pid, other, other, role, role);
         ctx.spine(&["session.wrong_role", role, &format!("pid={}", l.pid), &format!("carries={}", other)]);
+        // repair it ourselves once: end that pane and start again (Jeff: "i dont
+        // want the 10 steps i need to run when the 1 step command fails")
+        if envd("AWAKE_REPAIRING", "0") != "1" {
+            eprintln!("awake: {}  pid {} runs as {}, not {} — ending that pane and starting {} again", role, l.pid, other, role, role);
+            let _ = sh(&ctx.tmux, &["kill-session", "-t", &tmux_session]);
+            let _ = fs::remove_file(ctx.sessions_dir.join(format!("{}-{}.json", role, l.pid)));
+            env::set_var("AWAKE_REPAIRING", "1");
+            let again = on(ctx, role, attach);
+            env::remove_var("AWAKE_REPAIRING");
+            return again;
+        }
+        eprintln!("awake: {}  WRONG ROLE — pid {} still runs as {} after one restart; not logged in. Next: chorus-principal on {}", role, l.pid, other, role);
         return Err((1, format!("pid {} carries {}", l.pid, other)));
     }
     let st = st.with_pid(l.pid);
