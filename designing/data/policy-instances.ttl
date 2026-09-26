@@ -60,7 +60,7 @@ chorus:policy-tdd-gate a chorus:Policy ;
 chorus:policy-demo-gate a chorus:Policy ;
     rdfs:label "No accept without demo" ;
     rdfs:comment "A code card cannot be marked Done without demo evidence. Builder cannot self-accept. DEC-048 Proving Gate. Enforced by demo_gate.rs hook and werk-accept (the GO step of chorus_werk)." ;
-    chorus:derivedFrom chorus:principle-apply-self-regulation-and-accept-feedback,
+    chorus:derivedFrom chorus:hemenway-mistakes-are-tools-for-learning,
                        chorus:hemenway-biological-renewable-resources .
 
 chorus:policy-accept-gate a chorus:Policy ;
@@ -91,7 +91,7 @@ chorus:policy-pair-enforcement a chorus:Policy ;
     rdfs:label "Pair has navigator + driver, not spectators" ;
     rdfs:comment "A /pair session has exactly one navigator and one driver. Navigator scopes; driver implements. Rotation checkpoints enforce turn-taking. Partner silence > 60s = stall signal (see policy-response-window-60s for the heartbeat). Enforced by /pair skill state + future pair-heartbeat-check skill (#2317)." ;
     chorus:derivedFrom chorus:hemenway-observe,
-                       chorus:principle-integrate-rather-than-segregate .
+                       chorus:hemenway-connect .
 
 chorus:policy-icd-write-gate a chorus:Policy ;
     rdfs:label "No harvester without ICD provider" ;
@@ -103,7 +103,7 @@ chorus:policy-quality-gate a chorus:Policy ;
     rdfs:label "Quality gate required before demo" ;
     rdfs:comment "Quality gate (hooks pass, no regression, no console.log in production code) must pass before /demo is called on a code card. Kade-owned. Enforced by /gate-quality skill + quality_gate.rs hook integration." ;
     chorus:derivedFrom chorus:hemenway-catch-and-store,
-                       chorus:principle-produce-no-waste .
+                       chorus:hemenway-catch-and-store .
 
 # #4216 — appended 2026-09-20. These rows were still authored in a MODEL_SET file
 # (the first sweep checked the wrong file list and reported zero, which is the
