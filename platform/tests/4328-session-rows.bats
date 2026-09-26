@@ -300,3 +300,22 @@ EOS
   s=$(body PUT identity_sessions_wren-old); has "$s" '"actsAs":"wren"'
   test -z "$(printf '%s' "$s" | grep -F '"actsAs":"role-wren"' || true)"
 }
+
+@test "#4344 a login writes the role's credential files as rows that name the file and never carry the secret" {
+  printf '{"secret":"SUPERSECRET-client-secret","issuer":"x"}' > "$T/identity/silas/cred.json"
+  printf '{"seckey":"nsec1supersecretkey","pubkey":"ab"}' > "$T/identity/silas/nostr.json"
+  run "$SCRIPT" on silas
+  test "$status" -eq 0
+  test "$(bodies | grep -c POST-security_credentials)" -eq 2
+  c=$(cat "$T"/bodies/*POST-security_credentials*); has "$c" '"credentialKind":"css-client"'; has "$c" '"credentialKind":"nostr-key"'; has "$c" '/silas/cred.json"'
+  # negative proof: no secret value reaches any body
+  test -z "$(cat "$T"/bodies/* | grep -F -e SUPERSECRET -e nsec1 || true)"
+}
+
+@test "#4344 an unchanged credential is not written again" {
+  printf '{"secret":"s"}' > "$T/identity/silas/cred.json"
+  run "$SCRIPT" on silas
+  n=$(bodies | grep -c security_credentials)
+  echo '{"session_id":"c","prompt":"hi"}' | AWAKE_SEEN_SYNC=1 "$SCRIPT" seen silas
+  test "$(bodies | grep -c security_credentials)" -eq "$n"
+}

@@ -874,6 +874,24 @@ fn end_run(ctx: &Ctx, role: &str, reason: &str) {
     if let Some(p) = read_row(ctx, role, "presence").and_then(rows::gone_presence) { put_row(ctx, role, "identity/presences", "presence", &p); }
 }
 
+/// #4344 — the role's credential files as Credential rows, written once and
+/// updated when a file changes (the token rotates on every login).
+fn record_credentials(ctx: &Ctx, role: &str) {
+    let dir = PathBuf::from(&ctx.identity_dir).join(role);
+    let mtimes: Vec<(String, String)> = ["cred.json", "nostr.json", "token.cache"].iter().filter_map(|f| {
+        let secs = fs::metadata(dir.join(f)).ok()?.modified().ok()?.duration_since(UNIX_EPOCH).ok()?.as_secs();
+        Some((f.to_string(), iso_utc(secs)))
+    }).collect();
+    let shown = ctx.identity_dir.replacen(&ctx.home, "~", 1);
+    for row in rows::credential_rows(role, &shown, &mtimes) {
+        let kind = format!("cred-{}", row["credentialKind"].as_str().unwrap_or(""));
+        if read_row(ctx, role, &kind).as_ref() == Some(&row) { continue; }
+        let (code, _) = api_send(ctx, role, "security/credentials", None, &row, &kind);
+        let ok = if code == "409" { put_row(ctx, role, "security/credentials", &kind, &row) } else { ok_code(&code) };
+        if ok { save_row(ctx, role, &kind, &row); } else { ctx.spine(&["session.row.failed", role, "kind=credential", &format!("http={}", code)]); }
+    }
+}
+
 /// #4342 — one Conversation row per conversation id: written once, never twice.
 fn ensure_conversation(ctx: &Ctx, role: &str, run: &str, conversation: &str) {
     let Some(body) = rows::conversation_row(role, run, conversation) else { return };
@@ -909,6 +927,7 @@ fn record_run(ctx: &Ctx, role: &str, session: &str, l: &Live, conversation: &str
     let run_body = rows::run_row(role, &slug(&format!("{}-run-{}", role, stamp)), session, conversation, &started, previous.as_deref());
     let Some(run) = create_row(ctx, role, "identity/sessionruns", "run", run_body) else { return };
     ensure_conversation(ctx, role, &run, conversation);
+    record_credentials(ctx, role);
     let host_account = envd("USER", "unknown");
     let presence = create_row(ctx, role, "identity/presences", "presence", rows::presence_row(role, &slug(&format!("{}-presence-{}", role, stamp)), &run, &l.pane, &l.tty, &host_account));
     let context = create_row(ctx, role, "memory/contexts", "context", rows::boot_context_row(role, &slug(&format!("{}-boot-{}", role, stamp)), &run, &started));
@@ -968,6 +987,7 @@ fn seen_write(ctx: &Ctx, role: &str, conv: &str, delivered: bool) -> i32 {
     if let Some(run) = read_row(ctx, role, "run").filter(|r| r.get("runEndedAt").and_then(|e| e.as_str()).unwrap_or("").is_empty()) {
         ensure_conversation(ctx, role, &row_name(&run), conv);
     }
+    record_credentials(ctx, role);
     0
 }
 
