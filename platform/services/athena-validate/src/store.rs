@@ -162,8 +162,14 @@ mod tests {
         assert_ne!(v.summary_word(), Verdict::Clean.summary_word());
     }
 
+    /// Both tests below set and clear FUSEKI_QUERY. Run in parallel, one clears
+    /// it mid-run and the other sweeps the LIVE store (seen 2026-09-26: "dead
+    /// store reported Found(835)"). Serialise them.
+    static ENV_LOCK: std::sync::Mutex<()> = std::sync::Mutex::new(());
+
     #[test]
     fn the_endpoint_is_overridable_for_fixtures() {
+        let _g = ENV_LOCK.lock().unwrap_or_else(|e| e.into_inner());
         std::env::set_var("FUSEKI_QUERY", "http://127.0.0.1:9/query");
         assert_eq!(query_endpoint(), "http://127.0.0.1:9/query");
         std::env::remove_var("FUSEKI_QUERY");
@@ -173,6 +179,7 @@ mod tests {
     /// nothing listens on rather than by reading the code and agreeing with it.
     #[test]
     fn negative_proof_an_unreachable_store_is_unmeasured() {
+        let _g = ENV_LOCK.lock().unwrap_or_else(|e| e.into_inner());
         std::env::set_var("FUSEKI_QUERY", "http://127.0.0.1:9/query");
         let (v, f) = run(&COMPLETENESS);
         std::env::remove_var("FUSEKI_QUERY");
@@ -182,17 +189,11 @@ mod tests {
     }
 }
 
-/// One row of a class, with the local names of its stored predicates.
-///
-/// #4167 — the door check needs a real subject to compare. Sampling is
-/// deliberate: which fields a route projects is a property of the ROUTE, so one
-/// row finds a dropped field as surely as ten thousand, in a sweep that has to
-/// finish. `None` means the class has no rows to sample, which is not a
-/// violation — it is nothing to say.
-pub fn sample_subject(kind: &str) -> Option<(String, Vec<String>)> {
-    let q = format!(
-        "PREFIX c: <https://jeffbridwell.com/chorus#> SELECT ?s ?p WHERE {{ GRAPH ?g {{ ?s a c:{kind} ; ?p ?o }} }} LIMIT 60"
-    );
+/// The stored predicates of one subject, by the full IRI the door named for
+/// it. None when the store cannot be read — never an empty list, which would
+/// make every served row look clean.
+pub fn predicates_of(iri: &str) -> Option<Vec<String>> {
+    let q = format!("SELECT DISTINCT ?p WHERE {{ GRAPH ?g {{ <{iri}> ?p ?o }} }}");
     let out = Command::new("curl")
         .arg("-sS").arg("--max-time").arg("60")
         .arg("-H").arg("Accept: text/csv")
@@ -203,20 +204,10 @@ pub fn sample_subject(kind: &str) -> Option<(String, Vec<String>)> {
     let body = String::from_utf8_lossy(&out.stdout);
     let mut lines = body.lines().filter(|l| !l.trim().is_empty());
     lines.next()?; // header
-    let mut subject: Option<String> = None;
-    let mut preds: Vec<String> = Vec::new();
-    for line in lines {
-        let mut cols = line.split(',');
-        let s = cols.next().unwrap_or("").trim().to_string();
-        let p = cols.next().unwrap_or("").trim().to_string();
-        let s_short = short(&s);
-        match &subject {
-            None => { subject = Some(s_short.clone()); }
-            Some(first) if *first != s_short => continue, // one subject only
-            _ => {}
-        }
-        let p_short = short(&p);
-        if !p_short.is_empty() && !preds.contains(&p_short) { preds.push(p_short); }
+    let mut preds = Vec::new();
+    for l in lines {
+        let p = short(l.trim());
+        if !p.is_empty() && !preds.contains(&p) { preds.push(p); }
     }
-    subject.map(|s| (s, preds))
+    Some(preds)
 }

@@ -140,8 +140,7 @@ fn main() {
         }
         Ok(served) => {
             for s in &served {
-                let Some((name, preds)) = store::sample_subject(&s.kind) else { continue };
-                let (verdict, findings) = door::check_subject(&s.collection, &name, &preds);
+                let (verdict, findings) = door::check_collection(&s.collection);
                 for f in &findings {
                     report.line(format!("graph-issue|{}|{}|{}", f.check, f.subject, f.detail));
                 }
@@ -150,7 +149,7 @@ fn main() {
                     Verdict::Clean => {}
                     Verdict::Unmeasured(ref why) => {
                         unmeasured += 1;
-                        report.line(format!("graph-issue|{}|UNMEASURED|{}", SURVIVES_THE_DOOR.id, why));
+                        report.line(format!("graph-issue|{}|UNMEASURED|{} {}", SURVIVES_THE_DOOR.id, s.kind, why));
                     }
                 }
             }

@@ -55,9 +55,12 @@ pub fn parse_primitives(body: &str) -> Vec<Served> {
         let Some(collection) = between_quotes(&chunk[coll_at + "\"collection\":".len()..]) else {
             continue;
         };
-        // Routes are served as /v1/<domain>/<plural>; the leading slash is the
-        // discovery form and the caller appends the subject name.
-        let collection = collection.trim_start_matches('/').to_string();
+        // Routes are served as /v1/<domain>/<plural>. Discovery names them with
+        // the /v1 prefix (live 2026-09-26: "/v1/roles/agentroles"); the door
+        // adds /v1 itself, so strip it here or every URL reads /v1/v1/... and
+        // 404s as "unknown route" (#4331).
+        let collection = collection.trim_start_matches('/');
+        let collection = collection.strip_prefix("v1/").unwrap_or(collection).to_string();
         if !collection.is_empty() && !kind.is_empty() {
             out.push(Served { collection, kind });
         }
@@ -81,6 +84,10 @@ mod tests {
         { "kind": "CodeFile", "collection": "/code/files", "openapi": "/code/files/openapi.json" },
         { "kind": "Product", "collection": "/products/products" } ] }"#;
 
+    /// The form athena-make actually serves, copied from GET /v1 on 2026-09-26.
+    const LIVE: &str = r#"{ "apiVersion": "v1", "service": "athena-make", "kind": "Discovery", "count": 1,
+      "primitives": [{ "kind": "AgentRole", "collection": "/v1/roles/agentroles", "openapi": "/v1/roles/agentroles/openapi.json", "deprecatedCollection": "/v1/agentroles" }] }"#;
+
     #[test]
     fn collections_and_kinds_are_read_from_discovery() {
         let p = parse_primitives(SAMPLE);
@@ -88,6 +95,17 @@ mod tests {
         assert_eq!(p[0].kind, "CodeFile");
         assert_eq!(p[0].collection, "code/files");
         assert_eq!(p[1].kind, "Product");
+    }
+
+    /// NEGATIVE PROOF (#4331): with the live /v1-prefixed form, the collection
+    /// must come out without it. Before the fix this returned "v1/roles/agentroles",
+    /// the door asked /v1/v1/roles/agentroles/<name>, and all 338 findings on
+    /// 2026-09-26 were the stored fields of rows it never reached.
+    #[test]
+    fn negative_proof_the_live_v1_prefix_is_stripped() {
+        let p = parse_primitives(LIVE);
+        assert_eq!(p.len(), 1);
+        assert_eq!(p[0].collection, "roles/agentroles");
     }
 
     /// NEGATIVE PROOF (#3734): the state this function exists to prevent is a

@@ -70,19 +70,26 @@ pub struct Check {
 pub const COMPLETENESS: Check = Check {
     id: "row-missing-required-field",
     question: "does every row satisfy its shape's required fields",
-    query: r#"PREFIX c: <https://jeffbridwell.com/chorus#>
+    query: r##"PREFIX c: <https://jeffbridwell.com/chorus#>
 PREFIX sh: <http://www.w3.org/ns/shacl#>
-SELECT ?s ?cls ?path WHERE {
+SELECT ?s ?cls ?field WHERE {
   GRAPH <urn:chorus:ontology> {
     ?shape sh:targetClass ?cls ; sh:property ?p .
     ?p sh:path ?path ; sh:minCount ?mc .
     FILTER(?mc > 0)
+    OPTIONAL { ?path sh:inversePath ?inv }
   }
   GRAPH ?g { ?s a ?cls }
   FILTER(STRSTARTS(STR(?g), "urn:chorus:"))   # #4239 — honour the scope
   FILTER(?g != <urn:chorus:ontology>)
-  FILTER NOT EXISTS { GRAPH ?g2 { ?s ?path ?v } }
-}"#,
+  # #4331 — an inverse path (Domain needs some ^hasDomain) is a blank node, and
+  # `?s _:b ?v` never matches, so every Domain, Service and ValueStream read as
+  # missing it: 95 of the 835 on 2026-09-26. Ask the inverse the inverse way.
+  FILTER(IF(BOUND(?inv),
+            NOT EXISTS { GRAPH ?g3 { ?w ?inv ?s } },
+            NOT EXISTS { GRAPH ?g2 { ?s ?path ?v } }))
+  BIND(IF(BOUND(?inv), CONCAT("^", STRAFTER(STR(?inv), "#")), STR(?path)) AS ?field)
+}"##,
 };
 
 /// The check nothing has ever run. A row can be in the right graph, carry every
@@ -142,5 +149,41 @@ mod tests {
     fn checks_select_rows_not_counts() {
         assert!(COMPLETENESS.query.contains("SELECT ?s"));
         assert!(!COMPLETENESS.query.contains("COUNT("));
+    }
+
+    /// NEGATIVE PROOF (#4331), run as a real query, not a substring. d1 has a
+    /// product pointing at it and a label; d2 has neither. The check must name
+    /// d2 twice and d1 never. The old query named d1 too, because an inverse
+    /// path is a blank node that `?s ?path ?v` can never match. Needs Jena's
+    /// `arq` (brew install jena); without it this fails, it does not skip.
+    #[test]
+    fn negative_proof_inverse_required_field_is_measured_on_a_fixture() {
+        let dir = std::env::temp_dir().join(format!("av-4331-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let data = dir.join("fx.trig");
+        let query = dir.join("q.rq");
+        std::fs::write(&data, r##"@prefix c: <https://jeffbridwell.com/chorus#> .
+@prefix sh: <http://www.w3.org/ns/shacl#> .
+@prefix rdfs: <http://www.w3.org/2000/01/rdf-schema#> .
+<urn:chorus:ontology> {
+  c:DomainShape sh:targetClass c:Domain ;
+    sh:property [ sh:path [ sh:inversePath c:hasDomain ] ; sh:minCount 1 ] ;
+    sh:property [ sh:path rdfs:label ; sh:minCount 1 ] .
+}
+<urn:chorus:domains:domains> { c:d1 a c:Domain ; rdfs:label "one" . c:d2 a c:Domain . }
+<urn:chorus:domains:products> { c:p1 c:hasDomain c:d1 . }
+"##).unwrap();
+        std::fs::write(&query, COMPLETENESS.query).unwrap();
+        let out = std::process::Command::new("arq")
+            .arg("--data").arg(&data).arg("--query").arg(&query).arg("--results").arg("csv")
+            .output()
+            .expect("arq (Apache Jena) is required for this proof: brew install jena");
+        assert!(out.status.success(), "arq failed: {}", String::from_utf8_lossy(&out.stderr));
+        let findings = crate::store::parse_csv(COMPLETENESS.id, &String::from_utf8_lossy(&out.stdout));
+        let got: Vec<(String, String)> = findings.iter().map(|f| (f.subject.clone(), f.detail.clone())).collect();
+        assert!(got.contains(&("d2".into(), "Domain,^hasDomain".into())), "{got:?}");
+        assert!(got.contains(&("d2".into(), "label".into())), "{got:?}");
+        assert!(got.iter().all(|(s, _)| s != "d1"), "d1 has both and was reported: {got:?}");
+        assert_eq!(got.len(), 2, "{got:?}");
     }
 }
