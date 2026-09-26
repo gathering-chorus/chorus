@@ -43,10 +43,17 @@ pub fn iso(sqlite_ts: &str) -> String {
 /// The principal behind a sender or recipient name, if one exists.
 /// messages.db writes both "kade" and "principal-kade"; system, chorus-mcp,
 /// pulse and unknown have no principal yet (Wren 13:16: provenance, not identity).
+///
+/// The BARE name: the service adds "principal-" and refuses a value that
+/// already carries it (live 09-26 14:20: every message 422, "double-prefix").
 pub fn principal_of(name: &str, principals: &[String]) -> Option<String> {
     let bare = name.trim_start_matches("principal-");
-    principals.iter().find(|p| p.as_str() == bare || p.trim_start_matches("principal-") == bare).map(|p| format!("principal-{}", p.trim_start_matches("principal-")))
+    principals.iter().find(|p| p.as_str() == bare || p.trim_start_matches("principal-") == bare).map(|p| p.trim_start_matches("principal-").to_string())
 }
+
+/// An edge value as the service wants it: the bare name, with the kind prefix
+/// the listing or a create reply may carry taken off.
+pub fn bare(name: &str, kind: &str) -> String { name.strip_prefix(&format!("{}-", kind)).unwrap_or(name).to_string() }
 
 /// The channel a kind of message travels over today.
 pub fn channel_for(kind: &str) -> &'static str {
@@ -76,7 +83,7 @@ pub fn delivery_row(src: &Src, message: &str, presence: Option<&str>, outcome: &
         "name": format!("src-{}", src.id),
         "label": format!("{} of message {} to {}", outcome, src.id, src.to),
         "ownedBy": "principal-silas",
-        "deliveryOf": message,
+        "deliveryOf": bare(message, "message"),
         "overChannel": channel_for(&src.kind),
         "deliveryOutcome": outcome,
     });

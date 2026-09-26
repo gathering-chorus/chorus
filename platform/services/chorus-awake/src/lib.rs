@@ -998,6 +998,8 @@ fn project_messages(ctx: &Ctx) -> i32 {
 
     let (mut made, mut updated, mut failed) = (0, 0, 0);
     let mut new_mark = watermark;
+    // a message that failed must be tried again: the watermark never passes it
+    let mut first_failed: Option<u64> = None;
     for src in &srcs {
         // already projected and settled: the query should not return it; never write it twice
         if src.id <= watermark && !open.contains(&src.id) { continue; }
@@ -1005,7 +1007,7 @@ fn project_messages(ctx: &Ctx) -> i32 {
         let known = state.get("open").and_then(|o| o.get(&key)).cloned();
         let at = msgs::iso(if src.delivered_at.is_empty() { &src.created_at } else { &src.delivered_at });
         let to_p = msgs::principal_of(&src.to, &principals);
-        let presence = to_p.as_deref().and_then(|p| msgs::presence_at(p, &at, &runs, &presences));
+        let presence = to_p.as_deref().and_then(|p| msgs::presence_at(&format!("principal-{}", p), &at, &runs, &presences));
         let recv_role = src.to.trim_start_matches("principal-");
         // Kade's review: only prompts that arrived after this message was sent, within 10 minutes
         let received = if ROLES.contains(&recv_role) { msgs::received_for(&received_log(ctx, recv_role), &msgs::iso(&src.created_at), 600) } else { vec![] };
@@ -1014,10 +1016,12 @@ fn project_messages(ctx: &Ctx) -> i32 {
             Some(k) => k.get("message").and_then(|m| m.as_str()).unwrap_or("").to_string(),
             None => {
                 let from_p = msgs::principal_of(&src.from, &principals);
-                let session = from_p.as_deref().and_then(|p| msgs::session_at(p, &msgs::iso(&src.created_at), &sessions));
+                let session = from_p.as_deref().and_then(|p| msgs::session_at(&format!("principal-{}", p), &msgs::iso(&src.created_at), &sessions));
                 let body = msgs::message_row(src, &principals, session.as_deref());
-                let (code, reply) = api_send(ctx, "silas", "messages/messages", None, &body, "msg");
-                if !ok_code(&code) { failed += 1; eprintln!("  message {} not written (HTTP {})", src.id, code); continue; }
+                let (mut code, reply) = api_send(ctx, "silas", "messages/messages", None, &body, "msg");
+                // already there (a retry after a lost reply): idempotent, not a failure
+                if code == "409" { code = "200".into(); }
+                if !ok_code(&code) { failed += 1; first_failed = Some(first_failed.map_or(src.id, |f| f.min(src.id))); eprintln!("  message {} not written (HTTP {})", src.id, code); continue; }
                 made += 1;
                 stored_name(&reply).unwrap_or_else(|| row_name(&body))
             }
@@ -1033,7 +1037,8 @@ fn project_messages(ctx: &Ctx) -> i32 {
             }
             n
         } else {
-            let (code, reply) = api_send(ctx, "silas", "messages/deliveries", None, &row, "del");
+            let (mut code, reply) = api_send(ctx, "silas", "messages/deliveries", None, &row, "del");
+            if code == "409" { code = "200".into(); }
             if !ok_code(&code) { failed += 1; eprintln!("  delivery {} not written (HTTP {})", src.id, code); String::new() } else { stored_name(&reply).unwrap_or_else(|| row_name(&row)) }
         };
         if src.id > new_mark { new_mark = src.id; }
@@ -1046,6 +1051,7 @@ fn project_messages(ctx: &Ctx) -> i32 {
         }
         if outcome == "truncated" { ctx.spine(&["message.delivery.truncated", &format!("id={}", src.id), &format!("to={}", src.to)]); }
     }
+    if let Some(f) = first_failed { new_mark = new_mark.min(f.saturating_sub(1)); }
     state["watermark"] = serde_json::json!(new_mark);
     let _ = fs::create_dir_all(state_path.parent().unwrap_or(Path::new(".")));
     let _ = write_private(&state_path, &state.to_string());
