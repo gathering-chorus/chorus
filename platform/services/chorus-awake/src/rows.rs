@@ -168,6 +168,69 @@ pub fn turn_facts(hook_input: &str) -> (String, bool) {
     (conv, prompt.trim() == WAKE_LINE)
 }
 
+/// #4339 — who a prompt is from. pulse types only WAKE_LINE for a nudge, and
+/// the harness hands the role its own notices (task results, stop-hook
+/// feedback, reminders) as prompts too. Everything else was typed into the
+/// pane, and only Jeff types there: the Clearing types his Clearing words, his
+/// terminal types the rest.
+#[derive(Debug, PartialEq, Eq)]
+pub enum Speaker { Delivery, Harness, Jeff }
+
+pub fn speaker(hook_input: &str) -> Speaker {
+    let v: Value = serde_json::from_str(hook_input).unwrap_or(Value::Null);
+    let p = v.get("prompt").and_then(|s| s.as_str()).unwrap_or("").trim();
+    if p == WAKE_LINE { return Speaker::Delivery; }
+    if p.is_empty() || p.starts_with('<') || p.starts_with("Stop hook feedback:") || p.contains("[SYSTEM NOTIFICATION") { return Speaker::Harness; }
+    Speaker::Jeff
+}
+
+/// Jeff spoke to this session now: say so on the session. One PUT.
+pub fn attended_session(mut session: Value, principal: &str, now: &str) -> Option<Value> {
+    session.get("name")?;
+    session["attendedBy"] = Value::String(principal.into());
+    session["lastAttendedAt"] = Value::String(now.into());
+    Some(session)
+}
+
+/// Is a human terminal showing `pane` right now? `clients` is
+/// `tmux list-clients -F '#{client_flags}|#{pane_id}'`: one line per attached
+/// terminal, naming the pane it shows. tmux's own "focused" flag is not used:
+/// on 2026-09-26 all three clients carried it at once.
+pub fn pane_shown(clients: &str, pane: &str) -> bool {
+    !pane.is_empty() && clients.lines().any(|l| {
+        let mut it = l.split('|');
+        let flags = it.next().unwrap_or("");
+        flags.split(',').any(|f| f == "attached") && it.next() == Some(pane)
+    })
+}
+
+/// The presence with this reading of whether his terminal is on its pane.
+/// None when nothing changed, so a quiet turn is not a PUT.
+pub fn focused_presence(mut presence: Value, shown: bool, now: &str) -> Option<Value> {
+    presence.get("name")?;
+    let want = if shown { "true" } else { "false" };
+    if presence.get("focusedNow").and_then(|f| f.as_str()) == Some(want) { return None; }
+    presence["focusedNow"] = Value::String(want.into());
+    presence["checkedAt"] = Value::String(now.into());
+    Some(presence)
+}
+
+/// "jeff: here now · last spoke 2026-09-26T18:40:00Z" — the room as the
+/// store has it, for `status`. Unknown is said as unknown, never as "not here".
+pub fn room_line(session: Option<&Value>, presence: Option<&Value>) -> String {
+    let f = |v: Option<&Value>, k: &str| v.and_then(|r| r.get(k)).and_then(|x| x.as_str()).filter(|x| !x.is_empty()).map(String::from);
+    let here = match (f(presence, "focusedNow").as_deref(), f(presence, "checkedAt")) {
+        (Some("true"), Some(at)) => format!("here now (checked {at})"),
+        (Some("false"), Some(at)) => format!("not on this pane (checked {at})"),
+        _ => "presence unknown".to_string(),
+    };
+    let spoke = match (f(session, "attendedBy"), f(session, "lastAttendedAt")) {
+        (Some(_), Some(at)) => format!("last spoke {at}"),
+        _ => "has not spoken to this session".to_string(),
+    };
+    format!("jeff: {here} · {spoke}")
+}
+
 /// Is a last-seen write due? One every `every_secs`, so a fast back-and-forth
 /// is not a PUT per keystroke; a delivery always writes.
 pub fn seen_due(last_write_secs: Option<u64>, now_secs: u64, every_secs: u64, delivered: bool) -> bool {

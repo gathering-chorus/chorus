@@ -942,6 +942,8 @@ fn seen(ctx: &Ctx, role: &str) -> i32 {
     let mut input = String::new();
     let _ = std::io::Read::read_to_string(&mut std::io::stdin(), &mut input);
     let (conv, delivered) = rows::turn_facts(&input);
+    // #4339 — Jeff spoke: this turn always writes, so the session says when
+    let jeff = rows::speaker(&input) == rows::Speaker::Jeff;
     // #4340 — keep what actually arrived, so the projector can tell a message
     // that landed cut from one that landed whole (pulse cannot see that)
     log_received(ctx, role, &input);
@@ -949,10 +951,10 @@ fn seen(ctx: &Ctx, role: &str) -> i32 {
     let now = now_ms() as u64 / 1000;
     let last = fs::read_to_string(&at).ok().and_then(|t| t.trim().parse::<u64>().ok());
     let every: u64 = envd("AWAKE_SEEN_EVERY", "60").parse().unwrap_or(60);
-    if !rows::seen_due(last, now, every, delivered) { return 0; }
+    if !rows::seen_due(last, now, every, delivered || jeff) { return 0; }
     let _ = fs::write(&at, now.to_string());
-    let flag = if delivered { "delivered" } else { "turn" };
-    if envd("AWAKE_SEEN_SYNC", "0") == "1" { return seen_write(ctx, role, &conv, delivered); }
+    let flag = if delivered { "delivered" } else if jeff { "jeff" } else { "turn" };
+    if envd("AWAKE_SEEN_SYNC", "0") == "1" { return seen_write(ctx, role, &conv, flag); }
     if let Ok(me) = env::current_exe() {
         let _ = Command::new(me).args(["seen-write", role, &conv, flag]).stdin(std::process::Stdio::null()).stdout(std::process::Stdio::null()).stderr(std::process::Stdio::null()).spawn();
     }
@@ -960,7 +962,8 @@ fn seen(ctx: &Ctx, role: &str) -> i32 {
     0
 }
 
-fn seen_write(ctx: &Ctx, role: &str, conv: &str, delivered: bool) -> i32 {
+fn seen_write(ctx: &Ctx, role: &str, conv: &str, flag: &str) -> i32 {
+    let delivered = flag == "delivered";
     // after a logout the saved row is closed; a late turn must not reopen it
     if matches!(ctx.read_state(role), LoginState::Closed) { return 0; }
     let now = iso_utc(now_ms() as u64 / 1000);
@@ -971,6 +974,8 @@ fn seen_write(ctx: &Ctx, role: &str, conv: &str, delivered: bool) -> i32 {
             rows::with_role_and_start(s, role, &started)
         } else { s }
     });
+    // #4339 — a prompt from Jeff: the session records who attended it and when
+    let session = if flag == "jeff" { session.and_then(|s| rows::attended_session(s, "principal-jeff", &now)) } else { session };
     if let Some(s) = session.clone().and_then(|s| rows::seen_session(s, &now)) { put_row(ctx, role, "identity/sessions", "session", &s); }
     // ... and no run: this running session gets its run, presence and boot context now
     let run_live = read_row(ctx, role, "run").map(|r| r.get("runEndedAt").and_then(|e| e.as_str()).unwrap_or("").is_empty()).unwrap_or(false);
@@ -982,6 +987,12 @@ fn seen_write(ctx: &Ctx, role: &str, conv: &str, delivered: bool) -> i32 {
     }
     if delivered {
         if let Some(p) = read_row(ctx, role, "presence").and_then(|p| rows::delivered_presence(p, &now)) { put_row(ctx, role, "identity/presences", "presence", &p); }
+    }
+    // #4339 — is his terminal on this role's pane right now
+    if let Some(p) = read_row(ctx, role, "presence") {
+        let pane = p.get("pane").and_then(|x| x.as_str()).unwrap_or("").to_string();
+        let clients = Command::new(&ctx.tmux).args(["list-clients", "-F", "#{client_flags}|#{pane_id}"]).output().ok().map(|o| String::from_utf8_lossy(&o.stdout).to_string()).unwrap_or_default();
+        if let Some(p) = rows::focused_presence(p, rows::pane_shown(&clients, &pane), &now) { put_row(ctx, role, "identity/presences", "presence", &p); }
     }
     if let Some(r) = read_row(ctx, role, "run").and_then(|r| rows::with_conversation(r, conv)) { put_row(ctx, role, "identity/sessionruns", "run", &r); }
     if let Some(run) = read_row(ctx, role, "run").filter(|r| r.get("runEndedAt").and_then(|e| e.as_str()).unwrap_or("").is_empty()) {
@@ -1275,6 +1286,7 @@ fn off(ctx: &Ctx, role: &str, from_exit: bool) -> i32 {
 
 fn status(ctx: &Ctx) -> i32 {
     let listing = sh(&ctx.curl, &["-s", "--max-time", "5", &format!("{}/v1/identity/sessions?limit=5000", ctx.api)]).unwrap_or_default();
+    let presences = sh(&ctx.curl, &["-s", "--max-time", "5", &format!("{}/v1/identity/presences?limit=5000", ctx.api)]).unwrap_or_default();
     for role in ROLES {
         let live = live_entries(&ctx.sessions_dir, role, &ctx.ps);
         let pid = live.first().map(|l| l.pid);
@@ -1282,6 +1294,15 @@ fn status(ctx: &Ctx) -> i32 {
         println!("{}", lifecycle::status_line(role, pid, &ctx.read_state(role), answering));
         // #4328 — and what the store says, which is what everyone else reads
         if let Some(line) = store_line(&listing, read_row(ctx, role, "session").map(|v| row_name(&v)).as_deref()) { println!("       {}", line); }
+        // #4339 — who is in the room, as the store has it
+        let find = |l: &str, name: Option<String>| -> Option<Value> {
+            let v: Value = serde_json::from_str(l).ok()?;
+            let name = name?;
+            v.get("data")?.as_array()?.iter().find(|r| r.get("name").and_then(|n| n.as_str()) == Some(&name)).cloned()
+        };
+        let s = find(&listing, read_row(ctx, role, "session").map(|v| row_name(&v)));
+        let p = find(&presences, read_row(ctx, role, "presence").map(|v| row_name(&v)));
+        println!("       {}", rows::room_line(s.as_ref(), p.as_ref()));
         if live.len() >= 2 { println!("       {} live sessions: `chorus-principal off {}` ends both", live.len(), role); }
     }
     0
@@ -1378,7 +1399,7 @@ pub fn run(args: &[String]) -> i32 {
         // #4328 — the UserPromptSubmit hook, every turn; never refused, never slow
         "seen" => match role_arg(1) { Ok(r) => seen(&ctx, &r), Err(c) => c },
         "seen-write" => match role_arg(1) {
-            Ok(r) => seen_write(&ctx, &r, args.get(2).map(String::as_str).unwrap_or(""), args.get(3).map(String::as_str) == Some("delivered")),
+            Ok(r) => seen_write(&ctx, &r, args.get(2).map(String::as_str).unwrap_or(""), args.get(3).map(String::as_str).unwrap_or("turn")),
             Err(c) => c,
         },
         "sweep" => sweep(&ctx),
