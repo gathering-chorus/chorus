@@ -134,5 +134,8 @@ run_gen() {
 
   bash "$GEN_SCRIPT" --output-dir "$OUTPUT_DIR" --template-dir "$TEMPLATE_DIR"
 
-  diff "$OUTPUT_DIR/first-run.html" "$OUTPUT_DIR/chorus-standards.html"
+  # #4334 — the date line carries the minute it ran; two runs that straddle a
+  # minute on a busy box are still the same output. Compare everything else.
+  diff <(grep -v 'class="date"' "$OUTPUT_DIR/first-run.html") \
+       <(grep -v 'class="date"' "$OUTPUT_DIR/chorus-standards.html")
 }
