@@ -31,18 +31,20 @@ for role in roles:
     if not mine: line(False, role, "no session row at all"); continue
     s = mine[-1]; name = s.get("name", "")
     line(s.get("sessionState") == "open", role, f"newest session {name} is open (state {s.get('sessionState')!r})")
-    line(s.get("actsAs") == "role-" + role, role, f"it acts as role-{role} (actsAs {s.get('actsAs')!r})")
+    line(s.get("actsAs") in ("role-" + role, role), role, f"it acts as role-{role} (actsAs {s.get('actsAs')!r})")
     line(bool(t(s.get("startedAt", ""))), role, f"it says when it started (startedAt {s.get('startedAt')!r})")
     seen = t(s.get("lastSeenAt", ""))
     age = int((now - seen).total_seconds()) if seen else None
     line(age is not None and age <= window, role, f"last seen within {window}s (lastSeenAt {s.get('lastSeenAt')!r}, {age}s ago)")
-    live = [r for r in R if r.get("runOf") == name and not r.get("runEndedAt")]
+    # edges read back as the target's full local name (session-<name>, session-run-<name>)
+    same = lambda edge, n: bool(edge) and (edge == n or edge.endswith("-" + n))
+    live = [r for r in R if same(r.get("runOf"), name) and not r.get("runEndedAt")]
     line(len(live) == 1, role, f"exactly one live run ({len(live)})")
     if len(live) == 1:
         run = live[0]["name"]
-        pres = [p for p in P if p.get("presenceOf") == run]
+        pres = [p for p in P if same(p.get("presenceOf"), run)]
         line(len(pres) == 1, role, f"the run has one presence ({len(pres)})")
-        boot = [c for c in C if c.get("contextOf") == run and c.get("contextKind") == "boot"]
+        boot = [c for c in C if same(c.get("contextOf"), run) and c.get("contextKind") == "boot"]
         line(len(boot) == 1, role, f"the run has its boot context ({len(boot)})")
 sys.exit(1 if bad else 0)
 PY

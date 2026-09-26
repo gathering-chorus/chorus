@@ -62,7 +62,9 @@ pub fn boot_context_row(role: &str, name: &str, run: &str, started: &str) -> Val
 /// The session row as a login writes it now: #4202's row plus who it acts as
 /// and when it started.
 pub fn with_role_and_start(mut session: Value, role: &str, started: &str) -> Value {
-    session["actsAs"] = Value::String(format!("role-{}", role));
+    // the BARE name: the mint adds "role-" and refuses a name that already has it
+    // (live 2026-09-26 09:30: 422 double-prefix on 'role-silas')
+    session["actsAs"] = Value::String(role.into());
     session["startedAt"] = Value::String(started.into());
     session["lastSeenAt"] = Value::String(started.into());
     session
@@ -123,6 +125,17 @@ pub fn turn_facts(hook_input: &str) -> (String, bool) {
 /// is not a PUT per keystroke; a delivery always writes.
 pub fn seen_due(last_write_secs: Option<u64>, now_secs: u64, every_secs: u64, delivered: bool) -> bool {
     delivered || last_write_secs.map(|l| now_secs.saturating_sub(l) >= every_secs).unwrap_or(true)
+}
+
+/// A row as the listing returns it, made fit to PUT back: the listing adds
+/// "status" (not in any shape; 422 "off-model property") and reports every
+/// absent field as "" (an empty edge is refused as a name). Both go.
+pub fn putable(mut row: Value) -> Value {
+    if let Some(o) = row.as_object_mut() {
+        o.remove("status");
+        o.retain(|_, v| !matches!(v, Value::String(s) if s.is_empty()));
+    }
+    row
 }
 
 /// Sessions to close in the sweep: open, past expiry, and not a live login.
