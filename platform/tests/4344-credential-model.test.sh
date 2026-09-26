@@ -8,6 +8,7 @@ set -u
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 TMP="$(mktemp -d)"; trap 'rm -rf "$TMP"' EXIT
 pass=0; fail=0
+command -v shacl >/dev/null || { echo "FAIL: Jena shacl not on PATH (without it every check here would pass vacuously)"; exit 1; }
 cat "$ROOT/roles/silas/ontology/chorus.ttl" "$ROOT/roles/silas/ontology/session-model-4302.ttl" > "$TMP/shapes.ttl"
 cat > "$TMP/c.ttl" <<'TTL'
 @prefix c: <https://jeffbridwell.com/chorus#> .
