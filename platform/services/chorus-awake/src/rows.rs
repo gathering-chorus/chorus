@@ -61,6 +61,21 @@ pub fn boot_context_row(role: &str, name: &str, run: &str, started: &str) -> Val
     })
 }
 
+/// #4342 — the conversation a run speaks in: its Claude Code transcript id.
+/// None while the id is still unknown ("pending"): no row for a guess.
+pub fn conversation_row(role: &str, run: &str, conversation: &str) -> Option<Value> {
+    if conversation.is_empty() || conversation == "pending" { return None; }
+    let short: String = conversation.chars().take(8).collect();
+    Some(json!({
+        "name": format!("{}-conversation-{}", role, short),
+        "label": format!("{} conversation {}", role, short),
+        "comment": format!("The Claude Code transcript {} that {}'s run {} speaks in. #4342.", conversation, role, run),
+        "ownedBy": format!("principal-{}", role),
+        "conversationOf": run,
+        "conversationId": conversation,
+    }))
+}
+
 /// The session row as a login writes it now: #4202's row plus who it acts as
 /// and when it started.
 pub fn with_role_and_start(mut session: Value, role: &str, started: &str) -> Value {

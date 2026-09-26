@@ -258,3 +258,36 @@ EOS
   out_has "registered NO"
   test ! -e "$T/sessions/kade-701.json"
 }
+
+# ---- #4342: each run writes its Conversation row ----------------------------
+
+@test "#4342 a login whose conversation is not known yet writes no Conversation row (negative proof)" {
+  run "$SCRIPT" on silas
+  test "$status" -eq 0
+  test -z "$(bodies | grep -F POST-memory_conversations || true)"
+}
+
+@test "#4342 the first turn names the conversation: one Conversation row, linked to the run" {
+  run "$SCRIPT" on silas
+  runn=$(python3 -c 'import json,sys;print(json.load(open(sys.argv[1]))["name"])' "$T/identity/silas/run.row.json")
+  echo '{"session_id":"4d39d28c-37a5","prompt":"hi"}' | AWAKE_SEEN_SYNC=1 "$SCRIPT" seen silas
+  c=$(body POST memory_conversations); has "$c" '"conversationId":"4d39d28c-37a5"'; has "$c" "\"conversationOf\":\"$runn\""; has "$c" '"ownedBy":"principal-silas"'
+  grep -q "session.conversation.recorded silas" "$T/spine.log"
+  # a later turn in the same conversation writes nothing more
+  rm -f "$T/identity/silas/seen.at"
+  echo '{"session_id":"4d39d28c-37a5","prompt":"again"}' | AWAKE_SEEN_SYNC=1 "$SCRIPT" seen silas
+  test "$(bodies | grep -c POST-memory_conversations)" -eq 1
+}
+
+@test "#4342 a resumed conversation in a new run moves its row to that run, never a second row" {
+  run "$SCRIPT" on silas
+  echo '{"session_id":"4d39d28c-37a5","prompt":"hi"}' | AWAKE_SEEN_SYNC=1 "$SCRIPT" seen silas
+  # the role restarts and resumes the same transcript; the service already has the row
+  : > "$T/alive-pids"; rm -f "$T"/sessions/*.json "$T/identity/silas/login.json" "$T/identity/silas/conversation.row.json"
+  run "$SCRIPT" on silas
+  echo 409 > "$T/curl.status"
+  rm -f "$T/identity/silas/seen.at"
+  echo '{"session_id":"4d39d28c-37a5","prompt":"back"}' | AWAKE_SEEN_SYNC=1 "$SCRIPT" seen silas
+  newrun=$(python3 -c 'import json,sys;print(json.load(open(sys.argv[1]))["name"])' "$T/identity/silas/run.row.json")
+  p=$(cat "$T"/bodies/*PUT-memory_conversations_* | tail -1); has "$p" "\"conversationOf\":\"$newrun\""
+}

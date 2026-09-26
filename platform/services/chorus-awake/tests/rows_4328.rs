@@ -125,3 +125,13 @@ fn a_closed_row_from_the_listing_carries_no_status() {
     assert!(c.get("actsAs").is_none());
     assert_eq!(c["sessionState"], "closed");
 }
+
+#[test]
+fn conversation_row_4342_only_for_a_known_transcript() {
+    let c = conversation_row("silas", "silas-run-a", "4d39d28c-37a5-4139").unwrap();
+    assert_eq!(c["conversationOf"], "silas-run-a");
+    assert_eq!(c["conversationId"], "4d39d28c-37a5-4139");
+    assert_eq!(c["name"], "silas-conversation-4d39d28c");
+    assert!(conversation_row("silas", "r", "pending").is_none());
+    assert!(conversation_row("silas", "r", "").is_none());
+}
