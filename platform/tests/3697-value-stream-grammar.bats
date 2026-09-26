@@ -105,17 +105,22 @@ q() {
   run q "$CT" 'ASK { c:Vertebra owl:deprecated true }'
   echo "$output" | grep -qi 'yes'
 }
-@test "AC1 old chorusStream individual is owl:deprecated" {
-  run q "$CT" 'ASK { c:chorusStream owl:deprecated true }'
-  echo "$output" | grep -qi 'yes'
+# #4320 — #4315 (2026-09-25) retired the three v1 stream individuals: the model
+# seed's iri-guard refused their IRIs. chorusStream and gatheringStream folded
+# into value-stream-chorus / value-stream-gathering; lifeStream IS the Gathering
+# stream (Jeff 2026-09-25, #4314). So the v1 names must be GONE from the schema
+# and every reference must use the successor.
+@test "AC1 old v1 stream individuals are gone from the schema (#4315)" {
+  for old in chorusStream gatheringStream lifeStream value-stream-life; do
+    run q "$CT" "ASK { c:$old ?p ?o }"
+    echo "$output" | grep -qi 'no' || { echo "still declared: c:$old"; return 1; }
+  done
 }
-@test "AC1 old gatheringStream individual is owl:deprecated (drift b superseded)" {
-  run q "$CT" 'ASK { c:gatheringStream owl:deprecated true }'
-  echo "$output" | grep -qi 'yes'
-}
-@test "AC1 old lifeStream individual is owl:deprecated" {
-  run q "$CT" 'ASK { c:lifeStream owl:deprecated true }'
-  echo "$output" | grep -qi 'yes'
+@test "AC1 their successors exist as ValueStreams" {
+  for new in value-stream-chorus value-stream-gathering; do
+    run q "$VSI" "ASK { c:$new a c:ValueStream }"
+    echo "$output" | grep -qi 'yes' || { echo "missing: c:$new"; return 1; }
+  done
 }
 
 # #4265 NEGATIVE PROOF — the three cases above went red for two years' worth of

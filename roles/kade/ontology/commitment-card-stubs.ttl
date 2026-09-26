@@ -39,4 +39,4 @@ chorus:card-3983 a chorus:Card ;
 chorus:card-4055 a chorus:Card ;
     chorus:ownedBy chorus:principal-wren ; chorus:label "Test pyramid page returns 404 — rebuild /werk/quality/ against the live summary endpoint" ; rdfs:label "Test pyramid page returns 404 — rebuild /werk/quality/ against the live summary endpoint" .
 chorus:card-3325 a chorus:Card ;
-    chorus:ownedBy chorus:principal-wren ; chorus:label "One readable end-to-end test of the card pipeline: pull, commit, push, merge, deploy, accept" ; rdfs:label "One readable end-to-end test of the card pipeline: pull, commit, push, merge, deploy, accept" .
+    chorus:ownedBy chorus:principal-kade ; chorus:label "One readable end-to-end test of the card pipeline: pull, commit, push, merge, deploy, accept" ; rdfs:label "One readable end-to-end test of the card pipeline: pull, commit, push, merge, deploy, accept" .
