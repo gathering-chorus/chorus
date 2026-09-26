@@ -45,7 +45,6 @@ chorus:emittedBy a owl:ObjectProperty ;
 
 chorus:SpineEventShape a sh:NodeShape ;
     sh:targetClass chorus:SpineEvent ;
-    chorus:instancesGraph "urn:chorus:instances" ;
     sh:property [ sh:path rdfs:label       ; sh:minCount 1 ; sh:datatype xsd:string ] ;
     sh:property [ sh:path chorus:eventKind ; sh:minCount 1 ; sh:datatype xsd:string ] .
 
@@ -69,7 +68,6 @@ chorus:sentTo a owl:ObjectProperty ;
 
 chorus:MessageShape a sh:NodeShape ;
     sh:targetClass chorus:Message ;
-    chorus:instancesGraph "urn:chorus:instances" ;
     sh:property [ sh:path rdfs:label    ; sh:minCount 1 ; sh:datatype xsd:string ] ;
     sh:property [ sh:path chorus:sentBy ; sh:minCount 1 ; sh:class chorus:Role ] ;
     sh:property [ sh:path chorus:sentTo ; sh:minCount 1 ; sh:class chorus:Role ] .

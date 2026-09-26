@@ -614,7 +614,11 @@ chorus:gathering a chorus:Product ;
     chorus:valueProposition "One queryable home for everything Jeff gathers, owned by him, served from his own infrastructure." ;
     chorus:audience "Jeff, and family and friends where he chooses to share." ;
     chorus:status "operating" ;
-    chorus:gaps "hasDesignDoc unfilled (no Document instances in graph). #3603 brought this to the ProductShape floor — content domains predate the floor." ;
+    chorus:docState "current" ;
+    # #4319 — the ProductShape floor: its design doc and its content domains (the 12 domains Jeff owns).
+    chorus:gaps "The 12 content domains predate the ProductShape floor (#3603) and have no design docs of their own yet." ;
+    chorus:hasDesignDoc <https://jeffbridwell.com/chorus#doc/docs%2FGATHERING_VISION.md> ;
+    chorus:hasDomain chorus:blog-domain, chorus:books-domain, chorus:documents-domain, chorus:music-domain, chorus:notes-domain, chorus:people-domain, chorus:photos-domain, chorus:property-domain, chorus:sexuality-domain, chorus:social-domain, chorus:stories-domain, chorus:video-domain ;
     chorus:atStep chorus:Operating .
 
 
