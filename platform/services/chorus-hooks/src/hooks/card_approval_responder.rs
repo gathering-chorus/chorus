@@ -307,8 +307,9 @@ static DENY_PATTERN: LazyLock<Regex> = LazyLock::new(|| {
 /// Guards:
 /// - Long prompts (>200 chars) are ignored — `approve` / `deny` in a
 ///   paragraph is discussion, not signal. Mirrors the jdi_detector guard.
-/// - Relayed nudge content (`[nudge from`) is ignored — injected messages,
-///   not Jeff typing.
+/// - Pulse's wake line is ignored — a nudge arrived, not Jeff typing (#4339).
+///   A "[nudge from" label is no longer a peer: peers never type words into
+///   the pane, so any typed words are Jeff's.
 /// - Quoted/template content (`<…>`) is ignored.
 /// - When BOTH `approve` and `deny` appear, returns `None` — ambiguous.
 pub fn detect_approval_signal(prompt: &str) -> Option<ApprovalSignal> {
@@ -316,7 +317,7 @@ pub fn detect_approval_signal(prompt: &str) -> Option<ApprovalSignal> {
         return None;
     }
     let trimmed = prompt.trim();
-    if trimmed.starts_with("[nudge from") || trimmed.starts_with('<') {
+    if crate::shared::wake::is_wake_line(trimmed) || trimmed.starts_with('<') {
         return None;
     }
     let has_approve = APPROVE_PATTERN.is_match(prompt);
@@ -377,11 +378,15 @@ mod tests {
         assert_eq!(detect_approval_signal(&long), None);
     }
 
+    /// #4339 — a nudge reaches the pane only as pulse's wake line, which can
+    /// never approve. A "[nudge from" label typed into the pane is Jeff's
+    /// words, so it approves like any other thing he types.
     #[test]
-    fn no_match_on_relayed_nudge() {
+    fn no_match_on_the_wake_line_and_a_typed_label_is_jeff() {
+        assert_eq!(detect_approval_signal(crate::shared::wake::WAKE_LINE), None);
         assert_eq!(
             detect_approval_signal("[nudge from silas | 2026-05-15 10:00] approve please"),
-            None
+            Some(ApprovalSignal::Approve)
         );
     }
 

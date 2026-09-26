@@ -1,0 +1,9 @@
+@prefix c: <https://jeffbridwell.com/chorus#> .
+@prefix rdfs: <http://www.w3.org/2000/01/rdf-schema#> .
+@prefix dcterms: <http://purl.org/dc/terms/> .
+# #4339 — one broken rule per row, so each rule is shown to refuse (#3734).
+c:principal-jeff a c:Principal .
+c:sA a c:Session ; rdfs:label "sA: attended, no time" ; c:ownedBy c:principal-silas ; c:tokenId "t" ; c:issuedAt "2026-09-25T14:00:00Z" ; c:expiresAt "2026-09-25T14:10:00Z" ; c:sessionState "closed" ; c:hostAccount "jeffbridwell" ; c:endedAt "2026-09-25T15:00:00Z" ; c:attendedBy c:principal-jeff .
+c:sB a c:Session ; rdfs:label "sB: attended by a role, not a principal" ; c:ownedBy c:principal-silas ; c:tokenId "t" ; c:issuedAt "2026-09-25T14:00:00Z" ; c:expiresAt "2026-09-25T14:10:00Z" ; c:sessionState "closed" ; c:hostAccount "jeffbridwell" ; c:endedAt "2026-09-25T15:00:00Z" ; c:attendedBy c:role-silas ; c:lastAttendedAt "2026-09-25T14:06:00Z" .
+c:pC a c:Presence ; rdfs:label "pC: focus with no check" ; c:comment "fixture" ; dcterms:created "2026-09-25T14:00:00Z" ; dcterms:creator "silas" ; dcterms:modified "2026-09-25T14:00:00Z" ; c:ownedBy c:principal-silas ; c:presenceOf c:r0 ; c:hostAccount "jeffbridwell" ; c:reachability "unknown" ; c:focusedNow "true" .
+c:pD a c:Presence ; rdfs:label "pD: focus is not true or false" ; c:comment "fixture" ; dcterms:created "2026-09-25T14:00:00Z" ; dcterms:creator "silas" ; dcterms:modified "2026-09-25T14:00:00Z" ; c:ownedBy c:principal-silas ; c:presenceOf c:r0 ; c:hostAccount "jeffbridwell" ; c:reachability "unknown" ; c:focusedNow "maybe" ; c:checkedAt "2026-09-25T14:06:00Z" .

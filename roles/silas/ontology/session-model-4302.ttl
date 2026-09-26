@@ -138,6 +138,36 @@ chorus:lastDeliveredAt a owl:DatatypeProperty ;
     rdfs:domain chorus:Presence ;
     rdfs:range xsd:string .
 
+# --- #4339: who is in the room. Jeff has no login of his own (0 Session rows
+# owned by jeff, 2026-09-26 12:35); he ATTENDS the roles' sessions. The
+# session records when he last spoke to it; the presence records whether his
+# terminal is on its pane right now. Written by the role's seen hook, only for
+# a prompt that is his (anything but pulse's wake line). ---
+
+chorus:attendedBy a owl:ObjectProperty ;
+    rdfs:label "attended by" ;
+    rdfs:comment "The human principal who has spoken to this session: a prompt from him, not a nudge, arrived in it. Written by the seen hook. #4339." ;
+    rdfs:domain chorus:Session ;
+    rdfs:range chorus:Principal .
+
+chorus:lastAttendedAt a owl:DatatypeProperty ;
+    rdfs:label "last attended at" ;
+    rdfs:comment "When the attending principal last spoke to this session, ISO-8601 UTC. A peer nudge never sets it. #4339." ;
+    rdfs:domain chorus:Session ;
+    rdfs:range xsd:string .
+
+chorus:focusedNow a owl:DatatypeProperty ;
+    rdfs:label "focused now" ;
+    rdfs:comment "true when a human's terminal is showing this presence's pane (tmux: an attached client whose active pane is this one) at checkedAt; false otherwise. #4339." ;
+    rdfs:domain chorus:Presence ;
+    rdfs:range xsd:string .
+
+chorus:checkedAt a owl:DatatypeProperty ;
+    rdfs:label "checked at" ;
+    rdfs:comment "When focusedNow was last read, ISO-8601 UTC. A focusedNow with no checkedAt is a guess. #4339." ;
+    rdfs:domain chorus:Presence ;
+    rdfs:range xsd:string .
+
 chorus:writtenInSession a owl:ObjectProperty ;
     rdfs:label "written in session" ;
     rdfs:comment "The session a row or event was written in. The principal owns the row (ownedBy); the session is the writer, so Check can trace a bad row to the turn and the memory it started from. Declared here; step 3 makes writers carry it. #4302." ;
@@ -150,7 +180,9 @@ chorus:SessionShape
     sh:property chorus:SessionShape-actsAs ;
     sh:property chorus:SessionShape-startedAt ;
     sh:property chorus:SessionShape-lastSeenAt ;
-    sh:sparql chorus:OpenSessionActsAsARole , chorus:OpenSessionHasOneLiveRun .
+    sh:property chorus:SessionShape-attendedBy ;
+    sh:property chorus:SessionShape-lastAttendedAt ;
+    sh:sparql chorus:OpenSessionActsAsARole , chorus:OpenSessionHasOneLiveRun , chorus:AttendedNeedsATime .
 
 chorus:SessionShape-actsAs a sh:PropertyShape ;
     sh:path chorus:actsAs ; sh:maxCount 1 ; sh:class chorus:Role .
@@ -158,6 +190,10 @@ chorus:SessionShape-startedAt a sh:PropertyShape ;
     sh:path chorus:startedAt ; sh:maxCount 1 ; sh:datatype xsd:string .
 chorus:SessionShape-lastSeenAt a sh:PropertyShape ;
     sh:path chorus:lastSeenAt ; sh:maxCount 1 ; sh:datatype xsd:string .
+chorus:SessionShape-attendedBy a sh:PropertyShape ;
+    sh:path chorus:attendedBy ; sh:maxCount 1 ; sh:class chorus:Principal .
+chorus:SessionShape-lastAttendedAt a sh:PropertyShape ;
+    sh:path chorus:lastAttendedAt ; sh:maxCount 1 ; sh:datatype xsd:string .
 
 chorus:OpenSessionActsAsARole a sh:SPARQLConstraint ;
     sh:message "an open session must say which role it acts as (chorus:actsAs) and when it started (chorus:startedAt)" ;
@@ -255,8 +291,9 @@ chorus:PresenceShape a sh:NodeShape ;
     sh:property chorus:PresenceShape-label , chorus:PresenceShape-comment , chorus:PresenceShape-ownedBy ,
                 chorus:PresenceShape-presenceOf , chorus:PresenceShape-pane , chorus:PresenceShape-tty ,
                 chorus:PresenceShape-hostAccount , chorus:PresenceShape-onMachine ,
-                chorus:PresenceShape-reachability , chorus:PresenceShape-lastDeliveredAt ;
-    sh:sparql chorus:ReachableNeedsADelivery , chorus:StampedByTheDal .
+                chorus:PresenceShape-reachability , chorus:PresenceShape-lastDeliveredAt ,
+                chorus:PresenceShape-focusedNow , chorus:PresenceShape-checkedAt ;
+    sh:sparql chorus:ReachableNeedsADelivery , chorus:StampedByTheDal , chorus:FocusNeedsACheck .
 
 chorus:PresenceShape-label a sh:PropertyShape ; sh:path rdfs:label ; sh:minCount 1 .
 chorus:PresenceShape-comment a sh:PropertyShape ; sh:path chorus:comment ; sh:minCount 1 .
@@ -275,6 +312,27 @@ chorus:PresenceShape-reachability a sh:PropertyShape ;
     sh:pattern "^(reachable|unreachable|unknown)$" .
 chorus:PresenceShape-lastDeliveredAt a sh:PropertyShape ;
     sh:path chorus:lastDeliveredAt ; sh:maxCount 1 ; sh:datatype xsd:string .
+chorus:PresenceShape-focusedNow a sh:PropertyShape ;
+    sh:path chorus:focusedNow ; sh:maxCount 1 ; sh:datatype xsd:string ;
+    sh:pattern "^(true|false)$" .
+chorus:PresenceShape-checkedAt a sh:PropertyShape ;
+    sh:path chorus:checkedAt ; sh:maxCount 1 ; sh:datatype xsd:string .
+
+chorus:FocusNeedsACheck a sh:SPARQLConstraint ;
+    sh:message "focusedNow is a reading, not a fact: a presence carrying focusedNow must carry checkedAt. #4339" ;
+    sh:select """
+        SELECT $this WHERE {
+          $this <https://jeffbridwell.com/chorus#focusedNow> ?f .
+          FILTER NOT EXISTS { $this <https://jeffbridwell.com/chorus#checkedAt> ?c }
+        }""" .
+
+chorus:AttendedNeedsATime a sh:SPARQLConstraint ;
+    sh:message "attendedBy says who spoke; lastAttendedAt says when. A session attended by a principal must carry lastAttendedAt. #4339" ;
+    sh:select """
+        SELECT $this WHERE {
+          $this <https://jeffbridwell.com/chorus#attendedBy> ?p .
+          FILTER NOT EXISTS { $this <https://jeffbridwell.com/chorus#lastAttendedAt> ?t }
+        }""" .
 
 chorus:ReachableNeedsADelivery a sh:SPARQLConstraint ;
     sh:message "reachable is proven by a delivery: a presence marked reachable must carry lastDeliveredAt" ;

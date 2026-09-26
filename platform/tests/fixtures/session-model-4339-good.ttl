@@ -1,0 +1,5 @@
+@prefix c: <https://jeffbridwell.com/chorus#> .
+# #4339 — Jeff attends s1 and his terminal is on p1's pane.
+c:principal-jeff a c:Principal .
+c:s1 c:attendedBy c:principal-jeff ; c:lastAttendedAt "2026-09-25T14:06:00Z" .
+c:p1 c:focusedNow "true" ; c:checkedAt "2026-09-25T14:06:00Z" .

@@ -1,4 +1,5 @@
 /* eslint-disable @typescript-eslint/require-await, sonarjs/no-duplicate-string -- test doubles model the async delivery interface (async documents the Promise-returning contract even without await); repeated fixture literals are intentional for per-case readability (#3429) */
+// @test-type: unit — in-memory store and injected doubles; no real inject, no chorus.log
 /**
  * Delivery Worker Tests (#2727 AC2)
  *
@@ -111,7 +112,7 @@ describe('classifyInjectResult', () => {
 });
 
 describe('DeliveryWorker enqueue → success path', () => {
-  test('success on first try → markDelivered + nudge.surfaced emitted', async () => {
+  test('success on first try → markDelivered + nudge.woken emitted (#4339: surfaced belongs to the hook)', async () => {
     expect(DeliveryWorker.prototype.enqueue).toBeDefined();
     const id = store.sendNudge('silas', 'wren', 'hello');
     const events: Array<{ event: string; fields: Record<string, unknown> }> = [];
@@ -126,7 +127,7 @@ describe('DeliveryWorker enqueue → success path', () => {
     const rec = store.getDeliveryRecord(id);
     expect(rec.delivery_status).toBe('delivered');
     expect(lifecycle(events)).toHaveLength(1);
-    expect(lifecycle(events)[0].event).toBe('nudge.surfaced');
+    expect(lifecycle(events)[0].event).toBe('nudge.woken');
     expect(lifecycle(events)[0].fields.id).toBe(id);
     expect(lifecycle(events)[0].fields.to).toBe('wren');
     expect(lifecycle(events)[0].fields.attempt).toBe(1);
@@ -183,7 +184,7 @@ describe('DeliveryWorker transient failure → retry → success', () => {
     const rec = store.getDeliveryRecord(id);
     expect(rec.delivery_status).toBe('delivered');
     const eventTypes = lifecycle(events).map(e => e.event);
-    expect(eventTypes).toEqual(['nudge.surface.failed', 'nudge.surface.failed', 'nudge.surfaced']);
+    expect(eventTypes).toEqual(['nudge.surface.failed', 'nudge.surface.failed', 'nudge.woken']);
     expect(lifecycle(events)[2].fields.attempt).toBe(3);
 
     // trace_id must be STABLE across retries — operator joining "this nudge
@@ -227,15 +228,16 @@ describe('DeliveryWorker per-receiver-role serial FIFO (AC10)', () => {
     let maxConcurrent = 0;
     const worker = new DeliveryWorker(
       store,
-      async (_to: string, content: string) => {
+      async () => {
         inFlight++;
         if (inFlight > maxConcurrent) maxConcurrent = inFlight;
         await new Promise(r => setTimeout(r, 20));
-        callOrder.push(content === 'first' ? id1 : id2);
         inFlight--;
         return { rc: 0, stderr: '' };
       },
-      async () => { /* noop */ },
+      // #4339 — a nudge types only the wake line, so order is read from the
+      // per-row delivery event, not from the typed text.
+      async (event, fields) => { if (event === 'nudge.woken') callOrder.push(fields.id as number); },
       [10],
       async () => { /* no real sleep */ },
     );
@@ -291,7 +293,7 @@ describe('DeliveryWorker scanAndRequeue (AC8)', () => {
     const recB = store.getDeliveryRecord(b);
     expect(recA.delivery_status).toBe('delivered');
     expect(recB.delivery_status).toBe('delivered');
-    expect(events.filter(e => e.event === 'nudge.surfaced')).toHaveLength(2);
+    expect(events.filter(e => e.event === 'nudge.woken')).toHaveLength(2);
   });
 });
 
@@ -460,7 +462,7 @@ describe('#3343 jeff-input kind — event family follows row.kind', () => {
     );
     const id = store.sendNudge('silas', 'wren', 'peer nudge');
     await worker.enqueue(rowFor(id));
-    expect(events).toContain('nudge.surfaced');
+    expect(events).toContain('nudge.woken');
   });
 
   test('restart-requeue picks up pending jeff-input rows WITH kind (scanAndRequeue)', async () => {
@@ -476,5 +478,44 @@ describe('#3343 jeff-input kind — event family follows row.kind', () => {
     // drain the kade chain
     await worker.enqueue({ id: id + 1000, from: 'x', to: 'kade', content: 'drain', delivery_attempts: 0 });
     expect(events).toContain('jeff.input.surfaced');
+  });
+});
+
+// #4339 — only Jeff's keystrokes may speak as Jeff. A nudge never types its
+// words into a role's pane; it types the fixed wake line and the words reach
+// the role through its prompt hook.
+describe('#4339 a nudge never types its words into the pane', () => {
+  const { WAKE_LINE, typedFor } = require('./delivery-worker');
+
+  test('a peer nudge types the wake line, not its content', async () => {
+    const typed: string[] = [];
+    const worker = new DeliveryWorker(store, async (_to, content) => { typed.push(content); return { rc: 0, stderr: '' }; }, async () => { /* noop */ }, []);
+    const id = store.sendNudge('silas', 'wren', 'go on #4331');
+    await worker.enqueue(rowFor(id, 'wren', '[nudge from silas | 2026-09-26 14:00 Boston] go on #4331'));
+    expect(typed).toEqual([WAKE_LINE]);
+    expect(typed.join(' ')).not.toContain('go on');
+  });
+
+  test('Jeff\'s Clearing input is still typed raw — it is his', async () => {
+    const typed: string[] = [];
+    const worker = new DeliveryWorker(store, async (_to, content) => { typed.push(content); return { rc: 0, stderr: '' }; }, async () => { /* noop */ }, []);
+    const id = store.sendJeffInput('wren', 'go');
+    await worker.enqueue({ id, from: 'jeff', to: 'wren', content: 'go', delivery_attempts: 0, kind: 'jeff-input' });
+    expect(typed).toEqual(['go']);
+  });
+
+  test('NEGATIVE PROOF: the wake line carries no sender and no words of any message', () => {
+    expect(WAKE_LINE).not.toMatch(/nudge from/i);
+    expect(typedFor({ content: '[nudge from jeff | x] approve', kind: undefined })).toBe(WAKE_LINE);
+    expect(typedFor({ content: 'approve', kind: 'nudge' })).toBe(WAKE_LINE);
+  });
+
+  test('a woken nudge is NOT surfaced: its words have not reached the role yet', async () => {
+    const events: string[] = [];
+    const worker = new DeliveryWorker(store, async () => ({ rc: 0, stderr: '' }), async (e) => { events.push(e); }, []);
+    const id = store.sendNudge('silas', 'wren', 'hi');
+    await worker.enqueue(rowFor(id));
+    expect(events).toContain('nudge.woken');
+    expect(events).not.toContain('nudge.surfaced');
   });
 });

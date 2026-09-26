@@ -157,12 +157,43 @@ pub fn augment_envelope_with_nudges(
     window_events: usize,
     limit: usize,
 ) -> String {
-    let unread = fetch_unread(role, log_path, window_events);
+    let mut unread = fetch_unread(role, log_path, window_events);
+    // #4339 — a nudge no longer types its words into the pane; this block is
+    // the only way they reach the role. The spine carries a preview cut at the
+    // first quote, so fetch the whole message from pulse by its trace.
+    for n in unread.iter_mut().take(limit) {
+        if let Some(words) = full_words(&n.trace_id) {
+            n.content = words;
+        }
+    }
     let Some(block) = format_unread_block(role, &unread, limit) else {
         return envelope.to_string();
     };
     mark_surfaced(role, &unread[..unread.len().min(limit)]);
     format!("{}\n{}", envelope, block)
+}
+
+/// The whole message for one trace, from pulse's store (messages.db). None when
+/// pulse cannot be read or holds no such row; the caller keeps the preview.
+fn full_words(trace_id: &str) -> Option<String> {
+    if trace_id.is_empty() {
+        return None;
+    }
+    let base = std::env::var("PULSE_URL").unwrap_or_else(|_| "http://localhost:3475".to_string());
+    let url = format!("{base}/api/messages?type=nudge&trace={trace_id}&limit=1");
+    let body = ureq::get(&url).timeout(std::time::Duration::from_millis(1500)).call().ok()?.into_string().ok()?;
+    words_from_listing(&body, trace_id)
+}
+
+/// The content of the row in a pulse /api/messages listing that carries
+/// `trace_id`. A pulse that predates the trace filter ignores it and returns
+/// the newest nudge of all, so the row's own trace is checked: the wrong
+/// message is worse than a cut one.
+pub fn words_from_listing(body: &str, trace_id: &str) -> Option<String> {
+    let v: serde_json::Value = serde_json::from_str(body).ok()?;
+    let row = v.as_array()?.iter().find(|r| r.get("trace_id").and_then(|t| t.as_str()) == Some(trace_id))?;
+    let words = row.get("content")?.as_str()?;
+    Some(words.replace('\n', " "))
 }
 
 /// Emit a nudge.surfaced spine event for each nudge — the canonical receipt
@@ -610,5 +641,24 @@ mod tests {
         assert_eq!(unread.len(), 3);
         assert_eq!(unread[0].trace_id, "ntr-102");
         assert_eq!(unread[2].trace_id, "ntr-100");
+    }
+
+    /// #4339 — the words come whole from pulse. The live case: Silas's nudge
+    /// at 14:15 reached Wren as `...from the pipeline's headless \\` because the
+    /// spine preview stops at the first quote.
+    #[test]
+    fn words_come_whole_from_the_pulse_listing() {
+        let body = r#"[{"id":7,"content":"[nudge from silas | 14:15 Boston] the pipeline's headless \"wren\" review","trace_id":"t1"}]"#;
+        assert_eq!(
+            words_from_listing(body, "t1").as_deref(),
+            Some("[nudge from silas | 14:15 Boston] the pipeline's headless \"wren\" review")
+        );
+        // NEGATIVE PROOF: nothing to read is None, so the caller keeps the preview
+        // rather than injecting an empty message.
+        assert_eq!(words_from_listing("[]", "t1"), None);
+        assert_eq!(words_from_listing("not json", "t1"), None);
+        // NEGATIVE PROOF: an old pulse ignores ?trace= and hands back the newest
+        // nudge; a row with another trace must never be taken as this one.
+        assert_eq!(words_from_listing(body, "t2"), None);
     }
 }

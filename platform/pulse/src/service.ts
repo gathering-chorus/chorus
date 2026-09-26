@@ -302,6 +302,7 @@ function registerStateAndQueryRoutes(app: Express, store: MessageStore): void {
       from: req.query.from as string | undefined,
       to: req.query.to as string | undefined,
       since: req.query.since as string | undefined,
+      trace: req.query.trace as string | undefined,
       limit: req.query.limit ? parseInt(req.query.limit as string) : 50,
     }));
   });

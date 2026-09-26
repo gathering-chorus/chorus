@@ -105,16 +105,32 @@ describe('SessionTailer.processLine — user messages', () => {
     expect(call.text).toBe('actual question');
   });
 
-  test('user with [nudge from X] prefix attributes to sending role', () => {
+  // #4339 — peers never type words into a pane any more, so a prompt that
+  // starts "[nudge from silas" is text Jeff typed, and it is his.
+  test('NEGATIVE PROOF: a typed [nudge from X] label is Jeff, never the role it names', () => {
     fire('kade', {
       type: 'user',
-      message: { content: '[nudge from silas | 10:00] check the deploy' },
+      message: { content: '[nudge from silas | 10:00] go on #4339' },
     });
     expect(router.ingest).toHaveBeenCalledWith(expect.objectContaining({
-      from: 'silas',
-      text: expect.stringContaining('[nudge from silas'),
-      type: 'role-response',
+      from: 'jeff',
+      type: 'jeff-input',
     }));
+    expect(router.ingest).not.toHaveBeenCalledWith(expect.objectContaining({ from: 'silas' }));
+  });
+
+  test('#4339 pulse\'s wake line is a nudge arriving, not Jeff, and is not shown', () => {
+    const { WAKE_LINE } = require('../src/wake-line');
+    fire('kade', { type: 'user', message: { content: WAKE_LINE } });
+    expect(router.ingest).not.toHaveBeenCalled();
+  });
+
+  test('#4339 the Clearing and pulse agree on the wake line', () => {
+    const fs = require('fs');
+    const path = require('path');
+    const { WAKE_LINE } = require('../src/wake-line');
+    const pulse = fs.readFileSync(path.join(__dirname, '../../../platform/pulse/src/delivery-worker.ts'), 'utf8');
+    expect(pulse).toContain(`export const WAKE_LINE = '${WAKE_LINE}';`);
   });
 
   test('user with only filtered content resolves to empty and drops', () => {
