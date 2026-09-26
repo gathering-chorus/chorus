@@ -39,6 +39,7 @@
 
 pub mod lifecycle;
 pub mod rows;
+pub mod msgs;
 
 use serde_json::Value;
 use std::env;
@@ -896,6 +897,9 @@ fn seen(ctx: &Ctx, role: &str) -> i32 {
     let mut input = String::new();
     let _ = std::io::Read::read_to_string(&mut std::io::stdin(), &mut input);
     let (conv, delivered) = rows::turn_facts(&input);
+    // #4340 — keep what actually arrived, so the projector can tell a message
+    // that landed cut from one that landed whole (pulse cannot see that)
+    log_received(ctx, role, &input);
     let at = PathBuf::from(&ctx.identity_dir).join(role).join("seen.at");
     let now = now_ms() as u64 / 1000;
     let last = fs::read_to_string(&at).ok().and_then(|t| t.trim().parse::<u64>().ok());
@@ -945,6 +949,120 @@ fn store_line(listing: &str, session: Option<&str>) -> Option<String> {
     let row = v.get("data")?.as_array()?.iter().find(|r| r.get("name").and_then(|n| n.as_str()) == Some(session))?;
     let f = |k: &str| row.get(k).and_then(|x| x.as_str()).filter(|x| !x.is_empty()).unwrap_or("-").to_string();
     Some(format!("store: session {} {}, acts as {}, since {}, last seen {}", session, f("sessionState"), f("actsAs"), f("startedAt"), f("lastSeenAt")))
+}
+
+/// Append this turn's prompt to identity/<role>/received.jsonl (last 200 kept).
+fn log_received(ctx: &Ctx, role: &str, hook_input: &str) {
+    let v: Value = serde_json::from_str(hook_input).unwrap_or(Value::Null);
+    let Some(prompt) = v.get("prompt").and_then(|p| p.as_str()) else { return };
+    let path = PathBuf::from(&ctx.identity_dir).join(role).join("received.jsonl");
+    let mut lines: Vec<String> = fs::read_to_string(&path).unwrap_or_default().lines().map(String::from).collect();
+    lines.push(serde_json::json!({"at": iso_utc(now_ms() as u64 / 1000), "text": prompt}).to_string());
+    let keep = lines.len().saturating_sub(200);
+    let _ = write_private(&path, &(lines[keep..].join("\n") + "\n"));
+}
+
+/// (at, text) of every prompt the role received, from the seen hook's log.
+fn received_log(ctx: &Ctx, role: &str) -> Vec<(String, String)> {
+    let path = PathBuf::from(&ctx.identity_dir).join(role).join("received.jsonl");
+    fs::read_to_string(path).unwrap_or_default().lines()
+        .filter_map(|l| { let v: Value = serde_json::from_str(l).ok()?; Some((v.get("at")?.as_str()?.to_string(), v.get("text")?.as_str()?.to_string())) }).collect()
+}
+
+fn api_list(ctx: &Ctx, route: &str) -> Value {
+    serde_json::from_str(&sh(&ctx.curl, &["-s", "--max-time", "20", &format!("{}/v1/{}?limit=5000", ctx.api, route)]).unwrap_or_default()).unwrap_or(Value::Null)
+}
+
+/// `project-messages` — one pass of messages.db into the store: new messages
+/// (id past the watermark) and deliveries whose outcome changed since last time.
+/// Idempotent: the rows are named by the messages.db id.
+fn project_messages(ctx: &Ctx) -> i32 {
+    let db = envd("CHORUS_MESSAGES_DB", &format!("{}/platform/pulse/messages.db", ctx.root));
+    let sqlite = envd("AWAKE_SQLITE", "sqlite3");
+    let state_path = PathBuf::from(&ctx.identity_dir).join("silas").join("messages-projection.json");
+    let mut state: Value = fs::read_to_string(&state_path).ok().and_then(|t| serde_json::from_str(&t).ok()).unwrap_or(serde_json::json!({}));
+    let since = envd("AWAKE_PROJECT_SINCE", "2026-09-26 16:30:00");
+    let watermark = state.get("watermark").and_then(|w| w.as_u64()).unwrap_or(0);
+    let open: Vec<u64> = state.get("open").and_then(|o| o.as_object()).map(|o| o.keys().filter_map(|k| k.parse().ok()).collect()).unwrap_or_default();
+    let open_list = if open.is_empty() { "0".to_string() } else { open.iter().map(|i| i.to_string()).collect::<Vec<_>>().join(",") };
+    let q = format!("select id,type,\"from\",\"to\",content,created_at,delivery_status,delivered_at,last_delivery_error from messages where (id > {} and created_at >= '{}') or id in ({}) order by id limit 500", watermark, since, open_list);
+    let out = sh(&sqlite, &["-json", &db, &q]).unwrap_or_default();
+    let srcs = msgs::parse_rows(if out.trim().is_empty() { "[]" } else { &out });
+    if srcs.is_empty() { println!("project-messages: nothing new"); return 0; }
+
+    let principals: Vec<String> = api_list(ctx, "identity/principals").get("data").and_then(|d| d.as_array()).map(|a| a.iter().filter_map(|p| p.get("name")?.as_str().map(String::from)).collect()).unwrap_or_default();
+    let sessions = api_list(ctx, "identity/sessions");
+    let runs = api_list(ctx, "identity/sessionruns");
+    let presences = api_list(ctx, "identity/presences");
+    ensure_channels(ctx);
+
+    let (mut made, mut updated, mut failed) = (0, 0, 0);
+    let mut new_mark = watermark;
+    for src in &srcs {
+        // already projected and settled: the query should not return it; never write it twice
+        if src.id <= watermark && !open.contains(&src.id) { continue; }
+        let key = src.id.to_string();
+        let known = state.get("open").and_then(|o| o.get(&key)).cloned();
+        let at = msgs::iso(if src.delivered_at.is_empty() { &src.created_at } else { &src.delivered_at });
+        let to_p = msgs::principal_of(&src.to, &principals);
+        let presence = to_p.as_deref().and_then(|p| msgs::presence_at(p, &at, &runs, &presences));
+        let recv_role = src.to.trim_start_matches("principal-");
+        // Kade's review: only prompts that arrived after this message was sent, within 10 minutes
+        let received = if ROLES.contains(&recv_role) { msgs::received_for(&received_log(ctx, recv_role), &msgs::iso(&src.created_at), 600) } else { vec![] };
+        let outcome = msgs::outcome(src, &received);
+        let message_name = match &known {
+            Some(k) => k.get("message").and_then(|m| m.as_str()).unwrap_or("").to_string(),
+            None => {
+                let from_p = msgs::principal_of(&src.from, &principals);
+                let session = from_p.as_deref().and_then(|p| msgs::session_at(p, &msgs::iso(&src.created_at), &sessions));
+                let body = msgs::message_row(src, &principals, session.as_deref());
+                let (code, reply) = api_send(ctx, "silas", "messages/messages", None, &body, "msg");
+                if !ok_code(&code) { failed += 1; eprintln!("  message {} not written (HTTP {})", src.id, code); continue; }
+                made += 1;
+                stored_name(&reply).unwrap_or_else(|| row_name(&body))
+            }
+        };
+        let row = msgs::delivery_row(src, &message_name, presence.as_deref(), &outcome);
+        let prev_outcome = known.as_ref().and_then(|k| k.get("outcome")).and_then(|o| o.as_str()).map(String::from);
+        let delivery_name = if let Some(k) = &known {
+            let n = k.get("delivery").and_then(|d| d.as_str()).unwrap_or("").to_string();
+            if prev_outcome.as_deref() != Some(outcome.as_str()) {
+                let mut r = row.clone(); r["name"] = Value::String(n.clone());
+                let (code, _) = api_send(ctx, "silas", "messages/deliveries", Some(&n), &r, "del");
+                if ok_code(&code) { updated += 1 } else { failed += 1 }
+            }
+            n
+        } else {
+            let (code, reply) = api_send(ctx, "silas", "messages/deliveries", None, &row, "del");
+            if !ok_code(&code) { failed += 1; eprintln!("  delivery {} not written (HTTP {})", src.id, code); String::new() } else { stored_name(&reply).unwrap_or_else(|| row_name(&row)) }
+        };
+        if src.id > new_mark { new_mark = src.id; }
+        // keep it open while the outcome can still change
+        if let Some(o) = state.get_mut("open").and_then(|o| o.as_object_mut()) { o.remove(&key); }
+        let young = msgs::age_secs(&msgs::iso(&src.created_at), &iso_utc(now_ms() as u64 / 1000)).map(|a| a < 600).unwrap_or(false);
+        if (matches!(outcome.as_str(), "pending" | "queued") || (outcome == "delivered" && young)) && !delivery_name.is_empty() {
+            if state.get("open").is_none() { state["open"] = serde_json::json!({}); }
+            state["open"][&key] = serde_json::json!({"message": message_name, "delivery": delivery_name, "outcome": outcome});
+        }
+        if outcome == "truncated" { ctx.spine(&["message.delivery.truncated", &format!("id={}", src.id), &format!("to={}", src.to)]); }
+    }
+    state["watermark"] = serde_json::json!(new_mark);
+    let _ = fs::create_dir_all(state_path.parent().unwrap_or(Path::new(".")));
+    let _ = write_private(&state_path, &state.to_string());
+    ctx.spine(&["messages.projected", &format!("made={}", made), &format!("updated={}", updated), &format!("failed={}", failed), &format!("watermark={}", new_mark)]);
+    println!("project-messages: {} message(s) written, {} delivery update(s), {} failed, watermark {}", made, updated, failed, new_mark);
+    if failed > 0 { 1 } else { 0 }
+}
+
+/// The three channels that exist today, created once.
+fn ensure_channels(ctx: &Ctx) {
+    let have: Vec<String> = api_list(ctx, "messages/channels").get("data").and_then(|d| d.as_array()).map(|a| a.iter().filter_map(|c| c.get("channelKind")?.as_str().map(String::from)).collect()).unwrap_or_default();
+    for (kind, what) in [("terminal", "typed into a role's tmux pane: Jeff at the keyboard"), ("nudge", "the messages API, delivered into a role's pane by pulse"), ("clearing", "the group chat")] {
+        if have.iter().any(|h| h == kind) { continue; }
+        let body = serde_json::json!({"name": kind, "label": kind, "comment": format!("{} — {}. #4340.", kind, what), "ownedBy": "principal-silas", "channelKind": kind});
+        let (code, _) = api_send(ctx, "silas", "messages/channels", None, &body, "chan");
+        if !ok_code(&code) { eprintln!("  channel {} not written (HTTP {})", kind, code); }
+    }
 }
 
 /// `sweep` — close the sessions still reading open long after their token died.
@@ -1209,6 +1327,8 @@ pub fn run(args: &[String]) -> i32 {
             Err(c) => c,
         },
         "sweep" => sweep(&ctx),
+        // #4340 — messages.db into the model, one pass; run by com.chorus.messages-project
+        "project-messages" => project_messages(&ctx),
         "off" => match role_arg(1) {
             Ok(r) => {
                 if let Some(why) = caller_refusal(&r, "stop") { eprintln!("chorus-awake: REFUSED — {}", why); return 2; }

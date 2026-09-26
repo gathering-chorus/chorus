@@ -1,0 +1,13 @@
+@prefix c: <https://jeffbridwell.com/chorus#> .
+@prefix rdfs: <http://www.w3.org/2000/01/rdf-schema#> .
+@prefix dcterms: <http://purl.org/dc/terms/> .
+# #4340 — one broken rule per row (#3734).
+c:ch-nudge a c:Channel ; rdfs:label "nudge" ; c:comment "fixture" ; dcterms:created "2026-09-26T13:00:00Z" ; dcterms:creator "silas" ; dcterms:modified "2026-09-26T13:00:00Z" ; c:ownedBy c:principal-silas ; c:channelKind "nudge" .
+c:mA a c:Message ; rdfs:label "mA: no senderName" ; c:ownedBy c:principal-silas ; c:messageBody "hi" ; c:messageKind "nudge" ; c:sentAt "2026-09-26T13:00:00Z" ; dcterms:created "2026-09-26T13:00:00Z" ; dcterms:creator "silas" ; dcterms:modified "2026-09-26T13:00:00Z" .
+c:mB a c:Message ; rdfs:label "mB: unknown kind" ; c:ownedBy c:principal-silas ; c:messageBody "x" ; c:messageKind "carrier-pigeon" ; c:sentAt "t" ; dcterms:created "2026-09-26T13:00:00Z" ; dcterms:creator "silas" ; dcterms:modified "2026-09-26T13:00:00Z" ; c:senderName "wren" .
+c:mC a c:Message ; rdfs:label "mC: sent by a Role, not a Principal" ; c:ownedBy c:principal-silas ; c:messageBody "hi" ; c:messageKind "nudge" ; c:sentAt "2026-09-26T13:00:00Z" ; dcterms:created "2026-09-26T13:00:00Z" ; dcterms:creator "silas" ; dcterms:modified "2026-09-26T13:00:00Z" ; c:senderName "wren" ; c:sentBy c:role-silas .
+c:dD a c:Delivery ; rdfs:label "dD: delivered, but to nowhere" ; dcterms:created "2026-09-26T13:00:00Z" ; dcterms:creator "silas" ; dcterms:modified "2026-09-26T13:00:00Z" ; c:ownedBy c:principal-silas ; c:deliveryOf c:m0 ; c:overChannel c:ch-nudge ; c:deliveryOutcome "delivered" .
+c:dE a c:Delivery ; rdfs:label "dE: unknown outcome" ; dcterms:created "2026-09-26T13:00:00Z" ; dcterms:creator "silas" ; dcterms:modified "2026-09-26T13:00:00Z" ; c:ownedBy c:principal-silas ; c:deliveryOf c:m0 ; c:deliveredTo c:p1 ; c:overChannel c:ch-nudge ; c:deliveryOutcome "maybe" .
+c:dF a c:Delivery ; rdfs:label "dF: no message" ; dcterms:created "2026-09-26T13:00:00Z" ; dcterms:creator "silas" ; dcterms:modified "2026-09-26T13:00:00Z" ; c:ownedBy c:principal-silas ; c:deliveredTo c:p1 ; c:overChannel c:ch-nudge ; c:deliveryOutcome "failed" .
+c:m0 a c:Message ; rdfs:label "m0" ; c:ownedBy c:principal-silas ; c:messageBody "hi" ; c:messageKind "nudge" ; c:sentAt "2026-09-26T13:00:00Z" ; dcterms:created "2026-09-26T13:00:00Z" ; dcterms:creator "silas" ; dcterms:modified "2026-09-26T13:00:00Z" ; c:senderName "silas" .
+c:m0 c:sentTo c:principal-silas .

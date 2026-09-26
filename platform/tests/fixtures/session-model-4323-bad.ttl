@@ -2,10 +2,10 @@
 @prefix rdfs: <http://www.w3.org/2000/01/rdf-schema#> .
 @prefix dcterms: <http://purl.org/dc/terms/> .
 # #4323 — one broken rule per row, so each rule is shown to refuse (#3734).
-c:cxA a c:Context ; rdfs:label "cxA: no run" ; rdfs:comment "fixture" ; dcterms:created "2026-09-26T08:00:00Z" ; dcterms:creator "silas" ; dcterms:modified "2026-09-26T08:00:00Z" ; c:ownedBy c:principal-silas ; c:contextKind "boot" .
-c:cxB a c:Context ; rdfs:label "cxB: no DAL stamp" ; rdfs:comment "fixture" ; c:ownedBy c:principal-silas ; c:contextOf c:r1 ; c:contextKind "prompt" .
-c:cxC a c:Context ; rdfs:label "cxC: unknown kind" ; rdfs:comment "fixture" ; dcterms:created "2026-09-26T08:00:00Z" ; dcterms:creator "silas" ; dcterms:modified "2026-09-26T08:00:00Z" ; c:ownedBy c:principal-silas ; c:contextOf c:r1 ; c:contextKind "rumour" .
-c:cvD a c:Conversation ; rdfs:label "cvD: no run" ; rdfs:comment "fixture" ; dcterms:created "2026-09-26T08:00:00Z" ; dcterms:creator "silas" ; dcterms:modified "2026-09-26T08:00:00Z" ; c:ownedBy c:principal-silas ; c:conversationId "conv-x" .
-c:chE a c:Channel ; rdfs:label "chE: unknown kind" ; rdfs:comment "fixture" ; dcterms:created "2026-09-26T08:00:00Z" ; dcterms:creator "silas" ; dcterms:modified "2026-09-26T08:00:00Z" ; c:ownedBy c:principal-silas ; c:channelKind "carrier-pigeon" .
-c:chF a c:Channel ; rdfs:label "chF: no owner" ; rdfs:comment "fixture" ; dcterms:created "2026-09-26T08:00:00Z" ; dcterms:creator "silas" ; dcterms:modified "2026-09-26T08:00:00Z" ; c:channelKind "terminal" .
-c:mG a c:Message ; rdfs:label "mG: channel is not a Channel" ; c:sentBy c:role-silas ; c:sentTo c:role-silas ; c:overChannel c:r1 .
+c:cxA a c:Context ; rdfs:label "cxA: no run" ; c:comment "fixture" ; dcterms:created "2026-09-26T08:00:00Z" ; dcterms:creator "silas" ; dcterms:modified "2026-09-26T08:00:00Z" ; c:ownedBy c:principal-silas ; c:contextKind "boot" .
+c:cxB a c:Context ; rdfs:label "cxB: no DAL stamp" ; c:comment "fixture" ; c:ownedBy c:principal-silas ; c:contextOf c:r1 ; c:contextKind "prompt" .
+c:cxC a c:Context ; rdfs:label "cxC: unknown kind" ; c:comment "fixture" ; dcterms:created "2026-09-26T08:00:00Z" ; dcterms:creator "silas" ; dcterms:modified "2026-09-26T08:00:00Z" ; c:ownedBy c:principal-silas ; c:contextOf c:r1 ; c:contextKind "rumour" .
+c:cvD a c:Conversation ; rdfs:label "cvD: no run" ; c:comment "fixture" ; dcterms:created "2026-09-26T08:00:00Z" ; dcterms:creator "silas" ; dcterms:modified "2026-09-26T08:00:00Z" ; c:ownedBy c:principal-silas ; c:conversationId "conv-x" .
+c:chE a c:Channel ; rdfs:label "chE: unknown kind" ; c:comment "fixture" ; dcterms:created "2026-09-26T08:00:00Z" ; dcterms:creator "silas" ; dcterms:modified "2026-09-26T08:00:00Z" ; c:ownedBy c:principal-silas ; c:channelKind "carrier-pigeon" .
+c:chF a c:Channel ; rdfs:label "chF: no owner" ; c:comment "fixture" ; dcterms:created "2026-09-26T08:00:00Z" ; dcterms:creator "silas" ; dcterms:modified "2026-09-26T08:00:00Z" ; c:channelKind "terminal" .
+c:mG a c:Message ; rdfs:label "mG: channel is not a Channel" ; c:ownedBy c:principal-silas ; c:senderName "silas" ; c:messageBody "hi" ; c:messageKind "nudge" ; c:sentAt "2026-09-26T08:00:00Z" ; dcterms:created "2026-09-26T08:00:00Z" ; dcterms:creator "silas" ; dcterms:modified "2026-09-26T08:00:00Z" ; c:sentBy c:principal-silas ; c:sentTo c:principal-silas ; c:overChannel c:r1 .

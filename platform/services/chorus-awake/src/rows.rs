@@ -42,6 +42,8 @@ pub fn presence_row(role: &str, name: &str, run: &str, pane: &str, tty: &str, ho
         "presenceOf": run,
         "hostAccount": host_account,
         "reachability": "unknown",
+        // #4340 — the pane is reached over the nudge channel (pulse types into it)
+        "reachableOver": "nudge",
     });
     if !pane.is_empty() { v["pane"] = Value::String(pane.into()); }
     if !tty.is_empty() { v["tty"] = Value::String(tty.into()); }
