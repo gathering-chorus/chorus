@@ -66,6 +66,34 @@ export function eventPrefix(kind?: 'nudge' | 'jeff-input'): 'nudge' | 'jeff.inpu
 
 export const DEFAULT_BACKOFF_MS = [250, 500, 1000, 2000, 5000];
 
+/**
+ * #4339 — the only words a nudge may type into a role's pane. Anything else
+ * typed there is Jeff: a nudge used to be typed in full, marked only by the
+ * text "[nudge from <who> | ...]", so a pane could not tell Jeff from a peer
+ * (Jeff 2026-09-26 12:36: "how can u tell the difference between me and a
+ * nudge") and anything able to type could say "go" in his name. Now the pane
+ * gets this fixed line, which carries no sender and no words; the message
+ * itself reaches the role through its prompt hook, from messages.db, with the
+ * sender the API stamped. The hook recognises exactly this line as not-Jeff.
+ */
+export const WAKE_LINE = '[chorus] a message is waiting in your context under Pending nudges';
+
+/** What a delivery types into the pane: Jeff's own words for his input, the fixed wake line for everything else. */
+export function typedFor(row: Pick<DeliveryRow, 'kind' | 'content'>): string {
+  return row.kind === 'jeff-input' ? row.content : WAKE_LINE;
+}
+
+/**
+ * The success event for a delivery. A jeff-input is surfaced when typed. A
+ * nudge is only WOKEN: the role has not seen its words until the prompt hook
+ * injects them, and that hook emits nudge.surfaced. Emitting surfaced here
+ * would fold the nudge out of the hook's unread set and the words would never
+ * arrive.
+ */
+export function deliveredEvent(kind?: 'nudge' | 'jeff-input'): string {
+  return kind === 'jeff-input' ? 'jeff.input.surfaced' : 'nudge.woken';
+}
+
 // #3357 — the announce boundary: every delivery is typed/deduped/echo-killed
 // HERE, the one choke point, before any inject. Suppressions are terminal
 // (markDelivered — the row is handled, not failed) and METERED via
@@ -241,7 +269,7 @@ export class DeliveryWorker {
     if (!(await this.announceOrSuppress(row))) return;
 
     for (let attempt = 1; attempt <= maxAttempts; attempt++) {
-      const result = await this.runInject(row.to, row.content, row.from);
+      const result = await this.runInject(row.to, typedFor(row), row.from);
       const classified = classifyInjectResult(result);
 
       // #2765 — trace_id propagated to every spine event in lifecycle
@@ -267,7 +295,7 @@ export class DeliveryWorker {
       }
 
       if (classified.kind === 'success') {
-        await this.emitSpine(`${prefix}.surfaced`, {
+        await this.emitSpine(deliveredEvent(row.kind), {
           ...traceFields,
           id: row.id,
           from: row.from,

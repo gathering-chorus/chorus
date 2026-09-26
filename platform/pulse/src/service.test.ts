@@ -315,7 +315,7 @@ async function waitForState(store: MessageStore, id: number, expected: string, t
 }
 
 describe('#2766 E2E — pulse-owns-delivery lifecycle', () => {
-  it('AC1 happy-path: POST /api/nudge → row delivered, nudge.surfaced emitted', async () => {
+  it('AC1 happy-path: POST /api/nudge → row delivered, nudge.woken emitted (#4339)', async () => {
     expect(MessageStore.prototype.getDeliveryRecord).toBeDefined();
     expect(DeliveryWorker.prototype.enqueue).toBeDefined();
     const { app, store, events } = freshWithWorker([{ rc: 0, stderr: '' }]);
@@ -331,7 +331,7 @@ describe('#2766 E2E — pulse-owns-delivery lifecycle', () => {
     expect(rec.delivered_at).not.toBeNull();
     expect(rec.last_delivery_error).toBeNull();
     expect(rec.trace_id).toBe('018f-happy-trace');
-    const surfacedEvents = events.filter(e => e.event === 'nudge.surfaced');
+    const surfacedEvents = events.filter(e => e.event === 'nudge.woken');
     expect(surfacedEvents).toHaveLength(1);
     expect(surfacedEvents[0].fields.trace_id).toBe('018f-happy-trace');
     expect(surfacedEvents[0].fields.attempt).toBe(1);
@@ -353,7 +353,7 @@ describe('#2766 E2E — pulse-owns-delivery lifecycle', () => {
     await waitForState(store, id, 'delivered');
     expect(getInjectCalls()).toBe(3);
     const failedEvents = events.filter(e => e.event === 'nudge.surface.failed');
-    const surfacedEvents = events.filter(e => e.event === 'nudge.surfaced');
+    const surfacedEvents = events.filter(e => e.event === 'nudge.woken');
     expect(failedEvents).toHaveLength(2);
     expect(failedEvents.every(e => e.fields.permanent === false)).toBe(true);
     expect(surfacedEvents).toHaveLength(1);

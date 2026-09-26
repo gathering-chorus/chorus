@@ -33,9 +33,9 @@ pub async fn check(input: &HookInput, _state: &AppState) {
         return;
     }
 
-    // Skip relayed nudge content — these are injected messages, not Jeff typing
+    // Skip pulse's wake line — a nudge arrived, not Jeff typing (#4339)
     let trimmed = prompt.trim();
-    if trimmed.starts_with("[nudge from") || trimmed.starts_with("<") {
+    if crate::shared::wake::is_wake_line(trimmed) || trimmed.starts_with("<") {
         return;
     }
 

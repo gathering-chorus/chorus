@@ -11,6 +11,7 @@
  * Card: #1665
  */
 
+import { WAKE_LINE } from './wake-line';
 import fs from 'fs';
 import path from 'path';
 import { MessageRouter } from './router';
@@ -264,16 +265,16 @@ export class SessionTailer {
     if (!text) return;
     text = text.replace(/\n/g, ' ');
 
-    const nudgeMatch = text.match(/^\[nudge from (wren|silas|kade)/i);
-    if (nudgeMatch) {
-      this.router.ingest({ from: nudgeMatch[1].toLowerCase(), text, ts, type: 'role-response' });
-    } else {
-      // Jeff moved the conversation on — whatever reply was pending IS the
-      // reply; promote it before his new input lands so the room reads in order.
-      this.finalizeReply(role);
-      this.router.ingest({ from: 'jeff', text, ts, type: 'jeff-input' });
-      this.awaitingReply.add(role);
-    }
+    // #4339 — a nudge reaches the pane only as pulse's wake line; its words
+    // arrive through the role's prompt hook, not the transcript. Every other
+    // prompt is Jeff, including one that starts "[nudge from": peers can no
+    // longer type words into a pane, so that label is just text he typed.
+    if (text.trim() === WAKE_LINE) return;
+    // Jeff moved the conversation on — whatever reply was pending IS the
+    // reply; promote it before his new input lands so the room reads in order.
+    this.finalizeReply(role);
+    this.router.ingest({ from: 'jeff', text, ts, type: 'jeff-input' });
+    this.awaitingReply.add(role);
   }
 
   // #3772 — promote the pending reply candidate to a visible role-response.

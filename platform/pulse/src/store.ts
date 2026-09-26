@@ -386,7 +386,7 @@ export class MessageStore {
 
   // --- Queries ---
 
-  queryMessages(opts: { type?: string; from?: string; to?: string; since?: string; limit?: number }): Message[] {
+  queryMessages(opts: { type?: string; from?: string; to?: string; since?: string; trace?: string; limit?: number }): Message[] {
     let sql = 'SELECT * FROM messages WHERE 1=1';
     const params: (string | number)[] = [];
 
@@ -394,6 +394,9 @@ export class MessageStore {
     if (opts.from) { sql += ' AND "from" = ?'; params.push(opts.from); }
     if (opts.to) { sql += ' AND "to" = ?'; params.push(opts.to); }
     if (opts.since) { sql += ' AND created_at >= ?'; params.push(opts.since); }
+    // #4339 — the prompt hook fetches a nudge's full words by the trace the
+    // spine carried; the spine's own copy is a preview cut at the first quote.
+    if (opts.trace) { sql += ' AND trace_id = ?'; params.push(opts.trace); }
 
     sql += ' ORDER BY created_at DESC';
     if (opts.limit) { sql += ' LIMIT ?'; params.push(opts.limit); }

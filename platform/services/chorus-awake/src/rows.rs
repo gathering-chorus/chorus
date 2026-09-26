@@ -151,15 +151,21 @@ pub fn with_conversation(mut run: Value, conversation: &str) -> Option<Value> {
     Some(run)
 }
 
+/// #4339 — the only thing pulse types into a pane for a nudge. Must equal
+/// `WAKE_LINE` in platform/pulse/src/delivery-worker.ts and
+/// chorus-hooks' shared::wake.
+pub const WAKE_LINE: &str = "[chorus] a message is waiting in your context under Pending nudges";
+
 /// What one UserPromptSubmit turn tells `seen`: the conversation id, and
-/// whether the prompt WAS a delivered message (a nudge surfaces as the prompt
-/// text "[nudge from <who> | ...]"). A message that never arrived never
+/// whether the prompt WAS a delivered message. Since #4339 a nudge arrives as
+/// pulse's wake line, never as its words, so a "[nudge from" label typed into
+/// the pane is Jeff's text, not a delivery. A message that never arrived never
 /// produces a turn, so it can never mark the presence reachable.
 pub fn turn_facts(hook_input: &str) -> (String, bool) {
     let v: Value = serde_json::from_str(hook_input).unwrap_or(Value::Null);
     let conv = v.get("session_id").and_then(|s| s.as_str()).unwrap_or("").to_string();
     let prompt = v.get("prompt").and_then(|s| s.as_str()).unwrap_or("");
-    (conv, prompt.trim_start().starts_with("[nudge from "))
+    (conv, prompt.trim() == WAKE_LINE)
 }
 
 /// Is a last-seen write due? One every `every_secs`, so a fast back-and-forth

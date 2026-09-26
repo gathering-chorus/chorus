@@ -38,8 +38,22 @@ fn only_a_delivery_makes_a_presence_reachable() {
     // negative proof: an ordinary turn (no delivery) never marks it reachable
     let (_, delivered) = turn_facts(r#"{"session_id":"c","prompt":"work status"}"#);
     assert!(!delivered);
-    let (_, delivered) = turn_facts(r#"{"session_id":"c","prompt":"[nudge from wren | 2026-09-26 09:00 Boston] hi"}"#);
+    // #4339: a delivery is pulse's wake line; a typed "[nudge from" label is Jeff's text
+    let wake = format!(r#"{{"session_id":"c","prompt":"{}"}}"#, chorus_awake::rows::WAKE_LINE);
+    let (_, delivered) = turn_facts(&wake);
     assert!(delivered);
+    let (_, delivered) = turn_facts(r#"{"session_id":"c","prompt":"[nudge from wren | 2026-09-26 09:00 Boston] hi"}"#);
+    assert!(!delivered, "a forged label is not a delivery");
+}
+
+/// #4339 — one contract in three places. If pulse types a different line,
+/// every delivery reads as Jeff speaking and no presence is ever reachable.
+#[test]
+fn pulse_types_exactly_this_wake_line() {
+    let ts = concat!(env!("CARGO_MANIFEST_DIR"), "/../../pulse/src/delivery-worker.ts");
+    let src = std::fs::read_to_string(ts).expect("pulse delivery-worker.ts beside chorus-awake");
+    let decl = format!("export const WAKE_LINE = '{}';", chorus_awake::rows::WAKE_LINE);
+    assert!(src.contains(&decl), "pulse's WAKE_LINE differs; expected `{decl}`");
 }
 
 #[test]
