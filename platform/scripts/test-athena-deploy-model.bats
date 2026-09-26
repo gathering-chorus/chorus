@@ -12,8 +12,11 @@ SCRIPT="$BATS_TEST_DIRNAME/../services/athena-deploy/target/release/athena-deplo
 ROOT="$(cd "$BATS_TEST_DIRNAME/../.." && pwd)"
 TTL="$ROOT/roles/silas/ontology/chorus.ttl"
 TEST_GRAPH="urn:chorus:ontology-test-bats-3509"
-Q="http://localhost:3030/pods/query"
-GSP="http://localhost:3030/pods/data"
+# #4332 — writes go to the test dataset, never /pods (lib/test-store.sh)
+. "$BATS_TEST_DIRNAME/../tests/lib/test-store.sh"
+test_store || TEST_STORE_DOWN="$TEST_STORE_WHY"
+Q="${FUSEKI_QUERY:-}"
+GSP="${FUSEKI_GSP:-}"
 
 # #3606 — this teardown was UNAUTHENTICATED. Post-#3564 every one of these DELETEs
 # 401'd and `|| true` swallowed it, so the suite has never cleaned up: 25,996
@@ -70,6 +73,7 @@ _clear_all() {
 # seam, zero occurrences in the live spine). Seam in the suite — never
 # CHORUS_CONTEXT=prod, which would only re-point the same writes at production.
 setup_file() {
+  [ -z "${TEST_STORE_DOWN:-}" ] || skip "UNMEASURED: $TEST_STORE_DOWN"
   export CHORUS_LOG_FILE="${CHORUS_LOG_FILE:-$BATS_RUN_TMPDIR/membrane-spine.log}"
   _clear_all
   local left

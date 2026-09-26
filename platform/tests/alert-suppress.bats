@@ -7,7 +7,11 @@ load test_helper
 
 DEEP_HEALTH="${CHORUS_ROOT}/platform/scripts/deep-health.sh"
 APP_STATE="${CHORUS_ROOT}/platform/scripts/app-state.sh"
-SUPPRESS_FILE="/tmp/chorus-alert-suppress"
+# #4332 — a per-test suppress file. This suite used to delete the real
+# /tmp/chorus-alert-suppress in setup and teardown, which cleared a live
+# suppression during the nightly. The scripts read CHORUS_ALERT_SUPPRESS_FILE.
+export CHORUS_ALERT_SUPPRESS_FILE="${BATS_RUN_TMPDIR:-/tmp}/alert-suppress-test-$$"
+SUPPRESS_FILE="$CHORUS_ALERT_SUPPRESS_FILE"
 
 setup() {
   # Clean suppress file before each test

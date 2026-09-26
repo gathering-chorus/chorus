@@ -16,12 +16,16 @@ load test_helper
 # What it does: capture a Jeff-told story as a TTL instance in Fuseki,
 # one graph per story, conforming to the existing jeff:Story schema.
 #
-# These tests hit the real Fuseki (/pods dataset) using a test-only
+# These tests hit a real Fuseki (the test dataset, #4332) using a test-only
 # slug prefix so production stories aren't touched. Each test cleans
 # up after itself via SPARQL DROP GRAPH.
 
-FUSEKI_QUERY="http://localhost:3030/pods/query"
-FUSEKI_UPDATE="http://localhost:3030/pods/update"
+# #4332 — stories are written to the test dataset, never /pods
+# (lib/test-store.sh). write-story.sh reads FUSEKI_UPDATE from the env.
+. "$BATS_TEST_DIRNAME/lib/test-store.sh"
+test_store || TEST_STORE_DOWN="$TEST_STORE_WHY"
+FUSEKI_QUERY="${FUSEKI_QUERY:-}"
+FUSEKI_UPDATE="${FUSEKI_UPDATE:-}"
 SCRIPT="${CHORUS_ROOT}/platform/scripts/write-story.sh"
 TEST_SLUG_PREFIX="test-bats-2321"
 
@@ -77,6 +81,7 @@ _drop_test_stories() {
 }
 
 setup() {
+  [ -z "${TEST_STORE_DOWN:-}" ] || skip "UNMEASURED: $TEST_STORE_DOWN"
   # Drop any leftover test graphs from prior failed runs, and refuse to run on a
   # dirty slate — a suite that cannot clear its fixtures cannot tell its own
   # writes from the last run's.
@@ -145,13 +150,7 @@ teardown() {
   [[ "$RES" =~ "APPLIES-LINE" ]]
 }
 
-@test "story is queryable via Athena search after write" {
-  TITLE="${TEST_SLUG_PREFIX} athena query"
-  run bash "$SCRIPT" "$TITLE" "marker-said-zzz" "marker-tells-zzz" "marker-applies-zzz"
-  [ "$status" -eq 0 ]
-
-  # Chorus search should find the content.
-  # (Index may be async — accept either hit now or a 200 from the endpoint.)
-  RES=$(curl -s "http://localhost:3340/api/chorus/search?q=marker-said-zzz&limit=5")
-  [[ "$RES" =~ \"results\" ]]
-}
+# #4332 — the "queryable via Athena search" case is gone. It wrote a story to
+# /pods and passed on any response containing "results", so it could not go
+# red and it left production rows behind. Search over stories is a job for
+# the search suites, against a fixture index.

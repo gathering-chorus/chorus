@@ -73,6 +73,13 @@ find_sentinel() {
 TEST_LABELS=(gate:code-passed gate:quality-passed gate:arch-passed gate:ops-passed gate:product-passed)
 
 setup() {
+  # #4332 — this suite labels and moves a real card on the live board (the
+  # pinned sentinel), then puts it back. That is a production write on
+  # purpose, so it is gated like the api quartet (#4279): the nightly, or a
+  # person who says so. A hand run inside a werk never touches the board.
+  if [ "${WERK_TEST_NIGHTLY:-}" != "1" ] && [ "${E2E_PROD_CONFIRM:-}" != "yes" ]; then
+    skip "not the nightly and no E2E_PROD_CONFIRM=yes — this suite moves a live board card (#4332)"
+  fi
   SENTINEL=$(find_sentinel) || true
   # #3915 — a board we cannot reach is UNMEASURABLE, not a failing gate-spine
   # bridge. Skip loudly with the reason instead of reporting the bridge broken.

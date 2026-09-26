@@ -15,10 +15,14 @@ load test_helper   # test_graph_name (run-scoped throwaway graph)
 # a name that was never created and the real graphs leaked into the live store.
 # Run-scoped instead: unique per run, identical across its processes.
 GRAPH="$(test_graph_name 4029)"
-Q="http://localhost:3030/pods/query"
-GSP="http://localhost:3030/pods/data"
+# #4332 — writes go to the test dataset, never /pods (lib/test-store.sh)
+. "$BATS_TEST_DIRNAME/lib/test-store.sh"
+test_store || TEST_STORE_DOWN="$TEST_STORE_WHY"
+Q="${FUSEKI_QUERY:-}"
+GSP="${FUSEKI_GSP:-}"
 
 setup() {
+  [ -z "${TEST_STORE_DOWN:-}" ] || skip "UNMEASURED: $TEST_STORE_DOWN"
   curl -s -o /dev/null --max-time 3 "http://localhost:3030/\$/ping" || skip "fuseki not running"
   source "$ROOT/platform/scripts/fuseki-auth.sh" 2>/dev/null || true
   TTL="$BATS_TEST_TMPDIR/shapes.ttl"

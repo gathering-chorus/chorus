@@ -35,8 +35,11 @@ setup_file() {
   # unknown production surface and said so (two membrane.violation events,
   # 2026-09-19 18:49). The membrane was right and the test was wrong.
   export FIXTURE_GRAPH="$(test_graph_name 4167)"
-  export UPD="${FUSEKI_UPDATE:-http://localhost:3030/pods/update}"
-  export QRY="${FUSEKI_QUERY:-http://localhost:3030/pods/query}"
+  # #4332 — the fixture goes to the test dataset, never /pods (lib/test-store.sh)
+  . "$BATS_TEST_DIRNAME/lib/test-store.sh"
+  test_store || skip "UNMEASURED: $TEST_STORE_WHY"
+  export UPD="$FUSEKI_UPDATE"
+  export QRY="$FUSEKI_QUERY"
 }
 
 teardown_file() {
@@ -100,7 +103,10 @@ _load_clean() {
 }
 
 @test "the report format is unchanged — graph-issue lines and one graph-summary" {
-  _load_clean
+  # #4332 — the dirty fixture, so an issue line exists to check. This case
+  # used to load the clean fixture and lean on /pods always having issues;
+  # in the test dataset the clean fixture is the whole store.
+  _load_dirty
   run env FUSEKI_QUERY="$QRY" "$BIN"
   echo "$output" | grep -qE "^graph-summary\|[0-9A-Z]+\|(clean|dirty|unreachable)$"
   echo "$output" | grep -qE "^graph-issue\|[a-z-]+\|"

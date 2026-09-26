@@ -55,15 +55,12 @@ CHORUS_API="http://localhost:3340"
 # 400 test 2 expects. Verified live before changing anything.
 _token() { bash "${CHORUS_ROOT}/platform/scripts/chorus-identity-token" kade 2>/dev/null | head -1; }
 
-@test "POST /api/doc-catalog/link creates a governs edge" {
-  local tok; tok=$(_token)
-  [ -n "$tok" ] || skip "no identity token available on this host"
-  http_code=$(curl -s --max-time "${FUSEKI_WRITE_TIMEOUT:-120}" -o /dev/null -w "%{http_code}" -X POST "$CHORUS_API/api/doc-catalog/link" \
-    -H "Authorization: Bearer $tok" \
-    -H "Content-Type: application/json" \
-    -d '{"href": "/gathering-docs/service-design-knowledge.html", "domain": "chorus", "relationship": "governs"}' 2>/dev/null)
-  [ "$http_code" = "201" ] || [ "$http_code" = "200" ] || [ "$http_code" = "409" ]
-}
+# #4332 — the "creates a governs edge" case is gone. It posted to the live
+# chorus-api, which writes platform/api/data/doc-catalog-links.json in the
+# checkout the api runs from (canonical), so every nightly edited a tracked
+# repo file. The write path is covered hermetically by
+# api/tests/handlers/doc-catalog.test.ts (linkDocToDomain). The refusal case
+# below writes nothing, so it stays.
 
 @test "POST /api/doc-catalog/link rejects invalid relationship" {
   local tok; tok=$(_token)

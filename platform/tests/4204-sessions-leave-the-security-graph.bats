@@ -42,7 +42,23 @@ post_session() {
   code="$(curl -s -o /dev/null -w '%{http_code}' -X POST -H 'Content-Type: application/json' \
           -H "@$h" --data-binary "@$body" "$API/v1/identity/sessions")"
   rm -f "$h" "$body"
+  # #4332 — remember what this test wrote, so teardown deletes it. Every run
+  # used to leave two probe Session rows in production: 48 had built up by
+  # 2026-09-26, half of all the Session rows the store held.
+  printf '%s %s-4204probe-%s\n' "$role" "$role" "$$" >> "${BATS_FILE_TMPDIR}/4204-created"
   printf '%s' "$code"
+}
+
+teardown() {
+  local role name h
+  [ -f "${BATS_FILE_TMPDIR}/4204-created" ] || return 0
+  while read -r role name; do
+    [ -n "$name" ] || continue
+    h="$(hdr_for "$role")"
+    curl -s -o /dev/null --max-time 10 -X DELETE -H "@$h" "$API/v1/identity/sessions/$name" || true
+    rm -f "$h"
+  done < "${BATS_FILE_TMPDIR}/4204-created"
+  : > "${BATS_FILE_TMPDIR}/4204-created"
 }
 
 post_principal() {
@@ -85,6 +101,13 @@ post_principal() {
   code="$(post_principal kade)"
   [ "$code" != "201" ]
   [ "$code" = "403" ]
+}
+
+@test "#4332 no probe Session row this run wrote is left behind" {
+  post_session wren >/dev/null
+  teardown
+  left="$(curl -s --max-time 10 "$API/v1/identity/sessions?limit=5000" | tr -d ' \n' | grep -o "wren-4204probe-$$" | head -1)"
+  [ -z "$left" ]
 }
 
 @test "NEGATIVE PROOF — no Session row is left in the security graph" {

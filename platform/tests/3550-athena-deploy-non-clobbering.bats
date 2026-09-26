@@ -26,9 +26,12 @@ ROOT="$(cd "$BATS_TEST_DIRNAME/../.." && pwd)"
 SCRIPT="$ROOT/platform/services/athena-deploy/target/release/athena-deploy"
 TTL="$ROOT/roles/kade/ontology/werk-domains.ttl"
 TEST_GRAPH="urn:chorus:ontology-test-bats-3550"
-Q="http://localhost:3030/pods/query"
-GSP="http://localhost:3030/pods/data"
-UPD="http://localhost:3030/pods/update"
+# #4332 — writes go to the test dataset, never /pods (lib/test-store.sh)
+. "$BATS_TEST_DIRNAME/lib/test-store.sh"
+test_store || TEST_STORE_DOWN="$TEST_STORE_WHY"
+Q="${FUSEKI_QUERY:-}"
+GSP="${FUSEKI_GSP:-}"
+UPD="${FUSEKI_UPDATE:-}"
 PFX='PREFIX chorus: <https://jeffbridwell.com/chorus#>'
 SHPFX='PREFIX sh: <http://www.w3.org/ns/shacl#>'
 
@@ -46,6 +49,7 @@ _drop_test_graph() {
 }
 
 setup_file() {
+  [ -z "${TEST_STORE_DOWN:-}" ] || skip "UNMEASURED: $TEST_STORE_DOWN"
   local left
   left="$(_drop_test_graph)"
   if [ "${left:-0}" != "0" ]; then
