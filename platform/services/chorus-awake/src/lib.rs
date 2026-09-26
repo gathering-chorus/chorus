@@ -38,6 +38,7 @@
 //!   CHORUS_TOKEN_BIN  AWAKE_CURL  CHORUS_LOG_BIN  CHORUS_IDENTITY_DIR  CHORUS_API_URL
 
 pub mod lifecycle;
+pub mod rows;
 
 use serde_json::Value;
 use std::env;
@@ -568,6 +569,8 @@ fn do_login(ctx: &Ctx, role: &str) -> Result<LoginState, ()> {
     let host_account = envd("USER", "unknown");
     let start_id = format!("{:x}", now_ms());
     let (session_name, body) = session_row(role, &login, &host_account, &start_id);
+    // #4328 — the row says which role it acts as and when it started
+    let body = rows::with_role_and_start(body, role, &iso_utc(now_ms() as u64 / 1000));
     // the row: POST through the security API with the token as a header FILE (0600), never an argv
     let role_id_dir = PathBuf::from(&ctx.identity_dir).join(role);
     let _ = fs::create_dir_all(&role_id_dir);
@@ -672,7 +675,9 @@ fn on(ctx: &Ctx, role: &str, attach: bool) -> Result<Came, (i32, String)> {
                 LoginState::Recorded { .. } if lifecycle::login_belongs_to(&st, l.pid) => st.with_pid(l.pid),
                 _ => {
                     println!("{} is running without a login; logging it in now", role);
-                    match login_after_services(ctx, role, ctx.service_wait) { Ok(s) => s.with_pid(l.pid), Err(()) => return Err((1, "login refused".into())) }
+                    let s = match login_after_services(ctx, role, ctx.service_wait) { Ok(s) => s.with_pid(l.pid), Err(()) => return Err((1, "login refused".into())) };
+                    if let LoginState::Recorded { session, .. } = &s { record_run(ctx, role, session, l, "pending"); }
+                    s
                 }
             };
             ctx.write_state(role, &st);
@@ -710,6 +715,8 @@ fn on(ctx: &Ctx, role: &str, attach: bool) -> Result<Came, (i32, String)> {
         let tail = fs::read_to_string(projects.join(format!("{}.jsonl", id))).unwrap_or_default();
         transcript_is_poisoned(&tail, window, threshold)
     }).unwrap_or(false);
+    // #4328 — the transcript this run continues, when known at start
+    let conversation = if poisoned { "pending".to_string() } else { dec.attach.clone().or_else(|| latest.clone()).unwrap_or_else(|| "pending".to_string()) };
     let (cmd, how) = if poisoned {
         let id = latest.clone().unwrap_or_default();
         eprintln!("chorus-awake: the last conversation ({}) ends in API refusals — not resuming it", id);
@@ -762,12 +769,170 @@ fn on(ctx: &Ctx, role: &str, attach: bool) -> Result<Came, (i32, String)> {
     };
     let st = st.with_pid(l.pid);
     ctx.write_state(role, &st);
+    if let LoginState::Recorded { session, .. } = &st { record_run(ctx, role, session, &l, &conversation); }
     if matches!(st, LoginState::Pending { .. }) { spawn_retry(role); }
     let word = lifecycle::login_word(&st, Some(l.pid));
     ctx.set_bar(role, word);
     println!("{}", proof_line(role, &l, word, &how));
     if attach { attach_to(ctx, role); }
     Ok(came_of(&st))
+}
+
+// ------------------------------------------------ the rows a login keeps (#4328)
+
+/// POST (name None) or PUT (name Some) one row through the generated API as
+/// the role, the token passed as a 0600 header FILE, never an argv. Returns
+/// (http code, reply body).
+fn api_send(ctx: &Ctx, role: &str, route: &str, name: Option<&str>, body: &Value, tag: &str) -> (String, String) {
+    let Ok(token) = sh(&ctx.token_bin, &[role]) else { return ("no-token".into(), String::new()) };
+    let dir = PathBuf::from(&ctx.identity_dir).join(role);
+    let _ = fs::create_dir_all(&dir);
+    let hdr = dir.join(format!("{}.hdr", tag));
+    let body_path = dir.join(format!("{}.body", tag));
+    if write_private(&hdr, &format!("Authorization: Bearer {}\n", token.trim())).and_then(|_| write_private(&body_path, &body.to_string())).is_err() {
+        return ("no-file".into(), String::new());
+    }
+    let (method, url) = match name { Some(n) => ("PUT", format!("{}/v1/{}/{}", ctx.api, route, n)), None => ("POST", format!("{}/v1/{}", ctx.api, route)) };
+    let hdr_arg = format!("@{}", hdr.display());
+    let body_arg = format!("@{}", body_path.display());
+    let answer = sh(&ctx.curl, &["-s", "-w", "\n%{http_code}", "--max-time", "10", "-X", method, "-H", "Content-Type: application/json", "-H", &hdr_arg, "--data-binary", &body_arg, &url]).unwrap_or_default();
+    let _ = fs::remove_file(&hdr);
+    match answer.trim_end().rsplit_once('\n') { Some((b, c)) => (c.trim().to_string(), b.to_string()), None => (answer.trim().to_string(), String::new()) }
+}
+
+fn ok_code(c: &str) -> bool { matches!(c, "200" | "201" | "204") }
+fn row_path(ctx: &Ctx, role: &str, kind: &str) -> PathBuf { PathBuf::from(&ctx.identity_dir).join(role).join(format!("{}.row.json", kind)) }
+fn read_row(ctx: &Ctx, role: &str, kind: &str) -> Option<Value> { fs::read_to_string(row_path(ctx, role, kind)).ok().and_then(|t| serde_json::from_str(&t).ok()) }
+fn save_row(ctx: &Ctx, role: &str, kind: &str, v: &Value) { let _ = write_private(&row_path(ctx, role, kind), &v.to_string()); }
+fn row_name(v: &Value) -> String { v.get("name").and_then(|n| n.as_str()).unwrap_or("").to_string() }
+
+/// Create one row and keep it (with the name the API stored) for later PUTs.
+fn create_row(ctx: &Ctx, role: &str, route: &str, kind: &str, mut body: Value) -> Option<String> {
+    let (code, reply) = api_send(ctx, role, route, None, &body, kind);
+    if !ok_code(&code) {
+        ctx.spine(&["session.row.failed", role, &format!("kind={}", kind), &format!("http={}", code)]);
+        eprintln!("chorus-awake: the {} row for {} was not written (HTTP {})", kind, role, code);
+        return None;
+    }
+    let name = stored_name(&reply).unwrap_or_else(|| row_name(&body));
+    body["name"] = Value::String(name.clone());
+    save_row(ctx, role, kind, &body);
+    Some(name)
+}
+
+/// Replace one saved row and keep the new copy.
+fn put_row(ctx: &Ctx, role: &str, route: &str, kind: &str, row: &Value) -> bool {
+    let name = row_name(row);
+    let (code, _) = api_send(ctx, role, route, Some(&name), row, kind);
+    if ok_code(&code) { save_row(ctx, role, kind, row); true } else {
+        ctx.spine(&["session.row.failed", role, &format!("kind={}", kind), &format!("row={}", name), &format!("http={}", code)]);
+        false
+    }
+}
+
+/// End the role's saved run (and its presence) if it is still live.
+fn end_run(ctx: &Ctx, role: &str, reason: &str) {
+    let Some(run) = read_row(ctx, role, "run") else { return };
+    if run.get("runEndedAt").and_then(|e| e.as_str()).map(|e| !e.is_empty()).unwrap_or(false) { return; }
+    if let Some(ended) = rows::ended_run(run, &iso_utc(now_ms() as u64 / 1000), reason) {
+        if put_row(ctx, role, "identity/sessionruns", "run", &ended) {
+            ctx.spine(&["session.run.ended", role, &format!("run={}", row_name(&ended)), &format!("reason={}", reason)]);
+        }
+    }
+    if let Some(p) = read_row(ctx, role, "presence").and_then(rows::gone_presence) { put_row(ctx, role, "identity/presences", "presence", &p); }
+}
+
+/// A recorded login's run: the previous live run ends as a restart, then this
+/// run, its presence and its boot context are written.
+fn record_run(ctx: &Ctx, role: &str, session: &str, l: &Live, conversation: &str) {
+    let previous = read_row(ctx, role, "run").filter(|r| r.get("runEndedAt").and_then(|e| e.as_str()).unwrap_or("").is_empty()).map(|r| row_name(&r));
+    if previous.is_some() { end_run(ctx, role, "restart"); }
+    let started = iso_utc(now_ms() as u64 / 1000);
+    let stamp = format!("{:x}", now_ms());
+    let run_body = rows::run_row(role, &slug(&format!("{}-run-{}", role, stamp)), session, conversation, &started, previous.as_deref());
+    let Some(run) = create_row(ctx, role, "identity/sessionruns", "run", run_body) else { return };
+    let host_account = envd("USER", "unknown");
+    let presence = create_row(ctx, role, "identity/presences", "presence", rows::presence_row(role, &slug(&format!("{}-presence-{}", role, stamp)), &run, &l.pane, &l.tty, &host_account));
+    let context = create_row(ctx, role, "memory/contexts", "context", rows::boot_context_row(role, &slug(&format!("{}-boot-{}", role, stamp)), &run, &started));
+    ctx.spine(&["session.run.recorded", role, &format!("session={}", session), &format!("run={}", run),
+        &format!("previous={}", previous.unwrap_or_default()), &format!("presence={}", presence.unwrap_or_default()), &format!("context={}", context.unwrap_or_default())]);
+}
+
+/// `seen <role>` — the UserPromptSubmit hook. Reads the turn from stdin and,
+/// when a write is due, hands it to a detached `seen-write` so the prompt is
+/// never held for a network call.
+fn seen(ctx: &Ctx, role: &str) -> i32 {
+    let mut input = String::new();
+    let _ = std::io::Read::read_to_string(&mut std::io::stdin(), &mut input);
+    let (conv, delivered) = rows::turn_facts(&input);
+    let at = PathBuf::from(&ctx.identity_dir).join(role).join("seen.at");
+    let now = now_ms() as u64 / 1000;
+    let last = fs::read_to_string(&at).ok().and_then(|t| t.trim().parse::<u64>().ok());
+    let every: u64 = envd("AWAKE_SEEN_EVERY", "60").parse().unwrap_or(60);
+    if !rows::seen_due(last, now, every, delivered) { return 0; }
+    let _ = fs::write(&at, now.to_string());
+    let flag = if delivered { "delivered" } else { "turn" };
+    if envd("AWAKE_SEEN_SYNC", "0") == "1" { return seen_write(ctx, role, &conv, delivered); }
+    if let Ok(me) = env::current_exe() {
+        let _ = Command::new(me).args(["seen-write", role, &conv, flag]).stdin(std::process::Stdio::null()).stdout(std::process::Stdio::null()).stderr(std::process::Stdio::null()).spawn();
+    }
+    let _ = flag;
+    0
+}
+
+fn seen_write(ctx: &Ctx, role: &str, conv: &str, delivered: bool) -> i32 {
+    // after a logout the saved row is closed; a late turn must not reopen it
+    if matches!(ctx.read_state(role), LoginState::Closed) { return 0; }
+    let now = iso_utc(now_ms() as u64 / 1000);
+    // a login from before #4328 carries no role or start: add them on its first turn
+    let session = read_row(ctx, role, "session").map(|s| {
+        if s.get("actsAs").and_then(|a| a.as_str()).unwrap_or("").is_empty() {
+            let started = s.get("issuedAt").and_then(|a| a.as_str()).unwrap_or(&now).to_string();
+            rows::with_role_and_start(s, role, &started)
+        } else { s }
+    });
+    if let Some(s) = session.clone().and_then(|s| rows::seen_session(s, &now)) { put_row(ctx, role, "identity/sessions", "session", &s); }
+    // ... and no run: this running session gets its run, presence and boot context now
+    let run_live = read_row(ctx, role, "run").map(|r| r.get("runEndedAt").and_then(|e| e.as_str()).unwrap_or("").is_empty()).unwrap_or(false);
+    if !run_live {
+        if let (LoginState::Recorded { session: sname, .. }, Some(l)) = (ctx.read_state(role), live_entries(&ctx.sessions_dir, role, &ctx.ps).into_iter().next()) {
+            record_run(ctx, role, &sname, &l, if conv.is_empty() { "pending" } else { conv });
+            return 0;
+        }
+    }
+    if delivered {
+        if let Some(p) = read_row(ctx, role, "presence").and_then(|p| rows::delivered_presence(p, &now)) { put_row(ctx, role, "identity/presences", "presence", &p); }
+    }
+    if let Some(r) = read_row(ctx, role, "run").and_then(|r| rows::with_conversation(r, conv)) { put_row(ctx, role, "identity/sessionruns", "run", &r); }
+    0
+}
+
+/// "store: session <name> open, acts as role-x, since <t>, last seen <t>".
+fn store_line(listing: &str, session: Option<&str>) -> Option<String> {
+    let session = session?;
+    let v: Value = serde_json::from_str(listing).ok()?;
+    let row = v.get("data")?.as_array()?.iter().find(|r| r.get("name").and_then(|n| n.as_str()) == Some(session))?;
+    let f = |k: &str| row.get(k).and_then(|x| x.as_str()).filter(|x| !x.is_empty()).unwrap_or("-").to_string();
+    Some(format!("store: session {} {}, acts as {}, since {}, last seen {}", session, f("sessionState"), f("actsAs"), f("startedAt"), f("lastSeenAt")))
+}
+
+/// `sweep` — close the sessions still reading open long after their token died.
+fn sweep(ctx: &Ctx) -> i32 {
+    let listing = sh(&ctx.curl, &["-s", "--max-time", "20", &format!("{}/v1/identity/sessions?limit=5000", ctx.api)]).unwrap_or_default();
+    let keep: Vec<String> = ROLES.iter().filter_map(|r| read_row(ctx, r, "session").map(|v| row_name(&v))).collect();
+    let now = iso_utc(now_ms() as u64 / 1000);
+    let (mut closed, mut failed) = (0, 0);
+    for row in rows::expired_open(&listing, &now, &keep) {
+        let owner = row.get("ownedBy").and_then(|o| o.as_str()).unwrap_or("").trim_start_matches("principal-").to_string();
+        let name = row_name(&row);
+        let Some(done) = lifecycle::closed_row(&row.to_string(), &name, &now) else { failed += 1; continue };
+        if !ROLES.contains(&owner.as_str()) { failed += 1; continue; }
+        let (code, _) = api_send(ctx, &owner, "identity/sessions", Some(&name), &done, "sweep");
+        if ok_code(&code) { closed += 1 } else { failed += 1; eprintln!("  {} not closed (HTTP {})", name, code) }
+    }
+    ctx.spine(&["session.sweep", &format!("closed={}", closed), &format!("failed={}", failed)]);
+    println!("sweep: {} expired session(s) closed, {} not closed", closed, failed);
+    if failed > 0 { 1 } else { 0 }
 }
 
 /// `relogin <role>` — the background retry a pending login starts. Ends when
@@ -786,6 +951,7 @@ fn relogin(ctx: &Ctx, role: &str) -> i32 {
                 Ok(LoginState::Recorded { session, .. }) => {
                     let st = LoginState::Recorded { session: session.clone(), pid: Some(l.pid) };
                     ctx.write_state(role, &st);
+                    record_run(ctx, role, &session, &l, "pending");
                     ctx.set_bar(role, "logged in");
                     ctx.spine(&["session.login.recovered", role, &format!("session={}", session), &format!("after_secs={}", start.elapsed().as_secs())]);
                     return 0;
@@ -843,6 +1009,8 @@ fn off(ctx: &Ctx, role: &str, from_exit: bool) -> i32 {
         if !lifecycle::exit_reason_logs_out(&reason) { return 0; }
     }
     let st = ctx.read_state(role);
+    // #4328 — the run ends (and its presence goes unreachable) before the session closes
+    end_run(ctx, role, if from_exit { "exit" } else { "logout" });
     let closed = match &st {
         LoginState::Recorded { session, .. } => Some((session.clone(), close_row(ctx, role, session))),
         _ => None,
@@ -866,11 +1034,14 @@ fn off(ctx: &Ctx, role: &str, from_exit: bool) -> i32 {
 }
 
 fn status(ctx: &Ctx) -> i32 {
+    let listing = sh(&ctx.curl, &["-s", "--max-time", "5", &format!("{}/v1/identity/sessions?limit=5000", ctx.api)]).unwrap_or_default();
     for role in ROLES {
         let live = live_entries(&ctx.sessions_dir, role, &ctx.ps);
         let pid = live.first().map(|l| l.pid);
         let answering = pid.is_some() && ctx.answered(role);
         println!("{}", lifecycle::status_line(role, pid, &ctx.read_state(role), answering));
+        // #4328 — and what the store says, which is what everyone else reads
+        if let Some(line) = store_line(&listing, read_row(ctx, role, "session").map(|v| row_name(&v)).as_deref()) { println!("       {}", line); }
         if live.len() >= 2 { println!("       {} live sessions: `chorus-principal off {}` ends both", live.len(), role); }
     }
     0
@@ -964,6 +1135,13 @@ pub fn run(args: &[String]) -> i32 {
             up(&mut ctx, args.iter().any(|a| a == "--windows"))
         }
         "relogin" => match role_arg(1) { Ok(r) => relogin(&ctx, &r), Err(c) => c },
+        // #4328 — the UserPromptSubmit hook, every turn; never refused, never slow
+        "seen" => match role_arg(1) { Ok(r) => seen(&ctx, &r), Err(c) => c },
+        "seen-write" => match role_arg(1) {
+            Ok(r) => seen_write(&ctx, &r, args.get(2).map(String::as_str).unwrap_or(""), args.get(3).map(String::as_str) == Some("delivered")),
+            Err(c) => c,
+        },
+        "sweep" => sweep(&ctx),
         "off" => match role_arg(1) {
             Ok(r) => {
                 if let Some(why) = caller_refusal(&r, "stop") { eprintln!("chorus-awake: REFUSED — {}", why); return 2; }

@@ -1,0 +1,48 @@
+#!/usr/bin/env bash
+# session-live-check <role> [<role>...] — #4328, Jeff 2026-09-26 08:29: "is ur session better now?"
+#
+# Reads the live store through athena-make and answers, per role, whether its
+# login is really recorded: an open session that acts as the role, one live run,
+# one presence, a boot context, and a last-seen under the window. Read only.
+# Exit 0 all green · 1 any check failed · 2 UNMEASURED (the API did not answer).
+set -u
+API="${CHORUS_ATHENA_URL:-http://localhost:3360}"
+WINDOW="${SESSION_SEEN_WINDOW_SECS:-300}"
+[ $# -gt 0 ] || set -- silas wren kade
+fetch() { curl -sf --max-time 10 "$API/v1/$1?limit=5000"; }
+S=$(fetch identity/sessions) && R=$(fetch identity/sessionruns) && P=$(fetch identity/presences) && C=$(fetch memory/contexts) \
+  || { echo "UNMEASURED: $API did not answer; nothing was checked"; exit 2; }
+python3 - "$WINDOW" "$@" <<PY
+import json, sys, datetime as dt
+S, R, P, C = (json.loads(x)["data"] for x in (r'''$S''', r'''$R''', r'''$P''', r'''$C'''))
+window = int(sys.argv[1]); roles = sys.argv[2:]
+now = dt.datetime.now(dt.timezone.utc)
+def t(s):
+    try: return dt.datetime.strptime(s, "%Y-%m-%dT%H:%M:%SZ").replace(tzinfo=dt.timezone.utc)
+    except Exception: return None
+bad = 0
+def line(ok, role, what):
+    global bad
+    bad += 0 if ok else 1
+    print(("PASS " if ok else "FAIL ") + role + ": " + what)
+for role in roles:
+    mine = [s for s in S if s.get("ownedBy") == "principal-" + role]
+    mine.sort(key=lambda s: s.get("startedAt") or s.get("issuedAt") or "")
+    if not mine: line(False, role, "no session row at all"); continue
+    s = mine[-1]; name = s.get("name", "")
+    line(s.get("sessionState") == "open", role, f"newest session {name} is open (state {s.get('sessionState')!r})")
+    line(s.get("actsAs") == "role-" + role, role, f"it acts as role-{role} (actsAs {s.get('actsAs')!r})")
+    line(bool(t(s.get("startedAt", ""))), role, f"it says when it started (startedAt {s.get('startedAt')!r})")
+    seen = t(s.get("lastSeenAt", ""))
+    age = int((now - seen).total_seconds()) if seen else None
+    line(age is not None and age <= window, role, f"last seen within {window}s (lastSeenAt {s.get('lastSeenAt')!r}, {age}s ago)")
+    live = [r for r in R if r.get("runOf") == name and not r.get("runEndedAt")]
+    line(len(live) == 1, role, f"exactly one live run ({len(live)})")
+    if len(live) == 1:
+        run = live[0]["name"]
+        pres = [p for p in P if p.get("presenceOf") == run]
+        line(len(pres) == 1, role, f"the run has one presence ({len(pres)})")
+        boot = [c for c in C if c.get("contextOf") == run and c.get("contextKind") == "boot"]
+        line(len(boot) == 1, role, f"the run has its boot context ({len(boot)})")
+sys.exit(1 if bad else 0)
+PY
