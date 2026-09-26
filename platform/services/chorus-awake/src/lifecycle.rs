@@ -161,7 +161,7 @@ pub fn exit_reason_logs_out(reason: &str) -> bool { matches!(reason, "prompt_inp
 pub fn closed_row(source: &str, session: &str, ended_at: &str) -> Option<Value> {
     let v: Value = serde_json::from_str(source).ok()?;
     let named = |r: &Value| r.get("name").and_then(|n| n.as_str()) == Some(session);
-    let mut row = match v.get("data") {
+    let row = match v.get("data") {
         Some(Value::Array(rows)) => rows.iter().find(|r| named(r)).cloned()?,
         Some(d) if named(d) => d.clone(),
         _ if named(&v) => v.clone(),

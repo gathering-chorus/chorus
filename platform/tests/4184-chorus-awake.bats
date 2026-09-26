@@ -104,7 +104,10 @@ reg() { # reg <pid> [pane]
   printf '%s' "$output" | grep -qF "pane %5  logged in  via claude -c"
 }
 
-@test "NEGATIVE PROOF — a detached background conversation is ATTACHED, never restarted with -c" {
+# #4337 changed HOW the detached conversation is picked up (attach ran it inside the
+# daemon's warm spare, which carried another role's env on 09-26); the promise this
+# test guards — the same conversation, never a fresh -c — is unchanged.
+@test "NEGATIVE PROOF — a detached background conversation is RESUMED in the pane, never restarted with -c" {
   cat > "$T/agents.json" <<EOS
 [{"pid":"87866","id":"79906dc2","cwd":"$T/roles/kade","kind":"background","startedAt":"$(( $(date +%s) * 1000 - 60000 ))","sessionId":"79906dc2-1681","name":"test-verification-workflow","state":"working"}]
 EOS
@@ -112,9 +115,11 @@ EOS
   ( sleep 0.3; reg 88 %2 ) &
   run "$SCRIPT" kade
   [ "$status" -eq 0 ]
-  grep -q -- "claude attach 79906dc2" "$T/tmux.log"
+  grep -q -- "claude --resume 79906dc2" "$T/tmux.log"
+  grep -q -- "stop 79906dc2" "$T/claude.log"
+  ! grep -q -- "claude attach" "$T/tmux.log"
   ! grep -q -- "claude -c" "$T/tmux.log"
-  [[ "$output" == *"via attach 79906dc2"* ]]
+  printf '%s' "$output" | grep -qF "resumed 79906dc2 in its own pane"
 }
 
 @test "registration never appears → exit 1 and the line says registered NO" {

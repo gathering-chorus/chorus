@@ -179,3 +179,9 @@ mod tests {
     use super::*;
     #[test] fn hour_before_crosses_midnight() { assert_eq!(hour_before("2026-09-26T00:30:00Z"), "2026-09-25T23:30:00Z"); assert_eq!(hour_before("2026-03-01T00:10:00Z"), "2026-02-28T23:10:00Z"); }
 }
+
+/// One variable from `ps eww` output ("... KEY=value ..."). None when absent.
+pub fn env_value(ps_eww: &str, key: &str) -> Option<String> {
+    let want = format!("{}=", key);
+    ps_eww.split_whitespace().find(|w| w.starts_with(&want)).map(|w| w[want.len()..].to_string()).filter(|v| !v.is_empty())
+}
