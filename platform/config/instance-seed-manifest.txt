@@ -74,5 +74,8 @@ service-design:designing/data/service-design-instances.ttl
 emit-contract:designing/data/emit-contract-instances.ttl
 event-category:designing/data/event-category-instances.ttl
 named-graph:designing/data/named-graph-instances.ttl
+# #4324 — the ADRs the governance checks are bound to. Seeded BEFORE them: the
+# seed checks each group's edges against the store plus its own batch only.
+a-d-r:designing/data/adr-instances.ttl
 governance-check:designing/data/governance-check-instances.ttl
 api-surface:designing/data/api-surface-instances.ttl

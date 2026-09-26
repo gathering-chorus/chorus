@@ -25,3 +25,33 @@ property:prop-role-silas-nudge-word-cap
 property:prop-role-silas-response-word-cap
 property:prop-role-wren-nudge-word-cap
 property:prop-role-wren-response-word-cap
+# #4324 — the 28 API surfaces (security graph, 30 live rows) were named surface-* before
+# api-surface took the <kind>-slug convention; renaming would duplicate them and break edges.
+api-surface:surface-alert-write
+api-surface:surface-cards-writes
+api-surface:surface-catalog-writes
+api-surface:surface-delete-api-athena-subdomains
+api-surface:surface-discover-code-write
+api-surface:surface-discover-tests-write
+api-surface:surface-discover-writes
+api-surface:surface-doc-catalog-link-write
+api-surface:surface-embed-write
+api-surface:surface-icd-put-writes
+api-surface:surface-icd-writes
+api-surface:surface-index-writes
+api-surface:surface-open-write
+api-surface:surface-post-api-athena-reload
+api-surface:surface-post-api-athena-subdomains
+api-surface:surface-post-api-chorus-index
+api-surface:surface-post-api-chorus-trace
+api-surface:surface-post-api-doc-catalog-add
+api-surface:surface-principles-create
+api-surface:surface-principles-delete
+api-surface:surface-principles-update
+api-surface:surface-pulse-write
+api-surface:surface-put-api-athena-subdomains
+api-surface:surface-rca-write
+api-surface:surface-role-state-write
+api-surface:surface-spine-event-write
+api-surface:surface-validate-write
+api-surface:surface-voice-write
