@@ -503,6 +503,8 @@ fn read_registry(ctx: &Ctx) -> (HashMap<String, String>, Vec<(String, String)>) 
 // ───────────────────────── phase 2: the runner, streamed ─────────────────────────
 
 struct LaneResult {
+    /// #4318 — how often the lane waited on the load gate
+    gate_holds: usize,
     rows: Vec<SuiteRow>,
     rc: i32,
     /// #4247 — (filePath, testName, result) for every case the lane reported.
@@ -534,7 +536,7 @@ fn run_runner(ctx: &Ctx, box_over_load: bool) -> LaneResult {
         Err(e) => {
             let row = SuiteRow::new("runner", "werk-test-nightly", "silas", "fail", &format!("0 pass, 1 fail (runner could not start: {} — runner lanes DID NOT RUN, #3920/#3974)", e));
             ctx.append_log(&row.line());
-            return LaneResult { rows: vec![row], rc: 127, cases: Vec::new(), stored: None, whys: Vec::new() };
+            return LaneResult { gate_holds: 0, rows: vec![row], rc: 127, cases: Vec::new(), stored: None, whys: Vec::new() };
         }
     };
     let stdout = child.stdout.take().unwrap();
@@ -619,7 +621,7 @@ fn run_runner(ctx: &Ctx, box_over_load: bool) -> LaneResult {
         let slice = unit_slice(&lane_text, unit).join("\n");
         ctx.write_fail_log(r, &format!("{}\n# full lane output: {}\n", slice, lane_path));
     }
-    LaneResult { rows, rc, cases, stored, whys }
+    LaneResult { gate_holds: gate_holds(&lane_text), rows, rc, cases, stored, whys }
 }
 
 // ───────────────────────── phase 3: the census, from the run's own record ─────────────────────────
@@ -894,7 +896,7 @@ fn run_locked(ctx: &mut Ctx, _args: &[String]) -> Result<i32, String> {
         // #4292 — bdd is no longer one summary row here: each feature runs
         // in the runner's file-suite lane and stores one result per scenario.
         push(ctx, leg_daemons(ctx, &daemons_at_start, &sample_daemons()), &mut rows);
-        push(ctx, leg_duration(run_clock.elapsed().as_secs()), &mut rows);
+        push(ctx, leg_duration(run_clock.elapsed().as_secs(), lane.gate_holds), &mut rows);
     }
     // #4247 — the census from the run's own record, in one unit, before the
     // completion line so a reader sees the tally with the run it belongs to.
@@ -1097,6 +1099,37 @@ pub fn daemon_restarts(
 /// Run duration against its budget. kind=perf, so the page folds a fail to
 /// "slow (speed, not breakage)" (#4136) — over budget is a perf red, not a
 /// product red.
+/// #4318 — the load-gate waits a lane reported: each pool's heartbeat carries
+/// its running count (`-- pool heartbeat: 82/209 done, 2 in flight, 432 gate
+/// hold(s) --`), so the run's total is the sum of each pool's last count.
+pub fn gate_holds(lane_text: &str) -> usize {
+    let mut per_pool: std::collections::HashMap<String, usize> = std::collections::HashMap::new();
+    for l in lane_text.lines() {
+        let Some(rest) = l.trim().strip_prefix("-- pool heartbeat: ") else { continue };
+        let pool = rest.split(" done").next().and_then(|d| d.split('/').nth(1)).unwrap_or("").to_string();
+        let holds = rest
+            .split(", ")
+            .find_map(|seg| seg.strip_suffix(" gate hold(s) --").and_then(|n| n.trim().parse::<usize>().ok()));
+        if let Some(h) = holds {
+            let e = per_pool.entry(pool).or_insert(0);
+            *e = (*e).max(h);
+        }
+    }
+    per_pool.values().sum()
+}
+
+/// The duration verdict, and why a long run was long when the run knows:
+/// a run that waited on the load gate says so, in words the readout files
+/// under the machine's condition rather than a product break.
+pub fn duration_verdict_with_load(secs: u64, budget_secs: u64, holds: usize) -> (&'static str, String) {
+    let (status, summary) = duration_verdict(secs, budget_secs);
+    if status == "fail" && holds > 0 {
+        let s = summary.trim_end_matches(')').to_string();
+        return (status, format!("{}; {} load-gate waits — the box was under load)", s, holds));
+    }
+    (status, summary)
+}
+
 pub fn duration_verdict(secs: u64, budget_secs: u64) -> (&'static str, String) {
     if secs <= budget_secs {
         ("pass", format!("1 pass, 0 fail (run took {}s, budget {}s)", secs, budget_secs))
@@ -1253,16 +1286,52 @@ fn crawler_validate_verdict(rc: i32, out: &str) -> (&'static str, String) {
     }
 }
 
-fn leg_duration(secs: u64) -> SuiteRow {
+fn leg_duration(secs: u64, holds: usize) -> SuiteRow {
     // #4277 — the budget is a regression guard, so it sits above the measured
     // run, not at a wish: the two full runs of 2026-09-23 took 67 and 71 min
     // (4033s, 4252s) and the first budget (3600s) went red on a normal night.
     let budget: u64 = env_or("NIGHTLY_RUN_BUDGET_S", "5400").parse().unwrap_or(5400);
-    let (status, summary) = duration_verdict(secs, budget);
+    let (status, summary) = duration_verdict_with_load(secs, budget, holds);
     SuiteRow::new("perf", "nightly:duration", "kade", status, &summary)
 }
 
 
+
+#[cfg(test)]
+mod duration_4318 {
+    use super::*;
+
+    const LANE: &str = "-- pool heartbeat: 8/29 done, 2 in flight, 5 gate hold(s) --\n\
+-- pool heartbeat: 12/29 done, 2 in flight, 140 gate hold(s) --\n\
+x\n\
+-- pool heartbeat: 82/209 done, 2 in flight, 432 gate hold(s) --\n\
+-- pool heartbeat: 0/1 done, 1 in flight, 0 gate hold(s) --\n";
+
+    #[test]
+    fn holds_are_each_pools_last_count_summed() {
+        assert_eq!(gate_holds(LANE), 140 + 432);
+        assert_eq!(gate_holds("no heartbeats here"), 0);
+    }
+
+    #[test]
+    fn a_long_run_that_waited_on_load_says_so() {
+        let (st, s) = duration_verdict_with_load(10140, 5400, 572);
+        assert_eq!(st, "fail", "still red: the run was over budget");
+        assert!(s.contains("572 load-gate waits — the box was under load"), "{s}");
+        assert!(s.ends_with(')'), "{s}");
+    }
+
+    /// NEGATIVE PROOF — a long run with no waits is not blamed on load, and a
+    /// run inside budget carries no load note.
+    #[test]
+    fn no_waits_no_load_story() {
+        let (_, s) = duration_verdict_with_load(10140, 5400, 0);
+        assert!(!s.contains("under load"), "{s}");
+        let (st, s) = duration_verdict_with_load(3000, 5400, 99);
+        assert_eq!(st, "pass");
+        assert!(!s.contains("under load"), "{s}");
+    }
+}
 
 #[cfg(test)]
 mod lanes_4278 {

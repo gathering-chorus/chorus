@@ -35,12 +35,18 @@ setup() {
 @test "run_jest selects the hermetic project only when the integration tier is OFF (#4139)" {
   # #4111 passed --selectProjects hermetic unconditionally; #4139 made the flag
   # decide: RUN_INTEGRATION=true → bare jest (both projects), else hermetic only.
+  # #4160 staged the lanes: the runner calls jest_project_args_for(…, project),
+  # which names a project for a staged run and otherwise falls through to the
+  # #4139 rule. (#4318: this grep still named the pre-#4160 call and went red.)
   LIB="$ROOT/platform/services/werk-test/src/lib.rs"
-  grep -q 'werk_test::jest_project_args(jest_has_hermetic_project(&pkg_dir), run_integration)' "$RUNNER"
+  grep -q 'werk_test::jest_project_args_for(jest_has_hermetic_project(&pkg_dir), run_integration, project)' "$RUNNER"
   grep -q 'std::env::var("RUN_INTEGRATION")' "$RUNNER"
-  run bash -c "sed -n '/^pub fn jest_project_args/,/^}/p' '$LIB'"
-  [[ "$output" == *'has_hermetic_project && !run_integration'* ]]
-  [[ "$output" == *'"--selectProjects"'* ]]
+  # the no-project branch is the #4139 rule, unchanged
+  sed -n '/^pub fn jest_project_args_for/,/^}/p' "$LIB" | grep -q '_ => jest_project_args(has_hermetic_project, run_integration)'
+  # simple commands, not [[ ]]: a failing [[ ]] that is not the last line
+  # passes under bash 3.2 (the 09-16 count was 91 suites)
+  sed -n '/^pub fn jest_project_args(/,/^}/p' "$LIB" | grep -q 'has_hermetic_project && !run_integration'
+  sed -n '/^pub fn jest_project_args(/,/^}/p' "$LIB" | grep -q '"--selectProjects"'
 }
 
 @test "NEGATIVE PROOF: with the tier ON the runner passes no --selectProjects (the #4111 state)" {

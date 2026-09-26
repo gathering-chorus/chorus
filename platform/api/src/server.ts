@@ -43,7 +43,7 @@ import { vocabularyHandler } from './handlers/vocabulary';
 import { renderNightlyPage, suiteType, fetchFailingCases, type FetchLike } from './handlers/nightly-report';
 import { loadRunsFromGraph, fusekiCsv } from './handlers/nightly-graph';
 import { readRecords, renderCrawlerValidatePage, validateDir } from './handlers/crawler-validate';
-import { findRun, buildReadout, renderReadoutText, type NightlyRunRecord } from './handlers/nightly-readout';
+import { findRun, buildReadout, renderReadoutText, previousFinished, type NightlyRunRecord } from './handlers/nightly-readout';
 import { fetchLoomAnalytics, LoomCardRow } from './handlers/loom-analytics';
 
 /** Extract a string message from an unknown error. #2463 wave 1: replaces `catch (err: any)` + `err.message`. */
@@ -550,8 +550,7 @@ const nightlyRuns = (): Promise<NightlyRunRecord[] | null> => loadRunsFromGraph(
 function readoutFor(runs: NightlyRunRecord[], runId: string) {
   const run = findRun(runs, runId);
   if (!run) return null;
-  const idx = runs.indexOf(run);
-  return { runs, run, readout: buildReadout(run, idx > 0 ? runs[idx - 1] : null, runs) };
+  return { runs, run, readout: buildReadout(run, previousFinished(runs, run), runs) };
 }
 
 app.get('/api/chorus/nightly/runs', async (_req: Request, res: Response) => {

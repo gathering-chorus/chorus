@@ -7,7 +7,7 @@
 // TestSuiteRun + PipelineRun rows the runner now writes for it) must render the
 // same page and the same readout. The graph is the only source the routes use.
 import { runsFromGraph, loadRunsFromGraph, csvRecords, type CsvQuery } from '../src/handlers/nightly-graph';
-import { parseAllRuns, buildReadout, renderReadoutText } from '../src/handlers/nightly-readout';
+import { parseAllRuns, buildReadout, renderReadoutText, previousFinished } from '../src/handlers/nightly-readout';
 import { renderNightlyPage } from '../src/handlers/nightly-report';
 import { graphFromLog, SUITE_HEAD, RECORD_HEAD } from './lib/nightly-graph-fixture';
 
@@ -109,5 +109,31 @@ describe('#4156 the store is the only source', () => {
   it('summaries with commas and quotes survive the CSV', () => {
     const csv = `${SUITE_HEAD}\nr,1,npm,platform/api,kade,fail,"Tests: 2 failed, 198 passed (""x"")",1\n`;
     expect(csvRecords(csv)[0].sum).toBe('Tests: 2 failed, 198 passed ("x")');
+  });
+});
+
+describe('#4318 the delta is taken against the last finished run', () => {
+  const STOPPED = LOG.replace('RUN|start|2026-09-25T15:37:59|pid=2',
+    'RUN|start|2026-09-25T15:00:00|pid=9\nSUITE|lint|/chorus|kade|pass|1 pass, 0 fail (lint:ratchet clean)\nRUN|stopped|2026-09-25T15:10:00|signal=TERM pid=9\nRUN|start|2026-09-25T15:37:59|pid=2');
+  const runs = parseAllRuns(STOPPED);
+  const latest = runs[runs.length - 1];
+  it('skips a stopped run between the two finished ones', () => {
+    expect(runs.map((r) => r.completed)).toEqual([true, false, true]);
+    expect(previousFinished(runs, latest)?.runId).toBe('2026-09-24T03:00:00');
+    const r = buildReadout(latest, previousFinished(runs, latest), runs);
+    expect(r.changes.previousRunId).toBe('2026-09-24T03:00:00');
+    // chorus-principal was red on 09-24 and passes now: fixed, not "gone"
+    expect(r.changes.fixed.map((x) => x.suite)).toEqual(['platform/services/chorus-principal']);
+  });
+  // NEGATIVE PROOF: against the stopped run (the old rule, runs[idx - 1]) the
+  // bats red reads as new and the chorus-principal fix is invisible
+  it('the old rule compares against the stopped run and misreports', () => {
+    const r = buildReadout(latest, runs[runs.length - 2], runs);
+    expect(r.changes.previousRunId).toBe('2026-09-25T15:00:00');
+    expect(r.changes.fixed).toEqual([]);
+    expect(r.changes.newlyRed.map((x) => x.suite)).toContain('platform/tests/a.bats');
+  });
+  it('no finished run before it: the delta is unknown, not zero', () => {
+    expect(previousFinished(runs, runs[0])).toBeNull();
   });
 });

@@ -87,6 +87,15 @@ export function findRun(runs: NightlyRunRecord[], id: string): NightlyRunRecord 
   return runs.find((r) => r.runId === id) ?? null;
 }
 
+/** #4318 — the run a delta is taken against: the newest FINISHED run before
+ *  this one. A stopped or cut-off run holds a fraction of the suites, so
+ *  comparing against it called 12 reds "new" on 2026-09-25 that were only
+ *  absent from a run stopped at 68 of 444 suites. null = no finished run
+ *  before it (the delta is then unknown, never zero). */
+export function previousFinished(runs: NightlyRunRecord[], run: NightlyRunRecord): NightlyRunRecord | null {
+  return runs.slice(0, Math.max(0, runs.indexOf(run))).reverse().find((r) => r.completed) ?? null;
+}
+
 /** Failure text that names the machine's condition, not the product. */
 const MACHINE_WORDS = /latency|timeout|timed out|under load|ECONNREFUSED|no live stack|stack-down|stack down|load \d|wedged/i;
 /** Summaries where the runner took no reading at all. */
