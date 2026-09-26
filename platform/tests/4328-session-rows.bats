@@ -291,3 +291,12 @@ EOS
   newrun=$(python3 -c 'import json,sys;print(json.load(open(sys.argv[1]))["name"])' "$T/identity/silas/run.row.json")
   p=$(cat "$T"/bodies/*PUT-memory_conversations_* | tail -1); has "$p" "\"conversationOf\":\"$newrun\""
 }
+
+@test "#4343 a login saved with actsAs role-wren is sent back as wren, so the update is not refused" {
+  running wren 5151
+  printf '{"state":"recorded","session":"wren-old","pid":5151}' > "$T/identity/wren/login.json"
+  printf '{"name":"wren-old","tokenId":"j","ownedBy":"principal-wren","sessionState":"open","issuedAt":"2026-09-26T15:06:25Z","actsAs":"role-wren","startedAt":"2026-09-26T15:06:25Z"}' > "$T/identity/wren/session.row.json"
+  echo '{"session_id":"c","prompt":"hi"}' | AWAKE_SEEN_SYNC=1 "$SCRIPT" seen wren
+  s=$(body PUT identity_sessions_wren-old); has "$s" '"actsAs":"wren"'
+  test -z "$(printf '%s' "$s" | grep -F '"actsAs":"role-wren"' || true)"
+}
