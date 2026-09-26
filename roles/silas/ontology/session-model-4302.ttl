@@ -208,7 +208,7 @@ chorus:SessionRunShape a sh:NodeShape ;
     sh:sparql chorus:LiveRunHasOnePresence , chorus:EndedRunSaysWhy , chorus:StampedByTheDal .
 
 chorus:SessionRunShape-label a sh:PropertyShape ; sh:path rdfs:label ; sh:minCount 1 .
-chorus:SessionRunShape-comment a sh:PropertyShape ; sh:path rdfs:comment ; sh:minCount 1 .
+chorus:SessionRunShape-comment a sh:PropertyShape ; sh:path chorus:comment ; sh:minCount 1 .
 chorus:SessionRunShape-ownedBy a sh:PropertyShape ;
     sh:path chorus:ownedBy ; sh:minCount 1 ; sh:maxCount 1 ; sh:class chorus:Principal .
 chorus:SessionRunShape-runOf a sh:PropertyShape ;
@@ -259,7 +259,7 @@ chorus:PresenceShape a sh:NodeShape ;
     sh:sparql chorus:ReachableNeedsADelivery , chorus:StampedByTheDal .
 
 chorus:PresenceShape-label a sh:PropertyShape ; sh:path rdfs:label ; sh:minCount 1 .
-chorus:PresenceShape-comment a sh:PropertyShape ; sh:path rdfs:comment ; sh:minCount 1 .
+chorus:PresenceShape-comment a sh:PropertyShape ; sh:path chorus:comment ; sh:minCount 1 .
 chorus:PresenceShape-ownedBy a sh:PropertyShape ;
     sh:path chorus:ownedBy ; sh:minCount 1 ; sh:maxCount 1 ; sh:class chorus:Principal .
 chorus:PresenceShape-presenceOf a sh:PropertyShape ;
@@ -352,8 +352,7 @@ chorus:channelKind a owl:DatatypeProperty ;
 
 chorus:overChannel a owl:ObjectProperty ;
     rdfs:label "over channel" ;
-    rdfs:comment "The channel a message went over. #4323." ;
-    rdfs:domain chorus:Message ;
+    rdfs:comment "The channel a message, or one delivery of it, went over. rdfs:domain dropped by #4340 so Message and Delivery share it. #4323." ;
     rdfs:range chorus:Channel .
 
 # --- Context ------------------------------------------------------------------
@@ -366,7 +365,7 @@ chorus:ContextShape a sh:NodeShape ;
     sh:sparql chorus:StampedByTheDal .
 
 chorus:ContextShape-label a sh:PropertyShape ; sh:path rdfs:label ; sh:minCount 1 .
-chorus:ContextShape-comment a sh:PropertyShape ; sh:path rdfs:comment ; sh:minCount 1 .
+chorus:ContextShape-comment a sh:PropertyShape ; sh:path chorus:comment ; sh:minCount 1 .
 chorus:ContextShape-ownedBy a sh:PropertyShape ;
     sh:path chorus:ownedBy ; sh:minCount 1 ; sh:maxCount 1 ; sh:class chorus:Principal .
 chorus:ContextShape-contextOf a sh:PropertyShape ;
@@ -385,7 +384,7 @@ chorus:ConversationShape a sh:NodeShape ;
     sh:sparql chorus:StampedByTheDal .
 
 chorus:ConversationShape-label a sh:PropertyShape ; sh:path rdfs:label ; sh:minCount 1 .
-chorus:ConversationShape-comment a sh:PropertyShape ; sh:path rdfs:comment ; sh:minCount 1 .
+chorus:ConversationShape-comment a sh:PropertyShape ; sh:path chorus:comment ; sh:minCount 1 .
 chorus:ConversationShape-ownedBy a sh:PropertyShape ;
     sh:path chorus:ownedBy ; sh:minCount 1 ; sh:maxCount 1 ; sh:class chorus:Principal .
 chorus:ConversationShape-conversationOf a sh:PropertyShape ;
@@ -403,14 +402,152 @@ chorus:ChannelShape a sh:NodeShape ;
     sh:sparql chorus:StampedByTheDal .
 
 chorus:ChannelShape-label a sh:PropertyShape ; sh:path rdfs:label ; sh:minCount 1 .
-chorus:ChannelShape-comment a sh:PropertyShape ; sh:path rdfs:comment ; sh:minCount 1 .
+chorus:ChannelShape-comment a sh:PropertyShape ; sh:path chorus:comment ; sh:minCount 1 .
 chorus:ChannelShape-ownedBy a sh:PropertyShape ;
     sh:path chorus:ownedBy ; sh:minCount 1 ; sh:maxCount 1 ; sh:class chorus:Principal .
 chorus:ChannelShape-channelKind a sh:PropertyShape ;
     sh:path chorus:channelKind ; sh:minCount 1 ; sh:maxCount 1 ; sh:datatype xsd:string ;
     sh:pattern "^(terminal|nudge|clearing)$" .
 
-# Message grows one optional edge (additive; existing rows carry none).
-chorus:MessageShape sh:property chorus:MessageShape-overChannel .
+
+# =============================================================================
+# #4340 — messages in the model. Jeff 2026-09-26 12:44: "refine on the channel
+# piece and how that impacts messages and even a migration to buzz"; 13:11
+# option A: the address lives on Presence (pane, tty), the durable key on the
+# Principal (KeyRegistryEntry), no Endpoint class. Interview with Wren and Kade
+# 12:45-12:47; sender rules agreed with Wren 13:16.
+#
+#   Message   what was said, once: who sent it (a Principal, optional until the
+#             service principals exist; senderName keeps the raw source value
+#             as provenance), to whom, in which session, of which kind, when.
+#   Delivery  one attempt to land it: at which presence, over which channel,
+#             with what outcome. A message fans out; each attempt is a row, so a
+#             failed or cut-off delivery is a row that says so, never silence.
+#   Channel   the transport kind (terminal, nudge, clearing; buzz later), a few
+#             rows. A Presence says which channels reach it.
+#
+# Edges point up again: a Delivery points at its Message and its Presence.
+# Rows come from messages.db (pulse owns delivery; this card does not move it)
+# through a projector, so the store answers what the delivery table knows.
+# =============================================================================
+
+chorus:messages chorus:definesVocabulary chorus:Delivery .
+
+chorus:Delivery a owl:Class ;
+    rdfs:label "Delivery" ;
+    rdfs:comment "One attempt to land a Message at a Presence over a Channel, and how it went: delivered, failed, queued, pending, or truncated (it arrived shorter than it was sent). #4340." .
+
+chorus:deliveryOf a owl:ObjectProperty ;
+    rdfs:label "delivery of" ; rdfs:comment "The message this attempt carried. #4340." ;
+    rdfs:domain chorus:Delivery ; rdfs:range chorus:Message .
+chorus:deliveredTo a owl:ObjectProperty ;
+    rdfs:label "delivered to" ; rdfs:comment "The presence this attempt aimed at: where the message landed, or failed to. Absent when no presence was live. #4340." ;
+    rdfs:domain chorus:Delivery ; rdfs:range chorus:Presence .
+chorus:deliveryOutcome a owl:DatatypeProperty ;
+    rdfs:label "delivery outcome" ; rdfs:comment "delivered | failed | queued | pending | truncated. #4340." ;
+    rdfs:domain chorus:Delivery ; rdfs:range xsd:string .
+chorus:deliveredAt a owl:DatatypeProperty ;
+    rdfs:label "delivered at" ; rdfs:comment "When the attempt resolved, ISO-8601 UTC. #4340." ;
+    rdfs:domain chorus:Delivery ; rdfs:range xsd:string .
+chorus:deliveryError a owl:DatatypeProperty ;
+    rdfs:label "delivery error" ; rdfs:comment "Why an attempt failed, in the deliverer's words. #4340." ;
+    rdfs:domain chorus:Delivery ; rdfs:range xsd:string .
+chorus:sentInSession a owl:ObjectProperty ;
+    rdfs:label "sent in session" ; rdfs:comment "The session the sender was in: who AND which login (it carries actsAs). #4340." ;
+    rdfs:domain chorus:Message ; rdfs:range chorus:Session .
+chorus:senderName a owl:DatatypeProperty ;
+    rdfs:label "sender name" ; rdfs:comment "The sender exactly as the source recorded it (wren, system, chorus-mcp, unknown): provenance, not identity. The identity is sentBy. 'unknown' is a defect to count, not a sender (Wren 13:16). #4340." ;
+    rdfs:domain chorus:Message ; rdfs:range xsd:string .
+chorus:messageBody a owl:DatatypeProperty ;
+    rdfs:label "message body" ; rdfs:comment "What was said, as sent. #4340." ;
+    rdfs:domain chorus:Message ; rdfs:range xsd:string .
+chorus:messageKind a owl:DatatypeProperty ;
+    rdfs:label "message kind" ; rdfs:comment "nudge | chat | jeff-input | board-event | role-state: the kinds messages.db holds. #4340." ;
+    rdfs:domain chorus:Message ; rdfs:range xsd:string .
+chorus:sentAt a owl:DatatypeProperty ;
+    rdfs:label "sent at" ; rdfs:comment "When the message was sent, ISO-8601 UTC. #4340." ;
+    rdfs:domain chorus:Message ; rdfs:range xsd:string .
+chorus:sourceId a owl:DatatypeProperty ;
+    rdfs:label "source id" ; rdfs:comment "The row id in the system the record was projected from (messages.db id). Makes the projection idempotent. #4340." ;
+    rdfs:range xsd:string .
+chorus:reachableOver a owl:ObjectProperty ;
+    rdfs:label "reachable over" ; rdfs:comment "A channel that reaches this presence. The address on it is the presence's own pane and tty (option A). #4340." ;
+    rdfs:domain chorus:Presence ; rdfs:range chorus:Channel .
+
+# --- Message (replaces the retired blank-node MessageShape) -------------------
+
+chorus:MessageRecordShape a sh:NodeShape ;
+    sh:targetClass chorus:Message ;
+    chorus:instancesGraph "urn:chorus:domains:messages" ;
+    sh:property chorus:MessageRecordShape-label , chorus:MessageRecordShape-ownedBy , chorus:MessageRecordShape-sentBy ,
+                chorus:MessageRecordShape-sentTo , chorus:MessageRecordShape-senderName , chorus:MessageRecordShape-sentInSession ,
+                chorus:MessageRecordShape-messageBody , chorus:MessageRecordShape-messageKind , chorus:MessageRecordShape-sentAt ,
+                chorus:MessageRecordShape-sourceId , chorus:MessageShape-overChannel ;
+    sh:sparql chorus:StampedByTheDal .
+
+chorus:MessageRecordShape-label a sh:PropertyShape ; sh:path rdfs:label ; sh:minCount 1 .
+chorus:MessageRecordShape-ownedBy a sh:PropertyShape ;
+    sh:path chorus:ownedBy ; sh:minCount 1 ; sh:maxCount 1 ; sh:class chorus:Principal .
+chorus:MessageRecordShape-sentBy a sh:PropertyShape ;
+    sh:path chorus:sentBy ; sh:maxCount 1 ; sh:class chorus:Principal .
+chorus:MessageRecordShape-sentTo a sh:PropertyShape ;
+    sh:path chorus:sentTo ; sh:class chorus:Principal .
+chorus:MessageRecordShape-senderName a sh:PropertyShape ;
+    sh:path chorus:senderName ; sh:minCount 1 ; sh:maxCount 1 ; sh:datatype xsd:string .
+chorus:MessageRecordShape-sentInSession a sh:PropertyShape ;
+    sh:path chorus:sentInSession ; sh:maxCount 1 ; sh:class chorus:Session .
+chorus:MessageRecordShape-messageBody a sh:PropertyShape ;
+    sh:path chorus:messageBody ; sh:minCount 1 ; sh:maxCount 1 ; sh:datatype xsd:string .
+chorus:MessageRecordShape-messageKind a sh:PropertyShape ;
+    sh:path chorus:messageKind ; sh:minCount 1 ; sh:maxCount 1 ; sh:datatype xsd:string ;
+    sh:pattern "^(nudge|chat|jeff-input|board-event|role-state)$" .
+chorus:MessageRecordShape-sentAt a sh:PropertyShape ;
+    sh:path chorus:sentAt ; sh:minCount 1 ; sh:maxCount 1 ; sh:datatype xsd:string .
+chorus:MessageRecordShape-sourceId a sh:PropertyShape ;
+    sh:path chorus:sourceId ; sh:maxCount 1 ; sh:datatype xsd:string .
 chorus:MessageShape-overChannel a sh:PropertyShape ;
     sh:path chorus:overChannel ; sh:maxCount 1 ; sh:class chorus:Channel .
+
+# --- Delivery -----------------------------------------------------------------
+
+chorus:DeliveryShape a sh:NodeShape ;
+    sh:targetClass chorus:Delivery ;
+    chorus:instancesGraph "urn:chorus:domains:messages" ;
+    sh:property chorus:DeliveryShape-label , chorus:DeliveryShape-ownedBy , chorus:DeliveryShape-deliveryOf ,
+                chorus:DeliveryShape-deliveredTo , chorus:DeliveryShape-overChannel , chorus:DeliveryShape-deliveryOutcome ,
+                chorus:DeliveryShape-deliveredAt , chorus:DeliveryShape-deliveryError ;
+    sh:sparql chorus:StampedByTheDal , chorus:DeliveredNeedsAPresence .
+
+chorus:DeliveryShape-label a sh:PropertyShape ; sh:path rdfs:label ; sh:minCount 1 .
+chorus:DeliveryShape-ownedBy a sh:PropertyShape ;
+    sh:path chorus:ownedBy ; sh:minCount 1 ; sh:maxCount 1 ; sh:class chorus:Principal .
+chorus:DeliveryShape-deliveryOf a sh:PropertyShape ;
+    sh:path chorus:deliveryOf ; sh:minCount 1 ; sh:maxCount 1 ; sh:class chorus:Message .
+chorus:DeliveryShape-deliveredTo a sh:PropertyShape ;
+    sh:path chorus:deliveredTo ; sh:maxCount 1 ; sh:class chorus:Presence .
+chorus:DeliveryShape-overChannel a sh:PropertyShape ;
+    sh:path chorus:overChannel ; sh:minCount 1 ; sh:maxCount 1 ; sh:class chorus:Channel .
+chorus:DeliveryShape-deliveryOutcome a sh:PropertyShape ;
+    sh:path chorus:deliveryOutcome ; sh:minCount 1 ; sh:maxCount 1 ; sh:datatype xsd:string ;
+    sh:pattern "^(delivered|failed|queued|pending|truncated)$" .
+chorus:DeliveryShape-deliveredAt a sh:PropertyShape ;
+    sh:path chorus:deliveredAt ; sh:maxCount 1 ; sh:datatype xsd:string .
+chorus:DeliveryShape-deliveryError a sh:PropertyShape ;
+    sh:path chorus:deliveryError ; sh:maxCount 1 ; sh:datatype xsd:string .
+
+chorus:DeliveredNeedsAPresence a sh:SPARQLConstraint ;
+    sh:message "a delivered (or truncated) message to a principal who logs in landed somewhere: it names the presence (chorus:deliveredTo)" ;
+    sh:select """
+        SELECT $this WHERE {
+          $this <https://jeffbridwell.com/chorus#deliveryOutcome> ?o .
+          FILTER (?o IN ("delivered", "truncated"))
+          FILTER NOT EXISTS { $this <https://jeffbridwell.com/chorus#deliveredTo> ?p }
+          $this <https://jeffbridwell.com/chorus#deliveryOf> ?m .
+          ?m <https://jeffbridwell.com/chorus#sentTo> ?to .
+          FILTER EXISTS { ?s a <https://jeffbridwell.com/chorus#Session> ; <https://jeffbridwell.com/chorus#ownedBy> ?to }
+        }""" .
+
+# Presence grows the channels that reach it (additive).
+chorus:PresenceShape sh:property chorus:PresenceShape-reachableOver .
+chorus:PresenceShape-reachableOver a sh:PropertyShape ;
+    sh:path chorus:reachableOver ; sh:class chorus:Channel .

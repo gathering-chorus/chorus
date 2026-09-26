@@ -60,17 +60,16 @@ chorus:Nudge a owl:Class ;
     rdfs:label "Nudge" ;
     rdfs:comment "A Message that REQUIRES a response or action (DEC-1571 rule 5): the sender is waiting. Persist AND deliver, both paths, every time (DEC-107)." .
 
+# #4340 (Jeff 2026-09-26, option A; agreed with Wren 13:16): a message is sent
+# by a Principal, not a Role. Machine senders (system, chorus-mcp, pulse) are
+# not Roles and a third of messages.db could not be written. The shape moved to
+# roles/silas/ontology/session-model-4302.ttl as MessageRecordShape; the old
+# blank-node MessageShape is retired (model-retirements.jsonl).
 chorus:sentBy a owl:ObjectProperty ;
-    rdfs:label "sentBy" ; rdfs:domain chorus:Message ; rdfs:range chorus:Role .
+    rdfs:label "sentBy" ; rdfs:domain chorus:Message ; rdfs:range chorus:Principal .
 
 chorus:sentTo a owl:ObjectProperty ;
-    rdfs:label "sentTo" ; rdfs:domain chorus:Message ; rdfs:range chorus:Role .
-
-chorus:MessageShape a sh:NodeShape ;
-    sh:targetClass chorus:Message ;
-    sh:property [ sh:path rdfs:label    ; sh:minCount 1 ; sh:datatype xsd:string ] ;
-    sh:property [ sh:path chorus:sentBy ; sh:minCount 1 ; sh:class chorus:Role ] ;
-    sh:property [ sh:path chorus:sentTo ; sh:minCount 1 ; sh:class chorus:Role ] .
+    rdfs:label "sentTo" ; rdfs:domain chorus:Message ; rdfs:range chorus:Principal .
 
 chorus:messages chorus:definesVocabulary chorus:Message , chorus:Nudge .
 
