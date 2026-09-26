@@ -57,5 +57,21 @@ else echo "FAIL Delivery is not claimed by the messages domain"; fail=$((fail+1)
 if grep -q "chorus:MessageShape a sh:NodeShape" "$ROOT/roles/wren/ontology/clearing-domains-3860.ttl"; then echo "FAIL the retired MessageShape is still in clearing-domains-3860.ttl"; fail=$((fail+1)); else echo "PASS the retired MessageShape is out of the source"; pass=$((pass+1)); fi
 if grep -q '"retire_subject": "https://jeffbridwell.com/chorus#MessageShape"' "$ROOT/designing/schemas/model-retirements.jsonl"; then echo "PASS its retirement is staged, so the deploy removes it from the store"; pass=$((pass+1)); else echo "FAIL MessageShape retirement not staged"; fail=$((fail+1)); fi
 
+# AC6 — a principal's durable key is readable: KeyRegistryEntry is served from the graph its rows live in,
+# with the pubkey as a field (the 5 nostr keys sit in urn:chorus:domains:security; the route read identity: 0 of 5)
+q='PREFIX c: <https://jeffbridwell.com/chorus#> PREFIX sh: <http://www.w3.org/ns/shacl#> ASK { c:KeyRegistryEntryShape c:instancesGraph "urn:chorus:domains:security" ; sh:property ?p . ?p sh:path c:nostrPubkey }'
+if sparql --data "$ROOT/roles/silas/ontology/security-model-3618.ttl" --results TSV "$q" | grep -q true; then echo "PASS KeyRegistryEntry is served from the security graph, pubkey included"; pass=$((pass+1));
+else echo "FAIL KeyRegistryEntry does not declare the security graph with its pubkey"; fail=$((fail+1)); fi
+cat > "$TMP/key.ttl" <<'TTL'
+@prefix c: <https://jeffbridwell.com/chorus#> .
+c:principal-jeff a c:Principal .
+c:k-good a c:KeyRegistryEntry ; c:forPrincipal c:principal-jeff ; c:keyId "BUZZ_JEFF_NOSTR_KEY" ; c:permittedScope "urn:chorus:buzz" ; c:nostrPubkey "a42ccebeb2be92f57434f9d25243fb98be918f07752993283eeb95c98857c62a" .
+c:k-bad a c:KeyRegistryEntry ; c:forPrincipal c:principal-jeff ; c:keyId "BUZZ_X" ; c:permittedScope "urn:chorus:buzz" ; c:nostrPubkey "nsec1-this-is-a-private-key" .
+TTL
+rep=$(shacl validate --shapes "$ROOT/roles/silas/ontology/security-model-3618.ttl" --data "$TMP/key.ttl" 2>/dev/null | tr '\n' ' ' | sed 's/\[ *a *sh:ValidationResult/\n/g')
+if printf '%s\n' "$rep" | grep -F "chorus:k-good" | grep -q KeyRegistryEntryShape; then echo "FAIL a well-formed key was refused"; fail=$((fail+1));
+elif printf '%s\n' "$rep" | grep -F "chorus:k-bad" | grep -q "KeyRegistryEntryShape-nostrPubkey"; then echo "PASS negative proof: a value that is not a 64-hex pubkey is refused (a private key never passes as one)"; pass=$((pass+1));
+else echo "FAIL the pubkey rule refused nothing"; fail=$((fail+1)); fi
+
 echo "=== Results: $pass passed, $fail failed ==="
 [ "$fail" -eq 0 ]

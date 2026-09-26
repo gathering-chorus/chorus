@@ -382,9 +382,19 @@ chorus:PrincipalWorkerHoldsNoRole a sh:NodeShape ;
 
 chorus:KeyRegistryEntryShape a sh:NodeShape ;
     sh:targetClass chorus:KeyRegistryEntry ;
+    # #4340 — the declared home is where the rows are. The five nostr keys
+    # (bridge, jeff, wren, kade, marknakib) live in the security graph; without
+    # this the route read identity and served 0 of 5 (Login ER, 09-20), so a
+    # principal's durable Buzz key was in the store and readable by nobody.
+    chorus:instancesGraph "urn:chorus:domains:security" ;
+    sh:property chorus:KeyRegistryEntryShape-nostrPubkey , chorus:KeyRegistryEntryShape-keyType ;
     sh:property chorus:KeyRegistryEntryShape-forPrincipal ;
     sh:property chorus:KeyRegistryEntryShape-keyId ;
     sh:property chorus:KeyRegistryEntryShape-permittedScope .
+chorus:KeyRegistryEntryShape-nostrPubkey a sh:PropertyShape ;
+    sh:path chorus:nostrPubkey ; sh:maxCount 1 ; sh:datatype xsd:string ; sh:pattern "^[0-9a-f]{64}$" .
+chorus:KeyRegistryEntryShape-keyType a sh:PropertyShape ;
+    sh:path chorus:keyType ; sh:maxCount 1 ; sh:datatype xsd:string .
 chorus:KeyRegistryEntryShape-forPrincipal a sh:PropertyShape ;
     sh:path chorus:forPrincipal ; sh:minCount 1 ; sh:class chorus:Principal .
 chorus:KeyRegistryEntryShape-keyId a sh:PropertyShape ;

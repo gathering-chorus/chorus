@@ -85,3 +85,10 @@ fn rows_parse_from_sqlite_json() {
     assert_eq!(r.len(), 1);
     assert_eq!(r[0].delivered_at, "");
 }
+
+#[test]
+fn a_cut_message_is_found_even_when_the_pane_joined_its_lines() {
+    // the real 09-26 12:45 case: the content wraps with newline + indent, the pane shows one space
+    let s = src("nudge", "wren", "silas", "5 Keep Channel as data.\n  Buzz is then: add one Channel row, add pubkeys to Principals.\n  Step 0: messages live in messages.db", "delivered");
+    assert_eq!(outcome(&s, &[" as data. Buzz is then: add one Channel row, add pubkeys to Principals. Step 0: messages live in messages.db".into()]), "truncated");
+}

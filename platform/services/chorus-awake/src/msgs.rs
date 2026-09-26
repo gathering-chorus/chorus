@@ -95,10 +95,13 @@ pub fn delivery_row(src: &Src, message: &str, presence: Option<&str>, outcome: &
 pub fn outcome(src: &Src, received: &[String]) -> String {
     let base = match src.status.as_str() { "delivered" | "failed" | "queued" | "pending" => src.status.as_str(), _ => "pending" };
     if base != "delivered" { return base.to_string(); }
-    let full = src.content.trim();
+    // a pane joins wrapped lines, so compare with whitespace collapsed (live
+    // 09-26: "as data.\n  Buzz" arrived as "as data. Buzz")
+    let squash = |t: &str| t.split_whitespace().collect::<Vec<_>>().join(" ");
+    let full = squash(&src.content);
     for r in received {
-        let r = r.trim();
-        if r.len() >= 12 && r.len() < full.len() && full.contains(r) { return "truncated".into(); }
+        let r = squash(r);
+        if r.len() >= 12 && r.len() < full.len() && full.contains(&r) { return "truncated".into(); }
     }
     "delivered".into()
 }
