@@ -34,6 +34,7 @@ chorus:principal-silas a chorus:Principal ;
     chorus:webId "https://id.lightlifeurbangardens.com/silas/profile/card#me" ;
     chorus:holdsRole chorus:role-silas ;
     chorus:principalKind "agent" ;
+    chorus:hostAccount "jeffbridwell" ;   # #4348: the account it runs as on the Library (sessions and launchd, measured 2026-09-27)
     chorus:canSignIn "false" .
 
 chorus:principal-wren a chorus:Principal ;
@@ -41,6 +42,7 @@ chorus:principal-wren a chorus:Principal ;
     chorus:webId "https://id.lightlifeurbangardens.com/wren/profile/card#me" ;
     chorus:holdsRole chorus:role-wren ;
     chorus:principalKind "agent" ;
+    chorus:hostAccount "jeffbridwell" ;   # #4348: the account it runs as on the Library (sessions and launchd, measured 2026-09-27)
     chorus:canSignIn "false" .
 
 chorus:principal-kade a chorus:Principal ;
@@ -48,18 +50,21 @@ chorus:principal-kade a chorus:Principal ;
     chorus:webId "https://id.lightlifeurbangardens.com/kade/profile/card#me" ;
     chorus:holdsRole chorus:role-kade ;
     chorus:principalKind "agent" ;
+    chorus:hostAccount "jeffbridwell" ;   # #4348: the account it runs as on the Library (sessions and launchd, measured 2026-09-27)
     chorus:canSignIn "false" .
 
 chorus:principal-bridge a chorus:Principal ;
     rdfs:label "bridge (non-interactive relay principal)" ;
     chorus:webId "https://id.lightlifeurbangardens.com/bridge/profile/card#me" ;
     chorus:principalKind "service" ;
+    chorus:hostAccount "jeffbridwell" ;   # #4348: the account it runs as on the Library (sessions and launchd, measured 2026-09-27)
     chorus:canSignIn "false" .
 
 chorus:principal-chorus-sdk a chorus:Principal ;
     rdfs:label "chorus-sdk (service caller principal)" ;
     chorus:webId "https://id.lightlifeurbangardens.com/chorus-sdk/profile/card#me" ;
     chorus:principalKind "service" ;
+    chorus:hostAccount "jeffbridwell" ;   # #4348: the account it runs as on the Library (sessions and launchd, measured 2026-09-27)
     chorus:canSignIn "false" .
 
 # #3975 — the 03:00 nightly runner. werk-test --nightly posts per-case
@@ -77,6 +82,7 @@ chorus:principal-nightly a chorus:Principal ;
     rdfs:label "nightly (03:00 runner service principal)" ;
     chorus:webId "https://id.lightlifeurbangardens.com/nightly/profile/card#me" ;
     chorus:principalKind "service" ;
+    chorus:hostAccount "jeffbridwell" ;   # #4348: the account it runs as on the Library (sessions and launchd, measured 2026-09-27)
     chorus:holdsRole chorus:role-nightly ;
     chorus:canSignIn "false" .
 
@@ -90,6 +96,7 @@ chorus:principal-crawler a chorus:Principal ;
     rdfs:label "crawler (code + tests walker service principal)" ;
     chorus:webId "https://id.lightlifeurbangardens.com/crawler/profile/card#me" ;
     chorus:principalKind "service" ;
+    chorus:hostAccount "jeffbridwell" ;   # #4348: the account it runs as on the Library (sessions and launchd, measured 2026-09-27)
     chorus:holdsRole chorus:role-crawler ;
     chorus:canSignIn "false" .
 
@@ -101,6 +108,7 @@ chorus:principal-jeff a chorus:Principal ;
     rdfs:label "Jeff Bridwell" ;   # #3830 — the name field holds the name; "jeff (human principal - root authority)" was a description
     chorus:webId "https://id.lightlifeurbangardens.com/jeff/profile/card#me" ;
     chorus:principalKind "person" ;
+    chorus:hostAccount "jeffbridwell" ;   # #4348: the account it runs as on the Library (sessions and launchd, measured 2026-09-27)
     chorus:canSignIn "true" .
     # #3830 — jeff holds the security-graph write scope (a PERMISSION, in
     # security-scopes-3689) and deliberately NO holdsRole edge: role-jeff's own
@@ -130,6 +138,7 @@ chorus:principal-flow-probe a chorus:Principal ;
     rdfs:label "flow-probe (browser-flow test identity)" ;
     chorus:webId "https://id.lightlifeurbangardens.com/flow-probe/profile/card#me" ;
     chorus:principalKind "service" ;
+    chorus:hostAccount "jeffbridwell" ;   # #4348: the account it runs as on the Library (sessions and launchd, measured 2026-09-27)
     chorus:canSignIn "true" .
 
 # ============================================================================
