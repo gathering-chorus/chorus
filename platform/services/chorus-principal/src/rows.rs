@@ -309,3 +309,19 @@ pub fn env_value(ps_eww: &str, key: &str) -> Option<String> {
     let want = format!("{}=", key);
     ps_eww.split_whitespace().find(|w| w.starts_with(&want)).map(|w| w[want.len()..].to_string()).filter(|v| !v.is_empty())
 }
+
+/// #4345 — why the API refused a row, in one short line for the spine. On
+/// 2026-09-26 every role's session updates were refused (422) for hours and the
+/// log said only "http=422"; the reason was in the reply and thrown away.
+/// message / detail / title from the JSON reply, else the raw text; one line,
+/// at most 160 chars, and a token-shaped word (eyJ…) never leaves.
+pub fn refusal_reason(reply: &str) -> String {
+    let v: Value = serde_json::from_str(reply).unwrap_or(Value::Null);
+    let pick = |k: &str| v.get(k).and_then(|x| x.as_str()).map(String::from)
+        .or_else(|| v.get("data").and_then(|d| d.get(k)).and_then(|x| x.as_str()).map(String::from));
+    let raw = pick("message").or_else(|| pick("detail")).or_else(|| pick("title")).unwrap_or_else(|| reply.to_string());
+    let one: String = raw.split_whitespace()
+        .map(|w| if w.contains("eyJ") { "[token]" } else { w })
+        .collect::<Vec<_>>().join(" ");
+    one.chars().take(160).collect()
+}

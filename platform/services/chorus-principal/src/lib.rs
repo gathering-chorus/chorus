@@ -842,8 +842,9 @@ fn row_name(v: &Value) -> String { v.get("name").and_then(|n| n.as_str()).unwrap
 fn create_row(ctx: &Ctx, role: &str, route: &str, kind: &str, mut body: Value) -> Option<String> {
     let (code, reply) = api_send(ctx, role, route, None, &body, kind);
     if !ok_code(&code) {
-        ctx.spine(&["session.row.failed", role, &format!("kind={}", kind), &format!("http={}", code)]);
-        eprintln!("chorus-principal: the {} row for {} was not written (HTTP {})", kind, role, code);
+        let why = rows::refusal_reason(&reply);
+        ctx.spine(&["session.row.failed", role, &format!("kind={}", kind), &format!("http={}", code), &format!("why={}", why)]);
+        eprintln!("chorus-principal: the {} row for {} was not written (HTTP {}: {})", kind, role, code, why);
         return None;
     }
     let name = stored_name(&reply).unwrap_or_else(|| row_name(&body));
@@ -855,9 +856,9 @@ fn create_row(ctx: &Ctx, role: &str, route: &str, kind: &str, mut body: Value) -
 /// Replace one saved row and keep the new copy.
 fn put_row(ctx: &Ctx, role: &str, route: &str, kind: &str, row: &Value) -> bool {
     let name = row_name(row);
-    let (code, _) = api_send(ctx, role, route, Some(&name), row, kind);
+    let (code, reply) = api_send(ctx, role, route, Some(&name), row, kind);
     if ok_code(&code) { save_row(ctx, role, kind, row); true } else {
-        ctx.spine(&["session.row.failed", role, &format!("kind={}", kind), &format!("row={}", name), &format!("http={}", code)]);
+        ctx.spine(&["session.row.failed", role, &format!("kind={}", kind), &format!("row={}", name), &format!("http={}", code), &format!("why={}", rows::refusal_reason(&reply))]);
         false
     }
 }
@@ -886,9 +887,9 @@ fn record_credentials(ctx: &Ctx, role: &str) {
     for row in rows::credential_rows(role, &shown, &mtimes) {
         let kind = format!("cred-{}", row["credentialKind"].as_str().unwrap_or(""));
         if read_row(ctx, role, &kind).as_ref() == Some(&row) { continue; }
-        let (code, _) = api_send(ctx, role, "security/credentials", None, &row, &kind);
+        let (code, reply) = api_send(ctx, role, "security/credentials", None, &row, &kind);
         let ok = if code == "409" { put_row(ctx, role, "security/credentials", &kind, &row) } else { ok_code(&code) };
-        if ok { save_row(ctx, role, &kind, &row); } else { ctx.spine(&["session.row.failed", role, "kind=credential", &format!("http={}", code)]); }
+        if ok { save_row(ctx, role, &kind, &row); } else { ctx.spine(&["session.row.failed", role, "kind=credential", &format!("http={}", code), &format!("why={}", rows::refusal_reason(&reply))]); }
     }
 }
 
@@ -911,7 +912,7 @@ fn ensure_conversation(ctx: &Ctx, role: &str, run: &str, conversation: &str) {
         save_row(ctx, role, "conversation", &saved);
         n
     } else {
-        ctx.spine(&["session.row.failed", role, "kind=conversation", &format!("http={}", code)]);
+        ctx.spine(&["session.row.failed", role, "kind=conversation", &format!("http={}", code), &format!("why={}", rows::refusal_reason(&reply))]);
         return;
     };
     ctx.spine(&["session.conversation.recorded", role, &format!("run={}", run), &format!("conversation={}", name)]);

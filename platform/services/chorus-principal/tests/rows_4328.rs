@@ -222,3 +222,15 @@ fn the_roles_view_says_whether_jeff_is_there_and_when_he_last_spoke() {
     let away = json!({"focusedNow": "false", "checkedAt": "t"});
     assert!(room_line(None, Some(&away)).contains("not on this pane"));
 }
+
+/// #4345 — a refused row says why in the log, and a token never rides along.
+#[test]
+fn a_refusal_carries_its_reason_and_never_a_token() {
+    use chorus_principal::rows::refusal_reason;
+    let r = refusal_reason(r#"{"error":"validation","message":"athena-model: double-prefix: 'role-wren' already starts with 'role-'"}"#);
+    assert!(r.contains("double-prefix"), "{r}");
+    assert_eq!(refusal_reason(r#"{"data":{"detail":"no such session: x"}}"#), "no such session: x");
+    let t = refusal_reason("bad bearer eyJhbGciOiJFUzI1NiJ9.payload.sig here");
+    assert!(!t.contains("eyJ"), "a token leaked into the log: {t}");
+    assert!(refusal_reason(&"x ".repeat(500)).chars().count() <= 160);
+}
