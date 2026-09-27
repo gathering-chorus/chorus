@@ -60,6 +60,14 @@ export type DeliveryPlan =
  *                           As-is delivery is preserved whenever the registry
  *                           is empty or stale — the new path can never strand.
  */
+/** #4361 — Presence targets carry pid 0, so a pid match only counts when it
+ * is a real pid; a shared tmux pane or tty is the same session. */
+export function sameSession(a: SessionReg, b: SessionReg): boolean {
+  if (a.pid > 0 && a.pid === b.pid) return true;
+  if (a.tmux && a.tmux === b.tmux) return true;
+  return !!a.tty && a.tty === b.tty;
+}
+
 export function planDelivery(
   target: SessionReg | null,
   role: string,
@@ -75,7 +83,7 @@ export function planDelivery(
   // that collides with the SENDER is treated as STALE DATA and ignored, so
   // resolution falls through to the legacy role name-match — still a keystroke,
   // never a skip.
-  if (target && sender && (target.pid === sender.pid || (!!target.tty && target.tty === sender.tty))) {
+  if (target && sender && sameSession(target, sender)) {
     // #3608 review: Wren proposed defer-to-fold here (the 07-03 boomerang case);
     // Jeff KEPT unconditional keystroke (2026-07-04): "nudge has a way of
     // breaking and if it goes to the wrong terminal i want to see it." A
