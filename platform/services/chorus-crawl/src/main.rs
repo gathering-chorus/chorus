@@ -1844,6 +1844,8 @@ fn main() {
     );
     let mut wrote = 0usize;
     let mut failed: Vec<String> = Vec::new();
+    // #4352 — results of vanished cases that another principal owns, by owner
+    let mut held: std::collections::BTreeMap<String, usize> = std::collections::BTreeMap::new();
     let mut batch: Vec<String> = Vec::new();
 
     let ident = ident.as_ref().expect("writes happen only with an identity");
@@ -2083,7 +2085,15 @@ fn main() {
                                 });
                                 if let Err(e) = del {
                                     all_gone = false;
-                                    failed.push(format!("delete result {r} of {file} :: {case}: {e}"));
+                                    // #4352 — principals own their rows (Jeff, 09-17). A
+                                    // result another principal owns is theirs to remove:
+                                    // the case stays and the result is reported as held
+                                    // for its owner, never counted as a failed write.
+                                    match refused_as_not_owner(&e) {
+                                        Some(owner) => *held.entry(owner).or_default() += 1,
+                                        None => failed
+                                            .push(format!("delete result {r} of {file} :: {case}: {e}")),
+                                    }
                                 }
                             }
                             if all_gone {
@@ -2354,6 +2364,11 @@ fn main() {
         }
     }
 
+    for (owner, n) in &held {
+        println!(
+            "chorus-crawl: held {n} result(s) of vanished cases for their owner {owner} — not the crawler's to delete; their cases stay (#4352)"
+        );
+    }
     if !failed.is_empty() {
         for f in failed.iter().take(5) {
             eprintln!("chorus-crawl: FAILED {f}");
@@ -2375,6 +2390,17 @@ fn main() {
 /// Each failure reduced to `VERB /route/family -> STATUS`, counted, most first.
 /// A failure line the crawler prints reads like
 /// `delete case path :: name: DELETE /tests/tests/<id> -> HTTP 403`.
+/// #4352 — the owner named by an authz refusal that says this row is not ours
+/// ("not this row's owner (ownedBy nightly)"), or None for any other failure.
+fn refused_as_not_owner(err: &str) -> Option<String> {
+    if !err.contains("HTTP 403") || !err.contains("not this row's owner") {
+        return None;
+    }
+    let after = err.split("ownedBy ").nth(1)?;
+    let owner: String = after.chars().take_while(|c| c.is_alphanumeric() || *c == '-' || *c == '_').collect();
+    (!owner.is_empty()).then_some(owner)
+}
+
 fn failure_classes(failed: &[String]) -> Vec<(String, usize)> {
     let mut counts: std::collections::HashMap<String, usize> = std::collections::HashMap::new();
     for f in failed {
@@ -2385,7 +2411,10 @@ fn failure_classes(failed: &[String]) -> Vec<(String, usize)> {
         let verb_route = w
             .iter()
             .enumerate()
-            .position(|(i, x)| {
+            // #4352 — the LAST verb+path is the call that failed. A case title
+            // can hold one too ("POST /api/nudge ..."), and it comes first:
+            // taking the first match reported 36 case titles as routes.
+            .rposition(|(i, x)| {
                 matches!(*x, "POST" | "PUT" | "DELETE" | "PATCH")
                     && w.get(i + 1).is_some_and(|r| r.starts_with('/'))
             })
@@ -2878,6 +2907,21 @@ mod failure_classes_4201 {
         );
     }
 
+    /// #4352 NEGATIVE PROOF: a case TITLE that holds a verb and a route. The
+    /// 09-26 nightly reported "x19 POST /api/nudge" and "x17 POST
+    /// /api/doc-catalog" — case titles; every one of them was a result DELETE.
+    #[test]
+    fn a_route_inside_a_case_title_is_not_the_call_that_failed() {
+        let failed = vec![
+            "delete result r1 of t.ts :: POST /api/nudge persists the message: DELETE /tests/results/r1 -> HTTP 403 "
+                .to_string(),
+        ];
+        assert_eq!(
+            failure_classes(&failed),
+            vec![("DELETE /tests/results -> HTTP 403".to_string(), 1)]
+        );
+    }
+
     #[test]
     fn a_line_with_no_route_is_still_counted() {
         let failed = vec!["could not serialise row".to_string()];
@@ -2885,6 +2929,28 @@ mod failure_classes_4201 {
             failure_classes(&failed),
             vec![("(no route in line) -> HTTP ?".to_string(), 1)]
         );
+    }
+}
+
+/// #4352 — principals own their rows: a result another principal owns is held
+/// for them, not a failed write.
+#[cfg(test)]
+mod held_for_owner_4352 {
+    use super::refused_as_not_owner;
+
+    #[test]
+    fn a_refusal_naming_another_owner_is_held_for_that_owner() {
+        let e = r#"DELETE /tests/results/r1 -> HTTP 403 { "error": "authz", "message": "not this row's owner (ownedBy nightly); no Permission row opens this write" }"#;
+        assert_eq!(refused_as_not_owner(e), Some("nightly".to_string()));
+    }
+
+    /// NEGATIVE PROOF: any other failure — a 403 for another reason, a 422, a
+    /// dead store — is still a failed write and keeps the run red.
+    #[test]
+    fn every_other_failure_is_still_a_failure() {
+        assert_eq!(refused_as_not_owner("DELETE /tests/results/r1 -> HTTP 403 { \"error\": \"authn\" }"), None);
+        assert_eq!(refused_as_not_owner("DELETE /tests/results/r1 -> HTTP 422 not this row's owner (ownedBy nightly)"), None);
+        assert_eq!(refused_as_not_owner("curl: connection refused"), None);
     }
 }
 
