@@ -46,9 +46,13 @@ pub fn scope_irrelevant(f: &str) -> bool {
     // any build or test output; it is proven by the shell suites under
     // proving/scripts/tests/, which scope to themselves (is_test_suite_path).
     // Without this, re-pointing crawler-error.yml refused the run as unmapped.
+    // #4389 — platform/hooks/ (git hooks) is the same kind of file as
+    // .github/workflows/: it orchestrates, it is no build input, and the bats
+    // suites that name a hook are pulled in by coverage (is_governed_surface).
+    // Editing pre-commit refused #4333's run as unmapped.
     let dir = ["designing/", "roles/", "docs/", "knowledge/", "dashboards/", "messages/",
                "platform/scripts/", "platform/launchd/", "skills/", ".claude/",
-               ".github/", "proving/domains/"]
+               ".github/", "proving/domains/", "platform/hooks/"]
         .iter()
         .any(|d| f.starts_with(d));
     // #4173 — git's own metadata is on the list for the same reason a plist is:
