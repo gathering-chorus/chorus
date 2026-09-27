@@ -1,6 +1,6 @@
 // #4184 — the decision core, unit-tested with fixtures. The bats suite drives the
 // built binary with stub claude/tmux/ps for the integration proofs.
-use chorus_awake::{transcript_is_poisoned, tz_offset_secs, answered_recently, awake_verdict, chrono_secs, Awake, decide, parse_registry, proof_line, projects_dir_for, Live, login_posture, Start};
+use chorus_principal::{transcript_is_poisoned, tz_offset_secs, answered_recently, awake_verdict, chrono_secs, Awake, decide, parse_registry, proof_line, projects_dir_for, Live, login_posture, Start};
 
 const NOW: u128 = 1_789_000_000_000;
 fn agent(id: &str, sid: &str, pid: &str, started_ago_h: f64, state: &str) -> String {
@@ -59,7 +59,7 @@ fn stale_is_older_than_the_window_and_never_the_attach_target() {
 
 #[test]
 fn garbage_or_empty_session_list_means_continue_and_nothing_stale() {
-    assert_eq!(decide("[]", Some("x"), 24.0, NOW), chorus_awake::Decision { attach: None, stale: vec![] });
+    assert_eq!(decide("[]", Some("x"), 24.0, NOW), chorus_principal::Decision { attach: None, stale: vec![] });
     assert_eq!(decide("not json", Some("x"), 24.0, NOW).attach, None);
     assert_eq!(decide("[]", None, 24.0, NOW).attach, None);
 }
@@ -72,7 +72,7 @@ fn projects_dir_is_the_role_dir_with_slashes_as_dashes() {
 // ---------------------------------------------------------------- #4202 login
 
 mod login_4202 {
-    use chorus_awake::*;
+    use chorus_principal::*;
 
     fn tok(webid: &str, jti: &str, iat: u64, exp: u64) -> String {
         let payload = format!(r#"{{"webid":"{}","jti":"{}","iat":{},"exp":{}}}"#, webid, jti, iat, exp);
@@ -136,7 +136,7 @@ mod login_4202 {
         let l = login_check("silas", &tok("https://id.lightlifeurbangardens.com/silas/profile/card#me", "XoHOD4cSCW-P03U01z2C-", 1, 99_999_999_999), 2).unwrap();
         let (name, _) = session_row("silas", &l, "jeffbridwell", "1a0d90f31b5");
         assert_eq!(name, "silas-3u01z2c-1a0d90f31b5");
-        assert_eq!(chorus_awake::slug("A--b__C-"), "a-b-c");
+        assert_eq!(chorus_principal::slug("A--b__C-"), "a-b-c");
     }
 
     #[test]

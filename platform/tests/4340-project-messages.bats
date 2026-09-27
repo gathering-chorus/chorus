@@ -10,8 +10,8 @@
 
 setup() {
   ROOT="$(cd "$(dirname "$BATS_TEST_FILENAME")/../.." && pwd)"
-  SCRIPT="${CHORUS_AWAKE_BIN:-$ROOT/platform/services/chorus-awake/target/release/chorus-awake}"
-  [ -x "$SCRIPT" ] || skip "chorus-awake not built at $SCRIPT"
+  SCRIPT="${CHORUS_PRINCIPAL_TEST_BIN:-$ROOT/platform/services/chorus-principal/target/release/chorus-principal}"
+  [ -x "$SCRIPT" ] || skip "chorus-principal not built at $SCRIPT"
   T="$BATS_TEST_TMPDIR"; mkdir -p "$T/bin" "$T/bodies" "$T/identity/silas" "$T/identity/wren"
   printf '#!/bin/bash\necho token-$1\n' > "$T/bin/token"
   printf '#!/bin/bash\necho "$*" >> "%s/spine.log"\n' "$T" > "$T/bin/chorus-log"

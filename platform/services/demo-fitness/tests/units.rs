@@ -98,7 +98,7 @@ fn negative_proof_a_verb_the_werk_never_built_is_still_missing() {
     // The failure this replaces cut the other way: counting athena-model as
     // present because it exists somewhere. An unrelated verb in the list must
     // not satisfy it, or the check passes for every demo forever.
-    let f = measure(FULL, "kade", &["chorus-awake".to_string()]);
+    let f = measure(FULL, "kade", &["chorus-principal".to_string()]);
     assert!(f.missing.contains(&"athena-model".to_string()));
     assert_eq!(f.own.len(), 4);
 }

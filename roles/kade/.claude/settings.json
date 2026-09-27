@@ -27,7 +27,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "/Users/jeffbridwell/.chorus/bin/chorus-awake off kade --from-exit",
+            "command": "/Users/jeffbridwell/.chorus/bin/chorus-principal logout kade --from-exit",
             "timeout": 15
           }
         ]
@@ -38,7 +38,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "/Users/jeffbridwell/.chorus/bin/chorus-awake seen kade",
+            "command": "/Users/jeffbridwell/.chorus/bin/chorus-principal seen kade",
             "timeout": 5
           }
         ]

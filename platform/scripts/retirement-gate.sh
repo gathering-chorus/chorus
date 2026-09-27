@@ -30,6 +30,16 @@ for f in "${deleted[@]:-}"; do
     *.sh|*.ts|*.rs|*.py|pre-push|pre-commit) ;;
     *) continue ;;
   esac
+  # #4345 — a GENERIC file name says nothing on its own: deleting one crate's
+  # src/main.rs flagged all 13 tests that mention any main.rs (chorus-inject's,
+  # chorus-hooks'…) and blocked a crate retirement. For those names the needle is
+  # the last three path parts (chorus-awake/src/main.rs); every other surface is
+  # still matched by its base name, which is how tests usually name a script.
+  needle="$base"
+  case "$base" in
+    main.rs|lib.rs|mod.rs|build.rs|index.ts|index.js|server.ts|main.ts|mod.ts|__init__.py|main.py)
+      needle=$(printf '%s' "$f" | awk -F/ '{ n=NF; s=$n; if (n>1) s=$(n-1)"/"s; if (n>2) s=$(n-2)"/"s; print s }') ;;
+  esac
   # any test file (.bats / test-*.sh) still naming the deleted surface?
   # #3702 — EXCEPT declared absence-guards: a retirement card's own test must name
   # the deleted surface to assert it stays gone (the domain-detail-retired.bats
@@ -42,7 +52,7 @@ for f in "${deleted[@]:-}"; do
     fi
     echo "  RETIREMENT-GATE: $tf still references deleted surface $f" >&2
     violations=$(( violations + 1 ))
-  done < <(grep -rlF "$base" "$CHORUS_ROOT" --include='*.bats' --include='test-*.sh' 2>/dev/null)
+  done < <(grep -rlF "$needle" "$CHORUS_ROOT" --include='*.bats' --include='test-*.sh' 2>/dev/null)
 done
 
 if [ "$violations" -gt 0 ]; then

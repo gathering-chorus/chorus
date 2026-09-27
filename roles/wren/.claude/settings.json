@@ -28,7 +28,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "/Users/jeffbridwell/.chorus/bin/chorus-awake off wren --from-exit",
+            "command": "/Users/jeffbridwell/.chorus/bin/chorus-principal logout wren --from-exit",
             "timeout": 15
           }
         ]
@@ -39,7 +39,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "/Users/jeffbridwell/.chorus/bin/chorus-awake seen wren",
+            "command": "/Users/jeffbridwell/.chorus/bin/chorus-principal seen wren",
             "timeout": 5
           }
         ]

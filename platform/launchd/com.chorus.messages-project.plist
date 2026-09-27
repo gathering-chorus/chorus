@@ -12,7 +12,7 @@
          Idempotent: rows are named by the messages.db id. -->
     <key>ProgramArguments</key>
     <array>
-        <string>/Users/jeffbridwell/.chorus/bin/chorus-awake-bin</string>
+        <string>/Users/jeffbridwell/.chorus/bin/chorus-principal</string>
         <string>project-messages</string>
     </array>
     <key>EnvironmentVariables</key>

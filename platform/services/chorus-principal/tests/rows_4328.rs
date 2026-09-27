@@ -2,7 +2,7 @@
 //! Jeff 2026-09-26 08:29: "is ur session better now?" Each rule is also shown
 //! refusing the state it exists to catch (#3734).
 
-use chorus_awake::rows::*;
+use chorus_principal::rows::*;
 use serde_json::json;
 
 #[test]
@@ -39,7 +39,7 @@ fn only_a_delivery_makes_a_presence_reachable() {
     let (_, delivered) = turn_facts(r#"{"session_id":"c","prompt":"work status"}"#);
     assert!(!delivered);
     // #4339: a delivery is pulse's wake line; a typed "[nudge from" label is Jeff's text
-    let wake = format!(r#"{{"session_id":"c","prompt":"{}"}}"#, chorus_awake::rows::WAKE_LINE);
+    let wake = format!(r#"{{"session_id":"c","prompt":"{}"}}"#, chorus_principal::rows::WAKE_LINE);
     let (_, delivered) = turn_facts(&wake);
     assert!(delivered);
     let (_, delivered) = turn_facts(r#"{"session_id":"c","prompt":"[nudge from wren | 2026-09-26 09:00 Boston] hi"}"#);
@@ -51,8 +51,8 @@ fn only_a_delivery_makes_a_presence_reachable() {
 #[test]
 fn pulse_types_exactly_this_wake_line() {
     let ts = format!("{}/../../pulse/src/delivery-worker.ts", std::env::var("CARGO_MANIFEST_DIR").expect("cargo sets CARGO_MANIFEST_DIR"));  // #4351: read at run time (4030)
-    let src = std::fs::read_to_string(ts).expect("pulse delivery-worker.ts beside chorus-awake");
-    let decl = format!("export const WAKE_LINE = '{}';", chorus_awake::rows::WAKE_LINE);
+    let src = std::fs::read_to_string(ts).expect("pulse delivery-worker.ts beside chorus-principal");
+    let decl = format!("export const WAKE_LINE = '{}';", chorus_principal::rows::WAKE_LINE);
     assert!(src.contains(&decl), "pulse's WAKE_LINE differs; expected `{decl}`");
 }
 
@@ -134,7 +134,7 @@ fn a_listing_row_is_made_putable() {
 #[test]
 fn a_closed_row_from_the_listing_carries_no_status() {
     let listing = json!({"data":[{"name":"s1","status":"","tokenId":"j","ownedBy":"principal-kade","sessionState":"open","actsAs":""}]}).to_string();
-    let c = chorus_awake::lifecycle::closed_row(&listing, "s1", "2026-09-26T10:00:00Z").unwrap();
+    let c = chorus_principal::lifecycle::closed_row(&listing, "s1", "2026-09-26T10:00:00Z").unwrap();
     assert!(c.get("status").is_none());
     assert!(c.get("actsAs").is_none());
     assert_eq!(c["sessionState"], "closed");

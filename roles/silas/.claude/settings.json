@@ -26,7 +26,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "/Users/jeffbridwell/.chorus/bin/chorus-awake off silas --from-exit",
+            "command": "/Users/jeffbridwell/.chorus/bin/chorus-principal logout silas --from-exit",
             "timeout": 15
           }
         ]
@@ -37,7 +37,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "/Users/jeffbridwell/.chorus/bin/chorus-awake seen silas",
+            "command": "/Users/jeffbridwell/.chorus/bin/chorus-principal seen silas",
             "timeout": 5
           }
         ]

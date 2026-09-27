@@ -1,4 +1,4 @@
-//! chorus-awake <role> — wake a role the same way every time (#4184).
+//! chorus-principal <verb> <role> — the session lifecycle (was chorus-awake, #4184; folded in by #4345).
 //!
 //! Jeff, 2026-09-16: "i feel like i need a standard script to start each of u
 //! that initalizes u and makes sure i do the steps" and, an hour later, "it
@@ -552,7 +552,7 @@ fn do_login(ctx: &Ctx, role: &str) -> Result<LoginState, ()> {
         Ok(l) => l,
         Err(why) => match login_posture(Some(&why), refuse_on_any) {
             Start::Refuse(w) => {
-                eprintln!("chorus-awake: REFUSED — {} for {}", w, role);
+                eprintln!("chorus-principal: REFUSED — {} for {}", w, role);
                 if w.contains("wrong principal") {
                     eprintln!("  nothing was started; starting on another principal's credential would file this work as theirs.");
                 } else {
@@ -594,10 +594,10 @@ fn do_login(ctx: &Ctx, role: &str) -> Result<LoginState, ()> {
         let existing = sh(&ctx.curl, &["-s", "--max-time", "10", &get]).unwrap_or_default();
         let mine = format!("principal-{}", role);
         if existing.contains(&mine) {
-            eprintln!("chorus-awake: session {} already open and owned by {} — reusing it", session_name, mine);
+            eprintln!("chorus-principal: session {} already open and owned by {} — reusing it", session_name, mine);
         } else {
             let owner = existing.split("ownedBy").nth(1).map(|t| t.chars().take(60).collect::<String>()).unwrap_or_else(|| "unknown".into());
-            eprintln!("chorus-awake: REFUSED — session {} exists and is NOT yours (ownedBy{})", session_name, owner);
+            eprintln!("chorus-principal: REFUSED — session {} exists and is NOT yours (ownedBy{})", session_name, owner);
             eprintln!("  nothing was started; starting under someone else's session would log your work as theirs.");
             return Err(());
         }
@@ -662,9 +662,9 @@ fn on(ctx: &Ctx, role: &str, attach: bool) -> Result<Came, (i32, String)> {
     // 1/4/6 — registry first: one live → check it; two → refuse.
     let live = live_entries(&ctx.sessions_dir, role, &ctx.ps);
     if live.len() >= 2 {
-        eprintln!("chorus-awake: REFUSED — {} live sessions for {}; one role, one session:", live.len(), role);
+        eprintln!("chorus-principal: REFUSED — {} live sessions for {}; one role, one session:", live.len(), role);
         for l in &live { eprintln!("  pid {}  tty {}  host {}  pane {}", l.pid, l.tty, l.host, l.pane); }
-        eprintln!("  run `chorus-principal off {}` to end both, then `chorus-principal on {}`.", role, role);
+        eprintln!("  run `chorus-principal logout {}` to end both, then `chorus-principal login {}`.", role, role);
         return Err((1, format!("{} live sessions", live.len())));
     }
     if let Some(l) = live.first() {
@@ -690,7 +690,7 @@ fn on(ctx: &Ctx, role: &str, attach: bool) -> Result<Came, (i32, String)> {
             return Ok(came_of(&st));
         }
         let mute_secs: u64 = envd("AWAKE_MUTE_SECS", "900").parse().unwrap_or(900);
-        eprintln!("chorus-awake: {} has a live session (pid {}) that has not spoken in {}s — MUTE, replacing it", role, l.pid, mute_secs);
+        eprintln!("chorus-principal: {} has a live session (pid {}) that has not spoken in {}s — MUTE, replacing it", role, l.pid, mute_secs);
         eprintln!("  a pid and a registry entry are not an answer; ending it so a fresh conversation can start.");
         let _ = sh(&ctx.claude, &["stop", &l.pid.to_string()]);
         let _ = fs::remove_file(ctx.sessions_dir.join(format!("{}-{}.json", role, l.pid)));
@@ -700,7 +700,7 @@ fn on(ctx: &Ctx, role: &str, attach: bool) -> Result<Came, (i32, String)> {
     let agents = match sh(&ctx.claude, &["agents", "--json", "--cwd", &role_dir]) {
         Ok(j) => j,
         Err(e) => {
-            eprintln!("chorus-awake: could not list {}'s background sessions: {}", role, e.trim());
+            eprintln!("chorus-principal: could not list {}'s background sessions: {}", role, e.trim());
             eprintln!("  continuing with the last conversation (claude -c); a detached one may be left behind.");
             String::from("[]")
         }
@@ -720,7 +720,7 @@ fn on(ctx: &Ctx, role: &str, attach: bool) -> Result<Came, (i32, String)> {
     let conversation = if poisoned { "pending".to_string() } else { dec.attach.clone().or_else(|| latest.clone()).unwrap_or_else(|| "pending".to_string()) };
     let (cmd, how) = if poisoned {
         let id = latest.clone().unwrap_or_default();
-        eprintln!("chorus-awake: the last conversation ({}) ends in API refusals — not resuming it", id);
+        eprintln!("chorus-principal: the last conversation ({}) ends in API refusals — not resuming it", id);
         eprintln!("  starting a FRESH conversation instead; turning the key has to start the car.");
         (ctx.claude.clone(), format!("fresh conversation ({} ends in API refusals)", id))
     } else {
@@ -762,9 +762,9 @@ fn on(ctx: &Ctx, role: &str, attach: bool) -> Result<Came, (i32, String)> {
         return Ok(came_of(&st));
     }
     if !ctx.has_tmux(role) {
-        if let Err(e) = sh(&ctx.tmux, &["new-session", "-d", "-s", &tmux_session, "-c", &role_dir]) { eprintln!("chorus-awake: tmux new-session failed: {}", e); return Err((1, format!("tmux new-session failed: {}", e.trim()))); }
+        if let Err(e) = sh(&ctx.tmux, &["new-session", "-d", "-s", &tmux_session, "-c", &role_dir]) { eprintln!("chorus-principal: tmux new-session failed: {}", e); return Err((1, format!("tmux new-session failed: {}", e.trim()))); }
     }
-    if let Err(e) = sh(&ctx.tmux, &["send-keys", "-t", &tmux_session, &launch, "Enter"]) { eprintln!("chorus-awake: tmux send-keys failed: {}", e); return Err((1, format!("tmux send-keys failed: {}", e.trim()))); }
+    if let Err(e) = sh(&ctx.tmux, &["send-keys", "-t", &tmux_session, &launch, "Enter"]) { eprintln!("chorus-principal: tmux send-keys failed: {}", e); return Err((1, format!("tmux send-keys failed: {}", e.trim()))); }
 
     // 3 — prove it: wait for a live tmux-hosted registry entry.
     let mut found: Option<Live> = None;
@@ -796,7 +796,7 @@ fn on(ctx: &Ctx, role: &str, attach: bool) -> Result<Came, (i32, String)> {
             env::remove_var("AWAKE_REPAIRING");
             return again;
         }
-        eprintln!("awake: {}  WRONG ROLE — pid {} still runs as {} after one restart; not logged in. Next: chorus-principal on {}", role, l.pid, other, role);
+        eprintln!("awake: {}  WRONG ROLE — pid {} still runs as {} after one restart; not logged in. Next: chorus-principal login {}", role, l.pid, other, role);
         return Err((1, format!("pid {} carries {}", l.pid, other)));
     }
     let st = st.with_pid(l.pid);
@@ -843,7 +843,7 @@ fn create_row(ctx: &Ctx, role: &str, route: &str, kind: &str, mut body: Value) -
     let (code, reply) = api_send(ctx, role, route, None, &body, kind);
     if !ok_code(&code) {
         ctx.spine(&["session.row.failed", role, &format!("kind={}", kind), &format!("http={}", code)]);
-        eprintln!("chorus-awake: the {} row for {} was not written (HTTP {})", kind, role, code);
+        eprintln!("chorus-principal: the {} row for {} was not written (HTTP {})", kind, role, code);
         return None;
     }
     let name = stored_name(&reply).unwrap_or_else(|| row_name(&body));
@@ -1175,7 +1175,7 @@ fn register_from_pane(ctx: &Ctx, role: &str) -> Option<Live> {
     let pid = kids.lines().filter_map(|k| k.trim().parse::<u64>().ok()).find(|k| {
         sh(&ctx.ps, &["-o", "command=", "-p", &k.to_string()]).map(|c| c.contains("claude")).unwrap_or(false)
     })?;
-    let entry = serde_json::json!({"role": role, "pid": pid, "tty": tty, "host": "tmux", "tmux": pane, "source": "chorus-awake (attach, #4328)"});
+    let entry = serde_json::json!({"role": role, "pid": pid, "tty": tty, "host": "tmux", "tmux": pane, "source": "chorus-principal (attach, #4328)"});
     let _ = fs::create_dir_all(&ctx.sessions_dir);
     fs::write(ctx.sessions_dir.join(format!("{}-{}.json", role, pid)), entry.to_string()).ok()?;
     ctx.spine(&["session.registered.from_pane", role, &format!("pid={}", pid), &format!("pane={}", pane)]);
@@ -1303,7 +1303,7 @@ fn status(ctx: &Ctx) -> i32 {
         let s = find(&listing, read_row(ctx, role, "session").map(|v| row_name(&v)));
         let p = find(&presences, read_row(ctx, role, "presence").map(|v| row_name(&v)));
         println!("       {}", rows::room_line(s.as_ref(), p.as_ref()));
-        if live.len() >= 2 { println!("       {} live sessions: `chorus-principal off {}` ends both", live.len(), role); }
+        if live.len() >= 2 { println!("       {} live sessions: `chorus-principal logout {}` ends both", live.len(), role); }
     }
     0
 }
@@ -1320,8 +1320,8 @@ fn open_windows(ctx: &Ctx) {
         let dir = PathBuf::from(envd("AWAKE_VSCODE_DIR", &format!("{}/.vscode", ctx.root)));
         let tasks = dir.join("tasks.json");
         match fs::read_to_string(&tasks) {
-            Ok(t) if t.contains("on wren") => {}
-            Ok(_) => eprintln!("chorus-awake: {} exists without the wren task; not changing it. The task is:\n{}", tasks.display(), lifecycle::vscode_tasks_json(&principal)),
+            Ok(t) if t.contains("login wren") || t.contains("on wren") => {}   // #4345: login is the verb; an older on-task still counts
+            Ok(_) => eprintln!("chorus-principal: {} exists without the wren task; not changing it. The task is:\n{}", tasks.display(), lifecycle::vscode_tasks_json(&principal)),
             Err(_) => { let _ = fs::create_dir_all(&dir); let _ = fs::write(&tasks, lifecycle::vscode_tasks_json(&principal)); }
         }
         // VS Code asks once before running a folder-open task; this answers it
@@ -1334,13 +1334,13 @@ fn open_windows(ctx: &Ctx) {
                 let _ = fs::write(&settings, serde_json::to_string_pretty(&Value::Object(m)).unwrap_or_default() + "\n");
             }
             Ok(_) => {}
-            Err(_) => eprintln!("chorus-awake: {} is not plain JSON; add \"task.allowAutomaticTasks\": \"on\" by hand", settings.display()),
+            Err(_) => eprintln!("chorus-principal: {} is not plain JSON; add \"task.allowAutomaticTasks\": \"on\" by hand", settings.display()),
         }
         let _ = sh(&envd("AWAKE_OPEN", "open"), &["-a", "Visual Studio Code", &ctx.root]);
     }
     for role in ["silas", "kade"] {
         if attached(role) { continue; }
-        let script = format!("tell application \"Terminal\" to do script \"{} on {}\"", principal, role);
+        let script = format!("tell application \"Terminal\" to do script \"{} login {}\"", principal, role);
         let _ = sh(&osa, &["-e", &script]);
     }
 }
@@ -1348,7 +1348,7 @@ fn open_windows(ctx: &Ctx) {
 /// `up [--windows]` — after a reboot: all three roles, logged in, one line.
 fn up(ctx: &mut Ctx, windows: bool) -> i32 {
     // services are waited for ONCE, with the countdown; each role after that probes once
-    if let Err(why) = wait_for_services(ctx, ctx.service_wait, true) { eprintln!("chorus-awake: {}", why); }
+    if let Err(why) = wait_for_services(ctx, ctx.service_wait, true) { eprintln!("chorus-principal: {}", why); }
     ctx.service_wait = 0;
     let mut results = Vec::new();
     for role in ["wren", "kade", "silas"] {
@@ -1371,9 +1371,9 @@ fn caller_refusal(role: &str, verb: &str) -> Option<String> {
     lifecycle::caller_may_act(in_agent, caller.as_deref(), role, verb).err()
 }
 
-const USAGE: &str = "usage: chorus-awake on|off|status|up|relogin [role]   (wren | silas | kade)
-  on <role>      start it logged in, or log in the running one and go to its window
-  off <role>     stop it and close its login
+const USAGE: &str = "usage: chorus-principal login|logout|status|up|relogin [role]   (wren | silas | kade)
+  login <role>   start it logged in, or log in the running one and go to its window (was: on)
+  logout <role>  stop it and close its login (was: off)
   status         one line per role: running, logged in, answering
   up [--windows] all three after a reboot, one summary line; --windows opens VS Code and two Terminal windows
   <role>         same as on";
@@ -1385,14 +1385,14 @@ pub fn run(args: &[String]) -> i32 {
     let role_arg = |i: usize| -> Result<String, i32> {
         match args.get(i) {
             Some(r) if ROLES.contains(&r.as_str()) => Ok(r.clone()),
-            Some(r) => { eprintln!("chorus-awake: unknown role '{}' (wren | silas | kade)", r); Err(2) }
+            Some(r) => { eprintln!("chorus-principal: unknown role '{}' (wren | silas | kade)", r); Err(2) }
             None => { eprintln!("{}", USAGE); Err(2) }
         }
     };
     match verb {
         "status" => status(&ctx),
         "up" => {
-            if let Some(why) = caller_refusal("all roles", "start") { eprintln!("chorus-awake: REFUSED — {}", why); return 2; }
+            if let Some(why) = caller_refusal("all roles", "start") { eprintln!("chorus-principal: REFUSED — {}", why); return 2; }
             up(&mut ctx, args.iter().any(|a| a == "--windows"))
         }
         "relogin" => match role_arg(1) { Ok(r) => relogin(&ctx, &r), Err(c) => c },
@@ -1405,20 +1405,21 @@ pub fn run(args: &[String]) -> i32 {
         "sweep" => sweep(&ctx),
         // #4340 — messages.db into the model, one pass; run by com.chorus.messages-project
         "project-messages" => project_messages(&ctx),
-        "off" => match role_arg(1) {
+        // #4345 — Jeff, 2026-09-27: login/logout is the convention; on/off stay as aliases.
+        "logout" | "off" => match role_arg(1) {
             Ok(r) => {
-                if let Some(why) = caller_refusal(&r, "stop") { eprintln!("chorus-awake: REFUSED — {}", why); return 2; }
+                if let Some(why) = caller_refusal(&r, "stop") { eprintln!("chorus-principal: REFUSED — {}", why); return 2; }
                 off(&ctx, &r, args.iter().any(|a| a == "--from-exit"))
             }
             Err(c) => c,
         },
-        "on" | "wren" | "silas" | "kade" => {
-            let r = if verb == "on" { match role_arg(1) { Ok(r) => r, Err(c) => return c } } else { verb.to_string() };
-            if let Some(why) = caller_refusal(&r, "start") { eprintln!("chorus-awake: REFUSED — {}", why); eprintln!("  nothing was started."); return 2; }
+        "login" | "on" | "wren" | "silas" | "kade" => {
+            let r = if verb == "on" || verb == "login" { match role_arg(1) { Ok(r) => r, Err(c) => return c } } else { verb.to_string() };
+            if let Some(why) = caller_refusal(&r, "start") { eprintln!("chorus-principal: REFUSED — {}", why); eprintln!("  nothing was started."); return 2; }
             let attach = envd("AWAKE_NO_ATTACH", "0") != "1";
             match on(&ctx, &r, attach) { Ok(_) => 0, Err((c, _)) => c }
         }
         "" => { eprintln!("{}", USAGE); 2 }
-        other => { eprintln!("chorus-awake: unknown role '{}' (wren | silas | kade)", other); 2 }
+        other => { eprintln!("chorus-principal: unknown role '{}' (wren | silas | kade)", other); 2 }
     }
 }

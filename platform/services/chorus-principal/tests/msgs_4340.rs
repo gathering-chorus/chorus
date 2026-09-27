@@ -1,5 +1,5 @@
 //! #4340 — messages in the model: the rows the projector writes from messages.db.
-use chorus_awake::msgs::*;
+use chorus_principal::msgs::*;
 use serde_json::json;
 
 fn src(kind: &str, from: &str, to: &str, content: &str, status: &str) -> Src {
