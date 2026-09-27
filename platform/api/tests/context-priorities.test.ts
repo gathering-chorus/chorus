@@ -225,3 +225,24 @@ describe('#4301 /sup reads the graphs and owner form the store actually holds', 
     expect(d.products.unordered).toEqual(['Chorus']);
   });
 });
+
+// #4350 — the unsequenced list covers every open column, not three pulse lanes.
+describe('#4350 unsequenced from the whole board', () => {
+  const { readUnsequencedFromBoard } = require('../src/handlers/context-priorities');
+  const board = [
+    { id: 3871, title: 'canary', owner: 'wren', status: 'Keep' },
+    { id: 11, title: 'later one', owner: 'wren', status: 'Later' },
+    { id: 12, title: 'new column', owner: 'wren', status: 'Zzz' },
+    { id: 13, title: 'landed', owner: 'wren', status: 'Done' },
+    { id: 14, title: 'rejected', owner: 'wren', status: "Won't Do" },
+    { id: 15, title: 'kade card', owner: 'kade', status: 'Keep' },
+    { id: 16, title: 'in a chunk', owner: 'wren', status: 'Keep' },
+  ];
+  it('NEGATIVE PROOF: Keep, Later and an unknown column show; Done, Won\'t Do, other roles and chunked cards do not', () => {
+    const out = readUnsequencedFromBoard(board, 'wren', new Set([16]));
+    expect(out.cards.map((c: { id: number }) => c.id)).toEqual([11, 12, 3871]);
+  });
+  it('an empty board read is not an empty answer: it falls back (null)', () => {
+    expect(readUnsequencedFromBoard([], 'wren', new Set())).toBeNull();
+  });
+});

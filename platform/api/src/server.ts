@@ -1795,6 +1795,8 @@ app.get('/api/chorus/context/priorities', async (req: Request, res: Response) =>
     {
       sparql: _athena,
       readPulse: readPulseFile,
+      // #4350 — the whole board, so /sup's unsequenced list covers every open column
+      readOpenCards: () => getBoardCards().map((c) => ({ id: Number(c.id), title: c.title, owner: c.owner, status: c.status, priority: c.priority })),
       owl: async (path: string) => {
         const resp = await fetch(`${owlBase}${path}`);
         if (!resp.ok) throw new Error(`athena-make ${resp.status} on ${path}`);

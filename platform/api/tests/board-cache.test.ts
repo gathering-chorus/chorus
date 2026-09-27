@@ -1,3 +1,4 @@
+// @test-type: unit — parses fixed cards-list text; no board, no network
 import { parseCardsListOutput, createBoardCache, CachedCard } from '../src/board-cache';
 
 describe('parseCardsListOutput', () => {
@@ -31,6 +32,15 @@ Next (2):
     expect(result).toHaveLength(3);
     expect(result.map(c => c.status)).toEqual(['WIP', 'Next', 'Next']);
     expect(result.map(c => c.id)).toEqual(['100', '200', '300']);
+  });
+
+  // #4350 NEGATIVE PROOF: a column the parser has never heard of. With a named
+  // list its header did not match, and its card was filed under the column above
+  // (live 2026-09-26: 60 Keep cards would have read as WIP).
+  it('files a card under an unknown column, never under the one above it', () => {
+    const result = parseCardsListOutput(`WIP (1):\n  10  Building [Wren|P1]\nKeep (1):\n  3871  Canary [Wren|P2]\n`);
+    expect(result.find((c) => c.id === '3871')?.status).toBe('Keep');
+    expect(result.find((c) => c.id === '10')?.status).toBe('WIP');
   });
 
   it("recognizes Won't Do as a status", () => {

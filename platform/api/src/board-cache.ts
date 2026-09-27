@@ -40,7 +40,10 @@ export interface BoardCache {
   ageMs: () => number;
 }
 
-const STATUS_HEADER = /^(WIP|Blocked|Now|Next|Later|Done|Won't Do)\s*\(\d+\)/;
+// #4350 — any column header, not a list of names. `cards list` now prints every
+// column (Keep, Gathering, garden-observability ...); with a named list, those
+// headers did not match and their cards were filed under the column above them.
+const STATUS_HEADER = /^(\S[^(]*?)\s*\(\d+\):?\s*$/;
 const CARD_ROW = /^(\d+)\s+(.+?)\s+\[([^\]]+)\]$/;
 
 /** Parse one matched card row into a CachedCard. Extracted from the loop so the
