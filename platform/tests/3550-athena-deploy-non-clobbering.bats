@@ -74,14 +74,14 @@ plant_sibling() {
   plant_sibling
   env ONTOLOGY_GRAPH="$TEST_GRAPH" TTL="$TTL" "$SCRIPT" >/dev/null 2>&1
   run curl -s "$Q" --data-urlencode "query=$PFX ASK { GRAPH <$TEST_GRAPH> { chorus:vs-step-sibling-3550 chorus:stepOrder 7 ; chorus:inStream chorus:vs-werk } }" -H "Accept: application/sparql-results+json"
-  [[ "${output// /}" == *'"boolean":true'* ]]
+  [[ "${output// /}" == *'"boolean":true'* ]] || return 1
 }
 
 @test "deploying a domain still lands its OWN shape (additive merge works)" {
   plant_sibling
   env ONTOLOGY_GRAPH="$TEST_GRAPH" TTL="$TTL" "$SCRIPT" >/dev/null 2>&1
   run curl -s "$Q" --data-urlencode "query=$PFX $SHPFX ASK { GRAPH <$TEST_GRAPH> { chorus:TestEdgesShape sh:property [ sh:path chorus:hermeticity ] } }" -H "Accept: application/sparql-results+json"
-  [[ "${output// /}" == *'"boolean":true'* ]]
+  [[ "${output// /}" == *'"boolean":true'* ]] || return 1
 }
 
 @test "re-deploying the SAME domain is idempotent (subject not duplicated)" {
@@ -89,5 +89,5 @@ plant_sibling() {
   env ONTOLOGY_GRAPH="$TEST_GRAPH" TTL="$TTL" "$SCRIPT" >/dev/null 2>&1
   # pyramidLayer is declared `a owl:DatatypeProperty` exactly once after two deploys
   run curl -s "$Q" --data-urlencode "query=$PFX SELECT (COUNT(*) AS ?n) WHERE { GRAPH <$TEST_GRAPH> { chorus:pyramidLayer a ?t } }" -H "Accept: application/sparql-results+json"
-  [[ "${output// /}" == *'"value":"1"'* ]]
+  [[ "${output// /}" == *'"value":"1"'* ]] || return 1
 }

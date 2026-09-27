@@ -78,7 +78,7 @@ TTL
 }
 
 @test "return gate — the query no longer mentions hasScope, and reads acl:accessTo" {
-  ! grep -q "hasScope" "$RQ"
+  ! grep -q "hasScope" "$RQ" || return 1
   grep -q "chorus:accessTo" "$RQ"
   grep -q "acl:Write" "$RQ"
 }

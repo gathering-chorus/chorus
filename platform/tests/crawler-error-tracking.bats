@@ -61,7 +61,7 @@ assert 'timestamp' in entry, 'no timestamp field'
 print('ok')
 "
   [ "$status" -eq 0 ]
-  [[ "$output" == *"ok"* ]]
+  [[ "$output" == *"ok"* ]] || return 1
 }
 
 @test "crawler logs failure with error details to status file" {
@@ -78,7 +78,7 @@ assert entry.get('consecutive_failures', 0) >= 1
 print('ok')
 "
   [ "$status" -eq 0 ]
-  [[ "$output" == *"ok"* ]]
+  [[ "$output" == *"ok"* ]] || return 1
 }
 
 @test "consecutive failure counter increments across runs" {
@@ -93,7 +93,7 @@ assert entry.get('consecutive_failures', 0) >= 2, f'expected >=2, got {entry.get
 print('ok')
 "
   [ "$status" -eq 0 ]
-  [[ "$output" == *"ok"* ]]
+  [[ "$output" == *"ok"* ]] || return 1
 }
 
 @test "successful crawl resets consecutive failure counter" {
@@ -109,5 +109,5 @@ assert entry.get('consecutive_failures', 0) == 0
 print('ok')
 "
   [ "$status" -eq 0 ]
-  [[ "$output" == *"ok"* ]]
+  [[ "$output" == *"ok"* ]] || return 1
 }

@@ -40,8 +40,8 @@ teardown() { rm -rf "$TEST_HOME"; }
 @test "chorus-api unavailable: retries are bounded, run is skipped + announced" {
   run env API_URL="$DEAD_API" DB_PATH="$TEST_DB" CHORUS_ROOT="$TEST_ROOT" \
     HEALTH_RETRY_MAX=2 HEALTH_RETRY_DELAY=0 bash "$SCRIPT"
-  [[ "$output" == *"unavailable"* ]]
-  [[ "$output" == *"skip"* ]]
+  [[ "$output" == *"unavailable"* ]] || return 1
+  [[ "$output" == *"skip"* ]] || return 1
 }
 
 # AC1 (resume): the health gate breaks out and proceeds the moment chorus-api
@@ -68,9 +68,9 @@ with socketserver.TCPServer(('127.0.0.1', $STUB_PORT), H) as s:
   kill "$STUB_PID" 2>/dev/null || true
 
   # it got PAST the api gate — no "unavailable/skip" message
-  [[ "$output" != *"unavailable after"* ]]
+  [[ "$output" != *"unavailable after"* ]] || return 1
 
   # #3076: the status write landed in the override file, NOT the live /tmp path
   [ -f "$CRAWLER_STATUS_FILE" ]
-  ! grep -q notadomain /tmp/crawler-domain-status.json 2>/dev/null
+  ! grep -q notadomain /tmp/crawler-domain-status.json 2>/dev/null || return 1
 }

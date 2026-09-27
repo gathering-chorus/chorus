@@ -219,7 +219,7 @@ TTL
 @test "NEGATIVE PROOF: the decorative sh:sparql rule is GONE, not left beside the real one" {
   # Two rules for one thing is how three spellings of a role happened. The
   # inert one had to be deleted, not demoted.
-  ! grep -q "chorus:PrincipalWebIdUnique" "$SEC_TTL"
+  ! grep -q "chorus:PrincipalWebIdUnique" "$SEC_TTL" || return 1
 }
 
 # ------------------------------------------------------- the word cap ---

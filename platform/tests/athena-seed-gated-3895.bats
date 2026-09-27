@@ -36,7 +36,7 @@ setup() {
   # the split kept the gate.
   run env -u CHORUS_IDENTITY_TOKEN CHORUS_ROOT="$ROOT" "$BIN" seed --deploy
   [ "$status" -ne 0 ]
-  [[ "$output" == *"identity-token-required"* ]]
+  [[ "$output" == *"identity-token-required"* ]] || return 1
 }
 
 @test "NEGATIVE PROOF: a BOGUS token is refused too — presence is not verification" {
@@ -52,5 +52,5 @@ setup() {
   printf '# no groups here\n' > "$FAKEROOT/platform/config/instance-seed-manifest.txt"
   run env -u CHORUS_IDENTITY_TOKEN CHORUS_ROOT="$FAKEROOT" "$BIN" seed --deploy
   [ "$status" -ne 0 ]
-  [[ "$output" == *"no groups"* ]]
+  [[ "$output" == *"no groups"* ]] || return 1
 }

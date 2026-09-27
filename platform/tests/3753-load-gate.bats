@@ -30,19 +30,19 @@ setup() {
   export NIGHTLY_LOAD_STUB=999
   CHORUS_ROOT="$BATS_TEST_TMPDIR" CHORUS_HOME="$BATS_TEST_TMPDIR" NIGHTLY_RUNNER_CMD=/nonexistent NIGHTLY_LEGS_NOOP=1 OWLAPI=http://127.0.0.1:9 NIGHTLY_API=http://127.0.0.1:9 NIGHTLY_LOCKDIR="$BATS_TEST_TMPDIR/lock.d" run "$BIN" --nightly --run-all
   [ "$status" -eq 0 ]
-  [[ "$output" == *"UNMEASURABLE"* ]]
+  [[ "$output" == *"UNMEASURABLE"* ]] || return 1
   grep -q '^RUN|unmeasurable|' "$NIGHTLY_LOG_PATH"
   # spine carries the typed state, not a red
   grep -q 'nightly.run.unmeasurable' "$BATS_TEST_TMPDIR/spine.txt"
   grep -q 'zero_red=unmeasurable' "$BATS_TEST_TMPDIR/spine.txt"
   # no suite executed under load
-  ! grep -q '^SUITE|' "$NIGHTLY_LOG_PATH"
+  ! grep -q '^SUITE|' "$NIGHTLY_LOG_PATH" || return 1
 }
 
 @test "quiet box: low stubbed load passes the gate (--load-gate rc 0)" {
   NIGHTLY_LOAD_STUB=0.1 run "$BIN" --nightly --load-gate
   [ "$status" -eq 0 ]
-  [[ "$output" == load=0.1* ]]
+  [[ "$output" == load=0.1* ]] || return 1
 }
 
 @test "threshold is cores-relative and config-overridable" {
@@ -78,8 +78,8 @@ setup() {
     "chorus-api: DOWN — code=500 exit=0 after retry" \
     | NIGHTLY_LOAD_STUB=999 LOAD_GATE_BIN="'"$BIN"'" "'"$BATS_TEST_DIRNAME"'/../scripts/load-reclassify.sh"'
   [ "$status" -eq 0 ]
-  [[ "${lines[0]}" == "WARN|unmeasurable under load (load=999"* ]]
-  [[ "${lines[1]}" == "FAIL|chorus-api: DOWN — code=500"* ]]
+  [[ "${lines[0]}" == "WARN|unmeasurable under load (load=999"* ]] || return 1
+  [[ "${lines[1]}" == "FAIL|chorus-api: DOWN — code=500"* ]] || return 1
 }
 
 @test "AC3 negative proof: quiet box keeps timeouts as FAIL — the alert still fires" {
@@ -87,5 +87,5 @@ setup() {
     "gathering-app: localhost:3002 returned 000 — app down" \
     | NIGHTLY_LOAD_STUB=0.1 LOAD_GATE_BIN="'"$BIN"'" "'"$BATS_TEST_DIRNAME"'/../scripts/load-reclassify.sh"'
   [ "$status" -eq 0 ]
-  [[ "${lines[0]}" == "FAIL|gathering-app"* ]]
+  [[ "${lines[0]}" == "FAIL|gathering-app"* ]] || return 1
 }

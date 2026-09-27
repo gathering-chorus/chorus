@@ -141,7 +141,7 @@ sys.exit(0 if "Internal notes for the team" in r else 1)' || { echo "$p.referenc
 @test "negative proof (#3734): the insider-refs check FAILS on a chapter that names a card or a role" {
   run bash -c "$(declare -f no_insider_refs); printf '%s' 'landed on #4045 with the go' | no_insider_refs"
   [ "$status" -eq 1 ]
-  [[ "$output" == *"#4045"* ]]
+  [[ "$output" == *"#4045"* ]] || return 1
   run bash -c "$(declare -f no_insider_refs); printf '%s' 'Silas established this in the service design' | no_insider_refs"
   [ "$status" -eq 1 ]
   run bash -c "$(declare -f no_insider_refs); printf '%s' 'The architect role established this in the service design' | no_insider_refs"

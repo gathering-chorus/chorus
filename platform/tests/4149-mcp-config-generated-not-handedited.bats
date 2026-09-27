@@ -34,15 +34,15 @@ teardown() { rm -rf "$TMP"; }
   for r in "${ROLES[@]}"; do
     run srv "$TMP/roles/$r/.mcp.json"
     [ "$status" -eq 0 ]
-    [[ "$output" == *grafana* ]]
+    [[ "$output" == *grafana* ]] || return 1
   done
 }
 
 @test "grafana runs read-only — admin and write tools disabled" {
   env GEN_MCP_WRITE_ROOT="$TMP" bash "$GEN" >/dev/null
   run python3 -c "import json;a=json.load(open('$TMP/roles/silas/.mcp.json'))['mcpServers']['grafana']['args'];print(' '.join(a))"
-  [[ "$output" == *-disable-admin* ]]
-  [[ "$output" == *-disable-write* ]]
+  [[ "$output" == *-disable-admin* ]] || return 1
+  [[ "$output" == *-disable-write* ]] || return 1
 }
 
 @test "generator writes where told and leaves the live repo untouched" {
@@ -70,7 +70,7 @@ json.dump(d,open(p,"w"),indent=2)
 PY
   run bash "$DRIFT" "$TMP"
   [ "$status" -ne 0 ]
-  [[ "$output" == *kade* ]]
+  [[ "$output" == *kade* ]] || return 1
 }
 
 @test "NEGATIVE PROOF — drift check goes red when a role config is missing entirely" {
@@ -78,5 +78,5 @@ PY
   rm "$TMP/roles/wren/.mcp.json"
   run bash "$DRIFT" "$TMP"
   [ "$status" -ne 0 ]
-  [[ "$output" == *wren* ]]
+  [[ "$output" == *wren* ]] || return 1
 }

@@ -49,7 +49,7 @@ SCRIPT="$(cd "$(dirname "$BATS_TEST_FILENAME")/../scripts" && pwd)/daily-signal-
 @test "NEGATIVE PROOF (#4274): '[ -n ] && echo' as a loop body ends the scan on an empty section" {
   run bash -c 'set -euo pipefail; echo "" | while read -r line; do [ -n "$line" ] && echo "  - $line"; done; echo reached'
   [ "$status" -ne 0 ]
-  [[ "$output" != *reached* ]]
+  [[ "$output" != *reached* ]] || return 1
 }
 
 @test "#4274: the if-form prints nothing for an empty section and the scan continues" {

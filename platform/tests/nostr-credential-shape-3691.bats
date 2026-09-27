@@ -31,7 +31,7 @@ ${PRE}chorus:key-silas-nostr a chorus:KeyRegistryEntry ;
   chorus:nostrPubkey "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa" .
 TTL
   run "$SHACL" validate --shapes "$SHAPES" --data "$WORK/ok.ttl"
-  [[ "$output" == *"sh:conforms  true"* ]]
+  [[ "$output" == *"sh:conforms  true"* ]] || return 1
 }
 
 @test "NEGATIVE: an unowned credential (no forPrincipal) REFUSES" {
@@ -41,8 +41,8 @@ ${PRE}chorus:key-orphan a chorus:KeyRegistryEntry ;
   chorus:nostrPubkey "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa" .
 TTL
   run "$SHACL" validate --shapes "$SHAPES" --data "$WORK/unowned.ttl"
-  [[ "$output" == *"sh:conforms  false"* ]]
-  [[ "$output" == *"parallel identity"* ]]
+  [[ "$output" == *"sh:conforms  false"* ]] || return 1
+  [[ "$output" == *"parallel identity"* ]] || return 1
 }
 
 @test "NEGATIVE: a keyId carrying a VALUE-looking string (not an env-var NAME) REFUSES" {
@@ -54,8 +54,8 @@ ${PRE}chorus:key-leak a chorus:KeyRegistryEntry ;
   chorus:nostrPubkey "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa" .
 TTL
   run "$SHACL" validate --shapes "$SHAPES" --data "$WORK/leak.ttl"
-  [[ "$output" == *"sh:conforms  false"* ]]
-  [[ "$output" == *"ENV-VAR NAME"* ]]
+  [[ "$output" == *"sh:conforms  false"* ]] || return 1
+  [[ "$output" == *"ENV-VAR NAME"* ]] || return 1
 }
 
 @test "NEGATIVE: a malformed pubkey (wrong length / case) REFUSES" {
@@ -66,7 +66,7 @@ ${PRE}chorus:key-bad a chorus:KeyRegistryEntry ;
   chorus:nostrPubkey "DEADBEEF" .
 TTL
   run "$SHACL" validate --shapes "$SHAPES" --data "$WORK/badkey.ttl"
-  [[ "$output" == *"sh:conforms  false"* ]]
+  [[ "$output" == *"sh:conforms  false"* ]] || return 1
 }
 
 @test "the shape is IN the deploy set — declared is not deployed (#3691's whole lesson)" {

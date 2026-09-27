@@ -15,28 +15,28 @@ setup() {
 @test "RED: an unmapped instance fails the check and is NAMED" {
   run bash "$CHECK" --data "$FIX/unmapped-instance.ttl"
   [ "$status" -eq 1 ]
-  [[ "$output" == *"com.example.mystery"* ]]
-  [[ "$output" == *"unmapped"* ]]
+  [[ "$output" == *"com.example.mystery"* ]] || return 1
+  [[ "$output" == *"unmapped"* ]] || return 1
 }
 
 @test "GREEN: a mapped, running, fresh instance passes" {
   run bash "$CHECK" --data "$FIX/mapped-fresh.ttl"
   [ "$status" -eq 0 ]
-  [[ "$output" == *"green"* ]]
+  [[ "$output" == *"green"* ]] || return 1
 }
 
 @test "RED: a vanished (absent) instance fails even though it is mapped" {
   run bash "$CHECK" --data "$FIX/vanished-instance.ttl"
   [ "$status" -eq 1 ]
-  [[ "$output" == *"com.example.gone"* ]]
-  [[ "$output" == *"vanished"* ]]
+  [[ "$output" == *"com.example.gone"* ]] || return 1
+  [[ "$output" == *"vanished"* ]] || return 1
 }
 
 @test "RED: a stale instance (lastObserved beyond cutoff) fails" {
   run bash "$CHECK" --data "$FIX/stale-instance.ttl"
   [ "$status" -eq 1 ]
-  [[ "$output" == *"com.example.stale"* ]]
-  [[ "$output" == *"stale"* ]]
+  [[ "$output" == *"com.example.stale"* ]] || return 1
+  [[ "$output" == *"stale"* ]] || return 1
 }
 
 @test "GREEN: the empty graph passes — check works before any harvest exists" {
@@ -82,6 +82,6 @@ setup() {
 @test "RED: a stale mapping row is a named finding" {
   run bash "$CHECK" --data "$FIX/stale-mapping.ttl"
   [ "$status" -eq 1 ]
-  [[ "$output" == *"com.test.ghost"* ]]
-  [[ "$output" == *"stale-mapping"* ]]
+  [[ "$output" == *"com.test.ghost"* ]] || return 1
+  [[ "$output" == *"stale-mapping"* ]] || return 1
 }

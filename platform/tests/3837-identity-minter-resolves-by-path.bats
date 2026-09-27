@@ -27,12 +27,13 @@ setup() {
 @test "NEGATIVE PROOF: minter absent → wrapper warns on stderr and hands the DAL an empty token" {
   run bash -c "
     export PATH='$HOME_FIXTURE/bin:/usr/bin:/bin'
+    unset CHORUS_SESSION_TOKEN_FILE  # #4335: a logged-in pane's session file would name the role instead
     export CHORUS_HOME='$BATS_TEST_TMPDIR/no-chorus' CHORUS_ROLE=silas DEPLOY_ROLE=silas
     $(extract_wrapper)
     athena-model add --kind decision --name x
   "
-  [[ "$output" == *"WARN no identity token minted"* ]]
-  [[ "$output" == *"TOKEN=[]"* ]]
+  [[ "$output" == *"WARN no identity token minted"* ]] || return 1
+  [[ "$output" == *"TOKEN=[]"* ]] || return 1
 }
 
 @test "minter present at CHORUS_HOME/platform/scripts → used even though PATH has no such command" {
@@ -41,10 +42,11 @@ setup() {
   chmod +x "$BATS_TEST_TMPDIR/chorus/platform/scripts/chorus-identity-token"
   run bash -c "
     export PATH='$HOME_FIXTURE/bin:/usr/bin:/bin'
+    unset CHORUS_SESSION_TOKEN_FILE  # #4335: a logged-in pane's session file would name the role instead
     export CHORUS_HOME='$BATS_TEST_TMPDIR/chorus' CHORUS_ROLE=silas DEPLOY_ROLE=silas
     $(extract_wrapper)
     athena-model add --kind decision --name x
   "
-  [[ "$output" == *"TOKEN=[minted-for-silas]"* ]]
-  [[ "$output" != *"WARN"* ]]
+  [[ "$output" == *"TOKEN=[minted-for-silas]"* ]] || return 1
+  [[ "$output" != *"WARN"* ]] || return 1
 }

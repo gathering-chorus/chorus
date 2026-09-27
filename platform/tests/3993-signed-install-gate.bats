@@ -25,7 +25,7 @@ setup() {
   command -v codesign >/dev/null || skip "codesign absent (non-macOS)"
   run bash "$INSTALL" "$BATS_TEST_TMPDIR/fake-hooks" chorus-hooks
   [ "$status" -eq 10 ]
-  [[ "$output" == *"REFUSED"* ]]
+  [[ "$output" == *"REFUSED"* ]] || return 1
   [ "$("$HOME/.chorus/bin/chorus-hooks")" = "previous" ]
   grep -q 'binary.install.refused .*binary=chorus-hooks reason=unsigned' "$CHORUS_BIN_SPINE_LOG"
 }
@@ -48,5 +48,5 @@ setup() {
 @test "loud escape: CHORUS_BIN_SKIP_SIGCHECK=1 installs but says so on stderr" {
   CHORUS_BIN_SKIP_SIGCHECK=1 run bash "$INSTALL" "$BATS_TEST_TMPDIR/fake-hooks" chorus-hooks
   [ "$status" -eq 0 ]
-  [[ "$output" == *"SIGCHECK SKIPPED"* ]]
+  [[ "$output" == *"SIGCHECK SKIPPED"* ]] || return 1
 }

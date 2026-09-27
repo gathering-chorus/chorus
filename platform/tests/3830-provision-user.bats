@@ -37,7 +37,7 @@ world() {
 @test "usage is exit 2, not a silent success" {
   run "$BIN"
   [ "$status" -eq 2 ]
-  [[ "$output" == *"create"* ]]
+  [[ "$output" == *"create"* ]] || return 1
 }
 
 @test "NEGATIVE PROOF — an empty read is REFUSED, never reported as a clean census" {
@@ -50,7 +50,7 @@ world() {
   # 13 bindings from a perfectly good response. This refusal is what surfaced it.
   run "$BIN" census
   [ "$status" -eq 2 ]
-  [[ "$output" == *"refusing to report a clean census over an empty read"* ]]
+  [[ "$output" == *"refusing to report a clean census over an empty read"* ]] || return 1
 }
 
 @test "NEGATIVE PROOF — a role store that cannot be read is UNMEASURED, not no-role" {
@@ -58,8 +58,8 @@ world() {
   # domain refuses every provision and calls it a policy decision.
   run "$BIN" create somebody-new --kind agent --role role-test
   [ "$status" -eq 2 ]
-  [[ "$output" == *"UNMEASURED, not no-role"* ]]
-  [[ "$output" == *"nothing was written"* ]]
+  [[ "$output" == *"UNMEASURED, not no-role"* ]] || return 1
+  [[ "$output" == *"nothing was written"* ]] || return 1
 }
 
 @test "NEGATIVE PROOF — the unreadable store is a REFUSAL, not a yes (v1 returned true here)" {
@@ -67,7 +67,7 @@ world() {
   # became a minted credential. Under the same dead store, nothing past the
   # gate may run — the register refusal text must NOT appear.
   run "$BIN" create somebody-new --kind agent --role role-test
-  [[ "$output" != *"could not reach the CSS accounts API"* ]]
+  [[ "$output" != *"could not reach the CSS accounts API"* ]] || return 1
 }
 
 @test "a human is not gated on a role — they act for themself" {
@@ -75,17 +75,17 @@ world() {
   # gets as far as the identity check, which refuses for its own reason.
   run "$BIN" create somebody-new --kind human --name "Some Body" --email somebody@example.org
   [ "$status" -eq 2 ]
-  [[ "$output" != *"UNMEASURED"* ]]
-  [[ "$output" == *"no verified identity"* ]]
+  [[ "$output" != *"UNMEASURED"* ]] || return 1
+  [[ "$output" == *"no verified identity"* ]] || return 1
 }
 
 @test "NEGATIVE PROOF — a human with no name or no email is REFUSED at the door" {
   run "$BIN" create somebody-new --kind human --email somebody@example.org
   [ "$status" -eq 2 ]
-  [[ "$output" == *"needs --name"* ]]
+  [[ "$output" == *"needs --name"* ]] || return 1
   run "$BIN" create somebody-new --kind human --name "Some Body"
   [ "$status" -eq 2 ]
-  [[ "$output" == *"needs --name"* ]]
+  [[ "$output" == *"needs --name"* ]] || return 1
 }
 
 @test "a human gets their OWN account — the register unreachable refuses before anything, account included" {
@@ -93,16 +93,16 @@ world() {
   export CHORUS_IDENTITY_TOKEN="test-token"
   run "$BIN" create somebody-new --kind human --name "Some Body" --email somebody@example.org
   [ "$status" -eq 2 ]
-  [[ "$output" == *"could not reach the CSS accounts API"* ]]
-  [[ "$output" == *"nothing was written"* ]]
+  [[ "$output" == *"could not reach the CSS accounts API"* ]] || return 1
+  [[ "$output" == *"nothing was written"* ]] || return 1
   [ ! -e "$HOME/.chorus/identity/somebody-new/initial-password" ]
 }
 
 @test "NEGATIVE PROOF — a user with no kind is REFUSED at the door, not minted" {
   run "$BIN" create somebody-new
   [ "$status" -eq 2 ]
-  [[ "$output" == *"has no kind"* ]]
-  [[ "$output" == *"nothing was written"* ]]
+  [[ "$output" == *"has no kind"* ]] || return 1
+  [[ "$output" == *"nothing was written"* ]] || return 1
 }
 
 @test "NEGATIVE PROOF — a principal ROW without a pod is HALF-PROVISIONED, never ALREADY EXISTS" {
@@ -112,11 +112,11 @@ world() {
   world 401 200
   export CHORUS_IDENTITY_TOKEN="test-token"
   run "$BIN" create ghost --kind agent --role role-test
-  [[ "$output" != *"already exists"* ]]
-  [[ "$output" == *"HALF-PROVISIONED"* ]]
+  [[ "$output" != *"already exists"* ]] || return 1
+  [[ "$output" == *"HALF-PROVISIONED"* ]] || return 1
   # ...and it went on to the register, which is dead here, so it refused there.
   [ "$status" -eq 2 ]
-  [[ "$output" == *"could not reach the CSS accounts API"* ]]
+  [[ "$output" == *"could not reach the CSS accounts API"* ]] || return 1
 }
 
 @test "control — a row whose profile card the register SERVES is a no-op returning that webId" {
@@ -124,8 +124,8 @@ world() {
   export CHORUS_IDENTITY_TOKEN="test-token"
   run "$BIN" create whole --kind agent --role role-test
   [ "$status" -eq 0 ]
-  [[ "$output" == *"already exists"* ]]
-  [[ "${lines[0]}" == *"/whole/profile/card#me" ]]
+  [[ "$output" == *"already exists"* ]] || return 1
+  [[ "${lines[0]}" == *"/whole/profile/card#me" ]] || return 1
 }
 
 @test "the same fixture flipped — ghost served, whole not — flips both verdicts" {
@@ -134,16 +134,16 @@ world() {
   export CHORUS_IDENTITY_TOKEN="test-token"
   run "$BIN" create ghost --kind agent --role role-test
   [ "$status" -eq 0 ]
-  [[ "$output" == *"already exists"* ]]
+  [[ "$output" == *"already exists"* ]] || return 1
   run "$BIN" create whole --kind agent --role role-test
-  [[ "$output" == *"HALF-PROVISIONED"* ]]
+  [[ "$output" == *"HALF-PROVISIONED"* ]] || return 1
 }
 
 @test "plan reports HALF-PROVISIONED for a row without a pod and writes nothing" {
   world 401 200
   run "$BIN" plan ghost
   [ "$status" -eq 0 ]
-  [[ "$output" == *"HALF-PROVISIONED"* ]]
+  [[ "$output" == *"HALF-PROVISIONED"* ]] || return 1
 }
 
 @test "the write door's collection comes from the discovery document, not a path literal" {
@@ -153,8 +153,8 @@ world() {
   export ATHENA_MAKE_URL="http://127.0.0.1:59997" CHORUS_IDENTITY_TOKEN="test-token"
   run "$BIN" create somebody-new --kind agent --role role-test
   [ "$status" -eq 2 ]
-  [[ "$output" == *"discovery document does not name a Principal collection"* ]]
-  ! grep -q '"/v1/identity/principals"' "${BATS_TEST_DIRNAME}/../services/chorus-principal/src/main.rs"
+  [[ "$output" == *"discovery document does not name a Principal collection"* ]] || return 1
+  ! grep -q '"/v1/identity/principals"' "${BATS_TEST_DIRNAME}/../services/chorus-principal/src/main.rs" || return 1
 }
 
 @test "the register being unreachable REFUSES before anything is written" {
@@ -162,8 +162,8 @@ world() {
   export CHORUS_IDENTITY_TOKEN="test-token"
   run "$BIN" create somebody-new --kind agent --role role-test
   [ "$status" -eq 2 ]
-  [[ "$output" == *"could not reach the CSS accounts API"* ]]
-  [[ "$output" == *"nothing was written"* ]]
+  [[ "$output" == *"could not reach the CSS accounts API"* ]] || return 1
+  [[ "$output" == *"nothing was written"* ]] || return 1
 }
 
 @test "the refusal names the register as the only source of a webId" {
@@ -172,7 +172,7 @@ world() {
   world 401 200
   export CHORUS_IDENTITY_TOKEN="test-token"
   run "$BIN" create somebody-new --kind agent --role role-test
-  [[ "$output" == *"only source of a webId"* ]]
+  [[ "$output" == *"only source of a webId"* ]] || return 1
 }
 
 @test "NEGATIVE PROOF — there is no template fallback anywhere in the source" {
@@ -189,8 +189,8 @@ world() {
 @test "the plan subcommand writes nothing and says so" {
   run "$BIN" plan somebody-new
   [ "$status" -eq 0 ]
-  [[ "$output" == *"REFUSE"* ]]
-  [[ "$output" == *"all three, or none"* ]]
+  [[ "$output" == *"REFUSE"* ]] || return 1
+  [[ "$output" == *"all three, or none"* ]] || return 1
 }
 
 @test "plan is a separate verb, not a dry-run flag on create" {

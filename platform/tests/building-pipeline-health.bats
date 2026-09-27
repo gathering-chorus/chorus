@@ -140,7 +140,7 @@ run_health() {
   # never emits it. A weaker `!= *idle*` mid-test would be silently ignored,
   # and `== *chorus_acp.completed events*` is matched by the idle message too
   # ("no chorus_acp.completed events ...") — both would pass by not checking.
-  [[ "$output" == *"release-trigger pairing:"* ]]
+  [[ "$output" == *"release-trigger pairing:"* ]] || return 1
 }
 
 # Same condition, JSON shape — acp_count must be >0, never silently 0.
@@ -159,8 +159,8 @@ run_health() {
   start_mock
   run run_health
   [ "$status" -eq 1 ]
-  [[ "$output" != *"idle"* ]]
-  [[ "$output" == *"missing"* ]]
+  [[ "$output" != *"idle"* ]] || return 1
+  [[ "$output" == *"missing"* ]] || return 1
 }
 
 # Genuine idle (no acp anywhere) is the ONLY case "idle; skipping" is allowed.
@@ -180,5 +180,5 @@ PY
   for _ in $(seq 1 30); do curl -sf "http://localhost:${MOCK_PORT}/x" >/dev/null 2>&1 && break; sleep 0.1; done
   run run_health
   [ "$status" -eq 0 ]
-  [[ "$output" == *"idle"* ]]
+  [[ "$output" == *"idle"* ]] || return 1
 }

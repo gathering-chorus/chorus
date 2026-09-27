@@ -48,7 +48,7 @@ GEN_SCRIPT="${CHORUS_ROOT}/platform/scripts/generate-standards-surface.sh"
     bash "$SCRIPT" --force 2>/dev/null || true
   # The state file the RUN was told to use is the one that must exist.
   [ -f "$state" ]
-  [[ "$(cat "$state")" == *"decisions"* ]]
+  [[ "$(cat "$state")" == *"decisions"* ]] || return 1
 }
 
 @test "AC1: force flag always regenerates" {
@@ -58,8 +58,8 @@ GEN_SCRIPT="${CHORUS_ROOT}/platform/scripts/generate-standards-surface.sh"
   run env STANDARDS_STATE_FILE="$state" STANDARDS_OUTPUT_DIR="$outdir" \
     bash "$SCRIPT" --force
   [ "$status" -eq 0 ]
-  [[ "$output" == *"Forced regeneration"* ]]
-  [[ "$output" == *"complete"* ]]
+  [[ "$output" == *"Forced regeneration"* ]] || return 1
+  [[ "$output" == *"complete"* ]] || return 1
 }
 
 @test "AC3: generation script exists (dependency)" {

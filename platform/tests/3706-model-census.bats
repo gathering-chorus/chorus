@@ -41,7 +41,7 @@ setup() {
   grep -q "fetchJSON('/schema')" "$PAGE"
   grep -qE "set\.classes|\(set\.classes \|\| \[\]\)" "$PAGE"
   # and must NOT reintroduce a hardcoded roster
-  ! grep -qE "\['products',|\[\"products\"," "$PAGE"
+  ! grep -qE "\['products',|\[\"products\"," "$PAGE" || return 1
 }
 
 # It surfaces version (the #3704 axis) and the populated-vs-empty worklist.

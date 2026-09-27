@@ -52,7 +52,7 @@ teardown() { rm -rf "$T"; }
 
 @test "a unit the Loki job list does not carry gets no lokiJob (shipped is measured, not assumed)" {
   run python3 "$GEN" --plists "$T/la" --mapping "$T/map.tsv" --loki-jobs "$T/jobs.txt"
-  ! grep -A12 'logsource-library-com.chorus.silent>' <<<"$output" | grep -q 'chorus:lokiJob'
+  ! grep -A12 'logsource-library-com.chorus.silent>' <<<"$output" | grep -q 'chorus:lokiJob' || return 1
 }
 
 @test "a werk variant unit inherits its base unit's domain (env-up mints them per card; nobody authors rows for them)" {
@@ -92,7 +92,7 @@ teardown() { rm -rf "$T"; }
   python3 "$GEN" --plists "$T/la" --mapping "$T/map.tsv" --loki-jobs "$T/jobs.txt" > "$T/gen.ttl"
   run env -u HARVEST_OWNED_CLASSES bash "$LOAD" --generated "$T/gen.ttl" --dry-run
   [ "$status" -ne 0 ]
-  [[ "$output" == *"does not own"* ]]
+  [[ "$output" == *"does not own"* ]] || return 1
   run env HARVEST_OWNED_CLASSES=LogSource bash "$LOAD" --generated "$T/gen.ttl" --dry-run
-  [[ "$output" != *"does not own"* ]]
+  [[ "$output" != *"does not own"* ]] || return 1
 }

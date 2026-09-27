@@ -65,9 +65,9 @@ teardown() {
 @test "hooks.started lands on the daemon's own spine with pid + ppid" {
   start_daemon
   line=$(grep '"event":"hooks.started"' "$CHORUS_LOG_FILE" | tail -1)
-  [[ "$line" == *"\"pid\":\"$DPID\""* ]]
-  [[ "$line" == *"\"ppid\":\"$$\""* ]]
-  [[ "$line" == *'"role":"system"'* ]]
+  [[ "$line" == *"\"pid\":\"$DPID\""* ]] || return 1
+  [[ "$line" == *"\"ppid\":\"$$\""* ]] || return 1
+  [[ "$line" == *'"role":"system"'* ]] || return 1
 }
 
 @test "AC1: SIGTERM → hooks.terminating names signal + sender pid/uid/comm + ppid" {
@@ -76,15 +76,15 @@ teardown() {
   wait_gone "$DPID"
   line=$(grep '"event":"hooks.terminating"' "$CHORUS_LOG_FILE" | tail -1)
   echo "line=$line"
-  [[ -n "$line" ]]
-  [[ "$line" == *'"signal":"SIGTERM"'* ]]
+  [[ -n "$line" ]] || return 1
+  [[ "$line" == *'"signal":"SIGTERM"'* ]] || return 1
   # the sender is THIS bats shell — the witness saw si_pid, not a guess
-  [[ "$line" == *"\"sender_pid\":\"$$\""* ]]
-  [[ "$line" == *"\"sender_uid\":\"$(id -u)\""* ]]
-  [[ "$line" == *'"sender_comm":"'* ]]
-  [[ "$line" != *'"sender_comm":"unknown"'* ]]
-  [[ "$line" == *"\"ppid\":\"$$\""* ]]
-  [[ "$line" == *'"uptime_s":"'* ]]
+  [[ "$line" == *"\"sender_pid\":\"$$\""* ]] || return 1
+  [[ "$line" == *"\"sender_uid\":\"$(id -u)\""* ]] || return 1
+  [[ "$line" == *'"sender_comm":"'* ]] || return 1
+  [[ "$line" != *'"sender_comm":"unknown"'* ]] || return 1
+  [[ "$line" == *"\"ppid\":\"$$\""* ]] || return 1
+  [[ "$line" == *'"uptime_s":"'* ]] || return 1
 }
 
 @test "AC2 NEGATIVE PROOF: SIGKILL is uncatchable → NO hooks.terminating (absence stated honestly)" {
@@ -95,7 +95,7 @@ teardown() {
   sleep 0.5
   run grep -c '"event":"hooks.terminating"' "$CHORUS_LOG_FILE"
   echo "count=$output"
-  [[ "$output" == "0" ]]
+  [[ "$output" == "0" ]] || return 1
   # the daemon's own record ends at hooks.started — that gap IS the evidence
   grep -q '"event":"hooks.started"' "$CHORUS_LOG_FILE"
 }
@@ -107,11 +107,11 @@ teardown() {
   wait_gone "$DPID"
   line=$(grep '"event":"hooks.terminating"' "$CHORUS_LOG_FILE" | tail -1)
   echo "line=$line"
-  [[ -n "$line" ]]
+  [[ -n "$line" ]] || return 1
   # if the witness were just echoing getppid() the two would collide; they must not
-  [[ "$line" != *"\"sender_pid\":\"$$\""* ]]
-  [[ "$line" == *"\"ppid\":\"$$\""* ]]
+  [[ "$line" != *"\"sender_pid\":\"$$\""* ]] || return 1
+  [[ "$line" == *"\"ppid\":\"$$\""* ]] || return 1
   # the subshell exited the moment kill returned — the name resolves as gone,
   # which is exactly the state a one-shot terminator leaves behind in prod
-  [[ "$line" == *'"sender_comm":"gone"'* ]]
+  [[ "$line" == *'"sender_comm":"gone"'* ]] || return 1
 }

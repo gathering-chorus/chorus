@@ -75,8 +75,8 @@ EOF
 
   run "$CHECK_SCRIPT"
   [ "$status" -eq 0 ]
-  [[ "$output" == *"ok"* ]]
-  [[ "$output" == *"38074"* ]]
+  [[ "$output" == *"ok"* ]] || return 1
+  [[ "$output" == *"38074"* ]] || return 1
 }
 
 # --- AC: skip-count is observable (counter/log when skipping) ---

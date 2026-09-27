@@ -25,7 +25,7 @@ GEN="$REPO_ROOT/platform/scripts/gen-role-mcp.sh"
 
 @test "no bare command:cclsp regression (the nvm-PATH break)" {
   # The exact rot we are fixing must not reappear.
-  ! grep -qE '"command": "cclsp"' "$GEN"
+  ! grep -qE '"command": "cclsp"' "$GEN" || return 1
 }
 
 @test "running the generator emits an absolute cclsp command" {
@@ -40,6 +40,6 @@ GEN="$REPO_ROOT/platform/scripts/gen-role-mcp.sh"
   run python3 -c "import json; print(json.load(open('$TMP/roles/wren/.mcp.json'))['mcpServers']['cclsp']['command'])"
   [ "$status" -eq 0 ]
   # Command must be an absolute path (starts with /), not a bare name.
-  [[ "$output" == /* ]]
+  [[ "$output" == /* ]] || return 1
   rm -rf "$TMP"
 }

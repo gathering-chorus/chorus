@@ -34,12 +34,12 @@ MODEL="$ROOT/roles/silas/ontology/chorus.ttl"
 @test "the caller's name comes from the graph, not parsed out of the WebID" {
   grep -q 'fn principal_name_query' "$OIDC"
   grep -q 'REPLACE(REPLACE(STR(?p)' "$OIDC"
-  ! grep -qE 'web_id\.(split|rsplit|trim)\(.*profile' "$OIDC"
+  ! grep -qE 'web_id\.(split|rsplit|trim)\(.*profile' "$OIDC" || return 1
 }
 
 @test "model — ownedBy ranges over Principal, and no owner shape still says Role" {
   grep -A9 '^chorus:ownedBy a owl:ObjectProperty' "$MODEL" | grep -q 'rdfs:range chorus:Principal'
-  ! grep -A9 '^chorus:ownedBy a owl:ObjectProperty' "$MODEL" | grep -q 'rdfs:range chorus:Role'
+  ! grep -A9 '^chorus:ownedBy a owl:ObjectProperty' "$MODEL" | grep -q 'rdfs:range chorus:Role' || return 1
   # every property shape whose path is ownedBy: sh:class must be Principal
   for f in "$MODEL" "$ROOT/roles/wren/ontology/board-3654.ttl" "$ROOT/roles/kade/ontology/domains-kade-3581.ttl"; do
     bad=$(tr '\n' ' ' < "$f" | grep -oE '\[[^]]*sh:path chorus:ownedBy[^]]*\]' | grep -c 'sh:class chorus:Role' || true)
@@ -59,8 +59,8 @@ MODEL="$ROOT/roles/silas/ontology/chorus.ttl"
   # three refusal sites (batch scope, entity scope, row owner) call the one namer
   n=$(grep -c 'row_that_would_open(' "$DOOR" || true)
   [ "$n" -ge 4 ]
-  ! grep -q 'only the owning role may write this node' "$DOOR"
-  ! grep -q 'batch requires a scoped token whose scope names' "$DOOR"
+  ! grep -q 'only the owning role may write this node' "$DOOR" || return 1
+  ! grep -q 'batch requires a scoped token whose scope names' "$DOOR" || return 1
 }
 
 # --- the door writes a Permission row with its mode as a STRING (the shape types

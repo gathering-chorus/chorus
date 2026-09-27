@@ -36,7 +36,7 @@ WRAPPER="$SCRIPTS/shim-wrapper.sh"
   local home="${BATS_TEST_TMPDIR:-/tmp}/shim-nobin-$$"
   mkdir -p "$home/Library/Logs/Chorus"
   run env HOME="$home" CHORUS_ROOT=/nonexistent PATH=/usr/bin:/bin "$WRAPPER"
-  [[ "$output" == *"chorus-hook-shim not found"* ]]
+  [[ "$output" == *"chorus-hook-shim not found"* ]] || return 1
 }
 
 @test "wrapper logs failure to shim-wrapper.log" {

@@ -65,26 +65,26 @@ teardown() {
 @test "a stated chunk order is applied first-to-last" {
   run bash "$RERANK" chunks wren athena-pipeline phone-first
   [ "$status" -eq 0 ]
-  [[ "$output" == *"chunk athena-pipeline → roleSequence 1"* ]]
-  [[ "$output" == *"chunk phone-first → roleSequence 2"* ]]
+  [[ "$output" == *"chunk athena-pipeline → roleSequence 1"* ]] || return 1
+  [[ "$output" == *"chunk phone-first → roleSequence 2"* ]] || return 1
 }
 
 @test "an unnamed chunk is not silently dropped — it follows the named ones" {
   run bash "$RERANK" chunks wren athena-pipeline
   [ "$status" -eq 0 ]
-  [[ "$output" == *"chunk athena-pipeline → roleSequence 1"* ]]
+  [[ "$output" == *"chunk athena-pipeline → roleSequence 1"* ]] || return 1
   # phone-first and memory were not named; both must still be ordered, after it,
   # keeping their relative order (1 then 3 → 2 then 3).
-  [[ "$output" == *"chunk phone-first → roleSequence 2"* ]]
-  [[ "$output" == *"chunk memory → roleSequence 3"* ]]
+  [[ "$output" == *"chunk phone-first → roleSequence 2"* ]] || return 1
+  [[ "$output" == *"chunk memory → roleSequence 3"* ]] || return 1
 }
 
 @test "NEGATIVE: an unknown slug refuses BEFORE any write" {
   run bash "$RERANK" chunks wren nope-not-a-chunk
   [ "$status" -ne 0 ]
-  [[ "$output" == *"not a chunk owned by wren"* ]]
+  [[ "$output" == *"not a chunk owned by wren"* ]] || return 1
   # The proof that matters: nothing was ordered, not even the valid chunks.
-  [[ "$output" != *"roleSequence 1"* ]]
+  [[ "$output" != *"roleSequence 1"* ]] || return 1
 }
 
 @test "NEGATIVE: a DAL refusal is surfaced and exits non-zero" {
@@ -103,10 +103,10 @@ SH
   run bash "$RERANK" chunks wren athena-pipeline
 
   [ "$status" -ne 0 ]
-  [[ "$output" == *"REFUSED"* ]]
+  [[ "$output" == *"REFUSED"* ]] || return 1
   # The conflicting pair must reach the caller — it is the only thing that says
   # WHICH ordinal collided, and a bare "refused" sends someone reading SPARQL.
-  [[ "$output" == *"uniqueness #3681"* ]]
+  [[ "$output" == *"uniqueness #3681"* ]] || return 1
 }
 
 @test "a stated card order within a chunk is applied first-to-last" {
@@ -114,11 +114,11 @@ SH
   # The stub serves the same CSV for members, so column one is the id set; the
   # order verb must accept a listed member and rank it 1.
   [ "$status" -eq 0 ]
-  [[ "$output" == *"rank 1"* ]]
+  [[ "$output" == *"rank 1"* ]] || return 1
 }
 
 @test "usage is printed when a verb is missing its arguments" {
   run bash "$RERANK" chunks wren
   [ "$status" -eq 2 ]
-  [[ "$output" == *"chorus-rerank"* ]]
+  [[ "$output" == *"chorus-rerank"* ]] || return 1
 }

@@ -32,21 +32,21 @@ teardown() {
   echo 'const result = execSync("ls");' > "$FIXTURES/src/handlers/test.ts"
   run bash "$LINT_SCRIPT" "$FIXTURES/src/handlers/test.ts"
   [ "$status" -ne 0 ]
-  [[ "$output" =~ "execSync" ]]
+  [[ "$output" =~ "execSync" ]] || return 1
 }
 
 @test "FAIL when execSync in src/services/" {
   echo 'import { execSync } from "child_process";' > "$FIXTURES/src/services/monitor.ts"
   run bash "$LINT_SCRIPT" "$FIXTURES/src/services/monitor.ts"
   [ "$status" -ne 0 ]
-  [[ "$output" =~ "execSync" ]]
+  [[ "$output" =~ "execSync" ]] || return 1
 }
 
 @test "FAIL when execSync in src/middleware/" {
   echo 'execSync("whoami");' > "$FIXTURES/src/middleware/auth.ts"
   run bash "$LINT_SCRIPT" "$FIXTURES/src/middleware/auth.ts"
   [ "$status" -ne 0 ]
-  [[ "$output" =~ "execSync" ]]
+  [[ "$output" =~ "execSync" ]] || return 1
 }
 
 # --- AC 3: PASS if execSync is in scripts/, tests/, or build tooling ---

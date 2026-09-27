@@ -67,7 +67,7 @@ post_codefile() { # language → prints http code, body in $BODY
 @test "4157 AC3 negative proof: a free-string language is refused as unknown-target and nothing is written" {
   code=$(post_codefile klingon)
   # the refusal must be the DAL's referential one, not a 404 for a wrong URL
-  ! grep -q 'unknown route' "$BODY"
+  ! grep -q 'unknown route' "$BODY" || return 1
   grep -q 'unknown-target' "$BODY"
   [ "$code" = 422 ]   # validation: the DAL's referential refusal, measured 2026-09-12
   [ "$(curl -s -o /dev/null -w '%{http_code}' "$URL$CODEFILES/$SACRIFICE")" != 200 ]

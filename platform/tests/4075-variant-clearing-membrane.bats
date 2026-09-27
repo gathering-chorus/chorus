@@ -67,7 +67,7 @@ rows() { "$NODE" -e 'const a=JSON.parse(require("fs").readFileSync(process.argv[
   [ "$(rows "$PROD_STORE")" -eq "$before" ]
   [ -f "$WERK_STORE" ]
   grep -q '#4075 membrane probe' "$WERK_STORE"
-  ! grep -q '#4075 membrane probe' "$PROD_STORE"
+  ! grep -q '#4075 membrane probe' "$PROD_STORE" || return 1
 }
 
 @test "NEGATIVE PROOF (#3734): the same room pointed at the prod store DOES change prod rows — the check above can go red" {

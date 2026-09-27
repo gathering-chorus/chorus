@@ -20,13 +20,13 @@ setup() {
 @test "NEGATIVE PROOF: check scripts absent → FAIL owl-api-checks-missing, never reported as drift" {
   CHORUS_TESTS_DIR="$BATS_TEST_TMPDIR/no-such-tests" run bash "$HEALTH" -v
   [ "$status" -eq 1 ]
-  [[ "$output" == *"owl-api-checks-missing"* ]]
-  [[ "$output" != *"owl-api-drift:"* ]]
-  [[ "$output" != *"owl-api-conformance:"* ]]
+  [[ "$output" == *"owl-api-checks-missing"* ]] || return 1
+  [[ "$output" != *"owl-api-drift:"* ]] || return 1
+  [[ "$output" != *"owl-api-conformance:"* ]] || return 1
 }
 
 @test "with the real scripts present the missing-check state does not fire" {
   run bash "$HEALTH" -v
-  [[ "$output" != *"owl-api-checks-missing"* ]]
+  [[ "$output" != *"owl-api-checks-missing"* ]] || return 1
   [[ "$output" == *"owl-api-drift"* ]] || [[ "$output" == *"owl-api-conformance"* ]]
 }

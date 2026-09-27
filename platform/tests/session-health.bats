@@ -77,7 +77,7 @@ hs() { bash "$HEALTH_SCRIPT" "$@"; }
   # Must emit numeric queue_removes count, not 'not_emitted_by_claude_code'
   echo "$output" | grep -qE 'queue_removes=[0-9]+'
   # Must NOT contain the old placeholder
-  ! echo "$output" | grep -q 'not_emitted_by_claude_code'
+  ! echo "$output" | grep -q 'not_emitted_by_claude_code' || return 1
 }
 
 # --- Test-mode suppression ---
@@ -120,5 +120,5 @@ hs() { bash "$HEALTH_SCRIPT" "$@"; }
   mkdir -p "$BATS_TEST_TMPDIR/projects"
   run hs --role silas
   [ "$status" -ne 0 ] || { echo "reported on a session that does not exist: $output" >&2; return 1; }
-  ! echo "$output" | grep -qE 'prompts=[0-9]+'
+  ! echo "$output" | grep -qE 'prompts=[0-9]+' || return 1
 }

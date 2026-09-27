@@ -67,8 +67,8 @@ SKILLS_DIR="$CHORUS_ROOT/skills"
   # (axis-4: no live-role identifiers in tests).
   run "$shim" role-state synthetic-bats-role building
   # Expected: succeeds OR fails with role-specific error (not card-related)
-  [[ "$output" != *"card="* ]]
-  [[ "$output" != *"type="* ]]
+  [[ "$output" != *"card="* ]] || return 1
+  [[ "$output" != *"type="* ]] || return 1
 }
 
 @test "no test fixture or helper passes card= to role-state CLI" {

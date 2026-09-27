@@ -24,7 +24,7 @@ SCRIPT="${CHORUS_ROOT:-$(cd "$BATS_TEST_DIRNAME/../.." && pwd)}/platform/scripts
 @test "missing args prints usage and exits non-zero" {
   run bash "$SCRIPT"
   [ "$status" -ne 0 ]
-  [[ "$output" =~ [Uu]sage ]]
+  [[ "$output" =~ [Uu]sage ]] || return 1
 }
 
 # NEGATIVE PROOF (#3734) — this suite must be genuinely hermetic, not merely

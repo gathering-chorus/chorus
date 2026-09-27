@@ -34,7 +34,7 @@ run_check() {
   printf '{"claimed":{"borg":[{"href":"/borg/index.html"}]},"misc":[{"href":"/loom/decisions.html"},{"href":"/security.html"}]}' > "$UI"
   run run_check
   [ "$status" -eq 0 ]
-  [[ "$output" == *"3/3 rendered links covered"* ]]
+  [[ "$output" == *"3/3 rendered links covered"* ]] || return 1
 }
 
 @test "NEGATIVE PROOF: a rendered-but-unlisted link REDS and names the path (#3734)" {
@@ -42,8 +42,8 @@ run_check() {
   printf '{"claimed":{},"misc":[{"href":"/borg/index.html"},{"href":"/attention-analytics.html"}]}' > "$UI"
   run run_check
   [ "$status" -eq 1 ]
-  [[ "$output" == *"/attention-analytics.html"* ]]
-  [[ "$output" == *"UNCOVERED"* ]]
+  [[ "$output" == *"/attention-analytics.html"* ]] || return 1
+  [[ "$output" == *"UNCOVERED"* ]] || return 1
 }
 
 @test "NEGATIVE PROOF: prefix matching respects path boundaries — /borgX is not covered by /borg" {
@@ -51,7 +51,7 @@ run_check() {
   printf '{"claimed":{},"misc":[{"href":"/borgX/sneaky.html"}]}' > "$UI"
   run run_check
   [ "$status" -eq 1 ]
-  [[ "$output" == *"/borgX/sneaky.html"* ]]
+  [[ "$output" == *"/borgX/sneaky.html"* ]] || return 1
 }
 
 # --- #4004: the ASSET pass. The link pass reads ui-pages, a list of LINKS, so a
@@ -66,8 +66,8 @@ run_check() {
   printf '<script src="/ui-inventory.js"></script>' > "$HTML"
   run run_check
   [ "$status" -eq 1 ]
-  [[ "$output" == *"/ui-inventory.js"* ]]
-  [[ "$output" == *"UNCOVERED ASSETS"* ]]
+  [[ "$output" == *"/ui-inventory.js"* ]] || return 1
+  [[ "$output" == *"UNCOVERED ASSETS"* ]] || return 1
 }
 
 @test "an asset carried by the allowlist passes — the check can tell the two states apart" {
@@ -76,7 +76,7 @@ run_check() {
   printf '<script src="/ui-inventory.js"></script>' > "$HTML"
   run run_check
   [ "$status" -eq 0 ]
-  [[ "$output" == *"1/1 referenced assets covered"* ]]
+  [[ "$output" == *"1/1 referenced assets covered"* ]] || return 1
 }
 
 @test "navigation links are NOT re-measured by the asset pass (the link pass owns them)" {
@@ -87,7 +87,7 @@ run_check() {
   printf '<a href="/flow">flow</a><link href="/css/system.css">' > "$HTML"
   run run_check
   [ "$status" -eq 0 ]
-  [[ "$output" != *"/flow"* ]]
+  [[ "$output" != *"/flow"* ]] || return 1
 }
 
 @test "UNMEASURABLE, never vacuous green: an unreachable ENTRANCE → exit 2" {
@@ -97,14 +97,14 @@ run_check() {
   run env SHARE_ALLOW_FILE="$eff" UI_PAGES_URL="file://$UI" \
       ENTRANCE_URL="http://127.0.0.1:9/nope.html" bash "$CHECK"
   [ "$status" -eq 2 ]
-  [[ "$output" == *"UNMEASURABLE"* ]]
+  [[ "$output" == *"UNMEASURABLE"* ]] || return 1
 }
 
 @test "UNMEASURABLE, never vacuous green: unreachable ui-pages → exit 2" {
   printf '/borg\n' > "$ALLOW"
   run env SHARE_ALLOW_FILE="$ALLOW" UI_PAGES_URL="http://127.0.0.1:9/nope.json" bash "$CHECK"
   [ "$status" -eq 2 ]
-  [[ "$output" == *"UNMEASURABLE"* ]]
+  [[ "$output" == *"UNMEASURABLE"* ]] || return 1
 }
 
 @test "NEGATIVE PROOF: a bare / entry is the ROOT only — it must not score every link covered" {
@@ -114,6 +114,6 @@ run_check() {
   printf '{"claimed":{},"misc":[{"href":"/"},{"href":"/attention-analytics.html"}]}' > "$UI"
   run run_check
   [ "$status" -eq 1 ]
-  [[ "$output" == *"/attention-analytics.html"* ]]
-  [[ "$output" == *"1/2 rendered links covered"* ]]
+  [[ "$output" == *"/attention-analytics.html"* ]] || return 1
+  [[ "$output" == *"1/2 rendered links covered"* ]] || return 1
 }

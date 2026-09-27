@@ -74,7 +74,7 @@ teardown() { [ -n "${STUB_PID:-}" ] && kill "$STUB_PID" 2>/dev/null; rm -rf "${T
   # ABSENCE plus the summary, which is the stronger statement: no v1-row issue
   # exists at all, and the verdict is clean.
   test -z "$(grep -F "graph-issue|v1-row|" "$TMP/gv.txt" || true)"
-  ! grep -q "^graph-issue|v1-row|" "$TMP/gv.txt"
+  ! grep -q "^graph-issue|v1-row|" "$TMP/gv.txt" || return 1
   grep -q "^graph-summary|0|clean$" "$TMP/gv.txt"
 }
 
@@ -102,12 +102,12 @@ teardown() { [ -n "${STUB_PID:-}" ] && kill "$STUB_PID" 2>/dev/null; rm -rf "${T
   # Clean is said by ABSENCE plus the verdict, not by a prose line (#4167).
   test -z "$(grep -F "graph-issue|owner-not-principal|" "$TMP/gv.txt" || true)"
   grep -q "^graph-summary|0|clean$" "$TMP/gv.txt"
-  ! grep -q "^graph-issue|owner-not-principal|" "$TMP/gv.txt"
+  ! grep -q "^graph-issue|owner-not-principal|" "$TMP/gv.txt" || return 1
 }
 
 @test "the baseline no longer lives on the subject the deploy stamp wipes" {
   YML="$REPO_ROOT/.github/workflows/athena.yml"
-  ! grep -q "<urn:chorus:model-deploy> <urn:chorus:vocab#validateIssues>" "$YML"
+  ! grep -q "<urn:chorus:model-deploy> <urn:chorus:vocab#validateIssues>" "$YML" || return 1
   grep -q "<urn:chorus:model-validate> <urn:chorus:vocab#validateIssues>" "$YML"
   # the stamp rewrite in the deployer still deletes every predicate of model-deploy:
   # that is exactly why the baseline had to move (if this changes, the reason is gone, not the rule)

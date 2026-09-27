@@ -93,7 +93,7 @@ rows_against() {  # $1=check $2..=data files
   [ -n "$output" ]
   # A registry that emptied itself would make every assertion below vacuous.
   [ "$(echo "$output" | wc -l | tr -d ' ')" -ge 4 ]
-  ! echo "$output" | grep -q ' NONE$'
+  ! echo "$output" | grep -q ' NONE$' || return 1
 }
 
 @test "#4175 GREEN — every hat check returns zero rows against the real model" {
@@ -122,7 +122,7 @@ rows_against() {  # $1=check $2..=data files
     query_of "$chk" > "$BATS_TEST_TMPDIR/q.rq"
     arq --data "$FIXTURE" --query "$BATS_TEST_TMPDIR/q.rq" --results csv | tail -n +2 >> "$q"
   done < <(checks)
-  ! grep -q 'appt-good' "$q"
+  ! grep -q 'appt-good' "$q" || return 1
   ! grep -q 'chorus#kade,' "$q" || true   # kade legitimately wears the standing hat
   grep -q 'appt-bad-standing-on-anchor' "$q"
   grep -q 'appt-bad-no-anchor' "$q"

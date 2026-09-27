@@ -27,7 +27,7 @@ cred() { printf '{"id":"x","secret":"y","issuer":"https://id.example","webId":"h
   printf 'eyJhbGciOiJFUzI1NiJ9.eyJleHAiOjk5OTk5OTk5OTl9.sig' > "$T/id/kade/token.cache"
   run "$S" kade
   [ "$status" -eq 6 ]
-  ! printf '%s' "$output" | grep -q '^eyJ'
+  ! printf '%s' "$output" | grep -q '^eyJ' || return 1
 }
 
 @test "a credential bound to THIS account passes the check (fails later at the dead mint endpoint, exit 5 not 6)" {

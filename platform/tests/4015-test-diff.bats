@@ -46,7 +46,7 @@ a.bats|one,pass
 a.bats|two,pass'
   run "$DIFF" RUN_A RUN_B
   [ "$status" -eq 0 ]
-  [[ "$output" == *"no verdict changed"* ]]
+  [[ "$output" == *"no verdict changed"* ]] || return 1
 }
 
 @test "negative proof: a test that flipped pass->fail is NAMED, not counted" {
@@ -59,8 +59,8 @@ a.bats|one,pass
 a.bats|two,fail'
   run "$DIFF" RUN_A RUN_B
   [ "$status" -eq 1 ]
-  [[ "$output" == *"CHANGED  a.bats|two  pass -> fail"* ]]
-  [[ "$output" == *"1 test(s) differ"* ]]
+  [[ "$output" == *"CHANGED  a.bats|two  pass -> fail"* ]] || return 1
+  [[ "$output" == *"1 test(s) differ"* ]] || return 1
 }
 
 @test "a fail that recovered is named too — that is what a flake looks like" {
@@ -69,7 +69,7 @@ a.bats|one,fail' '?k,?res
 a.bats|one,pass'
   run "$DIFF" RUN_A RUN_B
   [ "$status" -eq 1 ]
-  [[ "$output" == *"CHANGED  a.bats|one  fail -> pass"* ]]
+  [[ "$output" == *"CHANGED  a.bats|one  fail -> pass"* ]] || return 1
 }
 
 @test "a test present in only one run is NEW or GONE, never a silent verdict change" {
@@ -79,7 +79,7 @@ a.bats|one,pass
 b.bats|added,pass'
   run "$DIFF" RUN_A RUN_B
   [ "$status" -eq 1 ]
-  [[ "$output" == *"NEW      b.bats|added"* ]]
+  [[ "$output" == *"NEW      b.bats|added"* ]] || return 1
 }
 
 @test "negative proof: an unanswerable store exits 2, never a reassuring 'no change'" {
@@ -88,7 +88,7 @@ b.bats|added,pass'
   printf '#!/bin/bash\nprintf ""\n' > "$TMP/ask"; chmod +x "$TMP/ask"
   run "$DIFF" RUN_A RUN_B
   [ "$status" -eq 2 ]
-  [[ "$output" != *"no verdict changed"* ]]
+  [[ "$output" != *"no verdict changed"* ]] || return 1
 }
 
 @test "control: the refusal is reachable only on a bad answer, not always" {

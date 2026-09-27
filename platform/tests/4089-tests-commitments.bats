@@ -37,7 +37,7 @@ setup() {
   echo "$output" | grep -q "^FAIL open-no-card commitment-one-binary$" || { echo "$output"; false; }
   # and the control: the committed file does NOT fail that row
   run env COMMITMENT_TTL="$TTL" "$CHECK"
-  ! echo "$output" | grep -q "^FAIL open-no-card commitment-one-binary$"
+  ! echo "$output" | grep -q "^FAIL open-no-card commitment-one-binary$" || return 1
 }
 
 @test "NEGATIVE PROOF: a closed row whose probe goes red is reported red" {

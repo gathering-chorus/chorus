@@ -62,8 +62,8 @@ teardown() { rm -rf "$TMP"; }
   # this is the failure that would let a dead sweep read as a healthy graph.
   run env FUSEKI_QUERY="http://127.0.0.1:9/query" bash "$SCRIPT"
   [ "$status" -ne 0 ]
-  [[ "$output" == *UNMEASURED* ]]
-  [[ "$output" != *"PROVEN CLEAN"* ]]
+  [[ "$output" == *UNMEASURED* ]] || return 1
+  [[ "$output" != *"PROVEN CLEAN"* ]] || return 1
 }
 
 @test "a run says what it found on the spine, with counts" {

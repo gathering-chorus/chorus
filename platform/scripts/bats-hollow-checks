@@ -1,0 +1,162 @@
+#!/usr/bin/env python3
+"""bats-hollow-checks — find (and fix) bats checks that cannot fail (#4335, #4014).
+
+On the Macs' bash 3.2, `set -e` does not fire on a failed `[[ ... ]]` or on a
+`!`-negated command. Bats relies on `set -e`, so any such line that is not the
+last command of a test is read and thrown away: the test goes green whether
+the check held or not. `[ ... ]` is not affected.
+
+The fix is an explicit `|| return 1` on every such line, which fails on any
+bash. It is added to the last line too, so a line appended later can never
+turn an enforced check into a hollow one.
+
+Usage:
+  bats-hollow-checks [--fix] [PATH ...]     PATH = .bats files or dirs (default: repo)
+
+Without --fix: prints file:line for each hollow check and exits 1 if any.
+With --fix: rewrites the lines in place and prints what it changed.
+"""
+import os
+import re
+import sys
+
+REGION_START = re.compile(r'^(@test\s.*|(function\s+)?[A-Za-z_][\w:.-]*\s*\(\)\s*)\{\s*$')
+REGION_END = re.compile(r'^\}\s*$')
+HEREDOC = re.compile(r'(?<!<)<<-?\s*([\'"]?)([A-Za-z_][A-Za-z0-9_]*)\1')
+CHECK_START = re.compile(r'^(\s*)(\[\[\s|!\s)')
+
+
+def scan_line(line, in_quote):
+    """Lex one line. Returns (in_quote_at_end, paren_delta, comment_col, top_level_ops).
+
+    in_quote is None, "'" or '"'. top_level_ops is the set of '||', '&&', ';'
+    seen outside quotes and parens.
+    """
+    i, n = 0, len(line)
+    depth = 0
+    ops = set()
+    comment = None
+    q = in_quote
+    while i < n:
+        c = line[i]
+        if q == "'":
+            if c == "'":
+                q = None
+        elif q == '"':
+            if c == '\\':
+                i += 1
+            elif c == '"':
+                q = None
+        else:
+            if c == '\\':
+                i += 1
+            elif c in ('"', "'"):
+                q = c
+            elif c == '#' and (i == 0 or line[i - 1] in ' \t;'):
+                comment = i
+                break
+            elif c == '(':
+                depth += 1
+            elif c == ')':
+                depth -= 1
+            elif depth == 0 and line.startswith('||', i):
+                ops.add('||')
+                i += 1
+            elif depth == 0 and line.startswith('&&', i):
+                ops.add('&&')
+                i += 1
+            elif depth == 0 and c == ';' and not line.startswith(';;', i):
+                ops.add(';')
+        i += 1
+    return q, depth, comment, ops
+
+
+def hollow_lines(text):
+    """Yield (index, line) for each hollow check line in a bats file's text."""
+    lines = text.split('\n')
+    in_region = False
+    heredoc_end = None
+    in_quote = None
+    depth = 0
+    continued = False
+    for idx, line in enumerate(lines):
+        if heredoc_end is not None:
+            if line.strip() == heredoc_end:
+                heredoc_end = None
+            continue
+        at_statement_start = in_quote is None and depth == 0 and not continued
+        if in_quote is None and depth == 0 and not continued:
+            if REGION_END.match(line):
+                in_region = False
+            elif REGION_START.match(line):
+                in_region = True
+        q, d, comment, ops = scan_line(line, in_quote)
+        body = line if comment is None else line[:comment]
+        is_continued = body.rstrip().endswith('\\')
+        if (in_region and at_statement_start and CHECK_START.match(line)
+                and q is None and d == 0 and not is_continued and not ops):
+            stripped = body.rstrip()
+            if not stripped.lstrip().startswith('[[') or stripped.endswith(']]'):
+                yield idx, line
+        m = HEREDOC.search(body) if q is None else None
+        if m:
+            heredoc_end = m.group(2)
+        in_quote = q
+        depth += d
+        if depth < 0:
+            depth = 0
+        continued = is_continued
+
+
+def fix_line(line):
+    _, _, comment, _ = scan_line(line, None)
+    if comment is None:
+        return line.rstrip() + ' || return 1'
+    code = line[:comment].rstrip()
+    return code + ' || return 1  ' + line[comment:]
+
+
+def bats_files(paths):
+    for p in paths:
+        if os.path.isfile(p):
+            yield p
+            continue
+        for root, dirs, files in os.walk(p):
+            dirs[:] = [d for d in dirs if d not in ('.git', 'node_modules', 'target')
+                       and not d.startswith('.werk')]
+            for f in sorted(files):
+                if f.endswith('.bats'):
+                    yield os.path.join(root, f)
+
+
+def main(argv):
+    fix = '--fix' in argv
+    paths = [a for a in argv if a != '--fix']
+    if not paths:
+        here = os.path.dirname(os.path.abspath(__file__))
+        paths = [os.path.dirname(os.path.dirname(here))]
+    total = 0
+    files_hit = 0
+    for path in bats_files(paths):
+        with open(path) as fh:
+            text = fh.read()
+        hits = list(hollow_lines(text))
+        if not hits:
+            continue
+        files_hit += 1
+        total += len(hits)
+        for idx, line in hits:
+            print(f'{path}:{idx + 1}: {line.strip()}')
+        if fix:
+            lines = text.split('\n')
+            for idx, line in hits:
+                lines[idx] = fix_line(line)
+            with open(path, 'w') as fh:
+                fh.write('\n'.join(lines))
+    verb = 'fixed' if fix else 'hollow'
+    print(f'{total} {verb} checks in {files_hit} files', file=sys.stderr)
+    return 0 if (fix or total == 0) else 1
+
+
+if __name__ == '__main__':
+    sys.exit(main(sys.argv[1:]))

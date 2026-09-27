@@ -87,8 +87,8 @@ run_merge_step() {
   stub_failing_helper
   run run_merge_step
   [ "$status" -ne 0 ]
-  [[ "$output" == *"merge-fail"* ]]
-  [[ "$output" == *"pr #1013"* ]]
+  [[ "$output" == *"merge-fail"* ]] || return 1
+  [[ "$output" == *"pr #1013"* ]] || return 1
 }
 
 @test "a succeeding merge still threads the landed commit forward" {
@@ -103,5 +103,5 @@ run_merge_step() {
   # removed, this test must go red rather than silently testing nothing.
   run extract_step_run no-such-step "$TMP/gone.sh"
   [ "$status" -ne 0 ]
-  [[ "$output" == *"extract failed"* ]]
+  [[ "$output" == *"extract failed"* ]] || return 1
 }

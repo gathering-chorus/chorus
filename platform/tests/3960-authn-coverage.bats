@@ -54,21 +54,21 @@ teardown_file() {
 @test "guarded fixture route scores COVERED" {
   run bash "$SCRIPT" probe "http://127.0.0.1:${FIXTURE_PORT}/guarded"
   [ "$status" -eq 0 ]
-  [[ "$output" == COVERED* ]]
+  [[ "$output" == COVERED* ]] || return 1
 }
 
 @test "NEGATIVE PROOF: an unguarded route scores OPEN, not COVERED" {
   run bash "$SCRIPT" probe "http://127.0.0.1:${FIXTURE_PORT}/open"
   [ "$status" -eq 0 ]
-  [[ "$output" == OPEN* ]]
-  [[ "$output" != COVERED* ]]
+  [[ "$output" == OPEN* ]] || return 1
+  [[ "$output" != COVERED* ]] || return 1
 }
 
 @test "NEGATIVE PROOF: a wrong/absent route scores MISPROBE, never COVERED" {
   run bash "$SCRIPT" probe "http://127.0.0.1:${FIXTURE_PORT}/does-not-exist"
   [ "$status" -eq 0 ]
-  [[ "$output" == MISPROBE* ]]
-  [[ "$output" != COVERED* ]]
+  [[ "$output" == MISPROBE* ]] || return 1
+  [[ "$output" != COVERED* ]] || return 1
 }
 
 # #3965 — bind scope decides whether an OPEN row is a real network hole or

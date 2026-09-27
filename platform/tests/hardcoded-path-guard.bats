@@ -60,7 +60,7 @@ setup() {
   printf 'load "%s/CascadeProjects/chorus/platform/tests/test_helper"\n' "$HOME" > "$scratch/offender.bats"
   run grep -rlE "/Users/($homes)/" "$scratch"
   [ "$status" -eq 0 ]
-  [[ "$output" == *"offender.bats"* ]]
+  [[ "$output" == *"offender.bats"* ]] || return 1
 }
 
 @test "the matcher IGNORES a synthetic placeholder home inside fixture data" {

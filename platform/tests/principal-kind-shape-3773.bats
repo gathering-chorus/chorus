@@ -58,7 +58,7 @@ chorus:principal-fixture-nowebid a chorus:Principal ;
   chorus:principalKind "person" ;
   chorus:canSignIn "true" .
 EOF
-  ! conforms "$WORK/bad.ttl"
+  ! conforms "$WORK/bad.ttl" || return 1
 }
 
 @test "NEGATIVE PROOF: a worker that can sign in is REFUSED" {
@@ -73,7 +73,7 @@ chorus:principal-fixture-worker a chorus:Principal ;
   chorus:canSignIn "true" ;
   chorus:webId "https://example.test/worker#me" .
 EOF
-  ! conforms "$WORK/bad.ttl"
+  ! conforms "$WORK/bad.ttl" || return 1
 }
 
 @test "NEGATIVE PROOF: a worker holding a role is REFUSED" {
@@ -87,7 +87,7 @@ chorus:principal-fixture-roleworker a chorus:Principal ;
   chorus:canSignIn "false" ;
   chorus:holdsRole chorus:role-architect .
 EOF
-  ! conforms "$WORK/bad.ttl"
+  ! conforms "$WORK/bad.ttl" || return 1
 }
 
 @test "NEGATIVE PROOF: an unrecognised principalKind is REFUSED" {
@@ -100,7 +100,7 @@ chorus:principal-fixture-typo a chorus:Principal ;
   chorus:principalKind "wroker" ;
   chorus:canSignIn "false" .
 EOF
-  ! conforms "$WORK/bad.ttl"
+  ! conforms "$WORK/bad.ttl" || return 1
 }
 
 @test "NEGATIVE PROOF: a missing principalKind is REFUSED" {
@@ -112,7 +112,7 @@ chorus:principal-fixture-nokind a chorus:Principal ;
   rdfs:label "fixture" ;
   chorus:canSignIn "false" .
 EOF
-  ! conforms "$WORK/bad.ttl"
+  ! conforms "$WORK/bad.ttl" || return 1
 }
 
 @test "a worker with no login and no role conforms — the shape is not refusing everything" {

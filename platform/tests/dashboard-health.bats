@@ -20,7 +20,7 @@ GRAFANA="http://localhost:3100"
 @test "script checks all 13 dashboards" {
   # Script should reference dashboard count or iterate over provisioned dashboards
   run bash "$SCRIPT"
-  [[ "$output" == *"dashboard"* ]]
+  [[ "$output" == *"dashboard"* ]] || return 1
 }
 
 @test "script reports results with dashboard names" {

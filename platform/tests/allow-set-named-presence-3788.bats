@@ -61,7 +61,7 @@ principal() { printf '<%s-%s> a <%s> ; <%s> "https://id.example.test/%s/profile/
   seed "$(principal crawler-index)$(principal reindex-worker)$(principal embed-worker)"
   CHORUS_ALLOW_SET_GRAPH="$G" run "$GATE"
   [ "$status" -eq 1 ]
-  [[ "$output" == *"cannot write"* ]]
+  [[ "$output" == *"cannot write"* ]] || return 1
 }
 
 @test "NEGATIVE PROOF: one missing person is enough to refuse" {
@@ -70,7 +70,7 @@ principal() { printf '<%s-%s> a <%s> ; <%s> "https://id.example.test/%s/profile/
   seed "$(principal jeff)$(principal silas)$(principal wren)"
   CHORUS_ALLOW_SET_GRAPH="$G" run "$GATE"
   [ "$status" -eq 1 ]
-  [[ "$output" == *"kade"* ]]
+  [[ "$output" == *"kade"* ]] || return 1
 }
 
 @test "NEGATIVE PROOF: an empty graph is still refused (unregressed from #3785)" {

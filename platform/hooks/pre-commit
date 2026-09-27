@@ -108,6 +108,20 @@ for rule in 4175-fuseki-writes-carry-a-timeout hardcoded-path-guard; do
   rm -f /tmp/rule-$rule.$$
 done
 
+# #4335 — a bats check that cannot fail. On the Macs' bash 3.2 a mid-test
+# `[[ ]]` or `!` line is thrown away, so the test goes green either way; every
+# such line carries `|| return 1`. Staged .bats files only, well under a second.
+__bats_staged=$(git diff --cached --name-only --diff-filter=ACM | grep '\.bats$' || true)
+if [ -n "$__bats_staged" ]; then
+  # shellcheck disable=SC2086
+  if ! (cd "$REPO" && python3 platform/scripts/bats-hollow-checks $__bats_staged) >&2; then
+    echo "" >&2
+    echo "🕳  pre-commit BLOCKED: a bats check above cannot fail on bash 3.2 (#4335)." >&2
+    echo "   Add '|| return 1', or run: platform/scripts/bats-hollow-checks --fix <file>" >&2
+    exit 1
+  fi
+fi
+
 # #3710 — clippy ratchet on staged Rust. The ratchet script's own header says
 # "Ratchet runs in pre-commit (Check 4.65)" and the CI job's comment calls
 # pre-commit the opportunistic layer — but the wiring was not here, so Rust lint
