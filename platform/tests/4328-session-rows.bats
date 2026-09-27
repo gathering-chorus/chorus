@@ -146,17 +146,23 @@ has() { printf '%s' "$1" | grep -qF -- "$2"; }
   s=$(body PUT "identity_sessions_$sess"); has "$s" '"lastSeenAt":"20'; has "$s" "\"name\":\"$sess\""
   r=$(bodies | grep -F "PUT-identity_sessionruns_" | tail -1); test -n "$r"
   has "$(cat "$T"/bodies/*"$r")" '"conversationId":"conv-42"'
-  # throttled: a second turn inside a minute writes nothing
+  # throttled: a second turn inside a minute writes nothing. #4351: since #4339 a
+  # turn Jeff typed always records that he spoke, so the throttle is proven on a
+  # harness notice (task result / reminder), which is neither Jeff nor a delivery.
   n=$(ls "$T/bodies" | wc -l)
-  echo '{"session_id":"conv-42","prompt":"and again"}' | AWAKE_SEEN_SYNC=1 "$SCRIPT" seen silas
+  echo '{"session_id":"conv-42","prompt":"<task-notification>done</task-notification>"}' | AWAKE_SEEN_SYNC=1 "$SCRIPT" seen silas
   test "$(ls "$T/bodies" | wc -l)" -eq "$n"
 }
 
 @test "a delivered nudge makes the presence reachable; an ordinary turn does not" {
   run "$SCRIPT" on kade
   echo '{"session_id":"c","prompt":"work status"}' | AWAKE_SEEN_SYNC=1 "$SCRIPT" seen kade
-  test -z "$(bodies | grep -F PUT-identity_presences || true)"
-  echo '{"session_id":"c","prompt":"[nudge from wren | 2026-09-26 09:00 Boston] hi"}' | AWAKE_SEEN_SYNC=1 "$SCRIPT" seen kade
+  # #4351: a Jeff turn may write the presence (focusedNow, #4339) but never marks it reachable
+  test -z "$(cat "$T"/bodies/*PUT-identity_presences_* 2>/dev/null | grep -F '"reachability":"reachable"' || true)"
+  # #4339: pulse types only the wake line for a nudge; that line is the delivery
+  wake=$(grep -o 'WAKE_LINE: &str = "[^"]*"' "$ROOT/platform/services/chorus-awake/src/rows.rs" | sed 's/.*= "//; s/"$//')
+  test -n "$wake"
+  printf '{"session_id":"c","prompt":"%s"}' "$wake" | AWAKE_SEEN_SYNC=1 "$SCRIPT" seen kade
   p=$(cat "$T"/bodies/*PUT-identity_presences_* | tail -1); has "$p" '"reachability":"reachable"'; has "$p" '"lastDeliveredAt":"20'
 }
 

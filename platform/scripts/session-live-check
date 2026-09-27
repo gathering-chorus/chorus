@@ -3,13 +3,20 @@
 #
 # Reads the live store through athena-make and answers, per role, whether its
 # login is really recorded: an open session that acts as the role, one live run,
-# one presence, a boot context, and a last-seen under the window. Read only.
+# one presence, a boot context, and a seen hook that has written (idle is not red, #4351). Read only.
 # Exit 0 all green · 1 any check failed · 2 UNMEASURED (the API did not answer).
 set -u
 API="${CHORUS_ATHENA_URL:-http://localhost:3360}"
 WINDOW="${SESSION_SEEN_WINDOW_SECS:-300}"
 [ $# -gt 0 ] || set -- silas wren kade
-fetch() { curl -sf --max-time 10 "$API/v1/$1?limit=5000"; }
+# SESSION_LIVE_FIXTURE=<dir> reads sessions.json runs.json presences.json contexts.json
+# from a directory instead of the API (#4351: the negative proofs run on fixtures).
+if [ -n "${SESSION_LIVE_FIXTURE:-}" ]; then
+  fetch() { case "$1" in identity/sessions) cat "$SESSION_LIVE_FIXTURE/sessions.json";; identity/sessionruns) cat "$SESSION_LIVE_FIXTURE/runs.json";;
+            identity/presences) cat "$SESSION_LIVE_FIXTURE/presences.json";; memory/contexts) cat "$SESSION_LIVE_FIXTURE/contexts.json";; esac; }
+else
+  fetch() { curl -sf --max-time 10 "$API/v1/$1?limit=5000"; }
+fi
 S=$(fetch identity/sessions) && R=$(fetch identity/sessionruns) && P=$(fetch identity/presences) && C=$(fetch memory/contexts) \
   || { echo "UNMEASURED: $API did not answer; nothing was checked"; exit 2; }
 python3 - "$WINDOW" "$@" <<PY
@@ -26,8 +33,12 @@ def line(ok, role, what):
     bad += 0 if ok else 1
     print(("PASS " if ok else "FAIL ") + role + ": " + what)
 for role in roles:
-    mine = [s for s in S if s.get("ownedBy") == "principal-" + role]
-    mine.sort(key=lambda s: s.get("startedAt") or s.get("issuedAt") or "")
+    # #4351: only the role's own login rows (named <role>-...), ordered by a real
+    # timestamp. A leftover probe row (zz-probe-..., garbage fields) once sorted last
+    # and was judged as Kade's newest session.
+    mine = [s for s in S if s.get("ownedBy") == "principal-" + role and s.get("name", "").startswith(role + "-")
+            and t(s.get("startedAt") or s.get("issuedAt") or "")]
+    mine.sort(key=lambda s: t(s.get("startedAt") or s.get("issuedAt")))
     if not mine: line(False, role, "no session row at all"); continue
     s = mine[-1]; name = s.get("name", "")
     line(s.get("sessionState") == "open", role, f"newest session {name} is open (state {s.get('sessionState')!r})")
@@ -35,7 +46,13 @@ for role in roles:
     line(bool(t(s.get("startedAt", ""))), role, f"it says when it started (startedAt {s.get('startedAt')!r})")
     seen = t(s.get("lastSeenAt", ""))
     age = int((now - seen).total_seconds()) if seen else None
-    line(age is not None and age <= window, role, f"last seen within {window}s (lastSeenAt {s.get('lastSeenAt')!r}, {age}s ago)")
+    # #4351: a role idle at 4am is not a broken login. Red only when the session was
+    # never seen, or its last-seen is older than its own start (the seen hook never
+    # wrote). Idle past the window is reported, not failed.
+    started = t(s.get("startedAt", "")) or t(s.get("issuedAt", ""))
+    line(seen is not None and started is not None and seen >= started, role, f"the seen hook has written (lastSeenAt {s.get('lastSeenAt')!r})")
+    if age is not None and age > window:
+        print(f"INFO {role}: idle {age}s (over {window}s; not a failure)")
     # edges read back as the target's full local name (session-<name>, session-run-<name>)
     same = lambda edge, n: bool(edge) and (edge == n or edge.endswith("-" + n))
     live = [r for r in R if same(r.get("runOf"), name) and not r.get("runEndedAt")]
