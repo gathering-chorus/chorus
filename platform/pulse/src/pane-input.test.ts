@@ -14,7 +14,7 @@ const pane = (inputLine: string, extra = '') =>
 
 describe('paneHasTypedInput (#4362)', () => {
   test('an empty input line is not typing', () => {
-    expect(paneHasTypedInput(pane('❯ '))).toBe(false);
+    expect(paneHasTypedInput(pane('❯\u00a0'))).toBe(false);
   });
 
   test('a plain-space empty input line is not typing', () => {
@@ -24,16 +24,16 @@ describe('paneHasTypedInput (#4362)', () => {
   // Negative proof (#3734): the same pane with Jeff's half-typed words must
   // read as typing. Delete the text check in pane-input.ts and this goes red.
   test('half-typed words on the input line are typing', () => {
-    expect(paneHasTypedInput(pane('❯ how do we host my experience more de'))).toBe(true);
+    expect(paneHasTypedInput(pane('❯\u00a0how do we host my experience more de'))).toBe(true);
   });
 
   test('ANSI colour codes around the prompt do not hide the words', () => {
-    expect(paneHasTypedInput(pane('\u001b[38;5;246m❯ \u001b[39mif we have all our edges'))).toBe(true);
-    expect(paneHasTypedInput(pane('\u001b[38;5;246m❯ \u001b[39m'))).toBe(false);
+    expect(paneHasTypedInput(pane('\u001b[38;5;246m❯\u00a0\u001b[39mif we have all our edges'))).toBe(true);
+    expect(paneHasTypedInput(pane('\u001b[38;5;246m❯\u00a0\u001b[39m'))).toBe(false);
   });
 
   test('a ❯ in earlier output does not count; only the last input line does', () => {
-    const cap = ['❯ old prompt text from scrollback', RULE, '❯ ', RULE].join('\n');
+    const cap = ['❯ old prompt text from scrollback', RULE, '❯\u00a0', RULE].join('\n');
     expect(paneHasTypedInput(cap)).toBe(false);
   });
 

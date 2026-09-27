@@ -269,6 +269,21 @@ export class DeliveryWorker {
     }
   }
 
+  /**
+   * #4362 — Jeff has words on the input line: wait for him, don't type.
+   * Waiting is not a failed attempt. After the hold window the last
+   * 'target-typing' result goes back to deliverOne, which parks the row.
+   */
+  private async injectWhenQuiet(row: DeliveryRow): Promise<InjectResult> {
+    let result = await this.runInject(row.to, typedFor(row), row.from);
+    for (const ms of this.typingHoldMs) {
+      if (!(result.deferred && result.deferReason === 'target-typing')) return result;
+      await this.sleep(ms);
+      result = await this.runInject(row.to, typedFor(row), row.from);
+    }
+    return result;
+  }
+
   private async deliverOne(row: DeliveryRow): Promise<void> {
     const maxAttempts = this.backoffMs.length + 1;
     // #3343 — event family follows the delivery kind (jeff.input.* vs nudge.*).
@@ -276,18 +291,8 @@ export class DeliveryWorker {
 
     if (!(await this.announceOrSuppress(row))) return;
 
-    let typingWaits = 0;
     for (let attempt = 1; attempt <= maxAttempts; attempt++) {
-      const result = await this.runInject(row.to, typedFor(row), row.from);
-      // #4362 — Jeff has words on the input line: wait for him, don't type.
-      // Waiting is not a failed attempt, so the attempt counter stays put.
-      if (result.deferred && result.deferReason === 'target-typing' && typingWaits < this.typingHoldMs.length) {
-        // eslint-disable-next-line security/detect-object-injection -- typingWaits is a bounded counter
-        await this.sleep(this.typingHoldMs[typingWaits]);
-        typingWaits++;
-        attempt--;
-        continue;
-      }
+      const result = await this.injectWhenQuiet(row);
       const classified = classifyInjectResult(result);
 
       // #2765 — trace_id propagated to every spine event in lifecycle
