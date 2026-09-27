@@ -34,7 +34,10 @@ mod tests {
     /// changes and this one does not, every nudge reads as Jeff speaking.
     #[test]
     fn pulse_types_exactly_this_line() {
-        let ts = concat!(env!("CARGO_MANIFEST_DIR"), "/../../pulse/src/delivery-worker.ts");
+        // read at run time: a path baked in at compile time points into the werk
+        // the binary was built in, which the nightly no longer has (Silas, 09-27)
+        let dir = std::env::var("CARGO_MANIFEST_DIR").expect("cargo sets CARGO_MANIFEST_DIR for tests");
+        let ts = format!("{dir}/../../pulse/src/delivery-worker.ts");
         let src = std::fs::read_to_string(ts).expect("pulse delivery-worker.ts must exist beside chorus-hooks");
         let decl = format!("export const WAKE_LINE = '{WAKE_LINE}';");
         assert!(src.contains(&decl), "pulse's WAKE_LINE differs from chorus-hooks'; expected `{decl}`");
