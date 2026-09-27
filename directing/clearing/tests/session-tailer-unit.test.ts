@@ -20,7 +20,7 @@ function load() {
 }
 
 function makeRouter() {
-  return { ingest: jest.fn() };
+  return { ingest: jest.fn(), consumeEcho: jest.fn(() => false) };
 }
 
 afterAll(() => {

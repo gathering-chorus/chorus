@@ -324,6 +324,9 @@ pub fn clearing_extra_env(
         s("CLEARING_HTTPS_PORT", https),
         s("CHORUS_LOG_FILE", format!("{}/chorus.log", demo_store_dir)),
         s("CLEARING_MSG_FILE", format!("{}/bridge-messages.json", demo_store_dir)),
+        // #4363 — the room journal and the tailer offsets sit under the werk too
+        s("CLEARING_JOURNAL", format!("{}/room.jsonl", demo_store_dir)),
+        s("CLEARING_TAILER_OFFSETS", format!("{}/tailer-offsets.json", demo_store_dir)),
         s("CHORUS_SIGNIN_URL", signin_url),
         s("CSS_ISSUER", css_issuer.to_string()),
         s("CHORUS_CLEARING_REQUIRE_DPOP", "1".to_string()),
@@ -342,6 +345,7 @@ pub const CLEARING_PROD_SURFACES: &[&str] = &[
     "localhost:3470",            // prod Clearing
     "/tmp/bridge-messages.json", // prod message store
     "/.chorus/chorus.log",       // prod spine
+    "/.chorus/clearing/",        // prod room journal + tailer offsets (#4363)
 ];
 
 pub fn clearing_env_prod_leak(env: &[(String, String)]) -> Option<String> {

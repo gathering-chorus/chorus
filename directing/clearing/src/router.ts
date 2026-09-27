@@ -4,8 +4,12 @@
  * Coverage: getHiddenCount tested in tests/router.test.ts.
  */
 import { EventEmitter } from 'events';
+import { createHash } from 'crypto';
 
 export interface ChannelMessage {
+  /** #4363 — one id per message, carried from its source (transcript uuid,
+   *  minted room id, relay event id); a content hash when the source has none. */
+  id: string;
   from: string;
   text: string;
   ts: string;
@@ -19,6 +23,20 @@ export interface ChannelMessage {
 }
 
 const MAX_MESSAGES = 200;
+/** #4363 — how many recent ids are remembered for replay detection. */
+const SEEN_MAX = 5000;
+/** #4363 — how long a room message's transcript echo is expected. */
+const ECHO_MS = 10 * 60 * 1000;
+
+/** The words of a message as a pane shows them: no @mention, no escaping, one line. */
+function echoKey(text: string): string {
+  return text.replace(/@(wren|silas|kade)\s*/gi, '').replace(/\\"/g, '"').replace(/\s+/g, ' ').trim();
+}
+
+/** #4363 — an id for a message whose source gave none: the same message gets the same id. */
+function contentId(raw: { from: string; type?: string; ts: string; text: string }): string {
+  return 'h:' + createHash('sha1').update(`${raw.from}|${raw.type ?? ''}|${raw.ts}|${raw.text}`).digest('hex').slice(0, 16);
+}
 
 /** Message types used in more than one place. Named so the classifier reads as
  *  decisions rather than repeated string literals. */
@@ -28,26 +46,19 @@ const ROLE_TO_ROLE = 'role-to-role' as const;
 export class MessageRouter extends EventEmitter {
   private messages: ChannelMessage[] = [];
 
+  /** #4363 — ids already admitted; a replay of the same id is not a new message. */
+  private seenIds = new Set<string>();
+  private seenOrder: string[] = [];
+  /** #4363 — room messages on their way into a role's pane, whose transcript echo is not new. */
+  private echoes: Array<{ role: string; text: string; until: number }> = [];
+
   /** Ingest a raw message, classify it, and store */
-  ingest(raw: { from: string; text: string; ts: string; type?: string; level?: string; buzzInbound?: boolean }): void {
-    const classified = this.classify(raw);
+  ingest(raw: { id?: string; from: string; text: string; ts: string; type?: string; level?: string; buzzInbound?: boolean }): void {
+    const classified: ChannelMessage = { ...this.classify(raw), id: raw.id ?? contentId(raw) };
     if (raw.level) classified.level = raw.level;
     if (raw.buzzInbound) classified.buzzInbound = true;
-
-    // Dedup: skip if any recent message (last 10) has same from + exact same text
-    // #2036: Removed fuzzy substring matching — it dropped Jeff's short messages
-    // ("test" matched "end-to-end bridge test" as substring). Only exact match now.
-    const recent = this.messages.slice(-10);
-    const normText = classified.text.replace(/^@(wren|silas|kade)\s+/i, '').trim();
-    for (const prev of recent) {
-      if (prev.from !== classified.from) continue;
-      if (prev.text === classified.text) return; // exact match
-      // Exact match after stripping @mentions (#1706)
-      const prevNorm = prev.text.replace(/^@(wren|silas|kade)\s+/i, '').trim();
-      if (normText && prevNorm && normText === prevNorm) {
-        return; // @mention-stripped exact duplicate
-      }
-    }
+    if (this.seenIds.has(classified.id)) return;
+    this.remember(classified.id);
 
     this.messages.push(classified);
 
@@ -57,6 +68,30 @@ export class MessageRouter extends EventEmitter {
     }
 
     this.emit('message', classified);
+  }
+
+  private remember(id: string): void {
+    this.seenIds.add(id);
+    this.seenOrder.push(id);
+    if (this.seenOrder.length > SEEN_MAX) this.seenIds.delete(this.seenOrder.shift() as string);
+  }
+
+  /** #4363 — Jeff's room message is being typed into `role`'s pane; its
+   *  transcript copy is the same message, not a second one. */
+  expectEcho(role: string, text: string): void {
+    const now = Date.now();
+    this.echoes = this.echoes.filter((e) => e.until > now);
+    this.echoes.push({ role, text: echoKey(text), until: now + ECHO_MS });
+  }
+
+  /** True once for the transcript copy of an expected room message. */
+  consumeEcho(role: string, text: string): boolean {
+    const now = Date.now();
+    const key = echoKey(text);
+    const i = this.echoes.findIndex((e) => e.role === role && e.text === key && e.until > now);
+    if (i < 0) return false;
+    this.echoes.splice(i, 1);
+    return true;
   }
 
   /** Get recent messages (visible only by default) */
@@ -101,7 +136,7 @@ export class MessageRouter extends EventEmitter {
   }
 
   /** Classify a message: determine type and visibility */
-  private classify(raw: { from: string; text: string; ts: string; type?: string; level?: string }): ChannelMessage {
+  private classify(raw: { from: string; text: string; ts: string; type?: string; level?: string }): Omit<ChannelMessage, 'id'> {
     const { from, text, ts } = raw;
     for (const rule of classificationRules) {
       const hit = rule(raw);

@@ -16,6 +16,8 @@
  */
 
 export interface JeffInputMessage {
+  /** #4363 — minted once when the room receives it; every store carries it. */
+  id?: string;
   from: string;
   text: string;
   ts: string;
@@ -38,6 +40,11 @@ export interface JeffInputDeps {
   now: () => string;
   /** Per-target outcome, emitted as each hand-off settles (UI shows failures). */
   onDeliveryStatus?: (status: DeliveryStatus) => void;
+  /** #4363 — the message's one id (server: randomUUID). */
+  newId?: () => string;
+  /** #4363 — the copy typed into `target`'s pane comes back in its transcript;
+   *  the room already holds it, so that echo is not stored a second time. */
+  expectEcho?: (target: string, text: string) => void;
 }
 
 export async function processJeffInput(
@@ -51,11 +58,12 @@ export async function processJeffInput(
     return [];
   }
 
-  deps.ingest({ from: data.from, text, ts: deps.now(), type: 'jeff-input' });
+  deps.ingest({ id: deps.newId?.(), from: data.from, text, ts: deps.now(), type: 'jeff-input' });
   // Accepted + persisted = sent. Terminal delivery reports separately.
   ack?.({ ok: true });
 
   const targets = deps.targetsOf(text);
+  for (const target of targets) deps.expectEcho?.(target, text);
   return Promise.all(
     targets.map(async (target): Promise<DeliveryStatus> => {
       const error = await deps.deliver(target);

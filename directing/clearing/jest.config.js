@@ -10,6 +10,8 @@ module.exports = {
   // ~11s; serial costs nothing and kills the whole race class. Remove only
   // with 10 consecutive clean parallel coverage runs as evidence.
   maxWorkers: 1,
+  // #4363 — temp journal + tailer offsets for every test process (never ~/.chorus/clearing)
+  setupFiles: ['<rootDir>/tests/env-4363.setup.js'],
   // #2524 convention: *.integration.test.ts excluded from hermetic default.
   // Run integration tier with RUN_INTEGRATION=true.
   testPathIgnorePatterns: process.env.RUN_INTEGRATION === 'true' ? ['/node_modules/'] : [
