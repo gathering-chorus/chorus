@@ -2555,6 +2555,17 @@
         "message": "Human-readable sentence: which case failed, in which file"
       }
     },
+    "test.build.failed": {
+      "vertebra": "building",
+      "source": "werk",
+      "description": "Werk `test` verb (#4392) — a build the selected suites need (a crate they run, a package dist they read) failed in the werk, so the run blocks before any suite runs against a stale or missing build.",
+      "fields": {
+        "trace_id": "Werk trace join key",
+        "role": "Acting role",
+        "card_id": "Card the run is for",
+        "message": "Which suite could not run and which build failed, in words"
+      }
+    },
     "test.failed": {
       "vertebra": "building",
       "source": "werk",

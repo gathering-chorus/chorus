@@ -743,6 +743,52 @@ pub fn suite_runner(path: &str) -> &'static str {
     runner_for(&first, path)
 }
 
+/// #4392 — what a suite runs that the werk must build first. On 2026-09-27 all
+/// four #4335 pipeline runs were red because suites ran code the werk never
+/// built from its own tree: no release binaries (7 red), a Clearing dist older
+/// than main (1 red). A suite names what it runs by path, so the path says what
+/// to build.
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord)]
+pub enum BuildTarget {
+    /// `platform/services/<crate>` — `cargo build --release` in the werk
+    Crate(String),
+    /// a package dir with a `build` script — `npm run build` in the werk
+    Package(String),
+}
+
+/// #4392 — the build targets a suite's text names. `packages` are the werk's
+/// package dirs that have a build script (relative, e.g. `directing/clearing`);
+/// a package counts when the suite names its `dist/`.
+pub fn suite_build_targets(text: &str, packages: &[String]) -> Vec<BuildTarget> {
+    let mut out = std::collections::BTreeSet::new();
+    let marker = "platform/services/";
+    for (i, _) in text.match_indices(marker) {
+        let rest = &text[i + marker.len()..];
+        let name: String = rest.chars().take_while(|c| c.is_ascii_alphanumeric() || *c == '-' || *c == '_').collect();
+        if !name.is_empty() && rest[name.len()..].starts_with("/target/release") {
+            out.insert(BuildTarget::Crate(name));
+        }
+    }
+    for p in packages {
+        if text.contains(&format!("{}/dist", p)) {
+            out.insert(BuildTarget::Package(p.clone()));
+        }
+    }
+    // #4392 rule 3 (Jeff + Kade, 2026-09-27): a suite may say what it needs,
+    // `# @needs-build: <crate>` or `# @needs-build: <package dir>`
+    for line in text.lines() {
+        let Some(rest) = line.trim().strip_prefix("# @needs-build:") else { continue };
+        for want in rest.split(|c: char| c == ',' || c.is_whitespace()).filter(|w| !w.is_empty()) {
+            if packages.iter().any(|p| p == want) {
+                out.insert(BuildTarget::Package(want.to_string()));
+            } else {
+                out.insert(BuildTarget::Crate(want.trim_start_matches("platform/services/").to_string()));
+            }
+        }
+    }
+    out.into_iter().collect()
+}
+
 /// #4292 — a cucumber feature the bdd lane runs (the package's features dir).
 pub fn is_feature_suite(path: &str) -> bool {
     path.starts_with("platform/tests/features/") && path.ends_with(".feature")
@@ -953,6 +999,33 @@ mod file_suites_4292 {
         assert!(cases.contains(&("fine".to_string(), "pass".to_string())), "{text}");
         assert!(!feature_reds_all_waiting(&cases));
         let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn a_suite_names_what_the_werk_must_build() {
+        let pk = vec!["directing/clearing".to_string(), "platform/pulse".to_string()];
+        let t = r#"SCRIPT="$ROOT/platform/services/chorus-principal/target/release/chorus-principal"
+[ -f "$ROOT/directing/clearing/dist/server.js" ] || skip"#;
+        assert_eq!(suite_build_targets(t, &pk), vec![
+            BuildTarget::Crate("chorus-principal".into()),
+            BuildTarget::Package("directing/clearing".into()),
+        ]);
+        // NEGATIVE PROOF: a crate named without target/release, or a package
+        // named without dist/, is source the suite reads, not something it runs
+        let n = "platform/services/chorus-principal/src/lib.rs platform/pulse/src/store.ts";
+        assert!(suite_build_targets(n, &pk).is_empty());
+    }
+
+    #[test]
+    fn a_needs_build_tag_names_a_crate_or_a_package() {
+        let pk = vec!["directing/clearing".to_string()];
+        let t = "#!/usr/bin/env bats\n# @needs-build: chorus-hooks, directing/clearing\n";
+        assert_eq!(suite_build_targets(t, &pk), vec![
+            BuildTarget::Crate("chorus-hooks".into()),
+            BuildTarget::Package("directing/clearing".into()),
+        ]);
+        // NEGATIVE PROOF: the words in a comment that is not the tag build nothing
+        assert!(suite_build_targets("# needs build chorus-hooks\n", &pk).is_empty());
     }
 
     #[test]
