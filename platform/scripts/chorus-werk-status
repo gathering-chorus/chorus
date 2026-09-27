@@ -18,8 +18,8 @@ Trust rules (#3780/#3781 — a pin's phase is a CLAIM, not a fact):
     (go:true would land a witness that misses content).
 
 Usage:
-  chorus-werk-status              # all live runs (jeff's view)
-  chorus-werk-status 3781         # one card
+  chorus-werk-status              # every WIP card, one line: where its pipeline is, runs, last failure (#4341)
+  chorus-werk-status 3781         # one card: lead + cycle time, then every run — start, finish, result, why
   chorus-werk-status --role wren  # one role's cards
   chorus-werk-status --fixture    # NEGATIVE PROOF self-test (see below)
 
@@ -42,6 +42,10 @@ from pathlib import Path
 RUNS_DIR = Path(os.environ.get("CWS_RUNS_DIR", os.path.expanduser("~/.chorus/werk-runs")))
 WERK_BASE = Path(os.environ.get("CHORUS_WERK_BASE", os.path.expanduser("~/CascadeProjects/chorus-werk")))
 SLACK_MS = 15 * 60 * 1000
+LOKI = os.environ.get("CWS_LOKI", "http://localhost:3102")
+API = os.environ.get("CWS_API", "http://localhost:3340")
+# the board CLI from the canonical tree: a werk's copy is not built
+CARDS = os.environ.get("CWS_CARDS", os.path.join(os.environ.get("CHORUS_HOME", os.path.expanduser("~/CascadeProjects/chorus")), "platform/scripts/cards"))
 PRESENTED_TTL_MS = 24 * 3600 * 1000
 
 # act stage markers, in pipeline order — last one seen in the log wins
@@ -104,6 +108,137 @@ def current_stage(pin):
     return stages[-1].strip() if stages else None
 
 
+def log_exit(pin):
+    """The WERK_EXIT code the run's log ends with, or None if it has none."""
+    run_id, card = pin.get("runId"), pin.get("card")
+    log = RUNS_DIR / f"{card}-{run_id}.log" if run_id else None
+    if not log or not log.is_file():
+        return None
+    m = re.search(r"WERK_EXIT=(\d+)", log.read_bytes()[-4000:].decode("utf-8", "replace"))
+    return int(m.group(1)) if m else None
+
+
+# #4341 — one card's runs, read from their logs: start, finish, each step and
+# why it stopped. Bookkeeping steps are left out; they never say anything.
+STEP_RE = re.compile(r"(✅\s+Success|❌\s+Failure) - Main ([a-zA-Z-]+) \[([^\]]+)\]")
+QUIET_STEPS = {"shared-trace", "proven-round", "demo-fitness", "witness-failed", "witness-close", "outcome", "crawl-delta"}
+
+
+def dur_s(text):
+    """act's '27m28.42s' / '968.4ms' / '1h2m3s' as seconds."""
+    total = 0.0
+    for n, unit in re.findall(r"([\d.]+)(h|ms|m|s)", text):
+        total += float(n) * {"h": 3600, "m": 60, "s": 1, "ms": 0.001}[unit]
+    return total
+
+
+def fmt_dur(sec):
+    sec = int(round(sec))
+    if sec >= 3600:
+        return f"{sec // 3600}h{(sec % 3600) // 60:02d}m"
+    if sec >= 60:
+        return f"{sec // 60}m"
+    return f"{sec}s"
+
+
+def why_stopped(text, step):
+    """The run's own words for its failed step."""
+    if step == "test":
+        reds = re.findall(r"bats:(\S+) … FAIL", text)
+        if reds:
+            names = ", ".join(Path(r).stem for r in reds[:2])
+            return f"{len(reds)} red{'s' if len(reds) != 1 else ''}: {names}" + (" …" if len(reds) > 2 else "")
+    if step == "prove-live":
+        n = len(re.findall(r"\| not ok ", text.split("Run Main prove-live")[-1]))
+        if n:
+            return f"{n} live case{'s' if n != 1 else ''} failed"
+    m = re.search(r"\|\s+(\S[^\n]*(?:refus|error|missing|no acceptance)[^\n]*)", text.split(f"Run Main {step}")[-1])
+    return m.group(1).strip()[:70] if m else ""
+
+
+def run_summary(log):
+    text = log.read_text("utf-8", "replace")
+    steps = [(name, ok.endswith("Success"), dur_s(d)) for ok, name, d in STEP_RE.findall(text)]
+    steps = [st for st in steps if st[0] not in QUIET_STEPS]
+    failed = next((st for st in steps if not st[1]), None)
+    names = [st[0] for st in steps]
+    if failed:
+        result = f"failed  {failed[0]} ({fmt_dur(failed[2])})"
+        why = why_stopped(text, failed[0])
+    elif "accept" in names:
+        result, why = "landed", ", ".join(f"{n} {fmt_dur(d)}" for n, _, d in steps if n in ("deploy-canonical", "accept"))
+    elif "demo" in names:
+        result = "presented"
+        slow = sorted(steps, key=lambda st: -st[2])[:2]
+        why = ", ".join(f"{n} {fmt_dur(d)}" for n, _, d in slow)
+    elif "WERK_EXIT" not in text:
+        result, why = "running", (f"at {names[-1]}" if names else "starting")
+    else:
+        result, why = "stopped", ""
+    st = log.stat()
+    start = getattr(st, "st_birthtime", st.st_mtime)
+    return {"start": start, "finish": None if result == "running" else st.st_mtime, "result": result, "why": why}
+
+
+def run_logs(card):
+    return sorted(RUNS_DIR.glob(f"{card}-{card}-*.log"), key=lambda p: getattr(p.stat(), "st_birthtime", p.stat().st_mtime))
+
+
+def card_times(card):
+    """(filed, first WIP) as epoch seconds, from the board and the spine; None when unknown."""
+    filed = pulled = None
+    try:
+        out = subprocess.run([CARDS, "view", str(card)],
+                             capture_output=True, text=True, timeout=30).stdout
+        m = re.search(r"Created:\s+(\S+)", out)
+        filed = parse_ts(m.group(1)) / 1000 if m else None
+    except Exception:
+        pass
+    # the pull comes after the card is filed: scanning only the card's own
+    # lifetime keeps the spine query to seconds, not a month of logs
+    try:
+        import urllib.parse, urllib.request
+        q = '{job="platform-chorus"} |= `"event":"card.pulled"` |= `"card_id":%s,`' % card
+        qs = urllib.parse.urlencode({"query": q, "limit": 1, "direction": "forward",
+                                     "start": str(int(((filed or time.time() - 7 * 86400) - 60) * 1e9))})
+        with urllib.request.urlopen(f"{LOKI}/loki/api/v1/query_range?{qs}", timeout=15) as r:
+            res = json.load(r)["data"]["result"]
+        ts = [int(v[0]) / 1e9 for s_ in res for v in s_["values"]]
+        pulled = min(ts) if ts else None
+    except Exception:
+        pass
+    return filed, pulled
+
+
+def hm(t):
+    return datetime.fromtimestamp(t).strftime("%m-%d %H:%M")
+
+
+def card_detail(card, pin_status):
+    logs = run_logs(card)
+    runs = [run_summary(p) for p in logs]
+    filed, pulled = card_times(card)
+    end = runs[-1]["finish"] if runs and runs[-1]["result"] == "landed" else time.time()
+    # the pin says where the pipeline is now (with its trust rules); the logs
+    # say what every run did
+    if pin_status:
+        head = render(pin_status, pid_start_times(), time.time() * 1000)
+    else:
+        head = f"#{card} [?] " + (runs[-1]["result"].split()[0] if runs else "no runs")
+    head += f" · {len(runs)} run{'s' if len(runs) != 1 else ''}"
+    print(head)
+    lc = []
+    lc.append(f"lead {fmt_dur(end - filed)} (filed {hm(filed)})" if filed else "lead unknown (card not read)")
+    lc.append(f"cycle {fmt_dur(end - pulled)} (WIP {hm(pulled)})" if pulled else "cycle unknown (no pull on the spine)")
+    print("  " + " · ".join(lc))
+    if runs:
+        print()
+        print("  run  start        finish  result                  why")
+    for i, r in enumerate(runs, 1):
+        fin = datetime.fromtimestamp(r["finish"]).strftime("%H:%M") if r["finish"] else "  -  "
+        print(f"  {i:>3}  {hm(r['start'])}  {fin}   {r['result']:<22}  {r['why']}")
+
+
 def classify(pin, pid_starts, now_ms):
     """Return (status, detail) applying the #3781 trust rules."""
     phase = pin.get("phase")
@@ -112,6 +247,11 @@ def classify(pin, pid_starts, now_ms):
         pin_start = parse_ts(pin.get("startedAt"))
         proc_start = pid_starts.get(pid) if pid else None
         if proc_start is None:
+            # #4341 — a run whose process exited left WERK_EXIT in its log. That
+            # run FINISHED; calling it abandoned hid a failed test step (#4334).
+            ended = log_exit(pin)
+            if ended is not None:
+                return ("landed" if pin.get("go") else "presented") if ended == 0 else "failed", None
             return "abandoned", "pin stale — recorded pid is dead"
         if pin_start is None or abs(proc_start - pin_start) > SLACK_MS:
             return "abandoned", "pin stale — pid reused by another process"
@@ -202,6 +342,16 @@ def fixture_mode():
         return 1
 
 
+def wip_cards():
+    """Every WIP card on the board, as (id, owner)."""
+    try:
+        import urllib.request
+        with urllib.request.urlopen(f"{API}/api/chorus/context/board/wip", timeout=10) as r:
+            return [(c["id"], c.get("owner", "?")) for c in json.load(r)["data"]["cards"]]
+    except Exception:
+        return None
+
+
 def main():
     args = sys.argv[1:]
     if "--fixture" in args:
@@ -213,22 +363,37 @@ def main():
     for a in args:
         if a.isdigit():
             card = a
-    pins = load_pins(card=card, role=role)
-    if not pins:
-        print("no runs on record" + (f" for #{card}" if card else "") + (f" for {role}" if role else ""))
-        return
     pid_starts = pid_start_times()
     now_ms = time.time() * 1000
-    live_first = sorted(pins, key=lambda p: (classify(p, pid_starts, now_ms)[0] not in ("running", "presented"), -(parse_ts(p.get("startedAt")) or 0)))
+    if card:
+        pins = load_pins(card=card)
+        card_detail(card, pins[0] if pins else None)
+        return
+    # #4341 — the no-arg view is every WIP card, one line each, not only the
+    # running pipelines: a card waiting or failed is still where the work is.
+    wip = wip_cards()
+    if wip is None:
+        print("board unreadable — showing live runs only")
+        wip = []
+    pins = {str(p.get("card")): p for p in load_pins(role=role)}
     shown = 0
-    for pin in live_first:
-        status, _ = classify(pin, pid_starts, now_ms)
-        if card is None and status not in ("running", "presented"):
-            continue  # no-arg view shows LIVE runs only; abandoned pins are noise, not status
-        print(render(pin, pid_starts, now_ms))
+    for cid, owner in wip:
+        if role and owner.lower() != role:
+            continue
+        pin = pins.get(str(cid))
+        logs = run_logs(cid)
+        if pin:
+            state = render(pin, pid_starts, now_ms)
+        else:
+            state = f"#{cid} [{owner.lower()}] no pipeline run yet"
+        last = run_summary(logs[-1]) if logs else None
+        tail = f" · {len(logs)} run{'s' if len(logs) != 1 else ''}"
+        if last and last["result"].startswith("failed"):
+            tail += f" · last: {last['result']}" + (f" — {last['why']}" if last["why"] else "")
+        print(state + tail)
         shown += 1
     if shown == 0:
-        print("no live runs — every pin on record is landed, failed, or stale")
+        print("no WIP cards" + (f" for {role}" if role else ""))
 
 
 if __name__ == "__main__":
