@@ -1393,7 +1393,7 @@ app.get('/api/chorus/crawl/:domain', async (req: Request, res: Response) => {
 
 // #3373: /api/chorus/domain/:domain/code-files RETIRED (deprecated by #2060,
 // zero non-test consumers confirmed by grep). /code is the surviving facet.
-// Retirement gate: platform/tests/3373-code-files-retired.bats.
+// Retirement gate: platform/tests/3373-code-files-retired.bats (cut by #4333).
 
 // --- Consolidated domain facet API (#2060) ---
 // One endpoint per facet under /api/chorus/domain/:name/.

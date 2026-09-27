@@ -41,8 +41,6 @@ BELONGS_MAP=(
   'platform/api/src/spine-event-write.ts|spine|role-wren'
   'platform/api/tests/spine-event-endpoint.integration.test.ts|spine|role-wren'
   'platform/api/tests/spine-event-write.test.ts|spine|role-wren'
-  'platform/tests/spine-emit-drift-audit.bats|spine|role-wren'
-  'platform/tests/spine-tick-poller-inject-resolve.bats|spine|role-wren'
 )
 
 post_update() {

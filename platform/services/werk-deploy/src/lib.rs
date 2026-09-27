@@ -248,6 +248,69 @@ pub fn crate_binaries_in(crate_dir: &Path) -> Vec<String> {
     out.into_iter().filter(|b| !b.is_empty() && seen.insert(b.clone())).collect()
 }
 
+/// #3785 — the allow-set gate is scoped: it runs only when a deploy changes a
+/// file that looks identity-related. Always-on would tie every land to the
+/// store being reachable, so an outage would block the fix for the outage.
+/// A path heuristic can quietly stop matching when a file is renamed, so the
+/// tests below check every pattern still names a real file (#4333 moved that
+/// canary here from a bats suite that read this source as text).
+pub const IDENTITY_SCOPE: &[&str] = &[
+    "chorus-oidc",
+    "solid-auth",
+    "identity-principals",
+    "security-model",
+    "athena-make/src/lib.rs",
+];
+
+/// True when any changed path in `diff` (one path per line) is in the scope.
+pub fn touches_identity(diff: &str) -> bool {
+    diff.lines().any(|f| IDENTITY_SCOPE.iter().any(|p| f.contains(p)))
+}
+
+/// The scope patterns that match none of `files` — each one is a place the
+/// gate has silently stopped applying.
+pub fn dead_scope_patterns<'a>(files: &[&str], scope: &[&'a str]) -> Vec<&'a str> {
+    scope.iter().copied().filter(|p| !files.iter().any(|f| f.contains(p))).collect()
+}
+
+#[cfg(test)]
+mod identity_scope_3785 {
+    use super::*;
+
+    fn tracked_files() -> Vec<String> {
+        // the repo root at run time, never a path baked in at compile time
+        let top = std::process::Command::new("git").args(["rev-parse", "--show-toplevel"]).output().expect("git rev-parse");
+        let root = String::from_utf8_lossy(&top.stdout).trim().to_string();
+        let out = std::process::Command::new("git").arg("ls-files").current_dir(&root).output().expect("git ls-files");
+        String::from_utf8_lossy(&out.stdout).lines().map(str::to_string).collect()
+    }
+
+    #[test]
+    fn an_identity_change_fires_the_gate_and_an_unrelated_one_does_not() {
+        assert!(touches_identity("README.md\nplatform/services/athena-make/src/lib.rs\n"));
+        assert!(!touches_identity("platform/tests/3370-no-new-hardcoded-lan-ips.bats\ndocs/x.md\n"));
+    }
+
+    /// CANARY: a rename that leaves a pattern matching nothing turns the gate
+    /// off for that surface without a word. Every pattern must still match.
+    #[test]
+    fn every_scope_pattern_matches_a_real_file_today() {
+        let files = tracked_files();
+        let refs: Vec<&str> = files.iter().map(String::as_str).collect();
+        assert!(!refs.is_empty(), "git ls-files returned nothing");
+        let dead = dead_scope_patterns(&refs, IDENTITY_SCOPE);
+        assert!(dead.is_empty(), "scope patterns matching no file (the gate stopped applying there): {dead:?}");
+    }
+
+    /// NEGATIVE PROOF: the canary names a pattern that matches nothing.
+    #[test]
+    fn a_pattern_that_matches_nothing_is_reported() {
+        let files = ["platform/services/athena-make/src/lib.rs", "x/security-model.ttl"];
+        let scope = ["security-model", "renamed-away"];
+        assert_eq!(dead_scope_patterns(&files, &scope), vec!["renamed-away"]);
+    }
+}
+
 #[cfg(test)]
 mod discovery_3902 {
     use super::*;
@@ -1786,12 +1849,7 @@ fn deploy_canonical(home: &Path, werk_s: &str, role: &str, card: u64, trace: &st
     // Scoped to deploys that touch identity: the gate asks the STORE what the
     // door would resolve, so running it on every docs card would be noise that
     // teaches people to ignore it.
-    let touches_identity = diff.lines().any(|f| {
-        f.contains("chorus-oidc") || f.contains("solid-auth")
-            || f.contains("identity-principals") || f.contains("security-model")
-            || f.contains("athena-make/src/lib.rs")
-    });
-    if touches_identity {
+    if touches_identity(&diff) {
         let gate = format!("{}/platform/scripts/chorus-allow-set-gate", canonical_root_path(home));
         match run_env(Some(werk_s), &[], "bash", &[&gate]) {
             Ok(out) => jsonl(home, role, card, trace, "deploy.allow_set_gate.passed",

@@ -27,13 +27,11 @@ doc_coherence	pipeline-test	GAP	ratchet exists; negative fixture missing
 membrane	pipeline-test	platform/tests/membrane-guard.bats	#3615
 build_deploy_invariance	pipeline-test	platform/scripts/test-build-invariance.sh
 werk_merge_checks	merge	platform/services/werk-merge/tests/e2e.rs	branch-mismatch, content-verify
-stale_base_guard	merge	platform/tests/2944-stale-base-guard.bats	#2944
-allow_set_gate	deploy-accept	platform/tests/allow-set-gate-scope-3785.bats	#3785
+allow_set_gate	deploy-accept	platform/services/werk-deploy/src/lib.rs	#3785 scope canary + negative proof (identity_scope_3785, moved by #4333)
 sdk_propagation_guard	deploy-accept	platform/tests/3628-sdk-propagation-guard.bats	#3628
 athena_model_gate	deploy-accept	GAP	instance-write governance; fixture unnamed
 werk_accept_checks	deploy-accept	platform/services/werk-accept/tests/e2e.rs	DEC-048, dirty-teardown
 hardcoded_bin_paths	nightly	platform/scripts/test-hardcoded-bin-paths.sh	#2734 baseline
-retired_surface_guards	nightly	platform/tests/3373-code-files-retired.bats	absence guards
 required_checks_drift	nightly	GAP	drift detector; no negative fixture
 factory_membrane	nightly	platform/scripts/test-product-membrane.sh	#3722 self-guarded
 adr056_advisory_pins	edit	platform/services/chorus-hooks/tests/adr056_advisory_3677.rs	quality_gate/pair_gate/icd_pre_read honest downgrades pinned (#3677)

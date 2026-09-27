@@ -22,8 +22,8 @@
 #      identity/Principal/KeyRegistryEntry/APISurface vocabulary, first-class
 #      surface instances, and SHACL shapes from security-model-3618.ttl.
 #
-# Tests: platform/tests/security-3618-migration.bats — shape tests run pre-apply;
-# done-state tests are RED until apply lands (definition of done).
+# Tests: security-3618-migration.bats guarded this one-shot until it was applied;
+# #4333 cut it once the migration was done.
 
 set -euo pipefail
 

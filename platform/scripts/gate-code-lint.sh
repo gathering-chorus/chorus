@@ -3,7 +3,7 @@
 #
 # #3606 — RESTORED. Deleted by #2035 ("dead code sweep, 9 orphan scripts removed")
 # as an orphan. It was not one: /gate-code check 5 invokes it by path, and two
-# suites (execsync-audit.bats, gate-code-execsync.bats) test it. Since that sweep
+# suites tested it (gate-code-execsync.bats still does; execsync-audit.bats was cut by #4333). Since that sweep
 # the gate step has exited 127 "command not found" on every run — a gate check
 # that cannot execute, which is worse than one that is merely weak.
 #
