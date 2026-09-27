@@ -1,23 +1,11 @@
-/* eslint-disable security/detect-non-literal-fs-filename -- #3429: reads session-registry files from a fixed internal dir (CHORUS_HOME/.sessions), filenames enumerated by readdir of that dir — not untrusted input */
+/* eslint-disable security/detect-non-literal-fs-filename -- #3429: the turn marker is read from a fixed internal dir, filename built from the role name */
 /**
- * #3125 — session registry (read/resolve side).
- *
- * Sessions register {role, pid, tty, host} at SessionStart by writing
- * ~/.chorus/sessions/<role>-<pid>.json (written by chorus-hooks). Delivery
- * resolves role → tty HERE — an exact, host-agnostic routing key — instead
- * of letting chorus-inject guess by window-title substring.
- *
- * Routing/transport split (the card's thesis): this module is ROUTING. It
- * answers "which session, on which tty, in which host." chorus-inject is
- * TRANSPORT. Keeping them separate is what stops a broken transport (a host
- * it can't reach) from corrupting routing.
- *
- * Liveness (AC2): a registration is only valid while its pid is alive. Dead
- * entries are never resolved (and can be pruned). This is what stops the
- * stale "wren — -zsh" class — a dead session can't be a target.
+ * #3125 routing, #4361 source. Where a role is comes from its Presence row
+ * (presence-target.ts); the ~/.chorus/sessions registry files are no longer
+ * read for routing. This module keeps the transport plan (tmux / tty / name)
+ * and the busy-turn marker (<role>.turn.json, written by chorus-hooks).
  */
-import { readdirSync, readFileSync, unlinkSync, appendFileSync } from 'fs';
-import { execFileSync } from 'child_process';
+import { readFileSync } from 'fs';
 import os from 'os';
 import path from 'path';
 
@@ -33,70 +21,7 @@ export interface SessionReg {
   registered_at?: string;
 }
 
-export type IsAlive = (pid: number) => boolean;
-
-/** #3608 — what role a pid ACTUALLY runs as (its CHORUS_ROLE env), or null when
- * unverifiable. Injectable so the resolver rule is unit-tested without ps. */
-export type RoleOfPid = (pid: number) => string | null;
-
 export const SESSIONS_DIR = path.join(os.homedir(), '.chorus', 'sessions');
-
-/** #3608 — read a live pid's CHORUS_ROLE from its environment via `ps eww`.
- * null when the probe fails or the var is absent (unverifiable ≠ poisoned:
- * never strand delivery on uncertainty — same stance as pid_alive). */
-export function actualRoleOfPid(pid: number): string | null {
-  try {
-    const out = execFileSync('ps', ['eww', '-p', String(pid)], { encoding: 'utf8', timeout: 2000 });
-    const m = out.match(/\bCHORUS_ROLE=([a-zA-Z0-9_-]+)/);
-    return m ? m[1] : null;
-  } catch {
-    return null;
-  }
-}
-
-/** Default liveness probe — signal 0 throws iff the pid is gone. */
-export function pidAlive(pid: number): boolean {
-  try {
-    process.kill(pid, 0);
-    return true;
-  } catch (e: unknown) {
-    // EPERM means the process exists but we can't signal it — still alive.
-    return (e as NodeJS.ErrnoException | undefined)?.code === 'EPERM';
-  }
-}
-
-/**
- * Resolve a role to its single best live session. Pure: caller supplies the
- * registration list + a liveness predicate, so this is fully unit-testable
- * without touching the filesystem or real processes.
- *
- * - Filters to the role's LIVE sessions (AC2).
- * - #3608: filters out POISONED entries — a registration whose pid actually
- *   runs a DIFFERENT role (its CHORUS_ROLE env disagrees with the file). This
- *   is what made the 07-03 misroutes stable: a test suite registered "silas"
- *   at wren's/kade's live pids, and liveness alone kept trusting it. A null
- *   verdict (unverifiable) keeps the entry — never strand on uncertainty.
- * - Among multiple live sessions (a role with two terminals), picks the
- *   most-recently-registered.
- * - Returns null when none — caller then falls back to the legacy name-match
- *   path, so as-is delivery is preserved when nothing is registered.
- */
-export function resolveTarget(
-  regs: SessionReg[],
-  role: string,
-  isAlive: IsAlive,
-  roleOf?: RoleOfPid,
-): SessionReg | null {
-  const live = regs
-    .filter((r) => r.role === role && isAlive(r.pid))
-    .filter((r) => {
-      if (!roleOf) return true;
-      const actual = roleOf(r.pid);
-      return actual === null || actual === r.role;
-    })
-    .sort((a, b) => (b.registered_at ?? '').localeCompare(a.registered_at ?? ''));
-  return live[0] ?? null;
-}
 
 /**
  * #3700 (fallback taxonomy) — typed resolution. A miss SAYS WHY:
@@ -105,109 +30,14 @@ export function resolveTarget(
  *                  (includes poisoned entries — a pid whose actual role
  *                  disagrees is NOT a live session of this role)
  *  - unregistered: no entry for the role at all
- * Callers must map dead/unregistered to a TYPED undelivered outcome — never
+ * #4361: resolved from the Presence row (presence-target.ts), never the
+ * registry files. Callers must map dead/unregistered to a TYPED undelivered outcome — never
  * fall through to legacy name-match (the 2026-07-26 cross-role spray).
  */
 export type TypedResolution =
   | { kind: 'resolved'; session: SessionReg }
   | { kind: 'dead' }
   | { kind: 'unregistered' };
-
-export function resolveTargetTyped(
-  regs: SessionReg[],
-  role: string,
-  isAlive: IsAlive,
-  roleOf?: RoleOfPid,
-): TypedResolution {
-  const session = resolveTarget(regs, role, isAlive, roleOf);
-  if (session) return { kind: 'resolved', session };
-  // truth-telling miss: an entry for the role existing at all means the role
-  // WAS here — that is dead (or poisoned), not unregistered.
-  return regs.some((r) => r.role === role) ? { kind: 'dead' } : { kind: 'unregistered' };
-}
-
-/** Read all registration files from `dir`. Best-effort: a malformed or
- * vanished file is skipped, never throws (registry reads must not break
- * delivery). Returns [] if the dir doesn't exist yet. */
-export function readRegistry(dir: string = SESSIONS_DIR): SessionReg[] {
-  let names: string[];
-  try {
-    names = readdirSync(dir).filter((n) => n.endsWith('.json'));
-  } catch {
-    return [];
-  }
-  const out: SessionReg[] = [];
-  for (const name of names) {
-    try {
-      const raw = readFileSync(path.join(dir, name), 'utf8');
-      const obj = JSON.parse(raw) as SessionReg | null;
-      if (obj && typeof obj.role === 'string' && typeof obj.pid === 'number' && typeof obj.tty === 'string') {
-        out.push({ ...obj, host: obj.host || 'unknown' });
-      }
-    } catch {
-      /* skip malformed/vanished entry */
-    }
-  }
-  return out;
-}
-
-/**
- * #3608 — sweep the registry: delete entries that are dead-pid or role-poisoned
- * (pid's actual CHORUS_ROLE disagrees with the registration). Runs at resolve
- * time so the registry self-heals — no manual `rm` ever again. Best-effort.
- * Returns the swept filenames (for the caller's spine event / log line).
- */
-/** #3608 AC2 — spine emitter seam so sweeps are queryable in Loki, not lost to
- * stdout (Kade's review + product gate). Injectable; the default appends a
- * canonical chorus.log JSON line (same shape the pulse emitSpine writes). */
-export type SweepEmit = (event: string, fields: Record<string, string>) => void;
-
-export function defaultSweepEmit(event: string, fields: Record<string, string>): void {
-  try {
-    const logPath = process.env.CHORUS_SPINE_LOG
-      || path.join(os.homedir(), 'CascadeProjects', 'chorus', 'platform', 'logs', 'chorus.log');
-    const line = JSON.stringify({ timestamp: new Date().toISOString(), event, role: 'pulse', ...fields });
-    appendFileSync(logPath, line + '\n'); // covered by the file-level #3429 disable — inner directive was flagged unused (#3606)
-  } catch { /* spine emit is best-effort — never break delivery */ }
-}
-
-export function sweepRegistry(
-  dir: string = SESSIONS_DIR,
-  isAlive: IsAlive = pidAlive,
-  roleOf: RoleOfPid = actualRoleOfPid,
-  emit: SweepEmit = defaultSweepEmit,
-): string[] {
-  const swept: string[] = [];
-  for (const r of readRegistry(dir)) {
-    const dead = !isAlive(r.pid);
-    const actual = dead ? null : roleOf(r.pid);
-    const poisoned = actual !== null && actual !== r.role;
-    if (!dead && !poisoned) continue;
-    const file = path.join(dir, `${r.role}-${r.pid}.json`);
-    try {
-      unlinkSync(file);
-      const desc = `${r.role}-${r.pid}.json${poisoned ? ` (poisoned: pid runs ${actual})` : ' (dead pid)'}`;
-      swept.push(desc);
-      // AC2 — poison/stale sweeps are spine events, queryable, never stdout-only.
-      emit(poisoned ? 'routing.poison.detected' : 'routing.stale.swept', {
-        reg_role: r.role, pid: String(r.pid), tty: r.tty,
-        ...(poisoned ? { actual_role: actual as string } : {}),
-      });
-    } catch { /* vanished or unwritable — skip */ }
-  }
-  return swept;
-}
-
-/**
- * The full resolve a caller wants: read the live registry from disk and
- * return the best live target for `role`, or null to fall back to name-match.
- * #3608: sweeps dead + poisoned entries first (self-healing), then resolves
- * with role re-verification.
- */
-export function resolveRoleTarget(role: string, dir: string = SESSIONS_DIR, isAlive: IsAlive = pidAlive, roleOf: RoleOfPid = actualRoleOfPid, emit: SweepEmit = defaultSweepEmit): SessionReg | null {
-  sweepRegistry(dir, isAlive, roleOf, emit);
-  return resolveTarget(readRegistry(dir), role, isAlive, roleOf);
-}
 
 export type DeliveryPlan =
   | { kind: 'inject'; args: string[] }
@@ -318,15 +148,12 @@ export type TypedDeliveryPlan =
  *    (amendment approved with #3700, 2026-07-26 — the busy-spray incident).
  */
 export function planDeliveryTyped(
-  regs: SessionReg[],
+  res: TypedResolution,
   role: string,
   content: string,
-  isAlive: IsAlive,
   turnStateOf: (role: string) => TurnState,
   now: () => number = Date.now,
-  roleOf?: RoleOfPid,
 ): TypedDeliveryPlan {
-  const res = resolveTargetTyped(regs, role, isAlive, roleOf);
   if (res.kind !== 'resolved') return { kind: 'undelivered', reason: res.kind };
   const turn = turnStateOf(role);
   const fresh = turn.busy && (!turn.since || now() - Date.parse(turn.since) < BUSY_STALENESS_MS);
