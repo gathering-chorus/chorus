@@ -116,3 +116,18 @@ describe('#3439 describeTarget — report resolved destination (AC3)', () => {
 
 // ── #3608 — role re-verification + registry self-heal ──────────────────────
 
+
+// #4361 regression (live 2026-09-27 11:59): Presence targets carry no pid
+// (pid 0). The #3352 same-session rule compared pids, so EVERY sender matched
+// every target and delivery fell to name-match → chorus-inject no-window-found.
+describe('#4361 same-session rule with Presence targets (pid 0)', () => {
+  const silas: SessionReg = { role: 'silas', pid: 0, tty: '/dev/ttys005', host: 'tmux', tmux: '%15' };
+  const wren: SessionReg = { role: 'wren', pid: 0, tty: '/dev/ttys006', host: 'tmux', tmux: '%14' };
+  test('two different panes with pid 0 are NOT the same session → tmux delivery', () => {
+    expect(planDelivery(silas, 'silas', 'hi', wren)).toEqual({ kind: 'inject', args: ['--tmux', '%15', 'hi'] });
+  });
+  test('the same pane IS the same session → name-match (the #3352 rule still holds)', () => {
+    expect(planDelivery(silas, 'silas', 'hi', { ...wren, tmux: '%15', tty: '/dev/ttys005' }).kind).toBe('inject');
+    expect(planDelivery(silas, 'silas', 'hi', { ...wren, tmux: '%15', tty: '/dev/ttys005' })).toEqual({ kind: 'inject', args: ['silas', 'hi'] });
+  });
+});
