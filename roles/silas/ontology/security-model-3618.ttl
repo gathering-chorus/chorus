@@ -314,8 +314,8 @@ chorus:PrincipalShape-label a sh:PropertyShape ;
     sh:path rdfs:label ; sh:minCount 1 .
 chorus:PrincipalShape-principalKind a sh:PropertyShape ;
     sh:path chorus:principalKind ; sh:minCount 1 ; sh:maxCount 1 ; sh:datatype xsd:string ;
-    sh:pattern "^(person|agent|service|worker)$" ;
-    sh:message "principalKind is one of person / agent / service / worker" .
+    sh:pattern "^(person|agent|service)$" ;   # #4348 — Ruling 2 (Jeff 2026-09-21): human means person, worker means service
+    sh:message "principalKind is one of person / agent / service" .
 chorus:PrincipalShape-canSignIn a sh:PropertyShape ;
     sh:path chorus:canSignIn ; sh:minCount 1 ; sh:maxCount 1 ; sh:datatype xsd:string ;
     sh:pattern "^(true|false)$" ;

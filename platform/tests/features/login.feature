@@ -70,3 +70,16 @@ Feature: A principal logs in, works, and logs out
 
   Scenario: A lapsed session is closed by the sweep
     # proven by: 4328-session-rows.bats :: sweep closes an expired open session and leaves the live login alone
+
+  # Added with #4348 (Wren's web research, 2026-09-27): standard session controls.
+  Scenario: A login copied from another pane is refused
+    # waiting on: #4383
+
+  Scenario: A session has an absolute lifetime, even while it renews
+    # waiting on: #4384
+
+  Scenario: Revoking a principal ends its session on the next turn
+    # waiting on: #4385
+
+  Scenario: Every login event names the principal, session and run
+    # waiting on: #4369

@@ -153,7 +153,7 @@ impl Kind {
                 None => continue,
             };
             return match v.as_str() {
-                "human" => Some(Kind::Human),
+                "human" | "person" => Some(Kind::Human),   // #4348: both words, one kind
                 "agent" => Some(Kind::Agent),
                 _ => None,
             };
@@ -166,8 +166,10 @@ impl Kind {
     /// The store's older spellings (person, service, worker) are a migration,
     /// not a third and fourth answer to write.
     fn stored(self) -> &'static str {
+        // #4348 — Jeff's Ruling 2 (2026-09-21): the stored word is "person";
+        // "human" is its alternate label (vocabulary-identity-4254.ttl).
         match self {
-            Kind::Human => "human",
+            Kind::Human => "person",
             Kind::Agent => "agent",
         }
     }
@@ -1363,13 +1365,13 @@ mod tests {
         assert_eq!(Kind::from_args(&args(&["--kind=agent"])), Some(Kind::Agent));
         // NEGATIVE: no kind, or a third word, is not a kind
         assert_eq!(Kind::from_args(&args(&[])), None);
-        assert_eq!(Kind::from_args(&args(&["--kind", "person"])), None);
+        assert_eq!(Kind::from_args(&args(&["--kind", "person"])), Some(Kind::Human), "#4348: person is the stored word");
         assert_eq!(Kind::from_args(&args(&["--kind", "service"])), None);
     }
 
     #[test]
     fn kind_decides_what_the_row_says_and_whether_they_sign_in() {
-        assert_eq!(Kind::Human.stored(), "human");
+        assert_eq!(Kind::Human.stored(), "person", "#4348: Ruling 2 — never \"human\" in the store");
         assert_eq!(Kind::Human.can_sign_in(), "true");
         assert_eq!(Kind::Agent.stored(), "agent");
         assert_eq!(Kind::Agent.can_sign_in(), "false");
