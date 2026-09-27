@@ -164,7 +164,9 @@ Feature: A principal logs in, works, and logs out
     When wren's principal is revoked
     Then wren's next turn is refused and wren's session is closed
 
-  @waiting-4369
-  Scenario: Every login event names the principal, session and run
-    When Jeff runs "chorus-principal login wren"
-    Then every spine event the login wrote carries principal wren, the session and the run
+  Scenario: An event a logged-in role emits names its principal and session
+    Given wren is logged in
+    When wren's pane writes a spine event for wren
+    And wren's pane writes a spine event for kade
+    Then wren's event names principal-wren and wren's session
+    And the event for kade names neither
