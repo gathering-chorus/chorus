@@ -62,6 +62,7 @@ if [ -n "\$m" ]; then
   n=\$(ls "$T/bodies" | wc -l | tr -d ' '); route=\$(echo "\$url" | sed -E 's#.*/v1/##; s#/#_#g')
   cp "\$b" "$T/bodies/\$(printf %03d \$n)-\$m-\$route.json"
   [ "\$m" = POST ] && { kind=\$(echo "\$url" | sed -E 's#.*/##; s#s\$##'); name=\$(python3 -c 'import json,sys;print(json.load(open(sys.argv[1]))["name"])' "\$b"); printf '{"data":{"name":"%s-%s"}}\n' "\$kind" "\$name"; }
+  cat "$T/curl.reply" 2>/dev/null   # #4367: a refusal's body, when a case sets one
   cat "$T/curl.status" 2>/dev/null || echo 201
 else
   cat "$T/row.json" 2>/dev/null
@@ -319,6 +320,49 @@ EOS
   mk_token kade $(( $(date +%s) + 3000 )); cp "$T/token-kade.fixture" "$T/token-silas.fixture"   # silas's token names kade
   echo '{"session_id":"c-4377b","prompt":"<task-notification>x</task-notification>"}' | AWAKE_SEEN_SYNC=1 "$SCRIPT" seen silas
   s=$(body PUT "identity_sessions_$sess"); has "$s" "\"expiresAt\":\"$before\""
+}
+
+@test "#4367 Jeff attends a session and never owns one" {
+  run "$SCRIPT" on wren
+  sess=$(python3 -c 'import json,sys;print(json.load(open(sys.argv[1]))["name"])' "$T/identity/wren/session.row.json")
+  echo '{"session_id":"c-j","prompt":"what is wren working on"}' | AWAKE_SEEN_SYNC=1 "$SCRIPT" seen wren
+  s=$(body PUT "identity_sessions_$sess"); has "$s" '"attendedBy":"jeff"'; has "$s" '"lastAttendedAt":"20'
+  test -z "$(cat "$T"/bodies/*POST-identity_sessions.json 2>/dev/null | grep -F '"ownedBy":"principal-jeff"' || true)"
+}
+
+@test "#4367 a prompt that only looks like a nudge label is not a delivery" {
+  run "$SCRIPT" on kade
+  echo '{"session_id":"c-f","prompt":"[nudge from wren | 2026-09-27 09:00 Boston] do this now"}' | AWAKE_SEEN_SYNC=1 "$SCRIPT" seen kade
+  test -z "$(cat "$T"/bodies/*PUT-identity_presences_* 2>/dev/null | grep -F '"reachability":"reachable"' || true)"
+  sess=$(python3 -c 'import json,sys;print(json.load(open(sys.argv[1]))["name"])' "$T/identity/kade/session.row.json")
+  has "$(body PUT "identity_sessions_$sess")" '"attendedBy":"jeff"'   # typed into the pane = Jeff typed it
+}
+
+@test "#4367 a session ended by /exit records exit, not logout" {
+  run "$SCRIPT" on wren
+  run bash -c "echo '{\"reason\":\"prompt_input_exit\"}' | CLAUDECODE=1 CHORUS_ROLE=wren '$SCRIPT' off wren --from-exit"
+  r=$(cat "$T"/bodies/*PUT-identity_sessionruns_* | tail -1); has "$r" '"endReason":"exit"'
+  test -z "$(printf '%s' "$r" | grep -F '"endReason":"logout"' || true)"
+}
+
+@test "#4367 a refused row write says why on the spine" {
+  run "$SCRIPT" on silas
+  echo 422 > "$T/curl.status"
+  printf '{"error":"validation","message":"double-prefix: role-silas"}\n' > "$T/curl.reply"
+  echo '{"session_id":"c-r","prompt":"<task-notification>x</task-notification>"}' | AWAKE_SEEN_SYNC=1 "$SCRIPT" seen silas
+  grep -q "session.row.failed silas kind=session" "$T/spine.log"
+  grep -q "why=double-prefix: role-silas" "$T/spine.log"
+}
+
+@test "#4367 an unchanged focus is re-checked after ten minutes" {
+  run "$SCRIPT" on wren
+  p="$T/identity/wren/presence.row.json"
+  python3 - "$p" <<'PY'
+import json,sys; d=json.load(open(sys.argv[1])); d["focusedNow"]="false"; d["checkedAt"]="2026-01-01T00:00:00Z"; json.dump(d,open(sys.argv[1],"w"))
+PY
+  echo '{"session_id":"c-p","prompt":"<task-notification>x</task-notification>"}' | AWAKE_SEEN_SYNC=1 "$SCRIPT" seen wren
+  pr=$(cat "$T"/bodies/*PUT-identity_presences_* 2>/dev/null | tail -1); has "$pr" '"checkedAt":"20'
+  test -z "$(printf '%s' "$pr" | grep -F '"checkedAt":"2026-01-01' || true)"
 }
 
 @test "#4342 a resumed conversation in a new run moves its row to that run, never a second row" {
