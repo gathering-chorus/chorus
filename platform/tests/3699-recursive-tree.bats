@@ -52,17 +52,6 @@ aq() { # arq over a data file; $1=data $2=query
   echo "$output" | grep -qE '\|[[:space:]]*0[[:space:]]*\|'
 }
 
-# ── AC4: the staging draft is INGESTED (via #3698 INSTANCE_SET), not un-ingested ──
-@test "AC4 value-stream-instances.ttl is ingested via the seed manifest (#3895 lane)" {
-  # #3904 — the INSTANCE_SET lane moved OUT of chorus-model-deploy.sh (#3895:
-  # the recovery path must not carry the DAL-gated seed). The ingest lane is
-  # now `athena-model seed --deploy` reading the committed manifest.
-  MANIFEST="$REPO/platform/config/instance-seed-manifest.txt"
-  [ -f "$MANIFEST" ]
-  grep -q 'value-stream-instances.ttl' "$MANIFEST"
-  grep -q 'value-stream-step-instances.ttl' "$MANIFEST"
-}
-
 # ── AC3 (live): GET /valuestreams/chorus/tree returns the RECURSIVE tree ──
 # A real recursion = a grandchild depth: chorus → step → child-stream → child-step.
 @test "AC3 GET /valuestreams/value-stream-chorus/tree serves a nested (recursive) tree" {

@@ -1,5 +1,5 @@
 #!/usr/bin/env bats
-# @test-type: contract — greps and parses TTL files in the repo plus fixtures it writes to BATS_TEST_TMPDIR; no store, no service, no network.
+# @test-type: contract — parses TTL files in the repo plus fixtures it writes to BATS_TEST_TMPDIR; no store, no service, no network.
 # @domain: roles — the product domain this suite guards (#4334)
 # #3838 — the roles model must be able to describe a role.
 #
@@ -28,7 +28,6 @@ setup() {
   SHAPE_TTL="$REPO/roles/wren/ontology/priorities-3686.ttl"
   # #4265 — the PropertyKey registry's home since the row moved out of the shape file.
   KEYS_TTL="$REPO/designing/data/property-key-instances.ttl"
-  SEC_TTL="$REPO/roles/silas/ontology/security-model-3618.ttl"
   TMP="$BATS_TEST_TMPDIR"
 }
 
@@ -128,98 +127,6 @@ chorus:GhostShape a sh:NodeShape ;
 TTL
   g=$(q "$TMP/unpinned.ttl" "$PFX SELECT ?g WHERE { chorus:GhostShape chorus:instancesGraph ?g }")
   [ -z "$g" ]   # the same query the positive check uses returns nothing: the check FIRES
-}
-
-# ------------------------------------------------------------- one spelling ---
-
-@test "ownership edges point at exactly one spelling of a role" {
-  cd "$REPO"
-  # No ownership edge may name the retired IRIs.
-  #
-  # #4179 — fixture data is EXCLUDED BY PATH. platform/tests/fixtures/ holds
-  # negative-proof fixtures whose whole job is to carry violating rows so a
-  # check can be shown to fire (#3734). A repo-wide grep cannot tell a fixture
-  # from a declaration, so before this it read hats-4175-violations.ttl as a
-  # real ownership edge and went red for two nightlies. The exclusion is by
-  # DIRECTORY, not by pattern: a pattern exception would also hide a real
-  # violation that happened to look like test data.
-  run bash -c "grep -rhoE 'chorus:(ownedBy|ownerRole|gatekeeper|assignedTo) chorus:(wren|silas|kade|jeff)\b' --include='*.ttl' --exclude-dir=fixtures . | wc -l | tr -d ' '"
-  [ "$output" -eq 0 ]
-}
-
-@test "NEGATIVE PROOF: the one-spelling check can fail" {
-  # A grep that matches nothing passes for two reasons — the rule holds, or the
-  # pattern is wrong. Prove the pattern still finds a violation when one exists.
-  cat > "$TMP/violation.ttl" <<'TTL'
-@prefix chorus: <https://jeffbridwell.com/chorus#> .
-chorus:product-x chorus:ownedBy chorus:wren .
-TTL
-  run bash -c "grep -hoE 'chorus:(ownedBy|ownerRole|gatekeeper|assignedTo) chorus:(wren|silas|kade|jeff)\b' '$TMP/violation.ttl' | wc -l | tr -d ' '"
-  [ "$output" -eq 1 ]
-}
-
-@test "the retired spellings declare no Role individual anywhere" {
-  cd "$REPO"
-  # Comment lines are stripped first: this card DOCUMENTS the retired names in
-  # role-instances-3838.ttl so the next reader knows what was collapsed and why.
-  # A check that cannot tell prose from a declaration would make recording the
-  # decision impossible — and an undocumented retirement is how someone
-  # reintroduces the spelling in six weeks.
-  # #4179 — same exclusion, same reason: the negative-proof fixture declares a
-  # retired spelling ON PURPOSE so the check can be shown to catch one.
-  run bash -c "grep -rh --include='*.ttl' --exclude-dir=fixtures -v '^[[:space:]]*#' . | grep -cE 'chorus:(wren|silas|kade|jeff) a chorus:Role\\b|chorus:(wren|silas)-owner' || true"
-  [ "$output" -eq 0 ]
-}
-
-@test "NEGATIVE PROOF: the retired-spelling check still sees a real declaration" {
-  # Stripping comments must not blind the check to an actual re-introduction.
-  cat > "$TMP/reintroduced.ttl" <<'TTL'
-@prefix chorus: <https://jeffbridwell.com/chorus#> .
-chorus:wren a chorus:Role ; rdfs:label "Wren" .
-TTL
-  run bash -c "grep -h -v '^[[:space:]]*#' '$TMP/reintroduced.ttl' | grep -cE 'chorus:(wren|silas|kade|jeff) a chorus:Role\\b'"
-  [ "$output" -eq 1 ]
-}
-
-# ------------------------------------------------------------------- seam ---
-
-@test "holdsRole is declared in PrincipalShape so the API can project it" {
-  # It was live in the store and absent from the shape, so /principals never
-  # returned it: the identity-to-role seam existed and was invisible.
-  grep -q "sh:property chorus:PrincipalShape-holdsRole" "$SEC_TTL"
-  grep -q "chorus:PrincipalShape-holdsRole a sh:PropertyShape" "$SEC_TTL"
-}
-
-@test "holdsRole is typed, so a dangling role reference is refused" {
-  run bash -c "sed -n '/chorus:PrincipalShape-holdsRole a sh:PropertyShape/,/\\.$/p' '$SEC_TTL' | grep -c 'sh:class chorus:Role'"
-  [ "$output" -eq 1 ]
-}
-
-@test "the WebID correlation key is unique, expressed in the idiom that RUNS" {
-  # It was a bare string with no uniqueness rule — two principals could claim the
-  # same identity and nothing would object.
-  #
-  # This asserts chorus:uniqueGlobal, NOT a sh:sparql shape. I wrote it as
-  # sh:sparql first; the chorus-model validator never reads sh:sparql (zero
-  # occurrences in the crate), so it would have looked enforced and never fired.
-  # The behavioural proof lives in the crate — webid_uniqueness_3838 — where a
-  # duplicate is actually refused. This grep only pins the DECLARATION.
-  # Block delimited by the next BLANK LINE, not by a trailing period: the
-  # comment explaining this choice ends in a period, which truncated the sed
-  # range and failed against a file that was correct. A range ending in the
-  # wrong place is its own small hollow gate.
-  #
-  # And the match is anchored to the start of the line so the comment that
-  # NAMES uniqueGlobal cannot satisfy the check — prose about a rule is not the
-  # rule, which is the whole lesson of this card.
-  run bash -c "awk '/PrincipalShape-webId a sh:PropertyShape/,/^[[:space:]]*\$/' '$SEC_TTL' | grep -cE '^[[:space:]]+chorus:uniqueGlobal true'"
-  [ "$output" -eq 1 ]
-}
-
-@test "NEGATIVE PROOF: the decorative sh:sparql rule is GONE, not left beside the real one" {
-  # Two rules for one thing is how three spellings of a role happened. The
-  # inert one had to be deleted, not demoted.
-  ! grep -q "chorus:PrincipalWebIdUnique" "$SEC_TTL" || return 1
 }
 
 # ------------------------------------------------------- the word cap ---

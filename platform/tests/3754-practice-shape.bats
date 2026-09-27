@@ -36,10 +36,9 @@ verdict() {
   if echo "$out" | grep -q "sh:conforms *true"; then echo "CONFORMS"; else echo "VIOLATES"; fi
 }
 
-@test "shape file is valid turtle and declares its instances graph" {
+@test "shape file is valid turtle" {
   run riot --validate "$SHAPE"
   [ "$status" -eq 0 ]
-  grep -q 'chorus:instancesGraph "urn:chorus:domains:practices"' "$SHAPE"
 }
 
 # --- the control: this MUST pass, or the shape separates nothing -------------

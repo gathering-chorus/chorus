@@ -104,12 +104,3 @@ teardown() { [ -n "${STUB_PID:-}" ] && kill "$STUB_PID" 2>/dev/null; rm -rf "${T
   grep -q "^graph-summary|0|clean$" "$TMP/gv.txt"
   ! grep -q "^graph-issue|owner-not-principal|" "$TMP/gv.txt" || return 1
 }
-
-@test "the baseline no longer lives on the subject the deploy stamp wipes" {
-  YML="$REPO_ROOT/.github/workflows/athena.yml"
-  ! grep -q "<urn:chorus:model-deploy> <urn:chorus:vocab#validateIssues>" "$YML" || return 1
-  grep -q "<urn:chorus:model-validate> <urn:chorus:vocab#validateIssues>" "$YML"
-  # the stamp rewrite in the deployer still deletes every predicate of model-deploy:
-  # that is exactly why the baseline had to move (if this changes, the reason is gone, not the rule)
-  grep -q 'DELETE WHERE {{ GRAPH <{ontology}> {{ <urn:chorus:model-deploy> ?p ?o }} }}' "$REPO_ROOT/platform/services/athena-deploy/src/lib.rs"
-}

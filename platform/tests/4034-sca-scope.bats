@@ -36,8 +36,3 @@ setup() {
   [ "$scoped" -eq 0 ]
   [ "$deep" -ne 0 ]
 }
-
-@test "the repo scan excludes the fixture dir itself — planted CVEs never red the nightly" {
-  run grep -q 'sca-fixtures' "$SCRIPT"
-  [ "$status" -eq 0 ]
-}

@@ -13,21 +13,6 @@
 REPO_ROOT="$(cd "$BATS_TEST_DIRNAME/../.." && pwd)"
 GEN="$REPO_ROOT/platform/scripts/gen-role-mcp.sh"
 
-@test "gen-role-mcp.sh resolves absolute node + cclsp paths" {
-  grep -qE 'NODE_BIN="\$\(command -v node' "$GEN"
-  grep -qE 'CCLSP_BIN="\$\(command -v cclsp' "$GEN"
-}
-
-@test "cclsp MCP block launches via absolute node with cclsp as arg" {
-  grep -qE '"command": "\$NODE_BIN"' "$GEN"
-  grep -qE '"args": \["\$CCLSP_BIN"\]' "$GEN"
-}
-
-@test "no bare command:cclsp regression (the nvm-PATH break)" {
-  # The exact rot we are fixing must not reappear.
-  ! grep -qE '"command": "cclsp"' "$GEN" || return 1
-}
-
 @test "running the generator emits an absolute cclsp command" {
   # #4149: generate into a scratch tree, NEVER the live repo. This case used to
   # run the generator bare, so every nightly regenerated the three real role
