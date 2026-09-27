@@ -9,8 +9,6 @@ import { execFileSync } from 'child_process';
 import * as fs from 'fs';
 import * as os from 'os';
 import * as path from 'path';
-// #4361 — pulse's own routing, checked against the rows a login writes
-import { resolveFromPresence } from '../../../pulse/src/presence-target';
 
 const ROOT = path.resolve(__dirname, '../../../..');
 const HARNESS = path.join(ROOT, 'platform/tests/lib/login-harness.bash');
@@ -237,7 +235,7 @@ Then("the nudge waits until Jeff's prompt is sent, and Jeff's text arrives whole
 
 // #4361 — pulse routes by the Presence row the login wrote. The registry file
 // is pointed at a pane nobody is in (%99); only a Presence read gets it right.
-Then("the relay found wren's pane through wren's Presence row, not a registry file", STEP, function () {
+Then("the relay found wren's pane through wren's Presence row, not a registry file", STEP, async function () {
   const bodies = path.join(T, 'bodies');
   const read = (suffix: string) => fs.readdirSync(bodies).filter((n) => n.endsWith(suffix))
     .map((n) => JSON.parse(fs.readFileSync(path.join(bodies, n), 'utf8')));
@@ -249,7 +247,10 @@ Then("the relay found wren's pane through wren's Presence row, not a registry fi
     const p = path.join(T, 'sessions', n);
     fs.writeFileSync(p, JSON.stringify({ ...JSON.parse(fs.readFileSync(p, 'utf8')), tmux: '%99' }));
   }
-  const res = resolveFromPresence(presences, runs, 'wren');
+  // pulse's own routing, loaded at run time (a sibling package, outside this tsconfig's root)
+  type Res = { kind: string; session: { tmux?: string } };
+  const pulse = (await import(path.join(ROOT, 'platform/pulse/src/presence-target'))) as { resolveFromPresence: (p: unknown[], r: unknown[], role: string) => Res };
+  const res = pulse.resolveFromPresence(presences, runs, 'wren');
   if (res.kind !== 'resolved') throw new Error(`no live Presence for wren: ${JSON.stringify(res)}`);
   if (res.session.tmux === '%99') throw new Error('routed by the registry file, not the Presence row');
   if (res.session.tmux !== presences[0].pane) throw new Error(`routed to ${res.session.tmux}, Presence says ${presences[0].pane}`);
