@@ -9,6 +9,9 @@
 SCRIPT="$BATS_TEST_DIRNAME/../scripts/alert-delivery-test.sh"
 
 setup() {
+  # #4335: RUN_INTEGRATION cannot gate this — the werk lane sets it (#4102) — so a
+  # card run paged Silas and Jeff. Only a hand run that means to page may run it.
+  [ "${CHORUS_LIVE_ALERTS:-}" = "true" ] || skip "UNMEASURED until #4336 fakes the bridge — posts real probes to the live bridge; CHORUS_LIVE_ALERTS=true to run"
   # A test brings its own world (#3528): never write fixture results into the real log.
   export ALERT_DELIVERY_LOG="$BATS_TEST_TMPDIR/alert-delivery-test.log"
   curl -s -o /dev/null --max-time 3 http://localhost:3475/health || skip "bridge not running"
@@ -16,7 +19,7 @@ setup() {
 
 @test "with the real token: bridge probe check PASSes" {
   run bash "$SCRIPT"
-  [[ "$output" == *"PASS: alert-runner: Bridge accepted probe"* ]]
+  [[ "$output" == *"PASS: alert-runner: Bridge accepted probe"* ]] || return 1
 }
 
 # #4004 — the failure must NAME which state it is in. #3968 proved an absent
@@ -26,24 +29,24 @@ setup() {
 # never asked when we have no credential, so it must not be the thing blamed.
 @test "NEGATIVE PROOF: token missing → check FAILS naming the CREDENTIAL state, not the bridge" {
   BRIDGE_TOKEN_FILE="$BATS_TEST_TMPDIR/absent-token" run bash "$SCRIPT"
-  [[ "$output" == *"FAIL: alert-runner: NO BRIDGE CREDENTIAL"* ]]
-  [[ "$output" == *"$BATS_TEST_TMPDIR/absent-token"* ]]
+  [[ "$output" == *"FAIL: alert-runner: NO BRIDGE CREDENTIAL"* ]] || return 1
+  [[ "$output" == *"$BATS_TEST_TMPDIR/absent-token"* ]] || return 1
   # the misattribution this replaces, and the artifact #3968 killed
-  [[ "$output" != *"Bridge rejected probe"* ]]
-  [[ "$output" != *"401000"* ]]
+  [[ "$output" != *"Bridge rejected probe"* ]] || return 1
+  [[ "$output" != *"401000"* ]] || return 1
 }
 
 @test "NEGATIVE PROOF: an EMPTY token file is the same state as a missing one" {
   : > "$BATS_TEST_TMPDIR/empty-token"
   BRIDGE_TOKEN_FILE="$BATS_TEST_TMPDIR/empty-token" run bash "$SCRIPT"
-  [[ "$output" == *"FAIL: alert-runner: NO BRIDGE CREDENTIAL"* ]]
+  [[ "$output" == *"FAIL: alert-runner: NO BRIDGE CREDENTIAL"* ]] || return 1
 }
 
 @test "NEGATIVE PROOF: a WRONG token still blames the bridge — the two states stay separable" {
   printf 'not-the-real-token\n' > "$BATS_TEST_TMPDIR/wrong-token"
   BRIDGE_TOKEN_FILE="$BATS_TEST_TMPDIR/wrong-token" run bash "$SCRIPT"
-  [[ "$output" == *"FAIL: alert-runner: Bridge rejected probe (HTTP 401)"* ]]
-  [[ "$output" != *"NO BRIDGE CREDENTIAL"* ]]
+  [[ "$output" == *"FAIL: alert-runner: Bridge rejected probe (HTTP 401)"* ]] || return 1
+  [[ "$output" != *"NO BRIDGE CREDENTIAL"* ]] || return 1
 }
 
 # #4027 — a transport miss (000) is not the bridge's verdict. Under load the
@@ -52,6 +55,6 @@ setup() {
 # name UNREACHABLE, never "rejected".
 @test "NEGATIVE PROOF: bridge unreachable → check FAILS naming TRANSPORT, not a rejection" {
   BRIDGE="http://127.0.0.1:1" run bash "$SCRIPT"
-  [[ "$output" == *"FAIL: alert-runner: Bridge UNREACHABLE"* ]]
-  [[ "$output" != *"Bridge rejected probe"* ]]
+  [[ "$output" == *"FAIL: alert-runner: Bridge UNREACHABLE"* ]] || return 1
+  [[ "$output" != *"Bridge rejected probe"* ]] || return 1
 }

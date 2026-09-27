@@ -84,14 +84,14 @@ reg() { # reg <pid> [pane]
   [ ! -f "$T/claude.log" ]
   run "$SCRIPT" kade
   [ "$status" -eq 0 ]
-  [[ "$output" == *"pid 56344"* ]]
+  [[ "$output" == *"pid 56344"* ]] || return 1
 }
 
 @test "NEGATIVE PROOF — two live sessions for one role → REFUSED, both named, nothing sent" {
   reg 111 %0; reg 222 %1
   run "$SCRIPT" kade
   [ "$status" -eq 1 ]
-  [[ "$output" == *"REFUSED"* ]]
+  [[ "$output" == *"REFUSED"* ]] || return 1
   [[ "$output" == *"pid 111"* ]] && [[ "$output" == *"pid 222"* ]]
   [ ! -f "$T/tmux.log" ]
 }
@@ -121,15 +121,15 @@ EOS
   [ "$status" -eq 0 ]
   grep -q -- "claude --resume 79906dc2" "$T/tmux.log"
   grep -q -- "stop 79906dc2" "$T/claude.log"
-  ! grep -q -- "claude attach" "$T/tmux.log"
-  ! grep -q -- "claude -c" "$T/tmux.log"
+  ! grep -q -- "claude attach" "$T/tmux.log" || return 1
+  ! grep -q -- "claude -c" "$T/tmux.log" || return 1
   printf '%s' "$output" | grep -qF "resumed 79906dc2 in its own pane"
 }
 
 @test "registration never appears → exit 1 and the line says registered NO" {
   run "$SCRIPT" kade
   [ "$status" -eq 1 ]
-  [[ "$output" == *"registered NO after 1s"* ]]
+  [[ "$output" == *"registered NO after 1s"* ]] || return 1
 }
 
 @test "stale background agents are NAMED, and ended only with AWAKE_END_STALE=1" {
@@ -141,8 +141,8 @@ EOS
   ( sleep 0.3; reg 5 %0 ) &
   run "$SCRIPT" kade
   [ "$status" -eq 0 ]
-  [[ "$output" == *"stale: 2 background agent(s)"*"aaaa1111,bbbb2222"* ]]
-  ! grep -q "claude rm" "$T/claude.log"
+  [[ "$output" == *"stale: 2 background agent(s)"*"aaaa1111,bbbb2222"* ]] || return 1
+  ! grep -q "claude rm" "$T/claude.log" || return 1
   rm -f "$T/sessions/kade-5.json"; : > "$T/alive-pids"; rm -f "$T/tmux.log"
   ( sleep 0.3; reg 6 %0 ) &
   export AWAKE_END_STALE=1
@@ -157,7 +157,7 @@ EOS
   ( sleep 0.3; reg 9 %0 ) &
   run "$SCRIPT" kade
   [ "$status" -eq 0 ]
-  ! grep -qE "claude'? Enter|claude agents" "$T/tmux.log"
+  ! grep -qE "claude'? Enter|claude agents" "$T/tmux.log" || return 1
 }
 
 @test "#4215 the background-session list cannot be read → the role STARTS on the last conversation, loudly" {
@@ -183,9 +183,9 @@ EOS
   ( sleep 0.3; reg 44 %0 ) &
   run "$SCRIPT" kade
   [ "$status" -eq 0 ]
-  ! grep -q -- "claude attach" "$T/tmux.log"
+  ! grep -q -- "claude attach" "$T/tmux.log" || return 1
   grep -q -- "claude -c" "$T/tmux.log"
-  [[ "$output" == *"via claude -c"* ]]
+  [[ "$output" == *"via claude -c"* ]] || return 1
 }
 
 # ---- #4219 — turn the key, the car starts ----

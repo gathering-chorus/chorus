@@ -25,7 +25,7 @@ mkbin() { printf '#!/bin/sh\nexit %s\n' "$1" > "$T/$2"; chmod +x "$T/$2"; }
   mkbin 9 candidate            # bare-invoke crashes (rc>2) → smoke fails
   run bash "$INSTALL" "$T/candidate" werk-frobnicate
   [ "$status" -eq 8 ]
-  [[ "$output" == *REFUSED* ]]
+  [[ "$output" == *REFUSED* ]] || return 1
   [ "$(cat "$HOME/.chorus/bin/werk-frobnicate")" = "OLD" ]   # untouched
   grep -q 'binary.install.refused.*werk-frobnicate.*smoke-fail' "$CHORUS_BIN_SPINE_LOG"
 }
@@ -57,5 +57,5 @@ mkbin() { printf '#!/bin/sh\nexit %s\n' "$1" > "$T/$2"; chmod +x "$T/$2"; }
   mkbin 9 candidate
   CHORUS_BIN_SKIP_SMOKE=1 run bash "$INSTALL" "$T/candidate" werk-frobnicate
   [ "$status" -eq 0 ]
-  [[ "$output" == *"SMOKE SKIPPED"* ]]
+  [[ "$output" == *"SMOKE SKIPPED"* ]] || return 1
 }

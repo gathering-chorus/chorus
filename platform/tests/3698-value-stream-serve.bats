@@ -41,7 +41,7 @@ setup() {
   # leg stays quarantined to the ontology graph, never the instances graph.
   run grep -c 'INSTANCE_MERGE=' "$DEPLOY"
   [ "$output" = "0" ]
-  ! grep -E 'RETIRE_ABSENT.*INSTANCE_GRAPH|INSTANCE_GRAPH.*RETIRE_ABSENT' "$DEPLOY"
+  ! grep -E 'RETIRE_ABSENT.*INSTANCE_GRAPH|INSTANCE_GRAPH.*RETIRE_ABSENT' "$DEPLOY" || return 1
 }
 
 # arq (portable across BSD/GNU, unlike grep -P) parses the committed TTL for the

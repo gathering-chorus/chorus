@@ -31,7 +31,7 @@ FAKE
   [ "$status" -eq 0 ]
   # process is gone (allow a beat for signal delivery)
   sleep 1
-  ! kill -0 "$pid" 2>/dev/null
+  ! kill -0 "$pid" 2>/dev/null || return 1
   grep -q '"event":"process.scratch.killed"' "$CHORUS_LOG_FILE"
   grep -q "\"pid\":\"$pid\"" "$CHORUS_LOG_FILE" || grep -q "pid=$pid" "$CHORUS_LOG_FILE"
 }

@@ -56,7 +56,7 @@ setup() {
 @test "EXTERNAL: binary outside our trees → chorus:external true; ours → no flag" {
   bash "$GEN" --snapshot "$FIX/snapshot-external.json" --timestamp "$T" --out "$OUT"
   grep -A7 'com.microsoft.teams' "$OUT" | grep -q 'chorus:external true'
-  ! grep -A7 'com.test.ours' "$OUT" | grep -q 'chorus:external'
+  ! grep -A7 'com.test.ours' "$OUT" | grep -q 'chorus:external' || return 1
 }
 
 # --- loader (diff-before-write; the live half of second-run-writes-0) ---
@@ -66,7 +66,7 @@ setup() {
   bash "$GEN" --snapshot "$FIX/snapshot-two-units.json" --timestamp "$T" --out "$BATS_TEST_TMPDIR/gen.ttl"
   run bash "$LOAD" --generated "$BATS_TEST_TMPDIR/gen.ttl" --current "$BATS_TEST_TMPDIR/gen.ttl" --dry-run
   [ "$status" -eq 0 ]
-  [[ "$output" == *"0 changes"* ]]
+  [[ "$output" == *"0 changes"* ]] || return 1
 }
 
 @test "LOADER: differing current vs generated → reports a write is needed" {
@@ -75,7 +75,7 @@ setup() {
   bash "$GEN" --snapshot "$FIX/snapshot-external.json" --timestamp "$T" --out "$BATS_TEST_TMPDIR/other.ttl"
   run bash "$LOAD" --generated "$BATS_TEST_TMPDIR/gen.ttl" --current "$BATS_TEST_TMPDIR/other.ttl" --dry-run
   [ "$status" -eq 0 ]
-  [[ "$output" == *"write needed"* ]]
+  [[ "$output" == *"write needed"* ]] || return 1
 }
 
 @test "LOADER: refuses when generated TTL is missing or empty (exit 2)" {
@@ -96,12 +96,12 @@ setup() {
   echo "# trailing comment, no triples" >> "$BATS_TEST_TMPDIR/commented.ttl"
   run bash "$LOAD" --generated "$BATS_TEST_TMPDIR/gen.ttl" --current "$BATS_TEST_TMPDIR/commented.ttl" --dry-run
   [ "$status" -eq 0 ]
-  [[ "$output" == *"0 changes"* ]]
+  [[ "$output" == *"0 changes"* ]] || return 1
 }
 
 @test "EXTERNAL: wrapper with OUR script in argv is NOT external (the css case)" {
   bash "$GEN" --snapshot "$FIX/snapshot-external.json" --timestamp "$T" --out "$OUT"
-  ! grep -A8 'com.test.wrapper' "$OUT" | grep -q 'chorus:external'
+  ! grep -A8 'com.test.wrapper' "$OUT" | grep -q 'chorus:external' || return 1
   grep -A8 'com.test.wrapper' "$OUT" | grep -q 'shared-security/bin/start.sh'
 }
 
@@ -113,7 +113,7 @@ setup() {
 @test "UNKNOWN: evidenceUnavailable unit emits evidenceState, not external" {
   bash "$GEN" --snapshot "$FIX/snapshot-unknown.json" --timestamp "$T" --out "$OUT"
   grep -A7 'com.remote.dark' "$OUT" | grep -q 'evidenceState "unknown"'
-  ! grep -A7 'com.remote.dark' "$OUT" | grep -q 'external'
+  ! grep -A7 'com.remote.dark' "$OUT" | grep -q 'external' || return 1
 }
 
 # --- mapping file (authored label→Service; rows stay machine-written) ---
@@ -148,7 +148,7 @@ setup() {
   run bash "$LOAD" --generated "$BATS_TEST_TMPDIR/gen.ttl" --current /dev/null --dry-run \
       --served-services "$BATS_TEST_TMPDIR/served.txt"
   [ "$status" -eq 2 ]
-  [[ "$output" == *"unserved"* ]]
+  [[ "$output" == *"unserved"* ]] || return 1
 }
 
 @test "LOADER: accepts deploys targets that ARE served" {

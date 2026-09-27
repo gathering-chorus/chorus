@@ -13,7 +13,7 @@ CLAUDEMD_DIR="$CHORUS_ROOT/designing/claudemd"
 @test "generator validates manifest without path errors" {
   run python3 "$CHORUS_ROOT/platform/scripts/claudemd-gen.py" "$MANIFEST" "$CLAUDEMD_DIR" validate "" ""
   [ "$status" -eq 0 ]
-  [[ "$output" != *"output directory does not exist"* ]]
+  [[ "$output" != *"output directory does not exist"* ]] || return 1
 }
 
 @test "resolve_output_path lands under chorus root for each role" {
@@ -101,5 +101,5 @@ json.dump(m, open('$BASE/designing/claudemd/manifest.json', 'w'), indent=2)
   OUT="$output"
   rm -rf "$BASE"
   [ "$STATUS" -ne 2 ]
-  [[ "$OUT" == *"LINT BYPASS"* ]]
+  [[ "$OUT" == *"LINT BYPASS"* ]] || return 1
 }

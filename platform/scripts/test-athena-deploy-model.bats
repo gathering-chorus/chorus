@@ -103,13 +103,13 @@ teardown_file() {
 @test "all 4 primitive shapes + StepShape are queryable after deploy" {
   env ONTOLOGY_GRAPH="$TEST_GRAPH" TTL="$TTL" "$SCRIPT" >/dev/null 2>&1
   run curl -s "$Q" --data-urlencode "query=PREFIX chorus: <https://jeffbridwell.com/chorus#> PREFIX sh: <http://www.w3.org/ns/shacl#> SELECT (COUNT(DISTINCT ?s) AS ?n) WHERE { GRAPH <$TEST_GRAPH> { ?s a sh:NodeShape . FILTER(?s IN (chorus:ProductShape,chorus:DomainShape,chorus:ServiceShape,chorus:ValueStreamShape,chorus:StepShape)) } }" -H "Accept: application/sparql-results+json"
-  [[ "${output// /}" == *'"value":"5"'* ]]
+  [[ "${output// /}" == *'"value":"5"'* ]] || return 1
 }
 
 @test "DomainShape carries chorus:purpose (the capability) after deploy" {
   env ONTOLOGY_GRAPH="$TEST_GRAPH" TTL="$TTL" "$SCRIPT" >/dev/null 2>&1
   run curl -s "$Q" --data-urlencode "query=PREFIX chorus: <https://jeffbridwell.com/chorus#> PREFIX sh: <http://www.w3.org/ns/shacl#> ASK { GRAPH <$TEST_GRAPH> { chorus:DomainShape sh:property [ sh:path chorus:purpose ] } }" -H "Accept: application/sparql-results+json"
-  [[ "${output// /}" == *'"boolean":true'* ]]
+  [[ "${output// /}" == *'"boolean":true'* ]] || return 1
 }
 
 @test "#3736 a successful deploy stamps deployedFromCommit == repo HEAD (single-request truth)" {
@@ -117,7 +117,7 @@ teardown_file() {
   head_sha="$(git -C "$CHORUS_ROOT" rev-parse HEAD)"
   run curl -s "$Q" --data-urlencode "query=SELECT ?c WHERE { GRAPH <$TEST_GRAPH> { <urn:chorus:model-deploy> <urn:chorus:vocab#deployedFromCommit> ?c } }" -H "Accept: text/csv"
   echo "stamp query: $output"
-  [[ "$output" == *"$head_sha"* ]]
+  [[ "$output" == *"$head_sha"* ]] || return 1
 }
 
 @test "#3736 negative proof: a graph deployed WITHOUT the stamp fails the stamp query (check can go red)" {
@@ -148,7 +148,7 @@ teardown_file() {
   [ "$status" -eq 0 ]
   echo "$output" | grep -q "retirement executed .* claim testdom->TestClaimX"
   run curl -s "$Q" --data-urlencode "query=ASK { GRAPH <$RG> { <https://jeffbridwell.com/chorus#testdom> <https://jeffbridwell.com/chorus#definesVocabulary> <https://jeffbridwell.com/chorus#TestClaimX> } }" -H "Accept: application/sparql-results+json"
-  [[ "${output// /}" == *'"boolean":false'* ]]
+  [[ "${output// /}" == *'"boolean":false'* ]] || return 1
   # idempotent rerun: already-absent is noted, never an error
   run env ONTOLOGY_GRAPH="$TEST_GRAPH" TTL="$TTL" RETIREMENTS_FILE="$RF" "$SCRIPT"
   [ "$status" -eq 0 ]
@@ -193,7 +193,7 @@ teardown_file() {
   echo "$output" | grep -q "serve-check UNANSWERED"
   # the negative that matters: nothing was retired blind — the claim is still there
   run curl -s "$Q" --data-urlencode "query=ASK { GRAPH <$RG> { <https://jeffbridwell.com/chorus#testdom> <https://jeffbridwell.com/chorus#definesVocabulary> <https://jeffbridwell.com/chorus#TestClaimX> } }" -H "Accept: application/sparql-results+json"
-  [[ "${output// /}" == *'"boolean":true'* ]]
+  [[ "${output// /}" == *'"boolean":true'* ]] || return 1
   # and the same staging line WITH an answering serve-check does retire it (so the deferral above is the unanswered path, not the harness)
   run env ONTOLOGY_GRAPH="$TEST_GRAPH" TTL="$TTL" RETIREMENTS_FILE="$RF" "$SCRIPT"
   [ "$status" -eq 0 ]
@@ -216,7 +216,7 @@ teardown_file() {
   echo "$output" | grep -q "graph retirement executed"
   # the graph is empty AND a backup file exists with the triples
   run curl -s "$Q" --data-urlencode "query=SELECT (COUNT(*) AS ?n) WHERE { GRAPH <$RG> { ?s ?p ?o } }" -H "Accept: text/csv"
-  [[ "$output" == *"0"* ]]
+  [[ "$output" == *"0"* ]] || return 1
   ls "$CHORUS_ROOT/platform/backups/graph-retirements/" | grep -q "dropme"
   # idempotent
   run env ONTOLOGY_GRAPH="$TEST_GRAPH" TTL="$TTL" RETIREMENTS_FILE="$RF" "$SCRIPT"
@@ -239,7 +239,7 @@ teardown_file() {
   echo "$output" | grep -q "no verified restore path"
   # and the data SURVIVED
   run curl -s "$Q" --data-urlencode "query=ASK { GRAPH <$RG> { <https://jeffbridwell.com/chorus#KeepA> ?p ?o } }" -H "Accept: application/sparql-results+json"
-  [[ "${output// /}" == *'"boolean":true'* ]]
+  [[ "${output// /}" == *'"boolean":true'* ]] || return 1
   curl -s --max-time "${FUSEKI_WRITE_TIMEOUT:-120}" "${FUSEKI_AUTH[@]+"${FUSEKI_AUTH[@]}"}" -X DELETE "$GSP?graph=$RG" -o /dev/null 2>/dev/null || true
 }
 
@@ -266,7 +266,7 @@ teardown_file() {
   echo "output: $output"
   [ "$status" -eq 0 ]   # report stays non-gating — the deploy itself is fine
   echo "$output" | grep -q "CRASHED — violations UNKNOWN"
-  ! echo "$output" | grep -q "0 violation(s)"
+  ! echo "$output" | grep -q "0 violation(s)" || return 1
 }
 
 @test "#3731 NEGATIVE PROOF: absent shacl is an explicit skip, not a clean-run lookalike" {
@@ -309,13 +309,13 @@ EOF
   rm -f "$pre" "$keep"
   # present domain kept
   run curl -s "$Q" --data-urlencode "query=PREFIX chorus: <https://jeffbridwell.com/chorus#> ASK { GRAPH <$G> { chorus:domainKeep a chorus:Domain } }" -H "Accept: application/sparql-results+json"
-  [[ "${output// /}" == *'"boolean":true'* ]]
+  [[ "${output// /}" == *'"boolean":true'* ]] || return 1
   # live-only NON-domain preserved (gap #1 invariant — retire is typed to Domain/SubDomain only)
   run curl -s "$Q" --data-urlencode "query=PREFIX chorus: <https://jeffbridwell.com/chorus#> ASK { GRAPH <$G> { chorus:liveInst a chorus:Test } }" -H "Accept: application/sparql-results+json"
-  [[ "${output// /}" == *'"boolean":true'* ]]
+  [[ "${output// /}" == *'"boolean":true'* ]] || return 1
   # absent domain RETIRED (no triples remain)
   run curl -s "$Q" --data-urlencode "query=PREFIX chorus: <https://jeffbridwell.com/chorus#> ASK { GRAPH <$G> { chorus:domainGone ?p ?o } }" -H "Accept: application/sparql-results+json"
-  [[ "${output// /}" == *'"boolean":false'* ]]
+  [[ "${output// /}" == *'"boolean":false'* ]] || return 1
   curl -s --max-time "${FUSEKI_WRITE_TIMEOUT:-120}" -X DELETE "$GSP?graph=$G" -o /dev/null 2>/dev/null || true
 }
 
@@ -336,7 +336,7 @@ EOF
   env ONTOLOGY_GRAPH="$G" TTL="$keep" "$SCRIPT" >/dev/null 2>&1
   rm -f "$pre" "$keep"
   run curl -s "$Q" --data-urlencode "query=PREFIX chorus: <https://jeffbridwell.com/chorus#> ASK { GRAPH <$G> { chorus:domainGone a chorus:Domain } }" -H "Accept: application/sparql-results+json"
-  [[ "${output// /}" == *'"boolean":true'* ]]
+  [[ "${output// /}" == *'"boolean":true'* ]] || return 1
   curl -s --max-time "${FUSEKI_WRITE_TIMEOUT:-120}" -X DELETE "$GSP?graph=$G" -o /dev/null 2>/dev/null || true
 }
 
@@ -380,7 +380,7 @@ EOF
   [ "$status" -ne 0 ]
   # live domain SURVIVES — no wipe
   run curl -s "$Q" --data-urlencode "query=PREFIX chorus: <https://jeffbridwell.com/chorus#> ASK { GRAPH <$G> { chorus:domainKeep a chorus:Domain } }" -H "Accept: application/sparql-results+json"
-  [[ "${output// /}" == *'"boolean":true'* ]]
+  [[ "${output// /}" == *'"boolean":true'* ]] || return 1
   curl -s --max-time "${FUSEKI_WRITE_TIMEOUT:-120}" -X DELETE "$GSP?graph=$G" -o /dev/null 2>/dev/null || true
 }
 
@@ -403,9 +403,9 @@ EOF
   env ONTOLOGY_GRAPH="$G" TTL="$TTL" "$SCRIPT" >/dev/null 2>&1
   # AC5a — DomainShape's 11 sh:property attrs are RESTORED (the wipe is undone)
   run curl -s "$Q" --data-urlencode "query=PREFIX chorus: <https://jeffbridwell.com/chorus#> PREFIX sh: <http://www.w3.org/ns/shacl#> SELECT (COUNT(?pp) AS ?n) WHERE { GRAPH <$G> { chorus:DomainShape sh:property ?pp } }" -H "Accept: application/sparql-results+json"
-  [[ "${output// /}" == *'"value":"11"'* ]]
+  [[ "${output// /}" == *'"value":"11"'* ]] || return 1
   # AC5b — the co-tenant (not in chorus.ttl) SURVIVES (co-tenant-safe, AC3 proven end-to-end)
   run curl -s "$Q" --data-urlencode "query=PREFIX chorus: <https://jeffbridwell.com/chorus#> ASK { GRAPH <$G> { chorus:coTenantProbe a chorus:Test } }" -H "Accept: application/sparql-results+json"
-  [[ "${output// /}" == *'"boolean":true'* ]]
+  [[ "${output// /}" == *'"boolean":true'* ]] || return 1
   curl -s --max-time "${FUSEKI_WRITE_TIMEOUT:-120}" -X DELETE "$GSP?graph=$G" -o /dev/null 2>/dev/null || true
 }

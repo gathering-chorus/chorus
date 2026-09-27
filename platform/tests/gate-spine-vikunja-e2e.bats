@@ -105,7 +105,7 @@ teardown() {
 
 @test "sentinel fixture exists and is discoverable" {
   [ -n "$SENTINEL" ]
-  [[ "$SENTINEL" =~ ^[0-9]+$ ]]
+  [[ "$SENTINEL" =~ ^[0-9]+$ ]] || return 1
   bash "$CARDS" view "$SENTINEL" 2>&1 | grep -q '\[e2e-sentinel\]'
 }
 
@@ -179,7 +179,7 @@ assert str(d.get('card_id')) == '${SENTINEL}', f\"card_id={d.get('card_id')}\"
 @test "bridge rejects unknown gate name" {
   run bash "$BRIDGE" "$SENTINEL" nonsense silas
   [ "$status" -ne 0 ]
-  [[ "$output" == *"unknown gate"* ]]
+  [[ "$output" == *"unknown gate"* ]] || return 1
 }
 
 # --- AC: every supported gate emits spine event + applies label ---

@@ -132,7 +132,7 @@ teardown_file() {
   _drop_test_graph
   [ "$(_graph_triples)" = "0" ]
   run curl -s "${FUSEKI_AUTH[@]+"${FUSEKI_AUTH[@]}"}" "$Q" --data-urlencode "query=$PFX ASK { GRAPH <$TEST_GRAPH> { chorus:TestEdgesShape sh:property [ sh:path chorus:testType ; sh:minCount 1 ] } }" -H "Accept: application/sparql-results+json"
-  [[ "${output// /}" == *'"boolean":false'* ]]
+  [[ "${output// /}" == *'"boolean":false'* ]] || return 1
 }
 
 @test "werk-domains.ttl deploys into the ontology graph (exit 0)" {
@@ -143,25 +143,25 @@ teardown_file() {
 @test "TestEdgesShape requires testType (minCount 1) after deploy (#4162 — the one field for what kind of proving)" {
   env ONTOLOGY_GRAPH="$TEST_GRAPH" TTL="$TTL" "$SCRIPT" >/dev/null 2>&1
   run curl -s "$Q" --data-urlencode "query=$PFX ASK { GRAPH <$TEST_GRAPH> { chorus:TestEdgesShape sh:property [ sh:path chorus:testType ; sh:minCount 1 ] } }" -H "Accept: application/sparql-results+json"
-  [[ "${output// /}" == *'"boolean":true'* ]]
+  [[ "${output// /}" == *'"boolean":true'* ]] || return 1
 }
 
 @test "TestEdgesShape requires covers (minCount 1) — the werk-test query edge" {
   env ONTOLOGY_GRAPH="$TEST_GRAPH" TTL="$TTL" "$SCRIPT" >/dev/null 2>&1
   run curl -s "$Q" --data-urlencode "query=$PFX ASK { GRAPH <$TEST_GRAPH> { chorus:TestEdgesShape sh:property [ sh:path chorus:covers ; sh:minCount 1 ] } }" -H "Accept: application/sparql-results+json"
-  [[ "${output// /}" == *'"boolean":true'* ]]
+  [[ "${output// /}" == *'"boolean":true'* ]] || return 1
 }
 
 @test "TestEdgesShape carries hermeticity as the optional finer axis (enum, no minCount)" {
   env ONTOLOGY_GRAPH="$TEST_GRAPH" TTL="$TTL" "$SCRIPT" >/dev/null 2>&1
   run curl -s "$Q" --data-urlencode "query=$PFX ASK { GRAPH <$TEST_GRAPH> { chorus:TestEdgesShape sh:property [ sh:path chorus:hermeticity ] } }" -H "Accept: application/sparql-results+json"
-  [[ "${output// /}" == *'"boolean":true'* ]]
+  [[ "${output// /}" == *'"boolean":true'* ]] || return 1
 }
 
 @test "#4162: TestEdgesShape serves neither retired field (pyramidLayer, testConcern)" {
   env ONTOLOGY_GRAPH="$TEST_GRAPH" TTL="$TTL" "$SCRIPT" >/dev/null 2>&1
   run curl -s "$Q" --data-urlencode "query=$PFX ASK { GRAPH <$TEST_GRAPH> { chorus:TestEdgesShape sh:property ?b . ?b sh:path ?p . FILTER(?p IN (chorus:pyramidLayer, chorus:testConcern)) } }" -H "Accept: application/sparql-results+json"
-  [[ "${output// /}" == *'"boolean":false'* ]]
+  [[ "${output// /}" == *'"boolean":false'* ]] || return 1
 }
 
 @test "#4162: a Test carries one testType, and whether it needs the stack is hermeticity" {
@@ -171,7 +171,7 @@ teardown_file() {
   run _insert "chorus:test-3540-ortho a chorus:Test ; chorus:covers chorus:subdomain-tests-domain ; chorus:testType \"security\" ; chorus:hermeticity \"needs-stack\""
   [ "$status" -eq 0 ]
   run curl -s "$Q" --data-urlencode "query=$PFX SELECT ?t WHERE { GRAPH <$TEST_GRAPH> { ?t chorus:testType \"security\" ; chorus:hermeticity \"needs-stack\" } }" -H "Accept: application/sparql-results+json"
-  [[ "$output" == *'test-3540-ortho'* ]]
+  [[ "$output" == *'test-3540-ortho'* ]] || return 1
 }
 
 @test "a minted Test instance is queryable BY its covers edge (the #3190 contract)" {
@@ -181,7 +181,7 @@ teardown_file() {
   [ "$status" -eq 0 ]
   # query the way werk-test will: which Tests cover this SubDomain?
   run curl -s "$Q" --data-urlencode "query=$PFX SELECT ?t WHERE { GRAPH <$TEST_GRAPH> { ?t a chorus:Test ; chorus:covers chorus:subdomain-tests-domain } }" -H "Accept: application/sparql-results+json"
-  [[ "$output" == *'test-3540-probe'* ]]
+  [[ "$output" == *'test-3540-probe'* ]] || return 1
 }
 
 @test "werk-domains.ttl is wired into the model-deploy SET (not orphaned)" {

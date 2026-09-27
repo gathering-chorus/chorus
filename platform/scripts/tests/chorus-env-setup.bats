@@ -96,12 +96,18 @@ setup() {
   # A red has to mean the product broke. The real invariant is that re-sourcing
   # ADDS nothing, whatever the caller handed us — so measure the delta.
   unset CHORUS_BIN
+  # #4335: take the installed bin out of the inherited PATH first. The script
+  # no-ops when it is already present, so from a shell that already sourced it
+  # the "leads" check below was false; it was hollow on bash 3.2 and nobody saw.
+  PATH=$(echo "$PATH" | tr ':' '\n' | grep -vx "$HOME/.chorus/bin" | paste -sd: -)
   # Start from a deliberately hostile PATH: the duplicate the pipeline had.
   PATH="/tmp/decoy-a:/tmp/decoy-a:$PATH"
   source "$SETUP"
   first_path="$PATH"
-  # First source must put CHORUS_BIN ahead of everything
-  [[ "$first_path" == "$CHORUS_BIN":* ]]
+  # First source must put CHORUS_BIN ahead of everything the caller handed in.
+  # Only the role's own build slot may come before it (#2995), and the script
+  # derives the role from the werk path, so "CHORUS_BIN is first" was never the rule.
+  [[ "$first_path" == *"$CHORUS_BIN:/tmp/decoy-a:"* ]] || return 1
   before=$(echo "$PATH" | tr ':' '\n' | grep -c "^$CHORUS_BIN$" || true)
   source "$SETUP"
   after=$(echo "$PATH" | tr ':' '\n' | grep -c "^$CHORUS_BIN$" || true)
@@ -183,8 +189,8 @@ NAIVE
   source "$SETUP"
   [ -n "$CHORUS_HOME" ]
   # Should end with /chorus, not /chorus-werk/<role>
-  [[ "$CHORUS_HOME" == */chorus ]]
-  [[ "$CHORUS_HOME" != *chorus-werk* ]]
+  [[ "$CHORUS_HOME" == */chorus ]] || return 1
+  [[ "$CHORUS_HOME" != *chorus-werk* ]] || return 1
 }
 
 @test "CHORUS_HOME equals CHORUS_ROOT when sourced from canonical" {

@@ -73,6 +73,6 @@ verdict() { # restored live age_days -> echoes pass|fail-empty|fail-short|fail-e
 @test "the drill REFUSES a scratch path inside the live data dir" {
   run env RESTORE_DRILL_SCRATCH="$HOME/.gathering/data/scratch-drill" bash "$DRILL"
   [ "$status" -eq 1 ]
-  [[ "$output" == *"REFUSING"* ]]
-  [[ "$output" == *"live data dir"* ]]
+  [[ "$output" == *"REFUSING"* ]] || return 1
+  [[ "$output" == *"live data dir"* ]] || return 1
 }

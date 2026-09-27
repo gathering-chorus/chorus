@@ -36,7 +36,7 @@ EOS
   echo '200|{"status":"healthy"}' > "$T/answers.txt"
   run "$BIN" com.chorus.athena-make http://h:1/health
   [ "$status" -eq 0 ]
-  [[ "$output" == *"com.chorus.athena-make answers healthy at http://h:1/health"* ]]
+  [[ "$output" == *"com.chorus.athena-make answers healthy at http://h:1/health"* ]] || return 1
   [ ! -f "$T/launchctl.log" ]
 }
 
@@ -52,21 +52,21 @@ EOS
   echo '000|' > "$T/answers.txt"
   run "$BIN" com.chorus.athena-make http://h:1/health --timeout 1
   [ "$status" -eq 1 ]
-  [[ "$output" == *"REFUSED"*"http://h:1/health"*"within 1s"*"HTTP 000"* ]]
+  [[ "$output" == *"REFUSED"*"http://h:1/health"*"within 1s"*"HTTP 000"* ]] || return 1
 }
 
 @test "NEGATIVE PROOF — a 200 whose body is not a status is not healthy (the 6.401ms class)" {
   echo '200|{"latency":"6.401ms","note":"ok"}' > "$T/answers.txt"
   run "$BIN" x http://h:1/health --timeout 1
   [ "$status" -eq 1 ]
-  [[ "$output" == *"HTTP 200"* ]]
+  [[ "$output" == *"HTTP 200"* ]] || return 1
 }
 
 @test "NEGATIVE PROOF — a failed kickstart REFUSES before any probe" {
   touch "$T/kickstart-fails"; echo '200|{"status":"healthy"}' > "$T/answers.txt"
   run "$BIN" com.chorus.athena-make http://h:1/health --kickstart
   [ "$status" -eq 1 ]
-  [[ "$output" == *"REFUSED"*"kickstart"*"Could not find service"* ]]
+  [[ "$output" == *"REFUSED"*"kickstart"*"Could not find service"* ]] || return 1
   [ ! -f "$T/calls" ]
 }
 

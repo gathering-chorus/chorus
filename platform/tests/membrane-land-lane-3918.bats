@@ -16,7 +16,7 @@ CHORUS_LOG_BIN="${CHORUS_ROOT}/platform/scripts/chorus-log"
   run env CI=true CHORUS_CONTEXT=prod CHORUS_LOG_FILE="$BATS_TEST_TMPDIR/spine.log" \
     BATS_TEST_TMPDIR= "$CHORUS_LOG_BIN" test.scoped silas card=3918 marker=lane-$$
   [ "$status" -eq 0 ]
-  [[ "$output" != *"MEMBRANE REFUSED"* ]]
+  [[ "$output" != *"MEMBRANE REFUSED"* ]] || return 1
 }
 
 @test "NEGATIVE: a test context is STILL refused the production spine" {
@@ -24,7 +24,7 @@ CHORUS_LOG_BIN="${CHORUS_ROOT}/platform/scripts/chorus-log"
   # exactly what must be refused. If this ever passes, #3615's teeth are gone.
   run env CI=true CHORUS_CONTEXT= BATS_TEST_TMPDIR="$BATS_TEST_TMPDIR" \
     CHORUS_LOG_FILE= "$CHORUS_LOG_BIN" test.scoped silas card=3918 marker=test-$$
-  [[ "$output" == *"MEMBRANE REFUSED"* ]]
+  [[ "$output" == *"MEMBRANE REFUSED"* ]] || return 1
 }
 
 @test "werk.yml no longer clears CHORUS_CONTEXT for the werk-test RUNNER" {

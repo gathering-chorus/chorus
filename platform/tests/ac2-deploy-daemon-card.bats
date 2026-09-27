@@ -109,7 +109,7 @@ load_with_stub_units() {
   load_with_stub_units
   run main 2925 --probe "echo ok" --units chorus-api
   [ "$status" -ne 0 ]
-  ! grep -q 'deploy chorus-api' "$CALLS"
+  ! grep -q 'deploy chorus-api' "$CALLS" || return 1
 }
 
 @test "deploy fails: aborts before probe and cards-done" {
@@ -120,8 +120,8 @@ load_with_stub_units() {
   load_with_stub_units
   run main 2925 --probe "echo SHOULD_NOT_RUN" --units chorus-api
   [ "$status" -ne 0 ]
-  ! grep -q 'cards done' "$CALLS"
-  ! grep -q 'SHOULD_NOT_RUN' "$CALLS"
+  ! grep -q 'cards done' "$CALLS" || return 1
+  ! grep -q 'SHOULD_NOT_RUN' "$CALLS" || return 1
 }
 
 @test "multi-unit: a later unit's deploy-fail rolls back the earlier succeeded unit" {
@@ -134,8 +134,8 @@ load_with_stub_units() {
   [ "$status" -ne 0 ]
   grep -q 'deploy chorus-api' "$CALLS"
   grep -q 'rollback chorus-api' "$CALLS"   # earlier success rolled back
-  ! grep -q 'rollback chorus-hooks' "$CALLS"  # failed unit never "succeeded"
-  ! grep -q 'cards done' "$CALLS"
+  ! grep -q 'rollback chorus-hooks' "$CALLS" || return 1  # failed unit never "succeeded"
+  ! grep -q 'cards done' "$CALLS" || return 1
 }
 
 @test "multi-unit probe-fail: rolls back succeeded units in REVERSE order" {
@@ -144,7 +144,7 @@ load_with_stub_units() {
   load_with_stub_units
   run main 2925 --probe "exit 1" --units "chorus-api,chorus-hooks"
   [ "$status" -ne 0 ]
-  ! grep -q 'cards done' "$CALLS"
+  ! grep -q 'cards done' "$CALLS" || return 1
   grep -q 'rollback chorus-api' "$CALLS"
   grep -q 'rollback chorus-hooks' "$CALLS"
   hooks_line=$(grep -n 'rollback chorus-hooks' "$CALLS" | head -1 | cut -d: -f1)
@@ -156,7 +156,7 @@ load_with_stub_units() {
   load_with_stub_units
   run main 2925 --probe "exit 1" --units chorus-api
   [ "$status" -ne 0 ]
-  ! grep -q 'cards done' "$CALLS"
+  ! grep -q 'cards done' "$CALLS" || return 1
   grep -q 'rollback chorus-api' "$CALLS"
   [[ "$output" == *"probe"* ]] || [[ "$output" == *"rollback"* ]]
 }
@@ -164,7 +164,7 @@ load_with_stub_units() {
 @test "missing --probe: refuses (probe is mandatory)" {
   run "$SCRIPT" 2925 --units chorus-api
   [ "$status" -ne 0 ]
-  [[ "$output" == *"probe"* ]]
+  [[ "$output" == *"probe"* ]] || return 1
 }
 
 @test "zero units matched: refuses (AC5)" {

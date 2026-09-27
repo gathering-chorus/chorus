@@ -359,10 +359,10 @@ chorus:PrincipalWorkerCannotSignIn a sh:NodeShape ;
     sh:targetClass chorus:Principal ;
     sh:severity sh:Violation ;
     sh:sparql [
-        sh:message "a worker principal cannot sign in" ;
+        sh:message "a service principal cannot sign in" ;
         sh:select """
             SELECT $this WHERE {
-              $this <https://jeffbridwell.com/chorus#principalKind> "worker" ;
+              $this <https://jeffbridwell.com/chorus#principalKind> "service" ;   # #4335: #4348 renamed worker to service
                     <https://jeffbridwell.com/chorus#canSignIn> "true" .
             }
         """ ;
@@ -371,10 +371,10 @@ chorus:PrincipalWorkerHoldsNoRole a sh:NodeShape ;
     sh:targetClass chorus:Principal ;
     sh:severity sh:Violation ;
     sh:sparql [
-        sh:message "a worker principal holds no role" ;
+        sh:message "a service principal holds no role" ;
         sh:select """
             SELECT $this WHERE {
-              $this <https://jeffbridwell.com/chorus#principalKind> "worker" ;
+              $this <https://jeffbridwell.com/chorus#principalKind> "service" ;   # #4335: #4348 renamed worker to service
                     <https://jeffbridwell.com/chorus#holdsRole> ?r .
             }
         """ ;

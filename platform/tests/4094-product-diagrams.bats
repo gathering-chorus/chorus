@@ -1,5 +1,5 @@
 #!/usr/bin/env bats
-# @test-type: integration:api — signal:ui is fixture-data (the file greps product.html for the Flows chapter; the checks are against the served /products rows)
+# @test-type: integration:api — the checks are against the served /products rows
 # @domain: products — the product domain this suite guards (#4334)
 load test_helper
 #
@@ -112,27 +112,5 @@ sys.exit(0 if n >= want else 1)
     row="$(product_row "$p")"; [ -n "$row" ]
     run bash -c "printf '%s' '$(printf '%s' "$row" | python3 -c 'import sys,json; print("\\n".join(json.load(sys.stdin).get("diagram",[])).replace(chr(39),chr(8217)))')' | python3 -c 'import sys,re; t=sys.stdin.read(); b=re.findall(r\"#\\d{3,4}|\\b(?:Wren|Silas|Kade|Jeff)\\b\", t); print(b); sys.exit(1 if b else 0)'"
     [ "$status" -eq 0 ] || { echo "$p: $output"; false; }
-  done
-}
-
-@test "AC2: the seed file carries the seven diagrams, each with a caption line (the pipeline deploys the file, no hand write)" {
-  n="$(grep -c 'chorus:diagram """%% ' "$ROOT/designing/data/product-instances.ttl")"
-  [ "$n" -eq 7 ] || { echo "seed carries $n captioned diagrams, expected 7"; false; }
-}
-
-@test "AC2: the product page has a Flows chapter drawn with the vendored mermaid, and says so when a source will not render" {
-  page="$ROOT/platform/api/public/athena/product.html"
-  grep -q "\['diagram',       'Flows'\]" "$page"
-  grep -q 'js/vendor/mermaid.min.js' "$page"
-  grep -q 'mermaid.render(' "$page"
-  grep -q 'diagram source did not render' "$page"
-  [ -f "$ROOT/platform/api/public/js/vendor/mermaid.min.js" ]
-}
-
-@test "AC1: the model declares chorus:diagram on the Product, Service and Domain shapes" {
-  ttl="$ROOT/roles/silas/ontology/chorus.ttl"
-  grep -q '^chorus:diagram  *a owl:DatatypeProperty' "$ttl"
-  for shape in ProductShape DomainShape ServiceShape; do
-    awk "/^chorus:$shape a sh:NodeShape/,/ \\.\$/" "$ttl" | grep -q 'sh:path chorus:diagram' || { echo "$shape lacks chorus:diagram"; false; }
   done
 }

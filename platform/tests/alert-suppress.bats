@@ -44,7 +44,7 @@ teardown() {
   run bash "$DEEP_HEALTH"
   # Should exit 0 and report suppressed, not fire alerts
   [ "$status" -eq 0 ]
-  [[ "$output" == *"suppressed"* ]]
+  [[ "$output" == *"suppressed"* ]] || return 1
 }
 
 # --- AC 3: suppress file auto-expires ---
@@ -55,7 +55,7 @@ teardown() {
   run bash "$DEEP_HEALTH"
   # Should run normally — expired suppress file treated as absent
   # (may pass or fail depending on actual health, but should NOT say "suppressed")
-  [[ "$output" != *"suppressed"* ]]
+  [[ "$output" != *"suppressed"* ]] || return 1
 }
 
 # --- AC 4: manual override ---
@@ -78,5 +78,5 @@ teardown() {
   run bash "$DEEP_HEALTH"
   # Normal behavior — passes or fails based on actual health
   # Key: no "suppressed" in output
-  [[ "$output" != *"suppressed"* ]]
+  [[ "$output" != *"suppressed"* ]] || return 1
 }

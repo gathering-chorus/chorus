@@ -87,7 +87,7 @@ terminal_scriptable() {
   # Only meaningful when a role is actually a live vscode session in this env.
   echo "$output" | grep -q "vscode session" || skip "no live vscode session registered in this env"
   # No role line may pair a vscode session with a no-window/unreachable alarm.
-  ! ( echo "$output" | grep -i "vscode session" | grep -iq "no.*window" )
+  ! ( echo "$output" | grep -i "vscode session" | grep -iq "no.*window" ) || return 1
 }
 
 # --- #3673: tmux arm — registry host=tmux probes the pane, never Terminal ---
@@ -110,7 +110,7 @@ terminal_scriptable() {
   tmux kill-session -t "$sess" 2>/dev/null || true
   rm -rf "$regdir"
   echo "$output" | grep "wren" | grep -q "OK:"
-  ! ( echo "$output" | grep "wren" | grep -q "no.*window" )
+  ! ( echo "$output" | grep "wren" | grep -q "no.*window" ) || return 1
 }
 
 @test "3673: dead pane with live registration alerts tmux-pane-gone, not no-window" {
@@ -124,7 +124,7 @@ terminal_scriptable() {
   rm -rf "$regdir"
   echo "$output" | grep "wren" | grep -q "tmux"
   echo "$output" | grep "wren" | grep -qi "ALERT"
-  ! ( echo "$output" | grep "wren" | grep -q "no matching Terminal window" )
+  ! ( echo "$output" | grep "wren" | grep -q "no matching Terminal window" ) || return 1
 }
 
 @test "health check detects missing role window" {

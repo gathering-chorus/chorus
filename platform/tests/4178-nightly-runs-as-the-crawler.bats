@@ -84,7 +84,7 @@ setup() {
   bad="$BATS_TEST_TMPDIR/werk.yml"
   grep -v 'continue-on-error: true' "$YML" > "$bad"
   run grep -A 12 '\- name: crawl-delta' "$bad"
-  [[ "$output" != *"continue-on-error: true"* ]]
+  [[ "$output" != *"continue-on-error: true"* ]] || return 1
 }
 
 # #4180 — the nightly must be a FULL pass. The first launchd-started run walked

@@ -34,7 +34,7 @@ setup() {
   curl -s --max-time 60 "${FUSEKI_AUTH[@]+"${FUSEKI_AUTH[@]}"}" -o /dev/null -X POST -H 'Content-Type: application/sparql-update' --data-binary "DROP SILENT GRAPH <$G>" "$UPDATE"
   echo "found: $left"
   echo "$left" | grep -q "zz-probe-$RID-planted"
-  ! echo "$left" | grep -q "zz-probe-$RID-absent"
+  ! echo "$left" | grep -q "zz-probe-$RID-absent" || return 1
 }
 
 # #4282 — the runner must send a constrained field one of the manifest's own
@@ -102,5 +102,5 @@ PY
   [ "$kind" = "pc" ]
   [ "$name" = "zz-probe-proof-$$-caps-widget" ]
   case "$label" in zz-4267-*) ;; *) echo "label was $label"; return 1 ;; esac
-  ! grep -q '"string"' "$FIX/create.json"
+  ! grep -q '"string"' "$FIX/create.json" || return 1
 }

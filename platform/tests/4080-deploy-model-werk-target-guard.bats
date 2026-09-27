@@ -26,15 +26,15 @@ setup() {
 @test "negative proof: bare run inside a werk is REFUSED and names prod" {
   run env -u FUSEKI_GSP -u DEPLOY_TARGET -u ONTOLOGY_GRAPH CHORUS_ROOT="$WERK_DIR" bash -c "cd '$WERK_DIR' && '$SCRIPT'"
   [ "$status" -eq 78 ]
-  [[ "$output" == *"REFUSED"* ]]
-  [[ "$output" == *"pods"* ]]
+  [[ "$output" == *"REFUSED"* ]] || return 1
+  [[ "$output" == *"pods"* ]] || return 1
 }
 
 @test "inside a werk with the werk store named, the guard passes" {
   run env FUSEKI_GSP="http://localhost:3030/werk-wren/data" CHORUS_ROOT="$WERK_DIR" bash -c "cd '$WERK_DIR' && '$SCRIPT'"
   [ "$status" -eq 0 ]
-  [[ "$output" == *"target-check: ok"* ]]
-  [[ "$output" == *"werk-wren"* ]]
+  [[ "$output" == *"target-check: ok"* ]] || return 1
+  [[ "$output" == *"werk-wren"* ]] || return 1
 }
 
 @test "inside a werk with DEPLOY_TARGET=canonical said on purpose, the guard passes" {
@@ -46,7 +46,7 @@ setup() {
   NONWERK="$BATS_TEST_TMPDIR/chorus"; mkdir -p "$NONWERK"
   run env -u FUSEKI_GSP -u DEPLOY_TARGET CHORUS_ROOT="$NONWERK" bash -c "cd '$NONWERK' && '$SCRIPT'"
   [ "$status" -eq 0 ]
-  [[ "$output" == *"default pods"* ]]
+  [[ "$output" == *"default pods"* ]] || return 1
 }
 
 @test "inside a werk, a test naming its own throwaway ONTOLOGY_GRAPH passes (the #3601 discipline)" {

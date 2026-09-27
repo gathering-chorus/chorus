@@ -24,8 +24,8 @@ setup() {
 EOF
   run "$REAPER" --dry-run --ps-file "$SNAP"
   [ "$status" -eq 0 ]
-  [[ "$output" == *"would reap pid=99901"* ]]
-  [[ "$output" == *"REAPED=1"* ]]
+  [[ "$output" == *"would reap pid=99901"* ]] || return 1
+  [[ "$output" == *"REAPED=1"* ]] || return 1
 }
 
 @test "flags an orphaned dist/cli.js proc and an npx ts-node proc" {
@@ -34,9 +34,9 @@ EOF
 99903     1 45:10 node /Users/x/.npm/_npx/ts-node /Users/x/CascadeProjects/chorus/directing/products/cards/src/cli.ts view 1
 EOF
   run "$REAPER" --dry-run --ps-file "$SNAP"
-  [[ "$output" == *"would reap pid=99902"* ]]
-  [[ "$output" == *"would reap pid=99903"* ]]
-  [[ "$output" == *"REAPED=2"* ]]
+  [[ "$output" == *"would reap pid=99902"* ]] || return 1
+  [[ "$output" == *"would reap pid=99903"* ]] || return 1
+  [[ "$output" == *"REAPED=2"* ]] || return 1
 }
 
 # --- selectivity: everything else MUST be spared ---
@@ -49,10 +49,10 @@ EOF
 EOF
   run "$REAPER" --dry-run --ps-file "$SNAP"
   [ "$status" -eq 0 ]
-  [[ "$output" != *"would reap"* ]]
-  [[ "$output" == *"REAPED=0"* ]]
+  [[ "$output" != *"would reap"* ]] || return 1
+  [[ "$output" == *"REAPED=0"* ]] || return 1
   # the young orphan is skipped as young, not silently invisible
-  [[ "$output" == *"skip pid=99906"* ]]
+  [[ "$output" == *"skip pid=99906"* ]] || return 1
 }
 
 # --- the RED-side proof of the proof: a snapshot with no match reaps zero ---
@@ -61,7 +61,7 @@ EOF
   : > "$SNAP"
   run "$REAPER" --dry-run --ps-file "$SNAP"
   [ "$status" -eq 0 ]
-  [[ "$output" == *"REAPED=0"* ]]
+  [[ "$output" == *"REAPED=0"* ]] || return 1
 }
 
 # --- live negative proof: spawn a REAL orphan, reaper kills it ---
@@ -89,10 +89,10 @@ EOF
     sleep 0.3
   done
   run "$REAPER" --min-age-secs 0
-  [[ "$output" == *"reaped pid=$orphan"* ]]
+  [[ "$output" == *"reaped pid=$orphan"* ]] || return 1
   # orphan gone, control alive
   sleep 0.3
-  ! ps -p "$orphan" > /dev/null
+  ! ps -p "$orphan" > /dev/null || return 1
   ps -p "$control" > /dev/null
   # cleanup control (it is ours; reaper must not have touched it)
   kill "$control" 2>/dev/null || true

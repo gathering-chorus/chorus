@@ -18,7 +18,7 @@ INSTALL="$BATS_TEST_DIRNAME/../scripts/chorus-bin-install"
   # HOME deliberately left as the REAL home — this IS the misconfiguration
   CHORUS_BIN_SPINE_LOG="$SPINE" run bash "$INSTALL" "$BATS_TEST_TMPDIR/candidate" chorus-hooks
   [ "$status" -eq 11 ]
-  [[ "$output" == *"REFUSED"* ]]
+  [[ "$output" == *"REFUSED"* ]] || return 1
   after="$(shasum -a 256 "$HOME/.chorus/bin/chorus-hooks" 2>/dev/null | awk '{print $1}')"
   [ "$before" = "$after" ]
   grep -q 'binary.install.refused .*reason=test-context-canonical' "$SPINE"

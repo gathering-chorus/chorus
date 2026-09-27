@@ -73,8 +73,8 @@ run_probe() {
 JSON
   run run_probe "$contract"
   [ "$status" -eq 0 ]
-  [[ "$output" == *"PASS /borg/foo/"* ]]
-  [[ "$output" == *"probes passed"* ]]
+  [[ "$output" == *"PASS /borg/foo/"* ]] || return 1
+  [[ "$output" == *"probes passed"* ]] || return 1
 }
 
 @test "fails when backing API returns non-200" {
@@ -85,8 +85,8 @@ JSON
 JSON
   run run_probe "$contract"
   [ "$status" -eq 1 ]
-  [[ "$output" == *"FAIL /borg/missing/"* ]]
-  [[ "$output" == *"returned 404"* ]]
+  [[ "$output" == *"FAIL /borg/missing/"* ]] || return 1
+  [[ "$output" == *"returned 404"* ]] || return 1
 }
 
 @test "fails when JSON assertion evaluates false" {
@@ -98,8 +98,8 @@ JSON
 JSON
   run run_probe "$contract"
   [ "$status" -eq 1 ]
-  [[ "$output" == *"FAIL /borg/cost/"* ]]
-  [[ "$output" == *"assertion false"* ]]
+  [[ "$output" == *"FAIL /borg/cost/"* ]] || return 1
+  [[ "$output" == *"assertion false"* ]] || return 1
 }
 
 @test "fails when assertion raises an exception" {
@@ -111,8 +111,8 @@ JSON
 JSON
   run run_probe "$contract"
   [ "$status" -eq 1 ]
-  [[ "$output" == *"FAIL /borg/broken/"* ]]
-  [[ "$output" == *"assertion raised"* ]]
+  [[ "$output" == *"FAIL /borg/broken/"* ]] || return 1
+  [[ "$output" == *"assertion raised"* ]] || return 1
 }
 
 @test "content-type probe passes for image response" {
@@ -125,7 +125,7 @@ JSON
 JSON
   run run_probe "$contract"
   [ "$status" -eq 0 ]
-  [[ "$output" == *"PASS /borg/jeff/"* ]]
+  [[ "$output" == *"PASS /borg/jeff/"* ]] || return 1
 }
 
 @test "content-type probe fails when Content-Type is wrong" {
@@ -137,7 +137,7 @@ JSON
 JSON
   run run_probe "$contract"
   [ "$status" -eq 1 ]
-  [[ "$output" == *"FAIL /borg/text/"* ]]
+  [[ "$output" == *"FAIL /borg/text/"* ]] || return 1
 }
 
 @test "aggregates multiple probe failures and reports count" {
@@ -152,9 +152,9 @@ JSON
 JSON
   run run_probe "$contract"
   [ "$status" -eq 1 ]
-  [[ "$output" == *"PASS /borg/good/"* ]]
-  [[ "$output" == *"FAIL /borg/bad/"* ]]
-  [[ "$output" == *"1/2 probe(s) failed"* ]]
+  [[ "$output" == *"PASS /borg/good/"* ]] || return 1
+  [[ "$output" == *"FAIL /borg/bad/"* ]] || return 1
+  [[ "$output" == *"1/2 probe(s) failed"* ]] || return 1
 }
 
 # --- Kade's error-path coverage ---
@@ -163,7 +163,7 @@ JSON
   local contract="${MOCK_DIR}/does-not-exist.json"
   run env BORG_HEALTH_CONTRACT="$contract" bash "$SCRIPT"
   [ "$status" -eq 2 ]
-  [[ "$output" == *"contract missing"* ]]
+  [[ "$output" == *"contract missing"* ]] || return 1
 }
 
 @test "exits with error when contract is malformed JSON" {
@@ -183,7 +183,7 @@ JSON
 JSON
   run run_probe "$contract"
   [ "$status" -eq 0 ]
-  [[ "$output" == *"0/0 probes passed"* ]]
+  [[ "$output" == *"0/0 probes passed"* ]] || return 1
 }
 
 @test "fails probe when entry is missing both assert and assert_content_type" {
@@ -196,7 +196,7 @@ JSON
 JSON
   run run_probe "$contract"
   [ "$status" -eq 1 ]
-  [[ "$output" == *"FAIL /borg/noop/"* ]]
+  [[ "$output" == *"FAIL /borg/noop/"* ]] || return 1
 }
 
 @test "fails probe when contract is missing 'probes' key" {

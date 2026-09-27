@@ -29,7 +29,7 @@ PROBE_SNIPPET() {  # extracted probe semantics, driven per-URL
   SRV=$!; sleep 1
   run PROBE_SNIPPET "http://127.0.0.1:39481/"
   kill $SRV 2>/dev/null
-  [[ "$output" == 1\ * ]]
+  [[ "$output" == 1\ * ]] || return 1
 }
 
 @test "NEGATIVE: dead port → DOWN (exit 7), never unmeasurable" {
@@ -57,5 +57,5 @@ while True:
 @test "the deployed script carries the split (no bare 'unreachable' verdicts)" {
   grep -q "UNMEASURABLE" "${CHORUS_ROOT}/platform/scripts/deep-health.sh"
   grep -q 'DOWN — code=' "${CHORUS_ROOT}/platform/scripts/deep-health.sh"
-  ! grep -qE '^\s*FAILURES\+=\("\$name: unreachable' "${CHORUS_ROOT}/platform/scripts/deep-health.sh"
+  ! grep -qE '^\s*FAILURES\+=\("\$name: unreachable' "${CHORUS_ROOT}/platform/scripts/deep-health.sh" || return 1
 }

@@ -43,8 +43,8 @@ make_sdk() { # $1 = fixture root; creates src/{emit,token}.ts + dist/{emit,token
   touch -t 202601010000 "$SDK/dist/emit.js" "$SDK/dist/token.js" "$SDK/src/token.ts"
   run env CHORUS_SDK_DIR="$SDK" "$SCRIPT"
   [ "$status" -eq 1 ]
-  [[ "$output" == *"stale"* ]]
-  [[ "$output" == *"emit"* ]]
+  [[ "$output" == *"stale"* ]] || return 1
+  [[ "$output" == *"emit"* ]] || return 1
 }
 
 @test "src module with NO dist counterpart → FAIL (the token.js miss)" {
@@ -55,7 +55,7 @@ make_sdk() { # $1 = fixture root; creates src/{emit,token}.ts + dist/{emit,token
   touch -t 202601020000 "$SDK/dist/emit.js"
   run env CHORUS_SDK_DIR="$SDK" "$SCRIPT"
   [ "$status" -eq 1 ]
-  [[ "$output" == *"token"* ]]
+  [[ "$output" == *"token"* ]] || return 1
 }
 
 @test "dist directory absent entirely → FAIL, never a bash error" {
@@ -63,5 +63,5 @@ make_sdk() { # $1 = fixture root; creates src/{emit,token}.ts + dist/{emit,token
   echo "// ts" > "$SDK/src/emit.ts"
   run env CHORUS_SDK_DIR="$SDK" "$SCRIPT"
   [ "$status" -eq 1 ]
-  [[ "$output" == *"dist"* ]]
+  [[ "$output" == *"dist"* ]] || return 1
 }

@@ -63,14 +63,14 @@ sq() {
 # ── AC3: exactly the two real instances, with real steps ──
 @test "AC3 cicd pipeline has the five werk steps in order" {
   run sq "$PIPES" 'SELECT (COUNT(?s) AS ?n) WHERE { c:pipeline-cicd c:hasStep ?s }'
-  [[ "$output" == *"5"* ]]
+  [[ "$output" == *"5"* ]] || return 1
   run sq "$PIPES" 'ASK { c:pipeline-cicd c:pipelineStatus "operating" }'
   [[ "$output" == *"yes"* || "$output" == *"true"* ]]
 }
 
 @test "AC3 athena pipeline has shape→forge→seed→validate" {
   run sq "$PIPES" 'SELECT (COUNT(?s) AS ?n) WHERE { c:pipeline-athena c:hasStep ?s }'
-  [[ "$output" == *"4"* ]]
+  [[ "$output" == *"4"* ]] || return 1
 }
 
 @test "AC3 clearing + borg are planned instances with NO steps (no invented steps)" {
@@ -127,7 +127,7 @@ sq() {
   [ "$(curl -s --max-time 5 -o /dev/null -w '%{http_code}' "$OWL_URL/documents")" = "200" ] \
     || skip "claim not deployed yet"
   run curl -sf --max-time 10 "$OWL_URL/documents"
-  [[ "$output" == *"pipelines"* ]]
+  [[ "$output" == *"pipelines"* ]] || return 1
 }
 
 # ── AC5: the daily runner emits a PipelineRun with metrics ──
@@ -149,7 +149,7 @@ sq() {
   run curl -s --max-time 10 -o /dev/null -w '%{http_code}' -X POST "$OWL_URL/pipelineruns" \
     -H 'Content-Type: application/json' \
     -d '{"label":"bogus run no pipeline link","runOutcome":"green","runDurationMs":1}'
-  [[ "$output" == 4* ]]
+  [[ "$output" == 4* ]] || return 1
 }
 
 # ── AC7 negative proofs ──
@@ -202,7 +202,7 @@ sq() {
   # the row by name cannot drift with the row count.
   run curl -sf --max-time 10 "$OWL_URL/pipelineruns/$NAME"
   [ "$status" -eq 0 ]
-  [[ "$output" == *"$NAME"* ]]
+  [[ "$output" == *"$NAME"* ]] || return 1
 }
 
 @test "AC4047 nightly emit authenticates and reports the real refusal" {
@@ -213,5 +213,5 @@ sq() {
   # Grepping the whole file is the #3734 trap in reverse: the comment explaining
   # the fix contains the string, so a naive grep fails on a correct file. Strip
   # comments first, then assert no emitted message still says it.
-  ! sed 's/#.*//' "$NS" | grep -q 'owl-api unreachable' 
+  ! sed 's/#.*//' "$NS" | grep -q 'owl-api unreachable' || return 1
 }

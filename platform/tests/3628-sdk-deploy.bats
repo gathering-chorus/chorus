@@ -42,6 +42,6 @@ setup() {
   run env CHORUS_SDK_DIR="$SDK" CHORUS_LOG_BIN=/usr/bin/true \
     CHORUS_SDK_BUILD_CMD="$REPO_ROOT/platform/tests/fixtures/3628-stub-build-partial.sh" "$SCRIPT"
   [ "$status" -eq 1 ]
-  [[ "$output" == *"token"* ]]
+  [[ "$output" == *"token"* ]] || return 1
   [ "$(cat "$SDK/dist/emit.js")" = "old" ]
 }

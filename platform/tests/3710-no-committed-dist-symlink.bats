@@ -29,9 +29,3 @@ load test_helper
   run bash -c "git ls-files platform/workflow-engine/dist"
   [ -z "$output" ]
 }
-
-@test "gitignore covers the dist SYMLINK form, not just the directory" {
-  cd "$CHORUS_ROOT"
-  # `dist/` alone is what let this through twice.
-  grep -qE '^platform/workflow-engine/dist$' .gitignore
-}

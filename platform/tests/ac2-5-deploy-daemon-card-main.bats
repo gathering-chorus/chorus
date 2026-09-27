@@ -104,7 +104,7 @@ teardown() {
   export DEPLOY_ROLE=jeff
   run "$SCRIPT" 9001 --probe "echo ok" --units chorus-hooks
   [ "$status" -eq 3 ]
-  [[ "$output" == *"DEPLOY_ROLE must be one of"* ]]
+  [[ "$output" == *"DEPLOY_ROLE must be one of"* ]] || return 1
 }
 
 @test "AC4: DEPLOY_ROLE unset refused with exit 3" {
@@ -133,7 +133,7 @@ teardown() {
 @test "AC5: --units with unknown name → refusal exit 6 (different from zero-match)" {
   run "$SCRIPT" 9001 --probe "echo ok" --units bogus-unit
   [ "$status" -eq 6 ]
-  [[ "$output" == *"unknown unit"* ]]
+  [[ "$output" == *"unknown unit"* ]] || return 1
 }
 
 # ---------- AC2: per-unit dispatch ----------
@@ -174,7 +174,7 @@ teardown() {
 
 @test "AC2: probe failure → cards done NOT called" {
   run "$SCRIPT" 9001 --probe "exit 1" --units chorus-hooks
-  ! grep -q 'cards done' "$CALLS"
+  ! grep -q 'cards done' "$CALLS" || return 1
   [ "$status" -ne 0 ]
 }
 

@@ -46,7 +46,7 @@ teardown() { rm -rf "$FIX"; }
   run bash "$SCRIPT" "$FIX"
   echo "$output" | grep -qE "VERIFY.*: 1"
   # the whole point: 'load' is never printed as a bucket/count
-  ! echo "$output" | grep -qiE "load: [0-9]|closed as .?load.? \(count"
+  ! echo "$output" | grep -qiE "load: [0-9]|closed as .?load.? \(count" || return 1
 }
 
 @test "the honest headline never closes anything as load" {

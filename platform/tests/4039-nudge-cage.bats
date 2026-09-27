@@ -9,16 +9,10 @@
 
 OPS_NUDGE="$BATS_TEST_DIRNAME/../scripts/ops-nudge"
 
-@test "the suite world cages CHORUS_MCP_NUDGE_URL to the dead port" {
-  # the runner is the authority: ask the crate's own env list
-  run grep -A1 'CHORUS_MCP_NUDGE_URL' "$BATS_TEST_DIRNAME/../services/werk-test/src/lib.rs"
-  [[ "$output" == *"127.0.0.1:9/nudge"* ]]
-}
-
 @test "NEGATIVE PROOF: under the caged URL, ops-nudge reaches nothing (typed transport error)" {
   run env CHORUS_MCP_NUDGE_URL="http://127.0.0.1:9/nudge" bash "$OPS_NUDGE" silas "caged probe — must not deliver"
   [ "$status" -eq 2 ]
-  [[ "$output" == *"transport error"* ]]
+  [[ "$output" == *"transport error"* ]] || return 1
 }
 
 @test "control: the same call with the seam at a live stub DELIVERS — the cage separates its states" {

@@ -73,7 +73,7 @@ lan_hits() {
   printf '#!/usr/bin/env bash\ncurl http://192.168.86.242:3000/\n' > "$W/platform/scripts/new-pin.sh"
   run bash -c "grep -rl '192\.168\.86\.' '$W' | grep -vE '/backups/|\.nt$|\.backup$|\.md$|\.html$|\.ejs$|\.db$|\.sqlite3?$'"
   [ "$status" -eq 0 ]
-  [[ "$output" == *"new-pin.sh"* ]]
+  [[ "$output" == *"new-pin.sh"* ]] || return 1
 
   # and a captured .db in the same tree is correctly ignored
   printf 'binary-ish 192.168.86.242 payload\n' > "$W/platform/scripts/messages.db"

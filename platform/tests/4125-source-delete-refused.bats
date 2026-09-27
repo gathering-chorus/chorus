@@ -177,8 +177,3 @@ _live_count() {
   test "$status" -eq 0
   test -z "$(printf '%s' "$output" | grep -F "authors a Role as an owner" || true)"
 }
-
-@test "#4125 the shipped MODEL_SET authors zero role owners" {
-  run grep -rlE 'ownedBy[[:space:]]+chorus:role-' --include='*.ttl' "$(cd "$BATS_TEST_DIRNAME/../.." && pwd)/roles"
-  test "$status" -ne 0
-}

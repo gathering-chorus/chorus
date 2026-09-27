@@ -12,6 +12,9 @@
 HEALTH="$BATS_TEST_DIRNAME/../scripts/chorus-health"
 
 setup() {
+  # #4335: RUN_INTEGRATION cannot gate this — the werk lane sets it (#4102) — so a
+  # card run paged Silas and Jeff. Only a hand run that means to page may run it.
+  [ "${CHORUS_LIVE_ALERTS:-}" = "true" ] || skip "UNMEASURED until #4336 fakes the bridge — runs the live chorus-health, which pages; CHORUS_LIVE_ALERTS=true to run"
   export CHORUS_HEALTH_NO_EMIT=1   # a test FAIL must not become a live chorus.health event/nudge
   curl -s -o /dev/null --max-time 3 http://localhost:3340/api/chorus/health || skip "chorus-api not running"
   curl -s -o /dev/null --max-time 3 http://localhost:3360/health || skip "athena-make not running (the branch under test is only reached when :3360 answers)"
@@ -20,13 +23,13 @@ setup() {
 @test "NEGATIVE PROOF: check scripts absent → FAIL owl-api-checks-missing, never reported as drift" {
   CHORUS_TESTS_DIR="$BATS_TEST_TMPDIR/no-such-tests" run bash "$HEALTH" -v
   [ "$status" -eq 1 ]
-  [[ "$output" == *"owl-api-checks-missing"* ]]
-  [[ "$output" != *"owl-api-drift:"* ]]
-  [[ "$output" != *"owl-api-conformance:"* ]]
+  [[ "$output" == *"owl-api-checks-missing"* ]] || return 1
+  [[ "$output" != *"owl-api-drift:"* ]] || return 1
+  [[ "$output" != *"owl-api-conformance:"* ]] || return 1
 }
 
 @test "with the real scripts present the missing-check state does not fire" {
   run bash "$HEALTH" -v
-  [[ "$output" != *"owl-api-checks-missing"* ]]
+  [[ "$output" != *"owl-api-checks-missing"* ]] || return 1
   [[ "$output" == *"owl-api-drift"* ]] || [[ "$output" == *"owl-api-conformance"* ]]
 }

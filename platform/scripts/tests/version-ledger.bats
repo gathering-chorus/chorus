@@ -64,7 +64,7 @@ seed_ledger() { # first bump seeds the ledger from the PROTOCOL_VERSION literal
   seed_ledger
   [ -f "$FIX/version-ledger.json" ]
   run cat "$FIX/PROTOCOL_VERSION"
-  [[ "$output" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]
+  [[ "$output" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]] || return 1
 }
 
 @test "AC1: rendered header shows the ledger-head version" {
@@ -122,7 +122,7 @@ seed_ledger() { # first bump seeds the ledger from the PROTOCOL_VERSION literal
   echo "drifted" >> "$FIX/shared/core.md"
   run gen check-version
   [ "$status" -eq 1 ]
-  [[ "$output" == *"without"*"bump"* ]]
+  [[ "$output" == *"without"*"bump"* ]] || return 1
 }
 
 @test "AC4: check-version fails when PROTOCOL_VERSION is hand-edited off the ledger" {
@@ -130,7 +130,7 @@ seed_ledger() { # first bump seeds the ledger from the PROTOCOL_VERSION literal
   echo "9.9.9" > "$FIX/PROTOCOL_VERSION"
   run gen check-version
   [ "$status" -eq 1 ]
-  [[ "$output" == *"ledger head"* ]]
+  [[ "$output" == *"ledger head"* ]] || return 1
 }
 
 @test "AC5: plain generate never writes ledger or PROTOCOL_VERSION" {

@@ -19,7 +19,9 @@
 setup() {
   SHACL="${SHACL_BIN:-shacl}"
   command -v "$SHACL" >/dev/null 2>&1 || skip "SHACL tool absent — cannot validate shapes here"
-  ROOT="${CHORUS_ROOT:-$(cd "$BATS_TEST_DIRNAME/../.." && pwd)}"   # #3904: derive, never hardcode a /Users path
+  # #4335: the tree under test, never $CHORUS_ROOT — prove-live points that at
+  # canonical, so a shape fix in the werk was tested against main's old shape.
+  ROOT="$(cd "$BATS_TEST_DIRNAME/../.." && pwd)"   # #3904: derive, never hardcode a /Users path
   SHAPES="$ROOT/roles/silas/ontology/security-model-3618.ttl"
   WORK="$(mktemp -d)"
   PRE='@prefix chorus: <https://jeffbridwell.com/chorus#> .
@@ -58,10 +60,10 @@ chorus:principal-fixture-nowebid a chorus:Principal ;
   chorus:principalKind "person" ;
   chorus:canSignIn "true" .
 EOF
-  ! conforms "$WORK/bad.ttl"
+  ! conforms "$WORK/bad.ttl" || return 1
 }
 
-@test "NEGATIVE PROOF: a worker that can sign in is REFUSED" {
+@test "NEGATIVE PROOF: a service that can sign in is REFUSED" {
   # The rule the old shape could not express. A worker authenticates with a
   # service credential and never at a login screen; a worker marked canSignIn
   # would silently become eligible for the guard's allow-set.
@@ -69,25 +71,25 @@ EOF
 $PRE
 chorus:principal-fixture-worker a chorus:Principal ;
   rdfs:label "fixture worker" ;
-  chorus:principalKind "worker" ;
+  chorus:principalKind "service" ;
   chorus:canSignIn "true" ;
   chorus:webId "https://example.test/worker#me" .
 EOF
-  ! conforms "$WORK/bad.ttl"
+  ! conforms "$WORK/bad.ttl" || return 1
 }
 
-@test "NEGATIVE PROOF: a worker holding a role is REFUSED" {
+@test "NEGATIVE PROOF: a service holding a role is REFUSED" {
   # role != user (Jeff, 2026-08-06). A worker is a party that acts; it holds no
   # role, so it can never be an accepter or an owner.
   cat > "$WORK/bad.ttl" <<EOF
 $PRE
 chorus:principal-fixture-roleworker a chorus:Principal ;
   rdfs:label "fixture worker" ;
-  chorus:principalKind "worker" ;
+  chorus:principalKind "service" ;
   chorus:canSignIn "false" ;
   chorus:holdsRole chorus:role-architect .
 EOF
-  ! conforms "$WORK/bad.ttl"
+  ! conforms "$WORK/bad.ttl" || return 1
 }
 
 @test "NEGATIVE PROOF: an unrecognised principalKind is REFUSED" {
@@ -100,7 +102,7 @@ chorus:principal-fixture-typo a chorus:Principal ;
   chorus:principalKind "wroker" ;
   chorus:canSignIn "false" .
 EOF
-  ! conforms "$WORK/bad.ttl"
+  ! conforms "$WORK/bad.ttl" || return 1
 }
 
 @test "NEGATIVE PROOF: a missing principalKind is REFUSED" {
@@ -112,17 +114,17 @@ chorus:principal-fixture-nokind a chorus:Principal ;
   rdfs:label "fixture" ;
   chorus:canSignIn "false" .
 EOF
-  ! conforms "$WORK/bad.ttl"
+  ! conforms "$WORK/bad.ttl" || return 1
 }
 
-@test "a worker with no login and no role conforms — the shape is not refusing everything" {
+@test "a service with no login and no role conforms — the shape is not refusing everything" {
   # Without this, every negative test above would also pass against a shape that
   # rejected all input. This is the control.
   cat > "$WORK/ok.ttl" <<EOF
 $PRE
 chorus:principal-fixture-goodworker a chorus:Principal ;
   rdfs:label "fixture worker" ;
-  chorus:principalKind "worker" ;
+  chorus:principalKind "service" ;
   chorus:canSignIn "false" .
 EOF
   conforms "$WORK/ok.ttl"

@@ -51,7 +51,7 @@ got={r[\"name\"].replace(\"value-stream-step-\",\"\"):int(r[\"stageOrder\"]) for
 assert got==want, got
 print(\"ok\")'"
   [ "$status" -eq 0 ]
-  [[ "$output" == *ok* ]]
+  [[ "$output" == *ok* ]] || return 1
 }
 
 @test "tree fold serves depth>=3 (stream -> step -> child stream -> its steps)" {
@@ -69,8 +69,8 @@ print(d)'"
 @test "v1 /api/athena/steps stays retired (410-class gone, points at owl-api)" {
   api_up || skip "chorus-api :3340 unreachable"
   run bash -c "curl -s '$API/api/athena/steps'"
-  [[ "$output" == *"3702"* ]]
-  [[ "$output" == *"valuestreams"* ]]
+  [[ "$output" == *"3702"* ]] || return 1
+  [[ "$output" == *"valuestreams"* ]] || return 1
 }
 
 @test "tree.html stays retired — redirect stub only, no Move-0 hand-render (Wren's call, #3707)" {
@@ -79,8 +79,8 @@ print(d)'"
   page="$CHORUS_ROOT/platform/api/public/athena/tree.html"
   [ -f "$page" ]
   grep -q 'url=/athena/value-stream.html' "$page"
-  ! grep -qi 'Move 0 hand-authored' "$page"
-  ! grep -q 'data/athena/tree.json' "$page"
+  ! grep -qi 'Move 0 hand-authored' "$page" || return 1
+  ! grep -q 'data/athena/tree.json' "$page" || return 1
 }
 
 @test "product layer serves at each step (pending: ProductShape instancesGraph decl — Wren follow-on)" {
@@ -98,5 +98,5 @@ paths=[q[\"path\"] for q in d[\"data\"][\"queries\"]]
 assert \"/api/athena/steps\" not in paths, paths
 print(\"ok\")'"
   [ "$status" -eq 0 ]
-  [[ "$output" == *ok* ]]
+  [[ "$output" == *ok* ]] || return 1
 }

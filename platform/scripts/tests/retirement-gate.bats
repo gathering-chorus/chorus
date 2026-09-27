@@ -25,8 +25,8 @@ teardown() {
   # widget.sh does NOT exist (deleted) and is passed as the deletion
   run env CHORUS_ROOT="$REPO" RETGATE_DELETED="platform/scripts/widget.sh" bash "$GATE"
   [ "$status" -ne 0 ]
-  [[ "$output" == *"widget.bats"* ]]
-  [[ "$output" == *"widget.sh"* ]]
+  [[ "$output" == *"widget.bats"* ]] || return 1
+  [[ "$output" == *"widget.sh"* ]] || return 1
 }
 
 @test "passes: deleting a file no test references" {

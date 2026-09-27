@@ -31,7 +31,7 @@ fn main() { emit_spine("merge.totally_unregistered_3927", &role, &card, &trace, 
 RS
   run env CHORUS_ROOT="$W" bash "$W/platform/scripts/test-werk-emit-conformance.sh"
   [ "$status" -ne 0 ]
-  [[ "$output" == *"merge.totally_unregistered_3927"* ]]
+  [[ "$output" == *"merge.totally_unregistered_3927"* ]] || return 1
 }
 
 @test "NEGATIVE: the pre-commit hook refuses when the check fails" {
@@ -39,7 +39,7 @@ RS
   # against the hook's own text so a future refactor that drops the exit is caught.
   run grep -A20 '#3927 — spine-emit registration gate' "$HOOK"
   [ "$status" -eq 0 ]
-  [[ "$output" == *"exit 1"* ]]
+  [[ "$output" == *"exit 1"* ]] || return 1
 }
 
 @test "the gate is wired into pre-commit, not only chorus-health" {

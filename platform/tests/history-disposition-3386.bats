@@ -34,9 +34,9 @@ c=collections.Counter(r.get('RuleID') for r in rows)
 print(len(rows), sorted(c.items()))
 "
   [ "$status" -eq 0 ]
-  [[ "$output" == 35* ]]
-  [[ "$output" == *"curl-auth-user"* ]]
-  [[ "$output" == *"generic-api-key"* ]]
+  [[ "$output" == 35* ]] || return 1
+  [[ "$output" == *"curl-auth-user"* ]] || return 1
+  [[ "$output" == *"generic-api-key"* ]] || return 1
 }
 
 @test "NEGATIVE PROOF: a repo whose history holds a LONG credential is caught" {
@@ -56,7 +56,7 @@ print(len(rows), sorted(c.items()))
   git -C "$W" -c user.email=t@t -c user.name=t commit -qm "fixture: long cred"
   run env CHORUS_ROOT="$W" FUSEKI_WRITE_ENV="$W/none.env" bash "$PROBE"
   [ "$status" -ne 0 ]
-  [[ "$output" == *"LONG-CRED"* ]]
+  [[ "$output" == *"LONG-CRED"* ]] || return 1
 }
 
 @test "NEGATIVE PROOF: a regressed LIVE credential is caught" {
@@ -69,7 +69,7 @@ print(len(rows), sorted(c.items()))
   printf 'FUSEKI_ADMIN_PASSWORD=admin\n' > "$W/fuseki-write.env"
   run env CHORUS_ROOT="$W" FUSEKI_WRITE_ENV="$W/fuseki-write.env" bash "$PROBE"
   [ "$status" -ne 0 ]
-  [[ "$output" == *"REGRESSED"* ]]
+  [[ "$output" == *"REGRESSED"* ]] || return 1
 }
 
 @test "a clean scratch repo passes (the probe is not stuck red)" {

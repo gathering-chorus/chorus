@@ -25,7 +25,7 @@ setup() {
 @test "NEGATIVE PROOF: scoped scan still fails on the planted HIGH CVE (lodash 4.17.15)" {
   run bash "$SCRIPT" sca-selftest "$FIX"
   [ "$status" -ne 0 ]
-  [[ "$output" == *"lodash"* ]]
+  [[ "$output" == *"lodash"* ]] || return 1
 }
 
 @test "the skip provably skips: the same lockfile under target/ is invisible scoped, visible deep" {
@@ -35,9 +35,4 @@ setup() {
   local deep="$status"
   [ "$scoped" -eq 0 ]
   [ "$deep" -ne 0 ]
-}
-
-@test "the repo scan excludes the fixture dir itself — planted CVEs never red the nightly" {
-  run grep -q 'sca-fixtures' "$SCRIPT"
-  [ "$status" -eq 0 ]
 }

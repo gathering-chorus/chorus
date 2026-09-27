@@ -35,7 +35,7 @@ start_run() {
   grep -q '^RUN|stopped|' "$T/run.log"
   grep -q 'signal=TERM' "$T/run.log"
   sleep 0.5
-  ! kill -0 "$child" 2>/dev/null
+  ! kill -0 "$child" 2>/dev/null || return 1
   [ ! -d "$T/lock.d" ]
 }
 
@@ -53,5 +53,5 @@ start_run() {
   OWLAPI=http://127.0.0.1:9 NIGHTLY_API=http://127.0.0.1:9 OPS_NUDGE="$T/nudge.sh" NIGHTLY_RUNNER_CMD="$T/runner.sh" \
   NIGHTLY_LEGS_NOOP=1 NIGHTLY_LOAD_MAX_PER_CORE=99 CHORUS_LOG_BIN=/nonexistent run "$BIN" --nightly --run-all
   grep -q '^RUN|complete|' "$T/run.log"
-  ! grep -q '^RUN|stopped|' "$T/run.log"
+  ! grep -q '^RUN|stopped|' "$T/run.log" || return 1
 }

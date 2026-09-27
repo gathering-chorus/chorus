@@ -106,7 +106,7 @@ teardown() {
 @test "missing args prints usage and exits non-zero" {
   run bash "$SCRIPT"
   [ "$status" -ne 0 ]
-  [[ "$output" =~ [Uu]sage ]]
+  [[ "$output" =~ [Uu]sage ]] || return 1
 }
 
 @test "writes a story to Fuseki with title, body fields, and Story type" {
@@ -120,11 +120,11 @@ teardown() {
   RES=$(curl -s -G "$FUSEKI_QUERY" \
     --data-urlencode "query=SELECT ?p ?o WHERE { GRAPH <$GRAPH> { ?s ?p ?o } }")
 
-  [[ "$RES" =~ "https://jeffbridwell.com/ontology#Story" ]]
-  [[ "$RES" =~ "$TITLE" ]]
-  [[ "$RES" =~ "He said it clearly" ]]
-  [[ "$RES" =~ "It tells us a lot" ]]
-  [[ "$RES" =~ "Applies here today" ]]
+  [[ "$RES" =~ "https://jeffbridwell.com/ontology#Story" ]] || return 1
+  [[ "$RES" =~ "$TITLE" ]] || return 1
+  [[ "$RES" =~ "He said it clearly" ]] || return 1
+  [[ "$RES" =~ "It tells us a lot" ]] || return 1
+  [[ "$RES" =~ "Applies here today" ]] || return 1
 }
 
 @test "slug is kebab-case lowercase of title" {
@@ -135,7 +135,7 @@ teardown() {
   GRAPH="urn:jb/jeff/stories/${SLUG}.ttl"
   RES=$(curl -s -G "$FUSEKI_QUERY" \
     --data-urlencode "query=ASK { GRAPH <$GRAPH> { ?s a <https://jeffbridwell.com/ontology#Story> } }")
-  [[ "$RES" =~ \"boolean\"[[:space:]]*:[[:space:]]*true ]]
+  [[ "$RES" =~ \"boolean\"[[:space:]]*:[[:space:]]*true ]] || return 1
 }
 
 @test "body combines the three narrative sections in a readable shape" {
@@ -146,9 +146,9 @@ teardown() {
   GRAPH="urn:jb/jeff/stories/${SLUG}.ttl"
   RES=$(curl -s -G "$FUSEKI_QUERY" \
     --data-urlencode "query=SELECT ?body WHERE { GRAPH <$GRAPH> { ?s <https://jeffbridwell.com/ontology#body> ?body } }")
-  [[ "$RES" =~ "SAID-LINE" ]]
-  [[ "$RES" =~ "TELLS-LINE" ]]
-  [[ "$RES" =~ "APPLIES-LINE" ]]
+  [[ "$RES" =~ "SAID-LINE" ]] || return 1
+  [[ "$RES" =~ "TELLS-LINE" ]] || return 1
+  [[ "$RES" =~ "APPLIES-LINE" ]] || return 1
 }
 
 # #4332 — the "queryable via Athena search" case is gone. It wrote a story to

@@ -17,10 +17,12 @@ NODE="${NODE:-$(command -v node)}"
 
 setup() {
   W="$BATS_TEST_TMPDIR"
-  export PROD_STORE="$W/prod-bridge-messages.json"   # stands in for /tmp/bridge-messages.json
-  export WERK_STORE="$W/werk/.chorus-demo/bridge-messages.json"
+  # #4335: #4363 moved the room to a journal (room.jsonl, CLEARING_JOURNAL); the
+  # probe lands there, so that is the store both cases count.
+  export PROD_STORE="$W/prod-room.jsonl"   # stands in for ~/.chorus/clearing/room.jsonl
+  export WERK_STORE="$W/werk/.chorus-demo/room.jsonl"
   mkdir -p "$W/werk/.chorus-demo" "$W/home"
-  printf '[{"from":"jeff","text":"p1"},{"from":"kade","text":"p2"},{"from":"jeff","text":"p3"}]' > "$PROD_STORE"
+  printf '%s\n' '{"from":"jeff","text":"p1"}' '{"from":"kade","text":"p2"}' '{"from":"jeff","text":"p3"}' > "$PROD_STORE"
   PORT=$(( 3600 + RANDOM % 300 ))
   [ -f "$ROOT/directing/clearing/dist/server.js" ] || skip "build directing/clearing first"
 }
@@ -31,7 +33,7 @@ start_clearing() {
   ( cd "$ROOT/directing/clearing" && \
     HOME="$W/home" COMMAND_CHANNEL_PORT="$PORT" CLEARING_HTTPS_PORT=0 \
     CHORUS_API_URL="http://127.0.0.1:9" CHORUS_API_BASE="http://127.0.0.1:9" PULSE_URL="http://127.0.0.1:9" \
-    CHORUS_LOG_FILE="$W/spine.log" CLEARING_SPINE_FILE="$W/spine.log" CLEARING_MSG_FILE="$store" \
+    CHORUS_LOG_FILE="$W/spine.log" CLEARING_SPINE_FILE="$W/spine.log" CLEARING_MSG_FILE="$store.msgs.json" CLEARING_JOURNAL="$store" \
     CHORUS_CLEARING_REQUIRE_DPOP=0 BUZZ_ROOM_ENABLED=0 \
     exec "$NODE" dist/server.js </dev/null >"$W/daemon.log" 2>&1 3>&- ) &
   PID=$!
@@ -57,7 +59,7 @@ post_one() {
     -d '{"from":"wren","text":"#4075 membrane probe"}' >/dev/null
 }
 
-rows() { "$NODE" -e 'const a=JSON.parse(require("fs").readFileSync(process.argv[1],"utf8"));console.log(a.length)' "$1"; }
+rows() { grep -c . "$1"; }   # journal rows: one JSON object per line
 
 @test "variant Clearing: one message posted lands in the werk store; prod rows unchanged" {
   start_clearing "$WERK_STORE"
@@ -67,7 +69,7 @@ rows() { "$NODE" -e 'const a=JSON.parse(require("fs").readFileSync(process.argv[
   [ "$(rows "$PROD_STORE")" -eq "$before" ]
   [ -f "$WERK_STORE" ]
   grep -q '#4075 membrane probe' "$WERK_STORE"
-  ! grep -q '#4075 membrane probe' "$PROD_STORE"
+  ! grep -q '#4075 membrane probe' "$PROD_STORE" || return 1
 }
 
 @test "NEGATIVE PROOF (#3734): the same room pointed at the prod store DOES change prod rows — the check above can go red" {

@@ -26,20 +26,20 @@ run_review() {
   printf 'SUITE|cargo|platform/services/chorus-hooks|silas|fail|652 pass, 2 fail\n' > "$F"
   run run_review
   N="$(cat "$BATS_TEST_TMPDIR/nudges.txt" 2>/dev/null || true)"
-  [[ "$output$N" != *"BUILD BROKE"* ]]
-  [[ "$N" == *"2/654 failed"* ]]
+  [[ "$output$N" != *"BUILD BROKE"* ]] || return 1
+  [[ "$N" == *"2/654 failed"* ]] || return 1
 }
 
 @test "captured npm lines (cards 612/4, clearing 800/22) label as counts" {
   printf 'SUITE|npm|directing/products/cards|kade|fail|612 pass, 4 fail\nSUITE|npm|directing/clearing|wren|fail|800 pass, 22 fail\n' > "$F"
   run run_review
   N="$(cat "$BATS_TEST_TMPDIR/nudges.txt" 2>/dev/null || true)"
-  [[ "$output$N" != *"BUILD BROKE"* ]]
+  [[ "$output$N" != *"BUILD BROKE"* ]] || return 1
 }
 
 @test "NEGATIVE PROOF: a genuinely output-less failure still says BUILD BROKE (#3734)" {
   printf 'SUITE|cargo|platform/services/chorus-hooks|silas|fail|\n' > "$F"
   run run_review
   N="$(cat "$BATS_TEST_TMPDIR/nudges.txt" 2>/dev/null || true)"
-  [[ "$N" == *"BUILD BROKE"* ]]
+  [[ "$N" == *"BUILD BROKE"* ]] || return 1
 }

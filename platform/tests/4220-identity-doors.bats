@@ -90,5 +90,5 @@ FUSEKI_QUERY_URL="${FUSEKI_QUERY:-http://localhost:3030/pods/sparql}"
   fi
   run curl -s --max-time 10 "$API/v1/identity/principals"
   printf '%s' "$output" | grep -q "$declared"
-  ! printf '%s' "$output" | grep -q "$wrong"
+  ! printf '%s' "$output" | grep -q "$wrong" || return 1
 }

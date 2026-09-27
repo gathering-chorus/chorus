@@ -19,9 +19,9 @@ teardown() { rm -rf "$TMP"; }
 @test "the block is generated from the model, not from the file" {
   run python3 "$GEN" --class Product --name pulse
   [ "$status" -eq 0 ]
-  [[ "$output" == *"BEGIN generated-identity"* ]]
-  [[ "$output" == *"Pulse"* ]]
-  [[ "$output" == *"/products/pulse"* ]]
+  [[ "$output" == *"BEGIN generated-identity"* ]] || return 1
+  [[ "$output" == *"Pulse"* ]] || return 1
+  [[ "$output" == *"/products/pulse"* ]] || return 1
 }
 
 @test "a doc whose block matches the model PASSES" {
@@ -41,10 +41,10 @@ teardown() { rm -rf "$TMP"; }
   # the edit was a no-op and this test failed because the FIXTURE never drifted,
   # not because the check was broken. Edit the label, then prove it changed.
   sed -i '' 's#<td>Pulse</td>#<td>Pulse and long-term recall</td>#' "$TMP/doc.html"
-  ! cmp -s "$TMP/doc.html" "$TMP/doc.before"
+  ! cmp -s "$TMP/doc.html" "$TMP/doc.before" || return 1
   run python3 "$GEN" --class Product --name pulse --check "$TMP/doc.html"
   [ "$status" -eq 1 ]
-  [[ "$output" == *"DRIFT"* ]]
+  [[ "$output" == *"DRIFT"* ]] || return 1
 }
 
 # NEGATIVE PROOF 2 — a doc with NO block must RED too. Otherwise the check
@@ -54,7 +54,7 @@ teardown() { rm -rf "$TMP"; }
   echo "<h1>Pulse</h1><p>all hand-written</p>" > "$TMP/doc.html"
   run python3 "$GEN" --class Product --name pulse --check "$TMP/doc.html"
   [ "$status" -eq 1 ]
-  [[ "$output" == *"no generated-identity block"* ]]
+  [[ "$output" == *"no generated-identity block"* ]] || return 1
 }
 
 # NEGATIVE PROOF 3 — an identity the model does not hold must REFUSE, not

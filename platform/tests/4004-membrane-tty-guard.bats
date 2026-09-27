@@ -21,8 +21,8 @@ SCRIPT="$BATS_TEST_DIRNAME/../scripts/test-product-membrane.sh"
   # grant check, so it brings its own env (#3528).
   run env -u NIGHTLY_UNIT_TIMEOUT -u WERK_TEST_NIGHTLY bash "$SCRIPT" --dry-run
   [ "$status" -eq 3 ]
-  [[ "$output" == *"REFUSED"* ]]
-  [[ "$output" == *"restore authority"* ]]
+  [[ "$output" == *"REFUSED"* ]] || return 1
+  [[ "$output" == *"restore authority"* ]] || return 1
 }
 
 @test "NEGATIVE PROOF: a pty does NOT buy authority — act's pty must not pass" {
@@ -30,12 +30,12 @@ SCRIPT="$BATS_TEST_DIRNAME/../scripts/test-product-membrane.sh"
   # script(1) reports ITS own exit status, and mangles stderr framing, so assert
   # on what the guard actually does: nothing is booted and the body never runs.
   run script -q /dev/null bash "$SCRIPT" --dry-run
-  [[ "$output" != *"would stop the above"* ]]
+  [[ "$output" != *"would stop the above"* ]] || return 1
 }
 
 @test "with the explicit grant an operator CAN run it — the check separates its states" {
   run env MEMBRANE_ALLOW_UNDER_AGENT=1 bash "$SCRIPT" --dry-run
   [ "$status" -ne 3 ]
-  [[ "$output" != *"REFUSED"* ]]
-  [[ "$output" == *"dry-run"* ]]
+  [[ "$output" != *"REFUSED"* ]] || return 1
+  [[ "$output" == *"dry-run"* ]] || return 1
 }

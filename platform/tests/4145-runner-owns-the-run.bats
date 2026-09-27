@@ -104,7 +104,7 @@ run_all() {
   # NEGATIVE PROOF of the 19:16 doubling: each row is in the log exactly once, and stdout carries none
   # (under launchd stdout IS the log file)
   [ "$(grep -c '^SUITE|' "$T/nightly.log")" -eq 4 ]
-  ! grep -q '^SUITE|' <<<"$output"
+  ! grep -q '^SUITE|' <<<"$output" || return 1
 }
 
 @test "the registry is read ONCE per run (the wrapper read it once per row: 385 times on 2026-09-11)" {
@@ -115,9 +115,9 @@ run_all() {
 
 @test "#4154: a registered case the run never posted produces NO reconcile row and no red — the runner no longer censuses the registry" {
   run run_all
-  ! grep -q '^SUITE|reconcile|' "$T/nightly.log"
-  ! grep -q '^reconcile-detail|' "$T/nightly.log"
-  ! grep -q 'never ran' "$T/nightly.log"
+  ! grep -q '^SUITE|reconcile|' "$T/nightly.log" || return 1
+  ! grep -q '^reconcile-detail|' "$T/nightly.log" || return 1
+  ! grep -q 'never ran' "$T/nightly.log" || return 1
 }
 
 @test "control: when every registered case was posted there is still no reconcile row (the row is gone in both states, #4154)" {
@@ -130,8 +130,8 @@ echo "nightly-unit|bats|platform/tests/a.bats|pass|3 pass, 0 fail"
 EOS
   chmod +x "$T/runner2.sh"
   RUNNER="$T/runner2.sh" run run_all
-  ! grep -q '^SUITE|reconcile|' "$T/nightly.log"
-  ! grep -q '^reconcile-detail|' "$T/nightly.log"
+  ! grep -q '^SUITE|reconcile|' "$T/nightly.log" || return 1
+  ! grep -q '^reconcile-detail|' "$T/nightly.log" || return 1
 }
 
 @test "NEGATIVE PROOF (#4147): a registered name with an escaped quote is read whole, so the case it names joins (60 NAME MISMATCH on 2026-09-12)" {
@@ -145,7 +145,7 @@ echo "nightly-unit|jest|directing/clearing|pass|1 pass, 0 fail"
 EOS
   chmod +x "$T/runner3.sh"
   RUNNER="$T/runner3.sh" run run_all
-  ! grep -q 'NAME MISMATCH' "$T/nightly.log"
+  ! grep -q 'NAME MISMATCH' "$T/nightly.log" || return 1
   grep -q '^SUITE|jest|directing/clearing|kade|pass|' "$T/nightly.log"
 }
 
@@ -153,7 +153,7 @@ EOS
   run run_all
   grep -q 'NUDGE to=silas msg=nightly RED now: platform/scripts/z.sh' "$T/nudges.txt"
   grep -q 'NUDGE to=silas msg=nightly: 1 suite(s) red — z.sh' "$T/nudges.txt"
-  ! grep -q 'tests-domain' "$T/nudges.txt"   # #4154: no census row, so no census red to nudge
+  ! grep -q 'tests-domain' "$T/nudges.txt" || return 1  # #4154: no census row, so no census red to nudge
   grep -qE 'NUDGE to=kade msg=nightly TOTAL: 1 red across the board \(silas 1\) — bar is zero — 1 slow \(speed, not breakage: p.sh\)' "$T/nudges.txt"
   grep -q 'NUDGE to=jeff msg=' "$T/nudges.txt"
 }

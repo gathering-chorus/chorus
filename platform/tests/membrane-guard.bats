@@ -125,7 +125,7 @@ require_shim() {
   # runner classified as a build context and every spine event it emitted died
   # on the membrane — the gate ran and left no record. The clearing now happens
   # per spawned test child inside werk-test.
-  ! grep -qE 'CHORUS_CONTEXT= .*werk-test' "$CHORUS_ROOT/.github/workflows/werk.yml"
+  ! grep -qE 'CHORUS_CONTEXT= .*werk-test' "$CHORUS_ROOT/.github/workflows/werk.yml" || return 1
   grep -q 'CHORUS_CONTEXT", ""' "$CHORUS_ROOT/platform/services/werk-test/src/main.rs"
 }
 

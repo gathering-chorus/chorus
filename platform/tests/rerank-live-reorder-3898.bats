@@ -99,8 +99,8 @@ print(' '.join(s for s,_ in sorted(g.items(), key=lambda kv: kv[1])))"; }
   run "$TMP/athena-model" --kind chunk --name athena-pipeline \
       --field slug=athena-pipeline --field roleSequence=1
   [ "$status" -ne 0 ]
-  [[ "$output" == *"duplicate 'roleSequence' 1"* ]]
-  [[ "$output" == *"held by phone-first"* ]]
+  [[ "$output" == *"duplicate 'roleSequence' 1"* ]] || return 1
+  [[ "$output" == *"held by phone-first"* ]] || return 1
   # And the store is untouched — the refusal protected it.
   [ "$(order_now)" = "phone-first athena-pipeline memory" ]
 }
@@ -144,6 +144,6 @@ SH
   chmod +x "$TMP/athena-model"
   run bash "$RERANK" chunks wren memory
   [ "$status" -ne 0 ]
-  [[ "$output" == *"ABORTED mid-reorder"* ]]
-  [[ "$output" == *"PARKED"* ]]
+  [[ "$output" == *"ABORTED mid-reorder"* ]] || return 1
+  [[ "$output" == *"PARKED"* ]] || return 1
 }

@@ -72,5 +72,5 @@ TTL
   run bash "$LOAD" --generated "$BATS_TEST_TMPDIR/oops.ttl" --print-update
   [ "$status" -eq 2 ]
   echo "$output" | grep -q "does not own"
-  ! echo "$output" | grep -q "DELETE"
+  ! echo "$output" | grep -q "DELETE" || return 1
 }

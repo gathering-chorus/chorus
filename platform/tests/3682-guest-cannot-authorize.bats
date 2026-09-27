@@ -35,12 +35,12 @@ run_cards_add() {
 @test "guest origin + DEPLOY_ROLE=jeff refuses with authorization-requires-Jeff" {
   DEPLOY_ROLE=jeff CHORUS_ORIGIN_PRINCIPAL="$MARK_WEBID" run run_cards_add
   [ "$status" -ne 0 ]
-  [[ "$output" == *"authorization requires Jeff"* ]]
+  [[ "$output" == *"authorization requires Jeff"* ]] || return 1
 }
 
 @test "guest refusal names the originating principal" {
   DEPLOY_ROLE=jeff CHORUS_ORIGIN_PRINCIPAL="$MARK_WEBID" run run_cards_add
-  [[ "$output" == *"$MARK_WEBID"* ]]
+  [[ "$output" == *"$MARK_WEBID"* ]] || return 1
 }
 
 # AC2 — regression: Jeff-originated path unchanged. Asserts POSITIVE success
@@ -49,12 +49,12 @@ run_cards_add() {
 @test "jeff origin + DEPLOY_ROLE=jeff passes the guest door" {
   CHORUS_JEFF_WEBID="$JEFF_WEBID" DEPLOY_ROLE=jeff CHORUS_ORIGIN_PRINCIPAL="$JEFF_WEBID" run run_cards_add
   [ "$status" -eq 0 ]
-  [[ "$output" == *"validation OK"* ]]
+  [[ "$output" == *"validation OK"* ]] || return 1
 }
 
 # AC2 — regression: no origin claim (direct terminal, today's path) unchanged
 @test "absent origin + DEPLOY_ROLE=jeff passes the guest door" {
   DEPLOY_ROLE=jeff run run_cards_add
   [ "$status" -eq 0 ]
-  [[ "$output" == *"validation OK"* ]]
+  [[ "$output" == *"validation OK"* ]] || return 1
 }
