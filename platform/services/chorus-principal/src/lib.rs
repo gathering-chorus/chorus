@@ -1006,11 +1006,12 @@ fn seen_write(ctx: &Ctx, role: &str, conv: &str, flag: &str) -> i32 {
     0
 }
 
-/// #4377 — the expiry of the role's current login token (token.cache, renewed
-/// by chorus-identity-token), only if it names this role. "" when unreadable.
+/// #4377 — the expiry of the role's current login: the same token the row write
+/// will carry (chorus-identity-token renews it when the cached one lapsed),
+/// only if it names this role. "" when there is none. Reading token.cache
+/// directly saw the lapsed token from before the renewal (demo, 09-27 09:07).
 fn current_login_expiry(ctx: &Ctx, role: &str) -> String {
-    let path = PathBuf::from(&ctx.identity_dir).join(role).join("token.cache");
-    let Ok(tok) = fs::read_to_string(&path) else { return String::new() };
+    let Ok(tok) = sh(&ctx.token_bin, &[role]) else { return String::new() };
     match login_check(role, tok.trim(), now_ms() as u64 / 1000) { Ok(l) => iso_utc(l.exp), Err(_) => String::new() }
 }
 

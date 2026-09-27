@@ -306,8 +306,7 @@ EOS
 @test "#4377 a renewed login moves the session's expiry; a live session never reads expired" {
   run "$SCRIPT" on silas
   sess=$(python3 -c 'import json,sys;print(json.load(open(sys.argv[1]))["name"])' "$T/identity/silas/session.row.json")
-  later=$(( $(date +%s) + 3000 )); mk_token silas "$later"
-  cp "$T/token-silas.fixture" "$T/identity/silas/token.cache"
+  later=$(( $(date +%s) + 3000 )); mk_token silas "$later"   # the token the next write carries
   echo '{"session_id":"c-4377","prompt":"<task-notification>x</task-notification>"}' | AWAKE_SEEN_SYNC=1 "$SCRIPT" seen silas
   want=$(python3 -c 'import sys,time;print(time.strftime("%Y-%m-%dT%H:%M:%SZ",time.gmtime(int(sys.argv[1]))))' "$later")
   s=$(body PUT "identity_sessions_$sess"); has "$s" "\"expiresAt\":\"$want\""
@@ -317,7 +316,7 @@ EOS
   run "$SCRIPT" on silas
   sess=$(python3 -c 'import json,sys;print(json.load(open(sys.argv[1]))["name"])' "$T/identity/silas/session.row.json")
   before=$(python3 -c 'import json,sys;print(json.load(open(sys.argv[1]))["expiresAt"])' "$T/identity/silas/session.row.json")
-  mk_token kade $(( $(date +%s) + 3000 )); cp "$T/token-kade.fixture" "$T/identity/silas/token.cache"
+  mk_token kade $(( $(date +%s) + 3000 )); cp "$T/token-kade.fixture" "$T/token-silas.fixture"   # silas's token names kade
   echo '{"session_id":"c-4377b","prompt":"<task-notification>x</task-notification>"}' | AWAKE_SEEN_SYNC=1 "$SCRIPT" seen silas
   s=$(body PUT "identity_sessions_$sess"); has "$s" "\"expiresAt\":\"$before\""
 }
