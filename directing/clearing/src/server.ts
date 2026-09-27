@@ -1180,7 +1180,8 @@ function parseCardList(output: string): ParsedCard[] {
   const cards: ParsedCard[] = [];
   let currentStatus = '';
   for (const line of output.split('\n')) {
-    const statusMatch = line.match(/^(WIP|SWAT|Blocked|Harvesting|Next|Later|Done|Won't Do)\s*\(\d+\)/);
+    // #4350 — any column header; a named list filed Keep cards under the column above
+    const statusMatch = line.match(/^(\S[^(]*?)\s*\(\d+\):?\s*$/);
     if (statusMatch) { currentStatus = statusMatch[1]; continue; }
     if (currentStatus === 'Done' || currentStatus === "Won't Do") continue;
     const card = parseCardRow(line, currentStatus);

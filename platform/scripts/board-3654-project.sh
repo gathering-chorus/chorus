@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # board-3654-project.sh — the read-side Vikunja→graph board projection (#3654 AC2/AC3/AC4).
 #
-# Reads the OPEN board (Now/WIP/Next/Blocked/Later) via the cards CLI and projects it
+# Reads the OPEN board (every column but Done and Won't Do, #4350) via the cards CLI and projects it
 # into the graph through the governed DAL (chorus-model) — never raw SPARQL:
 #   • one chorus:Chunk per chunk label carrying open cards (slug=label, ownedBy=dominant
 #     owner of its open cards, roleSequence assigned per role)
@@ -70,12 +70,16 @@ plan="$(BOARD_LISTING="$listing" EXISTING="$existing" python3 - <<'PY'
 import sys, os, re, html
 from collections import defaultdict
 
-STATUS_W = {"Now":0, "WIP":1, "Next":2, "Blocked":3, "Later":4}
+# #4350 — open is every column except Done and Wont Do (the cards CLI one
+# definition). A hand-typed column list dropped Jeff's Keep column: 60 cards,
+# and 8 of Wren's lost their chunk on the 2026-09-26 rebuild.
+STATUS_W = {"Now":0, "WIP":1, "Next":2, "Blocked":3, "Keep":4, "Later":5}
+CLOSED = {"Done", "Won" + chr(39) + "t Do"}  # no apostrophe: this sits inside $( ) and bash reads it
 sec, cards, chunks, card_owner = None, {}, defaultdict(list), {}
 for line in os.environ["BOARD_LISTING"].splitlines():
-    m = re.match(r'^(Now|WIP|Next|Blocked|Later|Done|Won.t Do|Harvesting|SWAT) \(', line)
+    m = re.match(r'^(\S.*?) \(\d+\):$', line)
     if m: sec = m.group(1); continue
-    if sec not in STATUS_W: continue
+    if sec is None or sec in CLOSED: continue
     m = re.match(r'^\s+(\d+)\s+(.*?)\s+\[(Wren|Silas|Kade|Jeff)\|(P\d)', line)
     if not m: continue
     cid, title, owner, prio = m.group(1), m.group(2), m.group(3).lower(), int(m.group(4)[1])
@@ -83,7 +87,7 @@ for line in os.environ["BOARD_LISTING"].splitlines():
     cards[cid] = title
     card_owner[cid] = owner   # #4116 — the ownedBy target for this row
     for ch in re.findall(r'chunk:([a-z-]+)', line):
-        chunks[ch].append((STATUS_W[sec], prio, int(cid), cid, owner))
+        chunks[ch].append((STATUS_W.get(sec, 6), prio, int(cid), cid, owner))
 
 # graph truth (preserve mode): chunk → set(card ids) + max rank; chunk → roleSequence
 known_members, max_rank, known_chunks = defaultdict(set), defaultdict(int), {}

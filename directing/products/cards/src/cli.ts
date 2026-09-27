@@ -33,6 +33,7 @@
  *   board [--self] audit-close <role>
  */
 
+import { isOpen, statusOrder } from './open';
 import * as fs from 'fs';
 import * as path from 'path';
 import { BoardClient } from './client';
@@ -140,7 +141,7 @@ function parseUpdateArgs(args: string[]): { index: number } & UpdateFields {
 // cog-override: cmdList: long-standing list/filter rendering switch — pre-existing complexity, refactor candidate not in #2652 scope.
 async function cmdList(client: BoardClient, _label: string, productFilter?: string) {
   const grouped = await client.listGrouped();
-  const order = ['Now', 'WIP', 'SWAT', 'Harvesting', 'Blocked', 'Next', 'Later', 'Jeff Tickets', 'Tech Debt', "Won't Do", 'Done'];
+  const order = statusOrder(grouped.keys(), true);
 
   for (const status of order) {
     let tasks = grouped.get(status);
@@ -374,14 +375,13 @@ const VALID_CHUNKS = ['spine', 'ops', 'memory', 'music', 'senses', 'strategy', '
 
 async function listAllChunks(client: BoardClient): Promise<void> {
   const all = await client.list();
-  const activeBuckets = ['Now', 'WIP', 'SWAT', 'Harvesting', 'Next', 'Later', 'Blocked'];
   console.log('Chunks:');
   for (const c of VALID_CHUNKS) {
-    const cards = all.filter(t => activeBuckets.includes(t.status) && t.domains.includes(`chunk:${c}`));
+    const cards = all.filter(t => isOpen(t.status) && t.domains.includes(`chunk:${c}`));
     const hasContext = fs.existsSync(path.join(CHUNKS_DIR, `${c}.md`)) ? '+' : ' ';
     console.log(`  ${hasContext} ${c.padEnd(10)} ${String(cards.length).padStart(2)} cards`);
   }
-  const untagged = all.filter(t => activeBuckets.includes(t.status) && !t.domains.some(d => d.startsWith('chunk:')));
+  const untagged = all.filter(t => isOpen(t.status) && !t.domains.some(d => d.startsWith('chunk:')));
   if (untagged.length > 0) {
     console.log(`    ${'untagged'.padEnd(10)} ${String(untagged.length).padStart(2)} cards`);
   }
@@ -410,8 +410,7 @@ function renderChunkContext(chunk: string): void {
 
 async function listChunkCards(client: BoardClient, chunk: string): Promise<void> {
   const all = await client.list();
-  const activeBuckets = ['Now', 'WIP', 'Next', 'Later', 'Blocked'];
-  const cards = all.filter(t => activeBuckets.includes(t.status) && t.domains.includes(`chunk:${chunk}`));
+  const cards = all.filter(t => isOpen(t.status) && t.domains.includes(`chunk:${chunk}`));
   if (cards.length === 0) {
     console.log(`No active cards tagged chunk:${chunk}`);
     return;
@@ -422,7 +421,7 @@ async function listChunkCards(client: BoardClient, chunk: string): Promise<void>
     list.push(c);
     byStatus.set(c.status, list);
   }
-  for (const status of ['Now', 'WIP', 'Blocked', 'Next', 'Later']) {
+  for (const status of statusOrder(byStatus.keys())) {
     const group = byStatus.get(status);
     if (!group) continue;
     console.log(`${status} (${group.length}):`);
@@ -501,15 +500,14 @@ async function cmdDomainRemove(client: BoardClient, name: string): Promise<void>
 async function cmdDomainList(client: BoardClient, showAll: boolean): Promise<void> {
   const validDomains = Object.keys(LABELS.domain).sort();
   const all = await client.list();
-  const activeBuckets = ['Now', 'WIP', 'SWAT', 'Harvesting', 'Next', 'Later', 'Blocked'];
   console.log('Domains:');
   for (const d of validDomains) {
-    const cards = all.filter((t) => activeBuckets.includes(t.status) && t.domains.includes(`domain:${d}`));
+    const cards = all.filter((t) => isOpen(t.status) && t.domains.includes(`domain:${d}`));
     if (cards.length > 0 || showAll) {
       console.log(`  ${d.padEnd(16)} ${String(cards.length).padStart(3)} cards`);
     }
   }
-  const untagged = all.filter((t) => activeBuckets.includes(t.status) && !t.domains.some((d) => d.startsWith('domain:')));
+  const untagged = all.filter((t) => isOpen(t.status) && !t.domains.some((d) => d.startsWith('domain:')));
   if (untagged.length > 0) {
     console.log(`  ${'(no domain)'.padEnd(16)} ${String(untagged.length).padStart(3)} cards`);
   }
@@ -525,13 +523,12 @@ async function cmdDomain(client: BoardClient, args: string[]) {
 async function listAllSequences(client: BoardClient): Promise<void> {
   const validSequences = Object.keys(LABELS.sequence);
   const all = await client.list();
-  const activeBuckets = ['Now', 'WIP', 'SWAT', 'Harvesting', 'Next', 'Later', 'Blocked'];
   console.log('Sequences:');
   for (const s of validSequences) {
-    const cards = all.filter(t => activeBuckets.includes(t.status) && t.domains.includes(`sequence:${s}`));
+    const cards = all.filter(t => isOpen(t.status) && t.domains.includes(`sequence:${s}`));
     console.log(`  ${s.padEnd(14)} ${String(cards.length).padStart(3)} cards`);
   }
-  const untagged = all.filter(t => activeBuckets.includes(t.status) && !t.domains.some(d => d.startsWith('sequence:')));
+  const untagged = all.filter(t => isOpen(t.status) && !t.domains.some(d => d.startsWith('sequence:')));
   if (untagged.length > 0) {
     console.log(`  ${'untagged'.padEnd(14)} ${String(untagged.length).padStart(3)} cards`);
   }
@@ -545,7 +542,7 @@ function printSequenceActive(seq: string, cards: { status: string; index: number
     byStatus.set(c.status, list);
   }
   console.log(`\nsequence:${seq} (${cards.length} active):`);
-  for (const status of ['Now', 'WIP', 'Blocked', 'Next', 'Later']) {
+  for (const status of statusOrder(byStatus.keys())) {
     const group = byStatus.get(status);
     if (!group) continue;
     console.log(`${status} (${group.length}):`);
@@ -576,8 +573,7 @@ async function cmdSequence(client: BoardClient, args: string[]) {
     return;
   }
   const all = await client.list();
-  const activeBuckets = ['Now', 'WIP', 'Next', 'Later', 'Blocked'];
-  const cards = all.filter(t => activeBuckets.includes(t.status) && t.domains.includes(`sequence:${seq}`));
+  const cards = all.filter(t => isOpen(t.status) && t.domains.includes(`sequence:${seq}`));
   if (cards.length === 0) {
     console.log(`No active cards tagged sequence:${seq}`);
     return;

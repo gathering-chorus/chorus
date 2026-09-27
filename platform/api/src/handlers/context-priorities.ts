@@ -40,6 +40,10 @@ export interface ContextPrioritiesDeps {
    *  route read through it (Jeff's governed-paths steer); levels without one
    *  (Role — route collision; Card — thin-shape skip) stay SPARQL, labeled. */
   owl: (path: string) => Promise<unknown>;
+  /** #4350 — every card on the board with its column, so "unsequenced" covers
+   *  every open column (Keep, Later, a column added tomorrow), not the three
+   *  lanes the pulse mirror carries. Absent or empty → the pulse mirror, labeled. */
+  readOpenCards?: () => Array<{ id: number; title: string; owner: string; status: string; priority?: string }>;
 }
 
 export interface RankedCard {
@@ -160,7 +164,8 @@ export async function fetchContextPriorities(
   const chunks = [...byChunk.values()].sort((a, b) => a.roleSequence - b.roleSequence);
   for (const c of chunks) c.cards.sort((a, b) => a.rank - b.rank);
 
-  const unsequenced = readUnsequenced(deps.readPulse(), r, sequencedIds);
+  const unsequenced = readUnsequencedFromBoard(deps.readOpenCards?.() ?? [], r, sequencedIds)
+    ?? readUnsequenced(deps.readPulse(), r, sequencedIds);
 
   // #3686 — the upper walk levels. products/domains via the GENERATED athena-make
   // routes; rolePriority via SPARQL until the Role route collision is fixed.
@@ -276,6 +281,21 @@ async function dropClosedCards(
 function vikunjaId(iri: string): number | null {
   const m = /#card-(\d+)$/.exec(iri);
   return m ? Number(m[1]) : null;
+}
+
+/** #4350 — the unsequenced set from the whole board: every open column. Null when
+ *  the board read gave nothing, so the caller falls back to the pulse mirror. */
+export function readUnsequencedFromBoard(
+  board: Array<{ id: number; title: string; owner: string; status: string; priority?: string }>,
+  role: string,
+  sequenced: Set<number>,
+): UnsequencedBlock | null {
+  if (board.length === 0) return null;
+  const cards = board
+    .filter((c) => isOpenStatus(c.status) && c.owner.toLowerCase() === role && !sequenced.has(c.id))
+    .map((c) => ({ id: c.id, title: c.title, ...(c.priority && { priority: c.priority }) }))
+    .sort((a, b) => a.id - b.id);
+  return { scope: "open cards (every column but Done and Won't Do) not in any chunk", cards };
 }
 
 function readUnsequenced(raw: string | null, role: string, sequenced: Set<number>): UnsequencedBlock {
