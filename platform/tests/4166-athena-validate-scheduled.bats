@@ -60,8 +60,12 @@ teardown() { rm -rf "$TMP"; }
 @test "NEGATIVE PROOF — an unreachable store reports UNMEASURED, never 0 issues" {
   # Point it at a closed port. Silence and cleanliness must not look alike:
   # this is the failure that would let a dead sweep read as a healthy graph.
-  run env FUSEKI_QUERY="http://127.0.0.1:9/query" bash "$SCRIPT"
+  # #4335: this ran `bash "$SCRIPT"`, a variable retired with the script, so it
+  # exited 127 and the UNMEASURED check below (hollow on bash 3.2) never read it.
+  run env ATHENA_VALIDATE_NUDGE=0 ATHENA_VALIDATE_REPORT="$BATS_TEST_TMPDIR/gv.txt" \
+    FUSEKI_QUERY="http://127.0.0.1:9/query" CHORUS_OWL_API="http://127.0.0.1:9" "$BIN"
   [ "$status" -ne 0 ]
+  [ "$status" -ne 127 ]
   [[ "$output" == *UNMEASURED* ]] || return 1
   [[ "$output" != *"PROVEN CLEAN"* ]] || return 1
 }
