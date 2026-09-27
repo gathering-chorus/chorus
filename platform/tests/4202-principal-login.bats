@@ -133,7 +133,7 @@ nostart() { test ! -f "$T/tmux.log"; }
 started() { grep -q "send-keys -t chorus-kade" "$T/tmux.log"; }
 lacks()   { test -z "$(grep -F -- "$2" "$1" 2>/dev/null || true)"; }
 
-@test "#4215 no token → the role STARTS anyway, degraded and loud" {
+@test "login: Login with identity down starts the role, degraded and loud" {
   touch "$T/token-fail"
   ( sleep 0.3; reg 781 %5 ) &
   run "$SCRIPT" kade
@@ -220,7 +220,7 @@ lacks()   { test -z "$(grep -F -- "$2" "$1" 2>/dev/null || true)"; }
   nostart
 }
 
-@test "idempotent: a role that is awake AND talking is not logged in again (nothing sent)" {
+@test "login: A second login makes no second session" {
   # #4215 — a registry entry alone is no longer "awake": the entry outlives the
   # conversation, which is how a mute Kade read as present. The role has to have
   # SPOKEN, so this test writes a turn onto the spine. The mute case is the next

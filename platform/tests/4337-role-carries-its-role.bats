@@ -150,7 +150,7 @@ EOS
   chmod +x "$T/bin/ps3"; export AWAKE_PS="$T/bin/ps3"
 }
 
-@test "a process carrying another role is repaired by on itself: that pane ends and the role starts again, logged in" {
+@test "login: A pane running as the wrong role is repaired" {
   wrong_env wren kade
   run "$SCRIPT" on kade
   test "$status" -eq 0

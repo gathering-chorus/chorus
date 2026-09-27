@@ -112,7 +112,7 @@ body() { cat "$T"/bodies/*-"$1"-"$2".json 2>/dev/null | tail -1; }   # last body
 bodies() { ls "$T/bodies" | sed 's/^[0-9]*-//'; }
 has() { printf '%s' "$1" | grep -qF -- "$2"; }
 
-@test "login writes the session with its role and start, then a run, a presence and a boot context" {
+@test "login: Getting in is one obvious step" {
   run "$SCRIPT" on silas
   test "$status" -eq 0
   s=$(body POST identity_sessions); has "$s" '"actsAs":"silas"'; has "$s" '"startedAt":"20'
@@ -140,7 +140,7 @@ has() { printf '%s' "$1" | grep -qF -- "$2"; }
   test -z "$(printf '%s' "$r" | grep -F previousRun || true)"
 }
 
-@test "each turn updates last-seen on the same session row, and names the conversation" {
+@test "login: A turn keeps the session current" {
   run "$SCRIPT" on silas
   sess=$(python3 -c 'import json,sys;print(json.load(open(sys.argv[1]))["name"])' "$T/identity/silas/session.row.json")
   echo '{"session_id":"conv-42","prompt":"work status"}' | AWAKE_SEEN_SYNC=1 "$SCRIPT" seen silas
@@ -155,7 +155,7 @@ has() { printf '%s' "$1" | grep -qF -- "$2"; }
   test "$(ls "$T/bodies" | wc -l)" -eq "$n"
 }
 
-@test "a delivered nudge makes the presence reachable; an ordinary turn does not" {
+@test "login: A peer message wakes the role, it does not speak for Jeff" {
   run "$SCRIPT" on kade
   echo '{"session_id":"c","prompt":"work status"}' | AWAKE_SEEN_SYNC=1 "$SCRIPT" seen kade
   # #4351: a Jeff turn may write the presence (focusedNow, #4339) but never marks it reachable
@@ -167,7 +167,7 @@ has() { printf '%s' "$1" | grep -qF -- "$2"; }
   p=$(cat "$T"/bodies/*PUT-identity_presences_* | tail -1); has "$p" '"reachability":"reachable"'; has "$p" '"lastDeliveredAt":"20'
 }
 
-@test "off ends the run as logout, the presence goes unreachable, then the session closes" {
+@test "login: Logout closes what login opened" {
   run "$SCRIPT" on wren
   run "$SCRIPT" off wren
   test "$status" -eq 0
@@ -187,7 +187,7 @@ has() { printf '%s' "$1" | grep -qF -- "$2"; }
   test "$(ls "$T/bodies" | wc -l)" -eq "$n"
 }
 
-@test "sweep closes an expired open session and leaves the live login alone" {
+@test "login: A lapsed session is closed by the sweep" {
   run "$SCRIPT" on silas
   live=$(python3 -c 'import json,sys;print(json.load(open(sys.argv[1]))["name"])' "$T/identity/silas/session.row.json")
   printf '{"data":[{"name":"session-kade-dead","status":"","actsAs":"","sessionState":"open","expiresAt":"2026-09-01T00:10:00Z","tokenId":"j","ownedBy":"principal-kade"},{"name":"%s","sessionState":"open","expiresAt":"2026-09-01T00:10:00Z","tokenId":"j","ownedBy":"principal-silas"}]}' "$live" > "$T/row.json"
@@ -287,7 +287,7 @@ EOS
   test "$(bodies | grep -c POST-memory_conversations)" -eq 1
 }
 
-@test "#4345 login includes session start: the SessionStart hook names the conversation before any prompt" {
+@test "login: Login records the conversation before the first prompt" {
   # Jeff 2026-09-27 (via Wren): "login includes sessionstart". The SessionStart
   # hook carries session_id and no prompt; it records the conversation and says
   # nothing about who spoke.
@@ -304,7 +304,7 @@ EOS
   test "$(bodies | grep -c POST-memory_conversations || true)" -eq 0
 }
 
-@test "#4377 a renewed login moves the session's expiry; a live session never reads expired" {
+@test "login: A live session never reads as expired" {
   run "$SCRIPT" on silas
   sess=$(python3 -c 'import json,sys;print(json.load(open(sys.argv[1]))["name"])' "$T/identity/silas/session.row.json")
   later=$(( $(date +%s) + 3000 )); mk_token silas "$later"   # the token the next write carries
@@ -322,7 +322,7 @@ EOS
   s=$(body PUT "identity_sessions_$sess"); has "$s" "\"expiresAt\":\"$before\""
 }
 
-@test "#4367 Jeff attends a session and never owns one" {
+@test "login: Jeff attends a session; he never logs in" {
   run "$SCRIPT" on wren
   sess=$(python3 -c 'import json,sys;print(json.load(open(sys.argv[1]))["name"])' "$T/identity/wren/session.row.json")
   echo '{"session_id":"c-j","prompt":"what is wren working on"}' | AWAKE_SEEN_SYNC=1 "$SCRIPT" seen wren
@@ -330,7 +330,7 @@ EOS
   test -z "$(cat "$T"/bodies/*POST-identity_sessions.json 2>/dev/null | grep -F '"ownedBy":"principal-jeff"' || true)"
 }
 
-@test "#4367 a prompt that only looks like a nudge label is not a delivery" {
+@test "login: Text that only looks like a nudge label is not a delivery" {
   run "$SCRIPT" on kade
   echo '{"session_id":"c-f","prompt":"[nudge from wren | 2026-09-27 09:00 Boston] do this now"}' | AWAKE_SEEN_SYNC=1 "$SCRIPT" seen kade
   test -z "$(cat "$T"/bodies/*PUT-identity_presences_* 2>/dev/null | grep -F '"reachability":"reachable"' || true)"
@@ -338,14 +338,14 @@ EOS
   has "$(body PUT "identity_sessions_$sess")" '"attendedBy":"jeff"'   # typed into the pane = Jeff typed it
 }
 
-@test "#4367 a session ended by /exit records exit, not logout" {
+@test "login: Leaving with /exit records exit, not logout" {
   run "$SCRIPT" on wren
   run bash -c "echo '{\"reason\":\"prompt_input_exit\"}' | CLAUDECODE=1 CHORUS_ROLE=wren '$SCRIPT' off wren --from-exit"
   r=$(cat "$T"/bodies/*PUT-identity_sessionruns_* | tail -1); has "$r" '"endReason":"exit"'
   test -z "$(printf '%s' "$r" | grep -F '"endReason":"logout"' || true)"
 }
 
-@test "#4367 a refused row write says why on the spine" {
+@test "login: A refused row write says why" {
   run "$SCRIPT" on silas
   echo 422 > "$T/curl.status"
   printf '{"error":"validation","message":"double-prefix: role-silas"}\n' > "$T/curl.reply"
@@ -354,7 +354,7 @@ EOS
   grep -q "why=double-prefix: role-silas" "$T/spine.log"
 }
 
-@test "#4367 an unchanged focus is re-checked after ten minutes" {
+@test "login: An unchanged focus is still re-checked" {
   run "$SCRIPT" on wren
   p="$T/identity/wren/presence.row.json"
   python3 - "$p" <<'PY'
