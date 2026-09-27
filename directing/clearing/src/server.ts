@@ -13,7 +13,9 @@ import { createServer as createHttpsServer } from 'https';
 import { Server } from 'socket.io';
 import path from 'path';
 import { TilePoller } from './tiles';
-import { MessageRouter, isRoleName } from './router';
+import { MessageRouter, isRoleName, type ChannelMessage } from './router';
+import { RoomJournal } from './room-journal';
+import { randomUUID } from 'crypto';
 import { verifyShareSession, shareSessionFromHeader, readCookieKey } from './share-session';
 import { ChorusLogTailer } from './tailer';
 import { processJeffInput } from './jeff-input';
@@ -854,15 +856,31 @@ const tailer = new ChorusLogTailer(messageRouter);
 // room it shows never reads or writes prod's messages (#3615 membrane).
 const MSG_FILE = process.env.CLEARING_MSG_FILE || '/tmp/bridge-messages.json';
 const fs_sync = require('fs');
-try {
-  const saved = JSON.parse(fs_sync.readFileSync(MSG_FILE, 'utf-8'));
-  if (Array.isArray(saved)) {
-    for (const msg of saved.slice(-100)) {
-      messageRouter.ingest(msg);
-    }
-    console.log(`[clearing] restored ${Math.min(saved.length, 100)} messages from disk`);
+// #4363 — the room's history is an append-only journal keyed by message id,
+// not a 200-row snapshot in /tmp rewritten every 10s. A variant sets
+// CLEARING_JOURNAL under its werk, like CLEARING_MSG_FILE (#4075).
+const JOURNAL_FILE = process.env.CLEARING_JOURNAL || path.join(process.env.HOME || '/tmp', '.chorus', 'clearing', 'room.jsonl');
+const roomJournal = new RoomJournal(JOURNAL_FILE);
+{
+  // restore the tail on boot; the ids come with it, so a replay is not a new message
+  let restored = roomJournal.page(undefined, 100);
+  if (restored.length === 0) {
+    // one-time carry-over from the old snapshot, if it is still there
+    try {
+      const saved = JSON.parse(fs_sync.readFileSync(MSG_FILE, 'utf-8'));
+      if (Array.isArray(saved)) restored = saved.slice(-100);
+    } catch { /* no snapshot */ }
+    for (const msg of restored) messageRouter.ingest(msg);
+    for (const msg of messageRouter.getRecent(200, true)) roomJournal.append(msg);
+  } else {
+    for (const msg of restored) messageRouter.ingest(msg);
   }
-} catch { /* ignored */ }
+  console.log(`[clearing] restored ${restored.length} messages from ${JOURNAL_FILE}`);
+}
+// every message the router admits is written once, after the restore above
+messageRouter.on('message', (m: ChannelMessage) => {
+  try { roomJournal.append(m); } catch (e) { console.error(`[clearing] journal append failed: ${(e as Error).message}`); }
+});
 
 // #3831 — message persistence moved into startBackgroundWork(). Importing a
 // module must not start writing files on a timer.
@@ -1382,6 +1400,12 @@ app.get('/api/tiles', (_req, res) => res.json(tilePoller.getTiles()));
 app.get('/api/messages', (req, res) => {
   const raw = Number(req.query.limit);
   const limit = Number.isFinite(raw) && raw > 0 ? Math.min(raw, 2000) : 300;
+  // #4363 — full history: page backwards from any message id through the journal
+  if (typeof req.query.before === 'string') {
+    res.setHeader('X-Chorus-Total', String(roomJournal.total()));
+    res.json(roomJournal.page(req.query.before, limit));
+    return;
+  }
   const w = messageRouter.getRecentWindowed(limit, !!req.query.includeHidden);
   res.setHeader('X-Chorus-Total', String(w.total));
   res.setHeader('X-Chorus-Withheld', String(w.withheld));
@@ -1536,6 +1560,8 @@ io.on('connection', (socket) => {
     void processJeffInput(
       {
         ingest: (m) => messageRouter.ingest(m),
+        newId: () => randomUUID(),
+        expectEcho: (target, text) => messageRouter.expectEcho(target, text),
         deliver: (target) => deliverJeffMessageToTarget(target, safeMsg, cleanText),
         targetsOf: pickJeffMessageTargets,
         now: () => new Date().toISOString(),
@@ -1740,14 +1766,8 @@ export function startBackgroundWork(deps: BackgroundWorkDeps = {}): void {
 
   if (deps.timers === false) return;
 
-  // Persist the room every 10s. unref'd so it can never be the reason Node
-  // stays alive — belt and braces, since it is no longer created on import.
-  setInterval(() => {
-    try {
-      const msgs = messageRouter.getRecent(200, true);
-      fs_sync.writeFileSync(MSG_FILE, JSON.stringify(msgs));
-    } catch { /* ignored */ }
-  }, 10000).unref();
+  // #4363 — the room is persisted by the journal, one line per message as it
+  // arrives; the 10-second /tmp snapshot is gone.
 
   // Broadcast tiles every 5s.
   setInterval(() => {

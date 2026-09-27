@@ -80,11 +80,14 @@ describe('MessageRouter — dedup', () => {
     expect(r.getRecent(10, true)).toHaveLength(2);
   });
 
-  test('@mention-stripped exact duplicate is dropped', () => {
+  // #4363 — the room copy and its transcript echo are one message: the echo
+  // is consumed by expectEcho/consumeEcho (one-id-4363.test.ts), not by
+  // comparing text, so two real sends of the same words both show.
+  test('@mention-stripped words are a different message unless they are the expected echo', () => {
     const r = new MessageRouter();
     r.ingest(mk('jeff', 'deploy the fix'));
     r.ingest(mk('jeff', '@kade deploy the fix'));
-    expect(r.getRecent(10)).toHaveLength(1);
+    expect(r.getRecent(10)).toHaveLength(2);
   });
 
   test('different text is not deduped', () => {

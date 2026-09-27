@@ -19,6 +19,21 @@ import { EmitSpine, makeSpineEmitter, renderedEvent } from './reply-delivery';
 
 // #2167: env-configurable so tests can point at a fixture directory.
 const PROJECTS_DIR = process.env.CLEARING_PROJECTS_DIR || '/Users/jeffbridwell/.claude/projects';
+/** #4363 — where each transcript was read up to, so a restart resumes there and a
+ *  reply written while the Clearing was down still reaches the room. */
+const OFFSETS_FILE = process.env.CLEARING_TAILER_OFFSETS || path.join(process.env.HOME || '/tmp', '.chorus', 'clearing', 'tailer-offsets.json');
+
+/** Where to start reading a file: the saved offset when it is still inside the file, else its end. */
+function resumeOffset(was: number | undefined, size: number): number {
+  return typeof was === 'number' && was >= 0 && was <= size ? was : size;
+}
+
+function loadOffsets(): Record<string, number> {
+  try {
+    const o = JSON.parse(fs.readFileSync(OFFSETS_FILE, 'utf8'));
+    return o && typeof o === 'object' ? o : {};
+  } catch { return {}; }
+}
 const POLL_INTERVAL = 30000; // 30s fallback — primary delivery is fs.watch
 const ROLES = ['wren', 'silas', 'kade'] as const;
 
@@ -70,7 +85,7 @@ export class SessionTailer {
   private sessions: Map<string, SessionState> = new Map();
   private timer: NodeJS.Timeout | null = null;
   // Debounce: buffer last assistant message per role, emit after 3s quiet (#1720)
-  private pendingAssistant: Map<string, { text: string; ts: string; timer: NodeJS.Timeout }> = new Map();
+  private pendingAssistant: Map<string, { id?: string; text: string; ts: string; timer: NodeJS.Timeout }> = new Map();
   // #3772 — the return path. After a jeff-input lands in a role's session, the
   // role's REPLY must surface in the room as a visible role-response, not be
   // folded away as pm-thinking (+n steps). Mechanics: mark the role awaiting;
@@ -80,7 +95,7 @@ export class SessionTailer {
   // the candidate promotes to role-response after REPLY_QUIET_MS of assistant
   // silence (turn ended) or immediately when Jeff's next input arrives.
   private awaitingReply: Set<string> = new Set();
-  private replyCandidate: Map<string, { text: string; ts: string; timer: NodeJS.Timeout }> = new Map();
+  private replyCandidate: Map<string, { id?: string; text: string; ts: string; timer: NodeJS.Timeout }> = new Map();
 
   constructor(router: MessageRouter, emitRendered?: EmitSpine) {
     this.router = router;
@@ -93,13 +108,15 @@ export class SessionTailer {
   private emitRendered: EmitSpine;
 
   start(): void {
-    // Find current session files — start from EOF, only show NEW messages
+    // Find current session files. #4363: resume where the last run stopped
+    // reading the same file; a file never read before starts at its end.
+    const saved = loadOffsets();
     for (const role of ROLES) {
       const sessionFile = this.findSessionFile(role);
       if (sessionFile) {
         try {
-          const stats = fs.statSync(sessionFile);
-          const state: SessionState = { file: sessionFile, offset: stats.size };
+          const offset = resumeOffset(saved[sessionFile], fs.statSync(sessionFile).size);
+          const state: SessionState = { file: sessionFile, offset };
           // fs.watch for near-instant delivery (<100ms)
           try {
             state.watcher = fs.watch(sessionFile, () => {
@@ -117,6 +134,20 @@ export class SessionTailer {
     // A background fallback poll must never be the reason a process stays alive.
     this.timer = setInterval(() => this.poll(), POLL_INTERVAL);
     this.timer.unref();
+  }
+
+  /** #4363 — read a role's transcript now, instead of waiting for fs.watch or the poll. */
+  checkNow(role: string): void {
+    if (this.rebindSession(role)) this.readNewEntries(role);
+  }
+
+  private saveOffsets(): void {
+    const all = loadOffsets();
+    for (const st of this.sessions.values()) all[st.file] = st.offset;
+    try {
+      fs.mkdirSync(path.dirname(OFFSETS_FILE), { recursive: true });
+      fs.writeFileSync(OFFSETS_FILE, JSON.stringify(all));
+    } catch { /* an unsaved offset only means a restart starts at the file's end, as before */ }
   }
 
   getSessionCount(): number {
@@ -156,6 +187,7 @@ export class SessionTailer {
       const consumedBytes = lastComplete ? bytesRead : data.lastIndexOf('\n') + 1;
 
       state.offset += consumedBytes;
+      this.saveOffsets();
 
       for (const line of completeLines) {
         this.processLine(role, line);
@@ -258,7 +290,7 @@ export class SessionTailer {
     return slashCmd || humanParts.join(' ').trim();
   }
 
-  private handleUserMessage(role: string, entry: { message?: { content?: unknown } }, ts: string): void {
+  private handleUserMessage(role: string, entry: { uuid?: string; message?: { content?: unknown } }, ts: string): void {
     const rawContent = entry.message?.content;
     if (!rawContent) return;
     let text = this.extractUserText(rawContent);
@@ -273,7 +305,9 @@ export class SessionTailer {
     // Jeff moved the conversation on — whatever reply was pending IS the
     // reply; promote it before his new input lands so the room reads in order.
     this.finalizeReply(role);
-    this.router.ingest({ from: 'jeff', text, ts, type: 'jeff-input' });
+    // #4363 — a room message typed into this pane is already in the room:
+    // its transcript copy is the same message, not a second one.
+    if (!this.router.consumeEcho(role, text)) this.router.ingest({ id: entry.uuid, from: 'jeff', text, ts, type: 'jeff-input' });
     this.awaitingReply.add(role);
   }
 
@@ -284,7 +318,7 @@ export class SessionTailer {
     clearTimeout(candidate.timer);
     this.replyCandidate.delete(role);
     this.awaitingReply.delete(role);
-    this.router.ingest({ from: role, text: candidate.text, ts: candidate.ts, type: 'role-response' });
+    this.router.ingest({ id: candidate.id, from: role, text: candidate.text, ts: candidate.ts, type: 'role-response' });
     // #3864 — this is the moment the reply is RENDERED into Clearing; stamp
     // the join key so it pairs with the Stop hook's reply.emitted.
     this.emitRendered(renderedEvent(role, candidate.text));
@@ -308,7 +342,7 @@ export class SessionTailer {
     return false;
   }
 
-  private handleAssistantMessage(role: string, entry: { message?: { content?: unknown; stop_reason?: string } }, ts: string): void {
+  private handleAssistantMessage(role: string, entry: { uuid?: string; message?: { content?: unknown; stop_reason?: string } }, ts: string): void {
     const contentArr = entry.message?.content;
     if (!contentArr) return;
     let combined = this.extractAssistantText(contentArr);
@@ -340,22 +374,22 @@ export class SessionTailer {
         const prev = this.replyCandidate.get(role);
         if (prev) {
           clearTimeout(prev.timer);
-          this.router.ingest({ from: role, text: prev.text, ts: prev.ts, type: 'pm-thinking' });
+          this.router.ingest({ id: prev.id, from: role, text: prev.text, ts: prev.ts, type: 'pm-thinking' });
         }
         const quietTimer = setTimeout(() => this.finalizeReply(role), REPLY_QUIET_MS);
-        this.replyCandidate.set(role, { text: pending.text, ts: pending.ts, timer: quietTimer });
+        this.replyCandidate.set(role, { id: pending.id, text: pending.text, ts: pending.ts, timer: quietTimer });
         // The turn is over — promote NOW rather than waiting out a clock that
         // has nothing left to learn.
         if (endedTurn) this.finalizeReply(role);
       } else {
-        this.router.ingest({ from: role, text: pending.text, ts: pending.ts, type: 'pm-thinking' });
+        this.router.ingest({ id: pending.id, from: role, text: pending.text, ts: pending.ts, type: 'pm-thinking' });
       }
     }, flushDelay);
-    this.pendingAssistant.set(role, { text: combined, ts, timer: debounceTimer });
+    this.pendingAssistant.set(role, { id: entry.uuid, text: combined, ts, timer: debounceTimer });
   }
 
   private processLine(role: string, line: string): void {
-    let entry: { type?: string; timestamp?: string; message?: { content?: unknown; stop_reason?: string } };
+    let entry: { type?: string; uuid?: string; timestamp?: string; message?: { content?: unknown; stop_reason?: string } };
     try { entry = JSON.parse(line); } catch { return; }
     const ts = entry.timestamp || new Date().toISOString();
     if (entry.type === 'user') return this.handleUserMessage(role, entry, ts);

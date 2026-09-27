@@ -945,6 +945,8 @@ fn variant_clearing_writes_only_under_the_werks_demo_store() {
     let env = werk_deploy::demo_env::clearing_extra_env("wren", "/w/.chorus-demo", "https://id.example", "/bin").unwrap();
     let get = |k: &str| env.iter().find(|(kk, _)| kk == k).map(|(_, v)| v.clone()).unwrap();
     assert_eq!(get("CLEARING_MSG_FILE"), "/w/.chorus-demo/bridge-messages.json");
+    assert_eq!(get("CLEARING_JOURNAL"), "/w/.chorus-demo/room.jsonl");
+    assert_eq!(get("CLEARING_TAILER_OFFSETS"), "/w/.chorus-demo/tailer-offsets.json");
     assert_eq!(get("CHORUS_LOG_FILE"), "/w/.chorus-demo/chorus.log");
     // negative proof: the prod paths the membrane forbids are absent from every value
     for (_, v) in &env {
@@ -978,6 +980,7 @@ fn negative_proof_3734_a_clearing_env_pointed_at_prod_is_refused() {
         ("PULSE_URL", "http://localhost:3475"),
         ("CLEARING_MSG_FILE", "/tmp/bridge-messages.json"),
         ("CHORUS_LOG_FILE", "/Users/jeffbridwell/.chorus/chorus.log"),
+        ("CLEARING_JOURNAL", "/Users/jeffbridwell/.chorus/clearing/room.jsonl"),
     ];
     for (k, v) in cases {
         let hit = werk_deploy::demo_env::clearing_env_prod_leak(&poison(k, v));

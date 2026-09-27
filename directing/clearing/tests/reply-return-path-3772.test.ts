@@ -21,7 +21,7 @@ interface Ingested { from: string; text: string; ts: string; type: string }
 
 function makeRouterStub() {
   const got: Ingested[] = [];
-  return { got, router: { ingest: (m: Ingested) => { got.push(m); } } };
+  return { got, router: { ingest: (m: Ingested) => { got.push(m); }, consumeEcho: () => false } };
 }
 
 function userLine(text: string): string {
