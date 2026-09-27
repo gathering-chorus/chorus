@@ -2069,6 +2069,25 @@ mod scope_vcs_metadata_4173 {
         );
     }
 
+    /// #4389 — a git hook change runs the suites that name it; it is not refused.
+    #[test]
+    fn a_hook_change_runs_its_suites_not_an_unmapped_refusal() {
+        use crate::{affected_bats_suites, SuiteCoverage};
+        let units = vec![ScopeUnit { name: "werk-test".into(), dir: "platform/services/werk-test".into() }];
+        let changed = vec!["platform/hooks/pre-commit".to_string()];
+        assert_eq!(scoped_test_reason(&changed, &units, &[]), Ok(vec![]));
+        let index = vec![SuiteCoverage {
+            suite: "platform/tests/pre-commit-gate.bats".into(),
+            covers: vec!["platform/hooks/pre-commit".into()],
+        }];
+        assert_eq!(affected_bats_suites(&changed, &index), vec!["platform/tests/pre-commit-gate.bats".to_string()]);
+        // NEGATIVE PROOF: a path outside platform/hooks is still refused by name
+        assert_eq!(
+            scoped_test_reason(&["platform/hookshot/x.rs".to_string()], &units, &[]),
+            Err("unmapped:platform/hookshot/x.rs".to_string())
+        );
+    }
+
     // NEGATIVE PROOF: the addition must not blunt the unmapped refusal it sits
     // inside. A file that really can change build output still forces FULL and
     // still names itself — otherwise this entry would be a hole, not a mapping.
