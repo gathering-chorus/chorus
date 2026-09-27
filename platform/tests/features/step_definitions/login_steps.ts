@@ -9,6 +9,8 @@ import { execFileSync } from 'child_process';
 import * as fs from 'fs';
 import * as os from 'os';
 import * as path from 'path';
+// #4361 — pulse's own routing, checked against the rows a login writes
+import { resolveFromPresence } from '../../../pulse/src/presence-target';
 
 const ROOT = path.resolve(__dirname, '../../../..');
 const HARNESS = path.join(ROOT, 'platform/tests/lib/login-harness.bash');
@@ -247,8 +249,6 @@ Then("the relay found wren's pane through wren's Presence row, not a registry fi
     const p = path.join(T, 'sessions', n);
     fs.writeFileSync(p, JSON.stringify({ ...JSON.parse(fs.readFileSync(p, 'utf8')), tmux: '%99' }));
   }
-  // eslint-disable-next-line @typescript-eslint/no-require-imports -- pulse is a sibling package; its routing is what this step checks
-  const { resolveFromPresence } = require(path.join(ROOT, 'platform/pulse/src/presence-target'));
   const res = resolveFromPresence(presences, runs, 'wren');
   if (res.kind !== 'resolved') throw new Error(`no live Presence for wren: ${JSON.stringify(res)}`);
   if (res.session.tmux === '%99') throw new Error('routed by the registry file, not the Presence row');
