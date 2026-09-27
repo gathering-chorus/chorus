@@ -50,7 +50,7 @@ fn only_a_delivery_makes_a_presence_reachable() {
 /// every delivery reads as Jeff speaking and no presence is ever reachable.
 #[test]
 fn pulse_types_exactly_this_wake_line() {
-    let ts = concat!(env!("CARGO_MANIFEST_DIR"), "/../../pulse/src/delivery-worker.ts");
+    let ts = format!("{}/../../pulse/src/delivery-worker.ts", std::env::var("CARGO_MANIFEST_DIR").expect("cargo sets CARGO_MANIFEST_DIR"));  // #4351: read at run time (4030)
     let src = std::fs::read_to_string(ts).expect("pulse delivery-worker.ts beside chorus-awake");
     let decl = format!("export const WAKE_LINE = '{}';", chorus_awake::rows::WAKE_LINE);
     assert!(src.contains(&decl), "pulse's WAKE_LINE differs; expected `{decl}`");
