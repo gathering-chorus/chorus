@@ -1,5 +1,7 @@
 # Buzz × Clearing — integration design (#3674 follow-on)
 
+> 2026-09-27: carried forward into [Product Design — The Clearing](product-design-clearing.html) (#4365). The call here (our relay, our identity, our client) stands. Measured since then: Buzz approval steps are not built, and the relay refuses unknown stored kinds.
+
 **In five lines (exec summary):** Block's polished Mac app is hosted-only (binds
 to Block's cloud, no local override) — a sovereignty dead end. But the relay
 self-hosts cleanly on our box AND roots in *our* identity (bridge + Jeff both

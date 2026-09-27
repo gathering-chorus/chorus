@@ -1,0 +1,414 @@
+<!DOCTYPE html>
+<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Clearing Architecture</title>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Instrument+Sans:wght@400;600;700&family=JetBrains+Mono:wght@400;600&display=swap">
+<style>
+:root{--bg:#f3f5f6;--panel:#fff;--ink:#1b2530;--muted:#5d6a76;--line:#d5dce2;--accent:#2d5f8b;
+--ready:#3d7a4a;--readybg:#e8f3eb;--part:#8a6a12;--partbg:#f6efda;--no:#b4452f;--nobg:#fbece7;--code:#edf1f4;color-scheme:light}
+@media (prefers-color-scheme: dark){:root:not([data-theme="light"]){--bg:#11171c;--panel:#18212a;--ink:#e2e9ef;--muted:#96a4b0;--line:#2a3642;--accent:#86b6e0;--ready:#88c497;--readybg:#1b2c20;--part:#e0bd5a;--partbg:#2e2815;--no:#e8836b;--nobg:#35211c;--code:#202b35;color-scheme:dark}}
+:root[data-theme="dark"]{--bg:#11171c;--panel:#18212a;--ink:#e2e9ef;--muted:#96a4b0;--line:#2a3642;--accent:#86b6e0;--ready:#88c497;--readybg:#1b2c20;--part:#e0bd5a;--partbg:#2e2815;--no:#e8836b;--nobg:#35211c;--code:#202b35;color-scheme:dark}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--ink);font:15px/1.6 "Instrument Sans",system-ui,sans-serif}
+.wrap{max-width:1060px;margin:0 auto;padding:28px 16px 64px;display:grid;gap:34px;min-width:0}
+h1{font-size:30px;line-height:1.2;margin:0;text-wrap:balance}h2{font-size:20px;margin:0 0 4px;text-wrap:balance}h3{font-size:16px;margin:0}
+p{margin:0;max-width:70ch}.lede{color:var(--muted);margin-top:6px}
+.eyebrow{font:600 11px/1 "JetBrains Mono",monospace;letter-spacing:.08em;text-transform:uppercase;color:var(--accent)}
+section{display:grid;gap:12px;min-width:0}
+.panel{background:var(--panel);border:1px solid var(--line);border-radius:6px;padding:16px;overflow-x:auto;min-width:0}
+.pair{display:grid;grid-template-columns:repeat(auto-fit,minmax(min(100%,460px),1fr));gap:14px}
+.pair h3{margin-bottom:8px}
+pre.mermaid{margin:0}
+.cap{font-size:14px;color:var(--muted)}
+code{font:13px "JetBrains Mono",monospace;background:var(--code);padding:1px 5px;border-radius:3px}
+table{border-collapse:collapse;width:100%;min-width:620px;font-size:14px}
+th,td{text-align:left;padding:8px 10px;border-bottom:1px solid var(--line);vertical-align:top}
+th{font:600 11px/1.2 "JetBrains Mono",monospace;letter-spacing:.06em;text-transform:uppercase;color:var(--muted)}
+.pill{font:600 11px/1 "JetBrains Mono",monospace;padding:4px 8px;border-radius:99px;white-space:nowrap;display:inline-block}
+.ready{background:var(--readybg);color:var(--ready)}.part{background:var(--partbg);color:var(--part)}.no{background:var(--nobg);color:var(--no)}
+.legend{display:flex;gap:8px;flex-wrap:wrap;align-items:center;font-size:13px;color:var(--muted)}
+ul.notes{margin:0;padding-left:20px;display:grid;gap:4px;max-width:75ch}
+</style>
+<div class="wrap">
+<header>
+<div class="eyebrow">Revamped Clearing · architecture · 2026-09-27 · Wren</div>
+<h1>Clearing Architecture</h1>
+<p class="lede">Today the Clearing keeps its own copy of everything and polls. In the target it is a client. Buzz carries the talk and proves who said it. athena-make serves the work from the graph. A trust strip on every page says how fresh each source is.</p>
+<div class="legend" style="margin-top:10px"><span class="pill ready">served</span><span class="pill part">stub or partial</span><span class="pill no">not modeled</span><span>Anything marked <b>inferred</b> is a design proposal, not a fact measured today.</span></div>
+</header>
+
+<section>
+<div class="eyebrow">1 · Context</div>
+<h2>Who and what is involved</h2>
+<div class="panel"><pre class="mermaid">
+flowchart LR
+  subgraph People["Principals"]
+    J(["Jeff<br/>human"])
+    H(["other humans<br/>human principals"])
+    A(["wren · silas · kade<br/>agent principals"])
+    S(["service principals<br/>pulse, crons, harvesters"])
+  end
+  CL["Clearing<br/>browser client"]
+  BZ["Buzz relay<br/>Bedroom ws :3000"]
+  AM["athena-make /v1 :3360<br/>over Fuseki :3030"]
+  PU["pulse :3475<br/>delivery"]
+  CP["chorus-principal<br/>login / logout"]
+  TX["tmux + Claude Code<br/>role panes"]
+  VK["Vikunja<br/>board system of record"]
+  GF["Grafana<br/>alert rules + dashboards"]
+  J --> CL
+  H --> CL
+  CL -->|talk| BZ
+  CL -->|work| AM
+  A --> TX
+  CP -->|Session, SessionRun, Presence| AM
+  TX --> CP
+  PU -->|types into pane| TX
+  PU -->|reads Presence| AM
+  A -->|posts| BZ
+  S --> AM
+  VK -.->|card stubs, #2159| AM
+  GF -.->|alert definitions| AM
+</pre></div>
+<p class="cap">Four kinds of principal use one client. Talk goes to Buzz, work goes to the graph, and pulse is the only thing that reaches into a role's terminal.</p>
+</section>
+
+<section>
+<div class="eyebrow">2 · Integration</div>
+<h2>Today vs target, every hop labeled</h2>
+<div class="pair">
+<div class="panel"><h3>Today</h3><pre class="mermaid">
+flowchart TB
+  J(["Jeff browser"]) -->|"1 socket.io"| CR["Clearing :3470<br/>router memory, cap 200"]
+  CR -->|"2 file write"| BF[("/tmp/bridge-messages.json")]
+  CR -->|"3 HTTP POST /api/jeff-input"| PU["pulse :3475"]
+  PU -->|"4 SQLite insert"| DB[("messages.db<br/>40,565 rows")]
+  DB -->|"5 delivery worker poll"| PU
+  PU -->|"6 spawn chorus-inject"| TX["tmux pane<br/>Claude Code"]
+  TX -->|"7 writes"| JL[("session JSONL")]
+  JL -->|"8 SessionTailer reads file"| CR
+  CR -->|"9 append"| SP[("spine chorus.log")]
+  CR -->|"10 ws publish"| BZ["Buzz relay"]
+  CR -->|"11 shell out, poll 3 to 15s"| CC["cards CLI"]
+  CC -->|"12 HTTP"| VK["Vikunja"]
+  CR -.->|"no /v1 reads"| AM["athena-make"]
+  classDef gone fill:#fbece7,stroke:#b4452f,color:#5a1f12
+  class BF,DB,JL,CC gone
+</pre></div>
+<div class="panel"><h3>Target</h3><pre class="mermaid">
+flowchart TB
+  J(["Jeff browser"]) -->|"1 ws, NIP-42 auth, kind 9 with h tag"| BZ["Buzz relay"]
+  J -->|"2 HTTPS GET and POST /v1"| AM["athena-make /v1"]
+  AM -->|"3 SPARQL"| FU[("Fuseki :3030")]
+  BZ -->|"4 ws subscription, inferred"| PU["pulse"]
+  PU -->|"5 GET /v1 Presence, #4361"| AM
+  PU -->|"6 chorus-inject, wake line held while Jeff types, #4362"| TX["tmux pane<br/>Claude Code"]
+  TX -->|"7 signed kind 9 reply, inferred"| BZ
+  BZ -->|"8 live event to subscribers"| J
+  PU -->|"9 PUT Delivery, inferred"| AM
+</pre></div>
+</div>
+<p class="cap">Hops 2, 4, 5, 7, 8 and 11 of today go away, marked red: the bridge file, the messages.db queue as a store of talk, the JSONL tail and the cards CLI scrape. In the target the Clearing holds no copy. It subscribes to Buzz and reads /v1.</p>
+<ul class="notes">
+<li>Today, six places hold messages: router memory, the bridge file, messages.db, session JSONL, the spine and Buzz. The target keeps one store of talk (Buzz) with one message id (#4363).</li>
+<li>Verified today: the Clearing's Buzz wiring publishes <code>kind:1</code> notes filtered by a <code>#t</code> topic tag (<code>buzz-room.ts</code>, <code>room-replay.ts</code>). The move to NIP-29 <code>kind 9</code> with an <code>h</code> tag is target work.</li>
+<li>Inferred: pulse subscribing to Buzz is one way to wake roles. The other is roles subscribing themselves. Either way pulse chooses the pane from Presence, not a registry file.</li>
+</ul>
+</section>
+
+<section>
+<div class="eyebrow">3 · Data</div>
+<h2>Classes and how they connect</h2>
+<div class="panel"><pre class="mermaid">
+erDiagram
+  Principal ||--o{ Session : "ownedBy"
+  Session }o--|| Role : "actsAs"
+  Principal ||--o{ Appointment : "holds"
+  Appointment }o--|| Hat : "wears"
+  SessionRun }o--|| Session : "runOf"
+  SessionRun |o--o| SessionRun : "previousRun"
+  Presence ||--|| SessionRun : "presenceOf"
+  Session }o--o| Principal : "attendedBy"
+  Credential }o--|| Principal : "KeyRegistryEntry, #4359"
+  Conversation }o--|| SessionRun : "conversationId"
+  Message }o--|| Channel : "in"
+  Message }o--|| Principal : "sentBy"
+  Delivery }o--|| Message : "of"
+  Delivery }o--|| Presence : "landedAt"
+  Card }o--o{ Chunk : "ChunkMembership"
+  Plan ||--o{ Chunk : "orders"
+  Cadence ||--o{ Meeting : "schedules"
+  Meeting ||--o{ MeetingRun : "runs"
+  MeetingRun ||--o{ Decision : "owes"
+  Decision }o--|| Principal : "decidedBy"
+  Decision }o--o{ Card : "creates"
+  MeetingRun }o--o| Channel : "heldIn"
+  Alert }o--o{ Card : "files"
+  Principal {
+    string status "served"
+  }
+  Session {
+    string status "served"
+  }
+  SessionRun {
+    string status "served"
+  }
+  Presence {
+    string status "served"
+  }
+  Role {
+    string status "exists, served not checked"
+  }
+  Appointment {
+    string status "served"
+  }
+  Hat {
+    string status "served"
+  }
+  Conversation {
+    string status "served"
+  }
+  Credential {
+    string status "not modeled, #4359"
+  }
+  Channel {
+    string status "served, 426-row copy"
+  }
+  Message {
+    string status "served, 426-row copy"
+  }
+  Delivery {
+    string status "served, 426-row copy"
+  }
+  Card {
+    string status "stub, Vikunja is record"
+  }
+  Chunk {
+    string status "served"
+  }
+  Alert {
+    string status "served, definitions only"
+  }
+  Plan {
+    string status "not modeled, #4364"
+  }
+  Cadence {
+    string status "not modeled, #4364"
+  }
+  Meeting {
+    string status "not modeled, #4364"
+  }
+  MeetingRun {
+    string status "not modeled, #4364"
+  }
+  Decision {
+    string status "not modeled, #4364"
+  }
+</pre></div>
+<p class="cap">Identity edges point up, from presence to run to session, in the order things happen. The loom half (Meeting, Cadence, MeetingRun, Decision, Plan) does not exist in the graph yet, and card state is not in the graph until #2159.</p>
+<ul class="notes">
+<li>Verified in <code>session-model-4302.ttl</code>: <code>runOf</code>, <code>previousRun</code>, <code>presenceOf</code>, <code>actsAs</code>, <code>attendedBy</code>, <code>conversationId</code>; Presence carries <code>pane</code>, <code>tty</code>, <code>reachability</code>, <code>lastDeliveredAt</code>, <code>focusedNow</code>. Session rows live in graph <code>urn:chorus:domains:identity</code> (<code>session-4202.ttl</code>).</li>
+<li>Inferred: every edge in the loom and messaging halves (<code>owes</code>, <code>heldIn</code>, <code>landedAt</code>, <code>sentBy</code>, <code>files</code>) is a proposed name, not a declared property. Credential/KeyRegistryEntry is on Silas's build order but I did not find it served.</li>
+</ul>
+</section>
+
+<section>
+<div class="eyebrow">4 · Backend</div>
+<h2>One writer per class</h2>
+<div class="panel"><pre class="mermaid">
+flowchart LR
+  subgraph W["Writers"]
+    CP["chorus-principal"]
+    PU["pulse"]
+    SH["seen hook in role session"]
+    BZ["Buzz relay"]
+    VK["Vikunja via cards"]
+    GF["alert rule deploy"]
+    LM["loom scheduler, inferred"]
+    CLw["Clearing, as Jeff"]
+  end
+  subgraph G["Classes"]
+    SE["Session, SessionRun, Presence"]
+    PF["Presence.focusedNow"]
+    DL["Delivery"]
+    MS["Message text"]
+    CA["Card"]
+    AL["Alert"]
+    MR["MeetingRun"]
+    DE["Decision answer"]
+  end
+  CP --> SE
+  SH --> PF
+  PU --> DL
+  BZ --> MS
+  VK --> CA
+  GF --> AL
+  LM --> MR
+  CLw --> DE
+  subgraph R["Readers"]
+    CLr["Clearing"]
+    PUr["pulse"]
+    SUP["/sup and roles"]
+  end
+  SE --> PUr
+  SE --> CLr
+  MS --> CLr
+  CA --> CLr
+  AL --> CLr
+  MR --> CLr
+  DE --> SUP
+</pre></div>
+<p class="cap">Each class has exactly one service that writes it. The Clearing reads almost everything and writes only what Jeff himself does, such as answering a decision.</p>
+<ul class="notes">
+<li>Fact: chorus-principal login/logout (#4345) creates Session, SessionRun and Presence. The ontology comment says the seen hook writes <code>focusedNow</code> (#4339). That makes Presence a two-writer class today. Either the hook calls chorus-principal, or focusedNow moves to its own row. <b>Open.</b></li>
+<li>Fact: the graph Message/Delivery/Channel is a 426-row copy, so today it has no single writer. Inferred target: Buzz owns message text, pulse owns Delivery, and the graph keeps no second copy of text.</li>
+<li>Inferred: who writes MeetingRun and Decision. buzz-workflow cron runs today, but its approval steps are not built.</li>
+</ul>
+</section>
+
+<section>
+<div class="eyebrow">5 · Frontend</div>
+<h2>Pages, components and where each gets its data</h2>
+<div class="panel"><pre class="mermaid">
+flowchart LR
+  subgraph P["Pages"]
+    TD["Today"]
+    RM["Rooms"]
+    BD["Board"]
+    CD["Card"]
+    DC["Decisions"]
+    CA["Calendar"]
+    MR["Meeting run"]
+    RL["Roles"]
+    AL["Alerts"]
+  end
+  subgraph C["Components"]
+    TS["Trust strip"]
+    RV["Room view + composer"]
+    PR["Presence badges"]
+    BC["Board columns"]
+    DL["Decisions owed list"]
+    MN["Minutes + outputs"]
+    AT["Alert list"]
+  end
+  subgraph D["Sources"]
+    BZS[["Buzz subscription<br/>kind 9 + kind 20001"]]
+    V1[["/v1 fetch<br/>athena-make"]]
+  end
+  TD --> DL
+  TD --> TS
+  RM --> RV
+  RM --> PR
+  RL --> PR
+  BD --> BC
+  CD --> BC
+  DC --> DL
+  CA --> MN
+  MR --> MN
+  AL --> AT
+  RV --> BZS
+  PR --> BZS
+  PR --> V1
+  BC --> V1
+  DL --> V1
+  MN --> V1
+  MN --> BZS
+  AT --> V1
+  TS --> BZS
+  TS --> V1
+</pre></div>
+<p class="cap">Talk and who is online come live from Buzz. Everything else is a /v1 fetch. Every page carries the trust strip.</p>
+<div class="panel"><pre class="mermaid">
+flowchart TB
+  S["for each source: Buzz, /v1, board stubs, pulse"] --> Q{"reachable on last try?"}
+  Q -->|no| U["show UNKNOWN in red<br/>keep old data, labeled with its age"]
+  Q -->|yes| AGE["age = now minus newest timestamp<br/>Buzz: last event or presence heartbeat<br/>/v1: response time and max modified<br/>board: newest Card stub modified"]
+  AGE --> T{"age under the source's limit?"}
+  T -->|yes| G["green: fresh, shows age"]
+  T -->|"no, under 3x"| A["amber: stale, shows age"]
+  T -->|"no, over 3x"| R["red: stale, shows age"]
+</pre></div>
+<p class="cap">Inferred rule set. The strip never shows old data as current. A source it cannot reach reads unknown, not green. Presence dots expire with the Buzz 180s presence window.</p>
+</section>
+
+<section>
+<div class="eyebrow">6a · Sequence</div>
+<h2>Jeff posts in a room and a role answers</h2>
+<div class="panel"><pre class="mermaid">
+sequenceDiagram
+  autonumber
+  actor J as Jeff
+  participant CL as Clearing
+  participant BZ as Buzz relay
+  participant PU as pulse
+  participant AM as athena-make /v1
+  participant TX as Silas pane
+  CL->>BZ: REQ subscribe room h=clearing
+  CL->>BZ: then replay since cursor
+  J->>CL: types a message
+  CL->>BZ: EVENT kind 9, signed as Jeff, id m1
+  BZ-->>CL: OK m1, echoed to subscribers
+  BZ-->>PU: event m1, inferred subscription
+  PU->>AM: GET Presence for silas, reachable run
+  AM-->>PU: pane and tty
+  Note over PU,TX: wake line held while Jeff is typing in that pane, #4362
+  PU->>TX: chorus-inject message m1
+  PU->>AM: PUT Delivery m1 landed, inferred
+  TX->>BZ: EVENT kind 9 reply, signed as silas, inferred
+  BZ-->>CL: reply shown under m1
+  CL->>CL: trust strip updates Buzz age
+</pre></div>
+<p class="cap">One id, m1, follows the message from Jeff to the relay to the pane to the delivery row. No bridge file, no JSONL tail.</p>
+</section>
+
+<section>
+<div class="eyebrow">6b · Sequence</div>
+<h2>An overnight meeting owes a decision, Jeff answers in the morning</h2>
+<div class="panel"><pre class="mermaid">
+sequenceDiagram
+  autonumber
+  participant CR as buzz-workflow cron
+  participant AM as athena-make /v1
+  participant BZ as Buzz relay
+  participant PU as pulse
+  participant R as roles
+  actor J as Jeff
+  participant CL as Clearing
+  CR->>AM: create MeetingRun from Cadence, not modeled #4364
+  CR->>BZ: open run in meeting room
+  BZ-->>PU: event, inferred
+  PU->>R: deliver to each role via Presence
+  R->>BZ: discussion as kind 9 events
+  R->>AM: write minutes and Decision owed by Jeff, not modeled
+  Note over CR,R: approval steps in buzz-workflow are not built yet
+  J->>CL: opens Today at 07:00
+  CL->>AM: GET decisions owed by jeff
+  AM-->>CL: 1 open decision, linked to its MeetingRun
+  CL->>BZ: replay the run's room since its start
+  J->>CL: answers the decision
+  CL->>AM: PUT Decision answered, decidedBy jeff
+  CL->>BZ: EVENT kind 9 with the answer, same id reference
+  BZ-->>PU: event
+  PU->>R: deliver answer, roles pick up the follow-on cards
+</pre></div>
+<p class="cap">The meeting runs without Jeff. What it owes him waits as one open decision on the Today page. His answer lands in the graph and in the room at the same time.</p>
+</section>
+
+<section>
+<div class="eyebrow">Rules</div>
+<h2>Consistency rules</h2>
+<div class="panel"><table>
+<thead><tr><th>Rule</th><th>What it means</th><th>Where it bites today</th></tr></thead>
+<tbody>
+<tr><td>One writer per class</td><td>Exactly one service writes each class. Everyone else reads.</td><td>Presence has two writers (chorus-principal and the seen hook). Message is a copy with no owner.</td></tr>
+<tr><td>One id per message</td><td>The Buzz event id is the message id everywhere: room, delivery row, pane, spine (#4363).</td><td>Six stores, each with its own id or none.</td></tr>
+<tr><td>Subscribe, then replay</td><td>Buzz has no global sequence number. Open the live subscription first, then replay since the cursor, then drop duplicates by id.</td><td><code>room-replay.ts</code> already rewinds the cursor 5s and dedupes. The order of subscribe versus replay needs checking.</td></tr>
+<tr><td>No silent fallback</td><td>If a source is down, the page says unknown. It never falls back to a cached copy shown as current.</td><td>Today the Clearing reads its own memory and files, so a dead source looks like a quiet one.</td></tr>
+<tr><td>Probe rows filtered out</td><td>Rows written by tests, crawlers and health probes never appear on Jeff's pages or in counts.</td><td>Needs a marker on probe rows that /v1 can filter on. Inferred: filter by owning principal.</td></tr>
+</tbody>
+</table></div>
+</section>
+</div>
+
+<script src="https://cdn.jsdelivr.net/npm/mermaid@10.9.1/dist/mermaid.min.js"></script>
+<script>if(window.mermaid){mermaid.initialize({startOnLoad:true,theme:"neutral"});}</script>
+</html>

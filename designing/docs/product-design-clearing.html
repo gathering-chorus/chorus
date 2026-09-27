@@ -1,0 +1,143 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Product Design — The Clearing</title>
+<style>
+* { margin:0; padding:0; box-sizing:border-box; }
+body { font-family:-apple-system,'Helvetica Neue',sans-serif; background:#fafafa; color:#1a1a2e; padding:40px 16px; max-width:1100px; margin:0 auto; line-height:1.6; }
+@media (min-width:800px){ body{ padding:40px 1in; } }
+h1 { font-size:1.4rem; margin-bottom:4px; }
+.subtitle { font-size:0.82rem; color:#666; margin-bottom:24px; }
+h2 { font-size:1.1rem; color:#2d4a7a; margin-top:28px; margin-bottom:10px; border-bottom:1px solid #ddd; padding-bottom:4px; }
+h3 { font-size:0.95rem; margin:14px 0 6px; }
+p, li { margin-bottom:8px; font-size:0.88rem; }
+ul, ol { padding-left:20px; }
+.tw { overflow-x:auto; }
+table { width:100%; border-collapse:collapse; margin:12px 0; font-size:0.84rem; min-width:620px; }
+th { text-align:left; padding:8px 12px; background:#e0e7ff; color:#2d4a7a; font-size:0.78rem; }
+td { padding:8px 12px; border-bottom:1px solid #e5e7eb; vertical-align:top; }
+table.identity { min-width:0; } table.identity th { width:150px; }
+.exp { font-size:1.05rem; font-style:italic; color:#92400e; background:#fffbeb; border-left:4px solid #f59e0b; padding:16px 20px; border-radius:0 8px 8px 0; margin:16px 0; }
+.note { background:#eff6ff; border-left:3px solid #3b82f6; padding:10px 14px; border-radius:0 6px 6px 0; margin:8px 0; font-size:0.84rem; }
+.fail { background:#fef2f2; border-left:3px solid #dc2626; padding:10px 14px; border-radius:0 6px 6px 0; margin:8px 0; font-size:0.84rem; }
+code { background:#f3f4f6; padding:1px 5px; border-radius:3px; font-size:0.82rem; }
+.muted { color:#666; font-size:0.8rem; }
+.pill { font-size:0.72rem; padding:2px 8px; border-radius:99px; white-space:nowrap; }
+.ready { background:#dcfce7; color:#166534; } .part { background:#fef3c7; color:#92400e; } .no { background:#fee2e2; color:#991b1b; }
+.meta { font-size:0.68rem; color:#555; margin-top:30px; text-align:center; padding-top:16px; border-top:1px solid #ddd; }
+</style>
+</head>
+<body>
+
+<h1>Product Design — The Clearing</h1>
+<div class="subtitle">Wren · #4365 · 2026-09-27 · companions: <a href="clearing-flows-4365.html">page flows</a> · <a href="clearing-mocks-4365.html">page mocks</a> · <a href="clearing-architecture-4365.html">architecture</a> · <a href="clearing-dependencies-4365.html">dependencies</a> · <a href="clearing-service-design.html">service design</a> · <a href="clearing-value-stream-design.html">value stream</a></div>
+
+<!-- identity: read from the model — GET http://localhost:3360/v1/products/products/clearing (2026-09-27). Edit the model, not this block. -->
+<table class="identity">
+  <tr><th>label</th><td>The Clearing</td></tr>
+  <tr><th>comment</th><td>Multi-party real-time alignment: browser chat with Jeff and all three AI roles. Parent product of Spine and Pulse.</td></tr>
+  <tr><th>audience</th><td>The owner, watching the team work in real time; the roles, coordinating with one another; and guests observing a session.</td></tr>
+  <tr><th>domains</th><td>cards · messages · streams</td></tr>
+</table>
+
+<h2>1. The experience</h2>
+<div class="exp">I open one place and I can see what the team did overnight, which decisions it needs from me, and who is working on what. I answer, and the work moves. I can trust what I see because every page tells me how fresh it is.</div>
+<p>Today Jeff relays. He checks terminals, retypes into panes, and asks "is Silas still working?". The Clearing's job is to make relaying unnecessary. The team's state is read off the room, the way it was in the Staples war room, instead of being asked for.</p>
+
+<h2>2. Who it is for</h2>
+<ul>
+<li><b>Jeff</b>, the human director. He needs to decide, steer and see, from any device, including off his home network.</li>
+<li><b>Other human principals</b> (Deb, Mark). They join with their own keys and see what they are allowed to see.</li>
+<li><b>Agent principals</b> (Wren, Silas, Kade). They take part in rooms, produce decisions, and are seen working.</li>
+<li><b>Service principals</b> (bridge, crawler, nightly). They post facts but never log in.</li>
+</ul>
+
+<h2>3. What the Clearing is, and is not</h2>
+<p><b>It is</b> the one designed surface over two building blocks. Buzz, our self-hosted Nostr relay, carries talk and proves who said it. The graph (athena-make over Fuseki) holds the work: cards, chunks, sessions, meetings, decisions and plans.</p>
+<p><b>It is not</b> Buzz's own app. That app's join experience was poor when Jeff tried it on 2026-09-26, and it has no board, decision inbox or agent states. It is also not the place where Chorus facts are stored. The relay refuses event kinds it doesn't know, so card moves and decisions stay in the graph.</p>
+<p><b>Not in scope</b> (from the model): what goes on the board and in what order; the log as its own product (Spine); aggregation, dashboards and alert rules (Borg); the composition of vital signs (Pulse); who a participant is (identity).</p>
+
+<h2>4. The product bet</h2>
+<p>If the backend is consistent (one writer per class, one id per message, one source for presence), then a thin client with eight pages can replace relaying. The bet fails if we build pages over data that disagrees with itself. That is why no page is built until the backend bar below is green.</p>
+<p>Two parts of this design have no precedent in the products we researched. The first is agent-run meetings on a real calendar. The second is decisions grouped by the meeting that produced them, with approve-all per group. We design those ourselves. The rest borrows proven patterns: Linear's agent session states (stale after 30 minutes), LangChain Agent Inbox (accept, edit, reply, skip), Slack's rule that agent chatter goes in threads, and Flotilla's room, thread and calendar layout.</p>
+
+<h2>5. The pages</h2>
+<p class="muted">Mocks for every page: <a href="clearing-mocks-4365.html">clearing-mocks-4365.html</a>. How they link: <a href="clearing-flows-4365.html">clearing-flows-4365.html</a>.</p>
+<div class="tw"><table>
+<tr><th>Page</th><th>Job</th><th>Reads</th><th>Waits on</th><th>State</th></tr>
+<tr><td>Today</td><td>Morning landing: decisions owed, what changed, new alerts, who is working</td><td>Decision, Card, Alert, Session</td><td>#4364, #2159, #4085</td><td><span class="pill part">partly</span></td></tr>
+<tr><td>Decisions</td><td>Inbox grouped by meeting run, evidence attached, accept / edit / reply / skip, approve-all</td><td>Decision, MeetingRun, Card, Chunk</td><td>#4364</td><td><span class="pill no">not ready</span></td></tr>
+<tr><td>Rooms</td><td>Talk with roles and people; agent chatter in threads; a tick per message from the relay's OK</td><td>Buzz kind 9 + h tag; Message, Principal</td><td>#4359, #4363, #4356</td><td><span class="pill part">partly</span></td></tr>
+<tr><td>Board</td><td>Process chunks and cards in rank order; read, comment, move, re-rank</td><td>Chunk, ChunkMembership, Card</td><td>#2159 (card state in the graph)</td><td><span class="pill no">not ready</span></td></tr>
+<tr><td>Roles</td><td>Each principal: logged in, session state, card, pane, whether Jeff is looking</td><td>Principal, Session, SessionRun, Presence</td><td>#4348, #4368, #4361</td><td><span class="pill part">partly</span></td></tr>
+<tr><td>Calendar</td><td>Loom meetings on a week grid; each run links to minutes and decisions</td><td>Meeting, Cadence, MeetingRun</td><td>#4364</td><td><span class="pill no">not ready</span></td></tr>
+<tr><td>Plans</td><td>An ordered set of chunks toward an outcome; progress read from cards</td><td>Plan, Chunk, Decision</td><td>#4364, #2159</td><td><span class="pill no">not ready</span></td></tr>
+<tr><td>Alerts</td><td>Only new, changed, or needs-Jeff; firing → acked → resolved</td><td>Alert instance, Monitor</td><td>#4085, #4088</td><td><span class="pill no">not ready</span></td></tr>
+</table></div>
+
+<h3>First build</h3>
+<p>Today, Decisions and Rooms come first, because they remove relays. Board, Roles, Calendar, Plans and Alerts follow. (Kade, 2026-09-27.)</p>
+<h3>The trust strip</h3>
+<p>Every page carries one slim line showing, for each source it reads, the time of that source's last successful write. Lag shows as a time ("board · as of 09:02"). A role's silence shows as "stale 34m" once it passes 30 minutes. Red appears only when a source failed, and it names the source. No page falls back silently to old data. The strip reads one endpoint that returns the last successful write per source. That endpoint doesn't exist yet, so it is part of the bar.</p>
+<p>A message tick means a Delivery row shows the message reached the recipient's presence (#4340). The relay's OK only means Buzz took it, so it shows as sent, not delivered.</p>
+
+<h2>6. What "good" looks like</h2>
+<ul>
+<li>Jeff reaches a decision from the Today page and answers it in one step. The run that asked resumes.</li>
+<li>A message Jeff sends shows once, with its tick, and the role's reply arrives in the same room, including replies written while the Clearing was restarting.</li>
+<li>The Roles page and nudge delivery agree about where each role is, because both read Presence.</li>
+<li>Jeff's typing is never interrupted by a wake line (#4362).</li>
+<li>Coordination touches per card fall toward his target of two: start and accept.</li>
+</ul>
+
+<h2>7. Backend first: the bar</h2>
+<p>No page is built until these hold. Silas and Wren agreed them on 2026-09-27.</p>
+<ul>
+<li>The login scenarios are green on a fixture store, with only a read-only check against live (#4367).</li>
+<li>athena-validate is clean on Principal, Session, SessionRun and Presence.</li>
+<li>Pulse delivers from Presence only; the registry file is gone (#4361).</li>
+<li>Zero <code>session.row.failed</code> in 24 hours.</li>
+<li>Zero probe or test rows in served collections (#4370).</li>
+<li>Relay liveness is in chorus-health (#4366). The relay was once down for 16 hours without anyone noticing.</li>
+<li>One endpoint returns the last successful write for each source the Clearing reads.</li>
+<li>The authn-coverage probe (#3960) is green on every Clearing route, because Jeff uses it off his home network.</li>
+<li>Two nightlies green on these suites.</li>
+</ul>
+<div class="tw"><table>
+<tr><th>Order</th><th>Card</th><th>Owner</th><th>Chunk</th></tr>
+<tr><td>1</td><td>#4345 login/logout (landed 2026-09-27)</td><td>silas</td><td>security</td></tr>
+<tr><td>2</td><td>#4348 principal rows complete</td><td>silas</td><td>security</td></tr>
+<tr><td>3</td><td>#4368 login reads the Principal row</td><td>silas</td><td>security</td></tr>
+<tr><td>4</td><td>#4366 relay liveness in chorus-health</td><td>silas</td><td>observability</td></tr>
+<tr><td>5</td><td>#4370 probe-row sweep of served collections</td><td>silas</td><td>security</td></tr>
+<tr><td>6</td><td>#4359 Buzz key → principal (5 of 7 keys already bound)</td><td>silas</td><td>security</td></tr>
+<tr><td>7</td><td>#4367 login scenarios as .feature on the bats harness</td><td>silas</td><td>werk-reliability</td></tr>
+<tr><td>—</td><td>#4362 wake line waits while Jeff types (P1)</td><td>wren</td><td>messages</td></tr>
+<tr><td>—</td><td>#4360 SessionStart boots from rows; the role speaks first</td><td>wren</td><td>messages</td></tr>
+<tr><td>—</td><td>#4361 pulse delivers from Presence</td><td>wren</td><td>messages</td></tr>
+<tr><td>—</td><td>#4363 one message id, full history</td><td>wren</td><td>messages</td></tr>
+<tr><td>—</td><td>#4364 Meeting, Cadence, MeetingRun, Decision, Plan</td><td>wren</td><td>model-core</td></tr>
+<tr><td>—</td><td>#4358 type the kinds; athena-validate reports empty dependency edges</td><td>wren</td><td>model-core</td></tr>
+<tr><td>after bar</td><td>#4369 spine envelope (principal + session)</td><td>silas</td><td>security</td></tr>
+<tr><td>after bar</td><td>#4356 Clearing ↔ Buzz bridge (held), then the page build cards for Kade</td><td>wren → kade</td><td>clearing</td></tr>
+</table></div>
+
+<h2>8. Four hats</h2>
+<h3>PM (Wren)</h3>
+<p>The value is Jeff's attention. Every page is judged by whether it removes a relay. The two parts nobody else has done (the meeting calendar and grouped decisions) are the product. Everything else should be boring and reliable.</p>
+<h3>Domain architect (Silas)</h3>
+<p>Build top-down, with each level green before the next: Principal → Session → SessionRun → Presence → Context → Conversation → Message/Delivery/Channel → key ↔ principal → spine envelope. Each class has one writer. Presence already has one: chorus-principal (one binary since #4345), writing only its own role's row at login and on each turn. Keep it that way. Pulse reads Presence (#4361) and never writes reachability; delivery results come back through the seen path.</p>
+<h3>Engineering lead (Kade)</h3>
+<p>The client subscribes to the relay before it replays history, because the relay has no global sequence number. It dedupes by the one message id (#4363), or replies would show twice. It reads /v1 collections, never CLI text scrapes. It drops the six message stores for one id. Polling (3–15 seconds today) gives way to relay subscriptions plus event-driven refresh. Page cards read /v1 collections only; any field a page needs that the model lacks becomes a model card first. Every page card ships a browser test against the chorus-test store (#4332), never prod, and never Jeff as the test.</p>
+<h3>Operations lead (Silas)</h3>
+<p>Every source the Clearing reads has a freshness a page can show, and a failure the health check can see. The relay, athena-make, pulse and Fuseki are each checked. A red trust strip must match a red in chorus-health.</p>
+
+<h2>9. What the model says today</h2>
+<div class="fail">The Clearing product records three domains and no products it consumes. <code>dependsOn</code> is empty on all 70 domains, so the dependency view had to be drawn by hand (<a href="clearing-dependencies-4365.html">dependencies</a>). Several concepts exist twice with different owners: messages / messages-domain, roles / roles-domain, streams / streams-domain, and cards / cards-service / board. #4358 makes athena-validate report these gaps.</div>
+<div class="note">The model's own <code>gaps</code> field for the Clearing already named three of this design's drivers: no per-participant identity on the public door, delivery by terminal injection rather than subscription, and a verb family designed but not modeled.</div>
+
+<div class="meta">Product Design — The Clearing · #4365 · Wren · 2026-09-27 · research: today's Clearing, backend data per face, human+agent tools on the web, Buzz protocol at b0d6fb8a</div>
+</body>
+</html>

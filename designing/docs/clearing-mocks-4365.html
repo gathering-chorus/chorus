@@ -1,0 +1,644 @@
+<!DOCTYPE html>
+<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Clearing Page Mocks</title>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Instrument+Sans:wght@400;500;600;700&family=JetBrains+Mono:wght@400;600&display=swap">
+<style>
+:root{
+--bg:#eef1ee;--frame:#fbfcfa;--panel:#ffffff;--sunk:#f3f5f2;--ink:#1c2621;--muted:#5f6b65;--faint:#8b958f;--line:#d7ddd8;--line2:#e6eae6;
+--accent:#2f6a5a;--accentbg:#e3efe9;--chrome:#e2e7e3;
+--ok:#3d7a4a;--okbg:#e6f2e8;--warn:#8a6a12;--warnbg:#f6efda;--bad:#b4452f;--badbg:#fbece7;--info:#35618a;--infobg:#e6eef6;
+--jeff:#7a5230;--wren:#2f6a5a;--silas:#35618a;--kade:#7b4a86;--deb:#8a6a12;
+--callout:#c2562f;--code:#edf1ee}
+@media (prefers-color-scheme: dark){:root:not([data-theme="light"]){
+--bg:#101614;--frame:#151d1a;--panel:#1a2420;--sunk:#131b18;--ink:#e1e9e4;--muted:#99a79f;--faint:#6f7d76;--line:#2a3833;--line2:#22302b;
+--accent:#83c4ae;--accentbg:#1c2f28;--chrome:#1f2a26;
+--ok:#88c497;--okbg:#1b2c20;--warn:#e0bd5a;--warnbg:#2e2815;--bad:#e8836b;--badbg:#35211c;--info:#8fb8e0;--infobg:#1a2633;
+--jeff:#d9a877;--wren:#83c4ae;--silas:#8fb8e0;--kade:#c79ad2;--deb:#e0bd5a;
+--callout:#f08a60;--code:#202b27;color-scheme:dark}}
+:root[data-theme="dark"]{
+--bg:#101614;--frame:#151d1a;--panel:#1a2420;--sunk:#131b18;--ink:#e1e9e4;--muted:#99a79f;--faint:#6f7d76;--line:#2a3833;--line2:#22302b;
+--accent:#83c4ae;--accentbg:#1c2f28;--chrome:#1f2a26;
+--ok:#88c497;--okbg:#1b2c20;--warn:#e0bd5a;--warnbg:#2e2815;--bad:#e8836b;--badbg:#35211c;--info:#8fb8e0;--infobg:#1a2633;
+--jeff:#d9a877;--wren:#83c4ae;--silas:#8fb8e0;--kade:#c79ad2;--deb:#e0bd5a;
+--callout:#f08a60;--code:#202b27;color-scheme:dark}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--ink);font:15px/1.55 "Instrument Sans",system-ui,-apple-system,"Segoe UI",sans-serif;overflow-x:hidden}
+.wrap{max-width:1120px;margin:0 auto;padding:28px 16px 72px;display:grid;gap:44px}
+h1{font-size:30px;margin:0;line-height:1.2;text-wrap:balance}
+h2{font-size:20px;margin:0;text-wrap:balance}
+h3{font-size:15px;margin:0}
+p{margin:0;max-width:72ch}
+.lede{color:var(--muted);margin-top:6px}
+.mono,.eyebrow,.tag,.kbd{font-family:"JetBrains Mono",ui-monospace,Menlo,monospace}
+.eyebrow{font-size:11px;font-weight:600;letter-spacing:.08em;text-transform:uppercase;color:var(--accent)}
+.legend{display:flex;flex-wrap:wrap;gap:8px 16px;font-size:13px;color:var(--muted);margin-top:12px}
+.legend span{display:inline-flex;align-items:center;gap:6px}
+
+/* mock section */
+.mock{display:grid;gap:12px;min-width:0}
+.cap{display:grid;gap:4px}
+.cap .reads{font:12px/1.5 "JetBrains Mono",monospace;color:var(--muted)}
+.cap .reads b{color:var(--ink);font-weight:600}
+
+/* browser frame */
+.frame{border:1px solid var(--line);border-radius:10px;background:var(--frame);overflow:hidden;box-shadow:0 1px 0 var(--line2),0 10px 28px -18px rgba(0,0,0,.25);min-width:0}
+.bar{display:flex;align-items:center;gap:10px;padding:8px 12px;background:var(--chrome);border-bottom:1px solid var(--line)}
+.dots{display:flex;gap:5px;flex:none}.dots i{width:9px;height:9px;border-radius:50%;background:var(--line)}
+.url{flex:1;min-width:0;font:12px "JetBrains Mono",monospace;color:var(--muted);background:var(--frame);border:1px solid var(--line);border-radius:6px;padding:3px 10px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.scroll{overflow-x:auto}
+nav.top{display:flex;align-items:center;gap:2px;padding:0 12px;border-bottom:1px solid var(--line2);overflow-x:auto;white-space:nowrap;scrollbar-width:none}
+nav.top .brand{font-weight:700;margin-right:10px;color:var(--accent);font-size:14px}
+nav.top a{font-size:13px;color:var(--muted);text-decoration:none;padding:9px 8px;border-bottom:2px solid transparent}
+nav.top a.on{color:var(--ink);border-bottom-color:var(--accent);font-weight:600}
+nav.top .n{font:600 10px "JetBrains Mono",monospace;background:var(--accentbg);color:var(--accent);border-radius:99px;padding:1px 6px;margin-left:4px}
+.strip{display:flex;flex-wrap:wrap;gap:6px 14px;padding:6px 14px;font:11.5px "JetBrains Mono",monospace;color:var(--muted);background:var(--sunk);border-bottom:1px solid var(--line2)}
+.strip span{white-space:nowrap}
+.strip i{display:inline-block;width:6px;height:6px;border-radius:50%;background:var(--ok);margin-right:5px;vertical-align:1px}
+.strip i.lag{background:var(--faint)}
+.strip .fail{color:var(--bad)}.strip .fail i{background:var(--bad)}
+.page{padding:18px 16px 22px;display:grid;gap:18px;min-width:0}
+.ph{display:flex;justify-content:space-between;align-items:baseline;gap:8px;flex-wrap:wrap}
+.ph h2{font-size:19px}
+.sub{font-size:13px;color:var(--muted)}
+
+/* callouts */
+.co{display:inline-grid;place-items:center;width:18px;height:18px;border-radius:50%;background:var(--callout);color:#fff;font:700 10.5px/1 "JetBrains Mono",monospace;vertical-align:2px;margin:0 3px;flex:none}
+.notes{list-style:none;margin:0;padding:0;display:grid;gap:6px;font-size:13.5px;color:var(--muted)}
+.notes li{display:flex;gap:8px;align-items:flex-start}
+.notes li .co{margin-top:2px}
+
+/* shared bits */
+.card{background:var(--panel);border:1px solid var(--line);border-radius:8px;padding:12px 14px;min-width:0}
+.grid2{display:grid;grid-template-columns:repeat(auto-fit,minmax(290px,1fr));gap:14px}
+.sec-t{font:600 11px "JetBrains Mono",monospace;letter-spacing:.07em;text-transform:uppercase;color:var(--muted);margin-bottom:8px;display:flex;gap:6px;align-items:center;flex-wrap:wrap}
+.tag{font-size:10.5px;font-weight:600;border-radius:99px;padding:2px 8px;white-space:nowrap;display:inline-block}
+.t-ok{background:var(--okbg);color:var(--ok)}.t-warn{background:var(--warnbg);color:var(--warn)}.t-bad{background:var(--badbg);color:var(--bad)}.t-info{background:var(--infobg);color:var(--info)}.t-mut{background:var(--sunk);color:var(--muted);border:1px solid var(--line2)}.t-acc{background:var(--accentbg);color:var(--accent)}
+.cid{font:600 12px "JetBrains Mono",monospace;color:var(--accent);text-decoration:none;white-space:nowrap}
+.btn{font:600 12px "Instrument Sans",sans-serif;border:1px solid var(--line);background:var(--panel);color:var(--ink);border-radius:6px;padding:4px 10px;white-space:nowrap;cursor:default}
+.btn.pri{background:var(--accent);border-color:var(--accent);color:var(--frame)}
+.btn.ghost{border-color:transparent;background:transparent;color:var(--muted)}
+.row{display:flex;gap:8px;align-items:center;flex-wrap:wrap}
+.list{display:grid}
+.li{display:flex;gap:10px;align-items:flex-start;padding:8px 0;border-top:1px solid var(--line2);font-size:14px}
+.li:first-child{border-top:0;padding-top:2px}
+.li .grow{flex:1;min-width:0}
+.meta{font-size:12px;color:var(--muted)}
+.av{width:24px;height:24px;border-radius:50%;flex:none;display:grid;place-items:center;font:700 11px "Instrument Sans",sans-serif;color:var(--frame)}
+.a-jeff{background:var(--jeff)}.a-wren{background:var(--wren)}.a-silas{background:var(--silas)}.a-kade{background:var(--kade)}.a-deb{background:var(--deb)}
+.who-wren{color:var(--wren)}.who-silas{color:var(--silas)}.who-kade{color:var(--kade)}.who-jeff{color:var(--jeff)}
+.dot{width:8px;height:8px;border-radius:50%;display:inline-block;flex:none}
+.d-ok{background:var(--ok)}.d-warn{background:var(--warn)}.d-bad{background:var(--bad)}.d-mut{background:var(--faint)}.d-info{background:var(--info)}
+.ex{font:600 10px "JetBrains Mono",monospace;letter-spacing:.06em;text-transform:uppercase;color:var(--warn);background:var(--warnbg);border-radius:4px;padding:2px 6px;white-space:nowrap}
+
+/* decisions */
+.grp{border:1px solid var(--line);border-radius:8px;background:var(--panel);overflow:hidden}
+.grp-h{display:flex;justify-content:space-between;gap:8px;flex-wrap:wrap;align-items:center;padding:10px 14px;background:var(--sunk);border-bottom:1px solid var(--line2)}
+.grp-h h3{font-size:14px}
+.dec{padding:12px 14px;border-top:1px solid var(--line2);display:grid;gap:8px}
+.dec:first-of-type{border-top:0}
+.q{font-weight:600;font-size:14.5px}
+.ev{display:flex;flex-wrap:wrap;gap:6px}
+.ev a{font:12px "JetBrains Mono",monospace;text-decoration:none;color:var(--ink);border:1px solid var(--line);border-radius:5px;padding:2px 8px;background:var(--sunk)}
+.ev a b{color:var(--accent)}
+.prop{font-size:13.5px;color:var(--muted);border-left:3px solid var(--accentbg);padding-left:10px}
+
+/* rooms */
+.rooms{display:grid;grid-template-columns:170px 1fr;min-height:420px}
+.rside{border-right:1px solid var(--line2);padding:12px;font-size:13.5px;display:grid;gap:3px;align-content:start;background:var(--sunk)}
+.rside .r{padding:4px 8px;border-radius:5px;color:var(--muted);display:flex;justify-content:space-between}
+.rside .r.on{background:var(--accentbg);color:var(--ink);font-weight:600}
+.rside .lab{font:600 10.5px "JetBrains Mono",monospace;text-transform:uppercase;letter-spacing:.07em;color:var(--faint);margin:10px 0 2px}
+.chat{display:grid;align-content:start;min-width:0}
+.msg{display:flex;gap:10px;padding:10px 14px;position:relative}
+.msg:hover{background:var(--sunk)}
+.msg .body{flex:1;min-width:0;font-size:14px}
+.msg .nm{font-weight:600;font-size:13.5px}
+.msg .tm{font:11px "JetBrains Mono",monospace;color:var(--faint);margin-left:6px}
+.tick{font:11px "JetBrains Mono",monospace;color:var(--ok);margin-left:6px;white-space:nowrap}
+.tick.pend{color:var(--faint)}
+.thr{margin-top:6px;display:inline-flex;gap:8px;align-items:center;font-size:12.5px;color:var(--muted);border:1px solid var(--line2);border-radius:6px;padding:3px 9px;background:var(--panel)}
+.thr .avs{display:inline-flex}.thr .avs .av{width:16px;height:16px;font-size:8px;margin-right:-4px;border:1.5px solid var(--panel)}
+.oc{position:absolute;right:12px;top:8px}
+.compose{margin:10px 14px 14px;border:1px solid var(--line);border-radius:8px;padding:10px 12px;color:var(--faint);font-size:14px;display:flex;justify-content:space-between;gap:8px;background:var(--panel)}
+.sep{font:11px "JetBrains Mono",monospace;color:var(--faint);text-align:center;padding:8px 0}
+
+/* board */
+.board{display:grid;grid-template-columns:1fr 320px;gap:0;min-height:460px}
+.bmain{padding:14px;display:grid;gap:12px;align-content:start;min-width:0}
+.chunk{border:1px solid var(--line);border-radius:8px;background:var(--panel)}
+.chunk-h{display:flex;gap:10px;align-items:center;padding:9px 12px;border-bottom:1px solid var(--line2);flex-wrap:wrap}
+.rank{font:700 12px "JetBrains Mono",monospace;color:var(--frame);background:var(--accent);border-radius:5px;padding:1px 7px}
+.chunk-h h3{font-size:14px;flex:1}
+.bar-p{height:5px;border-radius:3px;background:var(--line2);overflow:hidden;width:90px}
+.bar-p i{display:block;height:100%;background:var(--ok)}
+.crow{display:grid;grid-template-columns:22px 58px 1fr auto;gap:8px;align-items:center;padding:7px 12px;font-size:13.5px;border-top:1px solid var(--line2)}
+.crow:first-of-type{border-top:0}
+.crow .rk{font:11px "JetBrains Mono",monospace;color:var(--faint)}
+.crow.sel{background:var(--accentbg)}
+.detail{border-left:1px solid var(--line2);padding:14px;display:grid;gap:12px;align-content:start;background:var(--panel);min-width:0}
+.detail h3{font-size:16px;line-height:1.3}
+.kv{display:grid;grid-template-columns:80px 1fr;gap:4px 10px;font-size:13px}
+.kv dt{color:var(--muted)}.kv dd{margin:0}
+.ac{margin:0;padding-left:0;list-style:none;display:grid;gap:4px;font-size:13px}
+.ac li::before{content:"○ ";color:var(--faint)}
+.ac li.done::before{content:"● ";color:var(--ok)}
+
+/* roles */
+table{border-collapse:collapse;width:100%;font-size:13.5px}
+th,td{text-align:left;padding:9px 10px;border-bottom:1px solid var(--line2);vertical-align:top}
+th{font:600 10.5px/1.2 "JetBrains Mono",monospace;letter-spacing:.06em;text-transform:uppercase;color:var(--muted);background:var(--sunk)}
+.tw{border:1px solid var(--line);border-radius:8px;overflow-x:auto;background:var(--panel)}
+.tw table{min-width:760px}
+tr.you td{background:var(--accentbg)}
+.st{display:inline-flex;gap:6px;align-items:center;white-space:nowrap;font-weight:500}
+
+/* calendar */
+.cal{display:grid;grid-template-columns:52px repeat(7,minmax(92px,1fr));min-width:760px;font-size:12px;border:1px solid var(--line);border-radius:8px;overflow:hidden;background:var(--panel)}
+.cal .h{background:var(--sunk);padding:7px 6px;font:600 11px "JetBrains Mono",monospace;color:var(--muted);border-bottom:1px solid var(--line2);border-left:1px solid var(--line2)}
+.cal .h.today{color:var(--accent)}
+.cal .tl{font:11px "JetBrains Mono",monospace;color:var(--faint);padding:6px;border-top:1px solid var(--line2);height:58px}
+.cal .c{border-left:1px solid var(--line2);border-top:1px solid var(--line2);padding:4px;height:58px;display:grid;gap:3px;align-content:start}
+.cal .c.today{background:var(--accentbg)}
+.ev2{border-radius:4px;padding:2px 6px;font-size:11px;line-height:1.3;border-left:3px solid;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.e-tri{background:var(--accentbg);border-color:var(--wren);color:var(--ink)}
+.e-shp{background:var(--warnbg);border-color:var(--warn);color:var(--ink)}
+.e-tst{background:var(--infobg);border-color:var(--info);color:var(--ink)}
+.e-past{opacity:.62}
+.e-sel{outline:2px solid var(--callout);outline-offset:1px;opacity:1}
+.e-red{border-color:var(--bad)}
+.minutes{display:grid;grid-template-columns:repeat(auto-fit,minmax(280px,1fr));gap:14px}
+
+/* plans */
+.step{display:grid;grid-template-columns:28px 1fr auto;gap:10px;align-items:center;padding:10px 12px;border-top:1px solid var(--line2)}
+.step:first-child{border-top:0}
+.num{width:24px;height:24px;border-radius:50%;display:grid;place-items:center;font:700 11px "JetBrains Mono",monospace;border:1.5px solid var(--line);color:var(--muted)}
+.num.done{background:var(--ok);border-color:var(--ok);color:var(--frame)}
+.num.now{border-color:var(--accent);color:var(--accent)}
+.pbar{height:6px;border-radius:3px;background:var(--line2);overflow:hidden;margin-top:5px;max-width:320px}
+.pbar i{display:block;height:100%;background:var(--ok)}
+.pbar i.b{background:var(--bad)}
+.segs{display:flex;gap:2px;margin-top:5px}
+.segs i{width:14px;height:6px;border-radius:2px;background:var(--line2)}
+.segs i.d{background:var(--ok)}.segs i.w{background:var(--accent)}.segs i.x{background:var(--bad)}
+
+/* alerts */
+.al{display:grid;grid-template-columns:auto 1fr auto;gap:10px 12px;align-items:start;padding:11px 14px;border-top:1px solid var(--line2)}
+.al:first-of-type{border-top:0}
+.why{font:600 10.5px "JetBrains Mono",monospace;color:var(--muted)}
+.hid{font-size:13px;color:var(--muted);padding:10px 14px;border-top:1px dashed var(--line);background:var(--sunk)}
+
+@media (max-width:760px){
+ .rooms{grid-template-columns:1fr}
+ .rside{border-right:0;border-bottom:1px solid var(--line2);grid-template-columns:repeat(auto-fill,minmax(110px,1fr))}
+ .rside .lab{grid-column:1/-1;margin:4px 0 0}
+ .board{grid-template-columns:1fr}
+ .detail{border-left:0;border-top:1px solid var(--line2)}
+ .oc{position:static;display:inline-block;margin-top:6px}
+}
+@media (max-width:480px){
+ .crow{grid-template-columns:18px 50px 1fr;}
+ .crow .tag{grid-column:3}
+ .al{grid-template-columns:auto 1fr}
+ .al .row.end{grid-column:2}
+ .page{padding:14px 12px 18px}
+ h1{font-size:25px}
+}
+</style>
+
+<div class="wrap">
+<header>
+<div class="eyebrow">Revamped Clearing · page mocks · 2026-09-27 · Wren</div>
+<h1>Clearing Page Mocks</h1>
+<p class="lede">Eight static mocks of the pages in the flows draft. Each sits in a browser frame with the page's job and the data it reads. Numbered dots mark design choices that matter. All names, cards, times and counts are example data drawn from this week's work, not live reads.</p>
+<div class="legend">
+<span><span class="co">1</span>design choice, note under the frame</span>
+<span><span class="ex">example data</span>not a live read</span>
+<span><span class="av a-jeff">J</span>Jeff</span><span><span class="av a-wren">W</span>Wren</span><span><span class="av a-silas">S</span>Silas</span><span><span class="av a-kade">K</span>Kade</span>
+</div>
+</header>
+
+<!-- ===================== 1 TODAY ===================== -->
+<section class="mock">
+<div class="cap">
+<div class="eyebrow">Mock 1 · Today</div>
+<h2>Today: where Jeff lands</h2>
+<p>Job: tell Jeff what needs his hand and what moved while he slept, in one screen.</p>
+<div class="reads">Reads: <b>Decision</b> + <b>MeetingRun</b> rows · <b>card state</b> changes since last visit · <b>Alert</b> instances (new/changed) · <b>Session</b> + <b>Presence</b></div>
+</div>
+<div class="frame">
+<div class="bar"><div class="dots"><i></i><i></i><i></i></div><div class="url">clearing.local/today</div></div>
+<nav class="top"><span class="brand">Clearing</span><a class="on">Today</a><a>Decisions<span class="n">4</span></a><a>Rooms</a><a>Board</a><a>Roles</a><a>Calendar</a><a>Plans</a><a>Alerts<span class="n">2</span></a></nav>
+<div class="strip"><span><i></i>board · as of 09:02</span><span><i></i>rooms · live</span><span><i></i>decisions · as of 09:04</span><span><i class="lag"></i>roles · silas stale 34m</span><span><i></i>alerts · as of 09:03</span><span class="co">1</span></div>
+<div class="page">
+<div class="ph"><h2>Sunday, Sep 27 · 09:05</h2><span class="ex">example data</span></div>
+
+<div class="grid2">
+<div class="card" style="grid-column:1/-1">
+<div class="sec-t">Decisions owed · 4 <span class="co">2</span></div>
+<div class="grp" style="border:0">
+<div class="grp-h" style="border-radius:6px"><div><h3>Overnight triage · Wren's chunks</h3><div class="meta mono">ran 02:00–02:14 · 3 decisions</div></div><div class="row"><button class="btn">Open</button><button class="btn pri">Approve all 3</button></div></div>
+<div class="list" style="padding:4px 2px 0">
+<div class="li"><span class="dot d-warn" style="margin-top:7px"></span><div class="grow">Split #4361 so pulse delivery lands before the Presence rewrite?<div class="meta">evidence: <a class="cid">#4361</a> · chunk <b>messages</b></div></div></div>
+<div class="li"><span class="dot d-warn" style="margin-top:7px"></span><div class="grow">Move #4364 behind #4360 in model-core?<div class="meta">evidence: <a class="cid">#4360</a> <a class="cid">#4364</a></div></div></div>
+<div class="li"><span class="dot d-warn" style="margin-top:7px"></span><div class="grow">Close #4329 as removed by stability work?<div class="meta">evidence: <a class="cid">#4329</a></div></div></div>
+</div>
+</div>
+<div class="grp" style="border:0;margin-top:8px">
+<div class="grp-h" style="border-radius:6px"><div><h3>Nightly tests</h3><div class="meta mono">ran 06:00–06:41 · 1 decision</div></div><div class="row"><button class="btn">Open</button></div></div>
+<div class="list" style="padding:4px 2px 0">
+<div class="li"><span class="dot d-bad" style="margin-top:7px"></span><div class="grow">1 red: product broke, not the test. Hold the #4362 land until Kade fixes it?<div class="meta">evidence: <a class="cid">#4362</a> · run 06:00</div></div></div>
+</div>
+</div>
+</div>
+
+<div class="card">
+<div class="sec-t">Changed overnight <span class="co">3</span></div>
+<div class="list">
+<div class="li"><span class="tag t-ok">landed</span><div class="grow"><a class="cid">#4345</a> login mints a session row<div class="meta">Silas · 23:48</div></div></div>
+<div class="li"><span class="tag t-ok">landed</span><div class="grow"><a class="cid">#4357</a> LAN-IP ratchet counts -wal/-shm<div class="meta">Kade · 22:10</div></div></div>
+<div class="li"><span class="tag t-bad">blocked</span><div class="grow"><a class="cid">#4362</a> hold the wake line while Jeff types<div class="meta">Kade · nightly red 06:41</div></div></div>
+<div class="li"><span class="tag t-mut">moved</span><div class="grow"><a class="cid">#4360</a> Next → WIP<div class="meta">Wren · 07:12</div></div></div>
+</div>
+<div class="meta" style="margin-top:6px">+ 6 more moves · <a class="cid">show</a></div>
+</div>
+
+<div class="card">
+<div class="sec-t">Alerts · new or changed only</div>
+<div class="list">
+<div class="li"><span class="tag t-bad">firing</span><div class="grow">Relay write-backs lost · 14 since 03:10<div class="meta">new · <a class="cid">#4366</a></div></div></div>
+<div class="li"><span class="tag t-warn">acked</span><div class="grow">Fuseki backup older than 26h<div class="meta">changed: Silas acked 08:20 · <a class="cid">#4171</a></div></div></div>
+</div>
+<div class="sec-t" style="margin-top:14px">Working now</div>
+<div class="list">
+<div class="li"><span class="av a-wren">W</span><div class="grow">Wren · <span class="st"><span class="dot d-ok"></span>working</span><div class="meta"><a class="cid">#4360</a> SessionStart boots from session rows</div></div></div>
+<div class="li"><span class="av a-kade">K</span><div class="grow">Kade · <span class="st"><span class="dot d-warn"></span>waiting on you</span><div class="meta"><a class="cid">#4362</a> needs the hold decision</div></div></div>
+<div class="li"><span class="av a-silas">S</span><div class="grow">Silas · <span class="st"><span class="dot d-mut"></span>stale 34m</span><div class="meta"><a class="cid">#4361</a> last said 08:31</div></div></div>
+</div>
+</div>
+</div>
+</div>
+</div>
+<ul class="notes">
+<li><span class="co">1</span>Trust strip: each chip is a source's last write. Lag reads as a time or grey dot. Red appears only when a source fails.</li>
+<li><span class="co">2</span>Decisions come first and group by the meeting run that asked them, so Jeff answers a meeting, not a pile.</li>
+<li><span class="co">3</span>"Changed overnight" is a diff since Jeff's last visit, not a feed. It caps at four with the rest folded.</li>
+</ul>
+</section>
+
+<!-- ===================== 2 DECISIONS ===================== -->
+<section class="mock">
+<div class="cap">
+<div class="eyebrow">Mock 2 · Decisions</div>
+<h2>Decisions: an inbox grouped by meeting run</h2>
+<p>Job: let Jeff answer what a meeting asked, with the evidence one click away. His answer is a signed event and the run resumes.</p>
+<div class="reads">Reads: <b>Decision</b> (question, proposal, evidence edges) · <b>MeetingRun</b> · <b>Card</b> + <b>Chunk</b> for evidence. Writes: signed answer event.</div>
+</div>
+<div class="frame">
+<div class="bar"><div class="dots"><i></i><i></i><i></i></div><div class="url">clearing.local/decisions</div></div>
+<nav class="top"><span class="brand">Clearing</span><a>Today</a><a class="on">Decisions<span class="n">4</span></a><a>Rooms</a><a>Board</a><a>Roles</a><a>Calendar</a><a>Plans</a><a>Alerts<span class="n">2</span></a></nav>
+<div class="strip"><span><i></i>decisions · as of 09:04</span><span><i></i>board · as of 09:02</span><span><i></i>relay · live</span></div>
+<div class="page">
+<div class="ph"><h2>Owed · 4</h2><div class="row"><span class="tag t-acc">owed 4</span><span class="tag t-mut">answered today 2</span><span class="ex">example data</span></div></div>
+
+<div class="grp">
+<div class="grp-h"><div><h3>Overnight triage · Wren's chunks</h3><div class="meta mono">ran 02:00–02:14 · <a class="cid">minutes</a> · 3 owed</div></div><div class="row"><button class="btn pri">Approve all 3 <span class="co" style="background:var(--frame);color:var(--callout)">1</span></button></div></div>
+
+<div class="dec">
+<div class="row" style="justify-content:space-between"><div class="q">Split #4361 so pulse delivery lands before the Presence rewrite?</div><span class="meta mono">asked by Wren</span></div>
+<div class="prop">Proposal: ship delivery from the current Presence rows now, move the rewrite to a follow-on card. Keeps the messages chunk moving.</div>
+<div class="ev"><span class="co">2</span><a><b>#4361</b> pulse delivers from Presence</a><a><b>#4360</b> SessionStart boots from session rows</a><a>chunk <b>messages</b> · 2 of 5 done</a></div>
+<div class="row"><button class="btn pri">Accept</button><button class="btn">Edit</button><button class="btn">Reply</button><button class="btn ghost">Skip</button><span class="co">3</span></div>
+</div>
+
+<div class="dec">
+<div class="row" style="justify-content:space-between"><div class="q">Move #4364 behind #4360 in model-core?</div><span class="meta mono">asked by Wren</span></div>
+<div class="prop">Proposal: meetings need session rows to attribute who ran them. Rank #4360 first.</div>
+<div class="ev"><a><b>#4364</b> model loom meetings</a><a><b>#4360</b> SessionStart boots…</a><a>chunk <b>model-core</b></a></div>
+<div class="row"><button class="btn pri">Accept</button><button class="btn">Edit</button><button class="btn">Reply</button><button class="btn ghost">Skip</button></div>
+</div>
+
+<div class="dec" style="background:var(--sunk)">
+<div class="row" style="justify-content:space-between"><div class="q">Close #4329 as removed by stability work?</div><span class="tag t-info">editing</span></div>
+<div style="border:1px solid var(--accent);border-radius:6px;padding:8px 10px;font-size:13.5px;background:var(--panel)">Close it, but keep the repro note on #4337.<span style="border-left:1.5px solid var(--ink);margin-left:1px"></span></div>
+<div class="row"><button class="btn pri">Send edit</button><button class="btn ghost">Cancel</button><span class="meta">Signed as jeff · relay OK expected</span></div>
+</div>
+</div>
+
+<div class="grp">
+<div class="grp-h"><div><h3>Nightly tests</h3><div class="meta mono">ran 06:00–06:41 · <a class="cid">minutes</a> · 1 owed</div></div></div>
+<div class="dec">
+<div class="row" style="justify-content:space-between"><div class="q">Hold the #4362 land until the red is fixed?</div><span class="meta mono">asked by Kade</span></div>
+<div class="prop">1 red. The product broke, not the test: the wake line drops a keystroke after 40 chars.</div>
+<div class="ev"><a><b>#4362</b> hold the wake line while Jeff types</a><a>run 06:00 · 1 red / 412</a></div>
+<div class="row"><button class="btn pri">Accept</button><button class="btn">Edit</button><button class="btn">Reply</button><button class="btn ghost">Skip</button></div>
+</div>
+</div>
+
+<div class="grp" style="opacity:.75">
+<div class="grp-h"><div><h3>Weekly shaping · answered</h3><div class="meta mono">Mon 07:00 · 2 answered by Jeff · <span class="tick">✓ relay OK</span></div></div><a class="cid">show</a></div>
+</div>
+</div>
+</div>
+<ul class="notes">
+<li><span class="co">1</span>Approve-all belongs to the group, never the page. One meeting's proposals are shaped together, so accepting them together is safe.</li>
+<li><span class="co">2</span>Evidence is chips, not prose: cards and the chunk open in place. The chunk shows its own progress so Jeff sees the stakes.</li>
+<li><span class="co">3</span>Four answers only: accept, edit, reply, skip. Skip is quiet on purpose and leaves the decision owed.</li>
+</ul>
+</section>
+
+<!-- ===================== 3 ROOMS ===================== -->
+<section class="mock">
+<div class="cap">
+<div class="eyebrow">Mock 3 · Rooms</div>
+<h2>Rooms: #team</h2>
+<p>Job: talk with the roles and people. Role working chatter stays in threads so the room reads like a conversation.</p>
+<div class="reads">Reads: Buzz relay (NIP-29 group events, live subscription) · <b>key → principal</b> · relay OK per event · <b>Card</b> for open-card</div>
+</div>
+<div class="frame">
+<div class="bar"><div class="dots"><i></i><i></i><i></i></div><div class="url">clearing.local/rooms/team</div></div>
+<nav class="top"><span class="brand">Clearing</span><a>Today</a><a>Decisions<span class="n">4</span></a><a class="on">Rooms</a><a>Board</a><a>Roles</a><a>Calendar</a><a>Plans</a><a>Alerts<span class="n">2</span></a></nav>
+<div class="strip"><span><i></i>rooms · live</span><span><i></i>history · full to Sep 1</span><span><i class="lag"></i>roles · silas stale 34m</span></div>
+<div class="rooms">
+<div class="rside">
+<div class="lab">Rooms</div>
+<div class="r on"><span># team</span></div>
+<div class="r"><span># gathering</span><span class="mono">2</span></div>
+<div class="r"><span># chorus</span></div>
+<div class="lab">Direct</div>
+<div class="r"><span>Wren</span></div>
+<div class="r"><span>Silas</span></div>
+<div class="r"><span>Kade</span></div>
+<div class="r"><span>Deb <span class="meta">(soon)</span></span></div>
+</div>
+<div class="chat">
+<div class="row" style="justify-content:space-between;padding:10px 14px;border-bottom:1px solid var(--line2)"><div><b># team</b> <span class="meta">Jeff, Wren, Silas, Kade</span></div><span class="ex">example data</span></div>
+<div class="sep">Today</div>
+
+<div class="msg"><span class="av a-jeff">J</span><div class="body"><span class="nm who-jeff">Jeff</span><span class="tm">08:52</span><span class="tick">✓ relay</span><span class="co">1</span><div>Morning. Why is Kade waiting on me?</div></div></div>
+
+<div class="msg"><span class="av a-kade">K</span><div class="body"><span class="nm who-kade">Kade</span><span class="tm">08:54</span><span class="tick">✓ relay</span><div>Nightly went red on #4362. The wake line drops a keystroke after 40 chars. I need a call on holding the land. It's in Decisions.</div>
+<span class="thr"><span class="avs"><span class="av a-kade">K</span><span class="av a-silas">S</span></span>7 working replies · last 08:58<span class="co">2</span></span>
+</div><button class="btn oc">Open #4362 <span class="co" style="margin:0 0 0 2px">3</span></button></div>
+
+<div class="msg"><span class="av a-wren">W</span><div class="body"><span class="nm who-wren">Wren</span><span class="tm">08:59</span><span class="tick">✓ relay</span><div>Overnight triage asked three things about my chunks. Approve-all is safe. None of them touch Kade's red.</div></div><button class="btn oc">Open run</button></div>
+
+<div class="msg"><span class="av a-silas">S</span><div class="body"><span class="nm who-silas">Silas</span><span class="tm">08:31</span><span class="tick">✓ relay</span><div>#4345 landed. Login mints a session row. Starting #4361 next.</div>
+<span class="thr"><span class="avs"><span class="av a-silas">S</span></span>3 working replies · last 08:31</span></div><button class="btn oc">Open #4345</button></div>
+
+<div class="msg"><span class="av a-jeff">J</span><div class="body"><span class="nm who-jeff">Jeff</span><span class="tm">09:04</span><span class="tick pend">… sending</span><div>Hold it. Fix first.</div></div></div>
+
+<div class="compose"><span>Message #team</span><span class="mono" style="font-size:11px">signed as jeff</span></div>
+</div>
+</div>
+</div>
+<ul class="notes">
+<li><span class="co">1</span>The tick is the relay's OK for that signed event, not a guess. "sending" stays grey until the OK arrives, and a refused event turns red with the reason.</li>
+<li><span class="co">2</span>Working chatter (tool steps, status lines) collapses into a thread under the message that started it. The room shows people talking.</li>
+<li><span class="co">3</span>Any message that names a card gets an open-card button. It opens the card panel from the Board over the room.</li>
+</ul>
+</section>
+
+<!-- ===================== 4 BOARD ===================== -->
+<section class="mock">
+<div class="cap">
+<div class="eyebrow">Mock 4 · Board</div>
+<h2>Board: Wren's chunks in rank order</h2>
+<p>Job: process the work. Chunks in rank order, cards in rank order inside, one card open on the side.</p>
+<div class="reads">Reads: <b>Chunk</b> (rank, owner) · <b>Card</b> (rank, state, AC) from the graph · spine events for card history. Writes: move, re-rank, comment.</div>
+</div>
+<div class="frame">
+<div class="bar"><div class="dots"><i></i><i></i><i></i></div><div class="url">clearing.local/board/wren?card=4360</div></div>
+<nav class="top"><span class="brand">Clearing</span><a>Today</a><a>Decisions<span class="n">4</span></a><a>Rooms</a><a class="on">Board</a><a>Roles</a><a>Calendar</a><a>Plans</a><a>Alerts<span class="n">2</span></a></nav>
+<div class="strip"><span><i></i>board · as of 09:02</span><span><i></i>cards · graph</span><span><i class="lag"></i>chunks · as of 07:12</span></div>
+<div class="board">
+<div class="bmain">
+<div class="row" style="justify-content:space-between"><div class="row"><span class="tag t-acc">Wren</span><span class="tag t-mut">Silas</span><span class="tag t-mut">Kade</span><span class="tag t-mut">All</span></div><span class="ex">example data</span></div>
+
+<div class="chunk">
+<div class="chunk-h"><span class="rank">1</span><h3>messages</h3><span class="meta mono">2/5</span><span class="bar-p"><i style="width:40%"></i></span><span class="co">1</span></div>
+<div class="crow sel"><span class="rk">1</span><a class="cid">#4360</a><span>SessionStart boots the role from session rows</span><span class="tag t-info">WIP</span></div>
+<div class="crow"><span class="rk">2</span><a class="cid">#4361</a><span>pulse delivers from Presence</span><span class="tag t-mut">Next</span></div>
+<div class="crow"><span class="rk">3</span><a class="cid">#4363</a><span>one message id</span><span class="tag t-mut">Next</span></div>
+</div>
+
+<div class="chunk">
+<div class="chunk-h"><span class="rank">2</span><h3>model-core</h3><span class="meta mono">0/2</span><span class="bar-p"><i style="width:0"></i></span></div>
+<div class="crow"><span class="rk">1</span><a class="cid">#4364</a><span>model loom meetings</span><span class="tag t-mut">Next</span></div>
+<div class="crow"><span class="rk">2</span><a class="cid">#4362</a><span>hold the wake line while Jeff types</span><span class="tag t-bad">blocked</span></div>
+</div>
+
+<div class="chunk">
+<div class="chunk-h"><span class="rank">3</span><h3>clearing</h3><span class="meta mono">0/1</span><span class="bar-p"><i style="width:0"></i></span></div>
+<div class="crow"><span class="rk">1</span><a class="cid">#4365</a><span>Clearing page flows</span><span class="tag t-mut">Next</span></div>
+</div>
+
+<div class="chunk" style="border-style:dashed">
+<div class="chunk-h"><span class="rank" style="background:var(--faint)">–</span><h3>Unsequenced · 2</h3><span class="co">2</span></div>
+<div class="crow"><span class="rk">·</span><a class="cid">#4337</a><span>on/off repairs itself or gives one command</span><span class="tag t-mut">Next</span></div>
+<div class="crow"><span class="rk">·</span><a class="cid">#4366</a><span>relay write-backs lost</span><span class="tag t-mut">Next</span></div>
+</div>
+</div>
+
+<aside class="detail">
+<div class="row" style="justify-content:space-between"><a class="cid">#4360</a><span class="row"><button class="btn">Move</button><button class="btn ghost">✕</button></span></div>
+<h3>SessionStart boots the role from session rows</h3>
+<dl class="kv">
+<dt>state</dt><dd><span class="tag t-info">WIP</span> since 07:12</dd>
+<dt>owner</dt><dd class="who-wren">Wren</dd>
+<dt>chunk</dt><dd>messages · rank 1 of 3</dd>
+<dt>needs</dt><dd><a class="cid">#4345</a> <span class="tag t-ok">landed</span></dd>
+<dt>werk</dt><dd class="mono" style="font-size:12px">wren-4360 · 3 commits</dd>
+</dl>
+<div><div class="sec-t">Acceptance <span class="co">3</span></div>
+<ul class="ac">
+<li class="done">Boot reads the role's open session row, not a file</li>
+<li class="done">No session row: boot says so in one line</li>
+<li>Stale row older than 30 min is ignored and named</li>
+<li>Jeff sees the same card in Roles and here</li>
+</ul></div>
+<div><div class="sec-t">Latest</div>
+<div class="list">
+<div class="li"><span class="av a-wren" style="width:18px;height:18px;font-size:9px">W</span><div class="grow meta">08:40 · AC2 green against live session rows</div></div>
+<div class="li"><span class="av a-silas" style="width:18px;height:18px;font-size:9px">S</span><div class="grow meta">07:30 · #4345 landed, rows are real now</div></div>
+</div></div>
+<div class="compose" style="margin:0">Comment…</div>
+</aside>
+</div>
+</div>
+<ul class="notes">
+<li><span class="co">1</span>Chunk progress is counted from its cards' states. It is never typed.</li>
+<li><span class="co">2</span>Cards with no chunk stay visible at the bottom, dashed, so nothing hides by being unranked.</li>
+<li><span class="co">3</span>The side panel leads with acceptance, ticked from evidence. On a phone it drops below the list.</li>
+</ul>
+</section>
+
+<!-- ===================== 5 ROLES ===================== -->
+<section class="mock">
+<div class="cap">
+<div class="eyebrow">Mock 5 · Roles</div>
+<h2>Roles: who is here and what they are doing</h2>
+<p>Job: one row per principal so Jeff never has to ask "is Silas still working?"</p>
+<div class="reads">Reads: <b>Principal</b> · <b>Session</b> (login, last event) · andon state row · <b>Presence</b> (pane) · Jeff's own focus from the browser</div>
+</div>
+<div class="frame">
+<div class="bar"><div class="dots"><i></i><i></i><i></i></div><div class="url">clearing.local/roles</div></div>
+<nav class="top"><span class="brand">Clearing</span><a>Today</a><a>Decisions<span class="n">4</span></a><a>Rooms</a><a>Board</a><a class="on">Roles</a><a>Calendar</a><a>Plans</a><a>Alerts<span class="n">2</span></a></nav>
+<div class="strip"><span><i></i>sessions · live</span><span><i></i>presence · as of 09:05</span><span><i class="lag"></i>roles · silas stale 34m</span></div>
+<div class="page">
+<div class="ph"><h2>5 principals · 3 working or waiting</h2><span class="ex">example data</span></div>
+<div class="tw">
+<table>
+<thead><tr><th>Principal</th><th>Logged in</th><th>Session <span class="co">1</span></th><th>Card</th><th>Pane</th><th>Last heard</th></tr></thead>
+<tbody>
+<tr class="you"><td><span class="row"><span class="av a-jeff">J</span><b>Jeff</b></span></td><td>yes · browser</td><td><span class="st"><span class="dot d-ok"></span>working</span></td><td class="meta">–</td><td>Roles <span class="tag t-acc">you are here</span></td><td class="mono meta">now</td></tr>
+<tr><td><span class="row"><span class="av a-wren">W</span><b>Wren</b></span></td><td>yes · key wren</td><td><span class="st"><span class="dot d-ok"></span>working</span></td><td><a class="cid">#4360</a> <span class="meta">SessionStart boots…</span></td><td>Library · pane 2</td><td class="mono meta">09:04</td></tr>
+<tr><td><span class="row"><span class="av a-kade">K</span><b>Kade</b></span></td><td>yes · key kade</td><td><span class="st"><span class="dot d-warn"></span>waiting on you</span><div class="meta">Decisions · hold #4362?</div></td><td><a class="cid">#4362</a> <span class="meta">hold the wake line…</span></td><td>Library · pane 3 <span class="tag t-info">you looked 08:55</span><span class="co">2</span></td><td class="mono meta">08:58</td></tr>
+<tr><td><span class="row"><span class="av a-silas">S</span><b>Silas</b></span></td><td>yes · key silas</td><td><span class="st"><span class="dot d-mut"></span>stale 34m</span><div class="meta">set by system after 30m quiet</div></td><td><a class="cid">#4361</a> <span class="meta">pulse delivers…</span></td><td>Library · pane 1</td><td class="mono meta">08:31</td></tr>
+<tr><td><span class="row"><span class="av a-deb">D</span><b>Deb</b></span></td><td class="meta">no · invited</td><td><span class="st"><span class="dot d-mut" style="background:transparent;border:1.5px solid var(--faint)"></span>off</span></td><td class="meta">–</td><td class="meta">–</td><td class="mono meta">never</td></tr>
+</tbody>
+</table>
+</div>
+<div class="card" style="font-size:13.5px"><div class="sec-t">States <span class="co">3</span></div>
+<div class="row" style="gap:14px"><span class="st"><span class="dot d-ok"></span>working</span><span class="st"><span class="dot d-warn"></span>waiting on you</span><span class="st"><span class="dot d-bad"></span>blocked</span><span class="st"><span class="dot d-mut"></span>stale (30m quiet)</span><span class="st"><span class="dot" style="border:1.5px solid var(--faint)"></span>off</span></div></div>
+</div>
+</div>
+<ul class="notes">
+<li><span class="co">1</span>Five session states. Roles declare working, waiting and blocked. Stale is never declared: the system sets it after 30 minutes with no event.</li>
+<li><span class="co">2</span>"You are looking at this pane" shows where Jeff's attention last went, so a role can see it was seen.</li>
+<li><span class="co">3</span>Red is kept for blocked. Stale is grey on purpose: quiet is not failure.</li>
+</ul>
+</section>
+
+<!-- ===================== 6 CALENDAR ===================== -->
+<section class="mock">
+<div class="cap">
+<div class="eyebrow">Mock 6 · Calendar</div>
+<h2>Calendar: loom meetings on a week grid</h2>
+<p>Job: show the team's standing meetings, and let Jeff open any past run to see what it said and what it asked.</p>
+<div class="reads">Reads: <b>Meeting</b> + <b>Cadence</b> · <b>MeetingRun</b> (start, end, minutes) · <b>Decision</b> by run. Buzz cron fires the runs.</div>
+</div>
+<div class="frame">
+<div class="bar"><div class="dots"><i></i><i></i><i></i></div><div class="url">clearing.local/calendar?week=2026-W39&run=tri-0927</div></div>
+<nav class="top"><span class="brand">Clearing</span><a>Today</a><a>Decisions<span class="n">4</span></a><a>Rooms</a><a>Board</a><a>Roles</a><a class="on">Calendar</a><a>Plans</a><a>Alerts<span class="n">2</span></a></nav>
+<div class="strip"><span><i></i>meetings · as of 09:00</span><span><i></i>runs · as of 06:41</span></div>
+<div class="page">
+<div class="ph"><h2>Week of Sep 21</h2><div class="row"><span class="tag t-acc">Overnight triage</span><span class="tag t-warn">Weekly shaping</span><span class="tag t-info">Nightly tests</span><span class="ex">example data</span></div></div>
+<div class="scroll"><span class="co" style="position:sticky;left:0">1</span>
+<div class="cal">
+<div class="h"></div><div class="h">Mon 21</div><div class="h">Tue 22</div><div class="h">Wed 23</div><div class="h">Thu 24</div><div class="h">Fri 25</div><div class="h">Sat 26</div><div class="h today">Sun 27</div>
+<div class="tl">02:00</div>
+<div class="c"><div class="ev2 e-tri e-past">Triage · 2 dec</div></div><div class="c"><div class="ev2 e-tri e-past">Triage · 0</div></div><div class="c"><div class="ev2 e-tri e-past">Triage · 1 dec</div></div><div class="c"><div class="ev2 e-tri e-past">Triage · 0</div></div><div class="c"><div class="ev2 e-tri e-past">Triage · 3 dec</div></div><div class="c"><div class="ev2 e-tri e-past">Triage · 1 dec</div></div><div class="c today"><div class="ev2 e-tri e-sel">Triage · 3 owed</div></div>
+<div class="tl">06:00</div>
+<div class="c"><div class="ev2 e-tst e-past">Tests · green</div></div><div class="c"><div class="ev2 e-tst e-past">Tests · green</div></div><div class="c"><div class="ev2 e-tst e-past e-red">Tests · 2 red</div></div><div class="c"><div class="ev2 e-tst e-past">Tests · green</div></div><div class="c"><div class="ev2 e-tst e-past">Tests · green</div></div><div class="c"><div class="ev2 e-tst e-past">Tests · green</div></div><div class="c today"><div class="ev2 e-tst e-red">Tests · 1 red</div></div>
+<div class="tl">07:00</div>
+<div class="c"><div class="ev2 e-shp e-past">Weekly shaping</div></div><div class="c"></div><div class="c"></div><div class="c"></div><div class="c"></div><div class="c"></div><div class="c today"></div>
+<div class="tl">13:30</div>
+<div class="c"><div class="ev2 e-tst e-past">Tests · green</div></div><div class="c"><div class="ev2 e-tst e-past">Tests · green</div></div><div class="c"><div class="ev2 e-tst e-past">Tests · green</div></div><div class="c"><div class="ev2 e-tst e-past">Tests · green</div></div><div class="c"><div class="ev2 e-tst e-past">Tests · green</div></div><div class="c"><div class="ev2 e-tst e-past">Tests · green</div></div><div class="c today"><div class="ev2 e-tst" style="opacity:.9;border-style:dashed">Tests · 13:30</div></div>
+</div></div>
+
+<div class="card">
+<div class="row" style="justify-content:space-between;margin-bottom:10px"><div><h3>Overnight triage · Wren's chunks</h3><div class="meta mono">Sun Sep 27 · ran 02:00–02:14 · run tri-0927 · daily 02:00</div></div><div class="row"><button class="btn">Pause meeting</button><button class="btn">Move</button></div></div>
+<div class="minutes">
+<div><div class="sec-t">Minutes <span class="co">2</span></div>
+<div class="list" style="font-size:13.5px">
+<div class="li"><span class="mono meta">02:00</span><div class="grow">Read 3 chunks, 6 cards, 2 overnight lands.</div></div>
+<div class="li"><span class="mono meta">02:04</span><div class="grow">#4361 blocks on the Presence rewrite. Proposed a split.</div></div>
+<div class="li"><span class="mono meta">02:09</span><div class="grow">#4364 needs session rows. Proposed #4360 first.</div></div>
+<div class="li"><span class="mono meta">02:12</span><div class="grow">#4329 no longer reproduces since stability work. Proposed close.</div></div>
+<div class="li"><span class="mono meta">02:14</span><div class="grow">Paused for Jeff. 3 decisions owed.</div></div>
+</div></div>
+<div><div class="sec-t">Decisions it produced · 3</div>
+<div class="list" style="font-size:13.5px">
+<div class="li"><span class="tag t-warn">owed</span><div class="grow">Split #4361 before the Presence rewrite?</div></div>
+<div class="li"><span class="tag t-warn">owed</span><div class="grow">Move #4364 behind #4360?</div></div>
+<div class="li"><span class="tag t-info">editing</span><div class="grow">Close #4329?</div></div>
+</div>
+<div style="margin-top:10px"><button class="btn pri">Answer in Decisions</button></div></div>
+</div>
+</div>
+</div>
+</div>
+<ul class="notes">
+<li><span class="co">1</span>The grid scrolls inside its frame on a phone. Each past run shows its outcome in the block (decisions or reds), so the week reads at a glance.</li>
+<li><span class="co">2</span>A run's minutes are timestamped lines written by the run, next to the decisions it asked. Answering happens in Decisions so there is one place to answer.</li>
+</ul>
+</section>
+
+<!-- ===================== 7 PLANS ===================== -->
+<section class="mock">
+<div class="cap">
+<div class="eyebrow">Mock 7 · Plans</div>
+<h2>Plans: Backend ready for the new Clearing</h2>
+<p>Job: show where the work is going as an ordered list of chunks, with progress read from cards and the decisions that shaped it.</p>
+<div class="reads">Reads: <b>Plan</b> (ordered chunk edges, outcome) · <b>Chunk</b> → <b>Card</b> states · <b>Decision</b> edges to the plan</div>
+</div>
+<div class="frame">
+<div class="bar"><div class="dots"><i></i><i></i><i></i></div><div class="url">clearing.local/plans/backend-ready</div></div>
+<nav class="top"><span class="brand">Clearing</span><a>Today</a><a>Decisions<span class="n">4</span></a><a>Rooms</a><a>Board</a><a>Roles</a><a>Calendar</a><a class="on">Plans</a><a>Alerts<span class="n">2</span></a></nav>
+<div class="strip"><span><i></i>plans · as of 09:02</span><span><i></i>cards · graph</span><span><i></i>decisions · as of 09:04</span></div>
+<div class="page">
+<div class="ph"><div><h2>Backend ready for the new Clearing</h2><div class="sub">Outcome: every Clearing page reads real rows, none reads a file or a guess.</div></div><div class="row"><span class="tag t-acc">7 of 19 cards done</span><span class="ex">example data</span></div></div>
+<div class="grid2" style="grid-template-columns:repeat(auto-fit,minmax(300px,1fr))">
+<div class="card" style="padding:4px 2px">
+<div class="step"><span class="num done">✓</span><div><b>login + sessions</b><div class="meta">#4345 #4348 · Silas · unblocks Roles, Rooms</div><div class="segs"><i class="d"></i><i class="d"></i><i class="d"></i></div></div><span class="mono meta">3/3</span></div>
+<div class="step"><span class="num now">2</span><div><b>messages</b><span class="co">1</span><div class="meta">#4359 #4360 #4361 #4363 · Wren · unblocks Rooms</div><div class="segs"><i class="d"></i><i class="d"></i><i class="w"></i><i></i><i></i></div></div><span class="mono meta">2/5</span></div>
+<div class="step"><span class="num">3</span><div><b>model-core</b><div class="meta">#4364 #4362 · Wren · unblocks Calendar, Decisions</div><div class="segs"><i></i><i class="x"></i></div></div><span class="mono meta">0/2</span></div>
+<div class="step"><span class="num">4</span><div><b>card state in the graph</b><div class="meta">#2159 +3 · Silas · unblocks Board, Today, Plans</div><div class="segs"><i class="d"></i><i class="d"></i><i></i><i></i></div></div><span class="mono meta">2/4</span></div>
+<div class="step"><span class="num">5</span><div><b>alerts as instances</b><div class="meta">#4366 +2 · Silas · unblocks Alerts, Today</div><div class="segs"><i></i><i></i><i></i></div></div><span class="mono meta">0/3</span></div>
+<div class="step"><span class="num">6</span><div><b>clearing</b><div class="meta">#4365 +1 · Kade · the pages themselves</div><div class="segs"><i></i><i></i></div></div><span class="mono meta">0/2</span></div>
+</div>
+<div class="card">
+<div class="sec-t">Decisions that shaped it <span class="co">2</span></div>
+<div class="list" style="font-size:13.5px">
+<div class="li"><span class="mono meta">Sep 17</span><div class="grow">Principals own services; services own nothing.<div class="meta">Jeff · set the login chunk first</div></div></div>
+<div class="li"><span class="mono meta">Sep 19</span><div class="grow">Identity is one thread and Silas owns it.<div class="meta">Jeff · moved #4345 to Silas</div></div></div>
+<div class="li"><span class="mono meta">Sep 26</span><div class="grow">Talk moves to Buzz. Chorus facts stay in the graph.<div class="meta">Jeff · added messages chunk</div></div></div>
+<div class="li"><span class="mono meta">Sep 27</span><div class="grow">Backend before pages.<div class="meta">Weekly shaping · put clearing last</div></div></div>
+</div>
+<div class="sec-t" style="margin-top:14px">Legend</div>
+<div class="row meta"><span class="segs" style="margin:0"><i class="d"></i></span>done <span class="segs" style="margin:0"><i class="w"></i></span>WIP <span class="segs" style="margin:0"><i class="x"></i></span>blocked <span class="segs" style="margin:0"><i></i></span>not started</div>
+</div>
+</div>
+</div>
+</div>
+<ul class="notes">
+<li><span class="co">1</span>One segment per card, in rank order. Progress is counted from card states. Nobody types a percentage.</li>
+<li><span class="co">2</span>Decisions are listed in date order next to the plan so Jeff can see why the order is what it is.</li>
+</ul>
+</section>
+
+<!-- ===================== 8 ALERTS ===================== -->
+<section class="mock">
+<div class="cap">
+<div class="eyebrow">Mock 8 · Alerts</div>
+<h2>Alerts: only new, changed, or needs Jeff</h2>
+<p>Job: show the few alerts worth Jeff's attention, each tied to the card that fixes it.</p>
+<div class="reads">Reads: <b>Alert</b> instances (state, first fired, acked by) · <b>Monitor</b> rows · <b>Card</b> link. Everything else is counted, not listed.</div>
+</div>
+<div class="frame">
+<div class="bar"><div class="dots"><i></i><i></i><i></i></div><div class="url">clearing.local/alerts</div></div>
+<nav class="top"><span class="brand">Clearing</span><a>Today</a><a>Decisions<span class="n">4</span></a><a>Rooms</a><a>Board</a><a>Roles</a><a>Calendar</a><a>Plans</a><a class="on">Alerts<span class="n">2</span></a></nav>
+<div class="strip"><span><i></i>alerts · as of 09:03</span><span class="fail"><i></i>monitors · Grafana read failed 08:50</span><span class="co">1</span></div>
+<div class="page">
+<div class="ph"><h2>4 shown · 41 hidden</h2><span class="ex">example data</span></div>
+<div class="grp">
+<div class="al"><span class="tag t-bad">firing</span><div><b>Relay write-backs lost</b><div class="meta">14 since 03:10 · first time this month</div><div class="why">NEW <span class="co">2</span></div></div><div class="row end"><a class="cid">#4366</a><button class="btn">Ack</button></div></div>
+<div class="al"><span class="tag t-bad">firing</span><div><b>Session rows with no principal</b><div class="meta">5 service sessions · owners not named</div><div class="why">NEEDS JEFF · name the owners</div></div><div class="row end"><a class="cid">#4187</a><button class="btn pri">Answer</button></div></div>
+<div class="al"><span class="tag t-warn">acked</span><div><b>Fuseki backup older than 26h</b><div class="meta">acked by Silas 08:20 · restore drill still open</div><div class="why">CHANGED · was firing</div></div><div class="row end"><a class="cid">#4171</a></div></div>
+<div class="al"><span class="tag t-ok">resolved</span><div><b>chorus-hooks restarted twice per test run</b><div class="meta">resolved 07:40 by #4283 landing</div><div class="why">CHANGED · resolved since last visit</div></div><div class="row end"><a class="cid">#4283</a></div></div>
+<div class="hid">Hidden: 38 repeats of known alerts, 3 resolved before you saw them. <a class="cid">show all</a> <span class="co">3</span></div>
+</div>
+</div>
+</div>
+<ul class="notes">
+<li><span class="co">1</span>The one red in the trust strip: a source that failed, named. Here the monitor read failed, so the page says its list may be short.</li>
+<li><span class="co">2</span>Each alert says why it is shown: new, changed, or needs Jeff. If none apply, it is hidden.</li>
+<li><span class="co">3</span>Repeats are counted, not listed. Fifty identical 502 nudges become one number.</li>
+</ul>
+</section>
+
+</div>
+
+<script src="https://cdn.jsdelivr.net/npm/mermaid@10.9.1/dist/mermaid.min.js"></script>
+<script>if(window.mermaid){mermaid.initialize({startOnLoad:true,theme:"neutral"});}</script>
+</html>
