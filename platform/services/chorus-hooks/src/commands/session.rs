@@ -10,6 +10,7 @@ use super::context_cache;
 use super::pulse;
 use super::principles_inject;
 use super::athena_tree_inject;
+use super::session_rows_inject;
 
 /// Session start — replaces session-start-thin.sh (#1623)
 pub fn session_start_cmd(args: &[String]) -> ExitCode {
@@ -182,6 +183,22 @@ pub fn session_start_cmd(args: &[String]) -> ExitCode {
             ]);
         }
     }
+
+    // #4360 — the role's own rows: open Session, where the last run left off,
+    // and the /sup walk. Each read names itself when it fails; see the module
+    // note on #2940's static-JSON invariant.
+    let rows = session_rows_inject::read_all(role);
+    let failed: Vec<&str> = [("session", &rows.sessions), ("sessionrun", &rows.runs), ("priorities", &rows.priorities)]
+        .iter()
+        .filter(|(_, r)| r.is_err())
+        .map(|(n, _)| *n)
+        .collect();
+    content.push_str(&session_rows_inject::render(role, &rows));
+    let _ = chorus_log::run_silent(&[
+        "session.rows.injected".to_string(),
+        role.to_string(),
+        format!("failed={}", if failed.is_empty() { "none".to_string() } else { failed.join(",") }),
+    ]);
 
     // #2940 — Athena Move 0 tree injection. Appends owned + active + needs-work
     // ranking + ownership map. Graceful degradation: any failure injects a
