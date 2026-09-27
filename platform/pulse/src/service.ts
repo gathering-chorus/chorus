@@ -9,7 +9,8 @@
 import express, { Express } from 'express';
 import { MessageStore, inferNudgeClass } from './store';
 import { DeliveryWorker, classifyInjectOutput, type RunInject, type EmitSpine, type SelfTest } from './delivery-worker';
-import { planDelivery, planDeliveryTyped, readRegistry, readTurnState, resolveRoleTarget, describeTarget, SESSIONS_DIR, pidAlive, actualRoleOfPid } from './session-registry';
+import { planDelivery, planDeliveryTyped, readTurnState, describeTarget, type SessionReg } from './session-registry';
+import { fetchPresenceResolution } from './presence-target';
 import { dedupeKey, seenRecently } from './nudge-dedup';
 import { startReplyGapWatch, parseSpineTail, SpineEv } from './reply-gap';
 import { startWipDriftWatch, foldCardActivity } from './wip-drift';
@@ -162,7 +163,7 @@ function readEnvelope(body: { class?: unknown; expects?: unknown }, from: string
 }
 
 function registerNudgeRoutes(app: Express, store: MessageStore, metrics: Metrics, worker?: DeliveryWorker): void {
-  app.post('/api/nudge', (req, res) => {
+  app.post('/api/nudge', async (req, res) => {
     // #3485 — only the MCP server is the canonical caller. The pre-#3485 gate
     // accepted any request carrying a guessable X-Chorus-MCP-Caller header;
     // now the caller must present the shared secret (the mcp-server reads the
@@ -201,7 +202,11 @@ function registerNudgeRoutes(app: Express, store: MessageStore, metrics: Metrics
     // #3439 AC3: report WHERE this nudge resolved (the live session it targets, or
     // name-match fallback) so the caller/MCP can surface the real destination
     // instead of a blind "sent". Deterministic registry read; delivery stays async.
-    const resolved = describeTarget(to, resolveRoleTarget(to));
+    // #4361 — the destination comes from the role's Presence row.
+    const toRes = await fetchPresenceResolution(to);
+    const resolved = toRes.kind === 'resolved' ? describeTarget(to, toRes.session)
+      : toRes.kind === 'unread' ? `${to} [presence unread: ${toRes.why}]`
+      : `${to} [${toRes.kind === 'dead' ? 'logged out' : 'not logged in'} — no live Presence]`;
     log('info', 'nudge.resolved', { id, from, to, resolved, trace_id: traceId || undefined });
     res.json({ ok: true, id, traceId, resolved });
   });
@@ -336,22 +341,23 @@ function buildRuntimeDeps(): { runInject: RunInject; emitSpine: EmitSpine; selfT
   const chorusLog = process.env.CHORUS_LOG_FILE || process.env.CHORUS_LOG
     || path.join(os.homedir(), '.chorus', 'chorus.log');
 
-  const runInject: RunInject = (to, content, from) => new Promise(resolve => {
-    // #3125: route by tty when the target role has a LIVE registration.
-    // planDelivery returns the legacy `[role, content]` name-match args when
-    // nothing is registered, so this is inert (= today's behavior) until the
-    // SessionStart registry is populated — as-is delivery can never strand.
+  const runInject: RunInject = (to, content, from) => new Promise(resolve => { void (async () => {
+    // #4361 — where each role is comes from its Presence row (athena-make),
+    // not the ~/.chorus/sessions registry files. A failed read is reported
+    // typed; it never falls back to a guessed pane.
     // #3352 AC-0 — sender-aware plan: resolve BOTH ends so a delivery whose
-    // target collides with the sender's own session defers to the fold
-    // instead of keystroking the sender (the 2026-06-11 misdelivery).
-    const targetReg = resolveRoleTarget(to);
-    const senderReg = from ? resolveRoleTarget(from) : null;
-    // #3700 — the TYPED decision replaces null→name-match: busy targets queue
-    // (drained at their own turn boundary), dead/unregistered report typed to
-    // the sender + spine — never a keystroke into another role's terminal.
-    // The sender-collision stale-data rule (#3352) stays: that path still
-    // routes through planDelivery below.
-    const typed = planDeliveryTyped(readRegistry(SESSIONS_DIR), to, content, pidAlive, (r) => readTurnState(r), Date.now, actualRoleOfPid);
+    // target collides with the sender's own session name-matches instead.
+    const toRes = await fetchPresenceResolution(to);
+    if (toRes.kind === 'unread') {
+      resolve({ rc: 0, stderr: '', deferred: true, deferReason: 'undelivered-presence-unread', target: `undelivered:${to}:${toRes.why}` });
+      return;
+    }
+    const targetReg: SessionReg | null = toRes.kind === 'resolved' ? toRes.session : null;
+    const fromRes = from ? await fetchPresenceResolution(from) : null;
+    const senderReg: SessionReg | null = fromRes && fromRes.kind === 'resolved' ? fromRes.session : null;
+    // #3700 — busy targets queue (drained at their own turn boundary);
+    // dead/unregistered report typed to the sender + spine.
+    const typed = planDeliveryTyped(toRes, to, content, (r) => readTurnState(r), Date.now);
     if (typed.kind === 'queue') {
       resolve({ rc: 0, stderr: '', deferred: true, deferReason: 'target-busy', target: `queued:${to}` });
       return;
@@ -395,7 +401,7 @@ function buildRuntimeDeps(): { runInject: RunInject; emitSpine: EmitSpine; selfT
     proc.stderr.on('data', d => { stderr += d.toString(); });
     proc.on('close', rc => resolve(classifyInjectOutput(rc ?? 1, stdout, stderr, targetDesc)));
     proc.on('error', e => resolve({ rc: 127, stderr: e.message }));
-  });
+  })(); });
 
   const emitSpine: EmitSpine = async (event, fields) => {
     // Field name is `timestamp` (not `ts`) to match the canonical chorus.log
