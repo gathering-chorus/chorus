@@ -1378,13 +1378,32 @@ fn up(ctx: &mut Ctx, windows: bool) -> i32 {
 }
 
 /// Refuse a verb run from an agent session for another role (#4295).
+/// #4368 — a name a Principal row could carry: lowercase letters, digits, '-'.
+pub fn is_principal_name(n: &str) -> bool {
+    !n.is_empty() && n.chars().all(|c| c.is_ascii_lowercase() || c.is_ascii_digit() || c == '-')
+}
+
+/// #4368 — who may log in is the Principal row's kind, read through the
+/// identity API: an agent logs in, a service or a person is refused with why,
+/// no row is refused naming where the principals are listed, and an API that
+/// does not answer is refused with one next command, never a guess from a list.
+fn principal_gate(ctx: &Ctx, name: &str) -> Result<(), String> {
+    let url = format!("{}/v1/identity/principals/{}", ctx.api, name);
+    let answer = sh(&ctx.curl, &["-s", "-w", "\n%{http_code}", "--max-time", "5", &url]).unwrap_or_default();
+    let (body, code) = answer.trim_end().rsplit_once('\n').unwrap_or(("", answer.trim()));
+    rows::login_verdict(name, code.trim(), body, &ctx.api)?;
+    let home = ctx.role_dir(name);
+    if !Path::new(&home).is_dir() { return Err(format!("{} is an agent, but has no role home at {}; nothing to start", name, home)); }
+    Ok(())
+}
+
 fn caller_refusal(role: &str, verb: &str) -> Option<String> {
     let in_agent = env::var("CLAUDECODE").map(|v| !v.is_empty()).unwrap_or(false);
     let caller = env::var("CHORUS_ROLE").ok().filter(|r| !r.is_empty());
     lifecycle::caller_may_act(in_agent, caller.as_deref(), role, verb).err()
 }
 
-const USAGE: &str = "usage: chorus-principal login|logout|status|up|relogin [role]   (wren | silas | kade)
+const USAGE: &str = "usage: chorus-principal login|logout|status|up|relogin [name]   (an agent principal: its Principal row decides)
   login <role>   start it logged in, or log in the running one and go to its window (was: on)
   logout <role>  stop it and close its login (was: off)
   status         one line per role: running, logged in, answering
@@ -1399,6 +1418,15 @@ pub fn run(args: &[String]) -> i32 {
         match args.get(i) {
             Some(r) if ROLES.contains(&r.as_str()) => Ok(r.clone()),
             Some(r) => { eprintln!("chorus-principal: unknown role '{}' (wren | silas | kade)", r); Err(2) }
+            None => { eprintln!("{}", USAGE); Err(2) }
+        }
+    };
+    // #4368 — login and logout take any principal's name; the Principal row
+    // decides (principal_gate), never a list in this file.
+    let name_arg = |i: usize| -> Result<String, i32> {
+        match args.get(i) {
+            Some(r) if is_principal_name(r) => Ok(r.clone()),
+            Some(r) => { eprintln!("chorus-principal: '{}' is not a principal name (lowercase letters, digits, -)", r); Err(2) }
             None => { eprintln!("{}", USAGE); Err(2) }
         }
     };
@@ -1419,20 +1447,25 @@ pub fn run(args: &[String]) -> i32 {
         // #4340 — messages.db into the model, one pass; run by com.chorus.messages-project
         "project-messages" => project_messages(&ctx),
         // #4345 — Jeff, 2026-09-27: login/logout is the convention; on/off stay as aliases.
-        "logout" | "off" => match role_arg(1) {
+        "logout" | "off" => match name_arg(1) {
             Ok(r) => {
                 if let Some(why) = caller_refusal(&r, "stop") { eprintln!("chorus-principal: REFUSED — {}", why); return 2; }
+                // the SessionEnd hook (--from-exit) runs inside a session that is
+                // already logged in; it never waits on the identity API
+                let from_exit = args.iter().any(|a| a == "--from-exit");
+                if !from_exit { if let Err(why) = principal_gate(&ctx, &r) { eprintln!("chorus-principal: REFUSED — {}", why); return 2; } }
                 off(&ctx, &r, args.iter().any(|a| a == "--from-exit"))
             }
             Err(c) => c,
         },
-        "login" | "on" | "wren" | "silas" | "kade" => {
-            let r = if verb == "on" || verb == "login" { match role_arg(1) { Ok(r) => r, Err(c) => return c } } else { verb.to_string() };
+        "login" | "on" => {
+            let r = match name_arg(1) { Ok(r) => r, Err(c) => return c };
             if let Some(why) = caller_refusal(&r, "start") { eprintln!("chorus-principal: REFUSED — {}", why); eprintln!("  nothing was started."); return 2; }
+            if let Err(why) = principal_gate(&ctx, &r) { eprintln!("chorus-principal: REFUSED — {}", why); eprintln!("  nothing was started."); return 2; }
             let attach = envd("AWAKE_NO_ATTACH", "0") != "1";
             match on(&ctx, &r, attach) { Ok(_) => 0, Err((c, _)) => c }
         }
         "" => { eprintln!("{}", USAGE); 2 }
-        other => { eprintln!("chorus-principal: unknown role '{}' (wren | silas | kade)", other); 2 }
+        other => { eprintln!("chorus-principal: unknown verb '{}'", other); eprintln!("{}", USAGE); 2 }
     }
 }

@@ -342,3 +342,24 @@ pub fn refusal_reason(reply: &str) -> String {
         .collect::<Vec<_>>().join(" ");
     one.chars().take(160).collect()
 }
+
+/// #4368 — the login decision from the identity API's answer for one
+/// principal: `code` is the HTTP status, `body` the JSON it returned.
+pub fn login_verdict(name: &str, code: &str, body: &str, api: &str) -> Result<(), String> {
+    match code {
+        "200" => {
+            let kind = serde_json::from_str::<Value>(body).ok()
+                .and_then(|v| v["data"]["principalKind"].as_str().map(str::to_string)).unwrap_or_default();
+            match kind.as_str() {
+                "agent" => Ok(()),
+                "service" => Err(format!("{} is a service principal; it acts with its credential, it does not log in", name)),
+                "person" => Err(format!("{} is a person; a person attends a role's session and never logs in", name)),
+                "" => Err(format!("{}'s Principal row has no principalKind (agent | service | person); nothing was decided", name)),
+                k => Err(format!("{}'s Principal row says principalKind '{}', which is not agent | service | person", name, k)),
+            }
+        }
+        "404" => Err(format!("no Principal row named {}. Who exists: chorus-principal census", name)),
+        c => Err(format!("could not read {}'s Principal row: the identity API at {} answered {}. Next: agent-state.sh restart athena-make",
+            name, api, if c.is_empty() || c == "000" { "nothing".to_string() } else { format!("HTTP {}", c) })),
+    }
+}

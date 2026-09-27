@@ -229,6 +229,8 @@ Then("wren's presence is not reachable", STEP, function () {
 
 Then("the nudge waits until Jeff's prompt is sent, and Jeff's text arrives whole", { timeout: 180_000 }, function () {
   // #4362 is pulse's delivery worker; its proof is pulse's own tests, run here
+  const pulse = path.join(ROOT, 'platform/pulse');
+  if (!fs.existsSync(path.join(pulse, 'node_modules'))) throw new Error(`pulse's packages are not installed at ${pulse} (npm ci there); its tests cannot run`);
   execFileSync('npx', ['--no-install', 'jest', 'src/pane-input.test.ts', 'src/delivery-worker.test.ts'],
     { cwd: path.join(ROOT, 'platform/pulse'), stdio: 'pipe' });
 });
@@ -288,7 +290,18 @@ Then('the token is not on the spine', STEP, function () {
   sh('test -z "$(grep -F "c2VjcmV0" "$T/spine.log" || true)"');
 });
 
-Then('it is refused with {string}', STEP, function (_msg: string) { return waiting(4368); });
+Given("bridge's Principal row says it is a service", STEP, function () {
+  sh(`printf '{"data":{"principalKind":"service"}}\\n200\\n' > "$T/principal-bridge.json"; mkdir -p "$T/roles/bridge"`);
+});
+
+Then('it is refused with {string}', STEP, function (msg: string) {
+  fs.writeFileSync(path.join(T, 'want'), msg);
+  sh('test "$(cat "$T/status")" -eq 2; out_has "$(cat "$T/want")"');
+});
+
+Then('nothing is started', STEP, function () {
+  sh('test -z "$(grep -F send-keys "$T/tmux.log" 2>/dev/null || true)"; test ! -f "$T/token.log"');
+});
 
 Then('the run ends as logout, the presence is unreachable, and the session is closed, in that order', STEP, function () {
   sh(`test "$(cat "$T/status")" -eq 0

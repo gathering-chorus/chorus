@@ -58,7 +58,7 @@ fn main() {
         // #4345 — one binary. The session lifecycle (on/off/status/up/relogin,
         // and the hooks' seen/seen-write/sweep/project-messages) was chorus-awake;
         // it is this crate's library now, so the verbs run here, not forwarded.
-        Some("login" | "logout" | "on" | "off" | "status" | "up" | "relogin" | "seen" | "seen-write" | "sweep" | "project-messages" | "wren" | "silas" | "kade") => chorus_principal::run(&args),
+        Some("login" | "logout" | "on" | "off" | "status" | "up" | "relogin" | "seen" | "seen-write" | "sweep" | "project-messages") => chorus_principal::run(&args),
         Some("census") => cmd_census(),
         Some("create") => match args.get(1) {
             Some(n) => match Kind::from_args(&args[2..]) {
@@ -105,6 +105,13 @@ fn main() {
                 2
             }
         },
+        // #4368 — `chorus-principal <name>` is `login <name>` for any principal;
+        // its Principal row decides, not a list of three names here.
+        Some(n) if chorus_principal::is_principal_name(n) => {
+            let mut login = vec!["login".to_string()];
+            login.extend(args.iter().cloned());
+            chorus_principal::run(&login)
+        }
         _ => {
             eprint!("{USAGE}");
             2
