@@ -93,6 +93,21 @@ if ! CHORUS_ROOT="$REPO" bash "$REPO/platform/scripts/test-werk-emit-conformance
 fi
 rm -f /tmp/emit-conf.$$
 
+# #4333 — two repo-wide rules that caught real bugs move here from the nightly:
+# they read source, so they prove nothing about the running system, but they
+# stop a known-bad line at the commit that adds it (an untimed Fuseki write —
+# caught #4332's cleanup call on 2026-09-26 — and a hardcoded path). ~1s together.
+for rule in 4175-fuseki-writes-carry-a-timeout hardcoded-path-guard; do
+  if ! CHORUS_ROOT="$REPO" bats "$REPO/platform/tests/$rule.bats" >/tmp/rule-$rule.$$ 2>&1; then
+    echo "" >&2
+    echo "📏 pre-commit BLOCKED: repo rule $rule failed (#4333)." >&2
+    grep -E "^#" /tmp/rule-$rule.$$ | head -8 >&2 || true
+    rm -f /tmp/rule-$rule.$$
+    exit 1
+  fi
+  rm -f /tmp/rule-$rule.$$
+done
+
 # #3710 — clippy ratchet on staged Rust. The ratchet script's own header says
 # "Ratchet runs in pre-commit (Check 4.65)" and the CI job's comment calls
 # pre-commit the opportunistic layer — but the wiring was not here, so Rust lint

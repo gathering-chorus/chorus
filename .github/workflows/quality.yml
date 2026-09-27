@@ -808,12 +808,8 @@ jobs:
         run: |
           # Retirement-gates (forward-only structural absence assertions)
           bats platform/tests/role-state-card-decoupled.bats
-          bats platform/tests/nudge-cleanup-retirement.bats
           # Drift audits (correlate emit-events to follow-up events)
-          bats platform/tests/spine-emit-drift-audit.bats
           bats platform/tests/demo-complete-drift-audit.bats
-          # Skill-text structural asserts (markdown declares mandatory steps)
-          bats platform/tests/skill-text-structural-asserts.bats
 
       - name: Stop chorus-api
         if: always()

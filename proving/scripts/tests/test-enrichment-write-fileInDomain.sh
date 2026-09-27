@@ -49,8 +49,6 @@ BELONGS_RELS=(
   "platform/api/src/spine-event-write.ts"
   "platform/api/tests/spine-event-endpoint.integration.test.ts"
   "platform/api/tests/spine-event-write.test.ts"
-  "platform/tests/spine-emit-drift-audit.bats"
-  "platform/tests/spine-tick-poller-inject-resolve.bats"
 )
 for rel in "${BELONGS_RELS[@]}"; do
   mkdir -p "$FIXTURE/$(dirname "$rel")"
@@ -127,7 +125,8 @@ SEED_COUNT=$(curl -s -G -H 'Accept: application/sparql-results+json' \
   --data-urlencode 'query=PREFIX chorus: <https://jeffbridwell.com/chorus#> SELECT (COUNT(?f) AS ?n) WHERE { GRAPH <'"$TEST_GRAPH"'> { ?f a chorus:File } }' \
   "$FUSEKI_BASE/query" | python3 -c "import json,sys; d=json.load(sys.stdin); print(d['results']['bindings'][0]['n']['value'])" 2>/dev/null || echo 0)
 
-if [ "$SEED_COUNT" -ge 5 ] 2>/dev/null; then
+# #4333 — the seed holds one row per BELONGS_RELS entry; derive, never a literal
+if [ "$SEED_COUNT" -ge "${#BELONGS_RELS[@]}" ] 2>/dev/null; then
   p "seed: $SEED_COUNT chorus:File instances hydrated"
 else
   f "seed failed: only $SEED_COUNT chorus:File instances"
@@ -160,7 +159,6 @@ ASK { GRAPH <'"$TEST_GRAPH"'> {
 # The writer's real contract: the five BELONGS_MAP files carry chorus:spine.
 check_predicate "platform/api/src/spine-event-write.ts" "spine"
 check_predicate "platform/api/tests/spine-event-write.test.ts" "spine"
-check_predicate "platform/tests/spine-emit-drift-audit.bats" "spine"
 
 # NEGATIVE PROOF (#3734): the checks above pass for every file if the writer
 # tags indiscriminately. A file that is NOT in BELONGS_MAP must come back

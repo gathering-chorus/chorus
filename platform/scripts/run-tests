@@ -15,7 +15,7 @@
 #                      tests_unrun:[{name,file}],hermeticity_tags:{}}
 #   Stderr:      human-readable progress + failures
 #
-# Test hooks (set by run-tests.bats):
+# Test hooks (run-tests.bats, cut by #4333 — werk-test replaced this tool):
 #   --resolve         resolve domain → file list, emit JSON, exit 0 (no execution)
 #   RUN_TESTS_FAKE    short-circuit to canned JSON: pass|fail|budget
 #   RUN_TESTS_HARNESS test harness override: sleep (sleeps forever — for budget tests)
