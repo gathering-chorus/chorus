@@ -449,6 +449,10 @@ struct Ctx {
     token_bin: String,
     api: String,
     curl: String,
+    /// #4383 — sudo, for starting a principal as its own Mac account
+    sudo: String,
+    /// #4383 — the principal's own account, when it is not the current user
+    run_as: Option<String>,
     log_bin: String,
     probe: String,
     services: Vec<(String, String)>,
@@ -470,6 +474,8 @@ impl Ctx {
             token_bin: envd("CHORUS_TOKEN_BIN", &format!("{}/platform/scripts/chorus-identity-token", root)),
             api: envd("CHORUS_API_URL", "http://localhost:3360"),
             curl: envd("AWAKE_CURL", "curl"),
+            sudo: envd("AWAKE_SUDO", "sudo"),
+            run_as: None,
             log_bin: log_bin_for(&root),
             probe: envd("AWAKE_PROBE_BIN", "curl"),
             services: lifecycle::parse_services(&envd("AWAKE_SERVICES", lifecycle::DEFAULT_SERVICES)),
@@ -754,7 +760,32 @@ fn on(ctx: &Ctx, role: &str, attach: bool) -> Result<Came, (i32, String)> {
     // 1 — the pane, then launch inside it.
     // #4337 — CLAUDE_CODE_DISABLE_AGENT_VIEW=1: no on-demand daemon, no warm
     // spares, no exit handoff to the background (the role settings say the same)
-    let launch = format!("cd '{}' && source '{}/platform/scripts/chorus-env-setup.sh' && export CHORUS_SESSION_TOKEN_FILE='{}' CHORUS_ROLE='{}' CLAUDE_CODE_DISABLE_AGENT_VIEW=1 && {}", role_dir, ctx.root, token_file.display(), role, cmd);
+    let launch = match &ctx.run_as {
+        None => format!("cd '{}' && source '{}/platform/scripts/chorus-env-setup.sh' && export CHORUS_SESSION_TOKEN_FILE='{}' CHORUS_ROLE='{}' CLAUDE_CODE_DISABLE_AGENT_VIEW=1 && {}", role_dir, ctx.root, token_file.display(), role, cmd),
+        // #4383 — the session runs as the principal's own account: its token is
+        // copied into that account's home, readable by it alone, and files it
+        // writes in the werk stay group-writable (umask 002).
+        Some(acct) => {
+            // the principal's identity lives in its own home: its credentials
+            // (and current token) are handed over at login, readable by it alone,
+            // and every mint and renewal from then on happens as that account
+            let own_dir = format!("{}/{}/.chorus/identity", envd("AWAKE_ACCOUNT_HOMES", "/Users"), acct);
+            let own = format!("{}/{}/token.cache", own_dir, role);
+            for f in ["cred.json", "nostr.json", "token.cache"] {
+                let Ok(bytes) = fs::read(PathBuf::from(&ctx.identity_dir).join(role).join(f)) else { continue };
+                let dest = format!("{}/{}/{}", own_dir, role, f);
+                let put = format!("umask 077 && mkdir -p '{}/{}' && cat > '{}'", own_dir, role, dest);
+                let mut child = Command::new(&ctx.sudo).args(["-n", "-u", acct, "-H", "sh", "-c", &put])
+                    .stdin(std::process::Stdio::piped()).spawn().map_err(|e| (1, format!("could not hand {} its {}: {}", acct, f, e)))?;
+                if let Some(mut i) = child.stdin.take() { let _ = std::io::Write::write_all(&mut i, &bytes); }
+                if !child.wait().map(|s| s.success()).unwrap_or(false) {
+                    return Err((1, format!("could not hand {} its {}", acct, f)));
+                }
+            }
+            let inner = format!("umask 002 && cd '{}' && source '{}/platform/scripts/chorus-env-setup.sh' && export CHORUS_IDENTITY_DIR='{}' CHORUS_SESSION_TOKEN_FILE='{}' CHORUS_ROLE='{}' CLAUDE_CODE_DISABLE_AGENT_VIEW=1 && {}", role_dir, ctx.root, own_dir, own, role, cmd);
+            format!("{} -n -u {} -H bash -c \"{}\"", ctx.sudo, acct, inner.replace('\\', "\\\\").replace('"', "\\\"").replace('$', "\\$"))
+        }
+    };
     let in_own_pane = env::var("TMUX").is_ok() && sh(&ctx.tmux, &["display-message", "-p", "#S"]).map(|s| s.trim() == tmux_session).unwrap_or(false);
     if in_own_pane && attach {
         println!("awake: {}  starting here via {}", role, how);
@@ -1387,14 +1418,26 @@ pub fn is_principal_name(n: &str) -> bool {
 /// identity API: an agent logs in, a service or a person is refused with why,
 /// no row is refused naming where the principals are listed, and an API that
 /// does not answer is refused with one next command, never a guess from a list.
-fn principal_gate(ctx: &Ctx, name: &str) -> Result<(), String> {
+fn principal_gate(ctx: &Ctx, name: &str) -> Result<Option<String>, String> {
     let url = format!("{}/v1/identity/principals/{}", ctx.api, name);
     let answer = sh(&ctx.curl, &["-s", "-w", "\n%{http_code}", "--max-time", "5", &url]).unwrap_or_default();
     let (body, code) = answer.trim_end().rsplit_once('\n').unwrap_or(("", answer.trim()));
-    rows::login_verdict(name, code.trim(), body, &ctx.api)?;
+    let host = rows::login_verdict(name, code.trim(), body, &ctx.api)?;
     let home = ctx.role_dir(name);
     if !Path::new(&home).is_dir() { return Err(format!("{} is an agent, but has no role home at {}; nothing to start", name, home)); }
-    Ok(())
+    // #4383 — a principal whose row names its own Mac account runs as that
+    // account, so no other principal can read its token. The launcher must be
+    // able to start it without a password.
+    let me = env::var("USER").unwrap_or_default();
+    match host.filter(|h| !h.is_empty() && *h != me) {
+        None => Ok(None),
+        Some(acct) => {
+            if sh(&ctx.sudo, &["-n", "-u", &acct, "true"]).is_err() {
+                return Err(format!("{} runs as the Mac account {}, and this launcher cannot start that account without a password (the sudo rule in /etc/sudoers.d/chorus-principals does not cover it)", name, acct));
+            }
+            Ok(Some(acct))
+        }
+    }
 }
 
 fn caller_refusal(role: &str, verb: &str) -> Option<String> {
@@ -1461,7 +1504,10 @@ pub fn run(args: &[String]) -> i32 {
         "login" | "on" => {
             let r = match name_arg(1) { Ok(r) => r, Err(c) => return c };
             if let Some(why) = caller_refusal(&r, "start") { eprintln!("chorus-principal: REFUSED — {}", why); eprintln!("  nothing was started."); return 2; }
-            if let Err(why) = principal_gate(&ctx, &r) { eprintln!("chorus-principal: REFUSED — {}", why); eprintln!("  nothing was started."); return 2; }
+            match principal_gate(&ctx, &r) {
+                Ok(acct) => ctx.run_as = acct,
+                Err(why) => { eprintln!("chorus-principal: REFUSED — {}", why); eprintln!("  nothing was started."); return 2; }
+            }
             let attach = envd("AWAKE_NO_ATTACH", "0") != "1";
             match on(&ctx, &r, attach) { Ok(_) => 0, Err((c, _)) => c }
         }

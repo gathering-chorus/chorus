@@ -161,7 +161,10 @@ When('the sweep runs', STEP, function () {
   sh('run "$SCRIPT" sweep; test "$(cat "$T/status")" -eq 0');
 });
 
-When("wren's session token is used from another pane", STEP, function () { return waiting(4383); });
+Given("wren's Principal row names the Mac account chorus-wren", STEP, function () {
+  sh(`printf '{"data":{"principalKind":"agent","hostAccount":"chorus-wren"}}\\n200\\n' > "$T/principal-wren.json"
+printf '{"fixture":"wren cred"}' > "$T/identity/wren/cred.json"`);
+});
 When("wren's principal is revoked", STEP, function () { return waiting(4385); });
 
 // ---------------------------------------------------------------- Then
@@ -325,7 +328,14 @@ Then("wren's live session is left alone", STEP, function () {
   sh('test -z "$(bodies | grep -F "PUT-identity_sessions_$(row_name wren session)" || true)"');
 });
 
-Then('the call is refused and names the run the token belongs to', STEP, function () { return waiting(4383); });
+Then('wren starts as chorus-wren', STEP, function () {
+  sh(`test "$(cat "$T/status")" -eq 0; grep -F "send-keys -t chorus-wren" "$T/tmux.log" | grep -qF "sudo -n -u chorus-wren -H bash -c"`);
+});
+
+Then("wren's credentials are in chorus-wren's home, readable by that account alone", STEP, function () {
+  sh(`d="$T/homes/chorus-wren/.chorus/identity/wren"; cmp -s "$d/cred.json" "$T/identity/wren/cred.json"
+test "$(stat -f %Lp "$d")" = "700"; test "$(stat -f %Lp "$d/cred.json")" = "600"`);
+});
 Then('the session is closed and wren is asked to log in again', STEP, function () { return waiting(4384); });
 Then("wren's next turn is refused and wren's session is closed", STEP, function () { return waiting(4385); });
 Then('every spine event the login wrote carries principal wren, the session and the run', STEP, function () { return waiting(4369); });
