@@ -103,7 +103,7 @@ state_is() { grep -q "\"state\":\"$2\"" "$T/identity/$1/login.json"; }
 
 # ------------------------------------------------------------------ on
 
-@test "login: Getting in is one obvious step — on: a stopped role starts logged in, and the line says logged in" {
+@test "on: a stopped role starts logged in, and the line says logged in" {
   run "$SCRIPT" on silas
   test "$status" -eq 0
   out_has "login: silas"

@@ -1,21 +1,14 @@
-#!/usr/bin/env bats
-# @test-type: integration — drives the built chorus-awake and chorus-principal binaries with stub tmux, claude, ps, token-minter, curl, service probe, osascript and open; no live services, no live panes.
-# @domain: identity — the product domain this suite guards (#4334)
-#
-# #4337 — Jeff 2026-09-26: "i dont want to have to disassemble and reassemble the
-# car evertime i want to turn an agent on or off"; "i dont want the 10 steps i
-# need to run when the 1 step command fails". That morning Kade's session ran as
-# Wren: `claude attach` put it inside the Claude daemon's warm spare, started from
-# Wren's pane with her env. The fix takes the layer away: roles run with no
-# daemon (disableAgentView), `on` resumes a background conversation in its own
-# pane instead of attaching, `off` ends the background copy, and a process that
-# carries another role is never called logged in.
-setup() {
-  ROOT="$(cd "$(dirname "$BATS_TEST_FILENAME")/../.." && pwd)"
-  SCRIPT="${CHORUS_PRINCIPAL_TEST_BIN:-$ROOT/platform/services/chorus-principal/target/release/chorus-principal}"
-  PRINCIPAL="${CHORUS_PRINCIPAL_TEST_BIN:-$ROOT/platform/services/chorus-principal/target/release/chorus-principal}"
-  [ -x "$SCRIPT" ] || skip "chorus-principal not built at $SCRIPT"
-  T="$BATS_TEST_TMPDIR"
+#!/usr/bin/env bash
+# login-harness.bash — #4367. The fixture world the login scenarios run in: stub
+# tmux, claude, ps, token minter, curl, service probe, osascript and open, all
+# writing into $T; no live services, no live panes. Moved out of
+# 4328-session-rows.bats so the bats cases and the cucumber login steps
+# (features/step_definitions/login_steps.ts) stand in the same world.
+#   login_harness_stubs   write the stubs into $T (once per case / scenario)
+#   login_harness_env     export the env the binaries read (every shell)
+# Needs T (a scratch dir) and ROOT (the repo) set by the caller.
+
+login_harness_stubs() {
   mkdir -p "$T/sessions" "$T/bin" "$T/roles/wren" "$T/roles/kade" "$T/roles/silas" "$T/projects" "$T/identity" "$T/vscode"
   touch "$T/alive-pids"
   cat > "$T/bin/ps" <<EOS
@@ -62,6 +55,7 @@ if [ -n "\$m" ]; then
   n=\$(ls "$T/bodies" | wc -l | tr -d ' '); route=\$(echo "\$url" | sed -E 's#.*/v1/##; s#/#_#g')
   cp "\$b" "$T/bodies/\$(printf %03d \$n)-\$m-\$route.json"
   [ "\$m" = POST ] && { kind=\$(echo "\$url" | sed -E 's#.*/##; s#s\$##'); name=\$(python3 -c 'import json,sys;print(json.load(open(sys.argv[1]))["name"])' "\$b"); printf '{"data":{"name":"%s-%s"}}\n' "\$kind" "\$name"; }
+  cat "$T/curl.reply" 2>/dev/null   # #4367: a refusal's body, when a case sets one
   cat "$T/curl.status" 2>/dev/null || echo 201
 else
   cat "$T/row.json" 2>/dev/null
@@ -79,6 +73,10 @@ EOS
   printf '#!/bin/bash\necho "open $*" >> "%s/open.log"\n' "$T" > "$T/bin/open"
   chmod +x "$T/bin/"*
   for r in wren kade silas; do mk_token "$r"; mkdir -p "$T/identity/$r"; done
+  printf '' > "$T/spine-read.log"
+}
+
+login_harness_env() {
   export CLAUDE_BIN="$T/bin/claude" TMUX_BIN="$T/bin/tmux" AWAKE_PS="$T/bin/ps"
   export CHORUS_TOKEN_BIN="$T/bin/token" AWAKE_CURL="$T/bin/curl" CHORUS_LOG_BIN="$T/bin/chorus-log"
   export AWAKE_PROBE_BIN="$T/bin/probe" AWAKE_OSASCRIPT="$T/bin/osascript" AWAKE_OPEN="$T/bin/open"
@@ -88,10 +86,11 @@ EOS
   export CHORUS_SESSIONS_DIR="$T/sessions" AWAKE_ROLES_BASE="$T/roles" CHORUS_ROOT="$ROOT"
   export AWAKE_PROJECTS_DIR="$T/projects" AWAKE_NO_ATTACH=1 AWAKE_WAIT=2 USER=unit-account
   export AWAKE_VSCODE_DIR="$T/vscode" CHORUS_PRINCIPAL_BIN="/h/.chorus/bin/chorus-principal"
-  printf '' > "$T/spine-read.log"
   export CHORUS_LOG_FILE="$T/spine-read.log"
   unset TMUX CLAUDECODE CHORUS_ROLE AWAKE_ROLE_DIR
 }
+
+login_harness() { login_harness_stubs; login_harness_env; }
 
 mk_token() {
   local role="$1" exp="${2:-$(( $(date +%s) + 600 ))}" payload
@@ -104,77 +103,8 @@ running() {
   echo "$2" >> "$T/alive-pids"; touch "$T/tmux-chorus-$1"
   printf '{"role":"%s","event":"reply.published","timestamp":"%s"}\n' "$1" "$(date '+%Y-%m-%dT%H:%M:%S')" >> "$T/spine-read.log"
 }
-out_has()  { printf '%s' "$output" | grep -qF -- "$1"; }
-out_lacks() { test -z "$(printf '%s' "$output" | grep -F -- "$1" || true)"; }
-state_is() { grep -q "\"state\":\"$2\"" "$T/identity/$1/login.json"; }
 body() { cat "$T"/bodies/*-"$1"-"$2".json 2>/dev/null | tail -1; }   # last body sent: METHOD route
 bodies() { ls "$T/bodies" | sed 's/^[0-9]*-//'; }
 has() { printf '%s' "$1" | grep -qF -- "$2"; }
-
-@test "the launch turns the daemon off and names the role, and nothing is attached" {
-  run "$SCRIPT" on kade
-  test "$status" -eq 0
-  grep -qF "CLAUDE_CODE_DISABLE_AGENT_VIEW=1" "$T/tmux.log"
-  grep -qF "CHORUS_ROLE='kade'" "$T/tmux.log"
-  test -z "$(grep -F "claude attach" "$T/tmux.log" || true)"
-}
-
-@test "every role's settings turn Claude's background daemon off" {
-  for r in wren kade silas; do
-    python3 -c 'import json,sys; sys.exit(0 if json.load(open(sys.argv[1])).get("disableAgentView") is True else 1)' "$ROOT/roles/$r/.claude/settings.json"
-  done
-}
-
-@test "off ends the role's background copy of the conversation" {
-  cat > "$T/bin/claude" <<EOS
-#!/bin/bash
-echo "claude \$*" >> "$T/claude.log"
-[ "\$1" = "agents" ] && echo '[{"id":"bda5f062","kind":"background","sessionId":"bda5f062-da2b"},{"id":"x1","kind":"interactive"}]'
-exit 0
-EOS
-  chmod +x "$T/bin/claude"
-  running kade 4264
-  run "$SCRIPT" off kade
-  test "$status" -eq 0
-  grep -qx "claude stop bda5f062" "$T/claude.log"
-  test -z "$(grep -x "claude stop x1" "$T/claude.log" || true)"
-}
-
-wrong_env() {  # ps answering `eww`: CHORUS_ROLE=$1 on the first look, $2 (default: $1) after
-  printf '%s\n%s\n' "$1" "${2:-$1}" > "$T/env-seq"
-  cat > "$T/bin/ps3" <<EOS
-#!/bin/bash
-if [ "\$1" = "eww" ]; then r=\$(head -1 "$T/env-seq"); [ \$(wc -l < "$T/env-seq") -gt 1 ] && sed -i '' 1d "$T/env-seq"; echo "/h/.local/bin/claude -c PWD=/x CHORUS_ROLE=\$r TERM=xterm"; exit 0; fi
-grep -qx "\$2" "$T/alive-pids"
-EOS
-  chmod +x "$T/bin/ps3"; export AWAKE_PS="$T/bin/ps3"
-}
-
-@test "a process carrying another role is repaired by on itself: that pane ends and the role starts again, logged in" {
-  wrong_env wren kade
-  run "$SCRIPT" on kade
-  test "$status" -eq 0
-  out_has "runs as wren, not kade — ending that pane and starting kade again"
-  grep -q "kill-session -t chorus-kade" "$T/tmux.log"
-  out_has "logged in"
-  grep -q "session.wrong_role kade" "$T/spine.log"
-}
-
-@test "still wrong after one restart: refused as WRONG ROLE with ONE next command, never 'logged in'" {
-  wrong_env wren wren
-  run "$SCRIPT" on kade
-  test "$status" -ne 0
-  out_has "WRONG ROLE"
-  out_has "Next: chorus-principal login kade"
-  out_lacks "&&"
-  out_lacks "logged in  via"
-}
-
-@test "NEGATIVE PROOF: a process that carries its own role is neither restarted nor refused" {
-  wrong_env kade
-  run "$SCRIPT" on kade
-  test "$status" -eq 0
-  out_has "logged in"
-  out_lacks "WRONG ROLE"
-  test -z "$(grep -F "kill-session" "$T/tmux.log" || true)"
-}
+# the name a row file holds: row_name <role> <session|run|presence>
+row_name() { python3 -c 'import json,sys;print(json.load(open(sys.argv[1]))["name"])' "$T/identity/$1/$2.row.json"; }

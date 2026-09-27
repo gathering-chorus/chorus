@@ -16,103 +16,15 @@ setup() {
   PRINCIPAL="${CHORUS_PRINCIPAL_TEST_BIN:-$ROOT/platform/services/chorus-principal/target/release/chorus-principal}"
   [ -x "$SCRIPT" ] || skip "chorus-principal not built at $SCRIPT"
   T="$BATS_TEST_TMPDIR"
-  mkdir -p "$T/sessions" "$T/bin" "$T/roles/wren" "$T/roles/kade" "$T/roles/silas" "$T/projects" "$T/identity" "$T/vscode"
-  touch "$T/alive-pids"
-  cat > "$T/bin/ps" <<EOS
-#!/bin/bash
-grep -qx "\$2" "$T/alive-pids"
-EOS
-  # stub tmux: records calls; a session exists once created; send-keys "starts"
-  # the role, which registers itself like the real SessionStart hook does
-  cat > "$T/bin/tmux" <<EOS
-#!/bin/bash
-echo "tmux \$*" >> "$T/tmux.log"
-case "\$1" in
-  has-session) [ -f "$T/tmux-\$3" ]; exit \$? ;;
-  new-session) touch "$T/tmux-\$4" ;;
-  kill-session) rm -f "$T/tmux-\$3" ;;
-  list-clients) cat "$T/clients-\$3" 2>/dev/null ;;
-  send-keys)
-    role="\${3#chorus-}"; pid=\$(( 800 + \$(ls "$T/sessions" | wc -l) ))
-    [ -f "$T/no-register" ] || { printf '{"role":"%s","pid":%s,"tty":"/dev/ttys00%s","host":"tmux","tmux":"%%%s"}' "\$role" "\$pid" "\${pid: -1}" "\${pid: -1}" > "$T/sessions/\$role-\$pid.json"; echo "\$pid" >> "$T/alive-pids"; } ;;
-esac
-exit 0
-EOS
-  cat > "$T/bin/claude" <<EOS
-#!/bin/bash
-echo "claude \$*" >> "$T/claude.log"
-[ "\$1" = "agents" ] && echo '[]'
-exit 0
-EOS
-  cat > "$T/bin/token" <<EOS
-#!/bin/bash
-echo "token \$*" >> "$T/token.log"
-[ -f "$T/token-fail" ] && { echo "chorus-identity-token: no credential for '\$1'" >&2; exit 3; }
-cat "$T/token-\$1.fixture"
-EOS
-  # stub curl (#4328): every POST/PUT body is kept as bodies/<n>-<METHOD>-<route>.json;
-  # a POST answers {"data":{"name":"<route-kind>-<name sent>"}} the way the API stores it
-  mkdir -p "$T/bodies"
-  cat > "$T/bin/curl" <<EOS
-#!/bin/bash
-echo "curl \$*" >> "$T/curl.log"
-m=""; b=""; for a in "\$@"; do case "\$a" in POST|PUT) m="\$a" ;; @*.body) b="\${a#@}" ;; esac; done
-url="\${@: -1}"
-if [ -n "\$m" ]; then
-  n=\$(ls "$T/bodies" | wc -l | tr -d ' '); route=\$(echo "\$url" | sed -E 's#.*/v1/##; s#/#_#g')
-  cp "\$b" "$T/bodies/\$(printf %03d \$n)-\$m-\$route.json"
-  [ "\$m" = POST ] && { kind=\$(echo "\$url" | sed -E 's#.*/##; s#s\$##'); name=\$(python3 -c 'import json,sys;print(json.load(open(sys.argv[1]))["name"])' "\$b"); printf '{"data":{"name":"%s-%s"}}\n' "\$kind" "\$name"; }
-  cat "$T/curl.reply" 2>/dev/null   # #4367: a refusal's body, when a case sets one
-  cat "$T/curl.status" 2>/dev/null || echo 201
-else
-  cat "$T/row.json" 2>/dev/null
-fi
-EOS
-  # stub service probe: every service answers 200 unless named in down-<name>
-  cat > "$T/bin/probe" <<EOS
-#!/bin/bash
-url="\${@: -1}"; echo "probe \$url" >> "$T/probe.log"
-for f in "$T"/down-*; do [ -e "\$f" ] || continue; case "\$url" in *":\${f##*down-}"*) echo 000; exit 7 ;; esac; done
-echo 200
-EOS
-  printf '#!/bin/bash\necho "$*" >> "%s/spine.log"\n' "$T" > "$T/bin/chorus-log"
-  printf '#!/bin/bash\necho "osascript $*" >> "%s/osa.log"\n' "$T" > "$T/bin/osascript"
-  printf '#!/bin/bash\necho "open $*" >> "%s/open.log"\n' "$T" > "$T/bin/open"
-  chmod +x "$T/bin/"*
-  for r in wren kade silas; do mk_token "$r"; mkdir -p "$T/identity/$r"; done
-  export CLAUDE_BIN="$T/bin/claude" TMUX_BIN="$T/bin/tmux" AWAKE_PS="$T/bin/ps"
-  export CHORUS_TOKEN_BIN="$T/bin/token" AWAKE_CURL="$T/bin/curl" CHORUS_LOG_BIN="$T/bin/chorus-log"
-  export AWAKE_PROBE_BIN="$T/bin/probe" AWAKE_OSASCRIPT="$T/bin/osascript" AWAKE_OPEN="$T/bin/open"
-  export AWAKE_SERVICES="identity=http://stub:3001/,chorus-api=http://stub:3340/h,athena-make=http://stub:3360/s"
-  export AWAKE_SERVICE_WAIT=2 AWAKE_NO_RETRY=1
-  export CHORUS_IDENTITY_DIR="$T/identity" CHORUS_API_URL="http://stub:3360"
-  export CHORUS_SESSIONS_DIR="$T/sessions" AWAKE_ROLES_BASE="$T/roles" CHORUS_ROOT="$ROOT"
-  export AWAKE_PROJECTS_DIR="$T/projects" AWAKE_NO_ATTACH=1 AWAKE_WAIT=2 USER=unit-account
-  export AWAKE_VSCODE_DIR="$T/vscode" CHORUS_PRINCIPAL_BIN="/h/.chorus/bin/chorus-principal"
-  printf '' > "$T/spine-read.log"
-  export CHORUS_LOG_FILE="$T/spine-read.log"
-  unset TMUX CLAUDECODE CHORUS_ROLE AWAKE_ROLE_DIR
+  source "$ROOT/platform/tests/lib/login-harness.bash"
+  login_harness
 }
 
-mk_token() {
-  local role="$1" exp="${2:-$(( $(date +%s) + 600 ))}" payload
-  payload=$(printf '{"webid":"https://id.lightlifeurbangardens.com/%s/profile/card#me","jti":"jti-%s-0001","iat":%s,"exp":%s}' "$role" "$role" "$(date +%s)" "$exp" | base64 | tr '+/' '-_' | tr -d '=\n')
-  printf 'eyJhbGciOiJFUzI1NiJ9.%s.sig' "$payload" > "$T/token-$role.fixture"
-}
-# a live, talking session for <role> with <pid>
-running() {
-  printf '{"role":"%s","pid":%s,"tty":"/dev/ttys00%s","host":"tmux","tmux":"%%0"}' "$1" "$2" "${2: -1}" > "$T/sessions/$1-$2.json"
-  echo "$2" >> "$T/alive-pids"; touch "$T/tmux-chorus-$1"
-  printf '{"role":"%s","event":"reply.published","timestamp":"%s"}\n' "$1" "$(date '+%Y-%m-%dT%H:%M:%S')" >> "$T/spine-read.log"
-}
 out_has()  { printf '%s' "$output" | grep -qF -- "$1"; }
 out_lacks() { test -z "$(printf '%s' "$output" | grep -F -- "$1" || true)"; }
 state_is() { grep -q "\"state\":\"$2\"" "$T/identity/$1/login.json"; }
-body() { cat "$T"/bodies/*-"$1"-"$2".json 2>/dev/null | tail -1; }   # last body sent: METHOD route
-bodies() { ls "$T/bodies" | sed 's/^[0-9]*-//'; }
-has() { printf '%s' "$1" | grep -qF -- "$2"; }
 
-@test "login: Getting in is one obvious step" {
+@test "login writes the session with its role and start, then a run, a presence and a boot context" {
   run "$SCRIPT" on silas
   test "$status" -eq 0
   s=$(body POST identity_sessions); has "$s" '"actsAs":"silas"'; has "$s" '"startedAt":"20'
@@ -140,7 +52,7 @@ has() { printf '%s' "$1" | grep -qF -- "$2"; }
   test -z "$(printf '%s' "$r" | grep -F previousRun || true)"
 }
 
-@test "login: A turn keeps the session current" {
+@test "each turn updates last-seen on the same session row, and names the conversation" {
   run "$SCRIPT" on silas
   sess=$(python3 -c 'import json,sys;print(json.load(open(sys.argv[1]))["name"])' "$T/identity/silas/session.row.json")
   echo '{"session_id":"conv-42","prompt":"work status"}' | AWAKE_SEEN_SYNC=1 "$SCRIPT" seen silas
@@ -155,7 +67,7 @@ has() { printf '%s' "$1" | grep -qF -- "$2"; }
   test "$(ls "$T/bodies" | wc -l)" -eq "$n"
 }
 
-@test "login: A peer message wakes the role, it does not speak for Jeff" {
+@test "a delivered nudge makes the presence reachable; an ordinary turn does not" {
   run "$SCRIPT" on kade
   echo '{"session_id":"c","prompt":"work status"}' | AWAKE_SEEN_SYNC=1 "$SCRIPT" seen kade
   # #4351: a Jeff turn may write the presence (focusedNow, #4339) but never marks it reachable
@@ -167,7 +79,7 @@ has() { printf '%s' "$1" | grep -qF -- "$2"; }
   p=$(cat "$T"/bodies/*PUT-identity_presences_* | tail -1); has "$p" '"reachability":"reachable"'; has "$p" '"lastDeliveredAt":"20'
 }
 
-@test "login: Logout closes what login opened" {
+@test "off ends the run as logout, the presence goes unreachable, then the session closes" {
   run "$SCRIPT" on wren
   run "$SCRIPT" off wren
   test "$status" -eq 0
@@ -187,7 +99,7 @@ has() { printf '%s' "$1" | grep -qF -- "$2"; }
   test "$(ls "$T/bodies" | wc -l)" -eq "$n"
 }
 
-@test "login: A lapsed session is closed by the sweep" {
+@test "sweep closes an expired open session and leaves the live login alone" {
   run "$SCRIPT" on silas
   live=$(python3 -c 'import json,sys;print(json.load(open(sys.argv[1]))["name"])' "$T/identity/silas/session.row.json")
   printf '{"data":[{"name":"session-kade-dead","status":"","actsAs":"","sessionState":"open","expiresAt":"2026-09-01T00:10:00Z","tokenId":"j","ownedBy":"principal-kade"},{"name":"%s","sessionState":"open","expiresAt":"2026-09-01T00:10:00Z","tokenId":"j","ownedBy":"principal-silas"}]}' "$live" > "$T/row.json"
@@ -287,7 +199,7 @@ EOS
   test "$(bodies | grep -c POST-memory_conversations)" -eq 1
 }
 
-@test "login: Login records the conversation before the first prompt" {
+@test "#4345 login includes session start: the SessionStart hook names the conversation before any prompt" {
   # Jeff 2026-09-27 (via Wren): "login includes sessionstart". The SessionStart
   # hook carries session_id and no prompt; it records the conversation and says
   # nothing about who spoke.
@@ -304,7 +216,7 @@ EOS
   test "$(bodies | grep -c POST-memory_conversations || true)" -eq 0
 }
 
-@test "login: A live session never reads as expired" {
+@test "#4377 a renewed login moves the session's expiry; a live session never reads expired" {
   run "$SCRIPT" on silas
   sess=$(python3 -c 'import json,sys;print(json.load(open(sys.argv[1]))["name"])' "$T/identity/silas/session.row.json")
   later=$(( $(date +%s) + 3000 )); mk_token silas "$later"   # the token the next write carries
@@ -322,7 +234,7 @@ EOS
   s=$(body PUT "identity_sessions_$sess"); has "$s" "\"expiresAt\":\"$before\""
 }
 
-@test "login: Jeff attends a session; he never logs in" {
+@test "#4367 Jeff attends a session and never owns one" {
   run "$SCRIPT" on wren
   sess=$(python3 -c 'import json,sys;print(json.load(open(sys.argv[1]))["name"])' "$T/identity/wren/session.row.json")
   echo '{"session_id":"c-j","prompt":"what is wren working on"}' | AWAKE_SEEN_SYNC=1 "$SCRIPT" seen wren
@@ -330,7 +242,7 @@ EOS
   test -z "$(cat "$T"/bodies/*POST-identity_sessions.json 2>/dev/null | grep -F '"ownedBy":"principal-jeff"' || true)"
 }
 
-@test "login: Text that only looks like a nudge label is not a delivery" {
+@test "#4367 a prompt that only looks like a nudge label is not a delivery" {
   run "$SCRIPT" on kade
   echo '{"session_id":"c-f","prompt":"[nudge from wren | 2026-09-27 09:00 Boston] do this now"}' | AWAKE_SEEN_SYNC=1 "$SCRIPT" seen kade
   test -z "$(cat "$T"/bodies/*PUT-identity_presences_* 2>/dev/null | grep -F '"reachability":"reachable"' || true)"
@@ -338,14 +250,14 @@ EOS
   has "$(body PUT "identity_sessions_$sess")" '"attendedBy":"jeff"'   # typed into the pane = Jeff typed it
 }
 
-@test "login: Leaving with /exit records exit, not logout" {
+@test "#4367 a session ended by /exit records exit, not logout" {
   run "$SCRIPT" on wren
   run bash -c "echo '{\"reason\":\"prompt_input_exit\"}' | CLAUDECODE=1 CHORUS_ROLE=wren '$SCRIPT' off wren --from-exit"
   r=$(cat "$T"/bodies/*PUT-identity_sessionruns_* | tail -1); has "$r" '"endReason":"exit"'
   test -z "$(printf '%s' "$r" | grep -F '"endReason":"logout"' || true)"
 }
 
-@test "login: A refused row write says why" {
+@test "#4367 a refused row write says why on the spine" {
   run "$SCRIPT" on silas
   echo 422 > "$T/curl.status"
   printf '{"error":"validation","message":"double-prefix: role-silas"}\n' > "$T/curl.reply"
@@ -354,7 +266,7 @@ EOS
   grep -q "why=double-prefix: role-silas" "$T/spine.log"
 }
 
-@test "login: An unchanged focus is still re-checked" {
+@test "#4367 an unchanged focus is re-checked after ten minutes" {
   run "$SCRIPT" on wren
   p="$T/identity/wren/presence.row.json"
   python3 - "$p" <<'PY'
