@@ -38,8 +38,10 @@ describe('AC1: Chorus subdomains report a logs section', () => {
     expect(typeof body.data.sections.logs).toBe('boolean');
   });
 
-  test('alerts-monitors-domain completeness reports a logs section', async () => {
-    const res = await fetch(`${harness.baseUrl}/api/athena/subdomains/alerts-monitors-domain/completeness`);
+  // #4354: was alerts-monitors-domain, retired by #4293 as the twin of alerts. A
+  // shape contract (#3559) needs a domain that is served; observability is.
+  test('observability-domain completeness reports a logs section', async () => {
+    const res = await fetch(`${harness.baseUrl}/api/athena/subdomains/observability-domain/completeness`);
     expect(res.status).toBe(200);
     const body = await res.json();
     expect(typeof body.data.sections.logs).toBe('boolean');
