@@ -1,0 +1,54 @@
+#!/usr/bin/env python3
+"""refusals-after-gate — #4391. Counts safety refusals in the roles' Claude
+transcripts and how many came straight after a chorus-hooks gate message.
+
+A "refusal" is the harness's note that a reply was stopped by a safety
+classifier. For each conversation, the first refusal is attributed to the last
+tool result before it: GATE when that result is a chorus-hooks block, else OTHER.
+
+Usage: refusals-after-gate [--since YYYY-MM-DD] [--dir <projects dir>]
+Prints one line per conversation with a refusal, then a summary:
+  refusals: 18 conversations · first refusal after a gate: 5 · other: 4
+"""
+import argparse, glob, json, os, sys, time
+
+STOP = "stopped by a safety classifier"
+GATE = ("Context synthesis gate", "hook error:", "PreToolUse:")
+
+def first_refusal(path):
+    rows = []
+    with open(path, errors="replace") as f:
+        for line in f:
+            try: rows.append(json.loads(line))
+            except ValueError: continue
+    for i, e in enumerate(rows):
+        c = json.dumps(e.get("message", {}).get("content", ""))
+        if e.get("type") == "user" and STOP in c[:600]:
+            for j in range(i - 1, max(-1, i - 20), -1):
+                s = json.dumps(rows[j].get("message", {}).get("content", ""))
+                if "tool_result" in s:
+                    kind = "GATE" if any(g in s for g in GATE) else "OTHER"
+                    return kind, e.get("timestamp", "")[:16], s[s.find("content") + 10:][:100]
+            return "OTHER", e.get("timestamp", "")[:16], "(no tool result before it)"
+    return None
+
+def main():
+    ap = argparse.ArgumentParser()
+    ap.add_argument("--since", default="")
+    ap.add_argument("--dir", default=os.path.expanduser("~/.claude/projects"))
+    a = ap.parse_args()
+    since = time.mktime(time.strptime(a.since, "%Y-%m-%d")) if a.since else 0
+    n = gate = other = 0
+    for d in sorted(glob.glob(os.path.join(a.dir, "*roles-*"))):
+        for p in glob.glob(os.path.join(d, "*.jsonl")):
+            if os.path.getmtime(p) < since: continue
+            r = first_refusal(p)
+            if not r: continue
+            n += 1
+            gate += r[0] == "GATE"; other += r[0] == "OTHER"
+            print(f"{r[0]:5} {r[1]}  {os.path.basename(d).split('roles-')[-1]:6} {os.path.basename(p)[:8]}  {r[2]}")
+    print(f"refusals: {n} conversations · first refusal after a gate: {gate} · other: {other}")
+    return 0
+
+if __name__ == "__main__":
+    sys.exit(main())

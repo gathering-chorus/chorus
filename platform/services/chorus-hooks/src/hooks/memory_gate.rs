@@ -21,6 +21,20 @@ use crate::state::AppState;
 use crate::types::{permission_deny_json, HookInput, HookResponse};
 use tracing::info;
 
+// #4391 — what the gate says when it blocks. It asks for a written plan in the
+// reply, never for the model's reasoning: "show your reasoning" preceded 5 of 9
+// first safety refusals across the roles (2026-09-27, classifier label
+// reasoning_extraction), and every later turn in that conversation was refused.
+const NO_SEARCH_NO_PLAN: &str = "Context synthesis gate: no search and no written plan yet. \
+     Before this edit: 1) search Chorus and memory for prior work on this problem, \
+     2) write in your reply what you found and what you will change, \
+     in lines starting 'Prior work:' and 'Approach:'.";
+const SEARCHED_NO_PLAN: &str = "Context synthesis gate: you searched, but your reply has no plan yet. \
+     Before this edit, write in your reply what prior work showed and what you will change, \
+     in lines starting 'Prior work:' and 'Approach:'.";
+const PLAN_NO_SEARCH: &str = "Context synthesis gate: a plan is written but no search was run. \
+     If you're working from session context, that's fine. If not, run chorus-query.sh first.";
+
 /// PostToolUse: log when a Chorus search or memory read completes.
 /// This creates the investigation timeline Jeff needs to see in the log —
 /// not just write-time decisions, but the full research-then-synthesize arc.
@@ -324,10 +338,7 @@ pub fn check(input: &HookInput, state: &AppState) -> HookResponse {
             file = %file_path,
         );
         return HookResponse::deny(&permission_deny_json(
-            "Context synthesis gate: no search AND no synthesis detected. \
-             Before writing code: 1) search Chorus + memory for prior work on this problem, \
-             2) produce a context synthesis showing what you found and how it shapes your approach. \
-             Searching without synthesizing is the same as not searching."
+            NO_SEARCH_NO_PLAN
         ));
     }
 
@@ -340,10 +351,7 @@ pub fn check(input: &HookInput, state: &AppState) -> HookResponse {
             file = %file_path,
         );
         return HookResponse::deny(&permission_deny_json(
-            "Context synthesis gate: you searched but didn't synthesize. \
-             You ran searches — now demonstrate understanding: what did prior work tell you? \
-             What's your approach given that context? Show your reasoning before writing code. \
-             (Use markers like 'Prior work:', 'Current state:', 'Approach:' in your response.)"
+            SEARCHED_NO_PLAN
         ));
     }
 
@@ -356,9 +364,7 @@ pub fn check(input: &HookInput, state: &AppState) -> HookResponse {
             file = %file_path,
         );
         return HookResponse::warn_stderr(
-            "Context synthesis gate: synthesis found but no search detected. \
-             If you're working from session context, that's fine. But if you're \
-             guessing, run chorus-query.sh first."
+            PLAN_NO_SEARCH
         );
     }
 
@@ -374,6 +380,19 @@ pub fn check(input: &HookInput, state: &AppState) -> HookResponse {
 
 #[cfg(test)]
 mod tests {
+    /// #4391 — no gate message asks the model for its reasoning. The needles
+    /// are built from parts so this test's own source cannot match itself.
+    #[test]
+    fn gate_messages_ask_for_a_plan_never_for_reasoning() {
+        let banned = [["reason", "ing"].concat(), ["demonstrate", " understanding"].concat()];
+        for msg in [NO_SEARCH_NO_PLAN, SEARCHED_NO_PLAN, PLAN_NO_SEARCH] {
+            for b in &banned {
+                assert!(!msg.to_lowercase().contains(b.as_str()), "gate message asks for {b}: {msg}");
+            }
+        }
+        assert!(SEARCHED_NO_PLAN.contains("Prior work:") && SEARCHED_NO_PLAN.contains("Approach:"));
+    }
+
     use super::*;
     use crate::types::HookInput;
     use crate::shared::state_paths::chorus_root;
