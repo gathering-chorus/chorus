@@ -173,6 +173,22 @@ fn run(args: &[String]) -> Result<i32, String> {
     }
     let units = units;
 
+    // #4392 — build, in the werk, what the selected suites run, before any of
+    // them runs. A suite that runs an unbuilt or stale binary is red for the
+    // test world, not the product (four #4335 runs on 2026-09-27).
+    // Rule 3 (Jeff + Kade, 2026-09-27): a suite whose build failed reports
+    // UNMEASURED, by name, instead of running against a missing or stale build.
+    let unbuilt: std::collections::BTreeMap<String, String> = if args.iter().any(|a| a == "--explain") {
+        Default::default()
+    } else {
+        let m = build_for_suites(&werk, &units);
+        for (suite, why) in &m {
+            println!("   build FAILED for {}: {} — the suite reports UNMEASURED", suite, why);
+            emit_spine("test.build.failed", &role, &card, &trace, &[("message", &format!("{}: {}", suite, why))]);
+        }
+        m
+    };
+
     // #3917 AC5 — `--explain` answers "what would this diff measure?" without
     // running anything. The question had no answer before: the only way to learn
     // the gate had selected nothing was to read a green summary and disbelieve it.
@@ -433,13 +449,18 @@ fn run(args: &[String]) -> Result<i32, String> {
                 // read as a pass — the line says UNMEASURED and the run is not
                 // green on its account — and it must not read as a failure,
                 // because nothing was shown broken.
-                match run_bats(&werk, s) {
-                    BatsOutcome::Pass => true,
-                    BatsOutcome::Unmeasured => {
-                        unmeasured.push(target.to_string());
-                        true
+                if unbuilt.contains_key(s) {
+                    unmeasured.push(target.to_string());
+                    true
+                } else {
+                    match run_bats(&werk, s) {
+                        BatsOutcome::Pass => true,
+                        BatsOutcome::Unmeasured => {
+                            unmeasured.push(target.to_string());
+                            true
+                        }
+                        BatsOutcome::Fail => false,
                     }
-                    BatsOutcome::Fail => false,
                 }
             }
             (CheckKind::ClippyRatchet, None) => run_clippy_ratchet(&werk),
@@ -1475,6 +1496,77 @@ fn run_bats_cases(werk: &str, suite: &str) -> (bool, Vec<(String, String)>, Stri
 #[derive(PartialEq)]
 enum BatsOutcome { Pass, Fail, Unmeasured }
 
+/// #4392 — the werk's package dirs that have a build script, relative to the
+/// werk (depth 3, never inside node_modules, target or .git).
+fn werk_packages(werk: &str) -> Vec<String> {
+    fn walk(root: &Path, dir: &Path, depth: usize, out: &mut Vec<String>) {
+        if depth > 3 { return; }
+        let pj = dir.join("package.json");
+        if let Ok(t) = std::fs::read_to_string(&pj) {
+            if t.contains("\"build\"") {
+                if let Ok(rel) = dir.strip_prefix(root) { if !rel.as_os_str().is_empty() { out.push(rel.to_string_lossy().into_owned()); } }
+            }
+        }
+        let Ok(rd) = std::fs::read_dir(dir) else { return };
+        for e in rd.flatten() {
+            let n = e.file_name().to_string_lossy().into_owned();
+            if n == "node_modules" || n == "target" || n.starts_with('.') { continue; }
+            if e.file_type().map(|t| t.is_dir()).unwrap_or(false) { walk(root, &e.path(), depth + 1, out); }
+        }
+    }
+    let mut out = Vec::new();
+    walk(Path::new(werk), Path::new(werk), 0, &mut out);
+    out
+}
+
+/// #4392 — build, once each, every crate and package the selected bats suites
+/// need, in the werk. Returns the suites whose build failed, with why.
+fn build_for_suites(werk: &str, units: &[werk_test::TestUnit]) -> std::collections::BTreeMap<String, String> {
+    let packages = werk_packages(werk);
+    let mut needs: Vec<(String, Vec<werk_test::BuildTarget>)> = Vec::new();
+    for u in units {
+        if let werk_test::TestUnit::BatsSuite(s) = u {
+            if let Ok(t) = std::fs::read_to_string(format!("{}/{}", werk, s)) {
+                needs.push((s.clone(), werk_test::suite_build_targets(&t, &packages)));
+            }
+        }
+    }
+    let mut built: std::collections::BTreeMap<werk_test::BuildTarget, Result<(), String>> = Default::default();
+    let mut failed = std::collections::BTreeMap::new();
+    for (suite, targets) in needs {
+        for t in targets {
+            let r = built.entry(t.clone()).or_insert_with(|| build_one(werk, &t)).clone();
+            if let Err(why) = r { failed.insert(suite.clone(), why); break; }
+        }
+    }
+    failed
+}
+
+fn build_one(werk: &str, t: &werk_test::BuildTarget) -> Result<(), String> {
+    match t {
+        werk_test::BuildTarget::Crate(c) => {
+            let dir = format!("{}/platform/services/{}", werk, c);
+            if !Path::new(&format!("{}/Cargo.toml", dir)).exists() {
+                return Err(format!("no crate at platform/services/{}", c));
+            }
+            println!("   build: cargo build --release in platform/services/{} (a selected suite runs it)", c);
+            let ok = Command::new("cargo").args(["build", "--release", "--quiet"]).current_dir(&dir)
+                .status().map(|s| s.success()).unwrap_or(false);
+            if ok { Ok(()) } else { Err(format!("cargo build --release failed in platform/services/{}", c)) }
+        }
+        werk_test::BuildTarget::Package(p) => {
+            let dir = format!("{}/{}", werk, p);
+            if !Path::new(&format!("{}/node_modules", dir)).exists() {
+                return Err(format!("{} has no node_modules in the werk, so its dist cannot be built (npm ci there)", p));
+            }
+            println!("   build: npm run build in {} (a selected suite runs its dist)", p);
+            let ok = Command::new("npm").args(["run", "build", "--silent"]).current_dir(&dir)
+                .status().map(|s| s.success()).unwrap_or(false);
+            if ok { Ok(()) } else { Err(format!("npm run build failed in {}", p)) }
+        }
+    }
+}
+
 fn run_bats(werk: &str, suite: &str) -> BatsOutcome {
     let tmp = std::env::temp_dir().join(format!("werk-test-bats-{}", std::process::id()));
     let _ = std::fs::create_dir_all(&tmp);
@@ -1489,8 +1581,13 @@ fn run_bats(werk: &str, suite: &str) -> BatsOutcome {
     // #4106 — same rule on the werk lane: a `*.test.sh` whose shebang says bats
     // is a bats suite.
     let runner = werk_test::suite_runner(&format!("{}/{}", werk, suite));
+    // #4392 — the card lane gets the same hermetic world as the nightly lane
+    // (dead nudge and pulse ports, temp stores): without it a suite that runs
+    // chorus-health paged Jeff from inside a card's pipeline.
+    let mut cmd = Command::new(runner);
+    apply_suite_world(&mut cmd, werk);
     bats_outcome(
-        Command::new(runner)
+        cmd
             .arg(suite)
             .current_dir(werk)
             // #3918 — the child is a TEST: clear the runner's prod declaration so
@@ -2834,6 +2931,29 @@ mod suite_deadline_tests {
         std::fs::create_dir_all(&dir).unwrap();
         std::fs::write(dir.join(name), body).unwrap();
         (dir, name.to_string())
+    }
+
+    /// #4392 — the card lane's run_bats gives a suite the caged world and the
+    /// werk as its root. The suite fails unless both hold, so a runner that
+    /// hands it the live nudge path or canonical fails this test.
+    #[test]
+    fn the_card_lane_runs_a_suite_caged_and_rooted_in_the_werk() {
+        let (dir, s) = world("cage.sh", "case \"$CHORUS_MCP_NUDGE_URL\" in *127.0.0.1:9*) ;; *) echo \"live nudge path: $CHORUS_MCP_NUDGE_URL\"; exit 1 ;; esac\n\
+[ \"$CHORUS_ROOT\" = \"$PWD\" ] || { echo \"root $CHORUS_ROOT is not the werk $PWD\"; exit 1; }\n\
+echo '=== Results: 1 passed, 0 failed ==='\n");
+        std::env::remove_var("CHORUS_MCP_NUDGE_URL");
+        let werk = std::fs::canonicalize(&dir).unwrap();
+        assert!(matches!(run_bats(werk.to_str().unwrap(), &s), BatsOutcome::Pass));
+    }
+
+    /// NEGATIVE PROOF — the same suite run with the live nudge path fails, so
+    /// the check above can go red.
+    #[test]
+    fn negative_proof_a_live_nudge_path_fails_the_cage_suite() {
+        let (dir, s) = world("cage2.sh", "case \"$CHORUS_MCP_NUDGE_URL\" in *127.0.0.1:9*) ;; *) exit 1 ;; esac\n");
+        let out = Command::new("bash").arg(&s).current_dir(&dir)
+            .env("CHORUS_MCP_NUDGE_URL", "http://127.0.0.1:3341/nudge").status().unwrap();
+        assert!(!out.success());
     }
 
     #[test]
