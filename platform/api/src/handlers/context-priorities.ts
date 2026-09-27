@@ -164,8 +164,7 @@ export async function fetchContextPriorities(
   const chunks = [...byChunk.values()].sort((a, b) => a.roleSequence - b.roleSequence);
   for (const c of chunks) c.cards.sort((a, b) => a.rank - b.rank);
 
-  const unsequenced = readUnsequencedFromBoard(deps.readOpenCards?.() ?? [], r, sequencedIds)
-    ?? readUnsequenced(deps.readPulse(), r, sequencedIds);
+  const unsequenced = unsequencedFor(deps, r, sequencedIds);
 
   // #3686 — the upper walk levels. products/domains via the GENERATED athena-make
   // routes; rolePriority via SPARQL until the Role route collision is fixed.
@@ -281,6 +280,13 @@ async function dropClosedCards(
 function vikunjaId(iri: string): number | null {
   const m = /#card-(\d+)$/.exec(iri);
   return m ? Number(m[1]) : null;
+}
+
+/** #4350 — the whole board first; the pulse mirror only when the board gave nothing.
+ *  Its own function so the walk builder does not grow another branch. */
+function unsequencedFor(deps: ContextPrioritiesDeps, role: string, sequenced: Set<number>): UnsequencedBlock {
+  return readUnsequencedFromBoard(deps.readOpenCards?.() ?? [], role, sequenced)
+    ?? readUnsequenced(deps.readPulse(), role, sequenced);
 }
 
 /** #4350 — the unsequenced set from the whole board: every open column. Null when
