@@ -39,7 +39,8 @@ EOS
   payload=$(printf '{"webid":"https://id.lightlifeurbangardens.com/kade/profile/card#me","jti":"jti-4184","iat":%s,"exp":%s}' "$(date +%s)" "$(( $(date +%s) + 600 ))" | base64 | tr '+/' '-_' | tr -d '=\n')
   printf 'eyJhbGciOiJFUzI1NiJ9.%s.sig' "$payload" > "$T/token.fixture"
   printf '#!/bin/bash\ncat "%s/token.fixture"\n' "$T" > "$T/bin/token"
-  printf '#!/bin/bash\necho 201\n' > "$T/bin/curl"
+  # #4368: login reads the Principal row first; kade is an agent here
+  printf '#!/bin/bash\ncase "${@: -1}" in */v1/identity/principals/kade) printf '"'"'{"data":{"principalKind":"agent"}}\\n200\\n'"'"'; exit 0 ;; */v1/identity/principals/*) printf '"'"'{}\\n404\\n'"'"'; exit 0 ;; esac\necho 201\n' > "$T/bin/curl"
   printf '#!/bin/bash\nexit 0\n' > "$T/bin/chorus-log"
   export CHORUS_TOKEN_BIN="$T/bin/token" AWAKE_CURL="$T/bin/curl" CHORUS_LOG_BIN="$T/bin/chorus-log"
   export CHORUS_IDENTITY_DIR="$T/identity" CHORUS_API_URL="http://stub:1"
@@ -65,9 +66,11 @@ reg() { # reg <pid> [pane]
 }
 
 @test "usage: unknown role is exit 2, not a silent start" {
+  # #4368: unknown = no Principal row, not "not in a list of three"
   run "$SCRIPT" bob
   [ "$status" -eq 2 ]
   [ ! -f "$T/tmux.log" ]
+  printf '%s' "$output" | grep -qF "no Principal row named bob"
 }
 
 @test "idempotent: one live tmux session → the proof line, and NOTHING is sent" {

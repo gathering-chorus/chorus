@@ -116,10 +116,16 @@ Feature: A principal logs in, works, and logs out
     Then the spine says the session row failed, with the store's reason
     And the token is not on the spine
 
-  @waiting-4368
   Scenario: A service principal has no login
+    Given bridge's Principal row says it is a service
     When Jeff runs "chorus-principal login bridge"
     Then it is refused with "bridge is a service principal; it acts with its credential, it does not log in"
+    And nothing is started
+
+  Scenario: A name with no Principal row cannot log in
+    When Jeff runs "chorus-principal login bob"
+    Then it is refused with "no Principal row named bob. Who exists: chorus-principal census"
+    And nothing is started
 
   Scenario: Logout closes what login opened
     Given wren is logged in

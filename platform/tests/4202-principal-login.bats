@@ -45,6 +45,7 @@ EOS
   cat > "$T/bin/curl" <<EOS
 #!/bin/bash
 echo "curl \$*" >> "$T/curl.log"
+case "\${@: -1}" in */v1/identity/principals/*) pn="\${@: -1}"; pn="\${pn##*/}"; if [ -f "$T/principal-\$pn.json" ]; then cat "$T/principal-\$pn.json"; else case "\$pn" in wren|silas|kade) printf '{"data":{"principalKind":"agent"}}\n200\n' ;; *) printf '{"data":{"status":404}}\n404\n' ;; esac; fi; exit 0 ;; esac   # #4368: the Principal row login reads
 # the 409 branch re-reads the row with a plain GET (no -X POST): answer it with
 # the fixture body so the ownership decision can be exercised. #4215.
 case "\$*" in *"-X POST"*) ;; *) cat "$T/existing.json" 2>/dev/null; exit 0 ;; esac
@@ -233,7 +234,9 @@ lacks()   { test -z "$(grep -F -- "$2" "$1" 2>/dev/null || true)"; }
   run env CHORUS_LOG_FILE="$T/spine-read.log" "$SCRIPT" kade
   test "$status" -eq 0
   test ! -f "$T/token.log"
-  test ! -f "$T/curl.log"
+  # #4368: the one call is the Principal row read; nothing is written
+  grep -q -- '/v1/identity/principals/kade' "$T/curl.log"
+  test -z "$(grep -E -- '-X (POST|PUT)' "$T/curl.log" 2>/dev/null || true)"
 }
 
 @test "#4215 a registered but MUTE session is replaced, not blessed" {
