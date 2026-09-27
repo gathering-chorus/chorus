@@ -14,14 +14,19 @@ import type { SessionReg, TypedResolution } from './session-registry';
 export interface PresenceRow { name: string; presenceOf?: string; pane?: string; tty?: string; checkedAt?: string }
 export interface RunRow { name: string; runEndedAt?: string; startedAt?: string }
 
-const RUN_PREFIX = 'session-run-';
+/** presenceOf names the run as the API stored it: "<kind>-<run name>"
+ * ("session-run-wren-run-x" live). Match on the run name, whatever the prefix. */
+function ofLiveRun(presenceOf: string, live: Set<string>): boolean {
+  for (const run of live) if (presenceOf === run || presenceOf.endsWith(`-${run}`)) return true;
+  return false;
+}
 
 export function resolveFromPresence(presences: PresenceRow[], runs: RunRow[], role: string): TypedResolution {
   const mine = presences.filter((p) => p.name.startsWith(`${role}-presence-`));
   if (mine.length === 0) return { kind: 'unregistered' };
   const live = new Set(runs.filter((r) => r.name.startsWith(`${role}-run-`) && !r.runEndedAt).map((r) => r.name));
   const candidates = mine
-    .filter((p) => live.has((p.presenceOf ?? '').replace(RUN_PREFIX, '')))
+    .filter((p) => ofLiveRun(p.presenceOf ?? '', live))
     .sort((a, b) => (b.checkedAt ?? '').localeCompare(a.checkedAt ?? ''));
   if (candidates.length === 0) return { kind: 'dead' };
   const current = candidates[0];

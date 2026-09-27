@@ -85,7 +85,6 @@ Feature: A principal logs in, works, and logs out
     When silas sends wren a nudge
     Then the nudge waits until Jeff's prompt is sent, and Jeff's text arrives whole
 
-  @waiting-4361
   Scenario: A message finds the role through its Presence
     Given wren is logged in
     When silas sends wren a nudge

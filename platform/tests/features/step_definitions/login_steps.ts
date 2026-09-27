@@ -233,7 +233,27 @@ Then("the nudge waits until Jeff's prompt is sent, and Jeff's text arrives whole
     { cwd: path.join(ROOT, 'platform/pulse'), stdio: 'pipe' });
 });
 
-Then("the relay found wren's pane through wren's Presence row, not a registry file", STEP, function () { return waiting(4361); });
+// #4361 — pulse routes by the Presence row the login wrote. The registry file
+// is pointed at a pane nobody is in (%99); only a Presence read gets it right.
+Then("the relay found wren's pane through wren's Presence row, not a registry file", STEP, function () {
+  const bodies = path.join(T, 'bodies');
+  const read = (suffix: string) => fs.readdirSync(bodies).filter((n) => n.endsWith(suffix))
+    .map((n) => JSON.parse(fs.readFileSync(path.join(bodies, n), 'utf8')));
+  const presences = read('POST-identity_presences.json');
+  const runs = read('POST-identity_sessionruns.json');
+  if (presences.length !== 1 || runs.length !== 1) throw new Error(`login wrote ${presences.length} presence / ${runs.length} run rows`);
+  const reg = fs.readdirSync(path.join(T, 'sessions')).filter((n) => n.startsWith('wren-') && n.endsWith('.json'));
+  for (const n of reg) {
+    const p = path.join(T, 'sessions', n);
+    fs.writeFileSync(p, JSON.stringify({ ...JSON.parse(fs.readFileSync(p, 'utf8')), tmux: '%99' }));
+  }
+  // eslint-disable-next-line @typescript-eslint/no-require-imports -- pulse is a sibling package; its routing is what this step checks
+  const { resolveFromPresence } = require(path.join(ROOT, 'platform/pulse/src/presence-target'));
+  const res = resolveFromPresence(presences, runs, 'wren');
+  if (res.kind !== 'resolved') throw new Error(`no live Presence for wren: ${JSON.stringify(res)}`);
+  if (res.session.tmux === '%99') throw new Error('routed by the registry file, not the Presence row');
+  if (res.session.tmux !== presences[0].pane) throw new Error(`routed to ${res.session.tmux}, Presence says ${presences[0].pane}`);
+});
 
 Then('the command says wren is already logged in', STEP, function () {
   sh('test "$(cat "$T/status")" -eq 0; out_has "logged in"; out_has "already awake"');
