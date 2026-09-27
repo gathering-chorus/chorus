@@ -286,6 +286,23 @@ EOS
   test "$(bodies | grep -c POST-memory_conversations)" -eq 1
 }
 
+@test "#4345 login includes session start: the SessionStart hook names the conversation before any prompt" {
+  # Jeff 2026-09-27 (via Wren): "login includes sessionstart". The SessionStart
+  # hook carries session_id and no prompt; it records the conversation and says
+  # nothing about who spoke.
+  run "$SCRIPT" on silas
+  runn=$(python3 -c 'import json,sys;print(json.load(open(sys.argv[1]))["name"])' "$T/identity/silas/run.row.json")
+  echo '{"session_id":"start-4345","hook_event_name":"SessionStart","source":"startup"}' | AWAKE_SEEN_SYNC=1 "$SCRIPT" seen silas
+  c=$(body POST memory_conversations); has "$c" '"conversationId":"start-4345"'; has "$c" "\"conversationOf\":\"$runn\""
+  test -z "$(cat "$T"/bodies/* 2>/dev/null | grep -F '"attendedBy"' || true)"
+}
+
+@test "NEGATIVE PROOF: a SessionStart with no session_id writes no Conversation row" {
+  run "$SCRIPT" on silas
+  echo '{"hook_event_name":"SessionStart","source":"startup"}' | AWAKE_SEEN_SYNC=1 "$SCRIPT" seen silas
+  test "$(bodies | grep -c POST-memory_conversations || true)" -eq 0
+}
+
 @test "#4342 a resumed conversation in a new run moves its row to that run, never a second row" {
   run "$SCRIPT" on silas
   echo '{"session_id":"4d39d28c-37a5","prompt":"hi"}' | AWAKE_SEEN_SYNC=1 "$SCRIPT" seen silas
