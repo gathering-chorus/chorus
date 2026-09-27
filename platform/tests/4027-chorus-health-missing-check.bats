@@ -12,6 +12,7 @@
 HEALTH="$BATS_TEST_DIRNAME/../scripts/chorus-health"
 
 setup() {
+  [ "${RUN_INTEGRATION:-}" = "true" ] || skip "integration (runs the live chorus-health, which pages) — UNMEASURED until #4336 fakes the bridge; RUN_INTEGRATION=true to run"   # #4335: a card run paged Silas and Jeff
   export CHORUS_HEALTH_NO_EMIT=1   # a test FAIL must not become a live chorus.health event/nudge
   curl -s -o /dev/null --max-time 3 http://localhost:3340/api/chorus/health || skip "chorus-api not running"
   curl -s -o /dev/null --max-time 3 http://localhost:3360/health || skip "athena-make not running (the branch under test is only reached when :3360 answers)"

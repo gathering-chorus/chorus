@@ -19,7 +19,9 @@
 setup() {
   SHACL="${SHACL_BIN:-shacl}"
   command -v "$SHACL" >/dev/null 2>&1 || skip "SHACL tool absent — cannot validate shapes here"
-  ROOT="${CHORUS_ROOT:-$(cd "$BATS_TEST_DIRNAME/../.." && pwd)}"   # #3904: derive, never hardcode a /Users path
+  # #4335: the tree under test, never $CHORUS_ROOT — prove-live points that at
+  # canonical, so a shape fix in the werk was tested against main's old shape.
+  ROOT="$(cd "$BATS_TEST_DIRNAME/../.." && pwd)"   # #3904: derive, never hardcode a /Users path
   SHAPES="$ROOT/roles/silas/ontology/security-model-3618.ttl"
   WORK="$(mktemp -d)"
   PRE='@prefix chorus: <https://jeffbridwell.com/chorus#> .
