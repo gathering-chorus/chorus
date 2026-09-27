@@ -1429,7 +1429,11 @@ fn run_bats_cases(werk: &str, suite: &str) -> (bool, Vec<(String, String)>, Stri
             // two suites that correctly refuse to write to production were red
             // every night for doing the right thing.
             let unmeasured = werk_test::self_declared_unmeasured(code, &text);
-            let ok = success || refused || unmeasured;
+            // #4367 — a feature whose every red waits on a named card reports
+            // those reds and does not block (werk_test::feature_reds_all_waiting)
+            let waiting_only = werk_test::is_feature_suite(suite)
+                && werk_test::feature_reds_all_waiting(&werk_test::parse_file_suite_cases(suite, &text));
+            let ok = success || refused || unmeasured || waiting_only;
             if !ok {
                 // #4065 — the failing suite's own last lines go to STDOUT, each
                 // prefixed with the suite path, so nightly-suites.sh's per-unit

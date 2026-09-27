@@ -758,7 +758,10 @@ pub fn is_unittest_suite(path: &str) -> bool {
 /// `CUKE|<pass|fail|skip>|<scenario name>` line per scenario run. A scenario
 /// with any failed, undefined, ambiguous or pending step is a fail; one whose
 /// steps were all skipped is a skip.
-pub const CUKE_FLATTEN_JS: &str = r#"const r=JSON.parse(require('fs').readFileSync(process.argv[1],'utf8'));const only=process.argv[2];for(const f of r){if(only&&f.uri!==only)continue;for(const e of (f.elements||[])){if(e.type!=='scenario')continue;const st=(e.steps||[]).map(s=>s.result&&s.result.status);const v=st.some(x=>['failed','undefined','ambiguous','pending'].includes(x))?'fail':st.length&&st.every(x=>x==='skipped')?'skip':'pass';console.log('CUKE|'+v+'|'+e.name)}}"#;
+/// #4367 — a scenario tagged `@waiting-<card>` whose only non-passing steps are
+/// pending (a step that card has not built) is still a fail, and its name gains
+/// ` — waiting on #<card>` so every report says which card it waits for.
+pub const CUKE_FLATTEN_JS: &str = r#"const WAIT=' — waiting on #';const r=JSON.parse(require('fs').readFileSync(process.argv[1],'utf8'));const only=process.argv[2];for(const f of r){if(only&&f.uri!==only)continue;for(const e of (f.elements||[])){if(e.type!=='scenario')continue;const st=(e.steps||[]).map(s=>s.result&&s.result.status);const v=st.some(x=>['failed','undefined','ambiguous','pending'].includes(x))?'fail':st.length&&st.every(x=>x==='skipped')?'skip':'pass';const w=(e.tags||[]).map(t=>t.name).find(t=>/^@waiting-\d+$/.test(t));const waits=w&&v==='fail'&&st.includes('pending')&&st.every(x=>['passed','pending','skipped'].includes(x));console.log('CUKE|'+v+'|'+e.name+(waits?WAIT+w.slice(9):''))}}"#;
 
 /// #4292 — cucumber-js 10 MERGES a CLI feature path with the profile's
 /// `paths`, so `cucumber-js one.feature` ran all five features (measured:
@@ -793,6 +796,20 @@ fn js_str(s: &str) -> String {
     }
     o.push('\'');
     o
+}
+
+/// #4367 — the name suffix CUKE_FLATTEN_JS gives a scenario that waits on a card.
+pub const CUKE_WAITING: &str = " — waiting on #";
+
+/// #4367 — a feature suite whose every red is a scenario waiting on a card.
+/// Those reds stay in the report, by name and card, every run; they do not
+/// block a card that touches the file (the scenario a card finishes is in the
+/// same file as the ones still waiting). Any other red — a failed step, an
+/// undefined step, a pending step in an untagged scenario — is not waiting.
+/// No cases at all is never "only waiting".
+pub fn feature_reds_all_waiting(cases: &[(String, String)]) -> bool {
+    let reds: Vec<&(String, String)> = cases.iter().filter(|(_, v)| v == "fail").collect();
+    !cases.is_empty() && !reds.is_empty() && reds.iter().all(|(n, _)| n.contains(CUKE_WAITING))
 }
 
 /// #4292 — the `CUKE|` lines as (scenario name, result).
@@ -897,6 +914,45 @@ mod file_suites_4292 {
     fn a_single_feature_config_narrows_paths_and_keeps_the_profile() {
         let c = cuke_single_file_config("/x/platform/tests/cucumber.js", "features/seeds/it's.feature");
         assert_eq!(c, "const b=require('/x/platform/tests/cucumber.js').default;module.exports={default:{...b,paths:['features/seeds/it\\'s.feature']}};\n");
+    }
+
+    #[test]
+    fn a_feature_whose_reds_all_wait_on_cards_does_not_block() {
+        let c = |n: &str, v: &str| (n.to_string(), v.to_string());
+        assert!(feature_reds_all_waiting(&[c("a", "pass"), c("b — waiting on #4368", "fail")]));
+        // NEGATIVE PROOF: one real red among the waiting ones blocks
+        assert!(!feature_reds_all_waiting(&[c("a", "fail"), c("b — waiting on #4368", "fail")]));
+        // NEGATIVE PROOF: no reds is not this case (the suite passed on its own), no cases is never ok
+        assert!(!feature_reds_all_waiting(&[c("a", "pass")]));
+        assert!(!feature_reds_all_waiting(&[]));
+    }
+
+    #[test]
+    fn the_flattener_names_only_pending_tagged_scenarios_as_waiting() {
+        let dir = std::env::temp_dir().join(format!("cuke-wait-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let rep = dir.join("r.json");
+        let sc = |name: &str, tag: &str, st: &[&str]| format!(
+            r#"{{"type":"scenario","name":"{}","tags":[{}],"steps":[{}]}}"#, name,
+            if tag.is_empty() { String::new() } else { format!(r#"{{"name":"{}"}}"#, tag) },
+            st.iter().map(|s| format!(r#"{{"result":{{"status":"{}"}}}}"#, s)).collect::<Vec<_>>().join(","));
+        let json = format!("[{{\"uri\":\"f\",\"elements\":[{},{},{},{}]}}]",
+            sc("waits", "@waiting-4368", &["passed", "pending", "skipped"]),
+            sc("broke", "@waiting-4369", &["passed", "failed", "skipped"]),
+            sc("untagged", "", &["passed", "pending"]),
+            sc("fine", "@waiting-4370", &["passed", "passed"]));
+        std::fs::write(&rep, json).unwrap();
+        let out = std::process::Command::new("node").arg("-e").arg(CUKE_FLATTEN_JS).arg(&rep).output().unwrap();
+        let text = String::from_utf8_lossy(&out.stdout);
+        let cases = parse_cuke_lines(&text);
+        assert!(cases.contains(&("waits — waiting on #4368".to_string(), "fail".to_string())), "{text}");
+        // NEGATIVE PROOF: a FAILED step is a real red even under a waiting tag
+        assert!(cases.contains(&("broke".to_string(), "fail".to_string())), "{text}");
+        // NEGATIVE PROOF: pending without the tag is a real red
+        assert!(cases.contains(&("untagged".to_string(), "fail".to_string())), "{text}");
+        assert!(cases.contains(&("fine".to_string(), "pass".to_string())), "{text}");
+        assert!(!feature_reds_all_waiting(&cases));
+        let _ = std::fs::remove_dir_all(&dir);
     }
 
     #[test]
