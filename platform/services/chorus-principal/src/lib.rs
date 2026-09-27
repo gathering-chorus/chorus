@@ -977,6 +977,9 @@ fn seen_write(ctx: &Ctx, role: &str, conv: &str, flag: &str) -> i32 {
     });
     // #4339 — a prompt from Jeff: the session records who attended it and when
     let session = if flag == "jeff" { session.and_then(|s| rows::attended_session(s, "jeff", &now)) } else { session };
+    // #4377 — the login renewed since the row was written: its expiry follows,
+    // so a live session never reads as expired (one PUT with the turn's, not two)
+    let session = session.map(|s| { let exp = current_login_expiry(ctx, role); rows::renewed_session(s.clone(), &exp).unwrap_or(s) });
     if let Some(s) = session.clone().and_then(|s| rows::seen_session(s, &now)) { put_row(ctx, role, "identity/sessions", "session", &s); }
     // ... and no run: this running session gets its run, presence and boot context now
     let run_live = read_row(ctx, role, "run").map(|r| r.get("runEndedAt").and_then(|e| e.as_str()).unwrap_or("").is_empty()).unwrap_or(false);
@@ -1001,6 +1004,14 @@ fn seen_write(ctx: &Ctx, role: &str, conv: &str, flag: &str) -> i32 {
     }
     record_credentials(ctx, role);
     0
+}
+
+/// #4377 — the expiry of the role's current login token (token.cache, renewed
+/// by chorus-identity-token), only if it names this role. "" when unreadable.
+fn current_login_expiry(ctx: &Ctx, role: &str) -> String {
+    let path = PathBuf::from(&ctx.identity_dir).join(role).join("token.cache");
+    let Ok(tok) = fs::read_to_string(&path) else { return String::new() };
+    match login_check(role, tok.trim(), now_ms() as u64 / 1000) { Ok(l) => iso_utc(l.exp), Err(_) => String::new() }
 }
 
 /// "store: session <name> open, acts as role-x, since <t>, last seen <t>".
