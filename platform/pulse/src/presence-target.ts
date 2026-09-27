@@ -20,10 +20,11 @@ export function resolveFromPresence(presences: PresenceRow[], runs: RunRow[], ro
   const mine = presences.filter((p) => p.name.startsWith(`${role}-presence-`));
   if (mine.length === 0) return { kind: 'unregistered' };
   const live = new Set(runs.filter((r) => r.name.startsWith(`${role}-run-`) && !r.runEndedAt).map((r) => r.name));
-  const current = mine
+  const candidates = mine
     .filter((p) => live.has((p.presenceOf ?? '').replace(RUN_PREFIX, '')))
-    .sort((a, b) => (b.checkedAt ?? '').localeCompare(a.checkedAt ?? ''))[0];
-  if (!current) return { kind: 'dead' };
+    .sort((a, b) => (b.checkedAt ?? '').localeCompare(a.checkedAt ?? ''));
+  if (candidates.length === 0) return { kind: 'dead' };
+  const current = candidates[0];
   const session: SessionReg = {
     role,
     pid: 0,
@@ -36,6 +37,14 @@ export function resolveFromPresence(presences: PresenceRow[], runs: RunRow[], ro
 
 /** Read both collections from athena-make. A failed read is its own answer
  * (never a fallback to the registry files): the caller reports it typed. */
+/** #4361 — both ends of a delivery: the target's resolution, and the
+ * sender's session (for the #3352 same-session rule). */
+export async function resolveEnds(to: string, from?: string): Promise<{ toRes: TypedResolution | { kind: 'unread'; why: string }; sender: SessionReg | null }> {
+  const toRes = await fetchPresenceResolution(to);
+  const fromRes = from ? await fetchPresenceResolution(from) : null;
+  return { toRes, sender: fromRes?.kind === 'resolved' ? fromRes.session : null };
+}
+
 export async function fetchPresenceResolution(role: string, base = process.env.ATHENA_MAKE_URL || 'http://localhost:3360'): Promise<TypedResolution | { kind: 'unread'; why: string }> {
   try {
     const get = async (p: string): Promise<unknown[]> => {

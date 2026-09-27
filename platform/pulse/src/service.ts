@@ -10,7 +10,7 @@ import express, { Express } from 'express';
 import { MessageStore, inferNudgeClass } from './store';
 import { DeliveryWorker, classifyInjectOutput, type RunInject, type EmitSpine, type SelfTest } from './delivery-worker';
 import { planDelivery, planDeliveryTyped, readTurnState, describeTarget, type SessionReg } from './session-registry';
-import { fetchPresenceResolution } from './presence-target';
+import { fetchPresenceResolution, resolveEnds } from './presence-target';
 import { dedupeKey, seenRecently } from './nudge-dedup';
 import { startReplyGapWatch, parseSpineTail, SpineEv } from './reply-gap';
 import { startWipDriftWatch, foldCardActivity } from './wip-drift';
@@ -347,14 +347,12 @@ function buildRuntimeDeps(): { runInject: RunInject; emitSpine: EmitSpine; selfT
     // typed; it never falls back to a guessed pane.
     // #3352 AC-0 — sender-aware plan: resolve BOTH ends so a delivery whose
     // target collides with the sender's own session name-matches instead.
-    const toRes = await fetchPresenceResolution(to);
+    const { toRes, sender: senderReg } = await resolveEnds(to, from);
     if (toRes.kind === 'unread') {
       resolve({ rc: 0, stderr: '', deferred: true, deferReason: 'undelivered-presence-unread', target: `undelivered:${to}:${toRes.why}` });
       return;
     }
     const targetReg: SessionReg | null = toRes.kind === 'resolved' ? toRes.session : null;
-    const fromRes = from ? await fetchPresenceResolution(from) : null;
-    const senderReg: SessionReg | null = fromRes && fromRes.kind === 'resolved' ? fromRes.session : null;
     // #3700 — busy targets queue (drained at their own turn boundary);
     // dead/unregistered report typed to the sender + spine.
     const typed = planDeliveryTyped(toRes, to, content, (r) => readTurnState(r), Date.now);
