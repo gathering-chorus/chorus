@@ -60,7 +60,7 @@ lan_hits() {
       --exclude-dir=coverage --exclude-dir=dist \
       "192\.168\.86\." "$REPO/platform" "$REPO/proving" "$REPO/designing" "$REPO/.github" 2>/dev/null \
     | grep -vE "\.git|node_modules|/dist|/coverage|/logs/|/target/|board-snapshot|baseline" \
-    | grep -vE "/backups/|\.nt$|\.backup$|\.md$|\.html$|\.ejs$|\.db$|\.sqlite3?$" \
+    | grep -vE "/backups/|\.nt$|\.backup$|\.md$|\.html$|\.ejs$|\.db$|\.db-wal$|\.db-shm$|\.sqlite3?$" \
     | sed "s|^$REPO/||")
   [ -z "$fails" ] || { echo "ratchet violations:$fails"; false; }
 }
@@ -77,6 +77,16 @@ lan_hits() {
 
   # and a captured .db in the same tree is correctly ignored
   printf 'binary-ish 192.168.86.242 payload\n' > "$W/platform/scripts/messages.db"
-  run bash -c "grep -rl '192\.168\.86\.' '$W' | grep -vE '/backups/|\.nt$|\.backup$|\.md$|\.html$|\.ejs$|\.db$|\.sqlite3?$' | grep -c messages.db"
+  run bash -c "grep -rl '192\.168\.86\.' '$W' | grep -vE '/backups/|\.nt$|\.backup$|\.md$|\.html$|\.ejs$|\.db$|\.db-wal$|\.db-shm$|\.sqlite3?$' | grep -c messages.db"
   [ "$output" = "0" ]
+
+  # #4357 — SQLite's write-ahead and shared-memory sidecars hold the same
+  # captured data as the .db (the 09-27 nightly red was messages.db-wal).
+  # The address is assembled so this file adds no pin of its own.
+  ip="192.168.86""."242
+  printf 'wal %s payload\n' "$ip" > "$W/platform/scripts/messages.db-wal"
+  printf 'shm %s payload\n' "$ip" > "$W/platform/scripts/messages.db-shm"
+  run bash -c "grep -rl '192\.168\.86\.' '$W' | grep -vE '/backups/|\.nt$|\.backup$|\.md$|\.html$|\.ejs$|\.db$|\.db-wal$|\.db-shm$|\.sqlite3?$'"
+  if echo "$output" | grep -q "messages.db-"; then echo "sidecar not excluded: $output"; false; fi
+  echo "$output" | grep -q "new-pin.sh"
 }
