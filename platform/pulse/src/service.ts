@@ -19,7 +19,8 @@ import { bostonOffsetIso } from './boston-iso';
 type SpineEvExt = SpineEv & { card?: number | string; card_id?: number | string };
 import { callerIsAuthorized, resolvePulseSecret } from './pulse-secret';
 import { Registry, Counter, Histogram, Gauge, collectDefaultMetrics } from 'prom-client';
-import { spawn } from 'child_process';
+import { spawn, spawnSync } from 'child_process';
+import { paneHasTypedInput } from './pane-input';
 import { appendFile, open as fsOpen } from 'fs/promises';
 import * as path from 'path';
 import * as os from 'os';
@@ -368,6 +369,16 @@ function buildRuntimeDeps(): { runInject: RunInject; emitSpine: EmitSpine; selfT
       // Hand to the inbox/fold via the worker's deferred path — no keystroke.
       resolve({ rc: 0, stderr: '', deferred: true, deferReason: plan.reason, target: targetDesc });
       return;
+    }
+    // #4362 — never type into a pane where Jeff has words on the input line.
+    // The worker waits and retries; after the hold window the row parks and
+    // drains at his next turn. A capture failure means "can't tell": type.
+    if (plan.args[0] === '--tmux') {
+      const cap = spawnSync(process.env.TMUX_BIN || 'tmux', ['capture-pane', '-p', '-t', plan.args[1]], { encoding: 'utf8', timeout: 2000 });
+      if (cap.status === 0 && paneHasTypedInput(cap.stdout || '')) {
+        resolve({ rc: 0, stderr: '', deferred: true, deferReason: 'target-typing', target: targetDesc });
+        return;
+      }
     }
     const proc = spawn(injectBin, plan.args, {
       // #3439: capture stdout too — the VS Code focus-guard surfaces a runtime
