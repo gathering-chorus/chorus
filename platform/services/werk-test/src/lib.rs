@@ -2049,6 +2049,26 @@ mod scope_vcs_metadata_4173 {
         );
     }
 
+    /// #4333 — editing the contract inventory runs the suite that proves it,
+    /// instead of refusing the run as unmapped.
+    #[test]
+    fn the_contract_inventory_runs_its_own_suite_not_an_unmapped_refusal() {
+        use crate::{affected_bats_suites, SuiteCoverage, WERK_CODE_CONTRACT};
+        let units = vec![ScopeUnit { name: "werk-test".into(), dir: "platform/services/werk-test".into() }];
+        let changed = vec![WERK_CODE_CONTRACT.to_string()];
+        assert_eq!(scoped_test_reason(&changed, &units, &[]), Ok(vec![]));
+        let index = vec![
+            SuiteCoverage { suite: "platform/tests/werk-code-contract.bats".into(), covers: vec![WERK_CODE_CONTRACT.into()] },
+            SuiteCoverage { suite: "platform/tests/other.bats".into(), covers: vec!["platform/scripts/x.sh".into()] },
+        ];
+        assert_eq!(affected_bats_suites(&changed, &index), vec!["platform/tests/werk-code-contract.bats".to_string()]);
+        // NEGATIVE PROOF: another file in platform/config is still unmapped
+        assert_eq!(
+            scoped_test_reason(&["platform/config/werk-phase-budgets.tsv".to_string()], &units, &[]),
+            Err("unmapped:platform/config/werk-phase-budgets.tsv".to_string())
+        );
+    }
+
     // NEGATIVE PROOF: the addition must not blunt the unmapped refusal it sits
     // inside. A file that really can change build output still forces FULL and
     // still names itself — otherwise this entry would be a hole, not a mapping.
@@ -2426,7 +2446,13 @@ pub fn is_shell_script(path: &str) -> bool {
 pub fn is_governed_surface(path: &str) -> bool {
     path.starts_with(".github/workflows/") && (path.ends_with(".yml") || path.ends_with(".yaml"))
         || path.starts_with("platform/hooks/")
+        || path == WERK_CODE_CONTRACT
 }
+
+/// #4333 — the werk-code contract inventory: data a script reads, proven by the
+/// suite that runs that script against it. Editing it runs that suite; it is
+/// neither a build input nor an unmapped path.
+pub const WERK_CODE_CONTRACT: &str = "platform/config/werk-code-contract.tsv";
 
 /// Any changed path a suite may reference by name: scripts plus governed surfaces.
 pub fn is_referenceable(path: &str) -> bool {

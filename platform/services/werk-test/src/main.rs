@@ -1310,8 +1310,12 @@ fn build_suite_coverage(werk: &str) -> Vec<werk_test::SuiteCoverage> {
         for tok in body.split(|c: char| !(c.is_alphanumeric() || "._/-".contains(c))) {
             // #3934 — governed surfaces (workflow yml, hooks) count as coverage
             // targets too: a suite that greps werk.yml is ABOUT werk.yml.
-            if tok.contains(".github/workflows/") || tok.contains("platform/hooks/") {
-                let rel = match tok.find(".github/workflows/").or_else(|| tok.find("platform/hooks/")) {
+            if tok.contains(".github/workflows/") || tok.contains("platform/hooks/")
+                || tok.ends_with(werk_test::WERK_CODE_CONTRACT)
+            {
+                let rel = match tok.find(".github/workflows/").or_else(|| tok.find("platform/hooks/"))
+                    .or_else(|| tok.find(werk_test::WERK_CODE_CONTRACT))
+                {
                     Some(i) => tok[i..].to_string(),
                     None => continue,
                 };

@@ -63,7 +63,12 @@ pub fn scope_irrelevant(f: &str) -> bool {
         f.rsplit('/').next().unwrap_or(f),
         ".gitignore" | ".gitattributes" | ".gitmodules" | ".metadata_never_index"
     );
-    ext || dir || vcs || f.contains("/public/")
+    // #4333 — the werk-code contract inventory is read only by
+    // platform/scripts/werk-code-contract.sh; the suite that runs that script
+    // (platform/tests/werk-code-contract.bats) is pulled in by coverage, the
+    // same way an edited script pulls in the suites that name it.
+    let contract = f == "platform/config/werk-code-contract.tsv";
+    ext || dir || vcs || contract || f.contains("/public/")
 }
 
 /// A path that IS a test suite: the runner executes the file itself, so a change
