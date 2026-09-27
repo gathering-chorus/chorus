@@ -69,6 +69,15 @@ url="\${@: -1}"; echo "probe \$url" >> "$T/probe.log"
 for f in "$T"/down-*; do [ -e "\$f" ] || continue; case "\$url" in *":\${f##*down-}"*) echo 000; exit 7 ;; esac; done
 echo 200
 EOS
+  # #4383 stub sudo: records the call; `-n -u <acct> [-H] cmd…` runs cmd as
+  # this user (the harness has no second account), refused when $T/sudo-deny exists
+  cat > "$T/bin/sudo" <<EOS
+#!/bin/bash
+echo "sudo \$*" >> "$T/sudo.log"
+[ -f "$T/sudo-deny" ] && { echo "sudo: a password is required" >&2; exit 1; }
+while [ \$# -gt 0 ]; do case "\$1" in -n|-H) shift ;; -u) shift 2 ;; *) break ;; esac; done
+exec "\$@"
+EOS
   printf '#!/bin/bash\necho "$*" >> "%s/spine.log"\n' "$T" > "$T/bin/chorus-log"
   printf '#!/bin/bash\necho "osascript $*" >> "%s/osa.log"\n' "$T" > "$T/bin/osascript"
   printf '#!/bin/bash\necho "open $*" >> "%s/open.log"\n' "$T" > "$T/bin/open"
@@ -87,6 +96,7 @@ login_harness_env() {
   export CHORUS_SESSIONS_DIR="$T/sessions" AWAKE_ROLES_BASE="$T/roles" CHORUS_ROOT="$ROOT"
   export AWAKE_PROJECTS_DIR="$T/projects" AWAKE_NO_ATTACH=1 AWAKE_WAIT=2 USER=unit-account
   export AWAKE_VSCODE_DIR="$T/vscode" CHORUS_PRINCIPAL_BIN="/h/.chorus/bin/chorus-principal"
+  export AWAKE_SUDO="$T/bin/sudo" AWAKE_ACCOUNT_HOMES="$T/homes"
   export CHORUS_LOG_FILE="$T/spine-read.log"
   unset TMUX CLAUDECODE CHORUS_ROLE AWAKE_ROLE_DIR
 }

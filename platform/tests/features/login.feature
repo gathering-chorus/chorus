@@ -145,11 +145,11 @@ Feature: A principal logs in, works, and logs out
     And wren's live session is left alone
 
   # Added with #4348 (Wren's web research, 2026-09-27): standard session controls.
-  @waiting-4383
-  Scenario: A login copied from another pane is refused
-    Given wren is logged in
-    When wren's session token is used from another pane
-    Then the call is refused and names the run the token belongs to
+  Scenario: A principal runs as its own account, so no other principal can read its token
+    Given wren's Principal row names the Mac account chorus-wren
+    When Jeff runs "chorus-principal login wren"
+    Then wren starts as chorus-wren
+    And wren's credentials are in chorus-wren's home, readable by that account alone
 
   @waiting-4384
   Scenario: A session has an absolute lifetime, even while it renews

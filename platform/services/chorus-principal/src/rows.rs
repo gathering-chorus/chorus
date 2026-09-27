@@ -345,13 +345,13 @@ pub fn refusal_reason(reply: &str) -> String {
 
 /// #4368 — the login decision from the identity API's answer for one
 /// principal: `code` is the HTTP status, `body` the JSON it returned.
-pub fn login_verdict(name: &str, code: &str, body: &str, api: &str) -> Result<(), String> {
+pub fn login_verdict(name: &str, code: &str, body: &str, api: &str) -> Result<Option<String>, String> {
     match code {
         "200" => {
-            let kind = serde_json::from_str::<Value>(body).ok()
-                .and_then(|v| v["data"]["principalKind"].as_str().map(str::to_string)).unwrap_or_default();
+            let row = serde_json::from_str::<Value>(body).unwrap_or(Value::Null);
+            let kind = row["data"]["principalKind"].as_str().unwrap_or_default().to_string();
             match kind.as_str() {
-                "agent" => Ok(()),
+                "agent" => Ok(row["data"]["hostAccount"].as_str().map(str::to_string)),
                 "service" => Err(format!("{} is a service principal; it acts with its credential, it does not log in", name)),
                 "person" => Err(format!("{} is a person; a person attends a role's session and never logs in", name)),
                 "" => Err(format!("{}'s Principal row has no principalKind (agent | service | person); nothing was decided", name)),
