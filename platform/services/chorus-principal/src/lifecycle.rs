@@ -188,7 +188,7 @@ pub fn vscode_tasks_json(principal_bin: &str) -> String {
         "tasks": [{
             "label": "wren",
             "type": "shell",
-            "command": format!("{} on wren", principal_bin),
+            "command": format!("{} login wren", principal_bin),
             "runOptions": {"runOn": "folderOpen"},
             "presentation": {"reveal": "always", "panel": "dedicated", "focus": true, "clear": true},
             "problemMatcher": []

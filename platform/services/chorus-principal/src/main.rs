@@ -37,10 +37,14 @@ chorus-principal — create a user everywhere, or nowhere
   chorus-principal plan <name>       what would be created, writes nothing
   chorus-principal create <name>     create the user, all of it or none of it
 
-  chorus-principal on <role>         start the role logged in, or go back to it (#4295)
-  chorus-principal off <role>        stop the role and close its login
+  chorus-principal login <role>      start the role logged in, or go back to it (#4295; on is an alias)
+  chorus-principal logout <role>     stop the role and close its login (off is an alias)
   chorus-principal status            one line per role: running, logged in, answering
   chorus-principal up [--windows]    all three after a reboot, one summary line
+  chorus-principal relogin <role>    log a running role in again
+  chorus-principal seen <role>       the UserPromptSubmit hook: record the turn
+  chorus-principal sweep             close expired sessions
+  chorus-principal project-messages  messages.db into the model, one pass
 
 Environment:
   CSS_URL        CSS origin to talk to        (default http://localhost:3001)
@@ -51,10 +55,10 @@ Environment:
 fn main() {
     let args: Vec<String> = std::env::args().skip(1).collect();
     let code = match args.first().map(String::as_str) {
-        // #4295 — Jeff types `chorus-principal on silas`. The session lifecycle
-        // lives in chorus-awake (tmux, registry, login); this is the one name he
-        // uses for users, so the verbs are forwarded, not reimplemented.
-        Some("on" | "off" | "status" | "up") => lifecycle(&args),
+        // #4345 — one binary. The session lifecycle (on/off/status/up/relogin,
+        // and the hooks' seen/seen-write/sweep/project-messages) was chorus-awake;
+        // it is this crate's library now, so the verbs run here, not forwarded.
+        Some("login" | "logout" | "on" | "off" | "status" | "up" | "relogin" | "seen" | "seen-write" | "sweep" | "project-messages" | "wren" | "silas" | "kade") => chorus_principal::run(&args),
         Some("census") => cmd_census(),
         Some("create") => match args.get(1) {
             Some(n) => match Kind::from_args(&args[2..]) {
@@ -110,21 +114,6 @@ fn main() {
 }
 
 /// `--name value` or `--name=value`, the same shape Kind and Person read.
-/// Hand the verb to chorus-awake, replacing this process so the terminal (and
-/// a tmux attach) belongs to it. CHORUS_AWAKE_BIN, then the binary installed
-/// beside this one, then PATH.
-fn lifecycle(args: &[String]) -> i32 {
-    use std::os::unix::process::CommandExt;
-    let beside = std::env::current_exe().ok().and_then(|p| p.parent().map(|d| d.join("chorus-awake"))).filter(|p| p.is_file());
-    let bin = std::env::var("CHORUS_AWAKE_BIN").ok().filter(|b| !b.is_empty())
-        .or_else(|| beside.map(|p| p.to_string_lossy().to_string()))
-        .unwrap_or_else(|| "chorus-awake".to_string());
-    let err = Command::new(&bin).args(args).exec();
-    eprintln!("chorus-principal: could not run {bin}: {err}");
-    eprintln!("  chorus-awake is what starts and stops a role; install it with build-signed.sh chorus-awake.");
-    1
-}
-
 fn flag(rest: &[String], name: &str) -> Option<String> {
     let eq = format!("{name}=");
     let mut it = rest.iter();

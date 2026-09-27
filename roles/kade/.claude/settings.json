@@ -18,6 +18,11 @@
             "type": "command",
             "command": "/Users/jeffbridwell/CascadeProjects/chorus/platform/services/chorus-hooks/target/release/chorus-hook-shim session-start kade",
             "timeout": 30
+          },
+          {
+            "type": "command",
+            "command": "/Users/jeffbridwell/.chorus/bin/chorus-principal seen kade",
+            "timeout": 10
           }
         ]
       }
@@ -27,7 +32,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "/Users/jeffbridwell/.chorus/bin/chorus-awake off kade --from-exit",
+            "command": "/Users/jeffbridwell/.chorus/bin/chorus-principal logout kade --from-exit",
             "timeout": 15
           }
         ]
@@ -38,7 +43,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "/Users/jeffbridwell/.chorus/bin/chorus-awake seen kade",
+            "command": "/Users/jeffbridwell/.chorus/bin/chorus-principal seen kade",
             "timeout": 5
           }
         ]

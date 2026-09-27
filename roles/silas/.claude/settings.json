@@ -17,6 +17,11 @@
             "type": "command",
             "command": "/Users/jeffbridwell/CascadeProjects/chorus/platform/services/chorus-hooks/target/release/chorus-hook-shim session-start silas",
             "timeout": 30
+          },
+          {
+            "type": "command",
+            "command": "/Users/jeffbridwell/.chorus/bin/chorus-principal seen silas",
+            "timeout": 10
           }
         ]
       }
@@ -26,7 +31,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "/Users/jeffbridwell/.chorus/bin/chorus-awake off silas --from-exit",
+            "command": "/Users/jeffbridwell/.chorus/bin/chorus-principal logout silas --from-exit",
             "timeout": 15
           }
         ]
@@ -37,7 +42,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "/Users/jeffbridwell/.chorus/bin/chorus-awake seen silas",
+            "command": "/Users/jeffbridwell/.chorus/bin/chorus-principal seen silas",
             "timeout": 5
           }
         ]

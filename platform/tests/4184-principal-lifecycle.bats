@@ -8,8 +8,8 @@
 
 setup() {
   ROOT="$(cd "$(dirname "$BATS_TEST_FILENAME")/../.." && pwd)"
-  SCRIPT="${CHORUS_AWAKE_BIN:-$ROOT/platform/services/chorus-awake/target/release/chorus-awake}"
-  [ -x "$SCRIPT" ] || skip "chorus-awake not built at $SCRIPT"
+  SCRIPT="${CHORUS_PRINCIPAL_TEST_BIN:-$ROOT/platform/services/chorus-principal/target/release/chorus-principal}"
+  [ -x "$SCRIPT" ] || skip "chorus-principal not built at $SCRIPT"
   T="$BATS_TEST_TMPDIR"
   mkdir -p "$T/sessions" "$T/bin" "$T/roles/kade"
   touch "$T/alive-pids"

@@ -12,9 +12,9 @@
 
 setup() {
   ROOT="$(cd "$(dirname "$BATS_TEST_FILENAME")/../.." && pwd)"
-  SCRIPT="${CHORUS_AWAKE_BIN:-$ROOT/platform/services/chorus-awake/target/release/chorus-awake}"
+  SCRIPT="${CHORUS_PRINCIPAL_TEST_BIN:-$ROOT/platform/services/chorus-principal/target/release/chorus-principal}"
   PRINCIPAL="${CHORUS_PRINCIPAL_TEST_BIN:-$ROOT/platform/services/chorus-principal/target/release/chorus-principal}"
-  [ -x "$SCRIPT" ] || skip "chorus-awake not built at $SCRIPT"
+  [ -x "$SCRIPT" ] || skip "chorus-principal not built at $SCRIPT"
   T="$BATS_TEST_TMPDIR"
   mkdir -p "$T/sessions" "$T/bin" "$T/roles/wren" "$T/roles/kade" "$T/roles/silas" "$T/projects" "$T/identity" "$T/vscode"
   touch "$T/alive-pids"
@@ -87,7 +87,7 @@ EOS
   export CHORUS_IDENTITY_DIR="$T/identity" CHORUS_API_URL="http://stub:3360"
   export CHORUS_SESSIONS_DIR="$T/sessions" AWAKE_ROLES_BASE="$T/roles" CHORUS_ROOT="$ROOT"
   export AWAKE_PROJECTS_DIR="$T/projects" AWAKE_NO_ATTACH=1 AWAKE_WAIT=2 USER=unit-account
-  export AWAKE_VSCODE_DIR="$T/vscode" CHORUS_PRINCIPAL_BIN="/h/.chorus/bin/chorus-principal" CHORUS_AWAKE_BIN="$SCRIPT"
+  export AWAKE_VSCODE_DIR="$T/vscode" CHORUS_PRINCIPAL_BIN="/h/.chorus/bin/chorus-principal"
   printf '' > "$T/spine-read.log"
   export CHORUS_LOG_FILE="$T/spine-read.log"
   unset TMUX CLAUDECODE CHORUS_ROLE AWAKE_ROLE_DIR
@@ -160,7 +160,7 @@ has() { printf '%s' "$1" | grep -qF -- "$2"; }
   # #4351: a Jeff turn may write the presence (focusedNow, #4339) but never marks it reachable
   test -z "$(cat "$T"/bodies/*PUT-identity_presences_* 2>/dev/null | grep -F '"reachability":"reachable"' || true)"
   # #4339: pulse types only the wake line for a nudge; that line is the delivery
-  wake=$(grep -o 'WAKE_LINE: &str = "[^"]*"' "$ROOT/platform/services/chorus-awake/src/rows.rs" | sed 's/.*= "//; s/"$//')
+  wake=$(grep -o 'WAKE_LINE: &str = "[^"]*"' "$ROOT/platform/services/chorus-principal/src/rows.rs" | sed 's/.*= "//; s/"$//')
   test -n "$wake"
   printf '{"session_id":"c","prompt":"%s"}' "$wake" | AWAKE_SEEN_SYNC=1 "$SCRIPT" seen kade
   p=$(cat "$T"/bodies/*PUT-identity_presences_* | tail -1); has "$p" '"reachability":"reachable"'; has "$p" '"lastDeliveredAt":"20'
@@ -284,6 +284,23 @@ EOS
   rm -f "$T/identity/silas/seen.at"
   echo '{"session_id":"4d39d28c-37a5","prompt":"again"}' | AWAKE_SEEN_SYNC=1 "$SCRIPT" seen silas
   test "$(bodies | grep -c POST-memory_conversations)" -eq 1
+}
+
+@test "#4345 login includes session start: the SessionStart hook names the conversation before any prompt" {
+  # Jeff 2026-09-27 (via Wren): "login includes sessionstart". The SessionStart
+  # hook carries session_id and no prompt; it records the conversation and says
+  # nothing about who spoke.
+  run "$SCRIPT" on silas
+  runn=$(python3 -c 'import json,sys;print(json.load(open(sys.argv[1]))["name"])' "$T/identity/silas/run.row.json")
+  echo '{"session_id":"start-4345","hook_event_name":"SessionStart","source":"startup"}' | AWAKE_SEEN_SYNC=1 "$SCRIPT" seen silas
+  c=$(body POST memory_conversations); has "$c" '"conversationId":"start-4345"'; has "$c" "\"conversationOf\":\"$runn\""
+  test -z "$(cat "$T"/bodies/* 2>/dev/null | grep -F '"attendedBy"' || true)"
+}
+
+@test "NEGATIVE PROOF: a SessionStart with no session_id writes no Conversation row" {
+  run "$SCRIPT" on silas
+  echo '{"hook_event_name":"SessionStart","source":"startup"}' | AWAKE_SEEN_SYNC=1 "$SCRIPT" seen silas
+  test "$(bodies | grep -c POST-memory_conversations || true)" -eq 0
 }
 
 @test "#4342 a resumed conversation in a new run moves its row to that run, never a second row" {

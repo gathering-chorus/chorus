@@ -1,6 +1,6 @@
 // #4295 — sign in / sign out decisions. The bats suite (4295-role-login.bats)
 // drives the built binary; these hold the pure rules, each with its violation.
-use chorus_awake::lifecycle::*;
+use chorus_principal::lifecycle::*;
 
 #[test]
 fn a_login_state_round_trips_through_its_file() {
@@ -143,6 +143,6 @@ fn the_tmux_bar_says_the_login() {
 #[test]
 fn vscode_task_runs_on_folder_open_and_attaches_wren() {
     let j: serde_json::Value = serde_json::from_str(&vscode_tasks_json("/h/.chorus/bin/chorus-principal")).unwrap();
-    assert_eq!(j["tasks"][0]["command"], "/h/.chorus/bin/chorus-principal on wren");
+    assert_eq!(j["tasks"][0]["command"], "/h/.chorus/bin/chorus-principal login wren");
     assert_eq!(j["tasks"][0]["runOptions"]["runOn"], "folderOpen");
 }

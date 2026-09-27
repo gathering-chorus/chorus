@@ -14,7 +14,7 @@
          never started twice. Runs once per login: no KeepAlive. -->
     <key>ProgramArguments</key>
     <array>
-        <string>/Users/jeffbridwell/.chorus/bin/chorus-awake</string>
+        <string>/Users/jeffbridwell/.chorus/bin/chorus-principal</string>
         <string>up</string>
         <string>--windows</string>
     </array>

@@ -1,0 +1,15 @@
+#!/bin/sh
+# chorus-awake-retired — installed at ~/.chorus/bin/chorus-awake (and chorus-awake-bin)
+# once #4345 lands. chorus-awake's code moved into chorus-principal; this name is
+# gone. A leftover caller is told the one command to use, loudly, on every call.
+#
+# It still forwards, on purpose: the role sessions running today were started
+# with hooks that call chorus-awake on every turn and at exit, and a UserPromptSubmit
+# hook that exits non-zero blocks the turn. Forwarding keeps those sessions working
+# until they restart onto the new settings; the loud line names the caller to fix.
+# CHORUS_AWAKE_RETIRED_STRICT=1 makes it refuse instead (exit 2), for when no
+# caller is left.
+BIN="${CHORUS_PRINCIPAL_BIN:-$HOME/.chorus/bin/chorus-principal}"
+echo "chorus-awake is retired (#4345). Use: chorus-principal $*" >&2
+if [ "${CHORUS_AWAKE_RETIRED_STRICT:-0}" = 1 ]; then exit 2; fi
+exec "$BIN" "$@"

@@ -7,7 +7,16 @@ edition = "2021"
 # subprocess — the same shape werk-pull and athena-model use. Nothing here
 # handles a secret in a shell variable: the CSS account password is read by
 # reference from the env file and piped, never interpolated into an argv.
+#
+# #4345 — chorus-awake's session lifecycle lives here now (Jeff, 2026-09-26: "if
+# we have chorus-principal why do we also have chorus-awake?"). It brings its one
+# dependency, serde_json, for the rows it reads and writes through the API.
 [dependencies]
+serde_json = "1"
+
+[lib]
+name = "chorus_principal"
+path = "src/lib.rs"
 
 [[bin]]
 name = "chorus-principal"

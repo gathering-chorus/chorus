@@ -178,7 +178,7 @@ const BINARIES: &[(&str, &str)] = &[
     ("chorus-rerank", "knowledge"),
     ("athena-validate", "knowledge"),
     ("gen-role-mcp", "toolchain"),
-    ("chorus-awake", "roles"),
+    ("chorus-principal", "roles"),
     ("pulse-gather", "roles"),
     ("loom-gemba", "roles"),
     ("git-queue", "version-control"),
@@ -256,7 +256,7 @@ const CLASSES: &[(&str, &str)] = &[
 const UNITS: &[(&str, &str)] = &[
     ("chorus-hooks", "spine"),
     ("chorus-inject", "spine"),
-    ("chorus-awake", "spine"),
+    ("chorus-principal", "spine"),
     ("werk-", "builds"),
     // #4201 — athena-make is the API every domain is read and written through,
     // and athena-model is the layer under it. A test that MENTIONS either is

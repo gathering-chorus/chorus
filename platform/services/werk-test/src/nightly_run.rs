@@ -1471,11 +1471,13 @@ mod nightly_run_4145 {
         let dir = std::env::var("CARGO_MANIFEST_DIR").expect("cargo test sets CARGO_MANIFEST_DIR");
         let yaml = std::fs::read_to_string(format!("{dir}/../../../coverage-floors.yml")).unwrap();
         let floor = parse_floors(&yaml).into_iter().find(|(_, rel, _)| rel == "platform/services/chorus-principal").map(|(_, _, f)| f).expect("chorus-principal has a floor");
-        let measured_low = 16.959669079627716;
+        // #4345 — chorus-awake folded in; the crate is new code, so the low is
+        // re-measured: 31.75% lines, cargo llvm-cov, 2026-09-27 06:50 (was 16.96%).
+        let measured_low = 31.75;
         assert_eq!(coverage_row("platform/services/chorus-principal", "silas", floor, 0, Some(measured_low)).status, "pass", "floor {} must cover the measured low", floor);
         // NEGATIVE PROOF: one point above the low, the same measurement is red.
         assert_eq!(coverage_row("platform/services/chorus-principal", "silas", floor + 1, 0, Some(measured_low)).status, "fail");
-        assert_eq!(coverage_row("platform/services/chorus-principal", "silas", 18, 0, Some(measured_low)).status, "fail", "the 03:04 red reproduces at the old floor");
+        assert_eq!(coverage_row("platform/services/chorus-principal", "silas", 41, 0, Some(measured_low)).status, "fail", "chorus-awake's old floor of 41 would be red on the merged crate");
     }
     #[test]
     fn coverage_rows_keep_the_four_outcomes() {

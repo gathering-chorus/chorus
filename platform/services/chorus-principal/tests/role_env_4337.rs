@@ -1,6 +1,6 @@
 //! #4337 — a role's process must carry its own role. Kade ran as Wren on
 //! 2026-09-26 because his session lived in a daemon spare started from her pane.
-use chorus_awake::rows::env_value;
+use chorus_principal::rows::env_value;
 
 #[test]
 fn reads_the_role_a_process_carries() {

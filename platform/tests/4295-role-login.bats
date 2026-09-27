@@ -13,9 +13,9 @@
 
 setup() {
   ROOT="$(cd "$(dirname "$BATS_TEST_FILENAME")/../.." && pwd)"
-  SCRIPT="${CHORUS_AWAKE_BIN:-$ROOT/platform/services/chorus-awake/target/release/chorus-awake}"
+  SCRIPT="${CHORUS_PRINCIPAL_TEST_BIN:-$ROOT/platform/services/chorus-principal/target/release/chorus-principal}"
   PRINCIPAL="${CHORUS_PRINCIPAL_TEST_BIN:-$ROOT/platform/services/chorus-principal/target/release/chorus-principal}"
-  [ -x "$SCRIPT" ] || skip "chorus-awake not built at $SCRIPT"
+  [ -x "$SCRIPT" ] || skip "chorus-principal not built at $SCRIPT"
   T="$BATS_TEST_TMPDIR"
   mkdir -p "$T/sessions" "$T/bin" "$T/roles/wren" "$T/roles/kade" "$T/roles/silas" "$T/projects" "$T/identity" "$T/vscode"
   touch "$T/alive-pids"
@@ -80,7 +80,7 @@ EOS
   export CHORUS_IDENTITY_DIR="$T/identity" CHORUS_API_URL="http://stub:3360"
   export CHORUS_SESSIONS_DIR="$T/sessions" AWAKE_ROLES_BASE="$T/roles" CHORUS_ROOT="$ROOT"
   export AWAKE_PROJECTS_DIR="$T/projects" AWAKE_NO_ATTACH=1 AWAKE_WAIT=2 USER=unit-account
-  export AWAKE_VSCODE_DIR="$T/vscode" CHORUS_PRINCIPAL_BIN="/h/.chorus/bin/chorus-principal" CHORUS_AWAKE_BIN="$SCRIPT"
+  export AWAKE_VSCODE_DIR="$T/vscode" CHORUS_PRINCIPAL_BIN="/h/.chorus/bin/chorus-principal"
   printf '' > "$T/spine-read.log"
   export CHORUS_LOG_FILE="$T/spine-read.log"
   unset TMUX CLAUDECODE CHORUS_ROLE AWAKE_ROLE_DIR
@@ -209,7 +209,7 @@ state_is() { grep -q "\"state\":\"$2\"" "$T/identity/$1/login.json"; }
   running kade 11; running kade 12
   run "$SCRIPT" on kade
   test "$status" -eq 1
-  out_has "chorus-principal off kade"
+  out_has "chorus-principal logout kade"
 }
 
 # ------------------------------------------------------------------ off
@@ -308,11 +308,11 @@ state_is() { grep -q "\"state\":\"$2\"" "$T/identity/$1/login.json"; }
 @test "up --windows: VS Code gets the Wren task, Terminal opens Silas and Kade" {
   run "$SCRIPT" up --windows
   test "$status" -eq 0
-  grep -q '"command": "/h/.chorus/bin/chorus-principal on wren"' "$T/vscode/tasks.json"
+  grep -q '"command": "/h/.chorus/bin/chorus-principal login wren"' "$T/vscode/tasks.json"
   grep -q '"runOn": "folderOpen"' "$T/vscode/tasks.json"
   grep -q "open -a Visual Studio Code" "$T/open.log"
-  grep -q 'do script "/h/.chorus/bin/chorus-principal on silas"' "$T/osa.log"
-  grep -q 'do script "/h/.chorus/bin/chorus-principal on kade"' "$T/osa.log"
+  grep -q 'do script "/h/.chorus/bin/chorus-principal login silas"' "$T/osa.log"
+  grep -q 'do script "/h/.chorus/bin/chorus-principal login kade"' "$T/osa.log"
 }
 
 @test "up --windows: VS Code is told to run the task without asking, and its other settings stay" {
@@ -325,8 +325,8 @@ state_is() { grep -q "\"state\":\"$2\"" "$T/identity/$1/login.json"; }
 @test "up --windows: a role that already has a window gets no second one" {
   echo "/dev/ttys005: chorus-silas" > "$T/clients-chorus-silas"
   run "$SCRIPT" up --windows
-  test -z "$(grep -F 'on silas' "$T/osa.log" || true)"
-  grep -q 'on kade' "$T/osa.log"
+  test -z "$(grep -F 'login silas' "$T/osa.log" || true)"
+  grep -q 'login kade' "$T/osa.log"
 }
 
 @test "up --windows leaves an existing tasks.json alone" {
@@ -338,12 +338,31 @@ state_is() { grep -q "\"state\":\"$2\"" "$T/identity/$1/login.json"; }
 
 # ------------------------------------------------------------------ chorus-principal
 
-@test "chorus-principal on|off|status are the same verbs (Jeff types chorus-principal)" {
+@test "chorus-principal login|logout|status are the verbs (Jeff types chorus-principal)" {
   [ -x "$PRINCIPAL" ] || skip "chorus-principal not built at $PRINCIPAL"
   run "$PRINCIPAL" status
   test "$status" -eq 0
   out_has "silas  off"
+  run "$PRINCIPAL" login silas
+  test "$status" -eq 0
+  out_has "logged in  via claude -c"
+  run "$PRINCIPAL" logout silas
+  test "$status" -eq 0
+  out_has "silas off"
+}
+
+@test "#4345 on and off stay as aliases for login and logout" {
+  [ -x "$PRINCIPAL" ] || skip "chorus-principal not built at $PRINCIPAL"
   run "$PRINCIPAL" on silas
   test "$status" -eq 0
   out_has "logged in  via claude -c"
+  run "$PRINCIPAL" off silas
+  test "$status" -eq 0
+  out_has "silas off"
+}
+
+@test "NEGATIVE PROOF: an unknown verb is refused, not read as a login" {
+  [ -x "$PRINCIPAL" ] || skip "chorus-principal not built at $PRINCIPAL"
+  run "$PRINCIPAL" logon silas
+  test "$status" -eq 2
 }
