@@ -1,0 +1,129 @@
+<!DOCTYPE html>
+<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Clearing Dependencies</title>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Instrument+Sans:wght@400;600;700&family=JetBrains+Mono:wght@400;600&display=swap">
+<style>
+:root{--bg:#f3f5f6;--panel:#fff;--ink:#1b2530;--muted:#5d6a76;--line:#d5dce2;--accent:#2d5f8b;--gap:#b4452f;--gapbg:#fbece7;--code:#edf1f4}
+@media (prefers-color-scheme: dark){:root:not([data-theme="light"]){--bg:#11171c;--panel:#18212a;--ink:#e2e9ef;--muted:#96a4b0;--line:#2a3642;--accent:#86b6e0;--gap:#e8836b;--gapbg:#35211c;--code:#202b35;color-scheme:dark}}
+:root[data-theme="dark"]{--bg:#11171c;--panel:#18212a;--ink:#e2e9ef;--muted:#96a4b0;--line:#2a3642;--accent:#86b6e0;--gap:#e8836b;--gapbg:#35211c;--code:#202b35;color-scheme:dark}
+body{background:var(--bg);color:var(--ink);font:15px/1.6 "Instrument Sans",system-ui,sans-serif}
+.wrap{max-width:1060px;margin:0 auto;padding-inline:20px;padding-block:28px 64px;display:grid;gap:30px}
+h1{font-size:30px;margin:0}h2{font-size:20px;margin:0 0 4px}
+p{margin:0;max-width:70ch}.lede{color:var(--muted);margin-top:6px}
+.eyebrow{font:600 11px/1 "JetBrains Mono",monospace;letter-spacing:.08em;text-transform:uppercase;color:var(--accent)}
+section{display:grid;gap:12px}
+.panel{background:var(--panel);border:1px solid var(--line);border-radius:6px;padding:16px;overflow-x:auto}
+pre.mermaid{margin:0}
+code{font:13px "JetBrains Mono",monospace;background:var(--code);padding:1px 5px;border-radius:3px}
+.callout{border-left:3px solid var(--gap);background:var(--panel);padding:12px 16px;border-radius:0 6px 6px 0;display:grid;gap:6px}
+table{border-collapse:collapse;width:100%;min-width:640px;font-size:14px}
+th,td{text-align:left;padding:8px 10px;border-bottom:1px solid var(--line);vertical-align:top}
+th{font:600 11px/1.2 "JetBrains Mono",monospace;letter-spacing:.06em;text-transform:uppercase;color:var(--muted)}
+</style>
+<div class="wrap">
+<header>
+<div class="eyebrow">#4365 · read from athena-make /v1 at 2026-09-27 08:12</div>
+<h1>Clearing Dependencies</h1>
+<p class="lede">What the Clearing product depends on, product to domain to class. Solid lines are edges the model holds. Dashed lines are what the code and today's research show it really uses, but the model doesn't record.</p>
+</header>
+
+<section>
+<div class="eyebrow">What the model says</div>
+<div class="callout">
+<p>The Clearing product has three domains: <code>cards</code>, <code>messages</code> and <code>streams</code>. It records no product it consumes. Pulse is the only product with <code>consumes</code> filled in (13 domains).</p>
+<p><code>dependsOn</code> is empty on all 70 domains, so below product level the graph can't draw a dependency at all. Several concepts also exist twice with different owners: <code>messages</code> (wren) and <code>messages-domain</code> (silas), <code>streams</code> and <code>streams-domain</code>, <code>roles</code> and <code>roles-domain</code>, and <code>cards</code>, <code>cards-service</code> and <code>board</code>.</p>
+</div>
+</section>
+
+<section>
+<div class="eyebrow">All levels</div>
+<h2>Product → product → domain → class</h2>
+<div class="panel">
+<pre class="mermaid">
+flowchart LR
+  classDef prod fill:#2d5f8b,color:#fff,stroke:#2d5f8b
+  classDef dom fill:#e8eef4,color:#1b2530,stroke:#2d5f8b
+  classDef cls fill:#fff,color:#1b2530,stroke:#8a98a6
+  classDef miss fill:#fbece7,color:#7a2a18,stroke:#b4452f,stroke-dasharray:4 3
+
+  CL[Clearing]:::prod
+  PU[Pulse]:::prod
+  SP[Spine]:::prod
+  AT[Athena]:::prod
+  LO[Loom]:::prod
+  BO[Borg]:::prod
+
+  CL --> cards:::dom
+  CL --> messages:::dom
+  CL --> streams:::dom
+  CL -.-> PU
+  CL -.-> SP
+  CL -.-> AT
+  CL -.-> LO
+  CL -.-> BO
+
+  PU --> knowledge:::dom
+  PU -. consumes 13 .-> messages
+  PU -.-> cards
+  PU -.-> streams
+  SP --> events:::dom
+  LO --> decisions:::dom
+  LO --> roles:::dom
+  BO --> identity:::dom
+  BO --> alerts:::dom
+  BO --> monitors:::dom
+  BO --> security:::dom
+
+  board[board: Chunk, ChunkMembership]:::dom
+  CL -.-> board
+  cards --> Card:::cls
+  board --> Chunk:::cls
+  messages --> Message:::cls
+  messages --> Delivery:::cls
+  messages --> Channel:::cls
+  identity --> Principal:::cls
+  identity --> Session:::cls
+  identity --> SessionRun:::cls
+  identity --> Presence:::cls
+  identity --> KeyRegistryEntry:::cls
+  alerts --> Alert:::cls
+  monitors --> Monitor:::cls
+  roles --> Role:::cls
+  events --> SpineEvent:::cls
+  decisions --> Decision:::cls
+
+  Meeting[Meeting · Cadence · MeetingRun · Plan]:::miss
+  LO -.-> Meeting
+  AlertInst[alert instance]:::miss
+  alerts -.-> AlertInst
+</pre>
+</div>
+<p class="lede">Red dashed boxes are classes the new Clearing needs that aren't modeled yet (#4364, #4085).</p>
+</section>
+
+<section>
+<div class="eyebrow">Per page</div>
+<h2>Which domains each Clearing page reads</h2>
+<div class="panel"><table>
+<thead><tr><th>Page</th><th>Domains</th><th>Via product</th><th>Modeled today?</th></tr></thead>
+<tbody>
+<tr><td>Rooms</td><td>messages, identity</td><td>Clearing, Borg</td><td>messages yes · identity no edge</td></tr>
+<tr><td>Board</td><td>cards, board</td><td>Clearing</td><td>cards yes · board no edge</td></tr>
+<tr><td>Roles</td><td>identity, roles, streams</td><td>Borg, Loom, Clearing</td><td>streams yes · others no edge</td></tr>
+<tr><td>Decisions</td><td>decisions, cards</td><td>Loom, Clearing</td><td>no edge to decisions</td></tr>
+<tr><td>Calendar</td><td>loom meetings (not modeled)</td><td>Loom</td><td>no</td></tr>
+<tr><td>Plans</td><td>loom plans, board</td><td>Loom, Clearing</td><td>no</td></tr>
+<tr><td>Alerts</td><td>alerts, monitors</td><td>Borg</td><td>no edge</td></tr>
+<tr><td>Today</td><td>all of the above</td><td>Pulse</td><td>through Pulse's consumes only</td></tr>
+</tbody></table></div>
+</section>
+
+<section>
+<div class="eyebrow">What to fix in the model</div>
+<p>First, fill <code>consumes</code> on the Clearing product: Pulse, Spine, Athena, Loom and Borg. Second, fill <code>dependsOn</code> on its three domains. Third, merge the duplicate domains. Then this view can be drawn from the graph instead of by hand. That work fits #4358 (type the data, and have athena-validate report empty dependency edges).</p>
+</section>
+</div>
+
+<script src="https://cdn.jsdelivr.net/npm/mermaid@10.9.1/dist/mermaid.min.js"></script>
+<script>if(window.mermaid){mermaid.initialize({startOnLoad:true,theme:"neutral"});}</script>
+</html>

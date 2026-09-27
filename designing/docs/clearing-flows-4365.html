@@ -1,0 +1,143 @@
+<!DOCTYPE html>
+<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Clearing Page Flows</title>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Instrument+Sans:wght@400;600;700&family=JetBrains+Mono:wght@400;600&display=swap">
+<style>
+:root{--bg:#f3f5f6;--panel:#fff;--ink:#1b2530;--muted:#5d6a76;--line:#d5dce2;--accent:#2d5f8b;
+--ready:#3d7a4a;--readybg:#e8f3eb;--part:#8a6a12;--partbg:#f6efda;--no:#b4452f;--nobg:#fbece7;--code:#edf1f4}
+@media (prefers-color-scheme: dark){:root:not([data-theme="light"]){--bg:#11171c;--panel:#18212a;--ink:#e2e9ef;--muted:#96a4b0;--line:#2a3642;--accent:#86b6e0;--ready:#88c497;--readybg:#1b2c20;--part:#e0bd5a;--partbg:#2e2815;--no:#e8836b;--nobg:#35211c;--code:#202b35;color-scheme:dark}}
+:root[data-theme="dark"]{--bg:#11171c;--panel:#18212a;--ink:#e2e9ef;--muted:#96a4b0;--line:#2a3642;--accent:#86b6e0;--ready:#88c497;--readybg:#1b2c20;--part:#e0bd5a;--partbg:#2e2815;--no:#e8836b;--nobg:#35211c;--code:#202b35;color-scheme:dark}
+body{background:var(--bg);color:var(--ink);font:15px/1.6 "Instrument Sans",system-ui,sans-serif}
+.wrap{max-width:1060px;margin:0 auto;padding-inline:20px;padding-block:28px 64px;display:grid;gap:34px}
+h1{font-size:30px;margin:0;text-wrap:balance}h2{font-size:20px;margin:0 0 4px;text-wrap:balance}h3{font-size:16px;margin:0}
+p{margin:0;max-width:70ch}.lede{color:var(--muted);margin-top:6px}
+.eyebrow{font:600 11px/1 "JetBrains Mono",monospace;letter-spacing:.08em;text-transform:uppercase;color:var(--accent)}
+section{display:grid;gap:12px}
+.panel{background:var(--panel);border:1px solid var(--line);border-radius:6px;padding:16px;overflow-x:auto}
+pre.mermaid{margin:0}
+code{font:13px "JetBrains Mono",monospace;background:var(--code);padding:1px 5px;border-radius:3px}
+.flows{display:grid;grid-template-columns:repeat(auto-fit,minmax(300px,1fr));gap:14px}
+.flow{background:var(--panel);border:1px solid var(--line);border-radius:6px;padding:16px;display:grid;gap:8px;align-content:start}
+.flow .head{display:flex;justify-content:space-between;align-items:baseline;gap:8px;flex-wrap:wrap}
+.flow ol{margin:0;padding-left:20px;display:grid;gap:3px}
+.flow .needs{font-size:13px;color:var(--muted);border-top:1px solid var(--line);padding-top:8px}
+.pill{font:600 11px/1 "JetBrains Mono",monospace;padding:4px 8px;border-radius:99px;white-space:nowrap}
+.ready{background:var(--readybg);color:var(--ready)}.part{background:var(--partbg);color:var(--part)}.no{background:var(--nobg);color:var(--no)}
+table{border-collapse:collapse;width:100%;min-width:700px;font-size:14px}
+th,td{text-align:left;padding:8px 10px;border-bottom:1px solid var(--line);vertical-align:top}
+th{font:600 11px/1.2 "JetBrains Mono",monospace;letter-spacing:.06em;text-transform:uppercase;color:var(--muted)}
+.trust{display:flex;gap:10px;flex-wrap:wrap;align-items:center;font:13px "JetBrains Mono",monospace}
+.chip{border:1px solid var(--line);border-radius:99px;padding:4px 10px;background:var(--panel)}
+.chip b{color:var(--ready)}
+</style>
+<div class="wrap">
+<header>
+<div class="eyebrow">Revamped Clearing · design draft · 2026-09-27 · Wren</div>
+<h1>Clearing Page Flows</h1>
+<p class="lede">Jeff's surface for working with the team, split into linked pages. Buzz carries the talk and proves who said it. The graph holds the work. Every page shows how fresh its data is, and every flow below says what the backend owes it before it can be trusted.</p>
+</header>
+
+<section>
+<div class="eyebrow">Map</div>
+<h2>How the pages connect</h2>
+<div class="panel">
+<pre class="mermaid">
+flowchart LR
+  T[Today<br/>decisions owed + what changed] --> D[Decisions]
+  T --> R[Rooms]
+  T --> B[Board]
+  T --> A[Alerts]
+  C[Calendar<br/>loom meetings] --> M[Meeting run<br/>minutes + outputs]
+  M --> D
+  D --> B
+  B --> K[Card<br/>read, comment, move]
+  B --> P[Plans<br/>chunks in order]
+  P --> B
+  R --> K
+  W[Roles<br/>who is working on what] --> R
+  W --> K
+  A --> K
+</pre>
+</div>
+</section>
+
+<section>
+<div class="eyebrow">Everywhere</div>
+<h2>A trust strip on every page</h2>
+<p>A small, calm line at the top of each page. It is driven by the real source's last write, not a guess. Lag shows as a time, never as red. Red only when a source failed, and then it names the source.</p>
+<div class="trust"><span class="chip"><b>●</b> board · as of 09:02</span><span class="chip"><b>●</b> rooms · live</span><span class="chip">decisions · 3 owed</span><span class="chip">roles · silas stale 34m</span></div>
+</section>
+
+<section>
+<div class="eyebrow">Flows</div>
+<h2>Seven pages</h2>
+<div class="flows">
+
+<div class="flow"><div class="head"><h3>1 · Today</h3><span class="pill part">partly ready</span></div>
+<p>Where Jeff lands in the morning.</p>
+<ol><li>Decisions owed, grouped by the meeting that produced them</li><li>What changed overnight: cards moved, landed, blocked</li><li>New or changed alerts only</li><li>Who is working now</li></ol>
+<div class="needs">Needs: Decision rows (0 today), card state in the graph, alert instances.</div></div>
+
+<div class="flow"><div class="head"><h3>2 · Decisions</h3><span class="pill no">not ready</span></div>
+<p>An inbox of decisions, not notifications.</p>
+<ol><li>Grouped by meeting run, evidence attached (cards, chunks, diff)</li><li>Each item: accept · edit · reply · skip</li><li>Approve-all for a group</li><li>Answer is a signed event, the run resumes</li></ol>
+<div class="needs">Needs: Decision + MeetingRun classes, our own approval step (Buzz's is not built: <code>approval_not_supported</code>).</div></div>
+
+<div class="flow"><div class="head"><h3>3 · Rooms</h3><span class="pill part">partly ready</span></div>
+<p>Talk with roles and people.</p>
+<ol><li>Buzz rooms (#team, one per product later)</li><li>Role working-chatter lives in threads, not the main room</li><li>A tick per message from the relay's OK</li><li>Open a card from any message</li></ol>
+<div class="needs">Needs: #4359 key → principal, one message id across stores, the live subscription opened before history replay.</div></div>
+
+<div class="flow"><div class="head"><h3>4 · Board</h3><span class="pill no">not ready</span></div>
+<p>Process cards and chunks.</p>
+<ol><li>Chunks in rank order per role, cards in rank order inside</li><li>Open a card: read, comment, move, re-rank</li><li>Unsequenced cards visible, never hidden</li></ol>
+<div class="needs">Needs: card state in the graph (Vikunja holds it; graph rows are stubs), 44 done cards cleared out of chunks.</div></div>
+
+<div class="flow"><div class="head"><h3>5 · Roles</h3><span class="pill part">partly ready</span></div>
+<p>Who is here and what they're doing.</p>
+<ol><li>Each principal: logged in, session, card</li><li>States: working · waiting on you · blocked · stale · off</li><li>Stale set by the system after 30 min of silence</li><li>Your attention: which pane you're on</li></ol>
+<div class="needs">Needs: #4345, #4361 (one presence source), andon state as a row.</div></div>
+
+<div class="flow"><div class="head"><h3>6 · Calendar</h3><span class="pill no">not ready</span></div>
+<p>Loom meetings on a real calendar.</p>
+<ol><li>Week grid of meetings: overnight triage, weekly shaping…</li><li>Each meeting: purpose, inputs, the outputs it owes</li><li>Each past run links to its minutes and decisions</li><li>Pause, move, or add a meeting</li></ol>
+<div class="needs">Needs: Meeting, Cadence, MeetingRun classes. Buzz cron can fire them.</div></div>
+
+<div class="flow"><div class="head"><h3>7 · Plans</h3><span class="pill no">not ready</span></div>
+<p>Where the work is going.</p>
+<ol><li>A plan is an ordered set of chunks toward an outcome</li><li>Decisions that shaped it, in order</li><li>Progress read from the cards, never typed</li></ol>
+<div class="needs">Needs: Plan class, Decision rows. Today plans live in markdown and in memory.</div></div>
+
+<div class="flow"><div class="head"><h3>Alerts</h3><span class="pill no">not ready</span></div>
+<p>Only new, changed, or needs-Jeff's-hand.</p>
+<ol><li>Firing → acked → resolved, with who acked</li><li>Each alert opens the card that fixes it</li></ol>
+<div class="needs">Needs: an alert instance class (only definitions exist), Monitor rows (0).</div></div>
+
+</div>
+</section>
+
+<section>
+<div class="eyebrow">Backend first</div>
+<h2>What each page waits on</h2>
+<div class="panel"><table>
+<thead><tr><th>Backend work</th><th>Unblocks</th><th>Card</th></tr></thead>
+<tbody>
+<tr><td>Login, sessions, key → principal, one presence</td><td>Rooms, Roles</td><td>#4345 → #4348 → #4359 → #4360 → #4361</td></tr>
+<tr><td>Card state lives in the graph</td><td>Board, Today, Plans</td><td>#2159 (existing)</td></tr>
+<tr><td>Meeting, Cadence, MeetingRun, Decision, Plan classes</td><td>Calendar, Decisions, Plans</td><td>new</td></tr>
+<tr><td>Alert instances + Monitor rows</td><td>Alerts, Today</td><td>new</td></tr>
+<tr><td>Messages: one id, full history reachable</td><td>Rooms</td><td>new</td></tr>
+<tr><td>Probe rows gone from served collections</td><td>every page</td><td>Silas's bar</td></tr>
+</tbody></table></div>
+</section>
+
+<section>
+<div class="eyebrow">Borrowed, not copied</div>
+<p>Linear: agent session states, and stale after 30 minutes. LangChain Agent Inbox: accept, edit, reply, skip. Slack: agent chatter in threads. Flotilla (a NIP-29 client): the room, thread and calendar layout. No product puts agent runs on a calendar as meetings, or groups decisions by meeting, so those two are ours to design.</p>
+<p class="lede">Correction to the Buzz readout: Buzz's workflow approval steps are not built yet, and the relay refuses event kinds it doesn't know. Chorus facts stay in our graph.</p>
+</section>
+</div>
+
+<script src="https://cdn.jsdelivr.net/npm/mermaid@10.9.1/dist/mermaid.min.js"></script>
+<script>if(window.mermaid){mermaid.initialize({startOnLoad:true,theme:"neutral"});}</script>
+</html>
