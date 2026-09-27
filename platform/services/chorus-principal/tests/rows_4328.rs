@@ -234,3 +234,26 @@ fn a_refusal_carries_its_reason_and_never_a_token() {
     assert!(!t.contains("eyJ"), "a token leaked into the log: {t}");
     assert!(refusal_reason(&"x ".repeat(500)).chars().count() <= 160);
 }
+
+/// #4377 — focus unchanged for an hour still says when it was last checked:
+/// a quiet pane is re-checked every 10 minutes, not only when focus flips.
+#[test]
+fn an_unchanged_focus_is_rechecked_after_ten_minutes() {
+    use chorus_principal::rows::focused_presence;
+    let p = serde_json::json!({"name": "p1", "focusedNow": "true", "checkedAt": "2026-09-27T08:00:00Z"});
+    let f = focused_presence(p.clone(), true, "2026-09-27T08:11:00Z").expect("11 minutes stale → refreshed");
+    assert_eq!(f["checkedAt"], "2026-09-27T08:11:00Z");
+    assert!(focused_presence(p, true, "2026-09-27T08:05:00Z").is_none(), "5 minutes → no PUT");
+}
+
+/// #4377 — the login renews every 10 minutes; the session's expiry follows it,
+/// so a live session never reads as expired, and only moves forward.
+#[test]
+fn a_renewed_login_moves_the_session_expiry_forward_only() {
+    use chorus_principal::rows::renewed_session;
+    let s = serde_json::json!({"name": "wren-x", "expiresAt": "2026-09-26T16:38:09Z"});
+    let r = renewed_session(s.clone(), "2026-09-27T08:55:00Z").expect("later expiry → moved");
+    assert_eq!(r["expiresAt"], "2026-09-27T08:55:00Z");
+    assert!(renewed_session(s.clone(), "2026-09-26T16:00:00Z").is_none(), "an older token never pulls it back");
+    assert!(renewed_session(s, "").is_none(), "no token → no change");
+}

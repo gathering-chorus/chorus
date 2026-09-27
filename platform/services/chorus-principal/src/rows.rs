@@ -213,7 +213,11 @@ pub fn pane_shown(clients: &str, pane: &str) -> bool {
 pub fn focused_presence(mut presence: Value, shown: bool, now: &str) -> Option<Value> {
     presence.get("name")?;
     let want = if shown { "true" } else { "false" };
-    if presence.get("focusedNow").and_then(|f| f.as_str()) == Some(want) { return None; }
+    // #4377 — unchanged focus is still re-checked every 10 minutes, so checkedAt
+    // stays the last check (16h stale on 09-27, while status said "here now").
+    let checked = presence.get("checkedAt").and_then(|c| c.as_str()).unwrap_or("").to_string();
+    let recheck_due = !checked.is_empty() && { let cut = secs_before(now, 600); !cut.is_empty() && checked.as_str() <= cut.as_str() };
+    if presence.get("focusedNow").and_then(|f| f.as_str()) == Some(want) && !recheck_due { return None; }
     presence["focusedNow"] = Value::String(want.into());
     presence["checkedAt"] = Value::String(now.into());
     Some(presence)
@@ -279,7 +283,20 @@ pub fn expired_open(sessions_listing: &str, now_iso: &str, keep: &[String]) -> V
 
 /// The ISO time one hour before `iso` (same YYYY-MM-DDTHH:MM:SSZ form), for the
 /// string compare above. A malformed time gives "" (so nothing counts as recent).
-fn hour_before(iso: &str) -> String {
+fn hour_before(iso: &str) -> String { secs_before(iso, 3600) }
+
+/// #4377 — the login renews every 10 minutes; the session's expiry follows the
+/// current token, forward only. None when nothing moves (no PUT for it).
+pub fn renewed_session(mut session: Value, token_exp_iso: &str) -> Option<Value> {
+    if token_exp_iso.is_empty() { return None; }
+    let have = session.get("expiresAt").and_then(|e| e.as_str()).unwrap_or("");
+    if token_exp_iso <= have { return None; }
+    session["expiresAt"] = Value::String(token_exp_iso.into());
+    Some(session)
+}
+
+/// `iso` minus `back` seconds, same YYYY-MM-DDTHH:MM:SSZ form; "" if malformed.
+fn secs_before(iso: &str, back: i64) -> String {
     let p = |a: usize, b: usize| iso.get(a..b).and_then(|x| x.parse::<i64>().ok());
     let (Some(y), Some(mo), Some(d), Some(h), Some(mi), Some(s)) = (p(0,4), p(5,7), p(8,10), p(11,13), p(14,16), p(17,19)) else { return String::new() };
     // days from civil (Howard Hinnant), then back
@@ -288,7 +305,7 @@ fn hour_before(iso: &str) -> String {
     let doy = (153 * (if mo > 2 { mo - 3 } else { mo + 9 }) + 2) / 5 + d - 1;
     let doe = yoe * 365 + yoe / 4 - yoe / 100 + doy;
     let days = era * 146097 + doe - 719468;
-    let secs = days * 86400 + h * 3600 + mi * 60 + s - 3600;
+    let secs = days * 86400 + h * 3600 + mi * 60 + s - back;
     let (days, rem) = (secs.div_euclid(86400), secs.rem_euclid(86400));
     let z = days + 719468; let era = z.div_euclid(146097); let doe = z.rem_euclid(146097);
     let yoe = (doe - doe / 1460 + doe / 36524 - doe / 146096) / 365;
