@@ -1,5 +1,6 @@
 #!/usr/bin/env bats
 # @test-type: fitness — a repo-wide check over source text; no service, no store, no network.
+# @domain: infrastructure — the product domain this suite guards (#4334)
 #
 # #4175 — every WRITE to Fuseki carries a timeout.
 #

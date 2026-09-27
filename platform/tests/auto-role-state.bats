@@ -1,5 +1,6 @@
 #!/usr/bin/env bats
 # @test-type: unit — hermetic source guard
+# @domain: cards — the product domain this suite guards (#4334)
 load test_helper
 # auto-role-state.bats — verify card actions auto-declare role state (#1782)
 # Bug: roles forget to call role-state manually. State goes stale.

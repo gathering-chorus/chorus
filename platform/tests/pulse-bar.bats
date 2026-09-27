@@ -1,5 +1,6 @@
 #!/usr/bin/env bats
 # @test-type: unit — hermetic source guard
+# @domain: policies — the product domain this suite guards (#4334)
 load test_helper
 # pulse-bar.bats — Tests for pulse bar wiring (#2267)
 # What Jeff sees: GATE/PARTIAL/DOC tags on standards are manually assigned.

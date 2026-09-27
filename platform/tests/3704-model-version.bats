@@ -1,5 +1,6 @@
 #!/usr/bin/env bats
-# @test-type: integration — hermetic TTL guards (arq) + live owl-api projection check
+# @test-type: contract — hermetic TTL guards (arq) + live owl-api projection check
+# @domain: knowledge — the product domain this suite guards (#4334)
 # (service-hitting, skip-if-absent per #3528).
 load test_helper
 #

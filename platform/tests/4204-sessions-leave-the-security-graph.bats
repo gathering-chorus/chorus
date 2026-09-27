@@ -1,5 +1,6 @@
 #!/usr/bin/env bats
 # @test-type: integration:security — talks to the live identity API and store on
+# @domain: identity — the product domain this suite guards (#4334)
 # purpose: the question is what the RUNNING door allows, which no stub can answer.
 #
 # #4204. After #4202 landed, wren and kade could not log in:

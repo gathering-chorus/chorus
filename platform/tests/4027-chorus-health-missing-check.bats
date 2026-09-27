@@ -1,5 +1,6 @@
 #!/usr/bin/env bats
 # @test-type: integration — runs the live chorus-health (needs chorus-api :3340); skip-if-absent
+# @domain: services — the product domain this suite guards (#4334)
 # #4027 — chorus-health called platform/tests/owl-api-drift-check.sh and
 # owl-api-conformance.sh for six days after #3561 renamed them to athena-make-*.
 # bash's "No such file" was read as a failed check and reported as drift

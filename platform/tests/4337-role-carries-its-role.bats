@@ -1,5 +1,6 @@
 #!/usr/bin/env bats
 # @test-type: integration — drives the built chorus-awake and chorus-principal binaries with stub tmux, claude, ps, token-minter, curl, service probe, osascript and open; no live services, no live panes.
+# @domain: identity — the product domain this suite guards (#4334)
 #
 # #4337 — Jeff 2026-09-26: "i dont want to have to disassemble and reassemble the
 # car evertime i want to turn an agent on or off"; "i dont want the 10 steps i

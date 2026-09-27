@@ -1,5 +1,6 @@
 #!/usr/bin/env bats
 # @test-type: integration — operational; live services, skip-if-absent in CI
+# @domain: cards — the product domain this suite guards (#4334)
 load test_helper
 # chorus-ops-triage.bats — Tests for defect card triage gate (#2285)
 # What Jeff sees: 195 noise cards polluting the board. Every ERROR log line becomes a card.

@@ -1,5 +1,6 @@
 #!/usr/bin/env bats
 # @test-type: unit — pure verifier logic against fixtures; no ssh, no live store.
+# @domain: infrastructure — the product domain this suite guards (#4334)
 #
 # #3616 — the restore drill's negative proofs. A drill that cannot go RED on a
 # broken restore is decoration; this file proves it can, using the SAME

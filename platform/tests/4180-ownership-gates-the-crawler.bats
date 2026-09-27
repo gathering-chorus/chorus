@@ -1,5 +1,6 @@
 #!/usr/bin/env bats
 # @test-type: integration
+# @domain: security — the product domain this suite guards (#4334)
 # #4180 — a row a person created refuses the crawler; once the crawler owns it,
 # the same update is accepted. Proven live against a werk VARIANT, never prod:
 # the door stamps ownedBy from the caller and only the owner may update.

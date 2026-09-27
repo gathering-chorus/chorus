@@ -1,4 +1,6 @@
 #!/usr/bin/env bats
+# @test-type: unit — what it proves (#4334)
+# @domain: alerts — the product domain this suite guards (#4334)
 # Alert cooldown verification — #1966
 
 RUNNER="$BATS_TEST_DIRNAME/../alert-runner.sh"

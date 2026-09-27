@@ -1,5 +1,6 @@
 #!/usr/bin/env bats
 # @test-type: fitness
+# @domain: provenance — the product domain this suite guards (#4334)
 #
 # #4266 — chorus:Revision was renamed to chorus:Version by #4211 and the 16,186
 # history rows were migrated out of the catch-all graph into the domain graph.

@@ -1,4 +1,6 @@
 #!/usr/bin/env bats
+# @test-type: unit — what it proves (#4334)
+# @domain: deploys — the product domain this suite guards (#4334)
 # #2925 AC1 — Permission allow for daemon-runtime deploy commands.
 # Verifies the user's ~/.claude/settings.json carries explicit allow entries
 # for chorus-deploy + deploy-daemon-card.sh, so the Claude Code classifier

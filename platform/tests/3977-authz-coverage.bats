@@ -1,5 +1,6 @@
 #!/usr/bin/env bats
-# @test-type: integration — pure scoring subcommand of the script under test; no live store, no token
+# @test-type: unit — pure scoring subcommand of the script under test; no live store, no token
+# @domain: security — the product domain this suite guards (#4334)
 # #3977 — negative proof (#3734) for the authz-coverage scorer. authZ's verdict
 # turns on ONE distinction the tool must never blur: a 403 (scope refused) is the
 # ONLY covered state. A 200 is OPEN (under-scoped caller mutated), and — the trap —

@@ -1,5 +1,6 @@
 #!/usr/bin/env bats
 # @test-type: unit — hermetic: parses the repo plist, drives the lock functions
+# @domain: tests — the product domain this suite guards (#4334)
 # in a throwaway lock dir with a stubbed ops-nudge. No live service.
 #
 # 2026-09-08 (#4119): "hermetic" was not true. The stale-lock test read the REAL

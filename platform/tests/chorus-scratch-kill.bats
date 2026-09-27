@@ -1,5 +1,6 @@
 #!/usr/bin/env bats
 # @test-type: integration — spawns its own sleep fixture + fake launchctl; seamed spine; no live services touched
+# @domain: infrastructure — the product domain this suite guards (#4334)
 load test_helper
 # chorus-scratch-kill.bats — #3750: the owner-sanctioned scratch-process exit.
 # NEGATIVE PROOFS (#3734) are the point: the states this tool exists to refuse

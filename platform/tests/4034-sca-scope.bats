@@ -1,5 +1,6 @@
 #!/usr/bin/env bats
-# @test-type: integration — runs real trivy over seeded lockfile fixtures; no live service.
+# @test-type: integration:security — runs real trivy over seeded lockfile fixtures; no live service.
+# @domain: security — the product domain this suite guards (#4334)
 # #4034 — the nightly SCA scan is SCOPED (skip target/, node_modules/, .git)
 # because the unscoped 17GB walk ran 72+ min under contention and blew the
 # lane cap (2026-08-30). Negative proofs (#3734), both directions:

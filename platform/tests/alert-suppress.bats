@@ -1,5 +1,6 @@
 #!/usr/bin/env bats
 # @test-type: integration — operational; live services, skip-if-absent in CI
+# @domain: alerts — the product domain this suite guards (#4334)
 load test_helper
 # Tests for #2305: Suppress alerts during planned restarts
 # What Jeff sees: planned deploys/restarts fire alerts that look like real outages.

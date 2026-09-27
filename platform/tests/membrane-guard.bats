@@ -1,5 +1,6 @@
 #!/usr/bin/env bats
 # @test-type: integration — spawns the built shim binary, but hermetic-mode: redirected HOME, touches no live state
+# @domain: tests — the product domain this suite guards (#4334)
 load test_helper
 # membrane-guard.bats — #3615 test/prod membrane, end-to-end negative proof.
 #

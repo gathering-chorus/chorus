@@ -1,5 +1,6 @@
 #!/usr/bin/env bats
 # @test-type: fitness — greps source text in a temp tree; no service, no store.
+# @domain: roles — the product domain this suite guards (#4334)
 #
 # #4179 — the three checks #4175 tripped now EXCLUDE fixture data, and this
 # proves the exclusion narrowed them rather than blinded them.

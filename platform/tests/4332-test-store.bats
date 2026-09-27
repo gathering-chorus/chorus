@@ -1,5 +1,6 @@
 #!/usr/bin/env bats
 # @test-type: integration — creates the in-memory test dataset in the running Fuseki
+# @domain: tests — the product domain this suite guards (#4334)
 #
 # #4332 — the dataset bats suites write to is never /pods. These prove the
 # helper every writing suite now loads (lib/test-store.sh): it hands out a
@@ -30,7 +31,7 @@ setup() {
     --data-urlencode "query=ASK { GRAPH <$g> { ?s ?p ?o } }" | tail -1 | tr -d '\r')
   there=$(curl -s "${auth[@]}" -G "http://localhost:3030/pods/query" -H 'Accept: text/csv' \
     --data-urlencode "query=ASK { GRAPH <$g> { ?s ?p ?o } }" | tail -1 | tr -d '\r')
-  curl -s -o /dev/null "${auth[@]}" -X DELETE "$FUSEKI_GSP?graph=$g" || true
+  curl -s --max-time 10 -o /dev/null "${auth[@]}" -X DELETE "$FUSEKI_GSP?graph=$g" || true
   test "$here" = "true"
   test "$there" = "false"
 }

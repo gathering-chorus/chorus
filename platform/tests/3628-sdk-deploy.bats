@@ -1,5 +1,6 @@
 #!/usr/bin/env bats
 # @test-type: unit
+# @domain: spine — the product domain this suite guards (#4334)
 # #3628 — chorus-sdk-deploy.sh shape: build-verify-swap must be atomic.
 # A failed or incomplete build leaves the live dist untouched; a good build
 # swaps in atomically with the previous build kept at dist.prev.

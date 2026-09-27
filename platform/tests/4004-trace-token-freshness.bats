@@ -1,5 +1,6 @@
 #!/usr/bin/env bats
 # @test-type: unit — stubs chorus-identity-token; no CSS, no network, no spine
+# @domain: identity — the product domain this suite guards (#4334)
 #
 # #4004 — the single largest source of recorded pain. The identity token lives
 # 600 seconds; these scripts minted it ONCE per run and reused the variable for

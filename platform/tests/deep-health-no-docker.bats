@@ -1,5 +1,6 @@
 #!/usr/bin/env bats
-# @test-type: integration — operational; live services, skip-if-absent in CI
+# @test-type: unit — operational; live services, skip-if-absent in CI
+# @domain: monitors — the product domain this suite guards (#4334)
 load test_helper
 # deep-health-no-docker.bats — verify deep-health doesn't check for Docker (#2020, #2032)
 # Bug: deep-health checks for a chorus-hooks PID and compares binary timestamps.

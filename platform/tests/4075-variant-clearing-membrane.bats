@@ -1,5 +1,6 @@
 #!/usr/bin/env bats
 # @test-type: integration — starts the Clearing from THIS tree on a free port with a
+# @domain: messages — the product domain this suite guards (#4334)
 # fixture "prod" store; no live service, no ~/.chorus, no /tmp/bridge-messages.json.
 #
 # #4075 — a message posted in the variant Clearing lands in the VARIANT store and

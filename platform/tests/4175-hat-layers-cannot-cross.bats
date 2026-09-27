@@ -1,5 +1,6 @@
 #!/usr/bin/env bats
 # @test-type: fitness — runs the model's own governance queries over two local
+# @domain: roles — the product domain this suite guards (#4334)
 # TTL files with arq. No service, no store, no network.
 #
 # #4175 — the hat checks are DATA (chorus:GovernanceCheck rows in

@@ -1,5 +1,6 @@
 #!/usr/bin/env bats
 # @test-type: unit — signal is fixture-data: a stub SPARQL endpoint on a local port answers the sweep; no live store, no writes
+# @domain: knowledge — the product domain this suite guards (#4334)
 # #4187 — athena-validate counts the rows still living in the two v1 graphs
 # (urn:chorus:instances, urn:chorus:ontology) per class, and a single leftover row
 # turns the sweep red. Jeff 2026-09-16: "no more chorus:ontology or chorus:instances

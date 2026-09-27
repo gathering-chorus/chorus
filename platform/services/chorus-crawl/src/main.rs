@@ -2490,6 +2490,26 @@ fn print_graph_vs_project(
 
     // #4290 — the fold rows of the control record, filled by the loop below.
     let mut fold_rows: Vec<chorus_crawl::ValidateRow> = Vec::new();
+    // #4334 — every bats suite declares the domain it guards
+    {
+        let read = |q: &str| std::fs::read_to_string(std::path::Path::new(root).join(q)).ok();
+        let (n, missing) = domain::undeclared_bats(test_files, &read);
+        if missing.is_empty() {
+            println!("chorus-crawl: reconcile declared domains: clean — {n} bats suites, each with an @domain header");
+        } else {
+            println!("chorus-crawl: reconcile declared domains: DRIFT — {} of {n} bats suites carry no @domain header", missing.len());
+        }
+        fold_rows.push(chorus_crawl::ValidateRow {
+            domain: "tests".to_string(),
+            class: "Test (declared domain)".to_string(),
+            tree: n,
+            graph: n - missing.len(),
+            missing,
+            stale: Vec::new(),
+            excluded: Vec::new(),
+            measured: true,
+        });
+    }
     // #4214 — the folds, both directions. The classes shipped without this, so
     // for one afternoon nothing proved that every page on disk had a row or that
     // every row still had a file. Jeff caught it by asking the obvious question.

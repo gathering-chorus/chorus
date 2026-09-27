@@ -1,4 +1,6 @@
 #!/usr/bin/env bats
+# @test-type: fitness — what it proves (#4334)
+# @domain: services — the product domain this suite guards (#4334)
 # Shadow log enforcement — #2005 DEC-114
 
 @test "deep-health checks for /tmp/*.log files" {

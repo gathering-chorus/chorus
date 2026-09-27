@@ -1,5 +1,6 @@
 #!/usr/bin/env bats
 # @test-type: integration
+# @domain: products — the product domain this suite guards (#4334)
 #
 # #4010 — the identity block of a design doc is a PROJECTION, and the check that
 # says so must be able to fail.

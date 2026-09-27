@@ -1,5 +1,6 @@
 #!/usr/bin/env bats
 # @test-type: unit:security — static assertions on the recovery script itself;
+# @domain: security — the product domain this suite guards (#4334)
 # no service, store or credential is exercised (signal:security is the subject).
 #
 # #3785 — the recovery path must never gate on identity.

@@ -1,5 +1,6 @@
 #!/usr/bin/env bats
-# @test-type: integration — operational; live services, skip-if-absent in CI
+# @test-type: unit — operational; live services, skip-if-absent in CI
+# @domain: alerts — the product domain this suite guards (#4334)
 load test_helper
 # fuseki-harvest-stale-alert.bats — #2327
 # What Jeff sees: a fuseki-harvest-stale nudge only when photos really are absent,

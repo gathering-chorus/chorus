@@ -1,5 +1,6 @@
 #!/usr/bin/env bats
 # @test-type: unit — hermetic source guard
+# @domain: policies — the product domain this suite guards (#4334)
 load test_helper
 # Tests for standards-surface-cron.sh (#2268)
 # What Jeff sees: the standards surface updates itself overnight.

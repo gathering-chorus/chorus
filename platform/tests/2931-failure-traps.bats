@@ -1,4 +1,6 @@
 #!/usr/bin/env bats
+# @test-type: unit — what it proves (#4334)
+# @domain: cicd — the product domain this suite guards (#4334)
 # #2931 AC5 regression — ERR/EXIT failure traps in build-signed.sh and
 # deploy-daemon-card.sh must (a) emit a structured failure event AND
 # (b) propagate the original non-zero exit code. Silas's gate:arch

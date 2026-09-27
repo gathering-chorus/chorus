@@ -1,5 +1,6 @@
 #!/usr/bin/env bats
-# @test-type: integration — NEGATIVE PROOFS (#3734) at the live Test door; every request is refused, nothing is written
+# @test-type: contract — NEGATIVE PROOFS (#3734) at the live Test door; every request is refused, nothing is written
+# @domain: tests — the product domain this suite guards (#4334)
 # #4162 — one field, testType, says what kind of proving a Test is. The door
 # must refuse a Test that does not carry it, and a Test that still carries a
 # retired field (testConcern, pyramidLayer). Both are refusals: a 4xx creates

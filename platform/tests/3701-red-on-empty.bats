@@ -1,5 +1,6 @@
 #!/usr/bin/env bats
 # @test-type: integration — live owl-api serve checks (skip only when the service is
+# @domain: value-streams — the product domain this suite guards (#4334)
 # absent, #3528) PLUS hermetic red-proofs that the assertions themselves refuse empty.
 load test_helper
 #

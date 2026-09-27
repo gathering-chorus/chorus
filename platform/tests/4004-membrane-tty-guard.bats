@@ -1,5 +1,6 @@
 #!/usr/bin/env bats
-# @test-type: unit — drives the grant check only; --dry-run keeps the body inert
+# @test-type: unit:security — drives the grant check only; --dry-run keeps the body inert
+# @domain: tests — the product domain this suite guards (#4334)
 #
 # #4004 — test-product-membrane bootouts EVERY com.chorus.* agent, so it must
 # never run unattended. Two inference-based guards failed in a row:

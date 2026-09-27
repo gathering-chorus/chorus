@@ -1,4 +1,6 @@
 #!/usr/bin/env bats
+# @test-type: unit — what it proves (#4334)
+# @domain: roles — the product domain this suite guards (#4334)
 # lint-fragments.sh — fitness linter for CLAUDE.md fragment system (#2150)
 #
 # 6 rules:

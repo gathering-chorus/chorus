@@ -1,5 +1,6 @@
 #!/usr/bin/env bats
 # @test-type: integration — drives the built demo-fitness binary with a stub launchctl; no services touched
+# @domain: pipelines — the product domain this suite guards (#4334)
 # #4225 — the demo-fitness line, driven with a stub launchctl so the numbers are
 # fixtures rather than whatever this box happens to be running: a check whose
 # verdict depends on the machine cannot be read as red or green.

@@ -1,5 +1,6 @@
 #!/usr/bin/env bats
 # @test-type: unit — hermetic: NIGHTLY_LOCKDIR under BATS_TEST_TMPDIR, the process table stubbed through NIGHTLY_PS; no live runner, no launchd, no network
+# @domain: tests — the product domain this suite guards (#4334)
 # #4008 — the single-flight lock guards the RUNNER, not just the wrapper. On 2026-08-25
 # a killed wrapper left `werk-test --nightly` alive for 1h52m; its pid was dead, so the
 # next wrapper stole the lock and ran a second lane beside the orphan. Now a dead holder

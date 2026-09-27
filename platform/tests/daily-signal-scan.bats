@@ -1,5 +1,6 @@
 #!/usr/bin/env bats
 # @test-type: integration — reads the live store
+# @domain: analytics — the product domain this suite guards (#4334)
 # Tests for daily-signal-scan.sh (#2088)
 # What Jeff sees: a brief ready by 6am with codebase weather, trust verification,
 # backlog coherence, and golfball detection. No session required.
@@ -55,4 +56,13 @@ SCRIPT="$(cd "$(dirname "$BATS_TEST_FILENAME")/../scripts" && pwd)/daily-signal-
   run bash -c 'set -euo pipefail; echo "" | while read -r line; do if [ -n "$line" ]; then echo "  - $line"; fi; done; echo reached'
   [ "$status" -eq 0 ]
   [ "$output" = "reached" ]
+}
+
+# #4334 — an unreadable board ended the brief under `set -e`. The scan must
+# finish and say the section was not measured.
+@test "#4334: an unreadable board still finishes the brief and says flow health was not measured" {
+  out="$BATS_TEST_TMPDIR/signal.md"
+  run env DAILY_SIGNAL_CARDS=/usr/bin/false bash "$SCRIPT" --dry-run --output "$out"
+  [ "$status" -eq 0 ]
+  grep -q "flow health not measured" "$out"
 }

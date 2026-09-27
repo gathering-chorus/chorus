@@ -1,4 +1,6 @@
 #!/usr/bin/env bats
+# @test-type: unit — what it proves (#4334)
+# @domain: cicd — the product domain this suite guards (#4334)
 
 # #2500 — required-checks drift detector contract tests.
 #

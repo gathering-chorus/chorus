@@ -1,5 +1,6 @@
 #!/usr/bin/env bats
 # @test-type: unit — hermetic: extracts the real proven-round step from werk.yml,
+# @domain: cicd — the product domain this suite guards (#4334)
 # runs it against a fixture witness + a fixture git repo. No services.
 #
 # #3921 introduced the skip; #3943 moved its input to the werk-demo WITNESS.

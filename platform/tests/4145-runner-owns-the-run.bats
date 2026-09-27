@@ -1,5 +1,6 @@
 #!/usr/bin/env bats
 # @test-type: integration:api — drives the built werk-test binary against a stub runner, stub registry and stub nudge on loopback; no live service, no live log
+# @domain: tests — the product domain this suite guards (#4334)
 #
 # #4145 — Jeff, 2026-09-11: "delete the nightly script, change the launchd".
 # `werk-test --nightly --run-all` is now the whole 03:00 run. These proofs

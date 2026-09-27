@@ -1,5 +1,6 @@
 #!/usr/bin/env bats
 # @test-type: contract
+# @domain: security — the product domain this suite guards (#4334)
 # #4196 — one authz, step 2. A permission is a row, a role is a hat, an owner
 # is a user. These are the return gates: the door's write paths no longer ask
 # for a hat, and the model no longer says an owner is a Role. The live proofs

@@ -1,4 +1,6 @@
 #!/usr/bin/env bats
+# @test-type: unit — what it proves (#4334)
+# @domain: code — the product domain this suite guards (#4334)
 # #3021: fileDependsOn must derive edges from ONE filesystem ripgrep pass
 # (not a full ~6000-File scan + grep-each-file, which cost 33s) AND exclude
 # dist/build output (the 13 false positives included dist artifacts).

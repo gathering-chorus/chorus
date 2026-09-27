@@ -1,5 +1,6 @@
 #!/usr/bin/env bats
-# @test-type: unit (naming) + integration (residue scan; skip-if-absent)
+# @test-type: integration (naming) + integration (residue scan; skip-if-absent)
+# @domain: tests — the product domain this suite guards (#4334)
 # Subject: throwaway graphs that suites write into the shared store.
 #
 # 2026-09-04: 77 graphs named urn:chorus:ontology-test-bats-3540-<pid> were

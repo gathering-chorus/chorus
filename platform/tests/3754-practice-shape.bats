@@ -1,5 +1,6 @@
 #!/usr/bin/env bats
-# @test-type: unit — runs SHACL over fixtures written to BATS_TEST_TMPDIR against
+# @test-type: contract — runs SHACL over fixtures written to BATS_TEST_TMPDIR against
+# @domain: practices — the product domain this suite guards (#4334)
 # the repo's PracticeShape; no store, no service, no network.
 # #3754 — PracticeShape's five proofs.
 #

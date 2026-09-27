@@ -14,7 +14,7 @@ REPO="/Users/jeffbridwell/CascadeProjects/jeff-bridwell-personal-site"
 # launchd-spawned runs hit `command not found` (exit 127) on the first $CARDS
 # invocation. CHORUS_ROOT already IS the chorus root.
 CHORUS="${CHORUS_ROOT}"
-CARDS="$CHORUS/platform/scripts/cards"
+CARDS="${DAILY_SIGNAL_CARDS:-$CHORUS/platform/scripts/cards}"
 CHORUS_LOG="$CHORUS/platform/scripts/chorus-log"
 DECISIONS_MD="$CHORUS/roles/wren/decisions.md"
 PROJECTS_MD="$CHORUS/roles/wren/projects.md"
@@ -164,7 +164,13 @@ flow_health() {
 
   # Parse status sections from board output — extract only lines under matching header
   local board_output
-  board_output=$(bash "$CARDS" list 2>/dev/null)
+  # #4334 — an unreadable board (Vikunja down, no token in a werk) is a state
+  # to print, not a reason to stop: under `set -e` it ended the whole brief.
+  if ! board_output=$(bash "$CARDS" list 2>/dev/null); then
+    echo "- **Board:** unreadable — flow health not measured"
+    echo ""
+    return 0
+  fi
 
   # Extract WIP section (lines between "WIP (N):" and next status header)
   local wip_section
@@ -214,7 +220,11 @@ golfball_detection() {
 
   # Find domains in WIP+Next with both new/enhance AND fix/swat cards
   local board_output
-  board_output=$(bash "$CARDS" list 2>/dev/null)
+  if ! board_output=$(bash "$CARDS" list 2>/dev/null); then
+    echo "  - board unreadable — not measured"
+    echo ""
+    return 0
+  fi
   # Extract only WIP + Next sections
   local active_cards
   active_cards=$(echo "$board_output" | sed -n '/^WIP /,/^[A-Z]/p; /^Next /,/^[A-Z]/p' | grep -E '^\s+\d+' || true)

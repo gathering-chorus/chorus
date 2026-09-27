@@ -1,5 +1,6 @@
 #!/usr/bin/env bats
 # @test-type: integration — reads the HOST's installed LaunchAgents; skip-if-absent
+# @domain: services — the product domain this suite guards (#4334)
 load test_helper
 #
 # #3734 — "is this script actually reachable?" Nothing in the repo could answer it,

@@ -1,5 +1,6 @@
 #!/usr/bin/env bats
-# @test-type: integration — auto-classified (#3528 sweep); service-hitting=integration(skip-if-absent), static-guard=unit
+# @test-type: unit — auto-classified (#3528 sweep); service-hitting=integration(skip-if-absent), static-guard=unit
+# @domain: monitors — the product domain this suite guards (#4334)
 load test_helper
 # 3405-deep-health-probe-truthfulness.bats — Tests for #3405
 # What Jeff sees: deep-health stops crying wolf. A probe that can't RUN

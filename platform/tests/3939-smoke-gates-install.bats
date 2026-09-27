@@ -1,5 +1,6 @@
 #!/usr/bin/env bats
 # @test-type: unit — hermetic: fake HOME, fixture binaries, spine to a temp log
+# @domain: cicd — the product domain this suite guards (#4334)
 #
 # #3939 — chorus-bin-install refuses a candidate werk verb that fails its smoke.
 # The guarded condition: a broken binary becoming the running binary. Before

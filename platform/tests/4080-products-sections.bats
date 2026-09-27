@@ -1,5 +1,6 @@
 #!/usr/bin/env bats
 # @test-type: integration:api
+# @domain: products — the product domain this suite guards (#4334)
 load test_helper
 #
 # #4080 — every product carries its nine design sections as attributes, filled

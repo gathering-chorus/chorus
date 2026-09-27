@@ -1,5 +1,6 @@
 #!/usr/bin/env bats
 # @test-type: unit — hermetic: drives the REAL ops-nudge against (1) the caged
+# @domain: messages — the product domain this suite guards (#4334)
 # dead-port URL the suite world hands every test process and (2) a local stub.
 # #4039 — ops-nudge was the last uncaged outbound: suites shelling it
 # (alert-delivery-test.sh, chorus-health) paged Jeff from inside every daily

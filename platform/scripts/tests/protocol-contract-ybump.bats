@@ -1,5 +1,6 @@
 #!/usr/bin/env bats
 # @test-type: unit — hermetic: runs the generator against a COPY of claudemd.
+# @domain: roles — the product domain this suite guards (#4334)
 #
 # #2311 origin: the Y auto-bump regression. REWRITTEN by #3904 for the #3288
 # ledger contract, which retired auto-bump-on-generate entirely:

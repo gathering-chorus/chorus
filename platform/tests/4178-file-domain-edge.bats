@@ -1,5 +1,6 @@
 #!/usr/bin/env bats
 # @test-type: contract
+# @domain: code — the product domain this suite guards (#4334)
 # #4178 — a file's domain edge must point at a class the DAL can mint.
 #
 # fileInDomain ranged on chorus:SubDomain, the class Jeff retired 2026-06-19.

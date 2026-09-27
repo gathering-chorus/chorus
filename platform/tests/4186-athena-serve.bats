@@ -1,5 +1,6 @@
 #!/usr/bin/env bats
 # @test-type: integration — drives the built athena-serve binary with a stub launchctl and a stub curl; no launchd, no network.
+# @domain: services — the product domain this suite guards (#4334)
 #
 # #4186 — the SERVE leg of the athena pipeline. The land used to seed rows
 # against an athena-make that launchd called "running" and that answered

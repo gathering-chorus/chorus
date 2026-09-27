@@ -1,5 +1,6 @@
 #!/usr/bin/env bats
 # @test-type: unit — signal is fixture-data: jena update over files only; no live store, no $HOME, no network
+# @domain: services — the product domain this suite guards (#4334)
 # #4089 — the services harvester replaces the CLASSES it emits, never the graph.
 # Wren's ask (2026-09-03 10:16): a negative proof that a hand-authored Commitment
 # row in urn:chorus:domains:services survives a harvest cycle — that is the

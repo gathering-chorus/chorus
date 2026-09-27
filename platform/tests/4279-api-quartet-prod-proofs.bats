@@ -1,5 +1,6 @@
 #!/usr/bin/env bats
 # @test-type: integration — NEGATIVE PROOFS (#3734) for 4279-api-quartet-prod.bats.
+# @domain: tests — the product domain this suite guards (#4334)
 # Neither case writes production: one proves the label gate refuses, the other
 # plants a probe row in a throwaway graph and proves the residue query finds it.
 

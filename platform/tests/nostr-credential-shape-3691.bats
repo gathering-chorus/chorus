@@ -1,5 +1,6 @@
 #!/usr/bin/env bats
-# @test-type: unit — signal:security is fixture-data; validates a SHACL shape
+# @test-type: contract — signal:security is fixture-data; validates a SHACL shape
+# @domain: identity — the product domain this suite guards (#4334)
 # against synthetic credentials; no service, store, or real key involved.
 #
 # #3691 — the Nostr-credential shape, each rule proven to REFUSE a violation

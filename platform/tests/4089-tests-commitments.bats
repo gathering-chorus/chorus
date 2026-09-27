@@ -1,5 +1,6 @@
 #!/usr/bin/env bats
 # @test-type: unit — runs commitment-check.sh over the tests service's real Commitment rows and over fixtures; no store, no service, no network.
+# @domain: tests — the product domain this suite guards (#4334)
 # #4089 AC3: the #4064 check runs on the tests service. The real file is read as
 # it is committed; the negative proof removes a card from an open row and shows
 # the check go RED for exactly that row (#3734).

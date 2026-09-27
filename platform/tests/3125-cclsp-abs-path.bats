@@ -1,5 +1,6 @@
 #!/usr/bin/env bats
 # @test-type: contract
+# @domain: roles — the product domain this suite guards (#4334)
 # 3125-cclsp-abs-path — gen-role-mcp.sh must bake cclsp's launch via ABSOLUTE
 # node + cclsp paths, never a bare `command: "cclsp"`. cclsp is a Node script
 # (#!/usr/bin/env node), so bare resolution depends on nvm's PATH, which a

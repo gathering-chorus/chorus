@@ -1,5 +1,6 @@
 #!/usr/bin/env bats
-# @test-type: integration — hits service/remote/sibling, skip-if-absent in CI
+# @test-type: unit — hits service/remote/sibling, skip-if-absent in CI
+# @domain: monitors — the product domain this suite guards (#4334)
 load test_helper
 # seed-probe-hop5.bats — Tests for seed probe hop 5 fix (#2004)
 # What Jeff sees: seed probe reports FAIL on hop 5 every run because

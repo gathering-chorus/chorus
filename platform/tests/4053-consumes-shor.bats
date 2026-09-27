@@ -1,5 +1,6 @@
 #!/usr/bin/env bats
 # @test-type: contract — SHACL conformance of ProductShape's consumes/provides
+# @domain: products — the product domain this suite guards (#4334)
 # branches, run through Jena `shacl` against fixtures this test authors itself.
 #
 # #4053 — Jeff, reading the atlas: "there is no dependency from products class to

@@ -1,5 +1,6 @@
 #!/usr/bin/env bats
 # @test-type: integration — live owl-api (:3360) + chorus-api (:3340) value-stream surface
+# @domain: value-streams — the product domain this suite guards (#4334)
 load test_helper
 # 3707-value-stream-surface — contract pins for the value-stream chunk
 # (#3697-#3703): the recursive top-level stream must serve correctly at the

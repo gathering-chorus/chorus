@@ -1,5 +1,6 @@
 #!/usr/bin/env bats
 # @test-type: unit — hermetic source guard
+# @domain: policies — the product domain this suite guards (#4334)
 load test_helper
 # standards-gen.bats — Tests for generate-standards-surface.sh
 # Card #2266: Standards surface shows hardcoded data instead of live counts
@@ -133,5 +134,8 @@ run_gen() {
 
   bash "$GEN_SCRIPT" --output-dir "$OUTPUT_DIR" --template-dir "$TEMPLATE_DIR"
 
-  diff "$OUTPUT_DIR/first-run.html" "$OUTPUT_DIR/chorus-standards.html"
+  # #4334 — the date line carries the minute it ran; two runs that straddle a
+  # minute on a busy box are still the same output. Compare everything else.
+  diff <(grep -v 'class="date"' "$OUTPUT_DIR/first-run.html") \
+       <(grep -v 'class="date"' "$OUTPUT_DIR/chorus-standards.html")
 }

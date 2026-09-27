@@ -1,5 +1,6 @@
 #!/usr/bin/env bats
 # @test-type: unit — static source/workflow asserts, no live service
+# @domain: cicd — the product domain this suite guards (#4334)
 # #3116 retirement gate — werk-demo is the proving ceremony, not an orchestrator.
 # Structural memory (ADR-026 retirement-gate pattern): the ACT and the
 # go-run-your-gate nudge relay were stripped out of the binary; a future

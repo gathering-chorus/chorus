@@ -1,5 +1,6 @@
 #!/usr/bin/env bats
 # @test-type: unit — a STATEFUL stub graph (json file) + stub writer that enforces
+# @domain: cards — the product domain this suite guards (#4334)
 # the real uniqueness rule. No live Fuseki, no token, no real writes.
 #
 # #3898 — the proof #3897's fixture did not have.

@@ -1,5 +1,6 @@
 #!/usr/bin/env bats
 # @test-type: unit — hermetic source guard
+# @domain: analytics — the product domain this suite guards (#4334)
 load test_helper
 # frustration-telemetry.bats — #2454
 # What Jeff sees: the page renders bad days with memory-write follow-up,

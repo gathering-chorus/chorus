@@ -1,5 +1,6 @@
 #!/usr/bin/env bats
 # @test-type: integration:api
+# @domain: products — the product domain this suite guards (#4334)
 load test_helper
 #
 # #4045 — the spine is a modeled Product. What Jeff sees: /products serves nine

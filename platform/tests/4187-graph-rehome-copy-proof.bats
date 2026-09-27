@@ -1,5 +1,6 @@
 #!/usr/bin/env bats
 # @test-type: unit — signal is fixture-data: a stub SPARQL endpoint answers the
+# @domain: knowledge — the product domain this suite guards (#4334)
 # copy verification; no live store, no writes.
 # #4187 — graph-rehome verifies a copy landed before anything is pruned. The
 # first version compared raw row counts between the two graphs, which refused a

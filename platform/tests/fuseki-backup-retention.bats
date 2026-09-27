@@ -1,5 +1,6 @@
 #!/usr/bin/env bats
 # @test-type: unit
+# @domain: knowledge — the product domain this suite guards (#4334)
 # #3799/#4171 — backup retention.
 #
 # WHAT CHANGED AND WHY THIS FILE WAS REWRITTEN (2026-09-16):

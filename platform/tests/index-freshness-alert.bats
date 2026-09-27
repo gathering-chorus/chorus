@@ -1,5 +1,6 @@
 #!/usr/bin/env bats
-# @test-type: integration — operational; live services, skip-if-absent in CI
+# @test-type: unit — operational; live services, skip-if-absent in CI
+# @domain: monitors — the product domain this suite guards (#4334)
 load test_helper
 # index-freshness-alert.bats — Tests for session index freshness check (#2270)
 # What Jeff sees: gemba shows 2-day-old data and nobody knew. These tests

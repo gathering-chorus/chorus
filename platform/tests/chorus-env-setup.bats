@@ -1,5 +1,6 @@
 #!/usr/bin/env bats
 # @test-type: unit — hermetic: sources chorus-env-setup.sh in isolated subshells
+# @domain: version-control — the product domain this suite guards (#4334)
 # (own mktemp WERK_BASE, forced cwd, unset role vars), no live service touched.
 # chorus-env-setup.bats — <ROLE>_WERK resolves to the ephemeral werk (#2923).
 #

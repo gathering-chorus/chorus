@@ -1,5 +1,6 @@
 #!/usr/bin/env bats
 # @test-type: integration — hermetic TTL guards (arq) + live owl-api recursive-tree
+# @domain: value-streams — the product domain this suite guards (#4334)
 # serve check (service-hitting, skip-if-absent per #3528).
 load test_helper
 #

@@ -1,4 +1,6 @@
 #!/usr/bin/env bats
+# @test-type: unit — what it proves (#4334)
+# @domain: version-control — the product domain this suite guards (#4334)
 # #2944 / #3026 — stale-base detection in git-queue.sh push.
 #
 # #2944 ORIGINAL premise: a long-lived werk branch silently deletes peer-merged

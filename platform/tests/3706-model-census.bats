@@ -1,5 +1,6 @@
 #!/usr/bin/env bats
-# @test-type: integration — static page guards + live proxy reachability (skip-if-absent).
+# @test-type: integration:ui — static page guards + live proxy reachability (skip-if-absent).
+# @domain: knowledge — the product domain this suite guards (#4334)
 load test_helper
 #
 # #3706 — the live model census page. What Jeff sees: one page, "what is our model

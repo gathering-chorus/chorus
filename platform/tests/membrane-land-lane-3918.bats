@@ -1,5 +1,6 @@
 #!/usr/bin/env bats
 # @test-type: integration
+# @domain: tests — the product domain this suite guards (#4334)
 # #3918 — the land lane's own telemetry reaches the spine; a test's does not.
 #
 # This suite exists because the membrane could not separate the two states it

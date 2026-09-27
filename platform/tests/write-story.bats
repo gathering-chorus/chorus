@@ -1,5 +1,6 @@
 #!/usr/bin/env bats
 # @test-type: integration — hits service/remote/sibling, skip-if-absent in CI
+# @domain: knowledge — the product domain this suite guards (#4334)
 
 # #3606 — source Fuseki auth. Fuseki refuses unauthenticated writes (401) and
 # the setup writes below discard stderr, so a refused INSERT looked exactly like

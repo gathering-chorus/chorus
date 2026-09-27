@@ -1,4 +1,6 @@
 #!/usr/bin/env bats
+# @test-type: integration:security — what it proves (#4334)
+# @domain: security — the product domain this suite guards (#4334)
 # 2709-gitleaks-baseline.bats — secret-scanning gate (AC1)
 # What Jeff sees: no new secret can be committed; the 35 known historical
 # findings (logged auth + LAN fuseki cred, 2026-03-29 window) are baselined,

@@ -1,5 +1,6 @@
 #!/usr/bin/env bats
 # @test-type: integration — reads the live search index and the live api (read-only since #4332)
+# @domain: search — the product domain this suite guards (#4334)
 # chorus-search-fts-filter.bats — #2323
 # What Jeff sees: chorus search returns real content, not its own telemetry.
 # Queries for "wren last session shipped friction decisions" and

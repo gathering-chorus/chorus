@@ -1,5 +1,6 @@
 #!/usr/bin/env bats
 # @test-type: integration — operational; live services, skip-if-absent in CI
+# @domain: messages — the product domain this suite guards (#4334)
 load test_helper
 # bridge-subscriber-watchdog.bats — #1964
 # What Jeff sees: bridge-subscribers stay alive across crashes. When one dies,

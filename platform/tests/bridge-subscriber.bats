@@ -1,5 +1,6 @@
 #!/usr/bin/env bats
 # @test-type: unit — hermetic source guard
+# @domain: messages — the product domain this suite guards (#4334)
 load test_helper
 # bridge-subscriber.bats — Tests for Bridge notification filtering (#2284)
 # What Jeff sees: his own actions echoed back as notifications. Noise.

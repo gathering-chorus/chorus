@@ -1,5 +1,6 @@
 #!/usr/bin/env bats
 # @test-type: unit — signal is fixture-data: arq/generated files only; no live store, no $HOME, no network
+# @domain: services — the product domain this suite guards (#4334)
 # #3870 — service-drift check: negative proofs FIRST (Wren's pair directive:
 # the fixtures exist before the harvester, so the check cannot be shaped to
 # match whatever the harvester produces). Hermetic: every case runs arq over

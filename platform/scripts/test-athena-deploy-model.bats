@@ -1,5 +1,6 @@
 #!/usr/bin/env bats
 # @test-type: integration
+# @domain: knowledge — the product domain this suite guards (#4334)
 # test-chorus-model-deploy.bats (#3509) — the MODEL (chorus.ttl schema) deploys into Fuseki.
 # AC: a deploy step loads chorus.ttl -> urn:chorus:ontology and the 4 primitive shapes
 # (+ StepShape) are queryable live; an invalid model is refused fail-loud (no deploy).

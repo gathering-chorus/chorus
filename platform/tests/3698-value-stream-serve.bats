@@ -1,5 +1,6 @@
 #!/usr/bin/env bats
 # @test-type: integration — hermetic TTL guards (unit-shaped) PLUS live owl-api serve
+# @domain: value-streams — the product domain this suite guards (#4334)
 # checks (service-hitting); classified integration so it skips-if-absent (#3528).
 load test_helper
 #

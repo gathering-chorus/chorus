@@ -1,4 +1,6 @@
 #!/usr/bin/env bats
+# @test-type: integration — what it proves (#4334)
+# @domain: messages — the product domain this suite guards (#4334)
 # Bridge subscriber path fix — #1964
 
 SCRIPT="$BATS_TEST_DIRNAME/../bridge-subscriber.js"

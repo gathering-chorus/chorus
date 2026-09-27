@@ -1,5 +1,6 @@
 #!/usr/bin/env bats
 # @test-type: unit — hermetic. Reads write-story.sh's argument handling and
+# @domain: knowledge — the product domain this suite guards (#4334)
 # nothing else: no Fuseki, no auth, no network, no cleanup.
 #
 # #4126 — split out of write-story.bats, which is declared needs-stack /

@@ -1,5 +1,6 @@
 #!/usr/bin/env bats
 # @test-type: unit
+# @domain: cicd — the product domain this suite guards (#4334)
 # #4192 / #4199 — the land's crawl step never sits on the critical path, and the
 # process it starts is launchd's, not the job's.
 #

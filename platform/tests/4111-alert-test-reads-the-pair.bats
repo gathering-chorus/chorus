@@ -1,5 +1,6 @@
 #!/usr/bin/env bats
 # @test-type: unit — hermetic. Builds its own alert tree in BATS_TEST_TMPDIR and
+# @domain: tests — the product domain this suite guards (#4334)
 # drives startup-sync-alert.test.sh against it. No live Fuseki, no network.
 #
 # #4111 — the alert test greps a rule that has not lived in one file since

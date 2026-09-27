@@ -1,5 +1,6 @@
 #!/usr/bin/env bats
 # @test-type: unit — hermetic source guard (fixture plists, fixture mapping, fixture Loki list; the live-box
+# @domain: logs — the product domain this suite guards (#4334)
 # coverage check is log-harvest.sh --check, which runs hourly and goes red, not a test that peeks at $HOME)
 # #4084 — log-harvest-gen.py: every launchd unit's log as a LogSource row carrying the
 # authored domain edge. A test brings its own world (#3528): fixture plists, a fixture

@@ -1,5 +1,6 @@
 #!/usr/bin/env bats
 # @test-type: unit — #4173 retirement gates.
+# @domain: tests — the product domain this suite guards (#4334)
 #
 # A retirement that is only a deletion comes back. These gates fail if a
 # retired walker returns to the tree, or if the one crawler starts writing

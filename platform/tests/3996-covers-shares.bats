@@ -4,6 +4,7 @@
 # asserts, third home — the seams are the binary's own (--names-of, --covers-of,
 # --check-shares, --classify), no store, no network.
 # @test-type: unit — hermetic: covers_for runs offline (TESTS_COVERS_OFFLINE),
+# @domain: tests — the product domain this suite guards (#4334)
 # share fixtures are authored JSON; no store, no network
 # #3996 — covers-inference precision + the share gate, proven both directions
 # (#3734): the over-share state must FAIL, the healthy state must pass, and the

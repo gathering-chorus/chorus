@@ -1,5 +1,6 @@
 #!/usr/bin/env bats
 # @test-type: unit — hermetic source guard
+# @domain: messages — the product domain this suite guards (#4334)
 load test_helper
 # nudge-autosubmit.bats — verify nudge inject includes Return keystroke (#2029)
 # What Jeff sees: nudge arrives in role terminal and auto-submits.

@@ -1,5 +1,6 @@
 #!/usr/bin/env bats
 # @test-type: unit — static source guard (greps for forbidden pulse URLs); no live server
+# @domain: messages — the product domain this suite guards (#4334)
 # #3485 — one execution path: the MCP's executeNudge is the SOLE poster to
 # pulse /api/nudge. Every other sender (ops-nudge, nightly-coverage, the #3001
 # error-notify in transport.ts) must route THROUGH the MCP, not POST pulse

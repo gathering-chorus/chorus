@@ -1,5 +1,6 @@
 #!/usr/bin/env bats
-# @test-type: unit — retirement guard
+# @test-type: fitness — retirement guard
+# @domain: version-control — the product domain this suite guards (#4334)
 load test_helper
 # 3710-no-committed-dist-symlink.bats — guard a recurring incident.
 #

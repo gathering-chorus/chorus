@@ -1,5 +1,6 @@
 #!/usr/bin/env bats
 # @test-type: unit
+# @domain: alerts — the product domain this suite guards (#4334)
 # #3617 — alert-runner must honor rule schedules. Until now every alerts/*.yml
 # ran on every runner cycle (only "manual" was honored), so the 8am-only
 # fuseki-harvest rule fired at midnight and the 6-hourly lance rule joined the

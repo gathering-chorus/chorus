@@ -1,5 +1,6 @@
 #!/usr/bin/env bats
-# @test-type: integration — in-process python fixture server on a loopback port + the real script under test; hermetic (no live chorus surfaces)
+# @test-type: integration:security — in-process python fixture server on a loopback port + the real script under test; hermetic (no live chorus surfaces)
+# @domain: security — the product domain this suite guards (#4334)
 # #3960 — negative proof for the authn-coverage gate (#3734).
 # The gate must distinguish the three states it exists to separate:
 #   guarded route (401)      -> COVERED

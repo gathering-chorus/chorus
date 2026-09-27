@@ -1,5 +1,6 @@
 #!/usr/bin/env bats
 # @test-type: unit — retirement guard
+# @domain: messages — the product domain this suite guards (#4334)
 load test_helper
 # nudge-inject-ack.bats — RETIREMENT GUARD (#3710)
 #

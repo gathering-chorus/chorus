@@ -1,5 +1,6 @@
 #!/usr/bin/env bats
 # @test-type: unit — hermetic source guard
+# @domain: skills — the product domain this suite guards (#4334)
 load test_helper
 # skill-gate-logging.bats — verify structured logging for skill/gate invocations (#2015)
 #

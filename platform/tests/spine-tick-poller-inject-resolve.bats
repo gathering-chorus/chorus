@@ -1,5 +1,6 @@
 #!/usr/bin/env bats
 # @test-type: unit — hermetic source guard
+# @domain: messages — the product domain this suite guards (#4334)
 # spine-tick-poller-inject-resolve.bats — INJECT_BIN resolution order (#2772).
 #
 # The tick-poller LaunchAgent runs under launchd's minimal PATH (no ~/.chorus/bin),

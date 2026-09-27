@@ -1,5 +1,6 @@
 #!/usr/bin/env bats
 # @test-type: integration
+# @domain: principles — the product domain this suite guards (#4334)
 #
 # #4006 — the loom's value/principle layer, graded against the STORE and against
 # the deploy's own refusals. Two halves, and the second is the one that matters:

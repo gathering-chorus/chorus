@@ -1,5 +1,6 @@
 #!/usr/bin/env bats
 # @test-type: unit — hermetic; sources chorus-env-setup.sh in temp trees, no live services
+# @domain: version-control — the product domain this suite guards (#4334)
 
 # #2571 — chorus-env-setup.sh contract tests
 #

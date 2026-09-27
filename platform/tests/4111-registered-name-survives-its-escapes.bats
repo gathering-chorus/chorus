@@ -4,6 +4,7 @@
 # asserts, third home — the seams are the binary's own (--names-of, --covers-of,
 # --check-shares, --classify), no store, no network.
 # @test-type: unit — hermetic. Drives the tagger's --names-of seam with fixture
+# @domain: tests — the product domain this suite guards (#4334)
 # files in BATS_TEST_TMPDIR. No store, no network, no runner.
 #
 # #4111 — the registry stored the SOURCE spelling of a case name while the

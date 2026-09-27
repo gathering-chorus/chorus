@@ -1,5 +1,6 @@
 #!/usr/bin/env bats
 # @test-type: integration — auto-classified (#3528 sweep); service-hitting=integration(skip-if-absent), static-guard=unit
+# @domain: messages — the product domain this suite guards (#4334)
 load test_helper
 # clearing-post-restart-smoke.bats — Integration test against real localhost (#2333).
 #

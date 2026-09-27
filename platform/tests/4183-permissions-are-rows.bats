@@ -1,5 +1,6 @@
 #!/usr/bin/env bats
 # @test-type: contract
+# @domain: security — the product domain this suite guards (#4334)
 # #4183 — permissions are ROWS (acl:Authorization), and the door's scope query
 # reads rows, not hasScope literals. Proven OFFLINE with Jena's arq over the
 # model files themselves: no store, no service, no prod write. The negative

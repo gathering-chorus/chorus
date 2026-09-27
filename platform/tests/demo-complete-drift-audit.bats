@@ -1,5 +1,6 @@
 #!/usr/bin/env bats
-# @test-type: unit — static source/shape guard, hermetic
+# @test-type: integration — static source/shape guard, hermetic
+# @domain: cicd — the product domain this suite guards (#4334)
 # demo-complete-drift-audit.bats — #2630 wave 4
 #
 # Catches the failure pattern Jeff named 2026-04-30: "/demo says step 5

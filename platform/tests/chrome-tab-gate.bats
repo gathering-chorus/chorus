@@ -1,5 +1,6 @@
 #!/usr/bin/env bats
 # @test-type: unit — hermetic source guard
+# @domain: security — the product domain this suite guards (#4334)
 load test_helper
 # chrome-tab-gate.bats — verify hook blocks role-initiated 'open http' (#1775)
 # Prior work: DEC-090 established Chrome window separation. No enforcement hook existed.

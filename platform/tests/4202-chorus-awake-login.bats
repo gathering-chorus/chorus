@@ -1,5 +1,6 @@
 #!/usr/bin/env bats
 # @test-type: integration — drives the built chorus-awake binary with stub claude, tmux, ps, token-minter, curl and chorus-log; no live services.
+# @domain: identity — the product domain this suite guards (#4334)
 #
 # #4202 — Jeff, 2026-09-17: "to me chorus-awake must include authn for agents";
 # "agents must login to chorus"; "and then follow authz rules". Before a role's

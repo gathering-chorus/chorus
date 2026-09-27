@@ -1,5 +1,6 @@
 #!/usr/bin/env bats
 # @test-type: unit — static suite-wide grep for hardcoded local paths; no external deps.
+# @domain: tests — the product domain this suite guards (#4334)
 # #3528 — REGRESSION GUARD. No test file may hardcode an absolute local path
 # (/Users/<name>/...). Such a path is green on the author's machine and silent-red
 # on the CI runner — the "works on my machine" rot that kept quality.yml red and

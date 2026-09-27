@@ -1,5 +1,6 @@
 #!/usr/bin/env bats
 # @test-type: unit — reads two local ledgers, no live service
+# @domain: pipelines — the product domain this suite guards (#4334)
 #
 # 4111 — a round may not be PRESENTED as proven on content the prove never ran.
 #

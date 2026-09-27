@@ -1,5 +1,6 @@
 #!/usr/bin/env bats
 # @test-type: integration — operational; live services, skip-if-absent in CI
+# @domain: pipelines — the product domain this suite guards (#4334)
 # Tests for building-pipeline-health (#2870, hardened #3119).
 #
 # What Jeff sees: the deploy-chain health check went green 4-5 cards running

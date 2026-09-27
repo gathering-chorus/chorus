@@ -1,5 +1,6 @@
 #!/usr/bin/env bats
 # @test-type: integration
+# @domain: knowledge — the product domain this suite guards (#4334)
 # 3550 — athena-deploy: a per-domain model deploy must NOT clobber a sibling
 # domain's live data. Regression for the #3529 clobber: #3540's full-replace
 # (COPY staging->ontology) wiped value-stream wiring that wasn't in the deployed

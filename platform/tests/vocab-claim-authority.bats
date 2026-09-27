@@ -1,5 +1,6 @@
 #!/usr/bin/env bats
 # @test-type: integration — queries the LIVE Fuseki store + owl-api; RUN_INTEGRATION-gated (TEST.md two-mode contract)
+# @domain: knowledge — the product domain this suite guards (#4334)
 load test_helper
 # vocab-claim-authority.bats — #3727: one placement authority per served class.
 #

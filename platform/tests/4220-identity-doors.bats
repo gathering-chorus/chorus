@@ -1,5 +1,6 @@
 #!/usr/bin/env bats
 # @test-type: integration:api
+# @domain: identity — the product domain this suite guards (#4334)
 # #4220 — the two claims this card makes about the LIVE door, run against the
 # door rather than described in a demo. Jeff, 2026-09-19: presenting with "one
 # honest note" attached is a tell, and the note that day was that prove-live had

@@ -1,5 +1,6 @@
 #!/usr/bin/env bats
-# @test-type: integration — hits service/remote/sibling, skip-if-absent in CI
+# @test-type: unit — hits service/remote/sibling, skip-if-absent in CI
+# @domain: code — the product domain this suite guards (#4334)
 load test_helper
 # gate-code-execsync.bats — Tests for execSync lint gate (#2000)
 # What Jeff sees: app hangs in production because execSync blocks the event loop.

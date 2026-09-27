@@ -1,5 +1,6 @@
 #!/usr/bin/env bats
 # @test-type: fitness — signal is fixture-data: the guard scripts and ADR text are read,
+# @domain: security — the product domain this suite guards (#4334)
 # and the one live-looking line is a constructed lsof string, not a real socket.
 # 3390-bind-posture.bats — internal services bind localhost, not 0.0.0.0 (ADR-012 intent / ADR-042 §8)
 # What Jeff sees: nothing on the LAN can reach an internal service that was only

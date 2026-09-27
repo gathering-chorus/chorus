@@ -1,4 +1,6 @@
 #!/usr/bin/env bats
+# @test-type: unit — what it proves (#4334)
+# @domain: code — the product domain this suite guards (#4334)
 # #3021: fileInDomain must tag by TARGETED lookup, not a full ~6000-File scan.
 # The pre-#3021 version queried every chorus:File ("SELECT ?f ?p WHERE ... ?f a
 # chorus:File ; chorus:filePath ?p") and looped all rows — 21s to tag 5 files.

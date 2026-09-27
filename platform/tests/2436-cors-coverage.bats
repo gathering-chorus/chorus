@@ -1,5 +1,6 @@
 #!/usr/bin/env bats
 # @test-type: fitness:security
+# @domain: security — the product domain this suite guards (#4334)
 #
 # #2436 — the CORS coverage probe must separate the states it exists to separate.
 #

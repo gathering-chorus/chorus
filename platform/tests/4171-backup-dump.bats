@@ -1,5 +1,6 @@
 #!/usr/bin/env bats
 # @test-type: contract
+# @domain: infrastructure — the product domain this suite guards (#4334)
 # #4171 — the nightly Fuseki backup. These test the THREE guards that separate
 # "a file exists" from "the data is in it", each one taken from a failure that
 # actually shipped:

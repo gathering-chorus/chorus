@@ -1,5 +1,6 @@
 #!/usr/bin/env bats
-# @test-type: unit — hermetic: fixture allowlist + fixture ui-pages JSON via a local file URL
+# @test-type: unit:security — hermetic: fixture allowlist + fixture ui-pages JSON via a local file URL
+# @domain: security — the product domain this suite guards (#4334)
 # #4003 — the entrance-coverage check. Jeff's experience: a link rendered on his
 # /chorus entrance that the governed allowlist does not carry must RED here,
 # naming the path — instead of being discovered by clicking a dead tile (the

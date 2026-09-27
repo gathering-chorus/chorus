@@ -1,5 +1,6 @@
 #!/usr/bin/env bats
 # @test-type: unit — hermetic: stubs the SPARQL seam with fixture CSV. No store,
+# @domain: tests — the product domain this suite guards (#4334)
 # no network.
 #
 # #4015 — nothing in this repo has ever compared two runs. `chorus:runTs` was

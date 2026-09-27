@@ -1,5 +1,6 @@
 #!/usr/bin/env bats
 # @test-type: integration
+# @domain: spine — the product domain this suite guards (#4334)
 # #3927 — the spine-emit conformance check must BLOCK, not merely notify.
 #
 # The check was correct for months and stopped nothing: it ran only in

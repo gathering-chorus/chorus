@@ -1,5 +1,6 @@
 #!/usr/bin/env bats
 # @test-type: integration
+# @domain: knowledge — the product domain this suite guards (#4334)
 # #4125 — a subject deleted from a source .ttl is NAMED, not silently kept.
 #
 # The deploy's merge is per-subject additive: it only ever touches subjects that are

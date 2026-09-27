@@ -1,5 +1,6 @@
 #!/usr/bin/env bats
 # @test-type: e2e — full-flow end-to-end
+# @domain: roles — the product domain this suite guards (#4334)
 load test_helper
 # session-start-orchestration-e2e.bats — #2416 zone (d) of #2311 follow-on audit
 #

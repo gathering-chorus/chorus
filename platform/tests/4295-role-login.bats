@@ -1,5 +1,6 @@
 #!/usr/bin/env bats
 # @test-type: integration — drives the built chorus-awake and chorus-principal binaries with stub tmux, claude, ps, token-minter, curl, service probe, osascript and open; no live services, no live panes.
+# @domain: identity — the product domain this suite guards (#4334)
 #
 # #4295 — Jeff, 2026-09-25: "we wanted chorus-principal on|off to start and
 # exit"; "i dont want a swat on every reboot"; "if u can automate all of that

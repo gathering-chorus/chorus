@@ -1,5 +1,6 @@
 #!/usr/bin/env bats
 # @test-type: unit — reads the jest config and the runner source; no live service
+# @domain: tests — the product domain this suite guards (#4334)
 #
 # #4111 — the hermetic leg must run the hermetic project, not both.
 #

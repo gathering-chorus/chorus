@@ -1,5 +1,6 @@
 #!/usr/bin/env bats
 # @test-type: unit — signal is fixture-data: arq/generated files only; no live store, no $HOME, no network
+# @domain: knowledge — the product domain this suite guards (#4334)
 # #3870 — doc-coherence must not probe ports it doesn't own. 3343/3344/3345
 # are werk demo-variant chorus-api ports (demo_env.rs); a coherence probe that
 # auto-detects them health-checks an unmerged branch. Negative proof: add a

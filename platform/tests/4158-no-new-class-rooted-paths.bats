@@ -1,5 +1,6 @@
 #!/usr/bin/env bats
 # @test-type: fitness — a repo-wide check over source text; no service, no store, no network.
+# @domain: code — the product domain this suite guards (#4334)
 # #4158 AC4 — no CALLER may hardcode a class-rooted athena-make path.
 #
 # This replaces a mention-counter that could not do the job. That guard grepped

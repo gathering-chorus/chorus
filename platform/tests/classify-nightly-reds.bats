@@ -1,5 +1,6 @@
 #!/usr/bin/env bats
 # @test-type: unit
+# @domain: tests — the product domain this suite guards (#4334)
 # #3850 — the classifier must bucket by EVIDENCE, and must NOT let a real defect
 # hide as "load". These fixtures are the negative proof (#3734): a failure that a
 # lazy reader would wave off as load is shown to land in REAL, and load is never

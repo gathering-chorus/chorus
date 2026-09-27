@@ -1,5 +1,6 @@
 #!/usr/bin/env bats
-# @test-type: unit
+# @test-type: unit:security
+# @domain: knowledge — the product domain this suite guards (#4334)
 # #4080 — athena-deploy refuses a bare run from inside a werk, where its
 # defaults point at PROD (localhost:3030/pods). Regression for 2026-09-03 07:29:
 # a hand run from werk-silas rewrote prod's ontology graph (the 08-28

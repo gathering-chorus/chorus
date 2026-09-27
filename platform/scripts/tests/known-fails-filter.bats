@@ -1,4 +1,6 @@
 #!/usr/bin/env bats
+# @test-type: unit — what it proves (#4334)
+# @domain: tests — the product domain this suite guards (#4334)
 
 # #2497 — known-fails-filter.sh: pre-commit honors carded test failures.
 #

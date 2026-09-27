@@ -1,5 +1,6 @@
 #!/usr/bin/env bats
 # @test-type: unit — runs commitment-check.sh over TTL fixtures written to BATS_TEST_TMPDIR; no store, no service, no network.
+# @domain: cards — the product domain this suite guards (#4334)
 # #4064 AC3: open Commitment with no card = FAIL; closed Commitment whose probe fails = FAIL.
 # Both negative proofs are fixtures where the rule is VIOLATED and the check is shown RED (#3734).
 

@@ -1,5 +1,6 @@
 #!/usr/bin/env bats
 # @test-type: integration — needs the built chorus-hook-shim binary
+# @domain: toolchain — the product domain this suite guards (#4334)
 # #3721 — split out of shim-resilience.bats. That file's other cases are true
 # hermetic source guards (the symlink map, the wrapper's error text, its log
 # line) and pass on a runner. This one EXECUTES a shim script end-to-end, which

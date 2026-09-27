@@ -1,5 +1,6 @@
 #!/usr/bin/env bats
 # @test-type: integration — reads a live service, skip-if-absent in CI
+# @domain: memory — the product domain this suite guards (#4334)
 load test_helper
 # context-inject-envelope-spec.bats
 #

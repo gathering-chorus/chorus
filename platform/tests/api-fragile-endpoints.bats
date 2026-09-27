@@ -1,5 +1,6 @@
 #!/usr/bin/env bats
-# @test-type: integration — auto-classified (#3528 sweep); service-hitting=integration(skip-if-absent), static-guard=unit
+# @test-type: contract — auto-classified (#3528 sweep); service-hitting=integration(skip-if-absent), static-guard=unit
+# @domain: search — the product domain this suite guards (#4334)
 load test_helper
 # api-fragile-endpoints.bats — E2E tests for fragile API endpoints (#1776)
 # What Jeff sees: endpoints that break silently — Athena 500s, completeness timeouts,

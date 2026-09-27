@@ -1,5 +1,6 @@
 #!/usr/bin/env bats
 # @test-type: integration — needs chorus-api live on :3340
+# @domain: search — the product domain this suite guards (#4334)
 # #3721 — retiered from "unit — hermetic source guard", which it was not. Every
 # case here EXECUTES index-crawler-snapshots.sh, and that script health-gates on
 # $API_URL/health (chorus-api, :3340). With no API it prints "chorus-api

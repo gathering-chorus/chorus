@@ -1,5 +1,6 @@
 #!/usr/bin/env bats
 # @test-type: unit — hermetic source guard
+# @domain: tests — the product domain this suite guards (#4334)
 load test_helper
 # run-tests.bats — Phase 1 contract surface for platform/scripts/run-tests (#2118).
 # Wave 1: flag parsing + exit codes + skeleton JSON. No real test execution yet

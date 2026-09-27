@@ -1,5 +1,6 @@
 #!/usr/bin/env bats
 # @test-type: integration:api
+# @domain: products — the product domain this suite guards (#4334)
 # #3603 — proves the V1 product-layer retirement DONE-STATE against the live graph.
 # RED until the migration is applied; GREEN is the definition of done.
 # Target: SubProduct gone; products are typed chorus:Product children on the
