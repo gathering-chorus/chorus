@@ -1,0 +1,3 @@
+#4336 — fixtures for session-start-orchestration-e2e.bats: the principles and
+session-rows reads session-start makes, served from files (its own
+CHORUS_PRINCIPLES_FIXTURE_FILE / CHORUS_SESSION_ROWS_FIXTURE_DIR seams).

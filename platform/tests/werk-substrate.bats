@@ -1,5 +1,5 @@
 #!/usr/bin/env bats
-# @test-type: unit — hermetic source guard
+# @test-type: unit — runs werk; the deploy gate runs in a throwaway git root
 # @domain: pipelines — the product domain this suite guards (#4334)
 load test_helper
 # werk-substrate.bats — #2598 substrate uniformity
@@ -22,16 +22,16 @@ WERK="${CHORUS_ROOT_FOR_TEST:-${CHORUS_ROOT}}/platform/scripts/werk"
 }
 
 @test "werk check is read-only (no files modified)" {
-  # Snapshot mtime of canonical binary if it exists
+  # Snapshot mtime of canonical binary. #4336: when it is absent there is
+  # nothing to watch, and a case that asserts nothing must not read as a pass.
   local shim="${CHORUS_ROOT_FOR_TEST:-${CHORUS_ROOT}}/platform/services/chorus-hooks/target/release/chorus-hook-shim"
-  if [ -f "$shim" ]; then
-    local before_mtime
-    before_mtime=$(stat -f '%m' "$shim" 2>/dev/null || stat -c '%Y' "$shim" 2>/dev/null)
-    run bash "$WERK" check
-    local after_mtime
-    after_mtime=$(stat -f '%m' "$shim" 2>/dev/null || stat -c '%Y' "$shim" 2>/dev/null)
-    [ "$before_mtime" = "$after_mtime" ] || (echo "werk check mutated the binary mtime" && false)
-  fi
+  [ -f "$shim" ] || skip "UNMEASURED — chorus-hook-shim not built in this tree, nothing to watch (#4336)"
+  local before_mtime
+  before_mtime=$(stat -f '%m' "$shim" 2>/dev/null || stat -c '%Y' "$shim" 2>/dev/null)
+  run bash "$WERK" check
+  local after_mtime
+  after_mtime=$(stat -f '%m' "$shim" 2>/dev/null || stat -c '%Y' "$shim" 2>/dev/null)
+  [ "$before_mtime" = "$after_mtime" ] || (echo "werk check mutated the binary mtime" && false)
 }
 
 @test "werk help shows substrate framing" {
@@ -42,27 +42,47 @@ WERK="${CHORUS_ROOT_FOR_TEST:-${CHORUS_ROOT}}/platform/scripts/werk"
 
 # --- werk deploy refusal (no main checkout) ---
 
+# #4336 — werk derives CHORUS_ROOT from its own location, so the gate is
+# driven by giving it a root of our own: a throwaway git repo holding a copy of
+# werk, a chorus-log stub that records spine events, and a build-signed.sh stub
+# that records being called and then stops the deploy (exit 1), so a deploy the
+# gate wrongly lets through goes no further than the recorder — nothing builds,
+# nothing is written outside $BATS_TEST_TMPDIR.
+fake_root() {
+  R="$BATS_TEST_TMPDIR/root"
+  mkdir -p "$R/platform/scripts"
+  cp "$WERK" "$R/platform/scripts/werk"
+  printf '#!/bin/bash\necho "$*" >> "%s/spine.log"\n' "$BATS_TEST_TMPDIR" > "$R/platform/scripts/chorus-log"
+  printf '#!/bin/bash\necho "build-signed $*" >> "%s/build.log"\nexit 1\n' "$BATS_TEST_TMPDIR" > "$R/platform/scripts/build-signed.sh"
+  chmod +x "$R/platform/scripts/chorus-log" "$R/platform/scripts/build-signed.sh"
+  g() { git -C "$R" -c user.email=t@t -c user.name=t -c commit.gpgsign=false "$@"; }
+  g init -q && g add -A && g commit -qm base && g update-ref refs/remotes/origin/main HEAD
+}
+
 @test "werk deploy refuses when HEAD != origin/main" {
-  # #3721 — this used to just run `werk deploy` and expect a refusal, on the
-  # assumption in its original comment: "we're on kade/2598-* while this card is
-  # in flight, so HEAD will not match origin/main". That assumption was true the
-  # day it was written and false every day since. A freshly-pulled werk has NO
-  # commits yet, so its HEAD IS origin/main (verified: both 873769c4a) and the
-  # guard correctly ALLOWS the deploy — and a CI checkout of main is the same.
-  # The test was reading ambient git state instead of creating the condition it
-  # claims to test, so it failed on a working guard.
-  #
-  # werk derives CHORUS_ROOT from its own location (script line 27), ignoring the
-  # env, so the refusal cannot be driven from outside. Assert the guard STRUCTURALLY
-  # instead — tier-appropriate for this file's declared "hermetic source guard",
-  # and it catches the regression that actually matters: someone deleting the
-  # check or unwiring it from the canonical deploy path.
-  # Runtime refusal is exercised for real every time a role runs `werk deploy`
-  # from a werk that has commits — which is the normal case mid-card.
-  grep -q 'verify_main_sha()' "$WERK"
-  grep -q 'rev-parse origin/main' "$WERK"
-  grep -qi 'HEAD does not match origin/main' "$WERK"
-  # ...and it must be WIRED into the canonical deploy path, not merely defined.
-  run bash -c "sed -n '/^cmd_deploy()/,/^}/p' '$WERK' | grep -c verify_main_sha"
-  [ "$output" -ge 1 ]
+  # #3721 — this used to read ambient git state (a fresh werk's HEAD IS
+  # origin/main), then became a grep of the script. #4336: create the
+  # condition and run the refusal.
+  fake_root
+  echo change > "$R/change.txt"
+  g add -A && g commit -qm ahead
+  run env DEPLOY_ROLE=kade bash "$R/platform/scripts/werk" deploy
+  [ "$status" -eq 1 ]
+  [[ "$output" == *"HEAD does not match origin/main"* ]] || return 1
+  [[ "$output" != *"=== werk deploy"* ]] || return 1
+  # refused before any build step, and the refusal is on the spine
+  [ ! -e "$BATS_TEST_TMPDIR/build.log" ]
+  grep -q "^werk.deploy.refused kade reason=non-main-sha mode=canonical" "$BATS_TEST_TMPDIR/spine.log"
+}
+
+@test "werk deploy on HEAD == origin/main passes the gate (the refusal is not unconditional)" {
+  # The other state the gate must separate: same root, no extra commit. The
+  # gate lets it through to the (stubbed, stopping) build step.
+  fake_root
+  run env DEPLOY_ROLE=kade bash "$R/platform/scripts/werk" deploy
+  [[ "$output" != *"HEAD does not match origin/main"* ]] || return 1
+  [[ "$output" == *"=== werk deploy (canonical) ==="* ]] || return 1
+  grep -q "^build-signed chorus-hooks" "$BATS_TEST_TMPDIR/build.log"
+  run grep -q "werk.deploy.refused" "$BATS_TEST_TMPDIR/spine.log"
+  [ "$status" -ne 0 ]
 }

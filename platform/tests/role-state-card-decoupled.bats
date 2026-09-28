@@ -14,33 +14,51 @@
 #
 # This test is the TDD anchor for AC5: red against current main, green
 # after the skill source edits land.
+#
+# #4336 — the skill / fixture / CLAUDE.md cases no longer grep source text.
+# Each now RUNS the thing that would pass card=: the role-state commands the
+# skills and the generated CLAUDE.md instruct are executed through the real
+# CLI (which refuses card=/type=), and the role-state helper suite is run
+# with every call it makes recorded.
 
 # Default to the repo root the test file lives in (works in any worktree
 # per the per-role-worktree convention), not a hardcoded /chorus path.
 CHORUS_ROOT="${CHORUS_ROOT:-$(cd "${BATS_TEST_DIRNAME}/../.." && pwd)}"
 SKILLS_DIR="$CHORUS_ROOT/skills"
+SHIM_BIN="$CHORUS_ROOT/platform/services/chorus-hooks/target/release/chorus-hook-shim"
+RUN_INSTRUCTED="$CHORUS_ROOT/platform/tests/fixtures/4336/run-instructed-role-state.py"
 
-@test "no skill source passes card= to role-state" {
-  # role-state <role> <state> ... must not be followed by a card= arg
-  matches=$(grep -rn "role-state.*card=" "$SKILLS_DIR" 2>/dev/null \
-    | grep -v -E '^\s*#|//' \
-    || true)
-  if [ -n "$matches" ]; then
-    echo "Found skill sources still passing card= to role-state:"
-    echo "$matches"
-    false
-  fi
+# run_instructed <file|dir>... — execute every instructed role-state command
+# through the real CLI in a sandbox (own HOME, own spine, test context).
+run_instructed() {
+  mkdir -p "$BATS_TEST_TMPDIR/home"
+  run env HOME="$BATS_TEST_TMPDIR/home" CHORUS_CONTEXT=test \
+    CHORUS_LOG_FILE="$BATS_TEST_TMPDIR/spine.log" \
+    python3 "$RUN_INSTRUCTED" "$SHIM_BIN" "$@"
+  echo "$output"
 }
 
-@test "no skill source passes type= to role-state" {
-  matches=$(grep -rn "role-state.*type=" "$SKILLS_DIR" 2>/dev/null \
-    | grep -v -E '^\s*#|//' \
-    || true)
-  if [ -n "$matches" ]; then
-    echo "Found skill sources still passing type= to role-state:"
-    echo "$matches"
-    false
-  fi
+@test "every role-state command a skill instructs runs through the CLI without a card=/type= refusal" {
+  [ -x "$SHIM_BIN" ] || skip "UNMEASURED — shim binary not built (#4336)"
+  run_instructed "$SKILLS_DIR"
+  [ "$status" -eq 0 ]
+  [[ "$output" == *"refused=0"* ]] || return 1
+  # a skills tree with nothing to run is a vanished target, not a pass
+  [[ "$output" != *"ran=0 "* ]] || return 1
+}
+
+@test "NEGATIVE: a skill that instructs role-state card= / type= is refused when run" {
+  [ -x "$SHIM_BIN" ] || skip "UNMEASURED — shim binary not built (#4336)"
+  d="$BATS_TEST_TMPDIR/skills/bad"
+  mkdir -p "$d"
+  printf '%s\n' '1. Declare: `role-state <you> building card=4336`' \
+    '```' 'role-state <role> blocked type=fix detail="x"' '```' \
+    '2. Then: `role-state <you> waiting`' > "$d/SKILL.md"
+  run_instructed "$BATS_TEST_TMPDIR/skills"
+  [ "$status" -eq 1 ]
+  [[ "$output" == *"REFUSED "*"SKILL.md:1: role-state silas building card=4336"* ]] || return 1
+  [[ "$output" == *"REFUSED "*"SKILL.md:3: role-state silas blocked type=fix"* ]] || return 1
+  [[ "$output" == *"ran=1 refused=2"* ]] || return 1
 }
 
 # --- #2629 wave 3: affordance-layer assertions ---
@@ -71,35 +89,54 @@ SKILLS_DIR="$CHORUS_ROOT/skills"
   [[ "$output" != *"type="* ]] || return 1
 }
 
-@test "no test fixture or helper passes card= to role-state CLI" {
-  # Match invocation patterns only: `role-state <role> <state> card=N` style
-  # (state word followed by card=) OR `chorus-hook-shim role-state ...
-  # card=N`. Excludes echo/log output that contains the text "card=" but is
-  # not an invocation.
-  fixtures="$CHORUS_ROOT/platform/scripts $CHORUS_ROOT/platform/services/chorus-hooks/tests"
-  matches=$(grep -rnE "role-state[\" ][a-z]+[\" ]+(building|blocked|waiting|observing|idle).*card=|chorus-hook-shim role-state.*card=|role_state\(&\[.*card=" $fixtures 2>/dev/null \
-    | grep -v -E '^\s*#|//|REFUSED|REJECTED|deprecated|removed|#2467|#2629' \
-    || true)
-  if [ -n "$matches" ]; then
-    echo "Found test fixtures still passing card= to role-state CLI:"
-    echo "$matches"
-    false
-  fi
+# #4336 — was a grep of platform/scripts + chorus-hooks/tests for invocation
+# patterns. Now the role-state helper (test-role-state-spine.sh) is RUN against
+# the real CLI through a recording role-state: every call it makes is logged
+# with its exit code. Live instructions carry no card=/type=; the only card=
+# a helper may pass is a refusal proof, and it must actually be refused (2).
+@test "the role-state helper suite drives the CLI without card= (every call recorded)" {
+  [ -x "$SHIM_BIN" ] || skip "UNMEASURED — shim binary not built (#4336)"
+  T="$BATS_TEST_TMPDIR/helper"
+  mkdir -p "$T/root/platform/scripts" "$T/bin" "$T/home"
+  # the real wrapper, reached under the name role-state (it dispatches on $0)
+  mkdir -p "$T/real" && ln -s "$CHORUS_ROOT/platform/scripts/shim-wrapper.sh" "$T/real/role-state"
+  printf '#!/bin/bash\n"%s/real/role-state" "$@"; rc=$?\necho "$rc $*" >> "%s/calls"\nexit $rc\n' "$T" "$T" \
+    > "$T/root/platform/scripts/role-state"
+  # the wrapper's trace-hop POST goes to a recorder, never to chorus-api
+  printf '#!/bin/bash\nexit 0\n' > "$T/bin/curl"
+  chmod +x "$T/root/platform/scripts/role-state" "$T/bin/curl"
+  run env PATH="$T/bin:$(dirname "$SHIM_BIN"):$PATH" HOME="$T/home" CHORUS_CONTEXT=test \
+    CHORUS_ROOT="$T/root" CHORUS_LOG_FILE="$T/spine.log" \
+    bash "$CHORUS_ROOT/platform/scripts/test-role-state-spine.sh"
+  echo "$output"; echo "--- calls:"; cat "$T/calls"
+  [ "$status" -eq 0 ]
+  [[ "$output" == *"Results: 3 passed, 0 failed"* ]] || return 1
+  [ -s "$T/calls" ] || return 1
+  # every call carrying card= or type= was refused with exit 2
+  bad="$(awk '/ (card|type)=/ && $1 != 2' "$T/calls")"
+  [ -z "$bad" ] || { echo "helper passed card=/type= and it was NOT refused: $bad"; return 1; }
+  # and the state-only calls went through
+  [ -n "$(awk '!/ (card|type)=/ && $1 == 0' "$T/calls")" ] || return 1
 }
 
-@test "no CLAUDE.md fragment uses 'building card=<id>' syntax" {
-  # Per AC6: instruction text in CLAUDE.md fragments shouldn't tell
-  # roles to declare with card=. Historical / quoted mentions allowed
-  # (in code blocks discussing what was removed) but live instructions
-  # must not.
-  fragments_dir="$CHORUS_ROOT/designing/claudemd/shared"
-  [ -d "$fragments_dir" ] || skip "fragments dir not found"
-  matches=$(grep -rn 'building card=' "$fragments_dir" 2>/dev/null \
-    | grep -v -E '#2467|deprecated|removed|historical|retired' \
-    || true)
-  if [ -n "$matches" ]; then
-    echo "Found CLAUDE.md fragments with live 'building card=' instructions:"
-    echo "$matches"
-    false
-  fi
+# #4336 — was a grep of the fragment sources. Now the generator runs on a copy
+# of designing/claudemd and the GENERATED CLAUDE.md files (+ TEAM_PROTOCOL.md)
+# are checked: every role-state command they instruct runs through the CLI
+# without refusal, and no generated line tells a role to declare 'building card='.
+@test "generated CLAUDE.md: every instructed role-state command runs without a card= refusal" {
+  [ -x "$SHIM_BIN" ] || skip "UNMEASURED — shim binary not built (#4336)"
+  G="$BATS_TEST_TMPDIR/gen"
+  mkdir -p "$G/designing/claudemd" "$G/roles/wren" "$G/roles/silas" "$G/roles/kade"
+  cp -R "$CHORUS_ROOT/designing/claudemd/." "$G/designing/claudemd/"
+  ( cd "$G" && env -u CLAUDEMD_BUMP python3 "$CHORUS_ROOT/platform/scripts/claudemd-gen.py" \
+      "$G/designing/claudemd/manifest.json" "$G/designing/claudemd" generate "" "" ) >/dev/null 2>&1 || true
+  for r in wren silas kade; do
+    [ -s "$G/roles/$r/CLAUDE.md" ] || { echo "generator produced no CLAUDE.md for $r"; return 1; }
+  done
+  run_instructed "$G/roles/wren/CLAUDE.md" "$G/roles/silas/CLAUDE.md" "$G/roles/kade/CLAUDE.md" \
+    "$BATS_TEST_TMPDIR/TEAM_PROTOCOL.md"
+  [ "$status" -eq 0 ]
+  [[ "$output" == *"refused=0"* ]] || return 1
+  live="$(cat "$G"/roles/*/CLAUDE.md | grep 'building card=' | grep -v -E '#2467|deprecated|removed|historical|retired' || true)"
+  [ -z "$live" ] || { echo "generated CLAUDE.md carries live 'building card=': $live"; return 1; }
 }

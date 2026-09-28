@@ -1,0 +1,73 @@
+#!/usr/bin/env python3
+# #4336 — a fake SPARQL store standing in for `curl` on PATH.
+#
+# athena-validate shells out to curl for every store query (ADR-032 §1), so a
+# curl on PATH is the seam: the real binary runs, its real queries go out, and
+# this answers them as a store holding a small fixed graph would. It never
+# touches the network.
+#
+# The graph it pretends to hold:
+#   chorus#pulse lives in TWO graphs: urn:chorus:domains:pulse, urn:chorus:instances
+#   chorus#card-1 is ownedBy chorus#nobody, which is not a Principal
+#   everything else is clean
+#
+# Answers are shaped by the query's own SELECT list, so whatever the binary
+# projects is what comes back — a COUNT alias gets a number, a GROUP_CONCAT
+# alias gets the graph names, a bare ?g gets one row per graph.
+#
+# FAKE_STORE_LOG   every query received is appended here (one per record)
+# FAKE_STORE_MODE  "empty" → answer every query with an empty body
+import os, re, sys
+
+args = sys.argv[1:]
+query = ""
+for i, a in enumerate(args):
+    if a == "--data-urlencode" and i + 1 < len(args) and args[i + 1].startswith("query="):
+        query = args[i + 1][len("query="):]
+
+log = os.environ.get("FAKE_STORE_LOG")
+if log:
+    with open(log, "a") as f:
+        f.write(query.replace("\n", " ") + "\n")
+
+if os.environ.get("FAKE_STORE_MODE") == "empty":
+    sys.exit(0)
+if not query:
+    sys.stderr.write("fake-store: no query argument\n")
+    sys.exit(22)
+
+NS = "https://jeffbridwell.com/chorus#"
+PULSE = NS + "pulse"
+PULSE_GRAPHS = ["urn:chorus:domains:pulse", "urn:chorus:instances"]
+
+m = re.search(r"SELECT\s+(?:DISTINCT\s+)?(.*?)\s+WHERE", query, re.S | re.I)
+proj = m.group(1) if m else ""
+# (EXPR AS ?alias) terms, then bare ?vars outside parentheses.
+cols = []
+for expr, alias in re.findall(r"\(([^()]*(?:\([^()]*\)[^()]*)*)\s+AS\s+\?(\w+)\)", proj, re.I):
+    cols.append((alias, expr.upper()))
+bare = re.sub(r"\([^()]*(?:\([^()]*\)[^()]*)*\)", " ", proj)
+cols = [(v, "") for v in re.findall(r"\?(\w+)", bare)] + cols
+names = [c[0] for c in cols]
+print(",".join(names))
+
+def cell(name, expr, graph=None):
+    if "COUNT" in expr:
+        return str(len(PULSE_GRAPHS))
+    if "GROUP_CONCAT" in expr:
+        return '"' + " ".join(PULSE_GRAPHS) + '"'
+    if name == "g":
+        return graph
+    if name == "s":
+        return PULSE
+    return ""
+
+one_home = "HAVING" in query.upper() and "?G" in query.upper()
+about_pulse = "chorus#pulse>" in query or "c:pulse " in query or "c:pulse>" in query
+if one_home or (about_pulse and "g" in names):
+    has_agg = any(e for _, e in cols)
+    graphs = [None] if has_agg else PULSE_GRAPHS
+    for g in graphs:
+        print(",".join(cell(n, e, g) for n, e in cols))
+elif "ownedBy" in query and "Principal" in query and "sh:" not in query:
+    print(",".join({"s": NS + "card-1", "o": NS + "nobody"}.get(n, "") for n in names))

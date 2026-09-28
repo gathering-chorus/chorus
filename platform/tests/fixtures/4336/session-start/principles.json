@@ -1,0 +1,5 @@
+{"_meta": {"source": "fixture-4336"},
+ "data": {"principles": [
+  {"id": "fixture-observe", "label": "Observe", "comment": "Watch before acting.", "techReading": "", "jeffReading": "", "order": 1},
+  {"id": "fixture-stack", "label": "Stack functions", "comment": "Multiple yields.", "techReading": "", "jeffReading": "", "order": 2}
+ ]}}
