@@ -17,7 +17,7 @@
 // the type alias keeps every other fs use injected (tests pass their own).
 import fs_node from 'fs';
 
-export type StreamLine = { ts: string; role: string; type: string; text: string; card?: string | null; tool?: string };
+export type StreamLine = { ts: string; role: string; type: string; text: string; card?: string | null; tool?: string; what?: string };
 
 /** #3959 — the window is stated in TIME, not bytes, because bytes are a lie that
  *  drifts. 256 KB was written when it meant "thousands of lines"; at 2026-08-21
@@ -204,6 +204,7 @@ function parseActionEntry(entry: LogEntry, role: string): StreamLine | null {
     text: `\u25b8 ${entry.digest ? String(entry.digest) : tool}`,
     card: entry.card_id ? String(entry.card_id) : null,
     tool,
+    what: entry.digest ? String(entry.digest) : undefined,
   };
 }
 
@@ -267,7 +268,11 @@ export function dropCoveredActions(lines: StreamLine[], cover: StreamLine[] = li
   const actions = lines.filter((l) => l.type === 'action' && !Number.isNaN(at(l)))
     .sort((x, y) => at(x) - at(y));
   for (const a of actions) {
-    const o = obs.find((c) => !used.has(c) && c.role === a.role && c.tool === a.tool
+    // A start that carries its digest pairs only with the finish line saying the
+    // same thing, so a call that never finishes (refused by a hook, stuck) cannot
+    // take the next call's finish line and leave that call shown twice.
+    const same = (c: StreamLine): boolean => (a.what ? c.text === a.what : c.tool === a.tool);
+    const o = obs.find((c) => !used.has(c) && c.role === a.role && same(c)
       && at(c) >= at(a) - CLOCK_SLACK_MS);
     if (!o) continue;
     used.add(o);

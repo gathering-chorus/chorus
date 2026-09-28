@@ -104,3 +104,15 @@ describe('#4231 one line per running call', () => {
     expect(out.filter((l) => l.type === 'activity')).toHaveLength(2);
   });
 });
+
+describe('#4231 a call that never finishes cannot take the next call\'s finish line', () => {
+  it('pairs by the digest when the start carries one', () => {
+    const start = (ts: string, what: string) => ({ ts, role: 'wren', type: 'action', text: `▸ ${what}`, tool: 'Bash', what });
+    const refused = start('2026-09-28T14:17:00Z', 'Refused call · bash: git add -A');
+    const next = start('2026-09-28T14:17:05Z', 'Read the result · bash: cat x');
+    const done = obs('2026-09-28T10:17:06-0400', 'wren', 'Bash', 'Read the result · bash: cat x');
+    const out = dropCoveredActions([refused, next, done]);
+    // the refused call stays as a start line; the finished call shows once
+    expect(out.map((l) => l.text)).toEqual(['▸ Refused call · bash: git add -A', 'Read the result · bash: cat x']);
+  });
+});
