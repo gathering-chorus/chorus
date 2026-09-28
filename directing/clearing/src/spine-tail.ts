@@ -209,8 +209,10 @@ const SAME_CALL_MS = 10_000;
  *  show as a bare "▸ Bash". Jeff, 2026-09-28: "i feel like ur last card didnt
  *  work" — half the pane was still bare tool names. Calls with no observer
  *  line (Read, Edit, Grep) keep their "▸" line, so every call still shows. */
-export function dropCoveredActions(lines: StreamLine[]): StreamLine[] {
-  const obs = lines.filter((l) => l.type === 'obs' && l.tool);
+export function dropCoveredActions(lines: StreamLine[], cover: StreamLine[] = lines): StreamLine[] {
+  // The observer lines that COVER a call can be older than the ones the pane
+  // renders (the pane reads each role's last 30), so the caller may pass more.
+  const obs = cover.filter((l) => l.type === 'obs' && l.tool);
   const covered = (a: StreamLine): boolean => {
     const at = Date.parse(a.ts);
     if (Number.isNaN(at)) return false;

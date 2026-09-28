@@ -1047,21 +1047,21 @@ function parseObservation(line: string, seen: Set<string>): StreamLine | null {
   }
 }
 
-function readObservationsForRole(fs: typeof fs_node, role: string, out: StreamLine[]): void {
+function readObservationsForRole(fs: typeof fs_node, role: string, out: StreamLine[], last = 30): void {
   const obsFile = `${SCAN_DIR}/${role}-observations.jsonl`;
   try {
     const obsLines = fs.readFileSync(obsFile, 'utf-8').trim().split('\n').filter(Boolean);
     const seen = new Set<string>();
-    for (const line of obsLines.slice(-30)) {
+    for (const line of obsLines.slice(-last)) {
       const entry = parseObservation(line, seen);
       if (entry) out.push(entry);
     }
   } catch { /* ignored */ }
 }
 
-function readRoleObservations(fs: typeof fs_node): StreamLine[] {
+function readRoleObservations(fs: typeof fs_node, last = 30): StreamLine[] {
   const out: StreamLine[] = [];
-  for (const role of ['wren', 'silas', 'kade']) readObservationsForRole(fs, role, out);
+  for (const role of ['wren', 'silas', 'kade']) readObservationsForRole(fs, role, out, last);
   return out;
 }
 
@@ -1118,7 +1118,10 @@ app.get('/api/stream', (req, res) => {
   ];
   lines.sort((a, b) => (a.ts || '').localeCompare(b.ts || ''));
 
-  const formatted = dedupeLines(dropCoveredActions(lines)).slice(-limit).map((l) => {
+  // #4231 — the spine window reaches further back than 30 observer lines, so
+  // cover the bare "▸" lines from a deeper read than the one we render.
+  const cover = readRoleObservations(fs, 400);
+  const formatted = dedupeLines(dropCoveredActions(lines, cover)).slice(-limit).map((l) => {
     const ts = new Date(l.ts).toLocaleTimeString('en-US', {
       hour: 'numeric', minute: '2-digit', timeZone: 'America/New_York',
     });

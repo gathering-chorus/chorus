@@ -27,3 +27,12 @@ describe('#4231 bare action lines give way to the reason line', () => {
       .toEqual(['silas ▸ Read', 'kade ▸ Bash', 'silas ▸ Bash']);
   });
 });
+
+describe('#4231 cover can reach further back than the rendered lines', () => {
+  it('drops a bare line whose reason line is only in the deeper read', () => {
+    const lines = [action('2026-09-28T12:09:50Z', 'wren', 'mcp__x')];
+    const cover = [obs('2026-09-28T08:09:52-0400', 'wren', 'mcp__x', 'mcp: x → jeff')];
+    expect(dropCoveredActions(lines, cover)).toEqual([]);
+    expect(dropCoveredActions(lines)).toHaveLength(1);
+  });
+});
