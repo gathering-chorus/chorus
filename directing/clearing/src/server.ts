@@ -887,7 +887,7 @@ messageRouter.on('message', (m: ChannelMessage) => {
 
 // Ensure upload directory survives /tmp cleanup across reboots
 import fs_node from 'fs';
-import { readSpineWithStats, spinePath, type StreamLine } from './spine-tail';
+import { dropCoveredActions, readSpineWithStats, spinePath, type StreamLine } from './spine-tail';
 if (!fs_node.existsSync('/tmp/bridge-uploads')) {
   fs_node.mkdirSync('/tmp/bridge-uploads', { recursive: true });
 }
@@ -1041,7 +1041,7 @@ function parseObservation(line: string, seen: Set<string>): StreamLine | null {
     seen.add(key);
     const digest = obs.digest || '';
     if (!isRenderableDigest(digest)) return null;
-    return { ts: obs.ts, role: obs.role, type: 'obs', text: digest, card: obs.card || null };
+    return { ts: obs.ts, role: obs.role, type: 'obs', text: digest, card: obs.card || null, tool: obs.tool };
   } catch {
     return null;
   }
@@ -1118,7 +1118,7 @@ app.get('/api/stream', (req, res) => {
   ];
   lines.sort((a, b) => (a.ts || '').localeCompare(b.ts || ''));
 
-  const formatted = dedupeLines(lines).slice(-limit).map((l) => {
+  const formatted = dedupeLines(dropCoveredActions(lines)).slice(-limit).map((l) => {
     const ts = new Date(l.ts).toLocaleTimeString('en-US', {
       hour: 'numeric', minute: '2-digit', timeZone: 'America/New_York',
     });

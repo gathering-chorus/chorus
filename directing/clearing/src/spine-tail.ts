@@ -17,7 +17,7 @@
 // the type alias keeps every other fs use injected (tests pass their own).
 import fs_node from 'fs';
 
-export type StreamLine = { ts: string; role: string; type: string; text: string; card?: string | null };
+export type StreamLine = { ts: string; role: string; type: string; text: string; card?: string | null; tool?: string };
 
 /** #3959 — the window is stated in TIME, not bytes, because bytes are a lie that
  *  drifts. 256 KB was written when it meant "thousands of lines"; at 2026-08-21
@@ -198,7 +198,26 @@ function parseActionEntry(entry: LogEntry, role: string): StreamLine | null {
     type: 'action',
     text: `\u25b8 ${tool}`,
     card: entry.card_id ? String(entry.card_id) : null,
+    tool,
   };
+}
+
+/** #4231 — how close an observer line must be to count as the same call. */
+const SAME_CALL_MS = 10_000;
+
+/** #4231 — a call the observer already wrote a reason line for must not also
+ *  show as a bare "▸ Bash". Jeff, 2026-09-28: "i feel like ur last card didnt
+ *  work" — half the pane was still bare tool names. Calls with no observer
+ *  line (Read, Edit, Grep) keep their "▸" line, so every call still shows. */
+export function dropCoveredActions(lines: StreamLine[]): StreamLine[] {
+  const obs = lines.filter((l) => l.type === 'obs' && l.tool);
+  const covered = (a: StreamLine): boolean => {
+    const at = Date.parse(a.ts);
+    if (Number.isNaN(at)) return false;
+    return obs.some((o) => o.role === a.role && o.tool === a.tool
+      && Math.abs(Date.parse(o.ts) - at) <= SAME_CALL_MS);
+  };
+  return lines.filter((l) => l.type !== 'action' || !covered(l));
 }
 
 function parseLogEntry(entry: LogEntry): StreamLine | null {
