@@ -2098,8 +2098,10 @@ fn deploy_rust_service(
 
     let cbi = chorus_bin_install_cmd(home, werk_s);
     for (b, _) in &bins {
+        // #4380 — this function restarts the service once, below, after every
+        // binary is installed; the installer must not restart it per binary
         if let Err(e) = run_env(
-            Some(werk_s), &[("CHORUS_ROLE", role)], &cbi,
+            Some(werk_s), &[("CHORUS_ROLE", role), ("CHORUS_BIN_CALLER_RESTARTS", "1")], &cbi,
             &["--target", target, &built_path(b), b],
         ) {
             rollback(home, werk_s, role, card, trace, target, b, "install-fail");
