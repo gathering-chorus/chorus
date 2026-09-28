@@ -5059,7 +5059,9 @@ pub type Http<'a> = &'a dyn Fn(&str, &str, &str, Option<&str>) -> R<(u16, String
 pub struct PostReport { pub created: usize, pub replaced: usize, pub lines: Vec<String> }
 
 /// Post every row in order: GET decides create vs replace, the owner's token
-/// signs, any non-2xx stops the run loudly with the API's own words. Rows with
+/// signs. #4394 — a refused row does not stop the run: every row is tried and
+/// the run ends with every refusal in the API's own words (37 of 62 canonical
+/// lands failed the seed at ONE row each; each fix found the next). Rows with
 /// no owner are refused before anything is sent (Jeff: each owner in turn — a
 /// row nobody owns is a data defect to fix in the file, not a default).
 pub fn post_all(rows: &[PostRow], api: &str, tokens: &mut OwnerTokens<'_>, http: Http<'_>, dry: bool) -> R<PostReport> {
@@ -5079,9 +5081,13 @@ pub fn post_all(rows: &[PostRow], api: &str, tokens: &mut OwnerTokens<'_>, http:
     // row that had something held back, now that its targets exist.
     let mut pending: std::collections::HashSet<String> = rows.iter().map(|r| r.name.clone()).collect();
     let mut second_pass: Vec<&PostRow> = Vec::new();
-    for r in rows {
+    let mut refused: Vec<String> = Vec::new();
+    'rows: for r in rows {
         let owner = r.owner.as_deref().unwrap_or_default();
-        let token = tokens.for_owner(owner)?;
+        let token = match tokens.for_owner(owner) {
+            Ok(t) => t,
+            Err(e) => { refused.push(format!("{}/{}: {}", r.plural, r.name, e)); pending.remove(&r.name); continue; }
+        };
         let url_one = format!("{}/{}/{}", api, r.plural, r.name);
         let (st, _) = http("GET", &url_one, "", None)?;
         let (method, url) = if st == 200 { ("PUT", url_one.clone()) } else { ("POST", format!("{}/{}", api, r.plural)) };
@@ -5113,7 +5119,10 @@ pub fn post_all(rows: &[PostRow], api: &str, tokens: &mut OwnerTokens<'_>, http:
         }
         if !(200..300).contains(&st) {
             witness("model.seed.post.refused", &[("kind", &r.kind), ("name", &r.name), ("owner", owner), ("status", &st.to_string())]);
-            return Err(format!("seed --post: {} {} as {} → {}: {}", method, url, owner, st, body.trim()));
+            refused.push(format!("{} {} as {} → {}: {}", method, url, owner, st, body.trim()));
+            second_pass.retain(|x| x.name != r.name);
+            pending.remove(&r.name);
+            continue;
         }
         if method == "POST" { rep.created += 1 } else { rep.replaced += 1 }
         witness("model.seed.posted", &[("kind", &r.kind), ("name", &r.name), ("owner", owner), ("method", method), ("status", &st.to_string())]);
@@ -5125,7 +5134,9 @@ pub fn post_all(rows: &[PostRow], api: &str, tokens: &mut OwnerTokens<'_>, http:
             let (est, ebody) = http("POST", &eurl, &token, Some(&format!("{{\"target\":{}}}", json_str(target))))?;
             if !(200..300).contains(&est) && !(est == 409 && ebody.contains("already")) {
                 witness("model.seed.post.refused", &[("kind", &r.kind), ("name", &r.name), ("owner", owner), ("status", &est.to_string())]);
-                return Err(format!("seed --post: POST {} → {} as {} → {}: {}", eurl, target, owner, est, ebody.trim()));
+                refused.push(format!("POST {} → {} as {} → {}: {}", eurl, target, owner, est, ebody.trim()));
+                pending.remove(&r.name);
+                continue 'rows;
             }
             rep.lines.push(format!("POST {} {} as {} → {}", eurl, target, owner, est));
         }
@@ -5134,15 +5145,25 @@ pub fn post_all(rows: &[PostRow], api: &str, tokens: &mut OwnerTokens<'_>, http:
     if !dry {
         for r in second_pass {
             let owner = r.owner.as_deref().unwrap_or_default();
-            let token = tokens.for_owner(owner)?;
+            let token = match tokens.for_owner(owner) {
+                Ok(t) => t,
+                Err(e) => { refused.push(format!("{}/{} (second pass): {}", r.plural, r.name, e)); continue; }
+            };
             let url = format!("{}/{}/{}", api, r.plural, r.name);
             let (st, body) = http("PUT", &url, &token, Some(&r.body))?;
             if !(200..300).contains(&st) {
                 witness("model.seed.post.refused", &[("kind", &r.kind), ("name", &r.name), ("owner", owner), ("status", &st.to_string())]);
-                return Err(format!("seed --post (second pass, held-back edges): PUT {} as {} → {}: {}", url, owner, st, body.trim()));
+                refused.push(format!("(second pass, held-back edges) PUT {} as {} → {}: {}", url, owner, st, body.trim()));
+                continue;
             }
             rep.lines.push(format!("PUT {} as {} → {} (second pass: edges to rows posted after it)", url, owner, st));
         }
+    }
+    if !refused.is_empty() {
+        return Err(format!(
+            "seed --post: {} of {} rows refused ({} created, {} replaced):\n  {}",
+            refused.len(), rows.len(), rep.created, rep.replaced, refused.join("\n  ")
+        ));
     }
     Ok(rep)
 }
@@ -5345,9 +5366,67 @@ mod post_rows_4096 {
         };
         let err = post_all(&rows, "http://api/", &mut tokens, &http, false).unwrap_err();
         assert!(err.contains("422") && err.contains("shape-violation"), "{err}");
+        assert!(err.contains("1 of 3 rows refused"), "{err}");
         let c = calls.borrow();
         assert!(c.iter().any(|l| l == "PUT http://api/products/old tok-kade"), "{c:?}");
         assert!(c.iter().any(|l| l == "POST http://api/products tok-wren"), "{c:?}");
+    }
+}
+
+// #4394 — a refused row does not stop the seed: every row is tried, every refusal named.
+#[cfg(test)]
+mod seed_lists_every_refusal_4394 {
+    use super::*;
+    fn row(name: &str, owner: &str) -> PostRow {
+        PostRow { kind: "product".into(), plural: "products".into(), name: name.into(), owner: Some(owner.into()), body: format!("{{\"name\":\"{name}\"}}"), edge_targets: vec![], structural: vec![] }
+    }
+
+    #[test]
+    fn every_refused_row_is_named_and_the_rows_after_it_are_still_posted() {
+        use std::cell::RefCell;
+        let posted: RefCell<Vec<String>> = RefCell::new(Vec::new());
+        let rows = vec![row("a", "wren"), row("bad1", "wren"), row("b", "kade"), row("bad2", "kade"), row("c", "silas")];
+        let mint = |o: &str| -> R<String> { Ok(format!("tok-{o}")) };
+        let mut tokens = OwnerTokens::new(&mint);
+        let http = |m: &str, _u: &str, _t: &str, b: Option<&str>| -> R<(u16, String)> {
+            if m == "GET" { return Ok((404, String::new())); }
+            let b = b.unwrap_or("");
+            if b.contains("bad1") { return Ok((422, "unknown-target: atStep".into())); }
+            if b.contains("bad2") { return Ok((403, "not this row's owner".into())); }
+            posted.borrow_mut().push(b.to_string());
+            Ok((201, "created".into()))
+        };
+        let err = post_all(&rows, "http://api", &mut tokens, &http, false).unwrap_err();
+        assert!(err.contains("2 of 5 rows refused"), "{err}");
+        assert!(err.contains("unknown-target: atStep") && err.contains("not this row's owner"), "{err}");
+        assert_eq!(posted.borrow().len(), 3, "a, b and c are posted past the refusals");
+    }
+
+    /// NEGATIVE PROOF (#3734): a run where nothing is refused is Ok — the list
+    /// only exists when a row was refused.
+    #[test]
+    fn a_clean_run_is_ok() {
+        let rows = vec![row("a", "wren"), row("b", "kade")];
+        let mint = |o: &str| -> R<String> { Ok(format!("tok-{o}")) };
+        let mut tokens = OwnerTokens::new(&mint);
+        let http = |m: &str, _u: &str, _t: &str, _b: Option<&str>| -> R<(u16, String)> {
+            Ok(if m == "GET" { (404, String::new()) } else { (201, "created".into()) })
+        };
+        let rep = post_all(&rows, "http://api", &mut tokens, &http, false).unwrap();
+        assert_eq!(rep.created, 2);
+    }
+
+    /// A row whose owner has no identity is named with the rest, not a stop.
+    #[test]
+    fn an_owner_without_an_identity_is_one_refusal_not_a_stop() {
+        let rows = vec![row("a", "ghost"), row("b", "kade")];
+        let mint = |o: &str| -> R<String> { if o == "ghost" { Err("no identity for ghost".into()) } else { Ok("tok".into()) } };
+        let mut tokens = OwnerTokens::new(&mint);
+        let http = |m: &str, _u: &str, _t: &str, _b: Option<&str>| -> R<(u16, String)> {
+            Ok(if m == "GET" { (404, String::new()) } else { (201, "created".into()) })
+        };
+        let err = post_all(&rows, "http://api", &mut tokens, &http, false).unwrap_err();
+        assert!(err.contains("1 of 2 rows refused") && err.contains("products/a") && err.contains("no identity for ghost"), "{err}");
     }
 }
 
