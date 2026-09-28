@@ -101,11 +101,15 @@ SELECT DISTINCT ?cls WHERE {
 /// A subject living in more than one graph. Two homes means two answers to the
 /// same question, and which one a reader gets depends on which route they came
 /// through.
+///
+/// #4336 — the line names the graphs, not only their count: "pulse is in 2
+/// graphs" is not actionable, "pulse is in A and B" is. The retired bash printed
+/// them; the #4167 port dropped them.
 pub const ONE_HOME: Check = Check {
     id: "one-home",
     question: "does every row live in exactly one graph",
     query: r#"PREFIX c: <https://jeffbridwell.com/chorus#>
-SELECT ?s (COUNT(DISTINCT ?g) AS ?homes) WHERE {
+SELECT ?s (COUNT(DISTINCT ?g) AS ?homes) (GROUP_CONCAT(DISTINCT STR(?g); separator=" ") AS ?graphs) WHERE {
   GRAPH ?g { ?s a ?t }
   FILTER(STRSTARTS(STR(?g), "urn:chorus:"))
   FILTER(STRSTARTS(STR(?s), "https://jeffbridwell.com/chorus#"))

@@ -41,8 +41,12 @@ rows() { arq --results csv --query "$T/q.rq" "$@" 2>/dev/null | tail -n +2 | gre
   # and runs as kade, so under Jeff's 09-17 ruling those rows are kade's and the
   # grant was the missing member of the set — 133 PUTs were 403ing without it.
   # Named here on purpose: bumping this number is a decision, not a rubber stamp.
-  run grep -c "a chorus:Permission" "$PERMS"
-  test "$output" -eq 47
+  # #4336: counted by a query over the file, not a text grep that a comment
+  # mentioning "a chorus:Permission" would also match.
+  printf '%s\n' 'PREFIX chorus: <https://jeffbridwell.com/chorus#>' \
+    'SELECT (COUNT(DISTINCT ?p) AS ?n) WHERE { ?p a chorus:Permission }' > "$T/n.rq"
+  n=$(arq --results csv --query "$T/n.rq" --data "$PERMS" 2>/dev/null | tail -1 | tr -d '\r')
+  test "$n" -eq 47
 }
 
 @test "the scope query grants from Permission rows joined to real principals" {
@@ -56,11 +60,29 @@ rows() { arq --results csv --query "$T/q.rq" "$@" 2>/dev/null | tail -n +2 | gre
   [ "$n" -eq 0 ] || { echo "hasScope still grants $n — the query did not move"; false; }
 }
 
-@test "NEGATIVE PROOF — a Read-mode row is not a write grant" {
-  # nudge-read rows are mode acl:Read; none may appear as a write scope
-  arq --results csv --query "$T/q.rq" --data "$PERMS" --data "$PRINCIPALS" 2>/dev/null | grep -q "nudge-read" && {
-    echo "a Read row came back as a write grant"; false; }
-  true
+# #4336: this case was `grep -q … && { false; }; true`, which bash's set -e
+# never fails on, so it passed whatever the query returned. It now runs the
+# query over one principal with a Read row, then the same principal with a
+# Write row: 0 grants, then 1 — the two states it exists to separate.
+perm_fixture() {  # perm_fixture <mode-term>
+  printf '%s\n' '@prefix chorus: <https://jeffbridwell.com/chorus#> .' \
+    '@prefix acl: <http://www.w3.org/ns/auth/acl#> .' '@prefix xsd: <http://www.w3.org/2001/XMLSchema#> .' \
+    'chorus:principal-fx a chorus:Principal ; chorus:webId "https://example.test/fx#me" .' \
+    'chorus:permission-fx a chorus:Permission ; chorus:agent chorus:principal-fx ;' \
+    "    chorus:accessTo \"urn:chorus:domains:fixture\"^^xsd:anyURI ; chorus:mode $1 ." > "$T/perm.ttl"
+}
+
+@test "NEGATIVE PROOF — a Read-mode row is not a write grant; the same row as Write is" {
+  perm_fixture 'acl:Read';  r=$(rows --data "$T/perm.ttl")
+  perm_fixture 'acl:Write'; w=$(rows --data "$T/perm.ttl")
+  [ "$r" -eq 0 ] || { echo "a Read row granted write ($r)"; false; }
+  [ "$w" -eq 1 ] || { echo "a Write row did not grant ($w) — the Read result above proves nothing"; false; }
+}
+
+@test "the real Read rows (nudge-read) do not come back as write grants" {
+  run arq --results csv --query "$T/q.rq" --data "$PERMS" --data "$PRINCIPALS"
+  [ "$status" -eq 0 ]
+  test -z "$(printf '%s\n' "$output" | grep -F 'nudge-read' || true)"
 }
 
 @test "NEGATIVE PROOF — a row whose agent is not a Principal grants nothing" {
@@ -77,10 +99,15 @@ TTL
   [ "$n" -eq 0 ]
 }
 
-@test "return gate — the query no longer mentions hasScope, and reads acl:accessTo" {
-  ! grep -q "hasScope" "$RQ" || return 1
-  grep -q "chorus:accessTo" "$RQ"
-  grep -q "acl:Write" "$RQ"
+@test "return gate — a hasScope-only principal gets no grant, an accessTo Write row does" {
+  # #4336: was a grep of the .rq for "hasScope", "chorus:accessTo" and "acl:Write".
+  printf '%s\n' '@prefix chorus: <https://jeffbridwell.com/chorus#> .' \
+    'chorus:principal-hs a chorus:Principal ; chorus:webId "https://example.test/hs#me" ;' \
+    '    chorus:hasScope "urn:chorus:domains:fixture" .' > "$T/hs.ttl"
+  n=$(rows --data "$T/hs.ttl")
+  [ "$n" -eq 0 ]
+  perm_fixture 'acl:Write'; w=$(rows --data "$T/perm.ttl")
+  [ "$w" -eq 1 ]
 }
 
 @test "return gate — the security deploy set carries the rows file and not the literals file" {

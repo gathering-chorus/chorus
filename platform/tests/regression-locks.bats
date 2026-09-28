@@ -15,12 +15,27 @@ load test_helper
 #
 #   2. All osascript calls go through chorus-inject (#2077).
 #      chorus-hooks must not invoke osascript directly.
+#      (#4336: locks 2, 2b and 3b RUN the binaries/code with a recording
+#      osascript/ssh on PATH instead of grepping their source.)
 #
 #   3. Docker is retired (#2020, #2119).
 #      Live code paths (excluding ADRs, journal, guardrails, knowledge docs)
 #      must not contain the literal token `docker`.
 
 CHORUS_ROOT="${CHORUS_ROOT:-${CHORUS_ROOT}}"
+
+# #4336 — a PATH whose osascript / ssh / docker are recorders. A lock that runs
+# code under this PATH can see whether the code shelled out, without Terminal,
+# a relay, or Docker ever being touched.
+recorder_path() {
+  R="$BATS_TEST_TMPDIR/rec"
+  mkdir -p "$R/bin" "$R/home"
+  for tool in osascript ssh docker; do
+    printf '#!/bin/bash\nprintf "%%s\\n" "$*" >> "%s/%s.calls"\necho ok\n' "$R" "$tool" > "$R/bin/$tool"
+  done
+  chmod +x "$R/bin/"*
+}
+calls() { [ -f "$R/$1.calls" ] && wc -l < "$R/$1.calls" | tr -d ' ' || echo 0; }
 
 # ---------------------------------------------------------------------------
 # Lock 1: werk-version does not bump on plain `generate`
@@ -56,54 +71,50 @@ CHORUS_ROOT="${CHORUS_ROOT:-${CHORUS_ROOT}}"
 # Lock 2: no direct osascript in chorus-hooks (must route via chorus-inject)
 # ---------------------------------------------------------------------------
 
-@test "lock: chorus-hooks contains no direct Command::new(\"osascript\") — must route via chorus-inject" {
-  cd "$CHORUS_ROOT"
-  # Scan Rust source of chorus-hooks. Allow osascript in health.rs and
-  # context_cache.rs — those are Finder queries (Automation, not Accessibility)
-  # and do not conflict with the chorus-inject keystroke grant. The
-  # anti-pattern is a NEW osascript keystroke call in nudge/process.
-  offenders=$(grep -rn 'Command::new("osascript")\|Cmd::new("osascript")' \
-    platform/services/chorus-hooks/src/nudge.rs \
-    platform/services/chorus-hooks/src/process.rs \
-    2>/dev/null || true)
-  if [ -n "$offenders" ]; then
-    echo "Direct osascript call reintroduced (should route via chorus-inject):" >&2
-    echo "$offenders" >&2
-    false
-  fi
+# #4336 — was a grep of nudge.rs/process.rs for Command::new("osascript").
+# Now the built shim is run on every delivery verb it ever had (inject #2435,
+# nudge #2804) with a recording osascript first on PATH: each must be refused
+# loudly (non-zero, names the MCP tool) and osascript must never be spawned.
+@test "lock: chorus-hook-shim delivery verbs never spawn osascript — delivery routes via chorus-inject" {
+  shim="$CHORUS_ROOT/platform/services/chorus-hooks/target/release/chorus-hook-shim"
+  [ -x "$shim" ] || skip "UNMEASURED — chorus-hook-shim not built in this checkout (#4336)"
+  recorder_path
+  for verb in inject nudge; do
+    run env -i PATH="$R/bin:/usr/bin:/bin" HOME="$R/home" CHORUS_CONTEXT=test \
+      CHORUS_LOG_FILE="$R/spine.log" "$shim" "$verb" wren "hello-4336" < /dev/null
+    echo "$verb: status=$status $output"
+    [ "$status" -ne 0 ] || return 1
+    [[ "$output" == *"chorus_nudge_message"* ]] || return 1
+  done
+  [ "$(calls osascript)" -eq 0 ]
 }
 
 # ---------------------------------------------------------------------------
 # Lock 3: docker absent from live code paths (#2020 retirement, #2119 purge)
 # ---------------------------------------------------------------------------
 
-@test "lock: chorus-hooks inject tests use CHORUS_INJECT_DRY_RUN seam, not a skip-gate" {
-  cd "$CHORUS_ROOT"
-  # On 2026-04-17 a global "skip unless opt-in" polarity flip meant nudge
-  # delivery tests never ran; a global "fire unless opt-out" polarity stormed
-  # Jeff's terminal. The correct shape (matching chorus-inject integration
-  # tests): set CHORUS_INJECT_DRY_RUN in the test so the subprocess runs the
-  # real path but short-circuits before osascript. Both fire-by-default and
-  # skip-by-default are regressions.
-  # #3710 — the seam moved crates. #2804 took delivery out of chorus-hooks and
-  # into chorus-inject, so CHORUS_INJECT_DRY_RUN lives in chorus-inject/src now.
-  # The lock kept pointing at chorus-hooks/src/process.rs and failed on a file
-  # that had simply stopped owning the behaviour. The invariant is unchanged:
-  # the dry-run seam must exist, and skip-polarity gates must not come back.
-  inject_src=platform/services/chorus-inject/src
-  has_seam=$(grep -rc "CHORUS_INJECT_DRY_RUN" "$inject_src" 2>/dev/null | awk -F: '{s+=$2} END {print s+0}')
-  # Skip-polarity must stay absent from BOTH crates — either one reintroducing
-  # it recreates the 2026-04-17 never-ran / always-fired pair.
-  has_skip_polarity=$(grep -rlE 'RUN_LIVE_INJECT|HERMETIC_TEST_MODE' \
-    "$inject_src" platform/services/chorus-hooks/src 2>/dev/null | wc -l | tr -d ' ')
-  [ "$has_seam" -ge 1 ] || {
-    echo "Missing CHORUS_INJECT_DRY_RUN test seam in $inject_src" >&2
-    false
+# #4336 — was a grep of chorus-inject/src for the seam name and of both crates
+# for RUN_LIVE_INJECT / HERMETIC_TEST_MODE. Now the built chorus-inject runs:
+#  - with CHORUS_INJECT_DRY_RUN it walks the real path, prints its DRY-RUN
+#    line, and never spawns osascript (the seam exists and holds);
+#  - the two 2026-04-17 skip-polarity variables change NOTHING: the output is
+#    byte-identical with them set, so no skip-gate reads them.
+# (The non-dry path is not driven here: it is a live delivery primitive.)
+@test "lock: chorus-inject honours the CHORUS_INJECT_DRY_RUN seam and has no skip-polarity gate" {
+  inj="$CHORUS_ROOT/platform/services/chorus-inject/target/release/chorus-inject"
+  [ -x "$inj" ] || skip "UNMEASURED — chorus-inject not built in this checkout (#4336)"
+  recorder_path
+  dry() {
+    env -i PATH="$R/bin:/usr/bin:/bin" HOME="$R/home" _NUDGE_PULSE_INTERNAL=1 \
+      CHORUS_INJECT_DRY_RUN=1 "$@" "$inj" --tty /dev/ttys999 "hello-4336" 2>&1
   }
-  [ "$has_skip_polarity" -eq 0 ] || {
-    echo "Skip-polarity gate reintroduced (RUN_LIVE_INJECT or HERMETIC_TEST_MODE) — use dry-run seam instead" >&2
-    false
-  }
+  base="$(dry)"
+  echo "base: $base"
+  [[ "$base" == "DRY-RUN inject-by-tty tty=/dev/ttys999 "* ]] || return 1
+  [ "$(dry HERMETIC_TEST_MODE=1)" = "$base" ] || return 1
+  [ "$(dry RUN_LIVE_INJECT=0)" = "$base" ] || return 1
+  [ "$(dry RUN_LIVE_INJECT=1)" = "$base" ] || return 1
+  [ "$(calls osascript)" -eq 0 ]
 }
 
 @test "lock: no 'docker' in live code paths (ADRs, journal, knowledge docs exempted)" {
@@ -146,16 +157,41 @@ CHORUS_ROOT="${CHORUS_ROOT:-${CHORUS_ROOT}}"
   fi
 }
 
+# #4336 — was a count of `docker compose` lines in index-all-sources-deps.ts.
+# Now the REAL fetchBuzz runs (tsx, Fuseki stubbed in-process, ssh/docker as
+# recorders): one reindex pull must make exactly ONE ssh call carrying exactly
+# ONE `docker compose` invocation, and never run docker locally. With
+# BUZZ_RELAY_HOST unset the transport must not exist at all.
+buzz_probe() {
+  local mods="$CHORUS_ROOT/platform/api/node_modules"
+  [ -x "$mods/.bin/tsx" ] || mods="${CHORUS_HOME:-}/platform/api/node_modules"
+  [ -x "$mods/.bin/tsx" ] || return 99
+  env PATH="$R/bin:$PATH" HOME="$R/home" NODE_PATH="$mods" \
+    ATHENA_SPARQL=http://127.0.0.1:9/sparql ATHENA_UPDATE=http://127.0.0.1:9/update "$@" \
+    "$mods/.bin/tsx" "$CHORUS_ROOT/platform/tests/fixtures/4336/buzz-transport-probe.ts" \
+    "$CHORUS_ROOT/platform/api/src/index-all-sources-deps.ts" 2>&1
+}
+
 @test "lock: the Buzz docker exception stays a single, named transport (#3674)" {
-  cd "$CHORUS_ROOT"
-  # The exemption above is only safe while it stays one call site. This fails if
-  # the Buzz transport grows more docker invocations, so the exception cannot
-  # quietly become a habit.
-  # Count INVOCATIONS, not mentions — the file also documents the transport in a
-  # comment, and prose describing the exception is not another exception.
-  count=$(grep 'docker compose' platform/api/src/index-all-sources-deps.ts 2>/dev/null \
-    | grep -vE '^\s*(//|\*|/\*)' | wc -l | tr -d ' ')
-  [ "$count" -le 1 ]
+  recorder_path
+  run buzz_probe BUZZ_RELAY_HOST=relay.invalid BUZZ_COMPOSE_DIR=/compose
+  [ "$status" -ne 99 ] || skip "UNMEASURED — platform/api node_modules (tsx) not installed (#4336)"
+  echo "$output"
+  [ "$status" -eq 0 ]
+  [ "$output" = "rows=0" ]
+  [ "$(calls ssh)" -eq 1 ]
+  [ "$(grep -o 'docker compose' "$R/ssh.calls" | wc -l | tr -d ' ')" -eq 1 ]
+  [ "$(calls docker)" -eq 0 ]
+}
+
+@test "lock: with no relay configured the Buzz docker transport does not run (#3674)" {
+  recorder_path
+  run buzz_probe BUZZ_RELAY_HOST=
+  [ "$status" -ne 99 ] || skip "UNMEASURED — platform/api node_modules (tsx) not installed (#4336)"
+  echo "$output"
+  [ "$output" = "NO-FETCHBUZZ" ]
+  [ "$(calls ssh)" -eq 0 ]
+  [ "$(calls docker)" -eq 0 ]
 }
 
 @test "#3904 NEGATIVE PROOF: the comment-stripped docker lock still catches a REAL invocation" {

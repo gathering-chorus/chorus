@@ -15,6 +15,14 @@
 APP_API="http://localhost:3000"
 CHORUS_API="http://localhost:3340"
 
+setup() {
+  # #4336: a live-only contract suite. When chorus-api does not answer, the
+  # questions below are UNMEASURED, never red and never green.
+  curl -s -o /dev/null --max-time 3 http://localhost:3340/api/chorus/health \
+    || skip "UNMEASURED — chorus-api :3340 not answering (#4336)"
+}
+
+
 # --- AC 3: Doc-catalog handler wired as domain's primary service ---
 
 @test "GET /api/doc-catalog returns grouped docs" {

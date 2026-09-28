@@ -293,14 +293,14 @@ teardown_file() {
 
 @test "#3593 retire-subject deletes a Domain absent from staging; keeps present + non-domain" {
   G="${TEST_GRAPH}-retire"
-  curl -s --max-time "${FUSEKI_WRITE_TIMEOUT:-120}" -X DELETE "$GSP?graph=$G" -o /dev/null 2>/dev/null || true
+  curl -s --max-time "${FUSEKI_WRITE_TIMEOUT:-120}" "${FUSEKI_AUTH[@]+"${FUSEKI_AUTH[@]}"}" -X DELETE "$GSP?graph=$G" -o /dev/null 2>/dev/null || true
   pre="$(mktemp)"; cat > "$pre" <<'EOF'
 @prefix chorus: <https://jeffbridwell.com/chorus#> .
 chorus:domainKeep a chorus:Domain ; chorus:purpose "keep" .
 chorus:domainGone a chorus:Domain ; chorus:purpose "gone" .
 chorus:liveInst  a chorus:Test ; chorus:purpose "instance" .
 EOF
-  curl -s --max-time "${FUSEKI_WRITE_TIMEOUT:-120}" -X POST -H 'Content-Type: text/turtle' --data-binary "@$pre" "$GSP?graph=$G" >/dev/null
+  curl -s --max-time "${FUSEKI_WRITE_TIMEOUT:-120}" "${FUSEKI_AUTH[@]+"${FUSEKI_AUTH[@]}"}" -X POST -H 'Content-Type: text/turtle' --data-binary "@$pre" "$GSP?graph=$G" >/dev/null
   keep="$(mktemp).ttl"; cat > "$keep" <<'EOF'
 @prefix chorus: <https://jeffbridwell.com/chorus#> .
 chorus:domainKeep a chorus:Domain ; chorus:purpose "keep" .
@@ -316,18 +316,18 @@ EOF
   # absent domain RETIRED (no triples remain)
   run curl -s "$Q" --data-urlencode "query=PREFIX chorus: <https://jeffbridwell.com/chorus#> ASK { GRAPH <$G> { chorus:domainGone ?p ?o } }" -H "Accept: application/sparql-results+json"
   [[ "${output// /}" == *'"boolean":false'* ]] || return 1
-  curl -s --max-time "${FUSEKI_WRITE_TIMEOUT:-120}" -X DELETE "$GSP?graph=$G" -o /dev/null 2>/dev/null || true
+  curl -s --max-time "${FUSEKI_WRITE_TIMEOUT:-120}" "${FUSEKI_AUTH[@]+"${FUSEKI_AUTH[@]}"}" -X DELETE "$GSP?graph=$G" -o /dev/null 2>/dev/null || true
 }
 
 @test "#3593 a partial (TTL=) deploy does NOT retire absent domains (gate blocks mass-delete)" {
   G="${TEST_GRAPH}-partial"
-  curl -s --max-time "${FUSEKI_WRITE_TIMEOUT:-120}" -X DELETE "$GSP?graph=$G" -o /dev/null 2>/dev/null || true
+  curl -s --max-time "${FUSEKI_WRITE_TIMEOUT:-120}" "${FUSEKI_AUTH[@]+"${FUSEKI_AUTH[@]}"}" -X DELETE "$GSP?graph=$G" -o /dev/null 2>/dev/null || true
   pre="$(mktemp)"; cat > "$pre" <<'EOF'
 @prefix chorus: <https://jeffbridwell.com/chorus#> .
 chorus:domainKeep a chorus:Domain ; chorus:purpose "keep" .
 chorus:domainGone a chorus:Domain ; chorus:purpose "gone" .
 EOF
-  curl -s --max-time "${FUSEKI_WRITE_TIMEOUT:-120}" -X POST -H 'Content-Type: text/turtle' --data-binary "@$pre" "$GSP?graph=$G" >/dev/null
+  curl -s --max-time "${FUSEKI_WRITE_TIMEOUT:-120}" "${FUSEKI_AUTH[@]+"${FUSEKI_AUTH[@]}"}" -X POST -H 'Content-Type: text/turtle' --data-binary "@$pre" "$GSP?graph=$G" >/dev/null
   keep="$(mktemp).ttl"; cat > "$keep" <<'EOF'
 @prefix chorus: <https://jeffbridwell.com/chorus#> .
 chorus:domainKeep a chorus:Domain ; chorus:purpose "keep" .
@@ -337,7 +337,7 @@ EOF
   rm -f "$pre" "$keep"
   run curl -s "$Q" --data-urlencode "query=PREFIX chorus: <https://jeffbridwell.com/chorus#> ASK { GRAPH <$G> { chorus:domainGone a chorus:Domain } }" -H "Accept: application/sparql-results+json"
   [[ "${output// /}" == *'"boolean":true'* ]] || return 1
-  curl -s --max-time "${FUSEKI_WRITE_TIMEOUT:-120}" -X DELETE "$GSP?graph=$G" -o /dev/null 2>/dev/null || true
+  curl -s --max-time "${FUSEKI_WRITE_TIMEOUT:-120}" "${FUSEKI_AUTH[@]+"${FUSEKI_AUTH[@]}"}" -X DELETE "$GSP?graph=$G" -o /dev/null 2>/dev/null || true
 }
 
 @test "#3593 MODEL_SET includes the 34-domain sources (domains-wren-silas + domains-kade-3581)" {
@@ -363,12 +363,12 @@ EOF
 
 @test "#3536 empty-staging guard: retire against 0-domain staging REFUSES, never wipes live" {
   G="${TEST_GRAPH}-empty"
-  curl -s --max-time "${FUSEKI_WRITE_TIMEOUT:-120}" -X DELETE "$GSP?graph=$G" -o /dev/null 2>/dev/null || true
+  curl -s --max-time "${FUSEKI_WRITE_TIMEOUT:-120}" "${FUSEKI_AUTH[@]+"${FUSEKI_AUTH[@]}"}" -X DELETE "$GSP?graph=$G" -o /dev/null 2>/dev/null || true
   pre="$(mktemp)"; cat > "$pre" <<'EOF'
 @prefix chorus: <https://jeffbridwell.com/chorus#> .
 chorus:domainKeep a chorus:Domain ; chorus:purpose "keep" .
 EOF
-  curl -s --max-time "${FUSEKI_WRITE_TIMEOUT:-120}" -X POST -H 'Content-Type: text/turtle' --data-binary "@$pre" "$GSP?graph=$G" >/dev/null
+  curl -s --max-time "${FUSEKI_WRITE_TIMEOUT:-120}" "${FUSEKI_AUTH[@]+"${FUSEKI_AUTH[@]}"}" -X POST -H 'Content-Type: text/turtle' --data-binary "@$pre" "$GSP?graph=$G" >/dev/null
   # staging TTL with NO domain subjects (valid TTL, zero domains) + explicit retire
   nodom="$(mktemp).ttl"; cat > "$nodom" <<'EOF'
 @prefix chorus: <https://jeffbridwell.com/chorus#> .
@@ -381,14 +381,14 @@ EOF
   # live domain SURVIVES — no wipe
   run curl -s "$Q" --data-urlencode "query=PREFIX chorus: <https://jeffbridwell.com/chorus#> ASK { GRAPH <$G> { chorus:domainKeep a chorus:Domain } }" -H "Accept: application/sparql-results+json"
   [[ "${output// /}" == *'"boolean":true'* ]] || return 1
-  curl -s --max-time "${FUSEKI_WRITE_TIMEOUT:-120}" -X DELETE "$GSP?graph=$G" -o /dev/null 2>/dev/null || true
+  curl -s --max-time "${FUSEKI_WRITE_TIMEOUT:-120}" "${FUSEKI_AUTH[@]+"${FUSEKI_AUTH[@]}"}" -X DELETE "$GSP?graph=$G" -o /dev/null 2>/dev/null || true
 }
 
 # --- #3536 AC5: the proving case — the exact 06-20 shape-wipe this card exists to fix ---
 
-@test "#3536 AC5 proving case: re-deploy restores DomainShape's 11 sh:property AND preserves a co-tenant" {
+@test "#3536 AC5 proving case: re-deploy restores every DomainShape sh:property AND preserves a co-tenant" {
   G="${TEST_GRAPH}-proving"
-  curl -s --max-time "${FUSEKI_WRITE_TIMEOUT:-120}" -X DELETE "$GSP?graph=$G" -o /dev/null 2>/dev/null || true
+  curl -s --max-time "${FUSEKI_WRITE_TIMEOUT:-120}" "${FUSEKI_AUTH[@]+"${FUSEKI_AUTH[@]}"}" -X DELETE "$GSP?graph=$G" -o /dev/null 2>/dev/null || true
   # Reproduce the wipe: a stripped DomainShape (0 sh:property, the 06-20 broken state)
   # + a co-tenant subject that is NOT in chorus.ttl (must survive the deploy).
   pre="$(mktemp)"; cat > "$pre" <<'EOF'
@@ -397,15 +397,22 @@ EOF
 chorus:DomainShape a sh:NodeShape .
 chorus:coTenantProbe a chorus:Test ; chorus:purpose "co-tenant, absent from chorus.ttl" .
 EOF
-  curl -s --max-time "${FUSEKI_WRITE_TIMEOUT:-120}" -X POST -H 'Content-Type: text/turtle' --data-binary "@$pre" "$GSP?graph=$G" >/dev/null
+  curl -s --max-time "${FUSEKI_WRITE_TIMEOUT:-120}" "${FUSEKI_AUTH[@]+"${FUSEKI_AUTH[@]}"}" -X POST -H 'Content-Type: text/turtle' --data-binary "@$pre" "$GSP?graph=$G" >/dev/null
   rm -f "$pre"
   # deploy the REAL model (chorus.ttl) into the test graph
   env ONTOLOGY_GRAPH="$G" TTL="$TTL" "$SCRIPT" >/dev/null 2>&1
-  # AC5a — DomainShape's 11 sh:property attrs are RESTORED (the wipe is undone)
+  # AC5a — every DomainShape sh:property the model declares is RESTORED (the wipe is undone)
   run curl -s "$Q" --data-urlencode "query=PREFIX chorus: <https://jeffbridwell.com/chorus#> PREFIX sh: <http://www.w3.org/ns/shacl#> SELECT (COUNT(?pp) AS ?n) WHERE { GRAPH <$G> { chorus:DomainShape sh:property ?pp } }" -H "Accept: application/sparql-results+json"
-  [[ "${output// /}" == *'"value":"11"'* ]] || return 1
+  # #4336: the expected count comes from the model file, not a number typed in
+  # 2026-06 (it said 11; DomainShape has 16 now, and the hollow [[ ]] hid it).
+  command -v arq >/dev/null || skip "UNMEASURED — arq absent, cannot read the model's own count"
+  want="$(printf '%s\n' 'PREFIX chorus: <https://jeffbridwell.com/chorus#>' 'PREFIX sh: <http://www.w3.org/ns/shacl#>' \
+    'SELECT (COUNT(?pp) AS ?n) WHERE { chorus:DomainShape sh:property ?pp }' > "$BATS_TEST_TMPDIR/n.rq"
+    arq --data "$TTL" --query "$BATS_TEST_TMPDIR/n.rq" --results=csv | tail -1 | tr -d '\r')"
+  [ "$want" -gt 0 ]
+  [[ "${output// /}" == *"\"value\":\"$want\""* ]] || return 1
   # AC5b — the co-tenant (not in chorus.ttl) SURVIVES (co-tenant-safe, AC3 proven end-to-end)
   run curl -s "$Q" --data-urlencode "query=PREFIX chorus: <https://jeffbridwell.com/chorus#> ASK { GRAPH <$G> { chorus:coTenantProbe a chorus:Test } }" -H "Accept: application/sparql-results+json"
   [[ "${output// /}" == *'"boolean":true'* ]] || return 1
-  curl -s --max-time "${FUSEKI_WRITE_TIMEOUT:-120}" -X DELETE "$GSP?graph=$G" -o /dev/null 2>/dev/null || true
+  curl -s --max-time "${FUSEKI_WRITE_TIMEOUT:-120}" "${FUSEKI_AUTH[@]+"${FUSEKI_AUTH[@]}"}" -X DELETE "$GSP?graph=$G" -o /dev/null 2>/dev/null || true
 }

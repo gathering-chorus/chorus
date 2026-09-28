@@ -330,7 +330,15 @@ fn run(args: &[String]) -> Result<i32, String> {
     if selected_ns_tests == 0 && registered_in_unit > 0 {
         println!("{}", werk_test::integration_report_none_selected(registered_in_unit));
     }
-    let stack = if selected_ns.is_empty() { werk_test::StackState::Up } else { stack_state_now() };
+    // #4336 — an empty needs-stack selection is only "nothing needs the stack"
+    // when the registry answered. On the fallback plan the rows are missing, so
+    // empty means UNKNOWN: probe the stack, or RUN_INTEGRATION goes true with no
+    // stack behind it and bare jest lists the integration tier (the #4111 state).
+    let stack = if selected_ns.is_empty() && plan_source != "fallback" {
+        werk_test::StackState::Up
+    } else {
+        stack_state_now()
+    };
     let stack_down: Option<String> = stack_down_of(&stack);
     // #4102 — the werk lane never set RUN_INTEGRATION, so every bats
     // integration case self-skipped and reported `ok` in a green run (the

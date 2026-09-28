@@ -20,47 +20,57 @@ MODEL="$ROOT/roles/silas/ontology/chorus.ttl"
   [ "$n" -eq 0 ]
 }
 
-@test "the door stamps and compares the caller by principal name, not hat" {
-  grep -q 'principal_for(&claims.web_id' "$DOOR"
-  grep -q 'with_principal_names' "$DOOR"
+# #4336: these cases grepped the door's and the OIDC server's Rust source for
+# function names and strings. They now RUN the crates' own unit tests for the
+# behaviour, by exact name, so a renamed or deleted test fails here loudly
+# instead of a grep quietly still matching a comment.
+crate_test() {  # crate_test <crate> <exact test name>
+  command -v cargo >/dev/null 2>&1 || skip "UNMEASURED — cargo absent, cannot run the $1 unit test (#4336)"
+  run bash -c "cd '$ROOT/platform/services/$1' && cargo test --release -q -- --exact '$2' 2>&1"
+  [ "$status" -eq 0 ]
+  [[ "$output" == *"1 passed"* ]] || { echo "$1: $2 did not run as exactly one passing test"; echo "$output" | tail -5; return 1; }
+}
+
+@test "the door stamps the verified caller, not a body-supplied owner" {
+  crate_test athena-make bounds_closedshape_tests::the_door_stamps_the_write_and_refuses_a_body_stamp
+  crate_test athena-make bounds_closedshape_tests::verified_owner_uses_the_shape_declared_edge_and_ignores_body_owner
 }
 
 @test "NEGATIVE PROOF — the old spellings of one owner compare equal; two users never do" {
-  # the pure comparison is unit-tested in the crate; this proves the test exists and names both directions
-  grep -q 'owner_is_a_principal_and_the_old_spellings_still_name_the_same_user' "$DOOR"
-  grep -q 'principal-silas' "$DOOR"
+  crate_test athena-make tests::owner_is_a_principal_and_the_old_spellings_still_name_the_same_user
 }
 
-@test "the caller's name comes from the graph, not parsed out of the WebID" {
-  grep -q 'fn principal_name_query' "$OIDC"
-  grep -q 'REPLACE(REPLACE(STR(?p)' "$OIDC"
-  ! grep -qE 'web_id\.(split|rsplit|trim)\(.*profile' "$OIDC" || return 1
+@test "the caller's name comes from the graph rows, and no resolver yields no name" {
+  crate_test chorus-oidc oidc::tests::principal_names_resolve_from_rows_and_a_missing_resolver_yields_no_name
 }
 
 @test "model — ownedBy ranges over Principal, and no owner shape still says Role" {
-  grep -A9 '^chorus:ownedBy a owl:ObjectProperty' "$MODEL" | grep -q 'rdfs:range chorus:Principal'
-  ! grep -A9 '^chorus:ownedBy a owl:ObjectProperty' "$MODEL" | grep -q 'rdfs:range chorus:Role' || return 1
-  # every property shape whose path is ownedBy: sh:class must be Principal
-  for f in "$MODEL" "$ROOT/roles/wren/ontology/board-3654.ttl" "$ROOT/roles/kade/ontology/domains-kade-3581.ttl"; do
-    bad=$(tr '\n' ' ' < "$f" | grep -oE '\[[^]]*sh:path chorus:ownedBy[^]]*\]' | grep -c 'sh:class chorus:Role' || true)
-    [ "$bad" -eq 0 ] || { echo "$f still binds an ownedBy shape to Role"; false; }
-  done
+  command -v arq >/dev/null 2>&1 || skip "UNMEASURED — arq absent (#4336)"
+  T="$BATS_TEST_TMPDIR"
+  printf '%s\n' 'PREFIX chorus: <https://jeffbridwell.com/chorus#>' 'PREFIX rdfs: <http://www.w3.org/2000/01/rdf-schema#>' \
+    'ASK { chorus:ownedBy rdfs:range chorus:Principal FILTER NOT EXISTS { chorus:ownedBy rdfs:range chorus:Role } }' > "$T/range.rq"
+  run arq --data "$MODEL" --query "$T/range.rq"
+  [ "$output" = "yes" ]
+  printf '%s\n' 'PREFIX chorus: <https://jeffbridwell.com/chorus#>' 'PREFIX sh: <http://www.w3.org/ns/shacl#>' \
+    'SELECT (COUNT(?ps) AS ?n) WHERE { ?ps sh:path chorus:ownedBy ; sh:class chorus:Role }' > "$T/shapes.rq"
+  run arq --results=csv --data "$MODEL" --data "$ROOT/roles/wren/ontology/board-3654.ttl" \
+    --data "$ROOT/roles/kade/ontology/domains-kade-3581.ttl" --query "$T/shapes.rq"
+  [ "$(printf '%s\n' "$output" | tail -1 | tr -d '\r')" = "0" ]
 }
 
-@test "NEGATIVE PROOF — a fixture with an ownedBy shape bound to Role is caught by the model gate" {
-  T="$(mktemp -d)"
-  printf 'x:S a sh:NodeShape ; sh:property [ sh:path chorus:ownedBy ; sh:class chorus:Role ] .\n' > "$T/bad.ttl"
-  bad=$(tr '\n' ' ' < "$T/bad.ttl" | grep -oE '\[[^]]*sh:path chorus:ownedBy[^]]*\]' | grep -c 'sh:class chorus:Role' || true)
-  rm -rf "$T"
-  [ "$bad" -eq 1 ]
+@test "NEGATIVE PROOF — a fixture with an ownedBy shape bound to Role is counted by the same query" {
+  command -v arq >/dev/null 2>&1 || skip "UNMEASURED — arq absent (#4336)"
+  T="$BATS_TEST_TMPDIR"
+  printf '%s\n' '@prefix chorus: <https://jeffbridwell.com/chorus#> .' '@prefix sh: <http://www.w3.org/ns/shacl#> .' \
+    'chorus:BadShape sh:property [ sh:path chorus:ownedBy ; sh:class chorus:Role ] .' > "$T/bad.ttl"
+  printf '%s\n' 'PREFIX chorus: <https://jeffbridwell.com/chorus#>' 'PREFIX sh: <http://www.w3.org/ns/shacl#>' \
+    'SELECT (COUNT(?ps) AS ?n) WHERE { ?ps sh:path chorus:ownedBy ; sh:class chorus:Role }' > "$T/shapes.rq"
+  run arq --results=csv --data "$T/bad.ttl" --query "$T/shapes.rq"
+  [ "$(printf '%s\n' "$output" | tail -1 | tr -d '\r')" = "1" ]
 }
 
-@test "req 6 — every write refusal names the Permission row that would open the door" {
-  # three refusal sites (batch scope, entity scope, row owner) call the one namer
-  n=$(grep -c 'row_that_would_open(' "$DOOR" || true)
-  [ "$n" -ge 4 ]
-  ! grep -q 'only the owning role may write this node' "$DOOR" || return 1
-  ! grep -q 'batch requires a scoped token whose scope names' "$DOOR" || return 1
+@test "req 6 — a write refusal names the Permission row that would open the door" {
+  crate_test athena-make tests::a_refusal_names_the_row_that_would_open_the_door
 }
 
 # --- the door writes a Permission row with its mode as a STRING (the shape types
