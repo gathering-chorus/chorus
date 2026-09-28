@@ -994,6 +994,27 @@ fn end_revoked(ctx: &Ctx, role: &str, why: &str) {
     ctx.spine(&["session.revoked", role, &format!("session={}", session), &format!("why={}", rows::refusal_reason(why))]);
 }
 
+/// #4384 — None: nothing to do (no recorded session, no start, under the cap).
+/// Some(0): the old session was closed and a new one recorded; the turn runs.
+/// Some(2): the new login was refused; the turn does not run.
+fn past_lifetime_relogin(ctx: &Ctx, role: &str) -> Option<i32> {
+    let LoginState::Recorded { session, .. } = ctx.read_state(role) else { return None };
+    let started = read_row(ctx, role, "session")?.get("startedAt")?.as_str()?.to_string();
+    let hours: u64 = envd("CHORUS_SESSION_MAX_HOURS", "24").parse().unwrap_or(24);
+    let cutoff = iso_utc((now_ms() as u64 / 1000).saturating_sub(hours * 3600));
+    if !rows::past_lifetime(&started, &cutoff) { return None; }
+    let _ = close_row(ctx, role, &session);
+    ctx.spine(&["session.expired", role, &format!("session={}", session), &format!("started={}", started), &format!("max_hours={}", hours)]);
+    match do_login(ctx, role) {
+        Ok(st) => { ctx.write_state(role, &st); Some(0) }
+        Err(()) => {
+            ctx.write_state(role, &LoginState::Closed);
+            eprintln!("chorus-principal: {}'s session reached its {}h lifetime and a new login was refused. The turn did not run; log in again: chorus-principal login {}", role, hours, role);
+            Some(2)
+        }
+    }
+}
+
 fn seen(ctx: &Ctx, role: &str) -> i32 {
     let mut input = String::new();
     let _ = std::io::Read::read_to_string(&mut std::io::stdin(), &mut input);
@@ -1011,6 +1032,10 @@ fn seen(ctx: &Ctx, role: &str) -> i32 {
             return 2;
         }
     }
+    // #4384 — a session has an absolute lifetime. Renewal keeps the token
+    // alive, so a login never ended on its own; past the cap, the session is
+    // closed and the role logs in again here, and the turn runs.
+    if let Some(code) = past_lifetime_relogin(ctx, role) { return code; }
     let (conv, delivered) = rows::turn_facts(&input);
     // #4339 — Jeff spoke: this turn always writes, so the session says when
     let jeff = rows::speaker(&input) == rows::Speaker::Jeff;

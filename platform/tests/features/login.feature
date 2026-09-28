@@ -151,12 +151,11 @@ Feature: A principal logs in, works, and logs out
     Then wren starts as chorus-wren
     And wren's credentials are in chorus-wren's home, readable by that account alone
 
-  @waiting-4384
   Scenario: A session has an absolute lifetime, even while it renews
     Given wren is logged in
     And wren's session has kept renewing past its absolute lifetime
     When wren takes a turn
-    Then the session is closed and wren is asked to log in again
+    Then the old session is closed and wren is logged in again, and the turn runs
 
   Scenario: Revoking a principal ends its session on the next turn
     Given wren is logged in

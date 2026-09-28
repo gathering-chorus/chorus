@@ -122,7 +122,11 @@ Given("Jeff is typing in wren's pane", STEP, function () {
   // #4362 lives in pulse, not chorus-principal; its world is pulse's own tests
 });
 
-Given("wren's session has kept renewing past its absolute lifetime", STEP, function () { return waiting(4384); });
+Given("wren's session has kept renewing past its absolute lifetime", STEP, function () {
+  // started 25h ago; the cap is CHORUS_SESSION_MAX_HOURS, 24 by default
+  sh(`p="$T/identity/wren/session.row.json"; sess=$(row_name wren session); echo "$sess" > "$T/old-session"
+python3 -c 'import json,sys,time;p=sys.argv[1];v=json.load(open(p));v["startedAt"]=time.strftime("%Y-%m-%dT%H:%M:%SZ",time.gmtime(time.time()-25*3600));json.dump(v,open(p,"w"))' "$p"`);
+});
 
 // ---------------------------------------------------------------- When
 
@@ -339,7 +343,11 @@ Then("wren's credentials are in chorus-wren's home, readable by that account alo
   sh(`d="$T/homes/chorus-wren/.chorus/identity/wren"; cmp -s "$d/cred.json" "$T/identity/wren/cred.json"
 test "$(stat -f %Lp "$d")" = "700"; test "$(stat -f %Lp "$d/cred.json")" = "600"`);
 });
-Then('the session is closed and wren is asked to log in again', STEP, function () { return waiting(4384); });
+Then('the old session is closed and wren is logged in again, and the turn runs', STEP, function () {
+  sh(`test "$(cat "$T/turn.status")" -eq 0; old=$(cat "$T/old-session"); grep -q "session.expired wren" "$T/spine.log"
+has "$(body PUT "identity_sessions_$old")" '"sessionState":"closed"'
+test "$(row_name wren session)" != "$old"`);
+});
 Then("the turn is refused, wren's run ends as revoked and wren's session is closed", STEP, function () {
   sh(`test "$(cat "$T/turn.status")" -eq 2; grep -q "session.revoked wren" "$T/spine.log"
 has "$(cat "$T"/bodies/*PUT-identity_sessionruns_* | tail -1)" '"endReason":"revoked"'
