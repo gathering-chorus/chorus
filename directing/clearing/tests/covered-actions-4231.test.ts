@@ -36,3 +36,22 @@ describe('#4231 cover can reach further back than the rendered lines', () => {
     expect(dropCoveredActions(lines)).toHaveLength(1);
   });
 });
+
+describe('#4231 a slow call pairs its start with its own finish', () => {
+  it('drops the bare line when the reason line lands minutes later', () => {
+    const out = dropCoveredActions([
+      action('2026-09-28T12:09:10Z', 'wren', 'mcp__nudge'),
+      obs('2026-09-28T08:09:52-0400', 'wren', 'mcp__nudge', 'mcp: nudge → jeff'),
+    ]);
+    expect(out.map((l) => l.type)).toEqual(['obs']);
+  });
+
+  it('one reason line covers one call, and a running call stays bare', () => {
+    const out = dropCoveredActions([
+      action('2026-09-28T12:00:00Z', 'wren', 'Bash'),
+      obs('2026-09-28T08:00:05-0400', 'wren', 'Bash', 'a · bash: ls'),
+      action('2026-09-28T12:00:10Z', 'wren', 'Bash'),
+    ]);
+    expect(out.filter((l) => l.type === 'action').map((l) => l.ts)).toEqual(['2026-09-28T12:00:10Z']);
+  });
+});
