@@ -212,13 +212,30 @@ function parseActionEntry(entry: LogEntry, role: string): StreamLine | null {
  *  screen of them. A beat is dropped when a later beat from the same role
  *  follows with nothing else from that role in between (its pipeline's werk
  *  lines don't count), so the pane keeps only the newest one. */
+/** #4231 — which call a beat belongs to: the role, what it says is running,
+ *  and when that call started (the beat's time minus its elapsed seconds). */
+function beatCall(l: StreamLine): string | null {
+  const m = /^(.*) \((\d+)s\)$/.exec(l.text);
+  const at = Date.parse(l.ts);
+  if (!m || Number.isNaN(at)) return null;
+  const started = Math.round((at / 1000 - Number(m[2])) / 60);
+  return `${l.role}|${m[1]}|${started}`;
+}
+
 export function collapseBeats(lines: StreamLine[]): StreamLine[] {
+  // One line per running call: a later beat of the same call replaces an
+  // earlier one even when the role did other things in between (a subagent or
+  // a second session keeps its own call running).
+  const seenCall = new Set<string>();
   const keep: StreamLine[] = [];
   const lastOf = new Map<string, StreamLine>();
   for (const l of [...lines].reverse()) {
     // Pipeline lines ride under the role that ran the pipeline but are not the
     // role's own calls, so they never break a run of beats.
     if (l.type === 'werk') { keep.push(l); continue; }
+    const call = l.type === 'activity' ? beatCall(l) : null;
+    if (call && seenCall.has(call)) continue;
+    if (call) seenCall.add(call);
     const later = lastOf.get(l.role);
     if (l.type === 'activity' && later?.type === 'activity') continue;
     lastOf.set(l.role, l);

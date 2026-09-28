@@ -85,3 +85,22 @@ describe('#4231 pipeline lines do not split a run of beats', () => {
     expect(out.filter((l) => l.type === 'werk')).toHaveLength(2);
   });
 });
+
+describe('#4231 one line per running call', () => {
+  it('drops earlier beats of the same call even with other lines between', () => {
+    const beat = (ts: string, s: number) => ({ ts, role: 'silas', type: 'activity', text: `⏳ running Bash (${s}s)` });
+    const other = { ts: '2026-09-28T13:50:30Z', role: 'silas', type: 'obs', text: 'x · bash: ls' };
+    const out = collapseBeats([beat('2026-09-28T13:50:05Z', 365), other, beat('2026-09-28T13:50:25Z', 385),
+      { ts: '2026-09-28T13:51:00Z', role: 'silas', type: 'obs', text: 'y · bash: ls' }, beat('2026-09-28T13:51:45Z', 465)]);
+    expect(out.filter((l) => l.type === 'activity').map((l) => l.text)).toEqual(['⏳ running Bash (465s)']);
+  });
+
+  it('keeps a beat of a different call', () => {
+    const out = collapseBeats([
+      { ts: '2026-09-28T13:50:05Z', role: 'silas', type: 'activity', text: '⏳ running Bash (365s)' },
+      { ts: '2026-09-28T13:50:30Z', role: 'silas', type: 'obs', text: 'x · bash: ls' },
+      { ts: '2026-09-28T13:55:00Z', role: 'silas', type: 'activity', text: '⏳ running Bash (70s)' },
+    ]);
+    expect(out.filter((l) => l.type === 'activity')).toHaveLength(2);
+  });
+});
