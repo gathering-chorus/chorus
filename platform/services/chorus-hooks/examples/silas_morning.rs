@@ -14,6 +14,7 @@ fn run_scenario(label: &str, role: &str, file_path: &str) {
     std::env::remove_var(format!("{}_WERK", role.to_uppercase()));
 
     let input = HookInput {
+        tool_use_id: None,
         tool_name: Some("Write".to_string()),
         tool_input: Some(json!({"file_path": file_path, "content": "x"})),
         tool_response: None,
