@@ -215,8 +215,7 @@ function parseActionEntry(entry: LogEntry, role: string): StreamLine | null {
 export function collapseBeats(lines: StreamLine[]): StreamLine[] {
   const keep: StreamLine[] = [];
   const lastOf = new Map<string, StreamLine>();
-  for (let i = lines.length - 1; i >= 0; i--) {
-    const l = lines[i];
+  for (const l of [...lines].reverse()) {
     const later = lastOf.get(l.role);
     if (l.type === 'activity' && later?.type === 'activity') continue;
     lastOf.set(l.role, l);
