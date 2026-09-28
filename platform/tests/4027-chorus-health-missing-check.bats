@@ -13,8 +13,9 @@ HEALTH="$BATS_TEST_DIRNAME/../scripts/chorus-health"
 
 setup() {
   # #4335: RUN_INTEGRATION cannot gate this — the werk lane sets it (#4102) — so a
-  # card run paged Silas and Jeff. Only a hand run that means to page may run it.
-  [ "${CHORUS_LIVE_ALERTS:-}" = "true" ] || skip "UNMEASURED until #4336 fakes the bridge — runs the live chorus-health, which pages; CHORUS_LIVE_ALERTS=true to run"
+  # card run paged Silas and Jeff. RUN_LIVE_INTEGRATION is the runner's own flag for
+  # genuinely-live suites (suite_world_env, #3995); nothing sets it for you.
+  [ "${RUN_LIVE_INTEGRATION:-}" = "true" ] || skip "UNMEASURED until #4336 fakes the bridge — runs the live chorus-health, which pages; RUN_LIVE_INTEGRATION=true to run"
   export CHORUS_HEALTH_NO_EMIT=1   # a test FAIL must not become a live chorus.health event/nudge
   curl -s -o /dev/null --max-time 3 http://localhost:3340/api/chorus/health || skip "chorus-api not running"
   curl -s -o /dev/null --max-time 3 http://localhost:3360/health || skip "athena-make not running (the branch under test is only reached when :3360 answers)"

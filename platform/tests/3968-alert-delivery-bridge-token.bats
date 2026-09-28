@@ -10,8 +10,9 @@ SCRIPT="$BATS_TEST_DIRNAME/../scripts/alert-delivery-test.sh"
 
 setup() {
   # #4335: RUN_INTEGRATION cannot gate this — the werk lane sets it (#4102) — so a
-  # card run paged Silas and Jeff. Only a hand run that means to page may run it.
-  [ "${CHORUS_LIVE_ALERTS:-}" = "true" ] || skip "UNMEASURED until #4336 fakes the bridge — posts real probes to the live bridge; CHORUS_LIVE_ALERTS=true to run"
+  # card run paged Silas and Jeff. RUN_LIVE_INTEGRATION is the runner's own flag for
+  # genuinely-live suites (suite_world_env, #3995); nothing sets it for you.
+  [ "${RUN_LIVE_INTEGRATION:-}" = "true" ] || skip "UNMEASURED until #4336 fakes the bridge — posts real probes to the live bridge; RUN_LIVE_INTEGRATION=true to run"
   # A test brings its own world (#3528): never write fixture results into the real log.
   export ALERT_DELIVERY_LOG="$BATS_TEST_TMPDIR/alert-delivery-test.log"
   curl -s -o /dev/null --max-time 3 http://localhost:3475/health || skip "bridge not running"
