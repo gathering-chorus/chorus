@@ -2576,6 +2576,16 @@
         "message": "Which suite could not run and which build failed, in words"
       }
     },
+    "session.revoked": {
+      "vertebra": "building",
+      "source": "chorus-principal",
+      "description": "#4385 — a logged-in role's principal was revoked (its Principal row is gone or no longer an agent); its next turn ended the run as revoked, closed the session and refused the turn.",
+      "fields": {
+        "role": "The role whose session ended",
+        "session": "The Session row that was closed",
+        "why": "What the identity API said, in words"
+      }
+    },
     "test.failed": {
       "vertebra": "building",
       "source": "werk",

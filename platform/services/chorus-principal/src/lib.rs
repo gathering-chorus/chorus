@@ -970,9 +970,47 @@ fn record_run(ctx: &Ctx, role: &str, session: &str, l: &Live, conversation: &str
 /// `seen <role>` — the UserPromptSubmit hook. Reads the turn from stdin and,
 /// when a write is due, hands it to a detached `seen-write` so the prompt is
 /// never held for a network call.
+/// #4385 — a revoked principal's session ends on its next turn. Revoked means
+/// the identity API no longer lets it log in (its Principal row is gone, or is
+/// no longer an agent). An API that does not answer revokes nothing.
+fn revoked_now(ctx: &Ctx, role: &str) -> Option<String> {
+    let url = format!("{}/v1/identity/principals/{}", ctx.api, role);
+    let answer = sh(&ctx.curl, &["-s", "-w", "\n%{http_code}", "--max-time", "3", &url]).unwrap_or_default();
+    let (body, code) = answer.trim_end().rsplit_once('\n').unwrap_or(("", answer.trim()));
+    let code = code.trim();
+    if code != "200" && code != "404" { return None; }
+    rows::login_verdict(role, code, body, &ctx.api).err()
+}
+
+fn end_revoked(ctx: &Ctx, role: &str, why: &str) {
+    let st = ctx.read_state(role);
+    end_run(ctx, role, "revoked");
+    let session = match &st {
+        LoginState::Recorded { session, .. } => { let _ = close_row(ctx, role, session); session.clone() }
+        _ => String::new(),
+    };
+    ctx.write_state(role, &LoginState::Closed);
+    let _ = write_private(&PathBuf::from(&ctx.identity_dir).join(role).join("revoked"), why);
+    ctx.spine(&["session.revoked", role, &format!("session={}", session), &format!("why={}", rows::refusal_reason(why))]);
+}
+
 fn seen(ctx: &Ctx, role: &str) -> i32 {
     let mut input = String::new();
     let _ = std::io::Read::read_to_string(&mut std::io::stdin(), &mut input);
+    // #4385 — revocation bites on the next turn, not at the next login: the
+    // turn is refused (exit 2 stops the prompt), and it says why once
+    let marker = PathBuf::from(&ctx.identity_dir).join(role).join("revoked");
+    if marker.exists() {
+        eprintln!("chorus-principal: {}'s session was ended: its principal is revoked. Nothing more runs here until it is restored and it logs in again.", role);
+        return 2;
+    }
+    if !matches!(ctx.read_state(role), LoginState::Closed) {
+        if let Some(why) = revoked_now(ctx, role) {
+            end_revoked(ctx, role, &why);
+            eprintln!("chorus-principal: {}'s principal is revoked ({}). This session is ended as revoked; the turn did not run.", role, why);
+            return 2;
+        }
+    }
     let (conv, delivered) = rows::turn_facts(&input);
     // #4339 — Jeff spoke: this turn always writes, so the session says when
     let jeff = rows::speaker(&input) == rows::Speaker::Jeff;
@@ -1318,12 +1356,16 @@ fn off(ctx: &Ctx, role: &str, from_exit: bool) -> i32 {
         let live = live_entries(&ctx.sessions_dir, role, &ctx.ps);
         if ctx.has_tmux(role) { let _ = sh(&ctx.tmux, &["kill-session", "-t", &Ctx::tmux_session(role)]); }
         for l in &live { let _ = fs::remove_file(ctx.sessions_dir.join(format!("{}-{}.json", role, l.pid))); }
-        if live.is_empty() && closed.is_none() { println!("{} off (it was not running)", role); return 0; }
+        if live.is_empty() && closed.is_none() { println!("{} logged out (it was not running)", role); return 0; }
     }
+    // #4385 — the pane Jeff typed into is gone; what shows behind it can be
+    // days old (09-28 05:23: a Sep 25 "chorus-awake silas … starting" read as
+    // his logout turning into a login). Clear the screen, then say logged out.
+    if !from_exit && std::io::IsTerminal::is_terminal(&std::io::stdout()) { print!("\x1b[2J\x1b[3J\x1b[H"); }
     match closed {
-        Some((s, Ok(()))) => println!("{} off: login closed (session {})", role, s),
-        Some((s, Err(why))) => println!("{} off: stopped; the login row {} could not be closed ({}), and it expires on its own", role, s, why),
-        None => println!("{} off: stopped; it had no recorded login to close", role),
+        Some((s, Ok(()))) => println!("{} logged out: login closed (session {})", role, s),
+        Some((s, Err(why))) => println!("{} logged out: stopped; the login row {} could not be closed ({}), and it expires on its own", role, s, why),
+        None => println!("{} logged out: stopped; it had no recorded login to close", role),
     }
     0
 }
@@ -1505,7 +1547,7 @@ pub fn run(args: &[String]) -> i32 {
             let r = match name_arg(1) { Ok(r) => r, Err(c) => return c };
             if let Some(why) = caller_refusal(&r, "start") { eprintln!("chorus-principal: REFUSED — {}", why); eprintln!("  nothing was started."); return 2; }
             match principal_gate(&ctx, &r) {
-                Ok(acct) => ctx.run_as = acct,
+                Ok(acct) => { ctx.run_as = acct; let _ = fs::remove_file(PathBuf::from(&ctx.identity_dir).join(&r).join("revoked")); }
                 Err(why) => { eprintln!("chorus-principal: REFUSED — {}", why); eprintln!("  nothing was started."); return 2; }
             }
             let attach = envd("AWAKE_NO_ATTACH", "0") != "1";

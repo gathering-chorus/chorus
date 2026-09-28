@@ -114,7 +114,7 @@ pub fn with_role_and_start(mut session: Value, role: &str, started: &str) -> Val
 /// (the SessionRunShape pattern). None for any other word, so a typo cannot
 /// reach the store as a row the shape refuses.
 pub fn ended_run(mut run: Value, ended: &str, reason: &str) -> Option<Value> {
-    if !matches!(reason, "exit" | "logout" | "restart" | "refusal" | "crash") { return None; }
+    if !matches!(reason, "exit" | "logout" | "restart" | "refusal" | "crash" | "revoked") { return None; }
     run.get("name")?;
     run["runEndedAt"] = Value::String(ended.into());
     run["endReason"] = Value::String(reason.into());

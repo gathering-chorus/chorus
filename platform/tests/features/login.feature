@@ -158,11 +158,11 @@ Feature: A principal logs in, works, and logs out
     When wren takes a turn
     Then the session is closed and wren is asked to log in again
 
-  @waiting-4385
   Scenario: Revoking a principal ends its session on the next turn
     Given wren is logged in
     When wren's principal is revoked
-    Then wren's next turn is refused and wren's session is closed
+    And wren takes a turn
+    Then the turn is refused, wren's run ends as revoked and wren's session is closed
 
   Scenario: An event a logged-in role emits names its principal and session
     Given wren is logged in

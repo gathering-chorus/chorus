@@ -221,7 +221,7 @@ state_is() { grep -q "\"state\":\"$2\"" "$T/identity/$1/login.json"; }
   printf '{"name":"silas-x-1","ownedBy":"principal-silas","tokenId":"t1","sessionState":"open","endedAt":""}' > "$T/identity/silas/session.row.json"
   run "$SCRIPT" off silas
   test "$status" -eq 0
-  out_has "silas off: login closed (session silas-x-1)"
+  out_has "silas logged out: login closed (session silas-x-1)"
   grep -q -- "-X PUT" "$T/curl.log"
   grep -q '"sessionState":"closed"' "$T/curl.body"
   # the PUT replaces the whole row: the owner and token must ride along
@@ -349,7 +349,7 @@ state_is() { grep -q "\"state\":\"$2\"" "$T/identity/$1/login.json"; }
   out_has "logged in  via claude -c"
   run "$PRINCIPAL" logout silas
   test "$status" -eq 0
-  out_has "silas off"
+  out_has "silas logged out"
 }
 
 @test "#4345 on and off stay as aliases for login and logout" {
@@ -359,7 +359,7 @@ state_is() { grep -q "\"state\":\"$2\"" "$T/identity/$1/login.json"; }
   out_has "logged in  via claude -c"
   run "$PRINCIPAL" off silas
   test "$status" -eq 0
-  out_has "silas off"
+  out_has "silas logged out"
 }
 
 @test "NEGATIVE PROOF: an unknown verb is refused, not read as a login" {
