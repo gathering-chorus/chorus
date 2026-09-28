@@ -26,6 +26,8 @@ import { appendFile, open as fsOpen } from 'fs/promises';
 import * as path from 'path';
 import * as os from 'os';
 
+// #4398 — a card's demo runs its own pulse on the role's port (3491-3493) when
+// the card touches pulse or chorus-hooks; MESSAGING_PORT is how it gets there.
 const PORT = parseInt(process.env.MESSAGING_PORT || '3475');
 
 // #3967 — pulse was network-exposed by omission: `app.listen(PORT)` with no host
