@@ -1,0 +1,66 @@
+#!/usr/bin/env python3
+"""spine-session-check — #4369. Every spine event that names a session must name
+that session's owner as its principal. Reads the last hour of the spine, asks the
+identity API who owns each session named, and reports:
+
+  events 1h: 4210 · with a session: 1830 (43%) · principal ≠ owner: 0
+
+Exit 1 when any event's principal is not its session's owner (each one listed).
+Usage: spine-session-check [--minutes N] [--log FILE] [--owners FILE]
+  --owners FILE  a JSON {session: owner} map instead of the API (tests)
+"""
+import argparse, json, os, sys, time, urllib.request
+
+def owner_from_api(api, session, cache):
+    if session not in cache:
+        try:
+            with urllib.request.urlopen(f"{api}/v1/identity/sessions/{session}", timeout=5) as r:
+                cache[session] = json.load(r).get("links", {}).get("ownedBy", "").split(":")[-1]
+        except Exception:
+            cache[session] = None
+    return cache[session]
+
+def main():
+    ap = argparse.ArgumentParser()
+    ap.add_argument("--minutes", type=int, default=60)
+    ap.add_argument("--log", default=os.environ.get("CHORUS_LOG_FILE") or os.path.expanduser("~/.chorus/chorus.log"))
+    ap.add_argument("--owners")
+    ap.add_argument("--api", default=os.environ.get("CHORUS_API_URL", "http://localhost:3360"))
+    a = ap.parse_args()
+    owners = json.load(open(a.owners)) if a.owners else None
+    cutoff = time.time() - a.minutes * 60
+    total = with_s = 0
+    bad, unknown, cache = [], [], {}
+    size = os.path.getsize(a.log)
+    with open(a.log, "rb") as f:
+        f.seek(max(0, size - 64 * 1024 * 1024))  # the last hour lives in the tail
+        for raw in f:
+            try:
+                e = json.loads(raw)
+            except ValueError:
+                continue
+            ts = e.get("timestamp", "")
+            try:
+                t = time.mktime(time.strptime(ts[:19], "%Y-%m-%dT%H:%M:%S"))
+            except ValueError:
+                continue
+            if t < cutoff:
+                continue
+            total += 1
+            s = e.get("session")
+            if not s:
+                continue
+            with_s += 1
+            owner = owners.get(s) if owners is not None else owner_from_api(a.api, s, cache)
+            if owner is None:
+                unknown.append(s)
+            elif owner != e.get("principal"):
+                bad.append((e.get("event"), s, e.get("principal"), owner))
+    pct = f"{100 * with_s // total}%" if total else "—"
+    print(f"events {a.minutes}m: {total} · with a session: {with_s} ({pct}) · principal ≠ owner: {len(bad)} · session not found: {len(set(unknown))}")
+    for ev, s, p, o in bad[:20]:
+        print(f"  RED {ev}: session {s} is owned by {o}, the event says {p}")
+    return 1 if bad else 0
+
+if __name__ == "__main__":
+    sys.exit(main())

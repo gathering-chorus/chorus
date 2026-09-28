@@ -75,6 +75,17 @@ fn eastern_offset() -> chrono::FixedOffset {
     chrono::FixedOffset::west_opt(5 * 3600).unwrap()
 }
 
+/// #4369 — the (principal, session) an event carries: only for the pane's own
+/// role, only from an open Session row that names its owner.
+pub fn session_stamp(role: &str, pane_role: Option<&str>, row: Option<&str>) -> Option<(String, String)> {
+    if pane_role != Some(role) { return None; }
+    let v: serde_json::Value = serde_json::from_str(row?).ok()?;
+    if v["sessionState"].as_str() == Some("closed") { return None; }
+    let name = v["name"].as_str().filter(|s| !s.is_empty())?;
+    let owner = v["ownedBy"].as_str().filter(|s| !s.is_empty())?;
+    Some((owner.to_string(), name.to_string()))
+}
+
 pub fn run(args: &[String]) -> ExitCode {
     emit(args, /* silent */ false)
 }
@@ -211,6 +222,23 @@ fn emit(args: &[String], silent: bool) -> ExitCode {
         display.push_str(&format!(" trace={}", trace));
     }
 
+    // #4369 — who acted is a join, not a string: an event emitted from a
+    // logged-in pane, for that pane's own role, carries the principal and the
+    // Session row its login opened. Read from the role's session row; never
+    // for another role's event, never when the caller already named them.
+    if !extras.contains(r#","principal":"#) && !extras.contains(r#","session":"#) {
+        let pane = std::env::var("CHORUS_ROLE").ok();
+        let dir = std::env::var("CHORUS_IDENTITY_DIR").ok().filter(|d| !d.is_empty())
+            .unwrap_or_else(|| format!("{}/.chorus/identity", std::env::var("HOME").unwrap_or_default()));
+        let row = fs::read_to_string(format!("{}/{}/session.row.json", dir, role)).ok();
+        if let Some((principal, session)) = session_stamp(role, pane.as_deref(), row.as_deref()) {
+            extras.push_str(&format!(r#","principal":{},"session":{}"#,
+                serde_json::to_string(&principal).unwrap_or_default(),
+                serde_json::to_string(&session).unwrap_or_default()));
+            display.push_str(&format!(" principal={} session={}", principal, session));
+        }
+    }
+
     // Validate level. #4255 — `error` was NOT in this set, so every caller that
     // asked for it was silently downgraded to info: 24h of the spine held 2,536
     // failure-shaped events, 1,552 info and 976 warn, zero error. The contract
@@ -271,6 +299,28 @@ fn emit(args: &[String], silent: bool) -> ExitCode {
     }
 
     ExitCode::SUCCESS
+}
+
+#[cfg(test)]
+mod session_stamp_4369 {
+    use super::session_stamp;
+    const ROW: &str = r#"{"name":"session-silas-abc","ownedBy":"principal-silas","sessionState":"open"}"#;
+
+    #[test]
+    fn an_event_from_the_roles_own_pane_carries_its_principal_and_session() {
+        assert_eq!(session_stamp("silas", Some("silas"), Some(ROW)),
+            Some(("principal-silas".into(), "session-silas-abc".into())));
+    }
+
+    #[test]
+    fn negative_proof_another_roles_event_or_a_closed_session_carries_nothing() {
+        // a pane logging an event for another role must not stamp its own session on it
+        assert_eq!(session_stamp("kade", Some("silas"), Some(ROW)), None);
+        assert_eq!(session_stamp("silas", None, Some(ROW)), None);
+        let closed = r#"{"name":"session-silas-abc","ownedBy":"principal-silas","sessionState":"closed"}"#;
+        assert_eq!(session_stamp("silas", Some("silas"), Some(closed)), None);
+        assert_eq!(session_stamp("silas", Some("silas"), None), None);
+    }
 }
 
 #[cfg(test)]

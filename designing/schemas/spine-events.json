@@ -51,6 +51,16 @@
         "required": true,
         "description": "Role that triggered the event"
       },
+      "principal": {
+        "type": "string",
+        "required": false,
+        "description": "#4369 — the Principal that acted (principal-<name>), from the Session row its login opened; stamped by chorus-log on events a logged-in pane emits for its own role. role stays until every emitter carries principal and session. platform/scripts/spine-session-check reds any event whose principal is not its session's owner."
+      },
+      "session": {
+        "type": "string",
+        "required": false,
+        "description": "#4369 — the Session row (identity) the acting login opened; /v1/identity/sessions/<session> names its owner."
+      },
       "product": {
         "type": "string",
         "required": false,

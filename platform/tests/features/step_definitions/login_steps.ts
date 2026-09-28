@@ -338,4 +338,19 @@ test "$(stat -f %Lp "$d")" = "700"; test "$(stat -f %Lp "$d/cred.json")" = "600"
 });
 Then('the session is closed and wren is asked to log in again', STEP, function () { return waiting(4384); });
 Then("wren's next turn is refused and wren's session is closed", STEP, function () { return waiting(4385); });
-Then('every spine event the login wrote carries principal wren, the session and the run', STEP, function () { return waiting(4369); });
+const SHIM = process.env.CHORUS_HOOK_SHIM_TEST_BIN || path.join(ROOT, 'platform/services/chorus-hooks/target/release/chorus-hook-shim');
+When(/^wren's pane writes a spine event for (wren|kade)$/, STEP, function (who: string) {
+  if (!fs.existsSync(SHIM)) throw new Error(`chorus-hook-shim is not built at ${SHIM}`);
+  execFileSync(SHIM, ['chorus-log', `test.login.event.${who}`, who], {
+    env: { ...process.env, CHORUS_CONTEXT: 'test', CHORUS_ROLE: 'wren', CHORUS_IDENTITY_DIR: path.join(T, 'identity'), CHORUS_LOG_FILE: path.join(T, 'events.log') },
+    stdio: 'pipe',
+  });
+});
+
+Then("wren's event names principal-wren and wren's session", STEP, function () {
+  sh(`l=$(grep -F '"event":"test.login.event.wren"' "$T/events.log"); has "$l" '"principal":"principal-wren"'; s=$(row_name wren session); has "$l" "$s"`);
+});
+
+Then('the event for kade names neither', STEP, function () {
+  sh(`l=$(grep -F '"event":"test.login.event.kade"' "$T/events.log"); test -n "$l"; test -z "$(printf '%s' "$l" | grep -E '"(principal|session)":' || true)"`);
+});
