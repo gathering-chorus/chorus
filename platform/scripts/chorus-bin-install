@@ -299,7 +299,14 @@ fi
 # installs never touch live units (the demo env manages its own). Failure is
 # LOUD (spine event + stderr), not fatal — the install itself succeeded.
 # Override for fixtures: CHORUS_BIN_NO_KICKSTART=1.
-if [ "$TARGET" = "canonical" ] && [ -z "${CHORUS_BIN_NO_KICKSTART:-}" ] && [ -n "$LAUNCHD_ALLOWED" ]; then
+# #4380 — a caller that installs several binaries of one service and restarts
+# it once afterwards (werk-deploy) says so with CHORUS_BIN_CALLER_RESTARTS=1,
+# and this installer leaves the service's own unit alone. On 09-27 09:25 and
+# 09-28 08:32Z each deploy restarted com.chorus.hooks twice in a second, once
+# here and once in werk-deploy, and the second landed while the first bound.
+if [ -n "${CHORUS_BIN_CALLER_RESTARTS:-}" ]; then
+  echo "chorus-bin-install: the caller restarts the service once after every binary is in place (#4380) — not restarting it here"
+elif [ "$TARGET" = "canonical" ] && [ -z "${CHORUS_BIN_NO_KICKSTART:-}" ] && [ -n "$LAUNCHD_ALLOWED" ]; then
   # Unit naming is not uniform: owl-api runs as com.chorus.owl-api but
   # chorus-hooks runs as com.chorus.hooks — try the name as-is, then with the
   # chorus- prefix stripped.
