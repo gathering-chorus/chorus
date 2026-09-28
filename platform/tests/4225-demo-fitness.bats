@@ -85,34 +85,39 @@ run_fitness_with_verb() {
 # It ran canonical's, so #4227's own run printed the previous wording and the
 # previous count while the new binary sat built in the werk: a card that
 # changes the measure could never see its own change measured.
-resolve_order() {
-  # The BIN= lines of the demo-fitness step, in the order the step tries them.
+resolve_block() {
+  # #4336: the demo-fitness step's own BIN resolution lines, taken from
+  # werk.yml and RUN against fixture trees — not grepped for their order.
   awk '/^      - name: demo-fitness$/,/^      - name: prove-live$/' \
     "$BATS_TEST_DIRNAME/../../.github/workflows/werk.yml" \
-    | grep 'BIN=' | sed 's/.*BIN=//' | tr -d '"'
+    | grep -E '^ +(BIN=|\[ -x "\$BIN" \] \|\| BIN=)' | sed 's/^ *//'
 }
 
-@test "#4227 the pipeline reaches for the werk's fitness binary before canonical's" {
-  run resolve_order
-  echo "$output"
-  first=$(printf '%s\n' "$output" | head -1)
-  case "$first" in
-    *'${WERKDIR}'*) : ;;
-    *) echo "first candidate is not the werk: $first"; return 1 ;;
-  esac
-  # NEGATIVE PROOF: the same check against the order this replaces — canonical
-  # first — must fail, or it is not reading order at all.
-  printf '%s\n' '${CHORUS_HOME}/platform/services/demo-fitness/target/release/demo-fitness' \
-                '${WERKDIR}/platform/services/demo-fitness/target/release/demo-fitness' \
-    > "$BATS_TEST_TMPDIR/old-order"
-  bad=$(head -1 "$BATS_TEST_TMPDIR/old-order")
-  case "$bad" in
-    *'${WERKDIR}'*) echo "the check cannot tell the two orders apart"; return 1 ;;
-    *) : ;;
-  esac
+# pick <werk-has-binary> <canonical-has-binary> — prints the BIN the step chooses
+pick() {
+  local F="$BATS_TEST_TMPDIR/pick-$1$2"
+  local wb="$F/werk/platform/services/demo-fitness/target/release"
+  local cb="$F/canon/platform/services/demo-fitness/target/release"
+  mkdir -p "$wb" "$cb" "$F/werkbase"
+  [ "$1" = 1 ] && { printf '#!/bin/sh\n' > "$wb/demo-fitness"; chmod +x "$wb/demo-fitness"; }
+  [ "$2" = 1 ] && { printf '#!/bin/sh\n' > "$cb/demo-fitness"; chmod +x "$cb/demo-fitness"; }
+  resolve_block > "$F/resolve.sh"
+  [ -s "$F/resolve.sh" ] || { echo "no BIN resolution found in the demo-fitness step"; return 1; }
+  env -i PATH=/usr/bin:/bin WERKDIR="$F/werk" CHORUS_HOME="$F/canon" \
+    CHORUS_WERK_BASE="$F/werkbase" ROLE=kade bash -c ". '$F/resolve.sh'; echo \"\$BIN\""
+}
+
+@test "#4227 the pipeline runs the werk's fitness binary when the werk built one" {
+  run pick 1 1
+  [ "$status" -eq 0 ]
+  [[ "$output" == */werk/platform/services/demo-fitness/* ]] || return 1
+  # NEGATIVE PROOF: the canonical binary is present too, so a step that tried
+  # canonical first would print the canon path here and fail the line above.
+  [[ "$output" != */canon/* ]] || return 1
 }
 
 @test "#4227 canonical is still the fallback, so a card that did not touch this crate still measures" {
-  run resolve_order
-  printf '%s' "$output" | grep -q 'CHORUS_HOME'
+  run pick 0 1
+  [ "$status" -eq 0 ]
+  [[ "$output" == */canon/platform/services/demo-fitness/* ]] || return 1
 }
