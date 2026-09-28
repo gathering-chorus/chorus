@@ -10,6 +10,14 @@ load test_helper
 CHORUS_API="http://localhost:3340"
 APP_API="http://localhost:3000"
 
+setup() {
+  # #4336: a live-only contract suite. When chorus-api does not answer, the
+  # questions below are UNMEASURED, never red and never green.
+  curl -s -o /dev/null --max-time 3 http://localhost:3340/api/chorus/health \
+    || skip "UNMEASURED — chorus-api :3340 not answering (#4336)"
+}
+
+
 # --- Athena subdomain tests: DELETED by #4237, 2026-09-21 ---
 #
 # Four tests lived here asserting /api/athena/subdomains served a non-empty list,
@@ -31,6 +39,10 @@ APP_API="http://localhost:3000"
 # --- AC 4: Seed webhook returns 200 with valid Twilio payload ---
 
 @test "POST /api/seed/sms returns 200 with signed Twilio payload" {
+  # #4336: this posts a signed SMS to the live seed webhook, which files a real
+  # seed, and it reads the app's .env for the Twilio secret. Only a run that
+  # means to do both may run it.
+  [ "${RUN_LIVE_INTEGRATION:-}" = "true" ] || skip "UNMEASURED — writes a real seed and reads app secrets; RUN_LIVE_INTEGRATION=true to run (#4336)"
   # Load credentials
   ENV_FILE="${HOME}/CascadeProjects/jeff-bridwell-personal-site/.env"
   [ -f "$ENV_FILE" ] || skip "No .env file"

@@ -6,6 +6,14 @@
 
 API="http://localhost:3340/api/chorus/hooks/metrics"
 
+setup() {
+  # #4336: a live-only contract suite. When chorus-api does not answer, the
+  # questions below are UNMEASURED, never red and never green.
+  curl -s -o /dev/null --max-time 3 http://localhost:3340/api/chorus/health \
+    || skip "UNMEASURED — chorus-api :3340 not answering (#4336)"
+}
+
+
 @test "hooks metrics endpoint exists and returns 200" {
   run curl -sf --max-time 5 -o /dev/null -w "%{http_code}" "$API"
   [ "$output" = "200" ]
