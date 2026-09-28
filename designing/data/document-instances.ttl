@@ -246,3 +246,13 @@ chorus:document-service-design-security a chorus:Document ;
     chorus:hasDomain chorus:security ;
     chorus:ownedBy chorus:principal-silas ;
     chorus:hasProduct chorus:borg .
+
+# #4390 — gathering's design doc as a Document row the API can name
+# (the product pointed at a legacy doc/ IRI the seed could not resolve).
+chorus:document-gathering-vision a chorus:Document ;
+    chorus:docState """current""" ;
+    chorus:docTitle """Gathering — Vision""" ;
+    chorus:docHref """/designing/docs/gathering-vision.html""" ;
+    chorus:comment """The Gathering product's vision; its design doc (#4390).""" ;
+    rdfs:comment """The Gathering product's vision; its design doc (#4390).""" ;
+    chorus:ownedBy chorus:principal-jeff .
