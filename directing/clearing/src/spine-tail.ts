@@ -210,12 +210,15 @@ function parseActionEntry(entry: LogEntry, role: string): StreamLine | null {
 /** #4231 — one live heartbeat per role. A long call used to add a new
  *  "⏳ running Bash (Ns)" line every 20 seconds; Jeff's pane on 09-27 was a
  *  screen of them. A beat is dropped when a later beat from the same role
- *  follows with nothing else from that role in between, so the pane keeps
- *  only the newest one, with the latest elapsed time. */
+ *  follows with nothing else from that role in between (its pipeline's werk
+ *  lines don't count), so the pane keeps only the newest one. */
 export function collapseBeats(lines: StreamLine[]): StreamLine[] {
   const keep: StreamLine[] = [];
   const lastOf = new Map<string, StreamLine>();
   for (const l of [...lines].reverse()) {
+    // Pipeline lines ride under the role that ran the pipeline but are not the
+    // role's own calls, so they never break a run of beats.
+    if (l.type === 'werk') { keep.push(l); continue; }
     const later = lastOf.get(l.role);
     if (l.type === 'activity' && later?.type === 'activity') continue;
     lastOf.set(l.role, l);

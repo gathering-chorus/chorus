@@ -75,3 +75,13 @@ describe('#4231 a long call says what is running, once', () => {
     expect(out.map((l) => l.text)).toEqual(['⚙ werk: build', '⏳ running Bash (106s)', 'done · bash: x', '⏳ running Bash (61s)']);
   });
 });
+
+describe('#4231 pipeline lines do not split a run of beats', () => {
+  it('keeps one beat across the role\'s own werk lines', () => {
+    const beat = (ts: string, s: number) => ({ ts, role: 'wren', type: 'activity', text: `⏳ running Bash (${s}s)` });
+    const werk = (ts: string) => ({ ts, role: 'wren', type: 'werk', text: '⚙ werk: test #4231' });
+    const out = collapseBeats([beat('1', 102), werk('2'), beat('3', 122), werk('4'), beat('5', 142)]);
+    expect(out.filter((l) => l.type === 'activity').map((l) => l.text)).toEqual(['⏳ running Bash (142s)']);
+    expect(out.filter((l) => l.type === 'werk')).toHaveLength(2);
+  });
+});
