@@ -443,7 +443,16 @@ fn shorten_known_roots(cmd: &str) -> String {
 }
 
 /// Digest a tool call into a compact human-readable summary
+/// #4231 — a Bash stream line leads with the role's own one-line reason
+/// (the tool's `description`), then the call. No reason → the call alone.
 fn digest_tool_call(input: &HookInput) -> String {
+    let what = digest_call(input);
+    if input.tool_name_str() != "Bash" || what.is_empty() { return what; }
+    let why = input.get_tool_input_str("description");
+    if why.trim().is_empty() { what } else { format!("{} · {}", truncate(why.trim(), 80), what) }
+}
+
+fn digest_call(input: &HookInput) -> String {
     let tool = input.tool_name_str();
 
     match tool {
@@ -878,6 +887,33 @@ mod tests {
         let d = digest_tool_call(&input);
         assert!(!d.is_empty(), "unknown tool digested to empty — the #3884 hole is back");
         assert!(d.contains("SomeFutureTool"), "names the tool: {d}");
+    }
+
+    // === #4231 — the stream line says why, then what ===
+
+    #[test]
+    fn digest_bash_leads_with_the_roles_reason() {
+        let input = make_post_input(
+            "Bash",
+            json!({"command": "sed -n 1099,1180p directing/clearing/src/server.ts", "description": "Read the stream endpoint"}),
+            &format!("{}/architect", chorus_root()),
+        );
+        let d = digest_tool_call(&input);
+        assert!(d.starts_with("Read the stream endpoint"), "got: {}", d);
+        assert!(d.contains("sed -n 1099,1180p"), "the call is still shown: {}", d);
+    }
+
+    // Negative proof: with no reason given, the line is the old command digest,
+    // never an empty or invented reason.
+    #[test]
+    fn digest_bash_without_reason_is_the_command() {
+        let input = make_post_input(
+            "Bash",
+            json!({"command": "sed -n 1,5p a.txt"}),
+            &format!("{}/architect", chorus_root()),
+        );
+        let d = digest_tool_call(&input);
+        assert!(d.starts_with("bash: sed -n 1,5p a.txt"), "got: {}", d);
     }
 
     // === digest_tool_call tests ===
