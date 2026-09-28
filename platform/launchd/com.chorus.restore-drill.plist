@@ -12,6 +12,8 @@
 	     schedule we had. -->
 	<key>EnvironmentVariables</key>
 	<dict>
+		<key>FUSEKI_DRILL_NEWEST</key>
+		<string>1</string>
 		<key>CHORUS_HOME</key>
 		<string>/Users/jeffbridwell/CascadeProjects/chorus</string>
 		<key>CHORUS_ROOT</key>
@@ -26,7 +28,7 @@
 	<key>ProgramArguments</key>
 	<array>
 		<string>/bin/bash</string>
-		<string>/Users/jeffbridwell/CascadeProjects/chorus/platform/scripts/restore-drill.sh</string>
+		<string>/Users/jeffbridwell/CascadeProjects/chorus/platform/scripts/fuseki-restore-dump.sh</string>
 	</array>
 	<key>StandardErrorPath</key>
 	<string>/Users/jeffbridwell/Library/Logs/Chorus/restore-drill.log</string>
@@ -35,8 +37,6 @@
 	<key>StartCalendarInterval</key>
 	<array>
 		<dict>
-			<key>Weekday</key>
-			<integer>0</integer>
 			<key>Hour</key>
 			<integer>2</integer>
 			<key>Minute</key>
