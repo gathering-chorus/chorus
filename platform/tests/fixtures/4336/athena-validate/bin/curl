@@ -54,8 +54,10 @@ print(",".join(names))
 def cell(name, expr, graph=None):
     if "COUNT" in expr:
         return str(len(PULSE_GRAPHS))
-    if "GROUP_CONCAT" in expr:
-        return '"' + " ".join(PULSE_GRAPHS) + '"'
+    # the alias regex above can mis-split a GROUP_CONCAT with a quoted
+    # separator, so the alias name is the fallback signal for the graph list
+    if "GROUP_CONCAT" in expr or name in ("graphs", "gs"):
+        return " ".join(PULSE_GRAPHS)
     if name == "g":
         return graph
     if name == "s":
