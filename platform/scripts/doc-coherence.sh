@@ -90,19 +90,6 @@ if [ "$SKIP_HREF_PROBE" != "1" ]; then
           *) echo "$code $1" ;;
         esac
       ' _ {})
-      # #4396 — a probe that timed out (000) under load is not a broken link:
-      # on 09-28 a loaded box turned 0 broken into 16 and red a card's test.
-      # Ask each once more, one at a time, with a longer wait; a link still
-      # unanswered is counted broken, so a server that is really down stays red.
-      if printf '%s\n' "$BROKEN_HREFS" | grep -q '^000 '; then
-        BROKEN_HREFS=$(printf '%s\n' "$BROKEN_HREFS" | while read -r c h; do
-          [ -n "$h" ] || continue
-          if [ "$c" != "000" ]; then echo "$c $h"; continue; fi
-          c2=$(curl -s -o /dev/null -w "%{http_code}" --max-time 15 "http://$PROBE_HOST$h" 2>/dev/null)
-          [ "$c2" = "404" ] && c2=$(curl -s -o /dev/null -w "%{http_code}" --max-time 15 "http://$FALLBACK_HOST$h" 2>/dev/null)
-          if ! printf '%s' "$c2" | grep -qE '^(200|301|302|308)$'; then echo "$c2 $h"; fi
-        done)
-      fi
       BROKEN_COUNT=$(echo "$BROKEN_HREFS" | grep -c . | tr -d ' ')
       [ "$BROKEN_HREFS" = "" ] && BROKEN_COUNT=0
     fi

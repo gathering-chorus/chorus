@@ -53,7 +53,15 @@ check() {
 check "wrong-cabinet count" "$MAX_WRONG_CABINET" "$wrong_cabinet"
 check "content-dup-groups count" "$MAX_CONTENT_DUP_GROUPS" "$content_dup"
 check "basename-dup-groups count" "$MAX_BASENAME_DUP_GROUPS" "$basename_dup"
-check "broken-hrefs count" "$MAX_BROKEN_HREFS" "$broken_hrefs"
+# #4396 — the broken-hrefs probe asks the LIVE site (chorus-api :3340, the app
+# :3000), not this werk, so in a card lane it measured production under load,
+# not the card: 09-28 09:56 it read 16 for a werk-deploy change, 0 by hand a
+# minute later. A card lane skips it and says so; the nightly measures the site.
+if [ "${SKIP_HREF_PROBE:-0}" = "1" ]; then
+  echo "  SKIPPED: broken-hrefs count (probes the live site, not this werk; the nightly measures it)"
+else
+  check "broken-hrefs count" "$MAX_BROKEN_HREFS" "$broken_hrefs"
+fi
 
 echo ""
 echo "Result: $pass passed, $fail failed"
