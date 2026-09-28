@@ -218,6 +218,7 @@ mod tests {
 
     fn make_input(tool: &str, key: &str, val: &str) -> HookInput {
         HookInput {
+            tool_use_id: None,
             tool_name: Some(tool.to_string()),
             tool_input: Some(serde_json::json!({ key: val })),
             tool_response: None,
@@ -285,6 +286,7 @@ mod tests {
         // and prior production_code edits no longer trigger the "no test runs" deny.
         // The discipline lives at Gate 1 (code-edit time), not at demo time.
         let input = HookInput {
+            tool_use_id: None,
             tool_name: Some("Skill".into()),
             tool_input: Some(serde_json::json!({"skill": "demo", "args": "1234"})),
             tool_response: None,
@@ -334,6 +336,7 @@ mod tests {
 
     fn edit(file: &str, old: &str, new: &str) -> HookInput {
         HookInput {
+            tool_use_id: None,
             card_type: None,
             tool_name: Some("Edit".into()),
             tool_input: Some(serde_json::json!({
@@ -345,6 +348,7 @@ mod tests {
     }
     fn write(file: &str, content: &str) -> HookInput {
         HookInput {
+            tool_use_id: None,
             card_type: None,
             tool_name: Some("Write".into()),
             tool_input: Some(serde_json::json!({"file_path": file, "content": content})),

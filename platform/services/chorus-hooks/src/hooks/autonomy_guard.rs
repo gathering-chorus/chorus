@@ -606,6 +606,7 @@ mod tests {
 
     fn ask_question(question: &str) -> HookInput {
         HookInput {
+            tool_use_id: None,
             tool_name: Some("AskUserQuestion".to_string()),
             tool_input: Some(json!({"question": question})),
             tool_response: None,
@@ -621,6 +622,7 @@ mod tests {
 
     fn user_prompt(text: &str) -> HookInput {
         HookInput {
+            tool_use_id: None,
             tool_name: None,
             tool_input: None,
             tool_response: None,
@@ -651,6 +653,7 @@ mod tests {
     #[test]
     fn test_detect_trigger_stop() {
         let input = HookInput {
+            tool_use_id: None,
             tool_name: None,
             tool_input: None,
             tool_response: None,
@@ -776,6 +779,7 @@ mod tests {
     async fn test_non_ask_tool_passes() {
         let state = AppState::new();
         let input = HookInput {
+            tool_use_id: None,
             tool_name: Some("Bash".to_string()),
             tool_input: Some(json!({"command": "ls"})),
             tool_response: None,

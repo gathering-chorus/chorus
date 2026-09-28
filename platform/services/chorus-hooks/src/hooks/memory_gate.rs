@@ -399,6 +399,7 @@ mod tests {
 
     fn make_input(tool: &str, file_path: &str) -> HookInput {
         HookInput {
+            tool_use_id: None,
             tool_name: Some(tool.to_string()),
             tool_input: Some(serde_json::json!({
                 "file_path": file_path
@@ -432,6 +433,7 @@ mod tests {
         std::fs::write(&jsonl_path, &content).unwrap();
 
         let input = HookInput {
+            tool_use_id: None,
             tool_name: Some(tool.to_string()),
             tool_input: Some(serde_json::json!({ "file_path": file_path })),
             tool_response: None,
@@ -454,6 +456,7 @@ mod tests {
 
     fn make_bash_search_input(command: &str, response: &str) -> HookInput {
         HookInput {
+            tool_use_id: None,
             tool_name: Some("Bash".to_string()),
             tool_input: Some(serde_json::json!({ "command": command })),
             tool_response: Some(serde_json::Value::String(response.to_string())),

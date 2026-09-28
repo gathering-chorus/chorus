@@ -208,6 +208,7 @@ mod tests {
 
     fn make_bash(cmd: &str) -> HookInput {
         HookInput {
+            tool_use_id: None,
             tool_name: Some("Bash".to_string()),
             tool_input: Some(json!({"command": cmd})),
             tool_response: Some(json!({"stdout": "output", "stderr": ""})),

@@ -96,6 +96,7 @@ mod tests {
 
     fn make_input(tool: &str, key: &str, val: &str) -> HookInput {
         HookInput {
+            tool_use_id: None,
             tool_name: Some(tool.to_string()),
             tool_input: Some(json!({ key: val })),
             tool_response: None,

@@ -216,6 +216,7 @@ mod tests {
 
     fn make_input(tool: &str, file_path: &str) -> HookInput {
         HookInput {
+            tool_use_id: None,
             tool_name: Some(tool.to_string()),
             tool_input: Some(serde_json::json!({
                 "file_path": file_path

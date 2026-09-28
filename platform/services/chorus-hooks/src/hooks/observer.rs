@@ -445,6 +445,23 @@ fn shorten_known_roots(cmd: &str) -> String {
 /// Digest a tool call into a compact human-readable summary
 /// #4231 — a Bash stream line leads with the role's own one-line reason
 /// (the tool's `description`), then the call. No reason → the call alone.
+/// #4231 — the fields of one call event on the spine. `started` carries the
+/// reason and command (the digest); `ended` carries the outcome. Both carry
+/// `call_id` (Claude Code's tool_use_id), which is what joins them.
+pub(crate) fn call_event_fields(input: &HookInput, phase: &str, outcome: Option<&str>) -> Vec<(&'static str, String)> {
+    let sid = input.session_id.as_deref().unwrap_or("");
+    let sid: String = sid.chars().take(8).collect();
+    let mut f = vec![
+        ("tool", input.tool_name_str().to_string()),
+        ("phase", phase.to_string()),
+        ("call_id", input.tool_use_id.clone().unwrap_or_default()),
+        ("session_id", sid),
+    ];
+    if phase == "started" { f.push(("digest", digest_tool_call(input))); }
+    if let Some(o) = outcome { f.push(("outcome", o.to_string())); }
+    f
+}
+
 pub(crate) fn digest_tool_call(input: &HookInput) -> String {
     let what = digest_call(input);
     if input.tool_name_str() != "Bash" || what.is_empty() { return what; }
@@ -824,6 +841,7 @@ mod tests {
 
     fn make_post_input(tool: &str, tool_input: serde_json::Value, cwd: &str) -> HookInput {
         HookInput {
+            tool_use_id: None,
             tool_name: Some(tool.to_string()),
             tool_input: Some(tool_input),
             tool_response: Some(json!("ok")),
@@ -914,6 +932,29 @@ mod tests {
         );
         let d = digest_tool_call(&input);
         assert!(d.starts_with("bash: sed -n 1,5p a.txt"), "got: {}", d);
+    }
+
+    /// #4231 — a call's start and end carry the same call_id; the start says what
+    /// it is, the end says how it went.
+    #[test]
+    fn call_start_and_end_share_the_call_id() {
+        let mut input = make_post_input(
+            "Bash",
+            json!({"command": "ls", "description": "List the werk"}),
+            &format!("{}/architect", chorus_root()),
+        );
+        input.tool_use_id = Some("toolu_abc".into());
+        let get = |f: &Vec<(&str, String)>, k: &str| f.iter().find(|(n, _)| *n == k).map(|(_, v)| v.clone());
+        let start = call_event_fields(&input, "started", None);
+        let end = call_event_fields(&input, "ended", Some("ok"));
+        assert_eq!(get(&start, "call_id").as_deref(), Some("toolu_abc"));
+        assert_eq!(get(&end, "call_id").as_deref(), Some("toolu_abc"));
+        assert_eq!(get(&start, "digest").as_deref(), Some("List the werk · bash: ls"));
+        assert_eq!(get(&end, "outcome").as_deref(), Some("ok"));
+        assert_eq!(get(&end, "digest"), None);
+        // negative proof: no tool_use_id gives an empty call_id, never a made-up one
+        input.tool_use_id = None;
+        assert_eq!(get(&call_event_fields(&input, "started", None), "call_id").as_deref(), Some(""));
     }
 
     // === digest_tool_call tests ===
@@ -1111,6 +1152,7 @@ mod tests {
 
     fn make_input_with_response(tool: &str, tool_input: serde_json::Value, response: serde_json::Value) -> HookInput {
         HookInput {
+            tool_use_id: None,
             tool_name: Some(tool.to_string()),
             tool_input: Some(tool_input),
             tool_response: Some(response),

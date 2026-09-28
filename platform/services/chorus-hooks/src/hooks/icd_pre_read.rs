@@ -155,6 +155,7 @@ mod tests {
     async fn does_not_panic_on_read() {
         let state = AppState::new();
         let input = HookInput {
+            tool_use_id: None,
             tool_name: Some("Read".to_string()),
             tool_input: Some(json!({"file_path": "/tmp/test.md"})),
             tool_response: None, session_id: Some("t".into()),
@@ -170,6 +171,7 @@ mod tests {
     async fn does_not_panic_on_write() {
         let state = AppState::new();
         let input = HookInput {
+            tool_use_id: None,
             tool_name: Some("Write".to_string()),
             tool_input: Some(json!({"file_path": "/tmp/test.ts", "content": "test"})),
             tool_response: None, session_id: Some("t".into()),

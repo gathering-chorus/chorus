@@ -16,8 +16,11 @@
 // #2725 — the default value import gives spinePath's existence probe a real fs;
 // the type alias keeps every other fs use injected (tests pass their own).
 import fs_node from 'fs';
+import { isRenderableDigest } from './observations';
 
-export type StreamLine = { ts: string; role: string; type: string; text: string; card?: string | null; tool?: string; what?: string };
+export type StreamLine = { ts: string; role: string; type: string; text: string; card?: string | null; tool?: string; what?: string;
+  /** #4231 — one call's id (Claude Code tool_use_id), and the session it ran in. */
+  call?: string; session?: string; outcome?: string };
 
 /** #3959 — the window is stated in TIME, not bytes, because bytes are a lie that
  *  drifts. 256 KB was written when it meant "thousands of lines"; at 2026-08-21
@@ -49,6 +52,10 @@ interface LogEntry {
   elapsed_s?: string | number;
   /** #4231 — the call's reason · command, stamped by chorus-hooks at the start. */
   digest?: string;
+  /** #4231 — joins a call's start and end. */
+  call_id?: string;
+  session_id?: string;
+  outcome?: string;
 }
 
 function formatToolDisplay(summary: string, action: string): string | null {
@@ -135,29 +142,6 @@ function parseWerkEntry(entry: LogEntry, role: string): StreamLine | null {
   };
 }
 
-/** #3959 — the running/thinking beat. #3853 built it, wired it to the spine
- *  (12,787/day), and never wired it to the pane: parseLogEntry had no branch,
- *  so every beat returned null at the fallthrough. The beat exists precisely so
- *  Jeff can see a role is alive during a long tool call; dropping it here is the
- *  reason a working role looked dead for 70 minutes. */
-function parseActivityEntry(entry: LogEntry, role: string): StreamLine | null {
-  const phase = entry.phase ?? '';
-  if (phase !== 'running' && phase !== 'thinking') return null;
-  const tool = entry.tool ? String(entry.tool) : '';
-  const elapsed = entry.elapsed_s != null ? `${entry.elapsed_s}s` : '';
-  const verb = phase === 'running' ? '⏳ running' : '💭 thinking';
-  // #4231 — a long call says WHAT is running, not just "Bash".
-  const what = phase === 'running' && entry.digest ? String(entry.digest) : tool;
-  const text = [verb, what, elapsed && `(${elapsed})`].filter(Boolean).join(' ');
-  return {
-    ts: entry.timestamp ?? '',
-    role,
-    type: 'activity',
-    text,
-    card: entry.card_id ? String(entry.card_id) : null,
-  };
-}
-
 /** #3959 — why a line was dropped. Until now every rejection collapsed to
  *  `null`, so 26,000 unattributed events a day disappeared with no record and
  *  the pane looked identical to a quiet team. A drop is data. */
@@ -179,106 +163,73 @@ function classifyLogEntry(entry: LogEntry): { line: StreamLine | null; drop: Dro
   return { line, drop: line ? null : 'event-not-rendered' };
 }
 
-/** #3982 — the per-call action, which is what a BUSY role actually emits.
+/** #3982 — every call a role makes shows; Jeff, 2026-08-22: "i want all of ur
+ *  calls not a subset."
  *
- *  agent.activity is a heartbeat: it fires every 10s and ONLY when a session
- *  has been idle >= 15s (main.rs:181). A role working in bursts under 15
- *  seconds therefore emits agent.action + hook.decision and nothing the pane
- *  rendered — so it looked silent exactly when it was busiest, while a role
- *  stuck on one slow call looked alive. The pane showed the inverse of the truth.
- *
- *  Jeff, 2026-08-22, while I was mid-tool-call: "i see no streams for minutes
- *  from u." */
+ *  #4231 — one call is ONE record. chorus-hooks writes `agent.action`
+ *  phase=started (with the reason · command) when a call the hooks allowed
+ *  begins, and phase=ended when it ends, both carrying `call_id` (Claude Code's
+ *  tool_use_id). The pane joins them on that id: no time windows, no text
+ *  matching, no second feed. Twenty cards since 08-06 patched the guesses the
+ *  old three-feed design needed (the survey on the card). */
 function parseActionEntry(entry: LogEntry, role: string): StreamLine | null {
   const tool = entry.tool ? String(entry.tool) : '';
   if (!tool) return null;
-  // EVERY call, no quiet class. Jeff, 2026-08-22: "i want all of ur calls not
-  // a subset." Read/Glob/Grep were dropped here as noise, but a role reading
-  // for two minutes IS working, and hiding it is how a busy role reads as dead.
-  // The pane's job is to show what happened, not to curate it.
-  return {
-    ts: entry.timestamp ?? '',
-    role,
-    type: 'action',
-    // #4231 — the start line carries the reason · command when chorus-hooks sent it.
-    text: `\u25b8 ${entry.digest ? String(entry.digest) : tool}`,
-    card: entry.card_id ? String(entry.card_id) : null,
-    tool,
-    what: entry.digest ? String(entry.digest) : undefined,
-  };
+  const base = { ts: entry.timestamp ?? '', role, card: entry.card_id ? String(entry.card_id) : null, tool };
+  const call = entry.call_id ? String(entry.call_id) : '';
+  return entry.phase === 'ended' ? parseCallEnd(base, call, entry) : parseCallStart(base, call, entry);
 }
 
-/** #4231 — one live heartbeat per role. A long call used to add a new
- *  "⏳ running Bash (Ns)" line every 20 seconds; Jeff's pane on 09-27 was a
- *  screen of them. A beat is dropped when a later beat from the same role
- *  follows with nothing else from that role in between (its pipeline's werk
- *  lines don't count), so the pane keeps only the newest one. */
-/** #4231 — which call a beat belongs to: the role, what it says is running,
- *  and when that call started (the beat's time minus its elapsed seconds). */
-function beatCall(l: StreamLine): string | null {
-  const m = /^(.*) \((\d+)s\)$/.exec(l.text);
-  const at = Date.parse(l.ts);
-  if (!m || Number.isNaN(at)) return null;
-  const started = Math.round((at / 1000 - Number(m[2])) / 60);
-  return `${l.role}|${m[1]}|${started}`;
+type CallBase = Pick<StreamLine, 'ts' | 'role' | 'card' | 'tool'>;
+
+function parseCallEnd(base: CallBase, call: string, entry: LogEntry): StreamLine | null {
+  if (!call) return null;
+  return { ...base, type: 'call-end', text: '', call, outcome: entry.outcome ? String(entry.outcome) : 'ok' };
 }
 
-export function collapseBeats(lines: StreamLine[]): StreamLine[] {
-  // One line per running call: a later beat of the same call replaces an
-  // earlier one even when the role did other things in between (a subagent or
-  // a second session keeps its own call running).
-  const seenCall = new Set<string>();
-  const keep: StreamLine[] = [];
-  const lastOf = new Map<string, StreamLine>();
-  for (const l of [...lines].reverse()) {
-    // Pipeline lines ride under the role that ran the pipeline but are not the
-    // role's own calls, so they never break a run of beats.
-    if (l.type === 'werk') { keep.push(l); continue; }
-    const call = l.type === 'activity' ? beatCall(l) : null;
-    if (call && seenCall.has(call)) continue;
-    if (call) seenCall.add(call);
-    const later = lastOf.get(l.role);
-    if (l.type === 'activity' && later?.type === 'activity') continue;
-    lastOf.set(l.role, l);
-    keep.push(l);
-  }
-  return keep.reverse();
+function parseCallStart(base: CallBase, call: string, entry: LogEntry): StreamLine | null {
+  const what = entry.digest ? String(entry.digest) : String(base.tool);
+  // #4010 — the same "does this reach the room" rule the finish lines always had.
+  if (!isRenderableDigest(what)) return null;
+  if (!call) return { ...base, type: 'action', text: `\u25b8 ${what}`, what };
+  return { ...base, type: 'call', text: what, what, call, session: entry.session_id ? String(entry.session_id) : '' };
 }
 
-/** #4231 — clock slack between the spine's stamp and the observer's. */
-const CLOCK_SLACK_MS = 2_000;
+/** #4231 — the session's turn ended (Stop, or a new prompt after an interrupt).
+ *  Any call of that session still open is over, whether or not its end arrived. */
+function parseTurnEnded(entry: LogEntry, role: string): StreamLine | null {
+  const session = entry.session_id ? String(entry.session_id) : '';
+  return session ? { ts: entry.timestamp ?? '', role, type: 'turn-end', text: '', session } : null;
+}
 
 const at = (l: StreamLine): number => Date.parse(l.ts);
 
-/** #4231 — a call the observer already wrote a reason line for must not also
- *  show as a bare "▸ Bash". Jeff, 2026-09-28: "i feel like ur last card didnt
- *  work" — half the pane was still bare tool names. The spine stamps a call
- *  when it STARTS and the observer when it ENDS, so a slow call (a nudge, a
- *  commit) finishes long after it began: each start pairs with the first
- *  unused reason line for the same role and tool at or after it, however
- *  long the call ran. A call still running, or one with no observer line
- *  (Read, Edit, Grep), keeps its "▸" line, so every call still shows. */
-export function dropCoveredActions(lines: StreamLine[], cover: StreamLine[] = lines): StreamLine[] {
-  // The observer lines that COVER a call can be older than the ones the pane
-  // renders (the pane reads each role's last 30), so the caller may pass more.
-  const obs = cover.filter((l) => l.type === 'obs' && l.tool && !Number.isNaN(at(l)))
-    .sort((x, y) => at(x) - at(y));
-  const used = new Set<StreamLine>();
-  const covered = new Set<StreamLine>();
-  const actions = lines.filter((l) => l.type === 'action' && !Number.isNaN(at(l)))
-    .sort((x, y) => at(x) - at(y));
-  for (const a of actions) {
-    // A start that carries its digest pairs only with the finish line saying the
-    // same thing, so a call that never finishes (refused by a hook, stuck) cannot
-    // take the next call's finish line and leave that call shown twice.
-    const same = (c: StreamLine): boolean => (a.what ? c.text === a.what : c.tool === a.tool);
-    const o = obs.find((c) => !used.has(c) && c.role === a.role && same(c)
-      && at(c) >= at(a) - CLOCK_SLACK_MS);
-    if (!o) continue;
-    used.add(o);
-    covered.add(a);
+function elapsed(ms: number): string {
+  const s = Math.max(0, Math.round(ms / 1000));
+  return s < 120 ? `${s}s` : `${Math.round(s / 60)}m`;
+}
+
+/** #4231 — turn call records into the lines Jeff reads. A call with an end
+ *  shows once, as what it did (✗ if it failed). A call with no end is running
+ *  — "⏳ <what> (elapsed)", the time taken from its own start — unless its
+ *  session's turn has ended since, and then it shows as stopped. End and
+ *  turn records are joins, never lines. */
+export function resolveCalls(lines: StreamLine[], now: number): StreamLine[] {
+  const ends = new Map<string, StreamLine>();
+  const turnEnds: StreamLine[] = [];
+  for (const l of lines) {
+    if (l.type === 'call-end' && l.call) ends.set(l.call, l);
+    if (l.type === 'turn-end') turnEnds.push(l);
   }
-  return lines.filter((l) => !covered.has(l));
+  return lines
+    .filter((l) => l.type !== 'call-end' && l.type !== 'turn-end')
+    .map((l) => (l.type === 'call' && l.call ? renderCall(l, ends.get(l.call), turnEnds, now) : l));
+}
+
+function renderCall(l: StreamLine, end: StreamLine | undefined, turnEnds: StreamLine[], now: number): StreamLine {
+  if (end) return { ...l, text: end.outcome === 'error' ? `${l.text} \u2717` : l.text };
+  const stopped = turnEnds.some((t) => t.role === l.role && t.session === l.session && at(t) >= at(l));
+  return { ...l, text: stopped ? `${l.text} (stopped)` : `\u23f3 ${l.text} (${elapsed(now - at(l))})` };
 }
 
 function parseLogEntry(entry: LogEntry): StreamLine | null {
@@ -291,7 +242,9 @@ function parseKnownRoleEntry(entry: LogEntry, role: string): StreamLine | null {
   if (event === 'session_turn') return parseTurnLine(entry, role);
   if (event === 'nudge.emitted') return parseNudgeEntry(entry, role);
   if (event === 'werk.phase' || WERK_PHASE_EVENTS.has(event)) return parseWerkEntry(entry, role);
-  if (event === 'agent.activity') return parseActivityEntry(entry, role);
+  // #4231 — agent.activity beats are retired: a call is running exactly while
+  // it has a start and no end, so the pane needs no beat to say so.
+  if (event === 'agent.turn.ended') return parseTurnEnded(entry, role);
   if (event === 'agent.action') return parseActionEntry(entry, role);
   return null;
 }

@@ -6,7 +6,6 @@
  * any sink.
  */
 import express, { Request, Response, NextFunction } from 'express';
-import { isRenderableDigest } from './observations';
 import { checkCap } from './word-cap';
 import { createServer } from 'http';
 import { createServer as createHttpsServer } from 'https';
@@ -887,7 +886,7 @@ messageRouter.on('message', (m: ChannelMessage) => {
 
 // Ensure upload directory survives /tmp cleanup across reboots
 import fs_node from 'fs';
-import { collapseBeats, dropCoveredActions, readSpineWithStats, spinePath, type StreamLine } from './spine-tail';
+import { readSpineWithStats, resolveCalls, spinePath, type StreamLine } from './spine-tail';
 if (!fs_node.existsSync('/tmp/bridge-uploads')) {
   fs_node.mkdirSync('/tmp/bridge-uploads', { recursive: true });
 }
@@ -1033,37 +1032,9 @@ app.get('/api/commands/:role', (req, res) => {
 // #4010 — moved to observations.ts so the tile's age and the pane's render
 // share ONE skip predicate (the 06:19 two-event-sets defect).
 
-function parseObservation(line: string, seen: Set<string>): StreamLine | null {
-  try {
-    const obs = JSON.parse(line);
-    const key = `${obs.ts}|${obs.digest}`;
-    if (seen.has(key)) return null;
-    seen.add(key);
-    const digest = obs.digest || '';
-    if (!isRenderableDigest(digest)) return null;
-    return { ts: obs.ts, role: obs.role, type: 'obs', text: digest, card: obs.card || null, tool: obs.tool };
-  } catch {
-    return null;
-  }
-}
-
-function readObservationsForRole(fs: typeof fs_node, role: string, out: StreamLine[], last = 30): void {
-  const obsFile = `${SCAN_DIR}/${role}-observations.jsonl`;
-  try {
-    const obsLines = fs.readFileSync(obsFile, 'utf-8').trim().split('\n').filter(Boolean);
-    const seen = new Set<string>();
-    for (const line of obsLines.slice(-last)) {
-      const entry = parseObservation(line, seen);
-      if (entry) out.push(entry);
-    }
-  } catch { /* ignored */ }
-}
-
-function readRoleObservations(fs: typeof fs_node, last = 30): StreamLine[] {
-  const out: StreamLine[] = [];
-  for (const role of ['wren', 'silas', 'kade']) readObservationsForRole(fs, role, out, last);
-  return out;
-}
+// #4231 — the observer file no longer feeds /api/stream (parseObservation,
+// readObservationsForRole, readRoleObservations removed): each call is one
+// record on the spine. The tiles still read the file for last-activity age.
 
 /**
  * #3852 — NARROWED to exact duplicates only.
@@ -1112,16 +1083,13 @@ app.get('/api/stream', (req, res) => {
   res.set('X-Chorus-Spine-Dropped', String(d['no-role'] + d['unknown-role'] + d['event-not-rendered']));
   res.set('X-Chorus-Spine-Dropped-Unattributed', String(d['no-role'] + d['unknown-role']));
   res.set('X-Chorus-Spine-Span', `${spine.stats.spanFrom}..${spine.stats.spanTo}`);
-  const lines = [
-    ...spine.lines, // #3884: the durable spine, not platform/logs
-    ...readRoleObservations(fs),
-  ];
-  lines.sort((a, b) => (a.ts || '').localeCompare(b.ts || ''));
+  // #4231 — the stream is the spine alone. Each call is one record (start and
+  // end joined on call_id); the observer file no longer rides in beside it, so
+  // nothing has to be paired by guesswork. Timestamps compare as times, not strings.
+  const lines = resolveCalls(spine.lines, Date.now());
+  lines.sort((a, b) => (Date.parse(a.ts) || 0) - (Date.parse(b.ts) || 0));
 
-  // #4231 — the spine window reaches further back than 30 observer lines, so
-  // cover the bare "▸" lines from a deeper read than the one we render.
-  const cover = readRoleObservations(fs, 400);
-  const formatted = dedupeLines(collapseBeats(dropCoveredActions(lines, cover))).slice(-limit).map((l) => {
+  const formatted = dedupeLines(lines).slice(-limit).map((l) => {
     const ts = new Date(l.ts).toLocaleTimeString('en-US', {
       hour: 'numeric', minute: '2-digit', timeZone: 'America/New_York',
     });

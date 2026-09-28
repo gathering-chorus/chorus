@@ -1,118 +1,94 @@
 // @test-type: unit
-// #4231 — a call that already has a reason line must not also show as a bare "▸ Bash".
-import { collapseBeats, dropCoveredActions, parseLogEntryForTest } from '../src/spine-tail';
+// #4231 — one call is one record: a start and an end joined on call_id.
+// Each case below is a class of wrong line the survey found on Jeff's pane.
+import { parseLogEntryForTest, resolveCalls, type StreamLine } from '../src/spine-tail';
 
-const action = (ts: string, role: string, tool: string) =>
-  ({ ts, role, type: 'action', text: `▸ ${tool}`, tool });
-const obs = (ts: string, role: string, tool: string, text: string) =>
-  ({ ts, role, type: 'obs', text, tool });
+const NOW = Date.parse('2026-09-28T12:00:00-0400');
 
-describe('#4231 bare action lines give way to the reason line', () => {
-  it('drops the bare line when the same call has a reason line', () => {
-    const out = dropCoveredActions([
-      action('2026-09-28T12:02:01Z', 'silas', 'Bash'),
-      obs('2026-09-28T08:02:04-0400', 'silas', 'Bash', 'Read handle_write_stamped · bash: sed -n 1,9p lib.rs'),
-    ]);
-    expect(out.map((l) => l.text)).toEqual(['Read handle_write_stamped · bash: sed -n 1,9p lib.rs']);
+const start = (ts: string, role: string, call: string, digest: string, session = 'sess0001') =>
+  parseLogEntryForTest({ timestamp: ts, role, event: 'agent.action', phase: 'started', tool: 'Bash', call_id: call, session_id: session, digest } as never) as StreamLine;
+const end = (ts: string, role: string, call: string, outcome = 'ok') =>
+  parseLogEntryForTest({ timestamp: ts, role, event: 'agent.action', phase: 'ended', tool: 'Bash', call_id: call, outcome } as never) as StreamLine;
+const turnEnded = (ts: string, role: string, session = 'sess0001') =>
+  parseLogEntryForTest({ timestamp: ts, role, event: 'agent.turn.ended', session_id: session } as never) as StreamLine;
+
+const texts = (lines: StreamLine[]) => lines.map((l) => `${l.role} ${l.text}`);
+
+describe('#4231 a call shows once, as what it is', () => {
+  it('a finished call is one line with its reason, never a bare "▸ Bash" beside it', () => {
+    const out = resolveCalls([
+      start('2026-09-28T11:59:00-0400', 'silas', 'toolu_1', 'Read the lib · bash: sed -n 1,9p lib.rs'),
+      end('2026-09-28T11:59:02-0400', 'silas', 'toolu_1'),
+    ], NOW);
+    expect(texts(out)).toEqual(['silas Read the lib · bash: sed -n 1,9p lib.rs']);
   });
 
-  it('keeps a bare line no reason line covers — reads still show', () => {
-    const out = dropCoveredActions([
-      action('2026-09-28T12:02:01Z', 'silas', 'Read'),
-      obs('2026-09-28T08:02:04-0400', 'silas', 'Bash', 'x · bash: ls'),
-      action('2026-09-28T12:02:01Z', 'kade', 'Bash'),
-      action('2026-09-28T12:05:00Z', 'silas', 'Bash'),
-    ]);
-    expect(out.filter((l) => l.type === 'action').map((l) => `${l.role} ${l.text}`))
-      .toEqual(['silas ▸ Read', 'kade ▸ Bash', 'silas ▸ Bash']);
-  });
-});
-
-describe('#4231 cover can reach further back than the rendered lines', () => {
-  it('drops a bare line whose reason line is only in the deeper read', () => {
-    const lines = [action('2026-09-28T12:09:50Z', 'wren', 'mcp__x')];
-    const cover = [obs('2026-09-28T08:09:52-0400', 'wren', 'mcp__x', 'mcp: x → jeff')];
-    expect(dropCoveredActions(lines, cover)).toEqual([]);
-    expect(dropCoveredActions(lines)).toHaveLength(1);
-  });
-});
-
-describe('#4231 a slow call pairs its start with its own finish', () => {
-  it('drops the bare line when the reason line lands minutes later', () => {
-    const out = dropCoveredActions([
-      action('2026-09-28T12:09:10Z', 'wren', 'mcp__nudge'),
-      obs('2026-09-28T08:09:52-0400', 'wren', 'mcp__nudge', 'mcp: nudge → jeff'),
-    ]);
-    expect(out.map((l) => l.type)).toEqual(['obs']);
+  it('a slow call (a commit, a pipeline) still joins its own end, however long it ran', () => {
+    const out = resolveCalls([
+      start('2026-09-28T11:40:00-0400', 'wren', 'toolu_2', 'mcp: werk-commit #4231 wren'),
+      end('2026-09-28T11:52:00-0400', 'wren', 'toolu_2'),
+    ], NOW);
+    expect(texts(out)).toEqual(['wren mcp: werk-commit #4231 wren']);
   });
 
-  it('one reason line covers one call, and a running call stays bare', () => {
-    const out = dropCoveredActions([
-      action('2026-09-28T12:00:00Z', 'wren', 'Bash'),
-      obs('2026-09-28T08:00:05-0400', 'wren', 'Bash', 'a · bash: ls'),
-      action('2026-09-28T12:00:10Z', 'wren', 'Bash'),
-    ]);
-    expect(out.filter((l) => l.type === 'action').map((l) => l.ts)).toEqual(['2026-09-28T12:00:10Z']);
+  it('two identical commands each join their own end (no stealing)', () => {
+    const out = resolveCalls([
+      start('2026-09-28T11:59:00-0400', 'silas', 'toolu_a', 'Poll · bash: cws 4396'),
+      start('2026-09-28T11:59:10-0400', 'silas', 'toolu_b', 'Poll · bash: cws 4396'),
+      end('2026-09-28T11:59:11-0400', 'silas', 'toolu_b'),
+    ], NOW);
+    // toolu_a never ended: it is still running; toolu_b is done
+    expect(texts(out)).toEqual(['silas ⏳ Poll · bash: cws 4396 (60s)', 'silas Poll · bash: cws 4396']);
+  });
+
+  it('a failed call says so', () => {
+    const out = resolveCalls([
+      start('2026-09-28T11:59:00-0400', 'kade', 'toolu_3', 'Run bats · bash: bats x'),
+      end('2026-09-28T11:59:30-0400', 'kade', 'toolu_3', 'error'),
+    ], NOW);
+    expect(texts(out)).toEqual(['kade Run bats · bash: bats x ✗']);
   });
 });
 
-describe('#4231 a long call says what is running, once', () => {
-  it('the start line and the heartbeat carry the reason · command', () => {
-    const start = parseLogEntryForTest({ timestamp: 't', role: 'kade', event: 'agent.action', tool: 'Bash', digest: 'Run the suite · bash: bats x' } as never);
-    const beat = parseLogEntryForTest({ timestamp: 't', role: 'kade', event: 'agent.activity', phase: 'running', tool: 'Bash', digest: 'Run the suite · bash: bats x', elapsed_s: 86 } as never);
-    expect(start?.text).toBe('▸ Run the suite · bash: bats x');
-    expect(beat?.text).toBe('⏳ running Run the suite · bash: bats x (86s)');
-    // negative proof: no digest → the old tool-only text, never an empty line
-    const bare = parseLogEntryForTest({ timestamp: 't', role: 'kade', event: 'agent.activity', phase: 'running', tool: 'Bash', elapsed_s: 66 } as never);
-    expect(bare?.text).toBe('⏳ running Bash (66s)');
+describe('#4231 running means running', () => {
+  it('a call with no end is one running line, timed from its own start — no beats', () => {
+    const out = resolveCalls([start('2026-09-28T11:55:00-0400', 'kade', 'toolu_4', 'Run the suite · bash: cargo test')], NOW);
+    expect(texts(out)).toEqual(['kade ⏳ Run the suite · bash: cargo test (5m)']);
   });
 
-  it('keeps only the newest heartbeat in a run of beats from one role', () => {
-    const beat = (ts: string, role: string, s: number) => ({ ts, role, type: 'activity', text: `⏳ running Bash (${s}s)` });
-    const werk = { ts: '3', role: 'silas', type: 'werk', text: '⚙ werk: build' };
-    const out = collapseBeats([beat('1', 'kade', 66), werk, beat('4', 'kade', 86), beat('5', 'kade', 106),
-      { ts: '6', role: 'kade', type: 'obs', text: 'done · bash: x' }, beat('7', 'kade', 61)]);
-    expect(out.map((l) => l.text)).toEqual(['⚙ werk: build', '⏳ running Bash (106s)', 'done · bash: x', '⏳ running Bash (61s)']);
+  it('a call whose turn ended without an end reads stopped, never running for 900s', () => {
+    const out = resolveCalls([
+      start('2026-09-28T11:40:00-0400', 'wren', 'toolu_5', 'skill: /cws'),
+      turnEnded('2026-09-28T11:41:00-0400', 'wren'),
+    ], NOW);
+    expect(texts(out)).toEqual(['wren skill: /cws (stopped)']);
   });
-});
 
-describe('#4231 pipeline lines do not split a run of beats', () => {
-  it('keeps one beat across the role\'s own werk lines', () => {
-    const beat = (ts: string, s: number) => ({ ts, role: 'wren', type: 'activity', text: `⏳ running Bash (${s}s)` });
-    const werk = (ts: string) => ({ ts, role: 'wren', type: 'werk', text: '⚙ werk: test #4231' });
-    const out = collapseBeats([beat('1', 102), werk('2'), beat('3', 122), werk('4'), beat('5', 142)]);
-    expect(out.filter((l) => l.type === 'activity').map((l) => l.text)).toEqual(['⏳ running Bash (142s)']);
-    expect(out.filter((l) => l.type === 'werk')).toHaveLength(2);
+  it('negative proof: another session ending its turn does not stop this call', () => {
+    const out = resolveCalls([
+      start('2026-09-28T11:59:00-0400', 'wren', 'toolu_6', 'Wait · bash: sleep 30', 'sessAAAA'),
+      turnEnded('2026-09-28T11:59:30-0400', 'wren', 'sessBBBB'),
+    ], NOW);
+    expect(texts(out)).toEqual(['wren ⏳ Wait · bash: sleep 30 (60s)']);
+  });
+
+  it('end and turn records are joins, never lines', () => {
+    const out = resolveCalls([end('2026-09-28T11:59:00-0400', 'wren', 'toolu_x'), turnEnded('2026-09-28T11:59:00-0400', 'wren')], NOW);
+    expect(out).toEqual([]);
   });
 });
 
-describe('#4231 one line per running call', () => {
-  it('drops earlier beats of the same call even with other lines between', () => {
-    const beat = (ts: string, s: number) => ({ ts, role: 'silas', type: 'activity', text: `⏳ running Bash (${s}s)` });
-    const other = { ts: '2026-09-28T13:50:30Z', role: 'silas', type: 'obs', text: 'x · bash: ls' };
-    const out = collapseBeats([beat('2026-09-28T13:50:05Z', 365), other, beat('2026-09-28T13:50:25Z', 385),
-      { ts: '2026-09-28T13:51:00Z', role: 'silas', type: 'obs', text: 'y · bash: ls' }, beat('2026-09-28T13:51:45Z', 465)]);
-    expect(out.filter((l) => l.type === 'activity').map((l) => l.text)).toEqual(['⏳ running Bash (465s)']);
+describe('#4231 what reaches the room', () => {
+  it('a start whose digest is machinery (a cards/nudge helper) is not shown, same rule as before', () => {
+    expect(start('2026-09-28T11:59:00-0400', 'wren', 'toolu_7', 'bash: cards move 4231 Next')).toBeNull();
   });
 
-  it('keeps a beat of a different call', () => {
-    const out = collapseBeats([
-      { ts: '2026-09-28T13:50:05Z', role: 'silas', type: 'activity', text: '⏳ running Bash (365s)' },
-      { ts: '2026-09-28T13:50:30Z', role: 'silas', type: 'obs', text: 'x · bash: ls' },
-      { ts: '2026-09-28T13:55:00Z', role: 'silas', type: 'activity', text: '⏳ running Bash (70s)' },
-    ]);
-    expect(out.filter((l) => l.type === 'activity')).toHaveLength(2);
+  it('an old start with no call_id still shows, marked as a start', () => {
+    const legacy = parseLogEntryForTest({ timestamp: '2026-09-28T11:59:00-0400', role: 'wren', event: 'agent.action', phase: 'started', tool: 'Read' } as never) as StreamLine;
+    expect(texts(resolveCalls([legacy], NOW))).toEqual(['wren ▸ Read']);
   });
-});
 
-describe('#4231 a call that never finishes cannot take the next call\'s finish line', () => {
-  it('pairs by the digest when the start carries one', () => {
-    const start = (ts: string, what: string) => ({ ts, role: 'wren', type: 'action', text: `▸ ${what}`, tool: 'Bash', what });
-    const refused = start('2026-09-28T14:17:00Z', 'Refused call · bash: git add -A');
-    const next = start('2026-09-28T14:17:05Z', 'Read the result · bash: cat x');
-    const done = obs('2026-09-28T10:17:06-0400', 'wren', 'Bash', 'Read the result · bash: cat x');
-    const out = dropCoveredActions([refused, next, done]);
-    // the refused call stays as a start line; the finished call shows once
-    expect(out.map((l) => l.text)).toEqual(['▸ Refused call · bash: git add -A', 'Read the result · bash: cat x']);
+  it('the retired heartbeat renders nothing', () => {
+    expect(parseLogEntryForTest({ timestamp: 't', role: 'kade', event: 'agent.activity', phase: 'running', tool: 'Bash', elapsed_s: 66 } as never)).toBeNull();
   });
 });

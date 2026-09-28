@@ -140,6 +140,7 @@ mod tests {
     async fn does_not_panic_on_non_ttl_write() {
         let state = AppState::new();
         let input = HookInput {
+            tool_use_id: None,
             tool_name: Some("Write".to_string()),
             tool_input: Some(json!({"file_path": "/tmp/test.ts", "content": "const x = 1;"})),
             tool_response: None, session_id: Some("t".into()),
@@ -155,6 +156,7 @@ mod tests {
     async fn does_not_panic_on_non_write_tool() {
         let state = AppState::new();
         let input = HookInput {
+            tool_use_id: None,
             tool_name: Some("Read".to_string()),
             tool_input: Some(json!({"file_path": "/tmp/test.ttl"})),
             tool_response: None, session_id: Some("t".into()),

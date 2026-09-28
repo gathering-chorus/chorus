@@ -155,6 +155,7 @@ mod tests {
 
     fn make_bash(cmd: &str) -> HookInput {
         HookInput {
+            tool_use_id: None,
             tool_name: Some("Bash".to_string()),
             tool_input: Some(json!({"command": cmd})),
             tool_response: None,
@@ -170,6 +171,7 @@ mod tests {
 
     fn make_write(path: &str) -> HookInput {
         HookInput {
+            tool_use_id: None,
             tool_name: Some("Write".to_string()),
             tool_input: Some(json!({"file_path": path, "content": "test"})),
             tool_response: None,
@@ -185,6 +187,7 @@ mod tests {
 
     fn make_edit(path: &str) -> HookInput {
         HookInput {
+            tool_use_id: None,
             tool_name: Some("Edit".to_string()),
             tool_input: Some(json!({"file_path": path, "old_string": "a", "new_string": "b"})),
             tool_response: None,
@@ -255,6 +258,7 @@ mod tests {
     #[test]
     fn allows_non_bash_tools() {
         let input = HookInput {
+            tool_use_id: None,
             tool_name: Some("Read".to_string()),
             tool_input: Some(json!({"file_path": "/tmp/test.txt"})),
             tool_response: None,
@@ -273,6 +277,7 @@ mod tests {
     #[test]
     fn allows_read_commands() {
         let input = HookInput {
+            tool_use_id: None,
             tool_name: Some("Bash".to_string()),
             tool_input: Some(serde_json::json!({"command": "cat /tmp/session-start-silas.md"})),
             tool_response: None, session_id: Some("test".into()),

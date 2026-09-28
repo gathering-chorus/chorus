@@ -139,6 +139,7 @@ mod tests {
     async fn returns_none_for_non_bash() {
         let state = AppState::new();
         let input = HookInput {
+            tool_use_id: None,
             tool_name: Some("Read".to_string()),
             tool_input: Some(json!({"file_path": "/tmp/test"})),
             tool_response: None, session_id: Some("t".into()),
@@ -154,6 +155,7 @@ mod tests {
     async fn returns_none_for_normal_bash() {
         let state = AppState::new();
         let input = HookInput {
+            tool_use_id: None,
             tool_name: Some("Bash".to_string()),
             tool_input: Some(json!({"command": "echo hello"})),
             tool_response: None, session_id: Some("t".into()),

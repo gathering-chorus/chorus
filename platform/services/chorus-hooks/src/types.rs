@@ -103,6 +103,11 @@ pub struct HookInput {
     /// correlated flow. None on ad-hoc tool calls outside a werk run.
     #[serde(default)]
     pub trace_id: Option<String>,
+    /// #4231 — Claude Code's per-call id, identical on the PreToolUse and the
+    /// PostToolUse of one call. The stream joins a call's start and end on it
+    /// instead of guessing by time and tool.
+    #[serde(default)]
+    pub tool_use_id: Option<String>,
 }
 
 impl HookInput {

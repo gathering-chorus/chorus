@@ -83,6 +83,7 @@ mod tests {
 
     fn make_input(prompt: &str) -> HookInput {
         HookInput {
+            tool_use_id: None,
             tool_name: None,
             tool_input: None,
             tool_response: None,
