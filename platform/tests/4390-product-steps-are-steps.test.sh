@@ -37,5 +37,18 @@ PY
 if out=$(docs "$ROOT/designing/data/product-instances.ttl"); then echo "PASS every product's design doc is a declared Document ($out)"; pass=$((pass+1)); else echo "FAIL $out"; fail=$((fail+1)); fi
 printf 'chorus:x a chorus:Product ;\n    chorus:hasDesignDoc <https://jeffbridwell.com/chorus#doc/docs%%2FX.md> .\n' > "$T/d.ttl"
 if docs "$T/d.ttl" >/dev/null; then echo "FAIL NEGATIVE: a legacy doc IRI passed"; fail=$((fail+1)); else echo "PASS NEGATIVE: a legacy doc/ IRI is red"; pass=$((pass+1)); fi
+# DocumentShape requires hasDomain (seed 422 on 09-28 07:23 without it): every Document row carries one
+nodom() { python3 - "$1" <<'PY'
+import re,sys
+t=open(sys.argv[1]).read()
+blocks=re.findall(r'^chorus:(document-[a-z0-9-]+)\s+a chorus:Document\s*;(.*?)\s\.\s*$', t, re.M|re.S)
+bad=[n for n,b in blocks if 'chorus:hasDomain' not in b]
+for n in bad: print(f"Document without hasDomain: {n}")
+print(f"{len(blocks)} Document rows, {len(bad)} without hasDomain"); sys.exit(1 if bad else 0)
+PY
+}
+if out=$(nodom "$ROOT/designing/data/document-instances.ttl"); then echo "PASS every Document row names its domain ($out)"; pass=$((pass+1)); else echo "FAIL $out"; fail=$((fail+1)); fi
+printf 'chorus:document-x a chorus:Document ;\n    chorus:docTitle """X""" .\n' > "$T/n.ttl"
+if nodom "$T/n.ttl" >/dev/null; then echo "FAIL NEGATIVE: a Document without hasDomain passed"; fail=$((fail+1)); else echo "PASS NEGATIVE: a Document without hasDomain is red"; pass=$((pass+1)); fi
 echo "=== Results: $pass passed, $fail failed ==="
 [ "$fail" -eq 0 ]

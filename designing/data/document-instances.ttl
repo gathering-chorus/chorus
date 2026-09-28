@@ -255,4 +255,5 @@ chorus:document-gathering-vision a chorus:Document ;
     chorus:docHref """/designing/docs/gathering-vision.html""" ;
     chorus:comment """The Gathering product's vision; its design doc (#4390).""" ;
     rdfs:comment """The Gathering product's vision; its design doc (#4390).""" ;
+    chorus:hasDomain chorus:products ;
     chorus:ownedBy chorus:principal-jeff .
