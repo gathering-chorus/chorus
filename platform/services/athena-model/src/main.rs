@@ -491,6 +491,7 @@ fn run() -> Result<String, String> {
             let mut unowned_mode = String::from("refuse");
             // #4096 — owned rows post AFTER the ownerless kinds load (roles, value streams,
             // steps are what the owned rows point at); held here across the loader path
+            let mut kind_refused: Vec<String> = Vec::new();
             let mut deferred_post: Option<(Vec<athena_model::PostRow>, String)> = None;
             let rest = &args[1..];
             let mut i = 0;
@@ -625,8 +626,13 @@ fn run() -> Result<String, String> {
                 };
                 let mut tokens = OwnerTokens::new(&mint);
                 let mut rows = Vec::new();
+                // #4394 — a kind the door cannot take (unknown kind, a bad IRI) is
+                // named with the rest at the end; the other kinds still post.
                 for (k, triples) in &parsed {
-                    rows.extend(post_rows(k, triples)?);
+                    match post_rows(k, triples) {
+                        Ok(r) => rows.extend(r),
+                        Err(e) => kind_refused.push(format!("kind {}: {}", k, e)),
+                    }
                 }
                 let (owned, unowned): (Vec<_>, Vec<_>) = rows.into_iter().partition(|r| r.owner.is_some());
                 let mut per_kind: Vec<(String, usize)> = Vec::new();
@@ -645,7 +651,7 @@ fn run() -> Result<String, String> {
                     ));
                 }
                 if unowned.is_empty() {
-                    let rep = post_all(&owned, &api, &mut tokens, &curl_http, dry)?;
+                    let rep = with_kind_refusals(post_all(&owned, &api, &mut tokens, &curl_http, dry), &kind_refused)?;
                     for l in &rep.lines { println!("{}", l); }
                     return Ok(format!(
                         "posted: {} rows through {} ({} created, {} replaced){}",
@@ -751,7 +757,7 @@ fn run() -> Result<String, String> {
                         Ok(String::from_utf8_lossy(&out.stdout).trim().to_string())
                     };
                     let mut tokens = OwnerTokens::new(&mint);
-                    let rep = post_all(&owned, &api, &mut tokens, &curl_http, false)?;
+                    let rep = with_kind_refusals(post_all(&owned, &api, &mut tokens, &curl_http, false), &kind_refused)?;
                     for l in &rep.lines { println!("{}", l); }
                     println!("{}", seeded_line);
                     return Ok(format!(
@@ -1024,5 +1030,21 @@ mod prefix_header_tests_4157 {
     fn negative_proof_declared_prefixes_are_not_repeated() {
         let h = prefix_header_for("sh:datatype xsd:string", "@prefix sh: <x> .\n@prefix xsd: <z> .\n");
         assert!(h.is_empty(), "{h}");
+    }
+}
+
+/// #4394 — kinds the seed could not turn into rows join the rows the door
+/// refused, so one run names everything wrong with the files.
+fn with_kind_refusals(res: Result<athena_model::PostReport, String>, kind_refused: &[String]) -> Result<athena_model::PostReport, String> {
+    if kind_refused.is_empty() {
+        return res;
+    }
+    let listed = kind_refused.join("\n  ");
+    match res {
+        Ok(rep) => Err(format!(
+            "seed --post: {} kind(s) not posted ({} created, {} replaced):\n  {}",
+            kind_refused.len(), rep.created, rep.replaced, listed
+        )),
+        Err(e) => Err(format!("{}\n  {}", e, listed)),
     }
 }
