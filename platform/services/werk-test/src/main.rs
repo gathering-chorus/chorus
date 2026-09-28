@@ -2334,7 +2334,9 @@ fn run_doc_coherence(werk: &str) -> bool {
     if !Path::new(&script).is_file() {
         return true;
     }
-    status_ok(Command::new("bash").arg(&script).current_dir(werk).env("CHORUS_REPO", werk))
+    // #4396 — the live link probe measures production, not this card's tree:
+    // a card lane skips it (the ratchet prints SKIPPED); the nightly runs it.
+    status_ok(Command::new("bash").arg(&script).current_dir(werk).env("CHORUS_REPO", werk).env("SKIP_HREF_PROBE", "1"))
 }
 
 /// Provide a TS package's node_modules by symlinking canonical's ONLY when the
