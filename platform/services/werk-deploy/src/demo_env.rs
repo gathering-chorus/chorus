@@ -229,7 +229,89 @@ pub fn env_services() -> Vec<EnvService> {
             smoke_path: String::new(),
             smoke_kind: SmokeKind::UnixSocket,
         },
+        // #4398 — the werk's own pulse (messaging :3475, presence, delivery).
+        // OPTIONAL: started only for a card whose diff touches pulse or a
+        // service that depends on it (see OPTIONAL_TRIGGERS). Its message store
+        // is werk-local and its terminal delivery goes to a recording stub, so
+        // a demo can never type into a real pane.
+        EnvService {
+            name: "pulse".to_string(),
+            kind: EnvServiceKind::TsService,
+            silas_port: 3491,
+            kade_port: 3492,
+            wren_port: 3493,
+            source_dir_rel: "platform/pulse".to_string(),
+            program_args_template: ProgramArgsTemplate::Node {
+                entry: "dist/service.js".to_string(),
+            },
+            port_env: "MESSAGING_PORT".to_string(),
+            smoke_path: "/health".to_string(),
+            smoke_kind: SmokeKind::HttpGet,
+        },
     ]
+}
+
+/// #4398 — services a demo starts only when the card's diff reaches them.
+/// Each entry: the service, then the path prefixes that pull it in — its own
+/// source, and the source of every service that depends on it (hooks needs
+/// pulse: its nudge gate reads pulse's message store). A service not listed
+/// here is always started, which keeps today's demo for cards touching none.
+pub const OPTIONAL_TRIGGERS: &[(&str, &[&str])] = &[
+    ("pulse", &["platform/pulse/", "platform/services/chorus-hooks/"]),
+];
+
+/// #4398 — the env services a card's demo starts, given the files its diff
+/// changed: every always-on service, plus each optional one whose trigger a
+/// changed path falls under.
+pub fn services_for_diff(changed: &[String]) -> Vec<EnvService> {
+    env_services()
+        .into_iter()
+        .filter(|svc| match OPTIONAL_TRIGGERS.iter().find(|(n, _)| *n == svc.name) {
+            None => true,
+            Some((_, prefixes)) => changed.iter().any(|f| prefixes.iter().any(|p| f.starts_with(p))),
+        })
+        .collect()
+}
+
+/// #4398 — the files a werk's card changed, relative to origin/main. A diff
+/// that cannot be read starts only the always-on services.
+fn werk_changed_files(werk_root: &str) -> Vec<String> {
+    run_env(Some(werk_root), &[], "git", &["diff", "--name-only", "origin/main...HEAD"])
+        .map(|out| out.lines().map(|l| l.trim().to_string()).filter(|l| !l.is_empty()).collect())
+        .unwrap_or_default()
+}
+
+/// #4398 — the variant pulse's environment. Everything that could reach a
+/// real person or a prod store is pointed inside the werk: the message store,
+/// the spine, and both delivery binaries (a stub that records what it was
+/// asked to deliver). Returned as owned pairs so env_up can check them.
+pub fn pulse_extra_env(role: &str, demo_store_dir: &str, home: &str, path: &str) -> R<Vec<(String, String)>> {
+    let stub = format!("{}/delivery-stub.sh", demo_store_dir);
+    Ok(vec![
+        ("CHORUS_MESSAGES_DB".into(), format!("{}/messages.db", demo_store_dir)),
+        ("CHORUS_LOG_FILE".into(), format!("{}/spine.log", demo_store_dir)),
+        ("CHORUS_INJECT_BIN".into(), stub.clone()),
+        ("TMUX_BIN".into(), stub),
+        ("CHORUS_API_URL".into(), format!("http://localhost:{}", env_port_for("chorus-api", role)?)),
+        ("ATHENA_MAKE_URL".into(), format!("http://localhost:{}", env_port_for("athena-make", role)?)),
+        ("HOME".into(), home.to_string()),
+        ("PATH".into(), path.to_string()),
+    ])
+}
+
+/// #4398 — prod surfaces a variant pulse must never be handed.
+pub fn pulse_env_prod_leak(env: &[(String, String)], home: &str) -> Option<String> {
+    let prod = [
+        format!("{}/.chorus/bin/chorus-inject", home),
+        format!("{}/.chorus/chorus.log", home),
+        "platform/pulse/messages.db".to_string(),
+    ];
+    for (k, v) in env {
+        if (k == "TMUX_BIN" && v == "tmux") || prod.iter().any(|p| v.ends_with(p.as_str())) {
+            return Some(format!("{k}={v} reaches a prod surface"));
+        }
+    }
+    None
 }
 
 /// #4227 — where a role's variant hooks daemon keeps its socket and its
@@ -732,7 +814,9 @@ pub fn env_up(role: &str, werk_root: &str, canonical_root: &str, card: u64, trac
     // #4186 (Jeff, 2026-09-16 17:41: "our demo env must rely on our prod data") —
     // the variant reads the LIVE store. Nothing here creates, fills, checks or
     // drops a dataset; a model change is athena's own pipeline, never a demo copy.
-    for svc in env_services() {
+    // #4398 — only the services this card's diff reaches, plus the always-on set.
+    let changed = werk_changed_files(werk_root);
+    for svc in services_for_diff(&changed) {
         // Phase 1: build dist for this service in the werk. ~2s for TS.
         // Surfacing per-service so a failure points at exactly which service
         // failed to build, not "env_up failed."
@@ -807,6 +891,17 @@ pub fn env_up(role: &str, werk_root: &str, canonical_root: &str, card: u64, trac
         let hooks_run = hooks_run_dir(werk_root);
         let home_dir = std::env::var("HOME").unwrap_or_else(|_| "/Users/jeffbridwell".to_string());
         let clearing_owned = clearing_extra_env(role, &demo_store_dir, &css_issuer, &variant_path)?;
+        let pulse_owned = pulse_extra_env(role, &demo_store_dir, &home_dir, &variant_path)?;
+        if svc.name == "pulse" {
+            if let Some(leak) = pulse_env_prod_leak(&pulse_owned, &home_dir) {
+                return Err(format!("env_up: refusing to start the variant pulse — {}", leak));
+            }
+            let stub = format!("{}/delivery-stub.sh", demo_store_dir);
+            let log = format!("{}/deliveries.log", demo_store_dir);
+            fs::write(&stub, format!("#!/bin/sh\necho \"$*\" >> '{}'\nexit 0\n", log))
+                .map_err(|e| format!("env_up: write {}: {}", stub, e))?;
+            let _ = run_env(None, &[], "chmod", &["+x", &stub]);
+        }
         if svc.name == "clearing" {
             if let Some(leak) = clearing_env_prod_leak(&clearing_owned) {
                 return Err(format!("env_up: refusing to start the variant Clearing — {}", leak));
@@ -878,6 +973,7 @@ pub fn env_up(role: &str, werk_root: &str, canonical_root: &str, card: u64, trac
                 ("PATH", variant_path.as_str()),
             ],
             "clearing" => clearing_owned.iter().map(|(k, v)| (k.as_str(), v.as_str())).collect(),
+            "pulse" => pulse_owned.iter().map(|(k, v)| (k.as_str(), v.as_str())).collect(),
             _ => vec![],
         };
 
@@ -1333,5 +1429,68 @@ mod smoke_timeout_4173 {
             assert_eq!(smoke_timeout().as_secs(), 120, "junk {junk:?} must fall back, never disable");
         }
         std::env::remove_var("CHORUS_ENV_SMOKE_TIMEOUT_S");
+    }
+}
+
+#[cfg(test)]
+mod services_for_diff_4398 {
+    use super::*;
+
+    fn names(changed: &[&str]) -> Vec<String> {
+        let c: Vec<String> = changed.iter().map(|s| s.to_string()).collect();
+        services_for_diff(&c).into_iter().map(|s| s.name).collect()
+    }
+
+    const ALWAYS: [&str; 5] = ["chorus-api", "chorus-mcp", "athena-make", "clearing", "chorus-hooks"];
+
+    #[test]
+    fn a_card_touching_none_keeps_todays_services_and_no_pulse() {
+        let got = names(&["platform/tests/x.bats", "roles/kade/notes.md"]);
+        for s in ALWAYS { assert!(got.contains(&s.to_string()), "{s} missing"); }
+        assert!(!got.contains(&"pulse".to_string()), "pulse started for a card that never touched it");
+    }
+
+    #[test]
+    fn a_card_changing_pulse_gets_a_demo_pulse() {
+        assert!(names(&["platform/pulse/src/service.ts"]).contains(&"pulse".to_string()));
+    }
+
+    /// NEGATIVE PROOF (#3734) for the dependency: hooks needs pulse, so a card
+    /// that changes only the hooks daemon must get pulse too — and a path that
+    /// merely LOOKS like hooks (a test named after it) must not.
+    #[test]
+    fn a_hooks_change_pulls_in_pulse_and_a_lookalike_path_does_not() {
+        assert!(names(&["platform/services/chorus-hooks/src/main.rs"]).contains(&"pulse".to_string()));
+        assert!(!names(&["platform/tests/chorus-hooks-something.bats"]).contains(&"pulse".to_string()));
+    }
+
+    #[test]
+    fn the_variant_pulse_never_gets_a_prod_delivery_path_or_store() {
+        let env = pulse_extra_env("kade", "/w/.chorus-demo", "/Users/x", "/usr/bin").unwrap();
+        assert_eq!(pulse_env_prod_leak(&env, "/Users/x"), None);
+        let get = |k: &str| env.iter().find(|(n, _)| n == k).map(|(_, v)| v.clone()).unwrap();
+        assert!(get("CHORUS_INJECT_BIN").starts_with("/w/.chorus-demo/"));
+        assert!(get("TMUX_BIN").starts_with("/w/.chorus-demo/"));
+        assert_eq!(get("CHORUS_MESSAGES_DB"), "/w/.chorus-demo/messages.db");
+    }
+
+    /// NEGATIVE PROOF: the leak check sees each prod surface it exists to refuse.
+    #[test]
+    fn the_leak_check_catches_a_real_inject_binary_tmux_and_the_prod_spine() {
+        let home = "/Users/x";
+        for (k, v) in [
+            ("CHORUS_INJECT_BIN", "/Users/x/.chorus/bin/chorus-inject"),
+            ("TMUX_BIN", "tmux"),
+            ("CHORUS_LOG_FILE", "/Users/x/.chorus/chorus.log"),
+            ("CHORUS_MESSAGES_DB", "/Users/x/CascadeProjects/chorus/platform/pulse/messages.db"),
+        ] {
+            let env = vec![(k.to_string(), v.to_string())];
+            assert!(pulse_env_prod_leak(&env, home).is_some(), "{k}={v} not caught");
+        }
+    }
+
+    #[test]
+    fn pulse_ports_do_not_collide_with_the_other_env_services() {
+        assert_eq!(env_ports_collide(&env_services()), None);
     }
 }
