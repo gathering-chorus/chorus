@@ -45,8 +45,9 @@ function sh(script: string, stdin = ''): string {
     throw new Error(`step check failed:\n${script}\n--- stderr ---\n${e.stderr || ''}\n--- last command output ---\n${out}`, { cause: e });
   }
 }
+// a turn's hook: its exit (2 = the turn was refused) is kept in $T/turn.status
 const seen = (role: string, payload: object) =>
-  sh(`AWAKE_SEEN_SYNC=1 "$SCRIPT" seen ${role}`, JSON.stringify(payload));
+  sh(`set +e; AWAKE_SEEN_SYNC=1 "$SCRIPT" seen ${role} > "$T/turn.out" 2>&1; echo $? > "$T/turn.status"`, JSON.stringify(payload));
 const WAKE = () => (fs.readFileSync(path.join(ROOT, 'platform/services/chorus-principal/src/rows.rs'), 'utf8')
   .match(/WAKE_LINE: &str = "([^"]*)"/) || [])[1] || '';
 // cucumber reads only the literal 'pending'; the card is named by the scenario's
@@ -165,7 +166,9 @@ Given("wren's Principal row names the Mac account chorus-wren", STEP, function (
   sh(`printf '{"data":{"principalKind":"agent","hostAccount":"chorus-wren"}}\\n200\\n' > "$T/principal-wren.json"
 printf '{"fixture":"wren cred"}' > "$T/identity/wren/cred.json"`);
 });
-When("wren's principal is revoked", STEP, function () { return waiting(4385); });
+When("wren's principal is revoked", STEP, function () {
+  sh(`printf '{}\\n404\\n' > "$T/principal-wren.json"`);
+});
 
 // ---------------------------------------------------------------- Then
 
@@ -337,7 +340,11 @@ Then("wren's credentials are in chorus-wren's home, readable by that account alo
 test "$(stat -f %Lp "$d")" = "700"; test "$(stat -f %Lp "$d/cred.json")" = "600"`);
 });
 Then('the session is closed and wren is asked to log in again', STEP, function () { return waiting(4384); });
-Then("wren's next turn is refused and wren's session is closed", STEP, function () { return waiting(4385); });
+Then("the turn is refused, wren's run ends as revoked and wren's session is closed", STEP, function () {
+  sh(`test "$(cat "$T/turn.status")" -eq 2; grep -q "session.revoked wren" "$T/spine.log"
+has "$(cat "$T"/bodies/*PUT-identity_sessionruns_* | tail -1)" '"endReason":"revoked"'
+has "$(cat "$T"/bodies/*PUT-identity_sessions_* | tail -1)" '"sessionState":"closed"'`);
+});
 const SHIM = process.env.CHORUS_HOOK_SHIM_TEST_BIN || path.join(ROOT, 'platform/services/chorus-hooks/target/release/chorus-hook-shim');
 When(/^wren's pane writes a spine event for (wren|kade)$/, STEP, function (who: string) {
   if (!fs.existsSync(SHIM)) throw new Error(`chorus-hook-shim is not built at ${SHIM}`);

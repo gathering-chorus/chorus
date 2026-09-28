@@ -170,7 +170,30 @@ pub fn augment_envelope_with_nudges(
         return envelope.to_string();
     };
     mark_surfaced(role, &unread[..unread.len().min(limit)]);
+    mark_presence_reached(role);
     format!("{}\n{}", envelope, block)
+}
+
+/// #4385 — a nudge surfaced into the role's context has reached it, whether
+/// or not the prompt was the wake line (09-28: Wren's presence stayed
+/// "unknown" after a nudge surfaced at a tool call). Hands the delivery to
+/// chorus-principal, which owns the Presence row. Never from a test.
+fn mark_presence_reached(role: &str) {
+    if cfg!(test) || std::env::var("CHORUS_CONTEXT").as_deref() == Ok("test") {
+        return;
+    }
+    let bin = std::env::var("CHORUS_PRINCIPAL_BIN").unwrap_or_else(|_| {
+        format!("{}/.chorus/bin/chorus-principal", std::env::var("HOME").unwrap_or_default())
+    });
+    if !std::path::Path::new(&bin).exists() {
+        return;
+    }
+    let _ = std::process::Command::new(bin)
+        .args(["seen-write", role, "", "delivered"])
+        .stdin(std::process::Stdio::null())
+        .stdout(std::process::Stdio::null())
+        .stderr(std::process::Stdio::null())
+        .spawn();
 }
 
 /// The whole message for one trace, from pulse's store (messages.db). None when
