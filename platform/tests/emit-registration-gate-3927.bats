@@ -34,16 +34,40 @@ RS
   [[ "$output" == *"merge.totally_unregistered_3927"* ]] || return 1
 }
 
-@test "NEGATIVE: the pre-commit hook refuses when the check fails" {
-  # The hook must exit non-zero on a phantom — not log and continue. Asserted
-  # against the hook's own text so a future refactor that drops the exit is caught.
-  run grep -A20 '#3927 — spine-emit registration gate' "$HOOK"
-  [ "$status" -eq 0 ]
-  [[ "$output" == *"exit 1"* ]] || return 1
+# #4336 — these two cases grepped the hook's text for "exit 1" and for the
+# script name. They now RUN the hook in a fixture repo: the gates before this
+# one are stubbed to pass, so the only thing that can refuse is the emit gate.
+hook_world() {  # hook_world <emit-name> — a git repo whose staged werk source emits <emit-name>
+  H="$BATS_TEST_TMPDIR/hookrepo"
+  mkdir -p "$H/platform/services/werk-fake/src" "$H/platform/scripts" "$H/platform/hooks" "$H/designing/schemas"
+  cp "${CHORUS_ROOT}/designing/schemas/spine-events.json" "$H/designing/schemas/"
+  cp "$SCRIPT" "$H/platform/scripts/"
+  mkdir -p "$H/platform/services/shared"   # the check also reads the failureClass list
+  cp "${CHORUS_ROOT}/platform/services/shared/failure_class.rs" "$H/platform/services/shared/"
+  cp "$HOOK" "$H/platform/hooks/pre-commit"
+  for g in gate-test-type.sh retirement-gate.sh wipe-guard-scan.sh check-catalog-oversize.sh \
+           check-principle-direct-edit.sh check-decision-direct-edit.sh; do
+    printf '#!/bin/bash\nexit 0\n' > "$H/platform/scripts/$g"; chmod +x "$H/platform/scripts/$g"
+  done
+  printf 'fn main() { emit_spine("%s", &role, &card, &trace, &[]); }\n' "$1" \
+    > "$H/platform/services/werk-fake/src/main.rs"
+  git -C "$H" init -q && git -C "$H" add -A
 }
 
-@test "the gate is wired into pre-commit, not only chorus-health" {
-  run grep -c "test-werk-emit-conformance" "$HOOK"
-  [ "$status" -eq 0 ]
-  [ "$output" -ge 1 ]
+@test "NEGATIVE: the pre-commit hook refuses a commit whose werk source emits an unregistered event" {
+  hook_world "merge.totally_unregistered_3927"
+  run bash -c "cd '$H' && bash platform/hooks/pre-commit"
+  [ "$status" -ne 0 ]
+  [[ "$output" == *"a werk spine emit is not registered"* ]] || return 1
+  [[ "$output" == *"merge.totally_unregistered_3927"* ]] || return 1
+  # it stopped HERE: a later gate's refusal would mean this one only logged
+  [[ "$output" != *"repo rule"* ]] || return 1
+}
+
+@test "control: the same hook with a registered emit does not refuse at the emit gate" {
+  ev="$(jq -r '(.events // .) | if type=="object" then keys[0] else .[0].name end' "${CHORUS_ROOT}/designing/schemas/spine-events.json")"
+  [ -n "$ev" ] && [ "$ev" != "null" ]
+  hook_world "$ev"
+  run bash -c "cd '$H' && bash platform/hooks/pre-commit"
+  [[ "$output" != *"a werk spine emit is not registered"* ]] || return 1
 }
