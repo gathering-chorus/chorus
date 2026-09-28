@@ -2140,7 +2140,14 @@ fn deploy_rust_service(
                 // also require the daemon RESTARTED onto it. installed==built ALONE false-passes a stale
                 // daemon (codesign reads the file, not the live process — the 2026-06-04 outage). Bounded
                 // reload ONCE; record restartedAfterInstall (the auditable catcher) on the spine.
-                match running_verdict(true, b, i, resolve_restarted(svc, install_epoch)) {
+                // #4396 — a scheduled job (athena-validate, 07:00 and exit) has no process
+                // to be stale: each run execs the installed file, so installed==built is
+                // the proof. #4226 taught the liveness step this; this step still asked
+                // for a pid and held #4336 unaccepted after its merge (09-28 09:49).
+                let is_daemon = daemon_class(
+                    run_env(None, &[], "launchctl", &["print", &format!("gui/{}/{}", uid(), svc)]).ok().as_deref(),
+                );
+                match running_verdict(is_daemon, b, i, resolve_restarted(svc, install_epoch)) {
                     RunVerdict::Ok => {
                         jsonl(home, role, card, trace, "verified",
                             &format!(",\"name\":\"{}\",\"bin\":\"{}\",\"cdhash\":\"{}\",\"installedCdhash\":\"{}\",\"equal\":true,\"restartedAfterInstall\":true", crate_name, bin, i, i));
@@ -2149,7 +2156,7 @@ fn deploy_rust_service(
                         // started before the install (old inode) → force-reload ONCE, re-decide. No loop.
                         let _ = run_env(None, &[], "launchctl", &["kickstart", "-k", &format!("gui/{}/{}", uid(), svc)]);
                         let _ = wait_for_service_up(svc);
-                        match running_verdict(true, b, i, resolve_restarted(svc, install_epoch)) {
+                        match running_verdict(is_daemon, b, i, resolve_restarted(svc, install_epoch)) {
                             RunVerdict::Ok => {
                                 jsonl(home, role, card, trace, "verified",
                                     &format!(",\"name\":\"{}\",\"bin\":\"{}\",\"cdhash\":\"{}\",\"equal\":true,\"restartedAfterInstall\":true,\"reloaded\":true", crate_name, bin, i));
@@ -2847,6 +2854,16 @@ pub enum JobKind {
     Scheduled,
 }
 
+/// #4396 — does the running==built check apply? A daemon must be running the
+/// built binary; a scheduled job is proven by installed==built. A `launchctl
+/// print` that could not be read keeps the strict (daemon) check.
+pub fn daemon_class(print_out: Option<&str>) -> bool {
+    match print_out {
+        Some(p) => job_kind(p) == JobKind::Daemon,
+        None => true,
+    }
+}
+
 pub fn job_kind(print_out: &str) -> JobKind {
     let has = |k: &str| print_out.contains(k);
     if has("StartCalendarInterval") || has("StartInterval") || has("com.apple.launchd.calendarinterval") {
@@ -3154,7 +3171,24 @@ mod running_verdict_tests {
     // These pure tests exercise all 5 branches cross-platform (no shell), so the safety
     // logic stays covered on every CI push; the e2e tests verify the macOS shelling
     // where the runtime actually lives.
-    use super::{running_verdict, RunVerdict};
+    use super::{daemon_class, running_verdict, RunVerdict};
+
+    const SCHEDULED: &str = "gui/501/com.chorus.athena-validate = {\n\tstate = not running\n\tprogram = /x/athena-validate\n\tevent triggers = {\n\t\tcom.apple.launchd.calendarinterval.501 => {\n\t\t\tStartCalendarInterval = 7:00\n\t\t}\n\t}\n}";
+    const DAEMON: &str = "gui/501/com.chorus.hooks = {\n\tstate = running\n\tpid = 123\n\tprogram = /x/chorus-hooks\n}";
+
+    #[test]
+    fn scheduled_job_verifies_on_installed_equals_built_without_a_process() {
+        // #4396 — athena-validate at 09:49 on 09-28: installed==built, no pid, RED before
+        assert_eq!(running_verdict(daemon_class(Some(SCHEDULED)), "SAME", "SAME", None), RunVerdict::Ok);
+    }
+
+    /// NEGATIVE PROOF (#3734): a daemon with no resolvable process is still RED
+    /// (Unknown), and an unreadable print keeps the strict daemon check.
+    #[test]
+    fn daemon_or_unreadable_print_without_a_process_stays_unknown() {
+        assert_eq!(running_verdict(daemon_class(Some(DAEMON)), "SAME", "SAME", None), RunVerdict::Unknown);
+        assert_eq!(running_verdict(daemon_class(None), "SAME", "SAME", None), RunVerdict::Unknown);
+    }
 
     #[test]
     fn one_shot_cli_is_ok_without_a_live_process() {
