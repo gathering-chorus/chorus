@@ -47,6 +47,8 @@ interface LogEntry {
   target?: string;
   tool?: string;
   elapsed_s?: string | number;
+  /** #4231 — the call's reason · command, stamped by chorus-hooks at the start. */
+  digest?: string;
 }
 
 function formatToolDisplay(summary: string, action: string): string | null {
@@ -144,7 +146,9 @@ function parseActivityEntry(entry: LogEntry, role: string): StreamLine | null {
   const tool = entry.tool ? String(entry.tool) : '';
   const elapsed = entry.elapsed_s != null ? `${entry.elapsed_s}s` : '';
   const verb = phase === 'running' ? '⏳ running' : '💭 thinking';
-  const text = [verb, tool, elapsed && `(${elapsed})`].filter(Boolean).join(' ');
+  // #4231 — a long call says WHAT is running, not just "Bash".
+  const what = phase === 'running' && entry.digest ? String(entry.digest) : tool;
+  const text = [verb, what, elapsed && `(${elapsed})`].filter(Boolean).join(' ');
   return {
     ts: entry.timestamp ?? '',
     role,
@@ -196,10 +200,29 @@ function parseActionEntry(entry: LogEntry, role: string): StreamLine | null {
     ts: entry.timestamp ?? '',
     role,
     type: 'action',
-    text: `\u25b8 ${tool}`,
+    // #4231 — the start line carries the reason · command when chorus-hooks sent it.
+    text: `\u25b8 ${entry.digest ? String(entry.digest) : tool}`,
     card: entry.card_id ? String(entry.card_id) : null,
     tool,
   };
+}
+
+/** #4231 — one live heartbeat per role. A long call used to add a new
+ *  "⏳ running Bash (Ns)" line every 20 seconds; Jeff's pane on 09-27 was a
+ *  screen of them. A beat is dropped when a later beat from the same role
+ *  follows with nothing else from that role in between, so the pane keeps
+ *  only the newest one, with the latest elapsed time. */
+export function collapseBeats(lines: StreamLine[]): StreamLine[] {
+  const keep: StreamLine[] = [];
+  const lastOf = new Map<string, StreamLine>();
+  for (let i = lines.length - 1; i >= 0; i--) {
+    const l = lines[i];
+    const later = lastOf.get(l.role);
+    if (l.type === 'activity' && later?.type === 'activity') continue;
+    lastOf.set(l.role, l);
+    keep.push(l);
+  }
+  return keep.reverse();
 }
 
 /** #4231 — clock slack between the spine's stamp and the observer's. */

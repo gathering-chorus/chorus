@@ -445,7 +445,7 @@ fn shorten_known_roots(cmd: &str) -> String {
 /// Digest a tool call into a compact human-readable summary
 /// #4231 — a Bash stream line leads with the role's own one-line reason
 /// (the tool's `description`), then the call. No reason → the call alone.
-fn digest_tool_call(input: &HookInput) -> String {
+pub(crate) fn digest_tool_call(input: &HookInput) -> String {
     let what = digest_call(input);
     if input.tool_name_str() != "Bash" || what.is_empty() { return what; }
     let why = input.get_tool_input_str("description");
