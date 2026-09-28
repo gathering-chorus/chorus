@@ -56,14 +56,14 @@ run_runner() {
   mkdir -p "$W/platform/api/src" "$W/platform/api/node_modules/.bin"
   cp "$cfg" "$W/platform/api/jest.config.js"
   cp "$ROOT/platform/api/package.json" "$W/platform/api/"
-  printf '#!/bin/bash\necho "ARGV $*" >> "%s"\necho "RUN_INTEGRATION=${RUN_INTEGRATION:-}" >> "%s"\nfor a in "$@"; do [ "$a" = --json ] && echo "{\\"numFailedTests\\":0,\\"testResults\\":[]}"; done\nexit 0\n' \
-    "$REC" "$REC" > "$W/platform/api/node_modules/.bin/jest"
+  printf '#!/bin/bash\necho "ARGV $*" >> "%s"\necho "RUN_INTEGRATION=${RUN_INTEGRATION:-}" >> "%s"\necho "CHILD_CONTEXT=[${CHORUS_CONTEXT-unset}]" >> "%s"\nfor a in "$@"; do [ "$a" = --json ] && echo "{\\"numFailedTests\\":0,\\"testResults\\":[]}"; done\nexit 0\n' \
+    "$REC" "$REC" "$REC" > "$W/platform/api/node_modules/.bin/jest"
   chmod +x "$W/platform/api/node_modules/.bin/jest"
   g() { git -C "$W" -c user.email=t@t -c user.name=t -c commit.gpgsign=false "$@"; }
   g init -q && g add -A && g commit -qm base && g update-ref refs/remotes/origin/main HEAD
   echo 'export const x = 1;' > "$W/platform/api/src/x.ts"
   g add -A && g commit -qm change
-  run env -u CHORUS_HOME -u RUN_INTEGRATION TMPDIR="$BATS_TEST_TMPDIR" \
+  run env -u CHORUS_HOME -u RUN_INTEGRATION TMPDIR="$BATS_TEST_TMPDIR" CHORUS_CONTEXT=prod \
     CHORUS_WERK_BASE="$base" \
     OWL_API_TESTS=http://127.0.0.1:9/tests \
     OWL_API_TESTRESULTS_BATCH=http://127.0.0.1:9/results \
@@ -136,4 +136,14 @@ jest_run_env()  { grep -A1 '^ARGV .*--json' "$REC" | grep '^RUN_INTEGRATION=' | 
   [ "$(real_jest_count true)" -ge 1 ]
   # the runner's call with the stack down: none
   [ "$(real_jest_count "$env_ri" $sel)" -eq 0 ]
+}
+
+# #4336 — moved here from membrane-guard, where it was a grep of main.rs for
+# `CHORUS_CONTEXT", ""`. The runner runs as prod (werk.yml's job env); every test
+# child it spawns must get the context cleared, so the membrane still refuses it.
+@test "werk-test clears the runner's prod context for the test child it spawns (#3745/#3918)" {
+  run_runner "$CFG"
+  [ -n "$(jest_run_argv)" ]
+  child="$(grep -A2 '^ARGV .*--json' "$REC" | grep '^CHILD_CONTEXT=' | head -1)"
+  [ "$child" = "CHILD_CONTEXT=[]" ]
 }

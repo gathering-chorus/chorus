@@ -81,3 +81,26 @@ setup() {
   run grep -n "CHORUS_IDENTITY_TOKEN" "$FIXTURE"
   [ "$status" -eq 0 ]
 }
+
+# #4336 — the checks above read the binary's text. This one RUNS recovery: the
+# real athena-deploy, with no identity token anywhere in its environment, lands
+# a one-subject model into a throwaway graph on the TEST dataset (never /pods).
+# If recovery ever grows an identity gate, this is the case that goes red.
+@test "recovery deploys with NO identity token — run against the test store" {
+  [ -x "$DEPLOY" ] || skip "UNMEASURED — athena-deploy not built (#4336)"
+  . "$BATS_TEST_DIRNAME/lib/test-store.sh"
+  test_store || skip "UNMEASURED — test store unreachable: $TEST_STORE_WHY (#4336)"
+  . "$ROOT/platform/scripts/fuseki-auth.sh" 2>/dev/null || true
+  G="urn:chorus:ontology-test-bats-3785-recovery"
+  ttl="$BATS_TEST_TMPDIR/recover.ttl"
+  printf '%s\n' '@prefix chorus: <https://jeffbridwell.com/chorus#> .' \
+    'chorus:recoveryProbe3785 a chorus:Domain ; chorus:purpose "recovery probe" .' > "$ttl"
+  run env -u CHORUS_IDENTITY_TOKEN -u CHORUS_SESSION_TOKEN_FILE -u CHORUS_ROLE -u DEPLOY_ROLE \
+    ONTOLOGY_GRAPH="$G" TTL="$ttl" "$DEPLOY"
+  echo "$output" | tail -5
+  [ "$status" -eq 0 ]
+  n=$(curl -s "${FUSEKI_AUTH[@]+"${FUSEKI_AUTH[@]}"}" "$FUSEKI_QUERY" -H "Accept: text/csv" \
+    --data-urlencode "query=ASK { GRAPH <$G> { <https://jeffbridwell.com/chorus#recoveryProbe3785> ?p ?o } }" | tail -1 | tr -d '\r')
+  curl -s --max-time "${FUSEKI_WRITE_TIMEOUT:-120}" "${FUSEKI_AUTH[@]+"${FUSEKI_AUTH[@]}"}" -X DELETE "$FUSEKI_GSP?graph=$G" -o /dev/null || true
+  [ "$n" = "true" ]
+}

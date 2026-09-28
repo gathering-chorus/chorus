@@ -5,7 +5,13 @@
 # deny force on main. Replaces the broad Bash(git push --force*) deny that
 # blocked post-rebase role-branch pushes (hit on wren/2924 rebase 2026-05-15).
 
-SETTINGS="$HOME/.claude/settings.json"
+SETTINGS="${CLAUDE_SETTINGS:-$HOME/.claude/settings.json}"
+
+setup() {
+  # #4336: this audits one box's live, un-versioned settings file. Where it is
+  # absent (a CI runner, a fresh account) the question is UNMEASURED, not red.
+  [ -f "$SETTINGS" ] || skip "UNMEASURED — no settings file at $SETTINGS (#4336)"
+}
 
 @test "settings.json exists" {
   [ -f "$SETTINGS" ]
