@@ -15,6 +15,10 @@
 #   fuseki-restore-dump.sh <name>       drill a specific one
 #   FUSEKI_DRILL_TRUNCATE=1 ...         negative proof: corrupt it first, and
 #                                       the drill must FAIL (#3734)
+#   FUSEKI_DRILL_NEWEST=1 ...           drill the newest dump instead of the oldest
+#   FUSEKI_DRILL_KEEP_AT=<dir> ...      #4399: on PASS keep the restored store at
+#                                       <dir> (the nightly demo store) instead of
+#                                       discarding it; one restore, two uses
 set -uo pipefail
 . "$(dirname "${BASH_SOURCE[0]}")/chorus-env-setup.sh" >/dev/null 2>&1 || true
 
@@ -25,16 +29,29 @@ DATASET="${FUSEKI_DATASET:-pods}"
 MIN="${FUSEKI_DRILL_MIN:-1000000}"
 WANT="${1:-}"
 log(){ echo "$(date '+%F %T') [restore-dump] $*"; }
-fail(){ log "FAIL: $*"; exit 1; }
+CHORUS_LOG="${CHORUS_LOG:-${CHORUS_ROOT:-$HOME/CascadeProjects/chorus}/platform/scripts/chorus-log}"
+spine(){ "$CHORUS_LOG" "$1" "${DEPLOY_ROLE:-system}" "${@:2}" 2>/dev/null || true; }
+fail(){ log "FAIL: $*"; spine ops.restore.drill store=fuseki-dump verdict=fail reason="$*"; exit 1; }
+# #4399 — the newest dump must be from the last night. The backup runs at 00:00;
+# a newest dump older than this (hours) means a night was missed. Measured from
+# the dump's own name, not the file time, so a re-copy cannot make it look fresh.
+MAX_AGE_H="${FUSEKI_DRILL_MAX_AGE_H:-26}"
 
 # OLDEST by default, not newest. The newest dump is the one most likely to work
 # and least likely to be the one you need; retention (AC4) turns on whether the
 # copy about to age out is still restorable.
 if [ -z "$WANT" ]; then
-  WANT="$(ssh -o ConnectTimeout=10 "$REMOTE" "ls -1 '$DEST_BASE/dumps'/${DATASET}_*.nq.gz 2>/dev/null | sort | head -1" | tr -d '\r')"
+  PICK=head; [ "${FUSEKI_DRILL_NEWEST:-0}" = "1" ] && PICK=tail
+  WANT="$(ssh -o ConnectTimeout=10 "$REMOTE" "ls -1 '$DEST_BASE/dumps'/${DATASET}_*.nq.gz 2>/dev/null | sort | $PICK -1" | tr -d '\r')"
   WANT="$(basename "${WANT:-}")"
 fi
 [ -n "$WANT" ] || fail "no dump found under ${REMOTE}:${DEST_BASE}/dumps"
+if [ "${FUSEKI_DRILL_NEWEST:-0}" = "1" ]; then
+  stamp=$(printf '%s' "$WANT" | grep -oE '[0-9]{4}-[0-9]{2}-[0-9]{2}_[0-9]{2}-[0-9]{2}-[0-9]{2}')
+  taken=$(date -j -f '%Y-%m-%d_%H-%M-%S' "$stamp" +%s 2>/dev/null || echo 0)
+  age_h=$(( ( $(date +%s) - taken ) / 3600 ))
+  [ "$age_h" -le "$MAX_AGE_H" ] || fail "no backup since $WANT (${age_h}h old, limit ${MAX_AGE_H}h): a night was missed"
+fi
 log "drilling $WANT"
 
 rm -rf "$SCRATCH"; mkdir -p "$SCRATCH/store"
@@ -75,5 +92,13 @@ N=$(tdb2.tdbquery --loc="$SCRATCH/store" 'SELECT (COUNT(*) AS ?n) WHERE { GRAPH 
 G=$(tdb2.tdbquery --loc="$SCRATCH/store" 'SELECT (COUNT(DISTINCT ?g) AS ?n) WHERE { GRAPH ?g { ?s ?p ?o } }' 2>/dev/null \
     | grep -oE '[0-9]+' | tail -1)
 log "PASS: $WANT restored — $N triples across ${G:-?} graphs"
+spine ops.restore.drill store=fuseki-dump verdict=pass dump="$WANT" triples="$N" graphs="${G:-0}"
 ssh -o ConnectTimeout=10 "$REMOTE" "printf '%s\n' '$WANT' > '$DEST_BASE/restore-proven.txt'"
 rm -f "$SCRATCH/dump.nq"
+# #4399 — keep the proven store as the demo store. Moved only after PASS, so a
+# failed restore never replaces a working demo store.
+if [ -n "${FUSEKI_DRILL_KEEP_AT:-}" ]; then
+  rm -rf "$FUSEKI_DRILL_KEEP_AT.new"; mv "$SCRATCH/store" "$FUSEKI_DRILL_KEEP_AT.new" \
+    || fail "could not keep the restored store at $FUSEKI_DRILL_KEEP_AT"
+  log "kept at $FUSEKI_DRILL_KEEP_AT.new ($(du -sh "$FUSEKI_DRILL_KEEP_AT.new" | cut -f1))"
+fi

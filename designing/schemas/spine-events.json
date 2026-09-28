@@ -2576,6 +2576,19 @@
         "message": "Which suite could not run and which build failed, in words"
       }
     },
+    "ops.restore.drill": {
+      "vertebra": "operating",
+      "source": "fuseki-restore-dump.sh",
+      "description": "#4399 — the nightly restore test: last night's Fuseki dump pulled back from Bedroom and loaded into a scratch store. pass records restore-proven; fail names why (no dump in the last 26h = a missed night, a dump that will not load, too few triples).",
+      "fields": {
+        "store": "Which backup (fuseki-dump)",
+        "verdict": "pass or fail",
+        "dump": "The dump restored",
+        "triples": "Triples the restored store answered with",
+        "graphs": "Named graphs in the restored store",
+        "reason": "Why it failed"
+      }
+    },
     "session.expired": {
       "vertebra": "building",
       "source": "chorus-principal",
