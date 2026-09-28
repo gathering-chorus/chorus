@@ -887,7 +887,7 @@ messageRouter.on('message', (m: ChannelMessage) => {
 
 // Ensure upload directory survives /tmp cleanup across reboots
 import fs_node from 'fs';
-import { dropCoveredActions, readSpineWithStats, spinePath, type StreamLine } from './spine-tail';
+import { collapseBeats, dropCoveredActions, readSpineWithStats, spinePath, type StreamLine } from './spine-tail';
 if (!fs_node.existsSync('/tmp/bridge-uploads')) {
   fs_node.mkdirSync('/tmp/bridge-uploads', { recursive: true });
 }
@@ -1121,7 +1121,7 @@ app.get('/api/stream', (req, res) => {
   // #4231 — the spine window reaches further back than 30 observer lines, so
   // cover the bare "▸" lines from a deeper read than the one we render.
   const cover = readRoleObservations(fs, 400);
-  const formatted = dedupeLines(dropCoveredActions(lines, cover)).slice(-limit).map((l) => {
+  const formatted = dedupeLines(collapseBeats(dropCoveredActions(lines, cover))).slice(-limit).map((l) => {
     const ts = new Date(l.ts).toLocaleTimeString('en-US', {
       hour: 'numeric', minute: '2-digit', timeZone: 'America/New_York',
     });

@@ -181,6 +181,7 @@ async fn main() {
                 tick.tick().await;
                 for (session, role, tool, phase, elapsed) in hb.activity_due(15) {
                     let el = elapsed.to_string();
+                    let what = hb.running_what(&session);
                     let sid = if session.len() > 8 { &session[..8] } else { session.as_str() };
                     crate::state::chorus_log(
                         "agent.activity",
@@ -188,6 +189,7 @@ async fn main() {
                         &[
                             ("phase", phase),
                             ("tool", tool.as_str()),
+                            ("digest", what.as_str()),
                             ("elapsed_s", el.as_str()),
                             ("session_id", sid),
                         ],
@@ -340,7 +342,10 @@ async fn pre_tool_use_inner(
     log_hook("pre_tool_use", &tool, role.as_str(), "enter", &detail_str);
     // #3853 — a command is now in flight; the heartbeat ticker beats "running <tool>"
     // if it outlives the threshold, so a long command is never a silent window.
-    state.mark_running(input.session_id.as_deref().unwrap_or(""), role.as_str(), &tool);
+    // #4231 — remember WHAT is running (reason · command), not just the tool, so the
+    // start line and every heartbeat for a long call can say it.
+    let what = crate::hooks::observer::digest_tool_call(input);
+    state.mark_running_with(input.session_id.as_deref().unwrap_or(""), role.as_str(), &tool, &what);
     // #3885 — EMIT THE ACTION ITSELF, not just a heartbeat. mark_running only sets
     // state; the 10s ticker was the ONLY emitter, so any call shorter than 10s never
     // reached the stream at all. Long `Bash` runs survived to a beat and everything
@@ -357,7 +362,7 @@ async fn pre_tool_use_inner(
         crate::state::chorus_log(
             "agent.action",
             role.as_str(),
-            &[("tool", tool.as_str()), ("session_id", sid), ("phase", "started")],
+            &[("tool", tool.as_str()), ("digest", what.as_str()), ("session_id", sid), ("phase", "started")],
         )
         .await;
     }

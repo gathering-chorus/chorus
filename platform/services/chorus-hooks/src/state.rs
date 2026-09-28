@@ -35,6 +35,7 @@ struct Activity {
     role: String,
     tool: String,
     phase: &'static str, // "running" | "thinking"
+    what: String,        // #4231 — the call's digest (reason · command), set at start
     started: u64,        // epoch secs when this phase began
     last_beat: u64,      // epoch secs of the last heartbeat emitted for it
 }
@@ -125,14 +126,28 @@ impl AppState {
 
     /// #3853 — a command started; beat "running <tool>" until it ends.
     pub fn mark_running(&self, session_id: &str, role: &str, tool: &str) {
+        self.mark_running_with(session_id, role, tool, "");
+    }
+
+    /// #4231 — as mark_running, and remember what the call is (its digest), so a
+    /// heartbeat for a long call says what is running, not just "Bash".
+    pub fn mark_running_with(&self, session_id: &str, role: &str, tool: &str, what: &str) {
         if session_id.is_empty() { return; }
         let now = Self::now_secs();
         if let Ok(mut m) = self.activity.lock() {
             m.insert(session_id.to_string(), Activity {
-                role: role.to_string(), tool: tool.to_string(),
+                role: role.to_string(), tool: tool.to_string(), what: what.to_string(),
                 phase: "running", started: now, last_beat: now,
             });
         }
+    }
+
+    /// #4231 — the digest of the call a session is running now; empty when it is
+    /// thinking or unknown.
+    pub fn running_what(&self, session_id: &str) -> String {
+        self.activity.lock().ok()
+            .and_then(|m| m.get(session_id).filter(|a| a.phase == "running").map(|a| a.what.clone()))
+            .unwrap_or_default()
     }
 
     /// #3853 — a command ended; the session is now composing/thinking.
@@ -149,7 +164,7 @@ impl AppState {
         if let Ok(mut m) = self.activity.lock() {
             let last_tool = m.get(session_id).map(|a| a.tool.clone()).unwrap_or_default();
             m.insert(session_id.to_string(), Activity {
-                role: role.to_string(), tool: last_tool,
+                role: role.to_string(), tool: last_tool, what: String::new(),
                 phase: "thinking", started: now, last_beat: now,
             });
         }
@@ -564,6 +579,17 @@ mod activity_heartbeat_tests {
     // beats it; between commands it's "thinking"; Stop clears it so silence truthfully
     // means idle, not hidden work. That last one is the whole point — the negative case.
     use super::*;
+
+    #[test]
+    fn running_what_names_the_call_while_it_runs_4231() {
+        let s = AppState::new();
+        s.mark_running_with("s", "silas", "Bash", "Read the lib · bash: sed -n 1,9p lib.rs");
+        assert_eq!(s.running_what("s"), "Read the lib · bash: sed -n 1,9p lib.rs");
+        // negative proof: once the call ends the heartbeat must not keep naming it
+        s.mark_thinking("s", "silas");
+        assert_eq!(s.running_what("s"), "");
+        assert_eq!(s.running_what("nobody"), "");
+    }
 
     #[test]
     fn running_command_is_due_and_labeled() {
