@@ -23,5 +23,19 @@ if out=$(check "$ROOT/designing/data/product-instances.ttl" "$ROOT/designing/dat
 T=$(mktemp -d); trap 'rm -rf "$T"' EXIT
 printf 'chorus:x a chorus:Product ;\n    chorus:atStep chorus:Operating .\n' > "$T/p.ttl"
 if check "$T/p.ttl" "$ROOT/designing/data/value-stream-step-instances.ttl" >/dev/null; then echo "FAIL NEGATIVE: an event category passed as a step"; fail=$((fail+1)); else echo "PASS NEGATIVE: a product at chorus:Operating is red"; pass=$((pass+1)); fi
+# a product's design doc must be a Document row the API can name (chorus:document-…), declared in document-instances.ttl
+docs() { python3 - "$1" "$ROOT/designing/data/document-instances.ttl" <<'PY'
+import re,sys
+prod=open(sys.argv[1]).read(); docs=open(sys.argv[2]).read()
+declared=set(re.findall(r'^chorus:(document-[a-z0-9-]+)\s+a chorus:Document', docs, re.M))
+refs=re.findall(r'chorus:hasDesignDoc\s+(<[^>]+>|chorus:[A-Za-z0-9-]+)', prod)
+bad=[r for r in refs if not (r.startswith('chorus:') and r[7:] in declared)]
+for b in bad: print(f"design doc not a declared Document row: {b}")
+print(f"{len(refs)} design docs, {len(bad)} not declared"); sys.exit(1 if bad else 0)
+PY
+}
+if out=$(docs "$ROOT/designing/data/product-instances.ttl"); then echo "PASS every product's design doc is a declared Document ($out)"; pass=$((pass+1)); else echo "FAIL $out"; fail=$((fail+1)); fi
+printf 'chorus:x a chorus:Product ;\n    chorus:hasDesignDoc <https://jeffbridwell.com/chorus#doc/docs%%2FX.md> .\n' > "$T/d.ttl"
+if docs "$T/d.ttl" >/dev/null; then echo "FAIL NEGATIVE: a legacy doc IRI passed"; fail=$((fail+1)); else echo "PASS NEGATIVE: a legacy doc/ IRI is red"; pass=$((pass+1)); fi
 echo "=== Results: $pass passed, $fail failed ==="
 [ "$fail" -eq 0 ]

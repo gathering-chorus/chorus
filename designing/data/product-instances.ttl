@@ -618,7 +618,7 @@ chorus:gathering a chorus:Product ;
     chorus:docState "current" ;
     # #4319 — the ProductShape floor: its design doc and its content domains (the 12 domains Jeff owns).
     chorus:gaps "The 12 content domains predate the ProductShape floor (#3603) and have no design docs of their own yet." ;
-    chorus:hasDesignDoc <https://jeffbridwell.com/chorus#doc/docs%2FGATHERING_VISION.md> ;
+    chorus:hasDesignDoc chorus:document-gathering-vision ;
     chorus:hasDomain chorus:blog-domain, chorus:books-domain, chorus:documents-domain, chorus:music-domain, chorus:notes-domain, chorus:people-domain, chorus:photos-domain, chorus:property-domain, chorus:sexuality-domain, chorus:social-domain, chorus:stories-domain, chorus:video-domain ;
     # #4390 — gathering owns its own stream (value-stream-gathering, Jeff's Life
     # stream), so it is not at a Chorus step. atStep is required on ProductShape,
