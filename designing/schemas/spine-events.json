@@ -2576,6 +2576,17 @@
         "message": "Which suite could not run and which build failed, in words"
       }
     },
+    "session.expired": {
+      "vertebra": "building",
+      "source": "chorus-principal",
+      "description": "#4384 — a logged-in role's session passed its absolute lifetime (CHORUS_SESSION_MAX_HOURS, default 24) while renewing; its next turn closed the session and logged the role in again.",
+      "fields": {
+        "role": "The role whose session ended",
+        "session": "The Session row that was closed",
+        "started": "When that session started (ISO-8601 UTC)",
+        "max_hours": "The lifetime cap in hours"
+      }
+    },
     "session.revoked": {
       "vertebra": "building",
       "source": "chorus-principal",

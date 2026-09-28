@@ -101,6 +101,13 @@ pub fn credential_rows(role: &str, identity_dir: &str, mtimes: &[(String, String
 
 /// The session row as a login writes it now: #4202's row plus who it acts as
 /// and when it started.
+/// #4384 — a session has an absolute lifetime: started before the cutoff
+/// (now minus the cap, same ISO-8601 UTC form) means it is over. A row with
+/// no start is not judged; it is not a reason to end a session.
+pub fn past_lifetime(started: &str, cutoff: &str) -> bool {
+    !started.is_empty() && started < cutoff
+}
+
 pub fn with_role_and_start(mut session: Value, role: &str, started: &str) -> Value {
     // the BARE name: the mint adds "role-" and refuses a name that already has it
     // (live 2026-09-26 09:30: 422 double-prefix on 'role-silas')
@@ -361,5 +368,21 @@ pub fn login_verdict(name: &str, code: &str, body: &str, api: &str) -> Result<Op
         "404" => Err(format!("no Principal row named {}. Who exists: chorus-principal census", name)),
         c => Err(format!("could not read {}'s Principal row: the identity API at {} answered {}. Next: agent-state.sh restart athena-make",
             name, api, if c.is_empty() || c == "000" { "nothing".to_string() } else { format!("HTTP {}", c) })),
+    }
+}
+
+#[cfg(test)]
+mod lifetime_4384 {
+    use super::past_lifetime;
+    #[test]
+    fn older_than_the_cutoff_is_past() {
+        assert!(past_lifetime("2026-09-27T08:00:00Z", "2026-09-27T09:00:00Z"));
+    }
+    /// NEGATIVE PROOF: younger, equal, or no start at all is not past.
+    #[test]
+    fn younger_equal_or_missing_is_not_past() {
+        assert!(!past_lifetime("2026-09-27T10:00:00Z", "2026-09-27T09:00:00Z"));
+        assert!(!past_lifetime("2026-09-27T09:00:00Z", "2026-09-27T09:00:00Z"));
+        assert!(!past_lifetime("", "2026-09-27T09:00:00Z"));
     }
 }
