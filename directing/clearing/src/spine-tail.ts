@@ -202,24 +202,36 @@ function parseActionEntry(entry: LogEntry, role: string): StreamLine | null {
   };
 }
 
-/** #4231 — how close an observer line must be to count as the same call. */
-const SAME_CALL_MS = 10_000;
+/** #4231 — clock slack between the spine's stamp and the observer's. */
+const CLOCK_SLACK_MS = 2_000;
+
+const at = (l: StreamLine): number => Date.parse(l.ts);
 
 /** #4231 — a call the observer already wrote a reason line for must not also
  *  show as a bare "▸ Bash". Jeff, 2026-09-28: "i feel like ur last card didnt
- *  work" — half the pane was still bare tool names. Calls with no observer
- *  line (Read, Edit, Grep) keep their "▸" line, so every call still shows. */
+ *  work" — half the pane was still bare tool names. The spine stamps a call
+ *  when it STARTS and the observer when it ENDS, so a slow call (a nudge, a
+ *  commit) finishes long after it began: each start pairs with the first
+ *  unused reason line for the same role and tool at or after it, however
+ *  long the call ran. A call still running, or one with no observer line
+ *  (Read, Edit, Grep), keeps its "▸" line, so every call still shows. */
 export function dropCoveredActions(lines: StreamLine[], cover: StreamLine[] = lines): StreamLine[] {
   // The observer lines that COVER a call can be older than the ones the pane
   // renders (the pane reads each role's last 30), so the caller may pass more.
-  const obs = cover.filter((l) => l.type === 'obs' && l.tool);
-  const covered = (a: StreamLine): boolean => {
-    const at = Date.parse(a.ts);
-    if (Number.isNaN(at)) return false;
-    return obs.some((o) => o.role === a.role && o.tool === a.tool
-      && Math.abs(Date.parse(o.ts) - at) <= SAME_CALL_MS);
-  };
-  return lines.filter((l) => l.type !== 'action' || !covered(l));
+  const obs = cover.filter((l) => l.type === 'obs' && l.tool && !Number.isNaN(at(l)))
+    .sort((x, y) => at(x) - at(y));
+  const used = new Set<StreamLine>();
+  const covered = new Set<StreamLine>();
+  const actions = lines.filter((l) => l.type === 'action' && !Number.isNaN(at(l)))
+    .sort((x, y) => at(x) - at(y));
+  for (const a of actions) {
+    const o = obs.find((c) => !used.has(c) && c.role === a.role && c.tool === a.tool
+      && at(c) >= at(a) - CLOCK_SLACK_MS);
+    if (!o) continue;
+    used.add(o);
+    covered.add(a);
+  }
+  return lines.filter((l) => !covered.has(l));
 }
 
 function parseLogEntry(entry: LogEntry): StreamLine | null {
