@@ -147,6 +147,7 @@ mod tests {
 
     fn make_read(path: &str) -> HookInput {
         HookInput {
+            tool_use_id: None,
             tool_name: Some("Read".to_string()),
             tool_input: Some(json!({"file_path": path})),
             tool_response: None,
@@ -163,6 +164,7 @@ mod tests {
     #[tokio::test]
     async fn allows_non_read_tools() {
         let input = HookInput {
+            tool_use_id: None,
             tool_name: Some("Bash".to_string()),
             tool_input: Some(json!({"command": "ls"})),
             tool_response: None,

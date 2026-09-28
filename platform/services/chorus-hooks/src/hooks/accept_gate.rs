@@ -333,6 +333,7 @@ mod tests {
 
     fn make_skill(skill: &str, role_dir: &str) -> HookInput {
         HookInput {
+            tool_use_id: None,
             tool_name: Some("Skill".to_string()),
             tool_input: Some(json!({"skill": skill})),
             tool_response: None,
@@ -356,6 +357,7 @@ mod tests {
     #[tokio::test]
     async fn allows_non_skill_tools() {
         let input = HookInput {
+            tool_use_id: None,
             tool_name: Some("Bash".to_string()),
             tool_input: Some(json!({"command": "echo test"})),
             tool_response: None,

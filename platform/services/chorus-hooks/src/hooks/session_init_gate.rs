@@ -167,6 +167,7 @@ fn run_gate_smoke(role: &str, state: &AppState) -> bool {
         deploy_role: Some(role.to_string()),
         card_type: None,
         trace_id: None,
+        tool_use_id: None,
         tool_output_is_error: None,
     };
 
@@ -231,6 +232,7 @@ mod tests {
 
     fn make_input(tool: &str, role_dir: &str) -> HookInput {
         HookInput {
+            tool_use_id: None,
             tool_name: Some(tool.to_string()),
             tool_input: Some(json!({"command": "echo test", "file_path": "/tmp/test"})),
             tool_response: None,
@@ -264,6 +266,7 @@ mod tests {
     async fn allows_unknown_role() {
         let state = AppState::new();
         let input = HookInput {
+            tool_use_id: None,
             tool_name: Some("Bash".to_string()),
             tool_input: Some(serde_json::json!({"command": "echo test"})),
             tool_response: None,
@@ -330,6 +333,7 @@ mod tests {
         let _ = std::fs::remove_file(&done);
 
         let input = HookInput {
+            tool_use_id: None,
             tool_name: Some("Edit".to_string()),
             tool_input: Some(json!({"file_path": "/tmp/test.rs", "old_string": "x", "new_string": "y"})),
             tool_response: None,

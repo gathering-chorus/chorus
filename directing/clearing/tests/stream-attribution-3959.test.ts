@@ -42,18 +42,21 @@ function fakeFs(lines: string[]) {
   } as unknown as typeof import('fs');
 }
 
-const beat = (role: string | null, at: string, phase = 'running', tool = 'Bash') =>
+// #4231 — a role's work is now one call record per tool call (agent.action
+// phase=started, joined to its end on call_id); the agent.activity beat is retired.
+const beat = (role: string | null, at: string, _phase = 'started', tool = 'Bash') =>
   spineLine({
     timestamp: at,
-    event: 'agent.activity',
+    event: 'agent.action',
     ...(role === null ? {} : { role }),
-    phase,
+    phase: 'started',
     tool,
-    elapsed_s: '42',
+    call_id: `toolu_${at}`,
+    digest: `Run the suite · bash: ${tool.toLowerCase()} 42s`,
   });
 
 describe('#3959 — a role acts, the stream shows it, attributed', () => {
-  it('renders the running beat that #3853 emits (the 12,787/day that vanished)', () => {
+  it('renders a started call with what it is doing', () => {
     const { lines } = readSpineWithStats(
       fakeFs([beat('wren', '2026-08-21T18:00:00.000-0400')]),
       '/fake/chorus.log',
@@ -61,19 +64,13 @@ describe('#3959 — a role acts, the stream shows it, attributed', () => {
     );
     expect(lines).toHaveLength(1);
     expect(lines[0].role).toBe('wren');
-    expect(lines[0].text).toContain('Bash');
-    expect(lines[0].text).toContain('42s');
+    expect(lines[0].text).toContain('Run the suite');
   });
 
-  it('renders the thinking beat', () => {
-    const { lines } = readSpineWithStats(
-      fakeFs([beat('silas', '2026-08-21T18:00:01.000-0400', 'thinking', 'Edit')]),
-      '/fake/chorus.log',
-      80,
-    );
-    expect(lines).toHaveLength(1);
-    expect(lines[0].role).toBe('silas');
-    expect(lines[0].text).toContain('Edit');
+  it('no longer renders the retired agent.activity beat (#4231)', () => {
+    const old = spineLine({ timestamp: '2026-08-21T18:00:01.000-0400', event: 'agent.activity', role: 'silas', phase: 'running', tool: 'Bash', elapsed_s: '42' });
+    const { lines } = readSpineWithStats(fakeFs([old]), '/fake/chorus.log', 80);
+    expect(lines).toHaveLength(0);
   });
 
   // NEGATIVE PROOF #1 — the pre-fix parser. If the agent.activity branch is ever

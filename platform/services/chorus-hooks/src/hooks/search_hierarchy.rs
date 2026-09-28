@@ -483,6 +483,7 @@ mod tests {
     async fn test_non_search_tool_passes() {
         let state = AppState::new();
         let input = HookInput {
+            tool_use_id: None,
             tool_name: Some("Bash".to_string()),
             tool_input: Some(json!({"command": "ls", "pattern": ""})),
             tool_response: None,
@@ -503,6 +504,7 @@ mod tests {
     async fn test_empty_pattern_passes() {
         let state = AppState::new();
         let input = HookInput {
+            tool_use_id: None,
             tool_name: Some("Grep".to_string()),
             tool_input: Some(json!({"pattern": ""})),
             tool_response: None,
@@ -542,6 +544,7 @@ mod tests {
         state.set_search_block(&block_key).await;
 
         let input = HookInput {
+            tool_use_id: None,
             tool_name: Some("Grep".to_string()),
             tool_input: Some(json!({"pattern": "disk usage", "path": ""})),
             tool_response: None,

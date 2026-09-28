@@ -352,6 +352,7 @@ mod tests {
 
     fn kade_bash(cmd: &str) -> HookInput {
         HookInput {
+            tool_use_id: None,
             tool_name: Some("Bash".to_string()),
             tool_input: Some(json!({"command": cmd})),
             tool_response: None,
@@ -367,6 +368,7 @@ mod tests {
 
     fn silas_bash(cmd: &str) -> HookInput {
         HookInput {
+            tool_use_id: None,
             tool_name: Some("Bash".to_string()),
             tool_input: Some(json!({"command": cmd})),
             tool_response: None,
@@ -562,6 +564,7 @@ mod tests {
     #[tokio::test]
     async fn test_allow_write_tool() {
         let input = HookInput {
+            tool_use_id: None,
             tool_name: Some("Write".to_string()),
             tool_input: Some(json!({"file_path": "/tmp/test"})),
             tool_response: None,

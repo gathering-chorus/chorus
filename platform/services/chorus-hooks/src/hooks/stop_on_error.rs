@@ -218,6 +218,7 @@ mod tests {
     /// Helper: make a Bash input with structured tool_response (how Claude Code sends it)
     fn make_bash_input(command: &str, stderr: &str, stdout: &str) -> HookInput {
         HookInput {
+            tool_use_id: None,
             tool_name: Some("Bash".to_string()),
             tool_input: Some(json!({"command": command})),
             tool_response: Some(json!({
@@ -239,6 +240,7 @@ mod tests {
     /// Helper: make a Bash input with plain string response (some hooks send this way)
     fn make_bash_input_str(command: &str, response: &str) -> HookInput {
         HookInput {
+            tool_use_id: None,
             tool_name: Some("Bash".to_string()),
             tool_input: Some(json!({"command": command})),
             tool_response: Some(json!(response)),
@@ -351,6 +353,7 @@ mod tests {
     async fn test_allows_non_bash_tools() {
         let state = AppState::new();
         let input = HookInput {
+            tool_use_id: None,
             tool_name: Some("Read".to_string()),
             tool_input: Some(json!({"file_path": "/x"})),
             tool_response: Some(json!({"stderr": "Exit code 1", "stdout": ""})),

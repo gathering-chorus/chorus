@@ -153,6 +153,7 @@ mod tests {
 
     fn make_write_input(file_path: &str, content: &str) -> HookInput {
         HookInput {
+            tool_use_id: None,
             tool_name: Some("Write".to_string()),
             tool_input: Some(json!({
                 "file_path": file_path,
@@ -171,6 +172,7 @@ mod tests {
 
     fn make_edit_input(file_path: &str, new_string: &str) -> HookInput {
         HookInput {
+            tool_use_id: None,
             tool_name: Some("Edit".to_string()),
             tool_input: Some(json!({
                 "file_path": file_path,
@@ -328,6 +330,7 @@ mod tests {
     #[tokio::test]
     async fn test_allow_read_tool() {
         let input = HookInput {
+            tool_use_id: None,
             tool_name: Some("Read".to_string()),
             tool_input: Some(json!({"file_path": "/x/activity.md"})),
             tool_response: None,

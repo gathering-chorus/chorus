@@ -101,6 +101,25 @@ async fn emit_hook_decision(hook: &str, input: &HookInput, module: &str, resp: &
     .await;
 }
 
+/// #4231 — one tool call on the spine: `agent.action` phase=started at PreToolUse
+/// (allowed calls only), phase=ended at PostToolUse, joined on `call_id`
+/// (Claude Code's tool_use_id). The start carries the reason and command, so a
+/// running call already says what it is.
+async fn emit_call_event(input: &HookInput, phase: &str, outcome: Option<&str>) {
+    let owned = hooks::observer::call_event_fields(input, phase, outcome);
+    let fields: Vec<(&str, &str)> = owned.iter().map(|(k, v)| (*k, v.as_str())).collect();
+    crate::state::chorus_log("agent.action", input.role().as_str(), &fields).await;
+}
+
+/// #4231 — the session's turn is over (Stop, or a new prompt after an interrupt,
+/// where Stop never fires). The stream closes any call of this session still
+/// open, so a call whose end never arrived stops reading as running.
+async fn emit_turn_ended(input: &HookInput) {
+    let sid = input.session_id.as_deref().unwrap_or("");
+    let sid = if sid.len() > 8 { &sid[..8] } else { sid };
+    crate::state::chorus_log("agent.turn.ended", input.role().as_str(), &[("session_id", sid)]).await;
+}
+
 #[tokio::main]
 async fn main() {
     tracing_subscriber::fmt()
@@ -168,37 +187,10 @@ async fn main() {
 
     let state = AppState::new();
 
-    // #3853 — streams heartbeat. A background beat so a long-running command or a
-    // composing turn is never silent (the "idle" that isn't — the trust gap of
-    // 2026-08-13). Emits through the fail-loud spine path; a dropped beat surfaces,
-    // never swallowed. Additive: never touches a hook decision, so it can't break
-    // the hot path — worst case the task stops and beats go quiet.
-    {
-        let hb = state.clone();
-        tokio::spawn(async move {
-            let mut tick = tokio::time::interval(std::time::Duration::from_secs(10));
-            loop {
-                tick.tick().await;
-                for (session, role, tool, phase, elapsed) in hb.activity_due(15) {
-                    let el = elapsed.to_string();
-                    let what = hb.running_what(&session);
-                    let sid = if session.len() > 8 { &session[..8] } else { session.as_str() };
-                    crate::state::chorus_log(
-                        "agent.activity",
-                        &role,
-                        &[
-                            ("phase", phase),
-                            ("tool", tool.as_str()),
-                            ("digest", what.as_str()),
-                            ("elapsed_s", el.as_str()),
-                            ("session_id", sid),
-                        ],
-                    )
-                    .await;
-                }
-            }
-        });
-    }
+    // #4231 — the streams heartbeat ticker (#3853) is retired. A call is running
+    // exactly while it has a start and no end (agent.action phase=started/ended on
+    // one call_id), so nothing needs to beat to say a role is alive; the beats were
+    // the flood, and an entry that never cleared beat "running Skill (923s)".
 
     let app = Router::new()
         .route("/health", get(health))
@@ -322,6 +314,11 @@ async fn pre_tool_use(
     let (module, result) = pre_tool_use_inner(&state, &input).await;
     // #3252 — uniform hook.decision emit (JSON hooks.log + spine, shared trace).
     emit_hook_decision("pre_tool_use", &input, &module, &result, start).await;
+    // #4231 — a call the hooks let through starts here. A refused call never runs,
+    // gets no PostToolUse, and so gets no start: nothing is left open.
+    if hook_obs::classify_decision(&result) == "allow" {
+        emit_call_event(&input, "started", None).await;
+    }
     Json(result)
 }
 
@@ -340,32 +337,6 @@ async fn pre_tool_use_inner(
         _ => String::new(),
     };
     log_hook("pre_tool_use", &tool, role.as_str(), "enter", &detail_str);
-    // #3853 — a command is now in flight; the heartbeat ticker beats "running <tool>"
-    // if it outlives the threshold, so a long command is never a silent window.
-    // #4231 — remember WHAT is running (reason · command), not just the tool, so the
-    // start line and every heartbeat for a long call can say it.
-    let what = crate::hooks::observer::digest_tool_call(input);
-    state.mark_running_with(input.session_id.as_deref().unwrap_or(""), role.as_str(), &tool, &what);
-    // #3885 — EMIT THE ACTION ITSELF, not just a heartbeat. mark_running only sets
-    // state; the 10s ticker was the ONLY emitter, so any call shorter than 10s never
-    // reached the stream at all. Long `Bash` runs survived to a beat and everything
-    // else — Read, Grep, Edit, every MCP verb — vanished. That is why the pane read as
-    // "only bash" (Jeff, 2026-08-20) and why a working role looked stopped: the stream
-    // was sampling the SLOW parts of the work, not the work.
-    //
-    // One line per tool call, with the role and session already resolved above. Cheap
-    // (an append) and additive: the heartbeat still covers the long-running case, this
-    // covers the short one, and clear_activity still makes silence mean idle.
-    {
-        let sid = input.session_id.as_deref().unwrap_or("");
-        let sid = if sid.len() > 8 { &sid[..8] } else { sid };
-        crate::state::chorus_log(
-            "agent.action",
-            role.as_str(),
-            &[("tool", tool.as_str()), ("digest", what.as_str()), ("session_id", sid), ("phase", "started")],
-        )
-        .await;
-    }
     trace!(hook = "pre_tool_use", phase = "receive", %tool, role = role.as_str(), "dispatching");
 
     // #3278 — record test-file edits live, the instant the daemon sees them, so the
@@ -769,10 +740,9 @@ async fn post_tool_use(
     let start = std::time::Instant::now();
     let tool = input.tool_name_str().to_string();
 
-    // #3853 — command finished; the session is now composing/thinking. The ticker beats
-    // "thinking" if the compose window outlives the threshold, so between-command silence
-    // isn't read as idle.
-    state.mark_thinking(input.session_id.as_deref().unwrap_or(""), input.role().as_str());
+    // #4231 — the call ended; same call_id as its start.
+    let outcome = if input.tool_output_is_error == Some(true) { "error" } else { "ok" };
+    emit_call_event(&input, "ended", Some(outcome)).await;
 
     // Clock sync on every tool call (#1849) — keeps /tmp/wall-clock.txt fresh
     hooks::clock_sync::post_tick(&input).await;
@@ -975,6 +945,7 @@ async fn user_prompt_submit(
 ) -> Json<HookResponse> {
     let start = std::time::Instant::now();
     // Generate prompt cycle ID (#2231) — correlates this prompt with all subsequent tool calls
+    emit_turn_ended(&input).await;
     let session_id = input.session_id.as_deref().unwrap_or("unknown");
     let cycle_id = format!("{}-{:x}", chrono::Utc::now().timestamp_millis(), std::process::id());
     state.set_cycle_id(session_id, cycle_id.clone()).await;
@@ -1219,7 +1190,7 @@ async fn stop_hook(
     let input: HookInput = serde_json::from_value(raw.clone()).unwrap_or_default();
     // #3853 — turn ended; the session is genuinely idle now. Clear its activity so the
     // heartbeat goes quiet, and silence now truthfully means idle rather than hidden work.
-    if let Some(sid) = input.session_id.as_deref() { state.clear_activity(sid); }
+    emit_turn_ended(&input).await;
     inject_force_observe(&raw, &input).await;
     // Existing behavior unchanged — observe-only, no block on the inject-force path.
     let mut response = hooks::autonomy_guard::check(&input, &state).await;
@@ -1378,6 +1349,7 @@ mod emit_guard_dispatch_3945 {
 
     fn nudge_input(message: &str) -> HookInput {
         HookInput {
+            tool_use_id: None,
             tool_name: Some("mcp__chorus-api__chorus_nudge_message".to_string()),
             tool_input: Some(json!({ "to": "kade", "message": message })),
             tool_response: None,

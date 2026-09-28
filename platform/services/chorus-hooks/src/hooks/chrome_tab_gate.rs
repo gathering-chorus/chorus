@@ -56,6 +56,7 @@ mod tests {
 
     fn make_input(cmd: &str, prompt: &str) -> HookInput {
         HookInput {
+            tool_use_id: None,
             tool_name: Some("Bash".into()),
             tool_input: Some(json!({"command": cmd})),
             tool_response: None,

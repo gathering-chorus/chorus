@@ -156,6 +156,7 @@ mod tests {
 
     fn make_input(tool: &str) -> HookInput {
         HookInput {
+            tool_use_id: None,
             tool_name: Some(tool.to_string()),
             tool_input: Some(json!({"command": "echo test", "file_path": "/tmp/test.txt", "new_string": "test", "old_string": "old"})),
             tool_response: None,

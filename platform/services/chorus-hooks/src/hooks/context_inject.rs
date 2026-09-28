@@ -1478,6 +1478,7 @@ mod tests {
     async fn check_pushes_nonempty_context_against_live_services() {
         let state = AppState::new();
         let input = HookInput {
+            tool_use_id: None,
             tool_name: None,
             tool_input: None,
             tool_response: None,
