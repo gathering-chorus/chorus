@@ -19,6 +19,7 @@
  *     a scheme or protocol-relative //host that could bounce the user off-site.
  */
 
+import type { SignInClaims } from './person-session';
 import crypto from 'crypto';
 
 const b64url = (b: Buffer): string =>
@@ -132,14 +133,45 @@ export async function exchangeCodeForWebId(
   verifier: string,
   fetchImpl: typeof fetch = fetch,
 ): Promise<string | null> {
+  return (await exchangeCode(cfg, code, verifier, fetchImpl))?.webid ?? null;
+}
+
+/**
+ * #4412 — the same exchange, keeping what the sign-in carries: the WebID, the
+ * ID token (the person's own credential for writing his Session row), the
+ * refresh token (offline_access is in the scope), and iat/exp.
+ */
+export async function exchangeCode(
+  cfg: OidcConfig,
+  code: string,
+  verifier: string,
+  fetchImpl: typeof fetch = fetch,
+): Promise<SignInClaims | null> {
+  return tokenRequest(cfg, {
+    grant_type: 'authorization_code',
+    code,
+    redirect_uri: cfg.redirectUri,
+    client_id: cfg.clientId,
+    code_verifier: verifier,
+  }, fetchImpl);
+}
+
+/** #4412 — fresh tokens from a refresh token; null when CSS will not give them. */
+export async function refreshSignIn(
+  cfg: OidcConfig,
+  refreshToken: string,
+  fetchImpl: typeof fetch = fetch,
+): Promise<SignInClaims | null> {
+  return tokenRequest(cfg, { grant_type: 'refresh_token', refresh_token: refreshToken, client_id: cfg.clientId }, fetchImpl);
+}
+
+async function tokenRequest(
+  cfg: OidcConfig,
+  params: Record<string, string>,
+  fetchImpl: typeof fetch,
+): Promise<SignInClaims | null> {
   try {
-    const body = new URLSearchParams({
-      grant_type: 'authorization_code',
-      code,
-      redirect_uri: cfg.redirectUri,
-      client_id: cfg.clientId,
-      code_verifier: verifier,
-    });
+    const body = new URLSearchParams(params);
     // #3669 hardening 3 — exchange LOCALLY (no Cloudflare hairpin / bot-check /
     // internet dependency). Target the local token endpoint with the Host-override
     // so CSS matches its baseUrl; fall back to the public issuer only if no local
@@ -153,13 +185,32 @@ export async function exchangeCodeForWebId(
     }
     const res = await fetchImpl(endpoint, { method: 'POST', headers, body: body.toString() });
     if (!res.ok) return null;
-    const tok = (await res.json()) as { id_token?: string; access_token?: string };
+    const tok = (await res.json()) as { id_token?: string; access_token?: string; refresh_token?: string };
     const jwt = tok.id_token || tok.access_token;
+    if (!jwt) return null;
     // #3669 hardening 3 — with skip-verify weakened to loopback, pin the issuer:
     // the token's iss MUST equal our configured issuer, else reject.
-    return jwt ? webIdFromJwt(jwt, cfg.issuer) : null;
+    const webid = webIdFromJwt(jwt, cfg.issuer);
+    if (!webid) return null;
+    const payload = jwtPayload(jwt);
+    const now = Math.floor(Date.now() / 1000);
+    return {
+      webid,
+      idToken: jwt,
+      refreshToken: tok.refresh_token,
+      iat: typeof payload.iat === 'number' ? payload.iat : now,
+      exp: typeof payload.exp === 'number' ? payload.exp : now + 3600,
+    };
   } catch {
     return null;
+  }
+}
+
+function jwtPayload(jwt: string): Record<string, unknown> {
+  try {
+    return JSON.parse(Buffer.from((jwt.split('.')[1] ?? '').replace(/-/g, '+').replace(/_/g, '/'), 'base64').toString());
+  } catch {
+    return {};
   }
 }
 

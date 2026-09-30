@@ -171,3 +171,16 @@ Feature: A principal logs in, works, and logs out
     And wren's pane writes a spine event for kade
     Then wren's event names principal-wren and wren's session
     And the event for kade names neither
+
+  Scenario: A role's session starts and ends only while a person is signed in (#4412)
+    Given Jeff is signed in to the Clearing
+    When Jeff runs "chorus-principal login wren"
+    Then wren's session says jeff started it
+    When Jeff runs "chorus-principal logout wren"
+    Then wren's session says jeff ended it
+
+  Scenario: With nobody signed in, login is refused (#4412)
+    Given nobody is signed in to the Clearing
+    When Jeff runs "chorus-principal login wren"
+    Then it is refused with "nobody is signed in"
+    And nothing is started

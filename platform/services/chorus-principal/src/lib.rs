@@ -578,6 +578,10 @@ fn do_login(ctx: &Ctx, role: &str) -> Result<LoginState, ()> {
     let (session_name, body) = session_row(role, &login, &host_account, &start_id);
     // #4328 — the row says which role it acts as and when it started
     let body = rows::with_role_and_start(body, role, &iso_utc(now_ms() as u64 / 1000));
+    // #4412 — who started it, and where it lives
+    let mut body = body;
+    body["channel"] = Value::String("pane".into());
+    if let Ok(p) = env::var("CHORUS_STARTED_BY") { if !p.is_empty() { body["startedBy"] = Value::String(p); } }
     // the row: POST through the security API with the token as a header FILE (0600), never an argv
     let role_id_dir = PathBuf::from(&ctx.identity_dir).join(role);
     let _ = fs::create_dir_all(&role_id_dir);
@@ -634,6 +638,44 @@ fn stored_name(reply: &str) -> Option<String> {
 /// role's session is still open (it was /exited or restarted, never logged
 /// out) goes back to that session; the caller records a new run in it. Only
 /// a role with no open session gets a new one.
+/// #4412 — where a person signs in; the refusal hands Jeff this one step.
+/// #4412 — the one command that restarts CSS (LaunchAgent com.security.css).
+const CSS_RESTART: &str = "launchctl kickstart -k gui/$(id -u)/com.security.css";
+const CLEARING_SIGN_IN: &str = "https://clearing.lightlifeurbangardens.com";
+
+/// #4412 — Jeff 2026-09-30: "maybe we must bind chorus-principal to a human(s)"
+/// / "the login and logout". A role's session starts or ends only while a
+/// person is signed in: an open browser Session (his Clearing sign-in) owned by
+/// a person principal. Returns that person's bare name. The API not answering
+/// is a refusal too: nobody can be shown to be present.
+fn person_signed_in(ctx: &Ctx) -> Result<String, String> {
+    let url = format!("{}/v1/identity/sessions?channel=browser&limit=1000", ctx.api);
+    let answer = sh(&ctx.curl, &["-s", "-w", "\n%{http_code}", "--max-time", "5", &url]).unwrap_or_default();
+    let (body, code) = answer.trim_end().rsplit_once('\n').unwrap_or(("", answer.trim()));
+    if code.trim() != "200" { return Err(format!("could not read who is signed in (chorus-api answered {}).\n  fix: agent-state.sh restart chorus-api, then sign in at {}", code.trim(), CLEARING_SIGN_IN)); }
+    let now = iso_utc(now_ms() as u64 / 1000);
+    let rows = serde_json::from_str::<Value>(body).ok().and_then(|v| v.get("data").cloned()).and_then(|d| d.as_array().cloned()).unwrap_or_default();
+    for r in rows {
+        let f = |k: &str| r.get(k).and_then(|x| x.as_str()).unwrap_or("").to_string();
+        if f("channel") != "browser" || f("sessionState") == "closed" { continue; }
+        let exp = f("expiresAt");
+        if !exp.is_empty() && exp.as_str() <= now.as_str() { continue; }
+        let who = f("ownedBy"); let who = who.strip_prefix("principal-").unwrap_or(&who).to_string();
+        if who.is_empty() { continue; }
+        let purl = format!("{}/v1/identity/principals/{}", ctx.api, who);
+        let pa = sh(&ctx.curl, &["-s", "-w", "\n%{http_code}", "--max-time", "5", &purl]).unwrap_or_default();
+        if pa.contains("\"principalKind\":\"person\"") { return Ok(who); }
+    }
+    // #4412 — with CSS down nobody CAN sign in; say that, with its one fix
+    if let Some((_, url)) = ctx.services.iter().find(|(n, _)| n == "identity") {
+        let code = sh(&ctx.probe, &["-s", "-o", "/dev/null", "-w", "%{http_code}", "--max-time", "2", url]).unwrap_or_default();
+        if !lifecycle::is_answering(&code) {
+            return Err(format!("nobody can sign in: CSS (identity, {}) is not answering.\n  fix: {}", url, CSS_RESTART));
+        }
+    }
+    Err(format!("nobody is signed in: a role's session starts and ends only while a person is signed in to the Clearing.\n  fix: sign in at {}", CLEARING_SIGN_IN))
+}
+
 fn login_or_resume(ctx: &Ctx, role: &str) -> Result<LoginState, ()> {
     if let LoginState::Recorded { session, .. } = ctx.read_state(role) {
         let open = read_row(ctx, role, "session")
@@ -1342,6 +1384,9 @@ fn close_row_from(ctx: &Ctx, role: &str, session: &str, kept: Option<&str>) -> R
     let result = match row {
         None => Err(format!("session {} not found", session)),
         Some(row) => {
+            let mut row = row;
+            // #4412 — who ended it
+            if let Ok(p) = env::var("CHORUS_ENDED_BY") { if !p.is_empty() { row["endedBy"] = Value::String(p); } }
             write_private(&body_path, &row.to_string())?;
             let body_arg = format!("@{}", body_path.display());
             let code = sh(&ctx.curl, &["-s", "-o", "/dev/null", "-w", "%{http_code}", "--max-time", "10", "-X", "PUT", "-H", "Content-Type: application/json", "-H", &hdr_arg, "--data-binary", &body_arg, &url]).map(|c| c.trim().to_string()).unwrap_or_default();
@@ -1572,6 +1617,13 @@ pub fn run(args: &[String]) -> i32 {
                 // already logged in; it never waits on the identity API
                 let from_exit = args.iter().any(|a| a == "--from-exit");
                 if !from_exit { if let Err(why) = principal_gate(&ctx, &r) { eprintln!("chorus-principal: REFUSED — {}", why); return 2; } }
+                // #4412 — a person ends it (/exit ends only the run, #4406)
+                if !from_exit {
+                    match person_signed_in(&ctx) {
+                        Ok(p) => std::env::set_var("CHORUS_ENDED_BY", p),
+                        Err(why) => { eprintln!("chorus-principal: REFUSED — {}", why); eprintln!("  nothing was stopped."); return 2; }
+                    }
+                }
                 off(&ctx, &r, args.iter().any(|a| a == "--from-exit"))
             }
             Err(c) => c,
@@ -1581,6 +1633,11 @@ pub fn run(args: &[String]) -> i32 {
             if let Some(why) = caller_refusal(&r, "start") { eprintln!("chorus-principal: REFUSED — {}", why); eprintln!("  nothing was started."); return 2; }
             match principal_gate(&ctx, &r) {
                 Ok(acct) => { ctx.run_as = acct; let _ = fs::remove_file(PathBuf::from(&ctx.identity_dir).join(&r).join("revoked")); }
+                Err(why) => { eprintln!("chorus-principal: REFUSED — {}", why); eprintln!("  nothing was started."); return 2; }
+            }
+            // #4412 — a person starts it
+            match person_signed_in(&ctx) {
+                Ok(p) => std::env::set_var("CHORUS_STARTED_BY", p),
                 Err(why) => { eprintln!("chorus-principal: REFUSED — {}", why); eprintln!("  nothing was started."); return 2; }
             }
             let attach = envd("AWAKE_NO_ATTACH", "0") != "1";

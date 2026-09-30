@@ -44,7 +44,21 @@ var mockExchange: jest.Mock;
 jest.mock('../src/solid-oidc', () => {
   const actual = jest.requireActual('../src/solid-oidc');
   mockExchange = jest.fn();
-  return { ...actual, exchangeCodeForWebId: mockExchange };
+  // #4412 — the callback keeps the whole sign-in; the tests still say only WHO.
+  const exchangeCode = async (...a: unknown[]) => {
+    const webid = await mockExchange(...a);
+    return webid ? { webid, idToken: 'id-token', refreshToken: 'rt', iat: 0, exp: 9e9 } : null;
+  };
+  return { ...actual, exchangeCodeForWebId: mockExchange, exchangeCode };
+});
+// #4412 — his browser Session row: the seam to athena-make.
+var mockOpenPerson: jest.Mock;
+var mockClosePerson: jest.Mock;
+jest.mock('../src/person-session', () => {
+  const actual = jest.requireActual('../src/person-session');
+  mockOpenPerson = jest.fn().mockResolvedValue('psk-1');
+  mockClosePerson = jest.fn().mockResolvedValue(true);
+  return { ...actual, openPersonSession: mockOpenPerson, closePersonSession: mockClosePerson, touchPersonSession: jest.fn().mockResolvedValue(true) };
 });
 var mockChangePassword: jest.Mock;
 jest.mock('../src/account', () => {
@@ -173,6 +187,37 @@ describe('#3606 session identity on / (#3743 seam)', () => {
     const html = await home.text();
     expect(home.status).toBe(200);
     expect(html).toContain('window.BRIDGE_USER="jeff"');
+  });
+
+  test('#4412 sign-in writes his browser Session as him, and sign-out closes it', async () => {
+    mockExchange.mockResolvedValueOnce(JEFF_WEBID);
+    const { state, loginCookie } = await startLogin();
+    const cb = await fetch(`${baseUrl}/auth/callback?code=abc&state=${encodeURIComponent(state)}`, {
+      redirect: 'manual', headers: { cookie: loginCookie },
+    });
+    expect(cb.status).toBe(302);
+    expect(mockOpenPerson).toHaveBeenCalledWith(expect.anything(), 'jeff', expect.objectContaining({ webid: JEFF_WEBID, idToken: 'id-token' }));
+    const session = cookieOf(cb as unknown as Response, 'clearing_session');
+    const out = await fetch(`${baseUrl}/auth/signout`, { headers: { cookie: session } });
+    expect(out.status).toBe(200);
+    expect(mockClosePerson).toHaveBeenCalledWith(expect.anything(), 'psk-1');
+    expect(await out.text()).toContain('Roles can no longer log in');
+    // NEGATIVE PROOF: the session cookie is gone after sign-out
+    expect(out.headers.get('set-cookie') || '').toMatch(/clearing_session=;/);
+  });
+
+  test('NEGATIVE: a sign-in whose Session row fails still signs him in, with nothing to close', async () => {
+    mockOpenPerson.mockResolvedValueOnce(null);
+    mockClosePerson.mockClear();
+    mockExchange.mockResolvedValueOnce(JEFF_WEBID);
+    const { state, loginCookie } = await startLogin();
+    const cb = await fetch(`${baseUrl}/auth/callback?code=abc&state=${encodeURIComponent(state)}`, {
+      redirect: 'manual', headers: { cookie: loginCookie },
+    });
+    expect(cb.status).toBe(302);
+    const out = await fetch(`${baseUrl}/auth/signout`, { headers: { cookie: cookieOf(cb as unknown as Response, 'clearing_session') } });
+    expect(mockClosePerson).not.toHaveBeenCalled();
+    expect(await out.text()).not.toContain('Roles can no longer log in');
   });
 
   test('/logout clears the cookies and says so', async () => {
