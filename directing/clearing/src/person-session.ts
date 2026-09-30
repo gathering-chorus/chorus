@@ -113,9 +113,8 @@ export function openRoleSessionNames(list: unknown): string[] {
 
 function pickItems(list: unknown): Array<Record<string, unknown>> {
   if (Array.isArray(list)) return list as Array<Record<string, unknown>>;
-  const o = (list ?? {}) as Record<string, unknown>;
-  for (const k of ['items', 'data', 'rows']) {
-    const v = o[k];
+  const o = (list ?? {}) as { items?: unknown; data?: unknown; rows?: unknown };
+  for (const v of [o.items, o.data, o.rows]) {
     if (Array.isArray(v)) return v as Array<Record<string, unknown>>;
   }
   return [];
@@ -123,23 +122,30 @@ function pickItems(list: unknown): Array<Record<string, unknown>> {
 
 // --- the store: one 0600 file, keyed by the cookie's session key ------------
 
-function readStore(p: string): Record<string, PersonSessionRecord> {
+// The path is the Clearing's own config (CLEARING_PERSON_SESSIONS), never
+// request input; hence the fs-filename disables below.
+function readStore(p: string): Map<string, PersonSessionRecord> {
   try {
-    return JSON.parse(fs.readFileSync(p, 'utf-8')) as Record<string, PersonSessionRecord>;
+    // eslint-disable-next-line security/detect-non-literal-fs-filename -- config path, not input
+    const o = JSON.parse(fs.readFileSync(p, 'utf-8')) as Record<string, PersonSessionRecord>;
+    return new Map(Object.entries(o));
   } catch {
-    return {};
+    return new Map();
   }
 }
 
-function writeStore(p: string, s: Record<string, PersonSessionRecord>): void {
+function writeStore(p: string, s: Map<string, PersonSessionRecord>): void {
+  // eslint-disable-next-line security/detect-non-literal-fs-filename -- config path, not input
   fs.mkdirSync(path.dirname(p), { recursive: true });
   const tmp = `${p}.${process.pid}.tmp`;
-  fs.writeFileSync(tmp, JSON.stringify(s), { mode: 0o600 });
+  // eslint-disable-next-line security/detect-non-literal-fs-filename -- config path, not input
+  fs.writeFileSync(tmp, JSON.stringify(Object.fromEntries(s)), { mode: 0o600 });
+  // eslint-disable-next-line security/detect-non-literal-fs-filename -- config path, not input
   fs.renameSync(tmp, p);
 }
 
 export function getRecord(deps: PersonSessionDeps, key: string): PersonSessionRecord | null {
-  return readStore(deps.storePath)[key] ?? null;
+  return readStore(deps.storePath).get(key) ?? null;
 }
 
 // --- the API calls ----------------------------------------------------------
@@ -218,10 +224,10 @@ export async function openPersonSession(
   const rowName = storedName(reply.body, name);
   const key = crypto.randomBytes(18).toString('base64url');
   const store = readStore(deps.storePath);
-  store[key] = {
+  store.set(key, {
     key, principal, rowName, row: { ...row, name: rowName },
     idToken: claims.idToken, refreshToken: claims.refreshToken, exp: claims.exp, lastSeenWrite: nowMs,
-  };
+  });
   writeStore(deps.storePath, store);
   log(`person-session: ${principal} signed in, session ${rowName}, binds ${roles.length} role session(s)`);
   return key;
@@ -230,7 +236,7 @@ export async function openPersonSession(
 /** Activity: keep lastSeenAt current, at most once a minute. */
 export async function touchPersonSession(deps: PersonSessionDeps, key: string): Promise<boolean> {
   const store = readStore(deps.storePath);
-  const rec = store[key];
+  const rec = store.get(key);
   if (!rec) return false;
   const nowMs = deps.now();
   if (nowMs - rec.lastSeenWrite < SEEN_EVERY_MS) return true;
@@ -243,7 +249,7 @@ export async function touchPersonSession(deps: PersonSessionDeps, key: string): 
   if (roles) { if (roles.length) row.binds = roles; else delete row.binds; }
   const reply = await send(deps, 'PUT', `${deps.api}/v1/identity/sessions/${rec.rowName}`, token, row);
   if (reply.status >= 300) return false;
-  store[key] = { ...rec, row, lastSeenWrite: nowMs };
+  store.set(key, { ...rec, row, lastSeenWrite: nowMs });
   writeStore(deps.storePath, store);
   return true;
 }
@@ -252,7 +258,7 @@ export async function touchPersonSession(deps: PersonSessionDeps, key: string): 
 export async function closePersonSession(deps: PersonSessionDeps, key: string): Promise<boolean> {
   const log = deps.log ?? (() => {});
   const store = readStore(deps.storePath);
-  const rec = store[key];
+  const rec = store.get(key);
   if (!rec) return false;
   const token = await liveToken(deps, rec);
   let ok = false;
@@ -264,7 +270,7 @@ export async function closePersonSession(deps: PersonSessionDeps, key: string): 
     log(`person-session: ${rec.principal} sign-out row NOT closed: no live token`);
   }
   // Forget the tokens either way: a sign-out must not leave them on disk.
-  delete store[key];
+  store.delete(key);
   writeStore(deps.storePath, store);
   return ok;
 }

@@ -495,7 +495,7 @@ async function isAuthed(req: Request): Promise<boolean> {
   const session = readSessionCookie(req);
   const sessionAuthed = !!(session && (await isWebIdAllowed(session.webid, Date.now())));
   // #4412 — he is here: keep his Session's lastSeenAt current (≤ once a minute).
-  if (sessionAuthed && session?.psk) void touchPersonSession(personDeps(req), session.psk).catch(() => {});
+  if (session && sessionAuthed && session.psk) void touchPersonSession(personDeps(req), session.psk).catch(() => {});
   // BRIDGE_TOKEN is a long random value; tunnel auth gate, migration fallback only.
   const tokenAuthed = !REQUIRE_DPOP && extractToken(req) === BRIDGE_TOKEN;
   return sessionAuthed || tokenAuthed;
