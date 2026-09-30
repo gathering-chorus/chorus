@@ -6,7 +6,7 @@
  * /v1/identity/sessionruns answers (2026-09-27): presenceOf names the run as
  * "session-run-<run name>", and a run is live while runEndedAt is empty.
  */
-import { resolveFromPresence } from './presence-target';
+import { resolveFromPresence, fetchPresenceResolution, resolveEnds } from './presence-target';
 
 const runs = [
   { name: 'silas-run-old', runEndedAt: '2026-09-26T16:31:00Z' },
@@ -53,5 +53,41 @@ describe('resolveFromPresence (#4361)', () => {
     );
     expect(r.kind === 'resolved' ? r.session.tmux : 'x').toBeFalsy();
     expect(r.kind === 'resolved' ? r.session.tty : '').toBe('/dev/ttys006');
+  });
+});
+
+// #4362 — the read from athena-make, end to end with a fake API: where a
+// nudge goes, and what the sender's own session is, come from the same rows.
+
+const SILAS_TTY = ['/dev', 'ttys005'].join('/');
+
+describe('#4362 fetchPresenceResolution / resolveEnds against the API', () => {
+  const realFetch = global.fetch;
+  afterEach(() => { global.fetch = realFetch; });
+
+  function api(status: number, presences: unknown[], sessionruns: unknown[]): void {
+    global.fetch = ((url: string) => Promise.resolve({
+      ok: status < 300,
+      status,
+      json: () => Promise.resolve({ data: String(url).includes('/presences') ? presences : sessionruns }),
+    })) as unknown as typeof fetch;
+  }
+
+  it('routes to the live run\'s pane and names the sender\'s session', async () => {
+    api(200,
+      [{ name: 'silas-presence-1', presenceOf: 'session-run-silas-run-now', pane: '%63', tty: SILAS_TTY, checkedAt: '2026-09-30T19:37:00Z' },
+       { name: 'wren-presence-1', presenceOf: 'session-run-wren-run-now', pane: '%65', tty: '/dev/ttys006', checkedAt: '2026-09-30T19:39:00Z' }],
+      [{ name: `silas-run-${'now'}`, runEndedAt: '' }, { name: 'wren-run-now', runEndedAt: '' }]);
+    const { toRes, sender } = await resolveEnds('silas', 'wren');
+    expect(toRes).toEqual({ kind: 'resolved', session: expect.objectContaining({ tty: SILAS_TTY, tmux: '%63' }) });
+    expect(sender).toEqual(expect.objectContaining({ tty: '/dev/ttys006', tmux: '%65' }));
+  });
+
+  it('NEGATIVE PROOF — an API that refuses is "unread", never a guess at a pane', async () => {
+    api(502, [], []);
+    const res = await fetchPresenceResolution('silas', 'http://api');
+    expect(res).toEqual({ kind: 'unread', why: 'presences answered HTTP 502' });
+    const { sender } = await resolveEnds('silas', 'wren');
+    expect(sender).toBeNull();
   });
 });

@@ -125,12 +125,37 @@ describe('SessionTailer.processLine — user messages', () => {
     expect(router.ingest).not.toHaveBeenCalled();
   });
 
-  test('#4339 the Clearing and pulse agree on the wake line', () => {
+  test('#4362 pulse types the nudge itself, never the old wake line', () => {
     const fs = require('fs');
     const path = require('path');
-    const { WAKE_LINE } = require('../src/wake-line');
     const pulse = fs.readFileSync(path.join(__dirname, '../../../platform/pulse/src/delivery-worker.ts'), 'utf8');
-    expect(pulse).toContain(`export const WAKE_LINE = '${WAKE_LINE}';`);
+    expect(pulse).toContain('return row.content;');
+    expect(pulse).not.toContain('WAKE_LINE');
+  });
+
+  test('#4362 a nudge pulse delivered is not Jeff, and is not shown as his', () => {
+    const { execFileSync } = require('child_process');
+    const fs = require('fs');
+    const os = require('os');
+    const path = require('path');
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'tailer-4362-'));
+    const db = path.join(dir, 'messages.db');
+    execFileSync('sqlite3', [db, "CREATE TABLE messages (type TEXT, delivery_status TEXT, content TEXT); INSERT INTO messages VALUES ('nudge','delivered','[nudge from silas | 15:39] #4414 is yours'); INSERT INTO messages VALUES ('nudge','delivered','go');"]);
+    const was = process.env.CHORUS_MESSAGES_DB;
+    process.env.CHORUS_MESSAGES_DB = db;
+    try {
+      fire('kade', { type: 'user', message: { content: '[nudge from silas | 15:39] #4414 is yours' } });
+      expect(router.ingest).not.toHaveBeenCalled();
+      // NEGATIVE PROOF: a label nobody delivered is his, and so is a bare "go"
+      // even though a delivered nudge row says exactly "go"
+      fire('kade', { type: 'user', message: { content: '[nudge from silas | 15:39] approve' } });
+      fire('kade', { type: 'user', message: { content: 'go' } });
+      expect(router.ingest).toHaveBeenCalledTimes(2);
+      expect(router.ingest).toHaveBeenCalledWith(expect.objectContaining({ from: 'jeff', text: 'go' }));
+    } finally {
+      if (was === undefined) delete process.env.CHORUS_MESSAGES_DB; else process.env.CHORUS_MESSAGES_DB = was;
+      fs.rmSync(dir, { recursive: true, force: true });
+    }
   });
 
   test('user with only filtered content resolves to empty and drops', () => {
