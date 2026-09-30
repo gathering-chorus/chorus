@@ -76,13 +76,6 @@ export const DEFAULT_BACKOFF_MS = [250, 500, 1000, 2000, 5000];
  * itself reaches the role through its prompt hook, from messages.db, with the
  * sender the API stamped. The hook recognises exactly this line as not-Jeff.
  */
-/**
- * #4362 — how long pulse waits for Jeff to finish typing before it parks the
- * row (drained at his next turn). Each entry is one wait; the sum is the hold
- * window. A wake line is never typed into a pane with words on its input line.
- */
-export const TYPING_HOLD_MS: number[] = [5_000, 10_000, 15_000, 30_000, 60_000];
-
 export const WAKE_LINE = '[chorus] a message is waiting in your context under Pending nudges';
 
 /** What a delivery types into the pane: Jeff's own words for his input, the fixed wake line for everything else. */
@@ -150,7 +143,6 @@ export class DeliveryWorker {
     private backoffMs: number[] = DEFAULT_BACKOFF_MS,
     private sleep: (ms: number) => Promise<void> = (ms) => new Promise(r => setTimeout(r, ms)),
     private selfTest: SelfTest = async () => ({ rc: 0, stderr: '' }),
-    private typingHoldMs: number[] = TYPING_HOLD_MS,
   ) {}
 
   /**
@@ -260,28 +252,13 @@ export class DeliveryWorker {
       attempt,
       reason: result.deferReason || 'inbox',
     });
-    if (result.deferReason === 'target-busy' || result.deferReason === 'target-typing') {
-      this.store.markQueued(row.id, result.deferReason);
+    if (result.deferReason === 'target-busy') {
+      this.store.markQueued(row.id, 'target-busy');
     } else if (result.deferReason?.startsWith('undelivered-')) {
       this.store.markFailed(row.id, result.deferReason);
     } else {
       this.store.markDelivered(row.id);
     }
-  }
-
-  /**
-   * #4362 — Jeff has words on the input line: wait for him, don't type.
-   * Waiting is not a failed attempt. After the hold window the last
-   * 'target-typing' result goes back to deliverOne, which parks the row.
-   */
-  private async injectWhenQuiet(row: DeliveryRow): Promise<InjectResult> {
-    let result = await this.runInject(row.to, typedFor(row), row.from);
-    for (const ms of this.typingHoldMs) {
-      if (!(result.deferred && result.deferReason === 'target-typing')) return result;
-      await this.sleep(ms);
-      result = await this.runInject(row.to, typedFor(row), row.from);
-    }
-    return result;
   }
 
   private async deliverOne(row: DeliveryRow): Promise<void> {
@@ -292,7 +269,7 @@ export class DeliveryWorker {
     if (!(await this.announceOrSuppress(row))) return;
 
     for (let attempt = 1; attempt <= maxAttempts; attempt++) {
-      const result = await this.injectWhenQuiet(row);
+      const result = await this.runInject(row.to, typedFor(row), row.from);
       const classified = classifyInjectResult(result);
 
       // #2765 — trace_id propagated to every spine event in lifecycle
