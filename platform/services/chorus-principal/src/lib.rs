@@ -1003,14 +1003,22 @@ fn past_lifetime_relogin(ctx: &Ctx, role: &str) -> Option<i32> {
     let hours: u64 = envd("CHORUS_SESSION_MAX_HOURS", "24").parse().unwrap_or(24);
     let cutoff = iso_utc((now_ms() as u64 / 1000).saturating_sub(hours * 3600));
     if !rows::past_lifetime(&started, &cutoff) { return None; }
+    // #4403 — order matters: the new login state is written BEFORE the old run
+    // ends. A seen-write running meanwhile (a surfaced nudge starts one) then
+    // sees either the old run still live and records nothing, or the new state
+    // and records a run of the new session. The #4402 order (end first) let it
+    // see an ended run under the old state: 09-30 12:34 silas got a run of the
+    // session that was closing.
+    let old_row = fs::read_to_string(PathBuf::from(&ctx.identity_dir).join(role).join("session.row.json")).unwrap_or_default();
+    let fresh = do_login(ctx, role);
+    if let Ok(st) = &fresh { ctx.write_state(role, st); }
     // #4402 — the run belongs to the session being closed: end it too, or the
     // next turn sees a live run and never records one for the new session
-    // (09-29: silas and wren kept 09-28 runs, 0 live runs for their sessions)
     end_run(ctx, role, "restart");
-    let _ = close_row(ctx, role, &session);
+    let _ = close_row_from(ctx, role, &session, Some(&old_row));
     ctx.spine(&["session.expired", role, &format!("session={}", session), &format!("started={}", started), &format!("max_hours={}", hours)]);
-    match do_login(ctx, role) {
-        Ok(st) => { ctx.write_state(role, &st); Some(0) }
+    match fresh {
+        Ok(_) => Some(0),
         Err(()) => {
             ctx.write_state(role, &LoginState::Closed);
             eprintln!("chorus-principal: {}'s session reached its {}h lifetime and a new login was refused. The turn did not run; log in again: chorus-principal login {}", role, hours, role);
@@ -1328,6 +1336,12 @@ fn relogin(ctx: &Ctx, role: &str) -> i32 {
 
 /// Close the Session row: read it, write sessionState=closed + endedAt back.
 fn close_row(ctx: &Ctx, role: &str, session: &str) -> Result<(), String> {
+    close_row_from(ctx, role, session, None)
+}
+
+/// #4403 — close a session from a saved row the caller kept: after a re-login
+/// session.row.json already holds the NEW session.
+fn close_row_from(ctx: &Ctx, role: &str, session: &str, kept: Option<&str>) -> Result<(), String> {
     let token = sh(&ctx.token_bin, &[role]).map_err(|e| format!("no token: {}", e.trim()))?;
     let role_id_dir = PathBuf::from(&ctx.identity_dir).join(role);
     let _ = fs::create_dir_all(&role_id_dir);
@@ -1338,7 +1352,7 @@ fn close_row(ctx: &Ctx, role: &str, session: &str) -> Result<(), String> {
     let hdr_arg = format!("@{}", hdr.display());
     let ended = iso_utc(now_ms() as u64 / 1000);
     // the row saved at login; else the listing (the single-row GET lacks name/ownedBy)
-    let saved = fs::read_to_string(role_id_dir.join("session.row.json")).unwrap_or_default();
+    let saved = match kept { Some(k) => k.to_string(), None => fs::read_to_string(role_id_dir.join("session.row.json")).unwrap_or_default() };
     let row = lifecycle::closed_row(&saved, session, &ended).or_else(|| {
         let list = sh(&ctx.curl, &["-s", "--max-time", "10", "-H", &hdr_arg, &format!("{}/v1/identity/sessions?limit=1000", ctx.api)]).unwrap_or_default();
         lifecycle::closed_row(&list, session, &ended)
