@@ -100,6 +100,25 @@ fn a_running_job_is_judged_on_this_run_not_the_last_one() {
     assert!(!deploy_took(&stopped_after_a_bad_run));
 }
 
+// #4185 — com.chorus.crawl-nightly lost its 04:30 schedule and runs only when a
+// land kickstarts it. Real print lines, 2026-09-30.
+const ON_DEMAND_FINISHED: &str = "gui/501/com.chorus.crawl-nightly = {\n\tstate = not running\n\tprogram = /Users/x/.chorus/bin/chorus-crawl\n\tlast exit code = 0\n\tproperties = inferred program | managed LWCR\n}\n";
+const KEEPALIVE_DAEMON_DOWN: &str = "gui/501/com.chorus.hooks = {\n\tstate = not running\n\tprogram = /Users/x/.chorus/bin/chorus-hooks\n\tlast exit code = 0\n\tproperties = keepalive | runatload | inferred program | managed LWCR | has LWCR\n}\n";
+
+#[test]
+fn an_on_demand_job_that_finished_clean_is_up() {
+    assert_eq!(job_kind(ON_DEMAND_FINISHED), JobKind::Scheduled);
+    assert!(deploy_took(ON_DEMAND_FINISHED));
+    assert!(!deploy_took(&ON_DEMAND_FINISHED.replace("last exit code = 0", "last exit code = 1")));
+}
+
+/// NEGATIVE PROOF — a keepalive daemon that is not running is still down.
+#[test]
+fn negative_proof_a_keepalive_daemon_is_never_on_demand() {
+    assert_eq!(job_kind(KEEPALIVE_DAEMON_DOWN), JobKind::Daemon);
+    assert!(!deploy_took(KEEPALIVE_DAEMON_DOWN));
+}
+
 #[test]
 fn negative_proof_an_unrecognised_exit_value_is_not_waved_through() {
     // The permissive first cut passed anything that did not parse as a number.

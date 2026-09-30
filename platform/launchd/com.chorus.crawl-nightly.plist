@@ -34,18 +34,13 @@
     <string>/Users/jeffbridwell/CascadeProjects/chorus</string>
     <key>CHORUS_OWL_API</key>
     <string>http://localhost:3360</string>
-    <!-- #4180 — the nightly is the FULL pass. Without this it reads the on-disk
-         watermark and runs a delta over whatever landed since 04:30 yesterday,
-         which the on-land step already did; the first launchd-started pass
-         walked 0 files. An empty watermark forces the full walk that repairs
-         graph-side drift a delta cannot see. -->
-    <key>CHORUS_CRAWL_WATERMARK</key>
-    <string></string>
-  </dict>
-  <key>StartCalendarInterval</key>
-  <dict>
-    <key>Hour</key><integer>4</integer>
-    <key>Minute</key><integer>30</integer>
+    <!-- #4185 — this unit is the ON-LAND pass only, a delta over what landed.
+         The FULL pass is the 03:00 nightly's first step (werk-test's
+         crawler-validate leg, CHORUS_CRAWL_WATERMARK=""), crawl before tests.
+         The 04:30 schedule is gone (Jeff 2026-09-30: "crawl is step 1 and tests
+         step 2"; it crawled again after the tests read the graph), and so is the
+         empty watermark #4180 set here: it made every land start a full pass —
+         runs = 100 on 09-30, each killing the one before. -->
   </dict>
   <key>RunAtLoad</key>
   <false/>

@@ -1399,6 +1399,8 @@ pub fn write_routes(plural: &str) -> Vec<String> {
     // and one POST per file measured 1.01 s (12,944 files = 3.6 h). The DAL
     // primitive was always entity-generic; the route now is too.
     routes.insert(1, format!("POST /{}/batch", plural));
+    // #4185 — and the bulk delete: a JSON array of row names, one DAL update.
+    routes.insert(2, format!("POST /{}/delete-batch", plural));
     routes
 }
 
@@ -1438,6 +1440,7 @@ pub fn write_status(outcome: &str) -> (u16, &'static str) {
 pub enum WriteOp {
     CreateEntity,
     CreateBatch,
+    DeleteBatch,
     ReplaceEntity { name: String },
     DeleteEntity { name: String },
     AddEdge { name: String, edge: String },
@@ -1455,6 +1458,7 @@ pub fn parse_write(method: &str, path: &str, plural: &str) -> Option<WriteOp> {
     match (method, parts.len()) {
         ("POST", 1) => Some(WriteOp::CreateEntity),
         ("POST", 2) if parts[1] == "batch" => Some(WriteOp::CreateBatch),
+        ("POST", 2) if parts[1] == "delete-batch" => Some(WriteOp::DeleteBatch),
         ("PUT", 2) => Some(WriteOp::ReplaceEntity { name: parts[1].to_string() }),
         ("DELETE", 2) => Some(WriteOp::DeleteEntity { name: parts[1].to_string() }),
         ("POST", 3) => Some(WriteOp::AddEdge { name: parts[1].to_string(), edge: parts[2].to_string() }),
@@ -2001,6 +2005,13 @@ fn dal_add_batch(input: &str, token: &str) -> R<()> {
 /// and the Revision holding the version it displaces).
 fn dal_write_many(input: &str, token: &str) -> R<()> {
     dal_run_stdin(&["write-many".to_string()], token, input)
+}
+
+/// #4185 — delete many rows of one kind in one DAL process and one update;
+/// the names ride stdin, one per line, never argv.
+fn dal_delete_batch(kind: &str, names: &[String], token: &str, graph: &str) -> R<()> {
+    let args = ["delete-batch", "--kind", kind, "--graph", graph].map(String::from);
+    dal_run_stdin(&args, token, &names.join("\n"))
 }
 
 /// Delete an entity via the DAL `delete` (governed, fail-closed, witnessed).
@@ -2590,6 +2601,80 @@ fn handle_create_batch(body: &str, table: &RouteTable, caller_role: &str, token:
         Err(e) => {
             emit_write_spine(caller_role, "create-batch", &reqs.len().to_string(), "", "error");
             pen_refusal_resp(&e, caller_role, &table.instances_graph).unwrap_or_else(|| dal_err_resp(&e))
+        }
+    }
+}
+
+/// #4185 — the delete-batch body: a JSON array of row names, `["a","b"]`. Names
+/// pass the same injection check as a single write's path segment.
+pub fn parse_name_array(body: &str) -> Result<Vec<String>, String> {
+    let inner = body
+        .trim()
+        .strip_prefix('[')
+        .and_then(|b| b.strip_suffix(']'))
+        .ok_or("delete-batch body must be a JSON array of row names")?;
+    let mut names = Vec::new();
+    for item in inner.split(',').map(str::trim).filter(|s| !s.is_empty()) {
+        let name = item
+            .strip_prefix('"')
+            .and_then(|s| s.strip_suffix('"'))
+            .ok_or_else(|| format!("delete-batch: {} is not a quoted row name", item))?;
+        if !is_safe_local(name) {
+            return Err(format!("delete-batch: invalid row name '{}'", name));
+        }
+        names.push(name.to_string());
+    }
+    if names.is_empty() {
+        return Err("delete-batch requires at least one row name".into());
+    }
+    Ok(names)
+}
+
+/// #4185 — POST /{plural}/delete-batch: many rows, one DAL update. Every row gets
+/// the verdict a single DELETE gets (owner, or a Write Permission on the graph
+/// for a row another principal owns), and one refusal refuses the whole batch:
+/// nothing is deleted unless every row may be.
+fn handle_delete_batch(body: &str, table: &RouteTable, caller_role: &str, token: &str, scope: &[String]) -> (u16, String) {
+    let names = match parse_name_array(body) {
+        Ok(n) => n,
+        Err(e) => return write_resp("validation", &e),
+    };
+    let mut refused: Vec<String> = Vec::new();
+    for n in &names {
+        let verdict = permission_opens(
+            owner_verdict(caller_role, read_owned_by(&table.class, n, &table.instances_graph),
+                          || entity_exists_res(&table.class, n, &table.instances_graph)),
+            &table.instances_graph, scope);
+        match verdict {
+            OwnerVerdict::Allow => {}
+            OwnerVerdict::Unavailable(err) => {
+                emit_write_spine(caller_role, "delete-batch", n, "", "unavailable");
+                return write_resp("unavailable", &format!("could not read the owner of '{}' — the store did not answer ({}); retry, nothing deleted", n, err));
+            }
+            OwnerVerdict::NotFound => {
+                emit_write_spine(caller_role, "delete-batch", n, "", "not-found");
+                return write_resp("not-found", &format!("no such row '{}' to delete — nothing deleted", n));
+            }
+            OwnerVerdict::NotOwner(owned) => refused.push(format!(
+                "{} (ownedBy {})", n, owned.as_deref().unwrap_or("absent — the row has no owner"))),
+        }
+    }
+    if !refused.is_empty() {
+        emit_write_spine(caller_role, "delete-batch", &refused.len().to_string(), "", "authz");
+        return write_resp("authz", &format!(
+            "not this row's owner: {}; nothing deleted; {}",
+            refused.join(", "), row_that_would_open(caller_role, &table.instances_graph)));
+    }
+    let class_local = table.class.rsplit('#').next().unwrap_or("");
+    let plural = pluralize(class_local);
+    match dal_delete_batch(&kind_of_class(class_local), &names, token, &table.instances_graph) {
+        Ok(_) => {
+            emit_write_spine(caller_role, "delete-batch", &plural, "", "ok");
+            write_resp("ok", &format!("deleted {} {} via one DAL batch", names.len(), plural))
+        }
+        Err(e) => {
+            emit_write_spine(caller_role, "delete-batch", &names.len().to_string(), "", "error");
+            dal_err_resp(&e)
         }
     }
 }
@@ -3215,7 +3300,8 @@ pub fn handle_write_scoped(method: &str, path: &str, body: &str, table: &RouteTa
     }
     // entity name (None for create/create-batch) + injection-safety
     let entity: Option<String> = match &op {
-        WriteOp::CreateEntity | WriteOp::CreateBatch => None,
+        // #4185 — delete-batch checks each named row's owner in its own handler.
+        WriteOp::CreateEntity | WriteOp::CreateBatch | WriteOp::DeleteBatch => None,
         WriteOp::ReplaceEntity { name }
         | WriteOp::DeleteEntity { name }
         | WriteOp::AddEdge { name, .. }
@@ -3307,6 +3393,7 @@ pub fn handle_write_scoped(method: &str, path: &str, body: &str, table: &RouteTa
         }
         WriteOp::CreateEntity => handle_create(body, table, caller_role, token, landed_commit),
         WriteOp::CreateBatch => handle_create_batch(body, table, caller_role, token, landed_commit),
+        WriteOp::DeleteBatch => handle_delete_batch(body, table, caller_role, token, scope),
         WriteOp::ReplaceEntity { name } => {
             // REPLACE: authZ (ownedBy == caller) already enforced in the entity block
             // above. Must exist (404 otherwise).
@@ -3547,7 +3634,9 @@ pub fn openapi_json(t: &RouteTable) -> String {
             )
         } else {
             let params = if p.contains("{name}") { NAME_PARAM } else { "" };
-            let request_schema = if p.ends_with("/batch") {
+            let request_schema = if p.ends_with("/delete-batch") {
+                Some("{ \"type\": \"array\", \"minItems\": 1, \"items\": { \"type\": \"string\" } }".to_string())
+            } else if p.ends_with("/batch") {
                 Some(format!("{{ \"type\": \"array\", \"minItems\": 1, \"items\": {{ \"$ref\": \"#/components/schemas/{}Create\" }} }}", class_short))
             } else if m == "post" && !p.contains("{name}") {
                 Some(format!("{{ \"$ref\": \"#/components/schemas/{}Create\" }}", class_short))
@@ -3670,7 +3759,7 @@ pub fn tests_manifest(t: &RouteTable) -> String {
             let rest = r.strip_prefix(verb)?.trim();
             if with_name {
                 if rest.ends_with("/:name") { Some(rest.to_string()) } else { None }
-            } else if !rest.contains(":name") && !rest.ends_with("/batch") {
+            } else if !rest.contains(":name") && !rest.ends_with("/batch") && !rest.ends_with("/delete-batch") {
                 Some(rest.to_string())
             } else {
                 None
@@ -7382,6 +7471,9 @@ mod tests {
         // NEGATIVE PROOF: a two-segment POST that is not /batch is still not a write
         assert_eq!(parse_write("POST", "/domains/notbatch", "domains"), None);
         assert_eq!(parse_write("POST", "/testresults/batch", "testresults"), Some(WriteOp::CreateBatch));
+        assert_eq!(parse_write("POST", "/testresults/delete-batch", "testresults"), Some(WriteOp::DeleteBatch));
+        // a row NAMED delete-batch is still deleted one at a time by its own route
+        assert_eq!(parse_write("DELETE", "/testresults/delete-batch", "testresults"), Some(WriteOp::DeleteEntity { name: "delete-batch".into() }));
         assert_eq!(parse_write("PUT", "/domains/x", "domains"), Some(WriteOp::ReplaceEntity { name: "x".into() }));
         assert_eq!(parse_write("DELETE", "/domains/x", "domains"), Some(WriteOp::DeleteEntity { name: "x".into() }));
         assert_eq!(parse_write("POST", "/domains/x/partof", "domains"), Some(WriteOp::AddEdge { name: "x".into(), edge: "partof".into() }));

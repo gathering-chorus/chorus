@@ -1154,7 +1154,23 @@ fn sample_daemons() -> std::collections::BTreeMap<String, Option<u32>> {
     let cmd = env_or("NIGHTLY_LAUNCHCTL", "launchctl list");
     let out = Command::new("bash").arg("-c").arg(&cmd).output()
         .map(|o| String::from_utf8_lossy(&o.stdout).into_owned()).unwrap_or_default();
-    parse_launchctl(&out)
+    let agents = env_or("NIGHTLY_AGENT_DIR", &format!("{}/Library/LaunchAgents", env_or("HOME", "/tmp")));
+    let mut m = parse_launchctl(&out);
+    m.retain(|label, _| {
+        std::fs::read_to_string(format!("{agents}/{label}.plist"))
+            .map(|p| stays_up(&p))
+            .unwrap_or(true)
+    });
+    m
+}
+
+/// #4185 — only an agent launchd keeps up is a daemon this line watches. A
+/// job that runs to completion (com.chorus.crawl-nightly, started by a land)
+/// finishing mid-run is not a death: 2026-09-30's run read "crawl-nightly gone
+/// (was pid 12627)" for a pass that ended cleanly. A plist that cannot be read
+/// keeps the agent in the sample.
+pub fn stays_up(plist: &str) -> bool {
+    plist.contains("<key>KeepAlive</key>")
 }
 
 fn leg_daemons(
@@ -1207,10 +1223,21 @@ fn leg_crawler_validate(ctx: &Ctx) -> SuiteRow {
     // validates — so it checks a current graph. A run that writes no prod
     // rows (a werk, #3722) validates only.
     c.args(crawler_args(ctx.graph.enabled))
+        .envs(crawler_env(ctx.graph.enabled))
         .env("CHORUS_ROOT", &ctx.root)
         .env("CHORUS_ROLE", env_or("NIGHTLY_CRAWL_ROLE", "kade"))
         .current_dir(&ctx.root);
     let (rc, out) = run_capped(c, Duration::from_secs(1200));
+    // #4185 — this is now the ONE full pass (the 04:30 job is retired), so its
+    // output joins the crawler's own log: crawler-stale and the nightly's
+    // TOTAL line read that file. Only a run that may write prod writes it.
+    if ctx.graph.enabled {
+        let log = env_or("CRAWL_NIGHTLY_LOG", &format!("{}/Library/Logs/Chorus/crawl-nightly.log", env_or("HOME", "/tmp")));
+        if let Ok(mut f) = std::fs::OpenOptions::new().create(true).append(true).open(&log) {
+            use std::io::Write;
+            let _ = writeln!(f, "chorus-crawl: (the 03:00 nightly's full pass, run by werk-test)\n{out}");
+        }
+    }
     let (status, summary) = crawler_validate_verdict(rc, &out);
     let row = SuiteRow::new("crawler-validate", path, "kade", status, &summary);
     if status != "pass" {
@@ -1224,6 +1251,15 @@ fn leg_crawler_validate(ctx: &Ctx) -> SuiteRow {
 /// when it may not.
 pub fn crawler_args(may_write: bool) -> Vec<&'static str> {
     if may_write { Vec::new() } else { vec!["--validate"] }
+}
+
+/// #4185 — the write pass must be a FULL pass: the crawler prints its
+/// VALIDATE| lines only after a full pass, and without this the graph's
+/// watermark made it a delta (2026-09-30 08:33: "delta becf31089..9760be75a",
+/// no VALIDATE lines, the lane UNMEASURED). An empty watermark is the
+/// crawler's "full pass requested by the job", as the 04:30 job asks.
+pub fn crawler_env(may_write: bool) -> Vec<(&'static str, &'static str)> {
+    if may_write { vec![("CHORUS_CRAWL_WATERMARK", "")] } else { Vec::new() }
 }
 
 /// One parsed `VALIDATE|domain|class|tree=|graph=|missing=|stale=|measured` line.
@@ -1329,12 +1365,16 @@ mod crawl_first_4318 {
     #[test]
     fn the_team_run_crawls_before_it_validates() {
         assert!(crawler_args(true).is_empty(), "a full pass: write, then validate");
+        // #4185 — no args alone was a DELTA pass (the graph's watermark), which
+        // prints no VALIDATE lines; the empty watermark is what makes it full.
+        assert_eq!(crawler_env(true), vec![("CHORUS_CRAWL_WATERMARK", "")]);
     }
 
     /// NEGATIVE PROOF — a run that may not write prod (a werk) never crawls.
     #[test]
     fn a_werk_run_only_validates() {
         assert_eq!(crawler_args(false), vec!["--validate"]);
+        assert!(crawler_env(false).is_empty(), "--validate is always full; no watermark to override");
     }
 }
 
@@ -1426,6 +1466,16 @@ mod lanes_4278 {
         assert!(daemon_restarts(&start, &started_later).is_empty());
     }
 
+    // #4185 — a run-to-completion job is not in the daemon sample; a KeepAlive
+    // agent is. NEGATIVE PROOF: the hooks plist shape stays watched.
+    #[test]
+    fn only_keepalive_agents_are_watched_as_daemons() {
+        let crawl = "<dict><key>Label</key><string>com.chorus.crawl-nightly</string><key>RunAtLoad</key><false/></dict>";
+        let hooks = "<dict><key>Label</key><string>com.chorus.hooks</string><key>KeepAlive</key><true/></dict>";
+        assert!(!stays_up(crawl));
+        assert!(stays_up(hooks));
+    }
+
     /// #4290 NEGATIVE PROOF (#3734): the lane must go red on the state it
     /// exists to catch — one file in git without a row and one row without a
     /// file — and must name the domain with its two counts.
@@ -1484,6 +1534,33 @@ mod lanes_4278 {
             ops_nudge: "/usr/bin/true".into(), no_nudge: true, owners: HashMap::new(),
             graph: GraphRows::default(),
         }
+    }
+
+    // #4185 — the nightly's full pass is the crawler's one full pass, so its
+    // output lands in the crawler's log (crawler-stale reads it). NEGATIVE PROOF:
+    // a run that may not write prod (a werk) leaves that log alone.
+    #[test]
+    fn the_full_pass_writes_the_crawler_log_only_when_the_run_may_write() {
+        let dir = std::env::temp_dir().join(format!("wt-4185-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let bin = dir.join("crawl-stub.sh");
+        std::fs::write(&bin, "#!/bin/sh\necho 'chorus-crawl: full (stub)'\necho 'VALIDATE|code|CodeFile|tree=1|graph=1|missing=0|stale=0|measured'\n").unwrap();
+        use std::os::unix::fs::PermissionsExt;
+        std::fs::set_permissions(&bin, std::fs::Permissions::from_mode(0o755)).unwrap();
+        let log = dir.join("crawl-nightly.log");
+        std::env::set_var("NIGHTLY_CRAWL_BIN", &bin);
+        std::env::set_var("CRAWL_NIGHTLY_LOG", &log);
+        let root = dir.to_str().unwrap();
+        let werk = ctx_for(root);
+        leg_crawler_validate(&werk);
+        assert!(!log.exists(), "a werk run wrote the crawler log");
+        let mut prod = ctx_for(root);
+        prod.graph.enabled = true;
+        leg_crawler_validate(&prod);
+        let text = std::fs::read_to_string(&log).unwrap();
+        assert!(text.contains("chorus-crawl: full (stub)") && text.contains("03:00 nightly"), "{text}");
+        std::env::remove_var("NIGHTLY_CRAWL_BIN");
+        std::env::remove_var("CRAWL_NIGHTLY_LOG");
     }
 
 

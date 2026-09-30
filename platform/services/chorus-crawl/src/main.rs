@@ -1277,6 +1277,15 @@ fn main() {
     // #4292 — `--validate` is the crawler-validate control's name for the
     // same read-only pass (#4290); the nightly lane calls it by that name.
     let reconciling = std::env::args().any(|a| a == "--reconcile" || a == "--validate");
+    // #4185 — every pass says when it started and (below) when it ended, so a
+    // pass killed midway reads as a start with no end, never as silence. On
+    // 2026-09-30 a land SIGTERMed a 56-minute pass and the log just stopped.
+    println!(
+        "chorus-crawl: pass start {} pid={} mode={}",
+        chorus_crawl::iso_from_secs(now_secs()),
+        std::process::id(),
+        if reconciling { "validate" } else if dry_run { "dry-run" } else { "write" }
+    );
 
     let head = match head_commit(&root) {
         Ok(h) => h,
@@ -1644,6 +1653,12 @@ fn main() {
     };
     let on_box = |p: &str| std::path::Path::new(p).is_file();
     let mut log_actions = plan_logs(&log_files, &log_graph, scope_was_full_walk(&scope), &on_box);
+    // #4185 — a row whose only change is the crawl's clock is left alone.
+    let log_observed = now_secs();
+    let log_machine = std::env::var("CHORUS_MACHINE").unwrap_or_else(|_| "library".to_string());
+    log_actions = chorus_crawl::settle_log_replaces(log_actions, &log_graph, &log_machine, log_observed, &|row| {
+        log_domain(&row.launchd_label, &row.path, &valid_domains, &log_file_rows)
+    });
     let log_deletes = log_actions
         .iter()
         .filter(|a| matches!(a, LogAction::Delete { .. }))
@@ -1802,6 +1817,25 @@ fn main() {
                 }
             }
         }
+        // #4185 — a full pass rewrites only rows whose written fields changed.
+        // hasDomain always rides the comparison (empty when unplaced), because a
+        // write of an unplaced row removes a stored domain.
+        let with_domain = |mut f: Vec<(String, String)>, d: Option<String>| {
+            if d.is_none() {
+                f.push(("hasDomain".to_string(), String::new()));
+            }
+            f
+        };
+        page_plan = pages::settle_replaces(page_plan, &page_graph, &|r: &pages::PageRow| r.route.clone(), &|r: &pages::PageRow| {
+            let d = pages::page_domain(&r.route, &valid_domains)
+                .or_else(|| place_row(&root, &r.path, &unit_rows, &dir_rows, &valid_domains, &card_domain));
+            with_domain(page_fields(r, d.as_deref()), d)
+        });
+        endpoint_plan = pages::settle_replaces(endpoint_plan, &endpoint_graph, &|r: &pages::EndpointRow| format!("{} {}", r.http_method, r.route_path), &|r: &pages::EndpointRow| {
+            let d = pages::endpoint_domain(&r.route_path, &valid_domains, &route_rows)
+                .or_else(|| place_row(&root, &r.path, &unit_rows, &dir_rows, &valid_domains, &card_domain));
+            with_domain(endpoint_fields(r, d.as_deref()), d)
+        });
         let pc = pages::counts(&page_plan);
         let ec = pages::counts(&endpoint_plan);
         println!(
@@ -2092,7 +2126,21 @@ fn main() {
                         Ok(results) => {
                             let res_coll = collection_for(&api, "TestResult");
                             let mut all_gone = true;
-                            for r in &results {
+                            // #4185 — a case's results go in batches, one API call and
+                            // one store update each (one at a time measured 1.4 rows/s,
+                            // 2026-09-30). A batch the API refuses (a result someone
+                            // else owns, a row already gone) falls back to one at a
+                            // time below, so held results are still named per owner.
+                            let mut leftover: Vec<&String> = Vec::new();
+                            for chunk in results.chunks(cases::DELETE_BATCH_ROWS) {
+                                let del = res_coll.as_ref().map_err(|e| e.clone()).and_then(|c| {
+                                    write(ident, &api, "POST", &format!("{c}/delete-batch"), Some(&cases::delete_batch_body(chunk)))
+                                });
+                                if del.is_err() {
+                                    leftover.extend(chunk);
+                                }
+                            }
+                            for r in leftover {
                                 let del = res_coll.as_ref().map_err(|e| e.clone()).and_then(|c| {
                                     write(ident, &api, "DELETE", &format!("{c}/{r}"), None)
                                 });
@@ -2307,7 +2355,7 @@ fn main() {
     let elapsed = started.elapsed().as_secs_f64();
     let attempted = wrote + failed.len();
     println!(
-        "chorus-crawl: wrote={} failed={} · elapsed={:.0}s rate={:.1}/s mints={}",
+        "chorus-crawl: wrote={} failed={} · elapsed={:.0}s rate={:.1}/s mints={} · writes ended {}",
         wrote,
         failed.len(),
         elapsed,
@@ -2316,7 +2364,8 @@ fn main() {
         } else {
             0.0
         },
-        ident.borrow().mints
+        ident.borrow().mints,
+        chorus_crawl::iso_from_secs(now_secs())
     );
 
     // The watermark moves only when this run earned it.

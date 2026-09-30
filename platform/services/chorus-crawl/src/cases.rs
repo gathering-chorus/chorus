@@ -1318,6 +1318,35 @@ pub fn result_names_from_csv(csv: &str) -> Vec<String> {
         .collect()
 }
 
+/// #4185 — result rows per delete-batch call. A result name runs ~80 bytes, so
+/// 300 stays well inside athena-make's 64 KiB write-body cap and its 1000-row
+/// DAL cap.
+pub const DELETE_BATCH_ROWS: usize = 300;
+
+/// #4185 — the delete-batch body: a JSON array of row names. Names come from
+/// result IRIs, which carry no quote or backslash; athena-make re-checks each.
+pub fn delete_batch_body(names: &[String]) -> String {
+    let quoted: Vec<String> = names.iter().map(|n| format!("\"{n}\"")).collect();
+    format!("[{}]", quoted.join(","))
+}
+
+#[cfg(test)]
+mod delete_batch_4185 {
+    use super::*;
+
+    #[test]
+    fn the_body_is_a_json_array_of_names() {
+        assert_eq!(delete_batch_body(&["a1".into(), "b2".into()]), "[\"a1\",\"b2\"]");
+    }
+
+    /// NEGATIVE PROOF — a full chunk of long names still fits the API's body cap.
+    #[test]
+    fn a_full_chunk_fits_the_write_body_cap() {
+        let long: Vec<String> = (0..DELETE_BATCH_ROWS).map(|i| format!("{:0>120}", i)).collect();
+        assert!(delete_batch_body(&long).len() < 65_536, "{} bytes", delete_batch_body(&long).len());
+    }
+}
+
 #[cfg(test)]
 mod cases_4185 {
     // #4310 — a deleted case must take its results with it.

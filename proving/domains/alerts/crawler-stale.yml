@@ -7,7 +7,7 @@
 # while the thing it guards ran nightly (found by the 2026-09-17 nightly, #4197).
 #
 # What it reads — the crawler's own evidence, nothing else:
-#   CRAWL_LOG        ~/Library/Logs/Chorus/crawl-nightly.log (the 04:30 launchd pass)
+#   CRAWL_LOG        ~/Library/Logs/Chorus/crawl-nightly.log (the 03:00 nightly's full pass and every on-land delta, #4185)
 #   .chorus-crawl-watermark  at CHORUS_ROOT — the commit the graph is known to match
 # Stale when: no log · the log has not been written in 26 h · the last pass held
 # its watermark ("watermark HELD" — deletes refused or a write failed) · no
