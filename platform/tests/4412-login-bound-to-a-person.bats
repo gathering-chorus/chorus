@@ -33,6 +33,16 @@ posts() { ls "$T/bodies" 2>/dev/null | grep -c -- '-POST-identity_sessions.json$
   test "$(posts)" -eq 0
 }
 
+@test "#4412 NEGATIVE: CSS down means nobody can sign in, and the refusal gives its one restart" {
+  touch "$T/nobody-signed-in" "$T/down-3001"
+  run "$SCRIPT" login wren
+  test "$status" -eq 2
+  printf '%s' "$output" | grep -qF "CSS (identity"
+  printf '%s' "$output" | grep -qF 'fix: launchctl kickstart -k gui/$(id -u)/com.security.css'
+  test "$(printf '%s' "$output" | grep -cF "sign in at")" -eq 0
+  test "$(posts)" -eq 0
+}
+
 @test "#4412 NEGATIVE: chorus-api not answering is refused with the one command that fixes it" {
   touch "$T/api-down"
   run "$SCRIPT" login wren

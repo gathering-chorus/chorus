@@ -639,6 +639,8 @@ fn stored_name(reply: &str) -> Option<String> {
 /// out) goes back to that session; the caller records a new run in it. Only
 /// a role with no open session gets a new one.
 /// #4412 — where a person signs in; the refusal hands Jeff this one step.
+/// #4412 — the one command that restarts CSS (LaunchAgent com.security.css).
+const CSS_RESTART: &str = "launchctl kickstart -k gui/$(id -u)/com.security.css";
 const CLEARING_SIGN_IN: &str = "https://clearing.lightlifeurbangardens.com";
 
 /// #4412 — Jeff 2026-09-30: "maybe we must bind chorus-principal to a human(s)"
@@ -663,6 +665,13 @@ fn person_signed_in(ctx: &Ctx) -> Result<String, String> {
         let purl = format!("{}/v1/identity/principals/{}", ctx.api, who);
         let pa = sh(&ctx.curl, &["-s", "-w", "\n%{http_code}", "--max-time", "5", &purl]).unwrap_or_default();
         if pa.contains("\"principalKind\":\"person\"") { return Ok(who); }
+    }
+    // #4412 — with CSS down nobody CAN sign in; say that, with its one fix
+    if let Some((_, url)) = ctx.services.iter().find(|(n, _)| n == "identity") {
+        let code = sh(&ctx.probe, &["-s", "-o", "/dev/null", "-w", "%{http_code}", "--max-time", "2", url]).unwrap_or_default();
+        if !lifecycle::is_answering(&code) {
+            return Err(format!("nobody can sign in: CSS (identity, {}) is not answering.\n  fix: {}", url, CSS_RESTART));
+        }
     }
     Err(format!("nobody is signed in: a role's session starts and ends only while a person is signed in to the Clearing.\n  fix: sign in at {}", CLEARING_SIGN_IN))
 }
