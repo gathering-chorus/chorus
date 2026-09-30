@@ -313,10 +313,12 @@ print("; ".join(bad))' "$BODY" "$CF" "$WORK/readback")"
 for s in json.load(open(sys.argv[1]))["quartet"]["steps"]:
     print("\t".join([s["step"], s["method"], s["path"], str(s["expectStatus"])]))' "$M")
 
-  # Never leave a row behind, whatever happened above.
-  curl -s --max-time 20 -o /dev/null -X DELETE -H "Authorization: Bearer $TOKEN" \
+  # Never leave a row behind, whatever happened above. Its status is kept:
+  # a cleanup that never reached the door is why a row stays (#4411, kade
+  # 09-30: the update never answered and neither did this delete).
+  CLEANUP_CODE="$(curl -s --max-time 20 -o /dev/null -w '%{http_code}' -X DELETE -H "Authorization: Bearer $TOKEN" \
     "$API$(python3 -c 'import json,sys
-print(next((s["path"] for s in json.load(open(sys.argv[1]))["quartet"]["steps"] if s["step"]=="delete"), ""))' "$M")" 2>/dev/null || true
+print(next((s["path"] for s in json.load(open(sys.argv[1]))["quartet"]["steps"] if s["step"]=="delete"), ""))' "$M")" 2>/dev/null || true)"
 
   # #4279 — residue: the delete reply is not the proof; the store is. Count the
   # subject's triples in EVERY graph after the delete. Any left is a leftover
@@ -327,7 +329,9 @@ print(next((s["path"] for s in json.load(open(sys.argv[1]))["quartet"]["steps"] 
     LEFT="$(curl -s --max-time 20 "${FUSEKI_AUTH[@]+"${FUSEKI_AUTH[@]}"}" -G "$RESIDUE_QUERY" \
       --data-urlencode "query=SELECT ?g (COUNT(*) AS ?n) WHERE { GRAPH ?g { <$ROW_IRI> ?p ?o } } GROUP BY ?g" \
       -H 'Accept: text/csv' 2>/dev/null | tail -n +2 | tr -d '\r' | tr '\n' ' ')"
-    if [ -n "$LEFT" ]; then OK=0; DETAIL="leftover row after delete: <$ROW_IRI> in $LEFT"; fi
+    # Appended, never overwritten: the step that failed first is the cause,
+    # the leftover row is its consequence (#4411).
+    if [ -n "$LEFT" ]; then OK=0; DETAIL="${DETAIL:+$DETAIL · }leftover row after delete: <$ROW_IRI> in $LEFT (cleanup DELETE answered ${CLEANUP_CODE:-000})"; fi
   fi
 
   if [ "$OK" = 1 ]; then

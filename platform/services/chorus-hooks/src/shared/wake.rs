@@ -27,7 +27,9 @@ pub fn is_relay(prompt: &str) -> bool {
 /// Read-only lookup in pulse's messages.db; any read failure answers false.
 pub fn delivered_by_pulse(db: &str, prompt: &str) -> bool {
     let text = prompt.trim();
-    if text.is_empty() {
+    // Only a headed nudge: messages.db holds a bare "go" as a delivered nudge
+    // row, and Jeff typing "go" must never read as a relay (#4411).
+    if !text.starts_with("[nudge from ") {
         return false;
     }
     let Ok(conn) = rusqlite::Connection::open_with_flags(db, rusqlite::OpenFlags::SQLITE_OPEN_READ_ONLY) else {
@@ -92,5 +94,13 @@ mod tests {
         let (_p, pending) = store_with("[nudge from silas | x] hi", "pending");
         assert!(!delivered_by_pulse(&pending, "[nudge from silas | x] hi"));
         assert!(!delivered_by_pulse("/nonexistent/messages.db", "[nudge from silas | x] hi"));
+    }
+
+    /// #4411 NEGATIVE PROOF: messages.db holds a bare "go" as a delivered nudge
+    /// row (measured 09-30). Jeff typing "go" must stay Jeff's.
+    #[test]
+    fn a_bare_go_row_never_makes_jeffs_go_a_relay_4411() {
+        let (_d, db) = store_with("go", "delivered");
+        assert!(!delivered_by_pulse(&db, "go"));
     }
 }

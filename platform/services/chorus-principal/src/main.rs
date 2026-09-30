@@ -321,6 +321,13 @@ fn curl_cfg(cfg: Option<String>, args: &[&str]) -> Option<String> {
         let _ = si.write_all(text.as_bytes());
     }
     let out = child.wait_with_output().ok()?;
+    // No reply at all (refused, timed out) is None, never an empty body: an
+    // empty body read as the register's answer said "did not create an
+    // account" when the register was down (#4411). curl -s without -f
+    // still exits 0 on an HTTP error status, so those replies come through.
+    if !out.status.success() {
+        return None;
+    }
     Some(String::from_utf8_lossy(&out.stdout).to_string())
 }
 
@@ -688,18 +695,21 @@ fn cmd_create(name: &str, kind: Kind, person: Option<Person>, role: Option<&str>
     // cannot delete a pod (CSS has no pod-delete) makes every late refusal a
     // permanent half-state; and a POLICY refusal must not depend on the
     // register being up.
-    if kind == Kind::Agent && role.is_none() {
-        match holds_role(name) {
+    if kind == Kind::Agent {
+        // #4202 made --role required, so the old "holds no role" gate here
+        // never ran and the role was first asked of the store at step 3b,
+        // AFTER the account and pod exist. Ask it here instead (#4411).
+        let r = role.unwrap_or("");
+        match role_state(r) {
             Some(true) => {}
             Some(false) => {
-                eprintln!("chorus-principal: REFUSED — agent '{name}' holds no role");
-                eprintln!("  nothing was written. A credential minted for a role-less agent");
-                eprintln!("  403s on its first write; the agent would exist and be unable to act.");
-                eprintln!("  Give it a role in the roles domain first — an empty answer is still a role.");
+                eprintln!("chorus-principal: REFUSED — no role '{r}' to attach to agent '{name}'");
+                eprintln!("  nothing was written. An agent holding no role is refused its first write;");
+                eprintln!("  create the role in the roles domain first.");
                 return 2;
             }
             None => {
-                eprintln!("chorus-principal: REFUSED — the roles domain could not be read, so whether '{name}' holds a role is UNMEASURED, not no-role");
+                eprintln!("chorus-principal: REFUSED — the roles domain could not be read, so whether role '{r}' exists is UNMEASURED, not no-role");
                 eprintln!("  nothing was written. Unmeasured is not yes: minting on a failed read would");
                 eprintln!("  turn every store outage into a role-less credential.");
                 return 2;
@@ -1486,6 +1496,12 @@ mod tests {
 /// assumed from the name. An unreadable store answers no, which refuses the
 /// create rather than attaching to something that may not be there.
 fn role_exists(role: &str) -> bool {
+    role_state(role) == Some(true)
+}
+
+/// The same question, with an unreadable store answered as None (UNMEASURED)
+/// rather than no, so the door can refuse for the right reason (#4411).
+fn role_state(role: &str) -> Option<bool> {
     let q = format!("PREFIX c: <https://jeffbridwell.com/chorus#> ASK {{ GRAPH ?g {{ c:{role} a c:Role }} }}");
     let body = curl(&[
         "-s", "--max-time", "30", "-G",
@@ -1494,7 +1510,10 @@ fn role_exists(role: &str) -> bool {
         "-H", "Accept: application/sparql-results+json",
     ]).unwrap_or_default();
     let flat: String = body.chars().filter(|c| !c.is_whitespace()).collect();
-    flat.contains("\"boolean\":true")
+    if !flat.contains("\"boolean\"") {
+        return None;
+    }
+    Some(flat.contains("\"boolean\":true"))
 }
 
 /// How many of the four hats this principal wears. Counted from the store,

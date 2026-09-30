@@ -447,3 +447,21 @@ describe('#4278 spine lines carry card_id', () => {
     expect((r2.body as any).spine).toHaveLength(0);
   });
 });
+
+// #4411 — the discovery scan walked two repos with `find` (7.5s measured on
+// 09-30, crawl 12-16s against the BDD's 15s cap). It reads git's file index
+// instead: tracked files only, so build output and node_modules never enter.
+describe('codeScan discovery reads the git index, never walks the disk (#4411)', () => {
+  it('asks git ls-files for the domain stem and returns what it lists', async () => {
+    const cmds: string[] = [];
+    const exec: ExecAsyncFn = async (cmd: string) => {
+      cmds.push(cmd);
+      return { stdout: cmd.includes('ls-files') ? '/r/chorus/platform/api/src/seeds.ts\n' : '' };
+    };
+    const r = await fetchCrawl('seeds', deps({ execAsync: exec }));
+    const body = r.body as { codeScan: { discovered: string[] } };
+    expect(body.codeScan.discovered).toEqual(['/r/chorus/platform/api/src/seeds.ts']);
+    // NEGATIVE PROOF: no command walks the filesystem
+    expect(cmds.some((c) => /(^|\s)find\s/.test(c))).toBe(false);
+  });
+});

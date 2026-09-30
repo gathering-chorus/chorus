@@ -151,10 +151,49 @@ pub fn with_conversation(mut run: Value, conversation: &str) -> Option<Value> {
     Some(run)
 }
 
-/// #4339 — the only thing pulse types into a pane for a nudge. Must equal
-/// `WAKE_LINE` in platform/pulse/src/delivery-worker.ts and
-/// chorus-hooks' shared::wake.
+/// #4339 — what pulse typed into a pane for a nudge until #4362. Since #4362
+/// pulse types the nudge's own words; this line still counts as a delivery
+/// for a session that saw it before the change.
 pub const WAKE_LINE: &str = "[chorus] a message is waiting in your context under Pending nudges";
+
+/// pulse's messages.db — the same path rule as chorus-hooks' state_paths.
+pub fn messages_db() -> String {
+    if let Ok(p) = std::env::var("CHORUS_MESSAGES_DB") {
+        if !p.is_empty() {
+            return p;
+        }
+    }
+    let home = std::env::var("HOME").unwrap_or_default();
+    let root = std::env::var("CHORUS_ROOT").unwrap_or_else(|_| format!("{home}/CascadeProjects/chorus"));
+    format!("{root}/platform/pulse/messages.db")
+}
+
+/// #4411 — was this prompt a delivery? The old wake line, or the exact words
+/// of a nudge pulse marked delivered (the rule chorus-hooks' is_relay uses).
+/// A "[nudge from" label typed by hand is in no delivered row, so it stays Jeff's.
+pub fn is_delivery(prompt: &str) -> bool {
+    let t = prompt.trim();
+    t == WAKE_LINE || delivered_by_pulse(&messages_db(), t)
+}
+
+/// Read-only lookup through the sqlite3 CLI (this crate carries no sqlite
+/// dependency). The text goes in as a hex blob, so no quoting can break the
+/// query. Any failure answers false.
+pub fn delivered_by_pulse(db: &str, prompt: &str) -> bool {
+    let text = prompt.trim();
+    // Only a headed nudge: messages.db also holds a bare "go" typed as a
+    // nudge row, and Jeff typing "go" must never read as a delivery.
+    if !text.starts_with("[nudge from ") || !std::path::Path::new(db).exists() {
+        return false;
+    }
+    let hex: String = text.bytes().map(|b| format!("{b:02X}")).collect();
+    let q = format!("SELECT 1 FROM messages WHERE type = 'nudge' AND delivery_status = 'delivered' AND trim(content) = CAST(X'{hex}' AS TEXT) LIMIT 1;");
+    std::process::Command::new("sqlite3")
+        .args(["-readonly", db, &q])
+        .output()
+        .map(|o| o.status.success() && String::from_utf8_lossy(&o.stdout).trim() == "1")
+        .unwrap_or(false)
+}
 
 /// What one UserPromptSubmit turn tells `seen`: the conversation id, and
 /// whether the prompt WAS a delivered message. Since #4339 a nudge arrives as
@@ -165,7 +204,7 @@ pub fn turn_facts(hook_input: &str) -> (String, bool) {
     let v: Value = serde_json::from_str(hook_input).unwrap_or(Value::Null);
     let conv = v.get("session_id").and_then(|s| s.as_str()).unwrap_or("").to_string();
     let prompt = v.get("prompt").and_then(|s| s.as_str()).unwrap_or("");
-    (conv, prompt.trim() == WAKE_LINE)
+    (conv, is_delivery(prompt))
 }
 
 /// #4339 — who a prompt is from. pulse types only WAKE_LINE for a nudge, and
@@ -179,7 +218,7 @@ pub enum Speaker { Delivery, Harness, Jeff }
 pub fn speaker(hook_input: &str) -> Speaker {
     let v: Value = serde_json::from_str(hook_input).unwrap_or(Value::Null);
     let p = v.get("prompt").and_then(|s| s.as_str()).unwrap_or("").trim();
-    if p == WAKE_LINE { return Speaker::Delivery; }
+    if is_delivery(p) { return Speaker::Delivery; }
     if p.is_empty() || p.starts_with('<') || p.starts_with("Stop hook feedback:") || p.contains("[SYSTEM NOTIFICATION") { return Speaker::Harness; }
     Speaker::Jeff
 }
