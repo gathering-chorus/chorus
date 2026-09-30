@@ -630,6 +630,25 @@ fn stored_name(reply: &str) -> Option<String> {
 
 /// Services first (bounded, counted down), then the login. A service still
 /// down at the bound is a PENDING login, never a refusal to start.
+/// #4406 — a session is login to logout (Jeff 2026-09-30). A login while the
+/// role's session is still open (it was /exited or restarted, never logged
+/// out) goes back to that session; the caller records a new run in it. Only
+/// a role with no open session gets a new one.
+fn login_or_resume(ctx: &Ctx, role: &str) -> Result<LoginState, ()> {
+    if let LoginState::Recorded { session, .. } = ctx.read_state(role) {
+        let open = read_row(ctx, role, "session")
+            .filter(|r| row_name(r) == session)
+            .map(|r| r.get("sessionState").and_then(|v| v.as_str()).unwrap_or("open") != "closed")
+            .unwrap_or(false);
+        if open {
+            ctx.spine(&["session.resumed", role, &format!("session={}", session)]);
+            println!("login: {}  session {}  resumed (still open; logout ends it)", role, session);
+            return Ok(LoginState::Recorded { session, pid: None });
+        }
+    }
+    login_after_services(ctx, role, ctx.service_wait)
+}
+
 fn login_after_services(ctx: &Ctx, role: &str, bound: u64) -> Result<LoginState, ()> {
     match wait_for_services(ctx, bound, true) {
         Ok(()) => do_login(ctx, role),
@@ -682,7 +701,7 @@ fn on(ctx: &Ctx, role: &str, attach: bool) -> Result<Came, (i32, String)> {
                 LoginState::Recorded { .. } if lifecycle::login_belongs_to(&st, l.pid) => st.with_pid(l.pid),
                 _ => {
                     println!("{} is running without a login; logging it in now", role);
-                    let s = match login_after_services(ctx, role, ctx.service_wait) { Ok(s) => s.with_pid(l.pid), Err(()) => return Err((1, "login refused".into())) };
+                    let s = match login_or_resume(ctx, role) { Ok(s) => s.with_pid(l.pid), Err(()) => return Err((1, "login refused".into())) };
                     if let LoginState::Recorded { session, .. } = &s { record_run(ctx, role, session, l, "pending"); }
                     s
                 }
@@ -752,7 +771,7 @@ fn on(ctx: &Ctx, role: &str, attach: bool) -> Result<Came, (i32, String)> {
     }
 
     // 8 — LOGIN before anything is started (#4202), after the services answer (#4295).
-    let st = match login_after_services(ctx, role, ctx.service_wait) { Ok(s) => s, Err(()) => return Err((1, "login refused".into())) };
+    let st = match login_or_resume(ctx, role) { Ok(s) => s, Err(()) => return Err((1, "login refused".into())) };
     ctx.write_state(role, &st);
     if let LoginState::Pending { why, .. } = &st { println!("{}", pending_line(role, why)); }
     let token_file = PathBuf::from(&ctx.identity_dir).join(role).join("token.cache");
@@ -994,39 +1013,6 @@ fn end_revoked(ctx: &Ctx, role: &str, why: &str) {
     ctx.spine(&["session.revoked", role, &format!("session={}", session), &format!("why={}", rows::refusal_reason(why))]);
 }
 
-/// #4384 — None: nothing to do (no recorded session, no start, under the cap).
-/// Some(0): the old session was closed and a new one recorded; the turn runs.
-/// Some(2): the new login was refused; the turn does not run.
-fn past_lifetime_relogin(ctx: &Ctx, role: &str) -> Option<i32> {
-    let LoginState::Recorded { session, .. } = ctx.read_state(role) else { return None };
-    let started = read_row(ctx, role, "session")?.get("startedAt")?.as_str()?.to_string();
-    let hours: u64 = envd("CHORUS_SESSION_MAX_HOURS", "24").parse().unwrap_or(24);
-    let cutoff = iso_utc((now_ms() as u64 / 1000).saturating_sub(hours * 3600));
-    if !rows::past_lifetime(&started, &cutoff) { return None; }
-    // #4403 — order matters: the new login state is written BEFORE the old run
-    // ends. A seen-write running meanwhile (a surfaced nudge starts one) then
-    // sees either the old run still live and records nothing, or the new state
-    // and records a run of the new session. The #4402 order (end first) let it
-    // see an ended run under the old state: 09-30 12:34 silas got a run of the
-    // session that was closing.
-    let old_row = fs::read_to_string(PathBuf::from(&ctx.identity_dir).join(role).join("session.row.json")).unwrap_or_default();
-    let fresh = do_login(ctx, role);
-    if let Ok(st) = &fresh { ctx.write_state(role, st); }
-    // #4402 — the run belongs to the session being closed: end it too, or the
-    // next turn sees a live run and never records one for the new session
-    end_run(ctx, role, "restart");
-    let _ = close_row_from(ctx, role, &session, Some(&old_row));
-    ctx.spine(&["session.expired", role, &format!("session={}", session), &format!("started={}", started), &format!("max_hours={}", hours)]);
-    match fresh {
-        Ok(_) => Some(0),
-        Err(()) => {
-            ctx.write_state(role, &LoginState::Closed);
-            eprintln!("chorus-principal: {}'s session reached its {}h lifetime and a new login was refused. The turn did not run; log in again: chorus-principal login {}", role, hours, role);
-            Some(2)
-        }
-    }
-}
-
 fn seen(ctx: &Ctx, role: &str) -> i32 {
     let mut input = String::new();
     let _ = std::io::Read::read_to_string(&mut std::io::stdin(), &mut input);
@@ -1044,10 +1030,6 @@ fn seen(ctx: &Ctx, role: &str) -> i32 {
             return 2;
         }
     }
-    // #4384 — a session has an absolute lifetime. Renewal keeps the token
-    // alive, so a login never ended on its own; past the cap, the session is
-    // closed and the role logs in again here, and the turn runs.
-    if let Some(code) = past_lifetime_relogin(ctx, role) { return code; }
     let (conv, delivered) = rows::turn_facts(&input);
     // #4339 — Jeff spoke: this turn always writes, so the session says when
     let jeff = rows::speaker(&input) == rows::Speaker::Jeff;
@@ -1380,9 +1362,17 @@ fn off(ctx: &Ctx, role: &str, from_exit: bool) -> i32 {
         let reason = serde_json::from_str::<Value>(&input).ok().and_then(|v| v.get("reason").and_then(|r| r.as_str()).map(String::from)).unwrap_or_default();
         if !lifecycle::exit_reason_logs_out(&reason) { return 0; }
     }
+    // #4406 — Jeff 2026-09-30: "session starts when i do chorus-principal login
+    // and ends when i do logout". /exit ends this Claude run, not the session:
+    // the next login goes back to the same open session with a new run.
+    if from_exit {
+        end_run(ctx, role, "exit");
+        ctx.spine(&["session.run.exited", role]);
+        return 0;
+    }
     let st = ctx.read_state(role);
     // #4328 — the run ends (and its presence goes unreachable) before the session closes
-    end_run(ctx, role, if from_exit { "exit" } else { "logout" });
+    end_run(ctx, role, "logout");
     let closed = match &st {
         LoginState::Recorded { session, .. } => Some((session.clone(), close_row(ctx, role, session))),
         _ => None,
