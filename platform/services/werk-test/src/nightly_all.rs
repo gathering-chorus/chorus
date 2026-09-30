@@ -1154,7 +1154,23 @@ fn sample_daemons() -> std::collections::BTreeMap<String, Option<u32>> {
     let cmd = env_or("NIGHTLY_LAUNCHCTL", "launchctl list");
     let out = Command::new("bash").arg("-c").arg(&cmd).output()
         .map(|o| String::from_utf8_lossy(&o.stdout).into_owned()).unwrap_or_default();
-    parse_launchctl(&out)
+    let agents = env_or("NIGHTLY_AGENT_DIR", &format!("{}/Library/LaunchAgents", env_or("HOME", "/tmp")));
+    let mut m = parse_launchctl(&out);
+    m.retain(|label, _| {
+        std::fs::read_to_string(format!("{agents}/{label}.plist"))
+            .map(|p| stays_up(&p))
+            .unwrap_or(true)
+    });
+    m
+}
+
+/// #4185 — only an agent launchd keeps up is a daemon this line watches. A
+/// job that runs to completion (com.chorus.crawl-nightly, started by a land)
+/// finishing mid-run is not a death: 2026-09-30's run read "crawl-nightly gone
+/// (was pid 12627)" for a pass that ended cleanly. A plist that cannot be read
+/// keeps the agent in the sample.
+pub fn stays_up(plist: &str) -> bool {
+    plist.contains("<key>KeepAlive</key>")
 }
 
 fn leg_daemons(
@@ -1448,6 +1464,16 @@ mod lanes_4278 {
         // a one-shot that was not running at the start is not a restart
         let started_later = parse_launchctl("17630\t0\tcom.chorus.api\n4242\t0\tcom.chorus.index-artifacts\n5020\t0\tcom.chorus.hooks\n");
         assert!(daemon_restarts(&start, &started_later).is_empty());
+    }
+
+    // #4185 — a run-to-completion job is not in the daemon sample; a KeepAlive
+    // agent is. NEGATIVE PROOF: the hooks plist shape stays watched.
+    #[test]
+    fn only_keepalive_agents_are_watched_as_daemons() {
+        let crawl = "<dict><key>Label</key><string>com.chorus.crawl-nightly</string><key>RunAtLoad</key><false/></dict>";
+        let hooks = "<dict><key>Label</key><string>com.chorus.hooks</string><key>KeepAlive</key><true/></dict>";
+        assert!(!stays_up(crawl));
+        assert!(stays_up(hooks));
     }
 
     /// #4290 NEGATIVE PROOF (#3734): the lane must go red on the state it
