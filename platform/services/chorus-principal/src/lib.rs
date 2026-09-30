@@ -1003,6 +1003,10 @@ fn past_lifetime_relogin(ctx: &Ctx, role: &str) -> Option<i32> {
     let hours: u64 = envd("CHORUS_SESSION_MAX_HOURS", "24").parse().unwrap_or(24);
     let cutoff = iso_utc((now_ms() as u64 / 1000).saturating_sub(hours * 3600));
     if !rows::past_lifetime(&started, &cutoff) { return None; }
+    // #4402 — the run belongs to the session being closed: end it too, or the
+    // next turn sees a live run and never records one for the new session
+    // (09-29: silas and wren kept 09-28 runs, 0 live runs for their sessions)
+    end_run(ctx, role, "restart");
     let _ = close_row(ctx, role, &session);
     ctx.spine(&["session.expired", role, &format!("session={}", session), &format!("started={}", started), &format!("max_hours={}", hours)]);
     match do_login(ctx, role) {

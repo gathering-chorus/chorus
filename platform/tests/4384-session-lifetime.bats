@@ -40,6 +40,19 @@ posts() { ls "$T/bodies" | grep -c -- '-POST-identity_sessions.json$' || true; }
   test "$(row name)" != "$old"
 }
 
+@test "#4402 a lifetime re-login ends the old run, and the next turn records a run of the new session" {
+  "$SCRIPT" login wren >/dev/null 2>&1
+  turn                                          # the first turn records this login's run
+  oldrun=$(python3 -c 'import json,sys;print(json.load(open(sys.argv[1]))["name"])' "$T/identity/wren/run.row.json")
+  age 25
+  turn                                          # crosses the cap: old session closed, new login
+  has "$(cat "$T/bodies/"*"PUT-identity_sessionruns_${oldrun}"* | tail -1)" '"endReason":"restart"'
+  export AWAKE_SEEN_EVERY=0                     # writes are throttled to one a minute; this turn is due
+  turn                                          # the next turn records the new session's run
+  new=$(row name)
+  test "$(python3 -c 'import json,sys;print(json.load(open(sys.argv[1])).get("runOf",""))' "$T/identity/wren/run.row.json")" = "$new"
+}
+
 @test "#4384 NEGATIVE: a session under its lifetime is left alone" {
   "$SCRIPT" login wren >/dev/null 2>&1
   old=$(row name)
