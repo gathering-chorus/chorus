@@ -9,14 +9,15 @@ async function init() {
   try {
     const [spRes, sdRes] = await Promise.all([
       fetch(ATHENA + '/subproducts'),
-      fetch(ATHENA + '/subdomains'),
+      // #4353 — SubDomain is retired: the product view lists domains
+      fetch('/owl/v1/domains/domains'),
     ]);
     if (!spRes.ok || !sdRes.ok) throw new Error('Athena error');
     const spBody = await spRes.json();
     const sdBody = await sdRes.json();
 
     const subproducts = spBody.data;
-    const subdomains = sdBody.data;
+    const subdomains = (sdBody.data || []).map((d) => ({ ...d, id: d.name, owner: d.ownedBy }));
 
     // Attach subdomains to subproducts by checking which subdomains belong to which subproduct
     // For now, group subdomains by owner since partOf edges aren't populated yet

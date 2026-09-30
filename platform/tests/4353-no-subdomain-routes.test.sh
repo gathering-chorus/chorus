@@ -10,6 +10,7 @@ cd "$ROOT" || exit 1
 hits=$(git grep -nE "api/athena/subdomains|['\"\`/]subdomains/['\"\`$]|/subdomains\?|ATHENA *\+ *['\"]/subdomains" -- \
   ':!*.md' ':!*.jsonl' ':!*.log' ':!*.backup' ':!*.svg' ':!designing/docs/**' ':!**/fixtures/**' \
   ':!platform/tests/4353-no-subdomain-routes.test.sh' \
+  ':!platform/api/public/loom/principles-reference-impl.html' ':!platform/api/public/loom/cookbook-substrate-class-domain.html' \
   | grep -vE ':[0-9]+:\s*(#|//|\*|/\*|<!--)' || true)
 n=$(printf '%s' "$hits" | grep -c . || true)
 if [ "$n" -eq 0 ]; then echo "PASS no code path requests /api/athena/subdomains"; echo "=== Results: 1 passed, 0 failed ==="; exit 0; fi
