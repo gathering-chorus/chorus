@@ -9,7 +9,6 @@
  * prompt is Jeff, including a "[nudge from" label he typed himself.
  */
 import { execFileSync } from 'child_process';
-import * as fs from 'fs';
 import * as os from 'os';
 import * as path from 'path';
 
@@ -25,7 +24,8 @@ export function messagesDb(): string {
  * quoting can break the query. Any failure answers false (the words stay Jeff's). */
 export function deliveredByPulse(text: string, db: string = messagesDb()): boolean {
   const t = text.trim();
-  if (!t.startsWith('[nudge from ') || !fs.existsSync(db)) return false;
+  // a missing store makes sqlite3 exit non-zero, which the catch reads as false
+  if (!t.startsWith('[nudge from ')) return false;
   const hex = Buffer.from(t, 'utf8').toString('hex').toUpperCase();
   const q = `SELECT 1 FROM messages WHERE type = 'nudge' AND delivery_status = 'delivered' AND trim(content) = CAST(X'${hex}' AS TEXT) LIMIT 1;`;
   try {
