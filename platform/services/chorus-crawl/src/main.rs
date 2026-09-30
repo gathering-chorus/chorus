@@ -1312,6 +1312,13 @@ fn main() {
         Scope::Full { .. } if reconciling => Scope::Full {
             why: "--reconcile: forced full walk",
         },
+        // #4185 — the nightly job sets CHORUS_CRAWL_WATERMARK="" on purpose: the
+        // 04:30 pass is the full reconcile. It said "no watermark on the graph —
+        // first run" every night (and on every land-triggered kickstart of the
+        // same job), which read as a watermark that was being lost.
+        Scope::Full { .. } if std::env::var("CHORUS_CRAWL_WATERMARK").map(|v| v.trim().is_empty()).unwrap_or(false) => {
+            Scope::Full { why: "full pass requested by the job (CHORUS_CRAWL_WATERMARK is empty)" }
+        }
         s => s,
     };
 
@@ -1668,7 +1675,7 @@ fn main() {
         wrote_nothing(dry_run, reconciling)
     );
     println!(
-        "chorus-crawl: cases posted={} replaced={} unchanged={} deleted={} · test files parsed={} declared={} inferred={} no-case={}{}",
+        "chorus-crawl: cases posted={} replaced={} unchanged={} to-delete={} · test files parsed={} declared={} inferred={} no-case={}{}",
         cc.posted, cc.replaced, cc.unchanged, cc.deleted,
         parsed.parsed_files.len(), parsed.declared, parsed.inferred, parsed.no_case.len(),
         wrote_nothing(dry_run, reconciling)
@@ -1846,6 +1853,12 @@ fn main() {
     let mut failed: Vec<String> = Vec::new();
     // #4352 — results of vanished cases that another principal owns, by owner
     let mut held: std::collections::BTreeMap<String, usize> = std::collections::BTreeMap::new();
+    // #4185 — what the case deletes DID, not what the plan wanted. The plan line
+    // said deleted=704 every night while the cases whose results another
+    // principal holds stayed put, so the number never fell and looked like a
+    // delete that did not stick.
+    let mut cases_gone: usize = 0;
+    let mut cases_kept: usize = 0;
     let mut batch: Vec<String> = Vec::new();
 
     let ident = ident.as_ref().expect("writes happen only with an identity");
@@ -2097,11 +2110,12 @@ fn main() {
                                 }
                             }
                             if all_gone {
-                                if let Err(e) =
-                                    write(ident, &api, "DELETE", &format!("{case_coll}/{name}"), None)
-                                {
-                                    failed.push(format!("delete case {file} :: {case}: {e}"));
+                                match write(ident, &api, "DELETE", &format!("{case_coll}/{name}"), None) {
+                                    Ok(_) => cases_gone += 1,
+                                    Err(e) => failed.push(format!("delete case {file} :: {case}: {e}")),
                                 }
+                            } else {
+                                cases_kept += 1;
                             }
                         }
                         Err(e) => failed.push(format!(
@@ -2364,6 +2378,11 @@ fn main() {
         }
     }
 
+    if !dry_run {
+        println!(
+            "chorus-crawl: cases deleted={cases_gone} kept={cases_kept} (kept = a result another principal owns still points at it)"
+        );
+    }
     for (owner, n) in &held {
         println!(
             "chorus-crawl: held {n} result(s) of vanished cases for their owner {owner} — not the crawler's to delete; their cases stay (#4352)"
