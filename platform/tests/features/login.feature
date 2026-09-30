@@ -74,10 +74,11 @@ Feature: A principal logs in, works, and logs out
     Then wren's presence is reachable
     And nobody is recorded as having spoken
 
-  Scenario: A nudge typed into a pane is never Jeff speaking (#4412)
+  Scenario: Text that only looks like a nudge label is not a delivery
     Given wren is logged in
-    When a nudge from silas is typed into wren's pane
-    Then nobody is recorded as having spoken
+    When a prompt arrives that starts with a nudge label but did not come from the relay
+    Then wren's presence is not reachable
+    And wren's session is attended by jeff, with the time he spoke
 
   Scenario: A nudge never lands in Jeff's half-typed prompt
     Given Jeff is typing in wren's pane
