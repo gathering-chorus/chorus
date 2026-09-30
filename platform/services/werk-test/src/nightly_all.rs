@@ -1212,6 +1212,16 @@ fn leg_crawler_validate(ctx: &Ctx) -> SuiteRow {
         .env("CHORUS_ROLE", env_or("NIGHTLY_CRAWL_ROLE", "kade"))
         .current_dir(&ctx.root);
     let (rc, out) = run_capped(c, Duration::from_secs(1200));
+    // #4185 — this is now the ONE full pass (the 04:30 job is retired), so its
+    // output joins the crawler's own log: crawler-stale and the nightly's
+    // TOTAL line read that file. Only a run that may write prod writes it.
+    if ctx.graph.enabled {
+        let log = env_or("CRAWL_NIGHTLY_LOG", &format!("{}/Library/Logs/Chorus/crawl-nightly.log", env_or("HOME", "/tmp")));
+        if let Ok(mut f) = std::fs::OpenOptions::new().create(true).append(true).open(&log) {
+            use std::io::Write;
+            let _ = writeln!(f, "chorus-crawl: (the 03:00 nightly's full pass, run by werk-test)\n{out}");
+        }
+    }
     let (status, summary) = crawler_validate_verdict(rc, &out);
     let row = SuiteRow::new("crawler-validate", path, "kade", status, &summary);
     if status != "pass" {
@@ -1498,6 +1508,33 @@ mod lanes_4278 {
             ops_nudge: "/usr/bin/true".into(), no_nudge: true, owners: HashMap::new(),
             graph: GraphRows::default(),
         }
+    }
+
+    // #4185 — the nightly's full pass is the crawler's one full pass, so its
+    // output lands in the crawler's log (crawler-stale reads it). NEGATIVE PROOF:
+    // a run that may not write prod (a werk) leaves that log alone.
+    #[test]
+    fn the_full_pass_writes_the_crawler_log_only_when_the_run_may_write() {
+        let dir = std::env::temp_dir().join(format!("wt-4185-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let bin = dir.join("crawl-stub.sh");
+        std::fs::write(&bin, "#!/bin/sh\necho 'chorus-crawl: full (stub)'\necho 'VALIDATE|code|CodeFile|tree=1|graph=1|missing=0|stale=0|measured'\n").unwrap();
+        use std::os::unix::fs::PermissionsExt;
+        std::fs::set_permissions(&bin, std::fs::Permissions::from_mode(0o755)).unwrap();
+        let log = dir.join("crawl-nightly.log");
+        std::env::set_var("NIGHTLY_CRAWL_BIN", &bin);
+        std::env::set_var("CRAWL_NIGHTLY_LOG", &log);
+        let root = dir.to_str().unwrap();
+        let werk = ctx_for(root);
+        leg_crawler_validate(&werk);
+        assert!(!log.exists(), "a werk run wrote the crawler log");
+        let mut prod = ctx_for(root);
+        prod.graph.enabled = true;
+        leg_crawler_validate(&prod);
+        let text = std::fs::read_to_string(&log).unwrap();
+        assert!(text.contains("chorus-crawl: full (stub)") && text.contains("03:00 nightly"), "{text}");
+        std::env::remove_var("NIGHTLY_CRAWL_BIN");
+        std::env::remove_var("CRAWL_NIGHTLY_LOG");
     }
 
 

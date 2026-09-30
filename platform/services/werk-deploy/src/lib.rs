@@ -2866,11 +2866,24 @@ pub fn daemon_class(print_out: Option<&str>) -> bool {
 
 pub fn job_kind(print_out: &str) -> JobKind {
     let has = |k: &str| print_out.contains(k);
-    if has("StartCalendarInterval") || has("StartInterval") || has("com.apple.launchd.calendarinterval") {
+    if has("StartCalendarInterval") || has("StartInterval") || has("com.apple.launchd.calendarinterval") || on_demand(print_out) {
         JobKind::Scheduled
     } else {
         JobKind::Daemon
     }
+}
+
+/// #4185 — a job started only on demand (a land kickstarts it) is judged like a
+/// scheduled one: finished-clean is up. launchctl lists a daemon's
+/// `properties = keepalive | runatload …`; a job with a properties line naming
+/// neither never runs by itself. No properties line keeps the strict check.
+fn on_demand(print_out: &str) -> bool {
+    print_out
+        .lines()
+        .map(str::trim_start)
+        .find(|l| l.starts_with("properties = "))
+        .map(|l| !l.contains("keepalive") && !l.contains("runatload"))
+        .unwrap_or(false)
 }
 
 /// Did the deploy take? Daemon: running with a pid. Scheduled: the plist is
