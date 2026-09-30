@@ -638,6 +638,9 @@ fn stored_name(reply: &str) -> Option<String> {
 /// role's session is still open (it was /exited or restarted, never logged
 /// out) goes back to that session; the caller records a new run in it. Only
 /// a role with no open session gets a new one.
+/// #4412 — where a person signs in; the refusal hands Jeff this one step.
+const CLEARING_SIGN_IN: &str = "https://clearing.lightlifeurbangardens.com";
+
 /// #4412 — Jeff 2026-09-30: "maybe we must bind chorus-principal to a human(s)"
 /// / "the login and logout". A role's session starts or ends only while a
 /// person is signed in: an open browser Session (his Clearing sign-in) owned by
@@ -647,7 +650,7 @@ fn person_signed_in(ctx: &Ctx) -> Result<String, String> {
     let url = format!("{}/v1/identity/sessions?channel=browser&limit=1000", ctx.api);
     let answer = sh(&ctx.curl, &["-s", "-w", "\n%{http_code}", "--max-time", "5", &url]).unwrap_or_default();
     let (body, code) = answer.trim_end().rsplit_once('\n').unwrap_or(("", answer.trim()));
-    if code.trim() != "200" { return Err(format!("could not read who is signed in (the identity API answered {})", code.trim())); }
+    if code.trim() != "200" { return Err(format!("could not read who is signed in (chorus-api answered {}).\n  fix: agent-state.sh restart chorus-api, then sign in at {}", code.trim(), CLEARING_SIGN_IN)); }
     let now = iso_utc(now_ms() as u64 / 1000);
     let rows = serde_json::from_str::<Value>(body).ok().and_then(|v| v.get("data").cloned()).and_then(|d| d.as_array().cloned()).unwrap_or_default();
     for r in rows {
@@ -661,7 +664,7 @@ fn person_signed_in(ctx: &Ctx) -> Result<String, String> {
         let pa = sh(&ctx.curl, &["-s", "-w", "\n%{http_code}", "--max-time", "5", &purl]).unwrap_or_default();
         if pa.contains("\"principalKind\":\"person\"") { return Ok(who); }
     }
-    Err("nobody is signed in: a role's session starts and ends only while a person is signed in to the Clearing".into())
+    Err(format!("nobody is signed in: a role's session starts and ends only while a person is signed in to the Clearing.\n  fix: sign in at {}", CLEARING_SIGN_IN))
 }
 
 fn login_or_resume(ctx: &Ctx, role: &str) -> Result<LoginState, ()> {

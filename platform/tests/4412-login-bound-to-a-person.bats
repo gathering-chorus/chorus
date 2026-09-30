@@ -29,6 +29,15 @@ posts() { ls "$T/bodies" 2>/dev/null | grep -c -- '-POST-identity_sessions.json$
   run "$SCRIPT" login wren
   test "$status" -eq 2
   printf '%s' "$output" | grep -qF "nobody is signed in"
+  printf '%s' "$output" | grep -qF "fix: sign in at https://clearing.lightlifeurbangardens.com"
+  test "$(posts)" -eq 0
+}
+
+@test "#4412 NEGATIVE: chorus-api not answering is refused with the one command that fixes it" {
+  touch "$T/api-down"
+  run "$SCRIPT" login wren
+  test "$status" -eq 2
+  printf '%s' "$output" | grep -qF "fix: agent-state.sh restart chorus-api"
   test "$(posts)" -eq 0
 }
 
