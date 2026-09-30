@@ -237,9 +237,10 @@ pub fn env_services() -> Vec<EnvService> {
         EnvService {
             name: "pulse".to_string(),
             kind: EnvServiceKind::TsService,
-            silas_port: 3491,
-            kade_port: 3492,
-            wren_port: 3493,
+            // 3491-3493 are the Clearing variants' HTTPS ports (3481-3483 + 10).
+            silas_port: 3496,
+            kade_port: 3497,
+            wren_port: 3498,
             source_dir_rel: "platform/pulse".to_string(),
             program_args_template: ProgramArgsTemplate::Node {
                 entry: "dist/service.js".to_string(),
@@ -454,6 +455,17 @@ pub fn env_ports_collide(services: &[EnvService]) -> Option<(String, u16)> {
         for p in [s.silas_port, s.kade_port, s.wren_port] {
             if let Some(prev) = seen.insert(p, s.name.clone()) {
                 return Some((format!("{} vs {}", prev, s.name), p));
+            }
+            // #4398 — the Clearing also binds an HTTPS port ten above its HTTP
+            // one (clearing_https_port). The first demo pulse took 3492, which
+            // is Kade's Clearing HTTPS port: pulse bound 127.0.0.1, the Clearing
+            // bound *:3492, localhost resolved to the Clearing, and the pulse
+            // smoke timed out. A derived port is still a port.
+            if s.name == "clearing" {
+                let https = clearing_https_port(p);
+                if let Some(prev) = seen.insert(https, format!("{} (https)", s.name)) {
+                    return Some((format!("{} vs {} (https)", prev, s.name), https));
+                }
             }
         }
     }
@@ -1492,5 +1504,15 @@ mod services_for_diff_4398 {
     #[test]
     fn pulse_ports_do_not_collide_with_the_other_env_services() {
         assert_eq!(env_ports_collide(&env_services()), None);
+    }
+
+    /// NEGATIVE PROOF: the collision the first demo hit — pulse on a Clearing
+    /// HTTPS port — is caught by the check, not by a 120s smoke timeout.
+    #[test]
+    fn a_pulse_on_a_clearing_https_port_is_a_collision() {
+        let mut svcs = env_services();
+        let pulse = svcs.iter_mut().find(|s| s.name == "pulse").unwrap();
+        pulse.kade_port = clearing_https_port(env_port_for("clearing", "kade").unwrap());
+        assert!(env_ports_collide(&svcs).is_some());
     }
 }
