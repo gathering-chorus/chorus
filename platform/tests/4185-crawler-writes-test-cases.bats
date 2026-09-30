@@ -98,13 +98,13 @@ teardown() {
   # the on-land shape: an empty delta walks nothing and writes nothing
   run crawl; echo "$output"; [ "$status" -eq 0 ]
   has "chorus-crawl: delta"
-  has "cases posted=0 replaced=0 unchanged=0 deleted=0"
+  has "cases posted=0 replaced=0 unchanged=0 to-delete=0"
   has "wrote=0 failed=0"
   # the nightly shape: a FULL walk re-reads every row and still writes nothing
   rm -f "$FX/.chorus-crawl-watermark"
   run crawl; echo "$output"; [ "$status" -eq 0 ]
   has "chorus-crawl: full"
-  has "cases posted=0 replaced=0 unchanged=3 deleted=0"
+  has "cases posted=0 replaced=0 unchanged=3 to-delete=0"
   has "wrote=0 failed=0"
 }
 
@@ -116,7 +116,9 @@ teardown() {
   git -C "$FX" add -A && git -C "$FX" -c user.name=t -c user.email=t@t commit -q -m edit
   run crawl; echo "$output"; [ "$status" -eq 0 ]
   has "delta"
-  has "cases posted=1 replaced=0 unchanged=1 deleted=2"
+  has "cases posted=1 replaced=0 unchanged=1 to-delete=2"
+  # #4185 — the line that says what the deletes DID, beside the plan
+  has "cases deleted=2 kept=0"
   rows="$(rows_for "$TESTS_COLL")"
   lacks "second case" "$rows"
   lacks "\"testName\": \"$TAG jest case\"" "$rows"
@@ -125,7 +127,7 @@ teardown() {
   git -C "$FX" rm -q "$TS_F" && git -C "$FX" -c user.name=t -c user.email=t@t commit -q -m rm
   run crawl; echo "$output"; [ "$status" -eq 0 ]
   has "deleted=1 "     # the file row
-  has "cases posted=0 replaced=0 unchanged=0 deleted=1"   # an untouched file is not visited on a delta
+  has "cases posted=0 replaced=0 unchanged=0 to-delete=1"   # an untouched file is not visited on a delta
   lacks "renamed jest case" "$(rows_for "$TESTS_COLL")"
   lacks "$TS_F" "$(rows_for "$FILES_COLL")"
 }
@@ -141,12 +143,12 @@ teardown() {
   run crawl; echo "$output"
   chmod 644 "$FX/$TS_F"
   has "case read was PARTIAL, case deletes refused"
-  has "cases posted=0 replaced=0 unchanged=1 deleted=0"
+  has "cases posted=0 replaced=0 unchanged=1 to-delete=0"
   has "watermark HELD"
   [ "$(rows_for "$TESTS_COLL" | grep -c "second case")" -eq 1 ]           # the row is still there
   # control: the same tree, readable, DOES delete — the check separates its two states
   run crawl; echo "$output"; [ "$status" -eq 0 ]
-  has "cases posted=0 replaced=0 unchanged=2 deleted=1"
+  has "cases posted=0 replaced=0 unchanged=2 to-delete=1"
   [ "$(rows_for "$TESTS_COLL" | grep -c "second case")" -eq 0 ]
 }
 
