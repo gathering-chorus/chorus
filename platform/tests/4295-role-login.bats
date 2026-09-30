@@ -243,14 +243,14 @@ state_is() { grep -q "\"state\":\"$2\"" "$T/identity/$1/login.json"; }
   grep -q "kill-session -t chorus-silas" "$T/tmux.log"
 }
 
-@test "/exit logs out; the pane is not killed (it is already ending)" {
+@test "/exit ends the run, not the login (#4406); the pane is not killed (it is already ending)" {
   running silas 903
   printf '{"state":"recorded","session":"silas-x-3","pid":903}' > "$T/identity/silas/login.json"
   printf '{"data":[{"name":"silas-x-3","ownedBy":"principal-silas","tokenId":"t3","sessionState":"open"}]}' > "$T/row.json"
   run bash -c "echo '{\"reason\":\"prompt_input_exit\"}' | CLAUDECODE=1 CHORUS_ROLE=silas '$SCRIPT' off silas --from-exit"
   test "$status" -eq 0
-  state_is silas closed
-  grep -q "how=exit" "$T/spine.log"
+  state_is silas recorded
+  grep -q "session.run.exited silas" "$T/spine.log"
   test -z "$(grep -F kill-session "$T/tmux.log" 2>/dev/null || true)"
 }
 
