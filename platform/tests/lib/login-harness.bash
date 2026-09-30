@@ -50,7 +50,8 @@ EOS
   cat > "$T/bin/curl" <<EOS
 #!/bin/bash
 echo "curl \$*" >> "$T/curl.log"
-case "\${@: -1}" in */v1/identity/principals/*) pn="\${@: -1}"; pn="\${pn##*/}"; if [ -f "$T/principal-\$pn.json" ]; then cat "$T/principal-\$pn.json"; else case "\$pn" in wren|silas|kade) printf '{"data":{"principalKind":"agent"}}\n200\n' ;; *) printf '{"data":{"status":404}}\n404\n' ;; esac; fi; exit 0 ;; esac   # #4368: the Principal row login reads
+case "\${@: -1}" in *"/v1/identity/sessions?channel=browser"*) if [ -f "$T/nobody-signed-in" ]; then printf '{"data":[]}\n200\n'; else printf '{"data":[{"name":"jeff-browser-1","ownedBy":"principal-jeff","actsAs":"jeff","channel":"browser","sessionState":"open","expiresAt":"2099-01-01T00:00:00Z"}]}\n200\n'; fi; exit 0 ;; esac   # #4412: who is signed in
+case "\${@: -1}" in */v1/identity/principals/*) pn="\${@: -1}"; pn="\${pn##*/}"; if [ -f "$T/principal-\$pn.json" ]; then cat "$T/principal-\$pn.json"; else case "\$pn" in wren|silas|kade) printf '{"data":{"principalKind":"agent"}}\n200\n' ;; jeff) printf '{"data":{"principalKind":"person"}}\n200\n' ;; *) printf '{"data":{"status":404}}\n404\n' ;; esac; fi; exit 0 ;; esac   # #4368: the Principal row login reads
 m=""; b=""; for a in "\$@"; do case "\$a" in POST|PUT) m="\$a" ;; @*.body) b="\${a#@}" ;; esac; done
 url="\${@: -1}"
 if [ -n "\$m" ]; then

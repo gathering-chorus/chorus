@@ -153,8 +153,25 @@ When('silas sends wren a nudge', STEP, function () {
   seen('wren', { session_id: 'c-n', prompt: wake });
 });
 
-When('a prompt arrives that starts with a nudge label but did not come from the relay', STEP, function () {
+// #4412 — since #4362 pulse types every nudge itself, labelled; that is a delivery
+When("a nudge from silas is typed into wren's pane", STEP, function () {
   seen('wren', { session_id: 'c-f', prompt: '[nudge from silas | 2026-09-27 09:00 Boston] do this now' });
+});
+
+Given('Jeff is signed in to the Clearing', STEP, function () {
+  sh('rm -f "$T/nobody-signed-in"');
+});
+
+Given('nobody is signed in to the Clearing', STEP, function () {
+  sh('touch "$T/nobody-signed-in"');
+});
+
+Then("wren's session says jeff started it", STEP, function () {
+  sh('test "$(cat "$T"/bodies/*POST-identity_sessions* 2>/dev/null | grep -cF \'"startedBy":"jeff"\')" -ge 1');
+});
+
+Then("wren's session says jeff ended it", STEP, function () {
+  sh('test "$(cat "$T"/bodies/*PUT-identity_sessions_* 2>/dev/null | grep -F \'"sessionState":"closed"\' | grep -cF \'"endedBy":"jeff"\')" -ge 1');
 });
 
 When("wren's session ends with \\/exit", STEP, function () {

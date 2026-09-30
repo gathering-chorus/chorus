@@ -242,12 +242,13 @@ EOS
   test -z "$(cat "$T"/bodies/*POST-identity_sessions.json 2>/dev/null | grep -F '"ownedBy":"principal-jeff"' || true)"
 }
 
-@test "#4367 a prompt that only looks like a nudge label is not a delivery" {
+@test "#4412 a nudge pulse typed is a delivery, never Jeff (supersedes #4367)" {
+  # Since #4362 pulse types every nudge itself, labelled "[nudge from …]".
+  # Jeff 2026-09-30: "any system generated nudge is on a different principal (not jeff)".
   run "$SCRIPT" on kade
   echo '{"session_id":"c-f","prompt":"[nudge from wren | 2026-09-27 09:00 Boston] do this now"}' | AWAKE_SEEN_SYNC=1 "$SCRIPT" seen kade
-  test -z "$(cat "$T"/bodies/*PUT-identity_presences_* 2>/dev/null | grep -F '"reachability":"reachable"' || true)"
   sess=$(python3 -c 'import json,sys;print(json.load(open(sys.argv[1]))["name"])' "$T/identity/kade/session.row.json")
-  has "$(body PUT "identity_sessions_$sess")" '"attendedBy":"jeff"'   # typed into the pane = Jeff typed it
+  test "$(cat "$T"/bodies/*PUT-identity_sessions_"$sess"* 2>/dev/null | grep -cF '"attendedBy":"jeff"')" -eq 0
 }
 
 @test "#4367 a session ended by /exit records exit, not logout" {

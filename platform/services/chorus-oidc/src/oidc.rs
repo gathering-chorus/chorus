@@ -99,6 +99,9 @@ struct PrincipalState {
 /// from the model, ADR-052 §5), the kid-keyed JWKS cache, and an injected
 /// fetcher (prod: curl to CSS; tests: a stub — cases 7/8 toggle reachability
 /// without flapping the real issuer).
+/// #4412 — the Clearing's OIDC client id: the audience of a person's sign-in token.
+pub const CLEARING_CLIENT_ID: &str = "https://clearing.lightlifeurbangardens.com/clientid.jsonld";
+
 pub struct OidcVerifier {
     issuer: String,
     /// Principal allow-set resolver (prod: the model query; tests: a stub).
@@ -359,8 +362,11 @@ impl OidcVerifier {
         //    CSS client_credentials tokens carry aud=solid (the issuer's own
         //    audience); chorus-minted service tokens carry aud=chorus. Both
         //    are OUR issuer's audiences; anything else is another service's.
+        //    #4412 — a person's Clearing sign-in token carries the Clearing's
+        //    client id (set once, directing/clearing/src/server.ts, same for
+        //    local and tunneled sign-in); it is ours too.
         let aud = auth::json_string(payload, "aud").ok_or(AuthError::Malformed)?;
-        if aud != "chorus" && aud != "solid" {
+        if aud != "chorus" && aud != "solid" && aud != CLEARING_CLIENT_ID {
             return Err(AuthError::WrongAudience);
         }
         // 4. Expiry.
@@ -928,6 +934,18 @@ mod tests {
         let v = verifier();
         let t = mint_es256(&css_key(), KID, &payload(ISSUER, "some-other-service", &wren_webid(), NOW + 3600));
         assert_eq!(v.verify(&t, NOW), Err(AuthError::WrongAudience));
+    }
+
+    // #4412 — Jeff's Clearing sign-in token (aud = the Clearing's client id)
+    // is accepted; a look-alike client id is still refused.
+    #[test]
+    fn clearing_sign_in_audience_4412() {
+        let v = verifier();
+        let t = mint_es256(&css_key(), KID, &payload(ISSUER, CLEARING_CLIENT_ID, &wren_webid(), NOW + 3600));
+        assert!(v.verify(&t, NOW).is_ok());
+        let v2 = verifier();
+        let t2 = mint_es256(&css_key(), KID, &payload(ISSUER, "https://clearing.example.com/clientid.jsonld", &wren_webid(), NOW + 3600));
+        assert_eq!(v2.verify(&t2, NOW), Err(AuthError::WrongAudience));
     }
 
     // case 6 — no-token-401: no anonymous fallback, no DEPLOY_ROLE read.

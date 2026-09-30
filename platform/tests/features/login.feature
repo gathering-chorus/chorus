@@ -74,11 +74,10 @@ Feature: A principal logs in, works, and logs out
     Then wren's presence is reachable
     And nobody is recorded as having spoken
 
-  Scenario: Text that only looks like a nudge label is not a delivery
+  Scenario: A nudge typed into a pane is never Jeff speaking (#4412)
     Given wren is logged in
-    When a prompt arrives that starts with a nudge label but did not come from the relay
-    Then wren's presence is not reachable
-    And wren's session is attended by jeff, with the time he spoke
+    When a nudge from silas is typed into wren's pane
+    Then nobody is recorded as having spoken
 
   Scenario: A nudge never lands in Jeff's half-typed prompt
     Given Jeff is typing in wren's pane
@@ -171,3 +170,16 @@ Feature: A principal logs in, works, and logs out
     And wren's pane writes a spine event for kade
     Then wren's event names principal-wren and wren's session
     And the event for kade names neither
+
+  Scenario: A role's session starts and ends only while a person is signed in (#4412)
+    Given Jeff is signed in to the Clearing
+    When Jeff runs "chorus-principal login wren"
+    Then wren's session says jeff started it
+    When Jeff runs "chorus-principal logout wren"
+    Then wren's session says jeff ended it
+
+  Scenario: With nobody signed in, login is refused (#4412)
+    Given nobody is signed in to the Clearing
+    When Jeff runs "chorus-principal login wren"
+    Then it is refused with "nobody is signed in"
+    And nothing is started
