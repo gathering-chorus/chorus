@@ -35,7 +35,7 @@ pub async fn check(input: &HookInput, _state: &AppState) {
 
     // Skip pulse's wake line — a nudge arrived, not Jeff typing (#4339)
     let trimmed = prompt.trim();
-    if crate::shared::wake::is_wake_line(trimmed) || trimmed.starts_with("<") {
+    if crate::shared::wake::is_relay(trimmed) || trimmed.starts_with("<") {
         return;
     }
 

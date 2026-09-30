@@ -76,22 +76,22 @@ export const DEFAULT_BACKOFF_MS = [250, 500, 1000, 2000, 5000];
  * itself reaches the role through its prompt hook, from messages.db, with the
  * sender the API stamped. The hook recognises exactly this line as not-Jeff.
  */
-export const WAKE_LINE = '[chorus] a message is waiting in your context under Pending nudges';
-
-/** What a delivery types into the pane: Jeff's own words for his input, the fixed wake line for everything else. */
+/**
+ * #4362 (09-30) — the message itself is typed, header and all, every time
+ * (DEC-107: persist AND deliver). Jeff: "if we dont queue we dont need
+ * 'message is waiting'". The fixed wake line (#4339) is gone.
+ */
 export function typedFor(row: Pick<DeliveryRow, 'kind' | 'content'>): string {
-  return row.kind === 'jeff-input' ? row.content : WAKE_LINE;
+  return row.content;
 }
 
 /**
- * The success event for a delivery. A jeff-input is surfaced when typed. A
- * nudge is only WOKEN: the role has not seen its words until the prompt hook
- * injects them, and that hook emits nudge.surfaced. Emitting surfaced here
- * would fold the nudge out of the hook's unread set and the words would never
- * arrive.
+ * The success event for a delivery. The words were typed into the pane, so the
+ * role has seen them: surfaced, for a nudge as for Jeff's input. The prompt
+ * hook reads surfaced as read and does not list the message again.
  */
 export function deliveredEvent(kind?: 'nudge' | 'jeff-input'): string {
-  return kind === 'jeff-input' ? 'jeff.input.surfaced' : 'nudge.woken';
+  return kind === 'jeff-input' ? 'jeff.input.surfaced' : 'nudge.surfaced';
 }
 
 // #3357 — the announce boundary: every delivery is typed/deduped/echo-killed

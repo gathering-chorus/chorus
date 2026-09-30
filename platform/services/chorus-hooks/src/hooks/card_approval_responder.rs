@@ -317,7 +317,7 @@ pub fn detect_approval_signal(prompt: &str) -> Option<ApprovalSignal> {
         return None;
     }
     let trimmed = prompt.trim();
-    if crate::shared::wake::is_wake_line(trimmed) || trimmed.starts_with('<') {
+    if crate::shared::wake::is_relay(trimmed) || trimmed.starts_with('<') {
         return None;
     }
     let has_approve = APPROVE_PATTERN.is_match(prompt);
