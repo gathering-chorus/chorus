@@ -1,0 +1,166 @@
+#!/usr/bin/env python3
+"""
+chorus-werk-test-state — the nightly's suites and failed cases, in one answer. (#4413)
+
+Jeff, 2026-09-30: "i need to know both suites and cases — suites minimizes the
+scope and count"; "similar to /cws: last run date and time, total suites passed
+skipped failed, same for cases, by suite listing of each case that fails + suite".
+
+Reads the /nightly page (chorus-api), the one source every role reports from:
+never logs, never a per-role slice. Backs the /wts and /werk-test-state skills.
+
+Usage:
+  chorus-werk-test-state              # latest FINISHED run (a run in progress is one line on top)
+  chorus-werk-test-state RUN          # a run id from the page, e.g. 2026-09-30T08:33:41
+  chorus-werk-test-state --fixture    # NEGATIVE PROOF self-test against a saved page
+"""
+import html, re, sys, urllib.request
+
+import os
+BASE = os.environ.get("CHORUS_NIGHTLY_URL", "http://localhost:3340/nightly")
+FIXTURE = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "tests", "fixtures", "nightly-page-4413.html")
+
+def strip(page):
+    return re.sub(r"<style.*?</style>", "", page, flags=re.S)
+
+def get(url):
+    with urllib.request.urlopen(url, timeout=60) as r:
+        return strip(r.read().decode())
+
+def text(h):
+    return html.unescape(re.sub(r"\s+", " ", re.sub(r"<[^>]+>", " ", h))).strip()
+
+def span(h, cls):
+    m = re.search(rf'<span class="{cls}[^"]*">(.*?)</span>', h, flags=re.S)
+    return text(m.group(1)) if m else ""
+
+def banner(page):
+    m = re.search(r'<div class="banner[^"]*">(.*?)</div>\s*(?=<details|$)', page, flags=re.S)
+    b = m.group(1) if m else page
+    verdict = span(b, "verdict") or text(re.search(r'<div class="verdict">(.*?)</div>', b, re.S).group(1))
+    when = text((re.search(r'<div class="when">(.*?)</div>', b, re.S) or [None, ""])[1] if re.search(r'<div class="when">', b) else "")
+    counts = {}
+    for seg in re.findall(r'<span><span class="u">(\w+)</span>(.*?)</span>', b, flags=re.S):
+        counts[seg[0]] = text(seg[1])
+    split = text((re.search(r'<div class="split">(.*?)<ul', b, re.S) or re.search(r'<div class="split">(.*?)</div>', b, re.S) or [None, ""])[1]) if 'class="split"' in b else ""
+    return verdict, when, counts, split
+
+def case_name(h):
+    """The case's own name: the pill and the why-span dropped."""
+    h = re.sub(r'<span class="(pill|why)[^"]*">.*?</span>', "", h, flags=re.S)
+    name = re.sub(r"^fail\s+", "", text(h))
+    return re.split(r" (?:Error:|TypeError:|`|in test file |CUKE¦)", name)[0].strip()
+
+def tally_of(t):
+    """'237 pass, 15 fail (note)' -> ('15 of 252 cases', 'note')."""
+    m = re.match(r"(\d+) pass, (\d+) fail\s*(?:\((.*)\))?", t)
+    if not m: return t, ""
+    p, f = int(m.group(1)), int(m.group(2))
+    return f"{f} of {p + f} cases", m.group(3) or ""
+
+def runs(page):
+    return re.findall(r'href="/nightly\?run=([^"]+)"', page)
+
+def num(counts, key, word):
+    m = re.search(rf"([\d,]+) {word}", counts.get(key, ""))
+    return m.group(1) if m else "—"
+
+def main():
+    if "--fixture" in sys.argv:
+        sys.exit(fixture_mode())
+    args = [a for a in sys.argv[1:] if not a.startswith("--")]
+    front = get(BASE)
+    v, when, _, _ = banner(front)
+    run = args[0] if args else None
+    running = None
+    if not run and "IN PROGRESS" in v:
+        started = when.split(" ")[0]
+        running = f"running now: started {started.replace('T', ' ')[:16]}, {v.replace('IN PROGRESS — ', '')}"
+        done = [r for r in runs(front) if r != started]
+        run = sorted(done)[-1] if done else None
+    page = get(f"{BASE}?run={run}") if run else front
+    print(render(page, running))
+
+def render(page, running=None):
+    out = []
+    v, when, counts, split = banner(page)
+    m = re.match(r"(\S+) → (\S+) · took (.*)", when)
+    stamp = f"{m.group(1).replace('T', ' ')[:16]} → {m.group(2)[:5]} · {m.group(3)}" if m else when
+    out.append(f"last run  {stamp} · {v.lower()}")
+    if running:
+        out.append(f"          {running}")
+    out.append("")
+    out.append(f"{'':8}{'passed':>9}{'skipped':>9}{'failed':>8}{'unmeasured':>12}")
+    out.append(f"{'suites':8}{num(counts,'suites','passed'):>9}{num(counts,'suites','skipped'):>9}{num(counts,'suites','failed'):>8}{num(counts,'suites','unmeasured'):>12}")
+    nores = num(counts, 'tests', 'no result')
+    out.append(f"{'cases':8}{num(counts,'tests','passed'):>9}{'—':>9}{num(counts,'tests','failed'):>8}{num(counts,'tests','unmeasured'):>12}"
+               + (f"   ({nores} no result)" if nores != "—" else ""))
+    if split:
+        out.append("")
+        out.append(re.sub(r" since ", "\nsince ", split, count=1))
+    # #4413 — grouped by test type, in the order the run executed them (the
+    # page lists its type groups in run order), each failed case under its suite.
+    out.append("")
+    out.append("by type, in run order")
+    for g in re.split(r'<details class="group"', page)[1:]:
+        head = re.search(r"<summary>(.*?)</summary>", g, re.S)
+        head = head.group(1) if head else ""
+        typ, n, hint = span(head, "lbl"), span(head, "n"), span(head, "hint")
+        reds = re.findall(r'<details class="red"[^>]*>(.*?)</details>', g, flags=re.S)
+        # nothing measured is not a pass: "?" never "✓"
+        mark = "✗" if reds else ("?" if hint.startswith("0 pass · 0 fail") else "✓")
+        out.append(f"  {mark} {typ:<20} {n:>4} suites   {hint}")
+        for r in reds:
+            summ = re.search(r"<summary>(.*?)</summary>", r, re.S).group(1)
+            owner, _, tally = span(summ, "sum").partition(" · ")
+            t, note = tally_of(tally)
+            out.append(f"      {span(summ, 'path')}   {t} · {span(summ, 'label').lower()} · {owner}")
+            cases = [case_name(c) for c in re.findall(r'<li class="case fail">(.*?)</li>', r, flags=re.S)]
+            if not cases:
+                cases = [text(w) for w in re.findall(r'<span class="why">(.*?)</span>', r, flags=re.S)][:1] or [note or "(the suite recorded no case names)"]
+            for c in cases:
+                out.append(f"        ✗ {c[:120]}")
+    return "\n".join(out)
+
+def red_block(page, path):
+    """The page with one red suite's block removed (the violation the proof plants)."""
+    return re.sub(r'<details class="red"[^>]*>(?:(?!</details>).)*?<span class="path">' + re.escape(path) + r'</span>.*?</details>', "", page, count=1, flags=re.S)
+
+def fixture_mode():
+    """NEGATIVE PROOF (#3734): a reader that cannot tell a page with a red suite
+    from one without it must not be trusted. Render the saved page, check the
+    counts and every failed case land under their suite, then remove one red
+    suite and require the output to lose exactly that suite."""
+    page = strip(open(FIXTURE).read())
+    out = render(page)
+    want = [
+        "last run  2026-09-30 08:33 → 10:22 · 109 min · 2 red suites",
+        "suites        403       10       2          95",
+        "cases       9,469        —      17          43   (705 no result)",
+        "  ✓ coverage               15 suites   15 pass · 0 fail",
+        "  ✗ contract               17 suites   128 pass · 2 fail",
+        "      platform/tests/3830-provision-user.bats   2 of 18 cases · product broke · wren",
+        "        ✗ NEGATIVE PROOF — a role store that cannot be read is UNMEASURED, not no-role",
+        "        ✗ a human gets their OWN account",
+        "  ✗ integration           103 suites   950 pass · 15 fail",
+        "      platform/api   15 of 252 cases · product broke · unowned",
+        "        ✗ GET /api/athena/subdomains/:id/actors returns actor list",
+    ]
+    missing = [w for w in want if w not in out.splitlines()]
+    for m in missing:
+        print(f"fixture: MISSING line: {m!r}")
+    cut = render(red_block(page, "platform/api"))
+    caught = "platform/api" not in cut and "3830-provision-user.bats" in cut and cut != out
+    order = [l.split()[1] for l in out.splitlines() if l[:4] in ("  ✓ ", "  ✗ ", "  ? ")]
+    if order != ["coverage", "contract", "integration"]:
+        print(f"fixture: type groups out of run order: {order}")
+        missing.append("run order")
+    print(f"fixture: removing the platform/api red suite {'drops it from the answer' if caught else 'IS NOT SEEN'}")
+    if missing or not caught:
+        print("NEGATIVE PROOF FAILED")
+        return 1
+    print("NEGATIVE PROOF OK")
+    return 0
+
+if __name__ == "__main__":
+    main()
