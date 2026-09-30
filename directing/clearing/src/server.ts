@@ -37,8 +37,11 @@ primeAllowSetGraph().catch(() => {});
 import { resolveSenderIdentity } from './sender-identity';
 import {
   makePkce, makeState, signCookie, verifyCookie, safeReturnPath, buildAuthUrl,
-  exchangeCodeForWebId, type OidcConfig,
+  exchangeCode, refreshSignIn, type OidcConfig,
 } from './solid-oidc';
+import {
+  openPersonSession, touchPersonSession, closePersonSession, SIGN_IN_LASTS_MS, type PersonSessionDeps,
+} from './person-session';
 import { gateDecision } from './server-auth';
 import { changePassword } from './account';
 
@@ -139,9 +142,36 @@ const REQUIRE_DPOP = process.env.CHORUS_CLEARING_REQUIRE_DPOP === '1';
 // #3669 (Wren) — server-side session lifetime. The signed cookie is otherwise
 // valid forever on signature alone (maxAge is only browser-advisory), so a
 // captured cookie would never die. The gate enforces this against the payload iat.
-const SESSION_MAX_AGE_MS = 30 * 24 * 60 * 60 * 1000;
+const SESSION_MAX_AGE_MS = SIGN_IN_LASTS_MS; // #4412 — one number: the cookie and his Session row expire together
 
 /** Per-request OIDC config — redirect_uri matches the origin the browser is on. */
+// #4412 — Jeff's browser Session row: written as him, kept in one 0600 file.
+const PERSON_SESSIONS_FILE = process.env.CLEARING_PERSON_SESSIONS || `${CHORUS_HOME}/clearing-person-sessions.json`;
+function personDeps(req: Request): PersonSessionDeps {
+  return {
+    api: process.env.ATHENA_MAKE_URL || 'http://localhost:3360',
+    fetchImpl: fetch,
+    now: Date.now,
+    storePath: PERSON_SESSIONS_FILE,
+    refresh: (rt) => refreshSignIn(oidcCfg(req), rt),
+    log: (line) => console.log(line),
+  };
+}
+
+type SessionCookie = { webid?: string; iat?: number; psk?: string };
+
+/** #4412 — the session cookie; an expired one closes his row as it is seen. */
+function readSessionCookie(req: Request): { webid: string; psk?: string } | null {
+  const s = verifyCookie<SessionCookie>(req.cookies?.clearing_session, SESSION_SECRET, 'session');
+  if (!s?.webid) return null;
+  const fresh = !!s.iat && Date.now() - s.iat <= SESSION_MAX_AGE_MS;
+  if (!fresh) {
+    if (s.psk) void closePersonSession(personDeps(req), s.psk).catch(() => {});
+    return null;
+  }
+  return { webid: s.webid, psk: s.psk };
+}
+
 function oidcCfg(req: Request): OidcConfig {
   const onTunnel = isTunneled(req.headers);
   const redirectUri = onTunnel
@@ -382,6 +412,7 @@ function preAuthRoute(
   }
   if (req.path === '/auth/login') return () => handleAuthLogin(req, res);
   if (req.path === '/auth/callback') return () => handleAuthCallback(req, res);
+  if (req.path === '/auth/signout') return () => handleSignOut(req, res);
   return null;
 }
 
@@ -432,9 +463,8 @@ async function sessionPrincipal(req: Request): Promise<{ id: string; name: strin
     const p = await principalForWebId(guardWebId, Date.now());
     if (p) return p;
   }
-  const session = verifyCookie<{ webid?: string; iat?: number }>(req.cookies?.clearing_session, SESSION_SECRET, 'session');
-  const fresh = !!session?.iat && Date.now() - session.iat <= SESSION_MAX_AGE_MS;
-  if (!session?.webid || !fresh) return null;
+  const session = readSessionCookie(req);
+  if (!session) return null;
   return principalForWebId(session.webid, Date.now());
 }
 
@@ -462,9 +492,10 @@ async function isAuthed(req: Request): Promise<boolean> {
   const guardWebId = shareSessionWebId(req);
   if (guardWebId && (await isWebIdAllowed(guardWebId, Date.now()))) return true;
 
-  const session = verifyCookie<{ webid?: string; iat?: number }>(req.cookies?.clearing_session, SESSION_SECRET, 'session');
-  const sessionFresh = !!session?.iat && Date.now() - session.iat <= SESSION_MAX_AGE_MS;
-  const sessionAuthed = !!(session?.webid && sessionFresh && (await isWebIdAllowed(session.webid, Date.now())));
+  const session = readSessionCookie(req);
+  const sessionAuthed = !!(session && (await isWebIdAllowed(session.webid, Date.now())));
+  // #4412 — he is here: keep his Session's lastSeenAt current (≤ once a minute).
+  if (sessionAuthed && session?.psk) void touchPersonSession(personDeps(req), session.psk).catch(() => {});
   // BRIDGE_TOKEN is a long random value; tunnel auth gate, migration fallback only.
   const tokenAuthed = !REQUIRE_DPOP && extractToken(req) === BRIDGE_TOKEN;
   return sessionAuthed || tokenAuthed;
@@ -556,8 +587,9 @@ async function handleAuthCallback(req: Request, res: Response): Promise<void> {
     return;
   }
   // Exchange with the redirect_uri from the LOGIN leg (cookie), never re-derived.
-  const webid = await exchangeCodeForWebId({ ...oidcCfg(req), redirectUri: login.redirectUri }, code, login.verifier);
-  if (!webid) {
+  const claims = await exchangeCode({ ...oidcCfg(req), redirectUri: login.redirectUri }, code, login.verifier);
+  const webid = claims?.webid ?? null;
+  if (!claims || !webid) {
     res.status(502).send(errorPage('The identity server isn’t answering — the room is fine, try again in a minute.'));
     return;
   }
@@ -565,12 +597,27 @@ async function handleAuthCallback(req: Request, res: Response): Promise<void> {
     res.status(403).send(errorPage('This identity isn’t on the team list.'));
     return;
   }
-  const sessionCookie = signCookie({ typ: 'session', webid, iat: Date.now() }, SESSION_SECRET);
+  // #4412 — his browser Session row, written as him. A failed write is logged
+  // and never blocks the sign-in; login then refuses and names the fix.
+  const principal = await principalForWebId(webid, Date.now());
+  const psk = principal ? await openPersonSession(personDeps(req), principal.name, claims).catch(() => null) : null;
+  const sessionCookie = signCookie({ typ: 'session', webid, iat: Date.now(), ...(psk ? { psk } : {}) }, SESSION_SECRET);
   res.cookie('clearing_session', sessionCookie, {
     httpOnly: true, sameSite: 'lax', secure: isTunneled(req.headers), maxAge: 30 * 24 * 60 * 60 * 1000, path: '/',
   });
   res.clearCookie('clearing_login', { path: '/' });
   res.redirect(login.returnPath);
+}
+
+// #4412 — sign-out: close his browser Session (its role bindings end with it)
+// and drop the session cookie. The CSS session itself is left alone.
+async function handleSignOut(req: Request, res: Response): Promise<void> {
+  const s = verifyCookie<SessionCookie>(req.cookies?.clearing_session, SESSION_SECRET, 'session');
+  const closed = s?.psk ? await closePersonSession(personDeps(req), s.psk).catch(() => false) : false;
+  res.clearCookie('clearing_session', { path: '/' });
+  res.send(authShell(
+    closed ? 'Signed out. Roles can no longer log in until you sign in again.' : 'Signed out.',
+    '<a href="/auth/login" style="text-decoration:none"><button type="button">Sign in</button></a>'));
 }
 
 // #3669 — the login interstitial: the DEFAULT unauth experience on the public arm.
@@ -747,9 +794,7 @@ app.use(express.static(path.join(__dirname, '../public'), {
 // #3679 — the session WebID from the SIGNED session cookie (server-verified),
 // never any client-sent value (Silas hardening 1). null when unauthenticated.
 function sessionWebid(req: Request): string | null {
-  const s = verifyCookie<{ webid?: string; iat?: number }>(req.cookies?.clearing_session, SESSION_SECRET, 'session');
-  const fresh = !!s?.iat && Date.now() - s.iat <= SESSION_MAX_AGE_MS;
-  return s?.webid && fresh ? s.webid : null;
+  return readSessionCookie(req)?.webid ?? null;
 }
 
 // #3679 — the account page: shows the signed-in identity + a change-password form.
