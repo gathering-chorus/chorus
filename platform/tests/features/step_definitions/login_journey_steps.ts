@@ -148,3 +148,58 @@ Then('the login output says the hooks daemon is down', STEP, function () {
 // #4400 names the grant row; until then the setup cannot be written honestly.
 Given("wren's Principal row grants it no role", STEP, (): 'pending' => 'pending');
 Then('the login is refused, naming the missing role grant, and no session row is written', STEP, (): 'pending' => 'pending');
+
+// ---- the live reply gap ----
+type TurnWorld = { router?: Router; tailer?: Tailer; answer?: string; narration?: string };
+const assistantLine = (text: string, stop: string) =>
+  jsonl({ type: 'assistant', uuid: `a-${Math.random()}`, timestamp: new Date().toISOString(), message: { content: [{ type: 'text', text }], stop_reason: stop } });
+
+Given('Jeff has asked wren something from the Clearing', STEP, async function (this: TurnWorld) {
+  const src = path.join(ROOT, 'directing/clearing/src');
+  const { MessageRouter } = (await import(path.join(src, 'router'))) as { MessageRouter: new () => Router };
+  const { SessionTailer } = (await import(path.join(src, 'session-tailer'))) as { SessionTailer: new (r: unknown, f: () => undefined) => Tailer };
+  fs.mkdirSync(WREN_DIR, { recursive: true });
+  fs.writeFileSync(TRANSCRIPT, jsonl({ type: 'user', uuid: `u-${Date.now()}`, timestamp: new Date().toISOString(), message: { content: 'wren is the journey green?' } }));
+  this.router = new MessageRouter();
+  this.tailer = new SessionTailer(this.router, () => undefined);
+  this.tailer.start();
+});
+
+When('wren writes a line partway through the turn and runs a tool', STEP, async function (this: TurnWorld) {
+  this.narration = 'Now the journey, per the navigator.';
+  fs.appendFileSync(TRANSCRIPT, assistantLine(this.narration, 'tool_use'));
+  this.tailer?.checkNow('wren');
+  // the tool runs longer than the Clearing's quiet window
+  await new Promise((res) => setTimeout(res, 60));
+  fs.appendFileSync(TRANSCRIPT, jsonl({ type: 'user', uuid: `t-${Date.now()}`, timestamp: new Date().toISOString(), message: { content: [{ type: 'tool_result', tool_use_id: 'toolu_x', content: 'ok' }] } }));
+  this.tailer?.checkNow('wren');
+});
+
+When('wren finishes the turn with its answer', STEP, async function (this: TurnWorld) {
+  this.answer = 'Yes, the journey is green end to end.';
+  fs.appendFileSync(TRANSCRIPT, assistantLine(this.answer, 'end_turn'));
+  this.tailer?.checkNow('wren');
+  await new Promise((res) => setTimeout(res, 100));
+});
+
+Then("the Clearing shows wren's answer", STEP, function (this: TurnWorld) {
+  this.tailer?.stop();
+  const texts = (this.router?.getRecent(50, true) ?? []).map((m) => m.text);
+  if (!texts.includes(this.answer ?? '')) {
+    throw new Error(`the Clearing never showed wren's answer; it shows ${JSON.stringify(texts.slice(-3))}`);
+  }
+});
+
+Given("silas's nudge is typed into wren's pane", STEP, async function (this: TurnWorld) {
+  const src = path.join(ROOT, 'directing/clearing/src');
+  const { MessageRouter } = (await import(path.join(src, 'router'))) as { MessageRouter: new () => Router };
+  const { SessionTailer } = (await import(path.join(src, 'session-tailer'))) as { SessionTailer: new (r: unknown, f: () => undefined) => Tailer };
+  fs.mkdirSync(WREN_DIR, { recursive: true });
+  this.router = new MessageRouter();
+  this.tailer = new SessionTailer(this.router, () => undefined);
+  fs.writeFileSync(TRANSCRIPT, '');
+  this.tailer.start();
+  // what pulse types since #4362: the message itself, header and all
+  fs.appendFileSync(TRANSCRIPT, jsonl({ type: 'user', uuid: `u-${Date.now()}`, timestamp: new Date().toISOString(), message: { content: '[nudge from silas | 2026-09-30 11:50 Boston] is the journey green?' } }));
+  this.tailer.checkNow('wren');
+});

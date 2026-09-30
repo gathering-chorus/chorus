@@ -55,3 +55,24 @@ Feature: A role's day, from login to logout and back
     Given wren's Principal row grants it no role
     When Jeff runs "chorus-principal login wren"
     Then the login is refused, naming the missing role grant, and no session row is written
+
+  # ---- the live reply gap (Silas navigating, 11:49) ---------------------
+  # 09-30: 2 of 9 finals never shown in the Clearing; it showed a line written
+  # partway through the turn ("Now the journey, per Silas's direction.") as
+  # the answer, and dropped the real one.
+  # In-process this is GREEN (11:55): the tailer shows the final even when a
+  # tool outlasts the quiet window. Kept as a guard; the 2 live cases were
+  # turns a peer's nudge started, not Jeff.
+  Scenario: A turn that narrates, runs tools, then answers shows the answer in the Clearing
+    Given Jeff has asked wren something from the Clearing
+    When wren writes a line partway through the turn and runs a tool
+    And wren finishes the turn with its answer
+    Then the Clearing shows wren's answer
+
+  # Jeff, 04:57: "im not seeing messages from any of u in clearing". Since
+  # #4362 (11:26) pulse types the nudge itself into the pane, header included.
+  @waiting-4409
+  Scenario: A reply to a peer's nudge shows in the Clearing
+    Given silas's nudge is typed into wren's pane
+    When wren finishes the turn with its answer
+    Then the Clearing shows wren's answer
