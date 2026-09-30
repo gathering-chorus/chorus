@@ -71,15 +71,31 @@ def main():
     args = [a for a in sys.argv[1:] if not a.startswith("--")]
     front = get(BASE)
     v, when, _, _ = banner(front)
-    run = args[0] if args else None
     running = None
-    if not run and "IN PROGRESS" in v:
+    if not finished(front) and "IN PROGRESS" in v:
         started = when.split(" ")[0]
         running = f"running now: started {started.replace('T', ' ')[:16]}, {v.replace('IN PROGRESS — ', '')}"
-        done = [r for r in runs(front) if r != started]
-        run = sorted(done)[-1] if done else None
-    page = get(f"{BASE}?run={run}") if run else front
+    page = get(f"{BASE}?run={args[0]}") if args else latest_finished(front, lambda r: get(f"{BASE}?run={r}"))
+    if page is None:
+        print((running + "\n" if running else "") + "no finished nightly run on the page")
+        return
     print(render(page, running))
+
+def finished(page):
+    """A finished run's banner reads 'start → end · took N'. A run in progress,
+    or one that was stopped, reads 'start · duration unknown (run never completed)'."""
+    return "→" in banner(page)[1]
+
+def latest_finished(front, fetch):
+    """#4413 — the newest run that finished, walking newest-first. A stopped run
+    (Kade's 14:33 on 09-30) is newer than the last finished one and must be skipped."""
+    if finished(front):
+        return front
+    for r in sorted(set(runs(front)), reverse=True):
+        page = fetch(r)
+        if finished(page):
+            return page
+    return None
 
 def render(page, running=None):
     out = []
@@ -156,6 +172,19 @@ def fixture_mode():
         print(f"fixture: type groups out of run order: {order}")
         missing.append("run order")
     print(f"fixture: removing the platform/api red suite {'drops it from the answer' if caught else 'IS NOT SEEN'}")
+    # #4413 — a stopped run newer than the finished one must not be picked
+    stopped = re.sub(r'<div class="when">.*?</div>', '<div class="when">2026-09-30T14:33:35 · duration unknown (run never completed)</div>', page, count=1, flags=re.S)
+    stopped = re.sub(r'<div class="verdict">.*?</div>', '<div class="verdict">IN PROGRESS — 1 suite(s) so far, 0 red so far</div>', stopped, count=1, flags=re.S)
+    front = stopped.replace('<li class="cur">', '<li><a href="/nightly?run=2026-09-30T14:33:35">x</a></li><li class="cur">', 1)
+    if "2026-09-30T14:33:35" not in runs(front):
+        missing.append("fixture front does not list the stopped run")
+    pages = {"2026-09-30T08:33:41": page, "2026-09-30T14:33:35": stopped}
+    picked = latest_finished(front, lambda r: pages.get(r, ""))
+    naive = pages[sorted(pages)[-1]]
+    ok_pick = picked is page and naive is stopped
+    print(f"fixture: with a stopped run newer than the finished one, picks {'the finished run' if ok_pick else 'THE WRONG RUN'}")
+    if not ok_pick:
+        missing.append("stopped run picked")
     if missing or not caught:
         print("NEGATIVE PROOF FAILED")
         return 1
