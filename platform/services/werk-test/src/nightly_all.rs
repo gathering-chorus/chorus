@@ -1207,6 +1207,7 @@ fn leg_crawler_validate(ctx: &Ctx) -> SuiteRow {
     // validates — so it checks a current graph. A run that writes no prod
     // rows (a werk, #3722) validates only.
     c.args(crawler_args(ctx.graph.enabled))
+        .envs(crawler_env(ctx.graph.enabled))
         .env("CHORUS_ROOT", &ctx.root)
         .env("CHORUS_ROLE", env_or("NIGHTLY_CRAWL_ROLE", "kade"))
         .current_dir(&ctx.root);
@@ -1224,6 +1225,15 @@ fn leg_crawler_validate(ctx: &Ctx) -> SuiteRow {
 /// when it may not.
 pub fn crawler_args(may_write: bool) -> Vec<&'static str> {
     if may_write { Vec::new() } else { vec!["--validate"] }
+}
+
+/// #4185 — the write pass must be a FULL pass: the crawler prints its
+/// VALIDATE| lines only after a full pass, and without this the graph's
+/// watermark made it a delta (2026-09-30 08:33: "delta becf31089..9760be75a",
+/// no VALIDATE lines, the lane UNMEASURED). An empty watermark is the
+/// crawler's "full pass requested by the job", as the 04:30 job asks.
+pub fn crawler_env(may_write: bool) -> Vec<(&'static str, &'static str)> {
+    if may_write { vec![("CHORUS_CRAWL_WATERMARK", "")] } else { Vec::new() }
 }
 
 /// One parsed `VALIDATE|domain|class|tree=|graph=|missing=|stale=|measured` line.
@@ -1329,12 +1339,16 @@ mod crawl_first_4318 {
     #[test]
     fn the_team_run_crawls_before_it_validates() {
         assert!(crawler_args(true).is_empty(), "a full pass: write, then validate");
+        // #4185 — no args alone was a DELTA pass (the graph's watermark), which
+        // prints no VALIDATE lines; the empty watermark is what makes it full.
+        assert_eq!(crawler_env(true), vec![("CHORUS_CRAWL_WATERMARK", "")]);
     }
 
     /// NEGATIVE PROOF — a run that may not write prod (a werk) never crawls.
     #[test]
     fn a_werk_run_only_validates() {
         assert_eq!(crawler_args(false), vec!["--validate"]);
+        assert!(crawler_env(false).is_empty(), "--validate is always full; no watermark to override");
     }
 }
 

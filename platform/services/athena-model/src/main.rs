@@ -7,7 +7,7 @@
 //! Callers never pass IRIs — fields are literals, edges are (property, kind:name)
 //! pairs the mint resolves. --dry-run prints the Turtle and writes nothing.
 
-use athena_model::{add_batch, add_edge, add_edge_keeping, remove_edge_keeping, batch, curl_http, delete_entity, delete_iri, deploy_home, deploy_partitions, mint, post_all, post_rows, seed_multi_at, parse_add_batch_ndjson, parse_ntriples, remove_edge, seed_multi, OwnerTokens, SeedGroup, set_field, to_turtle, write, write_many, FusekiStore, Identity, Store, WriteReq};
+use athena_model::{add_batch, add_edge, add_edge_keeping, remove_edge_keeping, batch, curl_http, delete_batch, delete_entity, delete_iri, deploy_home, deploy_partitions, mint, post_all, post_rows, seed_multi_at, parse_add_batch_ndjson, parse_ntriples, remove_edge, seed_multi, OwnerTokens, SeedGroup, set_field, to_turtle, write, write_many, FusekiStore, Identity, Store, WriteReq};
 use std::io::Read;
 use std::process::ExitCode;
 
@@ -467,6 +467,33 @@ fn run() -> Result<String, String> {
             let store = FusekiStore::new();
             let id = Identity::resolve(&store)?; // #3651
             Ok(format!("deleted: {}", delete_entity(&store, &req.kind, &req.name, req.graph.as_deref(), &id)?))
+        }
+        // #4185 — delete-batch --kind <k> [--graph <g>]; one name per stdin line.
+        // All or none, one update (see delete_batch).
+        Some("delete-batch") => {
+            let rest = &args[1..];
+            let (mut kind, mut graph) = (String::new(), None::<String>);
+            let mut i = 0;
+            while i < rest.len() {
+                match rest[i].as_str() {
+                    "--kind" => { i += 1; kind = rest.get(i).cloned().unwrap_or_default(); }
+                    "--graph" => { i += 1; graph = rest.get(i).cloned(); }
+                    other => return Err(format!("delete-batch: unknown arg '{}'", other)),
+                }
+                i += 1;
+            }
+            if kind.is_empty() {
+                return Err("delete-batch needs --kind <k>; pipe one name per line on stdin".into());
+            }
+            let mut input = String::new();
+            std::io::stdin()
+                .read_to_string(&mut input)
+                .map_err(|e| format!("delete-batch: cannot read stdin: {}", e))?;
+            let names: Vec<String> = input.lines().map(str::trim).filter(|l| !l.is_empty()).map(String::from).collect();
+            let store = FusekiStore::new();
+            let id = Identity::resolve(&store)?; // #3651
+            let gone = delete_batch(&store, &kind, &names, graph.as_deref(), &id)?;
+            Ok(format!("deleted-batch: {} entity(s)\n{}", gone.len(), gone.join("\n")))
         }
         // #3692 — seed: bulk TTL ingest (the 5th DAL verb). Pre-minted IRIs
         // preserved, SHACL-validated fail-closed, provenance-stamped, idempotent.

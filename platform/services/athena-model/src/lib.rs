@@ -2332,8 +2332,55 @@ pub fn delete_entity(store: &dyn Store, kind: &str, name: &str, graph: Option<&s
         "DELETE WHERE {{ GRAPH <{g}> {{ <{s}> ?p ?o }} }}",
         g = g, s = subject
     ))?;
-    witness("model.delete", &[("kind", kind), ("name", name), ("iri", subject.as_str())]);
+    witness("model.delete", &[("kind", kind), ("name", name), ("iri", subject.as_str()), ("principal", _id.role())]);
     Ok(subject)
+}
+
+/// #4185 — the most rows one delete-batch takes. A crawler case rarely holds
+/// more results than this; a larger list is the caller's to split.
+pub const DELETE_BATCH_MAX: usize = 1000;
+
+/// #4185 — delete many rows of ONE kind in ONE update. The crawler removed a
+/// vanished case's results one DELETE at a time, one DAL process each (~1.4
+/// rows/s, 2026-09-30). Same rules as `delete_entity`, all or none: every row
+/// must exist or nothing is deleted, and the principal is named on the
+/// witness. athena-make checks each row's owner before calling.
+pub fn delete_batch(store: &dyn Store, kind: &str, names: &[String], graph: Option<&str>, id: &Identity) -> R<Vec<String>> {
+    if names.is_empty() {
+        return Err("delete-batch: no names".into());
+    }
+    if names.len() > DELETE_BATCH_MAX {
+        return Err(format!("delete-batch: {} names exceeds the {}-row cap; split the list", names.len(), DELETE_BATCH_MAX));
+    }
+    let mut subjects: Vec<String> = Vec::with_capacity(names.len());
+    for n in names {
+        let s = mint(kind, n)?;
+        if subjects.contains(&s) {
+            return Err(format!("delete-batch: '{}' is named twice", n));
+        }
+        subjects.push(s);
+    }
+    let values = subjects.iter().map(|s| format!("<{s}>")).collect::<Vec<_>>().join(" ");
+    let present: Vec<String> = store
+        .select_v(&format!(
+            "SELECT DISTINCT ?v WHERE {{ VALUES ?target {{ {values} }} GRAPH ?g {{ ?target ?p ?o }} BIND(CONCAT(STR(?target), \"|\") AS ?v) }}"
+        ))?
+        .into_iter()
+        .map(|v| v.trim_end_matches('|').to_string())
+        .collect();
+    if let Some(missing) = subjects.iter().find(|s| !present.contains(s)) {
+        witness("model.refused", &[("kind", kind), ("reason", "not-found"), ("iri", missing.as_str()), ("principal", id.role())]);
+        return Err(format!("not-found: <{}> does not exist — nothing deleted", missing));
+    }
+    let home = instance_home(store, kind, graph)?;
+    let g = home.as_str();
+    assert_dal_writable(g)?;
+    store.update(&format!(
+        "DELETE {{ GRAPH <{g}> {{ ?s ?p ?o }} }} WHERE {{ VALUES ?s {{ {values} }} GRAPH <{g}> {{ ?s ?p ?o }} }}"
+    ))?;
+    let count = subjects.len().to_string();
+    witness("model.delete-batch", &[("kind", kind), ("count", count.as_str()), ("graph", g), ("principal", id.role())]);
+    Ok(subjects)
 }
 
 /// #3468 — ADD one edge INCREMENTALLY (governed). Unlike `write` (full-subject
@@ -4034,6 +4081,39 @@ mod tests {
         assert_eq!(ups.len(), 1);
         assert!(ups[0].contains("DELETE WHERE"), "wholesale subject delete");
         assert!(ups[0].contains("urn:chorus:domains:tests"), "#4187 — routed to the defining domain's graph: {}", ups[0]);
+    }
+
+    // #4185 — one update for many rows; all or none.
+    #[test]
+    fn delete_batch_deletes_every_row_in_one_update() {
+        let (a, b) = (format!("{}tests", NS), format!("{}loom", NS));
+        let store = stub(&[a.as_str(), b.as_str()], &[]);
+        let got = delete_batch(&store, "domain", &["tests".into(), "loom".into()], None, &tid()).unwrap();
+        assert_eq!(got, vec![a.clone(), b.clone()]);
+        let ups = store.updates.borrow();
+        assert_eq!(ups.len(), 1, "one update for the whole batch");
+        assert!(ups[0].contains(&format!("<{a}>")) && ups[0].contains(&format!("<{b}>")), "{}", ups[0]);
+        assert!(ups[0].contains("urn:chorus:domains:tests"), "routed to the kind's home: {}", ups[0]);
+    }
+
+    /// NEGATIVE PROOF — one missing row and nothing is deleted.
+    #[test]
+    fn delete_batch_refuses_all_when_one_row_is_missing() {
+        let a = format!("{}tests", NS);
+        let store = stub(&[a.as_str()], &[]);
+        let e = delete_batch(&store, "domain", &["tests".into(), "ghost".into()], None, &tid()).unwrap_err();
+        assert!(e.starts_with("not-found") && e.contains("ghost"), "{}", e);
+        assert!(store.updates.borrow().is_empty(), "nothing deleted when one row is missing");
+    }
+
+    #[test]
+    fn delete_batch_refuses_empty_duplicate_and_oversized_lists() {
+        let store = stub(&[], &[]);
+        assert!(delete_batch(&store, "domain", &[], None, &tid()).is_err());
+        assert!(delete_batch(&store, "domain", &["a".into(), "a".into()], None, &tid()).unwrap_err().contains("named twice"));
+        let many: Vec<String> = (0..=DELETE_BATCH_MAX).map(|i| format!("r{i}")).collect();
+        assert!(delete_batch(&store, "domain", &many, None, &tid()).unwrap_err().contains("cap"));
+        assert!(store.updates.borrow().is_empty());
     }
 
     #[test]

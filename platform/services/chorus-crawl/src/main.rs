@@ -2092,7 +2092,21 @@ fn main() {
                         Ok(results) => {
                             let res_coll = collection_for(&api, "TestResult");
                             let mut all_gone = true;
-                            for r in &results {
+                            // #4185 — a case's results go in batches, one API call and
+                            // one store update each (one at a time measured 1.4 rows/s,
+                            // 2026-09-30). A batch the API refuses (a result someone
+                            // else owns, a row already gone) falls back to one at a
+                            // time below, so held results are still named per owner.
+                            let mut leftover: Vec<&String> = Vec::new();
+                            for chunk in results.chunks(cases::DELETE_BATCH_ROWS) {
+                                let del = res_coll.as_ref().map_err(|e| e.clone()).and_then(|c| {
+                                    write(ident, &api, "POST", &format!("{c}/delete-batch"), Some(&cases::delete_batch_body(chunk)))
+                                });
+                                if del.is_err() {
+                                    leftover.extend(chunk);
+                                }
+                            }
+                            for r in leftover {
                                 let del = res_coll.as_ref().map_err(|e| e.clone()).and_then(|c| {
                                     write(ident, &api, "DELETE", &format!("{c}/{r}"), None)
                                 });

@@ -1037,6 +1037,37 @@ fn write_lifecycle_create_replace_edge_delete() {
     assert!(b.contains("exceeds"), "{}", b);
 }
 
+// #4185 — delete-batch: many rows, one DAL call, and each row gets the verdict a
+// single DELETE gets. NEGATIVE PROOFS: one refused or missing row refuses the
+// whole batch; a caller with no Permission on the graph is refused.
+#[test]
+fn delete_batch_checks_every_row_and_refuses_all_or_none() {
+    let tok = mint_token(WREN_WEBID, None);
+    let auth = bearer(&tok);
+    let hdrs: &[(&str, &str)] = &[("Authorization", &auth)];
+    let (c, _, b) = http("POST", "/domains/delete-batch", hdrs, "[\"hasparent\",\"borg\"]");
+    assert_eq!(c, 200, "{}", b);
+    assert!(b.contains("deleted 2 domains via one DAL batch"), "{}", b);
+    // a row with no owner refuses the batch, and says nothing was deleted
+    let (c, _, b) = http("POST", "/domains/delete-batch", hdrs, "[\"hasparent\",\"orphan\"]");
+    assert_eq!(c, 403, "{}", b);
+    assert!(b.contains("orphan (ownedBy absent") && b.contains("nothing deleted"), "{}", b);
+    // a missing row → 404 for the batch
+    let (c, _, b) = http("POST", "/domains/delete-batch", hdrs, "[\"hasparent\",\"ghost\"]");
+    assert_eq!(c, 404, "{}", b);
+    assert!(b.contains("no such row 'ghost'") && b.contains("nothing deleted"), "{}", b);
+    // a caller holding no Write Permission (nobody: zero grants) cannot delete wren's rows
+    let other = bearer(&mint_token(NOBODY_WEBID, None));
+    let (c, _, b) = http("POST", "/domains/delete-batch", &[("Authorization", other.as_str())], "[\"borg\"]");
+    assert_eq!(c, 403, "{}", b);
+    assert!(b.contains("borg (ownedBy wren)"), "{}", b);
+    // the body is a JSON array of safe names, nothing else
+    for bad in ["{\"names\":[\"borg\"]}", "[]", "[borg]", "[\"../x\"]"] {
+        let (c, _, b) = http("POST", "/domains/delete-batch", hdrs, bad);
+        assert_eq!(c, 422, "{} → {}", bad, b);
+    }
+}
+
 #[test]
 fn testresult_batch_reuses_auth_prepares_all_and_delegates_one_exact_ndjson_call() {
     let w = world();
