@@ -1,3 +1,4 @@
+// @test-type: unit — an in-memory MCP client against a stub fetch; no live services
 // #3010 — chorus_principles_list returns structured JSON content alongside
 // the existing prose text. Closes the parse_tool_text fragility at the MCP
 // boundary: client reads structuredContent.principles directly, no greedy
@@ -20,28 +21,32 @@ const HEMENWAY_COMMENT =
   'Identify, collect, and hold useful flows. Every cycle is an opportunity for yield; ' +
   'every gradient (in slope, charge, temperature, or otherwise) is an opportunity for energy.';
 
+// #4353 — the generated principles route on athena-make: data is the row
+// array and each row's key is `name`. Every URL asked is recorded.
+const asked: string[] = [];
 function stubFetchPrinciples(): FetchImpl {
-  return async (_url: string) =>
-    ({
+  return async (url: string) => {
+    asked.push(url);
+    return ({
       ok: true,
       status: 200,
       json: async () => ({
-        data: {
-          principles: [
-            {
-              id: 'hemenway-catch-and-store',
-              label: 'Catch and store energy and materials',
-              comment: HEMENWAY_COMMENT,
-            },
-            {
-              id: 'principle-simple',
-              label: 'Simple principle',
-              comment: 'No parens here.',
-            },
-          ],
-        },
+        kind: 'Principle',
+        data: [
+          {
+            name: 'hemenway-catch-and-store',
+            label: 'Catch and store energy and materials',
+            comment: HEMENWAY_COMMENT,
+          },
+          {
+            name: 'principle-simple',
+            label: 'Simple principle',
+            comment: 'No parens here.',
+          },
+        ],
       }),
     } as unknown as Awaited<ReturnType<FetchImpl>>);
+  };
 }
 
 test('chorus_principles_list returns structuredContent.principles (#3010 AC1)', async () => {
@@ -75,6 +80,9 @@ test('chorus_principles_list returns structuredContent.principles (#3010 AC1)', 
       `Hemenway id should be 'hemenway-catch-and-store', got '${hemenway!.id}' (parse-fragment bug)`,
     );
     assert.equal(hemenway!.comment, HEMENWAY_COMMENT, 'comment should round-trip unchanged');
+    // #4353 — read from the generated route, never the retired subdomain one
+    assert.ok(asked.some((u) => u.endsWith('/v1/principles/principles')), `asked ${asked.join(', ')}`);
+    assert.ok(!asked.some((u) => /subdomains|\/api\/loom\//.test(u)), `asked a retired route: ${asked.join(', ')}`);
   } finally {
     await client.close();
     await server.close();

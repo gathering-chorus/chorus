@@ -318,7 +318,7 @@
   </main>
 
   <footer>
-    Source: <code>GET /api/athena/subdomains/loom-principles/principles</code> → graph <code>urn:chorus:instances</code> (per ADR-025). Top-level principles derived from Toby Hemenway, <em>Gaia's Garden</em> (2nd ed.), adapted for the Chorus+Jeff context per #2337.
+    Source: <code>GET /v1/principles/principles</code> on athena-make (#4353). Top-level principles derived from Toby Hemenway, <em>Gaia's Garden</em> (2nd ed.), adapted for the Chorus+Jeff context per #2337.
   </footer>
 
   <script>
@@ -410,10 +410,16 @@
       const main = document.getElementById('principles');
       main.innerHTML = '<div class="empty">Loading principles…</div>';
       try {
-        const res = await fetch('/api/athena/subdomains/loom-principles/principles');
+        // #4353 — the generated principles route, through chorus-api's same-origin proxy
+        const res = await fetch('/owl/v1/principles/principles');
         if (!res.ok) throw new Error('API returned ' + res.status);
         const body = await res.json();
-        const all = body?.data?.principles || [];
+        const all = (Array.isArray(body?.data) ? body.data : []).map((r) => ({
+          ...r,
+          id: r.name,
+          isPermacultureParent: r.isPermacultureParent === true || r.isPermacultureParent === 'true',
+          order: r.order === '' || r.order == null ? undefined : Number(r.order),
+        }));
         if (all.length === 0) {
           main.innerHTML = '<div class="empty">No principles found in the ontology yet.</div>';
           return;
@@ -453,8 +459,8 @@
         }
 
         if (unparented.length > 0) {
-          html += `<h3 class="section-heading">Unclassified</h3>`;
-          html += `<div class="section-intro">Principles with no permaculture parent yet.</div>`;
+          html += `<h3 class="section-heading">Extreme Programming</h3>`;
+          html += `<div class="section-intro">The XP principles, alongside the permaculture set.</div>`;
           html += unparented.map((c) => renderPrinciple(c)).join('');
         }
 
@@ -474,7 +480,7 @@
 
         document.getElementById('meta').textContent =
           `${all.length} principles (${parents.length} permaculture parents · ${grouped.length} specializations` +
-          (unparented.length > 0 ? ` · ${unparented.length} unclassified` : '') +
+          (unparented.length > 0 ? ` · ${unparented.length} XP` : '') +
           `) · rendered ${RENDERED_AT}`;
       } catch (err) {
         main.innerHTML = '<div class="error">Failed to load principles: ' + escapeHtml(err.message) + '</div>';
