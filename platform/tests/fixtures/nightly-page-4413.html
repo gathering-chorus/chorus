@@ -1,0 +1,13 @@
+<!-- #4413 fixture: the /nightly page's markup, cut to two red suites and one green group -->
+<html><head><style>.x{}</style></head><body>
+<div class="banner red">
+  <div class="verdict">2 RED SUITES</div>
+  <div class="when">2026-09-30T08:33:41 → 10:22:57 · took 109 min</div>
+  <div class="counts"><span><span class="u">suites</span> 403 passed · 2 failed · 1 slow · 95 unmeasured · 10 skipped</span><span><span class="u">tests</span> 9,469 passed · 17 failed · 43 unmeasured · 705 no result · 9,538 ran of 9,524 registered</span></div>
+  <div class="split"><span class="split"><b>2 red:</b> 2 product broke · 0 test wrong · 0 unmeasured</span><span class="d">since <a href="/nightly?run=2026-09-30T03:00:00">2026-09-30T03:00:00</a>: 1 new red · 0 fixed · 1 still red</span><ul class="delta"><li class="new">new: wren x</li></ul></div>
+</div>
+  <details class="group"><summary><span class="pill green">green</span><span class="n">15</span><span class="lbl">coverage</span><span class="hint">15 pass · 0 fail</span></summary></details>
+  <details class="group" open><summary><span class="pill red">1 red</span><span class="n">17</span><span class="lbl">contract</span><span class="hint">128 pass · 2 fail</span></summary><details class="red" open><summary><span class="pill red">fail</span><span class="kind">bats</span><span class="path">platform/tests/3830-provision-user.bats</span><span class="label product-broke">PRODUCT BROKE</span><span class="sum">wren · 16 pass, 2 fail</span></summary><ul class="cases"><li class="case fail"><span class="pill red">fail</span> NEGATIVE PROOF — a role store that cannot be read is UNMEASURED, not no-role <span class="why">`[[ "$output" == *"UNMEASURED"* ]]` failed</span></li><li class="case fail"><span class="pill red">fail</span> a human gets their OWN account <span class="why">`[[ x ]]` failed</span></li></ul></details></details>
+  <details class="group" open><summary><span class="pill red">1 red</span><span class="n">103</span><span class="lbl">integration</span><span class="hint">950 pass · 15 fail</span></summary><details class="red" open><summary><span class="pill red">fail</span><span class="kind">integration</span><span class="path">platform/api</span><span class="label product-broke">PRODUCT BROKE</span><span class="sum">unowned · 237 pass, 15 fail</span></summary><ul class="cases"><li class="case fail"><span class="pill red">fail</span> GET /api/athena/subdomains/:id/actors returns actor list Error: expect(received).toBe(expected)</li></ul></details></details>
+  <details class="history"><summary>runs</summary><ul><li class="cur"><a href="/nightly?run=2026-09-30T08:33:41">2026-09-30T08:33:41</a></li></ul></details>
+</body></html>
