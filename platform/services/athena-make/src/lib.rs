@@ -1505,6 +1505,16 @@ pub enum OwnerVerdict {
     Unavailable(String),
 }
 
+/// #4185 — a Write Permission on the row's graph opens a row the caller does not own.
+/// Only NotOwner changes: an unanswered store or a missing row keeps its own answer,
+/// and an empty scope changes nothing.
+pub fn permission_opens(v: OwnerVerdict, graph: &str, scope: &[String]) -> OwnerVerdict {
+    match v {
+        OwnerVerdict::NotOwner(_) if scope_allows(graph, scope) => OwnerVerdict::Allow,
+        other => other,
+    }
+}
+
 pub fn owner_verdict(
     caller_role: &str,
     read: Result<Option<String>, String>,
@@ -3143,6 +3153,15 @@ pub fn handle_write(method: &str, path: &str, body: &str, table: &RouteTable, ca
 }
 
 pub fn handle_write_stamped(method: &str, path: &str, body: &str, table: &RouteTable, caller_role: &str, token: &str, landed_commit: &str) -> (u16, String) {
+    handle_write_scoped(method, path, body, table, caller_role, token, landed_commit, &[])
+}
+
+/// #4185 — the write with the caller's token scope: its Write Permission rows, read from
+/// the store by chorus-oidc (agent = the caller's principal, accessTo, mode Write). A scope
+/// naming the row's graph opens a row another principal owns; the refusal has always named
+/// that row as the one that would open it. No scope = the owner check alone, as before.
+#[allow(clippy::too_many_arguments)]
+pub fn handle_write_scoped(method: &str, path: &str, body: &str, table: &RouteTable, caller_role: &str, token: &str, landed_commit: &str, scope: &[String]) -> (u16, String) {
     let class_local = table.class.rsplit('#').next().unwrap_or("");
     let plural = pluralize(class_local);
     // #4158 — the write door takes the VERSION prefix too. #3561 fixed this for
@@ -3209,8 +3228,9 @@ pub fn handle_write_stamped(method: &str, path: &str, body: &str, table: &RouteT
         // #4277 — the verdict names its state: a store that did not answer is
         // 503 (retry), a missing row is 404, and only a row held by someone
         // else is 403. The old fold sent all three as "ownedBy absent".
-        match owner_verdict(caller_role, read_owned_by(&table.class, e, &table.instances_graph),
-                            || entity_exists_res(&table.class, e, &table.instances_graph)) {
+        match permission_opens(owner_verdict(caller_role, read_owned_by(&table.class, e, &table.instances_graph),
+                            || entity_exists_res(&table.class, e, &table.instances_graph)),
+                            &table.instances_graph, scope) {
             OwnerVerdict::Allow => {}
             OwnerVerdict::Unavailable(err) => {
                 emit_write_spine(caller_role, method, e, "", "unavailable");
@@ -6009,7 +6029,7 @@ pub fn serve(port: u16, tables: &[RouteTable]) -> R<()> {
                                 // which `continue`s — it can't reach here. One site, no drift.)
                                 // #4101 — the land names the commit that is changing the row
                                 let landed_commit = header("x-landed-commit");
-                                let (c, b) = handle_write_stamped(&method, &path, body_str, table, &role, token, &landed_commit);
+                                let (c, b) = handle_write_scoped(&method, &path, body_str, table, &role, token, &landed_commit, &claims.scope);
                                 ((c, b), ReqMeta { route: format!("write:{}", method.to_ascii_lowercase()), ..Default::default() })
                             }
                         }
@@ -7466,6 +7486,24 @@ mod tests {
         assert_eq!(v, OwnerVerdict::Unavailable("timeout".into()));
         assert!(!matches!(v, OwnerVerdict::NotOwner(_)), "a failed read must never read as a refusal");
         assert_eq!(owner_verdict("kade", Ok(None), || Err("timeout".into())), OwnerVerdict::Unavailable("timeout".into()));
+    }
+
+    // #4185 — the crawler (kade, holding kade-tests: Write on the tests graph) deletes a
+    // nightly-owned TestResult. NEGATIVE PROOF: no scope, or a scope on another graph,
+    // is still refused; an unanswered store and a missing row keep their own answers.
+    #[test]
+    fn write_permission_opens_a_row_another_principal_owns() {
+        use super::{permission_opens, OwnerVerdict};
+        let tests = "urn:chorus:domains:tests";
+        let held = vec![tests.to_string()];
+        let nightly = || OwnerVerdict::NotOwner(Some("nightly".into()));
+        assert_eq!(permission_opens(nightly(), tests, &held), OwnerVerdict::Allow);
+        assert_eq!(permission_opens(OwnerVerdict::NotOwner(None), tests, &held), OwnerVerdict::Allow);
+        assert_eq!(permission_opens(nightly(), tests, &[]), nightly(), "no Permission row = refused");
+        assert_eq!(permission_opens(nightly(), tests, &["urn:chorus:domains:photos".to_string()]), nightly(),
+                   "a Permission on another graph opens nothing here");
+        assert_eq!(permission_opens(OwnerVerdict::NotFound, tests, &held), OwnerVerdict::NotFound);
+        assert_eq!(permission_opens(OwnerVerdict::Unavailable("t".into()), tests, &held), OwnerVerdict::Unavailable("t".into()));
     }
 
     #[test]
