@@ -197,6 +197,12 @@ chorus:endedBy a owl:ObjectProperty ;
     rdfs:domain chorus:Session ;
     rdfs:range chorus:Principal .
 
+chorus:binds a owl:ObjectProperty ;
+    rdfs:label "binds" ;
+    rdfs:comment "A person's browser session names each open role session it is bound to. Written on the person's own row by the Clearing at sign-in; it ends when that row closes at sign-out. Role rows are never written by the person. #4412." ;
+    rdfs:domain chorus:Session ;
+    rdfs:range chorus:Session .
+
 # --- Session grows (additive; issuedAt, expiresAt, hostAccount stay, ADR-059) ---
 
 chorus:SessionShape
@@ -208,6 +214,7 @@ chorus:SessionShape
     sh:property chorus:SessionShape-channel ;
     sh:property chorus:SessionShape-startedBy ;
     sh:property chorus:SessionShape-endedBy ;
+    sh:property chorus:SessionShape-binds ;
     sh:sparql chorus:OpenSessionActsAsARole , chorus:OpenSessionHasOneLiveRun , chorus:AttendedNeedsATime .
 
 chorus:SessionShape-actsAs a sh:PropertyShape ;
@@ -226,6 +233,8 @@ chorus:SessionShape-startedBy a sh:PropertyShape ;
     sh:path chorus:startedBy ; sh:maxCount 1 ; sh:class chorus:Principal .
 chorus:SessionShape-endedBy a sh:PropertyShape ;
     sh:path chorus:endedBy ; sh:maxCount 1 ; sh:class chorus:Principal .
+chorus:SessionShape-binds a sh:PropertyShape ;
+    sh:path chorus:binds ; sh:class chorus:Session .
 
 chorus:OpenSessionActsAsARole a sh:SPARQLConstraint ;
     sh:message "an open session must say which role it acts as (chorus:actsAs) and when it started (chorus:startedAt)" ;
