@@ -16,7 +16,7 @@ chorus:card-3645 a chorus:Card ;
 chorus:card-3784 a chorus:Card ;
     chorus:ownedBy chorus:principal-wren ; chorus:label "3784" ; rdfs:label "3784" .
 chorus:card-3829 a chorus:Card ;
-    chorus:ownedBy chorus:principal-wren ; chorus:label "Provision a person in one command — CSS account, pod, WebID, principal, access — all or none" ; rdfs:label "Provision a person in one command — CSS account, pod, WebID, principal, access — all or none" .
+    chorus:ownedBy chorus:principal-silas ; chorus:label "Provision a person in one command — CSS account, pod, WebID, principal, access — all or none" ; rdfs:label "Provision a person in one command — CSS account, pod, WebID, principal, access — all or none" .
 chorus:card-3614 a chorus:Card ;
     chorus:ownedBy chorus:principal-wren ; chorus:label "3614" ; rdfs:label "3614" .
 chorus:card-2646 a chorus:Card ;

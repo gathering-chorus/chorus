@@ -433,21 +433,19 @@ async function collectCodeScan(
   // domain. Distinct from code.files (card/git-derived) and from scanned
   // (graph-derived). Cheap find with name-pattern, bounded depth.
   try {
-    // The find -iname "*<stem>*" pattern matches both "<domain>" and "<stem>"
-    // files because <stem> is a substring of <domain> ('seed' matches 'seeds.ts').
-    // Single-pattern keeps the command shell-portable — earlier `\( -o \)` form
-    // failed under node's exec/bin/sh because the backslashes don't survive
-    // the shell-then-find round trip.
-    const stem = domain.replace(/s$/, '');
-    // Prune aggressively: huge subtrees (transcripts, briefs, coverage,
-    // node_modules, build outputs) blow past a 5-8s timeout. Bumped timeout
-    // to 12s as a backstop. Output capped at 50 entries by `head -50`.
+    // #4411: git's file index, not `find`. The find walked two repos to depth
+    // 6 (7.5s measured 09-30, the crawl 12-16s against the BDD's 15s cap).
+    // ls-files lists tracked files only, so node_modules, dist, target and
+    // .git never enter; transcripts/briefs/coverage are still dropped. The
+    // stem matches both "<domain>" and "<stem>" names ('seed' in 'seeds.ts').
+    const stem = domain.replace(/s$/, '').replace(/[^a-z0-9-]/g, '');
+    const repos = ['/Users/jeffbridwell/CascadeProjects/chorus', '/Users/jeffbridwell/CascadeProjects/jeff-bridwell-personal-site'];
     const { stdout } = await execAsync(
-      `find /Users/jeffbridwell/CascadeProjects/chorus /Users/jeffbridwell/CascadeProjects/jeff-bridwell-personal-site -maxdepth 6 -type f -iname "*${stem}*" -not -path "*/node_modules/*" -not -path "*/.git/*" -not -path "*/dist/*" -not -path "*/target/*" -not -path "*/coverage/*" -not -path "*/transcripts/*" -not -path "*/briefs/*" -not -path "*/.claude/*" 2>/dev/null | head -50`,
-      { encoding: 'utf-8', timeout: 12000 },
+      `for r in ${repos.join(' ')}; do git -C "$r" ls-files 2>/dev/null | grep -i -- "${stem}" | grep -vE "(^|/)(transcripts|briefs|coverage|\\.claude)/" | sed "s|^|$r/|"; done | head -50`,
+      { encoding: 'utf-8', timeout: 5000 },
     );
     codeScan.discovered = stdout.split('\n').map((s) => s.trim()).filter(Boolean);
-  } catch { /* find failed */ }
+  } catch { /* git index read failed */ }
   return codeScan;
 }
 

@@ -46,14 +46,35 @@ fn only_a_delivery_makes_a_presence_reachable() {
     assert!(!delivered, "a forged label is not a delivery");
 }
 
-/// #4339 — one contract in three places. If pulse types a different line,
-/// every delivery reads as Jeff speaking and no presence is ever reachable.
+/// #4362 — pulse types the nudge's own words, so a delivery is found by those
+/// words in messages.db. If pulse went back to a fixed line, no delivery
+/// would ever be recognised by content again.
 #[test]
-fn pulse_types_exactly_this_wake_line() {
+fn pulse_types_the_nudge_words() {
     let ts = format!("{}/../../pulse/src/delivery-worker.ts", std::env::var("CARGO_MANIFEST_DIR").expect("cargo sets CARGO_MANIFEST_DIR"));  // #4351: read at run time (4030)
     let src = std::fs::read_to_string(ts).expect("pulse delivery-worker.ts beside chorus-principal");
-    let decl = format!("export const WAKE_LINE = '{}';", chorus_principal::rows::WAKE_LINE);
-    assert!(src.contains(&decl), "pulse's WAKE_LINE differs; expected `{decl}`");
+    assert!(src.contains("return row.content;"), "pulse no longer types the row's content");
+    assert!(!src.contains("WAKE_LINE"), "pulse types a fixed wake line again");
+}
+
+/// #4411 — a nudge pulse delivered is a delivery; the same words not
+/// delivered (pending, or never sent) are not.
+#[test]
+fn a_delivered_nudge_is_a_delivery_and_nothing_else_is() {
+    let dir = std::env::temp_dir().join(format!("rows-4411-{}", std::process::id()));
+    std::fs::create_dir_all(&dir).unwrap();
+    let db = dir.join("messages.db").to_string_lossy().to_string();
+    let _ = std::fs::remove_file(&db);
+    let setup = "CREATE TABLE messages (type TEXT, delivery_status TEXT, content TEXT);\
+        INSERT INTO messages VALUES ('nudge','delivered','[nudge from silas | 2026-09-30 13:00 Boston] it''s done');\
+        INSERT INTO messages VALUES ('nudge','pending','[nudge from kade | 2026-09-30 13:01 Boston] later');";
+    assert!(std::process::Command::new("sqlite3").args([&db, setup]).status().unwrap().success());
+    assert!(chorus_principal::rows::delivered_by_pulse(&db, " [nudge from silas | 2026-09-30 13:00 Boston] it's done\n"));
+    // NEGATIVE PROOF: pending, forged, and a missing store are not deliveries
+    assert!(!chorus_principal::rows::delivered_by_pulse(&db, "[nudge from kade | 2026-09-30 13:01 Boston] later"));
+    assert!(!chorus_principal::rows::delivered_by_pulse(&db, "[nudge from silas | 2026-09-30 13:00 Boston] approve"));
+    assert!(!chorus_principal::rows::delivered_by_pulse(&format!("{db}.missing"), "[nudge from silas | 2026-09-30 13:00 Boston] it's done"));
+    let _ = std::fs::remove_dir_all(&dir);
 }
 
 #[test]
