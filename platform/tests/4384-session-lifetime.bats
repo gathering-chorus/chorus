@@ -53,6 +53,25 @@ posts() { ls "$T/bodies" | grep -c -- '-POST-identity_sessions.json$' || true; }
   test "$(python3 -c 'import json,sys;print(json.load(open(sys.argv[1])).get("runOf",""))' "$T/identity/wren/run.row.json")" = "$new"
 }
 
+@test "#4403 a seen-write racing the 24h re-login never records a run of the old session" {
+  "$SCRIPT" login wren >/dev/null 2>&1
+  turn                                          # this login's run
+  old=$(row name)
+  before=$(ls "$T"/bodies/*-POST-identity_sessionruns.json 2>/dev/null | wc -l | tr -d ' ')
+  age 25
+  echo 2 > "$T/token-slow"                      # every token call takes 2s, so the re-login's steps are 2s apart
+  ( echo '{"session_id":"c-4403","prompt":"<task-notification>x</task-notification>"}' | AWAKE_SEEN_SYNC=1 "$SCRIPT" seen wren >/dev/null 2>&1 ) &
+  sleep 3                                       # mid re-login: one step done, the next under way
+  AWAKE_SEEN_EVERY=0 "$SCRIPT" seen-write wren "" delivered >/dev/null 2>&1   # what a surfaced nudge starts
+  wait
+  rm -f "$T/token-slow"
+  stale=0
+  for b in $(ls "$T"/bodies/*-POST-identity_sessionruns.json | tail -n +$((before+1))); do
+    stale=$((stale + $(grep -cF "\"runOf\":\"$old\"" "$b" || true)))
+  done
+  test "$stale" -eq 0
+}
+
 @test "#4384 NEGATIVE: a session under its lifetime is left alone" {
   "$SCRIPT" login wren >/dev/null 2>&1
   old=$(row name)

@@ -40,6 +40,7 @@ EOS
   cat > "$T/bin/token" <<EOS
 #!/bin/bash
 echo "token \$*" >> "$T/token.log"
+[ -f "$T/token-slow" ] && sleep "\$(cat "$T/token-slow")"   # #4403: widen a race on purpose
 [ -f "$T/token-fail" ] && { echo "chorus-identity-token: no credential for '\$1'" >&2; exit 3; }
 cat "$T/token-\$1.fixture"
 EOS
