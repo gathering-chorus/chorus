@@ -2500,6 +2500,41 @@ pub fn plan_logs(
     out
 }
 
+/// #4185 — a full pass rewrites a log row only when something other than the
+/// crawl's own clock changed. It replaced all 135 rows every pass (2026-09-30,
+/// unchanged=0), each rewrite a delete of the whole row and an insert, because
+/// every row carried `lastObserved` = the crawl time. A Replace whose fields,
+/// less `lastObserved`, match the row in the graph becomes Unchanged.
+pub fn settle_log_replaces(
+    actions: Vec<LogAction>,
+    rows: &[LogInGraph],
+    machine: &str,
+    observed_secs: u64,
+    domain_of: &dyn Fn(&LogRow) -> Option<String>,
+) -> Vec<LogAction> {
+    actions
+        .into_iter()
+        .map(|a| match a {
+            LogAction::Replace { name, row } => {
+                let graph = rows.iter().find(|r| r.name == name).map(|r| r.fields.as_slice()).unwrap_or(&[]);
+                let mut want = row.owned_fields(machine, observed_secs);
+                if let Some(d) = domain_of(&row) {
+                    want.push(("hasDomain".to_string(), d));
+                }
+                let differs = want.iter().filter(|(k, _)| k != "lastObserved").any(|(k, v)| {
+                    graph.iter().find(|(gk, _)| gk == k).map(|(_, gv)| gv.as_str()) != Some(v.as_str())
+                });
+                if differs {
+                    LogAction::Replace { name, row }
+                } else {
+                    LogAction::Unchanged { path: row.path }
+                }
+            }
+            other => other,
+        })
+        .collect()
+}
+
 #[derive(Debug, Default, Clone, PartialEq, Eq)]
 pub struct LogCounts {
     pub posted: usize,
@@ -2595,6 +2630,30 @@ mod logs_4199 {
         let plan = plan_logs(&files, &rows, true, &|_| true);
         assert_eq!(plan.len(), 1);
         assert!(matches!(&plan[0], LogAction::Post(r) if r.launchd_label == "com.a"));
+    }
+
+    // #4185 — a row whose only change is the crawl's clock is not rewritten.
+    #[test]
+    fn a_row_changed_only_by_the_crawl_clock_is_left_alone() {
+        let f = file("/l/a.log", Some("com.a"), 100);
+        let lr = LogRow::from_file(&f);
+        let mut stored = lr.owned_fields("library", 1_000);
+        stored.push(("hasDomain".to_string(), "logs".to_string()));
+        let rows = [LogInGraph { name: "log-a".into(), path: "/l/a.log".into(), fields: stored }];
+        let plan = vec![LogAction::Replace { name: "log-a".into(), row: lr.clone() }];
+        // same file, same status, a later crawl → Unchanged
+        let dom = |_: &LogRow| Some("logs".to_string());
+        let out = settle_log_replaces(plan.clone(), &rows, "library", 1_050, &dom);
+        assert!(matches!(&out[0], LogAction::Unchanged { .. }), "{:?}", out);
+        // NEGATIVE PROOF — a real change (the file grew) is still written
+        let mut grown = lr.clone();
+        grown.size = 11;
+        let out = settle_log_replaces(vec![LogAction::Replace { name: "log-a".into(), row: grown }], &rows, "library", 1_050, &dom);
+        assert!(matches!(&out[0], LogAction::Replace { .. }), "{:?}", out);
+        // and a domain change alone is written too
+        let other = |_: &LogRow| Some("tests".to_string());
+        let out = settle_log_replaces(plan, &rows, "library", 1_050, &other);
+        assert!(matches!(&out[0], LogAction::Replace { .. }), "{:?}", out);
     }
 
     #[test]

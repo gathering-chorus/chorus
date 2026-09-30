@@ -357,6 +357,40 @@ pub fn door_addressable(name: &str) -> bool {
     !name.is_empty() && !name.contains(':') && !name.contains('/')
 }
 
+/// #4185 — a full pass rewrites a row only when a field the crawler writes
+/// differs from the row in the graph. It replaced every page (21/21) and every
+/// endpoint (265/265) on every full pass (2026-09-30), each a delete of the
+/// whole row and an insert, with nothing changed. `fields_of` is the exact field
+/// list the write would send. A stored value may carry the API's own prefix
+/// (hasKind "code" is stored "code-kind-code"), so a value ending in "-<ours>"
+/// matches.
+pub fn settle_replaces<T>(
+    actions: Vec<RowAction<T>>,
+    rows: &[InGraph],
+    key_of: &dyn Fn(&T) -> String,
+    fields_of: &dyn Fn(&T) -> Vec<(String, String)>,
+) -> Vec<RowAction<T>> {
+    actions
+        .into_iter()
+        .map(|a| match a {
+            RowAction::Replace { name, row } => {
+                let graph = rows.iter().find(|r| r.name == name).map(|r| r.fields.as_slice()).unwrap_or(&[]);
+                let differs = fields_of(&row).iter().filter(|(k, _)| k != "name").any(|(k, v)| {
+                    !graph
+                        .iter()
+                        .any(|(gk, gv)| gk == k && (gv == v || gv.ends_with(&format!("-{v}"))))
+                });
+                if differs {
+                    RowAction::Replace { name, row }
+                } else {
+                    RowAction::Unchanged { key: key_of(&row) }
+                }
+            }
+            other => other,
+        })
+        .collect()
+}
+
 /// What one pass does. `key_of` states each desired row's key; `domain_of`
 /// states the domain the rules place it in NOW.
 ///
@@ -715,6 +749,36 @@ mod desired_tests {
                 None => vec![],
             },
         }
+    }
+
+    // #4185 — a full pass leaves a row alone when nothing it writes changed.
+    #[test]
+    fn a_replace_with_nothing_changed_becomes_unchanged() {
+        let ep = EndpointRow { path: "platform/api/src/server.ts".into(), route_path: "/x".into(), http_method: "GET".into() };
+        let stored = InGraph {
+            name: "endpoint-get-x".into(),
+            key: "GET /x".into(),
+            domain: Some("knowledge".into()),
+            fields: vec![
+                ("filePath".into(), "platform/api/src/server.ts".into()),
+                ("hasKind".into(), "code-kind-code".into()),
+                ("hasDomain".into(), "knowledge".into()),
+            ],
+        };
+        let fields = |r: &EndpointRow| vec![
+            ("name".to_string(), "endpoint-get-x".to_string()),
+            ("filePath".to_string(), r.path.clone()),
+            ("hasKind".to_string(), "code".to_string()),
+            ("hasDomain".to_string(), "knowledge".to_string()),
+        ];
+        let key = |r: &EndpointRow| format!("{} {}", r.http_method, r.route_path);
+        let plan = vec![RowAction::Replace { name: "endpoint-get-x".into(), row: ep.clone() }];
+        let out = settle_replaces(plan, std::slice::from_ref(&stored), &key, &fields);
+        assert!(matches!(&out[0], RowAction::Unchanged { .. }), "{:?}", out);
+        // NEGATIVE PROOF — the route moved file: the row is rewritten
+        let moved = EndpointRow { path: "platform/api/src/other.ts".into(), ..ep };
+        let out = settle_replaces(vec![RowAction::Replace { name: "endpoint-get-x".into(), row: moved }], &[stored], &key, &fields);
+        assert!(matches!(&out[0], RowAction::Replace { .. }), "{:?}", out);
     }
 
     #[test]
