@@ -32,6 +32,18 @@ fi
 echo "=== /build + /deploy BDD tests (#2880) ==="
 echo ""
 
+# #4185 — the suite brings its own spine. Under CHORUS_CONTEXT=test the
+# membrane (#3615) refuses chorus-log's write to ~/.chorus/chorus.log, so the
+# steps that read binary.deployed and the coerced chorus-log line from the prod
+# log found nothing (nightly 2026-09-30 15:27: 3 of 4 scenarios red). One temp
+# log, read and written by the steps and every tool they call.
+if [ -z "${CHORUS_LOG_FILE:-}" ]; then
+  SPINE_DIR="$(mktemp -d "${TMPDIR:-/tmp}/build-deploy-spine.XXXXXX")"
+  export CHORUS_LOG_FILE="$SPINE_DIR/chorus.log"
+  : > "$CHORUS_LOG_FILE"
+  trap 'rm -rf "$SPINE_DIR"' EXIT
+fi
+
 CUKE_OUT=$(cd "$TESTS_DIR" && npx --no-install cucumber-js \
   --require-module ts-node/register \
   --require 'features/step_definitions/**/*.ts' \
