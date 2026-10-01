@@ -127,3 +127,49 @@ test.describe('#3857 the streams tab on a phone', () => {
     expect(box.bg).not.toBe('rgba(0, 0, 0, 0)');
   });
 });
+
+// #4417 — the domain panel, from role-filter-badge-3857 and domain-subtotals-3857
+// (regexes over index.html). The board answer is stubbed at /api/flow (the
+// panel's one source) so the counts are known: 5 chorus cards, 3 kade and 2
+// wren; one kade card has no sequence.
+const FLOW = {
+  domains: {
+    chorus: {
+      counts: { activeCards: 5, activeTotal: 5, wip: 1 },
+      cards: [
+        { id: '9001', owner: 'kade', status: 'WIP', priority: 1, title: 'kade clearing one', sequences: ['clearing'] },
+        { id: '9002', owner: 'kade', status: 'Next', priority: 2, title: 'kade clearing two', sequences: ['clearing'] },
+        { id: '9003', owner: 'kade', status: 'Next', priority: 2, title: 'kade with no sequence' },
+        { id: '9004', owner: 'wren', status: 'Next', priority: 2, title: 'wren cards one', sequences: ['cards'] },
+        { id: '9005', owner: 'wren', status: 'Next', priority: 3, title: 'wren cards two', sequences: ['cards'] },
+      ],
+    },
+  },
+};
+
+test.describe('#3857 the domain panel counts what it shows', () => {
+  test.beforeEach(async ({ page }) => {
+    await page.route('**/api/flow', (route) => route.fulfill({ contentType: 'application/json', body: JSON.stringify(FLOW) }));
+    await open(page);
+    await page.locator('.flow-section-title', { hasText: 'chorus' }).first().waitFor({ timeout: 20000 });
+  });
+
+  const header = (page) => page.locator('#flow-content > .flow-section > .flow-section-title', { hasText: 'chorus' });
+  const subCounts = (page) => page.locator('#flow-content .flow-section .flow-section-cards > div > .flow-section-title > span:first-of-type')
+    .evaluateAll((els) => els.map((e) => Number(e.textContent.trim())));
+
+  test('unfiltered: 5 cards, sub-groups by sequence with "unsequenced" last, and they add up', async ({ page }) => {
+    await expect(header(page)).toContainText('5 cards');
+    await expect(header(page)).toContainText('5 total');
+    const titles = await page.locator('#flow-content .flow-section .flow-section-cards > div > .flow-section-title').allTextContents();
+    expect(titles.map((t) => t.replace(/[▸▾]/g, '').trim().split(/\s+/)[0])).toEqual(['cards', 'clearing', 'unsequenced']);
+    expect((await subCounts(page)).reduce((a, b) => a + b, 0)).toBe(5);
+  });
+
+  test('NEGATIVE PROOF: the Kade filter shows 3 cards in the badges and the sub-groups', async ({ page }) => {
+    await page.click('.role-filter-btn[data-filter="kade"]');
+    await expect(header(page)).toContainText('3 cards');
+    await expect(header(page)).toContainText('3 total');
+    expect((await subCounts(page)).reduce((a, b) => a + b, 0)).toBe(3);
+  });
+});
