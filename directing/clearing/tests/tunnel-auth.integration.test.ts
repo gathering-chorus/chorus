@@ -2,8 +2,7 @@
 // @card: #3667
 // @owner: wren
 // the tunnel with a cf-ray header (isLocal classifies by header). Token comes
-// from ~/.chorus/bridge-auth-token — the same pre-existing machine coupling
-// server.ts itself has (named boundary, not extended).
+// from the test world's CLEARING_CHORUS_HOME, the same file server.ts reads.
 /**
  * #3667 — wire-level tunnel auth matrix.
  *
@@ -56,7 +55,8 @@ let stubHits: string[] = [];
 import { server, io, tailer, sessionTailer } from '../src/server';
 
 let baseUrl: string;
-const TOKEN = fs.readFileSync(path.join(os.homedir(), '.chorus', 'bridge-auth-token'), 'utf-8').trim();
+// #4417 — the test world's credential (env-4363.setup.js), the same file server.ts reads; never the live one.
+const TOKEN = fs.readFileSync(path.join(process.env.CLEARING_CHORUS_HOME || path.join(os.homedir(), '.chorus'), 'bridge-auth-token'), 'utf-8').trim();
 
 beforeAll(async () => {
   stubUpstream = http.createServer((req, res) => {
