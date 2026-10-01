@@ -1,4 +1,6 @@
 // @test-type: e2e:ui — playwright browser flow (clearing-room-key-3865), live surface
+// @card: #3865
+// @owner: wren
 /**
  * #3865 — Jeff's browser key must actually generate.
  *
@@ -16,14 +18,18 @@
  * all day while the key was dead, so "it loads" cannot be the assertion.
  */
 const { test, expect } = require('@playwright/test');
+const { ownClearing } = require('./lib/own-clearing.cjs');
 
 // #4045 — no prod default. With CLEARING_URL unset this spec used to post into the
 // LIVE Clearing on :3470 ("flow-probe <ts>", "dupe-check-<ts>") from every pipeline
 // run — Jeff watched seven of them land in the room in one hour (2026-09-02, Kade).
 // #3615 class: a test brings its own world or refuses. The variant has no Clearing
 // yet, so unset = skip, loudly; set it to a variant room to run.
-const CLEARING = process.env.CLEARING_URL;
-test.skip(!CLEARING, 'CLEARING_URL unset — refusing to write into the live Clearing (#3615); point it at a variant room to run');
+// #4417 — unset CLEARING_URL used to skip this spec on every nightly. Now the
+// spec starts its own Clearing (lib/own-clearing.cjs); the live room is refused.
+const WEBID = 'https://pods.example/jeff/profile/card#me';
+const CLEARING_TARGET = ownClearing(test, { signedInAs: WEBID });
+const CLEARING = CLEARING_TARGET.url;
 
 test.describe('#3865 — the pod-held key loads', () => {
   test('the page loads with no console exception', async ({ page }) => {
@@ -56,5 +62,38 @@ test.describe('#3865 — the pod-held key loads', () => {
     await expect
       .poll(() => page.evaluate(() => typeof window.roomKey), { timeout: 15000 })
       .not.toBe('undefined');
+  });
+});
+
+// #4417 — moved from room-bind-3827, which matched source text. Signed in, the
+// page binds this browser's key to the WebID on load (autoJoin); signed out it
+// mints nothing and says so.
+test.describe('#3827 the page joins the room on load', () => {
+  test('signed in: the page POSTs the bind on load and reports bound', async ({ page, context }) => {
+    test.skip(!CLEARING_TARGET.own, 'needs a session in the Clearing this spec started');
+    const u = new URL(CLEARING);
+    await context.addCookies([{ name: 'clearing_session', value: CLEARING_TARGET.session(), domain: u.hostname, path: '/' }]);
+    const bind = page.waitForRequest((r) => r.url().endsWith('/api/room/bind') && r.method() === 'POST', { timeout: 15000 });
+    await page.goto(CLEARING, { waitUntil: 'domcontentloaded' });
+    const req = await bind;
+    expect(JSON.parse(req.postData() || '{}').pubkey).toMatch(/^[0-9a-f]{64}$/);
+    await expect.poll(() => page.evaluate(() => window.roomKeyStatus && window.roomKeyStatus.state), { timeout: 15000 }).toBe('bound');
+  });
+
+  test('NEGATIVE PROOF: a refused bind is reported as failed, never swallowed', async ({ page, context }) => {
+    test.skip(!CLEARING_TARGET.own, 'needs a session in the Clearing this spec started');
+    const u = new URL(CLEARING);
+    await context.addCookies([{ name: 'clearing_session', value: CLEARING_TARGET.session(), domain: u.hostname, path: '/' }]);
+    await page.route('**/api/room/bind', (route) => route.fulfill({ status: 500, body: 'stub refused' }));
+    await page.goto(CLEARING, { waitUntil: 'domcontentloaded' });
+    await expect.poll(() => page.evaluate(() => window.roomKeyStatus && window.roomKeyStatus.state), { timeout: 15000 }).toBe('failed');
+  });
+
+  test('NEGATIVE PROOF: signed out, no key is minted and nothing is POSTed', async ({ page }) => {
+    const binds = [];
+    page.on('request', (r) => { if (r.url().endsWith('/api/room/bind')) binds.push(r); });
+    await page.goto(CLEARING, { waitUntil: 'domcontentloaded' });
+    await expect.poll(() => page.evaluate(() => window.roomKeyStatus && window.roomKeyStatus.state), { timeout: 15000 }).toBe('signed-out');
+    expect(binds).toHaveLength(0);
   });
 });

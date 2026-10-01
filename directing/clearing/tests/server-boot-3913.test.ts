@@ -1,4 +1,6 @@
 // @test-type: unit — module-init catch branches under a mocked HOME tempdir; no live services.
+// @card: #3913
+// @owner: wren
 /**
  * #3913 — server.ts's module-init CATCH branches: first-boot generation of
  * the bridge token and session secret (lines ~100-116) fire only when the
@@ -31,6 +33,9 @@ describe('#3913 first-boot secret generation', () => {
       const prev = { ...process.env };
       process.env.CHORUS_HOME = home;
       process.env.CLEARING_TEST = '1';
+      // #4417 — the setup file gives every test a Clearing home; this suite is
+      // about the default (homedir/.chorus), so clear the override here.
+      delete process.env.CLEARING_CHORUS_HOME;
       try {
         require('../src/server');
       } finally {

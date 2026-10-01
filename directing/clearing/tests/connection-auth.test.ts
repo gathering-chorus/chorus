@@ -1,4 +1,6 @@
-// @test-type: security
+// @test-type: unit:security
+// @card: #3669
+// @owner: wren
 /**
  * #3669 — the WebSocket tunnel-bypass hole, as a regression test.
  *

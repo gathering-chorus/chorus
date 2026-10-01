@@ -1,4 +1,6 @@
-// @test-type: unit — env-driven branches exercised via the exported middleware path; no live guard, brings its own world.
+// @test-type: unit — drives the in-process Clearing over HTTP with a stub allow-set store and a temp guard key; brings its own world.
+// @card: #3775
+// @owner: wren
 /**
  * #3775 — the Clearing behind the one door (DEC-2209).
  *
@@ -10,10 +12,18 @@
  *  - fallback: unset, the local interstitial still serves (the flag flips only
  *    when the guard cookie is parent-domain scoped; early flip = redirect loop).
  *  - vocabulary (clause 7): "Log in" is extinct in the Clearing's sources —
- *    a regression lock, since the string came back twice during #3669.
+ *    a regression lock, since the string came back twice during #3669. This
+ *    is a copy check over pages, so it reads files on purpose.
+ *
+ * #4417 — the redirect and guard-session legs used to match server.ts text.
+ * They now send real requests to the in-process server: tunneled (cf-ray), so
+ * the loopback exemption does not apply, with guard cookies signed by a temp
+ * key and an allow-set served by a stub store.
  */
 import fs from 'fs';
 import path from 'path';
+import crypto from 'crypto';
+import { useInProcessClearing } from './lib/in-process-clearing';
 
 const SRC = path.join(__dirname, '..', 'src');
 const PUB = path.join(__dirname, '..', 'public');
@@ -44,70 +54,44 @@ describe('#3775 vocabulary — Sign in, never Log in', () => {
   });
 });
 
-describe('#3775 redirect leg — source-level contract', () => {
-  const server = fs.readFileSync(path.join(SRC, 'server.ts'), 'utf-8');
+const gate = useInProcessClearing();
+const { visit, guardCookie, ALLOWED } = gate;
 
-  test('common-door redirect exists, gated on CHORUS_SIGNIN_URL, and carries the return URL', () => {
-    expect(server).toContain('CHORUS_SIGNIN_URL');
-    const block = server.slice(server.indexOf('CHORUS_SIGNIN_URL'));
-    // #3792 — pinned to the guard's ACTUAL parser (chorus-share-guard.py:617,
-    // :687 read `next`). A rename on either side breaks this test rather than
-    // silently breaking the journey.
-    expect(block).toContain('?next=');
-    expect(block).toContain('safeReturnPath');
-    expect(block).toContain('req.headers.host'); // FULL url — cross-subdomain return
+describe('#3775 the one door, driven', () => {
+  test('no session, door set: GET is sent to the door with the full return URL', async () => {
+    process.env.CHORUS_SIGNIN_URL = 'https://door.example/signin';
+    const r = await visit('GET', '/stream');
+    expect(r.status).toBe(302);
+    expect(r.location).toBe(`https://door.example/signin?next=${encodeURIComponent('https://team.example.com/stream')}`);
   });
 
-  test('fallback interstitial survives when the flag is unset', () => {
-    expect(server).toContain('interstitialPage(safeReturnPath(req.originalUrl))');
+  test('no session, door unset: the local sign-in page serves, no redirect', async () => {
+    delete process.env.CHORUS_SIGNIN_URL;
+    const r = await visit('GET', '/');
+    expect(r.status).toBe(401);
+    expect(r.location).toBeNull();
+    expect(r.body).toContain('Sign in');
   });
 
-  test('redirect only fires for GET — a POST mid-flow must not be bounced into a login page', () => {
-    const block = server.slice(server.indexOf('const commonDoor'));
-    expect(block.slice(0, 400)).toContain("req.method === 'GET'");
-  });
-});
-
-describe('#3775 guard-session consumption — source contract', () => {
-  const server = fs.readFileSync(path.join(SRC, 'server.ts'), 'utf-8');
-
-  test('isAuthed accepts the guard session, and asks the allow-set separately', () => {
-    const fn = server.slice(server.indexOf('async function isAuthed'), server.indexOf('async function gate'));
-    expect(fn).toContain('shareSessionWebId');
-    expect(fn).toContain('isWebIdAllowed');
-    // per-request, both questions: verify (who) THEN allow-set (whether)
-    expect(fn.indexOf('shareSessionWebId')).toBeLessThan(fn.indexOf('isWebIdAllowed'));
+  test('no session, door set: a POST is refused, never bounced to a sign-in page', async () => {
+    process.env.CHORUS_SIGNIN_URL = 'https://door.example/signin';
+    const r = await visit('POST', '/api/message');
+    expect(r.status).toBe(401);
+    expect(r.location).toBeNull();
   });
 
-  test('sessionPrincipal resolves the guard WebID too — one person, either door', () => {
-    const fn = server.slice(server.indexOf('async function sessionPrincipal'), server.indexOf('async function isAuthed'));
-    expect(fn).toContain('shareSessionWebId');
-    expect(fn).toContain('principalForWebId');
+  test('NEGATIVE PROOF: a guard cookie signed with the wrong key is nobody, sent to the door', async () => {
+    process.env.CHORUS_SIGNIN_URL = 'https://door.example/signin';
+    const r = await visit('GET', '/', guardCookie(ALLOWED, crypto.randomBytes(32)));
+    expect(r.status).toBe(302);
+    expect(r.location).toContain('https://door.example/signin?next=');
   });
 
-  test('NEGATIVE PROOF: the guard cookie is never trusted unverified', () => {
-    // A path that read the cookie and used its webid WITHOUT verifyShareSession
-    // would be a self-mint hole: anyone could set the cookie by hand.
-    const helper = server.slice(server.indexOf('function shareSessionWebId'), server.indexOf('function isAuthed'));
-    expect(helper).toContain('verifyShareSession');
-    expect(helper).toContain('v.ok ? v.webid : null');
+  test('a verified guard session on the allow-set gets the room', async () => {
+    process.env.CHORUS_SIGNIN_URL = 'https://door.example/signin';
+    const r = await visit('GET', '/', guardCookie(ALLOWED));
+    expect(r.status).toBe(200);
+    expect(r.location).toBeNull();
   });
-});
-
-describe('#3792 — the parameter name is pinned to the guard\'s parser', () => {
-  const server = fs.readFileSync(path.join(SRC, 'server.ts'), 'utf-8');
-  const block = server.slice(server.indexOf('const commonDoor'), server.indexOf('const commonDoor') + 1400);
-
-  test('the redirect sends next=, the parameter chorus-share-guard.py actually reads', () => {
-    expect(block).toContain('?next=');
-  });
-
-  test('NEGATIVE PROOF: the pre-#3792 shape (?return=) is absent — and would be caught here if it came back', () => {
-    // The failure this replaces was SILENT: the guard ignores an unknown
-    // parameter and signs the visitor in to its own root, so nothing errors and
-    // the journey just quietly ends in the wrong place. Assert the wrong shape
-    // is gone, and prove the assertion can see it by checking the matcher works.
-    expect(block).not.toContain('?return=');
-    expect('someurl?return=x').toContain('?return=');  // the check can go red
-  });
+  // #3795's refusal (verified, not on the list) is driven in refuse-not-bounce-3795.
 });

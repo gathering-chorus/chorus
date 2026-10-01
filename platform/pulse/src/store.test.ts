@@ -1,4 +1,6 @@
 // @test-type: unit — real sqlite against per-test tempfiles; no live services. #3615 membrane suite included; signal words are fixture-data (the refusal message is the subject under test).
+// @card: #1827
+// @owner: wren
 /* eslint-disable @typescript-eslint/no-explicit-any -- test reads dynamic sqlite row shapes; `any[]` casts keep the assertions terse (#3429) */
 /**
  * Messaging Store Tests (#1755, migrated to jest in #2154)

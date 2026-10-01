@@ -1,4 +1,6 @@
 // @test-type: unit — gateDecision is a pure decision table; no server, no fs.
+// @card: #3667
+// @owner: wren
 /**
  * #3667 — Domains/Streams tabs empty over the public tunnel.
  *

@@ -1,4 +1,6 @@
 // @test-type: unit — signal:security is the subject under test (the auth gate), pure functions, no live server
+// @card: #3485
+// @owner: wren
 // #3485 — AC4: POST /api/nudge accepts only the MCP server, authenticated by a
 // shared secret (not a guessable header). Pins the gate predicate:
 //   - matching secret → authorized

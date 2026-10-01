@@ -1,4 +1,6 @@
 // @test-type: unit — signal is fixture-data: in-memory MessageRouter, no io, no live session
+// @card: #2035
+// @owner: wren
 /**
  * Session Tailer Tests — #2035 AC #1, #2
  *

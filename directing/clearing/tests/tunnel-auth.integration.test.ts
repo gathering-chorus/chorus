@@ -1,4 +1,6 @@
 // @test-type: integration — boots the real app on an ephemeral port; simulates
+// @card: #3667
+// @owner: wren
 // the tunnel with a cf-ray header (isLocal classifies by header). Token comes
 // from ~/.chorus/bridge-auth-token — the same pre-existing machine coupling
 // server.ts itself has (named boundary, not extended).

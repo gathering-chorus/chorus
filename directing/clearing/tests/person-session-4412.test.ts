@@ -1,4 +1,6 @@
 // @test-type: unit — fake fetch and a temp store file; no CSS, no athena-make.
+// @card: #4412
+// @owner: wren
 /**
  * #4412 — Jeff's Clearing sign-in writes his browser Session, as him; activity
  * keeps it current; sign-out closes it. Role rows are never written here.

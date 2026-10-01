@@ -1,4 +1,6 @@
 // @test-type: unit — pure projection over fixture spine events; no fs, no live state.
+// @card: #3882
+// @owner: wren
 /**
  * #3882 — role tiles tell the truth: state is a PROJECTION of the spine
  * (Jeff: "if messages and streams are right then role state largely follows";

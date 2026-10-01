@@ -1,4 +1,6 @@
 // @test-type: unit:security
+// @card: #3669
+// @owner: wren
 // #4270 — was "security" alone, which is a CONCERN not a layer, so the gate read
 // it as no declaration. The file's own header says these are deterministic unit
 // tests of our policy with the verifier mocked: unit is the layer, security the

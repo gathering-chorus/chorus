@@ -1,4 +1,6 @@
 // @test-type: unit — in-memory router/tailer, no live services.
+// @card: #2167
+// @owner: wren
 /**
  * ChorusLogTailer — unit tests for the event-dispatch surface (#2167).
  *

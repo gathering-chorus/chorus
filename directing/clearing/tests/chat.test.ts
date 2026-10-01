@@ -1,3 +1,6 @@
+// @test-type: unit — pure module calls with fixtures; no live services
+// @card: #2167
+// @owner: wren
 /**
  * ClearingChat — unit tests (#2167 phase 2).
  *

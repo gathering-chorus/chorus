@@ -1,4 +1,6 @@
 // @test-type: unit — captures the dial arguments; no socket, no relay.
+// @card: #3907
+// @owner: wren
 /**
  * #3907 — the subscriber has to announce the right Host.
  *

@@ -1,4 +1,6 @@
 // @test-type: unit — pure auth decision; no socket, no HTTP, no WebID lookup.
+// @card: #3966
+// @owner: wren
 /**
  * #3966 — /api/message was anonymous (bound to *:3470, anyone on the LAN could
  * post into the room whose transcripts index into team memory). The write now

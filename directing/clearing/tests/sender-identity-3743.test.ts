@@ -1,4 +1,6 @@
 // @test-type: unit — injected fakes only; no Fuseki, no live session, brings its own world.
+// @card: #3743
+// @owner: wren
 /**
  * #3743 — identity from the session WebID, authority from the Principal.
  *

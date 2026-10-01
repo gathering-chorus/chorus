@@ -1,4 +1,6 @@
-// @test-type: security — exercises the REAL gate's refusal branch via the exported source contract + the real verifier; fixture key, no live guard, brings its own world.
+// @test-type: unit:security — drives the real gate over HTTP in-process and runs the real verifier; temp key, stub allow-set store, no live guard.
+// @card: #3795
+// @owner: wren
 /**
  * #3795 — refused is not unknown.
  *
@@ -13,51 +15,37 @@
  */
 import fs from 'fs';
 import path from 'path';
+import { useInProcessClearing } from './lib/in-process-clearing'; // first: sets the temp guard key path
 import { verifyShareSession } from '../src/share-session';
 
-const SRC = path.join(__dirname, '..', 'src');
-const server = fs.readFileSync(path.join(SRC, 'server.ts'), 'utf-8');
 const fixture = JSON.parse(
   fs.readFileSync(path.join(__dirname, 'fixtures', 'session-cookie-vectors.json'), 'utf-8'),
 ) as { key_b64u: string; now: number; vectors: { name: string; cookie: string; expect: string }[] };
 const KEY = Buffer.from(fixture.key_b64u.replace(/-/g, '+').replace(/_/g, '/'), 'base64');
 
-describe('#3795 the refusal branch', () => {
-  const gate = server.slice(server.indexOf('async function gate'), server.indexOf('function handleAuthLogin'));
+// #4417 — the gate is driven over HTTP now, not read as source text.
+const { visit, guardCookie, STRANGER } = useInProcessClearing();
 
-  test('a verified identity is refused with 403 BEFORE any redirect is considered', () => {
-    const refuseAt = gate.indexOf('res.status(403).send(refusedPage');
-    const redirectAt = gate.indexOf('res.redirect(`${commonDoor}');
-    expect(refuseAt).toBeGreaterThan(-1);
-    expect(redirectAt).toBeGreaterThan(-1);
-    // order is the whole fix: refuse first, so a verified session never reaches
-    // the redirect that the guard would answer by re-minting.
-    expect(refuseAt).toBeLessThan(redirectAt);
+describe('#3795 the refusal branch, driven', () => {
+  test('a verified identity not on the list is refused by name: 403, never a 3xx', async () => {
+    process.env.CHORUS_SIGNIN_URL = 'https://door.example/signin';
+    const r = await visit('GET', '/', guardCookie(STRANGER));
+    expect(r.status).toBe(403);
+    expect(r.location).toBeNull();
+    expect(r.body).toContain('pods.example/stranger');
+    expect(r.body).toContain('/logout');
+    expect(r.body).toContain('Sign out');
+    expect(r.body).not.toContain('/auth/login'); // a sign-in link here IS the loop
   });
 
-  test('NEGATIVE PROOF: the refusal is not a 3xx — the loop cannot come back as a redirect', () => {
-    const branch = gate.slice(gate.indexOf('const knownWebId'), gate.indexOf('const commonDoor'));
-    expect(branch).toContain('403');
-    expect(branch).not.toMatch(/res\.redirect/);
-    // and prove the matcher can see a redirect if one were there
-    expect('res.redirect(x)').toMatch(/res\.redirect/);
-  });
-
-  test('the refusal page names the identity and offers sign-out, with no path back to sign-in', () => {
-    // slice exactly refusedPage — the next function along (errorPage) legitimately
-    // links to /auth/login, and an over-wide window would fail on ITS content
-    // rather than this page's, which is a check that cannot tell two functions apart.
-    const start = server.indexOf('function refusedPage');
-    const page = server.slice(start, server.indexOf('\n}', start) + 2);
-    expect(page).toContain('/logout');
-    expect(page).toContain('Sign out');
-    expect(page).not.toContain('/auth/login');  // a sign-in link here IS the loop
-  });
-
-  test('the no-session path still redirects — unknown people still reach the door', () => {
-    const after = gate.slice(gate.indexOf('const commonDoor'));
-    expect(after).toContain('res.redirect');
-    expect(after).toContain('?next=');
+  test('NEGATIVE PROOF: a tampered cookie is nobody, sent to the door, not refused by name', async () => {
+    process.env.CHORUS_SIGNIN_URL = 'https://door.example/signin';
+    const good = guardCookie(STRANGER);
+    const tampered = good.slice(0, -2) + (good.endsWith('AA') ? 'BB' : 'AA');
+    const r = await visit('GET', '/', tampered);
+    expect(r.status).toBe(302);
+    expect(r.location).toContain('https://door.example/signin?next=');
+    expect(r.body).not.toContain('pods.example/stranger');
   });
 });
 

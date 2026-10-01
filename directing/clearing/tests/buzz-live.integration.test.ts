@@ -1,4 +1,6 @@
 // @test-type: integration — hits the LIVE self-hosted relay with the REAL bridge
+// @card: #3696
+// @owner: wren
 // key. Gated: runs only when BUZZ_LIVE=1 and ~/.chorus/buzz/bridge.key exists
 // (never in the default suite / CI). Proves "attribution provable on the relay"
 // through the ACTUAL modules — buzz-signer + buzz-bridge + buzz-relay —

@@ -1,4 +1,6 @@
 // @test-type: unit — pure view-model functions, no DOM, no live services.
+// @card: #3747
+// @owner: wren
 /**
  * #3747 — prompt-tree view-model. RENDERING EXERCISE ONLY (Jeff's pull
  * constraint): these functions derive a tree from the message stream the room

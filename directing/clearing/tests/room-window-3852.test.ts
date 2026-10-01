@@ -1,4 +1,6 @@
 // @test-type: unit — signal is fixture-data: in-memory router, no io
+// @card: #3852
+// @owner: wren
 //
 // #3852 — Jeff, 2026-08-13: "i frequently see messages in claude code that are
 // not showing in clearing even folded" and "this is why i want the folding

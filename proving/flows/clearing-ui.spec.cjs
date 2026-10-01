@@ -1,4 +1,6 @@
 // @test-type: e2e:ui — playwright browser flow (clearing-ui), live surface
+// @card: #3857
+// @owner: wren
 /**
  * #3857 — the four Clearing behaviours Jeff found by using it, 2026-08-13.
  *
@@ -11,14 +13,17 @@
  * it is production: a flow that proves the room works has to open the real room.
  */
 const { test, expect } = require('@playwright/test');
+const { ownClearing } = require('./lib/own-clearing.cjs');
 
 // #4045 — no prod default. With CLEARING_URL unset this spec used to post into the
 // LIVE Clearing on :3470 ("flow-probe <ts>", "dupe-check-<ts>") from every pipeline
 // run — Jeff watched seven of them land in the room in one hour (2026-09-02, Kade).
 // #3615 class: a test brings its own world or refuses. The variant has no Clearing
 // yet, so unset = skip, loudly; set it to a variant room to run.
-const CLEARING = process.env.CLEARING_URL;
-test.skip(!CLEARING, 'CLEARING_URL unset — refusing to write into the live Clearing (#3615); point it at a variant room to run');
+// #4417 — unset CLEARING_URL used to skip this spec on every nightly. Now the
+// spec starts its own Clearing (lib/own-clearing.cjs); the live room is refused.
+const CLEARING_TARGET = ownClearing(test);
+const CLEARING = CLEARING_TARGET.url;
 
 /**
  * Post into the ROOM.
@@ -33,14 +38,16 @@ test.skip(!CLEARING, 'CLEARING_URL unset — refusing to write into the live Cle
 // #3966 hardened the room's write door: BRIDGE_TOKEN or CSS session, anonymous
 // refused. The flow posts as a server-side caller, so it carries the same token
 // the probe/responder/roles present — read from the file the server reads.
-const fs = require('fs');
-// CHORUS_HOME means the repo in shell env but ~/.chorus to the Clearing server —
-// try both locations the server could have read its token from.
-const BRIDGE_TOKEN = [
-  `${process.env.CHORUS_HOME || ''}/bridge-auth-token`,
-  `${process.env.HOME}/.chorus/bridge-auth-token`,
-].map((p) => { try { return fs.readFileSync(p, 'utf8').trim(); } catch { return ''; } })
- .find(Boolean) || '';
+// #4417 — the Clearing's own credential, never the live bridge token.
+const BRIDGE_TOKEN = CLEARING_TARGET.token;
+
+// #4417 — Jeff speaks by typing in the page, not through /api/message with the
+// machine credential (a door a machine should not be able to use as him).
+async function sendFromPage(page, text) {
+  await page.waitForFunction(() => typeof socket !== 'undefined' && socket.connected, null, { timeout: 20000 });
+  await page.fill('#input', text);
+  await page.click('#send-btn');
+}
 
 async function postAs(request, from, text, type) {
   return request.post(`${CLEARING}/api/message`, {
@@ -147,7 +154,7 @@ test.describe('Clearing UI — the behaviours Jeff reported', () => {
     const marker = `machinery-${Date.now()}`;
     await postAs(request, 'silas', `[e2e-ack] silas received ${marker}`);
     const anchor = `anchor-${Date.now()}`;
-    await postAs(request, 'jeff', anchor);
+    await sendFromPage(page, anchor);
 
     // Wait on the anchor, so we are asserting absence at a moment the room has
     // demonstrably caught up — not absence because nothing has arrived yet.
@@ -158,7 +165,7 @@ test.describe('Clearing UI — the behaviours Jeff reported', () => {
   // Jeff's 10:24 screenshot: his message appeared TWICE.
   test('one send produces exactly ONE row', async ({ page, request }) => {
     const marker = `dupe-check-${Date.now()}`;
-    await postAs(request, 'jeff', marker);
+    await sendFromPage(page, marker);
     await expect(page.locator('#messages')).toContainText(marker, { timeout: 20000 });
     // Settle: a duplicate would arrive right behind the first.
     await page.waitForTimeout(2000);
@@ -168,5 +175,33 @@ test.describe('Clearing UI — the behaviours Jeff reported', () => {
       marker,
     );
     expect(occurrences).toBe(1);
+  });
+});
+
+// #4417 — the send button's states, moved here from socket-ack.test.ts, which
+// matched regexes over index.html. This drives the real page against its own
+// Clearing: what Jeff sees when a send lands, and when it cannot.
+test.describe('#1934 / #3646 what the send button tells Jeff', () => {
+  test.beforeEach(async ({ page }) => {
+    await page.goto(CLEARING, { waitUntil: 'domcontentloaded' });
+    await page.waitForFunction(() => typeof socket !== 'undefined' && socket.connected, null, { timeout: 20000 });
+  });
+
+  test('a send that lands: the box empties and the button says Sent', async ({ page }) => {
+    const text = `@wren send-state-${Date.now()}`;
+    await page.fill('#input', text);
+    await page.click('#send-btn');
+    await expect(page.locator('#send-btn')).toHaveText('Sent', { timeout: 10000 });
+    await expect(page.locator('#input')).toHaveValue('');
+    await expect(page.locator('#messages')).toContainText(text.replace('@wren ', ''), { timeout: 10000 });
+  });
+
+  test('NEGATIVE PROOF: a send with no connection fails visibly and keeps his words in the box', async ({ page }) => {
+    await page.evaluate(() => { socket.io.reconnection(false); socket.disconnect(); });
+    const text = `offline-${Date.now()}`;
+    await page.fill('#input', text);
+    await page.click('#send-btn');
+    await expect(page.locator('#send-btn')).toHaveText('Not connected');
+    await expect(page.locator('#input')).toHaveValue(text);
   });
 });

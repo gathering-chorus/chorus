@@ -1,4 +1,6 @@
-// @test-type: security
+// @test-type: unit:security — changePassword with a mocked identity server; no network
+// @card: #3679
+// @owner: wren
 /**
  * #3679 — self-service password change. Pins the security-critical logic:
  * session-binding (you can only change the identity you're signed in as), fail-closed
@@ -121,5 +123,26 @@ describe('#3679 changePassword — security core', () => {
     expect(sameWebid('https://x/a/profile/card#me', 'https://x/a/profile/card')).toBe(true);
     expect(sameWebid('https://x/a/profile/card#me', 'https://x/b/profile/card#me')).toBe(false);
     expect(sameWebid('', 'https://x/a')).toBe(false);
+  });
+});
+
+// #4417 — an identity server that is failing or gone is not a wrong password.
+describe('#4417 changePassword — the identity server failing is said as such', () => {
+  test('a 5xx on login → css-error, never bad-credentials, and nothing changes', async () => {
+    const calls: string[] = [];
+    const fetchImpl = (async (url: string) => {
+      calls.push(String(url));
+      return { ok: false, status: 503, json: async () => ({}) } as unknown as Response;
+    }) as unknown as typeof fetch;
+    const r = refusal(await changePassword(P, CSS, fetchImpl));
+    expect(r.reason).toBe('css-error');
+    expect(calls).toHaveLength(1);
+  });
+
+  test('NEGATIVE PROOF: unreachable (fetch throws) → css-error; a 401 is still bad-credentials', async () => {
+    const thrown = (async () => { throw new Error('ECONNREFUSED'); }) as unknown as typeof fetch;
+    expect(refusal(await changePassword(P, CSS, thrown)).reason).toBe('css-error');
+    const { fetchImpl } = mockCss({ loginOk: false });
+    expect(refusal(await changePassword(P, CSS, fetchImpl)).reason).toBe('bad-credentials');
   });
 });

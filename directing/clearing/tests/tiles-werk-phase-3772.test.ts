@@ -1,4 +1,6 @@
 // @test-type: unit — mkdtemp fixture dirs for scan + werk-runs, unreachable board API; brings its own world.
+// @card: #3772
+// @owner: wren
 /**
  * #3772 — tiles stop lying about idle.
  *

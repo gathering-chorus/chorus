@@ -24,7 +24,7 @@ import { startRoom } from './buzz-room-wiring';
 import { ClearingChat } from './chat';
 import { lanAddress, bonjourHost, startupLanLines, detectIpDrift } from './lan-url';
 import { isLocalConnection, isTunneled } from './connection-auth';
-import { isWebIdAllowed, principalForWebId, primeAllowSetGraph } from './solid-auth';
+import { isWebIdAllowed, principalForWebId, primeAllowSetGraph, personNames, normalizeSpeaker } from './solid-auth';
 
 // #4220 — ask the model where Principal rows live before the first sign-in is
 // judged. Three doors carrying three defaults is how a model move locked every
@@ -105,7 +105,9 @@ export function formatObserverDigest(content: string): string[] {
 // Auth token for remote access (#1719)
 // Generate a stable token per machine — persists across restarts
 const crypto = require('crypto');
-const CHORUS_HOME = `${require('os').homedir()}/.chorus`;
+// #4417 — overridable so jest gets its own token, session secret and person
+// sessions; in-process tests used to read the live ~/.chorus credentials.
+const CHORUS_HOME = process.env.CLEARING_CHORUS_HOME || `${require('os').homedir()}/.chorus`;
 const BRIDGE_TOKEN_FILE = `${CHORUS_HOME}/bridge-auth-token`;
 let BRIDGE_TOKEN: string;
 try {
@@ -937,12 +939,15 @@ messageRouter.on('message', (m: ChannelMessage) => {
 // Ensure upload directory survives /tmp cleanup across reboots
 import fs_node from 'fs';
 import { readSpineWithStats, resolveCalls, spinePath, type StreamLine } from './spine-tail';
-if (!fs_node.existsSync('/tmp/bridge-uploads')) {
-  fs_node.mkdirSync('/tmp/bridge-uploads', { recursive: true });
+// #4417 — configurable so a test Clearing and jest keep uploads in their own
+// world; the default is the live room's directory.
+const UPLOAD_DIR = process.env.CLEARING_UPLOAD_DIR || '/tmp/bridge-uploads';
+if (!fs_node.existsSync(UPLOAD_DIR)) {
+  fs_node.mkdirSync(UPLOAD_DIR, { recursive: true });
 }
 
 // Serve uploaded images
-app.use('/uploads', express.static('/tmp/bridge-uploads'));
+app.use('/uploads', express.static(UPLOAD_DIR));
 
 // Health
 // #3827 — bind a browser-held key to the signed-in WebID.
@@ -993,11 +998,11 @@ app.post('/api/upload', (req, res) => {
 
     if (contentType.includes('heic') || contentType.includes('heif')) {
       // Save HEIC, convert to JPEG with sips
-      const heicPath = `/tmp/bridge-uploads/${ts}.heic`;
-      const jpgPath = `/tmp/bridge-uploads/${ts}.jpg`;
+      const heicPath = `${UPLOAD_DIR}/${ts}.heic`;
+      const jpgPath = `${UPLOAD_DIR}/${ts}.jpg`;
       fs.writeFileSync(heicPath, body);
       try {
-        execSync(`sips -s format jpeg "${heicPath}" --out "${jpgPath}"`, { timeout: 10000 });
+        execSync(`sips -s format jpeg "${heicPath}" --out "${jpgPath}"`, { timeout: 10000, env: process.env });
         fs.unlinkSync(heicPath);
         res.json({ url: `/uploads/${ts}.jpg`, filename: `${ts}.jpg` });
       } catch {
@@ -1007,13 +1012,17 @@ app.post('/api/upload', (req, res) => {
     } else {
       const ext = contentType.includes('png') ? 'png' : contentType.includes('gif') ? 'gif' : 'jpg';
       const filename = `${ts}.${ext}`;
-      fs.writeFileSync(`/tmp/bridge-uploads/${filename}`, body);
+      fs.writeFileSync(`${UPLOAD_DIR}/${filename}`, body);
       res.json({ url: `/uploads/${filename}`, filename });
     }
   });
 });
 
 // API: voice capture — receive audio, transcribe with whisper-cli, return transcript (#1782)
+// #4417 — configurable so a test Clearing keeps its audio in its own world;
+// the default is the live room's directory.
+const AUDIO_UPLOAD_DIR = process.env.CLEARING_AUDIO_DIR || '/tmp/bridge-audio-uploads';
+
 app.post('/api/voice', (req, res) => {
   const fs = require('fs');
   const { execSync } = require('child_process');
@@ -1024,7 +1033,7 @@ app.post('/api/voice', (req, res) => {
     if (body.length === 0) { res.json({ error: 'empty audio' }); return; }
 
     const ts = Date.now();
-    const uploadDir = '/tmp/bridge-audio-uploads';
+    const uploadDir = AUDIO_UPLOAD_DIR;
     fs.mkdirSync(uploadDir, { recursive: true });
     const webmPath = `${uploadDir}/${ts}.webm`;
     const wavPath = `${uploadDir}/${ts}.wav`;
@@ -1032,13 +1041,15 @@ app.post('/api/voice', (req, res) => {
 
     try {
       // Convert webm to wav (whisper-cli needs wav)
-      execSync(`ffmpeg -i "${webmPath}" -ar 16000 -ac 1 -y "${wavPath}" 2>/dev/null`, { timeout: 15000 });
+      // env passed explicitly: the tools are found on this process's PATH, which is
+      // also how a test puts its stubs in front of the real binaries (#4417).
+      execSync(`ffmpeg -i "${webmPath}" -ar 16000 -ac 1 -y "${wavPath}" 2>/dev/null`, { timeout: 15000, env: process.env });
 
       // Transcribe with whisper-cli
       const model = '/opt/homebrew/share/whisper/ggml-base.en.bin';
       const output = execSync(
         `whisper-cli -m "${model}" -f "${wavPath}" --no-timestamps -t 4 2>/dev/null`,
-        { encoding: 'utf-8', timeout: 30000 }
+        { encoding: 'utf-8', timeout: 30000, env: process.env }
       ).trim();
 
       // Clean up wav (keep webm in audio-uploads for playback persistence)
@@ -1058,7 +1069,7 @@ app.post('/api/voice', (req, res) => {
 });
 
 // Serve persisted audio files for playback (#1782)
-app.use('/audio-uploads', express.static('/tmp/bridge-audio-uploads'));
+app.use('/audio-uploads', express.static(AUDIO_UPLOAD_DIR));
 
 // API: get commands-only view from observations JSONL
 app.get('/api/commands/:role', (req, res) => {
@@ -1450,8 +1461,23 @@ app.post('/api/message', async (req, res) => {
   if (!(await isMessageWriteAuthed(req))) {
     return res.status(401).json({ error: 'authentication required to post a message' });
   }
-  const { from, text } = req.body;
+  const { text } = req.body;
+  // #4417 (Silas 08-25, 10-01) — `from` used to be whatever the body said, so the
+  // shared machine credential could post as Jeff and the room and team memory
+  // recorded it as his words. A signed-in person posts as their own principal,
+  // whatever the body claims; the machine credential may use any name except a
+  // person's (read from the Principal rows). Roles posting as each other stays a
+  // named gap until per-role credentials exist.
+  const person = await sessionPrincipal(req);
+  const from = person ? person.name : req.body.from;
   if (!from || !text) return res.status(400).json({ error: 'from and text required' });
+  if (!person) {
+    const persons = await personNames(Date.now());
+    if (!persons) return res.status(503).json({ error: 'cannot tell who is a person right now; nothing was posted' });
+    if (persons.has(normalizeSpeaker(String(from)))) {
+      return res.status(403).json({ error: 'only a signed-in person can post under their own name' });
+    }
+  }
   messageRouter.ingest({ from, text, ts: new Date().toISOString(), type: req.body.type || 'role-response', level: req.body.level || '' });
   res.json({ ok: true });
 });
@@ -1895,7 +1921,7 @@ export function pickJeffMessageTargets(text: string): string[] {
 // fire-and-forget for audit continuity with the pre-#3343 event names.
 const PULSE_URL = process.env.PULSE_URL || 'http://localhost:3475';
 
-async function deliverJeffMessageToTarget(target: string, safeMsg: string, cleanText: string): Promise<string | null> {
+export async function deliverJeffMessageToTarget(target: string, safeMsg: string, cleanText: string): Promise<string | null> {
   const { execFile } = require('child_process');
   console.log(`[clearing] delivering to ${target}: ${cleanText.substring(0, 60)}`);
   const ctrl = new AbortController();

@@ -1,4 +1,6 @@
-// @test-type: security — asserts the REAL verifier against the shared cross-implementation vectors (test key, fixed clock); no live guard, no production key, brings its own world.
+// @test-type: unit:security — asserts the REAL verifier against the shared cross-implementation vectors (test key, fixed clock); no live guard, no production key, brings its own world.
+// @card: #3775
+// @owner: wren
 /**
  * #3775 — the Clearing's half of the guard session contract.
  *

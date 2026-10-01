@@ -67,14 +67,32 @@ function rejectBadArguments(p: ChangeParams): ChangeResult | null {
 /** Authenticate with the CURRENT password. Returns the account token, or null —
  *  and null must always read back as the SAME generic message a wrong password
  *  gets, or the route becomes an account-enumeration oracle. */
+type Login = { kind: 'ok'; token: string } | { kind: 'bad' } | { kind: 'unreachable' };
+
 async function authenticate(
   p: ChangeParams, cssBase: string, fetchImpl: typeof fetch,
-): Promise<string | null> {
-  const loginRes = await fetchImpl(`${cssBase}/.account/login/password/`, {
-    method: 'POST', headers: h(), body: JSON.stringify({ email: p.email, password: p.oldPassword }),
-  });
-  if (!loginRes.ok) return null;
-  return ((await loginRes.json()) as { authorization?: string }).authorization ?? null;
+): Promise<Login> {
+  let loginRes: Response;
+  try {
+    loginRes = await fetchImpl(`${cssBase}/.account/login/password/`, {
+      method: 'POST', headers: h(), body: JSON.stringify({ email: p.email, password: p.oldPassword }),
+    });
+  } catch {
+    return { kind: 'unreachable' };
+  }
+  // #4417 — only a 4xx is an answer about the credentials. A 5xx or no answer is
+  // the identity server failing; telling Jeff his password is wrong then sends
+  // him to reset a password that was right. An outage is not an enumeration oracle.
+  if (loginRes.status >= 500) return { kind: 'unreachable' };
+  if (!loginRes.ok) return { kind: 'bad' };
+  const token = ((await loginRes.json()) as { authorization?: string }).authorization;
+  return token ? { kind: 'ok', token } : { kind: 'bad' };
+}
+
+function loginRefusal(kind: 'bad' | 'unreachable'): ChangeResult {
+  return kind === 'unreachable'
+    ? { ok: false, reason: 'css-error', message: 'The identity server isn’t answering right now — nothing was changed. Try again in a minute.' }
+    : { ok: false, reason: 'bad-credentials', message: 'That email or current password is incorrect.' };
 }
 
 export async function changePassword(
@@ -86,8 +104,9 @@ export async function changePassword(
   if (bad) return bad;
 
   // 1. authenticate as the user with their CURRENT password
-  const token = await authenticate(p, cssBase, fetchImpl);
-  if (!token) return { ok: false, reason: 'bad-credentials', message: 'That email or current password is incorrect.' };
+  const login = await authenticate(p, cssBase, fetchImpl);
+  if (login.kind !== 'ok') return loginRefusal(login.kind);
+  const token = login.token;
 
   // fetch the authed account controls (account-scoped endpoints)
   const controls = ((await (await fetchImpl(`${cssBase}/.account/`, { headers: h(token) })).json()) as {

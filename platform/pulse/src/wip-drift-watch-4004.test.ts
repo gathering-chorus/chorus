@@ -1,3 +1,5 @@
+// @card: #4004
+// @owner: wren
 /* eslint-disable @typescript-eslint/require-await -- injected async doubles document the Promise contract the watcher awaits */
 // @test-type: unit — fake timers + injected readers; no board, no spine, no clock
 //

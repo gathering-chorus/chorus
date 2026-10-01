@@ -1,4 +1,6 @@
 // @test-type: integration — spawns its own Clearing on a test port; pulse dead-ported, nudge mocked (own world).
+// @card: #1827
+// @owner: wren
 /**
  * Clearing UI Validation Tests — #1818
  *
@@ -6,7 +8,6 @@
  * Every test verifies a user-visible behavior.
  */
 
-jest.setTimeout(20000);
 
 import { execSync, spawn, ChildProcess } from 'child_process';
 import * as http from 'http';
@@ -37,6 +38,11 @@ const MOCK_NUDGE_DIR = '/tmp/clearing-test-nudges';
 const MOCK_NUDGE_SCRIPT = '/tmp/clearing-test-mock-nudge';
 import * as fs from 'fs';
 import * as os from 'os';
+const { testClearingEnv } = require('./lib/test-clearing-world.cjs');
+const { startSecurityGraphStub } = require('./lib/security-graph-stub.cjs');
+let graph: { url: string; close: () => Promise<void> } | null = null;
+const TEST_WORLD = fs.mkdtempSync(path.join(os.tmpdir(), 'clearing-ui-'));
+const TEST_TOKEN = `test-${process.pid}-${Date.now()}`;
 
 beforeAll(async () => {
   // Create mock nudge that logs but doesn't inject
@@ -48,18 +54,19 @@ echo "$(date +%s) | $TARGET | $MSG" >> ${MOCK_NUDGE_DIR}/nudge.log
 echo "DELIVERED to $TARGET at $(TZ=America/New_York date '+%Y-%m-%d %H:%M')"
 `, { mode: 0o755 });
 
+  // #4417 — the security graph the room asks who is a person.
+  graph = await startSecurityGraphStub({ persons: ['jeff'] });
+
   // Spawn test-mode Clearing on TEST_PORT (#2166).
   clearingProc = spawn('node', [CLEARING_SERVER], {
     env: {
       ...process.env,
-      COMMAND_CHANNEL_PORT: String(TEST_PORT),
+      // #4417 — the whole world, not just ports: HOME, projects dir, offsets,
+      // journal, message file, spine log, messages.db (test-clearing-world.cjs).
+      ...testClearingEnv(TEST_WORLD, TEST_PORT, TEST_TOKEN),
       CLEARING_HTTPS_PORT: String(TEST_HTTPS_PORT),
-      CHORUS_INJECT_DRY_RUN: '1',  // belt-and-suspenders for any inject path
-      // 2026-08-24 — the spawned Clearing inherited live routing and nudged REAL
-      // role terminals (AC1-SOCKET spray into kade's session). Dead-port pulse,
-      // point the nudge binary at the mock above. A test brings its own world.
-      PULSE_URL: 'http://127.0.0.1:1',
       NUDGE_BINARY: MOCK_NUDGE_SCRIPT,
+      CHORUS_FUSEKI_QUERY: graph!.url,
     },
     stdio: 'pipe',
     detached: false,
@@ -82,6 +89,8 @@ echo "DELIVERED to $TARGET at $(TZ=America/New_York date '+%Y-%m-%d %H:%M')"
 });
 
 afterAll(async () => {
+  if (graph) await graph.close();
+  try { fs.rmSync(TEST_WORLD, { recursive: true, force: true }); } catch { /* ignore */ }
   try { fs.unlinkSync(MOCK_NUDGE_SCRIPT); } catch { /* ignore */ }
   try { fs.rmSync(MOCK_NUDGE_DIR, { recursive: true }); } catch { /* ignore */ }
   if (clearingProc && !clearingProc.killed) {
@@ -107,6 +116,33 @@ afterAll(async () => {
   // Allow event loop to drain
   await new Promise(r => setTimeout(r, 500));
 });
+
+// #4417 — waits for the room to go quiet instead of sleeping a fixed 1-6s:
+// done as soon as the message list holds still across two reads 100ms apart,
+// at most 3s. The feedback-loop cases used to sleep 6s for an echo that, in
+// this test world (nudges mocked, no transcripts to tail), cannot arrive; the
+// echo itself is proven in session-tailer-unit (expectEcho).
+async function settle(): Promise<void> {
+  const deadline = Date.now() + 3000;
+  let last = -1;
+  while (Date.now() < deadline) {
+    const n = (await getMessages(500)).length;
+    if (n === last) return;
+    last = n;
+    await new Promise(r => setTimeout(r, 100));
+  }
+}
+
+// #4417 — Jeff speaks through the page's socket (a local socket is Jeff), not
+// through /api/message with the shared machine credential, which is a door a
+// machine should not be able to use as him. Returns 200 when the room accepted it.
+async function sayAsJeff(text: string): Promise<number> {
+  const c = createClient();
+  await new Promise<void>((resolve, reject) => { c.on('connect', () => resolve()); c.on('connect_error', reject); });
+  const ack = await new Promise<{ ok: boolean }>((resolve) => c.emit('jeff-message', { text }, resolve));
+  c.disconnect();
+  return ack.ok ? 200 : 500;
+}
 
 // Helper: GET JSON from Clearing API
 function getMessages(limit = 10): Promise<any[]> {
@@ -172,7 +208,7 @@ describe('AC2 (re-ruled #3862): role-to-role nudges APPEAR, typed role-to-role �
       req.on('error', reject); req.write(body); req.end();
     });
 
-    await new Promise(r => setTimeout(r, 1000));
+    await settle();
     const messages = await getMessages(50);
     const found = messages.filter((m: any) => (m.text || '').includes(marker));
     expect(found).toHaveLength(1);
@@ -190,7 +226,7 @@ describe('AC2 (re-ruled #3862): role-to-role nudges APPEAR, typed role-to-role �
       req.on('error', reject); req.write(body); req.end();
     });
 
-    await new Promise(r => setTimeout(r, 1000));
+    await settle();
     const messages = await getMessages(50);
     const found = messages.filter((m: any) => (m.text || '').includes(marker));
     expect(found).toHaveLength(1);
@@ -208,7 +244,7 @@ describe('AC2 (re-ruled #3862): role-to-role nudges APPEAR, typed role-to-role �
       req.on('error', reject); req.write(body); req.end();
     });
 
-    await new Promise(r => setTimeout(r, 1000));
+    await settle();
     const messages = await getMessages(50);
     const found = messages.filter((m: any) => (m.text || '').includes(marker));
     expect(found).toHaveLength(1);
@@ -223,11 +259,9 @@ describe('AC2 (re-ruled #3862): role-to-role nudges APPEAR, typed role-to-role �
 // Helper: POST a message to Clearing API (top-level, used across describes)
 // #3966 — the room's write door refuses anonymous posts; carry the machine's
 // bridge token (the spawned server generates the file at boot if missing).
-const BRIDGE_TOKEN = (() => {
-  try { return fs.readFileSync(`${os.homedir()}/.chorus/bridge-auth-token`, 'utf-8').trim(); }
-  catch { return ''; }
-})();
-const AUTH_HEADERS = BRIDGE_TOKEN ? { Authorization: `Bearer ${BRIDGE_TOKEN}` } : {};
+// #4417 — the test Clearing's own credential (written into its temp HOME by
+// test-clearing-world.cjs); the suite never reads the live one.
+const AUTH_HEADERS = { Authorization: `Bearer ${TEST_TOKEN}` };
 
 function postMessage(from: string, text: string): Promise<number> {
   return new Promise((resolve, reject) => {
@@ -249,11 +283,11 @@ describe('AC4: No feedback loop — messages appear exactly once', () => {
   test('message posted via /api/message appears exactly once', async () => {
     const marker = `AC4-ECHO-${Date.now()}`;
 
-    const status = await postMessage('jeff', `${marker} — should appear exactly once`);
+    const status = await sayAsJeff(`${marker} — should appear exactly once`);
     expect(status).toBe(200);
 
     // Wait for any potential feedback loop to trigger
-    await new Promise(r => setTimeout(r, 6000));
+    await settle();
 
     const messages = await getMessages(100);
     const occurrences = messages.filter((m: any) => (m.text || '').includes(marker));
@@ -267,7 +301,7 @@ describe('AC4: No feedback loop — messages appear exactly once', () => {
     const status = await postMessage('wren', `${marker} — role response, no echo`);
     expect(status).toBe(200);
 
-    await new Promise(r => setTimeout(r, 6000));
+    await settle();
 
     const messages = await getMessages(100);
     const occurrences = messages.filter((m: any) => (m.text || '').includes(marker));
@@ -279,11 +313,11 @@ describe('AC4: No feedback loop — messages appear exactly once', () => {
     const marker = `AC4-RAPID-${Date.now()}`;
 
     // Send 3 distinct messages quickly
-    await postMessage('jeff', `${marker}-A`);
-    await postMessage('jeff', `${marker}-B`);
-    await postMessage('jeff', `${marker}-C`);
+    await sayAsJeff(`${marker}-A`);
+    await sayAsJeff(`${marker}-B`);
+    await sayAsJeff(`${marker}-C`);
 
-    await new Promise(r => setTimeout(r, 6000));
+    await settle();
 
     const messages = await getMessages(100);
     const countA = messages.filter((m: any) => (m.text || '').includes(`${marker}-A`)).length;
@@ -299,10 +333,10 @@ describe('AC4: No feedback loop — messages appear exactly once', () => {
     const marker = `AC4-REST-ECHO-${Date.now()}`;
 
     // Post via REST — this path does NOT trigger nudge injection
-    const status = await postMessage('jeff', `${marker} — REST echo test`);
+    const status = await sayAsJeff(`${marker} — REST echo test`);
     expect(status).toBe(200);
 
-    await new Promise(r => setTimeout(r, 6000));
+    await settle();
 
     const messages = await getMessages(100);
     const occurrences = messages.filter((m: any) => (m.text || '').includes(marker));
@@ -315,44 +349,10 @@ describe('AC4: No feedback loop — messages appear exactly once', () => {
 // ═══════════════════════════════════════════════════════════════════════════
 
 describe('AC3: Role-to-role /chat messages do NOT appear in Clearing', () => {
-  // tests/ → ../../../platform/scripts/chat.sh — portable, not machine-absolute (#3528).
-  const CHAT_SCRIPT = path.join(__dirname, '..', '..', '..', 'platform', 'scripts', 'chat.sh');
-
-  test('chat.sh message between roles does not leak into Clearing', async () => {
-    const marker = `AC3-CHAT-${Date.now()}`;
-
-    // Start a chat and send a message
-    try {
-      const chatId = execSync(
-        `bash "${CHAT_SCRIPT}" start silas kade "test-${marker}"`,
-        { encoding: 'utf-8', timeout: 10000 },
-      ).trim().split('\n').pop() || '';
-
-      /* eslint-disable jest/no-conditional-expect -- live integration; chat.sh availability gates the assertion */
-      if (chatId) {
-        execSync(
-          `bash "${CHAT_SCRIPT}" say ${chatId} silas "${marker} — chat message, must not appear in Clearing"`,
-          { encoding: 'utf-8', timeout: 10000 },
-        );
-
-        // Wait for session tailer to process
-        await new Promise(r => setTimeout(r, 5000));
-
-        const messages = await getMessages(100);
-        const allText = messages.map((m: any) => m.text || '').join('\n');
-
-        expect(allText).not.toContain(marker);
-
-        // Cleanup
-        execSync(`bash "${CHAT_SCRIPT}" end ${chatId}`, { encoding: 'utf-8', timeout: 5000 });
-      }
-    } catch (e: any) {
-      // chat.sh may not exist or fail — test the filter, not the chat mechanism
-      console.log(`chat.sh unavailable: ${e.message?.substring(0, 60)}`);
-      expect(true).toBe(true);
-    }
-    /* eslint-enable jest/no-conditional-expect */
-  });
+  // #4417 — the chat.sh case is gone. It started a real chat (silas→kade) and a
+  // real nudge on every nightly, and its catch passed it whatever happened.
+  // The property it meant — a nudge pulse delivered is not shown as Jeff — is
+  // proven in session-tailer-unit ("#4362 a nudge pulse delivered is not Jeff").
 
   test('[chat] prefixed messages appear, typed role-to-role (#3862 ruling)', async () => {
     const marker = `AC3-PREFIX-${Date.now()}`;
@@ -372,7 +372,7 @@ describe('AC3: Role-to-role /chat messages do NOT appear in Clearing', () => {
       req.end();
     });
 
-    await new Promise(r => setTimeout(r, 1000));
+    await settle();
     const messages = await getMessages(100);
     const chatMessages = messages.filter((m: any) =>
       m.from === 'silas' && (m.text || '').includes(marker)
@@ -404,7 +404,7 @@ describe('AC5: Guest identity displays correctly', () => {
       req.end();
     });
 
-    await new Promise(r => setTimeout(r, 2000));
+    await settle();
 
     const messages = await getMessages(50);
     const match = messages.find((m: any) => (m.text || '').includes(marker));
@@ -416,8 +416,8 @@ describe('AC5: Guest identity displays correctly', () => {
   test('message from jeff shows jeff as sender', async () => {
     const marker = `AC5-JEFF-${Date.now()}`;
 
-    await postMessage('jeff', marker);
-    await new Promise(r => setTimeout(r, 1000));
+    await sayAsJeff(marker);
+    await settle();
 
     const messages = await getMessages(50);
     const match = messages.find((m: any) => (m.text || '').includes(marker));
@@ -445,7 +445,7 @@ describe('AC5: Guest identity displays correctly', () => {
       });
     }
 
-    await new Promise(r => setTimeout(r, 2000));
+    await settle();
 
     const messages = await getMessages(50);
     for (const role of ['wren', 'silas', 'kade']) {
@@ -464,8 +464,8 @@ describe('AC1: Jeff sends message → role receives, response appears in stream'
   test('jeff message is recorded in message stream', async () => {
     const marker = `AC1-SEND-${Date.now()}`;
 
-    await postMessage('jeff', `${marker} — happy path test`);
-    await new Promise(r => setTimeout(r, 1000));
+    await sayAsJeff(`${marker} — happy path test`);
+    await settle();
 
     const messages = await getMessages(50);
     const match = messages.find((m: any) => (m.text || '').includes(marker));
@@ -478,7 +478,7 @@ describe('AC1: Jeff sends message → role receives, response appears in stream'
     const marker = `AC1-RESPONSE-${Date.now()}`;
 
     await postMessage('wren', `${marker} — role response`);
-    await new Promise(r => setTimeout(r, 1000));
+    await settle();
 
     const messages = await getMessages(50);
     const match = messages.find((m: any) => (m.text || '').includes(marker));
@@ -503,7 +503,7 @@ describe('AC1: Jeff sends message → role receives, response appears in stream'
     client.emit('jeff-message', { text: `@kade ${marker}` });
 
     // Give server time to process + persist
-    await new Promise(r => setTimeout(r, 1500));
+    await settle();
     client.disconnect();
 
     // Verify the message was persisted to the stream
@@ -522,10 +522,10 @@ describe('AC6: Reconnect after disconnect — no duplicates, no lost messages', 
     const marker = `AC6-RECON-${Date.now()}`;
 
     // Post before and after via REST — no injection side effects
-    await postMessage('jeff', `${marker}-before`);
-    await new Promise(r => setTimeout(r, 1000));
-    await postMessage('jeff', `${marker}-after`);
-    await new Promise(r => setTimeout(r, 1000));
+    await sayAsJeff(`${marker}-before`);
+    await settle();
+    await sayAsJeff(`${marker}-after`);
+    await settle();
 
     // Check: both messages present, each exactly once
     const messages = await getMessages(100);
@@ -554,7 +554,7 @@ describe('AC6: Reconnect after disconnect — no duplicates, no lost messages', 
       req.end();
     });
 
-    await new Promise(r => setTimeout(r, 1000));
+    await settle();
 
     // New client connects — should receive the gap message in initial state
     const client: ClientSocket = createClient();
@@ -569,7 +569,7 @@ describe('AC6: Reconnect after disconnect — no duplicates, no lost messages', 
       setTimeout(() => reject(new Error('timeout')), 5000);
     });
 
-    await new Promise(r => setTimeout(r, 2000));
+    await settle();
     client.disconnect();
 
     const gapMessage = initialMessages.find((m: any) => (m.text || '').includes(marker));
@@ -588,22 +588,10 @@ describe('AC8: Session tailer whitelist — only Jeff-facing content', () => {
   test('jeff-facing message (user typing) passes through', async () => {
     const marker = `AC8-JEFF-${Date.now()}`;
 
-    // Post as jeff input via REST (simulates session tailer forwarding)
-    const body = JSON.stringify({ from: 'jeff', text: marker, type: 'jeff-input' });
-    await new Promise<void>((resolve, reject) => {
-      const req = http.request(`${CLEARING_URL}/api/message`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json', 'Content-Length': Buffer.byteLength(body), ...AUTH_HEADERS },
-      }, (res) => {
-        res.on('data', () => {});
-        res.on('end', () => resolve());
-      });
-      req.on('error', reject);
-      req.write(body);
-      req.end();
-    });
+    // #4417 — Jeff's input arrives through his socket, not the machine credential.
+    await sayAsJeff(marker);
 
-    await new Promise(r => setTimeout(r, 2000));
+    await settle();
     const messages = await getMessages(50);
     expect(messages.some((m: any) => (m.text || '').includes(marker))).toBe(true);
   });
@@ -625,7 +613,7 @@ describe('AC8: Session tailer whitelist — only Jeff-facing content', () => {
       req.end();
     });
 
-    await new Promise(r => setTimeout(r, 2000));
+    await settle();
     const messages = await getMessages(50);
     expect(messages.some((m: any) => (m.text || '').includes(marker))).toBe(true);
   });
@@ -647,7 +635,7 @@ describe('AC8: Session tailer whitelist — only Jeff-facing content', () => {
       req.end();
     });
 
-    await new Promise(r => setTimeout(r, 1000));
+    await settle();
     const messages = await getMessages(100);
     const found = messages.filter((m: any) => (m.text || '').includes(marker));
     expect(found).toHaveLength(1);
@@ -671,7 +659,7 @@ describe('AC8: Session tailer whitelist — only Jeff-facing content', () => {
       req.end();
     });
 
-    await new Promise(r => setTimeout(r, 1000));
+    await settle();
     // #3862 flipped role-to-role to visible; DELIVERED rides the same predicate.
     // If product wants confirmations hidden again, that is a rule change + a
     // ruling, not a test edit.
@@ -873,7 +861,7 @@ describe('Message rendering via API', () => {
       req.end();
     });
 
-    await new Promise(r => setTimeout(r, 1000));
+    await settle();
     const messages = await getMessages(10);
     const match = messages.find((m: any) => (m.text || '').includes(marker));
 
@@ -888,7 +876,9 @@ describe('Message rendering via API', () => {
     const marker = `ATTR-${Date.now()}`;
     const roles = ['wren', 'silas', 'kade', 'jeff'];
 
-    for (const role of roles) {
+    // #4417 — Jeff speaks through his socket; the roles through the machine door.
+    await sayAsJeff(`${marker}-jeff`);
+    for (const role of roles.filter((r) => r !== 'jeff')) {
       const body = JSON.stringify({ from: role, text: `${marker}-${role}` });
       await new Promise<void>((resolve, reject) => {
         const req = http.request(`${CLEARING_URL}/api/message`, {
@@ -904,7 +894,7 @@ describe('Message rendering via API', () => {
       });
     }
 
-    await new Promise(r => setTimeout(r, 1000));
+    await settle();
     const messages = await getMessages(50);
 
     for (const role of roles) {

@@ -1,4 +1,6 @@
 // @test-type: integration — #3442 backfill: touches a real tmpdir (mkdtemp), not unit.
+// @card: #2167
+// @owner: wren
 /**
  * server.ts — unit tests (#2167 phase 3).
  *
@@ -272,7 +274,7 @@ describe('server — POST /api/message', () => {
   let msgAuth: Record<string, string> = { 'Content-Type': 'application/json' };
   beforeAll(() => {
     try {
-      const t = fs.readFileSync(path.join(os.homedir(), '.chorus/bridge-auth-token'), 'utf-8').trim();
+      const t = fs.readFileSync(path.join(process.env.CLEARING_CHORUS_HOME as string, 'bridge-auth-token'), 'utf-8').trim();
       if (t) msgAuth = { ...msgAuth, Authorization: `Bearer ${t}` };
     } catch { /* server generates it at import; absent = anonymous, tests below fail loudly */ }
   });
@@ -286,13 +288,15 @@ describe('server — POST /api/message', () => {
     expect(r.status).toBe(401);
   });
 
-  test('authorized {from, text} returns 200', async () => {
-    const r = await call('/api/message', {
-      method: 'POST',
-      headers: msgAuth,
-      body: JSON.stringify({ from: 'jeff', text: 'unit test marker' }),
-    });
-    expect(r.status).toBe(200);
+  // #4417 — accepted posts and who they are posted as: message-from-4417.test.ts
+  // (it brings the security-graph answers the route now asks for). Here the
+  // graph is a closed port, so this suite proves the fail-closed side.
+  test('NEGATIVE PROOF: with the security graph unreachable, a machine post is refused 503, never guessed', async () => {
+    const marker = `nograph-${Date.now()}`;
+    const r = await call('/api/message', { method: 'POST', headers: msgAuth, body: JSON.stringify({ from: 'silas', text: marker }) });
+    expect(r.status).toBe(503);
+    const list = await call('/api/messages?includeHidden=1&limit=500');
+    expect(JSON.stringify(list.body)).not.toContain(marker);
   });
 
   test('authorized but missing text returns 400', async () => {
@@ -391,8 +395,7 @@ describe('server — card and session lookups', () => {
 
 describe('server — upload endpoints', () => {
   beforeAll(() => {
-    // Upload handler writes to /tmp/bridge-uploads/ — ensure dir exists.
-    try { fs.mkdirSync('/tmp/bridge-uploads', { recursive: true }); } catch { /* ignore */ }
+    // #4417 — uploads go to CLEARING_UPLOAD_DIR (a temp dir from env-4363.setup.js), never the live room's.
     try { fs.mkdirSync('/tmp/bridge-audio-uploads', { recursive: true }); } catch { /* ignore */ }
   });
 
@@ -517,9 +520,9 @@ describe('server — authenticated tunneled paths', () => {
     // Read generated token from the test CHORUS_HOME (TMP is CHORUS_ROOT, home lives under test hom)
     let token = '';
     try {
-      token = fs.readFileSync(path.join(os.homedir(), '.chorus/bridge-auth-token'), 'utf-8').trim();
+      token = fs.readFileSync(path.join(process.env.CLEARING_CHORUS_HOME as string, 'bridge-auth-token'), 'utf-8').trim();
     } catch { /* ignore */ }
-    if (!token) return;  // no token available in test env — skip
+    expect(token).toBeTruthy(); // #4417 — the setup file writes it; a missing token is a red, never a skip
 
     const r = await call('/', {
       headers: {
@@ -534,9 +537,9 @@ describe('server — authenticated tunneled paths', () => {
   test('tunneled request WITH token but no name gets name prompt', async () => {
     let token = '';
     try {
-      token = fs.readFileSync(path.join(os.homedir(), '.chorus/bridge-auth-token'), 'utf-8').trim();
+      token = fs.readFileSync(path.join(process.env.CLEARING_CHORUS_HOME as string, 'bridge-auth-token'), 'utf-8').trim();
     } catch { /* ignore */ }
-    if (!token) return;
+    expect(token).toBeTruthy(); // #4417 — the setup file writes it; a missing token is a red, never a skip
 
     const r = await call('/', {
       headers: {
@@ -552,9 +555,9 @@ describe('server — authenticated tunneled paths', () => {
   test('token via query param also authenticates', async () => {
     let token = '';
     try {
-      token = fs.readFileSync(path.join(os.homedir(), '.chorus/bridge-auth-token'), 'utf-8').trim();
+      token = fs.readFileSync(path.join(process.env.CLEARING_CHORUS_HOME as string, 'bridge-auth-token'), 'utf-8').trim();
     } catch { /* ignore */ }
-    if (!token) return;
+    expect(token).toBeTruthy(); // #4417 — the setup file writes it; a missing token is a red, never a skip
 
     const r = await call(`/api/tiles?token=${token}`, {
       headers: { 'cf-connecting-ip': '1.2.3.4' },
@@ -565,9 +568,9 @@ describe('server — authenticated tunneled paths', () => {
   test('POST /login with correct token sets cookie and redirects', async () => {
     let token = '';
     try {
-      token = fs.readFileSync(path.join(os.homedir(), '.chorus/bridge-auth-token'), 'utf-8').trim();
+      token = fs.readFileSync(path.join(process.env.CLEARING_CHORUS_HOME as string, 'bridge-auth-token'), 'utf-8').trim();
     } catch { /* ignore */ }
-    if (!token) return;
+    expect(token).toBeTruthy(); // #4417 — the setup file writes it; a missing token is a red, never a skip
 
     const r = await call('/login', {
       method: 'POST',
@@ -699,7 +702,6 @@ describe('server — SSE stream and session', () => {
 
 describe('server — HEIC upload path', () => {
   beforeAll(() => {
-    try { fs.mkdirSync('/tmp/bridge-uploads', { recursive: true }); } catch { /* ignore */ }
   });
 
   test('POST /api/upload with image/heic content-type takes the convert branch', async () => {

@@ -1,4 +1,6 @@
 // @test-type: unit
+// @card: #3872
+// @owner: wren
 /**
  * #3872 — the Clearing must actually WORK at lightlifeurbangardens.com/clearing,
  * not merely answer there.

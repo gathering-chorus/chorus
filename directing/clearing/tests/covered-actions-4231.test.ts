@@ -1,4 +1,6 @@
 // @test-type: unit
+// @card: #4231
+// @owner: wren
 // #4231 — one call is one record: a start and an end joined on call_id.
 // Each case below is a class of wrong line the survey found on Jeff's pane.
 import { parseLogEntryForTest, resolveCalls, type StreamLine } from '../src/spine-tail';

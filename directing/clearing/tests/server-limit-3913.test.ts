@@ -1,4 +1,6 @@
 // @test-type: unit — pure request-shaping over the exported dedupe/limit logic; no live server.
+// @card: #3913
+// @owner: wren
 /**
  * #3913 — server.ts back over its coverage floor with REAL tests.
  * First slice: the /api/messages limit-clamp branches (#3852) — raw NaN,

@@ -1,4 +1,6 @@
 // @test-type: unit — calls the pure bind decision directly; no server, no relay, no pod.
+// @card: #3827
+// @owner: wren
 /**
  * #3827 — may this browser's key speak as this person?
  *
@@ -9,8 +11,6 @@
  * lost an afternoon to exactly that shape: a refusal naming the wrong state.
  */
 
-import fs from 'fs';
-import path from 'path';
 import { decideBind } from '../src/room-bind';
 
 const WEBID = 'https://id.lightlifeurbangardens.com/jeff/profile/card#me';
@@ -82,44 +82,8 @@ describe('#3827 what counts as a key', () => {
   });
 });
 
-describe('#3827 the page actually joins', () => {
-  // The first version of room-key.js exported join() and nothing called it.
-  // Everything was correct and nothing happened: Jeff opened the room over and
-  // over and the bindings stayed empty, which reads as "my key failed" rather
-  // than "nobody asked". These assert the WIRING, because that is what was
-  // missing — not the crypto.
-  const roomKeySrc = fs.readFileSync(path.join(__dirname, '..', 'public', 'room-key.js'), 'utf8');
-  const indexSrc = fs.readFileSync(path.join(__dirname, '..', 'public', 'index.html'), 'utf8');
+// #4417 — "the page actually joins" used to match room-key.js, index.html and
+// server.ts text. It is driven in a real browser now: proving/flows/
+// clearing-room-key-3865.spec.cjs signs in, sees the bind POST on load and the
+// 'bound' state, a refused bind reported as 'failed', and signed out, no POST.
 
-  test('room-key.js invokes the join itself, not just defines it', () => {
-    expect(roomKeySrc).toMatch(/autoJoin/);
-    // An IIFE — defined AND called. `function autoJoin(){}` alone would satisfy
-    // a naive "is it there" check while doing nothing, which is the exact bug.
-    expect(roomKeySrc).toMatch(/\(async function autoJoin\(\)[\s\S]*\}\(\)\);/);
-  });
-
-  test('the page loads the module', () => {
-    expect(indexSrc).toMatch(/<script[^>]+src="\/room-key\.js"/);
-  });
-
-  test('NEGATIVE PROOF: signed out, no key is minted', () => {
-    // Minting for an anonymous visitor would create an identity belonging to
-    // nobody that looks exactly like one belonging to Jeff. The guard is the
-    // empty-WebID early return.
-    expect(roomKeySrc).toMatch(/if \(!webid\)[\s\S]{0,200}signed-out/);
-  });
-
-  test('NEGATIVE PROOF: a failed join is reported, never swallowed', () => {
-    // A silent catch is indistinguishable from never having tried — the shape
-    // of this very defect. The catch must record a state.
-    expect(roomKeySrc).toMatch(/state: 'failed'/);
-  });
-
-  test('the WebID reaches the page from the SERVER session, not the client', () => {
-    const serverSrc = fs.readFileSync(path.join(__dirname, '..', 'src', 'server.ts'), 'utf8');
-    expect(serverSrc).toMatch(/window\.CHORUS_WEBID/);
-    // sessionWebid() reads the signed cookie. If this ever came from a request
-    // body or query param, anyone could claim to be anyone (#3679).
-    expect(serverSrc).toMatch(/const sessionWebId = sessionWebid\(req\)/);
-  });
-});

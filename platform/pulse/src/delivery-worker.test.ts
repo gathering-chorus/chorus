@@ -1,3 +1,5 @@
+// @card: #2727
+// @owner: wren
 /* eslint-disable @typescript-eslint/require-await, sonarjs/no-duplicate-string -- test doubles model the async delivery interface (async documents the Promise-returning contract even without await); repeated fixture literals are intentional for per-case readability (#3429) */
 // @test-type: unit — in-memory store and injected doubles; no real inject, no chorus.log
 /**

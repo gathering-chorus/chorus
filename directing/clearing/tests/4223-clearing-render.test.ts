@@ -1,4 +1,6 @@
 // @test-type: unit — pure text→HTML rendering; brings its own world.
+// @card: #4223
+// @owner: wren
 /**
  * #4220 — Jeff, 2026-09-19, reading Clearing on his phone:
  *
@@ -138,15 +140,6 @@ describe('#4234 — fenced blocks scroll sideways instead of wrapping', () => {
     expect(preTag).toContain('-webkit-overflow-scrolling:touch');
   });
 
-  /**
-   * NEGATIVE PROOF (#3734): the phone rule `.msg { overflow-x: hidden }` is what
-   * made the old scroll unreachable — the block was scrollable in principle and
-   * clipped in practice. Assert against the shipped stylesheet, not the markup.
-   */
-  it('the message row does not clip the block', () => {
-    const { readFileSync } = require('fs');
-    const { join } = require('path');
-    const page = readFileSync(join(__dirname, '..', 'public', 'index.html'), 'utf8');
-    expect(/\.msg \{[^}]*overflow-x:\s*hidden/.test(page)).toBe(false);
-  });
+  // #4417 — "the message row does not clip the block" is checked in a real phone
+  // browser now (proving/flows/clearing-page-3857.spec.cjs, computed styles).
 });

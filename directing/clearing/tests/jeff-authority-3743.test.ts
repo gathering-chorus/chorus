@@ -1,4 +1,6 @@
 // @test-type: unit — injected fakes only; no Fuseki, no live session, brings its own world.
+// @card: #3743
+// @owner: wren
 /**
  * #3743 — jeff-authority binds to the principal, not to a name string.
  * Negative proofs (per #3734) for the two live-source lines Kade verified:

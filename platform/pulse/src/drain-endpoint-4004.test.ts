@@ -1,4 +1,6 @@
 // @test-type: integration — supertest over createApp(); in-memory store, no live pulse (signal:security is the auth-gate subject)
+// @card: #4004
+// @owner: wren
 //
 // #4004 — POST /drain is the #3700 pull-based last mile: a role's own
 // turn-boundary hook releases its queued nudges. Its auth and validation

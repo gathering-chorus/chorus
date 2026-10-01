@@ -436,7 +436,11 @@
     .tile { padding: 0.4rem 0.5rem; font-size: 0.8rem; }
     .tile-top { flex-wrap: nowrap; gap: 4px; }
     .tile-name { font-size: 0.8rem; }
-    .tile-card { font-size: 0.65rem; white-space: nowrap; }
+    /* #4417 — a flex child's min-width defaults to its content, so one long
+       card title pushed the kade tile to 418px on a 390px phone and the whole
+       room went wider than the screen (the streams pane then sat over the tabs). */
+    .tile { min-width: 0; overflow: hidden; }
+    .tile-card { font-size: 0.65rem; white-space: nowrap; min-width: 0; overflow: hidden; text-overflow: ellipsis; }
     .tile-bottom { font-size: 0.65rem; }
     .tile-age { white-space: nowrap; }
     .tile-action, .tile-fold-btn { display: none; }

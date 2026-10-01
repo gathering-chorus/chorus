@@ -1,4 +1,6 @@
 // @test-type: unit — tmp fixture dirs (scan/pulse/werk-runs), no live services; brings its own world.
+// @card: #2167
+// @owner: wren
 /**
  * TilePoller — unit tests (#2167 phase 2).
  *

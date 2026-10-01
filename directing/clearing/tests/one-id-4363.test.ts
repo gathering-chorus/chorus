@@ -1,4 +1,6 @@
 // @test-type: unit — router, journal and tailer over temp dirs; no live Clearing, no live transcripts
+// @card: #4363
+// @owner: wren
 /**
  * #4363 — one message id, full history.
  *

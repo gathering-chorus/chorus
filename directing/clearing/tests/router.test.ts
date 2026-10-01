@@ -1,4 +1,6 @@
 // @test-type: unit — in-memory router/tailer, no live services.
+// @card: #2167
+// @owner: wren
 /**
  * MessageRouter — unit tests (#2167 phase 2).
  *

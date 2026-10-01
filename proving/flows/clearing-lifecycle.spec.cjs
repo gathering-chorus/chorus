@@ -1,4 +1,6 @@
 // @test-type: e2e:ui — playwright browser flow (clearing-lifecycle), live surface
+// @card: #3857
+// @owner: wren
 /**
  * #3857 — MOVED from jeff-bridwell-personal-site/e2e/tests/chorus-clearing.spec.ts.
  *
@@ -20,17 +22,16 @@
  * Endpoints: POST /api/chat/start, /api/chat/message, /api/chat/end
  */
 const { test: base, expect } = require('@playwright/test');
+const { ownClearing } = require('./lib/own-clearing.cjs');
 
-// #3966 — room writes require BRIDGE_TOKEN; read from either location the server uses.
-const fs = require('fs');
-const BRIDGE_TOKEN = [
-  `${process.env.CHORUS_HOME || ''}/bridge-auth-token`,
-  `${process.env.HOME}/.chorus/bridge-auth-token`,
-].map((p) => { try { return fs.readFileSync(p, 'utf8').trim(); } catch { return ''; } })
- .find(Boolean) || '';
-const AUTH = { Authorization: `Bearer ${BRIDGE_TOKEN}` };
-
-const BRIDGE_URL = 'http://localhost:3470';
+// #4417 — no prod default and no live credential. This spec POSTed chat
+// sessions and DECISION messages to Jeff's live Clearing on :3470 with the
+// machine's bridge token. It now drives its own Clearing (lib/own-clearing.cjs)
+// unless CLEARING_URL names a variant; the live room is refused.
+const JEFF_WEBID = 'https://pods.example/jeff/profile/card#me';
+const CLEARING_TARGET = ownClearing(base, { signedInAs: JEFF_WEBID });
+const BRIDGE_URL = CLEARING_TARGET.url;
+const AUTH = CLEARING_TARGET.auth;
 
 base.describe('Clearing: chat session lifecycle', () => {
   base('start session → send message → end session completes full lifecycle', async ({ request }) => {
@@ -87,12 +88,19 @@ base.describe('Clearing: chat session lifecycle', () => {
     });
   });
 
+  base('NEGATIVE PROOF: the machine credential cannot record a decision as Jeff', async ({ request }) => {
+    const r = await request.post(`${BRIDGE_URL}/api/message`, { headers: AUTH, data: { from: 'jeff', text: `DECISION: spoof ${Date.now()}` } });
+    expect(r.status()).toBe(403);
+  });
+
   base('DECISION-prefixed messages are captured with correct attribution', async ({ request }) => {
     const decisionText = `DECISION: Test decision from clearing ${Date.now()}`;
 
     await base.step('Send decision message', async () => {
+      // #4417 — a decision in Jeff's name comes from Jeff's signed-in session;
+      // the machine credential is refused when it claims a person.
       const response = await request.post(`${BRIDGE_URL}/api/message`, {
-        headers: AUTH,
+        headers: { cookie: `clearing_session=${CLEARING_TARGET.session()}` },
         data: { from: 'jeff', text: decisionText },
       });
       expect(response.status()).toBe(200);

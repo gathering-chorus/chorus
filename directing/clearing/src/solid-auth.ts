@@ -236,6 +236,72 @@ async function fetchPrincipalMap(fetchImpl: typeof fetch = fetch): Promise<Map<s
   return map;
 }
 
+// #4417 — who is a person. Silas, 10-01: a person's name comes only from their
+// sign-in cookie, so a machine credential may never post under one. Read from
+// the Principal rows (principalKind "person"), never a hard-coded list, and
+// every way the row names the person counts: its id, label, WebID, host account.
+export const PERSON_NAMES_QUERY = (): string =>
+  'PREFIX chorus: <https://jeffbridwell.com/chorus#> PREFIX rdfs: <http://www.w3.org/2000/01/rdf-schema#> ' +
+  `SELECT ?p ?label ?webid ?host WHERE { GRAPH <${allowSetGraph()}> { ?p a chorus:Principal ; chorus:principalKind ?k . FILTER(STR(?k) = "person") ` +
+  'OPTIONAL { ?p rdfs:label ?label } OPTIONAL { ?p chorus:webId ?webid } OPTIONAL { ?p chorus:hostAccount ?host } } }';
+
+/**
+ * One spelling for comparing who a message claims to be from. Silas's review
+ * (10-01): lowercasing alone let "principal-jeff", "Jeff Bridwell" and a WebID
+ * through. NFKC folds look-alike forms, zero-width characters go, whitespace
+ * collapses, and the chorus IRI, "principal-" and a WebID's "#me" and trailing
+ * slash are stripped, so every name for one person meets on the same string.
+ */
+export function normalizeSpeaker(raw: string): string {
+  return String(raw)
+    .normalize('NFKC')
+    .replace(/[\u200B-\u200D\u2060\uFEFF]/g, '')
+    .trim()
+    .toLowerCase()
+    .replace(/\s+/g, ' ')
+    .replace(/^https?:\/\/jeffbridwell\.com\/chorus#/, '')
+    .replace(/^principal-/, '')
+    .replace(/#me$/, '')
+    .replace(/\/+$/, '');
+}
+
+let personCache: { at: number; set: Set<string> } | null = null;
+
+type PersonRow = { p?: { value: string }; label?: { value: string }; webid?: { value: string }; host?: { value: string } };
+
+/** Pure: every normalized name the person rows go by. */
+export function personAliases(rows: PersonRow[]): Set<string> {
+  const names = rows.flatMap((r) => [
+    r.p ? r.p.value.split(/[#/]/).pop() || '' : '',
+    r.label?.value ?? '',
+    r.webid?.value ?? '',
+    r.host?.value ?? '',
+  ]);
+  return new Set(names.map(normalizeSpeaker).filter(Boolean));
+}
+
+async function fetchPersonAliases(fetchImpl: typeof fetch): Promise<Set<string>> {
+  const res = await fetchImpl(`${FUSEKI_QUERY}?query=${encodeURIComponent(PERSON_NAMES_QUERY())}`, { headers: { Accept: 'application/sparql-results+json' } });
+  if (!res.ok) throw new Error(`person query ${res.status}`);
+  const body = (await res.json()) as { results: { bindings: PersonRow[] } };
+  return personAliases(body.results.bindings);
+}
+
+/**
+ * Every normalized name a person principal goes by. TTL'd and stale-served like
+ * the allow-set; null on a cold miss with the store down, which the caller must
+ * treat as "cannot tell", never as "nobody is a person".
+ */
+export async function personNames(now: number, fetchImpl: typeof fetch = fetch): Promise<Set<string> | null> {
+  if (personCache && now - personCache.at < ALLOW_TTL_MS) return personCache.set;
+  try {
+    personCache = { at: now, set: await fetchPersonAliases(fetchImpl) };
+  } catch {
+    if (!personCache) return null;
+  }
+  return personCache.set;
+}
+
 /**
  * Principal for a verified WebID, or null. Cache semantics mirror
  * isWebIdAllowed: TTL'd, stale-served on fetch error, fail-closed (null) on a
@@ -268,6 +334,7 @@ export async function principalForWebId(
 export function invalidateAllowCache(): void {
   allowCache = null;
   principalCache = null;
+  personCache = null;
 }
 
 /** Test seam — reset the module cache. Delegates so the two cannot drift

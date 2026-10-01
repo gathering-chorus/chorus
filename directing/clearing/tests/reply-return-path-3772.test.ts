@@ -1,4 +1,6 @@
 // @test-type: unit — router stub, fixture JSONL lines, env-tuned timers; no live sessions, brings its own world.
+// @card: #3772
+// @owner: wren
 /**
  * #3772 — the Clearing return path.
  *
@@ -131,5 +133,39 @@ describe('#3772 NEGATIVE PROOF — silent-room state is detectable', () => {
       { from: 'jeff', text: 'anyone?', ts: 't1', type: 'jeff-input' },
     ];
     expect(findSilentReplies(quiet)).toHaveLength(0);
+  });
+});
+
+// #4417 — a bare SessionTailer appends reply.rendered to the spine log. Every
+// jest process gets a temp log from env-4363.setup.js; this proves the default
+// emitter writes there and nowhere live. NEGATIVE PROOF: drop the
+// CHORUS_LOG_FILE line from the setup file and both expectations go red.
+describe('#4417 the spine log in tests is a temp file', () => {
+  test('the default spine emitter writes to the temp log, not ~/.chorus/chorus.log', async () => {
+    const fs = require('fs');
+    const os = require('os');
+    const { makeSpineEmitter } = require('../src/reply-delivery');
+    const target = process.env.CHORUS_LOG_FILE || '';
+    expect(fs.realpathSync(require('path').dirname(target)).startsWith(fs.realpathSync(os.tmpdir()))).toBe(true);
+    const marker = `spine-4417-${Date.now()}`;
+    makeSpineEmitter()({ event: 'reply.rendered', marker });
+    await new Promise((r) => setTimeout(r, 100));
+    expect(fs.readFileSync(target, 'utf8')).toContain(marker);
+  });
+
+  test('athena-make and Fuseki are a closed port: a session write fails fast, never reaches live', async () => {
+    expect(process.env.ATHENA_MAKE_URL).toBe('http://127.0.0.1:9');
+    expect(process.env.CHORUS_FUSEKI_QUERY).toBe('http://127.0.0.1:9/query');
+    const t0 = Date.now();
+    await expect(fetch(`${process.env.ATHENA_MAKE_URL}/v1/identity/sessions`, { method: 'PUT', body: '{}' })).rejects.toThrow();
+    expect(Date.now() - t0).toBeLessThan(2000);
+  });
+
+  test('the guard key path is a temp file, never ~/.chorus/share-oidc.json', () => {
+    const fs = require('fs');
+    const os = require('os');
+    const path = require('path');
+    const target = process.env.SHARE_STATE_FILE || path.join(os.homedir(), '.chorus', 'share-oidc.json');
+    expect(fs.realpathSync(path.dirname(target)).startsWith(fs.realpathSync(os.tmpdir()))).toBe(true);
   });
 });

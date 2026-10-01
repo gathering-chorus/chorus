@@ -1,4 +1,6 @@
 // @test-type: e2e:ui — playwright browser flow (clearing-no-leaked-markup-3868), live surface
+// @card: #3868
+// @owner: wren
 /**
  * #3868 — no code commentary renders in Jeff's room.
  *
@@ -16,14 +18,17 @@
  * terminator turns these red.
  */
 const { test, expect } = require('@playwright/test');
+const { ownClearing } = require('./lib/own-clearing.cjs');
 
 // #4045 — no prod default. With CLEARING_URL unset this spec used to post into the
 // LIVE Clearing on :3470 ("flow-probe <ts>", "dupe-check-<ts>") from every pipeline
 // run — Jeff watched seven of them land in the room in one hour (2026-09-02, Kade).
 // #3615 class: a test brings its own world or refuses. The variant has no Clearing
 // yet, so unset = skip, loudly; set it to a variant room to run.
-const CLEARING = process.env.CLEARING_URL;
-test.skip(!CLEARING, 'CLEARING_URL unset — refusing to write into the live Clearing (#3615); point it at a variant room to run');
+// #4417 — unset CLEARING_URL used to skip this spec on every nightly. Now the
+// spec starts its own Clearing (lib/own-clearing.cjs); the live room is refused.
+const CLEARING_TARGET = ownClearing(test);
+const CLEARING = CLEARING_TARGET.url;
 
 test.describe('#3868 — the room shows conversation, not source', () => {
   // Scoped OUTSIDE #messages deliberately. The first version of this test

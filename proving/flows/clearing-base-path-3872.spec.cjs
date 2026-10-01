@@ -1,4 +1,6 @@
 // @test-type: e2e:ui — playwright browser flow (clearing-base-path-3872), live surface
+// @card: #3872
+// @owner: wren
 /**
  * #3872 — the Clearing CONNECTS at the /clearing mount, in a browser.
  *
@@ -16,8 +18,8 @@
  * person sees: the word "connecting…" goes away, and the room renders.
  *
  * RUN (against any mount — the point is it must pass at BOTH)
- *   CLEARING_URL=http://localhost:3470            npx playwright test proving/flows/clearing-base-path-3872.spec.cjs
- *   CLEARING_URL=http://localhost:3470/clearing   npx playwright test proving/flows/clearing-base-path-3872.spec.cjs
+ *   npx playwright test proving/flows/clearing-base-path-3872.spec.cjs        (its own Clearing, #4417)
+ *   CLEARING_URL=<variant room> CLEARING_TOKEN=<its credential> npx playwright test …   (the live room is refused)
  *
  * NEGATIVE PROOF, and its honest limit (#3734). Run against the UNFIXED build at
  * localhost:3480/clearing, the handshake test goes RED — it asks for the prefixed
@@ -29,14 +31,17 @@
  * two catch it only against the real edge. Local green is not proof.
  */
 const { test, expect } = require('@playwright/test');
+const { ownClearing } = require('./lib/own-clearing.cjs');
 
 // #4045 — no prod default. With CLEARING_URL unset this spec used to post into the
 // LIVE Clearing on :3470 ("flow-probe <ts>", "dupe-check-<ts>") from every pipeline
 // run — Jeff watched seven of them land in the room in one hour (2026-09-02, Kade).
 // #3615 class: a test brings its own world or refuses. The variant has no Clearing
 // yet, so unset = skip, loudly; set it to a variant room to run.
-const CLEARING = process.env.CLEARING_URL;
-test.skip(!CLEARING, 'CLEARING_URL unset — refusing to write into the live Clearing (#3615); point it at a variant room to run');
+// #4417 — unset CLEARING_URL used to skip this spec on every nightly. Now the
+// spec starts its own Clearing (lib/own-clearing.cjs); the live room is refused.
+const CLEARING_TARGET = ownClearing(test);
+const CLEARING = CLEARING_TARGET.url;
 
 test.describe('#3872 the Clearing connects under its mount', () => {
   test('the room stops saying "connecting…"', async ({ page }) => {

@@ -1,4 +1,6 @@
 // @test-type: integration — #3700: the queue→drain loop against a real tmp
+// @card: #3700
+// @owner: wren
 // sqlite store (brings its own world, no live messages.db).
 import { MessageStore } from './store';
 import { mkdtempSync, rmSync } from 'fs';

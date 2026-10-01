@@ -1,4 +1,6 @@
 // @test-type: unit — imports the target picker and calls it; no server, no sockets, no pulse.
+// @card: #3833
+// @owner: wren
 /**
  * #3833 — who hears Jeff.
  *
