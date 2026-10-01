@@ -286,21 +286,15 @@ describe('server — POST /api/message', () => {
     expect(r.status).toBe(401);
   });
 
-  test('authorized {from, text} returns 200', async () => {
-    const r = await call('/api/message', {
-      method: 'POST',
-      headers: msgAuth,
-      body: JSON.stringify({ from: 'wren', text: 'unit test marker' }),
-    });
-    expect(r.status).toBe(200);
-  });
-
-  test('an authorized post is in the room, under the name it was posted as', async () => {
-    const marker = `room-${Date.now()}`;
-    await call('/api/message', { method: 'POST', headers: msgAuth, body: JSON.stringify({ from: 'silas', text: marker }) });
+  // #4417 — accepted posts and who they are posted as: message-from-4417.test.ts
+  // (it brings the security-graph answers the route now asks for). Here the
+  // graph is a closed port, so this suite proves the fail-closed side.
+  test('NEGATIVE PROOF: with the security graph unreachable, a machine post is refused 503, never guessed', async () => {
+    const marker = `nograph-${Date.now()}`;
+    const r = await call('/api/message', { method: 'POST', headers: msgAuth, body: JSON.stringify({ from: 'silas', text: marker }) });
+    expect(r.status).toBe(503);
     const list = await call('/api/messages?includeHidden=1&limit=500');
-    const row = (list.body as Array<{ from: string; text: string }>).find((m) => m.text.includes(marker));
-    expect(row?.from).toBe('silas');
+    expect(JSON.stringify(list.body)).not.toContain(marker);
   });
 
   test('authorized but missing text returns 400', async () => {

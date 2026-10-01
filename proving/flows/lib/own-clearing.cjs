@@ -14,6 +14,7 @@ const os = require('os');
 const path = require('path');
 const { spawn } = require('child_process');
 const { testClearingEnv, signedInSession } = require('../../../directing/clearing/tests/lib/test-clearing-world.cjs');
+const { startSecurityGraphStub } = require('../../../directing/clearing/tests/lib/security-graph-stub.cjs');
 
 const CLEARING_SRC = path.resolve(__dirname, '..', '..', '..', 'directing', 'clearing');
 
@@ -41,6 +42,7 @@ function ownClearing(test, opts = {}) {
   let child = null;
   let dir = '';
   let sessionCookie = '';
+  let graph = null;
 
   test.beforeAll(async () => {
     if (given) return;
@@ -50,6 +52,9 @@ function ownClearing(test, opts = {}) {
     }
     dir = fs.mkdtempSync(path.join(os.tmpdir(), 'own-clearing-'));
     const env = testClearingEnv(dir, port, token);
+    // the security graph: jeff is the person; the signed-in WebID (if any) is jeff
+    graph = await startSecurityGraphStub({ persons: ['jeff'], principals: opts.signedInAs ? { [opts.signedInAs]: 'principal-jeff' } : {} });
+    env.CHORUS_FUSEKI_QUERY = graph.url;
     if (opts.spine && opts.spine.length) fs.writeFileSync(env.CHORUS_LOG_FILE, opts.spine.join('\n') + '\n');
     if (opts.signedInAs) sessionCookie = signedInSession(dir, opts.signedInAs);
     child = spawn(process.execPath, [entry], {
@@ -68,7 +73,8 @@ function ownClearing(test, opts = {}) {
     }
   });
 
-  test.afterAll(() => {
+  test.afterAll(async () => {
+    if (graph) await graph.close();
     if (child && child.exitCode === null) child.kill('SIGTERM');
     if (dir) fs.rmSync(dir, { recursive: true, force: true });
   });

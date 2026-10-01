@@ -39,6 +39,14 @@ const CLEARING = CLEARING_TARGET.url;
 // #4417 — the Clearing's own credential, never the live bridge token.
 const BRIDGE_TOKEN = CLEARING_TARGET.token;
 
+// #4417 — Jeff speaks by typing in the page, not through /api/message with the
+// machine credential (a door a machine should not be able to use as him).
+async function sendFromPage(page, text) {
+  await page.waitForFunction(() => typeof socket !== 'undefined' && socket.connected, null, { timeout: 20000 });
+  await page.fill('#input', text);
+  await page.click('#send-btn');
+}
+
 async function postAs(request, from, text, type) {
   return request.post(`${CLEARING}/api/message`, {
     headers: { Authorization: `Bearer ${BRIDGE_TOKEN}` },
@@ -144,7 +152,7 @@ test.describe('Clearing UI — the behaviours Jeff reported', () => {
     const marker = `machinery-${Date.now()}`;
     await postAs(request, 'silas', `[e2e-ack] silas received ${marker}`);
     const anchor = `anchor-${Date.now()}`;
-    await postAs(request, 'jeff', anchor);
+    await sendFromPage(page, anchor);
 
     // Wait on the anchor, so we are asserting absence at a moment the room has
     // demonstrably caught up — not absence because nothing has arrived yet.
@@ -155,7 +163,7 @@ test.describe('Clearing UI — the behaviours Jeff reported', () => {
   // Jeff's 10:24 screenshot: his message appeared TWICE.
   test('one send produces exactly ONE row', async ({ page, request }) => {
     const marker = `dupe-check-${Date.now()}`;
-    await postAs(request, 'jeff', marker);
+    await sendFromPage(page, marker);
     await expect(page.locator('#messages')).toContainText(marker, { timeout: 20000 });
     // Settle: a duplicate would arrive right behind the first.
     await page.waitForTimeout(2000);

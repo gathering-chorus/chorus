@@ -37,6 +37,8 @@ const MOCK_NUDGE_SCRIPT = '/tmp/clearing-test-mock-nudge';
 import * as fs from 'fs';
 import * as os from 'os';
 const { testClearingEnv } = require('./lib/test-clearing-world.cjs');
+const { startSecurityGraphStub } = require('./lib/security-graph-stub.cjs');
+let graph: { url: string; close: () => Promise<void> } | null = null;
 const TEST_WORLD = fs.mkdtempSync(path.join(os.tmpdir(), 'clearing-ui-'));
 const TEST_TOKEN = `test-${process.pid}-${Date.now()}`;
 
@@ -50,6 +52,9 @@ echo "$(date +%s) | $TARGET | $MSG" >> ${MOCK_NUDGE_DIR}/nudge.log
 echo "DELIVERED to $TARGET at $(TZ=America/New_York date '+%Y-%m-%d %H:%M')"
 `, { mode: 0o755 });
 
+  // #4417 — the security graph the room asks who is a person.
+  graph = await startSecurityGraphStub({ persons: ['jeff'] });
+
   // Spawn test-mode Clearing on TEST_PORT (#2166).
   clearingProc = spawn('node', [CLEARING_SERVER], {
     env: {
@@ -59,6 +64,7 @@ echo "DELIVERED to $TARGET at $(TZ=America/New_York date '+%Y-%m-%d %H:%M')"
       ...testClearingEnv(TEST_WORLD, TEST_PORT, TEST_TOKEN),
       CLEARING_HTTPS_PORT: String(TEST_HTTPS_PORT),
       NUDGE_BINARY: MOCK_NUDGE_SCRIPT,
+      CHORUS_FUSEKI_QUERY: graph!.url,
     },
     stdio: 'pipe',
     detached: false,
@@ -81,6 +87,7 @@ echo "DELIVERED to $TARGET at $(TZ=America/New_York date '+%Y-%m-%d %H:%M')"
 });
 
 afterAll(async () => {
+  if (graph) await graph.close();
   try { fs.rmSync(TEST_WORLD, { recursive: true, force: true }); } catch { /* ignore */ }
   try { fs.unlinkSync(MOCK_NUDGE_SCRIPT); } catch { /* ignore */ }
   try { fs.rmSync(MOCK_NUDGE_DIR, { recursive: true }); } catch { /* ignore */ }
@@ -579,20 +586,8 @@ describe('AC8: Session tailer whitelist — only Jeff-facing content', () => {
   test('jeff-facing message (user typing) passes through', async () => {
     const marker = `AC8-JEFF-${Date.now()}`;
 
-    // Post as jeff input via REST (simulates session tailer forwarding)
-    const body = JSON.stringify({ from: 'jeff', text: marker, type: 'jeff-input' });
-    await new Promise<void>((resolve, reject) => {
-      const req = http.request(`${CLEARING_URL}/api/message`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json', 'Content-Length': Buffer.byteLength(body), ...AUTH_HEADERS },
-      }, (res) => {
-        res.on('data', () => {});
-        res.on('end', () => resolve());
-      });
-      req.on('error', reject);
-      req.write(body);
-      req.end();
-    });
+    // #4417 — Jeff's input arrives through his socket, not the machine credential.
+    await sayAsJeff(marker);
 
     await settle();
     const messages = await getMessages(50);
@@ -879,7 +874,9 @@ describe('Message rendering via API', () => {
     const marker = `ATTR-${Date.now()}`;
     const roles = ['wren', 'silas', 'kade', 'jeff'];
 
-    for (const role of roles) {
+    // #4417 — Jeff speaks through his socket; the roles through the machine door.
+    await sayAsJeff(`${marker}-jeff`);
+    for (const role of roles.filter((r) => r !== 'jeff')) {
       const body = JSON.stringify({ from: role, text: `${marker}-${role}` });
       await new Promise<void>((resolve, reject) => {
         const req = http.request(`${CLEARING_URL}/api/message`, {

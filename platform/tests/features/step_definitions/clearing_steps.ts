@@ -5,7 +5,11 @@ import * as assert from 'assert';
 import * as fs from 'fs';
 import * as os from 'os';
 import * as path from 'path';
-const { testClearingEnv } = require('../../../../directing/clearing/tests/lib/test-clearing-world.cjs');
+const { testClearingEnv, signedInSession } = require('../../../../directing/clearing/tests/lib/test-clearing-world.cjs');
+const { spawnSecurityGraphStub } = require('../../../../directing/clearing/tests/lib/security-graph-stub.cjs');
+let graph: { url: string; close: () => Promise<void> } | null = null;
+const JEFF_WEBID = 'https://pods.example/jeff/profile/card#me';
+let jeffSession = '';
 
 // State shared across steps within a scenario
 let authToken = '';
@@ -38,9 +42,13 @@ Before({ tags: '@clearing', timeout: 20000 }, async function () {
   if (testClearing) return;
   testWorld = fs.mkdtempSync(path.join(os.tmpdir(), 'clearing-access-'));
   testToken = `test-${process.pid}-${Date.now()}`;
+  // #4417 — Jeff speaks as himself: a signed-in session (his WebID is principal-jeff
+  // in the stub graph), never the shared machine credential, which cannot post as a person.
+  graph = await spawnSecurityGraphStub({ persons: ['jeff'], principals: { [JEFF_WEBID]: 'principal-jeff' } });
+  jeffSession = signedInSession(testWorld, JEFF_WEBID);
   const log: string[] = [];
   testClearing = spawn('node', [CLEARING_SERVER], {
-    env: { ...process.env, ...testClearingEnv(testWorld, TEST_PORT, testToken) },
+    env: { ...process.env, ...testClearingEnv(testWorld, TEST_PORT, testToken), CHORUS_FUSEKI_QUERY: graph!.url },
     stdio: 'pipe',
   });
   testClearing.stderr?.on('data', (d) => log.push(d.toString()));
@@ -53,7 +61,8 @@ Before({ tags: '@clearing', timeout: 20000 }, async function () {
   throw new Error(`test Clearing did not start on ${TEST_PORT} within 15s: ${log.join('').slice(-400)}`);
 });
 
-AfterAll(function () {
+AfterAll(async function () {
+  if (graph) await graph.close();
   if (testClearing && !testClearing.killed) testClearing.kill('SIGTERM');
   if (testWorld) fs.rmSync(testWorld, { recursive: true, force: true });
 });
@@ -160,7 +169,7 @@ When('Jeff enters the name {string} via LAN', function (name: string) {
   const r = curlPost(
     `${TEST_LAN}/api/message`,
     JSON.stringify({ from: name, text: `[e2e-identity] ${name} joined` }),
-    `-H "Authorization: Bearer ${testToken}"`
+    `-b "clearing_session=${jeffSession}"`
   );
   nameAccepted = r.status === 200;
   lastResponse = r;
@@ -172,7 +181,7 @@ When('Jeff enters the name {string} via localhost', function (name: string) {
   const r = curlPost(
     `${TEST_LOCAL}/api/message`,
     JSON.stringify({ from: name, text: `[e2e-identity] ${name} joined` }),
-    `-H "Authorization: Bearer ${testToken}"`
+    `-b "clearing_session=${jeffSession}"`
   );
   nameAccepted = r.status === 200;
   lastResponse = r;
@@ -206,7 +215,7 @@ When('Jeff sends a message {string} via the API from LAN', function (label: stri
   lastResponse = curlPost(
     `${TEST_LAN}/api/message`,
     JSON.stringify({ from: 'jeff', text: probeMarker }),
-    `-H "Authorization: Bearer ${testToken}"` // #4278 — identity is required since #3966
+    `-b "clearing_session=${jeffSession}"` // #4278 — identity is required since #3966
   );
   assert.strictEqual(lastResponse.status, 200, `POST failed: ${lastResponse.status} ${lastResponse.body}`);
 });
@@ -216,7 +225,7 @@ When('Jeff sends a message {string} via the API from localhost', function (label
   lastResponse = curlPost(
     `${TEST_LOCAL}/api/message`,
     JSON.stringify({ from: 'jeff', text: probeMarker }),
-    `-H "Authorization: Bearer ${testToken}"` // #4278 — identity is required since #3966
+    `-b "clearing_session=${jeffSession}"` // #4278 — identity is required since #3966
   );
   assert.strictEqual(lastResponse.status, 200, `POST failed: ${lastResponse.status} ${lastResponse.body}`);
 });

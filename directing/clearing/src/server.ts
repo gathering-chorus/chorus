@@ -24,7 +24,7 @@ import { startRoom } from './buzz-room-wiring';
 import { ClearingChat } from './chat';
 import { lanAddress, bonjourHost, startupLanLines, detectIpDrift } from './lan-url';
 import { isLocalConnection, isTunneled } from './connection-auth';
-import { isWebIdAllowed, principalForWebId, primeAllowSetGraph } from './solid-auth';
+import { isWebIdAllowed, principalForWebId, primeAllowSetGraph, personNames } from './solid-auth';
 
 // #4220 — ask the model where Principal rows live before the first sign-in is
 // judged. Three doors carrying three defaults is how a model move locked every
@@ -1461,8 +1461,23 @@ app.post('/api/message', async (req, res) => {
   if (!(await isMessageWriteAuthed(req))) {
     return res.status(401).json({ error: 'authentication required to post a message' });
   }
-  const { from, text } = req.body;
+  const { text } = req.body;
+  // #4417 (Silas 08-25, 10-01) — `from` used to be whatever the body said, so the
+  // shared machine credential could post as Jeff and the room and team memory
+  // recorded it as his words. A signed-in person posts as their own principal,
+  // whatever the body claims; the machine credential may use any name except a
+  // person's (read from the Principal rows). Roles posting as each other stays a
+  // named gap until per-role credentials exist.
+  const person = await sessionPrincipal(req);
+  const from = person ? person.name : req.body.from;
   if (!from || !text) return res.status(400).json({ error: 'from and text required' });
+  if (!person) {
+    const persons = await personNames(Date.now());
+    if (!persons) return res.status(503).json({ error: 'cannot tell who is a person right now; nothing was posted' });
+    if (persons.has(String(from).trim().toLowerCase())) {
+      return res.status(403).json({ error: 'only a signed-in person can post under their own name' });
+    }
+  }
   messageRouter.ingest({ from, text, ts: new Date().toISOString(), type: req.body.type || 'role-response', level: req.body.level || '' });
   res.json({ ok: true });
 });

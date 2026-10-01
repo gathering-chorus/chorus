@@ -26,7 +26,8 @@ const { ownClearing } = require('./lib/own-clearing.cjs');
 // sessions and DECISION messages to Jeff's live Clearing on :3470 with the
 // machine's bridge token. It now drives its own Clearing (lib/own-clearing.cjs)
 // unless CLEARING_URL names a variant; the live room is refused.
-const CLEARING_TARGET = ownClearing(base);
+const JEFF_WEBID = 'https://pods.example/jeff/profile/card#me';
+const CLEARING_TARGET = ownClearing(base, { signedInAs: JEFF_WEBID });
 const BRIDGE_URL = CLEARING_TARGET.url;
 const AUTH = CLEARING_TARGET.auth;
 
@@ -85,12 +86,19 @@ base.describe('Clearing: chat session lifecycle', () => {
     });
   });
 
+  base('NEGATIVE PROOF: the machine credential cannot record a decision as Jeff', async ({ request }) => {
+    const r = await request.post(`${BRIDGE_URL}/api/message`, { headers: AUTH, data: { from: 'jeff', text: `DECISION: spoof ${Date.now()}` } });
+    expect(r.status()).toBe(403);
+  });
+
   base('DECISION-prefixed messages are captured with correct attribution', async ({ request }) => {
     const decisionText = `DECISION: Test decision from clearing ${Date.now()}`;
 
     await base.step('Send decision message', async () => {
+      // #4417 — a decision in Jeff's name comes from Jeff's signed-in session;
+      // the machine credential is refused when it claims a person.
       const response = await request.post(`${BRIDGE_URL}/api/message`, {
-        headers: AUTH,
+        headers: { cookie: `clearing_session=${CLEARING_TARGET.session()}` },
         data: { from: 'jeff', text: decisionText },
       });
       expect(response.status()).toBe(200);

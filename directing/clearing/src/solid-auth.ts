@@ -236,6 +236,34 @@ async function fetchPrincipalMap(fetchImpl: typeof fetch = fetch): Promise<Map<s
   return map;
 }
 
+// #4417 — who is a person. Silas, 10-01: a person's name comes only from their
+// sign-in cookie, so a machine credential may never post under one. Read from
+// the Principal rows (principalKind "person"), never a hard-coded list.
+export const PERSON_NAMES_QUERY = (): string =>
+  'PREFIX chorus: <https://jeffbridwell.com/chorus#> ' +
+  `SELECT ?p WHERE { GRAPH <${allowSetGraph()}> { ?p a chorus:Principal ; chorus:principalKind ?k . FILTER(STR(?k) = "person") } }`;
+
+let personCache: { at: number; set: Set<string> } | null = null;
+
+/**
+ * Lowercase names of the person principals (principal-jeff → "jeff"). TTL'd and
+ * stale-served like the allow-set; null on a cold miss with the store down,
+ * which the caller must treat as "cannot tell", never as "nobody is a person".
+ */
+export async function personNames(now: number, fetchImpl: typeof fetch = fetch): Promise<Set<string> | null> {
+  if (!personCache || now - personCache.at >= ALLOW_TTL_MS) {
+    try {
+      const res = await fetchImpl(`${FUSEKI_QUERY}?query=${encodeURIComponent(PERSON_NAMES_QUERY())}`, { headers: { Accept: 'application/sparql-results+json' } });
+      if (!res.ok) throw new Error(`person query ${res.status}`);
+      const body = (await res.json()) as { results: { bindings: Array<{ p: { value: string } }> } };
+      personCache = { at: now, set: new Set(body.results.bindings.map((b) => (b.p.value.split(/[#/]/).pop() || '').replace(/^principal-/, '').toLowerCase()).filter(Boolean)) };
+    } catch {
+      if (!personCache) return null;
+    }
+  }
+  return personCache.set;
+}
+
 /**
  * Principal for a verified WebID, or null. Cache semantics mirror
  * isWebIdAllowed: TTL'd, stale-served on fetch error, fail-closed (null) on a
@@ -268,6 +296,7 @@ export async function principalForWebId(
 export function invalidateAllowCache(): void {
   allowCache = null;
   principalCache = null;
+  personCache = null;
 }
 
 /** Test seam — reset the module cache. Delegates so the two cannot drift

@@ -25,9 +25,20 @@ fs.writeFileSync(path.join(TMP, 'share-oidc.json'), JSON.stringify({ cookie_key:
 process.env.SHARE_STATE_FILE = path.join(TMP, 'share-oidc.json');
 
 export function useInProcessClearing() {
-  const store = http.createServer((_req, res) => {
+  // The stub store answers the three questions the Clearing asks the security
+  // graph: who is allowed (webids), who is who (principal ↔ webid), and who is
+  // a person (principalKind "person"): jeff and marknakib here.
+  const store = http.createServer((req, res) => {
+    const q = decodeURIComponent((req.url || '').split('query=')[1] || '');
     res.setHeader('Content-Type', 'application/sparql-results+json');
-    res.end(JSON.stringify({ results: { bindings: [{ webid: { value: ALLOWED } }] } }));
+    const P = 'https://jeffbridwell.com/chorus#';
+    if (q.includes('principalKind')) {
+      res.end(JSON.stringify({ results: { bindings: [{ p: { value: `${P}principal-jeff` } }, { p: { value: `${P}principal-marknakib` } }] } }));
+    } else if (q.includes('?p ?webid')) {
+      res.end(JSON.stringify({ results: { bindings: [{ p: { value: `${P}principal-jeff` }, webid: { value: ALLOWED } }] } }));
+    } else {
+      res.end(JSON.stringify({ results: { bindings: [{ webid: { value: ALLOWED } }] } }));
+    }
   });
 
   function guardCookie(webid: string, key: Buffer = KEY): string {
