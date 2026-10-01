@@ -94,6 +94,7 @@ login_harness_env() {
   export CHORUS_TOKEN_BIN="$T/bin/token" AWAKE_CURL="$T/bin/curl" CHORUS_LOG_BIN="$T/bin/chorus-log"
   export AWAKE_PROBE_BIN="$T/bin/probe" AWAKE_OSASCRIPT="$T/bin/osascript" AWAKE_OPEN="$T/bin/open"
   export AWAKE_SERVICES="identity=http://stub:3001/,chorus-api=http://stub:3340/h,athena-make=http://stub:3360/s"
+  export AWAKE_HOOKS_SOCKET=none   # #4409: the hooks check is off unless a test points it somewhere
   export AWAKE_SERVICE_WAIT=2 AWAKE_NO_RETRY=1
   export CHORUS_IDENTITY_DIR="$T/identity" CHORUS_API_URL="http://stub:3360"
   export CHORUS_SESSIONS_DIR="$T/sessions" AWAKE_ROLES_BASE="$T/roles" CHORUS_ROOT="$ROOT"

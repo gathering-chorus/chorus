@@ -39,8 +39,7 @@ Feature: A role's day, from login to logout and back
     Then pulse resolves wren to its pane from the Presence row
 
   # Loud, not a refusal: Jeff decides. Login checks identity, chorus-api and
-  # athena-make (lifecycle.rs DEFAULT_SERVICES), never the hooks daemon.
-  @waiting-4409
+  # athena-make (lifecycle.rs DEFAULT_SERVICES), and the hooks daemon's socket (#4409).
   Scenario: Logging in with the hooks daemon down says so
     Given wren is logged out
     And the hooks daemon is not answering
