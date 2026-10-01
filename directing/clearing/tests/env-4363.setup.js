@@ -33,3 +33,5 @@ if (!process.env.CLEARING_CHORUS_HOME) {
   fs.mkdirSync(process.env.CLEARING_CHORUS_HOME, { recursive: true });
   fs.writeFileSync(path.join(process.env.CLEARING_CHORUS_HOME, 'bridge-auth-token'), `test-${process.pid}-${Date.now()}`);
 }
+// #4417 — the room's AI chat calls the Anthropic API; never from a test.
+if (!process.env.ANTHROPIC_BASE_URL) process.env.ANTHROPIC_BASE_URL = 'http://127.0.0.1:9';

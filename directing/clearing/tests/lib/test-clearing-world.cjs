@@ -49,6 +49,9 @@ function testClearingEnv(dir, port, token) {
     // the account page's password change talks to the identity server (CSS);
     // a test Clearing must never reach the live one.
     CSS_LOCAL_BASE: 'http://127.0.0.1:1',
+    // the room's AI chat (participants.ts) calls the Anthropic API; a test Clearing never does.
+    ANTHROPIC_BASE_URL: 'http://127.0.0.1:1',
+    ANTHROPIC_API_KEY: 'test-no-key',
   };
 }
 

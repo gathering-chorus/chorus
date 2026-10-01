@@ -96,5 +96,5 @@ export function useInProcessClearing() {
     });
   }
 
-  return { visit, guardCookie, ALLOWED, STRANGER, base: () => base };
+  return { visit, guardCookie, ALLOWED, STRANGER, base: () => base, dir: TMP };
 }
