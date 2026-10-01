@@ -119,12 +119,6 @@ vocab:gen-CodeKind a skos:Concept ;
     skos:definition "What a source file is for: code, test, log, config, doc. Named individuals, never free strings (#4157)." ;
     skos:exactMatch <https://jeffbridwell.com/chorus#CodeKind> .
 
-vocab:gen-Commitment a skos:Concept ;
-    skos:inScheme vocab:model-classes ;
-    skos:prefLabel "Commitment" ;
-    skos:definition "A promise a service design makes, held as a row instead of prose (#4064). What is promised, where the design says it, whether it is open, who owns it, the card that carries it (or none), and the probe that measures it when one exists. An open Commitment with no card is unowned work; that absence is what the commitment check turns red." ;
-    skos:exactMatch <https://jeffbridwell.com/chorus#Commitment> .
-
 vocab:gen-Document a skos:Concept ;
     skos:inScheme vocab:model-classes ;
     skos:prefLabel "Document" ;

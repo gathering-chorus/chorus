@@ -27,7 +27,9 @@ describe('#4093 service page engineering half', () => {
 
   test('the service page composes the domain facets and adds only what a service owns', () => {
     const s = read('service.html');
-    for (const chapter of ['Flows', 'Runs as', 'Commitments']) expect(s).toContain(chapter);
+    for (const chapter of ['Flows', 'Runs as']) expect(s).toContain(chapter);
+    // #4064 — Commitment is retired: the page must not fetch a route that no longer exists
+    expect(s).not.toContain('/commitments');
     expect(s).toContain("renderFacetTables(");
     expect(s).toContain("'API Contract', 'Persistence', 'Dependencies', 'Tests'");
     // the hosting domain is asked of the read-only SPARQL door, never guessed from the name

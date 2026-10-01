@@ -18,7 +18,7 @@ bad_rows() {
       { ?s a c:Card FILTER NOT EXISTS { ?s rdfs:label ?l } }
       UNION { ?s c:lifecycleEnabled ?v FILTER(datatype(?v) != xsd:boolean) } }' | tail -n +2 | grep -c . || true
 }
-for f in roles/kade/ontology/commitment-card-stubs.ttl designing/data/property-key-instances.ttl; do
+for f in designing/data/property-key-instances.ttl; do   # commitment-card-stubs.ttl retired with Commitment (#4064)
   n=$(bad_rows "$ROOT/$f")
   [ "$n" = "0" ] && { echo "PASS $f: every row conforms"; pass=$((pass+1)); } || { echo "FAIL $f: $n row(s) would stop the seed"; fail=$((fail+1)); }
 done

@@ -128,10 +128,6 @@ const KINDS: &[(&str, &str, bool)] = &[
     // and the write still 502'd "unknown-kind: session" — a row the model knows
     // and the writer does not is a row nobody can create.
     ("session", "Session", false),
-    // #4089 — Commitment rows (a service design's promises, #4064) deploy through
-    // the INSTANCE_SET like every cross-domain instance (Silas's OWL-DBA ruling
-    // 2026-09-03: not a domain's harvested graph). Type-prefixed: commitment-<name>.
-    ("commitment", "Commitment", false),
     // #3680 — Test as a REFERENCE kind: TestResult.ofTest must mint the target
     // IRI, and the 4,617 Test entities are crawler-minted BARE (NS#<name>, names
     // already test-*-slugged). bare_grain=true reproduces exactly that IRI. The
@@ -3391,11 +3387,6 @@ mod tests {
             format!("{}value-stream-step-proving", NS)
         );
         assert_eq!(mint("service", "crawler").unwrap(), format!("{}service-crawler", NS));
-        // #4089 — commitment rows seed through the manifest, so the kind must mint
-        assert_eq!(
-            mint("commitment", "ledger-cross-foots").unwrap(),
-            format!("{}commitment-ledger-cross-foots", NS)
-        );
         assert_eq!(mint("principle", "be direct").unwrap(), format!("{}be-direct", NS)); // #4282 bare
         // #4040 — the pipelines domain's kinds (the fifth generate-vs-write drift)
         assert_eq!(mint("pipeline", "cicd").unwrap(), format!("{}pipeline-cicd", NS));
