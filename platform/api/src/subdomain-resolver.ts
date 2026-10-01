@@ -2,7 +2,7 @@
 // for #2205 wave 10).
 //
 // resolveSubdomainId maps a domain NAME ("seeds") to the ontology's
-// subdomain ID ("seeds-domain" or "seeds-service"). Explicit forms pass
+// subdomain ID ("seeds" or "seeds-service"). Explicit forms pass
 // through unchanged. Unknown forms ASK Fuseki whether -domain exists and
 // fall back to -service when the query says no (or fails).
 

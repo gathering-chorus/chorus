@@ -8,7 +8,7 @@
  * Maps a doc (path + filename + optional frontmatter) to:
  *   product:    chorus | gathering | consulting
  *   subproduct: loom | werk | athena | convergence | clearing | quality (chorus only)
- *   subdomain:  one of Athena's 48 subdomains (e.g., loom-decisions, blog-domain)
+ *   subdomain:  the domain's name (e.g., decisions, blog)
  *
  * Inference order: frontmatter override > path-based > filename pattern > content.
  * Returns confidence: high (path or frontmatter) | medium (filename pattern) |
@@ -33,14 +33,14 @@ export interface DocTags {
 // Subproduct → subdomain ownership (from Athena #subproducts and #subdomains).
 export const SUBPRODUCT_DOMAINS: Record<string, string[]> = {
   loom: [
-    'loom-analytics', 'loom-decisions', 'loom-metrics', 'loom-policies',
-    'loom-practices', 'loom-principles', 'loom-rcas',
+    'analytics', 'decisions', 'metrics', 'policies',
+    'practices', 'principles', 'rcas',
   ],
-  werk: ['cards-service', 'roles-domain'],
-  athena: ['athena-domain', 'domains-domain', 'knowledge-domain', 'integrations-domain', 'services-domain'],
+  werk: ['cards', 'roles'],
+  athena: ['athena-domain', 'domains', 'knowledge', 'integrations', 'services'],
   convergence: ['convergence-domain'],
-  clearing: ['messages-domain'],
-  quality: ['gates-service', 'tests-domain'],
+  clearing: ['messages'],
+  quality: ['gates', 'tests'],
 };
 
 const SUBDOMAIN_TO_SUBPRODUCT: Record<string, string> = {};
@@ -50,18 +50,18 @@ for (const [sp, doms] of Object.entries(SUBPRODUCT_DOMAINS)) {
 
 // Gathering subdomains (no subproduct level)
 export const GATHERING_SUBDOMAINS = new Set([
-  'blog-domain', 'books-domain', 'cooking-domain', 'documents-domain',
-  'glimmers-domain', 'music-domain', 'notes-domain', 'photos-domain',
-  'property-domain', 'social-domain', 'video-domain',
-  'people-domain', 'sexuality-domain', 'stories-domain', 'self-domain',
-  'seeds-domain', 'reading-domain', 'watching-domain',
+  'blog', 'books', 'cooking-domain', 'documents',
+  'glimmers-domain', 'music', 'notes', 'photos',
+  'property', 'social', 'video',
+  'people', 'sexuality', 'stories', 'self-domain',
+  'seeds', 'reading-domain', 'watching-domain',
 ]);
 
 // #2627: filename → tags split into named phase helpers; orchestrator
 // tries each in order, first non-null wins.
 
 const LOOM_DECISIONS_TAG: Partial<DocTags> = {
-  product: 'chorus', subproduct: 'loom', subdomain: 'loom-decisions',
+  product: 'chorus', subproduct: 'loom', subdomain: 'decisions',
   confidence: 'high', signal: 'filename',
 };
 
@@ -72,17 +72,18 @@ function tagsFromAdrOrDec(bn: string): Partial<DocTags> | null {
 function tagsFromGatheringDomainPrefix(bn: string): Partial<DocTags> | null {
   const dm = bn.match(/^domain-([a-z]+)\.html?$/);
   if (!dm) return null;
-  const sub = `${dm[1]}-domain`;
-  if (!GATHERING_SUBDOMAINS.has(sub)) return null;
+  // #4353 — domains carry their bare name (photos); a few unmoved ones keep -domain.
+  const sub = [dm[1], `${dm[1]}-domain`].find((n) => GATHERING_SUBDOMAINS.has(n));
+  if (!sub) return null;
   return { product: 'gathering', subdomain: sub, confidence: 'high', signal: 'filename' };
 }
 
 function tagsFromServiceDesignPrefix(bn: string): Partial<DocTags> | null {
   const sd = bn.match(/^service-design-([a-z-]+)\.html?$/);
   if (!sd) return null;
-  const candidate = sd[1].endsWith('-domain') ? sd[1] : `${sd[1]}-domain`;
+  const candidate = [sd[1], `${sd[1]}-domain`].find((n) => SUBDOMAIN_TO_SUBPRODUCT[n]);
+  if (!candidate) return null;
   const sp = SUBDOMAIN_TO_SUBPRODUCT[candidate];
-  if (!sp) return null;
   return { product: 'chorus', subproduct: sp, subdomain: candidate, confidence: 'high', signal: 'filename' };
 }
 
@@ -133,7 +134,7 @@ function tagsFromPath(sourcePath: string): Partial<DocTags> | null {
 
   if (p.includes('/adr/') || p.startsWith('adr/') ||
       p.startsWith('roles/silas/adr') || p.startsWith('architect/adr')) {
-    return { product: 'chorus', subproduct: 'loom', subdomain: 'loom-decisions',
+    return { product: 'chorus', subproduct: 'loom', subdomain: 'decisions',
              confidence: 'high', signal: 'path' };
   }
   if (p.includes('akasha/') || p.startsWith('akasha')) {
@@ -147,7 +148,7 @@ function tagsFromPath(sourcePath: string): Partial<DocTags> | null {
     return { product: 'chorus', confidence: 'high', signal: 'path' };
   }
   if (p.startsWith('designing/decisions') || p.startsWith('wren/decisions')) {
-    return { product: 'chorus', subproduct: 'loom', subdomain: 'loom-decisions',
+    return { product: 'chorus', subproduct: 'loom', subdomain: 'decisions',
              confidence: 'high', signal: 'path' };
   }
   if (p.startsWith('designing/docs')) {

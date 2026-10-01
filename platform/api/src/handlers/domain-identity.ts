@@ -53,13 +53,13 @@ interface RegistryEntry {
  */
 const REGISTRY: Record<string, RegistryEntry> = {
   // Loom sub-subdomains: cards carry `sequence:loom`, decisions carry `domain:loom`.
-  'loom-principles': { aliases: ['loom'], cardSequenceTags: ['loom'], cardDomainTags: ['chorus', 'loom'] },
-  'loom-policies':   { aliases: ['loom'], cardSequenceTags: ['loom'], cardDomainTags: ['chorus', 'loom'] },
-  'loom-practices':  { aliases: ['loom'], cardSequenceTags: ['loom'], cardDomainTags: ['chorus', 'loom'] },
-  'loom-decisions':  { aliases: ['loom'], cardSequenceTags: ['loom'], cardDomainTags: ['chorus', 'loom'] },
-  'loom-metrics':    { aliases: ['loom'], cardSequenceTags: ['loom'], cardDomainTags: ['chorus', 'loom'] },
-  'loom-analytics':  { aliases: ['loom'], cardSequenceTags: ['loom'], cardDomainTags: ['chorus', 'loom'] },
-  'loom-rcas':       { aliases: ['loom'], cardSequenceTags: ['loom'], cardDomainTags: ['chorus', 'loom'] },
+  'principles': { aliases: ['loom'], cardSequenceTags: ['loom'], cardDomainTags: ['chorus', 'loom'] },
+  'policies':   { aliases: ['loom'], cardSequenceTags: ['loom'], cardDomainTags: ['chorus', 'loom'] },
+  'practices':  { aliases: ['loom'], cardSequenceTags: ['loom'], cardDomainTags: ['chorus', 'loom'] },
+  'decisions':  { aliases: ['loom'], cardSequenceTags: ['loom'], cardDomainTags: ['chorus', 'loom'] },
+  'metrics':    { aliases: ['loom'], cardSequenceTags: ['loom'], cardDomainTags: ['chorus', 'loom'] },
+  'analytics':  { aliases: ['loom'], cardSequenceTags: ['loom'], cardDomainTags: ['chorus', 'loom'] },
+  'rcas':       { aliases: ['loom'], cardSequenceTags: ['loom'], cardDomainTags: ['chorus', 'loom'] },
   // Quality/code/gates folds — pre-existing special cases.
   'tests': { aliases: ['quality'], cardDomainTags: ['quality'] },
   'code':  { aliases: ['code'],    cardDomainTags: ['code'] },

@@ -88,7 +88,7 @@ TOTAL_SOURCE=$((DEC_COUNT + ADR_COUNT))
 
 # 2. Graph counts
 GRAPH_DEC_COUNT=$(count_query "PREFIX chorus: <https://jeffbridwell.com/chorus#> SELECT (COUNT(*) AS ?n) WHERE { GRAPH <urn:chorus:instances> { ?d a chorus:Decision } }")
-CONTAINS_COUNT=$(count_query "PREFIX chorus: <https://jeffbridwell.com/chorus#> SELECT (COUNT(?d) AS ?n) WHERE { GRAPH <urn:chorus:instances> { <https://jeffbridwell.com/chorus#loom-decisions> chorus:contains ?d . ?d a chorus:Decision } }")
+CONTAINS_COUNT=$(count_query "PREFIX chorus: <https://jeffbridwell.com/chorus#> SELECT (COUNT(?d) AS ?n) WHERE { GRAPH <urn:chorus:instances> { <https://jeffbridwell.com/chorus#decisions> chorus:contains ?d . ?d a chorus:Decision } }")
 
 check "Total source count = total graph instance count" "$TOTAL_SOURCE" "$GRAPH_DEC_COUNT"
 check "All instances have chorus:contains edge from loom-decisions" "$GRAPH_DEC_COUNT" "$CONTAINS_COUNT"

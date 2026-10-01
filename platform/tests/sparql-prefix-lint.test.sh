@@ -44,7 +44,7 @@ PREFIX chorus: <https://jeffbridwell.com/chorus#>
 PREFIX rdfs: <http://www.w3.org/2000/01/rdf-schema#>
 SELECT ?label WHERE {
   GRAPH <urn:chorus:ontology> {
-    chorus:loom-principles rdfs:label ?label .
+    chorus:principles rdfs:label ?label .
   }
 }
 SPARQL

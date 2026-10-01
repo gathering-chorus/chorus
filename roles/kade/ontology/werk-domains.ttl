@@ -430,29 +430,29 @@ chorus:werk-product
         "TestSuiteRun write-back token provisioning (#3619) pending" ,
         "review advisory not yet promoted to gate (deliberate flip pattern)" .
 
-chorus:pipelines-domain
+chorus:pipelines
     chorus:status "operating" ;
     chorus:hasDesignDoc "designing/docs/ci-pipeline-service-design.html" ;
     chorus:gaps "per-PR CI disconnected (cost stop); nightly not yet trusted" ;
     chorus:hasRecordClass chorus:PipelineRun , chorus:GateResult , chorus:ReviewVerdict , chorus:DemoVerdict , chorus:Deployment .
 
-chorus:version-control-domain
+chorus:version-control
     chorus:status "operating" ;
     chorus:hasDesignDoc "designing/docs/version-control-service-design.html" ;
     chorus:gaps "phantom git-queue references in guard deny-text (#3290)" ;
     chorus:hasRecordClass chorus:WerkSlot , chorus:MergeEvent , chorus:ConflictHold , chorus:RecoveryAction .
 
-chorus:code-domain
+chorus:code
     chorus:status "building" ;
     chorus:hasDesignDoc "designing/docs/quality-service-design.html" ;
     chorus:gaps "blast-radius first-class entity defers to werk-code (#3148 lineage)" ;
     chorus:hasRecordClass chorus:SourceFile , chorus:CardDiff , chorus:QualityFinding .
 
 # #3554/#2819 — the tests domain (V2 IRI chorus:tests), COMPLETED + deduped from the legacy
-# chorus:tests-domain node. definesVocabulary mounts all three record kinds (Test/TestResult/
+# chorus:tests node. definesVocabulary mounts all three record kinds (Test/TestResult/
 # TestSuiteRun) into owl-api's served set. Placement uses existing nodes (Silas to confirm the
 # loom placement). hasDesignDoc carried as a string from the legacy node — Document-typing is
-# the residual. The legacy chorus:tests-domain triples are removed in the same pass.
+# the residual. The legacy chorus:tests triples are removed in the same pass.
 chorus:tests a owl:Class, chorus:Domain ;
     rdfs:label "tests" ;
     rdfs:comment "The set of all Tests — every automated test (jest, bats, cargo, integration) registered as a Test instance with its pyramid layer, hermeticity, and the domain it covers. The noun the register/run/trace verbs operate on." ;

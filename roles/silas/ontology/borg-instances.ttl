@@ -295,31 +295,31 @@ chorus:chorus-domain borg:usesEnvironment inst:chorus-api, inst:messaging-librar
     inst:clearing-library, inst:vikunja-library, inst:chorus-index .
 
 # Infrastructure domain — the engines themselves
-chorus:infrastructure-domain borg:usesEnvironment inst:fuseki-library, inst:mysql-library,
+chorus:infrastructure borg:usesEnvironment inst:fuseki-library, inst:mysql-library,
     inst:prometheus-library, inst:grafana-library, inst:loki-library,
     inst:promtail-library, inst:alertmanager-library .
 
 # Observability domain — monitoring stack
-chorus:observability-domain borg:usesEnvironment inst:prometheus-library, inst:grafana-library,
+chorus:observability borg:usesEnvironment inst:prometheus-library, inst:grafana-library,
     inst:loki-library, inst:promtail-library, inst:alertmanager-library .
 
 # Seeds domain — app + fuseki + chorus-api
-chorus:seeds-domain borg:usesEnvironment inst:gathering-app, inst:fuseki-library, inst:chorus-api .
+chorus:seeds borg:usesEnvironment inst:gathering-app, inst:fuseki-library, inst:chorus-api .
 
 # Photos domain
-chorus:photos-domain borg:usesEnvironment inst:gathering-app, inst:fuseki-library, inst:mysql-library .
+chorus:photos borg:usesEnvironment inst:gathering-app, inst:fuseki-library, inst:mysql-library .
 
 # Music domain
-chorus:music-domain borg:usesEnvironment inst:gathering-app, inst:fuseki-library, inst:mysql-library .
+chorus:music borg:usesEnvironment inst:gathering-app, inst:fuseki-library, inst:mysql-library .
 
 # Blog domain
-chorus:blog-domain borg:usesEnvironment inst:wordpress-library, inst:mysql-library .
+chorus:blog borg:usesEnvironment inst:wordpress-library, inst:mysql-library .
 
 # Search domain
 chorus:search-domain borg:usesEnvironment inst:gathering-app, inst:fuseki-library, inst:chorus-index .
 
 # Cards domain
-chorus:cards-service borg:usesEnvironment inst:vikunja-library, inst:vikunja-db .
+chorus:cards borg:usesEnvironment inst:vikunja-library, inst:vikunja-db .
 
 # Alerts domain
 chorus:alerts-monitors-domain borg:usesEnvironment inst:prometheus-library, inst:alertmanager-library, inst:grafana-library .

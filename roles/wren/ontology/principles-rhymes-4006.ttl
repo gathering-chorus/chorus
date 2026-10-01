@@ -52,7 +52,7 @@ chorus:xp-self-similarity chorus:rhymesWith chorus:hemenway-small-scale-intensiv
 # 14. An edge is a row in the domain of what it joins (Jeff, 2026-09-03: every
 # row in its domain graph); it rides the principles set like rhymesWith does,
 # so it can never outlive the row it points at.
-chorus:loom-principles chorus:contains
+chorus:principles chorus:contains
     chorus:hemenway-observe ,
     chorus:hemenway-connect ,
     chorus:hemenway-catch-and-store ,

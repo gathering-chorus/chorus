@@ -45,12 +45,12 @@ describe('loadAliasMap', () => {
 
   it('converts alias triples to a prefix → id map', () => {
     const map = loadAliasMap([
-      { sd: sdUri('photos-domain'), prefix: prefix('photos') },
-      { sd: sdUri('photos-domain'), prefix: prefix('photo') },
+      { sd: sdUri('photos'), prefix: prefix('photos') },
+      { sd: sdUri('photos'), prefix: prefix('photo') },
       { sd: sdUri('blog-domain'), prefix: prefix('wordpress') },
     ]);
-    expect(map.photos).toBe('photos-domain');
-    expect(map.photo).toBe('photos-domain');
+    expect(map.photos).toBe('photos');
+    expect(map.photo).toBe('photos');
     expect(map.wordpress).toBe('blog-domain');
   });
 
@@ -67,11 +67,11 @@ describe('loadAliasMap', () => {
 
   it('skips bindings with empty id or prefix', () => {
     const map = loadAliasMap([
-      { sd: sdUri('photos-domain'), prefix: prefix('photos') },
+      { sd: sdUri('photos'), prefix: prefix('photos') },
       { sd: { value: '' }, prefix: prefix('orphan') },
       { sd: sdUri('blog-domain'), prefix: { value: '' } },
     ]);
-    expect(map.photos).toBe('photos-domain');
+    expect(map.photos).toBe('photos');
     expect(map.orphan).toBeUndefined();
     expect(Object.keys(map)).toHaveLength(1);
   });
@@ -83,8 +83,8 @@ describe('loadAliasMap', () => {
 
 describe('inferDomain', () => {
   it('matches on basename containing an alias', () => {
-    const aliases = { photos: 'photos-domain', notes: 'notes-domain' };
-    expect(inferDomain('tests/handlers/photos.test.ts', aliases, FAKE_PATH)).toBe('photos-domain');
+    const aliases = { photos: 'photos', notes: 'notes' };
+    expect(inferDomain('tests/handlers/photos.test.ts', aliases, FAKE_PATH)).toBe('photos');
   });
 
   it('matches when a path segment equals the alias', () => {
@@ -103,8 +103,8 @@ describe('createDiscoverTests', () => {
   function makeSparql(aliasRows?: any[]) {
     const updates: string[] = [];
     const rows = aliasRows ?? [
-      { sd: { value: 'https://jeffbridwell.com/chorus#photos-domain' }, prefix: { value: 'photos' } },
-      { sd: { value: 'https://jeffbridwell.com/chorus#photos-domain' }, prefix: { value: 'photo' } },
+      { sd: { value: 'https://jeffbridwell.com/chorus#photos' }, prefix: { value: 'photos' } },
+      { sd: { value: 'https://jeffbridwell.com/chorus#photos' }, prefix: { value: 'photo' } },
     ];
     return {
       updates,

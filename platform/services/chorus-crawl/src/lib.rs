@@ -2144,7 +2144,7 @@ mod merge_4178 {
 
     const PAGE: &str = r#"{ "kind": "CodeFile", "data": [
   { "name": "file-a", "filePath": "a/b.rs", "fileSha": "aaa", "hasKind": "code-kind-code",
-    "hasLanguage": "language-rust", "fileInDomain": "code-domain", "fileHasOwner": "role-kade",
+    "hasLanguage": "language-rust", "fileInDomain": "code", "fileHasOwner": "role-kade",
     "stale": "", "label": "file-a" },
   { "name": "file-c", "filePath": "c/d{e}.md", "fileSha": "ccc", "hasKind": "code-kind-doc" }
 ], "links": { "next": "" }, "count": 2 }"#;
@@ -2160,7 +2160,7 @@ mod merge_4178 {
         let f = row_fields(objs[0]);
         let get = |k: &str| f.iter().find(|(a, _)| a == k).map(|(_, v)| v.as_str());
         assert_eq!(get("filePath"), Some("a/b.rs"));
-        assert_eq!(get("fileInDomain"), Some("code-domain"));
+        assert_eq!(get("fileInDomain"), Some("code"));
         assert_eq!(get("fileHasOwner"), Some("role-kade"));
         // the second row's path contains braces — the scanner must still split it out
         assert_eq!(
@@ -2186,7 +2186,7 @@ mod merge_4178 {
         assert_eq!(get("hasKind"), Some("code"));
         assert_eq!(
             get("fileInDomain"),
-            Some("code-domain"),
+            Some("code"),
             "the domain tag survives"
         );
         assert_eq!(get("fileHasOwner"), Some("role-kade"));
@@ -2224,7 +2224,7 @@ mod merge_4178 {
         let merged = merge_row(&existing, &owned);
         assert!(merged
             .iter()
-            .any(|(k, v)| k == "fileInDomain" && v == "code-domain"));
+            .any(|(k, v)| k == "fileInDomain" && v == "code"));
         assert_ne!(merged.len(), unmerged.len());
     }
 
