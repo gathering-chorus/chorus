@@ -315,44 +315,10 @@ describe('AC4: No feedback loop — messages appear exactly once', () => {
 // ═══════════════════════════════════════════════════════════════════════════
 
 describe('AC3: Role-to-role /chat messages do NOT appear in Clearing', () => {
-  // tests/ → ../../../platform/scripts/chat.sh — portable, not machine-absolute (#3528).
-  const CHAT_SCRIPT = path.join(__dirname, '..', '..', '..', 'platform', 'scripts', 'chat.sh');
-
-  test('chat.sh message between roles does not leak into Clearing', async () => {
-    const marker = `AC3-CHAT-${Date.now()}`;
-
-    // Start a chat and send a message
-    try {
-      const chatId = execSync(
-        `bash "${CHAT_SCRIPT}" start silas kade "test-${marker}"`,
-        { encoding: 'utf-8', timeout: 10000 },
-      ).trim().split('\n').pop() || '';
-
-      /* eslint-disable jest/no-conditional-expect -- live integration; chat.sh availability gates the assertion */
-      if (chatId) {
-        execSync(
-          `bash "${CHAT_SCRIPT}" say ${chatId} silas "${marker} — chat message, must not appear in Clearing"`,
-          { encoding: 'utf-8', timeout: 10000 },
-        );
-
-        // Wait for session tailer to process
-        await new Promise(r => setTimeout(r, 5000));
-
-        const messages = await getMessages(100);
-        const allText = messages.map((m: any) => m.text || '').join('\n');
-
-        expect(allText).not.toContain(marker);
-
-        // Cleanup
-        execSync(`bash "${CHAT_SCRIPT}" end ${chatId}`, { encoding: 'utf-8', timeout: 5000 });
-      }
-    } catch (e: any) {
-      // chat.sh may not exist or fail — test the filter, not the chat mechanism
-      console.log(`chat.sh unavailable: ${e.message?.substring(0, 60)}`);
-      expect(true).toBe(true);
-    }
-    /* eslint-enable jest/no-conditional-expect */
-  });
+  // #4417 — the chat.sh case is gone. It started a real chat (silas→kade) and a
+  // real nudge on every nightly, and its catch passed it whatever happened.
+  // The property it meant — a nudge pulse delivered is not shown as Jeff — is
+  // proven in session-tailer-unit ("#4362 a nudge pulse delivered is not Jeff").
 
   test('[chat] prefixed messages appear, typed role-to-role (#3862 ruling)', async () => {
     const marker = `AC3-PREFIX-${Date.now()}`;
