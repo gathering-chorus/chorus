@@ -45,14 +45,37 @@ describe('resolveFromPresence (#4361)', () => {
     expect(resolveFromPresence(presences, runs, 'wren')).toEqual({ kind: 'unregistered' });
   });
 
-  test('a Presence with no pane routes by tty', () => {
+  test('a Presence with no pane is no-pane, never a typed tty guess (#4362)', () => {
     const r = resolveFromPresence(
       [{ name: 'wren-presence-x', presenceOf: 'session-run-wren-run-x', pane: '', tty: '/dev/ttys006' }],
       [{ name: 'wren-run-x', runEndedAt: '' }],
       'wren',
     );
-    expect(r.kind === 'resolved' ? r.session.tmux : 'x').toBeFalsy();
-    expect(r.kind === 'resolved' ? r.session.tty : '').toBe('/dev/ttys006');
+    expect(r).toEqual({ kind: 'no-pane' });
+  });
+});
+
+// #4362 reopened 2026-10-01 — a run logged in outside tmux stores pane "-".
+// tmux reads "-" as "the current pane", so pulse typed every nudge for silas
+// into whichever pane was on screen (wren's, then kade's: 4 in 3 hours).
+describe('#4362 a pane that is not a tmux pane id is never a target', () => {
+  const live = [{ name: 'silas-run-tmux', runEndedAt: '' }, { name: 'silas-run-shell', runEndedAt: '' }];
+  const rows = [
+    { name: 'silas-presence-tmux', presenceOf: 'session-run-silas-run-tmux', pane: '%63', tty: '/dev/ttys005', checkedAt: '2026-09-30T19:25:36Z' },
+    { name: 'silas-presence-shell', presenceOf: 'session-run-silas-run-shell', pane: '-', tty: '/dev/ttys007', checkedAt: '2026-10-01T12:18:42Z' },
+  ];
+
+  // NEGATIVE PROOF (#3734): the "-" row is the newest, so a resolver that only
+  // sorts by checkedAt picks it. This is the live state of 2026-10-01 08:18.
+  test('the live run with a real pane wins over a newer run with pane "-"', () => {
+    const r = resolveFromPresence(rows, live, 'silas');
+    expect(r.kind === 'resolved' ? r.session.tmux : null).toBe('%63');
+  });
+
+  // The live state at 08:30: silas's %63 run had ended; his only live run was
+  // the werk-demo's on ttys007, pane "-". Nothing in that terminal is silas.
+  test('a lone run with pane "-" is no-pane: nothing is typed anywhere', () => {
+    expect(resolveFromPresence([rows[1]], [live[1]], 'silas')).toEqual({ kind: 'no-pane' });
   });
 });
 

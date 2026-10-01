@@ -25,18 +25,20 @@ export function resolveFromPresence(presences: PresenceRow[], runs: RunRow[], ro
   const mine = presences.filter((p) => p.name.startsWith(`${role}-presence-`));
   if (mine.length === 0) return { kind: 'unregistered' };
   const live = new Set(runs.filter((r) => r.name.startsWith(`${role}-run-`) && !r.runEndedAt).map((r) => r.name));
+  // #4362 — only a tmux pane id (%N) is a pane. A run logged in outside tmux
+  // stores "-", which tmux reads as "the current pane": every nudge typed into
+  // whoever was on screen. A live run with a real pane wins; then the newest.
+  const paneOf = (p: PresenceRow): string => (/^%\d+$/.test(p.pane ?? '') ? (p.pane as string) : '');
   const candidates = mine
     .filter((p) => ofLiveRun(p.presenceOf ?? '', live))
-    .sort((a, b) => (b.checkedAt ?? '').localeCompare(a.checkedAt ?? ''));
+    .sort((a, b) => Number(!!paneOf(b)) - Number(!!paneOf(a)) || (b.checkedAt ?? '').localeCompare(a.checkedAt ?? ''));
   if (candidates.length === 0) return { kind: 'dead' };
   const current = candidates[0];
-  const session: SessionReg = {
-    role,
-    pid: 0,
-    tty: current.tty ?? '',
-    host: current.pane ? 'tmux' : 'unknown',
-    ...(current.pane ? { tmux: current.pane } : {}),
-  };
+  const pane = paneOf(current);
+  // No live run has a pane: typing by tty would land in whatever that terminal
+  // runs now (on 2026-10-01, silas's only live run was a werk-demo on ttys007).
+  if (!pane) return { kind: 'no-pane' };
+  const session: SessionReg = { role, pid: 0, tty: current.tty ?? '', host: 'tmux', tmux: pane };
   return { kind: 'resolved', session };
 }
 
