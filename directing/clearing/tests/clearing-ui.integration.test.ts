@@ -124,6 +124,17 @@ async function settle(): Promise<void> {
   }
 }
 
+// #4417 — Jeff speaks through the page's socket (a local socket is Jeff), not
+// through /api/message with the shared machine credential, which is a door a
+// machine should not be able to use as him. Returns 200 when the room accepted it.
+async function sayAsJeff(text: string): Promise<number> {
+  const c = createClient();
+  await new Promise<void>((resolve, reject) => { c.on('connect', () => resolve()); c.on('connect_error', reject); });
+  const ack = await new Promise<{ ok: boolean }>((resolve) => c.emit('jeff-message', { text }, resolve));
+  c.disconnect();
+  return ack.ok ? 200 : 500;
+}
+
 // Helper: GET JSON from Clearing API
 function getMessages(limit = 10): Promise<any[]> {
   return new Promise((resolve, reject) => {
@@ -263,7 +274,7 @@ describe('AC4: No feedback loop — messages appear exactly once', () => {
   test('message posted via /api/message appears exactly once', async () => {
     const marker = `AC4-ECHO-${Date.now()}`;
 
-    const status = await postMessage('jeff', `${marker} — should appear exactly once`);
+    const status = await sayAsJeff(`${marker} — should appear exactly once`);
     expect(status).toBe(200);
 
     // Wait for any potential feedback loop to trigger
@@ -293,9 +304,9 @@ describe('AC4: No feedback loop — messages appear exactly once', () => {
     const marker = `AC4-RAPID-${Date.now()}`;
 
     // Send 3 distinct messages quickly
-    await postMessage('jeff', `${marker}-A`);
-    await postMessage('jeff', `${marker}-B`);
-    await postMessage('jeff', `${marker}-C`);
+    await sayAsJeff(`${marker}-A`);
+    await sayAsJeff(`${marker}-B`);
+    await sayAsJeff(`${marker}-C`);
 
     await settle();
 
@@ -313,7 +324,7 @@ describe('AC4: No feedback loop — messages appear exactly once', () => {
     const marker = `AC4-REST-ECHO-${Date.now()}`;
 
     // Post via REST — this path does NOT trigger nudge injection
-    const status = await postMessage('jeff', `${marker} — REST echo test`);
+    const status = await sayAsJeff(`${marker} — REST echo test`);
     expect(status).toBe(200);
 
     await settle();
@@ -396,7 +407,7 @@ describe('AC5: Guest identity displays correctly', () => {
   test('message from jeff shows jeff as sender', async () => {
     const marker = `AC5-JEFF-${Date.now()}`;
 
-    await postMessage('jeff', marker);
+    await sayAsJeff(marker);
     await settle();
 
     const messages = await getMessages(50);
@@ -444,7 +455,7 @@ describe('AC1: Jeff sends message → role receives, response appears in stream'
   test('jeff message is recorded in message stream', async () => {
     const marker = `AC1-SEND-${Date.now()}`;
 
-    await postMessage('jeff', `${marker} — happy path test`);
+    await sayAsJeff(`${marker} — happy path test`);
     await settle();
 
     const messages = await getMessages(50);
@@ -502,9 +513,9 @@ describe('AC6: Reconnect after disconnect — no duplicates, no lost messages', 
     const marker = `AC6-RECON-${Date.now()}`;
 
     // Post before and after via REST — no injection side effects
-    await postMessage('jeff', `${marker}-before`);
+    await sayAsJeff(`${marker}-before`);
     await settle();
-    await postMessage('jeff', `${marker}-after`);
+    await sayAsJeff(`${marker}-after`);
     await settle();
 
     // Check: both messages present, each exactly once

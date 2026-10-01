@@ -35,6 +35,7 @@ function testClearingEnv(dir, port, token) {
     // CHORUS_HOME is the repo, so pin both or the pane reads whatever it finds.
     CHORUS_SPINE: path.join(dir, 'chorus.log'),
     CHORUS_HOME: path.join(home, '.chorus'),
+    CLEARING_CHORUS_HOME: path.join(home, '.chorus'),
     CHORUS_MESSAGES_DB: path.join(dir, 'messages.db'),
     SHARE_STATE_FILE: path.join(dir, 'share-state.json'),
     CHORUS_INJECT_DRY_RUN: '1',
