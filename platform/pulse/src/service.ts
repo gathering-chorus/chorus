@@ -10,7 +10,7 @@ import express, { Express } from 'express';
 import { MessageStore, inferNudgeClass } from './store';
 import { DeliveryWorker, classifyInjectOutput, type RunInject, type EmitSpine, type SelfTest } from './delivery-worker';
 import { planDelivery, planDeliveryTyped, readTurnState, describeTarget, type SessionReg } from './session-registry';
-import { fetchPresenceResolution, resolveEnds } from './presence-target';
+import { fetchPresenceResolution, resolveEnds, rolePaneFromTmux } from './presence-target';
 import { dedupeKey, seenRecently } from './nudge-dedup';
 import { startReplyGapWatch, parseSpineTail, SpineEv } from './reply-gap';
 import { startWipDriftWatch, foldCardActivity } from './wip-drift';
@@ -20,7 +20,7 @@ import { bostonOffsetIso } from './boston-iso';
 type SpineEvExt = SpineEv & { card?: number | string; card_id?: number | string };
 import { callerIsAuthorized, resolvePulseSecret } from './pulse-secret';
 import { Registry, Counter, Histogram, Gauge, collectDefaultMetrics } from 'prom-client';
-import { spawn } from 'child_process';
+import { spawn, execFileSync } from 'child_process';
 import { appendFile, open as fsOpen } from 'fs/promises';
 import * as path from 'path';
 import * as os from 'os';
@@ -348,7 +348,15 @@ function buildRuntimeDeps(): { runInject: RunInject; emitSpine: EmitSpine; selfT
     // typed; it never falls back to a guessed pane.
     // #3352 AC-0 — sender-aware plan: resolve BOTH ends so a delivery whose
     // target collides with the sender's own session name-matches instead.
-    const { toRes, sender: senderReg } = await resolveEnds(to, from);
+    const ends = await resolveEnds(to, from);
+    const senderReg = ends.sender;
+    let toRes = ends.toRes;
+    // #4362 — the live run has no pane, but the role runs in its own tmux
+    // session: deliver to that session's pane instead of holding the message.
+    if (toRes.kind === 'no-pane') {
+      const pane = rolePaneFromTmux(to, (args) => execFileSync('tmux', args, { encoding: 'utf8', timeout: 2000 }));
+      if (pane) toRes = { kind: 'resolved', session: { role: to, pid: 0, tty: '', host: 'tmux', tmux: pane } };
+    }
     if (toRes.kind === 'unread') {
       resolve({ rc: 0, stderr: '', deferred: true, deferReason: 'undelivered-presence-unread', target: `undelivered:${to}:${toRes.why}` });
       return;
