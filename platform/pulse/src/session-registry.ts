@@ -37,7 +37,11 @@ export const SESSIONS_DIR = path.join(os.homedir(), '.chorus', 'sessions');
 export type TypedResolution =
   | { kind: 'resolved'; session: SessionReg }
   | { kind: 'dead' }
-  | { kind: 'unregistered' };
+  | { kind: 'unregistered' }
+  // #4362 — a live run whose Presence has no tmux pane (logged in outside tmux,
+  // e.g. a headless gate run). Nothing safe to type into: the message waits
+  // for the role's turn-end drain, and the sender is told why.
+  | { kind: 'no-pane' };
 
 export type DeliveryPlan =
   | { kind: 'inject'; args: string[] }
@@ -142,7 +146,7 @@ export function readTurnState(role: string, dir: string = SESSIONS_DIR): TurnSta
 export type TypedDeliveryPlan =
   | { kind: 'inject'; args: string[] }
   | { kind: 'queue'; reason: string }
-  | { kind: 'undelivered'; reason: 'dead' | 'unregistered' };
+  | { kind: 'undelivered'; reason: 'dead' | 'unregistered' | 'no-pane' };
 
 /**
  * #3700 (Silas half) — the typed delivery decision, replacing null→name-match:

@@ -48,3 +48,10 @@ describe('#3700 planDeliveryTyped — the four outcomes', () => {
     expect(p.kind).toBe('inject');
   });
 });
+
+describe('#4362 a live run with no tmux pane', () => {
+  test('is undelivered "no-pane": nothing typed, the message waits for the drain', () => {
+    const idle: TurnState = { busy: false };
+    expect(planDeliveryTyped({ kind: 'no-pane' }, 'silas', 'hello', () => idle)).toEqual({ kind: 'undelivered', reason: 'no-pane' });
+  });
+});

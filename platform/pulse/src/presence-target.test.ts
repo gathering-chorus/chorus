@@ -45,14 +45,13 @@ describe('resolveFromPresence (#4361)', () => {
     expect(resolveFromPresence(presences, runs, 'wren')).toEqual({ kind: 'unregistered' });
   });
 
-  test('a Presence with no pane routes by tty', () => {
+  test('a Presence with no pane is no-pane, never a typed tty guess (#4362)', () => {
     const r = resolveFromPresence(
       [{ name: 'wren-presence-x', presenceOf: 'session-run-wren-run-x', pane: '', tty: '/dev/ttys006' }],
       [{ name: 'wren-run-x', runEndedAt: '' }],
       'wren',
     );
-    expect(r.kind === 'resolved' ? r.session.tmux : 'x').toBeFalsy();
-    expect(r.kind === 'resolved' ? r.session.tty : '').toBe('/dev/ttys006');
+    expect(r).toEqual({ kind: 'no-pane' });
   });
 });
 
@@ -73,11 +72,10 @@ describe('#4362 a pane that is not a tmux pane id is never a target', () => {
     expect(r.kind === 'resolved' ? r.session.tmux : null).toBe('%63');
   });
 
-  test('a lone run with pane "-" has no tmux target; it routes by its tty', () => {
-    const r = resolveFromPresence([rows[1]], [live[1]], 'silas');
-    expect(r.kind).toBe('resolved');
-    expect(r.kind === 'resolved' ? r.session.tmux : 'x').toBeFalsy();
-    expect(r.kind === 'resolved' ? r.session.tty : '').toBe('/dev/ttys007');
+  // The live state at 08:30: silas's %63 run had ended; his only live run was
+  // the werk-demo's on ttys007, pane "-". Nothing in that terminal is silas.
+  test('a lone run with pane "-" is no-pane: nothing is typed anywhere', () => {
+    expect(resolveFromPresence([rows[1]], [live[1]], 'silas')).toEqual({ kind: 'no-pane' });
   });
 });
 
