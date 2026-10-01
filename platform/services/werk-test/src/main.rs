@@ -1007,7 +1007,7 @@ fn run_nightly(args: &[String]) -> Result<i32, String> {
 
         // ── cargo: `crate` is its unit run, `crate#stem` one typed binary ──
         let cargo_root = root.clone();
-        let (cargo_results, waits) = werk_test::run_pool_gated(&sp.cargo, cargo_workers, cap, read_loadavg, gate_wait, gate_tick, |item| {
+        let (cargo_results, waits) = werk_test::run_pool_gated(&sp.cargo, cargo_workers, cap, read_loadavg, gate_wait, gate_tick, |item| werk_test::time_unit(item, || {
             let ns_bins = ns_bins_for(item.split('#').next().unwrap_or(item));
             let (c, stem) = match item.split_once('#') {
                 Some((c, s)) => (c, Some(s)),
@@ -1052,10 +1052,11 @@ fn run_nightly(args: &[String]) -> Result<i32, String> {
             }
             store_unit(item, &matched, &reasons);
             (ok, cases, ns_len, stem.is_none() && !typed.is_empty())
-        });
+        }));
         cargo_waits += waits;
         for (item, (ok, cases, ns_len, moved)) in cargo_results {
             let (kind, unit) = werk_test::stage_item_label(stage, "cargo", &item);
+            werk_test::print_unit_time(&kind, &unit, &item);
             if ok && cases.is_empty() && moved && ns_len == 0 {
                 println!("nightly-unit|{}|{}|skip|0 pass, 0 fail (no unit tests of its own — its typed test binaries ran in their own stages)", kind, unit);
                 continue;
@@ -1079,7 +1080,7 @@ fn run_nightly(args: &[String]) -> Result<i32, String> {
         let npm_plan = werk_test::plan_parallel_units(&sp.npm,
             &|u| explicit_iso.iter().any(|e| e == u.split('#').next().unwrap_or(u)));
         let npm_root = root.clone();
-        let run_pkg = |item: &str| {
+        let run_pkg = |item: &str| werk_test::time_unit(item, || {
             let (p, project) = match item.split_once('#') {
                 Some((p, proj)) => (p, Some(proj)),
                 None if split_pkgs.iter().any(|s| s == item) => (item, Some("hermetic")),
@@ -1089,7 +1090,7 @@ fn run_nightly(args: &[String]) -> Result<i32, String> {
             // #4030 AC3 — stored the moment the package finishes
             store_unit(item, &cases, &reasons);
             (ok, cases)
-        };
+        });
         let (mut npm_results, w1) = werk_test::run_pool_gated(&npm_plan.parallel, npm_workers, cap, read_loadavg, gate_wait, gate_tick, run_pkg);
         let (alone_results, w2) = werk_test::run_pool_gated(&npm_plan.serialized, 1, cap, read_loadavg, gate_wait, gate_tick, run_pkg);
         npm_results.extend(alone_results);
@@ -1097,6 +1098,7 @@ fn run_nightly(args: &[String]) -> Result<i32, String> {
         for (item, (ok, cases)) in npm_results {
             let p = item.split('#').next().unwrap_or(&item).to_string();
             let (kind, unit) = werk_test::stage_item_label(stage, npm_kind_of(&p), &item);
+            werk_test::print_unit_time(&kind, &unit, &item);
             let pkg_ns: Vec<String> = if stack_down.is_some() {
                 ns_all.iter().filter(|f| f.starts_with(&format!("{}/", p))).cloned().collect()
             } else { Vec::new() };
@@ -1148,18 +1150,19 @@ fn run_nightly(args: &[String]) -> Result<i32, String> {
         }
         let pool_root = root.clone();
         let (mut lane_results, w1): (Vec<(String, (bool, Vec<(String, String)>, String))>, usize) =
-            werk_test::run_pool_gated(&plan.parallel, bats_workers, cap, read_loadavg, gate_wait, gate_tick, |b| run_bats_stored(&pool_root, b));
+            werk_test::run_pool_gated(&plan.parallel, bats_workers, cap, read_loadavg, gate_wait, gate_tick, |b| werk_test::time_unit(b, || run_bats_stored(&pool_root, b)));
         let reader_root = root.clone();
         let (reader_results, w2) =
-            werk_test::run_pool_gated(&stack_readers, 2, cap, read_loadavg, gate_wait, gate_tick, |b| run_bats_stored(&reader_root, b));
+            werk_test::run_pool_gated(&stack_readers, 2, cap, read_loadavg, gate_wait, gate_tick, |b| werk_test::time_unit(b, || run_bats_stored(&reader_root, b)));
         lane_results.extend(reader_results);
         bats_waits += w1 + w2;
         for b in &mutators {
-            lane_results.push((b.clone(), run_bats_stored(&root, b)));
+            lane_results.push((b.clone(), werk_test::time_unit(b, || run_bats_stored(&root, b))));
         }
         for (b, (ok, cases, text)) in lane_results {
             let b = &b;
             let kind = bats_kind(b);
+            werk_test::print_unit_time(kind, b, b);
             // #4065 — a suite that DECLINED to run (rc=3) is its own verdict
             if werk_test::is_self_refused(&cases) {
                 println!("{}", werk_test::nightly_lane_line_refused(kind, b));
@@ -1197,8 +1200,9 @@ fn run_nightly(args: &[String]) -> Result<i32, String> {
             c.arg("-c").arg(&cmd).current_dir(&root)
                 .env("CHORUS_CONTEXT", "")
                 .env("CLEARING_URL", std::env::var("CLEARING_URL").unwrap_or_else(|_| "http://localhost:3470".to_string()));
-            let (rc, out) = werk_test::run_capped(c, std::time::Duration::from_secs(1800));
+            let (rc, out) = werk_test::time_unit("proving/flows", || werk_test::run_capped(c, std::time::Duration::from_secs(1800)));
             let (verdict, summary) = werk_test::ui_lane_verdict(rc, &out);
+            werk_test::print_unit_time("ui", "proving/flows", "proving/flows");
             println!("nightly-unit|ui|proving/flows|{}|{}", verdict, summary);
             if verdict == "fail" {
                 any_failed = true;
@@ -3043,3 +3047,4 @@ mod bats_unmeasured_4265 {
         assert!(bats_outcome(&mut Command::new("/nonexistent/bats")) == BatsOutcome::Fail);
     }
 }
+

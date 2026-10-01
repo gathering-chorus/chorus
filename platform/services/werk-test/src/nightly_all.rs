@@ -127,14 +127,23 @@ impl Ctx {
     /// #4156 — one SUITE row: the log line, and the same row in the graph.
     fn record_row(&self, row: &SuiteRow) {
         self.append_log(&row.line());
+        if let Some(t) = row.time_line() {
+            self.append_log(&t);
+        }
         if !self.graph.enabled {
             return;
         }
         let order = self.graph.order.get() + 1;
         self.graph.order.set(order);
         let ts = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).map(|d| d.as_millis()).unwrap_or(0);
-        let body = werk_test::nightly_run::suite_row_payload(&self.graph.run_ts.borrow(), order, row, ts);
-        if self.post_graph("testsuiteruns", &env_or("WERK_NIGHTLY_MINT_ROLE", "nightly"), &body, &self.graph.token) {
+        let role = env_or("WERK_NIGHTLY_MINT_ROLE", "nightly");
+        let body = werk_test::nightly_run::suite_row_payload_timed(&self.graph.run_ts.borrow(), order, row, ts);
+        // #4416 — a store whose shape predates suiteSeconds refuses the field
+        // as off-model; the row still lands without it, never lost for a timing
+        let landed = self.post_graph("testsuiteruns", &role, &body, &self.graph.token)
+            || (row.millis.is_some()
+                && self.post_graph("testsuiteruns", &role, &werk_test::nightly_run::suite_row_payload(&self.graph.run_ts.borrow(), order, row, ts), &self.graph.token));
+        if landed {
             self.graph.written.set(self.graph.written.get() + 1);
         } else {
             self.graph.failed.set(self.graph.failed.get() + 1);
@@ -569,6 +578,8 @@ fn run_runner(ctx: &Ctx, box_over_load: bool) -> LaneResult {
     let mut stored: Option<usize> = None;
     let mut whys: Vec<(String, String, String, String)> = Vec::new();
     let mut nudged: std::collections::HashSet<String> = std::collections::HashSet::new();
+    // #4416 — each unit's run time arrives on its own line just before the unit
+    let mut unit_ms: HashMap<String, u64> = HashMap::new();
     for line in BufReader::new(stdout).lines().flatten() {
         if stop_requested() {
             let _ = child.kill();
@@ -597,7 +608,12 @@ fn run_runner(ctx: &Ctx, box_over_load: bool) -> LaneResult {
             let abs = if p.starts_with('/') { p.to_string() } else { format!("{}/{}", ctx.root, p) };
             std::path::Path::new(&abs).exists()
         };
-        if let Some((row, contradiction)) = fold_unit_line(&line, &|p| ctx.owner(p), box_over_load, &exists) {
+        if let Some((key, ms)) = werk_test::nightly_run::parse_unit_time_line(&line) {
+            unit_ms.insert(key, ms);
+            continue;
+        }
+        if let Some((mut row, contradiction)) = fold_unit_line(&line, &|p| ctx.owner(p), box_over_load, &exists) {
+            row.millis = werk_test::nightly_run::unit_line_key(&line).and_then(|k| unit_ms.remove(&k));
             if contradiction {
                 eprintln!("nightly: REPORTER CONTRADICTION — row says pass with failures; recording fail (#3753 AC4, row-level)");
                 ctx.spine("nightly.reporter.contradiction", &[("suite".into(), row.suite_name().into()), ("kind".into(), row.kind.clone())]);
