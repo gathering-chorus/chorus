@@ -87,20 +87,23 @@ setup() {
   [[ "$output" != *"continue-on-error: true"* ]] || return 1
 }
 
-# #4180 — the nightly must be a FULL pass. The first launchd-started run walked
-# 0 files: it read the watermark and did a delta, which the on-land step had
-# already done. A nightly that repeats the delta never sees graph-side drift.
-@test "the nightly forces a full walk, not a delta" {
+# #4185 — the FULL pass moved to the 03:00 nightly's first step (werk-test
+# forces it with CHORUS_CRAWL_WATERMARK="", pinned by its crawl_first_4318
+# unit tests). This unit is the on-land DELTA: no schedule, and no empty
+# watermark — that override made every land start a full pass (launchctl
+# showed runs = 100 on 2026-09-30, each killing the one before). #4180's
+# "nightly forces a full walk" now lives in the nightly, not here.
+@test "the crawl unit is the on-land delta: no schedule, no full-walk override" {
+  run /usr/libexec/PlistBuddy -c 'Print :StartCalendarInterval' "$PLIST"
+  [ "$status" -ne 0 ]
   run /usr/libexec/PlistBuddy -c 'Print :EnvironmentVariables:CHORUS_CRAWL_WATERMARK' "$PLIST"
-  [ "$status" -eq 0 ]
-  [ -z "$output" ]
+  [ "$status" -ne 0 ]
 }
 
-# NEGATIVE PROOF: a unit without the override is the one that ran a delta —
-# the check must fail on it.
-@test "NEGATIVE PROOF: a unit without the full-walk override is caught" {
+# NEGATIVE PROOF: a unit that forces a full walk on every land is caught.
+@test "NEGATIVE PROOF: a unit that forces a full walk on every land is caught" {
   bad="$BATS_TEST_TMPDIR/bad.plist"; cp "$PLIST" "$bad"
-  /usr/libexec/PlistBuddy -c 'Delete :EnvironmentVariables:CHORUS_CRAWL_WATERMARK' "$bad"
+  /usr/libexec/PlistBuddy -c 'Add :EnvironmentVariables:CHORUS_CRAWL_WATERMARK string ""' "$bad"
   run /usr/libexec/PlistBuddy -c 'Print :EnvironmentVariables:CHORUS_CRAWL_WATERMARK' "$bad"
-  [ "$status" -ne 0 ]
+  [ "$status" -eq 0 ]
 }
