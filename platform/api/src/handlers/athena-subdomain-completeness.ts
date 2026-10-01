@@ -71,7 +71,12 @@ function defaultEnvelope(name: string, data: unknown, durationMs: number, extra:
 }
 
 function buildMetaQuery(sdUri: string): string {
-  return `PREFIX chorus: <https://jeffbridwell.com/chorus#> PREFIX rdfs: <http://www.w3.org/2000/01/rdf-schema#> SELECT ?label ?comment ?ownerLabel ?stepLabel (COUNT(DISTINCT ?consumed) AS ?consumesCount) (COUNT(DISTINCT ?consumer) AS ?consumedByCount) WHERE { GRAPH <urn:chorus:domains:domains> { <${sdUri}> a chorus:Domain . OPTIONAL { <${sdUri}> rdfs:label ?label } OPTIONAL { <${sdUri}> rdfs:comment ?comment } OPTIONAL { <${sdUri}> chorus:ownedBy ?owner } OPTIONAL { <${sdUri}> chorus:primaryStep ?step } OPTIONAL { <${sdUri}> chorus:consumes ?consumed } OPTIONAL { ?consumer chorus:consumes <${sdUri}> } } OPTIONAL { GRAPH ?og { ?owner rdfs:label ?ownerLabel } } OPTIONAL { GRAPH ?sg { ?step rdfs:label ?stepLabel } } } GROUP BY ?label ?comment ?ownerLabel ?stepLabel`;
+  // #4415 — the owner and step are bound INSIDE the optional that looks up
+  // their label. With them bound in a separate optional, a domain with no
+  // primaryStep left ?step unbound, and `GRAPH ?sg { ?step rdfs:label ?l }`
+  // matched every label in all 6,262 graphs: 5.5 s per call on the live store,
+  // and board reported a TestResult's label as its step (2026-10-01).
+  return `PREFIX chorus: <https://jeffbridwell.com/chorus#> PREFIX rdfs: <http://www.w3.org/2000/01/rdf-schema#> SELECT ?label ?comment ?ownerLabel ?stepLabel (COUNT(DISTINCT ?consumed) AS ?consumesCount) (COUNT(DISTINCT ?consumer) AS ?consumedByCount) WHERE { GRAPH <urn:chorus:domains:domains> { <${sdUri}> a chorus:Domain . OPTIONAL { <${sdUri}> rdfs:label ?label } OPTIONAL { <${sdUri}> rdfs:comment ?comment } OPTIONAL { <${sdUri}> chorus:consumes ?consumed } OPTIONAL { ?consumer chorus:consumes <${sdUri}> } } OPTIONAL { GRAPH <urn:chorus:domains:domains> { <${sdUri}> chorus:ownedBy ?owner } GRAPH ?og { ?owner rdfs:label ?ownerLabel } } OPTIONAL { GRAPH <urn:chorus:domains:domains> { <${sdUri}> chorus:primaryStep ?step } GRAPH ?sg { ?step rdfs:label ?stepLabel } } } GROUP BY ?label ?comment ?ownerLabel ?stepLabel`;
 }
 
 function buildCountQuery(sdUri: string, predicate: string): string {
