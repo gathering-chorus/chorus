@@ -1014,6 +1014,10 @@ app.post('/api/upload', (req, res) => {
 });
 
 // API: voice capture — receive audio, transcribe with whisper-cli, return transcript (#1782)
+// #4417 — configurable so a test Clearing keeps its audio in its own world;
+// the default is the live room's directory.
+const AUDIO_UPLOAD_DIR = process.env.CLEARING_AUDIO_DIR || '/tmp/bridge-audio-uploads';
+
 app.post('/api/voice', (req, res) => {
   const fs = require('fs');
   const { execSync } = require('child_process');
@@ -1024,7 +1028,7 @@ app.post('/api/voice', (req, res) => {
     if (body.length === 0) { res.json({ error: 'empty audio' }); return; }
 
     const ts = Date.now();
-    const uploadDir = '/tmp/bridge-audio-uploads';
+    const uploadDir = AUDIO_UPLOAD_DIR;
     fs.mkdirSync(uploadDir, { recursive: true });
     const webmPath = `${uploadDir}/${ts}.webm`;
     const wavPath = `${uploadDir}/${ts}.wav`;
@@ -1032,13 +1036,15 @@ app.post('/api/voice', (req, res) => {
 
     try {
       // Convert webm to wav (whisper-cli needs wav)
-      execSync(`ffmpeg -i "${webmPath}" -ar 16000 -ac 1 -y "${wavPath}" 2>/dev/null`, { timeout: 15000 });
+      // env passed explicitly: the tools are found on this process's PATH, which is
+      // also how a test puts its stubs in front of the real binaries (#4417).
+      execSync(`ffmpeg -i "${webmPath}" -ar 16000 -ac 1 -y "${wavPath}" 2>/dev/null`, { timeout: 15000, env: process.env });
 
       // Transcribe with whisper-cli
       const model = '/opt/homebrew/share/whisper/ggml-base.en.bin';
       const output = execSync(
         `whisper-cli -m "${model}" -f "${wavPath}" --no-timestamps -t 4 2>/dev/null`,
-        { encoding: 'utf-8', timeout: 30000 }
+        { encoding: 'utf-8', timeout: 30000, env: process.env }
       ).trim();
 
       // Clean up wav (keep webm in audio-uploads for playback persistence)
@@ -1058,7 +1064,7 @@ app.post('/api/voice', (req, res) => {
 });
 
 // Serve persisted audio files for playback (#1782)
-app.use('/audio-uploads', express.static('/tmp/bridge-audio-uploads'));
+app.use('/audio-uploads', express.static(AUDIO_UPLOAD_DIR));
 
 // API: get commands-only view from observations JSONL
 app.get('/api/commands/:role', (req, res) => {

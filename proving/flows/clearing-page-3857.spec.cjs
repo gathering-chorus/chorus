@@ -173,3 +173,53 @@ test.describe('#3857 the domain panel counts what it shows', () => {
     expect((await subCounts(page)).reduce((a, b) => a + b, 0)).toBe(3);
   });
 });
+
+// #4417 — voice capture, page half (from voice-capture-3857's index.html regexes).
+// The browser has no microphone here, so getUserMedia and MediaRecorder are
+// stand-ins that hand over one chunk of bytes; /api/voice is answered with a
+// transcript (the server half is driven in directing/clearing voice-capture-3857).
+test.describe('#3857 talking to the room', () => {
+  test.beforeEach(async ({ page }) => {
+    await page.addInitScript(() => {
+      navigator.mediaDevices.getUserMedia = async () => ({ getAudioTracks: () => [{}], getTracks: () => [{ stop() {} }] });
+      window.MediaRecorder = class {
+        static isTypeSupported() { return true; }
+        constructor() { this.state = 'inactive'; }
+        start() { this.state = 'recording'; }
+        stop() {
+          this.state = 'inactive';
+          this.ondataavailable && this.ondataavailable({ data: new Blob(['fake-audio'], { type: 'audio/webm' }) });
+          this.onstop && this.onstop();
+        }
+      };
+    });
+  });
+
+  test('tap to record, tap to stop: the audio is uploaded and the words arrive as his message, no Send tap', async ({ page }) => {
+    const said = `voice note ${Date.now()}`;
+    let uploaded = 0;
+    await page.route('**/api/voice', async (route) => {
+      uploaded = (route.request().postDataBuffer() || Buffer.alloc(0)).length;
+      await route.fulfill({ contentType: 'application/json', body: JSON.stringify({ transcript: said, audioFile: '/audio-uploads/x.webm' }) });
+    });
+    await open(page);
+    const mic = page.locator('#mic-btn');
+    await mic.click();
+    await expect(mic).toHaveClass(/recording/);
+    await mic.click();
+    await expect(mic).not.toHaveClass(/recording/);
+    await expect(page.locator('#messages')).toContainText(said, { timeout: 10000 });
+    expect(uploaded).toBeGreaterThan(0);
+  });
+
+  test('NEGATIVE PROOF: a failed transcription sends nothing and says so in the box', async ({ page }) => {
+    await page.route('**/api/voice', (route) => route.fulfill({ contentType: 'application/json', body: JSON.stringify({ error: 'Transcription failed: stub' }) }));
+    await open(page);
+    const before = await page.locator('#messages .msg').count();
+    await page.locator('#mic-btn').click();
+    await page.locator('#mic-btn').click();
+    await expect(page.locator('#input')).toHaveAttribute('placeholder', /Transcription failed/, { timeout: 10000 });
+    await page.waitForTimeout(1000);
+    expect(await page.locator('#messages .msg').count()).toBe(before);
+  });
+});

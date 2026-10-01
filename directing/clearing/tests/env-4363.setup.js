@@ -20,3 +20,5 @@ if (!process.env.SHARE_STATE_FILE) process.env.SHARE_STATE_FILE = path.join(dir,
 // answer stands up its own stub and sets the variable itself.
 if (!process.env.ATHENA_MAKE_URL) process.env.ATHENA_MAKE_URL = 'http://127.0.0.1:9';
 if (!process.env.CHORUS_FUSEKI_QUERY) process.env.CHORUS_FUSEKI_QUERY = 'http://127.0.0.1:9/query';
+// #4417 — voice uploads land in the test's own directory, never the live room's.
+if (!process.env.CLEARING_AUDIO_DIR) process.env.CLEARING_AUDIO_DIR = path.join(dir, 'audio-uploads');
