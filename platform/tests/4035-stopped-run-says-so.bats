@@ -14,7 +14,10 @@ setup() {
   printf '#!/bin/bash\necho "  PID  PPID ELAPSED COMMAND"\n' > "$BATS_TEST_TMPDIR/ps-none"; chmod +x "$BATS_TEST_TMPDIR/ps-none"
   export NIGHTLY_PS="$BATS_TEST_TMPDIR/ps-none"
   mkdir -p "$T/root/platform/tests"
-  printf '#!/bin/bash\necho "nightly-plan|bats|x"\nsleep 300\n' > "$T/runner.sh"; chmod +x "$T/runner.sh"
+  # #4416 — the stub IS its sleep (exec, argv0 kept so pgrep finds it): when werk-test
+  # reaps the runner the sleep dies with it. It was `sleep 300` in a bash child that
+  # outlived the reap and held bats open: ~10 min per nightly for a 1.6 s suite.
+  printf '#!/bin/bash\necho "nightly-plan|bats|x"\nexec -a "$0" sleep 20\n' > "$T/runner.sh"; chmod +x "$T/runner.sh"
   printf '#!/bin/bash\nexit 0\n' > "$T/nudge.sh"; chmod +x "$T/nudge.sh"
 }
 
