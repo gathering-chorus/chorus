@@ -9,10 +9,6 @@ const INTEGRATION_ENABLED = process.env.RUN_INTEGRATION === 'true';
 const API = process.env.CHORUS_API || 'http://localhost:3340';
 
 const ATHENA_MAKE = process.env.ATHENA_MAKE_URL || 'http://localhost:3360';
-// #4415 — completeness on a populated subdomain measured 7.2 s on the live door
-// (board, 2026-10-01 07:15); jest's 5 s default reads that as a failure. The
-// cases test the answer; the slowness is reported separately, not hidden here.
-jest.setTimeout(20_000);
 
 let apiUp = false;
 
