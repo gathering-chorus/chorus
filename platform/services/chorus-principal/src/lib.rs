@@ -658,6 +658,10 @@ fn person_signed_in(ctx: &Ctx) -> Result<String, String> {
         let pa = sh(&ctx.curl, &["-s", "-w", "\n%{http_code}", "--max-time", "5", &purl]).unwrap_or_default();
         if pa.contains("\"principalKind\":\"person\"") { return Ok(who); }
     }
+    // #4412 — Jeff 2026-10-01: "both use cases are valid". A person typing in
+    // their own Mac account is present too: not an agent session, and the OS
+    // user is a person principal's hostAccount.
+    if let Some(p) = person_at_terminal(ctx) { return Ok(p); }
     // #4412 — with CSS down nobody CAN sign in; say that, with its one fix
     if let Some((_, url)) = ctx.services.iter().find(|(n, _)| n == "identity") {
         let code = sh(&ctx.probe, &["-s", "-o", "/dev/null", "-w", "%{http_code}", "--max-time", "2", url]).unwrap_or_default();
@@ -665,7 +669,19 @@ fn person_signed_in(ctx: &Ctx) -> Result<String, String> {
             return Err(format!("nobody can sign in: CSS (identity, {}) is not answering.\n  fix: {}", url, CSS_RESTART));
         }
     }
-    Err(format!("nobody is signed in: a role's session starts and ends only while a person is signed in to the Clearing.\n  fix: sign in at {}", CLEARING_SIGN_IN))
+    Err(format!("nobody is signed in: a role's session starts and ends only while a person is present — signed in to the Clearing, or at their own terminal.\n  fix: sign in at {}, or run this from your own terminal (not inside a role session)", CLEARING_SIGN_IN))
+}
+
+/// #4412 — the person at this terminal, if any: never from inside an agent
+/// session (CLAUDECODE), and only when this Mac account is a person
+/// principal's hostAccount.
+fn person_at_terminal(ctx: &Ctx) -> Option<String> {
+    if env::var("CLAUDECODE").map(|v| !v.is_empty()).unwrap_or(false) { return None; }
+    let user = env::var("USER").ok().filter(|u| !u.is_empty())
+        .or_else(|| sh("id", &["-un"]).ok().map(|u| u.trim().to_string()))?;
+    let url = format!("{}/v1/identity/principals?limit=1000", ctx.api);
+    let body = sh(&ctx.curl, &["-s", "--max-time", "5", &url]).unwrap_or_default();
+    rows::person_for_account(&body, &user)
 }
 
 fn login_or_resume(ctx: &Ctx, role: &str) -> Result<LoginState, ()> {

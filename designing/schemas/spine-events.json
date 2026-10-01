@@ -2929,6 +2929,17 @@
         "role": "Acting role"
       }
     },
+    "deploy.dependent.added": {
+      "vertebra": "building",
+      "source": "werk",
+      "description": "Werk `deploy` verb (canonical): a binary crate added to the deploy because it path-depends on a changed lib-only crate (#4412).",
+      "fields": {
+        "trace_id": "Werk trace join key",
+        "role": "Acting role",
+        "crate": "The dependent crate added",
+        "reason": "links-a-changed-lib"
+      }
+    },
     "deploy.skipped": {
       "vertebra": "building",
       "source": "werk",

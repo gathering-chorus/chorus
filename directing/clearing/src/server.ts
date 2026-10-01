@@ -40,7 +40,7 @@ import {
   exchangeCode, refreshSignIn, type OidcConfig,
 } from './solid-oidc';
 import {
-  openPersonSession, touchPersonSession, closePersonSession, SIGN_IN_LASTS_MS, type PersonSessionDeps,
+  openPersonSession, touchPersonSession, closePersonSession, getRecord, SIGN_IN_LASTS_MS, type PersonSessionDeps,
 } from './person-session';
 import { gateDecision } from './server-auth';
 import { changePassword } from './account';
@@ -169,6 +169,11 @@ function readSessionCookie(req: Request): { webid: string; psk?: string } | null
     if (s.psk) void closePersonSession(personDeps(req), s.psk).catch(() => {});
     return null;
   }
+  // #4412 — a cookie with no Session row behind it (signed in before #4412,
+  // or the row write failed) is not a sign-in roles can see. Treat it as
+  // signed out so the next visit signs in again and writes the row; otherwise
+  // "sign in at the Clearing" lands on a page that says he already is.
+  if (!s.psk || !getRecord(personDeps(req), s.psk)) return null;
   return { webid: s.webid, psk: s.psk };
 }
 
