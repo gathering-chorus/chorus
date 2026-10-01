@@ -1,3 +1,4 @@
+// @test-type: unit — pure module calls with fixtures; no live services
 /**
  * Participants — unit tests (#2167 phase 1).
  *

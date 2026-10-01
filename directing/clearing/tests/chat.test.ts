@@ -1,3 +1,4 @@
+// @test-type: unit — pure module calls with fixtures; no live services
 /**
  * ClearingChat — unit tests (#2167 phase 2).
  *

@@ -1,3 +1,4 @@
+// @test-type: unit — TilePoller with global fetch stubbed; no live board API
 /**
  * tiles.ts — API board fetch (#2261).
  *

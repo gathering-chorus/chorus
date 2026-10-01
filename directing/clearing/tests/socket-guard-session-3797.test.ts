@@ -1,4 +1,4 @@
-// @test-type: security — calls the REAL socketSessionAuthed with real cookie strings signed by the guard's own algorithm; allow-set and key injected, no live services. Brings its own world.
+// @test-type: unit:security — calls the REAL socketSessionAuthed with real cookie strings signed by the guard's own algorithm; allow-set and key injected, no live services. Brings its own world.
 /**
  * #3797 — a person who signed in ONCE can send, not just read.
  *

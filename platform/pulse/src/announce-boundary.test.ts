@@ -1,3 +1,4 @@
+// @test-type: unit — pure pulse logic on fixtures; no live services
 /* eslint-disable sonarjs/no-duplicate-string -- repeated fixture literals are real captured tape, intentionally verbatim (#3429) */
 // #3357 — the announce boundary (RED first). Fixtures are TODAY's real tape
 // (2026-06-11): the event-loop alert that hit Jeff 20+ times across three

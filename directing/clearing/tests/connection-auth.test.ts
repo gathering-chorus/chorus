@@ -1,4 +1,4 @@
-// @test-type: security
+// @test-type: unit:security
 /**
  * #3669 — the WebSocket tunnel-bypass hole, as a regression test.
  *
