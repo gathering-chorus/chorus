@@ -135,9 +135,9 @@ Then('pulse resolves wren to its pane from the Presence row', STEP, async functi
 
 Given('the hooks daemon is not answering', STEP, function () {
   const T = world();
-  // login's own service list (not the harness stub list), with hooks marked down
-  fs.appendFileSync(path.join(T, 'env.extra'), 'unset AWAKE_SERVICES\n');
-  fs.writeFileSync(path.join(T, 'down-hooks'), '');
+  // login's own service list (not the harness stub list); the hooks socket
+  // points where nothing listens (#4409: login checks it, loud not refused)
+  fs.appendFileSync(path.join(T, 'env.extra'), `unset AWAKE_SERVICES\nexport AWAKE_HOOKS_SOCKET="${path.join(T, 'no-hooks.sock')}"\n`);
 });
 
 Then('the login output says the hooks daemon is down', STEP, function () {

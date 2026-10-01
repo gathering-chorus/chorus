@@ -699,7 +699,18 @@ fn login_or_resume(ctx: &Ctx, role: &str) -> Result<LoginState, ()> {
     login_after_services(ctx, role, ctx.service_wait)
 }
 
+/// #4409 — the hooks daemon answers on a unix socket, not a URL, so it is not
+/// in AWAKE_SERVICES. Down is loud, never a refusal: the role starts and Jeff
+/// decides. AWAKE_HOOKS_SOCKET overrides the path; "none" skips the check.
+fn hooks_down(ctx: &Ctx, role: &str) -> Option<String> {
+    let path = envd("AWAKE_HOOKS_SOCKET", &format!("{}/.chorus/run/chorus-hooks.sock", env::var("HOME").unwrap_or_default()));
+    if path == "none" || std::os::unix::net::UnixStream::connect(&path).is_ok() { return None; }
+    ctx.spine(&["session.login.degraded", role, "reason=hooks-daemon-down"]);
+    Some(format!("hooks: the hooks daemon is not answering ({}); gates and nudges are off until it is.\n  fix: launchctl kickstart -k gui/$(id -u)/com.chorus.hooks", path))
+}
+
 fn login_after_services(ctx: &Ctx, role: &str, bound: u64) -> Result<LoginState, ()> {
+    if let Some(line) = hooks_down(ctx, role) { eprintln!("{}", line); }
     match wait_for_services(ctx, bound, true) {
         Ok(()) => do_login(ctx, role),
         Err(why) => { ctx.spine(&["session.login.degraded", role, &format!("reason={}", why)]); Ok(LoginState::Pending { why, pid: None }) }
