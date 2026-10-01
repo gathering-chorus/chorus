@@ -10,7 +10,6 @@
  */
 import { fetchAthenaSubdomainCompleteness } from '../../src/handlers/athena-subdomain-completeness';
 import { makeSparqlFromStore } from '../fixtures/oxigraph-sparql';
-// eslint-disable-next-line @typescript-eslint/no-require-imports
 const oxigraph = require('oxigraph');
 
 const NS = 'https://jeffbridwell.com/chorus#';
