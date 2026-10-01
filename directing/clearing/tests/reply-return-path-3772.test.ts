@@ -1,4 +1,6 @@
 // @test-type: unit — router stub, fixture JSONL lines, env-tuned timers; no live sessions, brings its own world.
+// @card: #3772
+// @owner: wren
 /**
  * #3772 — the Clearing return path.
  *

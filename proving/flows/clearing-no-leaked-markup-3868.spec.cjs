@@ -1,4 +1,6 @@
 // @test-type: e2e:ui — playwright browser flow (clearing-no-leaked-markup-3868), live surface
+// @card: #3868
+// @owner: wren
 /**
  * #3868 — no code commentary renders in Jeff's room.
  *

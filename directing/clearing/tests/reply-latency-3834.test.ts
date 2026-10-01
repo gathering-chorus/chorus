@@ -1,4 +1,6 @@
 // @test-type: unit — feeds transcript lines to the tailer with fake timers; no fs.watch, no sessions on disk, no network.
+// @card: #3834
+// @owner: wren
 /**
  * #3834 — a short answer should appear in seconds, not 45 of them.
  *

@@ -1,4 +1,6 @@
 // @test-type: unit — pure identity/attribution logic; injected publish, no relay, brings its own world.
+// @card: #3823
+// @owner: wren
 /**
  * #3823 — the room's identity rules, both directions.
  *

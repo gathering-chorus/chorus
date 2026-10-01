@@ -1,4 +1,6 @@
 // @test-type: unit:security — POST /api/message to the in-process Clearing, the security graph answered by a stub; who a post is "from".
+// @card: #4417
+// @owner: wren
 /**
  * #4417 (Silas 08-25, 10-01) — `from` was whatever the body said, so the shared
  * machine credential could post as Jeff and the room and team memory recorded it

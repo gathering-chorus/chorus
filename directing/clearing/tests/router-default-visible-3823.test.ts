@@ -1,4 +1,6 @@
 // @test-type: unit — the router classifies in-process; no I/O, no fixtures on disk.
+// @card: #3823
+// @owner: wren
 /**
  * #3823 — the classifier's fallback must not swallow role messages.
  *

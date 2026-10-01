@@ -1,4 +1,6 @@
 // @test-type: e2e:ui — playwright browser flow (clearing-base-path-3872), live surface
+// @card: #3872
+// @owner: wren
 /**
  * #3872 — the Clearing CONNECTS at the /clearing mount, in a browser.
  *

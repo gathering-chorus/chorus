@@ -1,4 +1,6 @@
 // @test-type: unit — brings its own world (tmpdir cursor file), no live relay.
+// @card: #3907
+// @owner: wren
 /**
  * #3893 — replay proofs.
  *

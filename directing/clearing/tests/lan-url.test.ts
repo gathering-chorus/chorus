@@ -1,4 +1,6 @@
 // @test-type: unit — pure module calls with fixtures; no live services
+// @card: #3366
+// @owner: wren
 /**
  * #3366 — LAN IP drift broke wifi access to the Clearing.
  *

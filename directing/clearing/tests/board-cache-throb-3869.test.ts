@@ -1,4 +1,6 @@
 // @test-type: unit — pure merge over cache inputs, no io.
+// @card: #3869
+// @owner: wren
 /**
  * #3869 (second leg) — the role cards "throb".
  *

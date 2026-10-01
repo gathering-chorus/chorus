@@ -1,4 +1,6 @@
 // @test-type: unit — injected stubs (signer/socket/env); no live relay, no real key, brings its own world.
+// @card: #3696
+// @owner: wren
 // #3696 — the live relay adapter's pure/framing logic + the publish state machine
 // with an injected socket stub. The real WebSocket is integration-proven against
 // the relay (a bad sig / missing channel is rejected there); here we pin framing,

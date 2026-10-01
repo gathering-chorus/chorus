@@ -1,4 +1,6 @@
 // @test-type: unit — TilePoller with global fetch stubbed; no live board API
+// @card: #2261
+// @owner: wren
 /**
  * tiles.ts — API board fetch (#2261).
  *

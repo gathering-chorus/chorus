@@ -1,4 +1,6 @@
 // @test-type: unit — a socket.io client talks to the in-process Clearing; pulse is a stub on an ephemeral port; brings its own world.
+// @card: #1840
+// @owner: wren
 /**
  * Socket.IO ack — #1934, contract rewritten #3646.
  *

@@ -1,4 +1,6 @@
 // @test-type: unit — pure text normalization; brings its own world.
+// @card: #3887
+// @owner: wren
 /**
  * #3887 — Jeff's slash commands render as commands, not as harness markup.
  *

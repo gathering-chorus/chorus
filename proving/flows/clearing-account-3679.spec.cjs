@@ -1,4 +1,6 @@
 // @test-type: integration:api — HTTP against its own Clearing (lib/own-clearing.cjs) with the identity server (CSS) stubbed; never the live CSS
+// @card: #4417
+// @owner: wren
 /**
  * #3679 — changing your password from the Clearing's account page.
  *

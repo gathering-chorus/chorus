@@ -1,4 +1,6 @@
 // @test-type: unit — pure; brings its own world.
+// @card: #3907
+// @owner: wren
 /**
  * #3893 — proofs that a missing message is VISIBLE.
  *

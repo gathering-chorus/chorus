@@ -1,4 +1,6 @@
 // @test-type: unit:security
+// @card: #3669
+// @owner: wren
 /**
  * #3669 lane 3 — the human browser login core. These pin the security-critical
  * pure pieces: PKCE S256, tamper-evident signed cookies, and the open-redirect

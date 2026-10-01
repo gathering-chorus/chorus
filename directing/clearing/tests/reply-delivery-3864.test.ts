@@ -1,4 +1,6 @@
 // @test-type: unit — signal is fixture-data: pure hasher + emit shaping, no io
+// @card: #3864
+// @owner: wren
 //
 // #3864 — reply-delivery correlation, Clearing leg. The content hash is the
 // cross-language join key with chorus-hooks' Rust hasher (reply.emitted at

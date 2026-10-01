@@ -1,4 +1,6 @@
 // @test-type: unit — signal is fixture-data: pure detector, no io, no timers
+// @card: #3864
+// @owner: wren
 /**
  * #3864 — reply-delivery gap detector (pure core).
  *

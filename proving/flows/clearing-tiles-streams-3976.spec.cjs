@@ -1,4 +1,6 @@
 // @test-type: e2e:ui — playwright browser flow (clearing-tiles-streams-3976), live surface
+// @card: #3976
+// @owner: wren
 /**
  * #3976 — the surface Jeff actually reads: tiles, the streams pane, and the
  * times on both.

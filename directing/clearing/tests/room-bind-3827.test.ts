@@ -1,4 +1,6 @@
 // @test-type: unit — calls the pure bind decision directly; no server, no relay, no pod.
+// @card: #3827
+// @owner: wren
 /**
  * #3827 — may this browser's key speak as this person?
  *

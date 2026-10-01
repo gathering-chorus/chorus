@@ -1,4 +1,6 @@
 // @test-type: unit
+// @card: #4006
+// @owner: wren
 /**
  * #4006 — the retirement gate for the shim's `nudge` subcommand.
  *

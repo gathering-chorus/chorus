@@ -1,4 +1,6 @@
 // @test-type: unit — signal is fixture-data: pure functions, no io
+// @card: #3852
+// @owner: wren
 //
 // #3852 — Jeff, 2026-08-13: "all commands run by agent roles must show in
 // streams" and "must not be best effort."

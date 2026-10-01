@@ -1,4 +1,6 @@
 // @test-type: unit — pure view-model functions, no DOM, no live services.
+// @card: #3746
+// @owner: wren
 /**
  * #3746 — role filtering (Mark's case: the room narrowed to the role he works
  * with) + chrome compaction (Jeff: "the werk-demo styling and length of

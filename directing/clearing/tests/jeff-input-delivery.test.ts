@@ -1,4 +1,6 @@
 // @test-type: unit — drives deliverJeffMessageToTarget against a stub pulse on an ephemeral port and a stub chorus-log; brings its own world.
+// @card: #3343
+// @owner: wren
 /**
  * #3343 — Jeff's Clearing input rides the pulse delivery worker.
  *

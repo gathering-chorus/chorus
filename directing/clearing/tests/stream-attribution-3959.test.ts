@@ -1,4 +1,6 @@
 // @test-type: integration:api
+// @card: #3959
+// @owner: wren
 //
 // #3959 — THE TEST WHOSE ABSENCE HID SIX DEFECTS.
 //

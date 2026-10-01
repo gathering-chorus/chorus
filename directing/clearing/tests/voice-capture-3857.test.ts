@@ -1,4 +1,6 @@
 // @test-type: unit — POSTs audio to the in-process Clearing with ffmpeg and whisper-cli stubbed on PATH; audio lands in a temp dir.
+// @card: #3857
+// @owner: wren
 /**
  * #3857 voice capture, server half. Jeff taps the mic, the page uploads the
  * recording, the Clearing keeps the audio and returns a transcript that the

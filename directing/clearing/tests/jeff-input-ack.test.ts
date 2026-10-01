@@ -1,4 +1,6 @@
 // @test-type: unit — pure contract module (processJeffInput), injected fakes, no I/O.
+// @card: #3646
+// @owner: wren
 // #3646 — TDD: the ack contract that fixes the works-once bug.
 // The client's "Sent" must mean accepted+persisted (ingested), never "every
 // terminal hand-off finished" — the old inline handler awaited sequential

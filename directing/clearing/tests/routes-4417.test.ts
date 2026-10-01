@@ -1,4 +1,6 @@
 // @test-type: unit — the Clearing's remaining routes over HTTP, in-process; the cards CLI is a stub under a temp CHORUS_ROOT.
+// @card: #4417
+// @owner: wren
 /**
  * #4417 — routes Kade's list showed named by one test file or none: the guest
  * name, the AI chat session, the message window, the tiles and the card panel.

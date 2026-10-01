@@ -1,4 +1,6 @@
 // @test-type: integration — #3442 backfill: touches a real tmpdir (mkdtemp), not unit.
+// @card: #2167
+// @owner: wren
 /**
  * SessionTailer — unit tests (#2167 phase 2).
  *

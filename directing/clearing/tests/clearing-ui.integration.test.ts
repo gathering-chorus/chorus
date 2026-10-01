@@ -1,4 +1,6 @@
 // @test-type: integration — spawns its own Clearing on a test port; pulse dead-ported, nudge mocked (own world).
+// @card: #1827
+// @owner: wren
 /**
  * Clearing UI Validation Tests — #1818
  *

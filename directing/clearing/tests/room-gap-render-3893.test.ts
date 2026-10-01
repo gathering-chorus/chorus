@@ -1,4 +1,6 @@
 // @test-type: unit — router classification only; brings its own world.
+// @card: #3907
+// @owner: wren
 /**
  * #3893 — the gap marker has to survive the room's own filters.
  *

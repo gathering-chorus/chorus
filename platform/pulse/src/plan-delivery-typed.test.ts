@@ -1,4 +1,6 @@
 // @test-type: unit — #3700 (Silas half): the typed delivery decision. Replaces
+// @card: #3700
+// @owner: wren
 // the null→name-match fallthrough with four explicit outcomes. Jeff's 07-04
 // visibility ruling is honored by TYPE, not by wrong-terminal keystroke: an
 // undeliverable nudge reports its reason to the SENDER + spine — never silent,

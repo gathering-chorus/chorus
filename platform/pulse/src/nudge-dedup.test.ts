@@ -1,4 +1,6 @@
 // @test-type: unit — pure pulse logic on fixtures; no live services
+// @card: #3335
+// @owner: wren
 // #3335 Pattern 7 — dedup window tests (jest/ts-jest, the pulse runner).
 import { dedupeKey, seenRecently } from './nudge-dedup';
 

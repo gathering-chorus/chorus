@@ -1,4 +1,6 @@
 // @test-type: unit — pure text→HTML rendering; brings its own world.
+// @card: #4223
+// @owner: wren
 /**
  * #4220 — Jeff, 2026-09-19, reading Clearing on his phone:
  *

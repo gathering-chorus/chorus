@@ -1,3 +1,5 @@
+// @card: #4010
+// @owner: wren
 /**
  * @test-type: unit
  * #4010 — the tile ages from what the PANE renders, one predicate for both.

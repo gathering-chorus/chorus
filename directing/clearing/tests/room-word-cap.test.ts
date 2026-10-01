@@ -1,4 +1,6 @@
 // @test-type: unit — signal is fixture-data: pure counter, no io, no room
+// @card: #3851
+// @owner: wren
 //
 // #3851 — the Clearing/Buzz outbound path. Jeff, 2026-08-13: the cap holds on
 // ALL messages. The room was a send path nobody had capped.

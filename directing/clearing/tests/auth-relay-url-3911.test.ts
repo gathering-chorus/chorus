@@ -1,4 +1,6 @@
 // @test-type: unit — pure URL derivation; no socket, no relay.
+// @card: #3911
+// @owner: wren
 /**
  * #3911 — the AUTH event must name the relay, not the tunnel.
  *

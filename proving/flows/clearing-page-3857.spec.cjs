@@ -1,4 +1,6 @@
 // @test-type: e2e:ui — playwright drives the Clearing page in a browser against its own Clearing (lib/own-clearing.cjs)
+// @card: #4417
+// @owner: wren
 /**
  * #4417 — the page behaviours that directing/clearing/tests used to check by
  * matching regexes over public/index.html (#3857 batch, #4234). Each case here

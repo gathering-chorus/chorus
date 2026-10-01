@@ -1,4 +1,6 @@
 // @test-type: unit — signal is fixture-data: pure detector, no io, no timers
+// @card: #3879
+// @owner: wren
 /**
  * #3879 — WIP-drift detector (pure core).
  *

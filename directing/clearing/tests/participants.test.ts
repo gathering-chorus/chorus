@@ -1,4 +1,6 @@
 // @test-type: unit — pure module calls with fixtures; no live services
+// @card: #2167
+// @owner: wren
 /**
  * Participants — unit tests (#2167 phase 1).
  *

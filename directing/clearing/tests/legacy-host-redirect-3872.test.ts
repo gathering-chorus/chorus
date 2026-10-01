@@ -1,4 +1,6 @@
 // @test-type: unit — pure URL derivation; no server, no socket.
+// @card: #3872
+// @owner: wren
 /**
  * #3872 — the upside-down URL is retired, and old links still work.
  *

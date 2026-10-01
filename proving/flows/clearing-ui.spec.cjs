@@ -1,4 +1,6 @@
 // @test-type: e2e:ui — playwright browser flow (clearing-ui), live surface
+// @card: #3857
+// @owner: wren
 /**
  * #3857 — the four Clearing behaviours Jeff found by using it, 2026-08-13.
  *

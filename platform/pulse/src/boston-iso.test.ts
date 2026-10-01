@@ -1,4 +1,6 @@
 // @test-type: unit — signal is fixture-data: pure formatter, no io
+// @card: #3880
+// @owner: wren
 /**
  * #3880 — one clock on the spine. bostonOffsetIso() must emit offset-ISO in
  * America/New_York, the format chorus-events (the majority writer) uses, so

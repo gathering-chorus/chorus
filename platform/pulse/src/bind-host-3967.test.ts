@@ -1,4 +1,6 @@
 // @test-type: unit — pure env resolution; no port opened, no io.
+// @card: #3967
+// @owner: wren
 /**
  * #3967 — pulse was network-exposed by omission (`app.listen(PORT)` binds
  * 0.0.0.0), so its anonymous write routes were reachable from the whole LAN.

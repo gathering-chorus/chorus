@@ -1,4 +1,6 @@
 // @test-type: unit — POSTs images to the in-process Clearing; sips stubbed on PATH; uploads land in a temp dir.
+// @card: #4417
+// @owner: wren
 /**
  * #4232 — images are how Jeff shows us what he sees. POST /api/upload stores
  * the picture and hands back a URL the room can show.

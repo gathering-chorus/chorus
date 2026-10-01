@@ -1,4 +1,6 @@
 // @test-type: integration — in-process listener on an ephemeral port, tempdir fixtures,
+// @card: #3606
+// @owner: wren
 // network-touching seams (CSS token exchange, allow-set) mocked. Brings its own world.
 /**
  * #3606 — the OIDC login/callback flow was the largest uncovered region of

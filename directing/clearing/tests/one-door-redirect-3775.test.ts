@@ -1,4 +1,6 @@
 // @test-type: unit — drives the in-process Clearing over HTTP with a stub allow-set store and a temp guard key; brings its own world.
+// @card: #3775
+// @owner: wren
 /**
  * #3775 — the Clearing behind the one door (DEC-2209).
  *

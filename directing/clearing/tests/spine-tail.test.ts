@@ -1,4 +1,6 @@
 // @test-type: integration — #3607: builds real tmpdir fixture logs (incl. a 100MB+ one) to prove tail-read latency; not unit.
+// @card: #3607
+// @owner: wren
 /**
  * spine-tail.ts — #3607 tail-read tests.
  *

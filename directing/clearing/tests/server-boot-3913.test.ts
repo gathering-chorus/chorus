@@ -1,4 +1,6 @@
 // @test-type: unit — module-init catch branches under a mocked HOME tempdir; no live services.
+// @card: #3913
+// @owner: wren
 /**
  * #3913 — server.ts's module-init CATCH branches: first-boot generation of
  * the bridge token and session secret (lines ~100-116) fire only when the

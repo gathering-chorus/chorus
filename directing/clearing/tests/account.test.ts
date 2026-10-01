@@ -1,4 +1,6 @@
 // @test-type: unit:security — changePassword with a mocked identity server; no network
+// @card: #3679
+// @owner: wren
 /**
  * #3679 — self-service password change. Pins the security-critical logic:
  * session-binding (you can only change the identity you're signed in as), fail-closed

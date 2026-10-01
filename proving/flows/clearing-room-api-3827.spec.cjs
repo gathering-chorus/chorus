@@ -1,4 +1,6 @@
 // @test-type: integration:api — HTTP against its own Clearing (lib/own-clearing.cjs), signed in through its temp world
+// @card: #4417
+// @owner: wren
 /**
  * #3827 — the room's key bindings: POST /api/room/bind and GET /api/room/bindings.
  * #4417 — neither route was named by any test. The page's side (autoJoin) runs

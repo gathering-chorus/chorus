@@ -1,4 +1,6 @@
 // @test-type: unit — pure function over tile inputs, no io.
+// @card: #3869
+// @owner: wren
 /**
  * #3869 — a role that is working must never render "idle".
  *

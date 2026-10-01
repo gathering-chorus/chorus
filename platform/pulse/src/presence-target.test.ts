@@ -1,4 +1,6 @@
 // @test-type: unit — pure resolution over fixture rows; no athena-make, no registry dir
+// @card: #4361
+// @owner: wren
 /**
  * #4361 — pulse finds a role's pane from its Presence row.
  *

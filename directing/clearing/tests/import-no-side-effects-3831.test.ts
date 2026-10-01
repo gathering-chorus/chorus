@@ -1,4 +1,6 @@
 // @test-type: unit — imports the module and calls exported fns; the handle checks run in short-lived subprocesses. No ports, no network, no fixtures.
+// @card: #3831
+// @owner: wren
 /**
  * #3831 — importing the server must not start the server.
  *

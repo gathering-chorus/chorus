@@ -1,4 +1,6 @@
 // @test-type: unit — in-memory router, no live services.
+// @card: #3862
+// @owner: wren
 /**
  * #3862 (third leg) — harness XML must not render as chat.
  *

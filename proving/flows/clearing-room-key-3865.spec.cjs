@@ -1,4 +1,6 @@
 // @test-type: e2e:ui — playwright browser flow (clearing-room-key-3865), live surface
+// @card: #3865
+// @owner: wren
 /**
  * #3865 — Jeff's browser key must actually generate.
  *

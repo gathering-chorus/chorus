@@ -1,3 +1,5 @@
+// @card: #4004
+// @owner: wren
 /* eslint-disable @typescript-eslint/require-await -- injected async doubles document the Promise contract */
 // @test-type: unit — injected store/inject/spine, temp db; no live pulse, no real inject
 //

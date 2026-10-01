@@ -1,4 +1,6 @@
 // @test-type: unit:security — drives the real gate over HTTP in-process and runs the real verifier; temp key, stub allow-set store, no live guard.
+// @card: #3795
+// @owner: wren
 /**
  * #3795 — refused is not unknown.
  *

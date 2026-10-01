@@ -1,4 +1,6 @@
 // @test-type: unit — signal is fixture-data: in-memory MessageRouter, no io, no live session
+// @card: #1827
+// @owner: wren
 /**
  * Bridge Integration Tests — #1674 AC #2, visibility matrix per #3862.
  *
