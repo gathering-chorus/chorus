@@ -355,6 +355,13 @@ export class MessageStore {
     ).all(chatId) as Message[];
   }
 
+  /** #4417 — the chat a message is for, or null; the route refuses a missing,
+   *  ended or someone-else's chat instead of storing a message to "unknown". */
+  getChat(chatId: string): { roleA: string; roleB: string; status: string } | null {
+    const row = this.db.prepare('SELECT role_a, role_b, status FROM chats WHERE id = ?').get(chatId) as { role_a: string; role_b: string; status: string | null } | undefined;
+    return row ? { roleA: row.role_a, roleB: row.role_b, status: row.status ?? 'active' } : null;
+  }
+
   endChat(chatId: string): void {
     this.db.prepare(
       'UPDATE chats SET status = \'ended\', ended_at = datetime(\'now\') WHERE id = ?'

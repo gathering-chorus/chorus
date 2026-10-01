@@ -5,6 +5,8 @@ module.exports = {
   // SQLite file-backed test DB is per-test; maxWorkers:1 avoids lock
   // contention across parallel workers hitting the same file path.
   maxWorkers: 1,
+  // #4417 — temp secret file and spine log for every test process (never ~/.chorus)
+  setupFiles: ['<rootDir>/test-env.setup.js'],
   transform: {
     '^.+\\.tsx?$': ['ts-jest', { diagnostics: false }],
   },

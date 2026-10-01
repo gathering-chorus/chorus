@@ -1,3 +1,6 @@
+// @test-type: integration:api — the spine-event route through the test app; temp spine log, temp index db
+// @card: #2109
+// @owner: wren
 /**
  * spine-event-endpoint.test.ts — Spine event service endpoint
  * Card #2109 AC: POST /api/chorus/spine-event accepts events, auto-traces hops
@@ -28,6 +31,12 @@ describe('POST /api/chorus/spine-event (#2109)', () => {
     expect(res.status).toBe(200);
     const data = await res.json();
     expect(data.ok).toBe(true);
+    // #4417 — it lands in the test's own spine, never ~/.chorus/chorus.log.
+    // NEGATIVE PROOF: drop CHORUS_LOG_FILE from tests/lib/test-app.ts and the
+    // path check below fails (the route falls back to the live spine).
+    const log = process.env.CHORUS_LOG_FILE as string;
+    expect(require('fs').realpathSync(require('path').dirname(log)).startsWith(require('fs').realpathSync(require('os').tmpdir()))).toBe(true);
+    expect(require('fs').readFileSync(log, 'utf8')).toContain('test-spine-');
   });
 
   test('event with hop field auto-creates trace entry', async () => {

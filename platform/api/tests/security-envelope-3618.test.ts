@@ -220,7 +220,7 @@ describe('decideEnvelope (#3618/#3719)', () => {
   });
 
   test('unsecured surface passes untouched with zero events — mixed-state by construction', async () => {
-    const d = await decideEnvelope(req({ path: '/api/cards/add' }), deps());
+    const d = await decideEnvelope(req({ path: '/api/example/unsecured' }), deps());
     expect(d.action).toBe('pass');
     expect(d.events).toHaveLength(0);
   });

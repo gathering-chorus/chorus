@@ -1249,13 +1249,13 @@ import { safeReadFile, readFileTail } from './lib/log-reader';
 // synchronous read off the multi-second freeze path.
 const SPINE_TAIL_BYTES = 4 * 1024 * 1024;
 app.get('/api/chorus/card-story/:id', async (req: Request, res: Response) => {
-  const cardsScript = path.resolve(__dirname, '../../scripts/cards');
+  const cardsScript = process.env.CHORUS_CARDS_BIN || path.resolve(__dirname, '../../scripts/cards'); // #4417 — a test points this at a stub, never the live board
   // #3819 — the SPINE, which moved to ~/.chorus/chorus.log on 2026-05-04 when
   // branch checkouts were clobbering the in-repo copy. These handlers were
   // never repointed, so they read a 57KB leftover and returned no events —
   // silently, for months. The candidates list at the /api/chorus/spine route
   // has had the right path all along.
-  const logPath = `${process.env.HOME}/.chorus/chorus.log`;
+  const logPath = process.env.CHORUS_SPINE_FILE || `${process.env.HOME}/.chorus/chorus.log`; // #4417 — overridable for tests
 
   let db: Database.Database | null = null;
   try { db = getDb(); } catch { /* db optional */ }
@@ -1344,7 +1344,7 @@ app.get('/api/chorus/domain-story/:domain', (req: Request, res: Response) => {
   // never repointed, so they read a 57KB leftover and returned no events —
   // silently, for months. The candidates list at the /api/chorus/spine route
   // has had the right path all along.
-  const logPath = `${process.env.HOME}/.chorus/chorus.log`;
+  const logPath = process.env.CHORUS_SPINE_FILE || `${process.env.HOME}/.chorus/chorus.log`; // #4417 — overridable for tests
   let db: Database.Database | null = null;
   try { db = getDb(); } catch { /* db optional */ }
   try {
@@ -1961,115 +1961,12 @@ app.get('/api/chorus/security-fitness', (_req: Request, res: Response) => {
   }
 });
 
-// #2652 AC9 — POST /api/cards/<verb> mutation routes.
-// Thin HTTP wrappers that spawn the cards bash CLI as subprocess with
-// DEPLOY_ROLE injected from X-Role header. Same canonical chain as bash CLI
-// and MCP tools. Subprocess contract per cards-service-design.md:
-//   - 10s timeout
-//   - X-Role required (refuse 400 if missing)
-//   - Exit codes: 0=success, 2=validation, 3=persistence, 4=network, 1=other
-//   - HTTP status mapping: 0→200, 2→400, 3→502, 4→503, *→500
-const cardsExecFileAsync = promisify(execFile);
-const CARDS_BIN = path.resolve(__dirname, '..', '..', 'scripts', 'cards');
-
-interface CardsExecResult { ok: boolean; stdout: string; stderr: string; code: number; }
-
-async function runCardsCli(role: string, verb: string, args: string[]): Promise<CardsExecResult> {
-  const env = { ...process.env, DEPLOY_ROLE: role, CHORUS_CARDS_ORIGIN: 'http' };
-  try {
-    const { stdout, stderr } = await cardsExecFileAsync(CARDS_BIN, [verb, ...args], { env, timeout: 10_000 });
-    return { ok: true, stdout, stderr, code: 0 };
-  } catch (err: unknown) {
-    const e = err as { code?: number; stdout?: string; stderr?: string; message?: string };
-    return {
-      ok: false,
-      stdout: e.stdout ?? '',
-      stderr: e.stderr ?? e.message ?? String(err),
-      code: typeof e.code === 'number' ? e.code : 1,
-    };
-  }
-}
-
-function httpStatusFromCardsExit(code: number): number {
-  if (code === 0) return 200;
-  if (code === 2) return 400;
-  if (code === 3) return 502;
-  if (code === 4) return 503;
-  return 500;
-}
-
-function requireRoleHeader(req: Request, res: Response): string | null {
-  const role = (req.header('X-Role') || req.header('x-role') || '').toLowerCase();
-  if (!['wren', 'silas', 'kade', 'jeff', 'automation'].includes(role)) {
-    res.status(400).json({ error: 'X-Role header required (wren|silas|kade|jeff|automation)' });
-    return null;
-  }
-  return role;
-}
-
-app.post('/api/cards/add', async (req: Request, res: Response) => {
-  const role = requireRoleHeader(req, res); if (!role) return;
-  const b = req.body as { title?: string; owner?: string; priority?: string; domain?: string; type?: string; origin?: string; desc?: string; sequence?: string; chunk?: string; subdomain?: string; subproduct?: string };
-  if (!b.title || !b.owner || !b.priority || !b.domain || !b.type || !b.origin || !b.desc) {
-    res.status(400).json({ error: 'required: title, owner, priority, domain, type, origin, desc' });
-    return;
-  }
-  const args = [b.title, '--owner', b.owner, '--priority', b.priority, '--domain', b.domain, '--type', b.type, '--origin', b.origin, '--desc', b.desc];
-  if (b.sequence) args.push('--sequence', b.sequence);
-  if (b.chunk) args.push('--chunk', b.chunk);
-  if (b.subdomain) args.push('--subdomain', b.subdomain);
-  if (b.subproduct) args.push('--subproduct', b.subproduct);
-  const r = await runCardsCli(role, 'add', args);
-  res.status(httpStatusFromCardsExit(r.code)).json({ ok: r.ok, stdout: r.stdout, stderr: r.stderr, code: r.code });
-});
-
-app.post('/api/cards/move', async (req: Request, res: Response) => {
-  const role = requireRoleHeader(req, res); if (!role) return;
-  const { id, status } = req.body as { id?: number; status?: string };
-  if (!id || !status) { res.status(400).json({ error: 'required: id, status' }); return; }
-  const r = await runCardsCli(role, 'move', [String(id), status]);
-  res.status(httpStatusFromCardsExit(r.code)).json({ ok: r.ok, stdout: r.stdout, stderr: r.stderr, code: r.code });
-});
-
-app.post('/api/cards/done', async (req: Request, res: Response) => {
-  const role = requireRoleHeader(req, res); if (!role) return;
-  const { id } = req.body as { id?: number };
-  if (!id) { res.status(400).json({ error: 'required: id' }); return; }
-  const r = await runCardsCli(role, 'done', [String(id)]);
-  res.status(httpStatusFromCardsExit(r.code)).json({ ok: r.ok, stdout: r.stdout, stderr: r.stderr, code: r.code });
-});
-
-app.post('/api/cards/tag', async (req: Request, res: Response) => {
-  const role = requireRoleHeader(req, res); if (!role) return;
-  const { id, category, value, op } = req.body as { id?: number; category?: string; value?: string; op?: string };
-  if (!id || !category || !value) { res.status(400).json({ error: 'required: id, category, value' }); return; }
-  let verb = 'tag', args: string[] = [String(id), `${category}:${value}`];
-  if (category === 'sequence' && op !== 'remove') { verb = 'sequence-tag'; args = [String(id), value]; }
-  else if (op === 'remove') { verb = 'untag'; }
-  const r = await runCardsCli(role, verb, args);
-  res.status(httpStatusFromCardsExit(r.code)).json({ ok: r.ok, stdout: r.stdout, stderr: r.stderr, code: r.code });
-});
-
-app.post('/api/cards/set', async (req: Request, res: Response) => {
-  const role = requireRoleHeader(req, res); if (!role) return;
-  const { id, fields } = req.body as { id?: number; fields?: Record<string, string> };
-  if (!id || !fields || typeof fields !== 'object') { res.status(400).json({ error: 'required: id, fields {key:value}' }); return; }
-  const args = [String(id), ...Object.entries(fields).map(([k, v]) => `${k}=${v}`)];
-  const r = await runCardsCli(role, 'set', args);
-  res.status(httpStatusFromCardsExit(r.code)).json({ ok: r.ok, stdout: r.stdout, stderr: r.stderr, code: r.code });
-});
-
-app.post('/api/cards/view', async (req: Request, res: Response) => {
-  const role = requireRoleHeader(req, res); if (!role) return;
-  const { id } = req.body as { id?: number };
-  if (!id) { res.status(400).json({ error: 'required: id' }); return; }
-  const r = await runCardsCli(role, 'view', [String(id), '--json']);
-  if (r.ok) {
-    try { res.status(200).json(JSON.parse(r.stdout)); return; }
-    catch { res.status(200).json({ ok: true, raw: r.stdout }); return; }
-  }
-  res.status(httpStatusFromCardsExit(r.code)).json({ ok: false, stdout: r.stdout, stderr: r.stderr, code: r.code });
-});
+// #4417 — the POST /api/cards/<verb> routes (#2652 AC9) are removed. They had
+// no caller (the MCP tools and the CLI write the board directly; 0 allowed calls
+// on surface-cards-writes in 7 days), and they took the filing role from a
+// self-asserted X-Role header, so any credential holder could file as Jeff past
+// the card bouncer. Removed rather than fixed (Jeff 10-01: remove, not fix).
+const cardsExecFileAsync = promisify(execFile); // still used by the open-in-editor route below
 
 // --- POST /api/chorus/reindex (#1879) ---
 // Trigger full re-index + re-embed without app restart
@@ -3086,7 +2983,7 @@ app.post('/api/athena/validate', async (req: Request, res: Response) => {
 
 // GET /api/athena/card/:id — card detail for inline rendering (#1900)
 app.get('/api/athena/card/:id', async (req: Request, res: Response) => {
-  const cardsScript = path.resolve(__dirname, '../../scripts/cards');
+  const cardsScript = process.env.CHORUS_CARDS_BIN || path.resolve(__dirname, '../../scripts/cards'); // #4417 — a test points this at a stub, never the live board
   const env = { ...process.env, PATH: `/Users/jeffbridwell/.nvm/versions/node/v20.11.1/bin:/opt/homebrew/bin:/usr/local/bin:${process.env.PATH}` };
   const r = await fetchAthenaCardDetail(
     {
@@ -3150,7 +3047,9 @@ app.get('/api/chorus/rcas', (req: Request, res: Response) => {
 
 // Spine event POST handler moved to src/spine-event-write.ts (#2205 wave 21).
 import { handleSpineEvent } from './spine-event-write';
-const SPINE_EVENT_LOG = `${process.env.HOME}/.chorus/chorus.log`;
+// #4417 — CHORUS_LOG_FILE first (the membrane seam, #3615): the integration test
+// that drives this route was appending to the live spine on every run.
+const SPINE_EVENT_LOG = process.env.CHORUS_LOG_FILE || `${process.env.HOME}/.chorus/chorus.log`;
 app.post('/api/chorus/spine-event', (req: Request, res: Response) => {
   handleSpineEvent(req, res, {
     appendFileSync: fs.appendFileSync,

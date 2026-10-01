@@ -275,6 +275,12 @@ function registerChatRoutes(app: Express, store: MessageStore): void {
   app.post('/api/chat/:id/message', (req, res) => {
     const { from, content } = req.body;
     if (!from || !content) return res.status(400).json({ error: 'from, content required' });
+    // #4417 — a message used to be stored for any id, addressed to "unknown"
+    // when the chat did not exist, after it ended, or from someone not in it.
+    const chat = store.getChat(req.params.id);
+    if (!chat) return res.status(404).json({ error: 'no such chat' });
+    if (chat.status === 'ended') return res.status(409).json({ error: 'chat has ended' });
+    if (from !== chat.roleA && from !== chat.roleB) return res.status(403).json({ error: `${from} is not in this chat` });
     res.json({ ok: true, id: store.chatMessage(req.params.id, from, content) });
   });
   app.get('/api/chat/:id/messages', (req, res) => {
@@ -282,6 +288,7 @@ function registerChatRoutes(app: Express, store: MessageStore): void {
     res.json(store.getChatMessages(req.params.id, sinceId));
   });
   app.post('/api/chat/:id/end', (req, res) => {
+    if (!store.getChat(req.params.id)) return res.status(404).json({ error: 'no such chat' });
     store.endChat(req.params.id);
     res.json({ ok: true });
   });

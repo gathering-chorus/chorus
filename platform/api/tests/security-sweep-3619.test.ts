@@ -21,7 +21,7 @@ import type { SecuredSurface } from '../src/security-envelope';
 
 const SERVER_FIXTURE = `
 app.get('/api/chorus/health', (_req, res) => res.json({ ok: true }));
-app.post('/api/cards/add', async (req: Request, res: Response) => {});
+app.post('/api/example/held', async (req: Request, res: Response) => {});
 app.post('/api/chorus/reindex', (_req: Request, res: Response) => {});
 app.put('/api/icd/domains/:id/fields', async (req, res) => {});
 app.delete('/api/athena/domains/:id', async (req, res) => {});
@@ -33,7 +33,7 @@ describe('parseMutationRoutes', () => {
   test('finds post/put/delete/patch and skips get', () => {
     const routes = parseMutationRoutes(SERVER_FIXTURE);
     const paths = routes.map(r => `${r.method} ${r.path}`);
-    expect(paths).toContain('POST /api/cards/add');
+    expect(paths).toContain('POST /api/example/held');
     expect(paths).toContain('POST /api/chorus/reindex');
     expect(paths).toContain('PUT /api/icd/domains/:id/fields');
     expect(paths).toContain('DELETE /api/athena/domains/:id');
@@ -84,7 +84,7 @@ describe('classifyEndpoints', () => {
     { method: '*', pathPrefix: '/api/icd/', requiresScope: 'urn:chorus:icd', surface: 's-icd' },
   ];
   const exemptions: SweepExemption[] = [
-    { method: 'POST', path: '/api/cards/add', reason: 'Class A held — Wren round-trip check', card: 3619 },
+    { method: 'POST', path: '/api/example/held', reason: 'Class A held — Wren round-trip check', card: 3619 },
   ];
   const routes = parseMutationRoutes(SERVER_FIXTURE);
 
@@ -96,8 +96,8 @@ describe('classifyEndpoints', () => {
 
   test('exempted endpoint is neither secured nor unprotected', () => {
     const gap = classifyEndpoints(routes, surfaces, exemptions);
-    expect(gap.exempted.map(r => r.path)).toContain('/api/cards/add');
-    expect(gap.unprotected.map(r => r.path)).not.toContain('/api/cards/add');
+    expect(gap.exempted.map(r => r.path)).toContain('/api/example/held');
+    expect(gap.unprotected.map(r => r.path)).not.toContain('/api/example/held');
   });
 
   test('everything else is unprotected — the ratchet catches new endpoints', () => {
