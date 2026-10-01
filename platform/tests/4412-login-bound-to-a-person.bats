@@ -71,3 +71,19 @@ posts() { ls "$T/bodies" 2>/dev/null | grep -c -- '-POST-identity_sessions.json$
   run bash -c "echo '{\"reason\":\"prompt_input_exit\"}' | CLAUDECODE=1 CHORUS_ROLE=wren '$SCRIPT' off wren --from-exit"
   test "$status" -eq 0
 }
+
+@test "#4412 Jeff at his own terminal, not signed in to the Clearing: login works and says he started it" {
+  touch "$T/nobody-signed-in" "$T/jeff-at-terminal"
+  unset CLAUDECODE
+  run "$SCRIPT" login wren
+  test "$status" -eq 0
+  has "$(cat "$T"/bodies/*-POST-identity_sessions.json | tail -1)" '"startedBy":"jeff"'
+}
+
+@test "#4412 NEGATIVE: the same terminal check from inside an agent session is refused" {
+  touch "$T/nobody-signed-in" "$T/jeff-at-terminal"
+  CLAUDECODE=1 run "$SCRIPT" login wren
+  test "$status" -eq 2
+  printf '%s' "$output" | grep -qF "REFUSED"
+  test "$(posts)" -eq 0
+}

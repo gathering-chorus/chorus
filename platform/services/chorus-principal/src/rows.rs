@@ -442,3 +442,35 @@ mod signed_in_owners_4412 {
         assert!(signed_in_owners("not json", NOW).is_empty());
     }
 }
+
+/// #4412 — the person principal whose hostAccount is `account`, from a
+/// `/v1/identity/principals` list reply. Agents and services never match.
+pub fn person_for_account(body: &str, account: &str) -> Option<String> {
+    if account.is_empty() { return None; }
+    let rows = serde_json::from_str::<Value>(body).ok()?.get("data")?.as_array()?.clone();
+    rows.iter().find_map(|r| {
+        let f = |k: &str| r.get(k).and_then(|x| x.as_str()).unwrap_or("");
+        (f("principalKind") == "person" && f("hostAccount") == account)
+            .then(|| f("name").strip_prefix("principal-").unwrap_or(f("name")).to_string())
+            .filter(|n| !n.is_empty())
+    })
+}
+
+#[cfg(test)]
+mod person_for_account_4412 {
+    use super::person_for_account;
+    const LIST: &str = r#"{"data":[{"name":"jeff","principalKind":"person","hostAccount":"jeffbridwell"},{"name":"silas","principalKind":"agent","hostAccount":"chorus-silas"},{"name":"anne","principalKind":"person","hostAccount":""}]}"#;
+
+    #[test]
+    fn the_account_names_its_person() {
+        assert_eq!(person_for_account(LIST, "jeffbridwell").as_deref(), Some("jeff"));
+    }
+
+    #[test]
+    fn negative_proof_an_agent_account_an_unknown_account_and_an_empty_one_name_nobody() {
+        assert_eq!(person_for_account(LIST, "chorus-silas"), None);
+        assert_eq!(person_for_account(LIST, "someone"), None);
+        assert_eq!(person_for_account(LIST, ""), None);
+        assert_eq!(person_for_account("nope", "jeffbridwell"), None);
+    }
+}

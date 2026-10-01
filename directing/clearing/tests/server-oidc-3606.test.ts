@@ -58,7 +58,9 @@ jest.mock('../src/person-session', () => {
   const actual = jest.requireActual('../src/person-session');
   mockOpenPerson = jest.fn().mockResolvedValue('psk-1');
   mockClosePerson = jest.fn().mockResolvedValue(true);
-  return { ...actual, openPersonSession: mockOpenPerson, closePersonSession: mockClosePerson, touchPersonSession: jest.fn().mockResolvedValue(true) };
+  // #4412 — a sign-in counts only with its Session row record behind it
+  const getRecord = jest.fn((_d: unknown, k: string) => (k === 'psk-1' ? { key: 'psk-1' } : null));
+  return { ...actual, openPersonSession: mockOpenPerson, closePersonSession: mockClosePerson, touchPersonSession: jest.fn().mockResolvedValue(true), getRecord };
 });
 var mockChangePassword: jest.Mock;
 jest.mock('../src/account', () => {
@@ -247,6 +249,13 @@ describe('#3606 account page + password change (#3679 routes, previously unteste
     const res = await fetch(`${baseUrl}/account`, { headers: { cookie: session } });
     expect(res.status).toBe(200);
     expect(await res.text()).toContain('id.lightlifeurbangardens.com/jeff');
+  });
+
+  test('#4412 NEGATIVE: a sign-in whose Session row was never written is signed out, so the next visit signs in again', async () => {
+    mockOpenPerson.mockResolvedValueOnce(null);
+    const session = await jeffSession();
+    const res = await fetch(`${baseUrl}/account`, { headers: { cookie: session } });
+    expect(res.status).toBe(401);
   });
 
   test('NEGATIVE: password change without a session → 401, changePassword never called', async () => {

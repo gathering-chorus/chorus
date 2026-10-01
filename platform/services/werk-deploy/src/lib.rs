@@ -1722,6 +1722,29 @@ pub fn changed_service_crates(diff: &str) -> Vec<String> {
     out
 }
 
+#[allow(dead_code)] // only scope_declared_edges is used here
+mod scope_core { include!("../../shared/scope_units.rs"); }
+
+/// #4412 — the deployable crates plus every binary crate that path-depends,
+/// directly or through another lib, on a changed lib-only crate. `edges` are
+/// (provider, dependent) dir names from scope_declared_edges.
+pub fn with_lib_dependents(root: &Path, crates: &[String], lib_only: &[String], edges: &[(String, String)]) -> Vec<String> {
+    let mut out: Vec<String> = crates.to_vec();
+    let mut seen: Vec<String> = lib_only.to_vec();
+    let mut queue: Vec<String> = lib_only.to_vec();
+    while let Some(lib) = queue.pop() {
+        for (provider, dependent) in edges {
+            if provider != &lib || seen.contains(dependent) { continue; }
+            seen.push(dependent.clone());
+            let dir = root.join("platform/services").join(dependent);
+            if !dir.join("Cargo.toml").is_file() { continue; }
+            if crate_binaries_in(&dir).is_empty() { queue.push(dependent.clone()); }
+            else if !out.contains(dependent) { out.push(dependent.clone()); }
+        }
+    }
+    out
+}
+
 /// #3638 — split a changed-crate list into (deployable, lib-only). A LIB-ONLY crate
 /// (Cargo.toml present, `crate_binaries_in` empty — e.g. werk-teardown, #3431) emits
 /// no binaries, so deploy_crate_canonical's werk-* CliVerb short-circuit would demand
@@ -1824,6 +1847,16 @@ fn deploy_canonical(home: &Path, werk_s: &str, role: &str, card: u64, trace: &st
     for c in &lib_only {
         jsonl(home, role, card, trace, "deploy.skipped",
             &format!(",\"target\":\"canonical\",\"crate\":\"{}\",\"reason\":\"lib-only-crate\"", c));
+    }
+    // #4412 — a lib-only crate ships THROUGH its dependents, so they deploy too.
+    // chorus-oidc changed on #4412 and athena-make, which links it, was never
+    // rebuilt: the live door kept refusing the token the card was built to accept.
+    let canon = PathBuf::from(canonical_root_path(home));
+    let edges = scope_core::scope_declared_edges(&canon);
+    let crates = with_lib_dependents(&canon, &crates, &lib_only, &edges);
+    for c in crates.iter().filter(|c| !all_crates.contains(c)) {
+        jsonl(home, role, card, trace, "deploy.dependent.added",
+            &format!(",\"target\":\"canonical\",\"crate\":\"{}\",\"reason\":\"links-a-changed-lib\"", c));
     }
     // #3243 — TS services (chorus-mcp at platform/mcp-server, chorus-api at platform/api) live
     // OUTSIDE platform/services/, so changed_service_crates misses them. They are npm-built
@@ -3312,5 +3345,34 @@ mod rebuild_took_tests {
     fn changed_source_that_no_longer_exists_cannot_make_a_build_stale() {
         let built = UNIX_EPOCH + Duration::from_secs(1);
         assert!(rebuild_took(Some(built), None));
+    }
+}
+
+#[cfg(test)]
+mod lib_dependents_4412 {
+    use super::with_lib_dependents;
+    use std::fs;
+
+    fn krate(root: &std::path::Path, name: &str, bin: bool) {
+        let d = root.join("platform/services").join(name);
+        fs::create_dir_all(d.join("src")).unwrap();
+        fs::write(d.join("Cargo.toml"), format!("[package]\nname = \"{name}\"\n")).unwrap();
+        fs::write(d.join("src").join(if bin { "main.rs" } else { "lib.rs" }), "").unwrap();
+    }
+    fn s(v: &[&str]) -> Vec<String> { v.iter().map(|x| x.to_string()).collect() }
+    fn e(v: &[(&str, &str)]) -> Vec<(String, String)> { v.iter().map(|(a, b)| (a.to_string(), b.to_string())).collect() }
+
+    #[test]
+    fn a_changed_lib_deploys_every_binary_that_links_it_even_through_another_lib() {
+        let t = std::env::temp_dir().join(format!("wd-4412-{}", std::process::id()));
+        let _ = fs::remove_dir_all(&t);
+        krate(&t, "oidc", false); krate(&t, "mid", false); krate(&t, "make", true); krate(&t, "model", true); krate(&t, "other", true);
+        let edges = e(&[("oidc", "make"), ("oidc", "mid"), ("mid", "model")]);
+        let got = with_lib_dependents(&t, &s(&["principal"]), &s(&["oidc"]), &edges);
+        assert_eq!(got, s(&["principal", "make", "model"]));
+        // NEGATIVE PROOF: no changed lib, nothing added; an unrelated binary never rides along
+        assert_eq!(with_lib_dependents(&t, &s(&["principal"]), &[], &edges), s(&["principal"]));
+        assert!(!got.contains(&"other".to_string()) && !got.contains(&"mid".to_string()));
+        let _ = fs::remove_dir_all(&t);
     }
 }
