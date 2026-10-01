@@ -93,8 +93,7 @@ mutate "fuseki-update"       DB  3030 "$(_code -X POST http://localhost:3030/cho
 mutate "owlapi-batch-write"  DB  3360 "$(_code -X POST http://localhost:3360/batch -H 'Content-Type: application/json' -d '{"ops":[]}')" "anon model batch write"
 
 # API
-mutate "chorus-api-card-add"  API 3340 "$(_code -X POST http://localhost:3340/api/cards/add -H 'Content-Type: application/json' -d '{}')" "anon card create :3340"
-mutate "chorus-api-card-move" API 3340 "$(_code -X POST http://localhost:3340/api/cards/move -H 'Content-Type: application/json' -d '{}')" "anon card move :3340"
+# #4417 — the /api/cards/* write routes are removed (no callers; X-Role was self-asserted).
 
 # MCP (agent action surface — no verified caller identity)
 mutate "mcp-tools-call-anon"  API 3341 "$(_code -X POST http://localhost:3341/mcp -H 'Content-Type: application/json' -H 'Accept: application/json, text/event-stream' -d '{"jsonrpc":"2.0","id":1,"method":"tools/call","params":{"name":"chorus_cards_add","arguments":{}}}')" "anon MCP tool-call, no role"

@@ -221,14 +221,6 @@ chorus:surface-embed-write a chorus:APISurface ;
 @prefix chorus: <https://jeffbridwell.com/chorus#> .
 @prefix rdfs: <http://www.w3.org/2000/01/rdf-schema#> .
 
-chorus:surface-cards-writes a chorus:APISurface ;
-    rdfs:label "chorus-api cards writes (zero-caller — CLI writes Vikunja direct)" ;
-    chorus:securedBy chorus:gate-chorus-api-mutations ;
-    chorus:httpMethod "POST" ;
-    chorus:pathPrefix "/api/cards/" ;
-    chorus:requiresScope "urn:chorus:cards" ;
-    chorus:servedBy chorus:services .
-
 # ----------------------------------------------------------------------------
 # 5. FIRST SECURED CLASS — instances (discover/index system writers, AC4)
 #    Consumers: crawler-index, reindex-worker, embed-worker LaunchAgents.
