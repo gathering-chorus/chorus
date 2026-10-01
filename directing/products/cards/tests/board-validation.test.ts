@@ -17,6 +17,8 @@
  * - Tests were creating production cards
  */
 
+// slow-by-design (#4417): runs only with RUN_INTEGRATION=true against the real
+// board over HTTP, and list() pages through every card. Off by default.
 jest.setTimeout(30000);
 
 import { BoardClient } from '../src/client';

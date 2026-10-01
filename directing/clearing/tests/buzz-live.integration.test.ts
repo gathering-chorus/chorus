@@ -45,5 +45,6 @@ const LIVE = process.env.BUZZ_LIVE === '1' && fs.existsSync(KEY_FILE);
     );
     console.log(`RELAY VERDICT: ok=${result.ok} pubkey=${signer.pubkey.slice(0, 12)}… msg="${result.message}"`);
     expect(result.ok).toBe(true);
+    // slow-by-design (#4417): a real websocket round trip to the relay.
   }, 15000);
 });

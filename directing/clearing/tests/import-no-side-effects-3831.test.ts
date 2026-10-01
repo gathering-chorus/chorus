@@ -34,6 +34,7 @@ beforeAll(() => {
   if (!fs.existsSync(path.join(CLEARING, 'dist', 'server.js'))) {
     execFileSync('npm', ['run', 'build', '--silent'], { cwd: CLEARING, stdio: 'ignore' });
   }
+  // slow-by-design (#4417): a cold tsc build, only when dist/ is missing.
 }, 180000);
 
 /** Run a snippet in a fresh node process; true if it exited on its own. */

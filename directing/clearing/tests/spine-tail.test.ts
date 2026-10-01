@@ -90,15 +90,28 @@ describe('readSpineLines — response shape regression (pre-#3607 semantics)', (
 describe('readSpineLines — latency on a 100MB+ log', () => {
   test('p95 < 50ms', () => {
     const f = path.join(dir, 'big.log');
-    // ~120 bytes/line ⇒ ~900k lines ≈ 105MB, streamed in 1MB chunks
-    const fd = fs.openSync(f, 'w');
+    // #4417 — a 105MB file without writing 105MB: extend it sparse, then put
+    // ~1MB of real lines at the end, where a tail read looks. Same size on disk
+    // to the reader, seconds less setup.
     const chunkLines: string[] = [];
     for (let i = 0; i < 8192; i++) chunkLines.push(spineLine(i));
-    const chunk = chunkLines.join('\n') + '\n';
-    let written = 0;
-    while (written < 105 * 1024 * 1024) written += fs.writeSync(fd, chunk);
-    fs.closeSync(fd);
+    const chunk = '\n' + chunkLines.join('\n') + '\n';
+    fs.writeFileSync(f, '');
+    fs.truncateSync(f, 105 * 1024 * 1024);
+    fs.appendFileSync(f, chunk);
     expect(fs.statSync(f).size).toBeGreaterThan(100 * 1024 * 1024);
+
+    // #4417 — the size claim, independent of how fast this machine is: a read
+    // touches at most the tail window, never the whole file.
+    let bytesRead = 0;
+    const countingFs = {
+      ...fs,
+      readSync: (...a: Parameters<typeof fs.readSync>) => { const n = fs.readSync(...a); bytesRead += n; return n; },
+      readFileSync: (...a: Parameters<typeof fs.readFileSync>) => { const b = fs.readFileSync(...a); bytesRead += b.length; return b; },
+    } as typeof fs;
+    readSpineLines(countingFs, f, 80);
+    expect(bytesRead).toBeGreaterThan(0);
+    expect(bytesRead).toBeLessThanOrEqual(TAIL_BYTES);
 
     const samples: number[] = [];
     for (let i = 0; i < 20; i++) {
@@ -111,7 +124,7 @@ describe('readSpineLines — latency on a 100MB+ log', () => {
     samples.sort((a, b) => a - b);
     const p95 = samples[Math.floor(samples.length * 0.95) - 1] ?? samples[samples.length - 1];
     expect(p95).toBeLessThan(50);
-  }, 120000);
+  });
 });
 
 // #3884 — werk pipeline phases interleave into the stream. The spine carries
