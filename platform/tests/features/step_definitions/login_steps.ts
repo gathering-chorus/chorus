@@ -14,7 +14,7 @@ const ROOT = path.resolve(__dirname, '../../../..');
 const HARNESS = path.join(ROOT, 'platform/tests/lib/login-harness.bash');
 const BIN = process.env.CHORUS_PRINCIPAL_TEST_BIN
   || path.join(ROOT, 'platform/services/chorus-principal/target/release/chorus-principal');
-const STEP = { timeout: 60_000 };
+const STEP = { timeout: 15_000 };   // #4409: one budget; every step drives a stubbed world in seconds
 
 let T = '';
 
@@ -48,8 +48,6 @@ function sh(script: string, stdin = ''): string {
 // a turn's hook: its exit (2 = the turn was refused) is kept in $T/turn.status
 const seen = (role: string, payload: object) =>
   sh(`set +e; AWAKE_SEEN_SYNC=1 "$SCRIPT" seen ${role} > "$T/turn.out" 2>&1; echo $? > "$T/turn.status"`, JSON.stringify(payload));
-const WAKE = () => (fs.readFileSync(path.join(ROOT, 'platform/services/chorus-principal/src/rows.rs'), 'utf8')
-  .match(/WAKE_LINE: &str = "([^"]*)"/) || [])[1] || '';
 // cucumber reads only the literal 'pending'; the card is named by the scenario's
 // @waiting-<card> tag, and the report carries it (werk-test CUKE_FLATTEN_JS)
 const waiting = (_card: number): 'pending' => 'pending';
@@ -118,9 +116,6 @@ Given('kade has an open session whose expiry has passed', STEP, function () {
 printf '{"data":[{"name":"session-kade-dead","status":"","actsAs":"","sessionState":"open","expiresAt":"2026-09-01T00:10:00Z","tokenId":"j","ownedBy":"principal-kade"},{"name":"%s","sessionState":"open","expiresAt":"2026-09-01T00:10:00Z","tokenId":"j","ownedBy":"principal-wren"}]}' "$live" > "$T/row.json"`);
 });
 
-Given("Jeff is typing in wren's pane", STEP, function () {
-  // #4362 lives in pulse, not chorus-principal; its world is pulse's own tests
-});
 
 Given("wren's session has been open for days", STEP, function () {
   sh(`p="$T/identity/wren/session.row.json"; row_name wren session > "$T/old-session"
@@ -147,10 +142,15 @@ When("Jeff types in wren's pane", STEP, function () {
   seen('wren', { session_id: 'c-j', prompt: 'what is wren working on' });
 });
 
+// #4409 — a nudge the way pulse delivers one since #4362: the message itself,
+// headed "[nudge from …]", and recorded delivered in pulse's messages.db. The
+// product decides from that row, so the step writes the row, never greps source.
 When('silas sends wren a nudge', STEP, function () {
-  const wake = WAKE();
-  if (!wake) throw new Error('no WAKE_LINE in chorus-principal rows.rs');
-  seen('wren', { session_id: 'c-n', prompt: wake });
+  const words = '[nudge from silas | 2026-10-01 09:00 Boston] the build is green';
+  sh(`sqlite3 "$T/messages.db" "CREATE TABLE IF NOT EXISTS messages (type TEXT, delivery_status TEXT, content TEXT);
+      INSERT INTO messages VALUES ('nudge','delivered','${words}');"
+      echo 'export CHORUS_MESSAGES_DB="$T/messages.db"' >> "$T/env.extra"`);
+  seen('wren', { session_id: 'c-n', prompt: words });
 });
 
 When('a prompt arrives that starts with a nudge label but did not come from the relay', STEP, function () {
@@ -252,13 +252,6 @@ Then("wren's presence is not reachable", STEP, function () {
   sh('test -z "$(cat "$T"/bodies/*PUT-identity_presences_* 2>/dev/null | grep -F \'"reachability":"reachable"\' || true)"');
 });
 
-Then("the nudge waits until Jeff's prompt is sent, and Jeff's text arrives whole", { timeout: 180_000 }, function () {
-  // #4362 is pulse's delivery worker; its proof is pulse's own tests, run here
-  const pulse = path.join(ROOT, 'platform/pulse');
-  if (!fs.existsSync(path.join(pulse, 'node_modules'))) throw new Error(`pulse's packages are not installed at ${pulse} (npm ci there); its tests cannot run`);
-  execFileSync('npx', ['--no-install', 'jest', 'src/pane-input.test.ts', 'src/delivery-worker.test.ts'],
-    { cwd: path.join(ROOT, 'platform/pulse'), stdio: 'pipe' });
-});
 
 // #4361 — pulse routes by the Presence row the login wrote. The registry file
 // is pointed at a pane nobody is in (%99); only a Presence read gets it right.

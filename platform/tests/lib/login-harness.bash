@@ -34,7 +34,8 @@ EOS
   cat > "$T/bin/claude" <<EOS
 #!/bin/bash
 echo "claude \$*" >> "$T/claude.log"
-[ "\$1" = "agents" ] && echo '[]'
+# agents: the fixture list (agents.json), or a failure when agents-fail exists (#4184)
+if [ "\$1" = "agents" ]; then [ -f "$T/agents-fail" ] && { echo "boom: unknown option --cwd" >&2; exit 1; }; cat "$T/agents.json" 2>/dev/null || echo '[]'; fi
 exit 0
 EOS
   cat > "$T/bin/token" <<EOS
@@ -42,6 +43,7 @@ EOS
 echo "token \$*" >> "$T/token.log"
 [ -f "$T/token-slow" ] && sleep "\$(cat "$T/token-slow")"   # #4403: widen a race on purpose
 [ -f "$T/token-fail" ] && { echo "chorus-identity-token: no credential for '\$1'" >&2; exit 3; }
+[ -f "$T/token.fixture" ] && { cat "$T/token.fixture"; exit 0; }   # one token for every role, when a case sets it
 cat "$T/token-\$1.fixture"
 EOS
   # stub curl (#4328): every POST/PUT body is kept as bodies/<n>-<METHOD>-<route>.json;
@@ -58,11 +60,12 @@ url="\${@: -1}"
 if [ -n "\$m" ]; then
   n=\$(ls "$T/bodies" | wc -l | tr -d ' '); route=\$(echo "\$url" | sed -E 's#.*/v1/##; s#/#_#g')
   cp "\$b" "$T/bodies/\$(printf %03d \$n)-\$m-\$route.json"
+  case "\$b" in *session.body) cp "\$b" "$T/curl.body" ;; esac   # the last Session body, by its old name
   [ "\$m" = POST ] && { kind=\$(echo "\$url" | sed -E 's#.*/##; s#s\$##'); name=\$(python3 -c 'import json,sys;print(json.load(open(sys.argv[1]))["name"])' "\$b"); printf '{"data":{"name":"%s-%s"}}\n' "\$kind" "\$name"; }
   cat "$T/curl.reply" 2>/dev/null   # #4367: a refusal's body, when a case sets one
   cat "$T/curl.status" 2>/dev/null || echo 201
 else
-  cat "$T/row.json" 2>/dev/null
+  cat "$T/existing.json" 2>/dev/null || cat "$T/row.json" 2>/dev/null   # existing.json: the row a 409 re-read finds (#4215)
 fi
 EOS
   # stub service probe: every service answers 200 unless named in down-<name>

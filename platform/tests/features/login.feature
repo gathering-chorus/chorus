@@ -80,10 +80,9 @@ Feature: A principal logs in, works, and logs out
     Then wren's presence is not reachable
     And wren's session is attended by jeff, with the time he spoke
 
-  Scenario: A nudge never lands in Jeff's half-typed prompt
-    Given Jeff is typing in wren's pane
-    When silas sends wren a nudge
-    Then the nudge waits until Jeff's prompt is sent, and Jeff's text arrives whole
+  # #4409 — "A nudge never lands in Jeff's half-typed prompt" is retired with
+  # the hold it tested: Jeff 2026-09-30 reverted it (#4362), "i did not want
+  # this, never did". Pulse types every nudge at once (DEC-107).
 
   Scenario: A message finds the role through its Presence
     Given wren is logged in

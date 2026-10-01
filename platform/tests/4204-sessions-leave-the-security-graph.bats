@@ -23,6 +23,11 @@ setup() {
   MINT="$CHORUS/platform/scripts/chorus-identity-token"
   [ -x "$MINT" ] || skip "no minter at $MINT"
   curl -s -o /dev/null --max-time 5 "$API/v1/identity/sessions" || skip "identity API not answering"
+  # #4409 — no token means nothing here was measured: every assert below would
+  # pass or fail on a 401, never on what the grant allows. UNMEASURED, not green.
+  for r in wren kade; do
+    [ -n "$("$MINT" "$r" 2>/dev/null)" ] || skip "UNMEASURED: no token for $r on this box"
+  done
 }
 
 # Token on a 0600 file, never in argv where ps can read it.
