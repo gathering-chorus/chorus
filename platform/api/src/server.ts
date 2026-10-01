@@ -3047,7 +3047,9 @@ app.get('/api/chorus/rcas', (req: Request, res: Response) => {
 
 // Spine event POST handler moved to src/spine-event-write.ts (#2205 wave 21).
 import { handleSpineEvent } from './spine-event-write';
-const SPINE_EVENT_LOG = `${process.env.HOME}/.chorus/chorus.log`;
+// #4417 — CHORUS_LOG_FILE first (the membrane seam, #3615): the integration test
+// that drives this route was appending to the live spine on every run.
+const SPINE_EVENT_LOG = process.env.CHORUS_LOG_FILE || `${process.env.HOME}/.chorus/chorus.log`;
 app.post('/api/chorus/spine-event', (req: Request, res: Response) => {
   handleSpineEvent(req, res, {
     appendFileSync: fs.appendFileSync,

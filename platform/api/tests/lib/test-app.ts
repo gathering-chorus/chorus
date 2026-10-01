@@ -43,6 +43,11 @@ import type { AddressInfo } from 'net';
 // under load (the full suite went red on this test at load 41 on 09-24).
 process.env.FUSEKI_QUERY = process.env.FUSEKI_QUERY || 'http://127.0.0.1:9/pods/query';
 process.env.CHORUS_EMBED_WORKER_SCRIPT = '/usr/bin/true';
+// #4417 — the spine-event route appends to CHORUS_LOG_FILE; a test app never
+// writes the live ~/.chorus/chorus.log.
+if (!process.env.CHORUS_LOG_FILE) {
+  process.env.CHORUS_LOG_FILE = path.join(fs.mkdtempSync(path.join(os.tmpdir(), 'chorus-api-spine-')), 'chorus.log');
+}
 process.env.CHORUS_REINDEX_WORKER_SCRIPT = '/usr/bin/true';
 
 export interface TestApp {
