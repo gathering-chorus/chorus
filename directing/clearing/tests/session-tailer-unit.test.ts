@@ -125,13 +125,8 @@ describe('SessionTailer.processLine — user messages', () => {
     expect(router.ingest).not.toHaveBeenCalled();
   });
 
-  test('#4362 pulse types the nudge itself, never the old wake line', () => {
-    const fs = require('fs');
-    const path = require('path');
-    const pulse = fs.readFileSync(path.join(__dirname, '../../../platform/pulse/src/delivery-worker.ts'), 'utf8');
-    expect(pulse).toContain('return row.content;');
-    expect(pulse).not.toContain('WAKE_LINE');
-  });
+  // #4417 — the grep of pulse's delivery-worker.ts source is gone; pulse's own
+  // delivery-worker.test.ts calls typedFor(row) and checks it returns the content.
 
   test('#4362 a nudge pulse delivered is not Jeff, and is not shown as his', () => {
     const { execFileSync } = require('child_process');
