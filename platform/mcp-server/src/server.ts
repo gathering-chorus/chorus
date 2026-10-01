@@ -168,7 +168,7 @@ const CardsAddInput = z.object({
   sequence: z.string().optional().describe('Sequence label (deprecated by subproduct per #2643)'),
   chunk: z.string().optional().describe('Optional chunk (app, ops, memory, ...)'),
   subproduct: z.enum(['athena', 'loom', 'werk', 'borg', 'convergence', 'clearing']).optional().describe('Subproduct — implementation within Chorus (#2652 AC2)'),
-  subdomain: z.string().optional().describe('Subdomain — Athena subdomain id, refused-at-source against live /api/athena/subdomains (#2652 AC1)'),
+  subdomain: z.string().optional().describe('Subdomain label on the card (SubDomain is retired from the model, #4353; kept as a plain card label)'),
 });
 
 // #2996 — Jeff-attributed card add. Same fields as CardsAddInput. #3293: the CLI
@@ -315,11 +315,16 @@ const DecisionsGetInput = z.object({
 const SubdomainsGetInput = z.object({
   id: z.string().min(1).describe('Subdomain id (e.g., commits-domain, gates-service)'),
 });
+// #4353 — the fields the Principle shape requires on athena-make
 const PrinciplesCreateInput = z.object({
   label: z.string().min(1).describe('Short human-readable name (e.g., "Ship small")'),
-  comment: z.string().optional().describe('One-paragraph description of the principle'),
-  broaderOf: z.string().optional().describe('Optional parent principle id this derives from'),
-  dcSource: z.string().optional().describe('Optional dc:source citation (book, ADR, etc.)'),
+  comment: z.string().min(1).describe('One-paragraph description of the principle'),
+  techReading: z.string().min(1).describe('How it reads in system design'),
+  jeffReading: z.string().min(1).describe('How it shows up in how Jeff works'),
+  principleKind: z.enum(['pc', 'xp']).describe('pc = Hemenway permaculture, xp = Extreme Programming'),
+  source: z.string().min(1).describe('Citation (book, ADR, card)'),
+  name: z.string().optional().describe('Row name; defaults to a slug of the label'),
+  rhymesWith: z.string().optional().describe('Optional parent principle name'),
 });
 
 const PRINCIPLES_LIST_TOOL_DEF = {
@@ -353,29 +358,20 @@ const PRINCIPLES_GET_TOOL_DEF = {
 const PRINCIPLES_CREATE_TOOL_DEF = {
   name: 'chorus_principles_create',
   description:
-    'Create a new Chorus principle in the live graph. Use this only after the team has agreed a new principle is needed (rare — principles change slowly). Required: label. Optional: comment (one-paragraph description), broaderOf (parent principle id), dcSource (citation). Do NOT use for practices, policies, or skills — those have separate surfaces. Do NOT use to update an existing principle — there is no chorus_principles_update yet (PUT REST stays available).',
+    'Create a new Chorus principle in the live graph (athena-make /v1/principles/principles, #4353). Use this only after the team has agreed a new principle is needed (rare — principles change slowly). Required, because the Principle shape requires them: label, comment, techReading, jeffReading, principleKind (pc = Hemenway permaculture, xp = Extreme Programming), source. Optional: name (defaults to a slug of the label), rhymesWith (the parent principle name). Do NOT use for practices, policies, or skills. Do NOT use to update an existing principle.',
   inputSchema: {
     type: 'object',
     properties: {
-      label: {
-        type: 'string',
-        minLength: 1,
-        description: 'Short human-readable name',
-      },
-      comment: {
-        type: 'string',
-        description: 'One-paragraph description of the principle',
-      },
-      broaderOf: {
-        type: 'string',
-        description: 'Optional parent principle id this derives from',
-      },
-      dcSource: {
-        type: 'string',
-        description: 'Optional dc:source citation (book, ADR, etc.)',
-      },
+      label: { type: 'string', minLength: 1, description: 'Short human-readable name' },
+      comment: { type: 'string', minLength: 1, description: 'One-paragraph description of the principle' },
+      techReading: { type: 'string', minLength: 1, description: 'How it reads in system design' },
+      jeffReading: { type: 'string', minLength: 1, description: 'How it shows up in how Jeff works' },
+      principleKind: { type: 'string', enum: ['pc', 'xp'], description: 'pc = Hemenway permaculture, xp = Extreme Programming' },
+      source: { type: 'string', minLength: 1, description: 'Citation (book, ADR, card)' },
+      name: { type: 'string', description: 'Row name; defaults to a slug of the label' },
+      rhymesWith: { type: 'string', description: 'Optional parent principle name this sits under' },
     },
-    required: ['label'],
+    required: ['label', 'comment', 'techReading', 'jeffReading', 'principleKind', 'source'],
   },
 } as const;
 
@@ -1900,14 +1896,37 @@ interface PrincipleRecord {
   uri?: string;
 }
 
-async function fetchPrinciplesList(fetchImpl: FetchImpl, apiBase: string): Promise<PrincipleRecord[]> {
-  const url = `${apiBase}/api/loom/principles`;
-  const resp = await fetchImpl(url);
+// #4353 — principles and decisions are read from athena-make's generated
+// routes. The /api/athena/subdomains/* routes they used are retired.
+function athenaMakeBase(): string {
+  return process.env.ATHENA_MAKE_URL || 'http://localhost:3360';
+}
+
+type GeneratedRow = Record<string, unknown> & { name?: string };
+
+async function fetchGeneratedRows(fetchImpl: FetchImpl, path: string, what: string): Promise<GeneratedRow[]> {
+  const resp = await fetchImpl(`${athenaMakeBase()}${path}`);
   if (!resp.ok) {
-    throw new Error(`principles list fetch failed (status ${resp.status ?? 'unknown'})`);
+    throw new Error(`${what} fetch failed (status ${resp.status ?? 'unknown'})`);
   }
-  const body = (await resp.json()) as { data?: { principles?: PrincipleRecord[] } };
-  return body.data?.principles ?? [];
+  const body = (await resp.json()) as { data?: GeneratedRow[] };
+  return Array.isArray(body.data) ? body.data : [];
+}
+
+const str = (v: unknown): string | undefined => (typeof v === 'string' && v !== '' ? v : undefined);
+
+async function fetchPrinciplesList(fetchImpl: FetchImpl, _apiBase: string): Promise<PrincipleRecord[]> {
+  const rows = await fetchGeneratedRows(fetchImpl, '/v1/principles/principles', 'principles list');
+  return rows.map((r) => ({
+    id: String(r.name ?? ''),
+    label: str(r.label),
+    comment: str(r.comment),
+    techReading: str(r.techReading),
+    jeffReading: str(r.jeffReading),
+    isPermacultureParent: r.isPermacultureParent === true || r.isPermacultureParent === 'true',
+    // rhymesWith names the permaculture parent (the retired read folded it into parents)
+    parents: ([] as unknown[]).concat(r.rhymesWith ?? []).map(String).filter(Boolean),
+  })).filter((p) => p.id);
 }
 
 // #3010 — return structuredContent.principles alongside the existing prose
@@ -1951,11 +1970,7 @@ async function executePrinciplesGet(
   apiBase: string,
   from: string,
 ): Promise<{ content: Array<{ type: 'text'; text: string }> }> {
-  // TODO(#2476-followon): Athena has no single-principle GET endpoint; we
-  // fetch the full list (~46) and filter in memory. Fine at this scale, but
-  // when an Athena GET /api/athena/subdomains/loom-principles/principles/:id
-  // lands, swap to it for O(1) and to avoid pulling the full set on every
-  // get call. Code smell flagged in #2476 gate:code review (kade).
+  // Fetches the list (28 rows) and filters: one read path for list and get.
   process.stderr.write(JSON.stringify({ level: 'info', event: 'mcp.principles.get.invoked', tool: 'chorus_principles_get', from, id: args.id, ts: new Date().toISOString() }) + '\n');
   const principles = await fetchPrinciplesList(fetchImpl, apiBase);
   const found = principles.find((p) => p.id === args.id);
@@ -1977,27 +1992,35 @@ async function executePrinciplesGet(
 }
 
 async function executePrinciplesCreate(
-  args: { label: string; comment?: string; broaderOf?: string; dcSource?: string },
+  args: { label: string; comment: string; techReading: string; jeffReading: string; principleKind: string; source: string; name?: string; rhymesWith?: string },
   fetchImpl: FetchImpl,
   apiBase: string,
   from: string,
 ): Promise<{ content: Array<{ type: 'text'; text: string }> }> {
   process.stderr.write(JSON.stringify({ level: 'info', event: 'mcp.principles.create.invoked', tool: 'chorus_principles_create', from, label: args.label, ts: new Date().toISOString() }) + '\n');
-  const url = `${apiBase}/api/athena/subdomains/loom-principles/principles`;
-  const body: Record<string, string> = { label: args.label };
-  if (args.comment) body.comment = args.comment;
-  if (args.broaderOf) body.broaderOf = args.broaderOf;
-  if (args.dcSource) body.dcSource = args.dcSource;
-  const resp = await fetchImpl(url, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify(body),
-  });
+  const url = `${athenaMakeBase()}/v1/principles/principles`;
+  const slug = args.label.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '');
+  const body: Record<string, string> = {
+    name: args.name || slug,
+    label: args.label,
+    comment: args.comment,
+    techReading: args.techReading,
+    jeffReading: args.jeffReading,
+    principleKind: args.principleKind,
+    source: args.source,
+  };
+  if (args.rhymesWith) body.rhymesWith = args.rhymesWith;
+  // The generated write route checks identity: carry a scoped token when one
+  // can be minted, and let the API refuse a write it does not allow.
+  const token = mintServiceToken();
+  const headers: Record<string, string> = { 'Content-Type': 'application/json' };
+  if (token) headers['Authorization'] = `Bearer ${token}`;
+  const resp = await fetchImpl(url, { method: 'POST', headers, body: JSON.stringify(body) });
   if (!resp.ok) {
     throw new Error(`principles create failed (status ${resp.status ?? 'unknown'})`);
   }
-  const result = (await resp.json()) as { data?: { id?: string; uri?: string } };
-  const id = result.data?.id ?? result.data?.uri ?? '(unknown id)';
+  const result = (await resp.json()) as { data?: { name?: string; iri?: string } };
+  const id = result.data?.name ?? result.data?.iri ?? '(unknown id)';
   return { content: [{ type: 'text', text: `principle created: ${id}` }] };
 }
 
@@ -2058,16 +2081,16 @@ interface DecisionRecord {
   uri?: string;
 }
 
-async function fetchDecisionsList(fetchImpl: FetchImpl, apiBase: string): Promise<DecisionRecord[]> {
-  // Hit Athena subdomain handler directly (loom alias 308-redirects here;
-  // skipping the redirect hop matches where the data flows).
-  const url = `${apiBase}/api/athena/subdomains/loom-decisions/decisions`;
-  const resp = await fetchImpl(url);
-  if (!resp.ok) {
-    throw new Error(`decisions list fetch failed (status ${resp.status ?? 'unknown'})`);
-  }
-  const body = (await resp.json()) as { data?: { decisions?: DecisionRecord[] } };
-  return body.data?.decisions ?? [];
+async function fetchDecisionsList(fetchImpl: FetchImpl, _apiBase: string): Promise<DecisionRecord[]> {
+  // #4353 — decisions are the ADR rows on athena-make.
+  const rows = await fetchGeneratedRows(fetchImpl, '/v1/decisions/adrs', 'decisions list');
+  return rows.map((r) => ({
+    id: String(r.name ?? ''),
+    label: str(r.label),
+    comment: str(r.comment),
+    status: str(r.status),
+    decisionType: 'ADR',
+  })).filter((d) => d.id);
 }
 
 async function executeDecisionsList(
@@ -2103,64 +2126,6 @@ async function executeDecisionsGet(
   ];
   if (found.status) lines.push('', `status: ${found.status}`);
   if (found.relatedCard !== undefined) lines.push(`relatedCard: #${found.relatedCard}`);
-  if (found.uri) lines.push(`uri: ${found.uri}`);
-  return { content: [{ type: 'text', text: lines.join('\n') }] };
-}
-
-interface SubdomainRecord {
-  id: string;
-  label?: string;
-  owner?: string;
-  step?: string;
-  uri?: string;
-}
-
-async function fetchSubdomainsList(fetchImpl: FetchImpl, apiBase: string): Promise<SubdomainRecord[]> {
-  const url = `${apiBase}/api/athena/subdomains`;
-  const resp = await fetchImpl(url);
-  if (!resp.ok) {
-    throw new Error(`subdomains list fetch failed (status ${resp.status ?? 'unknown'})`);
-  }
-  const body = (await resp.json()) as { data?: SubdomainRecord[] };
-  return body.data ?? [];
-}
-
-// eslint-disable-next-line @typescript-eslint/no-unused-vars -- parked subdomains executor, intentionally retained for future wiring (#3429)
-async function executeSubdomainsList(
-  fetchImpl: FetchImpl,
-  apiBase: string,
-  from: string,
-): Promise<{ content: Array<{ type: 'text'; text: string }> }> {
-  process.stderr.write(JSON.stringify({ level: 'info', event: 'mcp.subdomains.list.invoked', tool: 'chorus_subdomains_list', from, ts: new Date().toISOString() }) + '\n');
-  const subs = await fetchSubdomainsList(fetchImpl, apiBase);
-  const lines: string[] = [`${subs.length} subdomain${subs.length === 1 ? '' : 's'}:`];
-  for (const s of subs) {
-    const label = s.label ? `${s.label} (${s.id})` : s.id;
-    const ownerStep = [s.owner ? `owner=${s.owner}` : '', s.step ? `step=${s.step}` : '']
-      .filter(Boolean)
-      .join(' ');
-    lines.push(ownerStep ? `- ${label} — ${ownerStep}` : `- ${label}`);
-  }
-  return { content: [{ type: 'text', text: lines.join('\n') }] };
-}
-
-// eslint-disable-next-line @typescript-eslint/no-unused-vars -- parked subdomains executor, intentionally retained for future wiring (#3429)
-async function executeSubdomainsGet(
-  args: { id: string },
-  fetchImpl: FetchImpl,
-  apiBase: string,
-  from: string,
-): Promise<{ content: Array<{ type: 'text'; text: string }> }> {
-  // Athena has no GET /api/athena/subdomains/:id today — fetch the list and
-  // filter, mirroring the principles/decisions pattern. ~50 entries, fine
-  // at this scale; swap to dedicated GET when one lands.
-  process.stderr.write(JSON.stringify({ level: 'info', event: 'mcp.subdomains.get.invoked', tool: 'chorus_subdomains_get', from, id: args.id, ts: new Date().toISOString() }) + '\n');
-  const subs = await fetchSubdomainsList(fetchImpl, apiBase);
-  const found = subs.find((s) => s.id === args.id);
-  if (!found) throw new Error(`subdomain not found: ${args.id}`);
-  const lines = [`${found.label ?? found.id} (${found.id})`];
-  if (found.owner) lines.push(`owner: ${found.owner}`);
-  if (found.step) lines.push(`step: ${found.step}`);
   if (found.uri) lines.push(`uri: ${found.uri}`);
   return { content: [{ type: 'text', text: lines.join('\n') }] };
 }

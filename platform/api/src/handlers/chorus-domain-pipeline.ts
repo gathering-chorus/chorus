@@ -160,16 +160,19 @@ export async function fetchChorusDomainPipeline(
     };
   }
 
-  const [cardsRes, compRes, codeRes, testsRes, endpointsRes, alertsRes] = await Promise.all([
-    deps.fetcher(`/api/athena/subdomains/${sdId}/cards`),
-    deps.fetcher(`/api/athena/subdomains/${sdId}/completeness`),
+  // #4353 — cards and completeness come from the domain view itself; the
+  // /api/athena/subdomains/:id/{cards,completeness} routes are retired.
+  const [domainRes, codeRes, testsRes, endpointsRes, alertsRes] = await Promise.all([
+    deps.fetcher(`/api/chorus/domain/${name}`),
     deps.fetcher(`/api/chorus/domain/${name}/code`),
     deps.fetcher(`/api/chorus/domain/${name}/tests`),
     deps.fetcher(`/api/chorus/domain/${name}/services`),
     deps.fetcher(`/api/chorus/domain/${name}/alerts`),
   ]);
 
-  const cards = extractCards(cardsRes);
+  const dv = (domainRes ?? {}) as { cards?: CardRow[]; completeness?: unknown };
+  const cards = extractCards({ data: { cards: dv.cards ?? [] } });
+  const compRes = { data: dv.completeness ?? null };
   const stages: Stage[] = [
     buildShapeStage(cards),
     buildDesignStage(compRes),

@@ -15,11 +15,6 @@
         "description": "Ontology health \u2014 triple count, endpoint status"
       },
       {
-        "name": "blast-radius",
-        "path": "/api/athena/subdomains/:id/blast-radius",
-        "description": "Which sub-products consume a given sub-domain"
-      },
-      {
         "name": "owners",
         "path": "/api/athena/owners",
         "description": "Owners with sub-domain counts"

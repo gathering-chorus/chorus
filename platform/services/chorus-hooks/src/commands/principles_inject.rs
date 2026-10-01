@@ -1,6 +1,6 @@
 //! #2450 — Live principles injection into SessionStart envelope.
 //!
-//! Boot fetches the canonical principle set from /api/loom/principles, renders
+//! Boot fetches the canonical principle set (athena-make /v1/principles/principles, #4353), renders
 //! a `## Principles (live from graph)` section into additionalContext, writes
 //! a sibling hash file for cross-role drift detection, and falls back to a
 //! last-known-good cache when the API is unavailable.
@@ -17,7 +17,7 @@ use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
 use std::fs;
 
-const DEFAULT_API_URL: &str = "http://localhost:3340/api/loom/principles";
+const DEFAULT_API_URL: &str = "http://localhost:3360/v1/principles/principles";
 const DEFAULT_CACHE_PATH: &str = "/tmp/principles-cache.json";
 // #3007 — MCP transport moved off chorus-api (:3340) to chorus-mcp (:3341) in
 // #2998. Default must target the dedicated server; the chorus-api /mcp mount
@@ -306,7 +306,7 @@ pub fn render_section(principles: &[Principle], stale: bool) -> String {
 
 pub fn render_empty_banner() -> String {
     "\n## Principles (live from graph)\n\n\
-     ⚠ ALARM — /api/loom/principles returned an empty set. Graph state is broken; \
+     ⚠ ALARM — the principles API returned an empty set. Graph state is broken; \
      boot continuing without principle set. Investigate immediately.\n\n"
         .to_string()
 }

@@ -11,28 +11,29 @@
 //   fid     the materialized-view id (<name>-domain or bare name; resolveFacetId finds it)
 //   only    optional subset of facet titles, rendered in the order given
 //   domain  the bare domain name (defaults to fid without -domain); the graph folds filter on it
+// #4353 — SubDomain is retired, so there is no "<name>-domain" view to probe:
+// the facet id is the bare domain name.
 async function resolveFacetId(d) {
-  const ATHENA = '/api/athena/subdomains/';
-  let fid = `${d}-domain`;
-  const probe = await fetch(ATHENA + encodeURIComponent(fid)).then(r => r.ok ? r.json() : null).catch(() => null);
-  if (!probe || probe.error) fid = d;
-  return fid;
+  return d;
 }
 async function renderFacetTables(el, fid, opts) {
   opts = opts || {};
   const dname = opts.domain || String(fid).replace(/-domain$/, '');
   // one page-wide model base (#4064/#4084): the page may define OWL; otherwise the same-origin /owl proxy
   const OWL = (typeof window.OWL === 'string') ? window.OWL : ((typeof window.basePath === 'function') ? window.basePath('/owl') : '/owl');
-  const ATHENA = '/api/athena/subdomains/';
   const DOM = '/api/chorus/domain/';
+  // #4353 — code, pages and endpoints are graph rows carrying hasDomain; read them
+  // like the Logs fold. Actors, Scenarios, Integration, Persistence and Gaps came
+  // only from the retired SubDomain routes and are gone with them.
+  // hasDomain is one name or a list of them (115 of 6,329 code files name several)
+  const onDomain = r => [].concat(r.hasDomain || (r.links && r.links.hasDomain) || []).some(v => tail(v) === dname);
   const FACETS = [
-    { t: 'Cards', u: ATHENA + fid + '/cards', k: 'cards', cols: ['id', 'title', 'owner', 'status', 'priority'] },
+    { t: 'Cards', u: DOM + fid, k: 'cards', cols: ['id', 'title', 'owner', 'status', 'priority'] },
     { t: 'Dependencies', u: DOM + fid + '/dependencies', k: '_deps' },
-    { t: 'API Contract', u: ATHENA + fid + '/services', k: 'endpoints', alt: 'services', cols: ['method', 'path', 'handler'] },
-    { t: 'UI Pages', u: ATHENA + fid + '/pages', k: 'pages', cols: ['route', 'path', 'pageType'] },
-    { t: 'Code', u: ATHENA + fid + '/code', k: 'files', cols: ['path', 'type'] },
+    { t: 'API Contract', u: OWL + '/code/endpoints?limit=5000', k: 'items', graph: true, filter: onDomain, cols: ['httpMethod', 'routePath', 'filePath'], src: 'chorus:Endpoint · hasDomain = ' + dname },
+    { t: 'UI Pages', u: OWL + '/code/pages?limit=5000', k: 'items', graph: true, filter: onDomain, cols: ['route', 'filePath', 'pageType'], src: 'chorus:Page · hasDomain = ' + dname },
+    { t: 'Code', u: OWL + '/code/files?limit=20000', k: 'items', graph: true, filter: onDomain, cols: ['filePath', 'hasLanguage'], src: 'chorus:SourceFile · hasDomain = ' + dname },
     { t: 'Tests', u: DOM + fid + '/tests', k: 'tests', cols: ['path', 'type'] },
-    { t: 'Persistence', u: ATHENA + fid + '/persistence', k: 'stores', alt: 'persistence', cols: ['label', 'namespace', 'records', 'status'] },
     { t: 'Pipeline', u: DOM + fid + '/pipeline', k: 'stages', cols: ['name', 'status', 'summary'] },
     { t: 'Releases', u: DOM + fid + '/releases', k: 'releases', cols: ['timestamp', 'cardId', 'title', 'role'] },
     { t: 'Infrastructure', u: DOM + fid + '/infra', k: 'environments', cols: ['name', 'port', 'engine', 'host'] },
@@ -43,10 +44,6 @@ async function renderFacetTables(el, fid, opts) {
     { t: 'Logs', u: OWL + '/logs/sources?limit=500', k: 'items', graph: true, filter: r => tail(r.hasDomain || (r.links && r.links.hasDomain) || '') === dname,
       cols: ['launchdLabel', 'logStatus', 'lokiJob', 'lastWrittenAt', 'logPath'], src: 'chorus:LogSource · hasDomain = ' + dname },
     { t: 'Alerts', u: DOM + fid + '/alerts', k: 'alerts', cols: ['name', 'file', 'source'] },   // #4285: rows from the alerts graph
-    { t: 'Integration', u: ATHENA + fid + '/integrations', k: 'integrations', cols: ['label', 'source', 'status'] },
-    { t: 'Actors', u: ATHENA + fid + '/actors', k: 'actors', cols: ['label', 'role', 'action'] },
-    { t: 'Scenarios', u: ATHENA + fid + '/scenarios', k: 'scenarios', cols: ['label', 'given', 'when', 'then'] },
-    { t: 'Gaps & Status', u: ATHENA + fid + '/gaps', k: 'gaps', cols: ['type', 'description', 'severity'] },
   ];
   function tail(iri) { return String(iri || '').split('#').pop().replace(/^chorus:/, ''); }
   function unwrap(b, k, alt) {

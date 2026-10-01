@@ -318,7 +318,7 @@
   </main>
 
   <footer>
-    Source: <code>GET /api/athena/subdomains/loom-principles/principles</code> → graph <code>urn:chorus:instances</code> (per ADR-025). Top-level principles derived from Toby Hemenway, <em>Gaia's Garden</em> (2nd ed.), adapted for the Chorus+Jeff context per #2337.
+    Source: <code>GET /v1/principles/principles</code> on athena-make (#4353). Top-level principles derived from Toby Hemenway, <em>Gaia's Garden</em> (2nd ed.), adapted for the Chorus+Jeff context per #2337.
   </footer>
 
   <script>
@@ -410,10 +410,22 @@
       const main = document.getElementById('principles');
       main.innerHTML = '<div class="empty">Loading principles…</div>';
       try {
-        const res = await fetch('/api/athena/subdomains/loom-principles/principles');
+        // #4353 — the generated principles route, through chorus-api's same-origin proxy
+        const res = await fetch('/owl/v1/principles/principles');
         if (!res.ok) throw new Error('API returned ' + res.status);
         const body = await res.json();
-        const all = body?.data?.principles || [];
+        // rhymesWith names the permaculture parent an XP principle sits under;
+        // parents[].uri is the parent's name, and p.uri is each row's own name.
+        const all = (Array.isArray(body?.data) ? body.data : []).map((r) => ({
+          ...r,
+          id: r.name,
+          uri: r.name,
+          isPermacultureParent: r.isPermacultureParent === true || r.isPermacultureParent === 'true',
+          order: r.order === '' || r.order == null ? undefined : Number(r.order),
+          parents: [].concat(r.rhymesWith || []).filter(Boolean).map((n) => ({ uri: n })),
+        }));
+        const labelOf = new Map(all.map((p) => [p.name, p.label || p.name]));
+        all.forEach((p) => p.parents.forEach((pp) => { pp.label = labelOf.get(pp.uri) || pp.uri; }));
         if (all.length === 0) {
           main.innerHTML = '<div class="empty">No principles found in the ontology yet.</div>';
           return;

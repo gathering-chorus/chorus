@@ -206,7 +206,8 @@ async function load() {
     fetch('/api/doc-catalog/tree').then(r => r.json()),
     fetch('/api/doc-catalog/tags').then(r => r.json()),
     fetch('/api/doc-catalog').then(r => r.json()),
-    fetch('/api/athena/subdomains?limit=200').then(r => r.json()).catch(() => ({ data: [] })),
+    // #4353 — SubDomain is retired; the tag vocabulary reads domain names
+    fetch('/owl/v1/domains/domains').then(r => r.json()).then(b => ({ data: (b.data || []).map(d => ({ id: d.name })) })).catch(() => ({ data: [] })),
     fetch('/api/chorus/catalog/drift').then(r => r.json()).catch(() => ({ data: { drift: [] } })),
     fetch('/api/chorus/catalog/curated').then(r => r.json()).catch(() => ({ data: { curated: [] } })),
   ]);

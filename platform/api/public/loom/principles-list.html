@@ -87,10 +87,17 @@
       const list = document.getElementById('list');
       const meta = document.getElementById('meta');
       try {
-        const res = await fetch('/api/athena/subdomains/loom-principles/principles');
+        // #4353 — the generated principles route, through the same-origin proxy
+        const res = await fetch('/owl/v1/principles/principles');
         if (!res.ok) throw new Error('API ' + res.status);
         const body = await res.json();
-        const all = body?.data?.principles || [];
+        const rows = Array.isArray(body?.data) ? body.data : [];
+        const labelOf = new Map(rows.map((r) => [r.name, r.label || r.name]));
+        const all = rows.map((r) => ({
+          ...r, id: r.name, isPermacultureParent: r.isPermacultureParent === true || r.isPermacultureParent === 'true',
+          // rhymesWith names the permaculture parent (the old read folded it into parents)
+          parents: [].concat(r.rhymesWith || []).filter(Boolean).map((n) => ({ uri: n, label: labelOf.get(n) || n })),
+        }));
         const chorus = all
           .filter((p) => !p.isPermacultureParent)
           .slice()

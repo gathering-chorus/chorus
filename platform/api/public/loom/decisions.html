@@ -160,17 +160,18 @@
     <div class="counts" id="counts">
       <span>Loading…</span>
     </div>
-    <div class="meta">Source: <code>GET /api/athena/subdomains/loom-decisions/decisions</code> · Cookbook: <a href="/loom/cookbook-substrate-class-domain.html">substrate-class domain treatment</a></div>
+    <div class="meta">Source: <code>GET /v1/decisions/adrs</code> on athena-make · Cookbook: <a href="/loom/cookbook-substrate-class-domain.html">substrate-class domain treatment</a></div>
   </header>
   <main id="content"><div class="loading">Loading decisions…</div></main>
 
   <script>
     async function load() {
       try {
-        const res = await fetch('/api/athena/subdomains/loom-decisions/decisions');
+        // #4353 — decisions are the ADR rows on athena-make, via the same-origin proxy
+        const res = await fetch('/owl/v1/decisions/adrs');
         if (!res.ok) throw new Error('HTTP ' + res.status);
         const data = await res.json();
-        const decisions = data?.data?.decisions || [];
+        const decisions = (Array.isArray(data?.data) ? data.data : []).map((r) => ({ ...r, id: r.name, decisionType: 'ADR' }));
         render(decisions);
       } catch (err) {
         document.getElementById('content').innerHTML =

@@ -33,7 +33,7 @@ export const DEFAULT_QUERIES = [
   // #3603: products/subproducts retired — athena-make :3360/products is the product API.
   // #4274: the subdomains list route is gone with chorus:SubDomain (#4265) — the health
   // page stopped advertising a path that 404s. Domains are served by athena-make :3360/domains.
-  { name: 'blast-radius', path: '/api/athena/subdomains/:id/blast-radius', description: 'Which sub-products consume a given sub-domain' },
+  // #4353: the per-subdomain blast-radius route is gone with SubDomain
   // #3702: v1 steps retired (410) — athena-make :3360/valuestreams is the stream API.
   { name: 'owners', path: '/api/athena/owners', description: 'Owners with sub-domain counts' },
   { name: 'machines', path: '/api/athena/machines', description: 'Machines with running services' },

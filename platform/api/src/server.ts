@@ -54,6 +54,8 @@ function errMsg(e: unknown): string {
 /** SPARQL binding row — each variable maps to a { value, type } cell. */
 type SparqlBinding = Record<string, { value: string; type?: string; datatype?: string }>;
 
+// #4353 — athena-make, where the generated model API lives (Domain, Principle, ADR rows)
+const ATHENA_MAKE_BASE = process.env.ATHENA_MAKE_URL || 'http://localhost:3360';
 const app = express();
 app.use(express.json());
 // #4004/#4016 — the SPARQL read proxy receives `Content-Type:
@@ -2446,10 +2448,12 @@ app.get('/api/chorus/domain/:name', async (_req: Request, res: Response) => {
         },
         fetchCompleteness: async (sdId: string) => {
           try {
-            const resp = await fetch(`http://localhost:3340/api/athena/subdomains/${sdId}/completeness`);
+            // #4353 — athena-make scores the Domain row against its shape
+            const name = encodeURIComponent(sdId.replace(/-domain$/, ''));
+            const resp = await fetch(`${ATHENA_MAKE_BASE}/v1/domains/domains/${name}/completeness`);
             if (!resp.ok) return null;
-            const body = await resp.json() as { data?: Completeness };
-            return body.data ?? null;
+            const body = await resp.json() as Completeness;
+            return typeof body.percentage === 'number' ? body : null;
           } catch { return null; }
         },
         sparql: athenaSparqlQuery,
@@ -2729,8 +2733,6 @@ const ATHENA_QUERIES = [
   { name: 'health', path: '/api/athena/health', description: 'Ontology health — triple count, endpoint status' },
   // #3603: products/subproducts retired from the hand-coded surface — athena-make
   // :3360/products (generated from chorus:ProductShape) is the product API.
-  { name: 'subdomains', path: '/api/athena/subdomains', description: 'List sub-domains with owner, step. Filter: ?owner, ?step' },
-  { name: 'blast-radius', path: '/api/athena/subdomains/:id/blast-radius', description: 'Which sub-products consume a given sub-domain' },
   { name: 'owners', path: '/api/athena/owners', description: 'Owners with sub-domain counts' },
   { name: 'machines', path: '/api/athena/machines', description: 'Machines with running services' },
 ];
@@ -2781,23 +2783,6 @@ import { fetchAthenaValidate } from './handlers/athena-validate';
 import { fetchAthenaOwners } from './handlers/athena-owners';
 import { fetchAthenaMachines } from './handlers/athena-machines';
 import { fetchLoomPolicies } from './handlers/loom-policies';
-import { fetchLoomPrinciples } from './handlers/loom-principles';
-import { fetchAthenaBlastRadius } from './handlers/athena-blast-radius';
-import { fetchAthenaSubdomainCards } from './handlers/athena-subdomain-cards';
-import { fetchAthenaSubdomainCode } from './handlers/athena-subdomain-code';
-import { fetchAthenaSubdomainAlerts } from './handlers/athena-subdomain-alerts';
-import { fetchAthenaSubdomainCoverage, fetchAthenaSubdomainTestCoverage } from './handlers/athena-subdomain-coverage';
-import { fetchAthenaSubdomainPages } from './handlers/athena-subdomain-pages';
-import { fetchAthenaSubdomainEndpoints } from './handlers/athena-subdomain-endpoints';
-import {
-  fetchAthenaSubdomainActors,
-  fetchAthenaSubdomainScenarios,
-  fetchAthenaSubdomainContract,
-  fetchAthenaSubdomainIntegrations,
-  fetchAthenaSubdomainPersistence,
-  fetchAthenaSubdomainPriorArt,
-} from './handlers/athena-subdomain-facets';
-import { fetchAthenaSubdomainCompleteness } from './handlers/athena-subdomain-completeness';
 import { fetchAthenaCardDetail } from './handlers/athena-card-detail';
 app.get('/api/athena/health', async (_req: Request, res: Response) => {
   const r = await fetchAthenaHealth({
@@ -2845,20 +2830,6 @@ app.get('/api/athena/blast-radius/:iri', (req: Request, res: Response) => {
 // SubProduct is gone from the model; athena-make :3360/products (generated from
 // chorus:ProductShape) is the only product serving surface.
 
-// #4265/#4237 — GET /api/athena/subdomains and /api/athena/subdomains/:id RETIRED.
-// #4237 deleted subdomains.sparql and subdomain-detail.sparql because they read a
-// class that no longer exists; the handlers kept loading them by name and the two
-// routes 500'd on every call. Wren's call (2026-09-21): retire, don't restore —
-// callers get 404. The per-facet /subdomains/:id/<facet> routes are untouched.
-
-// GET /api/athena/subdomains/:id/blast-radius — what breaks if this sub-domain fails
-app.get('/api/athena/subdomains/:id/blast-radius', async (req: Request, res: Response) => {
-  const r = await fetchAthenaBlastRadius(
-    { sparql: athenaSparqlQuery, loadQuery: loadSparql, envelope: athenaEnvelope },
-    req.params.id,
-  );
-  res.status(r.status).json(r.body);
-});
 
 
 // #3702 — v1 value-stream surface retired. The Vertebra/primaryStep spine model is
@@ -2879,74 +2850,20 @@ app.get('/api/athena/machines', async (_req: Request, res: Response) => {
   res.status(r.status).json(r.body);
 });
 
-// GET /api/loom/principles — 308 redirect to Athena (#2314 — Loom GET retired post-ADR-025).
-// New canonical path: /api/athena/subdomains/loom-principles/principles. Frontend updated to fetch
-// the canonical path directly; this redirect serves any remaining callers.
+// GET /api/loom/principles and /api/loom/decisions — 308 to the generated rows on
+// athena-make, through the same-origin /owl proxy (#4353: the
+// /api/athena/subdomains/loom-* reads they used to point at are retired).
 app.get('/api/loom/principles', (_req: Request, res: Response) => {
-  res.redirect(308, '/api/athena/subdomains/loom-principles/principles');
+  res.redirect(308, '/owl/v1/principles/principles');
 });
-
-// GET /api/loom/decisions — 308 redirect to Athena (#2485 Move 2, mirror of principles).
 app.get('/api/loom/decisions', (_req: Request, res: Response) => {
-  res.redirect(308, '/api/athena/subdomains/loom-decisions/decisions');
-});
-
-// GET /api/athena/subdomains/:id/principles — principles inside a SubDomain (#2314).
-// Currently scoped to loom-principles; reuses the existing principle folding logic
-// (parent set, sort, envelope) from handlers/loom-principles.ts.
-app.get('/api/athena/subdomains/:id/principles', async (_req: Request, res: Response) => {
-  // #3749 — sourced from the generated athena-make surface (one implementation);
-  // the loom-principles.sparql path retired with the 2-of-29 graph split.
-  const r = await fetchLoomPrinciples();
-  res.status(r.status).json(r.body);
+  res.redirect(308, '/owl/v1/decisions/adrs');
 });
 
 // GET /api/loom/policies — all chorus:Policy instances + enforces edges (#2339)
 app.get('/api/loom/policies', async (_req: Request, res: Response) => {
   const r = await fetchLoomPolicies({ sparql: athenaSparqlQuery, loadQuery: loadSparql });
   res.status(r.status).json(r.body);
-});
-
-// GET /api/athena/subdomains/:id/cards — active board cards for this domain
-app.get('/api/athena/subdomains/:id/cards', (req: Request, res: Response) => {
-  const r = fetchAthenaSubdomainCards(
-    { getBoardCards, envelope: athenaEnvelope },
-    req.params.id,
-  );
-  res.status(r.status).json(r.body);
-});
-
-// GET /api/athena/subdomains/:id/alerts — alert rules related to this domain
-app.get('/api/athena/subdomains/:id/alerts', (req: Request, res: Response) => {
-  const ALERTS_DIR = path.join(REPO_ROOT, 'proving/domains/alerts');
-  const r = fetchAthenaSubdomainAlerts(
-    {
-      listAlertFiles: () => fs.readdirSync(ALERTS_DIR).filter((f: string) => f.endsWith('.yml')),
-      readAlertFile: (f: string) => fs.readFileSync(path.join(ALERTS_DIR, f), 'utf-8'),
-      envelope: athenaEnvelope,
-    },
-    req.params.id,
-  );
-  res.status(r.status).json(r.body);
-});
-
-// GET /api/athena/subdomains/:id/code — code inventory from instances graph (#1868)
-app.get('/api/athena/subdomains/:id/code', async (req: Request, res: Response) => {
-  const r = await fetchAthenaSubdomainCode(
-    { sparql: athenaSparqlQuery, extname: path.extname, envelope: athenaEnvelope },
-    req.params.id,
-  );
-  res.status(r.status).json(r.body);
-});
-
-// POST /api/athena/subdomains/:id/code — add code file to subdomain (#1868)
-// #4187 — RETIRED: this route wrote urn:chorus:instances, the catch-all this
-// card empties. CodeFile rows are written by chorus-crawl into urn:chorus:domains:code
-app.post('/api/athena/subdomains/:id/code', (_req: Request, res: Response) => {
-  res.status(410).json(athenaEnvelope('subdomain-code-create', {
-    error: 'retired',
-    message: 'POST /api/athena/subdomains/:id/code was retired by #4187: CodeFile rows are written by chorus-crawl into urn:chorus:domains:code',
-  }, 0, { error: true, retired_by: 4187 }));
 });
 
 // POST /api/athena/discover-code — RETIRED by #4154 (2026-09-12). It walked the
@@ -2971,18 +2888,6 @@ app.post('/api/athena/discover-tests', async (_req: Request, res: Response) => {
   } catch (err: unknown) {
     res.status(500).json(athenaEnvelope('discover-tests', { error: errMsg(err) }, Date.now() - start, { error: true }));
   }
-});
-
-// GET /api/athena/subdomains/:id/coverage — all test coverage for a domain (#1869)
-app.get('/api/athena/subdomains/:id/coverage', async (req: Request, res: Response) => {
-  const r = await fetchAthenaSubdomainCoverage({ sparql: athenaSparqlQuery, envelope: athenaEnvelope }, req.params.id);
-  res.status(r.status).json(r.body);
-});
-
-// GET /api/athena/subdomains/:id/test-coverage — what tests cover this domain? (#1869)
-app.get('/api/athena/subdomains/:id/test-coverage', async (req: Request, res: Response) => {
-  const r = await fetchAthenaSubdomainTestCoverage({ sparql: athenaSparqlQuery, envelope: athenaEnvelope }, req.params.id);
-  res.status(r.status).json(r.body);
 });
 
 // GET /api/chorus/tests/:domain + /api/chorus/tests — proxies to Gathering quality scanner (#2098, extracted #2189)
@@ -3011,15 +2916,10 @@ app.get('/api/chorus/tests', async (_req: Request, res: Response) => {
 app.post('/api/athena/discover-pages', (_req: Request, res: Response) => {
   res.status(410).json(athenaEnvelope('discover-pages', {
     error: 'retired',
-    message: 'POST /api/athena/discover-pages was retired by #4187: Page rows are written by chorus-crawl into urn:chorus:domains:code; read them at GET /api/athena/subdomains/<domain>/pages',
+    message: 'POST /api/athena/discover-pages was retired by #4187: Page rows are written by chorus-crawl into urn:chorus:domains:code; read them at athena-make GET :3360/v1/code/pages',
   }, 0, { error: true, retired_by: 4187 }));
 });
 
-// GET /api/athena/subdomains/:id/pages — pages for a domain (#2065)
-app.get('/api/athena/subdomains/:id/pages', async (req: Request, res: Response) => {
-  const r = await fetchAthenaSubdomainPages({ sparql: athenaSparqlQuery, envelope: athenaEnvelope }, req.params.id);
-  res.status(r.status).json(r.body);
-});
 
 
 
@@ -3032,34 +2932,11 @@ app.get('/api/athena/subdomains/:id/pages', async (req: Request, res: Response) 
 app.post('/api/athena/discover-endpoints', (_req: Request, res: Response) => {
   res.status(410).json(athenaEnvelope('discover-endpoints', {
     error: 'retired',
-    message: 'POST /api/athena/discover-endpoints was retired by #4187: Endpoint rows are written by chorus-crawl into urn:chorus:domains:code; read them at GET /api/athena/subdomains/<domain>/services',
+    message: 'POST /api/athena/discover-endpoints was retired by #4187: Endpoint rows are written by chorus-crawl into urn:chorus:domains:code; read them at athena-make GET :3360/v1/code/endpoints',
   }, 0, { error: true, retired_by: 4187 }));
 });
 
 
-// GET /api/athena/subdomains/:id/services — API endpoints for a domain (#2066)
-app.get('/api/athena/subdomains/:id/services', async (req: Request, res: Response) => {
-  const r = await fetchAthenaSubdomainEndpoints({ sparql: athenaSparqlQuery, envelope: athenaEnvelope }, req.params.id);
-  res.status(r.status).json(r.body);
-});
-
-// GET /api/athena/subdomains/:id/actors — actors that interact with this subdomain (#1899)
-app.get('/api/athena/subdomains/:id/actors', async (req: Request, res: Response) => {
-  const r = await fetchAthenaSubdomainActors({ sparql: athenaSparqlQuery, envelope: athenaEnvelope }, req.params.id);
-  res.status(r.status).json(r.body);
-});
-
-// GET /api/athena/subdomains/:id/scenarios — BDD scenarios for this subdomain (#1899)
-app.get('/api/athena/subdomains/:id/scenarios', async (req: Request, res: Response) => {
-  const r = await fetchAthenaSubdomainScenarios({ sparql: athenaSparqlQuery, envelope: athenaEnvelope }, req.params.id);
-  res.status(r.status).json(r.body);
-});
-
-// GET /api/athena/subdomains/:id/contract — API contract for this subdomain (#1899)
-app.get('/api/athena/subdomains/:id/contract', async (req: Request, res: Response) => {
-  const r = await fetchAthenaSubdomainContract({ sparql: athenaSparqlQuery, envelope: athenaEnvelope }, req.params.id);
-  res.status(r.status).json(r.body);
-});
 
 // POST /api/chorus/open — open a file locally (#1907)
 // #2436 — this one asks the machine to open a file, and it answered `*` with
@@ -3098,350 +2975,6 @@ app.post('/api/chorus/open', async (req: Request, res: Response) => {
   }
 });
 
-// NOTE: duplicate GET /api/athena/subdomains/:id/pages removed (#2187).
-// Express matches routes in registration order; the earlier definition at
-// src/handlers/athena-subdomain-pages.ts handled every request for this path.
-// The second copy (different response shape) was unreachable dead code.
-
-// POST /api/athena/subdomains/:id/pages — add page to subdomain (#1923)
-app.post('/api/athena/subdomains/:id/pages', async (req: Request, res: Response) => {
-  const r = await createSubdomainPage(subdomainWriteDeps(), req.params.id, req.body);
-  res.status(r.status).json(r.body);
-});
-
-// GET /api/athena/subdomains/:id/integrations — data integrations for this subdomain (#1923)
-app.get('/api/athena/subdomains/:id/integrations', async (req: Request, res: Response) => {
-  const r = await fetchAthenaSubdomainIntegrations({ sparql: athenaSparqlQuery, envelope: athenaEnvelope }, req.params.id);
-  res.status(r.status).json(r.body);
-});
-
-// POST /api/athena/subdomains/:id/integrations — add integration to subdomain (#1923)
-app.post('/api/athena/subdomains/:id/integrations', async (req: Request, res: Response) => {
-  const r = await createSubdomainIntegration(subdomainWriteDeps(), req.params.id, req.body);
-  res.status(r.status).json(r.body);
-});
-
-// GET /api/athena/subdomains/:id/persistence — persistence stores for this subdomain (#1923)
-app.get('/api/athena/subdomains/:id/persistence', async (req: Request, res: Response) => {
-  const r = await fetchAthenaSubdomainPersistence({ sparql: athenaSparqlQuery, envelope: athenaEnvelope }, req.params.id);
-  res.status(r.status).json(r.body);
-});
-
-app.post('/api/athena/subdomains/:id/persistence', async (req: Request, res: Response) => {
-  const r = await createSubdomainPersistence(subdomainWriteDeps(), req.params.id, req.body);
-  res.status(r.status).json(r.body);
-});
-
-// GET /api/athena/subdomains/:id/services — runtime services for this subdomain (#1924)
-// Extracted to handlers/subdomain-entities.ts (#2180). Four list-GETs share
-// fetchSubdomainEntities + spec — same subdomainExists check, same shape.
-import {
-  // fetchSubdomainServicesList removed by #4237 with the shadowed registration
-  // that was its only caller.
-  fetchSubdomainPipelineList,
-  fetchSubdomainLogsList,
-  fetchSubdomainGapsList,
-  createSubdomainService,
-  createSubdomainPipeline,
-  createSubdomainLog,
-  createSubdomainGap,
-  createSubdomainPage,
-  createSubdomainIntegration,
-  createSubdomainPersistence,
-  createSubdomainScenario,
-  createSubdomainActor,
-  createSubdomainContract,
-  createSubdomainPriorArt,
-  createSubdomainPrinciple,
-  updateSubdomainActor,
-  updateSubdomainScenario,
-  updateSubdomainContract,
-  updateSubdomainPriorArt,
-  updateSubdomainPrinciple,
-  updateSubdomainService,
-  updateSubdomainPipeline,
-  updateSubdomainLog,
-  updateSubdomainGap,
-  updateSubdomainPage,
-  updateSubdomainIntegration,
-  updateSubdomainPersistence,
-  deleteSubdomainEntity,
-} from './handlers/subdomain-entities';
-
-const subdomainWriteDeps = () => ({
-  ...domainFacetDeps(),
-  sparqlUpdate: athenaSparqlUpdate,
-});
-
-// GET /api/athena/subdomains/:id/services was registered HERE a second time
-// (#1924), after the #2066 registration ~130 lines above. Express serves the
-// first match, so this one never ran — and it was the only caller of
-// fetchSubdomainServicesList, whose subdomainExists() gate required
-// `a chorus:SubDomain`. #4237 deleted that class, so the shadowed handler could
-// only ever have 404'd anyway. Removed rather than left: a second registration of
-// a live path is a trap for whoever edits the first one next.
-
-// POST /api/athena/subdomains/:id/services — add service to subdomain (#1924)
-app.post('/api/athena/subdomains/:id/services', async (req: Request, res: Response) => {
-  const r = await createSubdomainService(subdomainWriteDeps(), req.params.id, req.body);
-  res.status(r.status).json(r.body);
-});
-
-// Envelope enrichment writes (#2206) — POST description + reads/writes/consumes edges.
-// Pairs with #2208 data regression. Writes go to Fuseki via athenaSparqlUpdate AND
-// append to a checked-in TTL seed so enrichment survives Fuseki rebuild.
-import {
-  fetchAthenaServiceDescription,
-  fetchAthenaPersistenceDescription,
-  fetchAthenaServiceEdge,
-} from './handlers/athena-enrichment-write';
-import { setSubdomainOwner } from './handlers/athena-owner-write';
-// Seed lives in src/sparql/seeds/ — always version-controlled, never in dist.
-// Resolve from ../src so this works whether server runs from src (ts-node/jest) or dist (compiled).
-const ENRICHMENT_SEED_PATH = path.resolve(__dirname, '..', 'src', 'sparql', 'seeds', 'athena-enrichment.ttl');
-const enrichmentDeps = () => ({
-  sparqlUpdate: athenaSparqlUpdate,
-  appendSeed: (triple: string) => {
-    try {
-      fs.appendFileSync(ENRICHMENT_SEED_PATH, triple + '\n');
-    } catch (err) {
-      console.error(`[enrichment] appendSeed failed: ${err instanceof Error ? err.message : String(err)}`);
-    }
-  },
-});
-
-app.post('/api/athena/subdomains/:id/services/:eid/description', async (req: Request, res: Response) => {
-  const r = await fetchAthenaServiceDescription(enrichmentDeps(), {
-    subdomainId: req.params.id, entityId: req.params.eid, body: req.body || {},
-  });
-  res.status(r.status).json(r.body);
-});
-
-app.post('/api/athena/subdomains/:id/persistence/:eid/description', async (req: Request, res: Response) => {
-  const r = await fetchAthenaPersistenceDescription(enrichmentDeps(), {
-    subdomainId: req.params.id, entityId: req.params.eid, body: req.body || {},
-  });
-  res.status(r.status).json(r.body);
-});
-
-for (const pred of ['reads', 'writes', 'consumes'] as const) {
-  app.post(`/api/athena/subdomains/:id/services/:eid/${pred}`, async (req: Request, res: Response) => {
-    const r = await fetchAthenaServiceEdge(enrichmentDeps(), {
-      subdomainId: req.params.id, entityId: req.params.eid, predicate: pred, body: req.body || {},
-    });
-    res.status(r.status).json(r.body);
-  });
-}
-
-// POST /api/athena/subdomains/:id/owner — re-assign SubDomain owner (#2508)
-const ONTOLOGY_TTL_PATH = path.join(REPO_ROOT, 'roles/silas/ontology/chorus.ttl');
-const ownerWriteDeps = () => ({
-  sparqlUpdate: athenaSparqlUpdate,
-  readTtl: () => fs.readFileSync(ONTOLOGY_TTL_PATH, 'utf-8'),
-  writeTtl: (content: string) => fs.writeFileSync(ONTOLOGY_TTL_PATH, content, 'utf-8'),
-});
-app.post('/api/athena/subdomains/:id/owner', async (req: Request, res: Response) => {
-  const r = await setSubdomainOwner(ownerWriteDeps(), {
-    subdomainId: req.params.id,
-    body: req.body || {},
-  });
-  res.status(r.status).json(r.body);
-});
-
-// GET /api/athena/subdomains/:id/pipeline — data pipeline for this subdomain (#1925)
-app.get('/api/athena/subdomains/:id/pipeline', async (req: Request, res: Response) => {
-  const r = await fetchSubdomainPipelineList(domainFacetDeps(), req.params.id);
-  res.status(r.status).json(r.body);
-});
-
-// POST /api/athena/subdomains/:id/pipeline — add pipeline to subdomain (#1925)
-app.post('/api/athena/subdomains/:id/pipeline', async (req: Request, res: Response) => {
-  const r = await createSubdomainPipeline(subdomainWriteDeps(), req.params.id, req.body);
-  res.status(r.status).json(r.body);
-});
-
-// GET /api/athena/subdomains/:id/logs — log sources for this subdomain (#1926)
-app.get('/api/athena/subdomains/:id/logs', async (req: Request, res: Response) => {
-  const r = await fetchSubdomainLogsList(domainFacetDeps(), req.params.id);
-  res.status(r.status).json(r.body);
-});
-
-// POST /api/athena/subdomains/:id/logs — add log source to subdomain (#1926)
-app.post('/api/athena/subdomains/:id/logs', async (req: Request, res: Response) => {
-  const r = await createSubdomainLog(subdomainWriteDeps(), req.params.id, req.body);
-  res.status(r.status).json(r.body);
-});
-
-// GET /api/athena/subdomains/:id/gaps — known gaps for this subdomain (#1926)
-app.get('/api/athena/subdomains/:id/gaps', async (req: Request, res: Response) => {
-  const r = await fetchSubdomainGapsList(domainFacetDeps(), req.params.id);
-  res.status(r.status).json(r.body);
-});
-
-// POST /api/athena/subdomains/:id/gaps — add gap to subdomain (#1926)
-app.post('/api/athena/subdomains/:id/gaps', async (req: Request, res: Response) => {
-  const r = await createSubdomainGap(subdomainWriteDeps(), req.params.id, req.body);
-  res.status(r.status).json(r.body);
-});
-
-// GET /api/athena/subdomains/:id/prior-art — prior art for this subdomain (#1907)
-app.get('/api/athena/subdomains/:id/prior-art', async (req: Request, res: Response) => {
-  const r = await fetchAthenaSubdomainPriorArt({ sparql: athenaSparqlQuery, envelope: athenaEnvelope }, req.params.id);
-  res.status(r.status).json(r.body);
-});
-
-// POST /api/athena/subdomains/:id/prior-art — add prior art to subdomain (#1907)
-app.post('/api/athena/subdomains/:id/prior-art', async (req: Request, res: Response) => {
-  const r = await createSubdomainPriorArt(subdomainWriteDeps(), req.params.id, req.body);
-  res.status(r.status).json(r.body);
-});
-
-// POST /api/athena/subdomains/:id/actors — add actor to subdomain (#1899)
-app.post('/api/athena/subdomains/:id/actors', async (req: Request, res: Response) => {
-  const r = await createSubdomainActor(subdomainWriteDeps(), req.params.id, req.body);
-  res.status(r.status).json(r.body);
-});
-
-// DELETE /api/athena/subdomains/:id/:section/:entityId — extracted to
-// handlers/subdomain-entities.ts::deleteSubdomainEntity (#2180). The
-// section→class/predicate table (ENTITY_SECTIONS) now lives in the
-// handler module too.
-// #4187 — registered BEFORE the generic :section/:entityId delete, which would otherwise
-// answer 400 'Unknown section: consumes' for this path.
-// #4187 — RETIRED: this route wrote urn:chorus:instances, the catch-all this
-// card empties. the consumes edge lives on the SubDomain row in urn:chorus:domains:domains and is written through athena-make
-app.delete('/api/athena/subdomains/:id/consumes/:targetId', (_req: Request, res: Response) => {
-  res.status(410).json(athenaEnvelope('subdomain-consumes-remove', {
-    error: 'retired',
-    message: 'DELETE /api/athena/subdomains/:id/consumes/:targetId was retired by #4187: the consumes edge lives on the SubDomain row in urn:chorus:domains:domains and is written through athena-make',
-  }, 0, { error: true, retired_by: 4187 }));
-});
-
-app.delete('/api/athena/subdomains/:id/:section/:entityId', async (req: Request, res: Response) => {
-  const r = await deleteSubdomainEntity(subdomainWriteDeps(), req.params.id, req.params.section, req.params.entityId);
-  if (r.status === 204) { res.status(204).send(); return; }
-  res.status(r.status).json(r.body);
-});
-
-app.put('/api/athena/subdomains/:id/actors/:entityId', async (req: Request, res: Response) => {
-  const r = await updateSubdomainActor(subdomainWriteDeps(), req.params.id, req.params.entityId, req.body);
-  res.status(r.status).json(r.body);
-});
-
-app.put('/api/athena/subdomains/:id/scenarios/:entityId', async (req: Request, res: Response) => {
-  const r = await updateSubdomainScenario(subdomainWriteDeps(), req.params.id, req.params.entityId, req.body);
-  res.status(r.status).json(r.body);
-});
-
-app.put('/api/athena/subdomains/:id/contract/:entityId', async (req: Request, res: Response) => {
-  const r = await updateSubdomainContract(subdomainWriteDeps(), req.params.id, req.params.entityId, req.body);
-  res.status(r.status).json(r.body);
-});
-
-// PUT /api/athena/subdomains/:id/pages/:entityId (#1929)
-// PUT adapters — 7 handlers, each 3 lines (#2180).
-app.put('/api/athena/subdomains/:id/pages/:entityId', async (req: Request, res: Response) => {
-  const r = await updateSubdomainPage(subdomainWriteDeps(), req.params.id, req.params.entityId, req.body);
-  res.status(r.status).json(r.body);
-});
-app.put('/api/athena/subdomains/:id/integrations/:entityId', async (req: Request, res: Response) => {
-  const r = await updateSubdomainIntegration(subdomainWriteDeps(), req.params.id, req.params.entityId, req.body);
-  res.status(r.status).json(r.body);
-});
-app.put('/api/athena/subdomains/:id/persistence/:entityId', async (req: Request, res: Response) => {
-  const r = await updateSubdomainPersistence(subdomainWriteDeps(), req.params.id, req.params.entityId, req.body);
-  res.status(r.status).json(r.body);
-});
-app.put('/api/athena/subdomains/:id/services/:entityId', async (req: Request, res: Response) => {
-  const r = await updateSubdomainService(subdomainWriteDeps(), req.params.id, req.params.entityId, req.body);
-  res.status(r.status).json(r.body);
-});
-app.put('/api/athena/subdomains/:id/pipeline/:entityId', async (req: Request, res: Response) => {
-  const r = await updateSubdomainPipeline(subdomainWriteDeps(), req.params.id, req.params.entityId, req.body);
-  res.status(r.status).json(r.body);
-});
-
-// PUT /api/athena/subdomains/:id/logs/:entityId (#1929)
-app.put('/api/athena/subdomains/:id/logs/:entityId', async (req: Request, res: Response) => {
-  const r = await updateSubdomainLog(subdomainWriteDeps(), req.params.id, req.params.entityId, req.body);
-  res.status(r.status).json(r.body);
-});
-app.put('/api/athena/subdomains/:id/gaps/:entityId', async (req: Request, res: Response) => {
-  const r = await updateSubdomainGap(subdomainWriteDeps(), req.params.id, req.params.entityId, req.body);
-  res.status(r.status).json(r.body);
-});
-
-app.put('/api/athena/subdomains/:id/prior-art/:entityId', async (req: Request, res: Response) => {
-  const r = await updateSubdomainPriorArt(subdomainWriteDeps(), req.params.id, req.params.entityId, req.body);
-  res.status(r.status).json(r.body);
-});
-
-// POST /api/athena/subdomains/:id/scenarios — add BDD scenario to subdomain (#1899)
-app.post('/api/athena/subdomains/:id/scenarios', async (req: Request, res: Response) => {
-  const r = await createSubdomainScenario(subdomainWriteDeps(), req.params.id, req.body);
-  res.status(r.status).json(r.body);
-});
-
-app.post('/api/athena/subdomains/:id/contract', async (req: Request, res: Response) => {
-  const r = await createSubdomainContract(subdomainWriteDeps(), req.params.id, req.body);
-  res.status(r.status).json(r.body);
-});
-
-// POST /api/athena/subdomains/:id/principles — add principle to subdomain (#2314)
-app.post('/api/athena/subdomains/:id/principles', async (req: Request, res: Response) => {
-  const r = await createSubdomainPrinciple(subdomainWriteDeps(), req.params.id, req.body);
-  res.status(r.status).json(r.body);
-});
-
-// PUT /api/athena/subdomains/:id/principles/:entityId — update principle (#2314)
-app.put('/api/athena/subdomains/:id/principles/:entityId', async (req: Request, res: Response) => {
-  const r = await updateSubdomainPrinciple(subdomainWriteDeps(), req.params.id, req.params.entityId, req.body);
-  res.status(r.status).json(r.body);
-});
-
-// GET /api/athena/subdomains/:id/completeness — lifecycle-gated completeness score (#1899, #1979)
-// #1979: Split into 2 parallel queries — metadata (ontology) + instance counts (instances).
-// The original monolithic query had 11 OPTIONAL cross-graph joins that caused
-// Fuseki timeout on populated domains due to combinatorial explosion.
-app.get('/api/athena/subdomains/:id/completeness', async (req: Request, res: Response) => {
-  const r = await fetchAthenaSubdomainCompleteness(
-    { sparqlQuery: athenaSparqlQuery, envelope: athenaEnvelope },
-    req.params.id,
-  );
-  res.status(r.status).json(r.body);
-});
-
-// POST /api/athena/subdomains — create a new SubDomain
-// #4187 — RETIRED: this route wrote urn:chorus:instances, the catch-all this
-// card empties. SubDomain rows live in urn:chorus:domains:domains and are written through athena-make (POST :3360/domains/subdomains)
-app.post('/api/athena/subdomains', (_req: Request, res: Response) => {
-  res.status(410).json(athenaEnvelope('subdomain-create', {
-    error: 'retired',
-    message: 'POST /api/athena/subdomains was retired by #4187: SubDomain rows live in urn:chorus:domains:domains and are written through athena-make (POST :3360/domains/subdomains)',
-  }, 0, { error: true, retired_by: 4187 }));
-});
-
-// PUT /api/athena/subdomains/:id — update SubDomain properties
-// #4187 — RETIRED: this route wrote urn:chorus:instances, the catch-all this
-// card empties. SubDomain rows live in urn:chorus:domains:domains and are written through athena-make (PUT :3360/domains/subdomains/<name>)
-app.put('/api/athena/subdomains/:id', (_req: Request, res: Response) => {
-  res.status(410).json(athenaEnvelope('subdomain-update', {
-    error: 'retired',
-    message: 'PUT /api/athena/subdomains/:id was retired by #4187: SubDomain rows live in urn:chorus:domains:domains and are written through athena-make (PUT :3360/domains/subdomains/<name>)',
-  }, 0, { error: true, retired_by: 4187 }));
-});
-
-// POST /api/athena/subdomains/:id/consumes — add consumption edge
-// #4187 — RETIRED: this route wrote urn:chorus:instances, the catch-all this
-// card empties. the consumes edge lives on the SubDomain row in urn:chorus:domains:domains and is written through athena-make
-app.post('/api/athena/subdomains/:id/consumes', (_req: Request, res: Response) => {
-  res.status(410).json(athenaEnvelope('subdomain-consumes-add', {
-    error: 'retired',
-    message: 'POST /api/athena/subdomains/:id/consumes was retired by #4187: the consumes edge lives on the SubDomain row in urn:chorus:domains:domains and is written through athena-make',
-  }, 0, { error: true, retired_by: 4187 }));
-});
-
-// DELETE /api/athena/subdomains/:id/consumes/:targetId — remove consumption edge
 
 // POST /api/athena/reload — redeploy the MODEL SET into this api's store.
 //
@@ -3726,9 +3259,10 @@ function summarizeCoverage(tagged: TaggedDocSummary[]): DocTagCoverage {
 
 async function fetchDriftAgainstAthena(tagged: TaggedDocSummary[]): Promise<ReturnType<typeof detectDrift>> {
   try {
-    const r = await fetch('http://localhost:3340/api/athena/subdomains?limit=100');
-    const d = await r.json() as { data?: Array<{ id?: string }> };
-    const valid = (d.data || []).map(x => x.id || '').filter(Boolean);
+    // #4353 — SubDomain is retired; a doc's domain tag is checked against the Domain rows
+    const r = await fetch(`${ATHENA_MAKE_BASE}/v1/domains/domains`);
+    const d = await r.json() as { data?: Array<{ name?: string }> };
+    const valid = (d.data || []).map(x => x.name || '').filter(Boolean);
     return detectDrift(tagged, valid);
   } catch {
     return [];
@@ -3809,7 +3343,9 @@ app.get('/api/doc-catalog/tree', async (_req: Request, res: Response) => {
     // top level stays the hubs. SUBPRODUCT_DOMAINS remains the tagger bridge.
     const [pRes, sdRes] = await Promise.all([
       fetch('http://localhost:3360/products').then(r => r.json()),
-      fetch('http://localhost:3340/api/athena/subdomains?limit=100').then(r => r.json()),
+      // #4353 — the Domain rows replace the retired SubDomain list (name → id)
+      fetch(`${ATHENA_MAKE_BASE}/v1/domains/domains`).then(r => r.json())
+        .then((raw: unknown) => { const b = raw as { data?: Array<{ name?: string; label?: string }> }; return { data: (b.data || []).map(x => ({ id: x.name, label: x.label })) }; }),
     ]) as [{ data?: Array<{ name?: string; label?: string; ownedBy?: string }> }, { data?: Array<{ id?: string; label?: string }> }];
 
     const TOP_LEVEL = new Set(['chorusProduct', 'gathering', 'borgProduct']);

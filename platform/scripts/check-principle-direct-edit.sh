@@ -2,7 +2,7 @@
 # check-principle-direct-edit.sh — block direct edits to chorus:Principle in TTL (#2314, #2470).
 #
 # Per ADR-025, Principle instances live in urn:chorus:instances and are written via
-# POST /api/athena/subdomains/loom-principles/principles. Hand-editing the schema TTL
+# POST /v1/principles/principles on athena-make. Hand-editing the schema TTL
 # to add/modify/delete Principle triples bypasses validation and re-creates the original
 # split-graph problem.
 #
@@ -141,7 +141,7 @@ fi
 
 echo "" >&2
 echo "Principles live in urn:chorus:instances and are written via the Athena API:" >&2
-echo "  POST /api/athena/subdomains/loom-principles/principles" >&2
+echo "  POST http://localhost:3360/v1/principles/principles" >&2
 echo "" >&2
 echo "Override (migration commit / schema-only): export PRINCIPLE_DIRECT_EDIT_SKIP=1" >&2
 echo "  (legit migrations will trip #2451 boot-hash-drift alert until roles /reboot — expected, not spurious)" >&2

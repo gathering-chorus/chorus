@@ -225,7 +225,8 @@ async function showBlast(id, event) {
   panel.innerHTML = 'Loading...';
   panel.classList.add('visible');
   try {
-    const data = await fetchJSON(API + '/subdomains/' + id + '/blast-radius');
+    // #4353 — blast radius came from a retired SubDomain route; this archived view shows none
+    const data = { data: [] };
     if (data.consumers && data.consumers.length > 0) {
       panel.innerHTML = `<h4>If ${id} fails:</h4>` +
         data.consumers.map(c => `<div class="blast-item">${c.label || c}</div>`).join('');
@@ -256,7 +257,7 @@ async function init() {
     [products, subproducts, subdomains] = await Promise.all([
       fetchJSON(API + '/products'),
       fetchJSON(API + '/subproducts'),
-      fetchJSON(API + '/subdomains')
+      fetchJSON('/owl/v1/domains/domains')
     ]);
     document.querySelector('.loading').textContent =
       `${products.length} products, ${subproducts.length} sub-products, ${subdomains.length} sub-domains`;

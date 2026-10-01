@@ -2,7 +2,7 @@
 # check-decision-direct-edit.sh — block direct edits to chorus:Decision/chorus:ADR in TTL (#2485 Move 5).
 #
 # Per ADR-025 + #2485, Decision and ADR instances live in urn:chorus:instances and are
-# written via POST /api/athena/subdomains/loom-decisions/decisions. Hand-editing the
+# written via POST /v1/decisions/adrs on athena-make. Hand-editing the
 # schema TTL to add/modify these instance triples bypasses validation and re-creates
 # the original split-graph problem.
 #
@@ -53,7 +53,7 @@ fi
 
 echo "" >&2
 echo "Decisions live in urn:chorus:instances and are written via the Athena API:" >&2
-echo "  POST /api/athena/subdomains/loom-decisions/decisions" >&2
+echo "  POST http://localhost:3360/v1/decisions/adrs" >&2
 echo "" >&2
 echo "Override (migration commit / schema-only): export DECISION_DIRECT_EDIT_SKIP=1" >&2
 

@@ -103,7 +103,6 @@ if [ "${1:-}" = "probe" ];       then probe_url "${2:?probe needs URL}" "${3:-}"
 # The routes are the CORS-bearing prefixes actually mounted by chorus-api.
 ROUTES="
 /api/athena/health
-/api/athena/subdomains
 /api/chorus/context/health
 /api/chorus/open
 /api/loom/principles

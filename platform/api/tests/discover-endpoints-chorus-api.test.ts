@@ -1,3 +1,4 @@
+// @test-type: unit — pure functions on fixtures; no live services
 /**
  * #2485 Move 8 — chorus-api route scanner for discover-endpoints.
  */
@@ -27,9 +28,9 @@ describe('parseChorusApiRoutes', () => {
     expect(entries[0].path).toBe('/api/athena/health');
   });
 
-  test('skips parameterized routes containing : (need per-subdomain instantiation)', () => {
+  test('skips parameterized routes containing : (need per-entity instantiation)', () => {
     const src = `
-      app.get('/api/athena/subdomains/:id/code', handler);
+      app.get('/api/athena/blast-radius/:iri', handler);
       app.get('/api/chorus/domain/:name/tests', handler);
     `;
     const entries = parseChorusApiRoutes(src, new Set(['chorus-domain']));
