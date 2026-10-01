@@ -1249,13 +1249,13 @@ import { safeReadFile, readFileTail } from './lib/log-reader';
 // synchronous read off the multi-second freeze path.
 const SPINE_TAIL_BYTES = 4 * 1024 * 1024;
 app.get('/api/chorus/card-story/:id', async (req: Request, res: Response) => {
-  const cardsScript = path.resolve(__dirname, '../../scripts/cards');
+  const cardsScript = process.env.CHORUS_CARDS_BIN || path.resolve(__dirname, '../../scripts/cards'); // #4417 — a test points this at a stub, never the live board
   // #3819 — the SPINE, which moved to ~/.chorus/chorus.log on 2026-05-04 when
   // branch checkouts were clobbering the in-repo copy. These handlers were
   // never repointed, so they read a 57KB leftover and returned no events —
   // silently, for months. The candidates list at the /api/chorus/spine route
   // has had the right path all along.
-  const logPath = `${process.env.HOME}/.chorus/chorus.log`;
+  const logPath = process.env.CHORUS_SPINE_FILE || `${process.env.HOME}/.chorus/chorus.log`; // #4417 — overridable for tests
 
   let db: Database.Database | null = null;
   try { db = getDb(); } catch { /* db optional */ }
@@ -1344,7 +1344,7 @@ app.get('/api/chorus/domain-story/:domain', (req: Request, res: Response) => {
   // never repointed, so they read a 57KB leftover and returned no events —
   // silently, for months. The candidates list at the /api/chorus/spine route
   // has had the right path all along.
-  const logPath = `${process.env.HOME}/.chorus/chorus.log`;
+  const logPath = process.env.CHORUS_SPINE_FILE || `${process.env.HOME}/.chorus/chorus.log`; // #4417 — overridable for tests
   let db: Database.Database | null = null;
   try { db = getDb(); } catch { /* db optional */ }
   try {
@@ -2983,7 +2983,7 @@ app.post('/api/athena/validate', async (req: Request, res: Response) => {
 
 // GET /api/athena/card/:id — card detail for inline rendering (#1900)
 app.get('/api/athena/card/:id', async (req: Request, res: Response) => {
-  const cardsScript = path.resolve(__dirname, '../../scripts/cards');
+  const cardsScript = process.env.CHORUS_CARDS_BIN || path.resolve(__dirname, '../../scripts/cards'); // #4417 — a test points this at a stub, never the live board
   const env = { ...process.env, PATH: `/Users/jeffbridwell/.nvm/versions/node/v20.11.1/bin:/opt/homebrew/bin:/usr/local/bin:${process.env.PATH}` };
   const r = await fetchAthenaCardDetail(
     {
