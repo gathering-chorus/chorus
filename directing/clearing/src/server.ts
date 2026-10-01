@@ -1895,7 +1895,7 @@ export function pickJeffMessageTargets(text: string): string[] {
 // fire-and-forget for audit continuity with the pre-#3343 event names.
 const PULSE_URL = process.env.PULSE_URL || 'http://localhost:3475';
 
-async function deliverJeffMessageToTarget(target: string, safeMsg: string, cleanText: string): Promise<string | null> {
+export async function deliverJeffMessageToTarget(target: string, safeMsg: string, cleanText: string): Promise<string | null> {
   const { execFile } = require('child_process');
   console.log(`[clearing] delivering to ${target}: ${cleanText.substring(0, 60)}`);
   const ctrl = new AbortController();
