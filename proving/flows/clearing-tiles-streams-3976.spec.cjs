@@ -35,7 +35,7 @@
  * was built to catch.
  */
 const { test, expect } = require('@playwright/test');
-const { spawn } = require('child_process');
+const { ownClearing } = require('./lib/own-clearing.cjs');
 const path = require('path');
 const fs = require('fs');
 
@@ -60,61 +60,20 @@ const ROLES = ['wren', 'silas', 'kade'];
  * still wins when set, so grading the deployed Clearing after a land is one env
  * var, which is the post-deploy check and belongs after the deploy.
  */
-const CLEARING_SRC = path.resolve(__dirname, '..', '..', 'directing', 'clearing');
-const OWN_PORT = Number(process.env.TILES_SPEC_PORT || 3487);
-const CLEARING = process.env.CLEARING_URL || `http://localhost:${OWN_PORT}`;
-const BRINGS_OWN = !process.env.CLEARING_URL;
-
-let child = null;
-
-test.beforeAll(async () => {
-  if (!BRINGS_OWN) return;
-  // #4004 — NAME THE REAL CAUSE. A werk has no directing/clearing/dist until the
-  // package is built, spawn() with stdio:'ignore' swallowed node's "cannot find
-  // module", and the only symptom was a 30s wait ending in "own Clearing did not
-  // answer on :3487" — which blames the port and sent two people hunting a
-  // service that was never going to start. Check the artifact first, and keep
-  // the child's stderr so the next failure explains itself.
-  const entry = path.join(CLEARING_SRC, 'dist', 'server.js');
-  if (!fs.existsSync(entry)) {
-    throw new Error(
-      `clearing is not built: ${entry} is missing. This spec brings its own ` +
-      `Clearing, so the package must be compiled first (npm run build in ` +
-      `directing/clearing), or point CLEARING_URL at a running one.`,
-    );
-  }
-  child = spawn(process.execPath, [entry], {
-    cwd: CLEARING_SRC,
-    env: {
-      ...process.env,
-      COMMAND_CHANNEL_PORT: String(OWN_PORT),
-      CLEARING_HTTPS_PORT: String(OWN_PORT + 1),
-      // A test-owned Clearing reads the spine and must not write to anyone:
-      // no pulse fetch, and nudges go nowhere near a role's terminal.
-      PULSE_URL: 'http://127.0.0.1:1',
-      NUDGE_BINARY: '/usr/bin/true',
-    },
-    stdio: ['ignore', 'ignore', 'pipe'],
-  });
-  let childErr = '';
-  child.stderr?.on('data', (d) => { childErr += String(d).slice(0, 2000); });
-  const deadline = Date.now() + 30000;
-  for (;;) {
-    const ok = await fetch(`${CLEARING}/api/stream?lines=1`).then((r) => r.ok).catch(() => false);
-    if (ok) return;
-    if (child.exitCode !== null) {
-      throw new Error(`own Clearing exited immediately (code ${child.exitCode}): ${childErr.trim() || 'no stderr'}`);
-    }
-    if (Date.now() > deadline) {
-      throw new Error(`own Clearing did not answer on ${CLEARING} in 30s: ${childErr.trim() || 'no stderr'}`);
-    }
-    await new Promise((r) => setTimeout(r, 500));
-  }
+// #4417 — the own-Clearing start moved to lib/own-clearing.cjs, shared by all six
+// Clearing specs, and now gets its whole world in a temp dir (it used to keep the
+// live HOME, projects dir and message file). The live room is refused.
+// Its own Clearing reads an empty spine unless seeded: one started call per role,
+// the shape a role's work takes on the live spine (#4231).
+const nowIso = () => new Date().toISOString();
+const CLEARING_TARGET = ownClearing(test, {
+  spine: ['wren', 'silas', 'kade'].map((role, i) => JSON.stringify({
+    appName: 'chorus-events', level: 'info', timestamp: nowIso(), event: 'agent.action',
+    role, phase: 'started', tool: 'Bash', call_id: `toolu_seed_${i}`, digest: `Run the suite · bash: bash ${i + 1}s`,
+  })),
 });
-
-test.afterAll(() => {
-  if (child && !child.killed) child.kill();
-});
+const CLEARING = CLEARING_TARGET.url;
+const BRINGS_OWN = CLEARING_TARGET.own;
 
 /**
  * REFUSE rather than pass when the target is not a Clearing.

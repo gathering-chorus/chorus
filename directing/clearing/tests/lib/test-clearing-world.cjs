@@ -28,6 +28,10 @@ function testClearingEnv(dir, port, token) {
     CLEARING_PULSE_FILE: path.join(dir, 'pulse-latest.json'),
     CLEARING_SPINE_FILE: path.join(dir, 'chorus.log'),
     CHORUS_LOG_FILE: path.join(dir, 'chorus.log'),
+    // the stream pane reads CHORUS_SPINE, then CHORUS_HOME/chorus.log; a shell's
+    // CHORUS_HOME is the repo, so pin both or the pane reads whatever it finds.
+    CHORUS_SPINE: path.join(dir, 'chorus.log'),
+    CHORUS_HOME: path.join(home, '.chorus'),
     CHORUS_MESSAGES_DB: path.join(dir, 'messages.db'),
     SHARE_STATE_FILE: path.join(dir, 'share-state.json'),
     CHORUS_INJECT_DRY_RUN: '1',

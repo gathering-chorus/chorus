@@ -20,15 +20,15 @@
  * Endpoints: POST /api/chat/start, /api/chat/message, /api/chat/end
  */
 const { test: base, expect } = require('@playwright/test');
+const { ownClearing } = require('./lib/own-clearing.cjs');
 
 // #4417 — no prod default and no live credential. This spec POSTed chat
 // sessions and DECISION messages to Jeff's live Clearing on :3470 with the
-// machine's bridge token, unguarded. Same rule as clearing-room-key-3865: a
-// test brings its own world or refuses. Unset CLEARING_URL = skip, loudly; set
-// it (and CLEARING_TOKEN, the variant's credential) to run against a variant.
-const BRIDGE_URL = process.env.CLEARING_URL;
-const AUTH = { Authorization: `Bearer ${process.env.CLEARING_TOKEN || ''}` };
-base.skip(!BRIDGE_URL, 'CLEARING_URL unset — refusing to write into the live Clearing (#4417); point it at a variant room to run');
+// machine's bridge token. It now drives its own Clearing (lib/own-clearing.cjs)
+// unless CLEARING_URL names a variant; the live room is refused.
+const CLEARING_TARGET = ownClearing(base);
+const BRIDGE_URL = CLEARING_TARGET.url;
+const AUTH = CLEARING_TARGET.auth;
 
 base.describe('Clearing: chat session lifecycle', () => {
   base('start session → send message → end session completes full lifecycle', async ({ request }) => {
