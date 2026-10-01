@@ -11,53 +11,26 @@ setup() {
   SCRIPT="${CHORUS_PRINCIPAL_TEST_BIN:-$ROOT/platform/services/chorus-principal/target/release/chorus-principal}"
   [ -x "$SCRIPT" ] || skip "chorus-principal not built at $SCRIPT"
   T="$BATS_TEST_TMPDIR"
-  mkdir -p "$T/sessions" "$T/bin" "$T/roles/kade"
-  touch "$T/alive-pids"
-  # stub ps: alive iff the pid is listed in alive-pids
-  cat > "$T/bin/ps" <<EOS
-#!/bin/bash
-grep -qx "\$2" "$T/alive-pids"
-EOS
-  # stub tmux: records every call; has-session answers from a marker file
+  # #4409 — the shared fixture world (lib/login-harness.bash); only what this
+  # suite needs differently is set below.
+  source "$ROOT/platform/tests/lib/login-harness.bash"
+  login_harness
+  # one role, one window: has-session answers from a marker; registration is
+  # simulated by the cases themselves, so send-keys registers nothing
   cat > "$T/bin/tmux" <<EOS
 #!/bin/bash
 echo "tmux \$*" >> "$T/tmux.log"
 case "\$1" in has-session) [ -f "$T/tmux-session-exists" ]; exit \$? ;; new-session) touch "$T/tmux-session-exists" ;; esac
 exit 0
 EOS
-  # stub claude: records calls; agents --json prints the fixture; send-keys is
-  # never executed (tmux is a stub) so registration is simulated by the test
-  cat > "$T/bin/claude" <<EOS
-#!/bin/bash
-echo "claude \$*" >> "$T/claude.log"
-if [ "\$1" = "agents" ]; then [ -f "$T/agents-fail" ] && { echo "boom: unknown option --cwd" >&2; exit 1; }; cat "$T/agents.json" 2>/dev/null || echo '[]'; fi
-exit 0
-EOS
-  # #4202 — login is mandatory before a pane starts: stub the minter, the
-  # security API and the spine so this suite never reaches the live ones.
-  mkdir -p "$T/identity/kade"
-  payload=$(printf '{"webid":"https://id.lightlifeurbangardens.com/kade/profile/card#me","jti":"jti-4184","iat":%s,"exp":%s}' "$(date +%s)" "$(( $(date +%s) + 600 ))" | base64 | tr '+/' '-_' | tr -d '=\n')
-  printf 'eyJhbGciOiJFUzI1NiJ9.%s.sig' "$payload" > "$T/token.fixture"
-  printf '#!/bin/bash\ncat "%s/token.fixture"\n' "$T" > "$T/bin/token"
-  # #4368: login reads the Principal row first; kade is an agent here
-  printf '#!/bin/bash\ncase "$*" in *"/v1/identity/sessions?channel=browser"*) printf '"'"'{"data":[{"ownedBy":"principal-jeff","channel":"browser","sessionState":"open","expiresAt":"2099-01-01T00:00:00Z"}]}\\n200\\n'"'"'; exit 0 ;; esac\ncase "${@: -1}" in */v1/identity/principals/jeff) printf '"'"'{"data":{"principalKind":"person"}}\\n200\\n'"'"'; exit 0 ;; */v1/identity/principals/kade) printf '"'"'{"data":{"principalKind":"agent"}}\\n200\\n'"'"'; exit 0 ;; */v1/identity/principals/*) printf '"'"'{}\\n404\\n'"'"'; exit 0 ;; esac\necho 201\n' > "$T/bin/curl"
-  printf '#!/bin/bash\nexit 0\n' > "$T/bin/chorus-log"
-  export CHORUS_TOKEN_BIN="$T/bin/token" AWAKE_CURL="$T/bin/curl" CHORUS_LOG_BIN="$T/bin/chorus-log"
-  export CHORUS_IDENTITY_DIR="$T/identity" CHORUS_API_URL="http://stub:1"
-  chmod +x "$T/bin/"*
-  echo '[]' > "$T/agents.json"
-  export CLAUDE_BIN="$T/bin/claude" TMUX_BIN="$T/bin/tmux" AWAKE_PS="$T/bin/ps"
-  export CHORUS_SESSIONS_DIR="$T/sessions" AWAKE_ROLE_DIR="$T/roles/kade" CHORUS_ROOT="$ROOT"
-  export AWAKE_NO_ATTACH=1 AWAKE_WAIT=1
-  # #4215 — the mute check reads the spine. Point it at a fixture that says kade
-  # answered a moment ago, so "already awake" means the same thing on every box
-  # and at every hour instead of depending on what the real team said today.
-  printf '{"role":"kade","event":"reply.published","timestamp":"%s"}\n' "$(date '+%Y-%m-%dT%H:%M:%S')" > "$T/spine-read.log"
-  export CHORUS_LOG_FILE="$T/spine-read.log"
-  mkdir -p "$T/projects"; export AWAKE_PROJECTS_DIR="$T/projects"
-  unset TMUX CLAUDECODE
+  chmod +x "$T/bin/tmux"
+  export AWAKE_ROLE_DIR="$T/roles/kade" AWAKE_WAIT=1
   # #4295: no live service probes from a unit world; no background retry left running
   export AWAKE_SERVICES=none AWAKE_NO_RETRY=1
+  echo '[]' > "$T/agents.json"
+  # #4215 — the mute check reads the spine. Point it at a fixture that says kade
+  # answered a moment ago, so "already awake" means the same thing on every box.
+  printf '{"role":"kade","event":"reply.published","timestamp":"%s"}\n' "$(date '+%Y-%m-%dT%H:%M:%S')" > "$T/spine-read.log"
 }
 
 reg() { # reg <pid> [pane]

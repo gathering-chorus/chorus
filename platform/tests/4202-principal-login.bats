@@ -16,64 +16,29 @@ setup() {
   SCRIPT="${CHORUS_PRINCIPAL_TEST_BIN:-$ROOT/platform/services/chorus-principal/target/release/chorus-principal}"
   [ -x "$SCRIPT" ] || skip "chorus-principal not built at $SCRIPT"
   T="$BATS_TEST_TMPDIR"
-  mkdir -p "$T/sessions" "$T/bin" "$T/roles/kade" "$T/projects" "$T/identity/kade"
-  touch "$T/alive-pids"
-  cat > "$T/bin/ps" <<EOS
-#!/bin/bash
-grep -qx "\$2" "$T/alive-pids"
-EOS
+  # #4409 — the shared fixture world (lib/login-harness.bash); only what this
+  # suite needs differently is set below.
+  source "$ROOT/platform/tests/lib/login-harness.bash"
+  login_harness
+  # one role, one window: has-session answers from a marker; registration is
+  # simulated by the cases themselves, so send-keys registers nothing
   cat > "$T/bin/tmux" <<EOS
 #!/bin/bash
 echo "tmux \$*" >> "$T/tmux.log"
 case "\$1" in has-session) [ -f "$T/tmux-session-exists" ]; exit \$? ;; new-session) touch "$T/tmux-session-exists" ;; esac
 exit 0
 EOS
-  cat > "$T/bin/claude" <<EOS
-#!/bin/bash
-echo "claude \$*" >> "$T/claude.log"
-if [ "\$1" = "agents" ]; then echo '[]'; fi
-exit 0
-EOS
-  # stub token minter: prints the fixture token for the role asked, or refuses
-  cat > "$T/bin/token" <<EOS
-#!/bin/bash
-echo "token \$*" >> "$T/token.log"
-[ -f "$T/token-fail" ] && { echo "chorus-identity-token: no credential for '\$1'" >&2; exit 3; }
-cat "$T/token.fixture"
-EOS
-  # stub curl: records the request (never the token), answers the fixture status
-  cat > "$T/bin/curl" <<EOS
-#!/bin/bash
-echo "curl \$*" >> "$T/curl.log"
-case "\$*" in *"/v1/identity/sessions?channel=browser"*) printf '{"data":[{"name":"jeff-browser-1","ownedBy":"principal-jeff","channel":"browser","sessionState":"open","expiresAt":"2099-01-01T00:00:00Z"}]}\n200\n'; exit 0 ;; esac   # #4412: Jeff is signed in
-case "\${@: -1}" in */v1/identity/principals/jeff) printf '{"data":{"principalKind":"person"}}\n200\n'; exit 0 ;; esac
-case "\${@: -1}" in */v1/identity/principals/*) pn="\${@: -1}"; pn="\${pn##*/}"; if [ -f "$T/principal-\$pn.json" ]; then cat "$T/principal-\$pn.json"; else case "\$pn" in wren|silas|kade) printf '{"data":{"principalKind":"agent"}}\n200\n' ;; *) printf '{"data":{"status":404}}\n404\n' ;; esac; fi; exit 0 ;; esac   # #4368: the Principal row login reads
-# the 409 branch re-reads the row with a plain GET (no -X POST): answer it with
-# the fixture body so the ownership decision can be exercised. #4215.
-case "\$*" in *"-X POST"*) ;; *) cat "$T/existing.json" 2>/dev/null; exit 0 ;; esac
-# #4328 — a login now also POSTs its run, presence and context; keep the SESSION body
-
-for a in "\$@"; do case "\$a" in @*session.body) cp "\${a#@}" "$T/curl.body" ;; esac; done
-cat "$T/curl.status" 2>/dev/null || echo 201
-EOS
-  cat > "$T/bin/chorus-log" <<EOS
-#!/bin/bash
-echo "\$*" >> "$T/spine.log"
-EOS
-  chmod +x "$T/bin/"*
-  export CLAUDE_BIN="$T/bin/claude" TMUX_BIN="$T/bin/tmux" AWAKE_PS="$T/bin/ps"
-  export CHORUS_TOKEN_BIN="$T/bin/token" AWAKE_CURL="$T/bin/curl" CHORUS_LOG_BIN="$T/bin/chorus-log"
-  export CHORUS_IDENTITY_DIR="$T/identity" CHORUS_API_URL="http://stub:1"
-  export CHORUS_SESSIONS_DIR="$T/sessions" AWAKE_ROLE_DIR="$T/roles/kade" CHORUS_ROOT="$ROOT"
-  export AWAKE_PROJECTS_DIR="$T/projects" AWAKE_NO_ATTACH=1 AWAKE_WAIT=1 USER=unit-account
-  unset TMUX CLAUDECODE
+  chmod +x "$T/bin/tmux"
+  export AWAKE_ROLE_DIR="$T/roles/kade" AWAKE_WAIT=1 CHORUS_API_URL="http://stub:1"
   # #4295: no live service probes from a unit world; no background retry left running
   export AWAKE_SERVICES=none AWAKE_NO_RETRY=1
-  mk_token kade
+  one_token kade
 }
 
 # a JWT-shaped token whose payload names <role>'s WebID; the signature is not checked here (CSS signs, the API verifies)
-mk_token() {
+# the one token every role is handed in this suite (token.fixture); named apart
+# from the harness's per-role mk_token, which sourcing the harness would replace
+one_token() {
   local role="$1" exp="${2:-$(( $(date +%s) + 600 ))}"
   local payload
   payload=$(printf '{"webid":"https://id.lightlifeurbangardens.com/%s/profile/card#me","jti":"jti-%s-0001","iat":%s,"exp":%s}' "$role" "$role" "$(date +%s)" "$exp" | base64 | tr '+/' '-_' | tr -d '=\n')
@@ -171,7 +136,7 @@ lacks()   { test -z "$(grep -F -- "$2" "$1" 2>/dev/null || true)"; }
 }
 
 @test "#4215 an expired token degrades: it is a stale credential, not someone else's" {
-  mk_token kade $(( $(date +%s) - 5 ))
+  one_token kade $(( $(date +%s) - 5 ))
   ( sleep 0.3; reg 784 %5 ) &
   run "$SCRIPT" kade
   out_has "expired"
@@ -201,7 +166,7 @@ lacks()   { test -z "$(grep -F -- "$2" "$1" 2>/dev/null || true)"; }
 }
 
 @test "#4215 THE ONE REFUSAL — another role's WebID is refused and nothing is started" {
-  mk_token silas
+  one_token silas
   run "$SCRIPT" kade
   test "$status" -eq 1
   out_has "REFUSED"

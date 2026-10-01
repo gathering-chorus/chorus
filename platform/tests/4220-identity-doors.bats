@@ -21,6 +21,15 @@ setup() {
   chmod 600 "$HDR"
 }
 
+# #4409 — every row a test writes is named here and deleted in teardown, so a
+# failed assert mid-test cannot leave it in the live store.
+teardown() {
+  [ -f "$BATS_TEST_TMPDIR/created" ] || return 0
+  while read -r name; do
+    [ -n "$name" ] && curl -s --max-time 10 -X DELETE -H "@$HDR" "$API/v1/identity/sessions/$name" -o /dev/null
+  done < "$BATS_TEST_TMPDIR/created"
+}
+
 FUSEKI_QUERY_URL="${FUSEKI_QUERY:-http://localhost:3030/pods/sparql}"
 
 @test "#4220 a session may NOT create a Principal — who exists is deploy-only" {
@@ -38,6 +47,7 @@ FUSEKI_QUERY_URL="${FUSEKI_QUERY:-http://localhost:3030/pods/sparql}"
   # If this fails, the refusal above proves nothing about deploy-only — it would
   # just mean the caller cannot write anything at all.
   name="bats-4220-sess-$$"
+  echo "$name" >> "$BATS_TEST_TMPDIR/created"
   run curl -s --max-time 10 -o /dev/null -w '%{http_code}' -X POST -H 'Content-Type: application/json' -H "@$HDR" \
     --data "{\"name\":\"$name\",\"label\":\"bats\",\"ownedBy\":\"principal-silas\",\"tokenId\":\"bats-4220-$$\",\"issuedAt\":\"2026-01-01T00:00:00Z\",\"expiresAt\":\"2026-01-01T00:10:00Z\",\"sessionState\":\"open\",\"hostAccount\":\"bats\"}" \
     "$API/v1/identity/sessions"
@@ -51,8 +61,20 @@ FUSEKI_QUERY_URL="${FUSEKI_QUERY:-http://localhost:3030/pods/sparql}"
   run curl -s --max-time 10 "$API/v1/identity/sessions/$name"
   printf '%s' "$output" | grep -q '"endedAt"'
   printf '%s' "$output" | grep -q 'closed'
+}
 
-  curl -s --max-time 10 -X DELETE -H "@$HDR" "$API/v1/identity/sessions/$name" -o /dev/null
+@test "#4409 the row the door test writes is gone after teardown" {
+  name="bats-4220-residue-$$"
+  echo "$name" >> "$BATS_TEST_TMPDIR/created"
+  run curl -s --max-time 10 -o /dev/null -w '%{http_code}' -X POST -H 'Content-Type: application/json' -H "@$HDR" \
+    --data "{\"name\":\"$name\",\"label\":\"bats\",\"ownedBy\":\"principal-silas\",\"tokenId\":\"bats-4220r-$$\",\"issuedAt\":\"2026-01-01T00:00:00Z\",\"expiresAt\":\"2026-01-01T00:10:00Z\",\"sessionState\":\"open\",\"hostAccount\":\"bats\"}" \
+    "$API/v1/identity/sessions"
+  test "$output" = "201"
+  teardown
+  : > "$BATS_TEST_TMPDIR/created"
+  # NEGATIVE PROOF that the read can see a row: it saw this one before teardown ran
+  run curl -s --max-time 10 "$API/v1/identity/sessions/$name"
+  test "$(printf '%s' "$output" | grep -cF "bats-4220r-$$")" -eq 0
 }
 
 @test "#4220 the door names the graph the MODEL declares, not a built-in" {
