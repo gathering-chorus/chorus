@@ -21,16 +21,14 @@
  */
 const { test: base, expect } = require('@playwright/test');
 
-// #3966 — room writes require BRIDGE_TOKEN; read from either location the server uses.
-const fs = require('fs');
-const BRIDGE_TOKEN = [
-  `${process.env.CHORUS_HOME || ''}/bridge-auth-token`,
-  `${process.env.HOME}/.chorus/bridge-auth-token`,
-].map((p) => { try { return fs.readFileSync(p, 'utf8').trim(); } catch { return ''; } })
- .find(Boolean) || '';
-const AUTH = { Authorization: `Bearer ${BRIDGE_TOKEN}` };
-
-const BRIDGE_URL = 'http://localhost:3470';
+// #4417 — no prod default and no live credential. This spec POSTed chat
+// sessions and DECISION messages to Jeff's live Clearing on :3470 with the
+// machine's bridge token, unguarded. Same rule as clearing-room-key-3865: a
+// test brings its own world or refuses. Unset CLEARING_URL = skip, loudly; set
+// it (and CLEARING_TOKEN, the variant's credential) to run against a variant.
+const BRIDGE_URL = process.env.CLEARING_URL;
+const AUTH = { Authorization: `Bearer ${process.env.CLEARING_TOKEN || ''}` };
+base.skip(!BRIDGE_URL, 'CLEARING_URL unset — refusing to write into the live Clearing (#4417); point it at a variant room to run');
 
 base.describe('Clearing: chat session lifecycle', () => {
   base('start session → send message → end session completes full lifecycle', async ({ request }) => {
