@@ -14,3 +14,9 @@ if (!process.env.CHORUS_LOG_FILE) process.env.CHORUS_LOG_FILE = path.join(dir, '
 // no jest process can read the live guard key (~/.chorus/share-oidc.json),
 // whatever order modules load in. A test that needs a key writes its own.
 if (!process.env.SHARE_STATE_FILE) process.env.SHARE_STATE_FILE = path.join(dir, 'share-oidc.json');
+// #4417 — 10 test files import server.ts in-process. A signed-in request makes
+// it PUT Session rows to athena-make and read the allow-set from Fuseki; in a
+// test both go to a closed port, never the live services. A test that needs an
+// answer stands up its own stub and sets the variable itself.
+if (!process.env.ATHENA_MAKE_URL) process.env.ATHENA_MAKE_URL = 'http://127.0.0.1:9';
+if (!process.env.CHORUS_FUSEKI_QUERY) process.env.CHORUS_FUSEKI_QUERY = 'http://127.0.0.1:9/query';
