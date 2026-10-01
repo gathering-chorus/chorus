@@ -13,7 +13,7 @@ const fs = require('fs');
 const os = require('os');
 const path = require('path');
 const { spawn } = require('child_process');
-const { testClearingEnv } = require('../../../directing/clearing/tests/lib/test-clearing-world.cjs');
+const { testClearingEnv, signedInSession } = require('../../../directing/clearing/tests/lib/test-clearing-world.cjs');
 
 const CLEARING_SRC = path.resolve(__dirname, '..', '..', '..', 'directing', 'clearing');
 
@@ -27,7 +27,8 @@ function isLiveClearing(url) {
   return port === '3470' || port === '3471';
 }
 
-/** opts.spine: lines written to the own Clearing's spine log before it starts. */
+/** opts.spine: lines written to the own Clearing's spine log before it starts.
+ *  opts.signedInAs: a WebID; the result's .session() is then a clearing_session cookie for it. */
 function ownClearing(test, opts = {}) {
   const given = process.env.CLEARING_URL;
   if (given && isLiveClearing(given)) {
@@ -38,6 +39,7 @@ function ownClearing(test, opts = {}) {
   const token = given ? (process.env.CLEARING_TOKEN || '') : `test-${process.pid}-${Date.now()}`;
   let child = null;
   let dir = '';
+  let sessionCookie = '';
 
   test.beforeAll(async () => {
     if (given) return;
@@ -48,6 +50,7 @@ function ownClearing(test, opts = {}) {
     dir = fs.mkdtempSync(path.join(os.tmpdir(), 'own-clearing-'));
     const env = testClearingEnv(dir, port, token);
     if (opts.spine && opts.spine.length) fs.writeFileSync(env.CHORUS_LOG_FILE, opts.spine.join('\n') + '\n');
+    if (opts.signedInAs) sessionCookie = signedInSession(dir, opts.signedInAs);
     child = spawn(process.execPath, [entry], {
       cwd: CLEARING_SRC,
       env: { ...process.env, ...env },
@@ -69,7 +72,7 @@ function ownClearing(test, opts = {}) {
     if (dir) fs.rmSync(dir, { recursive: true, force: true });
   });
 
-  return { url, token, auth: { Authorization: `Bearer ${token}` }, own: !given };
+  return { url, token, auth: { Authorization: `Bearer ${token}` }, own: !given, session: () => sessionCookie };
 }
 
 module.exports = { ownClearing, isLiveClearing };
