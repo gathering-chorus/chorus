@@ -13,7 +13,6 @@ import { startTestApp, type TestApp } from './lib/test-app';
 // (cold FTS + freshness caches) exceeds jest's 5s default and the suite
 // red-ed on timeout with every assertion untested (03:16 run: 27.7s suite).
 // 30s bounds a genuinely-hung API while never failing on load contention.
-jest.setTimeout(30000);
 
 describe('GET /api/chorus/search — _meta freshness (#1878)', () => {
 

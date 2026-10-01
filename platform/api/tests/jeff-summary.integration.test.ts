@@ -1,3 +1,4 @@
+// @test-type: integration:api — in-process TestApp harness
 /**
  * Jeff dashboard endpoints + page — #2099
  *
@@ -23,13 +24,13 @@ describe('#2099: /api/chorus/jeff/posture/strip', () => {
     expect(typeof body.total).toBe('number');
     expect(typeof body.filtered).toBe('number');
     expect(body.days).toBe(7);
-  }, 10_000);
+  });
 
   test('days clamps to max 30', async () => {
     const res = await fetch(`${harness.baseUrl}/api/chorus/jeff/posture/strip?days=100`);
     const body = await res.json();
     expect(body.days).toBe(30);
-  }, 10_000);
+  });
 });
 
 describe('#2099: /api/chorus/werk/activity', () => {
@@ -47,13 +48,13 @@ describe('#2099: /api/chorus/werk/activity', () => {
     expect(typeof body.total).toBe('number');
     expect(body.hours).toBe(6);
     expect(typeof body.sources).toBe('object');
-  }, 15_000);
+  });
 
   test('hours clamps to [1, 168]', async () => {
     const res = await fetch(`${harness.baseUrl}/api/chorus/werk/activity?hours=500`);
     const body = await res.json();
     expect(body.hours).toBe(168);
-  }, 15_000);
+  });
 });
 
 describe('#2099: /borg/jeff/ static page', () => {
@@ -66,7 +67,7 @@ describe('#2099: /borg/jeff/ static page', () => {
   test('GET /borg/jeff/ returns 200', async () => {
     const res = await fetch(`${harness.baseUrl}/borg/jeff/`);
     expect(res.status).toBe(200);
-  }, 10_000);
+  });
 
   test('page references 5 chorus-api endpoints', async () => {
     const res = await fetch(`${harness.baseUrl}/borg/jeff/`);
@@ -76,7 +77,7 @@ describe('#2099: /borg/jeff/ static page', () => {
     expect(html).toContain('/api/chorus/reprompt-analytics');
     expect(html).toContain('/api/chorus/cost/summary');
     expect(html).toContain('/api/chorus/jeff/posture/strip');
-  }, 10_000);
+  });
 
   test('page has posture, voice, attention, reprompt, cost, werk panel containers', async () => {
     const res = await fetch(`${harness.baseUrl}/borg/jeff/`);
@@ -87,5 +88,5 @@ describe('#2099: /borg/jeff/ static page', () => {
     expect(html).toContain('id="reprompt-panel"');
     expect(html).toContain('id="cost-panel"');
     expect(html).toContain('id="werk-panel"');
-  }, 10_000);
+  });
 });

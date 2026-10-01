@@ -1,3 +1,4 @@
+// @test-type: integration:api — in-process TestApp harness
 /**
  * Hooks summary endpoint + static page — #2099
  *
@@ -27,7 +28,7 @@ describe('#2099: /api/chorus/hooks/summary', () => {
     const res = await fetch(`${harness.baseUrl}/api/chorus/hooks/summary`);
     expect(res.status).toBe(200);
     expect(res.headers.get('content-type')).toMatch(/json/);
-  }, 15_000);
+  });
 
   test('response has summaries array and totals object', async () => {
     const res = await fetch(`${harness.baseUrl}/api/chorus/hooks/summary`);
@@ -39,7 +40,7 @@ describe('#2099: /api/chorus/hooks/summary', () => {
     expect(typeof body.totals.blocks).toBe('number');
     expect(typeof body.totals.flags).toBe('number');
     expect(typeof body.totals.nudges).toBe('number');
-  }, 15_000);
+  });
 
   test('summaries cover all 13 hook categories', async () => {
     const res = await fetch(`${harness.baseUrl}/api/chorus/hooks/summary`);
@@ -48,7 +49,7 @@ describe('#2099: /api/chorus/hooks/summary', () => {
     for (const cat of CATEGORIES) {
       expect(returned).toContain(cat);
     }
-  }, 15_000);
+  });
 
   test('each summary has label, description, enforcement, counts', async () => {
     const res = await fetch(`${harness.baseUrl}/api/chorus/hooks/summary`);
@@ -65,7 +66,7 @@ describe('#2099: /api/chorus/hooks/summary', () => {
     expect(typeof s.flags).toBe('number');
     expect(typeof s.nudges).toBe('number');
     expect(Array.isArray(s.recent)).toBe(true);
-  }, 15_000);
+  });
 });
 
 describe('#2119: hook category descriptions match current enforcement', () => {
@@ -97,19 +98,19 @@ describe('#2099: /borg/hooks/ static page', () => {
   test('GET /borg/hooks/ returns 200', async () => {
     const res = await fetch(`${harness.baseUrl}/borg/hooks/`);
     expect(res.status).toBe(200);
-  }, 10_000);
+  });
 
   test('page contains Governance Hooks heading and summary endpoint reference', async () => {
     const res = await fetch(`${harness.baseUrl}/borg/hooks/`);
     const html = await res.text();
     expect(html).toContain('Governance Hooks');
     expect(html).toContain('/api/chorus/hooks/summary');
-  }, 10_000);
+  });
 
   test('page has totals bar and category grid containers', async () => {
     const res = await fetch(`${harness.baseUrl}/borg/hooks/`);
     const html = await res.text();
     expect(html).toContain('id="totals"');
     expect(html).toContain('id="categories"');
-  }, 10_000);
+  });
 });

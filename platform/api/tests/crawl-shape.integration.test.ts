@@ -1,3 +1,4 @@
+// @test-type: integration:api — in-process TestApp harness
 /**
  * Crawl API response shape tests — #1884
  *
@@ -38,7 +39,7 @@ describe('Crawl API response shape (#1884)', () => {
         const res = await fetch(`${harness.baseUrl}/api/chorus/crawl/${domain}`);
         if (res.status !== 200) throw new Error(`crawl returned ${res.status}`);
         body = await res.json();
-      }, 60_000);
+      });
 
       test('returns all 16 keys', () => {
         const keys = Object.keys(body).sort();
@@ -74,5 +75,5 @@ describe('Crawl API response shape (#1884)', () => {
     expect(res.status).toBe(404);
     const body = await res.json();
     expect(body.error).toBeDefined();
-  }, 20_000);
+  });
 });

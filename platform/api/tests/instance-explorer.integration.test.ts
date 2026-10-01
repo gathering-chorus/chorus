@@ -1,3 +1,4 @@
+// @test-type: integration:api — in-process TestApp harness
 /**
  * Instance Explorer static page — #2099
  *
@@ -14,7 +15,7 @@ describe('#2099: /borg/instance-explorer/', () => {
   let harness: TestApp;
 
   beforeAll(async () => { harness = await startTestApp(); });
-  afterAll(async () => { if (harness) await harness.close(); }, 15000);
+  afterAll(async () => { if (harness) await harness.close(); });
 
   test('GET /borg/instance-explorer/ returns 200', async () => {
     const res = await fetch(`${harness.baseUrl}/borg/instance-explorer/`);

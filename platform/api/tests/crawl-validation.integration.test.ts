@@ -1,3 +1,4 @@
+// @test-type: integration:api — in-process TestApp harness
 /**
  * Crawl API input validation tests — #1886
  *
@@ -18,7 +19,7 @@ describe('Crawl API input validation (#1886)', () => {
   test('GET /api/chorus/crawl/nonexistent returns 404', async () => {
     const res = await fetch(`${harness.baseUrl}/api/chorus/crawl/nonexistent-xyz-domain`);
     expect(res.status).toBe(404);
-  }, 20_000);
+  });
 
   test('404 response includes suggestion listing valid domains', async () => {
     const res = await fetch(`${harness.baseUrl}/api/chorus/crawl/nonexistent-xyz-domain`);
@@ -26,7 +27,7 @@ describe('Crawl API input validation (#1886)', () => {
     expect(body.error).toBeDefined();
     expect(body.suggestion).toMatch(/Valid domains:/);
     expect((body.valid_count ?? 0)).toBeGreaterThan(0);
-  }, 20_000);
+  });
 
   test('valid domain returns 200 with arrays', async () => {
     const res = await fetch(`${harness.baseUrl}/api/chorus/crawl/seeds`);
@@ -35,5 +36,5 @@ describe('Crawl API input validation (#1886)', () => {
     expect(body.domain).toBe('seeds');
     expect(Array.isArray(body.cards)).toBe(true);
     expect(Array.isArray(body.timeline)).toBe(true);
-  }, 60_000);
+  });
 });
