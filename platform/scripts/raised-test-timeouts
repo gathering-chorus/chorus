@@ -3,9 +3,10 @@
 
 A raised timeout hides a slow endpoint: the run gets longer and nothing goes
 red. A test that truly waits on a slow external call says so on the line
-itself or the line above:
+itself or in the three lines above:
 
     // slow-by-design: <the call> measured <N> s
+    // slow-by-design (#card): <the call>
 
 Usage: raised-test-timeouts [ROOT ...]   (default: platform directing)
 Prints one `path:line: <ms> ms` per offender; exit 1 when there is any.
@@ -15,7 +16,7 @@ import re
 import sys
 
 LIMIT_MS = 5000
-REASON = 'slow-by-design:'
+REASON = re.compile(r'slow-by-design\b')
 TEST_FILE = re.compile(r'\.(test|spec)\.(ts|tsx|js|cjs|mjs)$')
 # `}, 20000);` closing a test/hook · jest.setTimeout(N) · testTimeout: N
 PATTERNS = [
@@ -45,8 +46,7 @@ def offenders(root):
                     ms = int(m.group(1).replace('_', ''))
                     if ms <= LIMIT_MS:
                         continue
-                    above = lines[i - 1] if i > 0 else ''
-                    if REASON in line or REASON in above:
+                    if any(REASON.search(l) for l in lines[max(0, i - 3):i + 1]):
                         continue
                     yield f'{path}:{i + 1}: {ms} ms'
                     break

@@ -54,6 +54,13 @@ normalise() { sed -E 's/:[0-9]+: ([0-9]+) ms$/ \1/' | sort; }
   [ -z "$output" ]
 }
 
+@test "the card-tagged reason form, up to three lines above, passes" {
+  mkdir -p "$T/tests"
+  printf "// slow-by-design (#4417): runs only against the real board,\n// and pages through every card.\njest.setTimeout(30000);\n" > "$T/tests/e.test.ts"
+  run "$SCAN" "$T"
+  [ "$status" -eq 0 ] || return 1
+}
+
 @test "a call that is not a test timeout is not counted" {
   mkdir -p "$T/tests"
   printf "const r = enrichHit({ content: 'x' }, 1_000_000);\n" > "$T/tests/d.test.ts"
