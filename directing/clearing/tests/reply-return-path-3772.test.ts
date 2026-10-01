@@ -33,9 +33,14 @@ function assistantLine(text: string, ts = '2026-08-06T15:00:10Z'): string {
   return JSON.stringify({ type: 'assistant', timestamp: ts, message: { content: [{ type: 'text', text }] } });
 }
 
-const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
+// #4417 — the tailer's debounce and quiet window are setTimeout timers, so the
+// tests advance a fake clock instead of waiting ~7s of real time per case.
+const sleep = (ms: number) => jest.advanceTimersByTimeAsync(ms);
 
 describe('#3772 return path — reply classification', () => {
+  beforeEach(() => { jest.useFakeTimers(); });
+  afterEach(() => { jest.useRealTimers(); });
+
   test('jeff-input then one assistant text → visible role-response after quiet', async () => {
     const { got, router } = makeRouterStub();
     const tailer = new SessionTailer(router as never);
@@ -53,7 +58,7 @@ describe('#3772 return path — reply classification', () => {
     const reply = got.find((m) => m.type === 'role-response');
     expect(reply!.text).toMatch(/25 APISurfaces/);
     expect(got.filter((m) => m.type === 'pm-thinking')).toHaveLength(0);
-  }, 15000);
+  });
 
   test('mid-turn status folds; LAST text is the reply', async () => {
     const { got, router } = makeRouterStub();
@@ -73,7 +78,7 @@ describe('#3772 return path — reply classification', () => {
     expect(folded[0].text).toMatch(/Checking the pipeline/);
     expect(replies).toHaveLength(1);
     expect(replies[0].text).toMatch(/landed as 82d84c00a/);
-  }, 20000);
+  });
 
   test('jeff typing again promotes the pending reply BEFORE his new input', async () => {
     const { got, router } = makeRouterStub();
@@ -90,7 +95,7 @@ describe('#3772 return path — reply classification', () => {
     const secondInputIdx = seq.lastIndexOf('jeff-input');
     expect(replyIdx).toBeGreaterThan(-1);
     expect(replyIdx).toBeLessThan(secondInputIdx);
-  }, 15000);
+  });
 
   test('unprompted assistant text stays folded (no jeff-input pending)', async () => {
     const { got, router } = makeRouterStub();

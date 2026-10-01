@@ -1,3 +1,6 @@
+// @test-type: integration — a local stalling server on an ephemeral port; no live board.
+// @card: #3347
+// @owner: wren
 /**
  * #3347 — cards CLI client timeout.
  *
@@ -50,7 +53,7 @@ describe('#3347 client timeout — slow API = fast typed failure', () => {
     // Must die promptly (timeout + small margin), not hang.
     expect(elapsed).toBeLessThan(3000);
     delete process.env.CARDS_API_TIMEOUT_MS;
-  }, 10_000);
+  });
 
   test('default timeout is seconds, not unbounded — and is configurable via env', () => {
     // Pin the contract values so a future refactor can't silently drop them.
