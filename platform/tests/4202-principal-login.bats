@@ -45,6 +45,8 @@ EOS
   cat > "$T/bin/curl" <<EOS
 #!/bin/bash
 echo "curl \$*" >> "$T/curl.log"
+case "\$*" in *"/v1/identity/sessions?channel=browser"*) printf '{"data":[{"name":"jeff-browser-1","ownedBy":"principal-jeff","channel":"browser","sessionState":"open","expiresAt":"2099-01-01T00:00:00Z"}]}\n200\n'; exit 0 ;; esac   # #4412: Jeff is signed in
+case "\${@: -1}" in */v1/identity/principals/jeff) printf '{"data":{"principalKind":"person"}}\n200\n'; exit 0 ;; esac
 case "\${@: -1}" in */v1/identity/principals/*) pn="\${@: -1}"; pn="\${pn##*/}"; if [ -f "$T/principal-\$pn.json" ]; then cat "$T/principal-\$pn.json"; else case "\$pn" in wren|silas|kade) printf '{"data":{"principalKind":"agent"}}\n200\n' ;; *) printf '{"data":{"status":404}}\n404\n' ;; esac; fi; exit 0 ;; esac   # #4368: the Principal row login reads
 # the 409 branch re-reads the row with a plain GET (no -X POST): answer it with
 # the fixture body so the ownership decision can be exercised. #4215.

@@ -402,3 +402,43 @@ pub fn login_verdict(name: &str, code: &str, body: &str, api: &str) -> Result<Op
             name, api, if c.is_empty() || c == "000" { "nothing".to_string() } else { format!("HTTP {}", c) })),
     }
 }
+
+/// #4412 — the owners of the open, unexpired browser Sessions in a
+/// `/v1/identity/sessions?channel=browser` reply: who may be signed in. The
+/// caller still asks each owner's Principal row whether it is a person.
+pub fn signed_in_owners(body: &str, now_iso: &str) -> Vec<String> {
+    let rows = serde_json::from_str::<Value>(body).ok()
+        .and_then(|v| v.get("data").cloned()).and_then(|d| d.as_array().cloned()).unwrap_or_default();
+    rows.iter().filter_map(|r| {
+        let f = |k: &str| r.get(k).and_then(|x| x.as_str()).unwrap_or("").to_string();
+        if f("channel") != "browser" || f("sessionState") == "closed" { return None; }
+        let exp = f("expiresAt");
+        if !exp.is_empty() && exp.as_str() <= now_iso { return None; }
+        let who = f("ownedBy");
+        let who = who.strip_prefix("principal-").unwrap_or(&who).to_string();
+        (!who.is_empty()).then_some(who)
+    }).collect()
+}
+
+#[cfg(test)]
+mod signed_in_owners_4412 {
+    use super::signed_in_owners;
+    const NOW: &str = "2026-10-01T08:00:00Z";
+
+    #[test]
+    fn an_open_unexpired_browser_session_names_its_owner() {
+        let b = r#"{"data":[{"ownedBy":"principal-jeff","channel":"browser","sessionState":"open","expiresAt":"2026-10-30T00:00:00Z"},{"ownedBy":"anne","channel":"browser","sessionState":"open"}]}"#;
+        assert_eq!(signed_in_owners(b, NOW), vec!["jeff", "anne"]);
+    }
+
+    #[test]
+    fn negative_proof_closed_expired_pane_and_ownerless_rows_name_nobody() {
+        let b = r#"{"data":[
+            {"ownedBy":"jeff","channel":"browser","sessionState":"closed","expiresAt":"2026-10-30T00:00:00Z"},
+            {"ownedBy":"jeff","channel":"browser","sessionState":"open","expiresAt":"2026-10-01T07:59:59Z"},
+            {"ownedBy":"principal-silas","channel":"pane","sessionState":"open"},
+            {"channel":"browser","sessionState":"open"}]}"#;
+        assert!(signed_in_owners(b, NOW).is_empty());
+        assert!(signed_in_owners("not json", NOW).is_empty());
+    }
+}

@@ -40,7 +40,7 @@ EOS
   printf 'eyJhbGciOiJFUzI1NiJ9.%s.sig' "$payload" > "$T/token.fixture"
   printf '#!/bin/bash\ncat "%s/token.fixture"\n' "$T" > "$T/bin/token"
   # #4368: login reads the Principal row first; kade is an agent here
-  printf '#!/bin/bash\ncase "${@: -1}" in */v1/identity/principals/kade) printf '"'"'{"data":{"principalKind":"agent"}}\\n200\\n'"'"'; exit 0 ;; */v1/identity/principals/*) printf '"'"'{}\\n404\\n'"'"'; exit 0 ;; esac\necho 201\n' > "$T/bin/curl"
+  printf '#!/bin/bash\ncase "$*" in *"/v1/identity/sessions?channel=browser"*) printf '"'"'{"data":[{"ownedBy":"principal-jeff","channel":"browser","sessionState":"open","expiresAt":"2099-01-01T00:00:00Z"}]}\\n200\\n'"'"'; exit 0 ;; esac\ncase "${@: -1}" in */v1/identity/principals/jeff) printf '"'"'{"data":{"principalKind":"person"}}\\n200\\n'"'"'; exit 0 ;; */v1/identity/principals/kade) printf '"'"'{"data":{"principalKind":"agent"}}\\n200\\n'"'"'; exit 0 ;; */v1/identity/principals/*) printf '"'"'{}\\n404\\n'"'"'; exit 0 ;; esac\necho 201\n' > "$T/bin/curl"
   printf '#!/bin/bash\nexit 0\n' > "$T/bin/chorus-log"
   export CHORUS_TOKEN_BIN="$T/bin/token" AWAKE_CURL="$T/bin/curl" CHORUS_LOG_BIN="$T/bin/chorus-log"
   export CHORUS_IDENTITY_DIR="$T/identity" CHORUS_API_URL="http://stub:1"

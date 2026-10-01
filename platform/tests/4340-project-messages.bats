@@ -1,5 +1,6 @@
 #!/usr/bin/env bats
 # @test-type: integration — drives the built chorus-awake and chorus-principal binaries with stub tmux, claude, ps, token-minter, curl, service probe, osascript and open; no live services, no live panes.
+# @domain: messages — the product domain this suite guards (#4334)
 #
 # #4340 — messages.db into the model. Jeff 2026-09-26: messages, channel, and
 # "even a migration to buzz"; option A. The projector reads what pulse recorded

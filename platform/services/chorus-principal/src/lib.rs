@@ -653,15 +653,7 @@ fn person_signed_in(ctx: &Ctx) -> Result<String, String> {
     let answer = sh(&ctx.curl, &["-s", "-w", "\n%{http_code}", "--max-time", "5", &url]).unwrap_or_default();
     let (body, code) = answer.trim_end().rsplit_once('\n').unwrap_or(("", answer.trim()));
     if code.trim() != "200" { return Err(format!("could not read who is signed in (chorus-api answered {}).\n  fix: agent-state.sh restart chorus-api, then sign in at {}", code.trim(), CLEARING_SIGN_IN)); }
-    let now = iso_utc(now_ms() as u64 / 1000);
-    let rows = serde_json::from_str::<Value>(body).ok().and_then(|v| v.get("data").cloned()).and_then(|d| d.as_array().cloned()).unwrap_or_default();
-    for r in rows {
-        let f = |k: &str| r.get(k).and_then(|x| x.as_str()).unwrap_or("").to_string();
-        if f("channel") != "browser" || f("sessionState") == "closed" { continue; }
-        let exp = f("expiresAt");
-        if !exp.is_empty() && exp.as_str() <= now.as_str() { continue; }
-        let who = f("ownedBy"); let who = who.strip_prefix("principal-").unwrap_or(&who).to_string();
-        if who.is_empty() { continue; }
+    for who in rows::signed_in_owners(body, &iso_utc(now_ms() as u64 / 1000)) {
         let purl = format!("{}/v1/identity/principals/{}", ctx.api, who);
         let pa = sh(&ctx.curl, &["-s", "-w", "\n%{http_code}", "--max-time", "5", &purl]).unwrap_or_default();
         if pa.contains("\"principalKind\":\"person\"") { return Ok(who); }
