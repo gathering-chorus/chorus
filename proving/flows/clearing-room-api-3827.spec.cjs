@@ -21,6 +21,17 @@ const bind = (request, pubkey, signedIn = true) => request.post(`${CLEARING}/api
 });
 const bindings = async (request) => (await request.get(`${CLEARING}/api/room/bindings`)).json();
 
+test.describe('#3827 who can read the bindings', () => {
+  // Kade 10-01: the handler has no auth check of its own and lists every WebID
+  // with its key. Through the tunnel (cf-ray, public Host) the gate must refuse
+  // an unauthenticated read.
+  test('from outside, not signed in → refused, the list is not readable', async ({ request }) => {
+    const r = await request.get(`${CLEARING}/api/room/bindings`, { headers: { 'cf-ray': 'test', host: 'team.example.com' }, maxRedirects: 0 });
+    expect([401, 302, 403]).toContain(r.status());
+    expect(await r.text()).not.toContain('pubkey');
+  });
+});
+
 test.describe('#3827 binding a browser key to a person', () => {
   test('NEGATIVE PROOF: not signed in → 401 not-signed-in, and nothing is bound', async ({ request }) => {
     const r = await bind(request, PUBKEY, false);
@@ -49,5 +60,14 @@ test.describe('#3827 binding a browser key to a person', () => {
     expect(list).toHaveLength(1);
     expect(JSON.stringify(list)).toContain(WEBID);
     expect(JSON.stringify(list)).not.toContain('impostor');
+    expect(Object.keys(list[0]).sort()).toEqual(['boundAt', 'pubkey', 'webid']);
+  });
+
+  test('NEGATIVE PROOF: the same key in capitals binds as the same key, still one row', async ({ request }) => {
+    const r = await bind(request, PUBKEY.toUpperCase());
+    expect(r.status()).toBe(200);
+    const list = await bindings(request);
+    expect(list).toHaveLength(1);
+    expect(list[0].pubkey).toBe(PUBKEY);
   });
 });
