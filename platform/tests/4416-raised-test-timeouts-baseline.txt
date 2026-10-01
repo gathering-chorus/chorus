@@ -1,0 +1,10 @@
+# #4416 — raised jest timeouts still in the tree, as `path ms`. This list may
+# only shrink. All of these are Wren's (Clearing and cards); platform/api has none.
+directing/products/cards/tests/board-validation.test.ts 30000
+directing/products/cards/tests/client-timeout.test.ts 10000
+directing/clearing/tests/spine-tail.test.ts 120000
+directing/clearing/tests/reply-return-path-3772.test.ts 15000
+directing/clearing/tests/reply-return-path-3772.test.ts 20000
+directing/clearing/tests/reply-return-path-3772.test.ts 15000
+directing/clearing/tests/buzz-live.integration.test.ts 15000
+directing/clearing/tests/import-no-side-effects-3831.test.ts 180000

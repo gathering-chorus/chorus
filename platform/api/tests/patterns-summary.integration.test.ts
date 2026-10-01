@@ -1,3 +1,4 @@
+// @test-type: integration:api — in-process TestApp harness
 /**
  * Interaction Patterns endpoint + static page — #2099
  *
@@ -18,7 +19,7 @@ describe('#2099: /api/chorus/patterns/summary', () => {
     const res = await fetch(`${harness.baseUrl}/api/chorus/patterns/summary?days=7`);
     expect(res.status).toBe(200);
     expect(res.headers.get('content-type')).toMatch(/json/);
-  }, 15_000);
+  });
 
   test('response has patterns, byDate, total, days', async () => {
     const res = await fetch(`${harness.baseUrl}/api/chorus/patterns/summary?days=7`);
@@ -27,13 +28,13 @@ describe('#2099: /api/chorus/patterns/summary', () => {
     expect(Array.isArray(body.byDate)).toBe(true);
     expect(typeof body.total).toBe('number');
     expect(body.days).toBe(7);
-  }, 15_000);
+  });
 
   test('defaults days=30 when omitted', async () => {
     const res = await fetch(`${harness.baseUrl}/api/chorus/patterns/summary`);
     const body = await res.json();
     expect(body.days).toBe(30);
-  }, 15_000);
+  });
 
   test('byDate entries have date, total, counts', async () => {
     const res = await fetch(`${harness.baseUrl}/api/chorus/patterns/summary?days=30`);
@@ -46,7 +47,7 @@ describe('#2099: /api/chorus/patterns/summary', () => {
       expect(typeof row.counts).toBe('object');
     }
     /* eslint-enable jest/no-conditional-expect */
-  }, 15_000);
+  });
 });
 
 describe('#2099: /borg/patterns/ static page', () => {
@@ -59,14 +60,14 @@ describe('#2099: /borg/patterns/ static page', () => {
   test('GET /borg/patterns/ returns 200', async () => {
     const res = await fetch(`${harness.baseUrl}/borg/patterns/`);
     expect(res.status).toBe(200);
-  }, 10_000);
+  });
 
   test('page references patterns summary endpoint and has patterns heading', async () => {
     const res = await fetch(`${harness.baseUrl}/borg/patterns/`);
     const html = await res.text();
     expect(html).toContain('Interaction Patterns');
     expect(html).toContain('/api/chorus/patterns/summary');
-  }, 10_000);
+  });
 
   test('page has bar, legend, and date-table containers', async () => {
     const res = await fetch(`${harness.baseUrl}/borg/patterns/`);
@@ -74,5 +75,5 @@ describe('#2099: /borg/patterns/ static page', () => {
     expect(html).toContain('id="bar"');
     expect(html).toContain('id="legend"');
     expect(html).toContain('id="date-table"');
-  }, 10_000);
+  });
 });

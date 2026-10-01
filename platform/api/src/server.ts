@@ -1384,6 +1384,8 @@ app.get('/api/chorus/crawl/:domain', async (req: Request, res: Response) => {
       // ~/.chorus/chorus.log, so every crawl answered spine=0 (bdd
       // domain-crawler.feature, 2026-09-23: cards 85, spine 0).
       chorusLogPath: process.env.CHORUS_SPINE_LOG || path.join(os.homedir(), '.chorus', 'chorus.log'),
+      lokiBaseUrl: process.env.LOKI_URL || 'http://localhost:3102',
+      fusekiUrl: process.env.FUSEKI_UPSTREAM || 'http://localhost:3030',
       memoryDir: path.join(os.homedir(), '.claude/projects/-Users-jeffbridwell-CascadeProjects/memory'),
       // shared-observability is a sibling of the chorus checkout (#3197 —
       // CHORUS_ROOT is now always the chorus dir, so the path is unambiguous).
@@ -1518,11 +1520,14 @@ app.get('/api/chorus/domain/:name/infra', async (req: Request, res: Response) =>
 // Assembles from 5 existing sources: cards, completeness, code/tests/endpoints, alerts/gates, done cards.
 import { fetchChorusDomainPipeline } from './handlers/chorus-domain-pipeline';
 app.get('/api/chorus/domain/:name/pipeline', async (req: Request, res: Response) => {
+  // Ask the server that took this request, not a fixed :3340 — a test app
+  // must never read the live API.
+  const self = `http://localhost:${req.socket.localPort}`;
   const r = await fetchChorusDomainPipeline(
     {
       fetcher: async (relUrl) => {
         try {
-          const resp = await fetch(`http://localhost:3340${relUrl}`);
+          const resp = await fetch(`${self}${relUrl}`);
           return resp.ok ? await resp.json() : null;
         } catch { return null; }
       },

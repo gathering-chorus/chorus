@@ -57,7 +57,7 @@ describe('#3657: /api/chorus/quality/summary projects the tests domain', () => {
     const res = await fetch(`${harness.baseUrl}/api/chorus/quality/summary`);
     expect(res.status).toBe(200);
     expect(res.headers.get('content-type')).toMatch(/json/);
-  }, 30_000);
+  });
 
   test('response has total, pyramid, repos, scannedAt, source', async () => {
     const res = await fetch(`${harness.baseUrl}/api/chorus/quality/summary`);
@@ -68,13 +68,13 @@ describe('#3657: /api/chorus/quality/summary projects the tests domain', () => {
     expect(typeof body.scannedAt).toBe('string');
     expect(body.source.kind).toBe('tests-domain');
     expect(body.source.generatedFrom.shape).toBe('chorus:TestShape');
-  }, 30_000);
+  });
 
   test('repos declare the domain scope — Chorus Platform only, no fabricated Gathering rollup', async () => {
     const res = await fetch(`${harness.baseUrl}/api/chorus/quality/summary`);
     const body = await res.json();
     expect(body.repos.map((r: { name: string }) => r.name)).toEqual(['Chorus Platform']);
-  }, 30_000);
+  });
 
   test('pyramid layers use the model vocabulary with hermeticity counts', async () => {
     const res = await fetch(`${harness.baseUrl}/api/chorus/quality/summary`);
@@ -89,7 +89,7 @@ describe('#3657: /api/chorus/quality/summary projects the tests domain', () => {
     expect(typeof layer.hermeticCount).toBe('number');
     expect(typeof layer.needsStackCount).toBe('number');
     expect(Array.isArray(layer.files)).toBe(true);
-  }, 30_000);
+  });
 });
 
 describe('#3657: /api/chorus/quality/domain/:domain filters on model covers', () => {
@@ -106,7 +106,7 @@ describe('#3657: /api/chorus/quality/domain/:domain filters on model covers', ()
     expect(body.total).toBe(2); // t1 + t2 cover chorus
     expect(Array.isArray(body.layers)).toBe(true);
     expect(body.layers.map((l: { key: string }) => l.key).sort()).toEqual(['integration', 'unit']);
-  }, 30_000);
+  });
 });
 
 describe('#3656: /werk/quality/ static page (reparented borg→werk, #2099)', () => {
@@ -118,21 +118,21 @@ describe('#3656: /werk/quality/ static page (reparented borg→werk, #2099)', ()
   test('GET /werk/quality/ returns 200', async () => {
     const res = await fetch(`${harness.baseUrl}/werk/quality/`);
     expect(res.status).toBe(200);
-  }, 10_000);
+  });
 
   test('page contains Quality heading and summary endpoint', async () => {
     const res = await fetch(`${harness.baseUrl}/werk/quality/`);
     const html = await res.text();
     expect(html).toContain('Quality');
     expect(html).toContain('/api/chorus/quality/summary');
-  }, 10_000);
+  });
 
   test('page has pyramid container and declares the tests-domain source', async () => {
     const res = await fetch(`${harness.baseUrl}/werk/quality/`);
     const html = await res.text();
     expect(html).toContain('id="pyramid"');
     expect(html).toContain('tests domain');
-  }, 10_000);
+  });
 
   test('old /borg/quality/ path 301s to /werk/quality/', async () => {
     for (const oldPath of ['/borg/quality', '/borg/quality/', '/borg/quality/index.html']) {
@@ -140,5 +140,5 @@ describe('#3656: /werk/quality/ static page (reparented borg→werk, #2099)', ()
       expect(res.status).toBe(301);
       expect(res.headers.get('location')).toBe('/werk/quality/');
     }
-  }, 10_000);
+  });
 });

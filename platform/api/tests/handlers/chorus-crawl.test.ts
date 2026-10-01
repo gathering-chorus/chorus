@@ -334,7 +334,7 @@ describe('fetchCrawl (#2189 /api/chorus/crawl/:domain)', () => {
     expect(b.rdf?.triples ?? []).toEqual([]);
     expect(b.rdf?.relationships ?? []).toEqual([]);
     jest.useRealTimers();
-  }, 30_000);
+  });
 
   test('#3091: SLOW Loki on collectLogs aborts at 5s — logs bucket empty, no hang', async () => {
     jest.useFakeTimers();
@@ -353,7 +353,7 @@ describe('fetchCrawl (#2189 /api/chorus/crawl/:domain)', () => {
     const b = r.body as { logs?: unknown[] };
     expect(b.logs ?? []).toEqual([]);
     jest.useRealTimers();
-  }, 30_000);
+  });
 });
 
 // --- #3606 — OWL bucket coverage: collectOwlClassProps / collectOwlRelations /

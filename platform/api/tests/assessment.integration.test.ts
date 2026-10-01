@@ -1,3 +1,4 @@
+// @test-type: integration:api — in-process TestApp harness
 /**
  * Borg Assessment endpoint + static page — #2099
  *
@@ -20,7 +21,7 @@ describe('#2099: /api/chorus/codebase/topology proxy', () => {
     const res = await fetch(`${harness.baseUrl}/api/chorus/codebase/topology`);
     expect(res.status).toBe(200);
     expect(res.headers.get('content-type')).toMatch(/json/);
-  }, 15_000);
+  });
 
   test('response has summary, spokes, domains', async () => {
     const res = await fetch(`${harness.baseUrl}/api/chorus/codebase/topology`);
@@ -28,7 +29,7 @@ describe('#2099: /api/chorus/codebase/topology proxy', () => {
     expect(body.summary).toBeDefined();
     expect(body.spokes).toBeDefined();
     expect(body.domains).toBeDefined();
-  }, 15_000);
+  });
 });
 
 describe('#2099: /borg/assessment/ static page', () => {
@@ -41,14 +42,14 @@ describe('#2099: /borg/assessment/ static page', () => {
   test('GET /borg/assessment/ returns 200', async () => {
     const res = await fetch(`${harness.baseUrl}/borg/assessment/`);
     expect(res.status).toBe(200);
-  }, 10_000);
+  });
 
   test('page has Borg Assessment heading and topology endpoint', async () => {
     const res = await fetch(`${harness.baseUrl}/borg/assessment/`);
     const html = await res.text();
     expect(html).toContain('Borg Assessment');
     expect(html).toContain('/api/chorus/codebase/topology');
-  }, 10_000);
+  });
 
   test('page has grid body + value-stream sections', async () => {
     const res = await fetch(`${harness.baseUrl}/borg/assessment/`);
@@ -56,5 +57,5 @@ describe('#2099: /borg/assessment/ static page', () => {
     expect(html).toContain('id="grid-body"');
     expect(html).toContain('Sowing');
     expect(html).toContain('Reflecting');
-  }, 10_000);
+  });
 });

@@ -42,7 +42,7 @@ beforeAll(async () => {
 afterAll(async () => {
   await new Promise<void>((resolve) => server.close(() => resolve()));
   try { fs.rmSync(TMP, { recursive: true, force: true }); } catch { /* ignore */ }
-}, 30000);
+});
 
 async function get(p: string, opts: RequestInit = {}) {
   try {
@@ -94,7 +94,7 @@ describe('server smoke — routes respond without crashing', () => {
   test('POST /api/chorus/embed with no body handled', async () => {
     const r = await get('/api/chorus/embed', { method: 'POST' });
     expect(typeof r.status).toBe('number');
-  }, 30_000);
+  });
 
   test('unknown route returns 404', async () => {
     const r = await get('/no-such-route-xxx');

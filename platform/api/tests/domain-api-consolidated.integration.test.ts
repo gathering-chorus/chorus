@@ -28,7 +28,7 @@ describe('#2060: consolidated domain API', () => {
     expect(Array.isArray(body.data.files)).toBe(true);
     expect(body._meta).toBeDefined();
     expect(body._meta.source_count).toBeDefined();
-  }, 10_000);
+  });
 
   test('/code does not include test files — tests have own endpoint', async () => {
     const res = await fetch(`${harness.baseUrl}/api/chorus/domain/seeds/code`);
@@ -37,7 +37,7 @@ describe('#2060: consolidated domain API', () => {
       return /\/(tests?|__tests__)\//.test(f.path) || /\.(test|spec)\./.test(f.path);
     });
     expect(testFiles.length).toBe(0);
-  }, 10_000);
+  });
 
   test('/code accepts domain name with or without suffix', async () => {
     const r1 = await fetch(`${harness.baseUrl}/api/chorus/domain/seeds/code`);
@@ -47,7 +47,7 @@ describe('#2060: consolidated domain API', () => {
     const b1 = await r1.json();
     const b2 = await r2.json();
     expect(b1.data.files.length).toBe(b2.data.files.length);
-  }, 10_000);
+  });
 
   // --- /tests ---
 
@@ -59,7 +59,7 @@ describe('#2060: consolidated domain API', () => {
     expect(Array.isArray(body.data.tests)).toBe(true);
     expect(body.data.byType).toBeDefined();
     expect(body._meta.count).toBeDefined();
-  }, 10_000);
+  });
 
   // --- /alerts ---
 
@@ -70,7 +70,7 @@ describe('#2060: consolidated domain API', () => {
     expect(body.data).toBeDefined();
     expect(Array.isArray(body.data.alerts)).toBe(true);
     expect(body._meta.count).toBeDefined();
-  }, 10_000);
+  });
 
   // --- /logs --- retired in #4084 (Logs fold reads the graph); no facet route (#4143)
 
@@ -83,7 +83,7 @@ describe('#2060: consolidated domain API', () => {
     expect(body.data).toBeDefined();
     expect(Array.isArray(body.data.endpoints)).toBe(true);
     expect(body._meta.count).toBeDefined();
-  }, 10_000);
+  });
 
   // --- Consistent envelope ---
 
@@ -98,7 +98,7 @@ describe('#2060: consolidated domain API', () => {
       expect(body._meta).toHaveProperty('source', 'athena');
       expect(typeof body._meta.duration_ms).toBe('number');
     }
-  }, 15_000);
+  });
 
   // --- Blast radius consumer ---
 
@@ -111,7 +111,7 @@ describe('#2060: consolidated domain API', () => {
     // invariant #4). Assert every returned path is a string.
     expect(Array.isArray(filePaths)).toBe(true);
     expect(filePaths.every(function(p) { return typeof p === 'string'; })).toBe(true);
-  }, 10_000);
+  });
 
   // --- Empty result for unknown domain ---
 
@@ -120,5 +120,5 @@ describe('#2060: consolidated domain API', () => {
     expect(res.status).toBe(200);
     const body = await res.json();
     expect(body.data.files).toEqual([]);
-  }, 10_000);
+  });
 });

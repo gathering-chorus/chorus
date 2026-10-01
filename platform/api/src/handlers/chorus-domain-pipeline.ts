@@ -170,8 +170,10 @@ export async function fetchChorusDomainPipeline(
     deps.fetcher(`/api/chorus/domain/${name}/alerts`),
   ]);
 
-  const dv = (domainRes ?? {}) as { cards?: CardRow[]; completeness?: unknown };
-  const cards = extractCards({ data: { cards: dv.cards ?? [] } });
+  // The domain view answers cards as { total, wip, blocked, items } — read
+  // the items; an object passed on as the list threw and reset the socket.
+  const dv = (domainRes ?? {}) as { cards?: { items?: CardRow[] }; completeness?: unknown };
+  const cards = extractCards({ data: { cards: dv.cards?.items ?? [] } });
   const compRes = { data: dv.completeness ?? null };
   const stages: Stage[] = [
     buildShapeStage(cards),

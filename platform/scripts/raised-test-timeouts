@@ -1,0 +1,68 @@
+#!/usr/bin/env python3
+"""raised-test-timeouts — list jest timeouts above 5 s that carry no reason (#4416).
+
+A raised timeout hides a slow endpoint: the run gets longer and nothing goes
+red. A test that truly waits on a slow external call says so on the line
+itself or the line above:
+
+    // slow-by-design: <the call> measured <N> s
+
+Usage: raised-test-timeouts [ROOT ...]   (default: platform directing)
+Prints one `path:line: <ms> ms` per offender; exit 1 when there is any.
+"""
+import os
+import re
+import sys
+
+LIMIT_MS = 5000
+REASON = 'slow-by-design:'
+TEST_FILE = re.compile(r'\.(test|spec)\.(ts|tsx|js|cjs|mjs)$')
+# `}, 20000);` closing a test/hook · jest.setTimeout(N) · testTimeout: N
+PATTERNS = [
+    re.compile(r'^\s*\}\s*,\s*([0-9][0-9_]*)\s*\)\s*;?\s*(?://.*)?$'),
+    re.compile(r'=>.*\}\s*,\s*([0-9][0-9_]*)\s*\)\s*;?\s*(?://.*)?$'),
+    re.compile(r'jest\.setTimeout\(\s*([0-9][0-9_]*)\s*\)'),
+    re.compile(r'testTimeout\s*:\s*([0-9][0-9_]*)'),
+]
+
+
+def offenders(root):
+    for dirpath, dirnames, filenames in os.walk(root):
+        dirnames[:] = [d for d in dirnames if d not in ('node_modules', 'dist', 'target', '.git')]
+        for name in filenames:
+            if not TEST_FILE.search(name):
+                continue
+            path = os.path.join(dirpath, name)
+            try:
+                lines = open(path, encoding='utf-8', errors='replace').read().split('\n')
+            except OSError:
+                continue
+            for i, line in enumerate(lines):
+                for pat in PATTERNS:
+                    m = pat.search(line)
+                    if not m:
+                        continue
+                    ms = int(m.group(1).replace('_', ''))
+                    if ms <= LIMIT_MS:
+                        continue
+                    above = lines[i - 1] if i > 0 else ''
+                    if REASON in line or REASON in above:
+                        continue
+                    yield f'{path}:{i + 1}: {ms} ms'
+                    break
+
+
+def main(argv):
+    roots = argv or ['platform', 'directing']
+    missing = [r for r in roots if not os.path.isdir(r)]
+    if missing:
+        print(f'raised-test-timeouts: no such directory: {" ".join(missing)}', file=sys.stderr)
+        return 2
+    found = [o for r in roots for o in offenders(r)]
+    for o in found:
+        print(o)
+    return 1 if found else 0
+
+
+if __name__ == '__main__':
+    sys.exit(main(sys.argv[1:]))

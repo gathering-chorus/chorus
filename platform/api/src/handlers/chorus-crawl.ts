@@ -149,7 +149,12 @@ async function collectRdf(fetchFn: FetchFn, fusekiUrl: string, domain: string): 
     // Cross-graph relationships: when a subject in this graph references
     // something that exists in another urn:gathering:* graph, that's a domain
     // link. Approximate with predicate-object matching across graphs.
-    const relSparql = `SELECT DISTINCT ?og WHERE { GRAPH <${graph}> { ?s ?p ?o } GRAPH ?og { ?o ?p2 ?o2 } FILTER(?og != <${graph}>) FILTER(STRSTARTS(STR(?og), 'urn:gathering:')) } LIMIT 30`;
+    // #4416 — join from a bounded set of this graph's IRI objects. The full
+    // join (every triple × every graph) took 23.4 s on music's 1.6M triples,
+    // past the 5 s abort, so it always answered [] and left Fuseki busy;
+    // this shape answers in 0.44 s. Links beyond the first 2,000 objects
+    // are not seen.
+    const relSparql = `SELECT DISTINCT ?og WHERE { { SELECT DISTINCT ?o WHERE { GRAPH <${graph}> { ?s ?p ?o FILTER(isIRI(?o)) } } LIMIT 2000 } GRAPH ?og { ?o ?p2 ?o2 } FILTER(?og != <${graph}> && STRSTARTS(STR(?og), 'urn:gathering:')) } LIMIT 30`;
     for (const b of await sparqlPost(fetchFn, fusekiUrl, relSparql)) {
       const og = b.og?.value;
       if (og) rdf.relationships.push(og.replace('urn:gathering:', ''));
@@ -655,15 +660,20 @@ export async function fetchCrawl(
   const history: HistoryBucket = { unresolved: [], feedback: [], trust_score: 0, health: '' };
 
   const cards = collectCards(getBoardCards, domain, timeline, history);
-  const rdf = await collectRdf(fetchFn, fusekiUrl, domain);
   const { mentions, related } = collectMentions(db, domain, timeline, mentionScanCap);
-  const spine = await collectSpine(fetchFn, lokiBaseUrl, chorusLogPath, cards, timeline, now);
-  const owl = await collectOwl(fetchFn, fusekiUrl, domain);
-  const infra = await collectInfra(execAsync, domain);
   history.feedback = collectFeedback(exists, readdir, readFile, memoryDir, domain);
-  const codeScan = await collectCodeScan(athenaSparqlQuery, execAsync, domain);
-  const codeFiles = await collectCodeFiles(execAsync, cards, domain);
-  const logs = await collectLogs(fetchFn, lokiBaseUrl, domain, now);
+  // #4416 — the collectors read different stores and don't depend on each
+  // other (timeline is sorted below), so they run together: the crawl
+  // costs its slowest store, not the sum (music measured 7.4 s in series).
+  const [rdf, spine, owl, infra, codeScan, codeFiles, logs] = await Promise.all([
+    collectRdf(fetchFn, fusekiUrl, domain),
+    collectSpine(fetchFn, lokiBaseUrl, chorusLogPath, cards, timeline, now),
+    collectOwl(fetchFn, fusekiUrl, domain),
+    collectInfra(execAsync, domain),
+    collectCodeScan(athenaSparqlQuery, execAsync, domain),
+    collectCodeFiles(execAsync, cards, domain),
+    collectLogs(fetchFn, lokiBaseUrl, domain, now),
+  ]);
   const alerts = collectAlerts(exists, readdir, readFile, alertDir, domain);
 
   computeTrust(cards, spine, history);

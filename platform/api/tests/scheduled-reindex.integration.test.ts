@@ -55,7 +55,7 @@ describe('Scheduled reindex — index_freshness (#1960)', () => {
     expect(body.status).toBe('spawned');
     expect(body.workers).toEqual(['reindex', 'embed']);
     expect(body.timestamp).toBeDefined();
-  }, 30_000);
+  });
 
   // #3379: the 'freshness improves after POST /reindex' test is retired with its
   // premise — the route spawns the worker instead of running the pass inline.

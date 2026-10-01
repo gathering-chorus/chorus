@@ -49,6 +49,14 @@ if (!process.env.CHORUS_LOG_FILE) {
   process.env.CHORUS_LOG_FILE = path.join(fs.mkdtempSync(path.join(os.tmpdir(), 'chorus-api-spine-')), 'chorus.log');
 }
 process.env.CHORUS_REINDEX_WORKER_SCRIPT = '/usr/bin/true';
+// #4416 — the app's Loki readers (patterns, werk activity, crawl spine/logs)
+// get a dead port, not the live :3102: a 30-day Loki scan took 6 s on a busy
+// box, so the test measured the box, not the code. A test that needs Loki
+// rows sets LOKI_URL to its own stub before importing this harness.
+process.env.LOKI_URL = process.env.LOKI_URL || 'http://127.0.0.1:9';
+// Same for the crawl's and sparql-read's Fuseki base: music's 1.6M triples
+// went past 5 s whenever the box was loaded.
+process.env.FUSEKI_UPSTREAM = process.env.FUSEKI_UPSTREAM || 'http://127.0.0.1:9';
 
 export interface TestApp {
   baseUrl: string;

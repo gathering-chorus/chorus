@@ -36,11 +36,11 @@ describe('#4187 — the discovery writers are retired', () => {
     expect(r).toMatchObject({ status: 410, error: 'retired', retiredBy: 4187 });
     expect(r.message).toContain('urn:chorus:domains:code');
     expect(r.message).toContain('/pages');
-  }, 30_000);
+  });
   test("POST /api/athena/discover-endpoints answers 410 and names the crawler's graph and the read route", async () => {
     const r = await hit('/api/athena/discover-endpoints');
     expect(r).toMatchObject({ status: 410, error: 'retired', retiredBy: 4187 });
     expect(r.message).toContain('urn:chorus:domains:code');
-    expect(r.message).toContain('/services');
-  }, 30_000);
+    expect(r.message).toContain('/v1/code/endpoints');
+  });
 });

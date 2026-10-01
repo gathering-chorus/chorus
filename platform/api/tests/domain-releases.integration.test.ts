@@ -1,5 +1,5 @@
 /**
- * @test-type: api
+ * @test-type: integration:api
  *
  * Domain release history — #1910
  *
@@ -28,7 +28,7 @@ describe('#1910: domain release history', () => {
     const body = await res.json();
     expect(body.data).toBeDefined();
     expect(Array.isArray(body.data.releases)).toBe(true);
-  }, 15_000);
+  });
 
   test('each release, when present, has card, commit, timestamp, and title', async () => {
     const res = await fetch(`${harness.baseUrl}/api/chorus/domain/chorus/releases`);
@@ -43,7 +43,7 @@ describe('#1910: domain release history', () => {
       expect(release).toHaveProperty('timestamp');
     }
     /* eslint-enable jest/no-conditional-expect */
-  }, 15_000);
+  });
 
   test('releases are ordered newest first', async () => {
     const res = await fetch(`${harness.baseUrl}/api/chorus/domain/chorus/releases`);
@@ -51,19 +51,19 @@ describe('#1910: domain release history', () => {
     var releases = body.data.releases;
     // eslint-disable-next-line jest/no-conditional-expect -- ordering check only when ≥2 releases observed
     if (releases.length >= 2) expect(new Date(releases[0].timestamp).getTime()).toBeGreaterThanOrEqual(new Date(releases[1].timestamp).getTime());
-  }, 15_000);
+  });
 
   test('uses athena envelope', async () => {
     const res = await fetch(`${harness.baseUrl}/api/chorus/domain/chorus/releases`);
     const body = await res.json();
     expect(body._meta).toBeDefined();
     expect(body._meta.source).toBe('athena');
-  }, 15_000);
+  });
 
   test('unknown domain returns empty releases', async () => {
     const res = await fetch(`${harness.baseUrl}/api/chorus/domain/nonexistent-xyz/releases`);
     expect(res.status).toBe(200);
     const body = await res.json();
     expect(body.data.releases).toEqual([]);
-  }, 15_000);
+  });
 });

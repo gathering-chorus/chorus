@@ -26,6 +26,9 @@ function deps(over: Partial<ChorusDomainPipelineDeps> = {}): ChorusDomainPipelin
   };
 }
 
+// #4416 — fixtures use the domain view's real shape, cards: { total, items }.
+// The bare array they used before is a shape the view never answers, so these
+// passed while every live call threw.
 describe('fetchChorusDomainPipeline (#2188)', () => {
   test('resolveSubdomainId throws → 200 with empty "not_started" stages + original name', async () => {
     const r = await fetchChorusDomainPipeline(
@@ -49,7 +52,7 @@ describe('fetchChorusDomainPipeline (#2188)', () => {
 
   test('shape: 5 cards → complete', async () => {
     const fetcher = makeFetcher({
-      '=/api/chorus/domain/photos': { cards: Array(5).fill({ status: 'Next' }) },
+      '=/api/chorus/domain/photos': { cards: { total: 5, items: Array(5).fill({ status: 'Next' }) } },
     });
     const body = (await fetchChorusDomainPipeline(deps({ fetcher }), 'photos')).body as {
       data: { stages: Array<{ name: string; status: string; evidence: number }> };
@@ -61,7 +64,7 @@ describe('fetchChorusDomainPipeline (#2188)', () => {
 
   test('shape: 3 cards → in_progress, 0 → not_started', async () => {
     const bodyThree = (await fetchChorusDomainPipeline(deps({
-      fetcher: makeFetcher({ '=/api/chorus/domain/photos': { cards: Array(3).fill({ status: 'Next' }) } }),
+      fetcher: makeFetcher({ '=/api/chorus/domain/photos': { cards: { total: 3, items: Array(3).fill({ status: 'Next' }) } } }),
     }), 'photos')).body as { data: { stages: Array<{ name: string; status: string }> } };
     expect(bodyThree.data.stages.find((s) => s.name === 'shape')?.status).toBe('in_progress');
   });
@@ -107,9 +110,9 @@ describe('fetchChorusDomainPipeline (#2188)', () => {
 
   test('ship: ≥50% done → complete; 0 → not_started', async () => {
     const fetcher = makeFetcher({
-      '=/api/chorus/domain/photos': { cards: [
+      '=/api/chorus/domain/photos': { cards: { total: 4, items: [
         { status: 'Done' }, { status: 'Done' }, { status: 'Done' }, { status: 'WIP' },
-      ] },
+      ] } },
     });
     const body = (await fetchChorusDomainPipeline(deps({ fetcher }), 'photos')).body as {
       data: { stages: Array<{ name: string; status: string; detail: { ratio?: number } }> };

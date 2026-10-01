@@ -1,5 +1,5 @@
 /**
- * @test-type: api
+ * @test-type: integration:api
  *
  * Ollama resilience tests — #1980
  *
@@ -52,7 +52,7 @@ describe('Ollama resilience — embed worker (#1980)', () => {
     expect(body.status).toBe('spawned');
     expect(Array.isArray(body.workers)).toBe(true);
     expect(body.workers).toContain('embed');
-  }, 30_000);
+  });
 
   test('health detail exposes Ollama status', async () => {
     const res = await fetch(`${harness.baseUrl}/api/chorus/health/detail`);
