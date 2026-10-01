@@ -44,6 +44,9 @@ function testClearingEnv(dir, port, token) {
     // live athena-make and Fuseki; a test Clearing talks to neither.
     ATHENA_MAKE_URL: 'http://127.0.0.1:1',
     CHORUS_FUSEKI_QUERY: 'http://127.0.0.1:1/query',
+    // the account page's password change talks to the identity server (CSS);
+    // a test Clearing must never reach the live one.
+    CSS_LOCAL_BASE: 'http://127.0.0.1:1',
   };
 }
 

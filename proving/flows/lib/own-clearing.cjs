@@ -28,7 +28,8 @@ function isLiveClearing(url) {
 }
 
 /** opts.spine: lines written to the own Clearing's spine log before it starts.
- *  opts.signedInAs: a WebID; the result's .session() is then a clearing_session cookie for it. */
+ *  opts.signedInAs: a WebID; the result's .session() is then a clearing_session cookie for it.
+ *  opts.env: extra env for the Clearing (e.g. a stub's address). */
 function ownClearing(test, opts = {}) {
   const given = process.env.CLEARING_URL;
   if (given && isLiveClearing(given)) {
@@ -53,7 +54,7 @@ function ownClearing(test, opts = {}) {
     if (opts.signedInAs) sessionCookie = signedInSession(dir, opts.signedInAs);
     child = spawn(process.execPath, [entry], {
       cwd: CLEARING_SRC,
-      env: { ...process.env, ...env },
+      env: { ...process.env, ...env, ...(opts.env || {}) },
       stdio: ['ignore', 'ignore', 'pipe'],
     });
     let err = '';

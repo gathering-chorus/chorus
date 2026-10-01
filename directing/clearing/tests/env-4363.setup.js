@@ -22,3 +22,5 @@ if (!process.env.ATHENA_MAKE_URL) process.env.ATHENA_MAKE_URL = 'http://127.0.0.
 if (!process.env.CHORUS_FUSEKI_QUERY) process.env.CHORUS_FUSEKI_QUERY = 'http://127.0.0.1:9/query';
 // #4417 — voice uploads land in the test's own directory, never the live room's.
 if (!process.env.CLEARING_AUDIO_DIR) process.env.CLEARING_AUDIO_DIR = path.join(dir, 'audio-uploads');
+// #4417 — /api/account/password calls the identity server; never the live one from a test.
+if (!process.env.CSS_LOCAL_BASE) process.env.CSS_LOCAL_BASE = 'http://127.0.0.1:9';
