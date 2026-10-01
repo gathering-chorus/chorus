@@ -8,7 +8,34 @@ withServiceAuth();
 const INTEGRATION_ENABLED = process.env.RUN_INTEGRATION === 'true';
 const API = process.env.CHORUS_API || 'http://localhost:3340';
 
+const ATHENA_MAKE = process.env.ATHENA_MAKE_URL || 'http://localhost:3360';
+// #4415 — completeness on a populated subdomain measured 7.2 s on the live door
+// (board, 2026-10-01 07:15); jest's 5 s default reads that as a failure. The
+// cases test the answer; the slowness is reported separately, not hidden here.
+jest.setTimeout(20_000);
+
 let apiUp = false;
+
+// #4415 — the subject subdomain comes from the graph, never a hardcoded name.
+// The suite asked gates-service and logs-domain for data; logs-domain is no
+// longer a Domain row (404) and nothing is filed under gates-service, so 15
+// cases were red every night since at least 2026-09-26 while the endpoints
+// answered correctly. SUBJECT is the first Domain (by name) whose facets
+// answer 200 and whose code inventory is non-empty.
+let SUBJECT = '';
+
+async function pickSubject(): Promise<string> {
+  const r = await fetch(`${ATHENA_MAKE}/v1/domains/domains?limit=500`);
+  if (!r.ok) return '';
+  const names: string[] = ((await r.json()).data || []).map((d: { name: string }) => d.name).sort();
+  for (const n of names) {
+    const facets = await fetch(`${API}/api/athena/subdomains/${n}/actors`);
+    if (facets.status !== 200) continue;
+    const code = await (await fetch(`${API}/api/athena/subdomains/${n}/code`)).json();
+    if (Array.isArray(code?.data?.files) && code.data.files.length > 0) return n;
+  }
+  return '';
+}
 
 beforeAll(async () => {
   if (!INTEGRATION_ENABLED) return;
@@ -18,7 +45,13 @@ beforeAll(async () => {
   } catch {
     apiUp = false;
   }
-});
+  // ATHENA_TEST_SUBJECT pins the subject by hand — the negative-proof seam:
+  // gates-service (no code rows) and logs-domain (no Domain row) must go red.
+  SUBJECT = process.env.ATHENA_TEST_SUBJECT || await pickSubject();
+  if (!SUBJECT) {
+    throw new Error('UNMEASURED — no Domain in /v1/domains/domains answers its facets with code rows (#4415)');
+  }
+}, 120_000);
 
 const describeIntegration = INTEGRATION_ENABLED ? describe : describe.skip;
 
@@ -236,11 +269,11 @@ describeIntegration('GET /api/athena/subdomains/:id/alerts', () => {
 
 describeIntegration('GET /api/athena/subdomains/:id/code', () => {
   test('returns code inventory for gates subdomain', async () => {
-    const res = await fetch(`${API}/api/athena/subdomains/gates-service/code`);
+    const res = await fetch(`${API}/api/athena/subdomains/${SUBJECT}/code`);
     expect(res.status).toBe(200);
     const body = await res.json();
     expect(body._meta.query_name).toBe('subdomain-code');
-    expect(body.data.subdomain).toBe('gates-service');
+    expect(body.data.subdomain).toBe(SUBJECT);
     expect(Array.isArray(body.data.files)).toBe(true);
     expect(body.data.files.length).toBeGreaterThan(0);
     // Should find gate skill files
@@ -321,12 +354,12 @@ describeIntegration('POST /api/athena/validate', () => {
 
 describeIntegration('GET /api/athena/subdomains/:id/actors', () => {
   test('returns actor list with athena envelope', async () => {
-    const res = await fetch(`${API}/api/athena/subdomains/logs-domain/actors`);
+    const res = await fetch(`${API}/api/athena/subdomains/${SUBJECT}/actors`);
     expect(res.status).toBe(200);
     const body = await res.json();
     expect(body._meta.source).toBe('athena');
     expect(body._meta.query_name).toBe('subdomain-actors');
-    expect(body.data.subdomain).toBe('logs-domain');
+    expect(body.data.subdomain).toBe(SUBJECT);
     expect(Array.isArray(body.data.actors)).toBe(true);
   });
 
@@ -338,24 +371,24 @@ describeIntegration('GET /api/athena/subdomains/:id/actors', () => {
 
 describeIntegration('GET /api/athena/subdomains/:id/scenarios', () => {
   test('returns scenario list with athena envelope', async () => {
-    const res = await fetch(`${API}/api/athena/subdomains/logs-domain/scenarios`);
+    const res = await fetch(`${API}/api/athena/subdomains/${SUBJECT}/scenarios`);
     expect(res.status).toBe(200);
     const body = await res.json();
     expect(body._meta.source).toBe('athena');
     expect(body._meta.query_name).toBe('subdomain-scenarios');
-    expect(body.data.subdomain).toBe('logs-domain');
+    expect(body.data.subdomain).toBe(SUBJECT);
     expect(Array.isArray(body.data.scenarios)).toBe(true);
   });
 });
 
 describeIntegration('GET /api/athena/subdomains/:id/contract', () => {
   test('returns contract list with athena envelope', async () => {
-    const res = await fetch(`${API}/api/athena/subdomains/logs-domain/contract`);
+    const res = await fetch(`${API}/api/athena/subdomains/${SUBJECT}/contract`);
     expect(res.status).toBe(200);
     const body = await res.json();
     expect(body._meta.source).toBe('athena');
     expect(body._meta.query_name).toBe('subdomain-contract');
-    expect(body.data.subdomain).toBe('logs-domain');
+    expect(body.data.subdomain).toBe(SUBJECT);
     expect(Array.isArray(body.data.endpoints)).toBe(true);
   });
 });
@@ -366,33 +399,33 @@ describeIntegration('GET /api/athena/subdomains/:id/contract', () => {
 
 describeIntegration('GET /api/athena/subdomains/:id/pages (#1923)', () => {
   test('returns pages list with athena envelope', async () => {
-    const res = await fetch(`${API}/api/athena/subdomains/logs-domain/pages`);
+    const res = await fetch(`${API}/api/athena/subdomains/${SUBJECT}/pages`);
     expect(res.status).toBe(200);
     const body = await res.json();
     expect(body._meta.query_name).toBe('subdomain-pages');
-    expect(body.data.subdomain).toBe('logs-domain');
+    expect(body.data.subdomain).toBe(SUBJECT);
     expect(Array.isArray(body.data.pages)).toBe(true);
   });
 });
 
 describeIntegration('GET /api/athena/subdomains/:id/integrations (#1923)', () => {
   test('returns integrations list with athena envelope', async () => {
-    const res = await fetch(`${API}/api/athena/subdomains/logs-domain/integrations`);
+    const res = await fetch(`${API}/api/athena/subdomains/${SUBJECT}/integrations`);
     expect(res.status).toBe(200);
     const body = await res.json();
     expect(body._meta.query_name).toBe('subdomain-integrations');
-    expect(body.data.subdomain).toBe('logs-domain');
+    expect(body.data.subdomain).toBe(SUBJECT);
     expect(Array.isArray(body.data.integrations)).toBe(true);
   });
 });
 
 describeIntegration('GET /api/athena/subdomains/:id/persistence (#1923)', () => {
   test('returns persistence stores list with athena envelope', async () => {
-    const res = await fetch(`${API}/api/athena/subdomains/logs-domain/persistence`);
+    const res = await fetch(`${API}/api/athena/subdomains/${SUBJECT}/persistence`);
     expect(res.status).toBe(200);
     const body = await res.json();
     expect(body._meta.query_name).toBe('subdomain-persistence');
-    expect(body.data.subdomain).toBe('logs-domain');
+    expect(body.data.subdomain).toBe(SUBJECT);
     expect(Array.isArray(body.data.stores)).toBe(true);
   });
 });
@@ -406,7 +439,7 @@ describeIntegration('GET /api/athena/subdomains/:id/services (#1924)', () => {
     // shadowing the #1924 handler that would return `data.services`
     // (runtime services). Relaxed to accept either shape so the test
     // passes under current routing; the route-collision fix is #2164.
-    const res = await fetch(`${API}/api/athena/subdomains/logs-domain/services`);
+    const res = await fetch(`${API}/api/athena/subdomains/${SUBJECT}/services`);
     expect(res.status).toBe(200);
     const body = await res.json();
     expect(body._meta.query_name).toBe('subdomain-services');
@@ -417,7 +450,7 @@ describeIntegration('GET /api/athena/subdomains/:id/services (#1924)', () => {
 
 describeIntegration('GET /api/athena/subdomains/:id/pipeline (#1925)', () => {
   test('GET returns pipeline list', async () => {
-    const res = await fetch(`${API}/api/athena/subdomains/logs-domain/pipeline`);
+    const res = await fetch(`${API}/api/athena/subdomains/${SUBJECT}/pipeline`);
     expect(res.status).toBe(200);
     const body = await res.json();
     expect(body._meta.query_name).toBe('subdomain-pipeline');
@@ -427,7 +460,7 @@ describeIntegration('GET /api/athena/subdomains/:id/pipeline (#1925)', () => {
 
 describeIntegration('GET /api/athena/subdomains/:id/logs (#1926)', () => {
   test('GET returns log sources list', async () => {
-    const res = await fetch(`${API}/api/athena/subdomains/logs-domain/logs`);
+    const res = await fetch(`${API}/api/athena/subdomains/${SUBJECT}/logs`);
     expect(res.status).toBe(200);
     const body = await res.json();
     expect(body._meta.query_name).toBe('subdomain-logs');
@@ -437,7 +470,7 @@ describeIntegration('GET /api/athena/subdomains/:id/logs (#1926)', () => {
 
 describeIntegration('GET /api/athena/subdomains/:id/gaps (#1926)', () => {
   test('GET returns gaps list', async () => {
-    const res = await fetch(`${API}/api/athena/subdomains/logs-domain/gaps`);
+    const res = await fetch(`${API}/api/athena/subdomains/${SUBJECT}/gaps`);
     expect(res.status).toBe(200);
     const body = await res.json();
     expect(body._meta.query_name).toBe('subdomain-gaps');
@@ -451,12 +484,12 @@ describeIntegration('GET /api/athena/subdomains/:id/gaps (#1926)', () => {
 
 describeIntegration('GET /api/athena/subdomains/:id/completeness', () => {
   test('returns completeness score with sections, present, missing, percentage', async () => {
-    const res = await fetch(`${API}/api/athena/subdomains/logs-domain/completeness`);
+    const res = await fetch(`${API}/api/athena/subdomains/${SUBJECT}/completeness`);
     expect(res.status).toBe(200);
     const body = await res.json();
     expect(body._meta.source).toBe('athena');
     expect(body._meta.query_name).toBe('subdomain-completeness');
-    expect(body.data.subdomain).toBe('logs-domain');
+    expect(body.data.subdomain).toBe(SUBJECT);
     expect(body.data.sections).toBeDefined();
     expect(Array.isArray(body.data.present)).toBe(true);
     expect(Array.isArray(body.data.missing)).toBe(true);
@@ -466,7 +499,7 @@ describeIntegration('GET /api/athena/subdomains/:id/completeness', () => {
   });
 
   test('returns lifecycle gates with create/wip/done stages', async () => {
-    const res = await fetch(`${API}/api/athena/subdomains/logs-domain/completeness`);
+    const res = await fetch(`${API}/api/athena/subdomains/${SUBJECT}/completeness`);
     const body = await res.json();
     // #3559: assert the lifecycle STRUCTURE + the stable create-gate anchor.
     // The exact wip/done gate membership (which stage requires actors/edges/
@@ -489,7 +522,7 @@ describeIntegration('GET /api/athena/subdomains/:id/completeness', () => {
   });
 
   test('present and missing arrays match sections boolean map (#1900)', async () => {
-    const res = await fetch(`${API}/api/athena/subdomains/logs-domain/completeness`);
+    const res = await fetch(`${API}/api/athena/subdomains/${SUBJECT}/completeness`);
     const body = await res.json();
     const sections = body.data.sections;
     const present = body.data.present;
