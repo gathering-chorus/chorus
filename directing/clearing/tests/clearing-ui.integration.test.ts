@@ -37,6 +37,9 @@ const MOCK_NUDGE_DIR = '/tmp/clearing-test-nudges';
 const MOCK_NUDGE_SCRIPT = '/tmp/clearing-test-mock-nudge';
 import * as fs from 'fs';
 import * as os from 'os';
+const { testClearingEnv } = require('./lib/test-clearing-world.cjs');
+const TEST_WORLD = fs.mkdtempSync(path.join(os.tmpdir(), 'clearing-ui-'));
+const TEST_TOKEN = `test-${process.pid}-${Date.now()}`;
 
 beforeAll(async () => {
   // Create mock nudge that logs but doesn't inject
@@ -52,13 +55,10 @@ echo "DELIVERED to $TARGET at $(TZ=America/New_York date '+%Y-%m-%d %H:%M')"
   clearingProc = spawn('node', [CLEARING_SERVER], {
     env: {
       ...process.env,
-      COMMAND_CHANNEL_PORT: String(TEST_PORT),
+      // #4417 — the whole world, not just ports: HOME, projects dir, offsets,
+      // journal, message file, spine log, messages.db (test-clearing-world.cjs).
+      ...testClearingEnv(TEST_WORLD, TEST_PORT, TEST_TOKEN),
       CLEARING_HTTPS_PORT: String(TEST_HTTPS_PORT),
-      CHORUS_INJECT_DRY_RUN: '1',  // belt-and-suspenders for any inject path
-      // 2026-08-24 — the spawned Clearing inherited live routing and nudged REAL
-      // role terminals (AC1-SOCKET spray into kade's session). Dead-port pulse,
-      // point the nudge binary at the mock above. A test brings its own world.
-      PULSE_URL: 'http://127.0.0.1:1',
       NUDGE_BINARY: MOCK_NUDGE_SCRIPT,
     },
     stdio: 'pipe',
@@ -82,6 +82,7 @@ echo "DELIVERED to $TARGET at $(TZ=America/New_York date '+%Y-%m-%d %H:%M')"
 });
 
 afterAll(async () => {
+  try { fs.rmSync(TEST_WORLD, { recursive: true, force: true }); } catch { /* ignore */ }
   try { fs.unlinkSync(MOCK_NUDGE_SCRIPT); } catch { /* ignore */ }
   try { fs.rmSync(MOCK_NUDGE_DIR, { recursive: true }); } catch { /* ignore */ }
   if (clearingProc && !clearingProc.killed) {
@@ -223,11 +224,9 @@ describe('AC2 (re-ruled #3862): role-to-role nudges APPEAR, typed role-to-role �
 // Helper: POST a message to Clearing API (top-level, used across describes)
 // #3966 — the room's write door refuses anonymous posts; carry the machine's
 // bridge token (the spawned server generates the file at boot if missing).
-const BRIDGE_TOKEN = (() => {
-  try { return fs.readFileSync(`${os.homedir()}/.chorus/bridge-auth-token`, 'utf-8').trim(); }
-  catch { return ''; }
-})();
-const AUTH_HEADERS = BRIDGE_TOKEN ? { Authorization: `Bearer ${BRIDGE_TOKEN}` } : {};
+// #4417 — the test Clearing's own credential (written into its temp HOME by
+// test-clearing-world.cjs); the suite never reads the live one.
+const AUTH_HEADERS = { Authorization: `Bearer ${TEST_TOKEN}` };
 
 function postMessage(from: string, text: string): Promise<number> {
   return new Promise((resolve, reject) => {

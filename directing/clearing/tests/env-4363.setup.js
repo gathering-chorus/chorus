@@ -7,3 +7,6 @@ const path = require('path');
 const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'clearing-4363-'));
 if (!process.env.CLEARING_JOURNAL) process.env.CLEARING_JOURNAL = path.join(dir, 'room.jsonl');
 if (!process.env.CLEARING_TAILER_OFFSETS) process.env.CLEARING_TAILER_OFFSETS = path.join(dir, 'tailer-offsets.json');
+// #4417 — a bare SessionTailer's reply.rendered goes to the spine log; without
+// this every jest process appended to the live ~/.chorus/chorus.log.
+if (!process.env.CHORUS_LOG_FILE) process.env.CHORUS_LOG_FILE = path.join(dir, 'chorus.log');

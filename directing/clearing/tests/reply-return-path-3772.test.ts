@@ -133,3 +133,21 @@ describe('#3772 NEGATIVE PROOF — silent-room state is detectable', () => {
     expect(findSilentReplies(quiet)).toHaveLength(0);
   });
 });
+
+// #4417 — a bare SessionTailer appends reply.rendered to the spine log. Every
+// jest process gets a temp log from env-4363.setup.js; this proves the default
+// emitter writes there and nowhere live. NEGATIVE PROOF: drop the
+// CHORUS_LOG_FILE line from the setup file and both expectations go red.
+describe('#4417 the spine log in tests is a temp file', () => {
+  test('the default spine emitter writes to the temp log, not ~/.chorus/chorus.log', async () => {
+    const fs = require('fs');
+    const os = require('os');
+    const { makeSpineEmitter } = require('../src/reply-delivery');
+    const target = process.env.CHORUS_LOG_FILE || '';
+    expect(fs.realpathSync(require('path').dirname(target)).startsWith(fs.realpathSync(os.tmpdir()))).toBe(true);
+    const marker = `spine-4417-${Date.now()}`;
+    makeSpineEmitter()({ event: 'reply.rendered', marker });
+    await new Promise((r) => setTimeout(r, 100));
+    expect(fs.readFileSync(target, 'utf8')).toContain(marker);
+  });
+});

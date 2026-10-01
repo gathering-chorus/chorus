@@ -1,9 +1,11 @@
 // @test-type: bdd — cucumber step definitions; the feature files are the tests
-import { Given, When, Then, After } from '@cucumber/cucumber';
-import { execSync } from 'child_process';
+import { Given, When, Then, Before, After, AfterAll } from '@cucumber/cucumber';
+import { execSync, spawn, ChildProcess } from 'child_process';
 import * as assert from 'assert';
 import * as fs from 'fs';
 import * as os from 'os';
+import * as path from 'path';
+const { testClearingEnv } = require('../../../../directing/clearing/tests/lib/test-clearing-world.cjs');
 
 // State shared across steps within a scenario
 let authToken = '';
@@ -17,6 +19,44 @@ const LOCAL = 'http://localhost:3470';
 // (the hardcoded .36 went stale when DHCP moved the machine to .23).
 const LAN = process.env.CLEARING_LAN_URL || 'http://jeffs-mac-mini-m1-3.local:3470';
 const PUBLIC = 'https://clearing.lightlifeurbangardens.com';
+
+// #4417 — sends and feed reads go to a Clearing this file starts, never to
+// Jeff's live room. Until 10-01 every nightly stored [e2e-identity] and
+// [e2e-test] probes in prod (46 in ~/.chorus/clearing/room.jsonl). The test
+// Clearing's world comes from directing/clearing/tests/lib/test-clearing-world.cjs,
+// shared with clearing-ui. Page loads and the public door stay live:
+// they only read, or are refused.
+const TEST_PORT = 12000 + Math.floor(Math.random() * 8000);
+const TEST_LOCAL = `http://localhost:${TEST_PORT}`;
+const TEST_LAN = LAN.replace(/:\d+$/, `:${TEST_PORT}`);
+const CLEARING_SERVER = path.join(__dirname, '..', '..', '..', '..', 'directing', 'clearing', 'dist', 'server.js');
+let testWorld = '';
+let testToken = '';
+let testClearing: ChildProcess | null = null;
+
+Before({ tags: '@clearing', timeout: 20000 }, async function () {
+  if (testClearing) return;
+  testWorld = fs.mkdtempSync(path.join(os.tmpdir(), 'clearing-access-'));
+  testToken = `test-${process.pid}-${Date.now()}`;
+  const log: string[] = [];
+  testClearing = spawn('node', [CLEARING_SERVER], {
+    env: { ...process.env, ...testClearingEnv(testWorld, TEST_PORT, testToken) },
+    stdio: 'pipe',
+  });
+  testClearing.stderr?.on('data', (d) => log.push(d.toString()));
+  testClearing.on('exit', (code) => log.push(`[exit ${code}]`));
+  const deadline = Date.now() + 15000;
+  while (Date.now() < deadline) {
+    if (curl(`${TEST_LOCAL}/health`).status === 200) return;
+    await new Promise((r) => setTimeout(r, 200));
+  }
+  throw new Error(`test Clearing did not start on ${TEST_PORT} within 15s: ${log.join('').slice(-400)}`);
+});
+
+AfterAll(function () {
+  if (testClearing && !testClearing.killed) testClearing.kill('SIGTERM');
+  if (testWorld) fs.rmSync(testWorld, { recursive: true, force: true });
+});
 
 function curl(url: string, opts: string = ''): { status: number; body: string } {
   try {
@@ -118,9 +158,9 @@ When('Jeff enters the name {string} via LAN', function (name: string) {
   // #4278 — /api/message requires a caller identity since #3966; the bridge
   // token is the identity a role carries. Anonymous got 401 (2026-09-23).
   const r = curlPost(
-    `${LAN}/api/message`,
+    `${TEST_LAN}/api/message`,
     JSON.stringify({ from: name, text: `[e2e-identity] ${name} joined` }),
-    `-H "Authorization: Bearer ${authToken}"`
+    `-H "Authorization: Bearer ${testToken}"`
   );
   nameAccepted = r.status === 200;
   lastResponse = r;
@@ -130,9 +170,9 @@ When('Jeff enters the name {string} via localhost', function (name: string) {
   // #4278 — /api/message requires a caller identity since #3966; the bridge
   // token is the identity a role carries. Anonymous got 401 (2026-09-23).
   const r = curlPost(
-    `${LOCAL}/api/message`,
+    `${TEST_LOCAL}/api/message`,
     JSON.stringify({ from: name, text: `[e2e-identity] ${name} joined` }),
-    `-H "Authorization: Bearer ${authToken}"`
+    `-H "Authorization: Bearer ${testToken}"`
   );
   nameAccepted = r.status === 200;
   lastResponse = r;
@@ -164,9 +204,9 @@ When('Jeff sends a message {string} via the API with token auth', function (labe
 When('Jeff sends a message {string} via the API from LAN', function (label: string) {
   probeMarker = `[e2e-test] ${label}-${Date.now()}`;
   lastResponse = curlPost(
-    `${LAN}/api/message`,
+    `${TEST_LAN}/api/message`,
     JSON.stringify({ from: 'jeff', text: probeMarker }),
-    `-H "Authorization: Bearer ${authToken}"` // #4278 — identity is required since #3966
+    `-H "Authorization: Bearer ${testToken}"` // #4278 — identity is required since #3966
   );
   assert.strictEqual(lastResponse.status, 200, `POST failed: ${lastResponse.status} ${lastResponse.body}`);
 });
@@ -174,9 +214,9 @@ When('Jeff sends a message {string} via the API from LAN', function (label: stri
 When('Jeff sends a message {string} via the API from localhost', function (label: string) {
   probeMarker = `[e2e-test] ${label}-${Date.now()}`;
   lastResponse = curlPost(
-    `${LOCAL}/api/message`,
+    `${TEST_LOCAL}/api/message`,
     JSON.stringify({ from: 'jeff', text: probeMarker }),
-    `-H "Authorization: Bearer ${authToken}"` // #4278 — identity is required since #3966
+    `-H "Authorization: Bearer ${testToken}"` // #4278 — identity is required since #3966
   );
   assert.strictEqual(lastResponse.status, 200, `POST failed: ${lastResponse.status} ${lastResponse.body}`);
 });
@@ -189,7 +229,7 @@ Then('the message {string} appears in the message feed', function (_label: strin
     // #4278 — identity is required, and [e2e-…] probes classify as hidden
     // (visible:false) by design so a test never reads as a message to Jeff;
     // the feed must be asked for hidden rows to see its own probe.
-    const r = curl(`${LOCAL}/api/messages?includeHidden=1&limit=2000`, `-H "Authorization: Bearer ${authToken}"`);
+    const r = curl(`${TEST_LOCAL}/api/messages?includeHidden=1&limit=2000`, `-H "Authorization: Bearer ${testToken}"`);
     if (r.body.includes(probeMarker)) {
       found = true;
       break;
