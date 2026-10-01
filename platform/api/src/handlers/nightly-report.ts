@@ -12,6 +12,8 @@ export type NightlyRow = {
   owner: string;
   status: string; // pass | fail | skip
   summary: string;
+  /** #4416 — how long the suite ran, when the runner timed it */
+  seconds?: number;
 };
 
 /** #4271 — the run's own count of TEST CASES, read verbatim from its RUN|tally
@@ -234,6 +236,21 @@ function labelText(label: string): string {
   if (label === 'product-broke') return 'PRODUCT BROKE';
   if (label === 'test-wrong') return 'TEST WRONG';
   return label === 'unmeasured' ? 'UNMEASURED' : '';
+}
+
+/** #4416 — the run's slowest suites, so a long run names where its time went.
+ *  Only rows the runner timed; a run with none shows nothing (never a guess). */
+export function slowestSuites(rows: NightlyRow[], n = 10): NightlyRow[] {
+  return rows.filter((r) => typeof r.seconds === 'number')
+    .sort((a, b) => (b.seconds as number) - (a.seconds as number)).slice(0, n);
+}
+
+function renderSlowest(rows: NightlyRow[]): string {
+  const top = slowestSuites(rows);
+  if (!top.length) return '';
+  const items = top.map((r) => `<li class="suite"><span class="kind">${esc(r.kind)}</span><span class="secs">${(r.seconds as number).toFixed(1)} s</span>`
+    + `<span class="path">${esc(displayPath(r.path))}</span><span class="owner">${esc(r.owner)}</span></li>`).join('');
+  return `<details class="slowest" open><summary><span class="lbl">${top.length} slowest suites</span></summary><ul class="suites">${items}</ul></details>`;
 }
 
 function renderHistory(o: NightlyPageOpts | undefined, current: string): string {
@@ -542,6 +559,7 @@ export function renderNightlyPage(run: NightlyRun | null, opts?: NightlyPageOpts
   const body = `
   ${renderBanner(run, opts)}
   ${groups}
+  ${renderSlowest(run.rows)}
   ${renderHistory(opts, run.startedAt)}
   <p class="prov">Suites in the order the run executed them; the page renders the record the run wrote (<code>werk-test --nightly</code>) and never re-derives a verdict. Failing cases are the run's own TestResult rows.</p>`;
   return page(`Nightly — ${verdict}`, body);
@@ -568,7 +586,9 @@ function page(title: string, body: string): string {
   .split .d { color:var(--mut); } .split .new, .new { color:var(--red); } .split .fx, .fixed { color:var(--green); }
   .split b { color:var(--fg); }
   ul.delta { margin:0; padding-left:1.25rem; flex-basis:100%; }
-  details.group, details.history { background:var(--panel); border:1px solid var(--line); border-radius:10px; }
+  details.slowest > summary { list-style:none; cursor:pointer; padding:.7rem 1rem; font-weight:600; }
+  .secs { font-variant-numeric:tabular-nums; font-weight:600; }
+  details.group, details.history, details.slowest { background:var(--panel); border:1px solid var(--line); border-radius:10px; }
   details.group > summary, details.history > summary, details.sub > summary, details.red > summary { list-style:none; cursor:pointer; }
   details > summary::-webkit-details-marker { display:none; }
   details.group > summary, details.history > summary, details.sub > summary { display:flex; align-items:center; gap:.75rem; padding:.7rem 1rem; font-weight:600; }

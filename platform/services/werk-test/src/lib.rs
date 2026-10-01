@@ -928,6 +928,36 @@ pub fn parse_file_suite_cases(suite: &str, out: &str) -> Vec<(String, String)> {
     }
 }
 
+// #4416 — each nightly unit's run time, measured inside the worker (after the
+// load gate lets it start), keyed by the unit as the pool names it. The units
+// run in parallel pools and print only when the pool is done, so the parent
+// cannot time them from the gaps between lines.
+pub fn unit_times() -> &'static std::sync::Mutex<std::collections::HashMap<String, u64>> {
+    static TIMES: std::sync::OnceLock<std::sync::Mutex<std::collections::HashMap<String, u64>>> = std::sync::OnceLock::new();
+    TIMES.get_or_init(|| std::sync::Mutex::new(std::collections::HashMap::new()))
+}
+
+pub fn time_unit<T>(item: &str, f: impl FnOnce() -> T) -> T {
+    let t0 = std::time::Instant::now();
+    let r = f();
+    if let Ok(mut m) = unit_times().lock() {
+        m.insert(item.to_string(), t0.elapsed().as_millis() as u64);
+    }
+    r
+}
+
+/// The `nightly-unit-time|kind|unit|millis` line, printed just before the unit's line.
+pub fn print_unit_time(kind: &str, unit: &str, item: &str) {
+    if let Some(l) = unit_time_line(kind, unit, item) {
+        println!("{}", l);
+    }
+}
+
+/// #4416 — the time line for a unit, if it was timed (print_unit_time's text).
+pub fn unit_time_line(kind: &str, unit: &str, item: &str) -> Option<String> {
+    unit_times().lock().ok().and_then(|m| m.get(item).copied()).map(|ms| format!("nightly-unit-time|{}|{}|{}", kind, unit, ms))
+}
+
 #[cfg(test)]
 mod file_suites_4292 {
     use super::*;

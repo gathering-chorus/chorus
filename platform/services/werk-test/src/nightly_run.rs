@@ -24,6 +24,8 @@ pub struct SuiteRow {
     pub owner: String,
     pub status: String,
     pub summary: String,
+    /// #4416 — how long the suite ran, start to end, when the runner timed it
+    pub millis: Option<u64>,
 }
 
 impl SuiteRow {
@@ -34,14 +36,46 @@ impl SuiteRow {
             owner: owner.into(),
             status: status.into(),
             summary: summary.into(),
+            millis: None,
         }
     }
     pub fn line(&self) -> String {
         format!("SUITE|{}|{}|{}|{}|{}", self.kind, self.path, self.owner, self.status, self.summary)
     }
+    /// #4416 — the row's run time, as its own log line beside the SUITE row.
+    /// A separate line, because a SUITE row's summary is its last field and
+    /// may hold '|'; every SUITE reader matches `SUITE|` and skips this one.
+    pub fn time_line(&self) -> Option<String> {
+        self.millis.map(|ms| format!("SUITETIME|{}|{}|{}", self.kind, self.path, seconds(ms)))
+    }
     pub fn suite_name(&self) -> &str {
         self.path.rsplit('/').next().unwrap_or(&self.path)
     }
+}
+
+/// #4416 — milliseconds as seconds with one decimal, the way rows show them.
+pub fn seconds(ms: u64) -> String {
+    format!("{}.{}", ms / 1000, (ms % 1000) / 100)
+}
+
+/// #4416 — the runner's `nightly-unit-time|kind|unit|millis` line, printed
+/// just before the unit's own line. Answers ("kind|unit", millis).
+pub fn parse_unit_time_line(line: &str) -> Option<(String, u64)> {
+    let rest = line.strip_prefix("nightly-unit-time|")?;
+    let (key, ms) = rest.rsplit_once('|')?;
+    if key.split('|').count() != 2 {
+        return None;
+    }
+    Some((key.to_string(), ms.trim().parse().ok()?))
+}
+
+/// #4416 — the "kind|unit" key of a `nightly-unit|…` line, matching the time line.
+pub fn unit_line_key(line: &str) -> Option<String> {
+    let mut it = line.splitn(4, '|');
+    if it.next()? != "nightly-unit" {
+        return None;
+    }
+    Some(format!("{}|{}", it.next()?, it.next()?))
 }
 
 /// `SUITE|…` back into a row (the daily readers and the tests round-trip it).
@@ -807,6 +841,15 @@ pub fn suite_row_payload(run_ts: &str, order: usize, row: &SuiteRow, ts_ms: u128
         crate::json_escape(&row.summary),
         ts_ms
     )
+}
+
+/// #4416 — the payload with the suite's seconds, when the runner timed it.
+pub fn suite_row_payload_timed(run_ts: &str, order: usize, row: &SuiteRow, ts_ms: u128) -> String {
+    let body = suite_row_payload(run_ts, order, row, ts_ms);
+    match row.millis {
+        Some(ms) => format!("{},\"suiteSeconds\":\"{}\"}}", &body[..body.len() - 1], seconds(ms)),
+        None => body,
+    }
 }
 
 /// #4156 — does this run write its record to the graph? A werk-rooted run

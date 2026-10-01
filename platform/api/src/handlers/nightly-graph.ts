@@ -27,9 +27,10 @@ export function runIdsQuery(limit: number): string {
 
 /** Every suite row of the runs from `oldest` on. */
 export function suiteRowsQuery(oldest: string): string {
-  return `${P} SELECT ?runTs ?order ?kind ?fp ?owner ?res ?sum ?ts WHERE { GRAPH ${TESTS} {`
+  return `${P} SELECT ?runTs ?order ?kind ?fp ?owner ?res ?sum ?ts ?secs WHERE { GRAPH ${TESTS} {`
     + ' ?r a c:TestSuiteRun ; c:runTs ?runTs ; c:suiteOrder ?order ; c:suiteKind ?kind ; c:filePath ?fp ;'
     + ' c:suiteOwner ?owner ; c:result ?res ; c:ts ?ts . OPTIONAL { ?r c:suiteSummary ?sum }'
+    + ' OPTIONAL { ?r c:suiteSeconds ?secs }'
     + ` FILTER(STR(?runTs) >= "${oldest.replace(/"/g, '')}") } }`;
 }
 
@@ -94,8 +95,10 @@ export function runsFromGraph(suiteCsv: string, recordCsv: string, nowMs: number
   const byRun = new Map<string, { rows: (NightlyRow & { order: number })[]; lastMs: number }>();
   for (const r of csvRecords(suiteCsv)) {
     const run = byRun.get(r.runTs) ?? { rows: [], lastMs: 0 };
+    const seconds = r.secs ? Number(r.secs) : NaN;
     run.rows.push({
       order: num(r.order) ?? 0, kind: r.kind, path: r.fp, owner: r.owner, status: r.res, summary: r.sum,
+      ...(Number.isFinite(seconds) ? { seconds } : {}),
     });
     run.lastMs = Math.max(run.lastMs, tsMs(r.ts));
     byRun.set(r.runTs, run);
@@ -105,7 +108,7 @@ export function runsFromGraph(suiteCsv: string, recordCsv: string, nowMs: number
     const got = byRun.get(id)!;
     const rec = records.get(id);
     const rows: NightlyRow[] = got.rows.sort((a, b) => a.order - b.order)
-      .map(({ kind, path, owner, status, summary }) => ({ kind, path, owner, status, summary }));
+      .map(({ order: _order, ...row }) => row);
     const run: NightlyRun & { runId: string } = { runId: id, startedAt: id, completed: false, rows };
     if (rec?.runOutcome === 'stopped') {
       run.stoppedAt = rec.runCompletedAt || undefined;

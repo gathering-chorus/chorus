@@ -136,6 +136,14 @@ def render(page, running=None):
                 cases = [text(w) for w in re.findall(r'<span class="why">(.*?)</span>', r, flags=re.S)][:1] or [note or "(the suite recorded no case names)"]
             for c in cases:
                 out.append(f"        ✗ {c[:120]}")
+    # #4416 — where the run's time went: the page's slowest-suites fold, when
+    # the run timed its suites (older runs did not, and show nothing here)
+    slow = re.search(r'<details class="slowest"[^>]*>(.*?)</details>', page, flags=re.S)
+    if slow:
+        out.append("")
+        out.append("slowest suites")
+        for li in re.findall(r'<li class="suite">(.*?)</li>', slow.group(1), flags=re.S):
+            out.append(f"  {span(li, 'secs'):>9}  {span(li, 'kind'):<10} {span(li, 'path')} · {span(li, 'owner')}")
     return "\n".join(out)
 
 def red_block(page, path):
