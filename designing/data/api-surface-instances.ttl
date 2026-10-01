@@ -27,35 +27,9 @@
 @prefix chorus: <https://jeffbridwell.com/chorus#> .
 @prefix rdfs: <http://www.w3.org/2000/01/rdf-schema#> .
 
-# #4130 — the principles write door. principles-api.test.sh's negative proof
-# (a POST with no identity is refused 401) read 200 on every run: these three
-# routes were never in this table, so the envelope gated nothing — the
-# open-by-construction class #3977 measured (59 undeclared routes). Scope is
-# the principles home graph; Wren's principal holds it (security-scopes-3689.ttl).
-chorus:surface-principles-create a chorus:APISurface ;
-    rdfs:label "chorus-api principles create (loom-principles write door)" ;
-    chorus:securedBy chorus:gate-chorus-api-mutations ;
-    chorus:httpMethod "POST" ;
-    chorus:pathPrefix "/api/athena/subdomains/loom-principles/principles" ;
-    chorus:requiresScope "urn:chorus:domains:principles" ;
-    chorus:servedBy chorus:services .
-
-chorus:surface-principles-update a chorus:APISurface ;
-    rdfs:label "chorus-api principles update (loom-principles write door)" ;
-    chorus:securedBy chorus:gate-chorus-api-mutations ;
-    chorus:httpMethod "PUT" ;
-    chorus:pathPrefix "/api/athena/subdomains/loom-principles/principles" ;
-    chorus:requiresScope "urn:chorus:domains:principles" ;
-    chorus:servedBy chorus:services .
-
-chorus:surface-principles-delete a chorus:APISurface ;
-    rdfs:label "chorus-api principles delete (loom-principles write door)" ;
-    chorus:securedBy chorus:gate-chorus-api-mutations ;
-    chorus:httpMethod "DELETE" ;
-    chorus:pathPrefix "/api/athena/subdomains/loom-principles/principles" ;
-    chorus:requiresScope "urn:chorus:domains:principles" ;
-    chorus:servedBy chorus:services .
-
+# #4353 — the principles write door on /api/athena/subdomains is retired with
+# SubDomain; principles are written through athena-make /v1/principles/principles.
+# Its three surfaces are in model-retirements.jsonl.
 chorus:surface-alert-write a chorus:APISurface ;
     rdfs:label "chorus-api alert write (zero-caller)" ;
     chorus:securedBy chorus:gate-chorus-api-mutations ;
@@ -119,7 +93,7 @@ chorus:surface-icd-writes a chorus:APISurface ;
 # (tests/lib/service-token). Athena UI browser writes 401 until the session
 # bridge exists — default-deny is correct (anonymous write refused, not
 # silently accepted). Deduped to one surface per (method, path-prefix, scope);
-# the envelope matches by prefix so subdomains/* collapses to method-keyed rows.
+# the envelope matches by prefix. (#4353: the /api/athena/subdomains rows are retired.)
 @prefix chorus: <https://jeffbridwell.com/chorus#> .
 @prefix rdfs: <http://www.w3.org/2000/01/rdf-schema#> .
 
@@ -129,30 +103,6 @@ chorus:surface-post-api-chorus-index a chorus:APISurface ;
     chorus:httpMethod "POST" ;
     chorus:pathPrefix "/api/chorus/index" ;
     chorus:requiresScope "urn:chorus:index" ;
-    chorus:servedBy chorus:services .
-
-chorus:surface-post-api-athena-subdomains a chorus:APISurface ;
-    rdfs:label "chorus-api POST /api/athena/subdomains (prefix surface)" ;
-    chorus:securedBy chorus:gate-chorus-api-mutations ;
-    chorus:httpMethod "POST" ;
-    chorus:pathPrefix "/api/athena/subdomains" ;
-    chorus:requiresScope "urn:chorus:domains:code" ;
-    chorus:servedBy chorus:services .
-
-chorus:surface-delete-api-athena-subdomains a chorus:APISurface ;
-    rdfs:label "chorus-api DELETE /api/athena/subdomains (prefix surface)" ;
-    chorus:securedBy chorus:gate-chorus-api-mutations ;
-    chorus:httpMethod "DELETE" ;
-    chorus:pathPrefix "/api/athena/subdomains" ;
-    chorus:requiresScope "urn:chorus:domains:code" ;
-    chorus:servedBy chorus:services .
-
-chorus:surface-put-api-athena-subdomains a chorus:APISurface ;
-    rdfs:label "chorus-api PUT /api/athena/subdomains (prefix surface)" ;
-    chorus:securedBy chorus:gate-chorus-api-mutations ;
-    chorus:httpMethod "PUT" ;
-    chorus:pathPrefix "/api/athena/subdomains" ;
-    chorus:requiresScope "urn:chorus:domains:code" ;
     chorus:servedBy chorus:services .
 
 chorus:surface-post-api-athena-reload a chorus:APISurface ;

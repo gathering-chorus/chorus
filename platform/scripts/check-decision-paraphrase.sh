@@ -62,18 +62,20 @@ id_patterns() {
   fi
 }
 
-LABELS=$(curl -s --max-time 5 "$API_URL/api/athena/subdomains/loom-decisions/decisions" | python3 -c "
+# #4353 — decisions are the ADR rows on athena-make (the SubDomain route is retired)
+DECISIONS_URL="${DECISIONS_URL:-${ATHENA_MAKE_URL:-http://localhost:3360}/v1/decisions/adrs}"
+LABELS=$(curl -s --max-time 5 "$DECISIONS_URL" | python3 -c "
 import json, sys
 d = json.load(sys.stdin)
-decs = d.get('data',{}).get('decisions',[])
+decs = d.get('data') if isinstance(d.get('data'), list) else []
 for dec in decs:
-    label = dec.get('label','').strip()
+    label = (dec.get('label') or '').strip()
     if len(label) >= 20:
-        print(f\"{dec.get('id','')}\\t{label}\")
+        print(f\"{dec.get('name','')}\\t{label}\")
 " 2>/dev/null)
 
 if [ -z "$LABELS" ]; then
-  echo "ERROR: could not fetch decision labels from $API_URL/api/athena/subdomains/loom-decisions/decisions"
+  echo "ERROR: could not fetch decision labels from $DECISIONS_URL"
   exit 2
 fi
 

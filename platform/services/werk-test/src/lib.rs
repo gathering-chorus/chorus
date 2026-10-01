@@ -5428,9 +5428,9 @@ mod athena_join_4136 {
         ];
         let ents: Vec<String> = vec!["bare".into(), "actors".into(), "completeness".into()];
         let cases = vec![
-            CaseResult { file_path: f.into(), test_name: "GET /api/athena/subdomains/:id/prior-art returns 404 for unknown subdomain".into(), result: "pass".into() },
-            CaseResult { file_path: f.into(), test_name: "GET /api/athena/subdomains/:id/actors actors returns 404 for unknown subdomain".into(), result: "pass".into() },
-            CaseResult { file_path: f.into(), test_name: "GET /api/athena/subdomains/:id/completeness completeness returns 404 for unknown subdomain".into(), result: "pass".into() },
+            CaseResult { file_path: f.into(), test_name: "GET /api/athena/domains/:id/prior-art returns 404 for unknown subdomain".into(), result: "pass".into() },
+            CaseResult { file_path: f.into(), test_name: "GET /api/athena/domains/:id/actors actors returns 404 for unknown subdomain".into(), result: "pass".into() },
+            CaseResult { file_path: f.into(), test_name: "GET /api/athena/domains/:id/completeness completeness returns 404 for unknown subdomain".into(), result: "pass".into() },
         ];
         let (joined, unjoined) = join_cases(&cases, &rows, &names, &ents);
         let mut ents_hit: Vec<&str> = joined.iter().map(|(_, e, _)| e.as_str()).collect();

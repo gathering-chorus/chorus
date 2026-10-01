@@ -91,8 +91,12 @@
         const res = await fetch('/owl/v1/principles/principles');
         if (!res.ok) throw new Error('API ' + res.status);
         const body = await res.json();
-        const all = (Array.isArray(body?.data) ? body.data : []).map((r) => ({
+        const rows = Array.isArray(body?.data) ? body.data : [];
+        const labelOf = new Map(rows.map((r) => [r.name, r.label || r.name]));
+        const all = rows.map((r) => ({
           ...r, id: r.name, isPermacultureParent: r.isPermacultureParent === true || r.isPermacultureParent === 'true',
+          // rhymesWith names the permaculture parent (the old read folded it into parents)
+          parents: [].concat(r.rhymesWith || []).filter(Boolean).map((n) => ({ uri: n, label: labelOf.get(n) || n })),
         }));
         const chorus = all
           .filter((p) => !p.isPermacultureParent)

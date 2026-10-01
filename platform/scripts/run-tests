@@ -95,14 +95,15 @@ resolve_domain() {
   # the underlying TestCoverage triples carry the file paths. We use the
   # subdomain test-coverage endpoint for the per-domain file list.
   local graph_response
-  graph_response=$(curl -sf --max-time 5 "${CHORUS_API}/api/athena/subdomains/${sd}/test-coverage" 2>/dev/null || true)
+  # #4353 — the Test rows on athena-make, filtered on covers = this domain
+  graph_response=$(curl -sf --max-time 10 "${ATHENA_MAKE_URL:-http://localhost:3360}/v1/tests/tests?limit=20000" 2>/dev/null || true)
   if [ -n "$graph_response" ]; then
-    files=$(echo "$graph_response" | python3 -c "
-import json,sys
+    files=$(echo "$graph_response" | SD="${sd%-domain}" python3 -c "
+import json,os,sys
 try:
     d=json.load(sys.stdin)
-    data=d.get('data',{})
-    tests=data.get('tests',[]) or data.get('files',[]) or []
+    rows=d.get('data') if isinstance(d.get('data'), list) else []
+    tests=[r.get('filePath') for r in rows if str(r.get('covers','')).split('#')[-1] == os.environ['SD']]
     out=[]
     for t in tests:
         if isinstance(t,dict): f=t.get('file') or t.get('testFile') or t.get('path')

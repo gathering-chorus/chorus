@@ -24,8 +24,8 @@ app.get('/api/chorus/health', (_req, res) => res.json({ ok: true }));
 app.post('/api/cards/add', async (req: Request, res: Response) => {});
 app.post('/api/chorus/reindex', (_req: Request, res: Response) => {});
 app.put('/api/icd/domains/:id/fields', async (req, res) => {});
-app.delete('/api/athena/subdomains/:id', async (req, res) => {});
-app.patch('/api/athena/subdomains/:id/meta', async (req, res) => {});
+app.delete('/api/athena/domains/:id', async (req, res) => {});
+app.patch('/api/athena/domains/:id/meta', async (req, res) => {});
 // app.post('/api/commented/out', ...) — must not count
 `;
 
@@ -36,8 +36,8 @@ describe('parseMutationRoutes', () => {
     expect(paths).toContain('POST /api/cards/add');
     expect(paths).toContain('POST /api/chorus/reindex');
     expect(paths).toContain('PUT /api/icd/domains/:id/fields');
-    expect(paths).toContain('DELETE /api/athena/subdomains/:id');
-    expect(paths).toContain('PATCH /api/athena/subdomains/:id/meta');
+    expect(paths).toContain('DELETE /api/athena/domains/:id');
+    expect(paths).toContain('PATCH /api/athena/domains/:id/meta');
     expect(paths.find(p => p.startsWith('GET'))).toBeUndefined();
   });
 
@@ -58,19 +58,19 @@ describe('parseMutationRoutes', () => {
 
   test('sees backtick/template-literal route paths (server.ts:2621 class)', () => {
     // Kade's finding: a quote-only regex false-clears this real route.
-    const src = 'app.post(`/api/athena/subdomains/:id/services/:eid/${pred}`, h)';
+    const src = 'app.post(`/api/athena/domains/:id/services/:eid/${pred}`, h)';
     const routes = parseMutationRoutes(src);
     expect(routes).toHaveLength(1);
     expect(routes[0].method).toBe('POST');
     // Captured up to the interpolation; classify's /: split yields the prefix.
-    expect(routes[0].path.startsWith('/api/athena/subdomains/:id/services/:eid/')).toBe(true);
+    expect(routes[0].path.startsWith('/api/athena/domains/:id/services/:eid/')).toBe(true);
   });
 
   test('a backtick route is covered by its prefix surface, not left unprotected', () => {
-    const routes = parseMutationRoutes('app.post(`/api/athena/subdomains/:id/services/:eid/${pred}`, h)');
+    const routes = parseMutationRoutes('app.post(`/api/athena/domains/:id/services/:eid/${pred}`, h)');
     const gap = classifyEndpoints(
       routes,
-      [{ method: 'POST', pathPrefix: '/api/athena/subdomains', requiresScope: 'urn:chorus:domains:code', surface: 's' }],
+      [{ method: 'POST', pathPrefix: '/api/athena/domains', requiresScope: 'urn:chorus:domains:code', surface: 's' }],
       [],
     );
     expect(gap.unprotected).toHaveLength(0);
@@ -103,8 +103,8 @@ describe('classifyEndpoints', () => {
   test('everything else is unprotected — the ratchet catches new endpoints', () => {
     const gap = classifyEndpoints(routes, surfaces, exemptions);
     const paths = gap.unprotected.map(r => r.path);
-    expect(paths).toContain('/api/athena/subdomains/:id');
-    expect(paths).toContain('/api/athena/subdomains/:id/meta');
+    expect(paths).toContain('/api/athena/domains/:id');
+    expect(paths).toContain('/api/athena/domains/:id/meta');
   });
 
   test('done-state: no exemptions + full surface coverage → unprotected and exempted both empty', () => {

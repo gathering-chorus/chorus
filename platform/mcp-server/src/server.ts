@@ -315,11 +315,16 @@ const DecisionsGetInput = z.object({
 const SubdomainsGetInput = z.object({
   id: z.string().min(1).describe('Subdomain id (e.g., commits-domain, gates-service)'),
 });
+// #4353 — the fields the Principle shape requires on athena-make
 const PrinciplesCreateInput = z.object({
   label: z.string().min(1).describe('Short human-readable name (e.g., "Ship small")'),
-  comment: z.string().optional().describe('One-paragraph description of the principle'),
-  broaderOf: z.string().optional().describe('Optional parent principle id this derives from'),
-  dcSource: z.string().optional().describe('Optional dc:source citation (book, ADR, etc.)'),
+  comment: z.string().min(1).describe('One-paragraph description of the principle'),
+  techReading: z.string().min(1).describe('How it reads in system design'),
+  jeffReading: z.string().min(1).describe('How it shows up in how Jeff works'),
+  principleKind: z.enum(['pc', 'xp']).describe('pc = Hemenway permaculture, xp = Extreme Programming'),
+  source: z.string().min(1).describe('Citation (book, ADR, card)'),
+  name: z.string().optional().describe('Row name; defaults to a slug of the label'),
+  rhymesWith: z.string().optional().describe('Optional parent principle name'),
 });
 
 const PRINCIPLES_LIST_TOOL_DEF = {
@@ -353,29 +358,20 @@ const PRINCIPLES_GET_TOOL_DEF = {
 const PRINCIPLES_CREATE_TOOL_DEF = {
   name: 'chorus_principles_create',
   description:
-    'Create a new Chorus principle in the live graph. Use this only after the team has agreed a new principle is needed (rare — principles change slowly). Required: label. Optional: comment (one-paragraph description), broaderOf (parent principle id), dcSource (citation). Do NOT use for practices, policies, or skills — those have separate surfaces. Do NOT use to update an existing principle — there is no chorus_principles_update yet (PUT REST stays available).',
+    'Create a new Chorus principle in the live graph (athena-make /v1/principles/principles, #4353). Use this only after the team has agreed a new principle is needed (rare — principles change slowly). Required, because the Principle shape requires them: label, comment, techReading, jeffReading, principleKind (pc = Hemenway permaculture, xp = Extreme Programming), source. Optional: name (defaults to a slug of the label), rhymesWith (the parent principle name). Do NOT use for practices, policies, or skills. Do NOT use to update an existing principle.',
   inputSchema: {
     type: 'object',
     properties: {
-      label: {
-        type: 'string',
-        minLength: 1,
-        description: 'Short human-readable name',
-      },
-      comment: {
-        type: 'string',
-        description: 'One-paragraph description of the principle',
-      },
-      broaderOf: {
-        type: 'string',
-        description: 'Optional parent principle id this derives from',
-      },
-      dcSource: {
-        type: 'string',
-        description: 'Optional dc:source citation (book, ADR, etc.)',
-      },
+      label: { type: 'string', minLength: 1, description: 'Short human-readable name' },
+      comment: { type: 'string', minLength: 1, description: 'One-paragraph description of the principle' },
+      techReading: { type: 'string', minLength: 1, description: 'How it reads in system design' },
+      jeffReading: { type: 'string', minLength: 1, description: 'How it shows up in how Jeff works' },
+      principleKind: { type: 'string', enum: ['pc', 'xp'], description: 'pc = Hemenway permaculture, xp = Extreme Programming' },
+      source: { type: 'string', minLength: 1, description: 'Citation (book, ADR, card)' },
+      name: { type: 'string', description: 'Row name; defaults to a slug of the label' },
+      rhymesWith: { type: 'string', description: 'Optional parent principle name this sits under' },
     },
-    required: ['label'],
+    required: ['label', 'comment', 'techReading', 'jeffReading', 'principleKind', 'source'],
   },
 } as const;
 
@@ -1928,6 +1924,8 @@ async function fetchPrinciplesList(fetchImpl: FetchImpl, _apiBase: string): Prom
     techReading: str(r.techReading),
     jeffReading: str(r.jeffReading),
     isPermacultureParent: r.isPermacultureParent === true || r.isPermacultureParent === 'true',
+    // rhymesWith names the permaculture parent (the retired read folded it into parents)
+    parents: ([] as unknown[]).concat(r.rhymesWith ?? []).map(String).filter(Boolean),
   })).filter((p) => p.id);
 }
 
@@ -1994,17 +1992,24 @@ async function executePrinciplesGet(
 }
 
 async function executePrinciplesCreate(
-  args: { label: string; comment?: string; broaderOf?: string; dcSource?: string },
+  args: { label: string; comment: string; techReading: string; jeffReading: string; principleKind: string; source: string; name?: string; rhymesWith?: string },
   fetchImpl: FetchImpl,
   apiBase: string,
   from: string,
 ): Promise<{ content: Array<{ type: 'text'; text: string }> }> {
   process.stderr.write(JSON.stringify({ level: 'info', event: 'mcp.principles.create.invoked', tool: 'chorus_principles_create', from, label: args.label, ts: new Date().toISOString() }) + '\n');
   const url = `${athenaMakeBase()}/v1/principles/principles`;
-  const body: Record<string, string> = { label: args.label };
-  if (args.comment) body.comment = args.comment;
-  if (args.broaderOf) body.broaderOf = args.broaderOf;
-  if (args.dcSource) body.dcSource = args.dcSource;
+  const slug = args.label.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '');
+  const body: Record<string, string> = {
+    name: args.name || slug,
+    label: args.label,
+    comment: args.comment,
+    techReading: args.techReading,
+    jeffReading: args.jeffReading,
+    principleKind: args.principleKind,
+    source: args.source,
+  };
+  if (args.rhymesWith) body.rhymesWith = args.rhymesWith;
   // The generated write route checks identity: carry a scoped token when one
   // can be minted, and let the API refuse a write it does not allow.
   const token = mintServiceToken();

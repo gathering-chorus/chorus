@@ -1,3 +1,4 @@
+// @test-type: unit — pure functions on fixtures; no live services
 /**
  * chorus-domain-pipeline handler — unit tests (#2188).
  */
@@ -8,7 +9,8 @@ const envelope = (queryName: string, data: unknown) => ({ _meta: { query_name: q
 function makeFetcher(routeMap: Record<string, unknown>): (url: string) => Promise<unknown | null> {
   return async (url: string) => {
     for (const [suffix, body] of Object.entries(routeMap)) {
-      if (url.includes(suffix)) return body;
+      // "=<url>" matches that URL exactly; anything else matches as a substring
+      if (suffix.startsWith('=') ? url === suffix.slice(1) : url.includes(suffix)) return body;
     }
     return null;
   };
@@ -47,7 +49,7 @@ describe('fetchChorusDomainPipeline (#2188)', () => {
 
   test('shape: 5 cards → complete', async () => {
     const fetcher = makeFetcher({
-      '/cards': { data: { cards: Array(5).fill({ status: 'Next' }) } },
+      '=/api/chorus/domain/photos': { cards: Array(5).fill({ status: 'Next' }) },
     });
     const body = (await fetchChorusDomainPipeline(deps({ fetcher }), 'photos')).body as {
       data: { stages: Array<{ name: string; status: string; evidence: number }> };
@@ -59,7 +61,7 @@ describe('fetchChorusDomainPipeline (#2188)', () => {
 
   test('shape: 3 cards → in_progress, 0 → not_started', async () => {
     const bodyThree = (await fetchChorusDomainPipeline(deps({
-      fetcher: makeFetcher({ '/cards': { data: { cards: Array(3).fill({ status: 'Next' }) } } }),
+      fetcher: makeFetcher({ '=/api/chorus/domain/photos': { cards: Array(3).fill({ status: 'Next' }) } }),
     }), 'photos')).body as { data: { stages: Array<{ name: string; status: string }> } };
     expect(bodyThree.data.stages.find((s) => s.name === 'shape')?.status).toBe('in_progress');
   });
@@ -68,7 +70,7 @@ describe('fetchChorusDomainPipeline (#2188)', () => {
     const cases: Array<[number, string]> = [[80, 'complete'], [0, 'not_started'], [40, 'in_progress']];
     for (const [pct, expected] of cases) {
       const fetcher = makeFetcher({
-        '/completeness': { data: { percentage: pct, present: [], missing: [] } },
+        '=/api/chorus/domain/photos': { completeness: { percentage: pct, present: [], missing: [] } },
       });
       const body = (await fetchChorusDomainPipeline(deps({ fetcher }), 'photos')).body as {
         data: { stages: Array<{ name: string; status: string }> };
@@ -105,9 +107,9 @@ describe('fetchChorusDomainPipeline (#2188)', () => {
 
   test('ship: ≥50% done → complete; 0 → not_started', async () => {
     const fetcher = makeFetcher({
-      '/cards': { data: { cards: [
+      '=/api/chorus/domain/photos': { cards: [
         { status: 'Done' }, { status: 'Done' }, { status: 'Done' }, { status: 'WIP' },
-      ] } },
+      ] },
     });
     const body = (await fetchChorusDomainPipeline(deps({ fetcher }), 'photos')).body as {
       data: { stages: Array<{ name: string; status: string; detail: { ratio?: number } }> };
@@ -117,14 +119,12 @@ describe('fetchChorusDomainPipeline (#2188)', () => {
     expect(ship?.detail.ratio).toBe(75);
   });
 
-  test('cards.data accepts either .cards or top-level array', async () => {
-    const fetcher = makeFetcher({
-      '/cards': { data: [{ status: 'Next' }, { status: 'Done' }] },
-    });
-    const body = (await fetchChorusDomainPipeline(deps({ fetcher }), 'photos')).body as {
-      data: { stages: Array<{ name: string; evidence: number }> };
-    };
-    expect(body.data.stages.find((s) => s.name === 'shape')?.evidence).toBe(2);
+  test('#4353 NEGATIVE PROOF — never asks a retired /api/athena/subdomains route', async () => {
+    const asked: string[] = [];
+    const fetcher = async (url: string) => { asked.push(url); return null; };
+    await fetchChorusDomainPipeline(deps({ fetcher }), 'photos');
+    expect(asked).toContain('/api/chorus/domain/photos');
+    expect(asked.filter((u) => u.includes('/api/athena/subdomains'))).toEqual([]);
   });
 
   test('envelope wraps body with query_name "domain-pipeline"', async () => {

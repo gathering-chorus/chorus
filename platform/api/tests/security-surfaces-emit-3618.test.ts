@@ -116,7 +116,7 @@ describe('#4273 — the surface query finds rows where they actually live', () =
     const row = {
       surface: { value: 'https://jeffbridwell.com/chorus#surface-principles-post' },
       method: { value: 'POST' },
-      pathPrefix: { value: '/api/athena/subdomains/loom-principles/principles' },
+      pathPrefix: { value: '/api/chorus/index' },
       requiresScope: { value: 'urn:chorus:scope:write' },
     };
     const pinsOntology = q.includes('GRAPH <urn:chorus:ontology>');
@@ -132,7 +132,7 @@ describe('#4273 — the surface query finds rows where they actually live', () =
       sparql: async (q: string) => twoGraphStore(q),
     });
     expect(table).toHaveLength(1);
-    expect(table[0].pathPrefix).toBe('/api/athena/subdomains/loom-principles/principles');
+    expect(table[0].pathPrefix).toBe('/api/chorus/index');
   });
 
   // NEGATIVE PROOF (#3734): the check above must be able to go RED. Run the

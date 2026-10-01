@@ -414,12 +414,18 @@
         const res = await fetch('/owl/v1/principles/principles');
         if (!res.ok) throw new Error('API returned ' + res.status);
         const body = await res.json();
+        // rhymesWith names the permaculture parent an XP principle sits under;
+        // parents[].uri is the parent's name, and p.uri is each row's own name.
         const all = (Array.isArray(body?.data) ? body.data : []).map((r) => ({
           ...r,
           id: r.name,
+          uri: r.name,
           isPermacultureParent: r.isPermacultureParent === true || r.isPermacultureParent === 'true',
           order: r.order === '' || r.order == null ? undefined : Number(r.order),
+          parents: [].concat(r.rhymesWith || []).filter(Boolean).map((n) => ({ uri: n })),
         }));
+        const labelOf = new Map(all.map((p) => [p.name, p.label || p.name]));
+        all.forEach((p) => p.parents.forEach((pp) => { pp.label = labelOf.get(pp.uri) || pp.uri; }));
         if (all.length === 0) {
           main.innerHTML = '<div class="empty">No principles found in the ontology yet.</div>';
           return;
@@ -459,8 +465,8 @@
         }
 
         if (unparented.length > 0) {
-          html += `<h3 class="section-heading">Extreme Programming</h3>`;
-          html += `<div class="section-intro">The XP principles, alongside the permaculture set.</div>`;
+          html += `<h3 class="section-heading">Unclassified</h3>`;
+          html += `<div class="section-intro">Principles with no permaculture parent yet.</div>`;
           html += unparented.map((c) => renderPrinciple(c)).join('');
         }
 
@@ -480,7 +486,7 @@
 
         document.getElementById('meta').textContent =
           `${all.length} principles (${parents.length} permaculture parents · ${grouped.length} specializations` +
-          (unparented.length > 0 ? ` · ${unparented.length} XP` : '') +
+          (unparented.length > 0 ? ` · ${unparented.length} unclassified` : '') +
           `) · rendered ${RENDERED_AT}`;
       } catch (err) {
         main.innerHTML = '<div class="error">Failed to load principles: ' + escapeHtml(err.message) + '</div>';

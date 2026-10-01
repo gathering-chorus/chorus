@@ -10,7 +10,6 @@
 import * as fs from 'fs';
 import * as path from 'path';
 import { fetchAthenaOwners } from '../../src/handlers/athena-owners';
-import { fetchAthenaBlastRadius } from '../../src/handlers/athena-blast-radius';
 import { fetchAthenaMachines } from '../../src/handlers/athena-machines';
 import { fetchAthenaHealth } from '../../src/handlers/athena-health';
 import { makeSparqlFromTtl } from '../fixtures/oxigraph-sparql';
@@ -55,12 +54,6 @@ describe('#2208 data regression — athena batch', () => {
     const r = await fetchAthenaOwners(deps);
     expect(r.status).toBe(200);
     await assertGolden('athena-owners', stripVolatile(r.body));
-  });
-
-  test('/api/athena/subdomains/:id/blast-radius', async () => {
-    const r = await fetchAthenaBlastRadius(deps, 'demo-alpha-domain');
-    expect(r.status).toBe(200);
-    await assertGolden('athena-blast-radius', stripVolatile(r.body));
   });
 
   // #4237 repointed machines.sparql from the SCHEMA graph to
