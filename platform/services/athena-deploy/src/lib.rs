@@ -27,7 +27,11 @@ pub mod model_scope { include!("../../shared/model_scope.rs"); }
 /// the range carries neither. Exit 2 when git cannot read the range (never a silent
 /// empty: an unreadable range must not read as "nothing to deploy").
 pub fn scope(root: &str, range: &str) -> Result<String, String> {
-    let out = Command::new("git").args(["-C", root, "diff", "--name-only", range]).output()
+    // #4064 — a DELETED model file is not a source to validate or load: its
+    // rows leave through the retirement ledger. Listing it made riot reject a
+    // file that no longer exists and failed the land's whole model deploy, so
+    // the ledger lines that were the point never ran (2026-10-01 15:40).
+    let out = Command::new("git").args(["-C", root, "diff", "--name-only", "--diff-filter=d", range]).output()
         .map_err(|e| format!("scope: git: {e}"))?;
     if !out.status.success() {
         return Err(format!("scope: git diff --name-only {range} failed in {root}: {}", String::from_utf8_lossy(&out.stderr).trim()));
@@ -2170,5 +2174,40 @@ mod subject_closure_runs_4064 {
         assert!(after.contains("KeptShape") && after.contains("x:k") && after.contains("minCount"),
             "the retirement reached a shape it does not own:\n{after}");
         let _ = std::fs::remove_dir_all(&dir);
+    }
+}
+
+#[cfg(test)]
+mod scope_deleted_4064 {
+    use super::scope;
+    use std::process::Command;
+
+    fn git(dir: &std::path::Path, args: &[&str]) {
+        let ok = Command::new("git").arg("-C").arg(dir).args(args)
+            .env("GIT_AUTHOR_NAME", "t").env("GIT_AUTHOR_EMAIL", "t@t")
+            .env("GIT_COMMITTER_NAME", "t").env("GIT_COMMITTER_EMAIL", "t@t")
+            .status().unwrap().success();
+        assert!(ok, "git {args:?}");
+    }
+
+    #[test]
+    fn a_deleted_model_file_is_not_in_scope_and_a_changed_one_is() {
+        let d = std::env::temp_dir().join(format!("scope-4064-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&d);
+        std::fs::create_dir_all(d.join("roles/silas/ontology")).unwrap();
+        git(&d, &["init", "-q"]);
+        std::fs::write(d.join("roles/silas/ontology/gone.ttl"), "# a\n").unwrap();
+        std::fs::write(d.join("roles/silas/ontology/kept.ttl"), "# a\n").unwrap();
+        git(&d, &["add", "."]);
+        git(&d, &["commit", "-qm", "one"]);
+        std::fs::remove_file(d.join("roles/silas/ontology/gone.ttl")).unwrap();
+        std::fs::write(d.join("roles/silas/ontology/kept.ttl"), "# b\n").unwrap();
+        git(&d, &["add", "-A"]);
+        git(&d, &["commit", "-qm", "two"]);
+        let s = scope(d.to_str().unwrap(), "HEAD^..HEAD").unwrap();
+        assert!(!s.contains("gone.ttl"), "a deleted file was put in scope:\n{s}");
+        // NEGATIVE PROOF: the filter must not drop a file that still exists
+        assert!(s.contains("model|roles/silas/ontology/kept.ttl"), "the changed file left scope:\n{s}");
+        let _ = std::fs::remove_dir_all(&d);
     }
 }
