@@ -1,3 +1,6 @@
+// @test-type: unit — pure functions over name tables; no store, no network.
+// @card: #4353
+// @owner: wren
 /**
  * domain-identity.test.ts — #2430
  * What Jeff sees: one shared resolver, every subdomain fold filters
@@ -9,48 +12,48 @@ import { resolveDomainIdentity, cardDomainSearchLabels } from '../../src/handler
 
 describe('resolveDomainIdentity — normalization', () => {
   it('accepts kebab input unchanged', () => {
-    expect(resolveDomainIdentity('loom-principles').primary).toBe('loom-principles');
+    expect(resolveDomainIdentity('principles').primary).toBe('principles');
   });
 
   it('normalizes underscore to kebab', () => {
-    expect(resolveDomainIdentity('loom_principles').primary).toBe('loom-principles');
+    expect(resolveDomainIdentity('version_control').primary).toBe('version-control');
   });
 
   it('strips -domain suffix', () => {
     expect(resolveDomainIdentity('chorus-domain').primary).toBe('chorus');
-    expect(resolveDomainIdentity('tests-domain').primary).toBe('tests');
+    expect(resolveDomainIdentity('tests').primary).toBe('tests');
   });
 
   it('does NOT strip -service / -analytics / other words — only -domain', () => {
     // loom-analytics is a real subdomain, not a "loom with analytics suffix"
-    expect(resolveDomainIdentity('loom-analytics').primary).toBe('loom-analytics');
+    expect(resolveDomainIdentity('analytics').primary).toBe('analytics');
     // pulse-service is its own subdomain id — don't collapse to 'pulse'
     expect(resolveDomainIdentity('pulse-service').primary).toBe('pulse-service');
   });
 
   it('lowercases mixed case input', () => {
-    expect(resolveDomainIdentity('Loom-Principles').primary).toBe('loom-principles');
+    expect(resolveDomainIdentity('Principles').primary).toBe('principles');
   });
 });
 
 describe('resolveDomainIdentity — loom sub-subdomains fold into loom parent', () => {
   it('loom-principles cards match sequence:loom (parent tag)', () => {
-    const id = resolveDomainIdentity('loom-principles');
+    const id = resolveDomainIdentity('principles');
     expect(id.aliases).toContain('loom');
     expect(id.cardSequenceTags).toContain('loom');
   });
 
   it('all 7 loom sub-subdomains alias to loom', () => {
-    const subs = ['loom-principles', 'loom-policies', 'loom-practices', 'loom-decisions', 'loom-metrics', 'loom-analytics', 'loom-rcas'];
+    const subs = ['principles', 'policies', 'practices', 'decisions', 'metrics', 'analytics', 'rcas'];
     for (const s of subs) {
       const id = resolveDomainIdentity(s);
       expect(id.aliases).toContain('loom');
     }
   });
 
-  it('loom-principles-domain (with suffix) resolves identically to loom-principles', () => {
-    const a = resolveDomainIdentity('loom-principles-domain');
-    const b = resolveDomainIdentity('loom-principles');
+  it('principles-domain (with suffix) resolves identically to principles', () => {
+    const a = resolveDomainIdentity('principles-domain');
+    const b = resolveDomainIdentity('principles');
     expect(a.primary).toBe(b.primary);
     expect(a.aliases).toEqual(b.aliases);
   });
@@ -58,13 +61,13 @@ describe('resolveDomainIdentity — loom sub-subdomains fold into loom parent', 
 
 describe('resolveDomainIdentity — special cases (tests/code/gates)', () => {
   it('tests subdomain aliases to quality', () => {
-    const id = resolveDomainIdentity('tests-domain');
+    const id = resolveDomainIdentity('tests');
     expect(id.primary).toBe('tests');
     expect(id.aliases).toContain('quality');
   });
 
   it('code subdomain aliases to code', () => {
-    const id = resolveDomainIdentity('code-domain');
+    const id = resolveDomainIdentity('code');
     expect(id.aliases).toContain('code');
   });
 
@@ -76,7 +79,7 @@ describe('resolveDomainIdentity — special cases (tests/code/gates)', () => {
 
 describe('resolveDomainIdentity — default behavior for unregistered subdomains', () => {
   it('returns the normalized id as the primary card domain tag by default', () => {
-    const id = resolveDomainIdentity('seeds-domain');
+    const id = resolveDomainIdentity('seeds');
     expect(id.primary).toBe('seeds');
     expect(id.cardDomainTags).toEqual(['seeds']);
     expect(id.aliases).toEqual([]);
@@ -93,21 +96,21 @@ describe('resolveDomainIdentity — default behavior for unregistered subdomains
   });
 
   it('builds subdomainUri from chorus# namespace', () => {
-    const id = resolveDomainIdentity('loom-principles');
-    expect(id.subdomainUri).toBe('https://jeffbridwell.com/chorus#loom-principles');
+    const id = resolveDomainIdentity('principles');
+    expect(id.subdomainUri).toBe('https://jeffbridwell.com/chorus#principles');
   });
 });
 
 describe('cardDomainSearchLabels helper', () => {
   it('returns primary + aliases for card-search handlers', () => {
-    const id = resolveDomainIdentity('loom-principles');
+    const id = resolveDomainIdentity('principles');
     const labels = cardDomainSearchLabels(id);
-    expect(labels).toContain('loom-principles');
+    expect(labels).toContain('principles');
     expect(labels).toContain('loom');
   });
 
   it('returns just primary for unregistered subdomain', () => {
-    const id = resolveDomainIdentity('seeds-domain');
+    const id = resolveDomainIdentity('seeds');
     const labels = cardDomainSearchLabels(id);
     expect(labels).toEqual(['seeds']);
   });

@@ -99,7 +99,7 @@ def walk(node):
         seen.append(cur)
     return seen, cur
 
-for node in ("gates-service", "observability-domain"):
+for node in ("gates", "observability"):
     chain, top = walk(node)
     if chain and top in vs:
         p(f"{node} -> {' -> '.join(chain)} (terminates at ValueStream {top})")

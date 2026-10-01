@@ -671,7 +671,7 @@ chorus:ServiceDesign a owl:Class ;
 # The Clearing service (def: designing/data/service-instances.ttl, #3675 — first
 # Service instance). Structural edges live here per the #3603 split. atStep uses
 # the ValueStreamStep instance grammar (value-stream-step-*), not the Vertebra.
-chorus:messages-domain chorus:hosts chorus:service-clearing .
+chorus:messages chorus:hosts chorus:service-clearing .
 chorus:service-clearing chorus:atStep chorus:value-stream-step-directing .
 
 # #3870 — Identity Service (def: service-instances.ttl; issuance-only boundary,
@@ -683,7 +683,7 @@ chorus:service-identity chorus:atStep chorus:value-stream-step-proving .
 # #3870 — Loom Service (def: service-instances.ttl; role-turns boundary).
 # Hosting domain: Silas review point — roles domain per Jeff's 2026-07-24
 # authN/authZ cut, exact domain IRI to confirm at gate-arch.
-chorus:roles-domain chorus:hosts chorus:service-loom .
+chorus:roles chorus:hosts chorus:service-loom .
 chorus:service-loom chorus:atStep chorus:value-stream-step-building .
 
 # The pulse DOMAIN is RETIRED (#4010, Jeff 2026-08-25: "pulse is a product not a
@@ -797,28 +797,28 @@ chorus:pulse a owl:Class ;
 # --- Wire domains to value streams via builtBy (#1864) ---
 
 # Chorus domains → chorusStream
-chorus:code-domain chorus:builtBy chorus:value-stream-chorus .
-chorus:gates-service chorus:builtBy chorus:value-stream-chorus .
+chorus:code chorus:builtBy chorus:value-stream-chorus .
+chorus:gates chorus:builtBy chorus:value-stream-chorus .
 chorus:toolchain-domain chorus:builtBy chorus:value-stream-chorus .
-chorus:domains-domain chorus:builtBy chorus:value-stream-chorus .
-chorus:services-domain chorus:builtBy chorus:value-stream-chorus .
+chorus:domains chorus:builtBy chorus:value-stream-chorus .
+chorus:services chorus:builtBy chorus:value-stream-chorus .
 chorus:chorus-domain chorus:builtBy chorus:value-stream-chorus .
 chorus:convergence-domain chorus:builtBy chorus:value-stream-chorus .
 
 # Gathering domains → gatheringStream
-chorus:music-domain chorus:builtBy chorus:value-stream-gathering .
-chorus:photos-domain chorus:builtBy chorus:value-stream-gathering .
-chorus:books-domain chorus:builtBy chorus:value-stream-gathering .
-chorus:notes-domain chorus:builtBy chorus:value-stream-gathering .
-chorus:documents-domain chorus:builtBy chorus:value-stream-gathering .
-chorus:blog-domain chorus:builtBy chorus:value-stream-gathering .
-chorus:seeds-domain chorus:builtBy chorus:value-stream-gathering .
-chorus:property-domain chorus:builtBy chorus:value-stream-gathering .
-chorus:people-domain chorus:builtBy chorus:value-stream-gathering .
-chorus:social-domain chorus:builtBy chorus:value-stream-gathering .
-chorus:sexuality-domain chorus:builtBy chorus:value-stream-gathering .
-chorus:stories-domain chorus:builtBy chorus:value-stream-gathering .
-chorus:video-domain chorus:builtBy chorus:value-stream-gathering .
+chorus:music chorus:builtBy chorus:value-stream-gathering .
+chorus:photos chorus:builtBy chorus:value-stream-gathering .
+chorus:books chorus:builtBy chorus:value-stream-gathering .
+chorus:notes chorus:builtBy chorus:value-stream-gathering .
+chorus:documents chorus:builtBy chorus:value-stream-gathering .
+chorus:blog chorus:builtBy chorus:value-stream-gathering .
+chorus:seeds chorus:builtBy chorus:value-stream-gathering .
+chorus:property chorus:builtBy chorus:value-stream-gathering .
+chorus:people chorus:builtBy chorus:value-stream-gathering .
+chorus:social chorus:builtBy chorus:value-stream-gathering .
+chorus:sexuality chorus:builtBy chorus:value-stream-gathering .
+chorus:stories chorus:builtBy chorus:value-stream-gathering .
+chorus:video chorus:builtBy chorus:value-stream-gathering .
 
 # --- Wire domains into products (hasDomain) ---
 
@@ -832,12 +832,12 @@ chorus:video-domain chorus:builtBy chorus:value-stream-gathering .
 # V1/V2 domain-layer convergence call on chorus-domain itself.
 
 # Borg/Observability: infrastructure, security, toolchain, properties, time (infra concerns)
-chorus:observability-domain chorus:hasDomain chorus:time-domain .
+chorus:observability chorus:hasDomain chorus:time .
 
 # (loom-policies, domains-domain, services-domain edges: on the product definitions above — #3603)
 
 # Borg has two domains: Observability and Heralds (DEC-2090)
-chorus:borg chorus:hasDomain chorus:observability-domain, chorus:properties, chorus:security .   # #3587: repointed from security-domain → security (V2 canonical); security also has partOf borgProduct
+chorus:borg chorus:hasDomain chorus:observability, chorus:properties, chorus:security .   # #3587: repointed from security-domain → security (V2 canonical); security also has partOf borgProduct
 # ^ chorus:properties wired via hasDomain (product→domain membership, what owl-api enumerates to
 # bind the domain API to its product) AS WELL AS partOf (single-parent ownership, #3450). Reciprocal
 # pair, same as observability (belongsTo + hasDomain). #3489: re-homed from observability → borg direct.
@@ -852,32 +852,32 @@ chorus:borg chorus:hasDomain chorus:observability-domain, chorus:properties, cho
 
 # --- Gathering content domains ---
 
-chorus:gathering chorus:hasDomain chorus:music-domain, chorus:photos-domain, chorus:books-domain,
-                                 chorus:notes-domain, chorus:documents-domain, chorus:blog-domain,
-                                 chorus:seeds-domain, chorus:property-domain, chorus:people-domain,
-                                 chorus:social-domain, chorus:sexuality-domain, chorus:stories-domain,
-                                 chorus:video-domain .
+chorus:gathering chorus:hasDomain chorus:music, chorus:photos, chorus:books,
+                                 chorus:notes, chorus:documents, chorus:blog,
+                                 chorus:seeds, chorus:property, chorus:people,
+                                 chorus:social, chorus:sexuality, chorus:stories,
+                                 chorus:video .
 
 # --- Product → Service consumption edges ---
 
 # observability-product consumes moved to borgProduct
-chorus:borg chorus:consumes chorus:infrastructure-domain, chorus:logs-domain,
+chorus:borg chorus:consumes chorus:infrastructure, chorus:logs-domain,
                                    chorus:alerts-monitors-domain, chorus:deploys-domain .
 
 # --- Product → Service provision edges ---
 
-chorus:chorus chorus:provides chorus:observability-domain, chorus:infrastructure-domain,
+chorus:chorus chorus:provides chorus:observability, chorus:infrastructure,
                                      chorus:logs-domain, chorus:alerts-monitors-domain,
-                                     chorus:deploys-domain, chorus:cards-service,
-                                     chorus:skills-service, chorus:gates-service,
-                                     chorus:spine-service .
+                                     chorus:deploys-domain, chorus:cards,
+                                     chorus:skills, chorus:gates,
+                                     chorus:spine .
 
 # --- Product → SubProduct containment (hasSubProduct) — RETIRED #3603 ---
 # Products are children of products via chorus:partOf (declared on each child's
 # definition). The hasSubProduct edges and the SubProduct class are gone.
 
 # Borg heralds grouped as single subdomain (DEC-2090)
-chorus:borg chorus:hasDomain chorus:heralds-domain .
+chorus:borg chorus:hasDomain chorus:heralds .
 
 # --- Product → ServiceDesign ---
 
@@ -887,81 +887,81 @@ chorus:chorus chorus:hasServiceDesign chorus:chorus-api-service-design .
 # (#3603: athena-domain hasDomain edge is on athenaProduct's definition above.)
 
 # --- Pipelines consumption edges ---
-chorus:pipelines-domain chorus:consumes chorus:infrastructure-domain,
-                                        chorus:observability-domain,
-                                        chorus:gates-service .
+chorus:pipelines chorus:consumes chorus:infrastructure,
+                                        chorus:observability,
+                                        chorus:gates .
 
 # --- Cross-cutting consumption: Properties, Security, and Time ---
 # Properties consumed by infrastructure services; Security and Time consumed by all subdomains.
 
-chorus:cards-service chorus:consumes chorus:properties .
-chorus:observability-domain chorus:consumes chorus:properties .
-chorus:infrastructure-domain chorus:consumes chorus:properties .
+chorus:cards chorus:consumes chorus:properties .
+chorus:observability chorus:consumes chorus:properties .
+chorus:infrastructure chorus:consumes chorus:properties .
 chorus:deploys-domain chorus:consumes chorus:properties .
 chorus:logs-domain chorus:consumes chorus:properties .
 
-chorus:code-domain chorus:consumes chorus:security .
-chorus:gates-service chorus:consumes chorus:security .
+chorus:code chorus:consumes chorus:security .
+chorus:gates chorus:consumes chorus:security .
 chorus:toolchain-domain chorus:consumes chorus:security .
 chorus:athena-domain chorus:consumes chorus:security .
 chorus:convergence-domain chorus:consumes chorus:security .
-chorus:domains-domain chorus:consumes chorus:security .
-chorus:integrations-domain chorus:consumes chorus:security .
-chorus:knowledge-domain chorus:consumes chorus:security .
-chorus:services-domain chorus:consumes chorus:security .
-chorus:cards-service chorus:consumes chorus:security .
+chorus:domains chorus:consumes chorus:security .
+chorus:integrations chorus:consumes chorus:security .
+chorus:knowledge chorus:consumes chorus:security .
+chorus:services chorus:consumes chorus:security .
+chorus:cards chorus:consumes chorus:security .
 chorus:alerts-monitors-domain chorus:consumes chorus:security .
 chorus:chorus-domain chorus:consumes chorus:security .
 chorus:deploys-domain chorus:consumes chorus:security .
-chorus:infrastructure-domain chorus:consumes chorus:security .
+chorus:infrastructure chorus:consumes chorus:security .
 chorus:logs-domain chorus:consumes chorus:security .
-chorus:messages-domain chorus:consumes chorus:security .
-chorus:observability-domain chorus:consumes chorus:security .
+chorus:messages chorus:consumes chorus:security .
+chorus:observability chorus:consumes chorus:security .
 chorus:properties chorus:consumes chorus:security .
 # pulse-metrics-domain security edge removed
-chorus:loom-rcas chorus:consumes chorus:security .
-chorus:streams-domain chorus:consumes chorus:security .
-chorus:loom-analytics chorus:consumes chorus:security .
-chorus:loom-decisions chorus:consumes chorus:security .
-chorus:loom-metrics chorus:consumes chorus:security .
-chorus:loom-policies chorus:consumes chorus:security .
-chorus:loom-practices chorus:consumes chorus:security .
-chorus:loom-principles chorus:consumes chorus:security .
-chorus:skills-service chorus:consumes chorus:security .
-chorus:spine-service chorus:consumes chorus:security .
-chorus:roles-domain chorus:consumes chorus:security .
+chorus:rcas chorus:consumes chorus:security .
+chorus:streams chorus:consumes chorus:security .
+chorus:analytics chorus:consumes chorus:security .
+chorus:decisions chorus:consumes chorus:security .
+chorus:metrics chorus:consumes chorus:security .
+chorus:policies chorus:consumes chorus:security .
+chorus:practices chorus:consumes chorus:security .
+chorus:principles chorus:consumes chorus:security .
+chorus:skills chorus:consumes chorus:security .
+chorus:spine chorus:consumes chorus:security .
+chorus:roles chorus:consumes chorus:security .
 
-chorus:code-domain chorus:consumes chorus:time-domain .
-chorus:gates-service chorus:consumes chorus:time-domain .
-chorus:toolchain-domain chorus:consumes chorus:time-domain .
-chorus:athena-domain chorus:consumes chorus:time-domain .
-chorus:convergence-domain chorus:consumes chorus:time-domain .
-chorus:domains-domain chorus:consumes chorus:time-domain .
-chorus:integrations-domain chorus:consumes chorus:time-domain .
-chorus:knowledge-domain chorus:consumes chorus:time-domain .
-chorus:services-domain chorus:consumes chorus:time-domain .
-chorus:cards-service chorus:consumes chorus:time-domain .
-chorus:alerts-monitors-domain chorus:consumes chorus:time-domain .
-chorus:chorus-domain chorus:consumes chorus:time-domain .
-chorus:deploys-domain chorus:consumes chorus:time-domain .
-chorus:infrastructure-domain chorus:consumes chorus:time-domain .
-chorus:logs-domain chorus:consumes chorus:time-domain .
-chorus:messages-domain chorus:consumes chorus:time-domain .
-chorus:observability-domain chorus:consumes chorus:time-domain .
-chorus:properties chorus:consumes chorus:time-domain .
-chorus:security chorus:consumes chorus:time-domain .
+chorus:code chorus:consumes chorus:time .
+chorus:gates chorus:consumes chorus:time .
+chorus:toolchain-domain chorus:consumes chorus:time .
+chorus:athena-domain chorus:consumes chorus:time .
+chorus:convergence-domain chorus:consumes chorus:time .
+chorus:domains chorus:consumes chorus:time .
+chorus:integrations chorus:consumes chorus:time .
+chorus:knowledge chorus:consumes chorus:time .
+chorus:services chorus:consumes chorus:time .
+chorus:cards chorus:consumes chorus:time .
+chorus:alerts-monitors-domain chorus:consumes chorus:time .
+chorus:chorus-domain chorus:consumes chorus:time .
+chorus:deploys-domain chorus:consumes chorus:time .
+chorus:infrastructure chorus:consumes chorus:time .
+chorus:logs-domain chorus:consumes chorus:time .
+chorus:messages chorus:consumes chorus:time .
+chorus:observability chorus:consumes chorus:time .
+chorus:properties chorus:consumes chorus:time .
+chorus:security chorus:consumes chorus:time .
 # pulse-metrics-domain time edge removed
-chorus:loom-rcas chorus:consumes chorus:time-domain .
-chorus:streams-domain chorus:consumes chorus:time-domain .
-chorus:loom-analytics chorus:consumes chorus:time-domain .
-chorus:loom-decisions chorus:consumes chorus:time-domain .
-chorus:loom-metrics chorus:consumes chorus:time-domain .
-chorus:loom-policies chorus:consumes chorus:time-domain .
-chorus:loom-practices chorus:consumes chorus:time-domain .
-chorus:loom-principles chorus:consumes chorus:time-domain .
-chorus:skills-service chorus:consumes chorus:time-domain .
-chorus:spine-service chorus:consumes chorus:time-domain .
-chorus:roles-domain chorus:consumes chorus:time-domain .
+chorus:rcas chorus:consumes chorus:time .
+chorus:streams chorus:consumes chorus:time .
+chorus:analytics chorus:consumes chorus:time .
+chorus:decisions chorus:consumes chorus:time .
+chorus:metrics chorus:consumes chorus:time .
+chorus:policies chorus:consumes chorus:time .
+chorus:practices chorus:consumes chorus:time .
+chorus:principles chorus:consumes chorus:time .
+chorus:skills chorus:consumes chorus:time .
+chorus:spine chorus:consumes chorus:time .
+chorus:roles chorus:consumes chorus:time .
 
 # --- Ownership hierarchy — chorus:partOf (#3450) ---
 # ONE single-parent "belongs-to" edge, used IDENTICALLY at every level
@@ -992,10 +992,9 @@ chorus:chorus chorus:partOf chorus:value-stream-chorus .
 # transaction, exactly like chorusProduct -> chorusStream one line up.
 chorus:chorus        chorus:partOf chorus:value-stream-chorus .
 chorus:gathering     chorus:partOf chorus:value-stream-chorus .
-chorus:observability-domain chorus:partOf chorus:borg .
-chorus:infrastructure-domain chorus:partOf chorus:borg .
-chorus:gates-service chorus:partOf chorus:werk .
-chorus:cards-service chorus:partOf chorus:werk .
+chorus:observability chorus:partOf chorus:borg .
+chorus:infrastructure chorus:partOf chorus:borg .
+chorus:gates chorus:partOf chorus:werk .
 
 # =============================================================================
 # 5. ARTIFACTS
@@ -1650,7 +1649,7 @@ chorus:PropertyKeyShape a sh:NodeShape ;
 
 
 
-chorus:cards-service chorus:hasProperty chorus:prop-cards-gate-enforced .
+chorus:cards chorus:hasProperty chorus:prop-cards-gate-enforced .
 
 
 
@@ -3056,23 +3055,23 @@ chorus:ScheduledJobShape a sh:NodeShape ;
 
 # Claim the runtime vocabulary so owl-api mounts /serviceinstances
 # (DECLARED ⊃ CLAIMED ⊃ SERVED — claiming MOUNTS the surface).
-chorus:services-domain chorus:definesVocabulary chorus:ServiceInstance , chorus:ScheduledJob .   # Commitment retired 2026-10-01 (#4064)
+chorus:services chorus:definesVocabulary chorus:ServiceInstance , chorus:ScheduledJob .   # Commitment retired 2026-10-01 (#4064)
 # chorus:Service is claimed by the V2 services Domain (domains-builds-decisions-rcas-4022.ttl) — one claimer per served class (vocab-claim-authority, #4029).
 
 # --- hosts / atStep edges for the six Services authored 2026-08-15 ---
 # FLAG(silas): hosting-domain choices are kade's best mapping to existing
 # SubDomains; rule at gate-arch and I re-point.
 # Silas gate-arch ruling 2026-08-15 15:15 applied: v2 step grammar, ruled domains.
-chorus:services-domain chorus:hosts chorus:service-athena .        # model surface
+chorus:services chorus:hosts chorus:service-athena .        # model surface
 chorus:service-athena chorus:atStep chorus:value-stream-step-designing .
 chorus:chorus-domain chorus:hosts chorus:service-knowledge-store . # context+memory+knowledge
 chorus:service-knowledge-store chorus:atStep chorus:value-stream-step-reflecting .
 chorus:chorus-domain chorus:hosts chorus:service-werk .            # pipeline
 chorus:service-werk chorus:atStep chorus:value-stream-step-building .
-chorus:tests-domain chorus:hosts chorus:service-tests .              # #4089 — the tests service: registry, runner, evidence, readout (atStep rides on the row in service-instances.ttl: an edge in this graph never reaches the served row — "no step" on every service page)
+chorus:tests chorus:hosts chorus:service-tests .              # #4089 — the tests service: registry, runner, evidence, readout (atStep rides on the row in service-instances.ttl: an edge in this graph never reaches the served row — "no step" on every service page)
 # gathering-app hosted under infrastructure for now (Silas ruling) — MIGRATES
 # to a gathering product domain the day one exists in this graph.
-chorus:infrastructure-domain chorus:hosts chorus:service-gathering-app .
+chorus:infrastructure chorus:hosts chorus:service-gathering-app .
 chorus:service-gathering-app chorus:atStep chorus:value-stream-step-building .
 chorus:alerts-monitors-domain chorus:hosts chorus:service-observability .
 chorus:service-observability chorus:atStep chorus:value-stream-step-proving .
@@ -3164,7 +3163,7 @@ chorus:UnitDomainMappingShape a sh:NodeShape ;
 # Q1: Who owns domain X?
 # ----------------------
 # SELECT ?owner ?ownerLabel WHERE {
-#   chorus:loom-principles chorus:ownedBy ?owner .
+#   chorus:principles chorus:ownedBy ?owner .
 #   ?owner rdfs:label ?ownerLabel .
 # }
 # Expected: chorus:jeff, "Jeff"
@@ -3181,7 +3180,7 @@ chorus:UnitDomainMappingShape a sh:NodeShape ;
 # Q3: What sub-products are impaired if service Z fails?
 # -------------------------------------------------------
 # SELECT ?product ?productLabel WHERE {
-#   ?product chorus:consumes chorus:cards-service .
+#   ?product chorus:consumes chorus:cards .
 #   ?product rdfs:label ?productLabel .
 # }
 # Expected: chorus:loom ("Loom"), chorus:werk ("Werk"),
@@ -3190,7 +3189,7 @@ chorus:UnitDomainMappingShape a sh:NodeShape ;
 # Q4: Full failure propagation — service → consumers → their owned domains
 # -------------------------------------------------------------------------
 # SELECT ?product ?productLabel ?domain ?domainLabel WHERE {
-#   ?product chorus:consumes chorus:spine-service .
+#   ?product chorus:consumes chorus:spine .
 #   ?product rdfs:label ?productLabel .
 #   OPTIONAL {
 #     ?product chorus:hasDomain ?domain .

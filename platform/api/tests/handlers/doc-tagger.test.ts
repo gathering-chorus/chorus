@@ -1,3 +1,6 @@
+// @test-type: unit — pure functions over name tables; no store, no network.
+// @card: #4353
+// @owner: wren
 /**
  * doc-tagger unit tests (#2520).
  *
@@ -21,7 +24,7 @@ describe('doc-tagger.inferTags (#2520)', () => {
     });
     expect(r.product).toBe('chorus');
     expect(r.subproduct).toBe('loom');
-    expect(r.subdomain).toBe('loom-decisions');
+    expect(r.subdomain).toBe('decisions');
     expect(r.confidence).toBe('high');
     expect(r.signal).toBe('path');
   });
@@ -43,7 +46,7 @@ describe('doc-tagger.inferTags (#2520)', () => {
     });
     expect(r.product).toBe('gathering');
     expect(r.subproduct).toBeUndefined();
-    expect(r.subdomain).toBe('blog-domain');
+    expect(r.subdomain).toBe('blog');
   });
 
   test('akasha/* path → Consulting product (no subproduct, no subdomain)', () => {
@@ -79,7 +82,7 @@ describe('doc-tagger.inferTags (#2520)', () => {
       basename: 'domain-photos.html',
     });
     expect(r.product).toBe('gathering');
-    expect(r.subdomain).toBe('photos-domain');
+    expect(r.subdomain).toBe('photos');
   });
 
   test('frontmatter override beats inference', () => {

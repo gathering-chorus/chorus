@@ -65,7 +65,7 @@ check "POST tags without href rejected at 400" "400" "$CODE"
 
 # 2. POST with valid 5-field tag returns 200 and persisted state.
 POST_BODY=$(cat <<EOF
-{"href":"$HREF_A","product":"chorus","subproduct":"loom","domain":"chorus","subdomain":"loom-principles","role":"wren"}
+{"href":"$HREF_A","product":"chorus","subproduct":"loom","domain":"chorus","subdomain":"principles","role":"wren"}
 EOF
 )
 RESP=$(curl -s -X POST "${AUTH[@]}" -H 'Content-Type: application/json' -d "$POST_BODY" "$TAGS_URL")
@@ -90,7 +90,7 @@ DOC_RESP=$(curl -s "$DOC_URL/$ID_A")
 DOC_PRODUCT=$(echo "$DOC_RESP" | python3 -c "import json,sys; print(json.load(sys.stdin).get('data',{}).get('tags',{}).get('product',''))" 2>/dev/null || echo "")
 check "GET doc returns persisted product" "chorus" "$DOC_PRODUCT"
 DOC_SUBDOMAIN=$(echo "$DOC_RESP" | python3 -c "import json,sys; print(json.load(sys.stdin).get('data',{}).get('tags',{}).get('subdomain',''))" 2>/dev/null || echo "")
-check "GET doc returns persisted subdomain" "loom-principles" "$DOC_SUBDOMAIN"
+check "GET doc returns persisted subdomain" "principles" "$DOC_SUBDOMAIN"
 DOC_ROLE=$(echo "$DOC_RESP" | python3 -c "import json,sys; print(json.load(sys.stdin).get('data',{}).get('tags',{}).get('role',''))" 2>/dev/null || echo "")
 check "GET doc returns persisted role" "wren" "$DOC_ROLE"
 
@@ -103,7 +103,7 @@ check "GET doc unknown returns 404" "404" "$CODE"
 
 # Create doc B so we can link A → B.
 POST_B=$(cat <<EOF
-{"href":"$HREF_B","product":"chorus","subproduct":"loom","domain":"chorus","subdomain":"loom-principles","role":"wren"}
+{"href":"$HREF_B","product":"chorus","subproduct":"loom","domain":"chorus","subdomain":"principles","role":"wren"}
 EOF
 )
 curl -s -o /dev/null -X POST "${AUTH[@]}" -H 'Content-Type: application/json' -d "$POST_B" "$TAGS_URL"
@@ -141,7 +141,7 @@ check "GET doc B shows supersedes in-edge from A" "1" "$B_IN"
 # (tagsFromPath checks startsWith on lowercased path after stripping leading slash.)
 HREF_DIVERGE="gathering-docs/curation-divergence-${TS}.html"
 DIV_BODY=$(cat <<EOF
-{"href":"$HREF_DIVERGE","product":"chorus","subproduct":"loom","domain":"chorus","subdomain":"loom-principles","role":"wren"}
+{"href":"$HREF_DIVERGE","product":"chorus","subproduct":"loom","domain":"chorus","subdomain":"principles","role":"wren"}
 EOF
 )
 curl -s -o /dev/null -X POST "${AUTH[@]}" -H 'Content-Type: application/json' -d "$DIV_BODY" "$TAGS_URL"

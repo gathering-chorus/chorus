@@ -93,7 +93,7 @@ chorus:security-probe-vocab-version-ledger a chorus:SecurityProbe ;
 
 chorus:auth-boundary-owl-api-seam a chorus:AuthBoundary ;
     rdfs:label "owl-api identity seam" ;
-    chorus:betweenDomainA chorus:roles-domain ;
+    chorus:betweenDomainA chorus:roles ;
     chorus:betweenDomainB chorus:athena-domain ;
     chorus:checkType "signature" ;
     chorus:bypassEnvs "" ;
@@ -102,8 +102,8 @@ chorus:auth-boundary-owl-api-seam a chorus:AuthBoundary ;
 
 chorus:auth-boundary-dal-write a chorus:AuthBoundary ;
     rdfs:label "DAL governed-write door" ;
-    chorus:betweenDomainA chorus:roles-domain ;
-    chorus:betweenDomainB chorus:knowledge-domain ;
+    chorus:betweenDomainA chorus:roles ;
+    chorus:betweenDomainB chorus:knowledge ;
     chorus:checkType "signature" ;
     chorus:bypassEnvs "" ;
     chorus:bypassAudit true ;
@@ -111,7 +111,7 @@ chorus:auth-boundary-dal-write a chorus:AuthBoundary ;
 
 chorus:auth-boundary-chorus-api-envelope a chorus:AuthBoundary ;
     rdfs:label "chorus-api security envelope" ;
-    chorus:betweenDomainA chorus:roles-domain ;
+    chorus:betweenDomainA chorus:roles ;
     chorus:betweenDomainB chorus:chorus-domain ;
     chorus:checkType "header" ;
     chorus:bypassEnvs "CHORUS_MCP_BYPASS" ;
@@ -120,8 +120,8 @@ chorus:auth-boundary-chorus-api-envelope a chorus:AuthBoundary ;
 
 chorus:auth-boundary-commit-gate a chorus:AuthBoundary ;
     rdfs:label "pre-commit gate" ;
-    chorus:betweenDomainA chorus:roles-domain ;
-    chorus:betweenDomainB chorus:version-control-domain ;
+    chorus:betweenDomainA chorus:roles ;
+    chorus:betweenDomainB chorus:version-control ;
     chorus:checkType "ad-hoc" ;
     chorus:bypassEnvs "flag:--no-verify" ;
     chorus:bypassAudit false ;

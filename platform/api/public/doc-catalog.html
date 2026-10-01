@@ -255,7 +255,7 @@ async function load() {
   vocab.subdomains = ((subdomainsR.data || []).map(sd => (sd.id || (sd.uri || '').split('#').pop() || '').toLowerCase()).filter(Boolean));
   // Fallback: union with tagger-known set so the dropdown isn't empty if Athena underreports
   if (vocab.subdomains.length < 20) {
-    const taggerKnown = ['loom-analytics','loom-decisions','loom-metrics','loom-policies','loom-practices','loom-principles','loom-rcas','cards-service','roles-domain','athena-domain','domains-domain','knowledge-domain','integrations-domain','services-domain','convergence-domain','messages-domain','gates-service','tests-domain','blog-domain','books-domain','cooking-domain','documents-domain','glimmers-domain','music-domain','notes-domain','photos-domain','property-domain','social-domain','video-domain','people-domain','sexuality-domain','stories-domain','self-domain','seeds-domain','reading-domain','watching-domain'];
+    const taggerKnown = ['analytics','decisions','metrics','policies','practices','principles','rcas','cards','roles','athena-domain','domains','knowledge','integrations','services','convergence-domain','messages','gates','tests','blog','books','cooking-domain','documents','glimmers-domain','music','notes','photos','property','social','video','people','sexuality','stories','self-domain','seeds','reading-domain','watching-domain'];
     vocab.subdomains = Array.from(new Set([...vocab.subdomains, ...taggerKnown])).sort();
   }
   driftByHref = new Map(((driftR.data || {}).drift || []).map(e => [e.href, e.divergence_fields || []]));
