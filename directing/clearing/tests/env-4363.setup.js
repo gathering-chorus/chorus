@@ -26,3 +26,10 @@ if (!process.env.CLEARING_AUDIO_DIR) process.env.CLEARING_AUDIO_DIR = path.join(
 if (!process.env.CSS_LOCAL_BASE) process.env.CSS_LOCAL_BASE = 'http://127.0.0.1:9';
 // #4417 — image uploads land in the test's own directory, never the live room's.
 if (!process.env.CLEARING_UPLOAD_DIR) process.env.CLEARING_UPLOAD_DIR = path.join(dir, 'uploads');
+// #4417 — the Clearing's own home (bridge token, session secret, person
+// sessions) for every jest process; tests read the token from here, never ~/.chorus.
+if (!process.env.CLEARING_CHORUS_HOME) {
+  process.env.CLEARING_CHORUS_HOME = path.join(dir, 'chorus-home');
+  fs.mkdirSync(process.env.CLEARING_CHORUS_HOME, { recursive: true });
+  fs.writeFileSync(path.join(process.env.CLEARING_CHORUS_HOME, 'bridge-auth-token'), `test-${process.pid}-${Date.now()}`);
+}

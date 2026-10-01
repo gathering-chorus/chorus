@@ -272,7 +272,7 @@ describe('server — POST /api/message', () => {
   let msgAuth: Record<string, string> = { 'Content-Type': 'application/json' };
   beforeAll(() => {
     try {
-      const t = fs.readFileSync(path.join(os.homedir(), '.chorus/bridge-auth-token'), 'utf-8').trim();
+      const t = fs.readFileSync(path.join(process.env.CLEARING_CHORUS_HOME as string, 'bridge-auth-token'), 'utf-8').trim();
       if (t) msgAuth = { ...msgAuth, Authorization: `Bearer ${t}` };
     } catch { /* server generates it at import; absent = anonymous, tests below fail loudly */ }
   });
@@ -290,9 +290,17 @@ describe('server — POST /api/message', () => {
     const r = await call('/api/message', {
       method: 'POST',
       headers: msgAuth,
-      body: JSON.stringify({ from: 'jeff', text: 'unit test marker' }),
+      body: JSON.stringify({ from: 'wren', text: 'unit test marker' }),
     });
     expect(r.status).toBe(200);
+  });
+
+  test('an authorized post is in the room, under the name it was posted as', async () => {
+    const marker = `room-${Date.now()}`;
+    await call('/api/message', { method: 'POST', headers: msgAuth, body: JSON.stringify({ from: 'silas', text: marker }) });
+    const list = await call('/api/messages?includeHidden=1&limit=500');
+    const row = (list.body as Array<{ from: string; text: string }>).find((m) => m.text.includes(marker));
+    expect(row?.from).toBe('silas');
   });
 
   test('authorized but missing text returns 400', async () => {
@@ -516,9 +524,9 @@ describe('server — authenticated tunneled paths', () => {
     // Read generated token from the test CHORUS_HOME (TMP is CHORUS_ROOT, home lives under test hom)
     let token = '';
     try {
-      token = fs.readFileSync(path.join(os.homedir(), '.chorus/bridge-auth-token'), 'utf-8').trim();
+      token = fs.readFileSync(path.join(process.env.CLEARING_CHORUS_HOME as string, 'bridge-auth-token'), 'utf-8').trim();
     } catch { /* ignore */ }
-    if (!token) return;  // no token available in test env — skip
+    expect(token).toBeTruthy(); // #4417 — the setup file writes it; a missing token is a red, never a skip
 
     const r = await call('/', {
       headers: {
@@ -533,9 +541,9 @@ describe('server — authenticated tunneled paths', () => {
   test('tunneled request WITH token but no name gets name prompt', async () => {
     let token = '';
     try {
-      token = fs.readFileSync(path.join(os.homedir(), '.chorus/bridge-auth-token'), 'utf-8').trim();
+      token = fs.readFileSync(path.join(process.env.CLEARING_CHORUS_HOME as string, 'bridge-auth-token'), 'utf-8').trim();
     } catch { /* ignore */ }
-    if (!token) return;
+    expect(token).toBeTruthy(); // #4417 — the setup file writes it; a missing token is a red, never a skip
 
     const r = await call('/', {
       headers: {
@@ -551,9 +559,9 @@ describe('server — authenticated tunneled paths', () => {
   test('token via query param also authenticates', async () => {
     let token = '';
     try {
-      token = fs.readFileSync(path.join(os.homedir(), '.chorus/bridge-auth-token'), 'utf-8').trim();
+      token = fs.readFileSync(path.join(process.env.CLEARING_CHORUS_HOME as string, 'bridge-auth-token'), 'utf-8').trim();
     } catch { /* ignore */ }
-    if (!token) return;
+    expect(token).toBeTruthy(); // #4417 — the setup file writes it; a missing token is a red, never a skip
 
     const r = await call(`/api/tiles?token=${token}`, {
       headers: { 'cf-connecting-ip': '1.2.3.4' },
@@ -564,9 +572,9 @@ describe('server — authenticated tunneled paths', () => {
   test('POST /login with correct token sets cookie and redirects', async () => {
     let token = '';
     try {
-      token = fs.readFileSync(path.join(os.homedir(), '.chorus/bridge-auth-token'), 'utf-8').trim();
+      token = fs.readFileSync(path.join(process.env.CLEARING_CHORUS_HOME as string, 'bridge-auth-token'), 'utf-8').trim();
     } catch { /* ignore */ }
-    if (!token) return;
+    expect(token).toBeTruthy(); // #4417 — the setup file writes it; a missing token is a red, never a skip
 
     const r = await call('/login', {
       method: 'POST',

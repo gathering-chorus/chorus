@@ -105,7 +105,9 @@ export function formatObserverDigest(content: string): string[] {
 // Auth token for remote access (#1719)
 // Generate a stable token per machine — persists across restarts
 const crypto = require('crypto');
-const CHORUS_HOME = `${require('os').homedir()}/.chorus`;
+// #4417 — overridable so jest gets its own token, session secret and person
+// sessions; in-process tests used to read the live ~/.chorus credentials.
+const CHORUS_HOME = process.env.CLEARING_CHORUS_HOME || `${require('os').homedir()}/.chorus`;
 const BRIDGE_TOKEN_FILE = `${CHORUS_HOME}/bridge-auth-token`;
 let BRIDGE_TOKEN: string;
 try {

@@ -31,6 +31,9 @@ describe('#3913 first-boot secret generation', () => {
       const prev = { ...process.env };
       process.env.CHORUS_HOME = home;
       process.env.CLEARING_TEST = '1';
+      // #4417 — the setup file gives every test a Clearing home; this suite is
+      // about the default (homedir/.chorus), so clear the override here.
+      delete process.env.CLEARING_CHORUS_HOME;
       try {
         require('../src/server');
       } finally {
