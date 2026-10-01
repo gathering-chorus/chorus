@@ -23,6 +23,7 @@ function testClearingEnv(dir, port, token) {
     CLEARING_HTTPS_PORT: String(port + 1),
     CLEARING_MSG_FILE: path.join(dir, 'bridge-messages.json'),
     CLEARING_AUDIO_DIR: path.join(dir, 'audio-uploads'),
+    CLEARING_UPLOAD_DIR: path.join(dir, 'uploads'),
     CLEARING_PROJECTS_DIR: path.join(dir, 'projects'),
     CLEARING_TAILER_OFFSETS: path.join(home, '.chorus', 'clearing', 'tailer-offsets.json'),
     CLEARING_JOURNAL: path.join(home, '.chorus', 'clearing', 'room.jsonl'),

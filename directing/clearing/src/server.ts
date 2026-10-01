@@ -937,12 +937,15 @@ messageRouter.on('message', (m: ChannelMessage) => {
 // Ensure upload directory survives /tmp cleanup across reboots
 import fs_node from 'fs';
 import { readSpineWithStats, resolveCalls, spinePath, type StreamLine } from './spine-tail';
-if (!fs_node.existsSync('/tmp/bridge-uploads')) {
-  fs_node.mkdirSync('/tmp/bridge-uploads', { recursive: true });
+// #4417 — configurable so a test Clearing and jest keep uploads in their own
+// world; the default is the live room's directory.
+const UPLOAD_DIR = process.env.CLEARING_UPLOAD_DIR || '/tmp/bridge-uploads';
+if (!fs_node.existsSync(UPLOAD_DIR)) {
+  fs_node.mkdirSync(UPLOAD_DIR, { recursive: true });
 }
 
 // Serve uploaded images
-app.use('/uploads', express.static('/tmp/bridge-uploads'));
+app.use('/uploads', express.static(UPLOAD_DIR));
 
 // Health
 // #3827 — bind a browser-held key to the signed-in WebID.
@@ -993,11 +996,11 @@ app.post('/api/upload', (req, res) => {
 
     if (contentType.includes('heic') || contentType.includes('heif')) {
       // Save HEIC, convert to JPEG with sips
-      const heicPath = `/tmp/bridge-uploads/${ts}.heic`;
-      const jpgPath = `/tmp/bridge-uploads/${ts}.jpg`;
+      const heicPath = `${UPLOAD_DIR}/${ts}.heic`;
+      const jpgPath = `${UPLOAD_DIR}/${ts}.jpg`;
       fs.writeFileSync(heicPath, body);
       try {
-        execSync(`sips -s format jpeg "${heicPath}" --out "${jpgPath}"`, { timeout: 10000 });
+        execSync(`sips -s format jpeg "${heicPath}" --out "${jpgPath}"`, { timeout: 10000, env: process.env });
         fs.unlinkSync(heicPath);
         res.json({ url: `/uploads/${ts}.jpg`, filename: `${ts}.jpg` });
       } catch {
@@ -1007,7 +1010,7 @@ app.post('/api/upload', (req, res) => {
     } else {
       const ext = contentType.includes('png') ? 'png' : contentType.includes('gif') ? 'gif' : 'jpg';
       const filename = `${ts}.${ext}`;
-      fs.writeFileSync(`/tmp/bridge-uploads/${filename}`, body);
+      fs.writeFileSync(`${UPLOAD_DIR}/${filename}`, body);
       res.json({ url: `/uploads/${filename}`, filename });
     }
   });

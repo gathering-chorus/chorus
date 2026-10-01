@@ -391,8 +391,7 @@ describe('server — card and session lookups', () => {
 
 describe('server — upload endpoints', () => {
   beforeAll(() => {
-    // Upload handler writes to /tmp/bridge-uploads/ — ensure dir exists.
-    try { fs.mkdirSync('/tmp/bridge-uploads', { recursive: true }); } catch { /* ignore */ }
+    // #4417 — uploads go to CLEARING_UPLOAD_DIR (a temp dir from env-4363.setup.js), never the live room's.
     try { fs.mkdirSync('/tmp/bridge-audio-uploads', { recursive: true }); } catch { /* ignore */ }
   });
 
@@ -699,7 +698,6 @@ describe('server — SSE stream and session', () => {
 
 describe('server — HEIC upload path', () => {
   beforeAll(() => {
-    try { fs.mkdirSync('/tmp/bridge-uploads', { recursive: true }); } catch { /* ignore */ }
   });
 
   test('POST /api/upload with image/heic content-type takes the convert branch', async () => {

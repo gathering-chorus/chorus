@@ -82,5 +82,5 @@ export function useInProcessClearing() {
     });
   }
 
-  return { visit, guardCookie, ALLOWED, STRANGER };
+  return { visit, guardCookie, ALLOWED, STRANGER, base: () => base };
 }
