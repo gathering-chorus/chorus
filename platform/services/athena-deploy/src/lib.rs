@@ -230,6 +230,29 @@ pub fn retirement_action(r: &Retirement, default_graph: &str) -> RetireAction {
     }
 }
 
+/// #4064 — the count, backup and delete for retiring one subject, WITH the
+/// blank nodes only it reaches through SHACL structure (sh:property, the
+/// sh:or/and/xone/not lists, sh:in, rdf:first/rest). Retiring a shape by its
+/// IRI alone left its property shapes behind as orphans — the deploy never
+/// removes a dropped sh:property block (2026-09-20, #4250), and a retirement
+/// that did the same would leave the ghosts it exists to clear.
+pub fn subject_retirement_sparql(iri: &str, graph: &str) -> (String, String, String) {
+    const SH: &str = "http://www.w3.org/ns/shacl#";
+    const RDF: &str = "http://www.w3.org/1999/02/22-rdf-syntax-ns#";
+    let path = format!(
+        "(<{SH}property>|<{SH}or>|<{SH}and>|<{SH}xone>|<{SH}not>|<{SH}in>|<{RDF}first>|<{RDF}rest>)+"
+    );
+    let body = format!(
+        "GRAPH <{graph}> {{ {{ BIND(<{iri}> AS ?s) <{iri}> ?p ?o }} UNION \
+         {{ <{iri}> {path} ?s . FILTER(isBlank(?s)) ?s ?p ?o }} }}"
+    );
+    (
+        format!("SELECT (COUNT(*) AS ?n) WHERE {{ {body} }}"),
+        format!("CONSTRUCT {{ ?s ?p ?o }} WHERE {{ {body} }}"),
+        format!("DELETE {{ GRAPH <{graph}> {{ ?s ?p ?o }} }} WHERE {{ {body} }}"),
+    )
+}
+
 /// AC3 — may this delete proceed? Every delete path in the deploy unloads
 /// first and REFUSES if the dump failed or landed short.
 ///
@@ -1501,13 +1524,10 @@ fn run_retirement(action: &RetireAction, line: usize, ctx: &StoreCtx) -> Result<
                 &format!("DELETE DATA {{ GRAPH <{graph}> {{ <{s_iri}> <{p_iri}> <{o_iri}> }} }}"),
             )
         }
-        RetireAction::Subject { iri, graph } => guarded_delete(
-            ctx, line,
-            &format!("<{graph}> subject <{iri}>"),
-            &format!("SELECT (COUNT(*) AS ?n) WHERE {{ GRAPH <{graph}> {{ <{iri}> ?p ?o }} }}"),
-            &format!("CONSTRUCT {{ <{iri}> ?p ?o }} WHERE {{ GRAPH <{graph}> {{ <{iri}> ?p ?o }} }}"),
-            &format!("DELETE WHERE {{ GRAPH <{graph}> {{ <{iri}> ?p ?o }} }}"),
-        ),
+        RetireAction::Subject { iri, graph } => {
+            let (count, construct, delete) = subject_retirement_sparql(iri, graph);
+            guarded_delete(ctx, line, &format!("<{graph}> subject <{iri}>"), &count, &construct, &delete)
+        }
         RetireAction::Class { class, graph } => {
             let local = class.rsplit('#').next().unwrap_or(class).to_string();
             // Three guards before any delete, all fail-closed.
@@ -2093,4 +2113,62 @@ pub fn ungrounded_concepts(files: &[(String, String)]) -> Vec<String> {
         finish(&subject, is_concept, grounded, &pref, &mut out);
     }
     out
+}
+
+#[cfg(test)]
+mod subject_closure_4064 {
+    use super::subject_retirement_sparql;
+
+    #[test]
+    fn a_subject_retirement_reaches_its_shape_blank_nodes() {
+        let (count, construct, delete) = subject_retirement_sparql("https://x#S", "urn:g");
+        for q in [&count, &construct, &delete] {
+            assert!(q.contains("<https://x#S> ?p ?o"), "the subject's own triples: {q}");
+            assert!(q.contains("shacl#property>|"), "the property shapes: {q}");
+            assert!(q.contains("isBlank(?s)"), "only blank nodes ride along: {q}");
+            assert!(q.contains("GRAPH <urn:g>"), "one graph: {q}");
+        }
+        assert!(delete.starts_with("DELETE { GRAPH <urn:g> { ?s ?p ?o } }"));
+    }
+}
+
+/// #4064 — the closure query RUN, not read: Jena's `update` applies the delete
+/// to a fixture holding the retired shape and a neighbour shape.
+#[cfg(test)]
+mod subject_closure_runs_4064 {
+    use super::subject_retirement_sparql;
+    use std::process::Command;
+
+    #[test]
+    fn retiring_a_shape_removes_its_property_shapes_and_nothing_of_its_neighbour() {
+        let Ok(out) = Command::new("sh").args(["-c", "command -v update"]).output() else { return };
+        let update = String::from_utf8_lossy(&out.stdout).trim().to_string();
+        if update.is_empty() { eprintln!("UNMEASURED: no Jena update CLI on this box"); return; }
+        let dir = std::env::temp_dir().join(format!("closure-4064-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let data = dir.join("d.trig");
+        std::fs::write(&data, r#"@prefix sh: <http://www.w3.org/ns/shacl#> . @prefix x: <https://x#> .
+<urn:g> {
+  x:GoneShape a sh:NodeShape ; sh:targetClass x:Gone ;
+    sh:property [ sh:path x:a ; sh:in ( "p" "q" ) ] ;
+    sh:property [ sh:path x:b ; sh:or ( [ sh:nodeKind sh:IRI ] [ sh:datatype x:s ] ) ] .
+  x:KeptShape a sh:NodeShape ; sh:targetClass x:Kept ;
+    sh:property [ sh:path x:k ; sh:minCount 1 ] .
+}"#).unwrap();
+        let (_, _, delete) = subject_retirement_sparql("https://x#GoneShape", "urn:g");
+        let ru = dir.join("u.ru");
+        std::fs::write(&ru, &delete).unwrap();
+        let o = Command::new(&update).arg(format!("--data={}", data.display()))
+            .arg(format!("--update={}", ru.display())).arg("--dump").output().unwrap();
+        let after = String::from_utf8_lossy(&o.stdout).to_string();
+        assert!(o.status.success(), "update failed: {}", String::from_utf8_lossy(&o.stderr));
+        // the dump writes prefixed names (x:a), so the checks read them that way
+        for gone in ["GoneShape", "x:a", "x:b", "\"p\"", "nodeKind"] {
+            assert!(!after.contains(gone), "{gone} survived the retirement:\n{after}");
+        }
+        // NEGATIVE PROOF: the neighbour shape and its own property shape are untouched
+        assert!(after.contains("KeptShape") && after.contains("x:k") && after.contains("minCount"),
+            "the retirement reached a shape it does not own:\n{after}");
+        let _ = std::fs::remove_dir_all(&dir);
+    }
 }

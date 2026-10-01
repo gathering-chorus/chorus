@@ -17,43 +17,44 @@ chorus:unit-new a chorus:ServiceInstance ; chorus:label "new instance" .
 chorus:job-new  a chorus:ScheduledJob ; chorus:label "new job" .
 TTL
   # the graph BEFORE the cycle: a stale instance (ours to replace), a hand-authored
-  # Commitment and a Service row (co-tenants, not ours)
+  # Document and a Service row (co-tenants, not ours). The co-tenant was a
+  # Commitment until #4064 retired that class; any class the harvester does not emit serves.
   cat > "$BATS_TEST_TMPDIR/before.trig" <<'TRIG'
 @prefix chorus: <https://jeffbridwell.com/chorus#> .
 <urn:chorus:domains:services> {
   chorus:unit-stale a chorus:ServiceInstance ; chorus:label "stale instance" .
-  chorus:commitment-keep-me a chorus:Commitment ; chorus:statement "hand-authored, must survive" .
+  chorus:document-keep-me a chorus:Document ; chorus:label "hand-authored, must survive" .
   chorus:service-tests a chorus:Service ; chorus:label "Tests" .
 }
 TRIG
 }
 
-@test "the harvest update replaces only the harvested classes; the Commitment and Service rows survive" {
+@test "the harvest update replaces only the harvested classes; the Document and Service rows survive" {
   run bash "$LOAD" --generated "$BATS_TEST_TMPDIR/generated.ttl" --print-update
   [ "$status" -eq 0 ] || { echo "$output"; false; }
   printf '%s\n' "$output" > "$BATS_TEST_TMPDIR/u.ru"
   after="$("$UPDATE" --data="$BATS_TEST_TMPDIR/before.trig" --update="$BATS_TEST_TMPDIR/u.ru" --dump 2>/dev/null)"
-  echo "$after" | grep -q "commitment-keep-me"   || { echo "$after"; false; }
+  echo "$after" | grep -q "document-keep-me"   || { echo "$after"; false; }
   echo "$after" | grep -q "service-tests"        || { echo "$after"; false; }
   echo "$after" | grep -q "unit-new"             || { echo "$after"; false; }
   echo "$after" | grep -q "job-new"              || { echo "$after"; false; }
   ! echo "$after" | grep -q "unit-stale"         || { echo "$after"; false; }
 }
 
-@test "NEGATIVE PROOF: the old wholesale replace loses the Commitment on the same fixture" {
+@test "NEGATIVE PROOF: the old wholesale replace loses the Document on the same fixture" {
   # what the loader did before #4089 (graph-store PUT = clear + insert), as an update
   printf 'PREFIX chorus: <https://jeffbridwell.com/chorus#>\nCLEAR GRAPH <%s> ;\nINSERT DATA { GRAPH <%s> { chorus:unit-new a chorus:ServiceInstance } }\n' "$G" "$G" > "$BATS_TEST_TMPDIR/old.ru"
   after="$("$UPDATE" --data="$BATS_TEST_TMPDIR/before.trig" --update="$BATS_TEST_TMPDIR/old.ru" --dump 2>/dev/null)"
-  ! echo "$after" | grep -q "commitment-keep-me" || { echo "the fixture cannot detect the loss"; echo "$after"; false; }
+  ! echo "$after" | grep -q "document-keep-me" || { echo "the fixture cannot detect the loss"; echo "$after"; false; }
   echo "$after" | grep -q "unit-new"
 }
 
-@test "a co-tenant row alone is not a difference: unchanged harvest over a graph with a Commitment writes nothing" {
+@test "a co-tenant row alone is not a difference: unchanged harvest over a graph with a Document writes nothing" {
   cat > "$BATS_TEST_TMPDIR/current.ttl" <<'TTL'
 @prefix chorus: <https://jeffbridwell.com/chorus#> .
 chorus:unit-new a chorus:ServiceInstance ; chorus:label "new instance" .
 chorus:job-new  a chorus:ScheduledJob ; chorus:label "new job" .
-chorus:commitment-keep-me a chorus:Commitment ; chorus:statement "hand-authored, must survive" .
+chorus:document-keep-me a chorus:Document ; chorus:label "hand-authored, must survive" .
 TTL
   run bash "$LOAD" --generated "$BATS_TEST_TMPDIR/generated.ttl" --current "$BATS_TEST_TMPDIR/current.ttl" --dry-run
   [ "$status" -eq 0 ] || { echo "$output"; false; }

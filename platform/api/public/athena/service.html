@@ -64,41 +64,16 @@ var s=document.createElement('script');s.src=window.basePath('/js/base-path.js')
 </div>
 ${folds.join('\n')}
 ${histHtml}
-<details class="fold" open id="commitments-fold"><summary>Commitments <span class="src">chorus:Commitment &rarr; chorus:ofService</span></summary><div class="body" id="commitments-body"><p class="empty">Loading commitments from the model&hellip;</p></div></details>
 <h2 class="eng">Engineering</h2>
 <details class="fold" open id="flows-fold"><summary>Flows <span class="src">chorus:diagram (mermaid)</span></summary><div class="body" id="flows-body"><p class="empty">Loading diagrams&hellip;</p></div></details>
 <details class="fold" open id="runsas-fold"><summary>Runs as <span class="src">chorus:ServiceInstance / chorus:ScheduledJob &rarr; chorus:runsService</span></summary><div class="body" id="runsas-body"><p class="empty">Loading harvested units&hellip;</p></div></details>
 <div id="domain-facets"><p class="empty">Loading the hosting domain&rsquo;s facets&hellip;</p></div>
 ${srcNote(`GET /services/${esc(s)} &middot; /serviceinstances &middot; /scheduledjobs &middot; the hosting domain's materialized facets`)}`;
   } catch (e) { fetchFailed(main, e); }
-  // #4064 — a service's commitments, rendered from the graph. Collection rows carry
-  // literals; the ofService edge is read from each row's entity `links`.
-  try {
-    const body = document.getElementById('commitments-body');
-    const col = await fetchJSON('/commitments?limit=200');
-    const rows = col.items || col.data || [];
-    const mine = [];
-    for (const r of rows) {
-      try {
-        const ent = await fetchJSON(`/commitments/${encodeURIComponent(r.name)}`);
-        const svc = String((ent.links || {}).ofService || '');
-        // the page's `s` is the row name (service-identity); links carry chorus:service-identity
-        if (svc === 'chorus:' + s || svc.endsWith('#' + s) || svc.endsWith(':' + s)) mine.push({ ...r, card: (ent.links || {}).card, owner: (ent.links || {}).ownedBy });
-      } catch (_) { /* one unreadable row does not blank the fold */ }
-    }
-    const open = mine.filter(r => r.status === 'open'), noCard = open.filter(r => !r.card);
-    if (!rows.length) { body.innerHTML = '<p class="empty">The model serves no commitment rows yet &mdash; a fetch of zero, not an empty design.</p>'; }
-    else if (!mine.length) { body.innerHTML = `<p class="empty">${rows.length} commitments served; none point at this service.</p>`; }
-    else {
-      const tr = mine.map(r => `<tr><td>${esc(r.label || r.name)}</td><td>${esc(r.status || '')}</td><td>${esc(String(r.owner || '').replace(/^.*role-/, ''))}</td><td>${r.card ? '#' + esc(String(r.card).replace(/^.*card-/, '')) : '<span style="color:#b00">none</span>'}</td></tr>`).join('');
-      body.innerHTML = `<p><strong>${mine.length}</strong> commitments &middot; <strong>${open.length}</strong> open &middot; <strong>${noCard.length}</strong> open with no card</p><table><thead><tr><th>Commitment</th><th>Status</th><th>Owner</th><th>Card</th></tr></thead><tbody>${tr}</tbody></table>`;
-    }
-  } catch (e) { const b = document.getElementById('commitments-body'); if (b) b.innerHTML = `<p class="empty"><strong>Cannot reach the model</strong> for commitments &mdash; fetch failure, not an empty design. ${esc(String(e && e.message || e))}</p>`; }
-
   // ---- #4093 — the engineering half. Jeff, 2026-09-03: "our service designs seem rather
   // untechnical, more like a pm view" and "the domains ultimately will show true state".
   // A service page COMPOSES its hosting domain's facets (one renderer, facets.js) and adds
-  // only what a service owns: flows, runs-as, commitments. Every chapter tells an empty
+  // only what a service owns: flows and runs-as (commitments retired, #4064). Every chapter tells an empty
   // model apart from a fetch failure.
   const asArray = v => Array.isArray(v) ? v : (v === undefined || v === null || v === '' ? [] : [v]);
 

@@ -201,7 +201,6 @@ const CLASSES: &[(&str, &str)] = &[
     ("ProductShape", "products"),
     ("ServiceInstance", "services"),
     ("ServiceShape", "services"),
-    ("Commitment", "services"),
     ("PipelineRun", "pipelines"),
     ("PipelineStep", "pipelines"),
     ("PipelineShape", "pipelines"),
@@ -1526,7 +1525,10 @@ mod tests_4201 {
     /// read the word and tagged the file `services`, 31 cases of it.
     #[test]
     fn a_locally_defined_type_does_not_fire_the_class_rule() {
-        let defines = "pub struct Commitment {\n    pub id: String,\n}\n                       fn load(p: &Path) -> Vec<Commitment> { vec![] }";
+        // #4064 — Commitment is retired from the graph, so the proof uses a class
+        // the table still maps to a valid domain (ServiceInstance → services); a
+        // retired name, or one whose domain is not valid here, proves nothing
+        let defines = "pub struct ServiceInstance {\n    pub id: String,\n}\n                       fn load(p: &Path) -> Vec<ServiceInstance> { vec![] }";
         assert_eq!(place(defines, &valid(), &no_card), Placement::Unplaced);
         // and with the unit known, it falls to the unit rule as it should
         let p = place_in_file(defines, "platform/services/chorus-hooks/src/x.rs",
@@ -1537,7 +1539,8 @@ mod tests_4201 {
     /// CONTROL: a file that USES the class without defining it still fires.
     #[test]
     fn using_a_class_it_does_not_define_still_fires() {
-        let uses = "const c: Commitment = await get('/x');\nexpect(c.id).toBe('a');";
+        // #4064 — Commitment is retired; ServiceInstance still maps to services
+        let uses = "const c: ServiceInstance = await get('/x');\nexpect(c.id).toBe('a');";
         assert_eq!(place(uses, &valid(), &no_card).domain(), Some("services"));
     }
     /// NEGATIVE PROOF: an ambiguous neighbour must not speak. clearing's

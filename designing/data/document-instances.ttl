@@ -213,7 +213,7 @@ chorus:document-alerts-service-design a chorus:Document ;
     chorus:docState "current" ;
     chorus:docTitle "Alerts — Service Design" ;
     chorus:docHref "/designing/docs/alerts-service-design.html" ;
-    chorus:comment "Authored by #4085 alongside the alerts/monitors split. Deliberately short — per #4064 a service's commitments are rows with a status and a card, not paragraphs here." ;
+    chorus:comment "Authored by #4085 alongside the alerts/monitors split. Deliberately short — a service's promises are tests on the service (#4064), not paragraphs here." ;
     rdfs:comment "Authored by #4085 alongside the alerts/monitors split." ;
     chorus:hasDomain chorus:alerts ;
     chorus:ownedBy chorus:principal-silas .
