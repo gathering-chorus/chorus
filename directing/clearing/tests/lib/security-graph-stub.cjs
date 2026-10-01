@@ -15,7 +15,7 @@ function startSecurityGraphStub({ persons = ['jeff'], principals = {} } = {}) {
     const q = decodeURIComponent((req.url || '').split('query=')[1] || '');
     res.setHeader('Content-Type', 'application/sparql-results+json');
     let bindings;
-    if (q.includes('principalKind')) bindings = persons.map((n) => ({ p: { value: `${P}principal-${n}` } }));
+    if (q.includes('principalKind')) bindings = persons.map((n) => ({ p: { value: `${P}principal-${n}` }, label: { value: n } }));
     else if (q.includes('?p ?webid')) bindings = Object.entries(principals).map(([webid, id]) => ({ p: { value: `${P}${id}` }, webid: { value: webid } }));
     else if (q.includes('?webid')) bindings = Object.keys(principals).map((webid) => ({ webid: { value: webid } }));
     else bindings = [];

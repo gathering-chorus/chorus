@@ -45,6 +45,23 @@ describe('#4417 who a message is from', () => {
     expect(await rowFor(r.marker)).toBeUndefined();
   });
 
+  // Silas's review of 0532077e2: lowercasing alone let these through.
+  test.each([
+    ['the principal id', 'principal-jeff'],
+    ['the full IRI', 'https://jeffbridwell.com/chorus#principal-jeff'],
+    ['the label', 'Jeff Bridwell'],
+    ['the label, spaced and cased', '  jeff   BRIDWELL '],
+    ['the WebID', 'https://id.example/jeff/profile/card#me'],
+    ['the WebID without #me', 'https://id.example/jeff/profile/card'],
+    ['the host account', 'jeffbridwell'],
+    ['a zero-width space inside', 'je\u200Bff'],
+    ['full-width letters', 'Ｊｅｆｆ'],
+  ])('NEGATIVE PROOF: the machine credential using %s ("%s") is refused 403', async (_what, name) => {
+    const r = await post({ from: name, text: `alias-${Date.now()}-${Math.random()}` });
+    expect(r.status).toBe(403);
+    expect(await rowFor(r.marker)).toBeUndefined();
+  });
+
   test('a signed-in person posts as themselves, whatever the body claims', async () => {
     const r = await post({ from: 'silas', text: `session-${Date.now()}` }, { cookie: gate.guardCookie(ALLOWED) });
     expect(r.status).toBe(200);

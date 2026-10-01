@@ -33,7 +33,10 @@ export function useInProcessClearing() {
     res.setHeader('Content-Type', 'application/sparql-results+json');
     const P = 'https://jeffbridwell.com/chorus#';
     if (q.includes('principalKind')) {
-      res.end(JSON.stringify({ results: { bindings: [{ p: { value: `${P}principal-jeff` } }, { p: { value: `${P}principal-marknakib` } }] } }));
+      res.end(JSON.stringify({ results: { bindings: [
+        { p: { value: `${P}principal-jeff` }, label: { value: 'Jeff Bridwell' }, webid: { value: 'https://id.example/jeff/profile/card#me' }, host: { value: 'jeffbridwell' } },
+        { p: { value: `${P}principal-marknakib` }, label: { value: 'Mark Nakib' } },
+      ] } }));
     } else if (q.includes('?p ?webid')) {
       res.end(JSON.stringify({ results: { bindings: [{ p: { value: `${P}principal-jeff` }, webid: { value: ALLOWED } }] } }));
     } else {

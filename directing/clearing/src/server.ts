@@ -24,7 +24,7 @@ import { startRoom } from './buzz-room-wiring';
 import { ClearingChat } from './chat';
 import { lanAddress, bonjourHost, startupLanLines, detectIpDrift } from './lan-url';
 import { isLocalConnection, isTunneled } from './connection-auth';
-import { isWebIdAllowed, principalForWebId, primeAllowSetGraph, personNames } from './solid-auth';
+import { isWebIdAllowed, principalForWebId, primeAllowSetGraph, personNames, normalizeSpeaker } from './solid-auth';
 
 // #4220 — ask the model where Principal rows live before the first sign-in is
 // judged. Three doors carrying three defaults is how a model move locked every
@@ -1474,7 +1474,7 @@ app.post('/api/message', async (req, res) => {
   if (!person) {
     const persons = await personNames(Date.now());
     if (!persons) return res.status(503).json({ error: 'cannot tell who is a person right now; nothing was posted' });
-    if (persons.has(String(from).trim().toLowerCase())) {
+    if (persons.has(normalizeSpeaker(String(from)))) {
       return res.status(403).json({ error: 'only a signed-in person can post under their own name' });
     }
   }
