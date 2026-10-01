@@ -285,11 +285,6 @@ chorus:streamCard a owl:ObjectProperty ;
 chorus:StreamEventShape a sh:NodeShape ;
     sh:targetClass chorus:StreamEvent ;
     sh:property [ sh:path chorus:streamRole ; sh:minCount 1 ] ;
-    chorus:generatedBy "athena-model" .
-
-chorus:StreamEventShape a sh:NodeShape ;
-    sh:targetClass chorus:StreamEvent ;
-    sh:property [ sh:path chorus:streamRole ; sh:minCount 1 ] ;
     sh:property [ sh:path chorus:streamTool ; sh:minCount 1 ] ;
     sh:property [ sh:path chorus:streamPhase ; sh:minCount 1 ] ;
     sh:property [ sh:path chorus:streamTs ; sh:minCount 1 ] ;
