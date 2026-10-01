@@ -150,4 +150,12 @@ describe('#4417 the spine log in tests is a temp file', () => {
     await new Promise((r) => setTimeout(r, 100));
     expect(fs.readFileSync(target, 'utf8')).toContain(marker);
   });
+
+  test('the guard key path is a temp file, never ~/.chorus/share-oidc.json', () => {
+    const fs = require('fs');
+    const os = require('os');
+    const path = require('path');
+    const target = process.env.SHARE_STATE_FILE || path.join(os.homedir(), '.chorus', 'share-oidc.json');
+    expect(fs.realpathSync(path.dirname(target)).startsWith(fs.realpathSync(os.tmpdir()))).toBe(true);
+  });
 });

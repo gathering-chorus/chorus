@@ -10,3 +10,7 @@ if (!process.env.CLEARING_TAILER_OFFSETS) process.env.CLEARING_TAILER_OFFSETS = 
 // #4417 — a bare SessionTailer's reply.rendered goes to the spine log; without
 // this every jest process appended to the live ~/.chorus/chorus.log.
 if (!process.env.CHORUS_LOG_FILE) process.env.CHORUS_LOG_FILE = path.join(dir, 'chorus.log');
+// #4417 — share-session reads SHARE_STATE_FILE once, at import. Pointed here,
+// no jest process can read the live guard key (~/.chorus/share-oidc.json),
+// whatever order modules load in. A test that needs a key writes its own.
+if (!process.env.SHARE_STATE_FILE) process.env.SHARE_STATE_FILE = path.join(dir, 'share-oidc.json');
