@@ -23,6 +23,9 @@ pub mod oidc; // #3613 / ADR-052 — ES256/JWKS (Solid-OIDC via CSS) verify at t
 
 pub const NS: &str = "https://jeffbridwell.com/chorus#";
 pub const ONTOLOGY_GRAPH: &str = "urn:chorus:ontology";
+/// #4338 — Domain ROWS (definesVocabulary, repoTarget, partOf …) live here; the
+/// ontology graph keeps only the punned class.
+pub const DOMAINS_GRAPH: &str = "urn:chorus:domains:domains";
 pub const INSTANCES_GRAPH: &str = "urn:chorus:instances";
 /// #3506 / ADR-047 — the response-contract version. Coarse, infrastructure-wide;
 /// path-prefixed (/v1/...) AND echoed in every envelope. Bumps only when the
@@ -937,8 +940,8 @@ pub fn resolve_instances_graph(declared: Option<&str>, domain: Option<&str>) -> 
 /// edge yields None (that level is simply skipped in the projected path).
 fn read_containment_local(class: &str, pred: &str, strip: &str) -> R<Option<String>> {
     let q = format!(
-        "PREFIX sh: <http://www.w3.org/ns/shacl#> PREFIX chorus: <{ns}> SELECT ?v WHERE {{ GRAPH <{g}> {{ {{ ?s sh:targetClass <{c}> ; {pred} ?t }} UNION {{ <{c}> {pred} ?t }} BIND(REPLACE(STR(?t), '.*[#/]', '') AS ?v) }} }} LIMIT 1",
-        ns = NS, g = ONTOLOGY_GRAPH, c = class, pred = pred
+        "PREFIX sh: <http://www.w3.org/ns/shacl#> PREFIX chorus: <{ns}> SELECT ?v WHERE {{ {{ GRAPH <{g}> {{ {{ ?s sh:targetClass <{c}> ; {pred} ?t }} UNION {{ <{c}> {pred} ?t }} }} }} UNION {{ GRAPH <{dg}> {{ <{c}> {pred} ?t }} }} BIND(REPLACE(STR(?t), '.*[#/]', '') AS ?v) }} LIMIT 1",
+        ns = NS, g = ONTOLOGY_GRAPH, dg = DOMAINS_GRAPH, c = class, pred = pred
     );
     let raw = select_v(&sparql_json(&q)?).into_iter().next();
     Ok(raw.map(|v| v.strip_prefix(strip).unwrap_or(&v).to_string()))
@@ -1004,7 +1007,7 @@ fn read_defines_vocabulary(domain_local: &str) -> R<Vec<String>> {
     let domain = format!("{}{}", NS, domain_local);
     let q = format!(
         "PREFIX chorus: <{ns}> SELECT ?v WHERE {{ GRAPH <{g}> {{ <{d}> chorus:definesVocabulary ?c BIND(REPLACE(STR(?c), '.*[#/]', '') AS ?v) }} }} ORDER BY ?v",
-        ns = NS, g = ONTOLOGY_GRAPH, d = domain
+        ns = NS, g = DOMAINS_GRAPH, d = domain
     );
     let mut cs = select_v(&sparql_json(&q)?);
     cs.sort();
@@ -1046,7 +1049,7 @@ pub fn project_domain_vocab_index(domain: &str, classes: &[&str]) -> String {
 pub fn all_vocab_classes() -> R<Vec<String>> {
     let q = format!(
         "PREFIX chorus: <{ns}> SELECT DISTINCT ?v WHERE {{ GRAPH <{g}> {{ ?d chorus:definesVocabulary ?c BIND(REPLACE(STR(?c), '.*[#/]', '') AS ?v) }} }} ORDER BY ?v",
-        ns = NS, g = ONTOLOGY_GRAPH
+        ns = NS, g = DOMAINS_GRAPH
     );
     let mut cs = select_v(&sparql_json(&q)?);
     cs.sort();
@@ -1243,7 +1246,7 @@ pub fn generate(class_local: &str) -> R<RouteTable> {
     let declared_ig = select_v(&sparql_json(&igq)?).into_iter().next();
     let dq = format!(
         "PREFIX chorus: <{ns}> SELECT ?v WHERE {{ GRAPH <{g}> {{ ?d chorus:definesVocabulary <{c}> BIND(REPLACE(STR(?d), '.*[#/]', '') AS ?v) }} }} LIMIT 1",
-        ns = NS, g = ONTOLOGY_GRAPH, c = class
+        ns = NS, g = DOMAINS_GRAPH, c = class
     );
     let domain_of = select_v(&sparql_json(&dq)?).into_iter().next();
     let instances_graph = resolve_instances_graph(declared_ig.as_deref(), domain_of.as_deref())?;
@@ -3172,7 +3175,7 @@ fn class_instances_graph(class: &str) -> R<String> {
     let declared = select_v(&sparql_json(&igq)?).into_iter().next();
     let dq = format!(
         "PREFIX chorus: <{ns}> SELECT ?v WHERE {{ GRAPH <{g}> {{ ?d chorus:definesVocabulary <{c}> BIND(REPLACE(STR(?d), '.*[#/]', '') AS ?v) }} }} LIMIT 1",
-        ns = NS, g = ONTOLOGY_GRAPH, c = class
+        ns = NS, g = DOMAINS_GRAPH, c = class
     );
     let domain = select_v(&sparql_json(&dq)?).into_iter().next();
     resolve_instances_graph(declared.as_deref(), domain.as_deref())
@@ -5620,7 +5623,7 @@ pub fn read_domain_surfaces() -> R<Vec<DomainSurface>> {
     // generate() does for field|kind) — one row per (domain, class) pair.
     let q = format!(
         "PREFIX chorus: <{ns}> SELECT ?v WHERE {{ GRAPH <{g}> {{ ?d chorus:repoTarget ?mount ; chorus:definesVocabulary ?c BIND(CONCAT(REPLACE(STR(?d), '.*[#/]', ''), '|', STR(?mount), '|', REPLACE(STR(?c), '.*[#/]', '')) AS ?v) }} }} ORDER BY ?v",
-        ns = NS, g = ONTOLOGY_GRAPH
+        ns = NS, g = DOMAINS_GRAPH
     );
     let body = sparql_json(&q)?;
     let mut by_mount: std::collections::BTreeMap<(String, String), Vec<String>> = std::collections::BTreeMap::new();

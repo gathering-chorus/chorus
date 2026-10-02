@@ -299,6 +299,8 @@ fn query_csv(endpoint: &str, sparql: &str) -> Vec<(String, String)> {
 fn main() {
     let query = env_or("FUSEKI_QUERY", "http://localhost:3030/pods/query");
     let graph = env_or("ONTOLOGY_GRAPH", "urn:chorus:ontology");
+    // #4338 — which classes a domain claims is a Domain-row fact, in the domains graph
+    let domains = env_or("DOMAINS_GRAPH", "urn:chorus:domains:domains");
     let root = env_or("CHORUS_ROOT", "/Users/jeffbridwell/CascadeProjects/chorus");
     let out_path = std::env::args()
         .nth(1)
@@ -307,8 +309,8 @@ fn main() {
     let class_q = format!(
         "PREFIX chorus: <https://jeffbridwell.com/chorus#> \
          PREFIX rdfs: <http://www.w3.org/2000/01/rdf-schema#> \
-         SELECT ?t ?c WHERE {{ GRAPH <{graph}> {{ ?d chorus:definesVocabulary ?t . \
-         OPTIONAL {{ ?t rdfs:comment ?c }} }} }}"
+         SELECT ?t ?c WHERE {{ GRAPH <{domains}> {{ ?d chorus:definesVocabulary ?t }} \
+         OPTIONAL {{ GRAPH <{graph}> {{ ?t rdfs:comment ?c }} }} }}"
     );
     let attr_q = format!(
         "PREFIX sh: <http://www.w3.org/ns/shacl#> \

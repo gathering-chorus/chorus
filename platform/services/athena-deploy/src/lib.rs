@@ -747,6 +747,34 @@ pub fn merge_sparql(staging: &str, ontology: &str) -> String {
     )
 }
 
+/// #4338 — Domain ROWS live in the domains graph; the ontology graph keeps only
+/// the punned class (`a owl:Class`, rdfs label/comment/subClassOf, owl:*). Runs
+/// in the same transaction as the merge, after it, so every deploy re-homes what
+/// the model set loads. For each predicate a staged Domain asserts, its values in
+/// the domains graph are replaced (fields an API wrote under other predicates are
+/// left alone); then every Domain-row triple leaves the ontology graph. Pure.
+pub const DOMAINS_GRAPH: &str = "urn:chorus:domains:domains";
+const ONTOLOGY_DEFAULT: &str = "urn:chorus:ontology";
+pub fn rehome_domain_rows_sparql(staging: &str, ontology: &str, domains: &str) -> String {
+    let c = "https://jeffbridwell.com/chorus#";
+    let rdf_type = "http://www.w3.org/1999/02/22-rdf-syntax-ns#type";
+    // what stays on the class in the ontology graph
+    let keep = format!(
+        "(?p = <{rdf_type}> && ?o != <{c}Domain>) || ?p IN (<http://www.w3.org/2000/01/rdf-schema#label>, \
+         <http://www.w3.org/2000/01/rdf-schema#comment>, <http://www.w3.org/2000/01/rdf-schema#subClassOf>) || \
+         STRSTARTS(STR(?p), \"http://www.w3.org/2002/07/owl#\")"
+    );
+    // what the row carries in the domains graph (labels ride along: a row needs one)
+    let row = format!("!((?p = <{rdf_type}> && ?o != <{c}Domain>) || STRSTARTS(STR(?p), \"http://www.w3.org/2002/07/owl#\"))");
+    format!(
+        "DELETE {{ GRAPH <{dom}> {{ ?s ?p ?old }} }} WHERE {{ GRAPH <{stg}> {{ ?s a <{c}Domain> ; ?p ?o FILTER({row}) }} \
+         GRAPH <{dom}> {{ ?s ?p ?old }} }} ; \
+         INSERT {{ GRAPH <{dom}> {{ ?s ?p ?o }} }} WHERE {{ GRAPH <{stg}> {{ ?s a <{c}Domain> ; ?p ?o FILTER({row}) }} }} ; \
+         DELETE {{ GRAPH <{ont}> {{ ?s ?p ?o }} }} WHERE {{ GRAPH <{ont}> {{ ?s a <{c}Domain> ; ?p ?o FILTER(!({keep})) }} }}",
+        dom = domains, stg = staging, ont = ontology,
+    )
+}
+
 fn ok_http(code: &str) -> bool {
     matches!(code, "200" | "201" | "204")
 }
@@ -1071,7 +1099,9 @@ pub fn run_athena_deploy() -> Result<String, String> {
     } else {
         String::new()
     };
-    let sparql = format!("{retire_clause}{bnodes}{}", merge_sparql(&staging, &ontology));
+    // #4338 — the ontology graph holds the model only: Domain rows go home.
+    let rehome = if ontology == ONTOLOGY_DEFAULT { format!(" ; {}", rehome_domain_rows_sparql(&staging, &ontology, DOMAINS_GRAPH)) } else { String::new() };
+    let sparql = format!("{retire_clause}{bnodes}{}{rehome}", merge_sparql(&staging, &ontology));
     let mcode = curl(&["-s", "-o", "/dev/null", "-w", "%{http_code}", "-X", "POST",
         "-H", "Content-Type: application/sparql-update", "--data-binary", &sparql, &update])?;
     if !ok_http(&mcode) {
@@ -1086,7 +1116,7 @@ pub fn run_athena_deploy() -> Result<String, String> {
     // (#3726 single-request-truth, #3731 fail-closed).
     let vresp = curl(&["-s", "--data-urlencode",
         &format!("query=SELECT (COUNT(DISTINCT ?s) AS ?n) WHERE {{ GRAPH <{staging}> {{ ?s ?p ?o }} \
-                  FILTER NOT EXISTS {{ GRAPH <{ontology}> {{ ?s ?q ?r }} }} }}"),
+                  FILTER NOT EXISTS {{ {{ GRAPH <{ontology}> {{ ?s ?q ?r }} }} UNION {{ GRAPH <{DOMAINS_GRAPH}> {{ ?s ?q ?r }} }} }} }}"),
         "-H", "Accept: text/csv", &query]).unwrap_or_default();
     let verdict = verify_missing(&vresp);
     let _ = curl(&["-s", "-X", "DELETE", "-o", "/dev/null", &format!("{gsp}?graph={staging}")]);
@@ -2209,5 +2239,46 @@ mod scope_deleted_4064 {
         // NEGATIVE PROOF: the filter must not drop a file that still exists
         assert!(s.contains("model|roles/silas/ontology/kept.ttl"), "the changed file left scope:\n{s}");
         let _ = std::fs::remove_dir_all(&d);
+    }
+}
+
+/// #4338 — the re-home RUN, not read: Jena's `update` applies merge + re-home to
+/// a store holding a staged Domain, an API-written field on it, and a schema class.
+#[cfg(test)]
+mod rehome_4338 {
+    use super::{merge_sparql, rehome_domain_rows_sparql};
+    use std::process::Command;
+
+    #[test]
+    fn domain_rows_leave_the_ontology_graph_and_the_class_stays() {
+        let Ok(out) = Command::new("sh").args(["-c", "command -v update"]).output() else { return };
+        let update = String::from_utf8_lossy(&out.stdout).trim().to_string();
+        if update.is_empty() { eprintln!("UNMEASURED: no Jena update CLI on this box"); return; }
+        let dir = std::env::temp_dir().join(format!("rehome-4338-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let data = dir.join("d.trig");
+        std::fs::write(&data, r#"@prefix c: <https://jeffbridwell.com/chorus#> . @prefix owl: <http://www.w3.org/2002/07/owl#> . @prefix rdfs: <http://www.w3.org/2000/01/rdf-schema#> .
+<urn:stg> { c:identity a owl:Class , c:Domain ; rdfs:label "identity" ; c:definesVocabulary c:Principal ; c:ownedBy c:principal-silas .
+            c:Principal a owl:Class ; rdfs:label "Principal" . }
+<urn:dom> { c:identity c:gaps "written by the API, keep" ; c:definesVocabulary c:Retired . }
+"#).unwrap();
+        let q = format!("{} ; {}", merge_sparql("urn:stg", "urn:ont"), rehome_domain_rows_sparql("urn:stg", "urn:ont", "urn:dom"));
+        let ru = dir.join("u.ru");
+        std::fs::write(&ru, &q).unwrap();
+        let o = Command::new(&update).arg(format!("--data={}", data.display()))
+            .arg(format!("--update={}", ru.display())).arg("--dump").output().unwrap();
+        assert!(o.status.success(), "update failed: {}", String::from_utf8_lossy(&o.stderr));
+        let after = String::from_utf8_lossy(&o.stdout).to_string();
+        let block = |g: &str| { let i = after.find(&format!("<{g}>")).unwrap_or(0); let j = after[i..].find('}').map(|k| i + k).unwrap_or(after.len()); after[i..j].to_string() };
+        let (ont, dom) = (block("urn:ont"), block("urn:dom"));
+        // the ontology keeps the classes, and no row predicate
+        assert!(ont.contains("c:identity") && ont.contains("owl:Class") && ont.contains("c:Principal"), "{after}");
+        assert!(!ont.contains("definesVocabulary") && !ont.contains("ownedBy") && !ont.contains("c:Domain"), "a row stayed in the ontology:\n{after}");
+        // the row lives in the domains graph, its staged values replaced
+        assert!(dom.contains("c:Domain") && dom.contains("c:Principal") && dom.contains("principal-silas"), "{after}");
+        // NEGATIVE PROOF: the old value of a re-staged predicate is gone; an API-written field survives
+        assert!(!dom.contains("c:Retired"), "a stale definesVocabulary survived:\n{after}");
+        assert!(dom.contains("written by the API, keep"), "the re-home wiped an API-written field:\n{after}");
+        let _ = std::fs::remove_dir_all(&dir);
     }
 }

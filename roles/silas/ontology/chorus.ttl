@@ -15,6 +15,12 @@
 # Unified model of how the team operates: roles, tools, the value stream
 # (spine), artifacts, handoffs, gates, trust, products, domains, and services.
 #
+# #4338 — this file loads into urn:chorus:ontology, which holds the MODEL only.
+# A domain written here as `a owl:Class , chorus:Domain` is a punned class: the
+# deploy keeps its class declaration (owl:Class, rdfs label/comment) in the
+# ontology graph and moves its ROW (definesVocabulary, ownedBy, partOf, …) to
+# urn:chorus:domains:domains (athena-deploy rehome_domain_rows_sparql).
+#
 # v0.3.0 merges Wren's product ontology (chorus-product-ontology.owl) into the
 # canonical namespace. Adds: ValueStream, Phase, Domain subtypes, Service,
 # Machine, Shaping vertebra, consumption/provision edges.

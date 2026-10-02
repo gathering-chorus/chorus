@@ -251,8 +251,7 @@ const ATLAS_QUERY = `PREFIX chorus: <https://jeffbridwell.com/chorus#>
 PREFIX rdfs: <http://www.w3.org/2000/01/rdf-schema#>
 PREFIX rdf: <http://www.w3.org/1999/02/22-rdf-syntax-ns#>
 PREFIX sh: <http://www.w3.org/ns/shacl#>
-SELECT ?domain ?class ?prop ?min ?max ?dt ?rc ?parent ?inValue ?orClass ?invOf ?pattern ?classDef ?propDef ?invDef WHERE { GRAPH <urn:chorus:ontology> {
-  ?domain chorus:definesVocabulary ?class .
+SELECT ?domain ?class ?prop ?min ?max ?dt ?rc ?parent ?inValue ?orClass ?invOf ?pattern ?classDef ?propDef ?invDef WHERE { GRAPH <urn:chorus:domains:domains> { ?domain chorus:definesVocabulary ?class } GRAPH <urn:chorus:ontology> {
   OPTIONAL { ?class rdfs:comment ?classDef }
   OPTIONAL { ?shp sh:targetClass ?class ; sh:property ?b . ?b sh:path ?prop .
     OPTIONAL { ?prop sh:inversePath ?invOf . OPTIONAL { ?invOf rdfs:comment ?invDef } }

@@ -290,8 +290,7 @@ app.get('/api/athena/domain-schema/:domain', async (req: Request, res: Response)
   const query = `PREFIX chorus: <https://jeffbridwell.com/chorus#>
 PREFIX rdfs: <http://www.w3.org/2000/01/rdf-schema#>
 PREFIX sh: <http://www.w3.org/ns/shacl#>
-SELECT ?class ?prop ?range ?req ?src WHERE { GRAPH <urn:chorus:ontology> {
-  chorus:${d} chorus:definesVocabulary ?class .
+SELECT ?class ?prop ?range ?req ?src WHERE { GRAPH <urn:chorus:domains:domains> { chorus:${d} chorus:definesVocabulary ?class } GRAPH <urn:chorus:ontology> {
   { ?prop rdfs:domain ?class . OPTIONAL { ?prop rdfs:range ?range } BIND("ontology" AS ?src) }
   UNION
   { ?sh sh:targetClass ?class ; sh:property ?b . ?b sh:path ?prop .
@@ -367,12 +366,12 @@ app.get('/api/athena/domain-owl/:domain', async (req: Request, res: Response) =>
 PREFIX rdfs: <http://www.w3.org/2000/01/rdf-schema#>
 PREFIX sh: <http://www.w3.org/ns/shacl#>
 CONSTRUCT { ?s ?p ?o } WHERE {
-  { GRAPH <urn:chorus:ontology> {
-    { VALUES ?s { chorus:${d} } ?s ?p ?o }
-    UNION { chorus:${d} chorus:definesVocabulary ?s . ?s ?p ?o }
-    UNION { chorus:${d} chorus:definesVocabulary ?c . ?s rdfs:domain ?c ; ?p ?o }
-    UNION { chorus:${d} chorus:definesVocabulary ?c . ?s sh:targetClass ?c ; ?p ?o }
-  } }
+  # #4338 — the Domain row lives in the domains graph; the classes it claims in the ontology
+  { GRAPH <urn:chorus:domains:domains> { VALUES ?s { chorus:${d} } ?s ?p ?o } }
+  UNION { GRAPH <urn:chorus:ontology> { VALUES ?s { chorus:${d} } ?s ?p ?o } }
+  UNION { GRAPH <urn:chorus:domains:domains> { chorus:${d} chorus:definesVocabulary ?s } GRAPH <urn:chorus:ontology> { ?s ?p ?o } }
+  UNION { GRAPH <urn:chorus:domains:domains> { chorus:${d} chorus:definesVocabulary ?c } GRAPH <urn:chorus:ontology> { ?s rdfs:domain ?c ; ?p ?o } }
+  UNION { GRAPH <urn:chorus:domains:domains> { chorus:${d} chorus:definesVocabulary ?c } GRAPH <urn:chorus:ontology> { ?s sh:targetClass ?c ; ?p ?o } }
   UNION
   { GRAPH <urn:chorus:domains:${d}> { ?s ?p ?o } }
 }`;

@@ -51,6 +51,8 @@ pub const INSTANCES_GRAPH: &str = "urn:chorus:instances";
 /// 2026-09-24). Every label the DAL writes, it now writes under both names.
 pub const RDFS_LABEL: &str = "http://www.w3.org/2000/01/rdf-schema#label";
 pub const ONTOLOGY_GRAPH: &str = "urn:chorus:ontology";
+/// #4338 — Domain rows live in the domains graph; the ontology keeps the class only.
+pub const DOMAINS_GRAPH: &str = "urn:chorus:domains:domains";
 /// Where the Principal registry USED to be, and the fallback when the model
 /// cannot be read. #4220: Silas is moving Principal rows to the graph
 /// PrincipalShape declares (urn:chorus:domains:identity, where Session rows
@@ -265,7 +267,7 @@ fn served_kinds() -> &'static Vec<(String, String)> {
         let store = FusekiStore::new();
         let q = format!(
             "PREFIX c: <{ns}> SELECT ?v WHERE {{ GRAPH <{g}> {{ ?d c:definesVocabulary ?cl . BIND(REPLACE(STR(?cl), '.*#', '') AS ?v) }} }}",
-            ns = NS, g = ONTOLOGY_GRAPH
+            ns = NS, g = DOMAINS_GRAPH
         );
         match store.select_v(&q) {
             Ok(rows) => {
@@ -1252,12 +1254,12 @@ fn assert_instance_graph(graph: &str) -> R<()> {
 /// is self-describing (Jeff, 2026-08-02): the `products` domain's
 /// `definesVocabulary` IS `chorus:Product`. So a class's instance placement is
 /// DERIVED from the domain that claims it — no per-shape annotation needed.
-/// Read from the schema graph, which is where `definesVocabulary` lives.
+/// Read from the domains graph, where Domain rows live (#4338).
 pub fn defining_domain_of(store: &dyn Store, class_iri: &str) -> Option<String> {
     let q = format!(
         "PREFIX chorus: <{ns}> SELECT ?v WHERE {{ GRAPH <{g}> {{ ?d a chorus:Domain ; \
          chorus:definesVocabulary <{c}> BIND(REPLACE(STR(?d), '.*#', '') AS ?v) }} }} LIMIT 1",
-        ns = NS, g = ONTOLOGY_GRAPH, c = class_iri
+        ns = NS, g = DOMAINS_GRAPH, c = class_iri
     );
     store.select_v(&q).ok()?.into_iter().next()
 }
