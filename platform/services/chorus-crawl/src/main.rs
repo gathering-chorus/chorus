@@ -670,24 +670,6 @@ mod served_name_4290 {
     }
 }
 
-/// A CodeFile row as the generated door expects it. `name` is a stable key
-/// derived from the path, so a re-walk addresses the same row rather than
-/// minting a second one.
-fn row_json(f: &OnDisk, kind: &str, lang: Option<&str>) -> String {
-    let mut s = format!(
-        "{{\"name\":\"{}\",\"filePath\":\"{}\",\"hasKind\":\"{}\",\"fileSha\":\"{}\"",
-        json_escape(&stable_name(&f.path)),
-        json_escape(&f.path),
-        kind,
-        json_escape(&f.sha)
-    );
-    if let Some(l) = lang {
-        s.push_str(&format!(",\"hasLanguage\":\"{l}\""));
-    }
-    s.push('}');
-    s
-}
-
 /// Deterministic row key: a readable slug plus a digest of the EXACT path.
 ///
 /// The slug alone is not injective. The first live run against 6,172 files
@@ -1586,7 +1568,10 @@ fn main() {
             let mut held_set: Vec<String> = g
                 .other
                 .iter()
-                .filter(|(k, _)| k == "hasDomain")
+                // #4416 — an unplaced row is written with hasDomain "" (so the
+                // write clears a stored domain); that empty value is no domain,
+                // or every unplaced row restated on every full pass
+                .filter(|(k, v)| k == "hasDomain" && !v.is_empty())
                 .map(|(_, v)| v.clone())
                 .collect();
             held_set.sort();
@@ -1914,6 +1899,52 @@ fn main() {
 
     let in_graph: HashMap<&str, &InGraph> = graph.iter().map(|g| (g.path.as_str(), g)).collect();
 
+    // #4416 — one placement for a code row, used by the create AND the
+    // update. The create wrote no hasDomain at all, so every new file was
+    // restated by the next full pass (and the crawl was not idempotent).
+    let place_file = |path: &String| -> Vec<(String, String)> {
+        let mut out: Vec<(String, String)> = Vec::new();
+            // #4222 — a file we cannot read AS TEXT still has a path, and for
+            // the non-source trees the path is the fact. 261 screenshots and
+            // other binaries carried no domain for exactly this reason: the
+            // read failed, so nothing below ever ran and the row was written
+            // with no hasDomain at all. Silent, and invisible in the counts.
+            let text = std::fs::read_to_string(std::path::Path::new(&root).join(path));
+            if text.is_err() {
+                // #4222 — the SAME path chain a readable file gets: its own
+                // name, then the tree, then the authored directory rows.
+                // place_by_tree alone covers only three trees, so 362 images
+                // under platform/ and designing/ still carried nothing.
+                if let Some(s) = domain::place_by_file_name(path, &valid_domains)
+                    .or_else(|| domain::place_by_tree(path, &valid_domains))
+                    .or_else(|| domain::place_by_dir(path, &valid_domains, &dir_rows))
+                {
+                    out.push(("hasDomain".to_string(), s.domain));
+                }
+            }
+            if let Ok(content) = text
+            {
+                let unit = domain::declared_unit(path, &|q: &str| {
+                    std::fs::read_to_string(std::path::Path::new(&root).join(q)).ok()
+                });
+                let placement = domain::place_in_file(
+                    &content,
+                    path,
+                    unit.as_deref(),
+                    &unit_rows,
+                    &dir_rows,
+                    &valid_domains,
+                    &card_domain,
+                    &|q: &str| {
+                        std::fs::read_to_string(std::path::Path::new(&root).join(q)).ok()
+                    },
+                );
+                out.extend(domain_fields(&placement));
+            }
+        out
+    };
+
+
     for a in &actions {
         match a {
             Action::Post { path } => {
@@ -1922,7 +1953,18 @@ fn main() {
                     None => continue,
                 };
                 if let Verdict::Classified(k, l) = verdict_for(&root, path) {
-                    let row = row_json(f, k.as_str(), l);
+                    let mut fields = vec![
+                        ("name".to_string(), stable_name(&f.path)),
+                        ("filePath".to_string(), f.path.clone()),
+                        ("hasKind".to_string(), k.as_str().to_string()),
+                        ("fileSha".to_string(), f.sha.clone()),
+                    ];
+                    if let Some(lang) = l {
+                        fields.push(("hasLanguage".to_string(), lang.to_string()));
+                    }
+                    fields.extend(place_file(path));
+                    prefixes.apply(&mut fields);
+                    let row = fields_json(&fields);
                     if !batch_accepts(batch_bytes(&batch), row.len(), BATCH_BODY_BUDGET) {
                         flush(&mut batch, &mut failed, &mut wrote);
                     }
@@ -1962,43 +2004,7 @@ fn main() {
                 // imports still cannot be placed: the module has no domain
                 // either. Read from the file, never the folder; silence when
                 // the rules cannot agree, exactly as for a test.
-                // #4222 — a file we cannot read AS TEXT still has a path, and for
-                // the non-source trees the path is the fact. 261 screenshots and
-                // other binaries carried no domain for exactly this reason: the
-                // read failed, so nothing below ever ran and the row was written
-                // with no hasDomain at all. Silent, and invisible in the counts.
-                let text = std::fs::read_to_string(std::path::Path::new(&root).join(path));
-                if text.is_err() {
-                    // #4222 — the SAME path chain a readable file gets: its own
-                    // name, then the tree, then the authored directory rows.
-                    // place_by_tree alone covers only three trees, so 362 images
-                    // under platform/ and designing/ still carried nothing.
-                    if let Some(s) = domain::place_by_file_name(path, &valid_domains)
-                        .or_else(|| domain::place_by_tree(path, &valid_domains))
-                        .or_else(|| domain::place_by_dir(path, &valid_domains, &dir_rows))
-                    {
-                        owned.push(("hasDomain".to_string(), s.domain));
-                    }
-                }
-                if let Ok(content) = text
-                {
-                    let unit = domain::declared_unit(path, &|q: &str| {
-                        std::fs::read_to_string(std::path::Path::new(&root).join(q)).ok()
-                    });
-                    let placement = domain::place_in_file(
-                        &content,
-                        path,
-                        unit.as_deref(),
-                        &unit_rows,
-                        &dir_rows,
-                        &valid_domains,
-                        &card_domain,
-                        &|q: &str| {
-                            std::fs::read_to_string(std::path::Path::new(&root).join(q)).ok()
-                        },
-                    );
-                    owned.extend(domain_fields(&placement));
-                }
+                owned.extend(place_file(path));
                 let mut fields = merge_row(existing, &owned);
                 let name = stable_name(path);
                 // The door names the prefix its mint adds; a refusal that names

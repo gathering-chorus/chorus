@@ -35,9 +35,22 @@ item(){ NAMES+=("$1"); VALUES+=("$2"); NOTES+=("${3:-}"); }
 # naive filter silently excluded werk-test/src/main.rs, a REAL minter, for the
 # entire life of this script. chorus-mint-token.py itself counts: it is the
 # artifact whose deletion the goal state requires.
-a_files=$(grep -rl --exclude-dir=target --exclude-dir=node_modules --exclude-dir=dist \
-          --exclude=security-distance-to-done.sh --exclude=test-security-distance-to-done.sh \
-          "chorus-mint-token" "$C/platform" 2>/dev/null); a_rc=$?
+# #4416 — in a git checkout, search the TRACKED files (git grep): the
+# recursive walk read every untracked log, database and build under platform/
+# (69 s a call, six calls a test run). A tree that is not a checkout (the
+# test's fixture roots) keeps the walk.
+code_grep() { # pattern
+  if git -C "$C" rev-parse --is-inside-work-tree >/dev/null 2>&1; then
+    git -C "$C" grep -l -E "$1" -- platform ':!platform/scripts/security-distance-to-done.sh' \
+      ':!platform/scripts/test-security-distance-to-done.sh' | sed "s|^|$C/|"
+    local rc=${PIPESTATUS[0]}
+    [ "$rc" -le 1 ] && return 0 || return 2
+  fi
+  grep -rlE --exclude-dir=target --exclude-dir=node_modules --exclude-dir=dist --exclude-dir=dist.prev \
+    --exclude=security-distance-to-done.sh --exclude=test-security-distance-to-done.sh \
+    "$1" "$C/platform" 2>/dev/null
+}
+a_files=$(code_grep "chorus-mint-token"); a_rc=$?
 b_files=$(grep -rlE 'alg.*HS256|createHmac.*sha256' \
           "$C/platform/chorus-sdk/src" "$C/platform/mcp-server/src" 2>/dev/null); b_rc=$?
 if [ $a_rc -ge 2 ] || [ $b_rc -ge 2 ]; then
@@ -55,9 +68,7 @@ else
   item hs256_minters "$minter_list" "deduped union incl. werk-test + the mint script itself (goal 0)"
 fi
 # ── shared_secret_refs: non-test live code reading the shared secret ─────────
-ref_files=$(grep -rl --exclude-dir=target --exclude-dir=node_modules --exclude-dir=dist --exclude-dir=dist.prev \
-       --exclude=security-distance-to-done.sh --exclude=test-security-distance-to-done.sh \
-       "CHORUS_SERVICE_TOKEN_SECRET" "$C/platform" 2>/dev/null); r_rc=$?
+ref_files=$(code_grep "CHORUS_SERVICE_TOKEN_SECRET"); r_rc=$?
 if [ $r_rc -ge 2 ]; then
   item shared_secret_refs unknown "grep failed — NOT measured"
 else

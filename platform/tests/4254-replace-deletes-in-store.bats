@@ -36,6 +36,8 @@ setup() {
   # shellcheck disable=SC1090
   . "${ROOT}/platform/scripts/fuseki-auth.sh" >/dev/null 2>&1 || true
   DEPLOY="${ROOT}/platform/services/athena-deploy/target/debug/athena-deploy"
+  # #4416 — the nightly builds release; fall back to it rather than skip
+  test -x "$DEPLOY" || DEPLOY="${ROOT}/platform/services/athena-deploy/target/release/athena-deploy"
 }
 
 teardown() {

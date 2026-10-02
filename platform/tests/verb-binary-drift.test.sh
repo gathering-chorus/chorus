@@ -16,6 +16,10 @@ PASS=0; FAIL=0
 [ -f "$SPINE" ] || { echo "SKIP: no spine at $SPINE"; exit 0; }
 [ -d "$BIN_DIR" ] || { echo "SKIP: no bin dir at $BIN_DIR"; exit 0; }
 git -C "$CHORUS_ROOT" fetch -q origin main 2>/dev/null || true
+# #4416 — read the spine ONCE. Each verb grepped the whole spine (3.6 GB, and
+# never rotated) twice; ten verbs made this suite 388 s of the nightly.
+DEPLOYS="$(mktemp)"
+LC_ALL=C grep -aF 'binary.deployed' "$SPINE" > "$DEPLOYS" 2>/dev/null || true
 
 for bin in "$BIN_DIR"/werk-*; do
   [ -x "$bin" ] || continue
@@ -28,11 +32,11 @@ for bin in "$BIN_DIR"/werk-*; do
   # `werk-test` name is the wrapper) and emits binary.deployed under that name;
   # matching the bare verb name read the 19:08 werk-side install as the newest
   # and called a freshly landed verb a month stale. Accept either spelling.
-  commit=$(grep -a '"event":"binary.deployed"' "$SPINE" | grep -aE "\"binary\":\"$name(-bin)?\"" \
+  commit=$(grep -a '"event":"binary.deployed"' "$DEPLOYS" | grep -aE "\"binary\":\"$name(-bin)?\"" \
            | tail -1 | grep -aoE '"commit":"[0-9a-f]+"' | cut -d'"' -f4)
   if [ -z "$commit" ]; then
     # fall back to key=value payload form
-    commit=$(grep -a 'binary.deployed' "$SPINE" | grep -aE "binary=$name([ ,\"]|$)" \
+    commit=$(grep -aE "binary=$name([ ,\"]|$)" "$DEPLOYS" | grep -aE "binary=$name([ ,\"]|$)" \
              | tail -1 | grep -aoE 'commit=[0-9a-f]+' | tail -1 | cut -d= -f2)
   fi
   if [ -z "$commit" ] || ! git -C "$CHORUS_ROOT" cat-file -e "$commit" 2>/dev/null; then
@@ -46,7 +50,7 @@ for bin in "$BIN_DIR"/werk-*; do
 done
 
 # NEGATIVE PROOF (#3734): a fabricated stale-deploy fixture must read as drift.
-TF="$(mktemp -d)"; trap 'rm -rf "$TF"' EXIT
+TF="$(mktemp -d)"; trap 'rm -rf "$TF" "$DEPLOYS"' EXIT
 git -C "$TF" init -q -b main .
 mkdir -p "$TF/platform/services/werk-x" && echo v1 > "$TF/platform/services/werk-x/lib.rs"
 git -C "$TF" add . && git -C "$TF" -c user.email=t@t -c user.name=t commit -q -m one

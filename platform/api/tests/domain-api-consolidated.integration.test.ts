@@ -24,7 +24,6 @@ describe('#2060: consolidated domain API', () => {
     expect(res.status).toBe(200);
     const body = await res.json();
     expect(body.data).toBeDefined();
-    expect(body.data.subdomain).toBe('seeds-domain');
     expect(Array.isArray(body.data.files)).toBe(true);
     expect(body._meta).toBeDefined();
     expect(body._meta.source_count).toBeDefined();
@@ -39,15 +38,9 @@ describe('#2060: consolidated domain API', () => {
     expect(testFiles.length).toBe(0);
   });
 
-  test('/code accepts domain name with or without suffix', async () => {
-    const r1 = await fetch(`${harness.baseUrl}/api/chorus/domain/seeds/code`);
-    const r2 = await fetch(`${harness.baseUrl}/api/chorus/domain/seeds-domain/code`);
-    expect(r1.status).toBe(200);
-    expect(r2.status).toBe(200);
-    const b1 = await r1.json();
-    const b2 = await r2.json();
-    expect(b1.data.files.length).toBe(b2.data.files.length);
-  });
+  // #4416 — the subdomain assertions and the '-domain' suffix case are gone:
+  // subdomains are retired (#4353, Jeff: "remove not fix subdomain dependencies").
+
 
   // --- /tests ---
 
