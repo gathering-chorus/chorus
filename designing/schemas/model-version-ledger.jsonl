@@ -26,3 +26,6 @@
 {"version": "1.25.0", "bump": "minor", "verb": "shape", "target": "shape:roles/kade/ontology/domains-kade-3581.ttl", "by": "kade", "card": "", "date": "2026-09-19"}
 {"version": "1.26.0", "bump": "minor", "verb": "shape", "target": "shape:roles/kade/ontology/domains-kade-3581.ttl", "by": "kade", "card": "", "date": "2026-09-19"}
 {"version": "1.27.0", "bump": "minor", "verb": "shape", "target": "shape:roles/kade/ontology/domains-kade-3581.ttl", "by": "kade", "card": "", "date": "2026-09-19"}
+{"version": "1.28.0", "bump": "minor", "verb": "property", "target": "property:/Users/jeffbridwell/CascadeProjects/chorus-werk/wren-3102/roles/wren/ontology/board-3654.ttl", "by": "wren", "card": "", "date": "2026-10-02"}
+{"version": "1.29.0", "bump": "minor", "verb": "property", "target": "property:/Users/jeffbridwell/CascadeProjects/chorus-werk/wren-3102/roles/wren/ontology/board-3654.ttl", "by": "wren", "card": "", "date": "2026-10-02"}
+{"version": "1.30.0", "bump": "minor", "verb": "property", "target": "property:/Users/jeffbridwell/CascadeProjects/chorus-werk/wren-3102/roles/wren/ontology/board-3654.ttl", "by": "wren", "card": "", "date": "2026-10-02"}

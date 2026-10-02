@@ -36,340 +36,68 @@
   mermaid.initialize({ startOnLoad: true, theme: 'default' });
 </script>
 <link rel="stylesheet" href="/css/doc-responsive.css">
-</head>
 <body>
-<div style="background:#e0e7ff;border:1px solid #6366f1;border-radius:6px;padding:12px 16px;margin:20px 0;font-family:-apple-system,sans-serif;font-size:0.9em"><strong>Canonical service-design shape for Cards.</strong> Related: <a href="/designing/docs/commits-service-design.html">Commits</a> · <a href="/designing/docs/ci-pipeline-service-design.html">CI/CD Pipeline</a> · <a href="/designing/docs/services-service-design.html">Services</a> · <a href="/designing/docs/nudge-service-design.html">Nudge</a>.</div>
+<h1>Cards <span>— service design</span></h1>
+<div class="date">Rewritten 2026-10-02 · #3102 · owner Wren · replaces the 2026-05-03 version</div>
 
-<h1>Cards <span>— Service Design</span></h1>
-<p class="date">2026-05-01 — Wren (#2643). Refreshed 2026-05-02 — consumer-first restructure (Silas walk), versioned-output bridge for #2676. Implementation: <code>#2652</code> accepted. Open cards: <code>#2671</code> fail-loud sweep, <code>#2672</code> Vikunja-write-refusal hook, <code>#2673</code> cards-service Athena populate, <code>#2676</code> validation single-source + dual-emit bridge.</p>
+<div class="promise">Every card on the board has one Card row in the graph, and that row matches the board within one write. One number says how many rows are out of sync, and it reads 0.</div>
 
-<div class="promise">
-A card mutation lands when, and only when, the role's request reaches the canonical adapter (the <code>cards</code> CLI) and the adapter (a) validates the input against a single canonical schema, (b) refuses unknown values at the writing surface, (c) writes to Vikunja through one client, and (d) emits exactly one spine event reflecting the actual state change. Direct writes to Vikunja are refused by hook. Spine events never lie about whether work happened. Validation has one source. Consumer migrations are bounded by a deprecation window with a hard retirement date — no follow-on-forever.
-</div>
-
-<h2>Overview</h2>
-<p>Cards is the kanban substrate for team coordination. Every unit of work (feature, fix, audit, follow-on) lives as a Vikunja card with structured labels (priority, owner, type, origin, domain, subdomain, subproduct). The substrate is API-with-validation: one canonical schema, transports derived from it, consumers migrating across a versioned bridge. Standard deprecation practice, not novel architecture.</p>
-
-<h2>Vocabulary</h2>
-<table>
-<tr><th>Internal term</th><th>What it actually is</th></tr>
-<tr><td><code>cards</code> CLI</td><td>TypeScript CLI in <code>directing/products/cards/src/</code>; canonical write path</td></tr>
-<tr><td><code>BoardClient</code></td><td>Transport wrapper around Vikunja's REST API + sqlite read fast-path</td></tr>
-<tr><td>Refuse-at-source</td><td>Validation in <code>sdk.ts</code> BEFORE persistence — unknown values refused with non-zero exit + spine event</td></tr>
-<tr><td>Spine event</td><td>One JSONL entry in <code>chorus.log</code> per actual state change</td></tr>
-<tr><td>Subprocess pattern</td><td>MCP/HTTP wrappers spawn <code>cards &lt;verb&gt; --json</code> subprocess and parse stdout</td></tr>
-<tr><td><code>DEPLOY_ROLE</code></td><td>Env var read by <code>detectRole()</code>; values: <code>wren | silas | kade | jeff | automation</code></td></tr>
-<tr><td>Dual-emit bridge</td><td>During the deprecation window, the CLI emits both old prose output AND new <code>--json</code> structured output. Old format carries deprecation marker with consumer attribution. Hard retirement date in schema metadata.</td></tr>
-</table>
-
-<h2>Consumer contracts</h2>
-<p>Consumers come first. The substrate exists to serve them. Today's cards-service has consumers that depend on undeclared contracts (mostly regex-on-prose-output). Substrate changes that ignore these contracts break Jeff's daily workflows.</p>
-
-<h3>The Clearing — primary human-facing client (Jeff uses daily)</h3>
-<p>Read-only on cards (no mutations). Contract: <strong>regex parsers on cards-CLI prose output</strong> + HTTP shape expectations on chorus-api board endpoints. Source: <code>directing/clearing/src/server.ts</code> + <code>tiles.ts</code> + <code>tailer.ts</code>.</p>
-
-<table>
-<tr><th>Surface</th><th>Call</th><th>Contract (parsed shape)</th><th>Frequency</th></tr>
-<tr><td>Board / flow view</td><td><code>execSync('bash cards list')</code> at <code>server.ts:694</code></td><td>Regex <code>/^(\d+)\s+(.+?)\s+\[([^\]]+)\]$/</code> on every card row; status header <code>/^(WIP|SWAT|Blocked|Harvesting|Next|Later|Done|Won't Do)\s*\(\d+\)/</code>; tag separator <code>[tag1|tag2]</code></td><td>Interactive — Jeff clicks board tab</td></tr>
-<tr><td>Card detail</td><td><code>execSync('bash cards view ID')</code> at <code>server.ts:717</code></td><td>~10 regex parsers on title, status, owner, desc (2-space field-header indent + 4-space body), AC items <code>- [ ]</code>/<code>- [x]</code>, comments, blast/domain radius markers</td><td>Interactive — Jeff clicks card</td></tr>
-<tr><td>Tile board cache</td><td><code>fetch('/api/chorus/context/board/wip')</code> + <code>.../swat</code> at <code>tiles.ts:88-89</code></td><td>Response: <code>{data: {cards: [{id: number, owner: string, title: string, ...}]}}</code>; role filter on <code>owner.toLowerCase()</code></td><td>Background poll every 5s</td></tr>
-<tr><td>Spine event tail</td><td>Tails <code>chorus.log</code> at <code>tailer.ts</code></td><td>Subscribes to <code>card.demo.started</code>, <code>card.accepted</code>, <code>card.pulled</code>, <code>role.state.changed</code>, <code>nudge.emitted</code>; checks both <code>card</code> and <code>card_id</code> field; <code>acceptor</code> defaults to 'jeff'</td><td>2s poll</td></tr>
-</table>
-
-<p><strong>Top breakage risks for The Clearing</strong> — any silently breaks Jeff's UI:</p>
-<ol>
-<li><strong>Status header format.</strong> <code>WIP (3):</code> → <code>WIP(3):</code> silently skips entire bucket.</li>
-<li><strong>Description indentation.</strong> 2-space field / 4-space body is hard-coded; change → corrupted render.</li>
-<li><strong>Card ID type.</strong> Number → string in HTTP responses → role-filter numeric comparison breaks silently.</li>
-<li><strong>AC checkbox format.</strong> <code>- [x]</code> → other → checklist disappears.</li>
-<li><strong>Tag separator.</strong> <code>[tag1|tag2]</code> → other → board loses metadata filtering.</li>
-<li><strong>Spine event field naming.</strong> <code>card</code>/<code>card_id</code> dual-checked; new field name → silent miss.</li>
-</ol>
-
-<p><strong>Migration path under #2676 (the versioned-output bridge):</strong> The Clearing migrates from regex-on-prose to consuming <code>--json</code> structured output during the dual-emit window. Old prose continues to work and emits a deprecation marker tagged with consumer attribution (<code>X-Source: clearing</code>) so the team sees which consumers haven't migrated. Hard retirement date in schema metadata: <strong>2026-06-15</strong> (~6 weeks soak). After that, old prose format errors out — The Clearing breaks loud if it hasn't migrated.</p>
-
-<h3>Skill consumers (gate skills, /pull, /demo, /acp)</h3>
-<p>Skills shell out to <code>cards view</code>, <code>cards comment</code>, <code>cards move</code>, <code>cards done</code>. Most parse output via simpler regexes (status check, AC count). Same fragility class as The Clearing but smaller blast radius — a broken parser = one skill breaks. Contract: existing exit codes (0 success, 2 validation, 3 persistence) and existing comment format (<code>demo:preflight-pass</code>, <code>gate:product-pass</code>) preserved. Migration: skills move to <code>--json</code> output during the dual-emit window; deprecation marker tagged with skill name as consumer attribution.</p>
-
-<h3>Morning-validator (#2642), Borg, Loom-rcas</h3>
-<p>Spine event consumers. Depend on existing event names (<code>card.item.tagged</code>, <code>card.item.set</code>, <code>card.item.created</code>, <code>card.item.moved</code>, <code>card.item.unblocked</code>, <code>card.accepted</code>) and field shapes. <strong>#2671's spine emit invariant</strong> — emit only on actual state change — changes the volume but not the event names. Subscribers should not break. New event <code>card.item.tag.idempotent</code> is additive (subscribers can ignore). No migration needed; consumer contract preserved.</p>
-
-<h3>HTTP read endpoints (browsers, doc-catalog)</h3>
-<p><code>GET /api/chorus/card-story/:id</code> currently returns 200 + empty on bogus id; #2671 closes this to 404 on not-found. Migration: any consumer that today silently absorbs the empty-body response will start seeing 404s — that's the desired behavior, but consumers checking <code>res.status === 200</code> as their sole signal must update to handle 404. Contract change is bounded by #2671's scope.</p>
-
-<h2>Loom contracts (three roles)</h2>
-<p>Cards routinely cite Loom artifacts (DEC-NNN decisions, ADR-NNN architecture decisions, principle URIs, practice URIs, policy URIs). These citations are part of the cards-service contract. Today there is no validation, no back-reference, no propagation on rename — citations rot silently.</p>
-
-<h3>Per-role production + consumption</h3>
-<table>
-<tr><th>Role</th><th>Produces into Loom</th><th>Where written</th><th>Consumes from Loom</th></tr>
-<tr><td><strong>Wren</strong> (PM)</td><td>DECs (decisions), story-memory entries</td><td><code>roles/wren/decisions.md</code> (~200 entries, manual edit + git); stories via <code>write-story.sh</code> per DEC-099</td><td>Decisions to cite in PM rationale at gate-product; principles to apply when refusing scope</td></tr>
-<tr><td><strong>Silas</strong> (Architect)</td><td>ADRs, principles, policies</td><td><code>roles/silas/adr/ADR-NNN-title.md</code> (30+ files); principles via <code>chorus_principles_create</code> MCP tool; policies via TTL edits in <code>roles/silas/ontology/chorus.ttl</code></td><td>ADRs in arch reviews; principles as design constraints; policies for substrate enforcement</td></tr>
-<tr><td><strong>Kade</strong> (Engineer)</td><td>Rarely; occasional principle when implementation surfaces one. No DEC/ADR production path.</td><td>Principles via Silas's MCP tool (or via brief to Silas); no first-class write surface</td><td>Principles when implementing (CLAUDE.md emphasis list); ADRs when refactoring touches architecture</td></tr>
-</table>
-
-<h3>Citation patterns observed in cards</h3>
-<ul>
-<li>Bare ID: <code>DEC-107</code>, <code>ADR-026</code></li>
-<li>With label: <code>DEC-107 (nudge delivery)</code></li>
-<li>Prose: <code>"Per DEC-107, nudge fires both persist AND deliver paths"</code></li>
-<li>Principle URI: <code>chorus:loom-principles-principle-value-first-who-benefits-and-how</code></li>
-<li>Format drift across all of the above: lowercase variants, missing hyphens, paraphrase-without-ID</li>
-</ul>
-
-<h3>Gaps in the cards↔Loom contract</h3>
-
-<div class="gap"><strong>L1. No citation validation at card-write time.</strong> <code>cards add --desc "..."</code> accepts any free-text description. A card can cite <code>DEC-9999</code> that doesn't exist; cards-service does not query Loom to verify.</div>
-
-<div class="gap"><strong>L2. No back-reference from Loom artifact to driving card.</strong> <code>chorus_principles_create</code> MCP tool accepts optional <code>dcSource</code> but no <code>cardId</code>. <code>handlers/loom-decisions.ts</code> response has no <code>relatedCard</code> field. Query "which card filed this decision?" is unanswerable.</div>
-
-<div class="gap"><strong>L3. No propagation when Loom artifact renames or retires.</strong> Decision DEC-NNN gets superseded; cards still cite the old ID with no flag.</div>
-
-<div class="gap"><strong>L4. No production gate.</strong> Anyone can call <code>chorus_principles_create</code> regardless of subdomain ownership. <code>TEAM_PROTOCOL.md</code> is descriptive, not enforced.</div>
-
-<div class="gap"><strong>L5. No citation audit script.</strong> No scheduled scan detecting "card #N cites DEC-X, but DEC-X does not exist." <code>lint-fragments.sh</code> R5 checks CLAUDE.md fragments, not card descriptions.</div>
-
-<h2>Sub-Domain Interaction Model</h2>
-<p>Cards as substrate; every cards mutation is one card-id'd event consumed by gates, observability, and morning audits.</p>
-<table>
-<tr><th>Trigger</th><th>Produces</th><th>Consumed By</th><th>Surface</th></tr>
-<tr><td>Role runs <code>cards add ...</code></td><td><code>card.item.created</code> spine event + Vikunja card row</td><td>morning-validator (#2642), Borg flow metrics, gate-product on demo</td><td>bash/CLI subprocess + Vikunja REST</td></tr>
-<tr><td>Role runs <code>cards move &lt;id&gt; WIP</code></td><td><code>card.item.moved</code> + role-state declare via <code>/pull</code> skill</td><td>gates, demo, observer</td><td>CLI subprocess</td></tr>
-<tr><td>Role runs <code>cards tag &lt;id&gt; ...</code> (state-changing)</td><td><code>card.item.tagged</code> (only when actually changed; idempotency-at-API)</td><td>morning-validator (subproduct alignment), audit</td><td>CLI subprocess</td></tr>
-<tr><td>Role runs <code>cards tag &lt;id&gt; ...</code> (already-applied)</td><td>exit 0 with <code>{"status":"no-op"}</code>, <strong>no spine event</strong>, no Vikunja call</td><td>— (no observability noise)</td><td>CLI subprocess</td></tr>
-<tr><td>MCP <code>chorus_cards_*</code> tool invocation</td><td>Spawns <code>cards &lt;verb&gt; --json</code> subprocess with <code>DEPLOY_ROLE</code> injected</td><td>Same as bash CLI</td><td>MCP host → spawn</td></tr>
-<tr><td>HTTP <code>POST /api/cards/&lt;verb&gt;</code> with <code>X-Role</code> header</td><td>Spawns <code>cards &lt;verb&gt; --json</code> subprocess with that role</td><td>Same as bash CLI</td><td>Express route → spawn</td></tr>
-<tr><td><code>cards done &lt;id&gt;</code></td><td><code>card.accepted</code> spine event</td><td>acp skill, gate chain, morning-validator</td><td>CLI subprocess</td></tr>
-</table>
-<p><strong>Spine emit invariant:</strong> the spine reflects what actually happened, not what was requested. A <code>card.item.tagged</code> event fires only when a tag was actually added or removed. When the requested tag was already present (or absent on remove), the canonical adapter emits no event. Subscribers folding spine events compute correct state.</p>
-
-<h2>Dependencies</h2>
-
-<h3>Service-level deps (lifecycle-coupled)</h3>
-<table>
-<tr><th>Dependency</th><th>Why</th></tr>
-<tr><td>Vikunja (<code>localhost:3456</code>)</td><td>Persistence — Vikunja down = no card mutations possible</td></tr>
-<tr><td>chorus-api</td><td>Hosts MCP transport + HTTP <code>/api/cards/*</code> routes</td></tr>
-<tr><td>Athena (chorus-api endpoints)</td><td>Subdomain refuse-at-source query (<code>fetchSubdomainSet</code>); Athena unreachable = subdomain validation degraded</td></tr>
-<tr><td><code>chorus.log</code> writer (chorus-hooks)</td><td>Spine event emission; if down, mutations succeed but audit trail is incomplete</td></tr>
-</table>
-
-<h3>Subdomain-level deps (substrate references, read-only)</h3>
-<table>
-<tr><th>Dependency</th><th>Why</th></tr>
-<tr><td><code>loom-decisions</code></td><td>DEC-048 (no self-accept), DEC-107 (persist+deliver), DEC-074 (search hierarchy) referenced in CLI behavior</td></tr>
-<tr><td><code>loom-policies</code></td><td>Single-implementation invariant policy; this design enforces it for cards</td></tr>
-<tr><td><code>loom-principles</code></td><td>Writing-surface-discipline, observe-and-interact (look-left-look-right) — referenced in refuse-at-source design</td></tr>
-<tr><td><code>loom-skills</code></td><td><code>/pull</code>, <code>/demo</code>, <code>/acp</code>, <code>/gate-product</code> skills consume cards CLI verbs</td></tr>
-</table>
-
-<h2>Surfaces</h2>
-<table>
-<tr><th>Surface</th><th>Consumers</th><th>Transport</th><th>Status</th></tr>
-<tr><td>Bash CLI (<code>cards</code> script)</td><td>Roles in terminal sessions, scripts, <code>/pull</code> <code>/demo</code> <code>/acp</code> skills</td><td>fork+exec</td><td><span class="tag-real">REAL</span></td></tr>
-<tr><td>MCP (<code>chorus_cards_*</code>)</td><td>Agent sessions via Claude Code</td><td>MCP host → subprocess spawn</td><td><span class="tag-real">REAL</span> (post-#2652)</td></tr>
-<tr><td>HTTP (<code>POST /api/cards/*</code>)</td><td><strong>The Clearing</strong> (primary human-facing surface, used daily), Slack-webhook, external automation</td><td>HTTPS on :3340 → subprocess spawn</td><td><span class="tag-real">REAL</span> (post-#2652)</td></tr>
-<tr><td>HTTP read (<code>GET /api/chorus/card-story/:id</code>)</td><td>Browsers, doc-catalog renderers</td><td>HTTPS on :3340</td><td><span class="tag-partial">PARTIAL</span> — fail-loud gap closes via #2671</td></tr>
-</table>
-
-<h2>Components (designed)</h2>
-
-<div class="component">
-<h3>Canonical zod schema + dual-emit bridge (<strong>#2676</strong>)</h3>
-<p>One file: <code>directing/products/cards/src/schema.ts</code>. Per-verb input shape with required fields, enums, refinements (subdomain ∈ Athena live query, subproduct ∈ closed list <code>{athena, loom, werk, borg, convergence, clearing}</code>). Source of truth for sdk + MCP + HTTP + CLI output schema + spec-doc generation. No hand-redeclared validation anywhere downstream.</p>
-<p><strong>Dual-emit bridge (consumer migration mechanism):</strong></p>
-<ul>
-<li>CLI emits both old prose output AND new <code>--json</code> structured output during the bridge window.</li>
-<li>Old prose format carries a deprecation marker tagged with consumer attribution (X-Source header from The Clearing, calling-script name from skills, role from MCP/HTTP transports).</li>
-<li>Telemetry visible in Borg per-consumer; team sees who's still on old format and at what rate.</li>
-<li>Hard retirement date in schema metadata: <strong>2026-06-15</strong> (~6 weeks soak).</li>
-<li>After retirement date, old prose format errors out; consumers migrate or break loud. No card cascade, no follow-on-forever, no per-consumer cards.</li>
-</ul>
-</div>
-
-<div class="component">
-<h3><code>cards</code> CLI canonical adapter</h3>
-<p>Verb router at <code>directing/products/cards/src/cli.ts</code>. Bash, MCP, HTTP all spawn <code>cards &lt;verb&gt; --json</code> with <code>DEPLOY_ROLE</code> injected. Verbs: add, move, done, tag, set, view, list, check, comment, swat, sequence-tag, bulk-move, snapshot, audit. Exit codes: <code>0</code> success/no-op | <code>2</code> validation | <code>3</code> persistence | <code>4</code> network | <code>1</code> unhandled.</p>
-</div>
-
-<div class="component">
-<h3><code>sdk.ts</code> business logic + truthful spine emit (<strong>#2671</strong>)</h3>
-<p>Validation derives from canonical schema (no hand-declared shape). Spine events fire only when state actually changes. Idempotent operations emit <code>card.item.tag.idempotent</code> (or no event); state-changing operations emit <code>card.item.tagged</code>. The "spine reflects what actually happened" rule is enforced at every emit site.</p>
-</div>
-
-<div class="component">
-<h3><code>BoardClient</code> Vikunja transport (<strong>#2671</strong>)</h3>
-<p><code>client.ts</code> returns typed results that distinguish <em>did-the-work</em> from <em>already-in-target-state</em>. <code>AlreadyTaggedError</code> typed; 409 surfaced as a result type, not silently absorbed. Author field never defaults to 'unknown' — substrate corruption signal preserved by throwing on missing author. Per-role tokens loaded by <code>config.ts:loadEnv</code>.</p>
-</div>
-
-<div class="component">
-<h3>Vikunja-write-refusal hook (<strong>#2672</strong>)</h3>
-<p>PreToolUse Bash hook in chorus-hooks detects bypass patterns: <code>curl.*localhost:3456</code>, <code>fetch.*localhost:3456</code>, <code>gh api.*vikunja</code>. Refuses with explicit message: "Direct Vikunja write blocked — use cards CLI." Allow-listed for the cards CLI binary itself. Bypass override <code>CHORUS_VIKUNJA_DIRECT_WRITE=1</code> for one-off migration; bypass MUST emit a spine event for audit. Canonical-by-enforcement, not canonical-by-convention.</p>
-</div>
-
-<div class="component">
-<h3><code>DEPLOY_ROLE</code>-required identity</h3>
-<p><code>config.ts:detectRole()</code> reads <code>DEPLOY_ROLE</code> env. Values: <code>wren | silas | kade | jeff | automation</code>. cwd-parsing fallback retired — refuse if unset (<strong>#2671</strong>). Role identity is required, not guessed.</p>
-</div>
-
-<div class="component">
-<h3>Generated spec doc</h3>
-<p>This document is generated from <code>schema.ts</code> downstream once #2676 lands. Build pipeline regenerates on schema change. The doc is never the source of truth; the schema is. Hand-edited prose lives only in non-contract sections (Promise, As-Is observations, design rationale).</p>
-</div>
-
-<h2>As-Is — 2026-05-02 today</h2>
-<p>The CLI is canonical for routing — bash, MCP tools, HTTP routes all spawn it as a subprocess and parse its output (post-#2652). It is NOT canonical for validation: three surfaces (sdk, MCP zod, HTTP if-checks) re-declare the same input shape with no shared source. The audit trail lies in specific places: <code>client.ts:324</code> swallows 409 errors silently while <code>sdk.ts:1160</code> emits success spine events unconditionally; three try/catch blocks during card-create swallow tag failures while reporting card-creation success. There is no hook refusing direct Vikunja writes.</p>
-
+<h2>The flow</h2>
 <pre class="mermaid">
 flowchart LR
-  subgraph SURFACES["Transports (delegate to CLI)"]
-    BASH["bash 'cards' wrapper"]
-    MCP["MCP chorus_cards_*<br/>(zod schema, hand-declared)"]
-    HTTP["HTTP POST /api/cards/*<br/>(if-checks, hand-declared)"]
-    DIRECT["curl localhost:3456<br/>(BYPASS — no hook refuses)"]
-  end
-
-  subgraph CANON["Canonical adapter"]
-    CLI["cards CLI<br/>cli.ts dispatch"]
-    SDK["sdk.ts<br/>(validation hand-declared,<br/>40+ spine emit sites)"]
-    CLIENT["BoardClient<br/>client.ts:324 swallows 409<br/>client.ts:355 author='unknown'"]
-  end
-
-  subgraph STORE["Persistence"]
-    VIK["Vikunja REST<br/>localhost:3456"]
-  end
-
-  subgraph EMIT["Audit"]
-    SPINE["chorus.log<br/>card.item.tagged emitted<br/>UNCONDITIONALLY (lies on idempotent ops)"]
-  end
-
-  BASH --> CLI
-  MCP --> CLI
-  HTTP --> CLI
-  DIRECT -.->|BYPASS| VIK
-  CLI --> SDK
-  SDK --> CLIENT
-  SDK --> SPINE
-  CLIENT --> VIK
-
-  classDef bypass fill:#fee2e2,stroke:#dc2626,color:#7f1d1d
-  classDef lying fill:#fef3c7,stroke:#d97706,color:#78350f
-  classDef canon fill:#d1fae5,stroke:#059669,color:#064e3b
-  class DIRECT bypass
-  class CLIENT,SPINE lying
-  class CLI,SDK,VIK canon
+  R[role or Jeff] -->|cards add / move / update / tag / chunk| SDK[cards package]
+  SDK -->|1 write| V[(Vikunja board<br/>source of truth today)]
+  SDK -->|2 PUT row, same call| AM[athena-make<br/>/cards/cards]
+  AM --> G[(urn:chorus:domains:cards)]
+  W[Vikunja web page] -->|edits outside the cards tool| V
+  RC[cards graph-sync<br/>reconcile pass] -->|read all| V
+  RC -->|read all| AM
+  RC -->|PUT what differs| AM
+  RC --> N[[out of sync: N]]
+  G --> SUP[/sup, domain pages, Athena/]
 </pre>
 
-<h2>To-Be — designed target state</h2>
-<p>One canonical zod schema declares per-verb input shape; sdk, HTTP routes, and MCP tools all derive from it via TypeScript type inference (no drift surface — the compiler enforces alignment). The CLI emits dual output (old prose + new <code>--json</code>) during the bridge window; deprecation telemetry tracks per-consumer migration; old format errors out at the hard retirement date. <code>BoardClient</code> returns typed results that distinguish "did the work" from "already in target state"; sdk emits distinct spine events per actual outcome. Read paths return non-zero exit / 404 on not-found. A PreToolUse hook refuses bash patterns matching <code>curl localhost:3456</code> outside the cards CLI binary.</p>
-
-<pre class="mermaid">
-flowchart LR
-  subgraph SCHEMA["Single canonical source"]
-    ZOD["zod schema<br/>directing/products/cards/src/schema.ts<br/>(per-verb input + refinements)"]
-  end
-
-  subgraph DERIVED["Transports (derived via TS inference)"]
-    SDK2["sdk.ts validation<br/>(z.parse from schema)"]
-    MCP2["MCP inputSchema<br/>(zod-to-json-schema)"]
-    HTTP2["HTTP route validators<br/>(z.parse middleware)"]
-    DOCGEN["cards-service-design.md<br/>(generated from schema)"]
-  end
-
-  subgraph BRIDGE["Dual-emit bridge (until 2026-06-15)"]
-    PROSE["Old prose output<br/>+ deprecation marker<br/>+ X-Source attribution"]
-    JSON["New --json structured output<br/>(consumers migrate to this)"]
-    TELEM["Per-consumer telemetry in Borg"]
-  end
-
-  subgraph HOOK["Bypass refusal"]
-    PRETOOL["PreToolUse hook<br/>refuses curl :3456 outside CLI"]
-  end
-
-  subgraph CANON2["Canonical adapter"]
-    CLI2["cards CLI"]
-    CLIENT2["BoardClient<br/>typed AlreadyTaggedError<br/>authoritative author or throw"]
-  end
-
-  subgraph EMIT2["Truthful audit"]
-    SPINE2["chorus.log<br/>card.item.tagged on actual change<br/>card.item.tag.idempotent on no-op<br/>distinct events per actual outcome"]
-  end
-
-  ZOD --> SDK2
-  ZOD --> MCP2
-  ZOD --> HTTP2
-  ZOD --> DOCGEN
-  SDK2 --> CLI2
-  MCP2 --> CLI2
-  HTTP2 --> CLI2
-  CLI2 --> PROSE
-  CLI2 --> JSON
-  PROSE --> TELEM
-  PRETOOL -.->|REFUSES BYPASS| CLI2
-  CLI2 --> CLIENT2
-  CLI2 --> SPINE2
-
-  classDef source fill:#dbeafe,stroke:#2563eb,color:#1e3a8a
-  classDef enforced fill:#d1fae5,stroke:#059669,color:#064e3b
-  classDef deprecated fill:#fef3c7,stroke:#d97706,color:#78350f
-  class ZOD source
-  class CLIENT2,SPINE2,PRETOOL enforced
-  class PROSE deprecated
-</pre>
-
-<h2>Gaps to close</h2>
-
-<div class="gap"><strong>Validation duplicated, no source-of-truth.</strong> Three hand-declared validators (sdk, MCP zod, HTTP if-checks). Closed by <strong>#2676</strong> (zod canonical + sdk/HTTP/MCP derive + dual-emit bridge + per-consumer telemetry + 2026-06-15 retirement).</div>
-
-<div class="gap"><strong>Audit trail lies on idempotent + partial-success operations.</strong> <code>client.ts:324</code> swallows 409; <code>sdk.ts:1160</code> emits unconditionally. <code>sdk.ts:656</code>, <code>:832</code> continue on tag failure during card-create. Closed by <strong>#2671</strong>.</div>
-
-<div class="gap"><strong>Read-path returns success on not-found.</strong> <code>/api/chorus/card-story/&lt;bogus-id&gt;</code> = 200 + empty; <code>cards view &lt;bogus-id&gt;</code> = exit 0. Closed by <strong>#2671</strong>.</div>
-
-<div class="gap"><strong><code>detectRole()</code> cwd-fallback warns-then-continues.</strong> Closed by <strong>#2671</strong>.</div>
-
-<div class="gap"><strong>No hook refuses direct Vikunja write.</strong> Bypass surface tempting and not bitten. Closed by <strong>#2672</strong>.</div>
-
-<div class="gap"><strong>cards-service Athena subdomain incomplete.</strong> 6/16 sections. Architecture conforms; data missing. Closed by <strong>#2673</strong>.</div>
-
-<div class="gap"><strong>Loom citation contracts (L1-L5).</strong> No citation validation, no back-reference, no propagation, no production gate, no audit. Named in Loom contracts section above; cards to file separately or fold into #2676 scope.</div>
-
-<div class="gap"><strong>Filesystem stomp at read path (shared-HEAD race).</strong> Shared <code>/chorus</code> tree; peer <code>git checkout</code> rewrites disk in place; uncommitted edits silently overwritten. Receipts: Silas's ontology + design-doc work this morning, this doc twice today. Commits-service-v3 (PR #100) addresses the commit path but does not intercept read-time stomp. <strong>Path-to-close in design — see <code>version-control-service-design.html</code> "Concurrent reads against shared mutable git state" + #2706.</strong></div>
-
-<h2>Implementation Plan</h2>
+<h2>What owns what</h2>
 <table>
-<tr><th>#</th><th>Action</th><th>Closes</th><th>Owner</th></tr>
-<tr><td>#2676</td><td>Cards validation single-source — zod canonical + sdk/HTTP/MCP/CLI all derive + dual-emit bridge + per-consumer attribution telemetry + hard retirement 2026-06-15</td><td>Validation source-of-truth gap; consumer migration end-to-end-whole</td><td>Wren</td></tr>
-<tr><td>#2671</td><td>Fail-loud sweep — typed errors, distinct spine taxonomy, non-zero exits across every named lying path</td><td>Audit-trail-lies + read-path gap + role-identity warn-then-continue</td><td>Wren</td></tr>
-<tr><td>#2672</td><td>Vikunja-write-refusal hook — PreToolUse Bash refusal of direct :3456 writes</td><td>Hook-bites-bypass gap</td><td>Wren</td></tr>
-<tr><td>#2673</td><td>cards-service subdomain Athena populate — fill 10 missing sections</td><td>Subdomain plumbing data gap</td><td>Wren</td></tr>
-<tr><td>L1-L5 (to file or fold)</td><td>Loom citation contracts — validation at write, back-reference, propagation, production gate, audit</td><td>Cards↔Loom contract gap</td><td>Wren + Silas</td></tr>
-<tr><td>#2706 (filed)</td><td>Read-time filesystem stomp prevention — three candidates designed in version-control-service-design.html (serialize-checkout / read-side-snapshot / formal-acceptance), Jeff picks at demo</td><td>Filesystem stomp gap (read path) — shared-HEAD race</td><td>Kade</td></tr>
-<tr><td>PR #100 (Kade)</td><td>Commits-service-v3 — substrate owns the working tree at the COMMIT path</td><td>Filesystem stomp gap (commit path only — read path remains open)</td><td>Kade</td></tr>
+<tr><th>Data</th><th>Lives in</th><th>Written by</th></tr>
+<tr><td>Card title, column, owner, priority, type, labels</td><td>Vikunja (system of record)</td><td>the cards package only; Jeff in the web page</td></tr>
+<tr><td>Card row: label, status, assignee, priority, cardType</td><td>urn:chorus:domains:cards</td><td>the cards package after each board write; the reconcile pass</td></tr>
+<tr><td>Chunk, ChunkMembership (rank)</td><td>urn:chorus:domains:board</td><td>chunk tooling (#4066); not yet kept current from the board</td></tr>
 </table>
 
-<h2>Not in scope</h2>
+<h2>The Card row</h2>
+<table>
+<tr><th>Field</th><th>From the board</th><th>Notes</th></tr>
+<tr><td>name</td><td>card number</td><td>row IRI chorus:card-&lt;n&gt;</td></tr>
+<tr><td>label</td><td>title</td><td>required</td></tr>
+<tr><td>status</td><td>kanban column</td><td>one of the board's columns; a closed column on any view wins (#4404)</td></tr>
+<tr><td>assignee</td><td>owner</td><td>a Role (role-wren …). Not ownedBy: the write door sets ownedBy to whoever wrote the row</td></tr>
+<tr><td>priority</td><td>P1 / P2 / P3</td><td>optional; many old cards have none</td></tr>
+<tr><td>cardType</td><td>type label</td><td>new / enhance / fix / chore / swat / issue</td></tr>
+</table>
+
+<h2>Rules</h2>
 <ul>
-<li>Cards CLI ergonomics (<code>--desc-file</code>, <code>create→add</code> alias) — separate card #2143.</li>
-<li>Cross-board cards — the <code>self</code> board has its own design needs.</li>
-<li>Backfill of stale labels on existing cards — separate cards (#1405, #1328 already Done).</li>
-<li>Graph-backed migration of cards (Class A version) — Vikunja remains canonical store.</li>
-<li>Subdomain populate beyond cards-service — other subdomains have their own cards.</li>
+<li>The board write comes first. If the graph write fails, the cards command says so on stderr and in the spine (<code>card.graph.sync_failed</code>); the board change stands, and the reconcile pass repairs the row.</li>
+<li>Every role writes the cards graph under its own Write permission on <code>urn:chorus:domains:cards</code>. The three permissions named the retired graph <code>urn:chorus:cards</code>; they are repointed.</li>
+<li>The reconcile pass is the only thing that may report "in sync". Its number is the measure: it should read 0 and hold.</li>
 </ul>
 
-<h2>References</h2>
+<h2>Measured 2026-10-02, before this card</h2>
+<table>
+<tr><th>Fact</th><th>Value</th></tr>
+<tr><td>Card rows in the graph</td><td>474 (the board has about 4,300 cards)</td></tr>
+<tr><td>Card shape</td><td>label + owner only</td></tr>
+<tr><td>Code that writes Card rows</td><td>none; a one-time copy dated 2026-09-27</td></tr>
+<tr><td>Card writes outside the cards package</td><td>none in code; the Vikunja web page is the only other path</td></tr>
+</table>
+
+<h2>Later, not this card</h2>
 <ul>
-<li>Cards filed 2026-05-02: <strong>#2671</strong>, <strong>#2672</strong>, <strong>#2673</strong>, <strong>#2676</strong>; <strong>#2669</strong> + <strong>#2670</strong> retracted to Won't Do per ADR-028 Addendum 2 (drift tests between internal sources are forbidden; single-source mandated)</li>
-<li>Audit comment on <strong>#2652</strong> (Wren+Silas, 2026-05-02) — find-record</li>
-<li>Silas walk 2026-05-02 (chat <code>silas-wren-1777737643</code>) — four lenses (consumer-first, contract validation non-negotiable, end-to-end-whole, stop-dressing-as-architecture); landed dual-emit bridge + per-consumer attribution + hard 2026-06-15 retirement</li>
-<li>PR #100 (Kade, commits-service-v3) — same single-source pattern at the commits substrate</li>
-<li><a href="/designing/docs/nudge-service-design.html"><code>nudge-service-design</code></a>, <a href="/designing/docs/commits-service-design.html"><code>commits-service-design</code></a>, <a href="/designing/docs/services-service-design.html"><code>services-service-design</code></a>, <a href="/designing/docs/ci-pipeline-service-design.html"><code>ci-pipeline-service-design</code></a> — sibling service designs</li>
-<li><code>directing/products/cards/src/cli.ts</code>, <code>sdk.ts</code>, <code>client.ts</code>, <code>config.ts</code> — canonical implementation files</li>
-<li><code>platform/api/src/mcp/server.ts</code>, <code>platform/api/src/server.ts</code> — MCP + HTTP transports</li>
-<li><code>directing/clearing/src/server.ts</code>, <code>tiles.ts</code>, <code>tailer.ts</code> — primary consumer (The Clearing)</li>
-<li>DEC-048 (no self-accept on code cards), DEC-107 (persist + deliver), DEC-074 (search hierarchy), DEC-099 (stories single-write-path)</li>
+<li>Chunk membership kept current from the board (blocked by #4070: the door cannot find rows minted under an older name).</li>
+<li>The graph becomes the system of record and Vikunja a view (#2159).</li>
 </ul>
 
-<p class="footer">Wren, 2026-05-01 / refreshed 2026-05-02 (consumer-first restructure + dual-emit bridge + lens 4 trim).</p>
-
+<div class="footer">Cards service · Wren · source: designing/docs/cards-service-design.html</div>
 </body>
 </html>

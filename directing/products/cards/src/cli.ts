@@ -42,6 +42,7 @@ import { BoardConfig, BoardTask } from './types';
 import { emitSpineEvent } from './events';
 import { formatCommentForView } from './cli-view-helpers';
 import { parseAddArgs as parseAddArgsShared } from './cli-add-helpers';
+import { reconcileGraph, athenaMakeDoor } from './graph-sync';
 import {
   addCard, moveCard, doneCard, demoCard, rejectCard,
   blockCard, unblockCard, commentCard, untagCard,
@@ -629,6 +630,7 @@ Commands:
   buckets                        Show buckets with WIP limits
   set-limit <bucket> <number>    Set WIP limit (0 = none)
   snapshot                       Save board state
+  graph-sync [--dry-run]         Compare every board card with its graph row, repair the differences, print how many were out of sync
   audit-start <role>             Session start board check
   audit-close <role>             Session close board diff
   fields                         Show available statuses/labels
@@ -662,6 +664,30 @@ Examples:
  * `clientFactory` to inject a mock `BoardClient`; default constructs one
  * from env.
  */
+function cmdSwat(ctx: CliCtx): Promise<unknown> {
+  if (!ctx.cmdArgs[0]) die('Usage: cards swat "description of urgent issue"');
+  return swatCard(ctx.client, ctx.cmdArgs[0]);
+}
+
+/** #3102 — the reconcile pass. Prints one number Jeff can trust: rows out of sync. */
+async function cmdGraphSync(client: BoardClient, args: string[]): Promise<void> {
+  const dryRun = args.includes('--dry-run');
+  const board = await client.list();
+  const res = await reconcileGraph(board, athenaMakeDoor(), { dryRun });
+  console.log(`board cards: ${res.boardCards}`);
+  console.log(`out of sync: ${res.outOfSync}`);
+  if (!dryRun) console.log(`repaired:    ${res.repaired}`);
+  if (res.failed.length) {
+    console.log(`failed:      ${res.failed.length}`);
+    for (const f of res.failed.slice(0, 10)) console.log(`  #${f.index}: ${f.reason}`);
+  }
+  for (const x of res.sample) console.log(`  #${x.index}: ${x.fields.join(', ')}`);
+  emitSpineEvent('card.graph.reconciled', detectRole(), {
+    board_cards: res.boardCards, out_of_sync: res.outOfSync, repaired: res.repaired, failed: res.failed.length, dry_run: dryRun ? 'true' : 'false',
+  });
+  if (res.failed.length) process.exitCode = 1;
+}
+
 interface CliCtx {
   client: BoardClient;
   cmdArgs: string[];
@@ -963,11 +989,9 @@ function buildCliHandlers(): Partial<Record<string, (ctx: CliCtx) => void | Prom
     sequence: (ctx) => cmdSequence(ctx.client, ctx.cmdArgs),
     'sequence-tag': cmdSequenceTag,
     'bulk-move': cmdBulkMove,
-    swat: (ctx) => {
-      if (!ctx.cmdArgs[0]) die('Usage: cards swat "description of urgent issue"');
-      return swatCard(ctx.client, ctx.cmdArgs[0]);
-    },
+    swat: cmdSwat,
     snapshot: (ctx) => snapshotBoard(ctx.client),
+    'graph-sync': (ctx) => cmdGraphSync(ctx.client, ctx.cmdArgs),
     'audit-start': (ctx) => auditStart(ctx.client, ctx.cmdArgs[0] || detectRole()),
     'audit-close': (ctx) => auditClose(ctx.client, ctx.cmdArgs[0] || detectRole()),
     label: cmdLabel,
