@@ -34,6 +34,8 @@ rows() { arq --results csv --query "$T/q.rq" "$@" 2>/dev/null | tail -n +2 | gre
   # which is three more rows — not drift. The count is asserted, not floored, so a row
   # vanishing still goes red.
   #
+  # 48 since #3102 (2026-10-02): permission-jeff-cards, on Jeff's go. The land's
+  # accept step runs `cards done` as jeff, and the graph write-through 403'd.
   # 47 since #4229 (2026-09-20): permission-kade-pipelines, on Jeff's go — he
   # owns 120 of that graph's 130 rows and could not write it, so the live
   # PipelineRun check 403'd for everyone.
@@ -46,7 +48,7 @@ rows() { arq --results csv --query "$T/q.rq" "$@" 2>/dev/null | tail -n +2 | gre
   printf '%s\n' 'PREFIX chorus: <https://jeffbridwell.com/chorus#>' \
     'SELECT (COUNT(DISTINCT ?p) AS ?n) WHERE { ?p a chorus:Permission }' > "$T/n.rq"
   n=$(arq --results csv --query "$T/n.rq" --data "$PERMS" 2>/dev/null | tail -1 | tr -d '\r')
-  test "$n" -eq 47
+  test "$n" -eq 48
 }
 
 @test "the scope query grants from Permission rows joined to real principals" {
@@ -116,4 +118,29 @@ TTL
   grep -q "permissions-4183.ttl" "$MAN"
   # NEGATIVE PROOF: the literals file must not have come back with it.
   test -z "$(grep -F "security-scopes-3689.ttl" "$MAN" || true)"
+}
+
+# #3102 — every principal the cards CLI writes as (DEPLOY_ROLE jeff on accept and
+# /card, the three roles otherwise) needs a Write row on the cards graph, or its
+# graph write-through 403s. Jeff's was missing and the land's accept left #3102's
+# row at WIP.
+cards_writers_missing() {  # cards_writers_missing <perms.ttl> → names with no Write row
+  printf '%s\n' 'PREFIX chorus: <https://jeffbridwell.com/chorus#>' \
+    'PREFIX acl: <http://www.w3.org/ns/auth/acl#>' \
+    'SELECT ?a WHERE { ?p a chorus:Permission ; chorus:agent ?a ; chorus:mode acl:Write ; chorus:accessTo ?g FILTER(STR(?g) = "urn:chorus:domains:cards") }' > "$T/cw.rq"
+  have=$(arq --results csv --query "$T/cw.rq" --data "$1" 2>/dev/null | tail -n +2 | tr -d '\r')
+  for w in jeff wren silas kade; do
+    grep -qx "https://jeffbridwell.com/chorus#principal-$w" <<<"$have" || echo "$w"
+  done
+}
+
+@test "every principal the cards CLI writes as can write the cards graph" {
+  missing=$(cards_writers_missing "$PERMS")
+  [ -z "$missing" ] || { echo "no cards Write row for: $missing"; false; }
+}
+
+@test "NEGATIVE PROOF — drop jeff's cards row and the check names jeff" {
+  awk '/^chorus:permission-jeff-cards /{skip=1} skip&&/ \.$/{skip=0;next} !skip' "$PERMS" > "$T/nojeff.ttl"
+  missing=$(cards_writers_missing "$T/nojeff.ttl")
+  [ "$missing" = "jeff" ] || { echo "expected jeff missing, got: '$missing'"; false; }
 }

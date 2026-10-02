@@ -214,6 +214,13 @@ chorus:permission-wren-cards a chorus:Permission ;
     chorus:mode acl:Write ;
     chorus:ownedBy chorus:principal-silas .
 
+chorus:permission-jeff-cards a chorus:Permission ;
+    rdfs:label "jeff may write urn:chorus:domains:cards" ;
+    chorus:agent chorus:principal-jeff ;
+    chorus:accessTo "urn:chorus:domains:cards"^^xsd:anyURI ;
+    chorus:mode acl:Write ;
+    chorus:ownedBy chorus:principal-silas .
+
 chorus:permission-wren-catalog a chorus:Permission ;
     rdfs:label "wren may write urn:chorus:catalog" ;
     chorus:agent chorus:principal-wren ;
