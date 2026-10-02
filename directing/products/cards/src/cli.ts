@@ -664,6 +664,11 @@ Examples:
  * `clientFactory` to inject a mock `BoardClient`; default constructs one
  * from env.
  */
+function cmdSwat(ctx: CliCtx): Promise<unknown> {
+  if (!ctx.cmdArgs[0]) die('Usage: cards swat "description of urgent issue"');
+  return swatCard(ctx.client, ctx.cmdArgs[0]);
+}
+
 /** #3102 — the reconcile pass. Prints one number Jeff can trust: rows out of sync. */
 async function cmdGraphSync(client: BoardClient, args: string[]): Promise<void> {
   const dryRun = args.includes('--dry-run');
@@ -984,10 +989,7 @@ function buildCliHandlers(): Partial<Record<string, (ctx: CliCtx) => void | Prom
     sequence: (ctx) => cmdSequence(ctx.client, ctx.cmdArgs),
     'sequence-tag': cmdSequenceTag,
     'bulk-move': cmdBulkMove,
-    swat: (ctx) => {
-      if (!ctx.cmdArgs[0]) die('Usage: cards swat "description of urgent issue"');
-      return swatCard(ctx.client, ctx.cmdArgs[0]);
-    },
+    swat: cmdSwat,
     snapshot: (ctx) => snapshotBoard(ctx.client),
     'graph-sync': (ctx) => cmdGraphSync(ctx.client, ctx.cmdArgs),
     'audit-start': (ctx) => auditStart(ctx.client, ctx.cmdArgs[0] || detectRole()),

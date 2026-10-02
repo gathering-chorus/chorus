@@ -41,28 +41,38 @@ export function cardRow(task: BoardTask): CardRow {
   if (ROLES.has(owner)) row.assignee = owner;
   const pri = (task.priority || '').toUpperCase();
   if (PRIORITIES.has(pri)) row.priority = pri;
-  const type = (task.domains || []).find((d) => d.startsWith('type:'))?.slice(5);
+  const type = task.domains.find((d) => d.startsWith('type:'))?.slice(5);
   if (type && CARD_TYPES.has(type)) row.cardType = type;
   return row;
 }
 
 /** A row as the generated route serves it, reduced to the fields we sync. */
 export function servedRow(r: Record<string, unknown>): CardRow {
-  const s = (k: string) => (typeof r[k] === 'string' && r[k] !== '' ? (r[k] as string) : undefined);
-  const tail = (v?: string) => (v ? v.replace(/^.*[#/]/, '').replace(/^role-/, '') : undefined);
-  const out: CardRow = { label: s('label') ?? '' };
-  if (s('status')) out.status = s('status');
-  if (s('assignee')) out.assignee = tail(s('assignee'));
-  if (s('priority')) out.priority = s('priority');
-  if (s('cardType')) out.cardType = s('cardType');
+  const str = (v: unknown) => (typeof v === 'string' && v !== '' ? v : undefined);
+  const roleName = (v: unknown) => str(v)?.replace(/^.*[#/]/, '').replace(/^role-/, '');
+  const out: CardRow = { label: str(r.label) ?? '' };
+  const status = str(r.status);
+  const assignee = roleName(r.assignee);
+  const priority = str(r.priority);
+  const cardType = str(r.cardType);
+  if (status) out.status = status;
+  if (assignee) out.assignee = assignee;
+  if (priority) out.priority = priority;
+  if (cardType) out.cardType = cardType;
   return out;
 }
 
 /** Field names where the graph row differs from the board. Empty = in sync. */
 export function rowDiff(want: CardRow, have: CardRow | undefined): string[] {
   if (!have) return ['missing'];
-  const keys: Array<keyof CardRow> = ['label', 'status', 'assignee', 'priority', 'cardType'];
-  return keys.filter((k) => (want[k] ?? '') !== (have[k] ?? ''));
+  const pairs: Array<[string, string | undefined, string | undefined]> = [
+    ['label', want.label, have.label],
+    ['status', want.status, have.status],
+    ['assignee', want.assignee, have.assignee],
+    ['priority', want.priority, have.priority],
+    ['cardType', want.cardType, have.cardType],
+  ];
+  return pairs.filter(([, w, h]) => (w ?? '') !== (h ?? '')).map(([name]) => name);
 }
 
 /** The role this process writes as. Row ownership follows the writer (the door's rule). */
@@ -105,7 +115,7 @@ export function athenaMakeDoor(fetchImpl: typeof fetch = fetch): GraphDoor {
       const body = await r.json() as { data?: Array<Record<string, unknown>> };
       const out = new Map<number, CardRow>();
       for (const d of body.data || []) {
-        const id = Number(String(d.name ?? '').replace(/^card-/, ''));
+        const id = Number((typeof d.name === 'string' ? d.name : '').replace(/^card-/, ''));
         if (Number.isFinite(id) && id > 0) out.set(id, servedRow(d));
       }
       return out;
