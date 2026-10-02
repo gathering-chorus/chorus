@@ -80,3 +80,8 @@ chorus:spine a chorus:Domain ;
   chorus:repoTarget "platform/api/src/spine-event-write.ts" ; chorus:definesVocabulary chorus:Vertebra, chorus:EmitContract, chorus:EventCategory .
 
 
+
+# #4338 — layer, hosting and dependency edges live on the domain's own row (they were in
+# cmdb-layers-4293.ttl, which deploys into the domains graph and replaced every row it
+# named: the 2026-10-02 15:51 land wiped 12 domains to one inLayer triple).
+chorus:builds chorus:inLayer chorus:layer-build ; chorus:dependsOn chorus:toolchain .

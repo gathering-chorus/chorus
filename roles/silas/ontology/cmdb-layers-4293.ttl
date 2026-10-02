@@ -45,52 +45,8 @@ chorus:layer-capability a chorus:Layer ;
     chorus:layerRank 2 ;
     chorus:ownedBy chorus:principal-silas .
 
-# --- Silas's domains: foundation ----------------------------------------------
-
-chorus:infrastructure chorus:inLayer chorus:layer-foundation .
-chorus:time           chorus:inLayer chorus:layer-foundation .
-chorus:logs           chorus:inLayer chorus:layer-foundation .
-chorus:security       chorus:inLayer chorus:layer-foundation .
-chorus:identity       chorus:inLayer chorus:layer-foundation .
-# #4325 — provenance is Wren's domain and sits here by her call (2026-09-26 13:35):
-# athena-make stamps it on every write, so every domain stands on it and none is
-# composed from it. Above identity, which gives it the creator it stamps.
-chorus:provenance     chorus:inLayer chorus:layer-foundation .
-
-# --- Silas's domains: build ----------------------------------------------------
-
-chorus:builds    chorus:inLayer chorus:layer-build .
-chorus:deploys   chorus:inLayer chorus:layer-build .
-chorus:toolchain chorus:inLayer chorus:layer-build .
-
-# --- Silas's domains: capability ----------------------------------------------
-
-chorus:alerts     chorus:inLayer chorus:layer-capability .
-chorus:monitors   chorus:inLayer chorus:layer-capability .
-chorus:metrics    chorus:inLayer chorus:layer-capability .
-chorus:analytics  chorus:inLayer chorus:layer-capability .
-chorus:properties chorus:inLayer chorus:layer-capability .
-
-# --- hosting moves from twin rows to the domain itself -------------------------
-# The Loki service row was hosted by the logs-domain twin and the observability
-# service by the alerts-monitors-domain twin. The domain the product actually
-# composes hosts them now; the twin rows retire in the same card.
-
-chorus:logs   chorus:hosts chorus:logs-domain-service-loki .
-chorus:alerts chorus:hosts chorus:service-observability .
-
-# --- explicit dependencies ------------------------------------------------------
-# Inside the foundation the order is stated edge by edge (it is the thing the layer
-# rule leans on). Above it, only what is beyond the foundation is written; depending
-# on the foundation itself is implied by inLayer. chorus:dependsOn is typed by #4289
-# (range Domain | Service | Skill, acyclic within a class).
-
-chorus:time     chorus:dependsOn chorus:infrastructure .
-chorus:logs     chorus:dependsOn chorus:infrastructure , chorus:time .
-chorus:security chorus:dependsOn chorus:infrastructure , chorus:time , chorus:logs .
-chorus:identity chorus:dependsOn chorus:security .
-
-chorus:alerts    chorus:dependsOn chorus:metrics , chorus:monitors .
-chorus:analytics chorus:dependsOn chorus:metrics .
-chorus:builds    chorus:dependsOn chorus:toolchain .
-chorus:deploys   chorus:dependsOn chorus:builds .
+# --- where the domains' own edges went ------------------------------------------
+# #4338: this file names no Domain subject. It deploys into the domains graph, and
+# that merge replaces every subject it names, so a domain named here lost its whole
+# row (12 domains, 2026-10-02 15:51). Each domain's inLayer, hosts and dependsOn now
+# sit on its own row, in the file that declares it.

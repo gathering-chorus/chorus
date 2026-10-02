@@ -154,3 +154,10 @@ chorus:MonitorShape a sh:NodeShape ;
     sh:property [ sh:path chorus:measures    ; sh:minCount 1 ; sh:datatype xsd:string ] ;
     sh:property [ sh:path chorus:hasDomain   ; sh:minCount 1 ; sh:class chorus:Domain ] .
 
+
+# #4338 — layer, hosting and dependency edges live on the domain's own row (they were in
+# cmdb-layers-4293.ttl, which deploys into the domains graph and replaced every row it
+# named: the 2026-10-02 15:51 land wiped 12 domains to one inLayer triple).
+chorus:alerts   chorus:inLayer chorus:layer-capability ; chorus:dependsOn chorus:metrics , chorus:monitors ;
+                chorus:hosts chorus:service-observability .
+chorus:monitors chorus:inLayer chorus:layer-capability .
