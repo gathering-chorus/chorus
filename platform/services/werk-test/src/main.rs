@@ -78,6 +78,7 @@ fn run(args: &[String]) -> Result<i32, String> {
         return Err(format!("werk not found: {}", werk));
     }
     let trace = std::env::var("CHORUS_TRACE_ID").unwrap_or_default();
+    std::env::set_var("WERK_TEST_TREE_ROOT", &werk);
 
     let changed_all = git_changed_files(&werk)?;
     // #4138 — a deleted test is retired, not red: a path gone from the tree is
@@ -3237,8 +3238,12 @@ fn unit_for_test(path: &str) -> Option<TestUnit> {
             return Some(TestUnit::RustCrate(name.to_string()));
         }
     }
+    // #4419 — only a REAL package (a package.json in the tree): the first live
+    // after-land run invented tsc:platform, platform/scripts and proving/scripts
+    // from test paths and scored each "deps unavailable".
     werk_test::ts_package_of(path)
         .or_else(|| if Path::new(path).extension().is_none() && !path.contains('.') { Some(path.to_string()) } else { None })
         .filter(|p| !p.starts_with("platform/services/"))
+        .filter(|p| Path::new(&std::env::var("WERK_TEST_TREE_ROOT").unwrap_or_default()).join(p).join("package.json").is_file())
         .map(TestUnit::TsPackage)
 }

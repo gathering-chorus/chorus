@@ -152,3 +152,28 @@ STUB
   grep -q '.nvm/versions/node/' "$p" || return 1
   grep -q 'CARGO_TARGET_DIR' "$p" || return 1
 }
+
+@test "a run killed mid-way leaves no stale worktree that blocks the next one" {
+  stub_werk_test 0
+  # the killed run: a registered worktree whose directory is gone
+  git -C "$R" worktree add --detach "$T/after-land/trees/100-3/chorus" "$C1" >/dev/null 2>&1
+  rm -rf "$T/after-land/trees/100-3"
+  mkdir -p "$AFTER_LAND_QUEUE"; printf 'CARD=3\nROLE=kade\nCOMMIT=%s\n' "$C1" > "$AFTER_LAND_QUEUE/100-3.env"
+  run env AFTER_LAND_WERK_TEST="$T/werk-test" AFTER_LAND_NUDGE="$T/nudge" CHORUS_ROOT="$R" bash "$REPO/platform/scripts/after-land-tests.sh"
+  [[ "$output" == *"#3 green"* ]] || return 1
+  [[ "$output" != *"could not check out"* ]] || return 1
+}
+
+@test "a suite that writes beside the repo writes into the run's own box, which is removed" {
+  cat > "$T/werk-test" <<STUB
+#!/bin/bash
+touch "\$WERK_TEST_TREE/../TEAM_PROTOCOL.md"
+exit 0
+STUB
+  chmod +x "$T/werk-test"
+  printf '#!/bin/bash\n' > "$T/nudge"; chmod +x "$T/nudge"
+  mkdir -p "$AFTER_LAND_QUEUE"; printf 'CARD=2\nROLE=kade\nCOMMIT=%s\n' "$C1" > "$AFTER_LAND_QUEUE/100-2.env"
+  run env AFTER_LAND_WERK_TEST="$T/werk-test" AFTER_LAND_NUDGE="$T/nudge" CHORUS_ROOT="$R" bash "$REPO/platform/scripts/after-land-tests.sh"
+  [ ! -e "$T/after-land/trees/TEAM_PROTOCOL.md" ] || return 1
+  [ ! -e "$T/after-land/trees/100-2" ] || return 1
+}

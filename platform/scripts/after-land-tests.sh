@@ -45,8 +45,15 @@ while :; do
   . "$entry"
   name="$(basename "$entry" .env)"
   echo "after-land: $(date '+%Y-%m-%dT%H:%M:%S%z') #$CARD ($ROLE) at ${COMMIT:0:9} — start"
-  tree="$TREES/$name"
-  rm -rf "$tree"
+  # The checkout sits one level down (trees/<entry>/chorus): some suites write
+  # beside the repo (../chorus-werk, ../TEAM_PROTOCOL.md, seen 10-02 11:31), and
+  # ../ must be this sandbox, never ~/CascadeProjects or trees/ shared by runs.
+  box="$TREES/$name"
+  tree="$box/chorus"
+  rm -rf "$box"; mkdir -p "$box"
+  # a run killed mid-way (a reload, 10-02 11:57) leaves its worktree registered;
+  # prune first or the next add of that path refuses and the entry is UNMEASURED
+  git -C "$ROOT" worktree prune >/dev/null 2>&1 || true
   if ! git -C "$ROOT" worktree add --detach "$tree" "$COMMIT" >/dev/null 2>&1; then
     echo "after-land: #$CARD — could not check out ${COMMIT:0:9}; UNMEASURED, nothing ran"
     mv "$entry" "$DONE/$name-unmeasured.env"
@@ -76,7 +83,8 @@ while :; do
     echo "after-land: #$CARD RED rc=$rc — $reds"
     [ -x "$NUDGE" ] && "$NUDGE" "$ROLE" "after-land #$CARD: red in the domains it touched (rc=$rc): ${reds:-see ~/Library/Logs/Chorus/after-land-tests.log}. Reopen the card and fix it there." system >/dev/null 2>&1 || true
   fi
-  git -C "$ROOT" worktree remove --force "$tree" >/dev/null 2>&1 || rm -rf "$tree"
+  git -C "$ROOT" worktree remove --force "$tree" >/dev/null 2>&1 || true
+  rm -rf "$box"; git -C "$ROOT" worktree prune >/dev/null 2>&1 || true
   mv "$entry" "$DONE/$name-rc$rc.env"
   cp "$out" "$DONE/$name-rc$rc.log"; rm -f "$out"
 done
