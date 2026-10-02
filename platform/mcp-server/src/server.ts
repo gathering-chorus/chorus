@@ -1369,7 +1369,7 @@ const ATHENA_DEPLOY_TOOL_DEF = {
     type: 'object',
     properties: {
       role: { type: 'string', enum: ['kade', 'wren', 'silas'], description: 'Calling role.' },
-      args: { type: 'array', items: { type: 'string' }, description: 'Verb args.' },
+      args: { type: 'array', items: { type: 'string' }, description: 'Verb args. [] deploys the model set. Otherwise one of scope, prove-trace, served-snapshot, served-compare; any other argument is refused (exit 2, #4338), never read as deploy.' },
     },
     required: ['role', 'args'],
     additionalProperties: false,
