@@ -259,6 +259,20 @@ async function readRolePriority(deps: ContextPrioritiesDeps): Promise<RolePriori
  */
 const CLOSED_STATUSES = new Set(['done', "won't do", 'wont do']);
 
+/** #4404 — a card's status from EVERY bucket it sits in. Vikunja keeps one bucket
+ *  per project view, so a closed card is in its kanban bucket (Done / Won't Do)
+ *  AND in another view's bucket ("To-Do"). Reading one row per card let the
+ *  last row win, and Done cards came back as open. A closed bucket anywhere wins. */
+export function statusesFromBucketRows(rows: Array<{ id: number; status: string | null }>): Map<number, string> {
+  const out = new Map<number, string>();
+  for (const r of rows) {
+    if (!r.status) continue;
+    const prev = out.get(r.id);
+    if (prev === undefined || (isOpenStatus(prev) && !isOpenStatus(r.status))) out.set(r.id, r.status);
+  }
+  return out;
+}
+
 function isOpenStatus(status: string | undefined): boolean {
   return status === undefined || !CLOSED_STATUSES.has(status.trim().toLowerCase());
 }

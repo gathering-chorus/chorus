@@ -1667,7 +1667,7 @@ app.get('/api/chorus/pulse/latest', (_req: Request, res: Response) => {
 // Three endpoints for the proof-of-shape: board/wip, roles, health.
 
 import { fetchContextBoardWip } from './handlers/context-board-wip';
-import { fetchContextPriorities } from './handlers/context-priorities';
+import { fetchContextPriorities, statusesFromBucketRows } from './handlers/context-priorities';
 import { fetchContextSpine } from './handlers/context-spine';
 import { fetchContextAlerts } from './handlers/context-alerts';
 import { fetchContextQualitySummary } from './handlers/context-quality-summary';
@@ -1821,7 +1821,7 @@ app.get('/api/chorus/context/priorities', async (req: Request, res: Response) =>
                  LEFT JOIN buckets b ON tb.bucket_id = b.id
                 WHERE t."index" IN (${ids.map(() => '?').join(',')})`,
             ).all(...ids) as Array<{ id: number; status: string | null }>;
-            for (const r of rows) if (r.status) out.set(r.id, r.status);
+            for (const [id, status] of statusesFromBucketRows(rows)) out.set(id, status);
           } finally {
             db.close();
           }
