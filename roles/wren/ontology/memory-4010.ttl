@@ -57,7 +57,7 @@ chorus:MemoryShape a sh:NodeShape ;
 # Floors are copied verbatim from the live store (measured 13:12) so bringing
 # the subjects into a deployed file cannot wipe them (#3587 wipe class).
 
-chorus:memory a owl:Class, chorus:Domain ;
+chorus:memory a chorus:Domain ;
     rdfs:label "memory" ;
     chorus:comment "Persistent context across sessions — indexed sessions and artifacts." ;
     chorus:purpose "Keep persistent context across sessions — indexed sessions, artifacts, and recall." ;
@@ -66,7 +66,7 @@ chorus:memory a owl:Class, chorus:Domain ;
     chorus:repoTarget "platform/api/src/index-worker.ts" ;
     chorus:definesVocabulary chorus:Memory, chorus:ShortTermMemory, chorus:LongTermMemory .
 
-chorus:knowledge a owl:Class, chorus:Domain ;
+chorus:knowledge a chorus:Domain ;
     rdfs:label "knowledge" ;
     chorus:comment "Structured facts about the team, products, and their history." ;
     chorus:purpose "Hold structured, queryable facts about the team, its products, and their history." ;

@@ -44,10 +44,6 @@ chorus:graph-gates a chorus:NamedGraph ;
     chorus:graphIri "urn:chorus:gates" ;
     chorus:graphStatus "sanctioned" .
 
-chorus:graph-framework a chorus:NamedGraph ;
-    chorus:graphIri "urn:chorus:framework" ;
-    chorus:graphStatus "sanctioned" .
-
 chorus:graph-domains a chorus:NamedGraph ;
     chorus:graphIri "urn:chorus:domains:*" ;
     chorus:graphStatus "sanctioned" .

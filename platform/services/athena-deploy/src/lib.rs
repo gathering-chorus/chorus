@@ -143,6 +143,9 @@ pub struct Retirement {
     pub graph: String,
     pub retire_graph: String,
     pub retire_class: String,
+    /// #4338 — merge this subject INTO `into`, within `graph`.
+    pub merge_subject: String,
+    pub into: String,
     pub status: String,
 }
 
@@ -163,6 +166,9 @@ pub enum RetireAction {
     Class { class: String, graph: String },
     /// A whole graph, backed up and verified first (#3732).
     WholeGraph { graph: String },
+    /// #4338 — one duplicate folded into the real subject in one graph: every
+    /// triple pointing at `from` points at `into`, then `from`'s own triples go.
+    Merge { from: String, into: String, graph: String },
 }
 
 /// Read one JSONL line. `Ok(None)` is a blank line. A line that is present but
@@ -201,6 +207,8 @@ pub fn parse_retirement(line: &str) -> Result<Option<Retirement>, String> {
         graph: field("graph")?,
         retire_graph: field("retire_graph")?,
         retire_class: field("retire_class")?,
+        merge_subject: field("merge_subject")?,
+        into: field("into")?,
         status: if status.is_empty() { "staged".into() } else { status },
     }))
 }
@@ -210,6 +218,8 @@ pub fn retirement_action(r: &Retirement, default_graph: &str) -> RetireAction {
     if r.status != "staged" {
         let target = if !r.retire_subject.is_empty() {
             r.retire_subject.clone()
+        } else if !r.merge_subject.is_empty() {
+            r.merge_subject.clone()
         } else if !r.retire_graph.is_empty() {
             r.retire_graph.clone()
         } else {
@@ -223,6 +233,9 @@ pub fn retirement_action(r: &Retirement, default_graph: &str) -> RetireAction {
     }
     if !r.retire_class.is_empty() {
         return RetireAction::Class { class: r.retire_class.clone(), graph };
+    }
+    if !r.merge_subject.is_empty() {
+        return RetireAction::Merge { from: r.merge_subject.clone(), into: r.into.clone(), graph };
     }
     if !r.retire_subject.is_empty() {
         return RetireAction::Subject { iri: r.retire_subject.clone(), graph };
@@ -254,6 +267,18 @@ pub fn subject_retirement_sparql(iri: &str, graph: &str) -> (String, String, Str
         format!("SELECT (COUNT(*) AS ?n) WHERE {{ {body} }}"),
         format!("CONSTRUCT {{ ?s ?p ?o }} WHERE {{ {body} }}"),
         format!("DELETE {{ GRAPH <{graph}> {{ ?s ?p ?o }} }} WHERE {{ {body} }}"),
+    )
+}
+
+/// #4338 — the count, backup and update that re-point every triple naming
+/// `from` as its object to `into`, inside one graph. The backup is the old
+/// triples; the update deletes them and inserts the re-pointed ones. Pure.
+pub fn merge_refs_sparql(from: &str, into: &str, graph: &str) -> (String, String, String) {
+    let body = format!("GRAPH <{graph}> {{ ?s ?p <{from}> }}");
+    (
+        format!("SELECT (COUNT(*) AS ?n) WHERE {{ {body} }}"),
+        format!("CONSTRUCT {{ ?s ?p <{from}> }} WHERE {{ {body} }}"),
+        format!("DELETE {{ GRAPH <{graph}> {{ ?s ?p <{from}> }} }} INSERT {{ GRAPH <{graph}> {{ ?s ?p <{into}> }} }} WHERE {{ {body} }}"),
     )
 }
 
@@ -747,30 +772,27 @@ pub fn merge_sparql(staging: &str, ontology: &str) -> String {
     )
 }
 
-/// #4338 — Domain ROWS live in the domains graph; the ontology graph keeps only
-/// the punned class (`a owl:Class`, rdfs label/comment/subClassOf, owl:*). Runs
-/// in the same transaction as the merge, after it, so every deploy re-homes what
-/// the model set loads. For each predicate a staged Domain asserts, its values in
-/// the domains graph are replaced (fields an API wrote under other predicates are
-/// left alone); then every Domain-row triple leaves the ontology graph. Pure.
+/// #4338 — a Domain lives in the domains graph and nowhere else (Jeff 2026-10-02:
+/// "one and only one of each fucking domain"). A Domain is no longer an
+/// owl:Class (ADR-045 superseded): measured on prod, none of the 42 punned rows
+/// had an instance or a subClassOf/targetClass/domain/range/sh:class reference.
+/// Runs in the same transaction as the merge, after it, so every deploy re-homes
+/// what the model set loads. For each predicate a staged Domain asserts, its
+/// values in the domains graph are replaced (fields an API wrote under other
+/// predicates are left alone); then EVERY triple of every Domain subject leaves
+/// the ontology graph, the class axioms included. Pure.
 pub const DOMAINS_GRAPH: &str = "urn:chorus:domains:domains";
 const ONTOLOGY_DEFAULT: &str = "urn:chorus:ontology";
 pub fn rehome_domain_rows_sparql(staging: &str, ontology: &str, domains: &str) -> String {
     let c = "https://jeffbridwell.com/chorus#";
     let rdf_type = "http://www.w3.org/1999/02/22-rdf-syntax-ns#type";
-    // what stays on the class in the ontology graph
-    let keep = format!(
-        "(?p = <{rdf_type}> && ?o != <{c}Domain>) || ?p IN (<http://www.w3.org/2000/01/rdf-schema#label>, \
-         <http://www.w3.org/2000/01/rdf-schema#comment>, <http://www.w3.org/2000/01/rdf-schema#subClassOf>) || \
-         STRSTARTS(STR(?p), \"http://www.w3.org/2002/07/owl#\")"
-    );
     // what the row carries in the domains graph (labels ride along: a row needs one)
     let row = format!("!((?p = <{rdf_type}> && ?o != <{c}Domain>) || STRSTARTS(STR(?p), \"http://www.w3.org/2002/07/owl#\"))");
     format!(
         "DELETE {{ GRAPH <{dom}> {{ ?s ?p ?old }} }} WHERE {{ GRAPH <{stg}> {{ ?s a <{c}Domain> ; ?p ?o FILTER({row}) }} \
          GRAPH <{dom}> {{ ?s ?p ?old }} }} ; \
          INSERT {{ GRAPH <{dom}> {{ ?s ?p ?o }} }} WHERE {{ GRAPH <{stg}> {{ ?s a <{c}Domain> ; ?p ?o FILTER({row}) }} }} ; \
-         DELETE {{ GRAPH <{ont}> {{ ?s ?p ?o }} }} WHERE {{ GRAPH <{ont}> {{ ?s a <{c}Domain> ; ?p ?o FILTER(!({keep})) }} }}",
+         DELETE {{ GRAPH <{ont}> {{ ?s ?p ?o }} }} WHERE {{ GRAPH <{ont}> {{ ?s a <{c}Domain> ; ?p ?o }} }}",
         dom = domains, stg = staging, ont = ontology,
     )
 }
@@ -1562,6 +1584,15 @@ fn run_retirement(action: &RetireAction, line: usize, ctx: &StoreCtx) -> Result<
             let (count, construct, delete) = subject_retirement_sparql(iri, graph);
             guarded_delete(ctx, line, &format!("<{graph}> subject <{iri}>"), &count, &construct, &delete)
         }
+        RetireAction::Merge { from, into, graph } => {
+            if from.is_empty() || into.is_empty() || from == into {
+                return Err(refuse("merge-entry-needs-from-and-a-different-into".into()));
+            }
+            let (count, construct, update) = merge_refs_sparql(from, into, graph);
+            guarded_delete(ctx, line, &format!("<{graph}> refs <{from}> -> <{into}>"), &count, &construct, &update)?;
+            let (count, construct, delete) = subject_retirement_sparql(from, graph);
+            guarded_delete(ctx, line, &format!("<{graph}> subject <{from}>"), &count, &construct, &delete)
+        }
         RetireAction::Class { class, graph } => {
             let local = class.rsplit('#').next().unwrap_or(class).to_string();
             // Three guards before any delete, all fail-closed.
@@ -2242,6 +2273,58 @@ mod scope_deleted_4064 {
     }
 }
 
+/// #4338 — the merge ledger op, parsed and RUN with Jena on a fixture.
+#[cfg(test)]
+mod merge_4338 {
+    use super::{merge_refs_sparql, parse_retirement, retirement_action, subject_retirement_sparql, RetireAction};
+    use std::process::Command;
+
+    #[test]
+    fn a_merge_line_parses_to_a_merge() {
+        let r = parse_retirement(r#"{"merge_subject": "https://jeffbridwell.com/chorus#gates-domain", "into": "https://jeffbridwell.com/chorus#gates", "graph": "urn:chorus:gates", "status": "staged"}"#).unwrap().unwrap();
+        assert_eq!(retirement_action(&r, "urn:chorus:ontology"), RetireAction::Merge {
+            from: "https://jeffbridwell.com/chorus#gates-domain".into(),
+            into: "https://jeffbridwell.com/chorus#gates".into(),
+            graph: "urn:chorus:gates".into(),
+        });
+        let done = parse_retirement(r#"{"merge_subject": "x", "into": "y", "status": "executed"}"#).unwrap().unwrap();
+        assert!(matches!(retirement_action(&done, "g"), RetireAction::Skip { .. }), "only staged lines run");
+    }
+
+    #[test]
+    fn a_twin_folds_into_the_real_domain_and_only_in_its_graph() {
+        let Ok(out) = Command::new("sh").args(["-c", "command -v update"]).output() else { return };
+        let update = String::from_utf8_lossy(&out.stdout).trim().to_string();
+        if update.is_empty() { eprintln!("UNMEASURED: no Jena update CLI on this box"); return; }
+        let dir = std::env::temp_dir().join(format!("merge-4338-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let data = dir.join("d.trig");
+        std::fs::write(&data, r#"@prefix c: <https://jeffbridwell.com/chorus#> .
+<urn:g> { c:gates-domain a c:Domain ; c:ownedBy c:principal-wren .
+          c:gate-1 c:hasDomain c:gates-domain . c:gate-2 c:hasDomain c:gates-domain . }
+<urn:other> { c:doc-1 c:hasDomain c:gates-domain . }
+"#).unwrap();
+        let (_, _, repoint) = merge_refs_sparql("https://jeffbridwell.com/chorus#gates-domain", "https://jeffbridwell.com/chorus#gates", "urn:g");
+        let (_, _, drop) = subject_retirement_sparql("https://jeffbridwell.com/chorus#gates-domain", "urn:g");
+        // run twice: the second run must change nothing (idempotent on every deploy)
+        let q = format!("{repoint} ; {drop} ; {repoint} ; {drop}");
+        let ru = dir.join("u.ru");
+        std::fs::write(&ru, &q).unwrap();
+        let o = Command::new(&update).arg(format!("--data={}", data.display()))
+            .arg(format!("--update={}", ru.display())).arg("--dump").output().unwrap();
+        assert!(o.status.success(), "update failed: {}", String::from_utf8_lossy(&o.stderr));
+        let after = String::from_utf8_lossy(&o.stdout).to_string();
+        let block = |g: &str| { let i = after.find(&format!("<{g}>")).unwrap_or(0); let j = after[i..].find('}').map(|k| i + k).unwrap_or(after.len()); after[i..j].to_string() };
+        let (g, other) = (block("urn:g"), block("urn:other"));
+        // NEGATIVE PROOF: both edges still exist, now on the real domain (a delete-only merge loses them)
+        assert!(g.contains("c:gate-1") && g.contains("c:gate-2"), "an edge was lost:\n{after}");
+        assert!(!g.contains("gates-domain"), "the twin survived in its graph:\n{after}");
+        // another graph is its own line: untouched by this one
+        assert!(other.contains("gates-domain"), "the merge reached a graph its line does not name:\n{after}");
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+}
+
 /// #4338 — the re-home RUN, not read: Jena's `update` applies merge + re-home to
 /// a store holding a staged Domain, an API-written field on it, and a schema class.
 #[cfg(test)]
@@ -2250,16 +2333,21 @@ mod rehome_4338 {
     use std::process::Command;
 
     #[test]
-    fn domain_rows_leave_the_ontology_graph_and_the_class_stays() {
+    fn a_domain_leaves_the_ontology_graph_entirely() {
         let Ok(out) = Command::new("sh").args(["-c", "command -v update"]).output() else { return };
         let update = String::from_utf8_lossy(&out.stdout).trim().to_string();
         if update.is_empty() { eprintln!("UNMEASURED: no Jena update CLI on this box"); return; }
         let dir = std::env::temp_dir().join(format!("rehome-4338-{}", std::process::id()));
         std::fs::create_dir_all(&dir).unwrap();
         let data = dir.join("d.trig");
+        // urn:ont holds what earlier deploys left: two punned Domains (one no
+        // longer staged at all) and a real class. The staged model set no longer
+        // puns: identity is a plain Domain.
         std::fs::write(&data, r#"@prefix c: <https://jeffbridwell.com/chorus#> . @prefix owl: <http://www.w3.org/2002/07/owl#> . @prefix rdfs: <http://www.w3.org/2000/01/rdf-schema#> .
-<urn:stg> { c:identity a owl:Class , c:Domain ; rdfs:label "identity" ; c:definesVocabulary c:Principal ; c:ownedBy c:principal-silas .
+<urn:stg> { c:identity a c:Domain ; rdfs:label "identity" ; c:definesVocabulary c:Principal ; c:ownedBy c:principal-silas .
             c:Principal a owl:Class ; rdfs:label "Principal" . }
+<urn:ont> { c:identity a owl:Class , c:Domain ; rdfs:label "identity" ; rdfs:comment "old" .
+            c:legacy a owl:Class , c:Domain ; rdfs:label "legacy" ; c:definesVocabulary c:Principal . }
 <urn:dom> { c:identity c:gaps "written by the API, keep" ; c:definesVocabulary c:Retired . }
 "#).unwrap();
         let q = format!("{} ; {}", merge_sparql("urn:stg", "urn:ont"), rehome_domain_rows_sparql("urn:stg", "urn:ont", "urn:dom"));
@@ -2271,11 +2359,12 @@ mod rehome_4338 {
         let after = String::from_utf8_lossy(&o.stdout).to_string();
         let block = |g: &str| { let i = after.find(&format!("<{g}>")).unwrap_or(0); let j = after[i..].find('}').map(|k| i + k).unwrap_or(after.len()); after[i..j].to_string() };
         let (ont, dom) = (block("urn:ont"), block("urn:dom"));
-        // the ontology keeps the classes, and no row predicate
-        assert!(ont.contains("c:identity") && ont.contains("owl:Class") && ont.contains("c:Principal"), "{after}");
-        assert!(!ont.contains("definesVocabulary") && !ont.contains("ownedBy") && !ont.contains("c:Domain"), "a row stayed in the ontology:\n{after}");
-        // the row lives in the domains graph, its staged values replaced
+        // the ontology keeps the real class and nothing of any Domain, class axioms included
+        assert!(ont.contains("c:Principal") && ont.contains("owl:Class"), "{after}");
+        assert!(!ont.contains("c:identity") && !ont.contains("c:legacy") && !ont.contains("c:Domain"), "a Domain stayed in the ontology:\n{after}");
+        // the row lives in the domains graph, its staged values replaced, never punned
         assert!(dom.contains("c:Domain") && dom.contains("c:Principal") && dom.contains("principal-silas"), "{after}");
+        assert!(!dom.contains("owl:Class"), "the pun followed the row into the domains graph:\n{after}");
         // NEGATIVE PROOF: the old value of a re-staged predicate is gone; an API-written field survives
         assert!(!dom.contains("c:Retired"), "a stale definesVocabulary survived:\n{after}");
         assert!(dom.contains("written by the API, keep"), "the re-home wiped an API-written field:\n{after}");

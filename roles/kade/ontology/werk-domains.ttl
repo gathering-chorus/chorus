@@ -453,7 +453,7 @@ chorus:code
 # TestSuiteRun) into owl-api's served set. Placement uses existing nodes (Silas to confirm the
 # loom placement). hasDesignDoc carried as a string from the legacy node — Document-typing is
 # the residual. The legacy chorus:tests triples are removed in the same pass.
-chorus:tests a owl:Class, chorus:Domain ;
+chorus:tests a chorus:Domain ;
     rdfs:label "tests" ;
     rdfs:comment "The set of all Tests — every automated test (jest, bats, cargo, integration) registered as a Test instance with its pyramid layer, hermeticity, and the domain it covers. The noun the register/run/trace verbs operate on." ;
     # #4201 — principal-kade, not role-kade: ownedBy has rdfs:range Principal

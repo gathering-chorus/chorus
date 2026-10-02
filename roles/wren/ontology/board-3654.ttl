@@ -146,7 +146,7 @@ chorus:ChunkMembershipShape a sh:NodeShape ;
 # FLAG (honest, not faked): hasDesignDoc omitted — the #3575 spike (cards-as-owl-class)
 # is not yet a registered chorus:Document; registering it is the domain-completeness
 # follow-on, tracked in chorus:gaps. Do not fake an edge to a non-existent Document.
-chorus:board a owl:Class, chorus:Domain ;
+chorus:board a chorus:Domain ;
   rdfs:label "board" ;
   rdfs:comment "The team's work board — cards grouped into chunks and ordered for execution." ;
   chorus:comment "The team's work board — cards grouped into chunks and ordered for execution." ;

@@ -76,7 +76,7 @@ chorus:AlertShape a sh:NodeShape ;
 # 3. The two domain rows that replace alerts-monitors.
 # ---------------------------------------------------------------------------
 
-chorus:alerts a owl:Class, chorus:Domain ;
+chorus:alerts a chorus:Domain ;
     rdfs:label "alerts" ;
     chorus:comment "Alert rules and the routing that decides who gets interrupted, and when." ;
     rdfs:comment "Alert rules and the routing that decides who gets interrupted, and when." ;
@@ -92,7 +92,7 @@ chorus:alerts a owl:Class, chorus:Domain ;
     chorus:hasDesignDoc chorus:document-alerts-service-design ;
     chorus:repoTarget "proving/domains/alerts" .
 
-chorus:monitors a owl:Class, chorus:Domain ;
+chorus:monitors a chorus:Domain ;
     rdfs:label "monitors" ;
     chorus:comment "Probes and health checks — the things that measure whether the system is working." ;
     rdfs:comment "Probes and health checks — the things that measure whether the system is working." ;

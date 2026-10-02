@@ -16,10 +16,10 @@
 # (spine), artifacts, handoffs, gates, trust, products, domains, and services.
 #
 # #4338 — this file loads into urn:chorus:ontology, which holds the MODEL only.
-# A domain written here as `a owl:Class , chorus:Domain` is a punned class: the
-# deploy keeps its class declaration (owl:Class, rdfs label/comment) in the
-# ontology graph and moves its ROW (definesVocabulary, ownedBy, partOf, …) to
-# urn:chorus:domains:domains (athena-deploy rehome_domain_rows_sparql).
+# A Domain is a row, not a class (ADR-045 superseded): write it `a chorus:Domain`.
+# The deploy moves every Domain written in any model file to
+# urn:chorus:domains:domains and leaves nothing of it in the ontology graph
+# (athena-deploy rehome_domain_rows_sparql).
 #
 # v0.3.0 merges Wren's product ontology (chorus-product-ontology.owl) into the
 # canonical namespace. Adds: ValueStream, Phase, Domain subtypes, Service,
@@ -28,8 +28,6 @@
 # Migration sources (no longer live):
 #   - building.ttl v0.1.0 (deprecated 2026-02-22, merged in v0.2.0)
 #   - chorus-product-ontology.owl v0.1 (migrated 2026-04-10)
-#
-# Bridge: framework.ttl connects this ontology to borg: (infra) and jb: (data).
 #
 # Prior art: US Patent 9,552,400 B2 (Bridwell) — RDF/OWL + SPARQL + workflow gates.
 #
@@ -1759,7 +1757,7 @@ chorus:snapshot        a owl:DatatypeProperty ; rdfs:label "snapshot" ; rdfs:ran
 # chorus:writeOrigin (184 rows migrated, verified 184 -> 0 / 0 -> 184) and keep
 # this IRI for the domain, because a domain's slug must match its graph and a
 # property and a domain sharing one IRI is the #4237 shape that broke prod today.
-chorus:provenance a owl:Class, chorus:Domain ;
+chorus:provenance a chorus:Domain ;
     rdfs:label "provenance" ;
     rdfs:comment "Version history — what a row looked like before it was replaced, so two versions can be diffed field by field." ;
     chorus:comment "Version history — what a row looked like before it was replaced." ;
@@ -2000,7 +1998,7 @@ chorus:ServiceShape a sh:NodeShape ;
 # is a test on its service, not a row. Ledger lines in model-retirements.jsonl.
 
 # the properties domain-class itself (punned)
-chorus:properties a owl:Class , chorus:Domain ;
+chorus:properties a chorus:Domain ;
     rdfs:label "properties" ;
     rdfs:comment "Config-as-data domain: service configuration + runtime properties governed as a registry (PropertyKey register-before-use). ADR-045 first worked example of domain-as-owl-class." ;
     chorus:partOf chorus:borg ;
