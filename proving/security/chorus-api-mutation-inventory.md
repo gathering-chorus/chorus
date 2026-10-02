@@ -33,7 +33,7 @@ Loki 7d = 0 hits. Securing these breaks nothing (same profile as #3618's reindex
 | Endpoint | 7d hits | Known caller | Credentialing |
 |---|---|---|---|
 | chorus/index | 13,638 | reindex-worker's index-worker.js (pokes embed-delta) | mint+send token in index-worker; highest stakes — do last, most careful |
-| athena/subdomains/* (~24 eps) | 1,366 | Athena UI writes + discover jobs | UI needs a browser-obtained token OR these stay session-gated; discover jobs credentialed |
+| athena per-domain routes, retired (~24 eps) | 1,366 | Athena UI writes + discover jobs | UI needs a browser-obtained token OR these stay session-gated; discover jobs credentialed |
 | athena/discover-code, discover-tests | 459 | discovery scheduler | credential the scheduler |
 | athena/validate | 204 | validation job/UI | identify + credential |
 | athena/reload | 36 | GSP bulk-load path | needs the governed bulk-load primitive (#3573 named it), not just a token |
@@ -41,7 +41,7 @@ Loki 7d = 0 hits. Securing these breaks nothing (same profile as #3618's reindex
 ## Flip order (deploy-before-require)
 1. **Step 0:** wrapper sources realm secret → ALLOW path works.
 2. **Class A wave:** verify-zero → secure all ~34 zero-caller endpoints in one model edit + flip. Big win, no breakage. (cards/* pending the round-trip check.)
-3. **Class B, ascending traffic:** reload(36) → validate(204) → discover(459) → subdomains(1366) → index(13638). Each: credential caller live → flip that surface → verify caller green → retire open path with receipt.
+3. **Class B, ascending traffic:** reload(36) → validate(204) → discover(459) → per-domain routes, retired (1366) → index(13638). Each: credential caller live → flip that surface → verify caller green → retire open path with receipt.
 4. **Done gate (AC):** automated sweep test asserts zero unauthenticated mutation endpoints.
 
 ## Done-state definition

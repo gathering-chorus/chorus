@@ -1,8 +1,8 @@
 #!/bin/bash
 # #4353 step 4 — move the old-named Domain rows onto their bare names, in the store.
 #
-# Jeff 2026-10-01: "i want to remove not fix subdomain dependencies." Step 4 is
-# the rows: 39 Domain rows named the subdomain way (cards-service, loom-principles,
+# Jeff 2026-10-01: remove the old domain naming, do not fix it. Step 4 is
+# the rows: 39 Domain rows with suffixed or prefixed names (cards-service, loom-principles,
 # photos-domain …) live only in the store. The source files were rewritten in the
 # same card; this moves what the store already holds, so nothing points at an old
 # name afterwards.

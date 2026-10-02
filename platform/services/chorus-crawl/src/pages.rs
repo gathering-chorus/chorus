@@ -10,8 +10,7 @@
 //!
 //! What this REPLACES. `POST /api/athena/discover-pages` and
 //! `/discover-endpoints` in chorus-api already wrote these rows, with raw
-//! SPARQL, into `urn:chorus:instances`, and hung them off a `chorus:SubDomain`
-//! by an inverse `hasPage`/`hasEndpoint` edge — the class #4187 is retiring.
+//! SPARQL, into `urn:chorus:instances`, by an inverse `hasPage`/`hasEndpoint` edge.
 //! Measured 2026-09-19: 63 Page + 448 Endpoint rows, `hasDomain` on none.
 //!
 //! What this does NOT carry over. The EJS classifier's last resort was a

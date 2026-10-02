@@ -1,7 +1,8 @@
+// @test-type: unit — stubbed dependencies; no live service.
 /**
  * athena-owners handler — unit tests (#2187).
  *
- * Lists owners with sub-domain counts. Trivial mapping — each binding is a
+ * Lists owners with domain counts. Trivial mapping — each binding is a
  * single owner with a parsed count.
  */
 import {
@@ -32,7 +33,7 @@ describe('fetchAthenaOwners (#2187)', () => {
     expect(body._meta.count).toBe(0);
   });
 
-  test('full binding maps uri, label, subdomainCount', async () => {
+  test('full binding maps uri, label, domainCount', async () => {
     const r = await fetchAthenaOwners(deps({
       sparql: async () => result([
         {
@@ -42,11 +43,11 @@ describe('fetchAthenaOwners (#2187)', () => {
         },
       ]),
     }));
-    const body = r.body as { data: Array<{ uri: string; label: string; subdomainCount: number }> };
+    const body = r.body as { data: Array<{ uri: string; label: string; domainCount: number }> };
     expect(body.data[0]).toEqual({
       uri: 'https://jeffbridwell.com/chorus#silas',
       label: 'Silas',
-      subdomainCount: 7,
+      domainCount: 7,
     });
   });
 
@@ -66,9 +67,9 @@ describe('fetchAthenaOwners (#2187)', () => {
         { owner: { value: '#o' }, label: { value: 'O' }, count: { value: '42' } },
       ]),
     }));
-    const body = r.body as { data: Array<{ subdomainCount: number }> };
-    expect(body.data[0].subdomainCount).toBe(42);
-    expect(typeof body.data[0].subdomainCount).toBe('number');
+    const body = r.body as { data: Array<{ domainCount: number }> };
+    expect(body.data[0].domainCount).toBe(42);
+    expect(typeof body.data[0].domainCount).toBe('number');
   });
 
   test('multiple owners yield matching count', async () => {

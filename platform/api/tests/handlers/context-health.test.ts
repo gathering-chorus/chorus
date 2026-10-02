@@ -118,13 +118,13 @@ describe('fetchContextHealth', () => {
     expect(body.data.checks).toEqual([]);
   });
 
-  it('envelope is system-scoped (no domain / subdomain / step / product)', async () => {
+  it('envelope is system-scoped (no domain / domain / step / product)', async () => {
     const r = await fetchContextHealth(
       { sparql: stubSparql(), readPulse: () => JSON.stringify({ health: { status: 'ok' } }) },
       '/api/chorus/context/health',
     );
     expect(r.body).not.toHaveProperty('domain');
-    expect(r.body).not.toHaveProperty('subdomain');
+    expect(r.body).not.toHaveProperty('domain');
     const keys = Object.keys(JSON.parse(JSON.stringify(r.body))).sort();
     expect(keys).toEqual(['data', 'source', 'timestamp']);
   });

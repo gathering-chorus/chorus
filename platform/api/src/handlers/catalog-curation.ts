@@ -15,7 +15,7 @@
  * Persisted shape:
  *   <doc-uri> a chorus:CatalogDoc ;
  *     chorus:catalogHref "<href>" ;
- *     chorus:product / chorus:subproduct / chorus:domain / chorus:subdomain / chorus:role "<value>" ;
+ *     chorus:product / chorus:subproduct / chorus:domain / chorus:role "<value>" ;
  *     chorus:curatedAt "<ISO>"^^xsd:dateTime .
  *
  *   <subj-uri> chorus:supersedes <obj-uri> .
@@ -23,7 +23,7 @@
  *   <subj-uri> chorus:reshapedInto <obj-uri> .
  */
 
-import { inferTags, SUBPRODUCT_DOMAINS, GATHERING_SUBDOMAINS } from './doc-tagger';
+import { inferTags, SUBPRODUCT_DOMAINS, GATHERING_DOMAINS } from './doc-tagger';
 
 const ATHENA_INSTANCES = 'urn:chorus:instances';
 const CHORUS_PREFIX = 'https://jeffbridwell.com/chorus#';
@@ -35,7 +35,6 @@ export interface CatalogTags {
   product?: string;
   subproduct?: string;
   domain?: string;
-  subdomain?: string;
   role?: string;
 }
 
@@ -75,13 +74,13 @@ const VALID_PRODUCTS = new Set(['chorus', 'gathering', 'consulting']);
 const VALID_SUBPRODUCTS = new Set(['loom', 'werk', 'athena', 'convergence', 'clearing', 'quality', 'borg']);
 const VALID_ROLES = new Set(['wren', 'silas', 'kade', 'jeff']);
 
-function buildValidSubdomains(): Set<string> {
+function buildValidDomains(): Set<string> {
   const s = new Set<string>();
   for (const list of Object.values(SUBPRODUCT_DOMAINS)) for (const d of list) s.add(d);
-  for (const d of GATHERING_SUBDOMAINS) s.add(d);
+  for (const d of GATHERING_DOMAINS) s.add(d);
   return s;
 }
-const VALID_SUBDOMAINS = buildValidSubdomains();
+const VALID_DOMAINS = buildValidDomains();
 
 function escapeLiteral(s: string): string {
   return s.replace(/\\/g, '\\\\').replace(/"/g, '\\"').replace(/\n/g, '\\n');
@@ -119,7 +118,7 @@ function pathImpliedTags(href: string): CatalogTags {
   const out: CatalogTags = {};
   if (inferred.product) out.product = inferred.product;
   if (inferred.subproduct) out.subproduct = inferred.subproduct;
-  if (inferred.subdomain) out.subdomain = inferred.subdomain;
+  if (inferred.domain) out.domain = inferred.domain;
   return out;
 }
 
@@ -127,7 +126,7 @@ function divergence(implied: CatalogTags, persisted: CatalogTags): string[] {
   const fields: string[] = [];
   if (implied.product && persisted.product && implied.product !== persisted.product) fields.push('product');
   if (implied.subproduct && persisted.subproduct && implied.subproduct !== persisted.subproduct) fields.push('subproduct');
-  if (implied.subdomain && persisted.subdomain && implied.subdomain !== persisted.subdomain) fields.push('subdomain');
+  if (implied.domain && persisted.domain && implied.domain !== persisted.domain) fields.push('domain');
   return fields;
 }
 
@@ -148,7 +147,7 @@ export function validateTags(body: unknown): { ok: true; tags: CatalogTags & { h
   const checks: Array<[unknown, string, Set<string>, (v: string) => void]> = [
     [b.product, 'product', VALID_PRODUCTS, (v) => { tags.product = v; }],
     [b.subproduct, 'subproduct', VALID_SUBPRODUCTS, (v) => { tags.subproduct = v; }],
-    [b.subdomain, 'subdomain', VALID_SUBDOMAINS, (v) => { tags.subdomain = v; }],
+    [b.domain, 'domain', VALID_DOMAINS, (v) => { tags.domain = v; }],
     [b.role, 'role', VALID_ROLES, (v) => { tags.role = v; }],
   ];
   for (const [raw, field, valid, assign] of checks) {
@@ -156,10 +155,6 @@ export function validateTags(body: unknown): { ok: true; tags: CatalogTags & { h
     const r = validateOneTag(raw, field, valid);
     if (!r.ok) return { ok: false, error: `unknown ${r.err.field}: ${r.err.value}` };
     assign(r.value);
-  }
-  if (b.domain !== undefined) {
-    if (typeof b.domain !== 'string') return { ok: false, error: 'domain must be a string' };
-    tags.domain = b.domain;
   }
   return { ok: true, tags };
 }
@@ -173,7 +168,6 @@ function buildTagInsertTriples(uri: string, href: string, isoNow: string, tags: 
   if (tags.product) triples.push(`<${uri}> chorus:product "${escapeLiteral(tags.product)}"`);
   if (tags.subproduct) triples.push(`<${uri}> chorus:subproduct "${escapeLiteral(tags.subproduct)}"`);
   if (tags.domain) triples.push(`<${uri}> chorus:domain "${escapeLiteral(tags.domain)}"`);
-  if (tags.subdomain) triples.push(`<${uri}> chorus:subdomain "${escapeLiteral(tags.subdomain)}"`);
   if (tags.role) triples.push(`<${uri}> chorus:role "${escapeLiteral(tags.role)}"`);
   return triples;
 }
@@ -187,7 +181,6 @@ DELETE {
   <${uri}> chorus:product ?p .
   <${uri}> chorus:subproduct ?sp .
   <${uri}> chorus:domain ?d .
-  <${uri}> chorus:subdomain ?sd .
   <${uri}> chorus:role ?r .
   <${uri}> chorus:curatedAt ?ca .
   <${uri}> chorus:catalogHref ?h .
@@ -198,7 +191,6 @@ WHERE {
   OPTIONAL { <${uri}> chorus:product ?p }
   OPTIONAL { <${uri}> chorus:subproduct ?sp }
   OPTIONAL { <${uri}> chorus:domain ?d }
-  OPTIONAL { <${uri}> chorus:subdomain ?sd }
   OPTIONAL { <${uri}> chorus:role ?r }
   OPTIONAL { <${uri}> chorus:curatedAt ?ca }
   OPTIONAL { <${uri}> chorus:catalogHref ?h }
@@ -207,7 +199,7 @@ WHERE {
 
 // #2627: tag-string serialization extracted; orchestrator becomes flat.
 function serializeTagsForSpine(tags: Record<string, string | undefined>): string {
-  const fields = ['product', 'subproduct', 'domain', 'subdomain', 'role'];
+  const fields = ['product', 'subproduct', 'domain', 'role'];
   const parts: string[] = [];
   for (const f of fields) {
     if (tags[f]) parts.push(`${f}=${tags[f]}`);
@@ -283,12 +275,10 @@ function tagsFromBinding(row: SparqlRow): CatalogTags {
   const product = readBinding(row, 'product');
   const subproduct = readBinding(row, 'subproduct');
   const domain = readBinding(row, 'domain');
-  const subdomain = readBinding(row, 'subdomain');
   const role = readBinding(row, 'role');
   if (product) tags.product = product;
   if (subproduct) tags.subproduct = subproduct;
   if (domain) tags.domain = domain;
-  if (subdomain) tags.subdomain = subdomain;
   if (role) tags.role = role;
   return tags;
 }
@@ -318,13 +308,12 @@ export async function readCatalogDoc(deps: CurationDeps, hrefb64: string): Promi
   const uri = hrefToUri(href);
 
   const tagsQuery = `PREFIX chorus: <${CHORUS_PREFIX}>
-SELECT ?product ?subproduct ?domain ?subdomain ?role WHERE {
+SELECT ?product ?subproduct ?domain ?role WHERE {
   GRAPH <${ATHENA_INSTANCES}> {
     <${uri}> a chorus:CatalogDoc .
     OPTIONAL { <${uri}> chorus:product ?product }
     OPTIONAL { <${uri}> chorus:subproduct ?subproduct }
     OPTIONAL { <${uri}> chorus:domain ?domain }
-    OPTIONAL { <${uri}> chorus:subdomain ?subdomain }
     OPTIONAL { <${uri}> chorus:role ?role }
   }
 }`;
@@ -378,13 +367,12 @@ export async function readCatalogAudit(deps: AuditDeps, hrefb64: string, limit =
 export async function readCatalogCurated(deps: CurationDeps): Promise<HandlerResult> {
   const start = Date.now();
   const query = `PREFIX chorus: <${CHORUS_PREFIX}>
-SELECT ?href ?product ?subproduct ?domain ?subdomain ?role WHERE {
+SELECT ?href ?product ?subproduct ?domain ?role WHERE {
   GRAPH <${ATHENA_INSTANCES}> {
     ?doc a chorus:CatalogDoc ; chorus:catalogHref ?href .
     OPTIONAL { ?doc chorus:product ?product }
     OPTIONAL { ?doc chorus:subproduct ?subproduct }
     OPTIONAL { ?doc chorus:domain ?domain }
-    OPTIONAL { ?doc chorus:subdomain ?subdomain }
     OPTIONAL { ?doc chorus:role ?role }
   }
 }`;
@@ -401,12 +389,12 @@ SELECT ?href ?product ?subproduct ?domain ?subdomain ?role WHERE {
 export async function readCatalogDrift(deps: CurationDeps): Promise<HandlerResult> {
   const start = Date.now();
   const query = `PREFIX chorus: <${CHORUS_PREFIX}>
-SELECT ?href ?product ?subproduct ?subdomain WHERE {
+SELECT ?href ?product ?subproduct ?domain WHERE {
   GRAPH <${ATHENA_INSTANCES}> {
     ?doc a chorus:CatalogDoc ; chorus:catalogHref ?href .
     OPTIONAL { ?doc chorus:product ?product }
     OPTIONAL { ?doc chorus:subproduct ?subproduct }
-    OPTIONAL { ?doc chorus:subdomain ?subdomain }
+    OPTIONAL { ?doc chorus:domain ?domain }
   }
 }`;
   const result = (await deps.sparqlQuery(query)) as SparqlResults;

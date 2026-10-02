@@ -1,6 +1,6 @@
 // @test-type: integration — hits the running API/store
 /**
- * Deploys sub-domain graph tests — #1873
+ * Deploys domain graph tests — #1873
  *
  * Integration tests — hit live Chorus API at localhost:3340.
  * Requires RUN_INTEGRATION=true, Chorus API running, Fuseki on 3030.
@@ -9,14 +9,14 @@
 import { startTestApp, type TestApp } from './lib/test-app';
 
 
-// #1873 AC1-AC4 originally asserted deploy-target child subdomains
+// #1873 AC1-AC4 originally asserted deploy-target child domains
 // (gathering-deploy, chorus-api-deploy, launchagents-deploy) under
 // deploys-domain, plus their individual completeness + consume edges.
 // Those targets never survived the graph restructure. The shape check that
 // replaced them ('deploys-domain is addressable and returns detail envelope')
-// is RETIRED by #4274: it fetched the subdomain DETAIL route, which went with
-// chorus:SubDomain (#4265; subdomain-detail.sparql deleted) and 404s. Jeff
-// 2026-09-23: "we are retiring subdomains". deploys-domain as a row is served
+// is RETIRED by #4274: it fetched the domain DETAIL route, which went with
+// chorus:Domain (#4265; domain-detail.sparql deleted) and 404s. Jeff
+// 2026-09-23: "we are retiring domains". deploys-domain as a row is served
 // by athena-make (:3360/domains/domains/deploys-domain).
 
 // AC5: Query "what deploys affect the spine?" returns results

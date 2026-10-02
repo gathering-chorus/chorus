@@ -2,7 +2,7 @@
 /**
  * #2485 Move 6 — scanner for chorus/platform/api/public/loom/*.html.
  *
- * Each <slug>.html maps to subdomain id `loom-<slug>` if that subdomain
+ * Each <slug>.html maps to domain id `loom-<slug>` if that domain
  * exists in the graph. Sibling to scanEjsViews / scanDocHtml in server.ts;
  * pulled into its own module for unit-testability.
  */
@@ -15,13 +15,13 @@ export interface LoomPageEntry {
   domainId: string;
 }
 
-export function scanLoomHtml(loomDir: string, validSubdomainIds: Set<string>): LoomPageEntry[] {
+export function scanLoomHtml(loomDir: string, validDomainIds: Set<string>): LoomPageEntry[] {
   const entries: LoomPageEntry[] = [];
   if (!fs.existsSync(loomDir)) return entries;
   for (const file of fs.readdirSync(loomDir).filter((f) => f.endsWith('.html'))) {
     const slug = file.replace(/\.html$/, '');
     const domainId = `loom-${slug}`;
-    if (!validSubdomainIds.has(domainId)) continue;
+    if (!validDomainIds.has(domainId)) continue;
     entries.push({
       route: `/loom/${file}`,
       path: `chorus/platform/api/public/loom/${file}`,

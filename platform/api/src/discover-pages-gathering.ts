@@ -3,7 +3,7 @@
  * Gathering page scanners — extracted from server.ts (#3097).
  *
  * scanEjsViews / scanDocHtml map gathering's EJS views + gathering-docs HTML to
- * chorus subdomain ids. Sibling to discover-pages-loom.ts; pulled into its own
+ * chorus domain ids. Sibling to discover-pages-loom.ts; pulled into its own
  * module so the gathering-absent soft-fail (#3097 blocker 1) is unit-testable
  * without importing server.ts (and booting its sqlite/lance handles).
  *

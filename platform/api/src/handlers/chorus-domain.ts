@@ -6,7 +6,7 @@
  *   domainRegistry     — Record<string, {product, step, description}>
  *   getCards           — () => Array<{id, title, status, owner, type, tags}>
  *   readDomainHtml     — (domainName) => string | null  (HTML content of artifacts/domain-<name>.html)
- *   fetchCompleteness  — async (subdomainId) => {percentage, present, missing, lifecycle} | null
+ *   fetchCompleteness  — async (domainId) => {percentage, present, missing, lifecycle} | null
  *   sparql             — async (query) => SparqlResult
  *   now                — () => number (default Date.now)
  *
@@ -14,10 +14,10 @@
  *   - 404 if domain not in registry (with validDomains list)
  *   - Cards filter: status not in {Done, Won't Do} AND tags include `domain:<name>`
  *   - Sections path 1: domain HTML — parse h2 sections with tables + lists
- *   - Sections path 2 fallback: if no HTML AND completeness resolves a subdomain, query
+ *   - Sections path 2 fallback: if no HTML AND completeness resolves a domain, query
  *     chorus:hasScenario / hasContract / hasPriorArt / hasIntegration / hasService / hasPersistence
  *     / hasPipeline / hasGap / hasActor / hasPage / hasLogSource per predicate, build items[] + itemDetails[]
- *     with ownership walk-up (direct owner wins; parent-sub-domain owner as fallback with ownerInherited=true).
+ *     with ownership walk-up (direct owner wins; parent-domain owner as fallback with ownerInherited=true).
  *   - Completeness: try <name>-service first, then <name>-domain
  *   - hasIcd: true for 8 ICD domains
  *
@@ -53,7 +53,7 @@ export interface ChorusDomainDeps {
   domainRegistry: Partial<Record<string, DomainMeta>>;
   getCards: () => DomainBoardCard[];
   readDomainHtml: (domainName: string) => string | null;
-  fetchCompleteness: (subdomainId: string) => Promise<Completeness | null>;
+  fetchCompleteness: (domainId: string) => Promise<Completeness | null>;
   sparql: Sparql;
   now?: () => number;
 }
@@ -124,10 +124,10 @@ interface SectionBinding {
 
 async function buildSparqlSections(
   deps: ChorusDomainDeps,
-  subdomainId: string,
+  domainId: string,
   sections: Record<string, HtmlSection>,
 ): Promise<void> {
-  const sdUri = `https://jeffbridwell.com/chorus#${subdomainId}`;
+  const sdUri = `https://jeffbridwell.com/chorus#${domainId}`;
 
   const parentOwnerQuery = `
     PREFIX chorus: <https://jeffbridwell.com/chorus#>
@@ -234,14 +234,14 @@ function buildSectionItems(
 async function lookupCompleteness(
   deps: ChorusDomainDeps,
   name: string,
-): Promise<{ completeness: Completeness | null; subdomainId: string | null }> {
+): Promise<{ completeness: Completeness | null; domainId: string | null }> {
   try {
     const svc = await deps.fetchCompleteness(`${name}-service`);
-    if (svc) return { completeness: svc, subdomainId: `${name}-service` };
+    if (svc) return { completeness: svc, domainId: `${name}-service` };
     const dom = await deps.fetchCompleteness(`${name}-domain`);
-    if (dom) return { completeness: dom, subdomainId: `${name}-domain` };
+    if (dom) return { completeness: dom, domainId: `${name}-domain` };
   } catch { /* unavailable */ }
-  return { completeness: null, subdomainId: null };
+  return { completeness: null, domainId: null };
 }
 
 function readSectionsFromHtml(deps: ChorusDomainDeps, name: string): Record<string, HtmlSection> {
@@ -273,11 +273,11 @@ export async function fetchChorusDomain(
   const blocked = cards.filter((c) => c.status === 'Blocked');
 
   const sections = readSectionsFromHtml(deps, name);
-  const { completeness, subdomainId } = await lookupCompleteness(deps, name);
+  const { completeness, domainId } = await lookupCompleteness(deps, name);
 
-  if (subdomainId && Object.keys(sections).length === 0) {
+  if (domainId && Object.keys(sections).length === 0) {
     try {
-      await buildSparqlSections(deps, subdomainId, sections);
+      await buildSparqlSections(deps, domainId, sections);
     } catch { /* sparql sections unavailable */ }
   }
 

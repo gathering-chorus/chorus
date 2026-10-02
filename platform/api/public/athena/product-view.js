@@ -9,7 +9,6 @@ async function init() {
   try {
     const [spRes, sdRes] = await Promise.all([
       fetch(ATHENA + '/subproducts'),
-      // #4353 — SubDomain is retired: the product view lists domains
       fetch('/owl/v1/domains/domains'),
     ]);
     if (!spRes.ok || !sdRes.ok) throw new Error('Athena error');
@@ -17,12 +16,12 @@ async function init() {
     const sdBody = await sdRes.json();
 
     const subproducts = spBody.data;
-    const subdomains = (sdBody.data || []).map((d) => ({ ...d, id: d.name, owner: d.ownedBy }));
+    const domains = (sdBody.data || []).map((d) => ({ ...d, id: d.name, owner: d.ownedBy }));
 
-    // Attach subdomains to subproducts by checking which subdomains belong to which subproduct
-    // For now, group subdomains by owner since partOf edges aren't populated yet
+    // Attach domains to subproducts by checking which domains belong to which subproduct
+    // For now, group domains by owner since partOf edges aren't populated yet
     window._subproducts = subproducts;
-    window._subdomains = subdomains;
+    window._domains = domains;
 
     renderFilters();
     renderContent();

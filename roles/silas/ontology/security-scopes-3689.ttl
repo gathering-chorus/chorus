@@ -123,7 +123,7 @@ chorus:principal-crawler
 #
 # The principle applied below is least privilege per KIND of work, not
 # convenience:
-#   domains:code   model authoring (athena subdomain PUT/POST/DELETE, /reload,
+#   domains:code   model authoring (athena domain PUT/POST/DELETE, /reload,
 #                  discover-code, discover-tests, discover-writes) — 7 surfaces.
 #                  Role work. The three roles.
 #   icd            ICD authoring — 2 surfaces. Role work. The three roles.

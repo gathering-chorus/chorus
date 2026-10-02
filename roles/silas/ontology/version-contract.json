@@ -18,19 +18,8 @@
         "rdfs:label": { "required": true, "cardinality": "1" },
         "rdfs:comment": { "required": false, "cardinality": "0..1" },
         "chorus:ownedBy": { "required": true, "cardinality": "1", "range": "chorus:Role" },
-        "chorus:hasDomain": { "required": false, "cardinality": "0..*", "range": "chorus:SubDomain" },
+        "chorus:hasDomain": { "required": false, "cardinality": "0..*", "range": "chorus:Domain" },
         "chorus:primaryStep": { "required": false, "cardinality": "0..1", "range": "chorus:Vertebra" }
-      }
-    },
-    "chorus:SubDomain": {
-      "required": true,
-      "superClass": "chorus:Domain",
-      "properties": {
-        "rdfs:label": { "required": true, "cardinality": "1" },
-        "rdfs:comment": { "required": false, "cardinality": "0..1" },
-        "chorus:ownedBy": { "required": true, "cardinality": "1", "range": "chorus:Role" },
-        "chorus:primaryStep": { "required": false, "cardinality": "0..1", "range": "chorus:Vertebra" },
-        "chorus:consumes": { "required": false, "cardinality": "0..*", "range": "chorus:SubDomain" }
       }
     },
     "chorus:Role": {
@@ -79,12 +68,7 @@
     {
       "name": "domain-detail-page",
       "owner": "kade",
-      "depends_on": ["chorus:SubDomain", "chorus:SubProduct", "chorus:ownedBy", "chorus:primaryStep", "chorus:consumes", "chorus:hasDomain", "rdfs:label", "rdfs:comment"]
-    },
-    {
-      "name": "athena-api-subdomains",
-      "owner": "kade",
-      "depends_on": ["chorus:SubDomain", "chorus:SubProduct", "chorus:ownedBy", "chorus:primaryStep", "chorus:consumes", "chorus:hasDomain", "rdfs:label", "rdfs:comment"]
+      "depends_on": ["chorus:SubProduct", "chorus:ownedBy", "chorus:primaryStep", "chorus:consumes", "chorus:hasDomain", "rdfs:label", "rdfs:comment"]
     },
     {
       "name": "value-stream-page",
@@ -94,7 +78,7 @@
     {
       "name": "crawler-service",
       "owner": "kade",
-      "depends_on": ["chorus:SubDomain", "chorus:SubProduct", "chorus:ownedBy", "chorus:consumes", "rdfs:label", "rdfs:comment"]
+      "depends_on": ["chorus:SubProduct", "chorus:ownedBy", "chorus:consumes", "rdfs:label", "rdfs:comment"]
     }
   ]
 }

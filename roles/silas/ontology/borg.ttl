@@ -177,18 +177,18 @@ borg:resourceURI a owl:DatatypeProperty ;
     rdfs:domain borg:Resource ;
     rdfs:range xsd:anyURI .
 
-# --- SubDomain → Resource link (replaces flat Persistence section) ---
+# --- Domain → Resource link (replaces flat Persistence section) ---
 
 borg:usesResource a owl:ObjectProperty ;
     rdfs:label "uses resource" ;
     rdfs:comment "This domain depends on this data resource. Shown on domain-detail page Persistence section." ;
-    rdfs:domain chorus:SubDomain ;
+    rdfs:domain chorus:Domain ;
     rdfs:range borg:Resource .
 
 borg:usesEnvironment a owl:ObjectProperty ;
     rdfs:label "uses environment" ;
     rdfs:comment "This domain depends on this running service. Shown on domain-detail page Infrastructure section." ;
-    rdfs:domain chorus:SubDomain ;
+    rdfs:domain chorus:Domain ;
     rdfs:range borg:Environment .
 
 # =============================================================================

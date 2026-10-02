@@ -49,17 +49,17 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 SESSION_COOKIE = "chorus_share_session"
 
 # #3790 — the session cookie is scoped to the PARENT domain so one sign-in rides
-# every subdomain. Without this the doors loop: the Clearing redirects an
+# every host under it. Without this the doors loop: the Clearing redirects an
 # anonymous visitor to the guard on chorus.<domain>, the guard signs them in and
 # sends them back to clearing.<domain>, and a host-only cookie never travels — so
 # they arrive anonymous and are redirected again. A login page that never logs
 # you in (Wren, reading the mint paths before it shipped).
 #
 # CONFIG, not a constant, because widening a cookie's reach IS a security change
-# and should read as one. A parent-domain cookie rides every subdomain INCLUDING
+# and should read as one. A parent-domain cookie rides every host under it INCLUDING
 # ONES THAT DO NOT EXIST YET: stand up a new host under this domain and it
 # silently receives everyone's session. That is the grant. Empty means host-only,
-# the old behaviour, and is the setting to use if a subdomain is ever run by
+# the old behaviour, and is the setting to use if a separate host is ever run by
 # something that should not be trusted with a Chorus identity.
 COOKIE_DOMAIN = os.environ.get("SHARE_COOKIE_DOMAIN", ".lightlifeurbangardens.com").strip()
 SESSION_TTL = int(os.environ.get("SHARE_SESSION_TTL", str(12 * 3600)))

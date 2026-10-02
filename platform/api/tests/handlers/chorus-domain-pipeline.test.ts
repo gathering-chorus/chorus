@@ -108,12 +108,12 @@ describe('fetchChorusDomainPipeline (#2188)', () => {
     expect(ship?.detail.ratio).toBe(75);
   });
 
-  test('#4353 NEGATIVE PROOF — never asks a retired /api/athena/subdomains route', async () => {
+  test('#4353 NEGATIVE PROOF — never asks a retired /api/athena/domains route', async () => {
     const asked: string[] = [];
     const fetcher = async (url: string) => { asked.push(url); return null; };
     await fetchChorusDomainPipeline(deps({ fetcher }), 'photos');
     expect(asked).toContain('/api/chorus/domain/photos');
-    expect(asked.filter((u) => u.includes('/api/athena/subdomains'))).toEqual([]);
+    expect(asked.filter((u) => u.includes('/api/athena/domains'))).toEqual([]);
   });
 
   test('envelope wraps body with query_name "domain-pipeline"', async () => {

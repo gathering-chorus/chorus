@@ -1,9 +1,10 @@
+// @test-type: unit — stubbed dependencies; no live service.
 /**
  * doc-catalog-tree unit tests (#2521).
  */
 import {
   buildHierarchyTree,
-  buildSubdomainIndex,
+  buildDomainIndex,
   buildSubproductIndex,
   type TaggedDoc,
   type AthenaShape,
@@ -20,7 +21,7 @@ const ATHENA: AthenaShape = {
     { id: 'athena-product', label: 'Athena', product: 'chorusProduct' },
     { id: 'werk-product', label: 'Werk', product: 'chorusProduct' },
   ],
-  subdomains: [
+  domains: [
     { id: 'loom-decisions', label: 'Decisions', subproduct: 'loom' },
     { id: 'loom-principles', label: 'Principles', subproduct: 'loom' },
     { id: 'athena-domain', label: 'Athena', subproduct: 'athena-product' },
@@ -30,13 +31,13 @@ const ATHENA: AthenaShape = {
   ],
 };
 
-function doc(href: string, product?: string, subproduct?: string, subdomain?: string): TaggedDoc {
+function doc(href: string, product?: string, subproduct?: string, domain?: string): TaggedDoc {
   return { href, source: 'test', title: href,
-    tags: { confidence: 'high', signal: 'path', product, subproduct, subdomain } };
+    tags: { confidence: 'high', signal: 'path', product, subproduct, domain } };
 }
 
 describe('buildHierarchyTree (#2521)', () => {
-  test('subdomain doc rolls up through subproduct → product', () => {
+  test('domain doc rolls up through subproduct → product', () => {
     const tree = buildHierarchyTree(
       [doc('/x.md', 'chorus', 'loom', 'loom-decisions')],
       ATHENA,
@@ -46,11 +47,11 @@ describe('buildHierarchyTree (#2521)', () => {
     expect(chorus!.docCount).toBe(1);
     const loom = chorus!.subproducts!.find(s => s.id === 'loom');
     expect(loom!.docCount).toBe(1);
-    const decisions = loom!.subdomains!.find(s => s.id === 'loom-decisions');
+    const decisions = loom!.domains!.find(s => s.id === 'loom-decisions');
     expect(decisions!.docCount).toBe(1);
   });
 
-  test('gathering: subdomain attaches directly to product (no subproduct level)', () => {
+  test('gathering: domain attaches directly to product (no subproduct level)', () => {
     const tree = buildHierarchyTree(
       [doc('/p.md', 'gathering', undefined, 'photos-domain')],
       ATHENA,
@@ -58,7 +59,7 @@ describe('buildHierarchyTree (#2521)', () => {
     const gathering = tree.products.find(p => p.label === 'Gathering');
     expect(gathering!.docCount).toBe(1);
     expect(gathering!.subproducts).toBeUndefined();
-    expect(gathering!.subdomains!.find(s => s.id === 'photos-domain')!.docCount).toBe(1);
+    expect(gathering!.domains!.find(s => s.id === 'photos-domain')!.docCount).toBe(1);
   });
 
   test('untagged docs go to untagged bucket', () => {
@@ -97,8 +98,8 @@ describe('buildHierarchyTree (#2521)', () => {
 // #2627: refactor extracted these phase helpers; tests pin the contracts
 // so the orchestrator can shrink without losing the wiring.
 describe('buildHierarchyTree extracted helpers (#2627)', () => {
-  test('buildSubdomainIndex routes by subproduct, by product, and by id', () => {
-    const idx = buildSubdomainIndex(ATHENA);
+  test('buildDomainIndex routes by subproduct, by product, and by id', () => {
+    const idx = buildDomainIndex(ATHENA);
     expect(idx.byId['loom-decisions']).toBeDefined();
     expect(idx.bySubproduct['loom']).toEqual(
       expect.arrayContaining([
@@ -106,20 +107,20 @@ describe('buildHierarchyTree extracted helpers (#2627)', () => {
         expect.objectContaining({ id: 'loom-principles' }),
       ]),
     );
-    // Subdomain attached directly to a product (not via subproduct) lands in byProduct
+    // Domain attached directly to a product (not via subproduct) lands in byProduct
     const productOnly: AthenaShape = {
       ...ATHENA,
-      subdomains: [{ id: 'orphan-sd', label: 'Orphan', product: 'gathering' }],
+      domains: [{ id: 'orphan-sd', label: 'Orphan', product: 'gathering' }],
     };
-    const idx2 = buildSubdomainIndex(productOnly);
+    const idx2 = buildDomainIndex(productOnly);
     expect(idx2.byProduct['gathering']).toEqual([expect.objectContaining({ id: 'orphan-sd' })]);
     expect(idx2.bySubproduct['gathering']).toBeUndefined();
   });
 
-  test('buildSubproductIndex carries subdomains forward and indexes by product+id', () => {
-    const subIdx = buildSubdomainIndex(ATHENA);
+  test('buildSubproductIndex carries domains forward and indexes by product+id', () => {
+    const subIdx = buildDomainIndex(ATHENA);
     const spIdx = buildSubproductIndex(ATHENA, subIdx);
-    expect(spIdx.byId['loom']?.subdomains.map(s => s.id)).toEqual(
+    expect(spIdx.byId['loom']?.domains.map(s => s.id)).toEqual(
       expect.arrayContaining(['loom-decisions', 'loom-principles']),
     );
     expect(spIdx.byProduct['chorusProduct']?.map(sp => sp.id)).toEqual(

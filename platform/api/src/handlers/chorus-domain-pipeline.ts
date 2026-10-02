@@ -133,8 +133,7 @@ export async function fetchChorusDomainPipeline(
 
   const sdId = name.toLowerCase();
 
-  // #4353 — cards and completeness come from the domain view itself; the
-  // /api/athena/subdomains/:id/{cards,completeness} routes are retired.
+  // Cards and completeness come from the domain view itself.
   const [domainRes, codeRes, testsRes, endpointsRes, alertsRes] = await Promise.all([
     deps.fetcher(`/api/chorus/domain/${name}`),
     deps.fetcher(`/api/chorus/domain/${name}/code`),
@@ -158,6 +157,6 @@ export async function fetchChorusDomainPipeline(
 
   return {
     status: 200,
-    body: deps.envelope('domain-pipeline', { subdomain: sdId, stages }, now() - start, { count: 5 }),
+    body: deps.envelope('domain-pipeline', { domain: sdId, stages }, now() - start, { count: 5 }),
   };
 }

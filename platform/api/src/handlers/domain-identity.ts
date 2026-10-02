@@ -6,34 +6,34 @@
  * (cards, tests, decisions, releases, coverage, code, pages, endpoints,
  * services, alerts, logs, prior-art, actors, scenarios, contract,
  * integrations, persistence, pipeline, gaps) calls `resolveDomainIdentity(id)`
- * to find out what the subdomain encompasses — instead of each inventing its
+ * to find out what the domain encompasses — instead of each inventing its
  * own alias table, prefix stripping, or exact-URI matching.
  *
  * Contract:
  *   - Input `id` may be kebab-case (`loom-principles`) or underscore
  *     (`loom_principles`) or trailing-suffix (`loom-principles-domain`,
  *     `tests-domain`). The resolver normalizes to kebab.
- *   - Registry entries override defaults for subdomains whose cards are
+ *   - Registry entries override defaults for domains whose cards are
  *     tagged with a parent product tag (e.g., loom-principles cards carry
  *     `sequence:loom`, not `sequence:loom-principles`).
- *   - Subdomains without a registry entry get a sensible default identity
+ *   - Domains without a registry entry get a sensible default identity
  *     derived from the id itself.
  */
 
 export interface DomainIdentity {
   /** Canonical kebab id: `loom-principles` */
   primary: string;
-  /** Parent tags this subdomain folds into (e.g., `['loom']` for `loom-principles`) */
+  /** Parent tags this domain folds into (e.g., `['loom']` for `loom-principles`) */
   aliases: string[];
   /** TTL subject URI for Athena exact-match queries */
-  subdomainUri: string;
+  domainUri: string;
   /** `domain:X` labels to match in card search */
   cardDomainTags: string[];
   /** `sequence:X` labels to match in card search */
   cardSequenceTags: string[];
   /** Filename tokens to match for alert scans (e.g., `['loom', 'principles']`) */
   alertFileTokens: string[];
-  /** Fuseki graph — `urn:chorus:ontology` for Chorus subdomains, `urn:chorus:instances` for instance-backed folds */
+  /** Fuseki graph — `urn:chorus:ontology` for Chorus domains, `urn:chorus:instances` for instance-backed folds */
   ontologyGraph: string;
 }
 
@@ -47,12 +47,12 @@ interface RegistryEntry {
 }
 
 /**
- * Registry — only enter subdomains whose cards are tagged with a parent,
+ * Registry — only enter domains whose cards are tagged with a parent,
  * not their primary id. If `cards list --label domain:<id>` already returns
  * what you want, no entry needed.
  */
 const REGISTRY: Record<string, RegistryEntry> = {
-  // Loom sub-subdomains: cards carry `sequence:loom`, decisions carry `domain:loom`.
+  // Loom sub-domains: cards carry `sequence:loom`, decisions carry `domain:loom`.
   'principles': { aliases: ['loom'], cardSequenceTags: ['loom'], cardDomainTags: ['chorus', 'loom'] },
   'policies':   { aliases: ['loom'], cardSequenceTags: ['loom'], cardDomainTags: ['chorus', 'loom'] },
   'practices':  { aliases: ['loom'], cardSequenceTags: ['loom'], cardDomainTags: ['chorus', 'loom'] },
@@ -69,8 +69,8 @@ const REGISTRY: Record<string, RegistryEntry> = {
 /**
  * Normalize any incoming id to canonical kebab form.
  * Strips trailing `-domain` suffix ONLY — `-analytics`, `-service`, etc. are
- * legitimate kebab words in real subdomain names (`loom-analytics`,
- * `pulse-service`). Earlier code in athena-subdomain-cards.ts stripped too
+ * legitimate kebab words in real domain names (`loom-analytics`,
+ * `pulse-service`). Earlier code in athena-domain-cards.ts stripped too
  * aggressively and would have silently collapsed `loom-analytics` to `loom`.
  * Converts underscores to hyphens, lowercases.
  */
@@ -87,7 +87,7 @@ function defaultAlertTokens(primary: string): string[] {
 }
 
 /**
- * Resolve a subdomain id into its identity envelope.
+ * Resolve a domain id into its identity envelope.
  * Accepts kebab, underscore, or trailing-suffix forms.
  */
 export function resolveDomainIdentity(rawId: string): DomainIdentity {
@@ -99,12 +99,12 @@ export function resolveDomainIdentity(rawId: string): DomainIdentity {
   const cardSequenceTags = entry.cardSequenceTags ?? [];
   const alertFileTokens = entry.alertFileTokens ?? defaultAlertTokens(primary);
   const ontologyGraph = entry.ontologyGraph ?? 'urn:chorus:ontology';
-  const subdomainUri = `https://jeffbridwell.com/chorus#${primary}`;
+  const domainUri = `https://jeffbridwell.com/chorus#${primary}`;
 
   return {
     primary,
     aliases,
-    subdomainUri,
+    domainUri,
     cardDomainTags,
     cardSequenceTags,
     alertFileTokens,

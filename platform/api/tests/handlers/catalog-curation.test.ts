@@ -57,9 +57,13 @@ describe('validateTags', () => {
     expect(r).toEqual({ ok: false, error: 'unknown product: nonsense' });
   });
 
-  it('accepts valid five-field tags and free-form domain', () => {
-    const r = validateTags({ href: '/d', product: 'chorus', subproduct: 'werk', role: 'kade', domain: 'anything-goes' });
-    expect(r).toMatchObject({ ok: true, tags: { href: '/d', product: 'chorus', subproduct: 'werk', role: 'kade', domain: 'anything-goes' } });
+  it('accepts valid tags with a known domain', () => {
+    const r = validateTags({ href: '/d', product: 'chorus', subproduct: 'werk', role: 'kade', domain: 'cards' });
+    expect(r).toMatchObject({ ok: true, tags: { href: '/d', product: 'chorus', subproduct: 'werk', role: 'kade', domain: 'cards' } });
+  });
+
+  it('#4353 — domain is checked like the other axes: an unknown name is refused', () => {
+    expect(validateTags({ href: '/d', domain: 'anything-goes' })).toEqual({ ok: false, error: 'unknown domain: anything-goes' });
   });
 
   it('rejects a non-string domain', () => {
@@ -135,7 +139,7 @@ describe('readCatalogDoc', () => {
     const d = fakeDeps();
     const uriOf = (href: string) => `https://jeffbridwell.com/chorus#catalog-doc-${b64url(href)}`;
     d.queryResults.push({
-      results: { bindings: [{ product: { value: 'chorus' }, subdomain: { value: 'tests-domain' } }] },
+      results: { bindings: [{ product: { value: 'chorus' }, domain: { value: 'tests' } }] },
     });
     d.queryResults.push({
       results: {

@@ -5,7 +5,7 @@
 import { parseChorusApiRoutes } from '../src/discover-endpoints-chorus-api';
 
 describe('parseChorusApiRoutes', () => {
-  test('tags concrete /api/loom/<slug> route to loom-<slug> when subdomain is valid', () => {
+  test('tags concrete /api/loom/<slug> route to loom-<slug> when domain is valid', () => {
     const src = `
       app.get('/api/loom/decisions', handler);
       app.get('/api/loom/principles', handler);
@@ -48,7 +48,7 @@ describe('parseChorusApiRoutes', () => {
     expect(methods).toEqual(['GET', 'POST']);
   });
 
-  test('does not tag loom-<slug> when that subdomain is not in valid set', () => {
+  test('does not tag loom-<slug> when that domain is not in valid set', () => {
     const src = `app.get('/api/loom/cookbook-substrate-class-domain', handler);`;
     const valid = new Set(['loom-decisions', 'chorus-domain']);
     const entries = parseChorusApiRoutes(src, valid);

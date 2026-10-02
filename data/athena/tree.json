@@ -302,7 +302,6 @@
         "roles/silas/ontology",
         "platform/api/src/handlers/athena-tree.ts",
         "platform/api/src/handlers/athena-tree-schemas.ts",
-        "platform/api/src/handlers/athena-subdomains.ts",
         "platform/api/src/handlers/athena-products.ts",
         "platform/api/src/handlers/athena-subproducts.ts",
         "platform/api/src/handlers/domain-identity.ts",
@@ -480,7 +479,6 @@
       "hasMapsTo": [
         "directing/products/cards",
         "platform/api/src/handlers/athena-card-detail.ts",
-        "platform/api/src/handlers/athena-subdomain-cards.ts",
         "platform/api/src/handlers/context-board-next.ts",
         "platform/api/src/handlers/context-board-wip.ts",
         "platform/api/src/handlers/context-board-swat.ts",
@@ -637,7 +635,6 @@
         "dashboards",
         "platform/api/public/borg",
         "platform/api/src/handlers/context-alerts.ts",
-        "platform/api/src/handlers/athena-subdomain-alerts.ts",
         "platform/api/src/eventloop-alert.ts"
       ]
     },

@@ -2,11 +2,11 @@
  * Levenshtein DP table is keyed by validated string indices; not user input.
  */
 /**
- * doc-tag-drift — detect docs claiming subdomains Athena doesn't recognize (#2520 AC6).
+ * doc-tag-drift — detect docs claiming domains Athena doesn't recognize (#2520 AC6).
  *
- * Pure function shape: takes a list of doc tags + the live Athena subdomain
+ * Pure function shape: takes a list of doc tags + the live Athena domain
  * set, returns the drift list. Tests pass a fixture set; production calls
- * Athena's /api/athena/subdomains.
+ * Athena's /api/athena/domains.
  */
 
 import type { DocTags } from './doc-tagger';
@@ -21,7 +21,7 @@ export interface DocWithTags {
 export interface DriftEntry {
   href: string;
   title: string;
-  claimedSubdomain: string;
+  claimedDomain: string;
   closestMatch?: string;
 }
 
@@ -41,7 +41,7 @@ function levenshtein(a: string, b: string): number {
   return dp[a.length][b.length];
 }
 
-function closestSubdomain(claimed: string, valid: string[]): string | undefined {
+function closestDomain(claimed: string, valid: string[]): string | undefined {
   let best: { id: string; dist: number } | undefined;
   for (const v of valid) {
     const d = levenshtein(claimed, v);
@@ -54,17 +54,17 @@ function closestSubdomain(claimed: string, valid: string[]): string | undefined 
   return undefined;
 }
 
-export function detectDrift(docs: DocWithTags[], validSubdomains: string[]): DriftEntry[] {
-  const validSet = new Set(validSubdomains);
+export function detectDrift(docs: DocWithTags[], validDomains: string[]): DriftEntry[] {
+  const validSet = new Set(validDomains);
   const drift: DriftEntry[] = [];
   for (const d of docs) {
-    if (!d.tags.subdomain) continue;
-    if (validSet.has(d.tags.subdomain)) continue;
+    if (!d.tags.domain) continue;
+    if (validSet.has(d.tags.domain)) continue;
     drift.push({
       href: d.href,
       title: d.title,
-      claimedSubdomain: d.tags.subdomain,
-      closestMatch: closestSubdomain(d.tags.subdomain, validSubdomains),
+      claimedDomain: d.tags.domain,
+      closestMatch: closestDomain(d.tags.domain, validDomains),
     });
   }
   return drift;

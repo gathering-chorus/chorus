@@ -62,7 +62,7 @@ id_patterns() {
   fi
 }
 
-# #4353 — decisions are the ADR rows on athena-make (the SubDomain route is retired)
+# #4353 — decisions are the ADR rows on athena-make
 DECISIONS_URL="${DECISIONS_URL:-${ATHENA_MAKE_URL:-http://localhost:3360}/v1/decisions/adrs}"
 LABELS=$(curl -s --max-time 5 "$DECISIONS_URL" | python3 -c "
 import json, sys

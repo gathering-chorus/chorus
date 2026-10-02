@@ -16,7 +16,7 @@ const read = (p: string): string => fs.readFileSync(path.join(PUB, p), 'utf-8');
 // #3635 replaced the athena/ generated skeletons with the Jeff-approved hand-
 // authored family (pending the generator upgrade); those pages carry the #3635
 // marker + athena-flow.js wiring instead of the page_html header. domain.html
-// (root) was the one generated shell left; #4353 deleted it with the SubDomain
+// (root) was the one generated shell left; #4353 deleted it with the Domain
 // routes, so no root generated shell remains to check.
 const FAMILY_PAGES = ['athena/value-stream.html', 'athena/product.html',
   'athena/products.html', 'athena/domains.html', 'athena/domain.html'];

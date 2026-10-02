@@ -2628,7 +2628,7 @@ const ATHENA_QUERIES = [
   { name: 'health', path: '/api/athena/health', description: 'Ontology health — triple count, endpoint status' },
   // #3603: products/subproducts retired from the hand-coded surface — athena-make
   // :3360/products (generated from chorus:ProductShape) is the product API.
-  { name: 'owners', path: '/api/athena/owners', description: 'Owners with sub-domain counts' },
+  { name: 'owners', path: '/api/athena/owners', description: 'Owners with domain counts' },
   { name: 'machines', path: '/api/athena/machines', description: 'Machines with running services' },
 ];
 
@@ -2733,7 +2733,7 @@ app.get('/api/athena/steps', (_req: Request, res: Response) => {
   res.status(410).json({ error: 'gone', message: 'v1 retired by #3702 — use /owl/valuestreams (athena-make :3360)' });
 });
 
-// GET /api/athena/owners — owners with sub-domain counts
+// GET /api/athena/owners — owners with domain counts
 app.get('/api/athena/owners', async (_req: Request, res: Response) => {
   const r = await fetchAthenaOwners({ sparql: athenaSparqlQuery, loadQuery: loadSparql, envelope: athenaEnvelope });
   res.status(r.status).json(r.body);
@@ -2746,8 +2746,7 @@ app.get('/api/athena/machines', async (_req: Request, res: Response) => {
 });
 
 // GET /api/loom/principles and /api/loom/decisions — 308 to the generated rows on
-// athena-make, through the same-origin /owl proxy (#4353: the
-// /api/athena/subdomains/loom-* reads they used to point at are retired).
+// athena-make, through the same-origin /owl proxy.
 app.get('/api/loom/principles', (_req: Request, res: Response) => {
   res.redirect(308, '/owl/v1/principles/principles');
 });
@@ -3125,7 +3124,7 @@ app.get('/api/chorus/trace/integrations/:domain', (req: Request, res: Response) 
 // Doc catalog (#2445) — relocated from gathering. Lift-and-shift; gathering's
 // /api/doc-catalog endpoints stay live until callers migrate.
 import { listCatalog as docCatalogList, addDoc as docCatalogAdd, domainArtifacts as docCatalogDomain, linkArtifact as docCatalogLink, buildDocCatalog } from './handlers/doc-catalog';
-import { inferTags, SUBPRODUCT_DOMAINS, GATHERING_SUBDOMAINS } from './handlers/doc-tagger';
+import { inferTags, SUBPRODUCT_DOMAINS, GATHERING_DOMAINS } from './handlers/doc-tagger';
 import { detectDrift } from './handlers/doc-tag-drift';
 import { scanTail } from './handlers/spine-scan';
 import { discoverPages, buildInventory } from './handlers/ui-pages';
@@ -3137,10 +3136,10 @@ app.post('/api/doc-catalog/link', docCatalogLink);
 
 // #2627: helpers extracted from /api/doc-catalog/tags route.
 type TaggedDocSummary = { href: string; source: string; title: string; tags: ReturnType<typeof inferTags> };
-type DocTagCoverage = { byProduct: Record<string, number>; bySubproduct: Record<string, number>; withProduct: number; withSubdomain: number };
+type DocTagCoverage = { byProduct: Record<string, number>; bySubproduct: Record<string, number>; withProduct: number; withDomain: number };
 
 function summarizeCoverage(tagged: TaggedDocSummary[]): DocTagCoverage {
-  const out: DocTagCoverage = { byProduct: {}, bySubproduct: {}, withProduct: 0, withSubdomain: 0 };
+  const out: DocTagCoverage = { byProduct: {}, bySubproduct: {}, withProduct: 0, withDomain: 0 };
   for (const t of tagged) {
     if (t.tags.product) {
       out.byProduct[t.tags.product] = (out.byProduct[t.tags.product] || 0) + 1;
@@ -3149,14 +3148,14 @@ function summarizeCoverage(tagged: TaggedDocSummary[]): DocTagCoverage {
     if (t.tags.subproduct) {
       out.bySubproduct[t.tags.subproduct] = (out.bySubproduct[t.tags.subproduct] || 0) + 1;
     }
-    if (t.tags.subdomain) out.withSubdomain++;
+    if (t.tags.domain) out.withDomain++;
   }
   return out;
 }
 
 async function fetchDriftAgainstAthena(tagged: TaggedDocSummary[]): Promise<ReturnType<typeof detectDrift>> {
   try {
-    // #4353 — SubDomain is retired; a doc's domain tag is checked against the Domain rows
+    // A doc's domain tag is checked against the Domain rows.
     const r = await fetch(`${ATHENA_MAKE_BASE}/v1/domains/domains`);
     const d = await r.json() as { data?: Array<{ name?: string }> };
     const valid = (d.data || []).map(x => x.name || '').filter(Boolean);
@@ -3166,7 +3165,7 @@ async function fetchDriftAgainstAthena(tagged: TaggedDocSummary[]): Promise<Retu
   }
 }
 
-function readTagCoverageHistory(): Array<{ date: string; productPct: number; subdomainPct: number; drift: number }> {
+function readTagCoverageHistory(): Array<{ date: string; productPct: number; domainPct: number; drift: number }> {
   try {
     const historyPath = path.resolve(__dirname, '..', '..', '..', 'knowledge', 'doc-tag-coverage-history.tsv');
     if (!fs.existsSync(historyPath)) return [];
@@ -3174,11 +3173,11 @@ function readTagCoverageHistory(): Array<{ date: string; productPct: number; sub
     return raw.split('\n')
       .filter(line => line && !line.startsWith('#'))
       .map(line => {
-        const [date, _total, _pt, productPct, _st, subdomainPct, driftCount] = line.split('\t');
+        const [date, _total, _pt, productPct, _st, domainPct, driftCount] = line.split('\t');
         return {
           date,
           productPct: Number(productPct) || 0,
-          subdomainPct: Number(subdomainPct) || 0,
+          domainPct: Number(domainPct) || 0,
           drift: Number(driftCount) || 0,
         };
       })
@@ -3209,7 +3208,7 @@ app.get('/api/doc-catalog/tags', async (_req: Request, res: Response) => {
       total: tagged.length,
       coverage: {
         product: { tagged: cov.withProduct, percent: Math.round(100 * cov.withProduct / tagged.length) },
-        subdomain: { tagged: cov.withSubdomain, percent: Math.round(100 * cov.withSubdomain / tagged.length) },
+        domain: { tagged: cov.withDomain, percent: Math.round(100 * cov.withDomain / tagged.length) },
       },
       byProduct: cov.byProduct,
       bySubproduct: cov.bySubproduct,
@@ -3240,7 +3239,7 @@ app.get('/api/doc-catalog/tree', async (_req: Request, res: Response) => {
     // top level stays the hubs. SUBPRODUCT_DOMAINS remains the tagger bridge.
     const [pRes, sdRes] = await Promise.all([
       fetch('http://localhost:3360/products').then(r => r.json()),
-      // #4353 — the Domain rows replace the retired SubDomain list (name → id)
+      // Domain rows, name → id.
       fetch(`${ATHENA_MAKE_BASE}/v1/domains/domains`).then(r => r.json())
         .then((raw: unknown) => { const b = raw as { data?: Array<{ name?: string; label?: string }> }; return { data: (b.data || []).map(x => ({ id: x.name, label: x.label })) }; }),
     ]) as [{ data?: Array<{ name?: string; label?: string; ownedBy?: string }> }, { data?: Array<{ id?: string; label?: string }> }];
@@ -3263,7 +3262,7 @@ app.get('/api/doc-catalog/tree', async (_req: Request, res: Response) => {
       .filter(p => !TOP_LEVEL.has(p.id))
       .map(sp => ({ id: sp.id, label: sp.label, product: 'chorusProduct' }));
 
-    // Build subdomain → child-product from SUBPRODUCT_DOMAINS (tagger short
+    // Build domain → child-product from SUBPRODUCT_DOMAINS (tagger short
     // names 'loom'/'werk'/… map to the product-* IRI convention; retired
     // 'quality' matches nothing and drops out).
     const sdToSp: Record<string, string> = {};
@@ -3274,10 +3273,10 @@ app.get('/api/doc-catalog/tree', async (_req: Request, res: Response) => {
       }
     }
 
-    const subdomains = (sdRes.data || []).map(sd => {
+    const domains = (sdRes.data || []).map(sd => {
       const id = sd.id || '';
       const subproduct = sdToSp[id] || null;
-      const isGathering = GATHERING_SUBDOMAINS.has(id);
+      const isGathering = GATHERING_DOMAINS.has(id);
       return {
         id, label: sd.label || id,
         subproduct,
@@ -3285,7 +3284,7 @@ app.get('/api/doc-catalog/tree', async (_req: Request, res: Response) => {
       };
     });
 
-    const shape: AthenaShape = { products, subproducts, subdomains };
+    const shape: AthenaShape = { products, subproducts, domains };
     const tree = buildHierarchyTree(tagged, shape);
     res.json(tree);
   } catch (error) {

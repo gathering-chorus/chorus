@@ -4,7 +4,7 @@
 
 # Live-graph drift test for #2485 Move 3: decisions graph matches expected baseline.
 # Post-#2485 Move 1, Decision instances live in urn:chorus:instances with chorus:contains
-# edges from loom-decisions subdomain. Baseline counts derived from canonical sources:
+# edges from the decisions domain. Baseline counts derived from canonical sources:
 #   - 114 DECs in roles/wren/decisions.md
 #   - 26 ADRs in roles/*/adr/ADR-*.md
 #   - 140 total chorus:Decision instances
@@ -118,8 +118,7 @@ DEC_GRAPH_COUNT=$(count_query "PREFIX chorus: <https://jeffbridwell.com/chorus#>
 check "ADR count in graph = ADR file count" "$ADR_COUNT" "$ADR_GRAPH_COUNT"
 check "DEC count in graph = DEC source count" "$DEC_COUNT" "$DEC_GRAPH_COUNT"
 
-# 6. API endpoint round-trip — #4274: /api/athena/subdomains/loom-decisions/decisions is gone
-# with chorus:SubDomain (#4265). When Decision is modelled, the read is athena-make :3360/decisions.
+# 6. API endpoint round-trip — #4274: the old decisions route is gone. When Decision is modelled, the read is athena-make :3360/decisions.
 API_COUNT=$(curl -s "$API_URL/api/athena/decisions-not-yet-modelled/loom-decisions/decisions" | python3 -c "import json,sys;d=json.load(sys.stdin);print(d.get('_meta',{}).get('count','?'))" 2>/dev/null)
 check "API endpoint count = graph instance count" "$GRAPH_DEC_COUNT" "$API_COUNT"
 

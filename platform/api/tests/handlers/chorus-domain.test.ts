@@ -1,3 +1,4 @@
+// @test-type: unit — stubbed dependencies; no live service.
 /**
  * chorus-domain handler — unit tests (#2198).
  *
@@ -224,10 +225,10 @@ describe('fetchChorusDomain — completeness fallback', () => {
 });
 
 describe('fetchChorusDomain — SPARQL section fallback', () => {
-  test('fires only when HTML empty AND subdomainId resolved', async () => {
+  test('fires only when HTML empty AND domainId resolved', async () => {
     let sparqlCalls = 0;
     const sparql = async () => { sparqlCalls++; return { results: { bindings: [] } }; };
-    // No HTML, no completeness → no SPARQL calls (subdomainId null)
+    // No HTML, no completeness → no SPARQL calls (domainId null)
     await fetchChorusDomain(deps({ sparql }), 'photos');
     expect(sparqlCalls).toBe(0);
 

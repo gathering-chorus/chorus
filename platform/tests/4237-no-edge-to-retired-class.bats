@@ -7,7 +7,7 @@
 #
 # The failure this catches, in Jeff's terms: you try to create a thing and the
 # door refuses, because a shape requires an edge pointing at a class that was
-# retired. #4010 hit it on Document (hasDomain -> SubDomain) and fixed that one
+# retired. #4010 hit it on Document (hasDomain -> a retired class) and fixed that one
 # shape. AuthBoundary still has it on betweenDomainA/betweenDomainB, so no
 # AuthBoundary can be created at all.
 #
@@ -116,7 +116,7 @@ dal_classes() {
 }
 
 @test "NEGATIVE PROOF: a class the DAL CAN mint is not reported" {
-  # grep -qx, not grep -q: a substring match would let "SubDomain" answer for
+  # grep -qx, not grep -q: a substring match would let "CollectionDomain" answer for
   # "Domain" and the test would pass for the wrong reason.
   dal_classes > "$BATS_TEST_TMPDIR/dal" || return 1
   grep -qx "Domain" "$BATS_TEST_TMPDIR/dal"
@@ -136,8 +136,8 @@ dal_classes() {
 #
 # An sh:class that names a retired class refuses a write. An sh:targetClass that
 # names one is quieter and worse: it matches nothing, never fires, and counts as
-# a pass on every run. #4237 deleted four of these (SubProductParentShape,
-# SubProductDomainShape, SubDomainParentShape, SubDomainInstancesShape) — two for
+# a pass on every run. #4237 deleted four of these (two
+# SubProduct shapes and two for the retired child-domain class) — two for
 # a class retired by #3603 and two for a class retired by #3509. All four had been
 # reporting clean for months without being able to report anything else.
 
@@ -197,7 +197,7 @@ declared_classes() {
 # Jeff, 2026-09-03: no rows in the ontology graph; every row lives in its own
 # domain graph. A query that asks urn:chorus:ontology for instances therefore asks
 # a graph that must be empty of them — and answers 0 without failing. That is what
-# emptied /api/athena/subdomains and /api/athena/products this week: the rows
+# emptied the old domain list and /api/athena/products this week: the rows
 # moved, the queries did not, and the endpoints returned [] as a normal answer.
 #
 # #4336: each .sparql file is EXECUTED against a fixture store holding one ghost row

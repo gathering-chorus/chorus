@@ -1,3 +1,4 @@
+// @test-type: unit — stubbed dependencies; no live service.
 /**
  * sdk.ts pure-function tests (#2241 wave 2).
  *
@@ -26,7 +27,7 @@ function silenceConsole() {
 
 describe('isCodeCard', () => {
   it('returns true for handler / refactor / sparql / endpoint phrasing', () => {
-    expect(isCodeCard('Extract handler for subdomain completeness')).toBe(true);
+    expect(isCodeCard('Extract handler for domain completeness')).toBe(true);
     expect(isCodeCard('Refactor the SPARQL query loader')).toBe(true);
     expect(isCodeCard('Fix stale-timestamp test bug')).toBe(true);
   });

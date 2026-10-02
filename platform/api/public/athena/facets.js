@@ -11,8 +11,7 @@
 //   fid     the materialized-view id (<name>-domain or bare name; resolveFacetId finds it)
 //   only    optional subset of facet titles, rendered in the order given
 //   domain  the bare domain name (defaults to fid without -domain); the graph folds filter on it
-// #4353 — SubDomain is retired, so there is no "<name>-domain" view to probe:
-// the facet id is the bare domain name.
+// The facet id is the bare domain name.
 async function resolveFacetId(d) {
   return d;
 }
@@ -23,8 +22,7 @@ async function renderFacetTables(el, fid, opts) {
   const OWL = (typeof window.OWL === 'string') ? window.OWL : ((typeof window.basePath === 'function') ? window.basePath('/owl') : '/owl');
   const DOM = '/api/chorus/domain/';
   // #4353 — code, pages and endpoints are graph rows carrying hasDomain; read them
-  // like the Logs fold. Actors, Scenarios, Integration, Persistence and Gaps came
-  // only from the retired SubDomain routes and are gone with them.
+  // like the Logs fold.
   // hasDomain is one name or a list of them (115 of 6,329 code files name several)
   const onDomain = r => [].concat(r.hasDomain || (r.links && r.links.hasDomain) || []).some(v => tail(v) === dname);
   const FACETS = [

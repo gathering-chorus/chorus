@@ -144,12 +144,12 @@ async function load() {
       trendStr = ` · trend baseline ${tags.history[0].productPct}% (1d)`;
     }
     document.getElementById('tagcoverage').innerHTML =
-      `<strong>Tag coverage:</strong> product ${cov.product.tagged}/${tags.total} <b>(${cov.product.percent}%)</b> · subdomain ${cov.subdomain.tagged}/${tags.total} <b>(${cov.subdomain.percent}%)</b> — ${byProd}${trendStr}`;
+      `<strong>Tag coverage:</strong> product ${cov.product.tagged}/${tags.total} <b>(${cov.product.percent}%)</b> · domain ${cov.domain.tagged}/${tags.total} <b>(${cov.domain.percent}%)</b> — ${byProd}${trendStr}`;
     if (tags.drift && tags.drift.length) {
-      const drift = tags.drift.slice(0, 5).map(d => `${d.claimedSubdomain}${d.closestMatch ? ` → ${d.closestMatch}?` : ''}`).join(', ');
+      const drift = tags.drift.slice(0, 5).map(d => `${d.claimedDomain}${d.closestMatch ? ` → ${d.closestMatch}?` : ''}`).join(', ');
       document.getElementById('drift').style.display = 'block';
       document.getElementById('drift').innerHTML =
-        `<strong>Drift:</strong> ${tags.drift.length} doc(s) claim a subdomain Athena doesn't recognize: ${drift}${tags.drift.length > 5 ? ` (+${tags.drift.length - 5} more)` : ''}`;
+        `<strong>Drift:</strong> ${tags.drift.length} doc(s) claim a domain Athena doesn't recognize: ${drift}${tags.drift.length > 5 ? ` (+${tags.drift.length - 5} more)` : ''}`;
     }
   } catch (_e) { /* tagger endpoint optional */ }
 

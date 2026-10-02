@@ -140,19 +140,19 @@ bash "$ENRICH" 2>&1 | tail -1
 
 # Each fixture file: assert correct fileInDomain.
 check_predicate() {
-  local path_substr="$1" expected_subdomain="$2"
+  local path_substr="$1" expected_domain="$2"
   local q='PREFIX chorus: <https://jeffbridwell.com/chorus#>
 ASK { GRAPH <'"$TEST_GRAPH"'> {
-  ?f chorus:filePath ?p ; chorus:fileInDomain chorus:'"$expected_subdomain"' .
+  ?f chorus:filePath ?p ; chorus:fileInDomain chorus:'"$expected_domain"' .
   FILTER(CONTAINS(?p, "'"$path_substr"'"))
 } }'
   local resp
   resp=$(curl -s -G -H 'Accept: application/sparql-results+json' \
     --data-urlencode "query=$q" "$FUSEKI_BASE/query" 2>/dev/null)
   if echo "$resp" | grep -qE '"boolean"[[:space:]]*:[[:space:]]*true'; then
-    p "$path_substr → chorus:$expected_subdomain"
+    p "$path_substr → chorus:$expected_domain"
   else
-    f "expected $path_substr → chorus:$expected_subdomain, ASK returned: $resp"
+    f "expected $path_substr → chorus:$expected_domain, ASK returned: $resp"
   fi
 }
 

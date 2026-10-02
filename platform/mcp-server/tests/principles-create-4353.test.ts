@@ -1,6 +1,6 @@
 // @test-type: unit — an in-memory MCP client against a stub fetch; no live services
 // #4353 — chorus_principles_create writes the generated route with the fields
-// the Principle shape requires, never the retired SubDomain route.
+// the Principle shape requires.
 import { test } from 'node:test';
 import { strict as assert } from 'node:assert';
 import { Client } from '@modelcontextprotocol/sdk/client/index.js';

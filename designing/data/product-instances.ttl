@@ -533,7 +533,7 @@ flowchart TB
   DV ==>|"GO=accept "| ME
   CD -->|changed paths| SF
   T -->|inFile| SF
-  T -->|"covers — the werk-test edge"| SD(["SubDomain"])
+  T -->|"covers — the werk-test edge"| SD(["Domain"])
   SCEN -->|"verifiedBy — intent bound to proof"| T
   T -.-> TRES
   TRES -.-> TSR

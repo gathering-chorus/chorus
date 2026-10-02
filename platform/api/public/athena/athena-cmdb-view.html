@@ -36,9 +36,9 @@ h1 { font-size: 20px; font-weight: 300; margin-bottom: 4px; }
 .tree-row:hover { background: #f8f9fa; }
 .tree-row:last-child { border-bottom: none; }
 .tree-row.subproduct { font-weight: 600; font-size: 14px; }
-.tree-row.subdomain { padding-left: 40px; font-size: 13px; color: #444; }
-.tree-row.subdomain .name { position: relative; }
-.tree-row.subdomain .name::before { content: '└'; position: absolute; left: -18px; color: #ccc; }
+.tree-row.domain { padding-left: 40px; font-size: 13px; color: #444; }
+.tree-row.domain .name { position: relative; }
+.tree-row.domain .name::before { content: '└'; position: absolute; left: -18px; color: #ccc; }
 
 .name { font-size: inherit; }
 .owner { font-size: 12px; }
@@ -83,7 +83,7 @@ var s=document.createElement('script');s.src=window.basePath('/js/base-path.js')
 <body>
 
 <h1>CMDB</h1>
-<p class="subtitle">Products, sub-products, and sub-domains — live from Athena</p>
+<p class="subtitle">Products, sub-products, and domains — live from Athena</p>
 
 <div class="product-tabs" id="tabs"></div>
 <div class="stats" id="stats"></div>
@@ -98,7 +98,7 @@ var s=document.createElement('script');s.src=window.basePath('/js/base-path.js')
 const API = 'http://localhost:3340/api/athena';
 let products = [];
 let subproducts = [];
-let subdomains = [];
+let domains = [];
 let activeProduct = null;
 let activeStep = null;
 
@@ -120,11 +120,11 @@ function stepBadge(step) {
 
 function renderStats() {
   const sp = subproducts.filter(s => !activeProduct || isChildOf(s, activeProduct));
-  const sd = subdomains.filter(s => !activeStep || s.step === activeStep);
+  const sd = domains.filter(s => !activeStep || s.step === activeStep);
   document.getElementById('stats').innerHTML = `
     <div class="stat-item"><div class="stat-value">${products.length}</div><div class="stat-label">Products</div></div>
     <div class="stat-item"><div class="stat-value">${sp.length}</div><div class="stat-label">Sub-Products</div></div>
-    <div class="stat-item"><div class="stat-value">${sd.length}</div><div class="stat-label">Sub-Domains</div></div>
+    <div class="stat-item"><div class="stat-value">${sd.length}</div><div class="stat-label">Domains</div></div>
     <div class="stat-item"><div class="stat-value">6</div><div class="stat-label">Steps</div></div>
   `;
 }
@@ -165,15 +165,15 @@ function renderTree() {
       <span></span>
     </div>`;
 
-    const children = subdomains.filter(sd => {
+    const children = domains.filter(sd => {
       if (activeStep && sd.step !== activeStep) return false;
       return true; // show all under each subproduct for now
     });
 
-    // Group subdomains by step under this subproduct
+    // Group domains by step under this subproduct
     const spDomains = sp.domains || [];
     for (const sd of children) {
-      html += `<div class="tree-row subdomain" data-parent="${sp.uri}" id="row-${sd.id}">
+      html += `<div class="tree-row domain" data-parent="${sp.uri}" id="row-${sd.id}">
         <span class="name">${sd.label}</span>
         <span class="owner">${ownerDot(sd.owner)}</span>
         <span>${stepBadge(sd.step)}</span>
@@ -185,7 +185,7 @@ function renderTree() {
     break; // Only show first subproduct's domains to avoid repeating all 31 under each
   }
 
-  // Show flat list instead — subproducts as headers, subdomains as flat filterable list
+  // Show flat list instead — subproducts as headers, domains as flat filterable list
   html = `<div class="tree-header"><span>Name</span><span>Owner</span><span>Step</span><span>Type</span><span>Blast</span></div>`;
 
   // Sub-products first
@@ -199,14 +199,14 @@ function renderTree() {
     </div>`;
   }
 
-  // Then all subdomains
-  const filteredSD = subdomains.filter(sd => !activeStep || sd.step === activeStep);
+  // Then all domains
+  const filteredSD = domains.filter(sd => !activeStep || sd.step === activeStep);
   for (const sd of filteredSD) {
-    html += `<div class="tree-row subdomain" id="row-${sd.id}" style="padding-left:16px;">
+    html += `<div class="tree-row domain" id="row-${sd.id}" style="padding-left:16px;">
       <span class="name">${sd.label}</span>
       <span class="owner">${ownerDot(sd.owner)}</span>
       <span>${stepBadge(sd.step)}</span>
-      <span style="font-size:11px;color:#888;">Sub-Domain</span>
+      <span style="font-size:11px;color:#888;">Domain</span>
       <span><a href="#" onclick="showBlast('${sd.id}', event)" style="font-size:11px;color:#e53e3e;text-decoration:none;">impact</a></span>
     </div>
     <div class="blast-panel" id="blast-${sd.id}"></div>`;
@@ -225,7 +225,6 @@ async function showBlast(id, event) {
   panel.innerHTML = 'Loading...';
   panel.classList.add('visible');
   try {
-    // #4353 — blast radius came from a retired SubDomain route; this archived view shows none
     const data = { data: [] };
     if (data.consumers && data.consumers.length > 0) {
       panel.innerHTML = `<h4>If ${id} fails:</h4>` +
@@ -254,13 +253,13 @@ function filterStep(step) {
 
 async function init() {
   try {
-    [products, subproducts, subdomains] = await Promise.all([
+    [products, subproducts, domains] = await Promise.all([
       fetchJSON(API + '/products'),
       fetchJSON(API + '/subproducts'),
       fetchJSON('/owl/v1/domains/domains')
     ]);
     document.querySelector('.loading').textContent =
-      `${products.length} products, ${subproducts.length} sub-products, ${subdomains.length} sub-domains`;
+      `${products.length} products, ${subproducts.length} sub-products, ${domains.length} domains`;
     renderTabs();
     renderFilters();
     renderStats();

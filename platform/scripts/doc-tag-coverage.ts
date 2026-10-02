@@ -4,7 +4,7 @@
  * report coverage (#2520).
  *
  * Reads /api/doc-catalog from chorus-api, derives a (product, subproduct,
- * subdomain) tag for every entry via inferTags(), prints coverage broken
+ * domain) tag for every entry via inferTags(), prints coverage broken
  * down by product, and lists docs that came back as confidence=none.
  *
  * Run: ts-node platform/scripts/doc-tag-coverage.ts
@@ -44,7 +44,7 @@ async function main() {
   const bySubproduct: Record<string, number> = {};
   const byConfidence: Record<string, number> = {};
   let tagged = 0;
-  let withSubdomain = 0;
+  let withDomain = 0;
   for (const r of results) {
     if (r.tags.product) {
       byProduct[r.tags.product] = (byProduct[r.tags.product] || 0) + 1;
@@ -53,13 +53,13 @@ async function main() {
     if (r.tags.subproduct) {
       bySubproduct[r.tags.subproduct] = (bySubproduct[r.tags.subproduct] || 0) + 1;
     }
-    if (r.tags.subdomain) withSubdomain++;
+    if (r.tags.domain) withDomain++;
     byConfidence[r.tags.confidence] = (byConfidence[r.tags.confidence] || 0) + 1;
   }
 
   console.log(`Total catalog entries: ${docs.length}`);
   console.log(`Tagged with product:   ${tagged} (${Math.round(100 * tagged / docs.length)}%)`);
-  console.log(`Tagged with subdomain: ${withSubdomain} (${Math.round(100 * withSubdomain / docs.length)}%)`);
+  console.log(`Tagged with domain: ${withDomain} (${Math.round(100 * withDomain / docs.length)}%)`);
   console.log();
   console.log('By product:');
   for (const [k, n] of Object.entries(byProduct).sort((a,b) => b[1]-a[1])) {

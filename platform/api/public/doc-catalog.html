@@ -17,8 +17,8 @@
   .node.selected { background: #1e40af; color: #fff; padding-left: 0.4rem; border-radius: 3px; }
   .product { font-weight: 600; color: #fbbf24; }
   .subproduct { color: #93c5fd; padding-left: 1rem; }
-  .subdomain { color: #d1d5db; padding-left: 2rem; font-size: 0.85rem; }
-  .subdomain-direct { color: #d1d5db; padding-left: 1rem; font-size: 0.85rem; }
+  .domain { color: #d1d5db; padding-left: 2rem; font-size: 0.85rem; }
+  .domain-direct { color: #d1d5db; padding-left: 1rem; font-size: 0.85rem; }
   .count { color: #666; font-size: 0.8em; margin-left: 0.4rem; }
   .untagged { color: #fca5a5; font-style: italic; }
   .toggle { display: inline-block; width: 0.8em; color: #666; }
@@ -140,12 +140,8 @@
         <select id="f-subproduct"><option value="">—</option></select>
       </div>
       <div class="field">
-        <label>Domain</label>
-        <input id="f-domain" type="text" placeholder="e.g., chorus, gathering">
-      </div>
-      <div class="field">
-        <label>Subdomain <span class="suggest" id="suggest-subdomain"></span></label>
-        <select id="f-subdomain"><option value="">—</option></select>
+        <label>Domain <span class="suggest" id="suggest-domain"></span></label>
+        <select id="f-domain"><option value="">—</option></select>
       </div>
       <div class="field">
         <label>Role</label>
@@ -195,18 +191,18 @@ let topicGroups = [];
 let viewMode = 'hierarchy'; // 'hierarchy' | 'topic'
 let selected = null;  // { kind, id?, path[] }
 // #2550 curation surface state
-let vocab = { products: [], subproducts: [], subdomains: [] };
+let vocab = { products: [], subproducts: [], domains: [] };
 let driftByHref = new Map();  // href → divergence_fields[]
 let panelDoc = null;  // { href, title, suggest, current }
 
 async function load() {
   // #3603: /api/athena/products + /api/athena/subproducts retired (results were
   // unused here anyway); owl-api :3360/products is the product API.
-  const [treeR, tagsR, catR, subdomainsR, driftR, curatedR] = await Promise.all([
+  const [treeR, tagsR, catR, domainsR, driftR, curatedR] = await Promise.all([
     fetch('/api/doc-catalog/tree').then(r => r.json()),
     fetch('/api/doc-catalog/tags').then(r => r.json()),
     fetch('/api/doc-catalog').then(r => r.json()),
-    // #4353 — SubDomain is retired; the tag vocabulary reads domain names
+    // The tag vocabulary reads domain names.
     fetch('/owl/v1/domains/domains').then(r => r.json()).then(b => ({ data: (b.data || []).map(d => ({ id: d.name })) })).catch(() => ({ data: [] })),
     fetch('/api/chorus/catalog/drift').then(r => r.json()).catch(() => ({ data: { drift: [] } })),
     fetch('/api/chorus/catalog/curated').then(r => r.json()).catch(() => ({ data: { curated: [] } })),
@@ -231,7 +227,7 @@ async function load() {
       if (!athenaId || !knownProducts.has(athenaId)) untaggedCount++;
     }
     tree.untagged.docCount = untaggedCount;
-    // Recompute product/subproduct/subdomain counts based on overlay-adjusted tags
+    // Recompute product/subproduct/domain counts based on overlay-adjusted tags
     for (const p of tree.products) {
       p.docCount = 0;
       if (p.subproducts) for (const sp of p.subproducts) sp.docCount = 0;
@@ -252,11 +248,11 @@ async function load() {
   // Vocab maps Athena ids → tagger short names so the dropdowns match what the API validates against.
   vocab.products = ['chorus', 'gathering', 'consulting'];
   vocab.subproducts = ['loom', 'werk', 'athena', 'convergence', 'clearing', 'quality', 'borg'];
-  vocab.subdomains = ((subdomainsR.data || []).map(sd => (sd.id || (sd.uri || '').split('#').pop() || '').toLowerCase()).filter(Boolean));
+  vocab.domains = ((domainsR.data || []).map(sd => (sd.id || (sd.uri || '').split('#').pop() || '').toLowerCase()).filter(Boolean));
   // Fallback: union with tagger-known set so the dropdown isn't empty if Athena underreports
-  if (vocab.subdomains.length < 20) {
+  if (vocab.domains.length < 20) {
     const taggerKnown = ['analytics','decisions','metrics','policies','practices','principles','rcas','cards','roles','athena-domain','domains','knowledge','integrations','services','convergence-domain','messages','gates','tests','blog','books','cooking-domain','documents','glimmers-domain','music','notes','photos','property','social','video','people','sexuality','stories','self-domain','seeds','reading-domain','watching-domain'];
-    vocab.subdomains = Array.from(new Set([...vocab.subdomains, ...taggerKnown])).sort();
+    vocab.domains = Array.from(new Set([...vocab.domains, ...taggerKnown])).sort();
   }
   driftByHref = new Map(((driftR.data || {}).drift || []).map(e => [e.href, e.divergence_fields || []]));
   populateVocabSelects();
@@ -271,7 +267,7 @@ function populateVocabSelects() {
   }
   document.getElementById('f-product').innerHTML = opts(vocab.products);
   document.getElementById('f-subproduct').innerHTML = opts(vocab.subproducts);
-  document.getElementById('f-subdomain').innerHTML = opts(vocab.subdomains);
+  document.getElementById('f-domain').innerHTML = opts(vocab.domains);
 }
 
 function renderNav() {
@@ -308,16 +304,16 @@ function renderTree() {
       for (const sp of p.subproducts) {
         const spSel = selected.kind === 'subproduct' && selected.id === sp.id;
         lines.push(`<div class="node subproduct ${spSel ? 'selected' : ''}" data-kind="subproduct" data-id="${sp.id}" data-product="${p.id}">${sp.label} <span class="count">${sp.docCount}</span></div>`);
-        for (const sd of sp.subdomains) {
-          const sdSel = selected.kind === 'subdomain' && selected.id === sd.id;
-          lines.push(`<div class="node subdomain ${sdSel ? 'selected' : ''}" data-kind="subdomain" data-id="${sd.id}" data-subproduct="${sp.id}" data-product="${p.id}">${sd.label} <span class="count">${sd.docCount}</span></div>`);
+        for (const sd of sp.domains) {
+          const sdSel = selected.kind === 'domain' && selected.id === sd.id;
+          lines.push(`<div class="node domain ${sdSel ? 'selected' : ''}" data-kind="domain" data-id="${sd.id}" data-subproduct="${sp.id}" data-product="${p.id}">${sd.label} <span class="count">${sd.docCount}</span></div>`);
         }
       }
     }
-    if (p.subdomains) {
-      for (const sd of p.subdomains) {
-        const sdSel = selected.kind === 'subdomain' && selected.id === sd.id;
-        lines.push(`<div class="node subdomain-direct ${sdSel ? 'selected' : ''}" data-kind="subdomain" data-id="${sd.id}" data-product="${p.id}">${sd.label} <span class="count">${sd.docCount}</span></div>`);
+    if (p.domains) {
+      for (const sd of p.domains) {
+        const sdSel = selected.kind === 'domain' && selected.id === sd.id;
+        lines.push(`<div class="node domain-direct ${sdSel ? 'selected' : ''}" data-kind="domain" data-id="${sd.id}" data-product="${p.id}">${sd.label} <span class="count">${sd.docCount}</span></div>`);
       }
     }
   }
@@ -333,7 +329,7 @@ function renderTree() {
       const path = [];
       if (kind === 'product') path.push(n.textContent.trim().split(/\s+\d+/)[0]);
       else if (kind === 'subproduct') path.push(n.dataset.product, id);
-      else if (kind === 'subdomain') path.push(n.dataset.product || '', n.dataset.subproduct || '', id);
+      else if (kind === 'domain') path.push(n.dataset.product || '', n.dataset.subproduct || '', id);
       else if (kind === 'untagged') path.push('Untagged');
       else path.push('All docs');
       selected = { kind, id, path: path.filter(Boolean) };
@@ -350,8 +346,8 @@ function filterDocs(term) {
     docs = docs.filter(d => d.tags.product && productMatchById(d.tags.product, selected.id));
   } else if (selected.kind === 'subproduct') {
     docs = docs.filter(d => d.tags.subproduct === selected.id);
-  } else if (selected.kind === 'subdomain') {
-    docs = docs.filter(d => d.tags.subdomain === selected.id);
+  } else if (selected.kind === 'domain') {
+    docs = docs.filter(d => d.tags.domain === selected.id);
   } else if (selected.kind === 'untagged') {
     docs = docs.filter(d => !d.tags.product);
   } else if (selected.kind === 'topic') {
@@ -404,8 +400,7 @@ async function openPanel(href, title) {
   document.getElementById('panel-title').textContent = title || '(untitled)';
   document.getElementById('panel-href').textContent = href;
   // Reset fields
-  ['f-product', 'f-subproduct', 'f-subdomain', 'f-role'].forEach(id => { document.getElementById(id).value = ''; });
-  document.getElementById('f-domain').value = '';
+  ['f-product', 'f-subproduct', 'f-domain', 'f-role'].forEach(id => { document.getElementById(id).value = ''; });
   document.getElementById('lineage-list').innerHTML = '';
   document.getElementById('audit-list').innerHTML = '<span style="color:#555">loading…</span>';
 
@@ -432,7 +427,7 @@ async function openPanel(href, title) {
   const sug = tagged && tagged.tags ? tagged.tags : {};
   document.getElementById('suggest-product').textContent = sug.product ? `suggest: ${sug.product} (${sug.confidence || '?'})` : '';
   document.getElementById('suggest-subproduct').textContent = sug.subproduct ? `suggest: ${sug.subproduct}` : '';
-  document.getElementById('suggest-subdomain').textContent = sug.subdomain ? `suggest: ${sug.subdomain}` : '';
+  document.getElementById('suggest-domain').textContent = sug.domain ? `suggest: ${sug.domain}` : '';
 
   document.getElementById('panel').classList.add('open');
   document.getElementById('panel').setAttribute('aria-hidden', 'false');
@@ -446,14 +441,13 @@ async function openPanel(href, title) {
       if (t.product) document.getElementById('f-product').value = t.product;
       if (t.subproduct) document.getElementById('f-subproduct').value = t.subproduct;
       if (t.domain) document.getElementById('f-domain').value = t.domain;
-      if (t.subdomain) document.getElementById('f-subdomain').value = t.subdomain;
       if (t.role) document.getElementById('f-role').value = t.role;
       renderLineage((j.data && j.data.lineage) || { in: [], out: [] });
     } else {
       // 404 = doc not curated yet; prefill from suggestions
       if (sug.product) document.getElementById('f-product').value = sug.product;
       if (sug.subproduct) document.getElementById('f-subproduct').value = sug.subproduct;
-      if (sug.subdomain) document.getElementById('f-subdomain').value = sug.subdomain;
+      if (sug.domain) document.getElementById('f-domain').value = sug.domain;
       renderLineage({ in: [], out: [] });
     }
   } catch (_) {
@@ -511,7 +505,6 @@ async function saveTags() {
     product: document.getElementById('f-product').value || undefined,
     subproduct: document.getElementById('f-subproduct').value || undefined,
     domain: document.getElementById('f-domain').value || undefined,
-    subdomain: document.getElementById('f-subdomain').value || undefined,
     role: document.getElementById('f-role').value || undefined,
   };
   Object.keys(body).forEach(k => body[k] === undefined && delete body[k]);
@@ -581,7 +574,7 @@ document.getElementById('drift-accept').addEventListener('click', async () => {
   const implied = (tagged && tagged.tags) || {};
   if (implied.product) document.getElementById('f-product').value = implied.product;
   if (implied.subproduct) document.getElementById('f-subproduct').value = implied.subproduct;
-  if (implied.subdomain) document.getElementById('f-subdomain').value = implied.subdomain;
+  if (implied.domain) document.getElementById('f-domain').value = implied.domain;
   await saveTags();
   document.getElementById('drift-banner').style.display = 'none';
 });

@@ -604,7 +604,7 @@ const bridgeToken = bridgeCookie ? bridgeCookie[1] : (new URLSearchParams(locati
 // #3872 — every fetch in this page is written root-absolute ('/api/...'). Under
 // the /clearing mount those resolve against the apex and 404. One wrapper fixes
 // all of them at once, rather than 16 call sites where the 17th would be missed.
-// Empty base (subdomain, localhost) leaves fetch untouched.
+// Empty base (clearing host, localhost) leaves fetch untouched.
 const CLEARING_BASE = window.CLEARING_BASE || '';
 if (CLEARING_BASE) {
   const _fetch = window.fetch.bind(window);

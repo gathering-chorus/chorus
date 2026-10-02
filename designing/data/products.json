@@ -36,8 +36,8 @@
       "comment": "The operating-model and team-knowledge layer of Chorus — the team's persistent product memory at the Shaping step — carrying principles, practices, policies, decisions, roles, skills, and RCAs.",
       "audience": "The Chorus team — the three AI roles and Jeff — for whom Loom holds the persistent normative substrate; owned by Jeff at the Shaping step.",
       "valueProposition": "Loom gives the team one coherent, validated home for its normative substrate as real OWL classes with SHACL shapes, so the operating model is graphed and constrained rather than scattered as ungraphed markdown.",
-      "vision": "A coherent product modeled on the recursive Athena model, one clean predicate set, every content type a real OWL class with a SHACL shape, every subdomain populated or explicitly planned — Loom as the template the other products follow.",
-      "gaps": "5 of 7 intent subdomains are empty shells (decisions live as ungraphed markdown; Decision and RCA aren't OWL classes); the predicate layer needs cleaning; content is unconstrained by SHACL."
+      "vision": "A coherent product modeled on the recursive Athena model, one clean predicate set, every content type a real OWL class with a SHACL shape, every domain populated or explicitly planned — Loom as the template the other products follow.",
+      "gaps": "5 of 7 intent domains are empty shells (decisions live as ungraphed markdown; Decision and RCA aren't OWL classes); the predicate layer needs cleaning; content is unconstrained by SHACL."
     }
   ]
 }

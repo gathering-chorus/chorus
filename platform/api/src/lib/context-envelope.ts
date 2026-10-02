@@ -30,7 +30,6 @@ export interface ContextEnvelope<T = unknown> {
   step?: string;
   product?: string;
   domain?: string;
-  subdomain?: string;
   timestamp: string;
   source: string;
   data: T;
@@ -44,25 +43,23 @@ export interface ContextEnvelopeHeader {
   step?: string;
   product?: string;
   domain?: string;
-  subdomain?: string;
   timestamp: string;
 }
 
 /**
- * Resolve canonical-model fields (step, product, domain, subdomain) from
+ * Resolve canonical-model fields (step, product, domain) from
  * the Athena named graph via SPARQL.
  *
  * - `domainId = null` (system-scoped) → returns `{ timestamp }` only.
- * - `domainId` given, no graph match → returns `{ domain, timestamp, subdomain? }`
+ * - `domainId` given, no graph match → returns `{ domain, timestamp }`
  *   (step + product gracefully absent, not null, not a crash).
- * - `domainId` given, graph match → returns `{ step, product, domain, subdomain?, timestamp }`.
+ * - `domainId` given, graph match → returns `{ step, product, domain, timestamp }`.
  *
  * Tests inject a stub `client` whose `query()` returns fixture bindings.
  */
 export async function stampHeader(
   client: StampSparqlClient,
   domainId: string | null,
-  subdomainId?: string | null,
 ): Promise<ContextEnvelopeHeader> {
   const timestamp = new Date().toISOString();
   if (!domainId) {
@@ -98,7 +95,6 @@ export async function stampHeader(
     ...(step && { step }),
     ...(product && { product }),
     domain: domainId,
-    ...(subdomainId && { subdomain: subdomainId }),
     timestamp,
   };
 }

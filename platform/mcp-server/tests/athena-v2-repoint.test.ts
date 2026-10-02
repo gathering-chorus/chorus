@@ -1,8 +1,9 @@
+// @test-type: unit — stubbed dependencies; no live service.
 // #3025 AC6 (CORRECTED 2026-05-22) — the three Athena lookups read the v2 JSON
 // tree, served by chorus-api at /api/athena/tree, /api/athena/ownership/:iri,
 // /api/athena/blast-radius/:iri (all backed by data/athena/tree.json, Move 0 of
-// Athena v2). They must NOT read /api/athena/subdomains — the AS-IS Fuseki
-// surface the design says v2 replaces, which drops products that live only in the
+// Athena v2). They must NOT read the AS-IS Fuseki per-domain routes the design
+// says v2 replaces, which drops products that live only in the
 // JSON tree (e.g. The Clearing). Asserts route hit + shape passthrough + not-found.
 // The getter is injected so no live chorus-api is needed; buildMcpServer is the
 // production entry under test in each case.

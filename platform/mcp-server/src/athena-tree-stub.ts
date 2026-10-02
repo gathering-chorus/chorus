@@ -1,7 +1,7 @@
 // #3025 AC6 — Athena lookups read the v2 JSON tree, NOT the AS-IS Fuseki surface.
 //
 // CORRECTED 2026-05-22: a prior pass had v1/v2 inverted. It repointed these
-// lookups to /api/athena/subdomains[/:id[/blast-radius]] — which the design
+// lookups to the old per-domain Fuseki routes — which the design
 // (designing/docs/athena-product-design.html, line 541) names as the AS-IS
 // surface that "Athena v2 replaces", a 4-field Fuseki record with no products.
 // That dropped every product that lives only in the v2 JSON tree — e.g. The

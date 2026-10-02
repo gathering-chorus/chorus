@@ -38,8 +38,7 @@ describe('#2060: consolidated domain API', () => {
     expect(testFiles.length).toBe(0);
   });
 
-  // #4416 — the subdomain assertions and the '-domain' suffix case are gone:
-  // subdomains are retired (#4353, Jeff: "remove not fix subdomain dependencies").
+  // #4416 — the '-domain' suffix case is gone (#4353).
 
 
   // --- /tests ---

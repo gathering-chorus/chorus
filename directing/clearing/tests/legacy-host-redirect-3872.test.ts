@@ -9,7 +9,7 @@
  * this is basic human needs, and these are interfaces, and it's like 100%
  * afterthought."
  *
- * #3878 made the apex path work but left the subdomain serving the room, so the
+ * #3878 made the apex path work but left the clearing host serving the room, so the
  * shape he objected to was still live and still linkable. This retires it.
  *
  * NEGATIVE PROOF (#3734): `the apex host is left alone` is the state a careless
@@ -19,8 +19,8 @@
  */
 import { legacyRedirectTarget } from '../src/server';
 
-describe('#3872 legacy subdomain retirement', () => {
-  it('sends the bare subdomain to the apex path', () => {
+describe('#3872 legacy host retirement', () => {
+  it('sends the bare clearing host to the apex path', () => {
     expect(legacyRedirectTarget('clearing.lightlifeurbangardens.com', '/'))
       .toBe('https://lightlifeurbangardens.com/clearing');
   });

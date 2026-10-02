@@ -50,8 +50,8 @@ describeIntegration('retired product endpoints (#3603)', () => {
 });
 
 // #4265 — DELETED: the list, owner-filter and step-filter cases asserted
-// chorus:SubDomain itself. The class is retired (#4216/#4237) and the routes'
-// query files (subdomains.sparql, subdomain-detail.sparql) were deleted with
+// chorus:Domain itself. The class is retired (#4216/#4237) and the routes'
+// query files (domains.sparql, domain-detail.sparql) were deleted with
 // it, so these 500'd on ENOENT. Wren's call 2026-09-21: don't bring them back
 // as "returns 88 domains" — that is the count-the-data shape Jeff called
 // brittle. The list surface is GET :3360/domains/domains.
@@ -66,14 +66,14 @@ describeIntegration('GET /api/athena/steps (retired #3702)', () => {
 });
 
 describeIntegration('GET /api/athena/owners', () => {
-  test('returns owners with subdomain counts', async () => {
+  test('returns owners with domain counts', async () => {
     const res = await fetch(`${API}/api/athena/owners`);
     expect(res.status).toBe(200);
     const body = await res.json();
     expect(body.data.length).toBeGreaterThan(0);
     for (const o of body.data) {
       expect(o.label).toBeDefined();
-      expect(typeof o.subdomainCount).toBe('number');
+      expect(typeof o.domainCount).toBe('number');
     }
   });
 });
@@ -82,7 +82,7 @@ describeIntegration('GET /api/athena/owners', () => {
 
 // #4265 — DELETED with the list cases above: step filters and the whole
 // :id detail block (detail, consumes, 404-with-suggestion, the two loom
-// contains cases, empty-instances). All read subdomain-detail.sparql, which
+// contains cases, empty-instances). All read domain-detail.sparql, which
 // was deleted with the class. Wren measured the replacement 2026-09-21:
 // GET :3360/domains/domains/<id> serves iri, label, comment only — owner,
 // step, consumes and consumedBy are no longer exposed, so repointing these
@@ -122,8 +122,8 @@ describeIntegration('GET /api/athena/machines', () => {
 
 describeIntegration('_meta envelope', () => {
   test('all endpoints include query_name, duration_ms, cached', async () => {
-    // #4274: 'subdomains' (the list route) retired — gone with chorus:SubDomain (#4265);
-    // Jeff 2026-09-23 "we are retiring subdomains". The /:id/* facets still serve and keep their tests.
+    // #4274: 'domains' (the list route) retired — gone with chorus:Domain (#4265);
+    // Jeff 2026-09-23 "we are retiring domains". The /:id/* facets still serve and keep their tests.
     const endpoints = ['health', 'owners', 'machines']; // products/subproducts retired #3603; steps retired #3702
     for (const ep of endpoints) {
       const res = await fetch(`${API}/api/athena/${ep}`);
@@ -135,7 +135,7 @@ describeIntegration('_meta envelope', () => {
   });
 });
 
-// === #1904: Roles domain — parent + 4 sub-domains ===
+// === #1904: Roles domain — parent + 4 domains ===
 
 
 

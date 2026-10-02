@@ -38,7 +38,7 @@ describe('deriveTestType', () => {
 describe('loadAliasMap', () => {
   // Derivation logic lives in scripts/migrate-aliases-to-graph.ts (deriveAliases).
   // This function is the runtime read: take alias triples from SPARQL,
-  // produce the prefix → subdomainId map. Trivial — the value is in the
+  // produce the prefix → domainId map. Trivial — the value is in the
   // graph data, not the function.
   const sdUri = (id: string) => ({ value: `https://jeffbridwell.com/chorus#${id}` });
   const prefix = (s: string) => ({ value: s });
@@ -99,7 +99,7 @@ describe('inferDomain', () => {
 
 describe('createDiscoverTests', () => {
   // #2516: query now fetches alias triples (?sd ?prefix) instead of
-  // SubDomains (?sd ?label). Mock shape updated.
+  // Domains (?sd ?label). Mock shape updated.
   function makeSparql(aliasRows?: any[]) {
     const updates: string[] = [];
     const rows = aliasRows ?? [

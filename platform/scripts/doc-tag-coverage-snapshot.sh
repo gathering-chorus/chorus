@@ -4,7 +4,7 @@
 # Run daily (via cron or pre-close), idempotent on date — if today's row
 # exists, it gets overwritten. Output appended to:
 #   chorus/knowledge/doc-tag-coverage-history.tsv
-# Schema: date \t total_docs \t product_tagged \t product_pct \t subdomain_tagged \t subdomain_pct \t drift_count
+# Schema: date \t total_docs \t product_tagged \t product_pct \t domain_tagged \t domain_pct \t drift_count
 set -uo pipefail
 
 CHORUS="${CHORUS_REPO:-/Users/jeffbridwell/CascadeProjects/chorus}"
@@ -23,7 +23,7 @@ d = json.load(sys.stdin)
 date = datetime.date.today().isoformat()
 total = d['total']
 pp = d['coverage']['product']
-sp = d['coverage']['subdomain']
+sp = d['coverage']['domain']
 drift = len(d.get('drift', []))
 print(f'{date}\t{total}\t{pp[\"tagged\"]}\t{pp[\"percent\"]}\t{sp[\"tagged\"]}\t{sp[\"percent\"]}\t{drift}')
 ")
@@ -32,7 +32,7 @@ mkdir -p "$(dirname "$HISTORY")"
 
 # Header if file is empty/missing
 if [ ! -s "$HISTORY" ]; then
-  echo -e "# date\ttotal\tproduct_tagged\tproduct_pct\tsubdomain_tagged\tsubdomain_pct\tdrift" > "$HISTORY"
+  echo -e "# date\ttotal\tproduct_tagged\tproduct_pct\tdomain_tagged\tdomain_pct\tdrift" > "$HISTORY"
 fi
 
 # Idempotent on date — strip today's existing row before append

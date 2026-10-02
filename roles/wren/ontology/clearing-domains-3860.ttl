@@ -115,4 +115,4 @@ chorus:streams a owl:Class, chorus:Domain ;
   chorus:atStep chorus:Directing ; chorus:atStream chorus:value-stream-chorus ;
   chorus:repoTarget "platform/api" .
   # ownedBy silas — observation layer (CLAUDE.md ownership split), matching the
-  # V1 streams-domain SubDomain attribution.
+  # V1 streams-domain Domain attribution.

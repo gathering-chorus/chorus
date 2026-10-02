@@ -461,7 +461,7 @@ assert "NEGATIVE PROOF: with the default library agent, the same call is REFUSED
 
 kill "$UA_PID" 2>/dev/null
 
-# --- #3790: the session cookie rides every subdomain, and still proves who ----
+# --- #3790: the session cookie rides every host under it, and still proves who ----
 #
 # Wren found this before it shipped: every cookie in the system was host-only, so
 # the Clearing would redirect an anonymous visitor to the guard, the guard would

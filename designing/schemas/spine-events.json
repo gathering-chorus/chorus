@@ -2674,12 +2674,12 @@
     "gate.quality.tests.consulted": {
       "vertebra": "proving",
       "source": "gate-quality",
-      "description": "gate:quality consumed the generated tests-domain API (:3360/tests, #2819) to scope its checks to a card's subdomain (#3580 — first generated-API consumer). Makes the consumption observable, not silent.",
+      "description": "gate:quality consumed the generated tests-domain API (:3360/tests, #2819) to scope its checks to a card's domain (#3580 — first generated-API consumer). Makes the consumption observable, not silent.",
       "fields": {
         "role": "Acting role (kade)",
-        "card": "Card whose subdomain was dispatched",
-        "subdomain": "The subdomain consulted (the covers→Domain join key)",
-        "covering": "Count of tests covering that subdomain",
+        "card": "Card whose domain was dispatched",
+        "domain": "The domain consulted (the covers→Domain join key)",
+        "covering": "Count of tests covering that domain",
         "scoped": "true = scoped check set found; false = degraded to suite-level (fail-open)"
       }
     },

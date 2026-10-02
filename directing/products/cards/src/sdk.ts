@@ -564,8 +564,8 @@ type AddOpts = {
   status?: string; owner?: string; priority?: string; domain?: string;
   description?: string; product?: string; chunk?: string; sequence?: string;
   type?: string; origin?: string;
-  // #2652 AC1+AC2 — new tag axes
-  subdomain?: string; subproduct?: string;
+  // #2652 AC2 — product sub-axis
+  subproduct?: string;
   // #3682 — run every gate (guest door included) but file nothing
   validateOnly?: boolean;
 };
@@ -575,39 +575,6 @@ type AddOpts = {
 // not exposed as a subproduct on cards yet (horizontal capability per Jeff
 // 2026-05-01). Add Quality if/when it becomes a tagged surface.
 const VALID_SUBPRODUCTS = new Set(['athena', 'loom', 'werk', 'borg', 'convergence', 'clearing']);
-
-// #2652 AC1 — closed list sourced LIVE from Athena. Cached per process lifetime
-// to keep validation fast; refresh on cache-miss.
-//
-// #4237, 2026-09-21 — reads athena-make's generated Domain route, not
-// chorus-api's /api/athena/subdomains. chorus:SubDomain is retired (Jeff's ruling
-// 2026-06-19, carried out on this card) and that route had been serving count 0,
-// so this closed list was EMPTY and every --subdomain value was refused with
-// "Athena reports 0 valid subdomains". The axis was not validating, it was
-// rejecting everything.
-//
-// It points at :3360 because chorus-api has no /api/athena/domains route — I
-// checked before changing it, having just spent the morning on routes aimed at
-// things that were not there. Verified 2026-09-21: :3360/domains/domains serves
-// 88 rows.
-let SUBDOMAIN_CACHE: Set<string> | null = null;
-async function fetchSubdomainSet(): Promise<Set<string>> {
-  if (SUBDOMAIN_CACHE) return SUBDOMAIN_CACHE;
-  try {
-    const resp = await fetch('http://localhost:3360/domains/domains');
-    if (!resp.ok) throw new Error(`status ${resp.status}`);
-    // The generated route keys rows by `name`, not `id` — checked the live payload
-    // rather than assuming the old shape carried over.
-    const body = await resp.json() as { data?: Array<{ name?: string; id?: string }> };
-    const ids = (body.data || []).map((r) => r.name ?? r.id).filter((x): x is string => !!x);
-    SUBDOMAIN_CACHE = new Set(ids);
-    return SUBDOMAIN_CACHE;
-  } catch (err) {
-    // If Athena is unreachable at validation time, fail closed: refuse-at-source
-    // means we'd rather block the add than let an unvalidated subdomain land.
-    throw new Error(`domain validation requires athena-make (localhost:3360/domains/domains): ${err instanceof Error ? err.message : String(err)}`, { cause: err });
-  }
-}
 
 // Mutates opts to fill in type/chunk/origin from title and domain where possible.
 function inferCardDefaults(title: string, opts: AddOpts): void {
@@ -636,7 +603,7 @@ function inferCardDefaults(title: string, opts: AddOpts): void {
 }
 
 // Validates required fields and collects error strings.
-// cog-override: required-field validator with per-axis branches (#2652 added subdomain+subproduct; pre-existing for type/priority/origin/domain). Each branch is one check with specific error text; collapsing to a loop would lose per-axis error-message clarity.
+// cog-override: required-field validator with per-axis branches (#2652 added subproduct; pre-existing for type/priority/origin/domain). Each branch is one check with specific error text; collapsing to a loop would lose per-axis error-message clarity.
 async function collectRequiredFieldErrors(opts: AddOpts): Promise<string[]> {
   const errors: string[] = [];
   if (!opts.domain) errors.push('Missing --domain <name>');
@@ -653,18 +620,6 @@ async function collectRequiredFieldErrors(opts: AddOpts): Promise<string[]> {
     const sp = opts.subproduct.toLowerCase();
     if (!VALID_SUBPRODUCTS.has(sp)) {
       errors.push(`Unknown --subproduct "${opts.subproduct}". Valid: ${Array.from(VALID_SUBPRODUCTS).join(', ')}`);
-    }
-  }
-  // #2652 AC1 — subdomain refuse-at-source (Athena live query, fail-closed)
-  if (opts.subdomain) {
-    try {
-      const valid = await fetchSubdomainSet();
-      if (!valid.has(opts.subdomain)) {
-        const preview = Array.from(valid).slice(0, 8).join(', ');
-        errors.push(`Unknown --subdomain "${opts.subdomain}". Athena reports ${valid.size} valid subdomains (e.g. ${preview}, ...). Add new subdomain in Athena before tagging.`);
-      }
-    } catch (err) {
-      errors.push(`--subdomain validation failed: ${err instanceof Error ? err.message : err}`);
     }
   }
   return errors;
@@ -747,7 +702,7 @@ async function bestEffort(label: string, fn: () => Promise<void>): Promise<void>
   catch (err: unknown) { console.error(`  (${label}: ${err instanceof Error ? err.message : err})`); }
 }
 
-// Applies post-add tags (sequence, origin, subproduct, subdomain — the #2652
+// Applies post-add tags (sequence, origin, subproduct — the #2652
 // axes) and triggers workflow if status is Now. Each axis is independent and
 // applied in order; none of them can block the others.
 async function applyPostAddTags(
@@ -760,23 +715,19 @@ async function applyPostAddTags(
     await bestEffort('origin tag', () => client.tag(task.index, 'origin', (opts.origin as string).toLowerCase()));
   }
   // #2652 AC1+AC2 — apply new tag axes (already validated refuse-at-source).
-  // Labels auto-create on first use; subdomain/subproduct categories not in
+  // Labels auto-create on first use; the subproduct category is not in
   // LABELS config so use direct label add via client.applyLabelByName helper.
   if (opts.subproduct) {
     await bestEffort('subproduct tag', () => applyDynamicLabel(client, task.index, `subproduct:${(opts.subproduct as string).toLowerCase()}`));
-  }
-  if (opts.subdomain) {
-    await bestEffort('subdomain tag', () => applyDynamicLabel(client, task.index, `subdomain:${opts.subdomain as string}`));
   }
   if (task.status.toLowerCase() === 'now') {
     await bestEffort('workflow', () => triggerWorkflow(client, task.index));
   }
 }
 
-// #2652 AC1+AC2 — apply a label by full name (e.g. "subdomain:cards-service"),
-// auto-creating the Vikunja label if it doesn't exist. Subdomain/subproduct
-// labels are not in LABELS config (Athena is source of truth for subdomain;
-// closed-list for subproduct). Reuses applyLabelByName which handles the
+// #2652 AC2 — apply a label by full name (e.g. "subproduct:werk"),
+// auto-creating the Vikunja label if it doesn't exist. Subproduct labels are
+// not in LABELS config (closed list). Reuses applyLabelByName which handles the
 // find-or-create path.
 async function applyDynamicLabel(
   client: BoardClient, index: number, labelName: string,
@@ -1591,15 +1542,15 @@ export async function reassignCard(client: BoardClient, index: number, newOwner:
   notifyOwnerIfDifferent(index, title, displayOwner, `reassigned-to-${displayOwner}`, detectRole());
 }
 
-// #2652 AC1+AC2 — subdomain + subproduct keys accepted on `cards set`. They
+// #2652 AC2 — the subproduct key is accepted on `cards set`. They
 // route through the dynamic-label path (Vikunja label auto-create) since
 // they're not in LABELS config — same as the create path's applyDynamicLabel.
-// `product` (gathering|chorus portfolio) added so all four taxonomy axes —
-// product / subproduct / domain / subdomain — are settable on existing cards
+// `product` (gathering|chorus portfolio) added so the taxonomy axes —
+// product / subproduct / domain — are settable on existing cards
 // per Jeff direction 2026-05-02 (board-wide attribute backfill).
-const SET_CARD_VALID_KEYS = new Set(['domain', 'chunk', 'sequence', 'stream', 'type', 'origin', 'owner', 'priority', 'title', 'desc', 'description', 'status', 'after', 'gates', 'subdomain', 'subproduct', 'product']);
+const SET_CARD_VALID_KEYS = new Set(['domain', 'chunk', 'sequence', 'stream', 'type', 'origin', 'owner', 'priority', 'title', 'desc', 'description', 'status', 'after', 'gates', 'subproduct', 'product']);
 // #3267: chunk removed from the static-map tag loop — it now routes through
-// applyLabelByName (auto-create), same as subproduct/subdomain, so chunk is a
+// applyLabelByName (auto-create), same as subproduct, so chunk is a
 // dynamic priority axis: a new priority is just a tag, no config.ts/enum edit.
 const SET_CARD_TAG_CATEGORIES = ['domain', 'sequence', 'stream', 'type', 'origin', 'product'];
 
@@ -1626,17 +1577,7 @@ async function applyTagChanges(client: BoardClient, index: number, pairs: Record
     await client.tag(index, 'priority', pairs.priority.toUpperCase());
     changes.push(`priority=${pairs.priority}`);
   }
-  // #2652 AC1+AC2 — apply dynamic-label categories. Subdomain refuses-at-source
-  // against Athena (live query, fail-closed); subproduct is closed-list
-  // (validated in validateSetKeys above).
-  if (pairs.subdomain) {
-    const valid = await fetchSubdomainSet();
-    if (!valid.has(pairs.subdomain)) {
-      throw new Error(`Unknown subdomain "${pairs.subdomain}". Athena reports ${valid.size} valid subdomains.`);
-    }
-    await client.applyLabelByName(index, `subdomain:${pairs.subdomain}`);
-    changes.push(`subdomain=${pairs.subdomain}`);
-  }
+  // #2652 AC2 — subproduct is closed-list (validated in validateSetKeys above).
   if (pairs.subproduct) {
     await client.applyLabelByName(index, `subproduct:${pairs.subproduct.toLowerCase()}`);
     changes.push(`subproduct=${pairs.subproduct}`);

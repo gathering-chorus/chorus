@@ -6,9 +6,9 @@
  * valid state (returns 200 with empty array) — principles are added over
  * time, absence isn't a 404-worthy condition.
  *
- * The sibling endpoint `GET /api/athena/subdomains/loom-principles` already
- * returns this data nested inside a sub-domain envelope. This handler is a
- * narrower, loom-scoped alias — hides the subdomain-layout detail from any
+ * The sibling endpoint `GET /api/athena/domains/loom-principles` already
+ * returns this data nested inside a domain envelope. This handler is a
+ * narrower, loom-scoped alias — hides the domain-layout detail from any
  * caller that just wants "give me the principles."
  */
 

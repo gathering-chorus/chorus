@@ -227,7 +227,6 @@ const CLASSES: &[(&str, &str)] = &[
     ("chorus:Monitor", "monitors"),
     ("DecisionShape", "decisions"),
     ("DomainShape", "domains"),
-    ("SubDomain", "domains"),
     ("chorus:Domain", "domains"),
 ];
 

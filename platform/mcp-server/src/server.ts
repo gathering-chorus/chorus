@@ -168,7 +168,6 @@ const CardsAddInput = z.object({
   sequence: z.string().optional().describe('Sequence label (deprecated by subproduct per #2643)'),
   chunk: z.string().optional().describe('Optional chunk (app, ops, memory, ...)'),
   subproduct: z.enum(['athena', 'loom', 'werk', 'borg', 'convergence', 'clearing']).optional().describe('Subproduct — implementation within Chorus (#2652 AC2)'),
-  subdomain: z.string().optional().describe('Subdomain label on the card (SubDomain is retired from the model, #4353; kept as a plain card label)'),
 });
 
 // #2996 — Jeff-attributed card add. Same fields as CardsAddInput. #3293: the CLI
@@ -185,7 +184,6 @@ const CardAddJeffInput = z.object({
   sequence: z.string().optional().describe('Sequence label (deprecated by subproduct per #2643)'),
   chunk: z.string().optional().describe('Optional chunk (app, ops, memory, ...)'),
   subproduct: z.enum(['athena', 'loom', 'werk', 'borg', 'convergence', 'clearing']).optional().describe('Subproduct — implementation within Chorus (#2652 AC2)'),
-  subdomain: z.string().optional().describe('Subdomain — Athena subdomain id (#2652 AC1)'),
 });
 
 const CardsMoveInput = z.object({
@@ -311,10 +309,6 @@ const PrinciplesGetInput = z.object({
 const DecisionsGetInput = z.object({
   id: z.string().min(1).describe('Decision id (e.g., dec-2090, adr-026)'),
 });
-// eslint-disable-next-line @typescript-eslint/no-unused-vars -- parked subdomains tool, intentionally retained for future wiring (see ~L2560) (#3429)
-const SubdomainsGetInput = z.object({
-  id: z.string().min(1).describe('Subdomain id (e.g., commits-domain, gates-service)'),
-});
 // #4353 — the fields the Principle shape requires on athena-make
 const PrinciplesCreateInput = z.object({
   label: z.string().min(1).describe('Short human-readable name (e.g., "Ship small")'),
@@ -390,36 +384,6 @@ const DECISIONS_GET_TOOL_DEF = {
     type: 'object',
     properties: {
       id: { type: 'string', minLength: 1, description: 'Decision id, e.g., adr-026 or dec-2090' },
-    },
-    required: ['id'],
-  },
-} as const;
-
-// eslint-disable-next-line @typescript-eslint/no-unused-vars -- parked subdomains tool def, intentionally retained for future wiring (#3429)
-const SUBDOMAINS_LIST_TOOL_DEF = {
-  name: 'chorus_subdomains_list',
-  description:
-    'List all Chorus subdomains from the live Athena graph. Returns id + label + owner + step for each. Use this to look up current ownership when DEC-058 says to query Athena via MCP — the canonical model is the source of truth, not a hardcoded table. Do NOT cache locally; ownership shifts as cards land.',
-  inputSchema: {
-    type: 'object',
-    properties: {},
-    required: [],
-  },
-} as const;
-
-// eslint-disable-next-line @typescript-eslint/no-unused-vars -- parked subdomains tool def, intentionally retained for future wiring (#3429)
-const SUBDOMAINS_GET_TOOL_DEF = {
-  name: 'chorus_subdomains_get',
-  description:
-    'Get one Chorus subdomain by id from the live Athena graph. Use when you have a specific subdomain id (e.g., commits-domain, gates-service) and want its full record — id, label, owner, step. Do NOT use to fish by topic; use chorus_subdomains_list and filter.',
-  inputSchema: {
-    type: 'object',
-    properties: {
-      id: {
-        type: 'string',
-        minLength: 1,
-        description: 'Subdomain id, e.g., commits-domain or gates-service',
-      },
     },
     required: ['id'],
   },
@@ -680,7 +644,6 @@ const CARDS_ADD_TOOL_DEF = {
       sequence: { type: 'string', description: 'Sequence label — legacy axis (deprecated by subproduct per #2643)' },
       chunk: { type: 'string', description: 'Chunk label (app, ops, memory, ...)' },
       subproduct: { type: 'string', enum: ['athena', 'loom', 'werk', 'borg', 'convergence', 'clearing'], description: 'Subproduct — pick one Chorus implementation product: athena=ontology, loom=team-knowledge, werk=execution-substrate, borg=observability, convergence=integration, clearing=interaction. Refused if not in this closed list (#2652 AC2).' },
-      subdomain: { type: 'string', description: 'Subdomain — Athena subdomain id (e.g. cards-service, gates-service). Refused if not in Athena (#2652 AC1).' },
     },
     required: ['title', 'owner', 'priority', 'domain', 'type', 'origin', 'desc'],
   },
@@ -705,7 +668,6 @@ const CARD_ADD_JEFF_TOOL_DEF = {
       sequence: { type: 'string', description: 'Sequence label' },
       chunk: { type: 'string', description: 'Chunk label' },
       subproduct: { type: 'string', enum: ['athena', 'loom', 'werk', 'borg', 'convergence', 'clearing'], description: 'Subproduct — pick one (athena=KG, loom=principles, werk=execution, borg=monitoring, convergence=NiFi-pipeline, clearing=multi-role-chat)' },
-      subdomain: { type: 'string', description: 'Subdomain — Athena subdomain id' },
     },
     required: ['title', 'owner', 'priority', 'domain', 'type', 'origin'],
   },
@@ -757,14 +719,14 @@ const CARDS_TAG_TOOL_DEF = {
 const CARDS_SET_TOOL_DEF = {
   name: 'chorus_cards_set',
   description:
-    'The single writer for a card\'s descriptive properties — owner, priority, type, origin, title, subdomain, subproduct, and the label axes sequence/domain/chunk (typed validation applies: subproduct closed-list, subdomain must exist in Athena). Use it for any field change or multi-field update that should land together. Pass {fields: {priority: "P1", owner: "wren", sequence: "pulse"}}. STATUS is REFUSED here (enforced at the boundary, not prose) — status is a transition, not a field: use chorus_cards_move for non-Done lanes, chorus_cards_done for Done (emits card.accepted). Emits card.item.set per change.',
+    'The single writer for a card\'s descriptive properties — owner, priority, type, origin, title, subproduct, and the label axes sequence/domain/chunk (typed validation applies: subproduct closed-list). Use it for any field change or multi-field update that should land together. Pass {fields: {priority: "P1", owner: "wren", sequence: "pulse"}}. STATUS is REFUSED here (enforced at the boundary, not prose) — status is a transition, not a field: use chorus_cards_move for non-Done lanes, chorus_cards_done for Done (emits card.accepted). Emits card.item.set per change.',
   inputSchema: {
     type: 'object',
     properties: {
       id: { type: 'integer', minimum: 1, description: 'Card id' },
       fields: {
         type: 'object',
-        description: 'field=value map (priority, owner, title, status, type, origin, subdomain, subproduct, ...)',
+        description: 'field=value map (priority, owner, title, status, type, origin, subproduct, ...)',
         additionalProperties: { type: 'string' },
       },
     },
@@ -850,7 +812,6 @@ const migrationCell = (v: MigrationCell): string => (v === null ? '—' : v ? '�
 export interface MigrationInputs {
   domains: string[]; // V2 chorus:Domain localnames present in urn:chorus:ontology
   srcDomains: string[]; // domain localnames declared in a committed MODEL_SET .ttl
-  subdomainStems: string[]; // V1 chorus:SubDomain localnames, '-domain'/'-service' suffix stripped
 }
 export interface MigrationRow {
   domain: string;
@@ -868,14 +829,13 @@ export interface MigrationRow {
  *  is unproven — the matrix never claims a domain fully migrated on partial evidence. */
 export function computeMigrationRows(inp: MigrationInputs): MigrationRow[] {
   const src = new Set(inp.srcDomains);
-  const stems = new Set(inp.subdomainStems.map((s) => s.toLowerCase()));
   return [...inp.domains].sort().map((d) => ({
     domain: d,
     created: true, // it is a chorus:Domain in the graph
     owlSrc: src.has(d), // declared in committed MODEL_SET source
     loaded: true, // read live from urn:chorus:ontology
     owlApi: null, // not-yet-instrumented
-    v1Retired: !stems.has(d.toLowerCase()), // no lingering V1 SubDomain twin (by stripped name)
+    v1Retired: true, // the V1 class is deleted from the model; no V1 twin can exist
     v1Code: null, // not-yet-instrumented
     done: false, // honest: can't be ✓ while athena-make/v1-code unproven
   }));
@@ -924,8 +884,6 @@ async function executeMigrationReadout(
   };
   try {
     const domains = await names('SELECT ?s WHERE { GRAPH <urn:chorus:ontology> { ?s a chorus:Domain } }');
-    const subs = await names('SELECT ?s WHERE { GRAPH ?g { ?s a chorus:SubDomain } }');
-    const subdomainStems = subs.map((s) => s.replace(/-(domain|service)$/i, ''));
     // owl-src: which domain localnames are declared in a committed MODEL_SET .ttl
     const files = [
       'roles/silas/ontology/chorus.ttl',
@@ -946,7 +904,7 @@ async function executeMigrationReadout(
     } catch {
       // files unreadable / grep found nothing — leave srcDomains empty; owl-src reads '·' honestly
     }
-    const rows = computeMigrationRows({ domains, srcDomains, subdomainStems });
+    const rows = computeMigrationRows({ domains, srcDomains });
     return { content: [{ type: 'text', text: renderMigrationReadout(rows) }] };
   } catch (err) {
     throw new Error(`migration-readout: gather failed — ${(err as Error).message}`, { cause: err });
@@ -1896,8 +1854,7 @@ interface PrincipleRecord {
   uri?: string;
 }
 
-// #4353 — principles and decisions are read from athena-make's generated
-// routes. The /api/athena/subdomains/* routes they used are retired.
+// Principles and decisions are read from athena-make's generated routes.
 function athenaMakeBase(): string {
   return process.env.ATHENA_MAKE_URL || 'http://localhost:3360';
 }
@@ -3322,7 +3279,6 @@ async function executeCardsAdd(
   if (args.sequence) argv.push('--sequence', args.sequence);
   if (args.chunk) argv.push('--chunk', args.chunk);
   if (args.subproduct) argv.push('--subproduct', args.subproduct);
-  if (args.subdomain) argv.push('--subdomain', args.subdomain);
   const out = await execCardsCli('add', argv, from, execFileAsync, cardsPath, 'chorus_cards_add');
   return { content: [{ type: 'text', text: out }] };
 }
@@ -3349,7 +3305,6 @@ async function executeCardAddJeff(
   if (args.sequence) argv.push('--sequence', args.sequence);
   if (args.chunk) argv.push('--chunk', args.chunk);
   if (args.subproduct) argv.push('--subproduct', args.subproduct);
-  if (args.subdomain) argv.push('--subdomain', args.subdomain);
   // #3025: the cards_add vs card_add_jeff split is the enforced auth-gate
   // boundary, not a prose-only convention. The attribution ('jeff') is
   // hardcoded here regardless of caller, so the bouncer's isAgent check returns
@@ -3414,7 +3369,7 @@ async function executeCardsSet(
   cardsPath: string,
 ): Promise<{ content: Array<{ type: 'text'; text: string }> }> {
   // #3025 / ADR-031: cards_set is the single writer for descriptive PROPERTIES —
-  // owner, priority, type, origin, title, subdomain, subproduct, and the label
+  // owner, priority, type, origin, title, subproduct, and the label
   // axes sequence/domain/chunk (gate-arch ruling: labels are properties, fold
   // into the one setter with typed validation). STATUS is excluded: it's a
   // state machine, not a field — transitions carry the move/accept events a
@@ -3515,8 +3470,6 @@ export function buildMcpServer(getCallerRole: () => string, deps: McpServerDeps 
       // chorus_tree_get / chorus_ownership_lookup (repointed to data/athena/tree.json
       // in #3025) instead. v1 SPARQL stays live for the ~80 detail/facet/coverage
       // consumers v2 doesn't cover yet; only the duplicate ownership path is cut.
-      // SUBDOMAINS_LIST_TOOL_DEF,
-      // SUBDOMAINS_GET_TOOL_DEF,
       CARDS_ADD_TOOL_DEF,
       CARD_ADD_JEFF_TOOL_DEF,
       CARDS_MOVE_TOOL_DEF,
@@ -3686,20 +3639,6 @@ export function buildMcpServer(getCallerRole: () => string, deps: McpServerDeps 
         }
         return executeDecisionsGet(parsed.data, fetchImpl, apiBase, from);
       }
-      // #3177: v1 SPARQL ownership tools de-listed (see TOOL_DEF registration above).
-      // Dispatch cases commented out so a hand-crafted call can't reach the v1 path —
-      // it falls through to the unknown-tool error. Use chorus_tree_get /
-      // chorus_ownership_lookup (v2) for ownership. executeSubdomainsList/Get +
-      // SubdomainsGetInput remain defined but unreferenced (noUnusedLocals off).
-      // case 'chorus_subdomains_list':
-      //   return executeSubdomainsList(fetchImpl, apiBase, from);
-      // case 'chorus_subdomains_get': {
-      //   const parsed = SubdomainsGetInput.safeParse(req.params.arguments);
-      //   if (!parsed.success) {
-      //     throw new Error(`Invalid arguments: ${parsed.error.issues.map((i) => i.message).join(', ')}`);
-      //   }
-      //   return executeSubdomainsGet(parsed.data, fetchImpl, apiBase, from);
-      // }
       case 'chorus_cards_add': {
         const parsed = CardsAddInput.safeParse(req.params.arguments);
         if (!parsed.success) {

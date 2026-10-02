@@ -141,7 +141,7 @@ describe('fetchChorusDomainCode (#2188)', () => {
     expect(asked[0]).toContain('<https://jeffbridwell.com/chorus#photos>');
     expect(asked[0]).not.toContain('photos-domain');
     expect(body.data.domain).toBe('photos');
-    expect(body.data).not.toHaveProperty('subdomain');
+    expect(Object.keys(body.data).sort()).toEqual(['byType', 'domain', 'files']);
   });
 
   test('sparql throws → empty envelope', async () => {

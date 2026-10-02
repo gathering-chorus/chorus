@@ -14,7 +14,7 @@
  * `sparql` stamps the envelope header. Tests inject both as stubs.
  *
  * Scope: domain (chorus) — the Context API itself lives in the chorus
- * product. `subdomain` is not set for this endpoint; a future per-domain
+ * product. `domain` is not set for this endpoint; a future per-domain
  * variant might add it.
  */
 

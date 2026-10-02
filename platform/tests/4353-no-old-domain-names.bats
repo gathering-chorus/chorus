@@ -52,3 +52,34 @@ old_names_in() {  # $1 = directory to scan; prints file:line for each hit in TRA
   [[ "$output" == *"y.ts"* ]] || false
   [[ "$output" != *"z.ttl"* ]] || false
 }
+
+# Jeff 2026-10-02: find every reference to subdomain and remove it. The word
+# stays only in history: the retirement ledger, graph backups, old message
+# backups and the record folders (designing/docs, role journals, briefs,
+# notes, artifacts). Everything that runs, models or instructs a role is held
+# to zero here.
+subdomain_in() {  # $1 = directory (git-tracked files only); prints file:line
+  local top
+  top=$(git -C "$1" rev-parse --show-toplevel 2>/dev/null) || {
+    grep -rniI "subdomain" "$1" || true; return 0; }
+  git -C "$top" grep -niI "subdomain" -- "${@:2}" \
+    ':!platform/backups/**' ':!designing/schemas/model-retirements.jsonl' \
+    ':!platform/pulse/*.backup' ':!platform/tests/4353-no-old-domain-names.bats' || true
+}
+
+@test "nothing that runs, models or instructs a role says subdomain" {
+  run subdomain_in "$ROOT" platform directing proving designing/claudemd designing/data \
+    designing/schemas designing/domain-context data docs/diagrams \
+    'roles/*/ontology' 'roles/*/CLAUDE.md'
+  [ -z "$output" ] || { echo "$output" | head -40; false; }
+}
+
+@test "NEGATIVE PROOF: the subdomain check catches the word in a fixture file" {
+  d="$(mktemp -d)"
+  printf 'const SubDomainCache = new Set();\n' > "$d/a.ts"
+  printf 'chorus:x chorus:y chorus:z .\n' > "$d/b.ttl"
+  run subdomain_in "$d"
+  rm -rf "$d"
+  [[ "$output" == *"a.ts"* ]] || false
+  [[ "$output" != *"b.ttl"* ]] || false
+}

@@ -3,9 +3,9 @@
  *
  * Sibling to parseAppRoutes (which scans gathering-app's src/app.ts). Tags
  * routes by URL pattern:
- *   /api/loom/<slug>(/.*)? → subdomain `loom-<slug>` (when in valid set)
+ *   /api/loom/<slug>(/.*)? → domain `loom-<slug>` (when in valid set)
  *   anything else (concrete) → `chorus-domain` (operational substrate)
- *   parameterized routes with :id / :name → skipped (would need per-subdomain
+ *   parameterized routes with :id / :name → skipped (would need per-domain
  *     instantiation; deferred until the contract model supports applies-to-all).
  *
  * Pulled into its own module for unit-testability; mirrors discover-pages-loom.
@@ -19,19 +19,19 @@ export interface ChorusApiEndpointEntry {
 }
 
 // #2627: route → domainId mapping extracted; loop becomes flat.
-function routeToDomainId(routePath: string, validSubdomainIds: Set<string>): string | null {
+function routeToDomainId(routePath: string, validDomainIds: Set<string>): string | null {
   const loomMatch = routePath.match(/^\/api\/loom\/([a-z0-9-]+)/);
   if (loomMatch) {
     const candidate = `loom-${loomMatch[1]}`;
-    if (validSubdomainIds.has(candidate)) return candidate;
+    if (validDomainIds.has(candidate)) return candidate;
   }
-  if (validSubdomainIds.has('chorus-domain')) return 'chorus-domain';
+  if (validDomainIds.has('chorus-domain')) return 'chorus-domain';
   return null;
 }
 
 export function parseChorusApiRoutes(
   appContent: string,
-  validSubdomainIds: Set<string>,
+  validDomainIds: Set<string>,
 ): ChorusApiEndpointEntry[] {
   const entries: ChorusApiEndpointEntry[] = [];
   const routeRegex = /app\.(get|post|put|delete|patch)\s*\(\s*['"`]([^'"`]+)['"`]/gi;
@@ -40,7 +40,7 @@ export function parseChorusApiRoutes(
     const method = match[1].toUpperCase();
     const routePath = match[2];
     if (routePath.includes(':')) continue;
-    const domainId = routeToDomainId(routePath, validSubdomainIds);
+    const domainId = routeToDomainId(routePath, validDomainIds);
     if (!domainId) continue;
     entries.push({
       method,

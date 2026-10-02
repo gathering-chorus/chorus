@@ -11,7 +11,7 @@
 #   2. TestEdgesShape carries the REQUIRED axes (testType minCount 1, covers
 #      minCount 1) and the OPTIONAL finer axis (hermeticity, enum-if-present).
 #   3. A minted Test instance is queryable BY ITS covers edge — the exact query
-#      werk-test (#3190) runs: card's changed SubDomain -> covering Tests.
+#      werk-test (#3190) runs: card's changed Domain -> covering Tests.
 #   4. werk-domains.ttl is part of the deployed model SET, not orphaned (the gap
 #      this card closes: the model existed but was never landed).
 #
@@ -168,7 +168,7 @@ teardown_file() {
   env ONTOLOGY_GRAPH="$TEST_GRAPH" TTL="$TTL" "$SCRIPT" >/dev/null 2>&1
   # #3606 — assert the write LANDED. A swallowed 401 here plus residue in the
   # graph is indistinguishable from a healthy mint at the SELECT below.
-  run _insert "chorus:test-3540-ortho a chorus:Test ; chorus:covers chorus:subdomain-tests-domain ; chorus:testType \"security\" ; chorus:hermeticity \"needs-stack\""
+  run _insert "chorus:test-3540-ortho a chorus:Test ; chorus:covers chorus:fixture-domain-3540 ; chorus:testType \"security\" ; chorus:hermeticity \"needs-stack\""
   [ "$status" -eq 0 ]
   run curl -s "$Q" --data-urlencode "query=$PFX SELECT ?t WHERE { GRAPH <$TEST_GRAPH> { ?t chorus:testType \"security\" ; chorus:hermeticity \"needs-stack\" } }" -H "Accept: application/sparql-results+json"
   [[ "$output" == *'test-3540-ortho'* ]] || return 1
@@ -176,11 +176,11 @@ teardown_file() {
 
 @test "a minted Test instance is queryable BY its covers edge (the #3190 contract)" {
   env ONTOLOGY_GRAPH="$TEST_GRAPH" TTL="$TTL" "$SCRIPT" >/dev/null 2>&1
-  # mint a Test instance covering a known SubDomain, the way the #2818 tagging will
-  run _insert "chorus:test-3540-probe a chorus:Test ; chorus:covers chorus:subdomain-tests-domain ; chorus:testType \"integration\" ; chorus:hermeticity \"needs-stack\""
+  # mint a Test instance covering a known Domain, the way the #2818 tagging will
+  run _insert "chorus:test-3540-probe a chorus:Test ; chorus:covers chorus:fixture-domain-3540 ; chorus:testType \"integration\" ; chorus:hermeticity \"needs-stack\""
   [ "$status" -eq 0 ]
-  # query the way werk-test will: which Tests cover this SubDomain?
-  run curl -s "$Q" --data-urlencode "query=$PFX SELECT ?t WHERE { GRAPH <$TEST_GRAPH> { ?t a chorus:Test ; chorus:covers chorus:subdomain-tests-domain } }" -H "Accept: application/sparql-results+json"
+  # query the way werk-test will: which Tests cover this Domain?
+  run curl -s "$Q" --data-urlencode "query=$PFX SELECT ?t WHERE { GRAPH <$TEST_GRAPH> { ?t a chorus:Test ; chorus:covers chorus:fixture-domain-3540 } }" -H "Accept: application/sparql-results+json"
   [[ "$output" == *'test-3540-probe'* ]] || return 1
 }
 

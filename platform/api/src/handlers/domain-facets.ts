@@ -2,7 +2,7 @@
  * Domain facet handlers (#2173 AC4).
  *
  * Four facet endpoints that share shape: /api/chorus/domain/:name/{tests,
- * logs, services, decisions}. Each resolves the subdomain → queries SPARQL
+ * logs, services, decisions}. Each resolves the domain → queries SPARQL
  * or an upstream service → shapes the result → returns an Athena envelope.
  * On error, returns an empty-result envelope rather than a 500 — these
  * endpoints back domain-detail pages where a partial render is better than
@@ -32,7 +32,7 @@ export interface DomainFacetDeps {
 
 export async function fetchDomainTests(
   deps: DomainFacetDeps,
-  subdomainName: string,
+  domainName: string,
 ): Promise<FetchResult> {
   const now = deps.now ?? Date.now;
   const qualityByDomain = deps.qualityByDomain ?? getQualityByDomain;
@@ -40,7 +40,7 @@ export async function fetchDomainTests(
   try {
     // #2430: shared resolver. The projection is domain-name-keyed (model
     // `covers`), not URI-keyed — use resolver.primary for the lookup.
-    const identity = resolveDomainIdentity(subdomainName);
+    const identity = resolveDomainIdentity(domainName);
     const domain = identity.primary;
     // #4093 — the REGISTRY first (Jeff, 2026-09-03: "the domains ultimately will show true
     // state"). The tests domain graph holds one row per registered test with the domain
@@ -71,12 +71,12 @@ export async function fetchDomainTests(
       total = scanData.total || 0;
     }
     // #2485 — fall back to chorus:TestCoverage instances graph when upstream
-    // has nothing (loom-* and other chorus-side subdomains the gathering-app
+    // has nothing (loom-* and other chorus-side domains the gathering-app
     // quality scanner doesn't see). Closes the follow-on parked at the top of
     // this function.
     if (tests.length === 0) {
       try {
-        const sdId = subdomainName.toLowerCase();
+        const sdId = domainName.toLowerCase();
         const sdUri = `https://jeffbridwell.com/chorus#${sdId}`;
         // #3442: testType is a declared hasProperty→Property, not a bare literal.
         const query = `PREFIX chorus: <https://jeffbridwell.com/chorus#> SELECT ?testFile ?testType WHERE { GRAPH <urn:chorus:instances> { ?tc a chorus:TestCoverage ; chorus:covers <${sdUri}> ; chorus:testFile ?testFile ; chorus:hasProperty [ chorus:propertyKey "testType" ; chorus:propertyValue ?testType ] } }`;
@@ -99,7 +99,7 @@ export async function fetchDomainTests(
       status: 200,
       body: deps.envelope(
         'domain-tests',
-        { subdomain: subdomainName, tests, byType, total },
+        { domain: domainName, tests, byType, total },
         now() - start,
         { count: tests.length },
       ),
@@ -107,7 +107,7 @@ export async function fetchDomainTests(
   } catch {
     return {
       status: 200,
-      body: deps.envelope('domain-tests', { subdomain: subdomainName, tests: [], byType: {} }, now() - start, { count: 0 }),
+      body: deps.envelope('domain-tests', { domain: domainName, tests: [], byType: {} }, now() - start, { count: 0 }),
     };
   }
 }
@@ -119,12 +119,12 @@ export async function fetchDomainTests(
 
 export async function fetchDomainServices(
   deps: DomainFacetDeps,
-  subdomainName: string,
+  domainName: string,
 ): Promise<FetchResult> {
   const now = deps.now ?? Date.now;
   const start = now();
   try {
-    const sdId = subdomainName.toLowerCase();
+    const sdId = domainName.toLowerCase();
     const sdUri = `https://jeffbridwell.com/chorus#${sdId}`;
     const query = `PREFIX chorus: <https://jeffbridwell.com/chorus#> PREFIX rdfs: <http://www.w3.org/2000/01/rdf-schema#> SELECT ?method ?routePath ?filePath WHERE { GRAPH <urn:chorus:instances> { <${sdUri}> chorus:hasEndpoint ?ep . ?ep a chorus:Endpoint ; chorus:httpMethod ?method ; chorus:routePath ?routePath ; chorus:filePath ?filePath . } } ORDER BY ?method ?routePath`;
     const result = await deps.sparql(query);
@@ -137,12 +137,12 @@ export async function fetchDomainServices(
     for (const e of endpoints) byMethod[e.method] = (byMethod[e.method] || 0) + 1;
     return {
       status: 200,
-      body: deps.envelope('domain-services', { subdomain: sdId, endpoints, byMethod }, now() - start, { count: endpoints.length }),
+      body: deps.envelope('domain-services', { domain: sdId, endpoints, byMethod }, now() - start, { count: endpoints.length }),
     };
   } catch {
     return {
       status: 200,
-      body: deps.envelope('domain-services', { subdomain: subdomainName, endpoints: [], byMethod: {} }, now() - start, { count: 0 }),
+      body: deps.envelope('domain-services', { domain: domainName, endpoints: [], byMethod: {} }, now() - start, { count: 0 }),
     };
   }
 }
@@ -160,14 +160,14 @@ interface DomainAlertEntry { name: string; file: string; source: string; route: 
 // scripts and YAML). A zero here now means the graph has zero.
 export async function fetchDomainAlerts(
   deps: DomainFacetDeps,
-  subdomainName: string,
+  domainName: string,
 ): Promise<FetchResult> {
   const now = deps.now ?? Date.now;
   const start = now();
-  const identity = resolveDomainIdentity(subdomainName);
+  const identity = resolveDomainIdentity(domainName);
   const sdUri = `https://jeffbridwell.com/chorus#${identity.primary}`;
   try {
-    const sdId = subdomainName.toLowerCase();
+    const sdId = domainName.toLowerCase();
     const query = `PREFIX chorus: <https://jeffbridwell.com/chorus#> SELECT ?name ?alertFile ?alertSource ?alertRoute WHERE { GRAPH <${ALERTS_GRAPH}> { ?a a chorus:Alert ; chorus:hasDomain <${sdUri}> ; chorus:label ?name . OPTIONAL { ?a chorus:alertFile ?alertFile } OPTIONAL { ?a chorus:alertSource ?alertSource } OPTIONAL { ?a chorus:alertRoute ?alertRoute } } } ORDER BY ?name`;
     const result = await deps.sparql(query);
     const rows = (result as { results?: { bindings?: Array<Record<string, { value?: string } | undefined>> } }).results?.bindings ?? [];
@@ -179,13 +179,13 @@ export async function fetchDomainAlerts(
     }));
     return {
       status: 200,
-      body: deps.envelope('domain-alerts', { subdomain: sdId, domainLabel: identity.primary, alerts }, now() - start, { count: alerts.length, graph: ALERTS_GRAPH }),
+      body: deps.envelope('domain-alerts', { domain: sdId, domainLabel: identity.primary, alerts }, now() - start, { count: alerts.length, graph: ALERTS_GRAPH }),
     };
   } catch (err) {
     const message = err instanceof Error ? err.message : String(err);
     return {
       status: 200,
-      body: deps.envelope('domain-alerts', { subdomain: subdomainName, alerts: [], error: message }, now() - start, { count: 0, graph: ALERTS_GRAPH, error: true }),
+      body: deps.envelope('domain-alerts', { domain: domainName, alerts: [], error: message }, now() - start, { count: 0, graph: ALERTS_GRAPH, error: true }),
     };
   }
 }
@@ -193,12 +193,12 @@ export async function fetchDomainAlerts(
 
 export async function fetchDomainRadius(
   deps: DomainFacetDeps,
-  subdomainName: string,
+  domainName: string,
 ): Promise<FetchResult> {
   const now = deps.now ?? Date.now;
   const start = now();
   try {
-    const sdId = subdomainName.toLowerCase();
+    const sdId = domainName.toLowerCase();
     const sdUri = `https://jeffbridwell.com/chorus#${sdId}`;
     const query = `PREFIX chorus: <https://jeffbridwell.com/chorus#>
 PREFIX rdfs: <http://www.w3.org/2000/01/rdf-schema#>
@@ -226,12 +226,12 @@ SELECT ?target ?label ?relationship ?direction WHERE {
     }));
     return {
       status: 200,
-      body: deps.envelope('domain-radius', { subdomain: sdId, edges }, now() - start, { count: edges.length }),
+      body: deps.envelope('domain-radius', { domain: sdId, edges }, now() - start, { count: edges.length }),
     };
   } catch {
     return {
       status: 200,
-      body: deps.envelope('domain-radius', { subdomain: subdomainName, edges: [] }, now() - start, { count: 0 }),
+      body: deps.envelope('domain-radius', { domain: domainName, edges: [] }, now() - start, { count: 0 }),
     };
   }
 }
@@ -240,12 +240,12 @@ SELECT ?target ?label ?relationship ?direction WHERE {
 
 export async function fetchDomainBlastRadius(
   deps: DomainFacetDeps,
-  subdomainName: string,
+  domainName: string,
 ): Promise<FetchResult> {
   const now = deps.now ?? Date.now;
   const start = now();
   try {
-    const sdId = subdomainName.toLowerCase();
+    const sdId = domainName.toLowerCase();
     const sdUri = `https://jeffbridwell.com/chorus#${sdId}`;
     const query = `PREFIX chorus: <https://jeffbridwell.com/chorus#>
 PREFIX rdfs: <http://www.w3.org/2000/01/rdf-schema#>
@@ -282,12 +282,12 @@ SELECT ?target ?label ?relationship ?direction WHERE {
     }
     return {
       status: 200,
-      body: deps.envelope('domain-blast-radius', { subdomain: sdId, edges }, now() - start, { count: edges.length }),
+      body: deps.envelope('domain-blast-radius', { domain: sdId, edges }, now() - start, { count: edges.length }),
     };
   } catch {
     return {
       status: 200,
-      body: deps.envelope('domain-blast-radius', { subdomain: subdomainName, edges: [] }, now() - start, { count: 0 }),
+      body: deps.envelope('domain-blast-radius', { domain: domainName, edges: [] }, now() - start, { count: 0 }),
     };
   }
 }
@@ -349,22 +349,22 @@ function foldInfraBindings(bindings: InfraBinding[]): InfraEnv[] {
 
 export async function fetchDomainInfra(
   deps: DomainFacetDeps,
-  subdomainName: string,
+  domainName: string,
 ): Promise<FetchResult> {
   const now = deps.now ?? Date.now;
   const start = now();
   try {
-    const sdId = subdomainName.toLowerCase();
+    const sdId = domainName.toLowerCase();
     const result = await deps.sparql(buildInfraQuery(sdId));
     const environments = foldInfraBindings(result.results.bindings as InfraBinding[]);
     return {
       status: 200,
-      body: deps.envelope('domain-infra', { subdomain: subdomainName, environments }, now() - start, { count: environments.length }),
+      body: deps.envelope('domain-infra', { domain: domainName, environments }, now() - start, { count: environments.length }),
     };
   } catch {
     return {
       status: 200,
-      body: deps.envelope('domain-infra', { subdomain: subdomainName, environments: [] }, now() - start, { count: 0 }),
+      body: deps.envelope('domain-infra', { domain: domainName, environments: [] }, now() - start, { count: 0 }),
     };
   }
 }
@@ -377,12 +377,12 @@ export async function fetchDomainInfra(
 
 export async function fetchDomainDecisions(
   deps: DomainFacetDeps,
-  subdomainName: string,
+  domainName: string,
 ): Promise<FetchResult> {
   const now = deps.now ?? Date.now;
   const start = now();
   try {
-    const identity = resolveDomainIdentity(subdomainName);
+    const identity = resolveDomainIdentity(domainName);
     const domainNames = [identity.primary, ...identity.aliases];
     const domainFilter = domainNames.map((n) => `<https://jeffbridwell.com/chorus#${n}-domain>`).join(', ');
     const query = `PREFIX chorus: <https://jeffbridwell.com/chorus#> PREFIX rdfs: <http://www.w3.org/2000/01/rdf-schema#> SELECT ?id ?title ?date ?status ?level ?type WHERE { GRAPH <urn:chorus:decisions> { ?s a chorus:Decision ; rdfs:label ?id ; rdfs:comment ?title ; chorus:decisionDate ?date ; chorus:decisionStatus ?status ; chorus:enforcementLevel ?level ; chorus:decisionType ?type ; chorus:hasDomain ?dom . FILTER(?dom IN (${domainFilter})) } } ORDER BY ?type ?id`;
@@ -399,12 +399,12 @@ export async function fetchDomainDecisions(
     for (const d of decisions) byEnforcement[d.enforcement] = (byEnforcement[d.enforcement] || 0) + 1;
     return {
       status: 200,
-      body: deps.envelope('domain-decisions', { domain: subdomainName, decisions, byEnforcement }, now() - start, { count: decisions.length }),
+      body: deps.envelope('domain-decisions', { domain: domainName, decisions, byEnforcement }, now() - start, { count: decisions.length }),
     };
   } catch {
     return {
       status: 200,
-      body: deps.envelope('domain-decisions', { domain: subdomainName, decisions: [], byEnforcement: {} }, now() - start, { count: 0 }),
+      body: deps.envelope('domain-decisions', { domain: domainName, decisions: [], byEnforcement: {} }, now() - start, { count: 0 }),
     };
   }
 }

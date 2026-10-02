@@ -9,8 +9,8 @@
  * Folds bindings (one row per hasDomain edge) into one row per decision URI with
  * domains[] aggregated. Sort: ADR first, then DEC/protocol; within each, label desc.
  *
- * The sibling endpoint `GET /api/athena/subdomains/loom-decisions` returns
- * decisions nested inside a sub-domain envelope. This handler is the narrower
+ * The sibling endpoint `GET /api/athena/domains/loom-decisions` returns
+ * decisions nested inside a domain envelope. This handler is the narrower
  * loom-scoped alias.
  */
 

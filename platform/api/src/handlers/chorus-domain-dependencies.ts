@@ -137,7 +137,7 @@ export async function fetchChorusDomainDependencies(
       status: 200,
       body: deps.envelope(
         'domain-dependencies',
-        { subdomain: sdId, direct, shared, layer, hosts },
+        { domain: sdId, direct, shared, layer, hosts },
         now() - start,
         { direct_count: direct.consumes.length + direct.consumedBy.length, shared_count: shared.length, graph: 'all (GRAPH ?g)' },
       ),
@@ -149,7 +149,7 @@ export async function fetchChorusDomainDependencies(
       status: 200,
       body: deps.envelope(
         'domain-dependencies',
-        { subdomain: name, direct: { consumes: [], consumedBy: [] }, shared: [], layer: null, hosts: [] },
+        { domain: name, direct: { consumes: [], consumedBy: [] }, shared: [], layer: null, hosts: [] },
         now() - start,
         { direct_count: 0, shared_count: 0, error: true, message: err instanceof Error ? err.message : String(err) },
       ),

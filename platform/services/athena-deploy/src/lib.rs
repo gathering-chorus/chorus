@@ -1050,7 +1050,7 @@ pub fn run_athena_deploy() -> Result<String, String> {
         let c = "https://jeffbridwell.com/chorus#";
         let staged = curl(&["-s", "--data-urlencode",
             &format!("query=SELECT (COUNT(DISTINCT ?s) AS ?n) WHERE {{ GRAPH <{staging}> \
-                      {{ ?s a ?t . FILTER(?t IN (<{c}Domain>, <{c}SubDomain>)) }} }}"),
+                      {{ ?s a ?t . FILTER(?t = <{c}Domain>) }} }}"),
             "-H", "Accept: text/csv", &query]).unwrap_or_default();
         if let Err(why) = retire_guard_allows(verify_missing(&staged)) {
             eprintln!("athena-deploy: {why}");

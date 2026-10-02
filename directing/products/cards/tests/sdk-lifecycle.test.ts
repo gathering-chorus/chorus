@@ -1,3 +1,4 @@
+// @test-type: unit — stubbed dependencies; no live service.
 /**
  * sdk.ts lifecycle tests (#2241 wave 2 pt 2).
  *
@@ -96,7 +97,7 @@ class MockClient {
     this.record('untag', [index, category, value]);
   }
 
-  // #3267: chunk (and subproduct/subdomain) route through this auto-create path.
+  // #3267: chunk (and subproduct) route through this auto-create path.
   async applyLabelByName(index: number, labelName: string): Promise<{ labelId: number; created: boolean }> {
     this.record('applyLabelByName', [index, labelName]);
     return { labelId: 999, created: true };
