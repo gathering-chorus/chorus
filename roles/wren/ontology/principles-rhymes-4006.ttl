@@ -44,10 +44,10 @@ chorus:xp-mutual-benefit chorus:rhymesWith chorus:hemenway-connect .
 
 chorus:xp-self-similarity chorus:rhymesWith chorus:hemenway-small-scale-intensive-systems .
 
-# #4130 — the loom-principles SubDomain contains every principle row. These
+# #4130 — the loom-principles Domain contains every principle row. These
 # edges lived in roles/silas/ontology/chorus.ttl (the ontology graph) and pointed
 # at 13 `principle-*` rows that #3749/#4006 retired, plus the 14 PC rows and
-# none of the 14 XP rows — so the subdomain detail served 13 dangling IRIs and
+# none of the 14 XP rows — so the domain detail served 13 dangling IRIs and
 # 14 typed principles, and principles-api's floor of 27 typed instances read
 # 14. An edge is a row in the domain of what it joins (Jeff, 2026-09-03: every
 # row in its domain graph); it rides the principles set like rhymesWith does,

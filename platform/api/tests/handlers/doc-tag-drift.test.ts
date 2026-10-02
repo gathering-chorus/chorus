@@ -1,3 +1,4 @@
+// @test-type: unit — stubbed dependencies; no live service.
 /**
  * doc-tag-drift unit tests (#2520 AC6).
  */
@@ -5,27 +6,27 @@ import { detectDrift, type DocWithTags } from '../../src/handlers/doc-tag-drift'
 
 const VALID = ['loom-decisions', 'loom-principles', 'athena-domain', 'photos-domain'];
 
-function doc(href: string, subdomain?: string): DocWithTags {
+function doc(href: string, domain?: string): DocWithTags {
   return {
     href, source: 'test', title: href,
-    tags: { confidence: 'high', signal: 'path', subdomain },
+    tags: { confidence: 'high', signal: 'path', domain },
   };
 }
 
 describe('detectDrift (#2520 AC6)', () => {
-  test('valid subdomains produce no drift', () => {
+  test('valid domains produce no drift', () => {
     const r = detectDrift([doc('/a', 'loom-decisions'), doc('/b', 'photos-domain')], VALID);
     expect(r).toEqual([]);
   });
 
-  test('unknown subdomain surfaces with closest match', () => {
+  test('unknown domain surfaces with closest match', () => {
     const r = detectDrift([doc('/x', 'loom-decision')], VALID);
     expect(r.length).toBe(1);
-    expect(r[0].claimedSubdomain).toBe('loom-decision');
+    expect(r[0].claimedDomain).toBe('loom-decision');
     expect(r[0].closestMatch).toBe('loom-decisions');
   });
 
-  test('docs without subdomain skipped (no false drift)', () => {
+  test('docs without domain skipped (no false drift)', () => {
     const r = detectDrift([doc('/a'), doc('/b')], VALID);
     expect(r).toEqual([]);
   });

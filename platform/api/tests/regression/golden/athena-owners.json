@@ -9,12 +9,12 @@
     {
       "uri": "https://jeffbridwell.com/chorus#role-wren",
       "label": "Wren",
-      "subdomainCount": 5
+      "domainCount": 5
     },
     {
       "uri": "https://jeffbridwell.com/chorus#role-silas",
       "label": "Silas",
-      "subdomainCount": 2
+      "domainCount": 2
     }
   ]
 }

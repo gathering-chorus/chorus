@@ -134,30 +134,30 @@ fi
 **Fail:** One or more pages broken — gate fails.
 **Warn:** App down locally — surface but don't block.
 
-### 6. Subdomain test dispatch (#3580)
+### 6. Domain test dispatch (#3580)
 
 Consume the generated tests-domain API (owl-api `:3360/tests`, #2819) to scope
-the quality check to the tests that actually cover this card's subdomain —
+the quality check to the tests that actually cover this card's domain —
 instead of reasoning about the whole suite. This is the FIRST real consumer of a
 generated domain API: it closes the owl-api loop (generate → land → consume) and
 emits a `gate.quality.tests.consulted` spine event so the consumption is
-observable. FAIL-OPEN: if the API is down or the card has no subdomain, it
+observable. FAIL-OPEN: if the API is down or the card has no domain, it
 degrades to suite-level and never blocks.
 
 ```bash
 cd /Users/jeffbridwell/CascadeProjects/chorus/platform/api
-# Resolve the card's subdomain from the board, then dispatch.
-SUBDOMAIN=$(../scripts/cards view "$CARD_ID" 2>/dev/null | grep -oE 'subdomain:[^ |]+' | head -1 | cut -d: -f2)
-if [ -n "$SUBDOMAIN" ]; then
-  npx tsx src/gate-quality-tests-dispatch-cli.ts "$SUBDOMAIN" "$CARD_ID"
+# Resolve the card's domain from the board, then dispatch.
+DOMAIN=$(../scripts/cards view "$CARD_ID" 2>/dev/null | grep -oE 'domain:[^ |,]+' | head -1 | cut -d: -f2)
+if [ -n "$DOMAIN" ]; then
+  npx tsx src/gate-quality-tests-dispatch-cli.ts "$DOMAIN" "$CARD_ID"
 else
-  echo "WARN: card has no subdomain — tests-dispatch degrades to suite-level"
+  echo "WARN: card has no domain — tests-dispatch degrades to suite-level"
 fi
 ```
 
-**Pass (scoped):** prints the covering tests for the subdomain + emits
-`gate.quality.tests.consulted {subdomain, covering, scoped:true}` — review those.
-**Degrade:** no subdomain / API down / no covering tests — suite-level, never blocks.
+**Pass (scoped):** prints the covering tests for the domain + emits
+`gate.quality.tests.consulted {domain, covering, scoped:true}` — review those.
+**Degrade:** no domain / API down / no covering tests — suite-level, never blocks.
 
 ## Manual Confirm (1 item)
 

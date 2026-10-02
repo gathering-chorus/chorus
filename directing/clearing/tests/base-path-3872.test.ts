@@ -36,7 +36,7 @@ describe('#3872 base-path mount', () => {
         .toEqual({ url: '/api/stream?lines=80', base: '/clearing' });
     });
 
-    it('leaves the subdomain and localhost paths untouched', () => {
+    it('leaves the clearing host and localhost paths untouched', () => {
       expect(stripBase('/room-key.js')).toEqual({ url: '/room-key.js', base: '' });
       expect(stripBase('/')).toEqual({ url: '/', base: '' });
     });

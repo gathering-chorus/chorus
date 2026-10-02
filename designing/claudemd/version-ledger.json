@@ -23,6 +23,14 @@
       "bump": "minor",
       "date": "2026-08-03",
       "card": "unattributed"
+    },
+    {
+      "version": "1.7.0",
+      "constituent_hash": "4a77f6172b6a8c480ce6361800c97d93cdc67ddb79f18021eb4cbaf557dd0e73",
+      "core_hash": "7d78ab31ab3df4811c0b5a7e5e0bbbe223002294a15268782ce8180b43ed54b2",
+      "bump": "minor",
+      "date": "2026-10-02",
+      "card": "unattributed"
     }
   ]
 }

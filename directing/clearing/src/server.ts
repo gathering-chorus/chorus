@@ -240,9 +240,9 @@ const io = new Server(server, {
 // That's not the normal way you form URLs. You go from general to specific."
 //
 // cloudflared cannot redirect — it proxies or 404s — so deleting the hostname
-// would break every old link instead of retiring it. The subdomain already
+// would break every old link instead of retiring it. The host already
 // points here, and the Host header survives the tunnel (measured, not assumed),
-// so the app answers: anything arriving on the subdomain is sent to the apex
+// so the app answers: anything arriving on the clearing host is sent to the apex
 // path, permanently, preserving the requested path and query.
 //
 // FIRST middleware on purpose: before cookies, before auth. A redirect that
@@ -253,7 +253,7 @@ const APEX_CLEARING = 'https://lightlifeurbangardens.com/clearing';
 
 export function legacyRedirectTarget(host: string | undefined, url: string): string | null {
   if (!host || !LEGACY_CLEARING_HOST.test(host)) return null;
-  // '/' on the subdomain means the room itself; anything deeper keeps its path.
+  // '/' on the clearing host means the room itself; anything deeper keeps its path.
   const rest = url === '/' ? '' : url;
   return `${APEX_CLEARING}${rest}`;
 }
@@ -273,7 +273,7 @@ app.use((req: Request, res, next) => {
 // retries a 404 silently rather than surfacing it.
 //
 // Strip the prefix here, before anything routes, so every existing route serves
-// under BOTH '/' (subdomain, localhost) and '/clearing' (the apex) with no
+// under BOTH '/' (clearing host, localhost) and '/clearing' (the apex) with no
 // per-route duplication. `basePath` is stashed for the page render below, which
 // tells the browser which prefix to build its own URLs with.
 export const CLEARING_BASE = '/clearing';
@@ -477,7 +477,7 @@ async function sessionPrincipal(req: Request): Promise<{ id: string; name: strin
 
 /**
  * #3775 — WHO, from the common door. The guard mints chorus_share_session at the
- * parent domain, so it reaches this subdomain; we verify signature + expiry
+ * parent domain, so it reaches this host; we verify signature + expiry
  * (share-session.ts, contract published 2026-08-07) and then ask the allow-set
  * SEPARATELY, per request. Two questions, asked twice, every time: the cookie
  * says who, the allow-set says whether that still means anything.
@@ -527,7 +527,7 @@ async function gate(req: Request, res: Response, next: NextFunction): Promise<un
   // parent-domain scoped per Silas's #3785 follow-on), the Clearing stops
   // serving its own login and sends the visitor there, preserving where they
   // were headed. Unset, the local interstitial survives as the fallback — the
-  // flag flips when the door's cookie actually reaches this subdomain, not
+  // flag flips when the door's cookie actually reaches this host, not
   // before (host-only cookies never cross; flipping early is an infinite loop
   // wearing a login page).
   // #3795 — REFUSED IS NOT UNKNOWN. A session we cannot verify is NOBODY: send
@@ -735,7 +735,7 @@ function log(level: 'info' | 'error', event: string, fields: Record<string, unkn
 // lands here as a literal GET /clearing. Without this route it 404s, and the
 // routing rule looks broken when it is doing exactly what it was told.
 //
-// `/` stays for the subdomain and for local use; both render the same page.
+// `/` stays for the clearing host and for local use; both render the same page.
 app.get(['/', '/clearing'], async (req: Request, res) => {
   const fs = require('fs');
   let html = fs.readFileSync(path.join(__dirname, '../public/index.html'), 'utf-8');
@@ -754,7 +754,7 @@ app.get(['/', '/clearing'], async (req: Request, res) => {
   const sessionWebId = sessionWebid(req) ?? '';
   // #3872 — the page must build its own URLs with the prefix it was served
   // under, or socket.io dials the apex root and 404s into a permanent
-  // "connecting…". Empty on the subdomain and localhost, '/clearing' on the apex.
+  // "connecting…". Empty on the clearing host and localhost, '/clearing' on the apex.
   const basePath = (req as Request & { basePath?: string }).basePath ?? '';
   html = html.replace('</head>', `<script>window.BRIDGE_USER="${userName.replace(/"/g, '')}";`
     + `window.CLEARING_BASE="${basePath}";`
@@ -1193,7 +1193,7 @@ interface ParsedCard {
 }
 
 interface DomainCard extends ParsedCard {
-  subDomain?: string;
+  domainTag?: string;
 }
 
 interface DomainCardGroup {
@@ -1265,7 +1265,7 @@ function groupByProduct(cards: ParsedCard[]): Record<string, DomainCardGroup> {
         group = { cards: [], counts: { wip: 0, next: 0, blocked: 0, activeCards: 0, activeWorkflows: 0, activeTotal: 0 } };
         byDomain[topLevel] = group;
       }
-      group.cards.push({ ...card, subDomain: CHORUS_DOMAINS.has(domain) ? undefined : domain });
+      group.cards.push({ ...card, domainTag: CHORUS_DOMAINS.has(domain) ? undefined : domain });
     }
   }
   return byDomain as Record<string, DomainCardGroup>;

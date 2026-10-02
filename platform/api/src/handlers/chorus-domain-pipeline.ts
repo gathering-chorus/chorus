@@ -4,7 +4,6 @@
  *
  * Dependencies injected:
  *   fetcher            — async (url) => any | null   (HTTP aggregator over sibling endpoints)
- *   resolveSubdomainId — async (name) => string (throws if unresolvable)
  *   envelope           — (query_name, data, duration_ms, extra) => wrapped body
  *   now                — () => number
  *
@@ -15,17 +14,14 @@
  *   - stage.build:  code+tests+endpoints (≥3 complete)
  *   - stage.prove:  alert count (≥1 complete)
  *   - stage.ship:   done/total cards (≥50% complete)
- *   - On resolveSubdomainId failure: return 5 "not_started" stages (not an error)
  */
 import type { FetchResult } from './codebase-topology';
 
 type Fetcher = (url: string) => Promise<unknown | null>;
-type ResolveSubdomainId = (name: string) => Promise<string>;
 type Envelope = (queryName: string, data: unknown, durationMs: number, extra?: Record<string, unknown>) => unknown;
 
 export interface ChorusDomainPipelineDeps {
   fetcher: Fetcher;
-  resolveSubdomainId: ResolveSubdomainId;
   envelope: Envelope;
   now?: () => number;
 }
@@ -45,16 +41,6 @@ function stageStatus(evidence: number, threshold = 1): Stage['status'] {
 function thresholdStatus(evidence: number, threshold: number): Stage['status'] {
   if (evidence === 0) return 'not_started';
   return evidence >= threshold ? 'complete' : 'in_progress';
-}
-
-function emptyStages(): Stage[] {
-  return (['shape', 'design', 'build', 'prove', 'ship'] as const).map((name) => ({
-    name,
-    status: 'not_started' as const,
-    evidence: 0,
-    detail: {},
-    summary: 'No data',
-  }));
 }
 
 type CardRow = { status?: string };
@@ -145,23 +131,9 @@ export async function fetchChorusDomainPipeline(
   const now = deps.now ?? Date.now;
   const start = now();
 
-  let sdId: string;
-  try {
-    sdId = await deps.resolveSubdomainId(name);
-  } catch {
-    return {
-      status: 200,
-      body: deps.envelope(
-        'domain-pipeline',
-        { subdomain: name, stages: emptyStages() },
-        now() - start,
-        { count: 5 },
-      ),
-    };
-  }
+  const sdId = name.toLowerCase();
 
-  // #4353 — cards and completeness come from the domain view itself; the
-  // /api/athena/subdomains/:id/{cards,completeness} routes are retired.
+  // Cards and completeness come from the domain view itself.
   const [domainRes, codeRes, testsRes, endpointsRes, alertsRes] = await Promise.all([
     deps.fetcher(`/api/chorus/domain/${name}`),
     deps.fetcher(`/api/chorus/domain/${name}/code`),
@@ -185,6 +157,6 @@ export async function fetchChorusDomainPipeline(
 
   return {
     status: 200,
-    body: deps.envelope('domain-pipeline', { subdomain: sdId, stages }, now() - start, { count: 5 }),
+    body: deps.envelope('domain-pipeline', { domain: sdId, stages }, now() - start, { count: 5 }),
   };
 }

@@ -12,7 +12,7 @@
  *   - ACP pattern: role: acp #<cardId> ... — <title>
  *   - Cross-ref each ACP to cards' domain:/sequence: tags — exact match → gates "passed"
  *   - Cards without tag match but title contains domain name → gates "unknown"
- *   - Any throw → empty envelope, original subdomain name preserved
+ *   - Any throw → empty envelope, original domain name preserved
  */
 import type { FetchResult } from './codebase-topology';
 import { resolveDomainIdentity } from './domain-identity';
@@ -117,7 +117,7 @@ export function fetchChorusDomainReleases(
       status: 200,
       body: deps.envelope(
         'domain-releases',
-        { subdomain: name, releases },
+        { domain: name, releases },
         now() - start,
         { count: releases.length, total_acps: allAcps.length },
       ),
@@ -127,7 +127,7 @@ export function fetchChorusDomainReleases(
       status: 200,
       body: deps.envelope(
         'domain-releases',
-        { subdomain: name, releases: [] },
+        { domain: name, releases: [] },
         now() - start,
         { count: 0 },
       ),

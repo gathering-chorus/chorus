@@ -14,10 +14,10 @@ export interface AthenaPageEntry {
   domainId: string;
 }
 
-export function scanAthenaHtml(athenaDir: string, validSubdomainIds: Set<string>): AthenaPageEntry[] {
+export function scanAthenaHtml(athenaDir: string, validDomainIds: Set<string>): AthenaPageEntry[] {
   const entries: AthenaPageEntry[] = [];
   if (!fs.existsSync(athenaDir)) return entries;
-  if (!validSubdomainIds.has('athena-domain')) return entries;
+  if (!validDomainIds.has('athena-domain')) return entries;
   for (const file of fs.readdirSync(athenaDir).filter((f) => f.endsWith('.html'))) {
     entries.push({
       route: `/athena/${file}`,

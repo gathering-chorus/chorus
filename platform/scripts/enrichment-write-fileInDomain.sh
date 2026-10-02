@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # enrichment-write-fileInDomain.sh — #3017: function-based belongs-to writer.
 #
-# RETIRES the path-regex SUBDOMAIN_MAP (the prior #2844 version inferred a
+# RETIRES the path-regex domain map (the prior #2844 version inferred a
 # file's domain from its directory prefix — over-broad, and exactly the
 # "repo tree != domains" trap). Domain membership is a FUNCTIONAL judgment:
 # a file belongs-to a domain when it IS that domain's surface (defines /

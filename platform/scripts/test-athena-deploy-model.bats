@@ -310,7 +310,7 @@ EOF
   # present domain kept
   run curl -s "$Q" --data-urlencode "query=PREFIX chorus: <https://jeffbridwell.com/chorus#> ASK { GRAPH <$G> { chorus:domainKeep a chorus:Domain } }" -H "Accept: application/sparql-results+json"
   [[ "${output// /}" == *'"boolean":true'* ]] || return 1
-  # live-only NON-domain preserved (gap #1 invariant — retire is typed to Domain/SubDomain only)
+  # live-only NON-domain preserved (gap #1 invariant — retire is typed to Domain only)
   run curl -s "$Q" --data-urlencode "query=PREFIX chorus: <https://jeffbridwell.com/chorus#> ASK { GRAPH <$G> { chorus:liveInst a chorus:Test } }" -H "Accept: application/sparql-results+json"
   [[ "${output// /}" == *'"boolean":true'* ]] || return 1
   # absent domain RETIRED (no triples remain)

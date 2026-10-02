@@ -2,8 +2,8 @@
 /**
  * #2485 Move 6 — discover-pages scanner extension for chorus/platform/api/public/loom/.
  *
- * Each <slug>.html in the loom dir maps to subdomain `loom-<slug>` if that
- * subdomain exists in the graph. Mirrors scanEjsViews / scanDocHtml shape.
+ * Each <slug>.html in the loom dir maps to domain `loom-<slug>` if that
+ * domain exists in the graph. Mirrors scanEjsViews / scanDocHtml shape.
  */
 import * as fs from 'node:fs';
 import * as os from 'node:os';
@@ -25,7 +25,7 @@ describe('scanLoomHtml', () => {
     expect(scanLoomHtml(path.join(tmp, 'missing'), new Set())).toEqual([]);
   });
 
-  test('maps decisions.html to loom-decisions when subdomain is valid', () => {
+  test('maps decisions.html to loom-decisions when domain is valid', () => {
     fs.writeFileSync(path.join(tmp, 'decisions.html'), '<html></html>');
     const valid = new Set(['loom-decisions']);
     const entries = scanLoomHtml(tmp, valid);
@@ -36,7 +36,7 @@ describe('scanLoomHtml', () => {
     expect(entries[0].path).toContain('decisions.html');
   });
 
-  test('skips files whose derived subdomain is not in the valid set', () => {
+  test('skips files whose derived domain is not in the valid set', () => {
     fs.writeFileSync(path.join(tmp, 'principles-reference-impl.html'), '<html></html>');
     const valid = new Set(['loom-principles', 'loom-decisions']);
     const entries = scanLoomHtml(tmp, valid);

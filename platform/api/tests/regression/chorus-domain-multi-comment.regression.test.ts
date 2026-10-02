@@ -1,3 +1,4 @@
+// @test-type: unit — stubbed dependencies; no live service.
 /**
  * Regression: chorus-domain drops reads/writes when service has multiple rdfs:comment triples (#2212).
  *
@@ -25,7 +26,7 @@ function makeDeps(sparql: ChorusDomainDeps['sparql']): ChorusDomainDeps {
     domainRegistry: { chorus: { label: 'Chorus', description: 'Team coordination', product: 'chorus', step: 'directing' } },
     getCards: () => [],
     readDomainHtml: () => null,
-    // Return a non-null completeness so subdomainId is set and buildSparqlSections fires
+    // Return a non-null completeness so domainId is set and buildSparqlSections fires
     fetchCompleteness: async () => ({ percentage: 50, present: ['label'], missing: [] }),
     sparql,
   };

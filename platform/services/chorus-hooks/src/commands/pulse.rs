@@ -578,7 +578,7 @@ mod tests {
 
     const SAMPLE: &str = concat!(
         "WIP (4):\n",
-        "  2151  Stand up loom-policies sub-domain — policies layer of roles-dependency chain [Wren|P2|domain:chorus|type:new]\n",
+        "  2151  Stand up loom-policies domain — policies layer of roles-dependency chain [Wren|P2|domain:chorus|type:new]\n",
         "  2154  [swat] Migrate platform/pulse store.test.ts from custom Node runner to jest [Silas|P1|chunk:ops|domain:chorus]\n",
         "  2167  Wire coverage tooling across chorus + push to 80% [Kade|P1|chunk:ops|domain:chorus|type:enhance]\n",
         "  2168  [swat] Wire pulse+spine+athena into per-prompt context-synthesis envelope [Silas|P1|chorus|chunk:ops|domain:chorus|type:swat]\n",

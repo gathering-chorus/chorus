@@ -28,7 +28,7 @@ VECTORS = [
     ("https://clearing.lightlifeurbangardens.com/room", ACCEPT,
      "the Clearing bounce — the case that sent people to the guard root instead"),
     ("https://lightlifeurbangardens.com/chorus", ACCEPT,
-     "the app leg (#3778): the apex itself, not a subdomain"),
+     "the app leg (#3778): the apex itself, not a separate host"),
     ("https://chorus.lightlifeurbangardens.com/athena/model.html", ACCEPT,
      "our own host, absolute"),
     ("/athena/model.html", ACCEPT,

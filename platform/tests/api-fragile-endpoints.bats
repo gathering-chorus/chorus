@@ -18,24 +18,6 @@ setup() {
 }
 
 
-# --- Athena subdomain tests: DELETED by #4237, 2026-09-21 ---
-#
-# Four tests lived here asserting /api/athena/subdomains served a non-empty list,
-# a detail document for chorus-domain, a 404 for an unknown id, and completeness
-# inside five seconds. All four went red in the nightly, and Kade triaged them to
-# this card rather than fixing them in his own.
-#
-# They are not fixed, they are retired: chorus:SubDomain is gone. Jeff ruled retire
-# on 2026-06-19 (#3509) and this card carried it out — 49 rows retyped chorus:Domain
-# and the class deleted from the model. A test asserting a retired class still
-# serves is a test that would have to be un-fixed later.
-#
-# What replaces them: the generated quartet in designing/products/*/domains/*/
-# tests.json, executed by platform/tests/4237-generated-api-quartet.test.sh. It
-# covers the same endpoints for every class the model declares, including Domain,
-# and asserts the contract the shape defines rather than a row count.
-
-
 # --- AC 4: Seed webhook returns 200 with valid Twilio payload ---
 
 @test "POST /api/seed/sms returns 200 with signed Twilio payload" {

@@ -168,7 +168,7 @@ def fixture_mode():
         "        ✗ a human gets their OWN account",
         "  ✗ integration           103 suites   950 pass · 15 fail",
         "      platform/api   15 of 252 cases · product broke · unowned",
-        "        ✗ GET /api/athena/subdomains/:id/actors returns actor list",
+        "        ✗ GET /api/athena/tree returns the tree",
     ]
     missing = [w for w in want if w not in out.splitlines()]
     for m in missing:

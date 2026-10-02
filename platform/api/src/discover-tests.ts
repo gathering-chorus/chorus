@@ -38,8 +38,8 @@ export interface DiscoverTestsDeps {
 
 // #2516: GENERIC_BASES + SPECIAL_ALIASES + buildAliasMap auto-derivation
 // retired. Aliases are graph-resident as <sd> chorus:hasTestPathPrefix
-// "alias" triples in urn:chorus:ontology. Migration: scripts/migrate-aliases-to-graph.ts.
-// New subdomains declare their own hasTestPathPrefix triples at creation time.
+// "alias" triples in urn:chorus:ontology.
+// New domains declare their own hasTestPathPrefix triples at creation time.
 
 // #3442: the type derivation authority. Replaces the old path-only
 // classifyTestType (folder/extension heuristic) that mislabeled 7
@@ -62,7 +62,7 @@ export function loadAliasMap(
   rows: Array<{ sd?: { value?: string }; prefix?: { value?: string } }>,
 ): Record<string, string> {
   // Reads alias triples from urn:chorus:ontology and produces the runtime
-  // aliasToId map. Order matters: when two SubDomains claim the same
+  // aliasToId map. Order matters: when two Domains claim the same
   // prefix (e.g. property), the SPARQL query's ORDER BY ?sd determines
   // which wins under last-write-wins dict semantics.
   const out: Record<string, string> = {};

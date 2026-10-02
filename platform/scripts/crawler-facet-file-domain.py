@@ -22,7 +22,7 @@ Deprecates fileInDomain (enrichment-write-fileInDomain.sh) and inDomain
 
 IDEMPOTENT: per file, DELETE any existing `?d contains <fileIRI>` then INSERT
 the computed edges. The DELETE is scoped to object = this file's IRI, so the
-product→domain→subdomain contains edges (object = chorus:<domain>, never a
+product→domain contains edges (object = chorus:<domain>, never a
 urn:chorus:file:*) are never touched. Low-blast: runs alongside the monolith.
 
 Default DRY-RUN (prints honest coverage). Pass --post to write to Fuseki.

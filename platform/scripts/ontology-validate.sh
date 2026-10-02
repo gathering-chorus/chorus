@@ -124,7 +124,7 @@ for class_name, class_def in classes.items():
         inst_names = [m.split()[0] for m in instances]
 
         if not inst_names and class_name == "chorus:Domain":
-            # Base class — check SubProduct and SubDomain instances instead
+            # Base class — check SubProduct instances instead
             continue
 
         missing_prop_instances = []

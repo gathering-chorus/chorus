@@ -1,5 +1,5 @@
 /* eslint-disable security/detect-object-injection --
- * SUBDOMAIN_TO_SUBPRODUCT and tag dictionaries are keyed by validated
+ * DOMAIN_TO_SUBPRODUCT and tag dictionaries are keyed by validated
  * domain names from a fixed enum; not user input. Lookups are safe.
  */
 /**
@@ -8,7 +8,7 @@
  * Maps a doc (path + filename + optional frontmatter) to:
  *   product:    chorus | gathering | consulting
  *   subproduct: loom | werk | athena | convergence | clearing | quality (chorus only)
- *   subdomain:  the domain's name (e.g., decisions, blog)
+ *   domain:  the domain's name (e.g., decisions, blog)
  *
  * Inference order: frontmatter override > path-based > filename pattern > content.
  * Returns confidence: high (path or frontmatter) | medium (filename pattern) |
@@ -19,18 +19,18 @@ export interface DocTagInput {
   sourcePath: string;
   basename: string;
   contentHead?: string;
-  frontmatter?: { product?: string; subproduct?: string; subdomain?: string };
+  frontmatter?: { product?: string; subproduct?: string; domain?: string };
 }
 
 export interface DocTags {
   product?: string;
   subproduct?: string;
-  subdomain?: string;
+  domain?: string;
   confidence: 'high' | 'medium' | 'low' | 'none';
   signal: 'frontmatter' | 'path' | 'filename' | 'content' | 'none';
 }
 
-// Subproduct → subdomain ownership (from Athena #subproducts and #subdomains).
+// Subproduct → domain ownership (from Athena #subproducts and #domains).
 export const SUBPRODUCT_DOMAINS: Record<string, string[]> = {
   loom: [
     'analytics', 'decisions', 'metrics', 'policies',
@@ -43,13 +43,13 @@ export const SUBPRODUCT_DOMAINS: Record<string, string[]> = {
   quality: ['gates', 'tests'],
 };
 
-const SUBDOMAIN_TO_SUBPRODUCT: Record<string, string> = {};
+const DOMAIN_TO_SUBPRODUCT: Record<string, string> = {};
 for (const [sp, doms] of Object.entries(SUBPRODUCT_DOMAINS)) {
-  for (const d of doms) SUBDOMAIN_TO_SUBPRODUCT[d] = sp;
+  for (const d of doms) DOMAIN_TO_SUBPRODUCT[d] = sp;
 }
 
-// Gathering subdomains (no subproduct level)
-export const GATHERING_SUBDOMAINS = new Set([
+// Gathering domains (no subproduct level)
+export const GATHERING_DOMAINS = new Set([
   'blog', 'books', 'cooking-domain', 'documents',
   'glimmers-domain', 'music', 'notes', 'photos',
   'property', 'social', 'video',
@@ -61,7 +61,7 @@ export const GATHERING_SUBDOMAINS = new Set([
 // tries each in order, first non-null wins.
 
 const LOOM_DECISIONS_TAG: Partial<DocTags> = {
-  product: 'chorus', subproduct: 'loom', subdomain: 'decisions',
+  product: 'chorus', subproduct: 'loom', domain: 'decisions',
   confidence: 'high', signal: 'filename',
 };
 
@@ -73,18 +73,18 @@ function tagsFromGatheringDomainPrefix(bn: string): Partial<DocTags> | null {
   const dm = bn.match(/^domain-([a-z]+)\.html?$/);
   if (!dm) return null;
   // #4353 — domains carry their bare name (photos); a few unmoved ones keep -domain.
-  const sub = [dm[1], `${dm[1]}-domain`].find((n) => GATHERING_SUBDOMAINS.has(n));
+  const sub = [dm[1], `${dm[1]}-domain`].find((n) => GATHERING_DOMAINS.has(n));
   if (!sub) return null;
-  return { product: 'gathering', subdomain: sub, confidence: 'high', signal: 'filename' };
+  return { product: 'gathering', domain: sub, confidence: 'high', signal: 'filename' };
 }
 
 function tagsFromServiceDesignPrefix(bn: string): Partial<DocTags> | null {
   const sd = bn.match(/^service-design-([a-z-]+)\.html?$/);
   if (!sd) return null;
-  const candidate = [sd[1], `${sd[1]}-domain`].find((n) => SUBDOMAIN_TO_SUBPRODUCT[n]);
+  const candidate = [sd[1], `${sd[1]}-domain`].find((n) => DOMAIN_TO_SUBPRODUCT[n]);
   if (!candidate) return null;
-  const sp = SUBDOMAIN_TO_SUBPRODUCT[candidate];
-  return { product: 'chorus', subproduct: sp, subdomain: candidate, confidence: 'high', signal: 'filename' };
+  const sp = DOMAIN_TO_SUBPRODUCT[candidate];
+  return { product: 'chorus', subproduct: sp, domain: candidate, confidence: 'high', signal: 'filename' };
 }
 
 const CHORUS_SUBPRODUCTS = ['loom', 'werk', 'athena', 'convergence', 'clearing', 'borg'];
@@ -134,7 +134,7 @@ function tagsFromPath(sourcePath: string): Partial<DocTags> | null {
 
   if (p.includes('/adr/') || p.startsWith('adr/') ||
       p.startsWith('roles/silas/adr') || p.startsWith('architect/adr')) {
-    return { product: 'chorus', subproduct: 'loom', subdomain: 'decisions',
+    return { product: 'chorus', subproduct: 'loom', domain: 'decisions',
              confidence: 'high', signal: 'path' };
   }
   if (p.includes('akasha/') || p.startsWith('akasha')) {
@@ -148,7 +148,7 @@ function tagsFromPath(sourcePath: string): Partial<DocTags> | null {
     return { product: 'chorus', confidence: 'high', signal: 'path' };
   }
   if (p.startsWith('designing/decisions') || p.startsWith('wren/decisions')) {
-    return { product: 'chorus', subproduct: 'loom', subdomain: 'decisions',
+    return { product: 'chorus', subproduct: 'loom', domain: 'decisions',
              confidence: 'high', signal: 'path' };
   }
   if (p.startsWith('designing/docs')) {
@@ -197,9 +197,9 @@ function tagsFromContent(contentHead: string | undefined): Partial<DocTags> | nu
 // linear: frontmatter → path/filename merge → enrichment → backfill.
 
 function tagsFromFrontmatter(fm: DocTagInput['frontmatter']): DocTags | null {
-  if (!fm || (!fm.product && !fm.subproduct && !fm.subdomain)) return null;
+  if (!fm || (!fm.product && !fm.subproduct && !fm.domain)) return null;
   return {
-    product: fm.product, subproduct: fm.subproduct, subdomain: fm.subdomain,
+    product: fm.product, subproduct: fm.subproduct, domain: fm.domain,
     confidence: 'high', signal: 'frontmatter',
   };
 }
@@ -210,7 +210,7 @@ function mergePathAndFilename(input: DocTagInput): Partial<DocTags> | null {
   const chosen: Partial<DocTags> | null = fromPath || fromFilename;
   if (chosen && chosen === fromPath && fromFilename) {
     if (!chosen.subproduct && fromFilename.subproduct) chosen.subproduct = fromFilename.subproduct;
-    if (!chosen.subdomain && fromFilename.subdomain) chosen.subdomain = fromFilename.subdomain;
+    if (!chosen.domain && fromFilename.domain) chosen.domain = fromFilename.domain;
   }
   return chosen;
 }
@@ -224,8 +224,8 @@ function enrichWithAthenaSubproduct(chosen: Partial<DocTags>, basename: string):
 }
 
 function backfillSubproduct(chosen: Partial<DocTags>): void {
-  if (chosen.subdomain && !chosen.subproduct && SUBDOMAIN_TO_SUBPRODUCT[chosen.subdomain]) {
-    chosen.subproduct = SUBDOMAIN_TO_SUBPRODUCT[chosen.subdomain];
+  if (chosen.domain && !chosen.subproduct && DOMAIN_TO_SUBPRODUCT[chosen.domain]) {
+    chosen.subproduct = DOMAIN_TO_SUBPRODUCT[chosen.domain];
   }
 }
 
@@ -240,7 +240,7 @@ export function inferTags(input: DocTagInput): DocTags {
   return {
     product: chosen.product,
     subproduct: chosen.subproduct,
-    subdomain: chosen.subdomain,
+    domain: chosen.domain,
     confidence: chosen.confidence ?? 'none',
     signal: chosen.signal ?? 'none',
   };

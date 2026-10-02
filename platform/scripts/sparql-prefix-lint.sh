@@ -14,7 +14,7 @@ for file in "$SPARQL_DIR"/*.sparql; do
   declared=$(grep -ioE 'PREFIX\s+(\w+):' "$file" | sed 's/[Pp][Rr][Ee][Ff][Ii][Xx]//; s/[[:space:]]//g; s/://' | tr '[:upper:]' '[:lower:]' | sort -u || true)
 
   # Extract used prefixes (word followed by : that isn't in a URI or PREFIX line)
-  # Match patterns like chorus:SubDomain, rdfs:label, owl:NamedIndividual
+  # Match patterns like chorus:Domain, rdfs:label, owl:NamedIndividual
   # Strip URIs in angle brackets and PREFIX lines, then find word: patterns
   # #4131 — strip <IRIs> first (they carry '#'), then '#' comments: a comment
   # that names urn:chorus:domains:principles is prose, not a prefix in use.

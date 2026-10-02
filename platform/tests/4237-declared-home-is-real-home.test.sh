@@ -7,7 +7,7 @@
 #
 # chorus:instancesGraph tells the generated route which graph to read. When it
 # names a graph the rows are not in, the route answers [] — a normal-looking empty
-# answer, not an error. That is what emptied /api/athena/subdomains, /products and
+# answer, not an error. That is what emptied the old domain list, /products and
 # (for twenty minutes today, by my own hand) /domains/domains.
 #
 # Silas measured eight classes in this state on 2026-09-21: Domain (mine, fixed),

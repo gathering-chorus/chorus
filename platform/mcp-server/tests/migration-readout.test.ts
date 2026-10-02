@@ -12,7 +12,6 @@ test('computeMigrationRows: graph+source stages real; athena-make/v1-code not-in
   const rows = computeMigrationRows({
     domains: ['search', 'code'], // unsorted input → compute sorts
     srcDomains: ['code'], // only code is declared in committed source
-    subdomainStems: ['code'], // code still has a V1 twin; search does not
   });
   // deterministic sort
   assert.deepEqual(rows.map((r) => r.domain), ['code', 'search']);
@@ -26,9 +25,8 @@ test('computeMigrationRows: graph+source stages real; athena-make/v1-code not-in
   // source-derivable owl-src
   assert.equal(code.owlSrc, true);
   assert.equal(search.owlSrc, false);
-  // v1-retired: false when a V1 twin lingers, true when its name is gone
-  assert.equal(code.v1Retired, false);
-  assert.equal(search.v1Retired, true);
+  // v1-retired: true on every row
+  assert.equal(rows.every((r) => r.v1Retired === true), true); // the V1 class is deleted
 
   // HONESTY invariant 1: the two uninstrumented stages are null on EVERY row, never faked
   assert.equal(rows.every((r) => r.owlApi === null && r.v1Code === null), true);
@@ -37,7 +35,7 @@ test('computeMigrationRows: graph+source stages real; athena-make/v1-code not-in
 });
 
 test('renderMigrationReadout: per-domain matrix — honest cells, real counts, deterministic', () => {
-  const rows = computeMigrationRows({ domains: ['code', 'search'], srcDomains: ['code'], subdomainStems: ['code'] });
+  const rows = computeMigrationRows({ domains: ['code', 'search'], srcDomains: ['code'] });
   const out = renderMigrationReadout(rows);
 
   // header + column row for the 7 stages
@@ -52,18 +50,18 @@ test('renderMigrationReadout: per-domain matrix — honest cells, real counts, d
   const rowLines = out.split('\n').filter((l) => l.startsWith('  code ') || l.startsWith('  search '));
   assert.equal(rowLines.length, 2);
   assert.equal(rowLines.every((l) => l.trimEnd().endsWith('·')), true);
-  // summary line reflects the REAL counts (created 2/2, owl-src 1/2, v1-retired 1/2)
-  assert.match(out, /2 domains — created 2\/2 · owl-src 1\/2 · loaded 2\/2 · v1-retired 1\/2/);
+  // summary line reflects the REAL counts (created 2/2, owl-src 1/2, v1-retired 2/2)
+  assert.match(out, /2 domains — created 2\/2 · owl-src 1\/2 · loaded 2\/2 · v1-retired 2\/2/);
   // legend names the uninstrumented stages explicitly
   assert.match(out, /not-yet-instrumented \(athena-make-run, v1-code-retired\)/);
 
   // determinism: identical input → identical output
   const render = (): string =>
-    renderMigrationReadout(computeMigrationRows({ domains: ['x'], srcDomains: [], subdomainStems: [] }));
+    renderMigrationReadout(computeMigrationRows({ domains: ['x'], srcDomains: [] }));
   assert.equal(render(), render());
 });
 
 test('empty graph degrades honestly: zero rows, 0/0 counts, no crash', () => {
-  const out = renderMigrationReadout(computeMigrationRows({ domains: [], srcDomains: [], subdomainStems: [] }));
+  const out = renderMigrationReadout(computeMigrationRows({ domains: [], srcDomains: [] }));
   assert.match(out, /0 domains — created 0\/0/);
 });

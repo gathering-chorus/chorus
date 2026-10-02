@@ -14,15 +14,21 @@
 ROOT="$(cd "$BATS_TEST_DIRNAME/../.." && pwd)"
 MAP="$ROOT/designing/schemas/4353-domain-renames.tsv"
 
-old_names_in() {  # $1 = directory to scan; prints file:line for each hit
-  local p
+old_names_in() {  # $1 = directory to scan; prints file:line for each hit in TRACKED files
+  local p files
   p=$(grep -v '^legacy' "$MAP" | cut -f1 | paste -sd'|' -)
   [ -n "$p" ] || { echo "empty map"; return 2; }
-  grep -rnE "(chorus:|chorus#)($p)([^-A-Za-z0-9_]|\$)" "$1" \
-    --include='*.ttl' --include='*.ts' --include='*.rs' --include='*.js' --include='*.sh' \
-    --exclude-dir=node_modules --exclude-dir=target --exclude-dir=backups --exclude-dir=recovery \
-    --exclude-dir=migrations --exclude-dir=docs \
-    --exclude='migrate-aliases-to-graph*' --exclude='witness-3025.mjs' --exclude='4353-*' || true
+  # Tracked files only: build output (dist.prev, target) is not source. A
+  # directory outside git (the negative-proof fixture) is scanned whole.
+  if git -C "$1" rev-parse --is-inside-work-tree >/dev/null 2>&1; then
+    files=$(git -C "$1" ls-files --full-name -- '*.ttl' '*.ts' '*.rs' '*.js' '*.sh' \
+      | grep -vE '(^|/)(node_modules|target|backups|recovery|migrations|docs)/|migrate-aliases-to-graph|witness-3025\.mjs|(^|/)4353-' \
+      | sed "s|^|$(git -C "$1" rev-parse --show-toplevel)/|")
+  else
+    files=$(find "$1" -type f \( -name '*.ttl' -o -name '*.ts' -o -name '*.rs' -o -name '*.js' -o -name '*.sh' \))
+  fi
+  [ -n "$files" ] || return 0
+  echo "$files" | tr '\n' '\0' | xargs -0 grep -nE "(chorus:|chorus#)($p)([^-A-Za-z0-9_]|\$)" || true
 }
 
 @test "no tracked source names a retired Domain row" {
@@ -45,4 +51,35 @@ old_names_in() {  # $1 = directory to scan; prints file:line for each hit
   [[ "$output" == *"x.ttl"* ]] || false
   [[ "$output" == *"y.ts"* ]] || false
   [[ "$output" != *"z.ttl"* ]] || false
+}
+
+# Jeff 2026-10-02: find every reference to subdomain and remove it. The word
+# stays only in history: the retirement ledger, graph backups, old message
+# backups and the record folders (designing/docs, role journals, briefs,
+# notes, artifacts). Everything that runs, models or instructs a role is held
+# to zero here.
+subdomain_in() {  # $1 = directory (git-tracked files only); prints file:line
+  local top
+  top=$(git -C "$1" rev-parse --show-toplevel 2>/dev/null) || {
+    grep -rniI "subdomain" "$1" || true; return 0; }
+  git -C "$top" grep -niI "subdomain" -- "${@:2}" \
+    ':!platform/backups/**' ':!designing/schemas/model-retirements.jsonl' \
+    ':!platform/pulse/*.backup' ':!platform/tests/4353-no-old-domain-names.bats' || true
+}
+
+@test "nothing that runs, models or instructs a role says subdomain" {
+  run subdomain_in "$ROOT" platform directing proving designing/claudemd designing/data \
+    designing/schemas designing/domain-context data docs/diagrams \
+    'roles/*/ontology' 'roles/*/CLAUDE.md'
+  [ -z "$output" ] || { echo "$output" | head -40; false; }
+}
+
+@test "NEGATIVE PROOF: the subdomain check catches the word in a fixture file" {
+  d="$(mktemp -d)"
+  printf 'const SubDomainCache = new Set();\n' > "$d/a.ts"
+  printf 'chorus:x chorus:y chorus:z .\n' > "$d/b.ttl"
+  run subdomain_in "$d"
+  rm -rf "$d"
+  [[ "$output" == *"a.ts"* ]] || false
+  [[ "$output" != *"b.ttl"* ]] || false
 }

@@ -7,7 +7,7 @@ describe('inferTags — path cabinets (#3606)', () => {
   const t = (sourcePath: string, basename = 'x.md') => inferTags({ sourcePath, basename });
 
   it('ADR paths → chorus/loom/loom-decisions', () => {
-    expect(t('roles/silas/adr/ADR-001.md')).toMatchObject({ product: 'chorus', subproduct: 'loom', subdomain: 'decisions', signal: 'path' });
+    expect(t('roles/silas/adr/ADR-001.md')).toMatchObject({ product: 'chorus', subproduct: 'loom', domain: 'decisions', signal: 'path' });
   });
 
   it('akasha → consulting; gathering-docs → gathering; chorus-docs → chorus', () => {
@@ -17,7 +17,7 @@ describe('inferTags — path cabinets (#3606)', () => {
   });
 
   it('decisions cabinets → loom-decisions; designing/docs + role dirs + docs/ → chorus', () => {
-    expect(t('designing/decisions/DEC-9.md')).toMatchObject({ subdomain: 'decisions' });
+    expect(t('designing/decisions/DEC-9.md')).toMatchObject({ domain: 'decisions' });
     expect(t('designing/docs/whatever.html')).toMatchObject({ product: 'chorus' });
     expect(t('roles/kade/notes.md')).toMatchObject({ product: 'chorus' });
     expect(t('docs/diagrams/c4.md')).toMatchObject({ product: 'chorus' });

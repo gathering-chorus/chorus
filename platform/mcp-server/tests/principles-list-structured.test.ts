@@ -80,9 +80,9 @@ test('chorus_principles_list returns structuredContent.principles (#3010 AC1)', 
       `Hemenway id should be 'hemenway-catch-and-store', got '${hemenway!.id}' (parse-fragment bug)`,
     );
     assert.equal(hemenway!.comment, HEMENWAY_COMMENT, 'comment should round-trip unchanged');
-    // #4353 — read from the generated route, never the retired subdomain one
+    // #4353 — read from the generated route only
     assert.ok(asked.some((u) => u.endsWith('/v1/principles/principles')), `asked ${asked.join(', ')}`);
-    assert.ok(!asked.some((u) => /subdomains|\/api\/loom\//.test(u)), `asked a retired route: ${asked.join(', ')}`);
+    assert.ok(!asked.some((u) => /\/api\/athena\/|\/api\/loom\//.test(u)), `asked a retired route: ${asked.join(', ')}`);
   } finally {
     await client.close();
     await server.close();

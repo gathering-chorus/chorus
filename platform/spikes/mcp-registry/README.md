@@ -63,7 +63,7 @@ WHERE {
 
 Each row → one MCP tool declaration. `label` becomes the tool name (slugified), `comment` becomes the description, `implementedIn` becomes the invocation target. Rebuild the registry whenever the graph reloads (same `/api/athena/reload` hook Silas shipped today).
 
-Same for resources: every `chorus:SubDomain` with a populated API endpoint becomes an MCP resource with `chorus://<subdomain>/<section>` URI.
+Same for resources: every `chorus:Domain` with a populated API endpoint becomes an MCP resource with `chorus://<domain>/<section>` URI.
 
 **Implication:** adding a skill = declaring in graph = appearing in MCP on next reload. No separate registry to maintain. No drift possible.
 
@@ -84,7 +84,7 @@ Neither is blocking for the spike. Both are viable; need to be decided before pr
 
 ## Integrations-section implication
 
-Every domain in Chorus has an `integrations` section (see `athena-subdomain-completeness.ts`). Today it's thin / ad-hoc.
+Every domain in Chorus has an `integrations` section. Today it's thin / ad-hoc.
 
 If MCP becomes the registry, domain integrations become **queryable and honest**:
 

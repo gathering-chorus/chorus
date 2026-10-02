@@ -340,12 +340,6 @@ vocab:gen-StreamEvent a skos:Concept ;
     skos:definition "One observed agent action: who did what, when, in which session." ;
     skos:exactMatch <https://jeffbridwell.com/chorus#StreamEvent> .
 
-vocab:gen-SubDomain a skos:Concept ;
-    skos:inScheme vocab:model-classes ;
-    skos:prefLabel "SubDomain" ;
-    skos:definition "A sub-domain within a product's domain. Matches the Sub Domain column in Jeff's spreadsheet. (SubProduct retired #3603.)" ;
-    skos:exactMatch <https://jeffbridwell.com/chorus#SubDomain> .
-
 vocab:gen-Test a skos:Concept ;
     skos:inScheme vocab:model-classes ;
     skos:prefLabel "Test" ;
@@ -678,13 +672,13 @@ vocab:gen-fileDependsOn a skos:Concept ;
 vocab:gen-fileHasOwner a skos:Concept ;
     skos:inScheme vocab:model-attributes ;
     skos:prefLabel "fileHasOwner" ;
-    skos:definition "Role responsible for the file. Derived: enrichment reads frontmatter / falls back to subdomain owner." ;
+    skos:definition "Role responsible for the file. Derived: enrichment reads frontmatter / falls back to domain owner." ;
     skos:exactMatch <https://jeffbridwell.com/chorus#fileHasOwner> .
 
 vocab:gen-fileInDomain a skos:Concept ;
     skos:inScheme vocab:model-attributes ;
     skos:prefLabel "fileInDomain" ;
-    skos:definition "Domain this file belongs to. Derived: enrichment maps the path against the domain registry. #4178 — the range was chorus:SubDomain, the class Jeff retired 2026-06-19, so the DAL could not mint it and PUT answered 502 unknown-kind: 'sub-domain'. Nobody could tag a file with its domain, and we read that absence as the class being dead. 21 of the 47 SubDomain rows were the same referent as a Domain row under a -domain/-service spelling; Domain is live, served and 42/42 owned." ;
+    skos:definition "Domain this file belongs to. Derived: enrichment maps the path against the domain registry." ;
     skos:exactMatch <https://jeffbridwell.com/chorus#fileInDomain> .
 
 vocab:gen-fileLastModified a skos:Concept ;
@@ -1053,7 +1047,7 @@ vocab:gen-overview a skos:Concept ;
 vocab:gen-ownerRole a skos:Concept ;
     skos:inScheme vocab:model-attributes ;
     skos:prefLabel "ownerRole" ;
-    skos:definition "The role accountable for the security artifact (credential rotation, probe response, boundary integrity). Distinct from chorus:ownedBy on SubDomains." ;
+    skos:definition "The role accountable for the security artifact (credential rotation, probe response, boundary integrity). Distinct from chorus:ownedBy on Domains." ;
     skos:exactMatch <https://jeffbridwell.com/chorus#ownerRole> .
 
 vocab:gen-ownerSequence a skos:Concept ;

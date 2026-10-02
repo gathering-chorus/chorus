@@ -66,12 +66,12 @@ const CHECKS: Check[] = [
   },
   // Four rules sat here and all four are DELETED by #4237, 2026-09-21 — the runtime
   // mirror of the four shapes removed from sparql/shapes.ttl:
-  //   SubProduct must have parent Product · SubProduct must have SubDomain
-  //   SubDomain must have parent          · SubDomain has no instances
+  //   SubProduct must have parent Product · SubProduct must have Domain
+  //   Domain must have parent          · Domain has no instances
   //
   // Every one queried GRAPH <urn:chorus:ontology> for `a chorus:SubProduct` or
-  // `a chorus:SubDomain`. SubProduct has had zero rows anywhere since #3603, and the
-  // 49 SubDomain rows lived in their own domain graphs, never this one. So all four
+  // `a chorus:Domain`. SubProduct has had zero rows anywhere since #3603, and the
+  // 49 Domain rows lived in their own domain graphs, never this one. So all four
   // matched zero nodes in every reachable state: they reported clean without ever
   // being able to report anything else, and the validate run counted them as passes.
   // --- CatalogDoc shape (#2554) — runtime mirror of chorus:CatalogDocShape in shapes.ttl ---
@@ -120,7 +120,7 @@ export interface AthenaValidateDeps {
   /** #4237 — the check list, injectable. The warning-severity path used to be
    * covered by a test that leaned on whichever real rule happened to carry
    * severity 'warning'; when this card deleted that rule (it targeted the retired
-   * chorus:SubDomain) the test went red without anything being broken. A test of
+   * chorus:Domain) the test went red without anything being broken. A test of
    * the binding should bring its own rule, not depend on the rule set of the day. */
   checks?: Check[];
 }

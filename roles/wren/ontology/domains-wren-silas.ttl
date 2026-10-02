@@ -102,7 +102,7 @@ chorus:deploys a owl:Class, chorus:Domain ;
   #
   # Points at the ExecutionPipeline instance, not chorus:Pipeline — that IRI
   # is already the harvest/data concept (chorus.ttl:477, hasPipeline bound to
-  # SubDomain). Kade mints chorus:ExecutionPipeline and types cicd/werk/athena
+  # Domain). Kade mints chorus:ExecutionPipeline and types cicd/werk/athena
   # as instances in #3985; this edge resolves when that lands.
   chorus:supports chorus:cicd .
   # FLAG: no chorus:Deploy vocab class yet — omitted, not faked.
@@ -112,7 +112,7 @@ chorus:deploys a owl:Class, chorus:Domain ;
 # The history, so nobody re-litigates this a third time:
 #   1. chorus:deploys (Domain) collided with chorus:deploys (ObjectProperty).
 #   2. Silas and I settled on deleting the Domain and folding into his
-#      chorus:deploys-domain SubDomain — which sits under observability-domain.
+#      chorus:deploys-domain Domain — which sits under observability-domain.
 #   3. Jeff overruled: "deploys is not cicd!" and "cicd is a pipeline instance
 #      ~ werk*". Deploys is a SUBJECT IN ITS OWN RIGHT — not a facet of
 #      observability, not a pipeline concern.

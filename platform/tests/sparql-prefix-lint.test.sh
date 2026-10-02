@@ -69,7 +69,7 @@ SPARQL
 run_test "no-prefix file passes" bash "$LINT_SCRIPT" "$TMPDIR"
 
 # #4131 — a '#' comment naming something:like-this is prose, not a prefix in use
-# (subdomain-detail.sparql went red on a comment that said urn:chorus:domains:principles).
+# (a detail .sparql went red on a comment that said urn:chorus:domains:principles).
 rm -f "$TMPDIR"/*.sparql
 printf 'PREFIX chorus: <https://jeffbridwell.com/chorus#>\n# rows live in urn:chorus:domains:principles now\nSELECT ?s WHERE { ?s a chorus:Principle }\n' > "$TMPDIR/comment.sparql"
 run_test "a prefix-shaped word inside a # comment is not a use" bash "$LINT_SCRIPT" "$TMPDIR"

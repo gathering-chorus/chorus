@@ -412,8 +412,7 @@ pub fn field_conflict_check(class_local: &str, fields: &[String]) -> Result<(), 
 /// in the create schema. Nothing was silently dropped, and I had looked at one
 /// schema of the two.
 ///
-/// What IS real: SubDomain is retired and unserved (/subdomains 404), so those
-/// two edges name rows no caller can reference, and the create they are
+/// What IS real: an edge at a retired, unserved class names rows no caller can reference, and the create they are
 /// required by fails closed at the DAL as unknown-target. A shape asking for
 /// something unobtainable is worth refusing where it is authored, not at every
 /// write attempt.
@@ -424,8 +423,8 @@ pub fn field_conflict_check(class_local: &str, fields: &[String]) -> Result<(), 
 ///
 /// Scoped to REQUIRED edges, and that line is measured, not convenient. Seven
 /// edges on served classes point at unserved targets today (2026-09-13):
-/// Machine x3 (ServiceInstance/ScheduledJob/LogSource.onMachine), SubDomain x2
-/// (AuthBoundary), Policy (Practice.operationalizes), SourceFile (Test.inFile).
+/// Machine x3 (ServiceInstance/ScheduledJob/LogSource.onMachine), two on
+/// AuthBoundary, Policy (Practice.operationalizes), SourceFile (Test.inFile).
 /// Refusing all seven would stop generation for six live classes — an outage I
 /// would have caused with a check meant to prevent one. The severities are
 /// genuinely different: an OPTIONAL edge at an unserved class is already
@@ -877,7 +876,7 @@ impl RepoKind {
 /// Project an ordered ROOT→LEAF containment chain into a repo path (ADR-041's
 /// Value Stream → Products → Domains, generalized). The vs-step is the bare root;
 /// every other ancestor emits `<collection>/<name>`. RECURSIVE by construction —
-/// sub-products, sub-domains, and a service that parents off a PRODUCT (a
+/// child products, child domains, and a service that parents off a PRODUCT (a
 /// cross-domain service like the clearing/chorus service) vs off a DOMAIN are all
 /// just different (kind, name) links in the chain; the projector follows whatever
 /// the model says the parent is. Empty/whitespace names are skipped. Pure.
@@ -1182,12 +1181,9 @@ pub fn generate(class_local: &str) -> R<RouteTable> {
     //
     // It refused a required edge whose target class is absent from
     // `all_vocab_classes()` — athena-make's own claimed list. That list is not
-    // "what is served"; it is "what THIS door serves". chorus:SubDomain is
-    // served by chorus-api (47 rows at :3340/api/athena/subdomains, measured
-    // 2026-09-13 13:08) and is absent here, so the check would have refused
-    // AuthBoundary's two perfectly good edges and broken a shape it was written
-    // to protect. Silas caught it before I shipped it; my `/subdomains 404` was
-    // the wrong door, not a retired class.
+    // "what is served"; it is "what THIS door serves". A class served by another
+    // door is absent here, so the check would refuse good edges and break a shape
+    // it was written to protect.
     //
     // By the rule this card is built on: a check that cannot tell "unserved
     // anywhere" from "served by another door" cannot separate the two states it
@@ -5312,7 +5308,7 @@ fn handle_inner(path: &str, table: &RouteTable, meta: &mut ReqMeta, authed: bool
         // #3468 — MODEL-DRIVEN completeness gauge: present datatype sections vs the
         // mandatory floor (table.mandatory, projected from sh:severity sh:Violation).
         // Unsecured read — it MEASURES, never blocks (thermometer). Replaces the page's
-        // Athena-v1 /subdomains/:id/completeness call (severs the old↔new dependency).
+        // old Athena-v1 completeness call (severs the old↔new dependency).
         if parts.len() == 3 && parts[2] == "completeness" {
             let q = format!(
                 "SELECT ?v WHERE {{ GRAPH <{g}> {{ <{ns}{n}> ?p ?o . FILTER(isLiteral(?o)) BIND(CONCAT(REPLACE(STR(?p), '.*#', ''), '|', STR(?o)) AS ?v) }} }}",
@@ -6734,14 +6730,14 @@ mod tests {
             "designing/products/athena/domains/domains",
             "vs-step bare root, product + domain carry their collection prefix",
         );
-        // RECURSION: sub-product + sub-domain are just more links in the chain
+        // RECURSION: child products and domains are just more links in the chain
         assert_eq!(
             project_repo_path(&[
                 (ValueStream, "directing"), (Product, "clearing"),
                 (Product, "pulse"), (Domain, "messages"), (Domain, "streams"),
             ]),
             "directing/products/clearing/products/pulse/domains/messages/domains/streams",
-            "sub-product (pulse under clearing) and sub-domain nest by the same rule",
+            "a child product (pulse under clearing) and a child domain nest by the same rule",
         );
         // a DOMAIN-scoped service nests under its domain
         assert_eq!(
@@ -7169,19 +7165,17 @@ mod tests {
 
     #[test]
     fn an_edge_at_an_unserved_class_is_refused() {
-        // #4163 AC3 — the AuthBoundary case, in miniature. Its two required
-        // edges point at chorus:SubDomain, retired and unserved (/subdomains
-        // 404), and the generator dropped them from `required` instead of
-        // refusing — for ten weeks, through a report.
+        // #4163 AC3 — a required edge at a retired, unserved class must be
+        // refused, not dropped from `required`.
         let served = vec!["Domain".to_string(), "Role".to_string()];
         let fields = vec![
             "label|plain".to_string(),
-            "betweenDomainA|edge:SubDomain".to_string(),
+            "betweenDomainA|edge:RetiredClass".to_string(),
         ];
         let required = vec!["betweenDomainA|edge".to_string()];
         let err = edge_target_check("AuthBoundary", &fields, &required, &served).unwrap_err();
         assert!(err.contains("betweenDomainA"), "names the field: {err}");
-        assert!(err.contains("SubDomain"), "names the class: {err}");
+        assert!(err.contains("RetiredClass"), "names the class: {err}");
         assert!(err.contains("no collection to reference"), "says why: {err}");
     }
 
@@ -7204,7 +7198,7 @@ mod tests {
         // and the same list with ONE target retired must go red — the states
         // differ by exactly the thing the check exists to see
         let mut bad = ok.clone();
-        bad.push("fileInDomain|edge:SubDomain".to_string());
+        bad.push("fileInDomain|edge:RetiredClass".to_string());
         assert!(edge_target_check("CodeFile", &bad, &required, &served).is_err(), "one retired REQUIRED target is enough to refuse");
         // and the same edge, OPTIONAL, passes — the DAL refuses it at write,
         // where the caller sees it. The two states this check must separate.
@@ -7413,7 +7407,7 @@ mod tests {
         assert_eq!(domain_path("tests", "TestSuiteRun"), "/tests/suiteruns");
         assert_eq!(domain_path("logs", "LogSource"), "/logs/sources");
         assert_eq!(domain_path("value-streams", "ValueStreamStep"), "/value-streams/steps");
-        assert_eq!(domain_path("domains", "SubDomain"), "/domains/subdomains");
+        assert_eq!(domain_path("domains", "CollectionDomain"), "/domains/collectiondomains");
         // no prefix to strip — the class is pluralized whole:
         assert_eq!(domain_path("code", "Language"), "/code/languages");
         assert_eq!(domain_path("board", "Chunk"), "/board/chunks");

@@ -3,7 +3,7 @@
 // @owner: wren
 /**
  * domain-identity.test.ts — #2430
- * What Jeff sees: one shared resolver, every subdomain fold filters
+ * What Jeff sees: one shared resolver, every domain fold filters
  * consistently. These tests pin the contract.
  */
 
@@ -25,9 +25,9 @@ describe('resolveDomainIdentity — normalization', () => {
   });
 
   it('does NOT strip -service / -analytics / other words — only -domain', () => {
-    // loom-analytics is a real subdomain, not a "loom with analytics suffix"
+    // loom-analytics is a real domain, not a "loom with analytics suffix"
     expect(resolveDomainIdentity('analytics').primary).toBe('analytics');
-    // pulse-service is its own subdomain id — don't collapse to 'pulse'
+    // pulse-service is its own domain id — don't collapse to 'pulse'
     expect(resolveDomainIdentity('pulse-service').primary).toBe('pulse-service');
   });
 
@@ -36,14 +36,14 @@ describe('resolveDomainIdentity — normalization', () => {
   });
 });
 
-describe('resolveDomainIdentity — loom sub-subdomains fold into loom parent', () => {
+describe('resolveDomainIdentity — loom sub-domains fold into loom parent', () => {
   it('loom-principles cards match sequence:loom (parent tag)', () => {
     const id = resolveDomainIdentity('principles');
     expect(id.aliases).toContain('loom');
     expect(id.cardSequenceTags).toContain('loom');
   });
 
-  it('all 7 loom sub-subdomains alias to loom', () => {
+  it('all 7 loom sub-domains alias to loom', () => {
     const subs = ['principles', 'policies', 'practices', 'decisions', 'metrics', 'analytics', 'rcas'];
     for (const s of subs) {
       const id = resolveDomainIdentity(s);
@@ -60,24 +60,24 @@ describe('resolveDomainIdentity — loom sub-subdomains fold into loom parent', 
 });
 
 describe('resolveDomainIdentity — special cases (tests/code/gates)', () => {
-  it('tests subdomain aliases to quality', () => {
+  it('tests domain aliases to quality', () => {
     const id = resolveDomainIdentity('tests');
     expect(id.primary).toBe('tests');
     expect(id.aliases).toContain('quality');
   });
 
-  it('code subdomain aliases to code', () => {
+  it('code domain aliases to code', () => {
     const id = resolveDomainIdentity('code');
     expect(id.aliases).toContain('code');
   });
 
-  it('gates subdomain aliases to gates', () => {
+  it('gates domain aliases to gates', () => {
     const id = resolveDomainIdentity('gates-domain');
     expect(id.aliases).toContain('gates');
   });
 });
 
-describe('resolveDomainIdentity — default behavior for unregistered subdomains', () => {
+describe('resolveDomainIdentity — default behavior for unregistered domains', () => {
   it('returns the normalized id as the primary card domain tag by default', () => {
     const id = resolveDomainIdentity('seeds');
     expect(id.primary).toBe('seeds');
@@ -95,9 +95,9 @@ describe('resolveDomainIdentity — default behavior for unregistered subdomains
     expect(id.ontologyGraph).toBe('urn:chorus:ontology');
   });
 
-  it('builds subdomainUri from chorus# namespace', () => {
+  it('builds domainUri from chorus# namespace', () => {
     const id = resolveDomainIdentity('principles');
-    expect(id.subdomainUri).toBe('https://jeffbridwell.com/chorus#principles');
+    expect(id.domainUri).toBe('https://jeffbridwell.com/chorus#principles');
   });
 });
 
@@ -109,7 +109,7 @@ describe('cardDomainSearchLabels helper', () => {
     expect(labels).toContain('loom');
   });
 
-  it('returns just primary for unregistered subdomain', () => {
+  it('returns just primary for unregistered domain', () => {
     const id = resolveDomainIdentity('seeds');
     const labels = cardDomainSearchLabels(id);
     expect(labels).toEqual(['seeds']);

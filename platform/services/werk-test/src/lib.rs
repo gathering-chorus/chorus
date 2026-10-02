@@ -1660,7 +1660,7 @@ pub fn join_cases(
         // along. Fall back to a UNIQUE suffix match within the same file; an
         // ambiguous suffix stays unjoined — identities are never guessed.
         // #4111 — the LONGEST suffix, not the only one. One file held three
-        // cases ending "returns 404 for unknown subdomain": the bare one, and
+        // cases ending "returns 404 for unknown domain": the bare one, and
         // "actors …" and "completeness …". Every emitted fullName matched two
         // registered names at once, #4015's uniqueness rule called that
         // ambiguous, and all three sat in the census as never-ran. The longest
@@ -4618,8 +4618,8 @@ mod describe_prefix_join_4015 {
 
     // #4111 — this case used to assert that TWO suffix candidates meant refuse.
     // That rule was measured wrong on 2026-09-06: athena.integration.test.ts
-    // holds "returns 404 for unknown subdomain", "actors returns 404 for
-    // unknown subdomain" and "completeness returns 404 for unknown subdomain".
+    // holds "returns 404 for unknown domain", "actors returns 404 for
+    // unknown domain" and "completeness returns 404 for unknown domain".
     // All three exist in the file, all three run, and every emitted fullName
     // matched two registered names at once, so all three sat in the census as
     // never-ran. jest's fullName is "<describe> <it-name>", so the it-name is
@@ -4664,11 +4664,11 @@ mod describe_prefix_join_4015 {
     #[test]
     fn negative_proof_the_shorter_candidate_never_claims_the_case() {
         let rows = vec![row("d.test.ts"), row("d.test.ts")];
-        let names = vec!["returns 404 for unknown subdomain".into(),
-                         "actors returns 404 for unknown subdomain".into()];
+        let names = vec!["returns 404 for unknown domain".into(),
+                         "actors returns 404 for unknown domain".into()];
         let ents = vec!["bare".into(), "actors".into()];
         let cases = vec![CaseResult { file_path: "d.test.ts".into(),
-            test_name: "athena actors returns 404 for unknown subdomain".into(),
+            test_name: "athena actors returns 404 for unknown domain".into(),
             result: "pass".into() }];
         let (joined, unjoined) = join_cases(&cases, &rows, &names, &ents);
         assert_eq!(unjoined, 0);
@@ -5452,15 +5452,15 @@ mod athena_join_4136 {
         let f = "platform/api/tests/athena.integration.test.ts";
         let rows = vec![row(f), row(f), row(f)];
         let names: Vec<String> = vec![
-            "returns 404 for unknown subdomain".into(),
-            "actors returns 404 for unknown subdomain".into(),
-            "completeness returns 404 for unknown subdomain".into(),
+            "returns 404 for unknown domain".into(),
+            "actors returns 404 for unknown domain".into(),
+            "completeness returns 404 for unknown domain".into(),
         ];
         let ents: Vec<String> = vec!["bare".into(), "actors".into(), "completeness".into()];
         let cases = vec![
-            CaseResult { file_path: f.into(), test_name: "GET /api/athena/domains/:id/prior-art returns 404 for unknown subdomain".into(), result: "pass".into() },
-            CaseResult { file_path: f.into(), test_name: "GET /api/athena/domains/:id/actors actors returns 404 for unknown subdomain".into(), result: "pass".into() },
-            CaseResult { file_path: f.into(), test_name: "GET /api/athena/domains/:id/completeness completeness returns 404 for unknown subdomain".into(), result: "pass".into() },
+            CaseResult { file_path: f.into(), test_name: "GET /api/athena/domains/:id/prior-art returns 404 for unknown domain".into(), result: "pass".into() },
+            CaseResult { file_path: f.into(), test_name: "GET /api/athena/domains/:id/actors actors returns 404 for unknown domain".into(), result: "pass".into() },
+            CaseResult { file_path: f.into(), test_name: "GET /api/athena/domains/:id/completeness completeness returns 404 for unknown domain".into(), result: "pass".into() },
         ];
         let (joined, unjoined) = join_cases(&cases, &rows, &names, &ents);
         let mut ents_hit: Vec<&str> = joined.iter().map(|(_, e, _)| e.as_str()).collect();

@@ -71,7 +71,7 @@ var N=[], E=[];
   document.querySelector('#H p').textContent = 'Failed to load from Fuseki — is it running?';
 });
 
-var C={"Product": "#4f46e5", "ValueStream": "#22d3ee", "Stage": "#818cf8", "Vertebra": "#818cf8", "GatheringDomain": "#00ff88", "ChorusDomain": "#6366f1", "Service": "#f59e0b", "Tool": "#9ca3af", "Deployment": "#78716c", "Practice": "#c084fc", "Role": "#fbbf24", "HumanRole": "#fbbf24", "AgentRole": "#fbbf24", "Constraint": "#f87171", "Responsibility": "#60a5fa", "Decision": "#fde68a", "Machine": "#06b6d4", "DataSource": "#06b6d4", "InteractionPattern": "#fb923c", "Sequence": "#818cf8", "Story": "#4ade80", "SubProduct": "#4f46e5", "LoomDomain": "#eab308", "SubDomain": "#eab308", "ArtifactType": "#78716c", "ToolType": "#9ca3af", "Gate": "#ef4444", "GateResult": "#fca5a5", "TrustMetric": "#a78bfa", "HandoffType": "#d1d5db", "HandoffStatus": "#d1d5db", "InteractionMode": "#fb923c", "EventCategory": "#94a3b8", "Domain": "#00ff88", "Service": "#f59e0b", "API": "#fb923c", "Skill": "#c084fc"};
+var C={"Product": "#4f46e5", "ValueStream": "#22d3ee", "Stage": "#818cf8", "Vertebra": "#818cf8", "GatheringDomain": "#00ff88", "ChorusDomain": "#6366f1", "Service": "#f59e0b", "Tool": "#9ca3af", "Deployment": "#78716c", "Practice": "#c084fc", "Role": "#fbbf24", "HumanRole": "#fbbf24", "AgentRole": "#fbbf24", "Constraint": "#f87171", "Responsibility": "#60a5fa", "Decision": "#fde68a", "Machine": "#06b6d4", "DataSource": "#06b6d4", "InteractionPattern": "#fb923c", "Sequence": "#818cf8", "Story": "#4ade80", "SubProduct": "#4f46e5", "LoomDomain": "#eab308", "ArtifactType": "#78716c", "ToolType": "#9ca3af", "Gate": "#ef4444", "GateResult": "#fca5a5", "TrustMetric": "#a78bfa", "HandoffType": "#d1d5db", "HandoffStatus": "#d1d5db", "InteractionMode": "#fb923c", "EventCategory": "#94a3b8", "Domain": "#00ff88", "Service": "#f59e0b", "API": "#fb923c", "Skill": "#c084fc"};
 var LC={"dependsOn": "#f87171", "hasConstraint": "#f87171", "ownsDomain": "#fbbf24", "ownedBy": "#fbbf24", "ownedByRole": "#fbbf24", "createdBy": "#fbbf24", "participatesIn": "#fbbf24", "affects": "#fde68a", "constrains": "#fde68a", "storyInforms": "#fde68a", "storyConnectsTo": "#4ade80", "triggersSkill": "#fb923c", "detectedIn": "#fb923c", "runsOn": "#06b6d4", "readsFrom": "#06b6d4", "writesTo": "#06b6d4", "touchesDomain": "#818cf8", "belongsToProduct": "#4f46e5", "hasProduct": "#4f46e5", "hasValueStream": "#22d3ee", "servesValueStream": "#22d3ee", "hasPhase": "#818cf8", "belongsTo": "#818cf8", "primaryPhaseProduct": "#c084fc", "nextPhase": "#818cf8", "operatesIn": "#f59e0b", "supportsStream": "#f59e0b", "hasDomain": "#4f46e5", "consumes": "#f87171", "provides": "#22c55e", "primaryStep": "#818cf8", "operatesAt": "#fbbf24", "feeds": "#9ca3af", "nextStage": "#818cf8", "previousStage": "#818cf8", "feedsInto": "#9d174d", "fromStage": "#ef4444", "toStage": "#ef4444", "gatekeeper": "#fbbf24", "outputOf": "#4f46e5", "inputTo": "#4f46e5", "indexes": "#a78bfa", "decomposes": "#fb923c", "servesDomain": "#f59e0b", "containsClass": "#00ff88", "protectedBy": "#ef4444", "ownedBy": "#fbbf24"};
 var W=innerWidth,H=innerHeight,M={},vis={},btns={};
 
@@ -83,15 +83,15 @@ N.forEach(function(n,i){
 
 // === DISPLAY CATEGORIES ===
 // Map OWL types to Jeff's display categories
-var DC={"Product":"Product","SubProduct":"Sub-Product","SubDomain":"Sub-Domain","Domain":"Domain","CollectionDomain":"Domain","Vertebra":"Step","ValueStream":"Value Stream","HumanRole":"Owner","AgentRole":"Owner","Machine":"Infra","Role":"Owner"};
+var DC={"Product":"Product","SubProduct":"Sub-Product","Domain":"Domain","CollectionDomain":"Domain","Vertebra":"Step","ValueStream":"Value Stream","HumanRole":"Owner","AgentRole":"Owner","Machine":"Infra","Role":"Owner"};
 var catTypes={};
-var catColors={"Product":"#4f46e5","Sub-Product":"#4f46e5","Sub-Domain":"#eab308","Domain":"#00ff88","Step":"#818cf8","Value Stream":"#22d3ee","Owner":"#fbbf24","Infra":"#06b6d4"};
+var catColors={"Product":"#4f46e5","Sub-Product":"#4f46e5","Domain":"#00ff88","Step":"#818cf8","Value Stream":"#22d3ee","Owner":"#fbbf24","Infra":"#06b6d4"};
 
 var cls=[];var ss={};
 N.forEach(function(n){if(!ss[n.cls]){ss[n.cls]=1;cls.push(n.cls)}});
 cls.forEach(function(c){var cat=DC[c]||"Other";if(!catTypes[cat])catTypes[cat]=[];catTypes[cat].push(c)});
 
-var defaultCats={"Product":1,"Sub-Product":1,"Domain":1,"Sub-Domain":1,"Value Stream":1,"Step":1,"Owner":1,"Infra":1};
+var defaultCats={"Product":1,"Sub-Product":1,"Domain":1,"Value Stream":1,"Step":1,"Owner":1,"Infra":1};
 cls.forEach(function(c){var cat=DC[c]||"Other";vis[c]=!!defaultCats[cat]});
 
 var cats=Object.keys(catTypes).filter(function(c){return c!=="Other"}).sort();

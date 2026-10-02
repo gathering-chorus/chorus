@@ -1,5 +1,5 @@
 /**
- * GET /api/athena/owners — Owners with sub-domain counts (#2187).
+ * GET /api/athena/owners — Owners with domain counts (#2187).
  */
 import type { FetchResult } from './codebase-topology';
 
@@ -42,7 +42,7 @@ export async function fetchAthenaOwners(deps: AthenaOwnersDeps): Promise<FetchRe
     const owners = result.results.bindings.map((b) => ({
       uri: b.owner.value,
       label: b.label?.value ?? fallbackLabel(b.owner.value),
-      subdomainCount: parseInt(b.count.value, 10),
+      domainCount: parseInt(b.count.value, 10),
     }));
     return {
       status: 200,

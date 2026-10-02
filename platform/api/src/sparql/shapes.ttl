@@ -29,15 +29,15 @@ chorus:ProductServiceDesignShape a sh:NodeShape ;
   ] .
 
 # Four shapes stood here and all four are DELETED by #4237, 2026-09-21:
-# SubProductParentShape, SubProductDomainShape, SubDomainParentShape,
-# SubDomainInstancesShape.
+# SubProductParentShape, SubProductDomainShape, DomainParentShape,
+# DomainInstancesShape.
 #
 # Both classes were already retired in the model — chorus:SubProduct by #3603,
-# chorus:SubDomain by #3509 in ruling and by this card in fact. The shapes outlived
+# chorus:Domain by #3509 in ruling and by this card in fact. The shapes outlived
 # them. Each targeted a class with zero rows and queried urn:chorus:ontology, a
 # graph that held none of either, so all four were vacuous passes: they could not
 # go red in any state the system could reach. SubProductDomainShape was the clearest
-# tell — it required "at least one SubDomain" from a class that no longer existed,
+# tell — it required "at least one Domain" from a class that no longer existed,
 # naming a second class that no longer existed.
 #
 # Measured before deleting, 2026-09-21 09:42: SubProduct rows 0, inbound edges 0,

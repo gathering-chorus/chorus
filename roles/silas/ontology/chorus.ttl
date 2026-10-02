@@ -147,31 +147,21 @@ chorus:CollectionDomain a owl:Class ;
 # chorus:SubProduct RETIRED (#3603) — "no subproducts — products are children of
 # products" (DEC 2026-06-25). Former instances re-authored as typed chorus:Product.
 
-# chorus:SubDomain — DELETED by #4237, 2026-09-21. Jeff ruled retire on 2026-06-19
-# (#3509), but #3509 never removed this declaration; four later cards cited it as
-# retired and each fixed only its own edge, so the class outlived its own
-# retirement by three months. It was rdfs:subClassOf chorus:Domain, so its 49 rows
-# already WERE Domains by the model's own reasoning — the class carried a label and
-# nothing else. Rows retyped in place (49 gained a:Domain, then lost a:SubDomain;
-# 990 statements to 941, exactly the 49 type triples and nothing else). Unloaded
-# first to platform/backups/graph-retirements/4237-subdomain-{rows,strays}-*.nt.
-# Re-adding it means re-opening that ruling, not fixing an omission.
-
 # =============================================================================
 # 2c2. DOMAIN COMPLETENESS — Actors, Scenarios, Contracts (#1899)
 # =============================================================================
 
 chorus:Actor a owl:Class ;
     rdfs:label "Actor" ;
-    rdfs:comment "An actor that interacts with a sub-domain. Has a role and a set of actions." .
+    rdfs:comment "An actor that interacts with a domain. Has a role and a set of actions." .
 
 chorus:Scenario a owl:Class ;
     rdfs:label "Scenario" ;
-    rdfs:comment "A BDD scenario — Given/When/Then — describing a guaranteed behavior of a sub-domain." .
+    rdfs:comment "A BDD scenario — Given/When/Then — describing a guaranteed behavior of a domain." .
 
 chorus:Contract a owl:Class ;
     rdfs:label "Contract" ;
-    rdfs:comment "An API contract — endpoint, method, request/response shape — for a sub-domain's service boundary." .
+    rdfs:comment "An API contract — endpoint, method, request/response shape — for a domain's service boundary." .
 
 chorus:hasActor a owl:ObjectProperty ;
     rdfs:label "has actor" ;
@@ -445,8 +435,7 @@ chorus:Document a owl:Class ;
 # #4237, 2026-09-21 — DECLARED, not deleted. The #4237 targetClass gate found four
 # SHACL shapes in platform/api/src/sparql/shapes.ttl (#2554) targeting
 # chorus:CatalogDoc, a class declared in no TTL — so they matched nothing and had
-# been vacuous passes, the same shape as the SubProduct and SubDomain shapes this
-# card removed.
+# been vacuous passes, the same shape as the SubProduct shapes this card removed.
 #
 # The difference: those two classes were retired and their shapes were residue.
 # This one is the opposite — the feature is live (handlers/catalog-curation.ts:169
@@ -537,10 +526,6 @@ chorus:DocumentShape a sh:NodeShape ;
     sh:property [
         sh:path chorus:hasDomain ;
         sh:minCount 1 ;
-        # #4010 — was chorus:SubDomain, a class retired by #3509. An edge typed
-        # to a retired class is unsatisfiable: the generator mapped it to kind
-        # 'sub-domain', which the DAL refuses as unknown, so no Document could
-        # ever be created through the API — one reason zero Documents existed.
         sh:class chorus:Domain ;
     ] ;
     sh:property [
@@ -575,7 +560,7 @@ chorus:DocumentShape a sh:NodeShape ;
 # 2d. SERVICES (from product ontology)
 # =============================================================================
 
-# Service tier classes removed (#1845 Phase 6) — Jeff's model uses Sub-Domain for all.
+# Service tier classes removed (#1845 Phase 6) — Jeff's model uses Domain for all.
 # Tier distinction (infra vs protocol) is metadata, not a type.
 
 # =============================================================================
@@ -823,7 +808,7 @@ chorus:video chorus:builtBy chorus:value-stream-gathering .
 # --- Wire domains into products (hasDomain) ---
 
 # Note: code/commits/tests and pipelines are inventory sections, not domains (#1962).
-# Services (observability, logs, alerts, deploys, skills, gates) remain as sub-domains.
+# Services (observability, logs, alerts, deploys, skills, gates) remain as domains.
 
 # #3603: the per-product hasDomain edges formerly scattered here now live ON each
 # typed Product's definition above (one declaration site per product). Only edges
@@ -847,7 +832,7 @@ chorus:borg chorus:hasDomain chorus:observability, chorus:properties, chorus:sec
 # The consumes edges below carry every product→service relationship.
 # (messages-domain edge: on clearingProduct's definition above.)
 
-# pulse-metrics now a subdomain of observability-domain
+# pulse-metrics now a domain of observability-domain
 # pulse-metrics-domain removed — folded into observability-domain
 
 # --- Gathering content domains ---
@@ -876,7 +861,7 @@ chorus:chorus chorus:provides chorus:observability, chorus:infrastructure,
 # Products are children of products via chorus:partOf (declared on each child's
 # definition). The hasSubProduct edges and the SubProduct class are gone.
 
-# Borg heralds grouped as single subdomain (DEC-2090)
+# Borg heralds grouped as single domain (DEC-2090)
 chorus:borg chorus:hasDomain chorus:heralds .
 
 # --- Product → ServiceDesign ---
@@ -892,7 +877,7 @@ chorus:pipelines chorus:consumes chorus:infrastructure,
                                         chorus:gates .
 
 # --- Cross-cutting consumption: Properties, Security, and Time ---
-# Properties consumed by infrastructure services; Security and Time consumed by all subdomains.
+# Properties consumed by infrastructure services; Security and Time consumed by all domains.
 
 chorus:cards chorus:consumes chorus:properties .
 chorus:observability chorus:consumes chorus:properties .
@@ -1217,14 +1202,14 @@ chorus:credentialSource a owl:DatatypeProperty ;
 
 chorus:ownerRole a owl:ObjectProperty ;
     rdfs:label "owner role" ;
-    rdfs:comment "The role accountable for the security artifact (credential rotation, probe response, boundary integrity). Distinct from chorus:ownedBy on SubDomains." ;
+    rdfs:comment "The role accountable for the security artifact (credential rotation, probe response, boundary integrity). Distinct from chorus:ownedBy on Domains." ;
     rdfs:domain [ owl:unionOf ( chorus:Credential chorus:SecurityProbe ) ] ;
     rdfs:range chorus:Role .
 
 chorus:subject a owl:ObjectProperty ;
     rdfs:label "subject" ;
     owl:deprecated true ;   # #4183 — replaced by acl:agent / acl:mode / acl:accessTo; 0 rows ever carried it
-    rdfs:comment "The actor (role or sub-domain) the permission applies to." ;
+    rdfs:comment "The actor (role or domain) the permission applies to." ;
     rdfs:domain chorus:Permission ;
     rdfs:range [ owl:unionOf ( chorus:Role chorus:Domain ) ] .
 
@@ -1238,7 +1223,7 @@ chorus:action a owl:DatatypeProperty ;
 chorus:resource a owl:DatatypeProperty ;
     rdfs:label "resource" ;
     owl:deprecated true ;   # #4183 — replaced by acl:agent / acl:mode / acl:accessTo; 0 rows ever carried it
-    rdfs:comment "The object the permission binds to. URI when graph-resolvable (a SubDomain, Service); string when a path glob, env name, or external resource." ;
+    rdfs:comment "The object the permission binds to. URI when graph-resolvable (a Domain, Service); string when a path glob, env name, or external resource." ;
     rdfs:domain chorus:Permission ;
     rdfs:range xsd:string .
 
@@ -1421,11 +1406,6 @@ chorus:AuthBoundaryShape a sh:NodeShape ;
     sh:property [
         sh:path chorus:betweenDomainA ;
         sh:minCount 1 ;
-        # #4237 — was chorus:SubDomain. Same unsatisfiable-edge defect #4010 fixed
-        # on DocumentShape: the generator maps the edge to kind 'sub-domain', the
-        # DAL has no such kind, so the create failed closed and no AuthBoundary
-        # could ever be made. SubDomain was declared rdfs:subClassOf chorus:Domain,
-        # so nothing narrows here — the constraint says what it always meant.
         sh:class chorus:Domain ;
     ] ;
     sh:property [
@@ -1574,7 +1554,7 @@ chorus:allowedValue a owl:DatatypeProperty ;
 # object arm
 chorus:edgeTargetClass a owl:ObjectProperty ;
     rdfs:label "edge target class" ;
-    rdfs:comment "object-arm: the owl:Class the value-IRI must belong to — the sh:class constraint the DAL compiles. A sub-domain is a Domain that is hasChild of another Domain; SubDomain is NOT a class of record (ADR-040). ADR-044 Decision 2." ;
+    rdfs:comment "object-arm: the owl:Class the value-IRI must belong to — the sh:class constraint the DAL compiles. ADR-044 Decision 2." ;
     rdfs:domain chorus:PropertyKey ;
     rdfs:range owl:Class .
 
@@ -1932,8 +1912,7 @@ chorus:DomainShape a sh:NodeShape ;
     # #4237, 2026-09-21 — was "urn:chorus:ontology". #3581 pointed it there because
     # that is where the rows LIVED; today they do not. Jeff, 2026-09-03: no rows in
     # the ontology graph, every row in its own domain graph. All 90 Domain rows now
-    # sit in urn:chorus:domains:domains (49 retyped from the retired SubDomain, 41
-    # moved out of the schema graph, 941 statements before and after), so the
+    # sit in urn:chorus:domains:domains (941 statements before and after), so the
     # declaration and the store agree again and the generated route reads the graph
     # the model names. Verified live: Domain rows in urn:chorus:ontology = 0.
     # #4256 — agreeing with the above, and adding the one thing it does not say:
@@ -2122,7 +2101,7 @@ chorus:derivedFrom a owl:ObjectProperty ;
 
 chorus:dependsOn a owl:ObjectProperty ;
     rdfs:label "depends on" ;
-    rdfs:comment "A sub-product or sub-domain depends on another for its function — if the target is unavailable or broken, the source is degraded. Distinct from chorus:consumes (read-only data flow). Dependency implies lifecycle coupling." .
+    rdfs:comment "A product or domain depends on another for its function — if the target is unavailable or broken, the source is degraded. Distinct from chorus:consumes (read-only data flow). Dependency implies lifecycle coupling." .
 
 chorus:reads a owl:ObjectProperty ;
     rdfs:label "reads" ;
@@ -2263,7 +2242,7 @@ chorus:Facilitating a chorus:InteractionMode ;
 
 chorus:hasDomain a owl:ObjectProperty ;
     rdfs:label "has domain" ;
-    rdfs:comment "True containment — the subject has this domain as a constituent part. Loom hasDomain Principles; a Document tags the domains it relates to. No rdfs:domain and no rdfs:range — shared across Document 321, Endpoint 264, Product 91, UnitDomainMapping 87, Skill 37, Page 20, SubDomain 1, and the two earlier declarations disagreed about whether the object is a Domain or a SubDomain (#4250)." .
+    rdfs:comment "True containment — the subject has this domain as a constituent part. Loom hasDomain Principles; a Document tags the domains it relates to. No rdfs:domain and no rdfs:range — shared across Document 321, Endpoint 264, Product 91, UnitDomainMapping 87, Skill 37, Page 20 (#4250)." .
 
 # chorus:hasSubProduct RETIRED (#3603) — containment is chorus:partOf child→parent.
 
@@ -2831,14 +2810,14 @@ chorus:fileLastModified a owl:DatatypeProperty ;
 
 chorus:fileInDomain a owl:ObjectProperty ;
     rdfs:label "in domain" ;
-    rdfs:comment "Domain this file belongs to. Derived: enrichment maps the path against the domain registry. #4178 — the range was chorus:SubDomain, the class Jeff retired 2026-06-19, so the DAL could not mint it and PUT answered 502 unknown-kind: 'sub-domain'. Nobody could tag a file with its domain, and we read that absence as the class being dead. 21 of the 47 SubDomain rows were the same referent as a Domain row under a -domain/-service spelling; Domain is live, served and 42/42 owned." ;
+    rdfs:comment "Domain this file belongs to. Derived: enrichment maps the path against the domain registry." ;
     rdfs:domain chorus:File ;
     rdfs:range chorus:Domain ;
     chorus:writeOwner chorus:enrichment .
 
 chorus:fileHasOwner a owl:ObjectProperty ;
     rdfs:label "file has owner" ;
-    rdfs:comment "Role responsible for the file. Derived: enrichment reads frontmatter / falls back to subdomain owner." ;
+    rdfs:comment "Role responsible for the file. Derived: enrichment reads frontmatter / falls back to domain owner." ;
     rdfs:domain chorus:File ;
     rdfs:range chorus:Role ;
     chorus:writeOwner chorus:enrichment .
@@ -3059,8 +3038,6 @@ chorus:services chorus:definesVocabulary chorus:ServiceInstance , chorus:Schedul
 # chorus:Service is claimed by the V2 services Domain (domains-builds-decisions-rcas-4022.ttl) — one claimer per served class (vocab-claim-authority, #4029).
 
 # --- hosts / atStep edges for the six Services authored 2026-08-15 ---
-# FLAG(silas): hosting-domain choices are kade's best mapping to existing
-# SubDomains; rule at gate-arch and I re-point.
 # Silas gate-arch ruling 2026-08-15 15:15 applied: v2 step grammar, ruled domains.
 chorus:services chorus:hosts chorus:service-athena .        # model surface
 chorus:service-athena chorus:atStep chorus:value-stream-step-designing .

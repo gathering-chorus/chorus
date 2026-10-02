@@ -56,8 +56,8 @@ describe('#2652 AC11 BoardClient coverage uplift', () => {
   test('createLabel returns id and title from PUT /labels via BoardClient', async () => {
     const client = new BoardClient('http://localhost:3456', 'fake-token', GATHERING);
     stub(client);
-    const result = await client.createLabel('subdomain:photos-domain');
-    expect(result.title).toBe('subdomain:photos-domain');
+    const result = await client.createLabel('subproduct:werk');
+    expect(result.title).toBe('subproduct:werk');
     expect(result.id).toBeGreaterThan(0);
   });
 
@@ -84,7 +84,7 @@ describe('#2652 AC11 BoardClient coverage uplift', () => {
     const client = new BoardClient('http://localhost:3456', 'fake-token', GATHERING);
     const tasks = new Map([[100, makeTask(100)]]);
     stub(client, { tasks, labels: [] });
-    const r = await client.applyLabelByName(100, 'subdomain:cards-service');
+    const r = await client.applyLabelByName(100, 'subproduct:clearing');
     expect(r.created).toBe(true);
     expect(r.labelId).toBeGreaterThan(0);
   });
@@ -109,8 +109,8 @@ describe('#2652 AC11 BoardClient coverage uplift', () => {
   test('removeLabelByName on BoardClient removes when label present', async () => {
     const client = new BoardClient('http://localhost:3456', 'fake-token', GATHERING);
     const tasks = new Map([[100, makeTask(100)]]);
-    stub(client, { tasks, labels: [{ id: 555, title: 'subdomain:tests-domain' }] });
-    const r = await client.removeLabelByName(100, 'subdomain:tests-domain');
+    stub(client, { tasks, labels: [{ id: 555, title: 'subproduct:loom' }] });
+    const r = await client.removeLabelByName(100, 'subproduct:loom');
     expect(r.removed).toBe(true);
   });
 

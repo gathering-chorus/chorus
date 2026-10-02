@@ -5,7 +5,7 @@
  * doc-tagger unit tests (#2520).
  *
  * Inference rules: filename + path + content keywords → product/subproduct/
- * domain/subdomain candidates against Athena ontology. Tests describe what
+ * domain/domain candidates against Athena ontology. Tests describe what
  * Jeff sees: every tag assignment is justifiable from filename or path
  * alone for the high-confidence cases; content is only consulted when
  * filename + path are inconclusive.
@@ -17,14 +17,14 @@ import {
 } from '../../src/handlers/doc-tagger';
 
 describe('doc-tagger.inferTags (#2520)', () => {
-  test('ADR-NNN file → Chorus product, Loom subproduct, loom-decisions subdomain', () => {
+  test('ADR-NNN file → Chorus product, Loom subproduct, loom-decisions domain', () => {
     const r: DocTags = inferTags({
       sourcePath: 'roles/silas/adr/ADR-014-pod-mediated-coordination.md',
       basename: 'ADR-014-pod-mediated-coordination.md',
     });
     expect(r.product).toBe('chorus');
     expect(r.subproduct).toBe('loom');
-    expect(r.subdomain).toBe('decisions');
+    expect(r.domain).toBe('decisions');
     expect(r.confidence).toBe('high');
     expect(r.signal).toBe('path');
   });
@@ -39,17 +39,17 @@ describe('doc-tagger.inferTags (#2520)', () => {
     expect(r.confidence).toBeDefined();
   });
 
-  test('domain-blog.html → Gathering product, blog-domain subdomain (no subproduct)', () => {
+  test('domain-blog.html → Gathering product, blog-domain domain (no subproduct)', () => {
     const r = inferTags({
       sourcePath: 'public/gathering-docs/domain-blog.html',
       basename: 'domain-blog.html',
     });
     expect(r.product).toBe('gathering');
     expect(r.subproduct).toBeUndefined();
-    expect(r.subdomain).toBe('blog');
+    expect(r.domain).toBe('blog');
   });
 
-  test('akasha/* path → Consulting product (no subproduct, no subdomain)', () => {
+  test('akasha/* path → Consulting product (no subproduct, no domain)', () => {
     // Akasha rolled into Consulting per 2026-04-28 ontology shift.
     const r = inferTags({
       sourcePath: 'public/akasha/practice-1.md',
@@ -82,18 +82,18 @@ describe('doc-tagger.inferTags (#2520)', () => {
       basename: 'domain-photos.html',
     });
     expect(r.product).toBe('gathering');
-    expect(r.subdomain).toBe('photos');
+    expect(r.domain).toBe('photos');
   });
 
   test('frontmatter override beats inference', () => {
     const r = inferTags({
       sourcePath: 'designing/docs/ambiguous.md',
       basename: 'ambiguous.md',
-      frontmatter: { product: 'chorus', subproduct: 'borg', subdomain: 'borg-domain' },
+      frontmatter: { product: 'chorus', subproduct: 'borg', domain: 'borg-domain' },
     });
     expect(r.product).toBe('chorus');
     expect(r.subproduct).toBe('borg');
-    expect(r.subdomain).toBe('borg-domain');
+    expect(r.domain).toBe('borg-domain');
     expect(r.signal).toBe('frontmatter');
   });
 

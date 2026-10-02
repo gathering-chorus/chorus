@@ -63,7 +63,7 @@ function termToBinding(t: OxigraphTerm): SparqlBindingValue {
  * The handlers no longer all read one graph: #4265 moved domain rows to
  * <urn:chorus:domains:domains> while envelopes and vocabulary stay in
  * <urn:chorus:ontology>. A fixture seeded into only one of them 404s half the
- * suite, which is what put 7 subdomain-batch cases in the 2026-09-22 nightly.
+ * suite, which is what put 7 domain-batch cases in the 2026-09-22 nightly.
  */
 export function loadStoreFromTtlGraphs(ttlPath: string, graphNames: string[]): OxigraphStore {
   const store = new oxigraph.Store();

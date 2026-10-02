@@ -1,4 +1,4 @@
-// #3580 — gate:quality dispatches checks by subdomain, consuming the generated
+// #3580 — gate:quality dispatches checks by domain, consuming the generated
 // tests-domain API (athena-make :3360/tests, landed #2819). The FIRST real consumer
 // of a generated domain API: it closes the athena-make loop (generate → land →
 // CONSUME) and proves the generation program pays off on the tests domain.
@@ -6,7 +6,7 @@
 // This module is the PURE selection core (hermetic, no live fetch — see the
 // fetch wiring below it). It mirrors gate-test-type.ts: a tested core + a thin
 // caller. The skill (platform/skills/gate-quality) invokes it to scope its
-// checks to the tests covering the card's subdomain instead of the whole suite.
+// checks to the tests covering the card's domain instead of the whole suite.
 
 /** One test record as athena-make serves it at /tests (the real key set). */
 export interface TestRecord {
@@ -27,11 +27,11 @@ export interface TestsApiResponse {
   count?: number;
 }
 
-/** The dispatch decision for a card in a given subdomain — the receipt. */
+/** The dispatch decision for a card in a given domain — the receipt. */
 export interface DispatchResult {
-  /** The subdomain consulted (named so consumption is observable — AC4). */
-  subdomain: string;
-  /** The tests that cover this subdomain — the scoped check set (AC2). */
+  /** The domain consulted (named so consumption is observable — AC4). */
+  domain: string;
+  /** The tests that cover this domain — the scoped check set (AC2). */
   coveringTests: string[];
   count: number;
   /** True when the gate has a scoped set to check; false → degrade, don't block (AC5). */
@@ -39,28 +39,28 @@ export interface DispatchResult {
 }
 
 /**
- * Select the tests covering a subdomain — the join on chorus:covers → Domain
+ * Select the tests covering a domain — the join on chorus:covers → Domain
  * (AC1). Pure: pass a /tests response, get the matching records. An empty
- * subdomain or empty data yields [] (fail-open shape — a missing join can only
+ * domain or empty data yields [] (fail-open shape — a missing join can only
  * relax the gate, never invent coverage).
  */
-export function selectCoveringTests(subdomain: string, resp: TestsApiResponse | null | undefined): TestRecord[] {
-  if (!subdomain || !resp || !Array.isArray(resp.data)) return [];
-  return resp.data.filter((t) => t.covers === subdomain);
+export function selectCoveringTests(domain: string, resp: TestsApiResponse | null | undefined): TestRecord[] {
+  if (!domain || !resp || !Array.isArray(resp.data)) return [];
+  return resp.data.filter((t) => t.covers === domain);
 }
 
 /**
- * Dispatch the quality gate to the tests covering a card's subdomain (AC2): a
- * card in subdomain X gets X's tests, not the whole suite. Returns the scoped
- * set plus a receipt (subdomain + count) so the consumption is observable, not
- * silent (AC4). `scoped` is false when nothing covers the subdomain — the gate
+ * Dispatch the quality gate to the tests covering a card's domain (AC2): a
+ * card in domain X gets X's tests, not the whole suite. Returns the scoped
+ * set plus a receipt (domain + count) so the consumption is observable, not
+ * silent (AC4). `scoped` is false when nothing covers the domain — the gate
  * degrades to its prior behavior rather than blocking on an empty join (AC5).
  */
-export function dispatchBySubdomain(subdomain: string, resp: TestsApiResponse): DispatchResult {
-  const covering = selectCoveringTests(subdomain, resp);
+export function dispatchByDomain(domain: string, resp: TestsApiResponse): DispatchResult {
+  const covering = selectCoveringTests(domain, resp);
   const coveringTests = covering.map((t) => t.testName);
   return {
-    subdomain,
+    domain,
     coveringTests,
     count: coveringTests.length,
     scoped: coveringTests.length > 0,
@@ -68,16 +68,16 @@ export function dispatchBySubdomain(subdomain: string, resp: TestsApiResponse): 
 }
 
 /** A degraded result: the gate falls back to its prior behavior (AC5). The
- *  receipt still names the subdomain it tried, so the degrade is observable. */
-function degraded(subdomain: string): DispatchResult {
-  return { subdomain, coveringTests: [], count: 0, scoped: false };
+ *  receipt still names the domain it tried, so the degrade is observable. */
+function degraded(domain: string): DispatchResult {
+  return { domain, coveringTests: [], count: 0, scoped: false };
 }
 
 /** Where athena-make serves the tests vertical. Overridable for tests/other hosts. */
 export const TESTS_API_DEFAULT = 'http://localhost:3360/tests?limit=10000';
 
 /**
- * Live wiring (AC1): fetch the tests API and dispatch for a card's subdomain.
+ * Live wiring (AC1): fetch the tests API and dispatch for a card's domain.
  * FAIL-OPEN (AC5) — any failure (API down, non-2xx, bad JSON) degrades to the
  * gate's prior behavior and NEVER throws, so the consumer can't block the gate
  * on its own unavailability. `fetchImpl`/`endpoint` are injectable for hermetic
@@ -85,17 +85,17 @@ export const TESTS_API_DEFAULT = 'http://localhost:3360/tests?limit=10000';
  * pull and select client-side.
  */
 export async function dispatchForCard(
-  subdomain: string,
+  domain: string,
   opts?: { endpoint?: string; fetchImpl?: typeof fetch },
 ): Promise<DispatchResult> {
   const endpoint = opts?.endpoint ?? TESTS_API_DEFAULT;
   const f = opts?.fetchImpl ?? fetch;
   try {
     const res = await f(endpoint);
-    if (!res.ok) return degraded(subdomain);
+    if (!res.ok) return degraded(domain);
     const json = (await res.json()) as TestsApiResponse;
-    return dispatchBySubdomain(subdomain, json);
+    return dispatchByDomain(domain, json);
   } catch {
-    return degraded(subdomain);
+    return degraded(domain);
   }
 }

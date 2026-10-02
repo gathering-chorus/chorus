@@ -924,7 +924,7 @@ mod stated_intent_tests {
     fn does_not_fire_on_a_reply_that_promises_nothing() {
         let v = vocab();
         for said in [
-            "Landed and live — the old subdomain 308s to the apex path.",
+            "Landed and live — the old host 308s to the apex path.",
             "Load average 69. Not a chorus-api defect.",
             "You were right and I was wrong.",
         ] {

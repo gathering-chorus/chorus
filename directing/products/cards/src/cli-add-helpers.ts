@@ -25,7 +25,6 @@ export interface AddArgs {
   type: string;
   origin: string;
   // #2652 AC1+AC2 — new tag axes per cards-service-design v1
-  subdomain: string;
   subproduct: string;
   // #3682 — run every gate (guest door included) but file nothing
   validateOnly: boolean;
@@ -33,7 +32,7 @@ export interface AddArgs {
 
 const USAGE =
   'Usage: cards add "title" [--status S] [--owner O] [--priority P] [--domain D] ' +
-  '[--product P] [--chunk C] [--sequence S] [--subproduct SP] [--subdomain SD] [--type T] [--origin O] ' +
+  '[--product P] [--chunk C] [--sequence S] [--subproduct SP] [--type T] [--origin O] ' +
   '[--desc D | --desc-file PATH | --desc -] [--validate-only]';
 
 /** String-valued field names. */
@@ -55,7 +54,6 @@ const STRING_FLAGS: Partial<Record<string, StringField>> = {
   '-t': 'type',
   '--origin': 'origin',
   // #2652 AC1+AC2
-  '--subdomain': 'subdomain',
   '--subproduct': 'subproduct',
 };
 
@@ -72,7 +70,7 @@ export function parseAddArgs(args: string[]): AddArgs {
   const out: AddArgs = {
     title: '', status: 'later', owner: '', priority: '',
     domain: '', description: '', product: '', chunk: '', sequence: '',
-    type: '', origin: '', subdomain: '', subproduct: '',
+    type: '', origin: '', subproduct: '',
     validateOnly: false,
   };
   let descFile = '';

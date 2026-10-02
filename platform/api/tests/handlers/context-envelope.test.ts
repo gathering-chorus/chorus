@@ -1,3 +1,4 @@
+// @test-type: unit — stubbed dependencies; no live service.
 /**
  * context-envelope unit tests (#2234 Step 3).
  *
@@ -29,7 +30,6 @@ describe('stampHeader', () => {
     expect(h).not.toHaveProperty('step');
     expect(h).not.toHaveProperty('product');
     expect(h).not.toHaveProperty('domain');
-    expect(h).not.toHaveProperty('subdomain');
   });
 
   it('domain-scoped with graph match → step + product + domain + timestamp', async () => {
@@ -38,16 +38,6 @@ describe('stampHeader', () => {
     expect(h.step).toBe('building');
     expect(h.product).toBe('chorus');
     expect(h.domain).toBe('chorus');
-    expect(h).not.toHaveProperty('subdomain');
-  });
-
-  it('subdomain-scoped with graph match → all four fields', async () => {
-    const client = clientReturning(okBinding('building', 'chorus'));
-    const h = await stampHeader(client, 'chorus', 'chorus-hooks');
-    expect(h.subdomain).toBe('chorus-hooks');
-    expect(h.domain).toBe('chorus');
-    expect(h.step).toBe('building');
-    expect(h.product).toBe('chorus');
   });
 
   it('domain given but no graph match → domain + timestamp only (graceful absence)', async () => {

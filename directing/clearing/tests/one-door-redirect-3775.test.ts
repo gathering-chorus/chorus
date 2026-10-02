@@ -7,7 +7,7 @@
  * Built legs under test here:
  *  - redirect: with CHORUS_SIGNIN_URL set, an unauthenticated GET is sent to
  *    the common door carrying the full return URL (host + path), so the door
- *    can land Jeff back where he was headed — cross-subdomain, which is the
+ *    can land Jeff back where he was headed — cross-host, which is the
  *    whole point.
  *  - fallback: unset, the local interstitial still serves (the flag flips only
  *    when the guard cookie is parent-domain scoped; early flip = redirect loop).

@@ -1373,8 +1373,8 @@ fn a_required_edge_at_an_unserved_class_refuses_and_the_repoint_restores_it() {
     // door publishes as required.
     let _ = world();
     // #4163 — the refusal is NOT wired into generate(): athena-make's claimed
-    // list answers "does THIS door serve it", and a class served by chorus-api
-    // (SubDomain, 47 rows at :3340) is absent from it. Gating on that would
+    // list answers "does THIS door serve it", and a class served by another
+    // door is absent from it. Gating on that would
     // refuse good shapes. So Retired generates, and what is asserted here is
     // that it generates rather than half-generating.
     let r = generate("Retired").expect("an edge at a class this door does not claim still generates");

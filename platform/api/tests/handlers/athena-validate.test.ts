@@ -80,7 +80,7 @@ describe('fetchAthenaValidate (#2180)', () => {
 
   test('warning-severity binding lands in warnings[] and leaves valid=true', async () => {
     // #4237 — this test used to reach for whichever real rule carried severity
-    // 'warning', which was "SubDomain has no instances". That rule targeted a
+    // 'warning', which was "Domain has no instances". That rule targeted a
     // retired class and was deleted with it, and the test went red although
     // nothing about the binding had changed. It now brings its own rule: what is
     // under test is that a warning lands in warnings[] and does not sink valid,

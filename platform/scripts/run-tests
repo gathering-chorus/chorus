@@ -93,7 +93,7 @@ resolve_domain() {
 
   # Try graph: POST /api/athena/discover-tests gives by_domain {sd: count} +
   # the underlying TestCoverage triples carry the file paths. We use the
-  # subdomain test-coverage endpoint for the per-domain file list.
+  # domain test-coverage endpoint for the per-domain file list.
   local graph_response
   # #4353 — the Test rows on athena-make, filtered on covers = this domain
   graph_response=$(curl -sf --max-time 10 "${ATHENA_MAKE_URL:-http://localhost:3360}/v1/tests/tests?limit=20000" 2>/dev/null || true)

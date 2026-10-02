@@ -236,7 +236,7 @@ pub fn is_sanctioned_graph(g: &str) -> bool {
 /// punned — zero Service individuals carry `owl:Class`; each is a plain
 /// `chorus:Service`. So `ServiceShape`'s ontology placement is a DEFECT, and
 /// its stated "wipe-protection" rationale is not a rationale AND is factually
-/// unnecessary: the retire clause targets only Domain/SubDomain, so a
+/// unnecessary: the retire clause targets only Domain, so a
 /// plain-ABox Service in a domain graph faces zero wipe risk.
 ///
 /// ONE REASON PER PLACEMENT: punning, never wipe-protection. Domain stays
@@ -250,7 +250,7 @@ pub fn is_sanctioned_graph(g: &str) -> bool {
 /// this module already reads. Deriving it is held until the ADR-045 §3 amendment
 /// lands (ruling 1) so the query is written against the ratified edge.
 pub fn is_punned(class_local: &str) -> bool {
-    matches!(class_local, "Domain" | "SubDomain" | "CollectionDomain")
+    matches!(class_local, "Domain" | "CollectionDomain")
 }
 
 /// A class whose instances are NOT in the graph its own shape declares. This is
@@ -384,7 +384,7 @@ pub fn store_counts() -> Option<BTreeMap<String, Vec<(String, u64)>>> {
     //
     // It is not a union view (a union would return the whole 31M-triple store;
     // this returns ~3,901). It is a real, separate, writable graph holding a
-    // FOURTH copy of the model — Products, ValueStreams, 49 SubDomains, 32
+    // FOURTH copy of the model — Products, ValueStreams, 49 Domains, 32
     // Skills, zero Domains — and any SPARQL written without an explicit GRAPH
     // clause reads it and ONLY it.
     //
@@ -522,7 +522,7 @@ pub fn reconcile_json(tables: &[RouteTable]) -> String {
         // Silas's second addendum invariant, 2026-08-02: A SERVED CLASS
         // RESOLVES TO EXACTLY ONE LIVE GRAPH. Ten classes violate it today
         // (SourceFile 1+566, Document 8+259, Skill 37+31, Principle 2+27,
-        // SubDomain across 3, ...). For each, "how many are there" has two
+        // Domain across 3, ...). For each, "how many are there" has two
         // answers depending which graph you read — that IS the tracking defect
         // Jeff named, and it is why three of us produced three different
         // product counts from three correct queries.
@@ -676,7 +676,7 @@ mod tests {
     // three that are right.
     #[test]
     fn punned_classes_live_in_the_ontology_graph() {
-        for c in ["Domain", "SubDomain", "CollectionDomain"] {
+        for c in ["Domain", "CollectionDomain"] {
             assert!(is_punned(c), "{} is punned", c);
         }
         // Product is NOT punned — verified in the store: its individuals carry

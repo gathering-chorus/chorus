@@ -8,7 +8,7 @@
 # MODEL_SET from day one — never live-only (the #3587/#3593 lesson).
 # IRI grammar follows product-clearing: chorus:service-<name>.
 # FK targets verified live 2026-07-23: chorus:wren (AgentRole ⊑ Role),
-# chorus:messages (SubDomain ⊑ Domain), chorus:value-stream-step-directing
+# chorus:messages (Domain), chorus:value-stream-step-directing
 # (ValueStreamStep — NOTE: lives in urn:chorus:instances, cross-graph; Silas
 # review point #1).
 

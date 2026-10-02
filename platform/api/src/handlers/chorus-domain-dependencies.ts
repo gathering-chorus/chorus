@@ -38,12 +38,10 @@ interface SharedBinding {
 interface BindingsOf<T> { results: { bindings: T[] } }
 
 type Sparql = (query: string) => Promise<BindingsOf<DirectBinding> | BindingsOf<SharedBinding> | BindingsOf<LayerBinding> | BindingsOf<HostsBinding>>;
-type ResolveSubdomainId = (name: string) => Promise<string>;
 type Envelope = (queryName: string, data: unknown, durationMs: number, extra?: Record<string, unknown>) => unknown;
 
 export interface ChorusDomainDependenciesDeps {
   sparql: Sparql;
-  resolveSubdomainId: ResolveSubdomainId;
   envelope: Envelope;
   now?: () => number;
 }
@@ -129,7 +127,7 @@ export async function fetchChorusDomainDependencies(
   const now = deps.now ?? Date.now;
   const start = now();
   try {
-    const sdId = await deps.resolveSubdomainId(name);
+    const sdId = name.toLowerCase();
     const sdUri = `https://jeffbridwell.com/chorus#${sdId}`;
     const direct = await readDirect(deps, sdUri);
     const shared = await readShared(deps, sdUri);
@@ -139,7 +137,7 @@ export async function fetchChorusDomainDependencies(
       status: 200,
       body: deps.envelope(
         'domain-dependencies',
-        { subdomain: sdId, direct, shared, layer, hosts },
+        { domain: sdId, direct, shared, layer, hosts },
         now() - start,
         { direct_count: direct.consumes.length + direct.consumedBy.length, shared_count: shared.length, graph: 'all (GRAPH ?g)' },
       ),
@@ -151,7 +149,7 @@ export async function fetchChorusDomainDependencies(
       status: 200,
       body: deps.envelope(
         'domain-dependencies',
-        { subdomain: name, direct: { consumes: [], consumedBy: [] }, shared: [], layer: null, hosts: [] },
+        { domain: name, direct: { consumes: [], consumedBy: [] }, shared: [], layer: null, hosts: [] },
         now() - start,
         { direct_count: 0, shared_count: 0, error: true, message: err instanceof Error ? err.message : String(err) },
       ),

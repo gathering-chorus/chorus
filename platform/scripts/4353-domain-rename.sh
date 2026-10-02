@@ -1,8 +1,8 @@
 #!/bin/bash
 # #4353 step 4 — move the old-named Domain rows onto their bare names, in the store.
 #
-# Jeff 2026-10-01: "i want to remove not fix subdomain dependencies." Step 4 is
-# the rows: 39 Domain rows named the subdomain way (cards-service, loom-principles,
+# Jeff 2026-10-01: remove the old domain naming, do not fix it. Step 4 is
+# the rows: 39 Domain rows with suffixed or prefixed names (cards-service, loom-principles,
 # photos-domain …) live only in the store. The source files were rewritten in the
 # same card; this moves what the store already holds, so nothing points at an old
 # name afterwards.
@@ -78,7 +78,7 @@ BK="$ROOT/platform/backups/graph-retirements/4353-step4-$(date -u +%Y%m%dT%H%M%S
 mkdir -p "$(dirname "$BK")"
 VALS=$(pairs | awk -F'\t' -v c="$C" '{printf "<%s%s> ", c, $1}')
 curl -sf --max-time 120 "${FUSEKI_AUTH[@]+"${FUSEKI_AUTH[@]}"}" -H 'Accept: application/sparql-results+json' \
-  --data-urlencode "query=SELECT ?g ?s ?p ?o WHERE { VALUES ?x { $VALS } { GRAPH ?g { ?x ?p ?o BIND(?x AS ?s) } } UNION { GRAPH ?g { ?s ?p ?x } } }" \
+  --data-urlencode "query=SELECT ?g ?s ?p ?o WHERE { VALUES ?x { $VALS } { GRAPH ?g { ?x ?p ?o BIND(?x AS ?s) } } UNION { GRAPH ?g { ?s ?p ?x BIND(?x AS ?o) } } }" \
   "$DS/query" | python3 -c '
 import json, sys
 def term(b):
@@ -91,11 +91,10 @@ def term(b):
 for r in json.load(sys.stdin)["results"]["bindings"]:
     print(term(r["s"]), term(r["p"]), term(r["o"]), term(r["g"]), ".")
 ' > "$BK"
-# A triple can name two old rows (code-domain consumes time-domain), so the
-# backup is checked against the distinct count, not the per-name sum.
-distinct=$(q "SELECT (COUNT(*) AS ?n) WHERE { SELECT DISTINCT ?g ?s ?p ?o WHERE { VALUES ?x { $VALS } { GRAPH ?g { ?x ?p ?o BIND(?x AS ?s) } } UNION { GRAPH ?g { ?s ?p ?x } } } }")
-lines=$(sort -u "$BK" | wc -l | tr -d ' ')
-[ "$lines" -eq "$distinct" ] || { echo "FAIL backup has $lines quads, the store has $distinct — nothing written" >&2; exit 1; }
+# One backup row per (old name, triple), the same pairs the per-name counts add
+# up; a triple naming two old rows appears twice, which a restore tolerates.
+lines=$(wc -l < "$BK" | tr -d ' ')
+[ "$lines" -eq "$total" ] || { echo "FAIL backup has $lines rows, the counts said $total — nothing written" >&2; exit 1; }
 echo "backup $BK ($lines quads)"
 
 all_updates | curl -sf --max-time "${FUSEKI_WRITE_TIMEOUT:-300}" "${FUSEKI_AUTH[@]+"${FUSEKI_AUTH[@]}"}" \

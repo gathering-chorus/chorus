@@ -2,7 +2,7 @@
  * #3775 — verify the guard's session cookie (DEC-2209 clause 2).
  *
  * The common door (chorus.lightlifeurbangardens.com) mints `chorus_share_session`
- * scoped to the parent domain, so it reaches this subdomain. This module is the
+ * scoped to the parent domain, so it reaches this host. This module is the
  * Clearing's half of the contract Silas published 2026-08-07:
  *
  *   cookie  = <payload>.<mac>

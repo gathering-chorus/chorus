@@ -26,7 +26,7 @@
 //!
 //! **Silas, same day** — ADR-051 and ADR-025 are ONE check, never two. A
 //! mechanical "must declare an ABox instances graph" would REFUSE Domain,
-//! Service and SubDomain — the ones that are correct — because punned classes
+//! Service and Domain — the ones that are correct — because punned classes
 //! live in the ontology graph deliberately (a Domain is an `owl:Class`; its
 //! instances are subclasses). The predicate is *placement CONSISTENT WITH KIND*.
 //!
@@ -49,7 +49,7 @@
 //!
 //! **Jeff, 2026-08-02** — the meta-model is self-describing, so placement is
 //! DERIVED, not declared: the `products` domain's `definesVocabulary` IS
-//! `chorus:Product`; `domains` defines `Domain`/`SubDomain`/`CollectionDomain`.
+//! `chorus:Product`; `domains` defines `Domain`/`CollectionDomain`.
 //! Therefore **a class's graph = the graph of the domain whose
 //! `definesVocabulary` contains it.** One rule, zero annotations. An explicit
 //! `instancesGraph` becomes an OVERRIDE with a stated reason, not the mechanism.
@@ -115,7 +115,7 @@ pub type Verdict = Result<(), Refusal>;
 /// `a chorus:Product` and nothing else). Assuming it produced a wrong finding
 /// on 2026-08-02 — the readout blamed the placement when the placement was right.
 pub fn is_punned(class_local: &str) -> bool {
-    matches!(class_local, "Domain" | "SubDomain" | "CollectionDomain" | "Service")
+    matches!(class_local, "Domain" | "CollectionDomain" | "Service")
 }
 
 /// Which layer a write targets. The two obey DIFFERENT placement rules and

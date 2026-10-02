@@ -56,13 +56,13 @@ describe('fetchAthenaHealth', () => {
     expect(body._meta.error).toBe(true);
   });
 
-  test('queries list includes health, not retired products (#3603) nor any SubDomain route (#4274, #4353)', async () => {
+  test('queries list includes health, not retired products (#3603) nor any Domain route (#4274, #4353)', async () => {
     const deps: AthenaHealthDeps = { sparql: emptySparql, loadQuery };
     const r = await fetchAthenaHealth(deps);
     const queries: any[] = (r.body as any).data.queries;
     expect(queries.some(q => q.name === 'health')).toBe(true);
-    expect(queries.some(q => String(q.path).includes('/subdomains'))).toBe(false); // #4353
-    expect(queries.some(q => q.name === 'subdomains')).toBe(false); // #4274: list route retired with chorus:SubDomain
+    expect(queries.some(q => String(q.path).includes('/domains'))).toBe(false); // #4353
+    expect(queries.some(q => q.name === 'domains')).toBe(false); // #4274: list route retired with chorus:Domain
     expect(queries.some(q => q.name === 'products')).toBe(false);
     expect(queries.some(q => q.name === 'subproducts')).toBe(false);
   });

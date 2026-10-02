@@ -115,12 +115,12 @@ test.describe('#4036 the hub page is Chorus-native', () => {
     await page.goto(`${BASE}/loom`, { waitUntil: 'domcontentloaded' });
     const p = page.locator('#principles');
     await expect(p.locator('h2'), 'Principles section').toHaveText('Principles');
-    for (const href of ['/loom/principles.html', '/loom/principles-list.html', '/loom/principles-reference-impl.html']) {
+    for (const href of ['/loom/principles.html', '/loom/principles-list.html']) {
       await expect(p.locator(`a[href="${href}"]`), `Principles carries ${href}`).toHaveCount(1);
     }
     const d = page.locator('#decisions-policies-practices');
     await expect(d.locator('h2'), 'Decisions · Policies · Practices section').toContainText('Decisions');
-    for (const href of ['/loom/decisions.html', '/loom/policies.html', '/loom/cookbook-substrate-class-domain.html']) {
+    for (const href of ['/loom/decisions.html', '/loom/policies.html']) {
       await expect(d.locator(`a[href="${href}"]`), `section carries ${href}`).toHaveCount(1);
     }
   });

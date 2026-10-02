@@ -1,3 +1,4 @@
+// @test-type: unit — stubbed dependencies; no live service.
 /**
  * chorus-domain-releases handler — unit tests (#2188).
  */
@@ -77,9 +78,9 @@ describe('fetchChorusDomainReleases (#2188)', () => {
     const body = fetchChorusDomainReleases(
       deps({ gitLog: () => log, getCards: () => cards }),
       'photos-domain',
-    ).body as { data: { subdomain: string; releases: unknown[] } };
+    ).body as { data: { domain: string; releases: unknown[] } };
     expect(body.data.releases.length).toBe(1);
-    expect(body.data.subdomain).toBe('photos-domain'); // preserved
+    expect(body.data.domain).toBe('photos-domain'); // preserved
   });
 
   test('non-ACP lines ignored', () => {

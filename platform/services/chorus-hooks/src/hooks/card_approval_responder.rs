@@ -59,8 +59,6 @@ pub struct PendingOpts {
     #[serde(default)]
     pub subproduct: Option<String>,
     #[serde(default)]
-    pub subdomain: Option<String>,
-    #[serde(default)]
     pub chunk: Option<String>,
     #[serde(default)]
     pub description: Option<String>,
@@ -112,7 +110,7 @@ pub fn is_stale(path: &Path, now: SystemTime) -> bool {
 pub fn build_cards_add_argv(payload: &PendingPayload) -> Vec<String> {
     let mut argv: Vec<String> = vec![payload.title.clone()];
     let opts = &payload.opts;
-    let pairs: [(&str, &Option<String>); 9] = [
+    let pairs: [(&str, &Option<String>); 8] = [
         ("--owner", &opts.owner),
         ("--priority", &opts.priority),
         ("--domain", &opts.domain),
@@ -120,7 +118,6 @@ pub fn build_cards_add_argv(payload: &PendingPayload) -> Vec<String> {
         ("--origin", &opts.origin),
         ("--sequence", &opts.sequence),
         ("--subproduct", &opts.subproduct),
-        ("--subdomain", &opts.subdomain),
         ("--chunk", &opts.chunk),
     ];
     for (flag, value) in pairs.iter() {
@@ -469,7 +466,6 @@ mod tests {
                 origin: Some("reactive".into()),
                 sequence: None,
                 subproduct: None,
-                subdomain: None,
                 chunk: None,
                 description: None,
             },
@@ -499,7 +495,6 @@ mod tests {
                 origin: Some("reflective".into()),
                 sequence: Some("werk".into()),
                 subproduct: Some("werk".into()),
-                subdomain: Some("gates-service".into()),
                 chunk: Some("ops".into()),
                 description: Some("body".into()),
             },
@@ -508,7 +503,6 @@ mod tests {
         let s = argv.join(" ");
         assert!(s.contains("--sequence werk"));
         assert!(s.contains("--subproduct werk"));
-        assert!(s.contains("--subdomain gates-service"));
         assert!(s.contains("--chunk ops"));
     }
 

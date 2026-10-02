@@ -9,7 +9,7 @@
  * malformed lines are skipped silently (logs outrun schema changes).
  *
  * Scope: domain (chorus) — spine is a chorus-product surface. Envelope
- * carries step + product + domain; no subdomain (spine spans all subdomains).
+ * carries step + product + domain; no domain (spine spans all domains).
  */
 
 import {
