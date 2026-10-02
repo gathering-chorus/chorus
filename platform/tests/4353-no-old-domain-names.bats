@@ -64,7 +64,10 @@ subdomain_in() {  # $1 = directory (git-tracked files only); prints file:line
     grep -rniI "subdomain" "$1" || true; return 0; }
   git -C "$top" grep -niI "subdomain" -- "${@:2}" \
     ':!platform/backups/**' ':!designing/schemas/model-retirements.jsonl' \
-    ':!platform/pulse/*.backup' ':!platform/tests/4353-no-old-domain-names.bats' || true
+    ':!platform/pulse/*.backup' ':!platform/tests/4353-no-old-domain-names.bats' \
+    ':!data/athena/tree.json' || true
+  # data/athena/tree.json: a June snapshot that #4419 (Kade) retires; editing it
+  # refuses the card's test run as an unmapped path (#4169), so it is left whole.
 }
 
 @test "nothing that runs, models or instructs a role says subdomain" {
