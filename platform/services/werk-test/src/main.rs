@@ -165,6 +165,50 @@ fn run(args: &[String]) -> Result<i32, String> {
             units.push(u);
         }
     }
+    // #4419 — select by domain: every registered test (any layer) in the
+    // domains the changed files touch, from the crawler's own placement rules.
+    // A changed file no rule places runs its whole package, and says so.
+    let dsel = domain_select(&werk, &changed, &rows);
+    let mut untagged_pkgs: Vec<String> = Vec::new();
+    match &dsel {
+        None => println!("domain-select: UNMEASURED — the crawler's --domains-of did not answer; import-graph selection only"),
+        Some(d) => {
+            println!(
+                "domain-select: {} changed file(s) touch domain(s) [{}] → {} registered test file(s)",
+                changed.len(),
+                d.domains.iter().cloned().collect::<Vec<_>>().join(", "),
+                d.tests.len()
+            );
+            for f in &d.untagged {
+                let pkg = werk_test::ts_package_of(f).or_else(|| crate_of(f));
+                match pkg {
+                    Some(p) => {
+                        println!("domain-select: {} has no domain — running its package {} whole", f, p);
+                        if !untagged_pkgs.contains(&p) {
+                            untagged_pkgs.push(p);
+                        }
+                    }
+                    None => println!("domain-select: {} has no domain and no package — nothing extra to run", f),
+                }
+            }
+            for f in d.tests.keys().chain(untagged_pkgs.iter()) {
+                if let Some(u) = unit_for_test(f) {
+                    if !units.contains(&u) {
+                        units.push(u);
+                    }
+                }
+            }
+            if args.iter().any(|a| a == "--explain") {
+                for (f, why) in &d.tests {
+                    println!("domain-select:   {f} ({why})");
+                }
+            }
+            emit_spine("test.selection.domain", &role, &card, &trace,
+                &[("domains", &d.domains.iter().cloned().collect::<Vec<_>>().join(",")),
+                  ("tests", &d.tests.len().to_string()),
+                  ("untagged", &d.untagged.len().to_string())]);
+        }
+    }
     // AC2 — a changed script no suite exercises is a NAMED gap. Silence here is how
     // "nothing ran" became indistinguishable from "everything passed".
     for s in werk_test::uncovered_scripts(&changed, &cov_index) {
@@ -221,7 +265,39 @@ fn run(args: &[String]) -> Result<i32, String> {
             related_all.extend(jest_related_files(&werk, p, &in_pkg));
         }
     }
-    let jplan = jest_plan(plan_source == "model", &rows, &related_all);
+    let mut jplan = jest_plan(plan_source == "model", &rows, &related_all);
+    // #4419 — the domain lane's TS files join the selection, and an untagged
+    // file's package runs every registered test it holds.
+    let mut domain_reasons: std::collections::BTreeMap<String, String> = Default::default();
+    if let (JestPlan::Selected(ref mut sels), Some(d)) = (&mut jplan, &dsel) {
+        let mut add = |file: &str, why: &str| {
+            let Some(p) = werk_test::ts_package_of(file) else { return };
+            if !(file.ends_with(".ts") || file.ends_with(".js") || file.ends_with(".cjs")) {
+                return;
+            }
+            domain_reasons.entry(file.to_string()).or_insert_with(|| why.to_string());
+            match sels.iter_mut().find(|s| s.package == p) {
+                Some(s) => {
+                    if !s.test_files.iter().any(|f| f == file) {
+                        s.test_files.push(file.to_string());
+                    }
+                }
+                None => sels.push(werk_test::JestSelection { package: p, test_files: vec![file.to_string()] }),
+            }
+        };
+        for (f, why) in &d.tests {
+            add(f, why);
+        }
+        for p in &untagged_pkgs {
+            for r in rows.iter().filter(|r| r.file_path.starts_with(&format!("{p}/"))) {
+                add(&r.file_path, &format!("package-whole: untagged change in {p}"));
+            }
+        }
+        for s in sels.iter_mut() {
+            s.test_files.sort();
+            s.test_files.dedup();
+        }
+    }
     if let JestPlan::FullFallback { ref reason } = jplan {
         println!("jest-select: {}", reason);
     } else if let JestPlan::Selected(ref sels) = jplan {
@@ -231,7 +307,12 @@ fn run(args: &[String]) -> Result<i32, String> {
     // #3931 — the selection is EVIDENCE, not a count: name every selected file
     // with its reason (or the fallback's reason) on stdout and the spine, so an
     // under-selection is inspectable from the record alone.
-    let sel_details = werk_test::selection_details(&jplan);
+    let mut sel_details = werk_test::selection_details(&jplan);
+    for d in sel_details.iter_mut() {
+        if let Some(why) = domain_reasons.get(&d.file) {
+            d.reason = why.clone();
+        }
+    }
     for d in &sel_details {
         println!("jest-select:   {} ({})", d.file, d.reason);
     }
@@ -1687,6 +1768,16 @@ fn collect_files_depth(werk: &str, rel_dir: &str, suffix: &str, out: &mut Vec<St
 /// Changed files on the card's diff: `git diff --name-only <merge-base> HEAD`,
 /// merge-base against origin/main (falls back to HEAD~1, like #3397).
 fn git_changed_files(werk: &str) -> Result<Vec<String>, String> {
+    // #4419 — replay a landed commit's diff (with --explain: what would this
+    // land have selected?). The proof that the selection would have caught a
+    // red the nightly found later.
+    if let Ok(c) = std::env::var("WERK_TEST_REPLAY") {
+        let out = Command::new("git")
+            .args(["-C", werk, "diff", "--name-only", &format!("{c}^..{c}")])
+            .output()
+            .map_err(|e| format!("git diff failed: {}", e))?;
+        return Ok(String::from_utf8_lossy(&out.stdout).lines().map(|l| l.trim().to_string()).filter(|l| !l.is_empty()).collect());
+    }
     let base = Command::new("git")
         .args(["-C", werk, "merge-base", "origin/main", "HEAD"])
         .output()
@@ -3077,4 +3168,49 @@ mod data_athena_scope_4353 {
         assert!(units.is_none(), "an unmapped data path must still refuse: {units:?}");
         assert!(reason.contains("unmapped:data/elsewhere/x.json"), "{reason}");
     }
+}
+
+/// #4419 — the domains each changed file will carry, from the crawler's own
+/// rules (`chorus-crawl --domains-of`), and the tests those domains select.
+/// None when the crawler cannot answer: the run says UNMEASURED, never guesses.
+fn domain_select(werk: &str, changed: &[String], rows: &[TestRow]) -> Option<werk_test::DomainSelection> {
+    if changed.is_empty() {
+        return Some(werk_test::DomainSelection::default());
+    }
+    let werk_bin = format!("{werk}/platform/services/chorus-crawl/target/release/chorus-crawl");
+    let bin = if Path::new(&werk_bin).exists() { werk_bin } else { "chorus-crawl".to_string() };
+    let out = Command::new(&bin).arg("--domains-of").args(changed).current_dir(werk).output().ok()?;
+    if !out.status.success() {
+        return None;
+    }
+    let text = String::from_utf8_lossy(&out.stdout);
+    let placed = werk_test::parse_domains_of(&text);
+    if placed.is_empty() {
+        return None; // an old crawler without the seam answers nothing
+    }
+    Some(werk_test::domain_selection(changed, &placed, rows))
+}
+
+/// #4419 — the Rust crate a path lives in.
+fn crate_of(path: &str) -> Option<String> {
+    let rest = path.strip_prefix("platform/services/")?;
+    let c = rest.split('/').next()?;
+    if c.is_empty() { None } else { Some(format!("platform/services/{c}")) }
+}
+
+/// #4419 — the unit that runs a selected test file (or a whole package path).
+fn unit_for_test(path: &str) -> Option<TestUnit> {
+    if werk_test::is_bats_suite(path) {
+        return Some(TestUnit::BatsSuite(path.to_string()));
+    }
+    if let Some(c) = path.strip_prefix("platform/services/") {
+        let name = c.split('/').next().unwrap_or("");
+        if !name.is_empty() {
+            return Some(TestUnit::RustCrate(name.to_string()));
+        }
+    }
+    werk_test::ts_package_of(path)
+        .or_else(|| if Path::new(path).extension().is_none() && !path.contains('.') { Some(path.to_string()) } else { None })
+        .filter(|p| !p.starts_with("platform/services/"))
+        .map(TestUnit::TsPackage)
 }

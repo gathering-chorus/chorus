@@ -1107,6 +1107,71 @@ fn share_limits() -> (f64, usize) {
 }
 
 /// The hermetic seams the bats suites drive (#4022 #4106 #4111 #3924 #3996):
+/// #4419 — the valid Domain names for a seam: CHORUS_VALID_DOMAINS when set
+/// (hermetic), else the Domain rows in the store (an anonymous read).
+fn valid_domains_for_seam() -> Vec<String> {
+    let from_env: Vec<String> = std::env::var("CHORUS_VALID_DOMAINS")
+        .unwrap_or_default()
+        .split(',')
+        .map(|s| s.trim().to_string())
+        .filter(|s| !s.is_empty())
+        .collect();
+    if !from_env.is_empty() {
+        return from_env;
+    }
+    let url = std::env::var("FUSEKI_QUERY").unwrap_or_else(|_| "http://localhost:3030/pods/query".to_string());
+    let q = "SELECT DISTINCT ?d WHERE { GRAPH <urn:chorus:domains:domains> { ?d a <https://jeffbridwell.com/chorus#Domain> } }";
+    let out = Command::new("curl")
+        .args(["-s", "-f", "--max-time", "20", "-H", "Accept: text/csv", "--data-urlencode"])
+        .arg(format!("query={q}"))
+        .arg(&url)
+        .output();
+    match out {
+        Ok(o) if o.status.success() => String::from_utf8_lossy(&o.stdout)
+            .lines()
+            .skip(1)
+            .filter_map(|l| l.trim().rsplit('#').next().map(|s| s.to_string()))
+            .filter(|s| !s.is_empty())
+            .collect(),
+        _ => {
+            eprintln!("chorus-crawl: cannot read the Domain list (set CHORUS_VALID_DOMAINS or reach the store)");
+            std::process::exit(2);
+        }
+    }
+}
+
+/// #4419 — one path's domains by the pass's own chain: a readable file is
+/// placed by its content (header, unit, rules); an unreadable one by its name,
+/// then its tree, then the authored directory rows.
+fn domains_for_path(
+    path: &str,
+    valid: &[String],
+    unit_rows: &[(String, String)],
+    dir_rows: &[(String, String)],
+) -> Vec<String> {
+    match std::fs::read_to_string(path) {
+        Ok(content) => {
+            let unit = domain::declared_unit(path, &|p: &str| std::fs::read_to_string(p).ok());
+            domain::place_in_file(
+                &content,
+                path,
+                unit.as_deref(),
+                unit_rows,
+                dir_rows,
+                valid,
+                &|_| None,
+                &|p: &str| std::fs::read_to_string(p).ok(),
+            )
+            .domains()
+        }
+        Err(_) => domain::place_by_file_name(path, valid)
+            .or_else(|| domain::place_by_tree(path, valid))
+            .or_else(|| domain::place_by_dir(path, valid, dir_rows))
+            .map(|s| vec![s.domain])
+            .unwrap_or_default(),
+    }
+}
+
 /// one file in, the answer out, no store, no network. Returns true if one ran.
 fn seam(args: &[String]) -> bool {
     let arg = |i: usize| args.get(i).cloned().unwrap_or_default();
@@ -1159,6 +1224,26 @@ fn seam(args: &[String]) -> bool {
             println!("{covers}");
             if let Some(l) = domain::listing(&path, &placement) {
                 eprintln!("{l}");
+            }
+        }
+        "--domains-of" => {
+            // #4419 — the domains the crawler WILL give each path, from the same
+            // rules the pass runs, read from the working tree (a new file is not
+            // in the graph until after its land). One line per path:
+            // `path<TAB>d1,d2` or `path<TAB>` when no rule places it. The valid
+            // Domain list is CHORUS_VALID_DOMAINS, else the store's Domain rows.
+            // Used by werk-test's selection and the pre-commit domain check.
+            let valid = valid_domains_for_seam();
+            let unit_rows = domain::unit_domain_rows(
+                &std::fs::read_to_string(UNIT_DOMAIN_TTL).unwrap_or_default(),
+            );
+            let dir_rows = domain::surface_domain_rows(
+                &std::fs::read_to_string(SURFACE_DOMAIN_TTL).unwrap_or_default(),
+                "chorus:pathPrefix",
+            );
+            for path in args.iter().skip(2) {
+                let doms = domains_for_path(path, &valid, &unit_rows, &dir_rows);
+                println!("{path}\t{}", doms.join(","));
             }
         }
         "--classify" => {
