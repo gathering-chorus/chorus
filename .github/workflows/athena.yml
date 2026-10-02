@@ -349,8 +349,15 @@ jobs:
           set -euo pipefail
           # shellcheck disable=SC1091
           source "${CHORUS_HOME}/platform/scripts/fuseki-auth.sh"
+          # #4338 — a binary older than this check reads any argument as "deploy
+          # everything". Refuse unless the installed binary knows the subcommand.
+          BIN="${HOME}/.chorus/bin/athena-deploy-bin"; [ -x "$BIN" ] || BIN="$(command -v athena-deploy)"
+          # athena starts at merge, and the land installs binaries a minute later:
+          # wait (bounded) for the binary that knows the subcommand, never run an old one.
+          for _ in $(seq 60); do grep -aq served-snapshot "$BIN" && break; sleep 5; done
+          grep -aq served-snapshot "$BIN" || { echo "::error::athena: $BIN predates served-snapshot (#4338) after 5 min — refusing rather than run it with an argument" >&2; exit 1; }
           FUSEKI_QUERY="${{ steps.resolve.outputs.store }}/query" \
-            athena-deploy served-snapshot "${{ steps.resolve.outputs.api }}" "${RUNNER_TEMP:-/tmp}/athena-served-before-${CHORUS_TRACE_ID:-run}.txt"
+            CHORUS_ROLE= "$BIN" served-snapshot "${{ steps.resolve.outputs.api }}" "${RUNNER_TEMP:-/tmp}/athena-served-before-${CHORUS_TRACE_ID:-run}.txt"
 
       - name: deploy
         # only when the land carried model sources
@@ -383,8 +390,12 @@ jobs:
           set -euo pipefail
           # shellcheck disable=SC1091
           source "${CHORUS_HOME}/platform/scripts/fuseki-auth.sh"
+          # #4338 — a binary older than this check reads any argument as "deploy
+          # everything". Refuse unless the installed binary knows the subcommand.
+          BIN="${HOME}/.chorus/bin/athena-deploy-bin"; [ -x "$BIN" ] || BIN="$(command -v athena-deploy)"
+          grep -aq served-snapshot "$BIN" || { echo "::error::athena: $BIN predates served-snapshot (#4338) — refusing rather than run it with an argument" >&2; exit 1; }
           FUSEKI_QUERY="${{ steps.resolve.outputs.store }}/query" \
-            athena-deploy served-compare "${RUNNER_TEMP:-/tmp}/athena-served-before-${CHORUS_TRACE_ID:-run}.txt" "${{ steps.resolve.outputs.api }}"
+            CHORUS_ROLE= "$BIN" served-compare "${RUNNER_TEMP:-/tmp}/athena-served-before-${CHORUS_TRACE_ID:-run}.txt" "${{ steps.resolve.outputs.api }}"
 
       - name: seed
         if: ${{ steps.scope.outputs.nothing != 'true' }}

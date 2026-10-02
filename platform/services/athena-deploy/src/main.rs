@@ -67,6 +67,13 @@ fn main() {
             _ => { eprintln!("usage: athena-deploy served-compare <before-file> <api>"); std::process::exit(2); }
         }
     }
+    // #4338 — an argument this binary does not know is refused, never read as
+    // "deploy everything". A 15:52 binary handed `served-snapshot` would have run a
+    // full prod deploy and exited 0.
+    if let Some(a) = args.get(1) {
+        eprintln!("athena-deploy: unknown argument '{a}' — refusing (a bare `athena-deploy` deploys; subcommands: scope, prove-trace, served-snapshot, served-compare)");
+        std::process::exit(2);
+    }
     match run_athena_deploy() {
         Ok(summary) => {
             println!("{}", summary);
