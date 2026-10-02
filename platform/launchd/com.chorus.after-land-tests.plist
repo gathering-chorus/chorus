@@ -19,8 +19,17 @@
   <dict>
     <key>CHORUS_ROOT</key>
     <string>/Users/jeffbridwell/CascadeProjects/chorus</string>
+    <!-- the nightly's own environment (com.chorus.nightly-suites): node and
+         cargo on PATH, its HOME, its own cargo target. The first run without
+         them scored "deps unavailable" / "cargo absent" on 22 units. -->
+    <key>HOME</key>
+    <string>/Users/jeffbridwell</string>
+    <key>CHORUS_HOME</key>
+    <string>/Users/jeffbridwell/CascadeProjects/chorus</string>
+    <key>CARGO_TARGET_DIR</key>
+    <string>/Users/jeffbridwell/.chorus/after-land-cargo-target</string>
     <key>PATH</key>
-    <string>/Users/jeffbridwell/.chorus/bin:/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin</string>
+    <string>/Users/jeffbridwell/.chorus/bin:/Users/jeffbridwell/.nvm/versions/node/v20.20.2/bin:/Users/jeffbridwell/.local/bin:/Users/jeffbridwell/.cargo/bin:/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin</string>
   </dict>
   <key>RunAtLoad</key>
   <false/>
