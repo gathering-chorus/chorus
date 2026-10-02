@@ -64,9 +64,16 @@ fn run(args: &[String]) -> Result<i32, String> {
         .or_else(|| std::env::var("ROLE").ok())
         .ok_or("missing role (argv[2] or $ROLE)")?;
 
-    let werk_base =
-        std::env::var("CHORUS_WERK_BASE").map_err(|_| "CHORUS_WERK_BASE unset".to_string())?;
-    let werk = format!("{}/{}-{}", werk_base, role, card);
+    // #4419 — the after-land run tests the LANDED tree (canonical main), not a
+    // werk: WERK_TEST_TREE names it, and WERK_TEST_REPLAY names the landed commit.
+    let werk = match std::env::var("WERK_TEST_TREE") {
+        Ok(t) if !t.is_empty() => t,
+        _ => {
+            let werk_base =
+                std::env::var("CHORUS_WERK_BASE").map_err(|_| "CHORUS_WERK_BASE unset".to_string())?;
+            format!("{}/{}-{}", werk_base, role, card)
+        }
+    };
     if !Path::new(&werk).is_dir() {
         return Err(format!("werk not found: {}", werk));
     }
@@ -168,9 +175,24 @@ fn run(args: &[String]) -> Result<i32, String> {
     // #4419 — select by domain: every registered test (any layer) in the
     // domains the changed files touch, from the crawler's own placement rules.
     // A changed file no rule places runs its whole package, and says so.
-    let dsel = domain_select(&werk, &changed, &rows);
+    // Jeff, 2026-10-02: the werk stays fast; the domain lane RUNS only after
+    // the land (WERK_TEST_AFTER_LAND=1, set by after-land-tests.sh). In a werk
+    // it only says what will run after the land.
+    let after_land = std::env::var("WERK_TEST_AFTER_LAND").map(|v| v == "1").unwrap_or(false);
+    let planned = domain_select(&werk, &changed, &rows);
+    if !after_land {
+        if let Some(d) = &planned {
+            println!(
+                "domain-select: after the land, {} registered test file(s) in [{}] run in the background (#4419)",
+                d.tests.len(),
+                d.domains.iter().cloned().collect::<Vec<_>>().join(", ")
+            );
+        }
+    }
+    let dsel = if after_land { planned } else { Some(werk_test::DomainSelection::default()) };
     let mut untagged_pkgs: Vec<String> = Vec::new();
     match &dsel {
+        Some(d) if !after_land && d.tests.is_empty() && d.untagged.is_empty() => {}
         None => println!("domain-select: UNMEASURED — the crawler's --domains-of did not answer; import-graph selection only"),
         Some(d) => {
             println!(
@@ -3177,18 +3199,24 @@ fn domain_select(werk: &str, changed: &[String], rows: &[TestRow]) -> Option<wer
     if changed.is_empty() {
         return Some(werk_test::DomainSelection::default());
     }
+    // the tree's own build first (a card that changes the rules is tested by
+    // them), then the installed crawler; an old build without the seam answers
+    // nothing and the next one is asked
     let werk_bin = format!("{werk}/platform/services/chorus-crawl/target/release/chorus-crawl");
-    let bin = if Path::new(&werk_bin).exists() { werk_bin } else { "chorus-crawl".to_string() };
-    let out = Command::new(&bin).arg("--domains-of").args(changed).current_dir(werk).output().ok()?;
-    if !out.status.success() {
-        return None;
+    for bin in [werk_bin.as_str(), "chorus-crawl"] {
+        if bin.contains('/') && !Path::new(bin).exists() {
+            continue;
+        }
+        let Ok(out) = Command::new(bin).arg("--domains-of").args(changed).current_dir(werk).output() else { continue };
+        if !out.status.success() {
+            continue;
+        }
+        let placed = werk_test::parse_domains_of(&String::from_utf8_lossy(&out.stdout));
+        if !placed.is_empty() {
+            return Some(werk_test::domain_selection(changed, &placed, rows));
+        }
     }
-    let text = String::from_utf8_lossy(&out.stdout);
-    let placed = werk_test::parse_domains_of(&text);
-    if placed.is_empty() {
-        return None; // an old crawler without the seam answers nothing
-    }
-    Some(werk_test::domain_selection(changed, &placed, rows))
+    None
 }
 
 /// #4419 — the Rust crate a path lives in.
