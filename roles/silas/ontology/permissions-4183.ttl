@@ -131,9 +131,9 @@ chorus:permission-silas-icd a chorus:Permission ;
     chorus:ownedBy chorus:principal-silas .
 
 chorus:permission-silas-cards a chorus:Permission ;
-    rdfs:label "silas may write urn:chorus:cards" ;
+    rdfs:label "silas may write urn:chorus:domains:cards" ;
     chorus:agent chorus:principal-silas ;
-    chorus:accessTo "urn:chorus:cards"^^xsd:anyURI ;
+    chorus:accessTo "urn:chorus:domains:cards"^^xsd:anyURI ;
     chorus:mode acl:Write ;
     chorus:ownedBy chorus:principal-silas .
 
@@ -208,9 +208,9 @@ chorus:permission-wren-icd a chorus:Permission ;
     chorus:ownedBy chorus:principal-silas .
 
 chorus:permission-wren-cards a chorus:Permission ;
-    rdfs:label "wren may write urn:chorus:cards" ;
+    rdfs:label "wren may write urn:chorus:domains:cards" ;
     chorus:agent chorus:principal-wren ;
-    chorus:accessTo "urn:chorus:cards"^^xsd:anyURI ;
+    chorus:accessTo "urn:chorus:domains:cards"^^xsd:anyURI ;
     chorus:mode acl:Write ;
     chorus:ownedBy chorus:principal-silas .
 
@@ -291,9 +291,9 @@ chorus:permission-kade-icd a chorus:Permission ;
     chorus:ownedBy chorus:principal-silas .
 
 chorus:permission-kade-cards a chorus:Permission ;
-    rdfs:label "kade may write urn:chorus:cards" ;
+    rdfs:label "kade may write urn:chorus:domains:cards" ;
     chorus:agent chorus:principal-kade ;
-    chorus:accessTo "urn:chorus:cards"^^xsd:anyURI ;
+    chorus:accessTo "urn:chorus:domains:cards"^^xsd:anyURI ;
     chorus:mode acl:Write ;
     chorus:ownedBy chorus:principal-silas .
 

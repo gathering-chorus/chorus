@@ -8,3 +8,6 @@
 process.env.NODE_ENV = 'test';
 delete process.env.DEPLOY_ROLE;
 delete process.env.CHORUS_ORIGIN_PRINCIPAL;
+// #3102 — a unit test must never write the live graph. Tests that exercise the
+// sync inject a fake door instead.
+process.env.CARDS_GRAPH_SYNC = 'off';

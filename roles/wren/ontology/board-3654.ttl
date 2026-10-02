@@ -69,13 +69,12 @@ chorus:rank a owl:DatatypeProperty ;
   rdfs:comment "This card's ordinal within its chunk. Unique within inChunk — deterministic card order." .
 
 # ── classes ──────────────────────────────────────────────────────────────────
-# Card — THIN foreign-reference stub. Vikunja is SoR for core attributes (title,
-# status, owner, priority); the board materializes only id+label so memberships
-# resolve. NOT board-owned; declared here as the FK target type until #2159 gives
-# cards their own domain.
+# Card — Vikunja is the system of record (#2159 moves it here). #3102: the row is
+# kept current from the board — label, status, assignee, priority, cardType —
+# by the cards package on every write and by the reconcile pass.
 chorus:Card a owl:Class ;
   rdfs:label "Card" ;
-  rdfs:comment "A unit of work on the board. Thin FK stub here (id+label); Vikunja is system-of-record until #2159." .
+  rdfs:comment "A unit of work on the board, kept current from Vikunja (the system of record until #2159): title, column, assignee, priority, type." .
 
 # Chunk — board-native. A committed grouping of cards with a role ordinal (and an
 # optional loom ordinal).
@@ -110,7 +109,16 @@ chorus:CardShape a sh:NodeShape ;
   # anyone — which is exactly what stopped #4102's land: the model declared the
   # owner, the live row carried none, and the replace 403'd. Requiring it at the
   # shape means the mint cannot produce that row in the first place.
-  sh:property [ sh:path chorus:ownedBy ; sh:minCount 1 ; sh:class chorus:Principal ] .
+  sh:property [ sh:path chorus:ownedBy ; sh:minCount 1 ; sh:class chorus:Principal ] ;
+  # #3102 — the row carries the board state, kept current by the cards package
+  # and the reconcile pass (cards graph-sync). status is the kanban column;
+  # assignee is the card's owner on the board (ownedBy is whoever wrote the row).
+  sh:property [ sh:path chorus:status ; sh:datatype xsd:string ;
+                sh:in ( "Later" "Next" "Now" "WIP" "Keep" "Blocked" "SWAT" "Harvesting" "Gathering" "Jeff Tickets" "Tech Debt" "Ops" "garden-observability" "Done" "Won't Do" ) ] ;
+  sh:property [ sh:path chorus:assignee ; sh:maxCount 1 ; sh:class chorus:Role ] ;
+  sh:property [ sh:path chorus:priority ; sh:maxCount 1 ; sh:datatype xsd:string ; sh:in ( "P1" "P2" "P3" ) ] ;
+  sh:property [ sh:path chorus:cardType ; sh:maxCount 1 ; sh:datatype xsd:string ;
+                sh:in ( "new" "enhance" "fix" "chore" "swat" "issue" ) ] .
 
 chorus:ChunkShape a sh:NodeShape ;
   sh:targetClass chorus:Chunk ;
@@ -151,3 +159,21 @@ chorus:board a owl:Class, chorus:Domain ;
   chorus:repoTarget "platform/services/cards" ;
   chorus:definesVocabulary chorus:Chunk, chorus:ChunkMembership ;
   chorus:gaps "Card is a thin FK stub (Vikunja SoR until #2159, not board-owned). Uniqueness enforcement (rank/roleSequence/loomSequence) lands via the DAL uniqueWithin/uniqueGlobal primitive paired with Silas (ADR-054) — inert until that ships. hasDesignDoc pending registration of the #3575 spike (cards-as-owl-class) as a chorus:Document." .
+
+chorus:assignee a owl:ObjectProperty ;
+    rdfs:label "assignee" ;
+    rdfs:comment "The role a card is assigned to on the board (its owner column). Distinct from ownedBy, which the write door sets to whoever wrote the row." ;
+    rdfs:domain chorus:Card ;
+    rdfs:range chorus:Role .
+
+chorus:priority a owl:DatatypeProperty ;
+    rdfs:label "priority" ;
+    rdfs:comment "A card's board priority: P1, P2 or P3." ;
+    rdfs:domain chorus:Card ;
+    rdfs:range xsd:string .
+
+chorus:cardType a owl:DatatypeProperty ;
+    rdfs:label "cardType" ;
+    rdfs:comment "A card's type label on the board: new, enhance, fix, chore, swat or issue." ;
+    rdfs:domain chorus:Card ;
+    rdfs:range xsd:string .

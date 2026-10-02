@@ -5,6 +5,7 @@
  */
 import * as https from 'http';
 import { execSync } from 'child_process';
+import { syncCardToGraph } from './graph-sync';
 import { VikunjaTask, VikunjaBucket, BoardConfig, BoardTask } from './types';
 import { LABELS, resolveBucket } from './config';
 import { fileTaskCache, cacheIdentity, TaskCache } from './task-cache';
@@ -317,7 +318,9 @@ export class BoardClient {
 
     this.clearCache();
     const statusName = this.board.bucketNames[bucketId] || opts?.status || 'Later';
-    return this.parseTask({ ...result, labels: [] }, statusName);
+    const added = this.parseTask({ ...result, labels: [] }, statusName);
+    await this.syncToGraph(added.index);
+    return added;
   }
 
   /** Move a task to a new status */
@@ -326,6 +329,7 @@ export class BoardClient {
     const bucketId = resolveBucket(this.board, status);
     await this.moveToBucket(apiId, bucketId);
     this.clearCache();
+    await this.syncToGraph(index);
   }
 
   /** Mark a task as done */
@@ -334,6 +338,7 @@ export class BoardClient {
     const bucketId = this.board.buckets['done'];
     await this.moveToBucket(apiId, bucketId);
     this.clearCache();
+    await this.syncToGraph(index);
   }
 
   /** Block a task with a reason */
@@ -345,6 +350,7 @@ export class BoardClient {
       await this.addComment(apiId, `BLOCKED: ${reason}`);
     }
     this.clearCache();
+    await this.syncToGraph(index);
   }
 
   /** Unblock a task — move back to Next */
@@ -354,6 +360,7 @@ export class BoardClient {
     await this.moveToBucket(apiId, bucketId);
     await this.addComment(apiId, 'Unblocked — moved to Next');
     this.clearCache();
+    await this.syncToGraph(index);
   }
 
   /** Update a task's title and/or description */
@@ -375,6 +382,7 @@ export class BoardClient {
       if (labelId) await this.addLabel(apiId, labelId);
     }
     this.clearCache();
+    await this.syncToGraph(index);
   }
 
   /** Add a label to an existing task by index */
@@ -402,6 +410,8 @@ export class BoardClient {
       if (err instanceof Error && (err.message.includes('409') || err.message.includes('already'))) return;
       throw err;
     }
+    this.clearCache();
+    await this.syncToGraph(index);
   }
 
   /** Remove a label by category and value */
@@ -415,6 +425,8 @@ export class BoardClient {
     const match = taskLabels.find((l: { title: string }) => l.title === labelTitle);
     if (!match) throw new Error(`Label "${labelTitle}" not found on card #${index}`);
     await this.removeLabel(apiId, match.id);
+    this.clearCache();
+    await this.syncToGraph(index);
   }
 
   /** Add a comment to a task */
@@ -565,6 +577,7 @@ export class BoardClient {
     }
     await this.addLabel(apiId, label.id);
     this.clearCache();
+    await this.syncToGraph(index);
     return { labelId: label.id, created };
   }
 
@@ -576,6 +589,7 @@ export class BoardClient {
     if (!label) return { removed: false };
     await this.removeLabel(apiId, label.id);
     this.clearCache();
+    await this.syncToGraph(index);
     return { removed: true };
   }
 
@@ -657,8 +671,21 @@ export class BoardClient {
     }
     await this.addLabel(apiId, newLabelId);
     this.clearCache();
+    await this.syncToGraph(index);
 
     return { oldOwner, newOwner: newOwner.charAt(0).toUpperCase() + newOwner.slice(1) };
+  }
+
+  /** #3102 — copy this card's current board state to its graph row. Never
+   *  throws: the board write already happened; a failure is reported and the
+   *  reconcile pass (cards graph-sync) repairs it. Off under tests. */
+  private async syncToGraph(index: number): Promise<void> {
+    if (process.env.CARDS_GRAPH_SYNC === 'off') return;
+    try {
+      await syncCardToGraph(await this.view(index));
+    } catch (err) {
+      process.stderr.write(`WARN: card #${index} graph sync skipped: ${err instanceof Error ? err.message : String(err)}\n`);
+    }
   }
 
   private async addComment(apiId: number, comment: string): Promise<void> {
