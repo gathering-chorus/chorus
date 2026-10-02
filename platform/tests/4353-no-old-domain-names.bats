@@ -14,15 +14,21 @@
 ROOT="$(cd "$BATS_TEST_DIRNAME/../.." && pwd)"
 MAP="$ROOT/designing/schemas/4353-domain-renames.tsv"
 
-old_names_in() {  # $1 = directory to scan; prints file:line for each hit
-  local p
+old_names_in() {  # $1 = directory to scan; prints file:line for each hit in TRACKED files
+  local p files
   p=$(grep -v '^legacy' "$MAP" | cut -f1 | paste -sd'|' -)
   [ -n "$p" ] || { echo "empty map"; return 2; }
-  grep -rnE "(chorus:|chorus#)($p)([^-A-Za-z0-9_]|\$)" "$1" \
-    --include='*.ttl' --include='*.ts' --include='*.rs' --include='*.js' --include='*.sh' \
-    --exclude-dir=node_modules --exclude-dir=target --exclude-dir=backups --exclude-dir=recovery \
-    --exclude-dir=migrations --exclude-dir=docs \
-    --exclude='migrate-aliases-to-graph*' --exclude='witness-3025.mjs' --exclude='4353-*' || true
+  # Tracked files only: build output (dist.prev, target) is not source. A
+  # directory outside git (the negative-proof fixture) is scanned whole.
+  if git -C "$1" rev-parse --is-inside-work-tree >/dev/null 2>&1; then
+    files=$(git -C "$1" ls-files --full-name -- '*.ttl' '*.ts' '*.rs' '*.js' '*.sh' \
+      | grep -vE '(^|/)(node_modules|target|backups|recovery|migrations|docs)/|migrate-aliases-to-graph|witness-3025\.mjs|(^|/)4353-' \
+      | sed "s|^|$(git -C "$1" rev-parse --show-toplevel)/|")
+  else
+    files=$(find "$1" -type f \( -name '*.ttl' -o -name '*.ts' -o -name '*.rs' -o -name '*.js' -o -name '*.sh' \))
+  fi
+  [ -n "$files" ] || return 0
+  echo "$files" | tr '\n' '\0' | xargs -0 grep -nE "(chorus:|chorus#)($p)([^-A-Za-z0-9_]|\$)" || true
 }
 
 @test "no tracked source names a retired Domain row" {
