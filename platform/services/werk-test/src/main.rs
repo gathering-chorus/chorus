@@ -179,18 +179,10 @@ fn run(args: &[String]) -> Result<i32, String> {
     // Jeff, 2026-10-02: the werk stays fast; the domain lane RUNS only after
     // the land (WERK_TEST_AFTER_LAND=1, set by after-land-tests.sh). In a werk
     // it only says what will run after the land.
-    let after_land = std::env::var("WERK_TEST_AFTER_LAND").map(|v| v == "1").unwrap_or(false);
-    let planned = domain_select(&werk, &changed, &rows);
-    if !after_land {
-        if let Some(d) = &planned {
-            println!(
-                "domain-select: after the land, {} registered test file(s) in [{}] run in the background (#4419)",
-                d.tests.len(),
-                d.domains.iter().cloned().collect::<Vec<_>>().join(", ")
-            );
-        }
-    }
-    let dsel = if after_land { planned } else { Some(werk_test::DomainSelection::default()) };
+    // Jeff, 2026-10-02: the card's domain tests run HERE, in werk-test and the
+    // demo, before the land — never after it.
+    let after_land = true;
+    let dsel = domain_select(&werk, &changed, &rows);
     let mut untagged_pkgs: Vec<String> = Vec::new();
     match &dsel {
         Some(d) if !after_land && d.tests.is_empty() && d.untagged.is_empty() => {}
@@ -2538,12 +2530,13 @@ fn fetch_test_rows() -> (Vec<TestRow>, Vec<String>, Vec<String>, &'static str) {
     // crawler has not rewritten yet still carries the retired pair; it is
     // read as-is until the crawler's next pass migrates it.
     let jq_filter = r#".data[] | .filePath as $f | (.testType // "") as $tt | (if ($tt | IN("ui","perf","security")) then "" elif $tt != "" then $tt else (.pyramidLayer // "") end) as $l | .testName as $n | .name as $e | .hermeticity as $h | (if ($tt | IN("ui","perf","security")) then $tt elif $tt != "" then "" else (.testConcern // "") end) as $tc | (.covers | if type=="array" then .[] else . end) as $c | [$f,$c,($l // ""),($n // ""),($e // ""),($h // ""),($tc // "")] | @tsv"#;
-    let curl = Command::new("curl")
-        .args(["-sf", "--max-time", "10", &endpoint])
-        .output();
-    let body = match curl {
-        Ok(o) if o.status.success() => o.stdout,
-        _ => return (Vec::new(), Vec::new(), Vec::new(), plan_source_label(false, 0)),
+    // #4419 — read the registry a page at a time. One 10,000-row read took
+    // 12.8 s (measured 10-02: 1,000 rows 1.5 s, linear) against this 10 s cap,
+    // so a run sometimes got 0 rows and "0 tests" read as an answer. Pages of
+    // 1,000 each fit the cap; the links.next cursor walks them.
+    let body = match fetch_all_pages(&endpoint) {
+        Some(b) => b,
+        None => return (Vec::new(), Vec::new(), Vec::new(), plan_source_label(false, 0)),
     };
     let mut jq = match Command::new("jq")
         .args(["-r", jq_filter])
@@ -3200,6 +3193,10 @@ fn domain_select(werk: &str, changed: &[String], rows: &[TestRow]) -> Option<wer
     if changed.is_empty() {
         return Some(werk_test::DomainSelection::default());
     }
+    // no registry rows = nothing measured, never "0 tests in these domains"
+    if rows.is_empty() {
+        return None;
+    }
     // the tree's own build first (a card that changes the rules is tested by
     // them), then the installed crawler; an old build without the seam answers
     // nothing and the next one is asked
@@ -3246,4 +3243,41 @@ fn unit_for_test(path: &str) -> Option<TestUnit> {
         .filter(|p| !p.starts_with("platform/services/"))
         .filter(|p| Path::new(&std::env::var("WERK_TEST_TREE_ROOT").unwrap_or_default()).join(p).join("package.json").is_file())
         .map(TestUnit::TsPackage)
+}
+
+/// #4419 — every page of a generated collection, joined as one `{"data":[…]}`.
+/// None if any page fails: a partial registry is not a registry.
+fn fetch_all_pages(endpoint: &str) -> Option<Vec<u8>> {
+    let base = endpoint.find("://").and_then(|i| endpoint[i + 3..].find('/').map(|j| &endpoint[..i + 3 + j])).unwrap_or(endpoint).to_string();
+    let first = if endpoint.contains("limit=10000") { endpoint.replace("limit=10000", "limit=1000") } else { endpoint.to_string() };
+    let mut url = first;
+    let mut rows: Vec<String> = Vec::new();
+    for _ in 0..100 {
+        let o = Command::new("curl").args(["-sf", "--max-time", "10", &url]).output().ok()?;
+        if !o.status.success() {
+            return None;
+        }
+        let jq = |filter: &str| -> Option<String> {
+            let mut c = Command::new("jq")
+                .args(["-r", filter])
+                .stdin(std::process::Stdio::piped())
+                .stdout(std::process::Stdio::piped())
+                .spawn()
+                .ok()?;
+            {
+                use std::io::Write;
+                c.stdin.take()?.write_all(&o.stdout).ok()?;
+            }
+            let out = c.wait_with_output().ok()?;
+            out.status.success().then(|| String::from_utf8_lossy(&out.stdout).to_string())
+        };
+        for l in jq(".data[] | tojson")?.lines().filter(|l| !l.is_empty()) {
+            rows.push(l.to_string());
+        }
+        match jq(".links.next // empty")?.trim() {
+            next if !next.is_empty() => url = format!("{base}{next}"),
+            _ => return Some(format!("{{\"data\":[{}]}}", rows.join(",")).into_bytes()),
+        }
+    }
+    None
 }

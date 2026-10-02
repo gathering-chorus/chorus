@@ -2996,12 +2996,16 @@ pub fn domain_selection(
 ) -> DomainSelection {
     let mut sel = DomainSelection::default();
     for f in changed {
+        // Jeff, 2026-10-02: every test is a member of the tests domain; what it
+        // checks is its `covers` edge. A changed TEST runs itself — its
+        // membership never pulls in every test that covers "tests".
+        if rows.iter().any(|r| &r.file_path == f) {
+            sel.tests.insert(f.clone(), "changed".to_string());
+            continue;
+        }
         match placed.get(f) {
             Some(ds) if !ds.is_empty() => sel.domains.extend(ds.iter().cloned()),
             _ => sel.untagged.push(f.clone()),
-        }
-        if rows.iter().any(|r| &r.file_path == f) {
-            sel.tests.insert(f.clone(), "changed".to_string());
         }
     }
     for r in rows {
