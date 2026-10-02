@@ -17,7 +17,6 @@ import { getQualityByDomain } from '../quality-summary';
 
 export interface DomainFacetDeps {
   sparql: (query: string) => Promise<SparqlResult>;
-  resolveSubdomainId: (name: string) => Promise<string>;
   envelope: (name: string, data: unknown, durationMs: number, extra?: Record<string, unknown>) => unknown;
   qualityByDomain?: (domain: string) => Promise<{
     layers?: Array<{ key: string; files?: Array<{ name: string }> }>;
@@ -77,7 +76,7 @@ export async function fetchDomainTests(
     // this function.
     if (tests.length === 0) {
       try {
-        const sdId = await deps.resolveSubdomainId(subdomainName);
+        const sdId = subdomainName.toLowerCase();
         const sdUri = `https://jeffbridwell.com/chorus#${sdId}`;
         // #3442: testType is a declared hasProperty→Property, not a bare literal.
         const query = `PREFIX chorus: <https://jeffbridwell.com/chorus#> SELECT ?testFile ?testType WHERE { GRAPH <urn:chorus:instances> { ?tc a chorus:TestCoverage ; chorus:covers <${sdUri}> ; chorus:testFile ?testFile ; chorus:hasProperty [ chorus:propertyKey "testType" ; chorus:propertyValue ?testType ] } }`;
@@ -125,7 +124,7 @@ export async function fetchDomainServices(
   const now = deps.now ?? Date.now;
   const start = now();
   try {
-    const sdId = await deps.resolveSubdomainId(subdomainName);
+    const sdId = subdomainName.toLowerCase();
     const sdUri = `https://jeffbridwell.com/chorus#${sdId}`;
     const query = `PREFIX chorus: <https://jeffbridwell.com/chorus#> PREFIX rdfs: <http://www.w3.org/2000/01/rdf-schema#> SELECT ?method ?routePath ?filePath WHERE { GRAPH <urn:chorus:instances> { <${sdUri}> chorus:hasEndpoint ?ep . ?ep a chorus:Endpoint ; chorus:httpMethod ?method ; chorus:routePath ?routePath ; chorus:filePath ?filePath . } } ORDER BY ?method ?routePath`;
     const result = await deps.sparql(query);
@@ -168,7 +167,7 @@ export async function fetchDomainAlerts(
   const identity = resolveDomainIdentity(subdomainName);
   const sdUri = `https://jeffbridwell.com/chorus#${identity.primary}`;
   try {
-    const sdId = await deps.resolveSubdomainId(subdomainName);
+    const sdId = subdomainName.toLowerCase();
     const query = `PREFIX chorus: <https://jeffbridwell.com/chorus#> SELECT ?name ?alertFile ?alertSource ?alertRoute WHERE { GRAPH <${ALERTS_GRAPH}> { ?a a chorus:Alert ; chorus:hasDomain <${sdUri}> ; chorus:label ?name . OPTIONAL { ?a chorus:alertFile ?alertFile } OPTIONAL { ?a chorus:alertSource ?alertSource } OPTIONAL { ?a chorus:alertRoute ?alertRoute } } } ORDER BY ?name`;
     const result = await deps.sparql(query);
     const rows = (result as { results?: { bindings?: Array<Record<string, { value?: string } | undefined>> } }).results?.bindings ?? [];
@@ -199,7 +198,7 @@ export async function fetchDomainRadius(
   const now = deps.now ?? Date.now;
   const start = now();
   try {
-    const sdId = await deps.resolveSubdomainId(subdomainName);
+    const sdId = subdomainName.toLowerCase();
     const sdUri = `https://jeffbridwell.com/chorus#${sdId}`;
     const query = `PREFIX chorus: <https://jeffbridwell.com/chorus#>
 PREFIX rdfs: <http://www.w3.org/2000/01/rdf-schema#>
@@ -246,7 +245,7 @@ export async function fetchDomainBlastRadius(
   const now = deps.now ?? Date.now;
   const start = now();
   try {
-    const sdId = await deps.resolveSubdomainId(subdomainName);
+    const sdId = subdomainName.toLowerCase();
     const sdUri = `https://jeffbridwell.com/chorus#${sdId}`;
     const query = `PREFIX chorus: <https://jeffbridwell.com/chorus#>
 PREFIX rdfs: <http://www.w3.org/2000/01/rdf-schema#>
@@ -355,7 +354,7 @@ export async function fetchDomainInfra(
   const now = deps.now ?? Date.now;
   const start = now();
   try {
-    const sdId = await deps.resolveSubdomainId(subdomainName);
+    const sdId = subdomainName.toLowerCase();
     const result = await deps.sparql(buildInfraQuery(sdId));
     const environments = foldInfraBindings(result.results.bindings as InfraBinding[]);
     return {

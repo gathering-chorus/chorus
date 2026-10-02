@@ -3,7 +3,6 @@
  *
  * Dependencies injected:
  *   sparql             — async (query) => SparqlResult
- *   resolveSubdomainId — async (name) => string
  *   envelope           — (queryName, data, durationMs, extra) => wrapped body
  *   now                — () => number (default Date.now)
  *
@@ -29,12 +28,10 @@ interface SparqlCodeResult {
 }
 
 type Sparql = (query: string) => Promise<SparqlCodeResult>;
-type ResolveSubdomainId = (name: string) => Promise<string>;
 type Envelope = (queryName: string, data: unknown, durationMs: number, extra?: Record<string, unknown>) => unknown;
 
 export interface ChorusDomainCodeDeps {
   sparql: Sparql;
-  resolveSubdomainId: ResolveSubdomainId;
   envelope: Envelope;
   now?: () => number;
 }
@@ -55,7 +52,7 @@ export async function fetchChorusDomainCode(
   const start = now();
 
   try {
-    const sdId = await deps.resolveSubdomainId(name);
+    const sdId = name.toLowerCase();
     const sdUri = `https://jeffbridwell.com/chorus#${sdId}`;
     const query = `PREFIX chorus: <https://jeffbridwell.com/chorus#> PREFIX rdfs: <http://www.w3.org/2000/01/rdf-schema#> SELECT ?file ?label ?filePath ?fileType ?description WHERE { GRAPH <urn:chorus:instances> { <${sdUri}> chorus:hasCodeFile ?file . OPTIONAL { ?file rdfs:label ?label } OPTIONAL { ?file chorus:filePath ?filePath } OPTIONAL { ?file chorus:fileType ?fileType } OPTIONAL { ?file rdfs:comment ?description } } }`;
     const result = await deps.sparql(query);
@@ -76,7 +73,7 @@ export async function fetchChorusDomainCode(
       status: 200,
       body: deps.envelope(
         'domain-code',
-        { subdomain: sdId, files: source, byType },
+        { domain: sdId, files: source, byType },
         now() - start,
         { count: allFiles.length, source_count: source.length, test_count: allFiles.length - source.length },
       ),
@@ -86,7 +83,7 @@ export async function fetchChorusDomainCode(
       status: 200,
       body: deps.envelope(
         'domain-code',
-        { subdomain: name, files: [], byType: {} },
+        { domain: name, files: [], byType: {} },
         now() - start,
         { count: 0, source_count: 0, test_count: 0 },
       ),

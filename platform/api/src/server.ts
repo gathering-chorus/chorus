@@ -83,7 +83,7 @@ import { createIdentityVerifier, scopeQueryFor } from './es256-identity';
 let SECURED_SURFACES: SecuredSurface[] = [];
 // #3719 — ES256 identity + model-resolved scope (chorus:hasScope) replaces the
 // HS256 shared secret. sparql is lazy-bound to athenaSparqlQuery (declared
-// below; calls only happen post-boot — same pattern as resolveSubdomainId).
+// below; calls only happen post-boot).
 // JWKS default derives from the ISSUER (a bare fetch to localhost:3001 500s —
 // CSS requires the trusted-proxy hairpin headers; the logical origin serves
 // /.oidc/jwks plainly, verified 2026-07-31). CHORUS_JWKS_URL overrides.
@@ -1403,17 +1403,12 @@ app.get('/api/chorus/crawl/:domain', async (req: Request, res: Response) => {
 // One endpoint per facet under /api/chorus/domain/:name/.
 // AX = UX: same shape whether rendering for Jeff or briefing a role on /pull.
 
-// resolveSubdomainId + isTestFile moved to src/subdomain-resolver.ts (#2205 wave 10).
-// The sparql dep is lazy-bound — athenaSparqlQuery is declared further down
-// in the module (post-#2205 wave 8), so an eager capture would TDZ here.
-import { createSubdomainResolver } from './subdomain-resolver';
-const resolveSubdomainId = createSubdomainResolver({ sparql: (q: string) => athenaSparqlQuery(q) });
 
 // GET /api/chorus/domain/:name/code — source files for a domain (#2060 AC1)
 import { fetchChorusDomainCode } from './handlers/chorus-domain-code';
 app.get('/api/chorus/domain/:name/code', async (req: Request, res: Response) => {
   const r = await fetchChorusDomainCode(
-    { sparql: athenaSparqlQuery, resolveSubdomainId, envelope: athenaEnvelope },
+    { sparql: athenaSparqlQuery, envelope: athenaEnvelope },
     req.params.name,
   );
   res.status(r.status).json(r.body);
@@ -1435,7 +1430,6 @@ import {
 
 const domainFacetDeps = () => ({
   sparql: athenaSparqlQuery,
-  resolveSubdomainId,
   envelope: athenaEnvelope,
 });
 
@@ -1503,7 +1497,7 @@ app.get('/api/chorus/domain/:name/releases', async (req: Request, res: Response)
 import { fetchChorusDomainDependencies } from './handlers/chorus-domain-dependencies';
 app.get('/api/chorus/domain/:name/dependencies', async (req: Request, res: Response) => {
   const r = await fetchChorusDomainDependencies(
-    { sparql: athenaSparqlQuery, resolveSubdomainId, envelope: athenaEnvelope },
+    { sparql: athenaSparqlQuery, envelope: athenaEnvelope },
     req.params.name,
   );
   res.status(r.status).json(r.body);
@@ -1531,7 +1525,6 @@ app.get('/api/chorus/domain/:name/pipeline', async (req: Request, res: Response)
           return resp.ok ? await resp.json() : null;
         } catch { return null; }
       },
-      resolveSubdomainId,
       envelope: athenaEnvelope,
     },
     req.params.name,

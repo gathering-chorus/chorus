@@ -42,7 +42,6 @@ function makeSparql(
 function deps(over: Partial<ChorusDomainDependenciesDeps> = {}): ChorusDomainDependenciesDeps {
   return {
     sparql: makeSparql([], []) as ChorusDomainDependenciesDeps['sparql'],
-    resolveSubdomainId: async (n) => `${n}-domain`,
     envelope,
     now: () => 1_000_000,
     ...over,
@@ -124,15 +123,6 @@ describe('fetchChorusDomainDependencies (#2188)', () => {
     expect(music?.sharedVia).toEqual(['gathering-db', 'gathering-fuseki']);
     const videos = body.data.shared.find((s) => s.domain === 'videos');
     expect(videos?.label).toBe('Videos');
-  });
-
-  test('resolveSubdomainId throw → empty envelope with original name', async () => {
-    const body = (await fetchChorusDomainDependencies(
-      deps({ resolveSubdomainId: async () => { throw new Error('unknown'); } }),
-      'photos',
-    )).body as { _meta: { direct_count: number }; data: { subdomain: string } };
-    expect(body._meta.direct_count).toBe(0);
-    expect(body.data.subdomain).toBe('photos');
   });
 
   test('sparql throw after resolve → empty envelope', async () => {

@@ -55,7 +55,7 @@ const envelope = (_n: string, data: unknown, _ms: number, extra?: Record<string,
 describe('#4293 domain dependencies read the CMDB edges', () => {
   test('logs shows its layer, the service it hosts, and its dependencies both ways', async () => {
     const w = world();
-    const r = await fetchChorusDomainDependencies({ sparql: w.sparql, resolveSubdomainId: async (n) => n, envelope }, 'logs');
+    const r = await fetchChorusDomainDependencies({ sparql: w.sparql, envelope }, 'logs');
     const d = (r.body as any).data;
     expect(d.layer).toEqual({ id: 'layer-foundation', label: 'foundation', rank: 0 });
     expect(d.hosts).toEqual([{ id: 'logs-domain-service-loki', label: 'Loki' }]);
@@ -65,14 +65,14 @@ describe('#4293 domain dependencies read the CMDB edges', () => {
 
   test('the same edge in two graphs is listed once', async () => {
     const w = world();
-    const r = await fetchChorusDomainDependencies({ sparql: w.sparql, resolveSubdomainId: async (n) => n, envelope }, 'logs');
+    const r = await fetchChorusDomainDependencies({ sparql: w.sparql, envelope }, 'logs');
     const ids = (r.body as any).data.direct.consumes.map((x: any) => x.id);
     expect(ids.filter((i: string) => i === 'time').length).toBe(1);
   });
 
   test('NEGATIVE: no query is pinned to urn:chorus:instances, the graph that made every fold read "none recorded"', async () => {
     const w = world();
-    await fetchChorusDomainDependencies({ sparql: w.sparql, resolveSubdomainId: async (n) => n, envelope }, 'logs');
+    await fetchChorusDomainDependencies({ sparql: w.sparql, envelope }, 'logs');
     const pinned = w.asked.filter((q) => q.includes('urn:chorus:instances'));
     expect(pinned).toEqual([]);
     expect(w.asked.some((q) => q.includes('chorus:dependsOn'))).toBe(true);
@@ -80,7 +80,7 @@ describe('#4293 domain dependencies read the CMDB edges', () => {
 
   test('NEGATIVE: a store failure says it failed; an empty fold is never silent', async () => {
     const r = await fetchChorusDomainDependencies(
-      { sparql: async () => { throw new Error('store down'); }, resolveSubdomainId: async (n) => n, envelope },
+      { sparql: async () => { throw new Error('store down'); }, envelope },
       'logs',
     );
     const body = r.body as any;

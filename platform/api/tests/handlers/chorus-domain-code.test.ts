@@ -1,3 +1,6 @@
+// @test-type: unit — stubs the store; no Fuseki, no live service.
+// @card: #2188
+// @owner: wren
 /**
  * chorus-domain-code handler — unit tests (#2188).
  */
@@ -24,7 +27,6 @@ function sparqlResult(rows: Array<{ file: string; label?: string; filePath?: str
 function deps(over: Partial<ChorusDomainCodeDeps> = {}): ChorusDomainCodeDeps {
   return {
     sparql: async () => sparqlResult([]),
-    resolveSubdomainId: async (n) => `${n}-domain`,
     envelope,
     now: () => 1_000_000,
     ...over,
@@ -131,13 +133,15 @@ describe('fetchChorusDomainCode (#2188)', () => {
     expect(body.data.byType).toEqual({ typescript: 2, rust: 1 });
   });
 
-  test('resolveSubdomainId throws → empty envelope, preserves original name', async () => {
-    const body = (await fetchChorusDomainCode(
-      deps({ resolveSubdomainId: async () => { throw new Error('boom'); } }),
-      'photos',
-    )).body as { _meta: { count: number }; data: { subdomain: string } };
-    expect(body._meta.count).toBe(0);
-    expect(body.data.subdomain).toBe('photos');
+  test('#4353 — asks for the domain by its own name and answers with domain, never a guessed -domain id', async () => {
+    const asked: string[] = [];
+    const sparql = async (q: string) => { asked.push(q); return sparqlResult([]); };
+    const body = (await fetchChorusDomainCode(deps({ sparql }), 'Photos')).body as { data: Record<string, unknown> };
+    expect(asked).toHaveLength(1);
+    expect(asked[0]).toContain('<https://jeffbridwell.com/chorus#photos>');
+    expect(asked[0]).not.toContain('photos-domain');
+    expect(body.data.domain).toBe('photos');
+    expect(body.data).not.toHaveProperty('subdomain');
   });
 
   test('sparql throws → empty envelope', async () => {

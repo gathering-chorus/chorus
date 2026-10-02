@@ -19,7 +19,6 @@ function makeFetcher(routeMap: Record<string, unknown>): (url: string) => Promis
 function deps(over: Partial<ChorusDomainPipelineDeps> = {}): ChorusDomainPipelineDeps {
   return {
     fetcher: async () => null,
-    resolveSubdomainId: async (n) => `${n}-domain`,
     envelope,
     now: () => 1_000_000,
     ...over,
@@ -30,19 +29,6 @@ function deps(over: Partial<ChorusDomainPipelineDeps> = {}): ChorusDomainPipelin
 // The bare array they used before is a shape the view never answers, so these
 // passed while every live call threw.
 describe('fetchChorusDomainPipeline (#2188)', () => {
-  test('resolveSubdomainId throws → 200 with empty "not_started" stages + original name', async () => {
-    const r = await fetchChorusDomainPipeline(
-      deps({ resolveSubdomainId: async () => { throw new Error('unknown'); } }),
-      'photos',
-    );
-    expect(r.status).toBe(200);
-    const body = r.body as { data: { subdomain: string; stages: Array<{ status: string }> } };
-    expect(body.data.subdomain).toBe('photos');
-    expect(body.data.stages.map((s) => s.status)).toEqual(
-      ['not_started', 'not_started', 'not_started', 'not_started', 'not_started'],
-    );
-  });
-
   test('all fetches return null → all stages not_started', async () => {
     const body = (await fetchChorusDomainPipeline(deps(), 'photos')).body as {
       data: { stages: Array<{ name: string; status: string }> };

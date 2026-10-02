@@ -32,7 +32,6 @@ function emptyResult(): SparqlResult {
 function deps(overrides: Partial<DomainFacetDeps> = {}): DomainFacetDeps {
   return {
     sparql: async () => emptyResult(),
-    resolveSubdomainId: async (n) => n,
     envelope,
     now: () => 1000,
     ...overrides,
@@ -201,13 +200,6 @@ describe('fetchDomainServices', () => {
     expect(body.data.byMethod).toEqual({});
   });
 
-  test('resolveSubdomainId throw returns empty envelope', async () => {
-    const d = deps({ resolveSubdomainId: async () => { throw new Error('no such subdomain'); } });
-    const r = await fetchDomainServices(d, 'nonexistent');
-    expect(r.status).toBe(200);
-    const body = r.body as { data: { endpoints: unknown[] } };
-    expect(body.data.endpoints).toEqual([]);
-  });
 });
 
 // --- fetchDomainDecisions ---
@@ -354,11 +346,4 @@ describe('fetchDomainBlastRadius', () => {
     expect(body.data.edges).toEqual([]);
   });
 
-  test('resolveSubdomainId throw returns empty envelope', async () => {
-    const d = deps({ resolveSubdomainId: async () => { throw new Error(''); } });
-    const r = await fetchDomainBlastRadius(d, 'nonexistent');
-    expect(r.status).toBe(200);
-    const body = r.body as { data: { edges: unknown[] } };
-    expect(body.data.edges).toEqual([]);
-  });
 });
