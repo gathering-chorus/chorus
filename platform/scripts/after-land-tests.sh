@@ -14,7 +14,6 @@ ROOT="${CHORUS_ROOT:-$HOME/CascadeProjects/chorus}"
 QUEUE="${AFTER_LAND_QUEUE:-$HOME/.chorus/after-land/queue}"
 BASE="$(dirname "$QUEUE")"
 DONE="$BASE/done"
-TREES="$BASE/trees"
 WERK_TEST="${AFTER_LAND_WERK_TEST:-$HOME/.chorus/bin/werk-test}"
 NUDGE="${AFTER_LAND_NUDGE:-$ROOT/platform/scripts/ops-nudge}"
 # The nightly's lock lives in its $TMPDIR, which launchd sets for every user
@@ -25,7 +24,7 @@ TMP_="$(getconf DARWIN_USER_TEMP_DIR 2>/dev/null || true)"
 TMP_="${TMP_:-${TMPDIR:-/tmp}}"
 LOCK="${NIGHTLY_LOCKDIR:-${TMP_%/}/chorus-nightly-suites.lock.d}"
 WAIT_TICK="${AFTER_LAND_WAIT_TICK:-60}"
-mkdir -p "$QUEUE" "$DONE" "$TREES"
+mkdir -p "$QUEUE" "$DONE"
 
 nightly_running() {
   [ -d "$LOCK" ] || return 1
@@ -45,20 +44,38 @@ while :; do
   . "$entry"
   name="$(basename "$entry" .env)"
   echo "after-land: $(date '+%Y-%m-%dT%H:%M:%S%z') #$CARD ($ROLE) at ${COMMIT:0:9} — start"
-  # The checkout sits one level down (trees/<entry>/chorus): some suites write
-  # beside the repo (../chorus-werk, ../TEAM_PROTOCOL.md, seen 10-02 11:31), and
-  # ../ must be this sandbox, never ~/CascadeProjects or trees/ shared by runs.
-  box="$TREES/$name"
+  # ONE persistent checkout, moved to each landed commit. A fresh checkout per
+  # run had no installed deps, no built binaries and a cold jest cache, and
+  # scored those as reds (10-02: eslint, athena-deploy not built, hook
+  # timeouts). This tree keeps its node_modules, target/ and caches between
+  # runs, the way the nightly's canonical tree does. It sits one level down
+  # (tree/chorus) so a suite writing beside the repo writes into tree/, which
+  # is cleared of everything but the checkout each run.
+  box="$BASE/tree"
   tree="$box/chorus"
-  rm -rf "$box"; mkdir -p "$box"
-  # a run killed mid-way (a reload, 10-02 11:57) leaves its worktree registered;
-  # prune first or the next add of that path refuses and the entry is UNMEASURED
+  mkdir -p "$box"
+  find "$box" -mindepth 1 -maxdepth 1 ! -name chorus -exec rm -rf {} + 2>/dev/null
   git -C "$ROOT" worktree prune >/dev/null 2>&1 || true
-  if ! git -C "$ROOT" worktree add --detach "$tree" "$COMMIT" >/dev/null 2>&1; then
+  if [ ! -e "$tree/.git" ]; then
+    rm -rf "$tree"
+    git -C "$ROOT" worktree add --detach "$tree" "$COMMIT" >/dev/null 2>&1
+  fi
+  if ! git -C "$tree" checkout --detach --force -q "$COMMIT" >/dev/null 2>&1; then
     echo "after-land: #$CARD — could not check out ${COMMIT:0:9}; UNMEASURED, nothing ran"
     mv "$entry" "$DONE/$name-unmeasured.env"
     continue
   fi
+  # tracked files exactly at the commit; untracked leftovers go, except the
+  # installed deps and build output that make this tree warm
+  git -C "$tree" clean -fdq -e node_modules -e target -e .jest-cache >/dev/null 2>&1 || true
+  # first use: link canonical's installed deps where this tree has none yet
+  ( cd "$ROOT" && find . -maxdepth 4 -name node_modules -type d -not -path '*/node_modules/*' -not -path './.werk*' 2>/dev/null ) |
+  while read -r nm; do
+    d="$(dirname "$nm")"
+    [ -f "$tree/$d/package.json" ] || continue
+    [ -e "$tree/$nm" ] && continue
+    ln -s "$ROOT/$nm" "$tree/$nm"
+  done
   out="$(mktemp)"
   WERK_TEST_AFTER_LAND=1 WERK_TEST_TREE="$tree" WERK_TEST_REPLAY="$COMMIT" CHORUS_ROOT="$ROOT" \
     "$WERK_TEST" "$CARD" "$ROLE" >"$out" 2>&1
@@ -69,7 +86,7 @@ while :; do
   # node or cargo scores "deps unavailable" (the first live run, 2026-10-02:
   # 22 such units, exit 0, printed green). Green means rc 0 AND no FAIL line
   # AND nothing unmeasured for want of a toolchain.
-  nofail=$(grep -cE ' FAIL$' "$out")
+  nofail=$(grep -cE '… FAIL$' "$out")
   nodeps=$(grep -cE 'deps unavailable|cargo absent|nextest-probe-spawn-failed' "$out")
   if [ "$nodeps" -gt 0 ]; then
     echo "after-land: #$CARD UNMEASURED — $nodeps unit(s) had no toolchain (deps unavailable / cargo absent); nothing is proven"
@@ -79,12 +96,10 @@ while :; do
     echo "after-land: #$CARD green — every test in the touched domains passed"
   else
     [ "$rc" -eq 0 ] && rc=1
-    reds="$(grep -E ' FAIL$' "$out" | sed -E 's/^[[:space:]|]*//' | head -5 | tr '\n' ';')"
+    reds="$(grep -E '… FAIL$' "$out" | sed -E 's/^[[:space:]|]*//' | head -5 | tr '\n' ';')"
     echo "after-land: #$CARD RED rc=$rc — $reds"
     [ -x "$NUDGE" ] && "$NUDGE" "$ROLE" "after-land #$CARD: red in the domains it touched (rc=$rc): ${reds:-see ~/Library/Logs/Chorus/after-land-tests.log}. Reopen the card and fix it there." system >/dev/null 2>&1 || true
   fi
-  git -C "$ROOT" worktree remove --force "$tree" >/dev/null 2>&1 || true
-  rm -rf "$box"; git -C "$ROOT" worktree prune >/dev/null 2>&1 || true
   mv "$entry" "$DONE/$name-rc$rc.env"
   cp "$out" "$DONE/$name-rc$rc.log"; rm -f "$out"
 done
