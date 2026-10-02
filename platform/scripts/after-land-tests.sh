@@ -56,10 +56,22 @@ while :; do
   WERK_TEST_AFTER_LAND=1 WERK_TEST_TREE="$tree" WERK_TEST_REPLAY="$COMMIT" CHORUS_ROOT="$ROOT" \
     "$WERK_TEST" "$CARD" "$ROLE" >"$out" 2>&1
   rc=$?
-  grep -E '^domain-select:|^-- werk-test| FAIL$|^!! ' "$out" | head -40
-  if [ "$rc" -eq 0 ]; then
+  grep -E '^domain-select:|^-- werk-test| FAIL$|^!! |UNMEASURED' "$out" | head -40
+  # The exit code alone is not the verdict: a run that touches werk-test is
+  # "self-modifying → advisory" and exits 0 with FAILs, and a unit with no
+  # node or cargo scores "deps unavailable" (the first live run, 2026-10-02:
+  # 22 such units, exit 0, printed green). Green means rc 0 AND no FAIL line
+  # AND nothing unmeasured for want of a toolchain.
+  nofail=$(grep -cE ' FAIL$' "$out")
+  nodeps=$(grep -cE 'deps unavailable|cargo absent|nextest-probe-spawn-failed' "$out")
+  if [ "$nodeps" -gt 0 ]; then
+    echo "after-land: #$CARD UNMEASURED — $nodeps unit(s) had no toolchain (deps unavailable / cargo absent); nothing is proven"
+    [ -x "$NUDGE" ] && "$NUDGE" "$ROLE" "after-land #$CARD: UNMEASURED — $nodeps unit(s) had no toolchain; see ~/Library/Logs/Chorus/after-land-tests.log" system >/dev/null 2>&1 || true
+    [ "$rc" -eq 0 ] && rc=2
+  elif [ "$rc" -eq 0 ] && [ "$nofail" -eq 0 ]; then
     echo "after-land: #$CARD green — every test in the touched domains passed"
   else
+    [ "$rc" -eq 0 ] && rc=1
     reds="$(grep -E ' FAIL$' "$out" | sed -E 's/^[[:space:]|]*//' | head -5 | tr '\n' ';')"
     echo "after-land: #$CARD RED rc=$rc — $reds"
     [ -x "$NUDGE" ] && "$NUDGE" "$ROLE" "after-land #$CARD: red in the domains it touched (rc=$rc): ${reds:-see ~/Library/Logs/Chorus/after-land-tests.log}. Reopen the card and fix it there." system >/dev/null 2>&1 || true

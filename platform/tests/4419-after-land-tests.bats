@@ -117,3 +117,38 @@ STUB2
   # the lock is still the nightly's: same dir, same pid file, not ours
   [ -d "$NIGHTLY_LOCKDIR" ] || return 1
 }
+
+stub_lines() { # exit code, extra line
+  cat > "$T/werk-test" <<STUB
+#!/bin/bash
+echo "$2"
+exit $1
+STUB
+  chmod +x "$T/werk-test"
+  printf '#!/bin/bash\necho "$*" >> %s/nudges\n' "$T" > "$T/nudge"; chmod +x "$T/nudge"
+}
+
+@test "NEGATIVE PROOF — exit 0 with a FAIL line (advisory) is red, never green" {
+  stub_lines 0 "   cargo-test:athena-make … FAIL"
+  mkdir -p "$AFTER_LAND_QUEUE"; printf 'CARD=5\nROLE=kade\nCOMMIT=%s\n' "$C1" > "$AFTER_LAND_QUEUE/100-5.env"
+  run env AFTER_LAND_WERK_TEST="$T/werk-test" AFTER_LAND_NUDGE="$T/nudge" CHORUS_ROOT="$R" bash "$REPO/platform/scripts/after-land-tests.sh"
+  [[ "$output" != *"#5 green"* ]] || return 1
+  [[ "$output" == *"#5 RED"* ]] || return 1
+  ls "$T/after-land/done/100-5-rc1.env" >/dev/null || return 1
+}
+
+@test "NEGATIVE PROOF — a unit with no toolchain is UNMEASURED, never green" {
+  stub_lines 0 "!! jest:platform/api CHANGED but deps unavailable — FAIL LOUD"
+  mkdir -p "$AFTER_LAND_QUEUE"; printf 'CARD=6\nROLE=kade\nCOMMIT=%s\n' "$C1" > "$AFTER_LAND_QUEUE/100-6.env"
+  run env AFTER_LAND_WERK_TEST="$T/werk-test" AFTER_LAND_NUDGE="$T/nudge" CHORUS_ROOT="$R" bash "$REPO/platform/scripts/after-land-tests.sh"
+  [[ "$output" != *"#6 green"* ]] || return 1
+  [[ "$output" == *"#6 UNMEASURED"* ]] || return 1
+  grep -q '^kade after-land #6: UNMEASURED' "$T/nudges" || return 1
+}
+
+@test "the agent runs with the nightly's toolchain on PATH" {
+  p="$REPO/platform/launchd/com.chorus.after-land-tests.plist"
+  grep -q '.cargo/bin' "$p" || return 1
+  grep -q '.nvm/versions/node/' "$p" || return 1
+  grep -q 'CARGO_TARGET_DIR' "$p" || return 1
+}

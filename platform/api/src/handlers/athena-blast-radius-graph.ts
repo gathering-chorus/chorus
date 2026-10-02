@@ -20,34 +20,38 @@ const short = (iri: string): string => (iri.startsWith(C) ? `chorus:${iri.slice(
 const full = (iri: string): string => (iri.startsWith('chorus:') ? C + iri.slice('chorus:'.length) : iri);
 const tail = (s: string): string => s.slice(s.lastIndexOf('#') + 1);
 
+type Sets = { consumers: Set<string>; dependents: Set<string>; hosts: Set<string> };
+const into = (edges: Edge[], p: string, o: string): string[] => edges.filter((e) => e.p === p && e.o === o).map((e) => e.s);
+
+function productRadius(edges: Edge[], me: string, mine: Edge[], r: Sets): void {
+  for (const e of mine) {
+    if (e.p === 'hasDomain') r.dependents.add(e.o);
+    if (e.p === 'partOf') r.consumers.add(e.o);
+  }
+  for (const d of r.dependents) for (const s of into(edges, 'consumes', d)) if (s !== me) r.consumers.add(s);
+}
+
+function domainRadius(edges: Edge[], me: string, mine: Edge[], r: Sets): void {
+  for (const s of [...into(edges, 'hasDomain', me), ...into(edges, 'consumes', me)]) r.consumers.add(s);
+  for (const e of mine) if (e.p === 'hosts') r.hosts.add(e.o);
+  for (const h of r.hosts) for (const s of into(edges, 'consumes', h)) r.consumers.add(s);
+}
+
 export function blastRadiusFromEdges(edges: Edge[], iri: string): GraphBlastRadius | null {
   const me = full(iri);
   const mine = edges.filter((e) => e.s === me);
   if (!mine.length && !edges.some((e) => e.o === me)) return null;
   // a subject with no edges of its own is only ever pointed at: a Domain
-  const k = mine[0]?.kind ?? 'Domain';
-  const consumers = new Set<string>();
-  const dependents = new Set<string>();
-  const hosts = new Set<string>();
-  const into = (p: string, o: string): string[] => edges.filter((e) => e.p === p && e.o === o).map((e) => e.s);
-  if (k === 'Product') {
-    for (const e of mine) {
-      if (e.p === 'hasDomain') dependents.add(e.o);
-      if (e.p === 'partOf') consumers.add(e.o);
-    }
-    for (const d of dependents) for (const s of into('consumes', d)) if (s !== me) consumers.add(s);
-  } else if (k === 'Service') {
-    for (const s of into('consumes', me)) consumers.add(s);
-  } else {
-    for (const s of [...into('hasDomain', me), ...into('consumes', me)]) consumers.add(s);
-    for (const e of mine) if (e.p === 'hosts') hosts.add(e.o);
-    for (const h of hosts) for (const s of into('consumes', h)) consumers.add(s);
-  }
+  const kind = mine[0]?.kind ?? 'Domain';
+  const r: Sets = { consumers: new Set(), dependents: new Set(), hosts: new Set() };
+  if (kind === 'Product') productRadius(edges, me, mine, r);
+  else if (kind === 'Service') for (const s of into(edges, 'consumes', me)) r.consumers.add(s);
+  else domainRadius(edges, me, mine, r);
   return {
     iri: short(me),
-    consumers: [...consumers].map(short),
-    dependents: [...dependents].map(short),
-    hosts: [...hosts].map(short),
+    consumers: [...r.consumers].map(short),
+    dependents: [...r.dependents].map(short),
+    hosts: [...r.hosts].map(short),
   };
 }
 
