@@ -133,10 +133,8 @@ async function buildSparqlSections(
     PREFIX chorus: <https://jeffbridwell.com/chorus#>
     PREFIX rdfs: <http://www.w3.org/2000/01/rdf-schema#>
     SELECT ?ownerLabel WHERE {
-      GRAPH <urn:chorus:ontology> {
-        <${sdUri}> chorus:ownedBy ?owner .
-        OPTIONAL { ?owner rdfs:label ?ownerLabel }
-      }
+      GRAPH <urn:chorus:domains:domains> { <${sdUri}> chorus:ownedBy ?owner }
+      OPTIONAL { GRAPH ?lg { ?owner rdfs:label ?ownerLabel } }
     } LIMIT 1
   `;
   const parentResult = await deps.sparql(parentOwnerQuery).catch(() => null);

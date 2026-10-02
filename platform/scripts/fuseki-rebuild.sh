@@ -211,8 +211,8 @@ cmd_quadify() {
 
   # The class -> domain map, straight from the ontology. Cheap: the ontology
   # graph is small and this touches no corrupt region.
-  log "reading the class -> domain map from urn:chorus:ontology"
-  sparql 'PREFIX c: <https://jeffbridwell.com/chorus#> SELECT ?d ?cls WHERE { GRAPH <urn:chorus:ontology> { ?d c:definesVocabulary ?cls } }' \
+  log "reading the class -> domain map from urn:chorus:domains:domains (#4338)"
+  sparql 'PREFIX c: <https://jeffbridwell.com/chorus#> SELECT ?d ?cls WHERE { GRAPH <urn:chorus:domains:domains> { ?d c:definesVocabulary ?cls } }' \
   | python3 -c '
 import sys, json
 b = json.load(sys.stdin)["results"]["bindings"]

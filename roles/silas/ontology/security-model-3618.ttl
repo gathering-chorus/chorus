@@ -37,7 +37,7 @@
 # 1. THE DOMAIN — chorus:security (renamed from chorus:security-trust, #3587)
 # ----------------------------------------------------------------------------
 
-chorus:security a owl:Class, chorus:Domain ;
+chorus:security a chorus:Domain ;
     rdfs:label "security" ;
     chorus:comment "Who may touch what, provably. Authentication (identity), authorization (permissions), secrets custody, TCC/platform trust, and the live security posture — modeled, generated, attested." ;
     chorus:purpose "Protect Jeff's data from agent intrusion and agent error: every write surface carries a door, every door checks an unforgeable identity, every check is attestable from the graph." ;
@@ -69,7 +69,7 @@ chorus:hasDomain-security-stmt a rdf:Statement ;
 # 2. THE CHILD — chorus:identity (authentication: who is this, provably)
 # ----------------------------------------------------------------------------
 
-chorus:identity a owl:Class, chorus:Domain ;
+chorus:identity a chorus:Domain ;
     rdfs:label "identity" ;
     chorus:comment "The authentication child of security: principals, the credentials they own, the roles they act as, and the key registry that verifies them. One reusable service (mint/verify/revoke) — every door calls the same one." ;
     chorus:purpose "Make 'who did this' cryptographically true: retire self-declared DEPLOY_ROLE attribution; an agent cannot impersonate a role or Jeff." ;

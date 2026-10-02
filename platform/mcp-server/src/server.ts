@@ -883,7 +883,7 @@ async function executeMigrationReadout(
     return (j.results?.bindings ?? []).map((b) => String(b.s.value).replace(/^.*[#/]/, ''));
   };
   try {
-    const domains = await names('SELECT ?s WHERE { GRAPH <urn:chorus:ontology> { ?s a chorus:Domain } }');
+    const domains = await names('SELECT ?s WHERE { GRAPH <urn:chorus:domains:domains> { ?s a chorus:Domain } }');
     // owl-src: which domain localnames are declared in a committed MODEL_SET .ttl
     const files = [
       'roles/silas/ontology/chorus.ttl',

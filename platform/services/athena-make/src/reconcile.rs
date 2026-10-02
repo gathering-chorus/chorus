@@ -249,8 +249,11 @@ pub fn is_sanctioned_graph(g: &str) -> bool {
 /// it is derivable in one query (`?c a owl:Class, chorus:Domain`) from the store
 /// this module already reads. Deriving it is held until the ADR-045 §3 amendment
 /// lands (ruling 1) so the query is written against the ratified edge.
+/// #4338 (Jeff 2026-10-02): a Domain is a row in urn:chorus:domains:domains,
+/// no longer an owl:Class. None of the 42 punned Domains had an instance or a
+/// subclass, so the pun bought nothing and kept a second copy of every domain.
 pub fn is_punned(class_local: &str) -> bool {
-    matches!(class_local, "Domain" | "CollectionDomain")
+    matches!(class_local, "CollectionDomain")
 }
 
 /// A class whose instances are NOT in the graph its own shape declares. This is
@@ -676,7 +679,7 @@ mod tests {
     // three that are right.
     #[test]
     fn punned_classes_live_in_the_ontology_graph() {
-        for c in ["Domain", "CollectionDomain"] {
+        for c in ["CollectionDomain"] {
             assert!(is_punned(c), "{} is punned", c);
         }
         // Product is NOT punned — verified in the store: its individuals carry
@@ -684,7 +687,8 @@ mod tests {
         // readout blame the placement instead of the data.
         // Service moved OUT of the punned list — verified in the store 2026-08-02:
         // zero Service individuals carry owl:Class.
-        for c in ["Service", "Product", "ValueStreamStep", "Test", "Principal"] {
+        // #4338: Domain is a row in the domains graph, not a class.
+        for c in ["Domain", "Service", "Product", "ValueStreamStep", "Test", "Principal"] {
             assert!(!is_punned(c), "{} is pure ABox", c);
         }
     }

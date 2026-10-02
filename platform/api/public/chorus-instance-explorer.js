@@ -5,7 +5,6 @@ var N=[], E=[];
   const FUSEKI = '/sparql-read?dataset=pods'  /* #4004 — same-origin; 'localhost' meant the PHONE */;
   const GRAPH = 'urn:chorus:ontology';
   const PREFIX = 'https://jeffbridwell.com/chorus#';
-  const FW_PREFIX = 'https://jeffbridwell.com/framework#';
   const JB_PREFIX = 'https://jeffbridwell.com/ontology#';
 
   async function sparql(query) {
@@ -20,22 +19,21 @@ var N=[], E=[];
 
   const nodeBindings = await sparql(`
     PREFIX chorus: <${PREFIX}>
-    PREFIX fw: <${FW_PREFIX}>
     PREFIX jb: <${JB_PREFIX}>
     PREFIX rdfs: <http://www.w3.org/2000/01/rdf-schema#>
     SELECT ?uri ?type ?label ?desc WHERE {
       GRAPH <${GRAPH}> {
         ?uri a ?type .
-        FILTER(STRSTARTS(STR(?type), "${PREFIX}") || STRSTARTS(STR(?type), "${FW_PREFIX}") || STRSTARTS(STR(?type), "${JB_PREFIX}"))
+        FILTER(STRSTARTS(STR(?type), "${PREFIX}") || STRSTARTS(STR(?type), "${JB_PREFIX}"))
         OPTIONAL { ?uri rdfs:label ?label }
         OPTIONAL { ?uri rdfs:comment ?desc }
       }
     }`);
 
   N = nodeBindings.map(b => ({
-    id: b.uri.value.replace(PREFIX, '').replace(FW_PREFIX, '').replace(JB_PREFIX, ''),
-    label: b.label ? b.label.value : b.uri.value.replace(PREFIX, '').replace(FW_PREFIX, '').replace(JB_PREFIX, ''),
-    cls: b.type.value.replace(PREFIX, '').replace(FW_PREFIX, '').replace(JB_PREFIX, ''),
+    id: b.uri.value.replace(PREFIX, '').replace(JB_PREFIX, ''),
+    label: b.label ? b.label.value : b.uri.value.replace(PREFIX, '').replace(JB_PREFIX, ''),
+    cls: b.type.value.replace(PREFIX, '').replace(JB_PREFIX, ''),
     desc: b.desc ? b.desc.value.substring(0, 120) : ''
   }));
 
@@ -48,19 +46,19 @@ var N=[], E=[];
       GRAPH <${GRAPH}> {
         ?s ?p ?t .
         ?s a ?sType . ?t a ?tType .
-        FILTER(STRSTARTS(STR(?p), "${PREFIX}") || STRSTARTS(STR(?p), "${FW_PREFIX}"))
+        FILTER(STRSTARTS(STR(?p), "${PREFIX}"))
         FILTER(?p != rdf:type)
-        FILTER(STRSTARTS(STR(?sType), "${PREFIX}") || STRSTARTS(STR(?sType), "${FW_PREFIX}") || STRSTARTS(STR(?sType), "${JB_PREFIX}"))
-        FILTER(STRSTARTS(STR(?tType), "${PREFIX}") || STRSTARTS(STR(?tType), "${FW_PREFIX}") || STRSTARTS(STR(?tType), "${JB_PREFIX}"))
+        FILTER(STRSTARTS(STR(?sType), "${PREFIX}") || STRSTARTS(STR(?sType), "${JB_PREFIX}"))
+        FILTER(STRSTARTS(STR(?tType), "${PREFIX}") || STRSTARTS(STR(?tType), "${JB_PREFIX}"))
         OPTIONAL { ?s rdfs:label ?sLabel }
         OPTIONAL { ?t rdfs:label ?tLabel }
       }
     }`);
 
   E = edgeBindings.map(b => ({
-    s: b.s.value.replace(PREFIX, '').replace(FW_PREFIX, '').replace(JB_PREFIX, ''),
-    t: b.t.value.replace(PREFIX, '').replace(FW_PREFIX, '').replace(JB_PREFIX, ''),
-    l: b.p.value.replace(PREFIX, '').replace(FW_PREFIX, ''),
+    s: b.s.value.replace(PREFIX, '').replace(JB_PREFIX, ''),
+    t: b.t.value.replace(PREFIX, '').replace(JB_PREFIX, ''),
+    l: b.p.value.replace(PREFIX, ''),
     c: ''
   }));
 

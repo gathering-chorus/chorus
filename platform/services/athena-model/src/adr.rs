@@ -69,7 +69,7 @@ use std::collections::BTreeSet;
 /// the rule rather than saying "invalid". The taxonomy IS the API.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Refusal {
-    /// ADR-045 — a Domain must be declared as an `owl:Class`.
+    /// #4338 (supersedes ADR-045) — a Domain is a row, never an `owl:Class`.
     DomainNotClass(String),
     /// ADR-051 × ADR-025 — placement contradicts the derivation. ONE check.
     Placement(String),
@@ -86,7 +86,7 @@ pub enum Refusal {
 impl Refusal {
     pub fn code(&self) -> &'static str {
         match self {
-            Refusal::DomainNotClass(_) => "adr045-domain-not-class",
+            Refusal::DomainNotClass(_) => "domain-is-a-row-not-a-class",
             Refusal::Placement(_) => "adr051x025-placement",
             Refusal::Manifest(_) => "manifest-membership",
             Refusal::NoShape(_) => "shape-is-truth",
@@ -115,7 +115,8 @@ pub type Verdict = Result<(), Refusal>;
 /// `a chorus:Product` and nothing else). Assuming it produced a wrong finding
 /// on 2026-08-02 — the readout blamed the placement when the placement was right.
 pub fn is_punned(class_local: &str) -> bool {
-    matches!(class_local, "Domain" | "CollectionDomain" | "Service")
+    // #4338: Domain left this list — a Domain is a row in urn:chorus:domains:domains.
+    matches!(class_local, "CollectionDomain" | "Service")
 }
 
 /// Which layer a write targets. The two obey DIFFERENT placement rules and
@@ -223,18 +224,21 @@ pub fn check_placement(
     }
 }
 
-/// **ADR-045** — a Domain is an `owl:Class`, and only that shape is accepted.
+/// **#4338** (supersedes ADR-045, Jeff 2026-10-02 "one and only one of each
+/// domain") — a Domain is a row in urn:chorus:domains:domains. Declaring it an
+/// `owl:Class` is refused: the pun is what kept a second copy of every domain
+/// in the ontology graph.
 pub fn check_domain_declaration(kind: &str, declared_types: &[&str]) -> Verdict {
     if kind != "domain" {
         return Ok(());
     }
     if declared_types.iter().any(|t| *t == "owl:Class") {
-        Ok(())
-    } else {
         Err(Refusal::DomainNotClass(format!(
-            "a Domain must be declared as an owl:Class (ADR-045); got [{}]",
+            "a Domain is a row, not an owl:Class (#4338); got [{}]",
             declared_types.join(", ")
         )))
+    } else {
+        Ok(())
     }
 }
 
@@ -383,7 +387,8 @@ mod tests {
     // three that are RIGHT.
     #[test]
     fn punned_classes_derive_the_ontology_graph_not_a_domain_graph() {
-        assert_eq!(derived_placement("Domain", Some("domains")).unwrap(), "urn:chorus:ontology");
+        // #4338: a Domain is a row — it derives to its own domain graph like any row
+        assert_eq!(derived_placement("Domain", Some("domains")).unwrap(), "urn:chorus:domains:domains");
         assert_eq!(derived_placement("Service", Some("services")).unwrap(), "urn:chorus:ontology");
         // Product is NOT punned — verified in the store, not assumed.
         assert_eq!(
@@ -438,11 +443,11 @@ mod tests {
     }
 
     #[test]
-    fn a_domain_must_be_an_owl_class() {
-        assert!(check_domain_declaration("domain", &["owl:Class", "chorus:Domain"]).is_ok());
+    fn a_domain_is_a_row_never_an_owl_class() {
+        assert!(check_domain_declaration("domain", &["chorus:Domain"]).is_ok());
         assert_eq!(
-            check_domain_declaration("domain", &["chorus:Domain"]).unwrap_err().code(),
-            "adr045-domain-not-class"
+            check_domain_declaration("domain", &["owl:Class", "chorus:Domain"]).unwrap_err().code(),
+            "domain-is-a-row-not-a-class"
         );
         assert!(check_domain_declaration("product", &["chorus:Product"]).is_ok());
     }
@@ -457,7 +462,7 @@ mod tests {
             kind: "domain",
             class_local: "Ghost",
             target_file: "roles/wren/artifacts/scratch.ttl",
-            declared_types: &["chorus:Domain"],
+            declared_types: &["owl:Class", "chorus:Domain"],
             defining_domain: None,
             declared_placement: None,
             override_reason: None,
@@ -468,7 +473,7 @@ mod tests {
         };
         let codes: Vec<&str> = check_all(&facts).iter().map(|r| r.code()).collect();
         for expected in [
-            "adr045-domain-not-class",
+            "domain-is-a-row-not-a-class",
             "manifest-membership",
             "shape-is-truth",
             "absence-stays-absent",
@@ -504,18 +509,17 @@ mod tests {
     // individuals, and the live store already agrees (40 Domains there).
     #[test]
     fn a_punned_individual_is_schema_layer_because_it_is_a_class() {
-        assert_eq!(layer_of("Domain", false), Layer::Schema, "a Domain individual IS a class");
         assert_eq!(layer_of("Service", false), Layer::Schema);
         assert_eq!(layer_of("Product", false), Layer::Instance, "Product is plain ABox");
         assert_eq!(layer_of("Product", true), Layer::Schema, "a class DEFINITION is always schema");
-        // and therefore a Domain individual belongs in the ontology graph
+        // #4338 (supersedes the 2026-08-02 ruling for Domain): a Domain is a row
+        assert_eq!(layer_of("Domain", false), Layer::Instance, "a Domain is a row, not a class");
         assert!(check_placement_layered(
-            layer_of("Domain", false), "Domain", Some("domains"), Some(SCHEMA_GRAPH), None
+            layer_of("Domain", false), "Domain", Some("domains"), Some("urn:chorus:domains:domains"), None
         ).is_ok());
-        // writing it to a domain graph is the refusal — this is the #3647 test's
-        // wrong-as-written assertion, now named rather than argued
+        // NEGATIVE PROOF: writing a Domain into the ontology graph is refused
         let r = check_placement_layered(
-            layer_of("Domain", false), "Domain", Some("domains"), Some("urn:chorus:domains:tests"), None
+            layer_of("Domain", false), "Domain", Some("domains"), Some(SCHEMA_GRAPH), None
         ).unwrap_err();
         assert_eq!(r.code(), "adr051x025-placement");
     }

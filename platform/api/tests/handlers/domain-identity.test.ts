@@ -72,7 +72,7 @@ describe('resolveDomainIdentity — special cases (tests/code/gates)', () => {
   });
 
   it('gates domain aliases to gates', () => {
-    const id = resolveDomainIdentity('gates-domain');
+    const id = resolveDomainIdentity('gates');
     expect(id.aliases).toContain('gates');
   });
 });

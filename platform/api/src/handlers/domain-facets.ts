@@ -207,9 +207,13 @@ SELECT ?target ?label ?relationship ?direction WHERE {
   {
     GRAPH <urn:chorus:ontology> {
       { ?parent chorus:hasDomain <${sdUri}> . ?parent rdfs:label ?label . BIND("hasDomain" AS ?relationship) BIND("parent" AS ?direction) BIND(?parent AS ?target) }
-      UNION { <${sdUri}> chorus:consumes ?target . OPTIONAL { ?target rdfs:label ?label } BIND("consumes" AS ?relationship) BIND("outbound" AS ?direction) }
-      UNION { ?target chorus:consumes <${sdUri}> . OPTIONAL { ?target rdfs:label ?label } BIND("consumedBy" AS ?relationship) BIND("inbound" AS ?direction) }
       UNION { ?parent chorus:contains <${sdUri}> . ?parent rdfs:label ?label . BIND("containedBy" AS ?relationship) BIND("parent" AS ?direction) BIND(?parent AS ?target) }
+    }
+  } UNION {
+    # #4338 — consumes is a Domain-row edge: it lives in the domains graph
+    GRAPH <urn:chorus:domains:domains> {
+      { <${sdUri}> chorus:consumes ?target . OPTIONAL { ?target rdfs:label ?label } BIND("consumes" AS ?relationship) BIND("outbound" AS ?direction) }
+      UNION { ?target chorus:consumes <${sdUri}> . OPTIONAL { ?target rdfs:label ?label } BIND("consumedBy" AS ?relationship) BIND("inbound" AS ?direction) }
     }
   } UNION {
     GRAPH <urn:borg:instances> {
@@ -252,9 +256,12 @@ PREFIX rdfs: <http://www.w3.org/2000/01/rdf-schema#>
 PREFIX borg: <urn:borg:ontology/>
 SELECT ?target ?label ?relationship ?direction WHERE {
   {
-    GRAPH <urn:chorus:ontology> {
+    GRAPH <urn:chorus:domains:domains> {
       { ?target chorus:consumes <${sdUri}> . OPTIONAL { ?target rdfs:label ?label } BIND("consumes" AS ?relationship) BIND("dependent" AS ?direction) }
-      UNION { ?target chorus:hasDomain <${sdUri}> . OPTIONAL { ?target rdfs:label ?label } BIND("ownerProduct" AS ?relationship) BIND("parent" AS ?direction) }
+    }
+  } UNION {
+    GRAPH <urn:chorus:ontology> {
+      { ?target chorus:hasDomain <${sdUri}> . OPTIONAL { ?target rdfs:label ?label } BIND("ownerProduct" AS ?relationship) BIND("parent" AS ?direction) }
       UNION { ?target chorus:contains <${sdUri}> . OPTIONAL { ?target rdfs:label ?label } BIND("containedBy" AS ?relationship) BIND("parent" AS ?direction) }
     }
   } UNION {

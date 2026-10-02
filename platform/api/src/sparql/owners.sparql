@@ -1,7 +1,8 @@
 PREFIX chorus: <https://jeffbridwell.com/chorus#>
 PREFIX rdfs: <http://www.w3.org/2000/01/rdf-schema#>
 SELECT ?owner ?label (COUNT(?sd) AS ?count) WHERE {
-  GRAPH <urn:chorus:ontology> {
+  # #4338 — Domain rows (and their owners) live in the domains graph
+  GRAPH <urn:chorus:domains:domains> {
     ?sd chorus:ownedBy ?owner .
   }
   # #4079: role labels live in urn:chorus:instances since #3838 (roles model),

@@ -24,14 +24,14 @@
 # owl:Class exists (verified vs the live 59); OMITTED (flagged) where none — NOT faked.
 
 # ── loom (Shaping, ownedBy wren, partOf chorusProduct) ────────────────────────
-chorus:roles a owl:Class, chorus:Domain ;
+chorus:roles a chorus:Domain ;
   rdfs:label "roles" ; chorus:comment "Team member identities, capabilities, and session lifecycle." ;
   chorus:purpose "Define who the team is — each role's identity, accountability, and session lifecycle." ;
   chorus:ownedBy chorus:principal-wren ; chorus:partOf chorus:product-loom ;
   chorus:atStep chorus:Shaping ; chorus:atStream chorus:value-stream-chorus ;
   chorus:repoTarget "roles" ; chorus:definesVocabulary chorus:Role, chorus:AgentRole, chorus:HumanRole .
 
-chorus:principles a owl:Class, chorus:Domain ;
+chorus:principles a chorus:Domain ;
   rdfs:label "principles" ; chorus:comment "Values and constraints governing team decisions and priorities." ;
   chorus:purpose "Hold the values and constraints that govern how the team decides and prioritizes." ;
   chorus:ownedBy chorus:principal-wren ; chorus:partOf chorus:product-loom ;
@@ -42,28 +42,28 @@ chorus:principles a owl:Class, chorus:Domain ;
 # above the principles needed a home before anything could serve it: athena-make
 # serves EXACTLY definesVocabulary-claimed classes, so an unclaimed chorus:Value
 # is inert no matter how many instances sit in the store.
-chorus:values a owl:Class, chorus:Domain ;
+chorus:values a chorus:Domain ;
   rdfs:label "values" ; chorus:comment "What the team cares about — the level the principles answer to." ;
   chorus:purpose "Hold the handful of values the principles serve, so a principle can say what it is in service of." ;
   chorus:ownedBy chorus:principal-wren ; chorus:partOf chorus:product-loom ;
   chorus:atStep chorus:Shaping ; chorus:atStream chorus:value-stream-chorus ;
   chorus:repoTarget "loom/values" ; chorus:definesVocabulary chorus:Value .
 
-chorus:policies a owl:Class, chorus:Domain ;
+chorus:policies a chorus:Domain ;
   rdfs:label "policies" ; chorus:comment "Rules that enforce principles in practice — hooks, guards, gates." ;
   chorus:purpose "Turn principles into enforced rules — the hooks, guards, and gates that hold the line." ;
   chorus:ownedBy chorus:principal-wren ; chorus:partOf chorus:product-loom ;
   chorus:atStep chorus:Shaping ; chorus:atStream chorus:value-stream-chorus ;
   chorus:repoTarget "loom/policies" ; chorus:definesVocabulary chorus:Policy .
 
-chorus:practices a owl:Class, chorus:Domain ;
+chorus:practices a chorus:Domain ;
   rdfs:label "practices" ; chorus:comment "Repeatable patterns the team uses — how we work, not just what we value." ;
   chorus:purpose "Capture the repeatable ways the team works — the how, distinct from the values." ;
   chorus:ownedBy chorus:principal-wren ; chorus:partOf chorus:product-loom ;
   chorus:atStep chorus:Shaping ; chorus:atStream chorus:value-stream-chorus ;
   chorus:repoTarget "loom/practices" ; chorus:definesVocabulary chorus:Practice .
 
-chorus:skills a owl:Class, chorus:Domain ;
+chorus:skills a chorus:Domain ;
   rdfs:label "skills" ; chorus:comment "Invokable capabilities — /skill-name commands that automate team workflows." ;
   chorus:purpose "Provide the team's invokable capabilities — the /skill commands that automate workflows." ;
   chorus:ownedBy chorus:principal-wren ; chorus:partOf chorus:product-loom ;
@@ -89,7 +89,7 @@ chorus:skills a owl:Class, chorus:Domain ;
 #   just inverted. If the position ever needs to be QUERYABLE it is a
 #   property of Skill, never a class beside it.
 
-chorus:deploys a owl:Class, chorus:Domain ;
+chorus:deploys a chorus:Domain ;
   rdfs:label "deploys" ; chorus:comment "How code gets running: deploy targets, rollback paths, freeze rules, and the deploy-invariance contract — same artifact reaches the same running state." ;
   chorus:purpose "Track how code reaches a running state — what shipped, where, the rollback path, and the invariance that proves a deploy is a deploy." ;
   chorus:ownedBy chorus:principal-silas ; chorus:partOf chorus:borg ;
@@ -145,7 +145,7 @@ chorus:deploys a owl:Class, chorus:Domain ;
 # one concept is how the collision happened in the first place.
 # Ruled with Silas (owner) and Kade (consumer), 2026-08-22 06:32.
 
-chorus:logs a owl:Class, chorus:Domain ;
+chorus:logs a chorus:Domain ;
   rdfs:label "logs" ; chorus:comment "Log aggregation and querying via Loki — structured observability." ;
   chorus:purpose "Aggregate and query the system's logs via Loki — structured runtime observability." ;
   chorus:ownedBy chorus:principal-silas ; chorus:partOf chorus:borg ;
@@ -158,7 +158,7 @@ chorus:logs a owl:Class, chorus:Domain ;
   chorus:hasDesignDoc chorus:document-domain-design-logs .
 
 
-chorus:alerts-monitors a owl:Class, chorus:Domain ;
+chorus:alerts-monitors a chorus:Domain ;
   rdfs:label "alerts-monitors" ; chorus:comment "Grafana dashboards, alert rules, and on-call signal management." ;
   chorus:purpose "Watch the system — dashboards, alert rules, and the on-call signal that surfaces trouble." ;
   chorus:ownedBy chorus:principal-silas ; chorus:partOf chorus:borg ;
@@ -174,7 +174,7 @@ chorus:alerts-monitors a owl:Class, chorus:Domain ;
 # 6-class vocabulary). Two MODEL_SET files defining one subject let the deploy
 # pick the stale one — the root cause of APISurface reading unclaimed live.
 
-chorus:time a owl:Class, chorus:Domain ;
+chorus:time a chorus:Domain ;
   rdfs:label "time" ; chorus:comment "Scheduling, cron jobs, and time-based triggers for automated team work." ;
   chorus:purpose "Drive time-based work — scheduling, cron, and the triggers that run automated team tasks." ;
   chorus:ownedBy chorus:principal-silas ; chorus:partOf chorus:borg ;
@@ -182,7 +182,7 @@ chorus:time a owl:Class, chorus:Domain ;
   chorus:repoTarget "platform/launchagents" .
   # FLAG: no real owl:Class vocab (no chorus:Schedule class) — omitted, not faked.
 
-chorus:heralds a owl:Class, chorus:Domain ;
+chorus:heralds a chorus:Domain ;
   rdfs:label "heralds" ; chorus:comment "Notification delivery — nudge routing, chorus-inject, and push delivery." ;
   chorus:purpose "Deliver notifications — nudge routing, chorus-inject, and push to the right terminal." ;
   chorus:ownedBy chorus:principal-silas ; chorus:partOf chorus:borg ;
@@ -190,14 +190,14 @@ chorus:heralds a owl:Class, chorus:Domain ;
   chorus:repoTarget "platform/services/chorus-inject" .
   # FLAG: no real owl:Class vocab (no chorus:Herald class) — omitted, not faked.
 
-chorus:toolchain a owl:Class, chorus:Domain ;
+chorus:toolchain a chorus:Domain ;
   rdfs:label "toolchain" ; chorus:comment "Development tools and their configuration — Claude Code, Node, Rust, git." ;
   chorus:purpose "Hold the team's development tools and their configuration — the toolchain it builds with." ;
   chorus:ownedBy chorus:principal-silas ; chorus:partOf chorus:borg ;
   chorus:atStep chorus:Proving ; chorus:atStream chorus:value-stream-chorus ;
   chorus:repoTarget "toolchain" ; chorus:definesVocabulary chorus:Tool, chorus:ToolType .
 
-chorus:infrastructure a owl:Class, chorus:Domain ;
+chorus:infrastructure a chorus:Domain ;
   rdfs:label "infrastructure" ; chorus:comment "Host machines, Docker, LaunchAgents — the physical substrate the team runs on." ;
   chorus:purpose "Hold the physical substrate the team runs on — host machines, stores, and LaunchAgents." ;
   chorus:ownedBy chorus:principal-silas ; chorus:partOf chorus:borg ;
@@ -206,7 +206,7 @@ chorus:infrastructure a owl:Class, chorus:Domain ;
   # #4084 — UnitDomainMapping is the authored unit → domain edge every harvester joins on (ADR-027); homed here because units are infrastructure.
   chorus:instancesGraph "urn:chorus:domains:infrastructure" .
 
-chorus:analytics a owl:Class, chorus:Domain ;
+chorus:analytics a chorus:Domain ;
   rdfs:label "analytics" ; chorus:comment "Usage analytics and behavioral signals — attention, interaction patterns." ;
   chorus:purpose "Surface behavioral signal — attention, interaction patterns, and how the team actually works." ;
   chorus:ownedBy chorus:principal-silas ; chorus:partOf chorus:borg ;
@@ -214,7 +214,7 @@ chorus:analytics a owl:Class, chorus:Domain ;
   chorus:repoTarget "platform/api/src/handlers/chorus-attention-analytics.ts" .
   # FLAG: no clean owl:Class vocab (Metric is metrics-domain's) — omitted, not faked.
 
-chorus:metrics a owl:Class, chorus:Domain ;
+chorus:metrics a chorus:Domain ;
   rdfs:label "metrics" ; chorus:comment "Quantitative measurements of system health — latency, cost, throughput." ;
   chorus:purpose "Measure system health quantitatively — latency, cost, throughput, and their trends." ;
   chorus:ownedBy chorus:principal-silas ; chorus:partOf chorus:borg ;
@@ -227,14 +227,14 @@ chorus:metrics a owl:Class, chorus:Domain ;
 # from chorus.ttl's ValueStream / ValueStreamStep vocabulary. Both were among the 10
 # domains lost in the 08-28 graph wipe (see RCA).
 
-chorus:products a owl:Class, chorus:Domain ;
+chorus:products a chorus:Domain ;
   rdfs:label "products" ; chorus:comment "The set of all Products — the product tree from the chorus parent down, each with what it claims." ;
   chorus:purpose "Hold the product tree — the products, their children, and what each claims — so structure questions resolve to one answer." ;
   chorus:ownedBy chorus:principal-wren ; chorus:partOf chorus:product-athena ;
   chorus:atStep chorus:Designing ; chorus:atStream chorus:value-stream-chorus ;
   chorus:repoTarget "designing/products" ; chorus:definesVocabulary chorus:Product .   # #4211 — Version left here: 547 of 15,630 rows revise a product, so it was never a products class
 
-chorus:value-streams a owl:Class, chorus:Domain ;
+chorus:value-streams a chorus:Domain ;
   rdfs:label "value-streams" ; chorus:comment "The value streams and their ordered steps — Chorus's Shaping → Directing → Designing → Building → Proving → Reflecting, and the child streams a step composes." ;
   chorus:purpose "Hold the value streams and their steps — the ordered shape every product and domain hangs off — so the walk from stream to product to domain resolves to one answer." ;
   chorus:ownedBy chorus:principal-wren ; chorus:partOf chorus:product-athena ;
