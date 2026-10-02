@@ -96,7 +96,14 @@ export interface GraphDoor {
   get(index: number): Promise<CardRow | undefined>;
   list(): Promise<Map<number, CardRow>>;
   put(index: number, row: CardRow): Promise<void>;
+  /** Create many rows in one write. Rows that already exist are refused, so
+   *  only missing cards go through here. */
+  createBatch(rows: Array<{ index: number; row: CardRow }>): Promise<void>;
 }
+
+/** #3102 — missing cards go in batches; one write per card took ~2s, so a
+ *  4,300-card first sync would run for hours. */
+export const BATCH_SIZE = 200;
 
 /** The real door: athena-make's generated /cards/cards route. */
 export function athenaMakeDoor(fetchImpl: typeof fetch = fetch): GraphDoor {
@@ -128,6 +135,11 @@ export function athenaMakeDoor(fetchImpl: typeof fetch = fetch): GraphDoor {
       }
       if (!r.ok) throw new Error(`athena-make ${r.status} writing card ${index}: ${(await r.text()).slice(0, 200)}`);
     },
+    async createBatch(rows) {
+      const body = JSON.stringify(rows.map(({ index, row }) => ({ name: String(index), ...row })));
+      const r = await fetchImpl(`${ATHENA_MAKE}${CARDS_ROUTE}/batch`, { method: 'POST', headers: auth(), body });
+      if (!r.ok) throw new Error(`athena-make ${r.status} creating ${rows.length} cards: ${(await r.text()).slice(0, 200)}`);
+    },
   };
 }
 
@@ -157,6 +169,59 @@ export interface ReconcileResult {
   repaired: number;
   failed: Array<{ index: number; reason: string }>;
   sample: Array<{ index: number; fields: string[] }>;
+  /** Card numbers the board gives to more than one card. One number can be one
+   *  graph row only, so these are reported and left for a person to fix. */
+  duplicateNumbers: number[];
+}
+
+type Pending = Array<{ index: number; row: CardRow }>;
+
+/** Card numbers the board gives to more than one card, sorted. */
+function duplicateNumbers(board: BoardTask[]): number[] {
+  const seen = new Map<number, number>();
+  for (const t of board) seen.set(t.index, (seen.get(t.index) ?? 0) + 1);
+  return [...seen].filter(([, n]) => n > 1).map(([i]) => i).sort((a, b) => a - b);
+}
+
+/** Compare each board card with its row; fill the counts and split the work. */
+function classify(board: BoardTask[], graph: Map<number, CardRow>, res: ReconcileResult): { missing: Pending; stale: Pending } {
+  const dup = new Set(res.duplicateNumbers);
+  const missing: Pending = [];
+  const stale: Pending = [];
+  for (const task of board.filter((t) => !dup.has(t.index))) {
+    const want = cardRow(task);
+    const fields = rowDiff(want, graph.get(task.index));
+    if (fields.length === 0) continue;
+    res.outOfSync++;
+    if (res.sample.length < 10) res.sample.push({ index: task.index, fields });
+    (fields[0] === 'missing' ? missing : stale).push({ index: task.index, row: want });
+  }
+  return { missing, stale };
+}
+
+function reason(err: unknown): string {
+  return err instanceof Error ? err.message : String(err);
+}
+
+/** Write the missing rows in batches and the stale ones one by one. */
+async function applyRepairs(door: GraphDoor, missing: Pending, stale: Pending, res: ReconcileResult): Promise<void> {
+  for (let i = 0; i < missing.length; i += BATCH_SIZE) {
+    const chunk = missing.slice(i, i + BATCH_SIZE);
+    try {
+      await door.createBatch(chunk);
+      res.repaired += chunk.length;
+    } catch (err) {
+      for (const c of chunk) res.failed.push({ index: c.index, reason: reason(err) });
+    }
+  }
+  for (const s of stale) {
+    try {
+      await door.put(s.index, s.row);
+      res.repaired++;
+    } catch (err) {
+      res.failed.push({ index: s.index, reason: reason(err) });
+    }
+  }
 }
 
 /** Diff the whole board against the graph; repair unless dryRun. */
@@ -166,20 +231,10 @@ export async function reconcileGraph(
   opts: { dryRun?: boolean } = {},
 ): Promise<ReconcileResult> {
   const graph = await door.list();
-  const res: ReconcileResult = { boardCards: board.length, outOfSync: 0, repaired: 0, failed: [], sample: [] };
-  for (const task of board) {
-    const want = cardRow(task);
-    const fields = rowDiff(want, graph.get(task.index));
-    if (fields.length === 0) continue;
-    res.outOfSync++;
-    if (res.sample.length < 10) res.sample.push({ index: task.index, fields });
-    if (opts.dryRun) continue;
-    try {
-      await door.put(task.index, want);
-      res.repaired++;
-    } catch (err) {
-      res.failed.push({ index: task.index, reason: err instanceof Error ? err.message : String(err) });
-    }
-  }
+  const res: ReconcileResult = {
+    boardCards: board.length, outOfSync: 0, repaired: 0, failed: [], sample: [], duplicateNumbers: duplicateNumbers(board),
+  };
+  const { missing, stale } = classify(board, graph, res);
+  if (!opts.dryRun) await applyRepairs(door, missing, stale, res);
   return res;
 }

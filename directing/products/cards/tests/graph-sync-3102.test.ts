@@ -16,10 +16,18 @@ function task(over: Partial<BoardTask>): BoardTask {
   };
 }
 
-function fakeDoor(rows: Map<number, CardRow>, failOn = new Set<number>()): GraphDoor & { puts: number[] } {
+function fakeDoor(rows: Map<number, CardRow>, failOn = new Set<number>()): GraphDoor & { puts: number[]; batches: number[][] } {
   const puts: number[] = [];
+  const batches: number[][] = [];
   return {
     puts,
+    batches,
+    async createBatch(chunk) {
+      if (chunk.some((c) => rows.has(c.index))) throw new Error('conflict: row exists');
+      if (chunk.some((c) => failOn.has(c.index))) throw new Error('athena-make 503');
+      batches.push(chunk.map((c) => c.index));
+      for (const c of chunk) rows.set(c.index, c.row);
+    },
     async get(i) { return rows.get(i); },
     async list() { return new Map(rows); },
     async put(i, row) {
@@ -59,11 +67,23 @@ describe('#3102 the reconcile pass', () => {
     expect(second.outOfSync).toBe(0);
   });
 
-  test('a card with no row at all counts as missing and is created', async () => {
+  test('a card with no row at all counts as missing and is created in a batch, not one write each', async () => {
     const door = fakeDoor(new Map());
     const res = await reconcileGraph([task({ index: 9 })], door);
     expect(res.sample[0].fields).toEqual(['missing']);
-    expect(door.puts).toEqual([9]);
+    expect(door.batches).toEqual([[9]]);
+    expect(door.puts).toEqual([]);
+  });
+
+  test('450 missing cards go in 3 batches of at most 200; existing stale rows are replaced one by one', async () => {
+    const rows = new Map<number, CardRow>([[1, { label: 'old' }]]);
+    const door = fakeDoor(rows);
+    const board = Array.from({ length: 451 }, (_, i) => task({ index: i + 1 }));
+    const res = await reconcileGraph(board, door);
+    expect(door.batches.map((b) => b.length)).toEqual([200, 200, 50]);
+    expect(door.puts).toEqual([1]);
+    expect(res).toMatchObject({ outOfSync: 451, repaired: 451, failed: [] });
+    expect((await reconcileGraph(board, door, { dryRun: true })).outOfSync).toBe(0);
   });
 
   test('--dry-run counts but writes nothing', async () => {
@@ -86,6 +106,18 @@ describe('#3102 the reconcile pass', () => {
     const res = await reconcileGraph([task({ index: 7 })], fakeDoor(new Map(), new Set([7])));
     expect(res.repaired).toBe(0);
     expect(res.failed).toEqual([{ index: 7, reason: 'athena-make 503' }]);
+    const stale = await reconcileGraph([task({ index: 8 })], fakeDoor(new Map([[8, { label: 'old' }]]), new Set([8])));
+    expect(stale.repaired).toBe(0);
+    expect(stale.failed.map((f) => f.index)).toEqual([8]);
+  });
+
+  test('NEGATIVE PROOF: a card number the board gives to two cards is reported and skipped, and does not sink its batch', async () => {
+    const door = fakeDoor(new Map());
+    const board = [task({ index: 1937, title: 'a' }), task({ index: 1937, title: 'b' }), task({ index: 1938 })];
+    const res = await reconcileGraph(board, door);
+    expect(res.duplicateNumbers).toEqual([1937]);
+    expect(door.batches).toEqual([[1938]]);
+    expect(res).toMatchObject({ outOfSync: 1, repaired: 1, failed: [] });
   });
 
   test('rowDiff names exactly the fields that differ', () => {

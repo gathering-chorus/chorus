@@ -63,7 +63,7 @@ function die(msg: string): never {
 // unref'd so it never holds a fast invocation open — it only fires if something
 // ELSE (a hung socket) is keeping the process alive past the deadline.
 const WATCHDOG_MS = Number(process.env.CARDS_WATCHDOG_MS) || 30_000;
-setTimeout(() => {
+const watchdog = setTimeout(() => {
   console.error(`ERROR: cards watchdog — process exceeded ${WATCHDOG_MS}ms wall clock; exiting 124 (slow/blocked API?)`);
   process.exit(124);
 }, WATCHDOG_MS).unref();
@@ -672,11 +672,18 @@ function cmdSwat(ctx: CliCtx): Promise<unknown> {
 /** #3102 — the reconcile pass. Prints one number Jeff can trust: rows out of sync. */
 async function cmdGraphSync(client: BoardClient, args: string[]): Promise<void> {
   const dryRun = args.includes('--dry-run');
+  // The reconcile pass writes thousands of rows; it gets its own wall-clock cap
+  // instead of the 30s every other command lives under.
+  clearTimeout(watchdog);
+  setTimeout(() => { console.error('ERROR: graph-sync exceeded 60 minutes; exiting 124'); process.exit(124); }, 3_600_000).unref();
   const board = await client.list();
   const res = await reconcileGraph(board, athenaMakeDoor(), { dryRun });
   console.log(`board cards: ${res.boardCards}`);
   console.log(`out of sync: ${res.outOfSync}`);
   if (!dryRun) console.log(`repaired:    ${res.repaired}`);
+  if (res.duplicateNumbers.length) {
+    console.log(`duplicate card numbers on the board (skipped, need a person): ${res.duplicateNumbers.length} — ${res.duplicateNumbers.join(', ')}`);
+  }
   if (res.failed.length) {
     console.log(`failed:      ${res.failed.length}`);
     for (const f of res.failed.slice(0, 10)) console.log(`  #${f.index}: ${f.reason}`);
