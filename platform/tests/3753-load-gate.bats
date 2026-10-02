@@ -63,9 +63,11 @@ setup() {
   [ "$output" = "pass" ]
 }
 
-@test "AC2: timeout folds to unmeasurable ONLY under load — quiet-box timeout stays fail" {
+# #4419 — Jeff: "any time u blame load u are almost always wrong". A timeout is
+# red whatever the load; the busy-box fold to unmeasurable is gone.
+@test "AC2: a suite timeout is fail whatever the load — busy box and quiet box alike" {
   NIGHTLY_LOAD_STUB=999 run "$BIN" --nightly --classify fail "0 pass, 1 fail (SUITE TIMEOUT: killed after 1800s)"
-  [ "$output" = "unmeasurable" ]
+  [ "$output" = "fail" ]
   NIGHTLY_LOAD_STUB=0.1 run "$BIN" --nightly --classify fail "0 pass, 1 fail (SUITE TIMEOUT: killed after 1800s)"
   [ "$output" = "fail" ]
 }
