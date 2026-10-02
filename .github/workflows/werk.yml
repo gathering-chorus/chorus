@@ -613,6 +613,14 @@ jobs:
           CHORUS_ROLE: kade
         run: bash "${CHORUS_HOME}/platform/scripts/crawl-detached.sh"
 
+      # #4419 — after the land, every test in the domains it touched, in the
+      # background. Jeff, 2026-10-02: keep the werk fast; catch the red in about
+      # 30 minutes instead of at 03:00. Queued and kickstarted, never waited on.
+      - name: after-land-tests
+        if: ${{ steps.demo.outputs.proven == 'true' }}
+        continue-on-error: true
+        run: bash "${CHORUS_HOME}/platform/scripts/after-land-detached.sh"
+
       - name: outcome
         if: success()
         # Tell the truth about the terminal state — landed (proven) vs presented (not proven).

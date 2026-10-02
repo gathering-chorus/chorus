@@ -2692,7 +2692,7 @@ app.get('/api/athena/health', async (_req: Request, res: Response) => {
 
 // #2940 — Athena Move 0 tree endpoints. Same Zod-validated source as
 // chorus_tree_get / chorus_ownership_lookup / chorus_blast_radius MCP tools.
-import { loadTree, lookupOwnership, computeBlastRadius } from './handlers/athena-tree';
+import { loadTree, lookupOwnership } from './handlers/athena-tree';
 app.get('/api/athena/tree', (_req: Request, res: Response) => {
   try {
     const tree = loadTree();
@@ -2711,13 +2711,23 @@ app.get('/api/athena/ownership/:iri', (req: Request, res: Response) => {
     res.status(422).json({ ok: false, reason: 'schema-violation', error: (err as Error).message });
   }
 });
-app.get('/api/athena/blast-radius/:iri', (req: Request, res: Response) => {
+// #4419 AC1 — blast radius reads the live graph's edges (hasDomain, partOf,
+// consumes, hosts), not the hand-written June tree.json.
+import { blastRadiusFromEdges, blastRadiusEdgesQuery, edgesFromCsv } from './handlers/athena-blast-radius-graph';
+app.get('/api/athena/blast-radius/:iri', async (req: Request, res: Response) => {
   try {
-    const r = computeBlastRadius(loadTree(), req.params.iri);
+    const r0 = await fetch(nightlyFuseki(), {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/x-www-form-urlencoded', Accept: 'text/csv' },
+      body: new URLSearchParams({ query: blastRadiusEdgesQuery() }).toString(),
+      signal: AbortSignal.timeout(10_000),
+    });
+    if (!r0.ok) return res.status(503).json({ ok: false, reason: 'store-unreachable', status: r0.status });
+    const r = blastRadiusFromEdges(edgesFromCsv(await r0.text()), req.params.iri);
     if (!r) return res.status(404).json({ ok: false, reason: 'not-found', iri: req.params.iri });
-    res.status(200).json(r);
+    res.status(200).json({ ...r, source: 'graph' });
   } catch (err) {
-    res.status(422).json({ ok: false, reason: 'schema-violation', error: (err as Error).message });
+    res.status(503).json({ ok: false, reason: 'store-unreachable', error: (err as Error).message });
   }
 });
 

@@ -30,6 +30,15 @@ if ! "$REPO/platform/scripts/gate-test-type.sh" staged; then
   exit 1
 fi
 
+# #4419 — a NEW code or test file must carry a domain (the crawler's own rules
+# place it), or the card that touches it can never find its tests by domain.
+if ! "$REPO/platform/scripts/gate-domain-tag.sh" staged; then
+  echo "" >&2
+  echo "🧭 pre-commit BLOCKED: a new file has no domain (#4419)." >&2
+  echo "   Add a header naming one, e.g.  // @domain: tests   or   # @domain: tests" >&2
+  exit 1
+fi
+
 # #3598 — retirement gate: a deleted surface (script/gate/hook/source) must not
 # leave orphaned tests that still reference it (the rot class that fed the nightly
 # false-reds — git-queue.sh/show-gate.sh/done-gate.sh deleted, their .bats left
