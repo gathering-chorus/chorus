@@ -102,12 +102,20 @@ skip_patterns = {
 }
 stale_counts = {k: 0 for k in skip_patterns}
 stale_samples = {k: [] for k in skip_patterns}
+# #4416 — the tracked test files, from git, not a recursive walk of the tree:
+# the walk descended every node_modules and target dir before filtering them
+# out (72 s of system time per call, three calls per smoke test)
 test_files = []
-for ext in ('*.test.ts', '*.test.js', '*.feature', '*.bats', '*.spec.ts'):
-    for path in glob.glob(f'{CHORUS_HOME}/**/{ext}', recursive=True):
-        if '/node_modules/' in path or '/dist/' in path or '/.consumed' in path:
-            continue
-        test_files.append(path)
+try:
+    out = subprocess.run(
+        ['git', 'ls-files', '--', '*.test.ts', '*.test.js', '*.feature', '*.bats', '*.spec.ts'],
+        capture_output=True, text=True, cwd=CHORUS_HOME, timeout=30,
+    ).stdout
+    for rel in out.split('\n'):
+        if rel and '/dist/' not in rel and '/.consumed' not in rel:
+            test_files.append(os.path.join(CHORUS_HOME, rel))
+except Exception:
+    pass
 for path in test_files:
     try:
         with open(path, errors='ignore') as f:
@@ -130,7 +138,10 @@ try:
     for ev in ('card.demo.started', 'card.accepted'):
         cmd = [
             'curl', '-s', f'{LOKI_URL}/loki/api/v1/query_range',
-            '--data-urlencode', f'query={{job=~".+"}} | json | event="{ev}"',
+            # #4416 — the spine's own job and a line filter before the json
+            # parse: the any-job query took ~50 s, past the 30 s timeout, so
+            # the gate-skip rate was never measured (now ~7 s)
+            '--data-urlencode', f'query={{job="platform-chorus"}} |= "\\"event\\":\\"{ev}\\"" | json | event="{ev}"',
             '--data-urlencode', 'limit=5000',
             '--data-urlencode', f'start={window_start_epoch}000000000',
             '--data-urlencode', f'end={now}000000000',

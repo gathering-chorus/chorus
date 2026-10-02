@@ -49,19 +49,18 @@ cd "$REPO_ROOT"
 SEARCH_DIRS=(platform skills proving)
 
 offenders=()
-for pat in "${PATTERNS[@]}"; do
-  while IFS= read -r line; do
-    [ -z "$line" ] && continue
-    file="${line%%:*}"
-    file="${file#./}"
-    [ "$file" = "$CANONICAL" ] && continue
-    echo "$file" | grep -qE "$EXCLUDE_PATTERN" && continue
-    offenders+=("$file: $line")
-  done < <(grep -rEn \
-    --exclude-dir=node_modules --exclude-dir=target --exclude-dir=dist --exclude-dir=.git \
-    --exclude-dir=logs --exclude='*.log' \
-    "$pat" "${SEARCH_DIRS[@]}" 2>/dev/null)
-done
+# #4416 — one git grep over the tracked files, not six recursive greps of the
+# working tree (which walked untracked data, logs and builds: 252 s a night).
+# A spawn site that matters is committed; that is what this gate guards.
+gargs=()
+for pat in "${PATTERNS[@]}"; do gargs+=(-e "$pat"); done
+while IFS= read -r line; do
+  [ -z "$line" ] && continue
+  file="${line%%:*}"
+  [ "$file" = "$CANONICAL" ] && continue
+  echo "$file" | grep -qE "$EXCLUDE_PATTERN" && continue
+  offenders+=("$file: $line")
+done < <(git grep -nE "${gargs[@]}" -- "${SEARCH_DIRS[@]}" ':!*.log' 2>/dev/null)
 
 if [ ${#offenders[@]} -gt 0 ]; then
   echo "FAIL (#2820, replaces #2283): chorus-inject spawn sites outside $CANONICAL:"
