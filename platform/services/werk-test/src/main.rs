@@ -2716,6 +2716,10 @@ fn diff_scoped_units_inner(werk: &str, changed: &[String]) -> (Option<Vec<TestUn
             }
         }
     }
+    // #4353 — data/athena/ is read by chorus-api (the athena tree handler and the
+    // index), so a change there runs chorus-api's suite instead of refusing as
+    // an unmapped path.
+    units.push(ScopeUnit { name: "platform/api".to_string(), dir: "data/athena".to_string() });
     // #4173 — a changed suite is its own unit. Without this the scoper names it
     // and the filter below drops it, which is the same "runs nothing" the
     // irrelevant list used to produce.
@@ -2749,7 +2753,7 @@ fn diff_scoped_units_inner(werk: &str, changed: &[String]) -> (Option<Vec<TestUn
                     } else if u.dir.starts_with("platform/services/") {
                         TestUnit::RustCrate(u.name)
                     } else {
-                        TestUnit::TsPackage(u.dir)
+                        TestUnit::TsPackage(u.name)
                     }
                 })
                 .collect(),
@@ -3048,3 +3052,29 @@ mod bats_unmeasured_4265 {
     }
 }
 
+
+#[cfg(test)]
+mod data_athena_scope_4353 {
+    use super::*;
+
+    fn empty_world(tag: &str) -> String {
+        let root = std::env::temp_dir().join(format!("werk-test-4353-{}-{}", std::process::id(), tag));
+        let _ = std::fs::create_dir_all(&root);
+        root.to_string_lossy().into_owned()
+    }
+
+    #[test]
+    fn a_tree_json_change_runs_chorus_api() {
+        let (units, reason) = diff_scoped_units_inner(&empty_world("tree"), &["data/athena/tree.json".to_string()]);
+        let units = units.unwrap_or_else(|| panic!("refused: {reason}"));
+        assert!(units.iter().any(|u| matches!(u, TestUnit::TsPackage(p) if p == "platform/api")), "{units:?}");
+        assert!(!units.iter().any(|u| matches!(u, TestUnit::TsPackage(p) if p == "data/athena")), "the unit is chorus-api, not the data dir: {units:?}");
+    }
+
+    #[test]
+    fn negative_proof_a_path_nobody_reads_still_refuses() {
+        let (units, reason) = diff_scoped_units_inner(&empty_world("other"), &["data/elsewhere/x.json".to_string()]);
+        assert!(units.is_none(), "an unmapped data path must still refuse: {units:?}");
+        assert!(reason.contains("unmapped:data/elsewhere/x.json"), "{reason}");
+    }
+}
