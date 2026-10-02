@@ -38,7 +38,7 @@ export interface DiscoverTestsDeps {
 
 // #2516: GENERIC_BASES + SPECIAL_ALIASES + buildAliasMap auto-derivation
 // retired. Aliases are graph-resident as <sd> chorus:hasTestPathPrefix
-// "alias" triples in urn:chorus:ontology. Migration: scripts/migrate-aliases-to-graph.ts.
+// "alias" triples in urn:chorus:ontology.
 // New domains declare their own hasTestPathPrefix triples at creation time.
 
 // #3442: the type derivation authority. Replaces the old path-only

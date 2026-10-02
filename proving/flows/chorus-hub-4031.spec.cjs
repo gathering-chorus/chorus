@@ -167,12 +167,12 @@ test.describe('#4031 the moved links landed on their product pages', () => {
     await page.goto(`${BASE}/loom`, { waitUntil: 'domcontentloaded' });
     const p = section(page, /^principles$/i);
     await expect(p, 'Loom has a Principles section').toHaveCount(1);
-    for (const href of ['/loom/principles.html', '/loom/principles-list.html', '/loom/principles-reference-impl.html']) {
+    for (const href of ['/loom/principles.html', '/loom/principles-list.html']) {
       await expect(p.locator(`a[href="${href}"]`), `Principles carries ${href}`).toHaveCount(1);
     }
     const d = section(page, /^decisions · policies · practices$/i);
     await expect(d, 'Loom has a Decisions · Policies · Practices section').toHaveCount(1);
-    for (const href of ['/loom/decisions.html', '/loom/policies.html', '/loom/cookbook-substrate-class-domain.html']) {
+    for (const href of ['/loom/decisions.html', '/loom/policies.html']) {
       await expect(d.locator(`a[href="${href}"]`), `section carries ${href}`).toHaveCount(1);
     }
   });

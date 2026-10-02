@@ -36,7 +36,6 @@ describe('deriveTestType', () => {
 });
 
 describe('loadAliasMap', () => {
-  // Derivation logic lives in scripts/migrate-aliases-to-graph.ts (deriveAliases).
   // This function is the runtime read: take alias triples from SPARQL,
   // produce the prefix → domainId map. Trivial — the value is in the
   // graph data, not the function.
