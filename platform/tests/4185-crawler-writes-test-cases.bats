@@ -22,13 +22,27 @@ has()   { grep -qF -- "$1" <<<"${2-$output}"; }
 lacks() { if grep -qF -- "$1" <<<"${2-$output}"; then echo "unexpected: $1" >&2; return 1; fi; }
 eq()    { [ "$1" = "$2" ] || { echo "expected [$2] got [$1]" >&2; return 1; }; }
 
+# #4416 — with no variant named, each case brings its own door (a private
+# athena-make on a private in-memory dataset) instead of skipping every night.
+# Per case, not per file: every case walks a new fixture repo, and a door that
+# kept the last case's rows and watermark would crawl a delta against a repo
+# it never saw.
+door_up() {
+  if [ "${RUN_INTEGRATION:-}" = "true" ] && [ -z "${OWL_URL:-}" ]; then
+    source "$BATS_TEST_DIRNAME/lib/test-store.sh"
+    private_door || PRIVATE_DOOR_WHY="$TEST_STORE_WHY"
+  fi
+}
+
 setup() {
   [ "${RUN_INTEGRATION:-}" = "true" ] || skip "integration — RUN_INTEGRATION=true against a werk variant"
   REPO="$(cd "$BATS_TEST_DIRNAME/../.." && pwd)"
   OWL_URL="${OWL_URL:-}"
+  door_up
+  [ -z "${PRIVATE_DOOR_WHY:-}" ] || skip "UNMEASURED — no private door: $PRIVATE_DOOR_WHY"
   case "$OWL_URL" in ""|*:3360*) skip "refuses to write to the canonical store — point OWL_URL at a werk variant" ;; esac
   source "$BATS_TEST_DIRNAME/lib/test-store.sh"
-  variant_shares_prod "$OWL_URL" && skip "UNMEASURED — the variant at $OWL_URL writes the production store; this suite needs one of its own (#4334)"
+  [ -n "${PRIVATE_DOOR_DS:-}" ] || ! variant_shares_prod "$OWL_URL" || skip "UNMEASURED — the variant at $OWL_URL writes the production store; this suite needs one of its own (#4334)"
   BIN="${CHORUS_CRAWL_BIN:-$REPO/platform/services/chorus-crawl/target/release/chorus-crawl}"
   [ -x "$BIN" ] || BIN="$REPO/platform/services/chorus-crawl/target/debug/chorus-crawl"
   [ -x "$BIN" ] || skip "chorus-crawl not built at $BIN"
@@ -39,8 +53,10 @@ setup() {
   TAG="fx4185$$"                       # unique per run so parallel suites never share rows
   BATS_F="platform/tests/$TAG-suite.bats"
   TS_F="platform/tests/$TAG-unit.test.ts"
-  printf '@test "%s first case" {\n  true\n}\n@test "%s second case" {\n  true\n}\n' "$TAG" "$TAG" > "$FX/$BATS_F"
-  printf "it('%s jest case', () => {});\n" "$TAG" > "$FX/$TS_F"
+  # #4416 — the fixture files carry their @domain header: reconcile now
+  # reports a bats suite without one, or an unplaced test file, as drift
+  printf '# @domain: tests\n@test "%s first case" {\n  true\n}\n@test "%s second case" {\n  true\n}\n' "$TAG" "$TAG" > "$FX/$BATS_F"
+  printf "// @domain: tests\nit('%s jest case', () => {});\n" "$TAG" > "$FX/$TS_F"
   printf 'fn main() {}\n' > "$FX/src/main.rs"
   git -C "$FX" init -q && git -C "$FX" add -A && git -C "$FX" -c user.name=t -c user.email=t@t commit -q -m fixture
 
@@ -63,7 +79,17 @@ import sys,json
 for r in json.load(sys.stdin)['data']:
     if '$TAG' in r.get('filePath',''): print(json.dumps(r))"
 }
-crawl() { "$BIN" "$@" 2>&1; }
+# #4416 — the crawl sees only the fixture: its own HOME (so the box's live
+# log files are not walked, and never change between two passes), its own
+# validate records (not the /crawler-validate page's), and, on the private
+# door, the private store for its reads.
+crawl() {
+  local q="${FUSEKI_QUERY:-http://localhost:3030/pods/query}"
+  [ -z "${PRIVATE_DOOR_DS:-}" ] || q="${FUSEKI_BASE_URL:-http://localhost:3030}/$PRIVATE_DOOR_DS/query"
+  mkdir -p "$BATS_TEST_TMPDIR/home"
+  HOME="$BATS_TEST_TMPDIR/home" CHORUS_VALIDATE_DIR="$BATS_TEST_TMPDIR/validate" FUSEKI_QUERY="$q" \
+    "$BIN" "$@" 2>&1
+}
 teardown() {
   # leave the variant as we found it: our rows only, by name, as the crawler
   for c in "$TESTS_COLL" "$FILES_COLL"; do
@@ -72,6 +98,10 @@ teardown() {
       curl -s -o /dev/null -X DELETE -H "Authorization: Bearer $TC" --max-time 10 "$OWL_URL$c/$n" || true
     done
   done
+  if [ -n "${PRIVATE_DOOR_PID:-}" ]; then
+    source "$BATS_TEST_DIRNAME/lib/test-store.sh"
+    private_door_stop
+  fi
 }
 
 @test "AC1: after a walk every case in every test file has a row, written as the crawler, inFile -> its CodeFile row" {
@@ -160,7 +190,7 @@ teardown() {
   has "reconcile cases: clean"
   # plant a row for a file that is not in the tree, as the crawler itself
   ghost="platform/tests/$TAG-ghost.bats"
-  body="[{\"name\":\"test-$TAG-ghost-00000000\",\"filePath\":\"$ghost\",\"testName\":\"$TAG ghost case\",\"inFile\":\"$(rows_for "$FILES_COLL" | head -1 | python3 -c 'import sys,json; print(json.load(sys.stdin)["name"])')\",\"covers\":\"services\",\"pyramidLayer\":\"unit\"}]"
+  body="[{\"name\":\"test-$TAG-ghost-00000000\",\"filePath\":\"$ghost\",\"testName\":\"$TAG ghost case\",\"inFile\":\"$(rows_for "$FILES_COLL" | head -1 | python3 -c 'import sys,json; print(json.load(sys.stdin)["name"])')\",\"covers\":\"services\",\"testType\":\"unit\"}]"
   run curl -s -o /dev/null -w '%{http_code}' -X POST -H "Authorization: Bearer $TC" -H 'Content-Type: application/json' --max-time 15 -d "$body" "$OWL_URL$TESTS_COLL/batch"
   [ "$output" = "201" ]
   run crawl --reconcile; echo "$output"; [ "$status" -eq 1 ]

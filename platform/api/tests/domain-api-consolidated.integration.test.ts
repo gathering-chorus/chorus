@@ -24,7 +24,8 @@ describe('#2060: consolidated domain API', () => {
     expect(res.status).toBe(200);
     const body = await res.json();
     expect(body.data).toBeDefined();
-    expect(body.data.subdomain).toBe('seeds-domain');
+    // #4353 renamed the Domain rows to bare names: chorus:seeds, no -domain row
+    expect(body.data.subdomain).toBe('seeds');
     expect(Array.isArray(body.data.files)).toBe(true);
     expect(body._meta).toBeDefined();
     expect(body._meta.source_count).toBeDefined();
