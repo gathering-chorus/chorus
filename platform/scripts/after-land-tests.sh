@@ -17,7 +17,12 @@ DONE="$BASE/done"
 TREES="$BASE/trees"
 WERK_TEST="${AFTER_LAND_WERK_TEST:-$HOME/.chorus/bin/werk-test}"
 NUDGE="${AFTER_LAND_NUDGE:-$ROOT/platform/scripts/ops-nudge}"
-TMP_="${TMPDIR:-/tmp}"
+# The nightly's lock lives in its $TMPDIR, which launchd sets for every user
+# agent to the per-user temp dir (getconf DARWIN_USER_TEMP_DIR; measured on a
+# running com.chorus agent 2026-10-02). Resolve it the same way here, so the
+# two agents agree whatever this one's own environment says.
+TMP_="$(getconf DARWIN_USER_TEMP_DIR 2>/dev/null || true)"
+TMP_="${TMP_:-${TMPDIR:-/tmp}}"
 LOCK="${NIGHTLY_LOCKDIR:-${TMP_%/}/chorus-nightly-suites.lock.d}"
 WAIT_TICK="${AFTER_LAND_WAIT_TICK:-60}"
 mkdir -p "$QUEUE" "$DONE" "$TREES"
