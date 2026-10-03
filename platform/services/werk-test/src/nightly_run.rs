@@ -103,7 +103,7 @@ fn first_count(summary: &str, words: &[&str]) -> Option<usize> {
 /// summary counts failures is a REPORTER CONTRADICTION and records fail
 /// (#3753 AC4). A fail whose summary names an environment that never ran the
 /// suite (missing node module, command not found, DID NOT RUN) is unmeasurable;
-/// a suite timeout under load is unmeasurable, over an idle box it is a fail.
+/// a suite timeout is a fail, whatever the load (2026-10-02).
 pub fn classify_verdict(verdict: &str, summary: &str, box_over_load: bool) -> (String, bool) {
     if verdict == "pass" {
         if let Some(f) = first_count(summary, &["failed", "fail"]) {
@@ -122,9 +122,10 @@ pub fn classify_verdict(verdict: &str, summary: &str, box_over_load: bool) -> (S
     if env_never_ran {
         return ("unmeasurable".into(), false);
     }
-    if (summary.contains("SUITE TIMEOUT") || summary.contains("rc=124")) && box_over_load {
-        return ("unmeasurable".into(), false);
-    }
+    // Jeff, 2026-10-02: "any time u blame load u are almost always wrong". A
+    // suite that timed out is red, whatever the load was; it is never filed
+    // as unmeasurable because the box looked busy.
+    let _ = box_over_load;
     ("fail".into(), false)
 }
 
@@ -1473,7 +1474,8 @@ mod nightly_run_4145 {
         let (v, _) = remap_unmeasured("pass", "0 pass, 0 fail (SELF-REFUSED rc=3 — suite declined to run here)");
         assert_eq!(v, "pass", "a row that names its own state keeps it");
         assert_eq!(classify_verdict("fail", "Cannot find module 'x'", false).0, "unmeasurable");
-        assert_eq!(classify_verdict("fail", "SUITE TIMEOUT rc=124", true).0, "unmeasurable");
+        // 2026-10-02 — a timeout is red, busy box or not
+        assert_eq!(classify_verdict("fail", "SUITE TIMEOUT rc=124", true).0, "fail");
         assert_eq!(classify_verdict("fail", "SUITE TIMEOUT rc=124", false).0, "fail", "a timeout on an idle box is a fail");
     }
 

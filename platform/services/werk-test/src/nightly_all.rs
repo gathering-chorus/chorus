@@ -1150,12 +1150,10 @@ pub fn gate_holds(lane_text: &str) -> usize {
 /// a run that waited on the load gate says so, in words the readout files
 /// under the machine's condition rather than a product break.
 pub fn duration_verdict_with_load(secs: u64, budget_secs: u64, holds: usize) -> (&'static str, String) {
-    let (status, summary) = duration_verdict(secs, budget_secs);
-    if status == "fail" && holds > 0 {
-        let s = summary.trim_end_matches(')').to_string();
-        return (status, format!("{}; {} load-gate waits — the box was under load)", s, holds));
-    }
-    (status, summary)
+    // 2026-10-02 — a long run is not explained by load; the summary says how
+    // far over budget it was and nothing about the box
+    let _ = holds;
+    duration_verdict(secs, budget_secs)
 }
 
 pub fn duration_verdict(secs: u64, budget_secs: u64) -> (&'static str, String) {
@@ -1436,11 +1434,12 @@ x\n\
     }
 
     #[test]
-    fn a_long_run_that_waited_on_load_says_so() {
+    fn a_long_run_is_red_and_blames_nothing() {
+        // 2026-10-02 — Jeff: load is almost never the cause; the summary
+        // reports how far over budget the run was, never the box
         let (st, s) = duration_verdict_with_load(10140, 5400, 572);
         assert_eq!(st, "fail", "still red: the run was over budget");
-        assert!(s.contains("572 load-gate waits — the box was under load"), "{s}");
-        assert!(s.ends_with(')'), "{s}");
+        assert!(!s.contains("load"), "{s}");
     }
 
     /// NEGATIVE PROOF — a long run with no waits is not blamed on load, and a

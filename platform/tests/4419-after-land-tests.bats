@@ -59,7 +59,6 @@ STUB
   [ "$status" -eq 0 ] || return 1
   # the LANDED commit is what ran (file=one), not canonical's later HEAD (two)
   grep -q "args=4353 wren replay=$C1 after=1 file=one" "$T/werk-test.args" || return 1
-  [ -z "$(git -C "$R" worktree list | sed 1d)" ] || return 1
   grep -q '^wren after-land #4353: red' "$T/nudges" || return 1
   grep -q 'jest:platform/api … FAIL' "$T/nudges" || return 1
   ls "$T/after-land/done/1-4353-rc1.env" >/dev/null || return 1
@@ -150,5 +149,66 @@ STUB
   p="$REPO/platform/launchd/com.chorus.after-land-tests.plist"
   grep -q '.cargo/bin' "$p" || return 1
   grep -q '.nvm/versions/node/' "$p" || return 1
-  grep -q 'CARGO_TARGET_DIR' "$p" || return 1
+  # crates build into the persistent tree's own target/, where suites look
+  if grep -q '<key>CARGO_TARGET_DIR</key>' "$p"; then return 1; fi
+}
+
+@test "a run killed mid-way leaves no stale worktree that blocks the next one" {
+  stub_werk_test 0
+  # the killed run: a registered worktree whose directory is gone
+  git -C "$R" worktree add --detach "$T/after-land/tree/chorus" "$C1" >/dev/null 2>&1
+  rm -rf "$T/after-land/tree"
+  mkdir -p "$AFTER_LAND_QUEUE"; printf 'CARD=3\nROLE=kade\nCOMMIT=%s\n' "$C1" > "$AFTER_LAND_QUEUE/100-3.env"
+  run env AFTER_LAND_WERK_TEST="$T/werk-test" AFTER_LAND_NUDGE="$T/nudge" CHORUS_ROOT="$R" bash "$REPO/platform/scripts/after-land-tests.sh"
+  [[ "$output" == *"#3 green"* ]] || return 1
+  [[ "$output" != *"could not check out"* ]] || return 1
+}
+
+@test "a suite that writes beside the repo writes into the run's own box, which is removed" {
+  cat > "$T/werk-test" <<STUB
+#!/bin/bash
+touch "\$WERK_TEST_TREE/../TEAM_PROTOCOL.md"
+exit 0
+STUB
+  chmod +x "$T/werk-test"
+  printf '#!/bin/bash\n' > "$T/nudge"; chmod +x "$T/nudge"
+  mkdir -p "$AFTER_LAND_QUEUE"; printf 'CARD=2\nROLE=kade\nCOMMIT=%s\n' "$C1" > "$AFTER_LAND_QUEUE/100-2.env"
+  run env AFTER_LAND_WERK_TEST="$T/werk-test" AFTER_LAND_NUDGE="$T/nudge" CHORUS_ROOT="$R" bash "$REPO/platform/scripts/after-land-tests.sh"
+  # it landed in the run's box (tree/), never beside the queue or the repo
+  [ ! -e "$T/after-land/TEAM_PROTOCOL.md" ] || return 1
+  [ -e "$T/after-land/tree/TEAM_PROTOCOL.md" ] || return 1
+  # and the next run clears it before it starts
+  printf 'CARD=3\nROLE=kade\nCOMMIT=%s\n' "$C1" > "$AFTER_LAND_QUEUE/200-3.env"
+  printf '#!/bin/bash\nexit 0\n' > "$T/werk-test"
+  run env AFTER_LAND_WERK_TEST="$T/werk-test" AFTER_LAND_NUDGE="$T/nudge" CHORUS_ROOT="$R" bash "$REPO/platform/scripts/after-land-tests.sh"
+  [ ! -e "$T/after-land/tree/TEAM_PROTOCOL.md" ] || return 1
+}
+
+@test "one persistent checkout moves to each landed commit and keeps its warm state" {
+  stub_werk_test 0
+  mkdir -p "$AFTER_LAND_QUEUE"
+  printf 'CARD=1\nROLE=kade\nCOMMIT=%s\n' "$C1" > "$AFTER_LAND_QUEUE/100-1.env"
+  run env AFTER_LAND_WERK_TEST="$T/werk-test" AFTER_LAND_NUDGE="$T/nudge" CHORUS_ROOT="$R" bash "$REPO/platform/scripts/after-land-tests.sh"
+  mkdir -p "$T/after-land/tree/chorus/target" && touch "$T/after-land/tree/chorus/target/built"
+  printf 'CARD=2\nROLE=kade\nCOMMIT=%s\n' "$C2" > "$AFTER_LAND_QUEUE/200-2.env"
+  run env AFTER_LAND_WERK_TEST="$T/werk-test" AFTER_LAND_NUDGE="$T/nudge" CHORUS_ROOT="$R" bash "$REPO/platform/scripts/after-land-tests.sh"
+  grep -q "args=1 kade replay=$C1 after=1 file=one" "$T/werk-test.args" || return 1
+  grep -q "args=2 kade replay=$C2 after=1 file=two" "$T/werk-test.args" || return 1
+  [ -e "$T/after-land/tree/chorus/target/built" ] || return 1
+}
+
+@test "the checkout gets canonical's installed deps, so eslint and jest can load" {
+  mkdir -p "$R/pkg/node_modules/dep" && echo '{}' > "$R/pkg/package.json" && git -C "$R" add pkg/package.json && git -C "$R" -c user.email=t@t -c user.name=t commit -qm pkg
+  C3="$(git -C "$R" rev-parse HEAD)"
+  cat > "$T/werk-test" <<STUB
+#!/bin/bash
+[ -d "\$WERK_TEST_TREE/pkg/node_modules/dep" ] && echo "deps-present" > "$T/deps"
+exit 0
+STUB
+  chmod +x "$T/werk-test"; printf '#!/bin/bash\n' > "$T/nudge"; chmod +x "$T/nudge"
+  mkdir -p "$AFTER_LAND_QUEUE"; printf 'CARD=1\nROLE=kade\nCOMMIT=%s\n' "$C3" > "$AFTER_LAND_QUEUE/100-1.env"
+  run env AFTER_LAND_WERK_TEST="$T/werk-test" AFTER_LAND_NUDGE="$T/nudge" CHORUS_ROOT="$R" bash "$REPO/platform/scripts/after-land-tests.sh"
+  grep -q deps-present "$T/deps" || return 1
+  # the link is removed with the box; canonical's own deps are untouched
+  [ -d "$R/pkg/node_modules/dep" ] || return 1
 }

@@ -50,8 +50,9 @@ fn a_file_with_two_domains_selects_both_and_a_changed_test_selects_itself() {
     assert!(s.tests.contains_key("platform/api/tests/discover-pages.integration.test.ts"));
     assert!(s.tests.contains_key("platform/api/tests/domain-page.integration.test.ts"));
     assert!(s.tests.contains_key("platform/tests/4202-principal-login.bats"));
+    // the changed test runs itself; its own domain adds nothing
     let d: Vec<&str> = s.domains.iter().map(|x| x.as_str()).collect();
-    assert_eq!(d, vec!["code", "domains", "roles"]);
+    assert_eq!(d, vec!["code", "domains"]);
 }
 
 #[test]
@@ -59,4 +60,16 @@ fn a_path_the_seam_did_not_answer_is_untagged_not_silently_dropped() {
     let placed: HashMap<String, Vec<String>> = HashMap::new();
     let s = domain_selection(&["platform/api/src/new.ts".into()], &placed, &rows());
     assert_eq!(s.untagged, vec!["platform/api/src/new.ts".to_string()]);
+}
+
+#[test]
+fn negative_proof_a_changed_test_does_not_pull_in_every_test_of_its_domain() {
+    let mut r = rows();
+    r.push(row("platform/tests/other-tests-domain.bats", "tests", ""));
+    r.push(row("platform/tests/4419-x.bats", "tests", ""));
+    let placed = parse_domains_of("platform/tests/4419-x.bats\ttests\n");
+    let s = domain_selection(&["platform/tests/4419-x.bats".into()], &placed, &r);
+    assert_eq!(s.tests.len(), 1, "{:?}", s.tests);
+    assert!(s.tests.contains_key("platform/tests/4419-x.bats"));
+    assert!(s.domains.is_empty());
 }
