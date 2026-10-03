@@ -15,9 +15,21 @@
 
 import { test } from 'node:test';
 import { strict as assert } from 'node:assert';
+import { mkdtempSync, readFileSync, existsSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
 import { Client } from '@modelcontextprotocol/sdk/client/index.js';
 import { InMemoryTransport } from '@modelcontextprotocol/sdk/inMemory.js';
 import { buildMcpServer, type ExecFileAsync } from '../src/server';
+
+// The last test calls the retired tool for real, and every tool error writes
+// mcp.tool.error to the spine and nudges ops. Without these two lines the
+// nightly wrote that line to the prod spine and nudged Silas on every run
+// (09-14, 09-18, 09-20, 09-23, 10-03). The error goes to this test's own log,
+// and CHORUS_SYNTHETIC=1 keeps the nudge off (shouldNotifyOps, #3335).
+const SPINE = join(mkdtempSync(join(tmpdir(), 'logs-query-retired-')), 'chorus.log');
+process.env.CHORUS_LOG_FILE = SPINE;
+process.env.CHORUS_SYNTHETIC = '1';
 
 const noopExec = (async () => ({ stdout: 'ok', stderr: '' })) as unknown as ExecFileAsync;
 
@@ -81,6 +93,21 @@ test('calling the retired name fails loud and names its replacement', async () =
       'the retired tool should refuse with a pointer, not a bare unknown-tool error',
     );
   });
+});
+
+test("the retired tool's error goes to the test's own spine, not prod's", async () => {
+  const server = buildMcpServer(() => 'silas', { execFileAsync: noopExec, cardsPath: '/fake/cards' });
+  const [clientTransport, serverTransport] = InMemoryTransport.createLinkedPair();
+  const client = new Client({ name: 'logs-query-retired-spine', version: '1.0' });
+  await Promise.all([server.connect(serverTransport), client.connect(clientTransport)]);
+  try {
+    await assert.rejects(() => client.callTool({ name: 'chorus_logs_query', arguments: { query: '{job="x"}' } }));
+  } finally {
+    await client.close();
+    await server.close();
+  }
+  assert.ok(existsSync(SPINE), `no tool error was written to the test spine ${SPINE}`);
+  assert.match(readFileSync(SPINE, 'utf8'), /"event":"mcp\.tool\.error"/);
 });
 
 test('no surviving tool description tells a caller to use chorus_logs_query', async () => {
