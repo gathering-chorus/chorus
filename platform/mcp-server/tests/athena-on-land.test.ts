@@ -11,7 +11,7 @@ import * as path from 'node:path';
 import { Client } from '@modelcontextprotocol/sdk/client/index.js';
 import { InMemoryTransport } from '@modelcontextprotocol/sdk/inMemory.js';
 import { execFileSync } from 'node:child_process';
-import { buildMcpServer } from '../src/server';
+import { buildMcpServer, athenaDeployFailureNudges, type FetchImpl } from '../src/server';
 
 // #4338 — CHORUS_HOME is a real git repo: the trigger runs the LANDED commit's
 // athena.yml (git show <sha>:...), and the tree's copy is deliberately different,
@@ -38,7 +38,21 @@ function stub(dir: string, name: string, body: string): string {
   return bin;
 }
 
-async function withServer(scopeOut: string | null, fn: (client: Client, dir: string) => Promise<void>, mergedSha?: string) {
+// #4228 — every POST to pulse's nudge route, as {to, content}. Other reads (the
+// word-cap lookup) answer not-ok, which the cap treats as "use the default".
+type Sent = { to: string; content: string };
+function capturingFetch(sent: Sent[]): FetchImpl {
+  return async (url, init) => {
+    if (url.includes('/api/nudge') && init?.method === 'POST') {
+      const b = JSON.parse(init.body ?? '{}');
+      sent.push({ to: b.to, content: b.content });
+      return { ok: true, status: 200, json: async () => ({ ok: true }), text: async () => '{"ok":true}' };
+    }
+    return { ok: false, status: 404, json: async () => ({}), text: async () => '' };
+  };
+}
+
+async function withServer(scopeOut: string | null, fn: (client: Client, dir: string) => Promise<void>, mergedSha?: string, actExit = 0, sent: Sent[] = []) {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'athena-on-land-'));
   const bins = path.join(dir, 'bin'); fs.mkdirSync(bins);
   const home = gitHome(dir);
@@ -47,9 +61,9 @@ async function withServer(scopeOut: string | null, fn: (client: Client, dir: str
   const prev = { bin: process.env.CHORUS_BIN, act: process.env.CHORUS_ACT_BIN, log: process.env.CHORUS_LOG_FILE, home: process.env.CHORUS_HOME };
   process.env.CHORUS_HOME = home;
   process.env.CHORUS_BIN = bins;
-  process.env.CHORUS_ACT_BIN = stub(bins, 'act', `echo "act $*" >> "${dir}/act-argv.txt"; sleep 0.2; echo "stub act ran"`);
+  process.env.CHORUS_ACT_BIN = stub(bins, 'act', `echo "act $*" >> "${dir}/act-argv.txt"; sleep 0.2; echo "stub act ran"; exit ${actExit}`);
   process.env.CHORUS_LOG_FILE = path.join(dir, 'chorus.log');
-  const server = buildMcpServer(() => 'wren', { runsDir: dir, cardsPath: '/fake/cards' });
+  const server = buildMcpServer(() => 'wren', { runsDir: dir, cardsPath: '/fake/cards', fetchImpl: capturingFetch(sent) });
   const [ct, st] = InMemoryTransport.createLinkedPair();
   const client = new Client({ name: 'athena-on-land-test', version: '1.0' });
   await Promise.all([server.connect(st), client.connect(ct)]);
@@ -126,4 +140,50 @@ test('NEGATIVE PROOF — a landed sha git cannot show is a named trigger failure
     await new Promise((r) => setTimeout(r, 300));
     assert.ok(!fs.existsSync(path.join(dir, 'act-argv.txt')), 'act never ran');
   }, 'deadbeefdeadbeefdeadbeefdeadbeefdeadbeef');
+});
+
+// #4228 reopened (Silas, 2026-10-02): #4338's model deploy failed at 15:54 and the
+// only record was a spine line. A failed exit now reaches the landing role and Jeff.
+async function waitForSent(sent: Sent[], n: number, ms = 3000): Promise<void> {
+  const t0 = Date.now();
+  while (sent.length < n && Date.now() - t0 < ms) await new Promise((r) => setTimeout(r, 50));
+}
+
+test('a model deploy that exits 1 after the land nudges the landing role and Jeff, naming the card and the log', async () => {
+  const sent: Sent[] = [];
+  await withServer('roles/wren/ontology/principles-3749.ttl\n', async (_client, dir) => {
+    const body = await merge(_client);
+    assert.equal(body.athena.triggered, true);
+    await waitForSent(sent, 2);
+    assert.deepEqual(sent.map((s) => s.to).sort(), ['jeff', 'wren']);
+    for (const s of sent) {
+      assert.ok(s.content.includes('#4177') && s.content.includes('exit 1'), s.content);
+      assert.ok(s.content.includes(body.athena.log), 'the nudge names the log to read');
+    }
+    assert.ok(fs.readFileSync(path.join(dir, 'chorus.log'), 'utf8').includes('"event":"athena.deploy.failed"'));
+  }, undefined, 1, sent);
+});
+
+test('NEGATIVE PROOF — a model deploy that exits 0 nudges nobody', async () => {
+  const sent: Sent[] = [];
+  await withServer('roles/wren/ontology/principles-3749.ttl\n', async (client, dir) => {
+    await merge(client);
+    const spine = path.join(dir, 'chorus.log');
+    const t0 = Date.now();
+    while (Date.now() - t0 < 3000 && !fs.readFileSync(spine, 'utf8').includes('athena.deploy.completed')) {
+      await new Promise((r) => setTimeout(r, 50));
+    }
+    assert.ok(fs.readFileSync(spine, 'utf8').includes('"event":"athena.deploy.completed"'), 'the exit was read');
+    await new Promise((r) => setTimeout(r, 200));
+    assert.deepEqual(sent, []);
+  }, undefined, 0, sent);
+});
+
+test('the rule alone: exit 0 is nobody; a non-zero exit or a kill is the role and Jeff; a jeff land is one nudge', () => {
+  assert.deepEqual(athenaDeployFailureNudges('kade', 7, 0, null, '/l'), []);
+  const fail = athenaDeployFailureNudges('kade', 7, 2, null, '/l');
+  assert.deepEqual(fail.map((n) => n.to), ['kade', 'jeff']);
+  assert.ok(fail[0].message.includes('exit 2') && fail[0].message.includes('/l'));
+  assert.ok(athenaDeployFailureNudges('wren', 7, null, 'SIGKILL', '/l')[0].message.includes('killed (SIGKILL)'));
+  assert.equal(athenaDeployFailureNudges('jeff', 7, 1, null, '/l').length, 1);
 });
