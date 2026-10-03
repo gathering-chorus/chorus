@@ -10,9 +10,26 @@ import * as os from 'node:os';
 import * as path from 'node:path';
 import { Client } from '@modelcontextprotocol/sdk/client/index.js';
 import { InMemoryTransport } from '@modelcontextprotocol/sdk/inMemory.js';
+import { execFileSync } from 'node:child_process';
 import { buildMcpServer } from '../src/server';
 
-const SHA = 'c6ee9fa02c6ee9fa02c6ee9fa02c6ee9fa02c6ee';
+// #4338 — CHORUS_HOME is a real git repo: the trigger runs the LANDED commit's
+// athena.yml (git show <sha>:...), and the tree's copy is deliberately different,
+// the way canonical still holds the previous land's file at merge time.
+const LANDED_MARK = 'landed-commit-workflow';
+const TREE_MARK = 'stale-tree-workflow';
+let SHA = '';
+function gitHome(dir: string): string {
+  const home = path.join(dir, 'home'); fs.mkdirSync(path.join(home, '.github', 'workflows'), { recursive: true });
+  const git = (...a: string[]) => execFileSync('git', ['-C', home, ...a], { encoding: 'utf8' }).trim();
+  git('init', '-q'); git('config', 'user.email', 't@t'); git('config', 'user.name', 't');
+  const wf = path.join(home, '.github', 'workflows', 'athena.yml');
+  fs.writeFileSync(wf, `name: athena\n# ${LANDED_MARK}\njobs: {}\n`);
+  git('add', '.'); git('commit', '-qm', 'landed');
+  SHA = git('rev-parse', 'HEAD');
+  fs.writeFileSync(wf, `name: athena\n# ${TREE_MARK}\njobs: {}\n`);
+  return home;
+}
 
 function stub(dir: string, name: string, body: string): string {
   const bin = path.join(dir, name);
@@ -21,12 +38,14 @@ function stub(dir: string, name: string, body: string): string {
   return bin;
 }
 
-async function withServer(scopeOut: string | null, fn: (client: Client, dir: string) => Promise<void>) {
+async function withServer(scopeOut: string | null, fn: (client: Client, dir: string) => Promise<void>, mergedSha?: string) {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'athena-on-land-'));
   const bins = path.join(dir, 'bin'); fs.mkdirSync(bins);
-  stub(bins, 'werk-merge', `echo "merged ${SHA}"`);
+  const home = gitHome(dir);
+  stub(bins, 'werk-merge', `echo "merged ${mergedSha ?? SHA}"`);
   if (scopeOut !== null) stub(bins, 'athena-deploy', `echo "athena-deploy $*" >> "${dir}/scope-argv.txt"; printf '%s' "${scopeOut}"`);
-  const prev = { bin: process.env.CHORUS_BIN, act: process.env.CHORUS_ACT_BIN, log: process.env.CHORUS_LOG_FILE };
+  const prev = { bin: process.env.CHORUS_BIN, act: process.env.CHORUS_ACT_BIN, log: process.env.CHORUS_LOG_FILE, home: process.env.CHORUS_HOME };
+  process.env.CHORUS_HOME = home;
   process.env.CHORUS_BIN = bins;
   process.env.CHORUS_ACT_BIN = stub(bins, 'act', `echo "act $*" >> "${dir}/act-argv.txt"; sleep 0.2; echo "stub act ran"`);
   process.env.CHORUS_LOG_FILE = path.join(dir, 'chorus.log');
@@ -36,7 +55,7 @@ async function withServer(scopeOut: string | null, fn: (client: Client, dir: str
   await Promise.all([server.connect(st), client.connect(ct)]);
   try { await fn(client, dir); } finally {
     await client.close(); await server.close();
-    for (const [k, v] of [['CHORUS_BIN', prev.bin], ['CHORUS_ACT_BIN', prev.act], ['CHORUS_LOG_FILE', prev.log]] as const) {
+    for (const [k, v] of [['CHORUS_BIN', prev.bin], ['CHORUS_ACT_BIN', prev.act], ['CHORUS_LOG_FILE', prev.log], ['CHORUS_HOME', prev.home]] as const) {
       if (v === undefined) delete process.env[k]; else process.env[k] = v;
     }
   }
@@ -66,7 +85,10 @@ test('a land that carried model sources starts the canonical athena run detached
     const scopeArgv = fs.readFileSync(path.join(dir, 'scope-argv.txt'), 'utf8');
     assert.ok(scopeArgv.includes(`scope`) && scopeArgv.includes(`${SHA}^..${SHA}`), 'scope asks about exactly the landed commit');
     const argv = await waitFor(path.join(dir, 'act-argv.txt'));
-    assert.ok(argv.includes('.github/workflows/athena.yml'), `act ran athena.yml: ${argv}`);
+    // #4338 — act ran the landed commit's workflow, never the tree's stale copy
+    const wf = /-W (\S+)/.exec(argv)?.[1] ?? '';
+    const ran = fs.readFileSync(wf, 'utf8');
+    assert.ok(ran.includes(LANDED_MARK) && !ran.includes(TREE_MARK), `act ran the landed athena.yml, got ${wf}: ${ran}`);
     assert.ok(argv.includes('--input target=canonical') && argv.includes(`--input landed_commit=${SHA}`) && argv.includes('--input card_id=4177'));
     const spine = fs.readFileSync(path.join(dir, 'chorus.log'), 'utf8');
     assert.ok(spine.includes('"event":"athena.trigger.started"') && spine.includes(SHA), 'the trigger is witnessed on the spine');
@@ -93,4 +115,15 @@ test('NEGATIVE PROOF — a missing scope tool is a named, witnessed trigger fail
     assert.ok(!fs.existsSync(path.join(dir, 'act-argv.txt')), 'act never ran');
     assert.ok(fs.readFileSync(path.join(dir, 'chorus.log'), 'utf8').includes('"event":"athena.trigger.failed"'));
   });
+});
+
+test('NEGATIVE PROOF — a landed sha git cannot show is a named trigger failure, never a run of the tree copy', async () => {
+  await withServer('roles/wren/ontology/principles-3749.ttl\n', async (client, dir) => {
+    const body = await merge(client);
+    assert.equal(body.ok, true, 'the code landed; the reply must not lie about that');
+    assert.equal(body.athena.triggered, false);
+    assert.equal(body.athena.reason, 'workflow-unreadable');
+    await new Promise((r) => setTimeout(r, 300));
+    assert.ok(!fs.existsSync(path.join(dir, 'act-argv.txt')), 'act never ran');
+  }, 'deadbeefdeadbeefdeadbeefdeadbeefdeadbeef');
 });

@@ -2896,6 +2896,54 @@ function athenaActArgs(args: z.infer<typeof AthenaRunInput>, workflow: string): 
   ];
 }
 
+/** #4338 — the athena.yml AT the landed commit, written to a file act can read.
+ *  Refuses (throws) when git cannot show it; never falls back to the tree's copy. */
+export async function landedAthenaWorkflow(home: string, landedCommit: string, dir: string, cardId: number): Promise<string> {
+  const pathMod = require('path') as typeof import('path');
+  const fsMod = require('fs') as typeof import('fs');
+  if (!/^[0-9a-f]{7,40}$/.test(landedCommit)) throw new Error(`landed commit '${landedCommit}' is not a sha`);
+  const show = () => promisify(execFile)('git', ['-C', home, 'show', `${landedCommit}:.github/workflows/athena.yml`], { maxBuffer: 4 * 1024 * 1024 });
+  // the merge may have pushed from elsewhere: fetch once, then the commit must be there
+  const r = await show().catch(async () => {
+    await promisify(execFile)('git', ['-C', home, 'fetch', '--quiet', 'origin'], { timeout: 60_000 }).catch((e: { killed?: boolean; signal?: string | null; message?: string }) => {
+      // a kill is named as a kill, never read as "the commit is missing"
+      throw new Error((e.killed || e.signal) ? `git fetch killed after 60000ms (${e.signal ?? 'timeout'})` : `git fetch failed: ${String(e.message).slice(0, 120)}`);
+    });
+    return show();
+  });
+  if (!r.stdout || !r.stdout.includes('jobs:')) throw new Error(`git show ${landedCommit}:athena.yml returned no workflow`);
+  const out = pathMod.join(dir, `athena-${cardId}-${landedCommit.slice(0, 12)}.yml`);
+  fsMod.writeFileSync(out, r.stdout);
+  return out;
+}
+
+/** #4338 — the scope half of the land trigger, split out so the trigger stays
+ *  under the complexity ceiling: the landed commit's model/seed files, or the
+ *  witnessed reason there is nothing to run. */
+async function scopeLandedCommit(
+  role: string, cardId: number, landedCommit: string, scopeBin: string, home: string,
+): Promise<{ scope: string } | { result: Record<string, unknown> }> {
+  const execFileP = promisify(execFile);
+  let scope: string;
+  try {
+    const r = await execFileP(scopeBin, ['scope', home, `${landedCommit}^..${landedCommit}`], { env: process.env, timeout: 60_000, maxBuffer: 4 * 1024 * 1024 });
+    scope = (r.stdout || '').trim();
+  } catch (err) {
+    const e = err as NodeJS.ErrnoException & { stderr?: string; killed?: boolean; signal?: string | null };
+    // a kill is named as a kill (the exec-timeout-is-named class), never read as a scope refusal
+    const detail = (e.killed || e.signal)
+      ? `athena-deploy scope killed after 60000ms (${e.signal ?? 'timeout'})`
+      : (e.stderr || e.message || String(err)).trim().slice(0, 200);
+    await appendChorusLog('athena.trigger.failed', role, { card_id: cardId, landedCommit, reason: 'scope-failed', detail });
+    return { result: { triggered: false, reason: 'scope-failed', detail } };
+  }
+  if (!scope) {
+    await appendChorusLog('athena.trigger.skipped', role, { card_id: cardId, landedCommit, reason: 'no-model-source' });
+    return { result: { triggered: false, reason: 'no-model-source' } };
+  }
+  return { scope };
+}
+
 // #4177 — the land event triggers the model pipeline. Called from the werk-merge case
 // once the merge verb has returned the landed origin/main sha. Scopes that one commit
 // with `athena-deploy scope` (the single owner of "is this a model or seed source");
@@ -2910,30 +2958,25 @@ async function triggerAthenaOnLand(
 ): Promise<Record<string, unknown>> {
   const { pathMod, home, werkBase, runnerPath, actBin, binDir } = werkRunPaths();
   const fsMod = require('fs') as typeof import('fs');
-  const execFileP = promisify(execFile);
-  const scopeBin = pathMod.join(binDir, 'athena-deploy');
-  let scope: string;
-  try {
-    const r = await execFileP(scopeBin, ['scope', home, `${landedCommit}^..${landedCommit}`], { env: process.env, timeout: 60_000, maxBuffer: 4 * 1024 * 1024 });
-    scope = (r.stdout || '').trim();
-  } catch (err) {
-    const e = err as NodeJS.ErrnoException & { stderr?: string; killed?: boolean; signal?: string | null };
-    // a kill is named as a kill (the exec-timeout-is-named class), never read as a scope refusal
-    const detail = (e.killed || e.signal)
-      ? `athena-deploy scope killed after 60000ms (${e.signal ?? 'timeout'})`
-      : (e.stderr || e.message || String(err)).trim().slice(0, 200);
-    await appendChorusLog('athena.trigger.failed', role, { card_id: cardId, landedCommit, reason: 'scope-failed', detail });
-    return { triggered: false, reason: 'scope-failed', detail };
-  }
-  if (!scope) {
-    await appendChorusLog('athena.trigger.skipped', role, { card_id: cardId, landedCommit, reason: 'no-model-source' });
-    return { triggered: false, reason: 'no-model-source' };
-  }
+  const scoped = await scopeLandedCommit(role, cardId, landedCommit, pathMod.join(binDir, 'athena-deploy'), home);
+  if ('result' in scoped) return scoped.result;
+  const { scope } = scoped;
   const files = scope.split('\n').filter(Boolean).length;
   const dir = runsDir || pathMod.join(process.env.HOME || '', '.chorus', 'werk-runs');
   try { fsMod.mkdirSync(dir, { recursive: true }); } catch { /* best-effort */ }
   const log = pathMod.join(dir, `athena-${cardId}-canonical-${Date.now()}.log`);
-  const workflow = pathMod.join(home, '.github', 'workflows', 'athena.yml');
+  // #4338 — run the LANDED commit's athena.yml, not canonical's. This fires at
+  // merge, before canonical fast-forwards, so reading the file from the tree ran
+  // the previous land's workflow (2026-10-02 20:20: the new served-before/after
+  // steps never ran on the land that added them).
+  let workflow: string;
+  try {
+    workflow = await landedAthenaWorkflow(home, landedCommit, dir, cardId);
+  } catch (err) {
+    const detail = String((err as Error).message || err).slice(0, 200);
+    await appendChorusLog('athena.trigger.failed', role, { card_id: cardId, landedCommit, reason: 'workflow-unreadable', detail });
+    return { triggered: false, reason: 'workflow-unreadable', detail };
+  }
   const args = { role: role as z.infer<typeof RoleEnum>, card_id: cardId, target: 'canonical' as const, landed_commit: landedCommit, parent_trace: process.env.CHORUS_TRACE_ID };
   const fd = fsMod.openSync(log, 'a');
   const child = spawn(actBin, athenaActArgs(args, workflow), {
