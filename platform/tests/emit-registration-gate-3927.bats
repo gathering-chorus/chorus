@@ -45,8 +45,12 @@ hook_world() {  # hook_world <emit-name> — a git repo whose staged werk source
   mkdir -p "$H/platform/services/shared"   # the check also reads the failureClass list
   cp "${CHORUS_ROOT}/platform/services/shared/failure_class.rs" "$H/platform/services/shared/"
   cp "$HOOK" "$H/platform/hooks/pre-commit"
-  for g in gate-test-type.sh retirement-gate.sh wipe-guard-scan.sh check-catalog-oversize.sh \
-           check-principle-direct-edit.sh check-decision-direct-edit.sh; do
+  # #3927 reopened 2026-10-03: stub EVERY gate script the hook calls except the emit
+  # check, read from the hook itself. A hand list went stale when #4419 added
+  # gate-domain-tag.sh, and the missing stub refused first, so this suite went red
+  # without the emit gate ever running.
+  for g in $(grep -oE 'platform/scripts/[A-Za-z0-9._-]+' "$HOOK" | sed 's#platform/scripts/##' | sort -u); do
+    [ "$g" = "$(basename "$SCRIPT")" ] && continue
     printf '#!/bin/bash\nexit 0\n' > "$H/platform/scripts/$g"; chmod +x "$H/platform/scripts/$g"
   done
   printf 'fn main() { emit_spine("%s", &role, &card, &trace, &[]); }\n' "$1" \
