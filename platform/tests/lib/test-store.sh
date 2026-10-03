@@ -126,7 +126,13 @@ private_door() {
       "$base/$PRIVATE_DOOR_DS/update" || { TEST_STORE_WHY="PRIVATE_DOOR_PREP update failed"; return 2; }
   fi
   local port; port="$(python3 -c 'import socket; s=socket.socket(); s.bind(("127.0.0.1",0)); print(s.getsockname()[1])')"
+  # #4416 reopened — the door verifies every token against the issuer's keys.
+  # The nightly's launchd env carries neither name, so every write came back
+  # 401 at 03:00 and passed by hand. The door names both itself, with the same
+  # defaults chorus-env-setup.sh uses.
   CHORUS_FUSEKI="$base/$PRIVATE_DOOR_DS" CHORUS_HOME="${BATS_FILE_TMPDIR:-/tmp}/door-home" \
+    CSS_ISSUER="${CSS_ISSUER:-https://id.lightlifeurbangardens.com/}" \
+    CHORUS_JWKS_URL="${CHORUS_JWKS_URL:-http://localhost:3001/.oidc/jwks}" \
     "$bin" serve --port "$port" >"${BATS_FILE_TMPDIR:-/tmp}/door.log" 2>&1 &
   PRIVATE_DOOR_PID=$!
   export PRIVATE_DOOR_PID OWL_URL="http://127.0.0.1:$port"
