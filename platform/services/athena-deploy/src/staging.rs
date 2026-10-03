@@ -42,6 +42,11 @@ pub fn staging_graphs(all: &[String]) -> Vec<String> {
     out
 }
 
+/// Graphs in staging that the new copy will not write: gone from prod, so dropped.
+pub fn stale_in_staging(in_staging: &[String], copying: &[String]) -> Vec<String> {
+    in_staging.iter().filter(|g| g.starts_with("urn:chorus:") && !copying.contains(g)).cloned().collect()
+}
+
 /// A graph's fingerprint from its N-Triples: (triple count, FNV-1a 64 over the
 /// sorted lines). Blank-node labels differ on every export, so each `_:label` is
 /// written as `_:b` before hashing: two exports of an unchanged graph agree, and
@@ -68,10 +73,15 @@ pub fn fingerprint(nt: &str) -> (usize, u64) {
 fn normalize_bnodes(line: &str) -> String {
     let mut out = String::with_capacity(line.len());
     let mut in_lit = false;
+    let mut escaped = false;
     let mut chars = line.chars().peekable();
     while let Some(c) = chars.next() {
-        if c == '"' && !out.ends_with('\\') {
-            in_lit = !in_lit;
+        if in_lit && escaped {
+            escaped = false; // this char is escaped, whatever it is
+        } else if in_lit && c == '\\' {
+            escaped = true;
+        } else if c == '"' {
+            in_lit = !in_lit; // Wren: an escaped backslash before a quote must not hide it
         }
         if !in_lit && c == '_' && chars.peek() == Some(&':') {
             chars.next();
@@ -151,6 +161,19 @@ pub fn copy(base: &str, prod: &str, staging: &str, manifest_path: &str) -> Resul
     if graphs.is_empty() {
         return Err("prod lists no urn:chorus graphs — unmeasured, not copying nothing".into());
     }
+    // Wren: a re-copy drops staging graphs prod no longer has, so staging is a copy, not a pile.
+    let (scsv, c) = curl(&["--data-urlencode", &format!("query={q}"), "-H", "Accept: text/csv",
+        &format!("{base}/{staging}/query")])?;
+    if c != "200" {
+        return Err(format!("staging-graph-list-http-{c}"));
+    }
+    let in_staging: Vec<String> = scsv.lines().skip(1).map(|l| l.trim().to_string()).collect();
+    for g in stale_in_staging(&in_staging, &graphs) {
+        let (_, c) = curl(&["-X", "DELETE", &graph_url(base, staging, &g)])?;
+        if !matches!(c.as_str(), "200" | "204") {
+            return Err(format!("drop-stale-http-{c}:{g}"));
+        }
+    }
     let dir = std::path::Path::new(manifest_path).parent().map(|p| p.to_path_buf())
         .unwrap_or_else(|| std::path::PathBuf::from("."));
     std::fs::create_dir_all(&dir).map_err(|e| format!("{}: {e}", dir.display()))?;
@@ -182,9 +205,188 @@ pub fn copy(base: &str, prod: &str, staging: &str, manifest_path: &str) -> Resul
     Ok(format!("staging copy: {} graphs, {} triples, counts equal prod; manifest {}", lines.len(), total, manifest_path))
 }
 
+/// The graph a published graph's previous version is kept in, for rollback.
+pub fn previous_graph(g: &str) -> String {
+    format!("urn:chorus:previous:{}", g.trim_start_matches("urn:chorus:"))
+}
+
+fn incoming_graph(g: &str) -> String {
+    format!("urn:chorus:incoming:{}", g.trim_start_matches("urn:chorus:"))
+}
+
+/// What a publish would do, decided from fingerprints only (pure, so the refusals
+/// have tests without a store). `manifest`: graph → hash at copy time.
+/// `prod_now` / `staging_now`: graph → hash now. Returns the graphs to swap, or a
+/// refusal naming every graph that blocks it:
+/// - prod moved since the copy (a runtime write would be erased by the swap);
+/// - a never-publish (live) graph was edited in staging.
+pub fn plan_publish(
+    manifest: &[(String, String)],
+    prod_now: &[(String, String)],
+    staging_now: &[(String, String)],
+) -> Result<Vec<String>, String> {
+    let get = |v: &[(String, String)], g: &str| v.iter().find(|(k, _)| k == g).map(|(_, h)| h.clone());
+    let mut swap = Vec::new();
+    let mut refusals = Vec::new();
+    for (g, copied) in manifest {
+        let staged = get(staging_now, g);
+        if staged.as_deref() == Some(copied.as_str()) {
+            continue; // unchanged in staging: nothing to publish
+        }
+        if PUBLISH_NEVER.contains(&g.as_str()) {
+            refusals.push(format!("{g}: live graph edited in staging (never published)"));
+            continue;
+        }
+        match get(prod_now, g) {
+            Some(h) if &h == copied => swap.push(g.clone()),
+            Some(_) => refusals.push(format!("{g}: prod changed since the copy (re-copy, redo the cleanup)")),
+            None => refusals.push(format!("{g}: prod fingerprint unmeasured")),
+        }
+    }
+    if refusals.is_empty() { Ok(swap) } else { Err(refusals.join("; ")) }
+}
+
+/// The one update that swaps every staged graph in: each prod graph moves to its
+/// previous-graph, each incoming copy moves into its place. One request = one
+/// TDB2 transaction, so readers see all old or all new.
+pub fn swap_sparql(graphs: &[String]) -> String {
+    graphs
+        .iter()
+        .map(|g| format!("MOVE SILENT <{g}> TO <{}> ; MOVE <{}> TO <{g}>", previous_graph(g), incoming_graph(g)))
+        .collect::<Vec<_>>()
+        .join(" ; ")
+}
+
+/// Rollback: the same move reversed, from previous-graph back into place.
+pub fn rollback_sparql(graphs: &[String]) -> String {
+    graphs
+        .iter()
+        .map(|g| format!("MOVE <{}> TO <{g}>", previous_graph(g)))
+        .collect::<Vec<_>>()
+        .join(" ; ")
+}
+
+fn fingerprints(base: &str, ds: &str, graphs: &[String]) -> Result<Vec<(String, String)>, String> {
+    let mut out = Vec::new();
+    for g in graphs {
+        let (nt, c) = curl(&["-H", "Accept: application/n-triples", &graph_url(base, ds, g)])?;
+        if c != "200" && c != "404" {
+            return Err(format!("export-http-{c}:{g}"));
+        }
+        let (_, h) = fingerprint(if c == "404" { "" } else { &nt });
+        out.push((g.clone(), format!("{h:016x}")));
+    }
+    Ok(out)
+}
+
+/// `athena-deploy staging publish`: swap in every graph edited in staging, if prod
+/// has not moved since the copy. Records what it swapped for rollback.
+pub fn publish(base: &str, prod: &str, staging: &str, manifest_path: &str) -> Result<String, String> {
+    let m = parse_manifest(&std::fs::read_to_string(manifest_path).map_err(|e| format!("no manifest {manifest_path}: {e} — run staging copy first"))?);
+    let graphs: Vec<String> = m.iter().map(|(g, _, _)| g.clone()).collect();
+    let man: Vec<(String, String)> = m.into_iter().map(|(g, _, h)| (g, h)).collect();
+    let swap = plan_publish(&man, &fingerprints(base, prod, &graphs)?, &fingerprints(base, staging, &graphs)?)?;
+    if swap.is_empty() {
+        return Ok("staging publish: nothing edited in staging — prod untouched".into());
+    }
+    let dir = std::path::Path::new(manifest_path).parent().unwrap_or(std::path::Path::new("."));
+    let tmp = dir.join("graph.nt");
+    let tmp_s = tmp.to_string_lossy().to_string();
+    for g in &swap {
+        let (nt, c) = curl(&["-H", "Accept: application/n-triples", &graph_url(base, staging, g)])?;
+        if c != "200" { return Err(format!("export-http-{c}:{g}")); }
+        std::fs::write(&tmp, &nt).map_err(|e| format!("{tmp_s}: {e}"))?;
+        let (_, c) = curl(&["-X", "PUT", "-H", "Content-Type: application/n-triples",
+            "--data-binary", &format!("@{tmp_s}"), &graph_url(base, prod, &incoming_graph(g))])?;
+        if !matches!(c.as_str(), "200" | "201" | "204") { return Err(format!("stage-into-prod-http-{c}:{g}")); }
+    }
+    let _ = std::fs::remove_file(&tmp);
+    // Check prod again right before the swap: the window is this one request.
+    let man_swap: Vec<(String, String)> = man.iter().filter(|(g, _)| swap.contains(g)).cloned().collect();
+    let again = fingerprints(base, prod, &swap)?;
+    if let Some((g, _)) = man_swap.iter().find(|(g, h)| again.iter().find(|(k, _)| k == g).map(|(_, x)| x) != Some(h)) {
+        return Err(format!("{g}: prod changed during publish — nothing swapped (incoming copies left for inspection)"));
+    }
+    let t0 = std::time::Instant::now();
+    let (_, c) = curl(&["-X", "POST", "-H", "Content-Type: application/sparql-update",
+        "--data-binary", &swap_sparql(&swap), &format!("{base}/{prod}/update")])?;
+    if !matches!(c.as_str(), "200" | "204") { return Err(format!("swap-http-{c}")); }
+    let ms = t0.elapsed().as_millis();
+    let after = fingerprints(base, prod, &swap)?;
+    let staged = fingerprints(base, staging, &swap)?;
+    if after != staged { return Err("swap ran but prod does not match staging — roll back".into()); }
+    std::fs::write(dir.join("published.tsv"), swap.join("\n") + "\n").map_err(|e| e.to_string())?;
+    Ok(format!("staging publish: {} graph(s) swapped in one update in {ms} ms; previous versions kept for rollback: {}", swap.len(), swap.join(", ")))
+}
+
+/// `athena-deploy staging rollback`: put back the previous version of every graph
+/// the last publish swapped, in one update.
+pub fn rollback(base: &str, prod: &str, manifest_path: &str) -> Result<String, String> {
+    let dir = std::path::Path::new(manifest_path).parent().unwrap_or(std::path::Path::new("."));
+    let list = std::fs::read_to_string(dir.join("published.tsv")).map_err(|e| format!("nothing published to roll back: {e}"))?;
+    let graphs: Vec<String> = list.lines().filter(|l| !l.is_empty()).map(str::to_string).collect();
+    let t0 = std::time::Instant::now();
+    let (_, c) = curl(&["-X", "POST", "-H", "Content-Type: application/sparql-update",
+        "--data-binary", &rollback_sparql(&graphs), &format!("{base}/{prod}/update")])?;
+    if !matches!(c.as_str(), "200" | "204") { return Err(format!("rollback-http-{c}")); }
+    let _ = std::fs::remove_file(dir.join("published.tsv"));
+    Ok(format!("staging rollback: {} graph(s) restored in {} ms", graphs.len(), t0.elapsed().as_millis()))
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+
+
+    fn h(v: &[(&str, &str)]) -> Vec<(String, String)> { v.iter().map(|(a, b)| (a.to_string(), b.to_string())).collect() }
+
+    #[test]
+    fn publishes_only_graphs_edited_in_staging() {
+        let m = h(&[("urn:chorus:domains:domains", "a"), ("urn:chorus:ontology", "o")]);
+        let prod = h(&[("urn:chorus:domains:domains", "a"), ("urn:chorus:ontology", "o")]);
+        let stg = h(&[("urn:chorus:domains:domains", "CLEANED"), ("urn:chorus:ontology", "o")]);
+        assert_eq!(plan_publish(&m, &prod, &stg).unwrap(), vec!["urn:chorus:domains:domains"]);
+    }
+
+    #[test]
+    fn negative_proof_prod_written_after_the_copy_refuses_the_publish() {
+        let m = h(&[("urn:chorus:domains:services", "a")]);
+        let prod = h(&[("urn:chorus:domains:services", "HARVESTED-SINCE")]);
+        let stg = h(&[("urn:chorus:domains:services", "CLEANED")]);
+        let e = plan_publish(&m, &prod, &stg).unwrap_err();
+        assert!(e.contains("urn:chorus:domains:services: prod changed since the copy"), "{e}");
+    }
+
+    #[test]
+    fn negative_proof_a_live_graph_edited_in_staging_is_refused() {
+        let m = h(&[("urn:chorus:domains:cards", "a")]);
+        let e = plan_publish(&m, &m, &h(&[("urn:chorus:domains:cards", "EDITED")])).unwrap_err();
+        assert!(e.contains("live graph"), "{e}");
+    }
+
+    #[test]
+    fn the_swap_is_one_request_and_rollback_reverses_it() {
+        let g = vec!["urn:chorus:domains:domains".to_string()];
+        assert_eq!(swap_sparql(&g), "MOVE SILENT <urn:chorus:domains:domains> TO <urn:chorus:previous:domains:domains> ; MOVE <urn:chorus:incoming:domains:domains> TO <urn:chorus:domains:domains>");
+        assert_eq!(rollback_sparql(&g), "MOVE <urn:chorus:previous:domains:domains> TO <urn:chorus:domains:domains>");
+    }
+
+
+    #[test]
+    fn an_escaped_backslash_before_a_quote_still_closes_the_literal() {
+        // "a\\" is a literal ending in one backslash; the _:x after it IS a bnode
+        let a = "<s> <p> \"a\\\\\" .\n_:x <q> <o> .\n";
+        let b = "<s> <p> \"a\\\\\" .\n_:y <q> <o> .\n";
+        assert_eq!(fingerprint(a), fingerprint(b));
+        assert_eq!(normalize_bnodes("<s> <p> \"a\\\\\" , _:x ."), "<s> <p> \"a\\\\\" , _:b .");
+    }
+
+    #[test]
+    fn a_recopy_drops_staging_graphs_prod_no_longer_has() {
+        let st: Vec<String> = ["urn:chorus:gone", "urn:chorus:kept"].iter().map(|s| s.to_string()).collect();
+        let cp = vec!["urn:chorus:kept".to_string()];
+        assert_eq!(stale_in_staging(&st, &cp), vec!["urn:chorus:gone"]);
+    }
 
     #[test]
     fn copies_chorus_graphs_skips_test_results_and_other_products() {
