@@ -17,6 +17,10 @@ const BIN = process.env.CHORUS_PRINCIPAL_TEST_BIN
 const STEP = { timeout: 15_000 };   // #4409: one budget; every step drives a stubbed world in seconds
 
 let T = '';
+// #4409: the journey steps read THIS scenario's world from here. They used to take
+// the newest login-feature-* dir in the shared temp dir, which is another process's
+// world whenever login.feature runs at the same time (the nightly runs suites in parallel).
+export function loginWorld(): string { return T; }
 
 Before({ tags: '@login' }, function () {
   T = fs.mkdtempSync(path.join(os.tmpdir(), 'login-feature-'));
