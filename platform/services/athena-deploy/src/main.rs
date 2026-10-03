@@ -67,11 +67,36 @@ fn main() {
             _ => { eprintln!("usage: athena-deploy served-compare <before-file> <api>"); std::process::exit(2); }
         }
     }
+    // #4423 — `athena-deploy staging copy`: the staging dataset becomes a copy of
+    // prod's model graphs, with a per-graph count + fingerprint manifest.
+    if args.get(1).map(String::as_str) == Some("staging") {
+        let base = std::env::var("CHORUS_FUSEKI_BASE").unwrap_or_else(|_| "http://localhost:3030".into());
+        let manifest = format!("{}/.chorus/staging/manifest.tsv", std::env::var("HOME").unwrap_or_default());
+        // #4423 — dataset names and the prod API from env, so the whole cycle can
+        // run end to end on throwaway datasets without touching /pods.
+        let prod = std::env::var("STAGING_PROD_DATASET").unwrap_or_else(|_| "pods".into());
+        let stg = std::env::var("STAGING_DATASET").unwrap_or_else(|_| "staging".into());
+        let prod_api = std::env::var("STAGING_PROD_API").unwrap_or_else(|_| "http://localhost:3360".into());
+        let r = match args.get(2).map(String::as_str) {
+            Some("copy") => athena_deploy::staging::copy(&base, &prod, &stg, &manifest),
+            Some("publish") => athena_deploy::staging::publish(&base, &prod, &stg, &manifest),
+            Some("rollback") => athena_deploy::staging::rollback(&base, &prod, &manifest),
+            Some("audit") => {
+                let make = std::env::var("ATHENA_MAKE_BIN").unwrap_or_else(|_| format!("{}/.chorus/bin/athena-make", std::env::var("HOME").unwrap_or_default()));
+                athena_deploy::staging::audit(&base, &prod, &stg, &manifest, &prod_api, &make)
+            }
+            _ => { eprintln!("usage: athena-deploy staging copy|audit|publish|rollback"); std::process::exit(2); }
+        };
+        match r {
+            Ok(s) => { println!("{s}"); std::process::exit(0); }
+            Err(e) => { eprintln!("athena-deploy: staging: {e}"); std::process::exit(1); }
+        }
+    }
     // #4338 — an argument this binary does not know is refused, never read as
     // "deploy everything". A 15:52 binary handed `served-snapshot` would have run a
     // full prod deploy and exited 0.
     if let Some(a) = args.get(1) {
-        eprintln!("athena-deploy: unknown argument '{a}' — refusing (a bare `athena-deploy` deploys; subcommands: scope, prove-trace, served-snapshot, served-compare)");
+        eprintln!("athena-deploy: unknown argument '{a}' — refusing (a bare `athena-deploy` deploys; subcommands: scope, prove-trace, served-snapshot, served-compare, staging)");
         std::process::exit(2);
     }
     match run_athena_deploy() {
