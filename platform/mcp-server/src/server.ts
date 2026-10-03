@@ -2896,6 +2896,21 @@ function athenaActArgs(args: z.infer<typeof AthenaRunInput>, workflow: string): 
   ];
 }
 
+/** #4338 — the athena.yml AT the landed commit, written to a file act can read.
+ *  Refuses (throws) when git cannot show it; never falls back to the tree's copy. */
+export async function landedAthenaWorkflow(home: string, landedCommit: string, dir: string, cardId: number): Promise<string> {
+  const pathMod = require('path') as typeof import('path');
+  const fsMod = require('fs') as typeof import('fs');
+  if (!/^[0-9a-f]{7,40}$/.test(landedCommit)) throw new Error(`landed commit '${landedCommit}' is not a sha`);
+  const show = () => promisify(execFile)('git', ['-C', home, 'show', `${landedCommit}:.github/workflows/athena.yml`], { maxBuffer: 4 * 1024 * 1024 });
+  // the merge may have pushed from elsewhere: fetch once, then the commit must be there
+  const r = await show().catch(async () => { await promisify(execFile)('git', ['-C', home, 'fetch', '--quiet', 'origin'], { timeout: 60_000 }); return show(); });
+  if (!r.stdout || !r.stdout.includes('jobs:')) throw new Error(`git show ${landedCommit}:athena.yml returned no workflow`);
+  const out = pathMod.join(dir, `athena-${cardId}-${landedCommit.slice(0, 12)}.yml`);
+  fsMod.writeFileSync(out, r.stdout);
+  return out;
+}
+
 // #4177 — the land event triggers the model pipeline. Called from the werk-merge case
 // once the merge verb has returned the landed origin/main sha. Scopes that one commit
 // with `athena-deploy scope` (the single owner of "is this a model or seed source");
@@ -2933,7 +2948,18 @@ async function triggerAthenaOnLand(
   const dir = runsDir || pathMod.join(process.env.HOME || '', '.chorus', 'werk-runs');
   try { fsMod.mkdirSync(dir, { recursive: true }); } catch { /* best-effort */ }
   const log = pathMod.join(dir, `athena-${cardId}-canonical-${Date.now()}.log`);
-  const workflow = pathMod.join(home, '.github', 'workflows', 'athena.yml');
+  // #4338 — run the LANDED commit's athena.yml, not canonical's. This fires at
+  // merge, before canonical fast-forwards, so reading the file from the tree ran
+  // the previous land's workflow (2026-10-02 20:20: the new served-before/after
+  // steps never ran on the land that added them).
+  let workflow: string;
+  try {
+    workflow = await landedAthenaWorkflow(home, landedCommit, dir, cardId);
+  } catch (err) {
+    const detail = String((err as Error).message || err).slice(0, 200);
+    await appendChorusLog('athena.trigger.failed', role, { card_id: cardId, landedCommit, reason: 'workflow-unreadable', detail });
+    return { triggered: false, reason: 'workflow-unreadable', detail };
+  }
   const args = { role: role as z.infer<typeof RoleEnum>, card_id: cardId, target: 'canonical' as const, landed_commit: landedCommit, parent_trace: process.env.CHORUS_TRACE_ID };
   const fd = fsMod.openSync(log, 'a');
   const child = spawn(actBin, athenaActArgs(args, workflow), {
