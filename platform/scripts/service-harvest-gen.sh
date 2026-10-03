@@ -50,6 +50,12 @@ if mapping:
 
 def esc(s): return s.replace('\\', '\\\\').replace('"', '\\"')
 
+# #3870 reopened — the API door addresses a row by a bare lowercase local name
+# under chorus# (athena-make is_safe_local: no dots, no urn:). The old
+# <urn:chorus:instance-machine-com.x.y> subjects were unaddressable.
+def slug(text): return re.sub(r"[^a-z0-9_-]+", "-", text.lower()).strip("-")
+def instance_id(machine, label): return f"chorus:instance-{slug(machine)}-{slug(label)}"
+
 OURS = ("/Users/jeffbridwell/CascadeProjects/", "/Users/jeffbridwell/.chorus/")
 def evidence_paths(rec):
     # Full argv beats argv0: com.security.css runs as /bin/bash + our
@@ -90,6 +96,19 @@ lines = [
     "",
 ]
 
+# Two labels that slug to one name would silently merge two rows: refuse.
+ids = {}
+for machine, units in snap.get("machines", {}).items():
+    if not isinstance(units, dict) or "error" in units:
+        continue
+    for label in units:
+        ids.setdefault(instance_id(machine, label), []).append(label)
+clash = {k: v for k, v in ids.items() if len(v) > 1}
+if clash:
+    for k, v in sorted(clash.items()):
+        print(f"service-harvest-gen: REFUSE — labels {', '.join(sorted(v))} all slug to {k}", file=sys.stderr)
+    sys.exit(2)
+
 seen = set()
 for machine in sorted(snap.get("machines", {})):
     units = snap["machines"][machine]
@@ -101,7 +120,7 @@ for machine in sorted(snap.get("machines", {})):
             continue
         seen.add((machine, label))
         cls = "chorus:ScheduledJob" if rec.get("kind") == "job" else "chorus:ServiceInstance"
-        lines.append(f"<urn:chorus:instance-{machine}-{label}>")
+        lines.append(instance_id(machine, label))
         lines.append(f"    a {cls} ;")
         lines.append(f'    rdfs:label "{esc(label)} ({machine})" ;')
         lines.append(f'    chorus:launchdLabel "{esc(label)}" ;')
@@ -127,15 +146,22 @@ for machine in sorted(snap.get("machines", {})):
 # truth: that is when it was last seen).
 if prev_path:
     prev = open(prev_path).read()
-    blocks = re.findall(r"<urn:chorus:instance-([a-z]+)-([^>]+)>(.*?)(?=\n<|\Z)", prev, re.S)
-    for machine, label, body in blocks:
+    # One block per subject; machine and label come from the body, so a file in
+    # the old <urn:chorus:instance-…> form and one in the door-safe form both parse.
+    blocks = re.split(r"\n(?=<urn:chorus:instance-|chorus:instance-)", "\n" + prev)
+    for body in blocks:
+        mm = re.search(r"chorus:onMachine chorus:([a-z]+)", body)
+        ml = re.search(r'chorus:launchdLabel "([^"]+)"', body)
+        if not (mm and ml) or "chorus:MappingStaleness" in body:
+            continue
+        machine, label = mm.group(1), ml.group(1)
         if (machine, label) in seen:
             continue
         m = re.search(r'lastObserved "([^"]+)"', body)
         old_seen = m.group(1) if m else ts
         is_job = "ScheduledJob" in body
         cls = "chorus:ScheduledJob" if is_job else "chorus:ServiceInstance"
-        lines.append(f"<urn:chorus:instance-{machine}-{label}>")
+        lines.append(instance_id(machine, label))
         lines.append(f"    a {cls} ;")
         lines.append(f'    rdfs:label "{esc(label)} ({machine})" ;')
         lines.append(f'    chorus:launchdLabel "{esc(label)}" ;')
@@ -150,7 +176,7 @@ if prev_path:
 # self-clears when the mapping is fixed or the unit returns.
 observed_labels = {l for (_, l) in seen}
 for label in sorted(set(mapping) - observed_labels):
-    lines.append(f"<urn:chorus:mapping-stale-{label}>")
+    lines.append(f"chorus:mapping-stale-{slug(label)}")
     lines.append("    a chorus:MappingStaleness ;")
     lines.append(f'    rdfs:label "stale mapping: {esc(label)} maps to {esc(mapping[label])} but no instance was observed" ;')
     lines.append(f'    chorus:launchdLabel "{esc(label)}" ;')

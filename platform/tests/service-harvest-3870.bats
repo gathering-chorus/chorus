@@ -45,7 +45,45 @@ setup() {
 
 @test "instance IRI derives from machine+label (stable across runs)" {
   bash "$GEN" --snapshot "$FIX/snapshot-two-units.json" --timestamp "$T" --out "$OUT"
-  grep -q 'instance-library-com.test.api' "$OUT"
+  grep -q 'chorus:instance-library-com-test-api$' "$OUT"
+}
+
+# #3870 reopened (2026-10-03) — the API door addresses a row by a bare lowercase
+# local name under chorus# (athena-make is_safe_local: no dots, no urn:). The old
+# <urn:chorus:instance-machine-com.x.y> subjects were unaddressable: 119 live rows,
+# athena-validate UNMEASURED. Every subject is checked as parsed triples.
+door_unsafe_subjects() {
+  /opt/homebrew/Cellar/jena/6.0.0/bin/riot --output=nt "$1" | awk '{print $1}' | sort -u \
+    | grep -vE '^<https://jeffbridwell\.com/chorus#[a-z0-9_-]+>$' || true
+}
+
+@test "DOOR: every generated subject is a door-safe chorus# local name" {
+  bash "$GEN" --snapshot "$FIX/snapshot-two-units.json" --timestamp "$T" \
+      --previous "$FIX/previous-with-gone.ttl" --mapping "$FIX/map-stale.json" \
+      --services-ttl "$FIX/services-authored.ttl" --out "$OUT"
+  [ -z "$(door_unsafe_subjects "$OUT")" ]
+}
+
+@test "DOOR negative proof: the pre-fix urn: subject is named unsafe" {
+  [ -n "$(door_unsafe_subjects "$FIX/previous-with-gone.ttl")" ]
+}
+
+@test "DOOR: an uppercase launchd label slugs to lowercase, label text kept" {
+  bash "$GEN" --snapshot "$FIX/snapshot-uppercase.json" --timestamp "$T" --out "$OUT"
+  grep -q '^chorus:instance-library-com-microsoft-vscode-shipit$' "$OUT"
+  grep -q 'chorus:launchdLabel "com.microsoft.VSCode.ShipIt"' "$OUT"
+}
+
+@test "DOOR: two labels that slug to one name REFUSE (exit 2), never merge" {
+  run bash "$GEN" --snapshot "$FIX/snapshot-slug-collision.json" --timestamp "$T" --out "$OUT"
+  [ "$status" -eq 2 ]
+  [[ "$output" == *"com.test.api"* && "$output" == *"com-test.api"* ]]
+}
+
+@test "VANISH: a previous file in the new door-safe form is read too" {
+  bash "$GEN" --snapshot "$FIX/snapshot-two-units.json" --timestamp "$T" \
+      --previous "$FIX/previous-with-gone-door.ttl" --out "$OUT"
+  grep -A6 '^chorus:instance-library-com-test-gone$' "$OUT" | grep -q '"absent"'
 }
 
 @test "REFUSE: missing snapshot is exit 2, never an empty harvest" {
