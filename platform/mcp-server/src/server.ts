@@ -2904,11 +2904,44 @@ export async function landedAthenaWorkflow(home: string, landedCommit: string, d
   if (!/^[0-9a-f]{7,40}$/.test(landedCommit)) throw new Error(`landed commit '${landedCommit}' is not a sha`);
   const show = () => promisify(execFile)('git', ['-C', home, 'show', `${landedCommit}:.github/workflows/athena.yml`], { maxBuffer: 4 * 1024 * 1024 });
   // the merge may have pushed from elsewhere: fetch once, then the commit must be there
-  const r = await show().catch(async () => { await promisify(execFile)('git', ['-C', home, 'fetch', '--quiet', 'origin'], { timeout: 60_000 }); return show(); });
+  const r = await show().catch(async () => {
+    await promisify(execFile)('git', ['-C', home, 'fetch', '--quiet', 'origin'], { timeout: 60_000 }).catch((e: { killed?: boolean; signal?: string | null; message?: string }) => {
+      // a kill is named as a kill, never read as "the commit is missing"
+      throw new Error((e.killed || e.signal) ? `git fetch killed after 60000ms (${e.signal ?? 'timeout'})` : `git fetch failed: ${String(e.message).slice(0, 120)}`);
+    });
+    return show();
+  });
   if (!r.stdout || !r.stdout.includes('jobs:')) throw new Error(`git show ${landedCommit}:athena.yml returned no workflow`);
   const out = pathMod.join(dir, `athena-${cardId}-${landedCommit.slice(0, 12)}.yml`);
   fsMod.writeFileSync(out, r.stdout);
   return out;
+}
+
+/** #4338 — the scope half of the land trigger, split out so the trigger stays
+ *  under the complexity ceiling: the landed commit's model/seed files, or the
+ *  witnessed reason there is nothing to run. */
+async function scopeLandedCommit(
+  role: string, cardId: number, landedCommit: string, scopeBin: string, home: string,
+): Promise<{ scope: string } | { result: Record<string, unknown> }> {
+  const execFileP = promisify(execFile);
+  let scope: string;
+  try {
+    const r = await execFileP(scopeBin, ['scope', home, `${landedCommit}^..${landedCommit}`], { env: process.env, timeout: 60_000, maxBuffer: 4 * 1024 * 1024 });
+    scope = (r.stdout || '').trim();
+  } catch (err) {
+    const e = err as NodeJS.ErrnoException & { stderr?: string; killed?: boolean; signal?: string | null };
+    // a kill is named as a kill (the exec-timeout-is-named class), never read as a scope refusal
+    const detail = (e.killed || e.signal)
+      ? `athena-deploy scope killed after 60000ms (${e.signal ?? 'timeout'})`
+      : (e.stderr || e.message || String(err)).trim().slice(0, 200);
+    await appendChorusLog('athena.trigger.failed', role, { card_id: cardId, landedCommit, reason: 'scope-failed', detail });
+    return { result: { triggered: false, reason: 'scope-failed', detail } };
+  }
+  if (!scope) {
+    await appendChorusLog('athena.trigger.skipped', role, { card_id: cardId, landedCommit, reason: 'no-model-source' });
+    return { result: { triggered: false, reason: 'no-model-source' } };
+  }
+  return { scope };
 }
 
 // #4177 — the land event triggers the model pipeline. Called from the werk-merge case
@@ -2925,25 +2958,9 @@ async function triggerAthenaOnLand(
 ): Promise<Record<string, unknown>> {
   const { pathMod, home, werkBase, runnerPath, actBin, binDir } = werkRunPaths();
   const fsMod = require('fs') as typeof import('fs');
-  const execFileP = promisify(execFile);
-  const scopeBin = pathMod.join(binDir, 'athena-deploy');
-  let scope: string;
-  try {
-    const r = await execFileP(scopeBin, ['scope', home, `${landedCommit}^..${landedCommit}`], { env: process.env, timeout: 60_000, maxBuffer: 4 * 1024 * 1024 });
-    scope = (r.stdout || '').trim();
-  } catch (err) {
-    const e = err as NodeJS.ErrnoException & { stderr?: string; killed?: boolean; signal?: string | null };
-    // a kill is named as a kill (the exec-timeout-is-named class), never read as a scope refusal
-    const detail = (e.killed || e.signal)
-      ? `athena-deploy scope killed after 60000ms (${e.signal ?? 'timeout'})`
-      : (e.stderr || e.message || String(err)).trim().slice(0, 200);
-    await appendChorusLog('athena.trigger.failed', role, { card_id: cardId, landedCommit, reason: 'scope-failed', detail });
-    return { triggered: false, reason: 'scope-failed', detail };
-  }
-  if (!scope) {
-    await appendChorusLog('athena.trigger.skipped', role, { card_id: cardId, landedCommit, reason: 'no-model-source' });
-    return { triggered: false, reason: 'no-model-source' };
-  }
+  const scoped = await scopeLandedCommit(role, cardId, landedCommit, pathMod.join(binDir, 'athena-deploy'), home);
+  if ('result' in scoped) return scoped.result;
+  const { scope } = scoped;
   const files = scope.split('\n').filter(Boolean).length;
   const dir = runsDir || pathMod.join(process.env.HOME || '', '.chorus', 'werk-runs');
   try { fsMod.mkdirSync(dir, { recursive: true }); } catch { /* best-effort */ }

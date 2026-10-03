@@ -134,11 +134,15 @@ test('a NEW exec timeout cannot be added without deciding about this class', () 
   // #4187 added the eleventh: executeAthenaValidate (VERB_TIMEOUT_MS). Bucket:
   // converted — a kill throws "athena-validate-fail — reason=killed after <ms>ms";
   // exit 0/1/2 are the sweep's own answers and come back as content with the report.
+  // #4338 added the twelfth: landedAthenaWorkflow's `git fetch origin` (60s), run
+  // only when the landed commit is not yet local. Bucket: converted in place — a
+  // kill throws "git fetch killed after 60000ms", which the trigger reports as
+  // reason=workflow-unreadable on the spine and in the merge reply.
   const src = readFileSync(join(__dirname, '..', 'src', 'server.ts'), 'utf8');
   const sites = (src.match(/timeout: [A-Za-z0-9_]+,?/g) || []).length;
   assert.equal(
     sites,
-    11,
+    12,
     'exec timeout sites changed — convert the new one to classifyExecFailure or add it to the unconverted list above',
   );
 });
