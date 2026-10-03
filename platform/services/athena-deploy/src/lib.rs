@@ -1636,10 +1636,15 @@ const DOMAIN_COUNT_QUERY: &str = "SELECT (COUNT(DISTINCT ?d) AS ?n) WHERE { GRAP
 /// #4338 — read the live snapshot: athena-make's discovery document at `api`,
 /// and the Domain count from FUSEKI_QUERY.
 pub fn read_served(api: &str) -> Result<String, String> {
+    read_served_from(api, &env_or("FUSEKI_QUERY", "http://localhost:3030/pods/query"))
+}
+
+/// #4423 — the same snapshot, naming the store explicitly (staging audits read
+/// prod's API + /pods and the staging API + /staging in one run).
+pub fn read_served_from(api: &str, query: &str) -> Result<String, String> {
     let disco = curl(&["-s", "-m", "10", &format!("{}/", api.trim_end_matches('/'))])?;
-    let query = env_or("FUSEKI_QUERY", "http://localhost:3030/pods/query");
     let count = curl(&["-s", "--data-urlencode", &format!("query={DOMAIN_COUNT_QUERY}"),
-        "-H", "Accept: text/csv", &query])?;
+        "-H", "Accept: text/csv", query])?;
     served_snapshot(&disco, &count)
 }
 

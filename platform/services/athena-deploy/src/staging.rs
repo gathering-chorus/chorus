@@ -205,6 +205,67 @@ pub fn copy(base: &str, prod: &str, staging: &str, manifest_path: &str) -> Resul
     Ok(format!("staging copy: {} graphs, {} triples, counts equal prod; manifest {}", lines.len(), total, manifest_path))
 }
 
+
+/// Port the audit's own athena-make serves staging on (prod is 3360, werk slots 3363-3365).
+pub const AUDIT_PORT: u16 = 3367;
+
+/// Fingerprints of every manifest graph in staging, as a stable string: an audit is
+/// valid only for the staging content it measured.
+fn staging_state(base: &str, staging: &str, manifest_path: &str) -> Result<String, String> {
+    let m = parse_manifest(&std::fs::read_to_string(manifest_path).map_err(|e| format!("no manifest {manifest_path}: {e} — run staging copy first"))?);
+    let graphs: Vec<String> = m.into_iter().map(|(g, _, _)| g).collect();
+    Ok(fingerprints(base, staging, &graphs)?.iter().map(|(g, h)| format!("{g}\t{h}")).collect::<Vec<_>>().join("\n"))
+}
+
+/// The audit's verdict, pure: what prod serves now vs what an athena-make reading
+/// staging serves, with only the drops named in `allow` let through (#4338 rule).
+pub fn audit_verdict(prod: &str, staged: &str, allow: &str) -> Result<String, String> {
+    let all = crate::served_drops(prod, staged);
+    let named: Vec<&String> = all.iter().filter(|d| allow.lines().any(|l| l.trim() == d.as_str())).collect();
+    let unapproved = crate::unapproved_drops(all.clone(), allow);
+    if !unapproved.is_empty() {
+        return Err(format!("staging takes away what prod serves (name each drop in ATHENA_ALLOW_DROPS to publish it): {}", unapproved.join("; ")));
+    }
+    let last = |t: &str| t.lines().last().unwrap_or("").to_string();
+    Ok(format!("audit pass: prod {} / staging {}; named drops: {}", last(prod), last(staged),
+        if named.is_empty() { "none".to_string() } else { named.iter().map(|s| s.as_str()).collect::<Vec<_>>().join(", ") }))
+}
+
+/// `athena-deploy staging audit`: serve staging from its own athena-make on
+/// AUDIT_PORT, snapshot both, refuse any unnamed drop, and record the staging state
+/// it passed so publish can insist the audited content is what it swaps.
+pub fn audit(base: &str, prod: &str, staging: &str, manifest_path: &str, prod_api: &str, make_bin: &str) -> Result<String, String> {
+    let before = crate::read_served_from(prod_api, &format!("{base}/{prod}/query"))?;
+    let mut child = Command::new(make_bin)
+        .args(["serve", "--port", &AUDIT_PORT.to_string()])
+        .env("CHORUS_FUSEKI", format!("{base}/{staging}"))
+        .stdout(std::process::Stdio::null()).stderr(std::process::Stdio::null())
+        .spawn().map_err(|e| format!("{make_bin}: {e}"))?;
+    let api = format!("http://localhost:{AUDIT_PORT}");
+    let mut up = false;
+    for _ in 0..120 {
+        if let Ok((_, c)) = curl(&[&format!("{api}/health")]) { if c == "200" { up = true; break; } }
+        std::thread::sleep(std::time::Duration::from_secs(1));
+    }
+    let after = if up { crate::read_served_from(&api, &format!("{base}/{staging}/query")) } else { Err(format!("staging athena-make never answered {api}/health in 120 s — unmeasured")) };
+    let _ = child.kill();
+    let _ = child.wait();
+    let verdict = audit_verdict(&before, &after?, &std::env::var("ATHENA_ALLOW_DROPS").unwrap_or_default())?;
+    let dir = std::path::Path::new(manifest_path).parent().unwrap_or(std::path::Path::new("."));
+    std::fs::write(dir.join("audited.tsv"), staging_state(base, staging, manifest_path)?).map_err(|e| e.to_string())?;
+    Ok(verdict)
+}
+
+/// Publish's audit gate: the staging content now must be exactly what the last
+/// passing audit measured.
+pub fn audited_matches(audited: Option<&str>, now: &str) -> Result<(), String> {
+    match audited {
+        None => Err("no passing audit — run `athena-deploy staging audit` first".into()),
+        Some(a) if a == now => Ok(()),
+        Some(_) => Err("staging changed since its audit — audit again before publishing".into()),
+    }
+}
+
 /// The graph a published graph's previous version is kept in, for rollback.
 pub fn previous_graph(g: &str) -> String {
     format!("urn:chorus:previous:{}", g.trim_start_matches("urn:chorus:"))
@@ -286,6 +347,9 @@ pub fn publish(base: &str, prod: &str, staging: &str, manifest_path: &str) -> Re
     let graphs: Vec<String> = m.iter().map(|(g, _, _)| g.clone()).collect();
     let man: Vec<(String, String)> = m.into_iter().map(|(g, _, h)| (g, h)).collect();
     let swap = plan_publish(&man, &fingerprints(base, prod, &graphs)?, &fingerprints(base, staging, &graphs)?)?;
+    // Wren: only audited content is published (#4423 AC: audit before publish).
+    let dir0 = std::path::Path::new(manifest_path).parent().unwrap_or(std::path::Path::new("."));
+    audited_matches(std::fs::read_to_string(dir0.join("audited.tsv")).ok().as_deref(), &staging_state(base, staging, manifest_path)?)?;
     if swap.is_empty() {
         return Ok("staging publish: nothing edited in staging — prod untouched".into());
     }
@@ -316,7 +380,23 @@ pub fn publish(base: &str, prod: &str, staging: &str, manifest_path: &str) -> Re
     let staged = fingerprints(base, staging, &swap)?;
     if after != staged { return Err("swap ran but prod does not match staging — roll back".into()); }
     std::fs::write(dir.join("published.tsv"), swap.join("\n") + "\n").map_err(|e| e.to_string())?;
-    Ok(format!("staging publish: {} graph(s) swapped in one update in {ms} ms; previous versions kept for rollback: {}", swap.len(), swap.join(", ")))
+    Ok(format!("staging publish: {} graph(s) swapped in one update in {ms} ms; previous versions kept for rollback: {}; {}", swap.len(), swap.join(", "), reserve_prod(prod)))
+}
+
+
+/// athena-make reads shapes and routes at boot: after a swap or a rollback it serves
+/// the OLD model until restarted (the 2026-10-02 16:59 lockout was a stale serve).
+/// Restart it through athena-serve and wait for /health, or say plainly it did not.
+fn reserve_prod(prod: &str) -> String {
+    if prod != "pods" {
+        return format!("prod dataset is /{prod}, not /pods — live athena-make left alone");
+    }
+    let bin = std::env::var("ATHENA_SERVE_BIN").unwrap_or_else(|_| format!("{}/.chorus/bin/athena-serve", std::env::var("HOME").unwrap_or_default()));
+    match Command::new(&bin).args(["com.chorus.athena-make", "http://localhost:3360/health", "--kickstart", "--timeout", "90"]).status() {
+        Ok(s) if s.success() => "athena-make restarted and healthy".into(),
+        Ok(s) => format!("WARNING athena-make restart exited {s} — prod may serve the old model until restarted"),
+        Err(e) => format!("WARNING could not run {bin}: {e} — restart athena-make by hand"),
+    }
 }
 
 /// `athena-deploy staging rollback`: put back the previous version of every graph
@@ -330,7 +410,8 @@ pub fn rollback(base: &str, prod: &str, manifest_path: &str) -> Result<String, S
         "--data-binary", &rollback_sparql(&graphs), &format!("{base}/{prod}/update")])?;
     if !matches!(c.as_str(), "200" | "204") { return Err(format!("rollback-http-{c}")); }
     let _ = std::fs::remove_file(dir.join("published.tsv"));
-    Ok(format!("staging rollback: {} graph(s) restored in {} ms", graphs.len(), t0.elapsed().as_millis()))
+    let ms = t0.elapsed().as_millis();
+    Ok(format!("staging rollback: {} graph(s) restored in {ms} ms; {}", graphs.len(), reserve_prod(prod)))
 }
 
 #[cfg(test)]
@@ -425,5 +506,29 @@ mod tests {
     #[test]
     fn copying_prod_onto_itself_is_refused() {
         assert!(copy("http://localhost:1", "pods", "pods", "/tmp/x").unwrap_err().starts_with("staging-is-prod"));
+    }
+
+    #[test]
+    fn audit_passes_an_unchanged_surface_and_names_its_drops() {
+        let p = "route /v1/a\nroute /v1/b\ndomains 61\n";
+        assert!(audit_verdict(p, p, "").is_ok());
+        let s = "route /v1/a\ndomains 60\n";
+        let ok = audit_verdict(p, s, "route gone: /v1/b\ndomains 61 -> 60\n").unwrap();
+        assert!(ok.contains("named drops: route gone: /v1/b, domains 61 -> 60"), "{ok}");
+    }
+
+    #[test]
+    fn negative_proof_an_unnamed_domain_drop_fails_the_audit() {
+        let p = "route /v1/a\ndomains 61\n";
+        let s = "route /v1/a\ndomains 49\n";
+        let e = audit_verdict(p, s, "").unwrap_err();
+        assert!(e.contains("domains 61 -> 49"), "{e}");
+    }
+
+    #[test]
+    fn negative_proof_publish_refuses_without_an_audit_or_after_staging_moved() {
+        assert!(audited_matches(None, "g\th").unwrap_err().contains("no passing audit"));
+        assert!(audited_matches(Some("g\th1"), "g\th2").unwrap_err().contains("changed since its audit"));
+        assert!(audited_matches(Some("g\th"), "g\th").is_ok());
     }
 }
