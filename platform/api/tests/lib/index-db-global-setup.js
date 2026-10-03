@@ -18,8 +18,30 @@ const path = require('path');
 // world path that is missing or holds no index rows is seeded the same way.
 const SEED_BELOW_BYTES = 1024 * 1024; // an empty schema is ~36 KB; the live index is ~490 MB
 
-function needsSeed(p) {
-  try { return !fs.existsSync(p) || fs.statSync(p).size < SEED_BELOW_BYTES; } catch { return true; }
+// #4152 reopened (Wren measured, 2026-10-03) — a copy seeded once was never
+// refreshed: the nightly world held 09-25 watermarks against the live 10-03,
+// so the freshness test read 11 sources dead. A copy THIS harness seeded
+// carries a marker and is re-seeded whenever the live index is newer. A path
+// someone set by hand has no marker and is still left alone.
+const SEEDED_MARK = '.seeded-by-harness';
+
+function needsSeed(p, live) {
+  try {
+    if (!fs.existsSync(p) || fs.statSync(p).size < SEED_BELOW_BYTES) return true;
+    if (!live) return false;
+    // the runner's suite world is always ours, marked or not (copies seeded
+    // before the marker existed carry none — tonight's 8-day-old one included)
+    // A test run writes to its copy, so the copy's own mtime says nothing about
+    // when it was seeded; only the marker does. A world copy with no marker
+    // predates it and is re-seeded once.
+    const marked = fs.existsSync(p + SEEDED_MARK);
+    if (!marked) return p.includes(`${path.sep}werk-suite-world-`);
+    return fs.statSync(live).mtimeMs > fs.statSync(p + SEEDED_MARK).mtimeMs;
+  } catch { return true; }
+}
+
+function markSeeded(p) {
+  fs.writeFileSync(p + SEEDED_MARK, new Date().toISOString() + '\n');
 }
 
 async function backupLiveInto(live, dest) {
@@ -39,9 +61,11 @@ module.exports = async function indexDbGlobalSetup() {
   const preset = process.env.CHORUS_DB_PATH;
   if (preset) {
     if (path.resolve(preset) === path.resolve(live)) return; // the harness refuses this itself
-    if (needsSeed(preset)) {
+    if (needsSeed(preset, live)) {
       for (const sfx of ['-wal', '-shm']) { try { fs.rmSync(preset + sfx, { force: true }); } catch {} }
+      try { fs.rmSync(preset, { force: true }); } catch {}
       await backupLiveInto(live, preset);
+      markSeeded(preset);
       process.env.CHORUS_TEST_INDEX_SEEDED = preset;
     }
     return;
@@ -53,4 +77,5 @@ module.exports = async function indexDbGlobalSetup() {
   process.env.CHORUS_TEST_INDEX_DIR = dir;
 };
 module.exports.needsSeed = needsSeed;
+module.exports.markSeeded = markSeeded;
 module.exports.backupLiveInto = backupLiveInto;

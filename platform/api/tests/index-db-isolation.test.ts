@@ -47,6 +47,36 @@ describe('#4152 api test harness brings its own index.db', () => {
     }
   });
 
+  // #4152 reopened (Wren, 2026-10-03): the nightly world held an 8-day-old copy
+  // because a seeded copy was never refreshed; freshness read 11 sources dead.
+  test('a copy the harness seeded is re-seeded when the live index is newer; a hand-set one never is', () => {
+    const setup = require('./lib/index-db-global-setup');
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'chorus-api-stale-world-'));
+    const live = path.join(dir, 'live.db');
+    const copy = path.join(dir, 'copy.db');
+    const big = Buffer.alloc(1024 * 1024 + 1);
+    try {
+      fs.writeFileSync(live, big);
+      fs.writeFileSync(copy, big);
+      setup.markSeeded(copy);
+      const past = new Date(Date.now() - 8 * 86400_000);
+      fs.utimesSync(copy + '.seeded-by-harness', past, past);   // seeded 8 days ago
+      expect(setup.needsSeed(copy, live)).toBe(true);            // live is newer → refresh
+      setup.markSeeded(copy);                                    // just seeded
+      expect(setup.needsSeed(copy, live)).toBe(false);           // fresh → leave alone
+      // NEGATIVE PROOF: a hand-set path (no marker, not a suite world) is never overwritten
+      fs.rmSync(copy + '.seeded-by-harness');
+      expect(setup.needsSeed(copy, live)).toBe(false);
+      // a suite-world copy from before the marker existed is re-seeded once
+      const world = path.join(dir, 'werk-suite-world-chorus', 'index.db');
+      fs.mkdirSync(path.dirname(world));
+      fs.writeFileSync(world, big);
+      expect(setup.needsSeed(world, live)).toBe(true);
+    } finally {
+      fs.rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
   test('backupLiveInto copies a sqlite database faithfully, rows and all', async () => {
     const setup = require('./lib/index-db-global-setup');
     const Database = require('better-sqlite3');
