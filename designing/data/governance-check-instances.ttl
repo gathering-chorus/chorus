@@ -204,7 +204,7 @@ chorus:gc-pre-mint-names a chorus:GovernanceCheck ;
     chorus:boundTo chorus:adr-058 ;
     chorus:checkSeverity "warn" ;
     chorus:provenRedOn "2026-09-25" ;
-    chorus:provenRedRows 47 ;
+    chorus:provenRedRows 44 ;
     chorus:checkQuery """PREFIX c: <https://jeffbridwell.com/chorus#>
 SELECT DISTINCT ?s WHERE {
   VALUES (?cls ?prefix) { (c:Gate "gate-") (c:Property "property-") (c:PropertyKey "property-key-") (c:EmitContract "emit-contract-") (c:APISurface "api-surface-") }
