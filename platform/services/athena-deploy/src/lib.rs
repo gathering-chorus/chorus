@@ -488,6 +488,64 @@ pub fn declared_subjects(ttl: &str) -> Vec<String> {
     out
 }
 
+/// #4338 — a file as N-Triples, through riot. The clobber guard reads triples,
+/// never Turtle lines: a full IRI, a second-line subject or odd spacing is still
+/// the same subject, and a text match on `chorus:` misses all three.
+pub fn to_ntriples(path: &str) -> Result<String, String> {
+    let riot_bin = env_or("RIOT_BIN", "riot");
+    let out = Command::new(&riot_bin).arg("--quiet").arg("--output=nt").arg(path).output()
+        .map_err(|e| format!("riot-spawn:{path}:{e}"))?;
+    if !out.status.success() {
+        return Err(format!("riot-unreadable:{path}"));
+    }
+    Ok(String::from_utf8_lossy(&out.stdout).into_owned())
+}
+
+/// The subject and predicate of one N-Triples line (None for blank/comment).
+fn nt_subject_predicate(line: &str) -> Option<(&str, &str)> {
+    let mut it = line.split_whitespace();
+    let s = it.next().filter(|s| s.starts_with('<') || s.starts_with("_:"))?;
+    Some((s, it.next()?))
+}
+
+/// #4338 — the Domain IRIs declared across N-Triples files (`?s a chorus:Domain`).
+pub fn declared_domains(files: &[(String, String)]) -> Vec<String> {
+    let rdf_type = "<http://www.w3.org/1999/02/22-rdf-syntax-ns#type>";
+    let domain = "<https://jeffbridwell.com/chorus#Domain>";
+    let mut out: Vec<String> = Vec::new();
+    for (_, nt) in files {
+        for line in nt.lines() {
+            let Some((s, p)) = nt_subject_predicate(line) else { continue };
+            if p == rdf_type && line.split_whitespace().nth(2) == Some(domain)
+                && !out.iter().any(|d| d == s) {
+                out.push(s.to_string());
+            }
+        }
+    }
+    out.sort();
+    out
+}
+
+/// #4338 — every Domain a domains-graph set file names as a SUBJECT, as
+/// "file: <iri>". Such a subject is a clobber: the set's merge replaces it whole.
+/// Domains count from the homes AND the set files, so a set file declaring a
+/// Domain itself is a second home and is named too. Pure over N-Triples text.
+pub fn domain_set_clobbers(homes: &[(String, String)], set_files: &[(String, String)]) -> Vec<String> {
+    let all: Vec<(String, String)> = homes.iter().chain(set_files.iter()).cloned().collect();
+    let domains = declared_domains(&all);
+    let mut out: Vec<String> = Vec::new();
+    for (label, nt) in set_files {
+        for line in nt.lines() {
+            let Some((s, _)) = nt_subject_predicate(line) else { continue };
+            let hit = format!("{label}: {s}");
+            if domains.iter().any(|d| d == s) && !out.contains(&hit) {
+                out.push(hit);
+            }
+        }
+    }
+    out
+}
+
 /// Subjects present in the previously deployed version of a file and absent
 /// from the working copy. Pure, so the refusal has a test that does not need
 /// a store or a git history.
@@ -938,6 +996,48 @@ pub fn run_athena_deploy() -> Result<String, String> {
              two mean different things, they are a name collision: rename one."
         );
         return Err(fail(&format!("duplicate-property-declaration:{}", dupes.len())));
+    }
+
+    // #4338 — a domain set's merge REPLACES every subject its files name. A file
+    // merged into the domains graph that names a Domain declared elsewhere wipes
+    // that Domain's row down to
+    // whatever the set file says: the 2026-10-02 15:51 land lost 12 domains to
+    // cmdb-layers-4293.ttl this way. Checked before any write, over the WHOLE
+    // model set (a TTL= partial run still has to know which subjects are Domains).
+    if sets_run(std::env::var("TTL").ok().as_deref()) {
+        let manifest_path = env_or(
+            "DOMAIN_SET_MANIFEST",
+            &format!("{root}/platform/config/domain-set-manifest.txt"),
+        );
+        let text = std::fs::read_to_string(&manifest_path)
+            .map_err(|e| fail(&format!("domain-set-manifest-unreadable:{manifest_path}:{e}")))?;
+        let sets = parse_domain_sets(&text).map_err(|e| fail(&e))?;
+        // fail closed: a file the guard cannot read as triples is a refusal, not a pass
+        let read_all = |paths: Vec<String>| -> Result<Vec<(String, String)>, String> {
+            paths.into_iter().map(|p| {
+                let label = p.strip_prefix(&format!("{root}/")).unwrap_or(&p).to_string();
+                to_ntriples(&p).map(|t| (label, t))
+            }).collect()
+        };
+        let homes = read_all(model_set(&root, None)).map_err(|e| fail(&e))?;
+        // only sets merged into the graph Domain rows live in; a set into its own
+        // graph (principles naming chorus:principles) replaces nothing of the row
+        let set_files = read_all(sets.iter().filter(|ds| ds.graph == DOMAINS_GRAPH)
+            .flat_map(|ds| ds.files.iter().map(|f| format!("{root}/{f}"))).collect())
+            .map_err(|e| fail(&e))?;
+        let clobbers = domain_set_clobbers(&homes, &set_files);
+        if !clobbers.is_empty() {
+            eprintln!(
+                "athena-deploy: REFUSED — a domain-set file names a Domain declared in the model \
+                 set (#4338). That set's merge replaces every subject it names, so the Domain's \
+                 row would be wiped down to these lines:"
+            );
+            for c in clobbers.iter().take(20) {
+                eprintln!("  {c}");
+            }
+            eprintln!("  -> move these lines onto the Domain's own row, in the file that declares it.");
+            return Err(fail(&format!("domain-set-names-domain:{}", clobbers.len())));
+        }
     }
 
 
@@ -1468,6 +1568,77 @@ pub fn count_from_answer(body: &str) -> Option<usize> {
     let inner = after.strip_prefix('"')?;
     let end = inner.find('"')?;
     inner[..end].parse().ok()
+}
+
+/// #4338 — what athena-make serves, as text a run can keep and compare: one
+/// `route <collection>` line per discovery entry, sorted, and `domains <n>`.
+/// REFUSES rather than snapshotting nothing: a discovery document with no
+/// collections, or a count the store did not answer, is an unmeasured state,
+/// and a comparison against it would pass every drop.
+pub fn served_snapshot(discovery: &str, domain_count_answer: &str) -> Result<String, String> {
+    let mut routes: Vec<&str> = discovery
+        .split("\"collection\"")
+        .skip(1)
+        .filter_map(|rest| {
+            let rest = rest.trim_start().strip_prefix(':')?.trim_start().strip_prefix('"')?;
+            rest.find('"').map(|end| &rest[..end])
+        })
+        .collect();
+    routes.sort();
+    routes.dedup();
+    if routes.is_empty() {
+        return Err("served-snapshot: the discovery document lists no collection — unmeasured, not empty".into());
+    }
+    let n = count_from_answer(domain_count_answer)
+        .ok_or("served-snapshot: the store did not answer the Domain count — unmeasured")?;
+    let mut out: Vec<String> = routes.iter().map(|r| format!("route {r}")).collect();
+    out.push(format!("domains {n}"));
+    Ok(out.join("\n") + "\n")
+}
+
+/// #4338 — what a land took away: every route served before and not after, and a
+/// Domain count that went down. Additions are not drops. The 2026-10-02 15:51 land
+/// would have read `domains 60 -> 49` plus a route per lost class, and failed.
+pub fn served_drops(before: &str, after: &str) -> Vec<String> {
+    let routes = |t: &str| -> Vec<String> {
+        t.lines().filter_map(|l| l.strip_prefix("route ")).map(str::to_string).collect()
+    };
+    let domains = |t: &str| -> Option<usize> {
+        t.lines().find_map(|l| l.strip_prefix("domains ")).and_then(|n| n.trim().parse().ok())
+    };
+    let now = routes(after);
+    let mut out: Vec<String> = routes(before)
+        .into_iter()
+        .filter(|r| !now.contains(r))
+        .map(|r| format!("route gone: {r}"))
+        .collect();
+    match (domains(before), domains(after)) {
+        (Some(b), Some(a)) if a < b => out.push(format!("domains {b} -> {a}")),
+        (Some(_), Some(_)) => {}
+        _ => out.push("domain count missing from a snapshot — unmeasured".into()),
+    }
+    out
+}
+
+/// #4338 — a land that removes a route or a Domain ON PURPOSE names each drop,
+/// exactly as `served_drops` prints it, in ATHENA_ALLOW_DROPS (one per line).
+/// Only an exact match passes; anything else the land took away still refuses.
+pub fn unapproved_drops(drops: Vec<String>, allow: &str) -> Vec<String> {
+    let allowed: Vec<&str> = allow.lines().map(str::trim).filter(|l| !l.is_empty()).collect();
+    drops.into_iter().filter(|d| !allowed.contains(&d.as_str())).collect()
+}
+
+const DOMAIN_COUNT_QUERY: &str = "SELECT (COUNT(DISTINCT ?d) AS ?n) WHERE { GRAPH <urn:chorus:domains:domains> \
+    { ?d a <https://jeffbridwell.com/chorus#Domain> } }";
+
+/// #4338 — read the live snapshot: athena-make's discovery document at `api`,
+/// and the Domain count from FUSEKI_QUERY.
+pub fn read_served(api: &str) -> Result<String, String> {
+    let disco = curl(&["-s", "-m", "10", &format!("{}/", api.trim_end_matches('/'))])?;
+    let query = env_or("FUSEKI_QUERY", "http://localhost:3030/pods/query");
+    let count = curl(&["-s", "--data-urlencode", &format!("query={DOMAIN_COUNT_QUERY}"),
+        "-H", "Accept: text/csv", &query])?;
+    served_snapshot(&disco, &count)
 }
 
 /// Where the store is and who is deploying. Threaded rather than re-read per

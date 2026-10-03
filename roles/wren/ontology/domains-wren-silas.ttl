@@ -289,3 +289,15 @@ chorus:StreamEventShape a sh:NodeShape ;
     sh:property [ sh:path chorus:streamPhase ; sh:minCount 1 ] ;
     sh:property [ sh:path chorus:streamTs ; sh:minCount 1 ] ;
     chorus:generatedBy "athena-model" .
+
+# #4338 — layer, hosting and dependency edges live on the domain's own row (they were in
+# cmdb-layers-4293.ttl, which deploys into the domains graph and replaced every row it
+# named: the 2026-10-02 15:51 land wiped 12 domains to one inLayer triple).
+chorus:infrastructure chorus:inLayer chorus:layer-foundation .
+chorus:time           chorus:inLayer chorus:layer-foundation ; chorus:dependsOn chorus:infrastructure .
+chorus:logs           chorus:inLayer chorus:layer-foundation ; chorus:dependsOn chorus:infrastructure , chorus:time ;
+                      chorus:hosts chorus:logs-domain-service-loki .
+chorus:toolchain      chorus:inLayer chorus:layer-build .
+chorus:deploys        chorus:inLayer chorus:layer-build ; chorus:dependsOn chorus:builds .
+chorus:metrics        chorus:inLayer chorus:layer-capability .
+chorus:analytics      chorus:inLayer chorus:layer-capability ; chorus:dependsOn chorus:metrics .

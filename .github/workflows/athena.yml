@@ -340,6 +340,25 @@ jobs:
           done <<< "${{ steps.scope.outputs.model }}"
           exit $rc
 
+      - name: served-before
+        # #4338 — what athena-make serves BEFORE this land: every route and the
+        # Domain count. On 2026-10-02 15:51 a land wiped 12 Domains and their
+        # routes, and the serve step (which reads /health only) called it served.
+        if: ${{ steps.scope.outputs.nothing != 'true' && steps.scope.outputs.model != '' }}
+        run: |
+          set -euo pipefail
+          # shellcheck disable=SC1091
+          source "${CHORUS_HOME}/platform/scripts/fuseki-auth.sh"
+          # #4338 — a binary older than this check reads any argument as "deploy
+          # everything". Refuse unless the installed binary knows the subcommand.
+          BIN="${HOME}/.chorus/bin/athena-deploy-bin"; [ -x "$BIN" ] || BIN="$(command -v athena-deploy)"
+          # athena starts at merge, and the land installs binaries a minute later:
+          # wait (bounded) for the binary that knows the subcommand, never run an old one.
+          for _ in $(seq 60); do grep -aq served-snapshot "$BIN" && break; sleep 5; done
+          grep -aq served-snapshot "$BIN" || { echo "::error::athena: $BIN predates served-snapshot (#4338) after 5 min — refusing rather than run it with an argument" >&2; exit 1; }
+          FUSEKI_QUERY="${{ steps.resolve.outputs.store }}/query" \
+            CHORUS_ROLE= "$BIN" served-snapshot "${{ steps.resolve.outputs.api }}" "${RUNNER_TEMP:-/tmp}/athena-served-before-${CHORUS_TRACE_ID:-run}.txt"
+
       - name: deploy
         # only when the land carried model sources
         if: ${{ steps.scope.outputs.nothing != 'true' && steps.scope.outputs.model != '' }}
@@ -361,6 +380,22 @@ jobs:
         run: |
           set -euo pipefail
           DEPLOY_ROLE="$ROLE" athena-serve "${{ steps.resolve.outputs.label }}" "${{ steps.resolve.outputs.api }}/health" --kickstart --timeout 90
+
+      - name: served-after
+        # #4338 — the land fails if anything served before it is gone: a route, or
+        # Domains. A card that removes one on purpose names the exact drop line in
+        # ATHENA_ALLOW_DROPS; nothing else passes.
+        if: ${{ steps.scope.outputs.nothing != 'true' && steps.scope.outputs.model != '' }}
+        run: |
+          set -euo pipefail
+          # shellcheck disable=SC1091
+          source "${CHORUS_HOME}/platform/scripts/fuseki-auth.sh"
+          # #4338 — a binary older than this check reads any argument as "deploy
+          # everything". Refuse unless the installed binary knows the subcommand.
+          BIN="${HOME}/.chorus/bin/athena-deploy-bin"; [ -x "$BIN" ] || BIN="$(command -v athena-deploy)"
+          grep -aq served-snapshot "$BIN" || { echo "::error::athena: $BIN predates served-snapshot (#4338) — refusing rather than run it with an argument" >&2; exit 1; }
+          FUSEKI_QUERY="${{ steps.resolve.outputs.store }}/query" \
+            CHORUS_ROLE= "$BIN" served-compare "${RUNNER_TEMP:-/tmp}/athena-served-before-${CHORUS_TRACE_ID:-run}.txt" "${{ steps.resolve.outputs.api }}"
 
       - name: seed
         if: ${{ steps.scope.outputs.nothing != 'true' }}

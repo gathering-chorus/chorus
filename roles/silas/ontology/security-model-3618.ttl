@@ -461,3 +461,9 @@ chorus:GateShape a sh:NodeShape ;
     # second — the opposite order is what left seven classes unservable.
     chorus:instancesGraph "urn:chorus:domains:security" ;
     chorus:generatedBy "athena-model" .
+
+# #4338 — layer, hosting and dependency edges live on the domain's own row (they were in
+# cmdb-layers-4293.ttl, which deploys into the domains graph and replaced every row it
+# named: the 2026-10-02 15:51 land wiped 12 domains to one inLayer triple).
+chorus:security chorus:inLayer chorus:layer-foundation ; chorus:dependsOn chorus:infrastructure , chorus:time , chorus:logs .
+chorus:identity chorus:inLayer chorus:layer-foundation ; chorus:dependsOn chorus:security .
