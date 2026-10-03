@@ -126,8 +126,11 @@ sq() {
   curl -sf --max-time 5 "$OWL_URL/health" >/dev/null || skip "owl-api absent (#3528)"
   [ "$(curl -s --max-time 5 -o /dev/null -w '%{http_code}' "$OWL_URL/documents")" = "200" ] \
     || skip "claim not deployed yet"
-  run curl -sf --max-time 10 "$OWL_URL/documents"
-  [[ "$output" == *"pipelines"* ]] || return 1
+  # #4040 reopened — the listing is paged (100 of 282 on 10-03), so a grep of
+  # page 1 went red the day the row moved past it. Ask for the row by name.
+  run curl -sf --max-time 10 "$OWL_URL/documents/pipelines-design"
+  [ "$status" -eq 0 ] || return 1
+  [[ "$output" == *'"id": "chorus:pipelines-design"'* ]] || return 1
 }
 
 # ── AC5: the daily runner emits a PipelineRun with metrics ──
