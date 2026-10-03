@@ -1,11 +1,13 @@
 PREFIX chorus: <https://jeffbridwell.com/chorus#>
 PREFIX rdfs: <http://www.w3.org/2000/01/rdf-schema#>
-SELECT ?owner ?label (COUNT(?sd) AS ?count) WHERE {
+# #4338 reopened: DISTINCT + SAMPLE — a role labelled in two graphs counted each
+# domain twice (the fixture showed Wren 10 / Silas 4 for 5 / 2).
+SELECT ?owner (SAMPLE(?l) AS ?label) (COUNT(DISTINCT ?sd) AS ?count) WHERE {
   # #4338 — Domain rows (and their owners) live in the domains graph
   GRAPH <urn:chorus:domains:domains> {
     ?sd chorus:ownedBy ?owner .
   }
   # #4079: role labels live in urn:chorus:instances since #3838 (roles model),
   # not in the ontology graph — look the label up in whichever graph holds it.
-  OPTIONAL { GRAPH ?lg { ?owner rdfs:label ?label } }
-} GROUP BY ?owner ?label ORDER BY DESC(?count)
+  OPTIONAL { GRAPH ?lg { ?owner rdfs:label ?l } }
+} GROUP BY ?owner ORDER BY DESC(?count)

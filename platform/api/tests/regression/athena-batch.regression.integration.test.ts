@@ -12,7 +12,7 @@ import * as path from 'path';
 import { fetchAthenaOwners } from '../../src/handlers/athena-owners';
 import { fetchAthenaMachines } from '../../src/handlers/athena-machines';
 import { fetchAthenaHealth } from '../../src/handlers/athena-health';
-import { makeSparqlFromTtl } from '../fixtures/oxigraph-sparql';
+import { makeSparqlFromTtl, makeSparqlFromTtlGraphs } from '../fixtures/oxigraph-sparql';
 
 const FIXTURE_TTL = path.join(__dirname, '..', 'fixtures', 'athena-minimal.ttl');
 
@@ -47,7 +47,9 @@ async function assertGolden(name: string, actual: unknown): Promise<void> {
 }
 
 describe('#2208 data regression — athena batch', () => {
-  const sparql = makeSparqlFromTtl(FIXTURE_TTL, 'urn:chorus:ontology');
+  // #4338: Domain rows live in urn:chorus:domains:domains, the model in the ontology
+  // graph. The fixture lands in both, the way prod is laid out after that card.
+  const sparql = makeSparqlFromTtlGraphs(FIXTURE_TTL, ['urn:chorus:ontology', 'urn:chorus:domains:domains']);
   const deps = { sparql, loadQuery, envelope };
 
   test('/api/athena/owners', async () => {

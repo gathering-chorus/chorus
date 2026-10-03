@@ -17,7 +17,7 @@
       {
         "name": "owners",
         "path": "/api/athena/owners",
-        "description": "Owners with sub-domain counts"
+        "description": "Owners with domain counts"
       },
       {
         "name": "machines",
