@@ -2,6 +2,7 @@
 // login_steps.ts does not already have. A leg whose fix has not landed returns
 // 'pending'; its scenario carries @waiting-<card> and reads RED by name.
 import { Given, When, Then } from '@cucumber/cucumber';
+import { loginWorld } from './login_steps';
 import * as fs from 'fs';
 import * as os from 'os';
 import * as path from 'path';
@@ -90,14 +91,12 @@ Then("the reply shows in Jeff's Clearing", STEP, async function (this: ClearingW
   }
 });
 
-// The fixture world's scratch dir is private to login_steps.ts; it is the
-// newest login-feature-* dir under the OS temp dir (one per scenario).
+// The fixture world is the one login_steps.ts made for THIS scenario, in this process.
+// Never "the newest login-feature-* dir": a parallel login.feature run makes newer ones.
 function world(): string {
-  const tmp = os.tmpdir();
-  const dirs = fs.readdirSync(tmp).filter((n) => n.startsWith('login-feature-'))
-    .map((n) => path.join(tmp, n)).sort((a, b) => fs.statSync(b).mtimeMs - fs.statSync(a).mtimeMs);
-  if (!dirs[0]) throw new Error('no fixture world');
-  return dirs[0];
+  const T = loginWorld();
+  if (!T) throw new Error('no fixture world: the @login Before hook did not run for this scenario');
+  return T;
 }
 
 Given("wren's session is written down", STEP, function () {
