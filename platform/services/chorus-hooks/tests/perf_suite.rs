@@ -26,7 +26,9 @@ fn skip_unless_integration(reason: &str) -> bool {
 
 fn chat_script() -> String { format!("{}/platform/scripts/chat.sh", chorus_root()) }
 fn chorus_log() -> String { format!("{}/platform/scripts/chorus-log", chorus_root()) }
-fn shim_bin() -> String { format!("{}/platform/services/chorus-hooks/target/release/chorus-hook-shim", chorus_root()) }
+// #2287 reopened 2026-10-03 (Kade, #4228 run 3): the shim the test just built,
+// never <root>/target/release, which a werk never builds (NotFound panic).
+fn shim_bin() -> String { env!("CARGO_BIN_EXE_chorus-hook-shim").to_string() }
 // Prior work: #2287 introduced this 500ms budget on the bash nudge script's
 // dry-run path; #2614 hermeticity-gated it behind RUN_INTEGRATION.
 // Current state: #2804 cut bash off the canonical send path; #2809 deletes the
