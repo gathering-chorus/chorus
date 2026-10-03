@@ -388,6 +388,25 @@ fn force_full_escape_hatch_is_named() {
 fn s(v: &str) -> String { v.to_string() }
 
 #[test]
+fn a_test_spec_ts_file_builds_nothing_4409() {
+    // Silas #4409, 2026-10-03: two step-definition .ts files escaped to FULL,
+    // rebuilt every crate, and hit the 600s cap.
+    use werk_build::{scope_units, ScopeDecision};
+    let d = scope_units(
+        &[s("platform/tests/features/step_definitions/login_journey_steps.ts"),
+          s("platform/tests/features/support/world.ts")],
+        &demo_map(), &demo_edges(), false);
+    assert_eq!(d, ScopeDecision::Scoped(vec![]), "test-spec files build nothing");
+    // NEGATIVE PROOF: a step file next to a real service change still builds that service
+    let d = scope_units(
+        &[s("platform/tests/features/step_definitions/login_journey_steps.ts"), s("directing/clearing/src/tiles.ts")],
+        &demo_map(), &demo_edges(), false);
+    assert_eq!(d, ScopeDecision::Scoped(vec![BuildUnit::TsService("clearing".into())]));
+    // and a root config still escapes, named
+    assert!(matches!(scope_units(&[s("tsconfig.base.json")], &demo_map(), &demo_edges(), false), ScopeDecision::Full(_)));
+}
+
+#[test]
 fn script_only_diff_stays_scoped_not_full() {
     // #3821 review catch (Silas+Wren): extracting the shared core DROPPED
     // platform/scripts/ + platform/tests/ from the irrelevant list, sending
