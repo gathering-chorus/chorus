@@ -1125,6 +1125,9 @@ fn build_irrelevant(f: &str) -> bool {
     scope_irrelevant(f)
 }
 
+/// The scope name for platform/tests in werk-build: no build unit has it.
+const NO_BUILD_TEST_SPECS: &str = "no-build:platform/tests";
+
 /// Pure scoping core (#3783). `edges` are DECLARED provider→dependent pairs by
 /// unit/dir name (TS `file:` deps + cargo path deps); the cascade is their
 /// transitive closure. `force_full` is the operator escape hatch.
@@ -1136,10 +1139,16 @@ pub fn scope_units(
 ) -> ScopeDecision {
     // #3821 — thin adapter over the shared scoping core (scope_unit_names),
     // the same code werk-test compiles: one answer, asked twice.
-    let units: Vec<ScopeUnit> = map
+    let mut units: Vec<ScopeUnit> = map
         .iter()
         .map(|m| ScopeUnit { name: unit_name(&m.unit).to_string(), dir: m.dir.clone() })
         .collect();
+    // #3783 reopened (Silas #4409, 2026-10-03) — platform/tests is the test-spec
+    // package (chorus-gate-specs): werk-test runs it, nothing BUILDS it. A step
+    // definition there matched no build unit and escaped to FULL — ~27 crates,
+    // killed at the 600s cap. Here it is a unit no build carries, so its files
+    // scope to nothing to build; werk-test's own map still runs the package.
+    units.push(ScopeUnit { name: NO_BUILD_TEST_SPECS.to_string(), dir: "platform/tests".to_string() });
     match scope_unit_names(changed, &units, edges, force_full) {
         ScopeVerdict::Full(r) => ScopeDecision::Full(r),
         ScopeVerdict::Scoped(names) => ScopeDecision::Scoped(
