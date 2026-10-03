@@ -435,6 +435,18 @@ fn header_says_needs_stack(content: &str) -> bool {
         .any(|l| l.contains("@test-type:") && l.contains("needs-stack"))
 }
 
+/// #4416 — the header line says `hermetic` (and not `needs-stack`): believed
+/// over the exec-signal guess. athena-serve's units.rs is pure functions; a
+/// comment naming the stub launchctl/curl its BATS uses read as an exec
+/// signal, the file was filed needs-stack, the nightly cargo lane excluded it,
+/// and the crate came out "0 tests" = UNMEASURED.
+fn header_says_hermetic(content: &str) -> bool {
+    content
+        .lines()
+        .take(40)
+        .any(|l| l.contains("@test-type:") && l.contains("hermetic") && !l.contains("needs-stack"))
+}
+
 pub fn file_class(path: &str, content: &str) -> FileClass {
     let (h_layer, hermeticity, h_concern) = classify_case(path, content);
     match declared(content) {
@@ -443,7 +455,13 @@ pub fn file_class(path: &str, content: &str) -> FileClass {
         // Fuseki through a library call has no exec signal to infer from)
         Some((layer, concern)) => FileClass {
             layer,
-            hermeticity: if header_says_needs_stack(content) { "needs-stack" } else { hermeticity },
+            hermeticity: if header_says_needs_stack(content) {
+                "needs-stack"
+            } else if header_says_hermetic(content) {
+                "hermetic"
+            } else {
+                hermeticity
+            },
             concern: concern.or(h_concern),
             declared: true,
         },
@@ -1521,6 +1539,17 @@ mod cases_4185 {
         assert_eq!(file_class("x/tests/live.rs", live).hermeticity, "needs-stack");
         let plain = "// @test-type: integration — reads a tmpdir\n#[test]\nfn t() {}\n";
         assert_eq!(file_class("x/tests/plain.rs", plain).hermeticity, "hermetic");
+    }
+
+    /// #4416 — a header that says hermetic beats the exec-signal guess; without
+    /// it, the same text (a comment naming launchctl and curl) reads needs-stack.
+    #[test]
+    fn a_header_that_says_hermetic_is_believed_over_an_exec_signal() {
+        let body = "// stub launchctl and a stub curl for the integration proofs\nuse std::process::Command;\n#[test]\nfn t() { let _ = Command::new(\"curl\"); }\n";
+        let declared = format!("// @test-type: unit — hermetic: pure functions\n{body}");
+        assert_eq!(file_class("x/tests/units.rs", &declared).hermeticity, "hermetic");
+        // NEGATIVE PROOF: no header → the exec signal still files it needs-stack
+        assert_eq!(file_class("x/tests/units.rs", body).hermeticity, "needs-stack");
     }
 
     /// #4292 — unittest cases as Class.method; pytest style and helpers mint nothing.
