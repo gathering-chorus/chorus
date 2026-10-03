@@ -18,8 +18,9 @@ fn offenders(files: &[(String, String)]) -> Vec<String> {
 
 #[test]
 fn no_test_runs_the_release_shim() {
-    let dir = concat!(env!("CARGO_MANIFEST_DIR"), "/tests");
-    let files: Vec<(String, String)> = std::fs::read_dir(dir).unwrap()
+    // #4030: read at run time — a shared target dir reuses this binary across werks
+    let dir = format!("{}/tests", std::env::var("CARGO_MANIFEST_DIR").unwrap());
+    let files: Vec<(String, String)> = std::fs::read_dir(&dir).unwrap()
         .filter_map(|e| e.ok()).map(|e| e.path())
         .filter(|p| p.extension().is_some_and(|x| x == "rs"))
         .map(|p| (p.file_name().unwrap().to_string_lossy().into_owned(), std::fs::read_to_string(&p).unwrap()))
