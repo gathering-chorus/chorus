@@ -2944,17 +2944,33 @@ async function scopeLandedCommit(
   return { scope };
 }
 
+// #4228 — who hears about a model deploy's exit. Exit 0 is nobody; anything else
+// (a non-zero code, or a kill with no code) is the landing role and Jeff, naming
+// the card, the exit and the log to read. Pure, so the rule is testable alone.
+export function athenaDeployFailureNudges(
+  role: string, cardId: number, code: number | null, signal: string | null, log: string,
+): NudgeArgs[] {
+  if (code === 0) return [];
+  const exit = code === null ? `killed (${signal ?? 'no signal'})` : `exit ${code}`;
+  const message = `Model deploy for #${cardId} FAILED after its land (${exit}). The store does not carry this card's model changes. Read ${log}`;
+  const to = new Set<string>([role, 'jeff']);
+  return [...to]
+    .filter((t): t is NudgeArgs['to'] => ['silas', 'wren', 'kade', 'jeff'].includes(t))
+    .map((t) => ({ to: t, message }));
+}
+
 // #4177 — the land event triggers the model pipeline. Called from the werk-merge case
 // once the merge verb has returned the landed origin/main sha. Scopes that one commit
 // with `athena-deploy scope` (the single owner of "is this a model or seed source");
 // nothing in scope = nothing to run, said on the spine. Something in scope = the
 // canonical athena run starts in its own process group and this returns at once:
 // the land is proven by the merge, the model run reports on its own trace
-// (athena.pipeline.started … completed, card=<card>) and in its log. Never fails the
-// merge: the code landed either way, and a merge reply that lied about that would
-// be worse than a model run that has to be read from the spine.
+// (athena.pipeline.started … completed, card=<card>) and in its log. It does not
+// undo the merge (the code landed either way), and a failed model run is sent to
+// the landing role and Jeff when it exits (#4228).
 async function triggerAthenaOnLand(
   role: string, cardId: number, landedCommit: string, runsDir?: string,
+  notify?: (n: NudgeArgs) => Promise<unknown>,
 ): Promise<Record<string, unknown>> {
   const { pathMod, home, werkBase, runnerPath, actBin, binDir } = werkRunPaths();
   const fsMod = require('fs') as typeof import('fs');
@@ -2997,6 +3013,10 @@ async function triggerAthenaOnLand(
       signal: signal ?? '',
       log,
     });
+    // #4228 reopened (Silas, 2026-10-02) — the spine line alone told nobody: #4338's
+    // deploy failed at 15:54 and was found when athena-make would not boot. A failed
+    // exit goes to the landing role and Jeff as nudges, every time.
+    for (const n of athenaDeployFailureNudges(role, cardId, code, signal, log)) void notify?.(n);
   });
   child.unref();
   fsMod.closeSync(fd);
@@ -3851,7 +3871,8 @@ export function buildMcpServer(getCallerRole: () => string, deps: McpServerDeps 
         const out = typeof body.stdout === 'string' ? body.stdout : '';
         const sha = (out.match(/[0-9a-f]{40}/g) || []).pop();
         body.athena = sha
-          ? await triggerAthenaOnLand(parsed.data.role, parsed.data.card_id, sha, runsDir)
+          ? await triggerAthenaOnLand(parsed.data.role, parsed.data.card_id, sha, runsDir,
+            (n) => executeNudge(n, 'athena', fetchImpl))
           : { triggered: false, reason: 'no-landed-sha' };
         return { content: [{ type: 'text' as const, text: JSON.stringify(body) }] };
       }
