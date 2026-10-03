@@ -130,9 +130,13 @@ private_door() {
   # The nightly's launchd env carries neither name, so every write came back
   # 401 at 03:00 and passed by hand. The door names both itself, with the same
   # defaults chorus-env-setup.sh uses.
+  # Same night, second cause: every write spawns the DAL (athena-model), found
+  # on PATH — and the nightly PATH has no ~/.chorus/bin, so writes were 502
+  # "dal-spawn: No such file". The door is told where the installed DAL is.
   CHORUS_FUSEKI="$base/$PRIVATE_DOOR_DS" CHORUS_HOME="${BATS_FILE_TMPDIR:-/tmp}/door-home" \
     CSS_ISSUER="${CSS_ISSUER:-https://id.lightlifeurbangardens.com/}" \
     CHORUS_JWKS_URL="${CHORUS_JWKS_URL:-http://localhost:3001/.oidc/jwks}" \
+    CHORUS_MODEL_BIN="${CHORUS_MODEL_BIN:-$(command -v athena-model 2>/dev/null || echo "$HOME/.chorus/bin/athena-model")}" \
     "$bin" serve --port "$port" >"${BATS_FILE_TMPDIR:-/tmp}/door.log" 2>&1 &
   PRIVATE_DOOR_PID=$!
   export PRIVATE_DOOR_PID OWL_URL="http://127.0.0.1:$port"
