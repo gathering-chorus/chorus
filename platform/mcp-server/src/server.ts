@@ -469,7 +469,7 @@ const WerkRunInput = z.object({
 const AthenaRunInput = z.object({
   role: RoleEnum,
   card_id: z.number().int().min(1).describe('Card the model change belongs to.'),
-  target: z.enum(['canonical']).describe('canonical = the live store, after a land. There is no variant target: the demo env reads the live store (Jeff, 2026-09-16), a model change is this pipeline, never a demo copy.'),
+  target: z.enum(['canonical', 'staging']).describe('canonical = the live store, after a land. staging = the /staging dataset and its own athena-make (#4423, Jeff 2026-10-03, superseding his 09-16 "no variant target"): iterate on the model without prod seeing it; publish is a separate, audited step.'),
   landed_commit: z.string().optional().describe('target=canonical: the merged origin/main sha the store must attest. Empty = ungated hand run.'),
   parent_trace: z.string().optional().describe('#4177: the caller\'s trace, recorded as parent on athena.pipeline.started; the run still mints its own trace.'),
 });
@@ -482,7 +482,7 @@ const ATHENA_RUN_TOOL_DEF = {
     properties: {
       role: { type: 'string', enum: ['kade', 'wren', 'silas'], description: 'Builder role.' },
       card_id: { type: 'integer', minimum: 1, description: 'Card the model change belongs to.' },
-      target: { type: 'string', enum: ['canonical'], description: 'canonical (the live store, after a land). No variant target: the demo reads the live store.' },
+      target: { type: 'string', enum: ['canonical', 'staging'], description: 'canonical (the live store, after a land) or staging (the /staging dataset and its own athena-make, #4423).' },
       landed_commit: { type: 'string', description: 'canonical only: the merged sha the store must attest.' },
     },
     required: ['role', 'card_id', 'target'],

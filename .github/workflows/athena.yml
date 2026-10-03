@@ -259,7 +259,9 @@ jobs:
   # Patch 2: target=werk (variant store + rows out of env_up) and a chorus_athena MCP verb.
   # Patch 3: Rust athena-deploy at parity with the bash engine; the bash retires.
   land:
-    if: ${{ inputs.target == 'canonical' }}
+    # #4423 — target=staging runs the SAME legs against the /staging dataset and the
+    # staging athena-make, so the model can be torn into without prod seeing anything.
+    if: ${{ inputs.target == 'canonical' || inputs.target == 'staging' }}
     runs-on: macos-latest
     env:
       CARD_ID: ${{ inputs.card_id }}
@@ -292,7 +294,8 @@ jobs:
       - name: resolve
         id: resolve
         # One place decides WHERE: the live store, the com.chorus.athena-make service,
-        # the canonical tree. There is no variant store: every demo reads the live one.
+        # the canonical tree. #4423 (Jeff 2026-10-03, superseding his 09-16 "no variant
+        # store"): target=staging points every leg at /staging and its own athena-make.
         run: |
           set -euo pipefail
           case "$TARGET" in
@@ -301,7 +304,25 @@ jobs:
               STORE="${CHORUS_FUSEKI_BASE:-http://localhost:3030}/pods"
               API="${ATHENA_MAKE_URL:-http://localhost:3360}"
               LABEL="com.chorus.athena-make" ;;
-            *) echo "::error::athena: the land target is canonical (the demo env reads the live store; there is no variant target), got '$TARGET'" >&2; exit 2 ;;
+            staging)
+              # the model under iteration: the card's werk if there is one, else canonical
+              ROOT="${CHORUS_WERK_BASE:-$HOME/CascadeProjects/chorus-werk}/${ROLE}-${CARD_ID}"
+              [ -n "$CARD_ID" ] && [ -d "$ROOT" ] || ROOT="${CHORUS_HOME}"
+              STORE="${CHORUS_FUSEKI_BASE:-http://localhost:3030}/staging"
+              API="${ATHENA_MAKE_STAGING_URL:?ATHENA_MAKE_STAGING_URL unset — the staging athena-make}"
+              LABEL="${ATHENA_MAKE_STAGING_LABEL:?ATHENA_MAKE_STAGING_LABEL unset}"
+              # the negative proof's BEFORE: what prod looks like as this run starts
+              # shellcheck disable=SC1091
+              source "${CHORUS_HOME}/platform/scripts/fuseki-auth.sh"
+              PRODQ="${CHORUS_FUSEKI_BASE:-http://localhost:3030}/pods/query"
+              PRODCSV=$(curl -sf -m 150 "${FUSEKI_AUTH[@]+"${FUSEKI_AUTH[@]}"}" "$PRODQ" -H 'Accept: text/csv' \
+                --data-urlencode 'query=SELECT ?g (COUNT(*) AS ?n) WHERE { GRAPH ?g { ?s ?p ?o } FILTER(STRSTARTS(STR(?g),"urn:chorus:") && ?g NOT IN (<urn:chorus:domains:tests>, <urn:chorus:domains:cards>, <urn:chorus:domains:board>, <urn:chorus:domains:messages>, <urn:chorus:domains:identity>, <urn:chorus:domains:provenance>, <urn:chorus:domains:services>, <urn:chorus:domains:logs>)) } GROUP BY ?g ORDER BY ?g' || true)
+              # the query takes ~40 s on the full store; an empty or failed answer is UNMEASURED, never a
+              # signature (sha of nothing would make before == after and pass every run)
+              [ "$(printf '%s\n' "$PRODCSV" | grep -c ',')" -ge 2 ] || { echo "::error::athena: could not read prod's graph counts — unmeasured, not running staging" >&2; exit 2; }
+              PRODSIG=$(printf '%s\n' "$PRODCSV" | shasum | cut -c1-16)
+              echo "PROD_SIG_BEFORE=$PRODSIG" >> "$GITHUB_ENV" ;;
+            *) echo "::error::athena: the land target is canonical or staging, got '$TARGET'" >&2; exit 2 ;;
           esac
           [ -d "$ROOT" ] || { echo "::error::athena: tree $ROOT does not exist" >&2; exit 2; }
           { echo "root=$ROOT"; echo "store=$STORE"; echo "api=$API"; echo "label=$LABEL"; echo "base=${CHORUS_FUSEKI_BASE:-http://localhost:3030}"; } >> "$GITHUB_OUTPUT"
@@ -321,6 +342,8 @@ jobs:
           SEED=$(printf '%s\n' "$LIST" | grep '^seed|' | cut -d'|' -f2- || true)
           printf 'range: %s\nmodel files:\n%s\nseed files:\n%s\n' "$RANGE" "${MODEL:-  (none)}" "${SEED:-  (none)}"
           { echo "model<<EOF"; echo "$MODEL"; echo "EOF"; echo "seed<<EOF"; echo "$SEED"; echo "EOF"; } >> "$GITHUB_OUTPUT"
+          # staging deploys the whole model set every run (that is the point of iterating)
+          [ "$TARGET" = "staging" ] && MODEL="${MODEL:-whole model set}"
           if [ "$TARGET" = "canonical" ] && [ -z "$MODEL$SEED" ]; then
             echo "nothing=true" >> "$GITHUB_OUTPUT"
             echo "athena: the landed diff touches no model or seed source — nothing to deploy (explicit absence, not a pass)"
@@ -458,6 +481,30 @@ jobs:
           fi
           echo "issues=${N:-unmeasured}" >> "$GITHUB_OUTPUT"
           exit $rc
+
+      - name: prod-untouched
+        # #4423 negative proof: a staging run must leave prod exactly as it found it.
+        # Same per-graph counts query as resolve; any difference fails the run.
+        # Graphs that people and services write all day (cards, board, messages,
+        # identity, provenance, harvested services and logs) are left out, or every run
+        # would go red for a write that has nothing to do with staging.
+        # (Counts, not content: a same-size edit is the blind spot, closed by publish's
+        # fingerprint check, which refuses whenever prod moved since the copy.)
+        if: ${{ always() && inputs.target == 'staging' }}
+        run: |
+          set -euo pipefail
+          # shellcheck disable=SC1091
+          source "${CHORUS_HOME}/platform/scripts/fuseki-auth.sh"
+          PRODQ="${CHORUS_FUSEKI_BASE:-http://localhost:3030}/pods/query"
+          AFTERCSV=$(curl -sf -m 150 "${FUSEKI_AUTH[@]+"${FUSEKI_AUTH[@]}"}" "$PRODQ" -H 'Accept: text/csv' \
+            --data-urlencode 'query=SELECT ?g (COUNT(*) AS ?n) WHERE { GRAPH ?g { ?s ?p ?o } FILTER(STRSTARTS(STR(?g),"urn:chorus:") && ?g NOT IN (<urn:chorus:domains:tests>, <urn:chorus:domains:cards>, <urn:chorus:domains:board>, <urn:chorus:domains:messages>, <urn:chorus:domains:identity>, <urn:chorus:domains:provenance>, <urn:chorus:domains:services>, <urn:chorus:domains:logs>)) } GROUP BY ?g ORDER BY ?g' || true)
+          [ "$(printf '%s\n' "$AFTERCSV" | grep -c ',')" -ge 2 ] || { echo "::error::athena: could not read prod's graph counts after the run — unmeasured" >&2; exit 1; }
+          AFTER=$(printf '%s\n' "$AFTERCSV" | shasum | cut -c1-16)
+          if [ "$AFTER" != "$PROD_SIG_BEFORE" ]; then
+            echo "::error::athena: prod's model graph counts changed during a staging run ($PROD_SIG_BEFORE → $AFTER). A runtime writer may have written meanwhile; check before trusting this run." >&2
+            exit 1
+          fi
+          echo "prod-untouched: urn:chorus graph counts identical before and after ($AFTER)"
 
       - name: complete
         # #4177 — the run's last word is emitted on EVERY run, including one with nothing
