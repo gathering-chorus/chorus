@@ -29,8 +29,15 @@ setup() {
 cls() { printf '%s' "$2" > "$BATS_TEST_TMPDIR/$1"; "$BIN" --classify "$BATS_TEST_TMPDIR/$1"; }
 
 @test "declared() contract — authored wins, prose does not declare, junk refused" {
-  # authored beats heuristic on layer even when content SCREAMS integration
-  [ "$(cls a.bats $'// @test-type: unit — hermetic despite the curl below\ncurl http://localhost:3030/x')" = "unit needs-stack - declared" ]
+  # authored beats heuristic on layer even when content SCREAMS integration.
+  # #4416 (2026-10-03): a header that SAYS hermetic now wins on hermeticity too,
+  # as #4292 made `needs-stack` win. A false "hermetic" runs a live test in the
+  # unit lane, where it goes red with no stack — the lie shows. A false
+  # needs-stack guess dropped athena-serve's tests out of the cargo lane in
+  # silence (its trigger was the string literal http://localhost:3360).
+  [ "$(cls a.bats $'// @test-type: unit — hermetic despite the curl below\ncurl http://localhost:3030/x')" = "unit hermetic - declared" ]
+  # a header that says nothing about hermeticity leaves the heuristic in charge
+  [ "$(cls a2.bats $'// @test-type: unit\ncurl http://localhost:3030/x')" = "unit needs-stack - declared" ]
   # authored concern beats classify()'s own concern regex (trap 1)
   [ "$(cls b.bats $'// @test-type: unit:api\n#  gitleaks mention would heuristically say security')" = "unit hermetic api declared" ]
   # prose MENTION is not a declaration (trap 2 — the June gate-test-type case)
