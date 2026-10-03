@@ -86,12 +86,13 @@ fn session_start_regen_heals_stale_claudemd() {
         "precondition: CLAUDE.md must be poisoned before session-start runs"
     );
 
-    let shim = format!(
-        "{}/platform/services/chorus-hooks/target/release/chorus-hook-shim",
-        chorus_root()
-    );
+    let shim = env!("CARGO_BIN_EXE_chorus-hook-shim").to_string(); // #2287: the shim cargo built for this test
+    // #3615 membrane: a test brings its own world — session registry in a tempdir
+    let world = std::env::temp_dir().join(format!("ss-regen-2287-{}", std::process::id()));
+    std::fs::create_dir_all(world.join("sessions")).unwrap();
     let out = Command::new(&shim)
         .args(["session-start", TEST_ROLE])
+        .env("CHORUS_SESSIONS_DIR", world.join("sessions"))
         .output()
         .expect("chorus-hook-shim must be built; run platform/scripts/build-signed.sh chorus-hooks");
     assert!(out.status.success(), "session-start failed: {:?}", out);

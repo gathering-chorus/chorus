@@ -20,10 +20,7 @@ use chorus_hooks::shared::state_paths::chorus_root;
 /// It will FAIL before the fix (hook blocks) and PASS after (hook allows).
 #[test]
 fn hook_shim_allows_cards_done_without_hook_gate() {
-    let shim = format!(
-        "{}/platform/services/chorus-hooks/target/release/chorus-hook-shim",
-        chorus_root()
-    );
+    let shim = env!("CARGO_BIN_EXE_chorus-hook-shim").to_string(); // #2287: the shim cargo built for this test
 
     // Simulate a PreToolUse call for `cards done 2270`
     let input = serde_json::json!({

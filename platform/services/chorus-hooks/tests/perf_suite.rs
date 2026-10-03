@@ -110,6 +110,12 @@ fn chat_say_under_200ms() {
 #[test]
 fn pulse_assembly_under_1500ms() {
     if skip_unless_integration("invokes shim with DEPLOY_ROLE=silas, hits role-state files") { return; }
+    // #2287 (2026-10-03): the first exec of a freshly built binary pays macOS's
+    // first-run cost — measured 0.50s for a fresh copy vs 0.01s on its second run,
+    // and this test read 2622ms / 2430ms on the first run after a build, ~670ms after.
+    // A werk always builds fresh. One untimed run, so the budget measures pulse
+    // assembly, not the OS seeing a new binary.
+    let _ = Command::new(shim_bin()).arg("pulse").env("DEPLOY_ROLE", "silas").output();
     let t = Instant::now();
     let out = Command::new(shim_bin())
         .arg("pulse")
