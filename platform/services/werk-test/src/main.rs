@@ -64,8 +64,8 @@ fn run(args: &[String]) -> Result<i32, String> {
         .or_else(|| std::env::var("ROLE").ok())
         .ok_or("missing role (argv[2] or $ROLE)")?;
 
-    // #4419 — the after-land run tests the LANDED tree (canonical main), not a
-    // werk: WERK_TEST_TREE names it, and WERK_TEST_REPLAY names the landed commit.
+    // #4419 — WERK_TEST_TREE points the run at another tree (canonical main, to
+    // replay a landed commit named by WERK_TEST_REPLAY) instead of the card's werk.
     let werk = match std::env::var("WERK_TEST_TREE") {
         Ok(t) if !t.is_empty() => t,
         _ => {
@@ -176,16 +176,11 @@ fn run(args: &[String]) -> Result<i32, String> {
     // #4419 — select by domain: every registered test (any layer) in the
     // domains the changed files touch, from the crawler's own placement rules.
     // A changed file no rule places runs its whole package, and says so.
-    // Jeff, 2026-10-02: the werk stays fast; the domain lane RUNS only after
-    // the land (WERK_TEST_AFTER_LAND=1, set by after-land-tests.sh). In a werk
-    // it only says what will run after the land.
     // Jeff, 2026-10-02: the card's domain tests run HERE, in werk-test and the
     // demo, before the land — never after it.
-    let after_land = true;
     let dsel = domain_select(&werk, &changed, &rows);
     let mut untagged_pkgs: Vec<String> = Vec::new();
     match &dsel {
-        Some(d) if !after_land && d.tests.is_empty() && d.untagged.is_empty() => {}
         None => println!("domain-select: UNMEASURED — the crawler's --domains-of did not answer; import-graph selection only"),
         Some(d) => {
             println!(
@@ -3236,7 +3231,7 @@ fn unit_for_test(path: &str) -> Option<TestUnit> {
         }
     }
     // #4419 — only a REAL package (a package.json in the tree): the first live
-    // after-land run invented tsc:platform, platform/scripts and proving/scripts
+    // domain-lane run invented tsc:platform, platform/scripts and proving/scripts
     // from test paths and scored each "deps unavailable".
     werk_test::ts_package_of(path)
         .or_else(|| if Path::new(path).extension().is_none() && !path.contains('.') { Some(path.to_string()) } else { None })
