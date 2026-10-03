@@ -309,8 +309,8 @@ jobs:
               ROOT="${CHORUS_WERK_BASE:-$HOME/CascadeProjects/chorus-werk}/${ROLE}-${CARD_ID}"
               [ -n "$CARD_ID" ] && [ -d "$ROOT" ] || ROOT="${CHORUS_HOME}"
               STORE="${CHORUS_FUSEKI_BASE:-http://localhost:3030}/staging"
-              API="${ATHENA_MAKE_STAGING_URL:?ATHENA_MAKE_STAGING_URL unset — the staging athena-make}"
-              LABEL="${ATHENA_MAKE_STAGING_LABEL:?ATHENA_MAKE_STAGING_LABEL unset}"
+              API="${ATHENA_MAKE_STAGING_URL:-http://localhost:3368}"   # com.chorus.athena-make.staging (platform/launchd)
+              LABEL="${ATHENA_MAKE_STAGING_LABEL:-com.chorus.athena-make.staging}"
               # the negative proof's BEFORE: what prod looks like as this run starts
               # shellcheck disable=SC1091
               source "${CHORUS_HOME}/platform/scripts/fuseki-auth.sh"
