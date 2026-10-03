@@ -21,7 +21,7 @@ describe('#2208 data regression — /api/chorus/domain/:name', () => {
   test('alpha → response matches golden (SPARQL-section fallback path)', async () => {
     // #4187 — the fixture's section rows live where real ones do: the domain's
     // own graph (urn:chorus:domains:demo-alpha). The schema half stays in ontology.
-    const sparql = makeSparqlFromTtlGraphs(FIXTURE_TTL, ['urn:chorus:ontology', 'urn:chorus:domains:demo-alpha']);
+    const sparql = makeSparqlFromTtlGraphs(FIXTURE_TTL, ['urn:chorus:ontology', 'urn:chorus:domains:domains', 'urn:chorus:domains:demo-alpha']);
 
     const deps: ChorusDomainDeps = {
       domainRegistry,
@@ -47,7 +47,7 @@ describe('#2208 data regression — /api/chorus/domain/:name', () => {
   });
 
   test('unknown domain → 404 unchanged', async () => {
-    const sparql = makeSparqlFromTtl(FIXTURE_TTL, 'urn:chorus:ontology');
+    const sparql = makeSparqlFromTtlGraphs(FIXTURE_TTL, ['urn:chorus:ontology', 'urn:chorus:domains:domains']);
     const deps: ChorusDomainDeps = {
       domainRegistry,
       getCards: () => [],
