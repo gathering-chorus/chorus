@@ -341,9 +341,10 @@ jobs:
           MODEL=$(printf '%s\n' "$LIST" | grep '^model|' | cut -d'|' -f2- || true)
           SEED=$(printf '%s\n' "$LIST" | grep '^seed|' | cut -d'|' -f2- || true)
           printf 'range: %s\nmodel files:\n%s\nseed files:\n%s\n' "$RANGE" "${MODEL:-  (none)}" "${SEED:-  (none)}"
-          { echo "model<<EOF"; echo "$MODEL"; echo "EOF"; echo "seed<<EOF"; echo "$SEED"; echo "EOF"; } >> "$GITHUB_OUTPUT"
-          # staging deploys the whole model set every run (that is the point of iterating)
+          # staging deploys the whole model set every run (that is the point of iterating).
+          # #4423 (Kade at the gate): set BEFORE the output is written, or it never reaches deploy.
           [ "$TARGET" = "staging" ] && MODEL="${MODEL:-whole model set}"
+          { echo "model<<EOF"; echo "$MODEL"; echo "EOF"; echo "seed<<EOF"; echo "$SEED"; echo "EOF"; } >> "$GITHUB_OUTPUT"
           if [ "$TARGET" = "canonical" ] && [ -z "$MODEL$SEED" ]; then
             echo "nothing=true" >> "$GITHUB_OUTPUT"
             echo "athena: the landed diff touches no model or seed source — nothing to deploy (explicit absence, not a pass)"
