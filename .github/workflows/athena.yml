@@ -211,7 +211,9 @@ jobs:
         # pass while Jeff still sees nothing.
         run: |
           set -euo pipefail
-          bash "${ATHENA_ROOT}/platform/scripts/athena-validate.sh" 2>&1 | tail -30
+          VALIDATE="${HOME}/.chorus/bin/athena-validate"; [ -x "$VALIDATE" ] || VALIDATE="$(command -v athena-validate || true)"
+          [ -n "$VALIDATE" ] || { echo "::error::athena: no athena-validate binary (#4338) — not validated" >&2; exit 1; }
+          "$VALIDATE" 2>&1 | tail -30
           "${ATHENA_ROOT}/platform/scripts/chorus-log" athena.validated "${ROLE}" \
             class="${CLASS}" card="${CARD_ID:-none}" || true
 
@@ -432,8 +434,14 @@ jobs:
             STAMP=$(curl -s -m 10 "${AUTH[@]}" "$STORE/query" --data-urlencode 'query=SELECT ?c WHERE { GRAPH <urn:chorus:ontology> { <urn:chorus:model-deploy> <urn:chorus:vocab#deployedFromCommit> ?c } }' -H 'Accept: text/csv' | sed -n 2p | tr -d '"\r')
             if [ "$STAMP" = "$LANDED" ]; then echo "stamp: store attests $STAMP == landed"; else echo "::error::athena: store attests '$STAMP', landed is '$LANDED' — the model deploy ran but the store does not say so" >&2; rc=1; fi
           fi
-          OUT=$(ATHENA_VALIDATE_NUDGE=0 FUSEKI_QUERY="$STORE/query" ATHENA_VALIDATE_REPORT=/dev/null bash "${CHORUS_HOME}/platform/scripts/athena-validate.sh" 2>&1 || true)
-          N=$(printf '%s\n' "$OUT" | grep -oE '^graph-summary\|[0-9]+\|' | cut -d'|' -f2 | tail -1)
+          # #4338 — the bash athena-validate.sh was deleted on 2026-09-20 (#4167) and this
+          # step kept calling it: bash said "No such file", grep found no count, and
+          # pipefail ended the step with exit 1 and no message on every land since.
+          # The Rust binary is the validator; a missing one is named, never silent.
+          VALIDATE="${HOME}/.chorus/bin/athena-validate"; [ -x "$VALIDATE" ] || VALIDATE="$(command -v athena-validate || true)"
+          [ -n "$VALIDATE" ] || { echo "::error::athena: no athena-validate binary — the graph is UNMEASURED, not proven" >&2; exit 1; }
+          OUT=$(ATHENA_VALIDATE_NUDGE=0 FUSEKI_QUERY="$STORE/query" ATHENA_VALIDATE_REPORT=/dev/null "$VALIDATE" 2>&1 || true)
+          N=$(printf '%s\n' "$OUT" | grep -oE '^graph-summary\|[0-9]+\|' | cut -d'|' -f2 | tail -1 || true)
           if [ -z "$N" ]; then
             echo "::error::athena-validate reported no count (unmeasured store?) — refusing to call the graph proven" >&2; printf '%s\n' "$OUT" | tail -5; rc=1
           else

@@ -41,7 +41,7 @@ chorus:value-stream-step-athena-deploy   a chorus:ValueStreamStep ; rdfs:label "
     chorus:implementedBy "athena-deploy" .
 chorus:value-stream-step-athena-validate a chorus:ValueStreamStep ; rdfs:label "Validate" ; chorus:label "Validate" ;
     chorus:inStream chorus:value-stream-athena ; chorus:stageOrder 4 ;
-    chorus:implementedBy "athena-validate.sh" .   # bash today (ADR-038 port debt); records what RUNS, not what we wish ran
+    chorus:implementedBy "athena-validate" .   # the Rust binary since #4167 deleted the bash (2026-09-20); records what RUNS
 
 # ── borg: plant → tend → read → surface⭐ → prune → feed ────────────────────
 chorus:value-stream-step-borg-plant   a chorus:ValueStreamStep ; rdfs:label "Plant" ; chorus:label "Plant" ;
