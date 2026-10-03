@@ -206,6 +206,33 @@ pub fn copy(base: &str, prod: &str, staging: &str, manifest_path: &str) -> Resul
 }
 
 
+
+/// The data-quality counts the 2026-10-02/03 cleanup measured, read from one
+/// dataset. Reported before -> after by the audit (they should go down); the
+/// drop gate is what refuses.
+pub const QUALITY_COUNTS: &[(&str, &str)] = &[
+    ("rows the API can't open (urn: names)", "SELECT (COUNT(DISTINCT ?s) AS ?n) WHERE { GRAPH ?g { ?s a ?t } FILTER(STRSTARTS(STR(?g),\"urn:chorus:\") && STRSTARTS(STR(?s),\"urn:\")) }"),
+    ("domain links to products that don't exist", "PREFIX c: <https://jeffbridwell.com/chorus#> SELECT (COUNT(*) AS ?n) WHERE { GRAPH <urn:chorus:domains:domains> { ?d a c:Domain ; c:partOf ?p } FILTER NOT EXISTS { GRAPH ?g { ?p a c:Product } } }"),
+    ("domains with no layer", "PREFIX c: <https://jeffbridwell.com/chorus#> SELECT (COUNT(DISTINCT ?d) AS ?n) WHERE { GRAPH <urn:chorus:domains:domains> { ?d a c:Domain FILTER NOT EXISTS { ?d c:inLayer ?l } } }"),
+    ("domains named *-domain", "PREFIX c: <https://jeffbridwell.com/chorus#> SELECT (COUNT(DISTINCT ?d) AS ?n) WHERE { GRAPH <urn:chorus:domains:domains> { ?d a c:Domain FILTER(STRENDS(STR(?d),\"-domain\")) } }"),
+];
+
+fn quality(base: &str, ds: &str) -> Vec<String> {
+    QUALITY_COUNTS.iter().map(|(_, q)| {
+        match curl(&["--data-urlencode", &format!("query={q}"), "-H", "Accept: text/csv", &format!("{base}/{ds}/query")]) {
+            Ok((csv, c)) if c == "200" => csv.lines().nth(1).unwrap_or("?").trim().trim_matches('"').to_string(),
+            _ => "unmeasured".into(),
+        }
+    }).collect()
+}
+
+/// One line per count: `name: prod -> staging`.
+pub fn quality_report(prod: &[String], staging: &[String]) -> String {
+    QUALITY_COUNTS.iter().zip(prod.iter().zip(staging.iter()))
+        .map(|((name, _), (p, s))| format!("{name}: {p} -> {s}"))
+        .collect::<Vec<_>>().join("; ")
+}
+
 /// Port the audit's own athena-make serves staging on (prod is 3360, werk slots 3363-3365).
 pub const AUDIT_PORT: u16 = 3367;
 
@@ -251,6 +278,7 @@ pub fn audit(base: &str, prod: &str, staging: &str, manifest_path: &str, prod_ap
     let _ = child.kill();
     let _ = child.wait();
     let verdict = audit_verdict(&before, &after?, &std::env::var("ATHENA_ALLOW_DROPS").unwrap_or_default())?;
+    let verdict = format!("{verdict}\n  {}", quality_report(&quality(base, prod), &quality(base, staging)));
     let dir = std::path::Path::new(manifest_path).parent().unwrap_or(std::path::Path::new("."));
     std::fs::write(dir.join("audited.tsv"), staging_state(base, staging, manifest_path)?).map_err(|e| e.to_string())?;
     Ok(verdict)
@@ -530,5 +558,14 @@ mod tests {
         assert!(audited_matches(None, "g\th").unwrap_err().contains("no passing audit"));
         assert!(audited_matches(Some("g\th1"), "g\th2").unwrap_err().contains("changed since its audit"));
         assert!(audited_matches(Some("g\th"), "g\th").is_ok());
+    }
+
+    #[test]
+    fn quality_report_reads_prod_to_staging_per_count() {
+        let p: Vec<String> = ["118", "20", "47", "3"].iter().map(|s| s.to_string()).collect();
+        let s: Vec<String> = ["0", "0", "47", "0"].iter().map(|s| s.to_string()).collect();
+        let r = quality_report(&p, &s);
+        assert!(r.contains("rows the API can't open (urn: names): 118 -> 0"), "{r}");
+        assert!(r.contains("domains named *-domain: 3 -> 0"), "{r}");
     }
 }
