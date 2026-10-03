@@ -21,6 +21,8 @@ fn env_or(key: &str, default: &str) -> String {
 /// default set (chorus.ttl + werk-domains.ttl). Pure — unit-tested.
 // #4186 — the one home for the model/seed predicates; `athena-deploy scope` prints them.
 pub mod model_scope { include!("../../shared/model_scope.rs"); }
+/// #4423 — data staging: Write-Audit-Publish for the model graphs.
+pub mod staging;
 
 /// `athena-deploy scope <root> <git range>` — list the model and seed sources a diff
 /// touched, one per line as `model|<path>` / `seed|<path>`. Exit 0 with no lines when

@@ -67,11 +67,25 @@ fn main() {
             _ => { eprintln!("usage: athena-deploy served-compare <before-file> <api>"); std::process::exit(2); }
         }
     }
+    // #4423 — `athena-deploy staging copy`: the staging dataset becomes a copy of
+    // prod's model graphs, with a per-graph count + fingerprint manifest.
+    if args.get(1).map(String::as_str) == Some("staging") {
+        let base = std::env::var("CHORUS_FUSEKI_BASE").unwrap_or_else(|_| "http://localhost:3030".into());
+        let manifest = format!("{}/.chorus/staging/manifest.tsv", std::env::var("HOME").unwrap_or_default());
+        let r = match args.get(2).map(String::as_str) {
+            Some("copy") => athena_deploy::staging::copy(&base, "pods", "staging", &manifest),
+            _ => { eprintln!("usage: athena-deploy staging copy"); std::process::exit(2); }
+        };
+        match r {
+            Ok(s) => { println!("{s}"); std::process::exit(0); }
+            Err(e) => { eprintln!("athena-deploy: staging: {e}"); std::process::exit(1); }
+        }
+    }
     // #4338 — an argument this binary does not know is refused, never read as
     // "deploy everything". A 15:52 binary handed `served-snapshot` would have run a
     // full prod deploy and exited 0.
     if let Some(a) = args.get(1) {
-        eprintln!("athena-deploy: unknown argument '{a}' — refusing (a bare `athena-deploy` deploys; subcommands: scope, prove-trace, served-snapshot, served-compare)");
+        eprintln!("athena-deploy: unknown argument '{a}' — refusing (a bare `athena-deploy` deploys; subcommands: scope, prove-trace, served-snapshot, served-compare, staging)");
         std::process::exit(2);
     }
     match run_athena_deploy() {
