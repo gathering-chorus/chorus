@@ -47,7 +47,7 @@ fn affected_units_is_deterministic_crates_sorted_then_packages() {
         "platform/api/src/x.ts",
         "platform/services/werk-build/src/lib.rs",
     ]);
-    // crates sorted alpha first, then TS packages in TS_PACKAGES order
+    // crates sorted alpha first, then TS packages in sorted order
     assert_eq!(
         affected_units(&changed),
         vec![
@@ -1463,4 +1463,42 @@ fn rc2_without_the_declaration_is_still_a_failure() {
 fn the_declaration_alone_does_not_excuse_a_failing_exit() {
     assert!(!self_declared_unmeasured(Some(1), "UNMEASURED appears in this text"));
     assert!(!self_declared_unmeasured(None, "UNMEASURED appears in this text"));
+}
+
+// #4424 — TS packages are found on disk the way Rust crates are: a directory
+// with a package.json that has a "test" script (outside node_modules/dist).
+// No hand-kept list. A new package is claimed the moment it exists.
+#[test]
+fn ts_packages_are_discovered_from_package_json_on_disk() {
+    use werk_test::discover_ts_packages;
+    // Zero-dep crate: a unique dir under the system temp, removed at the end.
+    let base = std::env::temp_dir().join(format!("werk-test-ts-{}", std::process::id()));
+    let _ = std::fs::remove_dir_all(&base);
+    struct Root(std::path::PathBuf);
+    impl Root { fn path(&self) -> &std::path::Path { &self.0 } }
+    impl Drop for Root { fn drop(&mut self) { let _ = std::fs::remove_dir_all(&self.0); } }
+    let root = Root(base);
+    let mk = |dir: &str, body: &str| {
+        std::fs::create_dir_all(root.path().join(dir)).unwrap();
+        std::fs::write(root.path().join(dir).join("package.json"), body).unwrap();
+    };
+    mk("platform/newpkg", r#"{"name":"n","scripts":{"test":"node --test"}}"#);
+    mk("directing/app", r#"{"name":"a","scripts":{"test":"jest"}}"#);
+    // Negative proofs: no test script, inside node_modules, inside dist.
+    mk("platform/spike", r#"{"name":"s","scripts":{"build":"tsc"}}"#);
+    mk("platform/newpkg/node_modules/dep", r#"{"name":"d","scripts":{"test":"x"}}"#);
+    mk("platform/newpkg/dist/inner", r#"{"name":"i","scripts":{"test":"x"}}"#);
+    assert_eq!(
+        discover_ts_packages(root.path()),
+        vec!["directing/app".to_string(), "platform/newpkg".to_string()]
+    );
+}
+
+#[test]
+fn the_real_tree_claims_the_new_adapters_package() {
+    let root = std::path::PathBuf::from(std::env::var("CARGO_MANIFEST_DIR").unwrap()).join("../../..");
+    let found = werk_test::discover_ts_packages(&root);
+    assert!(found.contains(&"platform/agent-adapters".to_string()), "{found:?}");
+    assert!(found.contains(&"platform/api".to_string()), "{found:?}");
+    assert!(!found.iter().any(|p| p.contains("spikes/mcp-registry")), "{found:?}");
 }
