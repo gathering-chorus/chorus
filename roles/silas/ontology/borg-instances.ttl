@@ -290,12 +290,12 @@ inst:clearing-library borg:dependsOn inst:messaging-library .
 # DOMAIN → ENVIRONMENT EDGES — which domains use which services
 # =============================================================================
 
-# Chorus domain — coordination infrastructure
-chorus:chorus-domain borg:usesEnvironment inst:chorus-api, inst:messaging-library,
-    inst:clearing-library, inst:vikunja-library, inst:chorus-index .
+# Each environment hangs on the domain that runs it (#4353, Silas 10-04).
+# vikunja-library → cards and chorus-index → search are declared on those domains.
+chorus:messages borg:usesEnvironment inst:messaging-library, inst:clearing-library .
 
-# Infrastructure domain — the engines themselves
-chorus:infrastructure borg:usesEnvironment inst:fuseki-library, inst:mysql-library,
+# Infrastructure domain — the engines themselves, and the shared chorus-api host
+chorus:infrastructure borg:usesEnvironment inst:chorus-api, inst:fuseki-library, inst:mysql-library,
     inst:prometheus-library, inst:grafana-library, inst:loki-library,
     inst:promtail-library, inst:alertmanager-library .
 
