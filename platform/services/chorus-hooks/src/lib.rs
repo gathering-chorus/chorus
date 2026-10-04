@@ -12,6 +12,8 @@
 #![allow(dead_code)]
 
 pub mod mcp_client;
+pub mod runtime_tools;
+pub mod runtime_hook;
 // #2505 — expose `shared` so integration tests can call
 // `chorus_hooks::shared::state_paths::chorus_root()` instead of hardcoding
 // the Mac path. main.rs and shim.rs continue to declare `mod shared;` for
