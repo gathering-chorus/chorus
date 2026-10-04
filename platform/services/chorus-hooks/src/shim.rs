@@ -424,6 +424,8 @@ fn main() -> ExitCode {
         "chorus-log" | "log" => return chorus_log::run(&args),
         "role-state" => return role_state::run(&args),
         "wall-clock" => return wall_clock_cmd(),
+        // #4426 — the boot transcript read, without replaying a flagged conversation.
+        "boot-read" => return commands::context_cache::boot_read(&args),
         "heartbeat" => return heartbeat_cmd(),
 
         // #2435 — "inject" subcommand retired alongside inject_by_tab_name.

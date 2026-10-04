@@ -188,12 +188,9 @@ pub fn run(args: &[String]) -> ExitCode {
 
     // 1. Session comprehension — Pulse + Chorus query (#1781, #1881, #1902)
     out.push_str("## Boot: Rebuild Context From the Transcript\n\n");
-    out.push_str(&format!(
-        "Before your first response, reconstruct where you and Jeff actually left off — from primary source, the real messages, not a remembered narrative:\n\
-         ```\n\
-         cat ~/.chorus/pulse-latest.json   # durable: survives reboot (/tmp is only a derived cache, #3202)\n\
-         curl -s \"http://localhost:3340/api/chorus/search?q=the&channel=session:{role}&order=recent&limit=30\"\n\
-         ```\n\n\
+    out.push_str(&boot_read_instruction(role));
+    out.push_str(
+        "\
          Read those ~30 messages in order — they are the ground truth of the open thread. Then open by rebuilding context, not performing insight:\n\n\
          1. **What actually happened.** Summarize the real state from the transcript — what shipped, what's open, what Jeff last asked for, what's mid-flight. From the messages, not a thesis.\n\n\
          2. **One position, only if earned.** If the reconstruction surfaces a clear call, state it (recommend, don't hedge). If it doesn't, name what you'd verify next. Don't manufacture a thesis to sound synthesized.\n\n\
@@ -202,8 +199,8 @@ pub fn run(args: &[String]) -> ExitCode {
          - Ground first, opinion second. The reconstruction is mandatory; the opinion is optional.\n\
          - Verify before asserting. If you name a constraint (broken X, N days of Y, a stale checkout), confirm it from the transcript or a quick check — never assert it from memory. (This boot replaced a thesis-first opening precisely because that one rewarded sounding synthesized over being accurate, and produced fabricated openings.)\n\
          - If the search returns stale or old messages, check the freshness and say so — your recall may be incomplete; do not fill the gap with invention.\n\
-         - You were not here overnight — you are catching up on the thread. Sound like a colleague who just read it accurately, not one performing overnight reflection.\n"
-    , role=role));
+         - You were not here overnight — you are catching up on the thread. Sound like a colleague who just read it accurately, not one performing overnight reflection.\n",
+    );
 
     // 2. Active Work — WIP + Now + Ops + Later only (no Done wall)
     out.push_str("\n## Active Cards\n");
@@ -464,4 +461,84 @@ fn scan_briefs_pending(briefs_dir: &std::path::Path) -> String {
         .collect();
     output.push(format!("SUMMARY:{} pending", items.len()));
     output.join("\n")
+}
+
+
+/// #4426 — markers of a conversation the safety classifier stopped. Replaying
+/// such a conversation into a fresh session re-poisons it within a second
+/// (measured: Kade 2026-10-04 13:29:12 read → 13:29:13 flag).
+const SAFETY_FLAG_MARKERS: &[&str] = &["safeguards flagged", "stopped by a safety classifier"];
+
+/// What the boot step prints from the role's recent session messages: the
+/// search answer as-is, or — when it holds a safety flag — one line instead.
+pub fn boot_messages(search_body: &str) -> String {
+    if SAFETY_FLAG_MARKERS.iter().any(|m| search_body.contains(m)) {
+        return "The last conversation ended in a safety flag and is not replayed (#4426). Start from the board, Active Cards and Open Threads below; ask Jeff where to pick up.".to_string();
+    }
+    search_body.to_string()
+}
+
+/// The commands the boot step runs. The transcript read goes through
+/// `chorus-hook-shim boot-read`, which applies `boot_messages`.
+pub fn boot_read_instruction(role: &str) -> String {
+    format!(
+        "Before your first response, reconstruct where you and Jeff actually left off — from primary source, the real messages, not a remembered narrative:\n\
+         ```\n\
+         cat ~/.chorus/pulse-latest.json   # durable: survives reboot (/tmp is only a derived cache, #3202)\n\
+         chorus-hook-shim boot-read {role}   # your last 30 session messages; a flagged conversation is not replayed (#4426)\n\
+         ```\n\n",
+        role = role
+    )
+}
+
+/// `chorus-hook-shim boot-read <role>` — fetch the role's recent session
+/// messages and print them through `boot_messages`.
+pub fn boot_read(args: &[String]) -> std::process::ExitCode {
+    let Some(role) = args.first().filter(|r| matches!(r.as_str(), "wren" | "silas" | "kade")) else {
+        eprintln!("usage: chorus-hook-shim boot-read <wren|silas|kade>");
+        return std::process::ExitCode::from(2);
+    };
+    let url = format!("http://localhost:3340/api/chorus/search?q=the&channel=session:{}&order=recent&limit=30", role);
+    match std::process::Command::new("curl").args(["-s", "--max-time", "20", &url]).output() {
+        Ok(out) => {
+            println!("{}", boot_messages(&String::from_utf8_lossy(&out.stdout)));
+            std::process::ExitCode::SUCCESS
+        }
+        Err(e) => {
+            eprintln!("boot-read: search unavailable: {}", e);
+            std::process::ExitCode::from(1)
+        }
+    }
+}
+
+#[cfg(test)]
+mod boot_read_tests_4426 {
+    use super::*;
+    const CLEAN: &str = r#"{"results":[{"author":"user","content":"pull 4425"},{"author":"assistant","content":"Pulled #4425."}]}"#;
+    const FLAGGED: &str = r#"{"results":[{"author":"user","content":"hello"},{"author":"assistant","content":"API Error: Opus 5.5's safeguards flagged this message"},{"author":"user","content":"secret thread text"}]}"#;
+    const STOPPED: &str = r#"{"results":[{"author":"user","content":"Your response above was stopped by a safety classifier"},{"author":"user","content":"other text"}]}"#;
+
+    // #4426 — a conversation that ended in a safety flag is never replayed:
+    // none of its text reaches the boot output, only one line saying so.
+    #[test]
+    fn a_flagged_conversation_is_not_replayed() {
+        for body in [FLAGGED, STOPPED] {
+            let out = boot_messages(body);
+            assert!(out.contains("not replayed"), "{out}");
+            assert!(!out.contains("secret thread text") && !out.contains("other text") && !out.contains("hello"), "{out}");
+        }
+    }
+
+    // Negative proof: with no flag, the messages print exactly as before.
+    #[test]
+    fn a_clean_conversation_prints_as_today() {
+        assert_eq!(boot_messages(CLEAN), CLEAN);
+    }
+
+    #[test]
+    fn the_boot_step_uses_the_filtered_read() {
+        let text = boot_read_instruction("kade");
+        assert!(text.contains("chorus-hook-shim boot-read kade"), "{text}");
+        assert!(!text.contains("curl -s \"http://localhost:3340/api/chorus/search"), "{text}");
+    }
 }
