@@ -647,3 +647,31 @@ async fn spine_events_go_through_chorus_log_with_role_and_principal() {
     // Negative proof: nothing is appended raw to the supervisor's own log.
     assert!(!std::path::Path::new(&f.cwd).join("state/chorus.log").exists());
 }
+
+// #4424 AC1 — Gemini silently ignores a project's hooks in a folder it does
+// not trust (found live: it wrote into canonical). A Gemini role session is
+// refused unless the folder is trusted in ~/.gemini/trustedFolders.json.
+#[test]
+fn gemini_is_refused_unless_its_folder_is_trusted() {
+    use chorus_agent::server::guards_installed_in;
+    let home = tempfile::tempdir().unwrap();
+    let work = tempfile::tempdir().unwrap();
+    let cwd = work.path().canonicalize().unwrap();
+    fs::create_dir_all(cwd.join(".gemini")).unwrap();
+    fs::write(cwd.join(".gemini/settings.json"), r#"{"hooks":{"BeforeTool":[{"hooks":[{"command":"chorus-hook-shim runtime-hook gemini BeforeTool"}]}]}}"#).unwrap();
+    fs::create_dir_all(home.path().join(".gemini")).unwrap();
+    let trust = home.path().join(".gemini/trustedFolders.json");
+    // No trust file: refused even though the hook file is there.
+    let err = guards_installed_in(&Runtime::Gemini, &cwd, home.path()).unwrap_err();
+    assert!(err.contains("not trusted"), "{err}");
+    // Trusted through a parent folder, compared case-insensitively as Gemini does.
+    fs::write(&trust, format!(r#"{{"{}": "TRUST_FOLDER"}}"#, cwd.parent().unwrap().to_string_lossy().to_lowercase())).unwrap();
+    assert!(guards_installed_in(&Runtime::Gemini, &cwd, home.path()).is_ok());
+    // Explicitly untrusted: refused.
+    fs::write(&trust, format!(r#"{{"{}": "DO_NOT_TRUST"}}"#, cwd.to_string_lossy())).unwrap();
+    assert!(guards_installed_in(&Runtime::Gemini, &cwd, home.path()).is_err());
+    // Codex has no folder-trust gate of this kind.
+    fs::create_dir_all(cwd.join(".codex")).unwrap();
+    fs::write(cwd.join(".codex/hooks.json"), "runtime-hook codex").unwrap();
+    assert!(guards_installed_in(&Runtime::Codex, &cwd, home.path()).is_ok());
+}

@@ -1,0 +1,7 @@
+{
+  "name": "@chorus/agent-adapters", "version": "0.1.0", "private": true,
+  "description": "Versioned JSONL workers for external agent runtimes",
+  "engines": { "node": ">=22" },
+  "scripts": { "build": "tsc", "test": "npm run build && node --test tests/*.test.cjs" },
+  "devDependencies": { "@types/node": "25.6.0", "typescript": "5.9.3" }
+}

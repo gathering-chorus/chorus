@@ -1015,6 +1015,44 @@ type ApiResult = std::result::Result<Json<Value>, (StatusCode, Json<Value>)>;
 /// there and must call `chorus-hook-shim runtime-hook <runtime>`. Claude keeps
 /// its account-wide hooks; an External runtime has no tools to guard.
 pub fn guards_installed(runtime: &Runtime, cwd: &std::path::Path) -> Result<()> {
+    let home = std::path::PathBuf::from(std::env::var_os("HOME").unwrap_or_default());
+    guards_installed_in(runtime, cwd, &home)
+}
+/// #4424 — as `guards_installed`, with the account home named (tests).
+pub fn guards_installed_in(runtime: &Runtime, cwd: &std::path::Path, home: &std::path::Path) -> Result<()> {
+    hook_file_present(runtime, cwd)?;
+    if *runtime == Runtime::Gemini && !gemini_folder_trusted(cwd, home) {
+        return Err(format!(
+            "gemini guards are not loaded: {} is not trusted in {}/.gemini/trustedFolders.json, and Gemini ignores a project's hooks in an untrusted folder",
+            cwd.display(),
+            home.display()
+        ));
+    }
+    Ok(())
+}
+/// Gemini's folder trust: the nearest listed ancestor decides. TRUST_FOLDER
+/// covers that folder, TRUST_PARENT its parent, DO_NOT_TRUST refuses.
+/// Paths compare case-insensitively, as Gemini writes them lowercased on macOS.
+fn gemini_folder_trusted(cwd: &std::path::Path, home: &std::path::Path) -> bool {
+    let Ok(text) = std::fs::read_to_string(home.join(".gemini/trustedFolders.json")) else { return false };
+    let Ok(Value::Object(rules)) = serde_json::from_str::<Value>(&text) else { return false };
+    let want = cwd.to_string_lossy().to_lowercase();
+    let mut best: Option<(usize, bool)> = None;
+    for (path, rule) in rules {
+        let base = std::path::Path::new(&path.to_lowercase()).to_path_buf();
+        let scope = match rule.as_str() {
+            Some("TRUST_PARENT") => base.parent().map(|p| p.to_path_buf()).unwrap_or(base),
+            _ => base,
+        };
+        let scope_s = scope.to_string_lossy().to_string();
+        let covers = want == scope_s || want.starts_with(&format!("{}/", scope_s.trim_end_matches('/')));
+        if covers && best.is_none_or(|(len, _)| scope_s.len() > len) {
+            best = Some((scope_s.len(), rule.as_str() != Some("DO_NOT_TRUST")));
+        }
+    }
+    best.is_some_and(|(_, trusted)| trusted)
+}
+fn hook_file_present(runtime: &Runtime, cwd: &std::path::Path) -> Result<()> {
     let (file, name) = match runtime {
         Runtime::Codex => (".codex/hooks.json", "codex"),
         Runtime::Gemini => (".gemini/settings.json", "gemini"),
