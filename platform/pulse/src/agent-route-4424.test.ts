@@ -175,3 +175,44 @@ describe('(d) pulse never asks the supervisor for a session list', () => {
     expect(SOURCE_LIST_CALL.exec('await supervisor.sessions()')).not.toBeNull();
   });
 });
+
+describe('Wren review: queued receipt, both runs live, no unchecked column', () => {
+  test('a supervisor "queued" receipt maps to agent-queued, not a busy guess', async () => {
+    const { supervisor } = fakeSupervisor('queued');
+    const { legacy } = fakeLegacy();
+    const r = await routeByPresence(legacy, supervisor, resolverFor('kade'))('kade', 'hi', 'silas', 'pulse:20');
+    expect(r.deferReason).toBe('agent-queued');
+  });
+
+  test('negative proof: a role with a live pane run AND a live agent run is refused as ambiguous', async () => {
+    const both = [
+      { name: 'wren-presence-pane', presenceOf: 'session-run-wren-run-a', pane: '%3', tty: '/dev/ttys001', reachableOver: 'nudge' },
+      { name: 'wren-presence-agent', presenceOf: 'session-run-wren-run-b', reachableOver: 'agent' },
+    ];
+    const live = [{ name: 'wren-run-a', runEndedAt: '' }, { name: 'wren-run-b', runEndedAt: '' }];
+    expect(resolveFromPresence(both, live, 'wren').kind).toBe('ambiguous');
+    const { supervisor, sent } = fakeSupervisor();
+    const { legacy, calls } = fakeLegacy();
+    const route = routeByPresence(legacy, supervisor, () => Promise.resolve(resolveFromPresence(both, live, 'wren')));
+    const r = await route('wren', 'hi', 'silas', 'pulse:21');
+    expect(sent).toEqual([]);
+    expect(calls).toEqual([]);
+    expect(r.deferred).toBe(true);
+    expect(r.deferReason).toBe('undelivered-ambiguous');
+  });
+
+  test('messages.db has no source_session_id column, and a nudge stores without one', () => {
+    const DB2 = path.join(__dirname, '..', 'test-agent-route-cols-4424.db');
+    if (fs.existsSync(DB2)) fs.unlinkSync(DB2);
+    const s2 = new MessageStore(DB2);
+    try {
+      const id = s2.sendNudge('silas', 'kade', 'hello');
+      expect(s2.getDeliveryRecord(id).delivery_status).toBe('pending');
+      expect(s2.columnNames()).not.toContain('source_session_id');
+      expect(s2.columnNames()).toContain('target_session_id');
+    } finally {
+      s2.close();
+      if (fs.existsSync(DB2)) fs.unlinkSync(DB2);
+    }
+  });
+});

@@ -45,6 +45,7 @@ export function resolveFromPresence(presences: PresenceRow[], runs: RunRow[], ro
   // #4424 — a run on another model is reached through the agent supervisor,
   // addressed by the run's own name (the supervisor's session id).
   const agent = candidates.find(overAgent);
+  if (agent && candidates.some((p) => !overAgent(p))) return { kind: 'ambiguous' };
   if (agent) {
     const run = liveRunOf(agent.presenceOf ?? '', live);
     if (run) return { kind: 'agent', run };

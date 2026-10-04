@@ -216,15 +216,14 @@ export class MessageStore {
     nudgeClass: 'r2r' | 'a2r' = 'r2r',
     expects: 'none' | 'reply' | 'decision' | 'action' = 'none',
     targetSessionId?: string,
-    sourceSessionId?: string,
   ): number {
     // #3403: every nudge carries an envelope. `class` = who's talking (peer vs
     // machine); `expects` = what's needed back. The gate only traps r2r + expects
     // != none, so an alert (a2r) or an ack/fyi (expects 'none') can never trap.
     const stmt = this.db.prepare(
-      'INSERT INTO messages (type, "from", "to", content, trace_id, nudge_class, nudge_expects, target_session_id, source_session_id) VALUES (\'nudge\', ?, ?, ?, ?, ?, ?, ?, ?)'
+      'INSERT INTO messages (type, "from", "to", content, trace_id, nudge_class, nudge_expects, target_session_id) VALUES (\'nudge\', ?, ?, ?, ?, ?, ?, ?)'
     );
-    return Number(stmt.run(from, to, content, traceId ?? null, nudgeClass, expects, targetSessionId ?? null, sourceSessionId ?? null).lastInsertRowid);
+    return Number(stmt.run(from, to, content, traceId ?? null, nudgeClass, expects, targetSessionId ?? null).lastInsertRowid);
   }
 
   // #3343 — Jeff's Clearing input rides the same delivery machinery as nudges
@@ -279,14 +278,19 @@ export class MessageStore {
   // addressed; delivery = the run an admission bound the row to; claim = the
   // run whose native hook claimed it at a boundary.
   private migrateAgentColumns(): void {
-    const have = (this.db.prepare('PRAGMA table_info(messages)').all() as Array<{ name: string }>).map((c) => c.name);
+    const have = this.columnNames();
     const add: Array<[string, string]> = [
       ['target_session_id', 'TEXT'], ['delivery_session_id', 'TEXT'], ['inbox_claim_session', 'TEXT'],
-      ['source_session_id', 'TEXT'], ['context_event_pending', 'INTEGER NOT NULL DEFAULT 0'],
+      ['context_event_pending', 'INTEGER NOT NULL DEFAULT 0'],
     ];
     for (const [name, type] of add.filter(([n]) => !have.includes(n))) {
       this.db.exec(`ALTER TABLE messages ADD COLUMN ${name} ${type}`);
     }
+  }
+
+  /** The messages table's columns, as SQLite reports them. */
+  columnNames(): string[] {
+    return (this.db.prepare('PRAGMA table_info(messages)').all() as Array<{ name: string }>).map((c) => c.name);
   }
 
   /** #3700 — park a row for a live-but-busy target; /drain flips it back. */
@@ -326,7 +330,7 @@ export class MessageStore {
     return this.db.transaction(() => {
       const rows = this.db.prepare(`SELECT id, "from", content, type as kind FROM messages
         WHERE "to"=? AND type IN ('nudge','jeff-input')
-        AND (delivery_status='pending' OR (delivery_status='queued' AND last_delivery_error IN ('agent-busy','supervisor-unavailable')))
+        AND (delivery_status='pending' OR (delivery_status='queued' AND last_delivery_error IN ('agent-queued','supervisor-unavailable')))
         AND (target_session_id IS NULL OR target_session_id=?)
         AND (delivery_session_id IS NULL OR delivery_session_id=?)
         AND (inbox_claim_session IS NULL OR inbox_claim_session=?) ORDER BY id LIMIT ?`)

@@ -75,6 +75,9 @@ export function routeByPresence(legacy: RunInject, supervisor: AgentSupervisor, 
   return async (to, content, from, messageId, options) => {
     const res = await resolve(to);
     const explicit = options?.targetSessionId;
+    // A role live on both a pane and an agent run has no single answer: refuse,
+    // typed and visible, rather than let either transport win silently.
+    if (res.kind === 'ambiguous') return { rc: 0, stderr: '', deferred: true, deferReason: 'undelivered-ambiguous', target: `undelivered:${to}:ambiguous` };
     if (res.kind !== 'agent') {
       if (explicit) return { rc: 0, stderr: '', deferred: true, deferReason: 'undelivered-agent-target-not-live', target: `undelivered:${to}:${explicit}` };
       return legacy(to, content, from, messageId, options);
@@ -89,7 +92,7 @@ export function routeByPresence(legacy: RunInject, supervisor: AgentSupervisor, 
       if (receipt === 'context_delivered') return { ...base, agentReceipt: receipt };
       // Admission is not delivery: everything short of context_delivered stays
       // queued, bound to this run.
-      return { ...base, deferred: true, agentReceipt: receipt, deferReason: receipt === 'queued' ? 'agent-busy' : receipt.replace('_', '-') };
+      return { ...base, deferred: true, agentReceipt: receipt, deferReason: receipt === 'queued' ? 'agent-queued' : receipt.replace('_', '-') };
     } catch {
       // An interrupted send may already have been admitted. Never blind retry.
       return { ...base, deferred: true, deferReason: 'uncertain', agentReceipt: 'uncertain' };

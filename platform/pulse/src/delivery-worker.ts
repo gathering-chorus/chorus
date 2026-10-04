@@ -37,7 +37,7 @@ export type RunInject = (
 ) => Promise<InjectResult>;
 
 /** #4424 — agent-transport states that keep a row queued, bound to its run. */
-export const AGENT_QUEUED_REASONS = ['agent-busy', 'transport-accepted', 'uncertain', 'supervisor-unavailable'];
+export const AGENT_QUEUED_REASONS = ['agent-queued', 'transport-accepted', 'uncertain', 'supervisor-unavailable'];
 
 /** #4424 — terminal, claimed by a native hook, or admitted/uncertain at the
  * supervisor: such a row is settled by its receipt, never sent again. */

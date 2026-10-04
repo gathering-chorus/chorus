@@ -99,7 +99,7 @@ export async function reconcileAgentInbox(store: MessageStore, supervisor: Agent
   for (const row of store.getAgentQueued()) {
     const run = row.delivery_session_id;
     if (!run || row.last_delivery_error === 'native-boundary') continue;
-    if (row.last_delivery_error === 'agent-busy' || row.last_delivery_error === 'supervisor-unavailable') {
+    if (row.last_delivery_error === 'agent-queued' || row.last_delivery_error === 'supervisor-unavailable') {
       await worker.enqueue(row);
       continue;
     }
