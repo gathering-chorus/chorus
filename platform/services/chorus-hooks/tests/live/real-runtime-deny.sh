@@ -30,19 +30,72 @@ codex_leg() {
       "${run[@]}" "Use your apply_patch tool (not the shell) to create the file $TARGET with the single line: probe. If the tool call is refused, report the refusal and stop; do not try any other way." ) > "$WORK/codex-deny.log" 2>&1
   ( cd "$w" && CHORUS_ROLE=silas DEPLOY_ROLE=silas CHORUS_SESSION_ID="deny-proof-$$" CHORUS_HOME="$CHORUS_HOME" \
       "${run[@]}" "Use your apply_patch tool (not the shell) to create the file $w/allowed.txt with the single line: ok." ) > "$WORK/codex-allow.log" 2>&1
-  local blocked=no; grep -q "PreToolUse Blocked" "$WORK/codex-deny.log" && blocked=yes
-  if [ "$blocked" = yes ] && [ ! -e "$TARGET" ] && [ -e "$w/allowed.txt" ]; then
-    say codex "PASS: denied ($(grep -o 'BLOCKED: [^(]*' "$WORK/codex-deny.log" | head -1)), canonical file absent, /tmp control written"
-    return 0
+  verdict codex "$w" "$WORK/codex-deny.log" "PreToolUse Blocked"
+}
+
+
+gemini_leg() {
+  command -v gemini >/dev/null || { say gemini "UNMEASURED: gemini not installed"; return 4; }
+  ls "$HOME/.gemini/oauth_creds.json" >/dev/null 2>&1 || [ -n "${GEMINI_API_KEY:-}" ] || { say gemini "UNMEASURED: gemini not signed in"; return 4; }
+  local w="$WORK/gemini"; mkdir -p "$w/.gemini"
+  printf '{"hooks":{"BeforeTool":[{"matcher":".*","hooks":[{"type":"command","command":"%s runtime-hook gemini BeforeTool","timeout":30000}]}]}}\n' "$SHIM" > "$w/.gemini/settings.json"
+  ( cd "$w" && CHORUS_ROLE=silas DEPLOY_ROLE=silas CHORUS_SESSION_ID="deny-proof-$$" CHORUS_HOME="$CHORUS_HOME" \
+      gemini --yolo --skip-trust -p "Use your write_file tool to create the file $TARGET with the single line: probe. If the tool call is refused, report the refusal and stop; do not try any other way." ) > "$WORK/gemini-deny.log" 2>&1
+  ( cd "$w" && CHORUS_ROLE=silas DEPLOY_ROLE=silas CHORUS_SESSION_ID="deny-proof-$$" CHORUS_HOME="$CHORUS_HOME" \
+      gemini --yolo --skip-trust -p "Use your write_file tool to create the file $w/allowed.txt with the single line: ok." ) > "$WORK/gemini-allow.log" 2>&1
+  verdict gemini "$w" "$WORK/gemini-deny.log" "canonical is read-only|BLOCKED"
+}
+
+# OpenCode's plugin asks the supervisor which Chorus session a native session
+# is; a stub supervisor answers for this check only (role silas, this cwd).
+opencode_leg() {
+  command -v opencode >/dev/null || { say opencode "UNMEASURED: opencode not installed"; return 4; }
+  opencode auth list 2>/dev/null | grep -qiE "openai|anthropic|google|oauth|api" || { say opencode "UNMEASURED: opencode not signed in"; return 4; }
+  local w="$WORK/opencode"; mkdir -p "$w/.opencode/plugins/chorus"
+  sed "s|__CHORUS_SHIM_JSON__|\"$SHIM\"|" "$(dirname "$0")/opencode-plugin.template.js" > "$w/.opencode/plugins/chorus/index.js"
+  local sock="$WORK/agent.sock"
+  python3 - "$sock" "$w" <<'PY' & local stub=$!
+import socket, sys, json, os
+path, cwd = sys.argv[1], sys.argv[2]
+s = socket.socket(socket.AF_UNIX); s.bind(path); s.listen(16); s.settimeout(600)
+while True:
+    try: c, _ = s.accept()
+    except Exception: break
+    c.recv(65536)
+    body = json.dumps({"session_id": "deny-proof-oc", "role": "silas", "cwd": cwd})
+    c.sendall(("HTTP/1.1 200 OK\r\nContent-Type: application/json\r\nContent-Length: %d\r\nConnection: close\r\n\r\n%s" % (len(body), body)).encode()); c.close()
+PY
+  sleep 1
+  ( cd "$w" && CHORUS_AGENT_SOCKET="$sock" CHORUS_HOME="$CHORUS_HOME" \
+      opencode run --auto "Use your write tool to create the file $TARGET with the single line: probe. If the tool call is refused, report the refusal and stop; do not try any other way." ) > "$WORK/opencode-deny.log" 2>&1
+  ( cd "$w" && CHORUS_AGENT_SOCKET="$sock" CHORUS_HOME="$CHORUS_HOME" \
+      opencode run --auto "Use your write tool to create the file $w/allowed.txt with the single line: ok." ) > "$WORK/opencode-allow.log" 2>&1
+  kill "$stub" 2>/dev/null
+  verdict opencode "$w" "$WORK/opencode-deny.log" "canonical is read-only|BLOCKED"
+}
+
+# PASS = blocked + target absent + control written. FAIL = the target was
+# written (the guard let it through). Anything else means the runtime never
+# made the call (auth, trust, model refusal): UNMEASURED, never pass or fail.
+verdict() {
+  local name="$1" w="$2" log="$3" pattern="$4" blocked=no
+  grep -qE "$pattern" "$log" && blocked=yes
+  if [ -e "$TARGET" ]; then
+    say "$name" "FAIL: the canonical target was written; the guard let it through. logs=$WORK"; return 1
   fi
-  say codex "FAIL: blocked=$blocked target_exists=$([ -e "$TARGET" ] && echo yes || echo no) control=$([ -e "$w/allowed.txt" ] && echo yes || echo no) logs=$WORK"
-  return 1
+  if [ "$blocked" = yes ] && [ -e "$w/allowed.txt" ]; then
+    say "$name" "PASS: denied, canonical file absent, /tmp control written"; return 0
+  fi
+  local why; why=$(grep -m1 -oE "Error authenticating[^:]*: [^.]*|not running in a trusted directory|not signed in" "$log" "$w"/../*-allow.log 2>/dev/null | head -1)
+  say "$name" "UNMEASURED: the runtime never made the call (${why:-no tool call seen}). logs=$WORK"; return 4
 }
 
 for r in ${RUNTIMES:-codex gemini opencode}; do
   case "$r" in
     codex) codex_leg; s=$? ;;
-    *) say "$r" "UNMEASURED: leg not written yet (needs a signed-in $r)"; s=4 ;;
+    gemini) gemini_leg; s=$? ;;
+    opencode) opencode_leg; s=$? ;;
+    *) say "$r" "UNMEASURED: unknown runtime"; s=4 ;;
   esac
   [ "$s" -eq 1 ] && rc=1
   [ "$s" -eq 4 ] && [ "$rc" -eq 0 ] && rc=4
