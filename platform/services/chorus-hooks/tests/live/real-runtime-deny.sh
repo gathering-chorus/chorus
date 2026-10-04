@@ -59,7 +59,7 @@ gemini_leg() {
 # is; a stub supervisor answers for this check only (role silas, this cwd).
 opencode_leg() {
   command -v opencode >/dev/null || { say opencode "UNMEASURED: opencode not installed"; return 4; }
-  opencode auth list 2>/dev/null | grep -qiE "openai|anthropic|google|oauth|api" || { say opencode "UNMEASURED: opencode not signed in"; return 4; }
+  # OpenCode's own free models need no sign-in; OPENCODE_MODEL picks another.
   local w="$WORK/opencode"; mkdir -p "$w/.opencode/plugins/chorus"
   sed "s|__CHORUS_SHIM_JSON__|\"$SHIM\"|" "$(dirname "$0")/opencode-plugin.template.js" > "$w/.opencode/plugins/chorus/index.js"
   local sock="$WORK/agent.sock"
@@ -76,9 +76,9 @@ while True:
 PY
   sleep 1
   ( cd "$w" && CHORUS_AGENT_SOCKET="$sock" CHORUS_HOME="$CHORUS_HOME" \
-      opencode run --auto "Use your write tool to create the file $TARGET with the single line: probe. If the tool call is refused, report the refusal and stop; do not try any other way." ) > "$WORK/opencode-deny.log" 2>&1
+      opencode run --auto -m "${OPENCODE_MODEL:-opencode/big-pickle}" "Use your write tool to create the file $TARGET with the single line: probe. If the tool call is refused, report the refusal and stop; do not try any other way." ) > "$WORK/opencode-deny.log" 2>&1
   ( cd "$w" && CHORUS_AGENT_SOCKET="$sock" CHORUS_HOME="$CHORUS_HOME" \
-      opencode run --auto "Use your write tool to create the file $w/allowed.txt with the single line: ok." ) > "$WORK/opencode-allow.log" 2>&1
+      opencode run --auto -m "${OPENCODE_MODEL:-opencode/big-pickle}" "Use your write tool to create the file $w/allowed.txt with the single line: ok." ) > "$WORK/opencode-allow.log" 2>&1
   kill "$stub" 2>/dev/null
   verdict opencode "$w" "$WORK/opencode-deny.log" "canonical is read-only|BLOCKED"
 }
