@@ -548,6 +548,10 @@ fn wait_for_services(ctx: &Ctx, bound: u64, show: bool) -> Result<(), String> {
 /// The login (#4202, #4215): token, principal check, Session row. Ok is
 /// Recorded or Pending; Err is a refusal (wrong principal), already printed.
 fn do_login(ctx: &Ctx, role: &str) -> Result<LoginState, ()> {
+    let channel = match rows::session_channel(env::var("CHORUS_SESSION_CHANNEL").ok().as_deref()) {
+        Ok(c) => c,
+        Err(why) => { eprintln!("chorus-principal: REFUSED — {} for {}; nothing was started.", why, role); return Err(()); }
+    };
     let refuse_on_any = envd("AWAKE_REFUSE_ON_LOGIN_FAILURE", "0") == "1";
     let token = sh(&ctx.token_bin, &[role]).map(|t| t.trim().to_string());
     let login = match &token {
@@ -580,7 +584,7 @@ fn do_login(ctx: &Ctx, role: &str) -> Result<LoginState, ()> {
     let body = rows::with_role_and_start(body, role, &iso_utc(now_ms() as u64 / 1000));
     // #4412 — who started it, and where it lives
     let mut body = body;
-    body["channel"] = Value::String("pane".into());
+    body["channel"] = Value::String(channel.into());
     if let Ok(p) = env::var("CHORUS_STARTED_BY") { if !p.is_empty() { body["startedBy"] = Value::String(p); } }
     // the row: POST through the security API with the token as a header FILE (0600), never an argv
     let role_id_dir = PathBuf::from(&ctx.identity_dir).join(role);
@@ -1041,7 +1045,7 @@ fn record_run(ctx: &Ctx, role: &str, session: &str, l: &Live, conversation: &str
     ensure_conversation(ctx, role, &run, conversation);
     record_credentials(ctx, role);
     let host_account = envd("USER", "unknown");
-    let presence = create_row(ctx, role, "identity/presences", "presence", rows::presence_row(role, &slug(&format!("{}-presence-{}", role, stamp)), &run, &l.pane, &l.tty, &host_account));
+    let presence = create_row(ctx, role, "identity/presences", "presence", rows::presence_row(role, &slug(&format!("{}-presence-{}", role, stamp)), &run, &l.pane, &l.tty, &host_account, rows::session_channel(env::var("CHORUS_SESSION_CHANNEL").ok().as_deref()).unwrap_or("pane")));
     let context = create_row(ctx, role, "memory/contexts", "context", rows::boot_context_row(role, &slug(&format!("{}-boot-{}", role, stamp)), &run, &started));
     ctx.spine(&["session.run.recorded", role, &format!("session={}", session), &format!("run={}", run),
         &format!("previous={}", previous.unwrap_or_default()), &format!("presence={}", presence.unwrap_or_default()), &format!("context={}", context.unwrap_or_default())]);
@@ -1282,10 +1286,12 @@ fn project_messages(ctx: &Ctx) -> i32 {
     if failed > 0 { 1 } else { 0 }
 }
 
-/// The three channels that exist today, created once.
+/// The channels that exist today, created once.
 fn ensure_channels(ctx: &Ctx) {
     let have: Vec<String> = api_list(ctx, "messages/channels").get("data").and_then(|d| d.as_array()).map(|a| a.iter().filter_map(|c| c.get("channelKind")?.as_str().map(String::from)).collect()).unwrap_or_default();
-    for (kind, what) in [("terminal", "typed into a role's tmux pane: Jeff at the keyboard"), ("nudge", "the messages API, delivered into a role's pane by pulse"), ("clearing", "the group chat")] {
+    for (kind, what) in [("terminal", "typed into a role's tmux pane: Jeff at the keyboard"), ("nudge", "the messages API, delivered into a role's pane by pulse"), ("clearing", "the group chat"),
+        // #4424 — a role on a non-Claude runtime, reached through its supervisor
+        ("agent", "the agent supervisor, delivered into a supervised runtime's session")] {
         if have.iter().any(|h| h == kind) { continue; }
         let body = serde_json::json!({"name": kind, "label": kind, "comment": format!("{} — {}. #4340.", kind, what), "ownedBy": "principal-silas", "channelKind": kind});
         let (code, _) = api_send(ctx, "silas", "messages/channels", None, &body, "chan");

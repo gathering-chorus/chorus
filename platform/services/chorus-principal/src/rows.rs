@@ -33,7 +33,18 @@ pub fn run_row(role: &str, name: &str, session: &str, conversation: &str, starte
     v
 }
 
-pub fn presence_row(role: &str, name: &str, run: &str, pane: &str, tty: &str, host_account: &str) -> Value {
+/// #4424 — the channel a session is started on, from `CHORUS_SESSION_CHANNEL`.
+/// Unset = pane (every Claude launch today); `agent` = a supervised runtime.
+/// Anything else is refused: a typo must not quietly become a pane session.
+pub fn session_channel(raw: Option<&str>) -> Result<&'static str, String> {
+    match raw.unwrap_or("") {
+        "" | "pane" => Ok("pane"),
+        "agent" => Ok("agent"),
+        other => Err(format!("CHORUS_SESSION_CHANNEL={:?} is not a session channel (pane|agent)", other)),
+    }
+}
+
+pub fn presence_row(role: &str, name: &str, run: &str, pane: &str, tty: &str, host_account: &str, channel: &str) -> Value {
     let mut v = json!({
         "name": name,
         "label": format!("{} presence {}", role, if pane.is_empty() { tty } else { pane }),
@@ -42,8 +53,9 @@ pub fn presence_row(role: &str, name: &str, run: &str, pane: &str, tty: &str, ho
         "presenceOf": run,
         "hostAccount": host_account,
         "reachability": "unknown",
-        // #4340 — the pane is reached over the nudge channel (pulse types into it)
-        "reachableOver": "nudge",
+        // #4340 — the pane is reached over the nudge channel (pulse types into it);
+        // #4424 — a supervised runtime is reached over the agent channel.
+        "reachableOver": if channel == "agent" { "agent" } else { "nudge" },
     });
     if !pane.is_empty() { v["pane"] = Value::String(pane.into()); }
     if !tty.is_empty() { v["tty"] = Value::String(tty.into()); }
@@ -472,5 +484,24 @@ mod person_for_account_4412 {
         assert_eq!(person_for_account(LIST, "someone"), None);
         assert_eq!(person_for_account(LIST, ""), None);
         assert_eq!(person_for_account("nope", "jeffbridwell"), None);
+    }
+}
+
+#[cfg(test)]
+mod channel_tests_4424 {
+    use super::*;
+    #[test] fn unset_channel_is_pane() { assert_eq!(session_channel(None).unwrap(), "pane"); assert_eq!(session_channel(Some("")).unwrap(), "pane"); }
+    #[test] fn agent_channel_is_accepted() { assert_eq!(session_channel(Some("agent")).unwrap(), "agent"); }
+    // Negative proof: anything else is refused, never quietly read as pane.
+    #[test] fn unknown_channel_is_refused() { for bad in ["browser", "Agent", "tmux", "pane "] { assert!(session_channel(Some(bad)).is_err(), "{bad}"); } }
+    #[test] fn agent_presence_is_reached_over_agent() {
+        let v = presence_row("wren", "p", "r", "", "", "chorus-wren", "agent");
+        assert_eq!(v["reachableOver"], "agent");
+        assert!(v.get("pane").is_none() && v.get("tty").is_none());
+    }
+    #[test] fn pane_presence_is_still_reached_over_nudge() {
+        let v = presence_row("wren", "p", "r", "%3", "/dev/ttys003", "chorus-wren", "pane");
+        assert_eq!(v["reachableOver"], "nudge");
+        assert_eq!(v["pane"], "%3");
     }
 }
