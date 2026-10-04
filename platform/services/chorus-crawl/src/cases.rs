@@ -537,6 +537,11 @@ fn string_literal(s: &str) -> Option<&str> {
 /// concurrent))?\s*\(\s*` then a same-quote-delimited literal. A name built by
 /// interpolation is a template, not a name, and is dropped.
 pub fn jest_case_names(source: &str) -> Vec<String> {
+    qualify_repeated_jest_names(source, jest_cases_at(source))
+}
+
+/// Every `it()` / `test()` literal name with the byte offset of its keyword.
+fn jest_cases_at(source: &str) -> Vec<(usize, String)> {
     let mut out = Vec::new();
     let b = source.as_bytes();
     let mut i = 0;
@@ -587,10 +592,140 @@ pub fn jest_case_names(source: &str) -> Vec<String> {
         if let Some(lit) = string_literal(rest) {
             let nm = unescape_js(lit);
             if !nm.contains("${") {
-                out.push(nm);
+                out.push((i, nm));
             }
         }
         i += kw;
+    }
+    out
+}
+
+/// #4185 reopened (2026-10-04) — a bare name that repeats within one file
+/// (the same `it('is case-insensitive')` under two describe blocks) was ONE
+/// row: 11 cases had no row of their own and no result. A repeated name is
+/// registered as jest's fullName — its describe titles, then the name — the
+/// name the runner reports, so werk-test's exact join holds. A name that does
+/// not repeat stays bare, so no existing row changes identity.
+fn qualify_repeated_jest_names(source: &str, cases: Vec<(usize, String)>) -> Vec<String> {
+    let mut seen: std::collections::HashMap<&str, usize> = std::collections::HashMap::new();
+    for (_, n) in &cases {
+        *seen.entry(n.as_str()).or_default() += 1;
+    }
+    let repeated: std::collections::HashSet<String> =
+        seen.into_iter().filter(|(_, c)| *c > 1).map(|(n, _)| n.to_string()).collect();
+    if repeated.is_empty() {
+        return cases.into_iter().map(|(_, n)| n).collect();
+    }
+    let blocks = describe_blocks(source);
+    cases
+        .into_iter()
+        .map(|(at, n)| {
+            if !repeated.contains(&n) {
+                return n;
+            }
+            let mut path: Vec<&(usize, usize, String)> =
+                blocks.iter().filter(|(open, close, _)| *open < at && at < *close).collect();
+            path.sort_by_key(|(open, _, _)| *open);
+            if path.is_empty() {
+                return n;
+            }
+            let mut full: Vec<&str> = path.iter().map(|(_, _, t)| t.as_str()).collect();
+            full.push(n.as_str());
+            full.join(" ")
+        })
+        .collect()
+}
+
+/// `describe('title', () => { … })` blocks as (open brace, close brace, title).
+/// Braces inside strings, template literals and comments are skipped.
+fn describe_blocks(source: &str) -> Vec<(usize, usize, String)> {
+    let b = source.as_bytes();
+    let mut out = Vec::new();
+    let mut i = 0;
+    while let Some(off) = source[i..].find("describe") {
+        let at = i + off;
+        i = at + "describe".len();
+        let prev_ok = at == 0
+            || !matches!(b[at - 1], b'.' | b'$' | b'_' | b'0'..=b'9' | b'a'..=b'z' | b'A'..=b'Z');
+        if !prev_ok {
+            continue;
+        }
+        let mut rest = &source[i..];
+        for m in [".only", ".skip"] {
+            if let Some(r) = rest.strip_prefix(m) {
+                rest = r;
+                break;
+            }
+        }
+        let Some(r) = rest.trim_start().strip_prefix('(') else { continue };
+        let r = r.trim_start();
+        let Some(lit) = string_literal(r) else { continue };
+        let title = unescape_js(lit);
+        let after_lit = source.len() - r.len() + lit.len() + 2;
+        let Some(open_off) = source[after_lit..].find('{') else { continue };
+        let open = after_lit + open_off;
+        if let Some(close) = matching_brace(b, open) {
+            out.push((open, close, title));
+        }
+    }
+    out
+}
+
+/// The index of the `}` closing the `{` at `open`, skipping quoted text and comments.
+fn matching_brace(b: &[u8], open: usize) -> Option<usize> {
+    let mut depth = 0usize;
+    let mut i = open;
+    while i < b.len() {
+        match b[i] {
+            b'\'' | b'"' | b'`' => {
+                let q = b[i];
+                i += 1;
+                while i < b.len() && b[i] != q {
+                    if b[i] == b'\\' {
+                        i += 1;
+                    }
+                    i += 1;
+                }
+            }
+            b'/' if i + 1 < b.len() && b[i + 1] == b'/' => {
+                while i < b.len() && b[i] != b'\n' {
+                    i += 1;
+                }
+            }
+            b'/' if i + 1 < b.len() && b[i + 1] == b'*' => {
+                i += 2;
+                while i + 1 < b.len() && !(b[i] == b'*' && b[i + 1] == b'/') {
+                    i += 1;
+                }
+                i += 1;
+            }
+            b'{' => depth += 1,
+            b'}' => {
+                depth -= 1;
+                if depth == 0 {
+                    return Some(i);
+                }
+            }
+            _ => {}
+        }
+        i += 1;
+    }
+    None
+}
+
+/// The text with every '…', "…" and `…` span removed.
+fn strip_quoted(s: &str) -> String {
+    let mut out = String::new();
+    let mut quote: Option<char> = None;
+    let mut esc = false;
+    for c in s.chars() {
+        match quote {
+            Some(q) => {
+                if esc { esc = false } else if c == '\\' { esc = true } else if c == q { quote = None }
+            }
+            None if c == '\'' || c == '"' || c == '`' => quote = Some(c),
+            None => out.push(c),
+        }
     }
     out
 }
@@ -615,7 +750,11 @@ pub fn test_aliases(source: &str) -> Vec<String> {
         {
             continue;
         }
-        let rhs = rhs.trim();
+        // #4185 reopened — a quoted word is not a binding: athena-sparql.test.ts's
+        // `const build = createEnvelopeBuilder({ graph: 'urn:test', … })` read
+        // as an alias of `test`, and every `build('q', …)` became a phantom
+        // case "q" that no runner ever reports.
+        let rhs = strip_quoted(rhs.trim());
         let mentions_test = rhs
             .split(|c: char| !(c.is_ascii_alphanumeric() || c == '_' || c == '.'))
             .any(|tok| {
@@ -1394,6 +1533,29 @@ mod cases_4185 {
     }
 
     use super::*;
+
+    // #4185 reopened — the 11: a repeated bare name was one row.
+    #[test]
+    fn a_name_repeated_under_two_describes_becomes_each_ones_full_name() {
+        let src = "describe('BoardClient.mine', () => {\n  it('is case-insensitive', () => { const s = '}'; });\n});\ndescribe('BoardClient.now', () => {\n  // a } in a comment\n  it('is case-insensitive', () => {});\n  it('only here', () => {});\n});\n";
+        assert_eq!(
+            jest_case_names(src),
+            vec!["BoardClient.mine is case-insensitive", "BoardClient.now is case-insensitive", "only here"]
+        );
+    }
+    #[test]
+    fn negative_proof_a_name_that_does_not_repeat_keeps_its_bare_identity() {
+        let src = "describe('A', () => {\n  it('one', () => {});\n  it('two', () => {});\n});\n";
+        assert_eq!(jest_case_names(src), vec!["one", "two"]);
+    }
+    #[test]
+    fn a_quoted_word_test_is_not_an_alias_binding() {
+        let src = "const build = make({ graph: 'urn:test' });\nit('real', () => { build('q', 1); });\n";
+        assert_eq!(jest_case_names(src), vec!["real"]);
+        // NEGATIVE PROOF: a real alias still declares cases
+        let alias = "const testW = ok ? test : test.skip;\ntestW('aliased', () => {});\n";
+        assert_eq!(jest_case_names(alias), vec!["aliased"]);
+    }
 
     // ── the authored header (#3924, ported from 3924-declared-wins.bats) ──
     #[test]
