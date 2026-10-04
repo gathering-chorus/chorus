@@ -21,6 +21,10 @@ pub struct Config {
     /// session's id is its login run, and the run says whether it is alive.
     #[serde(default = "default_runs_url")]
     pub runs_url: String,
+    /// #4424 AC6 — the OS accounts allowed to call the socket. Absent = the
+    /// supervisor's own account only; list Jeff's uid here for Pulse and the API.
+    #[serde(default)]
+    pub peer_uids: Option<Vec<u32>>,
 }
 fn default_concurrency() -> usize {
     3

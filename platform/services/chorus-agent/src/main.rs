@@ -9,6 +9,13 @@ async fn request(method: &str, path: &str, body: Option<Value>) -> Result<Value>
         .build()
         .map_err(|e| e.to_string())?;
     let mut req = client.request(method.parse().unwrap(), format!("http://localhost{path}"));
+    // #4424 AC6 — approval and human input carry Jeff's own token as a bearer.
+    if path.ends_with("/approve") || path.ends_with("/send") {
+        if let Ok(file) = std::env::var("CHORUS_HUMAN_TOKEN_FILE") {
+            let token = std::fs::read_to_string(&file).map_err(|_| "CHORUS_HUMAN_TOKEN_FILE unreadable")?;
+            req = req.bearer_auth(token.trim());
+        }
+    }
     if let Some(body) = body {
         req = req.json(&body);
     }

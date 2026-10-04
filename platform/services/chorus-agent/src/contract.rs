@@ -288,7 +288,8 @@ pub struct SwitchRequest {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct ApprovalRequest {
-    pub credential_file: String,
+    // #4424 AC6 — no credential_file: the approver is the verified bearer on
+    // the request, never a file path the caller names.
     pub request_id: String,
     pub decision: Option<String>,
     pub option_id: Option<String>,

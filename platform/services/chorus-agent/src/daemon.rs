@@ -44,7 +44,7 @@ async fn run() -> Result<()> {
     )?;
     eprintln!("chorus-agentd ready: {}", socket.display());
     let shutdown = app.clone();
-    axum::serve(listener, server::router(app))
+    axum::serve(listener, server::make_service(app))
         .with_graceful_shutdown(async move {
             let mut terminate =
                 tokio::signal::unix::signal(tokio::signal::unix::SignalKind::terminate())

@@ -31,6 +31,12 @@ impl Drop for Fixture {
 }
 
 async fn fixture() -> Fixture {
+    fixture_with_peers_opt(None).await
+}
+async fn fixture_with_peers(uids: Vec<u32>) -> Fixture {
+    fixture_with_peers_opt(Some(uids)).await
+}
+async fn fixture_with_peers_opt(peer_uids: Option<Vec<u32>>) -> Fixture {
     // Keep the UDS path below macOS's sockaddr_un limit; /tmp also exists on Linux CI.
     let dir = tempfile::Builder::new()
         .prefix("agent-boundary-")
@@ -67,7 +73,7 @@ async fn fixture() -> Fixture {
         }));
         axum::serve(identity, router).await.unwrap();
     });
-    let config: Config = serde_json::from_value(json!({"version":1,"profiles":{"native":{"runtime":"codex","mode":"native","enforcement":"trusted","approved_gaps":["filesystem isolation and hook coverage require deployment conformance"],"executable":executable,"timeout_secs":5}},"role_workspaces":{"wren":dir.path()},"max_concurrent_jobs":2,"runs_url":format!("http://{address}/runs")})).unwrap();
+    let config: Config = serde_json::from_value(json!({"version":1,"profiles":{"native":{"runtime":"codex","mode":"native","enforcement":"trusted","approved_gaps":["filesystem isolation and hook coverage require deployment conformance"],"executable":executable,"timeout_secs":5}},"role_workspaces":{"wren":dir.path()},"max_concurrent_jobs":2,"runs_url":format!("http://{address}/runs"),"peer_uids":peer_uids})).unwrap();
     let config_file = dir.path().join("agent-profiles.json");
     store::atomic_json(&config_file, &config).unwrap();
     let app = Supervisor::new_with_config_path(
@@ -81,9 +87,7 @@ async fn fixture() -> Fixture {
     let listener = tokio::net::UnixListener::bind(&socket).unwrap();
     let service = app.clone();
     let supervisor_task = tokio::spawn(async move {
-        axum::serve(listener, server::router(service))
-            .await
-            .unwrap();
+        server::serve(listener, service).await.unwrap();
     });
     let client = reqwest::Client::builder()
         .unix_socket(socket)
@@ -110,6 +114,11 @@ impl Fixture {
         start
     }
 }
+async fn get(f: &Fixture, path: &str) -> (reqwest::StatusCode, Value) {
+    let response = f.client.get(format!("http://localhost{path}")).send().await.unwrap();
+    let status = response.status();
+    (status, response.json().await.unwrap_or(Value::Null))
+}
 async fn post(f: &Fixture, path: &str, body: Value) -> (reqwest::StatusCode, Value) {
     let response = f
         .client
@@ -118,7 +127,7 @@ async fn post(f: &Fixture, path: &str, body: Value) -> (reqwest::StatusCode, Val
         .send()
         .await
         .unwrap();
-    (response.status(), response.json().await.unwrap())
+    (response.status(), response.json().await.unwrap_or(Value::Null))
 }
 struct EnvRestore(Vec<(&'static str, Option<String>)>);
 impl Drop for EnvRestore {
@@ -164,18 +173,52 @@ async fn managed_terminal_ingress_cannot_claim_delivery_and_role_cannot_approve(
         400
     );
     let approval = ApprovalRequest {
-        credential_file: f.start.credential_file.clone(),
         request_id: "req".into(),
         decision: Some("once".into()),
         option_id: None,
     };
+    // #4424 AC6 — the role's own token cannot approve its own request.
     assert!(f
         .app
-        .approve(&session.session_id, approval)
+        .approve(&session.session_id, approval, Some("boundary-fixture-token"))
         .await
         .unwrap_err()
         .contains("role"));
 }
+
+// #4424 AC6 — approval is Jeff's verified identity on the request, never a
+// file path someone names in the body; human input needs the same.
+#[tokio::test]
+async fn approval_and_human_input_need_jeffs_bearer_not_a_file_path() {
+    let f = fixture().await;
+    let session = f.app.start(f.fresh()).await.unwrap();
+    let route = format!("/v1/sessions/{}", session.session_id);
+    // The old shape, a credential file named in the body, is no longer accepted.
+    let (code, _) = post(&f, &format!("{route}/approve"), json!({"credential_file":f.start.credential_file,"request_id":"req"})).await;
+    assert_eq!(code, 422);
+    let (code, body) = post(&f, &format!("{route}/approve"), json!({"request_id":"req"})).await;
+    assert_eq!(code, 400);
+    assert!(body.to_string().contains("Jeff"), "{body}");
+    let (code, body) = post(&f, &format!("{route}/send"), json!({"version":1,"message_id":"jeff:1","input":"hi","kind":"human_input"})).await;
+    assert_eq!(code, 400);
+    assert!(body.to_string().contains("Jeff"), "{body}");
+    let (code, _) = post(&f, &format!("{route}/send"), json!({"version":1,"message_id":"pulse:1","input":"hi","kind":"peer_message"})).await;
+    assert_eq!(code, 200);
+}
+
+// #4424 AC6 — the socket checks who is calling: a peer whose uid is not on
+// the supervisor's list is refused before any route runs.
+#[tokio::test]
+async fn socket_refuses_a_peer_uid_that_is_not_allowed() {
+    let own = unsafe { libc::geteuid() };
+    let allowed = fixture_with_peers(vec![own]).await;
+    assert_eq!(get(&allowed, "/v1/config").await.0, 200);
+    let refused = fixture_with_peers(vec![own + 1]).await;
+    let (code, body) = get(&refused, "/v1/config").await;
+    assert_eq!(code, 403, "{body}");
+    assert!(body.to_string().contains("uid"), "{body}");
+}
+
 
 #[tokio::test]
 async fn uds_boundary_preserves_pulse_claim_and_requires_successful_ack_before_delivery() {

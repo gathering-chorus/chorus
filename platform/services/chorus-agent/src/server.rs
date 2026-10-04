@@ -6,8 +6,10 @@ use crate::{
     Result,
 };
 use axum::{
-    extract::{DefaultBodyLimit, Path, Query, State as AxState},
-    http::StatusCode,
+    extract::{connect_info::Connected, ConnectInfo, DefaultBodyLimit, Path, Query, Request, State as AxState},
+    http::{HeaderMap, StatusCode},
+    middleware::{self, Next},
+    response::{IntoResponse, Response},
     routing::{get, post},
     Json, Router,
 };
@@ -154,7 +156,10 @@ impl Supervisor {
         if token.len() > 16384 {
             return Err("identity credential exceeds limit".into());
         }
-        let token = token.trim();
+        self.verify_token(token.trim(), role).await
+    }
+    /// Verify a bearer token with the identity service and require `role`.
+    pub async fn verify_token(&self, token: &str, role: &str) -> Result<Identity> {
         if token.is_empty() {
             return Err("identity credential is empty".into());
         }
@@ -526,6 +531,15 @@ impl Supervisor {
         Ok(event)
     }
     pub async fn send(self: &Arc<Self>, id: &str, req: SendRequest) -> Result<Value> {
+        self.send_as(id, req, None).await
+    }
+    /// #4424 AC6 — human input carries Jeff's verified bearer; peer messages
+    /// and handoff context come from the role's own session.
+    pub async fn send_as(self: &Arc<Self>, id: &str, req: SendRequest, bearer: Option<&str>) -> Result<Value> {
+        if req.kind == "human_input" {
+            let token = bearer.ok_or("human input needs Jeff's verified identity (Authorization: Bearer)")?;
+            self.verify_token(token, "jeff").await?;
+        }
         let _transition = self.lifecycle.lock().await;
         if !self.accepting.load(Ordering::SeqCst) {
             return Err("supervisor admissions are paused".into());
@@ -917,9 +931,10 @@ impl Supervisor {
             json!({"ok":true,"session_id":id,"status":if terminate {"registration_stopped"} else {"cancellation_requested"}}),
         )
     }
-    pub async fn approve(&self, id: &str, req: ApprovalRequest) -> Result<Value> {
+    pub async fn approve(&self, id: &str, req: ApprovalRequest, bearer: Option<&str>) -> Result<Value> {
         let _transition = self.lifecycle.lock().await;
-        let actor = self.authenticate(&req.credential_file, "jeff").await?;
+        let token = bearer.ok_or("approval needs Jeff's verified identity (Authorization: Bearer)")?;
+        let actor = self.verify_token(token, "jeff").await?;
         let session = self.store.lock().await.get(id)?;
         if session.state != State::AwaitingApproval
             || !session.pending_approvals.contains_key(&req.request_id)
@@ -1053,7 +1068,46 @@ pub fn router(app: App) -> Router {
         .route("/v1/jobs", post(job))
         .route("/v1/profiles/{id}/probe", get(probe))
         .layer(DefaultBodyLimit::max(MAX_INPUT_BYTES))
+        .layer(middleware::from_fn_with_state(app.clone(), peer_guard))
         .with_state(app)
+}
+
+/// #4424 AC6 — who is on the other end of the socket, from the kernel.
+#[derive(Clone, Debug)]
+pub struct Peer {
+    pub uid: Option<u32>,
+}
+impl Connected<axum::serve::IncomingStream<'_, tokio::net::UnixListener>> for Peer {
+    fn connect_info(stream: axum::serve::IncomingStream<'_, tokio::net::UnixListener>) -> Self {
+        Peer { uid: stream.io().peer_cred().ok().map(|c| c.uid()) }
+    }
+}
+/// The supervisor as a service that knows each caller's uid.
+pub fn make_service(app: App) -> axum::extract::connect_info::IntoMakeServiceWithConnectInfo<Router, Peer> {
+    router(app).into_make_service_with_connect_info::<Peer>()
+}
+pub async fn serve(listener: tokio::net::UnixListener, app: App) -> std::io::Result<()> {
+    axum::serve(listener, make_service(app)).await
+}
+async fn peer_guard(AxState(app): AxState<App>, req: Request, next: Next) -> Response {
+    let peer = req.extensions().get::<ConnectInfo<Peer>>().cloned();
+    let allowed = app
+        .config_snapshot()
+        .peer_uids
+        .unwrap_or_else(|| vec![unsafe { libc::geteuid() }]);
+    match peer.and_then(|ConnectInfo(p)| p.uid) {
+        Some(uid) if allowed.contains(&uid) => next.run(req).await,
+        Some(uid) => error(format!("caller uid {uid} is not allowed on this socket")).into_response_with(StatusCode::FORBIDDEN),
+        None => error("caller uid unknown; the socket refuses unidentified peers".into()).into_response_with(StatusCode::FORBIDDEN),
+    }
+}
+trait WithStatus {
+    fn into_response_with(self, code: StatusCode) -> Response;
+}
+impl WithStatus for (StatusCode, Json<Value>) {
+    fn into_response_with(self, code: StatusCode) -> Response {
+        (code, self.1).into_response()
+    }
 }
 async fn config_status(AxState(app): AxState<App>) -> Json<Value> {
     let config = app.config_snapshot();
@@ -1091,12 +1145,20 @@ async fn status(AxState(app): AxState<App>, Path(id): Path<String>) -> ApiResult
     let session = app.store.lock().await.get(&id).map_err(error)?;
     Ok(Json(app.public_status(&session).await))
 }
+fn bearer(headers: &HeaderMap) -> Option<&str> {
+    headers
+        .get(axum::http::header::AUTHORIZATION)
+        .and_then(|v| v.to_str().ok())
+        .and_then(|v| v.strip_prefix("Bearer "))
+        .map(str::trim)
+}
 async fn send(
     AxState(app): AxState<App>,
     Path(id): Path<String>,
+    headers: HeaderMap,
     Json(req): Json<SendRequest>,
 ) -> ApiResult {
-    result(app.send(&id, req).await)
+    result(app.send_as(&id, req, bearer(&headers)).await)
 }
 async fn resume(AxState(app): AxState<App>, Path(id): Path<String>) -> ApiResult {
     result(app.resume(&id).await.map(|s| s.public()))
@@ -1125,9 +1187,10 @@ async fn context(
 async fn approve(
     AxState(app): AxState<App>,
     Path(id): Path<String>,
+    headers: HeaderMap,
     Json(req): Json<ApprovalRequest>,
 ) -> ApiResult {
-    result(app.approve(&id, req).await)
+    result(app.approve(&id, req, bearer(&headers)).await)
 }
 #[derive(Deserialize)]
 struct Cursor {
