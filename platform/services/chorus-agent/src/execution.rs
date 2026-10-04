@@ -607,8 +607,6 @@ fn record_job_metadata(
     started: &str,
     result: &Result<JobResult>,
 ) -> Result<()> {
-    use std::io::Write;
-    use std::os::unix::fs::OpenOptionsExt;
     let provider = profile.provider.as_ref().map(|provider| {
         // Validated configurations have neither URL credentials nor query strings;
         // sanitize again because failed validation must also be auditable safely.
@@ -655,16 +653,18 @@ fn record_job_metadata(
     crate::store::private_dir(&directory)?;
     crate::store::atomic_json(&directory.join(format!("{job_id}.json")), &metadata)
         .map_err(|_| "job provenance could not be recorded".to_string())?;
-    let spine = json!({"ts":crate::now(),"event":format!("job.{status}"),"job_id":job_id,"profile":req.profile,"runtime":profile.runtime,"trace_id":req.trace_id,"input_revision":req.input_revision});
-    let mut file = std::fs::OpenOptions::new()
-        .append(true)
-        .create(true)
-        .mode(0o600)
-        .open(root.join("chorus.log"))
-        .map_err(|_| "job spine event could not be recorded")?;
-    writeln!(file, "{spine}")
-        .and_then(|_| file.sync_data())
-        .map_err(|_| "job spine event could not be recorded".into())
+    crate::spine(
+        &format!("job.{status}"),
+        "system",
+        &[
+            ("job_id", job_id.to_string()),
+            ("profile", req.profile.clone()),
+            ("runtime", format!("{:?}", profile.runtime).to_lowercase()),
+            ("trace", req.trace_id.clone().unwrap_or_default()),
+            ("input_revision", req.input_revision.clone().unwrap_or_default()),
+        ],
+    )
+    .map_err(|_| "job spine event could not be recorded".into())
 }
 
 async fn run_job_with_slots(
@@ -894,6 +894,7 @@ for line in sys.stdin:
     #[test]
     fn durable_job_metadata_retains_provenance_without_content_or_raw_errors() {
         use std::os::unix::fs::PermissionsExt;
+        std::env::set_var("CHORUS_LOG_BIN", "/usr/bin/true");
         let directory = tempfile::tempdir().unwrap();
         let p = profile(FIXTURE);
         let mut req = request("PRIVATE_INPUT");
@@ -913,8 +914,7 @@ for line in sys.stdin:
             std::fs::metadata(path).unwrap().permissions().mode() & 0o777,
             0o600
         );
-        assert!(std::fs::read_to_string(directory.path().join("chorus.log"))
-            .unwrap()
-            .contains("job.failed"));
+        // #4424 — the job's spine event goes through chorus-log.
+        assert!(!directory.path().join("chorus.log").exists());
     }
 }

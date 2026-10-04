@@ -22,7 +22,22 @@ impl Drop for Fixture {
         self.identity.abort();
     }
 }
+/// #4424 — every test in this binary logs through one fake chorus-log that
+/// appends its arguments to a shared sink, so no test reaches the real spine.
+fn spine_sink() -> &'static std::path::PathBuf {
+    static SINK: std::sync::OnceLock<std::path::PathBuf> = std::sync::OnceLock::new();
+    SINK.get_or_init(|| {
+        let dir = tempfile::tempdir().unwrap().keep();
+        let sink = dir.join("spine.txt");
+        let fake = dir.join("chorus-log");
+        fs::write(&fake, format!("#!/bin/sh\necho \"$@\" >> '{}'\n", sink.display())).unwrap();
+        fs::set_permissions(&fake, fs::Permissions::from_mode(0o755)).unwrap();
+        std::env::set_var("CHORUS_LOG_BIN", &fake);
+        sink
+    })
+}
 async fn fixture(mode: &str) -> Fixture {
+    spine_sink();
     let dir = tempfile::tempdir().unwrap();
     let executable = dir.path().join("fake-codex");
     fs::write(&executable,"#!/bin/sh\nif [ \"$1\" = '--version' ]; then echo 'fixture-codex 1'; exit 0; fi\ncat >/dev/null\nprintf '%s\\n' '{\"type\":\"thread.started\",\"thread_id\":\"native-fixture\"}' '{\"type\":\"turn.started\"}' '{\"type\":\"item.completed\",\"item\":{\"id\":\"m1\",\"type\":\"agent_message\",\"text\":\"done\"}}' '{\"type\":\"turn.completed\",\"usage\":{\"input_tokens\":4}}'\n").unwrap();
@@ -610,4 +625,25 @@ async fn a_dead_run_is_refused_even_when_its_snapshot_exists() {
     assert!(f.app.store.lock().await.get(&s.session_id).unwrap().live());
     let err = f.app.send(&s.session_id, send("pulse:9", "hello")).await.unwrap_err();
     assert!(err.contains("ended"), "{err}");
+}
+
+// #4424 — the supervisor's spine events go through main's chorus-log writer
+// with the role and the principal, not appended raw to <state>/chorus.log.
+#[tokio::test]
+async fn spine_events_go_through_chorus_log_with_role_and_principal() {
+    let sink = spine_sink().clone();
+    let f = fixture("native").await;
+    let s = f.app.start(start(&f)).await.unwrap();
+    let mut seen = String::new();
+    for _ in 0..100 {
+        seen = fs::read_to_string(&sink).unwrap_or_default();
+        if seen.contains(&s.session_id) { break; }
+        tokio::time::sleep(Duration::from_millis(20)).await;
+    }
+    let line = seen.lines().find(|l| l.contains(&s.session_id)).unwrap_or_else(|| panic!("no chorus-log call: {seen:?}"));
+    assert!(line.starts_with("agent."), "{line}");
+    assert!(line.contains(" wren "), "{line}");
+    assert!(line.contains("principal=https://identity/wren"), "{line}");
+    // Negative proof: nothing is appended raw to the supervisor's own log.
+    assert!(!std::path::Path::new(&f.cwd).join("state/chorus.log").exists());
 }

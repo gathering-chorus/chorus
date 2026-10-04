@@ -37,6 +37,8 @@ async fn fixture_with_peers(uids: Vec<u32>) -> Fixture {
     fixture_with(Some(uids), None).await
 }
 async fn fixture_with(peer_uids: Option<Vec<u32>>, human_uids: Option<Vec<u32>>) -> Fixture {
+    // #4424 — spine events go through chorus-log; tests never reach the real one.
+    std::env::set_var("CHORUS_LOG_BIN", "/usr/bin/true");
     // Keep the UDS path below macOS's sockaddr_un limit; /tmp also exists on Linux CI.
     let dir = tempfile::Builder::new()
         .prefix("agent-boundary-")

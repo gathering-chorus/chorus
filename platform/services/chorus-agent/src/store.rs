@@ -334,17 +334,21 @@ impl Store {
         index
             .ids
             .insert(event.event_id.clone(), (event.sequence, hash));
-        // The detailed journal is authoritative; spine is an observational projection.
+        // The detailed journal is authoritative; spine is an observational
+        // projection through chorus-log (#4424), best effort.
         let session = self.sessions.get(&event.session_id).unwrap();
-        let projection = serde_json::json!({"ts":event.timestamp,"event":format!("agent.{}",event.event_type),"role":session.role,"runtime":session.runtime,"event_id":event.event_id,"session_id":event.session_id,"sequence":event.sequence,"trace_id":event.trace_id});
-        if let Ok(mut spine) = OpenOptions::new()
-            .append(true)
-            .create(true)
-            .mode(0o600)
-            .open(self.root.join("chorus.log"))
-        {
-            let _ = writeln!(spine, "{projection}");
-        }
+        let _ = crate::spine(
+            &format!("agent.{}", event.event_type),
+            &session.role,
+            &[
+                ("principal", session.principal.clone()),
+                ("session", event.session_id.clone()),
+                ("runtime", format!("{:?}", session.runtime).to_lowercase()),
+                ("event_id", event.event_id.clone()),
+                ("sequence", event.sequence.to_string()),
+                ("trace", event.trace_id.clone().unwrap_or_default()),
+            ],
+        );
         Ok(event)
     }
 }

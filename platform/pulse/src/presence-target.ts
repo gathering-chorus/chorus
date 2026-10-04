@@ -11,14 +11,23 @@
  */
 import type { SessionReg, TypedResolution } from './session-registry';
 
-export interface PresenceRow { name: string; presenceOf?: string; pane?: string; tty?: string; checkedAt?: string }
+export interface PresenceRow { name: string; presenceOf?: string; pane?: string; tty?: string; checkedAt?: string; reachableOver?: string }
 export interface RunRow { name: string; runEndedAt?: string; startedAt?: string }
 
 /** presenceOf names the run as the API stored it: "<kind>-<run name>"
  * ("session-run-wren-run-x" live). Match on the run name, whatever the prefix. */
 function ofLiveRun(presenceOf: string, live: Set<string>): boolean {
-  for (const run of live) if (presenceOf === run || presenceOf.endsWith(`-${run}`)) return true;
-  return false;
+  return liveRunOf(presenceOf, live) !== null;
+}
+function liveRunOf(presenceOf: string, live: Set<string>): string | null {
+  for (const run of live) if (presenceOf === run || presenceOf.endsWith(`-${run}`)) return run;
+  return null;
+}
+/** #4424 — reachableOver names a Channel; the store may keep the bare kind
+ * ("agent") or the row name ("channel-agent"). */
+function overAgent(p: PresenceRow): boolean {
+  const over = p.reachableOver ?? '';
+  return over === 'agent' || over.endsWith('-agent');
 }
 
 export function resolveFromPresence(presences: PresenceRow[], runs: RunRow[], role: string): TypedResolution {
@@ -33,6 +42,13 @@ export function resolveFromPresence(presences: PresenceRow[], runs: RunRow[], ro
     .filter((p) => ofLiveRun(p.presenceOf ?? '', live))
     .sort((a, b) => Number(!!paneOf(b)) - Number(!!paneOf(a)) || (b.checkedAt ?? '').localeCompare(a.checkedAt ?? ''));
   if (candidates.length === 0) return { kind: 'dead' };
+  // #4424 — a run on another model is reached through the agent supervisor,
+  // addressed by the run's own name (the supervisor's session id).
+  const agent = candidates.find(overAgent);
+  if (agent) {
+    const run = liveRunOf(agent.presenceOf ?? '', live);
+    if (run) return { kind: 'agent', run };
+  }
   const current = candidates[0];
   const pane = paneOf(current);
   // No live run has a pane: typing by tty would land in whatever that terminal

@@ -505,3 +505,47 @@ mod channel_tests_4424 {
         assert_eq!(v["pane"], "%3");
     }
 }
+
+/// #4424 — the pane line that starts the supervisor's runner bound to the
+/// SessionRun login just wrote. The run name must be a plain row name.
+pub fn agent_launch_cmd_checked(agent_bin: &str, role: &str, run: &str) -> Result<String, String> {
+    if run.is_empty() || !run.bytes().all(|b| b.is_ascii_alphanumeric() || b == b'-' || b == b'_') {
+        return Err(format!("refusing to launch on run name {:?}", run));
+    }
+    Ok(agent_launch_cmd(agent_bin, role, run))
+}
+pub fn agent_launch_cmd(agent_bin: &str, role: &str, run: &str) -> String {
+    format!("CHORUS_SESSION_RUN='{}' '{}' launch {}", run, agent_bin, role)
+}
+/// Enrolled = the supervisor's status for this run names this run.
+pub fn agent_enrolled(status_json: &str, run: &str) -> bool {
+    serde_json::from_str::<Value>(status_json).ok()
+        .and_then(|v| v.get("session_id").and_then(|s| s.as_str()).map(|s| s == run))
+        .unwrap_or(false)
+}
+
+// #4424 — a role started on another runtime: login writes the run first, then
+// the pane runs the supervisor's launch bound to that run, and enrollment is
+// proven by the supervisor answering for exactly that run.
+#[cfg(test)]
+mod agent_launch_tests_4424 {
+    use super::*;
+    #[test]
+    fn launch_binds_the_runner_to_the_login_run() {
+        let cmd = agent_launch_cmd("/x/chorus-agent", "wren", "wren-run-1a2b");
+        assert_eq!(cmd, "CHORUS_SESSION_RUN='wren-run-1a2b' '/x/chorus-agent' launch wren");
+    }
+    #[test]
+    fn a_run_name_that_could_break_the_shell_is_refused() {
+        assert!(agent_launch_cmd_checked("/x/chorus-agent", "wren", "wren-run-1;rm -rf ~").is_err());
+        assert!(agent_launch_cmd_checked("/x/chorus-agent", "wren", "").is_err());
+        assert!(agent_launch_cmd_checked("/x/chorus-agent", "wren", "wren-run-1a2b").is_ok());
+    }
+    #[test]
+    fn enrolled_only_when_the_supervisor_answers_for_that_run() {
+        assert!(agent_enrolled(r#"{"session_id":"wren-run-1a2b","state":"idle"}"#, "wren-run-1a2b"));
+        assert!(!agent_enrolled(r#"{"session_id":"wren-run-9999","state":"idle"}"#, "wren-run-1a2b"));
+        assert!(!agent_enrolled(r#"{"error":{"message":"unknown session"}}"#, "wren-run-1a2b"));
+        assert!(!agent_enrolled("not json", "wren-run-1a2b"));
+    }
+}
