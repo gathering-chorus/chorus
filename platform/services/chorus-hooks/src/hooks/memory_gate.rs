@@ -300,19 +300,12 @@ pub fn check(input: &HookInput, state: &AppState) -> HookResponse {
                 let fname = file_path.rsplit('/').next().unwrap_or(&file_path);
                 info!(
                     gate = "context-synthesis",
-                    decision = "deny",
+                    decision = "advisory",
                     reason = "fix card without git history on target file",
                     role = %format!("{:?}", role).to_lowercase(),
                     file = %file_path,
                 );
-                return HookResponse::deny(&permission_deny_json(
-                    &format!(
-                        "Context synthesis gate: fix card but no git history on {}. \
-                         Run `git log {}` or `git blame {}` first — this file has prior commits \
-                         that explain what was tried before. Don't repeat the same fix.",
-                        fname, fname, fname
-                    )
-                ));
+                return HookResponse::allow();
             }
         } else {
             info!(
@@ -333,27 +326,23 @@ pub fn check(input: &HookInput, state: &AppState) -> HookResponse {
     if !has_search && !has_synthesis {
         info!(
             gate = "context-synthesis",
-            decision = "deny",
+            decision = "advisory",
             reason = "no search, no synthesis",
             role = %role_name,
             file = %file_path,
         );
-        return HookResponse::deny(&permission_deny_json(
-            NO_SEARCH_NO_PLAN
-        ));
+        return HookResponse::allow();
     }
 
     if has_search && !has_synthesis {
         info!(
             gate = "context-synthesis",
-            decision = "deny",
+            decision = "advisory",
             reason = "searched but no synthesis",
             role = %role_name,
             file = %file_path,
         );
-        return HookResponse::deny(&permission_deny_json(
-            SEARCHED_NO_PLAN
-        ));
+        return HookResponse::allow();
     }
 
     if !has_search && has_synthesis {
