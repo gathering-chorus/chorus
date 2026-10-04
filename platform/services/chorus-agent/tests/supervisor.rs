@@ -58,7 +58,13 @@ async fn fixture(mode: &str) -> Fixture {
             let served=served.clone();
             async move {
                 match served.lock().unwrap().get(&name).cloned() {
-                    Some(ended)=>(axum::http::StatusCode::OK,axum::Json(json!({"name":name,"ownedBy":"principal-wren","runEndedAt":ended}))),
+                    // The real single-row read: wrapped in `data`, `creator` not `ownedBy`,
+                    // and no runEndedAt key at all while the run is live.
+                    Some(ended)=>{
+                        let mut row=json!({"iri":format!("chorus:session-run-{name}"),"creator":"wren","label":name});
+                        if !ended.is_empty(){row["runEndedAt"]=json!(ended);}
+                        (axum::http::StatusCode::OK,axum::Json(json!({"kind":"SessionRun","data":row})))
+                    }
                     None=>(axum::http::StatusCode::NOT_FOUND,axum::Json(json!({"error":"not found"}))),
                 }
             }

@@ -60,7 +60,7 @@ async fn fixture_with(peer_uids: Option<Vec<u32>>, human_uids: Option<Vec<u32>>)
         // login would have written is live.
         let router = axum::Router::new().route("/runs/{name}", axum::routing::get(|axum::extract::Path(name): axum::extract::Path<String>| async move {
             if name.starts_with("wren-run-") {
-                (axum::http::StatusCode::OK, axum::Json(json!({"name":name,"ownedBy":"principal-wren","runEndedAt":""})))
+                (axum::http::StatusCode::OK, axum::Json(json!({"kind":"SessionRun","data":{"label":name,"creator":"wren"}})))
             } else {
                 (axum::http::StatusCode::NOT_FOUND, axum::Json(json!({"error":"not found"})))
             }

@@ -200,8 +200,16 @@ impl Supervisor {
         if !response.status().is_success() {
             return Err(format!("session run registry refused ({})", response.status().as_u16()));
         }
-        let row: Value = response.json().await.map_err(|_| "invalid session run row")?;
-        if row["ownedBy"].as_str() != Some(format!("principal-{role}").as_str()) {
+        let body: Value = response.json().await.map_err(|_| "invalid session run row")?;
+        // #4424 — the generated API wraps the row in `data`, and its single-row
+        // read carries `creator` (the role that wrote it) but not `ownedBy`;
+        // measured live 2026-10-04 against silas-run-1a10683a3e6.
+        let row = body.get("data").unwrap_or(&body);
+        let owner_ok = match row["ownedBy"].as_str() {
+            Some(owner) => owner == format!("principal-{role}"),
+            None => row["creator"].as_str() == Some(role),
+        };
+        if !owner_ok {
             return Err("session run belongs to another role".into());
         }
         if row["runEndedAt"].as_str().is_some_and(|ended| !ended.is_empty()) {
