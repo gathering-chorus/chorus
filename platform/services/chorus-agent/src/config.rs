@@ -25,6 +25,16 @@ pub struct Config {
     /// supervisor's own account only; list Jeff's uid here for Pulse and the API.
     #[serde(default)]
     pub peer_uids: Option<Vec<u32>>,
+    /// #4424 AC6 — accounts whose calls may carry human input without a
+    /// bearer: Jeff's, where Pulse relays his Clearing input. Absent = none.
+    #[serde(default)]
+    pub human_uids: Option<Vec<u32>>,
+    /// #4424 — a supervisor that runs as a role's own account shares its
+    /// socket with Pulse/API (Jeff's account) through this group: the socket
+    /// directory becomes 0750 and the socket 0660 under it. Absent = owner-only.
+    /// The kernel peer-uid check (peer_uids) still decides who may call.
+    #[serde(default)]
+    pub socket_group: Option<String>,
 }
 fn default_concurrency() -> usize {
     3

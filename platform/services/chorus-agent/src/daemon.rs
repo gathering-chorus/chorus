@@ -14,6 +14,20 @@ async fn main() {
         std::process::exit(1);
     }
 }
+/// #4424 — hand the socket to a shared group (directory 0750, socket 0660).
+fn share_with_group(dir: &std::path::Path, socket: &std::path::Path, group: &str) -> Result<()> {
+    let name = std::ffi::CString::new(group).map_err(|_| "invalid socket_group")?;
+    let entry = unsafe { libc::getgrnam(name.as_ptr()) };
+    if entry.is_null() {
+        return Err(format!("socket_group {group} does not exist"));
+    }
+    let gid = unsafe { (*entry).gr_gid };
+    for (path, mode) in [(dir, 0o750), (socket, 0o660)] {
+        std::os::unix::fs::chown(path, None, Some(gid)).map_err(|e| format!("chown {}: {e}", path.display()))?;
+        std::fs::set_permissions(path, std::fs::Permissions::from_mode(mode)).map_err(|e| e.to_string())?;
+    }
+    Ok(())
+}
 async fn run() -> Result<()> {
     let config = config::read(&config::config_path())?;
     let socket = config::socket();
@@ -36,6 +50,9 @@ async fn run() -> Result<()> {
     let listener = tokio::net::UnixListener::bind(&socket).map_err(|e| e.to_string())?;
     std::fs::set_permissions(&socket, std::fs::Permissions::from_mode(0o600))
         .map_err(|e| e.to_string())?;
+    if let Some(group) = &config.socket_group {
+        share_with_group(parent, &socket, group)?;
+    }
     let api = std::env::var("CHORUS_API_URL").unwrap_or_else(|_| "http://127.0.0.1:3340".into());
     let app = server::Supervisor::new(
         config,

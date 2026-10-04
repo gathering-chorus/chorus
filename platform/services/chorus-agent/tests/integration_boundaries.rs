@@ -31,12 +31,12 @@ impl Drop for Fixture {
 }
 
 async fn fixture() -> Fixture {
-    fixture_with_peers_opt(None).await
+    fixture_with(None, None).await
 }
 async fn fixture_with_peers(uids: Vec<u32>) -> Fixture {
-    fixture_with_peers_opt(Some(uids)).await
+    fixture_with(Some(uids), None).await
 }
-async fn fixture_with_peers_opt(peer_uids: Option<Vec<u32>>) -> Fixture {
+async fn fixture_with(peer_uids: Option<Vec<u32>>, human_uids: Option<Vec<u32>>) -> Fixture {
     // Keep the UDS path below macOS's sockaddr_un limit; /tmp also exists on Linux CI.
     let dir = tempfile::Builder::new()
         .prefix("agent-boundary-")
@@ -73,7 +73,7 @@ async fn fixture_with_peers_opt(peer_uids: Option<Vec<u32>>) -> Fixture {
         }));
         axum::serve(identity, router).await.unwrap();
     });
-    let config: Config = serde_json::from_value(json!({"version":1,"profiles":{"native":{"runtime":"codex","mode":"native","enforcement":"trusted","approved_gaps":["filesystem isolation and hook coverage require deployment conformance"],"executable":executable,"timeout_secs":5}},"role_workspaces":{"wren":dir.path()},"max_concurrent_jobs":2,"runs_url":format!("http://{address}/runs"),"peer_uids":peer_uids})).unwrap();
+    let config: Config = serde_json::from_value(json!({"version":1,"profiles":{"native":{"runtime":"codex","mode":"native","enforcement":"trusted","approved_gaps":["filesystem isolation and hook coverage require deployment conformance"],"executable":executable,"timeout_secs":5}},"role_workspaces":{"wren":dir.path()},"max_concurrent_jobs":2,"runs_url":format!("http://{address}/runs"),"peer_uids":peer_uids,"human_uids":human_uids})).unwrap();
     let config_file = dir.path().join("agent-profiles.json");
     store::atomic_json(&config_file, &config).unwrap();
     let app = Supervisor::new_with_config_path(
@@ -746,4 +746,20 @@ async fn initial_handoff_context_is_durable_bounded_and_does_not_start_a_turn() 
             .0,
         400
     );
+}
+
+// #4424 AC6 — Pulse relays Jeff's Clearing input from Jeff's own account. The
+// supervisor accepts human input from a peer uid on human_uids; a caller not on
+// that list (a role's account) still needs Jeff's bearer.
+#[tokio::test]
+async fn human_input_is_accepted_from_a_listed_human_uid_only() {
+    let own = unsafe { libc::geteuid() };
+    let listed = fixture_with(None, Some(vec![own])).await;
+    let s = listed.app.start(listed.fresh()).await.unwrap();
+    let (code, body) = post(&listed, &format!("/v1/sessions/{}/send", s.session_id), json!({"version":1,"message_id":"jeff:2","input":"hi","kind":"human_input"})).await;
+    assert_eq!(code, 200, "{body}");
+    let other = fixture_with(None, Some(vec![own + 1])).await;
+    let s = other.app.start(other.fresh()).await.unwrap();
+    let (code, _) = post(&other, &format!("/v1/sessions/{}/send", s.session_id), json!({"version":1,"message_id":"jeff:3","input":"hi","kind":"human_input"})).await;
+    assert_eq!(code, 400);
 }

@@ -531,13 +531,15 @@ impl Supervisor {
         Ok(event)
     }
     pub async fn send(self: &Arc<Self>, id: &str, req: SendRequest) -> Result<Value> {
-        self.send_as(id, req, None).await
+        self.send_as(id, req, None, None).await
     }
     /// #4424 AC6 — human input carries Jeff's verified bearer; peer messages
     /// and handoff context come from the role's own session.
-    pub async fn send_as(self: &Arc<Self>, id: &str, req: SendRequest, bearer: Option<&str>) -> Result<Value> {
-        if req.kind == "human_input" {
-            let token = bearer.ok_or("human input needs Jeff's verified identity (Authorization: Bearer)")?;
+    pub async fn send_as(self: &Arc<Self>, id: &str, req: SendRequest, bearer: Option<&str>, peer_uid: Option<u32>) -> Result<Value> {
+        let human_uids = self.config_snapshot().human_uids.unwrap_or_default();
+        let from_human_account = peer_uid.is_some_and(|uid| human_uids.contains(&uid));
+        if req.kind == "human_input" && !from_human_account {
+            let token = bearer.ok_or("human input needs Jeff's verified identity (Authorization: Bearer) or Jeff's account")?;
             self.verify_token(token, "jeff").await?;
         }
         let _transition = self.lifecycle.lock().await;
@@ -1156,9 +1158,11 @@ async fn send(
     AxState(app): AxState<App>,
     Path(id): Path<String>,
     headers: HeaderMap,
+    peer: Option<axum::Extension<ConnectInfo<Peer>>>,
     Json(req): Json<SendRequest>,
 ) -> ApiResult {
-    result(app.send_as(&id, req, bearer(&headers)).await)
+    let uid = peer.and_then(|axum::Extension(ConnectInfo(p))| p.uid);
+    result(app.send_as(&id, req, bearer(&headers), uid).await)
 }
 async fn resume(AxState(app): AxState<App>, Path(id): Path<String>) -> ApiResult {
     result(app.resume(&id).await.map(|s| s.public()))
