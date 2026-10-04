@@ -30,11 +30,24 @@ pub const PUBLISH_NEVER: &[&str] = &[
     "urn:chorus:domains:provenance",
 ];
 
-/// The graphs a copy takes: every `urn:chorus:` graph except COPY_SKIP, sorted.
+/// The model's graph families. Borg's environments hang on chorus domains
+/// (`usesEnvironment` in urn:borg:instances), so a model cleanup that moves them
+/// must stage both (#4423 reopen, 2026-10-03: #4353's environment move could not
+/// be staged because the copy held urn:chorus:* only).
+pub const MODEL_PREFIXES: &[&str] = &["urn:chorus:", "urn:borg:"];
+
+/// A publish's own bookkeeping graphs: never copied, never treated as stale.
+const SWAP_PREFIXES: &[&str] = &["urn:chorus:previous:", "urn:chorus:incoming:"];
+
+fn is_model_graph(g: &str) -> bool {
+    MODEL_PREFIXES.iter().any(|p| g.starts_with(p)) && !SWAP_PREFIXES.iter().any(|p| g.starts_with(p))
+}
+
+/// The graphs a copy takes: every model graph except COPY_SKIP, sorted.
 pub fn staging_graphs(all: &[String]) -> Vec<String> {
     let mut out: Vec<String> = all
         .iter()
-        .filter(|g| g.starts_with("urn:chorus:") && !COPY_SKIP.contains(&g.as_str()))
+        .filter(|g| is_model_graph(g) && !COPY_SKIP.contains(&g.as_str()))
         .cloned()
         .collect();
     out.sort();
@@ -44,7 +57,7 @@ pub fn staging_graphs(all: &[String]) -> Vec<String> {
 
 /// Graphs in staging that the new copy will not write: gone from prod, so dropped.
 pub fn stale_in_staging(in_staging: &[String], copying: &[String]) -> Vec<String> {
-    in_staging.iter().filter(|g| g.starts_with("urn:chorus:") && !copying.contains(g)).cloned().collect()
+    in_staging.iter().filter(|g| is_model_graph(g) && !copying.contains(g)).cloned().collect()
 }
 
 /// A graph's fingerprint from its N-Triples: (triple count, FNV-1a 64 over the
@@ -503,6 +516,19 @@ mod tests {
             "urn:gathering:music", "urn:chorus:ontology", "urn:chorus:domains:domains"]
             .iter().map(|s| s.to_string()).collect();
         assert_eq!(staging_graphs(&all), vec!["urn:chorus:domains:domains", "urn:chorus:ontology"]);
+    }
+
+    // #4423 reopen. Negative proof: with the copy limited to urn:chorus:*, this
+    // goes red on urn:borg:instances, the graph #4353's environment move edits.
+    #[test]
+    fn copies_borg_graphs_and_skips_publish_bookkeeping() {
+        let all: Vec<String> = ["urn:borg:instances", "urn:borg:ontology", "urn:chorus:ontology",
+            "urn:chorus:previous:ontology", "urn:chorus:incoming:urn:borg:instances", "urn:gathering:music"]
+            .iter().map(|s| s.to_string()).collect();
+        assert_eq!(staging_graphs(&all), vec!["urn:borg:instances", "urn:borg:ontology", "urn:chorus:ontology"]);
+        let st: Vec<String> = ["urn:borg:gone", "urn:chorus:previous:ontology"].iter().map(|s| s.to_string()).collect();
+        assert_eq!(stale_in_staging(&st, &[]), vec!["urn:borg:gone"]);
+        assert_eq!(previous_graph("urn:borg:instances"), "urn:chorus:previous:urn:borg:instances");
     }
 
     #[test]
