@@ -33,7 +33,18 @@ pub fn run_row(role: &str, name: &str, session: &str, conversation: &str, starte
     v
 }
 
-pub fn presence_row(role: &str, name: &str, run: &str, pane: &str, tty: &str, host_account: &str) -> Value {
+/// #4424 — the channel a session is started on, from `CHORUS_SESSION_CHANNEL`.
+/// Unset = pane (every Claude launch today); `agent` = a supervised runtime.
+/// Anything else is refused: a typo must not quietly become a pane session.
+pub fn session_channel(raw: Option<&str>) -> Result<&'static str, String> {
+    match raw.unwrap_or("") {
+        "" | "pane" => Ok("pane"),
+        "agent" => Ok("agent"),
+        other => Err(format!("CHORUS_SESSION_CHANNEL={:?} is not a session channel (pane|agent)", other)),
+    }
+}
+
+pub fn presence_row(role: &str, name: &str, run: &str, pane: &str, tty: &str, host_account: &str, channel: &str) -> Value {
     let mut v = json!({
         "name": name,
         "label": format!("{} presence {}", role, if pane.is_empty() { tty } else { pane }),
@@ -42,8 +53,9 @@ pub fn presence_row(role: &str, name: &str, run: &str, pane: &str, tty: &str, ho
         "presenceOf": run,
         "hostAccount": host_account,
         "reachability": "unknown",
-        // #4340 — the pane is reached over the nudge channel (pulse types into it)
-        "reachableOver": "nudge",
+        // #4340 — the pane is reached over the nudge channel (pulse types into it);
+        // #4424 — a supervised runtime is reached over the agent channel.
+        "reachableOver": if channel == "agent" { "agent" } else { "nudge" },
     });
     if !pane.is_empty() { v["pane"] = Value::String(pane.into()); }
     if !tty.is_empty() { v["tty"] = Value::String(tty.into()); }
@@ -472,5 +484,68 @@ mod person_for_account_4412 {
         assert_eq!(person_for_account(LIST, "someone"), None);
         assert_eq!(person_for_account(LIST, ""), None);
         assert_eq!(person_for_account("nope", "jeffbridwell"), None);
+    }
+}
+
+#[cfg(test)]
+mod channel_tests_4424 {
+    use super::*;
+    #[test] fn unset_channel_is_pane() { assert_eq!(session_channel(None).unwrap(), "pane"); assert_eq!(session_channel(Some("")).unwrap(), "pane"); }
+    #[test] fn agent_channel_is_accepted() { assert_eq!(session_channel(Some("agent")).unwrap(), "agent"); }
+    // Negative proof: anything else is refused, never quietly read as pane.
+    #[test] fn unknown_channel_is_refused() { for bad in ["browser", "Agent", "tmux", "pane "] { assert!(session_channel(Some(bad)).is_err(), "{bad}"); } }
+    #[test] fn agent_presence_is_reached_over_agent() {
+        let v = presence_row("wren", "p", "r", "", "", "chorus-wren", "agent");
+        assert_eq!(v["reachableOver"], "agent");
+        assert!(v.get("pane").is_none() && v.get("tty").is_none());
+    }
+    #[test] fn pane_presence_is_still_reached_over_nudge() {
+        let v = presence_row("wren", "p", "r", "%3", "/dev/ttys003", "chorus-wren", "pane");
+        assert_eq!(v["reachableOver"], "nudge");
+        assert_eq!(v["pane"], "%3");
+    }
+}
+
+/// #4424 — the pane line that starts the supervisor's runner bound to the
+/// SessionRun login just wrote. The run name must be a plain row name.
+pub fn agent_launch_cmd_checked(agent_bin: &str, role: &str, run: &str) -> Result<String, String> {
+    if run.is_empty() || !run.bytes().all(|b| b.is_ascii_alphanumeric() || b == b'-' || b == b'_') {
+        return Err(format!("refusing to launch on run name {:?}", run));
+    }
+    Ok(agent_launch_cmd(agent_bin, role, run))
+}
+pub fn agent_launch_cmd(agent_bin: &str, role: &str, run: &str) -> String {
+    format!("CHORUS_SESSION_RUN='{}' '{}' launch {}", run, agent_bin, role)
+}
+/// Enrolled = the supervisor's status for this run names this run.
+pub fn agent_enrolled(status_json: &str, run: &str) -> bool {
+    serde_json::from_str::<Value>(status_json).ok()
+        .and_then(|v| v.get("session_id").and_then(|s| s.as_str()).map(|s| s == run))
+        .unwrap_or(false)
+}
+
+// #4424 — a role started on another runtime: login writes the run first, then
+// the pane runs the supervisor's launch bound to that run, and enrollment is
+// proven by the supervisor answering for exactly that run.
+#[cfg(test)]
+mod agent_launch_tests_4424 {
+    use super::*;
+    #[test]
+    fn launch_binds_the_runner_to_the_login_run() {
+        let cmd = agent_launch_cmd("/x/chorus-agent", "wren", "wren-run-1a2b");
+        assert_eq!(cmd, "CHORUS_SESSION_RUN='wren-run-1a2b' '/x/chorus-agent' launch wren");
+    }
+    #[test]
+    fn a_run_name_that_could_break_the_shell_is_refused() {
+        assert!(agent_launch_cmd_checked("/x/chorus-agent", "wren", "wren-run-1;rm -rf ~").is_err());
+        assert!(agent_launch_cmd_checked("/x/chorus-agent", "wren", "").is_err());
+        assert!(agent_launch_cmd_checked("/x/chorus-agent", "wren", "wren-run-1a2b").is_ok());
+    }
+    #[test]
+    fn enrolled_only_when_the_supervisor_answers_for_that_run() {
+        assert!(agent_enrolled(r#"{"session_id":"wren-run-1a2b","state":"idle"}"#, "wren-run-1a2b"));
+        assert!(!agent_enrolled(r#"{"session_id":"wren-run-9999","state":"idle"}"#, "wren-run-1a2b"));
+        assert!(!agent_enrolled(r#"{"error":{"message":"unknown session"}}"#, "wren-run-1a2b"));
+        assert!(!agent_enrolled("not json", "wren-run-1a2b"));
     }
 }

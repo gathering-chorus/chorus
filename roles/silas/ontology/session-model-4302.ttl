@@ -228,7 +228,7 @@ chorus:SessionShape-attendedBy a sh:PropertyShape ;
 chorus:SessionShape-lastAttendedAt a sh:PropertyShape ;
     sh:path chorus:lastAttendedAt ; sh:maxCount 1 ; sh:datatype xsd:string .
 chorus:SessionShape-channel a sh:PropertyShape ;
-    sh:path chorus:channel ; sh:maxCount 1 ; sh:datatype xsd:string ; sh:pattern "^(pane|browser)$" .
+    sh:path chorus:channel ; sh:maxCount 1 ; sh:datatype xsd:string ; sh:pattern "^(pane|browser|agent)$" .
 chorus:SessionShape-startedBy a sh:PropertyShape ;
     sh:path chorus:startedBy ; sh:maxCount 1 ; sh:class chorus:Principal .
 chorus:SessionShape-endedBy a sh:PropertyShape ;
