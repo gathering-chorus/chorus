@@ -8,6 +8,7 @@
 
 import express, { Express } from 'express';
 import { MessageStore, inferNudgeClass } from './store';
+import { fetchPeers } from './peers';
 import { DeliveryWorker, classifyInjectOutput, type RunInject, type EmitSpine, type SelfTest } from './delivery-worker';
 import { planDelivery, planDeliveryTyped, readTurnState, describeTarget, type SessionReg } from './session-registry';
 import { fetchPresenceResolution, resolveEnds, rolePaneFromTmux } from './presence-target';
@@ -153,12 +154,12 @@ function markNudge(from: string, content: string): string {
  * r2r + expects in (reply|decision|action), so an alert or a forgotten expects
  * can never trap — that's the safe-by-default Jeff chose.
  */
-function readEnvelope(body: { class?: unknown; expects?: unknown }, from: string): {
+function readEnvelope(body: { class?: unknown; expects?: unknown }, from: string, peers: readonly string[]): {
   nudgeClass: 'r2r' | 'a2r';
   expects: 'none' | 'reply' | 'decision' | 'action';
 } {
   return {
-    nudgeClass: body.class === 'r2r' || body.class === 'a2r' ? body.class : inferNudgeClass(from),
+    nudgeClass: body.class === 'r2r' || body.class === 'a2r' ? body.class : inferNudgeClass(from, peers),
     expects: ['reply', 'decision', 'action', 'none'].includes(body.expects as string)
       ? (body.expects as 'none' | 'reply' | 'decision' | 'action')
       : 'none',
@@ -211,7 +212,15 @@ function registerNudgeRoutes(app: Express, store: MessageStore, metrics: Metrics
     // needed back, declared by the sender, default 'none'. The gate only ever traps
     // r2r + expects in (reply|decision|action), so an alert or a forgotten expects
     // can never trap — that's the safe-by-default Jeff chose.
-    const { nudgeClass, expects } = readEnvelope(req.body, from);
+    // #4432 — the peer set comes from the roles door; a door that does not
+    // answer refuses the nudge loudly rather than guessing who is a peer.
+    let peers: string[];
+    try { peers = await fetchPeers(); }
+    catch (e) {
+      log('warn', 'nudge.refused.roles-door', { from, to, error: (e as Error).message });
+      return res.status(503).json({ error: 'roles door unreadable; nudge not stored', detail: (e as Error).message });
+    }
+    const { nudgeClass, expects } = readEnvelope(req.body, from, peers);
     // #4424 — an explicit target is accepted only when it is the recipient's
     // live agent run (Presence), never a session the sender names freely.
     const targetSessionId = typeof req.body.target_session_id === 'string' ? req.body.target_session_id : undefined;

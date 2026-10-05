@@ -28,8 +28,6 @@ function membraneContext(): 'prod' | 'test' | 'build' {
   return 'prod';
 }
 
-/** The four repliable peers — the only senders whose nudge can owe a response. */
-const NUDGE_PEERS = ['wren', 'silas', 'kade', 'jeff'];
 
 /**
  * #3403 — infer a nudge's envelope class from its sender. A peer (wren/silas/
@@ -38,8 +36,8 @@ const NUDGE_PEERS = ['wren', 'silas', 'kade', 'jeff'];
  * repliable target, which must never trap the recipient. The sender may override
  * by declaring class explicitly; this is the default when it doesn't.
  */
-export function inferNudgeClass(from: string): 'r2r' | 'a2r' {
-  return NUDGE_PEERS.includes(from) ? 'r2r' : 'a2r';
+export function inferNudgeClass(from: string, peers: readonly string[]): 'r2r' | 'a2r' {
+  return peers.includes(from) ? 'r2r' : 'a2r';
 }
 
 export interface Message {

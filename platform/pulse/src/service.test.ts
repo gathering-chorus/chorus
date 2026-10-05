@@ -14,6 +14,10 @@ import request from 'supertest';
 import { MessageStore } from './store';
 import { createApp, resetNudgeDedup } from './service';
 
+// #4432 — the peer set comes from the roles door; here a fixed stand-in so the
+// suite never reaches the live :3360. peers-4432.test.ts covers the door itself.
+jest.mock('./peers', () => ({ fetchPeers: async () => ['abby-normal', 'jeff', 'kade', 'silas', 'wren'] }));
+
 const CHAT_START = '/api/chat/start';
 
 // #2804 — pulse rejects POST /api/nudge without X-Chorus-MCP-Caller header.

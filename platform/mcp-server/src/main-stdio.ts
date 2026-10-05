@@ -11,6 +11,7 @@
 // becomes uniform with binaries/scripts in the WERK_ROLE_BIN model once it
 // spawns from PATH like anything else — no per-role port, no .mcp.json
 // repoint, no /reboot.
+import { fetchRoleSets } from './peers';
 import { StdioServerTransport } from '@modelcontextprotocol/sdk/server/stdio.js';
 import { execFileSync } from 'child_process';
 import { resolve } from 'path';
@@ -44,7 +45,9 @@ function emitSpine(event: string, fields: string[]): void {
  * HTTP transport builds; factored out so it can be exercised under test
  * without a real stdio pipe (the end-to-end spawn is the /demo).
  */
-const VALID_ROLES = /^(silas|wren|kade)$/;
+// #4432 — the shape of a role name; which names are agent roles is the roles
+// door's answer, checked in main() before the server connects.
+const ROLE_NAME = /^[a-z][a-z0-9-]*$/;
 
 export function buildStdioServer(
   role?: string,
@@ -53,9 +56,9 @@ export function buildStdioServer(
   // Fail loud, never default (Kade gate flag): the server hosts commit/acp/nudge,
   // which attribute by role. A wrong/absent role would silently misattribute.
   const resolved = role ?? process.env.CHORUS_ROLE;
-  if (!resolved || !VALID_ROLES.test(resolved)) {
+  if (!resolved || !ROLE_NAME.test(resolved)) {
     throw new Error(
-      `[chorus-mcp-stdio] CHORUS_ROLE must be one of silas|wren|kade; got ${JSON.stringify(resolved)}. ` +
+      `[chorus-mcp-stdio] CHORUS_ROLE must be a role name; got ${JSON.stringify(resolved)}. ` +
         'Refusing to default — a wrong role silently misattributes commit/acp/nudge (#3020).',
     );
   }
@@ -63,6 +66,11 @@ export function buildStdioServer(
 }
 
 async function main(): Promise<void> {
+  const role = process.env.CHORUS_ROLE ?? '';
+  const { agents } = await fetchRoleSets();
+  if (!agents.includes(role)) {
+    throw new Error(`[chorus-mcp-stdio] CHORUS_ROLE ${JSON.stringify(role)} is not an agent role the roles door lists (${agents.join(' | ')}). Refusing to start (#4432).`);
+  }
   const server = buildStdioServer();
   const transport = new StdioServerTransport();
 
