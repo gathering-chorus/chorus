@@ -415,6 +415,23 @@ pub fn login_verdict(name: &str, code: &str, body: &str, api: &str) -> Result<Op
     }
 }
 
+/// #4432 — the agent roles, from the roles door (`/v1/roles/roles`): every row
+/// whose roleKind is "agent", by name. Abby Normal is the fourth; nothing in
+/// this crate lists the roles by hand any more. An unreadable reply is an
+/// error, never "the usual three": a principal the door cannot name is not a
+/// role this command may act for.
+pub fn agent_roles(body: &str) -> Result<Vec<String>, String> {
+    let v: Value = serde_json::from_str(body).map_err(|_| "the roles door answered with something that is not JSON".to_string())?;
+    let rows = v.get("data").and_then(|d| d.as_array()).ok_or_else(|| "the roles door answered with no data list".to_string())?;
+    let mut names: Vec<String> = rows.iter()
+        .filter(|r| r.get("roleKind").and_then(|k| k.as_str()) == Some("agent"))
+        .filter_map(|r| r.get("name").and_then(|n| n.as_str()).map(str::to_string))
+        .collect();
+    names.sort();
+    if names.is_empty() { return Err("the roles door lists no agent role".to_string()); }
+    Ok(names)
+}
+
 /// #4412 — the owners of the open, unexpired browser Sessions in a
 /// `/v1/identity/sessions?channel=browser` reply: who may be signed in. The
 /// caller still asks each owner's Principal row whether it is a person.
