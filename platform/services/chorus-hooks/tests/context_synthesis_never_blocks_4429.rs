@@ -7,7 +7,7 @@
 // named the core issue. The gate keeps its info! log lines (decision=advisory).
 
 fn gate_source() -> String {
-    let path = format!("{}/src/hooks/memory_gate.rs", env!("CARGO_MANIFEST_DIR"));
+    let path = format!("{}/src/hooks/memory_gate.rs", std::env::var("CARGO_MANIFEST_DIR").unwrap());
     std::fs::read_to_string(&path).unwrap_or_else(|e| panic!("gate source missing at {path}: {e}"))
 }
 

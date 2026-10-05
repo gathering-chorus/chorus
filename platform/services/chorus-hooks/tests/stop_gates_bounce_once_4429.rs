@@ -5,7 +5,7 @@
 // → stated-intent, and Kade's sessions died after the same chain.
 
 fn stop_hook_body() -> String {
-    let path = format!("{}/src/main.rs", env!("CARGO_MANIFEST_DIR"));
+    let path = format!("{}/src/main.rs", std::env::var("CARGO_MANIFEST_DIR").unwrap());
     let src = std::fs::read_to_string(&path).unwrap_or_else(|e| panic!("main.rs missing at {path}: {e}"));
     let start = src.find("async fn stop_hook(").expect("stop_hook handler gone; re-point this guard");
     let rest = &src[start..];

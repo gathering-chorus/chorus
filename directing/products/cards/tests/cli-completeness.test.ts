@@ -5,6 +5,7 @@
  * Integration tests for tag error, untag, bulk-move, add --sequence warn.
  */
 import { execSync } from 'child_process';
+import * as fs from 'node:fs';
 import * as path from 'node:path';
 import { repoRoot } from './lib/repo-root';
 
@@ -24,7 +25,13 @@ function run(cmd: string): { stdout: string; stderr: string; exitCode: number } 
   }
 }
 
-describe('CLI completeness (#2024)', () => {
+// Drives the real cards CLI against the real board (bulk-move moves real
+// cards). jest.config only lets it in under RUN_INTEGRATION=true, but the werk
+// pipeline sets that without a board token, so it read red on every werk run
+// that selected it. No token here = not measured, never red.
+const BOARD_REACHABLE = !!process.env.VIKUNJA_TOKEN || fs.existsSync(path.join(repoRoot(), '.env'));
+
+(BOARD_REACHABLE ? describe : describe.skip)('CLI completeness (#2024)', () => {
 
   // AC #2: tag error message references correct commands
   test('tag command shows error pointing to cards set and sequence-tag', () => {
