@@ -73,3 +73,16 @@ chorus:prop-role-kade-nudge-word-cap a chorus:Property ;
     chorus:propertyValue "50" ;
     chorus:propertyValueType "int" ;
     chorus:propertyScope "role" .
+
+# #4432 — Abby Normal gets the same caps as the other agent roles.
+chorus:prop-role-abby-normal-response-word-cap a chorus:Property ;
+    chorus:propertyKey "response.word.cap" ;
+    chorus:propertyValue "100" ;
+    chorus:propertyValueType "int" ;
+    chorus:propertyScope "role" .
+
+chorus:prop-role-abby-normal-nudge-word-cap a chorus:Property ;
+    chorus:propertyKey "nudge.word.cap" ;
+    chorus:propertyValue "50" ;
+    chorus:propertyValueType "int" ;
+    chorus:propertyScope "role" .

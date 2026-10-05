@@ -57,6 +57,18 @@ chorus:role-silas a chorus:Role, chorus:AgentRole ;
     chorus:comment "Architect. Observation layer, identity, authN." ;
     chorus:rolePriority 2 .
 
+# #4432 — Abby Normal, the first agent role on another LLM (Codex or Gemini,
+# through PR #1275 / #4424, #4427, #4428). Until now role-abby-normal existed
+# only in the live store, minted 2026-09-17 with a label and nothing else.
+# Jeff 2026-09-17: PM, SA, EL and OL by default — that is the hat axis, a
+# separate edge from this row (Wren, #4432 pair).
+chorus:role-abby-normal a chorus:Role, chorus:AgentRole ;
+    chorus:roleKind "agent" ;
+    rdfs:label "Abby Normal" ; chorus:label "Abby Normal" ;
+    rdfs:comment "Agent role on another LLM. Product manager, solutions architect, engineering lead and operations lead by default (Jeff 2026-09-17)." ;
+    chorus:comment "Agent role on another LLM." ;
+    chorus:rolePriority 4 .
+
 # #3860/#3985 — the nightly runs as its OWN role, not borrowed agent identity.
 # The write door resolves agent_id from holdsRole; principal-nightly had
 # identity + scope but no role, so every batch write 403'd and the test ledger
@@ -102,3 +114,5 @@ chorus:role-kade chorus:hasProperty chorus:prop-role-kade-response-word-cap .
 chorus:role-silas chorus:hasProperty chorus:prop-role-silas-nudge-word-cap .
 chorus:role-wren chorus:hasProperty chorus:prop-role-wren-nudge-word-cap .
 chorus:role-kade chorus:hasProperty chorus:prop-role-kade-nudge-word-cap .
+chorus:role-abby-normal chorus:hasProperty chorus:prop-role-abby-normal-response-word-cap .
+chorus:role-abby-normal chorus:hasProperty chorus:prop-role-abby-normal-nudge-word-cap .
