@@ -105,7 +105,7 @@ pub async fn check_with_dir(input: &HookInput, state: &AppState, init_dir: &str)
 /// drive-by.
 #[allow(dead_code)]
 fn run_gate_smoke(role: &str, state: &AppState) -> bool {
-    use crate::hooks::{log_first_gate, memory_gate};
+    use crate::hooks::log_first_gate;
 
     // Force is_fix_card() to true regardless of live board state — the smoke
     // is verifying gate-blocking logic, not querying chorus-api. Without this,
@@ -131,9 +131,8 @@ fn run_gate_smoke(role: &str, state: &AppState) -> bool {
     let _ = std::fs::create_dir_all("/tmp/claude-team-scan");
     let _ = std::fs::write(&state_path, &smoke_state);
 
-    // Synthetic Edit on a cross-domain code file — both gates should DENY:
-    // - log_first_gate: no log evidence in session
-    // - memory_gate: no search/synthesis in session
+    // Synthetic Edit on a cross-domain code file — log_first_gate should DENY
+    // (no log evidence in session).
     let smoke_cwd = format!("{}/platform/roles/{}",
         chorus_root(),
         match role { "wren" => "wren", "silas" => "silas", _ => "kade" });
@@ -188,20 +187,8 @@ fn run_gate_smoke(role: &str, state: &AppState) -> bool {
         info!(gate = "smoke-check", target = "log_first_gate", role = role, "SMOKE PASS");
     }
 
-    // Smoke #2: memory_gate (context synthesis) — should deny (no search/synthesis)
-    let mem_result = memory_gate::check(&smoke_input, state);
-    if mem_result.stdout.is_none() {
-        error!(
-            gate = "smoke-check",
-            target = "memory_gate",
-            role = role,
-            "SMOKE FAILED: memory_gate allowed a fix-card edit without context synthesis."
-        );
-        eprintln!("⚠ GATE SMOKE FAILED: memory_gate did not block. Gates may be silently broken.");
-        all_pass = false;
-    } else {
-        info!(gate = "smoke-check", target = "memory_gate", role = role, "SMOKE PASS");
-    }
+    // #4429 — memory_gate (context synthesis) logs and never blocks, so it is
+    // not a smoke target; tests/context_synthesis_never_blocks_4429.rs guards it.
 
     // Restore original state and clean up smoke artifacts
     match backup {

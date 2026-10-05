@@ -1206,6 +1206,11 @@ async fn stop_hook(
     // heartbeat goes quiet, and silence now truthfully means idle rather than hidden work.
     emit_turn_ended(&input).await;
     inject_force_observe(&raw, &input).await;
+ // #4429: one bounce per turn. In a continuation a stop gate already caused, no gate blocks again.
+ if raw.get("stop_hook_active").and_then(|v| v.as_bool()) == Some(true) {
+ crate::state::chorus_log("stop.gate.yielded", &format!("{:?}", input.role()).to_lowercase(), &[]).await;
+ return Json(HookResponse::allow());
+ }
     // Existing behavior unchanged — observe-only, no block on the inject-force path.
     let mut response = hooks::autonomy_guard::check(&input, &state).await;
 
