@@ -1,0 +1,24 @@
+{
+  "version": 1,
+  "max_concurrent_jobs": 1,
+  "roles": { "abby-normal": "gemini-managed" },
+  "role_workspaces": { "abby-normal": "/Users/jeffbridwell/CascadeProjects/chorus/roles/abby-normal" },
+  "peer_uids": [505, 501],
+  "human_uids": [501],
+  "socket_group": "chorus",
+  "profiles": {
+    "gemini-managed": {
+      "runtime": "gemini", "mode": "managed", "enforcement": "trusted",
+      "approved_gaps": [
+        "ACP does not guarantee pre-tool interception or filesystem isolation",
+        "No-tools jobs are unsupported",
+        "Resume requires the agent loadSession capability; history replay may be incomplete"
+      ],
+      "executable": "/Users/jeffbridwell/.chorus/runtimes/bin/gemini",
+      "worker": "/opt/homebrew/bin/node",
+      "worker_args": ["/Users/jeffbridwell/.chorus/lib/agent-adapters/worker.js", "--runtime", "gemini"],
+      "timeout_secs": 900,
+      "adapter_config": { "timeout_ms": 900000 }
+    }
+  }
+}
