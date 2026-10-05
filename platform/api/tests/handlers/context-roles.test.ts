@@ -5,7 +5,7 @@
  * no "unknown" to answer.
  */
 
-import { fetchContextRoles, type ContextRolesDeps } from '../../src/handlers/context-roles';
+import { agentRolesFrom, fetchContextRoles, type ContextRolesDeps } from '../../src/handlers/context-roles';
 import type { SpineLine } from '../../src/derive-role-state';
 
 const T0 = Date.parse('2026-09-02T15:00:00-04:00');
@@ -15,21 +15,41 @@ function stubSparql(): ContextRolesDeps['sparql'] {
   return { query: async () => ({ results: { bindings: [] } }) };
 }
 
+// #4432 — the roles door as it answers today, Abby Normal the fourth agent.
+const DOOR = { data: [
+  { name: 'abby-normal', roleKind: 'agent', rolePriority: '4' }, { name: 'jeff', roleKind: 'human', rolePriority: '0' },
+  { name: 'kade', roleKind: 'agent', rolePriority: '1' }, { name: 'nightly', roleKind: '' },
+  { name: 'silas', roleKind: 'agent', rolePriority: '2' }, { name: 'wren', roleKind: 'agent', rolePriority: '3' },
+] };
+
 function deps(over: Partial<ContextRolesDeps> = {}): ContextRolesDeps {
   return {
     sparql: stubSparql(),
     readEvents: () => [],
     listWipCards: () => [],
+    listAgentRoles: async () => agentRolesFrom(DOOR),
     now: () => new Date(T0),
     ...over,
   };
 }
 
 describe('fetchContextRoles (#4028 — derived, never declared)', () => {
-  it('returns all three known roles in stable order', async () => {
+  it('#4432 returns every agent role the roles door lists, by rolePriority — Abby gets a tile', async () => {
     const r = await fetchContextRoles(deps(), '/api/chorus/context/roles');
     expect(r.status).toBe(200);
-    expect(r.body.data.roles.map((x) => x.name)).toEqual(['silas', 'wren', 'kade']);
+    expect(r.body.data.roles.map((x) => x.name)).toEqual(['kade', 'silas', 'wren', 'abby-normal']);
+  });
+
+  it('#4432 NEGATIVE PROOF: a door that cannot answer is a 503, never three guessed tiles', async () => {
+    const r = await fetchContextRoles(deps({ listAgentRoles: async () => { throw new Error('HTTP 502'); } }), '/api/chorus/context/roles');
+    expect(r.status).toBe(503);
+    expect(JSON.stringify(r.body)).toMatch(/roles door unreadable/);
+  });
+
+  it('#4432 a human or unkinded row never gets an agent tile', () => {
+    expect(agentRolesFrom(DOOR)).not.toContain('jeff');
+    expect(agentRolesFrom(DOOR)).not.toContain('nightly');
+    expect(() => agentRolesFrom({ data: [] })).toThrow(/no agent role/);
   });
 
   it('a role with tool calls in the window is building on its board card; lastEvent/lastActivity come from the streams', async () => {

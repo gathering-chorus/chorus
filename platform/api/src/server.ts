@@ -1686,7 +1686,7 @@ import { fetchContextQualitySummary } from './handlers/context-quality-summary';
 import { fetchContextBoardNext } from './handlers/context-board-next';
 import { fetchContextCoverage } from './handlers/context-coverage';
 import { fetchContextBoardSwat } from './handlers/context-board-swat';
-import { fetchContextRoles } from './handlers/context-roles';
+import { fetchContextRoles, agentRolesFrom } from './handlers/context-roles';
 import type { SpineLine, WipCardEntry } from './derive-role-state';
 import { fetchContextHealth } from './handlers/context-health';
 
@@ -1888,6 +1888,11 @@ app.get('/api/chorus/context/roles', async (req: Request, res: Response) => {
       sparql: _athena,
       readEvents: readSpineEventsForRole,
       listWipCards: listWipCardsForRoles,
+      listAgentRoles: async () => {
+        const r = await fetch(`${ATHENA_MAKE_BASE}/v1/roles/roles?limit=500`, { signal: AbortSignal.timeout(3000) });
+        if (!r.ok) throw new Error(`the roles door answered HTTP ${r.status}`);
+        return agentRolesFrom(await r.json());
+      },
     },
     req.originalUrl,
   );

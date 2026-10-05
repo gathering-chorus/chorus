@@ -15,10 +15,10 @@
 
 export const SPINE_ACTIVE_WINDOW_SECS = 120;
 
-/** Roles whose events count as team activity. Machinery attribution (pulse,
- *  bridge, system, unknown, heartbeat-probe…) must never light a tile —
- *  that is exactly the "looks alive while dead" failure inverted. */
-export const AGENT_ROLES = new Set(['jeff', 'wren', 'silas', 'kade']);
+/* Roles whose events count as team activity come from the caller (#4432: the
+ * tile list, i.e. Jeff plus the roles door's agent rows). Machinery
+ * attribution (pulse, bridge, system, unknown, heartbeat-probe…) is never in
+ * that list, so it can never light a tile. */
 
 export interface SpineActivity {
   ageSecs: number;
@@ -49,6 +49,7 @@ const HEARTBEAT_KINDS = new Set([
 export function latestSpineActivity(
   lines: string[],
   now: number,
+  roles: ReadonlySet<string>,
 ): Record<string, SpineActivity> {
   const out: Record<string, SpineActivity> = {};
   for (const line of lines) {
@@ -59,7 +60,7 @@ export function latestSpineActivity(
       continue;
     }
     const role = e.role ?? '';
-    if (!AGENT_ROLES.has(role) || !e.timestamp || !e.event) continue;
+    if (!roles.has(role) || !e.timestamp || !e.event) continue;
     if (HEARTBEAT_KINDS.has(e.event)) continue;
     const ts = Date.parse(e.timestamp);
     if (Number.isNaN(ts)) continue;

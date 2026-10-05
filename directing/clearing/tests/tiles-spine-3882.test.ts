@@ -8,6 +8,7 @@
  * declared role-state as override/fallback only). One clock: every age is
  * computed from event timestamps against a single `now` argument.
  */
+const TEAM = new Set(['jeff', 'wren', 'silas', 'kade', 'abby-normal']);
 import { projectRoleState, latestSpineActivity } from '../src/tiles-spine';
 
 const T0 = Date.parse('2026-08-15T14:00:00Z');
@@ -65,13 +66,13 @@ describe('#3882 latestSpineActivity — one clock over raw lines', () => {
     'not json at all',
   ];
   test('per-role latest activity from role-attributed events only', () => {
-    const acts = latestSpineActivity(lines, T0);
+    const acts = latestSpineActivity(lines, T0, TEAM);
     expect(acts.kade).toEqual({ ageSecs: 90, kind: 'werk.phase' });
     expect(acts.wren).toEqual({ ageSecs: 30, kind: 'reply.emitted' });
     expect(acts.silas).toBeUndefined();
   });
   test('negative proof (#3734): machinery roles never register as activity', () => {
-    const acts = latestSpineActivity(lines, T0);
+    const acts = latestSpineActivity(lines, T0, TEAM);
     expect(acts.pulse).toBeUndefined();
     expect(acts.system).toBeUndefined();
   });
@@ -84,7 +85,7 @@ describe('#2725 — heartbeats are process liveness, not role activity', () => {
 
   it('a fresh heartbeat over an hour-old real event does NOT read as activity', () => {
     // the live 2026-08-24 shape: tile said "8s ago", pane had been silent 48min
-    const act = latestSpineActivity([line('agent.action', 2913), line('system.heartbeat', 8)], now);
+    const act = latestSpineActivity([line('agent.action', 2913), line('system.heartbeat', 8)], now, TEAM);
     expect(act.silas.ageSecs).toBe(2913);
     expect(act.silas.kind).toBe('agent.action');
   });
@@ -92,12 +93,12 @@ describe('#2725 — heartbeats are process liveness, not role activity', () => {
   it('NEGATIVE PROOF: without the exclusion the heartbeat wins — the lie this fixes', () => {
     // same input, heartbeat spelled as an ordinary event: it DOES become newest,
     // which is exactly the tile-vs-pane disagreement the #3976 flow caught.
-    const act = latestSpineActivity([line('agent.action', 2913), line('reply.published', 8)], now);
+    const act = latestSpineActivity([line('agent.action', 2913), line('reply.published', 8)], now, TEAM);
     expect(act.silas.ageSecs).toBe(8);
   });
 
   it('thinking still counts — a role with no tool calls is not idled by this', () => {
-    const act = latestSpineActivity([line('observer.digest', 30), line('system.heartbeat', 1)], now);
+    const act = latestSpineActivity([line('observer.digest', 30), line('system.heartbeat', 1)], now, TEAM);
     expect(act.silas.kind).toBe('observer.digest');
   });
 });

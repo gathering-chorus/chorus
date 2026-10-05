@@ -28,8 +28,25 @@ import {
   type RoleState,
 } from '../derive-role-state';
 
-export const KNOWN_ROLES = ['silas', 'wren', 'kade'] as const;
-export type RoleName = (typeof KNOWN_ROLES)[number];
+/** #4432 — an agent role as the roles door serves it. */
+export interface AgentRoleRow { name: string; rolePriority?: string | number }
+export type RoleName = string;
+
+/**
+ * #4432 — the agent roles, ordered by rolePriority then name, from the roles
+ * door's rows (`/v1/roles/roles`, roleKind agent). Throws on a reply with no
+ * data list or no agent: a tile list is never guessed.
+ */
+export function agentRolesFrom(body: unknown): string[] {
+  const rows = (body as { data?: unknown })?.data;
+  if (!Array.isArray(rows)) throw new Error('the roles door answered with no data list');
+  const agents = (rows as Array<AgentRoleRow & { roleKind?: string }>)
+    .filter((r) => r.roleKind === 'agent' && r.name)
+    .sort((a, b) => (Number(a.rolePriority ?? 99) - Number(b.rolePriority ?? 99)) || a.name.localeCompare(b.name))
+    .map((r) => r.name);
+  if (agents.length === 0) throw new Error('the roles door lists no agent role');
+  return agents;
+}
 
 export interface ContextRolesDeps {
   sparql: StampSparqlClient;
@@ -38,6 +55,8 @@ export interface ContextRolesDeps {
   readEvents: (role: string, sinceMs: number) => SpineLine[] | Promise<SpineLine[]>;
   /** The board's WIP cards with owners. */
   listWipCards: () => WipCardEntry[];
+  /** #4432 — the agent roles from the roles door; throws when it can't answer. */
+  listAgentRoles: () => Promise<string[]>;
   /** Override in tests so timestamps are deterministic. */
   now?: () => Date;
 }
@@ -103,9 +122,14 @@ export async function fetchContextRoles(
   deps: ContextRolesDeps,
   sourceUrl: string,
 ): Promise<ContextRolesResponse> {
+  let roles: string[];
+  try { roles = await deps.listAgentRoles(); }
+  catch (e) {
+    return { status: 503, body: { error: 'roles door unreadable; no tiles guessed', detail: (e as Error).message } as unknown as ContextRolesResponse['body'] };
+  }
   const header = await stampHeader(deps.sparql, null);
   const nowMs = (deps.now?.() ?? new Date()).getTime();
   const wip = deps.listWipCards();
-  const rows: ContextRolesRow[] = await Promise.all(KNOWN_ROLES.map((name) => shapeRoleRow(deps, name, nowMs, wip)));
+  const rows: ContextRolesRow[] = await Promise.all(roles.map((name) => shapeRoleRow(deps, name, nowMs, wip)));
   return { status: 200, body: buildEnvelope(header, sourceUrl, { roles: rows }) };
 }

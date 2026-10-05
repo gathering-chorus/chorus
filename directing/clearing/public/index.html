@@ -556,7 +556,7 @@ if (window.BRIDGE_USER && window.BRIDGE_USER !== 'jeff') {
 <div class="input-area">
   <div class="input-row">
     <textarea class="input-field" id="input" rows="1"
-      placeholder="Type a message... (@wren @silas @kade or just type)"
+      placeholder="Type a message... (@ a role, or just type)"
       autocomplete="off"></textarea>
     <button class="mic-btn" id="mic-btn" title="Voice input (hold to talk)">🎙</button>
     <button class="send-btn" id="send-btn">Send</button>
@@ -674,11 +674,18 @@ socket.io.on('reconnect', () => {
 });
 
 // Tiles
+function placeholderText() {
+  return 'Type a message... (' + (roomRoles.length ? roomRoles.map((r) => '@' + r).join(' ') : '@ a role') + ' or just type)';
+}
+// #4432 — the room's roles are whatever tiles the server sends (Jeff plus the
+// roles door's agent rows); the page never types the names.
+let roomRoles = [];
 socket.on('tiles', (tiles) => {
+  roomRoles = (tiles || []).map((t) => t.role).filter((r) => r && r !== 'jeff');
   renderTiles(tiles);
   // #3746 — reflect the restored filter on the tiles after each render
   document.querySelectorAll('.tile').forEach(el => {
-    const tileRole = (el.className.match(/tile-(wren|silas|kade)/) || [])[1];
+    const tileRole = (el.className.match(/tile-([a-z][a-z0-9-]*)/) || [])[1];
     if (tileRole && selectedRoles.has(tileRole)) el.classList.add('tile-locked');
   });
 });
@@ -738,7 +745,7 @@ const selectedRoles = new Set();
 // #3746 — restore the persisted filter; tiles re-lock on first render below.
 try {
   (JSON.parse(localStorage.getItem('clearing_role_filter') || '[]') || [])
-    .forEach((r) => { if (['wren', 'silas', 'kade'].includes(r)) selectedRoles.add(r); });
+    .forEach((r) => { if (typeof r === 'string' && /^[a-z][a-z0-9-]*$/.test(r) && r !== 'jeff') selectedRoles.add(r); });
 } catch { /* corrupt state = full room */ }
 
 function updateInputHint() {
@@ -752,7 +759,7 @@ function updateInputHint() {
   } else {
     lockedRole = null;
     hint.innerHTML = '@role to direct &middot; no @ = Wren gets it &middot; Enter to send';
-    input.placeholder = 'Type a message... (@wren @silas @kade or just type)';
+    input.placeholder = placeholderText();
   }
 }
 
@@ -803,7 +810,8 @@ function sendMessage() {
       onAck(result || { ok: false, error: 'no response' });
     });
   }
-  if (selectedRoles.size > 0 && !text.match(/^@(wren|silas|kade)\b/i)) {
+  const leadMention = (text.match(/^@([a-z][a-z0-9-]*)\b/i) || [])[1];
+  if (selectedRoles.size > 0 && !(leadMention && roomRoles.includes(leadMention.toLowerCase()))) {
     for (var role of selectedRoles) {
       emitOne({ text: '@' + role + ' ' + text, from: bridgeUser });
     }
@@ -887,17 +895,17 @@ micBtn.addEventListener('click', async () => {
           console.log('[voice] auto-sending transcript:', result.transcript.substring(0, 80));
           socket.emit('jeff-message', { text: result.transcript, from: 'jeff' }, (ack) => {
             console.log('[voice] jeff-message ack:', JSON.stringify(ack));
-            input.placeholder = 'Type a message... (@wren @silas @kade or just type)';
+            input.placeholder = placeholderText();
           });
         } else {
           console.warn('[voice] transcription failed:', result.error);
           input.placeholder = result.error || 'Transcription failed';
-          setTimeout(() => { input.placeholder = 'Type a message... (@wren @silas @kade or just type)'; }, 3000);
+          setTimeout(() => { input.placeholder = placeholderText(); }, 3000);
         }
       } catch (err) {
         console.error('[voice] upload failed:', err);
         input.placeholder = 'Voice upload failed';
-        setTimeout(() => { input.placeholder = 'Type a message... (@wren @silas @kade or just type)'; }, 3000);
+        setTimeout(() => { input.placeholder = placeholderText(); }, 3000);
       }
 
       micBtn.textContent = '🎙';
@@ -965,7 +973,7 @@ function toggleLock(role) {
   renderTranscript();
   updateInputHint();
   document.querySelectorAll('.tile').forEach(el => {
-    const tileRole = el.className.match(/tile-(wren|silas|kade)/)?.[1];
+    const tileRole = el.className.match(/tile-([a-z][a-z0-9-]*)/)?.[1];
     if (tileRole && selectedRoles.has(tileRole)) {
       el.classList.add('tile-locked');
     } else {
@@ -1012,7 +1020,7 @@ async function loadFold(role) {
       const resp = await fetch('/api/stream?lines=80');
       const entries = await resp.json();
       foldContent.innerHTML = entries.map(e => {
-        const color = e.role === 'wren' ? 'var(--wren)' : e.role === 'silas' ? 'var(--silas)' : 'var(--kade)';
+        const color = e.role === 'wren' ? 'var(--wren)' : e.role === 'silas' ? 'var(--silas)' : e.role === 'kade' ? 'var(--kade)' : 'var(--role-other, #a78bfa)';
         const icon = e.type === 'gemba' ? '👁 ' : e.type === 'turn' ? '💬 ' : '';
         const lineClass = e.type === 'gemba' ? 'fold-line fold-gemba' : 'fold-line';
         const eLevel = e.level || (/^\[critical\]/i.test(e.text) ? 'critical' : /^\[warn\]/i.test(e.text) ? 'warn' : '');
@@ -1086,9 +1094,8 @@ function renderTranscript() {
 }
 
 function buildMessageEl(msg, cls, isClosing) {
-  const roles = ['wren', 'silas', 'kade'];
   const isJeff = msg.from === 'jeff';
-  const isRole = roles.includes(msg.from);
+  const isRole = roomRoles.includes(msg.from);
   const isGuest = !isJeff && !isRole;
   const nodeClass = cls || ClearingTree.classifyNode(msg);
 
@@ -1139,7 +1146,7 @@ function buildMessageEl(msg, cls, isClosing) {
 
   // Render images — check raw text BEFORE escaping
   const rawText = msg.text || '';
-  const rawWithoutMention = rawText.replace(/^@(wren|silas|kade)\s*/i, '').trim();
+  const rawWithoutMention = rawText.replace(/^@[a-z][a-z0-9-]*\s*/i, '').trim();
   const imageOnly = /^\[img:[^\]]+\]$/.test(rawWithoutMention);
 
   if (imageOnly) {
@@ -1151,7 +1158,7 @@ function buildMessageEl(msg, cls, isClosing) {
     // Image + text: render image above, text in bubble below
     const imgMatch = rawText.match(/\[img:([^\]]+)\]/);
     const imgUrl = imgMatch ? imgMatch[1] : '';
-    const textPart = rawText.replace(/\[img:[^\]]+\]/g, '').replace(/^@(wren|silas|kade)\s*/i, '').trim();
+    const textPart = rawText.replace(/\[img:[^\]]+\]/g, '').replace(/^@[a-z][a-z0-9-]*\s*/i, '').trim();
     let html = `<img src="${imgUrl}" style="max-width:300px;max-height:250px;border-radius:12px;display:block;margin-bottom:4px;" />`;
     if (textPart) {
       const renderedText = isJeff ? linkify(escapeHtml(textPart)) : renderMarkdown(textPart);

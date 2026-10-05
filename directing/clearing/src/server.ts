@@ -5,6 +5,7 @@
  * fields. Auth is enforced by BRIDGE_TOKEN before req-derived routing reaches
  * any sink.
  */
+import { roomRoles, isRoomRole } from './room-roles';
 import express, { Request, Response, NextFunction } from 'express';
 import { checkCap } from './word-cap';
 import { createServer } from 'http';
@@ -1074,7 +1075,7 @@ app.use('/audio-uploads', express.static(AUDIO_UPLOAD_DIR));
 // API: get commands-only view from observations JSONL
 app.get('/api/commands/:role', (req, res) => {
   const role = req.params.role;
-  if (!['wren', 'silas', 'kade'].includes(role)) return res.status(400).json({ error: 'invalid role' });
+  if (!isRoomRole(role)) return res.status(400).json({ error: 'invalid role' });
 
   const fs = require('fs');
   const obsFile = `${SCAN_DIR}/${role}-observations.jsonl`;
@@ -1392,7 +1393,7 @@ function getRoleTTY(role: string): string | null {
 // API: get raw terminal output for a role (for fold panel)
 app.get('/api/session/:role', (req, res) => {
   const role = req.params.role;
-  if (!['wren', 'silas', 'kade'].includes(role)) return res.status(400).json({ error: 'invalid role' });
+  if (!isRoomRole(role)) return res.status(400).json({ error: 'invalid role' });
 
   const tty = getRoleTTY(role);
   if (!tty) return res.json({ text: `No active session for ${role}`, lines: 0 });
@@ -1593,7 +1594,7 @@ io.on('connection', (socket) => {
       },
       principalFor: (webid) => principalForWebId(webid, Date.now()),
     });
-    const cleanText = (data.text || '').replace(/@(wren|silas|kade)\s*/gi, '').trim();
+    const cleanText = (data.text || '').replace(/@[a-z][a-z0-9-]*\s*/gi, '').trim();
     if (!identity.jeffAuthority) {
       // The message stays in the room under the sender's real name; the
       // jeff-authority delivery path is REFUSED, visibly — never silently as Jeff.
@@ -1877,8 +1878,8 @@ if (require.main === module) {
 // WebID via resolveSenderIdentity (sender-identity.ts); the hand-set cookie /
 // client field / 'jeff' default chain is exactly the hole Mark fell through.
 
-/** The three roles, in the order they appear in the room. */
-const ALL_ROLES = ['wren', 'silas', 'kade'];
+/* #4432 — the room's roles come from the roles door through the tile poller
+ * (room-roles.ts), in rolePriority order; never a typed list. */
 
 /**
  * Who hears this message.
@@ -1897,9 +1898,11 @@ const ALL_ROLES = ['wren', 'silas', 'kade'];
  * addressing would mean nothing and the room would be unusable.
  */
 export function pickJeffMessageTargets(text: string): string[] {
-  const mentions = text.match(/@(wren|silas|kade)/gi) || [];
-  if (mentions.length === 0) return [...ALL_ROLES];
-  return [...new Set(mentions.map((m: string) => m.slice(1).toLowerCase()))];
+  const mentions = (text.match(/@([a-z][a-z0-9-]*)/gi) || [])
+    .map((m: string) => m.slice(1).toLowerCase())
+    .filter((r: string) => isRoomRole(r));
+  if (mentions.length === 0) return roomRoles();
+  return [...new Set(mentions)];
 }
 
 // Returns null on success, error string on failure (#2036).

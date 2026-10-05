@@ -102,7 +102,7 @@
       // send-time target is not recorded on the message, so hiding it would be
       // guessing, and the filter must never guess a human's words away.
       if (!tree.prompt) return true;
-      var mentions = (String(tree.prompt.text || '').match(/@(wren|silas|kade)/gi) || [])
+      var mentions = (String(tree.prompt.text || '').match(/@[a-z][a-z0-9-]*/gi) || [])
         .map(function (mn) { return mn.slice(1).toLowerCase(); });
       if (mentions.length === 0) return true;
       return mentions.some(function (r) { return selected.has(r); });

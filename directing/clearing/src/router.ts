@@ -3,6 +3,7 @@
  * (this.messages[i] where i iterates over messages.length).
  * Coverage: getHiddenCount tested in tests/router.test.ts.
  */
+import { isRoomRole } from './room-roles';
 import { EventEmitter } from 'events';
 import { createHash } from 'crypto';
 
@@ -30,7 +31,7 @@ const ECHO_MS = 10 * 60 * 1000;
 
 /** The words of a message as a pane shows them: no @mention, no escaping, one line. */
 function echoKey(text: string): string {
-  return text.replace(/@(wren|silas|kade)\s*/gi, '').replace(/\\"/g, '"').replace(/\s+/g, ' ').trim();
+  return text.replace(/@[a-z][a-z0-9-]*\s*/gi, '').replace(/\\"/g, '"').replace(/\s+/g, ' ').trim();
 }
 
 /** #4363 — an id for a message whose source gave none: the same message gets the same id. */
@@ -331,21 +332,20 @@ function isJeff(from: string): boolean {
 // place it would invite a rewire of the same guessing.
 
 
-/** The three AI roles. Jeff is a person, not a role, and is handled earlier. */
-const ROLE_NAMES = ['wren', 'silas', 'kade'];
-
-/** Is this sender one of the three roles? Exact match, never a prefix (#3743). */
+/** Is this sender one of the room's agent roles (#4432: the roles door's rows,
+ *  never a typed list)? Exact match, never a prefix (#3743). Jeff is a person,
+ *  not a role, and is handled earlier. */
 export function isRoleName(from: string): boolean {
-  return ROLE_NAMES.includes(from.toLowerCase());
+  return isRoomRole(from);
 }
 
 /** Check if a message is role-to-role (no Jeff involvement) */
 function isRoleToRole(from: string, text: string): boolean {
-  const roles = ROLE_NAMES;
-  if (!roles.includes(from)) return false;
+  if (!isRoomRole(from)) return false;
 
   // Nudge prefixes targeting another role
-  if (text.match(/^\[nudge from (wren|silas|kade)/i)) return true;
+  const nudgeFrom = text.match(/^\[nudge from ([a-z][a-z0-9-]*)/i);
+  if (nudgeFrom && isRoomRole(nudgeFrom[1])) return true;
 
   // Role-to-role coordination prefixes — all hidden from Jeff
   if (text.match(/^\[(reply|ack|feedback|direction|correction|chat)\]/i)) return true;
@@ -354,7 +354,8 @@ function isRoleToRole(from: string, text: string): boolean {
   if (text.match(/^(ack|acknowledged|got it|will do|on it)\b/i)) return true;
 
   // Delivery confirmations
-  if (text.match(/^DELIVERED to (wren|silas|kade)/i)) return true;
+  const deliveredTo = text.match(/^DELIVERED to ([a-z][a-z0-9-]*)/i);
+  if (deliveredTo && isRoomRole(deliveredTo[1])) return true;
 
   return false;
 }
