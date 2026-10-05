@@ -154,9 +154,11 @@ export class TilePoller {
   // #4028 — derived rows from chorus-api; replaces <role>-declared.json.
   private rolesFromApi: Map<string, DerivedRoleRow> = new Map();
   private readRolesOverride: (() => DerivedRoleRow[] | null) | null = null;
-  /** #4432 — the tiles: Jeff, then every agent role /api/chorus/context/roles
-   *  returns (the roles door's rows, by rolePriority). Never a list in this file;
-   *  until the API answers, Jeff's tile is the only one. */
+  /** #4432 — the tiles: every logged-in principal /api/chorus/context/roles
+   *  returns (Jeff first, then the agents by rolePriority). Jeff's tile stays
+   *  until his browser login writes a Session row: measured 2026-10-05 19:03,
+   *  /v1/identity/sessions holds 0 rows owned by principal-jeff, so following
+   *  his session today would take his tile away while he is in the room. */
   private roleList: string[] = ['jeff'];
   // #2273: exposed so tests can await the board refresh instead of using setTimeout
   boardRefresh: Promise<void> = Promise.resolve();
@@ -183,7 +185,7 @@ export class TilePoller {
     this.refreshBoardFromApi();
   }
 
-  /** #4432 — adopt the API's agent rows as the tile list (Jeff first). */
+  /** #4432 — adopt the API's rows (the logged-in principals) as the tile list. */
   private setRoleList(rows: DerivedRoleRow[]): void {
     this.roleList = ['jeff', ...rows.map((r) => r.role).filter((r) => r && r !== 'jeff')];
     setRoomRoles(this.roleList);

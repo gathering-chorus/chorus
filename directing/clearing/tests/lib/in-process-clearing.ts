@@ -33,7 +33,7 @@ export function useInProcessClearing() {
     // from here and never from the live :3340 (they used to, silently).
     if ((req.url || '').startsWith('/api/chorus/context/roles')) {
       res.setHeader('Content-Type', 'application/json');
-      res.end(JSON.stringify({ data: { roles: ['kade', 'silas', 'wren'].map((role) => ({ role, name: role, state: 'idle', stale: true, lastActivity: null })) } }));
+      res.end(JSON.stringify({ data: { roles: ['jeff', 'kade', 'silas', 'wren'].map((role) => ({ role, name: role, state: 'idle', stale: true, lastActivity: null })) } }));
       return;
     }
     if ((req.url || '').startsWith('/api/')) { res.statusCode = 404; res.end('{}'); return; }

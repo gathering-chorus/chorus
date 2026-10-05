@@ -5,7 +5,7 @@
  * no "unknown" to answer.
  */
 
-import { agentRolesFrom, loggedInAgentRoles, fetchContextRoles, type ContextRolesDeps } from '../../src/handlers/context-roles';
+import { agentRolesFrom, loggedInRoles, fetchContextRoles, type ContextRolesDeps } from '../../src/handlers/context-roles';
 import type { SpineLine } from '../../src/derive-role-state';
 
 const T0 = Date.parse('2026-09-02T15:00:00-04:00');
@@ -46,20 +46,22 @@ describe('fetchContextRoles (#4028 — derived, never declared)', () => {
     expect(JSON.stringify(r.body)).toMatch(/roles door unreadable/);
   });
 
-  it('#4432 tiles follow logins: only agent roles with an open session, in role order', () => {
+  it('#4432 tiles follow logins: Jeff and the agents with an open session, Jeff first', () => {
     const sessions = { data: [
       { ownedBy: 'principal-wren', sessionState: 'open' }, { ownedBy: 'principal-abby-normal', sessionState: 'open' },
       { ownedBy: 'principal-kade', sessionState: 'closed' }, { ownedBy: 'principal-jeff', sessionState: 'open' },
     ] };
-    expect(loggedInAgentRoles(sessions, DOOR)).toEqual(['wren', 'abby-normal']);
+    expect(loggedInRoles(sessions, DOOR)).toEqual(['jeff', 'wren', 'abby-normal']);
   });
 
   it('#4432 NEGATIVE PROOF: Abby logs out (session closed) and her tile goes', () => {
     const before = { data: [{ ownedBy: 'principal-abby-normal', sessionState: 'open' }] };
     const after = { data: [{ ownedBy: 'principal-abby-normal', sessionState: 'closed' }] };
-    expect(loggedInAgentRoles(before, DOOR)).toEqual(['abby-normal']);
-    expect(loggedInAgentRoles(after, DOOR)).toEqual([]);
-    expect(() => loggedInAgentRoles({ error: 'down' }, DOOR)).toThrow(/sessions door/);
+    expect(loggedInRoles(before, DOOR)).toEqual(['abby-normal']);
+    expect(loggedInRoles(after, DOOR)).toEqual([]);
+    expect(() => loggedInRoles({ error: 'down' }, DOOR)).toThrow(/sessions door/);
+    // and Jeff's own tile follows his login the same way
+    expect(loggedInRoles({ data: [{ ownedBy: 'principal-jeff', sessionState: 'closed' }] }, DOOR)).toEqual([]);
   });
 
   it('#4432 a human or unkinded row never gets an agent tile', () => {

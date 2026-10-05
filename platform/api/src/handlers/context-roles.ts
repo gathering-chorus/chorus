@@ -50,12 +50,19 @@ export function agentRolesFrom(body: unknown): string[] {
 
 /**
  * #4432 — Jeff 2026-10-05 18:57: "the clearing needs to dynamically render
- * logged in principals." The agent roles with an open Session (login → logout,
+ * logged in principals." The roles (Jeff's and the agents') with an open Session (login → logout,
  * #4406: no timer ends one), in the roles door's rolePriority order. A role
  * with no open session has no tile; a login adds one, a logout removes it.
  */
-export function loggedInAgentRoles(sessionsBody: unknown, rolesBody: unknown): string[] {
-  const agents = agentRolesFrom(rolesBody);
+export function loggedInRoles(sessionsBody: unknown, rolesBody: unknown): string[] {
+  // Jeff and the agents alike (Wren 18:59: "logged in principals", not agent
+  // roles): every agent or human role row, Jeff first by rolePriority 0.
+  const body = rolesBody as { data?: unknown };
+  if (!Array.isArray(body?.data)) throw new Error('the roles door answered with no data list');
+  const agents = (body.data as Array<AgentRoleRow & { roleKind?: string }>)
+    .filter((r) => (r.roleKind === 'agent' || r.roleKind === 'human') && r.name)
+    .sort((a, b) => (Number(a.rolePriority ?? 99) - Number(b.rolePriority ?? 99)) || a.name.localeCompare(b.name))
+    .map((r) => r.name);
   const rows = (sessionsBody as { data?: unknown })?.data;
   if (!Array.isArray(rows)) throw new Error('the sessions door answered with no data list');
   const open = new Set(

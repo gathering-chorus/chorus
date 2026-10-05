@@ -1686,7 +1686,7 @@ import { fetchContextQualitySummary } from './handlers/context-quality-summary';
 import { fetchContextBoardNext } from './handlers/context-board-next';
 import { fetchContextCoverage } from './handlers/context-coverage';
 import { fetchContextBoardSwat } from './handlers/context-board-swat';
-import { fetchContextRoles, loggedInAgentRoles } from './handlers/context-roles';
+import { fetchContextRoles, loggedInRoles } from './handlers/context-roles';
 import type { SpineLine, WipCardEntry } from './derive-role-state';
 import { fetchContextHealth } from './handlers/context-health';
 
@@ -1888,7 +1888,7 @@ app.get('/api/chorus/context/roles', async (req: Request, res: Response) => {
       sparql: _athena,
       readEvents: readSpineEventsForRole,
       listWipCards: listWipCardsForRoles,
-      // #4432 — tiles are the logged-in agent roles: open Sessions joined to
+      // #4432 — tiles are the logged-in principals' roles (Jeff included): open Sessions joined to
       // the roles door for order (Jeff 2026-10-05: "dynamically render logged
       // in principals"). Either door down → refused, never guessed.
       listAgentRoles: async () => {
@@ -1898,7 +1898,7 @@ app.get('/api/chorus/context/roles', async (req: Request, res: Response) => {
         ]);
         if (!roles.ok) throw new Error(`the roles door answered HTTP ${roles.status}`);
         if (!sessions.ok) throw new Error(`the sessions door answered HTTP ${sessions.status}`);
-        return loggedInAgentRoles(await sessions.json(), await roles.json());
+        return loggedInRoles(await sessions.json(), await roles.json());
       },
     },
     req.originalUrl,

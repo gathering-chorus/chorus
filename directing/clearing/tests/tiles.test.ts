@@ -22,7 +22,7 @@ const PULSE = path.join(TMP, 'pulse-latest.json');
 const WERK_TMP = fs.mkdtempSync(path.join(os.tmpdir(), 'tiles-werk-'));
 // #4432 — the tiles come from /api/chorus/context/roles (the roles door's agent
 // rows); here a fixed stand-in so no test reaches the live API.
-const TEAM = ['kade', 'silas', 'wren', 'abby-normal'];
+const TEAM = ['jeff', 'kade', 'silas', 'wren', 'abby-normal'];
 const teamRows = () => TEAM.map((role) => ({ role, state: 'idle', stale: true, lastActivity: null }));
 const OPTS = { scanDir: TMP, pulseFile: PULSE, werkRunsDir: WERK_TMP, readRoles: teamRows };
 
@@ -50,7 +50,7 @@ afterAll(() => {
 describe('TilePoller — constructor initializes roles', () => {
   beforeEach(() => { clear(); });
 
-  test('#4432 getTiles is Jeff, then every agent role the API returns, in its order — Abby gets a tile', () => {
+  test('#4432 getTiles is every logged-in principal the API returns, in its order — Abby gets a tile', () => {
     const p = new TilePoller(OPTS);
     const tiles = p.getTiles();
     expect(tiles.map((t: any) => t.role)).toEqual(['jeff', 'kade', 'silas', 'wren', 'abby-normal']);
@@ -119,7 +119,7 @@ describe('TilePoller — role state comes from the derived endpoint (#4028)', ()
     expect(t.cardInferred).toBeUndefined();
   });
 
-  test('#4432 no derived rows yet (API not answered) — only Jeff, never guessed role tiles', () => {
+  test('#4432 no derived rows yet (API not answered) — Jeff only, never guessed role tiles', () => {
     const p = new TilePoller({ ...OPTS, readRoles: () => null });
     expect(p.getTiles().map((x) => x.role)).toEqual(['jeff']);
   });
