@@ -103,7 +103,8 @@ fn unanswered_inbound_inner(conn: &Connection, role: &str) -> rusqlite::Result<V
            WHERE "to" = ?1
              AND type = 'nudge'
              AND "from" != ?1
-             AND "from" IN ('wren', 'silas', 'kade', 'jeff')
+             -- #4432: who is a peer is pulse's verdict (nudge_class 'r2r',
+             -- read from the roles door), not a list of names here.
              AND nudge_class = 'r2r'
              AND nudge_expects IN ('reply', 'decision', 'action')
              AND created_at > COALESCE(
@@ -204,7 +205,6 @@ fn unanswered_for_session(conn: &Connection, role: &str, session_id: &str) -> ru
     let mut stmt = conn.prepare(
         r#"SELECT id, "from", content, trace_id FROM messages
            WHERE "to" = ?1 AND type = 'nudge' AND "from" != ?1
-             AND "from" IN ('wren', 'silas', 'kade', 'jeff')
              AND nudge_class = 'r2r' AND nudge_expects IN ('reply', 'decision', 'action')
              AND delivery_session_id = ?2 AND delivery_status = 'delivered'
              AND created_at > COALESCE(
@@ -526,11 +526,13 @@ mod tests {
     #[test]
     fn system_sender_does_not_owe() {
         // The hotfix (Silas's live over-trap): a 'nudge' from system / chorus-mcp /
-        // pulse / alert has no repliable peer (recipient enum is wren/silas/kade/jeff),
-        // so it must NOT trap the recipient — there is no way to clear it.
+        // pulse / alert has no repliable peer, so it must NOT trap the recipient.
+        // #4432 — pulse guarantees it: a non-peer is always stored a2r, even when
+        // it declares r2r (pulse peers-4432 tests that). The drain trusts the class.
         let conn = setup_db();
         insert(&conn, "nudge", "system", "silas", "werk-commit-fail alert", "2026-06-13 10:00:05");
         insert(&conn, "nudge", "chorus-mcp", "silas", "wedge alert", "2026-06-13 10:00:06");
+        conn.execute(r#"UPDATE messages SET nudge_class = 'a2r' WHERE "from" IN ('system', 'chorus-mcp')"#, []).expect("as pulse stores them");
         assert!(
             unanswered_inbound(&conn, "silas").is_empty(),
             "system/mcp nudges create no debt — no repliable peer to answer"
@@ -673,5 +675,24 @@ mod tests {
         assert!(block.contains("review #3218"), "content shown");
         assert!(block.contains("ntr-1"), "trace shown");
         assert!(block.contains("(-)"), "missing trace renders as '-'");
+    }
+
+    // #4432 — a peer is whoever pulse classed r2r from the roles door, so a
+    // nudge from Abby Normal owes a reply like any other peer's.
+    #[test]
+    fn a_reply_owing_nudge_from_abby_is_unanswered_until_answered() {
+        let conn = setup_db();
+        insert(&conn, "nudge", "abby-normal", "silas", "hello from abby", "2026-10-05 17:10:00");
+        let got = unanswered_inbound_inner(&conn, "silas").expect("query");
+        assert_eq!(got.len(), 1, "abby's r2r nudge owes a reply");
+    }
+
+    // NEGATIVE PROOF: a machine sender stays a2r and never traps, list or no list.
+    #[test]
+    fn an_a2r_nudge_never_owes_a_reply_whoever_sent_it() {
+        let conn = setup_db();
+        insert(&conn, "nudge", "abby-normal", "silas", "machine-ish", "2026-10-05 17:10:00");
+        conn.execute("UPDATE messages SET nudge_class = 'a2r'", []).expect("reclass");
+        assert!(unanswered_inbound_inner(&conn, "silas").expect("query").is_empty());
     }
 }

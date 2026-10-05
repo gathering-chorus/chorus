@@ -159,7 +159,9 @@ function readEnvelope(body: { class?: unknown; expects?: unknown }, from: string
   expects: 'none' | 'reply' | 'decision' | 'action';
 } {
   return {
-    nudgeClass: body.class === 'r2r' || body.class === 'a2r' ? body.class : inferNudgeClass(from, peers),
+    // #4432 — a declared 'r2r' from a sender the roles door does not list is
+    // downgraded: only a peer can owe-trap, so the drain may trust r2r alone.
+    nudgeClass: body.class === 'a2r' ? 'a2r' : inferNudgeClass(from, peers),
     expects: ['reply', 'decision', 'action', 'none'].includes(body.expects as string)
       ? (body.expects as 'none' | 'reply' | 'decision' | 'action')
       : 'none',
