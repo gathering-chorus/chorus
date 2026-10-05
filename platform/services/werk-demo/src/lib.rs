@@ -29,6 +29,7 @@ include!("../../shared/failure_class.rs");
 
 extern "C" {
     fn flock(fd: i32, operation: i32) -> i32;
+    fn kill(pid: i32, signal: i32) -> i32;
 }
 const LOCK_EX_NB: i32 = 0x02 | 0x04; // LOCK_EX | LOCK_NB
 const LOCK_UN: i32 = 0x08;
@@ -1181,7 +1182,7 @@ pub fn demo(card: u64, role: &str, home: &Path) -> R<DemoOutcome> {
     // now run in the headless path too. Skippable only in the unit/e2e suite,
     // which seeds its own gate results.
     let skip_gate_run = std::env::var("CHORUS_DEMO_SKIP_GATE_RUN").map(|v| v == "1").unwrap_or(false);
-    let gates_ran = !skip_gate_run && claude_available();
+    let gates_ran = !skip_gate_run && headless_available();
     if gates_ran {
         run_gates(home, role, card, &round, &trace);
     }
@@ -1265,7 +1266,7 @@ pub fn demo(card: u64, role: &str, home: &Path) -> R<DemoOutcome> {
         // the binary RUNS each peer's review itself (spawned headless claude -p,
         // recorded in-process) — peer review is a GATE, not a nudge we wait on. Only
         // in hosted CI with no claude do we fall back to the old send-the-nudge path.
-        if claude_available() {
+        if headless_available() {
             run_reviews(home, role, card, &round, &trace);
         } else {
             fire_gathers(home, role, card, &trace, &round);
@@ -1654,6 +1655,15 @@ fn claude_available() -> bool {
     claude_bin().is_some()
 }
 
+/// #4424 — gates self-run on a non-Claude model only through chorus-agent, and
+/// only when CHORUS_GATE_PROFILE names a profile; unset, this is claude_available.
+fn headless_available() -> bool {
+    match gate_profile() {
+        Some(_) => Path::new(&agent_bin()).is_file(),
+        None => claude_available(),
+    }
+}
+
 /// Unescape the JSON string-escapes claude emits (\" \\ \/ \n \r \t).
 pub fn json_unescape(s: &str) -> String {
     let mut out = String::with_capacity(s.len());
@@ -1918,6 +1928,122 @@ fn wait_for_memory_floor(home: &Path, role: &str, card: u64, label: &str, round:
     }
 }
 
+const GATE_OUTPUT_SCHEMA: &str = r#"{"type":"object","properties":{"result":{"type":"string","enum":["pass","fail","error"]},"findings":{"type":"string"}},"required":["result","findings"],"additionalProperties":false}"#;
+const REVIEW_OUTPUT_SCHEMA: &str = r#"{"type":"object","properties":{"result":{"type":"string","enum":["pass","concerns","block"]},"findings":{"type":"string"}},"required":["result","findings"],"additionalProperties":false}"#;
+
+fn agent_bin() -> String {
+    env::var("CHORUS_AGENT_BIN").unwrap_or_else(|_| format!("{}/.chorus/bin/chorus-agent", env::var("HOME").unwrap_or_default()))
+}
+
+fn gate_profile() -> Option<String> {
+    env::var("CHORUS_GATE_PROFILE").ok().filter(|s| !s.trim().is_empty())
+}
+
+/// Encode arbitrary prompt text as a JSON string (werk-demo is std-only).
+fn json_quote(text: &str) -> String {
+    let mut out = String::from("\"");
+    for c in text.chars() {
+        match c {
+            '"' => out.push_str("\\\""),
+            '\\' => out.push_str("\\\\"),
+            '\n' => out.push_str("\\n"),
+            '\r' => out.push_str("\\r"),
+            '\t' => out.push_str("\\t"),
+            c if c < '\u{20}' => out.push_str(&format!("\\u{:04x}", c as u32)),
+            c => out.push(c),
+        }
+    }
+    out.push('"');
+    out
+}
+
+/// #4424 AC3 — the chorus-agent `run` job for one gate or review. The profile
+/// must be a no-tools job profile; chorus-agent refuses any other.
+#[allow(clippy::too_many_arguments)]
+fn headless_job_request(profile: &str, input: &str, instructions: &str, schema: &str, model: Option<&str>, timeout: u64, trace: &str, revision: &str) -> String {
+    format!("{{\"version\":1,\"profile\":{},\"input\":{},\"instructions\":{},\"output_schema\":{},\"model\":{},\"timeout_secs\":{},\"trace_id\":{},\"input_revision\":{}}}",
+        json_quote(profile), json_quote(input), json_quote(instructions), schema,
+        model.map(json_quote).unwrap_or_else(|| "null".into()), timeout, json_quote(trace), json_quote(revision))
+}
+
+/// Drain both pipes while writing input, bound the whole process group.
+fn bounded_headless(mut command: Command, input: String, timeout: u64) -> R<String> {
+    use std::os::unix::process::CommandExt;
+    command.process_group(0).stdin(std::process::Stdio::piped()).stdout(std::process::Stdio::piped()).stderr(std::process::Stdio::piped());
+    let mut child = command.spawn().map_err(|e| format!("chorus-agent spawn failed: {e}"))?;
+    let pid = child.id() as i32;
+    let mut stdin = child.stdin.take().ok_or("chorus-agent stdin missing")?;
+    let writer = std::thread::spawn(move || stdin.write_all(input.as_bytes()));
+    fn drain(mut pipe: impl Read) -> Vec<u8> {
+        let mut kept = Vec::new();
+        let mut chunk = [0u8; 8192];
+        while let Ok(n) = pipe.read(&mut chunk) {
+            if n == 0 { break; }
+            let room = (8 * 1024 * 1024usize).saturating_sub(kept.len());
+            kept.extend_from_slice(&chunk[..n.min(room)]);
+        }
+        kept
+    }
+    let stdout = child.stdout.take().ok_or("chorus-agent stdout missing")?;
+    let stderr = child.stderr.take().ok_or("chorus-agent stderr missing")?;
+    let output = std::thread::spawn(move || drain(stdout));
+    let diagnostics = std::thread::spawn(move || drain(stderr));
+    let started = Instant::now();
+    let status = loop {
+        match child.try_wait() {
+            Ok(Some(status)) => break Ok(status),
+            Ok(None) if started.elapsed() < Duration::from_secs(timeout) => sleep(Duration::from_millis(25)),
+            Ok(None) => break Err(format!("chorus-agent timed out after {timeout}s (bounded, fail-loud)")),
+            Err(e) => break Err(format!("chorus-agent wait failed: {e}")),
+        }
+    };
+    // Descendants must not keep inherited pipes open after the runner exits.
+    unsafe { kill(-pid, 9); }
+    let _ = child.wait();
+    let _ = writer.join();
+    let err = diagnostics.join().unwrap_or_default();
+    let bytes = output.join().map_err(|_| "chorus-agent output reader failed")?;
+    if !status?.success() {
+        return Err(format!("chorus-agent failed: {}", String::from_utf8_lossy(&err).chars().take(160).collect::<String>()));
+    }
+    Ok(String::from_utf8_lossy(&bytes).into_owned())
+}
+
+/// #4424 AC3 — None when CHORUS_GATE_PROFILE is unset (the Claude path runs,
+/// unchanged); otherwise the reply from `chorus-agent run --text`.
+fn gate_via_agent(input: &str, instructions: &str, schema: &str, revision: &str) -> Option<R<String>> {
+    let profile = gate_profile()?;
+    let timeout = env::var("CHORUS_GATE_TIMEOUT_SECS").ok().and_then(|v| v.parse::<u64>().ok()).unwrap_or(180).clamp(1, 3600);
+    let model = env::var("CHORUS_GATE_MODEL").ok();
+    let trace = env::var("CHORUS_TRACE_ID").unwrap_or_default();
+    let payload = headless_job_request(&profile, input, instructions, schema, model.as_deref(), timeout, &trace, revision);
+    let mut command = Command::new(agent_bin());
+    command.args(["run", "--text"]).env("CHORUS_HEADLESS", "1").env_remove("CLAUDECODE");
+    // chorus-agent enforces the job timeout; this outer bound also reaps a wedged runner.
+    Some(bounded_headless(command, payload, timeout + 5))
+}
+
+/// #4424 AC4 — a peer's reply in the gather vocabulary. pass → pass,
+/// concerns → concerns, block or fail → block; anything else is an error.
+pub fn parse_review_verdict(stdout: &str) -> (String, String) {
+    let text = match extract_json_str(stdout, "result") {
+        Some(r) if r.contains("findings") || r.contains("\\\"") => json_unescape(&r),
+        _ => stdout.to_string(),
+    };
+    let raw = extract_json_str(&text, "result").map(|v| json_unescape(&v));
+    let findings = extract_json_str(&text, "findings").map(|v| json_unescape(&v)).unwrap_or_default();
+    let verdict = match raw.as_deref().map(str::trim) {
+        Some("pass") => "pass",
+        Some("concerns") => "concerns",
+        Some("block") | Some("fail") => "block",
+        _ => {
+            let reason = if findings.is_empty() { format!("unparseable review output: {}", text.chars().take(160).collect::<String>()) } else { findings };
+            return ("error".to_string(), reason);
+        }
+    };
+    (verdict.to_string(), findings)
+}
+
 fn run_one_gate(home: &Path, role: &str, card: u64, gate: &str, round: &str) {
     if !wait_for_memory_floor(home, role, card, gate, round) {
         record_gate(home, role, card, gate, "error",
@@ -1975,6 +2101,13 @@ fn run_one_gate(home: &Path, role: &str, card: u64, gate: &str, round: &str) {
         base_ctx
     };
 
+    if let Some(job) = gate_via_agent(&ctx, &sys, GATE_OUTPUT_SCHEMA, round) {
+        match job {
+            Ok(out) => { let (result, findings) = parse_gate_verdict(&out); record_gate(home, role, card, gate, &result, &findings, round); }
+            Err(e) => record_gate(home, role, card, gate, "error", &e, round),
+        }
+        return;
+    }
     let model = env::var("CHORUS_GATE_MODEL").unwrap_or_else(|_| "claude-sonnet-4-6".to_string());
     let bin = match claude_bin() {
         Some(b) => b,
@@ -2119,6 +2252,15 @@ fn run_one_review(home: &Path, role: &str, card: u64, peer: &str, round: &str) {
         card, card_view, diff_capped
     );
 
+    // A job profile's output is schema-checked, so the reply is the JSON alone.
+    let job_sys = format!("{}\n\nOutput ONLY the JSON object, nothing before or after it.", sys);
+    if let Some(job) = gate_via_agent(&ctx, &job_sys, REVIEW_OUTPUT_SCHEMA, round) {
+        match job {
+            Ok(out) => { let (verdict, findings) = parse_review_verdict(&out); record_gather_replied(home, role, card, peer, &verdict, &findings); }
+            Err(e) => record_gather_replied(home, role, card, peer, "error", &e),
+        }
+        return;
+    }
     let model = env::var("CHORUS_GATE_MODEL").unwrap_or_else(|_| "claude-sonnet-4-6".to_string());
     let bin = match claude_bin() {
         Some(b) => b,
@@ -2193,15 +2335,10 @@ fn run_one_review(home: &Path, role: &str, card: u64, peer: &str, round: &str) {
             &format!("claude exit {:?}: {}", status.code(), stderr.chars().take(160).collect::<String>()));
         return;
     }
-    // Reuse the gate verdict parser (same {result, findings} contract); map the
-    // gate vocabulary (pass|fail|error) onto the gather vocabulary (pass|block|concerns).
-    let (verdict, findings) = parse_gate_verdict(&stdout);
-    let v = match verdict.as_str() {
-        "pass" => "pass",
-        "fail" => "block",
-        _ => "concerns",
-    };
-    record_gather_replied(home, role, card, peer, v, &findings);
+    // #4424 AC4 — the gather vocabulary (pass|concerns|block); a reply that
+    // can't be read is an error, never a "concerns".
+    let (verdict, findings) = parse_review_verdict(&stdout);
+    record_gather_replied(home, role, card, peer, &verdict, &findings);
 }
 
 /// #3539 — run every peer review with NO reply recorded for THIS round, each as a
@@ -3232,5 +3369,84 @@ mod test_badge_4012 {
         let v = card_test_verdict(dir.to_str().unwrap());
         std::env::remove_var("CHORUS_DEMO_TEST_CMD");
         assert_eq!(v, "pass", "a suite that actually ran must report what it measured");
+    }
+}
+
+// #4424 AC3/AC4 — gates and peer reviews on a non-Claude model go through
+// `chorus-agent run --text` only when CHORUS_GATE_PROFILE names a profile; an
+// unparseable peer reply is an error, never a "concerns".
+#[cfg(test)]
+mod gate_profile_tests_4424 {
+    use super::*;
+    static ENV_LOCK: std::sync::Mutex<()> = std::sync::Mutex::new(());
+
+    /// A fake chorus-agent that records its argv and stdin, then answers.
+    fn fake_agent(dir: &Path, reply: &str) -> PathBuf {
+        let bin = dir.join("chorus-agent");
+        fs::write(&bin, format!(
+            "#!/bin/sh\nprintf '%s\\n' \"$*\" > '{0}/args'\ncat > '{0}/stdin'\nprintf '%s' '{1}'\n",
+            dir.display(), reply)).unwrap();
+        use std::os::unix::fs::PermissionsExt;
+        fs::set_permissions(&bin, fs::Permissions::from_mode(0o755)).unwrap();
+        bin
+    }
+    fn scratch(tag: &str) -> PathBuf {
+        let d = env::temp_dir().join(format!("werkdemo-4424-{}-{}", tag, std::process::id()));
+        let _ = fs::remove_dir_all(&d);
+        fs::create_dir_all(&d).unwrap();
+        d
+    }
+
+    #[test]
+    fn unset_gate_profile_never_calls_chorus_agent() {
+        let _g = ENV_LOCK.lock().unwrap_or_else(|e| e.into_inner());
+        let dir = scratch("unset");
+        let bin = fake_agent(&dir, r#"{"result":"pass","findings":"x"}"#);
+        env::remove_var("CHORUS_GATE_PROFILE");
+        env::set_var("CHORUS_AGENT_BIN", &bin);
+        assert!(gate_via_agent("input", "sys", GATE_OUTPUT_SCHEMA, "rev").is_none());
+        assert!(!dir.join("args").exists(), "chorus-agent must not run without a profile");
+        env::remove_var("CHORUS_AGENT_BIN");
+    }
+
+    #[test]
+    fn set_gate_profile_runs_chorus_agent_with_a_json_job() {
+        let _g = ENV_LOCK.lock().unwrap_or_else(|e| e.into_inner());
+        let dir = scratch("set");
+        let bin = fake_agent(&dir, r#"{"result":"fail","findings":"missing test"}"#);
+        env::set_var("CHORUS_GATE_PROFILE", "gate-chat");
+        env::set_var("CHORUS_AGENT_BIN", &bin);
+        let out = gate_via_agent("card text \"quoted\"", "gate sys", GATE_OUTPUT_SCHEMA, "abc123").expect("profile set").unwrap();
+        env::remove_var("CHORUS_GATE_PROFILE");
+        env::remove_var("CHORUS_AGENT_BIN");
+        assert_eq!(parse_gate_verdict(&out).0, "fail");
+        assert_eq!(fs::read_to_string(dir.join("args")).unwrap().trim(), "run --text");
+        let stdin = fs::read_to_string(dir.join("stdin")).unwrap();
+        assert_eq!(extract_json_str(&stdin, "profile").as_deref(), Some("gate-chat"));
+        assert_eq!(json_unescape(&extract_json_str(&stdin, "input").unwrap()), "card text \"quoted\"");
+        assert_eq!(extract_json_str(&stdin, "input_revision").as_deref(), Some("abc123"));
+        assert!(stdin.contains("\"output_schema\":{"));
+    }
+
+    #[test]
+    fn set_gate_profile_with_missing_agent_is_not_available() {
+        let _g = ENV_LOCK.lock().unwrap_or_else(|e| e.into_inner());
+        env::set_var("CHORUS_GATE_PROFILE", "gate-chat");
+        env::set_var("CHORUS_AGENT_BIN", "/nonexistent/chorus-agent");
+        let available = headless_available();
+        env::remove_var("CHORUS_GATE_PROFILE");
+        env::remove_var("CHORUS_AGENT_BIN");
+        assert!(!available);
+    }
+
+    #[test]
+    fn unparseable_review_is_error_never_concerns() {
+        assert_eq!(parse_review_verdict("no json here at all").0, "error");
+        assert_eq!(parse_review_verdict(r#"{"result":"maybe","findings":"?"}"#).0, "error");
+        // Negative proof: real verdicts keep their meaning.
+        assert_eq!(parse_review_verdict(r#"{"result":"fail","findings":"bad"}"#).0, "block");
+        assert_eq!(parse_review_verdict(r#"{"result":"block","findings":"bad"}"#).0, "block");
+        assert_eq!(parse_review_verdict(r#"{"result":"concerns","findings":"hm"}"#), ("concerns".to_string(), "hm".to_string()));
+        assert_eq!(parse_review_verdict(r#"{"result":"pass","findings":"ok"}"#).0, "pass");
     }
 }

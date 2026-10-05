@@ -41,7 +41,13 @@ export type TypedResolution =
   // #4362 — a live run whose Presence has no tmux pane (logged in outside tmux,
   // e.g. a headless gate run). Nothing safe to type into: the message waits
   // for the role's turn-end drain, and the sender is told why.
-  | { kind: 'no-pane' };
+  | { kind: 'no-pane' }
+  // #4424 — the live run is reached over the agent channel (Presence
+  // reachableOver agent): deliver through the agent supervisor to that run,
+  // never by typing into a pane.
+  | { kind: 'agent'; run: string }
+  // #4424 — live on both a pane run and an agent run: no single answer.
+  | { kind: 'ambiguous' };
 
 export type DeliveryPlan =
   | { kind: 'inject'; args: string[] }
@@ -146,7 +152,7 @@ export function readTurnState(role: string, dir: string = SESSIONS_DIR): TurnSta
 export type TypedDeliveryPlan =
   | { kind: 'inject'; args: string[] }
   | { kind: 'queue'; reason: string }
-  | { kind: 'undelivered'; reason: 'dead' | 'unregistered' | 'no-pane' };
+  | { kind: 'undelivered'; reason: 'dead' | 'unregistered' | 'no-pane' | 'agent' | 'ambiguous' };
 
 /**
  * #3700 (Silas half) — the typed delivery decision, replacing null→name-match:
