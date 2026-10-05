@@ -18,7 +18,7 @@ use werk_test::{
     is_test_suite_path, scope_declared_edges, scoped_test_units, scoped_test_reason, suite_run_payload, test_result_payload,
     unmapped_path,
     undeclared_gaps, CaseResult, CheckKind, Quarantined, ScopeUnit, TestRow, TestUnit,
-    TS_PACKAGES,
+    discover_ts_packages, set_repo_root,
 };
 
 mod nightly_all;
@@ -77,6 +77,8 @@ fn run(args: &[String]) -> Result<i32, String> {
     if !Path::new(&werk).is_dir() {
         return Err(format!("werk not found: {}", werk));
     }
+    // #4424 — TS packages are discovered in the tree under test.
+    set_repo_root(Path::new(&werk));
     let trace = std::env::var("CHORUS_TRACE_ID").unwrap_or_default();
     std::env::set_var("WERK_TEST_TREE_ROOT", &werk);
 
@@ -2447,7 +2449,7 @@ fn run_doc_coherence(werk: &str) -> bool {
 /// Provide a TS package's node_modules by symlinking canonical's ONLY when the
 /// lockfiles match (no dep drift — #3397). Returns true if deps are present after.
 fn ensure_ts_deps(werk: &str, pkg: &str) -> bool {
-    if !TS_PACKAGES.contains(&pkg) {
+    if !discover_ts_packages(Path::new(werk)).iter().any(|p| p == pkg) {
         return false;
     }
     let pkg_dir = format!("{}/{}", werk, pkg);
@@ -2802,8 +2804,9 @@ fn diff_scoped_units_inner(werk: &str, changed: &[String]) -> (Option<Vec<TestUn
         }
     }
     let mut ts_name_to_dir: Vec<(String, String)> = Vec::new();
-    for pkg in TS_PACKAGES {
-        units.push(ScopeUnit { name: (*pkg).to_string(), dir: (*pkg).to_string() });
+    for pkg in discover_ts_packages(root) {
+        let pkg = pkg.as_str();
+        units.push(ScopeUnit { name: pkg.to_string(), dir: pkg.to_string() });
         if let Ok(content) = std::fs::read_to_string(root.join(pkg).join("package.json")) {
             if let Some(i) = content.find("\"name\"") {
                 let rest = &content[i + 6..];
@@ -2811,7 +2814,7 @@ fn diff_scoped_units_inner(werk: &str, changed: &[String]) -> (Option<Vec<TestUn
                     let rest = rest[c + 1..].trim_start();
                     if let Some(rest) = rest.strip_prefix('"') {
                         if let Some(e) = rest.find('"') {
-                            ts_name_to_dir.push((rest[..e].to_string(), (*pkg).to_string()));
+                            ts_name_to_dir.push((rest[..e].to_string(), pkg.to_string()));
                         }
                     }
                 }

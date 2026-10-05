@@ -22,30 +22,51 @@ pub type R<T> = Result<T, String>;
 /// Known TS packages with their own jest config + node_modules (matches #3397's
 /// hardcoded set — the only packages whose tests are runnable in the werk).
 ///
-/// ⚠️ Part of the TRANSITIONAL BRIDGE (see `affected_units`): this hand-maintained
-/// list is the pre-graph approach. Stage 2 derives the testable units from the
-/// tests-domain graph (`Test covers Service`), not a hardcoded array — gated on
-/// #2818's populated instances. Don't grow this list as if it were permanent.
-pub const TS_PACKAGES: &[&str] = &[
-    "platform/api",
-    "platform/chorus-sdk",
-    "platform/pulse",
-    "platform/workflow-engine",
-    // #3974 — the packages the nightly's npm walker ran that the gate never
-    // selected: registered rows existed, unit_of_path dropped them. mcp-server
-    // runs node:test (not jest); the executor picks the runner per package.
-    "platform/mcp-server",
-    "directing/clearing",
-    "directing/products/cards",
-    // #3974 — the cucumber package: platform/tests runs cucumber-js via its
-    // own `npm test`; its .bats files resolve to script units first.
-    "platform/tests",
-    // #4106 — 27 registered tests in this app had NO LANE: `node --test test/`,
-    // the same non-jest shape mcp-server already runs, but the package was never
-    // in the table so nothing ever selected it. Registered, never planned, never
-    // run — the census called that never-ran every night, accurately.
-    "platform/apps/sexuality-player",
-];
+/// #4424 — TS packages are discovered on disk, the way Rust crates already
+/// are: a directory with a package.json that has a "test" script, outside
+/// node_modules/dist/target. This replaced the hand-kept TS_PACKAGES list,
+/// which needed a code edit for every new package (Jeff: "why is this a code
+/// change"). Sorted, repo-relative, the repo root itself excluded.
+pub fn discover_ts_packages(root: &std::path::Path) -> Vec<String> {
+    fn walk(root: &std::path::Path, dir: &std::path::Path, depth: usize, out: &mut Vec<String>) {
+        let Ok(entries) = std::fs::read_dir(dir) else { return };
+        for e in entries.flatten() {
+            let path = e.path();
+            if !path.is_dir() { continue; }
+            let name = e.file_name().to_string_lossy().to_string();
+            if name.starts_with('.') || ["node_modules", "dist", "target", "coverage"].contains(&name.as_str()) { continue; }
+            let has_test = std::fs::read_to_string(path.join("package.json")).ok()
+                .and_then(|t| t.find("\"scripts\"").map(|i| t[i..].to_string()))
+                .is_some_and(|scripts| scripts.split('}').next().is_some_and(|block| block.contains("\"test\"")));
+            if has_test {
+                if let Ok(rel) = path.strip_prefix(root) { out.push(rel.to_string_lossy().to_string()); }
+            }
+            if depth > 1 { walk(root, &path, depth - 1, out); }
+        }
+    }
+    let mut out = Vec::new();
+    walk(root, root, 5, &mut out);
+    out.sort();
+    out
+}
+
+static REPO_ROOT: std::sync::OnceLock<std::path::PathBuf> = std::sync::OnceLock::new();
+/// The tree werk-test is testing; main sets it to the card's werk.
+pub fn set_repo_root(root: &std::path::Path) {
+    let _ = REPO_ROOT.set(root.to_path_buf());
+}
+/// The TS packages of the tree under test (the repo root found by walking up
+/// to `.git` when main has not named one, e.g. in unit tests).
+pub fn ts_packages() -> Vec<String> {
+    let root = REPO_ROOT.get().cloned().or_else(|| {
+        let mut d = std::env::current_dir().ok()?;
+        loop {
+            if d.join(".git").exists() { return Some(d); }
+            if !d.pop() { return None; }
+        }
+    });
+    root.map(|r| discover_ts_packages(&r)).unwrap_or_default()
+}
 
 /// The test gate's OWN surface. A card whose diff touches these is "self-
 /// modifying": it cannot be hard-gated by the canonical `werk.yml` it is fixing,
@@ -66,7 +87,7 @@ pub const SELF_SURFACE: &[&str] = &[
 pub enum TestUnit {
     /// Rust crate at `platform/services/<name>/` — `cargo test --lib --bins`.
     RustCrate(String),
-    /// TS package (one of `TS_PACKAGES`) — `jest` in the package dir.
+    /// TS package (found by `discover_ts_packages`) — its test runner in the package dir.
     TsPackage(String),
     /// Bats suite under `platform/tests/` — `bats <path>` (#3917). Before this
     /// existed a bats-only diff selected nothing and the gate exited 0.
@@ -81,11 +102,11 @@ pub enum TestUnit {
 /// (`Test covers Service` / `Test inFile SourceFile`) → run those, at the tier their
 /// `pyramidLayer` + `hermeticity` declare. That's stage 2 (= #3148 semantic blast-radius,
 /// the query-from-model thesis), gated on #2818 populating the 489 Test instances + `covers`
-/// edges. Do NOT let this hardcoded core (also `TS_PACKAGES`, `check_plan`) calcify into a
+/// edges. Do NOT let this hardcoded core (also `check_plan`) calcify into a
 /// hand-maintained list that drifts — it is a stepping stone the graph query replaces.
 ///
 /// Mirrors #3397's git-diff heuristic, made deterministic: Rust crates first
-/// (sorted, deduped by crate name), then TS packages in `TS_PACKAGES` order. A
+/// (sorted, deduped by crate name), then TS packages in sorted order. A
 /// path is a Rust crate iff it sits under `platform/services/<name>/`; the runner
 /// later confirms a `Cargo.toml` exists (a pure fn can't touch the fs). A TS
 /// package matches iff a changed file is under `<pkg>/`.
@@ -102,12 +123,12 @@ pub fn affected_units(changed: &[String]) -> Vec<TestUnit> {
     }
     crates.sort();
     let mut units: Vec<TestUnit> = crates.into_iter().map(TestUnit::RustCrate).collect();
-    for pkg in TS_PACKAGES {
+    for pkg in ts_packages() {
         // #3974 — a changed .bats file selects its SUITE unit, never the
         // package around it (platform/tests holds both the cucumber package
         // and dozens of bats suites; editing one suite must not rerun all).
         if changed.iter().any(|f| f.starts_with(&format!("{}/", pkg)) && !f.ends_with(".bats")) {
-            units.push(TestUnit::TsPackage((*pkg).to_string()));
+            units.push(TestUnit::TsPackage(pkg.clone()));
         }
     }
     units
@@ -712,9 +733,12 @@ pub fn unit_of_path(path: &str) -> Option<TestUnit> {
     if is_feature_suite(path) || is_unittest_suite(path) {
         return Some(TestUnit::BatsSuite(path.to_string()));
     }
-    for pkg in TS_PACKAGES {
+    // Longest match first, so a nested package wins over its parent.
+    let mut pkgs = ts_packages();
+    pkgs.sort_by_key(|p| std::cmp::Reverse(p.len()));
+    for pkg in pkgs {
         if path.starts_with(&format!("{}/", pkg)) {
-            return Some(TestUnit::TsPackage((*pkg).to_string()));
+            return Some(TestUnit::TsPackage(pkg));
         }
     }
     None
