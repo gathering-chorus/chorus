@@ -23,28 +23,8 @@ import { MessageStore } from './store';
 // #3125: `deferred` signals the target is a host osascript can't reach
 // safely (VS Code) — runInject declined to push and the nudge should be
 // handed to the inbox/fold instead of surfaced or failed.
-export type InjectResult = {
-  rc: number; stderr: string; deferred?: boolean; deferReason?: string; target?: string;
-  // #4424 — set when the agent supervisor carried the message: the run it is
-  // bound to, and the supervisor's receipt (admission is not delivery).
-  agentSessionId?: string;
-  agentReceipt?: 'queued' | 'transport_accepted' | 'context_delivered' | 'uncertain';
-};
-export type RunInject = (
-  to: string, content: string, from?: string,
-  // #4424 — a stable id the supervisor dedupes on, and the delivery kind.
-  messageId?: string, options?: { kind?: 'nudge' | 'jeff-input'; targetSessionId?: string },
-) => Promise<InjectResult>;
-
-/** #4424 — agent-transport states that keep a row queued, bound to its run. */
-export const AGENT_QUEUED_REASONS = ['agent-queued', 'transport-accepted', 'uncertain', 'supervisor-unavailable'];
-
-/** #4424 — terminal, claimed by a native hook, or admitted/uncertain at the
- * supervisor: such a row is settled by its receipt, never sent again. */
-function alreadySettled(rec: { delivery_status: string; last_delivery_error: string | null; inbox_claim_session: string | null }): boolean {
-  if (rec.delivery_status === 'delivered' || rec.delivery_status === 'failed' || rec.inbox_claim_session) return true;
-  return rec.delivery_status === 'queued' && ['transport-accepted', 'uncertain'].includes(rec.last_delivery_error ?? '');
-}
+export type InjectResult = { rc: number; stderr: string; deferred?: boolean; deferReason?: string; target?: string };
+export type RunInject = (to: string, content: string, from?: string) => Promise<InjectResult>;
 
 /**
  * #3439 — map a spawned chorus-inject's exit into an InjectResult. The VS Code
@@ -76,10 +56,6 @@ export interface DeliveryRow {
   // so the nudge fold (emitted − surfaced − surface.failed) never sees a
   // surfaced with no matching emitted. Absent = 'nudge' (all pre-#3343 callers).
   kind?: 'nudge' | 'jeff-input';
-  // #4424 — an explicit agent run the sender addressed, and the run a prior
-  // admission bound this row to.
-  target_session_id?: string | null;
-  delivery_session_id?: string | null;
 }
 
 // #3343 — spine-event family per delivery kind. Pure so the mapping is pinned
@@ -276,9 +252,7 @@ export class DeliveryWorker {
       attempt,
       reason: result.deferReason || 'inbox',
     });
-    if (result.agentSessionId && AGENT_QUEUED_REASONS.includes(result.deferReason ?? '')) {
-      this.store.markAgentQueued(row.id, result.agentSessionId, result.deferReason as string);
-    } else if (result.deferReason === 'target-busy') {
+    if (result.deferReason === 'target-busy') {
       this.store.markQueued(row.id, 'target-busy');
     } else if (result.deferReason?.startsWith('undelivered-')) {
       this.store.markFailed(row.id, result.deferReason);
@@ -287,26 +261,15 @@ export class DeliveryWorker {
     }
   }
 
-  /** #4424 — a settled row is left to its receipt; a fresh row passes the
-   * announce boundary once (a retried row was announced on its first pass). */
-  private async shouldDeliver(row: DeliveryRow): Promise<boolean> {
-    const existing = this.store.getDeliveryRecord(row.id);
-    if (alreadySettled(existing)) return false;
-    return existing.delivery_attempts > 0 || this.announceOrSuppress(row);
-  }
-
   private async deliverOne(row: DeliveryRow): Promise<void> {
     const maxAttempts = this.backoffMs.length + 1;
     // #3343 — event family follows the delivery kind (jeff.input.* vs nudge.*).
     const prefix = eventPrefix(row.kind);
-    // #4424 — a row the supervisor already admitted (or whose admission is
-    // uncertain) is never sent again from here; its receipt settles it.
-    if (!(await this.shouldDeliver(row))) return;
+
+    if (!(await this.announceOrSuppress(row))) return;
 
     for (let attempt = 1; attempt <= maxAttempts; attempt++) {
-      const result = await this.runInject(row.to, typedFor(row), row.from, `pulse:${row.id}`, {
-        kind: row.kind, targetSessionId: row.target_session_id ?? row.delivery_session_id ?? undefined,
-      });
+      const result = await this.runInject(row.to, typedFor(row), row.from);
       const classified = classifyInjectResult(result);
 
       // #2765 — trace_id propagated to every spine event in lifecycle

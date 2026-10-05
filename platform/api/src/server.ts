@@ -8,7 +8,6 @@
  * to handlers, which validate before reaching their own fs/index sinks.
  */
 import express, { Request, Response, NextFunction } from 'express';
-import { verifyAgentIdentity } from './handlers/agent-identity';
 import { corsAllowOrigin } from './cors-origin'; // #2436
 import Database from 'better-sqlite3';
 // #3885 — the board's own store, read-only. Same file the cards CLI writes.
@@ -1322,17 +1321,6 @@ async function roleForWebId(webId: string): Promise<string | null> {
   }
   return null;
 }
-// #4424 — authentication only, for the session runner (chorus-agent): CSS
-// signature + the model's role for that WebID. Never trusts a role claim.
-app.post('/api/chorus/identity/verify', async (req: Request, res: Response) => {
-  const result = await verifyAgentIdentity(req.headers.authorization ?? '', {
-    verify: verifyIdentity,
-    roleForWebId,
-  });
-  res.setHeader('Cache-Control', 'no-store');
-  res.status(result.status).json(result.body);
-});
-
 app.get('/api/nudge/:role/pending', async (req: Request, res: Response) => {
   const d = await decideNudgePending(
     { role: req.params.role, authorization: req.headers.authorization ?? '' },

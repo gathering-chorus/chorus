@@ -23,7 +23,7 @@ fn a_first_run_carries_no_previous_run() {
 
 #[test]
 fn a_new_presence_is_unknown_not_reachable() {
-    let p = presence_row("kade", "kade-presence-a", "run-a", "%3", "/dev/ttys003", "jeffbridwell", "pane");
+    let p = presence_row("kade", "kade-presence-a", "run-a", "%3", "/dev/ttys003", "jeffbridwell");
     assert_eq!(p["reachability"], "unknown");
     assert!(p.get("lastDeliveredAt").is_none());
     assert_eq!(p["presenceOf"], "run-a");
@@ -31,7 +31,7 @@ fn a_new_presence_is_unknown_not_reachable() {
 
 #[test]
 fn only_a_delivery_makes_a_presence_reachable() {
-    let p = presence_row("kade", "n", "run-a", "%3", "", "u", "pane");
+    let p = presence_row("kade", "n", "run-a", "%3", "", "u");
     let d = delivered_presence(p.clone(), "2026-09-26T09:05:00Z").unwrap();
     assert_eq!(d["reachability"], "reachable");
     assert_eq!(d["lastDeliveredAt"], "2026-09-26T09:05:00Z");
