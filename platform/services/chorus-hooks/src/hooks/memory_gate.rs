@@ -18,20 +18,13 @@
 //! - Sub-millisecond — same scan pattern as JDI hook
 
 use crate::state::AppState;
-use crate::types::{permission_deny_json, HookInput, HookResponse};
+use crate::types::{HookInput, HookResponse};
 use tracing::info;
 
-// #4391 — what the gate says when it blocks. It asks for a written plan in the
-// reply, never for the model's reasoning: "show your reasoning" preceded 5 of 9
-// first safety refusals across the roles (2026-09-27, classifier label
-// reasoning_extraction), and every later turn in that conversation was refused.
-const NO_SEARCH_NO_PLAN: &str = "Context synthesis gate: no search and no written plan yet. \
-     Before this edit: 1) search Chorus and memory for prior work on this problem, \
-     2) write in your reply what you found and what you will change, \
-     in lines starting 'Prior work:' and 'Approach:'.";
-const SEARCHED_NO_PLAN: &str = "Context synthesis gate: you searched, but your reply has no plan yet. \
-     Before this edit, write in your reply what prior work showed and what you will change, \
-     in lines starting 'Prior work:' and 'Approach:'.";
+// #4429 — the gate logs and never refuses a write. A refusal sent the role back
+// to rewrite its reply; 17 of 148 refusals (09-16..10-04) were followed straight
+// away by a safety stop that killed the session, and the #4391 reword made it
+// worse (8 of 34). The one message left is a non-blocking note.
 const PLAN_NO_SEARCH: &str = "Context synthesis gate: a plan is written but no search was run. \
      If you're working from session context, that's fine. If not, run chorus-query.sh first.";
 
@@ -297,22 +290,14 @@ pub fn check(input: &HookInput, state: &AppState) -> HookResponse {
         if file_has_commits {
             let has_git_history = scan_for_git_history(input, state, &file_path);
             if !has_git_history {
-                let fname = file_path.rsplit('/').next().unwrap_or(&file_path);
                 info!(
                     gate = "context-synthesis",
-                    decision = "deny",
+                    decision = "advisory",
                     reason = "fix card without git history on target file",
                     role = %format!("{:?}", role).to_lowercase(),
                     file = %file_path,
                 );
-                return HookResponse::deny(&permission_deny_json(
-                    &format!(
-                        "Context synthesis gate: fix card but no git history on {}. \
-                         Run `git log {}` or `git blame {}` first — this file has prior commits \
-                         that explain what was tried before. Don't repeat the same fix.",
-                        fname, fname, fname
-                    )
-                ));
+                return HookResponse::allow();
             }
         } else {
             info!(
@@ -333,27 +318,23 @@ pub fn check(input: &HookInput, state: &AppState) -> HookResponse {
     if !has_search && !has_synthesis {
         info!(
             gate = "context-synthesis",
-            decision = "deny",
+            decision = "advisory",
             reason = "no search, no synthesis",
             role = %role_name,
             file = %file_path,
         );
-        return HookResponse::deny(&permission_deny_json(
-            NO_SEARCH_NO_PLAN
-        ));
+        return HookResponse::allow();
     }
 
     if has_search && !has_synthesis {
         info!(
             gate = "context-synthesis",
-            decision = "deny",
+            decision = "advisory",
             reason = "searched but no synthesis",
             role = %role_name,
             file = %file_path,
         );
-        return HookResponse::deny(&permission_deny_json(
-            SEARCHED_NO_PLAN
-        ));
+        return HookResponse::allow();
     }
 
     if !has_search && has_synthesis {
@@ -386,12 +367,9 @@ mod tests {
     #[test]
     fn gate_messages_ask_for_a_plan_never_for_reasoning() {
         let banned = [["reason", "ing"].concat(), ["demonstrate", " understanding"].concat()];
-        for msg in [NO_SEARCH_NO_PLAN, SEARCHED_NO_PLAN, PLAN_NO_SEARCH] {
-            for b in &banned {
-                assert!(!msg.to_lowercase().contains(b.as_str()), "gate message asks for {b}: {msg}");
-            }
+        for b in &banned {
+            assert!(!PLAN_NO_SEARCH.to_lowercase().contains(b.as_str()), "gate message asks for {b}");
         }
-        assert!(SEARCHED_NO_PLAN.contains("Prior work:") && SEARCHED_NO_PLAN.contains("Approach:"));
     }
 
     use super::*;
