@@ -30,6 +30,9 @@ function run(cmd: string): { stdout: string; stderr: string; exitCode: number } 
 // pipeline sets that without a board token, so it read red on every werk run
 // that selected it. No token here = not measured, never red.
 const BOARD_REACHABLE = !!process.env.VIKUNJA_TOKEN || fs.existsSync(path.join(repoRoot(), '.env'));
+if (!BOARD_REACHABLE) {
+  console.warn('UNMEASURED — cli-completeness: no VIKUNJA_TOKEN and no .env at ' + repoRoot() + '; the real board cannot be reached, so nothing here was tested');
+}
 
 (BOARD_REACHABLE ? describe : describe.skip)('CLI completeness (#2024)', () => {
 
