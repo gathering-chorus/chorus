@@ -6,47 +6,14 @@ import { execFile } from 'child_process';
 import { fileURLToPath } from 'url';
 import { parseSetFolder, getTagFromParent } from './lib/parser.js';
 import { loadPlaylists, savePlaylists, addItem, removeItem } from './lib/playlist-store.js';
+import { discoverVideoDirs, discoverPhotoSetParents, isUnder } from './lib/volumes.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const app = express();
 const PORT = 8090;
 
-// Photo set parent folders on /Volumes/VideosNew
-const PHOTO_SET_PARENTS = [
-  '/Volumes/VideosNew/photo sets - 💄',
-  '/Volumes/VideosNew/photo sets - 🔴',
-  '/Volumes/VideosNew/photo sets - 🟠',
-  '/Volumes/VideosNew/photo sets - 🟢',
-  '/Volumes/VideosNew/photo sets - 🟣',
-];
-
-// Video source directories — all mounted video volumes
-const VIDEO_DIRS = [
-  '/Volumes/VideosAbella-Alexa',
-  '/Volumes/VideosAlexa-Amb',
-  '/Volumes/VideosAme-Aria',
-  '/Volumes/VideosAria-Bianca',
-  '/Volumes/VideosBianka-Chan',
-  '/Volumes/VideosChan-Coco',
-  '/Volumes/VideosCoco-Eliza',
-  '/Volumes/VideosEliza-Erica',
-  '/Volumes/VideosErica-Haley',
-  '/Volumes/VideosHaley-Hime',
-  '/Volumes/VideosHime-Jeff',
-  '/Volumes/VideosJeff-Kata',
-  '/Volumes/VideosKey-Lea',
-  '/Volumes/VideosLeb-Luci',
-  '/Volumes/VideosLucj-Maria',
-  '/Volumes/VideosMaria-Mega',
-  '/Volumes/VideosMega-Mia',
-  '/Volumes/VideosMia-Nat',
-  '/Volumes/VideosMulti',
-  '/Volumes/VideosNew/video',
-  '/Volumes/VideosNia-Rilex',
-  '/Volumes/VideosRilez-Ta',
-  '/Volumes/VideosTb-Uma',
-  '/Volumes/VideosUma-Zaa',
-];
+// Video dirs and photo-set parents are discovered from /Volumes on each
+// request (lib/volumes.js, #4430) so consolidated volumes show up.
 
 // Media server base URL (images-api-video on localhost)
 const MEDIA_SERVER = 'http://localhost:8082';
@@ -76,7 +43,7 @@ async function countFiles(dirPath) {
 async function scanPhotoSets() {
   const sets = [];
 
-  for (const parent of PHOTO_SET_PARENTS) {
+  for (const parent of discoverPhotoSetParents()) {
     const tag = getTagFromParent(parent);
     let alphaEntries;
     try {
@@ -135,7 +102,7 @@ async function scanVideoFolders() {
   const videos = [];
   const videoExts = ['.mp4', '.mkv', '.avi', '.mov', '.wmv', '.webm'];
 
-  for (const videoDir of VIDEO_DIRS) {
+  for (const videoDir of discoverVideoDirs()) {
     let topEntries;
     try { topEntries = await fs.promises.readdir(videoDir); } catch { continue; }
 
@@ -239,7 +206,7 @@ async function getFinderTagMap() {
   console.log('Scanning Finder tags...');
   const tagMap = {}; // folder path → [tags]
   for (const tag of FINDER_TAGS) {
-    for (const videoDir of VIDEO_DIRS) {
+    for (const videoDir of discoverVideoDirs()) {
       try {
         const folders = await mdfindByTag(tag, videoDir);
         for (const folder of folders) {
@@ -308,7 +275,7 @@ app.get('/api/videos', async (_req, res) => {
 app.get('/api/photos/count', async (req, res) => {
   const setPath = req.query.path;
   if (!setPath) return res.status(400).json({ error: 'Missing path' });
-  const allowed = PHOTO_SET_PARENTS.some(p => setPath.startsWith(p));
+  const allowed = isUnder(setPath, discoverPhotoSetParents());
   if (!allowed) return res.status(403).json({ error: 'Path not allowed' });
   const count = await countFiles(setPath);
   res.json({ count, eligible: count > 0 });
@@ -320,7 +287,7 @@ app.get('/api/photos/set', async (req, res) => {
   if (!setPath) return res.status(400).json({ error: 'Missing path' });
 
   // Validate path is under allowed parents
-  const allowed = PHOTO_SET_PARENTS.some(p => setPath.startsWith(p));
+  const allowed = isUnder(setPath, discoverPhotoSetParents());
   if (!allowed) return res.status(403).json({ error: 'Path not allowed' });
 
   try {
@@ -347,7 +314,7 @@ app.get('/api/videos/list', async (req, res) => {
   const folderPath = req.query.path;
   if (!folderPath) return res.status(400).json({ error: 'Missing path' });
 
-  const allowed = VIDEO_DIRS.some(p => folderPath.startsWith(p));
+  const allowed = isUnder(folderPath, discoverVideoDirs());
   if (!allowed) return res.status(403).json({ error: 'Path not allowed' });
 
   try {
@@ -380,12 +347,8 @@ app.get('/api/proxy/image', (req, res) => {
   const filePath = req.query.path;
   if (!filePath) return res.status(400).json({ error: 'Missing path' });
 
-  const allowed = PHOTO_SET_PARENTS.some(p => filePath.startsWith(p));
-  if (!allowed) return res.status(403).json({ error: 'Path not allowed' });
-
-  const resolved = path.resolve(filePath);
-  if (!PHOTO_SET_PARENTS.some(p => resolved.startsWith(p))) {
-    return res.status(403).json({ error: 'Path traversal blocked' });
+  if (!isUnder(filePath, discoverPhotoSetParents())) {
+    return res.status(403).json({ error: 'Path not allowed' });
   }
 
   const ext = path.extname(filePath).toLowerCase();
@@ -394,10 +357,15 @@ app.get('/api/proxy/image', (req, res) => {
 
   try {
     const stat = fs.statSync(filePath);
+    // A folder path crashed the process (EISDIR on the read stream, #4430).
+    if (!stat.isFile()) return res.status(404).json({ error: 'File not found' });
     res.setHeader('Content-Type', contentType);
     res.setHeader('Content-Length', stat.size);
     res.setHeader('Cache-Control', 'public, max-age=86400');
-    fs.createReadStream(filePath).pipe(res);
+    // #3789 - destroy on client disconnect (no fd leak on abandoned serves).
+    const fullStream = fs.createReadStream(filePath);
+    res.on('close', () => fullStream.destroy());
+    fullStream.pipe(res);
   } catch {
     res.status(404).json({ error: 'File not found' });
   }
@@ -408,9 +376,7 @@ app.get('/api/proxy/video', (req, res) => {
   const filePath = req.query.path;
   if (!filePath) return res.status(400).json({ error: 'Missing path' });
 
-  const allAllowed = [...VIDEO_DIRS, ...PHOTO_SET_PARENTS];
-  const resolved = path.resolve(filePath);
-  if (!allAllowed.some(p => resolved.startsWith(p))) {
+  if (!isUnder(filePath, [...discoverVideoDirs(), ...discoverPhotoSetParents()])) {
     return res.status(403).json({ error: 'Path not allowed' });
   }
 
@@ -418,6 +384,8 @@ app.get('/api/proxy/video', (req, res) => {
   try { stat = fs.statSync(filePath); } catch {
     return res.status(404).json({ error: 'File not found' });
   }
+  // A folder path crashed the process (EISDIR on the read stream, #4430).
+  if (!stat.isFile()) return res.status(404).json({ error: 'File not found' });
 
   const fileSize = stat.size;
   const range = req.headers.range;
@@ -437,14 +405,21 @@ app.get('/api/proxy/video', (req, res) => {
       'Content-Length': chunkSize,
       'Content-Type': contentType,
     });
-    fs.createReadStream(filePath, { start, end }).pipe(res);
+    // #3789 - a client that abandons a range request (seek, next video) must not
+    // leak an open read-stream/fd; destroy on response close.
+    const rangeStream = fs.createReadStream(filePath, { start, end });
+    res.on('close', () => rangeStream.destroy());
+    rangeStream.pipe(res);
   } else {
     res.writeHead(200, {
       'Content-Length': fileSize,
       'Content-Type': contentType,
       'Accept-Ranges': 'bytes',
     });
-    fs.createReadStream(filePath).pipe(res);
+    // #3789 - destroy on client disconnect (no fd leak on abandoned serves).
+    const fullStream = fs.createReadStream(filePath);
+    res.on('close', () => fullStream.destroy());
+    fullStream.pipe(res);
   }
 });
 
@@ -491,6 +466,17 @@ app.post('/api/playlists/remove', (req, res) => {
 // ── Serve index ──
 app.get('/', (_req, res) => {
   res.sendFile(path.join(__dirname, 'public', 'index.html'));
+});
+
+// #3789 - EADDRINUSE crash-looped as an unhandled throw (5.3M-line log of
+// stack spam while launchd relaunched into the held port). Exit clean instead;
+// launchd's backoff handles the retry.
+process.on('uncaughtException', (err) => {
+  if (err && err.code === 'EADDRINUSE') {
+    console.log('port ' + PORT + ' already in use - another instance is running; exiting');
+    process.exit(1);
+  }
+  throw err;
 });
 
 app.listen(PORT, '0.0.0.0', () => {
