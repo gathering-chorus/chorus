@@ -869,33 +869,33 @@ fn existing_log_rows(api: &str, token: &str) -> Result<Vec<LogInGraph>, String> 
     Ok(out)
 }
 
-/// #4310 — the TestResult names whose `ofTest` is this case. A read against the
-/// store (reads are anonymous); the deletes still go through the door.
-fn results_of_case(case_name: &str) -> Result<Vec<String>, String> {
-    let url = std::env::var("FUSEKI_QUERY")
-        .unwrap_or_else(|_| "http://localhost:3030/pods/query".to_string());
-    let q = cases::results_of_case_query(case_name);
-    let out = Command::new("curl")
-        .args(["-s", "-f", "--max-time", "60", "-H", "Accept: text/csv", "--data-urlencode"])
-        .arg(format!("query={q}"))
-        .arg(&url)
-        .output()
-        .map_err(|e| format!("curl: {e}"))?;
-    if !out.status.success() {
-        return Err(format!("results query failed ({})", out.status));
-    }
-    Ok(cases::result_names_from_csv(&String::from_utf8_lossy(&out.stdout)))
+/// #4310 — the TestResult names whose `ofTest` is this case, asked of the door
+/// (#4433: no hand-written SPARQL). An anonymous read, as before; the deletes
+/// still go through the door with the crawler's identity.
+fn results_of_case(api: &str, case_name: &str) -> Result<Vec<String>, String> {
+    let rows = fetch_rows_where(api, None, "TestResult", &format!("ofTest={case_name}"))?;
+    Ok(rows
+        .into_iter()
+        .filter_map(|f| f.into_iter().find(|(k, _)| k == "name").map(|(_, v)| v))
+        .filter(|n| !n.is_empty())
+        .collect())
 }
 
 /// Every row of one served class, as flat field maps — paged by the door's own
 /// `links.next`, to exhaustion (see the note on existing_rows' first cut).
 fn fetch_rows(api: &str, token: &str, kind: &str) -> Result<Vec<Vec<(String, String)>>, String> {
+    fetch_rows_where(api, Some(token), kind, "")
+}
+
+/// #4433 — `fetch_rows` narrowed by the door's field filter (`field=value`, ""
+/// for every row). The door carries the filter on its own `links.next`.
+fn fetch_rows_where(api: &str, token: Option<&str>, kind: &str, filter: &str) -> Result<Vec<Vec<(String, String)>>, String> {
     let coll = collection_for(api, kind)?;
     let mut out = Vec::new();
-    let mut next = format!("{coll}?limit=1000");
+    let mut next = if filter.is_empty() { format!("{coll}?limit=1000") } else { format!("{coll}?limit=1000&{filter}") };
     let mut pages = 0usize;
     loop {
-        let page = curl(api, "GET", &next, None, Some(token))?;
+        let page = curl(api, "GET", &next, None, token)?;
         // #4178 — read the WHOLE row, not two strings. An update has to put the
         // complete entity back (the DAL is full-replace, #3345), so anything
         // dropped here is deleted from the graph on the next content change.
@@ -1108,7 +1108,7 @@ fn share_limits() -> (f64, usize) {
 
 /// The hermetic seams the bats suites drive (#4022 #4106 #4111 #3924 #3996):
 /// #4419 — the valid Domain names for a seam: CHORUS_VALID_DOMAINS when set
-/// (hermetic), else the Domain rows in the store (an anonymous read).
+/// (hermetic), else the Domain rows from the door (an anonymous read, #4433).
 fn valid_domains_for_seam() -> Vec<String> {
     let from_env: Vec<String> = std::env::var("CHORUS_VALID_DOMAINS")
         .unwrap_or_default()
@@ -1119,22 +1119,15 @@ fn valid_domains_for_seam() -> Vec<String> {
     if !from_env.is_empty() {
         return from_env;
     }
-    let url = std::env::var("FUSEKI_QUERY").unwrap_or_else(|_| "http://localhost:3030/pods/query".to_string());
-    let q = "SELECT DISTINCT ?d WHERE { GRAPH <urn:chorus:domains:domains> { ?d a <https://jeffbridwell.com/chorus#Domain> } }";
-    let out = Command::new("curl")
-        .args(["-s", "-f", "--max-time", "20", "-H", "Accept: text/csv", "--data-urlencode"])
-        .arg(format!("query={q}"))
-        .arg(&url)
-        .output();
-    match out {
-        Ok(o) if o.status.success() => String::from_utf8_lossy(&o.stdout)
-            .lines()
-            .skip(1)
-            .filter_map(|l| l.trim().rsplit('#').next().map(|s| s.to_string()))
-            .filter(|s| !s.is_empty())
+    let api = std::env::var("CHORUS_OWL_API").unwrap_or_else(|_| "http://localhost:3360".to_string());
+    match fetch_rows_where(&api, None, "Domain", "") {
+        Ok(rows) => rows
+            .into_iter()
+            .filter_map(|f| f.into_iter().find(|(k, _)| k == "name").map(|(_, v)| v))
+            .filter(|v| !v.is_empty())
             .collect(),
-        _ => {
-            eprintln!("chorus-crawl: cannot read the Domain list (set CHORUS_VALID_DOMAINS or reach the store)");
+        Err(e) => {
+            eprintln!("chorus-crawl: cannot read the Domain list ({e}) — set CHORUS_VALID_DOMAINS or reach the API");
             std::process::exit(2);
         }
     }
@@ -2213,7 +2206,7 @@ fn main() {
                     // missing tests (2026-09-25). If the lookup or any result
                     // delete fails, the case stays, so nothing dangles.
                     // #4185 reworks case writes/deletes here: keep this cascade.
-                    match results_of_case(&name) {
+                    match results_of_case(&api, &name) {
                         Ok(results) => {
                             let res_coll = collection_for(&api, "TestResult");
                             let mut all_gone = true;
