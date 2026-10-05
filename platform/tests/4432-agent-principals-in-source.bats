@@ -81,3 +81,37 @@ PY
   [ "$status" -eq 1 ]
   printf "%s" "$output" | grep -qF "principal-abby-normal: no hostAccount"
 }
+
+wears_four() {
+  for h in product-manager solutions-architect engineering-lead operations-lead; do
+    python3 - "$1" "$h" <<'PY' || { echo "missing hat-$h"; return 1; }
+import re, sys
+t = open(sys.argv[1]).read()
+b = re.search(r'(?ms)^chorus:principal-abby-normal a .*?canSignIn "false" \.', t).group(0)
+sys.exit(0 if f"chorus:hat-{sys.argv[2]}" in b and "chorus:wearsHat" in b else 1)
+PY
+  done
+}
+
+@test "abby-normal wears the four default hats (Jeff 2026-09-17)" {
+  wears_four "$PRINCIPALS"
+}
+
+@test "NEGATIVE PROOF: a principal missing one hat fails the hat check" {
+  sed 's/chorus:hat-engineering-lead, //' "$PRINCIPALS" > "$BATS_TEST_TMPDIR/p.ttl"
+  run wears_four "$BATS_TEST_TMPDIR/p.ttl"
+  [ "$status" -ne 0 ]
+  printf "%s" "$output" | grep -qF "missing hat-engineering-lead"
+}
+
+@test "abby-normal owns nothing and holds no appointment (Jeff 2026-10-05)" {
+  hits=$(cd "$ROOT" && git grep -nE "(ownedBy|appointee|appointedPrincipal|appointedRole)[^.;]*(role|principal)-abby-normal" -- '*.ttl' | wc -l | tr -d ' ')
+  echo "ownedBy/appointment references to abby-normal: $hits"
+  [ "$hits" -eq 0 ]
+}
+
+@test "NEGATIVE PROOF: an ownedBy pointing at abby-normal is caught" {
+  printf 'chorus:x a chorus:Domain ;\n    chorus:ownedBy chorus:principal-abby-normal .\n' > "$BATS_TEST_TMPDIR/x.ttl"
+  run grep -cE "(ownedBy|appointee|appointedPrincipal|appointedRole)[^.;]*(role|principal)-abby-normal" "$BATS_TEST_TMPDIR/x.ttl"
+  [ "$output" -eq 1 ]
+}

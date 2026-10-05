@@ -282,7 +282,8 @@ chorus:PrincipalShape a sh:NodeShape ;
     sh:property chorus:PrincipalShape-label ;
     sh:property chorus:PrincipalShape-principalKind ;
     sh:property chorus:PrincipalShape-canSignIn ;
-    sh:property chorus:PrincipalShape-holdsRole .
+    sh:property chorus:PrincipalShape-holdsRole ;
+    sh:property chorus:PrincipalShape-wearsHat .
 # #3830 — where a person's NAME goes: rdfs:label, the one required text field,
 # which Jeff's row had carried a description in for three months ("jeff (human
 # principal - root authority)") because nothing said otherwise. foaf:name is
@@ -335,6 +336,12 @@ chorus:PrincipalShape-canSignIn a sh:PropertyShape ;
 chorus:PrincipalShape-holdsRole a sh:PropertyShape ;
     sh:path chorus:holdsRole ; sh:maxCount 1 ; sh:class chorus:Role ;
     sh:message "holdsRole must point at a chorus:Role that exists — a dangling role reference is how a re-seed loses the identity-to-role seam silently" .
+
+# #4432 — the hats a principal may wear (Wren's roles vocabulary). Served so the
+# door shows them; no maxCount, an agent principal wears four by default.
+chorus:PrincipalShape-wearsHat a sh:PropertyShape ;
+    sh:path chorus:wearsHat ; sh:class chorus:Hat ;
+    sh:message "wearsHat must point at a chorus:Hat that exists" .
 
 
 # A principal that can sign in must have a WebID to sign in AS. This is the half

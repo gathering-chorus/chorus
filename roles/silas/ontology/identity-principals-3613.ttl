@@ -54,6 +54,10 @@ chorus:principal-abby-normal a chorus:Principal ;
     chorus:holdsRole chorus:role-abby-normal ;
     chorus:principalKind "agent" ;
     chorus:hostAccount "chorus-abby-normal" ;
+    # Jeff 2026-09-17: the four hats by default. Jeff 2026-10-05: she owns no
+    # domain, product, service or value stream, so no Appointment and no ownedBy.
+    chorus:wearsHat chorus:hat-product-manager, chorus:hat-solutions-architect,
+        chorus:hat-engineering-lead, chorus:hat-operations-lead ;
     chorus:canSignIn "false" .
 
 chorus:principal-kade a chorus:Principal ;

@@ -171,6 +171,13 @@ chorus:overAnchor a owl:ObjectProperty ;
     rdfs:domain chorus:Appointment ;
     rdfs:range chorus:Anchor .
 
+chorus:wearsHat a owl:ObjectProperty ;
+    rdfs:label "wearsHat" ;
+    rdfs:comment "A hat this principal may wear. Eligibility, not a post: being put over a product, domain or service is a chorus:Appointment. Jeff 2026-09-17: an agent principal gets product manager, solutions architect, engineering lead and operations lead by default; chorus-principal create writes these four." ;
+    rdfs:domain chorus:Principal ;
+    rdfs:range chorus:Hat .
+chorus:roles chorus:definesVocabulary chorus:wearsHat .
+
 
 chorus:HatShape a sh:NodeShape ;
     sh:targetClass chorus:Hat ;
