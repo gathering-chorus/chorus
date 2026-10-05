@@ -50,9 +50,14 @@ pub fn scope_irrelevant(f: &str) -> bool {
     // .github/workflows/: it orchestrates, it is no build input, and the bats
     // suites that name a hook are pulled in by coverage (is_governed_surface).
     // Editing pre-commit refused #4333's run as unmapped.
+    // #4432 — config/launchagents/ and config/agent/ are the same kind of
+    // file as platform/launchd/: a schedule and a supervisor's profile, read by
+    // launchd and chorus-agentd at run time, never an input to a build or test.
+    // Abby's two files refused #4432's run as unmapped.
     let dir = ["designing/", "roles/", "docs/", "knowledge/", "dashboards/", "messages/",
                "platform/scripts/", "platform/launchd/", "skills/", ".claude/",
-               ".github/", "proving/domains/", "platform/hooks/"]
+               ".github/", "proving/domains/", "platform/hooks/",
+               "config/launchagents/", "config/agent/"]
         .iter()
         .any(|d| f.starts_with(d));
     // #4173 — git's own metadata is on the list for the same reason a plist is:
@@ -333,6 +338,10 @@ mod scope_refusal_4169 {
     #[test]
     fn a_plist_is_not_a_build_or_test_input() {
         assert!(scope_irrelevant("platform/launchd/com.chorus.athena-validate.plist"));
+        assert!(scope_irrelevant("config/launchagents/com.chorus.agentd-abby-normal.plist"));
+        assert!(scope_irrelevant("config/agent/abby-normal.profiles.json"));
+        // negative proof: the rest of config/ is still mapped, never skipped
+        assert!(!scope_irrelevant("config/coverage-floors.yml"));
     }
 
     // #4197 — an alert rule is not a build or test input; the suite that reads
