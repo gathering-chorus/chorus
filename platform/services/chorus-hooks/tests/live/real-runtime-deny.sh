@@ -59,8 +59,15 @@ gemini_leg() {
 # is; a stub supervisor answers for this check only (role silas, this cwd).
 opencode_leg() {
   command -v opencode >/dev/null || { say opencode "UNMEASURED: opencode not installed"; return 4; }
-  # OpenCode's own free models need no sign-in; OPENCODE_MODEL picks another.
+  # OpenCode runs on the same AI Studio key as the Gemini leg. --standalone
+  # gives the run a private server: the shared background service never sees
+  # this shell's env, so the key would not reach it. stdin is closed or run
+  # waits on it forever.
+  local keyfile="${GEMINI_API_KEY_FILE:-$HOME/.chorus/secrets/gemini.key}"
+  [ -n "${GEMINI_API_KEY:-}" ] || { [ -r "$keyfile" ] && GEMINI_API_KEY="$(tr -d '[:space:]' < "$keyfile")" && export GEMINI_API_KEY; }
+  [ -n "${GEMINI_API_KEY:-}" ] || { say opencode "UNMEASURED: no GEMINI_API_KEY (AI Studio key)"; return 4; }
   local w="$WORK/opencode"; mkdir -p "$w/.opencode/plugins/chorus"
+  printf '%s\n' '{"$schema":"https://opencode.ai/config.json","provider":{"google":{"options":{"apiKey":"{env:GEMINI_API_KEY}"},"models":{"gemini-3.5-flash-lite":{}}}}}' > "$w/opencode.json"
   sed "s|__CHORUS_SHIM_JSON__|\"$SHIM\"|" "$(dirname "$0")/opencode-plugin.template.js" > "$w/.opencode/plugins/chorus/index.js"
   local sock="$WORK/agent.sock"
   python3 - "$sock" "$w" <<'PY' & local stub=$!
@@ -76,9 +83,9 @@ while True:
 PY
   sleep 1
   ( cd "$w" && CHORUS_AGENT_SOCKET="$sock" CHORUS_HOME="$CHORUS_HOME" \
-      opencode run --auto -m "${OPENCODE_MODEL:-opencode/big-pickle}" "Use your write tool to create the file $TARGET with the single line: probe. If the tool call is refused, report the refusal and stop; do not try any other way." ) > "$WORK/opencode-deny.log" 2>&1
+      opencode run --standalone --auto -m "${OPENCODE_MODEL:-google/gemini-3.5-flash-lite}" "Use your write tool to create the file $TARGET with the single line: probe. If the tool call is refused, report the refusal and stop; do not try any other way." ) < /dev/null > "$WORK/opencode-deny.log" 2>&1
   ( cd "$w" && CHORUS_AGENT_SOCKET="$sock" CHORUS_HOME="$CHORUS_HOME" \
-      opencode run --auto -m "${OPENCODE_MODEL:-opencode/big-pickle}" "Use your write tool to create the file $w/allowed.txt with the single line: ok." ) > "$WORK/opencode-allow.log" 2>&1
+      opencode run --standalone --auto -m "${OPENCODE_MODEL:-google/gemini-3.5-flash-lite}" "Use your write tool to create the file $w/allowed.txt with the single line: ok." ) < /dev/null > "$WORK/opencode-allow.log" 2>&1
   kill "$stub" 2>/dev/null
   verdict opencode "$w" "$WORK/opencode-deny.log" "canonical is read-only|BLOCKED"
 }
