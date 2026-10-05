@@ -1,0 +1,57 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:chorus:agent:protocol:1",
+  "title": "Chorus agent worker wire envelope, major 1",
+  "oneOf": [{"$ref":"#/$defs/request"},{"$ref":"#/$defs/response"},{"$ref":"#/$defs/notification"}],
+  "$defs": {
+    "request": {
+      "type":"object", "additionalProperties":false,
+      "required":["version","id","method","params"],
+      "properties": {
+        "version":{"const":1}, "id":{"type":"string","minLength":1,"maxLength":200},
+        "method":{"enum":["probe","start","resume","send","cancel","stop","status","approve","run"]},
+        "params":{"type":"object"}
+      }
+    },
+    "response": {
+      "type":"object", "additionalProperties":false, "required":["version","id"],
+      "properties": {
+        "version":{"const":1}, "id":{"type":"string","minLength":1,"maxLength":200},
+        "result":{},
+        "error":{"type":"object","required":["code","message"],"properties":{"code":{"type":"string"},"message":{"type":"string"}}}
+      },
+      "oneOf":[{"required":["result"],"not":{"required":["error"]}},{"required":["error"],"not":{"required":["result"]}}]
+    },
+    "notification": {
+      "type":"object", "additionalProperties":false, "required":["version","method","params"],
+      "properties": {
+        "version":{"const":1}, "method":{"const":"event"},
+        "params":{"type":"object","required":["type","data"],"properties":{
+          "type":{"type":"string","minLength":1}, "native_session_id":{"type":"string"},
+          "turn_id":{"type":"string"}, "tool_call_id":{"type":"string"}, "data":{}
+        }}
+      }
+    },
+    "capabilities": {
+      "type":"object","required":["gaps"],
+      "properties": {
+        "resume":{"type":"boolean"}, "autonomous_wake":{"type":"boolean"},
+        "mid_turn_steering":{"type":"boolean"}, "cancellation":{"type":"boolean"},
+        "structured_output":{"type":"boolean"}, "before_tool":{"type":"boolean"},
+        "history_recovery":{"type":"boolean"}, "no_tools":{"type":"boolean"},
+        "context_boundaries":{"type":"array","items":{"type":"string"}},
+        "gaps":{"type":"array","items":{"type":"string"}}
+      }
+    },
+    "event": {
+      "type":"object","required":["version","session_id","event_id","sequence","type","timestamp","data"],
+      "properties": {
+        "version":{"const":1}, "session_id":{"type":"string"}, "event_id":{"type":"string"},
+        "sequence":{"type":"integer","minimum":0}, "timestamp":{"type":"string"},
+        "type":{"type":"string"}, "native_session_id":{"type":["string","null"]},
+        "turn_id":{"type":["string","null"]}, "tool_call_id":{"type":["string","null"]},
+        "message_id":{"type":["string","null"]}, "trace_id":{"type":["string","null"]}, "data":{}
+      }
+    }
+  }
+}

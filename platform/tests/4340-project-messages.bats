@@ -5,7 +5,7 @@
 # #4340 — messages.db into the model. Jeff 2026-09-26: messages, channel, and
 # "even a migration to buzz"; option A. The projector reads what pulse recorded
 # and writes a Message row per message, a Delivery row per attempt, over one of
-# three Channel rows, and marks a delivery "truncated" when the recipient's own
+# four Channel rows (agent added by #4427), and marks a delivery "truncated" when the recipient's own
 # turn received less than was sent (Wren's 12:45 answer). Stubs: sqlite3 serves
 # a fixture, curl keeps every body and serves each listing from a fixture file.
 
@@ -57,15 +57,15 @@ one() { local f; f=$(grep -lF -- "$2" "$T"/bodies/*"$1"*.json 2>/dev/null | tail
 has() { printf '%s' "$1" | grep -qF -- "$2"; }
 lacks() { test -z "$(printf '%s' "$1" | grep -F -- "$2" || true)"; }
 
-@test "the three channels are created once" {
+@test "the four channels are created once" {
   run "$SCRIPT" project-messages
   test "$status" -eq 0
-  test "$(ls "$T/bodies" | grep -c POST-messages_channels)" -eq 3
-  echo '{"data":[{"channelKind":"terminal"},{"channelKind":"nudge"},{"channelKind":"clearing"}]}' > "$T/list-messages_channels.json"
+  test "$(ls "$T/bodies" | grep -c POST-messages_channels)" -eq 4
+  echo '{"data":[{"channelKind":"terminal"},{"channelKind":"nudge"},{"channelKind":"clearing"},{"channelKind":"agent"}]}' > "$T/list-messages_channels.json"
   n=$(ls "$T/bodies" | wc -l)
   echo '[]' > "$T/messages.json"
   run "$SCRIPT" project-messages
-  test "$(ls "$T/bodies" | grep -c POST-messages_channels)" -eq 3
+  test "$(ls "$T/bodies" | grep -c POST-messages_channels)" -eq 4
 }
 
 @test "a peer message is written with its principals and session, and its delivery names the presence" {

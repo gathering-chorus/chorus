@@ -548,6 +548,10 @@ fn wait_for_services(ctx: &Ctx, bound: u64, show: bool) -> Result<(), String> {
 /// The login (#4202, #4215): token, principal check, Session row. Ok is
 /// Recorded or Pending; Err is a refusal (wrong principal), already printed.
 fn do_login(ctx: &Ctx, role: &str) -> Result<LoginState, ()> {
+    let channel = match rows::session_channel(env::var("CHORUS_SESSION_CHANNEL").ok().as_deref()) {
+        Ok(c) => c,
+        Err(why) => { eprintln!("chorus-principal: REFUSED — {} for {}; nothing was started.", why, role); return Err(()); }
+    };
     let refuse_on_any = envd("AWAKE_REFUSE_ON_LOGIN_FAILURE", "0") == "1";
     let token = sh(&ctx.token_bin, &[role]).map(|t| t.trim().to_string());
     let login = match &token {
@@ -580,7 +584,7 @@ fn do_login(ctx: &Ctx, role: &str) -> Result<LoginState, ()> {
     let body = rows::with_role_and_start(body, role, &iso_utc(now_ms() as u64 / 1000));
     // #4412 — who started it, and where it lives
     let mut body = body;
-    body["channel"] = Value::String("pane".into());
+    body["channel"] = Value::String(channel.into());
     if let Ok(p) = env::var("CHORUS_STARTED_BY") { if !p.is_empty() { body["startedBy"] = Value::String(p); } }
     // the row: POST through the security API with the token as a header FILE (0600), never an argv
     let role_id_dir = PathBuf::from(&ctx.identity_dir).join(role);
@@ -741,9 +745,47 @@ fn attach_to(ctx: &Ctx, role: &str) {
 
 /// `on <role>`: start it logged in, or, when it is already running, make sure
 /// THIS session is logged in and go to its window. Never a second copy.
+/// The shell line that starts `cmd` in the role's pane, as the role's own
+/// account when one is configured (#4383). Shared by the Claude and agent paths.
+fn launch_line(ctx: &Ctx, role: &str, role_dir: &str, token_file: &Path, cmd: &str) -> Result<String, (i32, String)> {
+    let launch = match &ctx.run_as {
+        None => format!("cd '{}' && source '{}/platform/scripts/chorus-env-setup.sh' && export CHORUS_SESSION_TOKEN_FILE='{}' CHORUS_ROLE='{}' CLAUDE_CODE_DISABLE_AGENT_VIEW=1 && {}", role_dir, ctx.root, token_file.display(), role, cmd),
+        // #4383 — the session runs as the principal's own account: its token is
+        // copied into that account's home, readable by it alone, and files it
+        // writes in the werk stay group-writable (umask 002).
+        Some(acct) => {
+            // the principal's identity lives in its own home: its credentials
+            // (and current token) are handed over at login, readable by it alone,
+            // and every mint and renewal from then on happens as that account
+            let own_dir = format!("{}/{}/.chorus/identity", envd("AWAKE_ACCOUNT_HOMES", "/Users"), acct);
+            let own = format!("{}/{}/token.cache", own_dir, role);
+            for f in ["cred.json", "nostr.json", "token.cache"] {
+                let Ok(bytes) = fs::read(PathBuf::from(&ctx.identity_dir).join(role).join(f)) else { continue };
+                let dest = format!("{}/{}/{}", own_dir, role, f);
+                let put = format!("umask 077 && mkdir -p '{}/{}' && cat > '{}'", own_dir, role, dest);
+                let mut child = Command::new(&ctx.sudo).args(["-n", "-u", acct, "-H", "sh", "-c", &put])
+                    .stdin(std::process::Stdio::piped()).spawn().map_err(|e| (1, format!("could not hand {} its {}: {}", acct, f, e)))?;
+                if let Some(mut i) = child.stdin.take() { let _ = std::io::Write::write_all(&mut i, &bytes); }
+                if !child.wait().map(|s| s.success()).unwrap_or(false) {
+                    return Err((1, format!("could not hand {} its {}", acct, f)));
+                }
+            }
+            let inner = format!("umask 002 && cd '{}' && source '{}/platform/scripts/chorus-env-setup.sh' && export CHORUS_IDENTITY_DIR='{}' CHORUS_SESSION_TOKEN_FILE='{}' CHORUS_ROLE='{}' CLAUDE_CODE_DISABLE_AGENT_VIEW=1 && {}", role_dir, ctx.root, own_dir, own, role, cmd);
+            format!("{} -n -u {} -H bash -c \"{}\"", ctx.sudo, acct, inner.replace('\\', "\\\\").replace('"', "\\\"").replace('$', "\\$"))
+        }
+    };
+    Ok(launch)
+}
+
 fn on(ctx: &Ctx, role: &str, attach: bool) -> Result<Came, (i32, String)> {
     let tmux_session = Ctx::tmux_session(role);
     let role_dir = ctx.role_dir(role);
+    // #4424 — a role on another runtime starts through the supervisor.
+    match rows::session_channel(env::var("CHORUS_SESSION_CHANNEL").ok().as_deref()) {
+        Ok("agent") => return on_agent(ctx, role, attach),
+        Ok(_) => {}
+        Err(e) => return Err((1, e)),
+    }
 
     // 1/4/6 — registry first: one live → check it; two → refuse.
     let live = live_entries(&ctx.sessions_dir, role, &ctx.ps);
@@ -840,32 +882,7 @@ fn on(ctx: &Ctx, role: &str, attach: bool) -> Result<Came, (i32, String)> {
     // 1 — the pane, then launch inside it.
     // #4337 — CLAUDE_CODE_DISABLE_AGENT_VIEW=1: no on-demand daemon, no warm
     // spares, no exit handoff to the background (the role settings say the same)
-    let launch = match &ctx.run_as {
-        None => format!("cd '{}' && source '{}/platform/scripts/chorus-env-setup.sh' && export CHORUS_SESSION_TOKEN_FILE='{}' CHORUS_ROLE='{}' CLAUDE_CODE_DISABLE_AGENT_VIEW=1 && {}", role_dir, ctx.root, token_file.display(), role, cmd),
-        // #4383 — the session runs as the principal's own account: its token is
-        // copied into that account's home, readable by it alone, and files it
-        // writes in the werk stay group-writable (umask 002).
-        Some(acct) => {
-            // the principal's identity lives in its own home: its credentials
-            // (and current token) are handed over at login, readable by it alone,
-            // and every mint and renewal from then on happens as that account
-            let own_dir = format!("{}/{}/.chorus/identity", envd("AWAKE_ACCOUNT_HOMES", "/Users"), acct);
-            let own = format!("{}/{}/token.cache", own_dir, role);
-            for f in ["cred.json", "nostr.json", "token.cache"] {
-                let Ok(bytes) = fs::read(PathBuf::from(&ctx.identity_dir).join(role).join(f)) else { continue };
-                let dest = format!("{}/{}/{}", own_dir, role, f);
-                let put = format!("umask 077 && mkdir -p '{}/{}' && cat > '{}'", own_dir, role, dest);
-                let mut child = Command::new(&ctx.sudo).args(["-n", "-u", acct, "-H", "sh", "-c", &put])
-                    .stdin(std::process::Stdio::piped()).spawn().map_err(|e| (1, format!("could not hand {} its {}: {}", acct, f, e)))?;
-                if let Some(mut i) = child.stdin.take() { let _ = std::io::Write::write_all(&mut i, &bytes); }
-                if !child.wait().map(|s| s.success()).unwrap_or(false) {
-                    return Err((1, format!("could not hand {} its {}", acct, f)));
-                }
-            }
-            let inner = format!("umask 002 && cd '{}' && source '{}/platform/scripts/chorus-env-setup.sh' && export CHORUS_IDENTITY_DIR='{}' CHORUS_SESSION_TOKEN_FILE='{}' CHORUS_ROLE='{}' CLAUDE_CODE_DISABLE_AGENT_VIEW=1 && {}", role_dir, ctx.root, own_dir, own, role, cmd);
-            format!("{} -n -u {} -H bash -c \"{}\"", ctx.sudo, acct, inner.replace('\\', "\\\\").replace('"', "\\\"").replace('$', "\\$"))
-        }
-    };
+    let launch = launch_line(ctx, role, &role_dir, &token_file, &cmd)?;
     let in_own_pane = env::var("TMUX").is_ok() && sh(&ctx.tmux, &["display-message", "-p", "#S"]).map(|s| s.trim() == tmux_session).unwrap_or(false);
     if in_own_pane && attach {
         println!("awake: {}  starting here via {}", role, how);
@@ -917,6 +934,56 @@ fn on(ctx: &Ctx, role: &str, attach: bool) -> Result<Came, (i32, String)> {
     let word = lifecycle::login_word(&st, Some(l.pid));
     ctx.set_bar(role, word);
     println!("{}", proof_line(role, &l, word, &how));
+    if attach { attach_to(ctx, role); }
+    Ok(came_of(&st))
+}
+
+/// #4424 — `on` for a role whose channel is agent: log in, write the run (the
+/// supervisor's session id), start the runner in the role's pane bound to that
+/// run, and prove it by the supervisor answering for exactly that run.
+fn on_agent(ctx: &Ctx, role: &str, attach: bool) -> Result<Came, (i32, String)> {
+    let tmux_session = Ctx::tmux_session(role);
+    let role_dir = ctx.role_dir(role);
+    let live = live_entries(&ctx.sessions_dir, role, &ctx.ps);
+    if !live.is_empty() {
+        eprintln!("chorus-principal: REFUSED — {} already has a Claude session (pid {}); one role, one session.", role, live[0].pid);
+        eprintln!("  run `chorus-principal logout {}` first, then start it on its other runtime.", role);
+        return Err((1, "a Claude session is live".into()));
+    }
+    let st = match login_or_resume(ctx, role) { Ok(s) => s, Err(()) => return Err((1, "login refused".into())) };
+    ctx.write_state(role, &st);
+    let LoginState::Recorded { session, .. } = &st else {
+        eprintln!("chorus-principal: REFUSED — {}'s login is pending; an agent session needs a recorded login (its run is the session id).", role);
+        return Err((1, "login pending".into()));
+    };
+    if !ctx.has_tmux(role) {
+        if let Err(e) = sh(&ctx.tmux, &["new-session", "-d", "-s", &tmux_session, "-c", &role_dir]) { return Err((1, format!("tmux new-session failed: {}", e.trim()))); }
+    }
+    let where_ = sh(&ctx.tmux, &["display-message", "-p", "-t", &tmux_session, "#{pane_id}|#{pane_tty}"]).unwrap_or_default();
+    let (pane, tty) = where_.trim().split_once('|').map(|(a, b)| (a.to_string(), b.to_string())).unwrap_or_default();
+    let l = Live { pid: 0, tty, host: envd("HOST", "localhost"), pane };
+    record_run(ctx, role, session, &l, "pending");
+    let run = read_row(ctx, role, "run").filter(|r| r.get("runEndedAt").and_then(|e| e.as_str()).unwrap_or("").is_empty()).map(|r| row_name(&r)).unwrap_or_default();
+    let agent_bin = envd("CHORUS_AGENT_BIN", &format!("{}/.chorus/bin/chorus-agent", ctx.home));
+    let cmd = rows::agent_launch_cmd_checked(&agent_bin, role, &run).map_err(|e| (1, format!("the run row was not written: {}", e)))?;
+    let token_file = PathBuf::from(&ctx.identity_dir).join(role).join("token.cache");
+    let launch = launch_line(ctx, role, &role_dir, &token_file, &cmd)?;
+    if let Err(e) = sh(&ctx.tmux, &["send-keys", "-t", &tmux_session, &launch, "Enter"]) { return Err((1, format!("tmux send-keys failed: {}", e.trim()))); }
+    let mut enrolled = false;
+    for i in 0..=ctx.wait {
+        enrolled = sh(&agent_bin, &["status", &run]).map(|out| rows::agent_enrolled(&out, &run)).unwrap_or(false);
+        if enrolled || i == ctx.wait { break; }
+        std::thread::sleep(Duration::from_secs(1));
+    }
+    if !enrolled {
+        end_run(ctx, role, "agent-not-enrolled");
+        eprintln!("awake: {}  agent run {} NOT enrolled after {}s — look at the pane: {} attach -t {}", role, run, ctx.wait, ctx.tmux, tmux_session);
+        return Err((1, format!("agent run {} did not enroll", run)));
+    }
+    ctx.spine(&["session.agent.enrolled", role, &format!("run={}", run)]);
+    let word = lifecycle::login_word(&st, None);
+    ctx.set_bar(role, word);
+    println!("awake: {}  agent run {} enrolled  login {}", role, run, word);
     if attach { attach_to(ctx, role); }
     Ok(came_of(&st))
 }
@@ -1041,7 +1108,7 @@ fn record_run(ctx: &Ctx, role: &str, session: &str, l: &Live, conversation: &str
     ensure_conversation(ctx, role, &run, conversation);
     record_credentials(ctx, role);
     let host_account = envd("USER", "unknown");
-    let presence = create_row(ctx, role, "identity/presences", "presence", rows::presence_row(role, &slug(&format!("{}-presence-{}", role, stamp)), &run, &l.pane, &l.tty, &host_account));
+    let presence = create_row(ctx, role, "identity/presences", "presence", rows::presence_row(role, &slug(&format!("{}-presence-{}", role, stamp)), &run, &l.pane, &l.tty, &host_account, rows::session_channel(env::var("CHORUS_SESSION_CHANNEL").ok().as_deref()).unwrap_or("pane")));
     let context = create_row(ctx, role, "memory/contexts", "context", rows::boot_context_row(role, &slug(&format!("{}-boot-{}", role, stamp)), &run, &started));
     ctx.spine(&["session.run.recorded", role, &format!("session={}", session), &format!("run={}", run),
         &format!("previous={}", previous.unwrap_or_default()), &format!("presence={}", presence.unwrap_or_default()), &format!("context={}", context.unwrap_or_default())]);
@@ -1282,10 +1349,12 @@ fn project_messages(ctx: &Ctx) -> i32 {
     if failed > 0 { 1 } else { 0 }
 }
 
-/// The three channels that exist today, created once.
+/// The channels that exist today, created once.
 fn ensure_channels(ctx: &Ctx) {
     let have: Vec<String> = api_list(ctx, "messages/channels").get("data").and_then(|d| d.as_array()).map(|a| a.iter().filter_map(|c| c.get("channelKind")?.as_str().map(String::from)).collect()).unwrap_or_default();
-    for (kind, what) in [("terminal", "typed into a role's tmux pane: Jeff at the keyboard"), ("nudge", "the messages API, delivered into a role's pane by pulse"), ("clearing", "the group chat")] {
+    for (kind, what) in [("terminal", "typed into a role's tmux pane: Jeff at the keyboard"), ("nudge", "the messages API, delivered into a role's pane by pulse"), ("clearing", "the group chat"),
+        // #4424 — a role on a non-Claude runtime, reached through its supervisor
+        ("agent", "the agent supervisor, delivered into a supervised runtime's session")] {
         if have.iter().any(|h| h == kind) { continue; }
         let body = serde_json::json!({"name": kind, "label": kind, "comment": format!("{} — {}. #4340.", kind, what), "ownedBy": "principal-silas", "channelKind": kind});
         let (code, _) = api_send(ctx, "silas", "messages/channels", None, &body, "chan");

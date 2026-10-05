@@ -2,7 +2,7 @@
 import { createInterface } from 'node:readline';
 import { GeminiRuntime } from './gemini';
 import { OpenCodeRuntime } from './opencode';
-import { AdapterError, Json, required, Runtime } from './types';
+import { AdapterError, Json, Runtime } from './types';
 
 const write = (value: Json) => process.stdout.write(JSON.stringify(value) + '\n');
 const emit = (type: string, data: Json = {}, native_session_id?: string, turn_id?: string) => write({version:1,method:'event',params:{type,native_session_id,turn_id,data}});
@@ -13,7 +13,7 @@ else if (name === 'opencode') runtime = new OpenCodeRuntime(emit);
 else if (name === 'api') { process.stderr.write('api mode waits on the Clearing provider decision (#4424); use --runtime opencode|gemini\n'); process.exit(2); }
 else { process.stderr.write('Expected --runtime opencode|gemini\n'); process.exit(2); }
 
-async function execute(method: string, params: Json, id: string): Promise<Json> {
+async function execute(method: string, params: Json): Promise<Json> {
     let result: Json;
     {
       if (!runtime || !['probe','start','resume','send','cancel','stop','status','approve'].includes(method)) throw new AdapterError('unsupported_method','Unsupported worker method');
@@ -25,7 +25,7 @@ async function dispatch(value: Json) {
   const id = value.id;
   try {
     if (value.version !== 1 || !['string','number'].includes(typeof id) || typeof value.method !== 'string') throw new AdapterError('invalid_request','Expected version 1 JSONL request');
-    const result=await execute(value.method,value.params || {},String(id));
+    const result=await execute(value.method,value.params || {});
     write({version:1,id,result});
   } catch (error) {
     const safe = error as {code?:string;message?:string};
