@@ -901,6 +901,18 @@ chorus:dirdomain-config-launchagents a chorus:UnitDomainMapping ;
     chorus:pathPrefix "config/launchagents/" ;
     chorus:hasDomain chorus:infrastructure .
 
+# #4432 — the agent supervisor's per-principal profiles (Abby Normal's first).
+chorus:dirdomain-config-agent a chorus:UnitDomainMapping ;
+    rdfs:label "config/agent/ → infrastructure" ;
+    chorus:pathPrefix "config/agent/" ;
+    chorus:hasDomain chorus:infrastructure .
+
+# #4432 — Abby Normal's role home, like the other three.
+chorus:dirdomain-roles-abby-normal a chorus:UnitDomainMapping ;
+    rdfs:label "roles/abby-normal/ → roles" ;
+    chorus:pathPrefix "roles/abby-normal/" ;
+    chorus:hasDomain chorus:roles .
+
 chorus:dirdomain-docs-diagrams a chorus:UnitDomainMapping ;
     rdfs:label "docs/diagrams/ → knowledge" ;
     chorus:pathPrefix "docs/diagrams/" ;
