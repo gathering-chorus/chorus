@@ -1,3 +1,4 @@
+// @test-type: integration
 /**
  * Clearing Flow Tests — #1243
  *
@@ -55,9 +56,11 @@ describe('Flow: Clearing infrastructure', () => {
 // ═══════════════════════════════════════════════════════════════════════════
 
 describe('Flow: Decision capture from Clearing', () => {
-  test('DECISION: prefix is documented in CLAUDE.md', () => {
-    // Check any role's CLAUDE.md for DECISION: prefix convention
-    const claudeMd = path.join(__dirname, '../../../../roles/silas/CLAUDE.md');
+  test('DECISION: prefix is documented in the shared CLAUDE.md fragment', () => {
+    // Read the tracked source fragment, not a generated roles/<role>/CLAUDE.md
+    // (generated, not in git, so absent in every werk: ENOENT, #4430).
+    // A missing fragment throws here, so the test fails loud, never passes empty.
+    const claudeMd = path.join(__dirname, '../../../../designing/claudemd/shared/team-operating-model.md');
     const content = fs.readFileSync(claudeMd, 'utf-8');
     expect(content).toMatch(/DECISION:/);
   });
