@@ -16,12 +16,13 @@
         <string>-n</string>
         <string>-u</string>
         <string>chorus-abby-normal</string>
-        <string>/usr/bin/env</string>
-        <string>CHORUS_AGENT_CONFIG=/Users/chorus-abby-normal/.chorus/agent-profiles.json</string>
-        <string>CHORUS_AGENT_STATE_DIR=/Users/chorus-abby-normal/.chorus</string>
-        <string>CHORUS_HOME=/Users/jeffbridwell/CascadeProjects/chorus</string>
-        <string>GEMINI_CLI_TRUST_WORKSPACE=true</string>
-        <string>/Users/jeffbridwell/.chorus/bin/chorus-agentd</string>
+        <!-- The key is read from her 0600 file into the daemon's env, so Gemini
+             never goes looking for a .env: its search walks UP from the
+             workspace and would reach the repo's .env (Jeff's board token)
+             before her ~/.gemini/.env. A set GEMINI_API_KEY is not overridden. -->
+        <string>/bin/sh</string>
+        <string>-c</string>
+        <string>export GEMINI_API_KEY="$(cat /Users/chorus-abby-normal/.chorus/secrets/gemini.key)" CHORUS_AGENT_CONFIG=/Users/chorus-abby-normal/.chorus/agent-profiles.json CHORUS_AGENT_STATE_DIR=/Users/chorus-abby-normal/.chorus CHORUS_HOME=/Users/jeffbridwell/CascadeProjects/chorus GEMINI_CLI_TRUST_WORKSPACE=true; exec /Users/jeffbridwell/.chorus/bin/chorus-agentd</string>
     </array>
     <key>KeepAlive</key>
     <true/>
