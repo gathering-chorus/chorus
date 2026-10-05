@@ -11,6 +11,8 @@ import { MessageStore, inferNudgeClass } from './store';
 import { DeliveryWorker, classifyInjectOutput, type RunInject, type EmitSpine, type SelfTest } from './delivery-worker';
 import { planDelivery, planDeliveryTyped, readTurnState, describeTarget, type SessionReg } from './session-registry';
 import { fetchPresenceResolution, resolveEnds, rolePaneFromTmux } from './presence-target';
+import { LocalAgentSupervisor, routeByPresence } from './agent-supervisor';
+import { registerAgentInbox, reconcileAgentInbox } from './agent-inbox';
 import { dedupeKey, seenRecently } from './nudge-dedup';
 import { startReplyGapWatch, parseSpineTail, SpineEv } from './reply-gap';
 import { startWipDriftWatch, foldCardActivity } from './wip-drift';
@@ -163,6 +165,23 @@ function readEnvelope(body: { class?: unknown; expects?: unknown }, from: string
   };
 }
 
+/** #3439/#4361 — the destination a nudge resolved to, in words for the sender. */
+function describeResolution(to: string, toRes: Awaited<ReturnType<typeof fetchPresenceResolution>>): string {
+  if (toRes.kind === 'resolved') return describeTarget(to, toRes.session);
+  if (toRes.kind === 'agent') return `${to} @ agent run ${toRes.run}`; // #4424
+  if (toRes.kind === 'unread') return `${to} [presence unread: ${toRes.why}]`;
+  return `${to} [${toRes.kind === 'dead' ? 'logged out' : 'not logged in'} — no live Presence]`;
+}
+
+/** #4424 — an explicit target is accepted only when it is the recipient's live
+ * agent run (Presence), never a session the sender names freely. */
+async function refuseTarget(to: string, target: string | undefined): Promise<{ error: string; message: string } | null> {
+  if (!target) return null;
+  const where = await fetchPresenceResolution(to);
+  if (where.kind === 'agent' && where.run === target) return null;
+  return { error: 'target-not-live-run', message: `${target} is not ${to}'s live agent run` };
+}
+
 function registerNudgeRoutes(app: Express, store: MessageStore, metrics: Metrics, worker?: DeliveryWorker): void {
   app.post('/api/nudge', async (req, res) => {
     // #3485 — only the MCP server is the canonical caller. The pre-#3485 gate
@@ -193,21 +212,24 @@ function registerNudgeRoutes(app: Express, store: MessageStore, metrics: Metrics
     // r2r + expects in (reply|decision|action), so an alert or a forgotten expects
     // can never trap — that's the safe-by-default Jeff chose.
     const { nudgeClass, expects } = readEnvelope(req.body, from);
-    const id = store.sendNudge(from, to, marked, traceId, nudgeClass, expects);
+    // #4424 — an explicit target is accepted only when it is the recipient's
+    // live agent run (Presence), never a session the sender names freely.
+    const targetSessionId = typeof req.body.target_session_id === 'string' ? req.body.target_session_id : undefined;
+    const refusal = await refuseTarget(to, targetSessionId);
+    if (refusal) return res.status(409).json(refusal);
+    const id = store.sendNudge(from, to, marked, traceId, nudgeClass, expects, targetSessionId);
     metrics.nudgesReceived.labels(from, to).inc();
     log('info', 'nudge.stored', { id, from, to, chars: marked.length, trace_id: traceId || undefined });
     // #2727 AC2: enqueue for async delivery via worker. No-op if worker not wired (tests).
     if (worker) {
-      worker.enqueue({ id, from, to, content: marked, delivery_attempts: 0, trace_id: traceId || null }).catch(() => { /* worker handles its own state */ });
+      worker.enqueue({ id, from, to, content: marked, delivery_attempts: 0, trace_id: traceId || null, target_session_id: targetSessionId ?? null }).catch(() => { /* worker handles its own state */ });
     }
     // #3439 AC3: report WHERE this nudge resolved (the live session it targets, or
     // name-match fallback) so the caller/MCP can surface the real destination
     // instead of a blind "sent". Deterministic registry read; delivery stays async.
     // #4361 — the destination comes from the role's Presence row.
     const toRes = await fetchPresenceResolution(to);
-    const resolved = toRes.kind === 'resolved' ? describeTarget(to, toRes.session)
-      : toRes.kind === 'unread' ? `${to} [presence unread: ${toRes.why}]`
-      : `${to} [${toRes.kind === 'dead' ? 'logged out' : 'not logged in'} — no live Presence]`;
+    const resolved = describeResolution(to, toRes);
     log('info', 'nudge.resolved', { id, from, to, resolved, trace_id: traceId || undefined });
     res.json({ ok: true, id, traceId, resolved });
   });
@@ -325,7 +347,7 @@ function registerStateAndQueryRoutes(app: Express, store: MessageStore): void {
   });
 }
 
-export function createApp(store: MessageStore, worker?: DeliveryWorker): Express {
+export function createApp(store: MessageStore, worker?: DeliveryWorker, emit?: EmitSpine): Express {
   const app = express();
   app.use(express.json());
   const metrics = buildMetrics();
@@ -333,6 +355,7 @@ export function createApp(store: MessageStore, worker?: DeliveryWorker): Express
   registerHealthMetricsRoutes(app, store, metrics);
   registerNudgeRoutes(app, store, metrics, worker);
   registerJeffInputRoutes(app, store, worker);
+  registerAgentInbox(app, store, fetchPresenceResolution, emit); // #4424
   registerChatRoutes(app, store);
   registerStateAndQueryRoutes(app, store);
   return app;
@@ -442,7 +465,9 @@ function buildRuntimeDeps(): { runInject: RunInject; emitSpine: EmitSpine; selfT
     proc.on('error', e => resolve({ rc: 127, stderr: e.message }));
   });
 
-  return { runInject, emitSpine, selfTest };
+  // #4424 — a role whose live Presence is reachableOver agent is reached
+  // through the agent supervisor; every other role through tmux, unchanged.
+  return { runInject: routeByPresence(runInject, new LocalAgentSupervisor()), emitSpine, selfTest };
 }
 
 // Run as a server only when this file is the process entrypoint. Tests import
@@ -564,7 +589,22 @@ if (require.main === module) {
       process.stderr.write(JSON.stringify({ event: 'startup.wipdrift.watch', window_ms: 14400000 }) + '\n');
     }
 
-    const app = createApp(store, worker);
+    // #4424 — every 2s, copy agent-supervisor receipts into messages.db rows
+    // (context_delivered → delivered) and offer busy rows again. Never replays
+    // an admitted or uncertain send.
+    {
+      const supervisor = new LocalAgentSupervisor();
+      let reconciling = false;
+      setInterval(() => {
+        if (reconciling) return;
+        reconciling = true;
+        reconcileAgentInbox(store, supervisor, worker, emitSpine)
+          .catch((e) => process.stderr.write(JSON.stringify({ event: 'agent.reconcile.failed', error: String(e) }) + '\n'))
+          .finally(() => { reconciling = false; });
+      }, 2000).unref();
+    }
+
+    const app = createApp(store, worker, emitSpine);
     app.listen(PORT, BIND_HOST, () => {
       process.stderr.write(JSON.stringify({ event: 'startup', port: PORT, bind: BIND_HOST, ...store.getStats() }) + '\n');
     });
