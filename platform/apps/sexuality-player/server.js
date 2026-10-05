@@ -357,6 +357,8 @@ app.get('/api/proxy/image', (req, res) => {
 
   try {
     const stat = fs.statSync(filePath);
+    // A folder path crashed the process (EISDIR on the read stream, #4430).
+    if (!stat.isFile()) return res.status(404).json({ error: 'File not found' });
     res.setHeader('Content-Type', contentType);
     res.setHeader('Content-Length', stat.size);
     res.setHeader('Cache-Control', 'public, max-age=86400');
@@ -382,6 +384,8 @@ app.get('/api/proxy/video', (req, res) => {
   try { stat = fs.statSync(filePath); } catch {
     return res.status(404).json({ error: 'File not found' });
   }
+  // A folder path crashed the process (EISDIR on the read stream, #4430).
+  if (!stat.isFile()) return res.status(404).json({ error: 'File not found' });
 
   const fileSize = stat.size;
   const range = req.headers.range;
