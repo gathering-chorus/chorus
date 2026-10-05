@@ -48,6 +48,24 @@ export function agentRolesFrom(body: unknown): string[] {
   return agents;
 }
 
+/**
+ * #4432 — Jeff 2026-10-05 18:57: "the clearing needs to dynamically render
+ * logged in principals." The agent roles with an open Session (login → logout,
+ * #4406: no timer ends one), in the roles door's rolePriority order. A role
+ * with no open session has no tile; a login adds one, a logout removes it.
+ */
+export function loggedInAgentRoles(sessionsBody: unknown, rolesBody: unknown): string[] {
+  const agents = agentRolesFrom(rolesBody);
+  const rows = (sessionsBody as { data?: unknown })?.data;
+  if (!Array.isArray(rows)) throw new Error('the sessions door answered with no data list');
+  const open = new Set(
+    (rows as Array<{ sessionState?: string; ownedBy?: string }>)
+      .filter((r) => r.sessionState === 'open' && r.ownedBy)
+      .map((r) => String(r.ownedBy).replace(/^principal-/, '')),
+  );
+  return agents.filter((a) => open.has(a));
+}
+
 export interface ContextRolesDeps {
   sparql: StampSparqlClient;
   /** Spine lines for the role since `sinceMs` (epoch ms). May include other roles; the derivation filters.

@@ -5,7 +5,7 @@
  * no "unknown" to answer.
  */
 
-import { agentRolesFrom, fetchContextRoles, type ContextRolesDeps } from '../../src/handlers/context-roles';
+import { agentRolesFrom, loggedInAgentRoles, fetchContextRoles, type ContextRolesDeps } from '../../src/handlers/context-roles';
 import type { SpineLine } from '../../src/derive-role-state';
 
 const T0 = Date.parse('2026-09-02T15:00:00-04:00');
@@ -44,6 +44,22 @@ describe('fetchContextRoles (#4028 — derived, never declared)', () => {
     const r = await fetchContextRoles(deps({ listAgentRoles: async () => { throw new Error('HTTP 502'); } }), '/api/chorus/context/roles');
     expect(r.status).toBe(503);
     expect(JSON.stringify(r.body)).toMatch(/roles door unreadable/);
+  });
+
+  it('#4432 tiles follow logins: only agent roles with an open session, in role order', () => {
+    const sessions = { data: [
+      { ownedBy: 'principal-wren', sessionState: 'open' }, { ownedBy: 'principal-abby-normal', sessionState: 'open' },
+      { ownedBy: 'principal-kade', sessionState: 'closed' }, { ownedBy: 'principal-jeff', sessionState: 'open' },
+    ] };
+    expect(loggedInAgentRoles(sessions, DOOR)).toEqual(['wren', 'abby-normal']);
+  });
+
+  it('#4432 NEGATIVE PROOF: Abby logs out (session closed) and her tile goes', () => {
+    const before = { data: [{ ownedBy: 'principal-abby-normal', sessionState: 'open' }] };
+    const after = { data: [{ ownedBy: 'principal-abby-normal', sessionState: 'closed' }] };
+    expect(loggedInAgentRoles(before, DOOR)).toEqual(['abby-normal']);
+    expect(loggedInAgentRoles(after, DOOR)).toEqual([]);
+    expect(() => loggedInAgentRoles({ error: 'down' }, DOOR)).toThrow(/sessions door/);
   });
 
   it('#4432 a human or unkinded row never gets an agent tile', () => {
