@@ -126,7 +126,7 @@ run_instructed() {
 @test "generated CLAUDE.md: every instructed role-state command runs without a card= refusal" {
   [ -x "$SHIM_BIN" ] || skip "UNMEASURED — shim binary not built (#4336)"
   G="$BATS_TEST_TMPDIR/gen"
-  mkdir -p "$G/designing/claudemd" "$G/roles/wren" "$G/roles/silas" "$G/roles/kade"
+  mkdir -p "$G/designing/claudemd" "$G/roles/wren" "$G/roles/silas" "$G/roles/kade" "$G/roles/abby-normal"  # #4432: every manifest role needs its home
   cp -R "$CHORUS_ROOT/designing/claudemd/." "$G/designing/claudemd/"
   ( cd "$G" && env -u CLAUDEMD_BUMP python3 "$CHORUS_ROOT/platform/scripts/claudemd-gen.py" \
       "$G/designing/claudemd/manifest.json" "$G/designing/claudemd" generate "" "" ) >/dev/null 2>&1 || true

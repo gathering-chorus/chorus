@@ -428,14 +428,7 @@ window.basePath = window.basePath || function (p) {
 
   function load(days) {
     loading.style.display = 'inline';
-    // #4432 — the role list comes from the roles door (via chorus-api) before
-    // the bars draw; if it can't answer, the bars follow the board's owners.
-    fetch(bp('/api/chorus/context/roles')).then(function(r) { return r.ok ? r.json() : null; }).catch(function() { return null; })
-    .then(function(env) {
-      var rows = env && env.data && env.data.roles;
-      if (rows) window.__agentRoles = rows.map(function(x) { return x.name; });
-      return fetch(metricsUrl(days));
-    }).then(function(r) {
+    fetch(metricsUrl(days)).then(function(r) {
       if (!r.ok) throw new Error('loom-metrics answered ' + r.status);
       return r.json();
     }).then(function(m) {
@@ -545,21 +538,7 @@ window.basePath = window.basePath || function (p) {
 
     var byRole = b.by_role || {};
     var maxCards = Math.max.apply(null, Object.values(byRole).concat([1]));
-    // #4432 — one bar per agent role the roles door lists (Abby Normal is the
-    // fourth); a role with no static row gets a copy of the first one.
-    var roleNames = (window.__agentRoles && window.__agentRoles.length) ? window.__agentRoles : Object.keys(byRole);
-    roleNames.forEach(function(role) {
-      if (!$('role-row-' + role)) {
-        var tmpl = document.querySelector('[id^="role-row-"]');
-        if (tmpl) {
-          var row = tmpl.cloneNode(true);
-          row.id = 'role-row-' + role;
-          row.firstElementChild.textContent = role;
-          var bar = row.querySelector('[id^="role-bar-"]'); bar.id = 'role-bar-' + role; bar.style.background = '#7c3aed';
-          var num = row.querySelector('[id^="role-count-"]'); num.id = 'role-count-' + role; num.textContent = '0';
-          tmpl.parentNode.appendChild(row);
-        }
-      }
+    ['silas', 'kade', 'wren'].forEach(function(role) {
       var count = byRole[role] || 0;
       var barEl = $('role-bar-' + role);
       var numEl = $('role-count-' + role);

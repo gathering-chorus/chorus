@@ -9,7 +9,7 @@ const DOOR = { data: [
   { name: 'kade', roleKind: 'agent' }, { name: 'nightly', roleKind: '' },
   { name: 'silas', roleKind: 'agent' }, { name: 'wren', roleKind: 'agent' },
 ] };
-const answering = (body: unknown, ok = true, status = 200): FetchLike => async () => ({ ok, status, json: async () => body });
+const answering = (body: unknown, ok = true, status = 200): FetchLike => () => Promise.resolve({ ok, status, json: () => Promise.resolve(body) });
 
 test('peers are every agent and human role, Abby included', async () => {
   expect(await fetchPeers('http://door', answering(DOOR))).toEqual(['abby-normal', 'jeff', 'kade', 'silas', 'wren']);

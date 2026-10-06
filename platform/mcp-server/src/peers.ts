@@ -10,10 +10,10 @@ export interface RoleSets { peers: string[]; agents: string[] }
 type FetchLike = (url: string, init?: { signal?: AbortSignal }) => Promise<{ ok: boolean; status: number; json(): Promise<unknown> }>;
 
 export function roleSetsFrom(body: unknown): RoleSets {
-  const rows = (body as { data?: unknown })?.data;
+  const rows = (body as { data?: unknown } | null)?.data;
   if (!Array.isArray(rows)) throw new Error('the roles door answered with no data list');
-  const kind = (r: unknown) => String((r as { roleKind?: string })?.roleKind ?? '');
-  const name = (r: unknown) => String((r as { name?: string })?.name ?? '');
+  const kind = (r: unknown) => String((r as { roleKind?: string } | null)?.roleKind ?? '');
+  const name = (r: unknown) => String((r as { name?: string } | null)?.name ?? '');
   const peers = rows.filter((r) => ['agent', 'human'].includes(kind(r))).map(name).filter(Boolean).sort();
   const agents = rows.filter((r) => kind(r) === 'agent').map(name).filter(Boolean).sort();
   if (agents.length === 0) throw new Error('the roles door lists no agent role');

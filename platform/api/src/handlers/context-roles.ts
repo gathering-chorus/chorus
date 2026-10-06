@@ -38,7 +38,7 @@ export type RoleName = string;
  * data list or no agent: a tile list is never guessed.
  */
 export function agentRolesFrom(body: unknown): string[] {
-  const rows = (body as { data?: unknown })?.data;
+  const rows = (body as { data?: unknown } | null)?.data;
   if (!Array.isArray(rows)) throw new Error('the roles door answered with no data list');
   const agents = (rows as Array<AgentRoleRow & { roleKind?: string }>)
     .filter((r) => r.roleKind === 'agent' && r.name)
@@ -57,13 +57,13 @@ export function agentRolesFrom(body: unknown): string[] {
 export function loggedInRoles(sessionsBody: unknown, rolesBody: unknown): string[] {
   // Jeff and the agents alike (Wren 18:59: "logged in principals", not agent
   // roles): every agent or human role row, Jeff first by rolePriority 0.
-  const body = rolesBody as { data?: unknown };
+  const body = rolesBody as { data?: unknown } | null;
   if (!Array.isArray(body?.data)) throw new Error('the roles door answered with no data list');
-  const agents = (body.data as Array<AgentRoleRow & { roleKind?: string }>)
+  const agents = ((body as { data: unknown[] }).data as Array<AgentRoleRow & { roleKind?: string }>)
     .filter((r) => (r.roleKind === 'agent' || r.roleKind === 'human') && r.name)
     .sort((a, b) => (Number(a.rolePriority ?? 99) - Number(b.rolePriority ?? 99)) || a.name.localeCompare(b.name))
     .map((r) => r.name);
-  const rows = (sessionsBody as { data?: unknown })?.data;
+  const rows = (sessionsBody as { data?: unknown } | null)?.data;
   if (!Array.isArray(rows)) throw new Error('the sessions door answered with no data list');
   const open = new Set(
     (rows as Array<{ sessionState?: string; ownedBy?: string }>)

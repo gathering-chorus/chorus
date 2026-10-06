@@ -5,7 +5,7 @@ import request from 'supertest';
 import { MessageStore } from './store';
 import { createApp, resetNudgeDedup } from './service';
 
-jest.mock('./peers', () => ({ fetchPeers: async () => { throw new Error('the roles door answered HTTP 502'); } }));
+jest.mock('./peers', () => ({ fetchPeers: () => Promise.reject(new Error('the roles door answered HTTP 502')) }));
 
 test('NEGATIVE PROOF: door down → 503, nothing stored', async () => {
   resetNudgeDedup();

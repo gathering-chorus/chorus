@@ -44,7 +44,8 @@ describe('TilePoller — API board fetch (#2261)', () => {
   it('tiles show WIP card for Wren when API returns data.data.cards', async () => {
     mockFetch.mockReturnValue(apiResponse([{ id: 2261, owner: 'Wren', domain: 'chorus' }]));
 
-    const poller = new TilePoller();
+    // #4432 — tiles exist for the roles the API lists; Wren is logged in here.
+    const poller = new TilePoller({ readRoles: () => [{ role: 'wren', state: 'idle', stale: true, lastActivity: null }] });
     // Allow the async fetch to resolve
     await new Promise((r) => setTimeout(r, 50));
     poller.poll();
@@ -62,7 +63,8 @@ describe('TilePoller — API board fetch (#2261)', () => {
         : apiResponse([]),
     );
 
-    const poller = new TilePoller();
+    // #4432 — tiles exist for the roles the API lists; Wren is logged in here.
+    const poller = new TilePoller({ readRoles: () => [{ role: 'wren', state: 'idle', stale: true, lastActivity: null }] });
     await new Promise((r) => setTimeout(r, 50));
     poller.poll();
     await new Promise((r) => setTimeout(r, 50));

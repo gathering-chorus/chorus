@@ -5,7 +5,7 @@ import request from 'supertest';
 import { MessageStore } from './store';
 import { createApp, resetNudgeDedup } from './service';
 
-jest.mock('./peers', () => ({ fetchPeers: async () => ['abby-normal', 'jeff', 'kade', 'silas', 'wren'] }));
+jest.mock('./peers', () => ({ fetchPeers: () => Promise.resolve(['abby-normal', 'jeff', 'kade', 'silas', 'wren']) }));
 
 async function classOf(from: string, declared?: string): Promise<string> {
   resetNudgeDedup();
@@ -13,8 +13,8 @@ async function classOf(from: string, declared?: string): Promise<string> {
   process.env.PULSE_ALLOW_DIRECT_POST = '1';
   const res = await request(createApp(store)).post('/api/nudge').send({ from, to: 'silas', content: `x ${from} ${declared}`, class: declared, expects: 'reply' });
   expect(res.status).toBe(200);
-  const row = (store as any).db.prepare('SELECT nudge_class FROM messages WHERE id = ?').get(res.body.id);
-  return row.nudge_class;
+  const db = (store as unknown as { db: { prepare(q: string): { get(id: number): { nudge_class: string } } } }).db;
+  return db.prepare('SELECT nudge_class FROM messages WHERE id = ?').get(res.body.id as number).nudge_class;
 }
 
 test('a nudge from Abby is r2r', async () => { expect(await classOf('abby-normal')).toBe('r2r'); });

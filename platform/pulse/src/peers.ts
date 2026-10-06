@@ -8,7 +8,7 @@
 export type FetchLike = (url: string, init?: { signal?: AbortSignal }) => Promise<{ ok: boolean; status: number; json(): Promise<unknown> }>;
 
 export function peersFrom(body: unknown): string[] {
-  const rows = (body as { data?: unknown })?.data;
+  const rows = (body as { data?: unknown } | null)?.data;
   if (!Array.isArray(rows)) throw new Error('the roles door answered with no data list');
   const names = rows
     .filter((r) => r && ['agent', 'human'].includes((r as { roleKind?: string }).roleKind ?? ''))
