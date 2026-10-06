@@ -106,7 +106,6 @@ pub fn model_set(root: &str, ttl_override: Option<String>) -> Vec<String> {
             format!("{root}/roles/wren/ontology/domains-wren-silas.ttl"),
             format!("{root}/roles/kade/ontology/domains-kade-3581.ttl"),
             format!("{root}/roles/kade/ontology/domains-builds-decisions-rcas-4022.ttl"),
-            format!("{root}/designing/data/product-instances.ttl"),
             format!("{root}/roles/silas/ontology/alerts-4085.ttl"),
             format!("{root}/roles/wren/ontology/clearing-domains-3860.ttl"),
             format!("{root}/roles/wren/ontology/memory-4010.ttl"),
@@ -2077,7 +2076,9 @@ mod tests {
         // #4229 — was a two-member stub, which is how this verb loaded 2 files
         // where the bash loads 28 and reported success either way.
         let s = model_set("/R", None);
-        assert_eq!(s.len(), 29, "the ontology set is 29 files (#4302 added session-model-4302.ttl and moved cmdb-layers-4293.ttl to the domains set)");
+        assert_eq!(s.len(), 28, "the ontology set is 28 files (#4302 added session-model-4302.ttl; #4432 took out product-instances.ttl)");
+        // #4432 (Jeff 2026-10-06) — product rows live in the store; a land never replays them.
+        assert!(!s.iter().any(|m| m.ends_with("product-instances.ttl")));
         assert!(s[0].ends_with("/roles/silas/ontology/chorus.ttl"));
         assert!(s[1].ends_with("/roles/kade/ontology/werk-domains.ttl"));
         // #3593 — the 34-domain sources must be in it or a deploy retires them.

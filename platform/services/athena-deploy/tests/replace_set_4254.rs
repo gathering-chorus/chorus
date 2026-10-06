@@ -68,15 +68,15 @@ fn negative_proof_an_unknown_fourth_column_is_refused() {
     assert!(err.contains("replce"), "names what it saw: {err}");
 }
 
-/// The shipped manifest: the vocabulary set replaces, and it is the only one.
-/// Named rather than counted — a bare count would go red for the wrong reason
-/// the day a second owned graph legitimately takes the flag.
+/// #4432 — the vocabulary set left the deploy with the other row sets, so no
+/// shipped set replaces its graph. Replace stays a tested feature (fixtures above);
+/// a shipped set taking it again is a decision, and goes red here first.
 #[test]
-fn the_shipped_manifest_replaces_only_the_vocabulary() {
+fn the_shipped_manifest_replaces_nothing() {
     let d = std::env::var("CARGO_MANIFEST_DIR").expect("cargo sets CARGO_MANIFEST_DIR");
     let path = format!("{d}/../../config/domain-set-manifest.txt");
     let sets = parse_domain_sets(&std::fs::read_to_string(&path).unwrap()).unwrap();
     let replacing: Vec<&str> =
         sets.iter().filter(|s| s.replace).map(|s| s.name.as_str()).collect();
-    assert_eq!(replacing, vec!["vocabulary"], "unexpected set replaces its graph");
+    assert!(replacing.is_empty(), "unexpected set replaces its graph: {replacing:?}");
 }

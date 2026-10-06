@@ -35,10 +35,9 @@ fn the_real_manifest_holds_every_set_the_deploy_stages() {
     let text = std::fs::read_to_string(&path).expect("the manifest ships with the verb");
     let sets = parse_domain_sets(&text).expect("the shipped manifest must parse");
     let names: Vec<&str> = sets.iter().map(|s| s.name.as_str()).collect();
-    let expected = ["security", "code-vocab", "roles", "infrastructure",
-                    "principles", "values", "services", "practices", "vocabulary",
-                    // #4302 — the #4293 Layer rows and domain edges, served from the domains graph
-                    "domains"];
+    // #4432 (Jeff 2026-10-06) — row sets left the deploy; rows live in the store.
+    // Security stays only as the lockout recovery path until a restore is proven (#4171).
+    let expected = ["security"];
     for want in expected {
         assert!(names.contains(&want), "{want} missing from {names:?}");
     }
@@ -46,7 +45,7 @@ fn the_real_manifest_holds_every_set_the_deploy_stages() {
         assert!(expected.contains(got), "{got} is in the manifest and not in this test");
     }
     let files: usize = sets.iter().map(|s| s.files.len()).sum();
-    assert_eq!(files, 16, "13 files across the original eight sets, the vocabulary set's two, and the domains set's one (#4302)");
+    assert_eq!(files, 2, "principals and permissions only (#4432)");
 }
 
 #[test]

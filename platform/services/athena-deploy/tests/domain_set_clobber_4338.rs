@@ -5,7 +5,7 @@
 //!
 //! The guard reads triples through riot, never Turtle lines (Wren's review: a
 //! full IRI subject or a second-home declaration slipped past a `chorus:` match).
-use athena_deploy::{declared_domains, domain_set_clobbers, model_set, parse_domain_sets, to_ntriples, DOMAINS_GRAPH};
+use athena_deploy::{declared_domains, domain_set_clobbers, to_ntriples};
 
 const PREFIXES: &str = "@prefix chorus: <https://jeffbridwell.com/chorus#> .\n@prefix owl: <http://www.w3.org/2002/07/owl#> .\n@prefix rdfs: <http://www.w3.org/2000/01/rdf-schema#> .\n";
 const HOME: &str = "\
@@ -73,18 +73,6 @@ fn an_unreadable_file_is_an_error_not_an_empty_pass() {
     assert!(to_ntriples("/nonexistent/clobber-4338.ttl").is_err());
 }
 
-#[test]
-fn the_shipped_model_names_no_domain_in_the_domains_graph_sets() {
-    let root = format!("{}/../../..", std::env::var("CARGO_MANIFEST_DIR").unwrap());
-    let read = |p: &str| (p.to_string(), to_ntriples(p).unwrap_or_else(|e| panic!("{e}")));
-    let homes: Vec<_> = model_set(&root, None).iter().map(|p| read(p)).collect();
-    // a guard whose input vanished must fail, never pass on nothing
-    let n = declared_domains(&homes).len();
-    assert!(n >= 40, "found {n} Domains in the model set");
-    let manifest = std::fs::read_to_string(format!("{root}/platform/config/domain-set-manifest.txt")).unwrap();
-    let set_files: Vec<_> = parse_domain_sets(&manifest).unwrap().iter()
-        .filter(|ds| ds.graph == DOMAINS_GRAPH)
-        .flat_map(|ds| ds.files.clone()).map(|p| read(&format!("{root}/{p}"))).collect();
-    assert!(!set_files.is_empty(), "no set targets the domains graph");
-    assert_eq!(domain_set_clobbers(&homes, &set_files), Vec::<String>::new());
-}
+// #4432 — no shipped set targets the domains graph any more (rows live in the
+// store), so the shipped-manifest case left with it; the fixture cases above
+// still prove domain_set_clobbers.
