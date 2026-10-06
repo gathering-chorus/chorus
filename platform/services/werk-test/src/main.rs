@@ -19,6 +19,7 @@ use werk_test::{
     unmapped_path,
     undeclared_gaps, CaseResult, CheckKind, Quarantined, ScopeUnit, TestRow, TestUnit,
     discover_ts_packages, set_repo_root,
+    is_node_test_file, node_test_plan, package_test_script,
 };
 
 mod nightly_all;
@@ -2222,9 +2223,26 @@ cases to files; refusing to store package-level rows that can never cross-foot",
     };
     let mut all_ok = true;
     let mut cases: Vec<CaseResult> = Vec::new();
+    // #4435 — the script's own steps before the runner (`npm run build`): the
+    // files load what the build writes, so they run once, and a failed step
+    // fails the package loudly instead of every case failing for a missing dist.
+    for step in &runner.before {
+        let mut cmd = Command::new(&step[0]);
+        cmd.args(&step[1..]).current_dir(&pkg_dir);
+        cmd.env("CHORUS_CONTEXT", "");
+        apply_suite_world(&mut cmd, werk);
+        match run_capped_unit(&mut cmd, &format!("npm:{}:{}", pkg, step.join(" "))) {
+            Some((true, _, _)) => {}
+            Some((false, stdout, stderr)) => {
+                eprintln!("!! npm:{} `{}` failed before its tests — FAIL LOUD\n{}{}", pkg, step.join(" "), stdout, stderr);
+                return (false, Vec::new());
+            }
+            None => return (false, Vec::new()),
+        }
+    }
     for rel in &files {
-        let mut cmd = Command::new(&runner.0);
-        cmd.args(&runner.1).arg(rel).current_dir(&pkg_dir);
+        let mut cmd = Command::new(&runner.prog);
+        cmd.args(&runner.args).arg(rel).current_dir(&pkg_dir);
         cmd.env("CHORUS_CONTEXT", ""); // #3918 — test child stays refusable
         apply_suite_world(&mut cmd, werk);
         match run_capped_unit(&mut cmd, &format!("npm:{}:{}", pkg, rel)) {
@@ -2249,40 +2267,11 @@ cases to files; refusing to store package-level rows that can never cross-foot",
     (all_ok, cases)
 }
 
-/// The node:test runner behind a package's `test` script, as (program, args)
-/// with the file glob stripped — so one file can be appended. Recognises the
-/// two shapes we run: `tsx --test <glob>` and `node --test <glob>`.
-fn npm_test_runner(pkg_dir: &str) -> Option<(String, Vec<String>)> {
+/// The node:test plan behind a package's `test` script (#4435: steps that run
+/// first, then the runner with its glob dropped — so one file can be appended).
+fn npm_test_runner(pkg_dir: &str) -> Option<werk_test::NodeTestPlan> {
     let json = std::fs::read_to_string(format!("{}/package.json", pkg_dir)).ok()?;
-    let script = json
-        .lines()
-        .find(|l| l.contains("\"test\":"))?
-        .split_once(':')?
-        .1
-        .trim()
-        .trim_end_matches(',')
-        .trim()
-        .trim_matches('"')
-        .to_string();
-    if !script.contains("--test") {
-        return None;
-    }
-    let mut toks = script.split_whitespace().map(str::to_string);
-    let prog = toks.next()?;
-    // keep flags, drop the glob (anything that is not a flag)
-    let args: Vec<String> = toks.filter(|t| t.starts_with('-')).collect();
-    if !args.iter().any(|a| a == "--test") {
-        return None;
-    }
-    let prog = if prog == "tsx" { "npx".to_string() } else { prog };
-    let args = if prog == "npx" {
-        let mut v = vec!["--no-install".to_string(), "tsx".to_string()];
-        v.extend(args);
-        v
-    } else {
-        args
-    };
-    Some((prog, args))
+    node_test_plan(&package_test_script(&json)?)
 }
 
 /// The package's test files, package-relative, sorted. Mirrors what the test
@@ -2294,7 +2283,7 @@ fn npm_test_files(pkg_dir: &str) -> Vec<String> {
         let Ok(rd) = std::fs::read_dir(&dir) else { continue };
         for e in rd.flatten() {
             let name = e.file_name().to_string_lossy().to_string();
-            if name.ends_with(".test.ts") || name.ends_with(".test.js") {
+            if is_node_test_file(&name) {
                 out.push(format!("{}/{}", sub, name));
             }
         }
