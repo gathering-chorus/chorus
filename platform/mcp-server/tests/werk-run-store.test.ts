@@ -13,8 +13,9 @@ import os from 'os';
 import { execFileSync } from 'child_process';
 import {
   readRun, writeRun, writeRunAtomic, markPhase, clearRun, isRunStale,
-  logPath, reconcileRunning, currentWerkPatchId, currentWerkTreeHash, recordLeg,
+  logPath, reconcileRunning, currentWerkPatchId, currentWerkTreeHash, recordLeg, pushedSha,
 } from '../src/werk-run-store';
+import { patchSuperseded } from '../src/werk-run-state';
 import type { WerkRun } from '../src/werk-run-state';
 
 let dir: string;
@@ -275,5 +276,53 @@ describe('currentWerkTreeHash — race-free measurement, typed absence (#3972)',
       recordLeg(3972, 'build', 'pass', 'abc123', dir);
       assert.equal(readRun(3972, dir)?.legs?.[0]?.tree_hash, 'abc123', 'a real hash still records');
     } finally { rmSync(notRepo, { recursive: true, force: true }); }
+  });
+});
+
+// #4420 reopened (Wren, #4438) — a commit made after the run pushed but before
+// the poll that marks it presented was absorbed into the round: the round was
+// re-stamped from HEAD at poll time, cws read "round matches HEAD", and a go
+// would have landed without the commit.
+describe('the presented round is the commit the run pushed (#4420)', () => {
+  const git = (cwd: string, ...args: string[]) =>
+    execFileSync('git', ['-c', 'commit.gpgsign=false', '-C', cwd, ...args], { encoding: 'utf8' }).trim();
+
+  test('a commit after the push reads superseded, not absorbed', () => {
+    const repo = mkdtempSync(path.join(os.tmpdir(), 'werk-pushed-'));
+    const runs = mkdtempSync(path.join(os.tmpdir(), 'werk-runs-'));
+    try {
+      git(repo, 'init', '-q');
+      git(repo, 'config', 'user.email', 't@t');
+      git(repo, 'config', 'user.name', 't');
+      writeFileSync(path.join(repo, 'a.txt'), 'one\n');
+      git(repo, 'add', 'a.txt');
+      git(repo, 'commit', '-q', '-m', 'base');
+      git(repo, 'update-ref', 'refs/remotes/origin/main', 'HEAD');
+      writeFileSync(path.join(repo, 'a.txt'), 'two\n');
+      git(repo, 'commit', '-qam', 'the round');
+      const pushed = git(repo, 'rev-parse', 'HEAD');
+      // the builder commits a fix after the pipeline pushed, before any poll
+      writeFileSync(path.join(repo, 'a.txt'), 'three\n');
+      git(repo, 'commit', '-qam', 'the fix');
+      const log = `| {"ok":true,"verb":"werk-push","role":"wren","card_id":4438,"stdout":"${pushed}","stderr":""}\nWERK_EXIT=0\n`;
+      writeFileSync(logPath(4438, runs), log);
+      writeRun({ runId: 'r', card: 4438, role: 'wren', go: false, phase: 'running', startedAt: new Date().toISOString(), pid: 999999 } as WerkRun, runs);
+      const rec = reconcileRunning(4438, runs, (rev) => currentWerkPatchId(repo, rev));
+      assert.equal(rec?.phase, 'presented');
+      assert.equal(rec?.patchId, currentWerkPatchId(repo, pushed));
+      assert.equal(patchSuperseded(rec?.patchId, currentWerkPatchId(repo)), true, 'the fix is not in the round');
+      // NEGATIVE PROOF: stamping from HEAD (the old rule) absorbs the fix
+      assert.equal(patchSuperseded(currentWerkPatchId(repo), currentWerkPatchId(repo)), false);
+    } finally {
+      rmSync(repo, { recursive: true, force: true });
+      rmSync(runs, { recursive: true, force: true });
+    }
+  });
+
+  test('the last werk-push line wins; no push line means no sha', () => {
+    const a = 'a'.repeat(40);
+    const b = 'b'.repeat(40);
+    assert.equal(pushedSha(`{"verb":"werk-push","stdout":"${a}"}\n{"verb":"werk-push","stdout":"${b}"}`), b);
+    assert.equal(pushedSha(`{"verb":"werk-commit","stdout":"${a}"}`), undefined);
   });
 });

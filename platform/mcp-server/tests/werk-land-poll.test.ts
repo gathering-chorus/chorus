@@ -133,6 +133,26 @@ test('go:true retry after a FAILED land with the worktree present DOES start (re
   }, sink, werkBase);
 });
 
+// #4420 reopened (Jeff 2026-10-06 "u fix it") — retry:true on a run whose
+// process had just exited red returned the old failure and launched nothing
+// (#4420 run 9, #4440 run 1): the poll that discovers a failure swallowed the
+// retry. A plain poll still only reports it.
+test('retry:true right after a run exited red launches; a plain poll only reports', async () => {
+  const sink: SpawnCall[] = [];
+  const werkBase = fs.mkdtempSync(path.join(os.tmpdir(), 'werk-base-'));
+  fs.mkdirSync(path.join(werkBase, 'wren-3661'), { recursive: true });
+  await withServer(async (client, runsDir) => {
+    seedRun(runsDir, { card: 3661, go: false, phase: 'running', pid: DEAD_PID }, 'test…\nWERK_EXIT=1\n');
+    const poll = await client.callTool({ name: 'chorus_werk', arguments: { role: 'wren', card_id: 3661 } });
+    assert.match(textOf(poll), /"phase":"failed"/, 'a plain poll reports the failure');
+    assert.equal(sink.length, 0, 'a plain poll never launches');
+    seedRun(runsDir, { card: 3661, go: false, phase: 'running', pid: DEAD_PID }, 'test…\nWERK_EXIT=1\n');
+    const retry = await client.callTool({ name: 'chorus_werk', arguments: { role: 'wren', card_id: 3661, retry: true } });
+    assert.match(textOf(retry), /"launched":true/, `retry launches, got: ${textOf(retry)}`);
+    assert.equal(sink.length, 1, 'exactly one fresh act spawn for the retry');
+  }, sink, werkBase);
+});
+
 // ── Defect 1: failure evidence survives a relaunch (per-run logs) ─────────────
 
 test('a retry writes a DIFFERENT per-run log — the failed run\'s evidence is never truncated', async () => {

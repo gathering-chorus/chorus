@@ -2783,13 +2783,15 @@ async function executeChorusWerkLocked(
   // are absorbed into the round instead of superseding it. Without this, every
   // status poll after a present computed headChanged=true and RELAUNCHED the
   // whole build→demo (the 2026-07-23 #3592 three-round loop).
-  const existingRun = reconcileRunning(args.card_id, runsDir, () => currentWerkPatchId(werkDir));
+  const existingRun = reconcileRunning(args.card_id, runsDir, (rev) => currentWerkPatchId(werkDir, rev));
   // #3678 AC4 — a repeated announce is the SYSTEM's finding, not Jeff's: same
   // patch presenting again inside the window emits a loud spine warning.
   if (preReconcile?.phase === 'running' && existingRun?.phase === 'presented') {
     warnIfRepeatedAnnounce(existingRun, args.role, args.card_id, spawnFn, scriptsDir, pathMod);
   }
-  if (preReconcile?.phase === 'running' && existingRun?.phase === 'failed') {
+  // #4420 reopened — an explicit retry is never swallowed by the poll that
+  // discovers the failure (Jeff 10-06: two retries today returned the old red).
+  if (preReconcile?.phase === 'running' && existingRun?.phase === 'failed' && args.retry !== true) {
     return mcpJson({
       ok: true, verb: 'chorus_werk', phase: 'failed', attached: true,
       role: args.role, card_id: args.card_id, accepter,

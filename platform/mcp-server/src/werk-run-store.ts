@@ -30,10 +30,10 @@ export const RUNS_DIR = path.join(os.homedir(), '.chorus', 'werk-runs');
  *  back to `sha:<HEAD>` — stricter than a patch-id (a rebase re-demos) but never
  *  the unkeyable '' that left #3421's present permanently stuck. '' now means
  *  only total git failure (not a repo), which callers degrade to attach. */
-export function currentWerkPatchId(werkDir: string): string {
+export function currentWerkPatchId(werkDir: string, rev = 'HEAD'): string {
   const headKey = (): string => {
     try {
-      const head = execFileSync('git', ['-C', werkDir, 'rev-parse', 'HEAD'], {
+      const head = execFileSync('git', ['-C', werkDir, 'rev-parse', rev], {
         encoding: 'utf8',
       }).trim();
       return head ? `sha:${head}` : '';
@@ -42,11 +42,11 @@ export function currentWerkPatchId(werkDir: string): string {
     }
   };
   try {
-    const base = execFileSync('git', ['-C', werkDir, 'merge-base', 'origin/main', 'HEAD'], {
+    const base = execFileSync('git', ['-C', werkDir, 'merge-base', 'origin/main', rev], {
       encoding: 'utf8',
     }).trim();
     if (!base) return headKey();
-    const diff = execFileSync('git', ['-C', werkDir, 'diff', `${base}..HEAD`], {
+    const diff = execFileSync('git', ['-C', werkDir, 'diff', `${base}..${rev}`], {
       encoding: 'utf8',
       maxBuffer: 64 * 1024 * 1024,
     });
@@ -318,13 +318,24 @@ export function runLogPath(card: number, runId: string, dir: string = RUNS_DIR):
 /** #3678 AC1 — what a running→presented transition stamps: presentedAt + the
  *  re-read patchId (the round owns its self-commits). Degrades to the recorded
  *  patchId on any source failure. */
-function presentedExtras(patchIdSource?: () => string): Partial<WerkRun> {
+function presentedExtras(patchIdSource?: (rev?: string) => string, pushed?: string): Partial<WerkRun> {
   const extras: Partial<WerkRun> = { presentedAt: new Date().toISOString() };
   try {
-    const p = patchIdSource?.();
+    const p = patchIdSource?.(pushed);
     if (p) extras.patchId = p;
   } catch { /* degrade: recorded patchId stands */ }
   return extras;
+}
+
+/**
+ * #4420 reopened (Wren, #4438) — the commit this run PUSHED, from werk-push's
+ * own line in the run log. The presented round is that commit, not whatever
+ * HEAD is when a later poll notices the run finished: a commit made in between
+ * was being absorbed into the round, and a go would have landed without it.
+ */
+export function pushedSha(log: string): string | undefined {
+  const all = [...log.matchAll(/"verb":"werk-push"[^\n]*?"stdout":"([0-9a-f]{40})"/g)];
+  return all.length ? all[all.length - 1][1] : undefined;
 }
 
 export function reconcileRunning(
@@ -335,7 +346,7 @@ export function reconcileRunning(
   // pipeline's own commits (doc-coherence churn etc.) are absorbed into the
   // round instead of superseding it — the #3592 poll-relaunch loop's root.
   // Absent source (legacy callers/tests) → recorded patchId stands.
-  patchIdSource?: () => string,
+  patchIdSource?: (rev?: string) => string,
 ): WerkRun | null {
   const run = readRun(card, dir);
   if (!run || run.phase !== 'running') return run;
@@ -363,7 +374,7 @@ export function reconcileRunning(
   // exit 0 → terminal success: a land run (go:true) reached 'landed'; a present
   // run (go:false) reached 'presented'. Non-zero → failed with the child reason.
   if (code === 0) {
-    const extras = run.go ? {} : presentedExtras(patchIdSource);
+    const extras = run.go ? {} : presentedExtras(patchIdSource, pushedSha(log));
     return markPhase(card, run.go ? 'landed' : 'presented', extras, dir);
   }
   return markPhase(card, 'failed', { failureReason: extractFailureReason(log, '', 'unknown') }, dir);
