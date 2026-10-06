@@ -1808,17 +1808,11 @@ pub fn changed_ts_services(diff: &str) -> Vec<String> {
 /// security-model-3618.ttl, domains-*.ttl, board-3654.ttl, werk-domains.ttl, …).
 /// A .ttl elsewhere (e.g. platform/api/src/sparql/shapes.ttl) is NOT a model source
 /// and must not trigger a deploy. PURE — unit-tested, negative-proven.
-/// #4096 — the INSTANCE-SEED homes: the day-authored seed files under
-/// designing/data/*.ttl and the manifest that lists them. A card that changes only
-/// these (the normal shape of a content card since 09-02: products, documents) has
-/// no model source, so the model leg never ran and the seed leg — which lived
-/// inside it — never seeded canonical. #4080 landed green at 11:30 with canonical
-/// serving 0 of 9 sections for eight products until a hand run at 11:47. PURE —
-/// unit-tested, negative-proven (a .ttl elsewhere, a docs html, do NOT fire).
-// #4186 — ONE home for the model/seed predicates (shared/model_scope.rs); athena-deploy
+/// #4432 — there are no instance-seed homes: rows live in the store (Jeff 2026-10-06).
+// #4186 — ONE home for the model predicate (shared/model_scope.rs); athena-deploy
 // `scope` and both workflows read the same definition, so the rule cannot drift.
 mod model_scope { include!("../../shared/model_scope.rs"); }
-pub use model_scope::{changed_model_sources, changed_seed_sources, is_model_source, is_seed_source};
+pub use model_scope::{changed_model_sources, is_model_source};
 
 /// #3736 — read the store's model stamp (single-request truth): which commit the live
 /// ontology graph's model was deployed from. Empty string = no stamp / store unreachable
@@ -1867,8 +1861,6 @@ fn deploy_canonical(home: &Path, werk_s: &str, role: &str, card: u64, trace: &st
     // into the no-op branch below ("no-service-crates") and land green-but-inert: #3735
     // merged clean, board Done, live chorus:security unchanged until a HAND-RUN deploy.
     let model_files = changed_model_sources(&diff);
-    // #4096 — seed-only lands seed canonical too (see changed_seed_sources).
-    let seed_files = changed_seed_sources(&diff);
 
     // #3785 — BLOCKING allow-set gate. A deploy that would leave the doors
     // reading an empty allow-set is refused before it commits.
@@ -1902,7 +1894,7 @@ fn deploy_canonical(home: &Path, werk_s: &str, role: &str, card: u64, trace: &st
         }
     }
 
-    if crates.is_empty() && ts.is_empty() && model_files.is_empty() && seed_files.is_empty() {
+    if crates.is_empty() && ts.is_empty() && model_files.is_empty() {
         // Docs/config-only card — no service and no model to deploy for prod. Clean no-op
         // so the acp chain proceeds (mirrors werk-build's no-build-units case).
         jsonl(home, role, card, trace, "deploy.completed",
@@ -1984,16 +1976,16 @@ fn deploy_canonical(home: &Path, werk_s: &str, role: &str, card: u64, trace: &st
     // #4186 — the MODEL and SEED legs left this verb. Jeff, 2026-09-16: "athena and
     // werk are conjoined twins we need to separate them". They ran here from #3736
     // (model) and #4096 (seed), restarting athena-make and seeding against it before
-    // it answered: POST → 0 on six lands across #4175 and #4179. They now run as
-    // .github/workflows/athena.yml (scope → validate → deploy → serve → seed →
-    // prove), triggered by the land event in chorus-mcp's werk-merge case (#4177). This
-    // verb ships CODE only; it says so on the spine when the diff carried model or
-    // seed sources so the hand-off is witnessed, never assumed.
-    if !model_files.is_empty() || !seed_files.is_empty() {
+    // it answered: POST → 0 on six lands across #4175 and #4179. The model now runs as
+    // .github/workflows/athena.yml (scope → validate → deploy → serve → prove),
+    // triggered by the land event in chorus-mcp's werk-merge case (#4177); the seed leg
+    // is gone (#4432: rows live in the store). This verb ships CODE only; it says so on
+    // the spine when the diff carried model sources so the hand-off is witnessed.
+    if !model_files.is_empty() {
         jsonl(home, role, card, trace, "model.handoff.athena",
-            &format!(",\"target\":\"canonical\",\"modelFiles\":\"{}\",\"seedFiles\":\"{}\",\"pipeline\":\"athena.yml\"",
-                model_files.join(","), seed_files.join(",")));
-        labels.push(format!("athena-handoff[model={},seed={}]", model_files.len(), seed_files.len()));
+            &format!(",\"target\":\"canonical\",\"modelFiles\":\"{}\",\"pipeline\":\"athena.yml\"",
+                model_files.join(",")));
+        labels.push(format!("athena-handoff[model={}]", model_files.len()));
     }
 
     let only = labels.join(",");
@@ -3169,33 +3161,22 @@ mod model_source_tests {
     #[test]
     fn model_plus_public_page_is_model_only_not_a_death() {
         // #4045 — the exact diff that died at deploy-werk on 2026-09-02 09:03:
-        // a shape change, its seed file + manifest, the page that renders the
+        // a shape change, the page that renders the
         // new properties, and a bats test. Nothing here builds.
-        let diff = "roles/silas/ontology/chorus.ttl\ndesigning/data/product-instances.ttl\nplatform/config/instance-seed-manifest.txt\nplatform/api/public/athena/product.html\nplatform/api/public/athena/products.html\nplatform/tests/4045-spine-product.bats";
+        let diff = "roles/silas/ontology/chorus.ttl\nplatform/api/public/athena/product.html\nplatform/api/public/athena/products.html\nplatform/tests/4045-spine-product.bats";
         assert!(super::empty_summary_is_model_only(diff), "model + public page must be model-only");
         assert!(!super::empty_summary_is_config_only(diff), "a model change is not config-only");
     }
 
-    /// #4096 — the exact #4080 land diff (2026-09-03 11:30): seed files + manifest +
-    /// a public page + bats, NO ontology source. changed_model_sources is empty (right —
-    /// no MODEL_SET deploy needed) but changed_seed_sources must fire, or canonical is
-    /// never seeded and the land is green-but-hollow.
+    /// #4432 (Jeff 2026-10-06: "why do we reload this data as part of our deploy") —
+    /// row files are not deployed. The #4080 land diff (row files + a page + bats, no
+    /// ontology source) is config-only: nothing replays rows over the store.
     #[test]
-    fn seed_only_diff_fires_the_seed_leg_not_the_model_leg() {
-        let diff = "designing/data/document-instances.ttl\ndesigning/data/product-instances.ttl\nplatform/config/instance-seed-manifest.txt\nplatform/api/public/athena/product.html\nplatform/tests/4080-products-sections.bats";
+    fn row_files_only_diff_deploys_nothing() {
+        let diff = "designing/data/document-instances.ttl\ndesigning/data/product-instances.ttl\nplatform/api/public/athena/product.html\nplatform/tests/4080-products-sections.bats";
         assert!(super::changed_model_sources(diff).is_empty());
-        assert_eq!(super::changed_seed_sources(diff),
-            vec!["designing/data/document-instances.ttl", "designing/data/product-instances.ttl", "platform/config/instance-seed-manifest.txt"]);
-        assert!(super::empty_summary_is_model_only(diff), "a seed-only card is model-side, not a no-op");
-    }
-
-    /// NEGATIVE PROOF (#3734): the states the seed classifier must NOT fire on — a
-    /// .ttl outside designing/data, a design html under designing/docs, a schema json,
-    /// the ontology sources themselves (those are the MODEL leg's, not the seed leg's).
-    #[test]
-    fn non_seed_files_do_not_fire_the_seed_leg() {
-        let diff = "platform/api/src/sparql/shapes.ttl\ndesigning/docs/spine-product-design.html\ndesigning/schemas/spine-events.json\nroles/silas/ontology/chorus.ttl\ndesigning/data/README.md";
-        assert!(super::changed_seed_sources(diff).is_empty());
+        assert!(!super::empty_summary_is_model_only(diff), "row files are not a model change");
+        assert!(super::empty_summary_is_config_only(diff), "row files deploy nothing");
     }
 
     #[test]
@@ -3289,9 +3270,7 @@ pub fn empty_summary_is_model_only(diff: &str) -> bool {
     let buildable = drop_build_irrelevant(diff);
     changed_service_crates(&buildable).is_empty()
         && changed_ts_services(&buildable).is_empty()
-        && (!changed_model_sources(&buildable).is_empty()
-            // #4096 — a seed-only card (designing/data + manifest) is a model-side change too
-            || !changed_seed_sources(&buildable).is_empty())
+        && !changed_model_sources(&buildable).is_empty()
 }
 
 /// Lines that need no build, dropped BEFORE classification (Wren's #3810: a

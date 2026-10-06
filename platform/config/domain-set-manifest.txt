@@ -17,34 +17,10 @@
 # here: it is the schema, it carries the retirement and RETIRE_ABSENT legs, and
 # it stays explicit in the verb.
 
+# #4432 (Jeff 2026-10-06, "do it"): rows live in the store and change through the
+# door, so a land no longer replays row files over them. Every set that held only
+# rows left this list (each one's subjects measured present in the store first).
+# Principals and permissions stay ONLY as the lockout recovery path (#3785) until
+# a backup restore is proven (#4171); then they leave too.
 security|urn:chorus:domains:security|roles/silas/ontology/identity-principals-3613.ttl
 security|urn:chorus:domains:security|roles/silas/ontology/permissions-4183.ttl
-security|urn:chorus:domains:security|roles/silas/ontology/security-posture-3729.ttl
-
-code-vocab|urn:chorus:domains:code|designing/data/code-vocab.ttl
-
-roles|urn:chorus:domains:roles|roles/wren/ontology/hats-instances-4175.ttl
-roles|urn:chorus:domains:roles|roles/wren/ontology/hats-appointments-4175.ttl
-
-infrastructure|urn:chorus:domains:infrastructure|roles/silas/ontology/unit-domain-4084.ttl
-
-principles|urn:chorus:domains:principles|roles/wren/ontology/principles-instances-3749.ttl
-principles|urn:chorus:domains:principles|roles/wren/ontology/principles-xp-4006.ttl
-principles|urn:chorus:domains:principles|roles/wren/ontology/principles-rhymes-4006.ttl
-
-values|urn:chorus:domains:values|roles/wren/ontology/values-4006.ttl
-
-services|urn:chorus:domains:services|designing/data/service-instances.ttl
-
-practices|urn:chorus:domains:practices|roles/kade/ontology/practices-3754-instances.ttl
-
-# The ONLY set flagged `replace` (#4254). It is allowed because these two files
-# are the only writers of this graph — one generated, one hand-authored — so
-# delete-by-absence is safe by construction, and it is the only way a term
-# removed from the source actually leaves the STORE rather than surviving the
-# merge as a ghost. parse_domain_sets REFUSES the flag on any graph a second
-# set also targets; security, principles and roles could never take it.
-vocabulary|urn:chorus:domains:vocabulary|roles/silas/ontology/vocabulary-identity-4254.ttl|replace
-vocabulary|urn:chorus:domains:vocabulary|roles/silas/ontology/vocabulary-generated-4254.ttl|replace
-# #4302 — the #4293 Layer rows and domain edges are rows, served from the domains graph.
-domains|urn:chorus:domains:domains|roles/silas/ontology/cmdb-layers-4293.ttl

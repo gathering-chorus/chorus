@@ -1,5 +1,5 @@
-// model_scope — the ONE definition of "which changed files are model sources and
-// which are seed sources" (#4186, Kade's cold-eyes finding: the rule had grown
+// model_scope — the ONE definition of "which changed files are model sources"
+// (#4186, Kade's cold-eyes finding: the rule had grown
 // three copies — werk-deploy, werk.yml, athena.yml — and would drift silently).
 // Included by `#[path]` into werk-deploy (the witnessed hand-off) and athena-deploy
 // (the `scope` verb the workflows call). Pure; unit-tested in both crates.
@@ -15,18 +15,10 @@ pub fn is_model_source(path: &str) -> bool {
         || l == "designing/schemas/model-retirements.jsonl"
 }
 
-/// Seed sources (#4096): authored instance rows under designing/data and the
-/// manifest that lists them.
-pub fn is_seed_source(path: &str) -> bool {
-    let l = path.trim();
-    (l.starts_with("designing/data/") && l.ends_with(".ttl"))
-        || l == "platform/config/instance-seed-manifest.txt"
-}
+// #4432 (Jeff 2026-10-06: "why do we reload this data as part of our deploy"):
+// there are no seed sources. Instance rows live in the store and change through
+// the door; a land never replays row files over newer rows.
 
 pub fn changed_model_sources(diff: &str) -> Vec<String> {
     diff.lines().map(str::trim).filter(|l| is_model_source(l)).map(str::to_string).collect()
-}
-
-pub fn changed_seed_sources(diff: &str) -> Vec<String> {
-    diff.lines().map(str::trim).filter(|l| is_seed_source(l)).map(str::to_string).collect()
 }

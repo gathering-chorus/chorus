@@ -599,7 +599,7 @@ jobs:
       # that used to run the model pipeline here: "why is that part of this flow!"
       # The land EVENT triggers athena:
       # chorus-mcp's werk-merge case scopes the landed sha and, when it carried model
-      # or seed sources, starts athena.yml detached (athena.trigger.started on the
+      # sources, starts athena.yml detached (athena.trigger.started on the
       # spine, its own trace, card=<card>). This run is werk only.
 
       - name: accept

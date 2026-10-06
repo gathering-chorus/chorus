@@ -62,6 +62,12 @@ edge move) — the first fix whose done-ness is defined by a governance check.
 
 ## Addendum (2026-08-15, #3895) — the seed verb's recovery boundary
 
+> **Superseded 2026-10-06 (#4432).** Jeff: "why do we reload this data as part of
+> our deploy" — the deploy seed leg, its manifest and its test are removed. Rows
+> live in the store and change through the door; a land never replays row files
+> over newer rows. `athena-model seed` remains for an explicit one-off load
+> (`--kind/--ttl`). What follows is history.
+
 The deploy-time instance seeding moved out of `chorus-model-deploy.sh` and INTO
 the existing verb binary: `athena-model seed --deploy` (ADR-038 — no new
 deploy-path bash; Jeff's ruling the same day). Its file list is data:

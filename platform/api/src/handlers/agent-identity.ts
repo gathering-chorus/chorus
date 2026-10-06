@@ -19,7 +19,9 @@ export async function verifyAgentIdentity(authorization: string, deps: AgentIden
     const result = await deps.verify(match[1]);
     if (!result.ok) return { status: 401, body: { ok: false, error: result.reason } };
     const role = await deps.roleForWebId(result.webId);
-    if (!role || !['wren', 'silas', 'kade', 'jeff'].includes(role)) {
+    // #4432 — the model's holdsRole is the answer; a name list here refused
+    // Abby (role-unresolved) after the roles door already knew her.
+    if (!role) {
       return { status: 403, body: { ok: false, error: 'role-unresolved' } };
     }
     return { status: 200, body: { ok: true, principal: result.webId, role, scopes: result.scope } };

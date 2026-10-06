@@ -5,7 +5,7 @@
 # #4040 — the pipeline INSTANCES. Exactly the two REAL pipelines with their
 # steps (cicd, athena); clearing + borg as planned instances with NO invented
 # steps (Jeff 16:03: cicd is ONE instance of the pipelines domain, never the
-# archetype). Pure ABox → urn:chorus:instances via instance-seed-manifest.
+# archetype). Pure ABox; the rows live in the store (#4432: no deploy seed).
 # Every step declares its executor blend: human | agent | deterministic
 # (Jeff 16:05 — cicd's demo GO is the designed human step).
 # =============================================================================

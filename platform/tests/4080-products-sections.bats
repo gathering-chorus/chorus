@@ -71,17 +71,6 @@ v = v if isinstance(v, list) else [v]
 sys.exit(0 if any("werk-product-design" in str(x) for x in v) and not any("werk-subproduct-design" in str(x) for x in v) else 1)'
 }
 
-@test "AC2: the sections come from the seed file the pipeline deploys, not a hand write" {
-  # the served text for one product/section is byte-for-byte in the day-authored seed
-  seed="$CHORUS_ROOT/designing/data/product-instances.ttl"
-  [ -f "$seed" ]
-  grep -q '^product:designing/data/product-instances.ttl' "$CHORUS_ROOT/platform/config/instance-seed-manifest.txt"
-  for p in $PRODUCTS; do
-    first="$(printf '%s' "$(product_row "$p")" | python3 -c 'import sys,json; print(json.load(sys.stdin).get("promise","").splitlines()[0][:60])')"
-    [ -n "$first" ]
-    grep -qF -- "$first" "$seed" || { echo "$p promise not in seed: $first"; return 1; }
-  done
-}
 
 @test "AC4 negative proof (#3734): the section check FAILS on a row missing a section" {
   row="$(product_row spine)"

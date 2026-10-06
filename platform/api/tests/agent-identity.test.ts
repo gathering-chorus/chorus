@@ -36,3 +36,7 @@ test('unmapped identity refuses; unavailable identity dependencies fail closed',
   expect(await verifyAgentIdentity(`Bearer ${token()}`, { verify, roleForWebId: async () => { throw new Error('offline'); } }))
     .toEqual({ status: 503, body: { ok: false, error: 'identity-unavailable' } });
 });
+test('#4432: any role the model resolves is verified, not only the first three', async () => {
+  const result = await verifyAgentIdentity(`Bearer ${token()}`, { verify, roleForWebId: async (webId) => webId === principal ? 'abby-normal' : null });
+  expect(result).toEqual({ status: 200, body: { ok: true, principal, role: 'abby-normal', scopes: ['urn:chorus:index'] } });
+});
