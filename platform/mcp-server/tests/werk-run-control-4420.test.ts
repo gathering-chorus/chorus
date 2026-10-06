@@ -24,6 +24,7 @@ function fakeDeps(aliveAfterTerm: boolean) {
   const deps: ControlDeps = {
     killGroup: (pid, sig) => { signals.push([pid, sig]); if (sig === 'SIGKILL' || !aliveAfterTerm) alive = false; },
     isAlive: () => alive,
+    startedAt: () => new Date('2026-10-06T14:00:10Z'),
     writeRun: (r) => written.push(r),
     appendLog: (_f, line) => logs.push(line),
     sleep: async () => {},
@@ -63,6 +64,16 @@ describe('cancel', () => {
     pauseRun(run(), dir);
     await cancelRun(run(), fakeDeps(false).deps, dir);
     assert.equal(isHeld(4420, dir), false);
+  });
+});
+
+describe("cancel signals only this run's own process", () => {
+  // NEGATIVE PROOF — the 10-06 #4214 pin: Sep 19 start, its pid now held by another process.
+  test('a pid that started long after the run is never signalled', async () => {
+    const f = fakeDeps(false);
+    const res = await cancelRun(run({ startedAt: '2026-09-19T23:52:10Z' }), f.deps, tmp());
+    assert.equal(f.signals.length, 0);
+    assert.equal(res.ok && res.phase, 'cancelled', 'the run record still says cancelled');
   });
 });
 

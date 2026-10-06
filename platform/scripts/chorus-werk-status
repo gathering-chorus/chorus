@@ -1,4 +1,5 @@
 #!/usr/bin/env python3
+# @domain: cicd
 """
 chorus-werk-status — where is each pipeline, in one answer. (#3782)
 

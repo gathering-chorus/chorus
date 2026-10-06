@@ -13,6 +13,7 @@
  * live act.
  */
 import * as fs from 'fs';
+import { execFileSync } from 'child_process';
 import * as path from 'path';
 import type { WerkRun } from './werk-run-state';
 
@@ -22,6 +23,8 @@ export interface ControlDeps {
   /** Signal a whole process group (negative pid). Throws ESRCH when it is gone. */
   killGroup: (pid: number, signal: NodeJS.Signals) => void;
   isAlive: (pid: number) => boolean;
+  /** When the process holding `pid` started, or null if unknown. */
+  startedAt: (pid: number) => Date | null;
   writeRun: (run: WerkRun) => void;
   appendLog: (file: string, line: string) => void;
   sleep: (ms: number) => Promise<void>;
@@ -46,7 +49,10 @@ export async function cancelRun(run: WerkRun | null, deps: ControlDeps, runsDir:
   if (run.phase !== 'running') {
     return { ok: false, refusal: 'not-running', note: `The run on record is '${run.phase}', not running — nothing to cancel.` };
   }
-  if (typeof run.pid === 'number' && deps.isAlive(run.pid)) {
+  // A pid outlives its run: on 2026-10-06 a Sep 19 pin still named pid 30554,
+  // and a TERM by pid alone hit whatever process holds that number now. Signal
+  // only the process that started when this run did.
+  if (typeof run.pid === 'number' && deps.isAlive(run.pid) && sameProcess(run, deps)) {
     try { deps.killGroup(run.pid, 'SIGTERM'); } catch { /* already gone */ }
     const step = 250;
     for (let waited = 0; waited < graceMs && deps.isAlive(run.pid); waited += step) await deps.sleep(step);
@@ -59,6 +65,15 @@ export async function cancelRun(run: WerkRun | null, deps: ControlDeps, runsDir:
   const cancelled: WerkRun = { ...run, phase: 'cancelled', failureReason: `cancelled at ${deps.now().toISOString()}` };
   deps.writeRun(cancelled);
   return { ok: true, phase: 'cancelled', note: `Run ${run.runId} cancelled: act and its children stopped, the run record and its log say cancelled.` };
+}
+
+/** The live pid is this run's own process: it started within a minute of the run. */
+export function sameProcess(run: WerkRun, deps: Pick<ControlDeps, 'startedAt'>): boolean {
+  if (typeof run.pid !== 'number') return false;
+  const began = deps.startedAt(run.pid);
+  const pinned = Date.parse(run.startedAt);
+  if (!began || Number.isNaN(pinned)) return false;
+  return Math.abs(began.getTime() - pinned) <= 60_000;
 }
 
 /** Hold a live run between steps. */
@@ -87,6 +102,13 @@ export function liveControlDeps(writeRun: (run: WerkRun) => void): ControlDeps {
   return {
     killGroup: (pid, signal) => process.kill(-pid, signal),
     isAlive: (pid) => { try { process.kill(pid, 0); return true; } catch { return false; } },
+    startedAt: (pid) => {
+      try {
+        const out = execFileSync('ps', ['-o', 'lstart=', '-p', String(pid)], { encoding: 'utf8' }).trim();
+        const d = new Date(out);
+        return out && !Number.isNaN(d.getTime()) ? d : null;
+      } catch { return null; }
+    },
     writeRun,
     appendLog: (file, line) => fs.appendFileSync(file, line),
     sleep: (ms) => new Promise((r) => setTimeout(r, ms)),

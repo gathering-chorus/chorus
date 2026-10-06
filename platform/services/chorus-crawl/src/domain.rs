@@ -1,3 +1,4 @@
+// @domain: code — this file names every domain in its rule tables; the crawler is the code product (#4420)
 //! #4201 — which domain does a test file exercise?
 //!
 //! Jeff, 2026-09-17 13:34: "there are tests that test the services domain or
