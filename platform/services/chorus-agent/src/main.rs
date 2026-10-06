@@ -169,6 +169,12 @@ async fn run() -> Result<Value> {
             json!({"usage":"chorus-agent launch <role> [--profile name] [--cwd path]; start|register|run (JSON stdin); status [session]; resume|cancel|stop|disconnect|events <session>; send|context|handoff|switch|approve <session> (JSON stdin); reload; profiles; doctor [profile]; serve via chorus-agentd","version":VERSION}),
         );
     }
+    // #4444 — a Gemini role's pane login writes its allowed tools before Gemini
+    // starts (the same generation the supervisor did, from CHORUS_ALLOW_RULES_FILE).
+    if verb == "allowed-tools" {
+        let path = chorus_agent::server::gemini_allowed_installed()?;
+        return Ok(json!({"installed": path}));
+    }
     if verb == "doctor" {
         let c = config::read(&config::config_path())?;
         if let Some(name) = args.get(1) {
