@@ -1,4 +1,5 @@
 // @test-type: integration:api — the spine-event route through the test app; temp spine log, temp index db
+// @domain: events
 // @card: #2109
 // @owner: wren
 /**

@@ -1,3 +1,4 @@
+// @domain: events
 // @test-type: unit — event types by producer and subject, from the generated registry
 // @card: #4438
 // @owner: wren

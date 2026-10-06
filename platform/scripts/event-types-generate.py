@@ -1,4 +1,5 @@
 #!/usr/bin/env python3
+# @domain: events
 """#4438 — the spine's event registry lives in the model; the JSON is generated.
 
 The source is designing/data/event-type-instances.ttl: one chorus:EventType row

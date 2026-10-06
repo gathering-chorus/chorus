@@ -1,3 +1,4 @@
+# @domain: events
 # The spine's event registry (#4438). THIS FILE IS THE SOURCE: the events in
 # designing/schemas/spine-events.json are generated from it by
 # platform/scripts/event-types-generate.py. Register an event by adding a row.

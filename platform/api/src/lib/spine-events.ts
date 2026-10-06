@@ -1,3 +1,4 @@
+// @domain: events
 /* eslint-disable security/detect-non-literal-fs-filename -- the spine path is fixed by the caller (LOG_PATHS.chorus), never request input (#4431) */
 /**
  * #4431 — the one reader of the spine. Jeff, 2026-10-05: "to me spine is an

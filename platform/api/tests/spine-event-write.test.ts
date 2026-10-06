@@ -1,3 +1,4 @@
+// @domain: events
 // @test-type: unit — the spine-event write handler with fake fs and db
 // @card: #4438
 // @owner: wren
