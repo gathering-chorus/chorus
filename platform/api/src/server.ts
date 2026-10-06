@@ -1243,6 +1243,7 @@ app.get('/api/chorus/conversation', async (req: Request, res: Response) => {
 import { fetchChorusCardStory, type CardMeta, type NudgeMessage } from './handlers/chorus-card-story';
 import { recentNudges } from './nudge-fold';
 import { safeReadFile, readFileTail } from './lib/log-reader';
+import { SpineEventsReader } from './lib/spine-events';
 
 // #3406 — tail budget for the /context/spine log read. 4MB holds ~8x MAX_LIMIT(500)
 // recent JSONL spine events; reading only this (vs the full ~535MB log) keeps the
@@ -1694,37 +1695,19 @@ const readPulseFile = (): string | null => readPulseSnapshot();
 // #4028 — role state is derived from the streams on every read. The declared
 // file (/tmp/claude-team-scan/<role>-declared.json) and the #2193 inferred
 // side-file are gone: nothing is stored, so nothing reverts to "unknown".
-// The spine tail (4 MB ≈ the last few hours at today's rate) is read per
-// request and filtered to the role and the lookback the handler asks for.
-// One spine line → SpineLine, or null when it is not an event line worth keeping.
-const parseSpineLine = (line: string, sinceMs: number): SpineLine | null => {
-  let p: Record<string, unknown>;
-  try { p = JSON.parse(line) as Record<string, unknown>; } catch { return null; }
-  if (typeof p.event !== 'string' || typeof p.timestamp !== 'string') return null;
-  const t = Date.parse(p.timestamp);
-  if (!Number.isFinite(t) || t < sinceMs) return null;
-  return {
-    timestamp: p.timestamp,
-    event: p.event,
-    role: typeof p.role === 'string' ? p.role : undefined,
-    card_id: typeof p.card_id === 'string' || typeof p.card_id === 'number' ? p.card_id : undefined,
-    detail: typeof p.detail === 'string' ? p.detail : undefined,
-    payload: typeof p.payload === 'string' ? p.payload : undefined,
-  };
-};
+// #4431 — the events domain's one reader serves it. This used to read the last
+// 4 MB of chorus.log synchronously, once per role, on every /context/roles call
+// (~1700 calls an hour): 20 of 41 attributed freezes on 10-04/05. Now one read
+// per refresh window, off the event loop, shared by every consumer.
+const spineEvents = new SpineEventsReader({ path: `${process.env.HOME}/.chorus/chorus.log`, tailBytes: SPINE_TAIL_BYTES });
 
-const readSpineEventsForRole = (role: string, sinceMs: number): SpineLine[] => {
-  const raw = readFileTail(`${process.env.HOME}/.chorus/chorus.log`, SPINE_TAIL_BYTES);
-  if (raw == null) return [];
-  const roleTag = `"role":"${role}"`;
-  const out: SpineLine[] = [];
-  for (const line of raw.split('\n')) {
-    // cheap pre-filter before JSON.parse: the role, or a demo event (its go may come from jeff)
-    if (!line.includes(roleTag) && !line.includes('"event":"demo.')) continue;
-    const ev = parseSpineLine(line, sinceMs);
-    if (ev) out.push(ev);
+const readSpineEventsForRole = async (role: string, sinceMs: number): Promise<SpineLine[]> => {
+  // the role's own lines, plus demo events (a demo's go may come from jeff)
+  try {
+    return (await spineEvents.query({ sinceMs })).filter((r) => r.role === role || r.event.startsWith('demo.'));
+  } catch {
+    return []; // an unreadable spine derives as no activity, as before; GET /spine-events reports it as 503
   }
-  return out;
 };
 
 /** #4028 — the board's WIP by owner. The pulse snapshot is the same source
@@ -3068,6 +3051,22 @@ import { handleSpineEvent } from './spine-event-write';
 // #4417 — CHORUS_LOG_FILE first (the membrane seam, #3615): the integration test
 // that drives this route was appending to the live spine on every run.
 const SPINE_EVENT_LOG = process.env.CHORUS_LOG_FILE || `${process.env.HOME}/.chorus/chorus.log`;
+// #4431 — read side of the events domain: one endpoint, one reader. Every
+// consumer asks here (role, type, since, limit) instead of opening chorus.log.
+app.get('/api/chorus/spine-events', async (req: Request, res: Response) => {
+  const role = typeof req.query.role === 'string' && req.query.role ? req.query.role : undefined;
+  const types = typeof req.query.type === 'string' && req.query.type ? req.query.type.split(',') : undefined;
+  const sinceRaw = typeof req.query.since === 'string' ? Date.parse(req.query.since) : NaN;
+  const limit = Math.min(2000, Math.max(1, parseInt(str(req.query.limit) || '500', 10) || 500));
+  try {
+    const rows = await spineEvents.query({ role, types, sinceMs: Number.isFinite(sinceRaw) ? sinceRaw : undefined, limit });
+    // reads = file reads since start: shows the sharing (it grows once per window, not once per call)
+    res.json({ count: rows.length, reads: spineEvents.reads, events: rows.map(({ ts: _ts, ...r }) => r) });
+  } catch (e) {
+    res.status(503).json({ error: 'spine unreadable', detail: e instanceof Error ? e.message : String(e) });
+  }
+});
+
 app.post('/api/chorus/spine-event', (req: Request, res: Response) => {
   handleSpineEvent(req, res, {
     appendFileSync: fs.appendFileSync,

@@ -33,8 +33,9 @@ export type RoleName = (typeof KNOWN_ROLES)[number];
 
 export interface ContextRolesDeps {
   sparql: StampSparqlClient;
-  /** Spine lines for the role since `sinceMs` (epoch ms). May include other roles; the derivation filters. */
-  readEvents: (role: string, sinceMs: number) => SpineLine[];
+  /** Spine lines for the role since `sinceMs` (epoch ms). May include other roles; the derivation filters.
+   *  #4431 — may be async: production answers from the events domain's one shared reader. */
+  readEvents: (role: string, sinceMs: number) => SpineLine[] | Promise<SpineLine[]>;
   /** The board's WIP cards with owners. */
   listWipCards: () => WipCardEntry[];
   /** Override in tests so timestamps are deterministic. */
@@ -77,8 +78,8 @@ export interface ContextRolesResponse {
   body: ContextEnvelope<{ roles: ContextRolesRow[] }>;
 }
 
-function shapeRoleRow(deps: ContextRolesDeps, name: string, nowMs: number, wip: WipCardEntry[]): ContextRolesRow {
-  const events = deps.readEvents(name, nowMs - DEMO_LOOKBACK_MS);
+async function shapeRoleRow(deps: ContextRolesDeps, name: string, nowMs: number, wip: WipCardEntry[]): Promise<ContextRolesRow> {
+  const events = await deps.readEvents(name, nowMs - DEMO_LOOKBACK_MS);
   const d = stateFromStreams({ role: name, events, wipCards: wip, now: nowMs });
   const stale = d.lastActivity === null
     || nowMs - new Date(d.lastActivity).getTime() > STALE_THRESHOLD_MS;
@@ -105,6 +106,6 @@ export async function fetchContextRoles(
   const header = await stampHeader(deps.sparql, null);
   const nowMs = (deps.now?.() ?? new Date()).getTime();
   const wip = deps.listWipCards();
-  const rows: ContextRolesRow[] = KNOWN_ROLES.map((name) => shapeRoleRow(deps, name, nowMs, wip));
+  const rows: ContextRolesRow[] = await Promise.all(KNOWN_ROLES.map((name) => shapeRoleRow(deps, name, nowMs, wip)));
   return { status: 200, body: buildEnvelope(header, sourceUrl, { roles: rows }) };
 }
