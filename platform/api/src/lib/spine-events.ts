@@ -81,6 +81,26 @@ export function typesFor(
     .map(([name]) => name);
 }
 
+const param = (v: unknown): string | undefined => (typeof v === 'string' && v ? v : undefined);
+
+/**
+ * #4438 — the GET /api/chorus/spine-events query: role, type (comma list),
+ * since, limit, producer, about. producer/about narrow the types from the
+ * registry. null = the filters match no type, so the answer is no events.
+ */
+export function parseSpineEventsQuery(
+  query: Record<string, unknown>,
+  registry: Record<string, { producer?: string; about?: string }>,
+): SpineEventQuery | null {
+  let types = param(query.type)?.split(',');
+  const owned = typesFor(registry, { producer: param(query.producer), about: param(query.about) });
+  if (owned !== undefined) types = types ? types.filter((t) => owned.includes(t)) : owned;
+  if (types !== undefined && types.length === 0) return null;
+  const since = Date.parse(param(query.since) ?? '');
+  const limit = Math.min(2000, Math.max(1, parseInt(param(query.limit) ?? '500', 10) || 500));
+  return { role: param(query.role), types, sinceMs: Number.isFinite(since) ? since : undefined, limit };
+}
+
 export function filterSpineEvents(rows: SpineEventRow[], q: SpineEventQuery): SpineEventRow[] {
   const types = q.types && q.types.length > 0 ? new Set(q.types) : null;
   const out = rows.filter((r) =>

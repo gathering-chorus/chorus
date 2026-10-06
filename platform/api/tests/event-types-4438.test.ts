@@ -3,7 +3,7 @@
 // @card: #4438
 // @owner: wren
 import * as path from 'path';
-import { typesFor, filterSpineEvents, type SpineEventRow } from '../src/lib/spine-events';
+import { typesFor, filterSpineEvents, parseSpineEventsQuery, type SpineEventRow } from '../src/lib/spine-events';
 import { loadSpineSchema } from '../src/spine-event-write';
 
 const registry = loadSpineSchema(path.resolve(__dirname, '../../../designing/schemas/spine-events.json')).events ?? {};
@@ -38,5 +38,11 @@ describe('#4438 — consume by producer and by subject', () => {
     expect(t).toEqual([]);
     const byCards = filterSpineEvents(rows, { types: typesFor(registry, { producer: 'cards' }) });
     expect(byCards.map((r) => r.event)).toEqual(['card.pulled']);
+  });
+
+  it('the GET query: producer narrows type, an unknown producer answers nothing', () => {
+    expect(parseSpineEventsQuery({ producer: 'cards', type: 'card.pulled,hook.decision' }, registry)!.types).toEqual(['card.pulled']);
+    expect(parseSpineEventsQuery({ producer: 'no-such-domain' }, registry)).toBeNull();
+    expect(parseSpineEventsQuery({ role: 'wren', limit: '9999' }, registry)).toEqual({ role: 'wren', types: undefined, sinceMs: undefined, limit: 2000 });
   });
 });
