@@ -852,10 +852,12 @@ pub fn case_names(path: &str, content: &str) -> Vec<String> {
         rust_case_names(content)
     } else if path.ends_with(".bats") {
         bats_case_names(content)
-    } else if [".test.ts", ".test.js", ".spec.ts", ".spec.js"]
+    } else if [".test.ts", ".test.js", ".test.cjs", ".test.mjs", ".spec.ts", ".spec.js"]
         .iter()
         .any(|s| b.ends_with(s))
     {
+        // #4435 — .test.cjs/.mjs are node:test files (agent-adapters); their
+        // `test('title', …)` calls are the names werk-test's npm lane stores.
         jest_case_names(content)
     } else if path.ends_with(".sh") {
         vec![b.to_string()]
@@ -1473,6 +1475,36 @@ mod delete_batch_4185 {
     fn a_full_chunk_fits_the_write_body_cap() {
         let long: Vec<String> = (0..DELETE_BATCH_ROWS).map(|i| format!("{:0>120}", i)).collect();
         assert!(delete_batch_body(&long).len() < 65_536, "{} bytes", delete_batch_body(&long).len());
+    }
+}
+
+#[cfg(test)]
+mod node_test_cjs_4435 {
+    use super::*;
+
+    // The shape of platform/agent-adapters/tests/runtime.test.cjs: CommonJS,
+    // `test('title', async t => …)`, no describe. Checked live 2026-10-06: the
+    // crawler's names equal `node --test` TAP names, 7 and 4 cases.
+    const CJS: &str = "const {test} = require('node:test');\n\
+test('Gemini rejects no-tools before launching a process',async()=>{\n});\n\
+test('OpenCode refuses no-tools when server does not confirm policy',async t=>{ t.after(()=>{}); });\n";
+
+    #[test]
+    fn a_test_cjs_file_registers_its_node_test_titles() {
+        assert_eq!(
+            case_names("platform/agent-adapters/tests/runtime.test.cjs", CJS),
+            vec![
+                "Gemini rejects no-tools before launching a process".to_string(),
+                "OpenCode refuses no-tools when server does not confirm policy".to_string(),
+            ]
+        );
+        assert_eq!(case_names("x/tests/a.test.mjs", CJS).len(), 2);
+    }
+
+    // NEGATIVE PROOF — a fixture script beside the tests is not a test file.
+    #[test]
+    fn a_plain_cjs_helper_registers_nothing() {
+        assert!(case_names("platform/agent-adapters/tests/gemini-fixture.cjs", CJS).is_empty());
     }
 }
 

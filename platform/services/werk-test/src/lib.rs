@@ -5764,6 +5764,119 @@ pub fn npm_test_runner_script_is_node_test(script: &str) -> bool {
     script.contains("--test")
 }
 
+/// #4435 — how to run a node:test package one file at a time, read from its
+/// package.json `test` script: the `npm run <x>` steps that must run first
+/// (agent-adapters' tests load `../dist`, so `npm run build && node --test …`)
+/// and the runner with its glob dropped, so one file can be appended.
+#[derive(Debug, PartialEq, Eq)]
+pub struct NodeTestPlan {
+    pub before: Vec<Vec<String>>,
+    pub prog: String,
+    pub args: Vec<String>,
+}
+
+/// The `test` value inside package.json's `scripts`, wherever it sits on the
+/// line. The old reader split the first `:` of the line holding `"test":`,
+/// which on a one-line `"scripts": { "build": …, "test": … }` returned the
+/// whole object and ran a program named `{`.
+pub fn package_test_script(package_json: &str) -> Option<String> {
+    let scripts = &package_json[package_json.find("\"scripts\"")?..];
+    let at = scripts.find("\"test\"")? + "\"test\"".len();
+    let rest = scripts[at..].trim_start().strip_prefix(':')?.trim_start().strip_prefix('"')?;
+    let mut out = String::new();
+    let mut chars = rest.chars();
+    while let Some(c) = chars.next() {
+        match c {
+            '"' => return Some(out),
+            '\\' => out.push(chars.next()?),
+            c => out.push(c),
+        }
+    }
+    None
+}
+
+/// The plan for a node:test `test` script, or None when it is not this lane's
+/// (no `--test`) or has a step before the runner other than `npm run <x>`.
+pub fn node_test_plan(script: &str) -> Option<NodeTestPlan> {
+    let steps: Vec<&str> = script.split("&&").map(str::trim).filter(|s| !s.is_empty()).collect();
+    let (runner, before) = steps.split_last()?;
+    let mut toks = runner.split_whitespace();
+    let prog = toks.next()?.to_string();
+    // keep flags, drop the glob (anything that is not a flag)
+    let args: Vec<String> = toks.filter(|t| t.starts_with('-')).map(str::to_string).collect();
+    if !args.iter().any(|a| a == "--test") {
+        return None;
+    }
+    let mut pre = Vec::new();
+    for step in before {
+        let words: Vec<String> = step.split_whitespace().map(str::to_string).collect();
+        if words.len() != 3 || words[0] != "npm" || words[1] != "run" {
+            return None;
+        }
+        pre.push(words);
+    }
+    let (prog, args) = if prog == "tsx" {
+        let mut v = vec!["--no-install".to_string(), "tsx".to_string()];
+        v.extend(args);
+        ("npx".to_string(), v)
+    } else {
+        (prog, args)
+    };
+    Some(NodeTestPlan { before: pre, prog, args })
+}
+
+/// node:test files a package's script globs: `.test.ts/.js` and, #4435, the
+/// CommonJS / ESM forms `.test.cjs/.mjs` (agent-adapters).
+pub fn is_node_test_file(name: &str) -> bool {
+    [".test.ts", ".test.js", ".test.cjs", ".test.mjs"].iter().any(|s| name.ends_with(s))
+}
+
+#[cfg(test)]
+mod node_test_plan_4435 {
+    use super::*;
+
+    const AGENT_ADAPTERS: &str = r#"{
+  "name": "@chorus/agent-adapters", "version": "0.1.0", "private": true,
+  "scripts": { "build": "tsc", "test": "npm run build && node --test tests/*.test.cjs" },
+  "devDependencies": { "@types/node": "25.6.0" }
+}"#;
+
+    #[test]
+    fn a_one_line_scripts_object_yields_the_test_script() {
+        assert_eq!(package_test_script(AGENT_ADAPTERS).as_deref(), Some("npm run build && node --test tests/*.test.cjs"));
+    }
+
+    #[test]
+    fn a_build_step_runs_first_then_node_test_per_file() {
+        let plan = node_test_plan("npm run build && node --test tests/*.test.cjs").unwrap();
+        assert_eq!(plan.before, vec![vec!["npm".to_string(), "run".into(), "build".into()]]);
+        assert_eq!((plan.prog.as_str(), plan.args.clone()), ("node", vec!["--test".to_string()]));
+    }
+
+    #[test]
+    fn tsx_and_plain_node_scripts_keep_their_shape() {
+        let tsx = node_test_plan("tsx --test tests/*.test.ts").unwrap();
+        assert_eq!(tsx.prog, "npx");
+        assert_eq!(tsx.args, vec!["--no-install", "tsx", "--test"]);
+        assert!(tsx.before.is_empty());
+    }
+
+    // NEGATIVE PROOF — the shape that ran a program named `{`, and steps this
+    // lane will not run blind, are refused rather than guessed.
+    #[test]
+    fn not_node_test_or_an_unknown_pre_step_is_refused() {
+        assert_eq!(node_test_plan("cucumber-js --tags @gate"), None);
+        assert_eq!(node_test_plan("rm -rf x && node --test t.cjs"), None);
+        assert_ne!(node_test_plan(&package_test_script(AGENT_ADAPTERS).unwrap()).unwrap().prog, "{");
+    }
+
+    #[test]
+    fn cjs_and_mjs_are_test_files() {
+        assert!(is_node_test_file("runtime.test.cjs") && is_node_test_file("x.test.mjs"));
+        assert!(!is_node_test_file("gemini-fixture.cjs"));
+    }
+}
+
 /// #4236 — the integration count comes from the selection, both halves.
 #[cfg(test)]
 mod selected_needs_stack_4236 {
