@@ -219,3 +219,33 @@ fn a_route_change_selects_the_tests_that_call_it_over_http_too() {
     let s = select("platform/api/src/server.ts", &rows, &t, Some(&routes));
     assert!(s.tests.contains_key(p), "{:?}", s.tests);
 }
+
+// #4440 — what the retired bats-by-name lane (#3917/#3934) caught, the one
+// rule still catches: a workflow line a suite greps, a hook a suite runs.
+#[test]
+fn a_werk_yml_change_selects_the_suite_that_greps_it() {
+    let rows = vec![row("platform/tests/membrane-guard.bats", "cicd"), row("platform/tests/other.bats", "cicd")];
+    let texts = HashMap::from([
+        ("platform/tests/membrane-guard.bats", "grep -q 'CHORUS_MEMBRANE' \"$REPO/.github/workflows/werk.yml\""),
+        ("platform/tests/other.bats", "grep x .github/workflows/other.yml"),
+    ]);
+    let s = select(".github/workflows/werk.yml", &rows, &texts, None);
+    assert_eq!(s.tests.keys().cloned().collect::<Vec<_>>(), vec!["platform/tests/membrane-guard.bats".to_string()]);
+}
+
+#[test]
+fn transitive_importers_reach_the_test_and_stop_at_a_hub() {
+    let sources = vec!["platform/api/src/a.ts".to_string(), "platform/api/src/b.ts".to_string(), "platform/api/src/server.ts".to_string()];
+    let texts = HashMap::from([
+        ("platform/api/src/a.ts", "import { c } from './c';"),
+        ("platform/api/src/b.ts", "import { a } from './a';"),
+        ("platform/api/src/server.ts", "import { b } from './b';"),
+    ]);
+    let text_of = |p: &str| texts.get(p).map(|s| s.to_string());
+    let (via, hubs) = werk_test::importers_of("platform/api/src/c.ts", &sources, &text_of, &|p: &str| p.ends_with("server.ts"));
+    assert_eq!(via, vec!["platform/api/src/a.ts".to_string(), "platform/api/src/b.ts".to_string()]);
+    assert_eq!(hubs, vec!["platform/api/src/server.ts".to_string()]);
+    // NEGATIVE PROOF: without the hub stop, the hub is walked through
+    let (via, _) = werk_test::importers_of("platform/api/src/c.ts", &sources, &text_of, &|_| false);
+    assert!(via.contains(&"platform/api/src/server.ts".to_string()));
+}

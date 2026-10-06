@@ -163,19 +163,13 @@ fn run(args: &[String]) -> Result<i32, String> {
             }
         }
     };
-    // #3917 — bats suites and the shell scripts they cover were invisible to every
-    // selection lane above: neither is a Rust crate nor a TS package, so a diff made
-    // entirely of them selected ZERO units and the blocking gate exited 0. Union the
-    // implicated suites in here, after scoping, so they are added on every lane
-    // (scoped, diff-scoped, and full fallback alike).
+    // #4440 — ONE selection rule (Jeff 2026-10-06: "we dont need 4 conflicting
+    // set of rules"): the tests that exercise the changed files, below. The
+    // units above only say which crates and packages to BUILD and check; the
+    // bats-by-name lane (#3917) and jest --findRelatedTests (#3912) are gone —
+    // the exercise rule names the same suites by the same path, and follows
+    // imports transitively itself.
     let mut units = units;
-    let cov_index = build_suite_coverage(&werk);
-    for suite in werk_test::affected_bats_suites(&changed, &cov_index) {
-        let u = werk_test::TestUnit::BatsSuite(suite);
-        if !units.contains(&u) {
-            units.push(u);
-        }
-    }
     // #4419 — the registered tests (any layer) that exercise each changed file.
     // A changed file in a unit that no test exercises is refused and named.
     // Jeff, 2026-10-02: the card's domain tests run HERE, in werk-test and the
@@ -190,7 +184,7 @@ fn run(args: &[String]) -> Result<i32, String> {
                 d.domains.iter().cloned().collect::<Vec<_>>().join(", "),
                 d.tests.len()
             );
-            if args.iter().any(|a| a == "--explain") {
+            if args.iter().any(|a| a == "--explain" || a == "--select-only") {
                 for (f, why) in &d.tests {
                     println!("domain-select:   {f} ({why})");
                 }
@@ -238,12 +232,6 @@ fn run(args: &[String]) -> Result<i32, String> {
                   ("untagged", &d.untagged.len().to_string())]);
         }
     }
-    // AC2 — a changed script no suite exercises is a NAMED gap. Silence here is how
-    // "nothing ran" became indistinguishable from "everything passed".
-    for s in werk_test::uncovered_scripts(&changed, &cov_index) {
-        println!("   gap: {} — no bats suite references this script (uncovered, #3917)", s);
-        emit_spine("test.script.uncovered", &role, &card, &trace, &[("script", &s)]);
-    }
     let units = units;
     // #4419 — `--select-only`: print what this diff selects and why, run nothing.
     // Jeff 2026-10-06: "how do u figure out the tests to run for a file what r u querying".
@@ -287,22 +275,9 @@ fn run(args: &[String]) -> Result<i32, String> {
     let self_mod = is_self_modifying(&changed);
     let plan = check_plan(&units);
 
-    // #3912 phase 1 — the jest leg pulls REGISTERED tests: per affected TS
-    // package, jest's import graph names the related test files for the diff
-    // and the registry (unit layer) is the authority on what runs. Registry
-    // unreachable → FULL per-package fallback, loudly labeled.
-    let mut related_all: Vec<String> = Vec::new();
-    for u in &units {
-        if let werk_test::TestUnit::TsPackage(p) = u {
-            let in_pkg: Vec<String> = changed
-                .iter()
-                .filter(|f| f.starts_with(&format!("{}/", p)))
-                .cloned()
-                .collect();
-            related_all.extend(jest_related_files(&werk, p, &in_pkg));
-        }
-    }
-    let mut jplan = jest_plan(plan_source == "model", &rows, &related_all);
+    // #3912 — registry unreachable → FULL per-package fallback, loudly labeled.
+    // Otherwise jest runs exactly the exercise rule's files (#4440).
+    let mut jplan = jest_plan(plan_source == "model", &rows, &[]);
     // #4419 — the domain lane's TS files join the selection, and an untagged
     // file's package runs every registered test it holds.
     let mut domain_reasons: std::collections::BTreeMap<String, String> = Default::default();
@@ -1435,64 +1410,6 @@ fn unit_name(u: &TestUnit) -> &str {
     }
 }
 
-/// #3917 — build the script→suite coverage index by reading each bats suite and
-/// recording the repo-relative script paths its body names. Deliberately textual:
-/// a suite that runs a script names it, and the tests-domain graph (stage 2) is
-/// where this becomes a declared `covers` edge rather than a read.
-fn build_suite_coverage(werk: &str) -> Vec<werk_test::SuiteCoverage> {
-    let dir = std::path::Path::new(werk).join("platform/tests");
-    let mut rows = Vec::new();
-    let entries = match std::fs::read_dir(&dir) {
-        Ok(e) => e,
-        Err(_) => return rows,
-    };
-    let mut paths: Vec<std::path::PathBuf> = entries
-        .filter_map(|e| e.ok().map(|e| e.path()))
-        .filter(|p| p.extension().map(|x| x == "bats").unwrap_or(false))
-        .collect();
-    paths.sort();
-    for path in paths {
-        let body = match std::fs::read_to_string(&path) {
-            Ok(b) => b,
-            Err(_) => continue,
-        };
-        let suite = format!(
-            "platform/tests/{}",
-            path.file_name().unwrap_or_default().to_string_lossy()
-        );
-        let mut covers: Vec<String> = Vec::new();
-        for tok in body.split(|c: char| !(c.is_alphanumeric() || "._/-".contains(c))) {
-            // #3934 — governed surfaces (workflow yml, hooks) count as coverage
-            // targets too: a suite that greps werk.yml is ABOUT werk.yml.
-            if tok.contains(".github/workflows/") || tok.contains("platform/hooks/")
-                || tok.ends_with(werk_test::WERK_CODE_CONTRACT)
-            {
-                let rel = match tok.find(".github/workflows/").or_else(|| tok.find("platform/hooks/"))
-                    .or_else(|| tok.find(werk_test::WERK_CODE_CONTRACT))
-                {
-                    Some(i) => tok[i..].to_string(),
-                    None => continue,
-                };
-                if !covers.contains(&rel) {
-                    covers.push(rel);
-                }
-                continue;
-            }
-            if tok.ends_with(".sh") {
-                let rel = match tok.find("platform/") {
-                    Some(i) => tok[i..].to_string(),
-                    None => continue,
-                };
-                if !covers.contains(&rel) {
-                    covers.push(rel);
-                }
-            }
-        }
-        rows.push(werk_test::SuiteCoverage { suite, covers });
-    }
-    rows
-}
-
 /// #3974 — bats with per-case capture: same suite-world as run_bats, but the
 /// TAP output becomes per-case results for the wire-back.
 fn run_bats_cases(werk: &str, suite: &str) -> (bool, Vec<(String, String)>, String) {
@@ -2364,40 +2281,6 @@ fn run_jest_selected(werk: &str, pkg: &str, files: &[String]) -> (bool, Vec<Case
     }
 }
 
-/// #3912 — jest's own import graph: which test FILES relate to the changed
-/// sources. `--listTests --findRelatedTests` prints absolute paths; normalize
-/// to repo-relative. Any failure yields EMPTY (selection then runs nothing
-/// for the package — visible; the full-fallback lane is only for a dead
-/// registry, not a jest hiccup, which would fail the real run anyway).
-fn jest_related_files(werk: &str, pkg: &str, changed_in_pkg: &[String]) -> Vec<String> {
-    if changed_in_pkg.is_empty() {
-        return Vec::new();
-    }
-    let pkg_dir = format!("{}/{}", werk, pkg);
-    let jest = format!("{}/node_modules/.bin/jest", pkg_dir);
-    if !Path::new(&jest).exists() {
-        return Vec::new();
-    }
-    let rel: Vec<String> = changed_in_pkg
-        .iter()
-        .map(|f| f.strip_prefix(&format!("{}/", pkg)).unwrap_or(f).to_string())
-        .collect();
-    let mut cmd = Command::new(&jest);
-    // #3918 — test child: cleared (see child_context).
-    cmd.env("CHORUS_CONTEXT", "");
-    cmd.args(["--listTests", "--findRelatedTests"]).args(&rel).current_dir(&pkg_dir);
-    match cmd.output() {
-        Ok(o) if o.status.success() => String::from_utf8_lossy(&o.stdout)
-            .lines()
-            .filter_map(|l| {
-                let l = l.trim();
-                let idx = l.find(&format!("{}/", pkg))?;
-                Some(l[idx..].to_string())
-            })
-            .collect(),
-        _ => Vec::new(),
-    }
-}
 
 /// jq-extract per-case rows from jest's --json report (curl|jq zero-dep
 /// pattern, ADR-032 §6). Any jq failure yields an EMPTY set — emit is
@@ -2883,78 +2766,6 @@ fn diff_scoped_units_inner(werk: &str, changed: &[String]) -> (Option<Vec<TestUn
     )
 }
 
-#[cfg(test)]
-mod suite_coverage_3917 {
-    use super::*;
-
-    /// #3934 — key the fixture dir on the CALLER, not on files.len(): two tests
-    /// with one file each collided in the same tmpdir and saw each other's
-    /// suites. The tests caught it; the naming scheme was the bug.
-    fn world_named(tag: &str, files: &[(&str, &str)]) -> std::path::PathBuf {
-        let root = std::env::temp_dir()
-            .join(format!("werk-test-cov-{}-{}", std::process::id(), tag));
-        let tests = root.join("platform/tests");
-        let _ = std::fs::remove_dir_all(&root);
-        std::fs::create_dir_all(&tests).unwrap();
-        for (name, body) in files {
-            std::fs::write(tests.join(name), body).unwrap();
-        }
-        root
-    }
-
-    #[test]
-    fn index_records_the_scripts_a_suite_names() {
-        let root = world_named("scripts", &[(
-            "a.bats",
-            "run bash \"${CHORUS_ROOT}/platform/scripts/gate-spine-vikunja-bridge.sh\" code 1\n",
-        )]);
-        let rows = build_suite_coverage(root.to_str().unwrap());
-        assert_eq!(rows.len(), 1);
-        assert_eq!(rows[0].suite, "platform/tests/a.bats");
-        assert_eq!(rows[0].covers, vec!["platform/scripts/gate-spine-vikunja-bridge.sh"]);
-    }
-
-    /// NEGATIVE PROOF (#3734): a suite that names NO script must yield no
-    /// coverage. If this ever returns rows, the index is matching noise and
-    /// every script would look covered — the exact hollow-gate shape #3917 fixes.
-    #[test]
-    fn a_suite_naming_no_script_covers_nothing() {
-        let root = world_named("nogovern", &[("b.bats", "@test \"nothing\" { true; }\n"), ("c.bats", "# no scripts here\n")]);
-        let rows = build_suite_coverage(root.to_str().unwrap());
-        assert_eq!(rows.len(), 2);
-        assert!(rows.iter().all(|r| r.covers.is_empty()), "got {:?}", rows);
-    }
-
-    /// A missing tests dir is empty coverage, not a panic — the index must not
-    /// take down the gate in a tree that has no bats suites.
-    /// #3934 — the index must harvest GOVERNED SURFACES, not just *.sh. This is
-    /// the edge that let #3918's werk.yml change run no tests.
-    #[test]
-    fn index_records_a_governed_surface_a_suite_greps() {
-        let root = world_named("governed", &[(
-            "guard.bats",
-            "grep -qE 'CHORUS_CONTEXT' \"$CHORUS_ROOT/.github/workflows/werk.yml\"\n",
-        )]);
-        let rows = build_suite_coverage(root.to_str().unwrap());
-        assert_eq!(rows.len(), 1);
-        assert_eq!(rows[0].covers, vec![".github/workflows/werk.yml"]);
-    }
-
-    /// NEGATIVE PROOF (#3734): a suite naming no governed surface covers none —
-    /// otherwise every yml change would sweep every suite.
-    #[test]
-    fn a_suite_naming_no_governed_surface_covers_none() {
-        let root = world_named("noscript", &[("plain.bats", "@test \"x\" { true; }\n")]);
-        let rows = build_suite_coverage(root.to_str().unwrap());
-        assert!(rows[0].covers.is_empty(), "got {:?}", rows[0].covers);
-    }
-
-    #[test]
-    fn missing_tests_dir_is_empty_not_fatal() {
-        assert!(build_suite_coverage("/nonexistent/werk/root").is_empty());
-    }
-}
-
 /// #3920 — the ui lane's stack verdict. The lane is needs-stack by nature
 /// (browser against live pages); reuse the SAME probe machinery so up/down has
 /// one definition. Probes only when the lane actually fires.
@@ -3229,6 +3040,33 @@ fn domain_select(werk: &str, changed: &[String], rows: &[TestRow]) -> Option<wer
     for f in changed.iter().filter(|f| unrunnable_test(f) || (!werk_test::is_test_file(f) && !rows.iter().any(|r| &r.file_path == *f))) {
         let routes = changed_routes_of(werk, f);
         let mut ex = werk_test::exercisers_of(f, &candidates, &text_of, &crate_of, routes.as_deref());
+        // #4440 — and the tests of the files that import it, transitively
+        // (replaces jest --findRelatedTests as a second selection)
+        if routes.is_none() {
+            if let Some(pkg) = werk_test::ts_package_of(f).filter(|_| werk_test::is_code(f)) {
+                let sources = package_sources(werk, &pkg);
+                let is_hub = |s: &str| werk_test::exercisers_of(s, &candidates, &text_of, &crate_of, None).len() > werk_test::HUB_EXERCISERS;
+                let (via, hubs) = werk_test::importers_of(f, &sources, &text_of, &is_hub);
+                for i in &via {
+                    ex.extend(werk_test::exercisers_of(i, &candidates, &text_of, &crate_of, None));
+                }
+                if !hubs.is_empty() {
+                    println!("domain-select: {} — not expanded through hub(s) [{}]; their own tests run when they change", f, hubs.join(", "));
+                }
+                ex.sort();
+                ex.dedup();
+            }
+        }
+        // #4440 — a shared Rust file is compiled into the crates that
+        // include!() it (shared/scope_units.rs → werk-test, werk-build,
+        // werk-deploy); their tests exercise it
+        if ex.is_empty() && f.ends_with(".rs") {
+            for c in including_crates(werk, f) {
+                ex.extend(candidates.iter().map(|r| &r.file_path).filter(|p| p.starts_with(&format!("{c}/"))).cloned());
+            }
+            ex.sort();
+            ex.dedup();
+        }
         // a jest setup file runs before every test of its package
         if ex.is_empty() {
             let name = f.rsplit('/').next().unwrap_or(f);
@@ -3252,6 +3090,29 @@ fn domain_select(werk: &str, changed: &[String], rows: &[TestRow]) -> Option<wer
         exercisers.insert(f.clone(), ex);
     }
     Some(werk_test::domain_selection(changed, &exercisers, rows))
+}
+
+/// The crates whose source include!()s or #[path]s a shared Rust file.
+fn including_crates(werk: &str, f: &str) -> Vec<String> {
+    let name = f.rsplit('/').nth(1).zip(f.rsplit('/').next()).map(|(d, n)| format!("{d}/{n}")).unwrap_or_default();
+    let out = Command::new("git").args(["-C", werk, "grep", "-l", "-E", &format!(r#"(include!|#\[path).*{}"#, regex_escape(&name)), "--", "platform/services/*/src/*.rs"]).output();
+    let mut crates: Vec<String> = out.ok().map(|o| String::from_utf8_lossy(&o.stdout).lines().filter_map(crate_of).collect()).unwrap_or_default();
+    crates.sort();
+    crates.dedup();
+    crates
+}
+
+fn regex_escape(s: &str) -> String {
+    s.chars().flat_map(|c| if ".+*?()[]{}|^$\\".contains(c) { vec!['\\', c] } else { vec![c] }).collect()
+}
+
+/// A TS package's tracked source files (tests excluded).
+fn package_sources(werk: &str, pkg: &str) -> Vec<String> {
+    Command::new("git").args(["-C", werk, "ls-files", "--", pkg]).output().ok()
+        .map(|o| String::from_utf8_lossy(&o.stdout).lines()
+            .filter(|l| werk_test::is_code(l) && !werk_test::is_test_file(l) && !l.contains("/node_modules/"))
+            .map(String::from).collect())
+        .unwrap_or_default()
 }
 
 /// The routes a changed file's changed lines sit in, or None (no routes in

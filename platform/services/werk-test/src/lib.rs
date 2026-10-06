@@ -2245,15 +2245,10 @@ mod scope_vcs_metadata_4173 {
     /// instead of refusing the run as unmapped.
     #[test]
     fn the_contract_inventory_runs_its_own_suite_not_an_unmapped_refusal() {
-        use crate::{affected_bats_suites, SuiteCoverage, WERK_CODE_CONTRACT};
+        use crate::WERK_CODE_CONTRACT;
         let units = vec![ScopeUnit { name: "werk-test".into(), dir: "platform/services/werk-test".into() }];
         let changed = vec![WERK_CODE_CONTRACT.to_string()];
         assert_eq!(scoped_test_reason(&changed, &units, &[]), Ok(vec![]));
-        let index = vec![
-            SuiteCoverage { suite: "platform/tests/werk-code-contract.bats".into(), covers: vec![WERK_CODE_CONTRACT.into()] },
-            SuiteCoverage { suite: "platform/tests/other.bats".into(), covers: vec!["platform/scripts/x.sh".into()] },
-        ];
-        assert_eq!(affected_bats_suites(&changed, &index), vec!["platform/tests/werk-code-contract.bats".to_string()]);
         // NEGATIVE PROOF: another file in platform/config is still unmapped
         assert_eq!(
             scoped_test_reason(&["platform/config/werk-phase-budgets.tsv".to_string()], &units, &[]),
@@ -2264,15 +2259,9 @@ mod scope_vcs_metadata_4173 {
     /// #4389 — a git hook change runs the suites that name it; it is not refused.
     #[test]
     fn a_hook_change_runs_its_suites_not_an_unmapped_refusal() {
-        use crate::{affected_bats_suites, SuiteCoverage};
         let units = vec![ScopeUnit { name: "werk-test".into(), dir: "platform/services/werk-test".into() }];
         let changed = vec!["platform/hooks/pre-commit".to_string()];
         assert_eq!(scoped_test_reason(&changed, &units, &[]), Ok(vec![]));
-        let index = vec![SuiteCoverage {
-            suite: "platform/tests/pre-commit-gate.bats".into(),
-            covers: vec!["platform/hooks/pre-commit".into()],
-        }];
-        assert_eq!(affected_bats_suites(&changed, &index), vec!["platform/tests/pre-commit-gate.bats".to_string()]);
         // NEGATIVE PROOF: a path outside platform/hooks is still refused by name
         assert_eq!(
             scoped_test_reason(&["platform/hookshot/x.rs".to_string()], &units, &[]),
@@ -2578,15 +2567,6 @@ mod ts_packages_retirement_3912 {
 // under a green `werk-test: no-affected-units`.
 // ---------------------------------------------------------------------------
 
-/// One row of the script→suite coverage index: a bats suite and the repo-relative
-/// script paths its body references. Built by the runner (which may touch the fs);
-/// kept out of the pure selection so selection stays testable without a repo.
-#[derive(Debug, PartialEq, Eq, Clone)]
-pub struct SuiteCoverage {
-    pub suite: String,
-    pub covers: Vec<String>,
-}
-
 /// #4138 — a path on the diff that is no longer in the tree was DELETED. It is
 /// not a unit to run: bats on a missing file prints "does not exist" and the
 /// suite reads FAIL, so a retired test read as a red land (run 4138-…-23,
@@ -2600,13 +2580,6 @@ pub fn split_deleted(changed: &[String], exists: impl Fn(&str) -> bool) -> (Vec<
 #[cfg(test)]
 mod deleted_paths_4138 {
     use super::*;
-
-    fn index() -> Vec<SuiteCoverage> {
-        vec![SuiteCoverage {
-            suite: "platform/tests/deep-health.bats".to_string(),
-            covers: vec!["platform/scripts/deep-health.sh".to_string()],
-        }]
-    }
 
     #[test]
     fn present_paths_are_kept_and_deleted_paths_are_set_aside() {
@@ -2622,12 +2595,13 @@ mod deleted_paths_4138 {
     #[test]
     fn a_deleted_bats_suite_is_selected_without_the_filter_and_not_with_it() {
         let changed: Vec<String> = vec!["platform/tests/deep-health.bats".to_string()];
-        let before = affected_units_full(&changed, &index());
-        assert!(before.iter().any(|u| matches!(u, TestUnit::BatsSuite(s) if s == "platform/tests/deep-health.bats")),
-            "control: without the filter the deleted suite is a unit — otherwise this proof is hollow");
+        let none = std::collections::HashMap::new();
+        let before = domain_selection(&changed, &none, &[]);
+        assert!(before.tests.contains_key("platform/tests/deep-health.bats"),
+            "control: without the filter the deleted suite is selected — otherwise this proof is hollow");
         let (present, deleted) = split_deleted(&changed, |_| false);
         assert_eq!(deleted.len(), 1);
-        assert!(affected_units_full(&present, &index()).is_empty(), "a deleted suite must never become a unit");
+        assert!(domain_selection(&present, &none, &[]).tests.is_empty(), "a deleted suite must never be selected");
     }
 
     #[test]
@@ -2644,194 +2618,10 @@ pub fn is_bats_suite(path: &str) -> bool {
     path.starts_with("platform/tests/") && path.ends_with(".bats")
 }
 
-/// Is this changed path a shell script the gate should account for?
-pub fn is_shell_script(path: &str) -> bool {
-    path.ends_with(".sh") || path.starts_with("platform/scripts/")
-}
-
-/// #3934 — a GOVERNED SURFACE: a non-script file whose content a suite asserts
-/// on. #3917 taught the gate to see changed test FILES; it still could not see
-/// what a test is ABOUT. A one-line change to `.github/workflows/werk.yml`
-/// (#3918) implicated no test, so the land was green and the 04:19 nightly was
-/// red on `membrane-guard.bats` — a suite that greps that exact line.
-pub fn is_governed_surface(path: &str) -> bool {
-    path.starts_with(".github/workflows/") && (path.ends_with(".yml") || path.ends_with(".yaml"))
-        || path.starts_with("platform/hooks/")
-        || path == WERK_CODE_CONTRACT
-}
-
 /// #4333 — the werk-code contract inventory: data a script reads, proven by the
 /// suite that runs that script against it. Editing it runs that suite; it is
 /// neither a build input nor an unmapped path.
 pub const WERK_CODE_CONTRACT: &str = "platform/config/werk-code-contract.tsv";
-
-/// Any changed path a suite may reference by name: scripts plus governed surfaces.
-pub fn is_referenceable(path: &str) -> bool {
-    (is_shell_script(path) || is_governed_surface(path)) && !is_bats_suite(path)
-}
-
-/// Bats suites implicated by the diff: every changed suite itself, plus every
-/// suite whose body references a changed script. Deterministic (sorted, deduped).
-pub fn affected_bats_suites(changed: &[String], index: &[SuiteCoverage]) -> Vec<String> {
-    let mut out: Vec<String> = Vec::new();
-    for f in changed {
-        if is_bats_suite(f) && !out.contains(f) {
-            out.push(f.clone());
-        }
-    }
-    for f in changed {
-        if !is_referenceable(f) {
-            continue;
-        }
-        for row in index {
-            if row.covers.iter().any(|c| c == f) && !out.contains(&row.suite) {
-                out.push(row.suite.clone());
-            }
-        }
-    }
-    out.sort();
-    out
-}
-
-/// The full selection: the pre-#3917 crate/package units PLUS the bats suites
-/// the diff implicates. `affected_units` is left untouched so the old shape
-/// stays independently testable (and so the regression test can show what it
-/// could not see).
-pub fn affected_units_full(changed: &[String], index: &[SuiteCoverage]) -> Vec<TestUnit> {
-    let mut units = affected_units(changed);
-    for suite in affected_bats_suites(changed, index) {
-        units.push(TestUnit::BatsSuite(suite));
-    }
-    units
-}
-
-/// Changed shell scripts that NO suite covers. AC2: these are reported loudly
-/// rather than dissolving into an empty selection — an uncovered script is a
-/// known gap, not a pass.
-pub fn uncovered_scripts(changed: &[String], index: &[SuiteCoverage]) -> Vec<String> {
-    let mut out: Vec<String> = changed
-        .iter()
-        .filter(|f| is_referenceable(f))
-        .filter(|f| !index.iter().any(|r| r.covers.iter().any(|c| c == *f)))
-        .cloned()
-        .collect();
-    out.sort();
-    out.dedup();
-    out
-}
-
-#[cfg(test)]
-mod bats_selection_3917 {
-    use super::*;
-
-    fn index() -> Vec<SuiteCoverage> {
-        vec![
-            SuiteCoverage {
-                suite: "platform/tests/gate-spine-vikunja-e2e.bats".to_string(),
-                covers: vec!["platform/scripts/gate-spine-vikunja-bridge.sh".to_string()],
-            },
-            SuiteCoverage {
-                suite: "platform/tests/nudge-health.bats".to_string(),
-                covers: vec!["platform/scripts/nudge-health.sh".to_string()],
-            },
-        ]
-    }
-
-    /// The exact file list #3915 landed with. This is the regression: it MUST
-    /// select units now, and it selected none before.
-    #[test]
-    fn card_3915_file_list_now_selects_its_suites() {
-        let changed: Vec<String> = [
-            "platform/scripts/gate-spine-vikunja-bridge.sh",
-            "platform/tests/3370-lan-ip-baseline.txt",
-            "platform/tests/3370-no-new-hardcoded-lan-ips.bats",
-            "platform/tests/gate-spine-vikunja-e2e.bats",
-            "platform/tests/nudge-health.bats",
-            "platform/tests/products-3603-migration.bats",
-            "platform/tests/session-start-orchestration-e2e.bats",
-        ]
-        .iter()
-        .map(|s| s.to_string())
-        .collect();
-
-        let suites = affected_bats_suites(&changed, &index());
-        assert_eq!(suites.len(), 5, "expected all five changed suites, got {:?}", suites);
-        let units = affected_units_full(&changed, &index());
-        assert!(!units.is_empty(), "#3915's diff must not select zero units");
-        assert_eq!(gate_outcome(units.len(), false, false), GateOutcome::Pass);
-    }
-
-    /// NEGATIVE PROOF (#3734, AC3): with the fix in place a RED suite must
-    /// BLOCK. If this ever passes as non-blocking, the gate is decorative.
-    #[test]
-    fn a_red_bats_suite_blocks_the_land() {
-        let changed = vec!["platform/tests/nudge-health.bats".to_string()];
-        let units = affected_units_full(&changed, &index());
-        assert_eq!(units.len(), 1);
-        assert_eq!(
-            gate_outcome(units.len(), true, false),
-            GateOutcome::Block,
-            "a failing bats suite must block, not advise"
-        );
-    }
-
-    /// NEGATIVE PROOF: the OLD selection could not do this. Guards against a
-    /// future refactor quietly dropping bats back out of the unit shapes.
-    #[test]
-    fn bats_only_diff_is_not_no_units() {
-        let changed = vec!["platform/tests/session-start-orchestration-e2e.bats".to_string()];
-        assert!(
-            affected_units(&changed).is_empty(),
-            "documents the old behaviour this card fixes"
-        );
-        let units = affected_units_full(&changed, &index());
-        assert_ne!(
-            gate_outcome(units.len(), false, false),
-            GateOutcome::NoUnits,
-            "a bats-only diff must be measured, not waved through"
-        );
-    }
-
-    /// A changed script pulls in the suite that covers it (AC2, covered half).
-    #[test]
-    fn changed_script_pulls_in_its_covering_suite() {
-        let changed = vec!["platform/scripts/gate-spine-vikunja-bridge.sh".to_string()];
-        let suites = affected_bats_suites(&changed, &index());
-        assert_eq!(suites, vec!["platform/tests/gate-spine-vikunja-e2e.bats"]);
-        assert!(uncovered_scripts(&changed, &index()).is_empty());
-    }
-
-    /// An UNCOVERED script is named, not silently dropped (AC2, uncovered half).
-    #[test]
-    fn uncovered_script_is_named_not_silently_dropped() {
-        let changed = vec!["platform/scripts/no-suite-touches-this.sh".to_string()];
-        assert!(affected_bats_suites(&changed, &index()).is_empty());
-        assert_eq!(
-            uncovered_scripts(&changed, &index()),
-            vec!["platform/scripts/no-suite-touches-this.sh"]
-        );
-    }
-
-    /// A bats suite is planned as a bats check — not silently unplanned.
-    #[test]
-    fn bats_unit_gets_a_bats_check() {
-        let units = vec![TestUnit::BatsSuite("platform/tests/nudge-health.bats".to_string())];
-        let plan = check_plan(&units);
-        assert!(plan.iter().any(|p| p.kind == CheckKind::Bats));
-    }
-
-    /// AC4: selecting zero units must not read the same as passing units.
-    #[test]
-    fn no_units_label_does_not_read_as_green() {
-        let label = GateOutcome::NoUnits.label();
-        assert!(
-            label.contains("0"),
-            "NoUnits must state that nothing was measured, got {:?}",
-            label
-        );
-        assert_ne!(label, GateOutcome::Pass.label());
-    }
-}
 
 // ---------------------------------------------------------------------------
 // #3918 — the land lane's own telemetry.
@@ -2876,80 +2666,6 @@ pub fn child_context(program: &str) -> ChildContext {
         "cargo" | "bats" => ChildContext::Test,
         p if p.ends_with("jest") || p.ends_with("tsc") => ChildContext::Test,
         _ => ChildContext::Runner,
-    }
-}
-
-#[cfg(test)]
-mod governed_surface_selection_3934 {
-    use super::*;
-
-    fn index() -> Vec<SuiteCoverage> {
-        vec![
-            SuiteCoverage {
-                suite: "platform/tests/membrane-guard.bats".to_string(),
-                covers: vec![".github/workflows/werk.yml".to_string()],
-            },
-            SuiteCoverage {
-                suite: "platform/tests/gate-spine-vikunja-e2e.bats".to_string(),
-                covers: vec!["platform/scripts/gate-spine-vikunja-bridge.sh".to_string()],
-            },
-        ]
-    }
-
-    /// The #3918 regression: its diff changed werk.yml, membrane-guard.bats
-    /// asserts on that exact line, and NOTHING connected them. The land was
-    /// green; the nightly was red.
-    #[test]
-    fn a_werkyml_change_now_selects_the_suite_that_asserts_on_it() {
-        let changed = vec![".github/workflows/werk.yml".to_string()];
-        let suites = affected_bats_suites(&changed, &index());
-        assert_eq!(suites, vec!["platform/tests/membrane-guard.bats"]);
-        let units = affected_units_full(&changed, &index());
-        assert_ne!(gate_outcome(units.len(), false, false), GateOutcome::NoUnits);
-    }
-
-    /// NEGATIVE PROOF (#3734): widening must not become select-everything. A
-    /// governed surface NO suite references still selects nothing — and is
-    /// named as an uncovered gap rather than passing silently.
-    #[test]
-    fn an_unreferenced_governed_surface_selects_nothing_and_is_named() {
-        let changed = vec![".github/workflows/nobody-tests-this.yml".to_string()];
-        assert!(affected_bats_suites(&changed, &index()).is_empty());
-        assert_eq!(
-            uncovered_scripts(&changed, &index()),
-            vec![".github/workflows/nobody-tests-this.yml"]
-        );
-    }
-
-    /// NEGATIVE PROOF: ordinary source files are NOT governed surfaces — this
-    /// must not quietly turn every .ts/.rs change into a bats sweep.
-    #[test]
-    fn ordinary_source_is_not_a_governed_surface() {
-        for p in [
-            "platform/api/src/server.ts",
-            "platform/services/werk-test/src/lib.rs",
-            "designing/schemas/spine-events.json",
-            "knowledge/doc-coherence.md",
-        ] {
-            assert!(!is_governed_surface(p), "{} must not be governed", p);
-            assert!(!is_referenceable(p), "{} must not be referenceable", p);
-        }
-    }
-
-    /// A bats suite is never ALSO a referenceable target — it is the unit.
-    #[test]
-    fn a_suite_is_not_its_own_coverage_target() {
-        assert!(!is_referenceable("platform/tests/membrane-guard.bats"));
-    }
-
-    /// The #3917 script path still works — widening did not replace it.
-    #[test]
-    fn script_coverage_still_selects() {
-        let changed = vec!["platform/scripts/gate-spine-vikunja-bridge.sh".to_string()];
-        assert_eq!(
-            affected_bats_suites(&changed, &index()),
-            vec!["platform/tests/gate-spine-vikunja-e2e.bats"]
-        );
     }
 }
 
@@ -6216,6 +5932,40 @@ pub fn route_literal(route: &str) -> &str {
 /// The registered tests that exercise one changed file. `text_of` reads a test
 /// file; `crate_of` names the Rust crate a path sits in; `changed_routes` is
 /// Some(routes) when every changed line of the file sits in a route handler.
+/// #4440 — the package source files that import `f`, directly or through
+/// other files, by relative import (what jest's --findRelatedTests followed).
+/// Expansion stops at a hub — a file more than HUB_EXERCISERS tests already
+/// exercise (server.ts) — so one helper does not select a whole package;
+/// the hubs it stopped at are returned so the run can name them.
+pub fn importers_of(
+    f: &str,
+    sources: &[String],
+    text_of: &dyn Fn(&str) -> Option<String>,
+    is_hub: &dyn Fn(&str) -> bool,
+) -> (Vec<String>, Vec<String>) {
+    let mut seen: std::collections::BTreeSet<String> = Default::default();
+    let mut hubs: std::collections::BTreeSet<String> = Default::default();
+    let mut frontier = vec![f.to_string()];
+    while let Some(cur) = frontier.pop() {
+        for src in sources {
+            if src == f || seen.contains(src) || hubs.contains(src) {
+                continue;
+            }
+            let imports = text_of(src).is_some_and(|t| relative_import(src, &cur).is_some_and(|r| mentions(&t, &r)));
+            if !imports {
+                continue;
+            }
+            if is_hub(src) {
+                hubs.insert(src.clone());
+                continue;
+            }
+            seen.insert(src.clone());
+            frontier.push(src.clone());
+        }
+    }
+    (seen.into_iter().collect(), hubs.into_iter().collect())
+}
+
 pub fn exercisers_of(
     f: &str,
     rows: &[TestRow],
