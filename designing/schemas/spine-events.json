@@ -1,4 +1,5 @@
 {
+  "@domain": "spine",
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "title": "Spine Event Contract",
   "description": "Interface contract for all structured events flowing through the Chorus spine. Single source of truth for event types, fields, and vertebra mapping.",

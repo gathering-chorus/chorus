@@ -909,10 +909,14 @@ pub fn declared_domain(content: &str) -> Option<String> {
     let head: String = content.chars().take(2000).collect();
     for line in head.lines() {
         let t = line.trim_start();
-        let t = t
+        // #4420 — JSON has no comments, so a JSON file states it as a key:
+        // `"@domain": "spine",` (spine-events.json was placed in `tests` by its
+        // mentions, and every edit to it ran the whole tests domain).
+        let json = t.strip_prefix("\"@domain\"").map(|r| format!("@domain:{}", r.trim_start().trim_start_matches(':').trim_start().trim_start_matches('"')));
+        let t = json.as_deref().or_else(|| t
             .strip_prefix("//")
             .or_else(|| t.strip_prefix('#'))
-            .or_else(|| t.strip_prefix('*'));
+            .or_else(|| t.strip_prefix('*')));
         let Some(t) = t else { continue };
         let t = t.trim_start();
         const TAG: &str = "@domain:";
@@ -1955,4 +1959,26 @@ mod multi_domain_4222 {
         assert!(place_by_dir("platform/api/x.ts", &v, &[]).is_none());
     }
 
+}
+
+#[cfg(test)]
+mod json_domain_header_4420 {
+    use super::declared_domain;
+
+    #[test]
+    fn a_json_file_declares_its_domain_as_a_key() {
+        let json = "{\n  \"@domain\": \"spine\",\n  \"$schema\": \"x\",\n  \"events\": {}\n}\n";
+        assert_eq!(declared_domain(json).as_deref(), Some("spine"));
+    }
+
+    #[test]
+    fn a_yaml_file_declares_it_as_a_comment() {
+        assert_eq!(declared_domain("name: werk\n# @domain: cicd\non: x\n").as_deref(), Some("cicd"));
+    }
+
+    // NEGATIVE PROOF — a JSON value that merely mentions the word is not a declaration.
+    #[test]
+    fn a_json_value_mentioning_domain_is_not_a_declaration() {
+        assert_eq!(declared_domain("{\n  \"description\": \"each event has a @domain: tests field\"\n}\n"), None);
+    }
 }

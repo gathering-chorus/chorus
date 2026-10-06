@@ -121,6 +121,7 @@ def log_exit(pin):
 # #4341 — one card's runs, read from their logs: start, finish, each step and
 # why it stopped. Bookkeeping steps are left out; they never say anything.
 STEP_RE = re.compile(r"(✅\s+Success|❌\s+Failure) - Main ([a-zA-Z-]+) \[([^\]]+)\]")
+STARTED_RE = re.compile(r"⭐\s+Run Main ([a-zA-Z-]+)")
 QUIET_STEPS = {"shared-trace", "proven-round", "demo-fitness", "witness-failed", "witness-close", "outcome", "crawl-delta"}
 
 
@@ -172,7 +173,10 @@ def run_summary(log):
         slow = sorted(steps, key=lambda st: -st[2])[:2]
         why = ", ".join(f"{n} {fmt_dur(d)}" for n, _, d in slow)
     elif "WERK_EXIT" not in text:
-        result, why = "running", (f"at {names[-1]}" if names else "starting")
+        # #4420 — the step IN FLIGHT is the last one act started, not the last
+        # one that finished (Jeff 10-06: "your card is not in build its a cws bug").
+        started = [n for n in STARTED_RE.findall(text) if n not in QUIET_STEPS]
+        result, why = "running", (f"at {started[-1]}" if started else "starting")
     else:
         result, why = "stopped", ""
     st = log.stat()

@@ -1,4 +1,5 @@
 name: werk
+# @domain: cicd
 
 # werk — THE pipeline. ONE job, ONE run (#3499). There is no demo-half / land-half:
 # the GO is given AT INVOKE (the `go` input), werk-demo PROVES in-run (gates, gathers,
