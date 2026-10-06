@@ -2198,6 +2198,17 @@
         "tree_hash": "The werk tree hash both runs share"
       }
     },
+    "test.unit.timed": {
+      "vertebra": "proving",
+      "source": "werk",
+      "description": "Werk `test` verb (#4436) — one selected test unit finished: its verdict and wall time, every card run, so the slow units of a long test step can be named and compared run to run.",
+      "fields": {
+        "check": "The check kind (cargo-test, jest, bats, tsc, ...)",
+        "unit": "The unit the check ran (crate, package or suite path)",
+        "verdict": "ok | FAIL | UNMEASURED",
+        "seconds": "Wall-clock seconds the unit took, one decimal"
+      }
+    },
     "test.budget.blown": {
       "vertebra": "proving",
       "source": "werk",
