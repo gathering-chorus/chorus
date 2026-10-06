@@ -67,7 +67,7 @@ describe('POST /api/chorus/spine-event (#2109)', () => {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
-        event: 'test.nohop',
+        event: 'seed.received',
         role: 'system',
         trace_id: traceId,
       }),

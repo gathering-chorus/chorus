@@ -114,7 +114,8 @@ chorus:service-werk a chorus:Service ;
     chorus:implementationPlan "(1) #3896 (Silas) lands the step shape; werk-* steps follow. (2) Run metadata projection from spine to graph. (3) Pulse renders open runs (the loop-state surface from Jeff's 2026-08-15 framing)." ;
     chorus:pathToClose "Closed when a run's position is a query, not a log grep, and every gate the pipeline enforces is declared with its negative fixture." ;
     chorus:gaps "Run state not in the graph. Landed-but-unmerged contradiction still possible at pin level (refused on read, not prevented at write). hasDesignDoc unfilled." ;
-    chorus:notInScope "What the code does once deployed (each service owns its runtime). Card content authoring (roles). Model mutations (Athena)." .
+    chorus:notInScope "What the code does once deployed (each service owns its runtime). Card content authoring (roles). Model mutations (Athena)." ;
+    chorus:consumesEvent chorus:eventtype-card-pulled .
 
 chorus:service-tests a chorus:Service ;
     rdfs:label "Tests" ; chorus:label "Tests" ;

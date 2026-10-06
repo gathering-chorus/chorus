@@ -385,6 +385,7 @@ chorus:pulse a chorus:Product ;
     chorus:hasDesignDoc chorus:document-product-design-pulse ;
     chorus:hasDomain chorus:knowledge ;
     chorus:consumes chorus:code, chorus:logs, chorus:roles, chorus:alerts, chorus:monitors, chorus:messages, chorus:streams, chorus:events, chorus:cards, chorus:security, chorus:memory, chorus:knowledge, chorus:tests ;
+    chorus:consumesEvent chorus:eventtype-card-pulled ;
     chorus:publishesPreAuth """true""" ;
     chorus:promise """You look once and know whether your team is working — without asking anyone, and without being lied to. That is the whole product. Its measure is not uptime or latency; it is how many times in a day the owner has to type "are you working?" The day this product was designed the answer was six, and each time the answer was already in the log.
 Who it is for: the owner, at a glance, on a phone, often away from the local network — the one consumer whose time is irreplaceable, so a reading they cannot reach is a reading that does not exist. The roles, for mutual observation: read a peer's state rather than message them to ask. Alerting, as a consumer and never an owner: alerts read the pulse; the pulse never decides what an alert may say.

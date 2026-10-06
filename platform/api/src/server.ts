@@ -1243,7 +1243,7 @@ app.get('/api/chorus/conversation', async (req: Request, res: Response) => {
 import { fetchChorusCardStory, type CardMeta, type NudgeMessage } from './handlers/chorus-card-story';
 import { recentNudges } from './nudge-fold';
 import { safeReadFile, readFileTail } from './lib/log-reader';
-import { SpineEventsReader } from './lib/spine-events';
+import { SpineEventsReader, typesFor } from './lib/spine-events';
 
 // #3406 — tail budget for the /context/spine log read. 4MB holds ~8x MAX_LIMIT(500)
 // recent JSONL spine events; reading only this (vs the full ~535MB log) keeps the
@@ -3047,7 +3047,7 @@ app.get('/api/chorus/rcas', (req: Request, res: Response) => {
 // Events with hop fields auto-create trace entries.
 
 // Spine event POST handler moved to src/spine-event-write.ts (#2205 wave 21).
-import { handleSpineEvent } from './spine-event-write';
+import { handleSpineEvent, loadSpineSchema } from './spine-event-write';
 // #4417 — CHORUS_LOG_FILE first (the membrane seam, #3615): the integration test
 // that drives this route was appending to the live spine on every run.
 const SPINE_EVENT_LOG = process.env.CHORUS_LOG_FILE || `${process.env.HOME}/.chorus/chorus.log`;
@@ -3055,9 +3055,15 @@ const SPINE_EVENT_LOG = process.env.CHORUS_LOG_FILE || `${process.env.HOME}/.cho
 // consumer asks here (role, type, since, limit) instead of opening chorus.log.
 app.get('/api/chorus/spine-events', async (req: Request, res: Response) => {
   const role = typeof req.query.role === 'string' && req.query.role ? req.query.role : undefined;
-  const types = typeof req.query.type === 'string' && req.query.type ? req.query.type.split(',') : undefined;
+  let types = typeof req.query.type === 'string' && req.query.type ? req.query.type.split(',') : undefined;
+  // #4438 — by producer domain and by the class an event is about, from the registry
+  const producer = typeof req.query.producer === 'string' && req.query.producer ? req.query.producer : undefined;
+  const about = typeof req.query.about === 'string' && req.query.about ? req.query.about : undefined;
+  const owned = typesFor(loadSpineSchema().events ?? {}, { producer, about });
+  if (owned !== undefined) types = types ? types.filter((t) => owned.includes(t)) : owned;
   const sinceRaw = typeof req.query.since === 'string' ? Date.parse(req.query.since) : NaN;
   const limit = Math.min(2000, Math.max(1, parseInt(str(req.query.limit) || '500', 10) || 500));
+  if (types !== undefined && types.length === 0) { res.json({ count: 0, reads: spineEvents.reads, events: [] }); return; }
   try {
     const rows = await spineEvents.query({ role, types, sinceMs: Number.isFinite(sinceRaw) ? sinceRaw : undefined, limit });
     // reads = file reads since start: shows the sharing (it grows once per window, not once per call)

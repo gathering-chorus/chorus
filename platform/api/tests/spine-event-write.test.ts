@@ -1,3 +1,6 @@
+// @test-type: unit — the spine-event write handler with fake fs and db
+// @card: #4438
+// @owner: wren
 import { handleSpineEvent } from '../src/spine-event-write';
 
 function fakeDbFactory() {
@@ -81,7 +84,7 @@ describe('handleSpineEvent', () => {
     const append = jest.fn();
     const res = fakeRes();
     handleSpineEvent(
-      { body: { event: 'nudge.delivered', role: 'kade', card: 2205, target: 'silas' } } as any,
+      { body: { event: 'role.nudge.delivered', role: 'kade', card: 2205, target: 'silas' } } as any,
       res,
       {
         appendFileSync: append, chorusLogPath: '/log',
@@ -100,7 +103,7 @@ describe('handleSpineEvent', () => {
     const append = jest.fn(() => { throw new Error('disk full'); });
     const res = fakeRes();
     expect(() => handleSpineEvent(
-      { body: { event: 'x' } } as any,
+      { body: { event: 'seed.received' } } as any,
       res,
       {
         appendFileSync: append, chorusLogPath: '/log',
@@ -118,7 +121,7 @@ describe('handleSpineEvent', () => {
     const append = jest.fn();
     const res = fakeRes();
     handleSpineEvent(
-      { body: { event: 'integration.x', hop: 3, domain: 'chorus', trace_id: 'corr-1', callStack: 'stack-a' } } as any,
+      { body: { event: 'seed.received', hop: 3, domain: 'chorus', trace_id: 'corr-1', callStack: 'stack-a' } } as any,
       res,
       {
         appendFileSync: append, chorusLogPath: '/log',
@@ -141,7 +144,7 @@ describe('handleSpineEvent', () => {
     const ensureTrace = jest.fn();
     const res = fakeRes();
     handleSpineEvent(
-      { body: { event: 'x' } } as any,
+      { body: { event: 'seed.received' } } as any,
       res,
       {
         appendFileSync: jest.fn(), chorusLogPath: '/log',
@@ -158,7 +161,7 @@ describe('handleSpineEvent', () => {
     const { ctor, runs } = fakeDbFactory();
     const res = fakeRes();
     handleSpineEvent(
-      { body: { event: 'x', hop: 1 } } as any,
+      { body: { event: 'seed.received', hop: 1 } } as any,
       res,
       {
         appendFileSync: jest.fn(), chorusLogPath: '/log',
@@ -174,7 +177,7 @@ describe('handleSpineEvent', () => {
     const { ctor, runs } = fakeDbFactory();
     const res = fakeRes();
     handleSpineEvent(
-      { body: { event: 'x', hop: 'three' } } as any,
+      { body: { event: 'seed.received', hop: 'three' } } as any,
       res,
       {
         appendFileSync: jest.fn(), chorusLogPath: '/log',
@@ -184,5 +187,38 @@ describe('handleSpineEvent', () => {
       },
     );
     expect(runs).toHaveLength(0);
+  });
+
+  // #4438 — the emit door checks the EventType.
+  const deps = (append: jest.Mock, schemaPath?: string) => ({
+    appendFileSync: append, chorusLogPath: '/log', now: () => 't', schemaPath,
+    traceDbPath: '/db', DatabaseCtor: jest.fn() as any, ensureTraceTable: jest.fn(),
+  });
+
+  it('refuses an unregistered event type with 422 and writes nothing (negative proof)', () => {
+    const append = jest.fn();
+    const res = fakeRes();
+    handleSpineEvent({ body: { event: 'made.up.event' } } as any, res, deps(append));
+    expect(res.status_).toBe(422);
+    expect(res.body_.error).toContain('made.up.event');
+    expect(append).not.toHaveBeenCalled();
+  });
+
+  it('lands a registered type and an alias of one', () => {
+    for (const event of ['card.pulled', 'card_created']) {
+      const append = jest.fn();
+      const res = fakeRes();
+      handleSpineEvent({ body: { event } } as any, res, deps(append));
+      expect(res.body_).toEqual({ ok: true });
+      expect(append).toHaveBeenCalledTimes(1);
+    }
+  });
+
+  it('refuses everything with 503 when the registry cannot be read', () => {
+    const append = jest.fn();
+    const res = fakeRes();
+    handleSpineEvent({ body: { event: 'card.pulled' } } as any, res, deps(append, '/nonexistent/spine-events.json'));
+    expect(res.status_).toBe(503);
+    expect(append).not.toHaveBeenCalled();
   });
 });

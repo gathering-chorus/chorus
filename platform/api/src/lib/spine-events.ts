@@ -63,6 +63,23 @@ export function parseSpineLine(line: string): SpineEventRow | null {
   };
 }
 
+/**
+ * #4438 — the event types a producer domain owns and/or that are about a model
+ * class, read from the registry (spine-events.json, generated from the
+ * EventType rows). undefined = no producer/about asked. An empty array means
+ * nothing matches, and the caller must return no events, never all of them.
+ */
+export function typesFor(
+  registry: Record<string, { producer?: string; about?: string }>,
+  q: { producer?: string; about?: string },
+): string[] | undefined {
+  if (q.producer === undefined && q.about === undefined) return undefined;
+  return Object.entries(registry)
+    .filter(([, e]) => (q.producer === undefined || e.producer === q.producer)
+      && (q.about === undefined || e.about === q.about))
+    .map(([name]) => name);
+}
+
 export function filterSpineEvents(rows: SpineEventRow[], q: SpineEventQuery): SpineEventRow[] {
   const types = q.types && q.types.length > 0 ? new Set(q.types) : null;
   const out = rows.filter((r) =>

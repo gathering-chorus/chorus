@@ -109,6 +109,29 @@ chorus:consumesEvent a owl:ObjectProperty ;
     rdfs:label "consumesEvent" ; rdfs:range chorus:EventType ;
     rdfs:comment "A domain or service reads this event. No rdfs:domain: both Domain and Service consume. The graph answers 'who reads card.pulled' from these edges. Not chorus:consumes, which is a product using a shared service (chorus.ttl)." .
 
+# The rest of what spine-events.json said about each event, so the JSON can be
+# generated from the rows (platform/scripts/event-types-generate.py) and the
+# rows, not the JSON, are the registry.
+chorus:atVertebra a owl:DatatypeProperty ;
+    rdfs:label "atVertebra" ; rdfs:domain chorus:EventType ; rdfs:range xsd:string ;
+    rdfs:comment "The spine vertebra the event belongs to (designing, building, proving, ...); maps to a value-stream step via the registry's value_stream_map." .
+
+chorus:emitterSource a owl:DatatypeProperty ;
+    rdfs:label "emitterSource" ; rdfs:domain chorus:EventType ; rdfs:range xsd:string ;
+    rdfs:comment "The appName the registry recorded for the emitter (chorus-events, cards, chorus-hooks)." .
+
+chorus:legacyName a owl:DatatypeProperty ;
+    rdfs:label "legacyName" ; rdfs:domain chorus:EventType ; rdfs:range xsd:string ;
+    rdfs:comment "The event's old name before the #3513 naming law." .
+
+chorus:joinKeys a owl:DatatypeProperty ;
+    rdfs:label "joinKeys" ; rdfs:domain chorus:EventType ; rdfs:range xsd:string ;
+    rdfs:comment "The payload fields a reader joins on (card_id, trace), comma-separated in order." .
+
+chorus:envelopeFields a owl:DatatypeProperty ;
+    rdfs:label "envelopeFields" ; rdfs:domain chorus:EventType ; rdfs:range xsd:string ;
+    rdfs:comment "Envelope fields this event requires beyond the shared envelope, comma-separated in order." .
+
 chorus:EventTypeShape
     sh:property [ sh:path chorus:producedBy ; sh:minCount 1 ; sh:maxCount 1 ; sh:class chorus:Domain ] ;
     sh:property [ sh:path chorus:eventVersion ; sh:minCount 1 ; sh:maxCount 1 ; sh:datatype xsd:string ] ;

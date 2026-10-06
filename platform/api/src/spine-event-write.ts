@@ -2,6 +2,9 @@
 // Spine-event write handler (extracted from server.ts for #2205 wave 21).
 // POST /api/chorus/spine-event:
 // - Validates event field.
+// - #4438: refuses an event type the registry does not know (422), and refuses
+//   everything when the registry cannot be read (503): the door never writes
+//   an event no reader can describe.
 // - Appends a spine-log line (best-effort, swallows disk errors).
 // - If the body includes a numeric `hop`, also inserts a trace row
 //   with synthesized correlation id when absent.
@@ -22,10 +25,11 @@ type RunFn = (...args: any[]) => unknown;
 interface SpineSchema {
   product_map?: Record<string, string>;
   value_stream_map?: Record<string, string>;
-  events?: Record<string, { vertebra?: string }>;
+  aliases?: Record<string, string>;
+  events?: Record<string, { vertebra?: string; producer?: string; about?: string }>;
 }
 let schemaCache: { path: string; schema: SpineSchema } | null = null;
-function loadSpineSchema(schemaPath?: string): SpineSchema {
+export function loadSpineSchema(schemaPath?: string): SpineSchema {
   const p = schemaPath ?? path.resolve(__dirname, '../../../designing/schemas/spine-events.json');
   if (schemaCache && schemaCache.path === p) return schemaCache.schema;
   let schema: SpineSchema = {};
@@ -113,7 +117,22 @@ export function handleSpineEvent(req: Req, res: Res, deps: SpineEventDeps): void
     res.status(400).json!({ error: 'event is required' });
     return;
   }
-  appendSpineLog(deps, buildSpineEntry(event, role, fields, deps.now(), loadSpineSchema(deps.schemaPath)));
+  // #4438 — the emit door checks the EventType. The registry's events are
+  // generated from the model rows (designing/data/event-type-instances.ttl).
+  const schema = loadSpineSchema(deps.schemaPath);
+  if (!schema.events || Object.keys(schema.events).length === 0) {
+    res.status(503).json!({ error: 'event registry unreadable; nothing written' });
+    return;
+  }
+  if (!Object.prototype.hasOwnProperty.call(schema.events, event)
+      && !Object.prototype.hasOwnProperty.call(schema.aliases ?? {}, event)) {
+    res.status(422).json!({
+      error: `unregistered event type: ${event}`,
+      register: 'add a chorus:EventType row to designing/data/event-type-instances.ttl, then run platform/scripts/event-types-generate.py',
+    });
+    return;
+  }
+  appendSpineLog(deps, buildSpineEntry(event, role, fields, deps.now(), schema));
   if (typeof fields.hop === 'number' && !isNaN(fields.hop)) {
     insertTraceRow(deps, event, fields);
   }
