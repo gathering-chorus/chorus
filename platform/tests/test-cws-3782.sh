@@ -77,6 +77,39 @@ out=$(CWS_RUNS_DIR=$TD "$CWS" 105)
 t "a running run is at the step in flight" "at test" "$out"
 if [[ "$out" == *"at build"* ]]; then echo "FAIL running run still reads at build"; fails=$((fails+1)); fi
 
+# #4420 reopened (Wren, #4438) — a cancelled run reads cancelled, not failed,
+# and a red test step names the tests that went red, never a selection line.
+# Negative proof: the old "why" matched "refus" in a jest-select line and named
+# envelope-refusal-metric-3628, which never failed.
+cat > "$TD/106.json" <<EOF
+{"card":106,"role":"kade","phase":"running","pid":999903,"startedAt":"$NOW","runId":"106-t-7"}
+EOF
+cat > "$TD/106-106-t-7.log" <<'EOF'
+[werk/werk] ⭐ Run Main test
+[werk/werk]   ❌  Failure - Main test [3m1.0s]
+Error: context canceled
+WERK_EXIT=cancelled
+EOF
+out=$(CWS_RUNS_DIR=$TD "$CWS" 106)
+t "a cancelled run reads cancelled" "#106 [kade] cancelled" "$out"
+t "its row says cancelled at the step" "cancelled               at test" "$out"
+if [[ "$out" == *failed* ]]; then echo "FAIL cancelled run reads failed"; fails=$((fails+1)); fi
+
+cat > "$TD/107.json" <<EOF
+{"card":107,"role":"kade","phase":"running","pid":999904,"startedAt":"$NOW","runId":"107-t-8"}
+EOF
+cat > "$TD/107-107-t-8.log" <<'EOF'
+[werk/werk]   | jest-select:   platform/api/tests/envelope-refusal-metric-3628.test.ts (domain:security)
+[werk/werk]   | !! jest:platform/api WHY: platform/api/tests/search-freshness.integration.test.ts :: x :: Error: thrown
+[werk/werk]   |    jest:platform/api … FAIL 1m03s
+[werk/werk]   |    lint-ratchet:workspace … FAIL 13.6s
+[werk/werk]   ❌  Failure - Main test [58m32.9s]
+WERK_EXIT=1
+EOF
+out=$(CWS_RUNS_DIR=$TD "$CWS" 107)
+t "the why names the tests that went red" "2 reds: search-freshness.integration.test, lint-ratchet:workspace" "$out"
+if [[ "$out" == *envelope-refusal* ]]; then echo "FAIL why names a selection line"; fails=$((fails+1)); fi
+
 rm -rf "$TD"
 if [ $fails -gt 0 ]; then echo "test-cws-3782: $fails FAILURE(S)"; exit 1; fi
 echo "test-cws-3782: all green"
