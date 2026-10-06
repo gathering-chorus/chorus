@@ -10,7 +10,7 @@
 # deterministic — the demo GO is a designed human step); runs and steps emit
 # metrics. Two REAL pipelines today (cicd, athena); clearing + borg planned.
 # TBox + shapes here (MODEL_SET); instances in pipeline-instances.ttl
-# (instance-seed-manifest). chorus:Pipeline itself is declared in chorus.ttl
+# (rows in the store, #4432). chorus:Pipeline itself is declared in chorus.ttl
 # (#1925); Jeff's definition supersedes its data-pipeline reading.
 # =============================================================================
 

@@ -15,7 +15,6 @@ setup() {
   PIPES="$REPO/roles/kade/ontology/pipeline-instances.ttl"
   SHAPES="$REPO/roles/kade/ontology/pipelines-4040.ttl"
   STEPS="$REPO/roles/kade/ontology/pipeline-step-instances.ttl"
-  MANIFEST="$REPO/platform/config/instance-seed-manifest.txt"
   OWL_URL="${OWL_URL:-http://localhost:3360}"
 }
 
@@ -88,16 +87,6 @@ sq() {
   [[ "$output" == *"yes"* || "$output" == *"true"* ]]
 }
 
-# ── AC1/AC5 wiring: instances are governed-deployed (wipe-safe, #3895 lane) ──
-@test "AC1 pipeline-instances.ttl is in the instance-seed manifest" {
-  [ -f "$MANIFEST" ]
-  grep -q '^pipeline:roles/kade/ontology/pipeline-instances.ttl' "$MANIFEST"
-  grep -q '^pipeline-step:roles/kade/ontology/pipeline-step-instances.ttl' "$MANIFEST"
-  # two kinds share no file: the seeder refuses a subject claimed by two kinds
-  # in one batch (proven at the #4040 land 19:23)
-  [ "$(grep -cE '^(pipeline|pipeline-step):' "$MANIFEST")" = "2" ]
-  [ "$(grep -E '^(pipeline|pipeline-step):' "$MANIFEST" | cut -d: -f2 | sort -u | wc -l | tr -d ' ')" = "2" ]
-}
 
 # ── AC6 (live): the generated API serves both collections from the claims ──
 @test "AC6 GET /pipelines serves cicd + athena (live owl-api)" {

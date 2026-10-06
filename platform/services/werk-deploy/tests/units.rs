@@ -1058,9 +1058,12 @@ fn deploy_canonical_carries_no_model_or_seed_engine_4186() {
     }
     assert!(body.contains("model.handoff.athena"), "the hand-off must be witnessed on the spine");
     let yml = include_str!("../../../../.github/workflows/athena.yml");
-    for leg in ["name: scope", "name: validate", "name: deploy", "name: serve", "name: seed", "name: prove"] {
+    for leg in ["name: scope", "name: validate", "name: deploy", "name: serve", "name: prove"] {
         assert!(yml.contains(leg), "athena.yml is missing leg `{}`", leg);
     }
+    // #4432 (Jeff 2026-10-06): no seed leg — a land never replays row files over the store.
+    assert!(!yml.contains("name: seed"), "athena.yml carries a seed leg again (#4432)");
+    assert!(!yml.contains("seed --post"), "athena.yml posts row files at land again (#4432)");
     assert!(yml.contains("athena-serve \"${{ steps.resolve.outputs.label }}\""), "serve leg must use athena-serve on the resolved label, never launchd liveness");
     // the cut (Jeff 2026-09-16 17:41): ONE target, the live service; a variant label in
     // athena.yml would mean a demo store copy came back. (Caught red in the 09-17 nightly:

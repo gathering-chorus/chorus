@@ -19,14 +19,14 @@ fn env_or(key: &str, default: &str) -> String {
 
 /// The model SET to deploy: an explicit `TTL` override (single member) else the
 /// default set (chorus.ttl + werk-domains.ttl). Pure — unit-tested.
-// #4186 — the one home for the model/seed predicates; `athena-deploy scope` prints them.
+// #4186 — the one home for the model predicate; `athena-deploy scope` prints them.
 pub mod model_scope { include!("../../shared/model_scope.rs"); }
 /// #4423 — data staging: Write-Audit-Publish for the model graphs.
 pub mod staging;
 
-/// `athena-deploy scope <root> <git range>` — list the model and seed sources a diff
-/// touched, one per line as `model|<path>` / `seed|<path>`. Exit 0 with no lines when
-/// the range carries neither. Exit 2 when git cannot read the range (never a silent
+/// `athena-deploy scope <root> <git range>` — list the model sources a diff
+/// touched, one per line as `model|<path>`. Exit 0 with no lines when
+/// the range carries none (#4432: there is no seed leg). Exit 2 when git cannot read the range (never a silent
 /// empty: an unreadable range must not read as "nothing to deploy").
 pub fn scope(root: &str, range: &str) -> Result<String, String> {
     // #4064 — a DELETED model file is not a source to validate or load: its
@@ -39,8 +39,7 @@ pub fn scope(root: &str, range: &str) -> Result<String, String> {
         return Err(format!("scope: git diff --name-only {range} failed in {root}: {}", String::from_utf8_lossy(&out.stderr).trim()));
     }
     let diff = String::from_utf8_lossy(&out.stdout);
-    let mut lines: Vec<String> = model_scope::changed_model_sources(&diff).into_iter().map(|p| format!("model|{p}")).collect();
-    lines.extend(model_scope::changed_seed_sources(&diff).into_iter().map(|p| format!("seed|{p}")));
+    let lines: Vec<String> = model_scope::changed_model_sources(&diff).into_iter().map(|p| format!("model|{p}")).collect();
     Ok(lines.join("\n"))
 }
 
@@ -2067,12 +2066,10 @@ mod tests {
         assert!(is_model_source("designing/schemas/model-retirements.jsonl"));
         assert!(!is_model_source("roles/wren/notes/x.ttl"), "a TTL outside ontology/ is not a model source");
         assert!(!is_model_source("platform/tests/fixtures/principles-4186-violations.ttl"), "a fixture is never a model source");
-        assert!(is_seed_source("designing/data/pipelines.ttl"));
-        assert!(is_seed_source("platform/config/instance-seed-manifest.txt"));
-        assert!(!is_seed_source("designing/docs/x.ttl"));
         let diff = "roles/wren/ontology/a.ttl\nplatform/services/x/src/lib.rs\ndesigning/data/b.ttl\n";
         assert_eq!(changed_model_sources(diff), vec!["roles/wren/ontology/a.ttl".to_string()]);
-        assert_eq!(changed_seed_sources(diff), vec!["designing/data/b.ttl".to_string()]);
+        // #4432 — a row file under designing/data is not deployed: no seed leg.
+        assert!(!is_model_source("designing/data/b.ttl"));
     }
 
     #[test]

@@ -22,7 +22,7 @@ fn usage() -> String {
        athena-model unlink --kind <kind> --name <name> --edge prop=kind:name\n\
        athena-model seed   (--kind <kind> --ttl <file>)... [--graph <g>] [--provenance migrated] [--base <iri>]\n\
                     --kind/--ttl repeat as pairs; several kinds load as ONE transaction (#3839)\n\
-       athena-model seed --deploy   built-in instance manifest -> each kind's domain graph (#4187), output-verified (#3895)\n\
+       athena-model seed --deploy|--post (--kind <kind> --ttl <file>)...   each kind's domain graph (#4187), output-verified (#3895)\n\
        athena-model mint   --kind <kind> --name <name>\n\
        athena-model kinds"
         .to_string()
@@ -569,37 +569,11 @@ fn run() -> Result<String, String> {
             if deploy && post {
                 return Err("seed: --deploy (file loader) and --post (the API) are two doors — pick one; --post is the land's".into());
             }
-            if deploy || post {
-                if !pairs.is_empty() {
-                    return Err("seed: --deploy/--post carry their own manifest — do not combine with --kind/--ttl".into());
-                }
-                let root = std::env::var("CHORUS_ROOT")
-                    .unwrap_or_else(|_| "/Users/jeffbridwell/CascadeProjects/chorus".to_string());
-                // The manifest is DATA with one home — read by this verb and
-                // parsed by athena-make's deploy_set() audit. kind:path per line,
-                // stated per file, because the door validates each group
-                // against the STATED class's shape (#3839).
-                let mpath = format!("{}/platform/config/instance-seed-manifest.txt", root);
-                let mbody = std::fs::read_to_string(&mpath)
-                    .map_err(|e| format!("seed --deploy: manifest unreadable ({}): {}", mpath, e))?;
-                for line in mbody.lines() {
-                    let l = line.trim();
-                    if l.is_empty() || l.starts_with('#') {
-                        continue;
-                    }
-                    let (k, rel) = l
-                        .split_once(':')
-                        .ok_or_else(|| format!("seed --deploy: manifest line not kind:path — '{}'", l))?;
-                    pairs.push((k.trim().to_string(), format!("{}/{}", root, rel.trim())));
-                }
-                if pairs.is_empty() {
-                    return Err(format!("seed --deploy: manifest {} declares no groups — refusing a vacuous deploy", mpath));
-                }
-                for (_, f) in &pairs {
-                    if !std::path::Path::new(f).is_file() {
-                        return Err(format!("seed --deploy: manifest TTL not found: {}", f));
-                    }
-                }
+            // #4432 (Jeff 2026-10-06: "why do we reload this data as part of our
+            // deploy") — there is no built-in instance manifest any more. Rows live in
+            // the store and change through the door; a land never replays files over
+            // newer rows. --deploy/--post load only the --kind/--ttl pairs named here.
+            if deploy {
                 // #4187 — no default graph: each kind's home is resolved by
                 // deploy_home (explicit --graph, shape pin, or defining domain).
                 provenance = "deploy".into();

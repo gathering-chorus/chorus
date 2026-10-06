@@ -464,12 +464,12 @@ const WerkRunInput = z.object({
 });
 
 // #4186 — the MODEL pipeline as its own MCP verb (Jeff: "get athena out of werk").
-// Runs athena.yml's `land` job SYNCHRONOUSLY via act (deploy → serve → seed → prove is
+// Runs athena.yml's `land` job SYNCHRONOUSLY via act (deploy → serve → prove is
 // minutes, never a human wait) for one target: canonical (after a land, the landed
 // sha). #4177 (Jeff, 2026-09-17 07:51: "what is athena-land why is that part of
 // this flow!"): werk.yml no longer calls this verb at all. The land EVENT triggers
 // athena — the werk-merge case below scopes the landed sha and, when it carried
-// model or seed sources, starts this same run DETACHED (triggerAthenaOnLand). The
+// model sources, starts this same run DETACHED (triggerAthenaOnLand). The
 // verb remains the hand-run door; act never runs inside act either way.
 const AthenaRunInput = z.object({
   role: RoleEnum,
@@ -481,7 +481,7 @@ const AthenaRunInput = z.object({
 
 const ATHENA_RUN_TOOL_DEF = {
   name: 'chorus_athena',
-  description: 'THE model pipeline trigger (#4186) — runs athena.yml\'s land job for one target: scope → validate → deploy → serve → seed → prove. target=canonical does the same against the live store after a land and requires the landed sha, which the store must attest. Synchronous: returns the run\'s verdict and log path. Never lands code; werk owns code, athena owns the model.',
+  description: 'THE model pipeline trigger (#4186) — runs athena.yml\'s land job for one target: scope → validate → deploy → serve → prove. target=canonical does the same against the live store after a land and requires the landed sha, which the store must attest. Synchronous: returns the run\'s verdict and log path. Never lands code; werk owns code, athena owns the model.',
   inputSchema: {
     type: 'object',
     properties: {
@@ -2999,7 +2999,7 @@ export function athenaDeployFailureNudges(
 
 // #4177 — the land event triggers the model pipeline. Called from the werk-merge case
 // once the merge verb has returned the landed origin/main sha. Scopes that one commit
-// with `athena-deploy scope` (the single owner of "is this a model or seed source");
+// with `athena-deploy scope` (the single owner of "is this a model source");
 // nothing in scope = nothing to run, said on the spine. Something in scope = the
 // canonical athena run starts in its own process group and this returns at once:
 // the land is proven by the merge, the model run reports on its own trace

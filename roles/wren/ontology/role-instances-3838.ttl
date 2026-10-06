@@ -114,5 +114,5 @@ chorus:role-kade chorus:hasProperty chorus:prop-role-kade-response-word-cap .
 chorus:role-silas chorus:hasProperty chorus:prop-role-silas-nudge-word-cap .
 chorus:role-wren chorus:hasProperty chorus:prop-role-wren-nudge-word-cap .
 chorus:role-kade chorus:hasProperty chorus:prop-role-kade-nudge-word-cap .
-chorus:role-abby-normal chorus:hasProperty chorus:prop-role-abby-normal-response-word-cap .
-chorus:role-abby-normal chorus:hasProperty chorus:prop-role-abby-normal-nudge-word-cap .
+chorus:role-abby-normal chorus:hasProperty chorus:property-role-abby-normal-response-word-cap .
+chorus:role-abby-normal chorus:hasProperty chorus:property-role-abby-normal-nudge-word-cap .

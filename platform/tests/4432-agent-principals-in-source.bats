@@ -5,24 +5,24 @@
 # #4432 — Abby Normal's role and principal existed only in the live store
 # (minted 2026-09-17), so a reseed would have dropped her. These cases hold
 # the source to the rule that every agent principal can be rebuilt from it:
-# its role is declared, typed AgentRole, carries both word caps, and the
+# its role is declared, typed AgentRole, names both word caps (the property
+# rows themselves live in the store, not the seed — #4432), and the
 # principal names the Mac account it runs as.
 
 setup() {
   ROOT="$(cd "$(dirname "$BATS_TEST_FILENAME")/../.." && pwd)"
   PRINCIPALS="${PRINCIPALS_TTL:-$ROOT/roles/silas/ontology/identity-principals-3613.ttl}"
   ROLES="${ROLES_TTL:-$ROOT/roles/wren/ontology/role-instances-3838.ttl}"
-  PROPS="${PROPS_TTL:-$ROOT/designing/data/property-instances.ttl}"
 }
 
 check() {
-  python3 - "$PRINCIPALS" "$ROLES" "$PROPS" <<'PY'
+  python3 - "$PRINCIPALS" "$ROLES" <<'PY'
 import re, sys
-P, R, X = (open(f).read() for f in sys.argv[1:4])
+P, R = (open(f).read() for f in sys.argv[1:3])
 def blocks(t):
     t = re.sub(r'(?m)^\s*#.*$', '', t)
     return {m.group(1): m.group(2) for m in re.finditer(r'(?ms)^chorus:([\w-]+) a ([^.]*?(?:"[^"]*"[^.]*?)*)\.\s*$', t)}
-pb, rb, xb = blocks(P), blocks(R), blocks(X)
+pb, rb = blocks(P), blocks(R)
 bad = []
 for name, body in pb.items():
     if 'principalKind "agent"' not in body:
@@ -38,11 +38,13 @@ for name, body in pb.items():
     if 'chorus:AgentRole' not in rb[role]:
         bad.append(f"{role}: not typed chorus:AgentRole")
     for cap in ('response', 'nudge'):
-        prop = f"prop-{role}-{cap}-word-cap"
-        if f"chorus:{role} chorus:hasProperty chorus:{prop} ." not in R:
-            bad.append(f"{role}: no hasProperty {prop}")
-        if prop not in xb:
-            bad.append(f"{prop}: not declared in property-instances")
+        # New rows follow the ADR-040 mint table (property-…); the three
+        # original roles' prop-… names are grandfathered by the seed's iri-guard.
+        names = [f"property-{role}-{cap}-word-cap", f"prop-{role}-{cap}-word-cap"]
+        prop = next((n for n in names if f"chorus:{role} chorus:hasProperty chorus:{n} ." in R), None)
+        if prop is None:
+            bad.append(f"{role}: no hasProperty {names[0]}"); continue
+
 print("\n".join(bad) if bad else "ok")
 sys.exit(1 if bad else 0)
 PY
