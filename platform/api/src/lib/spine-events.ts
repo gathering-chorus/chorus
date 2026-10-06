@@ -1,3 +1,4 @@
+// @domain: events
 /* eslint-disable security/detect-non-literal-fs-filename -- the spine path is fixed by the caller (LOG_PATHS.chorus), never request input (#4431) */
 /**
  * #4431 — the one reader of the spine. Jeff, 2026-10-05: "to me spine is an
@@ -61,6 +62,43 @@ export function parseSpineLine(line: string): SpineEventRow | null {
     detail: typeof p.detail === 'string' ? p.detail : undefined,
     payload: typeof p.payload === 'string' ? p.payload : undefined,
   };
+}
+
+/**
+ * #4438 — the event types a producer domain owns and/or that are about a model
+ * class, read from the registry (spine-events.json, generated from the
+ * EventType rows). undefined = no producer/about asked. An empty array means
+ * nothing matches, and the caller must return no events, never all of them.
+ */
+export function typesFor(
+  registry: Record<string, { producer?: string; about?: string }>,
+  q: { producer?: string; about?: string },
+): string[] | undefined {
+  if (q.producer === undefined && q.about === undefined) return undefined;
+  return Object.entries(registry)
+    .filter(([, e]) => (q.producer === undefined || e.producer === q.producer)
+      && (q.about === undefined || e.about === q.about))
+    .map(([name]) => name);
+}
+
+const param = (v: unknown): string | undefined => (typeof v === 'string' && v ? v : undefined);
+
+/**
+ * #4438 — the GET /api/chorus/spine-events query: role, type (comma list),
+ * since, limit, producer, about. producer/about narrow the types from the
+ * registry. null = the filters match no type, so the answer is no events.
+ */
+export function parseSpineEventsQuery(
+  query: Record<string, unknown>,
+  registry: Record<string, { producer?: string; about?: string }>,
+): SpineEventQuery | null {
+  let types = param(query.type)?.split(',');
+  const owned = typesFor(registry, { producer: param(query.producer), about: param(query.about) });
+  if (owned !== undefined) types = types ? types.filter((t) => owned.includes(t)) : owned;
+  if (types !== undefined && types.length === 0) return null;
+  const since = Date.parse(param(query.since) ?? '');
+  const limit = Math.min(2000, Math.max(1, parseInt(param(query.limit) ?? '500', 10) || 500));
+  return { role: param(query.role), types, sinceMs: Number.isFinite(since) ? since : undefined, limit };
 }
 
 export function filterSpineEvents(rows: SpineEventRow[], q: SpineEventQuery): SpineEventRow[] {

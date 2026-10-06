@@ -1243,7 +1243,7 @@ app.get('/api/chorus/conversation', async (req: Request, res: Response) => {
 import { fetchChorusCardStory, type CardMeta, type NudgeMessage } from './handlers/chorus-card-story';
 import { recentNudges } from './nudge-fold';
 import { safeReadFile, readFileTail } from './lib/log-reader';
-import { SpineEventsReader } from './lib/spine-events';
+import { SpineEventsReader, parseSpineEventsQuery } from './lib/spine-events';
 
 // #3406 — tail budget for the /context/spine log read. 4MB holds ~8x MAX_LIMIT(500)
 // recent JSONL spine events; reading only this (vs the full ~535MB log) keeps the
@@ -1699,7 +1699,8 @@ const readPulseFile = (): string | null => readPulseSnapshot();
 // 4 MB of chorus.log synchronously, once per role, on every /context/roles call
 // (~1700 calls an hour): 20 of 41 attributed freezes on 10-04/05. Now one read
 // per refresh window, off the event loop, shared by every consumer.
-const spineEvents = new SpineEventsReader({ path: `${process.env.HOME}/.chorus/chorus.log`, tailBytes: SPINE_TAIL_BYTES });
+// #4438 — the same file the POST door writes (CHORUS_LOG_FILE is the test membrane seam, #4417)
+const spineEvents = new SpineEventsReader({ path: process.env.CHORUS_LOG_FILE || `${process.env.HOME}/.chorus/chorus.log`, tailBytes: SPINE_TAIL_BYTES });
 
 const readSpineEventsForRole = async (role: string, sinceMs: number): Promise<SpineLine[]> => {
   // the role's own lines, plus demo events (a demo's go may come from jeff)
@@ -3047,19 +3048,18 @@ app.get('/api/chorus/rcas', (req: Request, res: Response) => {
 // Events with hop fields auto-create trace entries.
 
 // Spine event POST handler moved to src/spine-event-write.ts (#2205 wave 21).
-import { handleSpineEvent } from './spine-event-write';
+import { handleSpineEvent, loadSpineSchema } from './spine-event-write';
 // #4417 — CHORUS_LOG_FILE first (the membrane seam, #3615): the integration test
 // that drives this route was appending to the live spine on every run.
 const SPINE_EVENT_LOG = process.env.CHORUS_LOG_FILE || `${process.env.HOME}/.chorus/chorus.log`;
 // #4431 — read side of the events domain: one endpoint, one reader. Every
 // consumer asks here (role, type, since, limit) instead of opening chorus.log.
 app.get('/api/chorus/spine-events', async (req: Request, res: Response) => {
-  const role = typeof req.query.role === 'string' && req.query.role ? req.query.role : undefined;
-  const types = typeof req.query.type === 'string' && req.query.type ? req.query.type.split(',') : undefined;
-  const sinceRaw = typeof req.query.since === 'string' ? Date.parse(req.query.since) : NaN;
-  const limit = Math.min(2000, Math.max(1, parseInt(str(req.query.limit) || '500', 10) || 500));
+  // #4438 — role/type/since/limit, plus by producer domain and by the class an event is about
+  const q = parseSpineEventsQuery(req.query as Record<string, unknown>, loadSpineSchema().events ?? {});
+  if (q === null) { res.json({ count: 0, reads: spineEvents.reads, events: [] }); return; }
   try {
-    const rows = await spineEvents.query({ role, types, sinceMs: Number.isFinite(sinceRaw) ? sinceRaw : undefined, limit });
+    const rows = await spineEvents.query(q);
     // reads = file reads since start: shows the sharing (it grows once per window, not once per call)
     res.json({ count: rows.length, reads: spineEvents.reads, events: rows.map(({ ts: _ts, ...r }) => r) });
   } catch (e) {
