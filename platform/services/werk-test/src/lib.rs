@@ -58,6 +58,15 @@ pub fn set_repo_root(root: &std::path::Path) {
 /// The TS packages of the tree under test (the repo root found by walking up
 /// to `.git` when main has not named one, e.g. in unit tests).
 pub fn ts_packages() -> Vec<String> {
+    // #4420 — the walk ran once per selected test (unit_for_test), so a 338-file
+    // selection walked the whole tree hundreds of times: Silas's #4432 run 14
+    // spun 13 min at 99.6% CPU in discover_ts_packages. The tree does not change
+    // during a run, so the answer is computed once per process.
+    static CACHE: std::sync::OnceLock<Vec<String>> = std::sync::OnceLock::new();
+    CACHE.get_or_init(ts_packages_uncached).clone()
+}
+
+fn ts_packages_uncached() -> Vec<String> {
     let root = REPO_ROOT.get().cloned().or_else(|| {
         let mut d = std::env::current_dir().ok()?;
         loop {

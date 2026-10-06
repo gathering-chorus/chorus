@@ -13,7 +13,7 @@
  * live act.
  */
 import * as fs from 'fs';
-import { execFileSync } from 'child_process';
+import { execFileSync, spawn } from 'child_process';
 import * as path from 'path';
 import type { WerkRun } from './werk-run-state';
 
@@ -40,6 +40,7 @@ export function holdFilePath(card: number, runsDir: string): string {
 }
 
 export function isHeld(card: number, runsDir: string): boolean {
+  // eslint-disable-next-line security/detect-non-literal-fs-filename -- runsDir is RUNS_DIR or a test dir; card is a validated integer
   return fs.existsSync(holdFilePath(card, runsDir));
 }
 
@@ -82,7 +83,9 @@ export function pauseRun(run: WerkRun | null, runsDir: string): ControlResult {
   if (run.phase !== 'running') {
     return { ok: false, refusal: 'not-running', note: `The run on record is '${run.phase}', not running — nothing to pause.` };
   }
+  // eslint-disable-next-line security/detect-non-literal-fs-filename -- runsDir is RUNS_DIR or a test dir
   fs.mkdirSync(runsDir, { recursive: true });
+  // eslint-disable-next-line security/detect-non-literal-fs-filename -- the card's own hold file under runsDir
   fs.writeFileSync(holdFilePath(run.card, runsDir), `${run.runId}\n`);
   return { ok: true, phase: 'running', paused: true, note: `Run ${run.runId} pauses after the step in flight; the next step waits until resume.` };
 }
@@ -110,8 +113,18 @@ export function liveControlDeps(writeRun: (run: WerkRun) => void): ControlDeps {
       } catch { return null; }
     },
     writeRun,
+    // eslint-disable-next-line security/detect-non-literal-fs-filename -- the run's own log path from its record
     appendLog: (file, line) => fs.appendFileSync(file, line),
     sleep: (ms) => new Promise((r) => setTimeout(r, ms)),
     now: () => new Date(),
   };
+}
+
+/** After a cancel: the slot's variant goes down with the run, and the spine says why. */
+export function afterCancel(role: string, card: number, runId: string, binDir: string, scriptsDir: string): void {
+  try {
+    spawn(path.join(binDir, 'werk-deploy'), ['env-down', role, String(card)], { detached: true, stdio: 'ignore' }).unref();
+    spawn('bash', [path.join(scriptsDir, 'chorus-log'), 'werk.cancelled', role, `card=${card}`, `run_id=${runId}`],
+      { detached: true, stdio: 'ignore' }).unref();
+  } catch { /* best-effort: the run record and log already say cancelled */ }
 }

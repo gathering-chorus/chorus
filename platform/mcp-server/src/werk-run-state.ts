@@ -139,15 +139,14 @@ export function decideRunAction(
   // Before: a status poll on a failed card relaunched it (2026-10-02 #4338 runs
   // 5 and 6, eight seconds apart; 2026-07-23 the same).
   const relaunch = requestedRetry || requestedRepresent;
-  if (existing.phase === 'running' && !isStale) {
-    return relaunch ? { kind: 'refuse-retry-running', run: existing } : { kind: 'attach', run: existing };
-  }
-  if (relaunch && (existing.phase === 'running' || existing.phase === 'failed' || existing.phase === 'cancelled')) {
-    return { kind: 'start' };
-  }
-  if (relaunch && existing.phase === 'presented' && (headChanged || requestedRepresent)) {
-    return { kind: 'start' };
-  }
+  return relaunch ? relaunchDecision(existing, isStale, headChanged || requestedRepresent) : { kind: 'attach', run: existing };
+}
+
+/** #4420 — what an explicit retry/represent does with the run on record. */
+function relaunchDecision(existing: WerkRun, isStale: boolean, newRound: boolean): RunAction {
+  if (existing.phase === 'running') return isStale ? { kind: 'start' } : { kind: 'refuse-retry-running', run: existing };
+  if (existing.phase === 'failed' || existing.phase === 'cancelled') return { kind: 'start' };
+  if (existing.phase === 'presented' && newRound) return { kind: 'start' };
   return { kind: 'attach', run: existing };
 }
 

@@ -31,7 +31,7 @@ import { recentErrors, logsForCard, logsForTrace, logsForBranch, type LogsQueryD
 import { executeDesignRefresh } from './design-refresh';
 // #3443 AC7 — run-state: a chorus_werk transport drop becomes a non-event.
 import { announceRepeated, decideRunAction, patchSuperseded, type WerkRun } from './werk-run-state';
-import { cancelRun, pauseRun, resumeRun, liveControlDeps } from './werk-run-control';
+import { cancelRun, pauseRun, resumeRun, liveControlDeps, afterCancel } from './werk-run-control';
 import {
   readRun, writeRunAtomic, isRunStale, runLogPath, reconcileRunning,
   currentWerkPatchId, clearRun, verifyPinIntegrity, archiveRun, withRunLaunchLock,
@@ -2745,6 +2745,15 @@ function werkRunPaths() {
   return { pathMod, home, werkBase, binDir, scriptsDir, workflow, actBin, runnerPath };
 }
 
+/** #4420 AC4 — a retry while a live run is in flight is refused and names it. */
+function refuseRetryRunning(r: WerkRun, args: { role: string; card_id: number }) {
+  return mcpJson({
+    ok: false, verb: 'chorus_werk', refusal: 'run-in-flight', phase: r.phase,
+    role: args.role, card_id: args.card_id, run_id: r.runId, pid: r.pid, started_at: r.startedAt,
+    note: `Refused: run ${r.runId} (pid ${r.pid ?? '?'}, started ${r.startedAt}) is still running on this werk. Poll it, or cancel it with action:'cancel', before launching another.`,
+  });
+}
+
 async function executeChorusWerkLocked(
   args: z.infer<typeof WerkRunInput>,
   spawnFn: SpawnFn,
@@ -2802,14 +2811,7 @@ async function executeChorusWerkLocked(
   // stale-running bug); isRunStale probes pid-liveness + TTL so a re-invoke past a
   // dead run starts fresh instead of stranding the card.
   const action = decideRunAction(existingRun, false, existingRun ? isRunStale(existingRun) : false, headChanged, args.represent === true, args.retry === true);
-  if (action.kind === 'refuse-retry-running') {
-    const r = action.run;
-    return mcpJson({
-      ok: false, verb: 'chorus_werk', refusal: 'run-in-flight', phase: r.phase,
-      role: args.role, card_id: args.card_id, run_id: r.runId, pid: r.pid, started_at: r.startedAt,
-      note: `Refused: run ${r.runId} (pid ${r.pid ?? '?'}, started ${r.startedAt}) is still running on this werk. Poll it, or cancel it with action:'cancel', before launching another.`,
-    });
-  }
+  if (action.kind === 'refuse-retry-running') return refuseRetryRunning(action.run, args);
   if (action.kind === 'attach') {
     const r = action.run;
     // #3751 — never report a phase from a pin that fails integrity (previous
@@ -2900,13 +2902,8 @@ async function executeWerkControl(
     ? await cancelRun(run, liveControlDeps((r) => writeRunAtomic(r, runsDir)), dir)
     : args.action === 'pause' ? pauseRun(run, dir) : resumeRun(run, dir);
   if (result.ok && args.action === 'cancel' && run) {
-    const { scriptsDir } = werkRunPaths();
-    try {
-      // the slot's variant goes down with the run, and the spine says why
-      spawn(pathMod.join(chorusBinDir(pathMod), 'werk-deploy'), ['env-down', args.role, String(args.card_id)], { detached: true, stdio: 'ignore' }).unref();
-      spawn('bash', [pathMod.join(scriptsDir, 'chorus-log'), 'werk.cancelled', args.role,
-        `card=${args.card_id}`, `run_id=${run.runId}`], { detached: true, stdio: 'ignore' }).unref();
-    } catch { /* best-effort: the run record and log already say cancelled */ }
+    const { binDir, scriptsDir } = werkRunPaths();
+    afterCancel(args.role, args.card_id, run.runId, binDir, scriptsDir);
   }
   return mcpJson({ verb: 'chorus_werk', action: args.action, role: args.role, card_id: args.card_id, run_id: run?.runId, ...result });
 }
