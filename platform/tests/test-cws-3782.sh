@@ -110,6 +110,18 @@ out=$(CWS_RUNS_DIR=$TD "$CWS" 107)
 t "the why names the tests that went red" "2 reds: search-freshness.integration.test, lint-ratchet:workspace" "$out"
 if [[ "$out" == *envelope-refusal* ]]; then echo "FAIL why names a selection line"; fails=$((fails+1)); fi
 
+# The exit marker is its own line. Negative proof: #4420's own run printed AC
+# text quoting WERK_EXIT=cancelled and the running run read "stopped".
+cat > "$TD/108.json" <<EOF
+{"card":108,"role":"kade","phase":"running","pid":$$,"startedAt":"$NOW","runId":"108-t-9"}
+EOF
+cat > "$TD/108-108-t-9.log" <<'EOF'
+[werk/werk]   |   unchecked AC (1): A log ending WERK_EXIT=cancelled reads "cancelled"
+[werk/werk] ⭐ Run Main deploy-werk
+EOF
+out=$(CWS_RUNS_DIR=$TD "$CWS" 108)
+t "a quoted marker is not an exit" "running                 at deploy-werk" "$out"
+
 rm -rf "$TD"
 if [ $fails -gt 0 ]; then echo "test-cws-3782: $fails FAILURE(S)"; exit 1; fi
 echo "test-cws-3782: all green"
