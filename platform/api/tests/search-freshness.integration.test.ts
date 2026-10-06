@@ -7,18 +7,20 @@
  */
 
 import { startTestApp, type TestApp } from './lib/test-app';
+import { smallIndexFrom } from './lib/small-index';
 
-// #3606 — integration budget. These tests assert _meta CORRECTNESS, not
-// latency; under the nightly's full-suite parallel load the first search
-// (cold FTS + freshness caches) exceeds jest's 5s default and the suite
-// red-ed on timeout with every assertion untested (03:16 run: 27.7s suite).
-// 30s bounds a genuinely-hung API while never failing on load contention.
+// #4416 reopened — these tests check what _meta SAYS. They search a small copy
+// (newest 2,000 rows, every watermark) instead of the 500 MB per-run copy, where
+// a first search took 1.1–2.6 s idle and passed 5 s in a loaded pipeline.
 
 describe('GET /api/chorus/search — _meta freshness (#1878)', () => {
 
   let harness: TestApp;
 
-  beforeAll(async () => { harness = await startTestApp(); });
+  beforeAll(async () => {
+    process.env.CHORUS_DB_PATH = smallIndexFrom(process.env.CHORUS_DB_PATH as string);
+    harness = await startTestApp();
+  });
   afterAll(async () => { if (harness) await harness.close(); });
   test('response includes _meta with domain_coverage', async () => {
     const res = await fetch(`${harness.baseUrl}/api/chorus/search?q=test&limit=5`);
