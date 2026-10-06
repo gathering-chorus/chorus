@@ -192,14 +192,20 @@ async fn main() {
     // one call_id), so nothing needs to beat to say a role is alive; the beats were
     // the flood, and an entry that never cleared beat "running Skill (923s)".
 
-    let app = Router::new()
+    let routes = Router::new()
         .route("/health", get(health))
         .route("/pre-tool-use", post(pre_tool_use))
         .route("/post-tool-use", post(post_tool_use))
         .route("/user-prompt-submit", post(user_prompt_submit))
         .route("/stop", post(stop_hook))
-        .layer(DefaultBodyLimit::max(16 * 1024 * 1024)) // 16MB — tool_response can be large
+        .layer(DefaultBodyLimit::max(16 * 1024 * 1024)); // 16MB — tool_response can be large
+    let app = routes.clone().with_state(state.clone());
+    // #4432 — the same guards for agent principals on their own Mac account,
+    // on a group-`chorus` socket where the OS names the caller (agent_socket).
+    let agent_app = routes
+        .layer(axum::middleware::from_fn(chorus_hooks::agent_socket::identify))
         .with_state(state);
+    spawn_agent_socket(agent_app);
 
     let listener = UnixListener::bind(&socket_path).expect("Failed to bind unix socket");
 
@@ -299,6 +305,41 @@ async fn shutdown_signal(started_at: std::time::Instant) {
         Path::new(&chorus_hooks::shared::state_paths::hook_socket_durable()),
         Path::new(&chorus_hooks::shared::state_paths::hook_pid_durable()),
     );
+}
+
+/// #4432 — `<run dir>-agents/chorus-hooks.sock`: dir 0710 and socket 0660,
+/// both group `chorus`, so an agent account in that group can connect and no
+/// one else can. No `chorus` group → no agent socket, said loudly; the main
+/// socket is untouched either way.
+fn spawn_agent_socket(app: Router) {
+    use std::os::unix::fs::PermissionsExt;
+    let dir = format!("{}-agents", chorus_hooks::shared::state_paths::hook_run_dir());
+    let sock = format!("{dir}/chorus-hooks.sock");
+    let Some(gid) = (unsafe { libc::getgrnam(c"chorus".as_ptr()).as_ref() }).map(|g| g.gr_gid) else {
+        tracing::warn!("chorus-hooks: no `chorus` group — the agent socket is not opened; agent principals on their own account get no guarded tools");
+        return;
+    };
+    let _ = std::fs::create_dir_all(&dir);
+    let chown = |p: &str| {
+        let c = std::ffi::CString::new(p).unwrap_or_default();
+        unsafe { libc::chown(c.as_ptr(), u32::MAX, gid) }
+    };
+    chown(&dir);
+    let _ = std::fs::set_permissions(&dir, std::fs::Permissions::from_mode(0o710));
+    let _ = std::fs::remove_file(&sock);
+    let listener = match UnixListener::bind(&sock) {
+        Ok(l) => l,
+        Err(e) => { tracing::warn!("chorus-hooks: agent socket {sock} not bound: {e}"); return; }
+    };
+    chown(&sock);
+    let _ = std::fs::set_permissions(&sock, std::fs::Permissions::from_mode(0o660));
+    info!("chorus-hooks agent socket listening on {}", sock);
+    tokio::spawn(async move {
+        let svc = app.into_make_service_with_connect_info::<chorus_hooks::agent_socket::AgentPeer>();
+        if let Err(e) = axum::serve(listener, svc).await {
+            tracing::warn!("chorus-hooks: agent socket stopped: {e}");
+        }
+    });
 }
 
 async fn health() -> &'static str {

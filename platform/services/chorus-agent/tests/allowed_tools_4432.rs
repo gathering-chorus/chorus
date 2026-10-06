@@ -51,7 +51,8 @@ fn install_writes_a_gemini_policy_file_with_allow_rules() {
     assert!(toml.contains("\"run_shell_command\""), "{toml}");
     assert!(toml.contains("\"mcp_chorus-api_*\""), "{toml}");
     assert!(toml.contains("commandPrefix = \"git push --force-with-lease origin\""), "{toml}");
-    assert_eq!(toml.matches("decision = \"allow\"").count(), 1 + 8, "one plain rule + 8 shell prefixes:\n{toml}");
+    assert_eq!(toml.matches("decision = \"allow\"").count(), 1 + 1 + 8, "plain + any-shell + 8 shell prefixes:\n{toml}");
+    assert!(toml.contains("toolName = \"run_shell_command\"\ndecision = \"allow\"\npriority = 100\nallowRedirection = true"), "{toml}");
     assert!(!toml.contains("NotebookEdit") && !toml.contains("deny"), "{toml}");
 }
 

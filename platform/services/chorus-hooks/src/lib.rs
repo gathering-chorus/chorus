@@ -11,6 +11,7 @@
 // Suppress dead_code crate-wide; the real clippy lints stay on.
 #![allow(dead_code)]
 
+pub mod agent_socket;
 pub mod mcp_client;
 pub mod runtime_tools;
 pub mod runtime_hook;

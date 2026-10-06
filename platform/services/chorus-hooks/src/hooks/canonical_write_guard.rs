@@ -59,11 +59,13 @@ pub fn check(input: &HookInput) -> HookResponse {
     let named = input.deploy_role.as_deref().filter(|r| {
         !r.is_empty() && r.bytes().all(|b| b.is_ascii_lowercase() || b.is_ascii_digit() || b == b'-')
     });
+    // The named role comes first: input.role() falls back to the cwd, and a
+    // proof run inside silas-4432's werk read Abby as silas (measured 10-06).
     let role: String = match (named, input.role()) {
-        (_, Role::Kade) => "kade".to_string(),
-        (_, Role::Wren) => "wren".to_string(),
-        (_, Role::Silas) => "silas".to_string(),
         (Some(r), _) => r.to_string(),
+        (None, Role::Kade) => "kade".to_string(),
+        (None, Role::Wren) => "wren".to_string(),
+        (None, Role::Silas) => "silas".to_string(),
         (None, _) => match std::env::var("CHORUS_ROLE") {
             Ok(r) if r == "kade" || r == "wren" || r == "silas" => r,
             _ => return HookResponse::allow(), // bootstrap / migration / generic shell

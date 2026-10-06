@@ -510,3 +510,16 @@ fn abby_normal_cannot_write_another_roles_werk_and_wren_cannot_write_hers() {
         assert!(r.stdout.as_deref().unwrap_or("").contains("abby-normal's werk"), "{:?}", r.stdout);
     });
 }
+
+#[test]
+fn negative_proof_the_named_role_wins_over_the_cwd() {
+    // Measured 10-06: Abby's call from inside silas-4432's werk was refused
+    // as silas, because the cwd-derived role was checked before deploy_role.
+    with_env("/Users/jeff/CascadeProjects/chorus", "abby-normal", "/Users/jeff/CascadeProjects/chorus-werk/abby-normal-4432", || {
+        std::env::remove_var("CHORUS_ROLE");
+        let mut input = as_role(write_input("/Users/jeff/CascadeProjects/chorus/x.txt"), "abby-normal");
+        input.cwd = Some("/Users/jeff/CascadeProjects/chorus-werk/silas-4432/roles/abby-normal".into());
+        let msg = canonical_write_guard::check(&input).stdout.unwrap_or_default();
+        assert!(msg.contains("ABBY_NORMAL_WERK") && !msg.contains("SILAS"), "{msg}");
+    });
+}

@@ -84,13 +84,20 @@ pub fn gemini_policy_toml(allowed: &[String], source: &Path) -> String {
         source.display()
     );
     let mut prefixes = Vec::new();
+    let mut any_shell = false;
     for name in allowed {
         match name.strip_prefix("run_shell_command(").and_then(|r| r.strip_suffix(')')) {
             Some(prefix) => prefixes.push(prefix.to_string()),
+            None if name == "run_shell_command" => any_shell = true,
             None => plain.push(q(name)),
         }
     }
     out.push_str(&format!("\n[[rule]]\ntoolName = [{}]\ndecision = \"allow\"\npriority = 100\n", plain.join(", ")));
+    // Claude's Bash(*) allows a redirect (`> file`); Gemini asks for one unless
+    // the rule says allowRedirection (measured 10-06: "requires user confirmation").
+    if any_shell {
+        out.push_str("\n[[rule]]\ntoolName = \"run_shell_command\"\ndecision = \"allow\"\npriority = 100\nallowRedirection = true\n");
+    }
     for prefix in prefixes {
         out.push_str(&format!(
             "\n[[rule]]\ntoolName = \"run_shell_command\"\ncommandPrefix = {}\ndecision = \"allow\"\npriority = 100\n",
