@@ -1,6 +1,6 @@
 // @domain: identity
 //! #4432 — the agent roles come from the roles door, never a list of three.
-use chorus_principal::rows::agent_roles;
+use chorus_principal::rows::{agent_roles, agent_socket_for};
 
 const DOOR: &str = r#"{"data":[
  {"name":"abby-normal","roleKind":"agent"},{"name":"jeff","roleKind":"human"},
@@ -28,4 +28,16 @@ fn negative_proof_an_unreadable_door_is_an_error_not_the_usual_three() {
 #[test]
 fn negative_proof_a_door_with_no_agent_role_is_an_error() {
     assert!(agent_roles(r#"{"data":[{"name":"jeff","roleKind":"human"}]}"#).is_err());
+}
+
+#[test]
+fn an_agent_on_its_own_account_is_asked_on_that_accounts_socket() {
+    assert_eq!(agent_socket_for("/Users", Some("chorus-abby-normal")).as_deref(),
+               Some("/Users/chorus-abby-normal/.chorus/run/chorus-agent.sock"));
+}
+
+#[test]
+fn negative_proof_no_own_account_means_the_launchers_default_socket() {
+    assert_eq!(agent_socket_for("/Users", None), None);
+    assert_eq!(agent_socket_for("/Users", Some("")), None);
 }

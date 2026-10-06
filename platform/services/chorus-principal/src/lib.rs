@@ -977,7 +977,13 @@ fn on_agent(ctx: &Ctx, role: &str, attach: bool) -> Result<Came, (i32, String)> 
     if let Err(e) = sh(&ctx.tmux, &["send-keys", "-t", &tmux_session, &launch, "Enter"]) { return Err((1, format!("tmux send-keys failed: {}", e.trim()))); }
     let mut enrolled = false;
     for i in 0..=ctx.wait {
-        enrolled = sh(&agent_bin, &["status", &run]).map(|out| rows::agent_enrolled(&out, &run)).unwrap_or(false);
+        // #4432 — ask the supervisor of the account the agent runs as (Abby's
+        // lives in her home), not the launcher's own socket.
+        let status = match rows::agent_socket_for(&envd("AWAKE_ACCOUNT_HOMES", "/Users"), ctx.run_as.as_deref()) {
+            Some(sock) => sh("env", &[&format!("CHORUS_AGENT_SOCKET={}", sock), &agent_bin, "status", &run]),
+            None => sh(&agent_bin, &["status", &run]),
+        };
+        enrolled = status.map(|out| rows::agent_enrolled(&out, &run)).unwrap_or(false);
         if enrolled || i == ctx.wait { break; }
         std::thread::sleep(Duration::from_secs(1));
     }

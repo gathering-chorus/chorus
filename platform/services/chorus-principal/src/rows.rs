@@ -534,6 +534,13 @@ pub fn agent_launch_cmd_checked(agent_bin: &str, role: &str, run: &str) -> Resul
 pub fn agent_launch_cmd(agent_bin: &str, role: &str, run: &str) -> String {
     format!("CHORUS_SESSION_RUN='{}' '{}' launch {}", run, agent_bin, role)
 }
+/// #4432 — where a principal's own supervisor listens: an agent that runs as
+/// its own Mac account (#4383) has its chorus-agentd in that account's home,
+/// so the launcher's enrollment check must ask THAT socket, not its own.
+/// None = the launcher's own account (the supervisor's default socket).
+pub fn agent_socket_for(account_homes: &str, run_as: Option<&str>) -> Option<String> {
+    run_as.filter(|a| !a.is_empty()).map(|a| format!("{}/{}/.chorus/run/chorus-agent.sock", account_homes.trim_end_matches('/'), a))
+}
 /// Enrolled = the supervisor's status for this run names this run.
 pub fn agent_enrolled(status_json: &str, run: &str) -> bool {
     serde_json::from_str::<Value>(status_json).ok()
