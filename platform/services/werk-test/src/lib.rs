@@ -3009,6 +3009,8 @@ pub struct DomainSelection {
     pub tests: std::collections::BTreeMap<String, String>,
     /// changed files no registered test exercises: named, and refused inside a unit
     pub untagged: Vec<String>,
+    /// changed file → the tests that exercise it
+    pub exercisers: std::collections::BTreeMap<String, Vec<String>>,
 }
 
 /// `exercisers`: changed non-test file → the registered tests that exercise it
@@ -3024,6 +3026,10 @@ pub fn domain_selection(
         // #4419 — a NEW test the registry has not crawled yet is still a test.
         if rows.iter().any(|r| &r.file_path == f) || is_test_file(f) {
             sel.tests.insert(f.clone(), "changed".to_string());
+            // a test with no runner of its own runs through the suite that runs it
+            for t in exercisers.get(f).map(|v| v.as_slice()).unwrap_or(&[]) {
+                sel.tests.entry(t.clone()).or_insert_with(|| format!("runs {f}"));
+            }
             continue;
         }
         let ex = exercisers.get(f).map(|v| v.as_slice()).unwrap_or(&[]);
@@ -3035,6 +3041,7 @@ pub fn domain_selection(
         }
     }
     sel.domains = sel.tests.keys().filter_map(|t| covers(t)).collect();
+    sel.exercisers = exercisers.iter().map(|(k, v)| (k.clone(), v.clone())).collect();
     sel
 }
 
@@ -6219,15 +6226,30 @@ pub fn exercisers_of(
     let mut out: Vec<String> = match (mention_key(f), crate_of(f)) {
         (None, Some(c)) => rows.iter().map(|r| &r.file_path)
             .filter(|p| p.starts_with(&format!("{c}/"))).cloned().collect(),
-        (Some(key), _) => rows.iter().map(|r| &r.file_path)
-            .filter(|p| text_of(p).is_some_and(|t| mentions(&t, &key) || relative_import(p, f).is_some_and(|r| mentions(&t, &r))))
-            .cloned().collect(),
+        // inside a TS package `src/server` names a different file in every
+        // package, so only the exact relative import or the full path counts
+        // (#4432 replay: clearing's server.ts matched 79 platform/api tests)
+        (Some(key), _) => {
+            let full = f.rsplit_once('.').map(|(a, _)| a).unwrap_or(f).to_string();
+            let in_pkg = ts_package_of(f).is_some();
+            rows.iter().map(|r| &r.file_path)
+                .filter(|p| text_of(p).is_some_and(|t| {
+                    mentions(&t, &full)
+                        || relative_import(p, f).is_some_and(|r| mentions(&t, &r))
+                        || (!in_pkg && mentions(&t, &key))
+                }))
+                .cloned().collect()
+        }
         (None, None) => Vec::new(),
     };
     if out.len() > HUB_EXERCISERS {
         if let Some(routes) = changed_routes {
+            // every test that calls a changed route, whether it imports the
+            // app or reaches it over HTTP from another package (Silas, #4440)
             let lits: Vec<&str> = routes.iter().map(|r| route_literal(r)).filter(|l| !l.is_empty()).collect();
-            out.retain(|p| text_of(p).is_some_and(|t| lits.iter().any(|l| mentions(&t, l))));
+            out = rows.iter().map(|r| &r.file_path)
+                .filter(|p| text_of(p).is_some_and(|t| lits.iter().any(|l| mentions(&t, l))))
+                .cloned().collect();
         }
     }
     out.sort();
@@ -6372,6 +6394,48 @@ app.post(\"/api/cards/:id\", handler);\n";
 /// #4419 — the untagged changed files that sit in a package or crate: each one
 /// used to run its whole unit. Returned (file, unit) so the run can refuse and
 /// name them. A file in no unit has nothing to run and is not refused.
+/// #4419 reopened (Jeff 2026-10-06 "wtf") — a test file werk-test has a
+/// runner for: a bats suite, a jest/spec test inside a TS package, or a cargo
+/// integration test. A bare `test-*.sh` is none of these: it never runs.
+pub fn runnable_test(f: &str, in_ts_package: bool) -> bool {
+    let name = f.rsplit('/').next().unwrap_or(f);
+    f.ends_with(".bats")
+        || (in_ts_package && [".test.", ".spec."].iter().any(|m| name.contains(m)))
+        || (f.ends_with(".rs") && f.contains("/tests/"))
+}
+
+/// Source a card can break: code by extension, or an extension-less script.
+pub fn is_code(f: &str) -> bool {
+    let name = f.rsplit('/').next().unwrap_or(f);
+    match name.rsplit_once('.') {
+        Some((_, ext)) => matches!(ext, "ts" | "tsx" | "js" | "cjs" | "mjs" | "rs" | "py" | "sh" | "bash"),
+        None => f.starts_with("platform/scripts/") || f.starts_with("platform/hooks/"),
+    }
+}
+
+/// The changed files a run must not pass over: a changed test the pipeline
+/// cannot run, and changed code no runnable test exercises. #4420 run 8:
+/// chorus-werk-status changed, its only test was test-cws-3782.sh, 0 ran, pass.
+/// A test werk-test cannot run is fine when a runnable one runs it
+/// (cws-3782.bats runs test-cws-3782.sh): `sel.exercisers` says which.
+pub fn unrun_changes(
+    changed: &[String],
+    sel: &DomainSelection,
+    runnable: &dyn Fn(&str) -> bool,
+) -> Vec<(String, &'static str)> {
+    let mut out = Vec::new();
+    for f in changed {
+        if is_test_file(f) {
+            if !runnable(f) && sel.exercisers.get(f).is_none_or(|e| e.is_empty()) {
+                out.push((f.clone(), "a test the pipeline has no runner for"));
+            }
+        } else if is_code(f) && sel.untagged.contains(f) {
+            out.push((f.clone(), "no test the pipeline can run exercises it"));
+        }
+    }
+    out
+}
+
 pub fn untagged_in_a_unit(untagged: &[String], unit_of: &dyn Fn(&str) -> Option<String>) -> Vec<(String, String)> {
     untagged.iter().filter_map(|f| unit_of(f).map(|u| (f.clone(), u))).collect()
 }

@@ -147,3 +147,75 @@ fn negative_proof_a_sibling_with_a_longer_name_is_not_a_mention() {
     let s = select("platform/pulse/src/peers.ts", &rows, &texts, None);
     assert_eq!(s.untagged, vec!["platform/pulse/src/peers.ts".to_string()]);
 }
+
+// #4419 reopened (Jeff 2026-10-06 "wtf") — #4420 run 8 changed chorus-werk-status;
+// its only test was test-cws-3782.sh, which werk-test has no runner for; 0 ran, pass.
+fn runnable(f: &str) -> bool {
+    werk_test::runnable_test(f, f.starts_with("platform/api/"))
+}
+
+#[test]
+fn negative_proof_the_4420_diff_is_refused() {
+    let changed = vec!["platform/scripts/chorus-werk-status".to_string(), "platform/tests/test-cws-3782.sh".to_string()];
+    let s = domain_selection(&changed, &HashMap::new(), &[]);
+    let unrun = werk_test::unrun_changes(&changed, &s, &runnable);
+    let names: Vec<&str> = unrun.iter().map(|(f, _)| f.as_str()).collect();
+    assert_eq!(names, vec!["platform/scripts/chorus-werk-status", "platform/tests/test-cws-3782.sh"]);
+}
+
+#[test]
+fn the_same_change_with_a_bats_suite_that_runs_it_passes() {
+    let changed = vec!["platform/scripts/chorus-werk-status".to_string(), "platform/tests/cws-3782.bats".to_string()];
+    let mut m = HashMap::new();
+    m.insert(changed[0].clone(), vec!["platform/tests/cws-3782.bats".to_string()]);
+    let s = domain_selection(&changed, &m, &[]);
+    assert!(werk_test::unrun_changes(&changed, &s, &runnable).is_empty());
+}
+
+#[test]
+fn docs_and_data_with_no_test_are_named_not_refused() {
+    let changed = vec!["designing/docs/x.html".to_string(), "designing/data/y.ttl".to_string()];
+    let s = domain_selection(&changed, &HashMap::new(), &[]);
+    assert!(werk_test::unrun_changes(&changed, &s, &runnable).is_empty());
+    assert_eq!(s.untagged.len(), 2);
+}
+
+#[test]
+fn a_jest_test_in_a_package_runs_a_bare_shell_test_does_not() {
+    assert!(werk_test::runnable_test("platform/api/tests/a.test.ts", true));
+    assert!(werk_test::runnable_test("platform/tests/x.bats", false));
+    assert!(werk_test::runnable_test("platform/services/werk-test/tests/a.rs", false));
+    assert!(!werk_test::runnable_test("platform/tests/test-cws-3782.sh", false));
+}
+
+#[test]
+fn a_shell_test_run_by_a_bats_suite_is_not_refused_and_the_suite_runs() {
+    let changed = vec!["platform/tests/test-cws-3782.sh".to_string()];
+    let mut m = HashMap::new();
+    m.insert(changed[0].clone(), vec!["platform/tests/cws-3782.bats".to_string()]);
+    let s = domain_selection(&changed, &m, &[]);
+    assert!(werk_test::unrun_changes(&changed, &s, &runnable).is_empty());
+    assert!(s.tests.contains_key("platform/tests/cws-3782.bats"), "{:?}", s.tests);
+}
+
+#[test]
+fn negative_proof_another_packages_server_is_not_this_one() {
+    let rows = vec![row("platform/api/tests/a.test.ts", "code")];
+    let texts = HashMap::from([("platform/api/tests/a.test.ts", "import app from '../src/server';")]);
+    let s = select("directing/clearing/src/server.ts", &rows, &texts, None);
+    assert!(s.tests.is_empty(), "{:?}", s.tests);
+    let s = select("platform/api/src/server.ts", &rows, &texts, None);
+    assert!(s.tests.contains_key("platform/api/tests/a.test.ts"));
+}
+
+#[test]
+fn a_route_change_selects_the_tests_that_call_it_over_http_too() {
+    let (mut rows, mut texts) = hub_rows();
+    let p = "directing/clearing/tests/tiles.test.ts";
+    rows.push(row(p, "messages"));
+    texts.insert(p, "await fetch(`${API}/api/chorus/spine-events?x=1`)".to_string());
+    let t: HashMap<&str, &str> = texts.iter().map(|(k, v)| (*k, v.as_str())).collect();
+    let routes = vec!["/api/chorus/spine-events/:id".to_string()];
+    let s = select("platform/api/src/server.ts", &rows, &t, Some(&routes));
+    assert!(s.tests.contains_key(p), "{:?}", s.tests);
+}

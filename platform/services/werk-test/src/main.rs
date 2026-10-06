@@ -203,6 +203,19 @@ fn run(args: &[String]) -> Result<i32, String> {
             for f in d.untagged.iter().filter(|f| !refused.iter().any(|(r, _)| r == *f)) {
                 println!("domain-select: {} — no registered test exercises it, and it is in no package", f);
             }
+            // #4419 reopened — what would otherwise pass with nothing run
+            let runnable = |f: &str| werk_test::runnable_test(f, werk_test::ts_package_of(f).is_some());
+            let unrun: Vec<(String, &str)> = werk_test::unrun_changes(&changed, d, &runnable).into_iter()
+                .filter(|(f, _)| !refused.iter().any(|(r, _)| r == f)).collect();
+            if !unrun.is_empty() {
+                for (f, why) in &unrun {
+                    eprintln!("domain-select: REFUSED — {}: {}. Give it a test werk-test runs (bats, jest in its package, cargo tests/), and re-run.", f, why);
+                }
+                eprintln!("  Nothing ran. A change no runnable test covers never passes as green (#4420 run 8).");
+                emit_spine("test.scope.refused", &role, &card, &trace,
+                    &[("reason", "unrun"), ("path", unrun[0].0.as_str()), ("count", &unrun.len().to_string())]);
+                std::process::exit(2);
+            }
             if !refused.is_empty() {
                 for (f, unit) in &refused {
                     eprintln!("domain-select: REFUSED — {} (in {}): no registered test exercises it. Add or register the test that does, and re-run.", f, unit);
@@ -3212,16 +3225,19 @@ fn domain_select(werk: &str, changed: &[String], rows: &[TestRow]) -> Option<wer
         candidates.push(TestRow { file_path: f.clone(), covers: String::new(), pyramid_layer: String::new(), hermeticity: String::new(), test_concern: String::new() });
     }
     let mut exercisers: std::collections::HashMap<String, Vec<String>> = Default::default();
-    for f in changed.iter().filter(|f| !werk_test::is_test_file(f) && !rows.iter().any(|r| &r.file_path == *f)) {
+    let unrunnable_test = |f: &str| werk_test::is_test_file(f) && !werk_test::runnable_test(f, werk_test::ts_package_of(f).is_some());
+    for f in changed.iter().filter(|f| unrunnable_test(f) || (!werk_test::is_test_file(f) && !rows.iter().any(|r| &r.file_path == *f))) {
         let routes = changed_routes_of(werk, f);
         let mut ex = werk_test::exercisers_of(f, &candidates, &text_of, &crate_of, routes.as_deref());
         // a jest setup file runs before every test of its package
         if ex.is_empty() {
-            if let Some(pkg) = werk_test::ts_package_of(f) {
-                let name = f.rsplit('/').next().unwrap_or(f);
+            let name = f.rsplit('/').next().unwrap_or(f);
+            let root = name.starts_with("jest.config.").then(|| f.rsplit_once('/').map(|(d, _)| d.to_string())).flatten();
+            if let Some(pkg) = werk_test::ts_package_of(f).or(root) {
                 let cfg = ["jest.config.js", "jest.config.cjs", "jest.config.ts"].iter()
                     .find_map(|c| std::fs::read_to_string(format!("{werk}/{pkg}/{c}")).ok()).unwrap_or_default();
-                if werk_test::mentions(&cfg, name) {
+                // the jest config itself runs under every test of its package
+                if werk_test::mentions(&cfg, name) || name.starts_with("jest.config.") {
                     ex = candidates.iter().map(|r| &r.file_path).filter(|p| p.starts_with(&format!("{pkg}/"))).cloned().collect();
                 }
             }
@@ -3231,6 +3247,8 @@ fn domain_select(werk: &str, changed: &[String], rows: &[TestRow]) -> Option<wer
                 "domain-select: {} — changed lines sit in route(s) [{}] → {} test(s) exercise it", f, r.join(", "), ex.len()),
             _ => println!("domain-select: {} → {} test(s) exercise it", f, ex.len()),
         }
+        // a test werk-test cannot run exercises nothing on a card
+        ex.retain(|t| werk_test::runnable_test(t, werk_test::ts_package_of(t).is_some()));
         exercisers.insert(f.clone(), ex);
     }
     Some(werk_test::domain_selection(changed, &exercisers, rows))
