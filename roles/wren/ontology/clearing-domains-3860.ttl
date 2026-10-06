@@ -132,6 +132,20 @@ chorus:envelopeFields a owl:DatatypeProperty ;
     rdfs:label "envelopeFields" ; rdfs:domain chorus:EventType ; rdfs:range xsd:string ;
     rdfs:comment "Envelope fields this event requires beyond the shared envelope, comma-separated in order." .
 
+# #4438 reopened: the rows live in the store, so the API must serve every
+# field the generated JSON carries; and a Product or Service row may say which
+# events it reads (the store refused Pulse's edge while no shape named it).
+chorus:EventTypeShape
+    sh:property [ sh:path chorus:atVertebra ; sh:maxCount 1 ; sh:datatype xsd:string ] ;
+    sh:property [ sh:path chorus:emitterSource ; sh:maxCount 1 ; sh:datatype xsd:string ] ;
+    sh:property [ sh:path chorus:legacyName ; sh:maxCount 1 ; sh:datatype xsd:string ] ;
+    sh:property [ sh:path chorus:joinKeys ; sh:maxCount 1 ; sh:datatype xsd:string ] ;
+    sh:property [ sh:path chorus:envelopeFields ; sh:maxCount 1 ; sh:datatype xsd:string ] ;
+    sh:property [ sh:path rdfs:comment ; sh:maxCount 1 ; sh:datatype xsd:string ] .
+
+chorus:ProductShape sh:property [ sh:path chorus:consumesEvent ; sh:class chorus:EventType ] .
+chorus:ServiceShape sh:property [ sh:path chorus:consumesEvent ; sh:class chorus:EventType ] .
+
 chorus:EventTypeShape
     sh:property [ sh:path chorus:producedBy ; sh:minCount 1 ; sh:maxCount 1 ; sh:class chorus:Domain ] ;
     sh:property [ sh:path chorus:eventVersion ; sh:minCount 1 ; sh:maxCount 1 ; sh:datatype xsd:string ] ;

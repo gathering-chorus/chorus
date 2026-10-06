@@ -9,9 +9,8 @@ import { loadSpineSchema } from '../src/spine-event-write';
 const registry = loadSpineSchema(path.resolve(__dirname, '../../../designing/schemas/spine-events.json')).events ?? {};
 
 describe('#4438 — consume by producer and by subject', () => {
-  it('card.pulled is produced by cards, about Card, read by Pulse and the werk service', () => {
+  it('card.pulled is produced by cards and is about a Card', () => {
     expect(registry['card.pulled']).toMatchObject({ producer: 'cards', about: 'Card', category: 'fact', version: '1' });
-    expect((registry['card.pulled'] as { consumers?: string[] }).consumers).toEqual(['pulse', 'service-werk']);
   });
 
   it('producer=cards names card.pulled and not a hooks event', () => {

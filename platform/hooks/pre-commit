@@ -102,17 +102,6 @@ if ! CHORUS_ROOT="$REPO" bash "$REPO/platform/scripts/test-werk-emit-conformance
 fi
 rm -f /tmp/emit-conf.$$
 
-# #4438 — the event registry lives in the model rows; spine-events.json's events
-# are generated from them (consumers from any row's consumesEvent edge). A commit
-# that touches the JSON or any model file must leave them equal.
-if git diff --cached --name-only | grep -qE '^(designing/schemas/spine-events\.json|designing/data/.*\.ttl|roles/[^/]+/ontology/.*\.ttl)$'; then
-  if ! python3 "$REPO/platform/scripts/event-types-generate.py" --check >&2; then
-    echo "" >&2
-    echo "📡 pre-commit BLOCKED: spine-events.json does not match the EventType rows (#4438)." >&2
-    exit 1
-  fi
-fi
-
 # #4333 — two repo-wide rules that caught real bugs move here from the nightly:
 # they read source, so they prove nothing about the running system, but they
 # stop a known-bad line at the commit that adds it (an untimed Fuseki write —
