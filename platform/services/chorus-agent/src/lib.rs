@@ -1,3 +1,4 @@
+pub mod allowed_tools;
 pub mod config;
 pub mod contract;
 pub mod execution;

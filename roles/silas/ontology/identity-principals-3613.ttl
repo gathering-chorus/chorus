@@ -45,6 +45,21 @@ chorus:principal-wren a chorus:Principal ;
     chorus:hostAccount "jeffbridwell" ;   # #4348: the account it runs as on the Library (sessions and launchd, measured 2026-09-27)
     chorus:canSignIn "false" .
 
+# #4432 — Abby Normal. Minted live 2026-09-17 and never in source, so a
+# reseed would have dropped her. She runs as her own Mac account (uid 505,
+# #4383), so no other principal can read her token.
+chorus:principal-abby-normal a chorus:Principal ;
+    rdfs:label "abby-normal (agent principal)" ;
+    chorus:webId "https://id.lightlifeurbangardens.com/abby-normal/profile/card#me" ;
+    chorus:holdsRole chorus:role-abby-normal ;
+    chorus:principalKind "agent" ;
+    chorus:hostAccount "chorus-abby-normal" ;
+    # Jeff 2026-09-17: the four hats by default. Jeff 2026-10-05: she owns no
+    # domain, product, service or value stream, so no Appointment and no ownedBy.
+    chorus:wearsHat chorus:hat-product-manager, chorus:hat-solutions-architect,
+        chorus:hat-engineering-lead, chorus:hat-operations-lead ;
+    chorus:canSignIn "false" .
+
 chorus:principal-kade a chorus:Principal ;
     rdfs:label "kade (agent principal)" ;
     chorus:webId "https://id.lightlifeurbangardens.com/kade/profile/card#me" ;

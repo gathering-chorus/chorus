@@ -39,6 +39,8 @@ fi
 EOS
   chmod +x "$T/bin/"*
   echo '{"data":[{"name":"jeff"},{"name":"kade"},{"name":"silas"},{"name":"wren"}]}' > "$T/list-identity_principals.json"
+  # #4432 — the agent roles come from the roles door
+  echo '{"data":[{"name":"kade","roleKind":"agent"},{"name":"silas","roleKind":"agent"},{"name":"wren","roleKind":"agent"},{"name":"jeff","roleKind":"human"}]}' > "$T/list-roles_roles.json"
   echo '{"data":[{"name":"wren-s1","ownedBy":"principal-wren","startedAt":"2026-09-26T16:28:25Z","endedAt":""}]}' > "$T/list-identity_sessions.json"
   echo '{"data":[{"name":"silas-run-b","ownedBy":"principal-silas","startedAt":"2026-09-26T16:30:00Z","runEndedAt":""}]}' > "$T/list-identity_sessionruns.json"
   echo '{"data":[{"name":"silas-presence-b","presenceOf":"session-run-silas-run-b"}]}' > "$T/list-identity_presences.json"

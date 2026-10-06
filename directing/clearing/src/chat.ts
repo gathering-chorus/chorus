@@ -5,6 +5,7 @@
  * #1795: The Clearing = one URL, one service, two modes (dashboard + chat).
  */
 
+import { isRoomRole } from './room-roles';
 import { Server as SocketServer } from 'socket.io';
 import { Participants } from './participants';
 import { Transcript, ChatMessage } from './transcript';
@@ -34,7 +35,8 @@ function executeNudge(from: string, target: string, message: string): { success:
 
 function extractNudges(content: string): { cleaned: string; nudges: Array<{ target: string; message: string }> } {
   const nudges: Array<{ target: string; message: string }> = [];
-  const cleaned = content.replace(/^\/nudge\s+(wren|silas|kade)\s+(.+)$/gim, (_match, target, msg) => {
+  const cleaned = content.replace(/^\/nudge\s+([a-z][a-z0-9-]*)\s+(.+)$/gim, (match, target, msg) => {
+    if (!isRoomRole(target)) return match;
     nudges.push({ target: target.toLowerCase(), message: msg.replace(/^["']|["']$/g, '') });
     return '';
   });
@@ -99,8 +101,8 @@ export class ClearingChat {
 
   private tryHandleNudgeCommand(content: string): boolean {
     const shorthandMap: Record<string, string> = { nw: 'wren', ns: 'silas', nk: 'kade' };
-    const nudgeMatch = content.match(/^(?:\/nudge\s+(wren|silas|kade)|(nw|ns|nk))\s+(.+)$/i);
-    if (!nudgeMatch) return false;
+    const nudgeMatch = content.match(/^(?:\/nudge\s+([a-z][a-z0-9-]*)|(nw|ns|nk))\s+(.+)$/i);
+    if (!nudgeMatch || (nudgeMatch[1] && !isRoomRole(nudgeMatch[1]))) return false;
     const target = (nudgeMatch[1] || shorthandMap[nudgeMatch[2].toLowerCase()]).toLowerCase();
     const msg = nudgeMatch[3].replace(/^["']|["']$/g, '');
     const jeffMsg = this.transcript.add('Jeff', content);

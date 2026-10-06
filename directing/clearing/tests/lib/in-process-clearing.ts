@@ -29,6 +29,14 @@ export function useInProcessClearing() {
   // graph: who is allowed (webids), who is who (principal ↔ webid), and who is
   // a person (principalKind "person"): jeff and marknakib here.
   const store = http.createServer((req, res) => {
+    // #4432 — the same stub answers chorus-api's role rows, so the tiles come
+    // from here and never from the live :3340 (they used to, silently).
+    if ((req.url || '').startsWith('/api/chorus/context/roles')) {
+      res.setHeader('Content-Type', 'application/json');
+      res.end(JSON.stringify({ data: { roles: ['jeff', 'kade', 'silas', 'wren'].map((role) => ({ role, name: role, state: 'idle', stale: true, lastActivity: null })) } }));
+      return;
+    }
+    if ((req.url || '').startsWith('/api/')) { res.statusCode = 404; res.end('{}'); return; }
     const q = decodeURIComponent((req.url || '').split('query=')[1] || '');
     res.setHeader('Content-Type', 'application/sparql-results+json');
     const P = 'https://jeffbridwell.com/chorus#';
@@ -56,6 +64,7 @@ export function useInProcessClearing() {
     await new Promise<void>((r) => store.listen(0, '127.0.0.1', () => r()));
     process.env.CHORUS_FUSEKI_QUERY = `http://127.0.0.1:${(store.address() as AddressInfo).port}/query`;
     process.env.PULSE_URL = 'http://127.0.0.1:1';
+    process.env.CHORUS_API_BASE = `http://127.0.0.1:${(store.address() as AddressInfo).port}`;
     process.env.CHORUS_ROOT = TMP;
     process.env.CLEARING_SCAN_DIR = TMP;
     process.env.CLEARING_PROJECTS_DIR = TMP;
@@ -63,6 +72,12 @@ export function useInProcessClearing() {
     srv = require('../../src/server');
     await new Promise<void>((r) => srv.server.listen(0, '127.0.0.1', () => r()));
     base = `http://127.0.0.1:${(srv.server.address() as AddressInfo).port}`;
+    // #4432 — the role tiles arrive with the poller's first API answer.
+    for (let i = 0; i < 40; i++) {
+      const tiles = await (await fetch(`${base}/api/tiles`)).json() as unknown[];
+      if (tiles.length > 1) break;
+      await new Promise((r) => setTimeout(r, 50));
+    }
   });
 
   afterAll(async () => {

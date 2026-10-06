@@ -5,7 +5,7 @@
  * no "unknown" to answer.
  */
 
-import { fetchContextRoles, type ContextRolesDeps } from '../../src/handlers/context-roles';
+import { agentRolesFrom, loggedInRoles, fetchContextRoles, type ContextRolesDeps } from '../../src/handlers/context-roles';
 import type { SpineLine } from '../../src/derive-role-state';
 
 const T0 = Date.parse('2026-09-02T15:00:00-04:00');
@@ -15,21 +15,80 @@ function stubSparql(): ContextRolesDeps['sparql'] {
   return { query: async () => ({ results: { bindings: [] } }) };
 }
 
+// #4432 — the roles door as it answers today, Abby Normal the fourth agent.
+const DOOR = { data: [
+  { name: 'abby-normal', roleKind: 'agent', rolePriority: '4' }, { name: 'jeff', roleKind: 'human', rolePriority: '0' },
+  { name: 'kade', roleKind: 'agent', rolePriority: '1' }, { name: 'nightly', roleKind: '' },
+  { name: 'silas', roleKind: 'agent', rolePriority: '2' }, { name: 'wren', roleKind: 'agent', rolePriority: '3' },
+] };
+
 function deps(over: Partial<ContextRolesDeps> = {}): ContextRolesDeps {
   return {
     sparql: stubSparql(),
     readEvents: () => [],
     listWipCards: () => [],
+    listAgentRoles: async () => agentRolesFrom(DOOR).map((name) => ({ name, sessions: [] })),
     now: () => new Date(T0),
     ...over,
   };
 }
 
 describe('fetchContextRoles (#4028 — derived, never declared)', () => {
-  it('returns all three known roles in stable order', async () => {
+  it('#4432 returns every agent role the roles door lists, by rolePriority — Abby gets a tile', async () => {
     const r = await fetchContextRoles(deps(), '/api/chorus/context/roles');
     expect(r.status).toBe(200);
-    expect(r.body.data.roles.map((x) => x.name)).toEqual(['silas', 'wren', 'kade']);
+    expect(r.body.data.roles.map((x) => x.name)).toEqual(['kade', 'silas', 'wren', 'abby-normal']);
+  });
+
+  it('#4432 NEGATIVE PROOF: a door that cannot answer is a 503, never three guessed tiles', async () => {
+    const r = await fetchContextRoles(deps({ listAgentRoles: async () => { throw new Error('HTTP 502'); } }), '/api/chorus/context/roles');
+    expect(r.status).toBe(503);
+    expect(JSON.stringify(r.body)).toMatch(/roles door unreadable/);
+  });
+
+  it('#4432 tiles follow logins: Jeff and the agents with an open session, Jeff first', () => {
+    const sessions = { data: [
+      { ownedBy: 'principal-wren', sessionState: 'open' }, { ownedBy: 'principal-abby-normal', sessionState: 'open' },
+      { ownedBy: 'principal-kade', sessionState: 'closed' }, { ownedBy: 'principal-jeff', sessionState: 'open' },
+    ] };
+    expect(loggedInRoles(sessions, DOOR).map((r) => r.name)).toEqual(['jeff', 'wren', 'abby-normal']);
+  });
+
+  it('#4432 NEGATIVE PROOF: Abby logs out (session closed) and her tile goes', () => {
+    const before = { data: [{ ownedBy: 'principal-abby-normal', sessionState: 'open' }] };
+    const after = { data: [{ ownedBy: 'principal-abby-normal', sessionState: 'closed' }] };
+    expect(loggedInRoles(before, DOOR).map((r) => r.name)).toEqual(['abby-normal']);
+    expect(loggedInRoles(after, DOOR)).toEqual([]);
+    expect(() => loggedInRoles({ error: 'down' }, DOOR)).toThrow(/sessions door/);
+    // and Jeff's own tile follows his login the same way
+    expect(loggedInRoles({ data: [{ ownedBy: 'principal-jeff', sessionState: 'closed' }] }, DOOR)).toEqual([]);
+  });
+
+  it('#4432 one tile per principal: two open sessions are one row carrying both, oldest first (Jeff 2026-10-06)', async () => {
+    const sessions = { data: [
+      { ownedBy: 'principal-wren', sessionState: 'open', channel: 'pane', startedAt: '2026-10-06T12:46:00Z', lastSeenAt: '2026-10-06T12:50:00Z' },
+      { ownedBy: 'principal-wren', sessionState: 'open', channel: 'pane', startedAt: '2026-10-02T13:03:00Z', lastSeenAt: '2026-10-02T19:51:00Z' },
+      { ownedBy: 'principal-wren', sessionState: 'closed', channel: 'pane', startedAt: '2026-10-01T09:00:00Z', lastSeenAt: '2026-10-01T10:00:00Z' },
+    ] };
+    const rows = loggedInRoles(sessions, DOOR);
+    expect(rows).toHaveLength(1);
+    expect(rows[0].sessions.map((x) => x.startedAt)).toEqual(['2026-10-02T13:03:00Z', '2026-10-06T12:46:00Z']);
+    const r = await fetchContextRoles(deps({ listAgentRoles: async () => rows }), '/api/chorus/context/roles');
+    expect(r.body.data.roles.map((x) => [x.name, x.sessions.length])).toEqual([['wren', 2]]);
+  });
+
+  it('#4432 NEGATIVE PROOF: a closed session is never listed inside the tile', () => {
+    const rows = loggedInRoles({ data: [
+      { ownedBy: 'principal-kade', sessionState: 'open', channel: 'pane', startedAt: '2026-10-06T11:00:00Z' },
+      { ownedBy: 'principal-kade', sessionState: 'closed', channel: 'agent', startedAt: '2026-10-06T10:00:00Z' },
+    ] }, DOOR);
+    expect(rows[0].sessions).toEqual([{ channel: 'pane', startedAt: '2026-10-06T11:00:00Z', lastSeenAt: '' }]);
+  });
+
+  it('#4432 a human or unkinded row never gets an agent tile', () => {
+    expect(agentRolesFrom(DOOR)).not.toContain('jeff');
+    expect(agentRolesFrom(DOOR)).not.toContain('nightly');
+    expect(() => agentRolesFrom({ data: [] })).toThrow(/no agent role/);
   });
 
   it('a role with tool calls in the window is building on its board card; lastEvent/lastActivity come from the streams', async () => {

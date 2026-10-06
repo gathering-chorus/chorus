@@ -21,6 +21,7 @@
  * /tmp/show-it-works.sh (init/list → process exits → restart → same list
  * call succeeds, no reconnect).
  */
+import { fetchRoleSets } from './peers';
 import type { Application, Request, Response } from 'express';
 import { StreamableHTTPServerTransport } from '@modelcontextprotocol/sdk/server/streamableHttp.js';
 import { buildMcpServer, executeNudge, type FetchImpl, type NudgeArgs } from './server';
@@ -113,13 +114,17 @@ async function notifyTransportError(fields: Record<string, unknown>): Promise<vo
   }
 }
 
-function resolveCallerRole(req: Request): string {
+// #4432 — a caller role is any agent or human role the roles door lists; a
+// door that does not answer leaves the caller 'unknown' (never a guessed name).
+async function resolveCallerRole(req: Request): Promise<string> {
+  let peers: string[];
+  try { ({ peers } = await fetchRoleSets()); } catch { return 'unknown'; }
   const headerRole = req.header('X-Chorus-Role');
-  if (headerRole && /^(silas|wren|kade|jeff)$/.test(headerRole)) {
+  if (headerRole && peers.includes(headerRole)) {
     return headerRole;
   }
   const envRole = process.env.CHORUS_ROLE;
-  if (envRole && /^(silas|wren|kade|jeff)$/.test(envRole)) {
+  if (envRole && peers.includes(envRole)) {
     return envRole;
   }
   return 'unknown';
@@ -127,7 +132,7 @@ function resolveCallerRole(req: Request): string {
 
 export function mountMcpEndpoint(app: Application): void {
   app.post('/mcp', async (req: Request, res: Response) => {
-    const callerRole = resolveCallerRole(req);
+    const callerRole = await resolveCallerRole(req);
     // #3008 — emit Mcp-Session-Id response header per MCP HTTP+SSE spec so
     // spec-conformant clients (chorus-hooks mcp_client.rs:65-68 requires it
     // on initialize and errors "no session id header" when absent) get the
@@ -189,7 +194,7 @@ export function mountMcpEndpoint(app: Application): void {
   // transport (same shape as POST). For Chorus's request/response tool-call
   // workload, no client today depends on SSE notifications.
   app.get('/mcp', async (req: Request, res: Response) => {
-    const callerRole = resolveCallerRole(req);
+    const callerRole = await resolveCallerRole(req);
     // #3008 — same header treatment as POST. GET /mcp opens an SSE
     // notification stream; spec-conformant clients expect the session-id
     // here too.

@@ -415,6 +415,23 @@ pub fn login_verdict(name: &str, code: &str, body: &str, api: &str) -> Result<Op
     }
 }
 
+/// #4432 — the agent roles, from the roles door (`/v1/roles/roles`): every row
+/// whose roleKind is "agent", by name. Abby Normal is the fourth; nothing in
+/// this crate lists the roles by hand any more. An unreadable reply is an
+/// error, never "the usual three": a principal the door cannot name is not a
+/// role this command may act for.
+pub fn agent_roles(body: &str) -> Result<Vec<String>, String> {
+    let v: Value = serde_json::from_str(body).map_err(|_| "the roles door answered with something that is not JSON".to_string())?;
+    let rows = v.get("data").and_then(|d| d.as_array()).ok_or_else(|| "the roles door answered with no data list".to_string())?;
+    let mut names: Vec<String> = rows.iter()
+        .filter(|r| r.get("roleKind").and_then(|k| k.as_str()) == Some("agent"))
+        .filter_map(|r| r.get("name").and_then(|n| n.as_str()).map(str::to_string))
+        .collect();
+    names.sort();
+    if names.is_empty() { return Err("the roles door lists no agent role".to_string()); }
+    Ok(names)
+}
+
 /// #4412 — the owners of the open, unexpired browser Sessions in a
 /// `/v1/identity/sessions?channel=browser` reply: who may be signed in. The
 /// caller still asks each owner's Principal row whether it is a person.
@@ -515,7 +532,17 @@ pub fn agent_launch_cmd_checked(agent_bin: &str, role: &str, run: &str) -> Resul
     Ok(agent_launch_cmd(agent_bin, role, run))
 }
 pub fn agent_launch_cmd(agent_bin: &str, role: &str, run: &str) -> String {
-    format!("CHORUS_SESSION_RUN='{}' '{}' launch {}", run, agent_bin, role)
+    // #4432 — the workspace is the role home the pane was just cd'd into
+    // (launch_line), so the supervisor never needs a second copy of where a
+    // role lives; a role_workspaces entry pointing elsewhere can't win.
+    format!("CHORUS_SESSION_RUN='{}' '{}' launch {} --cwd \"$PWD\"", run, agent_bin, role)
+}
+/// #4432 — where a principal's own supervisor listens: an agent that runs as
+/// its own Mac account (#4383) has its chorus-agentd in that account's home,
+/// so the launcher's enrollment check must ask THAT socket, not its own.
+/// None = the launcher's own account (the supervisor's default socket).
+pub fn agent_socket_for(account_homes: &str, run_as: Option<&str>) -> Option<String> {
+    run_as.filter(|a| !a.is_empty()).map(|a| format!("{}/{}/.chorus/run/chorus-agent.sock", account_homes.trim_end_matches('/'), a))
 }
 /// Enrolled = the supervisor's status for this run names this run.
 pub fn agent_enrolled(status_json: &str, run: &str) -> bool {
@@ -533,7 +560,8 @@ mod agent_launch_tests_4424 {
     #[test]
     fn launch_binds_the_runner_to_the_login_run() {
         let cmd = agent_launch_cmd("/x/chorus-agent", "wren", "wren-run-1a2b");
-        assert_eq!(cmd, "CHORUS_SESSION_RUN='wren-run-1a2b' '/x/chorus-agent' launch wren");
+        // #4432 — and to the role home the pane is in, never a second workspace map
+        assert_eq!(cmd, "CHORUS_SESSION_RUN='wren-run-1a2b' '/x/chorus-agent' launch wren --cwd \"$PWD\"");
     }
     #[test]
     fn a_run_name_that_could_break_the_shell_is_refused() {

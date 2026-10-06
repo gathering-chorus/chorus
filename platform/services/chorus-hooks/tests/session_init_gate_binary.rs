@@ -149,3 +149,28 @@ async fn bash_allowed_when_done_exists() {
         stdout,
     );
 }
+
+// #4432 — the in-session recovery cases (#2311), moved here from
+// session_init_gate_recovery.rs, which armed the LIVE kade.pending and posted
+// to the live daemon: a real role was locked out of every tool while it ran.
+
+/// A locked role that reads its own session-start file is unlocked: .done is written.
+#[tokio::test]
+async fn read_session_start_unlocks_role() {
+    let dir = TempDir::new().expect("tmpdir");
+    arm_pending_no_done(dir.path(), TEST_ROLE);
+    let file = chorus_hooks::shared::state_paths::session_start_file(TEST_ROLE, ".md");
+    let input = make_input(TEST_ROLE, "Read", serde_json::json!({"file_path": file}));
+    let _ = session_init_gate::check_with_dir(&input, &AppState::new(), dir.path().to_str().unwrap()).await;
+    assert!(dir.path().join(format!("{TEST_ROLE}.done")).exists(), "reading the role's own session-start file must write .done");
+}
+
+/// NEGATIVE PROOF: reading any other file leaves the role locked.
+#[tokio::test]
+async fn read_other_file_does_not_unlock() {
+    let dir = TempDir::new().expect("tmpdir");
+    arm_pending_no_done(dir.path(), TEST_ROLE);
+    let input = make_input(TEST_ROLE, "Read", serde_json::json!({"file_path": "/tmp/some-unrelated-file.txt"}));
+    let _ = session_init_gate::check_with_dir(&input, &AppState::new(), dir.path().to_str().unwrap()).await;
+    assert!(!dir.path().join(format!("{TEST_ROLE}.done")).exists(), "an unrelated Read must not unlock the role");
+}

@@ -11,7 +11,7 @@ module.exports = {
   // with 10 consecutive clean parallel coverage runs as evidence.
   maxWorkers: 1,
   // #4363 — temp journal + tailer offsets for every test process (never ~/.chorus/clearing)
-  setupFiles: ['<rootDir>/tests/env-4363.setup.js'],
+  setupFiles: ['<rootDir>/tests/env-4363.setup.js', '<rootDir>/tests/room-roles-4432.setup.ts'],
   // #2524 convention: *.integration.test.ts excluded from hermetic default.
   // Run integration tier with RUN_INTEGRATION=true.
   testPathIgnorePatterns: process.env.RUN_INTEGRATION === 'true' ? ['/node_modules/'] : [

@@ -48,7 +48,13 @@ use std::path::{Path, PathBuf};
 use std::process::Command;
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
-pub const ROLES: [&str; 3] = ["wren", "silas", "kade"];
+/// #4432 — the agent roles come from the roles door, not from a list here.
+/// Refuses loudly when the door does not answer; never falls back to three.
+fn agent_roles(ctx: &Ctx) -> Result<Vec<String>, String> {
+    let url = format!("{}/v1/roles/roles?limit=500", ctx.api);
+    let body = sh(&ctx.curl, &["-s", "--max-time", "10", &url]).map_err(|e| format!("could not read {}: {}", url, e.trim()))?;
+    rows::agent_roles(&body).map_err(|e| format!("{} ({})", e, url))
+}
 
 /// A live session from the registry (~/.chorus/sessions/<role>-<pid>.json).
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -971,7 +977,13 @@ fn on_agent(ctx: &Ctx, role: &str, attach: bool) -> Result<Came, (i32, String)> 
     if let Err(e) = sh(&ctx.tmux, &["send-keys", "-t", &tmux_session, &launch, "Enter"]) { return Err((1, format!("tmux send-keys failed: {}", e.trim()))); }
     let mut enrolled = false;
     for i in 0..=ctx.wait {
-        enrolled = sh(&agent_bin, &["status", &run]).map(|out| rows::agent_enrolled(&out, &run)).unwrap_or(false);
+        // #4432 — ask the supervisor of the account the agent runs as (Abby's
+        // lives in her home), not the launcher's own socket.
+        let status = match rows::agent_socket_for(&envd("AWAKE_ACCOUNT_HOMES", "/Users"), ctx.run_as.as_deref()) {
+            Some(sock) => sh("env", &[&format!("CHORUS_AGENT_SOCKET={}", sock), &agent_bin, "status", &run]),
+            None => sh(&agent_bin, &["status", &run]),
+        };
+        enrolled = status.map(|out| rows::agent_enrolled(&out, &run)).unwrap_or(false);
         if enrolled || i == ctx.wait { break; }
         std::thread::sleep(Duration::from_secs(1));
     }
@@ -1266,6 +1278,7 @@ fn api_list(ctx: &Ctx, route: &str) -> Value {
 /// (id past the watermark) and deliveries whose outcome changed since last time.
 /// Idempotent: the rows are named by the messages.db id.
 fn project_messages(ctx: &Ctx) -> i32 {
+    let roles = match agent_roles(ctx) { Ok(r) => r, Err(why) => { eprintln!("chorus-principal: REFUSED — {}", why); return 2; } };
     let db = envd("CHORUS_MESSAGES_DB", &format!("{}/platform/pulse/messages.db", ctx.root));
     let sqlite = envd("AWAKE_SQLITE", "sqlite3");
     let state_path = PathBuf::from(&ctx.identity_dir).join("silas").join("messages-projection.json");
@@ -1299,7 +1312,7 @@ fn project_messages(ctx: &Ctx) -> i32 {
         let presence = to_p.as_deref().and_then(|p| msgs::presence_at(&format!("principal-{}", p), &at, &runs, &presences));
         let recv_role = src.to.trim_start_matches("principal-");
         // Kade's review: only prompts that arrived after this message was sent, within 10 minutes
-        let received = if ROLES.contains(&recv_role) { msgs::received_for(&received_log(ctx, recv_role), &msgs::iso(&src.created_at), 600) } else { vec![] };
+        let received = if roles.iter().any(|r| r == recv_role) { msgs::received_for(&received_log(ctx, recv_role), &msgs::iso(&src.created_at), 600) } else { vec![] };
         let outcome = msgs::outcome(src, &received);
         let message_name = match &known {
             Some(k) => k.get("message").and_then(|m| m.as_str()).unwrap_or("").to_string(),
@@ -1365,14 +1378,15 @@ fn ensure_channels(ctx: &Ctx) {
 /// `sweep` — close the sessions still reading open long after their token died.
 fn sweep(ctx: &Ctx) -> i32 {
     let listing = sh(&ctx.curl, &["-s", "--max-time", "20", &format!("{}/v1/identity/sessions?limit=5000", ctx.api)]).unwrap_or_default();
-    let keep: Vec<String> = ROLES.iter().filter_map(|r| read_row(ctx, r, "session").map(|v| row_name(&v))).collect();
+    let roles = match agent_roles(ctx) { Ok(r) => r, Err(why) => { eprintln!("chorus-principal: REFUSED — {}", why); return 2; } };
+    let keep: Vec<String> = roles.iter().filter_map(|r| read_row(ctx, r, "session").map(|v| row_name(&v))).collect();
     let now = iso_utc(now_ms() as u64 / 1000);
     let (mut closed, mut failed) = (0, 0);
     for row in rows::expired_open(&listing, &now, &keep) {
         let owner = row.get("ownedBy").and_then(|o| o.as_str()).unwrap_or("").trim_start_matches("principal-").to_string();
         let name = row_name(&row);
         let Some(done) = lifecycle::closed_row(&row.to_string(), &name, &now) else { failed += 1; continue };
-        if !ROLES.contains(&owner.as_str()) { failed += 1; continue; }
+        if !roles.iter().any(|r| *r == owner) { failed += 1; continue; }
         let (code, _) = api_send(ctx, &owner, "identity/sessions", Some(&name), &done, "sweep");
         if ok_code(&code) { closed += 1 } else { failed += 1; eprintln!("  {} not closed (HTTP {})", name, code) }
     }
@@ -1539,7 +1553,8 @@ fn off(ctx: &Ctx, role: &str, from_exit: bool) -> i32 {
 fn status(ctx: &Ctx) -> i32 {
     let listing = sh(&ctx.curl, &["-s", "--max-time", "5", &format!("{}/v1/identity/sessions?limit=5000", ctx.api)]).unwrap_or_default();
     let presences = sh(&ctx.curl, &["-s", "--max-time", "5", &format!("{}/v1/identity/presences?limit=5000", ctx.api)]).unwrap_or_default();
-    for role in ROLES {
+    let roles = match agent_roles(ctx) { Ok(r) => r, Err(why) => { eprintln!("chorus-principal: REFUSED — {}", why); return 2; } };
+    for role in roles.iter().map(String::as_str) {
         let live = live_entries(&ctx.sessions_dir, role, &ctx.ps);
         let pid = live.first().map(|l| l.pid);
         let answering = pid.is_some() && ctx.answered(role);
@@ -1667,8 +1682,11 @@ pub fn run(args: &[String]) -> i32 {
     let verb = args.first().map(String::as_str).unwrap_or("");
     let role_arg = |i: usize| -> Result<String, i32> {
         match args.get(i) {
-            Some(r) if ROLES.contains(&r.as_str()) => Ok(r.clone()),
-            Some(r) => { eprintln!("chorus-principal: unknown role '{}' (wren | silas | kade)", r); Err(2) }
+            Some(r) => match agent_roles(&ctx) {
+                Ok(known) if known.iter().any(|k| k == r) => Ok(r.clone()),
+                Ok(known) => { eprintln!("chorus-principal: unknown role '{}' ({})", r, known.join(" | ")); Err(2) }
+                Err(why) => { eprintln!("chorus-principal: REFUSED — {}", why); Err(2) }
+            },
             None => { eprintln!("{}", USAGE); Err(2) }
         }
     };

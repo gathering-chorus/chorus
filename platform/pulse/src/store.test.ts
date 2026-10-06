@@ -10,6 +10,7 @@
  * unlinks the file so failures don't leave artifacts on disk.
  */
 
+const PEERS = ['abby-normal', 'jeff', 'kade', 'silas', 'wren'];
 import { MessageStore, inferNudgeClass } from './store';
 import * as fs from 'fs';
 import * as path from 'path';
@@ -74,13 +75,13 @@ describe('Nudge envelope (#3403 — class r2r/a2r + expects)', () => {
   });
 
   test('inferNudgeClass: peers are r2r, machine/alert senders are a2r', () => {
-    expect(inferNudgeClass('wren')).toBe('r2r');
-    expect(inferNudgeClass('silas')).toBe('r2r');
-    expect(inferNudgeClass('kade')).toBe('r2r');
-    expect(inferNudgeClass('jeff')).toBe('r2r');
-    expect(inferNudgeClass('system')).toBe('a2r');
-    expect(inferNudgeClass('chorus-mcp')).toBe('a2r');
-    expect(inferNudgeClass('pulse')).toBe('a2r');
+    expect(inferNudgeClass('wren', PEERS)).toBe('r2r');
+    expect(inferNudgeClass('silas', PEERS)).toBe('r2r');
+    expect(inferNudgeClass('kade', PEERS)).toBe('r2r');
+    expect(inferNudgeClass('jeff', PEERS)).toBe('r2r');
+    expect(inferNudgeClass('system', PEERS)).toBe('a2r');
+    expect(inferNudgeClass('chorus-mcp', PEERS)).toBe('a2r');
+    expect(inferNudgeClass('pulse', PEERS)).toBe('a2r');
   });
 
   test('defaults are safe: bare sendNudge is r2r/none (cannot trap until expects is set)', () => {

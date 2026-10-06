@@ -53,6 +53,8 @@ process.env.CHORUS_ROOT = TMP;
 // terminal on every suite run (23 on 2026-07-03 alone). A test brings its own
 // world: point pulse at a dead local port so nothing leaves the process.
 process.env.PULSE_URL = 'http://127.0.0.1:1';
+// #4432 — no live chorus-api: the role tiles must not come from :3340 here.
+process.env.CHORUS_API_BASE = 'http://127.0.0.1:1';
 
 // Now import — listener is guarded.
 import { server, io, clearingChat, extractSequenceTags, formatObserverDigest } from '../src/server';
@@ -132,11 +134,11 @@ describe('server — health and basic reads', () => {
     expect(typeof r.body.port).toBe('number');
   });
 
-  test('GET /api/tiles returns four role tiles', async () => {
+  test('#4432 GET /api/tiles with chorus-api unreachable is Jeff alone — no guessed role tiles', async () => {
     const r = await call('/api/tiles');
     expect(r.status).toBe(200);
     expect(Array.isArray(r.body)).toBe(true);
-    expect(r.body.map((t: any) => t.role).sort()).toEqual(['jeff', 'kade', 'silas', 'wren']);
+    expect(r.body.map((t: any) => t.role)).toEqual(['jeff']);
   });
 
   test('GET /api/messages returns an array', async () => {

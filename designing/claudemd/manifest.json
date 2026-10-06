@@ -538,7 +538,11 @@
       "CLI_OWNER_EXAMPLE": "cards add \"title\" --owner Wren --priority P1 --status Next",
       "BRIEF_ROUTING": "- For Silas: `../silas/briefs/`\n- For Kade: `../kade/briefs/`\n- For Wren (incoming): `briefs/` (this directory)",
       "SESSION_START_FILES": "`backlog.md`, `projects.md`, `decisions.md`",
-      "CREDENTIAL_EXAMPLE": "$SLACK_BOT_TOKEN"
+      "CREDENTIAL_EXAMPLE": "$SLACK_BOT_TOKEN",
+      "SESSION_CONTEXT_LINE": "Session context is injected into your first turn by the SessionStart hook — no file read needed.",
+      "SESSION_SYNC_STEP": "SessionStart hook injects context into your first turn; read state files as needed",
+      "SEARCH_ORDER": "Chorus (`/chorus search`) → codebase graph → filesystem (`Grep`/`Glob`).",
+      "CLOSE_TRIGGER_COMMAND": "/reboot, "
     },
     "silas": {
       "ROLE_NAME": "Silas",
@@ -546,7 +550,11 @@
       "CLI_OWNER_EXAMPLE": "cards add \"title\" --owner Silas --priority P2 --domain infrastructure",
       "BRIEF_ROUTING": "- For Wren: `../wren/briefs/`\n- For Kade: `../kade/briefs/`\n- For Silas (incoming): `briefs/` (this directory)",
       "SESSION_START_FILES": "`system-architecture.md`, `ontology-status.md`, `infrastructure-constraints.md`",
-      "CREDENTIAL_EXAMPLE": "$FUSEKI_ADMIN_PASSWORD"
+      "CREDENTIAL_EXAMPLE": "$FUSEKI_ADMIN_PASSWORD",
+      "SESSION_CONTEXT_LINE": "Session context is injected into your first turn by the SessionStart hook — no file read needed.",
+      "SESSION_SYNC_STEP": "SessionStart hook injects context into your first turn; read state files as needed",
+      "SEARCH_ORDER": "Chorus (`/chorus search`) → codebase graph → filesystem (`Grep`/`Glob`).",
+      "CLOSE_TRIGGER_COMMAND": "/reboot, "
     },
     "kade": {
       "ROLE_NAME": "Kade",
@@ -554,7 +562,23 @@
       "CLI_OWNER_EXAMPLE": "cards add \"title\" --owner Kade --priority P1 --domain infrastructure",
       "BRIEF_ROUTING": "- For Silas: `../silas/briefs/`\n- For Wren: `../wren/briefs/`\n- For Kade (incoming): `briefs/` (this directory)",
       "SESSION_START_FILES": "`current-work.md`, `tech-debt.md`",
-      "CREDENTIAL_EXAMPLE": "$TWILIO_AUTH_TOKEN"
+      "CREDENTIAL_EXAMPLE": "$TWILIO_AUTH_TOKEN",
+      "SESSION_CONTEXT_LINE": "Session context is injected into your first turn by the SessionStart hook — no file read needed.",
+      "SESSION_SYNC_STEP": "SessionStart hook injects context into your first turn; read state files as needed",
+      "SEARCH_ORDER": "Chorus (`/chorus search`) → codebase graph → filesystem (`Grep`/`Glob`).",
+      "CLOSE_TRIGGER_COMMAND": "/reboot, "
+    },
+    "abby-normal": {
+      "ROLE_NAME": "Abby Normal",
+      "ROLE_LOWER": "abby-normal",
+      "CLI_OWNER_EXAMPLE": "cards add \"title\" --owner Abby --priority P1 --status Next",
+      "BRIEF_ROUTING": "- For Wren: `../wren/briefs/`\n- For Silas: `../silas/briefs/`\n- For Kade: `../kade/briefs/`\n- For Abby (incoming): `briefs/` (this directory)",
+      "SESSION_START_FILES": "`briefs/`, `journal/`",
+      "CREDENTIAL_EXAMPLE": "$SLACK_BOT_TOKEN",
+      "SESSION_CONTEXT_LINE": "Nothing injects session context into your runtime yet (#4432) — on first response read `briefs/` and run `chorus-hook-shim boot-read abby-normal`.",
+      "SESSION_SYNC_STEP": "read `briefs/` and run `chorus-hook-shim boot-read abby-normal`; read state files as needed",
+      "SEARCH_ORDER": "Chorus (`bash ~/.chorus/scripts/chorus-query.sh search \"<term>\"`) → codebase graph → filesystem (`rg`).",
+      "CLOSE_TRIGGER_COMMAND": ""
     }
   },
   "reference": {
@@ -658,6 +682,26 @@
         "shared/icd-gate.md",
         "shared/worktree-convention.md",
         "roles/kade/state-files.md"
+      ]
+    },
+    "abby-normal": {
+      "output": "../../roles/abby-normal/AGENTS.md",
+      "sections": [
+        "roles/abby-normal/title.md",
+        "shared/chorus-prompt.md",
+        "shared/infrastructure-operations-core.md",
+        "shared/cross-machine-operations-core.md",
+        "shared/communication-discipline.md",
+        "shared/idle-awareness.md",
+        "shared/team-operating-model.md",
+        "shared/intellectual-honesty.md",
+        "shared/search-hierarchy.md",
+        "shared/domain-endpoints.md",
+        "shared/session-close-out-core.md",
+        "shared/error-handling-discipline.md",
+        "shared/tdd-discipline.md",
+        "shared/icd-gate.md",
+        "shared/worktree-convention.md"
       ]
     }
   }

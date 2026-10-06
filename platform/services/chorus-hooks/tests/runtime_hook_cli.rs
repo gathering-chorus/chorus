@@ -5,9 +5,31 @@ use std::os::unix::net::UnixListener;
 use std::process::{Command, Stdio};
 use std::time::Duration;
 
+/// #4432 — a stand-in roles door: the hook enrolls a role only when the door
+/// lists it as an agent role, so every case brings its own door, never :3360.
+fn roles_door() -> &'static str {
+    static URL: std::sync::OnceLock<String> = std::sync::OnceLock::new();
+    URL.get_or_init(|| {
+        let listener = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
+        let url = format!("http://{}", listener.local_addr().unwrap());
+        std::thread::spawn(move || {
+            let body = json!({"data":[
+                {"name":"wren","roleKind":"agent"},{"name":"silas","roleKind":"agent"},{"name":"kade","roleKind":"agent"},
+                {"name":"abby-normal","roleKind":"agent"},{"name":"jeff","roleKind":"human"},{"name":"nightly","roleKind":""}]}).to_string();
+            for stream in listener.incoming().flatten() {
+                let mut stream = stream;
+                let mut buf = [0u8; 4096];
+                let _ = stream.read(&mut buf);
+                let _ = write!(stream, "HTTP/1.1 200 OK\r\nContent-Type: application/json\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{}", body.len(), body);
+            }
+        });
+        url
+    })
+}
+
 fn command(home: &std::path::Path, runtime: &str, event: &str) -> Command {
     let mut command = Command::new(env!("CARGO_BIN_EXE_chorus-hook-shim"));
-    command.env_clear().env("HOME", home).env("CHORUS_ROLE", "wren")
+    command.env_clear().env("HOME", home).env("ATHENA_MAKE_URL", roles_door()).env("CHORUS_ROLE", "wren")
         .env("CHORUS_SESSION_ID", "hermetic-session")
         .env("DEPLOY_ROLE", "wren").arg("runtime-hook").arg(runtime).arg(event)
         .stdin(Stdio::piped()).stdout(Stdio::piped()).stderr(Stdio::piped());
@@ -245,4 +267,38 @@ fn daemon_down_lets_only_the_hooks_restart_through() {
         let denied = answer["hookSpecificOutput"]["permissionDecision"] == "deny";
         assert_eq!(!denied, allowed, "{command_text}: {answer}");
     }
+}
+
+// ---- #4432: enrollment comes from the roles door ----
+
+#[test]
+fn abby_normal_logged_in_reaches_the_policy() {
+    let home = tempfile::tempdir().unwrap();
+    let server = allow_once(home.path());
+    let answer = invoke(logged_in(home.path(), "gemini", "BeforeTool", "abby-normal"),
+        json!({"cwd":"/tmp","tool_name":"write_file","tool_input":{"file_path":"/tmp/abby.txt","content":"x"}}));
+    assert_ne!(answer["decision"], "deny", "{answer}");
+    let (_, body) = server.join().unwrap();
+    assert_eq!(body["deploy_role"], "abby-normal");
+}
+
+#[test]
+fn negative_proof_a_role_the_door_does_not_list_as_agent_is_not_enrolled() {
+    let home = tempfile::tempdir().unwrap();
+    for who in ["nightly", "jeff", "mallory"] {
+        let answer = invoke(logged_in(home.path(), "gemini", "BeforeTool", who),
+            json!({"cwd":"/tmp","tool_name":"read_file","tool_input":{"file_path":"/tmp/a"}}));
+        assert_eq!(answer["decision"], "deny", "{who}: {answer}");
+        assert!(answer["reason"].as_str().unwrap().contains("not enrolled"), "{who}: {answer}");
+    }
+}
+
+#[test]
+fn negative_proof_an_unreadable_roles_door_refuses_never_guesses() {
+    let home = tempfile::tempdir().unwrap();
+    let mut cmd = logged_in(home.path(), "gemini", "BeforeTool", "wren");
+    cmd.env("ATHENA_MAKE_URL", "http://127.0.0.1:9");
+    let answer = invoke(cmd, json!({"cwd":"/tmp","tool_name":"read_file","tool_input":{"file_path":"/tmp/a"}}));
+    assert_eq!(answer["decision"], "deny", "{answer}");
+    assert!(answer["reason"].as_str().unwrap().contains("roles door is unreadable"), "{answer}");
 }

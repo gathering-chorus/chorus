@@ -26,6 +26,14 @@ setup() {
 #!/bin/bash
 echo "tmux \$*" >> "$T/tmux.log"
 case "\$1" in has-session) [ -f "$T/tmux-session-exists" ]; exit \$? ;; new-session) touch "$T/tmux-session-exists" ;; esac
+# #4432 — the session registers when the pane is launched (send-keys), not
+# after a fixed sleep: a 0.3 s timer raced the login's own steps and failed
+# run 15 on unchanged code.
+if [ "\$1" = send-keys ] && [ -f "$T/reg-on-send" ]; then
+  read -r pid pane < "$T/reg-on-send"
+  printf '{"role":"kade","pid":%s,"tty":"/dev/ttys00%s","host":"tmux","tmux":"%s"}' "\$pid" "\${pid: -1}" "\$pane" > "$T/sessions/kade-\$pid.json"
+  echo "\$pid" >> "$T/alive-pids"
+fi
 exit 0
 EOS
   chmod +x "$T/bin/tmux"
@@ -45,13 +53,14 @@ one_token() {
   printf 'eyJhbGciOiJFUzI1NiJ9.%s.sig' "$payload" > "$T/token.fixture"
 }
 
+reg_on_launch() { echo "$1 ${2:-%0}" > "$T/reg-on-send"; }
 reg() { printf '{"role":"kade","pid":%s,"tty":"/dev/ttys00%s","host":"tmux","tmux":"%s"}' "$1" "${1: -1}" "${2:-%0}" > "$T/sessions/kade-$1.json"; echo "$1" >> "$T/alive-pids"; }
 out_has() { printf '%s' "$output" | grep -q -- "$1"; }
 file_has() { grep -q -- "$2" "$1"; }
 file_lacks() { ! grep -q -- "$2" "$1"; }
 
 @test "login happens BEFORE the pane is started: token asked for the role, then claude launched" {
-  ( sleep 0.3; reg 777 %5 ) &
+  reg_on_launch 777 %5
   run "$SCRIPT" kade
   [ "$status" -eq 0 ]
   file_has "$T/token.log" "token kade"
@@ -62,7 +71,7 @@ file_lacks() { ! grep -q -- "$2" "$1"; }
 }
 
 @test "the login is recorded as a Session row through the security API, owned by the principal" {
-  ( sleep 0.3; reg 778 %5 ) &
+  reg_on_launch 778 %5
   run "$SCRIPT" kade
   [ "$status" -eq 0 ]
   file_has "$T/curl.log" "http://stub:1/v1/identity/sessions"
@@ -77,7 +86,7 @@ file_lacks() { ! grep -q -- "$2" "$1"; }
 }
 
 @test "session.login is on the spine with the WebID and the token id, never the token" {
-  ( sleep 0.3; reg 779 %5 ) &
+  reg_on_launch 779 %5
   run "$SCRIPT" kade
   [ "$status" -eq 0 ]
   file_has "$T/spine.log" "^session.login kade "
@@ -103,7 +112,7 @@ lacks()   { test -z "$(grep -F -- "$2" "$1" 2>/dev/null || true)"; }
 
 @test "#4215 no token → the role STARTS anyway, degraded and loud" {
   touch "$T/token-fail"
-  ( sleep 0.3; reg 781 %5 ) &
+  reg_on_launch 781 %5
   run "$SCRIPT" kade
   # #4295 — the words changed: a failed sign-in says it is PENDING and handles
   # itself, not "UNAUTHENTICATED ... any write will be refused" at Jeff
@@ -115,14 +124,14 @@ lacks()   { test -z "$(grep -F -- "$2" "$1" 2>/dev/null || true)"; }
 
 @test "#4215 a degraded login is on the spine as session.login.degraded" {
   touch "$T/token-fail"
-  ( sleep 0.3; reg 782 %5 ) &
+  reg_on_launch 782 %5
   run "$SCRIPT" kade
   grep -q "^session.login.degraded kade " "$T/spine.log"
 }
 
 @test "#4215 the security API refusing the row does NOT stop the start" {
   echo 403 > "$T/curl.status"
-  ( sleep 0.3; reg 783 %5 ) &
+  reg_on_launch 783 %5
   run "$SCRIPT" kade
   out_has "login: kade  pending"
   out_has "403"
@@ -137,7 +146,7 @@ lacks()   { test -z "$(grep -F -- "$2" "$1" 2>/dev/null || true)"; }
 
 @test "#4215 an expired token degrades: it is a stale credential, not someone else's" {
   one_token kade $(( $(date +%s) - 5 ))
-  ( sleep 0.3; reg 784 %5 ) &
+  reg_on_launch 784 %5
   run "$SCRIPT" kade
   out_has "expired"
   out_has "login: kade  pending"
@@ -147,7 +156,7 @@ lacks()   { test -z "$(grep -F -- "$2" "$1" 2>/dev/null || true)"; }
 @test "#4215 a 409 on a row this principal owns is a login, not a failure — the role starts" {
   echo 409 > "$T/curl.status"
   printf '{"name":"kade-0001-x","ownedBy":"principal-kade","sessionState":"open"}' > "$T/existing.json"
-  ( sleep 0.3; reg 785 %5 ) &
+  reg_on_launch 785 %5
   run "$SCRIPT" kade
   out_has "already open and owned by principal-kade"
   out_has "reusing it"

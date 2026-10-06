@@ -15,6 +15,7 @@
 
 // #2725 — the default value import gives spinePath's existence probe a real fs;
 // the type alias keeps every other fs use injected (tests pass their own).
+import { isRoomRole } from './room-roles';
 import fs_node from 'fs';
 import { isRenderableDigest } from './observations';
 
@@ -158,7 +159,7 @@ export interface SpineReadStats {
 function classifyLogEntry(entry: LogEntry): { line: StreamLine | null; drop: DropReason | null } {
   const role = entry.role ?? '';
   if (!role) return { line: null, drop: 'no-role' };
-  if (!['wren', 'silas', 'kade'].includes(role)) return { line: null, drop: 'unknown-role' };
+  if (!isRoomRole(role)) return { line: null, drop: 'unknown-role' };
   const line = parseKnownRoleEntry(entry, role);
   return { line, drop: line ? null : 'event-not-rendered' };
 }

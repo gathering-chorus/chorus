@@ -262,6 +262,9 @@ Who a participant is — the identity layer; the Clearing consumes it.""" ;
     chorus:references """Public design: designing/docs/clearing-value-stream-design.html (the three faces, the verb family, the event-sourced engine, the domains — 2026-06-21) and clearing-service-design.html (the six components, supporting domains, infrastructure — 2026-04-06, refreshed 2026-07-23).
 Internal notes for the team: value-stream-template.html; streams-service-design.html, cards-service-design.html, nudge-service-design.html, service-design-pulse.html. Decisions: DEC-107 (persist and deliver, both, always), DEC-048 (deploy, demo, accept), DEC-093 (one API door), DEC-1571 (announce and continue), ADR-039 (transports). Cards: #3544 / #3548 (surface hardening), #3668 (multiplexer transport), #3669 (auth lanes), #3674 (relay spike), #4075 (a Clearing per demo environment), #4028 (derived role state), #3966 (closed to the network), #2159 (native board), #2708 / #3363 / #3112 (delivery receipts, retry, envelope), #3871 (prod canary).
 Chorus · The Clearing · rewritten for readers outside the team 2026-09-03""" ;
+    # #4432 — code reads both doors: tiles from /v1/roles/roles and
+    # /v1/identity/sessions; notInScope above already says "the Clearing consumes" identity.
+    chorus:consumes chorus:roles, chorus:identity ;
     chorus:partOf chorus:chorus .
 
 chorus:convergence a chorus:Product ;

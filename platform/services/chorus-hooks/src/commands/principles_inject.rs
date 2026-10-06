@@ -65,7 +65,7 @@ pub fn cache_path() -> String {
 }
 
 pub fn hash_path(role: &str) -> String {
-    format!("/tmp/session-start-{}-principles.hash", role)
+    crate::shared::state_paths::session_start_file(role, "-principles.hash")
 }
 
 /// #2964 (Silas chorus-health ask): retry policy for the principles fetch.

@@ -124,7 +124,7 @@ pub fn cruft_scan() -> ExitCode {
     // Session-start file sizes
     out.push_str("## Session Start Files\n");
     for role in &["silas", "wren", "kade"] {
-        let path = format!("/tmp/session-start-{}.md", role);
+        let path = crate::shared::state_paths::session_start_file(role, ".md");
         if let Ok(meta) = fs::metadata(&path) {
             let size = meta.len();
             let lines = fs::read_to_string(&path).map(|c| c.lines().count()).unwrap_or(0);

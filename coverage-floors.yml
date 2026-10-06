@@ -28,6 +28,7 @@ ts:
 
 rust:
   platform/services/chorus-hooks: 45
+  platform/services/chorus-agent: 65    # #4432: new with #4427 (PR #1275 runner); measured 68.15% lines, 2026-10-06 04:50
   platform/services/chorus-inject: 80
   # #4004 — owl-api was RENAMED athena-make by #3561; only an untracked husk
   # (target/ + a stale llvm-cov-summary.json) remains on disk, so the coverage

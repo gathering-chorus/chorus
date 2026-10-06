@@ -1,6 +1,6 @@
 ## Session Close-Out (MANDATORY)
 
-**Trigger**: /reboot, "eod", "wrapping up", "done for today", past 5pm. Don't wait for Jeff.
+**Trigger**: {{CLOSE_TRIGGER_COMMAND}}"eod", "wrapping up", "done for today", past 5pm. Don't wait for Jeff.
 
 **Sequence**: Introspect (`chorus-hook-shim session-close {{ROLE_LOWER}}`) → If-Touched (update stale docs) → Hard 5 (journal, board audit, activity log, next-session.md, commit) → Verify.
 

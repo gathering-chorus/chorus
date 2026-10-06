@@ -52,11 +52,21 @@ pub fn check(input: &HookInput) -> HookResponse {
     // doesn't cross the daemon socket boundary). Fall back to CHORUS_ROLE env
     // for the in-shim case where the hook runs in the same process as the
     // role's session.
-    let role: String = match input.role() {
-        Role::Kade => "kade".to_string(),
-        Role::Wren => "wren".to_string(),
-        Role::Silas => "silas".to_string(),
-        _ => match std::env::var("CHORUS_ROLE") {
+    // #4432 — a role the runtime hook enrolled from the roles door (Abby
+    // Normal) arrives as deploy_role and is guarded by name, like the three.
+    // Before, any name outside the three fell through to the bootstrap allow,
+    // so an enrolled fourth role could have written canonical.
+    let named = input.deploy_role.as_deref().filter(|r| {
+        !r.is_empty() && r.bytes().all(|b| b.is_ascii_lowercase() || b.is_ascii_digit() || b == b'-')
+    });
+    // The named role comes first: input.role() falls back to the cwd, and a
+    // proof run inside silas-4432's werk read Abby as silas (measured 10-06).
+    let role: String = match (named, input.role()) {
+        (Some(r), _) => r.to_string(),
+        (None, Role::Kade) => "kade".to_string(),
+        (None, Role::Wren) => "wren".to_string(),
+        (None, Role::Silas) => "silas".to_string(),
+        (None, _) => match std::env::var("CHORUS_ROLE") {
             Ok(r) if r == "kade" || r == "wren" || r == "silas" => r,
             _ => return HookResponse::allow(), // bootstrap / migration / generic shell
         },
@@ -72,7 +82,7 @@ pub fn check(input: &HookInput) -> HookResponse {
         .filter(|s| !s.is_empty())
         .unwrap_or_else(|| DEFAULT_CHORUS_WERK_BASE.to_string());
 
-    let werk_var = format!("{}_WERK", role.to_uppercase());
+    let werk_var = format!("{}_WERK", role.to_uppercase().replace('-', "_"));
     // #2913: no persistent-per-role fallback. Under the ephemeral model the
     // role's werk is per-card (chorus-werk/<role>-<card>/), so there is no
     // single stable path to default to. If <ROLE>_WERK isn't set, leave
@@ -95,7 +105,12 @@ pub fn check(input: &HookInput) -> HookResponse {
         // is the role — so this is correct during a heterogeneous migration.
         let rest = &file_path[werk_base.len() + 1..];
         let werk_slot = rest.split('/').next().unwrap_or("");
-        let other_role = werk_slot.split('-').next().unwrap_or("");
+        // #4432 — a role name may hold '-' (abby-normal): the owner is the
+        // slot minus its trailing -<card number>.
+        let other_role = match werk_slot.rsplit_once('-') {
+            Some((owner, card)) if !card.is_empty() && card.bytes().all(|b| b.is_ascii_digit()) => owner,
+            _ => werk_slot,
+        };
         if !other_role.is_empty() && other_role != role {
             let msg = format!(
                 "BLOCKED: cross-role write — {role} cannot write to {other_role}'s werk at {file_path}. \

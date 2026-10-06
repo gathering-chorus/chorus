@@ -345,6 +345,19 @@
       "description": "Observed on the spine 2026-10-05 but never registered; payload unknown (#4438).",
       "fields": {}
     },
+    "agent.allowed_tools.installed": {
+      "producer": "roles",
+      "category": "fact",
+      "version": "1",
+      "vertebra": "directing",
+      "source": "chorus-agent",
+      "description": "#4432 — a Gemini session's allowed tools were generated from the Claude roles' allow rules at session start",
+      "fields": {
+        "allowed": "How many Gemini tool names were written",
+        "runtime": "The agent runtime (gemini)",
+        "unmapped": "Claude allow rules with no Gemini tool, ;-separated"
+      }
+    },
     "agent.turn.ended": {
       "producer": "streams",
       "category": "diagnostic",

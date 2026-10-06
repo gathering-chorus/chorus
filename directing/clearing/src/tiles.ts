@@ -1,12 +1,13 @@
 /* eslint-disable security/detect-non-literal-fs-filename --
  * fs paths from server-controlled SCAN_DIR/PULSE_FILE env constants; reads on
- * `${SCAN_DIR}/${role}-declared.json` where role is a member of the 4-element
- * ROLES tuple. Object indexing keyed by validated role names from the same tuple.
+ * `${SCAN_DIR}/${role}-declared.json` where role is a member of the tile list
+ * (Jeff plus the roles door's agent rows, #4432). Object indexing keyed by those names.
  */
 import fs from 'fs';
 import path from 'path';
 import { isRenderableDigest } from './observations';
-import { AGENT_ROLES, projectRoleState, type SpineActivity } from './tiles-spine';
+import { projectRoleState, type SpineActivity } from './tiles-spine';
+import { setRoomRoles } from './room-roles';
 import { spinePath, projectSpine } from './spine-tail';
 
 // #2167: env-configurable so tests can point at a fixture directory.
@@ -17,7 +18,6 @@ const CHORUS_API = process.env.CHORUS_API_BASE || 'http://localhost:3340';
 // screenshot: three "idle" tiles while two pipelines and a build were running).
 const WERK_RUNS_DIR = process.env.CLEARING_WERK_RUNS_DIR
   || path.join(process.env.HOME || '/Users/jeffbridwell', '.chorus', 'werk-runs');
-const ROLES = ['jeff', 'wren', 'silas', 'kade'] as const;
 
 interface BoardCard { id: number; owner?: string; status?: string; title?: string; domain?: string; }
 
@@ -105,6 +105,8 @@ export interface RoleTile {
   lastAction: string;
   lastActionAge: string;
   sessionAlive: boolean;
+  /** #4432 — "2 sessions · pane 10-02 13:03 (seen 10-02 15:51) · pane 08:46 (seen 08:50)" */
+  sessionsLine?: string;
   /** #2168 — ALL WIP cards owned by this role, sourced from pulse.board.wip_cards.
    *  Tile must surface every card the role owns, not just their declared one. */
   cards?: string[];
@@ -144,6 +146,30 @@ export interface DerivedRoleRow {
   detail?: string | null;
   lastActivity?: string | null;
   stale?: boolean;
+  /** #4432 — this principal's open sessions, oldest first. */
+  sessions?: Array<{ channel?: string; startedAt?: string; lastSeenAt?: string }>;
+}
+
+/** #4432 — Boston wall clock: "08:46" today, "10-02 13:03" any other day. */
+function bostonClock(iso: string | undefined, now: Date): string {
+  const t = iso ? new Date(iso) : null;
+  if (!t || Number.isNaN(t.getTime())) return '?';
+  const fmt = (d: Date, o: Intl.DateTimeFormatOptions) => new Intl.DateTimeFormat('en-CA', { timeZone: 'America/New_York', ...o }).format(d);
+  const day = (d: Date) => fmt(d, { month: '2-digit', day: '2-digit' });
+  const hm = fmt(t, { hour: '2-digit', minute: '2-digit', hour12: false });
+  return day(t) === day(now) ? hm : `${day(t)} ${hm}`;
+}
+
+/**
+ * #4432 — Jeff 2026-10-06: tiles are logged-in principals, not sessions, but
+ * "that visibility is important so i can see - at least until we stabilize
+ * clearing". One line inside the tile: how many sessions, and for each its
+ * channel, when it started and when it was last seen.
+ */
+export function sessionsLine(sessions: DerivedRoleRow['sessions'], now: Date = new Date()): string {
+  if (!sessions || sessions.length === 0) return '';
+  const each = sessions.map((x) => `${x.channel || '?'} ${bostonClock(x.startedAt, now)} (seen ${bostonClock(x.lastSeenAt, now)})`);
+  return `${sessions.length} session${sessions.length === 1 ? '' : 's'} · ${each.join(' · ')}`;
 }
 
 export class TilePoller {
@@ -154,6 +180,12 @@ export class TilePoller {
   // #4028 — derived rows from chorus-api; replaces <role>-declared.json.
   private rolesFromApi: Map<string, DerivedRoleRow> = new Map();
   private readRolesOverride: (() => DerivedRoleRow[] | null) | null = null;
+  /** #4432 — the tiles: every logged-in principal /api/chorus/context/roles
+   *  returns (Jeff first, then the agents by rolePriority). Jeff's tile stays
+   *  until his browser login writes a Session row: measured 2026-10-05 19:03,
+   *  /v1/identity/sessions holds 0 rows owned by principal-jeff, so following
+   *  his session today would take his tile away while he is in the room. */
+  private roleList: string[] = ['jeff'];
   // #2273: exposed so tests can await the board refresh instead of using setTimeout
   boardRefresh: Promise<void> = Promise.resolve();
   private readonly scanDir: string;
@@ -174,24 +206,34 @@ export class TilePoller {
     this.spineFile = opts.spineFile
       ?? process.env.CLEARING_SPINE_FILE
       ?? (opts.scanDir ? path.join(opts.scanDir, 'chorus.log') : spinePath(process.env));
-    for (const role of ROLES) {
-      this.tiles.set(role, {
-        role,
-        state: 'unknown',
-        card: '',
-        lastAction: '',
-        lastActionAge: '',
-        sessionAlive: false,
-      });
-    }
+    this.ensureTiles();
     this.poll();
     this.refreshBoardFromApi();
   }
 
+  /** #4432 — adopt the API's rows (the logged-in principals) as the tile list. */
+  private setRoleList(rows: DerivedRoleRow[]): void {
+    this.roleList = ['jeff', ...rows.map((r) => r.role).filter((r) => r && r !== 'jeff')];
+    setRoomRoles(this.roleList);
+    for (const role of [...this.tiles.keys()]) if (!this.roleList.includes(role)) this.tiles.delete(role);
+    this.ensureTiles();
+  }
+
+  private ensureTiles(): void {
+    for (const role of this.roleList) {
+      if (this.tiles.has(role)) continue;
+      this.tiles.set(role, { role, state: 'unknown', card: '', lastAction: '', lastActionAge: '', sessionAlive: false });
+    }
+  }
+
   poll(): void {
+    if (this.readRolesOverride) {
+      const rows = this.readRolesOverride();
+      if (rows) this.setRoleList(rows);
+    }
     // #3882 — one spine read, one clock, for every tile this poll.
     this.spineActivity = this.readSpineActivity(Date.now());
-    for (const role of ROLES) {
+    for (const role of this.roleList) {
       const tile = this.readRoleTile(role);
       this.tiles.set(role, tile);
     }
@@ -215,7 +257,12 @@ export class TilePoller {
       // the last good rows (same hold-last-good rule as the board below).
       const rolesData = rolesResult.status === 'fulfilled' ? rolesResult.value : null;
       const rows: DerivedRoleRow[] | null = rolesData?.data?.roles ?? null;
-      if (rows) this.rolesFromApi = new Map(rows.map((r) => [r.role, r]));
+      if (rows) {
+        this.rolesFromApi = new Map(rows.map((r) => [r.role, r]));
+        const fresh = rows.map((r) => r.role).filter((r) => !this.roleList.includes(r));
+        this.setRoleList(rows);
+        for (const role of fresh) this.tiles.set(role, this.readRoleTile(role));
+      }
       const wipData = wipResult.status === 'fulfilled' ? wipResult.value : null;
       const swatData = swatResult.status === 'fulfilled' ? swatResult.value : null;
       // #3869 — `null` is preserved all the way to the merge. Collapsing it to
@@ -232,7 +279,8 @@ export class TilePoller {
   }
 
   getTiles(): RoleTile[] {
-    return ROLES.map((r) => this.tiles.get(r)!);
+    const now = new Date();
+    return this.roleList.map((r) => ({ ...this.tiles.get(r)!, sessionsLine: sessionsLine(this.rolesFromApi.get(r)?.sessions, now) }));
   }
 
   getPulse(): PulseState | null {
@@ -380,7 +428,7 @@ export class TilePoller {
    *  Now both come from projectSpine(). There is no second read left to drift. */
   private readSpineActivity(now: number): Record<string, SpineActivity> {
     try {
-      return projectSpine(fs, this.spineFile, 80, now, AGENT_ROLES).activity;
+      return projectSpine(fs, this.spineFile, 80, now, new Set(this.roleList)).activity;
     } catch {
       return {};
     }

@@ -38,9 +38,24 @@ fn fixture_empty(path: &Path) {
     fs::write(path, r#"{"_meta":{},"data":{"principles":[]}}"#).unwrap();
 }
 
+/// #4432 — this process's own session dir: session-start writes its .md,
+/// principles hash and boot markers here, never the live /tmp files a
+/// running role reads (run 17 went red when a live boot rewrote the hash).
+fn session_tmp() -> &'static str {
+    static DIR: std::sync::OnceLock<tempfile::TempDir> = std::sync::OnceLock::new();
+    DIR.get_or_init(|| tempfile::tempdir().unwrap()).path().to_str().unwrap()
+}
+
+fn hash_file(role: &str) -> String {
+    format!("{}/session-start-{}-principles.hash", session_tmp(), role)
+}
+
 fn run_session_start(role: &str, env: &[(&str, &str)]) -> std::process::Output {
     let mut cmd = std::process::Command::new(SHIM);
-    cmd.args(["session-start", role]);
+    cmd.args(["session-start", role])
+        .env("CHORUS_SESSION_TMP", session_tmp())
+        .env("CHORUS_SESSION_INIT_DIR", format!("{}/init", session_tmp()))
+        .env("CHORUS_SESSIONS_DIR", format!("{}/sessions", session_tmp()));
     for (k, v) in env { cmd.env(k, v); }
     cmd.output().expect("session-start should execute")
 }
@@ -96,7 +111,7 @@ fn session_start_writes_principles_hash_file() {
     let cache = tmp.path().join("principles-cache.json");
     fixture_three_principles(&fixture);
     let role = "wren";
-    let hash_file = format!("/tmp/session-start-{}-principles.hash", role);
+    let hash_file = hash_file(role);
     let _ = fs::remove_file(&hash_file);
 
     let out = run_session_start(role, &[
@@ -129,22 +144,22 @@ fn principles_hash_is_stable_across_roles_and_sensitive_to_set() {
         ("CHORUS_PRINCIPLES_FIXTURE_FILE", fixture_a.to_str().unwrap()),
         ("CHORUS_PRINCIPLES_CACHE_FILE", cache.to_str().unwrap()),
     ]);
-    assert!(out_silas_a.status.success());
-    let h_silas_a = fs::read_to_string("/tmp/session-start-silas-principles.hash").unwrap().trim().to_string();
+    assert!(out_silas_a.status.success(), "stderr: {}", String::from_utf8_lossy(&out_silas_a.stderr));
+    let h_silas_a = fs::read_to_string(hash_file("silas")).unwrap().trim().to_string();
 
     let out_kade_a = run_session_start("kade", &[
         ("CHORUS_PRINCIPLES_FIXTURE_FILE", fixture_a.to_str().unwrap()),
         ("CHORUS_PRINCIPLES_CACHE_FILE", cache.to_str().unwrap()),
     ]);
     assert!(out_kade_a.status.success());
-    let h_kade_a = fs::read_to_string("/tmp/session-start-kade-principles.hash").unwrap().trim().to_string();
+    let h_kade_a = fs::read_to_string(hash_file("kade")).unwrap().trim().to_string();
 
     let out_silas_b = run_session_start("silas", &[
         ("CHORUS_PRINCIPLES_FIXTURE_FILE", fixture_b.to_str().unwrap()),
         ("CHORUS_PRINCIPLES_CACHE_FILE", cache.to_str().unwrap()),
     ]);
     assert!(out_silas_b.status.success());
-    let h_silas_b = fs::read_to_string("/tmp/session-start-silas-principles.hash").unwrap().trim().to_string();
+    let h_silas_b = fs::read_to_string(hash_file("silas")).unwrap().trim().to_string();
 
     assert_eq!(h_silas_a, h_kade_a, "same principle set => same hash across roles");
     assert_ne!(h_silas_a, h_silas_b, "different principle set => different hash");

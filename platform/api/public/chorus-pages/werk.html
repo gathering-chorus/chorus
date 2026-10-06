@@ -1419,7 +1419,9 @@
         });
 
         var roleStats = {};
-        ['jeff','wren','silas','kade'].forEach(function(r) { roleStats[r] = { steps: 0, completed: 0, totalLead: 0, maxLead: 0, maxLeadAction: '' }; });
+        // #4432 — Jeff plus the roles door's agent roles (loaded at page start).
+        var statRoles = ['jeff'].concat(window.__agentRoles || []);
+        statRoles.forEach(function(r) { roleStats[r] = { steps: 0, completed: 0, totalLead: 0, maxLead: 0, maxLeadAction: '' }; });
 
         var arrivals = [], exits = [], stepExits = [];
 
@@ -1478,7 +1480,7 @@
 
         // Role grid
         var roleHtml = '';
-        ['jeff','wren','silas','kade'].forEach(function(r2) {
+        statRoles.forEach(function(r2) {
             var st = roleStats[r2];
             if (st.steps === 0 && role && role !== r2) return;
             var avg = st.completed > 0 ? fmtDelta(st.totalLead / st.completed) : '\u2014';
@@ -1779,7 +1781,14 @@
     function loadInstruments() {
         // #3408 — populate ALL_CARDS live from chorus-api's board before rendering
         // the WIP panel (the static snapshot left ALL_CARDS empty). Then render.
-        fetch('/api/chorus/context/board/wip')
+        // #4432 — the agent roles first (roles door via chorus-api), then the board.
+        fetch('/api/chorus/context/roles')
+            .then(function(r) { return r.ok ? r.json() : null; }).catch(function() { return null; })
+            .then(function(env) {
+                var rows = env && env.data && env.data.roles;
+                if (rows) window.__agentRoles = rows.map(function(x) { return x.name; });
+                return fetch('/api/chorus/context/board/wip');
+            })
             .then(function(r) { return r.ok ? r.json() : null; })
             .then(function(d) {
                 var cards = (d && d.data && d.data.cards) || [];
@@ -1809,16 +1818,20 @@
 
     function renderWipPanel() {
         var wipCards = ALL_CARDS.filter(function(c) { return c.status === 'WIP' && !c.done; });
-        var byRole = { wren: [], silas: [], kade: [] };
+        // #4432 — one panel per agent role the roles door lists (window.__agentRoles,
+        // loaded at page start); a WIP owner the door doesn't list still shows.
+        var byRole = {};
+        (window.__agentRoles || []).forEach(function(r) { byRole[r] = []; });
         wipCards.forEach(function(c) {
             var owner = (c.owner || '').toLowerCase();
-            if (byRole[owner]) byRole[owner].push(c);
+            if (!owner) return;
+            (byRole[owner] = byRole[owner] || []).push(c);
         });
 
         var WIP_LIMIT = 3; // DEC-051 total
         var HEALTHY = 1;   // 1 per role is healthy
         var html = '';
-        ['wren', 'silas', 'kade'].forEach(function(role) {
+        Object.keys(byRole).forEach(function(role) {
             var cards = byRole[role];
             var isOver = cards.length > HEALTHY;
             html += '<div class="wip-card' + (isOver ? ' over' : '') + '">';

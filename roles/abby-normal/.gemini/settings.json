@@ -1,0 +1,1 @@
+{"security": {"auth": {"selectedType": "gemini-api-key"}}, "hooks": {"BeforeTool": [{"matcher": ".*", "hooks": [{"type": "command", "command": "/Users/jeffbridwell/.chorus/bin/chorus-hook-shim runtime-hook gemini BeforeTool", "timeout": 30000, "env": {"CHORUS_HOOKS_RUN_DIR": "/Users/jeffbridwell/.chorus/run-agents"}}]}]}}

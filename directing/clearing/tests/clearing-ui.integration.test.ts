@@ -44,6 +44,9 @@ let graph: { url: string; close: () => Promise<void> } | null = null;
 const TEST_WORLD = fs.mkdtempSync(path.join(os.tmpdir(), 'clearing-ui-'));
 const TEST_TOKEN = `test-${process.pid}-${Date.now()}`;
 
+let rolesApi: http.Server | null = null;
+let rolesHits = 0;
+
 beforeAll(async () => {
   // Create mock nudge that logs but doesn't inject
   fs.mkdirSync(MOCK_NUDGE_DIR, { recursive: true });
@@ -57,6 +60,19 @@ echo "DELIVERED to $TARGET at $(TZ=America/New_York date '+%Y-%m-%d %H:%M')"
   // #4417 — the security graph the room asks who is a person.
   graph = await startSecurityGraphStub({ persons: ['jeff'] });
 
+  // #4432 — the room's roles come from chorus-api's role rows; a local stand-in
+  // answers them so the spawned Clearing never reads the live :3340.
+  rolesApi = http.createServer((req, res) => {
+    res.setHeader('Content-Type', 'application/json');
+    if ((req.url || '').startsWith('/api/chorus/context/roles')) {
+      rolesHits += 1;
+      res.end(JSON.stringify({ data: { roles: ['jeff', 'kade', 'silas', 'wren'].map((role) => ({ role, name: role, state: 'idle', stale: true, lastActivity: null })) } }));
+      return;
+    }
+    res.statusCode = 404; res.end('{}');
+  });
+  await new Promise<void>((r) => rolesApi!.listen(0, '127.0.0.1', () => r()));
+
   // Spawn test-mode Clearing on TEST_PORT (#2166).
   clearingProc = spawn('node', [CLEARING_SERVER], {
     env: {
@@ -67,6 +83,7 @@ echo "DELIVERED to $TARGET at $(TZ=America/New_York date '+%Y-%m-%d %H:%M')"
       CLEARING_HTTPS_PORT: String(TEST_HTTPS_PORT),
       NUDGE_BINARY: MOCK_NUDGE_SCRIPT,
       CHORUS_FUSEKI_QUERY: graph!.url,
+      CHORUS_API_BASE: `http://127.0.0.1:${(rolesApi!.address() as { port: number }).port}`,
     },
     stdio: 'pipe',
     detached: false,
@@ -81,7 +98,8 @@ echo "DELIVERED to $TARGET at $(TZ=America/New_York date '+%Y-%m-%d %H:%M')"
   while (Date.now() < deadline) {
     try {
       const code = execSync(`curl -sf -o /dev/null -w "%{http_code}" ${CLEARING_URL}/health`, { encoding: 'utf-8', timeout: 1000 }).trim();
-      if (code === '200') return;
+      // #4432 — and the room knows its roles (the poller's first roles answer)
+      if (code === '200' && rolesHits > 0) { await new Promise(r => setTimeout(r, 200)); return; }
     } catch { /* ignore */ }
     await new Promise(r => setTimeout(r, 200));
   }
@@ -90,6 +108,7 @@ echo "DELIVERED to $TARGET at $(TZ=America/New_York date '+%Y-%m-%d %H:%M')"
 
 afterAll(async () => {
   if (graph) await graph.close();
+  if (rolesApi) await new Promise<void>((r) => rolesApi!.close(() => r()));
   try { fs.rmSync(TEST_WORLD, { recursive: true, force: true }); } catch { /* ignore */ }
   try { fs.unlinkSync(MOCK_NUDGE_SCRIPT); } catch { /* ignore */ }
   try { fs.rmSync(MOCK_NUDGE_DIR, { recursive: true }); } catch { /* ignore */ }
@@ -774,7 +793,9 @@ describe('Page structure — all visible elements', () => {
   test('input field exists with correct placeholder', async () => {
     const html = await getHtml();
     expect(html).toContain('id="input"');
-    expect(html).toContain('@wren @silas @kade');
+    // #4432 — the role names in the hint come from the tiles at run time
+    expect(html).toContain('placeholder="Type a message... (@ a role, or just type)"');
+    expect(html).toContain('function placeholderText()');
   });
 
   test('send button exists', async () => {

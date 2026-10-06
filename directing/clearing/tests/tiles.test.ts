@@ -20,7 +20,11 @@ const PULSE = path.join(TMP, 'pulse-latest.json');
 // reads the LIVE ~/.chorus/werk-runs and a real in-flight pipeline leaks into
 // these hermetic tests (a test brings its own world, #3528).
 const WERK_TMP = fs.mkdtempSync(path.join(os.tmpdir(), 'tiles-werk-'));
-const OPTS = { scanDir: TMP, pulseFile: PULSE, werkRunsDir: WERK_TMP };
+// #4432 — the tiles come from /api/chorus/context/roles (the roles door's agent
+// rows); here a fixed stand-in so no test reaches the live API.
+const TEAM = ['jeff', 'kade', 'silas', 'wren', 'abby-normal'];
+const teamRows = () => TEAM.map((role) => ({ role, state: 'idle', stale: true, lastActivity: null }));
+const OPTS = { scanDir: TMP, pulseFile: PULSE, werkRunsDir: WERK_TMP, readRoles: teamRows };
 
 function writeState(role: string, data: any) {
   fs.writeFileSync(path.join(TMP, `${role}-declared.json`), JSON.stringify(data));
@@ -46,10 +50,15 @@ afterAll(() => {
 describe('TilePoller — constructor initializes roles', () => {
   beforeEach(() => { clear(); });
 
-  test('getTiles returns four roles in order', () => {
+  test('#4432 getTiles is every logged-in principal the API returns, in its order — Abby gets a tile', () => {
     const p = new TilePoller(OPTS);
     const tiles = p.getTiles();
-    expect(tiles.map((t: any) => t.role)).toEqual(['jeff', 'wren', 'silas', 'kade']);
+    expect(tiles.map((t: any) => t.role)).toEqual(['jeff', 'kade', 'silas', 'wren', 'abby-normal']);
+  });
+
+  test('#4432 NEGATIVE PROOF: a role the API does not return gets no tile', () => {
+    const p = new TilePoller({ ...OPTS, readRoles: () => [{ role: 'kade', state: 'idle', stale: true, lastActivity: null }] });
+    expect(p.getTiles().map((t: any) => t.role)).toEqual(['jeff', 'kade']);
   });
 
   test('fresh tiles with no state files have idle/offline defaults', () => {
@@ -110,9 +119,9 @@ describe('TilePoller — role state comes from the derived endpoint (#4028)', ()
     expect(t.cardInferred).toBeUndefined();
   });
 
-  test('no derived rows yet (API not answered) — tile keeps defaults', () => {
+  test('#4432 no derived rows yet (API not answered) — Jeff only, never guessed role tiles', () => {
     const p = new TilePoller({ ...OPTS, readRoles: () => null });
-    expect(p.getTiles().find((x) => x.role === 'kade')!.state).toBe('idle');
+    expect(p.getTiles().map((x) => x.role)).toEqual(['jeff']);
   });
 });
 
@@ -125,7 +134,10 @@ describe('TilePoller — observations and lastAction', () => {
       { digest: 'old', ts: new Date(Date.now() - 600_000).toISOString() },
       { digest: 'fresh digest', ts: past },
     ]);
-    const t = new TilePoller(OPTS).getTiles().find((x) => x.role === 'kade')!;
+    // #4432 — a tile exists only once the API has answered for its role, so the
+    // age comes from that row; the digest text still comes from the pane.
+    const t = new TilePoller({ ...OPTS, readRoles: () => [{ role: 'kade', state: 'idle', stale: true, lastActivity: past }] })
+      .getTiles().find((x) => x.role === 'kade')!;
     expect(t.lastAction).toBe('fresh digest');
     expect(t.lastActionAge).toMatch(/\dm ago|\d+s ago/);
   });
@@ -272,7 +284,7 @@ describe('TilePoller — poll re-reads state', () => {
   beforeEach(() => { clear(); });
 
   test('second poll picks up the new derived state', () => {
-    let rows: any[] = [];
+    let rows: any[] = [{ role: 'kade', state: 'idle', stale: true, lastActivity: null }];
     const p = new TilePoller({ ...OPTS, readRoles: () => rows });
     expect(p.getTiles().find((t) => t.role === 'kade')!.state).toBe('idle');
     rows = [{ role: 'kade', state: 'building', stale: false, lastActivity: new Date().toISOString() }];

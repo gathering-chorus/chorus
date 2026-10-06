@@ -14,6 +14,7 @@
  * by server.ts. Per-role context comes from X-Chorus-Role request header,
  * falling back to CHORUS_ROLE env var.
  */
+import { fetchRoleSets } from './peers';
 import { Server } from '@modelcontextprotocol/sdk/server/index.js';
 import {
   CallToolRequestSchema,
@@ -61,7 +62,7 @@ import {
 } from './nudge-transport';
 
 const NudgeInput = z.object({
-  to: z.enum(['silas', 'wren', 'kade', 'jeff']).describe('Target role'),
+  to: z.string().regex(/^[a-z][a-z0-9-]*$/, 'to must be a role name').describe('Target role — any agent or human role the roles door lists (#4432)'),
   message: z.string().min(1).describe('Message text the recipient sees'),
   // #3403 — what the sender needs back. Default 'none' (fyi/ack, never traps).
   // 'reply'/'decision'/'action' make the recipient owe a response (gated).
@@ -399,8 +400,8 @@ const NUDGE_TOOL_DEF = {
     properties: {
       to: {
         type: 'string',
-        enum: ['silas', 'wren', 'kade', 'jeff'],
-        description: 'Recipient — silas/wren/kade are AI roles, jeff is the human',
+        pattern: '^[a-z][a-z0-9-]*$',
+        description: 'Recipient — an agent role (silas, wren, kade, abby-normal) or the human (jeff), as the roles door lists them',
       },
       message: {
         type: 'string',
@@ -2991,9 +2992,7 @@ export function athenaDeployFailureNudges(
   const exit = code === null ? `killed (${signal ?? 'no signal'})` : `exit ${code}`;
   const message = `Model deploy for #${cardId} FAILED after its land (${exit}). The store does not carry this card's model changes. Read ${log}`;
   const to = new Set<string>([role, 'jeff']);
-  return [...to]
-    .filter((t): t is NudgeArgs['to'] => ['silas', 'wren', 'kade', 'jeff'].includes(t))
-    .map((t) => ({ to: t, message }));
+  return [...to].filter(Boolean).map((t) => ({ to: t, message }));
 }
 
 // #4177 — the land event triggers the model pipeline. Called from the werk-merge case
@@ -3628,6 +3627,12 @@ export function buildMcpServer(getCallerRole: () => string, deps: McpServerDeps 
         const parsed = NudgeInput.safeParse(req.params.arguments);
         if (!parsed.success) {
           throw new Error(`Invalid arguments: ${parsed.error.issues.map((i) => i.message).join(', ')}`);
+        }
+        // #4432 — the recipient must be a role the roles door lists; a door that
+        // does not answer refuses the nudge rather than guessing.
+        const { peers } = await fetchRoleSets();
+        if (!peers.includes(parsed.data.to)) {
+          throw new Error(`Unknown recipient '${parsed.data.to}' — the roles door lists ${peers.join(' | ')}`);
         }
         // #2804 — executeNudge POSTs to pulse instead of spawning shim.
         // #3485 — pulse URL is defaulted inside executeNudge (single owner).
