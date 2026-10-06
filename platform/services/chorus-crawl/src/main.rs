@@ -1314,10 +1314,19 @@ mod wrote_nothing_4201 {
     }
 }
 
+const PASS_FLAGS: &[&str] = &["--undo", "--dry-run", "--reconcile", "--validate"];
+
 fn main() {
     let argv: Vec<String> = std::env::args().collect();
     if seam(&argv) {
         return;
+    }
+    // #4419 — an unknown flag is refused, never read as "run a write pass":
+    // a seam name the installed binary did not have yet started a full pass
+    // against the store on 2026-10-06.
+    if let Some(bad) = argv.iter().skip(1).find(|a| a.starts_with("--") && !PASS_FLAGS.contains(&a.as_str())) {
+        eprintln!("chorus-crawl: unknown flag {bad} — nothing ran");
+        std::process::exit(2);
     }
     let root = std::env::var("CHORUS_ROOT").unwrap_or_else(|_| ".".to_string());
     // #4214 — `--undo <file>`: delete exactly the rows a previous run created,

@@ -176,14 +176,13 @@ fn run(args: &[String]) -> Result<i32, String> {
             units.push(u);
         }
     }
-    // #4419 — select by domain: every registered test (any layer) in the
-    // domains the changed files touch, from the crawler's own placement rules.
-    // A changed file no rule places is refused and named (#4419 reopened, #4169).
+    // #4419 — the registered tests (any layer) that exercise each changed file.
+    // A changed file in a unit that no test exercises is refused and named.
     // Jeff, 2026-10-02: the card's domain tests run HERE, in werk-test and the
     // demo, before the land — never after it.
     let dsel = domain_select(&werk, &changed, &rows);
     match &dsel {
-        None => println!("domain-select: UNMEASURED — the crawler's --domains-of did not answer; import-graph selection only"),
+        None => println!("domain-select: UNMEASURED — no registered tests to read; import-graph selection only"),
         Some(d) => {
             println!(
                 "domain-select: {} changed file(s) touch domain(s) [{}] → {} registered test file(s)",
@@ -191,19 +190,24 @@ fn run(args: &[String]) -> Result<i32, String> {
                 d.domains.iter().cloned().collect::<Vec<_>>().join(", "),
                 d.tests.len()
             );
+            if args.iter().any(|a| a == "--explain") {
+                for (f, why) in &d.tests {
+                    println!("domain-select:   {f} ({why})");
+                }
+            }
             // #4419 reopened (Wren, Jeff 2026-10-06: "we already fixed that bug") — a
             // changed file in a package with no domain used to run its whole
             // package (#4438: 13 of 14 files → whole packages). #4169 and Jeff
             // 2026-09-13: never widen; fail and fix the data. Refuse, naming each.
             let refused = werk_test::untagged_in_a_unit(&d.untagged, &|f: &str| werk_test::ts_package_of(f).or_else(|| crate_of(f)));
             for f in d.untagged.iter().filter(|f| !refused.iter().any(|(r, _)| r == *f)) {
-                println!("domain-select: {} has no domain and no package — nothing to run for it", f);
+                println!("domain-select: {} — no registered test exercises it, and it is in no package", f);
             }
             if !refused.is_empty() {
                 for (f, unit) in &refused {
-                    eprintln!("domain-select: REFUSED — {} (in {}) has no domain. Tag it (`@domain:` header or a placement rule) and re-run.", f, unit);
+                    eprintln!("domain-select: REFUSED — {} (in {}): no registered test exercises it. Add or register the test that does, and re-run.", f, unit);
                 }
-                eprintln!("  Nothing ran. A card never widens to a whole package for an untagged file (#4169).");
+                eprintln!("  Nothing ran. A card never widens to a whole package for an unexercised file (#4169).");
                 emit_spine("test.scope.refused", &role, &card, &trace,
                     &[("reason", "untagged"), ("path", refused[0].0.as_str()), ("count", &refused.len().to_string())]);
                 std::process::exit(2);
@@ -213,11 +217,6 @@ fn run(args: &[String]) -> Result<i32, String> {
                     if !units.contains(&u) {
                         units.push(u);
                     }
-                }
-            }
-            if args.iter().any(|a| a == "--explain") {
-                for (f, why) in &d.tests {
-                    println!("domain-select:   {f} ({why})");
                 }
             }
             emit_spine("test.selection.domain", &role, &card, &trace,
@@ -233,6 +232,14 @@ fn run(args: &[String]) -> Result<i32, String> {
         emit_spine("test.script.uncovered", &role, &card, &trace, &[("script", &s)]);
     }
     let units = units;
+    // #4419 — `--select-only`: print what this diff selects and why, run nothing.
+    // Jeff 2026-10-06: "how do u figure out the tests to run for a file what r u querying".
+    if args.iter().any(|a| a == "--select-only") {
+        for u in &units {
+            println!("select-only: {}", unit_name(u));
+        }
+        return Ok(0);
+    }
 
     // #4392 — build, in the werk, what the selected suites run, before any of
     // them runs. A suite that runs an unbuilt or stale binary is red for the
@@ -3180,9 +3187,10 @@ mod data_athena_scope_4353 {
     }
 }
 
-/// #4419 — the domains each changed file will carry, from the crawler's own
-/// rules (`chorus-crawl --domains-of`), and the tests those domains select.
-/// None when the crawler cannot answer: the run says UNMEASURED, never guesses.
+/// #4419 reopened — the registered tests that exercise each changed file run
+/// (Jeff 2026-10-06: "we are tagging the suites or cases"; the card runs the
+/// exercising tests, the nightly runs everything). None when the registry is
+/// empty: the run says UNMEASURED, never guesses.
 fn domain_select(werk: &str, changed: &[String], rows: &[TestRow]) -> Option<werk_test::DomainSelection> {
     if changed.is_empty() {
         return Some(werk_test::DomainSelection::default());
@@ -3191,78 +3199,65 @@ fn domain_select(werk: &str, changed: &[String], rows: &[TestRow]) -> Option<wer
     if rows.is_empty() {
         return None;
     }
-    // the tree's own build first (a card that changes the rules is tested by
-    // them), then the installed crawler; an old build without the seam answers
-    // nothing and the next one is asked
-    let werk_bin = format!("{werk}/platform/services/chorus-crawl/target/release/chorus-crawl");
-    for bin in [werk_bin.as_str(), "chorus-crawl"] {
-        if bin.contains('/') && !Path::new(bin).exists() {
-            continue;
-        }
-        let Ok(out) = Command::new(bin).arg("--domains-of").args(changed).current_dir(werk).output() else { continue };
-        if !out.status.success() {
-            continue;
-        }
-        let mut placed = werk_test::parse_domains_of(&String::from_utf8_lossy(&out.stdout));
-        if !placed.is_empty() {
-            narrow_hub_files(werk, changed, &mut placed);
-            return Some(werk_test::domain_selection(changed, &placed, rows));
-        }
+    let cache: std::cell::RefCell<std::collections::HashMap<String, Option<String>>> = Default::default();
+    let text_of = |p: &str| -> Option<String> {
+        cache.borrow_mut().entry(p.to_string())
+            .or_insert_with(|| std::fs::read_to_string(format!("{werk}/{p}")).ok())
+            .clone()
+    };
+    // a test the card adds exercises what it imports before the crawler has
+    // registered it
+    let mut candidates: Vec<TestRow> = rows.to_vec();
+    for f in changed.iter().filter(|f| werk_test::is_test_file(f) && !rows.iter().any(|r| &r.file_path == *f)) {
+        candidates.push(TestRow { file_path: f.clone(), covers: String::new(), pyramid_layer: String::new(), hermeticity: String::new(), test_concern: String::new() });
     }
-    None
-}
-
-/// #4436 — a changed file tagged with HUB_MIN_DOMAINS+ domains (server.ts:
-/// 22) is narrowed to the domains of the routes its changed lines sit in, read
-/// from the graph's Endpoint rows (filePath + routePath → hasDomain). Every
-/// domain test of those domains still runs. Any changed line outside every
-/// route, or a route the graph does not know, keeps the file's full list — a
-/// change never selects fewer tests than it needs. The log says which.
-fn narrow_hub_files(werk: &str, changed: &[String], placed: &mut std::collections::HashMap<String, Vec<String>>) {
-    for f in changed {
-        let Some(full) = placed.get(f).cloned() else { continue };
-        if full.len() < werk_test::HUB_MIN_DOMAINS {
-            continue;
-        }
-        let keep = |why: &str| println!("domain-select: {} has {} domains — kept all ({})", f, full.len(), why);
-        // a replay reads the file as that commit left it, so its hunk line
-        // numbers point at the right lines
-        let src = match std::env::var("WERK_TEST_REPLAY") {
-            Ok(c) => Command::new("git").args(["-C", werk, "show", &format!("{c}:{f}")]).output().ok()
-                .filter(|o| o.status.success()).map(|o| String::from_utf8_lossy(&o.stdout).into_owned()),
-            Err(_) => std::fs::read_to_string(format!("{}/{}", werk, f)).ok(),
-        };
-        let Some(src) = src else { keep("file not readable"); continue };
-        let extents = werk_test::route_extents(&src);
-        if extents.is_empty() { keep("no routes in it"); continue; }
-        let diff = card_diff_of(werk, f);
-        let text: Vec<&str> = src.lines().collect();
-        let lines: Vec<usize> = werk_test::changed_lines_from_unified_diff(&diff).into_iter()
-            .filter(|l| !text.get(l.saturating_sub(1)).is_some_and(|t| werk_test::is_named_import(t)))
-            .collect();
-        if lines.is_empty() { keep("no changed lines found"); continue; }
-        let Some(routes) = werk_test::routes_of_changed_lines(&extents, &lines) else {
-            keep("a changed line sits outside every route");
-            continue;
-        };
-        let by_route = endpoint_domains_of(f);
-        let mut doms: std::collections::BTreeSet<String> = Default::default();
-        let mut unknown: Vec<&String> = Vec::new();
-        for r in &routes {
-            match by_route.get(r) {
-                Some(ds) if !ds.is_empty() => doms.extend(ds.iter().cloned()),
-                _ => unknown.push(r),
+    let mut exercisers: std::collections::HashMap<String, Vec<String>> = Default::default();
+    for f in changed.iter().filter(|f| !werk_test::is_test_file(f) && !rows.iter().any(|r| &r.file_path == *f)) {
+        let routes = changed_routes_of(werk, f);
+        let mut ex = werk_test::exercisers_of(f, &candidates, &text_of, &crate_of, routes.as_deref());
+        // a jest setup file runs before every test of its package
+        if ex.is_empty() {
+            if let Some(pkg) = werk_test::ts_package_of(f) {
+                let name = f.rsplit('/').next().unwrap_or(f);
+                let cfg = ["jest.config.js", "jest.config.cjs", "jest.config.ts"].iter()
+                    .find_map(|c| std::fs::read_to_string(format!("{werk}/{pkg}/{c}")).ok()).unwrap_or_default();
+                if werk_test::mentions(&cfg, name) {
+                    ex = candidates.iter().map(|r| &r.file_path).filter(|p| p.starts_with(&format!("{pkg}/"))).cloned().collect();
+                }
             }
         }
-        if !unknown.is_empty() || doms.is_empty() {
-            keep(&format!("route(s) the graph has no Endpoint row for: {}", unknown.iter().map(|s| s.as_str()).collect::<Vec<_>>().join(", ")));
-            continue;
+        match &routes {
+            Some(r) if ex.len() <= werk_test::HUB_EXERCISERS => println!(
+                "domain-select: {} — changed lines sit in route(s) [{}] → {} test(s) exercise it", f, r.join(", "), ex.len()),
+            _ => println!("domain-select: {} → {} test(s) exercise it", f, ex.len()),
         }
-        println!("domain-select: {} has {} domains — changed lines sit in {} route(s) [{}] → domain(s) [{}]",
-            f, full.len(), routes.len(), routes.iter().cloned().collect::<Vec<_>>().join(", "),
-            doms.iter().cloned().collect::<Vec<_>>().join(", "));
-        placed.insert(f.clone(), doms.into_iter().collect());
+        exercisers.insert(f.clone(), ex);
     }
+    Some(werk_test::domain_selection(changed, &exercisers, rows))
+}
+
+/// The routes a changed file's changed lines sit in, or None (no routes in
+/// it, or a changed line outside every handler).
+fn changed_routes_of(werk: &str, f: &str) -> Option<Vec<String>> {
+    // a replay reads the file as that commit left it, so its hunk line
+    // numbers point at the right lines
+    let src = match std::env::var("WERK_TEST_REPLAY") {
+        Ok(c) => Command::new("git").args(["-C", werk, "show", &format!("{c}:{f}")]).output().ok()
+            .filter(|o| o.status.success()).map(|o| String::from_utf8_lossy(&o.stdout).into_owned()),
+        Err(_) => std::fs::read_to_string(format!("{}/{}", werk, f)).ok(),
+    }?;
+    let extents = werk_test::route_extents(&src);
+    if extents.is_empty() {
+        return None;
+    }
+    let text: Vec<&str> = src.lines().collect();
+    let lines: Vec<usize> = werk_test::changed_lines_from_unified_diff(&card_diff_of(werk, f)).into_iter()
+        .filter(|l| !text.get(l.saturating_sub(1)).is_some_and(|t| werk_test::is_named_import(t)))
+        .collect();
+    if lines.is_empty() {
+        return None;
+    }
+    werk_test::routes_of_changed_lines(&extents, &lines).map(|s| s.into_iter().collect())
 }
 
 /// The card's diff of one file, `-U0`, against the same base as the changed list.
@@ -3279,27 +3274,6 @@ fn card_diff_of(werk: &str, f: &str) -> String {
     };
     Command::new("git").args(["-C", werk, "diff", "-U0", &range, "--", f]).output()
         .map(|o| String::from_utf8_lossy(&o.stdout).into_owned()).unwrap_or_default()
-}
-
-/// routePath → domains for one file's Endpoint rows, from the API (#4433's
-/// field filter). An empty map when the API does not answer: callers keep the
-/// file's full domain list.
-fn endpoint_domains_of(f: &str) -> std::collections::HashMap<String, Vec<String>> {
-    let base = std::env::var("CHORUS_OWL_API").unwrap_or_else(|_| "http://localhost:3360".to_string());
-    let url = format!("{}/v1/code/endpoints?filePath={}&limit=1000", base, f.replace('%', "%25").replace(' ', "%20"));
-    let pipe = format!("curl -s -m 15 '{}' | jq -r '.data[] | [.routePath, .hasDomain] | @tsv'", url);
-    let mut m: std::collections::HashMap<String, Vec<String>> = Default::default();
-    if let Ok(o) = Command::new("bash").args(["-c", &pipe]).output() {
-        for l in String::from_utf8_lossy(&o.stdout).lines() {
-            if let Some((r, d)) = l.split_once('\t') {
-                let e = m.entry(r.to_string()).or_default();
-                for x in d.split(',').map(werk_test::norm_domain).filter(|x| !x.is_empty()) {
-                    if !e.contains(&x) { e.push(x); }
-                }
-            }
-        }
-    }
-    m
 }
 
 /// #4419 — the Rust crate a path lives in.

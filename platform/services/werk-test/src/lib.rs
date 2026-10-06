@@ -2987,66 +2987,54 @@ mod land_lane_telemetry_3918 {
     }
 }
 
-// ── #4419 — select by domain: every registered test in the domains a diff touches ──
+// ── #4419 — a card runs the tests that exercise what it changed ──────────────
 //
 // The import-graph lane above keeps unit-layer files only, so an integration
 // test in a changed package never ran in the werk; the nightly found it hours
-// after the land (#4353 → domain-page, #4417 → tunnel-auth). This lane reads
-// each changed file's domains from the crawler's own rules (`chorus-crawl
-// --domains-of`, the same tags the graph holds) and selects every registered
-// test whose `covers` names one of them, any layer.
+// after the land (#4353 → domain-page, #4417 → tunnel-auth). This lane runs
+// every registered test, any layer, that exercises a changed file. Jeff,
+// 2026-10-06, replayed on #4438 (33 exercising tests vs 834 in their domains):
+// the card runs the exercising tests; the nightly runs everything.
 
 /// A domain as a bare name: an IRI's fragment, or the name itself.
 pub fn norm_domain(s: &str) -> String {
     s.trim().rsplit('#').next().unwrap_or("").trim().to_string()
 }
 
-/// `path<TAB>d1,d2` lines (the crawler's --domains-of) into a map.
-pub fn parse_domains_of(out: &str) -> std::collections::HashMap<String, Vec<String>> {
-    let mut m = std::collections::HashMap::new();
-    for line in out.lines() {
-        let Some((path, doms)) = line.split_once('\t') else { continue };
-        let ds: Vec<String> = doms.split(',').map(norm_domain).filter(|d| !d.is_empty()).collect();
-        m.insert(path.to_string(), ds);
-    }
-    m
-}
-
 #[derive(Debug, Default, Clone, PartialEq, Eq)]
 pub struct DomainSelection {
-    /// the domains the diff touches
+    /// the domains the selected tests cover (reported, not expanded)
     pub domains: std::collections::BTreeSet<String>,
-    /// selected test file → why ("domain:<d>" or "changed")
+    /// selected test file → why ("changed" or "exercises <file>")
     pub tests: std::collections::BTreeMap<String, String>,
-    /// changed files no rule places: their package runs whole, and the run says so
+    /// changed files no registered test exercises: named, and refused inside a unit
     pub untagged: Vec<String>,
 }
 
+/// `exercisers`: changed non-test file → the registered tests that exercise it
+/// (`exercisers_of`). A changed test runs itself.
 pub fn domain_selection(
     changed: &[String],
-    placed: &std::collections::HashMap<String, Vec<String>>,
+    exercisers: &std::collections::HashMap<String, Vec<String>>,
     rows: &[TestRow],
 ) -> DomainSelection {
     let mut sel = DomainSelection::default();
+    let covers = |t: &str| rows.iter().find(|r| r.file_path == t).map(|r| norm_domain(&r.covers)).filter(|d| !d.is_empty());
     for f in changed {
-        // Jeff, 2026-10-02: every test is a member of the tests domain; what it
-        // checks is its `covers` edge. A changed TEST runs itself — its
-        // membership never pulls in every test that covers "tests".
-        if rows.iter().any(|r| &r.file_path == f) {
+        // #4419 — a NEW test the registry has not crawled yet is still a test.
+        if rows.iter().any(|r| &r.file_path == f) || is_test_file(f) {
             sel.tests.insert(f.clone(), "changed".to_string());
             continue;
         }
-        match placed.get(f) {
-            Some(ds) if !ds.is_empty() => sel.domains.extend(ds.iter().cloned()),
-            _ => sel.untagged.push(f.clone()),
+        let ex = exercisers.get(f).map(|v| v.as_slice()).unwrap_or(&[]);
+        if ex.is_empty() {
+            sel.untagged.push(f.clone());
+        }
+        for t in ex {
+            sel.tests.entry(t.clone()).or_insert_with(|| format!("exercises {f}"));
         }
     }
-    for r in rows {
-        let d = norm_domain(&r.covers);
-        if sel.domains.contains(&d) {
-            sel.tests.entry(r.file_path.clone()).or_insert_with(|| format!("domain:{d}"));
-        }
-    }
+    sel.domains = sel.tests.keys().filter_map(|t| covers(t)).collect();
     sel
 }
 
@@ -6150,12 +6138,103 @@ mod unit_timing_4436 {
     }
 }
 
-/// #4436 — a file tagged with this many domains is narrowed to the domains of
-/// the routes its changed lines sit in. Measured 2026-10-06 over 2,831 tracked
-/// files: 2,651 have 1 domain, 111 have 2, 40 have 3, 13 have 4, and 13 have 5
-/// or more (server.ts 22). Jeff: "i just dont want to run 1 hour of tests for a
-/// very small blast radius change" — and every domain test still runs (08:52).
-pub const HUB_MIN_DOMAINS: usize = 5;
+// ── #4419 reopened — a changed file's domains come from the TESTS that
+// exercise it, never from what the file's own text mentions ──────────────────
+//
+// Jeff, 2026-10-06: "tagging the file is the wrong spot … we are tagging the
+// suites or cases". Text guessing gave server.ts 22 domains, pre-commit 6 (one
+// per binary it calls), service-instances.ttl `tests`. Now: changed file →
+// the registered tests that exercise it → those tests' own `covers` → every
+// test in those domains.
+
+/// A file exercised by more tests than this is a hub (server.ts: every api test
+/// imports the app); it is narrowed to the tests that call its changed routes.
+pub const HUB_EXERCISERS: usize = 25;
+
+/// How a test names the file it exercises: `<parent dir>/<stem>` — the shape of
+/// an import (`../src/server`), a script path (`hooks/pre-commit`) and a data
+/// path (`data/service-instances.ttl`) alike. None for a Rust source file: its
+/// crate's tests exercise it.
+/// A path the runner executes as a test: a new one runs itself before the
+/// crawler has registered it.
+pub fn is_test_file(f: &str) -> bool {
+    let name = f.rsplit('/').next().unwrap_or(f);
+    f.ends_with(".bats")
+        || [".test.", ".spec."].iter().any(|m| name.contains(m))
+        || (f.ends_with(".rs") && f.contains("/tests/"))
+        || is_test_suite_path(f)
+}
+
+pub fn mention_key(path: &str) -> Option<String> {
+    if path.ends_with(".rs") {
+        return None;
+    }
+    let p = std::path::Path::new(path);
+    let stem = p.file_stem()?.to_str()?;
+    let parent = p.parent()?.file_name()?.to_str()?;
+    Some(format!("{parent}/{stem}"))
+}
+
+/// `text` names `key` as a whole path piece: the character after it is not
+/// part of a longer name (`src/server` is not `src/server-helpers`).
+pub fn mentions(text: &str, key: &str) -> bool {
+    let part = |c: char| c.is_ascii_alphanumeric() || c == '-' || c == '_';
+    text.match_indices(key).any(|(i, _)| {
+        let before = text[..i].chars().next_back();
+        let after = text[i + key.len()..].chars().next();
+        !before.is_some_and(part) && !after.is_some_and(part)
+    })
+}
+
+/// How a test at `test` imports `f` relatively, extension dropped:
+/// `platform/pulse/src/a.test.ts` → `platform/pulse/src/peers.ts` is `./peers`.
+pub fn relative_import(test: &str, f: &str) -> Option<String> {
+    let tdir: Vec<&str> = test.rsplit_once('/')?.0.split('/').collect();
+    let (fdir, fname) = f.rsplit_once('/')?;
+    let stem = fname.split('.').next().filter(|s| !s.is_empty())?;
+    let fdir: Vec<&str> = fdir.split('/').collect();
+    let common = tdir.iter().zip(&fdir).take_while(|(a, b)| a == b).count();
+    let ups = tdir.len() - common;
+    let mut parts: Vec<String> = if ups == 0 { vec![".".into()] } else { vec!["..".into(); ups] };
+    parts.extend(fdir[common..].iter().map(|s| s.to_string()));
+    parts.push(stem.to_string());
+    Some(parts.join("/"))
+}
+
+/// The literal a test writes for a route: everything before its first `:param`.
+pub fn route_literal(route: &str) -> &str {
+    route.find("/:").map(|i| &route[..i]).unwrap_or(route).trim_end_matches('/')
+}
+
+/// The registered tests that exercise one changed file. `text_of` reads a test
+/// file; `crate_of` names the Rust crate a path sits in; `changed_routes` is
+/// Some(routes) when every changed line of the file sits in a route handler.
+pub fn exercisers_of(
+    f: &str,
+    rows: &[TestRow],
+    text_of: &dyn Fn(&str) -> Option<String>,
+    crate_of: &dyn Fn(&str) -> Option<String>,
+    changed_routes: Option<&[String]>,
+) -> Vec<String> {
+    let mut out: Vec<String> = match (mention_key(f), crate_of(f)) {
+        (None, Some(c)) => rows.iter().map(|r| &r.file_path)
+            .filter(|p| p.starts_with(&format!("{c}/"))).cloned().collect(),
+        (Some(key), _) => rows.iter().map(|r| &r.file_path)
+            .filter(|p| text_of(p).is_some_and(|t| mentions(&t, &key) || relative_import(p, f).is_some_and(|r| mentions(&t, &r))))
+            .cloned().collect(),
+        (None, None) => Vec::new(),
+    };
+    if out.len() > HUB_EXERCISERS {
+        if let Some(routes) = changed_routes {
+            let lits: Vec<&str> = routes.iter().map(|r| route_literal(r)).filter(|l| !l.is_empty()).collect();
+            out.retain(|p| text_of(p).is_some_and(|t| lits.iter().any(|l| mentions(&t, l))));
+        }
+    }
+    out.sort();
+    out.dedup();
+    out
+}
+
 
 /// Express-style route registrations in a source file, with each handler's
 /// extent: (first line, last line, route paths), 1-based. A registration is a
@@ -6196,7 +6275,7 @@ pub fn route_extents(src: &str) -> Vec<(usize, usize, Vec<String>)> {
 
 /// The route paths whose handlers hold every changed line, or None when any
 /// changed line sits outside every route (a helper, an import, a middleware) —
-/// then the caller keeps the file's full domain list.
+/// then a hub keeps every test that exercises it.
 pub fn routes_of_changed_lines(
     extents: &[(usize, usize, Vec<String>)],
     changed: &[usize],
