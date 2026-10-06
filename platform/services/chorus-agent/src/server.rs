@@ -262,10 +262,12 @@ impl Supervisor {
         if request.version != VERSION {
             return Err("unsupported protocol major".into());
         }
-        if !["wren", "silas", "kade", "jeff"].contains(&request.role.as_str()) {
-            return Err("unknown role".into());
-        }
+        // #4432 — the roles this supervisor serves are its own config's roles
+        // map, not a typed list: Abby's login was refused "unknown role".
         let config = self.config_snapshot();
+        if !config.roles.contains_key(&request.role) && !config.role_workspaces.contains_key(&request.role) {
+            return Err(format!("unknown role: this supervisor serves {:?}", config.roles.keys().collect::<Vec<_>>()));
+        }
         let profile = self.profile(&request.profile)?;
         if profile.no_tools {
             return Err("inference profiles cannot enroll interactive sessions".into());

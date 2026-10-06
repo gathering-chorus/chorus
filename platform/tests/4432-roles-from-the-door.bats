@@ -44,7 +44,8 @@ typed_lists() {
     "$1/platform/api/src/handlers/context-roles.ts" "$1/platform/api/public/chorus-pages/loom.html" \
     "$1/platform/api/public/chorus-pages/werk.html" "$1/platform/api/views/team.ejs" "$1/platform/pulse/src/store.ts" \
     "$1/platform/mcp-server/src/main-stdio.ts" "$1/platform/services/chorus-hooks/src/hooks/nudge_drain.rs" \
-    "$1/platform/services/chorus-hooks/src/runtime_hook.rs" 2>/dev/null
+    "$1/platform/services/chorus-hooks/src/runtime_hook.rs" \
+    "$1/platform/services/chorus-agent/src/server.rs" 2>/dev/null
 }
 
 @test "no tile, mention, filter or nudge path types the three role names" {
@@ -53,17 +54,22 @@ typed_lists() {
   test -z "$output"
 }
 
-@test "NEGATIVE PROOF: the check finds the runtime hook's three-name enrollment main still has" {
-  M="$BATS_TEST_TMPDIR/main-hook"; mkdir -p "$M/platform/services/chorus-hooks/src"
-  git -C "$ROOT" show origin/main:platform/services/chorus-hooks/src/runtime_hook.rs > "$M/platform/services/chorus-hooks/src/runtime_hook.rs"
+# The proofs below plant the old code as fixed text. They used to read it from
+# origin/main, which stopped having it the moment #4432 landed, so the proof
+# went red on main (Kade, 10-06 16:18).
+@test "NEGATIVE PROOF: the check finds a runtime hook that enrolls three typed names" {
+  M="$BATS_TEST_TMPDIR/old-hook"; mkdir -p "$M/platform/services/chorus-hooks/src"
+  printf '%s\n' '    if !matches!(role.as_str(), "wren" | "silas" | "kade") { return Err("not enrolled".into()); }' \
+    > "$M/platform/services/chorus-hooks/src/runtime_hook.rs"
   run typed_lists "$M"
   echo "$output"
   printf '%s' "$output" | grep -qF 'runtime_hook.rs'
 }
 
-@test "NEGATIVE PROOF: the same check finds the typed lists main still has" {
-  M="$BATS_TEST_TMPDIR/main"; mkdir -p "$M/directing/clearing/src"
-  git -C "$ROOT" show origin/main:directing/clearing/src/tiles.ts > "$M/directing/clearing/src/tiles.ts"
+@test "NEGATIVE PROOF: the same check finds tiles built from a typed list" {
+  M="$BATS_TEST_TMPDIR/old-tiles"; mkdir -p "$M/directing/clearing/src"
+  printf '%s\n' "const ROLES = ['wren', 'silas', 'kade'] as const;" > "$M/directing/clearing/src/tiles.ts"
   run typed_lists "$M"
-  test -n "$output"
+  echo "$output"
+  printf '%s' "$output" | grep -qF 'tiles.ts'
 }

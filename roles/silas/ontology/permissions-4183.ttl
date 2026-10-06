@@ -417,3 +417,11 @@ chorus:permission-kade-pipelines a chorus:Permission ;
     chorus:accessTo "urn:chorus:domains:pipelines"^^xsd:anyURI ;
     chorus:mode acl:Write ;
     chorus:ownedBy chorus:principal-kade .
+
+# #4432 — Wren owns the events domain (#4438); event types now live in the store.
+chorus:permission-wren-events a chorus:Permission ;
+    rdfs:label "wren may write urn:chorus:domains:events" ;
+    chorus:agent chorus:principal-wren ;
+    chorus:accessTo "urn:chorus:domains:events"^^xsd:anyURI ;
+    chorus:mode acl:Write ;
+    chorus:ownedBy chorus:principal-silas .
