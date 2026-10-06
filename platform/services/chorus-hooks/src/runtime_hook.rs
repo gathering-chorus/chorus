@@ -216,6 +216,32 @@ fn publish(runtime: &str, ev: Event, raw: &Value, decision: &Decision) -> Option
     None
 }
 
+/// #4432 — the principal a WebID names: the path segment before
+/// `/profile/card#me`, any role-shaped name (not a list of three).
+pub fn principal_name_from_webid(webid: &str) -> Option<String> {
+    let name = webid.strip_suffix("/profile/card#me")?.rsplit('/').next()?;
+    (!name.is_empty() && name.bytes().all(|b| b.is_ascii_lowercase() || b.is_ascii_digit() || b == b'-')).then(|| name.to_string())
+}
+
+/// #4432 — a role is enrolled for a runtime hook when the roles door lists it
+/// as an agent role (roleKind agent). Abby Normal was refused every tool call,
+/// even a /tmp write, by the three-name list this replaces. Fail closed: a door
+/// that cannot answer refuses the call, it never guesses.
+pub fn enrolled_in(role: &str, door: &Value) -> Result<(), String> {
+    let rows = door.get("data").and_then(Value::as_array).ok_or("runtime hook refuses: the roles door answered with no data list")?;
+    let agent = rows.iter().any(|r| r.get("name").and_then(Value::as_str) == Some(role) && r.get("roleKind").and_then(Value::as_str) == Some("agent"));
+    if agent { Ok(()) } else { Err(format!("runtime hook role is not enrolled: the roles door lists no agent role {role}")) }
+}
+
+fn agent_role_enrolled(role: &str) -> Result<(), String> {
+    let base = std::env::var("ATHENA_MAKE_URL").unwrap_or_else(|_| "http://localhost:3360".into());
+    let url = format!("{base}/v1/roles/roles?limit=500");
+    let door: Value = ureq::get(&url).timeout(std::time::Duration::from_millis(2000)).call()
+        .map_err(|e| format!("runtime hook refuses: the roles door is unreadable ({url}): {e}"))?
+        .into_json().map_err(|e| format!("runtime hook refuses: the roles door answered non-JSON: {e}"))?;
+    enrolled_in(role, &door)
+}
+
 fn evaluate(runtime: &str, ev: Event, raw: &Value) -> Result<Decision, String> {
     if !matches!(runtime, "claude-code" | "claude" | "codex" | "gemini" | "opencode" | "openai-compatible" | "external") {
         return Err(format!("unknown runtime {runtime}"));
@@ -227,10 +253,10 @@ fn evaluate(runtime: &str, ev: Event, raw: &Value) -> Result<Decision, String> {
     // Claude in the shim; a typed role cannot override a login. Only a session
     // with no token still reads the launcher's role environment.
     let role = match crate::shared::role::session_token_from_env().as_deref().and_then(crate::shared::role::webid_of_token) {
-        Some(webid) => crate::shared::role::role_from_webid(&webid).ok_or("runtime hook session token names no role")?,
+        Some(webid) => principal_name_from_webid(&webid).ok_or("runtime hook session token names no role")?,
         None => std::env::var("CHORUS_ROLE").or_else(|_| std::env::var("DEPLOY_ROLE")).map_err(|_| "runtime hook requires a logged-in session or launcher-owned role environment")?,
     };
-    if !matches!(role.as_str(), "wren" | "silas" | "kade") { return Err("runtime hook role is not enrolled".into()); }
+    agent_role_enrolled(&role)?;
     let sid = std::env::var("CHORUS_SESSION_ID").map_err(|_|"runtime hook requires a supervisor-issued CHORUS_SESSION_ID")?;
     if sid.is_empty() || !sid.bytes().all(|b|b.is_ascii_alphanumeric() || b == b'-' || b == b'_') { return Err("invalid Chorus session identity".into()); }
     let mut base = json!({"cwd":cwd,"session_id":sid,"chorus_session_id":sid,"runtime":runtime,"deploy_role":role,"prompt":raw.get("prompt"),

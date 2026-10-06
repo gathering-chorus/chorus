@@ -336,9 +336,7 @@ impl Supervisor {
         if !profile.allow_unguarded {
             guards_installed(&profile.runtime, &cwd)?;
         }
-        if profile.runtime == Runtime::Gemini {
-            gemini_allowed_installed()?;
-        }
+
         let (runtime_version, observed) = execution::probe_in(&profile, &cwd).await?;
         let capabilities = if profile.enforcement == Enforcement::Verified {
             let proof = profile
@@ -485,6 +483,10 @@ impl Supervisor {
         settings["command"] = json!(execution::executable(&profile));
         settings["env_refs"] = json!({"CHORUS_SESSION_ID":"CHORUS_SESSION_ID","CHORUS_ROLE":"CHORUS_ROLE","CHORUS_SESSION_TOKEN_FILE":"CHORUS_SESSION_TOKEN_FILE"});
         settings["no_tools"] = json!(false);
+        if profile.runtime == Runtime::Gemini {
+            let policy = gemini_allowed_installed()?;
+            settings["args"] = crate::allowed_tools::gemini_args_with_policy(settings.get("args"), &policy)?;
+        }
         let result = worker.request(if resume {"resume"} else {"start"}, json!({"cwd":s.cwd,"model":s.model,"native_session_id":s.native_session_id,"endpoint":profile.endpoint,"config":settings}), 30).await;
         match result {
             Ok(result) => {
@@ -1030,24 +1032,25 @@ pub fn guards_installed(runtime: &Runtime, cwd: &std::path::Path) -> Result<()> 
     guards_installed_in(runtime, cwd, &home)
 }
 /// #4432 — a Gemini session starts only with its allowed tools generated
-/// from the Claude roles' allow rules (CHORUS_ALLOW_RULES_FILE). Unset or
-/// unreadable refuses the session: without the list every tool call waits on
-/// Jeff's approval, the blocker this exists to remove.
-pub fn gemini_allowed_installed() -> Result<()> {
-    let home = std::path::PathBuf::from(std::env::var_os("HOME").unwrap_or_default());
-    gemini_allowed_installed_in(std::env::var_os("CHORUS_ALLOW_RULES_FILE").as_deref(), &home)
+/// from the Claude roles' allow rules (CHORUS_ALLOW_RULES_FILE), written to
+/// the supervisor's state dir. Unset or unreadable refuses the session:
+/// without the list every tool call waits on Jeff's approval, the blocker
+/// this exists to remove. Returns the policy file to hand Gemini.
+pub fn gemini_allowed_installed() -> Result<std::path::PathBuf> {
+    gemini_allowed_installed_in(std::env::var_os("CHORUS_ALLOW_RULES_FILE").as_deref(), &crate::config::root())
 }
-/// #4432 — as `gemini_allowed_installed`, with the source and home named (tests).
-pub fn gemini_allowed_installed_in(source: Option<&std::ffi::OsStr>, home: &std::path::Path) -> Result<()> {
+/// #4432 — as `gemini_allowed_installed`, with the source and state dir named (tests).
+pub fn gemini_allowed_installed_in(source: Option<&std::ffi::OsStr>, state_dir: &std::path::Path) -> Result<std::path::PathBuf> {
     let source = source
         .ok_or("gemini allowed tools are not generated: CHORUS_ALLOW_RULES_FILE is unset, so every tool call would wait on Jeff's approval")?;
-    let (allowed, unmapped) = crate::allowed_tools::install_gemini_allowed(std::path::Path::new(source), home)?;
+    let target = state_dir.join("gemini-allowed.toml");
+    let (allowed, unmapped) = crate::allowed_tools::install_gemini_allowed(std::path::Path::new(source), &target)?;
     let _ = crate::spine(
         "agent.allowed_tools.installed",
         &std::env::var("CHORUS_ROLE").unwrap_or_else(|_| "unknown".into()),
         &[("runtime", "gemini".into()), ("allowed", allowed.len().to_string()), ("unmapped", unmapped.join(";"))],
     );
-    Ok(())
+    Ok(target)
 }
 /// #4424 — as `guards_installed`, with the account home named (tests).
 pub fn guards_installed_in(runtime: &Runtime, cwd: &std::path::Path, home: &std::path::Path) -> Result<()> {

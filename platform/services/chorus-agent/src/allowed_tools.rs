@@ -5,6 +5,12 @@
 //! read at every session start, so the two lists cannot drift. The Chorus
 //! guard hook (BeforeTool → chorus-hook-shim runtime-hook gemini) still makes
 //! the real refusals; this only stops the per-call approval prompt.
+//!
+//! The policy is a file in the supervisor's own state dir, handed to Gemini
+//! with `--policy` only for sessions the supervisor launches, which are the
+//! ones our hook guards. It is never put in ~/.gemini/policies: Gemini loads
+//! that for every session on the account, including a pane started by hand
+//! with no hook (measured 10-06: her pane runs in ~ with no hooks loaded).
 
 use crate::Result;
 use serde_json::Value;
@@ -94,19 +100,32 @@ pub fn gemini_policy_toml(allowed: &[String], source: &Path) -> String {
     out
 }
 
-/// Writes the allowed list as `<home>/.gemini/policies/chorus-allowed.toml`
-/// (atomic replace). Returns the list written and the rules left unmapped.
-pub fn install_gemini_allowed(source: &Path, home: &Path) -> Result<(Vec<String>, Vec<String>)> {
+/// Writes the allowed list as a Gemini policy file at `target` (atomic
+/// replace). Returns the list written and the rules left unmapped.
+pub fn install_gemini_allowed(source: &Path, target: &Path) -> Result<(Vec<String>, Vec<String>)> {
     let text = std::fs::read_to_string(source)
         .map_err(|e| format!("cannot read the allow rules at {}: {e}", source.display()))?;
     let claude: Value = serde_json::from_str(&text)
         .map_err(|e| format!("the allow rules at {} are not JSON: {e}", source.display()))?;
     let (allowed, unmapped) = gemini_allowed(&claude)?;
-    let dir = home.join(".gemini/policies");
-    std::fs::create_dir_all(&dir).map_err(|e| format!("cannot create {}: {e}", dir.display()))?;
-    let target = dir.join("chorus-allowed.toml");
-    let tmp = dir.join("chorus-allowed.toml.tmp");
+    if let Some(dir) = target.parent() {
+        std::fs::create_dir_all(dir).map_err(|e| format!("cannot create {}: {e}", dir.display()))?;
+    }
+    let tmp = target.with_extension("toml.tmp");
     std::fs::write(&tmp, gemini_policy_toml(&allowed, source)).map_err(|e| format!("cannot write {}: {e}", tmp.display()))?;
-    std::fs::rename(&tmp, &target).map_err(|e| format!("cannot replace {}: {e}", target.display()))?;
+    std::fs::rename(&tmp, target).map_err(|e| format!("cannot replace {}: {e}", target.display()))?;
     Ok((allowed, unmapped))
+}
+
+/// The Gemini launch args with the policy file added: the profile's own args
+/// (default `--acp`) then `--policy <file>`.
+pub fn gemini_args_with_policy(configured: Option<&Value>, policy: &Path) -> Result<Value> {
+    let mut args: Vec<Value> = match configured {
+        None | Some(Value::Null) => vec![Value::from("--acp")],
+        Some(Value::Array(a)) if a.iter().all(Value::is_string) => a.clone(),
+        Some(_) => return Err("gemini adapter args must be a list of strings".into()),
+    };
+    args.push(Value::from("--policy"));
+    args.push(Value::from(policy.to_string_lossy().to_string()));
+    Ok(Value::Array(args))
 }
