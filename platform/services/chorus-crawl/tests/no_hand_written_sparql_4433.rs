@@ -29,7 +29,7 @@ fn offending_lines(file: &str, text: &str) -> Vec<String> {
 
 #[test]
 fn the_crawler_source_holds_no_sparql_and_no_store_url() {
-    let src = Path::new(env!("CARGO_MANIFEST_DIR")).join("src");
+    let src = Path::new(&std::env::var("CARGO_MANIFEST_DIR").unwrap()).join("src");
     let mut files = 0;
     let mut hits = Vec::new();
     for entry in fs::read_dir(&src).expect("read src/") {
