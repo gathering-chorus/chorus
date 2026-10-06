@@ -3057,6 +3057,16 @@ fn domain_select(werk: &str, changed: &[String], rows: &[TestRow]) -> Option<wer
                 ex.dedup();
             }
         }
+        // #4440 — a shared Rust file is compiled into the crates that
+        // include!() it (shared/scope_units.rs → werk-test, werk-build,
+        // werk-deploy); their tests exercise it
+        if ex.is_empty() && f.ends_with(".rs") {
+            for c in including_crates(werk, f) {
+                ex.extend(candidates.iter().map(|r| &r.file_path).filter(|p| p.starts_with(&format!("{c}/"))).cloned());
+            }
+            ex.sort();
+            ex.dedup();
+        }
         // a jest setup file runs before every test of its package
         if ex.is_empty() {
             let name = f.rsplit('/').next().unwrap_or(f);
@@ -3080,6 +3090,20 @@ fn domain_select(werk: &str, changed: &[String], rows: &[TestRow]) -> Option<wer
         exercisers.insert(f.clone(), ex);
     }
     Some(werk_test::domain_selection(changed, &exercisers, rows))
+}
+
+/// The crates whose source include!()s or #[path]s a shared Rust file.
+fn including_crates(werk: &str, f: &str) -> Vec<String> {
+    let name = f.rsplit('/').nth(1).zip(f.rsplit('/').next()).map(|(d, n)| format!("{d}/{n}")).unwrap_or_default();
+    let out = Command::new("git").args(["-C", werk, "grep", "-l", "-E", &format!(r#"(include!|#\[path).*{}"#, regex_escape(&name)), "--", "platform/services/*/src/*.rs"]).output();
+    let mut crates: Vec<String> = out.ok().map(|o| String::from_utf8_lossy(&o.stdout).lines().filter_map(crate_of).collect()).unwrap_or_default();
+    crates.sort();
+    crates.dedup();
+    crates
+}
+
+fn regex_escape(s: &str) -> String {
+    s.chars().flat_map(|c| if ".+*?()[]{}|^$\\".contains(c) { vec!['\\', c] } else { vec![c] }).collect()
 }
 
 /// A TS package's tracked source files (tests excluded).
