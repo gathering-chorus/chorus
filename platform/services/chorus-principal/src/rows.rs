@@ -537,6 +537,42 @@ pub fn agent_launch_cmd(agent_bin: &str, role: &str, run: &str) -> String {
     // role lives; a role_workspaces entry pointing elsewhere can't win.
     format!("CHORUS_SESSION_RUN='{}' '{}' launch {} --cwd \"$PWD\"", run, agent_bin, role)
 }
+/// #4444 — which program a role's pane runs. A role home that carries Gemini's
+/// settings and no Claude settings is a Gemini role (Abby); every other role
+/// home starts Claude, as before.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum PaneRuntime { Claude, Gemini }
+
+pub fn pane_runtime(role_dir: &std::path::Path) -> PaneRuntime {
+    if role_dir.join(".gemini").is_dir() && !role_dir.join(".claude").is_dir() { PaneRuntime::Gemini } else { PaneRuntime::Claude }
+}
+
+/// #4444 — the command typed into a Gemini role's pane (it runs as the role's
+/// own account, inside launch_line). Node goes on PATH (launchd and sudo give a
+/// PATH without it — measured 10-06 18:16: "env: node: No such file or
+/// directory"), the key is the account's own, and the allowed tools are written
+/// from the Claude roles' rules before Gemini starts, so Jeff is not asked to
+/// approve every tool. Interactive: Jeff watches and types in that screen.
+/// The login's run is the session our guard hook names every tool call by
+/// (CHORUS_SESSION_ID — without it the hook refuses every tool, measured 18:40).
+pub fn gemini_pane_cmd(agent_bin: &str, gemini_bin: &str, allow_rules: &str, run: &str) -> Result<String, String> {
+    if run.is_empty() || !run.bytes().all(|b| b.is_ascii_alphanumeric() || b == b'-' || b == b'_') {
+        return Err(format!("refusing to launch on run name {:?}", run));
+    }
+    Ok(format!(
+        "export PATH=/opt/homebrew/bin:$PATH CHORUS_SESSION_ID='{}' GEMINI_API_KEY=\"$(cat ~/.chorus/secrets/gemini.key)\" && CHORUS_ALLOW_RULES_FILE='{}' '{}' allowed-tools >/dev/null && '{}' --policy ~/.chorus/gemini-allowed.toml",
+        run, allow_rules, agent_bin, gemini_bin
+    ))
+}
+
+/// #4444 — does a process in the role's pane run the program that was started?
+pub fn pane_process_is(command: &str, runtime: PaneRuntime) -> bool {
+    match runtime {
+        PaneRuntime::Claude => command.contains("claude"),
+        PaneRuntime::Gemini => command.contains("gemini"),
+    }
+}
+
 /// #4432 — where a principal's own supervisor listens: an agent that runs as
 /// its own Mac account (#4383) has its chorus-agentd in that account's home,
 /// so the launcher's enrollment check must ask THAT socket, not its own.

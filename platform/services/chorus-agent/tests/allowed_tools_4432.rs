@@ -91,3 +91,31 @@ fn write_the_live_policy() {
     let (allowed, unmapped) = install_gemini_allowed(std::path::Path::new(&source), std::path::Path::new(&out)).unwrap();
     println!("ALLOWED={} UNMAPPED={unmapped:?}", allowed.len());
 }
+
+// #4444 — the pane login runs `chorus-agent allowed-tools` before Gemini starts.
+#[test]
+fn the_allowed_tools_verb_writes_the_policy_into_the_state_dir() {
+    let dir = tempfile::tempdir().unwrap();
+    let rules = dir.path().join("settings.json");
+    std::fs::write(&rules, r#"{"permissions":{"allow":["Read","Bash(git status:*)"]}}"#).unwrap();
+    let out = std::process::Command::new(env!("CARGO_BIN_EXE_chorus-agent"))
+        .arg("allowed-tools")
+        .env("CHORUS_ALLOW_RULES_FILE", &rules)
+        .env("CHORUS_AGENT_STATE_DIR", dir.path())
+        .output().unwrap();
+    assert!(out.status.success(), "{}", String::from_utf8_lossy(&out.stderr));
+    let toml = std::fs::read_to_string(dir.path().join("gemini-allowed.toml")).unwrap();
+    assert!(toml.contains("git status"), "{toml}");
+}
+
+#[test]
+fn negative_proof_the_allowed_tools_verb_with_no_rules_file_fails_and_writes_nothing() {
+    let dir = tempfile::tempdir().unwrap();
+    let out = std::process::Command::new(env!("CARGO_BIN_EXE_chorus-agent"))
+        .arg("allowed-tools")
+        .env_remove("CHORUS_ALLOW_RULES_FILE")
+        .env("CHORUS_AGENT_STATE_DIR", dir.path())
+        .output().unwrap();
+    assert!(!out.status.success());
+    assert!(!dir.path().join("gemini-allowed.toml").exists());
+}
