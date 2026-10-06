@@ -185,6 +185,29 @@ async function refuseTarget(to: string, target: string | undefined): Promise<{ e
   return { error: 'target-not-live-run', message: `${target} is not ${to}'s live agent run` };
 }
 
+/** #4432 — everything that can refuse a nudge before it is stored: the roles
+ *  door (503) and a target that isn't the recipient's live run (409, #4424). */
+async function admitNudge(body: { class?: unknown; expects?: unknown; target_session_id?: unknown }, from: string, to: string): Promise<
+  { status: number; refused: object } | { nudgeClass: 'r2r' | 'a2r'; expects: 'none' | 'reply' | 'decision' | 'action'; targetSessionId: string | undefined }
+> {
+  const peers = await peersOrRefusal(from, to);
+  if (typeof peers === 'string') return { status: 503, refused: { error: 'roles door unreadable; nudge not stored', detail: peers } };
+  const targetSessionId = typeof body.target_session_id === 'string' ? body.target_session_id : undefined;
+  const refusal = await refuseTarget(to, targetSessionId);
+  if (refusal) return { status: 409, refused: refusal };
+  return { ...readEnvelope(body, from, peers), targetSessionId };
+}
+
+/** #4432 — the peer set, or the reason the roles door could not give it (logged). */
+async function peersOrRefusal(from: string, to: string): Promise<string[] | string> {
+  try { return await fetchPeers(); }
+  catch (e) {
+    const why = (e as Error).message;
+    log('warn', 'nudge.refused.roles-door', { from, to, error: why });
+    return why;
+  }
+}
+
 function registerNudgeRoutes(app: Express, store: MessageStore, metrics: Metrics, worker?: DeliveryWorker): void {
   app.post('/api/nudge', async (req, res) => {
     // #3485 — only the MCP server is the canonical caller. The pre-#3485 gate
@@ -216,18 +239,11 @@ function registerNudgeRoutes(app: Express, store: MessageStore, metrics: Metrics
     // can never trap — that's the safe-by-default Jeff chose.
     // #4432 — the peer set comes from the roles door; a door that does not
     // answer refuses the nudge loudly rather than guessing who is a peer.
-    let peers: string[];
-    try { peers = await fetchPeers(); }
-    catch (e) {
-      log('warn', 'nudge.refused.roles-door', { from, to, error: (e as Error).message });
-      return res.status(503).json({ error: 'roles door unreadable; nudge not stored', detail: (e as Error).message });
-    }
-    const { nudgeClass, expects } = readEnvelope(req.body, from, peers);
     // #4424 — an explicit target is accepted only when it is the recipient's
     // live agent run (Presence), never a session the sender names freely.
-    const targetSessionId = typeof req.body.target_session_id === 'string' ? req.body.target_session_id : undefined;
-    const refusal = await refuseTarget(to, targetSessionId);
-    if (refusal) return res.status(409).json(refusal);
+    const pre = await admitNudge(req.body, from, to);
+    if ('refused' in pre) return res.status(pre.status).json(pre.refused);
+    const { nudgeClass, expects, targetSessionId } = pre;
     const id = store.sendNudge(from, to, marked, traceId, nudgeClass, expects, targetSessionId);
     metrics.nudgesReceived.labels(from, to).inc();
     log('info', 'nudge.stored', { id, from, to, chars: marked.length, trace_id: traceId || undefined });
