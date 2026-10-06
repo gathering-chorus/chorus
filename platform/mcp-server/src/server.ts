@@ -2783,7 +2783,7 @@ async function executeChorusWerkLocked(
   // are absorbed into the round instead of superseding it. Without this, every
   // status poll after a present computed headChanged=true and RELAUNCHED the
   // whole build→demo (the 2026-07-23 #3592 three-round loop).
-  const existingRun = reconcileRunning(args.card_id, runsDir, () => currentWerkPatchId(werkDir));
+  const existingRun = reconcileRunning(args.card_id, runsDir, (rev) => currentWerkPatchId(werkDir, rev));
   // #3678 AC4 — a repeated announce is the SYSTEM's finding, not Jeff's: same
   // patch presenting again inside the window emits a loud spine warning.
   if (preReconcile?.phase === 'running' && existingRun?.phase === 'presented') {
