@@ -1391,6 +1391,8 @@ pub fn write_routes(plural: &str) -> Vec<String> {
         format!("DELETE /{}/:name/contains", plural), // remove contains edge
         format!("POST /{}/:name/has-child", plural),  // add has-child edge
         format!("DELETE /{}/:name/has-child", plural),// remove has-child edge
+        format!("POST /{}/:name/consumes-event", plural),   // #4438 add consumesEvent edge
+        format!("DELETE /{}/:name/consumes-event", plural), // #4438 remove consumesEvent edge
     ];
     // #4158 — the bulk transport is generated for EVERY served class, the same
     // way the single-entity routes are. Phase A (#3573) exposed it for
@@ -1474,6 +1476,9 @@ pub fn edge_predicate(edge: &str) -> Option<&'static str> {
         "partof" => Some("partOf"),
         "contains" => Some("contains"),
         "has-child" => Some("hasChild"),
+        // #4438 — a Product or Service records which events it reads. Rows change
+        // through the door, never a seed file (Jeff 2026-10-06).
+        "consumes-event" => Some("consumesEvent"),
         _ => None,
     }
 }
@@ -7743,6 +7748,10 @@ mod tests {
         assert_eq!(edge_predicate("partof"), Some("partOf"));
         assert_eq!(edge_predicate("contains"), Some("contains"));
         assert_eq!(edge_predicate("has-child"), Some("hasChild"));
+        // #4438 — the consumesEvent edge is writable; an unknown segment still is not.
+        assert_eq!(edge_predicate("consumes-event"), Some("consumesEvent"));
+        assert!(!edge_is_single_valued("consumes-event"));
+        assert_eq!(edge_predicate("consumes-anything"), None);
         assert_eq!(edge_predicate("bogus"), None);
         assert!(edge_is_single_valued("partof"));
         assert!(!edge_is_single_valued("contains"));
