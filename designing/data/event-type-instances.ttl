@@ -5749,3 +5749,16 @@ chorus:eventtype-werk-cancelled a chorus:EventType ;
     rdfs:comment "chorus_werk {action:'cancel'} (#4420): the card's running pipeline was stopped (act and its children), its slot sent env-down, and the run record and log say cancelled." ;
     chorus:payloadField "card: The card whose run was cancelled" ;
     chorus:payloadField "run_id: The cancelled run's id" .
+
+chorus:eventtype-agent-allowed-tools-installed a chorus:EventType ;
+    rdfs:label "agent.allowed_tools.installed" ;
+    chorus:eventName "agent.allowed_tools.installed" ;
+    chorus:eventCategory "fact" ;
+    chorus:producedBy chorus:roles ;
+    chorus:eventVersion "1" ;
+    chorus:atVertebra "directing" ;
+    chorus:emitterSource "chorus-agent" ;
+    rdfs:comment "#4432 — a Gemini session's allowed tools were generated from the Claude roles' allow rules at session start" ;
+    chorus:payloadField "allowed: How many Gemini tool names were written" ;
+    chorus:payloadField "runtime: The agent runtime (gemini)" ;
+    chorus:payloadField "unmapped: Claude allow rules with no Gemini tool, ;-separated" .

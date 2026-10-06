@@ -336,6 +336,9 @@ impl Supervisor {
         if !profile.allow_unguarded {
             guards_installed(&profile.runtime, &cwd)?;
         }
+        if profile.runtime == Runtime::Gemini {
+            gemini_allowed_installed()?;
+        }
         let (runtime_version, observed) = execution::probe_in(&profile, &cwd).await?;
         let capabilities = if profile.enforcement == Enforcement::Verified {
             let proof = profile
@@ -1025,6 +1028,26 @@ type ApiResult = std::result::Result<Json<Value>, (StatusCode, Json<Value>)>;
 pub fn guards_installed(runtime: &Runtime, cwd: &std::path::Path) -> Result<()> {
     let home = std::path::PathBuf::from(std::env::var_os("HOME").unwrap_or_default());
     guards_installed_in(runtime, cwd, &home)
+}
+/// #4432 — a Gemini session starts only with its allowed tools generated
+/// from the Claude roles' allow rules (CHORUS_ALLOW_RULES_FILE). Unset or
+/// unreadable refuses the session: without the list every tool call waits on
+/// Jeff's approval, the blocker this exists to remove.
+pub fn gemini_allowed_installed() -> Result<()> {
+    let home = std::path::PathBuf::from(std::env::var_os("HOME").unwrap_or_default());
+    gemini_allowed_installed_in(std::env::var_os("CHORUS_ALLOW_RULES_FILE").as_deref(), &home)
+}
+/// #4432 — as `gemini_allowed_installed`, with the source and home named (tests).
+pub fn gemini_allowed_installed_in(source: Option<&std::ffi::OsStr>, home: &std::path::Path) -> Result<()> {
+    let source = source
+        .ok_or("gemini allowed tools are not generated: CHORUS_ALLOW_RULES_FILE is unset, so every tool call would wait on Jeff's approval")?;
+    let (allowed, unmapped) = crate::allowed_tools::install_gemini_allowed(std::path::Path::new(source), home)?;
+    let _ = crate::spine(
+        "agent.allowed_tools.installed",
+        &std::env::var("CHORUS_ROLE").unwrap_or_else(|_| "unknown".into()),
+        &[("runtime", "gemini".into()), ("allowed", allowed.len().to_string()), ("unmapped", unmapped.join(";"))],
+    );
+    Ok(())
 }
 /// #4424 — as `guards_installed`, with the account home named (tests).
 pub fn guards_installed_in(runtime: &Runtime, cwd: &std::path::Path, home: &std::path::Path) -> Result<()> {
