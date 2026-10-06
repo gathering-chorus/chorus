@@ -104,7 +104,7 @@ def current_stage(pin):
     except OSError:
         return None
     stages = STAGE_RE.findall(tail)
-    if "WERK_EXIT=0" in tail:
+    if any(c == "0" for c in EXIT_RE.findall(tail)):
         return "act finished"
     return stages[-1].strip() if stages else None
 
@@ -115,9 +115,15 @@ def log_exit(pin):
     log = RUNS_DIR / f"{card}-{run_id}.log" if run_id else None
     if not log or not log.is_file():
         return None
-    m = re.search(r"WERK_EXIT=(\d+)", log.read_bytes()[-4000:].decode("utf-8", "replace"))
-    return int(m.group(1)) if m else None
+    codes = EXIT_RE.findall(log.read_bytes()[-4000:].decode("utf-8", "replace"))
+    if not codes:
+        return None
+    return codes[-1] if codes[-1] == "cancelled" else int(codes[-1])
 
+
+# #4420 reopened — the exit marker is a LINE of its own: a card's AC text that
+# mentions WERK_EXIT (printed by the demo step) made a running run read "stopped".
+EXIT_RE = re.compile(r"^WERK_EXIT=(\d+|cancelled)\s*$", re.M)
 
 # #4341 — one card's runs, read from their logs: start, finish, each step and
 # why it stopped. Bookkeeping steps are left out; they never say anything.
@@ -146,10 +152,22 @@ def fmt_dur(sec):
 def why_stopped(text, step):
     """The run's own words for its failed step."""
     if step == "test":
-        reds = re.findall(r"bats:(\S+) … FAIL", text)
+        # #4420 reopened — the tests that went red, from the run's own red lines
+        # (`!! <unit> WHY: <file> :: …` and `bats:<suite> … FAIL`), never a
+        # selection line: `jest-select: envelope-refusal-metric-3628` matched
+        # "refus" and named a test that never failed (Wren, Silas 10-06).
+        why_lines = re.findall(r"!! (\S+) WHY: (\S+) ::", text)
+        explained = {u for u, _ in why_lines}
+        reds = [Path(f).stem for _, f in why_lines]
+        for unit in re.findall(r"(\S+:\S+) … FAIL", text):
+            if unit not in explained:
+                kind, _, name = unit.partition(":")
+                reds.append(Path(name).stem if kind == "bats" else unit)
+        reds = list(dict.fromkeys(reds))
         if reds:
-            names = ", ".join(Path(r).stem for r in reds[:2])
+            names = ", ".join(reds[:2])
             return f"{len(reds)} red{'s' if len(reds) != 1 else ''}: {names}" + (" …" if len(reds) > 2 else "")
+        return ""
     if step == "prove-live":
         n = len(re.findall(r"\| not ok ", text.split("Run Main prove-live")[-1]))
         if n:
@@ -164,7 +182,12 @@ def run_summary(log):
     steps = [st for st in steps if st[0] not in QUIET_STEPS]
     failed = next((st for st in steps if not st[1]), None)
     names = [st[0] for st in steps]
-    if failed:
+    exits = EXIT_RE.findall(text)
+    if exits and exits[-1] == "cancelled":
+        # #4420 reopened — a cancel is not a failure (Wren, #4438 run 3)
+        started = [n for n in STARTED_RE.findall(text) if n not in QUIET_STEPS]
+        result, why = "cancelled", (f"at {started[-1]}" if started else "")
+    elif failed:
         result = f"failed  {failed[0]} ({fmt_dur(failed[2])})"
         why = why_stopped(text, failed[0])
     elif "accept" in names:
@@ -173,7 +196,7 @@ def run_summary(log):
         result = "presented"
         slow = sorted(steps, key=lambda st: -st[2])[:2]
         why = ", ".join(f"{n} {fmt_dur(d)}" for n, _, d in slow)
-    elif "WERK_EXIT" not in text:
+    elif not exits:
         # #4420 — the step IN FLIGHT is the last one act started, not the last
         # one that finished (Jeff 10-06: "your card is not in build its a cws bug").
         started = [n for n in STARTED_RE.findall(text) if n not in QUIET_STEPS]
@@ -256,6 +279,8 @@ def classify(pin, pid_starts, now_ms):
             # run FINISHED; calling it abandoned hid a failed test step (#4334).
             ended = log_exit(pin)
             if ended is not None:
+                if ended == "cancelled":
+                    return "cancelled", None
                 return ("landed" if pin.get("go") else "presented") if ended == 0 else "failed", None
             return "abandoned", "pin stale — recorded pid is dead"
         if pin_start is None or abs(proc_start - pin_start) > SLACK_MS:
@@ -266,7 +291,7 @@ def classify(pin, pid_starts, now_ms):
         if t is None or now_ms - t > PRESENTED_TTL_MS:
             return "abandoned", "presented round expired (>24h)"
         return "presented", None
-    if phase in ("landed", "failed"):
+    if phase in ("landed", "failed", "cancelled"):
         return phase, None
     return phase or "unknown", None
 
