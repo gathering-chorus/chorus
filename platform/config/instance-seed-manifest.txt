@@ -69,3 +69,5 @@ named-graph:designing/data/named-graph-instances.ttl
 a-d-r:designing/data/adr-instances.ttl
 governance-check:designing/data/governance-check-instances.ttl
 api-surface:designing/data/api-surface-instances.ttl
+# #4438 — the spine's event registry as model rows (generated from spine-events.json by platform/scripts/event-types-generate.py). After domains: producedBy points at Domain rows.
+event-type:designing/data/event-type-instances.ttl

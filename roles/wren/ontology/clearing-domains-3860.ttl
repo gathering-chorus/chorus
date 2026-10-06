@@ -81,6 +81,40 @@ chorus:EventTypeShape a sh:NodeShape ;
 
 chorus:events chorus:definesVocabulary chorus:EventType .
 
+# --- events as EDA: who produces, what it is about, what it carries (#4438) --
+# Jeff, 2026-10-06: "when we think about events in domains and eda does our owl
+# make sense? real business and system events that are consumable" and "how do
+# we register and consume and emit events". In event-driven terms an event
+# belongs to the domain that PRODUCES it, is ABOUT one thing in the model,
+# carries a PAYLOAD, has a VERSION, and is read by CONSUMERS. An event read by a
+# domain other than its producer is an integration event; that is derived from
+# the consumesEvent edges, never typed by hand.
+chorus:producedBy a owl:ObjectProperty ;
+    rdfs:label "producedBy" ; rdfs:domain chorus:EventType ; rdfs:range chorus:Domain ;
+    rdfs:comment "The domain that owns this event and is the only one that emits it (card.pulled is the cards domain's event). One producer per event type." .
+
+chorus:eventAbout a owl:ObjectProperty ;
+    rdfs:label "eventAbout" ; rdfs:domain chorus:EventType ;
+    rdfs:comment "The model class this event is about: card.pulled is about a Card, session.login about a Session. Absent when the event concerns no model thing (most diagnostics)." .
+
+chorus:payloadField a owl:DatatypeProperty ;
+    rdfs:label "payloadField" ; rdfs:domain chorus:EventType ; rdfs:range xsd:string ;
+    rdfs:comment "One field the event carries beyond the envelope, as 'name: meaning'. Repeatable; the set is the event's payload contract." .
+
+chorus:eventVersion a owl:DatatypeProperty ;
+    rdfs:label "eventVersion" ; rdfs:domain chorus:EventType ; rdfs:range xsd:string ;
+    rdfs:comment "The version of this event's contract. A change a consumer could notice (a field removed or renamed) bumps it." .
+
+chorus:consumesEvent a owl:ObjectProperty ;
+    rdfs:label "consumesEvent" ; rdfs:range chorus:EventType ;
+    rdfs:comment "A domain or service reads this event. No rdfs:domain: both Domain and Service consume. The graph answers 'who reads card.pulled' from these edges. Not chorus:consumes, which is a product using a shared service (chorus.ttl)." .
+
+chorus:EventTypeShape
+    sh:property [ sh:path chorus:producedBy ; sh:minCount 1 ; sh:maxCount 1 ; sh:class chorus:Domain ] ;
+    sh:property [ sh:path chorus:eventVersion ; sh:minCount 1 ; sh:maxCount 1 ; sh:datatype xsd:string ] ;
+    sh:property [ sh:path chorus:payloadField ; sh:datatype xsd:string ] ;
+    sh:property [ sh:path chorus:eventAbout ; sh:maxCount 1 ] .
+
 # --- messages: the nudge and its parent, modelled -------------------------
 chorus:Message a owl:Class ;
     rdfs:label "Message" ;
