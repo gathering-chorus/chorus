@@ -4808,10 +4808,77 @@ pub fn query_param(query: &str, key: &str) -> Option<String> {
 /// so the placement of VALUES is the fix, not the subquery. Ordering by subject IRI
 /// is a total, stable order, so cursor pagination keeps its meaning.
 pub fn collection_page_query(graph: &str, class: &str, limit: usize, offset: usize) -> String {
+    collection_page_query_filtered(graph, class, "", limit, offset)
+}
+
+/// The page query narrowed by `collection_filter`'s patterns ("" = whole collection).
+pub fn collection_page_query_filtered(graph: &str, class: &str, filter: &str, limit: usize, offset: usize) -> String {
     format!(
-        "SELECT (STR(?s) AS ?v) WHERE {{ GRAPH <{g}> {{ ?s a <{c}> }} }} ORDER BY ?s LIMIT {limit} OFFSET {offset}",
-        g = graph, c = class, limit = limit, offset = offset
+        "SELECT (STR(?s) AS ?v) WHERE {{ GRAPH <{g}> {{ ?s a <{c}>{f} }} }} ORDER BY ?s LIMIT {limit} OFFSET {offset}",
+        g = graph, c = class, f = filter, limit = limit, offset = offset
     )
+}
+
+/// Collection GET keys that page or shape the read rather than filter it.
+const COLLECTION_PARAMS: &[&str] = &["limit", "cursor", "depth"];
+
+/// #4433 — `GET <collection>?<field>=<value>` narrows the collection to the rows
+/// whose field holds that value, so a caller asks the API instead of writing its
+/// own SPARQL (Jeff, 2026-10-05: "we must not craft custom sparql to do what apis
+/// do"). The first caller: chorus-crawl asking for a Test's results by `ofTest`.
+///
+/// `fields` is the caller's EXPOSED projection (name, is-edge), so a filter can
+/// only test a field the caller could already read. An edge matches the target's
+/// local name (the value the collection serves for it); a literal matches exactly.
+/// Both bind a constant into the triple pattern, so the store answers from its
+/// index. An unknown key or an unsafe value is an error, never a silent "all rows".
+/// Returns the SPARQL patterns and the query-string to carry on `links.next`.
+pub fn collection_filter(query: &str, fields: &[(String, bool)]) -> Result<(String, String), String> {
+    let mut patterns = String::new();
+    let mut carried: Vec<&str> = Vec::new();
+    for kv in query.split('&').filter(|kv| !kv.is_empty()) {
+        let (key, raw) = kv.split_once('=').unwrap_or((kv, ""));
+        if COLLECTION_PARAMS.contains(&key) {
+            continue;
+        }
+        let Some((_, edge)) = fields.iter().find(|(n, _)| n == key) else {
+            return Err(format!("unknown filter '{key}': not a field this collection serves"));
+        };
+        let value = percent_decode(raw).ok_or_else(|| format!("filter '{key}': bad percent-encoding"))?;
+        if *edge {
+            if !is_safe_local(&value) {
+                return Err(format!("filter '{key}': '{value}' is not a row name"));
+            }
+            patterns.push_str(&format!(" . ?s <{NS}{key}> <{NS}{value}>"));
+        } else {
+            if value.is_empty() || value.chars().any(|c| c == '"' || c == '\\' || c.is_control()) {
+                return Err(format!("filter '{key}': value must be non-empty, with no quote, backslash or control character"));
+            }
+            patterns.push_str(&format!(" . ?s <{NS}{key}> \"{value}\""));
+        }
+        carried.push(kv);
+    }
+    Ok((patterns, carried.join("&")))
+}
+
+/// `%XX` and `+` decoding for one query-string value. None on a broken escape or
+/// bytes that are not UTF-8.
+pub fn percent_decode(s: &str) -> Option<String> {
+    let b = s.as_bytes();
+    let mut out = Vec::with_capacity(b.len());
+    let mut i = 0;
+    while i < b.len() {
+        match b[i] {
+            b'%' => {
+                let hex = s.get(i + 1..i + 3)?;
+                out.push(u8::from_str_radix(hex, 16).ok()?);
+                i += 3;
+            }
+            b'+' => { out.push(b' '); i += 1; }
+            c => { out.push(c); i += 1; }
+        }
+    }
+    String::from_utf8(out).ok()
 }
 
 /// The projection for ONE page: `where_body` is the collection's GRAPH block
@@ -5109,6 +5176,12 @@ fn handle_inner(path: &str, table: &RouteTable, meta: &mut ReqMeta, authed: bool
         let offset = query_param(query, "cursor")
             .and_then(|c| c.parse::<usize>().ok())
             .unwrap_or(0);
+        // #4433 — field filters narrow the count and the page (the projection
+        // is bound to the page's subjects, so it needs none) and ride links.next.
+        let (filter, filter_qs) = match collection_filter(query, &extra) {
+            Ok(f) => f,
+            Err(e) => return (400, error_envelope(table, "", 400, "bad-filter", &json_escape(&e), &[])),
+        };
         let where_body = format!(
             "GRAPH <{g}> {{ ?s a <{c}> . OPTIONAL {{ ?s <{ns}label> ?clabel }} OPTIONAL {{ ?s <http://www.w3.org/2000/01/rdf-schema#label> ?rlabel }} OPTIONAL {{ ?s <{ns}status> ?status }}{opts} BIND(CONCAT(STR(?s), \"\\u001F\", COALESCE(?clabel, ?rlabel, \"\"), \"\\u001F\", COALESCE(?status, \"\"){cat}) AS ?v) }}",
             g = table.instances_graph, c = table.class, ns = NS, opts = opts, cat = cat
@@ -5117,14 +5190,14 @@ fn handle_inner(path: &str, table: &RouteTable, meta: &mut ReqMeta, authed: bool
         // it stays cheap as the collection grows. `count` in the envelope keeps
         // meaning "how many exist", not "how many this page holds".
         let count_q = format!(
-            "SELECT (COUNT(DISTINCT ?s) AS ?v) WHERE {{ GRAPH <{g}> {{ ?s a <{c}> }} }}",
-            g = table.instances_graph, c = table.class
+            "SELECT (COUNT(DISTINCT ?s) AS ?v) WHERE {{ GRAPH <{g}> {{ ?s a <{c}>{f} }} }}",
+            g = table.instances_graph, c = table.class, f = filter
         );
         let total: i64 = match sparql_json(&count_q) {
             Ok(body) => select_v(&body).first().and_then(|v| v.parse::<i64>().ok()).unwrap_or(0),
             Err(_) => 0,
         };
-        let page_q = collection_page_query(&table.instances_graph, &table.class, limit, offset);
+        let page_q = collection_page_query_filtered(&table.instances_graph, &table.class, &filter, limit, offset);
         let subjects: Vec<String> = match sparql_json(&page_q) {
             Ok(body) => select_v(&body),
             Err(e) => return (502, error_envelope(table, "", 502, "upstream", &json_escape(&e), &[])),
@@ -5156,7 +5229,10 @@ fn handle_inner(path: &str, table: &RouteTable, meta: &mut ReqMeta, authed: bool
                     let (shape, shape_version, commit) = shape_meta(kind);
                     let self_url = format!("/{}{}", API_VERSION, public);
                     let links = match next {
-                        Some(n) => format!("{{ \"next\": \"/{}{}?cursor={}&limit={}\" }}", API_VERSION, public, n, limit),
+                        Some(n) => {
+                            let more = if filter_qs.is_empty() { String::new() } else { format!("&{}", json_escape(&filter_qs)) };
+                            format!("{{ \"next\": \"/{}{}?cursor={}&limit={}{}\" }}", API_VERSION, public, n, limit, more)
+                        }
                         None => "{}".to_string(),
                     };
                     (200, envelope(kind, None, &self_url, &shape, &shape_version, &commit, &table.instances_graph, !table.secured.is_empty(), &data, &links, Some(total), &table.model_version))
@@ -6630,6 +6706,49 @@ mod tests {
         assert_eq!(query_param("limit=20&cursor=10", "cursor").as_deref(), Some("10"));
         assert_eq!(query_param("limit=20", "cursor"), None);
         assert_eq!(query_param("", "limit"), None);
+    }
+
+    // #4433 — a collection answers "rows whose field = value", so callers stop
+    // writing their own SPARQL.
+    fn result_fields() -> Vec<(String, bool)> {
+        vec![("ofTest".into(), true), ("result".into(), false)]
+    }
+
+    #[test]
+    fn a_filter_on_an_edge_binds_the_target_row() {
+        let (p, qs) = collection_filter("ofTest=test-a-bats-one&limit=50", &result_fields()).unwrap();
+        assert_eq!(p, format!(" . ?s <{NS}ofTest> <{NS}test-a-bats-one>"));
+        assert_eq!(qs, "ofTest=test-a-bats-one", "the filter rides links.next; paging keys do not");
+        let page = collection_page_query_filtered("urn:g", "urn:C", &p, 50, 0);
+        assert!(page.contains(&format!("?s a <urn:C> . ?s <{NS}ofTest> <{NS}test-a-bats-one> }}")), "{page}");
+    }
+
+    #[test]
+    fn a_filter_on_a_literal_matches_the_decoded_value() {
+        let (p, _) = collection_filter("result=did%20not+run", &result_fields()).unwrap();
+        assert_eq!(p, format!(" . ?s <{NS}result> \"did not run\""));
+    }
+
+    #[test]
+    fn no_filter_is_the_whole_collection() {
+        assert_eq!(collection_filter("limit=10&cursor=20", &result_fields()).unwrap(), (String::new(), String::new()));
+        assert_eq!(collection_page_query_filtered("urn:g", "urn:C", "", 10, 20), collection_page_query("urn:g", "urn:C", 10, 20));
+    }
+
+    // NEGATIVE PROOF — a key the collection does not serve must fail, not quietly
+    // return every row (a typo would otherwise read as "these are all the results").
+    #[test]
+    fn an_unknown_or_unexposed_field_is_refused() {
+        assert!(collection_filter("ofTset=x", &result_fields()).is_err());
+        assert!(collection_filter("secretPlan=x", &result_fields()).is_err());
+    }
+
+    #[test]
+    fn a_value_cannot_break_out_of_the_query() {
+        assert!(collection_filter("ofTest=x>%20}%20DROP%20ALL%20{%20<y", &result_fields()).is_err());
+        assert!(collection_filter("result=a%22%20}%20DROP", &result_fields()).is_err());
+        assert!(collection_filter("result=", &result_fields()).is_err());
+        assert!(collection_filter("result=%ZZ", &result_fields()).is_err());
     }
 
     // #3561 — the advertised path MUST be the served path. Negative proof for the

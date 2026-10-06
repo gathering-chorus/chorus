@@ -80,14 +80,12 @@ for r in json.load(sys.stdin)['data']:
     if '$TAG' in r.get('filePath',''): print(json.dumps(r))"
 }
 # #4416 — the crawl sees only the fixture: its own HOME (so the box's live
-# log files are not walked, and never change between two passes), its own
-# validate records (not the /crawler-validate page's), and, on the private
-# door, the private store for its reads.
+# log files are not walked, and never change between two passes) and its own
+# validate records (not the /crawler-validate page's). #4433 — every read goes
+# through CHORUS_OWL_API, so on the private door the reads are the door's too.
 crawl() {
-  local q="${FUSEKI_QUERY:-http://localhost:3030/pods/query}"
-  [ -z "${PRIVATE_DOOR_DS:-}" ] || q="${FUSEKI_BASE_URL:-http://localhost:3030}/$PRIVATE_DOOR_DS/query"
   mkdir -p "$BATS_TEST_TMPDIR/home"
-  HOME="$BATS_TEST_TMPDIR/home" CHORUS_VALIDATE_DIR="$BATS_TEST_TMPDIR/validate" FUSEKI_QUERY="$q" \
+  HOME="$BATS_TEST_TMPDIR/home" CHORUS_VALIDATE_DIR="$BATS_TEST_TMPDIR/validate" \
     "$BIN" "$@" 2>&1
 }
 teardown() {
