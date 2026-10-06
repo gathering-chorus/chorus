@@ -6089,3 +6089,194 @@ mod no_plan_line_4251 {
         );
     }
 }
+
+/// #4436 — a unit's wall time as the log shows it: `0.4s`, `12.4s`, `6m31s`.
+pub fn fmt_secs(secs: f64) -> String {
+    if secs < 60.0 {
+        format!("{:.1}s", secs)
+    } else {
+        let s = secs.round() as u64;
+        format!("{}m{:02}s", s / 60, s % 60)
+    }
+}
+
+/// #4436 — the `n` slowest units, slowest first, and the test step's total.
+pub fn slowest_units_report(costs: &[(String, f64)], n: usize, total_secs: f64) -> String {
+    let mut sorted: Vec<&(String, f64)> = costs.iter().collect();
+    sorted.sort_by(|a, b| b.1.partial_cmp(&a.1).unwrap_or(std::cmp::Ordering::Equal));
+    let mut out = format!("   test step {} over {} unit(s); slowest:\n", fmt_secs(total_secs), costs.len());
+    for (name, secs) in sorted.into_iter().take(n) {
+        out.push_str(&format!("   {:>8}  {}\n", fmt_secs(*secs), name));
+    }
+    out
+}
+
+#[cfg(test)]
+mod unit_timing_4436 {
+    use super::*;
+
+    #[test]
+    fn times_read_the_way_a_person_reads_them() {
+        assert_eq!(fmt_secs(0.42), "0.4s");
+        assert_eq!(fmt_secs(12.44), "12.4s");
+        assert_eq!(fmt_secs(391.0), "6m31s");
+    }
+
+    #[test]
+    fn the_report_lists_the_slowest_first_and_the_total() {
+        let costs = vec![("bats:a".to_string(), 2.0), ("jest:b".to_string(), 391.0), ("cargo-test:c".to_string(), 0.0)];
+        let r = slowest_units_report(&costs, 2, 400.0);
+        let lines: Vec<&str> = r.lines().collect();
+        assert_eq!(lines[0], "   test step 6m40s over 3 unit(s); slowest:");
+        assert!(lines[1].ends_with("jest:b") && lines[1].contains("6m31s"), "{}", lines[1]);
+        assert!(lines[2].ends_with("bats:a"));
+        assert_eq!(lines.len(), 3, "n caps the list");
+    }
+
+    // NEGATIVE PROOF — a 0s unit is never reported as the slowest.
+    #[test]
+    fn a_zero_second_unit_is_not_the_slowest() {
+        let costs = vec![("cargo-test:c".to_string(), 0.0), ("bats:a".to_string(), 2.0)];
+        assert!(slowest_units_report(&costs, 1, 2.0).lines().nth(1).unwrap().ends_with("bats:a"));
+    }
+}
+
+/// #4436 — a file tagged with this many domains is narrowed to the domains of
+/// the routes its changed lines sit in. Measured 2026-10-06 over 2,831 tracked
+/// files: 2,651 have 1 domain, 111 have 2, 40 have 3, 13 have 4, and 13 have 5
+/// or more (server.ts 22). Jeff: "i just dont want to run 1 hour of tests for a
+/// very small blast radius change" — and every domain test still runs (08:52).
+pub const HUB_MIN_DOMAINS: usize = 5;
+
+/// Express-style route registrations in a source file, with each handler's
+/// extent: (first line, last line, route paths), 1-based. A registration is a
+/// line starting `app.|router.` + get/post/put/patch/delete/all, its path(s) the
+/// quoted string(s) before the handler; its extent runs to the first line that
+/// closes at column 0 (`})` / `});`).
+pub fn route_extents(src: &str) -> Vec<(usize, usize, Vec<String>)> {
+    let lines: Vec<&str> = src.lines().collect();
+    let mut out = Vec::new();
+    for (i, line) in lines.iter().enumerate() {
+        let t = line.trim_start();
+        let Some(rest) = ["app.", "router."].iter().find_map(|p| t.strip_prefix(p)) else { continue };
+        let Some(args) = ["get(", "post(", "put(", "patch(", "delete(", "all("].iter().find_map(|m| rest.strip_prefix(m)) else { continue };
+        // the path argument: a quoted string, or an array of them, before the first `,` that follows it
+        let head = args.split("=>").next().unwrap_or(args);
+        let mut paths = Vec::new();
+        let mut cur = String::new();
+        let mut quote: Option<char> = None;
+        for c in head.chars() {
+            match (quote, c) {
+                (None, '\'' | '"' | '`') => quote = Some(c),
+                (Some(q), c) if c == q => { paths.push(std::mem::take(&mut cur)); quote = None; }
+                (Some(_), c) => cur.push(c),
+                (None, ',') if !paths.is_empty() && !head.trim_start().starts_with('[') => break,
+                (None, ']') => break,
+                _ => {}
+            }
+        }
+        paths.retain(|p| p.starts_with('/'));
+        if paths.is_empty() {
+            continue;
+        }
+        let end = lines[i..].iter().position(|l| l.starts_with("})")).map(|k| i + k).unwrap_or(i);
+        out.push((i + 1, end + 1, paths));
+    }
+    out
+}
+
+/// The route paths whose handlers hold every changed line, or None when any
+/// changed line sits outside every route (a helper, an import, a middleware) —
+/// then the caller keeps the file's full domain list.
+pub fn routes_of_changed_lines(
+    extents: &[(usize, usize, Vec<String>)],
+    changed: &[usize],
+) -> Option<std::collections::BTreeSet<String>> {
+    let mut out = std::collections::BTreeSet::new();
+    for &l in changed {
+        let (_, _, paths) = extents.iter().find(|(a, b, _)| *a <= l && l <= *b)?;
+        out.extend(paths.iter().cloned());
+    }
+    if out.is_empty() { None } else { Some(out) }
+}
+
+/// A changed line that cannot change behaviour by itself: a named import
+/// (`import { a, b } from './x';`) only brings a symbol in, and the line that
+/// USES it sits in a route. A side-effect import (`import './x'`) still counts.
+pub fn is_named_import(line: &str) -> bool {
+    let t = line.trim();
+    t.starts_with("import ") && t.contains(" from ")
+}
+
+/// New-side line numbers from `git diff -U0` output (`@@ -a,b +c,d @@`). A pure
+/// deletion (`+c,0`) counts the line it sits after, so it still names a place.
+pub fn changed_lines_from_unified_diff(diff: &str) -> Vec<usize> {
+    let mut out = Vec::new();
+    for l in diff.lines().filter(|l| l.starts_with("@@")) {
+        let Some(plus) = l.split_whitespace().find(|w| w.starts_with('+')) else { continue };
+        let mut it = plus[1..].split(',');
+        let start: usize = it.next().and_then(|s| s.parse().ok()).unwrap_or(0);
+        let count: usize = it.next().and_then(|s| s.parse().ok()).unwrap_or(1);
+        if count == 0 {
+            out.push(start.max(1));
+        } else {
+            out.extend(start..start + count);
+        }
+    }
+    out
+}
+
+#[cfg(test)]
+mod hub_routes_4436 {
+    use super::*;
+
+    const SERVER: &str = "import x from 'y';\n\
+app.use(express.json());\n\
+app.get('/api/chorus/search', async (req, res) => {\n\
+  const r = 1;\n\
+  res.json(r);\n\
+});\n\
+\n\
+function helper() { return 2; }\n\
+\n\
+app.get(['/borg/quality', '/borg/quality/'], (_req, res) =>\n\
+  res.send('ok'));\n\
+app.post(\"/api/cards/:id\", handler);\n";
+
+    #[test]
+    fn routes_and_their_handler_lines_are_found() {
+        let e = route_extents(SERVER);
+        assert_eq!(e[0], (3, 6, vec!["/api/chorus/search".to_string()]));
+        assert_eq!(e[1].2, vec!["/borg/quality".to_string(), "/borg/quality/".to_string()]);
+        assert_eq!(e[2].2, vec!["/api/cards/:id".to_string()]);
+    }
+
+    #[test]
+    fn a_change_inside_one_route_names_that_route_only() {
+        let e = route_extents(SERVER);
+        let r = routes_of_changed_lines(&e, &[4, 5]).unwrap();
+        assert_eq!(r.into_iter().collect::<Vec<_>>(), vec!["/api/chorus/search".to_string()]);
+    }
+
+    // NEGATIVE PROOF — a change outside every route (the helper, the imports)
+    // is not narrowed: the caller keeps every domain of the file.
+    #[test]
+    fn a_change_outside_every_route_is_not_narrowed() {
+        let e = route_extents(SERVER);
+        assert_eq!(routes_of_changed_lines(&e, &[4, 8]), None);
+        assert_eq!(routes_of_changed_lines(&e, &[1]), None);
+    }
+
+    #[test]
+    fn a_named_import_is_not_behaviour_but_a_side_effect_import_is() {
+        assert!(is_named_import("import { fetchContextPriorities, statusesFromBucketRows } from './handlers/context-priorities';"));
+        assert!(!is_named_import("import './register-hooks';"));
+        assert!(!is_named_import("  const r = 1;"));
+    }
+
+    #[test]
+    fn diff_hunks_give_new_side_lines() {
+        let d = "diff --git a/x b/x\n@@ -10,2 +10,3 @@ fn\n+a\n@@ -40 +41 @@\n@@ -50,2 +52,0 @@\n";
+        assert_eq!(changed_lines_from_unified_diff(d), vec![10, 11, 12, 41, 52]);
+    }
+}

@@ -570,12 +570,17 @@ fn run(args: &[String]) -> Result<i32, String> {
             (CheckKind::DocCoherence, None) => run_doc_coherence(&werk),
             _ => true, // unreachable given check_plan's construction
         };
-        unit_costs.push((format!("{}:{}", check.kind.label(), target),
-            check_started.elapsed().as_secs_f64()));
+        let secs = check_started.elapsed().as_secs_f64();
+        unit_costs.push((format!("{}:{}", check.kind.label(), target), secs));
         let verdict = if unmeasured.last().map(|u| u == target).unwrap_or(false) {
             "UNMEASURED"
         } else if ok { "ok" } else { "FAIL" };
-        println!("   {}:{} … {}", check.kind.label(), target, verdict);
+        // #4436 — every unit's wall time on its own line, and with its result on
+        // the spine, so "why did this run take an hour" has an answer per unit.
+        println!("   {}:{} … {} {}", check.kind.label(), target, verdict, werk_test::fmt_secs(secs));
+        emit_spine("test.unit.timed", &role, &card, &trace,
+            &[("check", check.kind.label()), ("unit", target), ("verdict", verdict),
+              ("seconds", &format!("{:.1}", secs))]);
         if !ok {
             any_failed = true;
             failed_count += 1;
@@ -625,6 +630,9 @@ fn run(args: &[String]) -> Result<i32, String> {
     // per-unit culprit table) and NEVER blocks a green run — Jeff's ruling after
     // run 66 failed 1642 green tests at 701s.
     let phase_elapsed = phase_started.elapsed().as_secs_f64();
+    // #4436 — the slowest units and the step total, every run, not only when
+    // the budget is blown: the hour on #4432 run 11 had no per-unit answer.
+    print!("{}", werk_test::slowest_units_report(&unit_costs, 10, phase_elapsed));
     let budgets_path = format!("{}/platform/config/werk-phase-budgets.tsv",
         std::env::var("CHORUS_HOME").unwrap_or_default());
     let target = std::fs::read_to_string(&budgets_path).ok()
@@ -3196,12 +3204,103 @@ fn domain_select(werk: &str, changed: &[String], rows: &[TestRow]) -> Option<wer
         if !out.status.success() {
             continue;
         }
-        let placed = werk_test::parse_domains_of(&String::from_utf8_lossy(&out.stdout));
+        let mut placed = werk_test::parse_domains_of(&String::from_utf8_lossy(&out.stdout));
         if !placed.is_empty() {
+            narrow_hub_files(werk, changed, &mut placed);
             return Some(werk_test::domain_selection(changed, &placed, rows));
         }
     }
     None
+}
+
+/// #4436 — a changed file tagged with HUB_MIN_DOMAINS+ domains (server.ts:
+/// 22) is narrowed to the domains of the routes its changed lines sit in, read
+/// from the graph's Endpoint rows (filePath + routePath → hasDomain). Every
+/// domain test of those domains still runs. Any changed line outside every
+/// route, or a route the graph does not know, keeps the file's full list — a
+/// change never selects fewer tests than it needs. The log says which.
+fn narrow_hub_files(werk: &str, changed: &[String], placed: &mut std::collections::HashMap<String, Vec<String>>) {
+    for f in changed {
+        let Some(full) = placed.get(f).cloned() else { continue };
+        if full.len() < werk_test::HUB_MIN_DOMAINS {
+            continue;
+        }
+        let keep = |why: &str| println!("domain-select: {} has {} domains — kept all ({})", f, full.len(), why);
+        // a replay reads the file as that commit left it, so its hunk line
+        // numbers point at the right lines
+        let src = match std::env::var("WERK_TEST_REPLAY") {
+            Ok(c) => Command::new("git").args(["-C", werk, "show", &format!("{c}:{f}")]).output().ok()
+                .filter(|o| o.status.success()).map(|o| String::from_utf8_lossy(&o.stdout).into_owned()),
+            Err(_) => std::fs::read_to_string(format!("{}/{}", werk, f)).ok(),
+        };
+        let Some(src) = src else { keep("file not readable"); continue };
+        let extents = werk_test::route_extents(&src);
+        if extents.is_empty() { keep("no routes in it"); continue; }
+        let diff = card_diff_of(werk, f);
+        let text: Vec<&str> = src.lines().collect();
+        let lines: Vec<usize> = werk_test::changed_lines_from_unified_diff(&diff).into_iter()
+            .filter(|l| !text.get(l.saturating_sub(1)).is_some_and(|t| werk_test::is_named_import(t)))
+            .collect();
+        if lines.is_empty() { keep("no changed lines found"); continue; }
+        let Some(routes) = werk_test::routes_of_changed_lines(&extents, &lines) else {
+            keep("a changed line sits outside every route");
+            continue;
+        };
+        let by_route = endpoint_domains_of(f);
+        let mut doms: std::collections::BTreeSet<String> = Default::default();
+        let mut unknown: Vec<&String> = Vec::new();
+        for r in &routes {
+            match by_route.get(r) {
+                Some(ds) if !ds.is_empty() => doms.extend(ds.iter().cloned()),
+                _ => unknown.push(r),
+            }
+        }
+        if !unknown.is_empty() || doms.is_empty() {
+            keep(&format!("route(s) the graph has no Endpoint row for: {}", unknown.iter().map(|s| s.as_str()).collect::<Vec<_>>().join(", ")));
+            continue;
+        }
+        println!("domain-select: {} has {} domains — changed lines sit in {} route(s) [{}] → domain(s) [{}]",
+            f, full.len(), routes.len(), routes.iter().cloned().collect::<Vec<_>>().join(", "),
+            doms.iter().cloned().collect::<Vec<_>>().join(", "));
+        placed.insert(f.clone(), doms.into_iter().collect());
+    }
+}
+
+/// The card's diff of one file, `-U0`, against the same base as the changed list.
+fn card_diff_of(werk: &str, f: &str) -> String {
+    let range = match std::env::var("WERK_TEST_REPLAY") {
+        Ok(c) => format!("{c}^..{c}"),
+        Err(_) => {
+            let base = Command::new("git").args(["-C", werk, "merge-base", "origin/main", "HEAD"]).output().ok()
+                .filter(|o| o.status.success())
+                .map(|o| String::from_utf8_lossy(&o.stdout).trim().to_string())
+                .unwrap_or_else(|| "HEAD~1".to_string());
+            format!("{}..HEAD", base)
+        }
+    };
+    Command::new("git").args(["-C", werk, "diff", "-U0", &range, "--", f]).output()
+        .map(|o| String::from_utf8_lossy(&o.stdout).into_owned()).unwrap_or_default()
+}
+
+/// routePath → domains for one file's Endpoint rows, from the API (#4433's
+/// field filter). An empty map when the API does not answer: callers keep the
+/// file's full domain list.
+fn endpoint_domains_of(f: &str) -> std::collections::HashMap<String, Vec<String>> {
+    let base = std::env::var("CHORUS_OWL_API").unwrap_or_else(|_| "http://localhost:3360".to_string());
+    let url = format!("{}/v1/code/endpoints?filePath={}&limit=1000", base, f.replace('%', "%25").replace(' ', "%20"));
+    let pipe = format!("curl -s -m 15 '{}' | jq -r '.data[] | [.routePath, .hasDomain] | @tsv'", url);
+    let mut m: std::collections::HashMap<String, Vec<String>> = Default::default();
+    if let Ok(o) = Command::new("bash").args(["-c", &pipe]).output() {
+        for l in String::from_utf8_lossy(&o.stdout).lines() {
+            if let Some((r, d)) = l.split_once('\t') {
+                let e = m.entry(r.to_string()).or_default();
+                for x in d.split(',').map(werk_test::norm_domain).filter(|x| !x.is_empty()) {
+                    if !e.contains(&x) { e.push(x); }
+                }
+            }
+        }
+    }
+    m
 }
 
 /// #4419 — the Rust crate a path lives in.
