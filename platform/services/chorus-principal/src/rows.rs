@@ -532,7 +532,10 @@ pub fn agent_launch_cmd_checked(agent_bin: &str, role: &str, run: &str) -> Resul
     Ok(agent_launch_cmd(agent_bin, role, run))
 }
 pub fn agent_launch_cmd(agent_bin: &str, role: &str, run: &str) -> String {
-    format!("CHORUS_SESSION_RUN='{}' '{}' launch {}", run, agent_bin, role)
+    // #4432 — the workspace is the role home the pane was just cd'd into
+    // (launch_line), so the supervisor never needs a second copy of where a
+    // role lives; a role_workspaces entry pointing elsewhere can't win.
+    format!("CHORUS_SESSION_RUN='{}' '{}' launch {} --cwd \"$PWD\"", run, agent_bin, role)
 }
 /// #4432 — where a principal's own supervisor listens: an agent that runs as
 /// its own Mac account (#4383) has its chorus-agentd in that account's home,
@@ -557,7 +560,8 @@ mod agent_launch_tests_4424 {
     #[test]
     fn launch_binds_the_runner_to_the_login_run() {
         let cmd = agent_launch_cmd("/x/chorus-agent", "wren", "wren-run-1a2b");
-        assert_eq!(cmd, "CHORUS_SESSION_RUN='wren-run-1a2b' '/x/chorus-agent' launch wren");
+        // #4432 — and to the role home the pane is in, never a second workspace map
+        assert_eq!(cmd, "CHORUS_SESSION_RUN='wren-run-1a2b' '/x/chorus-agent' launch wren --cwd \"$PWD\"");
     }
     #[test]
     fn a_run_name_that_could_break_the_shell_is_refused() {
