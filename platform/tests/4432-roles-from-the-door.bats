@@ -42,7 +42,7 @@ typed_lists() {
     "$1/directing/clearing/src/server.ts" "$1/directing/clearing/src/spine-tail.ts" "$1/directing/clearing/src/chat.ts" \
     "$1/directing/clearing/public/index.html" "$1/directing/clearing/public/clearing-tree.js" \
     "$1/platform/api/src/handlers/context-roles.ts" "$1/platform/api/public/chorus-pages/loom.html" \
-    "$1/platform/api/public/chorus-pages/werk.html" "$1/platform/pulse/src/store.ts" \
+    "$1/platform/api/public/chorus-pages/werk.html" "$1/platform/api/views/team.ejs" "$1/platform/pulse/src/store.ts" \
     "$1/platform/mcp-server/src/main-stdio.ts" "$1/platform/services/chorus-hooks/src/hooks/nudge_drain.rs" 2>/dev/null
 }
 
