@@ -19,7 +19,7 @@ pub fn run(args: &[String]) -> ExitCode {
     let role_dir_name = crate::shared::state_paths::role_dir(role).unwrap();
     let role_dir = format!("{}/{}", repo_root(), role_dir_name);
     let board_ts = format!("{}/platform/scripts/cards", repo_root());
-    let out_path = format!("/tmp/session-context-{}.md", role);
+    let out_path = crate::shared::state_paths::session_context_file(role);
 
     // Werk version — #2311 AC#5: sole source is PROTOCOL_VERSION. manifest.json
     // holds "_build" (internal change-detection counter) which must never be
@@ -260,7 +260,7 @@ pub fn run(args: &[String]) -> ExitCode {
     let _ = fs::write(&out_path, &out);
     // Also write session-start file — roles read this, not the context cache.
     // Without this, session-start-<role>.md goes stale forever (#1781 bug).
-    let start_path = format!("/tmp/session-start-{}.md", role);
+    let start_path = crate::shared::state_paths::session_start_file(role, ".md");
     let _ = fs::write(&start_path, &out);
     let lines = out.lines().count();
     // #3890 — stderr, NOT stdout: session-start's stdout is the hook JSON

@@ -10,6 +10,20 @@ use std::fs;
 use std::path::Path;
 
 /// #2614: returns true (and prints a skip line) when RUN_INTEGRATION is unset.
+/// #4432 — this process's own session dir (see session_principle_inject.rs).
+fn session_tmp() -> &'static str {
+    static DIR: std::sync::OnceLock<tempfile::TempDir> = std::sync::OnceLock::new();
+    DIR.get_or_init(|| tempfile::tempdir().unwrap()).path().to_str().unwrap()
+}
+
+fn shim() -> std::process::Command {
+    let mut cmd = std::process::Command::new(SHIM);
+    cmd.env("CHORUS_SESSION_TMP", session_tmp())
+        .env("CHORUS_SESSION_INIT_DIR", format!("{}/init", session_tmp()))
+        .env("CHORUS_SESSIONS_DIR", format!("{}/sessions", session_tmp()));
+    cmd
+}
+
 fn skip_unless_integration(reason: &str) -> bool {
     if std::env::var("RUN_INTEGRATION").is_err() {
         eprintln!("SKIP: axis-4 — {reason} (set RUN_INTEGRATION=1 to run)");
@@ -24,7 +38,7 @@ const SHIM: &str = env!("CARGO_BIN_EXE_chorus-hook-shim");
 #[test]
 fn session_start_emits_additional_context_json() {
     if skip_unless_integration("writes /tmp/session-context-<role>.md via session-start") { return; }
-    let output = std::process::Command::new(SHIM)
+    let output = shim()
         .args(["session-start", "silas"])
         .output()
         .expect("session-start should execute");
@@ -67,7 +81,7 @@ fn session_start_emits_additional_context_json() {
 #[test]
 fn session_start_additional_context_contains_boot_payload() {
     if skip_unless_integration("writes /tmp/session-context-<role>.md via session-start") { return; }
-    let output = std::process::Command::new(SHIM)
+    let output = shim()
         .args(["session-start", "silas"])
         .output()
         .expect("session-start should execute");
@@ -81,7 +95,7 @@ fn session_start_additional_context_contains_boot_payload() {
         .expect("additionalContext must exist");
 
     // Session-start file content should appear in additionalContext.
-    let file = fs::read_to_string("/tmp/session-start-silas.md")
+    let file = fs::read_to_string(format!("{}/session-start-silas.md", session_tmp()))
         .expect("session-start file must be written");
 
     // A distinctive first-line marker from the cache output must be in both.
@@ -107,11 +121,11 @@ fn session_start_additional_context_contains_boot_payload() {
 #[test]
 fn session_start_writes_done() {
     if skip_unless_integration("writes /tmp/session-context-<role>.md via session-start") { return; }
-    let init_dir = "/tmp/claude-session-init";
+    let init_dir = format!("{}/init", session_tmp());
     let done = format!("{}/silas.done", init_dir);
     let _ = fs::remove_file(&done);
 
-    let output = std::process::Command::new(SHIM)
+    let output = shim()
         .args(["session-start", "silas"])
         .output()
         .expect("session-start should execute");

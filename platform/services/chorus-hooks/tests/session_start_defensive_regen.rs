@@ -11,7 +11,12 @@ use std::path::PathBuf;
 use std::process::Command;
 use chorus_hooks::shared::state_paths::chorus_root;
 
-const INIT_DIR: &str = "/tmp/claude-session-init";
+/// #4432 — this process's own boot-marker dir; the test used to clear the LIVE
+/// role's .pending/.done, which can lock a running role out of every tool.
+fn init_dir() -> &'static str {
+    static DIR: std::sync::OnceLock<tempfile::TempDir> = std::sync::OnceLock::new();
+    DIR.get_or_init(|| tempfile::tempdir().unwrap()).path().to_str().unwrap()
+}
 const TEST_ROLE: &str = "wren";
 
 fn skip_unless_integration(reason: &str) -> bool {
@@ -31,8 +36,8 @@ struct GateGuard {
 
 impl GateGuard {
     fn new(role: &str) -> Self {
-        let pending = PathBuf::from(format!("{}/{}.pending", INIT_DIR, role));
-        let done = PathBuf::from(format!("{}/{}.done", INIT_DIR, role));
+        let pending = PathBuf::from(format!("{}/{}.pending", init_dir(), role));
+        let done = PathBuf::from(format!("{}/{}.done", init_dir(), role));
         Self {
             had_pending: pending.exists(),
             had_done: done.exists(),
@@ -41,7 +46,7 @@ impl GateGuard {
         }
     }
     fn clear(&self) {
-        let _ = fs::create_dir_all(INIT_DIR);
+        let _ = fs::create_dir_all(init_dir());
         let _ = fs::remove_file(&self.pending);
         let _ = fs::remove_file(&self.done);
     }
@@ -93,6 +98,8 @@ fn session_start_regen_heals_stale_claudemd() {
     let out = Command::new(&shim)
         .args(["session-start", TEST_ROLE])
         .env("CHORUS_SESSIONS_DIR", world.join("sessions"))
+        .env("CHORUS_SESSION_INIT_DIR", init_dir())
+        .env("CHORUS_SESSION_TMP", world.to_str().unwrap())
         .output()
         .expect("chorus-hook-shim must be built; run platform/scripts/build-signed.sh chorus-hooks");
     assert!(out.status.success(), "session-start failed: {:?}", out);

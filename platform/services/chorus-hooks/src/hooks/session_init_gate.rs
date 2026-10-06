@@ -1,10 +1,8 @@
-use crate::shared::state_paths::chorus_root;
 use crate::state::AppState;
 use crate::types::{permission_deny_json, HookInput, HookResponse};
 use std::path::Path;
-use tracing::{info, error};
+use tracing::info;
 
-const INIT_DIR: &str = "/tmp/claude-session-init";
 
 /// #2311 rescope: binary gate. .pending exists AND .done missing → deny
 /// all Write/Edit/Bash with zero exemptions. Protocol contract check no
@@ -12,11 +10,11 @@ const INIT_DIR: &str = "/tmp/claude-session-init";
 /// (commands/session.rs) so context is injected via hookSpecificOutput,
 /// not via "please read the file" prose. Read is plain-allow.
 pub async fn check(input: &HookInput, state: &AppState) -> HookResponse {
-    check_with_dir(input, state, INIT_DIR).await
+    check_with_dir(input, state, &crate::shared::state_paths::session_init_dir()).await
 }
 
 /// Internal entry point parameterized on the session-init dir. Production
-/// `check()` always passes `INIT_DIR`. Tests pass a tmpdir to escape the
+/// `check()` passes `state_paths::session_init_dir()`. Tests pass a tmpdir to escape the
 /// daemon-vs-test race on the global /tmp/claude-session-init path (#2558).
 ///
 /// Migration note (#2524 "always hermetic" tier): cleanest long-term shape
@@ -47,7 +45,7 @@ pub async fn check_with_dir(input: &HookInput, state: &AppState, init_dir: &str)
     // is no drift for a runtime check to detect.
     if tool == "Read" {
         let file_path = input.get_tool_input_str("file_path");
-        let expected = format!("/tmp/session-start-{}.md", role_str);
+        let expected = crate::shared::state_paths::session_start_file(role_str, ".md");
         if file_path == expected
             && Path::new(&pending).exists()
             && !Path::new(&done).exists()
@@ -81,9 +79,9 @@ pub async fn check_with_dir(input: &HookInput, state: &AppState, init_dir: &str)
             "Session init gate: SessionStart boot did not complete for role '{}'. \
              Check {}/{}.done — if missing, the SessionStart \
              hook did not fire (see session.bootstrap.* spine events), or read \
-             /tmp/session-start-{}.md to complete boot in-session. This is a \
+             {} to complete boot in-session. This is a \
              binary gate: no Bash exemptions.",
-            role_str, init_dir, role_str, role_str
+            role_str, init_dir, role_str, crate::shared::state_paths::session_start_file(role_str, ".md")
         )));
     }
 
@@ -96,123 +94,9 @@ pub async fn check_with_dir(input: &HookInput, state: &AppState, init_dir: &str)
 // drift class left to banner. Committed-state coherence is CI's job
 // (`claudemd-gen check-version`).
 
-/// Gate smoke check (#1929): verify critical gates block when they should.
-/// Sets temporary fix-card state, sends a synthetic Edit, confirms gates deny.
-/// NOTE (#3288): this has had no production caller since the #2311 rescope —
-/// its only call site was the already-dead retired Read handler, so it never
-/// actually ran at boot. Kept (unit-tested) rather than deleted because
-/// re-wiring #1929's boot smoke is its own decision, not a version-card
-/// drive-by.
-#[allow(dead_code)]
-fn run_gate_smoke(role: &str, state: &AppState) -> bool {
-    use crate::hooks::log_first_gate;
-
-    // Force is_fix_card() to true regardless of live board state — the smoke
-    // is verifying gate-blocking logic, not querying chorus-api. Without this,
-    // smoke is non-deterministic: passes only when some role has a type:fix
-    // WIP card on the board (#2644 AC2).
-    let prior_override = std::env::var("CHORUS_TEST_FORCE_FIX_CARD").ok();
-    // SAFETY: smoke runs at session boot before workers spawn; tests are serial.
-    unsafe { std::env::set_var("CHORUS_TEST_FORCE_FIX_CARD", "1"); }
-
-    // Save current state file
-    let state_path = format!("/tmp/claude-team-scan/{}-declared.json", role);
-    let backup = std::fs::read_to_string(&state_path).ok();
-
-    // Write temporary fix-card state — gates should fire for fix cards
-    let smoke_state = format!(
-        r#"{{"role":"{}","state":"building","card":99999,"card_type":"fix","ts":{}}}"#,
-        role,
-        std::time::SystemTime::now()
-            .duration_since(std::time::UNIX_EPOCH)
-            .unwrap_or_default()
-            .as_secs()
-    );
-    let _ = std::fs::create_dir_all("/tmp/claude-team-scan");
-    let _ = std::fs::write(&state_path, &smoke_state);
-
-    // Synthetic Edit on a cross-domain code file — log_first_gate should DENY
-    // (no log evidence in session).
-    let smoke_cwd = format!("{}/platform/roles/{}",
-        chorus_root(),
-        match role { "wren" => "wren", "silas" => "silas", _ => "kade" });
-    let smoke_session_id = format!("smoke-{}", role);
-
-    // Seed a minimal JSONL file so gates have session data to scan (and find no evidence).
-    // Without this, gates fall open on empty session data and smoke can't verify blocking.
-    let home = std::env::var("HOME").unwrap_or_else(|_| "/Users/jeffbridwell".to_string());
-    let project_key = smoke_cwd.replace('/', "-");
-    #[allow(clippy::manual_strip)]
-    let project_key = if project_key.starts_with('-') { &project_key[1..] } else { &project_key };
-    let jsonl_dir = format!("{}/.claude/projects/-{}", home, project_key);
-    let jsonl_path = format!("{}/{}.jsonl", jsonl_dir, smoke_session_id);
-    let _ = std::fs::create_dir_all(&jsonl_dir);
-    // Neutral content — no log markers, no synthesis markers
-    let _ = std::fs::write(&jsonl_path, r#"{"type":"assistant","content":"Starting smoke check session."}"#);
-
-    let smoke_input = HookInput {
-        tool_name: Some("Edit".to_string()),
-        tool_input: Some(serde_json::json!({
-            "file_path": format!("{}/platform/services/smoke-test.rs", chorus_root()),
-            "old_string": "x",
-            "new_string": "y"
-        })),
-        tool_response: None,
-        session_id: Some(smoke_session_id.clone()),
-        cwd: Some(smoke_cwd),
-        prompt: None,
-        stop_hook_active: None,
-        hook_type: None,
-        deploy_role: Some(role.to_string()),
-        card_type: None,
-        trace_id: None,
-        tool_use_id: None,
-        tool_output_is_error: None,
-    };
-
-    let mut all_pass = true;
-
-    // Smoke #1: log_first_gate — should deny (no log evidence)
-    let log_result = log_first_gate::check(&smoke_input, state);
-    if log_result.stdout.is_none() {
-        error!(
-            gate = "smoke-check",
-            target = "log_first_gate",
-            role = role,
-            "SMOKE FAILED: log_first_gate allowed a fix-card edit without log inspection."
-        );
-        eprintln!("⚠ GATE SMOKE FAILED: log_first_gate did not block. Gates may be silently broken.");
-        all_pass = false;
-    } else {
-        info!(gate = "smoke-check", target = "log_first_gate", role = role, "SMOKE PASS");
-    }
-
-    // #4429 — memory_gate (context synthesis) logs and never blocks, so it is
-    // not a smoke target; tests/context_synthesis_never_blocks_4429.rs guards it.
-
-    // Restore original state and clean up smoke artifacts
-    match backup {
-        Some(original) => { let _ = std::fs::write(&state_path, original); }
-        None => { let _ = std::fs::remove_file(&state_path); }
-    }
-    let _ = std::fs::remove_file(&jsonl_path);
-    // SAFETY: see set_var above — single-threaded smoke path.
-    unsafe {
-        match prior_override {
-            Some(v) => std::env::set_var("CHORUS_TEST_FORCE_FIX_CARD", v),
-            None => std::env::remove_var("CHORUS_TEST_FORCE_FIX_CARD"),
-        }
-    }
-
-    if all_pass {
-        info!(gate = "smoke-check", role = role, "All gate smoke checks passed");
-    }
-
-    all_pass
-}
-
 #[cfg(test)]
 mod tests {
+    use crate::shared::state_paths::chorus_root;
     use super::*;
     use crate::types::HookInput;
     use serde_json::json;
@@ -267,57 +151,12 @@ mod tests {
         assert_eq!(r.exit_code, 0);
     }
 
-    #[test]
-    fn smoke_check_passes_when_gates_block() {
-        // With fix-card state and no log/synthesis evidence,
-        // both gates should deny → smoke returns true.
-        // Must use a real role name — is_fix_card() only checks kade/silas/wren.
-        let state = AppState::new();
-        let state_path = "/tmp/claude-team-scan/wren-declared.json";
-        let backup = std::fs::read_to_string(state_path).ok();
-
-        let result = run_gate_smoke("wren", &state);
-        assert!(result, "smoke should pass when gates correctly block");
-
-        // Restore any pre-existing state
-        match backup {
-            Some(original) => { let _ = std::fs::write(state_path, original); }
-            None => { let _ = std::fs::remove_file(state_path); }
-        }
-    }
-
-    #[test]
-    fn smoke_check_restores_original_state() {
-        let state = AppState::new();
-        let state_path = "/tmp/claude-team-scan/kade-declared.json";
-        let _ = std::fs::create_dir_all("/tmp/claude-team-scan");
-        let pre_existing = std::fs::read_to_string(state_path).ok();
-
-        let original = r#"{"role":"kade","state":"building","card":42,"card_type":"new","ts":1234}"#;
-        std::fs::write(state_path, original).unwrap();
-
-        let _result = run_gate_smoke("kade", &state);
-
-        let restored = std::fs::read_to_string(state_path).unwrap();
-        assert_eq!(restored, original, "original state should be restored after smoke");
-
-        match pre_existing {
-            Some(orig) => { let _ = std::fs::write(state_path, orig); }
-            None => { let _ = std::fs::remove_file(state_path); }
-        }
-    }
-
     #[tokio::test]
     async fn session_boot_blocked_when_smoke_fails_pending() {
+        // #4432 — its own marker dir; this used to arm the LIVE wren.pending.
         let state = AppState::new();
-        let _ = std::fs::create_dir_all(INIT_DIR);
-        let pending = format!("{}/wren.pending", INIT_DIR);
-        let done = format!("{}/wren.done", INIT_DIR);
-        let had_pending = Path::new(&pending).exists();
-        let had_done = Path::new(&done).exists();
-
-        std::fs::write(&pending, "").unwrap();
-        let _ = std::fs::remove_file(&done);
+        let dir = tempfile::tempdir().unwrap();
+        std::fs::write(dir.path().join("wren.pending"), "").unwrap();
 
         let input = HookInput {
             tool_use_id: None,
@@ -330,10 +169,7 @@ mod tests {
             deploy_role: Some("wren".to_string()),
             card_type: None,
             trace_id: None, tool_output_is_error: None,};
-        let r = check(&input, &state).await;
+        let r = check_with_dir(&input, &state, dir.path().to_str().unwrap()).await;
         assert!(r.stdout.is_some(), "Edit should be blocked when session init not complete");
-
-        if !had_pending { let _ = std::fs::remove_file(&pending); }
-        if had_done { let _ = std::fs::write(&done, ""); }
     }
 }

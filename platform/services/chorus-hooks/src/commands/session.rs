@@ -21,9 +21,10 @@ pub fn session_start_cmd(args: &[String]) -> ExitCode {
     }
     let role_dir = state_paths::role_dir(role).unwrap();
     let role_path = format!("{}/{}", repo_root(), role_dir);
-    let cache = format!("/tmp/session-context-{}.md", role);
-    let _out = format!("/tmp/session-start-{}.md", role);
-    let init_dir = "/tmp/claude-session-init";
+    let cache = state_paths::session_context_file(role);
+    let _out = state_paths::session_start_file(role, ".md");
+    let init_dir = state_paths::session_init_dir();
+    let init_dir = init_dir.as_str();
 
     // Build cache if missing or stale (>10 min)
     let cache_stale = std::path::Path::new(&cache).metadata().ok()

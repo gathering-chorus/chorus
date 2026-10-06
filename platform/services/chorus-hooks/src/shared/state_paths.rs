@@ -153,6 +153,32 @@ pub fn run_dir_from(override_dir: Option<&str>, home: Option<&str>) -> String {
 /// Session init gate directory
 pub const SESSION_INIT_DIR: &str = "/tmp/claude-session-init";
 
+/// #4432 — the boot markers' directory. CHORUS_SESSION_INIT_DIR moves it so a
+/// test brings its own: the tests that wrote the live one could lock a real
+/// role out of every tool mid-run (they armed kade.pending and removed .done).
+pub fn session_init_dir() -> String {
+    std::env::var("CHORUS_SESSION_INIT_DIR").ok().filter(|d| !d.is_empty())
+        .unwrap_or_else(|| SESSION_INIT_DIR.to_string())
+}
+
+/// #4432 — where session-start-<role>.md, its principles hash and the
+/// session-context cache live. CHORUS_SESSION_TMP moves all three together
+/// (tests); production is /tmp, unchanged.
+pub fn session_tmp_dir() -> String {
+    std::env::var("CHORUS_SESSION_TMP").ok().filter(|d| !d.is_empty())
+        .unwrap_or_else(|| "/tmp".to_string())
+}
+
+/// `<session tmp>/session-start-<role><suffix>` (suffix ".md" or "-principles.hash").
+pub fn session_start_file(role: &str, suffix: &str) -> String {
+    format!("{}/session-start-{}{}", session_tmp_dir(), role, suffix)
+}
+
+/// `<session tmp>/session-context-<role>.md`
+pub fn session_context_file(role: &str) -> String {
+    format!("{}/session-context-{}.md", session_tmp_dir(), role)
+}
+
 /// Chat directory
 pub const CHAT_DIR: &str = "/tmp/chorus-chat";
 
