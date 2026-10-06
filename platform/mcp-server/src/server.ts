@@ -2789,7 +2789,9 @@ async function executeChorusWerkLocked(
   if (preReconcile?.phase === 'running' && existingRun?.phase === 'presented') {
     warnIfRepeatedAnnounce(existingRun, args.role, args.card_id, spawnFn, scriptsDir, pathMod);
   }
-  if (preReconcile?.phase === 'running' && existingRun?.phase === 'failed') {
+  // #4420 reopened — an explicit retry is never swallowed by the poll that
+  // discovers the failure (Jeff 10-06: two retries today returned the old red).
+  if (preReconcile?.phase === 'running' && existingRun?.phase === 'failed' && args.retry !== true) {
     return mcpJson({
       ok: true, verb: 'chorus_werk', phase: 'failed', attached: true,
       role: args.role, card_id: args.card_id, accepter,
