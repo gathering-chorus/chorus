@@ -27,7 +27,7 @@ function deps(over: Partial<ContextRolesDeps> = {}): ContextRolesDeps {
     sparql: stubSparql(),
     readEvents: () => [],
     listWipCards: () => [],
-    listAgentRoles: async () => agentRolesFrom(DOOR),
+    listAgentRoles: async () => agentRolesFrom(DOOR).map((name) => ({ name, sessions: [] })),
     now: () => new Date(T0),
     ...over,
   };
@@ -51,17 +51,38 @@ describe('fetchContextRoles (#4028 — derived, never declared)', () => {
       { ownedBy: 'principal-wren', sessionState: 'open' }, { ownedBy: 'principal-abby-normal', sessionState: 'open' },
       { ownedBy: 'principal-kade', sessionState: 'closed' }, { ownedBy: 'principal-jeff', sessionState: 'open' },
     ] };
-    expect(loggedInRoles(sessions, DOOR)).toEqual(['jeff', 'wren', 'abby-normal']);
+    expect(loggedInRoles(sessions, DOOR).map((r) => r.name)).toEqual(['jeff', 'wren', 'abby-normal']);
   });
 
   it('#4432 NEGATIVE PROOF: Abby logs out (session closed) and her tile goes', () => {
     const before = { data: [{ ownedBy: 'principal-abby-normal', sessionState: 'open' }] };
     const after = { data: [{ ownedBy: 'principal-abby-normal', sessionState: 'closed' }] };
-    expect(loggedInRoles(before, DOOR)).toEqual(['abby-normal']);
+    expect(loggedInRoles(before, DOOR).map((r) => r.name)).toEqual(['abby-normal']);
     expect(loggedInRoles(after, DOOR)).toEqual([]);
     expect(() => loggedInRoles({ error: 'down' }, DOOR)).toThrow(/sessions door/);
     // and Jeff's own tile follows his login the same way
     expect(loggedInRoles({ data: [{ ownedBy: 'principal-jeff', sessionState: 'closed' }] }, DOOR)).toEqual([]);
+  });
+
+  it('#4432 one tile per principal: two open sessions are one row carrying both, oldest first (Jeff 2026-10-06)', async () => {
+    const sessions = { data: [
+      { ownedBy: 'principal-wren', sessionState: 'open', channel: 'pane', startedAt: '2026-10-06T12:46:00Z', lastSeenAt: '2026-10-06T12:50:00Z' },
+      { ownedBy: 'principal-wren', sessionState: 'open', channel: 'pane', startedAt: '2026-10-02T13:03:00Z', lastSeenAt: '2026-10-02T19:51:00Z' },
+      { ownedBy: 'principal-wren', sessionState: 'closed', channel: 'pane', startedAt: '2026-10-01T09:00:00Z', lastSeenAt: '2026-10-01T10:00:00Z' },
+    ] };
+    const rows = loggedInRoles(sessions, DOOR);
+    expect(rows).toHaveLength(1);
+    expect(rows[0].sessions.map((x) => x.startedAt)).toEqual(['2026-10-02T13:03:00Z', '2026-10-06T12:46:00Z']);
+    const r = await fetchContextRoles(deps({ listAgentRoles: async () => rows }), '/api/chorus/context/roles');
+    expect(r.body.data.roles.map((x) => [x.name, x.sessions.length])).toEqual([['wren', 2]]);
+  });
+
+  it('#4432 NEGATIVE PROOF: a closed session is never listed inside the tile', () => {
+    const rows = loggedInRoles({ data: [
+      { ownedBy: 'principal-kade', sessionState: 'open', channel: 'pane', startedAt: '2026-10-06T11:00:00Z' },
+      { ownedBy: 'principal-kade', sessionState: 'closed', channel: 'agent', startedAt: '2026-10-06T10:00:00Z' },
+    ] }, DOOR);
+    expect(rows[0].sessions).toEqual([{ channel: 'pane', startedAt: '2026-10-06T11:00:00Z', lastSeenAt: '' }]);
   });
 
   it('#4432 a human or unkinded row never gets an agent tile', () => {

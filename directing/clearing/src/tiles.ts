@@ -105,6 +105,8 @@ export interface RoleTile {
   lastAction: string;
   lastActionAge: string;
   sessionAlive: boolean;
+  /** #4432 — "2 sessions · pane 10-02 13:03 (seen 10-02 15:51) · pane 08:46 (seen 08:50)" */
+  sessionsLine?: string;
   /** #2168 — ALL WIP cards owned by this role, sourced from pulse.board.wip_cards.
    *  Tile must surface every card the role owns, not just their declared one. */
   cards?: string[];
@@ -144,6 +146,30 @@ export interface DerivedRoleRow {
   detail?: string | null;
   lastActivity?: string | null;
   stale?: boolean;
+  /** #4432 — this principal's open sessions, oldest first. */
+  sessions?: Array<{ channel?: string; startedAt?: string; lastSeenAt?: string }>;
+}
+
+/** #4432 — Boston wall clock: "08:46" today, "10-02 13:03" any other day. */
+function bostonClock(iso: string | undefined, now: Date): string {
+  const t = iso ? new Date(iso) : null;
+  if (!t || Number.isNaN(t.getTime())) return '?';
+  const fmt = (d: Date, o: Intl.DateTimeFormatOptions) => new Intl.DateTimeFormat('en-CA', { timeZone: 'America/New_York', ...o }).format(d);
+  const day = (d: Date) => fmt(d, { month: '2-digit', day: '2-digit' });
+  const hm = fmt(t, { hour: '2-digit', minute: '2-digit', hour12: false });
+  return day(t) === day(now) ? hm : `${day(t)} ${hm}`;
+}
+
+/**
+ * #4432 — Jeff 2026-10-06: tiles are logged-in principals, not sessions, but
+ * "that visibility is important so i can see - at least until we stabilize
+ * clearing". One line inside the tile: how many sessions, and for each its
+ * channel, when it started and when it was last seen.
+ */
+export function sessionsLine(sessions: DerivedRoleRow['sessions'], now: Date = new Date()): string {
+  if (!sessions || sessions.length === 0) return '';
+  const each = sessions.map((x) => `${x.channel || '?'} ${bostonClock(x.startedAt, now)} (seen ${bostonClock(x.lastSeenAt, now)})`);
+  return `${sessions.length} session${sessions.length === 1 ? '' : 's'} · ${each.join(' · ')}`;
 }
 
 export class TilePoller {
@@ -253,7 +279,8 @@ export class TilePoller {
   }
 
   getTiles(): RoleTile[] {
-    return this.roleList.map((r) => this.tiles.get(r)!);
+    const now = new Date();
+    return this.roleList.map((r) => ({ ...this.tiles.get(r)!, sessionsLine: sessionsLine(this.rolesFromApi.get(r)?.sessions, now) }));
   }
 
   getPulse(): PulseState | null {

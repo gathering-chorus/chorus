@@ -114,6 +114,7 @@
   .tile-state .dot { display: inline-block; width: 6px; height: 6px; border-radius: 50%; }
   .tile-age { color: var(--text-muted); font-size: 0.7rem; }
   .tile-action { color: var(--text-muted); font-size: 0.7rem; margin-top: 0.3rem; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .tile-sessions { color: var(--text-muted); font-size: 0.65rem; margin-top: 0.2rem; white-space: normal; overflow-wrap: anywhere; }
 
   .tile-jeff .tile-name { color: #c9d1d9; font-weight: 800; }
   .tile-jeff { border-color: rgba(201,209,217,0.4); background: rgba(201,209,217,0.05); }
@@ -948,6 +949,7 @@ function renderTiles(tiles) {
           <span class="tile-age">${t.lastActionAge || ''}</span>
         </div>
         ${action ? `<div class="tile-action">${escapeHtml(action)}</div>` : ''}
+        ${t.sessionsLine ? `<div class="tile-sessions">${escapeHtml(t.sessionsLine)}</div>` : ''}
         <div class="tile-fold-btn" onclick="event.stopPropagation(); toggleFold('${t.role}')">${foldRole === t.role ? '▲ hide' : '▼ stream'}</div>
         ${foldRole === t.role ? '<div class="tile-fold-btn" onclick="event.stopPropagation(); toggleFoldMode()">' + ({unified:'🌐 all roles', commands:'⚡ commands', terminal:'📄 terminal'}[foldMode] || foldMode) + '</div>' : ''}
       </div>

@@ -48,29 +48,43 @@ export function agentRolesFrom(body: unknown): string[] {
   return agents;
 }
 
+/** #4432 — one open session of a principal, as its tile lists it. */
+export interface OpenSession { channel: string; startedAt: string; lastSeenAt: string }
+
+/** #4432 — a logged-in principal and its open sessions (one tile, many sessions). */
+export interface LoggedInRole { name: string; sessions: OpenSession[] }
+
 /**
  * #4432 — Jeff 2026-10-05 18:57: "the clearing needs to dynamically render
  * logged in principals." The roles (Jeff's and the agents') with an open Session (login → logout,
  * #4406: no timer ends one), in the roles door's rolePriority order. A role
  * with no open session has no tile; a login adds one, a logout removes it.
+ * Jeff 2026-10-06 08:05: tiles are principals, not sessions, but he wants to
+ * see each principal's sessions inside its tile "until we stabilize clearing",
+ * so every row carries its open sessions, oldest first.
  */
-export function loggedInRoles(sessionsBody: unknown, rolesBody: unknown): string[] {
+export function loggedInRoles(sessionsBody: unknown, rolesBody: unknown): LoggedInRole[] {
   // Jeff and the agents alike (Wren 18:59: "logged in principals", not agent
   // roles): every agent or human role row, Jeff first by rolePriority 0.
   const body = rolesBody as { data?: unknown } | null;
   if (!Array.isArray(body?.data)) throw new Error('the roles door answered with no data list');
-  const agents = ((body as { data: unknown[] }).data as Array<AgentRoleRow & { roleKind?: string }>)
+  const names = ((body as { data: unknown[] }).data as Array<AgentRoleRow & { roleKind?: string }>)
     .filter((r) => (r.roleKind === 'agent' || r.roleKind === 'human') && r.name)
     .sort((a, b) => (Number(a.rolePriority ?? 99) - Number(b.rolePriority ?? 99)) || a.name.localeCompare(b.name))
     .map((r) => r.name);
   const rows = (sessionsBody as { data?: unknown } | null)?.data;
   if (!Array.isArray(rows)) throw new Error('the sessions door answered with no data list');
-  const open = new Set(
-    (rows as Array<{ sessionState?: string; ownedBy?: string }>)
-      .filter((r) => r.sessionState === 'open' && r.ownedBy)
-      .map((r) => String(r.ownedBy).replace(/^principal-/, '')),
-  );
-  return agents.filter((a) => open.has(a));
+  const open = new Map<string, OpenSession[]>();
+  for (const r of rows as Array<Partial<OpenSession> & { sessionState?: string; ownedBy?: string }>) {
+    if (r.sessionState !== 'open' || !r.ownedBy) continue;
+    const role = String(r.ownedBy).replace(/^principal-/, '');
+    const list = open.get(role) ?? [];
+    list.push({ channel: r.channel ?? '', startedAt: r.startedAt ?? '', lastSeenAt: r.lastSeenAt ?? '' });
+    open.set(role, list);
+  }
+  return names
+    .filter((n) => open.has(n))
+    .map((n) => ({ name: n, sessions: open.get(n)!.sort((a, b) => a.startedAt.localeCompare(b.startedAt)) }));
 }
 
 export interface ContextRolesDeps {
@@ -80,8 +94,8 @@ export interface ContextRolesDeps {
   readEvents: (role: string, sinceMs: number) => SpineLine[] | Promise<SpineLine[]>;
   /** The board's WIP cards with owners. */
   listWipCards: () => WipCardEntry[];
-  /** #4432 — the agent roles from the roles door; throws when it can't answer. */
-  listAgentRoles: () => Promise<string[]>;
+  /** #4432 — the logged-in principals and their open sessions; throws when the doors can't answer. */
+  listAgentRoles: () => Promise<LoggedInRole[]>;
   /** Override in tests so timestamps are deterministic. */
   now?: () => Date;
 }
@@ -115,6 +129,8 @@ export interface ContextRolesRow {
   /** Consumer shape kept from #2193; now the same derivation as `state`/`card`. */
   derived_state: { state: string | null; card: number | null; wip_count: number | null; recent_commit_count: number | null } | null;
   drift_state: DriftState;
+  /** #4432 — this principal's open sessions, oldest first (one tile, N sessions). */
+  sessions: OpenSession[];
 }
 
 export interface ContextRolesResponse {
@@ -122,7 +138,7 @@ export interface ContextRolesResponse {
   body: ContextEnvelope<{ roles: ContextRolesRow[] }>;
 }
 
-async function shapeRoleRow(deps: ContextRolesDeps, name: string, nowMs: number, wip: WipCardEntry[]): Promise<ContextRolesRow> {
+async function shapeRoleRow(deps: ContextRolesDeps, { name, sessions }: LoggedInRole, nowMs: number, wip: WipCardEntry[]): Promise<ContextRolesRow> {
   const events = await deps.readEvents(name, nowMs - DEMO_LOOKBACK_MS);
   const d = stateFromStreams({ role: name, events, wipCards: wip, now: nowMs });
   const stale = d.lastActivity === null
@@ -140,6 +156,7 @@ async function shapeRoleRow(deps: ContextRolesDeps, name: string, nowMs: number,
     source: 'streams',
     derived_state: { state: d.state, card: d.card, wip_count: d.wip_count, recent_commit_count: null },
     drift_state: { divergent: false, inferred_stale: false, card_declared: null, card_inferred: d.card },
+    sessions,
   };
 }
 
@@ -147,7 +164,7 @@ export async function fetchContextRoles(
   deps: ContextRolesDeps,
   sourceUrl: string,
 ): Promise<ContextRolesResponse> {
-  let roles: string[];
+  let roles: LoggedInRole[];
   try { roles = await deps.listAgentRoles(); }
   catch (e) {
     return { status: 503, body: { error: 'roles door unreadable; no tiles guessed', detail: (e as Error).message } as unknown as ContextRolesResponse['body'] };
@@ -155,6 +172,6 @@ export async function fetchContextRoles(
   const header = await stampHeader(deps.sparql, null);
   const nowMs = (deps.now?.() ?? new Date()).getTime();
   const wip = deps.listWipCards();
-  const rows: ContextRolesRow[] = await Promise.all(roles.map((name) => shapeRoleRow(deps, name, nowMs, wip)));
+  const rows: ContextRolesRow[] = await Promise.all(roles.map((r) => shapeRoleRow(deps, r, nowMs, wip)));
   return { status: 200, body: buildEnvelope(header, sourceUrl, { roles: rows }) };
 }
