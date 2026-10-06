@@ -178,11 +178,10 @@ fn run(args: &[String]) -> Result<i32, String> {
     }
     // #4419 — select by domain: every registered test (any layer) in the
     // domains the changed files touch, from the crawler's own placement rules.
-    // A changed file no rule places runs its whole package, and says so.
+    // A changed file no rule places is refused and named (#4419 reopened, #4169).
     // Jeff, 2026-10-02: the card's domain tests run HERE, in werk-test and the
     // demo, before the land — never after it.
     let dsel = domain_select(&werk, &changed, &rows);
-    let mut untagged_pkgs: Vec<String> = Vec::new();
     match &dsel {
         None => println!("domain-select: UNMEASURED — the crawler's --domains-of did not answer; import-graph selection only"),
         Some(d) => {
@@ -192,19 +191,24 @@ fn run(args: &[String]) -> Result<i32, String> {
                 d.domains.iter().cloned().collect::<Vec<_>>().join(", "),
                 d.tests.len()
             );
-            for f in &d.untagged {
-                let pkg = werk_test::ts_package_of(f).or_else(|| crate_of(f));
-                match pkg {
-                    Some(p) => {
-                        println!("domain-select: {} has no domain — running its package {} whole", f, p);
-                        if !untagged_pkgs.contains(&p) {
-                            untagged_pkgs.push(p);
-                        }
-                    }
-                    None => println!("domain-select: {} has no domain and no package — nothing extra to run", f),
-                }
+            // #4419 reopened (Wren, Jeff 2026-10-06: "we already fixed that bug") — a
+            // changed file in a package with no domain used to run its whole
+            // package (#4438: 13 of 14 files → whole packages). #4169 and Jeff
+            // 2026-09-13: never widen; fail and fix the data. Refuse, naming each.
+            let refused = werk_test::untagged_in_a_unit(&d.untagged, &|f: &str| werk_test::ts_package_of(f).or_else(|| crate_of(f)));
+            for f in d.untagged.iter().filter(|f| !refused.iter().any(|(r, _)| r == *f)) {
+                println!("domain-select: {} has no domain and no package — nothing to run for it", f);
             }
-            for f in d.tests.keys().chain(untagged_pkgs.iter()) {
+            if !refused.is_empty() {
+                for (f, unit) in &refused {
+                    eprintln!("domain-select: REFUSED — {} (in {}) has no domain. Tag it (`@domain:` header or a placement rule) and re-run.", f, unit);
+                }
+                eprintln!("  Nothing ran. A card never widens to a whole package for an untagged file (#4169).");
+                emit_spine("test.scope.refused", &role, &card, &trace,
+                    &[("reason", "untagged"), ("path", refused[0].0.as_str()), ("count", &refused.len().to_string())]);
+                std::process::exit(2);
+            }
+            for f in d.tests.keys() {
                 if let Some(u) = unit_for_test(f) {
                     if !units.contains(&u) {
                         units.push(u);
@@ -300,11 +304,6 @@ fn run(args: &[String]) -> Result<i32, String> {
         };
         for (f, why) in &d.tests {
             add(f, why);
-        }
-        for p in &untagged_pkgs {
-            for r in rows.iter().filter(|r| r.file_path.starts_with(&format!("{p}/"))) {
-                add(&r.file_path, &format!("package-whole: untagged change in {p}"));
-            }
         }
         for s in sels.iter_mut() {
             s.test_files.sort();

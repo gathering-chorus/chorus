@@ -6289,3 +6289,31 @@ app.post(\"/api/cards/:id\", handler);\n";
         assert_eq!(changed_lines_from_unified_diff(d), vec![10, 11, 12, 41, 52]);
     }
 }
+
+/// #4419 — the untagged changed files that sit in a package or crate: each one
+/// used to run its whole unit. Returned (file, unit) so the run can refuse and
+/// name them. A file in no unit has nothing to run and is not refused.
+pub fn untagged_in_a_unit(untagged: &[String], unit_of: &dyn Fn(&str) -> Option<String>) -> Vec<(String, String)> {
+    untagged.iter().filter_map(|f| unit_of(f).map(|u| (f.clone(), u))).collect()
+}
+
+#[cfg(test)]
+mod untagged_refused_4419 {
+    use super::*;
+
+    fn unit(f: &str) -> Option<String> {
+        f.strip_prefix("platform/api/").map(|_| "platform/api".to_string())
+    }
+
+    #[test]
+    fn an_untagged_file_in_a_package_is_named_for_refusal() {
+        let got = untagged_in_a_unit(&["platform/api/src/x.ts".into(), "README.md".into()], &unit);
+        assert_eq!(got, vec![("platform/api/src/x.ts".to_string(), "platform/api".to_string())]);
+    }
+
+    // NEGATIVE PROOF — a file in no unit is not refused (nothing would have run).
+    #[test]
+    fn a_file_in_no_unit_is_not_refused() {
+        assert!(untagged_in_a_unit(&["README.md".into()], &unit).is_empty());
+    }
+}
