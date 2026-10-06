@@ -1400,10 +1400,6 @@
       "about": "Card",
       "category": "fact",
       "version": "1",
-      "consumers": [
-        "pulse",
-        "service-werk"
-      ],
       "vertebra": "building",
       "source": "chorus-events",
       "description": "Card pulled to WIP — role started building",

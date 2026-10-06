@@ -119,7 +119,7 @@ export function handleSpineEvent(req: Req, res: Res, deps: SpineEventDeps): void
     return;
   }
   // #4438 — the emit door checks the EventType. The registry's events are
-  // generated from the model rows (designing/data/event-type-instances.ttl).
+  // generated from the EventType rows in the store (platform/scripts/event-types-generate.py).
   const schema = loadSpineSchema(deps.schemaPath);
   if (!schema.events || Object.keys(schema.events).length === 0) {
     res.status(503).json!({ error: 'event registry unreadable; nothing written' });
@@ -129,7 +129,7 @@ export function handleSpineEvent(req: Req, res: Res, deps: SpineEventDeps): void
       && !Object.prototype.hasOwnProperty.call(schema.aliases ?? {}, event)) {
     res.status(422).json!({
       error: `unregistered event type: ${event}`,
-      register: 'add a chorus:EventType row to designing/data/event-type-instances.ttl, then run platform/scripts/event-types-generate.py',
+      register: 'write its row through POST /owl/v1/events/types, then run platform/scripts/event-types-generate.py',
     });
     return;
   }
