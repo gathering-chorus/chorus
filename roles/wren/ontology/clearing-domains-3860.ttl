@@ -50,6 +50,37 @@ chorus:SpineEventShape a sh:NodeShape ;
 
 chorus:events chorus:definesVocabulary chorus:SpineEvent .
 
+# --- events: what KIND of thing belongs on the spine (#4431) ---------------
+# Jeff, 2026-10-05: "its important we clean our data and structure as we do
+# this ... how the model lags still instead of leading". Measured that day: of
+# 66,178 spine lines in 24h, 87% (93 of 189 types) were event types the
+# registry (designing/schemas/spine-events.json, 373 types) does not know, and
+# the registry itself lived only in JSON, never in the graph. EventType brings
+# the registry into the model; eventCategory says which types are team facts.
+chorus:EventType a owl:Class ;
+    rdfs:label "EventType" ;
+    rdfs:comment "One entry in the spine's vocabulary: a dotted event name and what it means. A SpineEvent whose eventKind has no EventType is unregistered." .
+
+chorus:eventName a owl:DatatypeProperty ;
+    rdfs:label "eventName" ; rdfs:domain chorus:EventType ; rdfs:range xsd:string ;
+    rdfs:comment "The dotted name an emitter writes, matching SpineEvent eventKind (e.g. card.pulled)." .
+
+chorus:eventCategory a owl:DatatypeProperty ;
+    rdfs:label "eventCategory" ; rdfs:domain chorus:EventType ; rdfs:range xsd:string ;
+    rdfs:comment "fact: something happened to a thing in the model, done by a principal, in past tense (card.pulled, demo.presented, session.login): a spine event. diagnostic: the system describing its own running (heartbeats, probes, hook decisions, store-write audit): a log line, for Loki, not the spine." .
+
+chorus:ofType a owl:ObjectProperty ;
+    rdfs:label "ofType" ; rdfs:domain chorus:SpineEvent ; rdfs:range chorus:EventType ;
+    rdfs:comment "The vocabulary entry this occurrence is an instance of." .
+
+chorus:EventTypeShape a sh:NodeShape ;
+    sh:targetClass chorus:EventType ;
+    sh:property [ sh:path rdfs:label ; sh:minCount 1 ; sh:datatype xsd:string ] ;
+    sh:property [ sh:path chorus:eventName ; sh:minCount 1 ; sh:maxCount 1 ; sh:datatype xsd:string ] ;
+    sh:property [ sh:path chorus:eventCategory ; sh:minCount 1 ; sh:maxCount 1 ; sh:in ( "fact" "diagnostic" ) ] .
+
+chorus:events chorus:definesVocabulary chorus:EventType .
+
 # --- messages: the nudge and its parent, modelled -------------------------
 chorus:Message a owl:Class ;
     rdfs:label "Message" ;
