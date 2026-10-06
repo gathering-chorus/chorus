@@ -3615,6 +3615,15 @@
         "role": "Acting role"
       }
     },
+    "werk.cancelled": {
+      "vertebra": "building",
+      "source": "werk",
+      "description": "chorus_werk {action:'cancel'} (#4420): the card's running pipeline was stopped (act and its children), its slot sent env-down, and the run record and log say cancelled.",
+      "fields": {
+        "card": "The card whose run was cancelled",
+        "run_id": "The cancelled run's id"
+      }
+    },
     "werk.failed": {
       "vertebra": "building",
       "source": "werk",
