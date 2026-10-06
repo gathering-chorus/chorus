@@ -87,4 +87,19 @@ describe('POST /api/chorus/spine-event (#2109)', () => {
     });
     expect(res.status).toBe(400);
   });
+
+  // #4438 — emit through the door, consume by producer: one round trip.
+  test('a registered event emitted at the door is read back by producer; an unregistered one is refused', async () => {
+    const post = (event: string) => fetch(`${harness.baseUrl}/api/chorus/spine-event`, {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ event, role: 'wren', card_id: '4438' }),
+    });
+    expect((await post('card.pulled')).status).toBe(200);
+    expect((await post('made.up.event')).status).toBe(422);
+    const byCards = await (await fetch(`${harness.baseUrl}/api/chorus/spine-events?producer=cards&role=wren`)).json();
+    expect(byCards.events.map((e: { event: string }) => e.event)).toContain('card.pulled');
+    expect(byCards.events.map((e: { event: string }) => e.event)).not.toContain('made.up.event');
+    const byGates = await (await fetch(`${harness.baseUrl}/api/chorus/spine-events?producer=gates&role=wren`)).json();
+    expect(byGates.events.map((e: { event: string }) => e.event)).not.toContain('card.pulled');
+  });
 });

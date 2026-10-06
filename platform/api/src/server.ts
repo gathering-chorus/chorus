@@ -1699,7 +1699,8 @@ const readPulseFile = (): string | null => readPulseSnapshot();
 // 4 MB of chorus.log synchronously, once per role, on every /context/roles call
 // (~1700 calls an hour): 20 of 41 attributed freezes on 10-04/05. Now one read
 // per refresh window, off the event loop, shared by every consumer.
-const spineEvents = new SpineEventsReader({ path: `${process.env.HOME}/.chorus/chorus.log`, tailBytes: SPINE_TAIL_BYTES });
+// #4438 — the same file the POST door writes (CHORUS_LOG_FILE is the test membrane seam, #4417)
+const spineEvents = new SpineEventsReader({ path: process.env.CHORUS_LOG_FILE || `${process.env.HOME}/.chorus/chorus.log`, tailBytes: SPINE_TAIL_BYTES });
 
 const readSpineEventsForRole = async (role: string, sinceMs: number): Promise<SpineLine[]> => {
   // the role's own lines, plus demo events (a demo's go may come from jeff)
