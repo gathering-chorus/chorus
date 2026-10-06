@@ -3060,7 +3060,8 @@ app.get('/api/chorus/spine-events', async (req: Request, res: Response) => {
   const limit = Math.min(2000, Math.max(1, parseInt(str(req.query.limit) || '500', 10) || 500));
   try {
     const rows = await spineEvents.query({ role, types, sinceMs: Number.isFinite(sinceRaw) ? sinceRaw : undefined, limit });
-    res.json({ count: rows.length, events: rows.map(({ ts: _ts, ...r }) => r) });
+    // reads = file reads since start: shows the sharing (it grows once per window, not once per call)
+    res.json({ count: rows.length, reads: spineEvents.reads, events: rows.map(({ ts: _ts, ...r }) => r) });
   } catch (e) {
     res.status(503).json({ error: 'spine unreadable', detail: e instanceof Error ? e.message : String(e) });
   }
