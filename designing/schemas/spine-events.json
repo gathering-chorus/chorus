@@ -1,4 +1,5 @@
 {
+  "@domain": "spine",
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "title": "Spine Event Contract",
   "description": "Interface contract for all structured events flowing through the Chorus spine. Single source of truth for event types, fields, and vertebra mapping.",
@@ -3613,6 +3614,15 @@
       "fields": {
         "trace_id": "Werk trace join key",
         "role": "Acting role"
+      }
+    },
+    "werk.cancelled": {
+      "vertebra": "building",
+      "source": "werk",
+      "description": "chorus_werk {action:'cancel'} (#4420): the card's running pipeline was stopped (act and its children), its slot sent env-down, and the run record and log say cancelled.",
+      "fields": {
+        "card": "The card whose run was cancelled",
+        "run_id": "The cancelled run's id"
       }
     },
     "werk.failed": {

@@ -24,12 +24,13 @@ describe('decideRunAction — a re-invoke never double-acts', () => {
     assert.deepEqual(decideRunAction(r, false), { kind: 'attach', run: r });
   });
 
-  test('run RUNNING but STALE (dead pid / past TTL) -> start (kills the stale-running attach bug; #3458 + Wren #2)', () => {
+  test('run RUNNING but STALE (dead pid / past TTL) -> start only on an explicit retry (#3458; #4420: a poll never launches)', () => {
     // belt+suspenders: if the durable terminal-phase write was lost (e.g. mcp
     // restart churned the run before act wrote its finish), a 'running' whose pid
     // is dead must not be attached-to forever — it is treated like 'failed'.
     const r = run({ phase: 'running', pid: 999999 });
-    assert.deepEqual(decideRunAction(r, false, true), { kind: 'start' });
+    assert.deepEqual(decideRunAction(r, false, true), { kind: 'attach', run: r });
+    assert.deepEqual(decideRunAction(r, false, true, false, false, true), { kind: 'start' });
   });
 
   test('run RUNNING and LIVE -> attach (a genuinely-live run is never stranded)', () => {
@@ -47,9 +48,10 @@ describe('decideRunAction — a re-invoke never double-acts', () => {
     assert.deepEqual(decideRunAction(r, false), { kind: 'attach', run: r });
   });
 
-  test('run FAILED -> start (RETRYABLE; #3443 Kade catch — never strand on a transient failure)', () => {
+  test('run FAILED -> a poll reports it and launches nothing; retry launches (#4420, was: any re-invoke retried)', () => {
     const r = run({ phase: 'failed', failureReason: 'merge: network hiccup' });
-    assert.deepEqual(decideRunAction(r, false), { kind: 'start' });
+    assert.deepEqual(decideRunAction(r, false), { kind: 'attach', run: r });
+    assert.deepEqual(decideRunAction(r, false, false, false, false, true), { kind: 'start' });
   });
 
   test('GO on a FAILED run -> start (a GO must not be swallowed by a stale failure)', () => {
@@ -62,11 +64,12 @@ describe('decideRunAction — a re-invoke never double-acts', () => {
     assert.deepEqual(decideRunAction(r, true), { kind: 'start' });
   });
 
-  test('PRESENTED but HEAD ADVANCED (new patch) -> start (#3538 re-demo the new commit)', () => {
+  test('PRESENTED but HEAD ADVANCED (new patch) -> reported; retry re-demos the new commit (#3538, #4420)', () => {
     // A fix committed after a present must re-demo: the presented record is for an
     // old patch-id; HEAD moved past it, so the variant on record is stale.
     const r = run({ phase: 'presented', go: false });
-    assert.deepEqual(decideRunAction(r, false, false, true), { kind: 'start' });
+    assert.deepEqual(decideRunAction(r, false, false, true), { kind: 'attach', run: r });
+    assert.deepEqual(decideRunAction(r, false, false, true, false, true), { kind: 'start' });
   });
 
   test('PRESENTED, SAME patch (content-identical rebase) -> attach (#3538 no needless re-run; sibling of #3461)', () => {
@@ -79,6 +82,30 @@ describe('decideRunAction — a re-invoke never double-acts', () => {
   test('GO while still RUNNING -> typed refusal (#3678 AC2: was attach, which let a go float onto an unseen round)', () => {
     const r = run({ phase: 'running', go: false });
     assert.deepEqual(decideRunAction(r, true), { kind: 'refuse-go-running', run: r });
+  });
+});
+
+describe('#4420 — checking on a run never starts one', () => {
+  test('a poll on a failed, cancelled or stale run launches nothing', () => {
+    for (const r of [run({ phase: 'failed' }), run({ phase: 'cancelled' }), run({ phase: 'running', pid: 999999 })]) {
+      assert.equal(decideRunAction(r, false, r.phase === 'running').kind, 'attach', r.phase);
+    }
+  });
+
+  test('a retry while a live run is in flight is refused and names that run (AC4)', () => {
+    const r = run({ phase: 'running', pid: 4242, runId: 'live-1' });
+    assert.deepEqual(decideRunAction(r, false, false, false, false, true), { kind: 'refuse-retry-running', run: r });
+    assert.deepEqual(decideRunAction(r, false, false, false, true), { kind: 'refuse-retry-running', run: r });
+  });
+
+  test('a retry after a cancel starts a fresh run', () => {
+    assert.deepEqual(decideRunAction(run({ phase: 'cancelled' }), false, false, false, false, true), { kind: 'start' });
+  });
+
+  // NEGATIVE PROOF — the old rule (any re-invoke of a failed run starts one) is
+  // exactly what launched #4338 runs 5 and 6; this must never be 'start'.
+  test('a plain re-invoke of a failed run is never a start', () => {
+    assert.notEqual(decideRunAction(run({ phase: 'failed' }), false).kind, 'start');
   });
 });
 

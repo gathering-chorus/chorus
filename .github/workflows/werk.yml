@@ -1,4 +1,5 @@
 name: werk
+# @domain: cicd
 
 # werk — THE pipeline. ONE job, ONE run (#3499). There is no demo-half / land-half:
 # the GO is given AT INVOKE (the `go` input), werk-demo PROVES in-run (gates, gathers,
@@ -194,18 +195,23 @@ jobs:
         if: ${{ steps.provenround.outputs.already_landed != 'true' }}
         # werk-commit, via MCP. Stages add-A in the card's werk + commits. Rebase onto
         # origin/main happens INSIDE commit under flock (#3186) — no separate rebase step.
-        run: chorus-mcp-call.sh "${ROLE}" werk-commit "$(printf '{"role":"%s","card_id":%s}' "${ROLE}" "${CARD_ID}")"
+        run: |
+          while [ -f "${HOME}/.chorus/werk-runs/${CARD_ID}.hold" ]; do sleep 2; done  # #4420 pause: wait here between steps
+          chorus-mcp-call.sh "${ROLE}" werk-commit "$(printf '{"role":"%s","card_id":%s}' "${ROLE}" "${CARD_ID}")"
 
       - name: push
         id: push
         if: ${{ steps.provenround.outputs.already_landed != 'true' }}
-        run: chorus-mcp-call.sh "${ROLE}" werk-push "$(printf '{"role":"%s","card_id":%s}' "${ROLE}" "${CARD_ID}")"
+        run: |
+          while [ -f "${HOME}/.chorus/werk-runs/${CARD_ID}.hold" ]; do sleep 2; done  # #4420 pause: wait here between steps
+          chorus-mcp-call.sh "${ROLE}" werk-push "$(printf '{"role":"%s","card_id":%s}' "${ROLE}" "${CARD_ID}")"
 
       - name: build
         id: build
         if: ${{ steps.provenround.outputs.skip_prove != 'true' }}
         # target=werk implied: builds the card's werk for the demo slot.
         run: |
+          while [ -f "${HOME}/.chorus/werk-runs/${CARD_ID}.hold" ]; do sleep 2; done  # #4420 pause: wait here between steps
           # #3956 — resume: a passed leg with an unchanged tree carries (exit 0),
           # a changed tree or missing pin refuses loudly (exit 2 → red).
           rc=0; "${CHORUS_HOME}/platform/scripts/werk-resume-check" "${CARD_ID}" "${ROLE}" build || rc=$?
@@ -225,6 +231,7 @@ jobs:
         # is fixing. Determinism (#3190 governing bar): same diff → same units → same gates →
         # same verdict. The pyramidLayer/hermeticity tier-selection (Silas #3540) wires in next.
         run: |
+          while [ -f "${HOME}/.chorus/werk-runs/${CARD_ID}.hold" ]; do sleep 2; done  # #4420 pause: wait here between steps
           # #3956 — resume: a passed leg with an unchanged tree carries (exit 0),
           # a changed tree or missing pin refuses loudly (exit 2 → red).
           rc=0; "${CHORUS_HOME}/platform/scripts/werk-resume-check" "${CARD_ID}" "${ROLE}" test || rc=$?
@@ -270,6 +277,7 @@ jobs:
         if: ${{ steps.provenround.outputs.skip_prove != 'true' }}
         # werk-review ADVISORY floor — records review.floor + chorus/review/<card> status.
         run: |
+          while [ -f "${HOME}/.chorus/werk-runs/${CARD_ID}.hold" ]; do sleep 2; done  # #4420 pause: wait here between steps
           # #3956 — resume: a passed leg with an unchanged tree carries (exit 0),
           # a changed tree or missing pin refuses loudly (exit 2 → red).
           rc=0; "${CHORUS_HOME}/platform/scripts/werk-resume-check" "${CARD_ID}" "${ROLE}" review || rc=$?
@@ -291,6 +299,7 @@ jobs:
         # canonical deploy (#3316 rebuild+cdhash prove) is Half B's own step.
         if: ${{ steps.provenround.outputs.skip_prove != 'true' }}
         run: |
+          while [ -f "${HOME}/.chorus/werk-runs/${CARD_ID}.hold" ]; do sleep 2; done  # #4420 pause: wait here between steps
           # #3956 — resume: a passed leg with an unchanged tree carries (exit 0),
           # a changed tree or missing pin refuses loudly (exit 2 → red).
           rc=0; "${CHORUS_HOME}/platform/scripts/werk-resume-check" "${CARD_ID}" "${ROLE}" deploy-werk || rc=$?
@@ -303,6 +312,7 @@ jobs:
         # #3943 — skipped on a proven go: the env is still up from present.
         if: ${{ steps.provenround.outputs.skip_prove != 'true' }}
         run: |
+          while [ -f "${HOME}/.chorus/werk-runs/${CARD_ID}.hold" ]; do sleep 2; done  # #4420 pause: wait here between steps
           # #3956 — resume: a passed leg with an unchanged tree carries (exit 0),
           # a changed tree or missing pin refuses loudly (exit 2 → red).
           rc=0; "${CHORUS_HOME}/platform/scripts/werk-resume-check" "${CARD_ID}" "${ROLE}" env-up || rc=$?
@@ -321,6 +331,7 @@ jobs:
         if: ${{ always() && steps.provenround.outputs.skip_prove != 'true' }}
         continue-on-error: true
         run: |
+          while [ -f "${HOME}/.chorus/werk-runs/${CARD_ID}.hold" ]; do sleep 2; done  # #4420 pause: wait here between steps
           # #4227 — the WERK's build first. This step ran canonical's binary,
           # so a card that changes demo-fitness could never see its own change
           # in its own run: #4227's run printed the old wording and the old
@@ -355,6 +366,7 @@ jobs:
         # canonical the next time the map changes.
         if: ${{ steps.provenround.outputs.skip_prove != 'true' }}
         run: |
+          while [ -f "${HOME}/.chorus/werk-runs/${CARD_ID}.hold" ]; do sleep 2; done  # #4420 pause: wait here between steps
           set -euo pipefail
           WERK="${CHORUS_WERK_BASE}/${ROLE}-${CARD_ID}"
           FILES=$(git -C "$WERK" diff --name-only origin/main...HEAD -- 'platform/tests/*.bats' || true)
@@ -427,6 +439,7 @@ jobs:
         #      gathers + Jeff's go are recorded for THIS patch-id (patch-keyed → survives the
         #      concurrent rebases that churn the round-sha). proven keys on THIS, not demo's exit.
         run: |
+          while [ -f "${HOME}/.chorus/werk-runs/${CARD_ID}.hold" ]; do sleep 2; done  # #4420 pause: wait here between steps
           set +e
           case "${GO}" in
             true|go|yes|GO)
@@ -507,6 +520,7 @@ jobs:
         # the PR had already merged. The MCP is NOT dropping stderr: calling the
         # helper directly prints `JSON-RPC ERROR: ... stderr=werk-merge: <reason>`.
         run: |
+          while [ -f "${HOME}/.chorus/werk-runs/${CARD_ID}.hold" ]; do sleep 2; done  # #4420 pause: wait here between steps
           set +e
           LANDED="$(chorus-mcp-call.sh "${ROLE}" werk-merge "$(printf '{"role":"%s","card_id":%s}' "${ROLE}" "${CARD_ID}")")"
           MERGE_RC=$?
@@ -529,6 +543,7 @@ jobs:
         # STALE binaries (the merged≠live root). Now: on ff failure, AUTO-RECOVER (`werk-sync recover`
         # = stash-dirty + ff) and re-verify canonical HEAD == origin/main before claiming SYNC_OK=1.
         run: |
+          while [ -f "${HOME}/.chorus/werk-runs/${CARD_ID}.hold" ]; do sleep 2; done  # #4420 pause: wait here between steps
           if [ -n "${CHORUS_HOME:-}" ] \
              && git -C "$CHORUS_HOME" fetch -q origin main 2>/dev/null \
              && git -C "$CHORUS_HOME" merge --ff-only origin/main >/dev/null 2>&1; then
@@ -554,6 +569,7 @@ jobs:
         # SYNC_OK → built+shipped pre-merge code (the merged≠live root, cost #3566/#3570 today).
         # SYNC_OK=0 here = canonical couldn't sync even after auto-recover → FAIL LOUD, don't ship stale.
         run: |
+          while [ -f "${HOME}/.chorus/werk-runs/${CARD_ID}.hold" ]; do sleep 2; done  # #4420 pause: wait here between steps
           if [ "${SYNC_OK:-0}" != "1" ]; then
             echo "::error::#3574: canonical not synced to origin/main (SYNC_OK=${SYNC_OK:-unset}) — REFUSING to deploy stale binaries. Fix canonical ('werk-sync recover') and re-land." >&2
             exit 1
@@ -591,7 +607,9 @@ jobs:
         if: ${{ steps.demo.outputs.proven == 'true' }}
         # #3311 GO=ACCEPT: the GO given at invoke IS the acceptance. werk-accept's DEC-048 authority
         # gate runs INSIDE the verb (ACCEPTER is the authorizing identity; a builder can't self-accept).
-        run: DEPLOY_ROLE="${ACCEPTER}" werk-accept "${CARD_ID}" "${ROLE}"
+        run: |
+          while [ -f "${HOME}/.chorus/werk-runs/${CARD_ID}.hold" ]; do sleep 2; done  # #4420 pause: wait here between steps
+          DEPLOY_ROLE="${ACCEPTER}" werk-accept "${CARD_ID}" "${ROLE}"
 
       # #4178 — the on-land delta. A land changes files; the graph follows in the
       # same breath instead of waiting for 04:30. Runs as `crawler` (the door

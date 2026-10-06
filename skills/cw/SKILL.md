@@ -48,7 +48,7 @@ That's the entire skill. The MCP drives the pipeline deterministically via `act`
 
 ## Step 2: Report
 
-Report what the CURRENT phase is, not a hoped-for one. On `running`, say it's in flight and you're polling. On `presented`, report the variant + that demo prework (gates + peer gathers) must complete before a GO lands (the announce is the ready-gate). On `landed`, report `#<card> landed` (deployed + accepted). On `failed`, surface the typed `failureReason` verbatim — don't paper over it. A re-invoke after a transport drop is a non-event: it attaches and reports the true phase (no double-act, no lost call).
+Report what the CURRENT phase is, not a hoped-for one. On `running`, say it's in flight and you're polling. On `presented`, report the variant + that demo prework (gates + peer gathers) must complete before a GO lands (the announce is the ready-gate). On `landed`, report `#<card> landed` (deployed + accepted). On `failed`, surface the typed `failureReason` verbatim — don't paper over it. A poll never launches a run (#4420): to run again after `failed`/`cancelled`, or to present new commits after a present, call with `retry: true`. Stop a running run with `action: "cancel"`; hold it between steps with `action: "pause"` and continue with `action: "resume"`. A re-invoke after a transport drop is a non-event: it attaches and reports the true phase (no double-act, no lost call).
 
 ## Hard rules
 

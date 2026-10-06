@@ -31,6 +31,7 @@ import { recentErrors, logsForCard, logsForTrace, logsForBranch, type LogsQueryD
 import { executeDesignRefresh } from './design-refresh';
 // #3443 AC7 — run-state: a chorus_werk transport drop becomes a non-event.
 import { announceRepeated, decideRunAction, patchSuperseded, type WerkRun } from './werk-run-state';
+import { cancelRun, pauseRun, resumeRun, liveControlDeps, afterCancel } from './werk-run-control';
 import {
   readRun, writeRunAtomic, isRunStale, runLogPath, reconcileRunning,
   currentWerkPatchId, clearRun, verifyPinIntegrity, archiveRun, withRunLaunchLock,
@@ -456,6 +457,9 @@ const WerkRunInput = z.object({
   // #3678 AC3 — the ONE way a caller forces a fresh round on a presented record.
   // Plain re-invokes are status checks: read-only by construction.
   represent: z.boolean().optional().describe('Explicitly start a fresh demo round on a presented card. Without this, re-invoking a presented run only reports state.'),
+  // #4420 — checking on a run never starts one; retry is the explicit relaunch.
+  retry: z.boolean().optional().describe('Run again after a failed, cancelled or superseded run. Without it a call only reports state.'),
+  action: z.enum(['cancel', 'pause', 'resume']).optional().describe('cancel: stop the running run (act and its children). pause: hold it after the step in flight. resume: continue.'),
 });
 
 // #4186 — the MODEL pipeline as its own MCP verb (Jeff: "get athena out of werk").
@@ -585,6 +589,9 @@ const CHORUS_WERK_TOOL_DEF = {
       card_id: { type: 'integer', minimum: 1, description: 'Card to run.' },
       accepter: { type: 'string', enum: ['jeff', 'wren', 'kade', 'silas'], description: 'Authorizing identity (DEC-048). Default jeff. With go:true this is who the accept runs under.' },
       go: { type: 'boolean', description: 'The human GO. false/absent = run to the demo stop and present. true = resume past the stop: merge → deploy-prod → accept.' },
+      represent: { type: 'boolean', description: 'Start a fresh demo round on a presented card.' },
+      retry: { type: 'boolean', description: 'Run again after a failed, cancelled or superseded run. A plain call only reports state and never launches over an existing run (#4420).' },
+      action: { type: 'string', enum: ['cancel', 'pause', 'resume'], description: 'cancel: stop the running run (act and its children; log + spine say cancelled). pause: hold the run after the step in flight. resume: continue from the next step.' },
     },
     required: ['role', 'card_id'],
     additionalProperties: false,
@@ -2738,6 +2745,15 @@ function werkRunPaths() {
   return { pathMod, home, werkBase, binDir, scriptsDir, workflow, actBin, runnerPath };
 }
 
+/** #4420 AC4 — a retry while a live run is in flight is refused and names it. */
+function refuseRetryRunning(r: WerkRun, args: { role: string; card_id: number }) {
+  return mcpJson({
+    ok: false, verb: 'chorus_werk', refusal: 'run-in-flight', phase: r.phase,
+    role: args.role, card_id: args.card_id, run_id: r.runId, pid: r.pid, started_at: r.startedAt,
+    note: `Refused: run ${r.runId} (pid ${r.pid ?? '?'}, started ${r.startedAt}) is still running on this werk. Poll it, or cancel it with action:'cancel', before launching another.`,
+  });
+}
+
 async function executeChorusWerkLocked(
   args: z.infer<typeof WerkRunInput>,
   spawnFn: SpawnFn,
@@ -2758,7 +2774,7 @@ async function executeChorusWerkLocked(
   // Before: reconcile marked 'failed' and decideRunAction immediately started a fresh
   // act, overwriting the record — the failureReason never reached any caller (the
   // #3660 "bare werk.failed, cause unrecoverable" defect). Now the discovering poll
-  // attaches with the reason; a SUBSEQUENT re-invoke (record already 'failed') retries.
+  // attaches with the reason. #4420: a later plain re-invoke reports it too; only retry:true relaunches.
   const preReconcile = readRun(args.card_id, runsDir);
   const werkDir = pathMod.join(werkBase, `${args.role}-${args.card_id}`);
   // #3678 AC1 — the presented round re-stamps its patchId at the transition, so
@@ -2777,7 +2793,7 @@ async function executeChorusWerkLocked(
       ok: true, verb: 'chorus_werk', phase: 'failed', attached: true,
       role: args.role, card_id: args.card_id, accepter,
       failureReason: existingRun.failureReason,
-      note: `Run for #${args.card_id} FAILED — reason: ${existingRun.failureReason || 'unknown'}. Full log: ${existingRun.logFile || 'per-card log'}. Re-invoke chorus_werk to retry.`,
+      note: `Run for #${args.card_id} FAILED — reason: ${existingRun.failureReason || 'unknown'}. Full log: ${existingRun.logFile || 'per-card log'}. Re-invoke with retry:true to run again.`,
     });
   }
   // #3538 — a PRESENTED record for a SUPERSEDED patch must re-demo the new commit.
@@ -2794,7 +2810,8 @@ async function executeChorusWerkLocked(
   // #3458 — a dead/stale 'running' record must not be attached-to forever (the
   // stale-running bug); isRunStale probes pid-liveness + TTL so a re-invoke past a
   // dead run starts fresh instead of stranding the card.
-  const action = decideRunAction(existingRun, false, existingRun ? isRunStale(existingRun) : false, headChanged, args.represent === true);
+  const action = decideRunAction(existingRun, false, existingRun ? isRunStale(existingRun) : false, headChanged, args.represent === true, args.retry === true);
+  if (action.kind === 'refuse-retry-running') return refuseRetryRunning(action.run, args);
   if (action.kind === 'attach') {
     const r = action.run;
     // #3751 — never report a phase from a pin that fails integrity (previous
@@ -2808,7 +2825,9 @@ async function executeChorusWerkLocked(
       failureReason: r.failureReason,
       note: polling
         ? `Still running (#${args.card_id}) — the detached pipeline is in flight. Re-invoke chorus_werk to poll; it advances to presented/failed when act finishes. Nothing held, no transport drop.`
-        : `Run on record for #${args.card_id} (phase=${r.phase}). ${r.phase === 'presented' ? 'On your GO, re-invoke with go:true to land.' : 'A re-invoke retries.'}`,
+        : `Run on record for #${args.card_id} (phase=${r.phase}). ${r.phase === 'presented'
+          ? (headChanged ? 'The werk has commits this round does not: re-invoke with retry:true to present them.' : 'On your GO, re-invoke with go:true to land.')
+          : 'Nothing was launched (#4420). Re-invoke with retry:true to run again.'}`,
     });
   }
   // #3458 — START: launch act DETACHED and return immediately. A bash wrapper streams
@@ -2869,6 +2888,24 @@ async function executeChorusWerkLocked(
     run_id: run.runId, role: args.role, card_id: args.card_id, accepter, go_command: landCmd,
     note: `Launched (#${args.card_id}) — build→demo runs DETACHED; nothing held, no transport drop. Re-invoke chorus_werk to poll: 'running' until act finishes, then 'presented' (variant up — GO with go:true to land) or 'failed' (with the reason).`,
   });
+}
+
+/** #4420 — cancel / pause / resume the card's run on record. */
+async function executeWerkControl(
+  args: z.infer<typeof WerkRunInput>,
+  runsDir?: string,
+): Promise<{ content: Array<{ type: 'text'; text: string }> }> {
+  const pathMod = require('path') as typeof import('path');
+  const dir = runsDir ?? pathMod.join(require('os').homedir(), '.chorus', 'werk-runs');
+  const run = readRun(args.card_id, runsDir);
+  const result = args.action === 'cancel'
+    ? await cancelRun(run, liveControlDeps((r) => writeRunAtomic(r, runsDir)), dir)
+    : args.action === 'pause' ? pauseRun(run, dir) : resumeRun(run, dir);
+  if (result.ok && args.action === 'cancel' && run) {
+    const { binDir, scriptsDir } = werkRunPaths();
+    afterCancel(args.role, args.card_id, run.runId, binDir, scriptsDir);
+  }
+  return mcpJson({ verb: 'chorus_werk', action: args.action, role: args.role, card_id: args.card_id, run_id: run?.runId, ...result });
 }
 
 async function executeChorusWerk(
@@ -3646,6 +3683,10 @@ export function buildMcpServer(getCallerRole: () => string, deps: McpServerDeps 
         const parsed = WerkRunInput.safeParse(req.params.arguments);
         if (!parsed.success) {
           throw new Error(`Invalid arguments: ${parsed.error.issues.map((i) => i.message).join(', ')}`);
+        }
+        // #4420 — cancel / pause / resume act on the card's run on record.
+        if (parsed.data.action) {
+          return executeWerkControl(parsed.data, runsDir);
         }
         // #3311 — ONE trigger: go resumes past the demo stop (Half B), else present (Half A).
         if (parsed.data.go) {

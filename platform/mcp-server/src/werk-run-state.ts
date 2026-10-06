@@ -18,7 +18,9 @@
  * fs or a real act. The fs-backed read/write + the detached spawn wire on top.
  */
 
-export type WerkRunPhase = 'running' | 'presented' | 'landed' | 'failed';
+// #4420 — 'cancelled': chorus_werk {action:'cancel'} stopped the run (act and its
+// children); terminal like failed, and a poll reports it without relaunching.
+export type WerkRunPhase = 'running' | 'presented' | 'landed' | 'failed' | 'cancelled';
 
 export interface WerkRun {
   runId: string;
@@ -58,7 +60,10 @@ export type RunAction =
   // #3678 AC2 — go while the pipeline is mid-flight: the accepter's go can only
   // attach to a PRESENTED round they actually saw. Queueing it onto whatever
   // presents next would land unseen work (the 2026-07-23 #3592 near-miss).
-  | { kind: 'refuse-go-running'; run: WerkRun };
+  | { kind: 'refuse-go-running'; run: WerkRun }
+  // #4420 AC4 — an explicit retry while a live run is in flight is refused and
+  // names the live run (2026-10-02: two launches 8 s apart on one werk).
+  | { kind: 'refuse-retry-running'; run: WerkRun };
 
 /**
  * #3638 — is the recorded patch-id superseded by the werk's current one?
@@ -109,6 +114,9 @@ function goDecision(existing: WerkRun, isStale: boolean): RunAction | null {
   }
   // A GO after a presented stop is the next legitimate phase (the land).
   if (!existing.go && existing.phase === 'presented') return { kind: 'start' };
+  // A GO is an explicit human launch, never a poll: past a dead or failed run it
+  // starts (the retry), so a stale failure cannot swallow it.
+  if (existing.phase === 'running' || existing.phase === 'failed') return { kind: 'start' };
   return null;
 }
 
@@ -118,22 +126,27 @@ export function decideRunAction(
   isStale = false,
   headChanged = false,
   requestedRepresent = false,
+  requestedRetry = false,
 ): RunAction {
   if (!existing) return { kind: 'start' };
   if (requestedGo) {
     const g = goDecision(existing, isStale);
     if (g) return g;
   }
-  // #3458 — a stale 'running' (dead pid/TTL) is retried, never attached forever.
-  if (existing.phase === 'running' && isStale) return { kind: 'start' };
-  // #3443 — a terminal 'failed' run is retryable; attaching forever strands the card.
-  if (existing.phase === 'failed') return { kind: 'start' };
-  // #3538 — a HUMAN commit after the present re-demos (headChanged); #3678 AC3 —
-  // represent is the caller's explicit fresh-round request. Everything else is a
-  // status check: read-only, attaches.
-  if (existing.phase === 'presented' && (headChanged || requestedRepresent)) {
-    return { kind: 'start' };
-  }
+  // #4420 — checking on a run never starts one. A stale running pin, a failed or
+  // cancelled run, and a present whose patch was superseded are REPORTED by a
+  // plain call; only an explicit retry (or represent, #3678 AC3) launches again.
+  // Before: a status poll on a failed card relaunched it (2026-10-02 #4338 runs
+  // 5 and 6, eight seconds apart; 2026-07-23 the same).
+  const relaunch = requestedRetry || requestedRepresent;
+  return relaunch ? relaunchDecision(existing, isStale, headChanged || requestedRepresent) : { kind: 'attach', run: existing };
+}
+
+/** #4420 — what an explicit retry/represent does with the run on record. */
+function relaunchDecision(existing: WerkRun, isStale: boolean, newRound: boolean): RunAction {
+  if (existing.phase === 'running') return isStale ? { kind: 'start' } : { kind: 'refuse-retry-running', run: existing };
+  if (existing.phase === 'failed' || existing.phase === 'cancelled') return { kind: 'start' };
+  if (existing.phase === 'presented' && newRound) return { kind: 'start' };
   return { kind: 'attach', run: existing };
 }
 

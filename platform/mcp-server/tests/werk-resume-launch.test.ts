@@ -84,7 +84,8 @@ async function launchWerk(
     const client = new Client({ name: 'resume-test', version: '1.0' });
     await Promise.all([server.connect(st), client.connect(ct)]);
     try {
-      await client.callTool({ name: 'chorus_werk', arguments: { role: 'kade', card_id: card } });
+      // #4420 — a relaunch is explicit: a plain call on a failed run only reports it.
+      await client.callTool({ name: 'chorus_werk', arguments: { role: 'kade', card_id: card, retry: true } });
     } finally { await client.close(); await server.close(); }
   } finally {
     if (prev === undefined) delete process.env.CHORUS_WERK_BASE; else process.env.CHORUS_WERK_BASE = prev;

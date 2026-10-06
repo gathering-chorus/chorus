@@ -62,6 +62,21 @@ t "run row names the reds" "2 reds: 4166-athena-validate-scheduled, standards-ge
 t "quiet steps are not rows" "1 run" "$out"
 t "unknown times say so" "cycle unknown" "$out"
 
+# #4420 — a running run is "at" the step act STARTED last, not the last one
+# that finished (Jeff 10-06: "your card is not in build its a cws bug").
+# Negative proof: the old rule read the last Success line and said "at build".
+cat > "$TD/105.json" <<EOF
+{"card":105,"role":"kade","phase":"running","pid":$$,"startedAt":"$NOW","runId":"105-t-6"}
+EOF
+cat > "$TD/105-105-t-6.log" <<'EOF'
+[werk/werk] ⭐ Run Main build
+[werk/werk]   ✅  Success - Main build [1m9.8s]
+[werk/werk] ⭐ Run Main test
+EOF
+out=$(CWS_RUNS_DIR=$TD "$CWS" 105)
+t "a running run is at the step in flight" "at test" "$out"
+if [[ "$out" == *"at build"* ]]; then echo "FAIL running run still reads at build"; fails=$((fails+1)); fi
+
 rm -rf "$TD"
 if [ $fails -gt 0 ]; then echo "test-cws-3782: $fails FAILURE(S)"; exit 1; fi
 echo "test-cws-3782: all green"
