@@ -5493,6 +5493,8 @@ pub struct NodeTestPlan {
     pub before: Vec<Vec<String>>,
     pub prog: String,
     pub args: Vec<String>,
+    /// #4440 — `VAR=value` words ahead of the runner, set on its environment
+    pub env: Vec<(String, String)>,
 }
 
 /// The `test` value inside package.json's `scripts`, wherever it sits on the
@@ -5520,7 +5522,15 @@ pub fn package_test_script(package_json: &str) -> Option<String> {
 pub fn node_test_plan(script: &str) -> Option<NodeTestPlan> {
     let steps: Vec<&str> = script.split("&&").map(str::trim).filter(|s| !s.is_empty()).collect();
     let (runner, before) = steps.split_last()?;
-    let mut toks = runner.split_whitespace();
+    let mut toks = runner.split_whitespace().peekable();
+    // #4440 — `CHORUS_SYNTHETIC=1 tsx --test …` (mcp-server since #4186,
+    // 2026-10-04): the env words were read as the program, it could not be
+    // spawned, and the nightly scored mcp-server UNMEASURED from 10-05 on.
+    let mut env = Vec::new();
+    while let Some((k, v)) = toks.peek().and_then(|t| t.split_once('=')).filter(|(k, _)| !k.is_empty() && k.chars().all(|c| c.is_ascii_alphanumeric() || c == '_')) {
+        env.push((k.to_string(), v.to_string()));
+        toks.next();
+    }
     let prog = toks.next()?.to_string();
     // keep flags, drop the glob (anything that is not a flag)
     let args: Vec<String> = toks.filter(|t| t.starts_with('-')).map(str::to_string).collect();
@@ -5542,7 +5552,7 @@ pub fn node_test_plan(script: &str) -> Option<NodeTestPlan> {
     } else {
         (prog, args)
     };
-    Some(NodeTestPlan { before: pre, prog, args })
+    Some(NodeTestPlan { before: pre, prog, args, env })
 }
 
 /// node:test files a package's script globs: `.test.ts/.js` and, #4435, the
@@ -5560,6 +5570,18 @@ mod node_test_plan_4435 {
   "scripts": { "build": "tsc", "test": "npm run build && node --test tests/*.test.cjs" },
   "devDependencies": { "@types/node": "25.6.0" }
 }"#;
+
+    #[test]
+    fn env_words_before_the_runner_are_env_not_the_program() {
+        let p = node_test_plan("CHORUS_SYNTHETIC=1 tsx --test tests/*.test.ts").unwrap();
+        assert_eq!(p.env, vec![("CHORUS_SYNTHETIC".to_string(), "1".to_string())]);
+        assert_eq!(p.prog, "npx");
+        assert_eq!(p.args, vec!["--no-install", "tsx", "--test"]);
+        // NEGATIVE PROOF: no env words, no env; a flag with `=` is not env
+        let q = node_test_plan("node --test --test-reporter=tap tests/").unwrap();
+        assert!(q.env.is_empty());
+        assert_eq!(q.prog, "node");
+    }
 
     #[test]
     fn a_one_line_scripts_object_yields_the_test_script() {

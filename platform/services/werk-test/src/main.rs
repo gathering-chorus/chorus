@@ -2115,6 +2115,12 @@ fn run_capped_unit(cmd: &mut Command, label: &str) -> Option<(bool, String, Stri
 /// TAP lines become per-case results; a missing test script is FAIL LOUD,
 /// never a vacuous green.
 fn run_npm_test(werk: &str, pkg: &str) -> (bool, Vec<CaseResult>) {
+    run_npm_test_files(werk, pkg, None)
+}
+
+/// #4440 reopened — `only`: the package-relative test files a card selected.
+/// None runs every test file the package's script would.
+fn run_npm_test_files(werk: &str, pkg: &str, only: Option<&[String]>) -> (bool, Vec<CaseResult>) {
     let pkg_dir = format!("{}/{}", werk, pkg);
     let has_script = std::fs::read_to_string(format!("{}/package.json", pkg_dir))
         .map(|j| j.contains("\"test\""))
@@ -2151,7 +2157,10 @@ fn run_npm_test(werk: &str, pkg: &str) -> (bool, Vec<CaseResult>) {
         eprintln!("   npm:{} runs its own non-node:test runner — graded by its own lane, not here", pkg);
         return (true, Vec::new());
     }
-    let files = npm_test_files(&pkg_dir);
+    let files: Vec<String> = match only {
+        Some(sel) => sel.to_vec(),
+        None => npm_test_files(&pkg_dir),
+    };
     if files.is_empty() {
         eprintln!("!! npm:{} has a test script but no test files found — FAIL LOUD", pkg);
         return (false, Vec::new());
@@ -2187,6 +2196,7 @@ cases to files; refusing to store package-level rows that can never cross-foot",
     for rel in &files {
         let mut cmd = Command::new(&runner.prog);
         cmd.args(&runner.args).arg(rel).current_dir(&pkg_dir);
+        cmd.envs(runner.env.iter().map(|(k, v)| (k.as_str(), v.as_str())));
         cmd.env("CHORUS_CONTEXT", ""); // #3918 — test child stays refusable
         apply_suite_world(&mut cmd, werk);
         match run_capped_unit(&mut cmd, &format!("npm:{}:{}", pkg, rel)) {
@@ -2245,13 +2255,21 @@ fn run_jest_selected(werk: &str, pkg: &str, files: &[String]) -> (bool, Vec<Case
         return (false, Vec::new());
     }
     let jest = format!("{}/node_modules/.bin/jest", pkg_dir);
-    if !Path::new(&jest).exists() {
-        return (true, Vec::new());
-    }
     let rel: Vec<String> = files
         .iter()
         .map(|f| f.strip_prefix(&format!("{}/", pkg)).unwrap_or(f).to_string())
         .collect();
+    if !Path::new(&jest).exists() {
+        // #4440 reopened — a package without jest (mcp-server: node:test) ran
+        // NOTHING here and returned pass: since #3912 (2026-08-17) a card never
+        // ran mcp-server's tests (#4420 run 12: 30 files selected, 0.0s). Its
+        // own runner runs the selected files; no runner at all is a red.
+        if npm_test_runner(&pkg_dir).is_none() {
+            eprintln!("!! {}: {} test file(s) selected and no runner for them (no jest, no node:test script) — FAIL LOUD", pkg, rel.len());
+            return (false, Vec::new());
+        }
+        return run_npm_test_files(werk, pkg, Some(&rel));
+    }
     let mut cmd = Command::new(&jest);
     // #3918 — test child: cleared (see child_context).
     cmd.env("CHORUS_CONTEXT", "");
@@ -3218,4 +3236,39 @@ fn fetch_all_pages(endpoint: &str) -> Option<Vec<u8>> {
         }
     }
     None
+}
+
+#[cfg(test)]
+mod selected_node_test_4440 {
+    use super::*;
+
+    /// a package with no jest whose `test` script is node's own runner
+    fn pkg(tag: &str) -> String {
+        let root = std::env::temp_dir().join(format!("wt-4440-{}-{}", std::process::id(), tag));
+        let _ = std::fs::remove_dir_all(&root);
+        let p = root.join("pkg");
+        std::fs::create_dir_all(p.join("tests")).unwrap();
+        std::fs::create_dir_all(p.join("node_modules/.bin")).unwrap();
+        std::fs::write(p.join("package.json"), r#"{"name":"p","scripts":{"test":"WT_FLAG=yes node --test tests/*.test.js"}}"#).unwrap();
+        std::fs::write(p.join("tests/red.test.js"), "require('node:test')('red', () => { throw new Error('boom') });\n").unwrap();
+        std::fs::write(p.join("tests/green.test.js"),
+            "require('node:test')('green', () => { if (process.env.WT_FLAG !== 'yes') throw new Error('env not set') });\n").unwrap();
+        root.to_string_lossy().into_owned()
+    }
+
+    #[test]
+    fn selected_files_in_a_node_test_package_run_and_carry_the_script_env() {
+        let w = pkg("green");
+        let (ok, cases) = run_jest_selected(&w, "pkg", &["pkg/tests/green.test.js".to_string()]);
+        assert!(ok, "{cases:?}");
+        assert_eq!(cases.len(), 1, "the selected file ran: {cases:?}");
+    }
+
+    /// NEGATIVE PROOF — before #4440 this returned (true, []) without running
+    #[test]
+    fn a_failing_selected_node_test_file_fails_the_step() {
+        let w = pkg("red");
+        let (ok, cases) = run_jest_selected(&w, "pkg", &["pkg/tests/red.test.js".to_string()]);
+        assert!(!ok, "a red selected file must fail: {cases:?}");
+    }
 }
