@@ -122,11 +122,7 @@ describe('#4152 api test harness brings its own index.db', () => {
     } finally {
       await h.close();
     }
-    // #4431 (Wren 10-06): this case proves the copy ANSWERS 200, not how fast. Booting the
-    // harness on a copy of index.db plus a cold /freshness recompute ran past jest's 5 s
-    // default in pipeline runs (wren #4431 run 1; silas 2 of 6 runs on 10-04) while passing
-    // locally in 4.8-6.9 s whole-file. A speed bar belongs in its own test, not this one.
-  }, 60_000);
+  });
 
   test('negative proof: pointed at the live file, the harness refuses to start', async () => {
     if (!haveLive) return;
