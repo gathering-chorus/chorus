@@ -48,7 +48,7 @@ pub fn scope_irrelevant(f: &str) -> bool {
     // Without this, re-pointing crawler-error.yml refused the run as unmapped.
     // #4389 — platform/hooks/ (git hooks) is the same kind of file as
     // .github/workflows/: it orchestrates, it is no build input, and the bats
-    // suites that name a hook are selected by the exercise rule (#4440).
+    // suites that name a hook are pulled in by coverage (is_governed_surface).
     // Editing pre-commit refused #4333's run as unmapped.
     let dir = ["designing/", "roles/", "docs/", "knowledge/", "dashboards/", "messages/",
                "platform/scripts/", "platform/launchd/", "skills/", ".claude/",
