@@ -48,7 +48,8 @@ rows() { arq --results csv --query "$T/q.rq" "$@" 2>/dev/null | tail -n +2 | gre
   printf '%s\n' 'PREFIX chorus: <https://jeffbridwell.com/chorus#>' \
     'SELECT (COUNT(DISTINCT ?p) AS ?n) WHERE { ?p a chorus:Permission }' > "$T/n.rq"
   n=$(arq --results csv --query "$T/n.rq" --data "$PERMS" 2>/dev/null | tail -1 | tr -d '\r')
-  test "$n" -eq 48
+  # 49 since #4432 (2026-10-06): permission-wren-events, for Wren's events domain (#4438).
+  test "$n" -eq 49
 }
 
 @test "the scope query grants from Permission rows joined to real principals" {
