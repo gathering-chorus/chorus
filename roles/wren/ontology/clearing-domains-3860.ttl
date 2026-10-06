@@ -143,8 +143,11 @@ chorus:EventTypeShape
     sh:property [ sh:path chorus:envelopeFields ; sh:maxCount 1 ; sh:datatype xsd:string ] ;
     sh:property [ sh:path rdfs:comment ; sh:maxCount 1 ; sh:datatype xsd:string ] .
 
-chorus:ProductShape sh:property [ sh:path chorus:consumesEvent ; sh:class chorus:EventType ] .
-chorus:ServiceShape sh:property [ sh:path chorus:consumesEvent ; sh:class chorus:EventType ] .
+# No sh:class: athena-make serves a sh:class property as an edge and leaves it
+# off the row's GET (ownedBy, hasDomain are absent there too), so "Pulse reads
+# card.pulled" was in the store and invisible. Same form as chorus:consumes.
+chorus:ProductShape sh:property [ sh:path chorus:consumesEvent ; sh:nodeKind sh:IRI ] .
+chorus:ServiceShape sh:property [ sh:path chorus:consumesEvent ; sh:nodeKind sh:IRI ] .
 
 chorus:EventTypeShape
     sh:property [ sh:path chorus:producedBy ; sh:minCount 1 ; sh:maxCount 1 ; sh:class chorus:Domain ] ;
