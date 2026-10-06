@@ -14,13 +14,15 @@ GEN="$BATS_TEST_DIRNAME/../scripts/event-types-generate.py"
 setup() {
   T="$(mktemp -d)"
   cat > "$T/rows.json" <<'JSON'
-{ "count": 2, "data": [
+{ "count": 3, "data": [
   { "eventName": "card.pulled", "producedBy": "cards", "eventAbout": "https://jeffbridwell.com/chorus#Card",
     "eventCategory": "fact", "eventVersion": "1", "atVertebra": "building", "emitterSource": "chorus-events",
     "comment": "Card pulled to WIP", "joinKeys": "card_id", "payloadField": "card_id: Card identifier" },
   { "eventName": "hook.decision", "producedBy": "https://jeffbridwell.com/chorus#gates",
     "eventCategory": "diagnostic", "eventVersion": "1",
-    "payloadField": ["hook: Dispatch point", "decision: allow or deny"] }
+    "payloadField": ["hook: Dispatch point", "decision: allow or deny"] },
+  { "eventName": "batch.progress", "producedBy": "integrations", "eventAbout": "",
+    "eventCategory": "fact", "eventVersion": "1", "payloadField": "" }
 ] }
 JSON
   printf '{"@domain":"spine","product_map":{"chorus-events":"Chorus"},"events":{}}\n' > "$T/registry.json"
@@ -41,6 +43,8 @@ assert e == {'producer': 'cards', 'about': 'Card', 'category': 'fact', 'version'
              'fields': {'card_id': 'Card identifier'}}, e
 h = d['events']['hook.decision']
 assert h['producer'] == 'gates' and h['fields'] == {'decision': 'allow or deny', 'hook': 'Dispatch point'}, h
+b = d['events']['batch.progress']
+assert b['fields'] == {} and 'about' not in b, b   # the API serves absent fields as ""
 "
   [ "$status" -eq 0 ] || return 1
 }
@@ -62,7 +66,7 @@ d['events']['made.up.event'] = {'fields': {}}; json.dump(d, open(p, 'w'))"
 }
 
 @test "NEGATIVE: a response holding fewer rows than its count is refused, nothing written" {
-  sed -i '' 's/"count": 2/"count": 5/' "$T/rows.json"
+  sed -i '' 's/"count": 3/"count": 5/' "$T/rows.json"
   run python3 "$GEN"
   [ "$status" -ne 0 ] || return 1
   [[ "$output" == *"never write a partial registry"* ]] || return 1

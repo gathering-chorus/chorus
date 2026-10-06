@@ -30,7 +30,8 @@ URL = os.environ.get("EVENT_TYPES_URL", "http://localhost:3340/owl/v1/events/typ
 
 
 def many(v):
-    return [] if v is None else v if isinstance(v, list) else [v]
+    # the API serves an absent field as "" and a repeated one as a list
+    return [x for x in (v if isinstance(v, list) else [v]) if x]
 
 
 def local(iri):
