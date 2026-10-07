@@ -30,7 +30,8 @@ fn negative_proof_a_malformed_or_empty_name_is_not_a_role() {
     for bad in ["", "unknown", "Abby", "abby;rm", "-x"] {
         let got = input(Some(bad), "/tmp").role();
         assert_eq!(got, fallback, "{bad:?}");
-        assert_ne!(got.as_str(), bad, "{bad:?}");
+        // ("unknown" IS the fallback when no spawner or werk names a role)
+        if bad != "unknown" { assert_ne!(got.as_str(), bad, "{bad:?}"); }
     }
 }
 
