@@ -48,3 +48,26 @@ fn the_relay_is_read_from_the_prod_clearing_plist() {
     assert_eq!(relay_url_in_plist("<dict><key>PATH</key><string>/bin</string></dict>"), None);
     assert_eq!(relay_url_in_plist("<key>BUZZ_RELAY_URL</key><string></string>"), None);
 }
+
+#[test]
+fn a_read_only_variant_clearing_starts_through_the_room_launcher_and_its_plist_holds_no_secret() {
+    let clearing = werk_deploy::demo_env::env_services().into_iter().find(|s| s.name == "clearing").unwrap();
+    let ro = werk_deploy::demo_env::generate_plist(&clearing, "silas", "/werk/silas-4445", 3481,
+        &[("BUZZ_RELAY_URL", RELAY), ("CLEARING_ROOM_READONLY", "1")]);
+    let a = ro.find("<string>/bin/bash</string>").expect("no bash launcher");
+    let b = ro.find("/werk/silas-4445/platform/scripts/clearing-room-env").expect("no room launcher");
+    let c = ro.find("/werk/silas-4445/directing/clearing/dist/server.js").expect("no server entry");
+    assert!(a < b && b < c, "launcher must wrap the server: {ro}");
+    assert!(!ro.contains("BUZZ_ROOM_SECRET"), "the secret must never be in the plist");
+}
+
+#[test]
+fn negative_proof_a_variant_without_the_relay_starts_node_directly() {
+    let clearing = werk_deploy::demo_env::env_services().into_iter().find(|s| s.name == "clearing").unwrap();
+    let plain = werk_deploy::demo_env::generate_plist(&clearing, "silas", "/werk/silas-4445", 3481, &[]);
+    assert!(!plain.contains("clearing-room-env"), "{plain}");
+    let other = werk_deploy::demo_env::env_services().into_iter().find(|s| s.name != "clearing").unwrap();
+    let not_clearing = werk_deploy::demo_env::generate_plist(&other, "silas", "/werk/silas-4445", 3343,
+        &[("CLEARING_ROOM_READONLY", "1")]);
+    assert!(!not_clearing.contains("clearing-room-env"), "only the Clearing is wrapped");
+}

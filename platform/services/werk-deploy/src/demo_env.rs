@@ -616,6 +616,16 @@ pub fn generate_plist(
         }
     };
 
+    // #4445 — a variant Clearing handed the live relay read-only starts through
+    // clearing-room-env, which reads the room secret from its 600 file at start;
+    // the secret never goes into this (644) plist.
+    let program_args = if svc.name == "clearing"
+        && extra_env.iter().any(|(k, v)| *k == "CLEARING_ROOM_READONLY" && *v == "1") {
+        let mut v = vec!["/bin/bash".to_string(), format!("{}/platform/scripts/clearing-room-env", werk_root)];
+        v.extend(program_args);
+        v
+    } else { program_args };
+
     let program_args_xml: String = program_args
         .iter()
         .map(|a| format!("    <string>{}</string>", xml_escape(a)))
