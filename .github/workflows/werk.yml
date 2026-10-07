@@ -14,7 +14,9 @@ name: werk
 # The demo step maps that rc to a step output `proven`; merge→sync→deploy→accept are
 # gated `if: steps.demo.outputs.proven == 'true'`. rc=2 → those skip, job stays green.
 #
-# Every verb runs THROUGH MCP via chorus-mcp-call.sh (the single toolchain). Stop-on-
+# Every verb runs THROUGH MCP via chorus-mcp-call.sh (the single toolchain), except the
+# steps that run a binary directly (werk-test, werk-demo test-result, and the prod
+# werk-deploy — #4452: a deploy must not run through a service it restarts). Stop-on-
 # failure is the GHA default — any verb's non-zero exit halts the job; nothing half-lands.
 
 on:
@@ -583,7 +585,15 @@ jobs:
           # #3955 AC2 — the werk build lock is shared across roles; losing the race
           # was a hard fail at 60s (run 51). Bounded, NAMED retries instead.
           for attempt in 1 2 3; do
-            out=$(chorus-mcp-call.sh "${ROLE}" werk-deploy "$(printf '{"role":"%s","card_id":%s,"target":"canonical","landedCommit":"%s"}' "${ROLE}" "${CARD_ID}" "${LANDED_COMMIT}")") && rc=0 || rc=$?
+            # #4452 — werk-deploy runs DIRECTLY, never through chorus-mcp. Through MCP,
+            # a card that deploys chorus-mcp (or chorus-api) restarted the very service
+            # carrying this call: #4446 run 11 dropped at 10:25:04 with `curl: (18)`,
+            # pulse never deployed, and the deploy was finished by hand. Same env the
+            # MCP executor set (DEPLOY_ROLE/CHORUS_ROLE/CHORUS_HOME/CHORUS_WERK_BASE).
+            out=$(DEPLOY_ROLE="${ROLE}" CHORUS_ROLE="${ROLE}" \
+                  CHORUS_HOME="${CHORUS_HOME}" CHORUS_WERK_BASE="${CHORUS_WERK_BASE:-$HOME/CascadeProjects/chorus-werk}" \
+                  PATH="$HOME/.local/bin:$HOME/.chorus/bin:$PATH" \
+                  werk-deploy "${CARD_ID}" --landedCommit "${LANDED_COMMIT}" 2>&1) && rc=0 || rc=$?
             echo "$out"
             if [ "$rc" = "0" ]; then break; fi
             case "$out" in

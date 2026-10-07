@@ -113,7 +113,12 @@ assert "werk.yml has NO standalone git rebase step (#3186)" "yes" \
 assert "werk.yml calls verbs via MCP helper (single toolchain)" "yes" \
   "$(present "$WERK" 'chorus-mcp-call|tools/call')"
 assert "werk.yml has no bare verb-binary invocation" "yes" \
-  "$(absent "$WERK" '^[[:space:]]*(werk-commit|werk-push|werk-merge|werk-build|werk-deploy)[[:space:]]')"
+  "$(absent "$WERK" '^[[:space:]]*(werk-commit|werk-push|werk-merge|werk-build)[[:space:]]')"
+# #4452 — the one exception: the prod deploy runs werk-deploy directly, because through
+# MCP a card that deploys chorus-mcp restarts the service carrying the call (#4446 run 11).
+# 4452-land-deploys-without-mcp.bats runs the step itself; this pins that it stays direct.
+assert "werk.yml deploy-canonical runs werk-deploy directly, not through MCP (#4452)" "yes" \
+  "$(absent "$WERK" 'chorus-mcp-call\.sh[^|]*werk-deploy[^|]*"target":"canonical"')"
 
 echo
 echo "werk-pipeline-shape: $PASSED passed, $FAILED failed"

@@ -545,3 +545,24 @@ fn e2e_mcp_self_deploy_detaches_and_continuation_runs_inline() {
     let jsonl = read(&home.join("ops/logs/werk-deploy.jsonl"));
     assert!(jsonl.contains("gh-token-capture"), "capture failure witnessed in the jsonl: {jsonl}");
 }
+
+// #4452 AC2 — a SCHEDULED job's deploy is install + verify, never a kickstart.
+// #4446 round 1: the deploy kickstarted athena-validate (StartCalendarInterval), the
+// job exited 1 on a dirty graph — its job, not a deploy fault — and the deploy rolled
+// back; a role installed it by hand. The launchctl shim answers `print` as a scheduled
+// job whose last run exited 1, with no pid. The deploy must pass and must not kickstart.
+#[cfg(target_os = "macos")]
+#[test]
+fn e2e_scheduled_job_deploys_without_a_kickstart_and_ignores_its_exit_code() {
+    let _env = ENV_LOCK.lock().unwrap_or_else(|p| p.into_inner());
+    let (home, werk_base) = canon_running_proof_fixture();
+    let bin = PathBuf::from(std::env::var("PATH").unwrap().split(':').next().unwrap());
+    let lc = tmp("lc4452").join("launchctl.log");
+    write_exec(&bin.join("launchctl"), &format!(
+        "#!/bin/sh\necho \"$@\" >> {lc:?}\nif [ \"$1\" = print ]; then\n  echo 'state = not running'\n  echo 'program = /x/chorus-inject'\n  echo 'StartCalendarInterval = {{'\n  echo 'last exit code = 1'\nfi\nexit 0\n"));
+    let r = deploy(7001, "silas", "canonical", &home, &werk_base);
+    std::env::remove_var("CHORUS_HOME");
+    let calls = read(&lc);
+    assert!(r.is_ok(), "a scheduled job's own exit code is not a deploy verdict: {:?}\nlaunchctl: {}", r, calls);
+    assert!(!calls.contains("kickstart"), "a deploy must not kickstart a scheduled job:\n{}", calls);
+}

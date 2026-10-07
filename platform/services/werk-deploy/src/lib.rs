@@ -2143,18 +2143,28 @@ fn deploy_rust_service(
     let install_epoch = now_epoch();
 
     if target == "canonical" {
-        if let Err(e) = run_env(None, &[], "launchctl", &["kickstart", "-k", &format!("gui/{}/{}", uid(), svc)]) {
-            rollback(home, werk_s, role, card, trace, target, bin, "kickstart-fail");
-            return Err(format!("kickstart {} failed; rolled back: {}", svc, e));
-        }
-        // #3317 (bash #3232 port) — verify the daemon actually came UP. `launchctl
-        // kickstart` returns BEFORE the daemon binds, so a crash-on-start otherwise
-        // ships green while the service is down (the 2026-06-04 chorus-hooks outage:
-        // launchctl said loaded, the socket was gone). launchctl liveness for every
-        // service; for com.chorus.hooks additionally require its socket to be live.
-        if let Err(e) = wait_for_service_up(svc) {
-            rollback(home, werk_s, role, card, trace, target, bin, "not-running");
-            return Err(format!("{} did not come up after kickstart; rolled back: {}", svc, e));
+        // #4452 — a SCHEDULED job is deployed by installing it: its next run execs the
+        // installed file. Kickstarting it to judge the deploy ran the job now and read
+        // the job's own exit code as the deploy's verdict — athena-validate exits 1 on a
+        // dirty graph, so #4446 round 1 rolled back a good install. Only a daemon is
+        // restarted and liveness-checked; an unreadable print keeps the strict path.
+        let is_daemon = daemon_class(
+            run_env(None, &[], "launchctl", &["print", &format!("gui/{}/{}", uid(), svc)]).ok().as_deref(),
+        );
+        if is_daemon {
+            if let Err(e) = run_env(None, &[], "launchctl", &["kickstart", "-k", &format!("gui/{}/{}", uid(), svc)]) {
+                rollback(home, werk_s, role, card, trace, target, bin, "kickstart-fail");
+                return Err(format!("kickstart {} failed; rolled back: {}", svc, e));
+            }
+            // #3317 (bash #3232 port) — verify the daemon actually came UP. `launchctl
+            // kickstart` returns BEFORE the daemon binds, so a crash-on-start otherwise
+            // ships green while the service is down (the 2026-06-04 chorus-hooks outage:
+            // launchctl said loaded, the socket was gone). launchctl liveness for every
+            // service; for com.chorus.hooks additionally require its socket to be live.
+            if let Err(e) = wait_for_service_up(svc) {
+                rollback(home, werk_s, role, card, trace, target, bin, "not-running");
+                return Err(format!("{} did not come up after kickstart; rolled back: {}", svc, e));
+            }
         }
         // #3179 — verify the DAEMON (service) binary specifically: `bin` is the
         // is_service binary com.chorus.<svc> runs. Installed cdhash == its built
@@ -2171,9 +2181,6 @@ fn deploy_rust_service(
                 // to be stale: each run execs the installed file, so installed==built is
                 // the proof. #4226 taught the liveness step this; this step still asked
                 // for a pid and held #4336 unaccepted after its merge (09-28 09:49).
-                let is_daemon = daemon_class(
-                    run_env(None, &[], "launchctl", &["print", &format!("gui/{}/{}", uid(), svc)]).ok().as_deref(),
-                );
                 match running_verdict(is_daemon, b, i, resolve_restarted(svc, install_epoch)) {
                     RunVerdict::Ok => {
                         jsonl(home, role, card, trace, "verified",
