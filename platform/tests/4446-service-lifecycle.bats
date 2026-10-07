@@ -34,8 +34,14 @@ teardown() {
   if [[ "$FIXHOME" == /tmp/h4446.* ]]; then rm -rf "$FIXHOME"; fi
 }
 
-# write_job <program> — a KeepAlive job in its own world
+# write_job <program> — a KeepAlive job in its own world, loaded
 write_job() {
+  write_plist "$1"
+  launchctl bootstrap "gui/$UIDN" "$PLIST"
+}
+
+# write_plist <program> — the same job's plist, not loaded
+write_plist() {
   cat > "$PLIST" <<PLIST
 <?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
@@ -54,7 +60,6 @@ write_job() {
   <key>StandardErrorPath</key><string>$FIXHOME/err.log</string>
 </dict></plist>
 PLIST
-  launchctl bootstrap "gui/$UIDN" "$PLIST"
 }
 
 job_pid() { launchctl print "gui/$UIDN/$LABEL" 2>/dev/null | awk -F' = ' '/^\tpid = /{print $2}'; }
@@ -229,16 +234,15 @@ SH
 # a process cannot fake XPC_SERVICE_NAME — libxpc aborts it at start (rc 134),
 # and launchd is the only thing that makes a run "the service".
 write_once() {  # write_once <script>
-  write_job "<string>/bin/bash</string><string>$1</string>"
-  /usr/bin/sed -i '' 's#<key>KeepAlive</key><true/>#<key>RunAtLoad</key><true/>#' "$PLIST"
-  launchctl bootout "gui/$UIDN/$LABEL" 2>/dev/null || true
-  launchctl bootstrap "gui/$UIDN" "$PLIST"
+  write_once_args "<string>/bin/bash</string><string>$1</string>"
 }
 
 write_once_args() {  # write_once_args <ProgramArguments strings> — a RunAtLoad job
-  write_job "$1"
+  # Loaded once. Loading the KeepAlive job first, booting it out and loading
+  # again raced: bootout returns before launchd drops the label, and the second
+  # bootstrap failed with "Bootstrap failed: 5" (runs 9 and 15 of #4446).
+  write_plist "$1"
   /usr/bin/sed -i '' 's#<key>KeepAlive</key><true/>#<key>RunAtLoad</key><true/>#' "$PLIST"
-  launchctl bootout "gui/$UIDN/$LABEL" 2>/dev/null || true
   launchctl bootstrap "gui/$UIDN" "$PLIST"
 }
 
@@ -377,6 +381,19 @@ GUARD="$TREE/platform/tests/4446-every-service-logs-its-lifecycle.test.sh"
   echo "$output"
   [[ "$status" -ne 0 ]] || return 1
   [[ "$output" == *"src/main.rs calls no lifecycle helper"* ]] || return 1
+}
+
+@test "NEGATIVE PROOF: a node service that imports the helper but never calls started() is red" {
+  mkdir -p "$FIXHOME/agents" "$FIXHOME/root/src"; touch "$FIXHOME/agents/com.chorus.x.plist"
+  printf '%s\n' "const lifecycle = serviceLifecycle('com.chorus.x');" > "$FIXHOME/root/src/service.ts"
+  run env SERVICE_WIRING_AGENTS="$FIXHOME/agents" CHORUS_ROOT="$FIXHOME/root" \
+    SERVICE_WIRING_TABLE=$'com.chorus.x\tsrc/service.ts' bash "$GUARD"
+  echo "$output"
+  [[ "$status" -ne 0 && "$output" == *"never calls started()"* ]] || return 1
+  echo "lifecycle.started();" >> "$FIXHOME/root/src/service.ts"
+  run env SERVICE_WIRING_AGENTS="$FIXHOME/agents" CHORUS_ROOT="$FIXHOME/root" \
+    SERVICE_WIRING_TABLE=$'com.chorus.x\tsrc/service.ts' bash "$GUARD"
+  [[ "$status" -eq 0 && "$output" == *"1 wired"* ]] || { echo "$output"; return 1; }
 }
 
 plist_args() {  # plist_args <file> <program...> — a minimal plist with these ProgramArguments

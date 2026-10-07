@@ -126,6 +126,10 @@ for plist in "$AGENTS"/com.chorus.*.plist; do
   elif ! grep -Eq "$MARK" "$CHORUS_ROOT/$row"; then
     echo "FAIL: $label — $row calls no lifecycle helper"
     FAIL=$((FAIL+1))
+  elif [[ "$row" =~ \.(ts|js|py)$ ]] && ! grep -Eq '\.started\(' "$CHORUS_ROOT/$row"; then
+    # an import alone is not wiring: pulse imported the helper and logged no start
+    echo "FAIL: $label — $row sets up a lifecycle but never calls started()"
+    FAIL=$((FAIL+1))
   else
     PASS=$((PASS+1))
   fi

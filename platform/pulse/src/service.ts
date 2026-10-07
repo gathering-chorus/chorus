@@ -638,6 +638,7 @@ if (require.main === module) {
     const app = createApp(store, worker, emitSpine);
     app.listen(PORT, BIND_HOST, () => {
       process.stderr.write(JSON.stringify({ event: 'startup', port: PORT, bind: BIND_HOST, ...store.getStats() }) + '\n');
+      lifecycle.started();  // #4446 — round 1 imported the helper but never called it
     });
   })();
 }

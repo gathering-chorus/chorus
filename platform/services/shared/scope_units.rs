@@ -50,9 +50,13 @@ pub fn scope_irrelevant(f: &str) -> bool {
     // .github/workflows/: it orchestrates, it is no build input, and the bats
     // suites that name a hook are pulled in by coverage (is_governed_surface).
     // Editing pre-commit refused #4333's run as unmapped.
+    // #4446 — config/launchagents/ and proving/config/launchagents/ hold plists,
+    // the same kind of file as platform/launchd/: what launchd runs, no build
+    // input. Wrapping 13 of them in service-run refused the run as unmapped.
     let dir = ["designing/", "roles/", "docs/", "knowledge/", "dashboards/", "messages/",
                "platform/scripts/", "platform/launchd/", "skills/", ".claude/",
-               ".github/", "proving/domains/", "platform/hooks/"]
+               ".github/", "proving/domains/", "platform/hooks/",
+               "config/launchagents/", "proving/config/launchagents/"]
         .iter()
         .any(|d| f.starts_with(d));
     // #4173 — git's own metadata is on the list for the same reason a plist is:
@@ -362,6 +366,18 @@ mod scope_refusal_4169 {
     // #4446 — the two job scripts outside platform/ scope to nothing, by name.
     // NEGATIVE PROOF: any other script beside them, a suite under
     // proving/scripts/tests/, and a file under convergence/domains/ still refuse.
+    // #4446 — plists outside platform/launchd/ scope to nothing. NEGATIVE PROOF:
+    // a non-plist file beside them under config/ still refuses.
+    #[test]
+    fn a_launchagent_plist_outside_platform_is_not_a_build_input_4446() {
+        assert!(scope_irrelevant("config/launchagents/com.chorus.index-artifacts.plist"));
+        assert!(scope_irrelevant("proving/config/launchagents/com.chorus.session-watcher.plist"));
+        let f = "config/other/settings.json";
+        assert!(!scope_irrelevant(f), "{f} must not be waved through");
+        assert_eq!(scope_unit_names(&[f.to_string()], &[], &[], false),
+                   ScopeVerdict::Full(format!("unmapped:{f}")));
+    }
+
     #[test]
     fn a_job_script_outside_platform_is_not_a_build_input_4446() {
         assert!(scope_irrelevant("proving/scripts/alert-runner.sh"));
