@@ -4,6 +4,7 @@
  * the index took 11-15s by October and froze chorus-api's main thread every 30s
  * (Silas measured it at 15:28 against the 15:10/15:16/15:23 freezes).
  */
+/* eslint-disable security/detect-non-literal-fs-filename -- paths are chorus-api's own index and spine log (env or ~/.chorus), never request input */
 import fs from 'node:fs';
 import Database from 'better-sqlite3';
 import { fetchFreshness } from './handlers/chorus-freshness';

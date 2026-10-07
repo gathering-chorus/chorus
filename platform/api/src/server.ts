@@ -1612,7 +1612,7 @@ const freshnessRunner = fs.existsSync(freshnessWorkerPath)
 const freshnessCache = createFreshnessCache(
   freshnessRunner
     ? freshnessRunner.run
-    : async () => computeFreshness(DB_PATH, `${process.env.HOME}/.chorus/chorus.log`),
+    : () => Promise.resolve(computeFreshness(DB_PATH, `${process.env.HOME}/.chorus/chorus.log`)),
   { ttlMs: 30_000 },
 );
 // pre-warm at boot so the first live request never waits. #4063 - a pre-warm is
