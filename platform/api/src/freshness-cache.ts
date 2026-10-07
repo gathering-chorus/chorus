@@ -1,67 +1,62 @@
 // #3060 - stale-while-revalidate cache for GET /api/chorus/freshness.
 //
-// fetchFreshness does ~1.4s of synchronous work (read+count the 170MB spine log,
-// COUNT spine rows). Doing that per request blocks the chorus-api event loop -
-// the coordination spine - freezing search / context-inject / cards / nudge.
+// The freshness recompute counts rows in the index. In May that was ~1.4s; by
+// 2026-10-07 it was 11-15s and froze chorus-api every 30s, because the May cache
+// still ran it on the main thread. compute now returns a Promise: server.ts runs
+// it in the freshness worker thread (freshness-worker.ts), so the main thread
+// only awaits.
 //
-// This cache decouples the cost from request rate: the request path returns the
-// last good snapshot in <1ms; when the snapshot ages past ttlMs the next get()
-// still returns the (stale) snapshot immediately and schedules a single
-// background recompute off the request tick. No single request blocks >100ms.
+// The request path returns the last good snapshot at once; when it ages past
+// ttlMs the next get() still returns it and starts one background recompute.
+// Only the very first get (no snapshot yet) waits, and it waits without blocking.
 //
-// Pure + injectable (now, schedule, compute) so it is fully unit-testable. The
-// residual synchronous cost of the recompute itself moving off the loop entirely
-// (worker thread) is the structural follow-on tracked in #3055.
+// Pure + injectable (now, compute) so it is fully unit-testable.
 
 export interface FreshnessCacheOpts {
   ttlMs: number;
   now?: () => number;
-  // schedule a background recompute off the current tick (default setImmediate).
-  schedule?: (fn: () => void) => void;
 }
 
 export interface FreshnessCache<T> {
-  get(): T;
+  get(): Promise<T>;
 }
 
 export function createFreshnessCache<T>(
-  compute: () => T,
+  compute: () => Promise<T>,
   opts: FreshnessCacheOpts,
 ): FreshnessCache<T> {
   const now = opts.now ?? Date.now;
-  const schedule = opts.schedule ?? ((fn: () => void) => setImmediate(fn));
   const ttlMs = opts.ttlMs;
 
   let snapshot: T | undefined;
   let computedAt = 0;
-  let refreshing = false;
+  let inFlight: Promise<T> | null = null;
 
-  function refresh(): void {
-    try {
-      snapshot = compute();
-      computedAt = now();
-    } finally {
-      refreshing = false;
+  function refresh(): Promise<T> {
+    if (!inFlight) {
+      inFlight = compute()
+        .then((v) => {
+          snapshot = v;
+          computedAt = now();
+          return v;
+        })
+        .finally(() => {
+          inFlight = null;
+        });
     }
+    return inFlight;
   }
 
   return {
-    get(): T {
-      // Cold start: nothing cached yet — compute once synchronously so the very
-      // first caller still gets a real answer. Pre-warm at boot to avoid paying
-      // this on a live request.
-      if (snapshot === undefined) {
-        refresh();
-        return snapshot as T;
-      }
+    get(): Promise<T> {
+      // Cold start: nothing cached yet, so the first caller waits for one recompute.
+      if (snapshot === undefined) return refresh();
 
-      // Stale: serve the existing snapshot immediately, schedule one refresh.
-      if (now() - computedAt >= ttlMs && !refreshing) {
-        refreshing = true;
-        schedule(refresh);
-      }
+      // Stale: serve the existing snapshot now and start one background recompute.
+      // A failed background recompute keeps the old snapshot; the next stale get retries.
+      if (now() - computedAt >= ttlMs) refresh().catch(() => undefined);
 
-      return snapshot;
+      return Promise.resolve(snapshot);
     },
   };
 }

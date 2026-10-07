@@ -1,3 +1,4 @@
+// @test-type: unit — compute and clock are injected; no service, no store.
 /**
  * context-freshness handler tests (#2252 migration wave).
  *
@@ -25,7 +26,7 @@ describe('fetchContextFreshness', () => {
     const r = await fetchContextFreshness(
       {
         sparql: stubSparql(),
-        runFreshness: () => ({ status: 200, body: innerBody }),
+        runFreshness: async () => ({ status: 200, body: innerBody }),
       },
       '/api/chorus/context/freshness',
     );
@@ -44,7 +45,7 @@ describe('fetchContextFreshness', () => {
     const r = await fetchContextFreshness(
       {
         sparql: stubSparql(),
-        runFreshness: () => ({ status: 503, body: { error: 'Index database not found' } }),
+        runFreshness: async () => ({ status: 503, body: { error: 'Index database not found' } }),
       },
       '/api/chorus/context/freshness',
     );
@@ -56,7 +57,7 @@ describe('fetchContextFreshness', () => {
     const r = await fetchContextFreshness(
       {
         sparql: stubSparql(),
-        runFreshness: () => ({ status: 200, body: { sources: [], summary: {}, timestamp: '' } }),
+        runFreshness: async () => ({ status: 200, body: { sources: [], summary: {}, timestamp: '' } }),
       },
       '/api/chorus/context/freshness',
     );

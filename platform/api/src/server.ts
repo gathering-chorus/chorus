@@ -1163,7 +1163,7 @@ const emitSearchEvent = createSearchEventEmitter({
 });
 
 // Staleness middleware + search meta extracted to src/search-meta.ts (#2205 wave 5).
-import { addStaleHeader, buildSearchMeta, SOURCE_CADENCE } from './search-meta';
+import { addStaleHeader, buildSearchMeta } from './search-meta';
 
 // enrichHit + resolveSearchLimit + SEARCH_* constants moved to search-fusion.ts.
 // (enrichHit + resolveSearchLimit imported at line 241.)
@@ -1595,61 +1595,55 @@ app.get('/api/chorus/stats', async (_req: Request, res: Response) => {
 // --- GET /api/chorus/freshness (#1879) ---
 // SOURCE_CADENCE moved to src/search-meta.ts (#2205 wave 5) — imported at line 264.
 
-import { fetchFreshness } from './handlers/chorus-freshness';
 import { fetchContextFreshness } from './handlers/context-freshness';
 import { createFreshnessCache } from './freshness-cache';
+import { computeFreshness } from './freshness-compute';
+import { createFreshnessRunner } from './freshness-runner';
 
-function runFreshnessHandler() {
-  if (!fs.existsSync(DB_PATH)) {
-    return { status: 503, body: { error: 'Index database not found' } };
-  }
-  const db = new Database(DB_PATH, { readonly: true });
-  db.pragma('journal_mode = WAL');
-  try {
-    return fetchFreshness({
-      db,
-      exists: (p) => fs.existsSync(p),
-      spineLogPath: `${process.env.HOME}/.chorus/chorus.log`,
-      cadence: SOURCE_CADENCE,
-      timestamp: bostonNow,
-    });
-  } finally {
-    db.close();
-  }
-}
-
-// #3060 - fetchFreshness reads the 170MB spine log + COUNTs ~838K spine rows,
-// ~1.4s of synchronous work that blocked the event loop (the coordination spine)
-// on every poll. The cache serves the last snapshot on the request path in <1ms
-// and recomputes off the request tick (stale-while-revalidate), so no request
-// blocks the loop. TTL 30s — well inside the hourly+ source cadences. The
-// recompute's own residual sync cost moving fully off-loop (worker thread) is
-// the structural follow-on #3055.
-const freshnessCache = createFreshnessCache(runFreshnessHandler, { ttlMs: 30_000 });
-// pre-warm at boot so the first live request never pays the cold cost. #4063 —
-// a pre-warm can only ever be a convenience: if it throws, the boot continues
-// and the first request computes cold (and reports the real error).
-try {
-  freshnessCache.get();
-} catch (e) {
-  console.error(`freshness pre-warm failed at boot (first request computes cold): ${(e as Error).message}`);
-}
+// #3060 (reopened 2026-10-07) - the freshness recompute COUNTs the index. By
+// October it took 11-15s and, run on this thread every 30s, froze chorus-api and
+// the Clearing behind it. It now runs in the freshness worker thread
+// (dist/freshness-worker.js); this thread only awaits the reply. Tests run
+// without a build, so they fall back to computing in-process.
+const freshnessWorkerPath = path.join(__dirname, 'freshness-worker.js');
+const freshnessRunner = fs.existsSync(freshnessWorkerPath)
+  ? createFreshnessRunner(() => new Worker(freshnessWorkerPath))
+  : null;
+const freshnessCache = createFreshnessCache(
+  freshnessRunner
+    ? freshnessRunner.run
+    : () => Promise.resolve(computeFreshness(DB_PATH, `${process.env.HOME}/.chorus/chorus.log`)),
+  { ttlMs: 30_000 },
+);
+// pre-warm at boot so the first live request never waits. #4063 - a pre-warm is
+// only a convenience: if it fails, the first request computes and reports the error.
+freshnessCache.get().catch((e: Error) => {
+  console.error(`freshness pre-warm failed at boot (first request computes cold): ${e.message}`);
+});
 
 // New canonical path under /api/chorus/context/* (#2252).
 app.get('/api/chorus/context/freshness', async (req: Request, res: Response) => {
-  const r = await fetchContextFreshness(
-    { sparql: _athena, runFreshness: () => freshnessCache.get() },
-    req.originalUrl,
-  );
-  res.status(r.status).json(r.body);
+  try {
+    const r = await fetchContextFreshness(
+      { sparql: _athena, runFreshness: () => freshnessCache.get() },
+      req.originalUrl,
+    );
+    res.status(r.status).json(r.body);
+  } catch (e) {
+    res.status(500).json({ error: (e as Error).message });
+  }
 });
 
 // Legacy path stays live (returns same JSON) while callers migrate to
 // /api/chorus/context/freshness. 301 redirect + telemetry wave follows
 // once callers (test suites, bats) are carded — see #2252 follow-on.
-app.get('/api/chorus/freshness', (_req: Request, res: Response) => {
-  const r = freshnessCache.get();
-  res.status(r.status).json(r.body);
+app.get('/api/chorus/freshness', async (_req: Request, res: Response) => {
+  try {
+    const r = await freshnessCache.get();
+    res.status(r.status).json(r.body);
+  } catch (e) {
+    res.status(500).json({ error: (e as Error).message });
+  }
 });
 
 // --- GET /api/chorus/pulse/latest (#1881) ---
