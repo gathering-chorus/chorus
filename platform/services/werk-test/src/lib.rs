@@ -67,14 +67,81 @@ pub fn ts_packages() -> Vec<String> {
 }
 
 fn ts_packages_uncached() -> Vec<String> {
-    let root = REPO_ROOT.get().cloned().or_else(|| {
-        let mut d = std::env::current_dir().ok()?;
-        loop {
-            if d.join(".git").exists() { return Some(d); }
-            if !d.pop() { return None; }
-        }
-    });
-    root.map(|r| discover_ts_packages(&r)).unwrap_or_default()
+    let env_root = std::env::var("CHORUS_ROOT").or_else(|_| std::env::var("CHORUS_HOME")).ok();
+    let cwd = std::env::current_dir().unwrap_or_default();
+    resolve_repo_root(REPO_ROOT.get().cloned(), env_root, &cwd)
+        .map(|r| discover_ts_packages(&r))
+        .unwrap_or_default()
+}
+
+/// #4440 reopen — which of a crate's test binaries a card runs. A change under
+/// src/ is exercised by every test that links the crate, so the whole crate
+/// runs (empty = all). A card that changed only tests/<stem>.rs files runs just
+/// those binaries: the crate list decides what to BUILD, not what to run.
+pub fn cargo_only_bins(krate: &str, changed: &[String]) -> Vec<String> {
+    let prefix = format!("platform/services/{}/", krate);
+    let mine: Vec<&str> = changed.iter().filter_map(|f| f.strip_prefix(&prefix)).collect();
+    let stems: Vec<String> = mine.iter()
+        .filter_map(|r| r.strip_prefix("tests/").and_then(|t| t.strip_suffix(".rs")))
+        .filter(|stem| !stem.contains('/'))
+        .map(|s| s.to_string())
+        .collect();
+    if mine.is_empty() || stems.len() != mine.len() { Vec::new() } else { stems }
+}
+
+#[cfg(test)]
+mod cargo_only_bins_4440 {
+    use super::cargo_only_bins;
+    fn v(xs: &[&str]) -> Vec<String> { xs.iter().map(|x| x.to_string()).collect() }
+
+    #[test]
+    fn a_card_that_changed_only_test_files_runs_only_those_binaries() {
+        let ch = v(&["platform/services/werk-test/tests/a_4440.rs", "platform/services/werk-test/tests/b.rs", "docs/x.md"]);
+        assert_eq!(cargo_only_bins("werk-test", &ch), v(&["a_4440", "b"]));
+    }
+
+    #[test]
+    fn negative_proof_a_src_change_runs_the_whole_crate() {
+        let ch = v(&["platform/services/werk-test/tests/a_4440.rs", "platform/services/werk-test/src/lib.rs"]);
+        assert!(cargo_only_bins("werk-test", &ch).is_empty());
+        // a helper module under tests/ is shared by every binary: whole crate
+        assert!(cargo_only_bins("werk-test", &v(&["platform/services/werk-test/tests/common/mod.rs"])).is_empty());
+        assert!(cargo_only_bins("werk-test", &v(&["platform/services/werk-test/Cargo.toml"])).is_empty());
+    }
+}
+
+/// #4440 reopen — the nightly's npm lane planned no package while the tree
+/// has TS packages: the run measured none of them. One line naming it, or None.
+pub fn npm_lane_unmeasured(discovered: &[String], planned: &[String]) -> Option<String> {
+    if planned.is_empty() && !discovered.is_empty() {
+        Some(format!("UNMEASURED: npm lane planned 0 of {} TS packages ({}) — no TS test ran",
+            discovered.len(), discovered.join(", ")))
+    } else {
+        None
+    }
+}
+
+/// #4440 reopen — which tree's TS packages a run sees. The nightly runs under
+/// launchd with no working directory (cwd `/`) and never named its root, so
+/// the walk up to `.git` found nothing: since #4424 (10-05) every unattended
+/// nightly planned 0 npm units and ran no TS test, mcp-server included. Order:
+/// the root a mode named, then CHORUS_ROOT/CHORUS_HOME, then the cwd walk.
+pub fn resolve_repo_root(
+    named: Option<std::path::PathBuf>,
+    env_root: Option<String>,
+    cwd: &std::path::Path,
+) -> Option<std::path::PathBuf> {
+    if named.is_some() {
+        return named;
+    }
+    if let Some(r) = env_root.map(std::path::PathBuf::from).filter(|r| r.join(".git").exists()) {
+        return Some(r);
+    }
+    let mut d = cwd.to_path_buf();
+    loop {
+        if d.join(".git").exists() { return Some(d); }
+        if !d.pop() { return None; }
+    }
 }
 
 /// The test gate's OWN surface. A card whose diff touches these is "self-
