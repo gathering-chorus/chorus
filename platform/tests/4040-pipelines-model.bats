@@ -67,9 +67,11 @@ sq() {
   [[ "$output" == *"yes"* || "$output" == *"true"* ]]
 }
 
-@test "AC3 athena pipeline has shape→forge→seed→validate" {
+@test "AC3 athena pipeline has shape→forge→validate (#4432: the seed step is gone)" {
   run sq "$PIPES" 'SELECT (COUNT(?s) AS ?n) WHERE { c:pipeline-athena c:hasStep ?s }'
-  [[ "$output" == *"4"* ]] || return 1
+  [[ "$output" == *"3"* ]] || return 1
+  run sq "$PIPES" 'ASK { c:pipeline-athena c:hasStep c:pipeline-step-athena-seed }'
+  [[ "$output" == *"no"* || "$output" == *"false"* ]]
 }
 
 @test "AC3 clearing + borg are planned instances with NO steps (no invented steps)" {
