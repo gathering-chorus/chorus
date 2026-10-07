@@ -3182,7 +3182,10 @@ fn crate_of(path: &str) -> Option<String> {
 
 /// #4419 — the unit that runs a selected test file (or a whole package path).
 fn unit_for_test(path: &str) -> Option<TestUnit> {
-    if werk_test::is_bats_suite(path) {
+    // #4440 reopened — a shell suite (`platform/scripts/test-*.sh`, `*.test.sh`)
+    // is run by the bats lane's runner (suite_runner picks bash); without this
+    // a changed shell test was selected and then ran nowhere: 0 units, exit 0.
+    if werk_test::is_bats_suite(path) || werk_test::is_shell_suite(path) {
         return Some(TestUnit::BatsSuite(path.to_string()));
     }
     if let Some(c) = path.strip_prefix("platform/services/") {
@@ -3270,5 +3273,18 @@ mod selected_node_test_4440 {
         let w = pkg("red");
         let (ok, cases) = run_jest_selected(&w, "pkg", &["pkg/tests/red.test.js".to_string()]);
         assert!(!ok, "a red selected file must fail: {cases:?}");
+    }
+}
+
+#[cfg(test)]
+mod shell_suite_unit_4440 {
+    use super::*;
+
+    #[test]
+    fn a_changed_shell_test_is_a_unit_that_runs() {
+        assert_eq!(unit_for_test("platform/scripts/test-nightly-npm-runner.sh"),
+            Some(TestUnit::BatsSuite("platform/scripts/test-nightly-npm-runner.sh".into())));
+        // NEGATIVE PROOF: an ordinary script is not a suite
+        assert_eq!(unit_for_test("platform/scripts/chorus-werk-status"), None);
     }
 }
