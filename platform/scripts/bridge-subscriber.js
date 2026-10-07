@@ -70,7 +70,8 @@ function formatBoardEvent(event) {
 
 // #4130 — every line carries its own time.
 //
-// bridge-subscriber-health.test.sh asked "any ping timeouts in the last 20
+// The old health test (removed 10-06, #4445: a code gate reading live log state)
+// asked "any ping timeouts in the last 20
 // LINES", because the lines had no timestamps and a line count was the only
 // window available. A count-window cannot age out: a fix stays red until enough
 // new lines push the old ones past 20, and a subscriber that is healthy and
