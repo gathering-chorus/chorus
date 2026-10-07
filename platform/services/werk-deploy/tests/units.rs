@@ -931,7 +931,7 @@ fn negative_proof_3734_a_port_collision_is_caught() {
 #[test]
 fn variant_clearing_reads_its_own_roles_api_never_prod() {
     for role in ["silas", "kade", "wren"] {
-        let env = werk_deploy::demo_env::clearing_extra_env(role, "/w/.chorus-demo", "https://id.example", "/bin").unwrap();
+        let env = werk_deploy::demo_env::clearing_extra_env(role, "/w/.chorus-demo", "https://id.example", "/bin", None).unwrap();
         let get = |k: &str| env.iter().find(|(kk, _)| kk == k).map(|(_, v)| v.clone()).unwrap();
         let api_port = werk_deploy::demo_env::env_port_for("chorus-api", role).unwrap();
         assert_eq!(get("CHORUS_API_URL"), format!("http://localhost:{api_port}"));
@@ -942,7 +942,7 @@ fn variant_clearing_reads_its_own_roles_api_never_prod() {
 
 #[test]
 fn variant_clearing_writes_only_under_the_werks_demo_store() {
-    let env = werk_deploy::demo_env::clearing_extra_env("wren", "/w/.chorus-demo", "https://id.example", "/bin").unwrap();
+    let env = werk_deploy::demo_env::clearing_extra_env("wren", "/w/.chorus-demo", "https://id.example", "/bin", None).unwrap();
     let get = |k: &str| env.iter().find(|(kk, _)| kk == k).map(|(_, v)| v.clone()).unwrap();
     assert_eq!(get("CLEARING_MSG_FILE"), "/w/.chorus-demo/bridge-messages.json");
     assert_eq!(get("CLEARING_JOURNAL"), "/w/.chorus-demo/room.jsonl");
@@ -957,13 +957,13 @@ fn variant_clearing_writes_only_under_the_werks_demo_store() {
 
 #[test]
 fn clearing_extra_env_refuses_an_unknown_role() {
-    assert!(werk_deploy::demo_env::clearing_extra_env("jeff", "/w", "x", "/bin").is_err());
+    assert!(werk_deploy::demo_env::clearing_extra_env("jeff", "/w", "x", "/bin", None).is_err());
 }
 
 #[test]
 fn the_real_variant_clearing_env_names_no_prod_surface() {
     for role in ["silas", "kade", "wren"] {
-        let env = werk_deploy::demo_env::clearing_extra_env(role, "/w/.chorus-demo", "https://id.example", "/bin").unwrap();
+        let env = werk_deploy::demo_env::clearing_extra_env(role, "/w/.chorus-demo", "https://id.example", "/bin", None).unwrap();
         assert_eq!(werk_deploy::demo_env::clearing_env_prod_leak(&env), None, "{role}");
     }
 }
@@ -971,7 +971,7 @@ fn the_real_variant_clearing_env_names_no_prod_surface() {
 #[test]
 fn negative_proof_3734_a_clearing_env_pointed_at_prod_is_refused() {
     // Silas, 2026-09-02: "ship a proof where clearing_extra_env points at prod and the check FAILS."
-    let base = werk_deploy::demo_env::clearing_extra_env("wren", "/w/.chorus-demo", "https://id.example", "/bin").unwrap();
+    let base = werk_deploy::demo_env::clearing_extra_env("wren", "/w/.chorus-demo", "https://id.example", "/bin", None).unwrap();
     let poison = |k: &str, v: &str| -> Vec<(String, String)> {
         base.iter().map(|(kk, vv)| if kk == k { (kk.clone(), v.to_string()) } else { (kk.clone(), vv.clone()) }).collect()
     };
