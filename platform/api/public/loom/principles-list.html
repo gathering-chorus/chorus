@@ -92,26 +92,18 @@
         if (!res.ok) throw new Error('API ' + res.status);
         const body = await res.json();
         const rows = Array.isArray(body?.data) ? body.data : [];
-        const labelOf = new Map(rows.map((r) => [r.name, r.label || r.name]));
-        const all = rows.map((r) => ({
-          ...r, id: r.name, isPermacultureParent: r.isPermacultureParent === true || r.isPermacultureParent === 'true',
-          // rhymesWith names the permaculture parent (the old read folded it into parents)
-          parents: [].concat(r.rhymesWith || []).filter(Boolean).map((n) => ({ uri: n, label: labelOf.get(n) || n })),
-        }));
-        const chorus = all
-          .filter((p) => !p.isPermacultureParent)
-          .slice()
+        // #4358 — the principles are the 14 Hemenway principles; one list, alphabetical
+        const all = rows
+          .map((r) => ({ ...r, id: r.name }))
           .sort((a, b) => (a.label || '').localeCompare(b.label || ''));
 
-        meta.textContent = `${chorus.length} chorus principles, alphabetical (Hemenway parents not shown).`;
+        meta.textContent = `${all.length} principles, alphabetical.`;
 
-        const html = '<ol>' + chorus.map((p) => {
-          const parent = (p.parents && p.parents[0]) ? p.parents[0].label : '';
+        const html = '<ol>' + all.map((p) => {
           const split = splitReviewTail(p.comment);
           return `
             <li>
               <span class="label">${escapeHtml(p.label || p.id)}</span>
-              ${parent ? `<span class="parent-ref">— under ${escapeHtml(parent)}</span>` : ''}
               ${split.body ? `<p class="body">${escapeHtml(split.body)}</p>` : ''}
             </li>
           `;

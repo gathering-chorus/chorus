@@ -19,19 +19,19 @@ test('create POSTs the shape\'s fields to /v1/principles/principles', async () =
   const calls: Array<{ url: string; method?: string; body?: Record<string, string> }> = [];
   const fetchImpl = (async (url: string, init?: { method?: string; body?: string }) => {
     calls.push({ url, method: init?.method, body: init?.body ? JSON.parse(init.body) : undefined });
-    return { ok: true, status: 201, json: async () => ({ data: { name: 'ship-small' } }) };
+    return { ok: true, status: 201, json: async () => ({ data: { name: 'hemenway-observe' } }) };
   }) as unknown as FetchImpl;
   await withClient(fetchImpl, async (c) => {
     const r = (await c.callTool({ name: 'chorus_principles_create', arguments: {
-      label: 'Ship Small', comment: 'c', techReading: 't', jeffReading: 'j', principleKind: 'xp', source: 's', rhymesWith: 'hemenway-observe',
+      label: 'Observe', comment: 'c', techReading: 't', jeffReading: 'j', order: 1, source: "Hemenway, T. Gaia's Garden, 2nd ed., p. 6.",
     } })) as { content: Array<{ text: string }> };
-    assert.match(r.content[0].text, /ship-small/);
+    assert.match(r.content[0].text, /hemenway-observe/);
   });
   assert.equal(calls.length, 1);
   assert.ok(calls[0].url.endsWith('/v1/principles/principles'), calls[0].url);
   assert.equal(calls[0].method, 'POST');
   assert.deepEqual(calls[0].body, {
-    name: 'ship-small', label: 'Ship Small', comment: 'c', techReading: 't', jeffReading: 'j', principleKind: 'xp', source: 's', rhymesWith: 'hemenway-observe',
+    name: 'hemenway-observe', label: 'Observe', comment: 'c', techReading: 't', jeffReading: 'j', order: '1', source: "Hemenway, T. Gaia's Garden, 2nd ed., p. 6.",
   });
 });
 
@@ -42,6 +42,23 @@ test('NEGATIVE PROOF — a create missing a required field is refused before any
     let refused: boolean;
     try {
       const r = (await c.callTool({ name: 'chorus_principles_create', arguments: { label: 'Only a label' } })) as { isError?: boolean };
+      refused = r.isError === true;
+    } catch { refused = true; }
+    assert.equal(refused, true);
+  });
+  assert.equal(called, 0);
+});
+
+// #4358 — order is required and bounded by the shape (1..14)
+test('NEGATIVE PROOF — a create with order 15 is refused before any write', async () => {
+  let called = 0;
+  const fetchImpl = (async () => { called++; return { ok: true, status: 201, json: async () => ({}) }; }) as unknown as FetchImpl;
+  await withClient(fetchImpl, async (c) => {
+    let refused: boolean;
+    try {
+      const r = (await c.callTool({ name: 'chorus_principles_create', arguments: {
+        label: 'Fifteenth', comment: 'c', techReading: 't', jeffReading: 'j', order: 15, source: "Hemenway, T. Gaia's Garden, 2nd ed., p. 6.",
+      } })) as { isError?: boolean };
       refused = r.isError === true;
     } catch { refused = true; }
     assert.equal(refused, true);

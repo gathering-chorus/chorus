@@ -37,14 +37,27 @@ pub fn parse_csv(check_id: &str, body: &str) -> Vec<Finding> {
     rows.map(|line| {
         let mut cols = line.split(',');
         let subject = cols.next().unwrap_or("").trim().to_string();
-        let detail = cols.collect::<Vec<_>>().join(",").trim().to_string();
+        // #4358 — shorten each column that IS an IRI, and only those. Shortening
+        // the joined detail cut everything before its last '#' or '/', which ate
+        // the regex and the value of a pattern finding ("#card-[0-9]+$" → "card-…").
+        let detail = cols
+            .map(|c| {
+                let c = c.trim();
+                if is_iri(c) { short(c) } else { c.to_string() }
+            })
+            .collect::<Vec<_>>()
+            .join(",");
         Finding {
             check: check_id.to_string(),
             subject: short(&subject),
-            detail: short(&detail),
+            detail,
         }
     })
     .collect()
+}
+
+fn is_iri(s: &str) -> bool {
+    s.starts_with("http://") || s.starts_with("https://") || s.starts_with("urn:")
 }
 
 /// IRIs are printed by their local name. A report Jeff has to read is not
@@ -136,6 +149,17 @@ pub fn run(check: &Check) -> (Verdict, Vec<Finding>) {
 mod tests {
     use super::*;
     use crate::checks::COMPLETENESS;
+
+    /// NEGATIVE PROOF (#4358): a non-IRI detail column (a regex, a literal)
+    /// containing '#' or '/' must survive whole. The old whole-detail shortening
+    /// turned "@id,https://…#oops,#card-[0-9]+$,miss" into "card-[0-9]+$,miss".
+    #[test]
+    fn negative_proof_non_iri_detail_columns_are_not_shortened() {
+        let body = "s,field,value,re,outcome\nhttps://jeffbridwell.com/chorus#oops,@id,https://jeffbridwell.com/chorus#oops,#card-[0-9]+$,miss\n";
+        let f = parse_csv("row-value-off-pattern", body);
+        assert_eq!(f[0].subject, "oops");
+        assert_eq!(f[0].detail, "@id,oops,#card-[0-9]+$,miss");
+    }
 
     #[test]
     fn a_header_only_response_is_clean() {

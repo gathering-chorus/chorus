@@ -13,7 +13,6 @@ a token that is valid for years).
 | hook-server-down | com.chorus.hooks PID/socket absent | daemon crashed/hung | launchctl kickstart -k gui/$(id -u)/com.chorus.hooks; verify /tmp/chorus-hooks.sock |
 | lancedb-stale | newest data/lance mtime > 24h | index build unscheduled (#3367), Ollama down | verify the index build job; Ollama on Bedroom |
 | loom-principles-hash-drift | per-role principle hashes not equal | a role booted before a graph change | coordinate /reboot to realign |
-| loom-principles-orphans | SPARQL COUNT orphan principles > 0 | mid-write or rename drift | inspect /loom/principles.html or SPARQL |
 | seed-write-failure | gathering logs matched seed/SPARQL-fail in 90s | Fuseki down, SPARQL update error | curl localhost:3030/$/ping; Loki seed errors |
 | tunnel-down | PID present but 3x /health probes failed | tunnel disconnected | launchctl kickstart -k com.cloudflare.tunnel; cloudflared.log |
 | vikunja-auth-failure | {job=vikunja} status=401 count in 5m | a caller is auth-rejected — NOTE: not necessarily the .env token (verify its expiry first) | identify the 401'd caller before touching any token |

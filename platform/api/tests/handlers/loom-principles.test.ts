@@ -22,8 +22,8 @@ describe('#3749 fetchLoomPrinciples via athena-make', () => {
     const fetchFn = jest.fn(async (url: RequestInfo | URL) => {
       const u = String(url);
       if (u.endsWith('/principles')) return list(['hemenway-observe', 'hemenway-connect']);
-      if (u.includes('hemenway-observe')) return entity('hemenway-observe', { label: 'Observe', comment: 'Watch first.', techReading: 'Gemba.', jeffReading: 'Reads the board.', isPermacultureParent: 'true' });
-      return entity('hemenway-connect', { label: 'Connect', comment: 'Relative location.', isPermacultureParent: 'true' });
+      if (u.includes('hemenway-observe')) return entity('hemenway-observe', { label: 'Observe', comment: 'Watch first.', techReading: 'Gemba.', jeffReading: 'Reads the board.', order: '1' });
+      return entity('hemenway-connect', { label: 'Connect', comment: 'Relative location.', order: '2' });
     });
     const r = await fetchLoomPrinciples({ fetchFn: fetchFn as unknown as typeof fetch, owlApiUrl: 'http://owl' });
     expect(r.status).toBe(200);
@@ -32,8 +32,11 @@ describe('#3749 fetchLoomPrinciples via athena-make', () => {
     const obs = body.data.principles.find((p) => p.id === 'hemenway-observe')!;
     expect(obs.label).toBe('Observe');
     expect(obs.techReading).toBe('Gemba.');
-    expect(obs.isPermacultureParent).toBe(true);
-    expect(obs.parents).toEqual([]); // the 14 are peers post-#3749
+    expect(obs.order).toBe(1);
+    // #4358 — one family, no kind flag and no parent edges on the wire
+    expect(obs).not.toHaveProperty('isPermacultureParent');
+    expect(obs).not.toHaveProperty('parents');
+    expect(body.data.principles.map((p) => p.id)).toEqual(['hemenway-observe', 'hemenway-connect']); // book order
   });
 
   test('NEGATIVE: athena-make unreachable → 502 error envelope, NEVER an empty principle list', async () => {

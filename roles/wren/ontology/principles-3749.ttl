@@ -20,101 +20,60 @@
 @prefix dcterms: <http://purl.org/dc/terms/> .
 
 
-# #4006 — principleKind as a declared property. athena-make projects DECLARED
-# vocabulary; an undeclared predicate sits in the store and never reaches the
-# read surface, which is exactly what "served 14, principleKind on zero" meant
-# — the value was there, the declaration was not.
-# #4195 (2026-09-17 03:09, Silas): the door refused Principle since #4186 landed, because
-# the shape asked for dcterms:source and the ADR-040 camelCase gate (athena-make
-# lib.rs:476) reads a non-chorus property's full IRI. /principles was 404 for nine hours.
-# chorus:source is the camelCase name; declared a subproperty of dcterms:source so the
-# meaning is kept (the same move #4183 made for acl:agent → chorus:agent).
+# #4358 — Jeff, 2026-10-07: "i want the principles to be only pc and mapped to
+# xp practices". The principles domain is the 14 Hemenway permaculture
+# principles, nothing else; XP lives in the practices that express them. So the
+# fields that only existed to tell two families apart are gone from the shape
+# (principleKind, isPermacultureParent, rhymesWith), and so is publishesPreAuth,
+# which no principle row ever carried. Every field left is described here, in
+# the model, and is either required (sh:minCount 1) or says it is optional.
+#
+# Names and citations are formats the door checks, not habits: a row named off
+# the hemenway-<slug> format, or a citation in a fourth spelling, is refused.
+# Negative proof: platform/tests/fixtures/principles-4186-violations.ttl and
+# 4186-principle-shape-floor.bats.
+
+# #4195 — chorus:source is the camelCase name the door accepts; a subproperty
+# of dcterms:source so the meaning is kept.
 chorus:source a owl:DatatypeProperty ;
     rdfs:subPropertyOf dcterms:source ;
     rdfs:label "source" ;
-    rdfs:comment "Where the principle came from: Hemenway, Beck, or a Chorus decision." .
-
-chorus:principleKind a owl:DatatypeProperty ;
-    rdfs:label "principle kind" ;
-    rdfs:domain chorus:Principle ;
-    rdfs:range xsd:string ;
-    rdfs:comment "Which set this principle belongs to: pc (the permaculture principles the team designs by) or xp (the extreme-programming principles it builds by)." .
+    rdfs:comment "Where the principle came from, as one citation: Hemenway, T. Gaia's Garden, 2nd ed., p. N." .
 
 chorus:PrincipleShape a sh:NodeShape ;
-    sh:property [ sh:path chorus:publishesPreAuth ; sh:maxCount 1 ; sh:datatype xsd:string ] ;   # #3777 — opt-in publication to the pre-auth sign-in page. OPTIONAL by design: absent means NOT published, so fail-closed comes from the data model rather than from generator code a later edit could soften.
     sh:targetClass chorus:Principle ;
-    sh:property [ sh:path rdfs:label ; sh:minCount 1 ] ;
-    sh:property [ sh:path rdfs:comment ; sh:minCount 1 ] ;
-    # #4006 — WHICH KIND of principle this is. The loom holds two sets that read
-    # differently and are cited differently: the 14 permaculture principles the
-    # team designs by, and the 14 XP principles the team builds by. Served as one
-    # undifferentiated list of 14, /principles could not tell you which you were
-    # reading, and nothing could bind a Practice to the XP principle it expresses
-    # (Kade, #3754, blocked on exactly that 2026-08-25).
-    #
-    # minCount 1 is the point: an untagged principle is REFUSED at the door
-    # rather than rendered as a blank axis. The 14 PC instances carry "pc" in the
-    # same commit, so the constraint is satisfiable the moment it lands.
-    sh:property [ sh:path chorus:principleKind ; sh:minCount 1 ; sh:maxCount 1 ;
-                  sh:datatype xsd:string ; sh:in ( "pc" "xp" ) ] ;
-    # #4130 — CLAIM the two properties the loom reads and the generator was not
-    # serving. DECLARED ⊃ CLAIMED ⊃ SERVED: athena-make projects onto a
-    # collection row exactly the shape's sh:property paths (lib.rs:944 — an
-    # sh:class makes it an edge, an sh:datatype a typed literal). rhymesWith
-    # was declared (principles-rhymes-4006.ttl, 11 edges) and stored (11 in
-    # urn:chorus:domains:principles, measured 2026-09-09) and served nowhere,
-    # so /principles carried parents:[] for every XP row and three suites
-    # (principles-api, principles-graph, the book page) were red on an edge
-    # that exists. order is the same story for the 14 PC parents (#2314).
-    sh:property [ sh:path chorus:rhymesWith ; sh:class chorus:Principle ] ;
-    # #4186 — Jeff, 2026-09-16: "use principles, the class and shacl is shallow".
-    # Measured that day: all 28 rows carry jeffReading, techReading, chorus:source (was dcterms:source, #4195)
-    # and ownedBy; the 14 permaculture roots carry order 1..14 and
-    # isPermacultureParent; NONE of that was in the shape. A shape that describes
-    # less than the rows is a floor nobody can fall through. The two readings ARE
-    # the principle (a bare Hemenway or Beck sentence is a quotation, not one of
-    # ours), so they are required; the source is where it came from, required;
-    # the owner is the role that keeps it, required. order is bounded to the 14
-    # roots. Negative proof: platform/tests/fixtures/principles-4186-violations.ttl
-    # must FAIL this shape (4186-principle-shape-floor.bats).
-    # #4177 — one label rule: line 46's shape declares rdfs:label plain; this one said
-    # xsd:string, and the door refuses a class whose two shapes disagree about one field
-    # ("declared twice with different kinds"). /principles was 404 from 2026-09-16 17:59.
-    sh:property [ sh:path rdfs:label ; sh:maxCount 1 ] ;
+    rdfs:comment "One of the 14 permaculture principles from Toby Hemenway's Gaia's Garden that the team designs by, with what it means to Jeff and to the code." ;
+    # The row's IRI. Standard SHACL: a node shape's sh:pattern tests the focus node.
+    sh:pattern "^https://jeffbridwell\\.com/chorus#hemenway-[a-z0-9]+(-[a-z0-9]+)*$" ;
+    sh:message "a principle row is named hemenway-<lowercase-slug>" ;
+    sh:property [ sh:path rdfs:label ; sh:minCount 1 ; sh:maxCount 1 ;
+                  sh:name "label" ;
+                  sh:description "Required. The principle's name as Hemenway words it, e.g. Observe." ] ;
+    sh:property [ sh:path rdfs:comment ; sh:minCount 1 ;
+                  sh:name "comment" ;
+                  sh:description "Required. What the principle says, in a sentence or two, close to the source." ] ;
     sh:property [ sh:path chorus:jeffReading ; sh:minCount 1 ; sh:maxCount 1 ; sh:datatype xsd:string ; sh:minLength 20 ;
+                  sh:name "Jeff's reading" ;
+                  sh:description "Required. What the principle means in how Jeff works and runs the team." ;
                   sh:message "a principle without Jeff's reading is a quotation, not one of ours" ] ;
     sh:property [ sh:path chorus:techReading ; sh:minCount 1 ; sh:maxCount 1 ; sh:datatype xsd:string ; sh:minLength 20 ;
+                  sh:name "tech reading" ;
+                  sh:description "Required. What the principle means for the code, the pipeline and the practices." ;
                   sh:message "a principle without its technical reading cannot be traced to a practice" ] ;
     sh:property [ sh:path chorus:source ; sh:minCount 1 ; sh:maxCount 1 ; sh:datatype xsd:string ;
-                  sh:message "every principle names where it came from (Hemenway, Beck, or a Chorus decision)" ] ;
-    # Jeff, 2026-09-16 17:16 (on #4183): the owner of a row is a PRINCIPAL, not a role;
-    # ownedBy's range moves Role → Principal in the authz step that follows this card.
-    # So this shape asks for exactly one IRI owner and does not name the class, or the
-    # range change would have to fight its own shape.
-    sh:property [ sh:path chorus:ownedBy ; sh:minCount 1 ; sh:maxCount 1 ; sh:nodeKind sh:IRI ;
-                  sh:message "a principle has exactly one owner (an IRI: a role today, a principal after the authz step)" ] ;
-    sh:property [ sh:path chorus:isPermacultureParent ; sh:maxCount 1 ; sh:datatype xsd:boolean ] ;
-    sh:property [ sh:path chorus:order ; sh:maxCount 1 ; sh:datatype xsd:integer ; sh:minInclusive 1 ; sh:maxInclusive 14 ;
+                  sh:pattern "^Hemenway, T\\. Gaia's Garden, 2nd ed\\., p\\. [0-9]+\\.$" ;
+                  sh:name "source" ;
+                  sh:description "Required. One citation format: Hemenway, T. Gaia's Garden, 2nd ed., p. N." ;
+                  sh:message "cite as: Hemenway, T. Gaia's Garden, 2nd ed., p. N." ] ;
+    sh:property [ sh:path chorus:order ; sh:minCount 1 ; sh:maxCount 1 ; sh:datatype xsd:integer ; sh:minInclusive 1 ; sh:maxInclusive 14 ;
+                  sh:name "order" ;
+                  sh:description "Required. The principle's number in Hemenway's list, 1 to 14." ;
                   sh:message "order is the Hemenway numbering, 1 to 14" ] ;
+    # Jeff, 2026-09-16 (#4183): the owner of a row is a principal. The door stamps
+    # it from the caller's verified identity, never from the body (#4196).
+    sh:property [ sh:path chorus:ownedBy ; sh:minCount 1 ; sh:maxCount 1 ; sh:nodeKind sh:IRI ;
+                  sh:name "owned by" ;
+                  sh:description "Required, set by the door. The principal that keeps this principle." ;
+                  sh:message "a principle has exactly one owner" ] ;
     chorus:instancesGraph "urn:chorus:domains:principles" ;
     chorus:generatedBy "athena-model" .
-
-# #4186 — the 14 permaculture roots are the ordered set the whole principle stack
-# hangs from (why-and-how-of-chorus: every Chorus principle carries a parent edge
-# up to one of them). A root without its number, or a numbered principle that is
-# not a root, breaks that ordering silently. SPARQL target: SHACL-AF, which Jena's
-# validator (the one the pipeline and the bats run) implements.
-chorus:PermacultureRootShape a sh:NodeShape ;
-    sh:target [ a sh:SPARQLTarget ;
-        sh:select """PREFIX chorus: <https://jeffbridwell.com/chorus#>
-            SELECT ?this WHERE { ?this a chorus:Principle ; chorus:principleKind "pc" . }""" ] ;
-    sh:property [ sh:path chorus:order ; sh:minCount 1 ; sh:message "a permaculture root carries its Hemenway number" ] ;
-    sh:property [ sh:path chorus:isPermacultureParent ; sh:minCount 1 ; sh:hasValue true ;
-                  sh:message "a permaculture root says so: isPermacultureParent true" ] .
-
-chorus:XpPrincipleShape a sh:NodeShape ;
-    sh:target [ a sh:SPARQLTarget ;
-        sh:select """PREFIX chorus: <https://jeffbridwell.com/chorus#>
-            SELECT ?this WHERE { ?this a chorus:Principle ; chorus:principleKind "xp" . }""" ] ;
-    sh:property [ sh:path chorus:order ; sh:maxCount 0 ; sh:message "only the 14 permaculture roots are numbered" ] ;
-    sh:property [ sh:path chorus:isPermacultureParent ; sh:maxCount 0 ; sh:message "an XP principle is not a permaculture root" ] .

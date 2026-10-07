@@ -368,7 +368,7 @@ The second vocabulary and the duplicated graphs the audit named — platform-wid
 The Clearing's surfaces and the board — the Clearing; an early Loom service design listed them before the products were separated.
 Running the gates at demo time — Werk; Loom defines the rules the gates enforce.""" ;
     chorus:references """Public design: designing/docs/loom-subproduct-design.html (the coherence audit and the resulting model — 2026-05-14) and loom-service-design.html (the nine components, deployed versus missing — 2026-04-05); loom-value-stream-design.html (the Shaping loop).
-Internal notes for the team: chorus-reference-model.html (the earliest Loom definition); roles-service-design.html, roles-domain-evolution.html; skill-lifecycle.html; INTERACTION_PATTERNS.md; /loom/principles.html; the principle seed at platform/api/src/sparql/seeds/permaculture-principles.rq. Decisions: ADR-045 (a domain is a class). Cards: #4077 (policies credit principles; plain language), #3838 (roles as seed entries), #4028 (derived role state), #2318 (decisions API), #3734 (no gate without a negative proof), #2152 (decisions into the graph).
+Internal notes for the team: chorus-reference-model.html (the earliest Loom definition); roles-service-design.html, roles-domain-evolution.html; skill-lifecycle.html; INTERACTION_PATTERNS.md; /loom/principles.html. Decisions: ADR-045 (a domain is a class). Cards: #4077 (policies credit principles; plain language), #3838 (roles as seed entries), #4028 (derived role state), #2318 (decisions API), #3734 (no gate without a negative proof), #2152 (decisions into the graph).
 Chorus · Loom · rewritten for readers outside the team 2026-09-03""" ;
     chorus:partOf chorus:chorus .
 

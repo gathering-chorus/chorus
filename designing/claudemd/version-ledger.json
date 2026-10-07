@@ -39,6 +39,14 @@
       "bump": "minor",
       "date": "2026-10-05",
       "card": "4432"
+    },
+    {
+      "version": "1.8.1",
+      "constituent_hash": "b7320871fdb53b44266e36ce4e779f048ab31a55273b4d8e06c74e4be362447f",
+      "core_hash": "f5c14bd63350586c341881bcac46110768e50e01b04f9c8b20b2c48ac8d6dce4",
+      "bump": "patch",
+      "date": "2026-10-07",
+      "card": "unattributed"
     }
   ]
 }
