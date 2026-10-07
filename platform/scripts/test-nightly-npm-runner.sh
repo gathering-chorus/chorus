@@ -25,10 +25,12 @@ sed -n '/fn run_jest(/,/^}/p' "$MAIN" | grep -q 'return (true, Vec::new());' \
   && bad "the vacuous-green no-jest branch is back in run_jest" || ok
 
 # 3. A package with neither jest nor a test script FAILS LOUD.
-sed -n '/fn run_npm_test(/,/^}/p' "$MAIN" | grep -q 'FAIL LOUD' && ok || bad "missing-runner must fail loud"
+# #4440 — the runner's logic lives in run_npm_test_files (run_npm_test is its
+# whole-package wrapper); the guard reads the function that holds it.
+sed -n '/fn run_npm_test_files(/,/^}/p' "$MAIN" | grep -q 'FAIL LOUD' && ok || bad "missing-runner must fail loud"
 
 # 4. Per-case results flow from the package runner's TAP output.
-sed -n '/fn run_npm_test(/,/^}/p' "$MAIN" | grep -q 'parse_bats_cases' && ok || bad "own-runner output must yield per-case results"
+sed -n '/fn run_npm_test_files(/,/^}/p' "$MAIN" | grep -q 'parse_bats_cases' && ok || bad "own-runner output must yield per-case results"
 
 # 5. NEGATIVE PROOF (#3734): check 2's grep DOES fire on the old shape.
 TMP=$(mktemp -d)
