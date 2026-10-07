@@ -682,8 +682,14 @@ function placeholderText() {
 // roles door's agent rows); the page never types the names.
 let roomRoles = [];
 socket.on('tiles', (tiles) => {
-  roomRoles = (tiles || []).map((t) => t.role).filter((r) => r && r !== 'jeff');
+  const nextRoles = (tiles || []).map((t) => t.role).filter((r) => r && r !== 'jeff');
+  // #4445 — a message that arrived before the first tiles was drawn as a guest's:
+  // plain text, so a role's ``` block showed as one flat line. When the role list
+  // changes, redraw the transcript so those messages render as the role's.
+  const rolesChanged = nextRoles.join(',') !== roomRoles.join(',');
+  roomRoles = nextRoles;
   renderTiles(tiles);
+  if (rolesChanged) renderTranscript();
   // #3746 — reflect the restored filter on the tiles after each render
   document.querySelectorAll('.tile').forEach(el => {
     const tileRole = (el.className.match(/tile-([a-z][a-z0-9-]*)/) || [])[1];
