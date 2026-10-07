@@ -6,6 +6,9 @@
     <string>com.chorus.jeff-input-monitor</string>
     <key>ProgramArguments</key>
     <array>
+        <string>/Users/jeffbridwell/CascadeProjects/chorus/platform/scripts/service-run</string>
+        <string>com.chorus.jeff-input-monitor</string>
+        <string>daemon</string>
         <string>/Users/jeffbridwell/.chorus/bin/jeff-input-monitor</string>
     </array>
     <key>RunAtLoad</key>

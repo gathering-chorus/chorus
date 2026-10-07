@@ -379,6 +379,19 @@ GUARD="$TREE/platform/tests/4446-every-service-logs-its-lifecycle.test.sh"
   [[ "$output" == *"src/main.rs calls no lifecycle helper"* ]] || return 1
 }
 
+@test "NEGATIVE PROOF: a node service that imports the helper but never calls started() is red" {
+  mkdir -p "$FIXHOME/agents" "$FIXHOME/root/src"; touch "$FIXHOME/agents/com.chorus.x.plist"
+  printf '%s\n' "const lifecycle = serviceLifecycle('com.chorus.x');" > "$FIXHOME/root/src/service.ts"
+  run env SERVICE_WIRING_AGENTS="$FIXHOME/agents" CHORUS_ROOT="$FIXHOME/root" \
+    SERVICE_WIRING_TABLE=$'com.chorus.x\tsrc/service.ts' bash "$GUARD"
+  echo "$output"
+  [[ "$status" -ne 0 && "$output" == *"never calls started()"* ]] || return 1
+  echo "lifecycle.started();" >> "$FIXHOME/root/src/service.ts"
+  run env SERVICE_WIRING_AGENTS="$FIXHOME/agents" CHORUS_ROOT="$FIXHOME/root" \
+    SERVICE_WIRING_TABLE=$'com.chorus.x\tsrc/service.ts' bash "$GUARD"
+  [[ "$status" -eq 0 && "$output" == *"1 wired"* ]] || { echo "$output"; return 1; }
+}
+
 plist_args() {  # plist_args <file> <program...> — a minimal plist with these ProgramArguments
   local f="$1"; shift
   { echo '<?xml version="1.0" encoding="UTF-8"?><plist version="1.0"><dict><key>ProgramArguments</key><array>'

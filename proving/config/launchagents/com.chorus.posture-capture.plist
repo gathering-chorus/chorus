@@ -8,6 +8,9 @@
 
   <key>ProgramArguments</key>
   <array>
+    <string>/Users/jeffbridwell/CascadeProjects/chorus/platform/scripts/service-run</string>
+    <string>com.chorus.posture-capture</string>
+    <string>job</string>
     <string>/bin/bash</string>
     <string>/Users/jeffbridwell/CascadeProjects/jeff-bridwell-personal-site/scripts/posture-capture.sh</string>
   </array>

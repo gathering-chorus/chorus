@@ -5,6 +5,9 @@
     <key>Label</key><string>com.chorus.context-cache-weekly</string>
     <key>ProgramArguments</key>
     <array>
+        <string>/Users/jeffbridwell/CascadeProjects/chorus/platform/scripts/service-run</string>
+        <string>com.chorus.context-cache-weekly</string>
+        <string>job</string>
         <string>/bin/bash</string><string>-c</string>
         <string>/Users/jeffbridwell/CascadeProjects/chorus/platform/scripts/context-cache-weekly.sh silas; /Users/jeffbridwell/CascadeProjects/chorus/platform/scripts/context-cache-weekly.sh kade; /Users/jeffbridwell/CascadeProjects/chorus/platform/scripts/context-cache-weekly.sh wren</string>
     </array>

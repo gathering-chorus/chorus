@@ -29,6 +29,9 @@
 
   <key>ProgramArguments</key>
   <array>
+    <string>/Users/jeffbridwell/CascadeProjects/chorus/platform/scripts/service-run</string>
+    <string>com.chorus.building-pipeline</string>
+    <string>job</string>
     <string>/bin/bash</string>
     <string>-c</string>
     <string>cd /Users/jeffbridwell/CascadeProjects/chorus &amp;&amp; /opt/homebrew/bin/act workflow_dispatch -P macos-latest=-self-hosted -W .github/workflows/building-pipeline.yml</string>

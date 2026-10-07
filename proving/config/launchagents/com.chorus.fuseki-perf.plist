@@ -8,6 +8,9 @@
 
   <key>ProgramArguments</key>
   <array>
+    <string>/Users/jeffbridwell/CascadeProjects/chorus/platform/scripts/service-run</string>
+    <string>com.chorus.fuseki-perf</string>
+    <string>job</string>
     <string>/Users/jeffbridwell/CascadeProjects/jeff-bridwell-personal-site/scripts/fuseki-perf.sh</string>
   </array>
 

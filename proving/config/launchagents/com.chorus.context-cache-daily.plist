@@ -5,6 +5,9 @@
     <key>Label</key><string>com.chorus.context-cache-daily</string>
     <key>ProgramArguments</key>
     <array>
+        <string>/Users/jeffbridwell/CascadeProjects/chorus/platform/scripts/service-run</string>
+        <string>com.chorus.context-cache-daily</string>
+        <string>job</string>
         <string>/bin/bash</string><string>-c</string>
         <string>/Users/jeffbridwell/CascadeProjects/chorus/platform/scripts/context-cache-daily.sh silas; /Users/jeffbridwell/CascadeProjects/chorus/platform/scripts/context-cache-daily.sh kade; /Users/jeffbridwell/CascadeProjects/chorus/platform/scripts/context-cache-daily.sh wren</string>
     </array>
