@@ -1124,22 +1124,27 @@ fn end_run(ctx: &Ctx, role: &str, reason: &str) {
     if let Some(p) = read_row(ctx, role, "presence").and_then(rows::gone_presence) { put_row(ctx, role, "identity/presences", "presence", &p); }
 }
 
-/// #4344 — the role's credential files as Credential rows, written once and
-/// updated when a file changes (the token rotates on every login).
-fn record_credentials(ctx: &Ctx, role: &str) {
+/// #4344 — the role's credential files as Credential rows. #4447: written by
+/// the identity owner (`writer`) with `chorus-principal credentials <role>`,
+/// never by a login as the role — the security graph is closed to role grants
+/// (#4204), and a login rewrote these every time because the token rotates.
+fn record_credentials(ctx: &Ctx, role: &str, writer: &str) -> i32 {
     let dir = PathBuf::from(&ctx.identity_dir).join(role);
     let mtimes: Vec<(String, String)> = ["cred.json", "nostr.json", "token.cache"].iter().filter_map(|f| {
         let secs = fs::metadata(dir.join(f)).ok()?.modified().ok()?.duration_since(UNIX_EPOCH).ok()?.as_secs();
         Some((f.to_string(), iso_utc(secs)))
     }).collect();
     let shown = ctx.identity_dir.replacen(&ctx.home, "~", 1);
+    let mut failed = 0;
     for row in rows::credential_rows(role, &shown, &mtimes) {
         let kind = format!("cred-{}", row["credentialKind"].as_str().unwrap_or(""));
         if read_row(ctx, role, &kind).as_ref() == Some(&row) { continue; }
-        let (code, reply) = api_send(ctx, role, "security/credentials", None, &row, &kind);
-        let ok = if code == "409" { put_row(ctx, role, "security/credentials", &kind, &row) } else { ok_code(&code) };
-        if ok { save_row(ctx, role, &kind, &row); } else { ctx.spine(&["session.row.failed", role, "kind=credential", &format!("http={}", code), &format!("why={}", rows::refusal_reason(&reply))]); }
+        let (code, reply) = api_send(ctx, writer, "security/credentials", None, &row, &kind);
+        let ok = if code == "409" { put_row(ctx, writer, "security/credentials", &kind, &row) } else { ok_code(&code) };
+        if ok { save_row(ctx, role, &kind, &row); println!("credential {} written", row_name(&row)); }
+        else { ctx.spine(&["session.row.failed", role, "kind=credential", &format!("http={}", code), &format!("why={}", rows::refusal_reason(&reply))]); eprintln!("credential {} refused: {}", row_name(&row), rows::refusal_reason(&reply)); failed += 1; }
     }
+    if failed > 0 { 1 } else { 0 }
 }
 
 /// #4342 — one Conversation row per conversation id: written once, never twice.
@@ -1177,7 +1182,6 @@ fn record_run(ctx: &Ctx, role: &str, session: &str, l: &Live, conversation: &str
     let run_body = rows::run_row(role, &slug(&format!("{}-run-{}", role, stamp)), session, conversation, &started, previous.as_deref());
     let Some(run) = create_row(ctx, role, "identity/sessionruns", "run", run_body) else { return };
     ensure_conversation(ctx, role, &run, conversation);
-    record_credentials(ctx, role);
     let host_account = envd("USER", "unknown");
     let presence = create_row(ctx, role, "identity/presences", "presence", rows::presence_row(role, &slug(&format!("{}-presence-{}", role, stamp)), &run, &l.pane, &l.tty, &host_account, rows::session_channel(env::var("CHORUS_SESSION_CHANNEL").ok().as_deref()).unwrap_or("pane")));
     let context = create_row(ctx, role, "memory/contexts", "context", rows::boot_context_row(role, &slug(&format!("{}-boot-{}", role, stamp)), &run, &started));
@@ -1289,7 +1293,6 @@ fn seen_write(ctx: &Ctx, role: &str, conv: &str, flag: &str) -> i32 {
     if let Some(run) = read_row(ctx, role, "run").filter(|r| r.get("runEndedAt").and_then(|e| e.as_str()).unwrap_or("").is_empty()) {
         ensure_conversation(ctx, role, &row_name(&run), conv);
     }
-    record_credentials(ctx, role);
     0
 }
 
@@ -1772,6 +1775,8 @@ pub fn run(args: &[String]) -> i32 {
             Err(c) => c,
         },
         "sweep" => sweep(&ctx),
+        // #4447 — the identity owner writes a role's Credential rows, once
+        "credentials" => match role_arg(1) { Ok(r) => record_credentials(&ctx, &r, &env::var("CHORUS_ROLE").unwrap_or_else(|_| "silas".into())), Err(c) => c },
         // #4340 — messages.db into the model, one pass; run by com.chorus.messages-project
         "project-messages" => project_messages(&ctx),
         // #4345 — Jeff, 2026-09-27: login/logout is the convention; on/off stay as aliases.

@@ -58,7 +58,7 @@ fn main() {
         // #4345 — one binary. The session lifecycle (on/off/status/up/relogin,
         // and the hooks' seen/seen-write/sweep/project-messages) was chorus-awake;
         // it is this crate's library now, so the verbs run here, not forwarded.
-        Some("login" | "logout" | "on" | "off" | "status" | "up" | "relogin" | "seen" | "seen-write" | "sweep" | "project-messages") => chorus_principal::run(&args),
+        Some("login" | "logout" | "on" | "off" | "status" | "up" | "relogin" | "seen" | "seen-write" | "sweep" | "project-messages" | "credentials") => chorus_principal::run(&args),
         Some("census") => cmd_census(),
         Some("create") => match args.get(1) {
             Some(n) => match Kind::from_args(&args[2..]) {
