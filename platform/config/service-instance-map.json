@@ -55,6 +55,7 @@
   "com.chorus.heartbeat-probe": "service-observability",
   "com.chorus.eventloop-probe": "service-observability",
   "com.chorus.clearing-probe": "service-observability",
+  "com.chorus.nudge-health": "service-observability",
   "com.chorus.alert-notifier": "service-observability",
   "com.chorus.alert-runner": "service-observability",
   "com.chorus.alert-delivery-test": "service-observability",
