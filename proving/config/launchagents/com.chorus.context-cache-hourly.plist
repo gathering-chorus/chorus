@@ -5,9 +5,6 @@
     <key>Label</key><string>com.chorus.context-cache-hourly</string>
     <key>ProgramArguments</key>
     <array>
-        <string>/Users/jeffbridwell/CascadeProjects/chorus/platform/scripts/service-run</string>
-        <string>com.chorus.context-cache-hourly</string>
-        <string>job</string>
         <string>/bin/bash</string><string>-c</string>
         <string>/Users/jeffbridwell/CascadeProjects/chorus/platform/scripts/context-cache-hourly.sh silas; /Users/jeffbridwell/CascadeProjects/chorus/platform/scripts/context-cache-hourly.sh kade; /Users/jeffbridwell/CascadeProjects/chorus/platform/scripts/context-cache-hourly.sh wren</string>
     </array>

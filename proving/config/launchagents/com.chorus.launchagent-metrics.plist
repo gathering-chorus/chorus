@@ -6,9 +6,6 @@
 	<string>com.chorus.launchagent-metrics</string>
 	<key>ProgramArguments</key>
 	<array>
-		<string>/Users/jeffbridwell/CascadeProjects/chorus/platform/scripts/service-run</string>
-		<string>com.chorus.launchagent-metrics</string>
-		<string>job</string>
 		<string>/bin/bash</string>
 		<string>/Users/jeffbridwell/CascadeProjects/shared-observability/scripts/launchagent-metrics.sh</string>
 	</array>

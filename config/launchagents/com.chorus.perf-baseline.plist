@@ -11,9 +11,6 @@
 	<string>com.chorus.perf-baseline</string>
 	<key>ProgramArguments</key>
 	<array>
-		<string>/Users/jeffbridwell/CascadeProjects/chorus/platform/scripts/service-run</string>
-		<string>com.chorus.perf-baseline</string>
-		<string>job</string>
 		<string>/bin/bash</string>
 		<string>-c</string>
 		<string>/Users/jeffbridwell/CascadeProjects/jeff-bridwell-personal-site/scripts/perf-baseline.sh safe; /Users/jeffbridwell/CascadeProjects/chorus/platform/scripts/perf-baseline-chorus.sh</string>

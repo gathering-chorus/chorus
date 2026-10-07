@@ -7,9 +7,6 @@
   <string>com.chorus.index-artifacts</string>
   <key>ProgramArguments</key>
   <array>
-    <string>/Users/jeffbridwell/CascadeProjects/chorus/platform/scripts/service-run</string>
-    <string>com.chorus.index-artifacts</string>
-    <string>job</string>
     <string>/bin/bash</string>
     <string>-c</string>
     <string>/Users/jeffbridwell/.chorus/scripts/chorus-index.sh artifacts</string>

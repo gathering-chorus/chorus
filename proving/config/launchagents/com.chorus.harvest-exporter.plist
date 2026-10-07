@@ -6,9 +6,6 @@
 	<string>com.chorus.harvest-exporter</string>
 	<key>ProgramArguments</key>
 	<array>
-		<string>/Users/jeffbridwell/CascadeProjects/chorus/platform/scripts/service-run</string>
-		<string>com.chorus.harvest-exporter</string>
-		<string>job</string>
 		<string>/bin/bash</string>
 		<string>/Users/jeffbridwell/CascadeProjects/shared-observability/scripts/harvest-exporter.sh</string>
 	</array>

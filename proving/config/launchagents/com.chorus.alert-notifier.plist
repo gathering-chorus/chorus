@@ -8,9 +8,6 @@
 
   <key>ProgramArguments</key>
   <array>
-    <string>/Users/jeffbridwell/CascadeProjects/chorus/platform/scripts/service-run</string>
-    <string>com.chorus.alert-notifier</string>
-    <string>daemon</string>
     <string>/usr/bin/python3</string>
     <string>/Users/jeffbridwell/CascadeProjects/shared-observability/scripts/alert-notifier.py</string>
   </array>

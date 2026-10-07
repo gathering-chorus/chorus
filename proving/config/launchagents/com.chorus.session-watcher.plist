@@ -6,9 +6,6 @@
     <string>com.chorus.session-watcher</string>
     <key>ProgramArguments</key>
     <array>
-        <string>/Users/jeffbridwell/CascadeProjects/chorus/platform/scripts/service-run</string>
-        <string>com.chorus.session-watcher</string>
-        <string>daemon</string>
         <string>/bin/bash</string>
         <string>/Users/jeffbridwell/.chorus/scripts/chorus-watch-sessions.sh</string>
     </array>
