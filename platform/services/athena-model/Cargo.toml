@@ -21,13 +21,6 @@ chorus-oidc = { path = "../chorus-oidc" }
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 
-# #4358 — SHACL sh:pattern is enforced at the governed write boundary. The
-# pattern is a regex the MODEL declares, so the DAL must compile and run it; a
-# hand-rolled matcher would be a second regex dialect nobody tested. Default
-# features off: unicode tables stay (SHACL patterns are XPath regexes over
-# Unicode strings), perf extras are not needed for one-value matches.
-regex = { version = "1", default-features = false, features = ["std", "unicode"] }
-
 # #3718 — RENAMED chorus-model -> athena-model (Jeff, 2026-07-31): "i feel we
 # rename chorus-model to athena-model - to me the model part is a strong analog
 # to coding - why i mention werk-code". werk-* is the governed writer for CODE;

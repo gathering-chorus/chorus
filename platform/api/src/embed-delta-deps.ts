@@ -3,7 +3,7 @@
 // Mirrors index-all-sources-deps.ts (#3085): ONE wiring used by both the
 // standalone embed worker (dist/embed-delta-worker.js — the only scheduled
 // caller) and any in-process consumer, so the two can never drift
-// (one concept, one implementation).
+// (chorus:principle-no-competing-implementations).
 //
 // Why this exists: the embed pass interleaves synchronous better-sqlite3 page
 // reads with lance writes. Run on chorus-api's event loop it blocks serving —

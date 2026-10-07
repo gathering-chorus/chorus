@@ -396,48 +396,63 @@ pub struct ShapeReq {
     pub node_patterns: Vec<ShapePattern>,
 }
 
-/// #4358 — one sh:pattern, compiled once when the shape is read. `source` is the
-/// regex exactly as the model declares it, so a refusal names the model's text,
-/// not a translated form.
+/// #4358 — one sh:pattern as the model declares it. `source` is the regex text
+/// exactly as written, so a refusal names the model's text; `owner` names the
+/// class (and property) it came from.
+///
+/// No regex is compiled here. SHACL defines sh:pattern as SPARQL REGEX, so the
+/// store that holds the model is asked to evaluate it — one dialect, the one the
+/// standard names, the same one athena-validate sweeps with.
 #[derive(Debug, Clone)]
 pub struct ShapePattern {
     pub source: String,
-    pub re: regex::Regex,
+    pub flags: String,
+    pub owner: String,
 }
 
-/// #4358 — compile a model-declared sh:pattern (+ optional sh:flags). A pattern
-/// the DAL cannot compile is REFUSED, never skipped: a skipped constraint reads
-/// exactly like a satisfied one, which is the vacuous-pass shape #3734 forbids.
-/// SHACL patterns are unanchored searches (XPath fn:matches), same as
-/// `Regex::is_match` and SPARQL REGEX.
-pub fn compile_shape_pattern(source: &str, flags: &str, owner: &str) -> R<ShapePattern> {
-    let mut inline = String::new();
-    for f in flags.chars() {
-        match f {
-            'i' | 'm' | 's' | 'x' => inline.push(f),
-            other => {
-                return Err(format!(
-                    "shape-model-error: sh:flags '{}' on {} carries '{}', which the DAL cannot honour — refused, not ignored",
-                    flags, owner, other
-                ))
-            }
+/// #4358 — admit a model-declared sh:pattern (+ optional sh:flags). Flags outside
+/// the SPARQL REGEX set (i, m, s, x) are REFUSED, never dropped: a skipped
+/// constraint reads exactly like a satisfied one (#3734).
+pub fn shape_pattern(source: &str, flags: &str, owner: &str) -> R<ShapePattern> {
+    if let Some(other) = flags.chars().find(|f| !matches!(f, 'i' | 'm' | 's' | 'x')) {
+        return Err(format!(
+            "shape-model-error: sh:flags '{}' on {} carries '{}', which the DAL cannot honour — refused, not ignored",
+            flags, owner, other
+        ));
+    }
+    Ok(ShapePattern { source: source.to_string(), flags: flags.to_string(), owner: owner.to_string() })
+}
+
+impl ShapePattern {
+    /// Ask the store whether `value` matches. Exactly "1" is a match and exactly
+    /// "0" is a miss; anything else — a store error (a malformed regex is one),
+    /// an empty or unbound answer — refuses. It never reads as a match.
+    pub fn matches(&self, store: &dyn Store, value: &str) -> R<bool> {
+        let q = format!(
+            "# athena-model sh:pattern check\nSELECT ?v WHERE {{ BIND(IF(REGEX(\"{}\", \"{}\", \"{}\"), \"1\", \"0\") AS ?v) }}",
+            // esc: the Turtle string escape, which is also SPARQL's (\\ " \n \r).
+            esc(value), esc(&self.source), esc(&self.flags)
+        );
+        let unevaluable = || {
+            format!(
+                "shape-model-error: sh:pattern {} on {} could not be evaluated — refused, not skipped",
+                self.source, self.owner
+            )
+        };
+        match store.select_v(&q) {
+            Ok(rows) if rows.len() == 1 && rows[0] == "1" => Ok(true),
+            Ok(rows) if rows.len() == 1 && rows[0] == "0" => Ok(false),
+            _ => Err(unevaluable()),
         }
     }
-    let full = if inline.is_empty() { source.to_string() } else { format!("(?{}){}", inline, source) };
-    let re = regex::Regex::new(&full).map_err(|e| {
-        format!(
-            "shape-model-error: sh:pattern {} on {} does not compile ({}) — refused, not skipped",
-            source, owner, e.to_string().lines().last().unwrap_or("invalid regex")
-        )
-    })?;
-    Ok(ShapePattern { source: source.to_string(), re })
 }
 
 impl ShapeReq {
-    /// #4358 — a property value off its sh:pattern(s).
-    pub fn check_value_pattern(&self, prop: &str, value: &str) -> Result<(), String> {
+    /// #4358 — a property value off its sh:pattern(s). Asks the store only when
+    /// the property carries a pattern, so unpatterned classes pay nothing.
+    pub fn check_value_pattern(&self, store: &dyn Store, prop: &str, value: &str) -> Result<(), String> {
         for p in self.patterns.get(prop).map(|v| v.as_slice()).unwrap_or(&[]) {
-            if !p.re.is_match(value) {
+            if !p.matches(store, value)? {
                 return Err(format!(
                     "shape-violation: '{}' does not match sh:pattern {} for {}",
                     value, p.source, prop
@@ -448,9 +463,9 @@ impl ShapeReq {
     }
 
     /// #4358 — the row's IRI off a node-level sh:pattern.
-    pub fn check_node_pattern(&self, iri: &str) -> Result<(), String> {
+    pub fn check_node_pattern(&self, store: &dyn Store, iri: &str) -> Result<(), String> {
         for p in &self.node_patterns {
-            if !p.re.is_match(iri) {
+            if !p.matches(store, iri)? {
                 return Err(format!("shape-violation: row {} does not match sh:pattern {}", iri, p.source));
             }
         }
@@ -654,8 +669,9 @@ pub fn read_shape(store: &dyn Store, class: &str) -> R<ShapeReq> {
 
     // #4358 — sh:pattern, property-level and node-level. Rows are
     // "<prop>|<flags>|<regex>" and "<flags>|<regex>"; the regex goes LAST because
-    // it may itself contain '|'. Each compiles here, so a malformed pattern in
-    // the model refuses the read — and therefore the write — loudly.
+    // it may itself contain '|'. Flags are admitted here; the regex itself is
+    // evaluated by the store's SPARQL REGEX at check time, and one it cannot
+    // evaluate refuses the write loudly.
     let mut patterns: BTreeMap<String, Vec<ShapePattern>> = BTreeMap::new();
     for row in store.select_v(&format!(
         "PREFIX sh: <http://www.w3.org/ns/shacl#> SELECT ?v WHERE {{ GRAPH <{g}> {{ ?s sh:targetClass <{c}> ; sh:property ?p . ?p sh:path ?path ; sh:pattern ?re . FILTER(isIRI(?path)) OPTIONAL {{ ?p sh:flags ?fl }} BIND(CONCAT(REPLACE(STR(?path), '.*#', ''), '|', IF(BOUND(?fl), STR(?fl), ''), '|', STR(?re)) AS ?v) }} }}",
@@ -665,7 +681,7 @@ pub fn read_shape(store: &dyn Store, class: &str) -> R<ShapeReq> {
         let (Some(prop), Some(flags), Some(re)) = (parts.next(), parts.next(), parts.next()) else {
             return Err(format!("shape-model-error: unreadable sh:pattern row '{}' for {}", row, class));
         };
-        let compiled = compile_shape_pattern(re, flags, &format!("{} {}", class, prop))?;
+        let compiled = shape_pattern(re, flags, &format!("{} {}", class, prop))?;
         patterns.entry(prop.to_string()).or_default().push(compiled);
     }
     let mut node_patterns: Vec<ShapePattern> = Vec::new();
@@ -676,7 +692,7 @@ pub fn read_shape(store: &dyn Store, class: &str) -> R<ShapeReq> {
         let Some((flags, re)) = row.split_once('|') else {
             return Err(format!("shape-model-error: unreadable node sh:pattern row '{}' for {}", row, class));
         };
-        node_patterns.push(compile_shape_pattern(re, flags, class)?);
+        node_patterns.push(shape_pattern(re, flags, class)?);
     }
     for prop in patterns.keys() {
         if !edge_classes.contains_key(prop) {
@@ -1802,12 +1818,12 @@ fn plan_writes<'a>(
         }
         // #4358 — sh:pattern: the row IRI against the node shape, every value
         // (fields AND more_values) against its property's pattern.
-        if let Err(e) = shape.check_node_pattern(&plan.subject) {
+        if let Err(e) = shape.check_node_pattern(store, &plan.subject) {
             witness("model.refused", &[("kind", req.kind.as_str()), ("name", req.name.as_str()), ("reason", "shape-violation"), ("field", "@id")]);
             return Err(WritePlanError::for_req(req, e));
         }
         for (prop, value) in req.fields.iter().chain(req.more_values.iter().map(|(k, v)| (k, v))) {
-            if let Err(e) = shape.check_value_pattern(prop, value) {
+            if let Err(e) = shape.check_value_pattern(store, prop, value) {
                 witness("model.refused", &[("kind", req.kind.as_str()), ("name", req.name.as_str()), ("reason", "shape-violation"), ("field", prop)]);
                 return Err(WritePlanError::for_req(req, e));
             }
@@ -2362,7 +2378,7 @@ pub fn set_field(
         }
     }
     // #4358 — sh:pattern, node-level on the subject and property-level on the value.
-    if let Err(e) = shape.check_node_pattern(&subject).and_then(|_| shape.check_value_pattern(prop, value)) {
+    if let Err(e) = shape.check_node_pattern(store, &subject).and_then(|_| shape.check_value_pattern(store, prop, value)) {
         witness("model.refused", &[("kind", kind), ("name", name), ("reason", "shape-violation"), ("field", prop)]);
         return Err(e);
     }
@@ -3273,7 +3289,7 @@ pub fn seed_multi_at(
                 let has_prop = |name: &str| props.iter().any(|(p, _)| field_of(p).as_deref() == Some(name));
 
                 // #4358 — node-level sh:pattern on the row IRI.
-                if let Err(e) = shape.check_node_pattern(&iri) {
+                if let Err(e) = shape.check_node_pattern(store, &iri) {
                     witness("model.refused", &[("kind", kind), ("name", iri.as_str()), ("reason", "shape-violation"), ("field", "@id")]);
                     return Err(e);
                 }
@@ -3307,7 +3323,7 @@ pub fn seed_multi_at(
                                 return Err(format!("shape-violation: '{}' not in sh:in {:?} for {}", val, allowed, local));
                             }
                         }
-                        if let Err(e) = shape.check_value_pattern(&local, val) {
+                        if let Err(e) = shape.check_value_pattern(store, &local, val) {
                             witness("model.refused", &[("kind", kind), ("name", iri.as_str()), ("reason", "shape-violation"), ("field", local.as_str())]);
                             return Err(e);
                         }
