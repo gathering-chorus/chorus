@@ -54,6 +54,23 @@ _sl_previous_end() {
   fi
 }
 
+# The reason a run failed: the last line it wrote to its launchd stderr log
+# during THIS run (#4446 reopen: prod had 121 failures that all said "exited N").
+# _sl_err_path <label> → launchd's stderr path for the job, or nothing
+_sl_err_path() {
+  launchctl print "gui/$(id -u)/$1" 2>/dev/null | awk -F' = ' '/^\tstderr path = /{print $2; exit}'
+}
+_sl_size() { [ -f "$1" ] && wc -c < "$1" | tr -d ' ' || echo 0; }
+# _sl_reason <exit code> <stderr path> <size at start> → "exited N[: last line]"
+_sl_reason() {
+  local line=""
+  if [ -n "$2" ] && [ -f "$2" ]; then
+    # only bytes written since the run began: an older run's line is not this run's reason
+    line="$(tail -c +"$(( $3 + 1 ))" "$2" 2>/dev/null | tr -d '\r' | grep -v '^[[:space:]]*$' | tail -n 1 | cut -c1-200)"
+  fi
+  printf 'exited %s%s' "$1" "${line:+: $line}"
+}
+
 _SL_SERVICE=""
 _SL_MODE=""
 _SL_STOP_REASON=""
@@ -64,7 +81,7 @@ service_lifecycle_exit() {  # service_lifecycle_exit <status>
   if [ -n "$_SL_STOP_REASON" ] || { [ "$rc" = 0 ] && [ "$_SL_MODE" = daemon ]; }; then
     [ "$_SL_MODE" = daemon ] && _sl_emit service.stopped "service=$_SL_SERVICE" "pid=$$" "reason=${_SL_STOP_REASON:-exit 0}"
   elif [ "$rc" != 0 ]; then
-    _sl_emit service.failed "service=$_SL_SERVICE" "pid=$$" "reason=exited $rc" "exit_code=$rc"
+    _sl_emit service.failed "service=$_SL_SERVICE" "pid=$$" "reason=$(_sl_reason "$rc" "${_SL_ERR:-}" "${_SL_MARK:-0}")" "exit_code=$rc"
   fi
   _SL_SERVICE=""
 }
@@ -77,6 +94,7 @@ service_lifecycle_daemon() {
   fi
   local version; version="$(shasum -a 256 "$0" 2>/dev/null | cut -c1-12)"
   _sl_emit service.started "service=$_SL_SERVICE" "pid=$$" "version=${version:-unknown}"
+  _SL_ERR="$(_sl_err_path "$_SL_SERVICE")"; _SL_MARK="$(_sl_size "$_SL_ERR")"
   trap '_SL_STOP_REASON=SIGTERM; exit 0' TERM
   trap '_SL_STOP_REASON=SIGINT; exit 0' INT
   trap 'service_lifecycle_exit $?' EXIT
@@ -93,12 +111,14 @@ service_lifecycle_job() {  # service_lifecycle_job <label> "$@"
   [ "${BASH_SOURCE[1]:-$0}" = "$0" ] || return 0
   local version; version="$(shasum -a 256 "$0" 2>/dev/null | cut -c1-12)"
   _sl_emit service.started "service=$XPC_SERVICE_NAME" "pid=$$" "version=${version:-unknown}"
+  local err; err="$(_sl_err_path "$XPC_SERVICE_NAME")"
+  local mark; mark="$(_sl_size "$err")"
   # `|| rc=$?`: under the job's own `set -e` a bare failing child would end
   # this parent before the failure is logged
   local rc=0
   "$BASH" "$0" "$@" || rc=$?
   if [ "$rc" != 0 ]; then
-    _sl_emit service.failed "service=$XPC_SERVICE_NAME" "pid=$$" "reason=exited $rc" "exit_code=$rc"
+    _sl_emit service.failed "service=$XPC_SERVICE_NAME" "pid=$$" "reason=$(_sl_reason "$rc" "$err" "$mark")" "exit_code=$rc"
   else
     _sl_emit service.stopped "service=$XPC_SERVICE_NAME" "pid=$$" "reason=exit 0"
   fi

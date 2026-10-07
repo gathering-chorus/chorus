@@ -8,23 +8,23 @@
  * Card: #1694
  */
 
-// Resolve socket.io-client from Bridge's node_modules (CHORUS_ROOT, not hardcoded — #1964)
-const CHORUS_ROOT = process.env.CHORUS_ROOT || '/Users/jeffbridwell/CascadeProjects/chorus';
-const BRIDGE_NODE_MODULES = `${CHORUS_ROOT}/directing/clearing/node_modules`;
-const io = require(`${BRIDGE_NODE_MODULES}/socket.io-client`);
 const fs = require('fs');
 const path = require('path');
 // #4446 — each bridge subscriber logs its own start, stop and failure.
 const { serviceLifecycle } = require('../chorus-sdk/lifecycle/service-lifecycle');
 const lifecycle = serviceLifecycle(`com.chorus.bridge-subscriber-${process.argv[2] || 'unknown'}`);
 lifecycle.started();
-process.on('uncaughtException', (e) => { lifecycle.failed(`uncaughtException: ${e.message}`, 1); process.exit(1); });
+process.on('uncaughtException', (e, origin) => { lifecycle.failed(`${origin}: ${e.message}`, 1); process.exit(1); });
 
 const role = process.argv[2];
 if (!role || !['wren', 'silas', 'kade'].includes(role)) {
-  console.error('Usage: bridge-subscriber.js <role>');
-  process.exit(1);
+  lifecycle.refuse(`bad role '${role || ''}' — usage: bridge-subscriber.js <wren|silas|kade>`, 1);
 }
+
+// Resolve socket.io-client from Bridge's node_modules (CHORUS_ROOT, not hardcoded — #1964)
+const CHORUS_ROOT = process.env.CHORUS_ROOT || '/Users/jeffbridwell/CascadeProjects/chorus';
+const BRIDGE_NODE_MODULES = `${CHORUS_ROOT}/directing/clearing/node_modules`;
+const io = require(`${BRIDGE_NODE_MODULES}/socket.io-client`);
 
 const BRIDGE_URL = 'http://localhost:3470';
 const INBOX_DIR = `/tmp/voice-inbox/${role}`;

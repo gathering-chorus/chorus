@@ -6,7 +6,7 @@ import { parseLastExit, startEvents, stopEvent, failedEvent, exitEvent, launchdL
 
 const KILLED = 'gui/501/com.chorus.api = {\n\truns = 15\n\tpid = 52021\n\tlast terminating signal = Killed: 9\n\tendpoints = {\n\t\tlast exit code = 0\n\t}\n}';
 const TERMINATED = 'gui/501/com.chorus.api = {\n\truns = 15\n\tlast terminating signal = Terminated: 15\n}';
-const EX_CONFIG = 'gui/501/com.chorus.nudge-health = {\n\truns = 3325\n\tlast exit code = 78: EX_CONFIG\n}';
+const EX_CONFIG = 'gui/501/com.chorus.fixture-ex-config = {\n\truns = 3325\n\tlast exit code = 78: EX_CONFIG\n}';
 const FIRST_RUN = 'gui/501/com.chorus.api = {\n\truns = 1\n\tpid = 52021\n}';
 
 const names = (ev: [string, Record<string, string>][]) => ev.map(([e]) => e);

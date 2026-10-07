@@ -123,6 +123,43 @@ pub fn previous_run(label: &str) -> Option<LastExit> {
     parse_last_exit(&String::from_utf8_lossy(&out.stdout))
 }
 
+/// launchd's stderr path for a label (`stderr path = …` in `launchctl print`).
+pub fn stderr_path(print: &str) -> Option<String> {
+    print.lines().find_map(|l| l.strip_prefix("\tstderr path = ").map(|p| p.trim().to_string()))
+}
+
+/// #4446 reopen — prod had 121 failures that all said "exited N". The reason
+/// is the last non-blank line the run wrote to its stderr log, taken only from
+/// what THIS run appended (`since` = the log's text after the run's start), so
+/// an older run's line is never borrowed.
+pub fn failure_reason(code: i32, since: &str) -> String {
+    match since.lines().map(str::trim).rfind(|l| !l.is_empty()) {
+        Some(l) => format!("exited {code}: {}", l.chars().take(200).collect::<String>()),
+        None => format!("exited {code}"),
+    }
+}
+
+fn launchctl_print(label: &str) -> String {
+    let uid = std::process::Command::new("/usr/bin/id").arg("-u").output().map(|o| o.stdout).unwrap_or_default();
+    let uid = String::from_utf8_lossy(&uid).trim().to_string();
+    std::process::Command::new("/bin/launchctl")
+        .args(["print", &format!("gui/{uid}/{label}")])
+        .output()
+        .map(|o| String::from_utf8_lossy(&o.stdout).into_owned())
+        .unwrap_or_default()
+}
+
+fn appended_since(path: &Option<String>, mark: u64) -> String {
+    use std::io::{Read, Seek, SeekFrom};
+    let Some(p) = path else { return String::new() };
+    let Ok(mut f) = std::fs::File::open(p) else { return String::new() };
+    let mut buf = Vec::new();
+    if f.seek(SeekFrom::Start(mark)).is_ok() {
+        let _ = f.read_to_end(&mut buf);
+    }
+    String::from_utf8_lossy(&buf).into_owned()
+}
+
 /// First 12 hex of the running binary's sha256 — names exactly what ran.
 /// Uses `shasum` so this file needs no crate dependencies.
 pub fn binary_version() -> String {
@@ -156,6 +193,8 @@ pub fn run_as_job() {
     // #4446 round 2 (Jeff: "rigorous about ... starts stops and failures"):
     // every run is a start and an end, not only a failure
     let pid = std::process::id();
+    let err = stderr_path(&launchctl_print(&label));
+    let mark = err.as_ref().and_then(|p| std::fs::metadata(p).ok()).map(|m| m.len()).unwrap_or(0);
     emit_via_chorus_log("service.started", &[
         ("service", label.clone()), ("pid", pid.to_string()), ("version", binary_version())]);
     let status = std::process::Command::new(exe)
@@ -172,7 +211,7 @@ pub fn run_as_job() {
             let mut f = vec![("service", label.clone()), ("pid", std::process::id().to_string())];
             match (s.code(), s.signal()) {
                 (Some(c), _) => {
-                    f.push(("reason", format!("exited {c}")));
+                    f.push(("reason", failure_reason(c, &appended_since(&err, mark))));
                     f.push(("exit_code", c.to_string()));
                     (c, f)
                 }
