@@ -33,7 +33,7 @@ const PLAN_NO_SEARCH: &str = "Context synthesis gate: a plan is written but no s
 /// not just write-time decisions, but the full research-then-synthesize arc.
 pub fn post_check(input: &HookInput) {
     let tool = input.tool_name_str();
-    let role_name = format!("{:?}", input.role()).to_lowercase();
+    let role_name = input.role().as_str().to_string();
 
     match tool {
         "Bash" => {
@@ -269,6 +269,7 @@ pub fn check(input: &HookInput, state: &AppState) -> HookResponse {
         crate::types::Role::Kade => file_path.contains("/engineer/") || file_path.contains("/roles/kade/") || file_path.contains("/src/"),
         crate::types::Role::Silas => file_path.contains("/architect/") || file_path.contains("/roles/silas/") || file_path.contains("/platform/"),
         crate::types::Role::Wren => file_path.contains("/product-manager/") || file_path.contains("/roles/wren/") || file_path.contains("/directing/"),
+        crate::types::Role::Other(ref name) => file_path.contains(&format!("/roles/{}/", name)),
         crate::types::Role::Unknown => false,
     };
 
@@ -277,7 +278,7 @@ pub fn check(input: &HookInput, state: &AppState) -> HookResponse {
             gate = "context-synthesis",
             decision = "skip",
             reason = "own domain enhancement",
-            role = %format!("{:?}", role).to_lowercase(),
+            role = %role.as_str(),
             file = %file_path,
         );
         return HookResponse::allow();
@@ -294,7 +295,7 @@ pub fn check(input: &HookInput, state: &AppState) -> HookResponse {
                     gate = "context-synthesis",
                     decision = "advisory",
                     reason = "fix card without git history on target file",
-                    role = %format!("{:?}", role).to_lowercase(),
+                    role = %role.as_str(),
                     file = %file_path,
                 );
                 return HookResponse::allow();
@@ -304,7 +305,7 @@ pub fn check(input: &HookInput, state: &AppState) -> HookResponse {
                 gate = "context-synthesis",
                 decision = "skip",
                 reason = "new file — no prior commits",
-                role = %format!("{:?}", role).to_lowercase(),
+                role = %role.as_str(),
                 file = %file_path,
             );
         }
@@ -313,7 +314,7 @@ pub fn check(input: &HookInput, state: &AppState) -> HookResponse {
     // The real gate: check for synthesis, not just search
     let (has_search, has_synthesis) = scan_session_for_synthesis(input, state);
 
-    let role_name = format!("{:?}", role).to_lowercase();
+    let role_name = role.as_str().to_string();
 
     if !has_search && !has_synthesis {
         info!(

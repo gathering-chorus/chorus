@@ -260,6 +260,8 @@ fn evaluate(runtime: &str, ev: Event, raw: &Value) -> Result<Decision, String> {
     let sid = std::env::var("CHORUS_SESSION_ID").map_err(|_|"runtime hook requires a supervisor-issued CHORUS_SESSION_ID")?;
     if sid.is_empty() || !sid.bytes().all(|b|b.is_ascii_alphanumeric() || b == b'-' || b == b'_') { return Err("invalid Chorus session identity".into()); }
     let mut base = json!({"cwd":cwd,"session_id":sid,"chorus_session_id":sid,"runtime":runtime,"deploy_role":role,"prompt":raw.get("prompt"),
+        // #4445 — Gemini's AfterAgent carries the reply itself; the stop leg publishes it.
+        "prompt_response":raw.get("prompt_response"),
         "stop_hook_active":raw.get("stop_hook_active"),
         "tool_response":raw.get("tool_response").or_else(|| raw.get("tool_output")).or_else(|| raw.get("output")),
         "tool_output_is_error":raw.get("tool_output_is_error"),

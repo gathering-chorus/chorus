@@ -98,14 +98,14 @@ resolve_args() {
   [ "$status" -eq 0 ]
   resolve_args
   complete=("steps.scope.outputs.nothing=" "steps.prove.outcome=success" "steps.prove.outputs.issues=0")
+  # #4432 — no seed step any more (rows live in the store).
   # emitter healthy: each step succeeds and leaves its event (by path — PATH has no chorus-log)
-  STEP_ENV=("STUB_SCOPE=model|m.ttl\nseed|s.ttl\n")
+  STEP_ENV=("STUB_SCOPE=model|m.ttl\n")
   run_step scope "${RESOLVE[@]}";  [ "$status" -eq 0 ]
   STEP_ENV=()
   run_step deploy "${RESOLVE[@]}"; [ "$status" -eq 0 ]
-  run_step seed "${RESOLVE[@]}";   [ "$status" -eq 0 ]
   run_step complete "${complete[@]}"; [ "$status" -eq 0 ]
-  for ev in athena.pipeline.started athena.deploy.started athena.seed.completed athena.pipeline.completed; do
+  for ev in athena.pipeline.started athena.deploy.started athena.pipeline.completed; do
     grep -q "\"event\":\"$ev\"" "$T/spine.log"
   done
   # emitter failing: every one of those steps goes red
@@ -113,7 +113,6 @@ resolve_args() {
   run_step scope "${RESOLVE[@]}";  [ "$status" -ne 0 ]
   STEP_ENV=(STUB_LOG_RC=1)
   run_step deploy "${RESOLVE[@]}"; [ "$status" -ne 0 ]
-  run_step seed "${RESOLVE[@]}";   [ "$status" -ne 0 ]
   run_step complete "${complete[@]}"; [ "$status" -ne 0 ]
 }
 
@@ -130,11 +129,11 @@ resolve_args() {
   [ "$status" -eq 0 ]
   printf '{"event":"merge.landed","trace":"werk-parent-2"}\n' >> "$T/spine.log"
   STEP_ENV=(CHORUS_SPINE="$T/spine.log")
-  run_step traceable steps.scope.outputs.seed= steps.scope.outputs.model=
+  run_step traceable steps.scope.outputs.model=
   [ "$status" -eq 0 ]
   echo "$output" | grep -q "2 event(s) on athena-"
   # a model leg that left no record: want 4, two events on the trace -> red
-  run_step traceable steps.scope.outputs.seed= steps.scope.outputs.model=m.ttl
+  run_step traceable steps.scope.outputs.model=m.ttl
   [ "$status" -eq 1 ]
   echo "$output" | grep -q "2 event(s) on trace athena-.* but 4 leg(s) ran"
 }

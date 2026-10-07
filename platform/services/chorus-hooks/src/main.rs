@@ -921,7 +921,7 @@ async fn post_tool_use(
             // Artifact creation pulse (#1907) — detect new docs in artifacts/ dirs
             if file_path.contains("/artifacts/") && tool == "Write" {
                 let fname = file_path.rsplit('/').next().unwrap_or(&file_path).to_string();
-                let role_name = format!("{:?}", input.role()).to_lowercase();
+                let role_name = input.role().as_str().to_string();
                 // Emit spine event
                 crate::state::chorus_log(
                     "artifact.created", &role_name,
@@ -1190,7 +1190,7 @@ async fn stated_intent_block(
     let calls = hooks::autonomy_guard::tool_calls_this_turn(tp);
     let vocab = hooks::autonomy_guard::load_commitments(&state.config.stated_intent_vocabulary);
     let id = hooks::autonomy_guard::stated_intent_without_action(&text, calls, &vocab)?;
-    let role = format!("{:?}", input.role()).to_lowercase();
+    let role = input.role().as_str().to_string();
     crate::state::chorus_log("stated.intent.stall", &role, &[("commitment", id.as_str())]).await;
     Some(HookResponse::block_with_stderr(
         &hooks::autonomy_guard::stall_refusal(&id),
@@ -1210,7 +1210,7 @@ if let Some(session_id) = input.session_id.as_deref() {
         if let Some(resp) = transcript.and_then(hooks::inject_force::last_assistant_text)
         {
             let verdict = hooks::inject_force::inject_engagement_verdict(&surfaced, &resp);
-            let role = format!("{:?}", input.role()).to_lowercase();
+            let role = input.role().as_str().to_string();
             let n = surfaced.len().to_string();
             let (label, detail) = match &verdict {
                 hooks::inject_force::EngagementVerdict::Pass => ("pass", String::new()),
@@ -1249,7 +1249,7 @@ async fn stop_hook(
     inject_force_observe(&raw, &input).await;
  // #4429: one bounce per turn. In a continuation a stop gate already caused, no gate blocks again.
  if raw.get("stop_hook_active").and_then(|v| v.as_bool()) == Some(true) {
- crate::state::chorus_log("stop.gate.yielded", &format!("{:?}", input.role()).to_lowercase(), &[]).await;
+ crate::state::chorus_log("stop.gate.yielded", input.role().as_str(), &[]).await;
  return Json(HookResponse::allow());
  }
     // Existing behavior unchanged — observe-only, no block on the inject-force path.
@@ -1271,7 +1271,7 @@ async fn stop_hook(
     // continuation clears it, never a trap.
     let mut debt_advisory = None;
     if response.exit_code == 0 && response.stdout.is_none() {
-        let role = format!("{:?}", input.role()).to_lowercase();
+        let role = input.role().as_str().to_string();
         let debt = hooks::nudge_drain::response_debt(
             &role, &shared::state_paths::messages_db(), input.session_id.as_deref(),
         );
@@ -1321,12 +1321,11 @@ async fn stop_hook(
     // handler resets on clean stops): a rewritten reply is a new debt with
     // fresh chances; the same over-cap text degrades after WORD_CAP_REFUSAL_CAP.
     if response.exit_code == 0 && response.stdout.is_none() {
-        let text = raw
-            .get("transcript_path")
-            .and_then(|v| v.as_str())
-            .and_then(hooks::inject_force::last_assistant_text);
+        // #4445 — Gemini has no transcript file: its AfterAgent hook hands the
+        // reply itself (prompt_response), forwarded by the runtime hook.
+        let text = hooks::reply_delivery::reply_text(&raw);
         if let Some(text) = text {
-            let role = format!("{:?}", input.role()).to_lowercase();
+            let role = input.role().as_str().to_string();
             let api_base = std::env::var("CHORUS_API_URL")
                 .unwrap_or_else(|_| "http://localhost:3340".to_string());
             // ureq is blocking — keep it off the async worker.

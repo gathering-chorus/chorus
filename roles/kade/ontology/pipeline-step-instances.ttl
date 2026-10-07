@@ -30,9 +30,6 @@ chorus:pipeline-step-athena-shape a chorus:PipelineStep ;
 chorus:pipeline-step-athena-forge a chorus:PipelineStep ;
     rdfs:label "forge" ; chorus:stepOrder 2 ;
     chorus:executor "deterministic" ; chorus:implementedBy "athena-make" .
-chorus:pipeline-step-athena-seed a chorus:PipelineStep ;
-    rdfs:label "seed" ; chorus:stepOrder 3 ;
-    chorus:executor "deterministic" ; chorus:implementedBy "athena-model seed --deploy" .
 chorus:pipeline-step-athena-validate a chorus:PipelineStep ;
     rdfs:label "validate" ; chorus:stepOrder 4 ;
     chorus:executor "deterministic" ; chorus:implementedBy "athena-validate" .

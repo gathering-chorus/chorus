@@ -75,6 +75,7 @@ pub mod word_cap {
 // with Clearing's TS hasher).
 pub mod reply_delivery {
     pub use crate::hooks::reply_delivery::content_hash;
+    pub use crate::hooks::reply_delivery::reply_text;
 }
 pub use state::AppState;
 // #3278 — expose append_log for the concurrent-append atomicity test.

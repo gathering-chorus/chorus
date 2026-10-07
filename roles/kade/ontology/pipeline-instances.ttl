@@ -23,7 +23,7 @@ chorus:pipeline-athena a chorus:Pipeline ;
     rdfs:label "athena" ;
     chorus:pipelineStatus "operating" ;
     chorus:hasStep chorus:pipeline-step-athena-shape , chorus:pipeline-step-athena-forge ,
-                   chorus:pipeline-step-athena-seed , chorus:pipeline-step-athena-validate .
+                   chorus:pipeline-step-athena-validate .
 
 # ── under construction — instances only, no invented steps ──────────────────
 chorus:pipeline-clearing a chorus:Pipeline ;

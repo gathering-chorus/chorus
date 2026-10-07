@@ -74,8 +74,13 @@ setup_blocking_fixture() {
   # Then remove working-with-jeff.md from wren's fragments + drop it from manifest,
   # leaving asymmetry (silas + kade have it, wren does not) — the linter catches this.
   BASE=$(mktemp -d)
-  mkdir -p "$BASE/designing" "$BASE/roles/wren" "$BASE/roles/silas" "$BASE/roles/kade"
+  mkdir -p "$BASE/designing"
   cp -r "$CLAUDEMD_DIR" "$BASE/designing/claudemd"
+  # One output dir per role the manifest names (#4445: abby-normal joined in
+  # #4432 and a three-role list here failed validation before the linter ran).
+  for r in $(python3 -c "import json;print(' '.join(json.load(open('$BASE/designing/claudemd/manifest.json'))['roles']))"); do
+    mkdir -p "$BASE/roles/$r"
+  done
   rm -f "$BASE/designing/claudemd/roles/wren/working-with-jeff.md"
   python3 -c "
 import json

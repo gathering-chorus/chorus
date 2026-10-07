@@ -12,6 +12,7 @@
  */
 
 import { buildRoomIdentity, authorOf, publishToRoom, inboundToClearing } from '../src/buzz-room';
+import { setRoomRoles } from '../src/room-roles';
 import { derivedSigner, roomSecret } from '../src/buzz-signer';
 import type { ClearingMsg, NostrEvent } from '../src/buzz-bridge';
 
@@ -25,7 +26,7 @@ process.env.BUZZ_ROOM_SECRET = TEST_SECRET;
 // #3910 — identity now reads REGISTERED keys from disk. The test injects its own
 // sources so it never touches the running machine's ~/.chorus, and still proves
 // the property that matters: a note is attributed by WHO SIGNED IT.
-const identity = buildRoomIdentity(undefined, {
+const identity = buildRoomIdentity(['jeff', 'wren', 'silas', 'kade', 'abby-normal'], {
   pubkeyFor: (actor) => derivedSigner(actor, TEST_SECRET).pubkey,
   serviceSigner: () => derivedSigner('bridge', TEST_SECRET),
 });
@@ -163,7 +164,7 @@ describe('#3823 outbound', () => {
     // unsigned traffic the relay would reject while our logs read as sent.
     // It refuses at CONSTRUCTION, which is stricter and better: the room never
     // starts rather than starting and failing quietly on each publish.
-    expect(() => buildRoomIdentity(undefined, {
+    expect(() => buildRoomIdentity(['jeff'], {
       pubkeyFor: () => null,
       serviceSigner: () => { throw new Error('no bridge key'); },
     })).toThrow(/no bridge key/);
@@ -214,5 +215,24 @@ describe('#3823 offline backlog is bounded (Silas review)', () => {
     room.stop();
     expect(dropped.length).toBeGreaterThan(0);
     expect(dropped[dropped.length - 1].kept).toBe(100);
+  });
+});
+
+// #4445 — the room's actors are the room's role list plus Jeff, read when a note arrives.
+describe('#4445 room actors follow the room role list', () => {
+  const live = buildRoomIdentity(undefined, {
+    pubkeyFor: (actor) => derivedSigner(actor, TEST_SECRET).pubkey,
+    serviceSigner: () => derivedSigner('bridge', TEST_SECRET),
+  });
+
+  it("a note Abby signed is attributed to abby-normal once she is in the role list (was: unknown pubkey)", () => {
+    setRoomRoles(['wren', 'silas', 'kade', 'abby-normal']);
+    expect(authorOf(noteFrom('abby-normal'), live)).toBe('abby-normal');
+    expect(authorOf(noteFrom('jeff'), live)).toBe('jeff');
+  });
+
+  it('NEGATIVE: a key whose role is not in the list stays unplaced', () => {
+    setRoomRoles(['wren', 'silas', 'kade']);
+    expect(authorOf(noteFrom('abby-normal'), live)).toBeNull();
   });
 });

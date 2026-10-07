@@ -3,7 +3,7 @@
 # moment ∈ edit|commit|pipeline-test|merge|deploy-accept|nightly (one per mechanism — the placement rule)
 # fixture = repo-relative negative-proof path, or GAP (an honest, named hole — the checker reports it, never hides it)
 canonical_write_guard	edit	platform/services/chorus-hooks/tests/canonical_write_guard.rs	canonical + cross-role werk writes
-tdd_gate	edit	platform/services/chorus-hooks/tests/tdd_gate_acceptance.rs	code before tests, building state
+tdd_gate	edit	GAP	code before tests; its negative suite was deleted 10-06 (#4432, Jeff: if its useless take it out); tdd_gate_live_state_3278.rs proves only the live-state path
 test_quality_gate	edit	GAP	#2196 assertion-less tests
 log_first_gate	edit	GAP	defect fix without log read — no negative suite
 icd_write_gate	edit	GAP	post-write validator; blocking claim unproven

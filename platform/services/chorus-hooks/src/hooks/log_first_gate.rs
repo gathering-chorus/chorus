@@ -174,13 +174,13 @@ pub fn check(input: &HookInput, state: &AppState) -> HookResponse {
             gate = "log-first",
             decision = "skip",
             reason = "build/lint error context — logs not relevant",
-            role = %format!("{:?}", input.role()).to_lowercase(),
+            role = %input.role().as_str().to_string(),
             file = %file_path,
         );
         return HookResponse::allow();
     }
 
-    let role_name = format!("{:?}", input.role()).to_lowercase();
+    let role_name = input.role().as_str().to_string();
 
     if !has_log_evidence(input, state) {
         info!(
