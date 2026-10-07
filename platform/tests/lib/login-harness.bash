@@ -85,6 +85,14 @@ echo "sudo \$*" >> "$T/sudo.log"
 while [ \$# -gt 0 ]; do case "\$1" in -n|-H) shift ;; -u) shift 2 ;; *) break ;; esac; done
 exec "\$@"
 EOS
+  # #4445 stub relay projection: records the call, never reaches the relay;
+  # fails like a dropped ssh when $T/relay-fail exists
+  cat > "$T/bin/relay" <<EOS
+#!/bin/bash
+echo "relay \$*" >> "$T/relay.log"
+[ -f "$T/relay-fail" ] && { echo "ssh: connect to host 192.0.2.1 port 22: Operation timed out" >&2; exit 255; }
+echo "projected: graph=4 keys, +1 -0 (relay allowlist = allow-set projection)"
+EOS
   printf '#!/bin/bash\necho "$*" >> "%s/spine.log"\n' "$T" > "$T/bin/chorus-log"
   printf '#!/bin/bash\necho "osascript $*" >> "%s/osa.log"\n' "$T" > "$T/bin/osascript"
   printf '#!/bin/bash\necho "open $*" >> "%s/open.log"\n' "$T" > "$T/bin/open"
@@ -99,6 +107,7 @@ login_harness_env() {
   export AWAKE_PROBE_BIN="$T/bin/probe" AWAKE_OSASCRIPT="$T/bin/osascript" AWAKE_OPEN="$T/bin/open"
   export AWAKE_SERVICES="identity=http://stub:3001/,chorus-api=http://stub:3340/h,athena-make=http://stub:3360/s"
   export AWAKE_HOOKS_SOCKET=none   # #4409: the hooks check is off unless a test points it somewhere
+  export AWAKE_RELAY_PROJECT="$T/bin/relay"   # #4445: never the real relay from a test
   export AWAKE_SERVICE_WAIT=2 AWAKE_NO_RETRY=1
   export CHORUS_IDENTITY_DIR="$T/identity" CHORUS_API_URL="http://stub:3360"
   export CHORUS_SESSIONS_DIR="$T/sessions" AWAKE_ROLES_BASE="$T/roles" CHORUS_ROOT="$ROOT"

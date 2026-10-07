@@ -463,6 +463,8 @@ struct Ctx {
     probe: String,
     services: Vec<(String, String)>,
     service_wait: u64,
+    /// #4445 — the relay member-list projection; "none" switches it off
+    relay: String,
 }
 
 impl Ctx {
@@ -486,6 +488,7 @@ impl Ctx {
             probe: envd("AWAKE_PROBE_BIN", "curl"),
             services: lifecycle::parse_services(&envd("AWAKE_SERVICES", lifecycle::DEFAULT_SERVICES)),
             service_wait: envd("AWAKE_SERVICE_WAIT", "180").parse().unwrap_or(180),
+            relay: envd("AWAKE_RELAY_PROJECT", &format!("{}/platform/scripts/buzz-allowlist-project", root)),
             home,
             root,
         }
@@ -694,7 +697,28 @@ fn person_at_terminal(ctx: &Ctx) -> Option<String> {
     rows::person_for_account(&body, &user)
 }
 
+/// #4445 — a principal's nostr key in the graph is not enough: the relay passes
+/// on only its members' messages, and its member list is a projection that
+/// nothing ran (Abby, 2026-10-07: 48 replies, none in the Clearing). Every login
+/// runs it, so a role's key is a member by the time its session starts. Down is
+/// loud, never a refusal, like the hooks check.
+fn project_relay(ctx: &Ctx, role: &str) {
+    if ctx.relay == "none" { return; }
+    match sh(&ctx.relay, &[]) {
+        Ok(out) => {
+            let line = out.lines().filter(|l| !l.trim().is_empty()).last().unwrap_or("done").to_string();
+            ctx.spine(&["session.relay.projected", role]);
+            println!("relay: {}", line);
+        }
+        Err(why) => {
+            ctx.spine(&["session.relay.failed", role, &format!("reason={}", why.trim())]);
+            eprintln!("relay: the relay member list was not updated — {}\n  {}'s messages reach the Clearing only once its key is a member.\n  fix: bash {}", why.trim(), role, ctx.relay);
+        }
+    }
+}
+
 fn login_or_resume(ctx: &Ctx, role: &str) -> Result<LoginState, ()> {
+    project_relay(ctx, role);
     if let LoginState::Recorded { session, .. } = ctx.read_state(role) {
         let open = read_row(ctx, role, "session")
             .filter(|r| row_name(r) == session)
