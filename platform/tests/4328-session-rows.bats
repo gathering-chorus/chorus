@@ -299,10 +299,14 @@ PY
   test -z "$(printf '%s' "$s" | grep -F '"actsAs":"role-wren"' || true)"
 }
 
-@test "#4344 a login writes the role's credential files as rows that name the file and never carry the secret" {
+@test "#4344 #4447 credentials writes the role's credential files as rows that name the file and never carry the secret" {
   printf '{"secret":"SUPERSECRET-client-secret","issuer":"x"}' > "$T/identity/silas/cred.json"
   printf '{"seckey":"nsec1supersecretkey","pubkey":"ab"}' > "$T/identity/silas/nostr.json"
+  # #4447: login no longer writes Credential rows; the identity owner writes them once
   run "$SCRIPT" on silas
+  test "$status" -eq 0
+  test "$(bodies | grep -c security_credentials || true)" -eq 0 || return 1
+  run "$SCRIPT" credentials silas
   test "$status" -eq 0
   test "$(bodies | grep -c POST-security_credentials)" -eq 2
   c=$(cat "$T"/bodies/*POST-security_credentials*); has "$c" '"credentialKind":"css-client"'; has "$c" '"credentialKind":"nostr-key"'; has "$c" '/silas/cred.json"'
@@ -310,10 +314,12 @@ PY
   test -z "$(cat "$T"/bodies/* | grep -F -e SUPERSECRET -e nsec1 || true)"
 }
 
-@test "#4344 an unchanged credential is not written again" {
+@test "#4344 #4447 an unchanged credential is not written again" {
   printf '{"secret":"s"}' > "$T/identity/silas/cred.json"
-  run "$SCRIPT" on silas
+  run "$SCRIPT" credentials silas
   n=$(bodies | grep -c security_credentials)
-  echo '{"session_id":"c","prompt":"hi"}' | AWAKE_SEEN_SYNC=1 "$SCRIPT" seen silas
+  test "$n" -ge 1
+  run "$SCRIPT" credentials silas
+  test "$status" -eq 0
   test "$(bodies | grep -c security_credentials)" -eq "$n"
 }
