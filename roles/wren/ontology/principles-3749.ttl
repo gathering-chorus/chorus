@@ -71,7 +71,7 @@ chorus:PrincipleShape a sh:NodeShape ;
                   sh:message "order is the Hemenway numbering, 1 to 14" ] ;
     # Jeff, 2026-09-16 (#4183): the owner of a row is a principal. The door stamps
     # it from the caller's verified identity, never from the body (#4196).
-    sh:property [ sh:path chorus:ownedBy ; sh:minCount 1 ; sh:maxCount 1 ; sh:nodeKind sh:IRI ;
+    sh:property [ sh:path chorus:ownedBy ; sh:minCount 1 ; sh:maxCount 1 ; sh:nodeKind sh:IRI ; sh:class chorus:Principal ;
                   sh:name "owned by" ;
                   sh:description "Required, set by the door. The principal that keeps this principle." ;
                   sh:message "a principle has exactly one owner" ] ;
