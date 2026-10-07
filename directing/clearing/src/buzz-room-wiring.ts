@@ -164,7 +164,8 @@ function handleInbound(st: RoomState, ev: NostrEvent): void {
     announceHoles(st, msg.from, ev);
     return;
   }
-  if (disposition !== 'own-echo') {
+  // 'tailed' is the normal case for every wren/silas/kade reply — not worth a line each.
+  if (disposition !== 'own-echo' && disposition !== 'tailed') {
     st.deps.log('info', 'buzz.room.not_rendered', { disposition, pubkey: ev.pubkey.slice(0, 8) });
   }
 }

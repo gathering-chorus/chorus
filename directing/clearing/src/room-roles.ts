@@ -18,3 +18,16 @@ export function roomRoles(): string[] {
 export function isRoomRole(name: string): boolean {
   return roles.includes(name.toLowerCase());
 }
+
+/**
+ * #4445 — the roles whose replies the session tailer reads from their Claude
+ * Code transcripts. Any other room role (Abby runs Gemini, which writes no Claude
+ * transcript) reaches the Clearing through its reply notes on the relay instead.
+ * One list, read by both: the tailer tails these, the room skips their reply
+ * notes so nothing renders twice.
+ */
+export const TAILED_ROLES = ['wren', 'silas', 'kade'] as const;
+
+export function isTailedRole(name: string): boolean {
+  return (TAILED_ROLES as readonly string[]).includes(name);
+}

@@ -49,9 +49,15 @@ export interface RoomFilter {
  * null if we have never rendered one.
  */
 export function roomFilter(topic: string, cursor: number | null): RoomFilter {
-  if (cursor === null) return { kinds: [1], '#t': [topic], limit: COLD_START_LIMIT };
-  return { kinds: [1], '#t': [topic], since: Math.max(0, cursor - OVERLAP_SECS) };
+  // #4445 — 'reply' too: a role the session tailer cannot read (Abby, on Gemini)
+  // reaches the Clearing only through the reply notes its hooks publish.
+  const t = [topic, REPLY_TAG];
+  if (cursor === null) return { kinds: [1], '#t': t, limit: COLD_START_LIMIT };
+  return { kinds: [1], '#t': t, since: Math.max(0, cursor - OVERLAP_SECS) };
 }
+
+/** The t tag chorus-hooks puts on every role reply note (buzz_reply.rs). */
+export const REPLY_TAG = 'reply';
 
 /**
  * Move the cursor forward — and only forward.
