@@ -41,7 +41,7 @@ com.chorus.bridge-subscriber-wren	platform/scripts/bridge-subscriber.js
 com.chorus.share-guard	platform/scripts/chorus-share-guard.py
 com.chorus.share-guard-path	platform/scripts/chorus-share-guard.py
 com.chorus.alert-delivery-test	platform/scripts/alert-delivery-test.sh
-com.chorus.alert-runner	proving/scripts/alert-runner.sh
+com.chorus.alert-runner	GAP: outside platform/; the werk-test scope rule that lets a card touch it lands with #4446, wire it after
 com.chorus.bedroom-health	platform/scripts/health-check-bedroom.sh
 com.chorus.cards-orphan-reaper	platform/scripts/cards-orphan-reaper.sh
 com.chorus.chorus-health	platform/scripts/chorus-health
@@ -53,7 +53,7 @@ com.chorus.daily-review-summary	platform/scripts/daily-review-summary.sh
 com.chorus.daily-signal-scan	platform/scripts/daily-signal-scan.sh
 com.chorus.deep-health	platform/scripts/deep-health.sh
 com.chorus.embed-worker	platform/scripts/chorus-embed-worker.sh
-com.chorus.fuseki-compact	building/products/convergence/fuseki-maintenance.sh
+com.chorus.fuseki-compact	GAP: outside platform/; the werk-test scope rule that lets a card touch it lands with #4446, wire it after
 com.chorus.lance-maintain	platform/scripts/chorus-lance-maintain.sh
 com.chorus.log-harvest	platform/scripts/log-harvest.sh
 com.chorus.mcp-config-herald	platform/scripts/mcp-config-herald.sh

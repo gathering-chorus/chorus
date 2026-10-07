@@ -10,9 +10,6 @@
 #   fuseki-maintenance.sh text-index      — Rebuild Lucene text index
 #
 # Card: #521
-# #4446 — a run that exits non-zero is logged as service.failed (com.chorus.fuseki-compact).
-. "$(dirname "${BASH_SOURCE[0]}")/../../../platform/scripts/lib/service-lifecycle.sh"
-service_lifecycle_job com.chorus.fuseki-compact "$@"
 
 set -u
 

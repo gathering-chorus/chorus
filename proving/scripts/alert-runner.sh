@@ -6,9 +6,6 @@
 # fires the action script if check fails.
 #
 # Usage: alert-runner.sh [--rule <name>]
-# #4446 — a run that exits non-zero is logged as service.failed (com.chorus.alert-runner).
-. "$(dirname "${BASH_SOURCE[0]}")/../../platform/scripts/lib/service-lifecycle.sh"
-service_lifecycle_job com.chorus.alert-runner "$@"
 
 set -euo pipefail
 
