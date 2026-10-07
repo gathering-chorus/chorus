@@ -1,7 +1,7 @@
 // @domain: identity
 //! #4444 — Abby logs in to her own Gemini screen in her pane (Jeff 2026-10-06:
 //! "thats my user interface — a background job that i cant interact with").
-use chorus_principal::rows::{gemini_pane_cmd, pane_process_is, pane_runtime, PaneRuntime};
+use chorus_principal::rows::{gemini_git_setup, gemini_pane_cmd, pane_process_is, pane_runtime, PaneRuntime};
 
 fn role_dir(name: &str, with: &[&str]) -> std::path::PathBuf {
     let d = std::env::temp_dir().join(format!("gp4444-{}-{}", name, std::process::id()));
@@ -99,4 +99,41 @@ fn negative_proof_a_shim_outside_the_agent_bin_dir_is_not_found() {
     let bin = fake_bin("off-path");
     let cmd = gemini_pane_cmd("/nowhere/chorus-agent", "/b/gemini", "/r", "abby-normal-run-1a2b").unwrap();
     assert!(!shim_resolves_under(&cmd, &bin), "{cmd}");
+}
+
+/// #4444 reopen 2 — Jeff kept approving Abby's `git -c safe.directory=* -C …` calls.
+/// Gemini's policy engine treats any `git -c` as dangerous and asks whatever the
+/// policy allows (gemini-cli bundle: gitHasConfigOverrideGlobalOption). She needed
+/// `-c` only because git refuses repos another account owns. Her login sets that
+/// once in her own git config, so plain `git -C` passes. Proof at the boundary:
+/// run the setup as a shell would, in a fresh HOME, and read git's config back.
+fn safe_directories_after(setup: &str, home: &std::path::Path, runs: usize) -> Vec<String> {
+    for _ in 0..runs {
+        let ok = std::process::Command::new("/bin/bash").arg("-c").arg(setup)
+            .env("HOME", home).env("GIT_CONFIG_NOSYSTEM", "1").status().unwrap().success();
+        assert!(ok, "setup failed: {setup}");
+    }
+    let out = std::process::Command::new("git").args(["config", "--global", "--get-all", "safe.directory"])
+        .env("HOME", home).env("GIT_CONFIG_NOSYSTEM", "1").output().unwrap();
+    String::from_utf8_lossy(&out.stdout).lines().map(str::to_string).collect()
+}
+
+fn fresh_home(tag: &str) -> std::path::PathBuf {
+    let h = std::env::temp_dir().join(format!("gemini-git-4444-{}-{}", tag, std::process::id()));
+    let _ = std::fs::remove_dir_all(&h);
+    std::fs::create_dir_all(&h).unwrap();
+    h
+}
+
+#[test]
+fn her_login_lets_git_read_jeffs_repos_without_a_dash_c() {
+    let cmd = gemini_pane_cmd("/b/chorus-agent", "/b/gemini", "/r", "abby-normal-run-1a2b").unwrap();
+    assert!(cmd.contains(gemini_git_setup()), "{cmd}");
+    // set once, and a second login does not add a duplicate
+    assert_eq!(safe_directories_after(gemini_git_setup(), &fresh_home("twice"), 2), vec!["*".to_string()]);
+}
+
+#[test]
+fn negative_proof_without_the_setup_git_trusts_no_other_owner() {
+    assert!(safe_directories_after("true", &fresh_home("none"), 1).is_empty());
 }

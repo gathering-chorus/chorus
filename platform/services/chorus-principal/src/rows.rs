@@ -547,6 +547,15 @@ pub fn pane_runtime(role_dir: &std::path::Path) -> PaneRuntime {
     if role_dir.join(".gemini").is_dir() && !role_dir.join(".claude").is_dir() { PaneRuntime::Gemini } else { PaneRuntime::Claude }
 }
 
+/// #4444 — Abby runs as her own account, so git refuses Jeff's repos ("dubious
+/// ownership") unless told they are safe. Passing `-c safe.directory=*` on each call
+/// made Gemini ask Jeff every time: its policy engine treats any `git -c` as
+/// dangerous whatever the policy allows. Set once in her own git config instead;
+/// idempotent, so every login can run it.
+pub fn gemini_git_setup() -> &'static str {
+    "{ git config --global --get-all safe.directory | grep -qxF '*' || git config --global --add safe.directory '*'; }"
+}
+
 /// #4444 — the command typed into a Gemini role's pane (it runs as the role's
 /// own account, inside launch_line). Node goes on PATH (launchd and sudo give a
 /// PATH without it — measured 10-06 18:16: "env: node: No such file or
@@ -566,8 +575,8 @@ pub fn gemini_pane_cmd(agent_bin: &str, gemini_bin: &str, allow_rules: &str, run
         return Err(format!("refusing to launch with a quote in the bin dir {:?}", bin_dir));
     }
     Ok(format!(
-        "export PATH='{}':/opt/homebrew/bin:$PATH CHORUS_SESSION_ID='{}' GEMINI_API_KEY=\"$(cat ~/.chorus/secrets/gemini.key)\" && CHORUS_ALLOW_RULES_FILE='{}' '{}' allowed-tools >/dev/null && '{}' --policy ~/.chorus/gemini-allowed.toml",
-        bin_dir, run, allow_rules, agent_bin, gemini_bin
+        "export PATH='{}':/opt/homebrew/bin:$PATH CHORUS_SESSION_ID='{}' GEMINI_API_KEY=\"$(cat ~/.chorus/secrets/gemini.key)\" && {} && CHORUS_ALLOW_RULES_FILE='{}' '{}' allowed-tools >/dev/null && '{}' --policy ~/.chorus/gemini-allowed.toml",
+        bin_dir, run, gemini_git_setup(), allow_rules, agent_bin, gemini_bin
     ))
 }
 
