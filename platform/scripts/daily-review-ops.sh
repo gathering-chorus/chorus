@@ -1,6 +1,9 @@
 #!/bin/bash
 # daily-review-ops.sh — 6am ops health check, posts to Bridge
 # Card #1766 | DEC-107 compliant (no osascript)
+# #4446 — a run that exits non-zero is logged as service.failed (com.chorus.daily-review-ops).
+. "$(dirname "${BASH_SOURCE[0]}")/lib/service-lifecycle.sh"
+service_lifecycle_job com.chorus.daily-review-ops "$@"
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"

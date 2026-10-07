@@ -72,7 +72,14 @@ pub fn scope_irrelevant(f: &str) -> bool {
     // (platform/tests/werk-code-contract.bats) is pulled in by coverage, the
     // same way an edited script pulls in the suites that name it.
     let contract = f == "platform/config/werk-code-contract.tsv";
-    ext || dir || vcs || contract || f.contains("/public/")
+    // #4446 — a launchd job script sitting DIRECTLY in one of these two dirs is
+    // the same kind of file as platform/scripts/: a schedule's body, not a build
+    // input. Only the .sh at that level: proving/scripts/tests/ suites still run
+    // themselves, and convergence/domains/ may hold build inputs, so it stays loud.
+    let job_script = f.ends_with(".sh")
+        && matches!(f.rsplit_once('/').map(|(d, _)| d),
+                    Some("proving/scripts") | Some("building/products/convergence"));
+    ext || dir || vcs || contract || job_script || f.contains("/public/")
 }
 
 /// A path that IS a test suite: the runner executes the file itself, so a change
@@ -351,6 +358,25 @@ mod scope_refusal_4169 {
             panic!("an alert rule + its suite must not go FULL")
         };
         assert_eq!(names, vec![suite.to_string()]);
+    }
+
+    // #4446 — the two job scripts outside platform/ scope to nothing; only that
+    // level is exempt. NEGATIVE PROOF: a suite under proving/scripts/tests/ still
+    // runs itself, and a file under convergence/domains/ still refuses.
+    #[test]
+    fn a_job_script_outside_platform_is_not_a_build_input_4446() {
+        assert!(scope_irrelevant("proving/scripts/alert-runner.sh"));
+        assert!(scope_irrelevant("building/products/convergence/fuseki-maintenance.sh"));
+        let suite = "proving/scripts/tests/test-alert-runner.sh";
+        assert!(!scope_irrelevant(suite));
+        assert!(is_test_suite_path(suite));
+        for f in ["building/products/convergence/domains/x.sh",
+                  "building/products/convergence/domains/x",
+                  "building/products/convergence/notes.py"] {
+            assert!(!scope_irrelevant(f), "{f} must not be waved through");
+            assert_eq!(scope_unit_names(&[f.to_string()], &[], &[], false),
+                       ScopeVerdict::Full(format!("unmapped:{f}")));
+        }
     }
 
     #[test]

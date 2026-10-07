@@ -3160,6 +3160,7 @@ import { inferTags, SUBPRODUCT_DOMAINS, GATHERING_DOMAINS } from './handlers/doc
 import { detectDrift } from './handlers/doc-tag-drift';
 import { scanTail } from './handlers/spine-scan';
 import { discoverPages, buildInventory } from './handlers/ui-pages';
+import { serviceLifecycle } from '../../chorus-sdk/lifecycle/service-lifecycle';
 import { buildHierarchyTree, type AthenaShape } from './handlers/doc-catalog-tree';
 app.get('/api/doc-catalog', docCatalogList);
 app.post('/api/doc-catalog/add', docCatalogAdd);
@@ -3481,10 +3482,14 @@ app.get('/api/doc-inventory', (_req: Request, res: Response) => {
   }
 });
 
+// #4446 — chorus-api logs its own start, stop and failure on the spine.
+const lifecycle = serviceLifecycle('com.chorus.api');
+
 process.on('uncaughtException', (err) => {
   console.error(`[chorus-api] FATAL uncaughtException: ${err.message}`);
   console.error(err.stack);
   crashAlert(err.message);
+  lifecycle.failed(`uncaughtException: ${err.message}`, 1);
   process.exit(1);
 });
 
@@ -3493,11 +3498,13 @@ process.on('unhandledRejection', (reason) => {
   console.error(`[chorus-api] FATAL unhandledRejection: ${msg}`);
   if (reason instanceof Error) console.error(reason.stack);
   crashAlert(msg);
+  lifecycle.failed(`unhandledRejection: ${msg}`, 1);
   process.exit(1);
 });
 
 process.on('SIGTERM', () => {
   console.log('[chorus-api] Received SIGTERM — shutting down');
+  lifecycle.stopped('SIGTERM');
   process.exit(0);
 });
 
@@ -3577,6 +3584,7 @@ if (require.main === module) {
 
   app.listen(PORT, BIND_HOST, () => {
     console.log(`[chorus-api] Listening on ${BIND_HOST}:${PORT}`);
+    lifecycle.started();
     console.log(`[chorus-api] Database: ${DB_PATH}`);
     // #3382 — LanceDB no longer initialized in-process; the search worker opens
     // the handle in its own process, lazily, on the first semantic query.

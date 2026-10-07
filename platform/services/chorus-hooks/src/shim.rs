@@ -394,7 +394,15 @@ fn log_debug(msg: &str) {
     }
 }
 
+// #4446 — the shim's scheduled jobs log their own failure.
+#[allow(dead_code)] // each crate uses part of the shared helper
+mod service_lifecycle {
+    include!("../../shared/service_lifecycle.rs");
+}
+
 fn main() -> ExitCode {
+    // #4446 — under launchd (heartbeat, nudge-health, context-cache jobs) a failed run is service.failed.
+    service_lifecycle::run_as_job();
     // Unified dispatch — handles both argv[0] symlinks and `shim <subcommand>` invocations.
     // argv[0] symlink: args start at index 1 (skip binary name)
     // Subcommand:      args start at index 2 (skip binary name + subcommand)

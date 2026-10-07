@@ -27,6 +27,9 @@ import { spawn, execFileSync } from 'child_process';
 import { appendFile, open as fsOpen } from 'fs/promises';
 import * as path from 'path';
 import * as os from 'os';
+// #4446 — pulse logs its own start, stop and failure.
+import { serviceLifecycle } from '../../chorus-sdk/lifecycle/service-lifecycle';
+const lifecycle = serviceLifecycle('com.chorus.pulse');
 
 // #4398 — a card's demo runs its own pulse on the role's port (3496-3498) when
 // the card touches pulse or chorus-hooks; MESSAGING_PORT is how it gets there.
@@ -514,8 +517,9 @@ if (require.main === module) {
     process.stderr.write(JSON.stringify({ event: 'startup.secret', resolved: ok }) + '\n');
   }
 
-  process.on('SIGTERM', () => { store.close(); process.exit(0); });
-  process.on('SIGINT', () => { store.close(); process.exit(0); });
+  process.on('SIGTERM', () => { lifecycle.stopped('SIGTERM'); store.close(); process.exit(0); });
+  process.on('SIGINT', () => { lifecycle.stopped('SIGINT'); store.close(); process.exit(0); });
+  process.on('uncaughtException', (e: Error) => { lifecycle.failed(`uncaughtException: ${e.message}`, 1); process.exit(1); });
 
   // #2727 boot sequence (Silas review 2026-05-07):
   // 1. startupSmoke — fail-fast, exit 1 if TCC cold-start probe fails

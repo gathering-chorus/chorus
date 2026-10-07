@@ -52,7 +52,15 @@ Environment:
   CHORUS_API     the generated write API      (default http://localhost:3340)
 ";
 
+// #4446 — a scheduled job logs its own failure.
+#[allow(dead_code)] // each crate uses part of the shared helper
+mod service_lifecycle {
+    include!("../../shared/service_lifecycle.rs");
+}
+
 fn main() {
+    // #4446 — under launchd, a failed run is logged as service.failed (shared/service_lifecycle.rs).
+    service_lifecycle::run_as_job();
     let args: Vec<String> = std::env::args().skip(1).collect();
     let code = match args.first().map(String::as_str) {
         // #4345 — one binary. The session lifecycle (on/off/status/up/relogin,

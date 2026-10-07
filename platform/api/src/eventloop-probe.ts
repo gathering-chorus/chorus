@@ -143,6 +143,15 @@ if (require.main === module) {
     }
   };
 
+  // #4446 — the probe worker logs its own start, stop and failure.
+  // eslint-disable-next-line @typescript-eslint/no-require-imports
+  const { serviceLifecycle } = require('../../chorus-sdk/lifecycle/service-lifecycle') as typeof import('../../chorus-sdk/lifecycle/service-lifecycle');
+  const lifecycle = serviceLifecycle('com.chorus.eventloop-probe');
+  process.on('SIGTERM', () => { lifecycle.stopped('SIGTERM'); process.exit(0); });
+  process.on('SIGINT', () => { lifecycle.stopped('SIGINT'); process.exit(0); });
+  process.on('uncaughtException', (e: Error) => { lifecycle.failed(`uncaughtException: ${e.message}`, 1); process.exit(1); });
+  lifecycle.started();
+
   void runEventloopProbe({
     probe,
     emit: (a) =>

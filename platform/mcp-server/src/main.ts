@@ -8,6 +8,9 @@ import express, { Application, Request, Response } from 'express';
 import { mountMcpEndpoint } from './transport';
 import { execFileSync } from 'child_process';
 import { executeNudge, type FetchImpl, type NudgeArgs } from './server';
+// #4446 — chorus-mcp logs its own start, stop and failure.
+import { serviceLifecycle } from '../../chorus-sdk/lifecycle/service-lifecycle';
+const lifecycle = serviceLifecycle('com.chorus.mcp');
 
 // #3000 — process-level error capture. Emit mcp.process.error to spine
 // before exit so a crash is observable to ops, not silent. Uses sync exec
@@ -85,12 +88,16 @@ mountMcpEndpoint(app);
 app.listen(PORT, BIND_HOST, () => {
    
   console.log(`[chorus-mcp] Listening on ${BIND_HOST}:${PORT}`);
+  lifecycle.started();
 });
+process.on('SIGTERM', () => { lifecycle.stopped('SIGTERM'); process.exit(0); });
+process.on('SIGINT', () => { lifecycle.stopped('SIGINT'); process.exit(0); });
 
 process.on('uncaughtException', (err) => {
   // #3000 — emit to spine before logging + exit so the crash is observable
   // to chorus-health rather than silent.
   emitProcessError('uncaughtException', err);
+  lifecycle.failed(`uncaughtException: ${err.message}`, 1);
    
   console.error('[chorus-mcp] FATAL uncaughtException:', err.message);
   console.error(err);

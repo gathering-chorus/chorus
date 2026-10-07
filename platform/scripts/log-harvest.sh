@@ -3,6 +3,9 @@
 # in urn:chorus:domains:logs. gen (pure) -> check (unmapped = red, never a guess)
 # -> load (PUT only when changed, via service-harvest-load.sh). Emits one spine
 # event per run with the counts, so "did the harvest run" is a query.
+# #4446 — a run that exits non-zero is logged as service.failed (com.chorus.log-harvest).
+. "$(dirname "${BASH_SOURCE[0]}")/lib/service-lifecycle.sh"
+service_lifecycle_job com.chorus.log-harvest "$@"
 set -euo pipefail
 CHORUS_ROOT="${CHORUS_HOME:-${CHORUS_ROOT:-/Users/jeffbridwell/CascadeProjects/chorus}}"
 S="$CHORUS_ROOT/platform/scripts"

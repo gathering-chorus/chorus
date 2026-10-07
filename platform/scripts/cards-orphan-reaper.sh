@@ -23,6 +23,9 @@
 #   brings its own world); format = `ps -axo pid=,ppid=,etime=,command=` lines.
 # Logs structured JSON to stdout (Promtail via LaunchAgent, same contract as
 # tmp-reaper.sh); emits cards.orphan.reaped spine events via chorus-log.
+# #4446 — a run that exits non-zero is logged as service.failed (com.chorus.cards-orphan-reaper).
+. "$(dirname "${BASH_SOURCE[0]}")/lib/service-lifecycle.sh"
+service_lifecycle_job com.chorus.cards-orphan-reaper "$@"
 
 set -uo pipefail
 

@@ -2,6 +2,9 @@
 # #3870 — one harvest cycle: walk both machines → generate → load → drift.
 # Idempotent: zero-change loads write nothing; drift RED prints findings and
 # exits 1 so the launchd log + nightly can see it. AC3's cadence engine.
+# #4446 — a run that exits non-zero is logged as service.failed (com.chorus.service-harvest).
+. "$(dirname "${BASH_SOURCE[0]}")/lib/service-lifecycle.sh"
+service_lifecycle_job com.chorus.service-harvest "$@"
 set -euo pipefail
 ROOT="${CHORUS_ROOT:-/Users/jeffbridwell/CascadeProjects/chorus}"
 S="$(dirname "$0")"

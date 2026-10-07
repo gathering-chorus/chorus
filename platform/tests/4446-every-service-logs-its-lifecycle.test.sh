@@ -1,0 +1,117 @@
+#!/bin/bash
+# @test-type: fitness — its subject is the source: is every service wired?
+# @domain: services
+#
+# #4446 — Jeff, 2026-10-06: "all services must be rigorous about structured
+# logging of starts stops and failures". 4446-service-lifecycle.bats proves the
+# four helpers work under real launchd jobs; this proves every com.chorus.*
+# LaunchAgent on the box calls one. Each label is either WIRED (its source file
+# calls a lifecycle helper) or a NAMED GAP with the reason. A label in neither
+# list is red: a new service that logs nothing cannot slip in unnoticed.
+#
+# Reads the installed LaunchAgents (read only). No LaunchAgents dir → UNMEASURED,
+# never a pass. SERVICE_WIRING_AGENTS and SERVICE_WIRING_TABLE are the test seams
+# the negative proof below uses.
+set -u
+CHORUS_ROOT="${CHORUS_ROOT:-$(cd "$(dirname "$0")/../.." && pwd)}"
+AGENTS="${SERVICE_WIRING_AGENTS:-$HOME/Library/LaunchAgents}"
+MARK='service_lifecycle|serviceLifecycle|service-lifecycle\.sh|run_as_job'
+
+# label <TAB> source file that must call a helper (repo-relative) | GAP: reason
+TABLE="${SERVICE_WIRING_TABLE:-$(cat <<'T'
+com.chorus.hooks	platform/services/chorus-hooks/src/main.rs
+com.chorus.athena-make	platform/services/athena-make/src/main.rs
+com.chorus.athena-make.staging	platform/services/athena-make/src/main.rs
+com.chorus.athena-validate	platform/services/athena-validate/src/main.rs
+com.chorus.crawl-nightly	platform/services/chorus-crawl/src/main.rs
+com.chorus.messages-project	platform/services/chorus-principal/src/main.rs
+com.chorus.roles-up	platform/services/chorus-principal/src/main.rs
+com.chorus.nightly-suites	platform/services/werk-test/src/main.rs
+com.chorus.pair-heartbeat	platform/services/pair-heartbeat/src/main.rs
+com.chorus.heartbeat	platform/services/chorus-hooks/src/shim.rs
+com.chorus.nudge-health	platform/services/chorus-hooks/src/shim.rs
+com.chorus.api	platform/api/src/server.ts
+com.chorus.eventloop-probe	platform/api/src/eventloop-probe.ts
+com.chorus.mcp	platform/mcp-server/src/main.ts
+com.chorus.pulse	platform/pulse/src/service.ts
+com.chorus.clearing	directing/clearing/src/server.ts
+com.chorus.bridge-subscriber-kade	platform/scripts/bridge-subscriber.js
+com.chorus.bridge-subscriber-silas	platform/scripts/bridge-subscriber.js
+com.chorus.bridge-subscriber-wren	platform/scripts/bridge-subscriber.js
+com.chorus.share-guard	platform/scripts/chorus-share-guard.py
+com.chorus.share-guard-path	platform/scripts/chorus-share-guard.py
+com.chorus.alert-delivery-test	platform/scripts/alert-delivery-test.sh
+com.chorus.alert-runner	GAP: outside platform/; the werk-test scope rule that lets a card touch it lands with #4446, wire it after
+com.chorus.bedroom-health	platform/scripts/health-check-bedroom.sh
+com.chorus.cards-orphan-reaper	platform/scripts/cards-orphan-reaper.sh
+com.chorus.chorus-health	platform/scripts/chorus-health
+com.chorus.clearing-probe	platform/scripts/clearing-probe.sh
+com.chorus.crawler-index	platform/scripts/index-crawler-snapshots.sh
+com.chorus.cruft-scan	platform/scripts/cruft-scan.sh
+com.chorus.daily-review-ops	platform/scripts/daily-review-ops.sh
+com.chorus.daily-review-summary	platform/scripts/daily-review-summary.sh
+com.chorus.daily-signal-scan	platform/scripts/daily-signal-scan.sh
+com.chorus.deep-health	platform/scripts/deep-health.sh
+com.chorus.embed-worker	platform/scripts/chorus-embed-worker.sh
+com.chorus.fuseki-compact	GAP: outside platform/; the werk-test scope rule that lets a card touch it lands with #4446, wire it after
+com.chorus.lance-maintain	platform/scripts/chorus-lance-maintain.sh
+com.chorus.log-harvest	platform/scripts/log-harvest.sh
+com.chorus.mcp-config-herald	platform/scripts/mcp-config-herald.sh
+com.chorus.ops	platform/scripts/chorus-ops.sh
+com.chorus.reindex-worker	platform/scripts/chorus-reindex-worker.sh
+com.chorus.restore-drill	platform/scripts/fuseki-restore-dump.sh
+com.chorus.security-scan-weekly	platform/scripts/test-security-scan.sh
+com.chorus.seed-probe	platform/scripts/seed-probe.sh
+com.chorus.service-harvest	platform/scripts/service-harvest-cycle.sh
+com.chorus.standards-surface	platform/scripts/standards-surface-cron.sh
+com.chorus.tm-thin	platform/scripts/tm-thin.sh
+com.chorus.tmp-reaper	platform/scripts/tmp-reaper.sh
+com.chorus.jeff-input-monitor	GAP: binary with no source in the repo or its history
+com.chorus.session-watcher	GAP: script lives only in ~/.chorus/scripts, not in the repo
+com.chorus.heartbeat-probe	GAP: script lives only in ~/.chorus/scripts, not in the repo
+com.chorus.buzz-tunnel	GAP: /usr/bin/ssh; not our code
+com.chorus.alert-notifier	GAP: shared-observability repo
+com.chorus.harvest-exporter	GAP: shared-observability repo
+com.chorus.launchagent-metrics	GAP: shared-observability repo
+com.chorus.fuseki-perf	GAP: jeff-bridwell-personal-site repo
+com.chorus.posture-capture	GAP: jeff-bridwell-personal-site repo
+com.chorus.building-pipeline	GAP: inline bash -c in the plist; wiring needs a plist change
+com.chorus.context-cache-daily	GAP: inline bash -c in the plist; wiring needs a plist change
+com.chorus.context-cache-hourly	GAP: inline bash -c in the plist; wiring needs a plist change
+com.chorus.context-cache-weekly	GAP: inline bash -c in the plist; wiring needs a plist change
+com.chorus.index-artifacts	GAP: inline bash -c in the plist; wiring needs a plist change
+com.chorus.perf-baseline	GAP: inline bash -c in the plist; wiring needs a plist change
+T
+)}"
+
+if [ ! -d "$AGENTS" ]; then
+  echo "UNMEASURED: no LaunchAgents dir at $AGENTS"
+  exit 0
+fi
+
+PASS=0; FAIL=0; GAPS=0
+for plist in "$AGENTS"/com.chorus.*.plist; do
+  [ -e "$plist" ] || continue
+  label="$(basename "$plist" .plist)"
+  # a card's demo env (com.chorus.<svc>.werk.<role>) runs the same code as <svc>
+  base="${label%%.werk.*}"
+  row="$(printf '%s\n' "$TABLE" | awk -F'\t' -v l="$base" '$1==l {print $2; exit}')"
+  if [ -z "$row" ]; then
+    echo "FAIL: $label — not in the wiring table: wire it to a lifecycle helper, or name it as a gap"
+    FAIL=$((FAIL+1))
+  elif [[ "$row" == GAP:* ]]; then
+    echo "GAP: $label — ${row#GAP: }"
+    GAPS=$((GAPS+1))
+  elif [ ! -f "$CHORUS_ROOT/$row" ]; then
+    echo "FAIL: $label — wired to $row, which does not exist (renamed or deleted)"
+    FAIL=$((FAIL+1))
+  elif ! grep -Eq "$MARK" "$CHORUS_ROOT/$row"; then
+    echo "FAIL: $label — $row calls no lifecycle helper"
+    FAIL=$((FAIL+1))
+  else
+    PASS=$((PASS+1))
+  fi
+done
+
+echo "=== Results: $PASS wired, $GAPS named gaps, $FAIL failed ==="
+[ "$FAIL" -eq 0 ]

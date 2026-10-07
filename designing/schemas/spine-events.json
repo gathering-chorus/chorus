@@ -4645,6 +4645,25 @@
         "service": "Full launchd label, e.g. com.chorus.api"
       }
     },
+    "service.failed": {
+      "producer": "infrastructure",
+      "category": "fact",
+      "version": "1",
+      "vertebra": "operating",
+      "source": "chorus-events",
+      "description": "#4446 — a com.chorus.* service ended badly: an error exit, an uncaught exception, a failed scheduled run, or (reported by its next start) a kill it could not log itself.",
+      "keys": [
+        "service"
+      ],
+      "envelope": [],
+      "fields": {
+        "exit_code": "Exit code, when it exited",
+        "pid": "Process id",
+        "reason": "What failed",
+        "service": "LaunchAgent label",
+        "signal": "Terminating signal, when it was killed"
+      }
+    },
     "service.rollback.completed": {
       "producer": "infrastructure",
       "category": "fact",
@@ -4699,6 +4718,41 @@
         "pre_pid": "Running PID before rollback",
         "service": "Full launchd label",
         "target_cdhash": "Prior cdhash from manifest being restored"
+      }
+    },
+    "service.started": {
+      "producer": "infrastructure",
+      "category": "fact",
+      "version": "1",
+      "vertebra": "operating",
+      "source": "chorus-events",
+      "description": "#4446 — a com.chorus.* service started. Emitted by the service itself, first thing (Rust/node/bash/python lifecycle helpers).",
+      "keys": [
+        "service"
+      ],
+      "envelope": [],
+      "fields": {
+        "pid": "Process id",
+        "service": "LaunchAgent label",
+        "version": "sha256 (12 hex) of the binary or main script that is running"
+      }
+    },
+    "service.stopped": {
+      "producer": "infrastructure",
+      "category": "fact",
+      "version": "1",
+      "vertebra": "operating",
+      "source": "chorus-events",
+      "description": "#4446 — a com.chorus.* service shut down cleanly (SIGTERM, SIGINT or exit 0), said by the service; or a deploy rollback stopping it (by=werk-deploy).",
+      "keys": [
+        "service"
+      ],
+      "envelope": [],
+      "fields": {
+        "by": "werk-deploy when a rollback stopped it",
+        "pid": "Process id of the run that stopped",
+        "reason": "The signal, exit 0, or rollback: <why>",
+        "service": "LaunchAgent label"
       }
     },
     "session.bootstrap.regen_ok": {
