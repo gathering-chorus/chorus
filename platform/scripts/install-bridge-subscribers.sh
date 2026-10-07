@@ -56,3 +56,4 @@ for role in "${ROLES[@]}"; do
 done
 
 echo
+echo "Verify:  bash platform/tests/bridge-subscriber-health.test.sh"
