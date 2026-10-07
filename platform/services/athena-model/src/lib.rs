@@ -484,6 +484,23 @@ pub trait Store {
     fn update(&self, sparql: &str) -> R<()>;
 }
 
+/// #4358 — the ?v values of a SPARQL-JSON SELECT result, JSON escapes decoded.
+/// The old hand-cut reader kept escapes (`\\.` for a stored `\.`) and stopped at
+/// an escaped quote, so a regex or a quoted value reached the caller altered.
+/// A body that is not SPARQL-JSON is an error, never an empty answer.
+pub fn parse_select_v(body: &str) -> R<Vec<String>> {
+    let doc: serde_json::Value = serde_json::from_str(body)
+        .map_err(|e| format!("store-read-error: SELECT answer is not SPARQL-JSON: {}", e))?;
+    let rows = doc
+        .pointer("/results/bindings")
+        .and_then(|b| b.as_array())
+        .ok_or_else(|| "store-read-error: SELECT answer has no results.bindings".to_string())?;
+    Ok(rows
+        .iter()
+        .filter_map(|row| row.pointer("/v/value").and_then(|v| v.as_str()).map(str::to_string))
+        .collect())
+}
+
 pub struct FusekiStore {
     pub endpoint: String,
 }
@@ -551,22 +568,7 @@ impl Store for FusekiStore {
         Ok(body.contains("\"boolean\" : true") || body.contains("\"boolean\":true"))
     }
     fn select_v(&self, sparql: &str) -> R<Vec<String>> {
-        let body = self.curl("/query", "query", sparql)?;
-        // minimal SPARQL-JSON value extraction for the single ?v variable —
-        // the werk-merge hand-parse pattern, zero-dep.
-        let mut vals = Vec::new();
-        for chunk in body.split("\"v\"").skip(1) {
-            if let Some(i) = chunk.find("\"value\"") {
-                let rest = &chunk[i + 7..];
-                if let Some(start) = rest.find('"') {
-                    let rest = &rest[start + 1..];
-                    if let Some(end) = rest.find('"') {
-                        vals.push(rest[..end].to_string());
-                    }
-                }
-            }
-        }
-        Ok(vals)
+        parse_select_v(&self.curl("/query", "query", sparql)?)
     }
     fn update(&self, sparql: &str) -> R<()> {
         self.curl("/update", "update", sparql)?;
