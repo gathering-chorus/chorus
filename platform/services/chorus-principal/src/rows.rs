@@ -559,9 +559,15 @@ pub fn gemini_pane_cmd(agent_bin: &str, gemini_bin: &str, allow_rules: &str, run
     if run.is_empty() || !run.bytes().all(|b| b.is_ascii_alphanumeric() || b == b'-' || b == b'_') {
         return Err(format!("refusing to launch on run name {:?}", run));
     }
+    // the chorus binaries (chorus-hook-shim, chorus-agent) sit beside chorus-agent;
+    // her AGENTS.md calls them by bare name, so their dir goes on her PATH
+    let bin_dir = std::path::Path::new(agent_bin).parent().and_then(|d| d.to_str()).unwrap_or("");
+    if bin_dir.contains('\'') {
+        return Err(format!("refusing to launch with a quote in the bin dir {:?}", bin_dir));
+    }
     Ok(format!(
-        "export PATH=/opt/homebrew/bin:$PATH CHORUS_SESSION_ID='{}' GEMINI_API_KEY=\"$(cat ~/.chorus/secrets/gemini.key)\" && CHORUS_ALLOW_RULES_FILE='{}' '{}' allowed-tools >/dev/null && '{}' --policy ~/.chorus/gemini-allowed.toml",
-        run, allow_rules, agent_bin, gemini_bin
+        "export PATH='{}':/opt/homebrew/bin:$PATH CHORUS_SESSION_ID='{}' GEMINI_API_KEY=\"$(cat ~/.chorus/secrets/gemini.key)\" && CHORUS_ALLOW_RULES_FILE='{}' '{}' allowed-tools >/dev/null && '{}' --policy ~/.chorus/gemini-allowed.toml",
+        bin_dir, run, allow_rules, agent_bin, gemini_bin
     ))
 }
 

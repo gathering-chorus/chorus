@@ -65,3 +65,24 @@ fn negative_proof_a_tool_filter_is_caught() {
     assert!(!includes_every_tool(&json!({"mcpServers":{"chorus-api":{"includeTools":["chorus_nudge_message"]}}})));
     assert!(!includes_every_tool(&json!({"mcpServers":{}})));
 }
+
+/// #4444 reopen — Jeff's 10:46 screenshot: her pane used a dark theme on his light
+/// terminal and he could not read it. Her role settings name a light theme, which
+/// overrides the dark one in her account's own settings.
+fn names_a_light_theme(settings: &serde_json::Value) -> bool {
+    let theme = settings.pointer("/ui/theme").and_then(serde_json::Value::as_str).unwrap_or("");
+    ["GitHub Light", "Default Light", "ANSI Light", "Ayu Light", "Google Code", "Xcode"].contains(&theme)
+}
+
+#[test]
+fn abbys_settings_name_a_theme_jeff_can_read_on_a_light_terminal() {
+    let root = std::path::PathBuf::from(std::env::var("CARGO_MANIFEST_DIR").unwrap()).join("../../..");
+    let text = std::fs::read_to_string(root.join("roles/abby-normal/.gemini/settings.json")).unwrap();
+    assert!(names_a_light_theme(&serde_json::from_str(&text).unwrap()), "{text}");
+}
+
+#[test]
+fn negative_proof_a_dark_or_missing_theme_is_caught() {
+    assert!(!names_a_light_theme(&json!({"ui":{"theme":"GitHub"}})));
+    assert!(!names_a_light_theme(&json!({})));
+}
