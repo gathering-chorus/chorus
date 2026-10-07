@@ -85,19 +85,33 @@ function emit([event, fields]) {
  * One service's lifecycle. `name` is its launchd label, used when the process
  * was not started by launchd (by hand, or under a test).
  */
+// #4446 round 2 — the end a service did not log itself: any process.exit(n)
+// path (a bad argument, a failed bind) ends as service.failed, a bare exit 0
+// as service.stopped. Null when the service already logged its end.
+function exitEvent(service, pid, code, ended) {
+  if (ended) return null;
+  return code === 0 ? stopEvent(service, pid, 'exit 0') : failedEvent(service, pid, `exited ${code}`, code);
+}
+
 function serviceLifecycle(name) {
   const service = launchdLabel() || name;
   const pid = process.pid;
+  let ended = false;
   return {
     service,
     started(version = scriptVersion()) {
       const fromLaunchd = launchdLabel();
       const previous = fromLaunchd ? previousRun(fromLaunchd) : null;
       for (const e of startEvents(service, pid, version, previous)) emit(e);
+      // 'exit' handlers run synchronously; emit is execFileSync, so it lands
+      process.once('exit', (code) => {
+        const e = exitEvent(service, pid, code, ended);
+        if (e) emit(e);
+      });
     },
-    stopped(reason) { emit(stopEvent(service, pid, reason)); },
-    failed(reason, exitCode = 1) { emit(failedEvent(service, pid, reason, exitCode)); },
+    stopped(reason) { ended = true; emit(stopEvent(service, pid, reason)); },
+    failed(reason, exitCode = 1) { ended = true; emit(failedEvent(service, pid, reason, exitCode)); },
   };
 }
 
-module.exports = { parseLastExit, startEvents, stopEvent, failedEvent, launchdLabel, previousRun, scriptVersion, serviceLifecycle };
+module.exports = { parseLastExit, startEvents, stopEvent, failedEvent, exitEvent, launchdLabel, previousRun, scriptVersion, serviceLifecycle };

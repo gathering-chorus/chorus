@@ -140,10 +140,10 @@ pub fn binary_version() -> String {
 }
 
 
-/// A scheduled job's failure, reported by the job itself. Call first in main.
-/// When launchd started this process, it runs the rest of the program as a
-/// child and reports the child's non-zero exit or killing signal as
-/// service.failed, then exits with the same code — so every `exit(n)` and
+/// A scheduled job's start, end and failure, reported by the job itself. Call
+/// first in main. When launchd started this process, it logs service.started,
+/// runs the rest of the program as a child, and logs service.stopped on exit 0
+/// or the child's non-zero exit or killing signal as service.failed, then exits with the same code — so every `exit(n)` and
 /// panic in the program is covered without touching them. Run by hand, or by
 /// anything other than launchd, it returns at once and nothing changes.
 pub fn run_as_job() {
@@ -153,11 +153,20 @@ pub fn run_as_job() {
         Ok(p) => p,
         Err(_) => return,
     };
+    // #4446 round 2 (Jeff: "rigorous about ... starts stops and failures"):
+    // every run is a start and an end, not only a failure
+    let pid = std::process::id();
+    emit_via_chorus_log("service.started", &[
+        ("service", label.clone()), ("pid", pid.to_string()), ("version", binary_version())]);
     let status = std::process::Command::new(exe)
         .args(std::env::args_os().skip(1))
         .status();
     let (code, fields) = match status {
-        Ok(s) if s.success() => std::process::exit(0),
+        Ok(s) if s.success() => {
+            emit_via_chorus_log("service.stopped", &[
+                ("service", label.clone()), ("pid", pid.to_string()), ("reason", "exit 0".to_string())]);
+            std::process::exit(0)
+        }
         Ok(s) => {
             use std::os::unix::process::ExitStatusExt;
             let mut f = vec![("service", label.clone()), ("pid", std::process::id().to_string())];

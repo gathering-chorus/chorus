@@ -46,6 +46,12 @@ import urllib.parse
 import urllib.request
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
+# #4446 — the guard logs its own start, stop and failure (two labels share this
+# file), including the refusals to start below.
+sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), "lib"))
+from service_lifecycle import service_lifecycle  # noqa: E402
+_lifecycle = service_lifecycle("com.chorus.share-guard")
+
 SESSION_COOKIE = "chorus_share_session"
 
 # #3790 — the session cookie is scoped to the PARENT domain so one sign-in rides
@@ -411,24 +417,21 @@ PORT = int(os.environ.get("SHARE_PORT", "8899"))
 # #3770 — an empty allow-set is a misconfiguration, never "everyone who can sign
 # in". Same fail-closed shape as the empty path allowlist.
 if not PRINCIPALS:
-    print(f"chorus-share-guard: WebID allow-set is EMPTY (source: {PRINCIPALS_SOURCE}) — refusing to start "
-          f"rather than admitting everyone who can authenticate.", file=sys.stderr)
-    sys.exit(2)
+    _lifecycle.refuse(f"chorus-share-guard: WebID allow-set is EMPTY (source: {PRINCIPALS_SOURCE}) — refusing to start "
+          f"rather than admitting everyone who can authenticate.", 2)
 
 # Basic auth is GONE (#3770). If someone still sets SHARE_AUTH, say so loudly
 # rather than silently ignoring it — a config that looks like it grants access
 # but does nothing is how people believe a door is locked when it is not.
 if os.environ.get("SHARE_AUTH"):
-    print("chorus-share-guard: SHARE_AUTH is set but basic auth was retired in #3770 — sign-in is via the "
-          "identity provider. Remove SHARE_AUTH; it grants nothing.", file=sys.stderr)
-    sys.exit(2)
+    _lifecycle.refuse("chorus-share-guard: SHARE_AUTH is set but basic auth was retired in #3770 — sign-in is via the "
+          "identity provider. Remove SHARE_AUTH; it grants nothing.", 2)
 
 # #3744 — an empty allowlist is a misconfiguration, never "allow everything" and
 # never a silent no-op. Fail closed, name the source that came up empty.
 if not ALLOW:
-    print(f"chorus-share-guard: allowlist is EMPTY (source: {ALLOW_SOURCE}) — refusing to start rather than "
-          f"guessing a policy. Create the file or set SHARE_ALLOW.", file=sys.stderr)
-    sys.exit(2)
+    _lifecycle.refuse(f"chorus-share-guard: allowlist is EMPTY (source: {ALLOW_SOURCE}) — refusing to start rather than "
+          f"guessing a policy. Create the file or set SHARE_ALLOW.", 2)
 
 # #3767 — every upstream the policy can reach is checked BEFORE serving anything,
 # including the default. A typo that points a public prefix at another host is a
@@ -437,9 +440,8 @@ if not ALLOW:
 for _prefix, _up in ALLOW + [("<SHARE_UPSTREAM>", UPSTREAM)]:
     _err = check_upstream(_up) if _up else None
     if _err:
-        print(f"chorus-share-guard: {_prefix} -> {_err} — refusing to start. The guard fronts THIS "
-              f"machine only; see {ALLOW_SOURCE}.", file=sys.stderr)
-        sys.exit(2)
+        _lifecycle.refuse(f"chorus-share-guard: {_prefix} -> {_err} — refusing to start. The guard fronts THIS "
+              f"machine only; see {ALLOW_SOURCE}.", 2)
 
 # --- #3770 identity wiring -------------------------------------------------
 
@@ -562,8 +564,7 @@ def webid_from_id_token(id_token):
 # loopback-only by design (the tunnel dials OUT to it; nothing else may reach it).
 BIND = os.environ.get("SHARE_BIND", "127.0.0.1")
 if BIND not in ("127.0.0.1", "::1", "localhost"):
-    print(f"chorus-share-guard: refusing non-loopback bind '{BIND}' — the tunnel is the only sanctioned ingress", file=sys.stderr)
-    sys.exit(2)
+    _lifecycle.refuse(f"chorus-share-guard: refusing non-loopback bind '{BIND}' — the tunnel is the only sanctioned ingress", 2)
 
 
 def route(path, allow, default_upstream):
@@ -1000,10 +1001,6 @@ if __name__ == "__main__":
     print(f"chorus-share-guard: sign-in via {ISSUER}; {len(PRINCIPALS)} WebID(s) authorized "
           f"(source={PRINCIPALS_SOURCE}). Signing in does not grant reach — the allow-set does.",
           file=sys.stderr)
-    # #4446 — the guard logs its own start, stop and failure (two labels share this file).
-    sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), "lib"))
-    from service_lifecycle import service_lifecycle
-    _lifecycle = service_lifecycle("com.chorus.share-guard")
     try:
         _server = ThreadingHTTPServer((BIND if BIND != "localhost" else "127.0.0.1", PORT), Guard)
     except OSError as _e:

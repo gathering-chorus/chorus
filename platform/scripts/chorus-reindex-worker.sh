@@ -10,7 +10,7 @@
 # better-sqlite3 — it blocks whatever loop it runs on. So this runs the indexing
 # directly in its OWN node process (dist/index-worker.js), writing SQLite directly;
 # chorus-api's event loop is never touched (#3080 Track A / ADR-034).
-# #4446 — a run that exits non-zero is logged as service.failed (com.chorus.reindex-worker).
+# #4446 — each run logs service.started, then service.stopped or service.failed (com.chorus.reindex-worker).
 . "$(dirname "${BASH_SOURCE[0]}")/lib/service-lifecycle.sh"
 service_lifecycle_job com.chorus.reindex-worker "$@"
 

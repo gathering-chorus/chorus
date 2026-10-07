@@ -235,6 +235,13 @@ write_once() {  # write_once <script>
   launchctl bootstrap "gui/$UIDN" "$PLIST"
 }
 
+write_once_args() {  # write_once_args <ProgramArguments strings> — a RunAtLoad job
+  write_job "$1"
+  /usr/bin/sed -i '' 's#<key>KeepAlive</key><true/>#<key>RunAtLoad</key><true/>#' "$PLIST"
+  launchctl bootout "gui/$UIDN/$LABEL" 2>/dev/null || true
+  launchctl bootstrap "gui/$UIDN" "$PLIST"
+}
+
 # wait_exit — until launchd records the run's exit
 wait_exit() {
   for _ in $(seq 1 100); do
@@ -245,8 +252,10 @@ wait_exit() {
 }
 
 job_script() {  # job_script <exit code> — a job that ends with its own trap + exec
+  # set -euo pipefail like most real jobs: bash 3.2 calls an empty array unbound
   cat > "$FIXHOME/job.sh" <<SH
 #!/bin/bash
+set -euo pipefail
 . "$LIB"
 service_lifecycle_job com.chorus.fixture-job "\$@"
 trap 'echo cleanup > "$FIXHOME/trap-ran"' EXIT
@@ -264,14 +273,20 @@ SH
   [[ "$line" == *"\"service\":\"$LABEL\""* ]] || return 1
   [[ "$line" =~ \"exit_code\":\"?4\"?[,}] ]] || return 1
   [[ "$line" == *'"level":"error"'* ]] || return 1
+  # the run began with a start, and a failed run is not also a clean stop
+  grep '"event":"service.started"' "$SPINE" | grep -q "\"service\":\"$LABEL\"" || return 1
+  ! grep -q '"event":"service.stopped"' "$SPINE" || return 1
 }
 
-@test "NEGATIVE PROOF: a bash job that succeeds writes nothing" {
+@test "bash job: a run that succeeds is service.started then service.stopped, never failed" {
   job_script 0
   write_once "$FIXHOME/job.sh"
   wait_exit
   sleep 0.5
-  [[ ! -s "$SPINE" ]] || { cat "$SPINE"; return 1; }
+  cat "$SPINE"
+  grep '"event":"service.started"' "$SPINE" | grep "\"service\":\"$LABEL\"" | grep -q '"version":"[0-9a-f]\{12\}"' || return 1
+  grep '"event":"service.stopped"' "$SPINE" | grep "\"service\":\"$LABEL\"" | grep -q '"reason":"exit 0"' || return 1
+  ! grep -q '"event":"service.failed"' "$SPINE" || return 1
 }
 
 @test "NEGATIVE PROOF: the same job run by hand (not by launchd) writes nothing when it fails" {
@@ -300,11 +315,14 @@ shim_once() {  # shim_once <verb>
   [[ "$line" =~ \"exit_code\":\"?[1-9][0-9]*\"?[,}] ]] || return 1
 }
 
-@test "NEGATIVE PROOF: a Rust job that succeeds writes no failure" {
+@test "Rust job: a run that succeeds is service.started then service.stopped, never failed" {
   shim_once wall-clock
   wait_exit
   sleep 0.5
-  ! grep '"event":"service.failed"' "$SPINE" || return 1
+  cat "$SPINE"
+  grep '"event":"service.started"' "$SPINE" | grep -q "\"service\":\"$LABEL\"" || return 1
+  grep '"event":"service.stopped"' "$SPINE" | grep "\"service\":\"$LABEL\"" | grep -q '"reason":"exit 0"' || return 1
+  ! grep -q '"event":"service.failed"' "$SPINE" || return 1
 }
 
 # --- python services: platform/scripts/lib/service_lifecycle.py ---
@@ -359,4 +377,92 @@ GUARD="$TREE/platform/tests/4446-every-service-logs-its-lifecycle.test.sh"
   echo "$output"
   [[ "$status" -ne 0 ]] || return 1
   [[ "$output" == *"src/main.rs calls no lifecycle helper"* ]] || return 1
+}
+
+plist_args() {  # plist_args <file> <program...> — a minimal plist with these ProgramArguments
+  local f="$1"; shift
+  { echo '<?xml version="1.0" encoding="UTF-8"?><plist version="1.0"><dict><key>ProgramArguments</key><array>'
+    for a in "$@"; do echo "<string>$a</string>"; done
+    echo '</array></dict></plist>'; } > "$f"
+}
+
+@test "NEGATIVE PROOF: a WRAP service whose plist skips service-run is red once service-run is installed" {
+  mkdir -p "$FIXHOME/agents"; touch "$FIXHOME/service-run"; chmod +x "$FIXHOME/service-run"
+  plist_args "$FIXHOME/agents/com.chorus.y.plist" /bin/bash -c 'echo hi'
+  run env SERVICE_WIRING_AGENTS="$FIXHOME/agents" SERVICE_RUN="$FIXHOME/service-run" \
+    SERVICE_WIRING_TABLE=$'com.chorus.y\tWRAP: inline bash -c in the plist' bash "$GUARD"
+  echo "$output"
+  [[ "$status" -ne 0 ]] || return 1
+  [[ "$output" == *"com.chorus.y — inline bash -c in the plist: its plist does not run through service-run"* ]] || return 1
+  # wrapped: wired
+  plist_args "$FIXHOME/agents/com.chorus.y.plist" "$FIXHOME/service-run" com.chorus.y job /bin/bash -c 'echo hi'
+  run env SERVICE_WIRING_AGENTS="$FIXHOME/agents" SERVICE_RUN="$FIXHOME/service-run" \
+    SERVICE_WIRING_TABLE=$'com.chorus.y\tWRAP: inline bash -c in the plist' bash "$GUARD"
+  [[ "$status" -eq 0 && "$output" == *"1 wired, 0 pending"* ]] || { echo "$output"; return 1; }
+}
+
+@test "a WRAP service before service-run is installed is PENDING: not wired, not red" {
+  mkdir -p "$FIXHOME/agents"
+  plist_args "$FIXHOME/agents/com.chorus.y.plist" /bin/bash -c 'echo hi'
+  run env SERVICE_WIRING_AGENTS="$FIXHOME/agents" SERVICE_RUN="$FIXHOME/no-such-service-run" \
+    SERVICE_WIRING_TABLE=$'com.chorus.y\tWRAP: inline bash -c in the plist' bash "$GUARD"
+  echo "$output"
+  [[ "$status" -eq 0 && "$output" == *"0 wired, 1 pending wrap"* ]] || return 1
+}
+
+# --- service-run: the wrapper for plists whose program we do not edit ---
+RUN="$TREE/platform/scripts/service-run"
+
+@test "service-run daemon: start, kickstart → service.stopped SIGTERM (child gone), then a new start" {
+  write_job "<string>$RUN</string><string>com.chorus.fixture-wrap</string><string>daemon</string><string>/bin/sleep</string><string>600</string>"
+  first="$(wait_pid_change "")"
+  restarted_with_start "$first"
+  kid="$(pgrep -P "$first" sleep)"
+  [[ -n "$kid" ]] || return 1
+  launchctl kickstart -k "gui/$UIDN/$LABEL"
+  second="$(wait_pid_change "$first")"
+  restarted_with_start "$second"
+  grep '"event":"service.stopped"' "$SPINE" | grep "\"pid\":\"$first\"" | grep -q '"reason":"SIGTERM"' || return 1
+  ! kill -0 "$kid" 2>/dev/null || { echo "child $kid outlived its wrapper"; return 1; }
+}
+
+@test "service-run daemon: a kill -9 is reported as service.failed by the next start" {
+  write_job "<string>$RUN</string><string>com.chorus.fixture-wrap</string><string>daemon</string><string>/bin/sleep</string><string>600</string>"
+  first="$(wait_pid_change "")"
+  restarted_with_start "$first"
+  launchctl kill SIGKILL "gui/$UIDN/$LABEL"
+  second="$(wait_pid_change "$first")"
+  restarted_with_start "$second"
+  grep '"event":"service.failed"' "$SPINE" | grep -q '"signal":"Killed: 9"'
+}
+
+@test "service-run job: a run that exits non-zero is service.started then service.failed with its code" {
+  write_once_args "<string>$RUN</string><string>x</string><string>job</string><string>/bin/sh</string><string>-c</string><string>exit 5</string>"
+  wait_exit
+  sleep 0.5
+  cat "$SPINE"
+  grep '"event":"service.started"' "$SPINE" | grep -q "\"service\":\"$LABEL\"" || return 1
+  line="$(grep '"event":"service.failed"' "$SPINE" | tail -1)"
+  [[ "$line" == *"\"service\":\"$LABEL\""* ]] || return 1
+  [[ "$line" =~ \"exit_code\":\"?5\"?[,}] ]] || return 1
+}
+
+@test "service-run job: a run that succeeds is service.started then service.stopped, never failed" {
+  write_once_args "<string>$RUN</string><string>x</string><string>job</string><string>/usr/bin/true</string>"
+  wait_exit
+  sleep 0.5
+  grep '"event":"service.stopped"' "$SPINE" | grep "\"service\":\"$LABEL\"" | grep -q '"reason":"exit 0"' || return 1
+  ! grep -q '"event":"service.failed"' "$SPINE" || return 1
+}
+
+# --- error handling: a service that refuses to start says so in the log ---
+@test "python: share-guard refusing a non-loopback bind exits 2 and logs service.failed with the reason" {
+  run env HOME="$FIXHOME" CHORUS_LOG_FILE="$SPINE" CHORUS_CONTEXT=test CHORUS_HOME="$TREE" \
+    SHARE_BIND=0.0.0.0 /usr/bin/python3 "$TREE/platform/scripts/chorus-share-guard.py"
+  [ "$status" -eq 2 ] || { echo "status=$status $output"; return 1; }
+  line="$(grep '"event":"service.failed"' "$SPINE" | tail -1)"
+  echo "line=$line"
+  [[ "$line" == *'"service":"com.chorus.share-guard"'* ]] || return 1
+  [[ "$line" == *'refusing'* ]] || return 1
+  [[ "$line" =~ \"exit_code\":\"?2\"?[,}] ]] || return 1
 }

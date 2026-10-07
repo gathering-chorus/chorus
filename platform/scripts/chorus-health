@@ -18,7 +18,7 @@
 #   chorus-health --json      — JSON output for tooling
 #
 # Exit: 0=PASS, 1=FAIL (any hard check fails), 2=ERROR (script broke)
-# #4446 — a run that exits non-zero is logged as service.failed (com.chorus.chorus-health).
+# #4446 — each run logs service.started, then service.stopped or service.failed (com.chorus.chorus-health).
 . "$(dirname "${BASH_SOURCE[0]}")/lib/service-lifecycle.sh"
 service_lifecycle_job com.chorus.chorus-health "$@"
 

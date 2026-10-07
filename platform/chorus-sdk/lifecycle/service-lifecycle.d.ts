@@ -5,6 +5,7 @@ export function parseLastExit(print: string): LastExit | null;
 export function startEvents(service: string, pid: number, version: string, previous: LastExit | null): LifecycleEvent[];
 export function stopEvent(service: string, pid: number, reason: string): LifecycleEvent;
 export function failedEvent(service: string, pid: number, reason: string, exitCode: number): LifecycleEvent;
+export function exitEvent(service: string, pid: number, code: number, ended: boolean): LifecycleEvent | null;
 export function launchdLabel(): string | null;
 export function previousRun(label: string): LastExit | null;
 export function scriptVersion(file?: string): string;

@@ -19,7 +19,7 @@
 #   FUSEKI_DRILL_KEEP_AT=<dir> ...      #4399: on PASS keep the restored store at
 #                                       <dir> (the nightly demo store) instead of
 #                                       discarding it; one restore, two uses
-# #4446 — a run that exits non-zero is logged as service.failed (com.chorus.restore-drill).
+# #4446 — each run logs service.started, then service.stopped or service.failed (com.chorus.restore-drill).
 . "$(dirname "${BASH_SOURCE[0]}")/lib/service-lifecycle.sh"
 service_lifecycle_job com.chorus.restore-drill "$@"
 set -uo pipefail

@@ -6,7 +6,7 @@
 # Runs daily at 5:55am before daily review. Alerts Bridge on failure.
 #
 # Exit codes: 0 = healthy, 1 = pipeline failure
-# #4446 — a run that exits non-zero is logged as service.failed (com.chorus.seed-probe).
+# #4446 — each run logs service.started, then service.stopped or service.failed (com.chorus.seed-probe).
 . "$(dirname "${BASH_SOURCE[0]}")/lib/service-lifecycle.sh"
 service_lifecycle_job com.chorus.seed-probe "$@"
 

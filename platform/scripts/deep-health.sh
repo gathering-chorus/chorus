@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # deep-health.sh — subprocess liveness, not wrapper alive (#2228)
 # Runs on 5-min cron. Alerts via nudge --force on failure.
-# #4446 — a run that exits non-zero is logged as service.failed (com.chorus.deep-health).
+# #4446 — each run logs service.started, then service.stopped or service.failed (com.chorus.deep-health).
 . "$(dirname "${BASH_SOURCE[0]}")/lib/service-lifecycle.sh"
 service_lifecycle_job com.chorus.deep-health "$@"
 set -euo pipefail
@@ -807,4 +807,4 @@ else
   "$OPS_NUDGE" "$ALERT_ROLE" "$MSG" 2>/dev/null || true
 fi
 "$CHORUS_LOG" ops.health.deep_check_failed system failures="${#FAILURES[@]}" 2>/dev/null || true
-exit 1
+exit 0  # #4446 — a finding, not a failed run: ops.health.deep_check_failed above is the record

@@ -7,7 +7,7 @@
 #
 # Usage: index-crawler-snapshots.sh [domain1 domain2 ...]
 #   No args = crawl all known domains
-# #4446 — a run that exits non-zero is logged as service.failed (com.chorus.crawler-index).
+# #4446 — each run logs service.started, then service.stopped or service.failed (com.chorus.crawler-index).
 . "$(dirname "${BASH_SOURCE[0]}")/lib/service-lifecycle.sh"
 service_lifecycle_job com.chorus.crawler-index "$@"
 

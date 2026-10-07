@@ -1,7 +1,7 @@
 #!/bin/bash
 # daily-review-summary.sh — 6am aggregated review, posts to Bridge
 # Card #1766 | Runs ops + quality, combines into one post
-# #4446 — a run that exits non-zero is logged as service.failed (com.chorus.daily-review-summary).
+# #4446 — each run logs service.started, then service.stopped or service.failed (com.chorus.daily-review-summary).
 . "$(dirname "${BASH_SOURCE[0]}")/lib/service-lifecycle.sh"
 service_lifecycle_job com.chorus.daily-review-summary "$@"
 set -euo pipefail

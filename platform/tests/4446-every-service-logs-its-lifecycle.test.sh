@@ -9,15 +9,22 @@
 # calls a lifecycle helper) or a NAMED GAP with the reason. A label in neither
 # list is red: a new service that logs nothing cannot slip in unnoticed.
 #
+# A WRAP row is a service whose program we do not edit (inline `bash -c`, a
+# binary with no source here, ssh, another repo): its installed plist must run
+# it through platform/scripts/service-run. Until service-run is on the box
+# (SERVICE_RUN, canonical) such a row is PENDING, never a pass; once it is,
+# an unwrapped plist is red.
+#
 # Reads the installed LaunchAgents (read only). No LaunchAgents dir → UNMEASURED,
-# never a pass. SERVICE_WIRING_AGENTS and SERVICE_WIRING_TABLE are the test seams
-# the negative proof below uses.
+# never a pass. SERVICE_WIRING_AGENTS, SERVICE_WIRING_TABLE and SERVICE_RUN are
+# the test seams the negative proofs use.
 set -u
 CHORUS_ROOT="${CHORUS_ROOT:-$(cd "$(dirname "$0")/../.." && pwd)}"
 AGENTS="${SERVICE_WIRING_AGENTS:-$HOME/Library/LaunchAgents}"
 MARK='service_lifecycle|serviceLifecycle|service-lifecycle\.sh|run_as_job'
+SERVICE_RUN="${SERVICE_RUN:-$HOME/CascadeProjects/chorus/platform/scripts/service-run}"
 
-# label <TAB> source file that must call a helper (repo-relative) | GAP: reason
+# label <TAB> source file that must call a helper (repo-relative) | WRAP: why | GAP: reason
 TABLE="${SERVICE_WIRING_TABLE:-$(cat <<'T'
 com.chorus.hooks	platform/services/chorus-hooks/src/main.rs
 com.chorus.athena-make	platform/services/athena-make/src/main.rs
@@ -41,7 +48,7 @@ com.chorus.bridge-subscriber-wren	platform/scripts/bridge-subscriber.js
 com.chorus.share-guard	platform/scripts/chorus-share-guard.py
 com.chorus.share-guard-path	platform/scripts/chorus-share-guard.py
 com.chorus.alert-delivery-test	platform/scripts/alert-delivery-test.sh
-com.chorus.alert-runner	GAP: outside platform/; the werk-test scope rule that lets a card touch it lands with #4446, wire it after
+com.chorus.alert-runner	proving/scripts/alert-runner.sh
 com.chorus.bedroom-health	platform/scripts/health-check-bedroom.sh
 com.chorus.cards-orphan-reaper	platform/scripts/cards-orphan-reaper.sh
 com.chorus.chorus-health	platform/scripts/chorus-health
@@ -53,7 +60,7 @@ com.chorus.daily-review-summary	platform/scripts/daily-review-summary.sh
 com.chorus.daily-signal-scan	platform/scripts/daily-signal-scan.sh
 com.chorus.deep-health	platform/scripts/deep-health.sh
 com.chorus.embed-worker	platform/scripts/chorus-embed-worker.sh
-com.chorus.fuseki-compact	GAP: outside platform/; the werk-test scope rule that lets a card touch it lands with #4446, wire it after
+com.chorus.fuseki-compact	building/products/convergence/fuseki-maintenance.sh
 com.chorus.lance-maintain	platform/scripts/chorus-lance-maintain.sh
 com.chorus.log-harvest	platform/scripts/log-harvest.sh
 com.chorus.mcp-config-herald	platform/scripts/mcp-config-herald.sh
@@ -66,21 +73,21 @@ com.chorus.service-harvest	platform/scripts/service-harvest-cycle.sh
 com.chorus.standards-surface	platform/scripts/standards-surface-cron.sh
 com.chorus.tm-thin	platform/scripts/tm-thin.sh
 com.chorus.tmp-reaper	platform/scripts/tmp-reaper.sh
-com.chorus.jeff-input-monitor	GAP: binary with no source in the repo or its history
-com.chorus.session-watcher	GAP: script lives only in ~/.chorus/scripts, not in the repo
-com.chorus.heartbeat-probe	GAP: script lives only in ~/.chorus/scripts, not in the repo
-com.chorus.buzz-tunnel	GAP: /usr/bin/ssh; not our code
-com.chorus.alert-notifier	GAP: shared-observability repo
-com.chorus.harvest-exporter	GAP: shared-observability repo
-com.chorus.launchagent-metrics	GAP: shared-observability repo
-com.chorus.fuseki-perf	GAP: jeff-bridwell-personal-site repo
-com.chorus.posture-capture	GAP: jeff-bridwell-personal-site repo
-com.chorus.building-pipeline	GAP: inline bash -c in the plist; wiring needs a plist change
-com.chorus.context-cache-daily	GAP: inline bash -c in the plist; wiring needs a plist change
-com.chorus.context-cache-hourly	GAP: inline bash -c in the plist; wiring needs a plist change
-com.chorus.context-cache-weekly	GAP: inline bash -c in the plist; wiring needs a plist change
-com.chorus.index-artifacts	GAP: inline bash -c in the plist; wiring needs a plist change
-com.chorus.perf-baseline	GAP: inline bash -c in the plist; wiring needs a plist change
+com.chorus.jeff-input-monitor	WRAP: binary with no source in the repo
+com.chorus.session-watcher	WRAP: script lives only in ~/.chorus/scripts
+com.chorus.heartbeat-probe	WRAP: script lives only in ~/.chorus/scripts
+com.chorus.buzz-tunnel	WRAP: ssh, not our code
+com.chorus.alert-notifier	WRAP: shared-observability repo
+com.chorus.harvest-exporter	WRAP: shared-observability repo
+com.chorus.launchagent-metrics	WRAP: shared-observability repo
+com.chorus.fuseki-perf	WRAP: jeff-bridwell-personal-site repo
+com.chorus.posture-capture	WRAP: jeff-bridwell-personal-site repo
+com.chorus.building-pipeline	WRAP: inline bash -c in the plist
+com.chorus.context-cache-daily	WRAP: inline bash -c in the plist
+com.chorus.context-cache-hourly	WRAP: inline bash -c in the plist
+com.chorus.context-cache-weekly	WRAP: inline bash -c in the plist
+com.chorus.index-artifacts	WRAP: inline bash -c in the plist
+com.chorus.perf-baseline	WRAP: inline bash -c in the plist
 T
 )}"
 
@@ -89,7 +96,7 @@ if [ ! -d "$AGENTS" ]; then
   exit 0
 fi
 
-PASS=0; FAIL=0; GAPS=0
+PASS=0; FAIL=0; GAPS=0; PENDING=0
 for plist in "$AGENTS"/com.chorus.*.plist; do
   [ -e "$plist" ] || continue
   label="$(basename "$plist" .plist)"
@@ -99,6 +106,17 @@ for plist in "$AGENTS"/com.chorus.*.plist; do
   if [ -z "$row" ]; then
     echo "FAIL: $label — not in the wiring table: wire it to a lifecycle helper, or name it as a gap"
     FAIL=$((FAIL+1))
+  elif [[ "$row" == WRAP:* ]]; then
+    args="$(/usr/libexec/PlistBuddy -c 'Print :ProgramArguments' "$plist" 2>/dev/null)"
+    if printf '%s\n' "$args" | grep -q "service-run"; then
+      PASS=$((PASS+1))
+    elif [ ! -x "$SERVICE_RUN" ]; then
+      echo "PENDING: $label — ${row#WRAP: }; wrap it once $SERVICE_RUN is installed"
+      PENDING=$((PENDING+1))
+    else
+      echo "FAIL: $label — ${row#WRAP: }: its plist does not run through service-run"
+      FAIL=$((FAIL+1))
+    fi
   elif [[ "$row" == GAP:* ]]; then
     echo "GAP: $label — ${row#GAP: }"
     GAPS=$((GAPS+1))
@@ -113,5 +131,5 @@ for plist in "$AGENTS"/com.chorus.*.plist; do
   fi
 done
 
-echo "=== Results: $PASS wired, $GAPS named gaps, $FAIL failed ==="
+echo "=== Results: $PASS wired, $PENDING pending wrap, $GAPS named gaps, $FAIL failed ==="
 [ "$FAIL" -eq 0 ]

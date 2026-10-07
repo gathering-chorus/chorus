@@ -116,6 +116,14 @@ class _Lifecycle:
     def stopped(self, reason):
         emit("service.stopped", {"service": self.service, "pid": str(self.pid), "reason": reason})
 
+    def refuse(self, reason, exit_code=2):
+        """#4446 round 2 — refuse to start on a bad config: say why on stderr,
+        log service.failed with the same reason, and exit. A service that stops
+        itself never does so silently."""
+        print(reason, file=sys.stderr)
+        self.failed(reason, exit_code)
+        sys.exit(exit_code)
+
     def failed(self, reason, exit_code=1):
         emit("service.failed", {"service": self.service, "pid": str(self.pid), "reason": reason,
                                 "exit_code": str(exit_code)})

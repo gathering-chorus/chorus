@@ -19,7 +19,7 @@
 #   chorus-ops.sh all                 # Both (health throttled)
 #   chorus-ops.sh status              # Show combined state
 #   chorus-ops.sh dry-run             # Dry run both subsystems
-# #4446 — a run that exits non-zero is logged as service.failed (com.chorus.ops).
+# #4446 — each run logs service.started, then service.stopped or service.failed (com.chorus.ops).
 . "$(dirname "${BASH_SOURCE[0]}")/lib/service-lifecycle.sh"
 service_lifecycle_job com.chorus.ops "$@"
 
