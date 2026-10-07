@@ -418,6 +418,15 @@ plist_args() {  # plist_args <file> <program...> — a minimal plist with these 
   [[ "$status" -eq 0 && "$output" == *"1 wired, 0 pending"* ]] || { echo "$output"; return 1; }
 }
 
+@test "NEGATIVE PROOF: the wiring guard is red for a service that runs a target/release build artifact" {
+  mkdir -p "$FIXHOME/agents"
+  plist_args "$FIXHOME/agents/com.chorus.athena-make.plist" "$TREE/platform/services/athena-make/target/release/athena-make"
+  run env SERVICE_WIRING_AGENTS="$FIXHOME/agents" bash "$TREE/platform/tests/4446-every-service-logs-its-lifecycle.test.sh"
+  echo "$output"
+  [ "$status" -ne 0 ]
+  [[ "$output" == *"com.chorus.athena-make — runs a build artifact"* ]] || return 1
+}
+
 @test "a WRAP service before service-run is installed is PENDING: not wired, not red" {
   mkdir -p "$FIXHOME/agents"
   plist_args "$FIXHOME/agents/com.chorus.y.plist" /bin/bash -c 'echo hi'
@@ -470,6 +479,69 @@ RUN="$TREE/platform/scripts/service-run"
   sleep 0.5
   grep '"event":"service.stopped"' "$SPINE" | grep "\"service\":\"$LABEL\"" | grep -q '"reason":"exit 0"' || return 1
   ! grep -q '"event":"service.failed"' "$SPINE" || return 1
+}
+
+# --- the reason: a failed run says what went wrong, not only its exit code ---
+# Jeff's AC: "no service exits on an error without a service.failed naming the
+# reason". Prod on 10-07 had 121 failures, every one "exited N". A job's own last
+# stderr line, written during THIS run, is the reason.
+reason_of_last_failure() {
+  grep '"event":"service.failed"' "$SPINE" | grep "\"service\":\"$LABEL\"" | tail -1 \
+    | /usr/bin/python3 -c 'import json,sys; print(json.loads(sys.stdin.read())["reason"])'
+}
+
+err_job() {  # err_job <stderr text or empty> <exit code> — a bash job using the helper
+  cat > "$FIXHOME/job.sh" <<SH
+#!/bin/bash
+set -euo pipefail
+. "$LIB"
+service_lifecycle_job com.chorus.fixture-job "\$@"
+[ -z "$1" ] || echo "$1" >&2
+exit $2
+SH
+  # an older run's line is already in the log: it must never become this run's reason
+  echo "stale: from an earlier run" > "$FIXHOME/err.log"
+}
+
+@test "bash job: a failed run's reason is the last line it wrote to stderr" {
+  err_job "boom: disk full" 4
+  write_once "$FIXHOME/job.sh"
+  wait_exit; sleep 0.5
+  r="$(reason_of_last_failure)"; echo "reason=$r"
+  [[ "$r" == "exited 4: boom: disk full" ]] || return 1
+}
+
+@test "NEGATIVE PROOF: a failed run that wrote nothing to stderr does not borrow an older run's line" {
+  err_job "" 4
+  write_once "$FIXHOME/job.sh"
+  wait_exit; sleep 0.5
+  r="$(reason_of_last_failure)"; echo "reason=$r"
+  [[ "$r" == "exited 4" ]] || return 1
+}
+
+@test "service-run job: a failed run's reason is the last line it wrote to stderr" {
+  echo "stale: from an earlier run" > "$FIXHOME/err.log"
+  write_once_args "<string>$RUN</string><string>x</string><string>job</string><string>/bin/sh</string><string>-c</string><string>echo cannot reach fuseki &gt;&amp;2; exit 5</string>"
+  wait_exit; sleep 0.5
+  r="$(reason_of_last_failure)"; echo "reason=$r"
+  [[ "$r" == "exited 5: cannot reach fuseki" ]] || return 1
+}
+
+@test "Rust job: a failed run's reason is the last line it wrote to stderr" {
+  echo "stale: from an earlier run" > "$FIXHOME/err.log"
+  shim_once no-such-verb-4446
+  wait_exit; sleep 0.5
+  r="$(reason_of_last_failure)"; echo "reason=$r"
+  [[ "$r" == "exited "[1-9]*": "*"retired verbs stay gone"* || "$r" == "exited "[1-9]*": "*"unknown subcommand"* ]] || return 1
+  [[ "$r" != *stale* ]] || return 1
+}
+
+@test "node: bridge-subscriber given a bad role logs service.failed naming why" {
+  run env HOME="$FIXHOME" CHORUS_LOG_FILE="$SPINE" CHORUS_CONTEXT=test CHORUS_HOME="$TREE" CHORUS_ROOT="$TREE" \
+    node "$TREE/platform/scripts/bridge-subscriber.js" bogus
+  [ "$status" -eq 1 ] || { echo "status=$status $output"; return 1; }
+  line="$(grep '"event":"service.failed"' "$SPINE" | tail -1)"; echo "line=$line"
+  [[ "$line" == *'bad role'* ]] || return 1
 }
 
 # --- error handling: a service that refuses to start says so in the log ---

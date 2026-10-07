@@ -14,5 +14,7 @@ export interface ServiceLifecycle {
   started(version?: string): void;
   stopped(reason: string): void;
   failed(reason: string, exitCode?: number): void;
+  /** Refuse to run: the reason on stderr, service.failed with it, then exit. */
+  refuse(reason: string, exitCode?: number): never;
 }
 export function serviceLifecycle(name: string): ServiceLifecycle;

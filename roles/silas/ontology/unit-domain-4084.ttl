@@ -224,11 +224,6 @@ chorus:unitdomain-com.chorus.nightly-suites a chorus:UnitDomainMapping ;
     chorus:launchdLabel "com.chorus.nightly-suites" ;
     chorus:hasDomain chorus:tests .
 
-chorus:unitdomain-com.chorus.nudge-health a chorus:UnitDomainMapping ;
-    rdfs:label "com.chorus.nudge-health → messages" ;
-    chorus:launchdLabel "com.chorus.nudge-health" ;
-    chorus:hasDomain chorus:messages .
-
 chorus:unitdomain-com.chorus.ops a chorus:UnitDomainMapping ;
     rdfs:label "com.chorus.ops → infrastructure" ;
     chorus:launchdLabel "com.chorus.ops" ;

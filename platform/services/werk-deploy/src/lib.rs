@@ -1747,6 +1747,200 @@ pub fn with_lib_dependents(root: &Path, crates: &[String], lib_only: &[String], 
     out
 }
 
+/// #4446 — a file under platform/services/shared/ is not a crate: it is compiled
+/// INSIDE every crate that `include!`s it. Round 2 changed shared/service_lifecycle.rs
+/// and the land deployed none of its seven includers, so pair-heartbeat, crawl,
+/// the hook shim and werk-test kept round 1's code. Returns the binary crates whose
+/// sources name a changed shared file, sorted.
+pub fn shared_includers(root: &Path, diff: &str) -> Vec<String> {
+    let changed: Vec<String> = diff.lines()
+        .filter_map(|l| l.trim().strip_prefix("platform/services/shared/").map(|r| format!("shared/{}", r)))
+        .collect();
+    if changed.is_empty() { return Vec::new(); }
+    fn rs_files(dir: &Path, out: &mut Vec<PathBuf>) {
+        if let Ok(rd) = fs::read_dir(dir) {
+            for e in rd.flatten() {
+                let p = e.path();
+                if p.is_dir() { rs_files(&p, out); } else if p.extension().map(|x| x == "rs").unwrap_or(false) { out.push(p); }
+            }
+        }
+    }
+    let mut out: Vec<String> = Vec::new();
+    let Ok(rd) = fs::read_dir(root.join("platform/services")) else { return out };
+    for e in rd.flatten() {
+        let dir = e.path();
+        if !dir.join("Cargo.toml").is_file() || crate_binaries_in(&dir).is_empty() { continue; }
+        let mut files = Vec::new();
+        rs_files(&dir.join("src"), &mut files);
+        let hit = files.iter().any(|f| fs::read_to_string(f)
+            .map(|t| changed.iter().any(|c| t.contains(c.as_str()))).unwrap_or(false));
+        if hit { if let Some(n) = dir.file_name().and_then(|n| n.to_str()) { out.push(n.to_string()); } }
+    }
+    out.sort();
+    out
+}
+
+/// #4446 — every installed com.chorus.* LaunchAgent as (label, plist text).
+/// HOME-relative, so a test's fake HOME sees only its own fixtures.
+fn installed_agents(home: &Path) -> Vec<(String, String)> {
+    let mut out = Vec::new();
+    let user_home = env::var("HOME").map(PathBuf::from).unwrap_or_else(|_| home.to_path_buf());
+    if let Ok(rd) = fs::read_dir(user_home.join("Library/LaunchAgents")) {
+        for e in rd.flatten() {
+            let n = e.file_name().to_string_lossy().to_string();
+            let Some(label) = n.strip_suffix(".plist") else { continue };
+            if !label.starts_with("com.chorus.") || label.contains(".werk.") { continue; }
+            if let Ok(t) = fs::read_to_string(e.path()) { out.push((label.to_string(), t)); }
+        }
+    }
+    out.sort();
+    out
+}
+
+/// #4446 — is this LaunchAgent always on? A `KeepAlive` that is anything but
+/// `<false/>` (true, or a condition dict like share-guard's) keeps it running, so
+/// it holds the code it started with until something restarts it.
+pub fn plist_is_daemon(plist: &str) -> bool {
+    match plist.find("<key>KeepAlive</key>") {
+        Some(i) => !plist[i + "<key>KeepAlive</key>".len()..].trim_start().starts_with("<false/>"),
+        None => false,
+    }
+}
+
+/// #4446 — what a LaunchAgent runs, as repo paths ("platform/scripts/x.js") and
+/// installed binaries ("bin:athena-make"). Read from its ProgramArguments and,
+/// one level down, from the text of any script it starts: a wrapper names the
+/// real program (share-guard-wrapper.sh → chorus-share-guard.py, the eventloop
+/// worker → platform/api/dist/eventloop-probe.js, athena-make-launch.sh →
+/// ~/.chorus/bin/athena-make). A dist .js also names its src .ts.
+pub fn daemon_refs(plist: &str, root: &str, read: &dyn Fn(&str) -> Option<String>) -> Vec<String> {
+    const TOPS: [&str; 5] = ["platform/", "directing/", "designing/", "config/", "roles/"];
+    fn norm(tok: &str, out: &mut Vec<String>) {
+        let tok = tok.trim_matches(|c: char| c == '"' || c == '\'' || c == '(' || c == ')' || c == ';');
+        if let Some(i) = tok.find(".chorus/bin/") {
+            let name = tok[i + ".chorus/bin/".len()..].split(|c: char| c == '"' || c == '\'' || c.is_whitespace()).next().unwrap_or("");
+            if !name.is_empty() { out.push(format!("bin:{}", name)); }
+            return;
+        }
+        let Some(i) = TOPS.iter().filter_map(|t| tok.find(t)).min() else { return };
+        let rel = tok[i..].split(|c: char| c == '"' || c == '\'' || c.is_whitespace() || c == '}').next().unwrap_or("").to_string();
+        if rel.is_empty() || rel.ends_with('/') { return; }
+        if let Some(r) = rel.strip_suffix(".js") {
+            if let Some((pkg, file)) = r.split_once("/dist/") { out.push(format!("{}/src/{}.ts", pkg, file)); }
+        }
+        out.push(rel);
+    }
+    let mut args: Vec<String> = Vec::new();
+    if let Some(start) = plist.find("<key>ProgramArguments</key>") {
+        let rest = &plist[start..];
+        let end = rest.find("</array>").unwrap_or(rest.len());
+        let mut r = &rest[..end];
+        while let Some(i) = r.find("<string>") {
+            let after = &r[i + 8..];
+            let j = after.find("</string>").unwrap_or(after.len());
+            args.push(after[..j].to_string());
+            r = &after[j..];
+        }
+    }
+    let mut out: Vec<String> = Vec::new();
+    for a in &args {
+        for tok in a.split_whitespace() { norm(tok, &mut out); }
+        if a.starts_with('/') && (a.ends_with(".sh") || !a.contains('.')) && !a.contains("/.chorus/bin/") {
+            if let Some(text) = read(a) {
+                for line in text.lines().filter(|l| !l.trim_start().starts_with('#')) {
+                    for tok in line.split_whitespace() { norm(tok, &mut out); }
+                }
+            }
+        } else if a.contains("/.chorus/bin/") && a.ends_with(".sh") {
+            if let Some(text) = read(a) {
+                for line in text.lines().filter(|l| !l.trim_start().starts_with('#')) {
+                    for tok in line.split_whitespace() { norm(tok, &mut out); }
+                }
+            }
+        }
+    }
+    // one level of imports: a service's own file is rarely what a land changes —
+    // the helper it requires is (eventloop-probe.js → chorus-sdk/lifecycle,
+    // chorus-share-guard.py → lib/service_lifecycle.py)
+    let direct: Vec<String> = out.clone();
+    for rel in &direct {
+        let Some(text) = read(&format!("{}/{}", root, rel)) else { continue };
+        for imp in imports_of(rel, &text) {
+            if read(&format!("{}/{}", root, imp)).is_some() { out.push(imp); }
+        }
+    }
+    let mut seen = Vec::new();
+    out.retain(|r| if seen.contains(r) { false } else { seen.push(r.clone()); true });
+    out
+}
+
+/// #4446 — the repo files a JS/TS or Python file imports by a relative path,
+/// as candidates (the caller keeps those that exist). `node:` and package
+/// imports are not ours and are skipped.
+pub fn imports_of(rel: &str, text: &str) -> Vec<String> {
+    let dir = rel.rsplit_once('/').map(|(d, _)| d).unwrap_or("");
+    let join = |base: &str, spec: &str| -> String {
+        let mut parts: Vec<&str> = if base.is_empty() { vec![] } else { base.split('/').collect() };
+        for seg in spec.split('/') {
+            match seg { "." | "" => {}, ".." => { parts.pop(); }, s => parts.push(s) }
+        }
+        parts.join("/")
+    };
+    let mut out = Vec::new();
+    if rel.ends_with(".py") {
+        for line in text.lines().map(|l| l.trim()) {
+            let m = line.strip_prefix("from ").and_then(|r| r.split_whitespace().next())
+                .or_else(|| line.strip_prefix("import ").and_then(|r| r.split(|c: char| c == ',' || c.is_whitespace()).next()));
+            if let Some(m) = m {
+                if m.starts_with('.') || m.is_empty() { continue; }
+                let f = m.replace('.', "/");
+                out.push(join(dir, &format!("{}.py", f)));
+                out.push(join(dir, &format!("lib/{}.py", f)));
+            }
+        }
+    } else if rel.ends_with(".js") || rel.ends_with(".ts") {
+        for line in text.lines() {
+            for key in ["require(", "from ", "import "] {
+                let mut rest = line;
+                while let Some(i) = rest.find(key) {
+                    rest = &rest[i + key.len()..];
+                    let q = rest.trim_start();
+                    let Some(qc) = q.chars().next().filter(|c| *c == '\'' || *c == '"') else { continue };
+                    let body = &q[1..];
+                    let Some(end) = body.find(qc) else { continue };
+                    let spec = &body[..end];
+                    if !spec.starts_with('.') { continue; }
+                    let base = join(dir, spec);
+                    for ext in ["", ".js", ".ts", "/index.js", "/index.ts"] { out.push(format!("{}{}", base, ext)); }
+                }
+            }
+        }
+    }
+    out
+}
+
+/// #4446 — the always-on services still running code this land changed: their
+/// program (or the script it starts) is in the diff, or they run an installed
+/// binary of a crate this deploy rebuilt. `skip` holds the labels the deploy
+/// already restarts itself (each crate's own service, the TS daemons). Seven
+/// services (bridge-subscribers, share-guard, eventloop-probe, the staging
+/// athena-make) sat on old code for days because nothing restarted them.
+pub fn daemons_on_changed_code(plists: &[(String, String)], root: &str, diff: &str, bins: &[String], skip: &[String],
+                               read: &dyn Fn(&str) -> Option<String>) -> Vec<String> {
+    let changed: Vec<&str> = diff.lines().map(|l| l.trim()).filter(|l| !l.is_empty()).collect();
+    let mut out: Vec<String> = Vec::new();
+    for (label, text) in plists {
+        if skip.contains(label) || !plist_is_daemon(text) { continue; }
+        let hit = daemon_refs(text, root, read).iter().any(|r| match r.strip_prefix("bin:") {
+            Some(b) => bins.iter().any(|x| x == b || format!("{}-bin", x) == b),
+            None => changed.contains(&r.as_str()),
+        });
+        if hit && !out.contains(label) { out.push(label.clone()); }
+    }
+    out.sort();
+    out
+}
+
 /// #3638 — split a changed-crate list into (deployable, lib-only). A LIB-ONLY crate
 /// (Cargo.toml present, `crate_binaries_in` empty — e.g. werk-teardown, #3431) emits
 /// no binaries, so deploy_crate_canonical's werk-* CliVerb short-circuit would demand
@@ -1854,6 +2048,14 @@ fn deploy_canonical(home: &Path, werk_s: &str, role: &str, card: u64, trace: &st
         jsonl(home, role, card, trace, "deploy.dependent.added",
             &format!(",\"target\":\"canonical\",\"crate\":\"{}\",\"reason\":\"links-a-changed-lib\"", c));
     }
+    // #4446 — a changed shared/ file ships through every crate that include!s it.
+    let mut crates = crates;
+    for c in shared_includers(&canon, &diff) {
+        if crates.contains(&c) { continue; }
+        jsonl(home, role, card, trace, "deploy.dependent.added",
+            &format!(",\"target\":\"canonical\",\"crate\":\"{}\",\"reason\":\"includes-a-changed-shared-file\"", c));
+        crates.push(c);
+    }
     // #3243 — TS services (chorus-mcp at platform/mcp-server, chorus-api at platform/api) live
     // OUTSIDE platform/services/, so changed_service_crates misses them. They are npm-built
     // in place by the native TS-daemon path (#3317), WITHOUT a werk-build step.
@@ -1896,7 +2098,16 @@ fn deploy_canonical(home: &Path, werk_s: &str, role: &str, card: u64, trace: &st
         }
     }
 
-    if crates.is_empty() && ts.is_empty() && model_files.is_empty() {
+    // #4446 — always-on services whose code this land changed, restarted after the
+    // installs below (a script daemon has nothing to install: canonical IS its code).
+    let bins: Vec<String> = crates.iter()
+        .flat_map(|c| crate_binaries_in(&canon.join("platform/services").join(c)))
+        .collect();
+    let skip: Vec<String> = crates.iter().chain(ts.iter()).map(|c| service_for_crate(c)).collect();
+    let restarts = daemons_on_changed_code(&installed_agents(home), &canon.to_string_lossy(), &diff, &bins, &skip,
+        &|p: &str| fs::read_to_string(p).ok());
+
+    if crates.is_empty() && ts.is_empty() && model_files.is_empty() && restarts.is_empty() {
         // Docs/config-only card — no service and no model to deploy for prod. Clean no-op
         // so the acp chain proceeds (mirrors werk-build's no-build-units case).
         jsonl(home, role, card, trace, "deploy.completed",
@@ -1973,6 +2184,16 @@ fn deploy_canonical(home: &Path, werk_s: &str, role: &str, card: u64, trace: &st
         // #3320 — a detached unit is in flight, not deployed; label it honestly in the
         // whole-deploy envelope (its own deploy.completed comes from the child).
         labels.push(if is_detached_ack(&out) { format!("{}(detached)", c) } else { c.clone() });
+    }
+    // #4446 — restart the always-on services running code this land changed. A
+    // restart that fails names its service and fails the deploy (#4452 AC4).
+    for label in &restarts {
+        run_env(None, &[], "launchctl", &["kickstart", "-k", &format!("gui/{}/{}", uid(), label)])
+            .map_err(|e| died(home, role, card, trace, "restart-fail",
+                format!("restart of {} (its code changed in this land) failed: {}", label, e)))?;
+        jsonl(home, role, card, trace, "deploy.restarted",
+            &format!(",\"target\":\"canonical\",\"service\":\"{}\",\"reason\":\"code-changed\"", label));
+        labels.push(format!("restart:{}", label));
     }
 
     // #4186 — the MODEL and SEED legs left this verb. Jeff, 2026-09-16: "athena and

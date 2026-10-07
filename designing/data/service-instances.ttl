@@ -165,7 +165,7 @@ chorus:service-gathering-app a chorus:Service ;
 
 chorus:service-observability a chorus:Service ;
     rdfs:label "Observability" ; chorus:label "Observability" ;
-    chorus:overview "Borg's seeing half — Jeff's cut: 'observability and security are borg.' Prometheus, Grafana, Loki, promtail on both machines; alertmanager + the alert-notifier/runner delivery chain; the probe fleet (deep-health, chorus-health, bedroom-health, heartbeat, eventloop, clearing-probe, nudge-health, blackbox) and the exporters (node, mysqld, launchagent-metrics, harvest-exporter, nifi-metrics). INSIDE iff its subject is WATCHING other services and saying so — metrics, logs, probes, alerts." ;
+    chorus:overview "Borg's seeing half — Jeff's cut: 'observability and security are borg.' Prometheus, Grafana, Loki, promtail on both machines; alertmanager + the alert-notifier/runner delivery chain; the probe fleet (deep-health, chorus-health, bedroom-health, heartbeat, eventloop, clearing-probe, blackbox) and the exporters (node, mysqld, launchagent-metrics, harvest-exporter, nifi-metrics). INSIDE iff its subject is WATCHING other services and saying so — metrics, logs, probes, alerts." ;
     chorus:ownedBy chorus:principal-silas ;
     chorus:status "operating" ;
     chorus:asIs "Live across both machines; Loki is the durable log superset (tailing files is ephemeral); the probe fleet's recurring false-fire classes were each diagnosed 2026-07-10 — fragile probes, not outages. Hard truth: 26 standing warnings on the health surface reads as noise, and a broken monitor is a real defect to fix or retire, not weather." ;

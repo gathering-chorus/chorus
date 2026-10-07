@@ -24,6 +24,7 @@ fi
 cmd="$(command -v "$1" || printf '%s' "$1")"
 version="$(shasum -a 256 "$cmd" 2>/dev/null | cut -c1-12)"
 _sl_emit service.started "service=$label" "pid=$$" "version=${version:-unknown}"
+err="$(_sl_err_path "$label")"; mark="$(_sl_size "$err")"
 
 stop_reason=""
 on_signal() { stop_reason="$1"; kill "-${1#SIG}" "$child" 2>/dev/null; }
@@ -44,6 +45,6 @@ if [ -n "$stop_reason" ]; then
 elif [ "$rc" = 0 ]; then
   _sl_emit service.stopped "service=$label" "pid=$$" "reason=exit 0"
 else
-  _sl_emit service.failed "service=$label" "pid=$$" "reason=exited $rc" "exit_code=$rc"
+  _sl_emit service.failed "service=$label" "pid=$$" "reason=$(_sl_reason "$rc" "$err" "$mark")" "exit_code=$rc"
 fi
 exit "$rc"

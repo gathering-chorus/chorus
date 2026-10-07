@@ -36,7 +36,6 @@ com.chorus.roles-up	platform/services/chorus-principal/src/main.rs
 com.chorus.nightly-suites	platform/services/werk-test/src/main.rs
 com.chorus.pair-heartbeat	platform/services/pair-heartbeat/src/main.rs
 com.chorus.heartbeat	platform/services/chorus-hooks/src/shim.rs
-com.chorus.nudge-health	platform/services/chorus-hooks/src/shim.rs
 com.chorus.api	platform/api/src/server.ts
 com.chorus.eventloop-probe	platform/api/src/eventloop-probe.ts
 com.chorus.mcp	platform/mcp-server/src/main.ts
@@ -103,7 +102,13 @@ for plist in "$AGENTS"/com.chorus.*.plist; do
   # a card's demo env (com.chorus.<svc>.werk.<role>) runs the same code as <svc>
   base="${label%%.werk.*}"
   row="$(printf '%s\n' "$TABLE" | awk -F'\t' -v l="$base" '$1==l {print $2; exit}')"
-  if [ -z "$row" ]; then
+  prog="$(/usr/libexec/PlistBuddy -c 'Print :ProgramArguments:0' "$plist" 2>/dev/null)"
+  if [[ "$prog" == */target/release/* ]]; then
+    # #4446 reopen: heartbeat ran the build artifact; a rebuild on 10-06 changed
+    # its signature and launchd refused to start it (exit 78) — no process, no event
+    echo "FAIL: $label — runs a build artifact ($prog); run the installed copy in ~/.chorus/bin"
+    FAIL=$((FAIL+1))
+  elif [ -z "$row" ]; then
     echo "FAIL: $label — not in the wiring table: wire it to a lifecycle helper, or name it as a gap"
     FAIL=$((FAIL+1))
   elif [[ "$row" == WRAP:* ]]; then

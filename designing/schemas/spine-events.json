@@ -2414,6 +2414,20 @@
         "verb": "#3270 — emitting verb (deploy)"
       }
     },
+    "deploy.restarted": {
+      "producer": "deploys",
+      "category": "fact",
+      "version": "1",
+      "vertebra": "building",
+      "source": "werk",
+      "description": "Werk `deploy` verb (canonical): an always-on service restarted because the land changed its code, a script it loads, or a binary it runs (#4446).",
+      "fields": {
+        "service": "The launchd label restarted",
+        "reason": "code-changed",
+        "role": "Acting role",
+        "trace_id": "Werk trace join key"
+      }
+    },
     "deploy.dependent.added": {
       "producer": "deploys",
       "category": "fact",

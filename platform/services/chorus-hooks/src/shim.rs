@@ -401,7 +401,7 @@ mod service_lifecycle {
 }
 
 fn main() -> ExitCode {
-    // #4446 — under launchd (heartbeat, nudge-health, context-cache jobs) a failed run is service.failed.
+    // #4446 — under launchd (heartbeat, context-cache jobs) a failed run is service.failed.
     service_lifecycle::run_as_job();
     // Unified dispatch — handles both argv[0] symlinks and `shim <subcommand>` invocations.
     // argv[0] symlink: args start at index 1 (skip binary name)

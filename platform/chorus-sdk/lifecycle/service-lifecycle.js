@@ -111,6 +111,14 @@ function serviceLifecycle(name) {
     },
     stopped(reason) { ended = true; emit(stopEvent(service, pid, reason)); },
     failed(reason, exitCode = 1) { ended = true; emit(failedEvent(service, pid, reason, exitCode)); },
+    // #4446 reopen — a service that stops itself on a bad argument or config
+    // says why, in the log as well as on stderr (python's refuse, same shape)
+    refuse(reason, exitCode = 1) {
+      console.error(reason);
+      ended = true;
+      emit(failedEvent(service, pid, reason, exitCode));
+      process.exit(exitCode);
+    },
   };
 }
 

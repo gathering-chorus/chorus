@@ -1,0 +1,24 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<!-- #4446 reopen: the installed copy in ~/.chorus/bin, never target/release (a
+     rebuild there on 10-06 changed the signature and launchd stopped starting
+     it, exit 78). Every 300s; KeepAlive made it respawn every 10s. -->
+<plist version="1.0">
+<dict>
+    <key>Label</key>
+    <string>com.chorus.heartbeat</string>
+    <key>ProgramArguments</key>
+    <array>
+        <string>/Users/jeffbridwell/.chorus/bin/chorus-hook-shim</string>
+        <string>heartbeat</string>
+    </array>
+    <key>RunAtLoad</key>
+    <true/>
+    <key>StartInterval</key>
+    <integer>300</integer>
+    <key>StandardOutPath</key>
+    <string>/Users/jeffbridwell/Library/Logs/Gathering/heartbeat.log</string>
+    <key>StandardErrorPath</key>
+    <string>/Users/jeffbridwell/Library/Logs/Gathering/heartbeat.log</string>
+</dict>
+</plist>
