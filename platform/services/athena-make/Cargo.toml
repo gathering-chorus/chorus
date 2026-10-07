@@ -27,8 +27,6 @@ p256 = { version = "0.13", features = ["ecdsa"] }
 properties-resolver = { path = "../properties-resolver" }
 # #3356 — the shared CSS-token verifier (extracted from this crate, now consumed).
 chorus-oidc = { path = "../chorus-oidc" }
-# #4446 — the serve daemon logs its own clean stop (shared/service_stop.rs).
-libc = "0.2"
 
 [[bin]]
 name = "athena-make"

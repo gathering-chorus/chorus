@@ -8,7 +8,6 @@ version = "0.1.0"
 dependencies = [
  "chorus-oidc",
  "hmac",
- "libc",
  "p256",
  "properties-resolver",
  "sha2",
