@@ -2208,13 +2208,6 @@ chorus:dctermsSource a owl:AnnotationProperty ;
 
 # --- Contains edges — domains contain their instances ---
 
-# #4130 — the loom-principles contains edges moved to
-# roles/wren/ontology/principles-rhymes-4006.ttl (the principles graph). The
-# block that stood here pointed at 13 principle-* rows retired by #3749/#4006
-# and at none of the XP rows. The live ontology graph keeps the stale edges
-# until the deploy learns to retire (#4125); the read path unions the
-# principles graph, so the page shows the 28 real rows either way.
-
 # #3754 — loom-practices membership emptied with practice v1; v2 members are
 # authored in roles/kade/ontology/practices-3754-instances.ttl.
 
