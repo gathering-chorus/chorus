@@ -72,11 +72,41 @@ pub fn gemini_allowed(claude_settings: &Value) -> Result<(Vec<String>, Vec<Strin
     Ok((allowed, unmapped))
 }
 
+/// #4444 — the Claude deny rules for Gemini: each `Bash(<glob>)` rule becomes
+/// a command regex (Gemini matches it from the start of the command), every
+/// other rule is reported. No deny list is no deny rules, not an error.
+pub fn gemini_denied(claude_settings: &Value) -> (Vec<String>, Vec<String>) {
+    let rules = claude_settings.pointer("/permissions/deny").and_then(Value::as_array);
+    let (mut denied, mut unmapped) = (Vec::new(), Vec::new());
+    for rule in rules.into_iter().flatten().filter_map(Value::as_str) {
+        match rule.strip_prefix("Bash(").and_then(|r| r.strip_suffix(')')) {
+            Some(glob) => {
+                let regex = glob.split('*').map(regex_literal).collect::<Vec<_>>().join(".*");
+                if !denied.contains(&regex) {
+                    denied.push(regex);
+                }
+            }
+            None => unmapped.push(rule.to_string()),
+        }
+    }
+    (denied, unmapped)
+}
+
+fn regex_literal(text: &str) -> String {
+    text.chars().fold(String::new(), |mut out, c| {
+        if "\\.+?^$()[]{}|".contains(c) {
+            out.push('\\');
+        }
+        out.push(c);
+        out
+    })
+}
+
 /// The Gemini policy file (TOML, user tier) for an allowed list: one allow
 /// rule for the plain tool names, one per shell command prefix. Gemini 0.62
 /// marks `tools.allowed` in settings.json deprecated (removed at 1.0), so the
 /// list is written as policy, the form it keeps.
-pub fn gemini_policy_toml(allowed: &[String], source: &Path) -> String {
+pub fn gemini_policy_toml(allowed: &[String], denied: &[String], source: &Path) -> String {
     let q = |v: &str| serde_json::to_string(v).unwrap_or_default();
     let mut plain = Vec::new();
     let mut out = format!(
@@ -104,6 +134,14 @@ pub fn gemini_policy_toml(allowed: &[String], source: &Path) -> String {
             q(&prefix)
         ));
     }
+    // #4444 — the deny rules outrank every allow rule above (Claude applies
+    // deny before allow the same way).
+    for regex in denied {
+        out.push_str(&format!(
+            "\n[[rule]]\ntoolName = \"run_shell_command\"\ncommandRegex = {}\ndecision = \"deny\"\npriority = 200\n",
+            q(regex)
+        ));
+    }
     out
 }
 
@@ -115,11 +153,12 @@ pub fn install_gemini_allowed(source: &Path, target: &Path) -> Result<(Vec<Strin
     let claude: Value = serde_json::from_str(&text)
         .map_err(|e| format!("the allow rules at {} are not JSON: {e}", source.display()))?;
     let (allowed, unmapped) = gemini_allowed(&claude)?;
+    let (denied, _) = gemini_denied(&claude);
     if let Some(dir) = target.parent() {
         std::fs::create_dir_all(dir).map_err(|e| format!("cannot create {}: {e}", dir.display()))?;
     }
     let tmp = target.with_extension("toml.tmp");
-    std::fs::write(&tmp, gemini_policy_toml(&allowed, source)).map_err(|e| format!("cannot write {}: {e}", tmp.display()))?;
+    std::fs::write(&tmp, gemini_policy_toml(&allowed, &denied, source)).map_err(|e| format!("cannot write {}: {e}", tmp.display()))?;
     std::fs::rename(&tmp, target).map_err(|e| format!("cannot replace {}: {e}", target.display()))?;
     Ok((allowed, unmapped))
 }
