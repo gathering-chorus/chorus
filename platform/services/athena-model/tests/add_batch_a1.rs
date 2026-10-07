@@ -325,7 +325,8 @@ fn same_kind_shape_is_loaded_once_for_the_entire_batch() {
             // #4187 — the instance-home pin lookup reads the same graph once per kind
             && !q.contains("# athena-model instance home"))
         .count();
-    assert_eq!(shape_selects, 6, "read_shape's six queries run once per distinct class, not once per entity");
+    // #4358 — eight: sh:pattern added a property-level and a node-level read.
+    assert_eq!(shape_selects, 8, "read_shape's eight queries run once per distinct class, not once per entity");
     assert_eq!(store.updates.borrow().len(), 1);
 }
 

@@ -16,12 +16,11 @@
 # graph and rendered HTML. Baseline pattern: same as doc-coherence-ratchet.test.sh.
 #
 # Checks:
-#   1. Graph has 14 Hemenway parents (chorus:isPermacultureParent true)
-#   2. Graph has 12 skos:broader edges (specialization relationships)
-#   3. Every Hemenway parent has rdfs:label + rdfs:comment + dcterms:source
-#   4. HTML article count matches (14)
-#   5. Drift: every HTML h2 label finds a matching Hemenway parent in graph
-#   6. riot validates chorus.ttl
+#   1. Graph has 14 Hemenway principles, numbered (chorus:order)
+#   2. Every specialization edge resolves to a real parent
+#   3. Every Hemenway principle has rdfs:label + rdfs:comment + chorus:source
+#   4. #4358: every principle is a hemenway-* row and none carries a retired field
+#   5. riot validates chorus.ttl
 set -uo pipefail
 
 SPARQL_URL="${SPARQL_URL:-http://localhost:3030/pods/sparql}"
@@ -46,9 +45,9 @@ ask_query() {
   sparql "$1" | python3 -c "import json,sys;print(json.load(sys.stdin)['boolean'])" 2>/dev/null
 }
 
-# 1. Hemenway parent count
-PARENTS=$(count_query 'PREFIX chorus: <https://jeffbridwell.com/chorus#> SELECT (COUNT(?p) AS ?n) WHERE { GRAPH <urn:chorus:domains:principles> { ?p a chorus:Principle ; chorus:isPermacultureParent true } }')
-check "14 Hemenway parents in graph" "14" "$PARENTS"
+# 1. Hemenway principle count (#4358: the principles are the 14, each numbered)
+PARENTS=$(count_query 'PREFIX chorus: <https://jeffbridwell.com/chorus#> SELECT (COUNT(DISTINCT ?p) AS ?n) WHERE { GRAPH <urn:chorus:domains:principles> { ?p a chorus:Principle ; chorus:order ?o } }')
+check "14 numbered Hemenway principles in graph" "14" "$PARENTS"
 
 # 2. Specialization edges — INTEGRITY, not a count.
 #
@@ -66,10 +65,14 @@ DANGLING=$(count_query 'PREFIX chorus: <https://jeffbridwell.com/chorus#> PREFIX
 check "every specialization edge resolves to a real parent (${EDGES} edge(s))" "0" "$DANGLING"
 
 # 3. Every Hemenway parent has label + comment + source
-COMPLETE=$(count_query 'PREFIX chorus: <https://jeffbridwell.com/chorus#> PREFIX rdfs: <http://www.w3.org/2000/01/rdf-schema#> SELECT (COUNT(?p) AS ?n) WHERE { GRAPH <urn:chorus:domains:principles> { ?p a chorus:Principle ; chorus:isPermacultureParent true ; rdfs:label ?l ; rdfs:comment ?c ; chorus:source ?s } }')
+COMPLETE=$(count_query 'PREFIX chorus: <https://jeffbridwell.com/chorus#> PREFIX rdfs: <http://www.w3.org/2000/01/rdf-schema#> SELECT (COUNT(?p) AS ?n) WHERE { GRAPH <urn:chorus:domains:principles> { ?p a chorus:Principle ; chorus:order ?o ; rdfs:label ?l ; rdfs:comment ?c ; chorus:source ?s } }')
 check "all 14 parents have label+comment+source (chorus:source — #4273: the check asked for dcterms:source, which the model never used)" "14" "$COMPLETE"
 
-# 4. riot validation
+# 4. #4358 — one family: no row off the hemenway-* name, no retired field on any row
+STRAY=$(count_query 'PREFIX chorus: <https://jeffbridwell.com/chorus#> SELECT (COUNT(DISTINCT ?p) AS ?n) WHERE { GRAPH <urn:chorus:domains:principles> { ?p a chorus:Principle . OPTIONAL { ?p ?f ?v . VALUES ?f { chorus:principleKind chorus:isPermacultureParent chorus:rhymesWith chorus:publishesPreAuth } } FILTER(!STRSTARTS(STR(?p), "https://jeffbridwell.com/chorus#hemenway-") || BOUND(?f)) } }')
+check "every principle is hemenway-* and carries no retired field" "0" "$STRAY"
+
+# 5. riot validation
 if riot --validate "$TTL" >/dev/null 2>&1; then
   check "chorus.ttl validates" "0" "0"
 else

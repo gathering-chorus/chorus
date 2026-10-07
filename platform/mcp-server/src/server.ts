@@ -317,10 +317,9 @@ const PrinciplesCreateInput = z.object({
   comment: z.string().min(1).describe('One-paragraph description of the principle'),
   techReading: z.string().min(1).describe('How it reads in system design'),
   jeffReading: z.string().min(1).describe('How it shows up in how Jeff works'),
-  principleKind: z.enum(['pc', 'xp']).describe('pc = Hemenway permaculture, xp = Extreme Programming'),
-  source: z.string().min(1).describe('Citation (book, ADR, card)'),
-  name: z.string().optional().describe('Row name; defaults to a slug of the label'),
-  rhymesWith: z.string().optional().describe('Optional parent principle name'),
+  order: z.number().int().min(1).max(14).describe("The principle's number in Hemenway's list, 1 to 14"),
+  source: z.string().min(1).describe("Citation, one format: Hemenway, T. Gaia's Garden, 2nd ed., p. N."),
+  name: z.string().optional().describe('Row name hemenway-<slug>; defaults to hemenway- plus a slug of the label'),
 });
 
 const PRINCIPLES_LIST_TOOL_DEF = {
@@ -337,7 +336,7 @@ const PRINCIPLES_LIST_TOOL_DEF = {
 const PRINCIPLES_GET_TOOL_DEF = {
   name: 'chorus_principles_get',
   description:
-    'Get one Chorus principle by id from the live graph. Use this when you have a specific principle id (from a CLAUDE.md citation, a card, or chorus_principles_list) and want its full body. Returns label + comment + parent edges. Do NOT use to fish for a principle by topic — use chorus_principles_list and filter; ids are stable but labels are mutable.',
+    'Get one Chorus principle by id from the live graph. Use this when you have a specific principle id (from a CLAUDE.md citation, a card, or chorus_principles_list) and want its full body. Returns label + comment. Do NOT use to fish for a principle by topic — use chorus_principles_list and filter; ids are stable but labels are mutable.',
   inputSchema: {
     type: 'object',
     properties: {
@@ -354,7 +353,7 @@ const PRINCIPLES_GET_TOOL_DEF = {
 const PRINCIPLES_CREATE_TOOL_DEF = {
   name: 'chorus_principles_create',
   description:
-    'Create a new Chorus principle in the live graph (athena-make /v1/principles/principles, #4353). Use this only after the team has agreed a new principle is needed (rare — principles change slowly). Required, because the Principle shape requires them: label, comment, techReading, jeffReading, principleKind (pc = Hemenway permaculture, xp = Extreme Programming), source. Optional: name (defaults to a slug of the label), rhymesWith (the parent principle name). Do NOT use for practices, policies, or skills. Do NOT use to update an existing principle.',
+    "Create a Chorus principle in the live graph (athena-make /v1/principles/principles, #4353). The principles are Hemenway's 14 permaculture principles (#4358), so this is for restoring one of those, not for minting new team principles. Required, because the Principle shape requires them: label, comment, techReading, jeffReading, order (1-14), source (Hemenway, T. Gaia's Garden, 2nd ed., p. N.). Optional: name (hemenway-<slug>; defaults to hemenway- plus a slug of the label). Do NOT use for practices, policies, or skills. Do NOT use to update an existing principle.",
   inputSchema: {
     type: 'object',
     properties: {
@@ -362,12 +361,11 @@ const PRINCIPLES_CREATE_TOOL_DEF = {
       comment: { type: 'string', minLength: 1, description: 'One-paragraph description of the principle' },
       techReading: { type: 'string', minLength: 1, description: 'How it reads in system design' },
       jeffReading: { type: 'string', minLength: 1, description: 'How it shows up in how Jeff works' },
-      principleKind: { type: 'string', enum: ['pc', 'xp'], description: 'pc = Hemenway permaculture, xp = Extreme Programming' },
-      source: { type: 'string', minLength: 1, description: 'Citation (book, ADR, card)' },
-      name: { type: 'string', description: 'Row name; defaults to a slug of the label' },
-      rhymesWith: { type: 'string', description: 'Optional parent principle name this sits under' },
+      order: { type: 'integer', minimum: 1, maximum: 14, description: "The principle's number in Hemenway's list, 1 to 14" },
+      source: { type: 'string', minLength: 1, description: "Citation, one format: Hemenway, T. Gaia's Garden, 2nd ed., p. N." },
+      name: { type: 'string', description: 'Row name hemenway-<slug>; defaults to hemenway- plus a slug of the label' },
     },
-    required: ['label', 'comment', 'techReading', 'jeffReading', 'principleKind', 'source'],
+    required: ['label', 'comment', 'techReading', 'jeffReading', 'order', 'source'],
   },
 } as const;
 
@@ -1857,8 +1855,6 @@ interface PrincipleRecord {
   comment?: string;
   techReading?: string;
   jeffReading?: string;
-  isPermacultureParent?: boolean;
-  parents?: string[];
   uri?: string;
 }
 
@@ -1888,9 +1884,6 @@ async function fetchPrinciplesList(fetchImpl: FetchImpl, _apiBase: string): Prom
     comment: str(r.comment),
     techReading: str(r.techReading),
     jeffReading: str(r.jeffReading),
-    isPermacultureParent: r.isPermacultureParent === true || r.isPermacultureParent === 'true',
-    // rhymesWith names the permaculture parent (the retired read folded it into parents)
-    parents: ([] as unknown[]).concat(r.rhymesWith ?? []).map(String).filter(Boolean),
   })).filter((p) => p.id);
 }
 
@@ -1947,9 +1940,6 @@ async function executePrinciplesGet(
     '',
     found.comment ?? '(no comment)',
   ];
-  if (found.parents && found.parents.length > 0) {
-    lines.push('', `parents: ${found.parents.join(', ')}`);
-  }
   if (found.uri) {
     lines.push(`uri: ${found.uri}`);
   }
@@ -1957,7 +1947,7 @@ async function executePrinciplesGet(
 }
 
 async function executePrinciplesCreate(
-  args: { label: string; comment: string; techReading: string; jeffReading: string; principleKind: string; source: string; name?: string; rhymesWith?: string },
+  args: { label: string; comment: string; techReading: string; jeffReading: string; order: number; source: string; name?: string },
   fetchImpl: FetchImpl,
   apiBase: string,
   from: string,
@@ -1966,15 +1956,14 @@ async function executePrinciplesCreate(
   const url = `${athenaMakeBase()}/v1/principles/principles`;
   const slug = args.label.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '');
   const body: Record<string, string> = {
-    name: args.name || slug,
+    name: args.name || `hemenway-${slug}`,
     label: args.label,
     comment: args.comment,
     techReading: args.techReading,
     jeffReading: args.jeffReading,
-    principleKind: args.principleKind,
+    order: String(args.order),
     source: args.source,
   };
-  if (args.rhymesWith) body.rhymesWith = args.rhymesWith;
   // The generated write route checks identity: carry a scoped token when one
   // can be minted, and let the API refuse a write it does not allow.
   const token = mintServiceToken();

@@ -1,5 +1,5 @@
 // #3757 — the shared model fold: schema → OWL → instances for one domain.
-// ONE implementation used by BOTH altitudes (chorus:principle-no-competing-implementations):
+// ONE implementation used by BOTH altitudes (one concept, one implementation):
 //   /domains/<d>        (model view, full)    — domains-view.html
 //   /athena/domain.html (ops view, compact)   — the what-is-this anchor
 // Same endpoints, same markup, same honest states; divergence is impossible

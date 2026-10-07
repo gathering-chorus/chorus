@@ -712,8 +712,7 @@ jobs:
           npm run build
 
       - name: Seed Fuseki with principles ontology
-        # Loads chorus.ttl into urn:chorus:instances — the named graph the
-        # principles SPARQL (src/sparql/loom-principles.sparql) queries.
+        # Loads chorus.ttl into urn:chorus:instances.
         # Earlier versions loaded into ?default and the query returned empty.
         run: |
           for i in $(seq 1 30); do

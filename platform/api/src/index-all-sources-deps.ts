@@ -5,7 +5,7 @@
 // (index-worker.ts) need to construct indexAllSources with the SAME real deps —
 // in particular the perf-tuned positioned reads readTail (#3067) and readSince
 // (#3077). Defining them once here keeps the two callers from drifting
-// (chorus:principle-no-competing-implementations).
+// (one concept, one implementation).
 import fs from 'fs';
 import path from 'path';
 import os from 'os';

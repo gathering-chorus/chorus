@@ -12,7 +12,7 @@ mod ported;
 mod registry;
 mod store;
 
-use checks::{Verdict, COMPLETENESS, SURVIVES_THE_DOOR};
+use checks::{Verdict, ALLOWED_VALUES, COMPLETENESS, PATTERN, SURVIVES_THE_DOOR};
 use std::io::Write;
 
 /// Every line the run produced, printed AND written to the report file.
@@ -119,6 +119,10 @@ fn main() {
     // The store checks.
     let mut store_checks = ported::all();
     store_checks.push(&COMPLETENESS);
+    // #4358 — sh:in and sh:pattern, the two value constraints the DAL enforces
+    // at the door, swept over what is already in the store.
+    store_checks.push(&ALLOWED_VALUES);
+    store_checks.push(&PATTERN);
     for check in store_checks {
         let (verdict, findings) = store::run(check);
         for f in &findings {

@@ -305,7 +305,7 @@
   </header>
 
   <div class="intro">
-    Principles are stable. Policies enforce them. Practices express them. Top-level principles are drawn from Toby Hemenway's <em>Gaia's Garden</em> permaculture principles — each carries three readings: the original permaculture frame, the Chorus/tech reading (same principle in system design), and the Jeff reading (how it shows up in how Jeff works). Chorus-specific principles appear as specializations under their permaculture parents.
+    Principles are stable. Policies enforce them. Practices express them. They are the 14 permaculture principles from Toby Hemenway's <em>Gaia's Garden</em>. Each carries three readings: the original permaculture frame, the Chorus/tech reading (same principle in system design), and the Jeff reading (how it shows up in how Jeff works).
   </div>
 
   <div class="actions">
@@ -344,7 +344,6 @@
     }
 
     function renderPrinciple(p, opts = {}) {
-      const showLayers = p.isPermacultureParent || opts.alwaysShowLayers;
       const layers = [];
       const split = splitReviewTail(p.comment);
       if (split.body) {
@@ -354,7 +353,7 @@
           </div>
         `);
       }
-      if (showLayers) {
+      {
         if (p.techReading) {
           layers.push(`
             <div class="layer tech">
@@ -380,27 +379,15 @@
           </div>
         `);
       }
-      const parentsList = (p.parents && p.parents.length > 0)
-        ? p.parents.map((pp) => escapeHtml(pp.label)).join(', ')
-        : '';
-      const parents = parentsList
-        ? `<div class="parents">Specialization of <strong>${parentsList}</strong></div>`
-        : '';
-      const summaryParent = parentsList
-        ? `<span class="summary-parent">Specialization of ${parentsList}</span>`
-        : (p.isPermacultureParent ? `<span class="summary-parent">Permaculture parent</span>` : '');
       const headedLabel = opts.heading || (p.label || p.id || 'Unlabeled');
-      const tierClass = opts.tier === 'parent' ? ' is-parent' : (opts.tier === 'child' ? ' is-child' : '');
       return `
-        <details class="principle${tierClass}">
+        <details class="principle">
           <summary>
             <h2>${escapeHtml(headedLabel)}</h2>
-            ${summaryParent}
           </summary>
           <div class="body">
             <code class="id">${escapeHtml(p.id || '')}</code>
             ${layers.join('')}
-            ${parents}
           </div>
         </details>
       `;
@@ -414,61 +401,29 @@
         const res = await fetch('/owl/v1/principles/principles');
         if (!res.ok) throw new Error('API returned ' + res.status);
         const body = await res.json();
-        // rhymesWith names the permaculture parent an XP principle sits under;
-        // parents[].uri is the parent's name, and p.uri is each row's own name.
+        // #4358 — the principles are the 14 Hemenway principles, in book order
         const all = (Array.isArray(body?.data) ? body.data : []).map((r) => ({
           ...r,
           id: r.name,
-          uri: r.name,
-          isPermacultureParent: r.isPermacultureParent === true || r.isPermacultureParent === 'true',
           order: r.order === '' || r.order == null ? undefined : Number(r.order),
-          parents: [].concat(r.rhymesWith || []).filter(Boolean).map((n) => ({ uri: n })),
-        }));
-        const labelOf = new Map(all.map((p) => [p.name, p.label || p.name]));
-        all.forEach((p) => p.parents.forEach((pp) => { pp.label = labelOf.get(pp.uri) || pp.uri; }));
+        })).sort((a, b) => (a.order ?? 999) - (b.order ?? 999));
         if (all.length === 0) {
           main.innerHTML = '<div class="empty">No principles found in the ontology yet.</div>';
           return;
         }
 
-        const parents = all.filter((p) => p.isPermacultureParent)
-          .slice()
-          .sort((a, b) => (a.order ?? 999) - (b.order ?? 999));
-        const children = all.filter((p) => !p.isPermacultureParent);
-        const unparented = children.filter((c) => !c.parents || c.parents.length === 0);
-        const grouped = children.filter((c) => c.parents && c.parents.length > 0);
-
-        // Group specializations by parent URI for nested render
-        const childrenByParent = new Map();
-        grouped.forEach((c) => {
-          c.parents.forEach((pp) => {
-            if (!childrenByParent.has(pp.uri)) childrenByParent.set(pp.uri, []);
-            childrenByParent.get(pp.uri).push(c);
-          });
-        });
-
         let html = '';
-        html += `<div class="section-intro">All principles, single flat list, in Hemenway book order with specializations following each parent. Click a header to open; print expands all.</div>`;
+        html += `<div class="section-intro">Hemenway's 14 permaculture principles, in book order. Click a header to open; print expands all.</div>`;
         html += `<div class="actions-bar">
           <button type="button" id="expand-all">Expand all</button>
           <button type="button" id="collapse-all">Collapse all</button>
           <button type="button" id="print-view">Print</button>
         </div>`;
 
-        if (parents.length > 0) {
-          parents.forEach((p, idx) => {
-            const ordinal = p.order ?? (idx + 1);
-            html += renderPrinciple(p, { heading: `${ordinal}. ${p.label || p.id || 'Unlabeled'}`, tier: 'parent' });
-            const kids = childrenByParent.get(p.uri) || [];
-            kids.forEach((c) => { html += renderPrinciple(c, { tier: 'child' }); });
-          });
-        }
-
-        if (unparented.length > 0) {
-          html += `<h3 class="section-heading">Unclassified</h3>`;
-          html += `<div class="section-intro">Principles with no permaculture parent yet.</div>`;
-          html += unparented.map((c) => renderPrinciple(c)).join('');
-        }
+        all.forEach((p, idx) => {
+          const ordinal = p.order ?? (idx + 1);
+          html += renderPrinciple(p, { heading: `${ordinal}. ${p.label || p.id || 'Unlabeled'}` });
+        });
 
         main.innerHTML = html;
 
@@ -485,9 +440,7 @@
         });
 
         document.getElementById('meta').textContent =
-          `${all.length} principles (${parents.length} permaculture parents · ${grouped.length} specializations` +
-          (unparented.length > 0 ? ` · ${unparented.length} unclassified` : '') +
-          `) · rendered ${RENDERED_AT}`;
+          `${all.length} principles · rendered ${RENDERED_AT}`;
       } catch (err) {
         main.innerHTML = '<div class="error">Failed to load principles: ' + escapeHtml(err.message) + '</div>';
       }
