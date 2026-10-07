@@ -1645,6 +1645,8 @@ const room = process.env.BUZZ_ROOM_ENABLED === '1'
     relayUrl: process.env.BUZZ_RELAY_URL ?? 'ws://192.168.86.242:3000',
     topic: process.env.BUZZ_ROOM_TOPIC ?? 'team',
     ingest: (msg) => messageRouter.ingest({ ...msg, buzzInbound: true }),
+    // #4445 — demo variants set this so they can show the relay without writing to it
+    readOnly: process.env.CLEARING_ROOM_READONLY === '1',
     log: (level, event, fields) =>
       process.stderr.write(JSON.stringify({ level, event, ...fields, ts: new Date().toISOString() }) + '\n'),
   })
