@@ -5,6 +5,11 @@ mod signal_witness;
 pub mod shared;
 mod state;
 mod types;
+// #4446 — start / stop / failure of this daemon, shared with every chorus Rust service.
+#[allow(dead_code)] // each crate uses part of the shared helper
+mod service_lifecycle {
+    include!("../../shared/service_lifecycle.rs");
+}
 
 // #2120 — re-use commands::pulse so post_tool_use can refresh /tmp/pulse-latest.json
 // in-process instead of shelling out. pulse.rs depends on process::wall_clock.
@@ -207,7 +212,10 @@ async fn main() {
         .with_state(state);
     spawn_agent_socket(agent_app);
 
-    let listener = UnixListener::bind(&socket_path).expect("Failed to bind unix socket");
+    let listener = match UnixListener::bind(&socket_path) {
+        Ok(l) => l,
+        Err(e) => fail_and_exit(&format!("bind {socket_path}: {e}")).await,
+    };
 
     // #3631 — 0600, owner-only. The guard daemon's control socket is no longer
     // world-writable (was 0o777 in /tmp).
@@ -224,19 +232,46 @@ async fn main() {
     // signal-hook-registry chains to whatever sigaction it finds installed.
     signal_witness::install();
     let started_at = std::time::Instant::now();
-    let pid = std::process::id().to_string();
-    let ppid = unsafe { libc::getppid() }.to_string();
-    crate::state::chorus_log(
-        "hooks.started",
-        "system",
-        &[("pid", &pid), ("ppid", &ppid), ("socket", &socket_path)],
-    )
-    .await;
+    // #4446 — the previous run's abnormal end (a kill it could not log), then this start.
+    let label = service_label();
+    // only launchd keeps a previous run for us; by hand or under a test there is none
+    let previous = service_lifecycle::launchd_label().and_then(|l| service_lifecycle::previous_run(&l));
+    let version = service_lifecycle::binary_version();
+    for (event, mut fields) in service_lifecycle::start_events(&label, std::process::id(), &version, previous.as_ref()) {
+        if event == "service.started" {
+            fields.push(("ppid", unsafe { libc::getppid() }.to_string()));
+            fields.push(("socket", socket_path.clone()));
+        }
+        emit_lifecycle(event, &fields).await;
+    }
 
-    axum::serve(listener, app)
+    if let Err(e) = axum::serve(listener, app)
         .with_graceful_shutdown(shutdown_signal(started_at))
         .await
-        .expect("Server failed");
+    {
+        fail_and_exit(&format!("serve: {e}")).await;
+    }
+}
+
+/// #4446 — launchd's label for this daemon; the same name when run by hand or by a test.
+fn service_label() -> String {
+    service_lifecycle::launchd_label().unwrap_or_else(|| "com.chorus.hooks".to_string())
+}
+
+/// #4446 — an error the daemon cannot run past: say so on the spine, then exit 1.
+async fn fail_and_exit(reason: &str) -> ! {
+    let (event, fields) = service_lifecycle::failed_event(&service_label(), std::process::id(), reason, 1);
+    emit_lifecycle(event, &fields).await;
+    eprintln!("chorus-hooks: {reason}");
+    std::process::exit(1)
+}
+
+async fn emit_lifecycle(event: &str, fields: &[(&str, String)]) {
+    let mut kvs: Vec<(&str, &str)> = fields.iter().map(|(k, v)| (*k, v.as_str())).collect();
+    if event == "service.failed" {
+        kvs.push(("level", "error"));
+    }
+    crate::state::chorus_log(event, "system", &kvs).await;
 }
 
 async fn shutdown_signal(started_at: std::time::Instant) {
@@ -277,23 +312,18 @@ async fn shutdown_signal(started_at: std::time::Instant) {
     let sender_pid = w.sender_pid.to_string();
     let sender_uid = w.sender_uid.to_string();
     let sender_comm = signal_witness::sender_comm(w.sender_pid);
-    let pid = std::process::id().to_string();
     let ppid = unsafe { libc::getppid() }.to_string();
     let uptime_s = started_at.elapsed().as_secs().to_string();
-    crate::state::chorus_log(
-        "hooks.terminating",
-        "system",
-        &[
-            ("signal", w.signal_name()),
-            ("sender_pid", &sender_pid),
-            ("sender_uid", &sender_uid),
-            ("sender_comm", &sender_comm),
-            ("pid", &pid),
-            ("ppid", &ppid),
-            ("uptime_s", &uptime_s),
-        ],
-    )
-    .await;
+    let (event, mut fields) = service_lifecycle::stop_event(&service_label(), std::process::id(), w.signal_name());
+    fields.extend([
+        ("signal", w.signal_name().to_string()),
+        ("sender_pid", sender_pid.clone()),
+        ("sender_uid", sender_uid.clone()),
+        ("sender_comm", sender_comm.clone()),
+        ("ppid", ppid),
+        ("uptime_s", uptime_s),
+    ]);
+    emit_lifecycle(event, &fields).await;
     info!(
         "Shutting down... {} from pid {} ({}) uid {}",
         w.signal_name(), sender_pid, sender_comm, sender_uid

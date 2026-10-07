@@ -1544,6 +1544,7 @@ fn deploy_ts_daemon_canonical(
         }
         let _ = fs::remove_dir_all(&dist);
         fs::rename(&prev, &dist).map_err(|e| format!("restore {} → {}: {}", prev, dist, e))?;
+        emit_rollback_stop(home, role, card, trace, &svc, "dist.prev restore");
         let _ = kickstart(); // bash parity: warn-only
         smoke().map_err(|e| died(home, role, card, trace, "smoke-timeout-rollback", e))?;
         emit_spine(home, "deploy.rolled_back", role, card, trace, &[("crate", name)]);
@@ -1686,6 +1687,7 @@ fn run_crate_mode(args: &[String]) -> R<String> {
                 .map_err(|e| format!("rollback of {} failed: {}", b, e))?;
         }
         if let Ok(TargetClass::RustService { svc, .. }) = target_class_in(&name, Path::new(&root)) {
+            emit_rollback_stop(&home, &role, card, &trace, &svc, "crate rollback");
             run_env(None, &[], "launchctl", &["kickstart", "-k", &format!("gui/{}/{}", uid(), svc)])
                 .map_err(|e| format!("kickstart {} after rollback failed: {}", svc, e))?;
             wait_for_service_up(&svc)?;
@@ -3115,8 +3117,23 @@ fn rollback(home: &Path, werk_s: &str, role: &str, card: u64, trace: &str, targe
     let _ = run_env(Some(werk_s), &[("CHORUS_ROLE", role)], &chorus_bin_install_cmd(home, werk_s), &["--target", target, "--rollback", bin]);
     if target == "canonical" {
         let svc = service_for_crate(bin);
+        emit_rollback_stop(home, role, card, trace, &svc, reason);
         let _ = run_env(None, &[], "launchctl", &["kickstart", "-k", &format!("gui/{}/{}", uid(), svc)]);
     }
+}
+
+/// #4446 — the fields of the service.stopped a rollback writes before it
+/// restarts a service. The 2026-10-06 22:23 hooks outage was a rollback that
+/// stopped the daemon and said so only in the deploy's own jsonl, never on the
+/// spine. Pure so the shape is tested without stopping anything.
+pub fn rollback_stop_fields<'a>(svc: &'a str, reason: &str) -> Vec<(&'static str, String)> {
+    vec![("service", svc.to_string()), ("reason", format!("rollback: {}", reason)), ("by", "werk-deploy".to_string())]
+}
+
+fn emit_rollback_stop(home: &Path, role: &str, card: u64, trace: &str, svc: &str, reason: &str) {
+    let fields = rollback_stop_fields(svc, reason);
+    let extras: Vec<(&str, &str)> = fields.iter().map(|(k, v)| (*k, v.as_str())).collect();
+    emit_spine(home, "service.stopped", role, card, trace, &extras);
 }
 
 #[cfg(test)]
@@ -3353,5 +3370,18 @@ mod lib_dependents_4412 {
         assert_eq!(with_lib_dependents(&t, &s(&["principal"]), &[], &edges), s(&["principal"]));
         assert!(!got.contains(&"other".to_string()) && !got.contains(&"mid".to_string()));
         let _ = fs::remove_dir_all(&t);
+    }
+}
+
+#[cfg(test)]
+mod rollback_stop_4446 {
+    use super::rollback_stop_fields;
+
+    #[test]
+    fn a_rollback_names_the_service_it_stopped_and_why() {
+        let f = rollback_stop_fields("com.chorus.hooks", "cdhash-mismatch");
+        assert!(f.contains(&("service", "com.chorus.hooks".to_string())));
+        assert!(f.contains(&("reason", "rollback: cdhash-mismatch".to_string())));
+        assert!(f.contains(&("by", "werk-deploy".to_string())));
     }
 }

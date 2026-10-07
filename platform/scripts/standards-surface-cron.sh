@@ -4,6 +4,9 @@
 #
 # Source change detection: compares sha256 of inputs against last-run checksums.
 # If nothing changed, skips regeneration (idempotent, no wasted work).
+# #4446 — a run that exits non-zero is logged as service.failed (com.chorus.standards-surface).
+. "$(dirname "${BASH_SOURCE[0]}")/lib/service-lifecycle.sh"
+service_lifecycle_job com.chorus.standards-surface "$@"
 set -euo pipefail
 CHORUS_ROOT="${CHORUS_ROOT:-/Users/jeffbridwell/CascadeProjects/chorus}"
 

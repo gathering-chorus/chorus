@@ -3,6 +3,9 @@
 # Runs every 60s via LaunchAgent. Proves the full round-trip:
 #   POST probe → GET messages → verify probe appears → emit spine event
 # Alerts on failure so Jeff knows the channel is dead before he discovers it.
+# #4446 — a run that exits non-zero is logged as service.failed (com.chorus.clearing-probe).
+. "$(dirname "${BASH_SOURCE[0]}")/lib/service-lifecycle.sh"
+service_lifecycle_job com.chorus.clearing-probe "$@"
 set -euo pipefail
 
 # #2571 — source-from-substrate replaces #1917's ${CHORUS_ROOT:-mac-path} default

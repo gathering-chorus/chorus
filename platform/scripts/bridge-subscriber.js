@@ -14,6 +14,11 @@ const BRIDGE_NODE_MODULES = `${CHORUS_ROOT}/directing/clearing/node_modules`;
 const io = require(`${BRIDGE_NODE_MODULES}/socket.io-client`);
 const fs = require('fs');
 const path = require('path');
+// #4446 — each bridge subscriber logs its own start, stop and failure.
+const { serviceLifecycle } = require('../chorus-sdk/lifecycle/service-lifecycle');
+const lifecycle = serviceLifecycle(`com.chorus.bridge-subscriber-${process.argv[2] || 'unknown'}`);
+lifecycle.started();
+process.on('uncaughtException', (e) => { lifecycle.failed(`uncaughtException: ${e.message}`, 1); process.exit(1); });
 
 const role = process.argv[2];
 if (!role || !['wren', 'silas', 'kade'].includes(role)) {
@@ -114,12 +119,14 @@ socket.on('connect_error', (err) => {
 
 // Graceful shutdown
 process.on('SIGINT', () => {
+  lifecycle.stopped('SIGINT');
   log("[bridge-subscriber] Shutting down");
   socket.close();
   process.exit(0);
 });
 
 process.on('SIGTERM', () => {
+  lifecycle.stopped('SIGTERM');
   log("[bridge-subscriber] Shutting down");
   socket.close();
   process.exit(0);

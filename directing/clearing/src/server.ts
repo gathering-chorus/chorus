@@ -940,6 +940,9 @@ messageRouter.on('message', (m: ChannelMessage) => {
 // Ensure upload directory survives /tmp cleanup across reboots
 import fs_node from 'fs';
 import { readSpineWithStats, resolveCalls, spinePath, type StreamLine } from './spine-tail';
+// #4446 — the Clearing logs its own start, stop and failure (Jeff: every service, rigorously).
+import { serviceLifecycle } from '../../../platform/chorus-sdk/lifecycle/service-lifecycle';
+
 // #4417 — configurable so a test Clearing and jest keep uploads in their own
 // world; the default is the live room's directory.
 const UPLOAD_DIR = process.env.CLEARING_UPLOAD_DIR || '/tmp/bridge-uploads';
@@ -1846,6 +1849,13 @@ if (require.main === module) {
   // not a bind question, escalated to Jeff (LAN-exception in ADR-042 §8).
   server.listen(PORT, () => {
     console.log(`The Clearing listening on http://localhost:${PORT} (also LAN :${PORT})`);
+    // Handlers are installed here, where the server actually starts, so a test
+    // that imports this module never gets exit-on-signal handlers.
+    const lifecycle = serviceLifecycle('com.chorus.clearing');
+    process.on('SIGTERM', () => { lifecycle.stopped('SIGTERM'); process.exit(0); });
+    process.on('SIGINT', () => { lifecycle.stopped('SIGINT'); process.exit(0); });
+    process.on('uncaughtException', (e: Error) => { lifecycle.failed(`uncaughtException: ${e.message}`, 1); process.exit(1); });
+    lifecycle.started();
   });
 
   // HTTPS server for LAN mic access — getUserMedia requires secure context (#1782)

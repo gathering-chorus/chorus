@@ -6,6 +6,39 @@
 use athena_make::{all_vocab_classes, dal_skeleton_ts, dashboards_json, generate, generate_product_index, generate_verb, mcp_binding, openapi_json, page_html, routes_json, serve, tests_manifest};
 use std::process::ExitCode;
 
+// #4446 — the serve daemon logs its own start, stop and failure.
+#[allow(dead_code)] // each crate uses part of the shared helper
+mod service_lifecycle {
+    include!("../../shared/service_lifecycle.rs");
+}
+mod service_stop {
+    include!("../../shared/service_stop.rs");
+}
+
+/// launchd's label (prod or staging); the prod name when run by hand.
+fn service_label() -> String {
+    service_lifecycle::launchd_label().unwrap_or_else(|| "com.chorus.athena-make".to_string())
+}
+
+/// Through chorus-log, like every other athena-make spine event (#3151).
+fn emit_lifecycle((event, fields): service_lifecycle::LifecycleEvent) {
+    let home = std::env::var("CHORUS_HOME")
+        .unwrap_or_else(|_| format!("{}/CascadeProjects/chorus", std::env::var("HOME").unwrap_or_default()));
+    let mut args = vec![format!("{home}/platform/scripts/chorus-log"), event.to_string(), "system".to_string()];
+    args.extend(fields.into_iter().map(|(k, v)| format!("{k}={v}")));
+    if event == "service.failed" {
+        args.push("--level=error".to_string());
+    }
+    let _ = std::process::Command::new("bash").args(&args).output();
+}
+
+/// The serve daemon could not run: say so, then exit 1.
+fn serve_failed(reason: &str) -> u8 {
+    eprintln!("athena-make: {}", reason);
+    emit_lifecycle(service_lifecycle::failed_event(&service_label(), std::process::id(), reason, 1));
+    1
+}
+
 fn arg(args: &[String], flag: &str, default: &str) -> String {
     args.iter().position(|a| a == flag).and_then(|i| args.get(i + 1).cloned()).unwrap_or_else(|| default.to_string())
 }
@@ -142,6 +175,15 @@ fn run(args: Vec<String>) -> u8 {
             }
         }
         Some("serve") => {
+            // #4446 — before any thread starts: the stop handler blocks SIGTERM in all of them.
+            let label = service_label();
+            let pid = std::process::id();
+            let stop_label = label.clone();
+            service_stop::on_stop(move |sig| emit_lifecycle(service_lifecycle::stop_event(&stop_label, pid, sig)));
+            let previous = service_lifecycle::launchd_label().and_then(|l| service_lifecycle::previous_run(&l));
+            for e in service_lifecycle::start_events(&label, pid, &service_lifecycle::binary_version(), previous.as_ref()) {
+                emit_lifecycle(e);
+            }
             let port: u16 = arg(&args, "--port", "3360").parse().unwrap_or(3360);
             // #3640 (ADR-051) — the serve list IS the model: mount exactly the
             // classes some domain definesVocabulary. The #3466 hardcoded candidate
@@ -165,15 +207,11 @@ fn run(args: Vec<String>) -> u8 {
                 Err(e) => eprintln!("athena-make: vocabulary read failed ({})", e),
             }
             if tables.is_empty() {
-                eprintln!("athena-make: no classes generated — nothing to serve");
-                return 1;
+                return serve_failed("no classes generated — nothing to serve");
             }
             match serve(port, &tables) {
                 Ok(()) => 0,
-                Err(e) => {
-                    eprintln!("athena-make: {}", e);
-                    1
-                }
+                Err(e) => serve_failed(&e),
             }
         }
         _ => {

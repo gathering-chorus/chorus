@@ -18,6 +18,9 @@
 #   security-scan.sh sast         semgrep only
 #   security-scan.sh sca          trivy only
 #   security-scan.sh selftest DIR semgrep the given dir (used by the negative-proof test)
+# #4446 — a run that exits non-zero is logged as service.failed (com.chorus.security-scan-weekly).
+. "$(dirname "${BASH_SOURCE[0]}")/lib/service-lifecycle.sh"
+service_lifecycle_job com.chorus.security-scan-weekly "$@"
 
 set -uo pipefail
 # The repo root to SCAN can come from CHORUS_ROOT (nightly) or default to the

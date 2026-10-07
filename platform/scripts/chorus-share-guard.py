@@ -1000,4 +1000,14 @@ if __name__ == "__main__":
     print(f"chorus-share-guard: sign-in via {ISSUER}; {len(PRINCIPALS)} WebID(s) authorized "
           f"(source={PRINCIPALS_SOURCE}). Signing in does not grant reach — the allow-set does.",
           file=sys.stderr)
-    ThreadingHTTPServer((BIND if BIND != "localhost" else "127.0.0.1", PORT), Guard).serve_forever()
+    # #4446 — the guard logs its own start, stop and failure (two labels share this file).
+    sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), "lib"))
+    from service_lifecycle import service_lifecycle
+    _lifecycle = service_lifecycle("com.chorus.share-guard")
+    try:
+        _server = ThreadingHTTPServer((BIND if BIND != "localhost" else "127.0.0.1", PORT), Guard)
+    except OSError as _e:
+        _lifecycle.failed(f"bind {BIND}:{PORT}: {_e}", 1)
+        raise SystemExit(1)
+    _lifecycle.started()
+    _server.serve_forever()

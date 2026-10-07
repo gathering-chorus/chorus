@@ -1,6 +1,9 @@
 #!/usr/bin/env bash
 # deep-health.sh — subprocess liveness, not wrapper alive (#2228)
 # Runs on 5-min cron. Alerts via nudge --force on failure.
+# #4446 — a run that exits non-zero is logged as service.failed (com.chorus.deep-health).
+. "$(dirname "${BASH_SOURCE[0]}")/lib/service-lifecycle.sh"
+service_lifecycle_job com.chorus.deep-health "$@"
 set -euo pipefail
 
 CHORUS_ROOT="${CHORUS_ROOT:-/Users/jeffbridwell/CascadeProjects/chorus}"

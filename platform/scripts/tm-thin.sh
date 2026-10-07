@@ -2,6 +2,9 @@
 # tm-thin.sh — Delete Time Machine local snapshots older than 24 hours
 # Prevents APFS container bloat on heavy-write sessions.
 # Scheduled daily via LaunchAgent com.chorus.tm-thin.
+# #4446 — a run that exits non-zero is logged as service.failed (com.chorus.tm-thin).
+. "$(dirname "${BASH_SOURCE[0]}")/lib/service-lifecycle.sh"
+service_lifecycle_job com.chorus.tm-thin "$@"
 
 set -euo pipefail
 

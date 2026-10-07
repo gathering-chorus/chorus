@@ -6,6 +6,9 @@
 #         done pair files, posture/sentiment temp files
 # Rotates: posture-timelapse/ and chorus-look/ (keep 7 days)
 # Logs: structured JSON to stdout (Promtail picks up via LaunchAgent)
+# #4446 — a run that exits non-zero is logged as service.failed (com.chorus.tmp-reaper).
+. "$(dirname "${BASH_SOURCE[0]}")/lib/service-lifecycle.sh"
+service_lifecycle_job com.chorus.tmp-reaper "$@"
 
 set -uo pipefail
 

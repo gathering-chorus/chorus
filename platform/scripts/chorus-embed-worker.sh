@@ -13,6 +13,9 @@
 # Each worker invocation processes one EMBED_PAGE_SIZE (100) page; this script
 # loops with a pause until a pass embeds 0, then exits. The LaunchAgent
 # restarts it on the next interval.
+# #4446 — a run that exits non-zero is logged as service.failed (com.chorus.embed-worker).
+. "$(dirname "${BASH_SOURCE[0]}")/lib/service-lifecycle.sh"
+service_lifecycle_job com.chorus.embed-worker "$@"
 
 set -euo pipefail
 

@@ -10,6 +10,9 @@
 # Loud on miss: logs to ~/Library/Logs/Gathering/lance-maintain.log, which
 # deep-health's DAILY_LOGS freshness check watches (25h threshold) — a skipped
 # night surfaces in the 6am ops review without any new alert plumbing.
+# #4446 — a run that exits non-zero is logged as service.failed (com.chorus.lance-maintain).
+. "$(dirname "${BASH_SOURCE[0]}")/lib/service-lifecycle.sh"
+service_lifecycle_job com.chorus.lance-maintain "$@"
 
 set -euo pipefail
 

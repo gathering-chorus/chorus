@@ -10,11 +10,11 @@
 //! registers its own. tokio goes through `signal-hook-registry`, which keeps the
 //! previous `sigaction` and chains to it, so both run: ours records `si_pid` /
 //! `si_uid` into atomics (async-signal-safe: a store, nothing else), tokio's wakes
-//! the graceful-shutdown future, and `main.rs` emits `hooks.terminating` with the
+//! the graceful-shutdown future, and `main.rs` emits `service.stopped` (#4446) with the
 //! sender before exit.
 //!
 //! What this can NOT see, stated honestly (AC2): SIGKILL is uncatchable — a hard
-//! kill leaves no `hooks.terminating` at all. The *absence* of the event after a
+//! kill leaves no `service.stopped` at all. The *absence* of the event after a
 //! death is itself the signal: nobody asked nicely. The negative-proof bats
 //! (`4025-hooks-terminating-witness.bats`) shows both halves.
 
