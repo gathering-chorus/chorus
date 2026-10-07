@@ -12,7 +12,7 @@
 #   alert-delivery-test.sh --path deep-health    # test deep-health only
 #
 # Exit codes: 0 = both paths delivered, 1 = delivery failure
-# #4446 — a run that exits non-zero is logged as service.failed (com.chorus.alert-delivery-test).
+# #4446 — each run logs service.started, then service.stopped or service.failed (com.chorus.alert-delivery-test).
 . "$(dirname "${BASH_SOURCE[0]}")/lib/service-lifecycle.sh"
 service_lifecycle_job com.chorus.alert-delivery-test "$@"
 

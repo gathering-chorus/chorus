@@ -6,7 +6,7 @@
 # /Users/jeffbridwell/CascadeProjects/chorus/.mcp.json). When the file changes,
 # all role Claude Code sessions need to restart to pick up the new tools/list.
 # Without this herald, a tool addition would silently fail to reach roles.
-# #4446 — a run that exits non-zero is logged as service.failed (com.chorus.mcp-config-herald).
+# #4446 — each run logs service.started, then service.stopped or service.failed (com.chorus.mcp-config-herald).
 . "$(dirname "${BASH_SOURCE[0]}")/lib/service-lifecycle.sh"
 service_lifecycle_job com.chorus.mcp-config-herald "$@"
 

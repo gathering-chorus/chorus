@@ -5,7 +5,7 @@
 #
 # Usage: health-check-bedroom.sh [--card]
 #   --card: create board cards for failures (default: just report)
-# #4446 — a run that exits non-zero is logged as service.failed (com.chorus.bedroom-health).
+# #4446 — each run logs service.started, then service.stopped or service.failed (com.chorus.bedroom-health).
 . "$(dirname "${BASH_SOURCE[0]}")/lib/service-lifecycle.sh"
 service_lifecycle_job com.chorus.bedroom-health "$@"
 

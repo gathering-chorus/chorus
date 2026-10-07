@@ -92,9 +92,10 @@ freshness_lines() {
   run freshness_lines
   [[ "$output" == *"com.chorus.probe.log"* ]] || { echo "ASSERT FAILED: [[ '$output' == *'com.chorus.probe.log'* ]]"; return 1; }
   [[ "$output" == *"stale"* ]] || { echo "ASSERT FAILED: [[ '$output' == *'stale'* ]]"; return 1; }
-  # and it must be a failure, not a warning: the script exits 1 on degraded
+  # and it must be a failure, not a warning. #4446: the run itself succeeds
+  # (exit 0); the finding is recorded as degraded in health.json below
   run bash "$SCRIPT"
-  [ "$status" -eq 1 ] || { echo "ASSERT FAILED: [ '$status' -eq 1 ]"; return 1; }
+  [ "$status" -eq 0 ] || { echo "ASSERT FAILED: [ '$status' -eq 0 ]"; return 1; }
   grep -q '"status":"degraded"' "$W/health.json"
   grep -q 'com.chorus.probe.log' "$W/health.json"
   # the finding must be in details (failures), never in warnings

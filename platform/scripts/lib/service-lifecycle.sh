@@ -11,9 +11,9 @@
 #       previous run's kill (read from launchd), which no process can log itself.
 #
 #   service_lifecycle_job com.chorus.deep-health "$@"
-#       scheduled job: service.failed when a run exits non-zero, nothing when it
-#       succeeds. A 15-second job logging every run would write 11,520 lines a
-#       day saying it ran; launchd keeps the run count.
+#       scheduled job: service.started when a run begins, service.stopped when
+#       it exits 0, service.failed when it exits non-zero (Jeff, 2026-10-07:
+#       every start and stop, not failures only).
 #
 # The label argument is the name used when launchd did not start the script
 # (XPC_SERVICE_NAME unset: by hand, or under a test). The daemon form installs
@@ -24,7 +24,9 @@ _sl_emit() {  # _sl_emit <event> key=value...
   local home="${CHORUS_HOME:-$HOME/CascadeProjects/chorus}"
   local level=()
   [ "$1" = service.failed ] && level=(--level=error)
-  bash "$home/platform/scripts/chorus-log" "$1" system "${@:2}" "${level[@]}" >/dev/null 2>&1 || true
+  # ${level[@]+...}: bash 3.2 calls an empty array unbound under `set -u`, and
+  # most job scripts that source this run with set -u
+  bash "$home/platform/scripts/chorus-log" "$1" system "${@:2}" ${level[@]+"${level[@]}"} >/dev/null 2>&1 || true
 }
 
 # launchd's label when launchd started this script (parent pid 1); everything a
@@ -89,10 +91,16 @@ service_lifecycle_job() {  # service_lifecycle_job <label> "$@"
   [ -n "$(_sl_launchd_label)" ] || return 0
   # sourced by another script (a test, a helper): $0 is the caller, not this job
   [ "${BASH_SOURCE[1]:-$0}" = "$0" ] || return 0
-  "$BASH" "$0" "$@"
-  local rc=$?
+  local version; version="$(shasum -a 256 "$0" 2>/dev/null | cut -c1-12)"
+  _sl_emit service.started "service=$XPC_SERVICE_NAME" "pid=$$" "version=${version:-unknown}"
+  # `|| rc=$?`: under the job's own `set -e` a bare failing child would end
+  # this parent before the failure is logged
+  local rc=0
+  "$BASH" "$0" "$@" || rc=$?
   if [ "$rc" != 0 ]; then
     _sl_emit service.failed "service=$XPC_SERVICE_NAME" "pid=$$" "reason=exited $rc" "exit_code=$rc"
+  else
+    _sl_emit service.stopped "service=$XPC_SERVICE_NAME" "pid=$$" "reason=exit 0"
   fi
   exit "$rc"
 }

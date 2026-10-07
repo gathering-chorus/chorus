@@ -3,7 +3,7 @@
 # Runs every 60s via LaunchAgent. Proves the full round-trip:
 #   POST probe → GET messages → verify probe appears → emit spine event
 # Alerts on failure so Jeff knows the channel is dead before he discovers it.
-# #4446 — a run that exits non-zero is logged as service.failed (com.chorus.clearing-probe).
+# #4446 — each run logs service.started, then service.stopped or service.failed (com.chorus.clearing-probe).
 . "$(dirname "${BASH_SOURCE[0]}")/lib/service-lifecycle.sh"
 service_lifecycle_job com.chorus.clearing-probe "$@"
 set -euo pipefail
@@ -42,7 +42,7 @@ HTTP_CODE=$(curl -s -o /dev/null -w '%{http_code}' \
 if [ "$HTTP_CODE" != "200" ]; then
   log "FAIL: POST returned $HTTP_CODE"
   "$CHORUS_LOG" clearing.probe.failed "$ROLE" "stage=post" "http=$HTTP_CODE" 2>/dev/null || true
-  exit 1
+  exit 0  # #4446 — a finding, not a failed run: clearing.probe.failed above is the record
 fi
 
 # Step 2: Verify the probe appears in message history
@@ -63,5 +63,5 @@ else
   _probe_unmeasurable_if_loaded "verify"
   log "FAIL: probe not found in messages after ${MAX_WAIT}s"
   "$CHORUS_LOG" clearing.probe.failed "$ROLE" "stage=verify" "timeout=${MAX_WAIT}s" 2>/dev/null || true
-  exit 1
+  exit 0  # #4446 — a finding, not a failed run
 fi

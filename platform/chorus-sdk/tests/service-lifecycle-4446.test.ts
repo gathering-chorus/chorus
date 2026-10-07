@@ -2,7 +2,7 @@
 // @test-type: unit
 // #4446 — the node twin of shared/service_lifecycle.rs: same events, same rule
 // for a kill the service could not log. Fixtures are real `launchctl print`.
-import { parseLastExit, startEvents, stopEvent, failedEvent, launchdLabel } from '../lifecycle/service-lifecycle';
+import { parseLastExit, startEvents, stopEvent, failedEvent, exitEvent, launchdLabel } from '../lifecycle/service-lifecycle';
 
 const KILLED = 'gui/501/com.chorus.api = {\n\truns = 15\n\tpid = 52021\n\tlast terminating signal = Killed: 9\n\tendpoints = {\n\t\tlast exit code = 0\n\t}\n}';
 const TERMINATED = 'gui/501/com.chorus.api = {\n\truns = 15\n\tlast terminating signal = Terminated: 15\n}';
@@ -51,4 +51,17 @@ describe('service lifecycle (#4446)', () => {
     expect(launchdLabel()).toBeNull();
     if (saved === undefined) delete process.env.XPC_SERVICE_NAME; else process.env.XPC_SERVICE_NAME = saved;
   });
+});
+
+// #4446 round 2 — error handling: an exit the service did not log itself.
+describe('an exit the service did not log', () => {
+  it('a non-zero exit is service.failed with its code; exit 0 is a stop', () => {
+    expect(exitEvent('s', 1, 3, false)).toEqual(failedEvent('s', 1, 'exited 3', 3));
+    expect(exitEvent('s', 1, 0, false)).toEqual(stopEvent('s', 1, 'exit 0'));
+  });
+
+  it('NEGATIVE PROOF: an end the service already logged is not logged twice', () => {
+    expect(exitEvent('s', 1, 1, true)).toBeNull();
+  });
+
 });

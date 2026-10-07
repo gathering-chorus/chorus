@@ -3,7 +3,7 @@
 # Cron: 6am ET via LaunchAgent. Produces a brief with codebase weather,
 # trust verification, signal-to-noise, doc freshness, backlog coherence,
 # sequence health, and golfball detection.
-# #4446 — a run that exits non-zero is logged as service.failed (com.chorus.daily-signal-scan).
+# #4446 — each run logs service.started, then service.stopped or service.failed (com.chorus.daily-signal-scan).
 . "$(dirname "${BASH_SOURCE[0]}")/lib/service-lifecycle.sh"
 service_lifecycle_job com.chorus.daily-signal-scan "$@"
 set -euo pipefail

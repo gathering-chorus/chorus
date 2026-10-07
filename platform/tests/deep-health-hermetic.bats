@@ -65,9 +65,12 @@ GRD
   [[ "$output" == "SUMMARY reached (exit=7 code=000)" ]] || return 1
 }
 
-@test "every probe refused: the script prints a summary, names each DOWN endpoint, exits nonzero" {
+# #4446 — a run that FINDS problems is a successful run: it exits 0 and its
+# findings are the record (health.json + ops.health.deep_check_failed). Only a
+# run that dies is a failed run (service.failed), the negative proof below.
+@test "every probe refused: the script prints a summary, names each DOWN endpoint, exits 0 with the findings recorded" {
   run bash "$DEEP_HEALTH"
-  [ "$status" -ne 0 ] || return 1
+  [ "$status" -eq 0 ] || return 1
   [ -n "$output" ] || return 1
   [[ "$output" == *"deep-health: "*"failure(s)"* ]] || return 1
   for n in fixture-a fixture-b fixture-c; do

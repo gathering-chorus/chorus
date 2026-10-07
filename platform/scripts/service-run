@@ -1,0 +1,49 @@
+#!/usr/bin/env bash
+# #4446 round 2 — a service whose own code we cannot (or should not) edit still
+# logs its start, stop and failure: launchd runs it through this wrapper.
+#
+#   service-run <label> <job|daemon> <command> [args...]
+#
+# Logs service.started, runs the command as a child, then service.stopped on
+# exit 0 or on SIGTERM/SIGINT (passed on to the child), service.failed with the
+# exit code otherwise, and exits with the child's code. `daemon` also reports a
+# previous run that launchd saw end abnormally (a kill -9 no process can log).
+# Used for the plists whose program is an inline `bash -c`, a binary with no
+# source here, ssh, or a script in another repo (shared-observability,
+# jeff-bridwell-personal-site). Same events and fields as the four helpers.
+set -u
+. "$(dirname "${BASH_SOURCE[0]}")/lib/service-lifecycle.sh"
+
+[ $# -ge 3 ] || { echo "usage: service-run <label> <job|daemon> <command> [args...]" >&2; exit 64; }
+label="$(_sl_label "$1")"; mode="$2"; shift 2
+
+if [ "$mode" = daemon ] && [ -n "$(_sl_launchd_label)" ]; then
+  prev="$(_sl_previous_end "$(launchctl print "gui/$(id -u)/$label" 2>/dev/null)")"
+  [ -n "$prev" ] && _sl_emit service.failed "service=$label" "reason=previous run ended abnormally" "$prev"
+fi
+cmd="$(command -v "$1" || printf '%s' "$1")"
+version="$(shasum -a 256 "$cmd" 2>/dev/null | cut -c1-12)"
+_sl_emit service.started "service=$label" "pid=$$" "version=${version:-unknown}"
+
+stop_reason=""
+on_signal() { stop_reason="$1"; kill "-${1#SIG}" "$child" 2>/dev/null; }
+trap 'on_signal SIGTERM' TERM
+trap 'on_signal SIGINT' INT
+
+"$@" &
+child=$!
+# wait returns early when a trapped signal arrives; keep waiting for the child
+while :; do
+  wait "$child"; rc=$?
+  kill -0 "$child" 2>/dev/null || break
+done
+
+if [ -n "$stop_reason" ]; then
+  _sl_emit service.stopped "service=$label" "pid=$$" "reason=$stop_reason"
+  exit 0
+elif [ "$rc" = 0 ]; then
+  _sl_emit service.stopped "service=$label" "pid=$$" "reason=exit 0"
+else
+  _sl_emit service.failed "service=$label" "pid=$$" "reason=exited $rc" "exit_code=$rc"
+fi
+exit "$rc"
