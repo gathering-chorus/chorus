@@ -20,7 +20,7 @@ import {
 export interface ContextFreshnessDeps {
   sparql: StampSparqlClient;
   /** Runs the underlying /api/chorus/freshness handler. Returns its shape. */
-  runFreshness: () => { status: number; body: unknown };
+  runFreshness: () => Promise<{ status: number; body: unknown }>;
 }
 
 export interface ContextFreshnessResponse {
@@ -32,7 +32,7 @@ export async function fetchContextFreshness(
   deps: ContextFreshnessDeps,
   sourceUrl: string,
 ): Promise<ContextFreshnessResponse> {
-  const inner = deps.runFreshness();
+  const inner = await deps.runFreshness();
   if (inner.status !== 200) {
     return { status: inner.status, body: inner.body as { error: string } };
   }
