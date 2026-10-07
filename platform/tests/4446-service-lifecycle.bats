@@ -427,6 +427,14 @@ plist_args() {  # plist_args <file> <program...> — a minimal plist with these 
   [[ "$output" == *"com.chorus.athena-make — runs a build artifact"* ]] || return 1
 }
 
+@test "a card's demo variant running its werk's build is not a build-artifact failure" {
+  mkdir -p "$FIXHOME/agents"
+  plist_args "$FIXHOME/agents/com.chorus.athena-make.werk.kade.plist" "$TREE/platform/services/athena-make/target/release/athena-make"
+  run env SERVICE_WIRING_AGENTS="$FIXHOME/agents" bash "$TREE/platform/tests/4446-every-service-logs-its-lifecycle.test.sh"
+  echo "$output"
+  [[ "$output" != *"runs a build artifact"* ]] || return 1
+}
+
 @test "a WRAP service before service-run is installed is PENDING: not wired, not red" {
   mkdir -p "$FIXHOME/agents"
   plist_args "$FIXHOME/agents/com.chorus.y.plist" /bin/bash -c 'echo hi'

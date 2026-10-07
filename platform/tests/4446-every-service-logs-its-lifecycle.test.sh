@@ -103,7 +103,8 @@ for plist in "$AGENTS"/com.chorus.*.plist; do
   base="${label%%.werk.*}"
   row="$(printf '%s\n' "$TABLE" | awk -F'\t' -v l="$base" '$1==l {print $2; exit}')"
   prog="$(/usr/libexec/PlistBuddy -c 'Print :ProgramArguments:0' "$plist" 2>/dev/null)"
-  if [[ "$prog" == */target/release/* ]]; then
+  # a card's demo variant (<svc>.werk.<role>) runs its werk's own build on purpose
+  if [[ "$prog" == */target/release/* && "$label" != *.werk.* ]]; then
     # #4446 reopen: heartbeat ran the build artifact; a rebuild on 10-06 changed
     # its signature and launchd refused to start it (exit 78) — no process, no event
     echo "FAIL: $label — runs a build artifact ($prog); run the installed copy in ~/.chorus/bin"
