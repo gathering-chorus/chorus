@@ -44,3 +44,18 @@ pub fn content_hash(text: &str) -> String {
     let hex = format!("{:x}", h.finalize());
     hex[..16].to_string()
 }
+
+/// #4445 — the reply a turn ended with: Claude's last assistant text from its
+/// transcript file, or — for Gemini, which has no transcript file — the reply
+/// its AfterAgent hook hands over (prompt_response).
+pub fn reply_text(raw: &serde_json::Value) -> Option<String> {
+    raw.get("transcript_path")
+        .and_then(|v| v.as_str())
+        .and_then(crate::hooks::inject_force::last_assistant_text)
+        .or_else(|| {
+            raw.get("prompt_response")
+                .and_then(|v| v.as_str())
+                .filter(|t| !t.trim().is_empty())
+                .map(str::to_string)
+        })
+}

@@ -1,12 +1,15 @@
 use serde::{Deserialize, Serialize};
 
 /// Role detection from working directory
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "lowercase")]
 pub enum Role {
     Wren,
     Silas,
     Kade,
+    /// #4445 — any other agent role the login names (Abby). Was collapsed to
+    /// Unknown, so her activity and decisions logged as role=unknown (10-06 19:50).
+    Other(String),
     Unknown,
 }
 
@@ -57,12 +60,27 @@ impl Role {
         }
     }
 
-    pub fn as_str(&self) -> &'static str {
+    pub fn as_str(&self) -> &str {
         match self {
             Role::Wren => "wren",
             Role::Silas => "silas",
             Role::Kade => "kade",
+            Role::Other(name) => name.as_str(),
             Role::Unknown => "unknown",
+        }
+    }
+
+    /// #4445 — a role name a login or the agent socket hands us. The three
+    /// Claude roles keep their variants; any other well-formed name is that role.
+    pub fn named(name: &str) -> Option<Role> {
+        match name {
+            "silas" => Some(Role::Silas),
+            "wren" => Some(Role::Wren),
+            "kade" => Some(Role::Kade),
+            "" | "unknown" => None,
+            n if n.bytes().next().is_some_and(|b| b.is_ascii_lowercase())
+                && n.bytes().all(|b| b.is_ascii_lowercase() || b.is_ascii_digit() || b == b'-') => Some(Role::Other(n.to_string())),
+            _ => None,
         }
     }
 }
@@ -113,13 +131,8 @@ pub struct HookInput {
 impl HookInput {
     pub fn role(&self) -> Role {
         // Check deploy_role field injected by shim (#1714) — CWD detection fails from app dir
-        if let Some(ref dr) = self.deploy_role {
-            match dr.as_str() {
-                "silas" => return Role::Silas,
-                "wren" => return Role::Wren,
-                "kade" => return Role::Kade,
-                _ => {}
-            }
+        if let Some(role) = self.deploy_role.as_deref().and_then(Role::named) {
+            return role;
         }
         // #4004 — before falling back to a directory string, ask who SPAWNED us.
         // A subagent carries none of its parent's environment, so DEPLOY_ROLE is

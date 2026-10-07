@@ -908,7 +908,7 @@ pub async fn check(input: &HookInput, state: &AppState) -> HookResponse {
         return HookResponse::allow();
     }
 
-    let role_name = format!("{:?}", input.role()).to_lowercase();
+    let role_name = input.role().as_str().to_string();
     // #3187: chorus search query is the top-2 significant keywords (the search ANDs
     // them), NOT all 6 - which over-constrained to 0. Memory below uses the full set.
     let query = search_query(&keywords);

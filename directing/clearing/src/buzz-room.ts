@@ -17,10 +17,20 @@
 
 import { buildNote, type ClearingMsg, type NostrEvent, type NostrSigner } from './buzz-bridge';
 import { registeredPubkey, registeredSigner } from './buzz-signer';
+import { roomRoles } from './room-roles';
 
-/** The actors with derived keys in the test-drive. */
-export const ROOM_ACTORS = ['jeff', 'wren', 'silas', 'kade'] as const;
-export type RoomActor = typeof ROOM_ACTORS[number];
+/** An actor is a Role row's name (jeff, wren, abby-normal, ...). */
+export type RoomActor = string;
+
+/**
+ * #4445 — who can speak in the room is the room's role list (room-roles.ts, fed
+ * from the roles service by the tile poller) plus Jeff, read when a note arrives,
+ * never a list typed here. The old jeff/wren/silas/kade list dropped Abby's notes
+ * as an unknown pubkey even after she had a key. One reader, not two.
+ */
+export function roomActors(): RoomActor[] {
+  return ['jeff', ...roomRoles()];
+}
 
 export interface RoomIdentity {
   /** hex pubkey → actor name. The only way an incoming note gets attributed. */
@@ -38,7 +48,7 @@ export interface IdentitySources {
 }
 
 export function buildRoomIdentity(
-  actors: readonly string[] = ROOM_ACTORS,
+  actors: readonly string[] | (() => readonly string[]) = roomActors,
   sources: IdentitySources = {},
 ): RoomIdentity {
   // #3910 — attribution reads REGISTERED pubkeys, and the room signs as ONE
@@ -54,16 +64,30 @@ export function buildRoomIdentity(
   // running machine's ~/.chorus identity files.
   const pubkeyFor = sources.pubkeyFor ?? ((a: string) => registeredPubkey(a));
   const serviceSigner = sources.serviceSigner ?? (() => registeredSigner('bridge'));
-  const byPubkey = new Map<string, RoomActor>();
-  for (const actor of actors) {
-    const pubkey = pubkeyFor(actor);
-    // An actor with no minted key is simply unattributable. Skipping is right:
-    // inventing a placeholder would let an unknown key render as a role.
-    if (pubkey) byPubkey.set(pubkey, actor as RoomActor);
-  }
+  const listActors = typeof actors === 'function' ? actors : () => actors;
+  // Rebuilt when the role list changes, so a role added to the roles service is
+  // attributed without restarting the room (the list is empty until the tile
+  // poller first answers, and nothing is guessed meanwhile).
+  let seen = '';
+  let byPubkey = new Map<string, RoomActor>();
+  const current = (): Map<string, RoomActor> => {
+    const list = listActors();
+    const key = list.join(',');
+    if (key !== seen) {
+      seen = key;
+      byPubkey = new Map<string, RoomActor>();
+      for (const actor of list) {
+        const pubkey = pubkeyFor(actor);
+        // An actor with no minted key is simply unattributable. Skipping is right:
+        // inventing a placeholder would let an unknown key render as a role.
+        if (pubkey) byPubkey.set(pubkey, actor);
+      }
+    }
+    return byPubkey;
+  };
   const bridge = serviceSigner();
   return {
-    byPubkey,
+    get byPubkey() { return current(); },
     // The room signs as the bridge, whoever is speaking. Authorship of a message
     // is carried by the publisher that made it, not by this connection.
     signerFor: () => bridge,
