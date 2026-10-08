@@ -1153,6 +1153,15 @@ fn end_run(ctx: &Ctx, role: &str, reason: &str) {
 /// the identity owner (`writer`) with `chorus-principal credentials <role>`,
 /// never by a login as the role — the security graph is closed to role grants
 /// (#4204), and a login rewrote these every time because the token rotates.
+/// #4455 — who writes a role's Credential rows: the caller's own CHORUS_ROLE.
+/// No role set is refused (exit 2), never defaulted to a teammate (#3959).
+pub fn credentials_writer(role: Option<String>) -> Result<String, i32> {
+    match role.filter(|w| !w.trim().is_empty()) {
+        Some(w) => Ok(w),
+        None => { eprintln!("chorus-principal: REFUSED — credentials needs CHORUS_ROLE (the writer); none is set"); Err(2) }
+    }
+}
+
 fn record_credentials(ctx: &Ctx, role: &str, writer: &str) -> i32 {
     let dir = PathBuf::from(&ctx.identity_dir).join(role);
     let mtimes: Vec<(String, String)> = ["cred.json", "nostr.json", "token.cache"].iter().filter_map(|f| {
@@ -1827,7 +1836,8 @@ pub fn run(args: &[String]) -> i32 {
         },
         "sweep" => sweep(&ctx),
         // #4447 — the identity owner writes a role's Credential rows, once
-        "credentials" => match role_arg(1) { Ok(r) => record_credentials(&ctx, &r, &env::var("CHORUS_ROLE").unwrap_or_else(|_| "silas".into())), Err(c) => c },
+        // #4455 — the writer is the caller's own role; none set is refused, never a teammate's name
+        "credentials" => match (role_arg(1), credentials_writer(env::var("CHORUS_ROLE").ok())) { (Ok(r), Ok(w)) => record_credentials(&ctx, &r, &w), (Err(c), _) | (_, Err(c)) => c },
         // #4340 — messages.db into the model, one pass; run by com.chorus.messages-project
         "project-messages" => project_messages(&ctx),
         // #4345 — Jeff, 2026-09-27: login/logout is the convention; on/off stay as aliases.

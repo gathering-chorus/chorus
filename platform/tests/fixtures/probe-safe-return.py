@@ -13,7 +13,7 @@ somebody else's site, with our domain in the link the victim clicked.
 import sys
 
 guard = sys.argv[1]
-ns = {"__name__": "probe"}
+ns = {"__name__": "probe", "__file__": guard}  # #4455: the guard finds its lib/ from __file__ (#4446)
 exec(compile(open(guard).read().split("ALLOW, ALLOW_SOURCE = load_allow()")[0], "guard", "exec"), ns)
 safe_return = ns["safe_return"]
 # #3796 — a refusal now falls back to the guard's LANDING page, not "/". Comparing

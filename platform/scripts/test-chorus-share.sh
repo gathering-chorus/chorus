@@ -34,7 +34,7 @@ trap cleanup EXIT
 mkdir -p "$TEST_ROOT/www/about" "$TEST_ROOT/www/secret"
 echo "public page" > "$TEST_ROOT/www/about/x.html"
 echo "not shared" > "$TEST_ROOT/www/secret/y.html"
-(cd "$TEST_ROOT/www" && python3 -m http.server "$UP_PORT" >/dev/null 2>&1) &
+(cd "$TEST_ROOT/www" && exec python3 -m http.server "$UP_PORT" >/dev/null 2>&1) &
 UP_PID=$!
 
 # #3770 — the guard authenticates people, so the harness needs an identity world:
@@ -249,7 +249,7 @@ UP2_PORT=$(pick_port)
 mkdir -p "$TEST_ROOT/www2/about" "$TEST_ROOT/www2/athena"
 echo "FROM-UPSTREAM-TWO" > "$TEST_ROOT/www2/about/x.html"
 echo "athena page"       > "$TEST_ROOT/www2/athena/model.html"
-(cd "$TEST_ROOT/www2" && python3 -m http.server "$UP2_PORT" >/dev/null 2>&1) &
+(cd "$TEST_ROOT/www2" && exec python3 -m http.server "$UP2_PORT" >/dev/null 2>&1) &
 UP2_PID=$!
 wait_up "$UP2_PORT" "stub upstream" "" || exit 1
 
@@ -660,7 +660,7 @@ OP_ROOT=$(mktemp -d)
 echo "ER-PAGE" > "$OP_ROOT/chorus-er-diagram.html"
 echo "SIBLING-UNREVIEWED" > "$OP_ROOT/chorus-hook-architecture.html"
 OUP_PORT=$(pick_port); OG_PORT=$(pick_port)
-(cd "$OP_ROOT" && python3 -m http.server "$OUP_PORT" >/dev/null 2>&1) &
+(cd "$OP_ROOT" && exec python3 -m http.server "$OUP_PORT" >/dev/null 2>&1) &
 OUP_PID=$!
 wait_up "$OUP_PORT" "ontology upstream" "" || exit 1
 SHARE_UPSTREAM="http://127.0.0.1:$OUP_PORT" \

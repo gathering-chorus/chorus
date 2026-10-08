@@ -24,8 +24,9 @@ wrong_key = "--wrong-key" in sys.argv
 # Execute only the definitions — everything before module-level configuration,
 # which would read policy files and exit.
 src = open(guard).read().split("ALLOW, ALLOW_SOURCE = load_allow()")[0]
-ns = {"__name__": "vectors"}
-exec(compile(src, "guard", "exec"), ns)
+# #4455: the guard finds its lib/ from __file__ (#4446), so the slice needs one.
+ns = {"__name__": "vectors", "__file__": guard}
+exec(compile(src, guard, "exec"), ns)
 
 fx = json.load(open(vectors))
 now = fx["now"]
