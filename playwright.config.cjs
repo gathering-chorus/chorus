@@ -32,8 +32,7 @@ module.exports = {
   // would sign the same account in and out from under each other.
   workers: 1,
   fullyParallel: false,
-  // #4454 — the list for werk-test to read; each case's start and end on the trace
-  reporter: [['list'], ['./proving/flows/lib/case-events-reporter.cjs']],
+  reporter: [['list']],
   use: {
     baseURL: process.env.FLOW_BASE || 'https://lightlifeurbangardens.com',
     ignoreHTTPSErrors: false,

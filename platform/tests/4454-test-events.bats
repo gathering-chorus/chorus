@@ -12,7 +12,7 @@
 # Covers: proving/flows/lib/own-clearing.cjs
 # Covers: proving/flows/lib/case-events-reporter.cjs
 # Covers: platform/tests/lib/jest-case-events-reporter.cjs
-# Covers: playwright.config.cjs
+# Covers: platform/services/werk-test/src/main.rs
 # Covers: platform/scripts/shim-wrapper.sh
 
 setup() {

@@ -3582,6 +3582,10 @@ pub fn unit_cost_report(costs: &[(String, f64)]) -> String {
     out
 }
 
+/// #4454 — the playwright reporter that logs each spec case's start and end
+/// to `$CHORUS_TEST_EVENTS`. Relative to the werk root, where playwright runs.
+pub const PLAYWRIGHT_CASE_REPORTER: &str = "./proving/flows/lib/case-events-reporter.cjs";
+
 /// #3920 — the registered browser-lane files (testConcern=ui), deduped+sorted.
 pub fn ui_files(rows: &[TestRow]) -> std::collections::BTreeSet<String> {
     rows.iter()

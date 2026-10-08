@@ -1325,12 +1325,15 @@ fn run_nightly(args: &[String]) -> Result<i32, String> {
         // ── ui: the playwright flows (was an outer leg, #4278) ──
         if ui_here {
             let cmd = std::env::var("NIGHTLY_PLAYWRIGHT_CMD")
-                .unwrap_or_else(|_| "npx --no-install playwright test --reporter=line".to_string());
+                .unwrap_or_else(|_| format!("npx --no-install playwright test --reporter=line,{}", werk_test::PLAYWRIGHT_CASE_REPORTER));
             let mut c = Command::new("bash");
             c.arg("-c").arg(&cmd).current_dir(&root)
                 .env("CHORUS_CONTEXT", "")
+                // #4454 — the specs' own events ride the trace like every other unit's
+                .env("CHORUS_TEST_EVENTS", test_events_path(&root))
                 .env("CLEARING_URL", std::env::var("CLEARING_URL").unwrap_or_else(|_| "http://localhost:3470".to_string()));
             let (rc, out) = werk_test::time_unit("proving/flows", || werk_test::run_capped(c, std::time::Duration::from_secs(1800)));
+            forward_test_events(&root);
             let (verdict, summary) = werk_test::ui_lane_verdict(rc, &out);
             werk_test::print_unit_time("ui", "proving/flows", "proving/flows");
             println!("nightly-unit|ui|proving/flows|{}|{}", verdict, summary);
@@ -3007,6 +3010,10 @@ fn run_ui_flows(werk: &str, files: &std::collections::BTreeSet<String>, quaranti
     ensure_ui_service_built(werk, "directing/clearing", "dist/server.js");
     let mut cmd = Command::new("npx");
     cmd.arg("playwright").arg("test");
+    // #4454 — list stays the output werk-test reads; the second reporter puts each
+    // case's start and end on the trace. Passed here, not in the root config, so
+    // the nightly's `--reporter=line` gets it too.
+    cmd.arg(format!("--reporter=list,{}", werk_test::PLAYWRIGHT_CASE_REPORTER));
     // #4045 — honour the quarantine here too, not only in run_cargo. Visible: the
     // pattern is printed, so a skipped spec is never a silent absence (#3443).
     let mut excluded = String::new();
