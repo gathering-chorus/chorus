@@ -17,7 +17,8 @@
 
 import { buildNote, type ClearingMsg, type NostrEvent, type NostrSigner } from './buzz-bridge';
 import { registeredPubkey, registeredSigner } from './buzz-signer';
-import { roomRoles } from './room-roles';
+import { roomRoles, isTailedRole } from './room-roles';
+import { REPLY_TAG } from './room-replay';
 
 /** An actor is a Role row's name (jeff, wren, abby-normal, ...). */
 export type RoomActor = string;
@@ -139,7 +140,7 @@ export interface InboundResult {
   /** The message to hand the Clearing router, or null if it should not render. */
   msg: ClearingMsg | null;
   /** Why, in the caller's words — for logs and for the refusal to name its state. */
-  disposition: 'rendered' | 'unknown-key' | 'own-echo' | 'empty';
+  disposition: 'rendered' | 'unknown-key' | 'own-echo' | 'empty' | 'tailed';
 }
 
 /**
@@ -159,6 +160,10 @@ export function inboundToClearing(
   if (!ev.content || !ev.content.trim()) return { msg: null, disposition: 'empty' };
   const author = authorOf(ev, identity);
   if (author === null) return { msg: null, disposition: 'unknown-key' };
+  // #4445 — a tailed role's reply already reaches the Clearing from its transcript;
+  // rendering its reply note too would show every reply twice.
+  const isReply = ev.tags.some((t) => t[0] === 't' && t[1] === REPLY_TAG);
+  if (isReply && isTailedRole(author)) return { msg: null, disposition: 'tailed' };
   return {
     msg: {
       from: author,

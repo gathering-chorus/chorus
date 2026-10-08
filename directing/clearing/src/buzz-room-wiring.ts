@@ -66,6 +66,13 @@ export interface RoomWiringDeps {
    *  their author, the socket is authenticated by whoever is running it. */
   authAs?: string;
   connect?: (url: string, opts?: unknown) => WebSocket;
+  /** #4445 — a demo variant reads the live relay but must never write to it:
+   *  no notes published, and no replay cursor written over the live room's. */
+  readOnly?: boolean;
+  /** #4445 — resolves once the room's role list has been read. The room dials
+   *  only after it: the replay arrives within a second of connecting, and a note
+   *  whose author is not yet in the list is dropped as an unknown key. */
+  rolesReady?: Promise<unknown>;
   /** #3893 — where the replay cursor persists. Injected so a test brings its
    *  own world instead of writing into the running role's ~/.chorus. */
   cursorFile?: string;
@@ -159,12 +166,13 @@ function handleInbound(st: RoomState, ev: NostrEvent): void {
     const next = advanceCursor(st.cursor, ev.created_at);
     if (next !== st.cursor) {
       st.cursor = next;
-      if (next !== null) writeCursor(st.cursorFile, next);
+      if (next !== null && !st.deps.readOnly) writeCursor(st.cursorFile, next);
     }
     announceHoles(st, msg.from, ev);
     return;
   }
-  if (disposition !== 'own-echo') {
+  // 'tailed' is the normal case for every wren/silas/kade reply — not worth a line each.
+  if (disposition !== 'own-echo' && disposition !== 'tailed') {
     st.deps.log('info', 'buzz.room.not_rendered', { disposition, pubkey: ev.pubkey.slice(0, 8) });
   }
 }
@@ -297,11 +305,19 @@ export function startRoom(deps: RoomWiringDeps): RoomWiring {
   const dialOpts = dialOptions(deps.relayHost);
   const connect = deps.connect ?? ((url: string, opts?: unknown) => new WebSocket(url, opts as never));
   st.dialOpts = dialOpts;
-  connectRoom(st, connect);
+  if (deps.rolesReady) {
+    // A failed read still dials: a room that never connects is worse than one
+    // that cannot yet name a sender (each drop is logged as unknown-key).
+    const dial = () => { if (!st.stopped) connectRoom(st, connect); };
+    void deps.rolesReady.then(dial, dial);
+  } else {
+    connectRoom(st, connect);
+  }
 
   return {
     enabled: true,
     publish: (msg: ClearingMsg) => {
+      if (deps.readOnly) return; // #4445 — a read-only room never publishes
       void publishToRoom(msg, {
         topic: deps.topic,
         identity: st.identity,

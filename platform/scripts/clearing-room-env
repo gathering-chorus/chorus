@@ -1,0 +1,19 @@
+#!/bin/bash
+# clearing-room-env <command...> — #4445. Turns the Buzz room on for the
+# Clearing it starts, the way ~/.chorus/bin/clearing-launch.sh does for prod:
+# the room secret is read from the local 600 file at start, so it never sits in
+# a LaunchAgent plist (644). A demo variant runs through this with
+# CLEARING_ROOM_READONLY=1 already set by env-up, so its room reads the live
+# relay and publishes nothing. No readable secret: the Clearing starts with the
+# room off and says so, never fails.
+SECRET_FILE="${BUZZ_ROOM_SECRET_FILE:-$HOME/.chorus/buzz/room-secret}"
+if [ -r "$SECRET_FILE" ]; then
+  BUZZ_ROOM_SECRET="$(cat "$SECRET_FILE")"
+  export BUZZ_ROOM_SECRET
+  export BUZZ_ROOM_ENABLED=1
+  # the relay routes by Host header (#3907)
+  export BUZZ_RELAY_HOST_HEADER="${BUZZ_RELAY_HOST_HEADER:-192.168.86.242:3000}"
+else
+  echo "clearing-room-env: no readable room secret at $SECRET_FILE; the room stays off" >&2
+fi
+exec "$@"

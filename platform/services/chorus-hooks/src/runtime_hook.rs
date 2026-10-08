@@ -262,6 +262,8 @@ fn evaluate(runtime: &str, ev: Event, raw: &Value) -> Result<Decision, String> {
     let mut base = json!({"cwd":cwd,"session_id":sid,"chorus_session_id":sid,"runtime":runtime,"deploy_role":role,"prompt":raw.get("prompt"),
         // #4445 — Gemini's AfterAgent carries the reply itself; the stop leg publishes it.
         "prompt_response":raw.get("prompt_response"),
+        // its chat file holds the reply once; prompt_response joins every model turn
+        "gemini_transcript_path":if runtime == "gemini" { raw.get("transcript_path") } else { None },
         "stop_hook_active":raw.get("stop_hook_active"),
         "tool_response":raw.get("tool_response").or_else(|| raw.get("tool_output")).or_else(|| raw.get("output")),
         "tool_output_is_error":raw.get("tool_output_is_error"),

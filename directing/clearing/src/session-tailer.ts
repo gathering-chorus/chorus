@@ -15,6 +15,7 @@ import { isDelivery } from './wake-line';
 import fs from 'fs';
 import path from 'path';
 import { MessageRouter } from './router';
+import { TAILED_ROLES } from './room-roles';
 import { EmitSpine, makeSpineEmitter, renderedEvent } from './reply-delivery';
 
 // #2167: env-configurable so tests can point at a fixture directory.
@@ -35,7 +36,8 @@ function loadOffsets(): Record<string, number> {
   } catch { return {}; }
 }
 const POLL_INTERVAL = 30000; // 30s fallback — primary delivery is fs.watch
-const ROLES = ['wren', 'silas', 'kade'] as const;
+// #4445 — the tailed list lives in room-roles.ts so the room can skip these roles' reply notes.
+const ROLES = TAILED_ROLES;
 
 // #3890/#3893 — the role's CANONICAL session dir, matched EXACTLY. The old
 // substring match ('wren' ∈ entry) let ephemeral werk dirs shadow the real

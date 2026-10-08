@@ -37,6 +37,21 @@ fn canonicalize(text: &str) -> String {
     stripped.split_whitespace().collect::<Vec<_>>().join(" ")
 }
 
+/// The text of the LAST Gemini message in a gemini-cli chat file, or None when
+/// that message is empty (the turn ended on tools) — never an older reply.
+fn last_gemini_text(path: &str) -> Option<String> {
+    let content = std::fs::read_to_string(path).ok()?;
+    let last = content
+        .lines()
+        .rev()
+        .filter_map(|l| serde_json::from_str::<serde_json::Value>(l).ok())
+        .find(|v| v.get("type").and_then(|t| t.as_str()) == Some("gemini"))?;
+    last.get("content")
+        .and_then(|c| c.as_str())
+        .filter(|t| !t.trim().is_empty())
+        .map(str::to_string)
+}
+
 /// Join key for one reply across surfaces. sha256(canonicalize(text)), hex[..16].
 pub fn content_hash(text: &str) -> String {
     let mut h = Sha256::new();
@@ -46,12 +61,19 @@ pub fn content_hash(text: &str) -> String {
 }
 
 /// #4445 — the reply a turn ended with: Claude's last assistant text from its
-/// transcript file, or — for Gemini, which has no transcript file — the reply
-/// its AfterAgent hook hands over (prompt_response).
+/// transcript file; for Gemini, its last message in its own chat file. Gemini's
+/// AfterAgent `prompt_response` joins every model turn of the prompt with
+/// spaces (Abby's 10-07 20:41 reply went out doubled), so it is only the
+/// fallback when the chat file cannot be read.
 pub fn reply_text(raw: &serde_json::Value) -> Option<String> {
     raw.get("transcript_path")
         .and_then(|v| v.as_str())
         .and_then(crate::hooks::inject_force::last_assistant_text)
+        .or_else(|| {
+            raw.get("gemini_transcript_path")
+                .and_then(|v| v.as_str())
+                .and_then(last_gemini_text)
+        })
         .or_else(|| {
             raw.get("prompt_response")
                 .and_then(|v| v.as_str())

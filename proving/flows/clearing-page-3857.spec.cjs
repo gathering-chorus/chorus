@@ -45,6 +45,37 @@ test.describe('#4234 a readout in a fence stays readable on a phone', () => {
   });
 });
 
+// #4445 — the red that blocked #4445 and #4443: in the full flows run the fence
+// above rendered as one flat line. The message reached the page before the first
+// tiles did, so the page drew it as a guest's (plain text), and nothing redrew it
+// once the roles arrived. This case makes that ordering certain by holding the
+// tiles back, so it fails on the old page every time instead of under load only.
+test.describe('#4445 a role message that arrives before the tiles still renders as the role', () => {
+  test.use(PHONE);
+  test('tiles held back 3s: the fence still becomes a pre block once the roles arrive', async ({ page, request }) => {
+    await page.addInitScript(() => {
+      let realIo;
+      Object.defineProperty(window, 'io', {
+        configurable: true,
+        get() { return realIo; },
+        set(fn) {
+          realIo = (...args) => {
+            const sock = fn(...args);
+            const on = sock.on.bind(sock);
+            sock.on = (ev, handler) => on(ev, ev === 'tiles' ? (...a) => setTimeout(() => handler(...a), 3000) : handler);
+            return sock;
+          };
+        },
+      });
+    });
+    await open(page);
+    const line = `tiles-late-4445 ${Date.now()}`;
+    await postAs(request, 'wren', '```\n' + line + '\n```');
+    await expect(page.locator('#messages', { hasText: line })).toBeVisible({ timeout: 10000 });
+    await expect(page.locator('#messages pre', { hasText: line }).last()).toBeVisible({ timeout: 10000 });
+  });
+});
+
 test.describe('#3857 typing on a phone', () => {
   test.use(PHONE);
   test('the box is a textarea, not focused on load, Enter adds a line instead of sending, and it grows', async ({ page }) => {

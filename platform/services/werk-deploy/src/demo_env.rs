@@ -394,6 +394,7 @@ pub fn clearing_extra_env(
     demo_store_dir: &str,
     css_issuer: &str,
     variant_path: &str,
+    relay: Option<&str>,
 ) -> R<Vec<(String, String)>> {
     let api_url = format!("http://localhost:{}", env_port_for("chorus-api", role)?);
     let https = clearing_https_port(env_port_for("clearing", role)?).to_string();
@@ -414,7 +415,27 @@ pub fn clearing_extra_env(
         s("CSS_ISSUER", css_issuer.to_string()),
         s("CHORUS_CLEARING_REQUIRE_DPOP", "1".to_string()),
         s("PATH", variant_path.to_string()),
-    ])
+    ]
+    .into_iter()
+    // #4445 — a role on another runtime (Abby, Gemini) reaches the room only
+    // through the relay, so a variant room that never connects to it cannot
+    // show her replies and its demo proves nothing. It reads the live relay,
+    // READ-ONLY: it subscribes and renders, and publishes nothing.
+    .chain(relay.filter(|r| !r.is_empty()).into_iter().flat_map(|r| [
+        s("BUZZ_RELAY_URL", r.to_string()),
+        s("CLEARING_ROOM_READONLY", "1".to_string()),
+    ]))
+    .collect())
+}
+
+/// #4445 — the relay the prod Clearing reads, taken from its installed plist
+/// (the one place it is configured). None when prod has no relay.
+pub fn relay_url_in_plist(plist: &str) -> Option<String> {
+    let i = plist.find("<key>BUZZ_RELAY_URL</key>")?;
+    let rest = &plist[i..];
+    let a = rest.find("<string>")? + "<string>".len();
+    let b = rest[a..].find("</string>")?;
+    Some(rest[a..a + b].trim().to_string()).filter(|v| !v.is_empty())
 }
 
 /// #4075 — the prod surfaces a variant Clearing must never be handed. If any
@@ -432,6 +453,13 @@ pub const CLEARING_PROD_SURFACES: &[&str] = &[
 ];
 
 pub fn clearing_env_prod_leak(env: &[(String, String)]) -> Option<String> {
+    // #4445 — the live relay is allowed only read-only: a variant room that may
+    // publish would put its demo messages in Jeff's room.
+    let has = |k: &str, v: Option<&str>| env.iter().any(|(kk, vv)| kk == k && v.map(|x| vv == x).unwrap_or(true));
+    if has("BUZZ_RELAY_URL", None) && !has("CLEARING_ROOM_READONLY", Some("1")) {
+        let v = env.iter().find(|(k, _)| k == "BUZZ_RELAY_URL").map(|(_, v)| v.as_str()).unwrap_or("");
+        return Some(format!("BUZZ_RELAY_URL={} without CLEARING_ROOM_READONLY=1 would publish to the live relay", v));
+    }
     for (k, v) in env {
         if let Some(hit) = CLEARING_PROD_SURFACES.iter().find(|s| v.contains(*s)) {
             return Some(format!("{}={} names prod surface {}", k, v, hit));
@@ -587,6 +615,16 @@ pub fn generate_plist(
             v
         }
     };
+
+    // #4445 — a variant Clearing handed the live relay read-only starts through
+    // clearing-room-env, which reads the room secret from its 600 file at start;
+    // the secret never goes into this (644) plist.
+    let program_args = if svc.name == "clearing"
+        && extra_env.iter().any(|(k, v)| *k == "CLEARING_ROOM_READONLY" && *v == "1") {
+        let mut v = vec!["/bin/bash".to_string(), format!("{}/platform/scripts/clearing-room-env", werk_root)];
+        v.extend(program_args);
+        v
+    } else { program_args };
 
     let program_args_xml: String = program_args
         .iter()
@@ -902,7 +940,9 @@ pub fn env_up(role: &str, werk_root: &str, canonical_root: &str, card: u64, trac
         let clearing_port_s = env_port_for("clearing", role)?.to_string();
         let hooks_run = hooks_run_dir(werk_root);
         let home_dir = std::env::var("HOME").unwrap_or_else(|_| "/Users/jeffbridwell".to_string());
-        let clearing_owned = clearing_extra_env(role, &demo_store_dir, &css_issuer, &variant_path)?;
+        let prod_relay = fs::read_to_string(format!("{}/Library/LaunchAgents/com.chorus.clearing.plist", home_dir))
+            .ok().and_then(|t| relay_url_in_plist(&t));
+        let clearing_owned = clearing_extra_env(role, &demo_store_dir, &css_issuer, &variant_path, prod_relay.as_deref())?;
         let pulse_owned = pulse_extra_env(role, &demo_store_dir, &home_dir, &variant_path)?;
         if svc.name == "pulse" {
             if let Some(leak) = pulse_env_prod_leak(&pulse_owned, &home_dir) {
