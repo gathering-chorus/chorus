@@ -20,11 +20,10 @@ const ROLE_IS_A_FILTER = new Set(['chorus_logs_recent_errors', 'chorus_logs_quer
 
 export function unknownRoleError(tool: string, args: unknown, sets: RoleSets): string | null {
   if (ROLE_IS_A_FILTER.has(tool)) return null;
-  const a = (args ?? {}) as Record<string, unknown>;
-  const checks: Array<[string, string[]]> = [['role', sets.agents], ['owner', sets.peers]];
-  if (tool === 'loom-gemba') checks.push(['target', sets.agents]);
-  for (const [key, allowed] of checks) {
-    const v = a[key];
+  const { role, owner, target } = (args ?? {}) as { role?: unknown; owner?: unknown; target?: unknown };
+  const checks: Array<[string, unknown, string[]]> = [['role', role, sets.agents], ['owner', owner, sets.peers]];
+  if (tool === 'loom-gemba') checks.push(['target', target, sets.agents]);
+  for (const [key, v, allowed] of checks) {
     if (typeof v !== 'string' || v === '') continue;
     if (!allowed.includes(v.toLowerCase())) {
       return `Unknown ${key} '${v}' — the roles door lists ${allowed.join(' | ')}`;
@@ -36,9 +35,9 @@ export function unknownRoleError(tool: string, args: unknown, sets: RoleSets): s
 /** Refuse a call whose role argument the roles door does not list. Reads the door only when there is one to check. */
 export async function refuseUnknownRoles(tool: string, args: unknown, read: () => Promise<RoleSets> = fetchRoleSets): Promise<void> {
   if (ROLE_IS_A_FILTER.has(tool)) return;
-  const a = (args ?? {}) as Record<string, unknown>;
-  const has = ['role', 'owner', 'target'].some((k) => typeof a[k] === 'string' && a[k] !== '');
+  const { role, owner, target } = (args ?? {}) as { role?: unknown; owner?: unknown; target?: unknown };
+  const has = [role, owner, target].some((v) => typeof v === 'string' && v !== '');
   if (!has) return;
-  const err = unknownRoleError(tool, a, await read());
+  const err = unknownRoleError(tool, args, await read());
   if (err) throw new Error(err);
 }
