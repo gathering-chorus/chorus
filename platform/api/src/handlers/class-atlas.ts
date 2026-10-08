@@ -29,6 +29,10 @@ export interface SparqlBinding {
   propDef?: SparqlTerm;
   /** rdfs:comment of the predicate BEHIND an inverse path. */
   invDef?: SparqlTerm;
+  /** #4358 — sh:description on the property shape: what the field means for
+   *  THIS class. It wins over the property's rdfs:comment, which is global and
+   *  absent for shared predicates such as rdfs:label and rdfs:comment. */
+  shapeDef?: SparqlTerm;
 }
 
 export interface AtlasAttribute {
@@ -111,6 +115,11 @@ function addPropertyRow(
 
 interface EdgeSpec { name: string; rangeClass: string; min: number; max: number | null; inverse: boolean; dom: string }
 
+/** #4358 — the field's shape description, else its property's rdfs:comment. */
+function fieldDefinition(row: SparqlBinding): string | undefined {
+  return row.shapeDef?.value ?? row.propDef?.value;
+}
+
 /** Split out to keep addPropertyRow under the complexity ratchet. */
 function addEdgeRow(
   entry: AtlasClass,
@@ -120,7 +129,7 @@ function addEdgeRow(
 ): void {
   if (entry.edges.some((e) => e.name === spec.name && e.to === spec.rangeClass)) return;
   // An inverse edge takes its definition from the predicate being inverted.
-  const definition = row.propDef?.value ?? row.invDef?.value;
+  const definition = fieldDefinition(row) ?? row.invDef?.value;
   // cross-domain when the target class's home domain is not this one;
   // an unknown home is treated as cross — an honest "elsewhere".
   entry.edges.push({
@@ -161,6 +170,7 @@ function addAttributeRow(
   // A shape may constrain values without declaring a datatype (ProductShape's
   // status does exactly that); an enum IS the type in that case.
   const declared = local(row.dt?.value);
+  const definition = fieldDefinition(row);
   entry.attributes.push({
     name,
     type: declared || (member !== undefined ? 'enum' : ''),
@@ -168,7 +178,7 @@ function addAttributeRow(
     max,
     ...(member !== undefined ? { allowed: [member] } : {}),
     ...(row.pattern?.value ? { pattern: row.pattern.value } : {}),
-    ...(row.propDef?.value ? { definition: row.propDef.value } : {}),
+    ...(definition ? { definition } : {}),
   });
 }
 
@@ -251,12 +261,13 @@ const ATLAS_QUERY = `PREFIX chorus: <https://jeffbridwell.com/chorus#>
 PREFIX rdfs: <http://www.w3.org/2000/01/rdf-schema#>
 PREFIX rdf: <http://www.w3.org/1999/02/22-rdf-syntax-ns#>
 PREFIX sh: <http://www.w3.org/ns/shacl#>
-SELECT ?domain ?class ?prop ?min ?max ?dt ?rc ?parent ?inValue ?orClass ?invOf ?pattern ?classDef ?propDef ?invDef WHERE { GRAPH <urn:chorus:domains:domains> { ?domain chorus:definesVocabulary ?class } GRAPH <urn:chorus:ontology> {
+SELECT ?domain ?class ?prop ?min ?max ?dt ?rc ?parent ?inValue ?orClass ?invOf ?pattern ?classDef ?propDef ?invDef ?shapeDef WHERE { GRAPH <urn:chorus:domains:domains> { ?domain chorus:definesVocabulary ?class } GRAPH <urn:chorus:ontology> {
   OPTIONAL { ?class rdfs:comment ?classDef }
   OPTIONAL { ?shp sh:targetClass ?class ; sh:property ?b . ?b sh:path ?prop .
     OPTIONAL { ?prop sh:inversePath ?invOf . OPTIONAL { ?invOf rdfs:comment ?invDef } }
     OPTIONAL { ?b sh:pattern ?pattern }
     OPTIONAL { ?prop rdfs:comment ?propDef }
+    OPTIONAL { ?b sh:description ?shapeDef }
     OPTIONAL { ?b sh:minCount ?min } OPTIONAL { ?b sh:maxCount ?max }
     OPTIONAL { ?b sh:datatype ?dt } OPTIONAL { ?b sh:class ?rc }
     OPTIONAL { ?b sh:in ?inList . ?inList rdf:rest*/rdf:first ?inValue }

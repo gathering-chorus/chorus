@@ -394,6 +394,11 @@ pub struct ShapeReq {
     /// #4358 — sh:pattern declared on the NodeShape itself. Standard SHACL: a
     /// node shape's pattern tests STR(focus node), i.e. the row's full IRI.
     pub node_patterns: Vec<ShapePattern>,
+    /// #4358 — field local name → the full sh:path IRI, for fields whose path is
+    /// outside the chorus namespace (rdfs:comment, rdfs:label). The door writes
+    /// every field at chorus:<name>; it also writes these at the path the shape
+    /// names, so a row satisfies its own shape.
+    pub field_paths: BTreeMap<String, String>,
 }
 
 /// #4358 — one sh:pattern as the model declares it. `source` is the regex text
@@ -701,6 +706,18 @@ pub fn read_shape(store: &dyn Store, class: &str) -> R<ShapeReq> {
             field_properties.insert(prop.clone());
         }
     }
+    let mut field_paths: BTreeMap<String, String> = BTreeMap::new();
+    for row in store.select_v(&format!(
+        "# athena-model declared field paths\nPREFIX sh: <http://www.w3.org/ns/shacl#> SELECT ?v WHERE {{ GRAPH <{g}> {{ ?s sh:targetClass <{c}> ; sh:property ?p . ?p sh:path ?path . FILTER(isIRI(?path)) FILTER(!STRSTARTS(STR(?path), \"{ns}\")) FILTER NOT EXISTS {{ ?p sh:class ?edgeClass }} BIND(CONCAT(REPLACE(STR(?path), '.*[#/]', ''), '|', STR(?path)) AS ?v) }} }}",
+        g = ONTOLOGY_GRAPH, c = class, ns = NS
+    ))? {
+        if let Some((prop, iri)) = row.split_once('|') {
+            let clean = !iri.chars().any(|c| c.is_whitespace() || "<>\"{}|^`\\".contains(c));
+            if iri.starts_with("http") && clean && check_property_local(prop).is_ok() {
+                field_paths.insert(prop.to_string(), iri.to_string());
+            }
+        }
+    }
 
     Ok(ShapeReq {
         required,
@@ -712,7 +729,25 @@ pub fn read_shape(store: &dyn Store, class: &str) -> R<ShapeReq> {
         unique_global,
         patterns,
         node_patterns,
+        field_paths,
     })
+}
+
+/// #4358 — the triples that put each field at the path its shape declares, for
+/// fields whose path is outside the chorus namespace. label already has its
+/// rdfs:label twin (#4291), so it is skipped here rather than written twice.
+fn declared_path_triples(subject: &str, req: &WriteReq, shape: &ShapeReq) -> String {
+    let mut out = String::new();
+    let values = req.fields.iter().chain(req.more_values.iter().map(|(p, v)| (p, v)));
+    for (prop, val) in values {
+        match shape.field_paths.get(prop) {
+            Some(iri) if iri != RDFS_LABEL => {
+                out.push_str(&format!("<{}> <{}> \"{}\" .\n", subject, iri, esc(val)));
+            }
+            _ => {}
+        }
+    }
+    out
 }
 
 /// Turtle string-literal escape.
@@ -1694,7 +1729,7 @@ fn plan_writes<'a>(
         plans.push(PlannedWrite { req, identity, class, subject, turtle, graph });
     }
 
-    // Shape reads are eight SELECTs today (#4358 added the two sh:pattern reads).
+    // Shape reads are nine SELECTs today (#4358 added the two sh:pattern reads and the declared field paths).
     // Cache by class so 1,000 entities of one kind issue those reads once, not
     // 8,000 times.
     let mut shapes: BTreeMap<String, ShapeReq> = BTreeMap::new();
@@ -1704,6 +1739,12 @@ fn plan_writes<'a>(
                 .map_err(|e| WritePlanError::for_req(plan.req, e))?;
             shapes.insert(plan.class.clone(), shape);
         }
+    }
+    // #4358 — a field whose shape names a path outside chorus (rdfs:comment) is
+    // also written there, so the row satisfies the shape it was checked against.
+    for plan in plans.iter_mut() {
+        let extra = declared_path_triples(&plan.subject, plan.req, &shapes[&plan.class]);
+        plan.turtle.push_str(&extra);
     }
 
     // A SHACL property's value channel is part of its type contract. Accepting
@@ -2434,13 +2475,14 @@ pub fn set_field(
     const DCT: &str = "http://purl.org/dc/terms/";
     let now = now_iso();
     // #4291 — setting the label sets its twin too, so the two names never diverge.
-    let twin = if prop == "label" {
-        format!(
+    // #4358 — likewise a field whose shape declares a path outside chorus.
+    let twin_iri = if prop == "label" { Some(RDFS_LABEL) } else { shape.field_paths.get(prop).map(String::as_str) };
+    let twin = match twin_iri {
+        Some(r) => format!(
             " ;\nDELETE WHERE {{ GRAPH <{g}> {{ <{s}> <{r}> ?o }} }} ;\nINSERT DATA {{ GRAPH <{g}> {{ <{s}> <{r}> \"{v}\" }} }}",
-            g = g, s = subject, r = RDFS_LABEL, v = esc(value)
-        )
-    } else {
-        String::new()
+            g = g, s = subject, r = r, v = esc(value)
+        ),
+        None => String::new(),
     };
     store.update(&format!(
         "DELETE WHERE {{ GRAPH <{g}> {{ <{s}> <{ns}{p}> ?o }} }} ;\nDELETE WHERE {{ GRAPH <{g}> {{ <{s}> <{d}modified> ?o }} }} ;\nINSERT DATA {{ GRAPH <{g}> {{ <{s}> <{ns}{p}> \"{v}\" . <{s}> <{d}modified> \"{m}\" }} }}{twin}",

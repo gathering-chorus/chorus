@@ -29,6 +29,11 @@
       margin: 0;
       padding: 3rem 1in 6rem 1in;
     }
+    /* #4358 — a phone keeps a small margin; the inch is for desktop and print. */
+    @media screen and (max-width: 600px) {
+      body { padding: 1.5rem 16px 4rem 16px; }
+      h1 { font-size: 2rem; }
+    }
     header {
       border-bottom: 1px solid var(--border);
       padding-bottom: 1.5rem;
