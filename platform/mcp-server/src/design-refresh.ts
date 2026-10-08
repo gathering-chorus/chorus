@@ -18,8 +18,7 @@ import { promisify } from 'util';
 
 const execFileAsync = promisify(execFileCb);
 
-// #4458 — any agent role the roles door lists (checked before dispatch).
-export type Role = string;
+export type Role = 'kade' | 'wren' | 'silas';
 
 export interface DesignRefreshArgs {
   role: Role;

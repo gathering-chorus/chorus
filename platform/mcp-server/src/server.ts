@@ -30,7 +30,7 @@ import { resolveShimPath } from './shim-path';
 import { resolveCardsPath } from './cards-path';
 import { resolvePulseSecret } from './pulse-secret';
 import { recentErrors, logsForCard, logsForTrace, logsForBranch, type LogsQueryDeps } from './handlers/logs-query';
-import { executeDesignRefresh } from './design-refresh';
+import { executeDesignRefresh, type DesignRefreshArgs } from './design-refresh';
 // #3443 AC7 — run-state: a chorus_werk transport drop becomes a non-event.
 import { announceRepeated, decideRunAction, patchSuperseded, type WerkRun } from './werk-run-state';
 import { cancelRun, pauseRun, resumeRun, liveControlDeps, afterCancel } from './werk-run-control';
@@ -3962,7 +3962,8 @@ export function buildMcpServer(getCallerRole: () => string, deps: McpServerDeps 
           const fs = require('fs') as typeof import('fs');
           const path = require('path') as typeof import('path');
           const repoRoot = resolveWorkingTree(parsed.data.role);
-          const result = await executeDesignRefresh(parsed.data, {
+          // #4458 — design-refresh never reads role; the roles door already vetted it.
+          const result = await executeDesignRefresh(parsed.data as DesignRefreshArgs, {
             readFile: (p: string) => fs.readFileSync(p, 'utf8'),
             writeFile: (p: string, content: string) => fs.writeFileSync(p, content, 'utf8'),
             cardsPath,
