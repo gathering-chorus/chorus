@@ -500,7 +500,16 @@ fn run(args: &[String]) -> Result<i32, String> {
                     .map(|s| s.to_string())
                     .collect();
                 let ns_refs: Vec<&str> = ns_bins.iter().map(|s| s.as_str()).collect();
-                let (ok, cases) = run_cargo(&werk, c, &q_names, &ns_refs);
+                // #4440 reopen — only test files changed: run just those binaries
+                let only = werk_test::cargo_only_bins(c, &changed);
+                let (ok, cases) = if only.is_empty() {
+                    run_cargo(&werk, c, &q_names, &ns_refs)
+                } else {
+                    println!("cargo-select: {} → only {} (no src change; the tests that changed run)", c, only.join(", "));
+                    let only_refs: Vec<&str> = only.iter().map(|s| s.as_str()).collect();
+                    let (ok, cases, _) = run_cargo_sel(&werk, c, &q_names, &ns_refs, &only_refs);
+                    (ok, cases)
+                };
                 let crate_dir = format!("platform/services/{}", c);
                 for (path, result) in cases {
                     match werk_test::match_cargo_case_path(&path, &crate_dir, &rows, &row_names) {
@@ -749,6 +758,8 @@ fn run_nightly(args: &[String]) -> Result<i32, String> {
     if !Path::new(&root).is_dir() {
         return Err(format!("nightly root not found: {}", root));
     }
+    // #4440 reopen — name the tree, so its TS packages are found from launchd's cwd `/`
+    set_repo_root(Path::new(&root));
     let role = "system".to_string();
     let card = String::new(); // typed absence — a nightly run has no card
     let trace = std::env::var("CHORUS_TRACE_ID").unwrap_or_default();
@@ -946,6 +957,14 @@ fn run_nightly(args: &[String]) -> Result<i32, String> {
         .into_iter()
         .filter(|p| only.as_deref().map(|o| o == p).unwrap_or(true))
         .collect();
+    // #4440 reopen — a run that plans no TS package on a tree that has them
+    // measured nothing, and must say so rather than read as a quiet night.
+    if only.is_none() {
+        if let Some(why) = werk_test::npm_lane_unmeasured(&discover_ts_packages(Path::new(&root)), &ts_pkgs) {
+            // the report's own unit line, so the page shows it as unmeasured (#798's shape)
+            println!("nightly-unit|npm|ts-packages|unmeasured|0 pass, 0 fail ({})", why);
+        }
+    }
     // #3974 — bats lane: registered suites from the registry, per-case TAP
     // results (boolean-only bats is over).
     // #4131 — a suite that can only ever self-refuse unattended (it boots out

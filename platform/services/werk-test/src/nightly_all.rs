@@ -784,6 +784,8 @@ pub fn run_all(args: &[String]) -> Result<i32, String> {
     }
     install_stop_handler();
     let root = std::env::var("CHORUS_ROOT").or_else(|_| std::env::var("CHORUS_HOME")).unwrap_or_else(|_| "/Users/jeffbridwell/CascadeProjects/chorus".into());
+    // #4440 reopen — launchd starts this at cwd `/`: name the tree it tests
+    werk_test::set_repo_root(std::path::Path::new(&root));
     let home = env_or("CHORUS_HOME", &root);
     let home_dir = env_or("HOME", "/tmp");
     let mut ctx = Ctx {
