@@ -15,6 +15,7 @@ const path = require('path');
 const { spawn } = require('child_process');
 const { testClearingEnv, signedInSession } = require('../../../directing/clearing/tests/lib/test-clearing-world.cjs');
 const { startSecurityGraphStub } = require('../../../directing/clearing/tests/lib/security-graph-stub.cjs');
+const { testEvent } = require('../../../platform/tests/lib/test-events.cjs');
 
 const CLEARING_SRC = path.resolve(__dirname, '..', '..', '..', 'directing', 'clearing');
 
@@ -48,7 +49,9 @@ function ownClearing(test, opts = {}) {
     if (given) return;
     const entry = path.join(CLEARING_SRC, 'dist', 'server.js');
     if (!fs.existsSync(entry)) {
-      throw new Error(`clearing is not built: ${entry} is missing. Build directing/clearing first (npm run build), or point CLEARING_URL at a variant room.`);
+      const why = `clearing is not built: ${entry} is missing. Build directing/clearing first (npm run build), or point CLEARING_URL at a variant room.`;
+      testEvent('test.fixture.failed', { fixture: 'own-clearing', port, reason: why, level: 'error', message: `own Clearing not started: ${why}` });
+      throw new Error(why);
     }
     dir = fs.mkdtempSync(path.join(os.tmpdir(), 'own-clearing-'));
     const env = testClearingEnv(dir, port, token);
@@ -64,17 +67,32 @@ function ownClearing(test, opts = {}) {
     });
     let err = '';
     child.stderr.on('data', (d) => { err = (err + String(d)).slice(-2000); });
+    // #4454 — the fixture says it started, then ready (and how long it took) or
+    // why not, on the run's trace: a red with the fixture down reads that way
+    const started = Date.now();
+    const fixture = { fixture: 'own-clearing', port, pid: child.pid };
+    testEvent('test.fixture.started', { ...fixture, message: `own Clearing starting on ${url}` });
+    const notReady = (why) => {
+      testEvent('test.fixture.failed', { ...fixture, elapsed_ms: Date.now() - started, reason: why, level: 'error',
+        message: `own Clearing on ${url} not ready: ${why}` });
+      return new Error(why);
+    };
     const deadline = Date.now() + 30000;
     for (;;) {
-      if (await fetch(`${url}/health`).then((r) => r.ok).catch(() => false)) return;
-      if (child.exitCode !== null) throw new Error(`own Clearing exited (code ${child.exitCode}): ${err.trim() || 'no stderr'}`);
-      if (Date.now() > deadline) throw new Error(`own Clearing did not answer on ${url} in 30s: ${err.trim() || 'no stderr'}`);
+      if (await fetch(`${url}/health`).then((r) => r.ok).catch(() => false)) {
+        testEvent('test.fixture.ready', { ...fixture, ready_ms: Date.now() - started, message: `own Clearing ready on ${url}` });
+        return;
+      }
+      if (child.exitCode !== null) throw notReady(`own Clearing exited (code ${child.exitCode}): ${err.trim() || 'no stderr'}`);
+      if (Date.now() > deadline) throw notReady(`own Clearing did not answer on ${url} in 30s: ${err.trim() || 'no stderr'}`);
       await new Promise((r) => setTimeout(r, 250));
     }
   });
 
   test.afterAll(async () => {
     if (graph) await graph.close();
+    if (child) testEvent('test.fixture.stopped', { fixture: 'own-clearing', port, pid: child.pid, exit: child.exitCode ?? 'running',
+      message: `own Clearing on ${url} stopping` });
     if (child && child.exitCode === null) child.kill('SIGTERM');
     if (dir) fs.rmSync(dir, { recursive: true, force: true });
   });

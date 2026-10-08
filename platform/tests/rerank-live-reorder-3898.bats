@@ -76,7 +76,9 @@ socketserver.TCPServer(("127.0.0.1", $PORT), H).serve_forever()
 PY
   python3 "$TMP/serve.py" &
   SERVER_PID=$!
-  for _ in $(seq 1 40); do curl -sf "http://127.0.0.1:$PORT/" >/dev/null 2>&1 && break; sleep 0.1; done
+  # #4454 — up, ready in how long, or why not, on the run's trace
+  load lib/test-events.bash
+  stub_ready rerank-stub "$PORT" "$SERVER_PID" 40 || true
 
   export FUSEKI_QUERY_URL="http://127.0.0.1:$PORT/"
   export CHORUS_MODEL_BIN="$TMP/athena-model"

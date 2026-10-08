@@ -31,11 +31,9 @@ HTTPServer(('127.0.0.1', int(sys.argv[1])), H).serve_forever()
 PY
   python3 "${BATS_TMPDIR}/authn_fixture.py" "$FIXTURE_PORT" >/dev/null 2>&1 &
   echo $! > "${BATS_TMPDIR}/authn_fixture.pid"
-  # wait for listen
-  for _ in $(seq 1 40); do
-    curl -s -o /dev/null "http://127.0.0.1:${FIXTURE_PORT}/" && break
-    sleep 0.1
-  done
+  # wait for listen — #4454: up, ready in how long, or why not, on the run's trace
+  load lib/test-events.bash
+  stub_ready authn-fixture "$FIXTURE_PORT" "$(cat "${BATS_TMPDIR}/authn_fixture.pid")" 40 || true
 }
 
 teardown_file() {

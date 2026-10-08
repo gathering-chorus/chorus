@@ -24,6 +24,9 @@ PY
   STUB_PID=$!
   for _ in $(seq 1 50); do [ -s "$T/port" ] && break; sleep 0.1; done
   API="http://127.0.0.1:$(cat "$T/port")"
+  # #4454 — up, ready in how long, or why not, on the run's trace
+  load lib/test-events.bash
+  stub_ready api-stub "$(cat "$T/port")" "$STUB_PID" 10 || true
   source "$ROOT/platform/tests/lib/quartet-record.sh"
 }
 teardown() { [ -n "${STUB_PID:-}" ] && kill "$STUB_PID" 2>/dev/null || true; }

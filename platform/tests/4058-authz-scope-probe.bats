@@ -28,11 +28,9 @@ class H(BaseHTTPRequestHandler):
 HTTPServer(('127.0.0.1', port), H).serve_forever()
 PY
   STUB_PID=$!
-  for _ in $(seq 1 40); do
-    curl -s -o /dev/null "http://127.0.0.1:$port/" 2>/dev/null && return 0
-    sleep 0.1
-  done
-  return 1
+  # #4454 — up, ready in how long, or why not, on the run's trace
+  load lib/test-events.bash
+  stub_ready authz-stub "$port" "$STUB_PID" 40
 }
 
 teardown() { [ -n "${STUB_PID:-}" ] && kill "$STUB_PID" 2>/dev/null || true; }

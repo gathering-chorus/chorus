@@ -87,7 +87,38 @@ pub fn session_stamp(role: &str, pane_role: Option<&str>, row: Option<&str>) -> 
 }
 
 pub fn run(args: &[String]) -> ExitCode {
+    if args.first().map(String::as_str) == Some("--batch") {
+        return run_batch(std::io::stdin().lock());
+    }
     emit(args, /* silent */ false)
+}
+
+/// #4454 — many events from one process: one tab-separated event per line
+/// (`<event>\t<role>\t<key=value>...`), the schema read once. A test run logs
+/// every case; at one process per event that was ~28ms each, about 10 minutes
+/// a nightly. Each line is written exactly as a single `chorus-log` call would
+/// write it. Returns failure if any line could not be written.
+pub fn run_batch(input: impl std::io::BufRead) -> ExitCode {
+    let schema = load_schema();
+    let mut failed = 0usize;
+    for line in input.lines().map_while(Result::ok) {
+        if line.trim().is_empty() {
+            continue;
+        }
+        let args: Vec<String> = line.split('\t').map(String::from).collect();
+        if emit_with(&args, /* silent */ true, schema.as_ref()) != ExitCode::SUCCESS {
+            failed += 1;
+        }
+    }
+    if failed > 0 {
+        eprintln!("chorus-log --batch: {} event(s) not written", failed);
+        return ExitCode::from(1);
+    }
+    ExitCode::SUCCESS
+}
+
+fn load_schema() -> Option<serde_json::Value> {
+    fs::read_to_string(schema_file()).ok().and_then(|s| serde_json::from_str::<serde_json::Value>(&s).ok())
 }
 
 /// #2311: silent emit — writes the event to chorus.log but skips the stdout
@@ -98,6 +129,10 @@ pub fn run_silent(args: &[String]) -> ExitCode {
 }
 
 fn emit(args: &[String], silent: bool) -> ExitCode {
+    emit_with(args, silent, load_schema().as_ref())
+}
+
+fn emit_with(args: &[String], silent: bool, parsed: Option<&serde_json::Value>) -> ExitCode {
     if args.len() < 2 {
         eprintln!("Usage: chorus-hook-shim log <event> <role> [key=value ...]");
         return ExitCode::from(1);
@@ -110,11 +145,7 @@ fn emit(args: &[String], silent: bool) -> ExitCode {
     // (spine-events.json). resolve_and_derive does alias resolution + product/
     // value_stream/value_stream_step derivation (pure, unit-tested). Best-effort:
     // a missing/bad schema yields the event unchanged + no enrichment (back-compat).
-    let schema_json = fs::read_to_string(schema_file()).ok();
-    let parsed = schema_json
-        .as_deref()
-        .and_then(|s| serde_json::from_str::<serde_json::Value>(s).ok());
-    let derived = match &parsed {
+    let derived = match parsed {
         Some(schema) => {
             let (resolved, extras) = resolve_and_derive(schema, &event);
             event = resolved;
@@ -170,7 +201,7 @@ fn emit(args: &[String], silent: bool) -> ExitCode {
             // requires unquoted form; without this, env-bridge build.* / card.*
             // events drop out of chorus_logs_for_card joins. Coerce here for
             // the same reason events.ts coerces on the TS side.
-            let is_numeric_key = matches!(key, "card_id" | "hop" | "latencyMs" | "exit_code" | "file_count");
+            let is_numeric_key = matches!(key, "card_id" | "hop" | "latencyMs" | "exit_code" | "file_count" | "elapsed_ms");
             let value_repr = if is_numeric_key {
                 if let Ok(n) = val.parse::<i64>() {
                     n.to_string()
@@ -215,7 +246,9 @@ fn emit(args: &[String], silent: bool) -> ExitCode {
                     .filter(|s| !s.is_empty())
             })
         });
-    if let Some(trace) = trace_id_opt {
+    // #4454 — a caller that names its trace keeps it; the env trace is not
+    // written a second time (two "trace" keys on one line).
+    if let Some(trace) = trace_id_opt.filter(|_| !extras.contains(r#","trace":"#)) {
         let escaped =
             serde_json::to_string(&trace).unwrap_or_else(|_| "\"\"".to_string());
         extras.push_str(&format!(r#","trace":{}"#, escaped));
@@ -365,6 +398,35 @@ mod tests {
             }
         }
         None
+    }
+
+    // --- #4454: many events, one process ---
+
+    #[test]
+    fn batch_writes_one_line_per_event_in_the_single_call_shape() {
+        let input = "test.batch4454.one\tkade\tcard=4454\tcase=a b\n\ntest.batch4454.two\tkade\tcase=c\n";
+        assert_eq!(run_batch(input.as_bytes()), ExitCode::SUCCESS);
+        let one = find_event_line("test.batch4454.one").expect("first batch event in log");
+        assert!(one.contains("\"card_id\":4454"), "got: {}", one);
+        assert!(one.contains("\"case\":\"a b\""), "a value with a space survives the tab split: {}", one);
+        assert!(find_event_line("test.batch4454.two").is_some(), "second batch event in log");
+    }
+
+    #[test]
+    fn a_caller_named_trace_is_written_once_and_elapsed_is_a_number() {
+        assert_eq!(run(&["test.once4454".into(), "kade".into(), "trace=t-1".into(), "elapsed_ms=12".into()]), ExitCode::SUCCESS);
+        let line = find_event_line("test.once4454").expect("event in log");
+        assert_eq!(line.matches("\"trace\":").count(), 1, "one trace key: {}", line);
+        assert!(line.contains("\"elapsed_ms\":12"), "numeric elapsed: {}", line);
+    }
+
+    // NEGATIVE PROOF: a line that is not an event is reported, not dropped in
+    // silence — a batch that loses events must not say success.
+    #[test]
+    fn batch_with_a_malformed_line_fails() {
+        let input = "test.batch4454.ok\tkade\nnot-an-event\n";
+        assert_ne!(run_batch(input.as_bytes()), ExitCode::SUCCESS);
+        assert!(find_event_line("test.batch4454.ok").is_some(), "the good line is still written");
     }
 
     // --- AC3: emit/read-back ---

@@ -30,7 +30,9 @@ teardown() { rm -rf "$T"; [ -n "${STUB_PID:-}" ] && kill "$STUB_PID" 2>/dev/null
 world() {
   PORT=$((20000 + RANDOM % 20000))
   python3 "$STUB" "$PORT" "$1" "$2" & STUB_PID=$!
-  for _ in $(seq 1 40); do curl -s -o /dev/null "http://127.0.0.1:$PORT/" && break; sleep 0.1; done
+  # #4454 — up, ready in how long, or why not, on the run's trace
+  load lib/test-events.bash
+  stub_ready store-stub "$PORT" "$STUB_PID" 40 || true
   export FUSEKI_URL="http://127.0.0.1:$PORT" ATHENA_MAKE_URL="http://127.0.0.1:$PORT"
 }
 

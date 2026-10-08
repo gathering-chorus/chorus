@@ -78,6 +78,9 @@ EOS
   STUB_PID=$!
   for _ in $(seq 1 50); do [ -s "$T/port" ] && break; sleep 0.1; done
   PORT=$(cat "$T/port")
+  # #4454 — up, ready in how long, or why not, on the run's trace
+  load lib/test-events.bash
+  stub_ready runner-stub "$PORT" "$STUB_PID" 10 || true
 }
 
 teardown() {

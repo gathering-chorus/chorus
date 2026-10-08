@@ -9,6 +9,8 @@ set -uo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 GUARD="$SCRIPT_DIR/chorus-share-guard.py"
+# shellcheck source=../tests/lib/test-events.bash
+source "$SCRIPT_DIR/../tests/lib/test-events.bash"
 
 PASS=0; FAIL=0
 assert() {
@@ -80,16 +82,24 @@ wait_up() {  # wait_up <port> <what> [expected-Server, "" for any]
   # argument as absent, so passing "" to mean "any server will do" silently
   # became "must be the guard", and the stub upstream waited the full 30s for a
   # name it never sends. An opt-out that cannot be spelled is not an opt-out.
-  local want="${3-chorus-share-guard}" hdrs
+  local want="${3-chorus-share-guard}" hdrs t0
+  # #4454 — up, ready in how long, or why not, on the run's trace
+  t0=$(_te_ms)
+  test_event test.fixture.started fixture="$2" port="$1" "message=$2 starting on port $1"
   for _ in $(seq 1 100); do
     # Identity, not just liveness. Answering is not the same as being OURS —
     # a probe that cannot tell those apart is exactly how another run's guard
     # passed for this one. Pass "" as the third argument for the stub upstream,
     # which is a plain http.server and never sends the guard's name.
     hdrs=$(curl -s -D - -o /dev/null --max-time 5 "http://127.0.0.1:$1/" 2>/dev/null) || hdrs=""
-    [ -n "$hdrs" ] && return 0
+    if [ -n "$hdrs" ]; then
+      test_event test.fixture.ready fixture="$2" port="$1" ready_ms=$(($(_te_ms) - t0)) "message=$2 ready on port $1"
+      return 0
+    fi
     sleep 0.3
   done
+  test_event test.fixture.failed fixture="$2" port="$1" elapsed_ms=$(($(_te_ms) - t0)) level=error \
+    "reason=never answered in 30s" "message=$2 on port $1 never answered"
   echo "FAIL: $2 on port $1 never answered (30s). Not an assertion — it never started." >&2
   return 1
 }

@@ -26,7 +26,10 @@ PROBE_SNIPPET() {  # extracted probe semantics, driven per-URL
 
 @test "healthy endpoint → reachable on first pass" {
   python3 -m http.server 39481 --bind 127.0.0.1 >/dev/null 2>&1 &
-  SRV=$!; sleep 1
+  SRV=$!
+  # #4454 — up, ready in how long, or why not, on the run's trace
+  load lib/test-events.bash
+  stub_ready health-stub 39481 "$SRV" 30 || true
   run PROBE_SNIPPET "http://127.0.0.1:39481/"
   kill $SRV 2>/dev/null
   [[ "$output" == 1\ * ]] || return 1

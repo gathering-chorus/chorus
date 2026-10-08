@@ -100,11 +100,9 @@ start_mock() {
   # ephemeral peer. Longer window + one port retry; a mock that STILL cannot
   # start is an environment verdict, skipped loudly — never a red about the
   # pipeline-health logic this suite actually guards.
-  for _ in $(seq 1 100); do
-    curl -sf "http://localhost:${MOCK_PORT}/loki/api/v1/query_range?query=x" >/dev/null 2>&1 && return 0
-    kill -0 "$MOCK_PID" 2>/dev/null || break
-    sleep 0.1
-  done
+  # #4454 — up, ready in how long, or why not, on the run's trace
+  load lib/test-events.bash
+  stub_ready loki-mock "$MOCK_PORT" "$MOCK_PID" 100 && return 0
   # kill exits 1 if the mock already died — the common retry case; a bare
   # nonzero here aborts start_mock itself (run 71's red).
   kill "$MOCK_PID" 2>/dev/null || true
@@ -112,10 +110,7 @@ start_mock() {
   write_mock
   ( exec python3 "${MOCK_DIR}/loki_mock.py" "$MOCK_PORT" >/dev/null 2>&1 ) &
   MOCK_PID=$!
-  for _ in $(seq 1 100); do
-    curl -sf "http://localhost:${MOCK_PORT}/loki/api/v1/query_range?query=x" >/dev/null 2>&1 && return 0
-    sleep 0.1
-  done
+  stub_ready loki-mock "$MOCK_PORT" "$MOCK_PID" 100 && return 0
   skip "UNMEASURABLE: mock loki failed to start twice (port ${MOCK_PORT}) — environment, not pipeline-health logic (#3949)"
 }
 

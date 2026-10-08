@@ -1387,7 +1387,7 @@ Error: Cannot find module '@playwright/test'\n";
 
 #[test]
 fn failed_event_carries_level_error() {
-    let got = spine_args("testcase.failed", "kade", "4255", "t", &[("case", "x")]);
+    let got = spine_args("test.case.failed", "kade", "4255", "t", &[("case", "x")]);
     assert!(got.contains(&"level=error".to_string()), "got {:?}", got);
 }
 

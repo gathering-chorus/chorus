@@ -40,10 +40,10 @@ class H(BaseHTTPRequestHandler):
 HTTPServer(("127.0.0.1", int(sys.argv[1])), H).serve_forever()
 PY
   python3 "$TMP/stub.py" "$PORT" "$1" "$2" "$3" & STUB_PID=$!
-  for _ in 1 2 3 4 5 6 7 8 9 10; do
-    curl -sf --max-time 1 --data-urlencode 'query=SELECT 1' "http://127.0.0.1:$PORT/query" >/dev/null 2>&1 && break
-    sleep 0.2
-  done
+  # #4454 — up, ready in how long, or why not, on the run's trace
+  load lib/test-events.bash
+  fixture_ready fuseki-stub "$PORT" "$STUB_PID" 10 0.2 \
+    curl -sf --max-time 1 --data-urlencode 'query=SELECT 1' "http://127.0.0.1:$PORT/query" || true
   export FUSEKI_QUERY="http://127.0.0.1:$PORT/query" FUSEKI_UPDATE="http://127.0.0.1:$PORT/update"
 }
 teardown() { [ -n "${STUB_PID:-}" ] && kill "$STUB_PID" 2>/dev/null; rm -rf "${TMP:-}"; }

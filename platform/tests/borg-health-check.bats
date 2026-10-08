@@ -33,10 +33,9 @@ start_mock() {
   # exec replaces the subshell with python3, so MOCK_PID is the real python pid
   ( cd "$MOCK_DIR" && exec python3 -m http.server "$MOCK_PORT" >/dev/null 2>&1 ) &
   MOCK_PID=$!
-  for _ in $(seq 1 30); do
-    curl -sf "http://localhost:${MOCK_PORT}/" >/dev/null 2>&1 && return 0
-    sleep 0.1
-  done
+  # #4454 — up, ready in how long, or why not, on the run's trace
+  load lib/test-events.bash
+  stub_ready borg-mock "$MOCK_PORT" "$MOCK_PID" 30 && return 0
   echo "mock failed to start on $MOCK_PORT" >&2
   return 1
 }
