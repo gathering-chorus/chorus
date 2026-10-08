@@ -11,13 +11,21 @@
 set -u
 
 GUARD="$(cd "$(dirname "$0")" && pwd)/chorus-share-guard.py"
-ROOT="$(mktemp -d)"; trap 'rm -rf "$ROOT"' EXIT
+ROOT="$(mktemp -d)"
+# #4454 — the stub and the guard die with the suite; before, both outlived
+# every run (the subshell's pid is not the server's, so exec; the guard was
+# never stopped at all)
+PIDS=()
+trap 'kill "${PIDS[@]}" 2>/dev/null; rm -rf "$ROOT"' EXIT
+# shellcheck source=../tests/lib/test-events.bash
+source "$(dirname "$0")/../tests/lib/test-events.bash"
 mkdir -p "$ROOT/www/athena"
 echo "ATHENA-PAGE" > "$ROOT/www/athena/index.html"
 echo "ENTRANCE-PAGE" > "$ROOT/www/index.html"
 
 UP=$((26000 + ($$ % 9000))); GP=$((UP + 1))
-(cd "$ROOT/www" && python3 -m http.server "$UP" >/dev/null 2>&1) &
+(cd "$ROOT/www" && exec python3 -m http.server "$UP" >/dev/null 2>&1) &
+PIDS+=($!)
 ME="https://example.test/alice#me"
 printf '%s\n' "$ME" > "$ROOT/p.txt"
 printf '/\n/athena\n' > "$ROOT/allow.txt"
@@ -25,7 +33,9 @@ export SHARE_PRINCIPALS_FILE="$ROOT/p.txt" SHARE_STATE_FILE="$ROOT/s.json" SHARE
 
 SHARE_PATH_PREFIX="/chorus" SHARE_ALLOW_FILE="$ROOT/allow.txt" \
   SHARE_UPSTREAM="http://127.0.0.1:$UP" SHARE_PORT="$GP" python3 "$GUARD" >/dev/null 2>&1 &
-for _ in $(seq 1 25); do curl -s -o /dev/null "http://127.0.0.1:$GP/_auth/" 2>/dev/null && break; sleep 0.3; done
+PIDS+=($!)
+# #4454 — up, ready in how long, or why not, on the run's trace
+fixture_ready share-guard "$GP" "$!" 25 0.3 curl -s -o /dev/null "http://127.0.0.1:$GP/_auth/" || true
 
 S=$(SHARE_STATE_FILE="$ROOT/s.json" python3 "$GUARD" --sign-session "$ME" 2>/dev/null)
 B="http://127.0.0.1:$GP"

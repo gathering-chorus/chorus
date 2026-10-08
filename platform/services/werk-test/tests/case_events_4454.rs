@@ -1,0 +1,93 @@
+// @domain: tests
+//! #4454 — every test case is an event on the run's trace, with its time and,
+//! when it failed, its reason. Jeff, 2026-10-07: "unless we have this level of
+//! detailed log and trace we are just guessing".
+
+use werk_test::{
+    bats_case_times, batch_line, case_event_args, case_tsv_times, nextest_case_times, parse_bats_cases,
+    CaseResult,
+};
+
+// bats -T output, as bats 1.13 prints it
+const BATS_T: &str = "1..3\nok 1 a ok in 6ms\nok 2 b skip in 8ms # skip why\nnot ok 3 c bad in 5ms\n# (in test file t.bats, line 4)\n";
+
+fn case(name: &str, result: &str) -> CaseResult {
+    CaseResult { file_path: "platform/tests/t.bats".into(), test_name: name.into(), result: result.into() }
+}
+
+#[test]
+fn bats_timing_keeps_the_case_names_and_verdicts() {
+    assert_eq!(
+        parse_bats_cases(BATS_T),
+        vec![("a ok".into(), "pass".into()), ("b skip".into(), "skip".into()), ("c bad".into(), "fail".into())]
+    );
+}
+
+// NEGATIVE PROOF: the timing suffix is really there to strip — a parse that
+// ignored it would store "a ok in 6ms", a name the registry never holds.
+#[test]
+fn the_raw_timing_line_is_not_the_case_name() {
+    assert!(BATS_T.contains("ok 1 a ok in 6ms"));
+    assert!(!parse_bats_cases(BATS_T).iter().any(|(n, _)| n.contains(" in ") || n.ends_with("ms")));
+}
+
+#[test]
+fn each_runner_reports_its_case_times() {
+    let b = bats_case_times(BATS_T);
+    assert_eq!((b.get("a ok"), b.get("b skip"), b.get("c bad")), (Some(&6), Some(&8), Some(&5)));
+
+    let n = nextest_case_times("        PASS [   0.012s] werk-test::units a_case\n        FAIL [   1.500s] werk-test::units b_case\n");
+    assert_eq!((n.get("a_case"), n.get("b_case")), (Some(&12), Some(&1500)));
+
+    let j = case_tsv_times("/w/a.test.ts\tsuite does x\tpassed\t41\n/w/a.test.ts\tsuite no time\tpassed\t\n");
+    assert_eq!(j.get("suite does x"), Some(&41));
+    assert_eq!(j.get("suite no time"), None, "no duration is absent, never 0");
+}
+
+#[test]
+fn a_failed_case_event_carries_its_reason_time_and_level() {
+    let a = case_event_args(&case("c bad", "fail"), Some(5), "platform/tests/t.bats", "assertion",
+        "expected 2 got 3", "nightly", "4454", "tr-1");
+    assert_eq!(a[0], "test.case.failed");
+    for want in ["level=error", "reason=expected 2 got 3", "failure_kind=assertion", "elapsed_ms=5",
+                 "case=c bad", "file=platform/tests/t.bats", "trace=tr-1", "card=4454"] {
+        assert!(a.iter().any(|x| x == want), "missing {want} in {a:?}");
+    }
+}
+
+// NEGATIVE PROOF: a passed case is not stamped as a failure and carries no
+// reason — if every case read as failed, the red would name nothing.
+#[test]
+fn a_passed_case_event_is_info_with_no_reason() {
+    let a = case_event_args(&case("a ok", "pass"), Some(6), "u", "", "", "nightly", "4454", "tr-1");
+    assert_eq!(a[0], "test.case.passed");
+    assert!(!a.iter().any(|x| x == "level=error" || x.starts_with("reason=")), "{a:?}");
+    let s = case_event_args(&case("b skip", "skip"), None, "u", "", "", "nightly", "4454", "tr-1");
+    assert_eq!(s[0], "test.case.skipped");
+    assert!(!s.iter().any(|x| x.starts_with("elapsed_ms=")), "no time given, none invented: {s:?}");
+}
+
+#[test]
+fn a_batch_line_is_one_event_even_when_a_value_has_a_tab_or_newline() {
+    let line = batch_line(&["test.case.failed".into(), "nightly".into(), "reason=a\tb\nc".into()]);
+    assert_eq!(line.split('\t').count(), 3);
+    assert!(!line.contains('\n'));
+}
+
+// The one door a test child's own events take to the spine: test.* only.
+#[test]
+fn a_childs_test_events_are_forwarded() {
+    let got = werk_test::forwardable_test_events(
+        "test.fixture.ready\ttests\tport=1\ntest.case.started\ttests\tcase=a\n");
+    assert_eq!(got.len(), 2);
+}
+
+// NEGATIVE PROOF: a test cannot use the door to write anything else on the
+// live spine — a card or deploy event from a child is dropped, as is a line
+// with no role.
+#[test]
+fn a_child_cannot_forward_a_non_test_event() {
+    let got = werk_test::forwardable_test_events(
+        "card.moved\ttests\tcard=1\ndeploy.completed\tkade\nservice.started\tsystem\ntest.case.started\n\n");
+    assert!(got.is_empty(), "{got:?}");
+}

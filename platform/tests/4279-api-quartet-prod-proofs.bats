@@ -86,7 +86,9 @@ HTTPServer(("127.0.0.1",int(sys.argv[1])),H).serve_forever()
 PY
   PORT=$((20000 + RANDOM % 20000))
   python3 "$FIX/api.py" "$PORT" "$FIX/create.json" & SRV=$!
-  for _ in 1 2 3 4 5 6 7 8 9 10; do curl -sf "http://127.0.0.1:$PORT/health" >/dev/null 2>&1 && break; sleep 0.3; done
+  # #4454 — up, ready in how long, or why not, on the run's trace
+  load lib/test-events.bash
+  stub_ready api-stub "$PORT" "$SRV" 10 || true
   # The run id carries capitals on purpose: the DAL slugs the name it writes
   # (T→t), the door reads by the literal path, so a capital in the subject is a
   # 404 read-back and a leftover row (16:53 run, 2026-09-23: 138 rows). The

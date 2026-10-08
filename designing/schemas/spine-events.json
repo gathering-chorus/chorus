@@ -5584,24 +5584,6 @@
         "unit": "The unit that produced no measurement (workspace)."
       }
     },
-    "testcase.failed": {
-      "producer": "tests",
-      "about": "TestResult",
-      "category": "fact",
-      "version": "1",
-      "vertebra": "building",
-      "source": "werk",
-      "description": "Werk test runner — one event per failing TEST CASE (#4255). test.failed names the unit and the check; this names the file and the case, so Loki can answer which test failed, not only that a unit went red. Jeff, 2026-09-21: \"i thought they had our logging standards integrated it feels like they dont\".",
-      "fields": {
-        "case": "Test case name as the framework reports it",
-        "file": "Test file path, repo-relative",
-        "level": "error — the severity required by the Structured Logging Contract, derived from the event name",
-        "message": "Human-readable sentence: which case failed, in which file",
-        "role": "Acting role",
-        "trace_id": "Werk trace join key",
-        "unit": "Unit the case ran in (crate / package / suite)"
-      }
-    },
     "testresult.lost": {
       "producer": "tests",
       "about": "TestResult",
@@ -6055,6 +6037,183 @@
       "fields": {
         "role": "Acting role",
         "trace_id": "Werk trace join key"
+      }
+    },
+    "test.case.failed": {
+      "producer": "tests",
+      "about": "TestResult",
+      "category": "fact",
+      "version": "1",
+      "vertebra": "building",
+      "source": "werk",
+      "description": "Werk test runner — one event per failing TEST CASE (#4255; #4454 put passed, failed and skipped under one name). Carries the reason and elapsed time. Jeff, 2026-10-07: \"unless we have this level of detailed log and trace we are just guessing\".",
+      "fields": {
+        "case": "Test case name as the framework reports it",
+        "file": "Test file path, repo-relative",
+        "unit": "The unit the case ran in (crate, package, suite)",
+        "elapsed_ms": "How long the case ran, from the runner's own timing (bats -T, nextest, jest duration); absent when the runner gave none",
+        "message": "Human-readable sentence: which case, in which file, and the outcome",
+        "role": "Acting role",
+        "trace": "Werk trace join key: every case of one run shares it",
+        "card_id": "Card the run is for",
+        "level": "error — derived from the event name",
+        "failure_kind": "Kind of failure the runner read (assertion, timeout, panic, ...)",
+        "reason": "The failure as the runner printed it: the assertion and the value seen"
+      }
+    },
+    "test.case.passed": {
+      "producer": "tests",
+      "about": "TestResult",
+      "category": "fact",
+      "version": "1",
+      "vertebra": "building",
+      "source": "werk",
+      "description": "Werk test runner — one event per passing TEST CASE (#4454), with its elapsed time, on the run's trace: a red's neighbours and a slow case are visible in Loki, not only the failure.",
+      "fields": {
+        "case": "Test case name as the framework reports it",
+        "file": "Test file path, repo-relative",
+        "unit": "The unit the case ran in (crate, package, suite)",
+        "elapsed_ms": "How long the case ran, from the runner's own timing (bats -T, nextest, jest duration); absent when the runner gave none",
+        "message": "Human-readable sentence: which case, in which file, and the outcome",
+        "role": "Acting role",
+        "trace": "Werk trace join key: every case of one run shares it",
+        "card_id": "Card the run is for"
+      }
+    },
+    "test.case.skipped": {
+      "producer": "tests",
+      "about": "TestResult",
+      "category": "fact",
+      "version": "1",
+      "vertebra": "building",
+      "source": "werk",
+      "description": "Werk test runner — one event per skipped TEST CASE (#4454): the case ran and declined, with its time.",
+      "fields": {
+        "case": "Test case name as the framework reports it",
+        "file": "Test file path, repo-relative",
+        "unit": "The unit the case ran in (crate, package, suite)",
+        "elapsed_ms": "How long the case ran, from the runner's own timing (bats -T, nextest, jest duration); absent when the runner gave none",
+        "message": "Human-readable sentence: which case, in which file, and the outcome",
+        "role": "Acting role",
+        "trace": "Werk trace join key: every case of one run shares it",
+        "card_id": "Card the run is for"
+      }
+    },
+    "test.case.started": {
+      "producer": "tests",
+      "about": "TestResult",
+      "category": "fact",
+      "version": "1",
+      "vertebra": "building",
+      "source": "werk",
+      "description": "A test case begins (#4454), from the runner's own reporter (jest, playwright): a case that hangs reads started with no end. Written by the test child to CHORUS_TEST_EVENTS and forwarded by werk-test.",
+      "fields": {
+        "role": "Acting role",
+        "trace": "Werk trace join key",
+        "card_id": "Card the run is for",
+        "message": "Human-readable sentence",
+        "file": "Test file path, repo-relative",
+        "case": "Test case name",
+        "unit": "Runner (jest, playwright)",
+        "at": "When the case started (ISO), from the child"
+      }
+    },
+    "test.unit.started": {
+      "producer": "tests",
+      "about": "TestResult",
+      "category": "fact",
+      "version": "1",
+      "vertebra": "building",
+      "source": "werk",
+      "description": "A test unit begins (#4454) — a crate, package or suite — so a unit that hangs reads started with no end, for runners that do not report each case starting (bats, cargo).",
+      "fields": {
+        "role": "Acting role",
+        "trace": "Werk trace join key",
+        "card_id": "Card the run is for",
+        "message": "Human-readable sentence",
+        "check": "Kind of check (cargo, jest, bats, ...)",
+        "unit": "The unit"
+      }
+    },
+    "test.fixture.started": {
+      "producer": "tests",
+      "about": "TestResult",
+      "category": "fact",
+      "version": "1",
+      "vertebra": "building",
+      "source": "werk",
+      "description": "A test fixture starts (#4454): an own Clearing, a stub service. Written by the fixture to CHORUS_TEST_EVENTS and forwarded by werk-test.",
+      "fields": {
+        "role": "Acting role",
+        "trace": "Werk trace join key",
+        "card_id": "Card the run is for",
+        "message": "Human-readable sentence",
+        "fixture": "Which fixture (own-clearing, stub-upstream, ...)",
+        "port": "Port it listens on",
+        "pid": "Its process id",
+        "at": "When (ISO), from the child"
+      }
+    },
+    "test.fixture.ready": {
+      "producer": "tests",
+      "about": "TestResult",
+      "category": "fact",
+      "version": "1",
+      "vertebra": "building",
+      "source": "werk",
+      "description": "A test fixture answers (#4454), with how long it took: a slow start reads as slow, not as a product red.",
+      "fields": {
+        "role": "Acting role",
+        "trace": "Werk trace join key",
+        "card_id": "Card the run is for",
+        "message": "Human-readable sentence",
+        "fixture": "Which fixture (own-clearing, stub-upstream, ...)",
+        "port": "Port it listens on",
+        "pid": "Its process id",
+        "at": "When (ISO), from the child",
+        "ready_ms": "Milliseconds from start to answering"
+      }
+    },
+    "test.fixture.failed": {
+      "producer": "tests",
+      "about": "TestResult",
+      "category": "fact",
+      "version": "1",
+      "vertebra": "building",
+      "source": "werk",
+      "description": "A test fixture never became ready (#4454), and why: a case that fails with its fixture down reads differently in Loki from a case that fails on a wrong value.",
+      "fields": {
+        "role": "Acting role",
+        "trace": "Werk trace join key",
+        "card_id": "Card the run is for",
+        "message": "Human-readable sentence",
+        "fixture": "Which fixture (own-clearing, stub-upstream, ...)",
+        "port": "Port it listens on",
+        "pid": "Its process id",
+        "at": "When (ISO), from the child",
+        "elapsed_ms": "Milliseconds before it gave up",
+        "reason": "Why it was not ready",
+        "level": "error"
+      }
+    },
+    "test.fixture.stopped": {
+      "producer": "tests",
+      "about": "TestResult",
+      "category": "fact",
+      "version": "1",
+      "vertebra": "building",
+      "source": "werk",
+      "description": "A test fixture is stopped at the end of its specs (#4454).",
+      "fields": {
+        "role": "Acting role",
+        "trace": "Werk trace join key",
+        "card_id": "Card the run is for",
+        "message": "Human-readable sentence",
+        "fixture": "Which fixture (own-clearing, stub-upstream, ...)",
+        "port": "Port it listens on",
+        "pid": "Its process id",
+        "at": "When (ISO), from the child",
+        "exit": "Its exit code, or running when it was still up"
       }
     }
   }

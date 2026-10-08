@@ -62,6 +62,9 @@ with socketserver.TCPServer(('127.0.0.1', $STUB_PORT), H) as s:
 " &
   STUB_PID=$!
   for _ in $(seq 1 50); do [ -f "$TEST_HOME/port.ready" ] && break; sleep 0.05; done
+  # #4454 — up, ready in how long, or why not, on the run's trace
+  load lib/test-events.bash
+  stub_ready crawler-api-stub "$STUB_PORT" "$STUB_PID" 10 || true
 
   run env API_URL="http://127.0.0.1:${STUB_PORT}" DB_PATH="$TEST_DB" CHORUS_ROOT="$TEST_ROOT" \
     HEALTH_RETRY_MAX=2 HEALTH_RETRY_DELAY=0 bash "$SCRIPT" notadomain

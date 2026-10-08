@@ -488,6 +488,10 @@ fn run(args: &[String]) -> Result<i32, String> {
     for check in &plan {
         let target = check.unit.as_ref().map(unit_name).unwrap_or("workspace");
         let check_started = std::time::Instant::now();
+        let cases_before = all_cases.len();
+        // #4454 — the unit starts on the trace: a hung unit reads started, no end
+        emit_spine("test.unit.started", &role, &card, &trace,
+            &[("check", check.kind.label()), ("unit", target), ("message", &format!("{} {} started", check.kind.label(), target))]);
         let ok = match (&check.kind, &check.unit) {
             (CheckKind::CargoTest, Some(TestUnit::RustCrate(c))) => {
                 // stack-down: this crate's needs-stack integration binaries
@@ -566,7 +570,9 @@ fn run(args: &[String]) -> Result<i32, String> {
                     unmeasured.push(target.to_string());
                     true
                 } else {
-                    match run_bats(&werk, s) {
+                    let (outcome, cases) = run_bats(&werk, s);
+                    all_cases.extend(cases);
+                    match outcome {
                         BatsOutcome::Pass => true,
                         BatsOutcome::Unmeasured => {
                             unmeasured.push(target.to_string());
@@ -582,6 +588,10 @@ fn run(args: &[String]) -> Result<i32, String> {
             _ => true, // unreachable given check_plan's construction
         };
         let secs = check_started.elapsed().as_secs_f64();
+        // #4454 — this check's cases on the trace, as soon as it ends, and
+        // whatever its fixtures said
+        emit_case_events(target, &all_cases[cases_before..], &role, &card, &trace);
+        forward_test_events(&werk);
         unit_costs.push((format!("{}:{}", check.kind.label(), target), secs));
         let verdict = if unmeasured.last().map(|u| u == target).unwrap_or(false) {
             "UNMEASURED"
@@ -856,7 +866,7 @@ fn run_nightly(args: &[String]) -> Result<i32, String> {
     // #4155 — `reasons` are (file, case, text) as the runner read them; a
     // failed case takes its own, else its file's (a suite that died before
     // any case ran), else the unit's (an empty file and case name).
-    let store_unit = |unit: &str, cases: &[CaseResult], reasons: &[(String, String, String)]| {
+    let store_unit = |unit: &str, cases: &[CaseResult], reasons: &[(String, String, String)], times: &std::collections::HashMap<String, u64>| {
         if cases.is_empty() {
             return;
         }
@@ -887,6 +897,17 @@ fn run_nightly(args: &[String]) -> Result<i32, String> {
                 ((c.file_path.clone(), c.test_name.clone()), (kind, reason))
             })
             .collect();
+        // #4454 — every case is an event on the run's trace, passed, failed or
+        // skipped, with its time and (failed) its reason: one Loki query on the
+        // trace says which case, how long, and why. Before the withheld return,
+        // so a werk-rooted run logs its cases too. One process for the unit.
+        let events: Vec<String> = cases.iter().map(|c| {
+            let (kind, reason) = whys.get(&(c.file_path.clone(), c.test_name.clone())).cloned().unwrap_or_default();
+            werk_test::batch_line(&werk_test::case_event_args(c, times.get(&c.test_name).copied(), unit,
+                &kind, &reason, &mint_role, &card, &trace))
+        }).collect();
+        emit_spine_batch(&events);
+        forward_test_events(&root);
         if withheld {
             withheld_total.fetch_add(cases.len(), Ordering::SeqCst);
             println!("nightly-withheld|{}|{} (werk root, prod ledger untouched)", unit, cases.len());
@@ -919,33 +940,6 @@ fn run_nightly(args: &[String]) -> Result<i32, String> {
                 c.result,
                 werk_test::nightly_run::registered_suffix_len(&c.test_name, registered)
             );
-            // #4255 — a FAILING case becomes an event, not just a line in a file
-            // on this box. Jeff, 2026-09-21: "i thought they had our logging
-            // standards integrated it feels like they dont". The runner emitted
-            // test.failed per UNIT with no case name and no reason, so Loki
-            // could say a unit went red and never which test or why.
-            if c.result == "fail" {
-                let (kind, reason) = whys.get(&(c.file_path.clone(), c.test_name.clone())).cloned().unwrap_or_default();
-                // #4255 — `message` is required by the Structured Logging
-                // Contract and the runner was not carrying one, so Loki held a
-                // failure with no sentence in it. `level` rides from the event
-                // name (spine_args).
-                let msg = format!("{} failed in {}: {}", c.test_name, c.file_path, reason);
-                emit_spine(
-                    "testcase.failed",
-                    &mint_role,
-                    &card,
-                    &trace,
-                    &[
-                        ("file", c.file_path.as_str()),
-                        ("case", c.test_name.as_str()),
-                        ("unit", unit),
-                        ("failure_kind", kind.as_str()),
-                        ("reason", reason.as_str()),
-                        ("message", msg.as_str()),
-                    ],
-                );
-            }
         }
         println!("nightly-stored|{}|{} of {}", unit, stored, joined.len());
     };
@@ -1086,6 +1080,9 @@ fn run_nightly(args: &[String]) -> Result<i32, String> {
         // #4126 — one timestamp per unit: a slow unit names its own seconds,
         // a wedged one never prints.
         let unit_started = std::time::Instant::now();
+        // #4454 — the unit starts on the trace: a hung unit reads started, no end
+        emit_spine("test.unit.started", &mint_role, &card, &trace,
+            &[("check", bats_kind(b)), ("unit", b), ("message", &format!("{} started", b))]);
         let r = run_bats_cases(werk, b);
         let unit_ms = unit_started.elapsed().as_millis();
         let mut cases: Vec<CaseResult> = r.1.iter()
@@ -1109,7 +1106,7 @@ fn run_nightly(args: &[String]) -> Result<i32, String> {
         if !r.0 {
             reasons.push((b.to_string(), String::new(), werk_test::why::tail_reason(&r.2, 4)));
         }
-        store_unit(b, &cases, &reasons);
+        store_unit(b, &cases, &reasons, &werk_test::bats_case_times(&r.2));
         r
     };
     let (mut cargo_waits, mut npm_waits, mut bats_waits) = (0usize, 0usize, 0usize);
@@ -1131,6 +1128,9 @@ fn run_nightly(args: &[String]) -> Result<i32, String> {
         // ── cargo: `crate` is its unit run, `crate#stem` one typed binary ──
         let cargo_root = root.clone();
         let (cargo_results, waits) = werk_test::run_pool_gated(&sp.cargo, cargo_workers, cap, read_loadavg, gate_wait, gate_tick, |item| werk_test::time_unit(item, || {
+            // #4454 — the unit starts on the trace: a hung unit reads started, no end
+            emit_spine("test.unit.started", &mint_role, &card, &trace,
+                &[("check", "cargo"), ("unit", item), ("message", &format!("cargo {} started", item))]);
             let ns_bins = ns_bins_for(item.split('#').next().unwrap_or(item));
             let (c, stem) = match item.split_once('#') {
                 Some((c, s)) => (c, Some(s)),
@@ -1173,7 +1173,10 @@ fn run_nightly(args: &[String]) -> Result<i32, String> {
             if !ok {
                 reasons.push((String::new(), String::new(), werk_test::why::tail_reason(&text, 4)));
             }
-            store_unit(item, &matched, &reasons);
+            // #4454 — nextest times by full path, keyed the way the case is stored
+            let times: std::collections::HashMap<String, u64> = werk_test::nextest_case_times(&text)
+                .into_iter().map(|(p, ms)| (werk_test::nextest_bare_name(&p).to_string(), ms)).collect();
+            store_unit(item, &matched, &reasons, &times);
             (ok, cases, ns_len, stem.is_none() && !typed.is_empty())
         }));
         cargo_waits += waits;
@@ -1204,14 +1207,18 @@ fn run_nightly(args: &[String]) -> Result<i32, String> {
             &|u| explicit_iso.iter().any(|e| e == u.split('#').next().unwrap_or(u)));
         let npm_root = root.clone();
         let run_pkg = |item: &str| werk_test::time_unit(item, || {
+            // #4454 — the unit starts on the trace: a hung unit reads started, no end
+            emit_spine("test.unit.started", &mint_role, &card, &trace,
+                &[("check", "jest"), ("unit", item), ("message", &format!("jest {} started", item))]);
             let (p, project) = match item.split_once('#') {
                 Some((p, proj)) => (p, Some(proj)),
                 None if split_pkgs.iter().any(|s| s == item) => (item, Some("hermetic")),
                 None => (item, None),
             };
             let (ok, cases, reasons) = run_jest_project(&npm_root, p, Some(jest_workers), project);
+            let jest_times = take_case_times(&cases);
             // #4030 AC3 — stored the moment the package finishes
-            store_unit(item, &cases, &reasons);
+            store_unit(item, &cases, &reasons, &jest_times);
             (ok, cases)
         });
         let (mut npm_results, w1) = werk_test::run_pool_gated(&npm_plan.parallel, npm_workers, cap, read_loadavg, gate_wait, gate_tick, run_pkg);
@@ -1475,7 +1482,12 @@ fn run_bats_cases(werk: &str, suite: &str) -> (bool, Vec<(String, String)>, Stri
         c.args(["-m", "unittest", "-v", file.trim_end_matches(".py")]);
         (c, format!("{}/{}", werk, d))
     } else {
-        let mut c = Command::new(werk_test::suite_runner(&format!("{}/{}", werk, suite)));
+        let runner = werk_test::suite_runner(&format!("{}/{}", werk, suite));
+        let mut c = Command::new(runner);
+        // #4454 — each case's time on its TAP line
+        if runner == "bats" {
+            c.arg("-T");
+        }
         c.arg(suite);
         (c, werk.to_string())
     };
@@ -1644,7 +1656,7 @@ fn build_one(werk: &str, t: &werk_test::BuildTarget) -> Result<(), String> {
     }
 }
 
-fn run_bats(werk: &str, suite: &str) -> BatsOutcome {
+fn run_bats(werk: &str, suite: &str) -> (BatsOutcome, Vec<CaseResult>) {
     let tmp = std::env::temp_dir().join(format!("werk-test-bats-{}", std::process::id()));
     let _ = std::fs::create_dir_all(&tmp);
     // #4004 — a .sh suite is EXECUTED by bash, never handed to bats. run_bats_cases
@@ -1663,7 +1675,20 @@ fn run_bats(werk: &str, suite: &str) -> BatsOutcome {
     // chorus-health paged Jeff from inside a card's pipeline.
     let mut cmd = Command::new(runner);
     apply_suite_world(&mut cmd, werk);
-    bats_outcome(
+    // #4454 — each case's time on its TAP line
+    if runner == "bats" {
+        cmd.arg("-T");
+    }
+    // #4454 — output to a FILE (a leaked server cannot hold it open, #4022),
+    // echoed to the run log as before, then read for each case's verdict,
+    // time and reason.
+    let out_path = tmp.join(format!("card-{}.out", suite.replace('/', "_")));
+    if let Ok(f) = std::fs::File::create(&out_path) {
+        if let Ok(f2) = f.try_clone() {
+            cmd.stdout(f).stderr(f2);
+        }
+    }
+    let outcome = bats_outcome(
         cmd
             .arg(suite)
             .current_dir(werk)
@@ -1677,7 +1702,15 @@ fn run_bats(werk: &str, suite: &str) -> BatsOutcome {
             // sentinel e2e) wrote done-briefs into a LIVE role dir every night;
             // the SDK honors this seam, so every suite's briefs land in its world.
             .env("CARDS_BRIEFS_ROOT", tmp.join("briefs")),
-    )
+    );
+    let text = std::fs::read_to_string(&out_path).unwrap_or_default();
+    print!("{}", text);
+    let cases: Vec<CaseResult> = werk_test::parse_file_suite_cases(suite, &text).into_iter()
+        .map(|(n, r)| CaseResult { file_path: suite.to_string(), test_name: n, result: r })
+        .collect();
+    note_case_times(werk_test::bats_case_times(&text));
+    note_case_reasons(werk_test::why::bats_case_reasons(&text));
+    (outcome, cases)
 }
 
 /// #3661 — `--flag=value` extraction (the verb's positional parse filters all
@@ -1820,6 +1853,28 @@ fn apply_suite_world(cmd: &mut Command, werk: &str) {
             cmd.env(k, v);
         }
     }
+    cmd.env("CHORUS_TEST_EVENTS", test_events_path(werk));
+}
+
+/// #4454 — where a test child writes its own events (fixture up, ready,
+/// failed; a case starting). werk-test forwards them after each unit.
+fn test_events_path(werk: &str) -> String {
+    let slot = Path::new(werk).file_name().and_then(|s| s.to_str()).unwrap_or("werk");
+    std::env::temp_dir().join(format!("werk-test-events-{slot}-{}.tsv", std::process::id())).to_string_lossy().into_owned()
+}
+
+/// #4454 — move the children's events to the spine: the file is renamed
+/// first, so a child still writing starts a new one and nothing is read twice.
+fn forward_test_events(werk: &str) {
+    let path = test_events_path(werk);
+    static N: std::sync::atomic::AtomicUsize = std::sync::atomic::AtomicUsize::new(0);
+    let taken = format!("{}.{}", path, N.fetch_add(1, std::sync::atomic::Ordering::SeqCst));
+    if std::fs::rename(&path, &taken).is_err() {
+        return;
+    }
+    let text = std::fs::read_to_string(&taken).unwrap_or_default();
+    let _ = std::fs::remove_file(&taken);
+    emit_spine_batch(&werk_test::forwardable_test_events(&text));
 }
 
 /// #3929 — probe `cargo nextest --version` ONCE per process against the pin in
@@ -1954,6 +2009,11 @@ fn run_cargo_sel(werk: &str, name: &str, quarantined: &[&str], exclude_bins: &[&
             }
             // #4063 — full nextest paths: the module chain resolves same-named fns
             let cases = werk_test::parse_nextest_case_paths(&text);
+            // #4454 — times and failure reasons, by the bare name a case is stored under
+            note_case_times(werk_test::nextest_case_times(&text).into_iter()
+                .map(|(p, ms)| (werk_test::nextest_bare_name(&p).to_string(), ms)).collect());
+            note_case_reasons(werk_test::why::nextest_case_reasons(&text).into_iter()
+                .map(|(p, r)| (werk_test::nextest_bare_name(&p).to_string(), r)));
             (ok, cases, text)
         }
         Err(e) => (false, Vec::new(), format!("cargo could not start: {}", e)),
@@ -2029,7 +2089,8 @@ fn run_jest(werk: &str, pkg: &str) -> (bool, Vec<CaseResult>) {
 /// #4022 — jest with its share of the CPU budget (`--maxWorkers N`); None keeps
 /// jest's default (a worker per core), which is what pegged the box.
 fn run_jest_with(werk: &str, pkg: &str, max_workers: Option<usize>) -> (bool, Vec<CaseResult>) {
-    let (ok, cases, _) = run_jest_project(werk, pkg, max_workers, None);
+    let (ok, cases, reasons) = run_jest_project(werk, pkg, max_workers, None);
+    note_case_reasons(reasons.into_iter().map(|(_, n, r)| (n, r)));
     (ok, cases)
 }
 
@@ -2319,7 +2380,10 @@ fn run_jest_selected(werk: &str, pkg: &str, files: &[String]) -> (bool, Vec<Case
                 for l in werk_test::nightly_run::jest_failure_why(&stdout, pkg, &|f| rel_path(f, werk)) {
                     println!("{}", l);
                 }
-                (ok, jest_cases_via_jq(stdout.as_bytes(), werk))
+                {
+                    note_case_reasons(werk_test::why::jest_reasons(stdout.as_bytes()).into_iter().map(|(_, n, r)| (n, r)));
+                    (ok, jest_cases_via_jq(stdout.as_bytes(), werk))
+                }
             }
         }
         None => (false, Vec::new()),
@@ -2332,7 +2396,7 @@ fn run_jest_selected(werk: &str, pkg: &str, files: &[String]) -> (bool, Vec<Case
 /// best-effort, the gate verdict never depends on it.
 fn jest_cases_via_jq(json: &[u8], werk: &str) -> Vec<CaseResult> {
     let jq_filter =
-        r#".testResults[] | .name as $f | .assertionResults[] | [$f, .fullName, .status] | @tsv"#;
+        r#".testResults[] | .name as $f | .assertionResults[] | [$f, .fullName, .status, (.duration // "")] | @tsv"#;
     let mut jq = match Command::new("jq")
         .args(["-r", jq_filter])
         .stdin(std::process::Stdio::piped())
@@ -2352,10 +2416,68 @@ fn jest_cases_via_jq(json: &[u8], werk: &str) -> Vec<CaseResult> {
         Ok(o) if o.status.success() => o.stdout,
         _ => return Vec::new(),
     };
-    parse_case_tsv(&String::from_utf8_lossy(&out))
+    let tsv = String::from_utf8_lossy(&out);
+    let cases: Vec<CaseResult> = parse_case_tsv(&tsv)
         .into_iter()
         .map(|c| CaseResult { file_path: rel_path(&c.file_path, werk), ..c })
-        .collect()
+        .collect();
+    // #4454 — the durations ride beside the cases (CaseResult has 30 builders)
+    note_case_times(werk_test::case_tsv_times(&tsv));
+    cases
+}
+
+/// #4454 — what each runner printed about its cases, by case name: elapsed
+/// time and (failed) reason. Filled where the runner's raw output is in hand,
+/// taken by whoever logs those cases. CaseResult has 30 builders; the facts
+/// ride beside it rather than through every one.
+static CASE_TIMES: std::sync::Mutex<Option<std::collections::HashMap<String, u64>>> = std::sync::Mutex::new(None);
+static CASE_REASONS: std::sync::Mutex<Option<std::collections::HashMap<String, String>>> = std::sync::Mutex::new(None);
+
+fn note_case_times(times: std::collections::HashMap<String, u64>) {
+    if let Ok(mut m) = CASE_TIMES.lock() {
+        m.get_or_insert_with(Default::default).extend(times);
+    }
+}
+
+fn note_case_reasons(reasons: impl IntoIterator<Item = (String, String)>) {
+    if let Ok(mut m) = CASE_REASONS.lock() {
+        m.get_or_insert_with(Default::default).extend(reasons);
+    }
+}
+
+fn take_case_times(cases: &[CaseResult]) -> std::collections::HashMap<String, u64> {
+    let mut out = std::collections::HashMap::new();
+    if let Ok(mut m) = CASE_TIMES.lock() {
+        if let Some(all) = m.as_mut() {
+            for c in cases {
+                if let Some(ms) = all.remove(&c.test_name) {
+                    out.insert(c.test_name.clone(), ms);
+                }
+            }
+        }
+    }
+    out
+}
+
+/// #4454 — a card run's cases as events, the same shape the nightly logs:
+/// time from the runner, reason (and its kind) for a failed case.
+fn emit_case_events(unit: &str, cases: &[CaseResult], role: &str, card: &str, trace: &str) {
+    let times = take_case_times(cases);
+    let reasons: std::collections::HashMap<String, String> = CASE_REASONS.lock().ok()
+        .and_then(|mut m| m.as_mut().map(|all| cases.iter()
+            .filter_map(|c| all.remove(&c.test_name).map(|r| (c.test_name.clone(), r))).collect()))
+        .unwrap_or_default();
+    let lines: Vec<String> = cases.iter().map(|c| {
+        let (kind, reason) = if c.result == "fail" {
+            let why = werk_test::why::why_line(&c.file_path, &c.test_name, reasons.get(&c.test_name).map(String::as_str).unwrap_or(""));
+            let (_, _, k, r) = werk_test::why::parse_why_line(&why).unwrap_or_default();
+            (k, r)
+        } else {
+            Default::default()
+        };
+        werk_test::batch_line(&werk_test::case_event_args(c, times.get(&c.test_name).copied(), unit, &kind, &reason, role, card, trace))
+    }).collect();
+    emit_spine_batch(&lines);
 }
 
 /// #4155 — each failed jest case's reason, paths made werk-relative.
@@ -2431,6 +2553,40 @@ fn bats_outcome(cmd: &mut Command) -> BatsOutcome {
         Ok(s) if s.success() => BatsOutcome::Pass,
         Ok(s) if s.code() == Some(2) => BatsOutcome::Unmeasured,
         _ => BatsOutcome::Fail,
+    }
+}
+
+/// #4454 — many spine events from one `chorus-log --batch` process: a test
+/// unit's cases, one per line (see werk_test::batch_line). A process per
+/// event cost ~28ms, ten minutes over a nightly's ~20,000 cases.
+fn emit_spine_batch(lines: &[String]) {
+    if lines.is_empty() {
+        return;
+    }
+    let home = match std::env::var("CHORUS_HOME") {
+        Ok(h) => h,
+        Err(_) => return,
+    };
+    let log = format!("{}/platform/scripts/chorus-log", home);
+    if !Path::new(&log).is_file() {
+        return;
+    }
+    let child = Command::new(&log).arg("--batch")
+        .stdin(std::process::Stdio::piped()).stdout(std::process::Stdio::null()).stderr(std::process::Stdio::null()).spawn();
+    let batched = child.map(|mut child| {
+        if let Some(mut stdin) = child.stdin.take() {
+            use std::io::Write as _;
+            let _ = stdin.write_all(lines.join("\n").as_bytes());
+            let _ = stdin.write_all(b"\n");
+        }
+        child.wait().map(|s| s.success()).unwrap_or(false)
+    }).unwrap_or(false);
+    // a chorus-log that predates --batch (the installed shim, until this
+    // lands) refuses it: one process per event then, slow but nothing lost
+    if !batched {
+        for l in lines {
+            let _ = Command::new(&log).args(l.split('\t')).stdout(std::process::Stdio::null()).status();
+        }
     }
 }
 
@@ -2865,7 +3021,11 @@ fn run_ui_flows(werk: &str, files: &std::collections::BTreeSet<String>, quaranti
     }
     cmd.current_dir(werk);
     cmd.env("CHORUS_CONTEXT", ""); // #3918 — test child stays refusable
-    match cmd.output() {
+    // #4454 — the specs' own events (fixtures, each case starting and ending)
+    cmd.env("CHORUS_TEST_EVENTS", test_events_path(werk));
+    let out = cmd.output();
+    forward_test_events(werk);
+    match out {
         Ok(o) => {
             let text = format!("{}{}",
                 String::from_utf8_lossy(&o.stdout), String::from_utf8_lossy(&o.stderr));
@@ -2938,7 +3098,7 @@ mod suite_deadline_tests {
 echo '=== Results: 1 passed, 0 failed ==='\n");
         std::env::remove_var("CHORUS_MCP_NUDGE_URL");
         let werk = std::fs::canonicalize(&dir).unwrap();
-        assert!(matches!(run_bats(werk.to_str().unwrap(), &s), BatsOutcome::Pass));
+        assert!(matches!(run_bats(werk.to_str().unwrap(), &s).0, BatsOutcome::Pass));
     }
 
     /// NEGATIVE PROOF — the same suite run with the live nudge path fails, so

@@ -74,6 +74,11 @@ TRACE_AUTH=""
     --max-time 3 > /dev/null 2>&1 &
 fi
 
+# #4454 — `chorus-log --batch`: events on stdin, one per line. The trace rides
+# from CHORUS_TRACE_ID in the shim; each line names its own card.
+if [ "$CMD" = "chorus-log" ] && [ "${1:-}" = "--batch" ]; then
+  exec "$SHIM" "$CMD" --batch
+fi
 # #2857 — trace_id + card_id env-bridge for chorus-log. When invoked as
 # chorus-log AND CHORUS_TRACE_ID / CHORUS_CARD_ID are set in env, prepend
 # them to argv as kv pairs so the Rust shim emits them on the spine event.

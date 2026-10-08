@@ -440,7 +440,15 @@ test.nightly.refused	yes	0	fact	default: a principal did something to a model th
 test.plan.degraded	yes	0	fact	default: a principal did something to a model thing
 test.scope.full	yes	0	fact	default: a principal did something to a model thing
 test.unmeasured	yes	0	fact	default: a principal did something to a model thing
-testcase.failed	yes	0	fact	default: a principal did something to a model thing
+test.case.failed	yes	0	fact	default: a principal did something to a model thing
+test.case.passed	yes	0	fact	default: a principal did something to a model thing
+test.case.started	yes	0	fact	default: a principal did something to a model thing
+test.unit.started	yes	0	fact	default: a principal did something to a model thing
+test.fixture.started	yes	0	fact	default: a principal did something to a model thing
+test.fixture.ready	yes	0	fact	default: a principal did something to a model thing
+test.fixture.failed	yes	0	fact	default: a principal did something to a model thing
+test.fixture.stopped	yes	0	fact	default: a principal did something to a model thing
+test.case.skipped	yes	0	fact	default: a principal did something to a model thing
 testresult.lost	yes	0	fact	default: a principal did something to a model thing
 testresult.post.skipped	yes	0	fact	default: a principal did something to a model thing
 testresult.writeback.withheld	yes	0	fact	default: a principal did something to a model thing

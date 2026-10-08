@@ -1379,6 +1379,32 @@ pub fn tsv_unescape(s: &str) -> String {
     out
 }
 
+/// #4454 — each jest case's duration from the same TSV, 4th column (ms), by
+/// the case name parse_case_tsv gives it. A row with no duration is absent.
+pub fn case_tsv_times(tsv: &str) -> std::collections::HashMap<String, u64> {
+    tsv.lines()
+        .filter_map(|l| {
+            let cols: Vec<&str> = l.trim_end().split('\t').collect();
+            let ms = cols.get(3)?.trim().parse::<f64>().ok()?;
+            Some((tsv_unescape(cols.get(1)?), ms.round() as u64))
+        })
+        .collect()
+}
+
+/// #4454 — the events a test child wrote to its CHORUS_TEST_EVENTS file that
+/// may reach the spine: `test.*` only. A test cannot write the live spine
+/// (#3615 membrane); this is the one door its own events take, and it opens
+/// for test events and nothing else.
+pub fn forwardable_test_events(text: &str) -> Vec<String> {
+    text.lines()
+        .filter(|l| {
+            let mut f = l.split('\t');
+            matches!((f.next(), f.next()), (Some(ev), Some(role)) if ev.starts_with("test.") && !role.is_empty())
+        })
+        .map(String::from)
+        .collect()
+}
+
 pub fn parse_case_tsv(tsv: &str) -> Vec<CaseResult> {
     tsv.lines()
         .filter_map(|l| {
@@ -4010,10 +4036,96 @@ pub fn split_tap_skip(name: &str) -> Option<&str> {
     }
 }
 
+/// #4454 — `bats -T` puts ` in <N>ms` after the case name and before any
+/// `# skip` directive. Split it off so the case keeps the name the registry
+/// holds, and keep the time.
+pub fn split_tap_timing(line: &str) -> (String, Option<u64>) {
+    let (head, directive) = match line.find(" # skip") {
+        Some(at) => (&line[..at], &line[at..]),
+        None => (line, ""),
+    };
+    if let Some(at) = head.rfind(" in ") {
+        if let Some(ms) = head[at + 4..].strip_suffix("ms") {
+            if !ms.is_empty() && ms.chars().all(|c| c.is_ascii_digit()) {
+                return (format!("{}{}", &head[..at], directive), ms.parse().ok());
+            }
+        }
+    }
+    (line.to_string(), None)
+}
+
+/// #4454 — each bats case's elapsed time, by the name parse_bats_cases gives it.
+pub fn bats_case_times(out: &str) -> std::collections::HashMap<String, u64> {
+    let mut times = std::collections::HashMap::new();
+    for l in out.lines() {
+        let (bare, ms) = split_tap_timing(l.trim());
+        if let Some(ms) = ms {
+            if let Some((name, _)) = parse_bats_cases(&bare).into_iter().next() {
+                times.insert(name, ms);
+            }
+        }
+    }
+    times
+}
+
+/// #4454 — each nextest case's elapsed time, by its full path:
+/// `PASS [   0.012s] crate::tests::name` → 12.
+pub fn nextest_case_times(out: &str) -> std::collections::HashMap<String, u64> {
+    let mut times = std::collections::HashMap::new();
+    for l in out.lines() {
+        let t = l.trim();
+        if !(t.starts_with("PASS ") || t.starts_with("FAIL ")) {
+            continue;
+        }
+        let secs = t.split_once('[').and_then(|(_, r)| r.split_once(']'))
+            .and_then(|(s, _)| s.trim().strip_suffix('s')).and_then(|s| s.trim().parse::<f64>().ok());
+        let path = t.split(']').nth(1).and_then(|a| a.split_whitespace().last());
+        if let (Some(secs), Some(path)) = (secs, path) {
+            times.insert(path.to_string(), (secs * 1000.0).round() as u64);
+        }
+    }
+    times
+}
+
+/// #4454 — one test case as a spine event: `test.case.passed|failed|skipped`
+/// with its file, case, unit, elapsed time, and — when it failed — the kind
+/// and the reason. Returns the chorus-log argv (event first).
+#[allow(clippy::too_many_arguments)]
+pub fn case_event_args(c: &CaseResult, elapsed_ms: Option<u64>, unit: &str, kind: &str, reason: &str,
+                       role: &str, card: &str, trace: &str) -> Vec<String> {
+    let event = match c.result.as_str() {
+        "fail" => "test.case.failed",
+        "skip" => "test.case.skipped",
+        _ => "test.case.passed",
+    };
+    let ms = elapsed_ms.map(|m| m.to_string()).unwrap_or_default();
+    let message = match c.result.as_str() {
+        "fail" => format!("{} failed in {}: {}", c.test_name, c.file_path, reason),
+        r => format!("{} {} in {}", c.test_name, if r == "skip" { "skipped" } else { "passed" }, c.file_path),
+    };
+    let mut extras: Vec<(&str, &str)> = vec![("file", &c.file_path), ("case", &c.test_name), ("unit", unit)];
+    if !ms.is_empty() {
+        extras.push(("elapsed_ms", &ms));
+    }
+    if c.result == "fail" {
+        extras.push(("failure_kind", kind));
+        extras.push(("reason", reason));
+    }
+    extras.push(("message", &message));
+    spine_args(event, role, card, trace, &extras)
+}
+
+/// #4454 — one `chorus-log --batch` line: the argv joined by tabs. A tab or a
+/// newline inside a value would split the event, so it becomes a space.
+pub fn batch_line(args: &[String]) -> String {
+    args.iter().map(|a| a.replace(['\t', '\n', '\r'], " ")).collect::<Vec<_>>().join("\t")
+}
+
 pub fn parse_bats_cases(out: &str) -> Vec<(String, String)> {
     let mut cases = Vec::new();
     for l in out.lines() {
-        let l = l.trim();
+        let l = split_tap_timing(l.trim()).0;
+        let l = l.as_str();
         if let Some(rest) = l.strip_prefix("not ok ") {
             if let Some((_, name)) = rest.split_once(' ') {
                 cases.push((tap_unescape(name.trim().trim_start_matches("- ").trim()), "fail".to_string()));

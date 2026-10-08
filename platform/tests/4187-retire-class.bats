@@ -58,10 +58,10 @@ class H(BaseHTTPRequestHandler):
 HTTPServer(("127.0.0.1", int(sys.argv[1])), H).serve_forever()
 PY
   python3 "$TMP/stub.py" "$PORT" "$1" "$2" "$3" "$4" & STUB_PID=$!
-  for _ in 1 2 3 4 5 6 7 8 9 10; do
-    curl -sf --max-time 1 "http://127.0.0.1:$PORT/__model_deploy_probe__" >/dev/null 2>&1 && break
-    sleep 0.2
-  done
+  # #4454 — up, ready in how long, or why not, on the run's trace
+  load lib/test-events.bash
+  fixture_ready model-stub "$PORT" "$STUB_PID" 10 0.2 \
+    curl -sf --max-time 1 "http://127.0.0.1:$PORT/__model_deploy_probe__" || true
   printf '# empty\n' > "$TMP/empty.ttl"
   RET="$TMP/retire.jsonl"
   printf '%s\n' '{"retire_class":"https://jeffbridwell.com/chorus#Fixture","graph":"urn:chorus:bats-4187","status":"staged"}' > "$RET"

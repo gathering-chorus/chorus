@@ -51,11 +51,9 @@ PY
   # control went red: python had not bound the port 0.4s in, curl got refused,
   # and a load-dependent race reported as a product failure. A control that
   # depends on how fast the box is that night cannot separate its states.
-  local i
-  for i in $(seq 1 80); do
-    (echo > "/dev/tcp/127.0.0.1/$port") 2>/dev/null && break
-    sleep 0.1
-  done
+  # #4454 — up, ready in how long, or why not, on the run's trace
+  load lib/test-events.bash
+  fixture_ready nudge-stub "$port" "$stub" 80 0.1 bash -c "echo > /dev/tcp/127.0.0.1/$port" || true
   run env CHORUS_MCP_NUDGE_URL="http://127.0.0.1:$port/nudge" bash "$OPS_NUDGE" silas "stub probe"
   wait "$stub" 2>/dev/null || true
   [ "$status" -eq 0 ]
