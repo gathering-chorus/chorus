@@ -1,3 +1,4 @@
+// @test-type: contract — the loom-gemba tool definition and dispatch through an in-process MCP client.
 // #3319 — loom-gemba at the MCP surface. The observation verb follows the
 // werk-verb skin pattern (#3110/#3178): the MCP tool IS the verb name, a thin
 // skin that execs ~/.chorus/bin/loom-gemba and returns {ok, stdout, ...} with
@@ -32,22 +33,21 @@ test('loom-gemba is exposed at the MCP surface (verb-named, no chorus_ prefix)',
   });
 });
 
-test('loom-gemba contract: role + target (both role-enums), no card_id — observation is not card-scoped', async () => {
+test('loom-gemba contract: role + target (both role names), no card_id — observation is not card-scoped', async () => {
   await withClient(async (client) => {
     const tool = (await client.listTools()).tools.find((t) => t.name === 'loom-gemba');
     assert.ok(tool, 'tool def present');
     const schema = tool!.inputSchema as {
-      properties?: Record<string, { enum?: string[] }>;
+      properties?: Record<string, { enum?: string[]; pattern?: string }>;
       required?: string[];
     };
     assert.deepEqual(schema.required?.sort(), ['role', 'target'], 'role + target required, nothing else');
     assert.ok(!('card_id' in (schema.properties ?? {})), 'observation has no card_id');
+    // #4458 — role names come from the roles door at call time, so the schema
+    // carries the role-name pattern, not a list of three names.
     for (const field of ['role', 'target'] as const) {
-      assert.deepEqual(
-        schema.properties?.[field]?.enum?.sort(),
-        ['kade', 'silas', 'wren'],
-        `${field} is the role enum`,
-      );
+      assert.equal(schema.properties?.[field]?.pattern, '^[a-z][a-z0-9-]*$', `${field} is a role name`);
+      assert.equal(schema.properties?.[field]?.enum, undefined, `${field} lists no names`);
     }
   });
 });

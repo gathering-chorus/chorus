@@ -15,6 +15,7 @@
  * falling back to CHORUS_ROLE env var.
  */
 import { fetchRoleSets } from './peers';
+import { AgentRole, ROLE_PATTERN, refuseUnknownRoles } from './roles-arg';
 import { Server } from '@modelcontextprotocol/sdk/server/index.js';
 import {
   CallToolRequestSchema,
@@ -134,7 +135,7 @@ export interface McpServerDeps {
   // default impl globs chorus-werk/<role>-* : a single match is the role's
   // active card werk, zero/ambiguous returns canonical (#2662 cwd=repo-root
   // contract preserved). Tests inject a stub path.
-  resolveWorkingTree?: (role: 'kade' | 'wren' | 'silas') => string;
+  resolveWorkingTree?: (role: string) => string;
   // #2760 — werk path existence check. Default uses fs.existsSync; tests
   // inject `() => true` so refusal taxonomy tests don't need real /tmp dirs.
   fsExists?: (p: string) => boolean;
@@ -153,7 +154,7 @@ export type BoardCard = { id: number; owner: string; title: string };
 export type BoardReaderResult =
   | { ok: true; cards: BoardCard[] }
   | { ok: false; reason: 'board-unreachable'; detail?: string };
-export type BoardReader = (role: 'kade' | 'wren' | 'silas') => Promise<BoardReaderResult>;
+export type BoardReader = (role: string) => Promise<BoardReaderResult>;
 export type SpineEmitter = (event: string, fields: Record<string, unknown>) => void;
 
 // #2652 (AC8) — cards MCP tool input schemas. Each tool spawns the cards bash
@@ -161,7 +162,7 @@ export type SpineEmitter = (event: string, fields: Record<string, unknown>) => v
 // the cards CLI; tools translate structured MCP arguments to argv.
 const CardsAddInput = z.object({
   title: z.string().min(1).describe('Short imperative card title'),
-  owner: z.enum(['wren', 'silas', 'kade', 'jeff']).describe('Owner role'),
+  owner: AgentRole.describe('Owner role'),
   priority: z.enum(['P1', 'P2', 'P3']).describe('Priority — P1 highest'),
   domain: z.string().min(1).describe('Domain label (e.g., chorus, photos, seeds)'),
   type: z.enum(['new', 'enhance', 'fix', 'chore', 'swat']).describe('Card type'),
@@ -177,7 +178,7 @@ const CardsAddInput = z.object({
 // only the agent six-section gate (via attribution), so desc is effectively required.
 const CardAddJeffInput = z.object({
   title: z.string().min(1).describe('Short imperative card title'),
-  owner: z.enum(['wren', 'silas', 'kade', 'jeff']).describe('Owner role'),
+  owner: AgentRole.describe('Owner role'),
   priority: z.enum(['P1', 'P2', 'P3']).describe('Priority — P1 highest'),
   domain: z.string().min(1).describe('Domain label (e.g., chorus, photos, seeds)'),
   type: z.enum(['new', 'enhance', 'fix', 'chore', 'swat']).describe('Card type'),
@@ -218,7 +219,7 @@ const CardsViewInput = z.object({
 // on the wire. Service derives the active card from the BOARD (#2467/#2629:
 // card lives on the board, role-state owns session/attention only).
 const CommitStatusInput = z.object({
-  role: z.enum(['kade', 'wren', 'silas']).describe('Calling role — kade/wren/silas. Service queries the board for this role\'s active WIP card.'),
+  role: AgentRole.describe('Calling role — an agent role the roles door lists. Service queries the board for this role\'s active WIP card.'),
 }).strict();
 
 // #3178 — werk-commit input (v1 chorus_commit/git-queue.sh contract CUT). Card-
@@ -226,7 +227,7 @@ const CommitStatusInput = z.object({
 // ephemeral werk, which IS the card's file set) and formats the message
 // "<role>: #<card> — <summary>". No explicit `paths` — that was the v1 contract.
 const CommitInput = z.object({
-  role: z.enum(['kade', 'wren', 'silas']).describe('Builder role — owns the werk <role>/<card> being committed.'),
+  role: AgentRole.describe('Builder role — owns the werk <role>/<card> being committed.'),
   card_id: z.number().int().positive().describe('Card ID whose werk changes to commit.'),
   summary: z.string().min(1).optional().describe('Optional short summary; werk-commit formats the message as "<role>: #<card> — <summary>".'),
 }).strict();
@@ -236,25 +237,25 @@ const CommitInput = z.object({
 // No bypasses on the wire — werk-dirty / werk-wrong-branch are typed refusals,
 // not flags the caller can suppress.
 const PullCardInput = z.object({
-  role: z.enum(['kade', 'wren', 'silas']).describe('Calling role — kade/wren/silas. DEPLOY_ROLE attribution + spine event role field.'),
+  role: AgentRole.describe('Calling role — an agent role the roles door lists. DEPLOY_ROLE attribution + spine event role field.'),
   card_id: z.number().int().positive().describe('Card ID to pull. Must be in Next or Later status with AC + Experience populated.'),
 }).strict();
 
 // #3178 — werk-push input. Thin skin over the rust werk-push verb.
 const WerkPushInput = z.object({
-  role: z.enum(['kade', 'wren', 'silas']).describe('Builder role — owns the werk <role>/<card> being pushed.'),
+  role: AgentRole.describe('Builder role — owns the werk <role>/<card> being pushed.'),
   card_id: z.number().int().positive().describe('Card ID whose werk branch to push.'),
 }).strict();
 
 // #3319 — loom-gemba input. Observation is watcher→target, not card-scoped.
 const LoomGembaInput = z.object({
-  role: z.enum(['kade', 'wren', 'silas']).describe('Observer role — who is watching. DEPLOY_ROLE attribution + the observing state declared.'),
-  target: z.enum(['kade', 'wren', 'silas']).describe('Target role being observed.'),
+  role: AgentRole.describe('Observer role — who is watching. DEPLOY_ROLE attribution + the observing state declared.'),
+  target: AgentRole.describe('Target role being observed.'),
 }).strict();
 
 // #3175 — werk-merge input. Thin skin over the rust werk-merge verb.
 const WerkMergeInput = z.object({
-  role: z.enum(['kade', 'wren', 'silas']).describe('Builder role — owns the werk branch <role>/<card> being merged to main.'),
+  role: AgentRole.describe('Builder role — owns the werk branch <role>/<card> being merged to main.'),
   card_id: z.number().int().positive().describe('Card ID whose pushed branch to merge.'),
 }).strict();
 
@@ -262,7 +263,7 @@ const WerkMergeInput = z.object({
 // is the calling identity (DEPLOY_ROLE), set by the handler from getCallerRole —
 // only jeff/wren may finalize (DEC-048).
 const WerkAcceptInput = z.object({
-  role: z.enum(['kade', 'wren', 'silas']).describe('Builder role whose card/werk is being accepted (werk location).'),
+  role: AgentRole.describe('Builder role whose card/werk is being accepted (werk location).'),
   card_id: z.number().int().positive().describe('Card ID to finalize.'),
 }).strict();
 
@@ -281,7 +282,7 @@ const RegisterFeedbackInput = z.object({
 // service-design HTML from current card statuses. Skill body is one MCP
 // call; same substrate pattern as /acp + /pull.
 const DesignRefreshInput = z.object({
-  role: z.enum(['kade', 'wren', 'silas']).describe('Calling role — kade/wren/silas. DEPLOY_ROLE attribution + spine event role field.'),
+  role: AgentRole.describe('Calling role — an agent role the roles door lists. DEPLOY_ROLE attribution + spine event role field.'),
   design_name: z.string().min(1).describe('Filename stem (or basename) of the service design HTML, e.g. "build-and-deploy-service-design". Looked up under designing/docs/<name>.html.'),
 }).strict();
 
@@ -300,7 +301,7 @@ const DocCatalogAddInput = z.object({
 // Role + card_id; same shape as pull. Refuses if card isn't WIP-owned-by-role
 // or werk has uncommitted work (don't lose work).
 const UnpullCardInput = z.object({
-  role: z.enum(['kade', 'wren', 'silas']).describe('Calling role — kade/wren/silas. DEPLOY_ROLE attribution + spine event role field.'),
+  role: AgentRole.describe('Calling role — an agent role the roles door lists. DEPLOY_ROLE attribution + spine event role field.'),
   card_id: z.number().int().positive().describe('Card ID to unpull. Must be currently WIP and owned by role.'),
 }).strict();
 
@@ -427,7 +428,7 @@ type ServiceVerb = 'status' | 'start' | 'stop' | 'restart' | 'deploy' | 'rollbac
 const SERVICE_LIFECYCLE_VERBS: ReadonlyArray<ServiceVerb> = ['status', 'start', 'stop', 'restart', 'deploy', 'rollback'];
 
 // #3110: werk-binary MCP wrapper inputs.
-const RoleEnum = z.enum(['kade', 'wren', 'silas']);
+const RoleEnum = AgentRole;
 const BuildInput = z.object({
   role: RoleEnum,
   card_id: z.number().int().min(1).describe('Card id whose werk holds the source.'),
@@ -483,7 +484,7 @@ const ATHENA_RUN_TOOL_DEF = {
   inputSchema: {
     type: 'object',
     properties: {
-      role: { type: 'string', enum: ['kade', 'wren', 'silas'], description: 'Builder role.' },
+      role: { type: 'string', pattern: ROLE_PATTERN, description: 'Builder role.' },
       card_id: { type: 'integer', minimum: 1, description: 'Card the model change belongs to.' },
       target: { type: 'string', enum: ['canonical', 'staging'], description: 'canonical (the live store, after a land) or staging (the /staging dataset and its own athena-make, #4423).' },
       landed_commit: { type: 'string', description: 'canonical only: the merged sha the store must attest.' },
@@ -542,7 +543,7 @@ const CHORUS_BUILD_TOOL_DEF = {
   inputSchema: {
     type: 'object',
     properties: {
-      role: { type: 'string', enum: ['kade', 'wren', 'silas'], description: 'Calling role — drives DEPLOY_ROLE + werk path resolution.' },
+      role: { type: 'string', pattern: ROLE_PATTERN, description: 'Calling role — drives DEPLOY_ROLE + werk path resolution.' },
       card_id: { type: 'integer', minimum: 1, description: 'Card id whose werk holds the source to build.' },
     },
     required: ['role', 'card_id'],
@@ -557,7 +558,7 @@ const CHORUS_DEPLOY_TOOL_DEF = {
   inputSchema: {
     type: 'object',
     properties: {
-      role: { type: 'string', enum: ['kade', 'wren', 'silas'], description: 'Calling role.' },
+      role: { type: 'string', pattern: ROLE_PATTERN, description: 'Calling role.' },
       card_id: { type: 'integer', minimum: 1, description: 'Card id whose werk holds the build artifacts to deploy.' },
       target: { type: 'string', enum: ['canonical', 'werk'], description: 'Install target — canonical (~/.chorus/bin/) or werk (per-card slot). Default: canonical.' },
       landedCommit: { type: 'string', description: '#3517 — the trigger\'s landed origin/main sha; deploy gates deployed-commit==landedCommit (empty=RED).' },
@@ -584,7 +585,7 @@ const CHORUS_WERK_TOOL_DEF = {
   inputSchema: {
     type: 'object',
     properties: {
-      role: { type: 'string', enum: ['kade', 'wren', 'silas'], description: 'Builder role whose werk runs.' },
+      role: { type: 'string', pattern: ROLE_PATTERN, description: 'Builder role whose werk runs.' },
       card_id: { type: 'integer', minimum: 1, description: 'Card to run.' },
       accepter: { type: 'string', enum: ['jeff', 'wren', 'kade', 'silas'], description: 'Authorizing identity (DEC-048). Default jeff. With go:true this is who the accept runs under.' },
       go: { type: 'boolean', description: 'The human GO. false/absent = run to the demo stop and present. true = resume past the stop: merge → deploy-prod → accept.' },
@@ -641,7 +642,7 @@ const CARDS_ADD_TOOL_DEF = {
     type: 'object',
     properties: {
       title: { type: 'string', minLength: 1, description: 'Short imperative card title' },
-      owner: { type: 'string', enum: ['wren', 'silas', 'kade', 'jeff'], description: 'Owner role — pick one of these specific roles (wren=PM, silas=architect/ops, kade=engineer, jeff=human director)' },
+      owner: { type: 'string', pattern: ROLE_PATTERN, description: 'Owner role — pick one of these specific roles (wren=PM, silas=architect/ops, kade=engineer, jeff=human director)' },
       priority: { type: 'string', enum: ['P1', 'P2', 'P3'], description: 'Priority — pick one: P1=highest/now, P2=meaningful/soon, P3=eventual' },
       domain: { type: 'string', minLength: 1, description: 'Domain label (chorus, photos, seeds, ...)' },
       type: { type: 'string', enum: ['new', 'enhance', 'fix', 'chore', 'swat'], description: 'Card type — pick one: new=greenfield, enhance=existing-feature-improvement, fix=bug, chore=housekeeping, swat=crisis' },
@@ -665,7 +666,7 @@ const CARD_ADD_JEFF_TOOL_DEF = {
     type: 'object',
     properties: {
       title: { type: 'string', minLength: 1, description: 'Short imperative card title — what to do, not why' },
-      owner: { type: 'string', enum: ['wren', 'silas', 'kade', 'jeff'], description: 'Owning role — pick one (wren=PM/loom, silas=ops/observe, kade=engineer/frontend, jeff=human)' },
+      owner: { type: 'string', pattern: ROLE_PATTERN, description: 'Owning role — pick one (wren=PM/loom, silas=ops/observe, kade=engineer/frontend, jeff=human)' },
       priority: { type: 'string', enum: ['P1', 'P2', 'P3'], description: 'Priority lane — pick one (P1=urgent/blocking, P2=soon, P3=eventual; default P3 if Jeff didn\'t signal urgency)' },
       domain: { type: 'string', minLength: 1, description: 'Domain label (e.g. chorus, gathering)' },
       type: { type: 'string', enum: ['new', 'enhance', 'fix', 'chore', 'swat'], description: 'Card type — pick one (new=feature, enhance=improve existing, fix=bug, chore=housekeeping, swat=crisis)' },
@@ -763,7 +764,7 @@ const PRIORITIES_READOUT_TOOL_DEF = {
   inputSchema: {
     type: 'object',
     properties: {
-      role: { type: 'string', enum: ['kade', 'wren', 'silas'], description: 'Return ONLY this role\'s priorities (the usual mode). Omit for the whole-team report.' },
+      role: { type: 'string', pattern: ROLE_PATTERN, description: 'Return ONLY this role\'s priorities (the usual mode). Omit for the whole-team report.' },
     },
   },
 } as const;
@@ -776,7 +777,7 @@ const WIP_TOOL_DEF = {
   inputSchema: {
     type: 'object',
     properties: {
-      role: { type: 'string', enum: ['kade', 'wren', 'silas'], description: 'Role whose WIP to fetch. Defaults to the calling role (X-Chorus-Role).' },
+      role: { type: 'string', pattern: ROLE_PATTERN, description: 'Role whose WIP to fetch. Defaults to the calling role (X-Chorus-Role).' },
     },
   },
 } as const;
@@ -792,7 +793,7 @@ const SUP_TOOL_DEF = {
   inputSchema: {
     type: 'object',
     properties: {
-      role: { type: 'string', enum: ['kade', 'wren', 'silas'], description: 'Role whose walk to show. Defaults to the calling role (X-Chorus-Role).' },
+      role: { type: 'string', pattern: ROLE_PATTERN, description: 'Role whose walk to show. Defaults to the calling role (X-Chorus-Role).' },
     },
   },
 } as const;
@@ -1175,7 +1176,7 @@ const COMMIT_STATUS_TOOL_DEF = {
     properties: {
       role: {
         type: 'string',
-        enum: ['kade', 'wren', 'silas'],
+        pattern: ROLE_PATTERN,
         description: 'Role whose commit-state to query — kade, wren, or silas',
       },
     },
@@ -1261,7 +1262,7 @@ const COMMIT_TOOL_DEF = {
   inputSchema: {
     type: 'object',
     properties: {
-      role: { type: 'string', enum: ['kade', 'wren', 'silas'], description: 'Builder role owning the werk being committed.' },
+      role: { type: 'string', pattern: ROLE_PATTERN, description: 'Builder role owning the werk being committed.' },
       card_id: { type: 'integer', minimum: 1, description: 'Card ID whose werk changes to commit.' },
       summary: { type: 'string', minLength: 1, description: 'Optional short summary; message becomes "<role>: #<card> — <summary>".' },
     },
@@ -1280,8 +1281,8 @@ const UNPULL_CARD_TOOL_DEF = {
     properties: {
       role: {
         type: 'string',
-        enum: ['kade', 'wren', 'silas'],
-        description: 'Calling role — kade / wren / silas. DEPLOY_ROLE attribution + spine role field.',
+        pattern: ROLE_PATTERN,
+        description: 'Calling role — an agent role the roles door lists. DEPLOY_ROLE attribution + spine role field.',
       },
       card_id: {
         type: 'integer',
@@ -1314,7 +1315,7 @@ const WERK_REVIEW_TOOL_DEF = {
     type: 'object',
     properties: {
       mode: { type: 'string', enum: ['floor', 'verdict', 'check'], description: 'floor = run objective checks; verdict = record the agent review; check = read the latest verdict.' },
-      role: { type: 'string', enum: ['kade', 'wren', 'silas'], description: 'Builder role whose werk is reviewed (floor mode).' },
+      role: { type: 'string', pattern: ROLE_PATTERN, description: 'Builder role whose werk is reviewed (floor mode).' },
       card_id: { type: 'integer', minimum: 1, description: 'Card under review.' },
       verdict: { type: 'string', enum: ['pass', 'fail'], description: 'verdict mode only.' },
       findings: { type: 'string', description: 'verdict mode: specific findings (file:line / AC item N). Required on fail.' },
@@ -1344,7 +1345,7 @@ const ATHENA_MODEL_TOOL_DEF = {
   inputSchema: {
     type: 'object',
     properties: {
-      role: { type: 'string', enum: ['kade', 'wren', 'silas'], description: 'Calling role — DEPLOY_ROLE attribution + spine role field.' },
+      role: { type: 'string', pattern: ROLE_PATTERN, description: 'Calling role — DEPLOY_ROLE attribution + spine role field.' },
       args: { type: 'array', items: { type: 'string' }, description: 'Verb args, e.g. ["class","--name","StreamEvent","--comment","...","--claimed-by","streams","--file","<path>"].' },
     },
     required: ['role', 'args'],
@@ -1359,7 +1360,7 @@ const ATHENA_MAKE_TOOL_DEF = {
   inputSchema: {
     type: 'object',
     properties: {
-      role: { type: 'string', enum: ['kade', 'wren', 'silas'], description: 'Calling role.' },
+      role: { type: 'string', pattern: ROLE_PATTERN, description: 'Calling role.' },
       args: { type: 'array', items: { type: 'string' }, description: 'Verb args, e.g. ["generate-page","--class","Service"].' },
     },
     required: ['role', 'args'],
@@ -1374,7 +1375,7 @@ const ATHENA_DEPLOY_TOOL_DEF = {
   inputSchema: {
     type: 'object',
     properties: {
-      role: { type: 'string', enum: ['kade', 'wren', 'silas'], description: 'Calling role.' },
+      role: { type: 'string', pattern: ROLE_PATTERN, description: 'Calling role.' },
       args: { type: 'array', items: { type: 'string' }, description: 'Verb args. [] deploys the model set. Otherwise one of scope, prove-trace, served-snapshot, served-compare; any other argument is refused (exit 2, #4338), never read as deploy.' },
     },
     required: ['role', 'args'],
@@ -1389,7 +1390,7 @@ const ATHENA_VALIDATE_TOOL_DEF = {
   inputSchema: {
     type: 'object',
     properties: {
-      role: { type: 'string', enum: ['kade', 'wren', 'silas'], description: 'Calling role.' },
+      role: { type: 'string', pattern: ROLE_PATTERN, description: 'Calling role.' },
       args: { type: 'array', items: { type: 'string' }, description: 'Verb args.' },
     },
     required: ['role', 'args'],
@@ -1406,8 +1407,8 @@ const PULL_CARD_TOOL_DEF = {
     properties: {
       role: {
         type: 'string',
-        enum: ['kade', 'wren', 'silas'],
-        description: 'Calling role — kade / wren / silas. DEPLOY_ROLE attribution + spine role field.',
+        pattern: ROLE_PATTERN,
+        description: 'Calling role — an agent role the roles door lists. DEPLOY_ROLE attribution + spine role field.',
       },
       card_id: {
         type: 'integer',
@@ -1429,12 +1430,12 @@ const LOOM_GEMBA_TOOL_DEF = {
     properties: {
       role: {
         type: 'string',
-        enum: ['kade', 'wren', 'silas'],
+        pattern: ROLE_PATTERN,
         description: 'Observer role — who is watching.',
       },
       target: {
         type: 'string',
-        enum: ['kade', 'wren', 'silas'],
+        pattern: ROLE_PATTERN,
         description: 'Target role being observed.',
       },
     },
@@ -1450,7 +1451,7 @@ const WERK_PUSH_TOOL_DEF = {
   inputSchema: {
     type: 'object',
     properties: {
-      role: { type: 'string', enum: ['kade', 'wren', 'silas'], description: 'Builder role owning the werk being pushed.' },
+      role: { type: 'string', pattern: ROLE_PATTERN, description: 'Builder role owning the werk being pushed.' },
       card_id: { type: 'integer', minimum: 1, description: 'Card ID whose werk branch to push.' },
     },
     required: ['role', 'card_id'],
@@ -1465,7 +1466,7 @@ const WERK_MERGE_TOOL_DEF = {
   inputSchema: {
     type: 'object',
     properties: {
-      role: { type: 'string', enum: ['kade', 'wren', 'silas'], description: 'Builder role owning the werk branch being merged.' },
+      role: { type: 'string', pattern: ROLE_PATTERN, description: 'Builder role owning the werk branch being merged.' },
       card_id: { type: 'integer', minimum: 1, description: 'Card ID whose pushed branch to merge.' },
     },
     required: ['role', 'card_id'],
@@ -1480,7 +1481,7 @@ const WERK_ACCEPT_TOOL_DEF = {
   inputSchema: {
     type: 'object',
     properties: {
-      role: { type: 'string', enum: ['kade', 'wren', 'silas'], description: 'Builder role whose card/werk is being accepted.' },
+      role: { type: 'string', pattern: ROLE_PATTERN, description: 'Builder role whose card/werk is being accepted.' },
       card_id: { type: 'integer', minimum: 1, description: 'Card ID to finalize.' },
     },
     required: ['role', 'card_id'],
@@ -1497,8 +1498,8 @@ const DESIGN_REFRESH_TOOL_DEF = {
     properties: {
       role: {
         type: 'string',
-        enum: ['kade', 'wren', 'silas'],
-        description: 'Calling role — kade / wren / silas. DEPLOY_ROLE attribution + spine role field.',
+        pattern: ROLE_PATTERN,
+        description: 'Calling role — an agent role the roles door lists. DEPLOY_ROLE attribution + spine role field.',
       },
       design_name: {
         type: 'string',
@@ -1772,13 +1773,13 @@ const EVT_ATHENA_TREE_QUERIED = 'athena.tree.queried';
 // is gone (promote = rebuild + prove-cdhash, not copy). Zero call sites confirmed
 // semantically (ast-grep: no calls anywhere).
 
-export function defaultResolveWorkingTree(canonicalRoot: string): (role: 'kade' | 'wren' | 'silas') => string {
+export function defaultResolveWorkingTree(canonicalRoot: string): (role: string) => string {
    
   const fs = require('node:fs') as typeof import('node:fs');
    
   const path = require('node:path') as typeof import('node:path');
 
-  return (role: 'kade' | 'wren' | 'silas'): string => {
+  return (role: string): string => {
     // CHORUS_WERK_BASE convention: sibling of canonical, parent dir + /chorus-werk/
     const werkBase = path.join(path.dirname(canonicalRoot), CHORUS_WERK);
     let matches: string[]; // assigned in try; catch returns before any read
@@ -1813,7 +1814,7 @@ export function defaultResolveWorkingTree(canonicalRoot: string): (role: 'kade' 
 // executeWerkVerb. Zero call sites confirmed (ast-grep) after the dispatch swap.
 
 async function executeCommitStatus(
-  args: { role: 'kade' | 'wren' | 'silas' },
+  args: { role: string },
   boardReader: BoardReader,
   emit: SpineEmitter,
 ): Promise<{ content: Array<{ type: 'text'; text: string }> }> {
@@ -3521,7 +3522,7 @@ export function buildMcpServer(getCallerRole: () => string, deps: McpServerDeps 
   // a single match is the role's active card werk, zero/ambiguous falls back to
   // canonical (#2662 cwd=repo-root contract preserved). No CHORUS_WERK_ENABLE
   // flag — the ephemeral model is the model, not an opt-in.
-  const resolveWorkingTree: (role: 'kade' | 'wren' | 'silas') => string =
+  const resolveWorkingTree: (role: string) => string =
     deps.resolveWorkingTree ?? defaultResolveWorkingTree(canonicalRepoRoot);
    
   const server = new Server(
@@ -3613,6 +3614,8 @@ export function buildMcpServer(getCallerRole: () => string, deps: McpServerDeps 
     const errorTraceId = mintTraceIdV7();
     try {
       // cog-override: MCP tool-dispatch switch — one branch per tool by construction; pre-existing, not in #3173 scope
+      // #4458 — a role argument must be a role the roles door lists.
+      await refuseUnknownRoles(req.params.name, req.params.arguments);
       const result = await (async () => { switch (req.params.name) {
       case 'chorus_nudge_message': {
         const parsed = NudgeInput.safeParse(req.params.arguments);
@@ -3790,18 +3793,18 @@ export function buildMcpServer(getCallerRole: () => string, deps: McpServerDeps 
       }
       case 'chorus_priorities_readout': {
         const a = (req.params.arguments ?? {}) as { role?: string };
-        const role = a.role && ['kade', 'wren', 'silas'].includes(a.role) ? a.role : undefined;
+        const role = a.role || undefined;
         return executePrioritiesReadout(execFileAsync, role);
       }
       case 'chorus_wip': {
         // #3683 — role arg wins; else the caller's own role (X-Chorus-Role).
         const a = (req.params.arguments ?? {}) as { role?: string };
-        const role = a.role && ['kade', 'wren', 'silas'].includes(a.role) ? a.role : from;
+        const role = a.role || from;
         return executeWip(fetchImpl, apiBase, role);
       }
       case 'chorus_sup': {
         const a = (req.params.arguments ?? {}) as { role?: string };
-        const role = a.role && ['kade', 'wren', 'silas'].includes(a.role) ? a.role : from;
+        const role = a.role || from;
         return executeSup(fetchImpl, apiBase, role);
       }
       case 'chorus_migration_readout': {
@@ -3834,7 +3837,7 @@ export function buildMcpServer(getCallerRole: () => string, deps: McpServerDeps 
       case 'athena-deploy':
       case 'athena-validate': {
         const parsed = z.object({
-          role: z.enum(['kade', 'wren', 'silas']),
+          role: AgentRole,
           args: z.array(z.string()),
         }).safeParse(req.params.arguments);
         if (!parsed.success) {

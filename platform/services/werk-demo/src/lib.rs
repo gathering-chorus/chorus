@@ -1005,13 +1005,18 @@ fn send_mcp_nudge(from: &str, other: &str, card: u64, trace: &str) -> R<()> {
 /// demo_env env_services): silas=3481, kade=3482, wren=3483. The announce
 /// carries it so Jeff opens THIS round's room, not prod's.
 pub fn clearing_url_for(role: &str) -> String {
-    let port = match role {
-        "silas" => 3481,
-        "kade" => 3482,
-        "wren" => 3483,
-        _ => 3470,
-    };
-    format!("http://localhost:{}/", port)
+    format!("http://localhost:{}/", variant_port(role, 3481, 3470))
+}
+
+/// #4458 — a role's demo-copy port: the service's first-role port plus the
+/// role's slot, in the order werk-deploy's demo_env::known_roles() gives them
+/// (this crate takes no dependency on werk-deploy, ADR-032). A role with no
+/// slot gets the production port, as before.
+pub fn variant_port(role: &str, base: u16, prod: u16) -> u16 {
+    match ["silas", "kade", "wren", "abby-normal"].iter().position(|r| *r == role) {
+        Some(slot) => base + slot as u16,
+        None => prod,
+    }
 }
 
 fn announce_to_jeff(from: &str, card: u64, trace: &str, variant_url: &str, round: &str) {
@@ -1394,8 +1399,8 @@ pub fn demo(card: u64, role: &str, home: &Path) -> R<DemoOutcome> {
     // exactly what new code is running and where to hit it. Without this, the
     // pause is a "comment window" with no surface to comment on; with it, the
     // pause becomes a real test window. Silas paired the framing on #3101.
-    let api_port = match role { "silas" => 3343, "kade" => 3344, "wren" => 3345, _ => 3340 };
-    let mcp_port = match role { "silas" => 3351, "kade" => 3352, "wren" => 3353, _ => 3341 };
+    let api_port = variant_port(role, 3343, 3340);
+    let mcp_port = variant_port(role, 3351, 3341);
     let test_surface_body = format!(
         r#"{{"from":"{}","text":"━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n🧪 [TEST SURFACE READY] — card #{}\n━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\nService variants: chorus-api http://localhost:{}/, chorus-mcp http://localhost:{}/mcp\nCLI verbs (if changed): resolve via {}'s session PATH (role-slot-first per #3101)\nWhat's new: read the card, the diff, then exercise the new code against the surfaces above.\nThis is the test window — substantive trial before /acp."}}"#,
         role, card, api_port, mcp_port, role
@@ -1427,13 +1432,7 @@ pub fn demo(card: u64, role: &str, home: &Path) -> R<DemoOutcome> {
     // id, variant URL, explicit react prompt. Not a scrollable Bridge line.
     // Per-role werk-api ports per #3092 (silas=3343, kade=3344, wren=3345);
     // canonical 3340 fallback for unknown role.
-    let variant_port = match role {
-        "silas" => 3343,
-        "kade"  => 3344,
-        "wren"  => 3345,
-        _ => 3340,
-    };
-    let variant_url = format!("http://localhost:{}/api/chorus/health", variant_port);
+    let variant_url = format!("http://localhost:{}/api/chorus/health", variant_port(role, 3343, 3340));
     let clearing_url = clearing_url_for(role);
     let pause_body = format!(
         r#"{{"from":"{}","text":"━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n🎬 [DEMO READY FOR JEFF] — card #{}\n━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\nVariant up: {}\nClearing: {}\nAwaiting your eyes (or a machine verdict).\n→ React with questions, check the variant, or /acp when satisfied."}}"#,
@@ -3448,5 +3447,24 @@ mod gate_profile_tests_4424 {
         assert_eq!(parse_review_verdict(r#"{"result":"block","findings":"bad"}"#).0, "block");
         assert_eq!(parse_review_verdict(r#"{"result":"concerns","findings":"hm"}"#), ("concerns".to_string(), "hm".to_string()));
         assert_eq!(parse_review_verdict(r#"{"result":"pass","findings":"ok"}"#).0, "pass");
+    }
+}
+
+#[cfg(test)]
+mod variant_port_4458 {
+    use super::*;
+
+    #[test]
+    fn abby_normal_gets_the_fourth_slot() {
+        assert_eq!(variant_port("abby-normal", 3343, 3340), 3346);
+        assert_eq!(clearing_url_for("abby-normal"), "http://localhost:3484/");
+        assert_eq!(variant_port("wren", 3343, 3340), 3345);
+    }
+
+    /// NEGATIVE PROOF: a role with no slot is not given someone else's port.
+    #[test]
+    fn negative_proof_an_unknown_role_gets_production() {
+        assert_eq!(variant_port("abby", 3343, 3340), 3340);
+        assert_eq!(clearing_url_for("ghost"), "http://localhost:3470/");
     }
 }

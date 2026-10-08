@@ -114,3 +114,23 @@ mcp_port() {
   run bash -c "cd '$WERK_BASE'; unset KADE_WERK WREN_WERK SILAS_WERK CHORUS_MCP_PORT; export CHORUS_ROLE=silas CHORUS_MCP_PORT_CANONICAL=4000; source '$ENV_SETUP' >/dev/null 2>&1; echo \$CHORUS_MCP_PORT"
   [ "$output" = "4000" ]
 }
+
+# #4458 — Abby (abby-normal) works cards like the other agents: her session and
+# her werk resolve her role, her werk var and her demo MCP port (slot 4: 3354).
+@test "abby-normal: her werk resolves to ABBY_NORMAL_WERK" {
+  mkdir -p "$WERK_BASE/abby-normal-4456"
+  run bash -c "cd '$WERK_BASE' && unset ABBY_NORMAL_WERK && export CHORUS_ROLE=abby-normal && source '$ENV_SETUP' >/dev/null 2>&1 && echo \"\${ABBY_NORMAL_WERK:-}\""
+  [ "$output" = "$WERK_BASE/abby-normal-4456" ] || return 1
+}
+
+@test "abby-normal: a shell inside her werk is attributed to her" {
+  mkdir -p "$WERK_BASE/chorus-werk/abby-normal-4456"
+  run bash -c "cd '$WERK_BASE/chorus-werk/abby-normal-4456' && unset CHORUS_ROLE DEPLOY_ROLE && source '$ENV_SETUP' >/dev/null 2>&1 && echo \"\$CHORUS_ROLE \$DEPLOY_ROLE\""
+  [ "$output" = "abby-normal abby-normal" ] || return 1
+}
+
+@test "NEGATIVE PROOF: a werk named for a role with no case is not attributed to abby-normal" {
+  mkdir -p "$WERK_BASE/chorus-werk/abby-4456"
+  run bash -c "cd '$WERK_BASE/chorus-werk/abby-4456' && unset CHORUS_ROLE DEPLOY_ROLE && source '$ENV_SETUP' >/dev/null 2>&1 && echo \"[\${CHORUS_ROLE:-}]\""
+  [ "$output" = "[]" ] || return 1
+}

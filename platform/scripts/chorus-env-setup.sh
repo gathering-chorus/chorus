@@ -45,9 +45,11 @@ case "$PWD" in
   */roles/wren*)          export CHORUS_ROLE=wren  DEPLOY_ROLE=wren  ;;
   */roles/silas*)         export CHORUS_ROLE=silas DEPLOY_ROLE=silas ;;
   */roles/kade*)          export CHORUS_ROLE=kade  DEPLOY_ROLE=kade  ;;
+  */roles/abby-normal*)   export CHORUS_ROLE=abby-normal DEPLOY_ROLE=abby-normal ;;  # #4458
   */chorus-werk/wren-*)   export CHORUS_ROLE=wren  DEPLOY_ROLE=wren  ;;
   */chorus-werk/silas-*)  export CHORUS_ROLE=silas DEPLOY_ROLE=silas ;;
   */chorus-werk/kade-*)   export CHORUS_ROLE=kade  DEPLOY_ROLE=kade  ;;
+  */chorus-werk/abby-normal-*) export CHORUS_ROLE=abby-normal DEPLOY_ROLE=abby-normal ;;
 esac
 export DEPLOY_ROLE
 
@@ -108,6 +110,7 @@ if [ -n "${CHORUS_ROLE:-}" ]; then
       kade)  export KADE_WERK="$__chorus_env_werk_dir"   ;;
       wren)  export WREN_WERK="$__chorus_env_werk_dir"   ;;
       silas) export SILAS_WERK="$__chorus_env_werk_dir"  ;;
+      abby-normal) export ABBY_NORMAL_WERK="$__chorus_env_werk_dir" ;;
     esac
   fi
   unset __chorus_env_werk_dir __chorus_env_werk_count
@@ -141,6 +144,7 @@ esac
 export WERK_KADE_BIN="$CHORUS_WERK_BASE/kade-bin"
 export WERK_WREN_BIN="$CHORUS_WERK_BASE/wren-bin"
 export WERK_SILAS_BIN="$CHORUS_WERK_BASE/silas-bin"
+export WERK_ABBY_NORMAL_BIN="$CHORUS_WERK_BASE/abby-normal-bin"
 mkdir -p "$WERK_KADE_BIN" "$WERK_WREN_BIN" "$WERK_SILAS_BIN" 2>/dev/null || true
 
 # PATH-prefix only the CURRENT role's slot — that part IS session-scoped: a role
@@ -151,6 +155,7 @@ if [ -n "${CHORUS_ROLE:-}" ]; then
     kade)  __chorus_env_role_bin="$WERK_KADE_BIN"  ;;
     wren)  __chorus_env_role_bin="$WERK_WREN_BIN"  ;;
     silas) __chorus_env_role_bin="$WERK_SILAS_BIN" ;;
+    abby-normal) __chorus_env_role_bin="$WERK_ABBY_NORMAL_BIN" ;;
     *)     __chorus_env_role_bin="" ;;
   esac
   if [ -n "$__chorus_env_role_bin" ]; then
@@ -184,6 +189,7 @@ if [ -n "${CHORUS_ROLE:-}" ]; then
     silas) __chorus_mcp_werk_port=3351 ;;
     kade)  __chorus_mcp_werk_port=3352 ;;
     wren)  __chorus_mcp_werk_port=3353 ;;
+    abby-normal) __chorus_mcp_werk_port=3354 ;;  # #4458 — slot 4, werk-deploy demo_env
     *)     __chorus_mcp_werk_port="" ;;
   esac
   if [ -n "$__chorus_mcp_werk_port" ]; then

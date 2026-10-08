@@ -43,10 +43,9 @@ pub struct EnvService {
     pub name: String,
     /// Service kind drives plist shape + smoke.
     pub kind: EnvServiceKind,
-    /// Per-role port — silas/kade/wren ordering (matches chorus-mcp #3016).
-    pub silas_port: u16,
-    pub kade_port: u16,
-    pub wren_port: u16,
+    /// #4458 — the first role's port; each role's port is this plus its slot in
+    /// known_roles() (silas +0, kade +1, wren +2, abby-normal +3). 0 = binds no port.
+    pub base_port: u16,
     /// Service source dir relative to repo root (e.g., "platform/api").
     pub source_dir_rel: String,
     /// Path to the LaunchAgent program — either an absolute path to a binary
@@ -119,10 +118,10 @@ pub fn owl_upstream_for(role: &str) -> R<String> {
     Ok(format!("http://127.0.0.1:{}", athena.port_for(role)?))
 }
 
-/// The canonical role list — silas, kade, wren. Adding a fourth role would
-/// extend this list + the per-role port fields on EnvService.
+/// The roles that get a demo copy, in port-slot order. #4458 — Abby
+/// (abby-normal) is the fourth: her ports are each service's base + 3.
 pub fn known_roles() -> &'static [&'static str] {
-    &["silas", "kade", "wren"]
+    &["silas", "kade", "wren", "abby-normal"]
 }
 
 /// The canonical service list for the demo env. Today: chorus-api + chorus-mcp.
@@ -133,9 +132,7 @@ pub fn env_services() -> Vec<EnvService> {
         EnvService {
             name: "chorus-api".to_string(),
             kind: EnvServiceKind::TsService,
-            silas_port: 3343,
-            kade_port: 3344,
-            wren_port: 3345,
+            base_port: 3343,
             source_dir_rel: "platform/api".to_string(),
             program_args_template: ProgramArgsTemplate::Node {
                 entry: "dist/server.js".to_string(),
@@ -151,9 +148,7 @@ pub fn env_services() -> Vec<EnvService> {
             // 2026-05-26). Source layout pre-dates the platform/services/
             // convention. The TsService kind reflects truth.
             kind: EnvServiceKind::TsService,
-            silas_port: 3351,
-            kade_port: 3352,
-            wren_port: 3353,
+            base_port: 3351,
             source_dir_rel: "platform/mcp-server".to_string(),
             program_args_template: ProgramArgsTemplate::Node {
                 entry: "dist/main.js".to_string(),
@@ -167,9 +162,7 @@ pub fn env_services() -> Vec<EnvService> {
         EnvService {
             name: "athena-make".to_string(),
             kind: EnvServiceKind::RustService,
-            silas_port: 3363,
-            kade_port: 3364,
-            wren_port: 3365,
+            base_port: 3363,
             source_dir_rel: "platform/services/athena-make".to_string(),
             program_args_template: ProgramArgsTemplate::WerkBin {
                 binary: "athena-make".to_string(),
@@ -187,9 +180,7 @@ pub fn env_services() -> Vec<EnvService> {
         EnvService {
             name: "clearing".to_string(),
             kind: EnvServiceKind::TsService,
-            silas_port: 3481,
-            kade_port: 3482,
-            wren_port: 3483,
+            base_port: 3481,
             source_dir_rel: "directing/clearing".to_string(),
             program_args_template: ProgramArgsTemplate::Node {
                 entry: "dist/server.js".to_string(),
@@ -209,9 +200,7 @@ pub fn env_services() -> Vec<EnvService> {
             kind: EnvServiceKind::RustService,
             // No port. These are never read; the port_env below is empty, which
             // is what tells generate_plist this service does not bind one.
-            silas_port: 0,
-            kade_port: 0,
-            wren_port: 0,
+            base_port: 0,
             source_dir_rel: "platform/services/chorus-hooks".to_string(),
             // #4227 follow-on — built from the WERK's own source, not taken
             // from the role's bin slot. deploy-werk builds only the crates a
@@ -238,9 +227,7 @@ pub fn env_services() -> Vec<EnvService> {
             name: "pulse".to_string(),
             kind: EnvServiceKind::TsService,
             // 3491-3493 are the Clearing variants' HTTPS ports (3481-3483 + 10).
-            silas_port: 3496,
-            kade_port: 3497,
-            wren_port: 3498,
+            base_port: 3496,
             source_dir_rel: "platform/pulse".to_string(),
             program_args_template: ProgramArgsTemplate::Node {
                 entry: "dist/service.js".to_string(),
@@ -480,7 +467,7 @@ pub fn env_ports_collide(services: &[EnvService]) -> Option<(String, u16)> {
         if s.port_env.is_empty() {
             continue;
         }
-        for p in [s.silas_port, s.kade_port, s.wren_port] {
+        for p in known_roles().iter().filter_map(|r| s.port_for(r).ok()) {
             if let Some(prev) = seen.insert(p, s.name.clone()) {
                 return Some((format!("{} vs {}", prev, s.name), p));
             }
@@ -504,12 +491,12 @@ impl EnvService {
     /// Per-role port lookup. Returns Err on unknown role so a typo surfaces
     /// rather than silent default.
     pub fn port_for(&self, role: &str) -> R<u16> {
-        match role {
-            "silas" => Ok(self.silas_port),
-            "kade" => Ok(self.kade_port),
-            "wren" => Ok(self.wren_port),
-            other => Err(format!("env: unknown role '{}' (known: silas/kade/wren)", other)),
+        let slot = known_roles().iter().position(|r| *r == role)
+            .ok_or_else(|| format!("env: unknown role '{}' (known: {})", role, known_roles().join("/")))?;
+        if self.base_port == 0 {
+            return Ok(0);
         }
+        Ok(self.base_port + slot as u16)
     }
 
     /// LaunchAgent label for this service + role.
@@ -1243,7 +1230,7 @@ mod tests {
 
     #[test]
     fn known_roles_lists_three_with_stable_order() {
-        assert_eq!(known_roles(), &["silas", "kade", "wren"]);
+        assert_eq!(known_roles(), &["silas", "kade", "wren", "abby-normal"]);
     }
 
     #[test]
@@ -1303,6 +1290,26 @@ mod tests {
         assert_eq!(api.port_for("kade").unwrap(), 3344);
         assert_eq!(api.port_for("wren").unwrap(), 3345);
         assert!(api.port_for("ghost").is_err());
+    }
+
+    /// #4458 — Abby gets a demo copy of every service, on ports no other role
+    /// or service uses. NEGATIVE PROOF beside it: a role not in the list is
+    /// refused by name, never given a default port.
+    #[test]
+    fn abby_normal_gets_her_own_port_for_every_service() {
+        let ports: Vec<(String, u16)> = env_services().iter()
+            .map(|s| (s.name.clone(), s.port_for("abby-normal").unwrap())).collect();
+        assert!(ports.contains(&("chorus-api".to_string(), 3346)), "{:?}", ports);
+        assert!(ports.contains(&("chorus-mcp".to_string(), 3354)), "{:?}", ports);
+        assert!(ports.contains(&("clearing".to_string(), 3484)), "{:?}", ports);
+        assert_eq!(env_ports_collide(&env_services()), None, "abby-normal's ports collide with another role's");
+        assert_eq!(env_services()[0].label("abby-normal"), "com.chorus.api.werk.abby-normal");
+    }
+
+    #[test]
+    fn negative_proof_a_role_without_a_slot_is_refused_by_name() {
+        let e = env_services()[0].port_for("abby").unwrap_err();
+        assert!(e.contains("unknown role 'abby'") && e.contains("abby-normal"), "{}", e);
     }
 
     #[test]
@@ -1552,7 +1559,8 @@ mod services_for_diff_4398 {
     fn a_pulse_on_a_clearing_https_port_is_a_collision() {
         let mut svcs = env_services();
         let pulse = svcs.iter_mut().find(|s| s.name == "pulse").unwrap();
-        pulse.kade_port = clearing_https_port(env_port_for("clearing", "kade").unwrap());
+        // kade is slot 1: put pulse's kade port on the Clearing's kade HTTPS port.
+        pulse.base_port = clearing_https_port(env_port_for("clearing", "kade").unwrap()) - 1;
         assert!(env_ports_collide(&svcs).is_some());
     }
 }
