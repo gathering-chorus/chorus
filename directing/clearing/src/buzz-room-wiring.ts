@@ -69,6 +69,10 @@ export interface RoomWiringDeps {
   /** #4445 — a demo variant reads the live relay but must never write to it:
    *  no notes published, and no replay cursor written over the live room's. */
   readOnly?: boolean;
+  /** #4445 — resolves once the room's role list has been read. The room dials
+   *  only after it: the replay arrives within a second of connecting, and a note
+   *  whose author is not yet in the list is dropped as an unknown key. */
+  rolesReady?: Promise<unknown>;
   /** #3893 — where the replay cursor persists. Injected so a test brings its
    *  own world instead of writing into the running role's ~/.chorus. */
   cursorFile?: string;
@@ -301,7 +305,14 @@ export function startRoom(deps: RoomWiringDeps): RoomWiring {
   const dialOpts = dialOptions(deps.relayHost);
   const connect = deps.connect ?? ((url: string, opts?: unknown) => new WebSocket(url, opts as never));
   st.dialOpts = dialOpts;
-  connectRoom(st, connect);
+  if (deps.rolesReady) {
+    // A failed read still dials: a room that never connects is worse than one
+    // that cannot yet name a sender (each drop is logged as unknown-key).
+    const dial = () => { if (!st.stopped) connectRoom(st, connect); };
+    void deps.rolesReady.then(dial, dial);
+  } else {
+    connectRoom(st, connect);
+  }
 
   return {
     enabled: true,

@@ -1647,6 +1647,8 @@ const room = process.env.BUZZ_ROOM_ENABLED === '1'
     ingest: (msg) => messageRouter.ingest({ ...msg, buzzInbound: true }),
     // #4445 — demo variants set this so they can show the relay without writing to it
     readOnly: process.env.CLEARING_ROOM_READONLY === '1',
+    // #4445 — dial after the first roles read, so the replay can name Abby
+    rolesReady: tilePoller.boardRefresh,
     log: (level, event, fields) =>
       process.stderr.write(JSON.stringify({ level, event, ...fields, ts: new Date().toISOString() }) + '\n'),
   })
