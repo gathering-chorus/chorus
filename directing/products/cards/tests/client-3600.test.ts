@@ -97,6 +97,7 @@ describe('BoardClient verb contracts (#3600 coverage)', () => {
       const { client } = make();
       const c = client as any;
       c.fetchTask = jest.fn(async () => ({ labels: [{ id: 3, title: 'owner:silas' }] }));
+      c.listLabels = jest.fn(async () => [{ id: 3, title: 'owner:silas' }, { id: 4, title: 'owner:kade' }]);
       const removed: number[][] = [];
       const added: number[][] = [];
       c.removeLabel = jest.fn(async (a: number, l: number) => { removed.push([a, l]); });
@@ -105,15 +106,16 @@ describe('BoardClient verb contracts (#3600 coverage)', () => {
       const res = await client.reassignOwner(7, 'kade');
       expect(res).toEqual({ oldOwner: 'silas', newOwner: 'Kade' });
       expect(removed[0]).toEqual([1007, 3]);
-      expect(added[0]).toEqual([1007, 4]); // LABELS.owner.kade === 4
+      expect(added[0]).toEqual([1007, 4]); // the board's owner:kade label
     });
 
     it('throws on an unknown owner, naming the valid owners', async () => {
       const { client } = make();
       const c = client as any;
       c.fetchTask = jest.fn(async () => ({ labels: [] }));
+      c.listLabels = jest.fn(async () => [{ id: 4, title: 'owner:kade' }]);
       c.addLabel = jest.fn();
-      await expect(client.reassignOwner(1, 'nobody')).rejects.toThrow(/Unknown owner "nobody"/);
+      await expect(client.reassignOwner(1, 'nobody')).rejects.toThrow(/Unknown owner "nobody"\. Valid: kade/);
     });
   });
 
@@ -197,7 +199,7 @@ describe('BoardClient verb contracts (#3600 coverage)', () => {
       c.api = jest.fn(async (m: string, ep: string, body?: unknown) => {
         calls.push({ method: m, endpoint: ep, body });
         if (m === 'PUT' && ep.endsWith('/tasks')) return { id: 900 };
-        if (m === 'GET' && ep.startsWith('/labels')) return [];
+        if (m === 'GET' && ep.startsWith('/labels')) return [{ id: 4, title: 'owner:kade' }];
         return {};
       });
       c.moveToBucket = jest.fn();

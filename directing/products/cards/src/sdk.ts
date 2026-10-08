@@ -1522,17 +1522,19 @@ export async function commentCard(client: BoardClient, index: number, text: stri
 }
 
 export async function reassignCard(client: BoardClient, index: number, newOwner: string): Promise<void> {
-  const validRoles = ['wren', 'silas', 'kade', 'jeff'];
   const role = newOwner.toLowerCase();
-  if (!validRoles.includes(role)) {
-    console.error(`ERROR: Invalid role "${newOwner}". Valid: ${validRoles.join(', ')}`);
-    process.exit(1);
-  }
-
   let title = '';
   try { title = (await client.view(index)).title; } catch { /* best effort */ }
 
-  const { oldOwner, newOwner: displayOwner } = await client.reassignOwner(index, role);
+  // #4457 — the board's owner:* labels decide who can own a card.
+  let result: { oldOwner: string; newOwner: string };
+  try {
+    result = await client.reassignOwner(index, role);
+  } catch (err) {
+    console.error(`ERROR: ${err instanceof Error ? err.message : String(err)}`);
+    process.exit(1);
+  }
+  const { oldOwner, newOwner: displayOwner } = result;
   console.log(`Reassigned #${index}: ${oldOwner || 'unassigned'} → ${displayOwner}`);
   emitSpineEvent('card.item.reassigned', detectRole(), {
     card_id: String(index), title, old_owner: oldOwner || 'unassigned', new_owner: role,

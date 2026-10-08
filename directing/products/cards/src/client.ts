@@ -265,8 +265,9 @@ export class BoardClient {
   }
 
   private async applyAddLabels(taskId: number, opts: AddLabelOpts): Promise<void> {
+    // #4457 — the owner comes from the board's own owner:* labels, not a typed list.
+    if (opts.owner) await this.addLabel(taskId, await this.ownerLabelId(opts.owner));
     const specs: Array<[keyof AddLabelOpts, keyof typeof LABELS, (s: string) => string]> = [
-      ['owner', 'owner', (s) => s.toLowerCase()],
       ['priority', 'priority', (s) => s.toUpperCase()],
       ['domain', 'domain', (s) => s.toLowerCase()],
       ['product', 'product', (s) => s.toLowerCase()],
@@ -654,6 +655,8 @@ export class BoardClient {
     const apiId = await this.resolveIndex(index);
     const task = await this.fetchTask(apiId);
 
+    // #4457 — resolve the new owner first, so an unknown owner leaves the card as it was.
+    const newLabelId = await this.ownerLabelId(newOwner);
     // Find and remove existing owner label
     let oldOwner = '';
     for (const label of task.labels ?? []) {
@@ -665,15 +668,26 @@ export class BoardClient {
     }
 
     // Add new owner label
-    const newLabelId = LABELS.owner[newOwner.toLowerCase()];
-    if (!newLabelId) {
-      throw new Error(`Unknown owner "${newOwner}". Valid: ${Object.keys(LABELS.owner).join(', ')}`);
-    }
     await this.addLabel(apiId, newLabelId);
     this.clearCache();
     await this.syncToGraph(index);
 
     return { oldOwner, newOwner: newOwner.charAt(0).toUpperCase() + newOwner.slice(1) };
+  }
+
+  /**
+   * #4457 — the board's owners are its owner:* labels. A role is an owner once
+   * the board has its label; nothing here lists the team. Unknown → refused by
+   * name, with the owners the board does have.
+   */
+  async ownerLabelId(role: string): Promise<number> {
+    const name = `owner:${role.toLowerCase()}`;
+    const owners = (await this.listLabels()).filter((l) => l.title.startsWith('owner:'));
+    const hit = owners.find((l) => l.title === name);
+    if (!hit) {
+      throw new Error(`Unknown owner "${role}". Valid: ${owners.map((l) => l.title.slice('owner:'.length)).join(', ')}`);
+    }
+    return hit.id;
   }
 
   /** #3102 — copy this card's current board state to its graph row. Never

@@ -1,3 +1,4 @@
+// @test-type: unit — pure config lookups; no board, no network.
 import { GATHERING, SELF, resolveBucket, LABELS } from '../src/config';
 
 describe('Board configs', () => {
@@ -92,11 +93,9 @@ describe('resolveBucket', () => {
 });
 
 describe('Labels', () => {
-  test('owner labels cover all roles', () => {
-    expect(LABELS.owner['jeff']).toBeDefined();
-    expect(LABELS.owner['wren']).toBeDefined();
-    expect(LABELS.owner['silas']).toBeDefined();
-    expect(LABELS.owner['kade']).toBeDefined();
+  // #4457 — owners are read from the board's owner:* labels (client.ownerLabelId), not listed here.
+  test('no owner list is typed into the config', () => {
+    expect((LABELS as Record<string, unknown>).owner).toBeUndefined();
   });
 
   test('priority labels cover P1-P3', () => {
@@ -107,7 +106,6 @@ describe('Labels', () => {
 
   test('all label IDs are unique numbers', () => {
     const allIds = [
-      ...Object.values(LABELS.owner),
       ...Object.values(LABELS.priority),
       ...Object.values(LABELS.domain),
     ];

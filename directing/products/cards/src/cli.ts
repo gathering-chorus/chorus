@@ -588,7 +588,7 @@ function cmdFields(board: BoardConfig) {
   const buckets = Object.keys(board.buckets).join(', ');
   console.log(`Board:    ${board.name}`);
   console.log(`Statuses: ${buckets}`);
-  console.log('Owners:   Jeff, Wren, Silas, Kade');
+  console.log('Owners:   the board\'s owner:* labels (cards label list)');
   console.log('Priority: P1, P2, P3');
   if (board.name === 'gathering') {
     console.log(`Domains:  ${Object.keys(LABELS.domain).join(', ')}`);
@@ -616,7 +616,7 @@ Commands:
   now [role]                     Show role's cards in Now
   view <id>                      Full task details
   update <id> [--title T] [--desc D] [--domain D] [--chunk C] [--seq S] [--owner O]  Update task fields + metadata
-  reassign <id> <role>            Change card owner (wren/silas/kade/jeff)
+  reassign <id> <role>            Change card owner (any role with an owner:<role> label)
   comment <id> "text"            Add a comment
   untag <id> <category:value>     Remove a label (e.g. untag 1866 sequence:infrastructure)
   tag <id> <chunk>               Tag card with chunk label
@@ -639,7 +639,7 @@ Options:
   --self, -s                     Target Self board
   --product P, -p P              Filter by product (gathering|chorus)
   --status S                     Initial status (Now/Next/Later/Done/Blocked/Harvesting/SWAT/Won't Do)
-  --owner O                      Owner (Wren/Silas/Kade/Jeff)
+  --owner O                      Owner (any role with an owner:<role> label)
   --priority P                   Priority (P1/P2/P3)
   --domain D                     Domain label (gathering/infrastructure/...)
   --chunk C                      Chunk label (spine/ops/memory/music/senses/strategy/app/sexuality/convergence/knowledge/ci/tests)

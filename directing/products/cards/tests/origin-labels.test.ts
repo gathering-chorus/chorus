@@ -1,9 +1,20 @@
+// @test-type: integration:api — reads the LIVE Vikunja label list; UNMEASURED without a board credential
 /**
  * Origin labels — reflective vs reactive classification for cards.
  * Verifies config, SDK, and Vikunja label integrity.
  */
 import { LABELS, loadEnv, GATHERING } from '../src/config';
 import { BoardClient } from '../src/client';
+
+// #4457 — the werk lane turns integration on when the stack answers, but it holds
+// no board credential, so this read cannot be made there. Without a credential
+// the live checks are UNMEASURED (said out loud and skipped), never red and never
+// green: the box, not the board, would be what failed.
+const boardEnv = ((): ReturnType<typeof loadEnv> | null => {
+  try { return loadEnv(); } catch { return null; }
+})();
+if (!boardEnv) console.log('UNMEASURED: no board credential in this lane; live label checks not run');
+const describeBoard = boardEnv ? describe : describe.skip;
 
 describe('Origin label config', () => {
   test('LABELS.origin exists with reflective and reactive', () => {
@@ -26,7 +37,7 @@ describe('Origin label config', () => {
   });
 });
 
-describe('Origin label in Vikunja', () => {
+describeBoard('Origin label in Vikunja', () => {
   let client: BoardClient;
   let allLabels: Array<{ id: number; title: string }>;
 
@@ -49,7 +60,7 @@ describe('Origin label in Vikunja', () => {
   });
 });
 
-describe('SDK accepts origin as set key', () => {
+describeBoard('SDK accepts origin as set key', () => {
   test('setCard does not throw on origin key', async () => {
     // Import dynamically so config changes are picked up
     const { setCard } = await import('../src/sdk');

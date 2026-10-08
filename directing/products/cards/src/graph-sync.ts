@@ -31,14 +31,14 @@ export interface CardRow {
 
 const PRIORITIES = new Set(['P1', 'P2', 'P3']);
 const CARD_TYPES = new Set(['new', 'enhance', 'fix', 'chore', 'swat', 'issue']);
-const ROLES = new Set(['jeff', 'wren', 'silas', 'kade']);
 
 /** One board card → the row its graph copy should hold. Pure. */
 export function cardRow(task: BoardTask): CardRow {
   const row: CardRow = { label: task.title };
   if (task.status) row.status = task.status;
   const owner = (task.owner || '').toLowerCase();
-  if (ROLES.has(owner)) row.assignee = owner;
+  // #4457 — the owner already came from the board's own owner:* label.
+  if (owner && owner !== 'unassigned') row.assignee = owner;
   const pri = (task.priority || '').toUpperCase();
   if (PRIORITIES.has(pri)) row.priority = pri;
   const type = task.domains.find((d) => d.startsWith('type:'))?.slice(5);
