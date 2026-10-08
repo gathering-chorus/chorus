@@ -85,8 +85,12 @@ export function recordSeq(state: SeqState, author: string, seq: number | null): 
 export function holesFor(state: SeqState, author: string): number[] {
   const high = state.highest.get(author);
   const seen = state.seen.get(author);
-  if (high === undefined || seen === undefined) return [];
-  const floor = Math.max(0, high - HOLE_WINDOW);
+  if (high === undefined || seen === undefined || seen.size === 0) return [];
+  // #4445 — count from the first number this room has seen from the author, not
+  // from zero. Abby published 66 replies before the room listened for replies;
+  // counting from zero showed all 66 as "never arrived" the first time one did.
+  // A gap after the first note we saw is still reported.
+  const floor = Math.max(Math.min(...seen), high - HOLE_WINDOW);
   const out: number[] = [];
   for (let n = floor; n < high; n++) if (!seen.has(n)) out.push(n);
   return out;
