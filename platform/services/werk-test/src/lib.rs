@@ -28,11 +28,24 @@ pub type R<T> = Result<T, String>;
 /// which needed a code edit for every new package (Jeff: "why is this a code
 /// change"). Sorted, repo-relative, the repo root itself excluded.
 pub fn discover_ts_packages(root: &std::path::Path) -> Vec<String> {
+    // #4455 — in a git tree, ask git for the package.json files instead of
+    // walking the disk: the nightly's tree holds untracked runtime data
+    // (platform/backups/graph-retirements, 581k files) that the walk listed on
+    // every call. The walk stays for trees with no git (fixtures).
+    git_ts_packages(root).unwrap_or_else(|| walk_ts_packages(root))
+}
+
+/// The disk walk: a directory with a package.json that has a "test" script,
+/// up to 5 deep, outside dot/node_modules/dist/target/coverage directories.
+pub fn walk_ts_packages(root: &std::path::Path) -> Vec<String> {
     fn walk(root: &std::path::Path, dir: &std::path::Path, depth: usize, out: &mut Vec<String>) {
         let Ok(entries) = std::fs::read_dir(dir) else { return };
         for e in entries.flatten() {
+            // #4455 — the entry's own type, never a stat per file: the nightly's
+            // tree holds platform/backups/graph-retirements (581k files), and a
+            // stat for each made every caller of this walk take 35-47 s.
+            if !e.file_type().is_ok_and(|t| t.is_dir()) { continue; }
             let path = e.path();
-            if !path.is_dir() { continue; }
             let name = e.file_name().to_string_lossy().to_string();
             if name.starts_with('.') || ["node_modules", "dist", "target", "coverage"].contains(&name.as_str()) { continue; }
             let has_test = std::fs::read_to_string(path.join("package.json")).ok()
@@ -48,6 +61,32 @@ pub fn discover_ts_packages(root: &std::path::Path) -> Vec<String> {
     walk(root, root, 5, &mut out);
     out.sort();
     out
+}
+
+/// The TS packages git knows about: tracked package.json files with a "test"
+/// script, at most 5 directories deep, outside dot/node_modules/dist/target/
+/// coverage directories — the same rule as the disk walk. None when `root` is
+/// not a git work tree.
+pub fn git_ts_packages(root: &std::path::Path) -> Option<Vec<String>> {
+    if !root.join(".git").exists() { return None; }
+    let out = std::process::Command::new("git")
+        .arg("-C").arg(root)
+        .args(["ls-files", "-z", "--", "package.json", "*/package.json"])
+        .output().ok()?;
+    if !out.status.success() { return None; }
+    let skip = |c: &str| c.starts_with('.') || ["node_modules", "dist", "target", "coverage"].contains(&c);
+    let mut found: Vec<String> = String::from_utf8_lossy(&out.stdout)
+        .split('\0')
+        .filter_map(|f| f.strip_suffix("/package.json"))
+        .filter(|dir| { let parts: Vec<&str> = dir.split('/').collect(); parts.len() <= 5 && !parts.iter().any(|c| skip(c)) })
+        .filter(|dir| std::fs::read_to_string(root.join(dir).join("package.json")).ok()
+            .and_then(|t| t.find("\"scripts\"").map(|i| t[i..].to_string()))
+            .is_some_and(|scripts| scripts.split('}').next().is_some_and(|block| block.contains("\"test\""))))
+        .map(str::to_string)
+        .collect();
+    found.sort();
+    found.dedup();
+    Some(found)
 }
 
 static REPO_ROOT: std::sync::OnceLock<std::path::PathBuf> = std::sync::OnceLock::new();

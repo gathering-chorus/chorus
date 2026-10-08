@@ -18,7 +18,7 @@ otherwise exit before defining anything.
 import sys
 
 guard_path, issuer = sys.argv[1], sys.argv[2]
-ns = {"__name__": "probe"}
+ns = {"__name__": "probe", "__file__": guard_path}  # #4455: the guard finds its lib/ from __file__ (#4446)
 exec(compile(open(guard_path).read(), "guard", "exec"), ns)
 
 ns["ISSUER"] = issuer.rstrip("/")

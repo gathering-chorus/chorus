@@ -62,7 +62,15 @@ ack_initialized() {
     -d '{"jsonrpc":"2.0","id":2,"method":"tools/list"}')
   echo "$resp" | grep -q 'chorus_nudge_message' || (echo "tool not in list: $resp" && false)
   echo "$resp" | grep -q 'inputSchema' || (echo "no inputSchema: $resp" && false)
-  echo "$resp" | grep -qE '"enum":\["silas","wren","kade","jeff"\]' || (echo "wrong target enum: $resp" && false)
+  # #4455 — since #4432 the target is any role the roles door lists, so the
+  # schema carries a role-name pattern, not a fixed four-name enum. Read the
+  # real schema of `to` and require it to be typed.
+  to_pattern=$(echo "$resp" | sed -n 's/^data: //p' | python3 -c '
+import json, sys
+tools = json.loads(sys.stdin.read())["result"]["tools"]
+t = next(t for t in tools if t["name"] == "chorus_nudge_message")
+print(t["inputSchema"]["properties"]["to"].get("pattern", ""))')
+  [ "$to_pattern" = '^[a-z][a-z0-9-]*$' ] || (echo "to is not typed as a role name: '$to_pattern'" && false)
 }
 
 @test "tools/call chorus_nudge_message returns success and emits spine event" {
