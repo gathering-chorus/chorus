@@ -4855,6 +4855,45 @@
         "session": "The open Session row resumed"
       }
     },
+    "session.relay.failed": {
+      "producer": "identity",
+      "about": "Session",
+      "category": "fact",
+      "version": "1",
+      "vertebra": "building",
+      "source": "chorus-principal",
+      "description": "#4445 — a login ran the relay member projection and it failed; the role still starts, and its messages reach the Clearing only once its key is a member.",
+      "fields": {
+        "role": "The role logging in",
+        "reason": "Why the projection failed"
+      }
+    },
+    "session.relay.projected": {
+      "producer": "identity",
+      "about": "Session",
+      "category": "fact",
+      "version": "1",
+      "vertebra": "building",
+      "source": "chorus-principal",
+      "description": "#4445 — a login ran the relay member projection, so the role's nostr key is a relay member by the time its session starts.",
+      "fields": {
+        "role": "The role logging in"
+      }
+    },
+    "session.superseded": {
+      "producer": "identity",
+      "about": "Session",
+      "category": "fact",
+      "version": "1",
+      "vertebra": "building",
+      "source": "chorus-principal",
+      "description": "#4445 — a login closed the role's other open sessions on its channel, left by a login that wrote its row and was interrupted before recording it; a role has one session, login to logout.",
+      "fields": {
+        "role": "The role logging in",
+        "closed": "The older Session rows closed",
+        "by": "The new Session row"
+      }
+    },
     "session.revoked": {
       "producer": "identity",
       "about": "Session",

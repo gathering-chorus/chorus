@@ -449,6 +449,20 @@ pub fn signed_in_owners(body: &str, now_iso: &str) -> Vec<String> {
     }).collect()
 }
 
+/// #4445 — the role's other open sessions on this channel: rows an interrupted
+/// login wrote and never recorded (Jeff ran `on abby-normal` twice, 2026-10-08,
+/// and her tile showed 2 sessions). A role has one session, login to logout.
+pub fn superseded_sessions(body: &str, role: &str, channel: &str, keep: &str) -> Vec<String> {
+    let rows = serde_json::from_str::<Value>(body).ok()
+        .and_then(|v| v.get("data").cloned()).and_then(|d| d.as_array().cloned()).unwrap_or_default();
+    rows.iter().filter_map(|r| {
+        let f = |k: &str| r.get(k).and_then(|x| x.as_str()).unwrap_or("").to_string();
+        let mine = f("actsAs") == role && f("ownedBy") == format!("principal-{}", role);
+        (mine && f("channel") == channel && f("sessionState") != "closed" && f("name") != keep && !f("name").is_empty())
+            .then(|| f("name"))
+    }).collect()
+}
+
 #[cfg(test)]
 mod signed_in_owners_4412 {
     use super::signed_in_owners;
