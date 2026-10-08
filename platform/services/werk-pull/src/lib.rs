@@ -127,6 +127,14 @@ fn emit_spine(home: &Path, event: &str, role: &str, card: u64, trace: &str, extr
 }
 
 /// Run a CLI, capture stdout; any non-zero exit is a typed error (no silent failure).
+/// #4458 — `git worktree add` under umask 002, so the werk is group-writable.
+/// werk-pull runs inside the message service under the host account; a role
+/// that works as its own OS account (Abby, group chorus) could read her werk
+/// but not edit it. chorus-werk itself is already setgid group chorus.
+pub fn worktree_add_args<'a>(repo: &'a str, branch: &'a str, werk: &'a str) -> Vec<&'a str> {
+    vec!["-c", "umask 002 && exec git \"$@\"", "sh", "-C", repo, "worktree", "add", "-b", branch, werk, "origin/main"]
+}
+
 fn run(cmd: &str, args: &[&str]) -> R<String> {
     let out = Command::new(cmd)
         .args(args)
@@ -376,7 +384,7 @@ pub fn pull(card: u64, role: &str, home: &Path, werk_base: &Path) -> R<String> {
         jsonl(home, role, card, &trace, "lock.acquired", "");
         run("git", &["-C", &repo_s, "fetch", "-q", "origin", "main"])?;
         jsonl(home, role, card, &trace, "fetch.done", "");
-        run("git", &["-C", &repo_s, "worktree", "add", "-b", &branch, &werk_s, "origin/main"])?;
+        run("sh", &worktree_add_args(&repo_s, &branch, &werk_s))?;
         jsonl(home, role, card, &trace, "worktree.added", "");
     } // flock released here
 
