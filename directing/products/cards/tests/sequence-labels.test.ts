@@ -7,7 +7,17 @@
 import { LABELS, loadEnv, GATHERING } from '../src/config';
 import { BoardClient } from '../src/client';
 
-describe('Sequence label naming (#2024 AC #1)', () => {
+// #4457 — the werk lane turns integration on when the stack answers, but it holds
+// no board credential, so this read cannot be made there. Without a credential
+// the live checks are UNMEASURED (said out loud and skipped), never red and never
+// green: the box, not the board, would be what failed.
+const boardEnv = ((): ReturnType<typeof loadEnv> | null => {
+  try { return loadEnv(); } catch { return null; }
+})();
+if (!boardEnv) console.log('UNMEASURED: no board credential in this lane; live label checks not run');
+const describeBoard = boardEnv ? describe : describe.skip;
+
+describeBoard('Sequence label naming (#2024 AC #1)', () => {
   let client: BoardClient;
   let allLabels: Array<{ id: number; title: string }>;
 
