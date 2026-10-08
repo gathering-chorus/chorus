@@ -64,3 +64,13 @@ fn an_unreadable_chat_file_falls_back_to_what_gemini_handed_over() {
         "gemini_transcript_path":"/nonexistent/chat-4445.jsonl"});
     assert_eq!(reply_text(&raw).as_deref(), Some("Pipeline is green."));
 }
+
+// 2026-10-08 06:39: a turn with no text reached the Clearing as "[no response text]"
+#[test]
+fn gemini_s_no_text_placeholder_is_never_published() {
+    let raw = serde_json::json!({"hook_event_name":"AfterAgent","prompt_response":"[no response text]"});
+    assert_eq!(reply_text(&raw), None);
+    let p = chat("");
+    let raw = serde_json::json!({"prompt_response":"[no response text]","gemini_transcript_path":p.to_string_lossy()});
+    assert_eq!(reply_text(&raw), None, "an empty last message plus the placeholder publishes nothing");
+}

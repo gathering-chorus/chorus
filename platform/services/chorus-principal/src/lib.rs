@@ -636,6 +636,7 @@ fn do_login(ctx: &Ctx, role: &str) -> Result<LoginState, ()> {
     let _ = write_private(&role_id_dir.join("session.row.json"), &saved.to_string());
     ctx.spine(&["session.login", role, &format!("webid={}", login.webid), &format!("jti={}", login.jti), &format!("session={}", session_name), &format!("host_account={}", host_account), &format!("expires_at={}", iso_utc(login.exp))]);
     println!("login: {}  webid {}  jti {}  session {}  recorded yes", role, login.webid, login.jti, session_name);
+    close_superseded(ctx, role, channel, &session_name);
     Ok(LoginState::Recorded { session: session_name, pid: None })
 }
 
@@ -1543,6 +1544,32 @@ fn relogin(ctx: &Ctx, role: &str) -> i32 {
             return 1;
         }
         std::thread::sleep(Duration::from_secs(every));
+    }
+}
+
+/// #4445 — close the role's other open sessions on this channel, left by a
+/// login that wrote its row and was interrupted before recording it. Loud, never
+/// a refusal: the new session is already recorded.
+fn close_superseded(ctx: &Ctx, role: &str, channel: &str, keep: &str) {
+    let Ok(token) = sh(&ctx.token_bin, &[role]) else { return };
+    let role_id_dir = PathBuf::from(&ctx.identity_dir).join(role);
+    let hdr = role_id_dir.join("session.hdr");
+    if write_private(&hdr, &format!("Authorization: Bearer {}\n", token.trim())).is_err() { return; }
+    let url = format!("{}/v1/identity/sessions?channel={}&limit=1000", ctx.api, channel);
+    let list = sh(&ctx.curl, &["-s", "--max-time", "10", "-H", &format!("@{}", hdr.display()), &url]).unwrap_or_default();
+    let _ = fs::remove_file(&hdr);
+    let stale = rows::superseded_sessions(&list, role, channel, keep);
+    if stale.is_empty() { return; }
+    let mut closed = Vec::new();
+    for name in &stale {
+        match close_row_from(ctx, role, name, Some(&list)) {
+            Ok(()) => closed.push(name.clone()),
+            Err(why) => eprintln!("login: could not close older session {} — {}", name, why),
+        }
+    }
+    if !closed.is_empty() {
+        ctx.spine(&["session.superseded", role, &format!("closed={}", closed.join(",")), &format!("by={}", keep)]);
+        println!("login: closed {} older open session(s) an interrupted login left: {}", closed.len(), closed.join(", "));
     }
 }
 

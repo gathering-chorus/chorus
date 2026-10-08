@@ -37,6 +37,10 @@ fn canonicalize(text: &str) -> String {
     stripped.split_whitespace().collect::<Vec<_>>().join(" ")
 }
 
+/// #4445 — what gemini-cli's AfterAgent sends as prompt_response when the turn
+/// produced no text. Abby's 2026-10-08 06:39 "reply" in the Clearing was this.
+const GEMINI_NO_TEXT: &str = "[no response text]";
+
 /// The text of the LAST Gemini message in a gemini-cli chat file, or None when
 /// that message is empty (the turn ended on tools) — never an older reply.
 fn last_gemini_text(path: &str) -> Option<String> {
@@ -77,7 +81,8 @@ pub fn reply_text(raw: &serde_json::Value) -> Option<String> {
         .or_else(|| {
             raw.get("prompt_response")
                 .and_then(|v| v.as_str())
-                .filter(|t| !t.trim().is_empty())
+                // gemini-cli hands this placeholder when a turn produced no text
+                .filter(|t| !t.trim().is_empty() && t.trim() != GEMINI_NO_TEXT)
                 .map(str::to_string)
         })
 }
