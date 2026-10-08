@@ -6,7 +6,9 @@
 # chorus-principal commands 2x". The first `on` wrote its Session row and was
 # interrupted before it recorded it, so nothing ever closed that row. A login
 # now closes every other open session of the same role on the same channel: a
-# role has one session, login to logout (#4406).
+# role has one session, login to logout (#4406). Rows are shaped like the real
+# listing (actsAs "role-<name>"): the first fixture used a bare name and passed
+# while prod (10:02, 10:04) never matched.
 #
 # Asserts are simple commands, never `[[ ]]` (bash 3.2 hollow-assert, 2026-09-16).
 
@@ -24,7 +26,7 @@ setup() {
 listing() {
   printf '{"data":[%s]}\n' "$1" > "$T/existing.json"
 }
-ROW() { printf '{"name":"%s","actsAs":"%s","ownedBy":"principal-%s","tokenId":"jti-%s","channel":"%s","sessionState":"%s","startedAt":"2026-10-08T10:41:18Z"}' "$1" "$2" "$2" "$1" "$3" "$4"; }
+ROW() { printf '{"name":"%s","actsAs":"role-%s","ownedBy":"principal-%s","tokenId":"jti-%s","channel":"%s","sessionState":"%s","startedAt":"2026-10-08T10:41:18Z"}' "$1" "$2" "$2" "$1" "$3" "$4"; }
 
 @test "a login closes the open session an interrupted login left behind" {
   listing "$(ROW session-silas-orphan silas pane open),$(ROW session-silas-old silas pane closed),$(ROW session-kade-live kade pane open),$(ROW session-silas-agent silas agent open)"
