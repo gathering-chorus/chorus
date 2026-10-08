@@ -105,6 +105,10 @@ class MockClient {
 
   async reassignOwner(index: number, role: string): Promise<{ oldOwner: string; newOwner: string }> {
     this.record('reassignOwner', [index, role]);
+    // #4457 — like the real board, an owner needs an owner:<role> label.
+    if (!['jeff', 'wren', 'silas', 'kade', 'abby-normal'].includes(role)) {
+      throw new Error(`Unknown owner "${role}". Valid: jeff, wren, silas, kade, abby-normal`);
+    }
     const t = this.tasks.get(index);
     const oldOwner = (t as { owner?: string } | undefined)?.owner ?? '';
     if (t) (t as { owner?: string }).owner = role;
@@ -437,7 +441,7 @@ describe('reassignCard', () => {
       cap.restore();
     }
     expect(exit.calls).toEqual([1]);
-    expect(cap.errs.join('\n')).toMatch(/Invalid role "nobody"/);
+    expect(cap.errs.join('\n')).toMatch(/Unknown owner "nobody"/);
   });
 });
 

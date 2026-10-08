@@ -8,7 +8,7 @@ import { BoardConfig } from './types';
 // Label IDs (shared across both boards)
 // Updated 2026-04-07 after Vikunja DB rebuild
 export const LABELS = {
-  owner: { jeff: 1, wren: 2, silas: 3, kade: 4 } as Record<string, number>,
+  // #4457 — owners are not listed here: the board's owner:* labels are the list (client.ownerLabelId).
   priority: { P1: 5, P2: 6, P3: 7 } as Record<string, number>,
   domain: {
     // Legacy (keep for existing cards)
@@ -163,7 +163,7 @@ export function loadEnv(): { url: string; token: string } {
  *     a warning to stderr (so existing automation isn't immediately broken).
  *     The fallback is deprecated; future cards card retires it entirely.
  */
-const VALID_ROLES = new Set(['wren', 'silas', 'kade', 'jeff', 'automation']);
+const VALID_ROLES = new Set(['wren', 'silas', 'kade', 'jeff', 'abby-normal', 'automation']);
 
 export function detectRole(): string {
   const env = (process.env.DEPLOY_ROLE || '').toLowerCase();

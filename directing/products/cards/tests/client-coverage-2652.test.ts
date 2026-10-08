@@ -132,7 +132,7 @@ describe('#2652 AC11 BoardClient coverage uplift', () => {
   test('reassignOwner on BoardClient swaps owner labels', async () => {
     const client = new BoardClient('http://localhost:3456', 'fake-token', GATHERING);
     const tasks = new Map([[100, makeTask(100, [{ id: 2, title: 'owner:wren' }])]]);
-    stub(client, { tasks });
+    stub(client, { tasks, labels: [{ id: 2, title: 'owner:wren' }, { id: 4, title: 'owner:kade' }] });
     const r = await client.reassignOwner(100, 'kade');
     expect(r.oldOwner).toBe('wren');
     expect(r.newOwner.toLowerCase()).toBe('kade');
