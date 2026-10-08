@@ -7,8 +7,9 @@
 # nightly. Each fixture now supplies __file__. This runs the suite on a card,
 # and proves the __file__ line is what makes the fixtures work.
 #
-# Fixtures exercised: fixtures/verify-cookie-vectors, fixtures/probe-safe-return,
-# fixtures/probe-discover
+# Covers: platform/tests/fixtures/verify-cookie-vectors.py
+# Covers: platform/tests/fixtures/probe-safe-return.py
+# Covers: platform/tests/fixtures/probe-discover.py
 
 setup() {
   ROOT="${BATS_TEST_DIRNAME}/.."
