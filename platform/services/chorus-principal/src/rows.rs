@@ -457,7 +457,9 @@ pub fn superseded_sessions(body: &str, role: &str, channel: &str, keep: &str) ->
         .and_then(|v| v.get("data").cloned()).and_then(|d| d.as_array().cloned()).unwrap_or_default();
     rows.iter().filter_map(|r| {
         let f = |k: &str| r.get(k).and_then(|x| x.as_str()).unwrap_or("").to_string();
-        let mine = f("actsAs") == role && f("ownedBy") == format!("principal-{}", role);
+        // the store names the role "role-<name>" (measured 2026-10-08); a bare name is accepted too
+        let acts = f("actsAs");
+        let mine = (acts == role || acts == format!("role-{}", role)) && f("ownedBy") == format!("principal-{}", role);
         (mine && f("channel") == channel && f("sessionState") != "closed" && f("name") != keep && !f("name").is_empty())
             .then(|| f("name"))
     }).collect()
