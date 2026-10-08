@@ -921,9 +921,9 @@ fn env_services_run_a_clearing_per_role_on_ports_nothing_else_uses() {
 #[test]
 fn negative_proof_3734_a_port_collision_is_caught() {
     let mut svcs = werk_deploy::demo_env::env_services();
-    let api_wren = svcs.iter().find(|s| s.name == "chorus-api").unwrap().wren_port;
+    let api_wren = svcs.iter().find(|s| s.name == "chorus-api").unwrap().port_for("wren").unwrap();
     let c = svcs.iter_mut().find(|s| s.name == "clearing").unwrap();
-    c.silas_port = api_wren; // the state the check exists to catch
+    c.base_port = api_wren; // the state the check exists to catch
     let hit = werk_deploy::demo_env::env_ports_collide(&svcs);
     assert_eq!(hit.map(|(_, p)| p), Some(api_wren));
 }

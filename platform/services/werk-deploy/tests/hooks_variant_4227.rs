@@ -78,9 +78,9 @@ fn negative_proof_the_collision_gate_still_catches_a_real_one() {
     // The skip above must not have switched the gate off. Two real services on
     // one port must still be named.
     let mut svcs = env_services();
-    let api_wren = svcs.iter().find(|s| s.name == "chorus-api").unwrap().wren_port;
+    let api_wren = svcs.iter().find(|s| s.name == "chorus-api").unwrap().port_for("wren").unwrap();
     let c = svcs.iter_mut().find(|s| s.name == "clearing").unwrap();
-    c.silas_port = api_wren;
+    c.base_port = api_wren;
     assert_eq!(env_ports_collide(&svcs).map(|(_, p)| p), Some(api_wren));
 }
 
