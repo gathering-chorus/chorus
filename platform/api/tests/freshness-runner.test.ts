@@ -56,7 +56,6 @@ async function worstTimerLag<T>(work: () => Promise<T>): Promise<{ result: T; wo
 }
 
 describe('freshness runs in a worker thread (#3060 reopen)', () => {
-  jest.setTimeout(20_000);
 
   it('AC1: a 1.5s recompute in the worker leaves the main thread answering', async () => {
     const runner = createFreshnessRunner(() => new Worker(slowWorkerSource, { eval: true }));

@@ -1,4 +1,6 @@
 // @test-type: unit — a stub socket and a temp cursor file; no relay, no service.
+// @card: #4445
+// @owner: wren
 /**
  * #4445 — a demo variant's Clearing reads the live relay so Jeff can see Abby's
  * replies in the demo, but it must never write to the live room: no notes

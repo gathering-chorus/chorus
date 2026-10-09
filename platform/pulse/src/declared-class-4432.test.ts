@@ -1,5 +1,7 @@
 // @test-type: unit — in-memory store, peers mocked; no live services
 // @domain: messages
+// @card: #4432
+// @owner: wren
 /** #4432 — only a peer's nudge can be r2r; a machine that declares r2r is stored a2r. */
 import request from 'supertest';
 import { MessageStore } from './store';

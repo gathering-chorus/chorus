@@ -1,5 +1,7 @@
 // @test-type: unit — a stub socket, derived test keys and the in-process role list; no relay, no roles API.
 // @domain: messages
+// @card: #4445
+// @owner: wren
 /**
  * #4445 — Silas, 2026-10-07 20:20, demo :3481: the read-only room replayed 207
  * notes at startup and every one logged unknown-key. The room dialed at import,

@@ -1,5 +1,7 @@
 // @test-type: unit — fake fetch; no live services
 // @domain: messages
+// @card: #4432
+// @owner: wren
 /** #4432 — pulse learns its peers from the roles door, and refuses when it can't. */
 import { peersFrom, fetchPeers, FetchLike } from './peers';
 import { inferNudgeClass } from './store';
