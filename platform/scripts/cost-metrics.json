@@ -1,5 +1,5 @@
 {
-  "_doc": "#4463 — what the team pays. The cost exporter (platform/scripts/cost-metrics) reads this. A model with no price here has its tokens counted and its spend reported as unmeasured, never as $0. Gemini prices from ai.google.dev/gemini-api/docs/pricing, read by Wren 2026-10-09; cached input is charged at the full input price (an upper bound).",
+  "_doc": "#4463 — what the team pays. The cost exporter (platform/scripts/cost-metrics) reads this; it lives beside the script, like borg-health-contract.json. A model with no price here has its tokens counted and its spend reported as unmeasured, never as $0. Gemini prices from ai.google.dev/gemini-api/docs/pricing, read by Wren 2026-10-09; cached input is charged at the full input price (an upper bound).",
   "fixed_monthly_dollars": {
     "claude-code-plan": 200
   },

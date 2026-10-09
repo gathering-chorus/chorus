@@ -12,7 +12,7 @@ Sources:
   claude  Claude Code transcripts (~/.claude/projects), one row per API response,
           deduped by message id + request id, assigned to a role by project folder
   gemini  Abby's Gemini CLI chats (~chorus-abby-normal/.gemini/tmp/*/chats/*.jsonl),
-          spend = tokens x the price in platform/config/cost.json
+          spend = tokens x the price in platform/scripts/cost-metrics.json
   twilio  Twilio usage API, needs TWILIO_ACCOUNT_SID / TWILIO_AUTH_TOKEN in the env
 
 Env (tests): COST_CLAUDE_PROJECTS, COST_GEMINI_TMP, COST_CONFIG, COST_TODAY (YYYY-MM-DD).
@@ -32,7 +32,7 @@ BOSTON = ZoneInfo("America/New_York")
 ROOT = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 CLAUDE_DIR = os.environ.get("COST_CLAUDE_PROJECTS", os.path.expanduser("~/.claude/projects"))
 GEMINI_DIR = os.environ.get("COST_GEMINI_TMP", os.path.expanduser("~chorus-abby-normal/.gemini/tmp"))
-CONFIG = os.environ.get("COST_CONFIG", os.path.join(ROOT, "platform", "config", "cost.json"))
+CONFIG = os.environ.get("COST_CONFIG", os.path.join(os.path.dirname(os.path.abspath(__file__)), "cost-metrics.json"))
 
 # project folder name -> role. Werk and role dirs name the role; headless runs
 # (claude -p from tests, the nightly, subagents) live under temp folders.
@@ -245,7 +245,7 @@ def main():
     else:
         complete = False
 
-    gauge("cost_fixed_claude_dollars", "fixed monthly plans (platform/config/cost.json)", [({}, fixed)])
+    gauge("cost_fixed_claude_dollars", "fixed monthly plans (platform/scripts/cost-metrics.json)", [({}, fixed)])
     gauge("cost_variable_total_dollars", "measured variable spend this month", [({}, f"{variable:.4f}")])
     gauge("cost_total_dollars", "fixed + measured variable this month", [({}, f"{fixed + variable:.4f}")])
     gauge("cost_total_complete", "1 only if every variable source and model was measured", [({}, int(complete))])

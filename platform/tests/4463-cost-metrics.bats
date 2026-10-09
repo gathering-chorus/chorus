@@ -11,7 +11,7 @@ setup() {
   SCRIPT="$ROOT/platform/scripts/cost-metrics"
   T="$BATS_TEST_TMPDIR"
   export COST_CLAUDE_PROJECTS="$T/claude" COST_GEMINI_TMP="$T/gemini" COST_TODAY="2026-10-09"
-  export COST_CONFIG="$ROOT/platform/config/cost.json"
+  export COST_CONFIG="$ROOT/platform/scripts/cost-metrics.json"
   unset TWILIO_ACCOUNT_SID TWILIO_AUTH_TOKEN
   mkdir -p "$T/claude" "$T/gemini"
 }
