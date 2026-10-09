@@ -5,7 +5,7 @@ Moved from shared-observability/scripts/cost-metrics.py. The old version globbed
 Gathering-era project folders (architect/engineer/product-manager), so after roles moved
 into chorus/roles/* it read 0 tokens and still looked like a measurement.
 
-Rule: a source that cannot be read is UNMEASURED — `cost_source_measured{source=...} 0`
+Rule: a source that cannot be read — or has one file it cannot read — is UNMEASURED — `cost_source_measured{source=...} 0`
 and none of its value lines — never a 0 that reads as measured.
 
 Sources:
@@ -74,8 +74,10 @@ def scan_claude(month):
         role = role_for(os.path.relpath(path, CLAUDE_DIR).split(os.sep)[0])
         try:
             fh = open(path, errors="ignore")
-        except OSError:
-            continue
+        except OSError as e:
+            # a file we cannot read makes the total a guess: unmeasured, not low
+            print(f"cost-metrics: unreadable {path}: {e}", file=sys.stderr)
+            return None
         with fh:
             for line in fh:
                 if '"usage"' not in line:
@@ -126,8 +128,10 @@ def scan_gemini(month, prices):
     for path in files:
         try:
             fh = open(path, errors="ignore")
-        except OSError:
-            continue
+        except OSError as e:
+            # a file we cannot read makes the total a guess: unmeasured, not low
+            print(f"cost-metrics: unreadable {path}: {e}", file=sys.stderr)
+            return None
         with fh:
             for line in fh:
                 if '"tokens"' not in line:

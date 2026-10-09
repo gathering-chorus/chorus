@@ -115,3 +115,15 @@ sys.exit(1 if missing else 0)
 PY
   [ "$status" -eq 0 ] || { echo "$output"; false; }
 }
+
+@test "negative proof: one unreadable transcript makes Claude unmeasured, not a low total" {
+  [ "$(id -u)" -ne 0 ] || skip "root reads every file"
+  claude_row -Users-x-CascadeProjects-chorus-roles-silas m1 2026-10-09T13:00:00Z 100
+  claude_row -Users-x-CascadeProjects-chorus-roles-kade m2 2026-10-09T13:00:00Z 40
+  chmod 000 "$T/claude/-Users-x-CascadeProjects-chorus-roles-kade/session.jsonl"
+  run "$SCRIPT"
+  chmod 644 "$T/claude/-Users-x-CascadeProjects-chorus-roles-kade/session.jsonl"
+  [ "$status" -eq 0 ]
+  [ "$(metric 'cost_source_measured{source="claude"}')" = 0 ]
+  lacks '^claude_role_output_tokens'
+}
