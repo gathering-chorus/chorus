@@ -2891,6 +2891,37 @@ fn diff_scoped_units(werk: &str, changed: &[String]) -> Option<Vec<TestUnit>> {
     diff_scoped_units_inner(werk, changed).0
 }
 
+/// #4466 — every test suite in the werk with its text, for naming lookups.
+/// Skips build output and dependencies. An unreadable suite is said out loud:
+/// it cannot be searched, so a file it names might run nothing.
+fn suite_texts(root: &Path) -> Vec<(String, String)> {
+    let mut out = Vec::new();
+    let mut stack = vec![root.to_path_buf()];
+    while let Some(dir) = stack.pop() {
+        let Ok(entries) = std::fs::read_dir(&dir) else { continue };
+        for e in entries.flatten() {
+            let p = e.path();
+            let name = e.file_name().to_string_lossy().to_string();
+            if p.is_dir() {
+                if !matches!(name.as_str(), "node_modules" | ".git" | "target" | "dist") && !name.starts_with(".werk") {
+                    stack.push(p);
+                }
+                continue;
+            }
+            let Ok(rel) = p.strip_prefix(root) else { continue };
+            let rel = rel.to_string_lossy().to_string();
+            if is_test_suite_path(&rel) {
+                match std::fs::read_to_string(&p) {
+                    Ok(text) => out.push((rel, text)),
+                    Err(e) => eprintln!("scope(diff): cannot read suite {rel} to find what it names: {e}"),
+                }
+            }
+        }
+    }
+    out.sort();
+    out
+}
+
 fn diff_scoped_units_inner(werk: &str, changed: &[String]) -> (Option<Vec<TestUnit>>, String) {
     let root = Path::new(werk);
     let mut units: Vec<ScopeUnit> = Vec::new();
@@ -2931,14 +2962,6 @@ fn diff_scoped_units_inner(werk: &str, changed: &[String]) -> (Option<Vec<TestUn
     // #4173 — a changed suite is its own unit. Without this the scoper names it
     // and the filter below drops it, which is the same "runs nothing" the
     // irrelevant list used to produce.
-    for f in changed {
-        // A DELETED suite is in the diff and has nothing to run. #4173 deletes
-        // four crawler suites with the walkers they proved; scoping them to
-        // themselves would hand the runner four paths that are not on disk.
-        if is_test_suite_path(f) && root.join(f).is_file() {
-            units.push(ScopeUnit { name: f.clone(), dir: f.clone() });
-        }
-    }
     let edges: Vec<(String, String)> = scope_declared_edges(root)
         .into_iter()
         .map(|(p, d)| {
@@ -2947,6 +2970,17 @@ fn diff_scoped_units_inner(werk: &str, changed: &[String]) -> (Option<Vec<TestUn
             (p2, d2)
         })
         .collect();
+    // #4466 — every changed file brings in the suites that name it; a file no
+    // unit claims but a suite names is covered by that suite, not refused.
+    let changed = &werk_test::expand_by_naming_suites(changed, &suite_texts(root), &units, &edges);
+    for f in changed {
+        // A DELETED suite is in the diff and has nothing to run. #4173 deletes
+        // four crawler suites with the walkers they proved; scoping them to
+        // themselves would hand the runner four paths that are not on disk.
+        if is_test_suite_path(f) && root.join(f).is_file() {
+            units.push(ScopeUnit { name: f.clone(), dir: f.clone() });
+        }
+    }
     let (scoped, reason) = match scoped_test_reason(changed, &units, &edges) {
         Ok(v) => (v, "scoped".to_string()),
         Err(r) => return (None, r),

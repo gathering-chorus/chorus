@@ -2181,6 +2181,63 @@ pub fn scoped_test_reason(
     }
 }
 
+/// #4466 — true when `text` names `file` as a whole path: the next character
+/// cannot continue a path segment, so naming `scripts/cost-metrics` is not
+/// naming `scripts/cost-metrics.json`.
+pub fn text_names_path(text: &str, file: &str) -> bool {
+    text.match_indices(file).any(|(i, _)| {
+        !text[i + file.len()..]
+            .chars()
+            .next()
+            .is_some_and(|c| c.is_ascii_alphanumeric() || matches!(c, '_' | '-' | '.'))
+    })
+}
+
+/// #4466 — a changed file is tested by the suites that name it. 14 cards in 26
+/// days were refused for an unmapped path, and each was "fixed" by adding the
+/// path to scope_irrelevant or moving the file into a skipped folder — so an
+/// edited script, hook or config ran NO suite at all, whatever the comments
+/// said about coverage pulling suites in. Here every changed non-suite file
+/// brings in each suite (`suites` = (path, text)) that names it. A file that
+/// belongs to no unit but is named by a suite is covered by those suites and
+/// no longer refused; one that no suite names stays in the diff and is refused
+/// as unmapped, exactly as before.
+pub fn expand_by_naming_suites(
+    changed: &[String],
+    suites: &[(String, String)],
+    units: &[ScopeUnit],
+    edges: &[(String, String)],
+) -> Vec<String> {
+    let mut out: Vec<String> = Vec::new();
+    let push = |v: &mut Vec<String>, s: &str| {
+        if !v.iter().any(|x| x == s) {
+            v.push(s.to_string());
+        }
+    };
+    for f in changed {
+        if is_test_suite_path(f) {
+            push(&mut out, f);
+            continue;
+        }
+        let naming: Vec<&String> = suites
+            .iter()
+            .filter(|(p, text)| p != f && text_names_path(text, f))
+            .map(|(p, _)| p)
+            .collect();
+        for s in &naming {
+            push(&mut out, s);
+        }
+        let unmapped = matches!(
+            scope_unit_names(std::slice::from_ref(f), units, edges, false),
+            ScopeVerdict::Full(r) if r == format!("unmapped:{f}")
+        );
+        if !(unmapped && !naming.is_empty()) {
+            push(&mut out, f);
+        }
+    }
+    out
+}
+
 pub fn scoped_test_units(
     changed: &[String],
     units: &[ScopeUnit],
@@ -2259,7 +2316,7 @@ mod npm_lane_4173 {
 
 #[cfg(test)]
 mod scope_vcs_metadata_4173 {
-    use super::{is_test_suite_path, scope_irrelevant, scoped_test_reason, ScopeUnit};
+    use super::{expand_by_naming_suites, is_test_suite_path, scope_irrelevant, scoped_test_reason, text_names_path, ScopeUnit};
 
     #[test]
     fn git_metadata_never_widens_a_card_to_the_whole_tree() {
@@ -2399,6 +2456,55 @@ mod scope_vcs_metadata_4173 {
             scoped_test_reason(&["platform/hookshot/x.rs".to_string()], &units, &[]),
             Err("unmapped:platform/hookshot/x.rs".to_string())
         );
+    }
+
+    fn suites_4463() -> Vec<(String, String)> {
+        vec![
+            ("platform/tests/4463-cost-metrics.bats".into(),
+             "SCRIPT=\"$ROOT/platform/scripts/cost-metrics\"\nCOST_CONFIG=\"$ROOT/platform/config/cost.json\"".into()),
+            ("platform/tests/other.bats".into(), "run platform/scripts/cards view 1".into()),
+        ]
+    }
+
+    /// #4466 — a config file no unit claims, named by a suite, runs that suite.
+    #[test]
+    fn an_unmapped_file_named_by_a_suite_runs_that_suite() {
+        let units = vec![ScopeUnit { name: "werk-test".into(), dir: "platform/services/werk-test".into() }];
+        let changed = vec!["platform/config/cost.json".to_string()];
+        let expanded = expand_by_naming_suites(&changed, &suites_4463(), &units, &[]);
+        assert_eq!(expanded, vec!["platform/tests/4463-cost-metrics.bats".to_string()]);
+        assert!(scoped_test_reason(&expanded, &units, &[]).is_ok());
+        // NEGATIVE PROOF: a config file no suite names is still refused by name
+        let lone = vec!["platform/config/werk-phase-budgets.tsv".to_string()];
+        let expanded = expand_by_naming_suites(&lone, &suites_4463(), &units, &[]);
+        assert_eq!(
+            scoped_test_reason(&expanded, &units, &[]),
+            Err("unmapped:platform/config/werk-phase-budgets.tsv".to_string())
+        );
+    }
+
+    /// #4466 — an edited script used to run nothing (platform/scripts/ is on the
+    /// irrelevant list); now the suites that name it run.
+    #[test]
+    fn an_edited_script_runs_the_suites_that_name_it() {
+        let units: Vec<ScopeUnit> = vec![];
+        let changed = vec!["platform/scripts/cost-metrics".to_string()];
+        let expanded = expand_by_naming_suites(&changed, &suites_4463(), &units, &[]);
+        assert!(expanded.contains(&"platform/tests/4463-cost-metrics.bats".to_string()));
+        // NEGATIVE PROOF: naming is whole-path — the suite naming cards does not
+        // name cards-sync, and nothing names it, so it brings in no suite
+        let other = vec!["platform/scripts/cards-sync".to_string()];
+        assert_eq!(
+            expand_by_naming_suites(&other, &suites_4463(), &units, &[]),
+            vec!["platform/scripts/cards-sync".to_string()]
+        );
+    }
+
+    #[test]
+    fn naming_is_whole_path() {
+        assert!(text_names_path("x $ROOT/platform/scripts/cost-metrics\" y", "platform/scripts/cost-metrics"));
+        assert!(!text_names_path("platform/scripts/cost-metrics.json", "platform/scripts/cost-metrics"));
+        assert!(!text_names_path("platform/scripts/cost-metrics-old", "platform/scripts/cost-metrics"));
     }
 
     // NEGATIVE PROOF: the addition must not blunt the unmapped refusal it sits
