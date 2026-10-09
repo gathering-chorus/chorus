@@ -503,6 +503,28 @@ pub fn parse_nextest_case_paths(out: &str) -> Vec<(String, String)> {
         .collect()
 }
 
+/// #4454 reopen — the same lines as `parse_nextest_case_paths`, in the same
+/// order, also keeping the nextest binary id (`chorus-hooks`,
+/// `chorus-hooks::bin/chorus-hooks`, `chorus-hooks::pulse_roles_4077`). A crate
+/// that builds one source file into two targets runs its tests twice; the
+/// binary id is what tells the two runs apart.
+pub fn parse_nextest_case_runs(out: &str) -> Vec<(String, String, String)> {
+    out.lines()
+        .filter_map(|l| {
+            let t = l.trim();
+            let verdict = if t.starts_with("PASS ") { "pass" }
+                else if t.starts_with("FAIL ") { "fail" }
+                else if t.starts_with("SKIP ") { "skip" }
+                else { return None };
+            let after = t.split(']').nth(1)?.trim();
+            let mut words = after.split_whitespace().rev();
+            let path = words.next()?;
+            let target = words.next().unwrap_or("");
+            Some((path.to_string(), target.to_string(), verdict.to_string()))
+        })
+        .collect()
+}
+
 /// The bare fn name of a nextest case path.
 pub fn nextest_bare_name(path: &str) -> &str {
     path.rsplit("::").next().unwrap_or(path)
@@ -4213,6 +4235,14 @@ pub fn run_trace_id(given: Option<&str>, epoch_ms: u128, pid: u32) -> String {
 #[allow(clippy::too_many_arguments)]
 pub fn case_event_args(c: &CaseResult, elapsed_ms: Option<u64>, unit: &str, kind: &str, reason: &str,
                        role: &str, card: &str, trace: &str) -> Vec<String> {
+    case_event_args_at(c, elapsed_ms, unit, kind, reason, role, card, trace, "", "")
+}
+
+/// #4454 reopen — `case_event_args` plus the build target and full path a
+/// cargo case ran under; empty for runners that have neither (bats, jest).
+#[allow(clippy::too_many_arguments)]
+pub fn case_event_args_at(c: &CaseResult, elapsed_ms: Option<u64>, unit: &str, kind: &str, reason: &str,
+                          role: &str, card: &str, trace: &str, target: &str, path: &str) -> Vec<String> {
     let event = match c.result.as_str() {
         "fail" => "test.case.failed",
         "skip" => "test.case.skipped",
@@ -4224,6 +4254,12 @@ pub fn case_event_args(c: &CaseResult, elapsed_ms: Option<u64>, unit: &str, kind
         r => format!("{} {} in {}", c.test_name, if r == "skip" { "skipped" } else { "passed" }, c.file_path),
     };
     let mut extras: Vec<(&str, &str)> = vec![("file", &c.file_path), ("case", &c.test_name), ("unit", unit)];
+    if !target.is_empty() {
+        extras.push(("target", target));
+    }
+    if !path.is_empty() {
+        extras.push(("path", path));
+    }
     if !ms.is_empty() {
         extras.push(("elapsed_ms", &ms));
     }

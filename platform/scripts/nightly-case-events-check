@@ -43,27 +43,45 @@ def window(when):
     return int(start.timestamp()), int(end.timestamp()) + 120  # forwarding lags the last unit
 
 
-def loki_counts(start, end):
-    secs = end - start
-    q = (f'sum by (event) (count_over_time({{job="platform-chorus"}} |= "test.case." | json '
-         f'| event=~"test.case.(passed|failed)" | role=~"{ROLES}" [{secs}s]))')
+def _loki(q, end):
     url = f"{LOKI}/loki/api/v1/query?" + urllib.parse.urlencode({"query": q, "time": end})
     with urllib.request.urlopen(url, timeout=120) as r:
-        res = json.load(r)["data"]["result"]
-    out = {"passed": 0, "failed": 0}
-    for x in res:
+        return json.load(r)["data"]["result"]
+
+
+def loki_counts(start, end):
+    """{'passed': tests, 'failed': tests, 'runs': {...}}. The page counts each
+    test once; a crate that builds one file into two targets runs it twice
+    (#4454 reopen: chorus-hooks, 662 repeats on 10-09). So a test is one
+    (file, case, path) key, and its runs are counted separately, beside it."""
+    secs = end - start
+    sel = (f'{{job="platform-chorus"}} |= "test.case." | json '
+           f'| event=~"test.case.(passed|failed)" | role=~"{ROLES}"')
+    out = {"passed": 0, "failed": 0, "runs": {"passed": 0, "failed": 0}}
+    for x in _loki(f"sum by (event) (count_over_time({sel} [{secs}s]))", end):
+        out["runs"][x["metric"]["event"].rsplit(".", 1)[1]] = int(x["value"][1])
+    q = f"count by (event) (sum by (event, file, case, path) (count_over_time({sel} [{secs}s])))"
+    for x in _loki(q, end):
         out[x["metric"]["event"].rsplit(".", 1)[1]] = int(x["value"][1])
     return out
 
 
 def verdict(page, loki):
-    lines = [f"{'':8}{'page':>8}{'loki':>8}"]
+    runs = loki.get("runs", {})
+    lines = [f"{'':8}{'page':>8}{'loki':>8}{'runs':>8}"]
     ok = True
+    gaps = []
     for k in ("passed", "failed"):
-        mark = "" if page[k] == loki[k] else "  ✗"
+        d = loki[k] - page[k]
+        mark = "" if d == 0 else "  ✗"
         ok &= not mark
-        lines.append(f"{k:8}{page[k]:>8,}{loki[k]:>8,}{mark}")
-    lines.append("MATCH" if ok else "MISMATCH — cases on the page that Loki cannot find by event")
+        lines.append(f"{k:8}{page[k]:>8,}{loki[k]:>8,}{runs.get(k, loki[k]):>8,}{mark}")
+        if d < 0:
+            gaps.append(f"{-d:,} {k} on the page with no event in Loki")
+        elif d > 0:
+            gaps.append(f"{d:,} {k} in Loki the page does not count")
+    lines.append("loki = distinct tests (file, case, path); runs = every event, a test built into two targets runs twice")
+    lines.append("MATCH" if ok else "MISMATCH — " + "; ".join(gaps))
     return ok, "\n".join(lines)
 
 
@@ -72,15 +90,19 @@ def fixture_mode():
     ok, _ = verdict(page, {"passed": 9873, "failed": 7})
     bad, _ = verdict(page, {"passed": 0, "failed": 0})  # the stripped-promtail night
     short, _ = verdict(page, {"passed": 9873, "failed": 6})
+    # a test run twice is one test: counted as runs, never as an extra test
+    twice, _ = verdict(page, {"passed": 9873, "failed": 7, "runs": {"passed": 10535, "failed": 7}})
+    _, extra = verdict(page, {"passed": 10115, "failed": 7})
+    named = "242 passed in Loki the page does not count" in extra
     try:
         page_counts({"tests": "no counts here"})
         vacuous = True
     except ValueError:
         vacuous = False
-    if ok and not bad and not short and not vacuous:
+    if ok and twice and named and not bad and not short and not vacuous:
         print("NEGATIVE PROOF OK")
         return 0
-    print(f"NEGATIVE PROOF FAILED ok={ok} bad={bad} short={short} vacuous={vacuous}")
+    print(f"NEGATIVE PROOF FAILED ok={ok} twice={twice} named={named} bad={bad} short={short} vacuous={vacuous}")
     return 1
 
 

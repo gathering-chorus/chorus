@@ -875,7 +875,9 @@ fn run_nightly(args: &[String]) -> Result<i32, String> {
     // #4155 — `reasons` are (file, case, text) as the runner read them; a
     // failed case takes its own, else its file's (a suite that died before
     // any case ran), else the unit's (an empty file and case name).
-    let store_unit = |unit: &str, cases: &[CaseResult], reasons: &[(String, String, String)], times: &std::collections::HashMap<String, u64>| {
+    // #4454 reopen — `runs` is (target, path) per case, in case order, for a
+    // cargo unit; empty for runners with neither.
+    let store_unit = |unit: &str, cases: &[CaseResult], runs: &[(String, String)], reasons: &[(String, String, String)], times: &std::collections::HashMap<String, u64>| {
         if cases.is_empty() {
             return;
         }
@@ -910,10 +912,11 @@ fn run_nightly(args: &[String]) -> Result<i32, String> {
         // skipped, with its time and (failed) its reason: one Loki query on the
         // trace says which case, how long, and why. Before the withheld return,
         // so a werk-rooted run logs its cases too. One process for the unit.
-        let events: Vec<String> = cases.iter().map(|c| {
+        let events: Vec<String> = cases.iter().enumerate().map(|(i, c)| {
             let (kind, reason) = whys.get(&(c.file_path.clone(), c.test_name.clone())).cloned().unwrap_or_default();
-            werk_test::batch_line(&werk_test::case_event_args(c, times.get(&c.test_name).copied(), unit,
-                &kind, &reason, &mint_role, &card, &trace))
+            let (target, path) = runs.get(i).map(|(t, p)| (t.as_str(), p.as_str())).unwrap_or(("", ""));
+            werk_test::batch_line(&werk_test::case_event_args_at(c, times.get(&c.test_name).copied(), unit,
+                &kind, &reason, &mint_role, &card, &trace, target, path))
         }).collect();
         emit_spine_batch(&events);
         forward_test_events(&root);
@@ -1115,7 +1118,7 @@ fn run_nightly(args: &[String]) -> Result<i32, String> {
         if !r.0 {
             reasons.push((b.to_string(), String::new(), werk_test::why::tail_reason(&r.2, 4)));
         }
-        store_unit(b, &cases, &reasons, &werk_test::bats_case_times(&r.2));
+        store_unit(b, &cases, &[], &reasons, &werk_test::bats_case_times(&r.2));
         r
     };
     let (mut cargo_waits, mut npm_waits, mut bats_waits) = (0usize, 0usize, 0usize);
@@ -1167,9 +1170,13 @@ fn run_nightly(args: &[String]) -> Result<i32, String> {
             let panics = werk_test::why::nextest_case_reasons(&text);
             let mut reasons: Vec<(String, String, String)> = Vec::new();
             let mut matched: Vec<CaseResult> = Vec::new();
-            for (path, result) in &cases {
+            // #4454 reopen — the build target each case ran under, in case order
+            let targets: Vec<String> = werk_test::parse_nextest_case_runs(&text).into_iter().map(|(_, t, _)| t).collect();
+            let mut runs: Vec<(String, String)> = Vec::new();
+            for (i, (path, result)) in cases.iter().enumerate() {
                 match werk_test::match_cargo_case_path(path, &crate_dir, &rows, &row_names) {
                     Some(fp) => {
+                        runs.push((targets.get(i).cloned().unwrap_or_default(), path.clone()));
                         let bare = werk_test::nextest_bare_name(path).to_string();
                         if let Some(r) = werk_test::why::reason_for_nextest_path(&panics, path) {
                             reasons.push((fp.clone(), bare.clone(), r.to_string()));
@@ -1185,7 +1192,7 @@ fn run_nightly(args: &[String]) -> Result<i32, String> {
             // #4454 — nextest times by full path, keyed the way the case is stored
             let times: std::collections::HashMap<String, u64> = werk_test::nextest_case_times(&text)
                 .into_iter().map(|(p, ms)| (werk_test::nextest_bare_name(&p).to_string(), ms)).collect();
-            store_unit(item, &matched, &reasons, &times);
+            store_unit(item, &matched, &runs, &reasons, &times);
             (ok, cases, ns_len, stem.is_none() && !typed.is_empty())
         }));
         cargo_waits += waits;
@@ -1227,7 +1234,7 @@ fn run_nightly(args: &[String]) -> Result<i32, String> {
             let (ok, cases, reasons) = run_jest_project(&npm_root, p, Some(jest_workers), project);
             let jest_times = take_case_times(&cases);
             // #4030 AC3 — stored the moment the package finishes
-            store_unit(item, &cases, &reasons, &jest_times);
+            store_unit(item, &cases, &[], &reasons, &jest_times);
             (ok, cases)
         });
         let (mut npm_results, w1) = werk_test::run_pool_gated(&npm_plan.parallel, npm_workers, cap, read_loadavg, gate_wait, gate_tick, run_pkg);

@@ -4,7 +4,7 @@
 //! detailed log and trace we are just guessing".
 
 use werk_test::{
-    bats_case_times, batch_line, case_event_args, run_trace_id, case_tsv_times, nextest_case_times, parse_bats_cases,
+    bats_case_times, batch_line, case_event_args, case_event_args_at, parse_nextest_case_runs, run_trace_id, case_tsv_times, nextest_case_times, parse_bats_cases,
     CaseResult,
 };
 
@@ -106,4 +106,51 @@ fn negative_proof_an_empty_or_blank_trace_is_never_kept() {
         let t = run_trace_id(given, 7, 8);
         assert!(!t.trim().is_empty() && t.starts_with("nightly-"), "blank trace survived: {t:?}");
     }
+}
+
+// #4454 reopen — chorus-hooks builds hooks/ and shared/ into its library AND
+// its program, so nextest runs each of those tests twice (10-09 10:21 run: 662
+// repeats, observer.rs 63 tests → 126 events). Two runs are two events; the
+// build target and the full path are what tell them apart.
+const NEXTEST_TWICE: &str = "    PASS [   0.020s] chorus-hooks hooks::observer::tests::test_truncate_short\n\
+    PASS [   0.021s] chorus-hooks::bin/chorus-hooks hooks::observer::tests::test_truncate_short\n\
+    FAIL [   0.100s] chorus-hooks::pulse_roles_4077 counts_roles\n";
+
+#[test]
+fn nextest_runs_keep_the_build_target() {
+    let runs = parse_nextest_case_runs(NEXTEST_TWICE);
+    assert_eq!(runs.len(), 3);
+    assert_eq!(runs[0], ("hooks::observer::tests::test_truncate_short".into(), "chorus-hooks".into(), "pass".into()));
+    assert_eq!(runs[1].1, "chorus-hooks::bin/chorus-hooks");
+    assert_eq!(runs[2], ("counts_roles".into(), "chorus-hooks::pulse_roles_4077".into(), "fail".into()));
+    // same order and verdicts as the path parser the join uses, so the two line up
+    let paths = werk_test::parse_nextest_case_paths(NEXTEST_TWICE);
+    assert_eq!(paths.iter().map(|(p, r)| (p.clone(), r.clone())).collect::<Vec<_>>(),
+               runs.iter().map(|(p, _, r)| (p.clone(), r.clone())).collect::<Vec<_>>());
+}
+
+#[test]
+fn a_cargo_case_event_names_its_target_and_path() {
+    let c = CaseResult { file_path: "platform/services/chorus-hooks/src/hooks/observer.rs".into(),
+                         test_name: "test_truncate_short".into(), result: "pass".into() };
+    let a = case_event_args_at(&c, Some(21), "chorus-hooks", "", "", "nightly", "4454", "tr-1",
+        "chorus-hooks::bin/chorus-hooks", "hooks::observer::tests::test_truncate_short");
+    for want in ["target=chorus-hooks::bin/chorus-hooks", "path=hooks::observer::tests::test_truncate_short",
+                 "case=test_truncate_short"] {
+        assert!(a.iter().any(|x| x == want), "missing {want} in {a:?}");
+    }
+}
+
+// NEGATIVE PROOF: the two runs of one test are told apart — if target were
+// dropped, both events would carry the same keys and read as one test logged twice.
+#[test]
+fn the_two_runs_of_one_test_differ_by_target() {
+    let c = CaseResult { file_path: "f.rs".into(), test_name: "t".into(), result: "pass".into() };
+    let runs = parse_nextest_case_runs(NEXTEST_TWICE);
+    let a = case_event_args_at(&c, None, "u", "", "", "nightly", "4454", "tr-1", &runs[0].1, &runs[0].0);
+    let b = case_event_args_at(&c, None, "u", "", "", "nightly", "4454", "tr-1", &runs[1].1, &runs[1].0);
+    assert_ne!(a, b);
+    // a case with no target (bats, jest) carries no empty target field
+    let plain = case_event_args(&c, None, "u", "", "", "nightly", "4454", "tr-1");
+    assert!(!plain.iter().any(|x| x.starts_with("target=") || x.starts_with("path=")), "{plain:?}");
 }
