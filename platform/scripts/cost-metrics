@@ -1,0 +1,261 @@
+#!/usr/bin/env python3
+"""cost-metrics: what the team spends this month, as Prometheus textfile lines (#4463).
+
+Moved from shared-observability/scripts/cost-metrics.py. The old version globbed the
+Gathering-era project folders (architect/engineer/product-manager), so after roles moved
+into chorus/roles/* it read 0 tokens and still looked like a measurement.
+
+Rule: a source that cannot be read — or has one file it cannot read — is UNMEASURED — `cost_source_measured{source=...} 0`
+and none of its value lines — never a 0 that reads as measured.
+
+Sources:
+  claude  Claude Code transcripts (~/.claude/projects), one row per API response,
+          deduped by message id + request id, assigned to a role by project folder
+  gemini  Abby's Gemini CLI chats (~chorus-abby-normal/.gemini/tmp/*/chats/*.jsonl),
+          spend = tokens x the price in platform/config/cost.json
+  twilio  Twilio usage API, needs TWILIO_ACCOUNT_SID / TWILIO_AUTH_TOKEN in the env
+
+Env (tests): COST_CLAUDE_PROJECTS, COST_GEMINI_TMP, COST_CONFIG, COST_TODAY (YYYY-MM-DD).
+Run every 5 min by cron, stdout to the node-exporter textfile collector.
+"""
+
+import glob
+import json
+import os
+import re
+import sys
+from collections import defaultdict
+from datetime import date, datetime
+from zoneinfo import ZoneInfo
+
+BOSTON = ZoneInfo("America/New_York")
+ROOT = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+CLAUDE_DIR = os.environ.get("COST_CLAUDE_PROJECTS", os.path.expanduser("~/.claude/projects"))
+GEMINI_DIR = os.environ.get("COST_GEMINI_TMP", os.path.expanduser("~chorus-abby-normal/.gemini/tmp"))
+CONFIG = os.environ.get("COST_CONFIG", os.path.join(ROOT, "platform", "config", "cost.json"))
+
+# project folder name -> role. Werk and role dirs name the role; headless runs
+# (claude -p from tests, the nightly, subagents) live under temp folders.
+ROLE_PATTERNS = [
+    re.compile(r"-chorus-roles-([a-z][a-z-]*)$"),
+    re.compile(r"-chorus-platform-roles-([a-z][a-z-]*)$"),
+    re.compile(r"-chorus-werk-([a-z]+)-\d+"),
+    re.compile(r"-chorus-\.worktrees-([a-z]+)-"),
+]
+HEADLESS = re.compile(r"^-(var-folders|private-tmp|tmp)-")
+
+
+def role_for(project_dir):
+    name = os.path.basename(project_dir.rstrip("/"))
+    for pat in ROLE_PATTERNS:
+        m = pat.search(name)
+        if m:
+            return m.group(1)
+    return "headless" if HEADLESS.search(name) else "other"
+
+
+def boston_day(ts):
+    try:
+        return datetime.fromisoformat(ts.replace("Z", "+00:00")).astimezone(BOSTON).date().isoformat()
+    except (ValueError, AttributeError):
+        return None
+
+
+def scan_claude(month):
+    """Returns None when there is nothing to read (unmeasured)."""
+    files = glob.glob(os.path.join(CLAUDE_DIR, "*", "**", "*.jsonl"), recursive=True)
+    if not files:
+        return None
+    seen = set()
+    by_role = defaultdict(lambda: defaultdict(int))
+    daily = defaultdict(lambda: defaultdict(int))
+    sessions = set()
+    for path in files:
+        role = role_for(os.path.relpath(path, CLAUDE_DIR).split(os.sep)[0])
+        try:
+            fh = open(path, errors="ignore")
+        except OSError as e:
+            # a file we cannot read makes the total a guess: unmeasured, not low
+            print(f"cost-metrics: unreadable {path}: {e}", file=sys.stderr)
+            return None
+        with fh:
+            for line in fh:
+                if '"usage"' not in line:
+                    continue
+                try:
+                    obj = json.loads(line)
+                except json.JSONDecodeError:
+                    continue
+                msg = obj.get("message") or {}
+                usage = msg.get("usage")
+                day = boston_day(obj.get("timestamp", ""))
+                if not usage or not day or not day.startswith(month):
+                    continue
+                key = (msg.get("id"), obj.get("requestId"))
+                if key in seen:
+                    continue
+                seen.add(key)
+                row = {
+                    "input": usage.get("input_tokens") or 0,
+                    "output": usage.get("output_tokens") or 0,
+                    "cache_read": usage.get("cache_read_input_tokens") or 0,
+                    "cache_write": usage.get("cache_creation_input_tokens") or 0,
+                    "messages": 1,
+                }
+                for k, v in row.items():
+                    by_role[role][k] += v
+                    daily[day][k] += v
+                sessions.add(obj.get("sessionId"))
+    return {"by_role": by_role, "daily": daily, "sessions": len(sessions - {None})}
+
+
+def price_for(prices, model, day):
+    p = prices.get(model)
+    if not p:
+        return None
+    if p.get("valid_until") and day > p["valid_until"] and p.get("after"):
+        return p["after"]
+    return p
+
+
+def scan_gemini(month, prices):
+    """Returns None when Abby's chats cannot be read (unmeasured)."""
+    files = glob.glob(os.path.join(GEMINI_DIR, "*", "chats", "*.jsonl"))
+    if not os.path.isdir(GEMINI_DIR) or not files:
+        return None
+    by_model = defaultdict(lambda: {"input": 0, "output": 0, "dollars": 0.0, "priced": True})
+    seen = set()
+    for path in files:
+        try:
+            fh = open(path, errors="ignore")
+        except OSError as e:
+            # a file we cannot read makes the total a guess: unmeasured, not low
+            print(f"cost-metrics: unreadable {path}: {e}", file=sys.stderr)
+            return None
+        with fh:
+            for line in fh:
+                if '"tokens"' not in line:
+                    continue
+                try:
+                    obj = json.loads(line)
+                except json.JSONDecodeError:
+                    continue
+                tok = obj.get("tokens") or {}
+                day = boston_day(obj.get("timestamp", ""))
+                if not tok or not day or not day.startswith(month) or obj.get("id") in seen:
+                    continue
+                seen.add(obj.get("id"))
+                model = obj.get("model") or "unknown"
+                inp = tok.get("input") or 0
+                out = (tok.get("output") or 0) + (tok.get("thoughts") or 0)
+                m = by_model[model]
+                m["input"] += inp
+                m["output"] += out
+                p = price_for(prices, model, day)
+                if p is None:
+                    m["priced"] = False
+                else:
+                    m["dollars"] += inp / 1e6 * p["input"] + out / 1e6 * p["output"]
+    return by_model
+
+
+def fetch_twilio(month):
+    sid, token = os.environ.get("TWILIO_ACCOUNT_SID"), os.environ.get("TWILIO_AUTH_TOKEN")
+    if not sid or not token:
+        return None
+    import base64
+    import urllib.request
+    auth = base64.b64encode(f"{sid}:{token}".encode()).decode()
+    out = {}
+    try:
+        for cat in ("sms", "phonenumbers"):
+            url = (f"https://api.twilio.com/2010-04-01/Accounts/{sid}/Usage/Records.json"
+                   f"?Category={cat}&StartDate={month}-01&EndDate={date.today().isoformat()}")
+            req = urllib.request.Request(url, headers={"Authorization": f"Basic {auth}"})
+            with urllib.request.urlopen(req, timeout=10) as resp:
+                recs = json.loads(resp.read()).get("usage_records", [])
+            out[cat] = (sum(float(r.get("price") or 0) for r in recs), sum(int(r.get("count") or 0) for r in recs))
+    except Exception:
+        return None
+    return out
+
+
+def main():
+    today = os.environ.get("COST_TODAY") or datetime.now(BOSTON).date().isoformat()
+    month = today[:7]
+    try:
+        config = json.load(open(CONFIG))
+    except (OSError, json.JSONDecodeError) as e:
+        print(f"cost-metrics: cannot read {CONFIG}: {e}", file=sys.stderr)
+        return 2
+    fixed = sum(config.get("fixed_monthly_dollars", {}).values())
+    claude = scan_claude(month)
+    gemini = scan_gemini(month, config.get("gemini_prices_per_million", {}))
+    twilio = fetch_twilio(month)
+
+    out = []
+
+    def gauge(name, help_, rows):
+        out.append(f"# HELP {name} {help_}")
+        out.append(f"# TYPE {name} gauge")
+        for labels, value in rows:
+            lab = ",".join(f'{k}="{v}"' for k, v in labels.items())
+            out.append(f"{name}{{{lab}}} {value}" if lab else f"{name} {value}")
+
+    gauge("cost_source_measured", "1 if the source was read this run, 0 if unmeasured (#4463)",
+          [({"source": "claude"}, int(claude is not None)),
+           ({"source": "gemini"}, int(gemini is not None)),
+           ({"source": "twilio"}, int(twilio is not None))])
+
+    if claude is not None:
+        by_role, daily = claude["by_role"], claude["daily"]
+        tot = lambda k: sum(r[k] for r in by_role.values())
+        gauge("claude_billing_total_messages", "API responses this month", [({}, tot("messages"))])
+        gauge("claude_billing_total_sessions", "sessions this month", [({}, claude["sessions"])])
+        gauge("claude_billing_output_tokens", "output tokens this month", [({}, tot("output"))])
+        gauge("claude_billing_input_tokens", "input tokens this month", [({}, tot("input"))])
+        gauge("claude_billing_cache_read_tokens", "cache read tokens this month", [({}, tot("cache_read"))])
+        day_n = int(today[8:10])
+        gauge("claude_billing_avg_daily_output", "output tokens per elapsed day this month",
+              [({}, round(tot("output") / max(day_n, 1)))])
+        gauge("claude_role_messages", "API responses by role this month",
+              [({"role": r}, v["messages"]) for r, v in sorted(by_role.items())])
+        gauge("claude_role_output_tokens", "output tokens by role this month",
+              [({"role": r}, v["output"]) for r, v in sorted(by_role.items())])
+        gauge("claude_role_total_tokens", "all tokens (input+output+cache) by role this month",
+              [({"role": r}, v["input"] + v["output"] + v["cache_read"] + v["cache_write"]) for r, v in sorted(by_role.items())])
+        gauge("claude_daily_messages", "API responses per day, last 7 days",
+              [({"date": d}, daily[d]["messages"]) for d in sorted(daily)[-7:]])
+        gauge("claude_daily_output_tokens", "output tokens per day, last 7 days",
+              [({"date": d}, daily[d]["output"]) for d in sorted(daily)[-7:]])
+
+    variable, complete = 0.0, True
+    if gemini is not None:
+        gauge("gemini_model_tokens", "Abby's Gemini tokens this month by model and kind",
+              [({"model": m, "kind": k}, v[k]) for m, v in sorted(gemini.items()) for k in ("input", "output")])
+        gauge("cost_gemini_spend_measured", "1 if the model has a price in cost.json",
+              [({"model": m}, int(v["priced"])) for m, v in sorted(gemini.items())])
+        priced = [(m, v) for m, v in sorted(gemini.items()) if v["priced"]]
+        gauge("cost_gemini_dollars", "Abby's Gemini spend this month by priced model",
+              [({"model": m}, f'{v["dollars"]:.4f}') for m, v in priced])
+        variable += sum(v["dollars"] for _, v in priced)
+        complete = complete and len(priced) == len(gemini)
+    else:
+        complete = False
+    if twilio is not None:
+        gauge("cost_twilio_sms_dollars", "Twilio SMS this month", [({}, f'{twilio["sms"][0]:.4f}')])
+        gauge("cost_twilio_numbers_dollars", "Twilio numbers this month", [({}, f'{twilio["phonenumbers"][0]:.4f}')])
+        variable += twilio["sms"][0] + twilio["phonenumbers"][0]
+    else:
+        complete = False
+
+    gauge("cost_fixed_claude_dollars", "fixed monthly plans (platform/config/cost.json)", [({}, fixed)])
+    gauge("cost_variable_total_dollars", "measured variable spend this month", [({}, f"{variable:.4f}")])
+    gauge("cost_total_dollars", "fixed + measured variable this month", [({}, f"{fixed + variable:.4f}")])
+    gauge("cost_total_complete", "1 only if every variable source and model was measured", [({}, int(complete))])
+    print("\n".join(out))
+    return 0
+
+
+if __name__ == "__main__":
+    sys.exit(main())
