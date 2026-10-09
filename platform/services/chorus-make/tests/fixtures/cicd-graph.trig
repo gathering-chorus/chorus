@@ -1,0 +1,80 @@
+# #4465 fixture graph — the cicd rows as they will sit in the store: steps in the pipelines graph,
+# skills and step-skills in the skills graph. Built from cicd-rows.tsv so both read paths must agree.
+@prefix chorus: <https://jeffbridwell.com/chorus#> .
+@prefix rdfs: <http://www.w3.org/2000/01/rdf-schema#> .
+
+<urn:chorus:domains:pipelines> {
+  chorus:pipeline-cicd a chorus:Pipeline ; rdfs:label "cicd" ;
+    chorus:hasStep chorus:pipeline-step-cicd-commit , chorus:pipeline-step-cicd-build , chorus:pipeline-step-cicd-test , chorus:pipeline-step-cicd-demo , chorus:pipeline-step-cicd-land .
+  chorus:pipeline-athena a chorus:Pipeline ; rdfs:label "athena" ; chorus:hasStep chorus:pipeline-step-athena-shape .
+  chorus:pipeline-step-athena-shape a chorus:PipelineStep ; rdfs:label "shape" ; chorus:stepOrder 1 .
+  chorus:pipeline-step-cicd-commit a chorus:PipelineStep ; rdfs:label "commit" ; chorus:stepOrder 1 .
+  chorus:pipeline-step-cicd-build a chorus:PipelineStep ; rdfs:label "build" ; chorus:stepOrder 2 .
+  chorus:pipeline-step-cicd-test a chorus:PipelineStep ; rdfs:label "test" ; chorus:stepOrder 3 .
+  chorus:pipeline-step-cicd-demo a chorus:PipelineStep ; rdfs:label "demo" ; chorus:stepOrder 4 .
+  chorus:pipeline-step-cicd-land a chorus:PipelineStep ; rdfs:label "land" ; chorus:stepOrder 5 .
+}
+<urn:chorus:domains:skills> {
+  chorus:skill-werk-commit a chorus:Skill ; rdfs:label "werk-commit" ; chorus:executor "deterministic" ; chorus:implementedBy "werk-commit" ; chorus:arguments "${CARD} ${ROLE} --atomic" .
+  chorus:stepskill-cicd-commit-1 a chorus:StepSkill ; chorus:forStep chorus:pipeline-step-cicd-commit ; chorus:callsSkill chorus:skill-werk-commit ; chorus:skillOrder 1 .
+  chorus:skill-werk-push a chorus:Skill ; rdfs:label "werk-push" ; chorus:executor "deterministic" ; chorus:implementedBy "werk-push" ; chorus:arguments "${CARD} ${ROLE} --atomic" .
+  chorus:stepskill-cicd-commit-2 a chorus:StepSkill ; chorus:forStep chorus:pipeline-step-cicd-commit ; chorus:callsSkill chorus:skill-werk-push ; chorus:skillOrder 2 .
+  chorus:skill-werk-build a chorus:Skill ; rdfs:label "werk-build" ; chorus:executor "deterministic" ; chorus:implementedBy "werk-build" ; chorus:arguments "${CARD} ${ROLE} --target werk" .
+  chorus:stepskill-cicd-build-1 a chorus:StepSkill ; chorus:forStep chorus:pipeline-step-cicd-build ; chorus:callsSkill chorus:skill-werk-build ; chorus:skillOrder 1 .
+  chorus:skill-werk-test a chorus:Skill ; rdfs:label "werk-test" ; chorus:executor "deterministic" ; chorus:implementedBy "werk-test" ; chorus:arguments "${CARD} ${ROLE}" .
+  chorus:stepskill-cicd-test-1 a chorus:StepSkill ; chorus:forStep chorus:pipeline-step-cicd-test ; chorus:callsSkill chorus:skill-werk-test ; chorus:skillOrder 1 .
+  chorus:skill-werk-review a chorus:Skill ; rdfs:label "werk-review" ; chorus:executor "deterministic" ; chorus:implementedBy "werk-review" ; chorus:arguments "${CARD} ${ROLE}" .
+  chorus:stepskill-cicd-test-2 a chorus:StepSkill ; chorus:forStep chorus:pipeline-step-cicd-test ; chorus:callsSkill chorus:skill-werk-review ; chorus:skillOrder 2 .
+  chorus:skill-werk-deploy-werk a chorus:Skill ; rdfs:label "werk-deploy --target werk" ; chorus:executor "deterministic" ; chorus:implementedBy "werk-deploy" ; chorus:arguments "${CARD} ${ROLE} --target werk" .
+  chorus:stepskill-cicd-demo-1 a chorus:StepSkill ; chorus:forStep chorus:pipeline-step-cicd-demo ; chorus:callsSkill chorus:skill-werk-deploy-werk ; chorus:skillOrder 1 .
+  chorus:skill-werk-deploy-env-up a chorus:Skill ; rdfs:label "werk-deploy env-up" ; chorus:executor "deterministic" ; chorus:implementedBy "werk-deploy" ; chorus:arguments "env-up ${ROLE} ${CARD}" .
+  chorus:stepskill-cicd-demo-2 a chorus:StepSkill ; chorus:forStep chorus:pipeline-step-cicd-demo ; chorus:callsSkill chorus:skill-werk-deploy-env-up ; chorus:skillOrder 2 .
+  chorus:skill-demo a chorus:Skill ; rdfs:label "/demo" ; chorus:executor "deterministic" ; chorus:implementedBy "werk-demo" ; chorus:arguments "${CARD}" .
+  chorus:stepskill-cicd-demo-3 a chorus:StepSkill ; chorus:forStep chorus:pipeline-step-cicd-demo ; chorus:callsSkill chorus:skill-demo ; chorus:skillOrder 3 .
+  chorus:skill-go a chorus:Skill ; rdfs:label "Jeff's go" ; chorus:executor "human" .
+  chorus:stepskill-cicd-demo-4 a chorus:StepSkill ; chorus:forStep chorus:pipeline-step-cicd-demo ; chorus:callsSkill chorus:skill-go ; chorus:skillOrder 4 .
+  chorus:skill-werk-merge a chorus:Skill ; rdfs:label "werk-merge" ; chorus:executor "deterministic" ; chorus:implementedBy "werk-merge" ; chorus:arguments "${CARD} ${ROLE} --atomic" .
+  chorus:stepskill-cicd-land-1 a chorus:StepSkill ; chorus:forStep chorus:pipeline-step-cicd-land ; chorus:callsSkill chorus:skill-werk-merge ; chorus:skillOrder 1 .
+  chorus:skill-werk-sync a chorus:Skill ; rdfs:label "werk-sync" ; chorus:executor "deterministic" ; chorus:implementedBy "werk-sync" .
+  chorus:stepskill-cicd-land-2 a chorus:StepSkill ; chorus:forStep chorus:pipeline-step-cicd-land ; chorus:callsSkill chorus:skill-werk-sync ; chorus:skillOrder 2 .
+  chorus:skill-werk-deploy-canonical a chorus:Skill ; rdfs:label "werk-deploy --target canonical" ; chorus:executor "deterministic" ; chorus:implementedBy "werk-deploy" ; chorus:arguments "${CARD} ${ROLE} --target canonical" .
+  chorus:stepskill-cicd-land-3 a chorus:StepSkill ; chorus:forStep chorus:pipeline-step-cicd-land ; chorus:callsSkill chorus:skill-werk-deploy-canonical ; chorus:skillOrder 3 .
+  chorus:skill-werk-accept a chorus:Skill ; rdfs:label "werk-accept" ; chorus:executor "deterministic" ; chorus:implementedBy "werk-accept" ; chorus:arguments "${CARD} ${ROLE} --atomic" .
+  chorus:stepskill-cicd-land-4 a chorus:StepSkill ; chorus:forStep chorus:pipeline-step-cicd-land ; chorus:callsSkill chorus:skill-werk-accept ; chorus:skillOrder 4 .
+}
+# #4465 AC7 — the walk: stream ← automates ← pipeline; pipeline step coversStep stream steps; skills name domains.
+<urn:chorus:domains:value-streams> {
+  chorus:value-stream-werk a chorus:ValueStream ; rdfs:label "Werk" .
+  chorus:value-stream-step-pull a chorus:ValueStreamStep ; chorus:inStream chorus:value-stream-werk .
+  chorus:value-stream-step-commit a chorus:ValueStreamStep ; chorus:inStream chorus:value-stream-werk .
+  chorus:value-stream-step-push a chorus:ValueStreamStep ; chorus:inStream chorus:value-stream-werk .
+  chorus:value-stream-step-build a chorus:ValueStreamStep ; chorus:inStream chorus:value-stream-werk .
+  chorus:value-stream-step-test a chorus:ValueStreamStep ; chorus:inStream chorus:value-stream-werk .
+  chorus:value-stream-step-demo a chorus:ValueStreamStep ; chorus:inStream chorus:value-stream-werk .
+  chorus:value-stream-step-merge a chorus:ValueStreamStep ; chorus:inStream chorus:value-stream-werk .
+  chorus:value-stream-step-deploy a chorus:ValueStreamStep ; chorus:inStream chorus:value-stream-werk .
+  chorus:value-stream-step-accept a chorus:ValueStreamStep ; chorus:inStream chorus:value-stream-werk .
+}
+<urn:chorus:domains:pipelines> {
+  chorus:pipeline-cicd chorus:automates chorus:value-stream-werk .
+  chorus:pipeline-step-cicd-commit chorus:coversStep chorus:value-stream-step-commit , chorus:value-stream-step-push .
+  chorus:pipeline-step-cicd-build chorus:coversStep chorus:value-stream-step-build .
+  chorus:pipeline-step-cicd-test chorus:coversStep chorus:value-stream-step-test .
+  chorus:pipeline-step-cicd-demo chorus:coversStep chorus:value-stream-step-demo .
+  chorus:pipeline-step-cicd-land chorus:coversStep chorus:value-stream-step-merge , chorus:value-stream-step-deploy , chorus:value-stream-step-accept .
+}
+<urn:chorus:domains:skills> {
+  chorus:skill-werk-commit chorus:hasDomain chorus:version-control .
+  chorus:skill-werk-push chorus:hasDomain chorus:version-control .
+  chorus:skill-werk-build chorus:hasDomain chorus:builds .
+  chorus:skill-werk-test chorus:hasDomain chorus:tests .
+  chorus:skill-werk-review chorus:hasDomain chorus:code .
+  chorus:skill-werk-deploy-werk chorus:hasDomain chorus:deploys .
+  chorus:skill-werk-deploy-env-up chorus:hasDomain chorus:deploys .
+  chorus:skill-demo chorus:hasDomain chorus:pipelines .
+  chorus:skill-go chorus:hasDomain chorus:cards .
+  chorus:skill-werk-merge chorus:hasDomain chorus:version-control .
+  chorus:skill-werk-sync chorus:hasDomain chorus:version-control .
+  chorus:skill-werk-deploy-canonical chorus:hasDomain chorus:deploys .
+  chorus:skill-werk-accept chorus:hasDomain chorus:version-control .
+}

@@ -1,0 +1,16 @@
+# #4465 — dagu, the product orchestration layer (ADR-062). Runs the workflows
+# chorus-make generates from the graph. Owned by Silas (ops).
+#
+# Loopback only. auth.mode is set explicitly to "none": nothing off this machine
+# can reach 127.0.0.1:8526, and every caller on it is already an agent or Jeff
+# running as this account. When real per-agent identity lands (the authn work),
+# this becomes "builtin" with tokens. platform/tests/4465-dagu-launchd.bats
+# fails if host is anything but 127.0.0.1 while auth.mode is none.
+host: 127.0.0.1
+port: 8526
+tz: America/New_York
+dags_dir: /Users/jeffbridwell/CascadeProjects/chorus/platform/pipelines
+data_dir: /Users/jeffbridwell/.chorus/dagu/data
+log_dir: /Users/jeffbridwell/.chorus/dagu/logs
+auth:
+  mode: none

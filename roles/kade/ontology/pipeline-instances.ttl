@@ -14,6 +14,7 @@
 chorus:pipeline-cicd a chorus:Pipeline ;
     rdfs:label "cicd" ;
     chorus:pipelineStatus "operating" ;
+    chorus:automates chorus:value-stream-werk ;
     chorus:hasStep chorus:pipeline-step-cicd-commit , chorus:pipeline-step-cicd-build ,
                    chorus:pipeline-step-cicd-test , chorus:pipeline-step-cicd-demo ,
                    chorus:pipeline-step-cicd-land .
@@ -22,6 +23,7 @@ chorus:pipeline-cicd a chorus:Pipeline ;
 chorus:pipeline-athena a chorus:Pipeline ;
     rdfs:label "athena" ;
     chorus:pipelineStatus "operating" ;
+    chorus:automates chorus:value-stream-athena ;
     chorus:hasStep chorus:pipeline-step-athena-shape , chorus:pipeline-step-athena-forge ,
                    chorus:pipeline-step-athena-validate .
 

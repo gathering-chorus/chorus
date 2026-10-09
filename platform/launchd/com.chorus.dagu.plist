@@ -1,0 +1,24 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+  <!-- #4465 — dagu scheduler + UI, loopback only; config in platform/config/dagu.yaml -->
+  <key>Label</key><string>com.chorus.dagu</string>
+  <key>ProgramArguments</key>
+  <array>
+    <string>/opt/homebrew/bin/dagu</string>
+    <string>start-all</string>
+    <string>--config</string>
+    <string>/Users/jeffbridwell/CascadeProjects/chorus/platform/config/dagu.yaml</string>
+  </array>
+  <key>EnvironmentVariables</key>
+  <dict>
+    <key>CHORUS_ROOT</key><string>/Users/jeffbridwell/CascadeProjects/chorus</string>
+    <key>PATH</key><string>/Users/jeffbridwell/.chorus/bin:/Users/jeffbridwell/CascadeProjects/chorus/platform/scripts:/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin</string>
+  </dict>
+  <key>RunAtLoad</key><true/>
+  <key>KeepAlive</key><true/>
+  <key>StandardOutPath</key><string>/Users/jeffbridwell/Library/Logs/Chorus/dagu.log</string>
+  <key>StandardErrorPath</key><string>/Users/jeffbridwell/Library/Logs/Chorus/dagu.log</string>
+</dict>
+</plist>

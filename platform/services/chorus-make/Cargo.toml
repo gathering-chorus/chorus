@@ -1,0 +1,14 @@
+[package]
+name = "chorus-make"
+version = "0.1.0"
+edition = "2021"
+
+# #4465 — reads a pipeline's steps and skills from the graph and writes the
+# werk v2 workflow (dagu). Zero-dep blueprint (ADR-032 §1): std only; curl is a
+# subprocess, never a code dependency. Same pattern as athena-make's
+# generate-verb: rows into a table, text out by plain functions.
+[dependencies]
+
+[[bin]]
+name = "chorus-make"
+path = "src/main.rs"

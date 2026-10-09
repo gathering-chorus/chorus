@@ -1,0 +1,82 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>chorus-make — Service Design</title>
+<style>
+  body { font-family: -apple-system, 'Helvetica Neue', sans-serif; background: #fafafa; color: #1a1a2e; padding: 40px; max-width: 1000px; margin: 0 auto; line-height: 1.5; }
+  h1 { font-size: 2em; margin-bottom: 4px; }
+  h1 span { color: #888; font-weight: 400; }
+  h2 { margin-top: 32px; border-bottom: 1px solid #ddd; padding-bottom: 4px; }
+  .date { color: #999; font-size: 0.82em; margin-bottom: 20px; }
+  code { background: #eee; padding: 1px 5px; border-radius: 3px; font-size: 0.9em; }
+  pre { background: #fff; border: 1px solid #e0e0e0; border-radius: 6px; padding: 14px; overflow-x: auto; font-size: 0.88em; }
+  .law { background: #f4f7ff; border-left: 4px solid #4a6fd0; padding: 14px 18px; border-radius: 4px; margin: 18px 0; }
+  .open { background: #fffaf0; border-left: 4px solid #d08a1a; padding: 12px 16px; border-radius: 4px; margin: 14px 0; }
+  table { border-collapse: collapse; width: 100%; margin: 14px 0; font-size: 0.92em; }
+  th, td { border: 1px solid #ddd; padding: 6px 10px; text-align: left; vertical-align: top; }
+  th { background: #f0f0f0; }
+</style>
+</head>
+<body>
+
+<h1>chorus-make <span>— Service Design</span></h1>
+<p class="date">Draft 2026-10-09 — Kade (driver) + Wren (navigator), #4465. OUTLINE: sections marked open are not decided.</p>
+
+<div class="law">
+<strong>Jeff, 2026-10-09.</strong> (1) We design, code and test chorus-make. (2) chorus-make generates a new werk pipeline, a new major version. (3) Cards run against werk v1 and werk v2, so v1 is the fallback when v2 breaks. chorus-make goes first because a failure there costs only v2; athena-make, which every app depends on, follows the same pattern once it is proven here.
+</div>
+
+<h2>1. What it reads</h2>
+<pre>
+werk value stream ◀─inStream─ 9 ValueStreamSteps (pull, commit, push, build, test, demo, merge, deploy, accept)
+  cicd pipeline ─automates─▶ werk value stream
+    5 PipelineSteps (stepOrder, executor, coversStep ▶ ValueStreamStep, onFail ▶ ValueStreamStep)
+      ◀─forStep─ StepSkill (skillOrder) ─callsSkill─▶ Skill (executor, implementedBy, arguments, hasDomain ▶ Domain)
+      Jeff's go: Skill executor human, between demo and land
+</pre>
+<p>Live 2026-10-09: 13 Skill + 13 StepSkill rows; <code>chorus-make walk Werk</code> walks stream → steps → pipeline → ordered skills → domains and is red on any broken link (pull sits outside the pipeline: it is /pull). Domains are nouns (version-control, builds, tests, deploys, code, pipelines, cards); cicd is a workflow, not a domain (#4473 retires the row). One demo skill: <code>/demo</code>, run by werk-demo.</p>
+<p>No Verb or Operation class. Jeff, 2026-08-22: a verb is an automated deterministic skill, and "no verb owl". Each operation is a Skill row. Shape: Wren's draft v3 (#4465 pair).</p>
+
+<div class="open"><strong>Finding (#4465):</strong> the athena-model door does not run <code>sh:sparql</code> (athena-model lib.rs:4453); it reads pattern, datatype, class, minCount, in and the two uniqueness primitives. So "a deterministic skill needs <code>implementedBy</code>" cannot live in the shape without being a hollow gate. chorus-make refuses such a skill instead, with a negative-proof fixture.</div>
+
+<h2>2. What it writes</h2>
+<p>One dagu workflow file per pipeline (v2). Each operation is its own dagu step, named from the graph, grouped under its PipelineStep. A header says it is generated from the graph and must not be edited. werk.yml (act) stays as v1, by hand, untouched.</p>
+<table>
+<tr><th>PipelineStep</th><th>Operations, in order (from today's 20 act steps)</th></tr>
+<tr><td>commit</td><td>commit, push</td></tr>
+<tr><td>build</td><td>build</td></tr>
+<tr><td>test</td><td>test, review</td></tr>
+<tr><td>demo</td><td>deploy-werk, env-up, demo-fitness, prove-live, demo — then Jeff's go (dagu <code>human.task</code>)</td></tr>
+<tr><td>land</td><td>merge, sync, deploy-canonical, accept, crawl-delta</td></tr>
+<tr><td>run frame (added by chorus-make, not modelled as steps)</td><td>shared-trace, proven-round, outcome, witness-close, witness-failed</td></tr>
+</table>
+
+<p><b>The card is the carrier</b> (Jeff 14:55 on #4470, "this is pretty clean"): every generated workflow takes one parameter, the card. athena(card) leaves card.model_sha when the card touches the model; werk(card) appends a round {n, sha, targets}; borg(card) proves the latest round and leaves card.verdict, or routes the failure to the owning stream's step. The werk v2 workflow chorus-make writes today already runs on <code>${CARD}</code>; the round record is what it adds.</p>
+<p><b>Sequencing between pipelines</b> (Jeff 2026-10-09: "i think my go is in the right place"). The go stays after Proving has staged and readied the round and before the land, so werk runs in two stretches around it. One parent dagu run per card:</p>
+<pre>athena(card)              # skipped when the card does not touch the model
+werk(card) commit…demo    # appends round {n, sha, targets}
+borg(card) verify, stage, ready, go
+werk(card) land           # merges and deploys the round that was proven
+borg(card) verify in prod, record</pre>
+<p>Each call reads the card and writes back only its own part. A failure stops the parent at that call, and the retry starts from that call.</p>
+
+<h2>3. The runner: dagu</h2>
+<p>Trial 2026-10-09 10:43, dagu 2.18.2, isolated home: a real verb ran; a failed step resumed with <code>dagu retry --step --downstream</code> without rerunning the steps before it; the go waited as a <code>human.task</code> with no process held; <code>dagu human-task complete</code> resumed it and land ran. What act needed three home-built pieces for (a second run for the go, the run pin for resume, log regexes for phase) dagu does itself.</p>
+<p><b>State transitions are dagu's, not ours</b> (Jeff 2026-10-09: "can dagu handle state transitions so we dont have to?" — yes). A run's state (queued, running, waiting on go, failed, succeeded) is dagu's own record, so the run pins in <code>~/.chorus/werk-runs</code> and their reconcile-on-poll retire in v2, and /cws reads <code>dagu status</code>. Card moves (WIP → Done) are generated steps that call the cards verb at the step they belong to, so no one moves a card by hand and a failed step leaves the card where it was.</p>
+<div class="open">Open: the scheduler under launchd (Silas's lane); auth mode for loopback; how a step's events reach the spine (dagu has no per-step hook, so verbs keep writing their own).</div>
+
+<h2>4. v1 and v2 side by side</h2>
+<p>Jeff 2026-10-09 17:06: prove v2 with one card that has no dependencies, rerun in v2 until it works end to end, every failure fixed in chorus-make, the model or a verb, never in the generated file; then a real card. v1 stays the fallback. That work is #4474.</p>
+
+<h2>5. Inline logic moves into verbs first</h2>
+<p>werk.yml carries about 500 lines of inline bash (proven-round 108, demo 75, prove-live 74, test 52, deploy-canonical 49, outcome 49). An operation the graph names must be a verb call, so each block becomes a verb mode before chorus-make can generate it. #4474's no-dependency card finds which blocks are actually needed first.</p>
+
+<h2>6. The drift check</h2>
+<p>Regenerate and diff, in pre-commit and in the pipeline; fails on any difference. Negative proof: a hand-edited step goes red. Same graph in, byte-identical file out.</p>
+
+<h2>7. Where it lives and who owns it</h2>
+<p>Kade (werk is Kade's). A Rust crate beside athena-make, following its pattern (SPARQL into a table, text written by plain functions, ADR-032), not inside it. No athena-make code changes on this card.</p>
+
+</body>
+</html>
