@@ -993,7 +993,10 @@ fn write_lifecycle_create_replace_edge_delete() {
     // #4277 — the owner check names its state (2026-09-23: kade's own delete
     // came back 403 "ownedBy absent" while the store was not answering, and the
     // row stayed). A row that EXISTS with no ownedBy → 403 fail-closed, named.
-    let (c, _, b) = http("PUT", "/domains/orphan", hdrs, "{\"comment\":\"x\"}");
+    // #4467 — fail-closed to a caller with no Permission on its graph; wren holds
+    // Write on this graph, so the refusal is proven with nobody (zero grants).
+    let nobody = bearer(&mint_token(NOBODY_WEBID, None));
+    let (c, _, b) = http("PUT", "/domains/orphan", &[("Authorization", nobody.as_str())], "{\"comment\":\"x\"}");
     assert_eq!(c, 403, "{}", b);
     assert!(b.contains("not this row's owner (ownedBy absent — the row has no owner)") && b.contains("chorus:agent principal-"), "{}", b);
     // A row that is not there at all → 404, never a refusal about ownership.
@@ -1048,8 +1051,13 @@ fn delete_batch_checks_every_row_and_refuses_all_or_none() {
     let (c, _, b) = http("POST", "/domains/delete-batch", hdrs, "[\"hasparent\",\"borg\"]");
     assert_eq!(c, 200, "{}", b);
     assert!(b.contains("deleted 2 domains via one DAL batch"), "{}", b);
-    // a row with no owner refuses the batch, and says nothing was deleted
+    // #4467 — a row with no owner opens to a caller holding Write on its graph...
     let (c, _, b) = http("POST", "/domains/delete-batch", hdrs, "[\"hasparent\",\"orphan\"]");
+    assert_eq!(c, 200, "{}", b);
+    assert!(b.contains("deleted 2 domains via one DAL batch"), "{}", b);
+    // ...and NEGATIVE PROOF: to a caller with no Permission it refuses the batch, nothing deleted
+    let nobody = bearer(&mint_token(NOBODY_WEBID, None));
+    let (c, _, b) = http("POST", "/domains/delete-batch", &[("Authorization", nobody.as_str())], "[\"orphan\"]");
     assert_eq!(c, 403, "{}", b);
     assert!(b.contains("orphan (ownedBy absent") && b.contains("nothing deleted"), "{}", b);
     // a missing row → 404 for the batch
