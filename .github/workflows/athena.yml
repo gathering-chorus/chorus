@@ -464,6 +464,8 @@ jobs:
           AUTH=(); [ -n "${FUSEKI_ADMIN_PASSWORD:-}" ] && AUTH=(-u "${FUSEKI_ADMIN_USER:-admin}:${FUSEKI_ADMIN_PASSWORD}")
           rc=0
           if [ "$TARGET" = "canonical" ] && [ -n "${{ steps.scope.outputs.model }}" ] && [ -n "$LANDED" ]; then
+            # #4467 (Silas) — the store attests the full sha; a short one never matches it.
+            LANDED=$(git -C "$CHORUS_HOME" rev-parse --verify --quiet "${LANDED}^{commit}" || printf '%s' "$LANDED")
             STAMP=$(curl -s -m 10 "${AUTH[@]}" "$STORE/query" --data-urlencode 'query=SELECT ?c WHERE { GRAPH <urn:chorus:ontology> { <urn:chorus:model-deploy> <urn:chorus:vocab#deployedFromCommit> ?c } }' -H 'Accept: text/csv' | sed -n 2p | tr -d '"\r')
             if [ "$STAMP" = "$LANDED" ]; then echo "stamp: store attests $STAMP == landed"; else echo "::error::athena: store attests '$STAMP', landed is '$LANDED' — the model deploy ran but the store does not say so" >&2; rc=1; fi
           fi

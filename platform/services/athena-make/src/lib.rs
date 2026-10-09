@@ -1519,7 +1519,7 @@ pub enum OwnerVerdict {
 /// changes nothing.
 pub fn permission_opens(v: OwnerVerdict, graph: &str, scope: &[String]) -> OwnerVerdict {
     match v {
-        OwnerVerdict::NotOwner(Some(_)) if scope_allows(graph, scope) => OwnerVerdict::Allow,
+        OwnerVerdict::NotOwner(_) if scope_allows(graph, scope) => OwnerVerdict::Allow,
         other => other,
     }
 }
@@ -7712,8 +7712,14 @@ mod tests {
         let held = vec![tests.to_string()];
         let nightly = || OwnerVerdict::NotOwner(Some("nightly".into()));
         assert_eq!(permission_opens(nightly(), tests, &held), OwnerVerdict::Allow);
-        assert_eq!(permission_opens(OwnerVerdict::NotOwner(None), tests, &held), OwnerVerdict::NotOwner(None),
-                   "a row with no owner stays refused, Permission or not");
+        // #4467 (Jeff, 2026-10-09) — a Permission on the graph opens its ownerless rows too...
+        assert_eq!(permission_opens(OwnerVerdict::NotOwner(None), tests, &held), OwnerVerdict::Allow,
+                   "a Write Permission on the graph opens a row with no owner");
+        // ...and NEGATIVE PROOF: without one, or with one on another graph, it stays refused.
+        assert_eq!(permission_opens(OwnerVerdict::NotOwner(None), tests, &[]), OwnerVerdict::NotOwner(None),
+                   "a row with no owner stays refused without a Permission");
+        assert_eq!(permission_opens(OwnerVerdict::NotOwner(None), tests, &["urn:chorus:domains:photos".to_string()]),
+                   OwnerVerdict::NotOwner(None), "a Permission on another graph opens no ownerless row here");
         assert_eq!(permission_opens(nightly(), tests, &[]), nightly(), "no Permission row = refused");
         assert_eq!(permission_opens(nightly(), tests, &["urn:chorus:domains:photos".to_string()]), nightly(),
                    "a Permission on another graph opens nothing here");
