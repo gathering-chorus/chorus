@@ -1,0 +1,68 @@
+# #4470 iteration 1 — the Proving runner. dagu owns the run's state
+# (queued → running → succeeded/failed/waiting) and validates each step's
+# JSON output against its schema; we write no state machine and no validator.
+name: proving
+description: Prove one card's AC against the running system, step by step, then wait for Jeff's go.
+params:
+  - CARD: "4463"
+env:
+  - CHORUS: /Users/jeffbridwell/CascadeProjects/chorus
+preconditions:
+  - condition: "echo ${CARD} | grep -Eq '^[0-9]+$'"
+steps:
+  - id: ac
+    name: read the card's AC
+    description: Count the card's AC lines and how many are checked off.
+    command: >-
+      sh -c 'v=$(bash ${CHORUS}/platform/scripts/cards view ${CARD});
+      t=$(printf "%s\n" "$v" | grep -cE "^\s*- \[[ xX]\]");
+      c=$(printf "%s\n" "$v" | grep -cE "^\s*- \[[xX]\]");
+      printf "{\"card\":%s,\"ac_total\":%s,\"ac_checked\":%s}\n" ${CARD} $t $c'
+    output: AC
+    output_schema:
+      type: object
+      required: [card, ac_total, ac_checked]
+      properties:
+        card: {type: integer}
+        ac_total: {type: integer, minimum: 1}
+        ac_checked: {type: integer, minimum: 0}
+
+  - id: suite
+    name: run the card's own tests
+    description: Run every bats suite named for the card; fail on any red.
+    depends: [ac]
+    command: >-
+      sh -c 'cd ${CHORUS}; f=$(ls platform/tests/${CARD}-*.bats 2>/dev/null);
+      [ -n "$f" ] || { echo "{\"suites\":0,\"passed\":0,\"failed\":0}"; exit 1; };
+      out=$(bats $f 2>&1); p=$(printf "%s\n" "$out" | grep -c "^ok "); n=$(printf "%s\n" "$out" | grep -c "^not ok ");
+      printf "{\"suites\":%s,\"passed\":%s,\"failed\":%s}\n" $(echo $f | wc -w) $p $n; [ "$n" -eq 0 ]'
+    output: SUITE
+    output_schema:
+      type: object
+      required: [suites, passed, failed]
+      properties:
+        suites: {type: integer, minimum: 1}
+        passed: {type: integer}
+        failed: {type: integer, maximum: 0}
+
+  - id: live
+    name: check the live system
+    description: "#4463: Prometheus has the cost exporter's sources-read gauge for every source."
+    depends: [ac]
+    command: >-
+      sh -c 'n=$(curl -s -m 10 "http://localhost:9090/api/v1/query?query=count(cost_source_measured)" | python3 -c "import json,sys;r=json.load(sys.stdin)[\"data\"][\"result\"];print(int(r[0][\"value\"][1]) if r else 0)");
+      printf "{\"sources_reported\":%s}\n" $n'
+    output: LIVE
+    output_schema:
+      type: object
+      required: [sources_reported]
+      properties:
+        sources_reported: {type: integer, minimum: 3}
+
+  - id: go
+    name: Jeff's go
+    description: Pause for Jeff with the evidence above.
+    depends: [suite, live]
+    command: 'echo "card ${CARD} AC ${AC} tests ${SUITE} live ${LIVE}"'
+    approval:
+      prompt: "Accept card ${CARD}? AC ${AC}, tests ${SUITE}, live ${LIVE}"
