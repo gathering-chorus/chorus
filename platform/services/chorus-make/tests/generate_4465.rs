@@ -86,3 +86,20 @@ fn a_bad_row_is_refused_by_line_never_skipped() {
         .expect_err("a non-number order is refused");
     assert_eq!(errs, vec!["line 2: stepOrder and skillOrder must be numbers".to_string()]);
 }
+
+// Fixtures by their repo path, so the pipeline's test step sees which files these tests read.
+const REPO_FIXTURES: [&str; 4] = [
+    "platform/services/chorus-make/tests/fixtures/cicd-golden.yaml",
+    "platform/services/chorus-make/tests/fixtures/cicd-rows.tsv",
+    "platform/services/chorus-make/tests/fixtures/cicd-graph.trig",
+    "platform/services/chorus-make/tests/fixtures/mcp-server-names-20261009.txt",
+];
+
+#[test]
+fn every_fixture_named_here_exists() {
+    let dir = std::env::var("CARGO_MANIFEST_DIR").expect("cargo sets CARGO_MANIFEST_DIR");
+    for f in REPO_FIXTURES {
+        let local = f.strip_prefix("platform/services/chorus-make/").unwrap();
+        assert!(std::path::Path::new(&dir).join(local).is_file(), "missing fixture {f}");
+    }
+}
