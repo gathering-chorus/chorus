@@ -1,0 +1,12 @@
+{
+  "_doc": "#4463 — what the team pays. The cost exporter (platform/scripts/cost-metrics) reads this. A model with no price here has its tokens counted and its spend reported as unmeasured, never as $0. Gemini prices from ai.google.dev/gemini-api/docs/pricing, read by Wren 2026-10-09; cached input is charged at the full input price (an upper bound).",
+  "fixed_monthly_dollars": {
+    "claude-code-plan": 200
+  },
+  "gemini_prices_per_million": {
+    "gemini-3.8-flash": {"input": 0.75, "output": 3.75, "valid_until": "2026-12-31", "after": {"input": 1.50, "output": 7.50}},
+    "gemini-3.7-flash": {"input": 0.75, "output": 3.75, "valid_until": "2026-12-31"},
+    "gemini-3.6-flash": {"input": 0.75, "output": 3.75, "valid_until": "2026-12-31"},
+    "gemini-3.5-flash": {"input": 1.50, "output": 9.00}
+  }
+}
