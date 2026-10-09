@@ -68,7 +68,7 @@ chorus:skills a chorus:Domain ;
   chorus:purpose "Provide the team's invokable capabilities — the /skill commands that automate workflows." ;
   chorus:ownedBy chorus:principal-wren ; chorus:partOf chorus:product-loom ;
   chorus:atStep chorus:Shaping ; chorus:atStream chorus:value-stream-chorus ;
-  chorus:repoTarget "skills" ; chorus:definesVocabulary chorus:Skill, chorus:UtilitySkill .
+  chorus:repoTarget "skills" ; chorus:definesVocabulary chorus:Skill .
 
 # #3982 — NO Verb class minted. Jeff, 2026-08-22: "i never said i want a verb owl."
 #

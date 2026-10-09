@@ -38,7 +38,7 @@
 <p class="date">2026-04-22 — Wren. Draft. Source: chorus.ttl (authorization graph merged via #2348), roles-service-design.md (2026-04-17), pulse-service-design.md (2026-04-20), borg-service-design.md (2026-04-15), #2452 MCP spike, athena-subdomain-completeness.ts, observed running services.</p>
 
 <div class="promise">
-Every Chorus service declares itself once in the graph: <code>chorus:Service</code> instance with label, implementedIn, exposesVia, healthAt, ownedBy, dependsOn, consumes, consumedBy. Two surfaces generate automatically — HTTP for humans and browsers (existing shape), MCP for agents (native discovery). A role or external MCP client enumerates the registry and knows what exists with typed schemas, without URL-guessing or source-grepping. When Services is healthy, adding a new service = declaring in graph → appearing in both surfaces on next reload. When it drifts, agents and humans rediscover the same system differently, consumers hard-code URLs that rot, and Jeff becomes the registry every time.
+Every Chorus service declares itself once in the graph: <code>chorus:Service</code> instance with label, implementedBy, exposesVia, healthAt, ownedBy, dependsOn, consumes, consumedBy. Two surfaces generate automatically — HTTP for humans and browsers (existing shape), MCP for agents (native discovery). A role or external MCP client enumerates the registry and knows what exists with typed schemas, without URL-guessing or source-grepping. When Services is healthy, adding a new service = declaring in graph → appearing in both surfaces on next reload. When it drifts, agents and humans rediscover the same system differently, consumers hard-code URLs that rot, and Jeff becomes the registry every time.
 </div>
 
 <h2>Overview</h2>
@@ -53,7 +53,7 @@ Every Chorus service declares itself once in the graph: <code>chorus:Service</co
 <tr><td>Service instances populated</td><td><span class="tag-none">MISSING</span></td><td>Services exist in reality; not in graph</td><td>~15 running services (chorus-api, chorus-hooks, pulse, nudge, observer, clearing, messaging, mcp-registry, Fuseki, deep-health, watchdog, session-indexer, ...) with ad-hoc declarations scattered across plists, scripts, bats tests</td></tr>
 <tr><td>HTTP registry surface</td><td><span class="tag-partial">PARTIAL</span></td><td><code>/api/chorus/*</code>, <code>/api/loom/*</code>, <code>/api/athena/*</code> exist</td><td>No introspection endpoint; no <code>exposesVia</code> metadata; browsers know URLs by convention</td></tr>
 <tr><td>MCP registry surface</td><td><span class="tag-spike">SPIKE</span></td><td><code>platform/spikes/mcp-registry/</code> (#2452)</td><td>Proof-of-concept works end-to-end (45 tools generated from graph); no generator in production; stdio transport only</td></tr>
-<tr><td>Generator (graph → surfaces)</td><td><span class="tag-spike">SPIKE</span></td><td><code>generator.mjs</code> in spike</td><td>Hand-declared today in production; spike proves pattern with fail-loud on missing <code>implementedIn</code>; extraction card pending</td></tr>
+<tr><td>Generator (graph → surfaces)</td><td><span class="tag-spike">SPIKE</span></td><td><code>generator.mjs</code> in spike</td><td>Hand-declared today in production; spike proves pattern with fail-loud on missing <code>implementedBy</code>; extraction card pending</td></tr>
 <tr><td>Cache + invalidation</td><td><span class="tag-none">MISSING</span></td><td>—</td><td>Will need event-bus cache per Silas's #2452 feedback; reload-hook on <code>/api/athena/reload</code> is the trigger (same shape as #2442 pulse sidecar)</td></tr>
 <tr><td>Auth / role-scoping</td><td><span class="tag-partial">PARTIAL</span></td><td>CLAUDE.md prose scopes <code>/gate-product</code> to Wren, etc.; no code enforcement</td><td>Per-role filtering on MCP <code>listTools</code>/<code>callTool</code> needs trusted side-channel identity (UDS peer-cred or harness-injected env)</td></tr>
 <tr><td>Health signals per service</td><td><span class="tag-partial">PARTIAL</span></td><td>deep-health.sh per machine; pulse snapshots</td><td>Not queryable per-service; no alert on service disappearing from registry</td></tr>
@@ -72,7 +72,7 @@ Every Chorus service declares itself once in the graph: <code>chorus:Service</co
 <tr><td>Consumer calls <code>/api/chorus/*</code> (HTTP)</td><td>Data per existing envelope</td><td>Browsers, human tooling</td><td>HTTPS</td></tr>
 <tr><td>Service health probe (<code>healthAt</code>) fails</td><td>Alert + status update in graph</td><td>Pulse, deep-health, Borg observability</td><td>spine event</td></tr>
 <tr><td>Service renamed or retired</td><td>Graph instance updated or marked with retire-edge</td><td>Both surfaces regenerate; honest-fold renders "retired" explicitly</td><td>reload event</td></tr>
-<tr><td>New skill or gate declared (#2348 pattern)</td><td><code>chorus:Skill</code> or <code>chorus:Gate</code> instance with <code>implementedIn</code></td><td>Generator emits MCP tool declaration</td><td>same graph, same generator</td></tr>
+<tr><td>New skill or gate declared (#2348 pattern)</td><td><code>chorus:Skill</code> or <code>chorus:Gate</code> instance with <code>implementedBy</code></td><td>Generator emits MCP tool declaration</td><td>same graph, same generator</td></tr>
 </table>
 
 <h2>Dependencies</h2>
@@ -116,14 +116,14 @@ Every Chorus service declares itself once in the graph: <code>chorus:Service</co
 <ul style="font-size:0.88em; margin-left:20px;">
 <li><code>chorus:dependsOn</code> — #2448 pattern; service→service + service→substrate edges</li>
 <li><code>chorus:consumes</code>, <code>chorus:consumedBy</code> — service-level read/write</li>
-<li><code>chorus:implementedIn</code> — #2348; file path</li>
+<li><code>chorus:implementedBy</code> — #2348; file path</li>
 </ul>
 </div>
 
 <div class="component">
 <h3>Service instances (target v1 population)</h3>
 <table>
-<tr><th>Service</th><th>implementedIn</th><th>exposesVia</th><th>healthAt</th></tr>
+<tr><th>Service</th><th>implementedBy</th><th>exposesVia</th><th>healthAt</th></tr>
 <tr><td>chorus-api</td><td>platform/api/src/server.ts</td><td>both</td><td>GET /api/chorus/health</td></tr>
 <tr><td>chorus-hooks</td><td>platform/services/chorus-hooks/src/main.rs</td><td>internal</td><td>launchctl status</td></tr>
 <tr><td>pulse</td><td>pulse.rs in chorus-hooks</td><td>internal</td><td>/tmp/pulse-latest.json freshness</td></tr>
@@ -141,7 +141,7 @@ Every Chorus service declares itself once in the graph: <code>chorus:Service</co
 
 <div class="component">
 <h3>Generator</h3>
-<p>SPARQL over <code>urn:chorus:ontology</code> returning every <code>chorus:Service</code>, <code>chorus:Skill</code>, <code>chorus:Gate</code>, <code>chorus:Endpoint</code>. Output: MCP tool/resource declarations + HTTP route metadata. Runs on chorus-api startup + on <code>/api/athena/reload</code>. <strong>Fail-loud</strong> if any Service/Skill/Gate has missing <code>implementedIn</code> — honest-fold at the registry level per Silas's #2452 feedback. Spike already proved this catches real drift (4 gate superclass instances).</p>
+<p>SPARQL over <code>urn:chorus:ontology</code> returning every <code>chorus:Service</code>, <code>chorus:Skill</code>, <code>chorus:Gate</code>, <code>chorus:Endpoint</code>. Output: MCP tool/resource declarations + HTTP route metadata. Runs on chorus-api startup + on <code>/api/athena/reload</code>. <strong>Fail-loud</strong> if any Service/Skill/Gate has missing <code>implementedBy</code> — honest-fold at the registry level per Silas's #2452 feedback. Spike already proved this catches real drift (4 gate superclass instances).</p>
 </div>
 
 <div class="component">

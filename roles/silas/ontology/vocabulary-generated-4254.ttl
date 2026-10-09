@@ -376,12 +376,6 @@ vocab:gen-UnitDomainMapping a skos:Concept ;
     skos:definition "ADR-027 / ADR-060 §5: the ONE authored place that says which domain a launchd unit (or Loki-only job) belongs to. Every harvester (logs, services, alerts, monitors, the crawler's unit facets) joins on launchdLabel and copies hasDomain from here. Authored rows (unit-domain-4084.ttl); an unmapped unit is a red in log-harvest --check, never a guess." ;
     skos:exactMatch <https://jeffbridwell.com/chorus#UnitDomainMapping> .
 
-vocab:gen-UtilitySkill a skos:Concept ;
-    skos:inScheme vocab:model-classes ;
-    skos:prefLabel "UtilitySkill" ;
-    skos:definition "A skill that provides a utility action (open tab, share, listen, simplify, check-seeds, interrupt, cron-tick) and is not an enactment of a specific practice. Subclass exists so the orphan-skill query honestly excludes utilities: FILTER NOT EXISTS { ?s a chorus:UtilitySkill }. #2348 sub-spike 3A." ;
-    skos:exactMatch <https://jeffbridwell.com/chorus#UtilitySkill> .
-
 vocab:gen-Value a skos:Concept ;
     skos:inScheme vocab:model-classes ;
     skos:prefLabel "Value" ;

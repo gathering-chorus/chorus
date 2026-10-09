@@ -5,8 +5,8 @@
 # automated not suggestions". 04-17/04-29: roles and practices own skills;
 # skills have gates. 09-24: skills may be a child of a value-stream step;
 # 10-09 traversal: value stream → steps → domains → skills, so a skill names its domain.
-# So: NO Verb class, NO Operation class. One Skill class (chorus.ttl:1147,
-# keeps hasSkill, UtilitySkill, gates). A verb operation is a Skill row whose
+# So: NO Verb class, NO Operation class. One Skill class (here since #4471;
+# gates stay in chorus.ttl). A verb operation is a Skill row whose
 # executor is deterministic; the binary is chorus:implementedBy (the existing
 # string, #4250) and the mode a plain field. Steps call skills in order.
 
@@ -17,6 +17,15 @@
 @prefix owl: <http://www.w3.org/2002/07/owl#> .
 
 chorus:skills chorus:definesVocabulary chorus:Skill , chorus:StepSkill .
+
+# #4471 — the Skill class lives here, with its shape (it was in chorus.ttl since
+# #2348, described as a slash skill only). Who may use a skill: any principal
+# (Jeff 2026-10-09 16:13). ownedBy names its one keeper.
+chorus:Skill a owl:Class ;
+    rdfs:label "Skill" ;
+    rdfs:comment "Something the team runs: a slash skill an agent runs, a deterministic verb (Jeff 08-22: a verb is an automated deterministic skill), or a human step like Jeff's go. Any principal may use a skill; one principal keeps it." .
+chorus:delegatesTo a owl:ObjectProperty ; rdfs:label "delegates to" ;
+    rdfs:comment "A skill hands part of its work to another skill, e.g. /demo delegates to the gates." .
 
 chorus:arguments a owl:DatatypeProperty ; rdfs:label "arguments" ;
     rdfs:comment "The arguments that make a deterministic skill one operation of its binary, e.g. env-up." .
@@ -44,6 +53,8 @@ chorus:SkillShape a sh:NodeShape ;
                   sh:description "Optional. The arguments that pick this operation of the binary; empty when it has one." ] ;
     # #4467 reopen — Jeff's traversal: value stream → steps → domains → skills. A skill
     # reaches its step through its domain; no atStep, so there is no second path.
+    sh:property [ sh:path chorus:delegatesTo ; sh:nodeKind sh:IRI ; sh:class chorus:Skill ; sh:name "delegates to" ;
+                  sh:description "Optional. The skills this one hands work to, e.g. /demo to the gates." ] ;
     sh:property [ sh:path chorus:hasDomain ; sh:minCount 1 ; sh:maxCount 1 ; sh:nodeKind sh:IRI ; sh:class chorus:Domain ;
                   sh:name "domain" ;
                   sh:description "Required. The domain this skill belongs to; its value-stream step comes through the domain." ] ;

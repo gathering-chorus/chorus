@@ -4,7 +4,7 @@
 
 ## Promise
 
-Every Chorus service declares itself once in the graph: `chorus:Service` instance with label, implementedIn, exposesVia, healthAt, ownedBy, dependsOn, consumes, consumedBy. Two surfaces generate automatically — HTTP (for humans/browsers, existing shape) and MCP (for agents, agent-native discovery). A role or an external MCP client enumerates the registry and knows what exists, with typed schemas, without URL-guessing or source-grepping.
+Every Chorus service declares itself once in the graph: `chorus:Service` instance with label, implementedBy, exposesVia, healthAt, ownedBy, dependsOn, consumes, consumedBy. Two surfaces generate automatically — HTTP (for humans/browsers, existing shape) and MCP (for agents, agent-native discovery). A role or an external MCP client enumerates the registry and knows what exists, with typed schemas, without URL-guessing or source-grepping.
 
 When Services is healthy, adding a new service = declaring in graph → appearing in both surfaces on next `/api/athena/reload`. When it drifts, agents and humans rediscover the same system differently, consumers hard-code URLs that eventually rot, and Jeff becomes the registry (explaining "oh, that's actually at /api/loom/... now") every time.
 
@@ -36,7 +36,7 @@ Services provides the registry surface; every other sub-product reads (or will r
 | Consumer calls `/api/chorus/*` (HTTP) | Returns data per existing envelope | Browsers, human tooling | HTTPS |
 | Service health probe (`healthAt`) fails | Alert + status update in graph | Pulse, deep-health, Borg observability | spine event |
 | Service renamed / retired | Graph instance updated or removed + retire-edge added | Both surfaces regenerate; honest-fold renders "retired" explicitly | reload event |
-| New skill / gate declared (via #2348 pattern) | `chorus:Skill` or `chorus:Gate` instance with `implementedIn` | Generator emits MCP tool declaration for it | same graph, same generator |
+| New skill / gate declared (via #2348 pattern) | `chorus:Skill` or `chorus:Gate` instance with `implementedBy` | Generator emits MCP tool declaration for it | same graph, same generator |
 
 Core pattern: Services doesn't enforce behavior; it **surfaces truth** about what capabilities exist. Two surfaces, one source. Consistent with Pulse's "assembler not generator" shape (actually emits registry as cache, same family as #2442 sidecar).
 
@@ -85,13 +85,13 @@ Per Silas's gate:arch amendment (1): surface must be a declared class with indiv
 **Existing, reused at service scope:**
 - `chorus:dependsOn` — pattern from #2448; reused here for service→service + service→substrate edges
 - `chorus:consumes`, `chorus:consumedBy` — service-level read/write relationships
-- `chorus:implementedIn` — existing (#2348); file path to the service's code entry point
+- `chorus:implementedBy` — existing (#2348); file path to the service's code entry point
 
 ### Service instances
 
 Target population for v1 declaration (one pass, not per-card):
 
-| Service | implementedIn | exposesVia | healthAt |
+| Service | implementedBy | exposesVia | healthAt |
 |---------|--------------|-----------|---------|
 | chorus-api | platform/api/src/server.ts | both (http today, mcp when #2452 generator lands) | GET /api/chorus/health |
 | chorus-hooks | platform/services/chorus-hooks/src/main.rs | internal | launchctl status |
@@ -110,7 +110,7 @@ Populate incrementally. Each service gets one TTL declaration; no mass migration
 
 ### Generator
 
-SPARQL over `urn:chorus:ontology` returning every `chorus:Service`, `chorus:Skill`, `chorus:Gate`, `chorus:Endpoint` (if declared). Output: MCP tool/resource declarations + HTTP route metadata. Runs on chorus-api startup + on `/api/athena/reload`. Fail-loud if any Service / Skill / Gate has missing `implementedIn` (honest-fold at the registry level per Silas's #2452 feedback).
+SPARQL over `urn:chorus:ontology` returning every `chorus:Service`, `chorus:Skill`, `chorus:Gate`, `chorus:Endpoint` (if declared). Output: MCP tool/resource declarations + HTTP route metadata. Runs on chorus-api startup + on `/api/athena/reload`. Fail-loud if any Service / Skill / Gate has missing `implementedBy` (honest-fold at the registry level per Silas's #2452 feedback).
 
 ### Registry cache
 
@@ -160,7 +160,7 @@ In-memory on chorus-api process. Event-bus shape (same as #2442 pulse sidecar). 
 |---|--------|--------|-------|---------|
 | 1 | Declare `chorus:Service` class + `exposesVia`/`healthAt` properties in chorus.ttl | Schema ready for instance population | Wren + Silas review | — |
 | 2 | Populate ~15 service instances (one-pass, minimal envelope) | Services domain has real data; Gap 7 closes | Wren | #1 |
-| 3 | Generator (SPARQL → MCP tool/resource declarations + HTTP route metadata) with fail-loud on missing implementedIn | Both surfaces live from graph; no hand-maintenance | Wren (conceptual) + whoever-builds | #2; unlocks #2452 follow-on |
+| 3 | Generator (SPARQL → MCP tool/resource declarations + HTTP route metadata) with fail-loud on missing implementedBy | Both surfaces live from graph; no hand-maintenance | Wren (conceptual) + whoever-builds | #2; unlocks #2452 follow-on |
 | 4 | Event-bus cache + `/api/athena/reload` invalidation hook | Registry stays fresh at scale; same shape as #2442 pulse | Silas (owns event-bus pattern) | #3 |
 | 5 | Auth: trusted side-channel caller identity; per-role filtering on MCP listTools/callTool | Secure adoption of agent surface | Silas | #4 |
 | 6 | Transport: HTTP+SSE on chorus-api replacing stdio | Production-ready multi-client | Silas | #5 |
