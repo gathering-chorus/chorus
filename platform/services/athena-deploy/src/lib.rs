@@ -129,6 +129,7 @@ pub fn model_set(root: &str, ttl_override: Option<String>) -> Vec<String> {
             format!("{root}/designing/data/model-version.ttl"),
             format!("{root}/roles/kade/ontology/pipelines-4040.ttl"),
             format!("{root}/roles/wren/ontology/hats-4175.ttl"),
+            format!("{root}/roles/wren/ontology/skills-4467.ttl"),
         ],
     }
 }
@@ -2076,7 +2077,7 @@ mod tests {
         // #4229 — was a two-member stub, which is how this verb loaded 2 files
         // where the bash loads 28 and reported success either way.
         let s = model_set("/R", None);
-        assert_eq!(s.len(), 28, "the ontology set is 28 files (#4302 added session-model-4302.ttl; #4432 took out product-instances.ttl)");
+        assert_eq!(s.len(), 29, "the ontology set is 29 files (#4302 added session-model-4302.ttl; #4432 took out product-instances.ttl; #4467 added skills-4467.ttl)");
         // #4432 (Jeff 2026-10-06) — product rows live in the store; a land never replays them.
         assert!(!s.iter().any(|m| m.ends_with("product-instances.ttl")));
         assert!(s[0].ends_with("/roles/silas/ontology/chorus.ttl"));
