@@ -772,7 +772,16 @@ fn run_nightly(args: &[String]) -> Result<i32, String> {
     set_repo_root(Path::new(&root));
     let role = "system".to_string();
     let card = String::new(); // typed absence — a nightly run has no card
-    let trace = std::env::var("CHORUS_TRACE_ID").unwrap_or_default();
+    // #4454 reopen — launchd starts the nightly with no CHORUS_TRACE_ID, so all
+    // 9,910 case events of 10-09 03:00 carried trace="" and no one query could
+    // pull the run. Mint one per run and hand it to every child (the test
+    // helpers read CHORUS_TRACE_ID), so the run is one trace.
+    let trace = werk_test::run_trace_id(
+        std::env::var("CHORUS_TRACE_ID").ok().as_deref(),
+        std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).map(|d| d.as_millis()).unwrap_or(0),
+        std::process::id(),
+    );
+    std::env::set_var("CHORUS_TRACE_ID", &trace);
     let only = flag_value(args, "--crate");
 
     let (rows, row_names, row_entities, plan_source) = fetch_test_rows();

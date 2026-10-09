@@ -1,0 +1,108 @@
+#!/usr/bin/env python3
+# @domain: tests
+"""nightly-case-events-check — #4454: every case the /nightly page counts is in
+Loki as its own event, readable with `| json`.
+
+  nightly-case-events-check [RUN]     # RUN from the /nightly page; default the latest finished
+  nightly-case-events-check --fixture # NEGATIVE PROOF self-test, no network
+
+Compares the page's passed and failed case counts for a run with the
+test.case.passed / test.case.failed events Loki parses in that run's window.
+Exit 0 when they match, 1 when they differ, 2 when either side cannot be read.
+"""
+import importlib.machinery, json, os, re, sys, urllib.parse, urllib.request
+from datetime import datetime
+
+HERE = os.path.dirname(os.path.abspath(__file__))
+STATE = importlib.machinery.SourceFileLoader("cwts", os.path.join(HERE, "chorus-werk-test-state")).load_module()
+LOKI = os.environ.get("LOKI_URL", "http://localhost:3102")
+ROLES = "nightly|tests"  # werk-test's nightly cases, and the browser-flow reporter's
+
+
+def page_counts(counts):
+    """The page's 'tests' line -> {'passed': n, 'failed': n}."""
+    t = counts.get("tests", "")
+    out = {}
+    for word in ("passed", "failed"):
+        m = re.search(rf"([\d,]+) {word}", t)
+        if not m:
+            raise ValueError(f"page has no '{word}' case count: {t!r}")
+        out[word] = int(m.group(1).replace(",", ""))
+    return out
+
+
+def window(when):
+    """'2026-10-09T03:00:00 → 04:34:45 · took 95 min' -> (start, end) epoch seconds."""
+    m = re.match(r"(\d{4}-\d\d-\d\dT\d\d:\d\d:\d\d) → (\d\d:\d\d:\d\d)", when)
+    if not m:
+        raise ValueError(f"run has no finished window: {when!r}")
+    start = datetime.fromisoformat(m.group(1))
+    end = datetime.fromisoformat(f"{m.group(1)[:10]}T{m.group(2)}")
+    if end < start:  # ran past midnight
+        end = end.replace(day=end.day + 1)
+    return int(start.timestamp()), int(end.timestamp()) + 120  # forwarding lags the last unit
+
+
+def loki_counts(start, end):
+    secs = end - start
+    q = (f'sum by (event) (count_over_time({{job="platform-chorus"}} |= "test.case." | json '
+         f'| event=~"test.case.(passed|failed)" | role=~"{ROLES}" [{secs}s]))')
+    url = f"{LOKI}/loki/api/v1/query?" + urllib.parse.urlencode({"query": q, "time": end})
+    with urllib.request.urlopen(url, timeout=120) as r:
+        res = json.load(r)["data"]["result"]
+    out = {"passed": 0, "failed": 0}
+    for x in res:
+        out[x["metric"]["event"].rsplit(".", 1)[1]] = int(x["value"][1])
+    return out
+
+
+def verdict(page, loki):
+    lines = [f"{'':8}{'page':>8}{'loki':>8}"]
+    ok = True
+    for k in ("passed", "failed"):
+        mark = "" if page[k] == loki[k] else "  ✗"
+        ok &= not mark
+        lines.append(f"{k:8}{page[k]:>8,}{loki[k]:>8,}{mark}")
+    lines.append("MATCH" if ok else "MISMATCH — cases on the page that Loki cannot find by event")
+    return ok, "\n".join(lines)
+
+
+def fixture_mode():
+    page = page_counts({"tests": "9,873 passed · 7 failed · 30 unmeasured"})
+    ok, _ = verdict(page, {"passed": 9873, "failed": 7})
+    bad, _ = verdict(page, {"passed": 0, "failed": 0})  # the stripped-promtail night
+    short, _ = verdict(page, {"passed": 9873, "failed": 6})
+    try:
+        page_counts({"tests": "no counts here"})
+        vacuous = True
+    except ValueError:
+        vacuous = False
+    if ok and not bad and not short and not vacuous:
+        print("NEGATIVE PROOF OK")
+        return 0
+    print(f"NEGATIVE PROOF FAILED ok={ok} bad={bad} short={short} vacuous={vacuous}")
+    return 1
+
+
+def main():
+    if "--fixture" in sys.argv:
+        return fixture_mode()
+    args = [a for a in sys.argv[1:] if not a.startswith("--")]
+    try:
+        front = STATE.get(STATE.BASE)
+        page = STATE.get(f"{STATE.BASE}?run={args[0]}") if args else STATE.latest_finished(front, lambda r: STATE.get(f"{STATE.BASE}?run={r}"))
+        if page is None:
+            print("no finished nightly run on the page")
+            return 2
+        _, when, counts, _ = STATE.banner(page)
+        start, end = window(when)
+        ok, text = verdict(page_counts(counts), loki_counts(start, end))
+    except Exception as e:  # unreadable is its own state, never a match
+        print(f"cannot read: {e}")
+        return 2
+    print(f"run {when}\n{text}")
+    return 0 if ok else 1
+
+
+if __name__ == "__main__":
+    sys.exit(main())
