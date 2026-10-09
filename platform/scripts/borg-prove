@@ -1,0 +1,142 @@
+#!/usr/bin/env python3
+"""
+borg-prove: check every AC of a card against the running system.
+Usage: borg-prove --demo|--prod <card_id>
+"""
+import sys
+import json
+import os
+import subprocess
+
+def print_help():
+    print("Usage: borg-prove --demo|--prod <card_id>", file=sys.stderr)
+    print("  --demo: Run against demo copy (Note: 3343 is a placeholder; demo ports differ per role per #4458 AC3)", file=sys.stderr)
+    print("  --prod: Run against canonical/prod system", file=sys.stderr)
+
+def get_chorus_root():
+    root = os.environ.get("CHORUS_ROOT")
+    if not root:
+        root = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+    return root
+
+def find_snapshot_path(chorus_root):
+    env_snap = os.environ.get("BORG_SNAPSHOT", "")
+    if env_snap and os.path.exists(env_snap):
+        return env_snap
+        
+    candidates = [
+        os.path.join(chorus_root, "directing", "products", "logs", "board-snapshot-gathering-kade.json"),
+        os.path.join(chorus_root, "directing", "products", "logs", "board-snapshot-gathering-silas.json"),
+        os.path.join(os.path.dirname(os.path.dirname(chorus_root)), "chorus", "directing", "products", "logs", "board-snapshot-gathering-kade.json"),
+        os.path.join(os.path.dirname(os.path.dirname(chorus_root)), "chorus", "directing", "products", "logs", "board-snapshot-gathering-silas.json"),
+        os.path.join(os.path.dirname(chorus_root), "chorus", "directing", "products", "logs", "board-snapshot-gathering-kade.json"),
+        os.path.join(os.path.dirname(chorus_root), "chorus", "directing", "products", "logs", "board-snapshot-gathering-silas.json"),
+    ]
+    for c in candidates:
+        if os.path.exists(c):
+            return c
+    return None
+
+def main():
+    args = sys.argv[1:]
+    
+    if "--help" in args or "-h" in args:
+        print_help()
+        sys.exit(0)
+        
+    target_base = ""
+    if "--demo" in args:
+        target_base = "http://localhost:3343"
+        args.remove("--demo")
+    elif "--prod" in args:
+        target_base = "http://localhost:3340"
+        args.remove("--prod")
+        
+    if not target_base:
+        print("Error: Target flag (--demo or --prod) is required.", file=sys.stderr)
+        print_help()
+        sys.exit(1)
+        
+    os.environ["BORG_BASE"] = target_base
+
+    if len(args) < 1:
+        print("Error: Missing card ID.", file=sys.stderr)
+        print_help()
+        sys.exit(1)
+    
+    card_id = str(args[0])
+    chorus_root = get_chorus_root()
+    snapshot_path = find_snapshot_path(chorus_root)
+        
+    if not snapshot_path:
+        print(f"Error: board snapshot not found.", file=sys.stderr)
+        sys.exit(1)
+        
+    try:
+        with open(snapshot_path, "r") as f:
+            data = json.load(f)
+        tasks = data.get("tasks", [])
+        card = next((t for t in tasks if str(t.get("index")) == card_id or str(t.get("id")) == card_id), None)
+        if not card:
+            print(f"Error: card #{card_id} not found in board snapshot.", file=sys.stderr)
+            sys.exit(1)
+    except Exception as e:
+        print(f"Error reading board snapshot: {e}", file=sys.stderr)
+        sys.exit(1)
+        
+    title = card.get("title", f"Card #{card_id}")
+    description = card.get("description", "")
+    
+    lines = description.splitlines()
+    ac_items = []
+    in_ac = False
+    for line in lines:
+        if "## AC" in line:
+            in_ac = True
+            continue
+        if in_ac and line.strip().startswith("## "):
+            in_ac = False
+        if in_ac and (line.strip().startswith("- [ ]") or line.strip().startswith("- [x]")):
+            ac_items.append(line.strip())
+            
+    if not ac_items:
+        print(f"Error: no AC items found for card #{card_id}.", file=sys.stderr)
+        sys.exit(1)
+
+    print(f"Proving card #{card_id} against {target_base}: {title}")
+    print(f"Found {len(ac_items)} AC items.")
+    
+    unmeasured_count = 0
+    not_met_count = 0
+    met_count = 0
+
+    for item in ac_items:
+        if "check:" in item:
+            parts = item.split("check:")
+            check_cmd = parts[1].strip()
+            try:
+                proc = subprocess.run(check_cmd, shell=True, capture_output=True, text=True, timeout=10)
+                if proc.returncode == 0:
+                    status = "met"
+                    evidence = proc.stdout.strip() or "exit 0"
+                    met_count += 1
+                else:
+                    status = "not met"
+                    evidence = proc.stderr.strip() or proc.stdout.strip() or f"exit {proc.returncode}"
+                    not_met_count += 1
+            except Exception as ex:
+                status = "not met"
+                evidence = str(ex)
+                not_met_count += 1
+        else:
+            status = "unmeasured"
+            evidence = "No runnable check specified (missing check: line)."
+            unmeasured_count += 1
+            
+        print(f"[{status.upper()}] {item} | evidence: {evidence}")
+
+    if not_met_count > 0:
+        sys.exit(1)
+
+if __name__ == "__main__":
+    main()
