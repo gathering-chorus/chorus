@@ -23,6 +23,32 @@ chorus:hasStep a owl:ObjectProperty ;
     rdfs:domain chorus:Pipeline ;
     rdfs:range chorus:PipelineStep .
 
+# #4465 — Jeff 2026-09-26: "is a pipeline basically automation on a value
+# stream?" — yes. The edge the traversal walks: value stream ← pipeline.
+chorus:automates a owl:ObjectProperty ;
+    rdfs:label "automates" ;
+    rdfs:comment "The value stream a pipeline automates." ;
+    rdfs:domain chorus:Pipeline ;
+    rdfs:range chorus:ValueStream .
+
+# #4465 — a pipeline step automates one or more steps of the value stream its
+# pipeline automates (land covers merge, deploy, accept). The traversal walks
+# skill → step skill → pipeline step → value-stream step → stream through it.
+chorus:coversStep a owl:ObjectProperty ;
+    rdfs:label "covers step" ;
+    rdfs:comment "A value-stream step this pipeline step automates." ;
+    rdfs:domain chorus:PipelineStep ;
+    rdfs:range chorus:ValueStreamStep .
+
+# #4465 / #4470 — Jeff 2026-10-09: a failure routes to a named step in the
+# stream that owns it, not back to the start. Proving's "an AC check fails in
+# demo" routes to werk's build step; "an AC has no check" to Designing.
+chorus:onFail a owl:ObjectProperty ;
+    rdfs:label "on fail" ;
+    rdfs:comment "The value-stream step a failure of this pipeline step routes to; that step's stream owns the fix." ;
+    rdfs:domain chorus:PipelineStep ;
+    rdfs:range chorus:ValueStreamStep .
+
 chorus:stepOrder a owl:DatatypeProperty ;
     rdfs:label "step order" ;
     rdfs:domain chorus:PipelineStep ;
@@ -35,7 +61,7 @@ chorus:executor a owl:DatatypeProperty ;
 
 chorus:implementedBy a owl:DatatypeProperty ;
     rdfs:label "implemented by" ;
-    rdfs:comment "The invocable implementation (binary or script name) that runs a step. A verb rename updates this value; the step label (the WORK) survives it. No rdfs:domain — shared across ValueStreamStep 26 and PipelineStep 18 (#4250)." ;
+    rdfs:comment "The binary a deterministic Skill runs (#4467). A verb rename updates this value; the skill label survives it. #4465: PipelineStep no longer carries it — a step names its skills through StepSkill rows, so the binary has one home. ValueStreamStep values (#4250) retire the same way." ;
     rdfs:range xsd:string .
 
 chorus:forPipeline a owl:ObjectProperty ;
@@ -111,12 +137,21 @@ chorus:otherErrorCount a owl:DatatypeProperty ;
 chorus:PipelineShape a sh:NodeShape ;
     sh:targetClass chorus:Pipeline ;
     sh:property [ sh:path rdfs:label ; sh:minCount 1 ] ;
-    sh:property [ sh:path chorus:pipelineStatus ; sh:minCount 1 ] .
+    sh:property [ sh:path chorus:pipelineStatus ; sh:minCount 1 ] ;
+    sh:property [ sh:path chorus:automates ; sh:minCount 1 ; sh:maxCount 1 ; sh:nodeKind sh:IRI ;
+                  sh:class chorus:ValueStream ; sh:name "automates" ;
+                  sh:description "Required. The value stream this pipeline automates (cicd → werk, athena → athena)." ] .
 
 chorus:PipelineStepShape a sh:NodeShape ;
     sh:targetClass chorus:PipelineStep ;
     sh:property [ sh:path chorus:executor ; sh:minCount 1 ] ;
-    sh:property [ sh:path chorus:stepOrder ; sh:minCount 1 ] .
+    sh:property [ sh:path chorus:stepOrder ; sh:minCount 1 ] ;
+    sh:property [ sh:path chorus:coversStep ; sh:minCount 1 ; sh:nodeKind sh:IRI ; sh:class chorus:ValueStreamStep ;
+                  sh:name "covers step" ;
+                  sh:description "Required. The value-stream steps this step automates." ] ;
+    sh:property [ sh:path chorus:onFail ; sh:maxCount 1 ; sh:nodeKind sh:IRI ; sh:class chorus:ValueStreamStep ;
+                  sh:name "on fail" ;
+                  sh:description "Optional. Where a failure of this step routes; absent means the step itself is retried." ] .
 
 # Tightens the existing chorus:PipelineRunShape (werk-domains.ttl — traceId):
 # triples on the same subject merge in the store; both constraints apply.
