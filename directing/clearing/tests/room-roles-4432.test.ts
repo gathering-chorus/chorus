@@ -1,5 +1,7 @@
 // @test-type: unit — module state only; no live services
 // @domain: messages
+// @card: #4432
+// @owner: wren
 /** #4432 — Abby joins the room the way the other roles did: from the roles door's rows. */
 import { setRoomRoles, roomRoles } from '../src/room-roles';
 import { pickJeffMessageTargets } from '../src/server';

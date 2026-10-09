@@ -1,5 +1,7 @@
 // @test-type: unit — a local HTTP server on a temp Unix socket stands in for chorus-agentd; no live services
 // @domain: messages
+// @card: #4432
+// @owner: wren
 /** #4432 — Pulse's client for an agent's supervisor, against a stand-in socket. */
 import { createServer, type Server } from 'node:http';
 import { mkdtempSync, rmSync } from 'node:fs';

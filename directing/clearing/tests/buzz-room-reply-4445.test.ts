@@ -1,4 +1,6 @@
 // @test-type: unit — notes are signed in-process with derived test keys; no relay, no tailer, no service.
+// @card: #4445
+// @owner: wren
 /**
  * #4445 — Jeff, 2026-10-07: "i still never have seen messages from abby in clearing".
  *

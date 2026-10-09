@@ -1,5 +1,7 @@
 // @test-type: unit — in-memory store, peers lookup mocked to fail; no live services
 // @domain: messages
+// @card: #4432
+// @owner: wren
 /** #4432 — when the roles door can't name the peers, a nudge is refused loudly, never stored as a guess. */
 import request from 'supertest';
 import { MessageStore } from './store';
