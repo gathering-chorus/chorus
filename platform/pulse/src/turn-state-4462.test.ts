@@ -16,17 +16,22 @@ let dir: string;
 beforeEach(() => { dir = fs.mkdtempSync(path.join(os.tmpdir(), 'turn-4462-')); });
 afterEach(() => { fs.rmSync(dir, { recursive: true, force: true }); });
 
+function mark(content: string): void {
+  // eslint-disable-next-line security/detect-non-literal-fs-filename -- the test's own mkdtemp directory, not caller input.
+  fs.writeFileSync(path.join(dir, 'kade.turn.json'), content);
+}
+
 test('a busy marker reads busy, with its start time', () => {
-  fs.writeFileSync(path.join(dir, 'kade.turn.json'), JSON.stringify({ busy: true, since: '2026-10-09T12:00:00Z' }));
+  mark(JSON.stringify({ busy: true, since: '2026-10-09T12:00:00Z' }));
   expect(readTurnState('kade', dir)).toEqual({ busy: true, since: '2026-10-09T12:00:00Z' });
 });
 
 test('negative proof: no file, broken JSON, or a busy field that is not a boolean all read idle', () => {
   expect(readTurnState('kade', dir)).toEqual({ busy: false });
-  fs.writeFileSync(path.join(dir, 'kade.turn.json'), '{not json');
+  mark('{not json');
   expect(readTurnState('kade', dir)).toEqual({ busy: false });
-  fs.writeFileSync(path.join(dir, 'kade.turn.json'), JSON.stringify({ busy: 'yes' }));
+  mark(JSON.stringify({ busy: 'yes' }));
   expect(readTurnState('kade', dir)).toEqual({ busy: false });
-  fs.writeFileSync(path.join(dir, 'kade.turn.json'), 'null');
+  mark('null');
   expect(readTurnState('kade', dir)).toEqual({ busy: false });
 });
