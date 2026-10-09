@@ -5,17 +5,17 @@ use chorus_make::{check, drift, generate, parse_rows};
 fn fixture(name: &str) -> String {
     // run time, not env!(): the werk-test 4030 guard refuses a compile-time path
     let dir = std::env::var("CARGO_MANIFEST_DIR").expect("cargo sets CARGO_MANIFEST_DIR");
-    std::fs::read_to_string(format!("{dir}/tests/fixtures/{name}")).expect("fixture")
+    std::fs::read_to_string(format!("{dir}/tests/{name}")).expect("fixture")
 }
 
 fn cicd() -> Vec<chorus_make::Row> {
-    parse_rows(&fixture("cicd-rows.tsv")).expect("fixture rows parse")
+    parse_rows(&fixture("fixtures/cicd-rows.tsv")).expect("fixture rows parse")
 }
 
 #[test]
 fn the_cicd_rows_generate_the_golden_workflow() {
     let out = generate("cicd", &cicd()).expect("generates");
-    assert_eq!(out, fixture("cicd-golden.yaml"));
+    assert_eq!(out, fixture("fixtures/cicd-golden.yaml"));
 }
 
 #[test]
