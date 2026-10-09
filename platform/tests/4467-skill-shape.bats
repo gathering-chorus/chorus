@@ -80,3 +80,50 @@ report() { cat "$SHAPE" "$T/base.ttl" "$1" > "$T/all.ttl"; shacl validate --shap
   [[ "$output" == *"robot"* ]] || false
   [[ "$output" == *"skillOrder"* ]] || false
 }
+
+# #4471 — the skills bed of the fall cleanup.
+@test "#4471 negative proof: a skill with two owners, no executor, or delegating to a non-skill is refused" {
+  cat > "$T/bad4471.ttl" <<'TTL'
+@prefix chorus: <https://jeffbridwell.com/chorus#> .
+@prefix rdfs: <http://www.w3.org/2000/01/rdf-schema#> .
+chorus:principal-kade a chorus:Principal .
+chorus:skill-two-keepers a chorus:Skill ;
+    rdfs:label "/two" ; rdfs:comment "Has two keepers." ; chorus:executor "agent" ; chorus:hasDomain chorus:cicd ;
+    chorus:ownedBy chorus:principal-wren , chorus:principal-kade .
+chorus:skill-no-runner a chorus:Skill ;
+    rdfs:label "/none" ; rdfs:comment "Says nothing about who runs it." ; chorus:hasDomain chorus:cicd ;
+    chorus:ownedBy chorus:principal-wren .
+chorus:skill-hands-off a chorus:Skill ;
+    rdfs:label "/hands" ; rdfs:comment "Delegates to a domain, not a skill." ; chorus:executor "agent" ;
+    chorus:hasDomain chorus:cicd ; chorus:delegatesTo chorus:cicd ; chorus:ownedBy chorus:principal-wren .
+TTL
+  run report "$T/bad4471.ttl"
+  [[ "$output" == *"skill-two-keepers"* ]] || { echo "$output"; false; }
+  [[ "$output" == *"skill-no-runner"* ]] || false
+  [[ "$output" == *"skill-hands-off"* ]] || false
+  [[ "$output" == *"delegatesTo"* ]] || false
+}
+
+@test "#4471 a skill delegating to a skill conforms" {
+  cat > "$T/good4471.ttl" <<'TTL'
+@prefix chorus: <https://jeffbridwell.com/chorus#> .
+@prefix rdfs: <http://www.w3.org/2000/01/rdf-schema#> .
+chorus:skill-demo a chorus:Skill ;
+    rdfs:label "/demo" ; rdfs:comment "Presents a card." ; chorus:executor "agent" ; chorus:hasDomain chorus:cicd ;
+    chorus:delegatesTo chorus:skill-go ; chorus:ownedBy chorus:principal-wren .
+chorus:skill-go a chorus:Skill ;
+    rdfs:label "go" ; rdfs:comment "Jeff accepts." ; chorus:executor "human" ; chorus:hasDomain chorus:cicd ;
+    chorus:ownedBy chorus:principal-wren .
+TTL
+  run report "$T/good4471.ttl"
+  [[ "$output" == *"sh:conforms  true"* ]] || { echo "$output"; false; }
+}
+
+@test "#4471 one home: Skill is declared with its shape, and implementedIn / hasSkill are gone from the model" {
+  run grep -c 'chorus:Skill a owl:Class' "$SHAPE"
+  [ "$output" -eq 1 ]
+  run grep -c 'chorus:Skill a owl:Class' "$ROOT/roles/silas/ontology/chorus.ttl"
+  [ "$output" -eq 0 ]
+  run grep -rlE 'chorus:(implementedIn|hasSkill)[[:space:]]' "$ROOT/roles" "$ROOT/designing/data" --include=*.ttl
+  [ -z "$output" ] || { echo "still uses the old words: $output"; false; }
+}

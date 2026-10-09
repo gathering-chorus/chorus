@@ -1144,14 +1144,9 @@ chorus:Policy a owl:Class ;
     rdfs:label "Policy" ;
     rdfs:comment "A binary team rule — allowed/blocked, in-bounds/out-of-bounds. Derived from principles but enforceable as yes/no (unlike practices, which are disciplines). Examples: working hours, WIP limits, response windows, touch-count targets." .
 
-chorus:Skill a owl:Class ;
-    rdfs:label "Skill" ;
-    rdfs:comment "A named invocable procedure a role executes. Entry point into a pipeline of actions; contains hard gates, spine emission, and building logic. Invoked as /<slug>. Skills are attributes of roles and practices, not products. #2348." .
+# chorus:Skill moved to roles/wren/ontology/skills-4467.ttl with its shape (#4471).
 
-chorus:UtilitySkill a owl:Class ;
-    rdfs:subClassOf chorus:Skill ;
-    rdfs:label "Utility Skill" ;
-    rdfs:comment "A skill that provides a utility action (open tab, share, listen, simplify, check-seeds, interrupt, cron-tick) and is not an enactment of a specific practice. Subclass exists so the orphan-skill query honestly excludes utilities: FILTER NOT EXISTS { ?s a chorus:UtilitySkill }. #2348 sub-spike 3A." .
+# UtilitySkill retired by #4471: it existed for the hasSkill orphan query, which went with hasSkill; its 7 rows are plain Skills.
 
 # --- Security domain classes (#2659) ---
 
@@ -2115,11 +2110,7 @@ chorus:writes a owl:ObjectProperty ;
     rdfs:label "writes" ;
     rdfs:comment "A service writes state to a persistence or emits events consumed by another service. Distinguishes data production from data consumption at the service level. #2178." .
 
-chorus:hasSkill a owl:ObjectProperty ;
-    rdfs:label "has skill" ;
-    rdfs:comment "A role or practice has a skill in its repertoire. Role hasSkill = the role's toolkit; Practice hasSkill = the named entry point that enacts the practice. #2348." ;
-    rdfs:domain [ owl:unionOf ( chorus:Role chorus:Practice ) ] ;
-    rdfs:range chorus:Skill .
+# hasSkill retired by #4471: any principal may use a skill (Jeff 2026-10-09); it held no rows.
 
 chorus:hasGate a owl:ObjectProperty ;
     rdfs:label "has gate" ;
@@ -2129,15 +2120,11 @@ chorus:hasGate a owl:ObjectProperty ;
 
 chorus:authorizedBy a owl:ObjectProperty ;
     rdfs:label "authorized by" ;
-    rdfs:comment "A skill or gate is authorized by a role or practice. Inverse of hasSkill / hasGate. Makes orphan queries cheap: Skill or Gate without authorizedBy = orphan. #2348." ;
-    rdfs:domain [ owl:unionOf ( chorus:Skill chorus:Gate ) ] ;
+    rdfs:comment "A gate is authorized by a role or practice. Inverse of hasGate. Makes orphan queries cheap: a Gate without authorizedBy = orphan. #2348; skills dropped by #4471 (any principal may use a skill)." ;
+    rdfs:domain chorus:Gate ;
     rdfs:range [ owl:unionOf ( chorus:Role chorus:Practice ) ] .
 
-chorus:implementedIn a owl:ObjectProperty ;
-    rdfs:label "implemented in" ;
-    rdfs:comment "A skill or gate is implemented in a file (path relative to chorus repo root, e.g., platform/services/chorus-hooks/src/gates/demo_gate.rs). Concrete Loom→Werk trace. Range is xsd:string today; future: resource pointing at a code node. #2348." ;
-    rdfs:domain [ owl:unionOf ( chorus:Skill chorus:Gate ) ] ;
-    rdfs:range xsd:string .
+# implementedIn retired by #4471: chorus:implementedBy is the one property.
 
 
 
@@ -2679,47 +2666,14 @@ chorus:principle-use-edges-and-value-the-marginal
 
 
 # --- Role authorization edges ---
+# #4471: the role hasSkill lists were never in the store (0 rows) and any principal
+# may use a skill (Jeff 2026-10-09), so they are gone; gates stay.
 
-chorus:wren chorus:hasSkill
-    chorus:skill-pull, chorus:skill-demo, chorus:skill-close,
-    chorus:skill-reboot, chorus:skill-jdi,
-    chorus:skill-nudge, chorus:skill-chat, chorus:skill-clearing, chorus:skill-pair,
-    chorus:skill-gemba, chorus:skill-gemba-tick, chorus:skill-retro,
-    chorus:skill-werk, chorus:skill-sb, chorus:skill-ab, chorus:skill-flow,
-    chorus:skill-board-sweep, chorus:skill-pipeline, chorus:skill-golfball,
-    chorus:skill-chorus,
-    chorus:skill-lw, chorus:skill-ls, chorus:skill-lk,
-    chorus:skill-lc, chorus:skill-lm, chorus:skill-look,
-    chorus:skill-ot, chorus:skill-share, chorus:skill-listen,
-    chorus:skill-simplify, chorus:skill-cs, chorus:skill-interrupt,
-    chorus:skill-chat-tick, chorus:skill-gate-product ;
-    chorus:hasGate chorus:gate-product .
+chorus:wren chorus:hasGate chorus:gate-product .
 
-chorus:silas chorus:hasSkill
-    chorus:skill-pull, chorus:skill-demo, chorus:skill-close,
-    chorus:skill-reboot, chorus:skill-jdi,
-    chorus:skill-nudge, chorus:skill-chat, chorus:skill-clearing, chorus:skill-pair,
-    chorus:skill-gemba, chorus:skill-gemba-tick, chorus:skill-retro,
-    chorus:skill-chorus,
-    chorus:skill-lw, chorus:skill-ls, chorus:skill-lk,
-    chorus:skill-lc, chorus:skill-lm, chorus:skill-look,
-    chorus:skill-ot, chorus:skill-share, chorus:skill-simplify,
-    chorus:skill-cs, chorus:skill-chat-tick,
-    chorus:skill-gate-arch, chorus:skill-gate-ops ;
-    chorus:hasGate chorus:gate-arch, chorus:gate-ops .
+chorus:silas chorus:hasGate chorus:gate-arch, chorus:gate-ops .
 
-chorus:kade chorus:hasSkill
-    chorus:skill-pull, chorus:skill-demo, chorus:skill-close,
-    chorus:skill-reboot, chorus:skill-jdi,
-    chorus:skill-nudge, chorus:skill-chat, chorus:skill-clearing, chorus:skill-pair,
-    chorus:skill-gemba, chorus:skill-gemba-tick, chorus:skill-retro,
-    chorus:skill-chorus,
-    chorus:skill-lw, chorus:skill-ls, chorus:skill-lk,
-    chorus:skill-lc, chorus:skill-lm, chorus:skill-look,
-    chorus:skill-ot, chorus:skill-share, chorus:skill-simplify,
-    chorus:skill-cs, chorus:skill-chat-tick,
-    chorus:skill-gate-code, chorus:skill-gate-quality ;
-    chorus:hasGate chorus:gate-code, chorus:gate-quality .
+chorus:kade chorus:hasGate chorus:gate-code, chorus:gate-quality .
 
 # --- Practice authorization edges (sub-spike 2) ---
 

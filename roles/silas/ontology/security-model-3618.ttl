@@ -462,6 +462,9 @@ chorus:GateShape a sh:NodeShape ;
     # #4316 — optional (see GateShape-ownerRole above): required here, it refused
     # the four stage gates at the seed.
     sh:property [ sh:path chorus:ownerRole ; sh:maxCount 1 ] ;
+    # #4471 (Silas OK 16:30) — the file or binary that runs the gate; replaces implementedIn.
+    sh:property [ sh:path chorus:implementedBy ; sh:maxCount 1 ; sh:datatype xsd:string ; sh:name "implemented by" ;
+                  sh:description "Optional. The file or binary that runs the gate, e.g. platform/services/chorus-hooks/src/gates/demo_gate.rs." ] ;
     # #4256 — ruling A (Jeff, 2026-09-21): the declared home follows the rows.
     # Every one of these seven classes declared urn:chorus:ontology while not a
     # single row lived there, so the door served 0 of 29. Rows first, declaration
