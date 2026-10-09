@@ -3,7 +3,8 @@
 # Jeff 08-22: "a verb is just an automated deterministic skill", "i never said i
 # want a verb owl", skills "wrap" or "point to" verbs. 05-12: "our skills are
 # automated not suggestions". 04-17/04-29: roles and practices own skills;
-# skills have gates. 09-24: skills may be a child of a value-stream step.
+# skills have gates. 09-24: skills may be a child of a value-stream step;
+# 10-09 traversal: value stream → steps → domains → skills, so a skill names its domain.
 # So: NO Verb class, NO Operation class. One Skill class (chorus.ttl:1147,
 # keeps hasSkill, UtilitySkill, gates). A verb operation is a Skill row whose
 # executor is deterministic; the binary is chorus:implementedBy (the existing
@@ -41,8 +42,11 @@ chorus:SkillShape a sh:NodeShape ;
                   sh:description "The binary on PATH that runs it, e.g. werk-deploy. A deterministic skill must have one; chorus-make checks that, not the door, which has no conditional rule (#4465)." ] ;
     sh:property [ sh:path chorus:arguments ; sh:maxCount 1 ; sh:datatype xsd:string ; sh:name "arguments" ;
                   sh:description "Optional. The arguments that pick this operation of the binary; empty when it has one." ] ;
-    sh:property [ sh:path chorus:atStep ; sh:maxCount 1 ; sh:class chorus:ValueStreamStep ; sh:name "at step" ;
-                  sh:description "Optional. The value-stream step this skill serves (Jeff 09-24: skills may be a child of a step)." ] ;
+    # #4467 reopen — Jeff's traversal: value stream → steps → domains → skills. A skill
+    # reaches its step through its domain; no atStep, so there is no second path.
+    sh:property [ sh:path chorus:hasDomain ; sh:minCount 1 ; sh:maxCount 1 ; sh:nodeKind sh:IRI ; sh:class chorus:Domain ;
+                  sh:name "domain" ;
+                  sh:description "Required. The domain this skill belongs to; its value-stream step comes through the domain." ] ;
     sh:property [ sh:path chorus:ownedBy ; sh:minCount 1 ; sh:maxCount 1 ; sh:nodeKind sh:IRI ; sh:class chorus:Principal ;
                   sh:name "owned by" ; sh:description "Required, set by the door." ] ;
     chorus:instancesGraph "urn:chorus:domains:skills" ;

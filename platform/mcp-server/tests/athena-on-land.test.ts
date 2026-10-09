@@ -11,7 +11,7 @@ import * as path from 'node:path';
 import { Client } from '@modelcontextprotocol/sdk/client/index.js';
 import { InMemoryTransport } from '@modelcontextprotocol/sdk/inMemory.js';
 import { execFileSync } from 'node:child_process';
-import { buildMcpServer, athenaDeployFailureNudges, type FetchImpl } from '../src/server';
+import { buildMcpServer, athenaDeployFailureNudges, athenaFailedSteps, type FetchImpl } from '../src/server';
 
 // #4338 — CHORUS_HOME is a real git repo: the trigger runs the LANDED commit's
 // athena.yml (git show <sha>:...), and the tree's copy is deliberately different,
@@ -186,4 +186,25 @@ test('the rule alone: exit 0 is nobody; a non-zero exit or a kill is the role an
   assert.ok(fail[0].message.includes('exit 2') && fail[0].message.includes('/l'));
   assert.ok(athenaDeployFailureNudges('wren', 7, null, 'SIGKILL', '/l')[0].message.includes('killed (SIGKILL)'));
   assert.equal(athenaDeployFailureNudges('jeff', 7, 1, null, '/l').length, 1);
+});
+
+// #4467 — the nudge names the step. On #4467's land only prove failed, and the
+// nudge said the store did not carry the model, which was false.
+test('the nudge names the failed step and says whether the model deployed', () => {
+  const log = [
+    '[athena/land  ]   ✅  Success - Main deploy [1m18s]',
+    '[athena/land  ]   ✅  Success - Main served-after [115ms]',
+    '[athena/land  ]   ❌  Failure - Main prove [14m7s]',
+  ].join('\n');
+  const failed = athenaFailedSteps(log);
+  assert.deepEqual(failed, ['prove']);
+  const after = athenaDeployFailureNudges('wren', 4467, 1, null, '/l', failed)[0].message;
+  assert.ok(after.includes('the prove step failed') && after.includes('model deployed'), after);
+  assert.ok(!after.includes('does not carry'), after);
+  // negative proof: a failed deploy still says the store does not carry it
+  const before = athenaDeployFailureNudges('wren', 4467, 1, null, '/l', athenaFailedSteps('❌  Failure - Main deploy [3s]'))[0].message;
+  assert.ok(before.includes('deploy step failed') && before.includes('does not carry'), before);
+  // no step in the log: unknown, never a guess either way
+  const none = athenaDeployFailureNudges('wren', 4467, 1, null, '/l', [])[0].message;
+  assert.ok(none.includes('unknown') && !none.includes('does not carry') && !none.includes('model deployed'), none);
 });

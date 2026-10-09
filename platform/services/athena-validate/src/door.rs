@@ -126,8 +126,18 @@ pub fn check_collection(collection: &str) -> (Verdict, Vec<Finding>) {
             }],
         );
     }
+    // #4467 — a row the door serves without an iri is a finding about the row,
+    // not a failure to measure. ScheduledJob and ServiceInstance rows named
+    // urn:chorus:instance-… made every land's prove step UNMEASURED.
     let Some(iri) = value_of(&item, "iri") else {
-        return (Verdict::Unmeasured(format!("no iri in /v1/{collection}/{name}")), vec![]);
+        return (
+            Verdict::Found(1),
+            vec![Finding {
+                check: "row-served-without-iri".into(),
+                subject: name.clone(),
+                detail: format!("GET /v1/{collection}/{name} has no iri"),
+            }],
+        );
     };
     let Some(stored) = crate::store::predicates_of(&iri) else {
         return (Verdict::Unmeasured(format!("store unreadable for {iri}")), vec![]);
@@ -199,8 +209,12 @@ mod tests {
     /// NEGATIVE PROOF: a door that cannot be reached is Unmeasured. Without
     /// this, an unreachable API returns no keys, every stored predicate reads as
     /// dropped, and the sweep screams about a defect that isn't there.
+    /// Both door tests set CHORUS_OWL_API; run in parallel, one would read the other's.
+    static DOOR_ENV: std::sync::Mutex<()> = std::sync::Mutex::new(());
+
     #[test]
     fn negative_proof_an_unreachable_door_is_unmeasured_not_a_flood() {
+        let _g = DOOR_ENV.lock().unwrap_or_else(|e| e.into_inner());
         std::env::set_var("CHORUS_OWL_API", "http://127.0.0.1:9");
         let (v, f) = check_collection("products/products");
         std::env::remove_var("CHORUS_OWL_API");
@@ -229,5 +243,32 @@ mod tests {
         assert!(is_not_found(&keys_of(body), body));
         let row = r#"{ "apiVersion": "v1", "kind": "AgentRole", "data": { "name": "role-kade", "status": "" } }"#;
         assert!(!is_not_found(&keys_of(row), row));
+    }
+
+    /// NEGATIVE PROOF (#4467): a row the door serves with no iri. It was
+    /// UNMEASURED, which turned every land's prove step into "could not tell".
+    /// It is a finding about the row, so the sweep can still answer.
+    #[test]
+    fn negative_proof_a_row_with_no_iri_is_a_finding_not_unmeasured() {
+        use std::io::{Read, Write};
+        let listener = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
+        let port = listener.local_addr().unwrap().port();
+        std::thread::spawn(move || {
+            for body in [
+                r#"{ "kind": "List", "data": [ { "name": "urn:chorus:instance-x" } ] }"#,
+                r#"{ "kind": "ScheduledJob", "data": { "name": "urn:chorus:instance-x", "label": "x" } }"#,
+            ] {
+                let (mut c, _) = listener.accept().unwrap();
+                let mut buf = [0u8; 2048];
+                let _ = c.read(&mut buf);
+                let _ = write!(c, "HTTP/1.1 200 OK\r\nContent-Type: application/json\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{}", body.len(), body);
+            }
+        });
+        let _g = DOOR_ENV.lock().unwrap_or_else(|e| e.into_inner());
+        std::env::set_var("CHORUS_OWL_API", format!("http://127.0.0.1:{port}"));
+        let (v, f) = check_collection("ops/scheduledjobs");
+        std::env::remove_var("CHORUS_OWL_API");
+        assert_eq!(v, Verdict::Found(1), "{f:?}");
+        assert_eq!(f[0].check, "row-served-without-iri");
     }
 }

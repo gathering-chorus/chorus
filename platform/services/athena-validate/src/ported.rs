@@ -109,13 +109,17 @@ pub const ONE_HOME: Check = Check {
     id: "one-home",
     question: "does every row live in exactly one graph",
     query: r#"PREFIX c: <https://jeffbridwell.com/chorus#>
-SELECT ?s (COUNT(DISTINCT ?g) AS ?homes) (GROUP_CONCAT(DISTINCT STR(?g); separator=" ") AS ?graphs) WHERE {
+SELECT ?s (COUNT(DISTINCT ?h) AS ?homes) (GROUP_CONCAT(DISTINCT STR(?h); separator=" ") AS ?graphs) WHERE {
   GRAPH ?g { ?s a ?t }
   FILTER(STRSTARTS(STR(?g), "urn:chorus:"))
   FILTER(STRSTARTS(STR(?s), "https://jeffbridwell.com/chorus#"))
+  # #4467 — the homes are counted in ?h, not ?g. A scoped run binds ?g to the
+  # card's graphs; counting ?g would then see one home for a row that has two.
+  GRAPH ?h { ?s a ?t2 }
+  FILTER(STRSTARTS(STR(?h), "urn:chorus:"))
 }
 GROUP BY ?s
-HAVING(COUNT(DISTINCT ?g) > 1)"#,
+HAVING(COUNT(DISTINCT ?h) > 1)"#,
 };
 
 /// Every check the sweep runs against the store, in report order.

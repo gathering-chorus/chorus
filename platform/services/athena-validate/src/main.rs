@@ -110,11 +110,26 @@ fn main() {
     // graph and a clean run against the store are the same word otherwise, and the
     // second is the only one that means the graph is clean.
     let scope = store::graph_scope();
-    report.line(format!(
-        "graph-scope|{}|{}",
-        scope,
-        if scope == "urn:chorus:" { "every chorus graph" } else { "SCOPED — not the whole store" }
-    ));
+    // #4467 — exact graphs, the land's scope. A bad name stops the run as
+    // UNMEASURED; an empty list says the store checks were not run, by name.
+    let exact = match store::exact_graphs() {
+        Ok(e) => e,
+        Err(why) => {
+            report.line(format!("graph-scope|?|{why}"));
+            report.line("graph-summary|UNMEASURED|bad-scope".to_string());
+            report.flush();
+            std::process::exit(2);
+        }
+    };
+    match &exact {
+        Some(g) if g.is_empty() => report.line("graph-scope||SCOPED — no instance graph named, store checks not run".to_string()),
+        Some(g) => report.line(format!("graph-scope|{}|SCOPED — these graphs only", g.join(" "))),
+        None => report.line(format!(
+            "graph-scope|{}|{}",
+            scope,
+            if scope == "urn:chorus:" { "every chorus graph" } else { "SCOPED — not the whole store" }
+        )),
+    }
 
     // The store checks.
     let mut store_checks = ported::all();
@@ -123,6 +138,9 @@ fn main() {
     // at the door, swept over what is already in the store.
     store_checks.push(&ALLOWED_VALUES);
     store_checks.push(&PATTERN);
+    if matches!(&exact, Some(g) if g.is_empty()) {
+        store_checks.clear();
+    }
     for check in store_checks {
         let (verdict, findings) = store::run(check);
         for f in &findings {

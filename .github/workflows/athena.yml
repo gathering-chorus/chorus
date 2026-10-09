@@ -341,6 +341,12 @@ jobs:
           LIST=$(athena-deploy scope "$ROOT" "$RANGE")
           MODEL=$(printf '%s\n' "$LIST" | grep '^model|' | cut -d'|' -f2- || true)
           printf 'range: %s\nmodel files:\n%s\n' "$RANGE" "${MODEL:-  (none)}"
+          # #4467 — the graphs this card's model feeds: every chorus:instancesGraph its
+          # model files name. prove checks these, not the whole store (10.7M triples,
+          # 10.0M of them test results, timed three checks out on every land).
+          GRAPHS=$(while IFS= read -r f; do if [ "${f%.ttl}" != "$f" ] && [ -f "$ROOT/$f" ]; then grep -oE 'instancesGraph[[:space:]]+"urn:chorus:[A-Za-z0-9:._-]+"' "$ROOT/$f" | grep -oE 'urn:chorus:[A-Za-z0-9:._-]+' || true; fi; done <<< "$MODEL" | sort -u | tr '\n' ' ' | sed 's/ $//')
+          echo "graphs this card feeds: ${GRAPHS:-(none)}"
+          echo "graphs=$GRAPHS" >> "$GITHUB_OUTPUT"
           # staging deploys the whole model set every run (that is the point of iterating).
           # #4423 (Kade at the gate): set BEFORE the output is written, or it never reaches deploy.
           [ "$TARGET" = "staging" ] && MODEL="${MODEL:-whole model set}"
@@ -385,6 +391,26 @@ jobs:
           FUSEKI_QUERY="${{ steps.resolve.outputs.store }}/query" \
             CHORUS_ROLE= "$BIN" served-snapshot "${{ steps.resolve.outputs.api }}" "${RUNNER_TEMP:-/tmp}/athena-served-before-${CHORUS_TRACE_ID:-run}.txt"
 
+      - name: prove-before
+        # #4467 — what prod's graphs for this card look like BEFORE the land: the
+        # same scoped sweep prove runs after, against the canonical store and door.
+        # prove holds the card to this number (a card may not add gaps). Measured
+        # 2026-10-09 on the skills and cards graphs: 25s, where the whole-store
+        # sweep ran 14 minutes and could not finish.
+        if: ${{ steps.scope.outputs.nothing != 'true' }}
+        run: |
+          set -euo pipefail
+          # shellcheck disable=SC1091
+          source "${CHORUS_HOME}/platform/scripts/fuseki-auth.sh"
+          VALIDATE="${HOME}/.chorus/bin/athena-validate"; [ -x "$VALIDATE" ] || VALIDATE="$(command -v athena-validate || true)"
+          [ -n "$VALIDATE" ] || { echo "::error::athena: no athena-validate binary — the graph is UNMEASURED, not proven" >&2; exit 1; }
+          OUT=$(ATHENA_VALIDATE_GRAPHS="${{ steps.scope.outputs.graphs }}" ATHENA_VALIDATE_NUDGE=0 ATHENA_VALIDATE_REPORT=/dev/null \
+            FUSEKI_QUERY="${CHORUS_FUSEKI_BASE:-http://localhost:3030}/pods/query" CHORUS_OWL_API="${ATHENA_MAKE_URL:-http://localhost:3360}" "$VALIDATE" 2>&1 || true)
+          N=$(printf '%s\n' "$OUT" | grep -oE '^graph-summary\|[0-9]+\|' | cut -d'|' -f2 | tail -1 || true)
+          printf '%s\n' "$OUT" | grep -E '^graph-(scope|summary)|UNMEASURED|SKIPPED' || true
+          [ -n "$N" ] || { echo "::error::athena: the before-sweep reported no count — prove has nothing to hold this card to" >&2; printf '%s\n' "$OUT" | grep -E 'UNMEASURED' | head -20; exit 1; }
+          echo "ATHENA_ISSUES_BEFORE=$N" >> "$GITHUB_ENV"
+
       - name: deploy
         # only when the land carried model sources
         if: ${{ steps.scope.outputs.nothing != 'true' && steps.scope.outputs.model != '' }}
@@ -425,16 +451,14 @@ jobs:
 
       - name: prove
         if: ${{ steps.scope.outputs.nothing != 'true' }}
-        # canonical: the store attests the landed sha, and the sweep is a RATCHET whose
-        # baseline lives IN THE STORE (<urn:chorus:model-validate> vocab:validateIssues), not
-        # in a file on one Mac. #4187: its OWN subject. It used to sit on
-        # <urn:chorus:model-deploy>, whose stamp is rewritten with DELETE WHERE { <s> ?p ?o }
-        # on every deploy, so every deploy wiped the baseline and the ratchet restarted
-        # (measured 2026-09-17: 1,204 at 07:56 → "no baseline" → 10,684 at 12:52). werk: the sweep runs against the variant store and is held
-        # to the canonical baseline (a card may not add gaps); the baseline is never written.
+        # canonical: the store attests the landed sha. Then the sweep, scoped to the
+        # graphs this card's model feeds (#4467), held to prove-before's count from
+        # the same graphs in prod: a card may not add gaps. The whole-store sweep is
+        # the daily 07:00 run (com.chorus.athena-validate); on 10.7M triples it
+        # cannot finish inside a land, and every land since 10-08 said UNMEASURED.
         run: |
           set -euo pipefail
-          STORE="${{ steps.resolve.outputs.store }}"; CANON="${CHORUS_FUSEKI_BASE:-http://localhost:3030}/pods"
+          STORE="${{ steps.resolve.outputs.store }}"
           # shellcheck disable=SC1091
           source "${CHORUS_HOME}/platform/scripts/fuseki-auth.sh"
           AUTH=(); [ -n "${FUSEKI_ADMIN_PASSWORD:-}" ] && AUTH=(-u "${FUSEKI_ADMIN_USER:-admin}:${FUSEKI_ADMIN_PASSWORD}")
@@ -449,21 +473,21 @@ jobs:
           # The Rust binary is the validator; a missing one is named, never silent.
           VALIDATE="${HOME}/.chorus/bin/athena-validate"; [ -x "$VALIDATE" ] || VALIDATE="$(command -v athena-validate || true)"
           [ -n "$VALIDATE" ] || { echo "::error::athena: no athena-validate binary — the graph is UNMEASURED, not proven" >&2; exit 1; }
-          OUT=$(ATHENA_VALIDATE_NUDGE=0 FUSEKI_QUERY="$STORE/query" ATHENA_VALIDATE_REPORT=/dev/null "$VALIDATE" 2>&1 || true)
+          OUT=$(ATHENA_VALIDATE_GRAPHS="${{ steps.scope.outputs.graphs }}" ATHENA_VALIDATE_NUDGE=0 ATHENA_VALIDATE_REPORT=/dev/null \
+            FUSEKI_QUERY="$STORE/query" CHORUS_OWL_API="${{ steps.resolve.outputs.api }}" "$VALIDATE" 2>&1 || true)
           N=$(printf '%s\n' "$OUT" | grep -oE '^graph-summary\|[0-9]+\|' | cut -d'|' -f2 | tail -1 || true)
+          printf '%s\n' "$OUT" | grep -E '^graph-(scope|summary)|UNMEASURED|SKIPPED' || true
+          BASE="${ATHENA_ISSUES_BEFORE:-}"
           if [ -z "$N" ]; then
-            echo "::error::athena-validate reported no count (unmeasured store?) — refusing to call the graph proven" >&2; printf '%s\n' "$OUT" | tail -5; rc=1
+            # #4467 — name what could not be measured; the old `tail -5` hid it.
+            echo "::error::athena-validate reported no count — refusing to call the graph proven" >&2; rc=1
+          elif [ -z "$BASE" ]; then
+            echo "::error::athena: prove-before left no count — nothing to hold this ${TARGET} to" >&2; rc=1
+          elif [ "$N" -gt "$BASE" ]; then
+            echo "::error::athena-validate: $N issues in this card's graphs, $BASE before — this ${TARGET} ADDED gaps" >&2
+            printf '%s\n' "$OUT" | grep '^graph-issue' | head -40; rc=1
           else
-            BASE=$(curl -s -m 10 "${AUTH[@]}" "$CANON/query" --data-urlencode 'query=SELECT ?n WHERE { GRAPH <urn:chorus:ontology> { <urn:chorus:model-validate> <urn:chorus:vocab#validateIssues> ?n } }' -H 'Accept: text/csv' | sed -n 2p | tr -d '"\r')
-            [ -n "$BASE" ] || { BASE="$N"; echo "athena-validate: no baseline in the store yet; this run sets it to $N"; }
-            if [ "$N" -gt "$BASE" ]; then echo "::error::athena-validate: $N issues, baseline $BASE — this ${TARGET} ADDED gaps" >&2; rc=1
-            else
-              echo "athena-validate ($TARGET): $N issues (baseline $BASE → $N)"
-              if [ "$TARGET" = "canonical" ]; then
-                curl -s -m 10 "${AUTH[@]}" -o /dev/null -w 'baseline write http %{http_code}\n' "$CANON/update" -H 'Content-Type: application/sparql-update' \
-                  --data-binary "DELETE WHERE { GRAPH <urn:chorus:ontology> { <urn:chorus:model-validate> <urn:chorus:vocab#validateIssues> ?o } }; INSERT DATA { GRAPH <urn:chorus:ontology> { <urn:chorus:model-validate> <urn:chorus:vocab#validateIssues> $N } }"
-              fi
-            fi
+            echo "athena-validate ($TARGET): $N issues in this card's graphs ($BASE before → $N)"
           fi
           echo "issues=${N:-unmeasured}" >> "$GITHUB_OUTPUT"
           exit $rc
