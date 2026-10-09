@@ -21,17 +21,18 @@ setup() {
 @prefix rdfs: <http://www.w3.org/2000/01/rdf-schema#> .
 chorus:principal-wren a chorus:Principal .
 chorus:pipeline-step-cicd-demo a chorus:PipelineStep .
+chorus:cicd a chorus:Domain .
 EOF
   cat > "$T/good.ttl" <<'EOF'
 @prefix chorus: <https://jeffbridwell.com/chorus#> .
 @prefix rdfs: <http://www.w3.org/2000/01/rdf-schema#> .
 chorus:skill-werk-deploy-env-up a chorus:Skill ;
     rdfs:label "werk-deploy env-up" ; rdfs:comment "Brings the card's demo variant up." ;
-    chorus:executor "deterministic" ; chorus:implementedBy "werk-deploy" ; chorus:arguments "env-up" ;
+    chorus:executor "deterministic" ; chorus:implementedBy "werk-deploy" ; chorus:arguments "env-up" ; chorus:hasDomain chorus:cicd ;
     chorus:ownedBy chorus:principal-wren .
 chorus:skill-go a chorus:Skill ;
     rdfs:label "go" ; rdfs:comment "Jeff accepts the presented card." ;
-    chorus:executor "human" ; chorus:ownedBy chorus:principal-wren .
+    chorus:executor "human" ; chorus:hasDomain chorus:cicd ; chorus:ownedBy chorus:principal-wren .
 chorus:stepskill-cicd-demo-1 a chorus:StepSkill ;
     chorus:forStep chorus:pipeline-step-cicd-demo ; chorus:callsSkill chorus:skill-werk-deploy-env-up ;
     chorus:skillOrder 1 ; chorus:ownedBy chorus:principal-wren .
@@ -65,6 +66,11 @@ report() { cat "$SHAPE" "$T/base.ttl" "$1" > "$T/all.ttl"; shacl validate --shap
 @test "good skills and a step's ordered skill conform" {
   run report "$T/good.ttl"
   [[ "$output" == *"sh:conforms  true"* ]] || { echo "$output"; false; }
+}
+
+@test "negative proof: a skill with no domain is refused (Jeff's traversal reaches skills through domains)" {
+  run report "$T/bad.ttl"
+  [[ "$output" == *"hasDomain"* ]] || { echo "$output"; false; }
 }
 
 @test "negative proof: a bad name, an executor outside the three, and a step skill with no order are refused" {

@@ -82,10 +82,57 @@ pub fn graph_scope() -> String {
     std::env::var("ATHENA_VALIDATE_GRAPH").unwrap_or_else(|_| "urn:chorus:".into())
 }
 
+/// #4467 — exact graphs, named one by one: `ATHENA_VALIDATE_GRAPHS="urn:a urn:b"`.
+///
+/// The prefix scope above saves no time, because Fuseki walks every graph and
+/// filters afterwards. On 10.7M triples (10.0M of them test results) three whole-store
+/// checks hit the 180s limit, so every land's prove step said UNMEASURED. A land
+/// only needs to prove the graphs its model feeds. Binding `?g` with VALUES before
+/// the query runs means Fuseki reads only those graphs: the cards graph (46k
+/// triples) answers dangling-edge in 0.4s.
+///
+/// Unset is None (the old behaviour). Set but empty is Some(empty): the card's
+/// model feeds no instance graph, and the store checks say so instead of running.
+/// A name that is not a plain `urn:chorus:` IRI is an error, never a guess,
+/// because it is pasted into the query.
+pub fn exact_graphs() -> Result<Option<Vec<String>>, String> {
+    let Ok(raw) = std::env::var("ATHENA_VALIDATE_GRAPHS") else { return Ok(None) };
+    let graphs: Vec<String> = raw.split([' ', ',', '\n']).filter(|g| !g.is_empty()).map(String::from).collect();
+    for g in &graphs {
+        let plain = g.chars().all(|c| c.is_ascii_alphanumeric() || ":-_.".contains(c));
+        if !g.starts_with("urn:chorus:") || !plain {
+            return Err(format!("ATHENA_VALIDATE_GRAPHS names '{g}', which is not a urn:chorus: graph"));
+        }
+    }
+    Ok(Some(graphs))
+}
+
+/// The scope filter every store check carries. In exact mode it is taken out and
+/// `?g` is bound up front instead.
+const PREFIX_FILTER: &str = r#"FILTER(STRSTARTS(STR(?g), "urn:chorus:"))"#;
+
+/// Bind `?g` to the exact graphs at the top of the query.
+///
+/// Only `?g`, the graph a check is ABOUT, is bound. The graphs a check looks
+/// things up in (`?g2`, `?og`, `?pg`, `?h`) stay open, so a row in a scoped graph
+/// whose field or target lives elsewhere is still judged against the whole store.
+/// A check that names its own graphs (v1-row) joins with the binding and has
+/// nothing to say when those graphs are out of scope.
+pub fn bind_graphs(query: &str, graphs: &[String]) -> String {
+    let values = format!(
+        "WHERE {{\n  VALUES ?g {{ {} }}",
+        graphs.iter().map(|g| format!("<{g}>")).collect::<Vec<_>>().join(" ")
+    );
+    query.replace(PREFIX_FILTER, "").replacen("WHERE {", &values, 1)
+}
+
 /// Substitute the scope into a check's query. The prefix appears only as a
 /// quoted literal inside STRSTARTS; the angle-bracket IRIs (`<urn:chorus:instances>`)
 /// name specific graphs a check is ABOUT and are deliberately left alone.
 fn scoped(query: &str) -> String {
+    if let Ok(Some(graphs)) = exact_graphs() {
+        return bind_graphs(query, &graphs);
+    }
     let scope = graph_scope();
     if scope == "urn:chorus:" {
         return query.to_string();
@@ -104,6 +151,15 @@ fn scoped(query: &str) -> String {
     query.replace("\"urn:chorus:\"", &format!("\"{scope}\""))
 }
 
+/// Seconds one store query may take. 180 unless ATHENA_VALIDATE_TIMEOUT says
+/// otherwise, for the daily whole-store sweep, which is not racing a land.
+fn timeout_secs() -> String {
+    std::env::var("ATHENA_VALIDATE_TIMEOUT")
+        .ok()
+        .filter(|t| t.parse::<u32>().is_ok_and(|n| n > 0))
+        .unwrap_or_else(|| "180".into())
+}
+
 pub fn run(check: &Check) -> (Verdict, Vec<Finding>) {
     if check.query.is_empty() {
         return (
@@ -114,7 +170,7 @@ pub fn run(check: &Check) -> (Verdict, Vec<Finding>) {
     let out = Command::new("curl")
         .arg("-sS")
         .arg("--max-time")
-        .arg("180")
+        .arg(timeout_secs())
         .arg("-H")
         .arg("Accept: text/csv")
         .arg("--data-urlencode")
@@ -184,6 +240,79 @@ mod tests {
         assert!(v.is_unmeasured(), "no-query check reported {v:?}");
         assert!(f.is_empty());
         assert_ne!(v.summary_word(), Verdict::Clean.summary_word());
+    }
+
+    fn arq(tag: &str, trig: &str, query: &str) -> Vec<Finding> {
+        let dir = std::env::temp_dir().join(format!("av-{}-{}", tag, std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        std::fs::write(dir.join("fx.trig"), trig).unwrap();
+        std::fs::write(dir.join("q.rq"), query).unwrap();
+        let out = std::process::Command::new("arq")
+            .arg("--data").arg(dir.join("fx.trig")).arg("--query").arg(dir.join("q.rq")).arg("--results").arg("csv")
+            .output()
+            .expect("arq (Apache Jena) is required for this proof: brew install jena");
+        assert!(out.status.success(), "arq failed: {}", String::from_utf8_lossy(&out.stderr));
+        parse_csv(tag, &String::from_utf8_lossy(&out.stdout))
+    }
+
+    /// #4467: one dangling edge in the card's graph, one in a graph the card does
+    /// not touch, and a row whose second home is outside the scope.
+    const SCOPE_4467: &str = r##"@prefix c: <https://jeffbridwell.com/chorus#> .
+<urn:chorus:domains:skills> { c:skill-a a c:Skill ; c:hasDomain c:gone . c:skill-b a c:Skill . }
+<urn:chorus:domains:other> { c:o1 a c:Thing ; c:points c:also-gone . c:skill-b a c:Skill . }
+"##;
+
+    fn scoped_to_skills(q: &str) -> String {
+        bind_graphs(q, &["urn:chorus:domains:skills".to_string()])
+    }
+
+    #[test]
+    fn negative_proof_a_scoped_run_finds_the_dangling_edge_in_its_graph_only() {
+        let got = arq("4467-dangle", SCOPE_4467, &scoped_to_skills(crate::ported::DANGLING_EDGE.query));
+        let subjects: Vec<&str> = got.iter().map(|f| f.subject.as_str()).collect();
+        assert_eq!(subjects, vec!["skill-a"], "{got:?}");
+    }
+
+    #[test]
+    fn the_whole_store_run_still_sees_both_dangling_edges() {
+        let got = arq("4467-dangle-all", SCOPE_4467, crate::ported::DANGLING_EDGE.query);
+        assert_eq!(got.len(), 2, "{got:?}");
+    }
+
+    /// The case the old exact-graph attempt (#4239) got wrong: binding the graph
+    /// hid the second home. Homes are counted across the store, so it is found.
+    #[test]
+    fn negative_proof_a_scoped_run_still_sees_a_second_home_outside_the_scope() {
+        let got = arq("4467-home", SCOPE_4467, &scoped_to_skills(crate::ported::ONE_HOME.query));
+        assert_eq!(got.len(), 1, "{got:?}");
+        assert_eq!(got[0].subject, "skill-b");
+        assert!(got[0].detail.starts_with('2'), "{got:?}");
+    }
+
+    #[test]
+    fn every_store_check_is_bound_when_scoped() {
+        let mut checks = crate::ported::all();
+        checks.extend([&crate::checks::COMPLETENESS, &crate::checks::ALLOWED_VALUES, &crate::checks::PATTERN]);
+        for c in checks {
+            let q = scoped_to_skills(c.query);
+            assert!(q.contains("VALUES ?g { <urn:chorus:domains:skills> }"), "{} is not bound", c.id);
+            assert!(!q.contains(PREFIX_FILTER), "{} still walks every graph", c.id);
+        }
+    }
+
+    #[test]
+    fn negative_proof_a_graph_name_that_is_not_a_chorus_urn_is_refused() {
+        let _g = ENV_LOCK.lock().unwrap_or_else(|e| e.into_inner());
+        for bad in ["urn:other:x", "urn:chorus:x> } DROP ALL #"] {
+            std::env::set_var("ATHENA_VALIDATE_GRAPHS", bad);
+            assert!(exact_graphs().is_err(), "accepted {bad}");
+        }
+        std::env::set_var("ATHENA_VALIDATE_GRAPHS", "urn:chorus:domains:skills,urn:chorus:domains:cards");
+        assert_eq!(exact_graphs().unwrap().unwrap().len(), 2);
+        std::env::set_var("ATHENA_VALIDATE_GRAPHS", "");
+        assert_eq!(exact_graphs().unwrap(), Some(vec![]));
+        std::env::remove_var("ATHENA_VALIDATE_GRAPHS");
+        assert_eq!(exact_graphs().unwrap(), None);
     }
 
     /// Both tests below set and clear FUSEKI_QUERY. Run in parallel, one clears

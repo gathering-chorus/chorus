@@ -2977,12 +2977,32 @@ async function scopeLandedCommit(
 // #4228 — who hears about a model deploy's exit. Exit 0 is nobody; anything else
 // (a non-zero code, or a kill with no code) is the landing role and Jeff, naming
 // the card, the exit and the log to read. Pure, so the rule is testable alone.
+// #4467 — the steps of the athena run that failed, read from act's own
+// "❌  Failure - Main <step>" lines. The run's log is the record; nothing else
+// knows which step it was.
+export function athenaFailedSteps(logText: string): string[] {
+  const steps: string[] = [];
+  for (const m of logText.matchAll(/Failure - Main ([\w-]+)/g)) if (!steps.includes(m[1])) steps.push(m[1]);
+  return steps;
+}
+
+// #4467 — the steps after which the store carries the card's model. A run that
+// failed only after these did deploy; saying "the store does not carry this
+// card's model changes" was false on #4467's land, where only prove failed.
+const ATHENA_AFTER_DEPLOY = ['serve', 'served-after', 'prove', 'prod-untouched', 'complete', 'traceable'];
+
 export function athenaDeployFailureNudges(
-  role: string, cardId: number, code: number | null, signal: string | null, log: string,
+  role: string, cardId: number, code: number | null, signal: string | null, log: string, failed: string[] = [],
 ): NudgeArgs[] {
   if (code === 0) return [];
   const exit = code === null ? `killed (${signal ?? 'no signal'})` : `exit ${code}`;
-  const message = `Model deploy for #${cardId} FAILED after its land (${exit}). The store does not carry this card's model changes. Read ${log}`;
+  const deployed = failed.length > 0 && failed.every((s) => ATHENA_AFTER_DEPLOY.includes(s));
+  const what = failed.length === 0
+    ? 'The log names no failed step, so whether the store carries this card\'s model is unknown.'
+    : deployed
+      ? `The model deployed; the ${failed.join(', ')} step failed.`
+      : `The ${failed.join(', ')} step failed. The store does not carry this card's model changes.`;
+  const message = `Model run for #${cardId} FAILED after its land (${exit}). ${what} Read ${log}`;
   const to = new Set<string>([role, 'jeff']);
   return [...to].filter(Boolean).map((t) => ({ to: t, message }));
 }
@@ -3034,17 +3054,22 @@ async function triggerAthenaOnLand(
   // a store that never changed. Detaching is fine; not reading the exit is not.
   child.on('exit', (code, signal) => {
     const ok = code === 0;
+    let failed: string[] = [];
+    if (!ok) {
+      try { failed = athenaFailedSteps(fsMod.readFileSync(log, 'utf8')); } catch { /* unreadable log: no step named */ }
+    }
     void appendChorusLog(ok ? 'athena.deploy.completed' : 'athena.deploy.failed', role, {
       card_id: cardId,
       landedCommit,
       exit: String(code ?? -1),
       signal: signal ?? '',
       log,
+      failed_steps: failed.join(','),
     });
     // #4228 reopened (Silas, 2026-10-02) — the spine line alone told nobody: #4338's
     // deploy failed at 15:54 and was found when athena-make would not boot. A failed
     // exit goes to the landing role and Jeff as nudges, every time.
-    for (const n of athenaDeployFailureNudges(role, cardId, code, signal, log)) void notify?.(n);
+    for (const n of athenaDeployFailureNudges(role, cardId, code, signal, log, failed)) void notify?.(n);
   });
   child.unref();
   fsMod.closeSync(fd);

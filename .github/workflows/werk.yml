@@ -670,7 +670,15 @@ jobs:
               done
             fi
             if [ "$MODEL" = "failed" ]; then
-              echo "::error ::[NOT LIVE] #${CARD_ID} merged + accepted, but the model deploy REFUSED — the store does not carry this card's model changes. Read ~/.chorus/werk-runs/athena-${CARD_ID}-canonical-*.log and re-deploy before ticking any AC that reads the store." >&2
+              # #4467 — say which step failed. A run where only prove failed DID deploy,
+              # and "the store does not carry this card's model changes" was false.
+              STEPS=$(tail -400 "$HOME/.chorus/chorus.log" 2>/dev/null | grep "\"event\":\"athena.deploy.failed\".*\"card_id\":\"${CARD_ID}\"" | tail -1 | sed -n 's/.*"failed_steps":"\([^"]*\)".*/\1/p')
+              case ",${STEPS}," in
+                ,,) echo "::error ::[UNMEASURED] #${CARD_ID} merged + accepted, but the model run failed and its log names no failed step — whether the store carries this card's model is unknown. Read ~/.chorus/werk-runs/athena-${CARD_ID}-canonical-*.log." >&2 ;;
+                *,validate,*|*,scope,*|*,resolve,*|*,served-before,*|*,deploy,*)
+                  echo "::error ::[NOT LIVE] #${CARD_ID} merged + accepted, but the model run failed at: ${STEPS}. The store does not carry this card's model changes. Read ~/.chorus/werk-runs/athena-${CARD_ID}-canonical-*.log and re-deploy before ticking any AC that reads the store." >&2 ;;
+                *) echo "::error ::[LIVE, NOT PROVEN] #${CARD_ID} merged + accepted, and the model deployed, but the model run failed at: ${STEPS}. Read ~/.chorus/werk-runs/athena-${CARD_ID}-canonical-*.log." >&2 ;;
+              esac
             elif [ "$MODEL" = "unmeasured" ]; then
               echo "::error ::[UNMEASURED] #${CARD_ID} merged + accepted, but the model deploy had not finished after 120s. Its outcome is unknown — do NOT read this as live. Check athena-${CARD_ID}-canonical-*.log." >&2
             elif [ "${SYNC_OK:-0}" = "1" ]; then
