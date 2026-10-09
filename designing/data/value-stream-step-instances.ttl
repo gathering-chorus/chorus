@@ -43,19 +43,35 @@ chorus:value-stream-step-athena-validate a chorus:ValueStreamStep ; rdfs:label "
     chorus:inStream chorus:value-stream-athena ; chorus:stageOrder 4 ;
     chorus:implementedBy "athena-validate" .   # the Rust binary since #4167 deleted the bash (2026-09-20); records what RUNS
 
-# ── borg: plant → tend → read → surface⭐ → prune → feed ────────────────────
+# ── proving (#4470): intake → verify → stage → ready → accept → verify in prod → record ──
+chorus:value-stream-step-borg-intake a chorus:ValueStreamStep ; rdfs:label "Intake" ; chorus:label "Intake" ;
+    chorus:inStream chorus:value-stream-proving ; chorus:stageOrder 1 .
+chorus:value-stream-step-borg-verify a chorus:ValueStreamStep ; rdfs:label "Verify" ; chorus:label "Verify" ;
+    chorus:inStream chorus:value-stream-proving ; chorus:stageOrder 2 .
+chorus:value-stream-step-borg-stage a chorus:ValueStreamStep ; rdfs:label "Stage" ; chorus:label "Stage" ;
+    chorus:inStream chorus:value-stream-proving ; chorus:stageOrder 3 .
+chorus:value-stream-step-borg-ready a chorus:ValueStreamStep ; rdfs:label "Ready" ; chorus:label "Ready" ;
+    chorus:inStream chorus:value-stream-proving ; chorus:stageOrder 4 .
+chorus:value-stream-step-borg-accept a chorus:ValueStreamStep ; rdfs:label "Accept" ; chorus:label "Accept" ;
+    chorus:inStream chorus:value-stream-proving ; chorus:stageOrder 5 .
+chorus:value-stream-step-borg-verify-in-prod a chorus:ValueStreamStep ; rdfs:label "Verify in prod" ; chorus:label "Verify in prod" ;
+    chorus:inStream chorus:value-stream-proving ; chorus:stageOrder 6 .
+chorus:value-stream-step-borg-record a chorus:ValueStreamStep ; rdfs:label "Record" ; chorus:label "Record" ;
+    chorus:inStream chorus:value-stream-proving ; chorus:stageOrder 7 .
+
+# ── operating (#4470): the Reflecting loop — plant → tend → read → surface⭐ → prune → feed ──
 chorus:value-stream-step-borg-plant   a chorus:ValueStreamStep ; rdfs:label "Plant" ; chorus:label "Plant" ;
-    chorus:inStream chorus:value-stream-borg ; chorus:stageOrder 1 .
+    chorus:inStream chorus:value-stream-operating ; chorus:stageOrder 1 .
 chorus:value-stream-step-borg-tend    a chorus:ValueStreamStep ; rdfs:label "Tend" ; chorus:label "Tend" ;
-    chorus:inStream chorus:value-stream-borg ; chorus:stageOrder 2 .
+    chorus:inStream chorus:value-stream-operating ; chorus:stageOrder 2 .
 chorus:value-stream-step-borg-read    a chorus:ValueStreamStep ; rdfs:label "Read" ; chorus:label "Read" ;
-    chorus:inStream chorus:value-stream-borg ; chorus:stageOrder 3 .
+    chorus:inStream chorus:value-stream-operating ; chorus:stageOrder 3 .
 chorus:value-stream-step-borg-surface a chorus:ValueStreamStep ; rdfs:label "Surface" ; chorus:label "Surface" ;
-    chorus:inStream chorus:value-stream-borg ; chorus:stageOrder 4 .
+    chorus:inStream chorus:value-stream-operating ; chorus:stageOrder 4 .
 chorus:value-stream-step-borg-prune   a chorus:ValueStreamStep ; rdfs:label "Prune" ; chorus:label "Prune" ;
-    chorus:inStream chorus:value-stream-borg ; chorus:stageOrder 5 .
+    chorus:inStream chorus:value-stream-operating ; chorus:stageOrder 5 .
 chorus:value-stream-step-borg-feed    a chorus:ValueStreamStep ; rdfs:label "Feed" ; chorus:label "Feed" ;
-    chorus:inStream chorus:value-stream-borg ; chorus:stageOrder 6 .
+    chorus:inStream chorus:value-stream-operating ; chorus:stageOrder 6 .
 
 # ── convergence: ingest → map → land⭐ (reconcile is internal to land) ──────
 chorus:value-stream-step-convergence-ingest a chorus:ValueStreamStep ; rdfs:label "Ingest" ; chorus:label "Ingest" ;
@@ -125,10 +141,11 @@ chorus:value-stream-step-building   a chorus:ValueStreamStep ; rdfs:label "Build
     chorus:hasValueStream chorus:value-stream-werk .
 chorus:value-stream-step-proving    a chorus:ValueStreamStep ; rdfs:label "Proving" ; chorus:label "Proving" ;
     chorus:inStream chorus:value-stream-chorus ; chorus:stageOrder 5 ;
-    chorus:hasValueStream chorus:value-stream-borg .
-chorus:value-stream-step-reflecting a chorus:ValueStreamStep ; rdfs:label "Reflecting" ; chorus:label "Reflecting" ;
+    chorus:hasValueStream chorus:value-stream-proving .
+# #4470 (Jeff 2026-10-09): step 6 is Operating; Reflecting is the loop that runs inside it.
+chorus:value-stream-step-reflecting a chorus:ValueStreamStep ; rdfs:label "Operating" ; chorus:label "Operating" ;
     chorus:inStream chorus:value-stream-chorus ; chorus:stageOrder 6 ;
-    chorus:hasValueStream chorus:value-stream-borg .
+    chorus:hasValueStream chorus:value-stream-operating .
 
 # ── werk build-cycle stream: pull → accept ─────────────────────────────────
 chorus:value-stream-step-pull   a chorus:ValueStreamStep ; rdfs:label "Pull" ; chorus:label "Pull" ;

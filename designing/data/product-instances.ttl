@@ -74,18 +74,19 @@ Chorus · Athena · rewritten for readers outside the team 2026-09-03""" ;
 
 chorus:borg a chorus:Product ;
     chorus:docState """current""" ;
-    chorus:diagram """%% Structure
-flowchart TD
-  PR["Proving<br/><i>per-card · terminates</i>"] --- B["product: Borg"]
-  RE["Reflecting<br/><i>continuous · loops</i>"] --- B
-  B --> OBS["domain: observability"]
-  B --> OPS["domain: operations"]
-  B --> INF["domain: infrastructure"]
-  OBS --> o1["heralds · monitor · alert<br/>logs · metrics · analytics"]
-  OPS --> p1["deploys · builds · time · security-trust"]
-  INF --> i1["infra hosts · properties · toolchain"]
-  RE -.->|"hasValueStream"| CY["reflect cycle:<br/>plant→tend→read→surface→prune→feed"]
-  PR -.->|"hasValueStream"| DC["proving ceremony:<br/>present→gather→verdict→accept"]""" ;
+    chorus:diagram """%% Structure (#4470, 2026-10-09)
+flowchart LR
+  CARD["card<br/><i>AC + checks</i>"] --> A["athena-*<br/>writes modelSha"] --> W["werk-*<br/>writes round: sha"] --> P
+  subgraph P["Proving — per card, ends"]
+    p1[intake] --> p2[verify] --> p3[stage] --> p4[ready] --> p5{accept} --> p6[verify in prod] --> p7[record]
+  end
+  p7 -->|"the land creates a deploy"| O
+  subgraph O["Operating — continuous; the Reflecting loop"]
+    o1[plant] --> o2[tend] --> o3[read] --> o4[surface] --> o5[prune] --> o6[feed]
+  end
+  o4 -->|"ticket card"| DIR(["Directing"])
+  o6 --> SH(["Shaping"])
+  p3 -. "fail: named step" .-> W""" ;
     chorus:diagram """%% Entry: the map to the mirror
 flowchart LR
   C["/chorus drawing (the map)"] -->|"Spine to Proving"| L["Borg landing (the verdict)"]
@@ -94,14 +95,14 @@ flowchart LR
   D --> X["each page = generated shell +<br/>client-fetch of its class's HTTP route"]""" ;
     chorus:label """Borg""" ;
     rdfs:label """Borg""" ;
-    chorus:comment """Borg is the self-judgment product of Chorus, spanning Proving and Reflecting — the system seeing itself so no human has to be the eyes.""" ;
-    rdfs:comment """Borg is the self-judgment product of Chorus, spanning Proving and Reflecting — the system seeing itself so no human has to be the eyes.""" ;
+    chorus:comment """Borg is the self-judgment product of Chorus. It runs two value streams: Proving, which proves each card's change, and Operating, whose Reflecting loop watches what is running, so no human has to be the eyes.""" ;
+    rdfs:comment """Borg is the self-judgment product of Chorus. It runs two value streams: Proving, which proves each card's change, and Operating, whose Reflecting loop watches what is running, so no human has to be the eyes.""" ;
     chorus:ownedBy chorus:principal-silas ;
     chorus:vision """A self-observing system whose monitors and alerts are generated from the model, whose front page is a verdict rather than a readout, and whose capability travels to any system it builds.""" ;
     chorus:valueProposition """Your attention back. Borg surfaces the one thing that needs a person, calmly, to the person who owns it, so nobody has to be the eyes.""" ;
     chorus:audience """The roles building the system, who use it to notice a peer gone dark or a service drifting before the owner does; and the owner, who consumes outcomes only.""" ;
     chorus:status """building""" ;
-    chorus:gaps """No liveness or crash-loop signal; alerts routed by hand; no model-driven monitor contract; no Borg page yet, so the observation surfaces are scattered.""" ;
+    chorus:gaps """No AC checks on cards and no verdict or route on the card; chorus-make does not exist yet, so no borg pipeline runs; no single prod service list (83 running against 13 designed); no canary (one copy of everything); no liveness signal; alerts routed by hand.""" ;
     chorus:atStep chorus:value-stream-step-proving ;
     chorus:hasDesignDoc chorus:document-borg-product-design ;
     chorus:hasDomain chorus:infrastructure, chorus:builds, chorus:deploys, chorus:time, chorus:heralds, chorus:toolchain, chorus:analytics, chorus:security, chorus:properties, chorus:alerts, chorus:monitors, chorus:logs, chorus:identity, chorus:metrics ;
@@ -109,12 +110,11 @@ flowchart LR
     chorus:promise """The system sees itself, so no person has to be the eyes. Borg watches everything it can reach — services, health, alerts, and the gap between how the system is drawn and how it actually runs — and surfaces the one thing that needs a person, calmly, to the person who owns it.
 Its product is not dashboards. It is your attention back. Every time the owner is the first to notice a stall is a failure of this product. A service that froze silently for weeks is the anti-promise made concrete, and the reason Borg exists.
 Who it is for: the roles building the system, who use it to notice a peer gone dark, a service flapping, a drift, before the owner does; and the owner, who consumes outcomes only — a calm board, or the single thing that needs them. Never a wall of warnings; never the job of monitor.""" ;
-    chorus:structure """Borg spans the last two steps of the value stream with one eye at two focal lengths. Proving is per change: present it, gather feedback, reach a verdict, accept; it terminates. Reflecting is continuous: watch the running system and feed what it learns back into what gets built next; it loops.
-Its domains group into three layers. Observability: heralds (the scouts that discover what is out there, including the crawlers), monitors, alerts, logs, metrics, analytics. Operations: builds, deploys, time (schedules), security and trust, identity. Infrastructure: the hosts, their properties, and the toolchain.
-Owner: the architect role, wearing every hat — product, domain design, engineering lead, operations lead. Borg is not greenfield: a full observability stack already runs underneath it; the design names the cycle that runs over that stack.""" ;
-    chorus:model """Monitors, alerts, service levels and signals are modeled as classes with rules, seated in the shared value-stream model. A monitor has a type (liveness, freshness, saturation, latency, errors, synthetic flow); an alert has severity, routing, and deduplication state; a service level has a burn rate.
-The difference between the declared model and the observed behaviour is itself a modeled thing — the map versus the mirror — and it is what most Borg pages render. The map is the system drawing: how the system is meant to cohere. The mirror is how it runs. The gap between them is the signal.
-The verdict at the front door is computed, not curated: calm when no critical alert is open, no service level is burning fast, and nothing monitored has gone silent past its freshness window; otherwise the single highest-severity unresolved signal.""" ;
+    chorus:structure """Borg runs two value streams. Proving is per card and ends: intake, verify, stage, ready, accept, verify in prod, record. Its carrier is the card. Every card type runs every step; a type only adds work (athena-* for model changes), never removes proof, and a type is checked against data at intake, never just declared. Operating is continuous: its Reflecting loop is plant, tend, read, surface, prune, feed. Its carrier is the deploy, the running version a land creates, and surface is where a ticket card is created.
+On one card the pipelines run in order: athena-* writes modelSha when the card touches the model, werk-* writes a round (sha and targets), borg-* writes the verdict. Each reads the card and writes back only its own part, so nothing lives between streams; a failure routes to a named step in the stream that owns it. dagu runs the pipelines and owns their state; chorus-make generates the workflows from the graph.
+Domains: deploys sits at Proving, because the land is where change enters prod. Heralds, monitors, alerts, logs, metrics and analytics sit at Operating. Builds, time, infrastructure, properties and toolchain run underneath. Identity and security sit in Shaping, because who acts and what is allowed shape everything after. Owner: the architect role.""" ;
+    chorus:model """A card's verdict is Proven, Failed (with a route to a named step in the owning stream), Rejected (an AC has no check: back to Designing) or Regressed (verify in prod failed: rollback ready and a ticket card opened). A chunk card is Proven only when every child is Proven and its own outcome check passes. Every AC carries a check that can fail (CardAC rows); a card's rounds record each sha it was proven on (CardRound rows). A ticket card is keyed by role, event and reason, and a repeat raises its count instead of opening another. Every transition is Given, When, Then, so the model is the BDD.
+Monitors, alerts and service levels are classes with rules: a monitor has a type (liveness, freshness, saturation, latency, errors, synthetic flow); an alert has severity, routing and deduplication state; a service level has a burn rate. The gap between the declared model and the running system, the map versus the mirror, is what most Borg pages render.""" ;
     chorus:pagesAndFlow """Every Borg page is generated from the model, not built by hand — the hand-built dashboards scattered across the stack are precisely the problem it replaces. You enter through the system drawing: the map. From the drawing, the Proving node opens the mirror.
 The landing page is a verdict, not a readout. Two states: calm — "all coherent, nothing needs you — go" — or the one thing that does, alone, with nothing competing for the eye. You walk into a room and know instantly whether it is calm or on fire; if calm, you leave. The gauges are one level down, not the front door.
 The reflect cycle renders as a seasonal wheel — plant, tend, read, surface, prune, feed — not a progress bar. Drill pages: monitors (which services are alive, which jobs ran, saturation, latency, errors, synthetic flows), alerts (what is firing and to whom it was routed), and health, metrics and fitness (the aggregate verdict, service-level burn, the flow report). The agent and the person read the same model, one through tools, the other through the generated routes.""" ;
@@ -125,16 +125,12 @@ GET /alerts?owner=&severity= — what is firing, routed by ownership.
 GET /slo/{name}/burn — service-level burn rate.
 GET /borg/flow — the standing fitness report: cycle time, lead time, escaping defects, time to recover.
 Serving today underneath: a Prometheus / Grafana / Loki / Alertmanager stack, health checks on a schedule, a log query surface by card or trace, a pain rollup of reactive work, and the nightly test run whose red list the roles read each morning.""" ;
-    chorus:asIs """Running: the full observability stack, a modeled monitor and alert taxonomy, and probes that stopped crying wolf. The nightly test run is the detector of a broken main branch.
-Not yet: no liveness or crash-loop signal, which is why a frozen service once hid for weeks; alerts routed by hand rather than by ownership in the model; no model-driven monitor contract; and no Borg page — the observation surfaces are still scattered across the stack.
-Recent lessons the product carries: a test suite once took down the very services it was observing, and went unnamed for weeks; a demo run from an isolated environment once wrote into production; a rollup of pain re-reports classes already fixed unless read day by day. Each is a monitor that should have spoken first.""" ;
-    chorus:toBe """The reflect cycle, model-driven: monitors and alerts as domains whose contracts generate; the verdict-first landing page; silence and absence as first-class signals.
-Path, in order: the value-stream spine, then liveness (the gap that hid the freeze), then freshness, errors, saturation, latency and synthetic flows, then ownership-routed alerting, then the pages that render it all.
-Borg is built to travel. Chorus is a factory, and the systems it builds must run with Chorus switched off. So Borg ships generatively: the model generates a client system's own scrape configs, alert rules, service-level definitions, dashboards, liveness emitters and deploy scripts, plus a standalone open-source stack. The test is literal — turn Chorus off; does the client system still observe, alert and deploy itself? Any callback is a leaked dependency to cut. Borg is the proof that a modeled system can generate the commodity eighty percent every team otherwise rebuilds.""" ;
-    chorus:notInScope """The demo ceremony itself — presenting, gathering feedback, recording the verdict — belongs to Werk. Borg proves; Werk runs the ceremony.
-Remediation in the reflecting half: Borg surfaces, the owning role acts. Its operations layer does deploy, roll back and restart; observe-only is a property of observability, not of the whole product.
-Assimilation (extracting a legacy system's structure) and mitosis (reproducing the product for another system) — the other two Borg modes, described in their own designs; they share the scouts as their first step.
-Triage of the work queue — a Directing concern.""" ;
+    chorus:asIs """Running: the observability stack (Prometheus, Grafana, Loki, Alertmanager), the nightly test run, the pain rollup, scheduled health checks, and the service-harvest crawler (57 running instances, 36 linked to a design).
+Proving today is the werk demo plus Jeff's go, which makes Jeff the AC validator. On 2026-10-08 only 1 of 11 accepted cards had its AC fully met. There are no AC checks, no verdict on the card, and failures re-enter Building by hand as reopens. launchd runs 83 jobs against 13 Service designs. Alerts arrive as nudges that vanish (40 in one day were two issues). There is one copy of every service, so there is no canary and data is effectively tested in prod.""" ;
+    chorus:toBe """Proving and Operating as generated pipelines: chorus-make writes the borg workflows from the two value streams and dagu owns their state transitions and validation. Intake rejects any card whose AC lack checks; stage proves the card in the demo copy; verify in prod re-runs the same checks after the land, read-only, with a rollback ready. Operating keeps one ticket card per issue and counts repeats.
+First proof is a walking skeleton: one fixture card through borg-prove with every chorus URL dead-ported, 20 of 20 runs reaching a final state and a failing variant landing on its named step 20 of 20. Then one prod service list (#4472), so a card's demo starts the services it changed.
+Borg is built to travel: the systems Chorus builds must run with Chorus switched off, so the model generates a client system's own monitors, alerts and pipelines.""" ;
+    chorus:notInScope """Remediation: Borg surfaces, the owning role prunes. A real canary, until there is a second prod copy of each service. Assimilation and mitosis, the other two Borg modes, described in their own designs. Triage of the work queue, which is Directing.""" ;
     chorus:references """Public design: designing/docs/borg-product-design.html (2026-06-14) and borg-value-stream-design.html (the reflect cycle and the domains); athena-product-design.html is the mirrored template.
 Internal notes for the team: ADR-043 (monitor / alert split, monitor types, service-level classes); observability-service-design.html, logs-service-design.html, infrastructure-service-design.html; chorus-product-domain-hierarchy.html; GOOD_BORG.html, BORG_ASSIMILATION_PATTERN.html, borg-mitosis.html. Cards: #3418 (the cycle, garden, map and mirror, verdict not readout), #3415 (design system), #3406 (the freeze that hid), #3405 (probe truthfulness), #3720 (the nightly black box), #4028 (role state derived from streams).
 Chorus · Borg · rewritten for readers outside the team 2026-09-03""" ;
