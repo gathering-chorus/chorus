@@ -48,8 +48,19 @@ chorus:value-stream-athena a chorus:ValueStream ;
     # still named the retired six, and referential integrity failed closed.
     chorus:contains chorus:value-stream-step-athena-model, chorus:value-stream-step-athena-make,
         chorus:value-stream-step-athena-deploy, chorus:value-stream-step-athena-validate .
-chorus:value-stream-borg a chorus:ValueStream ;
-    rdfs:label "Borg" ; chorus:label "Borg" ;
+# #4470 (Jeff 2026-10-09) — Borg is a PRODUCT spanning two streams, not one stream:
+# Proving (per card, ends) and Operating (continuous loop; the garden steps are its
+# Reflecting loop). The card carries change through Proving; the land creates a
+# deploy, and the deploy is Operating's carrier.
+chorus:value-stream-proving a chorus:ValueStream ;
+    rdfs:label "Proving" ; chorus:label "Proving" ;
+    chorus:outcome "Each card's AC are checked against the running system and the card gets a verdict: Proven, or Failed with the step it routes back to" ;
+    chorus:trigger "a card leaves Building" ;
+    chorus:contains chorus:value-stream-step-borg-intake, chorus:value-stream-step-borg-verify, chorus:value-stream-step-borg-stage,
+        chorus:value-stream-step-borg-ready, chorus:value-stream-step-borg-accept, chorus:value-stream-step-borg-verify-in-prod,
+        chorus:value-stream-step-borg-record .
+chorus:value-stream-operating a chorus:ValueStream ;
+    rdfs:label "Operating" ; chorus:label "Operating" ;
     chorus:outcome "Continuously reflects the running system against its model and surfaces a verdict to the owner to act on" ;
     chorus:trigger "continuous" ;
     chorus:contains chorus:value-stream-step-borg-plant, chorus:value-stream-step-borg-tend, chorus:value-stream-step-borg-read,
