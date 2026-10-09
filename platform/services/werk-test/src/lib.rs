@@ -4197,6 +4197,16 @@ pub fn nextest_case_times(out: &str) -> std::collections::HashMap<String, u64> {
     times
 }
 
+/// #4454 reopen — the trace a run's events share: the caller's, else one
+/// minted for this run. Never empty — an empty trace means no query can find
+/// the run, which is how the 10-09 03:00 nightly logged 9,910 cases.
+pub fn run_trace_id(given: Option<&str>, epoch_ms: u128, pid: u32) -> String {
+    match given.map(str::trim) {
+        Some(t) if !t.is_empty() => t.to_string(),
+        _ => format!("nightly-{epoch_ms}-{pid}"),
+    }
+}
+
 /// #4454 — one test case as a spine event: `test.case.passed|failed|skipped`
 /// with its file, case, unit, elapsed time, and — when it failed — the kind
 /// and the reason. Returns the chorus-log argv (event first).

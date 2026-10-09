@@ -4,7 +4,7 @@
 //! detailed log and trace we are just guessing".
 
 use werk_test::{
-    bats_case_times, batch_line, case_event_args, case_tsv_times, nextest_case_times, parse_bats_cases,
+    bats_case_times, batch_line, case_event_args, run_trace_id, case_tsv_times, nextest_case_times, parse_bats_cases,
     CaseResult,
 };
 
@@ -90,4 +90,20 @@ fn a_child_cannot_forward_a_non_test_event() {
     let got = werk_test::forwardable_test_events(
         "card.moved\ttests\tcard=1\ndeploy.completed\tkade\nservice.started\tsystem\ntest.case.started\n\n");
     assert!(got.is_empty(), "{got:?}");
+}
+
+#[test]
+fn a_run_with_no_trace_mints_one_and_a_given_trace_is_kept() {
+    // #4454 reopen: launchd gives the nightly no CHORUS_TRACE_ID.
+    assert_eq!(run_trace_id(None, 1791560000000, 42), "nightly-1791560000000-42");
+    assert_eq!(run_trace_id(Some("tr-card-run"), 1, 1), "tr-card-run", "a card run's trace is not replaced");
+}
+
+#[test]
+fn negative_proof_an_empty_or_blank_trace_is_never_kept() {
+    // the 10-09 03:00 state: the variable unset or empty -> every case event had trace=""
+    for given in [Some(""), Some("   ")] {
+        let t = run_trace_id(given, 7, 8);
+        assert!(!t.trim().is_empty() && t.starts_with("nightly-"), "blank trace survived: {t:?}");
+    }
 }
