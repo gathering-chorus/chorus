@@ -10,49 +10,32 @@ use std::collections::BTreeMap;
 const MAIN: &str = include_str!("../templates/main.rs");
 const STORE: &str = include_str!("../templates/store.rs");
 const SETTINGS: &str = include_str!("../templates/settings.rs");
-<<<<<<< HEAD
-<<<<<<< HEAD
 const AUTH: &str = include_str!("../templates/auth.rs");
 const RULES: &str = include_str!("../templates/rules.rs");
-<<<<<<< HEAD
-<<<<<<< HEAD
 const REQUIREMENTS: &str = include_str!("../templates/requirements_tests.rs");
 const MODEL_TEST: &str = include_str!("../templates/model_test.rs");
-<<<<<<< HEAD
-<<<<<<< HEAD
-=======
->>>>>>> 3795eee59 (wren: #4490 — athena-gen generate writes the pulse-api crate (RowStore trait, remote SPARQL backend, settings env then file then default, versioned envelope); pulse-api compiles and serves the 5 pulse collections read-only on :3392; emitter tests incl. same-model-same-bytes and a model-change negative proof)
-=======
-const AUTH: &str = include_str!("../templates/auth.rs");
->>>>>>> 4c9755287 (wren: #4490 — pulse-api writes require a signed caller: ES256 token through the shared chorus-oidc verifier, principal and grants read from the model, typed refusals (no-token 401, token-invalid 401, identity-unreachable 503, not-a-principal 403); live check: wren's token resolves to principal wren)
-=======
->>>>>>> 9ac820daf (wren: #4490 — pulse-api writes (create, replace, patch, delete) with the door rules generated in: shape checks (off-model, sh:in, one-value, required), links as IRIs with dangling targets refused, owner or Write Permission, prior version kept before every change, owl.write event per outcome; live: wren's RoleState created and patched, v1 reads it back, version-rolestates-wren-1 kept)
-=======
-const REQUIREMENTS: &str = include_str!("../templates/requirements_tests.rs");
->>>>>>> ba777c764 (wren: #4490 — the v1 requirements are generated tests in every product API (9 in pulse-api: patch names only, link removal by wildcard, many-links, dangling target refused, ownerless needs Permission, not-owner refused, names round-trip, versions kept); negative proof: removing the owner rule turns req5 and req5b red)
-=======
->>>>>>> be528d717 (wren: #4490 — tests that exercise every crate file for werk-test selection: athena-gen crates_4490 (manifests by path, committed pulse-api equals a fresh generate, hand-edit negative proof) and a generated pulse-api tests/model.rs)
-=======
 const EMBEDDED_TESTS: &str = include_str!("../templates/embedded_tests.rs");
->>>>>>> cd24e3b18 (wren: #4493 — pulse-api runs with no Fuseki: store engines split (Remote, Embedded Oxigraph), store.kind=embedded + store.path from the model, load/dump commands; 5 embedded tests incl. wrong-kind link removal on the real update and the backup/restore drill with a negative proof; live: pulse graphs loaded from a Fuseki export, parity with today's door 5/5 on the embedded store; hash crates pinned to one digest)
 
 /// The crate's own version. Step 1 starts every product at 1.0.0; the bump rule
 /// (#4478 Versions: removed field = major, added = minor) arrives with the diff check.
 pub const CRATE_VERSION: &str = "1.0.0";
 
-<<<<<<< HEAD
-<<<<<<< HEAD
-=======
->>>>>>> 4c9755287 (wren: #4490 — pulse-api writes require a signed caller: ES256 token through the shared chorus-oidc verifier, principal and grants read from the model, typed refusals (no-token 401, token-invalid 401, identity-unreachable 503, not-a-principal 403); live check: wren's token resolves to principal wren)
-/// The shared token verifier, by path from `<step>/products/<product>/api/`. A crate
-/// shipped away from this repo vendors it (the export step, a later card).
+/// The shared token verifier, by path from `<step>/products/<product>/api/` (the
+/// ADR-041 place for a product crate). A crate shipped away from this repo vendors it
+/// (the export step, a later card).
 pub const OIDC_PATH: &str = "../../../../platform/services/chorus-oidc";
 
-<<<<<<< HEAD
-=======
->>>>>>> 3795eee59 (wren: #4490 — athena-gen generate writes the pulse-api crate (RowStore trait, remote SPARQL backend, settings env then file then default, versioned envelope); pulse-api compiles and serves the 5 pulse collections read-only on :3392; emitter tests incl. same-model-same-bytes and a model-change negative proof)
-=======
->>>>>>> 4c9755287 (wren: #4490 — pulse-api writes require a signed caller: ES256 token through the shared chorus-oidc verifier, principal and grants read from the model, typed refusals (no-token 401, token-invalid 401, identity-unreachable 503, not-a-principal 403); live check: wren's token resolves to principal wren)
+/// The verifier's path from wherever the crate is written, so a crate placed at any
+/// depth in the repo still finds it (Kade's review, #4490 run 1). The out folder must
+/// sit inside the repo.
+pub fn oidc_path(root: &std::path::Path, out: &std::path::Path) -> Result<String, String> {
+    let root = std::fs::canonicalize(root).map_err(|e| format!("root: {e}"))?;
+    std::fs::create_dir_all(out).map_err(|e| format!("out: {e}"))?;
+    let out = std::fs::canonicalize(out).map_err(|e| format!("out: {e}"))?;
+    let rel = out.strip_prefix(&root).map_err(|_| format!("{} is not inside {}", out.display(), root.display()))?;
+    Ok(format!("{}platform/services/chorus-oidc", "../".repeat(rel.components().count())))
+}
+
 /// StreamEvent → stream-event: the kind that prefixes a row's IRI (v1's mint rule).
 pub fn kebab(class: &str) -> String {
     let mut out = String::new();
@@ -73,29 +56,7 @@ fn lit(s: &str) -> String {
     format!("{s:?}")
 }
 
-<<<<<<< HEAD
-<<<<<<< HEAD
 pub fn model_rs(p: &Product, model_version: &str, settings: &[(String, String)]) -> String {
-=======
-/// The settings every product API reads, with their defaults. Step 1 declares them here;
-/// AC6 moves them into the model as Property rows on the product (#3435).
-pub fn settings(port: u16) -> Vec<(String, String)> {
-    vec![
-        ("events.command".into(), "".into()),
-        ("identity.issuer".into(), "https://id.lightlifeurbangardens.com/".into()),
-        ("server.bind".into(), format!("127.0.0.1:{port}")),
-        ("store.endpoint".into(), "http://localhost:3030/pods".into()),
-        ("store.kind".into(), "sparql".into()),
-        ("store.password_var".into(), "FUSEKI_ADMIN_PASSWORD".into()),
-        ("store.user_var".into(), "FUSEKI_ADMIN_USER".into()),
-    ]
-}
-
-pub fn model_rs(p: &Product, model_version: &str, port: u16) -> String {
->>>>>>> 3795eee59 (wren: #4490 — athena-gen generate writes the pulse-api crate (RowStore trait, remote SPARQL backend, settings env then file then default, versioned envelope); pulse-api compiles and serves the 5 pulse collections read-only on :3392; emitter tests incl. same-model-same-bytes and a model-change negative proof)
-=======
-pub fn model_rs(p: &Product, model_version: &str, settings: &[(String, String)]) -> String {
->>>>>>> 5f9aadb25 (wren: #4490 — settings come from the model: 7 Property rows on pulse (pulse-settings-4490.ttl, in the model set), the generator emits the loader from them and refuses a product missing a runtime setting; v1 freeze guard (4490-v1-freeze.sh, athena-make frozen at 9975 lines, negative proofs: a 200-line feature and a missing target both go red))
     let mut s = String::new();
     s.push_str(&format!(
         "//! {name}'s slice of the model. Generated by athena-gen — DO NOT EDIT; change the model.\n\n\
@@ -103,59 +64,25 @@ pub fn model_rs(p: &Product, model_version: &str, settings: &[(String, String)])
          pub const API_VERSION: &str = \"v1\";\npub const MODEL_VERSION: &str = {mv};\npub const NS: &str = {ns};\n\n",
         name = p.name, pn = lit(&p.name), mv = lit(model_version), ns = lit(NS)
     ));
-<<<<<<< HEAD
-<<<<<<< HEAD
     s.push_str("/// Declared settings and their defaults, from the product's Property rows (see settings.rs for the lookup order).\npub const SETTINGS: &[(&str, &str)] = &[\n");
     for (k, v) in settings {
-=======
-    s.push_str("/// Declared settings and their defaults (see settings.rs for the lookup order).\npub const SETTINGS: &[(&str, &str)] = &[\n");
-    for (k, v) in settings(port) {
->>>>>>> 3795eee59 (wren: #4490 — athena-gen generate writes the pulse-api crate (RowStore trait, remote SPARQL backend, settings env then file then default, versioned envelope); pulse-api compiles and serves the 5 pulse collections read-only on :3392; emitter tests incl. same-model-same-bytes and a model-change negative proof)
-=======
-    s.push_str("/// Declared settings and their defaults, from the product's Property rows (see settings.rs for the lookup order).\npub const SETTINGS: &[(&str, &str)] = &[\n");
-    for (k, v) in settings {
->>>>>>> 5f9aadb25 (wren: #4490 — settings come from the model: 7 Property rows on pulse (pulse-settings-4490.ttl, in the model set), the generator emits the loader from them and refuses a product missing a runtime setting; v1 freeze guard (4490-v1-freeze.sh, athena-make frozen at 9975 lines, negative proofs: a 200-line feature and a missing target both go red))
         s.push_str(&format!("    ({}, {}),\n", lit(&k), lit(&v)));
     }
     s.push_str("];\n\n");
     s.push_str(
-<<<<<<< HEAD
-<<<<<<< HEAD
         "pub struct FieldDef {\n    pub name: &'static str,\n    pub link: bool,\n    pub datatype: &'static str,\n    pub required: bool,\n    pub many: bool,\n    pub allowed: &'static [&'static str],\n}\n\n\
          pub struct ClassDef {\n    pub domain: &'static str,\n    pub name: &'static str,\n    pub kind: &'static str,\n    pub plural: &'static str,\n    pub segment: &'static str,\n    pub graph: &'static str,\n    pub fields: &'static [FieldDef],\n}\n\n\
-=======
-        "pub struct FieldDef {\n    pub name: &'static str,\n    pub link: bool,\n    pub required: bool,\n    pub many: bool,\n    pub allowed: &'static [&'static str],\n}\n\n\
-         pub struct ClassDef {\n    pub domain: &'static str,\n    pub name: &'static str,\n    pub kind: &'static str,\n    pub segment: &'static str,\n    pub graph: &'static str,\n    pub fields: &'static [FieldDef],\n}\n\n\
->>>>>>> 3795eee59 (wren: #4490 — athena-gen generate writes the pulse-api crate (RowStore trait, remote SPARQL backend, settings env then file then default, versioned envelope); pulse-api compiles and serves the 5 pulse collections read-only on :3392; emitter tests incl. same-model-same-bytes and a model-change negative proof)
-=======
-        "pub struct FieldDef {\n    pub name: &'static str,\n    pub link: bool,\n    pub datatype: &'static str,\n    pub required: bool,\n    pub many: bool,\n    pub allowed: &'static [&'static str],\n}\n\n\
-         pub struct ClassDef {\n    pub domain: &'static str,\n    pub name: &'static str,\n    pub kind: &'static str,\n    pub plural: &'static str,\n    pub segment: &'static str,\n    pub graph: &'static str,\n    pub fields: &'static [FieldDef],\n}\n\n\
->>>>>>> 9ac820daf (wren: #4490 — pulse-api writes (create, replace, patch, delete) with the door rules generated in: shape checks (off-model, sh:in, one-value, required), links as IRIs with dangling targets refused, owner or Write Permission, prior version kept before every change, owl.write event per outcome; live: wren's RoleState created and patched, v1 reads it back, version-rolestates-wren-1 kept)
          pub const CLASSES: &[ClassDef] = &[\n",
     );
     for d in &p.domains {
         for c in &d.classes {
             s.push_str(&format!(
-<<<<<<< HEAD
-<<<<<<< HEAD
                 "    ClassDef {{\n        domain: {}, name: {}, kind: {}, plural: {}, segment: {}, graph: {},\n        fields: &[\n",
                 lit(&d.name), lit(&c.name), lit(&kebab(&c.name)), lit(&crate::model::pluralize(&c.name)), lit(&c.segment), lit(&c.graph)
-=======
-                "    ClassDef {{\n        domain: {}, name: {}, kind: {}, segment: {}, graph: {},\n        fields: &[\n",
-                lit(&d.name), lit(&c.name), lit(&kebab(&c.name)), lit(&c.segment), lit(&c.graph)
->>>>>>> 3795eee59 (wren: #4490 — athena-gen generate writes the pulse-api crate (RowStore trait, remote SPARQL backend, settings env then file then default, versioned envelope); pulse-api compiles and serves the 5 pulse collections read-only on :3392; emitter tests incl. same-model-same-bytes and a model-change negative proof)
-=======
-                "    ClassDef {{\n        domain: {}, name: {}, kind: {}, plural: {}, segment: {}, graph: {},\n        fields: &[\n",
-                lit(&d.name), lit(&c.name), lit(&kebab(&c.name)), lit(&crate::model::pluralize(&c.name)), lit(&c.segment), lit(&c.graph)
->>>>>>> 9ac820daf (wren: #4490 — pulse-api writes (create, replace, patch, delete) with the door rules generated in: shape checks (off-model, sh:in, one-value, required), links as IRIs with dangling targets refused, owner or Write Permission, prior version kept before every change, owl.write event per outcome; live: wren's RoleState created and patched, v1 reads it back, version-rolestates-wren-1 kept)
             ));
             for f in &c.fields {
                 let allowed: Vec<String> = f.allowed.iter().map(|a| lit(a)).collect();
                 s.push_str(&format!(
-<<<<<<< HEAD
-<<<<<<< HEAD
-=======
->>>>>>> 9ac820daf (wren: #4490 — pulse-api writes (create, replace, patch, delete) with the door rules generated in: shape checks (off-model, sh:in, one-value, required), links as IRIs with dangling targets refused, owner or Write Permission, prior version kept before every change, owl.write event per outcome; live: wren's RoleState created and patched, v1 reads it back, version-rolestates-wren-1 kept)
                     "            FieldDef {{ name: {}, link: {}, datatype: {}, required: {}, many: {}, allowed: &[{}] }},\n",
                     lit(&f.name),
                     matches!(f.kind, Kind::Link { .. }),
@@ -163,13 +90,6 @@ pub fn model_rs(p: &Product, model_version: &str, settings: &[(String, String)])
                     f.required,
                     f.many,
                     allowed.join(", ")
-<<<<<<< HEAD
-=======
-                    "            FieldDef {{ name: {}, link: {}, required: {}, many: {}, allowed: &[{}] }},\n",
-                    lit(&f.name), matches!(f.kind, Kind::Link { .. }), f.required, f.many, allowed.join(", ")
->>>>>>> 3795eee59 (wren: #4490 — athena-gen generate writes the pulse-api crate (RowStore trait, remote SPARQL backend, settings env then file then default, versioned envelope); pulse-api compiles and serves the 5 pulse collections read-only on :3392; emitter tests incl. same-model-same-bytes and a model-change negative proof)
-=======
->>>>>>> 9ac820daf (wren: #4490 — pulse-api writes (create, replace, patch, delete) with the door rules generated in: shape checks (off-model, sh:in, one-value, required), links as IRIs with dangling targets refused, owner or Write Permission, prior version kept before every change, owl.write event per outcome; live: wren's RoleState created and patched, v1 reads it back, version-rolestates-wren-1 kept)
                 ));
             }
             s.push_str("        ],\n    },\n");
@@ -179,30 +99,14 @@ pub fn model_rs(p: &Product, model_version: &str, settings: &[(String, String)])
     s
 }
 
-fn cargo_toml(p: &Product) -> String {
+fn cargo_toml(p: &Product, oidc: &str) -> String {
     format!(
         "# Generated by athena-gen (#4490) — DO NOT EDIT; change the model or the generator.\n\
          [package]\nname = \"{n}-api\"\nversion = \"{CRATE_VERSION}\"\nedition = \"2021\"\n\
          description = \"The {n} product's API, generated from the Chorus model.\"\n\n\
-<<<<<<< HEAD
-<<<<<<< HEAD
-<<<<<<< HEAD
-         [dependencies]\nchorus-oidc = {{ path = \"{oidc}\" }}\nserde_json = \"1\"\ntiny_http = \"0.12\"\nureq = {{ version = \"2\", features = [\"json\"] }}\n\n\
-=======
          [dependencies]\nchorus-oidc = {{ path = \"{oidc}\" }}\nserde_json = \"1\"\ntiny_http = \"0.12\"\noxigraph = \"=0.5.11\"\nureq = {{ version = \"2\", features = [\"json\"] }}\n\n\
->>>>>>> cd24e3b18 (wren: #4493 — pulse-api runs with no Fuseki: store engines split (Remote, Embedded Oxigraph), store.kind=embedded + store.path from the model, load/dump commands; 5 embedded tests incl. wrong-kind link removal on the real update and the backup/restore drill with a negative proof; live: pulse graphs loaded from a Fuseki export, parity with today's door 5/5 on the embedded store; hash crates pinned to one digest)
-         [[bin]]\nname = \"{n}-api\"\npath = \"src/main.rs\"\n",
-        n = p.name, oidc = OIDC_PATH
-=======
-         [dependencies]\nserde_json = \"1\"\ntiny_http = \"0.12\"\nureq = {{ version = \"2\", features = [\"json\"] }}\n\n\
          [[bin]]\nname = \"{n}-api\"\npath = \"src/main.rs\"\n",
         n = p.name
->>>>>>> 3795eee59 (wren: #4490 — athena-gen generate writes the pulse-api crate (RowStore trait, remote SPARQL backend, settings env then file then default, versioned envelope); pulse-api compiles and serves the 5 pulse collections read-only on :3392; emitter tests incl. same-model-same-bytes and a model-change negative proof)
-=======
-         [dependencies]\nchorus-oidc = {{ path = \"{oidc}\" }}\nserde_json = \"1\"\ntiny_http = \"0.12\"\nureq = {{ version = \"2\", features = [\"json\"] }}\n\n\
-         [[bin]]\nname = \"{n}-api\"\npath = \"src/main.rs\"\n",
-        n = p.name, oidc = OIDC_PATH
->>>>>>> 4c9755287 (wren: #4490 — pulse-api writes require a signed caller: ES256 token through the shared chorus-oidc verifier, principal and grants read from the model, typed refusals (no-token 401, token-invalid 401, identity-unreachable 503, not-a-principal 403); live check: wren's token resolves to principal wren)
     )
 }
 
@@ -213,44 +117,25 @@ fn retag(template: &str, domain: &str) -> String {
     format!("// @domain: {domain}\n{body}")
 }
 
-/// Every file of the product's crate, keyed by path inside the crate.
-<<<<<<< HEAD
-<<<<<<< HEAD
+/// Every file of the product's crate, keyed by path inside the crate, for a crate at
+/// the ADR-041 product depth.
 pub fn crate_files(p: &Product, model_version: &str, settings: &[(String, String)]) -> BTreeMap<String, String> {
+    crate_files_with(p, model_version, settings, OIDC_PATH)
+}
+
+/// The same, with the verifier's path worked out from where the crate is written.
+pub fn crate_files_with(p: &Product, model_version: &str, settings: &[(String, String)], oidc: &str) -> BTreeMap<String, String> {
     let domain = p.domains.first().map(|d| d.name.as_str()).unwrap_or("domains");
     let mut out = BTreeMap::new();
-    out.insert("Cargo.toml".into(), cargo_toml(p));
+    out.insert("Cargo.toml".into(), cargo_toml(p, oidc));
     out.insert("src/auth.rs".into(), retag(AUTH, domain));
     out.insert("src/main.rs".into(), retag(MAIN, domain));
     out.insert("src/rules.rs".into(), retag(RULES, domain));
     out.insert("src/requirements_tests.rs".into(), retag(REQUIREMENTS, domain));
     out.insert("src/embedded_tests.rs".into(), retag(EMBEDDED_TESTS, domain));
     out.insert("tests/model.rs".into(), retag(MODEL_TEST, domain));
-<<<<<<< HEAD
     out.insert("src/store.rs".into(), retag(STORE, domain));
     out.insert("src/settings.rs".into(), retag(SETTINGS, domain));
     out.insert("src/model.rs".into(), format!("// @domain: {domain}\n{}", model_rs(p, model_version, settings)));
-=======
-pub fn crate_files(p: &Product, model_version: &str, port: u16) -> BTreeMap<String, String> {
-=======
-pub fn crate_files(p: &Product, model_version: &str, settings: &[(String, String)]) -> BTreeMap<String, String> {
->>>>>>> 5f9aadb25 (wren: #4490 — settings come from the model: 7 Property rows on pulse (pulse-settings-4490.ttl, in the model set), the generator emits the loader from them and refuses a product missing a runtime setting; v1 freeze guard (4490-v1-freeze.sh, athena-make frozen at 9975 lines, negative proofs: a 200-line feature and a missing target both go red))
-    let domain = p.domains.first().map(|d| d.name.as_str()).unwrap_or("domains");
-    let mut out = BTreeMap::new();
-    out.insert("Cargo.toml".into(), cargo_toml(p));
-    out.insert("src/auth.rs".into(), retag(AUTH, domain));
-    out.insert("src/main.rs".into(), retag(MAIN, domain));
-    out.insert("src/rules.rs".into(), retag(RULES, domain));
-    out.insert("src/requirements_tests.rs".into(), retag(REQUIREMENTS, domain));
-=======
->>>>>>> be528d717 (wren: #4490 — tests that exercise every crate file for werk-test selection: athena-gen crates_4490 (manifests by path, committed pulse-api equals a fresh generate, hand-edit negative proof) and a generated pulse-api tests/model.rs)
-    out.insert("src/store.rs".into(), retag(STORE, domain));
-    out.insert("src/settings.rs".into(), retag(SETTINGS, domain));
-<<<<<<< HEAD
-    out.insert("src/model.rs".into(), format!("// @domain: {domain}\n{}", model_rs(p, model_version, port)));
->>>>>>> 3795eee59 (wren: #4490 — athena-gen generate writes the pulse-api crate (RowStore trait, remote SPARQL backend, settings env then file then default, versioned envelope); pulse-api compiles and serves the 5 pulse collections read-only on :3392; emitter tests incl. same-model-same-bytes and a model-change negative proof)
-=======
-    out.insert("src/model.rs".into(), format!("// @domain: {domain}\n{}", model_rs(p, model_version, settings)));
->>>>>>> 5f9aadb25 (wren: #4490 — settings come from the model: 7 Property rows on pulse (pulse-settings-4490.ttl, in the model set), the generator emits the loader from them and refuses a product missing a runtime setting; v1 freeze guard (4490-v1-freeze.sh, athena-make frozen at 9975 lines, negative proofs: a 200-line feature and a missing target both go red))
     out
 }

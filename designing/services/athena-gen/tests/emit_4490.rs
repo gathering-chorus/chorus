@@ -111,3 +111,15 @@ fn kinds_are_kebab() {
     assert_eq!(kebab("RoleState"), "role-state");
     assert_eq!(kebab("Heartbeat"), "heartbeat");
 }
+
+#[test]
+fn the_verifier_path_follows_where_the_crate_is_written() {
+    let root = std::env::temp_dir().join(format!("athena-gen-oidc-{}", std::process::id()));
+    let deep = root.join("directing/products/pulse/api");
+    let shallow = root.join("x");
+    std::fs::create_dir_all(&deep).unwrap();
+    assert_eq!(athena_gen::emit::oidc_path(&root, &deep).unwrap(), "../../../../platform/services/chorus-oidc");
+    assert_eq!(athena_gen::emit::oidc_path(&root, &shallow).unwrap(), "../platform/services/chorus-oidc");
+    // NEGATIVE PROOF: a crate written outside the repo is refused, never given a broken path
+    assert!(athena_gen::emit::oidc_path(&root, &std::env::temp_dir().join("elsewhere-4490")).is_err());
+}

@@ -43,8 +43,10 @@ fn main() {
     };
     let files = athena_gen::model::model_files(&root);
     let (store, skipped) = athena_gen::model::load(&files).unwrap_or_else(|e| die(e));
-    for s in &skipped {
-        eprintln!("athena-gen: skipped (does not parse): {s}");
+    // a model file that does not parse would silently drop classes or fields from the
+    // generated API (Kade's review, #4490 run 1): refuse instead, naming each file
+    if !skipped.is_empty() {
+        die(format!("{} model file(s) do not parse; nothing generated:\n  {}", skipped.len(), skipped.join("\n  ")));
     }
     let p = athena_gen::model::product(&store, &product).unwrap_or_else(|e| die(e));
     match cmd.as_str() {
@@ -57,7 +59,8 @@ fn main() {
             if !missing.is_empty() {
                 die(format!("{product} declares no setting for {missing:?}: add a Property row (c:{product} c:hasProperty …) for each"));
             }
-            for (path, text) in athena_gen::emit::crate_files(&p, &mv, &settings) {
+            let oidc = athena_gen::emit::oidc_path(&root, &out).unwrap_or_else(|e| die(e));
+            for (path, text) in athena_gen::emit::crate_files_with(&p, &mv, &settings, &oidc) {
                 let f = out.join(&path);
                 if let Some(dir) = f.parent() {
                     std::fs::create_dir_all(dir).unwrap_or_else(|e| die(e));
