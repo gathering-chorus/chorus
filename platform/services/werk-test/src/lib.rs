@@ -249,9 +249,41 @@ pub fn affected_units(changed: &[String]) -> Vec<TestUnit> {
     units
 }
 
-/// Bootstrap escape: does the diff touch the test gate's own surface? If so, the
-/// gate runs advisory (a self-modifying card can't validate against the canonical
-/// `werk.yml` it is fixing — #3397).
+/// #4442 — set on the card's own werk-test when the installed one hands over,
+/// so the handed-to build never hands over again.
+pub const OWN_BUILD_ENV: &str = "WERK_TEST_OWN_BUILD";
+
+/// #4442 — a card that changes werk-test is tested by the werk-test built from
+/// that card's werk, never by the installed one (which would judge the change by
+/// the code it replaces). `Ok(Some(path))` = hand over to that build;
+/// `Ok(None)` = this binary is the right one; `Err` = the card changes werk-test
+/// and its own build is missing, which blocks rather than test with the old one.
+pub fn own_build_to_run(
+    werk: &str,
+    changed: &[String],
+    current: &std::path::Path,
+    already_own: bool,
+    exists: &dyn Fn(&std::path::Path) -> bool,
+) -> Result<Option<std::path::PathBuf>, String> {
+    if already_own || !changed.iter().any(|f| f.starts_with("platform/services/werk-test/")) {
+        return Ok(None);
+    }
+    let own = std::path::Path::new(werk).join("platform/services/werk-test/target/release/werk-test");
+    if current == own {
+        return Ok(None);
+    }
+    if !exists(&own) {
+        return Err(format!(
+            "this card changes werk-test, and its own build is missing at {} — run werk-build first; the installed werk-test cannot judge the change",
+            own.display()
+        ));
+    }
+    Ok(Some(own))
+}
+
+/// Does the diff touch the test gate's own surface? #4442: this no longer makes
+/// a red advisory — a red blocks every card. It is reported on the run line so
+/// a reader knows the gate judged a change to itself.
 pub fn is_self_modifying(changed: &[String]) -> bool {
     changed.iter().any(|f| {
         SELF_SURFACE.iter().any(|s| match s.strip_suffix('/') {
@@ -270,8 +302,6 @@ pub enum GateOutcome {
     Pass,
     /// A unit failed and the gate BLOCKS the land (exit 1).
     Block,
-    /// A unit failed but the diff is self-modifying — advisory, does NOT block.
-    AdvisoryFail,
 }
 
 /// #3983 — what a card run proves about the card's OWN tests: how many cases
@@ -294,16 +324,15 @@ pub fn card_coverage(plan_source: &str, units: usize, registered_ran: usize) -> 
     }
 }
 
-/// Decide the gate outcome. A failure blocks the land UNLESS the diff is
-/// self-modifying, where it degrades to advisory to avoid the canonical-`werk.yml`
-/// bootstrap deadlock (#3397). No affected units → nothing to prove → passes.
-pub fn gate_outcome(unit_count: usize, any_failed: bool, self_modifying: bool) -> GateOutcome {
+/// Decide the gate outcome. A failure blocks the land, on every card. #4442
+/// removed the #3397 advisory escape for cards that change the gate: such a
+/// card is tested by its own build (own_build_to_run), so there is no deadlock
+/// to escape. No affected units → nothing to prove → passes.
+pub fn gate_outcome(unit_count: usize, any_failed: bool) -> GateOutcome {
     if unit_count == 0 {
         GateOutcome::NoUnits
     } else if !any_failed {
         GateOutcome::Pass
-    } else if self_modifying {
-        GateOutcome::AdvisoryFail
     } else {
         GateOutcome::Block
     }
@@ -730,14 +759,13 @@ pub fn completed_extras(
         v.push(("failureClass".to_string(), "change".to_string()));
     }
     if self_modifying {
-        v.push(("advisory".to_string(), "true".to_string()));
+        v.push(("self_modifying".to_string(), "true".to_string()));
     }
     v
 }
 
 impl GateOutcome {
-    /// Process exit code: only `Block` stops the land (exit 1). `AdvisoryFail`
-    /// is honest-red-but-non-blocking → exit 0 (the bootstrap escape). `Pass` /
+    /// Process exit code: only `Block` stops the land (exit 1). `Pass` /
     /// `NoUnits` → exit 0.
     pub fn exit_code(&self) -> i32 {
         match self {
@@ -755,7 +783,6 @@ impl GateOutcome {
             GateOutcome::NoUnits => "SELECTED 0 UNITS — nothing was measured",
             GateOutcome::Pass => "pass",
             GateOutcome::Block => "BLOCK",
-            GateOutcome::AdvisoryFail => "advisory-fail (self-modifying)",
         }
     }
 }
@@ -6668,3 +6695,39 @@ mod card_coverage_3983 {
         assert_eq!(card_coverage("fallback", 0, 0).0, "registry-unreadable");
     }
 }
+
+#[cfg(test)]
+mod own_build_4442 {
+    use super::own_build_to_run;
+    use std::path::Path;
+
+    const WERK: &str = "/w/kade-1";
+    fn own() -> std::path::PathBuf { Path::new(WERK).join("platform/services/werk-test/target/release/werk-test") }
+    fn ch(v: &[&str]) -> Vec<String> { v.iter().map(|s| s.to_string()).collect() }
+    const INSTALLED: &str = "/home/chorus-werk/kade-bin/werk-test";
+
+    #[test]
+    fn a_card_that_changes_werk_test_is_run_by_its_own_build() {
+        let got = own_build_to_run(WERK, &ch(&["platform/services/werk-test/src/lib.rs"]), Path::new(INSTALLED), false, &|_| true);
+        assert_eq!(got, Ok(Some(own())));
+    }
+
+    /// NEGATIVE PROOF: other cards stay on the installed werk-test, and the
+    /// handed-to build never hands over again (no exec loop)
+    #[test]
+    fn other_cards_and_the_own_build_itself_do_not_hand_over() {
+        assert_eq!(own_build_to_run(WERK, &ch(&["platform/api/src/x.ts"]), Path::new(INSTALLED), false, &|_| true), Ok(None));
+        let wt = ch(&["platform/services/werk-test/src/lib.rs"]);
+        assert_eq!(own_build_to_run(WERK, &wt, Path::new(INSTALLED), true, &|_| true), Ok(None));
+        assert_eq!(own_build_to_run(WERK, &wt, &own(), false, &|_| true), Ok(None));
+    }
+
+    /// A card that changes werk-test with no build of its own blocks; it is
+    /// never quietly judged by the installed one
+    #[test]
+    fn a_missing_own_build_blocks() {
+        let got = own_build_to_run(WERK, &ch(&["platform/services/werk-test/src/main.rs"]), Path::new(INSTALLED), false, &|_| false);
+        assert!(got.unwrap_err().contains("its own build is missing"));
+    }
+}
+

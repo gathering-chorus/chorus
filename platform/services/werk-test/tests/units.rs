@@ -102,30 +102,33 @@ fn self_modifying_does_not_match_a_lookalike_sibling_crate() {
 
 #[test]
 fn gate_no_units_passes() {
-    assert_eq!(gate_outcome(0, false, false), GateOutcome::NoUnits);
+    assert_eq!(gate_outcome(0, false), GateOutcome::NoUnits);
     assert_eq!(GateOutcome::NoUnits.exit_code(), 0);
 }
 
 #[test]
 fn gate_all_green_passes() {
-    assert_eq!(gate_outcome(2, false, false), GateOutcome::Pass);
+    assert_eq!(gate_outcome(2, false), GateOutcome::Pass);
     assert_eq!(GateOutcome::Pass.exit_code(), 0);
 }
 
 #[test]
 fn gate_red_floor_blocks_the_land() {
-    let o = gate_outcome(2, true, false);
+    let o = gate_outcome(2, true);
     assert_eq!(o, GateOutcome::Block);
     assert_eq!(o.exit_code(), 1, "a red floor MUST stop the land");
 }
 
 #[test]
-fn gate_red_but_self_modifying_is_advisory_not_blocking() {
-    // the #3397 deadlock escape: a card fixing the gate can't be hard-gated by
-    // the canonical werk.yml it's fixing — honest-red, but exit 0.
-    let o = gate_outcome(1, true, true);
-    assert_eq!(o, GateOutcome::AdvisoryFail);
-    assert_eq!(o.exit_code(), 0, "a self-modifying card must not deadlock");
+fn gate_red_blocks_even_when_the_card_changes_the_gate() {
+    // #4442 NEGATIVE PROOF: the #3397 advisory escape is gone. A card that
+    // changes werk-test and carries a failing test BLOCKS (exit 1), because
+    // it is now tested by its own build (own_build_to_run).
+    let changed = vec!["platform/services/werk-test/src/lib.rs".to_string()];
+    assert!(werk_test::is_self_modifying(&changed));
+    let o = gate_outcome(1, true);
+    assert_eq!(o, GateOutcome::Block);
+    assert_eq!(o.exit_code(), 1, "a red on a card that changes the gate must stop the land");
 }
 
 // --- check_plan: the 3 checks #3397 didn't wire (tsc/clippy/doc) join cargo+jest ---
@@ -345,10 +348,11 @@ fn completed_extras_names_the_failure_class_on_block() {
 }
 
 #[test]
-fn completed_extras_marks_advisory_for_self_modifying_cards() {
-    let got = werk_test::completed_extras(&GateOutcome::AdvisoryFail, 1, 2, 1, 500, true);
-    assert!(got.contains(&("advisory".to_string(), "true".to_string())));
-    assert!(got.contains(&("verdict".to_string(), "advisory-fail (self-modifying)".to_string())));
+fn completed_extras_names_a_card_that_changes_the_gate_and_never_says_advisory() {
+    let got = werk_test::completed_extras(&GateOutcome::Block, 1, 2, 1, 500, true);
+    assert!(got.contains(&("self_modifying".to_string(), "true".to_string())));
+    assert!(got.contains(&("verdict".to_string(), "BLOCK".to_string())));
+    assert!(!got.iter().any(|(k, _)| k == "advisory"));
 }
 
 // ── #3634 — model-driven plan derivation from the tests domain ─────────────

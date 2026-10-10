@@ -5230,7 +5230,7 @@
       "source": "werk",
       "description": "Werk test terminal phase: execution and best-effort model write-back have both returned. Verdict + counts + total duration are emitted on every run; execution_duration_ms and writeback_duration_ms expose the former hidden persistence tail.",
       "fields": {
-        "advisory": "true when self-modifying (non-blocking)",
+        "self_modifying": "true when the card changes the test gate (#4442: judged by its own build; a red still blocks)",
         "checks_failed": "Checks that failed",
         "checks_run": "Checks executed",
         "duration_ms": "Total wall-clock duration from test start through write-back",
@@ -5239,7 +5239,7 @@
         "role": "Acting role",
         "trace_id": "Werk trace join key",
         "units": "Affected test units",
-        "verdict": "pass | BLOCK | advisory-fail (self-modifying) | no-affected-units",
+        "verdict": "pass | BLOCK | SELECTED 0 UNITS (no units measured); #4442 removed advisory-fail",
         "writeback_duration_ms": "Wall-clock duration of TestSuiteRun and TestResult reflection"
       }
     },
@@ -5273,7 +5273,7 @@
       "source": "werk",
       "description": "Werk test execution completed: the blocking checks have a verdict, but durable TestSuiteRun/TestResult reflection may still be in progress. Separates test execution time from write-back latency.",
       "fields": {
-        "advisory": "true when self-modifying (non-blocking)",
+        "self_modifying": "true when the card changes the test gate (#4442: judged by its own build; a red still blocks)",
         "checks_failed": "Checks that failed",
         "checks_run": "Checks executed",
         "duration_ms": "Wall-clock duration of test execution only",
@@ -5281,7 +5281,7 @@
         "role": "Acting role",
         "trace_id": "Werk trace join key",
         "units": "Affected test units",
-        "verdict": "pass | BLOCK | advisory-fail (self-modifying) | no-affected-units"
+        "verdict": "pass | BLOCK | SELECTED 0 UNITS (no units measured); #4442 removed advisory-fail"
       }
     },
     "test.failed": {
@@ -5405,6 +5405,18 @@
         "reason": "Refusal cause (tests-domain-unreachable)",
         "role": "Acting role (system for the 03:00 agent)",
         "trace_id": "Trace join key, if any"
+      }
+    },
+    "test.own_build.missing": {
+      "producer": "tests",
+      "about": "TestResult",
+      "category": "fact",
+      "version": "1",
+      "vertebra": "proving",
+      "source": "werk",
+      "description": "A card that changes werk-test has no build of its own in its werk (#4442); the test step blocks rather than judge the change with the installed werk-test.",
+      "fields": {
+        "message": "Where the build was expected and what to run"
       }
     },
     "test.plan.degraded": {
