@@ -6,6 +6,8 @@
 // vs `Fuseki`). Dedicated resolver turns a domainId into a URI via two-
 // phase lookup (id then name).
 
+import fs from 'fs';
+
 export interface IcdSparqlClientDeps {
   queryUrl: string;
   updateUrl: string;
@@ -21,11 +23,30 @@ export function basicAuthHeader(auth: { user: string; password: string }): strin
 
 /** #3566 — read the Fuseki write credential from the environment. Returns undefined
  *  when FUSEKI_ADMIN_PASSWORD is unset, so writers stay unauthenticated (current
- *  behavior) until the credential is deployed — no breakage at code-land time. */
-export function fusekiWriteAuthFromEnv(env: NodeJS.ProcessEnv = process.env): { user: string; password: string } | undefined {
-  const password = env.FUSEKI_ADMIN_PASSWORD;
+ *  behavior) until the credential is deployed — no breakage at code-land time.
+ *  #4451 — a demo variant's launch file carries only FUSEKI_WRITE_ENV, the path of
+ *  the 0600 credential file; the credential is read from it when the environment
+ *  has none. Prod's wrapper exports the credential, so prod never reads the file. */
+export function fusekiWriteAuthFromEnv(
+  env: NodeJS.ProcessEnv = process.env,
+  readFile: (path: string) => string | null = readCredFile,
+): { user: string; password: string } | undefined {
+  if (env.FUSEKI_ADMIN_PASSWORD) {
+    return { user: env.FUSEKI_ADMIN_USER || 'admin', password: env.FUSEKI_ADMIN_PASSWORD };
+  }
+  const path = env.FUSEKI_WRITE_ENV;
+  const body = path ? readFile(path) : null;
+  if (body === null) return undefined;
+  const pick = (k: string): string | undefined =>
+    body.split('\n').find((l) => l.startsWith(`${k}=`))?.slice(k.length + 1).trim();
+  const password = pick('FUSEKI_ADMIN_PASSWORD');
   if (!password) return undefined;
-  return { user: env.FUSEKI_ADMIN_USER || 'admin', password };
+  return { user: pick('FUSEKI_ADMIN_USER') || 'admin', password };
+}
+
+function readCredFile(path: string): string | null {
+  // eslint-disable-next-line security/detect-non-literal-fs-filename -- the path comes from the service's own launch environment (FUSEKI_WRITE_ENV), never a request
+  try { return fs.readFileSync(path, 'utf8'); } catch { return null; }
 }
 
 /** SPARQL response shape — caller downcasts bindings to the expected shape. */
