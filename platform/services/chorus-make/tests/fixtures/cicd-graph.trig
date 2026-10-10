@@ -29,7 +29,7 @@
   chorus:stepskill-cicd-demo-1 a chorus:StepSkill ; chorus:forStep chorus:pipeline-step-cicd-demo ; chorus:callsSkill chorus:skill-werk-deploy-werk ; chorus:skillOrder 1 .
   chorus:skill-werk-deploy-env-up a chorus:Skill ; rdfs:label "werk-deploy env-up" ; chorus:executor "deterministic" ; chorus:implementedBy "werk-deploy" ; chorus:arguments "env-up ${ROLE} ${CARD}" .
   chorus:stepskill-cicd-demo-2 a chorus:StepSkill ; chorus:forStep chorus:pipeline-step-cicd-demo ; chorus:callsSkill chorus:skill-werk-deploy-env-up ; chorus:skillOrder 2 .
-  chorus:skill-demo a chorus:Skill ; rdfs:label "/demo" ; chorus:executor "deterministic" ; chorus:implementedBy "werk-demo" ; chorus:arguments "${CARD}" .
+  chorus:skill-demo a chorus:Skill ; rdfs:label "/demo" ; chorus:executor "deterministic" ; chorus:implementedBy "werk-demo" ; chorus:arguments "${CARD} ${ROLE}" .
   chorus:stepskill-cicd-demo-3 a chorus:StepSkill ; chorus:forStep chorus:pipeline-step-cicd-demo ; chorus:callsSkill chorus:skill-demo ; chorus:skillOrder 3 .
   chorus:skill-go a chorus:Skill ; rdfs:label "Jeff's go" ; chorus:executor "human" .
   chorus:stepskill-cicd-demo-4 a chorus:StepSkill ; chorus:forStep chorus:pipeline-step-cicd-demo ; chorus:callsSkill chorus:skill-go ; chorus:skillOrder 4 .

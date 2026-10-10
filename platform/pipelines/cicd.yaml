@@ -43,7 +43,7 @@ steps:
   - name: skill-demo
     description: "/demo"
     depends: [skill-werk-deploy-env-up]
-    command: "werk-demo ${CARD}"
+    command: "werk-demo ${CARD} ${ROLE}"
   - name: skill-go
     description: "Jeff's go"
     depends: [skill-demo]
