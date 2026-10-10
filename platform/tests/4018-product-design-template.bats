@@ -84,8 +84,10 @@ report() {
   grep -q 'roles/wren/ontology/product-design-4018.ttl' "$ROOT/platform/services/athena-deploy/src/lib.rs"
 }
 
-# The post-land rewrite (roles/wren/notes/4018-postland.py, 4018-postland-designs.json,
-# 4018-postland-jeff.sh) runs once against prod after the land; these hold it to the template.
+# The post-land rewrite runs once against prod after the land; these hold it to the template:
+#   roles/wren/notes/4018-postland.py
+#   roles/wren/notes/4018-postland-designs.json
+#   roles/wren/notes/4018-postland-jeff.sh
 NOTES="$ROOT/roles/wren/notes"
 
 @test "post-land designs only write fields the template and ProductShape know" {
