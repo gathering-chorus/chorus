@@ -520,20 +520,25 @@ async function isAuthed(req: Request): Promise<boolean> {
   return sessionAuthed || tokenAuthed;
 }
 
+/** #4412 — answers a LAN request that must sign in first; true when it did. */
+async function lanRefused(req: Request, res: Response, local: boolean): Promise<boolean> {
+  if (!local || !LAN_SIGN_IN) return false;
+  const lan = lanAccess({
+    flagOn: LAN_SIGN_IN, local, ip: req.ip || req.socket.remoteAddress || '',
+    method: req.method, accept: req.headers.accept, authed: await isAuthed(req),
+  });
+  if (lan === 'sign-in') res.status(401).send(interstitialPage(safeReturnPath(req.originalUrl)));
+  else if (lan === 'refuse') res.status(401).json({ error: 'sign-in required', signIn: '/auth/login' });
+  return lan !== 'pass';
+}
+
 async function gate(req: Request, res: Response, next: NextFunction): Promise<unknown> {
   const preAuth = preAuthRoute(req, res, next);
   if (preAuth) return preAuth();
 
   const local = isLocal(req);
   // #4412 — on the LAN a person's page load signs in first (flagged, see LAN_SIGN_IN).
-  if (local && LAN_SIGN_IN) {
-    const lan = lanAccess({
-      flagOn: LAN_SIGN_IN, local, ip: req.ip || req.socket.remoteAddress || '',
-      method: req.method, accept: req.headers.accept, authed: await isAuthed(req),
-    });
-    if (lan === 'sign-in') return res.status(401).send(interstitialPage(safeReturnPath(req.originalUrl)));
-    if (lan === 'refuse') return res.status(401).json({ error: 'sign-in required', signIn: '/auth/login' });
-  }
+  if (await lanRefused(req, res, local)) return;
   // Both auth paths feed the #3667 gateDecision policy, which owns the
   // admin-forbid + read-pair GET-only rules — so those survive the human-login
   // path unchanged.
