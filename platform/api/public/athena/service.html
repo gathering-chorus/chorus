@@ -102,7 +102,10 @@ ${srcNote(`GET /services/${esc(s)} &middot; /serviceinstances &middot; /schedule
   try {
     const body = document.getElementById('runsas-body');
     const [inst, jobs] = await Promise.all([fetchJSON('/serviceinstances?limit=500'), fetchJSON('/scheduledjobs?limit=500')]);
-    const mine = r => String(r.runsService || '') === s || String(r.runsService || '').endsWith(':' + s);
+    // the door serves an edge as the target's IRI local name, which carries the class
+    // slug (service-werk) while this page is opened by the row name (werk) (#4472)
+    const runsServiceNames = (v, s) => { v = String(v || ''); return v === s || v === 'service-' + s || v.endsWith(':' + s); };
+    const mine = r => runsServiceNames(r.runsService, s);
     const rows = [...(inst.data || []).filter(mine).map(r => ({ ...r, kind: 'instance' })), ...(jobs.data || []).filter(mine).map(r => ({ ...r, kind: 'job' }))];
     if (!rows.length) { body.innerHTML = `<p class="empty">No harvested unit names this service (${(inst.data || []).length} instances, ${(jobs.data || []).length} jobs served). If one should, map it in platform/config/service-instance-map.json.</p>`; }
     else {
