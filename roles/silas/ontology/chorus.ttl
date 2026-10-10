@@ -1993,6 +1993,12 @@ chorus:DomainShape a sh:NodeShape ;
     sh:property [ sh:path [ sh:inversePath chorus:hasDomain ] ; sh:minCount 1 ; sh:class chorus:Product ] .  # at least one composing Product; #4288 (ADR-041 amended 2026-09-24): a domain two products share lives once, so no maxCount
 
 # --- ServiceShape (ADR-029 service-design template form; the most-ready primitive — 50+ designs to ingest) ---
+chorus:oidcClientId a owl:DatatypeProperty ;
+    rdfs:label "OIDC client id" ;
+    rdfs:comment "#4412 — the OIDC client id (a Client ID Document URL) a person signs in through when this service is a sign-in surface. The door accepts a person's sign-in token whose audience is one of these, so a new sign-in surface is a row, not a code change." ;
+    rdfs:domain chorus:Service ;
+    rdfs:range xsd:string .
+
 chorus:ServiceShape a sh:NodeShape ;
     sh:property [ sh:path chorus:writeCount         ; sh:maxCount 1 ; sh:datatype xsd:string ] ;   # #4101 — write count, stamped by the door
     sh:property [ sh:path chorus:docState        ; sh:minCount 1 ; sh:in ( "draft" "current" "superseded" "retired" ) ] ;   # #4101 — one declared word
@@ -2000,6 +2006,7 @@ chorus:ServiceShape a sh:NodeShape ;
     sh:property [ sh:path chorus:changedIn       ; sh:maxCount 1 ; sh:datatype xsd:string ] ;   # #4101 — stamped by the door
     sh:property [ sh:path chorus:diagram         ; sh:minCount 0 ; sh:datatype xsd:string ; chorus:exposure chorus:public ] ;   # #4094 — repeatable mermaid source, %% caption first line   # #4093 — Service fields are tiered (#4010); without an exposure the diagram was withheld from the page like gaps/notInScope
     sh:property [ sh:path chorus:publishesPreAuth ; sh:maxCount 1 ; sh:datatype xsd:string ] ;   # #3777 — opt-in publication to the pre-auth sign-in page. OPTIONAL by design: absent means NOT published, so fail-closed comes from the data model rather than from generator code a later edit could soften.
+    sh:property [ sh:path chorus:oidcClientId     ; sh:datatype xsd:string ] ;   # #4412 — the OIDC client id people sign in through, when this service is a sign-in surface
     sh:targetClass chorus:Service ;
     # #4010 — MOVED off the ontology graph. #3675 parked Service instances in
     # urn:chorus:ontology to fix a READ (the serve defaulted to the empty

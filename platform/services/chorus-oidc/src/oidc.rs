@@ -95,6 +95,14 @@ struct PrincipalState {
     last_attempt: u64,
 }
 
+/// #4412 — the OIDC client ids a person signs in through (the Clearing, the
+/// shared sign-in page), read from the model like the allow-set.
+struct ClientState {
+    ids: Vec<String>,
+    fetched_at: u64,
+    last_attempt: u64,
+}
+
 /// The ES256 verifier: expected issuer, the Principal allow-set (boot-resolved
 /// from the model, ADR-052 §5), the kid-keyed JWKS cache, and an injected
 /// fetcher (prod: curl to CSS; tests: a stub — cases 7/8 toggle reachability
@@ -117,6 +125,10 @@ pub struct OidcVerifier {
     /// so the eighteen existing constructors keep their shape; absent, the
     /// door falls back to the hat (`agent_id`), which is the pre-#4196 world.
     resolve_principals: Option<Box<dyn Fn() -> Option<Vec<(String, String)>> + Send + Sync>>,
+    /// #4412 — person sign-in client ids from the model. Opt-in via
+    /// `with_person_clients`; absent, only the Clearing's constant is ours.
+    resolve_clients: Option<Box<dyn Fn() -> Option<Vec<String>> + Send + Sync>>,
+    clients: Mutex<ClientState>,
     state: Mutex<JwksState>,
     allow: Mutex<AllowState>,
     roles: Mutex<RoleState>,
@@ -139,6 +151,8 @@ impl OidcVerifier {
             resolve_scopes: Box::new(resolve_scopes),
             fetch: Box::new(fetch),
             resolve_principals: None,
+            resolve_clients: None,
+            clients: Mutex::new(ClientState { ids: Vec::new(), fetched_at: 0, last_attempt: 0 }),
             state: Mutex::new(JwksState { keys: HashMap::new(), last_attempt: 0 }),
             allow: Mutex::new(AllowState { webids: Vec::new(), fetched_at: 0, last_attempt: 0 }),
             roles: Mutex::new(RoleState { pairs: Vec::new(), fetched_at: 0, last_attempt: 0 }),
@@ -155,6 +169,40 @@ impl OidcVerifier {
     ) -> Self {
         self.resolve_principals = Some(Box::new(resolve));
         self
+    }
+
+    /// #4412 — wire the person sign-in client resolver (prod: the model query
+    /// over `chorus:oidcClientId`; tests: a stub).
+    pub fn with_person_clients(
+        mut self,
+        resolve: impl Fn() -> Option<Vec<String>> + Send + Sync + 'static,
+    ) -> Self {
+        self.resolve_clients = Some(Box::new(resolve));
+        self
+    }
+
+    /// #4412 — is `aud` a client a person signs in through? With no resolver
+    /// wired, the Clearing's constant (the pre-#4412 world). With one, the
+    /// model's list on the ALLOW_TTL cadence; unreachable = none (fail closed).
+    fn is_person_client(&self, aud: &str, now_secs: u64) -> bool {
+        let Some(resolve) = self.resolve_clients.as_ref() else {
+            return aud == CLEARING_CLIENT_ID;
+        };
+        let mut cl = self.clients.lock().unwrap_or_else(|e| e.into_inner());
+        let stale = cl.fetched_at == 0 || now_secs.saturating_sub(cl.fetched_at) >= ALLOW_TTL_SECS;
+        let can_retry = now_secs.saturating_sub(cl.last_attempt) >= ALLOW_RETRY_COOLDOWN_SECS
+            || cl.last_attempt == 0;
+        if stale && can_retry {
+            cl.last_attempt = now_secs;
+            match resolve() {
+                Some(v) => {
+                    cl.ids = v;
+                    cl.fetched_at = now_secs;
+                }
+                None => cl.ids.clear(),
+            }
+        }
+        cl.ids.iter().any(|c| c == aud)
     }
 
     /// #4196 — the caller's NAME as a Principal (`silas`, `jeff`, `crawler`),
@@ -362,11 +410,12 @@ impl OidcVerifier {
         //    CSS client_credentials tokens carry aud=solid (the issuer's own
         //    audience); chorus-minted service tokens carry aud=chorus. Both
         //    are OUR issuer's audiences; anything else is another service's.
-        //    #4412 — a person's Clearing sign-in token carries the Clearing's
-        //    client id (set once, directing/clearing/src/server.ts, same for
-        //    local and tunneled sign-in); it is ours too.
+        //    #4412 — a person's sign-in token carries the client id of the app
+        //    they signed in through (the Clearing, the shared sign-in page).
+        //    Those apps are named in the model (chorus:oidcClientId), so a new
+        //    sign-in surface is a model row, not a code change.
         let aud = auth::json_string(payload, "aud").ok_or(AuthError::Malformed)?;
-        if aud != "chorus" && aud != "solid" && aud != CLEARING_CLIENT_ID {
+        if aud != "chorus" && aud != "solid" && !self.is_person_client(&aud, now_secs) {
             return Err(AuthError::WrongAudience);
         }
         // 4. Expiry.
@@ -560,6 +609,15 @@ pub fn resolve_principal_webids(query: impl Fn(&str) -> Option<String>) -> Optio
 /// The name is the IRI's local part minus the `principal-` prefix the mint
 /// adds (ADR-040), so it is the same token `chorus-identity-token <name>`
 /// mints for and the same string the door stamps as a row's owner.
+/// #4412 — every OIDC client id the model names: the apps a person signs in
+/// through. Any graph, because each app's row lives in its own domain graph.
+pub const PERSON_CLIENT_QUERY: &str = "PREFIX chorus: <https://jeffbridwell.com/chorus#> SELECT ?v WHERE { GRAPH ?g { ?s chorus:oidcClientId ?id } FILTER(STRSTARTS(STR(?g), \"urn:chorus:\")) BIND(STR(?id) AS ?v) }";
+
+/// None = graph unreachable (caller fails closed); Some(empty) = none named.
+pub fn resolve_person_clients(query: impl Fn(&str) -> Option<String>) -> Option<Vec<String>> {
+    query(PERSON_CLIENT_QUERY).map(|body| crate::select_v(&body).into_iter().filter(|v| !v.is_empty()).collect())
+}
+
 pub fn principal_name_query() -> String {
     format!(
         "PREFIX chorus: <https://jeffbridwell.com/chorus#> SELECT ?v WHERE {{ GRAPH <{}> {{ ?p a chorus:Principal ; chorus:webId ?w }} BIND(CONCAT(STR(?w), \" \", REPLACE(REPLACE(STR(?p), \".*[#/]\", \"\"), \"^principal-\", \"\")) AS ?v) }}",
@@ -946,6 +1004,29 @@ mod tests {
         let v2 = verifier();
         let t2 = mint_es256(&css_key(), KID, &payload(ISSUER, "https://clearing.example.com/clientid.jsonld", &wren_webid(), NOW + 3600));
         assert_eq!(v2.verify(&t2, NOW), Err(AuthError::WrongAudience));
+    }
+
+    // #4412 — with the model wired, the apps a person signs in through are the
+    // model's list: the shared sign-in page's id is accepted once the model
+    // names it. NEGATIVE PROOF: a client the model does not name is refused,
+    // the Clearing's constant included once the model is the source, and an
+    // unreachable model refuses every person client (fail closed).
+    #[test]
+    fn person_clients_come_from_the_model_4412() {
+        let guard = "https://lightlifeurbangardens.com/chorus/_auth/clientid.jsonld";
+        let body = format!(r#"{{"results":{{"bindings":[{{"v":{{"type":"literal","value":"{guard}"}}}}]}}}}"#);
+        let v = verifier().with_person_clients(move || resolve_person_clients(|_| Some(body.clone())));
+        let ok = mint_es256(&css_key(), KID, &payload(ISSUER, guard, &wren_webid(), NOW + 3600));
+        assert!(v.verify(&ok, NOW).is_ok());
+        let other = mint_es256(&css_key(), KID, &payload(ISSUER, "https://evil.example/clientid.jsonld", &wren_webid(), NOW + 3600));
+        assert_eq!(v.verify(&other, NOW), Err(AuthError::WrongAudience));
+        let clearing = mint_es256(&css_key(), KID, &payload(ISSUER, CLEARING_CLIENT_ID, &wren_webid(), NOW + 3600));
+        assert_eq!(v.verify(&clearing, NOW), Err(AuthError::WrongAudience));
+        let down = verifier().with_person_clients(|| None);
+        assert_eq!(down.verify(&ok, NOW), Err(AuthError::WrongAudience));
+        // chorus/solid service audiences never depend on the list
+        let svc = mint_es256(&css_key(), KID, &payload(ISSUER, "chorus", &wren_webid(), NOW + 3600));
+        assert!(down.verify(&svc, NOW).is_ok());
     }
 
     // case 6 — no-token-401: no anonymous fallback, no DEPLOY_ROLE read.

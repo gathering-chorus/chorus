@@ -50,6 +50,7 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 # file), including the refusals to start below.
 sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), "lib"))
 from service_lifecycle import service_lifecycle  # noqa: E402
+import person_session  # noqa: E402
 _lifecycle = service_lifecycle("com.chorus.share-guard")
 
 SESSION_COOKIE = "chorus_share_session"
@@ -450,6 +451,23 @@ PUBLIC_ORIGIN = os.environ.get("SHARE_PUBLIC_ORIGIN", "https://chorus.lightlifeu
 REDIRECT_URI = PUBLIC_ORIGIN + AUTH_PREFIX + "callback"
 STATE_FILE = os.environ.get("SHARE_STATE_FILE", os.path.join(os.path.expanduser("~"), ".chorus", "share-oidc.json"))
 OFFLINE = os.environ.get("SHARE_OIDC_OFFLINE") == "1"  # tests: sign sessions without a live IdP
+# #4412 — the guard's fixed identity as an OIDC client: a Client ID Document it
+# serves itself, the same way the Clearing does. A dynamically registered id
+# changed whenever the registration self-healed (#3804), so nothing could name
+# it; this URL is named in the model (chorus:oidcClientId on service-identity)
+# and the door accepts a person's token minted for it.
+CLIENT_ID = os.environ.get("SHARE_OIDC_CLIENT_ID", "https://chorus.lightlifeurbangardens.com/_auth/clientid.jsonld")
+REDIRECT_FAMILY = sorted({
+    REDIRECT_URI,
+    "https://chorus.lightlifeurbangardens.com" + AUTH_PREFIX + "callback",
+    "https://share.lightlifeurbangardens.com" + AUTH_PREFIX + "callback",
+    "https://lightlifeurbangardens.com/chorus" + AUTH_PREFIX + "callback",
+})
+# #4412 — his sign-in is a Session row in the store, written as him.
+ATHENA_URL = os.environ.get("ATHENA_MAKE_URL", "http://localhost:3360").rstrip("/")
+SPARQL_URL = os.environ.get("FUSEKI_QUERY", "http://localhost:3030/pods/query")
+SESSIONS_FILE = os.environ.get("SHARE_PERSON_SESSIONS",
+                               os.path.join(os.path.expanduser("~"), ".chorus", "share-person-sessions.json"))
 
 STATE = load_state(STATE_FILE)
 if "cookie_key" not in STATE:
@@ -490,33 +508,11 @@ def discover():
         return json.load(r)
 
 
-def register_client(conf):
-    """Register this guard as an OIDC client, once, and remember it.
-
-    Dynamic registration on every start would litter the provider with clients
-    and change the client_id under live sessions, so the registration is stored
-    beside the cookie key in the runtime state file.
-    """
-    body = json.dumps({
-        "client_name": "chorus-share-guard",
-        # Every surface this guard family answers on, deduped. Two instances
-        # share one state file (one cookie key = one sign-in works everywhere,
-        # #3790) and therefore one client — so the registration must carry every
-        # instance's callback, not just this instance's own (#3804).
-        "redirect_uris": sorted({
-            REDIRECT_URI,
-            "https://chorus.lightlifeurbangardens.com" + AUTH_PREFIX + "callback",
-            "https://share.lightlifeurbangardens.com" + AUTH_PREFIX + "callback",
-            "https://lightlifeurbangardens.com/chorus" + AUTH_PREFIX + "callback",
-        }),
-        "grant_types": ["authorization_code", "refresh_token"],
-        "response_types": ["code"],
-        "token_endpoint_auth_method": "client_secret_basic",
-        "scope": "openid webid profile offline_access",
-    }).encode()
-    with fetch(conf["registration_endpoint"], data=body,
-               headers={"Content-Type": "application/json"}) as r:
-        return json.load(r)
+def client_document():
+    """#4412 — what CLIENT_ID dereferences to: every surface's callback, one id."""
+    return person_session.client_document(
+        CLIENT_ID, REDIRECT_FAMILY,
+        [u.rsplit(AUTH_PREFIX, 1)[0] + "/" for u in REDIRECT_FAMILY])
 
 
 def oidc():
@@ -532,18 +528,9 @@ def oidc():
         conf = discover()
         STATE["_cache"]["conf"] = conf
     conf = STATE["_cache"]["conf"]
-    # #3804 — self-heal a stale registration. A second instance mounted under a
-    # path shares this state file; if the stored client predates that instance,
-    # its callback is not registered and every sign-in there is refused with a
-    # redirect_uri mismatch — an outage visible only from the new surface.
-    # Re-register (register_client now carries the whole family) rather than
-    # serve a client that cannot answer for this instance.
-    if "client" in STATE and REDIRECT_URI not in (STATE["client"].get("redirect_uris") or []):
-        del STATE["client"]
-    if "client" not in STATE:
-        STATE["client"] = register_client(conf)
-        save_state(STATE_FILE, {k: v for k, v in STATE.items() if k != "_cache"})
-    return conf, STATE["client"]
+    # #4412 — no registration: the client is its Client ID Document, which
+    # lists every instance's callback, so #3804's stale-registration case is gone.
+    return conf, {"client_id": CLIENT_ID, "redirect_uris": REDIRECT_FAMILY}
 
 
 def webid_from_id_token(id_token):
@@ -596,6 +583,81 @@ def route(path, allow, default_upstream):
             return upstream or default_upstream
     return None
 
+
+
+# --- #4412 his sign-in as a Session row ------------------------------------
+
+def _http(method, url, bearer, body):
+    """One JSON call to the door. Returns (status, parsed body or {})."""
+    data = json.dumps(body).encode() if body is not None else None
+    req = urllib.request.Request(url, data=data, method=method)
+    req.add_header("User-Agent", USER_AGENT)
+    req.add_header("Accept", "application/json")
+    if data is not None:
+        req.add_header("Content-Type", "application/json")
+    if bearer:
+        req.add_header("Authorization", "Bearer " + bearer)
+    try:
+        with urllib.request.urlopen(req, timeout=10) as r:
+            raw = r.read()
+            status = r.status
+    except urllib.error.HTTPError as e:
+        raw, status = e.read(), e.code
+    try:
+        return status, json.loads(raw or b"{}")
+    except ValueError:
+        return status, {}
+
+
+def _sparql(query):
+    try:
+        req = urllib.request.Request(SPARQL_URL + "?" + urllib.parse.urlencode({"query": query}))
+        req.add_header("Accept", "application/sparql-results+json")
+        with urllib.request.urlopen(req, timeout=10) as r:
+            return json.load(r)
+    except Exception:
+        return None
+
+
+def _log(line):
+    print(line, file=sys.stderr, flush=True)
+
+
+def _refresh(refresh_token):
+    try:
+        conf, client = oidc()
+        body = urllib.parse.urlencode({"grant_type": "refresh_token", "refresh_token": refresh_token,
+                                       "client_id": client["client_id"]}).encode()
+        with fetch(conf["token_endpoint"], data=body,
+                   headers={"Content-Type": "application/x-www-form-urlencoded"}) as r:
+            return json.load(r)
+    except Exception:
+        return None
+
+
+def open_person_session(webid, tok):
+    """Never raises and never blocks the sign-in; the record is kept 0600 for sign-out."""
+    try:
+        rec = person_session.open_session(webid, tok, time.time(), SESSION_TTL, _sparql, _http, ATHENA_URL, _log)
+        if rec:
+            recs = load_state(SESSIONS_FILE)
+            recs[webid] = rec
+            save_state(SESSIONS_FILE, recs)
+    except Exception as e:
+        _log(f"person-session: sign-in row NOT written: {e}")
+
+
+def close_person_session(webid):
+    if not webid:
+        return
+    try:
+        recs = load_state(SESSIONS_FILE)
+        rec = recs.pop(webid, None)
+        if rec:
+            person_session.close_session(rec, time.time(), _http, ATHENA_URL, _refresh, _log)
+            save_state(SESSIONS_FILE, recs)
+    except Exception as e:
+        _log(f"person-session: sign-out close failed: {e}")
 
 class Guard(BaseHTTPRequestHandler):
     server_version = "chorus-share-guard"
@@ -725,7 +787,7 @@ Nothing is wrong with your account. Try again in a moment.</p>""")
                 "response_type": "code",
                 "client_id": client["client_id"],
                 "redirect_uri": REDIRECT_URI,
-                "scope": "openid webid profile",
+                "scope": "openid webid offline_access",
                 "state": state,
                 "code_challenge": challenge,
                 "code_challenge_method": "S256",
@@ -746,16 +808,17 @@ Nothing is wrong with your account. Try again in a moment.</p>""")
                 return self._deny(400, "sign-in expired or not recognised\n")
             verifier, return_path, _ = pending
             code = args.get("code", [""])[0]
+            # #4412 — a public client (Client ID Document): PKCE proves the
+            # caller, and the client id rides the body instead of a secret.
             body = urllib.parse.urlencode({
                 "grant_type": "authorization_code",
                 "code": code,
                 "redirect_uri": REDIRECT_URI,
                 "code_verifier": verifier,
+                "client_id": client["client_id"],
             }).encode()
-            basic = base64.b64encode(f"{client['client_id']}:{client.get('client_secret','')}".encode()).decode()
             try:
                 with fetch(conf["token_endpoint"], data=body, headers={
-                    "Authorization": "Basic " + basic,
                     "Content-Type": "application/x-www-form-urlencoded",
                 }) as r:
                     tok = json.load(r)
@@ -766,6 +829,7 @@ Nothing is wrong with your account. Try again in a moment.</p>""")
                 return self._deny(502, "identity provider returned no WebID\n")
             # NOTE: the allow-set is NOT consulted here. Signing in always
             # succeeds; reach is decided per request, so revocation is immediate.
+            open_person_session(webid, tok)
             cookie = (f"{SESSION_COOKIE}={sign_session(webid, COOKIE_KEY)}; Path=/; HttpOnly; "
                       f"Secure; SameSite=Lax; Max-Age={SESSION_TTL}{cookie_domain_attr()}")
             # #3791 — validated, so a cross-host return works and an attacker's
@@ -812,7 +876,17 @@ Nothing is wrong with your account. Try again in a moment.</p>""")
         if path in (AUTH_PREFIX, AUTH_PREFIX.rstrip("/")):
             return self._sign_in_page(args.get("next", [pub("/")])[0])
 
+        if path == AUTH_PREFIX + "clientid.jsonld":
+            payload = json.dumps(client_document(), indent=2).encode()
+            self.send_response(200)
+            self.send_header("Content-Type", "application/ld+json")
+            self.send_header("Content-Length", str(len(payload)))
+            self.end_headers()
+            self.wfile.write(payload)
+            return True
+
         if path == AUTH_PREFIX + "logout":
+            close_person_session(self._session_webid())
             # Cleared at the SAME scope it was minted at — a cookie deleted at a
             # narrower scope than it was set leaves the original in place, so
             # sign-out would appear to work and do nothing.
