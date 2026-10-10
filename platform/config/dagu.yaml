@@ -11,6 +11,10 @@ port: 8526
 tz: America/New_York
 dags_dir: /Users/jeffbridwell/CascadeProjects/chorus/platform/pipelines
 data_dir: /Users/jeffbridwell/.chorus/dagu/data
-log_dir: /Users/jeffbridwell/.chorus/dagu/logs
+# ADR-023: logs live under ~/Library/Logs/Chorus where Promtail reads them
+# (#4474: step output sat in ~/.chorus/dagu/logs, invisible to Loki), and dagu's
+# own lines are JSON so Loki can parse them.
+log_dir: /Users/jeffbridwell/Library/Logs/Chorus/dagu
+log_format: json
 auth:
   mode: none

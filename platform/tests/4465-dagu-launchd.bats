@@ -77,3 +77,29 @@ passthrough_unset() {
   run passthrough_unset "$bad"
   [[ "$output" == *CHORUS_WERK_BASE* ]] || return 1
 }
+
+# #4474 / ADR-023: dagu's run and step logs must land where Promtail reads
+# (~/Library/Logs/Chorus), and its own lines are JSON. Step output in
+# ~/.chorus/dagu/logs was invisible to Loki.
+logs_ok() {
+  local dir fmt
+  dir=$(awk '/^log_dir:/{print $2}' "$1")
+  fmt=$(awk '/^log_format:/{print $2}' "$1")
+  [[ "$dir" == */Library/Logs/Chorus/* ]] || { echo "log_dir ${dir:-MISSING} is outside ~/Library/Logs/Chorus"; return 1; }
+  [ "$fmt" = json ] || { echo "log_format ${fmt:-MISSING} is not json"; return 1; }
+}
+
+@test "dagu logs to ~/Library/Logs/Chorus in JSON" {
+  run logs_ok "$CONF"
+  [ "$status" -eq 0 ] || { echo "$output"; return 1; }
+}
+
+@test "negative proof: a log_dir outside ~/Library/Logs/Chorus or no JSON is caught" {
+  bad="$BATS_TEST_TMPDIR/dagu.yaml"
+  sed 's|^log_dir: .*|log_dir: $HOME/.chorus/dagu/logs|' "$CONF" > "$bad"
+  run logs_ok "$bad"
+  [ "$status" -ne 0 ] || return 1
+  grep -v '^log_format:' "$CONF" > "$bad"
+  run logs_ok "$bad"
+  [ "$status" -ne 0 ] || return 1
+}
