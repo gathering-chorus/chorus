@@ -6,7 +6,7 @@ set -u
 CWS="$(cd "$(dirname "$0")/../scripts" && pwd)/chorus-werk-status"
 fails=0
 # #4341 — the board, the spine and the card CLI all point nowhere: this suite reads only its fixtures
-export CWS_API=http://127.0.0.1:9 CWS_LOKI=http://127.0.0.1:9 CWS_CARDS=/usr/bin/false
+export CWS_API=http://127.0.0.1:9 CWS_LOKI=http://127.0.0.1:9 CWS_CARDS=/usr/bin/false CWS_DAGU=http://127.0.0.1:9
 t() { local name="$1" want="$2" got="$3"; if [[ "$got" == *"$want"* ]]; then echo "ok   $name"; else echo "FAIL $name — wanted '$want' in: $got"; fails=$((fails+1)); fi; }
 
 # 1. NEGATIVE PROOF self-test must pass (and is itself the two-states fixture)
@@ -121,6 +121,23 @@ cat > "$TD/108-108-t-9.log" <<'EOF'
 EOF
 out=$(CWS_RUNS_DIR=$TD "$CWS" 108)
 t "a quoted marker is not an exit" "running                 at deploy-werk" "$out"
+
+# #4474 — werk v2 runs come from dagu (a file:// fixture stands in for its API).
+# Negative proof: a run for CARD=1090 is a different card and must not count.
+mkdir -p "$TD/dagu/api/v1/dags/cicd"
+cat > "$TD/dagu/api/v1/dags/cicd/dag-runs" <<'EOF'
+{"dagRuns":[
+ {"dagRunId":"r3","params":"CARD=1090 ROLE=kade","statusLabel":"failed","startedAt":"2026-10-09T23:00:00-04:00","finishedAt":"2026-10-09T23:01:00-04:00","nodes":[{"statusLabel":"failed","step":{"name":"skill-werk-build"}}]},
+ {"dagRunId":"r2","params":"CARD=109 ROLE=kade","statusLabel":"waiting","startedAt":"2026-10-09T22:14:19-04:00","finishedAt":"2026-10-09T22:54:28-04:00","nodes":[{"statusLabel":"succeeded","step":{"name":"skill-demo"}},{"statusLabel":"waiting","step":{"name":"skill-go"}}]},
+ {"dagRunId":"r1","params":"CARD=109 ROLE=kade","statusLabel":"failed","startedAt":"2026-10-09T21:03:31-04:00","finishedAt":"2026-10-09T21:03:32-04:00","nodes":[{"statusLabel":"failed","step":{"name":"skill-werk-commit"}},{"statusLabel":"aborted","step":{"name":"skill-werk-push"}}]}
+]}
+EOF
+out=$(CWS_RUNS_DIR=$TD CWS_DAGU="file://$TD/dagu" "$CWS" 109)
+t "v2 runs come from dagu" "v2 (dagu)" "$out"
+t "a failed v2 run names the step dagu failed" "failed     skill-werk-commit" "$out"
+t "a waiting v2 run names the step it waits at" "waiting    skill-go" "$out"
+if [[ "$out" == *skill-werk-build* ]]; then echo "FAIL another card's dagu run (CARD=1090) counted for 109"; fails=$((fails+1)); fi
+t "dagu down says so, never silent" "v2 (dagu): unreadable" "$(CWS_RUNS_DIR=$TD "$CWS" 109)"
 
 rm -rf "$TD"
 if [ $fails -gt 0 ]; then echo "test-cws-3782: $fails FAILURE(S)"; exit 1; fi
