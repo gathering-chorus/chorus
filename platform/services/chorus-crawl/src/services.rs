@@ -283,6 +283,9 @@ pub fn last_exit_from_print(text: &str) -> Option<i64> {
         .and_then(|v| v.split(':').next().unwrap_or("").trim().parse().ok())
 }
 
+/// lsof lives in /usr/sbin, which launchd's PATH for the crawl job does not include.
+pub const LSOF: &str = "/usr/sbin/lsof";
+
 /// One observed unit, ready to become a row.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Unit {
@@ -698,6 +701,12 @@ mod plan_4472 {
     }
     fn unit(label: &str) -> Unit {
         Unit { label: label.into(), run_state: "running".into(), meta: UnitMeta { scheduled: false, argv: vec!["/Users/jeffbridwell/.chorus/bin/x".into()], bundle_id: None }, evidence_unavailable: false, ports: vec![], last_exit_code: None }
+    }
+
+    #[test]
+    fn lsof_is_named_by_a_path_that_exists_not_looked_up_on_path() {
+        assert!(LSOF.starts_with('/'));
+        assert!(std::path::Path::new(LSOF).exists(), "{LSOF} missing on this box");
     }
 
     #[test]

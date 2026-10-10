@@ -1546,7 +1546,15 @@ fn walk_local_units() -> chorus_crawl::services::MachineWalk {
     let home = std::env::var("HOME").unwrap_or_default();
     let dirs = [format!("{home}/Library/LaunchAgents"), "/Library/LaunchAgents".into(), "/Library/LaunchDaemons".into()];
     let uid = sh("id", &["-u"], "/").map(|s| s.trim().to_string()).unwrap_or_default();
-    let listens = parse_lsof_listen(&sh("lsof", &["-nP", "-iTCP", "-sTCP:LISTEN", "-F", "pn"], "/").unwrap_or_default());
+    // absolute path: launchd's PATH for this job has no /usr/sbin, so a bare "lsof"
+    // failed there and every library port was silently empty (10 of 52 listening, 2026-10-10)
+    let listens = match sh(LSOF, &["-nP", "-iTCP", "-sTCP:LISTEN", "-F", "pn"], "/") {
+        Ok(t) => parse_lsof_listen(&t),
+        Err(e) => {
+            eprintln!("services: library ports unmeasured — {LSOF} failed: {e}");
+            Default::default()
+        }
+    };
     let tree = parse_ps(&sh("ps", &["-axo", "pid=,ppid="], "/").unwrap_or_default());
     Ok(parse_launchctl_list(&list)
         .into_iter()
