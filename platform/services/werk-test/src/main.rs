@@ -35,11 +35,58 @@ fn main() {
     service_lifecycle::run_as_job();
     let args: Vec<String> = std::env::args().skip(1).collect();
     match run(&args) {
-        Ok(code) => std::process::exit(code),
+        Ok(code) => {
+            record_demo_verdict(&args, code);
+            std::process::exit(code)
+        }
         Err(e) => {
             eprintln!("werk-test: {}", e);
             std::process::exit(1);
         }
+    }
+}
+
+/// #4474 — the gate's verdict is the demo's `tests:` badge. werk.yml (v1) wrote
+/// it with an inline `werk-demo test-result` after this verb; werk v2 runs only
+/// verbs, so its demo said "tests: unmeasured" (run 13). The verb records its
+/// own verdict for `werk-test <card> <role>`; nightly and other modes never do.
+fn demo_verdict_call(args: &[String], code: i32) -> Option<(String, String, &'static str)> {
+    let card = args.first().filter(|a| !a.is_empty() && a.chars().all(|c| c.is_ascii_digit()))?;
+    let role = args.get(1).filter(|a| !a.starts_with('-'))?;
+    Some((card.clone(), role.clone(), if code == 0 { "pass" } else { "fail" }))
+}
+
+fn record_demo_verdict(args: &[String], code: i32) {
+    if let Some((card, role, verdict)) = demo_verdict_call(args, code) {
+        let ok = std::process::Command::new("werk-demo")
+            .args(["test-result", &card, verdict])
+            .env("DEPLOY_ROLE", &role)
+            .status()
+            .map(|s| s.success())
+            .unwrap_or(false);
+        if !ok {
+            eprintln!("werk-test: WARN werk-demo test-result write failed — the demo badge falls back to its self-run (#3638)");
+        }
+    }
+}
+
+#[cfg(test)]
+mod demo_verdict_4474 {
+    use super::demo_verdict_call;
+    fn a(v: &[&str]) -> Vec<String> { v.iter().map(|s| s.to_string()).collect() }
+
+    #[test]
+    fn a_card_run_records_its_verdict_for_the_demo() {
+        assert_eq!(demo_verdict_call(&a(&["4474", "kade"]), 0), Some(("4474".into(), "kade".into(), "pass")));
+        assert_eq!(demo_verdict_call(&a(&["4474", "kade"]), 1), Some(("4474".into(), "kade".into(), "fail")));
+    }
+
+    /// NEGATIVE PROOF — the nightly and flag modes must never write a card's badge
+    #[test]
+    fn other_modes_record_nothing() {
+        assert_eq!(demo_verdict_call(&a(&["--nightly", "--run-all"]), 0), None);
+        assert_eq!(demo_verdict_call(&a(&["4474", "--json"]), 0), None);
+        assert_eq!(demo_verdict_call(&a(&[]), 0), None);
     }
 }
 

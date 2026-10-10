@@ -504,13 +504,17 @@ pub fn render_gate_feedback(witness: &str, card: u64) -> String {
 /// #3511 — summarize the ROLE feedback (the peer gathers) for the announce: each
 /// peer's recorded demo.gather.replied verdict + substance. Distinct from the
 /// per-gate findings above — this is the TEAM's review Jeff weighs before his go.
-pub fn render_role_feedback(witness: &str, card: u64) -> String {
+/// #4474 — only THIS round's peers: the demoer never reviews itself, and a reply
+/// from an earlier round is not this round's review (run 14 showed a kade "block"
+/// recorded rounds earlier, when the demo ran without a role and kade was a peer).
+pub fn render_role_feedback(witness: &str, card: u64, role: &str, round: &str, patch_id: &str) -> String {
     let card_key = format!("\"card_id\":{},", card);
     let mut lines = Vec::new();
-    for peer in ["silas", "kade", "wren"] {
+    for peer in gather_peers(role) {
         let peer_key = format!("\"peer\":\"{}\"", peer);
         if let Some(l) = witness.lines().rev().find(|l| {
             l.contains("\"event\":\"demo.gather.replied\"") && l.contains(&card_key) && l.contains(&peer_key)
+                && line_keyed(l, round, patch_id)
         }) {
             let verdict = json_str_after(l, "verdict").unwrap_or_else(|| "pass".to_string());
             let note = json_str_after(l, "note").unwrap_or_default();
@@ -1504,7 +1508,7 @@ pub fn demo(card: u64, role: &str, home: &Path) -> R<DemoOutcome> {
     let title = card_title(&cv);
     let experience = extract_section(&cv, "Experience");
     let ac_items = render_ac_items(&cv);
-    let role_feedback = render_role_feedback(&witness, card);
+    let role_feedback = render_role_feedback(&witness, card, role, &round, &patch);
     let claim = if experience.is_empty() {
         format!("🔬 To prove it works: exercise the AC against the live variant ({}).", variant_url)
     } else {
@@ -2432,22 +2436,34 @@ fn card_test_verdict(werk: &str) -> &'static str {
     if run_card_tests(werk) { "pass" } else { "fail" }
 }
 
+/// #4474 — whose werk the ceremony demos. `werk-demo <card> <role>` names the
+/// builder role the way every other werk verb does (`<card> <role>`), so werk
+/// v2's dagu step needs no DEPLOY_ROLE (Jeff 2026-10-09: DEPLOY_ROLE is
+/// identity; a run must not assert one). Without the argument, and for every
+/// subcommand, DEPLOY_ROLE stays the source, unchanged from v1.
+pub fn demo_role(argv: &[String], deploy_role: &str) -> R<String> {
+    let ceremony = argv.first().is_some_and(|a| a.parse::<u64>().is_ok());
+    let named = if ceremony { argv.get(1).map(|r| r.trim()).filter(|r| !r.is_empty()) } else { None };
+    match named.or(Some(deploy_role.trim()).filter(|r| !r.is_empty())) {
+        Some(r) => Ok(r.to_string()),
+        None => Err("no role: pass `werk-demo <card> <role>` or set DEPLOY_ROLE".to_string()),
+    }
+}
+
 /// CLI shim: parse args/env only, then call the testable core (blueprint pattern).
 /// Two forms: `werk-demo <card-id>` (the ceremony) and `werk-demo gate <card>
 /// <gate> <result>` (a gate subagent recording its result, #3237).
 pub fn run_demo() -> R<DemoOutcome> {
-    let role = env::var("DEPLOY_ROLE").unwrap_or_default();
-    if role.trim().is_empty() {
-        return Err("DEPLOY_ROLE unset — cannot demo without a role".to_string());
-    }
+    let argv: Vec<String> = env::args().skip(1).collect();
+    let role = demo_role(&argv, &env::var("DEPLOY_ROLE").unwrap_or_default())?;
     let home = env::var("CHORUS_HOME")
         .map(PathBuf::from)
         .unwrap_or_else(|_| Path::new(&env::var("HOME").unwrap_or_default()).join("CascadeProjects/chorus"));
 
-    let mut args = env::args().skip(1);
+    let mut args = argv.into_iter();
     let first = args
         .next()
-        .ok_or("usage: werk-demo <card-id> | werk-demo gate <card> <gate> <result>")?;
+        .ok_or("usage: werk-demo <card-id> [role] | werk-demo gate <card> <gate> <result>")?;
 
     if first == "gate" {
         let card: u64 = args
@@ -2599,7 +2615,7 @@ pub fn run_demo() -> R<DemoOutcome> {
         });
     }
 
-    let card: u64 = first.parse().map_err(|_| "usage: werk-demo <card-id>")?;
+    let card: u64 = first.parse().map_err(|_| "usage: werk-demo <card-id> [role]")?;
     // #3511 — NO go at invoke. Every run proves (gates + peer gathers) → ANNOUNCES
     // to Jeff → blocks for HIS in-run go (`werk-demo go <card>`) before merge. The
     // go-flag conflation is gone: there is no arg for an agent to set, so only
@@ -2853,6 +2869,19 @@ mod tests {
     // announce_ready is `true || …` — the assert could not fail (passes-by-definition).
 
     // #3352 — the full invariant: gates AND gathers-replied before any announce.
+    #[test]
+    fn team_review_shows_this_rounds_peers_only_4474() {
+        let now = r#"{"ts":2,"event":"demo.gather.replied","role":"kade","card_id":4474,"trace_id":"t","peer":"wren","round":"r2","note":"ok"}"#;
+        let old_self = r#"{"ts":1,"event":"demo.gather.replied","role":"false","card_id":4474,"trace_id":"t","peer":"kade","round":"r2","verdict":"block","note":"Branch diff is empty"}"#;
+        let old_peer = r#"{"ts":1,"event":"demo.gather.replied","role":"kade","card_id":4474,"trace_id":"t","peer":"silas","round":"r1","verdict":"block","note":"stale"}"#;
+        let w = format!("{}\n{}\n{}", old_self, old_peer, now);
+        let out = render_role_feedback(&w, 4474, "kade", "r2", "");
+        assert!(out.contains("wren: pass — ok"), "{out}");
+        // NEGATIVE PROOF — the demoer's own old reply and another round's reply must not show
+        assert!(!out.contains("kade:"), "the demoer reviewed itself: {out}");
+        assert!(!out.contains("stale"), "an earlier round's review shown as this round's: {out}");
+    }
+
     fn gather_line(card: u64, peer: &str) -> String {
         format!(
             r#"{{"ts":1,"event":"demo.gather.replied","role":"wren","card_id":{},"trace_id":"t","peer":"{}","round":"r1","note":"ack"}}"#,

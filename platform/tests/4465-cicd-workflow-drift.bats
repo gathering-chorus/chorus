@@ -29,3 +29,18 @@ setup() {
   run "$CM" check cicd "$ROWS" "$BATS_TEST_TMPDIR/absent.yaml"
   [ "$status" -ne 0 ]
 }
+
+# #4474: the go step's missing id passed every Rust test and only dagu refused it.
+@test "dagu itself loads and dry-runs the committed workflow" {
+  command -v dagu >/dev/null || { echo "dagu not installed: unmeasured, not green"; false; }
+  run env DAGU_HOME="$BATS_TEST_TMPDIR/dagu" dagu dry "$WF"
+  [ "$status" -eq 0 ]
+  [[ "$output" == *"Result: Succeeded"* ]] || return 1
+}
+
+@test "negative proof: dagu refuses a go step with no id" {
+  command -v dagu >/dev/null || { echo "dagu not installed: unmeasured, not green"; false; }
+  grep -v '    id: skill_werk_go' "$WF" > "$BATS_TEST_TMPDIR/noid.yaml"
+  run env DAGU_HOME="$BATS_TEST_TMPDIR/dagu" dagu dry "$BATS_TEST_TMPDIR/noid.yaml"
+  [ "$status" -ne 0 ]
+}

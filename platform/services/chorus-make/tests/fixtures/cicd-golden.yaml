@@ -3,57 +3,89 @@ description: "werk v2 — pipeline cicd, generated from the graph"
 params:
   - CARD: ""
   - ROLE: ""
+env:
+  - CHORUS_HOME: ${CHORUS_HOME}
+  - CHORUS_WERK_BASE: ${CHORUS_WERK_BASE}
+  - CHORUS_BIN: ${CHORUS_BIN}
+  - WERK_KADE_BIN: ${WERK_KADE_BIN}
+  - WERK_WREN_BIN: ${WERK_WREN_BIN}
+  - WERK_SILAS_BIN: ${WERK_SILAS_BIN}
+  - WERK_ABBY_NORMAL_BIN: ${WERK_ABBY_NORMAL_BIN}
+  - CHORUS_TRACE_ID: ${DAG_RUN_ID}
+  - PATH: ${CHORUS_WERK_BASE}/${ROLE}-bin:${PATH}
+handler_on:
+  failure:
+    command: 'ops-nudge ${ROLE} "werk v2 #${CARD} failed · dagu ${DAG_RUN_ID} · /cws ${CARD}"'
 steps:
-  - id: commit_werk_commit
-    description: "commit · werk-commit"
+  - name: skill-werk-commit
+    description: "werk-commit"
     command: "werk-commit ${CARD} ${ROLE} --atomic"
-  - id: commit_werk_push
-    description: "commit · werk-push"
-    depends: [commit_werk_commit]
+  - name: skill-werk-push
+    description: "werk-push"
+    depends: [skill-werk-commit]
     command: "werk-push ${CARD} ${ROLE} --atomic"
-  - id: build_werk_build
-    description: "build · werk-build"
-    depends: [commit_werk_push]
+  - name: skill-werk-build
+    description: "werk-build"
+    depends: [skill-werk-push]
     command: "werk-build ${CARD} ${ROLE} --target werk"
-  - id: test_werk_test
-    description: "test · werk-test"
-    depends: [build_werk_build]
+  - name: skill-werk-test
+    description: "werk-test"
+    depends: [skill-werk-build]
     command: "werk-test ${CARD} ${ROLE}"
-  - id: test_werk_review
-    description: "test · werk-review"
-    depends: [test_werk_test]
+  - name: skill-werk-review
+    description: "werk-review"
+    depends: [skill-werk-test]
     command: "werk-review ${CARD} ${ROLE}"
-  - id: demo_werk_deploy_werk
-    description: "demo · werk-deploy --target werk"
-    depends: [test_werk_review]
+  - name: skill-werk-deploy-werk
+    description: "werk-deploy --target werk"
+    depends: [skill-werk-review]
     command: "werk-deploy ${CARD} ${ROLE} --target werk"
-  - id: demo_werk_deploy_env_up
-    description: "demo · werk-deploy env-up"
-    depends: [demo_werk_deploy_werk]
+  - name: skill-werk-deploy-env-up
+    description: "werk-deploy env-up"
+    depends: [skill-werk-deploy-werk]
     command: "werk-deploy env-up ${ROLE} ${CARD}"
-  - id: demo_demo
-    description: "demo · /demo"
-    depends: [demo_werk_deploy_env_up]
-    command: "werk-demo ${CARD}"
-  - id: demo_go
-    description: "demo · Jeff's go"
-    depends: [demo_demo]
+  - name: skill-werk-demo
+    description: "/demo"
+    depends: [skill-werk-deploy-env-up]
+    command: "werk-demo ${CARD} ${ROLE}"
+    continue_on:
+      exit_code: [2]
+      mark_success: true
+  - name: skill-werk-go
+    description: "Jeff's go"
+    depends: [skill-werk-demo]
+    id: skill_werk_go
     action: human.task
     with:
       prompt: "Jeff's go for #${CARD}?"
-  - id: land_werk_merge
-    description: "land · werk-merge"
-    depends: [demo_go]
+      form:
+        type: object
+        properties:
+          accepter:
+            type: string
+            enum: [jeff, wren, kade, silas]
+        required: [accepter]
+  - name: skill-werk-merge
+    description: "werk-merge"
+    depends: [skill-werk-go]
     command: "werk-merge ${CARD} ${ROLE} --atomic"
-  - id: land_werk_sync
-    description: "land · werk-sync"
-    depends: [land_werk_merge]
+    env:
+      - ACCEPTER: ${skill_werk_go.outputs.accepter}
+  - name: skill-werk-sync
+    description: "werk-sync"
+    depends: [skill-werk-merge]
     command: "werk-sync"
-  - id: land_werk_deploy_canonical
-    description: "land · werk-deploy --target canonical"
-    depends: [land_werk_sync]
+    env:
+      - ACCEPTER: ${skill_werk_go.outputs.accepter}
+  - name: skill-werk-deploy-canonical
+    description: "werk-deploy --target canonical"
+    depends: [skill-werk-sync]
     command: "werk-deploy ${CARD} ${ROLE} --target canonical"
-  - id: land_werk_accept
-    description: "land · werk-accept"
-    depends: [land_werk_deploy_canonical]
+    env:
+      - ACCEPTER: ${skill_werk_go.outputs.accepter}
+  - name: skill-werk-accept
+    description: "werk-accept"
+    depends: [skill-werk-deploy-canonical]
     command: "werk-accept ${CARD} ${ROLE} --atomic"
+    env:
+      - ACCEPTER: ${skill_werk_go.outputs.accepter}

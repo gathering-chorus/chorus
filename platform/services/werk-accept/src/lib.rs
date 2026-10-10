@@ -202,6 +202,17 @@ pub fn parse_accept_args(args: &[String]) -> R<(u64, String, bool)> {
     Ok((card, role, atomic))
 }
 
+/// #4474 — who gave the go. $ACCEPTER first: werk v2's dagu go step names the
+/// accepter and passes it to every land step as ACCEPTER, the same name
+/// werk-merge and werk-deploy read; a run sets no DEPLOY_ROLE (ADR-052). v1
+/// sets DEPLOY_ROLE=$ACCEPTER, so its path is unchanged.
+pub fn accepter_from(accepter: Option<String>, deploy_role: Option<String>) -> String {
+    accepter
+        .filter(|s| !s.trim().is_empty())
+        .or(deploy_role)
+        .unwrap_or_default()
+}
+
 /// ACCEPTER is $DEPLOY_ROLE (the authorizing identity, distinct from the builder
 /// `role`). Writes Jeff's go to the demo witness; does NOT merge or finalize. Conforms
 /// to ADR-032 (verb contract) + ADR-037 (--atomic): accept is the human's DEC-048 go,
@@ -209,7 +220,7 @@ pub fn parse_accept_args(args: &[String]) -> R<(u64, String, bool)> {
 pub fn run_accept() -> R<String> {
     let args: Vec<String> = env::args().skip(1).collect();
     let (card, role, _atomic) = parse_accept_args(&args)?;
-    let accepter = env::var("DEPLOY_ROLE").unwrap_or_default();
+    let accepter = accepter_from(env::var("ACCEPTER").ok(), env::var("DEPLOY_ROLE").ok());
     let home = PathBuf::from(env::var("CHORUS_HOME").map_err(|_| "CHORUS_HOME not set".to_string())?);
     run_accept_in(card, &role, &accepter, &home)
 }

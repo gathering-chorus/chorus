@@ -71,6 +71,7 @@ pub fn check(rows: &[Row]) -> Vec<String> {
         errs.push("no rows: a pipeline with no steps is refused, never written empty".into());
     }
     let mut seen = std::collections::BTreeSet::new();
+    let mut names = std::collections::BTreeSet::new();
     for r in rows {
         match r.executor.as_str() {
             "deterministic" if r.implemented_by.is_empty() => errs.push(format!(
@@ -80,6 +81,9 @@ pub fn check(rows: &[Row]) -> Vec<String> {
                 "{}: an agent skill cannot run inside the v2 workflow yet", r.skill)),
             other => errs.push(format!("{}: unknown executor '{}'", r.skill, other)),
         }
+        if !names.insert(step_name(r)) {
+            errs.push(format!("{}: called twice in one pipeline; dagu step names must be unique", r.skill));
+        }
         if !seen.insert((r.step.clone(), r.skill_order)) {
             errs.push(format!("{}: two skills hold order {} in step {}", r.skill, r.skill_order, r.step));
         }
@@ -87,19 +91,20 @@ pub fn check(rows: &[Row]) -> Vec<String> {
     errs
 }
 
-/// dagu step id: `<step>_<skill local name>`, lowercase. dagu 2.18 refuses
-/// any id outside ^[a-zA-Z][a-zA-Z0-9_]*$ (found by loading the first
-/// generated file), so every other character becomes '_'.
-pub fn step_id(r: &Row) -> String {
-    let local = r.skill.rsplit(['#', '/']).next().unwrap_or(&r.skill);
-    let local = local.strip_prefix("skill-").unwrap_or(local);
-    let id: String = format!("{}_{}", r.step, local)
-        .to_lowercase()
-        .chars()
-        .map(|c| if c.is_ascii_alphanumeric() { c } else { '_' })
-        .collect();
-    if id.starts_with(|c: char| c.is_ascii_alphabetic()) { id } else { format!("s_{id}") }
+/// dagu step name: the Skill row's own name (`skill-werk-deploy-werk`),
+/// never one chorus-make makes up (Jeff via Silas 2026-10-09 20:34). dagu's
+/// `name` takes hyphens; its `id` does not, so no id is written. The verb
+/// alone is not unique (werk-deploy runs three skills).
+pub fn step_name(r: &Row) -> String {
+    r.skill.rsplit(['#', '/']).next().unwrap_or(&r.skill).to_string()
 }
+
+/// werk-demo's exit contract (#3237): 0 go, 2 presented and held, 1 error.
+pub const PRESENTED_EXIT: u8 = 2;
+
+/// Who may give the go (DEC-048: GO = accept). The same set chorus_werk's
+/// `accepter` takes; werk-merge refuses a land without $ACCEPTER (#4474 run 9).
+pub const ACCEPTERS: [&str; 4] = ["jeff", "wren", "kade", "silas"];
 
 fn quote(s: &str) -> String {
     format!("\"{}\"", s.replace('\\', "\\\\").replace('"', "\\\""))
@@ -117,21 +122,76 @@ pub fn generate(pipeline: &str, rows: &[Row]) -> Result<String, Vec<String>> {
     let mut out = String::from(HEADER);
     out.push_str(&format!("description: {}\n", quote(&format!("werk v2 — pipeline {pipeline}, generated from the graph"))));
     out.push_str("params:\n  - CARD: \"\"\n  - ROLE: \"\"\n");
+    // dagu hands a step only a short list of its own env (#4474 runs 1-2:
+    // "CHORUS_HOME not set", then "CHORUS_WERK_BASE not set"). The machine's
+    // paths pass through from the scheduler's env (launchd unit, or the shell
+    // that ran `dagu start`), and dagu's run id is the trace, so every verb's
+    // spine events name the run. WERK_<ROLE>_BIN are the role bin slots
+    // chorus-bin-install reads (run 4); paths, not identity. No DEPLOY_ROLE: it is a self-declared
+    // identity (ADR-052 retires it), and a run param must not assert one.
+    out.push_str(concat!(
+        "env:\n",
+        "  - CHORUS_HOME: ${CHORUS_HOME}\n",
+        "  - CHORUS_WERK_BASE: ${CHORUS_WERK_BASE}\n",
+        "  - CHORUS_BIN: ${CHORUS_BIN}\n",
+        "  - WERK_KADE_BIN: ${WERK_KADE_BIN}\n",
+        "  - WERK_WREN_BIN: ${WERK_WREN_BIN}\n",
+        "  - WERK_SILAS_BIN: ${WERK_SILAS_BIN}\n",
+        "  - WERK_ABBY_NORMAL_BIN: ${WERK_ABBY_NORMAL_BIN}\n",
+        "  - CHORUS_TRACE_ID: ${DAG_RUN_ID}\n",
+        // #4474 run 12: under the scheduler the verbs resolved to the installed
+        // ones, so the card's own werk-demo never ran. The role's slot comes
+        // first, as chorus-env-setup.sh does for a role's shell (#2995).
+        "  - PATH: ${CHORUS_WERK_BASE}/${ROLE}-bin:${PATH}\n",
+    ));
+    // #4474 run 15: a v2 run failed at test and nobody heard for 40 minutes; v1's
+    // pipeline nudges, and no role polls (Jeff: "the pipeline nudges you"). dagu's
+    // own failure handler tells the builder role, through the one nudge door.
+    out.push_str(concat!(
+        "handler_on:\n  failure:\n",
+        "    command: 'ops-nudge ${ROLE} \"werk v2 #${CARD} failed · dagu ${DAG_RUN_ID} · /cws ${CARD}\"'\n",
+    ));
     out.push_str("steps:\n");
     let mut prev: Option<String> = None;
-    for r in &rows {
-        let id = step_id(r);
-        out.push_str(&format!("  - id: {id}\n"));
-        out.push_str(&format!("    description: {}\n", quote(&format!("{} · {}", r.step, r.label))));
+    let mut go: Option<String> = None;
+    for (i, r) in rows.iter().enumerate() {
+        let before_a_human = rows.get(i + 1).is_some_and(|n| n.executor == "human");
+        let id = step_name(r);
+        out.push_str(&format!("  - name: {id}\n"));
+        out.push_str(&format!("    description: {}\n", quote(&r.label)));
         if let Some(p) = &prev {
             out.push_str(&format!("    depends: [{p}]\n"));
         }
         if r.executor == "human" {
+            // dagu 2.18 refuses a human.task with no id, and an id takes no
+            // hyphens: the same row name, '-' as '_'.
+            out.push_str(&format!("    id: {}\n", id.replace('-', "_")));
             out.push_str("    action: human.task\n    with:\n");
             out.push_str(&format!("      prompt: {}\n", quote(&format!("{} for #${{CARD}}?", r.label))));
+            // the one who gives the go is the accepter (DEC-048): the form
+            // asks who, and every later step reads it as $ACCEPTER
+            out.push_str(concat!(
+                "      form:\n        type: object\n        properties:\n",
+                "          accepter:\n            type: string\n",
+            ));
+            out.push_str(&format!("            enum: [{}]\n", ACCEPTERS.join(", ")));
+            out.push_str("        required: [accepter]\n");
+            go = Some(id.replace('-', "_"));
         } else {
             let cmd = if r.mode.is_empty() { r.implemented_by.clone() } else { format!("{} {}", r.implemented_by, r.mode) };
             out.push_str(&format!("    command: {}\n", quote(&cmd)));
+            if let Some(g) = &go {
+                out.push_str(&format!("    env:\n      - ACCEPTER: ${{{g}.outputs.accepter}}\n"));
+            }
+            if before_a_human {
+                // #4474 run 6: the verb before a human go presents and exits
+                // PRESENTED_EXIT ("held for the go", werk-demo #3237); in v2 the
+                // go is the next dagu step, so held is this step's success.
+                // Any other non-zero exit still fails the run.
+                out.push_str(&format!(
+                    "    continue_on:\n      exit_code: [{PRESENTED_EXIT}]\n      mark_success: true\n"
+                ));
+            }
         }
         prev = Some(id);
     }

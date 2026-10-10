@@ -48,6 +48,10 @@ API = os.environ.get("CWS_API", "http://localhost:3340")
 # the board CLI from the canonical tree: a werk's copy is not built
 CARDS = os.environ.get("CWS_CARDS", os.path.join(os.environ.get("CHORUS_HOME", os.path.expanduser("~/CascadeProjects/chorus")), "platform/scripts/cards"))
 PRESENTED_TTL_MS = 24 * 3600 * 1000
+# #4474 — werk v2 runs live in dagu, not in the pins: dagu is the one source
+# of each step's state (Jeff: "cws is broken" when v2 runs never showed).
+DAGU = os.environ.get("CWS_DAGU", "http://127.0.0.1:8526")
+DAGU_DAG = os.environ.get("CWS_DAGU_DAG", "cicd")
 
 # act stage markers, in pipeline order — last one seen in the log wins
 STAGE_RE = re.compile(r"\[werk/werk\]\s+(?:⭐\s+Run|✅\s+Success -)\s+(?:Main\s+)?([a-zA-Z-]+(?:\s[a-zA-Z-]+)?)")
@@ -265,6 +269,7 @@ def card_detail(card, pin_status):
     for i, r in enumerate(runs, 1):
         fin = datetime.fromtimestamp(r["finish"]).strftime("%H:%M") if r["finish"] else "  -  "
         print(f"  {i:>3}  {hm(r['start'])}  {fin}   {r['result']:<22}  {r['why']}")
+    dagu_detail(card, dagu_runs(card))
 
 
 def classify(pin, pid_starts, now_ms):
@@ -372,6 +377,75 @@ def fixture_mode():
         return 1
 
 
+def dagu_runs(card):
+    """This card's v2 runs, newest first, as dagu reports them; None when dagu cannot be read."""
+    try:
+        import urllib.request
+        with urllib.request.urlopen(f"{DAGU}/api/v1/dags/{DAGU_DAG}/dag-runs", timeout=10) as r:
+            runs = json.load(r)["dagRuns"]
+    except Exception:
+        return None
+    # CARD=4474 must not match CARD=44740
+    want = re.compile(r"(?:^|\s)CARD=\"?%s\"?(?:\s|$)" % re.escape(str(card)))
+    return [r for r in runs if want.search(r.get("params") or "")]
+
+
+def dagu_summary(run):
+    """(result, step) in dagu's own words: the step that failed, waits or runs."""
+    status = run.get("statusLabel", "?")
+    for want in ("failed", "waiting", "running"):
+        step = next((n["step"]["name"] for n in run.get("nodes", []) if n.get("statusLabel") == want), None)
+        if step:
+            return status, step
+    return status, ""
+
+
+def dagu_state(runs, i):
+    """(result, step) for runs[i] (newest first). Only the newest run can be at
+    the go: an older run still waiting there is superseded, never live."""
+    status, step = dagu_summary(runs[i])
+    if status == "waiting" and i > 0:
+        return "superseded", step
+    return status, step
+
+
+def dagu_go(card, run):
+    """The go for a v2 run waiting at its human step, in dagu's own words."""
+    node = next((n for n in run.get("nodes", []) if n.get("statusLabel") == "waiting"), None)
+    if not node:
+        return ""
+    step_id = node["step"].get("id") or node["step"]["name"].replace("-", "_")
+    return (f" · go: dagu human-task complete {DAGU_DAG} --run-id {run.get('dagRunId')}"
+            f" --step {step_id} --input accepter=jeff")
+
+
+def dagu_line(card, role, runs):
+    if runs is None:
+        return f"#{card} [{role}] v2 dagu unreadable at {DAGU}"
+    if not runs:
+        return None
+    status, step = dagu_state(runs, 0)
+    line = f"#{card} [{role}] v2 {status}" + (f" at {step}" if step else "") + f" · {len(runs)} run{'s' if len(runs) != 1 else ''}"
+    return line + (dagu_go(card, runs[0]) if status == "waiting" else f" · dagu {runs[0].get('dagRunId', '?')}")
+
+
+def dagu_detail(card, runs):
+    if runs is None:
+        print(f"\n  v2 (dagu): unreadable at {DAGU}")
+        return
+    if not runs:
+        return
+    print("\n  " + dagu_line(card, "v2", runs).split("] ", 1)[1])
+    print("  run  start        finish  result      step")
+    n = len(runs)
+    for i, r in enumerate(reversed(runs), 1):
+        status, step = dagu_state(runs, n - i)
+        st, fin = parse_ts(r.get("startedAt")), parse_ts(r.get("finishedAt"))
+        start = hm(st / 1000) if st else "     ?     "
+        end = datetime.fromtimestamp(fin / 1000).strftime("%H:%M") if fin and status not in ("running", "waiting") else "  -  "
+        print(f"  {i:>3}  {start}  {end}   {status:<10}  {step}")
+
+
 def wip_cards():
     """Every WIP card on the board, as (id, owner)."""
     try:
@@ -421,6 +495,9 @@ def main():
         if last and last["result"].startswith("failed"):
             tail += f" · last: {last['result']}" + (f" — {last['why']}" if last["why"] else "")
         print(state + tail)
+        v2 = dagu_line(cid, owner.lower(), dagu_runs(cid))
+        if v2:
+            print(v2)
         shown += 1
     if shown == 0:
         print("no WIP cards" + (f" for {role}" if role else ""))
