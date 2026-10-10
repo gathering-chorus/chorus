@@ -117,6 +117,7 @@ fn local(v: &str) -> String {
 }
 
 <<<<<<< HEAD
+<<<<<<< HEAD
 /// One SELECT against a remote SPARQL endpoint, as the raw SPARQL-JSON body.
 pub fn sparql_update(endpoint: &str, auth: &Option<(String, String)>, update: &str) -> Result<(), String> {
     let mut req = ureq::post(&format!("{}/update", endpoint.trim_end_matches('/')));
@@ -126,6 +127,9 @@ pub fn sparql_update(endpoint: &str, auth: &Option<(String, String)>, update: &s
     req.send_form(&[("update", update)]).map(|_| ()).map_err(|e| format!("store: {e}"))
 }
 
+=======
+/// One SELECT against a remote SPARQL endpoint, as the raw SPARQL-JSON body.
+>>>>>>> 4c9755287 (wren: #4490 — pulse-api writes require a signed caller: ES256 token through the shared chorus-oidc verifier, principal and grants read from the model, typed refusals (no-token 401, token-invalid 401, identity-unreachable 503, not-a-principal 403); live check: wren's token resolves to principal wren)
 pub fn sparql_body(endpoint: &str, auth: &Option<(String, String)>, query: &str) -> Result<String, String> {
     let mut req = ureq::post(&format!("{}/query", endpoint.trim_end_matches('/')))
         .set("Accept", "application/sparql-results+json");
@@ -136,6 +140,7 @@ pub fn sparql_body(endpoint: &str, auth: &Option<(String, String)>, query: &str)
     resp.into_string().map_err(|e| format!("store: {e}"))
 }
 
+<<<<<<< HEAD
 impl Sparql {
     fn select(&self, query: &str) -> Result<Vec<Map<String, Value>>, String> {
         let text = sparql_body(&self.endpoint, &self.auth, query)?;
@@ -152,6 +157,12 @@ impl Sparql {
         let resp = req.send_form(&[("query", query)]).map_err(|e| format!("store: {e}"))?;
         let body: Value = resp.into_json().map_err(|e| format!("store: {e}"))?;
 >>>>>>> 3795eee59 (wren: #4490 — athena-gen generate writes the pulse-api crate (RowStore trait, remote SPARQL backend, settings env then file then default, versioned envelope); pulse-api compiles and serves the 5 pulse collections read-only on :3392; emitter tests incl. same-model-same-bytes and a model-change negative proof)
+=======
+impl Sparql {
+    fn select(&self, query: &str) -> Result<Vec<Map<String, Value>>, String> {
+        let text = sparql_body(&self.endpoint, &self.auth, query)?;
+        let body: Value = serde_json::from_str(&text).map_err(|e| format!("store: {e}"))?;
+>>>>>>> 4c9755287 (wren: #4490 — pulse-api writes require a signed caller: ES256 token through the shared chorus-oidc verifier, principal and grants read from the model, typed refusals (no-token 401, token-invalid 401, identity-unreachable 503, not-a-principal 403); live check: wren's token resolves to principal wren)
         let rows = body["results"]["bindings"].as_array().cloned().unwrap_or_default();
         Ok(rows.into_iter().filter_map(|r| r.as_object().cloned()).collect())
     }

@@ -15,7 +15,11 @@ pub const SETTINGS: &[(&str, &str)] = &[
 =======
 /// Declared settings and their defaults (see settings.rs for the lookup order).
 pub const SETTINGS: &[(&str, &str)] = &[
+<<<<<<< HEAD
 >>>>>>> 3795eee59 (wren: #4490 — athena-gen generate writes the pulse-api crate (RowStore trait, remote SPARQL backend, settings env then file then default, versioned envelope); pulse-api compiles and serves the 5 pulse collections read-only on :3392; emitter tests incl. same-model-same-bytes and a model-change negative proof)
+=======
+    ("identity.issuer", "https://id.lightlifeurbangardens.com/"),
+>>>>>>> 4c9755287 (wren: #4490 — pulse-api writes require a signed caller: ES256 token through the shared chorus-oidc verifier, principal and grants read from the model, typed refusals (no-token 401, token-invalid 401, identity-unreachable 503, not-a-principal 403); live check: wren's token resolves to principal wren)
     ("server.bind", "127.0.0.1:3392"),
     ("store.endpoint", "http://localhost:3030/pods"),
     ("store.kind", "sparql"),

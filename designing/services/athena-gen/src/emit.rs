@@ -11,24 +11,34 @@ const MAIN: &str = include_str!("../templates/main.rs");
 const STORE: &str = include_str!("../templates/store.rs");
 const SETTINGS: &str = include_str!("../templates/settings.rs");
 <<<<<<< HEAD
+<<<<<<< HEAD
 const AUTH: &str = include_str!("../templates/auth.rs");
 const RULES: &str = include_str!("../templates/rules.rs");
 const REQUIREMENTS: &str = include_str!("../templates/requirements_tests.rs");
 const MODEL_TEST: &str = include_str!("../templates/model_test.rs");
 =======
 >>>>>>> 3795eee59 (wren: #4490 — athena-gen generate writes the pulse-api crate (RowStore trait, remote SPARQL backend, settings env then file then default, versioned envelope); pulse-api compiles and serves the 5 pulse collections read-only on :3392; emitter tests incl. same-model-same-bytes and a model-change negative proof)
+=======
+const AUTH: &str = include_str!("../templates/auth.rs");
+>>>>>>> 4c9755287 (wren: #4490 — pulse-api writes require a signed caller: ES256 token through the shared chorus-oidc verifier, principal and grants read from the model, typed refusals (no-token 401, token-invalid 401, identity-unreachable 503, not-a-principal 403); live check: wren's token resolves to principal wren)
 
 /// The crate's own version. Step 1 starts every product at 1.0.0; the bump rule
 /// (#4478 Versions: removed field = major, added = minor) arrives with the diff check.
 pub const CRATE_VERSION: &str = "1.0.0";
 
 <<<<<<< HEAD
+<<<<<<< HEAD
+=======
+>>>>>>> 4c9755287 (wren: #4490 — pulse-api writes require a signed caller: ES256 token through the shared chorus-oidc verifier, principal and grants read from the model, typed refusals (no-token 401, token-invalid 401, identity-unreachable 503, not-a-principal 403); live check: wren's token resolves to principal wren)
 /// The shared token verifier, by path from `<step>/products/<product>/api/`. A crate
 /// shipped away from this repo vendors it (the export step, a later card).
 pub const OIDC_PATH: &str = "../../../../platform/services/chorus-oidc";
 
+<<<<<<< HEAD
 =======
 >>>>>>> 3795eee59 (wren: #4490 — athena-gen generate writes the pulse-api crate (RowStore trait, remote SPARQL backend, settings env then file then default, versioned envelope); pulse-api compiles and serves the 5 pulse collections read-only on :3392; emitter tests incl. same-model-same-bytes and a model-change negative proof)
+=======
+>>>>>>> 4c9755287 (wren: #4490 — pulse-api writes require a signed caller: ES256 token through the shared chorus-oidc verifier, principal and grants read from the model, typed refusals (no-token 401, token-invalid 401, identity-unreachable 503, not-a-principal 403); live check: wren's token resolves to principal wren)
 /// StreamEvent → stream-event: the kind that prefixes a row's IRI (v1's mint rule).
 pub fn kebab(class: &str) -> String {
     let mut out = String::new();
@@ -56,6 +66,7 @@ pub fn model_rs(p: &Product, model_version: &str, settings: &[(String, String)])
 /// AC6 moves them into the model as Property rows on the product (#3435).
 pub fn settings(port: u16) -> Vec<(String, String)> {
     vec![
+        ("identity.issuer".into(), "https://id.lightlifeurbangardens.com/".into()),
         ("server.bind".into(), format!("127.0.0.1:{port}")),
         ("store.endpoint".into(), "http://localhost:3030/pods".into()),
         ("store.kind".into(), "sparql".into()),
@@ -134,6 +145,7 @@ fn cargo_toml(p: &Product) -> String {
          [package]\nname = \"{n}-api\"\nversion = \"{CRATE_VERSION}\"\nedition = \"2021\"\n\
          description = \"The {n} product's API, generated from the Chorus model.\"\n\n\
 <<<<<<< HEAD
+<<<<<<< HEAD
          [dependencies]\nchorus-oidc = {{ path = \"{oidc}\" }}\nserde_json = \"1\"\ntiny_http = \"0.12\"\nureq = {{ version = \"2\", features = [\"json\"] }}\n\n\
          [[bin]]\nname = \"{n}-api\"\npath = \"src/main.rs\"\n",
         n = p.name, oidc = OIDC_PATH
@@ -142,6 +154,11 @@ fn cargo_toml(p: &Product) -> String {
          [[bin]]\nname = \"{n}-api\"\npath = \"src/main.rs\"\n",
         n = p.name
 >>>>>>> 3795eee59 (wren: #4490 — athena-gen generate writes the pulse-api crate (RowStore trait, remote SPARQL backend, settings env then file then default, versioned envelope); pulse-api compiles and serves the 5 pulse collections read-only on :3392; emitter tests incl. same-model-same-bytes and a model-change negative proof)
+=======
+         [dependencies]\nchorus-oidc = {{ path = \"{oidc}\" }}\nserde_json = \"1\"\ntiny_http = \"0.12\"\nureq = {{ version = \"2\", features = [\"json\"] }}\n\n\
+         [[bin]]\nname = \"{n}-api\"\npath = \"src/main.rs\"\n",
+        n = p.name, oidc = OIDC_PATH
+>>>>>>> 4c9755287 (wren: #4490 — pulse-api writes require a signed caller: ES256 token through the shared chorus-oidc verifier, principal and grants read from the model, typed refusals (no-token 401, token-invalid 401, identity-unreachable 503, not-a-principal 403); live check: wren's token resolves to principal wren)
     )
 }
 
@@ -171,6 +188,7 @@ pub fn crate_files(p: &Product, model_version: &str, port: u16) -> BTreeMap<Stri
     let domain = p.domains.first().map(|d| d.name.as_str()).unwrap_or("domains");
     let mut out = BTreeMap::new();
     out.insert("Cargo.toml".into(), cargo_toml(p));
+    out.insert("src/auth.rs".into(), retag(AUTH, domain));
     out.insert("src/main.rs".into(), retag(MAIN, domain));
     out.insert("src/store.rs".into(), retag(STORE, domain));
     out.insert("src/settings.rs".into(), retag(SETTINGS, domain));
