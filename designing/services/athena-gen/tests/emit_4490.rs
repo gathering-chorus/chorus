@@ -32,7 +32,7 @@ fn same_model_same_bytes() {
 #[test]
 fn the_crate_carries_the_product_its_routes_and_its_versions() {
     let files = crate_files(&pulse(), "1.30.0", 3392);
-    assert_eq!(files.keys().collect::<Vec<_>>(), ["Cargo.toml", "src/main.rs", "src/model.rs", "src/settings.rs", "src/store.rs"]);
+    assert_eq!(files.keys().collect::<Vec<_>>(), ["Cargo.toml", "src/auth.rs", "src/main.rs", "src/model.rs", "src/settings.rs", "src/store.rs"]);
     assert!(files["Cargo.toml"].contains("name = \"pulse-api\""));
     let m = &files["src/model.rs"];
     for want in ["PRODUCT: &str = \"pulse\"", "MODEL_VERSION: &str = \"1.30.0\"", "segment: \"rolestates\"",

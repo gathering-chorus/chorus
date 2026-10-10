@@ -65,16 +65,21 @@ fn local(v: &str) -> String {
     v.rsplit(['#', '/']).next().unwrap_or(v).to_string()
 }
 
+/// One SELECT against a remote SPARQL endpoint, as the raw SPARQL-JSON body.
+pub fn sparql_body(endpoint: &str, auth: &Option<(String, String)>, query: &str) -> Result<String, String> {
+    let mut req = ureq::post(&format!("{}/query", endpoint.trim_end_matches('/')))
+        .set("Accept", "application/sparql-results+json");
+    if let Some((u, p)) = auth {
+        req = req.set("Authorization", &format!("Basic {}", b64(format!("{u}:{p}").as_bytes())));
+    }
+    let resp = req.send_form(&[("query", query)]).map_err(|e| format!("store: {e}"))?;
+    resp.into_string().map_err(|e| format!("store: {e}"))
+}
+
 impl Sparql {
     fn select(&self, query: &str) -> Result<Vec<Map<String, Value>>, String> {
-        let mut req = ureq::post(&format!("{}/query", self.endpoint.trim_end_matches('/')))
-            .set("Accept", "application/sparql-results+json");
-        if let Some((u, p)) = &self.auth {
-            let token = b64(format!("{u}:{p}").as_bytes());
-            req = req.set("Authorization", &format!("Basic {token}"));
-        }
-        let resp = req.send_form(&[("query", query)]).map_err(|e| format!("store: {e}"))?;
-        let body: Value = resp.into_json().map_err(|e| format!("store: {e}"))?;
+        let text = sparql_body(&self.endpoint, &self.auth, query)?;
+        let body: Value = serde_json::from_str(&text).map_err(|e| format!("store: {e}"))?;
         let rows = body["results"]["bindings"].as_array().cloned().unwrap_or_default();
         Ok(rows.into_iter().filter_map(|r| r.as_object().cloned()).collect())
     }

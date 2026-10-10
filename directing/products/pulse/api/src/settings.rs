@@ -13,6 +13,7 @@ pub struct Settings {
     pub store_endpoint: String,
     pub store_user_var: String,
     pub store_password_var: String,
+    pub identity_issuer: String,
 }
 
 impl Settings {
@@ -58,5 +59,6 @@ pub fn load() -> Settings {
         store_endpoint: value("store.endpoint", &file),
         store_user_var: value("store.user_var", &file),
         store_password_var: value("store.password_var", &file),
+        identity_issuer: value("identity.issuer", &file),
     }
 }

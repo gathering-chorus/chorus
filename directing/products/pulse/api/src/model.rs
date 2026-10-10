@@ -9,6 +9,7 @@ pub const NS: &str = "https://jeffbridwell.com/chorus#";
 
 /// Declared settings and their defaults (see settings.rs for the lookup order).
 pub const SETTINGS: &[(&str, &str)] = &[
+    ("identity.issuer", "https://id.lightlifeurbangardens.com/"),
     ("server.bind", "127.0.0.1:3392"),
     ("store.endpoint", "http://localhost:3030/pods"),
     ("store.kind", "sparql"),
