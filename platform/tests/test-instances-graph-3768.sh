@@ -72,9 +72,11 @@ for line in $CASES; do
   fi
 done
 
-# Gate's second tenancy (11 v1 rows in urn:chorus:gates, outside the declared
-# graph) is staged for retirement by #4474 (Jeff 2026-10-10): the served Gate
-# rows are the ones in urn:chorus:domains:security.
+# Gate's second tenancy: 11 instances remain in urn:chorus:gates OUTSIDE the
+# declared graph (measured 2026-08-06). That is a source-exclusivity violation
+# ADR-051 Addendum II owns; recorded here as a KNOWN count so growth is loud.
+# When the instance-migrate verb moves them, delete this note and raise the
+# Gate floor to 29.
 
 if [ "$fails" -gt 0 ]; then echo "test-instances-graph-3768: $fails FAILURE(S)"; exit 1; fi
 echo "test-instances-graph-3768: all green"
