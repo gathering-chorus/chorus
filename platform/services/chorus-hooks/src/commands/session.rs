@@ -9,7 +9,6 @@ use crate::shared::state_paths::{self, repo_root};
 use super::context_cache;
 use super::pulse;
 use super::principles_inject;
-use super::athena_tree_inject;
 use super::session_rows_inject;
 
 /// Session start — replaces session-start-thin.sh (#1623)
@@ -201,18 +200,9 @@ pub fn session_start_cmd(args: &[String]) -> ExitCode {
         format!("failed={}", if failed.is_empty() { "none".to_string() } else { failed.join(",") }),
     ]);
 
-    // #2940 — Athena Move 0 tree injection. Appends owned + active + needs-work
-    // ranking + ownership map. Graceful degradation: any failure injects a
-    // one-line note rather than blocking boot.
-    //
-    // INVARIANT (Silas gate:arch #2940; cross-link: designing/docs/athena-product-design.html):
-    // SessionStart reads the Athena tree from the STATIC JSON at data/athena/tree.json.
-    // It does NOT call SPARQL or any live query, even after Move 1's SHACL/OWL lands.
-    // Boot latency is the surface defended; turning this into a live query at any
-    // future Move re-introduces a per-boot network cost. If the invariant grows
-    // (e.g., "all role-boot envelope reads are static") promote to an ADR; for now
-    // the constraint lives here + at #2928's reference.
-    content.push_str(&athena_tree_inject::render_for_role(role));
+    // #4235 — the Athena tree block that read the proto-graph file is gone
+    // (Silas OK, 2026-10-10): the prompt envelope carries a live Athena block,
+    // and session start still makes no network call (#2940).
 
     // Log — silent: session-start owns stdout for the hookSpecificOutput envelope.
     let _ = chorus_log::run_silent(&["session.role.started".to_string(), role.to_string()]);

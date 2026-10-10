@@ -263,29 +263,32 @@ describe('createIndexAllSources', () => {
     expect(doc!.args[5]).not.toContain('boot()'); // <script> stripped
   });
 
-  it('indexes athena tree products/domains/services (#3136 REFINE)', async () => {
+  it('indexes products/domains/services from the graph rows (#3136 REFINE, #4235)', async () => {
     const { ctor, runs } = fakeDbFactory();
-    const tree = JSON.stringify({
-      products: [{ iri: 'chorus:loom', label: 'Loom', comment: 'Knowledge layer', ownedBy: 'chorus:role-wren', gaps: [] }],
-      domains: [{ iri: 'chorus:roles', label: 'roles', comment: 'identities', gaps: ['no lifecycle'] }],
-      services: [],
-    });
-    const fs = {
-      existsSync: (p: string) => p.endsWith('tree.json'),
-      readdirSync: jest.fn(() => []),
-      readFileSync: jest.fn(() => tree),
-      statSync: jest.fn(() => ({ mtime: { toISOString: () => 't' } })),
-    };
     const run = createIndexAllSources({
-      dbPath: '/db', DatabaseCtor: ctor as any, fs: fs as any, path: FAKE_PATH as any, repoRoot: '/r', homedir: () => '/h',
+      dbPath: '/db', DatabaseCtor: ctor as any, fs: EMPTY_FS as any, path: FAKE_PATH as any, repoRoot: '/r', homedir: () => '/h',
+      fetchGraph: async () => ([
+        { source: 'domain', id: 'domain:chorus:loom', content: 'Loom (product)\nKnowledge layer\nowner: chorus:principal-wren' },
+        { source: 'domain', id: 'domain:chorus:roles', content: 'roles (domain)\nidentities\ngaps: no lifecycle' },
+        { source: 'principle', id: 'principle:p', content: 'p' },
+      ]),
     });
     const r = await run();
     expect(r.indexed.domains).toBe('2 domains indexed');
     const rows = runs.filter(e => e.sql.includes('INTO messages') && e.args[0] === 'domain');
     expect(rows).toHaveLength(2);
     expect(rows[0].args[5]).toContain('Loom (product)');
-    expect(rows[0].args[5]).toContain('owner: chorus:role-wren');
     expect(rows.some(x => x.args[5].includes('gaps: no lifecycle'))).toBe(true);
+  });
+
+  it('NEGATIVE PROOF (#4235): with no graph the domains are not indexed from any file', async () => {
+    const { ctor } = fakeDbFactory();
+    const fs = { ...EMPTY_FS, existsSync: () => true, readFileSync: jest.fn(() => JSON.stringify({ products: [{ iri: 'chorus:x', label: 'X' }] })) };
+    const run = createIndexAllSources({
+      dbPath: '/db', DatabaseCtor: ctor as any, fs: fs as any, path: FAKE_PATH as any, repoRoot: '/r', homedir: () => '/h',
+    });
+    const r = await run();
+    expect(r.indexed.domains).toBe('0 domains indexed');
   });
 
   it('indexes prefetched graph knowledge into principle/policy/practice (#3136 REFINE)', async () => {
@@ -327,8 +330,7 @@ describe('createIndexAllSources', () => {
 
   it('coverage signal reports ok when sources are populated (#3136)', async () => {
     const { ctor } = fakeDbFactory();
-    // Every knowledge source present: briefs/decisions/adrs/memory dirs + docs + tree.
-    const tree = JSON.stringify({ products: [{ iri: 'chorus:loom', label: 'Loom', comment: 'c', gaps: [] }], domains: [], services: [] });
+    // Every knowledge source present: briefs/decisions/adrs/memory dirs + docs.
     const fs = {
       existsSync: () => true,
       readdirSync: jest.fn((p: string) => {
@@ -339,7 +341,6 @@ describe('createIndexAllSources', () => {
         return [];
       }),
       readFileSync: jest.fn((p: string) => {
-        if (p.endsWith('tree.json')) return tree;
         if (p.endsWith('decisions.md')) return '## DEC-001 x\nbody';
         return 'content';
       }),

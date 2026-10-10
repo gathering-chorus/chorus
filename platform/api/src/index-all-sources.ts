@@ -290,47 +290,17 @@ function indexDocsFrom(ctx: IndexCtx, docs: Array<{ href: string; title?: string
   return `${indexed} docs indexed`;
 }
 
-// #3136 REFINE — domains. The canonical product/domain/service model (tree.json):
-// 7 products + 33 domains + services, each label+comment+owner+step+status+gaps.
-// File-read — the graph's chorus:Domain count is 0, the tree IS the source. Answers
-// "what is athena v2 / which domains exist / who owns X" — none of which the index
-// could answer before.
-// #3429 — safe stringify for unknown tree-node fields (no "[object Object]").
-function str(v: unknown): string {
-  if (v == null) return '';
-  if (typeof v === 'string') return v;
-  if (typeof v === 'number' || typeof v === 'boolean') return String(v);
-  return JSON.stringify(v);
-}
-// #3429 — one tree node → its searchable content blob (extracted to keep
-// indexDomains under the complexity threshold).
-function nodeContent(node: Record<string, unknown>, kind: string, iri: string): string {
-  const gaps = Array.isArray(node.gaps) ? (node.gaps as string[]).join('; ') : '';
-  return [
-    `${str(node.label) || iri} (${kind.replace(/s$/, '')})`,
-    str(node.comment),
-    node.ownedBy ? `owner: ${str(node.ownedBy)}` : '',
-    node.atStep ? `step: ${str(node.atStep)}` : '',
-    node.status ? `status: ${str(node.status)}` : '',
-    gaps ? `gaps: ${gaps}` : '',
-  ].filter(Boolean).join('\n');
-}
-function indexDomains(ctx: IndexCtx): string {
-  const treePath = ctx.path.join(ctx.repoRoot, 'data/athena/tree.json');
-  if (!ctx.fs.existsSync(treePath)) return '0 domains indexed (no tree)';
-  const tree = JSON.parse(String(ctx.fs.readFileSync(treePath, 'utf-8'))) as Record<string, unknown>;
-  let indexed = 0;
-  for (const kind of ['products', 'domains', 'services']) {
-    const arr = (tree[kind] as Array<Record<string, unknown>> | undefined) ?? [];
-    for (const node of arr) {
-      const iri = str(node.iri);
-      if (!iri) continue;
-      ctx.insert.run!('domain', `domain:${iri}`, 'athena-tree', 'system', 'system', nodeContent(node, kind, iri), ctx.now);
-      indexed++;
-    }
+// #3136 REFINE — domains: every product, domain and service, label + comment +
+// owner + step + status + gaps. #4235 — read from the graph (prefetched with
+// the rest of the graph knowledge as `domain` rows), not a hand-written file.
+// Answers "which domains exist / who owns X".
+function indexDomainRows(ctx: IndexCtx, rows: Array<{ source: string; id: string; content: string }>): string {
+  const subset = rows.filter((r) => r.source === 'domain');
+  for (const r of subset) {
+    ctx.insert.run!('domain', r.id, 'athena-graph', 'system', 'system', r.content, ctx.now);
   }
   ctx.updateWatermark.run!('artifact:domains', ctx.now, ctx.now);
-  return `${indexed} domains indexed`;
+  return `${subset.length} domains indexed`;
 }
 
 // #3136 REFINE — graph knowledge. principles (28) / policies (14) / practices (40)
@@ -455,7 +425,6 @@ export function createIndexAllSources(deps: IndexAllSourcesDeps): () => Promise<
     runSource('stories', results, () => indexStories(ctx));
     const docList = deps.listDocs ? deps.listDocs() : [];
     runSource('docs', results, () => indexDocsFrom(ctx, docList));
-    runSource('domains', results, () => indexDomains(ctx));
 
     // #3136 REFINE — prefetch graph knowledge once (async). Fuseki-down must not tank
     // the file-source indexers, so isolate in its own try and fall back to empty (the
@@ -465,6 +434,7 @@ export function createIndexAllSources(deps: IndexAllSourcesDeps): () => Promise<
       try { graphRows = await deps.fetchGraph(); }
       catch (err: unknown) { results.graph = `error: ${err instanceof Error ? err.message : String(err)}`; }
     }
+    runSource('domains', results, () => indexDomainRows(ctx, graphRows));
     runSource('principles', results, () => indexGraphRows(ctx, graphRows, 'principle'));
     runSource('policies', results, () => indexGraphRows(ctx, graphRows, 'policy'));
     runSource('practices', results, () => indexGraphRows(ctx, graphRows, 'practice'));
@@ -481,8 +451,8 @@ export function createIndexAllSources(deps: IndexAllSourcesDeps): () => Promise<
     clearSlackWatermarks(db, results);
 
     // #3136 coverage signal — flag any knowledge source that came back empty.
-    const expected = ['briefs', 'decisions', 'adrs', 'memory', 'docs', 'domains'];
-    if (deps.fetchGraph) expected.push('principles', 'policies', 'practices');
+    const expected = ['briefs', 'decisions', 'adrs', 'memory', 'docs'];
+    if (deps.fetchGraph) expected.push('domains', 'principles', 'policies', 'practices');
     results._coverage = coverageCheck(results, expected);
 
     db.close();

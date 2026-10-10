@@ -1,7 +1,6 @@
 // @domain: domains
 /**
- * #4419 AC1 — blast radius from the live graph, not data/athena/tree.json
- * (hand-written, last changed 2026-06-15). The edges are the model's own:
+ * #4419 AC1 — blast radius from the live graph. The edges are the model's own:
  * a Product hasDomain / partOf / consumes, a Domain hosts a Service.
  *
  * - Product: dependents = its domains; consumers = the products it is part of

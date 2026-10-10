@@ -998,11 +998,6 @@ chorus:dirdomain-product-manager a chorus:UnitDomainMapping ;
     chorus:hasDomain chorus:roles .
 
 
-chorus:dirdomain-data-athena a chorus:UnitDomainMapping ;
-    rdfs:label "data/athena/ → knowledge" ;
-    chorus:pathPrefix "data/athena/" ;
-    chorus:hasDomain chorus:knowledge .
-
 chorus:dirdomain-directing-vikunja a chorus:UnitDomainMapping ;
     rdfs:label "directing/vikunja/ → cards" ;
     chorus:pathPrefix "directing/vikunja/" ;

@@ -1677,8 +1677,7 @@ const PAIN_CARD_TOOL_DEF = {
   },
 } as const;
 
-// #2940 — Athena Move 0 tree-query MCP tools.
-// data/athena/tree.json is the single source-of-truth for the structural model.
+// #2940 / #4235 — Athena tree-query MCP tools, answered from the live graph.
 // These three tools surface it for /demo, /gate-product, role-nudge routing.
 
 const TreeGetInput = z.object({});
@@ -1700,14 +1699,14 @@ const BlastRadiusInput = z.object({
 const TREE_GET_TOOL_DEF = {
   name: 'chorus_tree_get',
   description:
-    'Use this to fetch the full Athena structural tree — every Product, Domain, Service with their stored attributes (label, comment, vision, audience, status, gaps, ownership, value-stream-step, design-doc edges) and containment edges (hasChild, hasDomain, hosts, contains, consumes). Source: data/athena/tree.json (Athena Move 0 hand-authored; Move 5 ingests this into Fuseki via composite-POST). Use when you need the whole tree at once, e.g. for the rendered tree.html page or a session-start envelope. Do NOT call repeatedly per IRI — use chorus_ownership_lookup for single-IRI lookups (cheaper). Refusal taxonomy: tree-not-found | schema-violation (tree.json failed Zod parse).',
+    'Use this to fetch the full Athena structural tree — every Product, Domain, Service with their stored attributes (label, comment, vision, audience, status, gaps, ownership, value-stream-step, design-doc edges) and containment edges (hasChild, hasDomain, hosts, contains, consumes). Source: the live graph via chorus-api /api/athena/tree (#4235). Use when you need the whole tree at once. Do NOT call repeatedly per IRI — use chorus_ownership_lookup for single-IRI lookups (cheaper). Refusal taxonomy: store-unreachable (the graph did not answer).',
   inputSchema: { type: 'object', properties: {}, required: [], additionalProperties: false },
 } as const;
 
 const OWNERSHIP_LOOKUP_TOOL_DEF = {
   name: 'chorus_ownership_lookup',
   description:
-    'Use this to answer "who owns this IRI and where does it sit in the tree?" Returns { iri, kind: product|domain|service, owner: role-iri, product, domain, service } — the containing-path filled in for the IRI\'s kind. Source: data/athena/tree.json. Use for role-nudge routing (resolve the IRI to a role before nudging), /gate-product domain-existence checks, demo product-impact framing. Do NOT use to fetch the IRI\'s full attribute set — use chorus_tree_get for that. Refusal taxonomy: not-found (IRI not in tree) | schema-violation.',
+    'Use this to answer "who owns this IRI and where does it sit in the tree?" Returns { iri, kind: product|domain|service, owner: role-iri, product, domain, service } — the containing-path filled in for the IRI\'s kind. Source: the live graph via chorus-api /api/athena/ownership (#4235). Use for role-nudge routing (resolve the IRI to a role before nudging), /gate-product domain-existence checks, demo product-impact framing. Do NOT use to fetch the IRI\'s full attribute set — use chorus_tree_get for that. Refusal taxonomy: not-found (IRI not in tree) | schema-violation.',
   inputSchema: {
     type: 'object',
     properties: {
@@ -3583,8 +3582,8 @@ export function buildMcpServer(getCallerRole: () => string, deps: McpServerDeps 
       DECISIONS_GET_TOOL_DEF,
       // #3177: v1 SPARQL ownership tools removed from the advertised list so the
       // team has ONE place to look for ownership — the v2 tree. Use
-      // chorus_tree_get / chorus_ownership_lookup (repointed to data/athena/tree.json
-      // in #3025) instead. v1 SPARQL stays live for the ~80 detail/facet/coverage
+      // chorus_tree_get / chorus_ownership_lookup (answered from the graph,
+      // #4235) instead. v1 SPARQL stays live for the ~80 detail/facet/coverage
       // consumers v2 doesn't cover yet; only the duplicate ownership path is cut.
       CARDS_ADD_TOOL_DEF,
       CARD_ADD_JEFF_TOOL_DEF,

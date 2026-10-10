@@ -2691,29 +2691,24 @@ app.get('/api/athena/health', async (_req: Request, res: Response) => {
 
 // #3603: GET /api/athena/products RETIRED — athena-make :3360/products serves products.
 
-// #2940 — Athena Move 0 tree endpoints. Same Zod-validated source as
-// chorus_tree_get / chorus_ownership_lookup / chorus_blast_radius MCP tools.
-import { loadTree, lookupOwnership } from './handlers/athena-tree';
-app.get('/api/athena/tree', (_req: Request, res: Response) => {
-  try {
-    const tree = loadTree();
-    res.status(200).json(tree);
-  } catch (err) {
-    const code = (err as NodeJS.ErrnoException).code === 'ENOENT' ? 404 : 422;
-    res.status(code).json({ ok: false, reason: code === 404 ? 'tree-not-found' : 'schema-violation', error: (err as Error).message });
-  }
+// #4235 — the tree and ownership answer from the live graph (the proto-graph
+// file is gone). A store that does not answer is a 503, never a file.
+import { loadTreeFromGraph, lookupOwnership } from './handlers/athena-tree-graph';
+const athenaTree = () => loadTreeFromGraph(fusekiCsv(nightlyFuseki()));
+app.get('/api/athena/tree', async (_req: Request, res: Response) => {
+  const tree = await athenaTree();
+  if (!tree) { res.status(503).json({ ok: false, reason: 'store-unreachable' }); return; }
+  res.status(200).json(tree);
 });
-app.get('/api/athena/ownership/:iri', (req: Request, res: Response) => {
-  try {
-    const r = lookupOwnership(loadTree(), req.params.iri);
-    if (!r) return res.status(404).json({ ok: false, reason: 'not-found', iri: req.params.iri });
-    res.status(200).json(r);
-  } catch (err) {
-    res.status(422).json({ ok: false, reason: 'schema-violation', error: (err as Error).message });
-  }
+app.get('/api/athena/ownership/:iri', async (req: Request, res: Response) => {
+  const tree = await athenaTree();
+  if (!tree) { res.status(503).json({ ok: false, reason: 'store-unreachable' }); return; }
+  const r = lookupOwnership(tree, req.params.iri);
+  if (!r) { res.status(404).json({ ok: false, reason: 'not-found', iri: req.params.iri }); return; }
+  res.status(200).json(r);
 });
 // #4419 AC1 — blast radius reads the live graph's edges (hasDomain, partOf,
-// consumes, hosts), not the hand-written June tree.json.
+// consumes, hosts).
 import { blastRadiusFromEdges, blastRadiusEdgesQuery, edgesFromCsv, fileTagsQuery, fileTagsFromCsv } from './handlers/athena-blast-radius-graph';
 const blastRadiusRead = (query: string): Promise<globalThis.Response> => fetch(nightlyFuseki(), {
   method: 'POST',

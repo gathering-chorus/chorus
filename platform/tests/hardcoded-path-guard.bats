@@ -75,7 +75,7 @@ setup() {
 }
 
 # #3528 — the /Users/ pattern above MISSES the werk-path form that actually bit us:
-# athena-tree.test.ts hardcoded os.homedir()+'chorus-werk/wren-2940', not /Users/...
+# a jest test (since retired) hardcoded os.homedir()+'chorus-werk/wren-2940', not /Users/...
 # Green on the author's werk, silent-red on CI. Extends the guard to TS/jest tests.
 @test "no TS/jest test hardcodes a chorus-werk/<role>-<card> werk path" {
   cd "$REPO_ROOT"

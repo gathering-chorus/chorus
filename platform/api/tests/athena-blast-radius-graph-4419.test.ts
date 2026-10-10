@@ -1,7 +1,7 @@
 // @test-type: unit
 // @domain: tests · @card: 4419 · owner: kade
-// #4419 AC1 — blast radius answers from the live graph's edges, not the June
-// tree.json. The Clearing names the domains it is made of as dependents.
+// #4419 AC1 — blast radius answers from the live graph's edges. The Clearing
+// names the domains it is made of as dependents.
 import { blastRadiusFromEdges, type Edge } from '../src/handlers/athena-blast-radius-graph';
 
 const C = 'https://jeffbridwell.com/chorus#';

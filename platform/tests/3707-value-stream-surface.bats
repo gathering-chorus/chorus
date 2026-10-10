@@ -80,7 +80,7 @@ print(d)'"
   [ -f "$page" ]
   grep -q 'url=/athena/value-stream.html' "$page"
   ! grep -qi 'Move 0 hand-authored' "$page" || return 1
-  ! grep -q 'data/athena/tree.json' "$page" || return 1
+  ! grep -q 'data/athena/' "$page" || return 1
 }
 
 @test "product layer serves at each step (pending: ProductShape instancesGraph decl — Wren follow-on)" {

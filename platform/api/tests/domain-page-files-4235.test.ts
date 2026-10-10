@@ -18,7 +18,7 @@ describe('#4235 domain page Files fold', () => {
   it("reads the crawl's tags from the graph, not a file", () => {
     expect(fn).toContain('chorus:CodeFile ; chorus:hasDomain');
     expect(fn).toContain("'/sparql-read'");
-    expect(fn).not.toContain('tree.json');
+    expect(fn).not.toMatch(/data\/athena\//);
   });
 
   it('NEGATIVE PROOF — a failed read shows an unknown count, never zero files', () => {

@@ -6,7 +6,7 @@
 
 # #3581 — Kade-lane domain materialization (round 1: the 5 non-tests).
 # Paired Wren(drive)+Kade(this file). Authored to the VERIFIED RESOLVING forms
-# (every edge target confirmed to exist in urn:chorus:ontology — NOT tree.json's
+# (every edge target confirmed to exist in urn:chorus:ontology — NOT the proto-graph's
 # value-stream-step-*/role-*/bare-product forms, which dangle):
 #   ownedBy → chorus:kade · atStep → chorus:Building|Designing (capitalized bare)
 #   partOf  → chorus:chorus (the real Product; coarse, matching Properties template)
