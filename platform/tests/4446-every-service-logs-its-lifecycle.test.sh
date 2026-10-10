@@ -68,7 +68,7 @@ com.chorus.reindex-worker	platform/scripts/chorus-reindex-worker.sh
 com.chorus.restore-drill	platform/scripts/fuseki-restore-dump.sh
 com.chorus.security-scan-weekly	platform/scripts/test-security-scan.sh
 com.chorus.seed-probe	platform/scripts/seed-probe.sh
-com.chorus.service-harvest	platform/scripts/service-harvest-cycle.sh
+com.chorus.service-harvest	platform/services/chorus-crawl/src/main.rs
 com.chorus.standards-surface	platform/scripts/standards-surface-cron.sh
 com.chorus.tm-thin	platform/scripts/tm-thin.sh
 com.chorus.tmp-reaper	platform/scripts/tmp-reaper.sh

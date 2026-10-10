@@ -1314,6 +1314,202 @@ mod wrote_nothing_4201 {
     }
 }
 
+// #4472 — the services crawl's I/O. Every rule is in services.rs.
+//
+// chorus-crawl services [--dry-run] [--timestamp ISO]
+//                       [--mapping FILE --services-ttl FILE]
+// Walks launchd on both machines, writes the changed rows through the door
+// as CHORUS_ROLE, and reports every finding; any finding exits 1.
+fn run_services(args: &[String]) -> i32 {
+    use chorus_crawl::services::*;
+    const WITH_VALUE: &[&str] = &["--timestamp", "--mapping", "--services-ttl"];
+    let mut i = 0;
+    while i < args.len() {
+        let a = args[i].as_str();
+        if WITH_VALUE.contains(&a) {
+            i += 2;
+        } else if a == "--dry-run" {
+            i += 1;
+        } else {
+            eprintln!("chorus-crawl services: unknown arg {a} — nothing ran");
+            return 2;
+        }
+    }
+    let flag = |name: &str| args.iter().position(|a| a == name).and_then(|i| args.get(i + 1)).cloned();
+    let dry_run = args.iter().any(|a| a == "--dry-run");
+    let root = std::env::var("CHORUS_ROOT").unwrap_or_else(|_| ".".to_string());
+    let mapping_path = flag("--mapping").unwrap_or_else(|| format!("{root}/platform/config/service-instance-map.json"));
+    let ttl_path = flag("--services-ttl").unwrap_or_else(|| format!("{root}/designing/data/service-instances.ttl"));
+    let mapping = {
+        let parsed = std::fs::read_to_string(&mapping_path).map_err(|e| e.to_string()).and_then(|t| parse_mapping(&t));
+        let ttl = std::fs::read_to_string(&ttl_path);
+        match (parsed, ttl) {
+            (Ok(map), Ok(ttl)) => {
+                let bad = unknown_targets(&map, &authored_services(&ttl));
+                if !bad.is_empty() {
+                    eprintln!("chorus-crawl services: REFUSE — mapping targets unknown Service(s): {}", bad.join(", "));
+                    return 2;
+                }
+                map
+            }
+            (Err(e), _) => { eprintln!("chorus-crawl services: mapping {mapping_path}: {e}"); return 2; }
+            (_, Err(e)) => { eprintln!("chorus-crawl services: services TTL {ttl_path}: {e}"); return 2; }
+        }
+    };
+    let now = now_secs();
+    let ts = flag("--timestamp").unwrap_or_else(|| chorus_crawl::iso_from_secs(now));
+    let machines: Vec<(String, MachineWalk)> = vec![("library".into(), walk_local_units()), ("bedroom".into(), walk_bedroom_units())];
+    let n = |w: &MachineWalk| match w { Ok(u) => u.len().to_string(), Err(e) => format!("error:{}", e.chars().take(40).collect::<String>()) };
+    println!("services: walked library {} units, bedroom {}", n(&machines[0].1), n(&machines[1].1));
+    let walked: Vec<&str> = machines.iter().filter(|(_, w)| w.is_ok()).map(|(m, _)| m.as_str()).collect();
+    let unwalked: Vec<(String, String)> = machines.iter().filter_map(|(m, w)| w.as_ref().err().map(|e| (m.clone(), e.clone()))).collect();
+    let desired: Vec<DoorRow> = machines
+        .iter()
+        .filter_map(|(m, w)| w.as_ref().ok().map(|us| (m, us)))
+        .flat_map(|(m, us)| us.iter().map(move |u| (m, u)))
+        .map(|(m, u)| desired_row(m, u, &mapping, &ts))
+        .collect();
+
+    let api = std::env::var("CHORUS_OWL_API").unwrap_or_else(|_| "http://localhost:3360".to_string());
+    let role = match declared_role(std::env::var("CHORUS_ROLE").ok()) {
+        Ok(r) => r,
+        Err(e) => { eprintln!("chorus-crawl services: {e}"); return 2; }
+    };
+    let ident = match Identity::open(&root, &role) {
+        Ok(i) => std::cell::RefCell::new(i),
+        Err(e) => { eprintln!("chorus-crawl services: {e}"); return 2; }
+    };
+    let mut current: Vec<DoorRow> = Vec::new();
+    let mut legacy = 0usize;
+    let mut colls: Vec<(UnitClass, String)> = Vec::new();
+    for (class, kind) in [(UnitClass::ServiceInstance, "ServiceInstance"), (UnitClass::ScheduledJob, "ScheduledJob")] {
+        let token = match ident.borrow_mut().bearer() { Ok(t) => t, Err(e) => { eprintln!("chorus-crawl services: {e}"); return 2; } };
+        let coll = match collection_for(&api, kind) { Ok(c) => c, Err(e) => { eprintln!("chorus-crawl services: {e}"); return 2; } };
+        let rows = match fetch_rows(&api, &token, kind) { Ok(r) => r, Err(e) => { eprintln!("chorus-crawl services: cannot read {kind} rows — {e}"); return 2; } };
+        for fields in rows {
+            let name = fields.iter().find(|(k, _)| k == "name").map(|(_, v)| v.clone()).unwrap_or_default();
+            // #3870 rows were written straight to the store with urn: names the
+            // door cannot address; they are counted, never planned against.
+            if name.starts_with("urn:") {
+                legacy += 1;
+                continue;
+            }
+            let fields = fields.into_iter().filter(|(k, _)| k != "name").collect();
+            current.push(DoorRow { class, name, fields });
+        }
+        colls.push((class, coll));
+    }
+    let coll_of = |c: UnitClass| colls.iter().find(|(k, _)| *k == c).map(|(_, v)| v.clone()).unwrap_or_default();
+    let p = plan(desired.clone(), &current, &walked, now, &secs_from_iso);
+    let mut found = findings(&desired, &p, &mapping, &unwalked);
+    // rows the run did not touch and nothing has refreshed in a day
+    let touched: Vec<&str> = p.update.iter().chain(p.retire.iter()).map(|r| r.name.as_str()).collect();
+    let untouched: Vec<DoorRow> = current.iter().filter(|c| !touched.contains(&c.name.as_str()) && !desired.iter().any(|d| d.name == c.name)).cloned().collect();
+    found.extend(stale_rows(&untouched, now, &secs_from_iso));
+    println!(
+        "services: {} rows observed · create {} · update {} · retire {} · unchanged {} · old #3870 rows still in the graph {}",
+        desired.len(), p.create.len(), p.update.len(), p.retire.len(), p.unchanged, legacy
+    );
+    let mut failed: Vec<String> = Vec::new();
+    if dry_run {
+        println!("services: dry-run — NOTHING WRITTEN");
+    } else {
+        let body = |r: &DoorRow| {
+            let mut f = vec![("name".to_string(), r.name.clone())];
+            f.extend(r.fields.iter().cloned());
+            fields_json(&f)
+        };
+        for class in [UnitClass::ServiceInstance, UnitClass::ScheduledJob] {
+            let coll = coll_of(class);
+            let batch: Vec<String> = p.create.iter().filter(|r| r.class == class).map(body).collect();
+            for chunk in batch.chunks(200) {
+                if let Err(e) = write(&ident, &api, "POST", &format!("{coll}/batch"), Some(&format!("[{}]", chunk.join(",")))) {
+                    failed.push(format!("create batch of {}: {e}", chunk.len()));
+                }
+            }
+        }
+        for r in &p.update {
+            if let Err(e) = write(&ident, &api, "PUT", &format!("{}/{}", coll_of(r.class), r.name), Some(&body(r))) {
+                failed.push(format!("update {}: {e}", r.name));
+            }
+        }
+        for r in &p.retire {
+            if let Err(e) = write(&ident, &api, "DELETE", &format!("{}/{}", coll_of(r.class), r.name), None) {
+                failed.push(format!("retire {}: {e}", r.name));
+            }
+        }
+    }
+    for f in &found {
+        println!("  finding: {f}");
+    }
+    for f in &failed {
+        eprintln!("  FAILED: {f}");
+    }
+    if !failed.is_empty() {
+        return 2;
+    }
+    if found.is_empty() {
+        println!("services: green — every unit is mapped or external, nothing stale");
+        0
+    } else {
+        println!("services: RED — {} finding(s)", found.len());
+        1
+    }
+}
+
+fn walk_local_units() -> chorus_crawl::services::MachineWalk {
+    use chorus_crawl::services::*;
+    let list = sh("launchctl", &["list"], "/").map_err(|e| e.to_string())?;
+    let home = std::env::var("HOME").unwrap_or_default();
+    let dirs = [format!("{home}/Library/LaunchAgents"), "/Library/LaunchAgents".into(), "/Library/LaunchDaemons".into()];
+    let uid = sh("id", &["-u"], "/").map(|s| s.trim().to_string()).unwrap_or_default();
+    Ok(parse_launchctl_list(&list)
+        .into_iter()
+        .map(|u| {
+            let mut meta = dirs
+                .iter()
+                .map(|d| format!("{d}/{}.plist", u.label))
+                .find(|p| std::path::Path::new(p).exists())
+                .and_then(|p| sh("plutil", &["-convert", "json", "-o", "-", &p], "/").ok())
+                .and_then(|j| parse_json(&j).ok())
+                .map(|j| plist_meta(&j))
+                .unwrap_or_default();
+            if meta.argv.is_empty() {
+                let text = sh("launchctl", &["print", &format!("gui/{uid}/{}", u.label)], "/").unwrap_or_default();
+                let (argv, bundle) = parse_launchctl_print(&text);
+                meta.argv = argv;
+                meta.bundle_id = bundle;
+            }
+            Unit { run_state: u.run_state().into(), label: u.label, meta, evidence_unavailable: false }
+        })
+        .collect())
+}
+
+/// Bedroom over ssh: the list, then each plist as JSON. No `launchctl print`
+/// remotely — the gui domain is not reachable from a non-interactive session.
+/// `find`, never a shell glob: bedroom's zsh makes an unmatched glob fatal.
+fn walk_bedroom_units() -> chorus_crawl::services::MachineWalk {
+    use chorus_crawl::services::*;
+    let cmd = "launchctl list ; echo ---PLISTS--- ; \
+        for f in $(find ~/Library/LaunchAgents /Library/LaunchAgents /Library/LaunchDaemons -maxdepth 1 -name 'com.*.plist' 2>/dev/null); do \
+        case \"$f\" in *com.apple*) continue;; esac; \
+        [ -f \"$f\" ] && echo \"FILE:$f\" && plutil -convert json -o - \"$f\" 2>/dev/null && echo; done";
+    let remote = sh("ssh", &["-o", "ConnectTimeout=5", "bedroom", cmd], "/").map_err(|e| e.to_string())?;
+    let (head, plists) = remote.split_once("---PLISTS---").unwrap_or((&remote, ""));
+    let mut units: Vec<Unit> = parse_launchctl_list(head)
+        .into_iter()
+        .map(|u| Unit { run_state: u.run_state().into(), label: u.label, meta: UnitMeta::default(), evidence_unavailable: true })
+        .collect();
+    for block in plists.split("FILE:").skip(1) {
+        let (path, json) = block.split_once('\n').unwrap_or((block, ""));
+        let label = path.trim().rsplit('/').next().unwrap_or("").trim_end_matches(".plist");
+        let (Some(u), Ok(j)) = (units.iter_mut().find(|u| u.label == label), parse_json(json.trim())) else { continue };
+        u.meta = plist_meta(&j);
+        u.evidence_unavailable = false;
+    }
+    Ok(units)
+}
+
 const PASS_FLAGS: &[&str] = &["--undo", "--dry-run", "--reconcile", "--validate"];
 
 // #4446 — a scheduled job logs its own failure.
@@ -1328,6 +1524,10 @@ fn main() {
     let argv: Vec<String> = std::env::args().collect();
     if seam(&argv) {
         return;
+    }
+    // #4472 — `services`: the launchd crawl.
+    if argv.get(1).map(String::as_str) == Some("services") {
+        std::process::exit(run_services(&argv[2..]));
     }
     // #4419 — an unknown flag is refused, never read as "run a write pass":
     // a seam name the installed binary did not have yet started a full pass
