@@ -2868,11 +2868,15 @@ chorus:runState a owl:DatatypeProperty ;
 #     to the design that produced it. Harvested from binary.deployed spine
 #     events {binary, cdhash, commit, role} — already emitted per deploy by
 #     build-signed.sh/chorus-bin-install (#2734) — never authored. ---
-chorus:deployedCommit a owl:DatatypeProperty ;
+chorus:deployedCommit a owl:DatatypeProperty ;   # #4472 — shared by ServiceInstance and ScheduledJob: no rdfs:domain (two would intersect)
     rdfs:label "deployed commit" ;
     rdfs:comment "Source commit of the running binary, from the latest binary.deployed spine event for this unit. Answers 'which design produced this running thing.'" ;
-    rdfs:domain chorus:ServiceInstance ;
     rdfs:range xsd:string .
+
+chorus:sourcePath a owl:ObjectProperty ;   # #4472 — shared by ServiceInstance and ScheduledJob: no rdfs:domain (two would intersect)
+    rdfs:label "source path" ;
+    rdfs:comment "The CodeFile that is this unit's code: the crate source of the deployed binary it runs (Cargo.toml [[bin]]), else the repo script launchd starts. Written only when the CodeFile row exists, so the edge never dangles. Lets 'which running things does this change touch' be asked from a changed path." ;
+    rdfs:range chorus:CodeFile .
 
 
 chorus:binaryPath a owl:DatatypeProperty ;   # #4472 — shared by ServiceInstance and ScheduledJob: no rdfs:domain (two would intersect)
@@ -2909,6 +2913,7 @@ chorus:ServiceInstanceShape a sh:NodeShape ;
     sh:property [ sh:path chorus:binaryPath     ; sh:minCount 0 ; sh:maxCount 1 ; sh:datatype xsd:string ; chorus:exposure chorus:internal ] ;
     sh:property [ sh:path chorus:deployedCommit ; sh:minCount 0 ; sh:maxCount 1 ; sh:datatype xsd:string ; chorus:exposure chorus:internal ] ;
     sh:property [ sh:path chorus:cdhash         ; sh:minCount 0 ; sh:maxCount 1 ; sh:datatype xsd:string ; chorus:exposure chorus:internal ] ;
+    sh:property [ sh:path chorus:sourcePath     ; sh:minCount 0 ; sh:maxCount 1 ; sh:class chorus:CodeFile ; chorus:exposure chorus:public ] ;
     sh:property [ sh:path chorus:external       ; sh:minCount 0 ; sh:maxCount 1 ; sh:datatype xsd:boolean ; chorus:exposure chorus:public ] ;
     sh:property [ sh:path chorus:evidenceState  ; sh:minCount 0 ; sh:maxCount 1 ; sh:in ( "unknown" ) ; chorus:exposure chorus:public ] .
     # evidenceState "unknown" = the harvester could not read this unit's
@@ -2955,7 +2960,11 @@ chorus:ScheduledJobShape a sh:NodeShape ;
     sh:property [ sh:path chorus:runsService   ; sh:minCount 0 ; sh:class chorus:Service ; chorus:exposure chorus:public ] ;
     sh:property [ sh:path chorus:binaryPath    ; sh:minCount 0 ; sh:maxCount 1 ; sh:datatype xsd:string ; chorus:exposure chorus:internal ] ;
     sh:property [ sh:path chorus:external      ; sh:minCount 0 ; sh:maxCount 1 ; sh:datatype xsd:boolean ; chorus:exposure chorus:public ] ;
-    sh:property [ sh:path chorus:evidenceState ; sh:minCount 0 ; sh:maxCount 1 ; sh:in ( "unknown" ) ; chorus:exposure chorus:public ] .
+    sh:property [ sh:path chorus:evidenceState ; sh:minCount 0 ; sh:maxCount 1 ; sh:in ( "unknown" ) ; chorus:exposure chorus:public ] ;
+    # #4472 AC2 — a job runs a binary too: the same provenance as an instance
+    sh:property [ sh:path chorus:deployedCommit ; sh:minCount 0 ; sh:maxCount 1 ; sh:datatype xsd:string ; chorus:exposure chorus:internal ] ;
+    sh:property [ sh:path chorus:cdhash         ; sh:minCount 0 ; sh:maxCount 1 ; sh:datatype xsd:string ; chorus:exposure chorus:internal ] ;
+    sh:property [ sh:path chorus:sourcePath     ; sh:minCount 0 ; sh:maxCount 1 ; sh:class chorus:CodeFile ; chorus:exposure chorus:public ] .
     # lastRunAt/lastExitCode (Wren follow-on, folded in): "which nightly job
     # failed" becomes a graph query instead of a Loki spelunk. minCount 0 —
     # a job that has never fired since harvest began has no run to report.

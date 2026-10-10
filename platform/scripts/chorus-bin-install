@@ -199,8 +199,10 @@ if ! mv -f "$DEST_TMP" "$DEST" 2>/dev/null; then
 fi
 
 # Compute cdhash (best-effort — the test fixture uses fake binaries with no
-# Mach-O signature; codesign will fail silently in that case).
-CDHASH=$(codesign --display --verbose=2 "$DEST" 2>&1 | grep '^CDHash=' | head -1 | sed 's/^CDHash=//')
+# Mach-O signature; codesign will fail silently in that case). #4472:
+# --verbose=3, because at 2 this macOS prints no CDHash line and every
+# deploy since #2734 recorded cdhash=unknown.
+CDHASH=$(codesign --display --verbose=3 "$DEST" 2>&1 | grep '^CDHash=' | head -1 | sed 's/^CDHash=//')
 CDHASH="${CDHASH:-unknown}"
 
 # Resolve commit context (best-effort — script may be invoked outside a git tree).

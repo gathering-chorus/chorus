@@ -109,5 +109,18 @@ assert "install refuses no args" test "$RC" -ne 0
 RC=$?
 assert "install refuses missing binary name" test "$RC" -ne 0
 
+# --- TEST 9 (#4472): a signed binary's spine event carries its real cdhash ---
+# Every promoted deploy since #2734 recorded cdhash=unknown: `--verbose=2`
+# does not print CDHash on this macOS, so the services crawl had no cdhash to
+# report. A copy of a system binary is signed; its cdhash must reach the spine.
+SIGNED="$TEST_HOME/signed-src"
+cp /bin/echo "$SIGNED"
+WANT=$(codesign --display --verbose=3 "$SIGNED" 2>&1 | grep '^CDHash=' | sed 's/^CDHash=//')
+: > "$SPINE_LOG"
+"$INSTALL" "$SIGNED" chorus-signed-test > /dev/null 2>&1
+SPINE_CONTENT=$(cat "$SPINE_LOG" 2>/dev/null || echo "")
+assert "the fixture binary is signed (else this test proves nothing)" test -n "$WANT"
+assert "spine event carries the installed cdhash, not unknown" contains "$SPINE_CONTENT" "cdhash=$WANT "
+
 echo "=== Results: $PASS passed, $FAIL failed ==="
 [ "$FAIL" -eq 0 ]

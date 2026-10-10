@@ -151,6 +151,39 @@ fn lang_of(ext: &str) -> Option<&'static str> {
     LANG.iter().find(|(e, _)| *e == ext).map(|(_, l)| *l)
 }
 
+/// Deterministic row key: a readable slug plus a digest of the EXACT path.
+///
+/// The slug alone is not injective. The first live run against 6,172 files
+/// found it in one batch: `designing/docs/LOG_RELATEDNESS.html` and
+/// `designing/docs/log-relatedness.html` are different files that lowercase to
+/// the same slug, so the door refused the batch with a duplicate-name conflict.
+/// Two files must never share a row. The suffix is FNV-1a over the raw bytes —
+/// case, punctuation and all — so distinct paths stay distinct while the name
+/// remains something a human can read in a query result.
+pub fn stable_name(rel: &str) -> String {
+    let mut out = String::with_capacity(rel.len() + 8);
+    let mut last_dash = false;
+    for c in rel.chars() {
+        if c.is_ascii_alphanumeric() {
+            out.push(c.to_ascii_lowercase());
+            last_dash = false;
+        } else if !last_dash {
+            out.push('-');
+            last_dash = true;
+        }
+    }
+    let mut h: u64 = 0xcbf2_9ce4_8422_2325;
+    for b in rel.as_bytes() {
+        h ^= *b as u64;
+        h = h.wrapping_mul(0x1000_0000_01b3);
+    }
+    format!(
+        "file-{}-{:08x}",
+        out.trim_matches('-'),
+        (h & 0xffff_ffff) as u32
+    )
+}
+
 /// Is this path a test, by the repo's own conventions? Ported verbatim from
 /// testfiles.py's `is_test_file` so the two walkers cannot disagree while both
 /// exist. Path-shaped only — the content check (a .rs carrying `#[test]`) is

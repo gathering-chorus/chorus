@@ -282,6 +282,8 @@ pub struct Unit {
     pub meta: UnitMeta,
     /// remote unit whose plist we could not read: "we could not look"
     pub evidence_unavailable: bool,
+    /// #4472 AC2 — TCP ports the unit's process tree listens on, sorted
+    pub ports: Vec<u16>,
 }
 
 /// What one machine's walk returned: its units, or why it could not be walked.
@@ -327,7 +329,7 @@ pub fn authored_services(ttl: &str) -> Vec<String> {
 
 /// Mapping targets that are not authored Services — the generator refuses.
 pub fn unknown_targets(mapping: &[(String, String)], authored: &[String]) -> Vec<String> {
-    let mut bad: Vec<String> = mapping.iter().map(|(_, s)| s.clone()).filter(|s| !authored.contains(s)).collect();
+    let mut bad: Vec<String> = mapping.iter().map(|(_, s)| s.clone()).filter(|s| s != NO_DESIGN && !authored.contains(s)).collect();
     bad.sort();
     bad.dedup();
     bad
@@ -401,11 +403,38 @@ impl DoorRow {
     pub fn get(&self, k: &str) -> &str {
         self.fields.iter().find(|(f, _)| f == k).map(|(_, v)| v.as_str()).unwrap_or("")
     }
+    /// every value of a field, sorted — a multi-valued field (listensOn) is
+    /// compared whole, never by its first value
+    pub fn all(&self, k: &str) -> Vec<&str> {
+        let mut v: Vec<&str> = self.fields.iter().filter(|(f, x)| f == k && !x.is_empty()).map(|(_, x)| x.as_str()).collect();
+        v.sort();
+        v
+    }
 }
 
-/// The fields this crawl owns. Anything else on a row (deployedCommit,
-/// cdhash, lastRunAt…) belongs to another writer and is put back untouched.
-pub const OWNED_FIELDS: &[&str] = &["label", "launchdLabel", "onMachine", "runState", "binaryPath", "runsService", "external", "evidenceState"];
+/// The fields this crawl owns. Anything else on a row belongs to another
+/// writer and is put back untouched.
+pub const OWNED_FIELDS: &[&str] = &[
+    "label", "launchdLabel", "onMachine", "runState", "binaryPath", "runsService", "external", "evidenceState",
+    "listensOn", "deployedCommit", "cdhash", "sourcePath",
+];
+
+/// The mapping value that names a unit as ours with no design behind it
+/// (AC3: "link every instance to a design, or name it as having none").
+/// It is not a finding, and it writes no runsService edge.
+pub const NO_DESIGN: &str = "none";
+
+/// The Service a label runs. A card's werk-slot copy (`<label>.werk.<role>`,
+/// started by env-up for a demo) is the Werk's demo environment, whatever it
+/// copies — the #3870 mapping already said so for api.werk.silas and
+/// mcp.werk.silas. By rule, because the slots come and go with cards: a
+/// per-label entry is a stale-mapping finding whenever no card is up.
+pub fn service_for<'a>(label: &str, mapping: &'a [(String, String)]) -> Option<&'a str> {
+    if let Some((_, svc)) = mapping.iter().find(|(k, _)| k == label) {
+        return Some(svc.as_str());
+    }
+    label.contains(".werk.").then_some("service-werk")
+}
 
 /// The row a unit should be: the bash generator's triples, as door fields.
 pub fn desired_row(machine: &str, u: &Unit, mapping: &[(String, String)], ts: &str) -> DoorRow {
@@ -421,8 +450,11 @@ pub fn desired_row(machine: &str, u: &Unit, mapping: &[(String, String)], ts: &s
     if let Some(bp) = binary_path(&u.meta) {
         f.push(("binaryPath".into(), bp.into()));
     }
-    if let Some((_, svc)) = mapping.iter().find(|(k, _)| *k == u.label) {
-        f.push(("runsService".into(), svc.clone()));
+    if let Some(svc) = service_for(&u.label, mapping).filter(|s| *s != NO_DESIGN) {
+        f.push(("runsService".into(), svc.to_string()));
+    }
+    for port in &u.ports {
+        f.push(("listensOn".into(), port.to_string()));
     }
     if is_external(&u.label, &u.meta) {
         f.push(("external".into(), "true".into()));
@@ -469,7 +501,7 @@ pub fn plan(desired: Vec<DoorRow>, current: &[DoorRow], walked: &[&str], now_sec
         match current.iter().find(|c| c.name == d.name && c.class == d.class) {
             None => p.create.push(d),
             Some(c) => {
-                let differs = OWNED_FIELDS.iter().any(|k| c.get(k) != d.get(k));
+                let differs = OWNED_FIELDS.iter().any(|k| c.all(k) != d.all(k));
                 let old = iso_secs(c.get("lastObserved")).map_or(true, |t| now_secs.saturating_sub(t) >= REFRESH_AFTER_SECS);
                 if differs || old {
                     let mut fields: Vec<(String, String)> = c
@@ -542,7 +574,8 @@ pub fn findings(desired: &[DoorRow], plan: &Plan, mapping: &[(String, String)], 
         f.push(format!("collision: {c}"));
     }
     for d in desired {
-        if d.class == UnitClass::ServiceInstance && d.get("runsService").is_empty() && d.get("external").is_empty() && d.get("evidenceState").is_empty() {
+        let named_none = service_for(d.get("launchdLabel"), mapping) == Some(NO_DESIGN);
+        if d.class == UnitClass::ServiceInstance && !named_none && d.get("runsService").is_empty() && d.get("external").is_empty() && d.get("evidenceState").is_empty() {
             f.push(format!("unmapped: {} — ours, and no Service claims it", d.get("label")));
         }
     }
@@ -643,7 +676,7 @@ mod plan_4472 {
         s.strip_prefix("T").and_then(|n| n.parse().ok())
     }
     fn unit(label: &str) -> Unit {
-        Unit { label: label.into(), run_state: "running".into(), meta: UnitMeta { scheduled: false, argv: vec!["/Users/jeffbridwell/.chorus/bin/x".into()], bundle_id: None }, evidence_unavailable: false }
+        Unit { label: label.into(), run_state: "running".into(), meta: UnitMeta { scheduled: false, argv: vec!["/Users/jeffbridwell/.chorus/bin/x".into()], bundle_id: None }, evidence_unavailable: false, ports: vec![] }
     }
 
     #[test]
@@ -667,15 +700,15 @@ mod plan_4472 {
         let mut cur = d.clone();
         cur.fields.retain(|(k, _)| k != "runState");
         cur.fields.push(("runState".into(), "loaded".into()));
-        cur.fields.push(("deployedCommit".into(), "abc".into()));
-        cur.fields.push(("cdhash".into(), "".into()));
+        cur.fields.push(("comment".into(), "abc".into()));
+        cur.fields.push(("status".into(), "".into()));
         let p = plan(vec![d], &[cur], &["library"], 1000, &iso);
         assert_eq!(p.update.len(), 1);
         let u = &p.update[0];
         assert_eq!(u.get("runState"), "running");
         // NEGATIVE PROOF: the full-replace PUT must not drop another writer's field
-        assert_eq!(u.get("deployedCommit"), "abc");
-        assert!(!u.fields.iter().any(|(k, _)| k == "cdhash"), "empty fields are not written back");
+        assert_eq!(u.get("comment"), "abc");
+        assert!(!u.fields.iter().any(|(k, _)| k == "status"), "empty fields are not written back");
     }
 
     #[test]
@@ -717,14 +750,14 @@ mod plan_4472 {
 
     #[test]
     fn evidence_rules_carry_into_rows() {
-        let bundle_only = Unit { label: "com.docker.helper".into(), run_state: "running".into(), meta: UnitMeta { scheduled: false, argv: vec![], bundle_id: Some("com.docker.docker".into()) }, evidence_unavailable: false };
+        let bundle_only = Unit { label: "com.docker.helper".into(), run_state: "running".into(), meta: UnitMeta { scheduled: false, argv: vec![], bundle_id: Some("com.docker.docker".into()) }, evidence_unavailable: false, ports: vec![] };
         assert_eq!(desired_row("library", &bundle_only, &[], "T").get("external"), "true");
-        let unseen = Unit { label: "com.x.y".into(), run_state: "loaded".into(), meta: UnitMeta::default(), evidence_unavailable: true };
+        let unseen = Unit { label: "com.x.y".into(), run_state: "loaded".into(), meta: UnitMeta::default(), evidence_unavailable: true, ports: vec![] };
         let r = desired_row("bedroom", &unseen, &[], "T");
         assert_eq!(r.get("evidenceState"), "unknown");
         assert_eq!(r.get("external"), "");
         // NEGATIVE PROOF: a wrapper around OUR script is ours (the css case)
-        let css = Unit { label: "com.security.css".into(), run_state: "running".into(), meta: UnitMeta { scheduled: false, argv: vec!["/bin/bash".into(), "/Users/jeffbridwell/CascadeProjects/x/start.sh".into()], bundle_id: None }, evidence_unavailable: false };
+        let css = Unit { label: "com.security.css".into(), run_state: "running".into(), meta: UnitMeta { scheduled: false, argv: vec!["/bin/bash".into(), "/Users/jeffbridwell/CascadeProjects/x/start.sh".into()], bundle_id: None }, evidence_unavailable: false, ports: vec![] };
         assert_eq!(desired_row("library", &css, &[], "T").get("external"), "");
     }
 
@@ -754,7 +787,7 @@ mod report_4472 {
 
     #[test]
     fn findings_name_unmapped_stale_retired_and_unwalked() {
-        let u = |l: &str, ext: bool| Unit { label: l.into(), run_state: "running".into(), meta: UnitMeta { scheduled: false, argv: vec![if ext { "/opt/x".into() } else { "/Users/jeffbridwell/.chorus/bin/x".into() }], bundle_id: None }, evidence_unavailable: false };
+        let u = |l: &str, ext: bool| Unit { label: l.into(), run_state: "running".into(), meta: UnitMeta { scheduled: false, argv: vec![if ext { "/opt/x".into() } else { "/Users/jeffbridwell/.chorus/bin/x".into() }], bundle_id: None }, evidence_unavailable: false, ports: vec![] };
         let mapping = vec![("com.chorus.mapped".to_string(), "service-a".to_string()), ("com.gone".to_string(), "service-b".to_string())];
         let desired = vec![
             desired_row("library", &u("com.chorus.mapped", false), &mapping, "T"),
@@ -771,5 +804,403 @@ mod report_4472 {
         // NEGATIVE PROOF: mapped and external units are not findings
         assert!(!f.iter().any(|x| x.contains("com.chorus.mapped") || x.contains("com.other.app")), "{f:?}");
         assert_eq!(f.len(), 4);
+    }
+
+    #[test]
+    fn a_werk_slot_is_the_werk_and_none_is_named_not_unmapped() {
+        let u = |l: &str| Unit { label: l.into(), run_state: "running".into(), meta: UnitMeta { scheduled: false, argv: vec!["/Users/jeffbridwell/.chorus/bin/x".into()], bundle_id: None }, evidence_unavailable: false, ports: vec![] };
+        let mapping = vec![("com.chorus.bare".to_string(), NO_DESIGN.to_string())];
+        let slot = desired_row("library", &u("com.chorus.api.werk.kade"), &mapping, "T");
+        assert_eq!(slot.get("runsService"), "service-werk");
+        let bare = desired_row("library", &u("com.chorus.bare"), &mapping, "T");
+        assert_eq!(bare.get("runsService"), "", "none writes no edge");
+        let orphan = desired_row("library", &u("com.chorus.orphan"), &mapping, "T");
+        let f = findings(&[slot, bare, orphan], &Plan::default(), &mapping, &[]);
+        // NEGATIVE PROOF (#3734): the orphan beside them is still a finding
+        assert_eq!(f, vec!["unmapped: com.chorus.orphan (library) — ours, and no Service claims it".to_string()]);
+    }
+}
+
+// ---- #4472 AC2: ports, provenance and source, from evidence on the box ----
+
+/// `lsof -nP -iTCP -sTCP:LISTEN -F pn` → (pid, port). A `p` line names the
+/// process; each `n` line under it is one listening address (`*:3360`,
+/// `127.0.0.1:8526`, `[::1]:3000`); the port is what follows the last colon.
+pub fn parse_lsof_listen(text: &str) -> Vec<(u32, u16)> {
+    let mut out = Vec::new();
+    let mut pid: Option<u32> = None;
+    for line in text.lines() {
+        if let Some(p) = line.strip_prefix('p') {
+            pid = p.trim().parse().ok();
+        } else if let (Some(n), Some(p)) = (line.strip_prefix('n'), pid) {
+            if let Some(port) = n.rsplit(':').next().and_then(|x| x.trim().parse().ok()) {
+                if !out.contains(&(p, port)) {
+                    out.push((p, port));
+                }
+            }
+        }
+    }
+    out
+}
+
+/// `ps -axo pid=,ppid=` → (pid, parent).
+pub fn parse_ps(text: &str) -> Vec<(u32, u32)> {
+    text.lines()
+        .filter_map(|l| {
+            let mut it = l.split_whitespace();
+            Some((it.next()?.parse().ok()?, it.next()?.parse().ok()?))
+        })
+        .collect()
+}
+
+/// The ports a unit answers: its own pid's and every descendant's. launchd
+/// holds the wrapper's pid (service-run, a launch script); the listener is
+/// often its child, so the pid alone would report most services as portless.
+pub fn ports_of(pid: u32, listens: &[(u32, u16)], tree: &[(u32, u32)]) -> Vec<u16> {
+    let mut family = vec![pid];
+    let mut i = 0;
+    while i < family.len() {
+        let parent = family[i];
+        let children: Vec<u32> = tree.iter().filter(|(c, pp)| *pp == parent && !family.contains(c)).map(|(c, _)| *c).collect();
+        family.extend(children);
+        i += 1;
+    }
+    let mut ports: Vec<u16> = listens.iter().filter(|(p, _)| family.contains(p)).map(|(_, port)| *port).collect();
+    ports.sort();
+    ports.dedup();
+    ports
+}
+
+pub const BIN_DIR: &str = "/Users/jeffbridwell/.chorus/bin/";
+pub const CHORUS_REPO: &str = "/Users/jeffbridwell/CascadeProjects/chorus/";
+
+/// The deployed binary a unit runs, named the way chorus-bin-install names
+/// it: the first argument under ~/.chorus/bin/, where `X-bin` is the signed
+/// body behind wrapper X and `X-launch.sh` is X's launcher.
+pub fn deployed_binary(meta: &UnitMeta) -> Option<String> {
+    let a = meta.argv.iter().find(|a| a.starts_with(BIN_DIR))?;
+    let base = &a[BIN_DIR.len()..];
+    let name = base.strip_suffix("-bin").or_else(|| base.strip_suffix("-launch.sh")).unwrap_or(base);
+    Some(name.to_string())
+}
+
+/// The latest promoted deploy of each binary: (binary, commit, cdhash).
+pub type Deploys = Vec<(String, String, Option<String>)>;
+
+/// Fold spine lines into `deploys`, latest event winning. Only
+/// `binary.deployed` events count, and only installs to ~/.chorus/bin: a
+/// `target=werk` install went to a card's werk slot, not to what launchd runs.
+/// A cdhash of "unknown" (codesign could not read it) is no cdhash.
+pub fn fold_deploys(deploys: &mut Deploys, text: &str) {
+    for line in text.lines().filter(|l| l.contains("\"event\":\"binary.deployed\"")) {
+        let Ok(e) = parse_json(line) else { continue };
+        if e.get("target").and_then(Json::as_str) == Some("werk") {
+            continue;
+        }
+        let (Some(bin), Some(commit)) = (e.get("binary").and_then(Json::as_str), e.get("commit").and_then(Json::as_str)) else { continue };
+        let cdhash = e.get("cdhash").and_then(Json::as_str).filter(|c| !c.is_empty() && *c != "unknown").map(String::from);
+        deploys.retain(|(b, _, _)| b != bin);
+        deploys.push((bin.to_string(), commit.to_string(), cdhash));
+    }
+}
+
+/// The deploys ledger as a file: line 1 is the spine byte offset read up to,
+/// then one `binary<TAB>commit<TAB>cdhash` line per binary. The spine is
+/// 4 GB and never rotated, so each run reads only what was appended.
+pub fn ledger_text(offset: u64, deploys: &Deploys) -> String {
+    let mut s = format!("{offset}\n");
+    for (b, c, h) in deploys {
+        s.push_str(&format!("{b}\t{c}\t{}\n", h.as_deref().unwrap_or("")));
+    }
+    s
+}
+
+pub fn parse_ledger(text: &str) -> Option<(u64, Deploys)> {
+    let mut lines = text.lines();
+    let offset = lines.next()?.trim().parse().ok()?;
+    let mut d = Deploys::new();
+    for l in lines {
+        let mut f = l.split('\t');
+        let (Some(b), Some(c)) = (f.next(), f.next()) else { return None };
+        let h = f.next().filter(|h| !h.is_empty()).map(String::from);
+        d.push((b.into(), c.into(), h));
+    }
+    Some((offset, d))
+}
+
+/// One crate's binaries → their source files, repo-relative, from its
+/// Cargo.toml: each `[[bin]]` with its `path` (or `src/bin/<name>.rs`), and
+/// the package itself at `src/main.rs` when no `[[bin]]` names it.
+pub fn crate_bins(crate_rel: &str, toml: &str, has_main: bool) -> Vec<(String, String)> {
+    let mut out = Vec::new();
+    let mut section = "";
+    let mut package = None;
+    let mut bin: (Option<String>, Option<String>) = (None, None);
+    let flush = |bin: &mut (Option<String>, Option<String>), out: &mut Vec<(String, String)>| {
+        if let (Some(n), p) = std::mem::take(bin) {
+            let path = p.unwrap_or_else(|| format!("src/bin/{n}.rs"));
+            out.push((n, format!("{crate_rel}/{path}")));
+        }
+    };
+    for line in toml.lines().map(str::trim) {
+        if line.starts_with('[') {
+            if section == "[[bin]]" {
+                flush(&mut bin, &mut out);
+            }
+            section = line;
+            continue;
+        }
+        let Some((k, v)) = line.split_once('=') else { continue };
+        let v = v.trim().trim_matches('"').to_string();
+        match (section, k.trim()) {
+            ("[package]", "name") => package = Some(v),
+            ("[[bin]]", "name") => bin.0 = Some(v),
+            ("[[bin]]", "path") => bin.1 = Some(v),
+            _ => {}
+        }
+    }
+    if section == "[[bin]]" {
+        flush(&mut bin, &mut out);
+    }
+    if let Some(p) = package {
+        if has_main && !out.iter().any(|(n, _)| *n == p) {
+            out.push((p, format!("{crate_rel}/src/main.rs")));
+        }
+    }
+    out
+}
+
+/// What the box says about where a unit's code came from (library only:
+/// deploys happen there and the CodeFile rows are its repo's files).
+#[derive(Debug, Default)]
+pub struct Provenance {
+    pub deploys: Deploys,
+    /// binary name → repo-relative source file
+    pub sources: Vec<(String, String)>,
+    /// CodeFile row names the door holds — an edge to a row that is not
+    /// there would dangle, so it is not written
+    pub codefiles: Vec<String>,
+}
+
+/// The repo-relative file that is a unit's code: the crate source of the
+/// deployed binary it runs, else the repo script launchd starts.
+pub fn source_of(meta: &UnitMeta, prov: &Provenance) -> Option<String> {
+    if let Some(bin) = deployed_binary(meta) {
+        if let Some((_, rel)) = prov.sources.iter().find(|(b, _)| *b == bin) {
+            return Some(rel.clone());
+        }
+    }
+    binary_path(meta).and_then(|p| p.strip_prefix(CHORUS_REPO)).map(String::from)
+}
+
+/// Add deployedCommit, cdhash and sourcePath to a unit's row, before
+/// lastObserved. Every field is evidence or it is absent: no deploy event,
+/// no commit; no CodeFile row, no edge.
+pub fn with_provenance(mut row: DoorRow, u: &Unit, prov: &Provenance) -> DoorRow {
+    let mut add: Vec<(String, String)> = Vec::new();
+    if let Some((_, commit, cdhash)) = deployed_binary(&u.meta).and_then(|b| prov.deploys.iter().find(|(d, _, _)| *d == b)) {
+        add.push(("deployedCommit".into(), commit.clone()));
+        if let Some(h) = cdhash {
+            add.push(("cdhash".into(), h.clone()));
+        }
+    }
+    if let Some(name) = source_of(&u.meta, prov).map(|rel| crate::stable_name(&rel)).filter(|n| prov.codefiles.contains(n)) {
+        add.push(("sourcePath".into(), name));
+    }
+    let at = row.fields.iter().position(|(k, _)| k == "lastObserved").unwrap_or(row.fields.len());
+    row.fields.splice(at..at, add);
+    row
+}
+
+/// One door page → its rows, every field kept: a multi-valued field (served
+/// as an array) becomes one pair per value. `row_fields` skips arrays, so a
+/// full-replace PUT built from it would drop listensOn, and a multi-valued
+/// field would read as changed on every run.
+pub fn door_page_rows(page: &str) -> Vec<Vec<(String, String)>> {
+    fn scalar(v: &Json) -> Option<String> {
+        match v {
+            Json::Str(s) => Some(s.clone()),
+            Json::Num(n) => Some(n.clone()),
+            Json::Bool(b) => Some(b.to_string()),
+            _ => None,
+        }
+    }
+    let Ok(p) = parse_json(page) else { return vec![] };
+    let Some(Json::Arr(rows)) = p.get("data") else { return vec![] };
+    rows.iter()
+        .filter_map(|r| if let Json::Obj(kv) = r { Some(kv) } else { None })
+        .map(|kv| {
+            let mut out = Vec::new();
+            for (k, v) in kv {
+                match v {
+                    Json::Arr(items) => out.extend(items.iter().filter_map(scalar).map(|x| (k.clone(), x))),
+                    other => out.extend(scalar(other).map(|x| (k.clone(), x))),
+                }
+            }
+            out
+        })
+        .collect()
+}
+
+/// AC6 — "how many services in prod" as one number per side: our
+/// ServiceInstance rows that are not absent, and our units launchd listed.
+/// Externals are not ours and are not counted on either side.
+pub fn prod_count(rows: &[DoorRow]) -> usize {
+    rows.iter().filter(|r| r.class == UnitClass::ServiceInstance && r.get("runState") != "absent" && r.get("external").is_empty()).count()
+}
+
+/// AC7 — does a changed repo path touch a unit whose code is `source`? The
+/// same file does; so does any file in the same crate, because a crate's
+/// binary is built from all of it, not just its main.rs.
+pub fn touched_by(changed: &str, source: &str) -> bool {
+    fn crate_dir(p: &str) -> Option<&str> {
+        let rest = p.strip_prefix("platform/services/")?;
+        let end = rest.find('/')?;
+        Some(&p[.."platform/services/".len() + end])
+    }
+    changed == source || matches!((crate_dir(changed), crate_dir(source)), (Some(a), Some(b)) if a == b)
+}
+
+#[cfg(test)]
+mod provenance_4472 {
+    use super::*;
+    use crate::row_fields;
+
+    fn meta(argv: &[&str]) -> UnitMeta {
+        UnitMeta { scheduled: false, argv: argv.iter().map(|s| s.to_string()).collect(), bundle_id: None }
+    }
+
+    #[test]
+    fn a_listener_under_the_wrapper_is_the_units_port() {
+        let lsof = "p100\nf5\nn*:3360\np200\nf7\nn127.0.0.1:8526\nn[::1]:8526\np300\nn*:9999\n";
+        let listens = parse_lsof_listen(lsof);
+        assert_eq!(listens, vec![(100, 3360), (200, 8526), (300, 9999)]);
+        let tree = parse_ps("  100     1\n  150   100\n  200   150\n  300     1\n");
+        assert_eq!(ports_of(100, &listens, &tree), vec![3360, 8526]);
+        // NEGATIVE PROOF (#3734): a sibling's port is not ours
+        assert!(!ports_of(100, &listens, &tree).contains(&9999));
+        assert_eq!(ports_of(150, &listens, &tree), vec![8526]);
+    }
+
+    #[test]
+    fn the_binary_is_named_the_way_bin_install_names_it() {
+        assert_eq!(deployed_binary(&meta(&["/Users/jeffbridwell/.chorus/bin/werk-test-bin", "--nightly"])).as_deref(), Some("werk-test"));
+        assert_eq!(deployed_binary(&meta(&["/Users/jeffbridwell/.chorus/bin/athena-make-launch.sh", "serve"])).as_deref(), Some("athena-make"));
+        let wrapped = meta(&["/Users/jeffbridwell/CascadeProjects/chorus/platform/scripts/service-run", "l", "daemon", "/Users/jeffbridwell/.chorus/bin/jeff-input-monitor"]);
+        assert_eq!(deployed_binary(&wrapped).as_deref(), Some("jeff-input-monitor"));
+        assert_eq!(deployed_binary(&meta(&["/opt/homebrew/bin/dagu"])), None);
+    }
+
+    #[test]
+    fn a_werk_install_is_not_what_launchd_runs() {
+        let spine = concat!(
+            r#"{"event":"binary.deployed","binary":"chorus-hooks","commit":"aaa","cdhash":"h1","target":"canonical"}"#, "\n",
+            r#"{"event":"binary.deployed","binary":"chorus-hooks","commit":"bbb","cdhash":"h2","target":"werk"}"#, "\n",
+            r#"{"event":"card.pulled","binary":"chorus-hooks","commit":"ccc"}"#, "\n",
+            r#"{"event":"binary.deployed","binary":"werk-test","commit":"ddd","cdhash":"unknown"}"#, "\n",
+            "not json at all\n",
+        );
+        let mut d = Deploys::new();
+        fold_deploys(&mut d, spine);
+        assert_eq!(d, vec![("chorus-hooks".into(), "aaa".into(), Some("h1".into())), ("werk-test".into(), "ddd".into(), None)]);
+        // a later canonical install replaces the earlier one
+        fold_deploys(&mut d, r#"{"event":"binary.deployed","binary":"chorus-hooks","commit":"eee","cdhash":"h3","target":"canonical"}"#);
+        assert_eq!(d.iter().find(|x| x.0 == "chorus-hooks").unwrap().1, "eee");
+    }
+
+    #[test]
+    fn a_door_page_keeps_every_value_of_a_multi_valued_field() {
+        let page = r#"{ "count": 1, "data": [ { "name": "instance-library-x", "listensOn": ["3340", "3341"], "label": "x", "external": "", "n": 5 } ], "links": {} }"#;
+        let rows = door_page_rows(page);
+        assert_eq!(rows.len(), 1);
+        let r = DoorRow { class: UnitClass::ServiceInstance, name: "x".into(), fields: rows[0].clone() };
+        assert_eq!(r.all("listensOn"), vec!["3340", "3341"]);
+        assert_eq!(r.get("n"), "5");
+        // NEGATIVE PROOF (#3734): the reader every other crawl uses drops the array
+        let flat = row_fields(page.split("[ {").nth(1).unwrap());
+        assert!(!flat.iter().any(|(k, _)| k == "listensOn"));
+    }
+
+    #[test]
+    fn the_prod_count_is_ours_and_present() {
+        let row = |state: &str, ext: &str, class| DoorRow { class, name: "n".into(), fields: vec![("runState".into(), state.into()), ("external".into(), ext.into())] };
+        let rows = [
+            row("running", "", UnitClass::ServiceInstance),
+            row("loaded", "", UnitClass::ServiceInstance),
+            row("absent", "", UnitClass::ServiceInstance),
+            row("running", "true", UnitClass::ServiceInstance),
+            row("", "", UnitClass::ScheduledJob),
+        ];
+        assert_eq!(prod_count(&rows), 2);
+    }
+
+    #[test]
+    fn a_change_anywhere_in_a_crate_touches_its_binary() {
+        let main = "platform/services/chorus-crawl/src/main.rs";
+        assert!(touched_by(main, main));
+        assert!(touched_by("platform/services/chorus-crawl/src/services.rs", main));
+        assert!(touched_by("platform/scripts/service-run", "platform/scripts/service-run"));
+        // NEGATIVE PROOF (#3734): a neighbouring crate, or a prefix-sharing name, is not this one
+        assert!(!touched_by("platform/services/chorus-crawler/src/main.rs", main));
+        assert!(!touched_by("platform/services/werk-test/src/main.rs", main));
+        assert!(!touched_by("platform/scripts/service-run-2", "platform/scripts/service-run"));
+    }
+
+    #[test]
+    fn the_ledger_round_trips() {
+        let d: Deploys = vec![("a".into(), "c1".into(), Some("h".into())), ("b".into(), "c2".into(), None)];
+        assert_eq!(parse_ledger(&ledger_text(42, &d)), Some((42, d)));
+        assert_eq!(parse_ledger("not a number\n"), None);
+    }
+
+    #[test]
+    fn crate_bins_reads_bin_paths_and_the_package_main() {
+        let toml = "[package]\nname = \"chorus-hooks\"\n\n[[bin]]\nname = \"chorus-hook-shim\"\npath = \"src/shim.rs\"\n\n[[bin]]\nname = \"other\"\n\n[dependencies]\nx = \"1\"\n";
+        assert_eq!(
+            crate_bins("platform/services/chorus-hooks", toml, true),
+            vec![
+                ("chorus-hook-shim".into(), "platform/services/chorus-hooks/src/shim.rs".into()),
+                ("other".into(), "platform/services/chorus-hooks/src/bin/other.rs".into()),
+                ("chorus-hooks".into(), "platform/services/chorus-hooks/src/main.rs".into()),
+            ]
+        );
+        assert_eq!(crate_bins("c", "[package]\nname = \"lib-only\"\n", false), vec![]);
+    }
+
+    #[test]
+    fn provenance_is_evidence_or_absent() {
+        let rel = "platform/services/werk-test/src/main.rs";
+        let prov = Provenance {
+            deploys: vec![("werk-test".into(), "abc123".into(), Some("cd1".into()))],
+            sources: vec![("werk-test".into(), rel.into())],
+            codefiles: vec![crate::stable_name(rel)],
+        };
+        let u = Unit { label: "com.chorus.nightly-suites".into(), run_state: "loaded".into(), meta: meta(&["/Users/jeffbridwell/.chorus/bin/werk-test-bin"]), evidence_unavailable: false, ports: vec![] };
+        let r = with_provenance(desired_row("library", &u, &[], "T"), &u, &prov);
+        assert_eq!(r.get("deployedCommit"), "abc123");
+        assert_eq!(r.get("cdhash"), "cd1");
+        assert_eq!(r.get("sourcePath"), crate::stable_name(rel));
+        assert_eq!(r.fields.last().unwrap().0, "lastObserved");
+        // NEGATIVE PROOF (#3734): no CodeFile row → no edge; no deploy → no commit
+        let bare = Provenance { sources: prov.sources.clone(), ..Default::default() };
+        let r = with_provenance(desired_row("library", &u, &[], "T"), &u, &bare);
+        assert_eq!((r.get("deployedCommit"), r.get("sourcePath")), ("", ""));
+        // a repo script launchd starts is its own source
+        let script = meta(&["/bin/bash", "/Users/jeffbridwell/CascadeProjects/chorus/platform/scripts/x.sh"]);
+        assert_eq!(source_of(&script, &bare).as_deref(), Some("platform/scripts/x.sh"));
+    }
+
+    #[test]
+    fn a_port_change_is_a_write_and_the_same_ports_are_not() {
+        let mut u = Unit { label: "com.chorus.api".into(), run_state: "running".into(), meta: meta(&["/Users/jeffbridwell/.chorus/bin/x"]), evidence_unavailable: false, ports: vec![3340, 3341] };
+        let cur = desired_row("library", &u, &[], "T");
+        let now = 100;
+        let fresh = |_: &str| Some(now);
+        let same = plan(vec![desired_row("library", &u, &[], "T")], &[cur.clone()], &["library"], now, &fresh);
+        assert_eq!((same.update.len(), same.unchanged), (0, 1));
+        u.ports = vec![3340];
+        let moved = plan(vec![desired_row("library", &u, &[], "T")], &[cur], &["library"], now, &fresh);
+        assert_eq!(moved.update.len(), 1);
+        assert_eq!(moved.update[0].all("listensOn"), vec!["3340"]);
     }
 }
