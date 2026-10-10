@@ -1903,6 +1903,78 @@ chorus:ProductShape a sh:NodeShape ;
     sh:property [ sh:path chorus:notInScope      ; sh:minCount 0 ; sh:datatype xsd:string ] ;
     sh:property [ sh:path chorus:references      ; sh:minCount 0 ; sh:datatype xsd:string ] .
 
+# --- #4481: one parent per row, no links across hierarchies (Jeff 2026-10-10, reviewed with Wren) ---
+# The chain is value stream -> step -> domain -> service -> running unit. Each row stores
+# ONE parent link, named on its class by chorus:parentVia; step and stream are read up
+# the chain, never stored twice. A link joins two rows in the same hierarchy unless its
+# property carries chorus:crossesHierarchy, which says why it may cross. athena-validate
+# reads these annotations, so the rule and the check cannot drift apart.
+# Design: https://claude.ai/artifact/L8xNss5fqT4QjVSBDgxJ2p
+chorus:inHierarchy a owl:AnnotationProperty ; rdfs:label "in hierarchy" ;
+    rdfs:comment "The hierarchy a class's rows belong to. A link between rows of two different hierarchies is refused unless its property is marked chorus:crossesHierarchy." .
+chorus:parentVia a owl:AnnotationProperty ; rdfs:label "parent via" ;
+    rdfs:comment "The one link a row of this class stores to its parent in the chain: a property, or [ sh:inversePath p ] when the parent points down. Every row has exactly one, unless the class says chorus:parentOptional true." .
+chorus:parentOptional a owl:AnnotationProperty ; rdfs:label "parent optional" ;
+    rdfs:comment "true when a row may have no parent yet: a crawled unit mapped to no Service (#4472 AC3). It may still never have two." .
+chorus:chainPosition a owl:AnnotationProperty ; rdfs:label "chain position" ;
+    rdfs:comment "true on a link that places a row in the chain (a step or a stream). A row may store one only when it is its class's chorus:parentVia; everywhere else the position is read up the chain." .
+chorus:atStep      chorus:chainPosition true .
+chorus:atStream    chorus:chainPosition true .
+chorus:inStream    chorus:chainPosition true .
+chorus:primaryStep chorus:chainPosition true .
+chorus:crossesHierarchy a owl:AnnotationProperty ; rdfs:label "crosses hierarchy" ;
+    rdfs:comment "Why this link type may join rows of two hierarchies. Only the properties carrying it may." .
+
+chorus:ValueStream     chorus:inHierarchy "chain" .
+chorus:ValueStreamStep chorus:inHierarchy "chain" ; chorus:parentVia chorus:inStream .
+chorus:Domain          chorus:inHierarchy "chain" ; chorus:parentVia chorus:atStep .
+chorus:Service         chorus:inHierarchy "chain" ; chorus:parentVia [ sh:inversePath chorus:hosts ] .
+chorus:ServiceInstance chorus:inHierarchy "chain" ; chorus:parentVia chorus:runsService ; chorus:parentOptional true .
+chorus:ScheduledJob    chorus:inHierarchy "chain" ; chorus:parentVia chorus:runsService ; chorus:parentOptional true .
+chorus:Product         chorus:inHierarchy "product" .
+chorus:Principal       chorus:inHierarchy "principal" .
+chorus:Document        chorus:inHierarchy "document" .
+chorus:EventType       chorus:inHierarchy "event" .
+
+# Five kinds of link may cross, a fixed set (Jeff 2026-10-10 11:03), not a list that grows:
+# ownership, design, grouping, tag, event flow. A tag (a document, log, alert, skill or
+# gate saying what it is about) points at ONE place in the chain, the lowest it knows;
+# product and step are read up the chain. So a document's hasProduct is not on this list.
+chorus:ownedBy       chorus:crossesHierarchy "ownership: every row names the principal who owns it." .
+chorus:hasDesignDoc  chorus:crossesHierarchy "design: a product, domain or service links to the document that holds its design." .
+chorus:hasDomain     chorus:crossesHierarchy "grouping and tag: a product groups domains (not their parent: Chorus is an assemblage, and werk spans two steps); an artifact tags the domain it is about." .
+chorus:consumes      chorus:crossesHierarchy "grouping: a product uses something it does not group." .
+chorus:consumesEvent chorus:crossesHierarchy "event flow: who reads an event type." .
+chorus:producedBy    chorus:crossesHierarchy "event flow: who emits an event type; the pair of consumesEvent." .
+
+# --- #4481: every link type in use says what it links from and to ---
+# Several had their rdfs:domain dropped because two classes share them, and two rdfs:domain
+# triples mean BOTH (an intersection). A union says EITHER, which is what was meant.
+# Types read from the store on 2026-10-10 (which classes actually use each link).
+# owl:Thing is written only where any row may carry the link (ownership, tags).
+# Nine link types no row uses (writes, reads, produces, indexes, sourceAlert,
+# propertyValueRef, writeOwner, memoryLayer, writtenInSession) are left for #4482 to
+# retire or type with their owners; athena-validate keeps naming them until then.
+chorus:sourcePath    rdfs:domain [ owl:unionOf ( chorus:ServiceInstance chorus:ScheduledJob ) ] .
+chorus:runsService   rdfs:domain [ owl:unionOf ( chorus:ServiceInstance chorus:ScheduledJob ) ] .
+chorus:onMachine     rdfs:domain [ owl:unionOf ( chorus:ServiceInstance chorus:ScheduledJob chorus:LogSource chorus:Presence ) ] .
+chorus:hasDesignDoc  rdfs:domain [ owl:unionOf ( chorus:Product chorus:Domain chorus:Service ) ] ; rdfs:range chorus:Document .
+chorus:consumesEvent rdfs:domain [ owl:unionOf ( chorus:Product chorus:Domain chorus:Service ) ] .
+chorus:overChannel   rdfs:domain [ owl:unionOf ( chorus:Message chorus:Delivery ) ] .
+chorus:ownedBy       rdfs:domain owl:Thing .
+chorus:hasDomain     rdfs:domain owl:Thing ; rdfs:range chorus:Domain .
+chorus:atStep        rdfs:domain chorus:Domain .
+chorus:dependsOn     rdfs:domain [ owl:unionOf ( chorus:Domain chorus:Product chorus:Service ) ] ;
+                     rdfs:range  [ owl:unionOf ( chorus:Domain chorus:Service chorus:Skill ) ] .
+chorus:delegatesTo   rdfs:domain chorus:Skill ; rdfs:range chorus:Skill .
+chorus:callsSkill    rdfs:domain chorus:StepSkill ; rdfs:range chorus:Skill .
+chorus:forStep       rdfs:domain chorus:StepSkill ; rdfs:range chorus:PipelineStep .
+chorus:eventAbout    rdfs:range [ owl:unionOf ( owl:Class chorus:ArtifactType ) ] .
+chorus:boundTo       rdfs:domain chorus:GovernanceCheck ; rdfs:range [ owl:unionOf ( chorus:ADR chorus:Practice ) ] .
+# contains: a value stream's steps (which duplicate each step's inStream, for #4482) and a
+# domain's collection members (Principles contains its Principle rows).
+chorus:contains      rdfs:domain [ owl:unionOf ( chorus:ValueStream chorus:Domain ) ] ; rdfs:range owl:Thing .
+
 # --- DomainShape (supersedes DomainCoordinateShape; + purpose [the capability] + definesVocabulary [DDD mark] per ADR-045 + the capability ruling) ---
 chorus:DomainShape a sh:NodeShape ;
     sh:property [ sh:path chorus:diagram         ; sh:minCount 0 ; sh:datatype xsd:string ] ;   # #4094 — repeatable mermaid source, %% caption first line
@@ -1926,8 +1998,8 @@ chorus:DomainShape a sh:NodeShape ;
     sh:property [ sh:path chorus:ownedBy           ; sh:minCount 1 ; sh:class chorus:Principal ] ;
     sh:property [ sh:path chorus:purpose           ; sh:minCount 1 ; sh:datatype xsd:string ] ;   # the capability the domain expresses
     sh:property [ sh:path chorus:definesVocabulary ; sh:minCount 1 ; sh:class owl:Class ] ;        # the DDD ubiquitous-language mark
-    sh:property [ sh:path chorus:atStream          ; sh:minCount 1 ; sh:class chorus:ValueStream ] ;
-    sh:property [ sh:path chorus:atStep            ; sh:minCount 1 ; sh:class chorus:ValueStreamStep ] ;
+    # #4481 — atStream left: a domain's stream is its step's stream, read up the chain.
+    sh:property [ sh:path chorus:atStep            ; sh:minCount 1 ; sh:maxCount 1 ; sh:class chorus:ValueStreamStep ] ;   # #4481 — its one parent
     sh:property [ sh:path chorus:status            ; sh:minCount 1 ; sh:in ( "exploring" "building" "operating" "retiring" ) ] ;
     sh:property [ sh:path chorus:gaps              ; sh:minCount 1 ; sh:datatype xsd:string ] ;
     sh:property [ sh:path chorus:hasDesignDoc      ; sh:minCount 1 ; sh:class chorus:Document ] ;
