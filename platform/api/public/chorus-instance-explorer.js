@@ -70,7 +70,7 @@ var N=[], E=[];
 });
 
 var C={"Product": "#4f46e5", "ValueStream": "#22d3ee", "Stage": "#818cf8", "Vertebra": "#818cf8", "GatheringDomain": "#00ff88", "ChorusDomain": "#6366f1", "Service": "#f59e0b", "Tool": "#9ca3af", "Deployment": "#78716c", "Practice": "#c084fc", "Role": "#fbbf24", "HumanRole": "#fbbf24", "AgentRole": "#fbbf24", "Constraint": "#f87171", "Responsibility": "#60a5fa", "Decision": "#fde68a", "Machine": "#06b6d4", "DataSource": "#06b6d4", "InteractionPattern": "#fb923c", "Sequence": "#818cf8", "Story": "#4ade80", "SubProduct": "#4f46e5", "LoomDomain": "#eab308", "ArtifactType": "#78716c", "ToolType": "#9ca3af", "Gate": "#ef4444", "GateResult": "#fca5a5", "TrustMetric": "#a78bfa", "HandoffType": "#d1d5db", "HandoffStatus": "#d1d5db", "InteractionMode": "#fb923c", "EventCategory": "#94a3b8", "Domain": "#00ff88", "Service": "#f59e0b", "API": "#fb923c", "Skill": "#c084fc"};
-var LC={"dependsOn": "#f87171", "hasConstraint": "#f87171", "ownsDomain": "#fbbf24", "ownedBy": "#fbbf24", "ownedByRole": "#fbbf24", "createdBy": "#fbbf24", "participatesIn": "#fbbf24", "affects": "#fde68a", "constrains": "#fde68a", "storyInforms": "#fde68a", "storyConnectsTo": "#4ade80", "triggersSkill": "#fb923c", "detectedIn": "#fb923c", "runsOn": "#06b6d4", "readsFrom": "#06b6d4", "writesTo": "#06b6d4", "touchesDomain": "#818cf8", "belongsToProduct": "#4f46e5", "hasProduct": "#4f46e5", "hasValueStream": "#22d3ee", "servesValueStream": "#22d3ee", "hasPhase": "#818cf8", "belongsTo": "#818cf8", "primaryPhaseProduct": "#c084fc", "nextPhase": "#818cf8", "operatesIn": "#f59e0b", "supportsStream": "#f59e0b", "hasDomain": "#4f46e5", "consumes": "#f87171", "provides": "#22c55e", "primaryStep": "#818cf8", "operatesAt": "#fbbf24", "feeds": "#9ca3af", "nextStage": "#818cf8", "previousStage": "#818cf8", "feedsInto": "#9d174d", "fromStage": "#ef4444", "toStage": "#ef4444", "gatekeeper": "#fbbf24", "outputOf": "#4f46e5", "inputTo": "#4f46e5", "indexes": "#a78bfa", "decomposes": "#fb923c", "servesDomain": "#f59e0b", "containsClass": "#00ff88", "protectedBy": "#ef4444", "ownedBy": "#fbbf24"};
+var LC={"dependsOn": "#f87171", "hasConstraint": "#f87171", "ownsDomain": "#fbbf24", "ownedBy": "#fbbf24", "ownedByRole": "#fbbf24", "createdBy": "#fbbf24", "participatesIn": "#fbbf24", "affects": "#fde68a", "constrains": "#fde68a", "storyInforms": "#fde68a", "storyConnectsTo": "#4ade80", "triggersSkill": "#fb923c", "detectedIn": "#fb923c", "runsOn": "#06b6d4", "readsFrom": "#06b6d4", "writesTo": "#06b6d4", "touchesDomain": "#818cf8", "belongsToProduct": "#4f46e5", "hasProduct": "#4f46e5", "hasValueStream": "#22d3ee", "servesValueStream": "#22d3ee", "hasPhase": "#818cf8", "belongsTo": "#818cf8", "primaryPhaseProduct": "#c084fc", "nextPhase": "#818cf8", "operatesIn": "#f59e0b", "supportsStream": "#f59e0b", "hasDomain": "#4f46e5", "consumes": "#f87171", "provides": "#22c55e", "atStep": "#818cf8", "operatesAt": "#fbbf24", "feeds": "#9ca3af", "nextStage": "#818cf8", "previousStage": "#818cf8", "feedsInto": "#9d174d", "fromStage": "#ef4444", "toStage": "#ef4444", "gatekeeper": "#fbbf24", "outputOf": "#4f46e5", "inputTo": "#4f46e5", "indexes": "#a78bfa", "decomposes": "#fb923c", "servesDomain": "#f59e0b", "containsClass": "#00ff88", "protectedBy": "#ef4444", "ownedBy": "#fbbf24"};
 var W=innerWidth,H=innerHeight,M={},vis={},btns={};
 
 function init(){
@@ -124,9 +124,9 @@ assignProduct('gathering', 'gathering');
 assignProduct('chorusProduct', 'chorus');
 assignProduct('borgProduct', 'borg');
 
-// Steps: assign via primaryStep edges (domain→step). Must run BEFORE value streams.
+// Steps: assign via atStep edges (domain→step, the one parent — #4482). Must run BEFORE value streams.
 E.forEach(function(e){
-  if(e.l==='primaryStep' && nodeProd[e.s] && nodeProd[e.s] !== 'shared') {
+  if(e.l==='atStep' && nodeProd[e.s] && nodeProd[e.s] !== 'shared') {
     var domProd = nodeProd[e.s];
     if(!nodeProd[e.t]) nodeProd[e.t] = domProd;
     else if(nodeProd[e.t] !== domProd && nodeProd[e.t] !== 'shared') nodeProd[e.t] = 'shared';
@@ -134,7 +134,7 @@ E.forEach(function(e){
 });
 
 // Value streams: assign based on which steps belong to them.
-// Steps now have product assignments from primaryStep pass above.
+// Steps now have product assignments from the atStep pass above.
 E.forEach(function(e){
   if(e.l==='belongsTo' && M[e.t] && M[e.t].cls==='ValueStream') {
     var stepProd = nodeProd[e.s];

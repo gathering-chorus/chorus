@@ -661,19 +661,16 @@ chorus:ServiceDesign a owl:Class ;
 # Service instance). Structural edges live here per the #3603 split. atStep uses
 # the ValueStreamStep instance grammar (value-stream-step-*), not the Vertebra.
 chorus:messages chorus:hosts chorus:service-clearing .
-chorus:service-clearing chorus:atStep chorus:value-stream-step-directing .
 
 # #3870 — Identity Service (def: service-instances.ttl; issuance-only boundary,
 # pair-reviewed kade+wren, Jeff homed it under borg). security is the V2
 # canonical domain individual (#3587 repoint).
 chorus:security chorus:hosts chorus:service-identity .
-chorus:service-identity chorus:atStep chorus:value-stream-step-proving .
 
 # #3870 — Loom Service (def: service-instances.ttl; role-turns boundary).
 # Hosting domain: Silas review point — roles domain per Jeff's 2026-07-24
 # authN/authZ cut, exact domain IRI to confirm at gate-arch.
 chorus:roles chorus:hosts chorus:service-loom .
-chorus:service-loom chorus:atStep chorus:value-stream-step-building .
 
 # The pulse DOMAIN is RETIRED (#4010, Jeff 2026-08-25: "pulse is a product not a
 # domain... we remove the domains and keep the product compositions").
@@ -691,7 +688,6 @@ chorus:pulse a owl:Class ;
     chorus:comment "Agent vital signs — heartbeats, declared role states, andon, nudge-delivery health." ;
     chorus:purpose "Carry the team's vital signs — heartbeats, declared states, and delivery health — so liveness is observable, not assumed." ;
     chorus:ownedBy chorus:principal-wren ;   # #4175 — was role-silas; the store said role-wren and Silas ruled the store right 2026-09-14 ("coordination state, not observation"). Found by #4175's appointment check on its first real run.
-    chorus:atStep chorus:Directing ; chorus:atStream chorus:value-stream-chorus ;
     chorus:repoTarget "platform/pulse" .
     
 
@@ -981,9 +977,6 @@ chorus:chorus chorus:partOf chorus:value-stream-chorus .
 # transaction, exactly like chorusProduct -> chorusStream one line up.
 chorus:chorus        chorus:partOf chorus:value-stream-chorus .
 chorus:gathering     chorus:partOf chorus:value-stream-chorus .
-chorus:observability chorus:partOf chorus:borg .
-chorus:infrastructure chorus:partOf chorus:borg .
-chorus:gates chorus:partOf chorus:werk .
 
 # =============================================================================
 # 5. ARTIFACTS
@@ -1658,18 +1651,12 @@ chorus:definesVocabulary a owl:ObjectProperty ;
     rdfs:domain chorus:Domain ;
     rdfs:range owl:Class .
 
-chorus:atStream a owl:ObjectProperty ;
-    rdfs:label "at stream" ;
-    rdfs:comment "Domain -> its ValueStream (value-stream-chorus | value-stream-gathering). Required (with atStep) because steps are SHARED across streams, so atStep alone is ambiguous. ADR-045 §4." ;
-    rdfs:domain chorus:Domain ;
-    rdfs:range chorus:ValueStream .
-
 # ════════════════════════════════════════════════════════════════════════
 # v2 STRUCTURAL SHAPES (#3509) — the four primitives' SHACL shapes, ONE model.
 # Folds + supersedes the stranded designing/ontology/chorus-v2*.ttl (deleted by #3509).
-# Supersedes chorus:DomainCoordinateShape (its atStream+atStep fold into DomainShape).
+# Supersedes chorus:DomainCoordinateShape (its atStep folds into DomainShape).
 # Field set = research-grounded essence (SAFe/DDD/ArchiMate/SOA, 2026-06-19) + the
-# ADR-029 service-design template (asIs/toBe/...) + ADR-045 (definesVocabulary/atStream)
+# ADR-029 service-design template (asIs/toBe/...) + ADR-045 (definesVocabulary)
 # + the v2 ruling (Jeff 2026-06-19: FOUR FLAT types, no Sub-*; Capability = Domain.purpose).
 # Conformance to the OWL ADRs (ADR-040 IRI/class grain · ADR-041 value-stream layer · ADR-045 domain-as-class):
 #   • name/description = rdfs:label / rdfs:comment (live convention; no ADR mandates a chorus: label variant).
@@ -1757,8 +1744,8 @@ chorus:provenance a chorus:Domain ;
     rdfs:comment "Version history — what a row looked like before it was replaced, so two versions can be diffed field by field." ;
     chorus:comment "Version history — what a row looked like before it was replaced." ;
     chorus:purpose "Keep every replaced version of a row, so a human can see what changed without re-reading the whole document." ;
-    chorus:ownedBy chorus:principal-wren ; chorus:partOf chorus:chorus ;
-    chorus:atStep chorus:Directing ; chorus:atStream chorus:value-stream-chorus ;
+    chorus:ownedBy chorus:principal-wren ;
+    chorus:atStep chorus:value-stream-step-directing ;
     chorus:repoTarget "platform/services/athena-make" ;
     chorus:definesVocabulary chorus:Version .
 
@@ -1785,7 +1772,7 @@ chorus:gaps               a owl:DatatypeProperty ; rdfs:label "gaps" ; rdfs:rang
 
 # --- object props absent from v0.3.0 ---
 chorus:atStep        a owl:ObjectProperty ; rdfs:label "at step" ; rdfs:range chorus:ValueStreamStep ;
-    rdfs:comment "subject (Product|Domain|Service) -> its primary value-stream step (chorus:ValueStreamStep, ADR-040). Ingestion maps the AS-IS chorus:primaryStep onto this." .
+    rdfs:comment "subject (Product|Domain|Service) -> its primary value-stream step (chorus:ValueStreamStep, ADR-040)." .
 chorus:hasDesignDoc  a owl:ObjectProperty ; rdfs:label "has design doc" ; rdfs:range chorus:Document .
 chorus:hosts         a owl:ObjectProperty ; rdfs:label "hosts" ; rdfs:domain chorus:Domain ; rdfs:range chorus:Service ;
     rdfs:comment "Domain hosts Service (1:* from Domain). Inverse drives the Service 'exactly one hosting Domain' constraint." .
@@ -1877,7 +1864,6 @@ chorus:ProductShape a sh:NodeShape ;
     sh:property [ sh:path chorus:audience         ; sh:minCount 1 ; sh:datatype xsd:string ] ;
     sh:property [ sh:path chorus:status           ; sh:minCount 1 ; sh:in ( "exploring" "building" "operating" "retiring" ) ] ;
     sh:property [ sh:path chorus:gaps             ; sh:minCount 1 ; sh:datatype xsd:string ] ;
-    sh:property [ sh:path chorus:atStep           ; sh:minCount 1 ; sh:class chorus:ValueStreamStep ] ;
     sh:property [ sh:path chorus:hasDesignDoc     ; sh:minCount 1 ; sh:class chorus:Document ] ;
     sh:property [ sh:path chorus:hasDomain        ; sh:minCount 1 ; sh:class chorus:Domain ] ;
     # #4053 — Jeff, reading the atlas: "there is no dependency from products class
@@ -1919,9 +1905,7 @@ chorus:parentOptional a owl:AnnotationProperty ; rdfs:label "parent optional" ;
 chorus:chainPosition a owl:AnnotationProperty ; rdfs:label "chain position" ;
     rdfs:comment "true on a link that places a row in the chain (a step or a stream). A row may store one only when it is its class's chorus:parentVia; everywhere else the position is read up the chain." .
 chorus:atStep      chorus:chainPosition true .
-chorus:atStream    chorus:chainPosition true .
 chorus:inStream    chorus:chainPosition true .
-chorus:primaryStep chorus:chainPosition true .
 chorus:crossesHierarchy a owl:AnnotationProperty ; rdfs:label "crosses hierarchy" ;
     rdfs:comment "Why this link type may join rows of two hierarchies. Only the properties carrying it may." .
 
@@ -1998,7 +1982,7 @@ chorus:DomainShape a sh:NodeShape ;
     sh:property [ sh:path chorus:ownedBy           ; sh:minCount 1 ; sh:class chorus:Principal ] ;
     sh:property [ sh:path chorus:purpose           ; sh:minCount 1 ; sh:datatype xsd:string ] ;   # the capability the domain expresses
     sh:property [ sh:path chorus:definesVocabulary ; sh:minCount 1 ; sh:class owl:Class ] ;        # the DDD ubiquitous-language mark
-    # #4481 — atStream left: a domain's stream is its step's stream, read up the chain.
+    # #4481 — a domain's stream is its step's stream, read up the chain; it is never stored.
     sh:property [ sh:path chorus:atStep            ; sh:minCount 1 ; sh:maxCount 1 ; sh:class chorus:ValueStreamStep ] ;   # #4481 — its one parent
     sh:property [ sh:path chorus:status            ; sh:minCount 1 ; sh:in ( "exploring" "building" "operating" "retiring" ) ] ;
     sh:property [ sh:path chorus:gaps              ; sh:minCount 1 ; sh:datatype xsd:string ] ;
@@ -2049,7 +2033,6 @@ chorus:ServiceShape a sh:NodeShape ;
     sh:property [ sh:path chorus:overview           ; sh:minCount 1 ; sh:datatype xsd:string ; chorus:exposure chorus:public ] ;   # #4010 — Silas's tiers (his lane, his call): overview/asIs/toBe public; gaps/notInScope/pathToClose signed-in (a list of what is uncovered reads as a roadmap to anyone hostile); implementationPlan stays secret.
     sh:property [ sh:path chorus:ownedBy            ; sh:minCount 1 ; sh:class chorus:Principal ] ;
     sh:property [ sh:path [ sh:inversePath chorus:hosts ] ; sh:minCount 1 ; sh:maxCount 1 ; sh:class chorus:Domain ] ;  # exactly one hosting Domain
-    sh:property [ sh:path chorus:atStep             ; sh:minCount 1 ; sh:class chorus:ValueStreamStep ] ;
     sh:property [ sh:path chorus:status             ; sh:minCount 1 ; sh:in ( "exploring" "building" "operating" "retiring" ) ; chorus:exposure chorus:public ] ;
     sh:property [ sh:path chorus:asIs               ; sh:minCount 1 ; sh:datatype xsd:string ; chorus:exposure chorus:public ] ;
     sh:property [ sh:path chorus:toBe               ; sh:minCount 1 ; sh:datatype xsd:string ; chorus:exposure chorus:public ] ;
@@ -2068,9 +2051,7 @@ chorus:ServiceShape a sh:NodeShape ;
 chorus:properties a chorus:Domain ;
     rdfs:label "properties" ;
     rdfs:comment "Config-as-data domain: service configuration + runtime properties governed as a registry (PropertyKey register-before-use). ADR-045 first worked example of domain-as-owl-class." ;
-    chorus:partOf chorus:borg ;
-    chorus:atStream chorus:value-stream-chorus ;
-    chorus:atStep chorus:Proving ;
+    chorus:atStep chorus:value-stream-step-proving ;
     chorus:ownedBy chorus:principal-silas ;
     chorus:runsOn chorus:library, chorus:bedroom ;
     chorus:repoTarget "borg/properties" ;
@@ -2324,12 +2305,6 @@ chorus:provides a owl:ObjectProperty ;
     rdfs:comment "What a product offers as a shared service. Chorus provides Observability." ;
     rdfs:domain chorus:Product ;
     rdfs:range chorus:Service .
-
-chorus:primaryStep a owl:ObjectProperty ;
-    rdfs:label "primary step" ;
-    rdfs:comment "The vertebra where this service is primarily maintained." ;
-    rdfs:domain chorus:Service ;
-    rdfs:range chorus:Vertebra .
 
 chorus:consumptionStep a owl:ObjectProperty ;
     rdfs:label "consumption step" ;
@@ -3075,20 +3050,14 @@ chorus:services chorus:definesVocabulary chorus:ServiceInstance , chorus:Schedul
 # --- hosts / atStep edges for the six Services authored 2026-08-15 ---
 # Silas gate-arch ruling 2026-08-15 15:15 applied: v2 step grammar, ruled domains.
 chorus:services chorus:hosts chorus:service-athena .        # model surface
-chorus:service-athena chorus:atStep chorus:value-stream-step-designing .
 chorus:chorus-domain chorus:hosts chorus:service-knowledge-store . # context+memory+knowledge
-chorus:service-knowledge-store chorus:atStep chorus:value-stream-step-reflecting .
 chorus:chorus-domain chorus:hosts chorus:service-werk .            # pipeline
-chorus:service-werk chorus:atStep chorus:value-stream-step-building .
 chorus:tests chorus:hosts chorus:service-tests .              # #4089 — the tests service: registry, runner, evidence, readout (atStep rides on the row in service-instances.ttl: an edge in this graph never reaches the served row — "no step" on every service page)
 # gathering-app hosted under infrastructure for now (Silas ruling) — MIGRATES
 # to a gathering product domain the day one exists in this graph.
 chorus:infrastructure chorus:hosts chorus:service-gathering-app .
-chorus:service-gathering-app chorus:atStep chorus:value-stream-step-building .
 chorus:alerts-monitors-domain chorus:hosts chorus:service-observability .
-chorus:service-observability chorus:atStep chorus:value-stream-step-proving .
 chorus:convergence-domain chorus:hosts chorus:service-integration .
-chorus:service-integration chorus:atStep chorus:value-stream-step-building .
 
 # ============================================================================
 # #4084 — logs domain becomes a graph writer (ADR-060: borrow the semantics,

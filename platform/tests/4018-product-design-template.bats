@@ -67,7 +67,9 @@ report() {
 
 @test "the value stream and dependency pictures are drawn from the graph, not typed" {
   grep -q "const vsSrc = () =>" "$PAGE"
-  grep -q "stepLocal(e.atStep)" "$PAGE"
+  grep -q "productSteps(e, " "$PAGE"            # #4482 — the step is read from the product's domains
+  run grep -q "e\.atStep" "$PAGE"                 # negative proof: never from a stored product step
+  [ "$status" -ne 0 ]
   grep -q "const depSrc = () =>" "$PAGE"
   grep -q "asArray(e.consumes)" "$PAGE"
   grep -q "asArray(r.consumes)" "$PAGE"   # used by: the reverse direction

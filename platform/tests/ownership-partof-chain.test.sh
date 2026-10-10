@@ -58,16 +58,22 @@ if re.search(r"chorus:partOf\s+a\s+owl:ObjectProperty", ttl):
 else:
     f("chorus:partOf is not defined as owl:ObjectProperty")
 
+# #4482 — one parent per row, and the link names the kind of parent: a Product is partOf
+# its product, a Domain is atStep its step, a step is inStream its stream. The walk follows
+# whichever the row carries (partOf first); the single-parent invariant stays on partOf.
 # Collect partOf triples in the simple one-line form: chorus:S chorus:partOf chorus:O .
 # #4113 — subject-scoped scan. A subject block runs from `chorus:name a ...` to the
 # terminating period, and partOf may sit anywhere inside it, separated by `;`. The old
 # pattern required the triple to be its own one-line statement, which is the least
 # common way any of this is actually written.
 edges = []
+up = {}   # #4482 — the step/stream parent of a row that has no partOf
 for m in re.finditer(r"^chorus:([\w-]+)\s+a\s+(.*?)(?<!\\)\s\.\s*$", ttl, re.S | re.M):
     subj, block = m.group(1), m.group(2)
     for po in re.findall(r"chorus:partOf\s+chorus:([\w-]+)", block):
         edges.append((subj, po))
+    for po in re.findall(r"chorus:(?:atStep|inStream)\s+chorus:([\w-]+)", block):
+        up.setdefault(subj, po)
 # plus the standalone one-line form the original looked for
 edges += re.findall(r"^chorus:([\w-]+)\s+chorus:partOf\s+chorus:([\w-]+)\s*\.", ttl, re.M)
 edges = list(dict.fromkeys(edges))
@@ -92,14 +98,16 @@ vs = set(re.findall(r"chorus:([\w-]+)\s+a\s+chorus:ValueStream", ttl))
 
 def walk(node):
     seen, cur = [], node
-    while cur in parent:
-        cur = parent[cur]
+    while cur in parent or cur in up:
+        cur = parent.get(cur) or up[cur]
         if cur in seen:
             return seen, None
         seen.append(cur)
     return seen, cur
 
-for node in ("gates", "observability"):
+# #4482 — gates and observability lost their partOf (a Domain's parent is its step) and
+# have no authored row to carry atStep; cards and tests are authored Domains on the chain.
+for node in ("cards", "tests"):
     chain, top = walk(node)
     if chain and top in vs:
         p(f"{node} -> {' -> '.join(chain)} (terminates at ValueStream {top})")

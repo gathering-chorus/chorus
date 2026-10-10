@@ -2738,7 +2738,7 @@ app.get('/api/athena/blast-radius/:iri', async (req: Request, res: Response) => 
 
 
 
-// #3702 — v1 value-stream surface retired. The Vertebra/primaryStep spine model is
+// #3702 — v1 value-stream surface retired. The Vertebra spine model is
 // gone; athena-make :3360/valuestreams (proxied at /owl/valuestreams) is the only path.
 app.get('/api/athena/steps', (_req: Request, res: Response) => {
   res.status(410).json({ error: 'gone', message: 'v1 retired by #3702 — use /owl/valuestreams (athena-make :3360)' });

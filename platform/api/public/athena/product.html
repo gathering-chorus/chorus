@@ -121,7 +121,8 @@ var s=document.createElement('script');s.src=window.basePath('/js/base-path.js')
     const domsByName = Object.fromEntries((((domEnv || {}).data) || []).map(r => [r.name, r]));
     const label = e.label || p[0].toUpperCase() + p.slice(1);
     document.title = `${label} — Product — Athena`;
-    const step = stepLocal(e.atStep);
+    const steps = productSteps(e, (domEnv || {}).data);   // #4482 — read up the chain, not stored
+    const step = steps[0] || '';
     document.getElementById('crumb').innerHTML =
       `<a href="value-stream.html">value stream</a> &rarr; <a href="value-stream.html">${esc(step ? step[0].toUpperCase() + step.slice(1) : '?')}</a> &rarr; <a href="products.html">products</a> &rarr; ${esc(p)}`;
     const designDoc = asArray(e.hasDesignDoc).map(v => docsByName[String(v).replace(/^.*[#/]/, '')]).find(Boolean);
@@ -161,7 +162,7 @@ var s=document.createElement('script');s.src=window.basePath('/js/base-path.js')
       ['whyNow',           'Why it matters now'],
       ['valueProposition', 'What it is'],
       ['pagesAndFlow',     'Page flow'],
-      ['valueStream',      'Value stream flow'],      // drawn from atStep, never typed
+      ['valueStream',      'Value stream flow'],      // drawn from its domains' atStep (#4482), never typed
       ['dependencies',     'Dependencies'],           // drawn from the edges, both directions
       ['outcomes',         'How we will know it worked'],
       ['notInScope',       'Not in scope, and open bets'],
@@ -186,9 +187,9 @@ var s=document.createElement('script');s.src=window.basePath('/js/base-path.js')
     const STEPS = ['shaping', 'directing', 'designing', 'building', 'proving', 'reflecting'];
     const node = x => String(x).replace(/[^A-Za-z0-9_]/g, '_');
     const vsSrc = () => {
-      const at = (stepLocal(e.atStep) || '').toLowerCase();
+      const at = steps.filter(st => STEPS.includes(st));
       return 'flowchart LR\n' + STEPS.map(st => `  ${st}["${st[0].toUpperCase() + st.slice(1)}"]`).join('\n') + '\n  ' +
-        STEPS.join(' --> ') + '\n' + (at ? `  classDef here fill:#e5f0ec,stroke:#2f6f5e,stroke-width:3px\n  class ${at} here\n` : '');
+        STEPS.join(' --> ') + '\n' + (at.length ? `  classDef here fill:#e5f0ec,stroke:#2f6f5e,stroke-width:3px\n  class ${at.join(',')} here\n` : '');
     };
     const bareName = x => String(x).replace(/^.*[#/]/, '').replace(/^chorus:/, '');   // the store hands back full IRIs on some reads
     const uses = asArray(e.consumes).map(bareName).sort();
@@ -219,11 +220,11 @@ var s=document.createElement('script');s.src=window.basePath('/js/base-path.js')
     const fieldText = k => k === 'outcomes' ? [e.outcomes, e.asIs && `As-is: ${e.asIs}`, e.toBe && `To-be: ${e.toBe}`].filter(Boolean).join('\n')
       : k === 'notInScope' ? [e.notInScope, e.openBets && `Open bets: ${e.openBets}`].filter(Boolean).join('\n') : e[k];
     const has = k => k === 'composition' ? doms.length > 0 : k === 'diagram' ? diagrams().length > 0
-      : k === 'valueStream' ? !!stepLocal(e.atStep) : k === 'dependencies' ? (doms.length + uses.length + usedBy.length) > 0
+      : k === 'valueStream' ? steps.length > 0 : k === 'dependencies' ? (doms.length + uses.length + usedBy.length) > 0
       : !!(fieldText(k) && String(fieldText(k)).trim());
     const toc = chapters.map(([k, t]) => `<a href="#${k}" class="${has(k) ? 'filled' : ''}">${esc(t)}</a>`).join('');
     const chapterOf = ([k, t], n) => {
-      const src = k === 'composition' ? 'chorus:hasDomain' : k === 'valueStream' ? 'drawn from chorus:atStep' : k === 'dependencies' ? 'drawn from hasDomain, consumes, consumesEvent' : `chorus:${k}`;
+      const src = k === 'composition' ? 'chorus:hasDomain' : k === 'valueStream' ? 'drawn from its domains (hasDomain → atStep)' : k === 'dependencies' ? 'drawn from hasDomain, consumes, consumesEvent' : `chorus:${k}`;
       if (!has(k)) return `<section class="ch empty" id="${k}"><h2><span class="n">${n}</span>${esc(t)}<span class="src">${src} &middot; not written</span></h2></section>`;
       let body;
       if (k === 'composition') {
@@ -232,7 +233,7 @@ var s=document.createElement('script');s.src=window.basePath('/js/base-path.js')
       } else if (k === 'diagram') {
         body = diagrams().map((d, di) => fig(d.caption || `Diagram ${di + 1}`, d.src)).join('');
       } else if (k === 'valueStream') {
-        body = fig(`${label} serves ${stepLocal(e.atStep)}`, vsSrc());
+        body = fig(`${label} serves ${steps.join(', ')}`, vsSrc());
       } else if (k === 'dependencies') {
         body = fig(`What ${label} is made of, what it uses, and what uses it`, depSrc()) +
           (usedBy.length ? '' : '<p class="unwritten">No other product records that it uses this one.</p>');
@@ -267,7 +268,7 @@ var s=document.createElement('script');s.src=window.basePath('/js/base-path.js')
   <h1>${esc(label)} <span class="kind">&mdash; Product</span></h1>
   <div class="meta">
     <span>${ownerDot(e.ownedBy)}</span>
-    <span>${stepBadge(e.atStep)}</span>
+    <span>${stepBadges(steps)}</span>
     <span><em>${esc(e.status || 'no status')}</em></span>
     ${designDoc && designDoc.docHref ? `<a href="${esc(basePath(designDoc.docHref))}">design doc &rarr;</a>` : '<span class="unwritten">no design doc registered</span>'}
     ${e.version ? `<span class="changed" title="version = how many times this row has been saved; the date is the last save; both written automatically">v${esc(String(e.version))}${e.docState ? ` &middot; ${esc(String(e.docState))}` : ''} &middot; changed ${esc(localDay(e.changedAt))}</span>` : '<span class="unwritten">not yet saved through the API</span>'}

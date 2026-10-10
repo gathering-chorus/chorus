@@ -424,13 +424,13 @@ mod tests {
     fn negative_proof_wrong_target_names_the_wrong_kind_and_the_missing_row() {
         let fx = r##"<urn:chorus:ontology> {
   c:dependsOn a owl:ObjectProperty ; rdfs:range [ owl:unionOf ( c:Domain c:Service ) ] .
-  c:Subdomain rdfs:subClassOf c:Domain .
+  c:Nested rdfs:subClassOf c:Domain .
 }
 <urn:chorus:domains:domains> {
   c:vert a c:Vertebra .
   c:bad a c:Domain ; c:atStep c:vert .
   c:good a c:Domain ; c:atStep c:building ; c:dependsOn c:svc, c:sub .
-  c:svc a c:Service . c:sub a c:Subdomain .
+  c:svc a c:Service . c:sub a c:Nested .
   c:lost a c:Domain ; c:atStep c:building ; c:dependsOn c:nowhere .
 }"##;
         let mut got = run(&LINK_WRONG_TARGET, "neg", fx);

@@ -32,7 +32,7 @@ MODE="${1:-dry}"
 [ -r "$MAP" ] || { echo "FAIL no map at $MAP" >&2; exit 1; }
 
 # Single-valued on a Domain row: when the target already has one, keep it.
-SCALARS="<${RDFS}label> <${RDFS}comment> <${C}ownedBy> <${C}primaryStep> <${C}status> <${C}gaps> <${C}hasDesignDoc> <${C}diagram> <${C}atStep> <${C}atStream> <${C}partOf> <${C}belongsTo> <${C}builtBy>"
+SCALARS="<${RDFS}label> <${RDFS}comment> <${C}ownedBy> <${C}status> <${C}gaps> <${C}hasDesignDoc> <${C}diagram> <${C}atStep> <${C}partOf> <${C}belongsTo> <${C}builtBy>"
 
 pairs() { grep -v '^legacy' "$MAP" | awk -F'\t' 'NF>=2 && $1!="" {print $1"\t"$2}'; }
 

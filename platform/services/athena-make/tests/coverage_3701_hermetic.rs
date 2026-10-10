@@ -133,6 +133,7 @@ fn rows_for(q: &str) -> Vec<String> {
             format!("{} urn:test:instances", WREN_WEBID),
             format!("{} urn:chorus:domains:tests", WREN_WEBID),
             format!("{} urn:chorus:ontology", WREN_WEBID),
+            format!("{} urn:chorus:domains:athena", WREN_WEBID),   // #4482 — the Product PATCH proof
             format!("{} urn:test:instances", ROLELESS_SCOPED_WEBID),
             format!("{} urn:chorus:domains:tests", ROLELESS_SCOPED_WEBID),
         ];
@@ -229,6 +230,11 @@ fn rows_for(q: &str) -> Vec<String> {
     }
     if q.contains("chorus:repoTarget") || q.contains("#repoTarget>") {
         return vec![]; // no declared override (shape or verb)
+    }
+    if q.contains("BIND(STR(?o) AS ?v)") && q.contains("#borg>") && q.contains("#hasDomain>") {
+        // #4482 — a PATCH reads a link field's stored values before changing them. One is
+        // the right link, one a wrong-kind value (c:Stray) that only its own IRI can remove.
+        return vec![format!("{NS}cards"), format!("{NS}Stray")];
     }
     if q.contains("chorus:atStep") {
         return vec![s("value-stream-step-designing")];
@@ -1440,6 +1446,22 @@ fn patch_changes_only_the_named_fields() {
     let (c, _, b) = http("PATCH", "/domains/pulse", hdrs, "{\"ownedBy\":\"kade\"}");
     assert_eq!(c, 422, "{}", b);
     assert!(b.contains("cannot be patched"), "{}", b);
+    // #4482 — a link value the field no longer names is removed by the IRI the store holds.
+    // The DAL unlink rebuilt <kind>-<name> (domain-Stray) and left c:Stray in place, while a
+    // second link was added beside it.
+    let (c, _, b) = http("PATCH", "/products/borg", hdrs, "{\"hasDomain\":[\"cards\"]}");
+    assert_eq!(c, 200, "{}", b);
+    let log = calls();
+    assert!(log.lines().any(|l| l.starts_with("batch ") && l.contains("--del") && l.contains("#borg>") && l.contains("#hasDomain>") && l.contains(&format!("<{NS}Stray>"))),
+        "the wrong-kind value was not removed by its stored IRI:\n{}", log);
+    assert!(!log.lines().any(|l| l.contains("hasDomain=domain:Stray")), "removal rebuilt the IRI instead of using the stored one:\n{}", log);
+    assert!(!log.lines().any(|l| l.contains("#hasDomain>") && l.contains(&format!("<{NS}cards>"))), "the value still named was removed:\n{}", log);
+    let (c, _, b) = http("PATCH", "/products/borg", hdrs, "{\"hasDomain\":null}");
+    assert_eq!(c, 200, "{}", b);
+    let log = calls();
+    assert!(log.lines().any(|l| l.starts_with("batch ") && l.contains(&format!("<{NS}cards>")) && l.contains(&format!("<{NS}Stray>"))),
+        "null on a link field did not remove every stored value:\n{}", log);
+
     // and someone who does not own the row is refused like a PUT
     let nobody = bearer(&mint_token(NOBODY_WEBID, None));
     let (c, _, b) = http("PATCH", "/domains/orphan", &[("Authorization", nobody.as_str())], "{\"comment\":\"x\"}");

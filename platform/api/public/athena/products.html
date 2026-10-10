@@ -30,8 +30,9 @@ var s=document.createElement('script');s.src=window.basePath('/js/base-path.js')
 (async function () {
   const main = document.getElementById('main');
   try {
-    const env = await fetchJSON('/products');
+    const [env, domEnv] = await Promise.all([fetchJSON('/products'), fetchJSON('/domains').catch(() => null)]);
     const rows = env.data || [];
+    const domains = (domEnv || {}).data || [];   // #4482 — a product's step is its domains' step
     // containment lives in the has-child FOLD, not the collection row
     const folds = await Promise.all(rows.map(r =>
       fetchJSON(`/products/${encodeURIComponent(r.name)}/has-child`).catch(() => null)));
@@ -44,7 +45,7 @@ var s=document.createElement('script');s.src=window.basePath('/js/base-path.js')
       const kids = (p._children || []).slice();
       return `<div class="pcard${featured ? ' featured' : ''}" id="p-${esc(p.name)}">
   <div class="phead"><h2><a class="edge" href="product.html?p=${encodeURIComponent(p.name)}">${esc(p.label || p.name[0].toUpperCase() + p.name.slice(1))}</a> <span class="kind">Product</span></h2>
-    <div class="pmeta">${ownerDot(p.ownedBy)} &middot; ${stepBadge(p.atStep)} &middot; <span class="status">${esc(p.status || 'no status')}</span></div></div>
+    <div class="pmeta">${ownerDot(p.ownedBy)} &middot; ${stepBadges(productSteps(p, domains))} &middot; <span class="status">${esc(p.status || 'no status')}</span></div></div>
   <div class="promise"><strong>vision:</strong> ${esc(p.vision || '')}</div>
   <p class="vp"><strong>value proposition:</strong> ${esc(p.valueProposition || '')}</p>
   <div><span class="lbl">domains (${asArray(p.hasDomain).length})</span> ${domainChips(p.hasDomain)}</div>

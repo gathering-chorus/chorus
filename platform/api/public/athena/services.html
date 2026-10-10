@@ -23,8 +23,9 @@ var s=document.createElement('script');s.src=window.basePath('/js/base-path.js')
 (async function () {
   const main = document.getElementById('main');
   try {
-    const env = await fetchJSON('/services');
+    const [env, domEnv] = await Promise.all([fetchJSON('/services'), fetchJSON('/domains').catch(() => null)]);
     const rows = env.data || [];
+    const domains = (domEnv || {}).data || [];   // #4482 — a service's step is its hosting domain's step
     // The collection row is thin by design (ADR-048 exposure). Per-service reads
     // carry the edges, so fetch them rather than inventing an owner column.
     const details = await Promise.all(rows.map(r =>
@@ -33,6 +34,7 @@ var s=document.createElement('script');s.src=window.basePath('/js/base-path.js')
       const d = details[i];
       r._links = (d && d.links) || {};
       r._data = (d && d.data) || {};
+      r._steps = serviceSteps(r.name, domains);
     });
 
     // What the shape declares vs what the API actually returned. Honest, not
@@ -45,7 +47,7 @@ var s=document.createElement('script');s.src=window.basePath('/js/base-path.js')
 
     const byStep = {};
     rows.forEach(r => {
-      const s = r._links.atStep || 'unplaced';
+      const s = r._steps[0] || 'unplaced';
       (byStep[s] = byStep[s] || []).push(r);
     });
 
@@ -53,7 +55,7 @@ var s=document.createElement('script');s.src=window.basePath('/js/base-path.js')
       const owner = s._links.ownedBy || '';
       return `<div class="pcard" id="s-${esc(s.name)}">
   <div class="phead"><h2><a class="edge" href="service.html?s=${encodeURIComponent(s.name)}">${esc(s.label || s.name)}</a> <span class="kind">Service</span></h2>
-    <div class="pmeta">${ownerDot(owner)} &middot; ${stepBadge(s._links.atStep)} &middot; <span class="status">${esc(s.status || 'no status')}</span></div></div>
+    <div class="pmeta">${ownerDot(owner)} &middot; ${stepBadges(s._steps)} &middot; <span class="status">${esc(s.status || 'no status')}</span></div></div>
   ${s._data.overview ? `<p class="vp">${esc(s._data.overview)}</p>`
                      : `<p class="vp"><em>overview withheld &mdash; ADR-048 marks it internal; this page reads unauthenticated.</em></p>`}
 </div>`;
@@ -69,7 +71,7 @@ var s=document.createElement('script');s.src=window.basePath('/js/base-path.js')
 ${withheld.length ? `<p class="src-note">Design fields present in ServiceShape but not returned by the API for any service: ${withheld.map(esc).join(', ')}. These are unmarked in the shape, so exposure is fail-closed &mdash; the text exists in the graph and no caller can read it. Not a gap in the data; a gap in what is published.</p>` : ''}
 ${steps.map(st => `<h2 class="kind">${esc(String(st).replace(/^.*[#-]/, ''))}</h2>
 <div class="pgrid">${byStep[st].sort((a, b) => a.name.localeCompare(b.name)).map(card).join('\n')}</div>`).join('\n')}
-${srcNote('GET /services')}`;
+${srcNote('GET /services · /domains (hosts, atStep)')}`;
   } catch (e) { fetchFailed(main, e); }
 })();
 </script>

@@ -141,8 +141,7 @@ chorus:ChunkMembershipShape a sh:NodeShape ;
 # ── domain individual ────────────────────────────────────────────────────────
 # Punned owl:Class + chorus:Domain, ABox-in-ontology (served from urn:chorus:ontology
 # per DomainShape's #3581 instancesGraph). Edges FK-verified to resolve (2026-07-24):
-# ownedBy→wren, atStream→chorusStream, atStep→Directing (Vertebra, matching sibling
-# domains' atStep convention), partOf→chorusProduct (coarse valid template).
+# ownedBy→wren, atStep→value-stream-step-directing (#4482: the step is the one parent) (coarse valid template).
 # FLAG (honest, not faked): hasDesignDoc omitted — the #3575 spike (cards-as-owl-class)
 # is not yet a registered chorus:Document; registering it is the domain-completeness
 # follow-on, tracked in chorus:gaps. Do not fake an edge to a non-existent Document.
@@ -152,9 +151,7 @@ chorus:board a chorus:Domain ;
   chorus:comment "The team's work board — cards grouped into chunks and ordered for execution." ;
   chorus:purpose "Group work into committed chunks with deterministic ordering so roles run bigger units without colliding on loose cards." ;
   chorus:ownedBy chorus:principal-wren ;
-  chorus:partOf chorus:chorus ;
-  chorus:atStep chorus:Directing ;
-  chorus:atStream chorus:value-stream-chorus ;
+  chorus:atStep chorus:value-stream-step-directing ;
   chorus:status "building" ;
   chorus:repoTarget "platform/services/cards" ;
   chorus:definesVocabulary chorus:Chunk, chorus:ChunkMembership ;
