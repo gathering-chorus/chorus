@@ -83,3 +83,29 @@ report() {
 @test "the template file is in the model set athena-deploy loads" {
   grep -q 'roles/wren/ontology/product-design-4018.ttl' "$ROOT/platform/services/athena-deploy/src/lib.rs"
 }
+
+# The post-land rewrite (roles/wren/notes/4018-postland.py, 4018-postland-designs.json,
+# 4018-postland-jeff.sh) runs once against prod after the land; these hold it to the template.
+NOTES="$ROOT/roles/wren/notes"
+
+@test "post-land designs only write fields the template and ProductShape know" {
+  run python3 - "$NOTES/4018-postland-designs.json" <<'PY'
+import json, sys
+known = {"promise", "audience", "job", "whyNow", "valueProposition", "pagesAndFlow", "outcomes", "notInScope", "openBets", "hasDomain"}
+d = json.load(open(sys.argv[1]))
+bad = {p: sorted(set(v) - known) for p, v in d.items() if not p.startswith("_") and set(v) - known}
+missing = {p: sorted({"promise", "audience", "job", "whyNow", "valueProposition", "outcomes", "notInScope"} - set(v)) for p, v in d.items() if not p.startswith("_")}
+missing = {p: m for p, m in missing.items() if m}
+print(bad, missing); sys.exit(1 if bad or missing else 0)
+PY
+  [ "$status" -eq 0 ] || { echo "$output"; return 1; }
+}
+
+@test "the post-land rewrite writes nothing without --apply, and leaves consumes to Jeff's links" {
+  python3 -m py_compile "$NOTES/4018-postland.py"
+  grep -q 'APPLY = "--apply" in sys.argv' "$NOTES/4018-postland.py"
+  grep -q '"consumes", "consumesEvent"' "$NOTES/4018-postland.py"
+  bash -n "$NOTES/4018-postland-jeff.sh"
+  run grep -c 'INS' "$NOTES/4018-postland-jeff.sh"
+  [ "$output" -ge 3 ]
+}
