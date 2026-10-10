@@ -1,0 +1,190 @@
+# #4018 — Pulse's own nouns, modelled.
+#
+# Jeff, 2026-08-27: Clearing and pulse focus on a critical capability of chorus,
+# "pulse especially around the 'shared awareness' case for chorus."
+# Jeff, 2026-10-10: pulse is what is happening now; "clearing is just a renderer
+# for pulse (mostly)". The nouns pulse reads (cards, messages, alerts, events,
+# sessions) stay with their own products; pulse holds only what it alone knows:
+# who is in what state, who is alive, how old each reading is, and who is
+# waiting on whom.
+#
+# All four are short-term memory (#4010): true now, kept briefly, never the
+# record. Their instances live in pulse's own reading, not as Fuseki rows; the
+# instancesGraph below names where the generated door would serve them.
+#
+# Grounded in what pulse already carries (pulse-latest.json, measured
+# 2026-10-10 08:32): roles[].state / derived_state / drift_state.card_declared
+# vs card_inferred / sessions[].lastSeenAt / source; one section per reading
+# (alerts board events health index_freshness nudges roles) with its timing.
+
+@prefix chorus: <https://jeffbridwell.com/chorus#> .
+@prefix rdfs: <http://www.w3.org/2000/01/rdf-schema#> .
+@prefix owl: <http://www.w3.org/2002/07/owl#> .
+@prefix sh: <http://www.w3.org/ns/shacl#> .
+@prefix xsd: <http://www.w3.org/2001/XMLSchema#> .
+
+# --- classes -----------------------------------------------------------------
+
+chorus:RoleState a owl:Class ;
+    rdfs:label "Role state" ;
+    rdfs:subClassOf chorus:ShortTermMemory ;
+    rdfs:comment "What one principal is doing right now — idle, building, waiting, blocked, observing — and whether that was declared by the role or observed from what it did." .
+
+chorus:Heartbeat a owl:Class ;
+    rdfs:label "Heartbeat" ;
+    rdfs:subClassOf chorus:ShortTermMemory ;
+    rdfs:comment "One activity beat from an agent's session: its phase and current tool at a moment. A missed beat is itself a signal." .
+
+chorus:Reading a owl:Class ;
+    rdfs:label "Reading" ;
+    rdfs:subClassOf chorus:ShortTermMemory ;
+    rdfs:comment "One section of the pulse as last read from its producer, stamped with when. Its age is now minus that time; a consumer that cannot see the age is being lied to." .
+
+chorus:WaitingOn a owl:Class ;
+    rdfs:label "Waiting on" ;
+    rdfs:subClassOf chorus:ShortTermMemory ;
+    rdfs:comment "One principal waiting on another principal or a card, and why. An edge in the reading, so nobody has to send a nudge to find out who is stuck on whom." .
+
+# --- properties --------------------------------------------------------------
+
+chorus:aboutPrincipal a owl:ObjectProperty ;
+    rdfs:label "about principal" ; rdfs:range chorus:Principal ;
+    rdfs:comment "The principal this state or beat is about." .
+
+chorus:stateValue a owl:DatatypeProperty ;
+    rdfs:label "state" ; rdfs:range xsd:string ;
+    rdfs:comment "The state word: idle, building, waiting, blocked, observing, unmeasured." .
+
+chorus:stateSource a owl:DatatypeProperty ;
+    rdfs:label "source" ; rdfs:range xsd:string ;
+    rdfs:comment "declared (the role said so) or observed (derived from what it did). Observation beats declaration." .
+
+chorus:currentCard a owl:ObjectProperty ;
+    rdfs:label "current card" ; rdfs:range chorus:Card ;
+    rdfs:comment "The card the principal is on in this state, if any." .
+
+chorus:observedAt a owl:DatatypeProperty ;
+    rdfs:label "observed at" ; rdfs:range xsd:dateTime ;
+    rdfs:comment "When this was true. Age is derived from it, never stored." .
+
+chorus:inSession a owl:ObjectProperty ;
+    rdfs:label "in session" ; rdfs:range chorus:Session ;
+    rdfs:comment "The session the beat came from." .
+
+chorus:phase a owl:DatatypeProperty ;
+    rdfs:label "phase" ; rdfs:range xsd:string ;
+    rdfs:comment "Where in its turn the agent was: thinking, tool, idle." .
+
+chorus:currentTool a owl:DatatypeProperty ;
+    rdfs:label "current tool" ; rdfs:range xsd:string ;
+    rdfs:comment "The tool the agent was running at the beat, if any." .
+
+chorus:section a owl:DatatypeProperty ;
+    rdfs:label "section" ; rdfs:range xsd:string ;
+    rdfs:comment "Which part of the pulse a reading is." .
+
+chorus:readFrom a owl:DatatypeProperty ;
+    rdfs:label "read from" ; rdfs:range xsd:string ;
+    rdfs:comment "The producer a reading was read from, e.g. pulse-worker. A string, not the EventType producedBy edge." .
+
+chorus:waiter a owl:ObjectProperty ;
+    rdfs:label "waiter" ; rdfs:range chorus:Principal ;
+    rdfs:comment "The principal who is waiting." .
+
+chorus:waitsFor a owl:ObjectProperty ;
+    rdfs:label "waits for" ;
+    rdfs:comment "What the waiter is waiting on: a principal or a card." .
+
+chorus:waitReason a owl:DatatypeProperty ;
+    rdfs:label "reason" ; rdfs:range xsd:string ;
+    rdfs:comment "Why, in one line." .
+
+# --- shapes ------------------------------------------------------------------
+
+chorus:RoleStateShape a sh:NodeShape ;
+    sh:targetClass chorus:RoleState ;
+    rdfs:comment "One principal's state now." ;
+    sh:property [ sh:path chorus:aboutPrincipal ; sh:minCount 1 ; sh:maxCount 1 ; sh:nodeKind sh:IRI ; sh:class chorus:Principal ;
+                  sh:name "principal" ; sh:description "Required. Whose state this is." ] ;
+    sh:property [ sh:path chorus:stateValue ; sh:minCount 1 ; sh:maxCount 1 ; sh:datatype xsd:string ;
+                  sh:in ( "idle" "building" "waiting" "blocked" "observing" "unmeasured" ) ;
+                  sh:name "state" ; sh:description "Required. One of idle, building, waiting, blocked, observing, unmeasured." ] ;
+    sh:property [ sh:path chorus:stateSource ; sh:minCount 1 ; sh:maxCount 1 ; sh:datatype xsd:string ;
+                  sh:in ( "declared" "observed" ) ;
+                  sh:name "source" ; sh:description "Required. declared or observed; nothing else." ] ;
+    sh:property [ sh:path chorus:currentCard ; sh:maxCount 1 ; sh:nodeKind sh:IRI ; sh:class chorus:Card ;
+                  sh:name "current card" ; sh:description "Optional. The card it is on." ] ;
+    sh:property [ sh:path chorus:observedAt ; sh:minCount 1 ; sh:maxCount 1 ; sh:datatype xsd:dateTime ;
+                  sh:name "observed at" ; sh:description "Required. When this was true; the age comes from it." ] ;
+    sh:property [ sh:path chorus:ownedBy ; sh:minCount 1 ; sh:maxCount 1 ; sh:nodeKind sh:IRI ; sh:class chorus:Principal ;
+                  sh:name "owned by" ; sh:description "Required, set by the door." ] ;
+    chorus:instancesGraph "urn:chorus:domains:awareness" ;
+    chorus:generatedBy "athena-model" .
+
+chorus:HeartbeatShape a sh:NodeShape ;
+    sh:targetClass chorus:Heartbeat ;
+    rdfs:comment "One beat from one session." ;
+    sh:property [ sh:path chorus:aboutPrincipal ; sh:minCount 1 ; sh:maxCount 1 ; sh:nodeKind sh:IRI ; sh:class chorus:Principal ;
+                  sh:name "principal" ; sh:description "Required. Whose session beat." ] ;
+    sh:property [ sh:path chorus:inSession ; sh:minCount 1 ; sh:maxCount 1 ; sh:nodeKind sh:IRI ; sh:class chorus:Session ;
+                  sh:name "session" ; sh:description "Required. Which session it came from." ] ;
+    sh:property [ sh:path chorus:phase ; sh:maxCount 1 ; sh:datatype xsd:string ;
+                  sh:name "phase" ; sh:description "Optional. thinking, tool or idle." ] ;
+    sh:property [ sh:path chorus:currentTool ; sh:maxCount 1 ; sh:datatype xsd:string ;
+                  sh:name "current tool" ; sh:description "Optional. The tool running at the beat." ] ;
+    sh:property [ sh:path chorus:observedAt ; sh:minCount 1 ; sh:maxCount 1 ; sh:datatype xsd:dateTime ;
+                  sh:name "observed at" ; sh:description "Required. When the beat happened." ] ;
+    sh:property [ sh:path chorus:ownedBy ; sh:minCount 1 ; sh:maxCount 1 ; sh:nodeKind sh:IRI ; sh:class chorus:Principal ;
+                  sh:name "owned by" ; sh:description "Required, set by the door." ] ;
+    chorus:instancesGraph "urn:chorus:domains:awareness" ;
+    chorus:generatedBy "athena-model" .
+
+chorus:ReadingShape a sh:NodeShape ;
+    sh:targetClass chorus:Reading ;
+    rdfs:comment "One section of the pulse and when it was read." ;
+    sh:property [ sh:path chorus:section ; sh:minCount 1 ; sh:maxCount 1 ; sh:datatype xsd:string ;
+                  sh:in ( "roles" "board" "health" "alerts" "events" "index_freshness" "nudges" ) ;
+                  sh:name "section" ; sh:description "Required. One of the sections pulse carries today." ] ;
+    sh:property [ sh:path chorus:readFrom ; sh:minCount 1 ; sh:maxCount 1 ; sh:datatype xsd:string ;
+                  sh:name "read from" ; sh:description "Required. The producer it was read from, e.g. pulse-worker." ] ;
+    sh:property [ sh:path chorus:observedAt ; sh:minCount 1 ; sh:maxCount 1 ; sh:datatype xsd:dateTime ;
+                  sh:name "observed at" ; sh:description "Required. When it was read; the age comes from it." ] ;
+    sh:property [ sh:path chorus:ownedBy ; sh:minCount 1 ; sh:maxCount 1 ; sh:nodeKind sh:IRI ; sh:class chorus:Principal ;
+                  sh:name "owned by" ; sh:description "Required, set by the door." ] ;
+    chorus:instancesGraph "urn:chorus:domains:awareness" ;
+    chorus:generatedBy "athena-model" .
+
+chorus:WaitingOnShape a sh:NodeShape ;
+    sh:targetClass chorus:WaitingOn ;
+    rdfs:comment "Who waits on whom or on which card, and why." ;
+    sh:property [ sh:path chorus:waiter ; sh:minCount 1 ; sh:maxCount 1 ; sh:nodeKind sh:IRI ; sh:class chorus:Principal ;
+                  sh:name "waiter" ; sh:description "Required. The principal who is waiting." ] ;
+    sh:property [ sh:path chorus:waitsFor ; sh:minCount 1 ; sh:maxCount 1 ; sh:nodeKind sh:IRI ;
+                  sh:name "waits for" ; sh:description "Required. The principal or card waited on." ] ;
+    sh:property [ sh:path chorus:waitReason ; sh:minCount 1 ; sh:maxCount 1 ; sh:datatype xsd:string ;
+                  sh:name "reason" ; sh:description "Required. Why, in one line." ] ;
+    sh:property [ sh:path chorus:stateSource ; sh:minCount 1 ; sh:maxCount 1 ; sh:datatype xsd:string ;
+                  sh:in ( "declared" "observed" ) ;
+                  sh:name "source" ; sh:description "Required. declared or observed." ] ;
+    sh:property [ sh:path chorus:observedAt ; sh:minCount 1 ; sh:maxCount 1 ; sh:datatype xsd:dateTime ;
+                  sh:name "observed at" ; sh:description "Required. Since when." ] ;
+    sh:property [ sh:path chorus:ownedBy ; sh:minCount 1 ; sh:maxCount 1 ; sh:nodeKind sh:IRI ; sh:class chorus:Principal ;
+                  sh:name "owned by" ; sh:description "Required, set by the door." ] ;
+    chorus:instancesGraph "urn:chorus:domains:awareness" ;
+    chorus:generatedBy "athena-model" .
+
+# --- the domain --------------------------------------------------------------
+# Pulse's own domain. pulse hasDomain awareness replaces pulse hasDomain
+# knowledge (the model, which pulse never served) — that edge is on the
+# product row and moves through the door, not in this file.
+
+chorus:awareness a chorus:Domain ;
+    rdfs:label "awareness" ;
+    chorus:comment "Shared awareness: who is in what state now, who is alive, how old each reading is, and who is waiting on whom." ;
+    chorus:purpose "Let the team and Jeff read the team's state at a glance instead of asking for it." ;
+    chorus:ownedBy chorus:principal-wren ;
+    # One parent (Silas model-chain draft, 2026-10-10): the step is the parent; no partOf.
+    # atStream stays only because DomainShape still requires it; it goes when that rule changes.
+    chorus:atStep chorus:Directing ; chorus:atStream chorus:value-stream-chorus ;
+    chorus:repoTarget "platform/pulse" ;
+    chorus:definesVocabulary chorus:RoleState , chorus:Heartbeat , chorus:Reading , chorus:WaitingOn .
