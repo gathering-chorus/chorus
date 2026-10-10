@@ -30,7 +30,7 @@ chorus:skill-werk-deploy-env-up a chorus:Skill ;
     rdfs:label "werk-deploy env-up" ; rdfs:comment "Brings the card's demo variant up." ;
     chorus:executor "deterministic" ; chorus:implementedBy "werk-deploy" ; chorus:arguments "env-up" ; chorus:hasDomain chorus:cicd ;
     chorus:ownedBy chorus:principal-wren .
-chorus:skill-go a chorus:Skill ;
+chorus:skill-werk-go a chorus:Skill ;
     rdfs:label "go" ; rdfs:comment "Jeff accepts the presented card." ;
     chorus:executor "human" ; chorus:hasDomain chorus:cicd ; chorus:ownedBy chorus:principal-wren .
 chorus:stepskill-cicd-demo-1 a chorus:StepSkill ;
@@ -108,10 +108,10 @@ TTL
   cat > "$T/good4471.ttl" <<'TTL'
 @prefix chorus: <https://jeffbridwell.com/chorus#> .
 @prefix rdfs: <http://www.w3.org/2000/01/rdf-schema#> .
-chorus:skill-demo a chorus:Skill ;
+chorus:skill-werk-demo a chorus:Skill ;
     rdfs:label "/demo" ; rdfs:comment "Presents a card." ; chorus:executor "agent" ; chorus:hasDomain chorus:cicd ;
-    chorus:delegatesTo chorus:skill-go ; chorus:ownedBy chorus:principal-wren .
-chorus:skill-go a chorus:Skill ;
+    chorus:delegatesTo chorus:skill-werk-go ; chorus:ownedBy chorus:principal-wren .
+chorus:skill-werk-go a chorus:Skill ;
     rdfs:label "go" ; rdfs:comment "Jeff accepts." ; chorus:executor "human" ; chorus:hasDomain chorus:cicd ;
     chorus:ownedBy chorus:principal-wren .
 TTL

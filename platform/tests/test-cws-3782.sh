@@ -128,17 +128,17 @@ mkdir -p "$TD/dagu/api/v1/dags/cicd"
 cat > "$TD/dagu/api/v1/dags/cicd/dag-runs" <<'EOF'
 {"dagRuns":[
  {"dagRunId":"r3","params":"CARD=1090 ROLE=kade","statusLabel":"failed","startedAt":"2026-10-09T23:00:00-04:00","finishedAt":"2026-10-09T23:01:00-04:00","nodes":[{"statusLabel":"failed","step":{"name":"skill-werk-build"}}]},
- {"dagRunId":"r2","params":"CARD=109 ROLE=kade","statusLabel":"waiting","startedAt":"2026-10-09T22:14:19-04:00","finishedAt":"2026-10-09T22:54:28-04:00","nodes":[{"statusLabel":"succeeded","step":{"name":"skill-demo"}},{"statusLabel":"waiting","step":{"name":"skill-go"}}]},
+ {"dagRunId":"r2","params":"CARD=109 ROLE=kade","statusLabel":"waiting","startedAt":"2026-10-09T22:14:19-04:00","finishedAt":"2026-10-09T22:54:28-04:00","nodes":[{"statusLabel":"succeeded","step":{"name":"skill-werk-demo"}},{"statusLabel":"waiting","step":{"name":"skill-werk-go"}}]},
  {"dagRunId":"r1","params":"CARD=109 ROLE=kade","statusLabel":"failed","startedAt":"2026-10-09T21:03:31-04:00","finishedAt":"2026-10-09T21:03:32-04:00","nodes":[{"statusLabel":"failed","step":{"name":"skill-werk-commit"}},{"statusLabel":"aborted","step":{"name":"skill-werk-push"}}]},
  {"dagRunId":"r0","params":"CARD=109 ROLE=kade","statusLabel":"waiting","startedAt":"2026-10-09T21:00:00-04:00","finishedAt":"2026-10-09T21:02:00-04:00","nodes":[{"statusLabel":"waiting","step":{"name":"skill-werk-go","id":"skill_werk_go"}}]}
 ]}
 EOF
 out=$(CWS_RUNS_DIR=$TD CWS_DAGU="file://$TD/dagu" "$CWS" 109)
-t "v2 runs come from dagu" "  v2 waiting at skill-go · 3 runs" "$out"
+t "v2 runs come from dagu" "  v2 waiting at skill-werk-go · 3 runs" "$out"
 t "a failed v2 run names the step dagu failed" "failed      skill-werk-commit" "$out"
-t "a waiting v2 run names the step it waits at" "waiting     skill-go" "$out"
+t "a waiting v2 run names the step it waits at" "waiting     skill-werk-go" "$out"
 if [[ "$out" == *skill-werk-build* ]]; then echo "FAIL another card's dagu run (CARD=1090) counted for 109"; fails=$((fails+1)); fi
-t "the newest run waiting at the go prints the go" "go: dagu human-task complete cicd --run-id r2 --step skill_go --input accepter=jeff" "$out"
+t "the newest run waiting at the go prints the go" "go: dagu human-task complete cicd --run-id r2 --step skill_werk_go --input accepter=jeff" "$out"
 t "an older run still waiting at the go is superseded" "superseded  skill-werk-go" "$out"
 if [[ "$out" == *"--run-id r0"* ]]; then echo "FAIL a superseded run is offered a go"; fails=$((fails+1)); fi
 t "dagu down says so, never silent" "v2 (dagu): unreadable" "$(CWS_RUNS_DIR=$TD "$CWS" 109)"
