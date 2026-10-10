@@ -46,7 +46,7 @@ export function liveRowsQuery(runTs: string): string {
 /** #4007 — live rows to units in flight, as of `nowMs`. */
 export function inFlightFromCsv(csv: string, nowMs: number): InFlightUnit[] {
   return csvRecords(csv).map((r) => {
-    const t = /timeout=(\d+)s/.exec(r.sum ?? '');
+    const t = /timeout=(\d+)s/.exec(r.sum);
     return {
       unit: r.fp,
       elapsedMs: Math.max(0, nowMs - tsMs(r.ts)),
@@ -175,8 +175,8 @@ export async function loadRunsFromGraph(query: CsvQuery, limit = 14, nowMs = Dat
   if (suites === null || records === null) return null;
   const runs = runsFromGraph(suites, records, nowMs);
   // #4007 — the newest run, still going: which suites are running now
-  const newest = runs[runs.length - 1];
-  if (newest && !newest.completed && !newest.stoppedAt) {
+  const newest = runs.length > 0 ? runs[runs.length - 1] : undefined;
+  if (newest !== undefined && !newest.completed && !newest.stoppedAt) {
     const live = await query(liveRowsQuery(newest.runId));
     if (live !== null) newest.inFlight = inFlightFromCsv(live, nowMs);
   }
