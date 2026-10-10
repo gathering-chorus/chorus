@@ -504,13 +504,17 @@ pub fn render_gate_feedback(witness: &str, card: u64) -> String {
 /// #3511 — summarize the ROLE feedback (the peer gathers) for the announce: each
 /// peer's recorded demo.gather.replied verdict + substance. Distinct from the
 /// per-gate findings above — this is the TEAM's review Jeff weighs before his go.
-pub fn render_role_feedback(witness: &str, card: u64) -> String {
+/// #4474 — only THIS round's peers: the demoer never reviews itself, and a reply
+/// from an earlier round is not this round's review (run 14 showed a kade "block"
+/// recorded rounds earlier, when the demo ran without a role and kade was a peer).
+pub fn render_role_feedback(witness: &str, card: u64, role: &str, round: &str, patch_id: &str) -> String {
     let card_key = format!("\"card_id\":{},", card);
     let mut lines = Vec::new();
-    for peer in ["silas", "kade", "wren"] {
+    for peer in gather_peers(role) {
         let peer_key = format!("\"peer\":\"{}\"", peer);
         if let Some(l) = witness.lines().rev().find(|l| {
             l.contains("\"event\":\"demo.gather.replied\"") && l.contains(&card_key) && l.contains(&peer_key)
+                && line_keyed(l, round, patch_id)
         }) {
             let verdict = json_str_after(l, "verdict").unwrap_or_else(|| "pass".to_string());
             let note = json_str_after(l, "note").unwrap_or_default();
@@ -1504,7 +1508,7 @@ pub fn demo(card: u64, role: &str, home: &Path) -> R<DemoOutcome> {
     let title = card_title(&cv);
     let experience = extract_section(&cv, "Experience");
     let ac_items = render_ac_items(&cv);
-    let role_feedback = render_role_feedback(&witness, card);
+    let role_feedback = render_role_feedback(&witness, card, role, &round, &patch);
     let claim = if experience.is_empty() {
         format!("🔬 To prove it works: exercise the AC against the live variant ({}).", variant_url)
     } else {
@@ -2865,6 +2869,19 @@ mod tests {
     // announce_ready is `true || …` — the assert could not fail (passes-by-definition).
 
     // #3352 — the full invariant: gates AND gathers-replied before any announce.
+    #[test]
+    fn team_review_shows_this_rounds_peers_only_4474() {
+        let now = r#"{"ts":2,"event":"demo.gather.replied","role":"kade","card_id":4474,"trace_id":"t","peer":"wren","round":"r2","note":"ok"}"#;
+        let old_self = r#"{"ts":1,"event":"demo.gather.replied","role":"false","card_id":4474,"trace_id":"t","peer":"kade","round":"r2","verdict":"block","note":"Branch diff is empty"}"#;
+        let old_peer = r#"{"ts":1,"event":"demo.gather.replied","role":"kade","card_id":4474,"trace_id":"t","peer":"silas","round":"r1","verdict":"block","note":"stale"}"#;
+        let w = format!("{}\n{}\n{}", old_self, old_peer, now);
+        let out = render_role_feedback(&w, 4474, "kade", "r2", "");
+        assert!(out.contains("wren: pass — ok"), "{out}");
+        // NEGATIVE PROOF — the demoer's own old reply and another round's reply must not show
+        assert!(!out.contains("kade:"), "the demoer reviewed itself: {out}");
+        assert!(!out.contains("stale"), "an earlier round's review shown as this round's: {out}");
+    }
+
     fn gather_line(card: u64, peer: &str) -> String {
         format!(
             r#"{{"ts":1,"event":"demo.gather.replied","role":"wren","card_id":{},"trace_id":"t","peer":"{}","round":"r1","note":"ack"}}"#,
