@@ -557,7 +557,11 @@ pub fn plan(desired: Vec<DoorRow>, current: &[DoorRow], walked: &[&str], now_sec
                 r.fields.push(("runState".into(), "absent".into()));
                 p.update.push(r);
             }
-            p.vanished.push(c.get("label").to_string());
+            // a card's werk-slot copy (<label>.werk.<role>) comes and goes with its
+            // pipeline run: absent is the fact, not a finding (Jeff, 2026-10-10)
+            if !c.get("launchdLabel").contains(".werk.") {
+                p.vanished.push(c.get("label").to_string());
+            }
         } else {
             p.retire.push(c.clone());
         }
@@ -780,6 +784,18 @@ mod plan_4472 {
         }
         assert_eq!(plan(vec![d.clone()], &[cur.clone()], &["library"], 50000, &iso).update.len(), 1);
         assert_eq!(plan(vec![d], &[cur], &["library"], 3600, &iso).unchanged, 1);
+    }
+
+    #[test]
+    fn a_torn_down_werk_slot_turns_absent_without_a_finding() {
+        let slot = row(UnitClass::ServiceInstance, "library-com-chorus-api-werk-silas", &[("onMachine", "library"), ("launchdLabel", "com.chorus.api.werk.silas"), ("label", "com.chorus.api.werk.silas (library)"), ("runState", "running")]);
+        let p = plan(vec![], &[slot], &["library"], 0, &iso);
+        assert_eq!(p.update.len(), 1);
+        assert_eq!(p.update[0].get("runState"), "absent", "still recorded as absent");
+        assert!(p.vanished.is_empty(), "but not reported as a finding");
+        // NEGATIVE PROOF: a prod service that disappears is still a finding
+        let prod = row(UnitClass::ServiceInstance, "library-com-chorus-api", &[("onMachine", "library"), ("launchdLabel", "com.chorus.api"), ("label", "com.chorus.api (library)"), ("runState", "running")]);
+        assert_eq!(plan(vec![], &[prod], &["library"], 0, &iso).vanished, ["com.chorus.api (library)"]);
     }
 
     #[test]
