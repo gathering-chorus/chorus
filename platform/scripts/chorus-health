@@ -441,7 +441,7 @@ fi
 
 # deployed=running (cdhash check for chorus-hooks)
 deployed_cdhash=$(python3 - "$LOKI_URL" << 'PYEOF' 2>/dev/null
-import sys, json, subprocess, datetime
+import sys, os, json, subprocess, datetime
 loki = sys.argv[1]
 now = int(datetime.datetime.now().timestamp())
 start = now - 86400 * 30  # 30 days
@@ -451,7 +451,9 @@ cmd = ['curl', '-s', '--max-time', '5', f'{loki}/loki/api/v1/query_range',
        '--data-urlencode', f'start={start}000000000',
        '--data-urlencode', f'end={now}000000000']
 try:
-    out = subprocess.run(cmd, capture_output=True, text=True, timeout=6).stdout
+    # CHORUS_HEALTH_DEPLOYS_FIXTURE: a saved Loki answer, so the selection below is testable (#4472)
+    fixture = os.environ.get('CHORUS_HEALTH_DEPLOYS_FIXTURE')
+    out = open(fixture).read() if fixture else subprocess.run(cmd, capture_output=True, text=True, timeout=6).stdout
     d = json.loads(out)
     deploys = []
     for stream in d.get('data', {}).get('result', []):
@@ -459,8 +461,10 @@ try:
             try:
                 ev = json.loads(line)
                 binary = ev.get('binary', '')
-                if binary in ('chorus-hooks', 'chorus-hook-shim'):
-                    deploys.append((ts, ev.get('cdhash', 'unknown')))
+                # only installs into ~/.chorus/bin count: a werk-slot install (target=werk) is a
+                # different file, and chorus-hook-shim is a different binary (#4472)
+                if binary == 'chorus-hooks' and ev.get('target') != 'werk' and ev.get('cdhash', 'unknown') != 'unknown':
+                    deploys.append((ts, ev['cdhash']))
             except:
                 pass
     if deploys:
