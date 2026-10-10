@@ -2,27 +2,28 @@
 # @test-type: unit — reads the instance TTLs; no store
 # @domain: products
 #
-# #4390 — every product's atStep names a declared ValueStreamStep. gathering
-# pointed at chorus:Operating (an EventCategory) and every canonical model land
-# failed at the seed step with 422 unknown-target.
+# #4390 — gathering pointed at chorus:Operating (an EventCategory) and every canonical
+# model land failed at the seed step with 422 unknown-target. #4482 removed the cause:
+# one parent per row, so a product stores no step at all; its step is read from its
+# domains (hasDomain → atStep). A product row that stores one again is red.
 set -u
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
-check() { # products-file steps-file
-  python3 - "$1" "$2" <<'PY'
+check() { # products-file
+  python3 - "$1" <<'PY'
 import re,sys
-prod=open(sys.argv[1]).read(); steps=open(sys.argv[2]).read()
-declared=set(re.findall(r'^chorus:(value-stream-step-[a-z0-9-]+)\s+a chorus:ValueStreamStep', steps, re.M))
-bad=[(m.group(1)) for m in re.finditer(r'chorus:atStep chorus:([A-Za-z0-9-]+)', prod) if m.group(1) not in declared]
-for b in bad: print(f"not a ValueStreamStep: chorus:{b}")
-print(f"{len(re.findall(r'chorus:atStep chorus:', prod))} product steps, {len(bad)} not declared")
-sys.exit(1 if bad else 0)
+prod=open(sys.argv[1]).read()
+blocks=re.findall(r'^chorus:([A-Za-z0-9-]+)\s+a chorus:Product\s*;(.*?)\s\.\s*$', prod, re.M|re.S)
+bad=[n for n,b in blocks if re.search(r'chorus:(atStep|atStream|primaryStep)\s', b)]
+for b in bad: print(f"product stores a position: chorus:{b}")
+print(f"{len(blocks)} products, {len(bad)} storing a step")
+sys.exit(1 if bad or not blocks else 0)
 PY
 }
 pass=0; fail=0
-if out=$(check "$ROOT/designing/data/product-instances.ttl" "$ROOT/designing/data/value-stream-step-instances.ttl"); then echo "PASS every product's atStep is a declared step ($out)"; pass=$((pass+1)); else echo "FAIL $out"; fail=$((fail+1)); fi
+if out=$(check "$ROOT/designing/data/product-instances.ttl"); then echo "PASS no product stores its step ($out)"; pass=$((pass+1)); else echo "FAIL $out"; fail=$((fail+1)); fi
 T=$(mktemp -d); trap 'rm -rf "$T"' EXIT
-printf 'chorus:x a chorus:Product ;\n    chorus:atStep chorus:Operating .\n' > "$T/p.ttl"
-if check "$T/p.ttl" "$ROOT/designing/data/value-stream-step-instances.ttl" >/dev/null; then echo "FAIL NEGATIVE: an event category passed as a step"; fail=$((fail+1)); else echo "PASS NEGATIVE: a product at chorus:Operating is red"; pass=$((pass+1)); fi
+printf 'chorus:x a chorus:Product ;\n    chorus:label "X" ;\n    chorus:atStep chorus:value-stream-step-building .\n' > "$T/p.ttl"
+if check "$T/p.ttl" >/dev/null; then echo "FAIL NEGATIVE: a product storing a step passed"; fail=$((fail+1)); else echo "PASS NEGATIVE: a product storing a step is red"; pass=$((pass+1)); fi
 # a product's design doc must be a Document row the API can name (chorus:document-…), declared in document-instances.ttl
 docs() { python3 - "$1" "$ROOT/designing/data/document-instances.ttl" <<'PY'
 import re,sys

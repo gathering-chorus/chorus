@@ -121,7 +121,7 @@ chorus:service-tests a chorus:Service ;
     rdfs:label "Tests" ; chorus:label "Tests" ;
     chorus:overview "The service that answers 'is it tested, and did it pass' for every card and every night: the registry of tests (the tests domain, one row per test with layer, concern, hermeticity, covers), the runner that selects from that registry and executes it (werk-test: the blocking floor of every land and the whole-registry nightly), the evidence it stores (one TestResult per case), and the surfaces that read the evidence (the readout to Jeff, /nightly, the census). INSIDE iff its subject is a test's identity, selection, execution, evidence or readout." ;
     chorus:ownedBy chorus:principal-kade ;
-    chorus:atStep chorus:value-stream-step-building ;   # Jeff, 2026-09-03 11:44: "isnt it building" — the test step is part of Building; the demo is Proving
+    # Jeff, 2026-09-03 11:44: "isnt it building" — the test step is part of Building; the demo is Proving
     # #4093 — the flows, as data (chorus:diagram, Wren's #4094: repeatable mermaid, %% caption first line)
     chorus:diagram """%% As is (2026-09-03): the runner as it runs — a bash wrapper around the Rust binary, a python hydrator writing the registry
 flowchart LR

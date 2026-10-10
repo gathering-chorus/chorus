@@ -87,6 +87,31 @@ function stepBadge(step) {
   return s ? `<span class="badge ${cls}">${esc(s[0].toUpperCase() + s.slice(1))}</span>` : '<span class="empty">no step</span>';
 }
 
+// #4482 — one parent per row: a Product or Service stores no step of its own; the step is
+// read up the chain. A product sits at the steps of its domains (hasDomain); a service at
+// the step of the domain that hosts it (chorus:hosts names service-<name> or <name>).
+function bareLocal(v) {
+  return String(v || '').replace(/^.*[#/]/, '').replace(/^chorus:/, '');
+}
+
+function chainSteps(domainRows) {
+  return [...new Set(domainRows.map(d => stepLocal(d && d.atStep)).filter(Boolean))].sort();
+}
+
+function productSteps(product, domains) {
+  const byName = Object.fromEntries((domains || []).map(d => [d.name, d]));
+  return chainSteps(asArray(product && product.hasDomain).map(n => byName[bareLocal(n)]));
+}
+
+function serviceSteps(serviceName, domains) {
+  const s = bareLocal(serviceName);
+  return chainSteps((domains || []).filter(d => asArray(d.hosts).map(bareLocal).some(h => h === s || h === `service-${s}`)));
+}
+
+function stepBadges(steps) {
+  return steps && steps.length ? steps.map(stepBadge).join(' ') : stepBadge('');
+}
+
 function domainChips(hasDomain) {
   const doms = asArray(hasDomain);
   if (!doms.length) return '<span class="empty">no domains declared</span>';

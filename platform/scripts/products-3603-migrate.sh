@@ -77,7 +77,7 @@ generate() {
         o="${o_rest% .}"
         # keep only product-layer-relevant predicates (type/floor/edges)
         case "$p" in
-          "<http://www.w3.org/1999/02/22-rdf-syntax-ns#type>"|"<http://www.w3.org/2000/01/rdf-schema#label>"|"<http://www.w3.org/2000/01/rdf-schema#comment>"|"<${NS}label>"|"<${NS}comment>"|"<${NS}ownedBy>"|"<${NS}vision>"|"<${NS}valueProposition>"|"<${NS}audience>"|"<${NS}status>"|"<${NS}gaps>"|"<${NS}atStep>"|"<${NS}partOf>"|"<${NS}hasDomain>"|"<${NS}consumes>"|"<${NS}runsOn>"|"<${NS}purpose>"|"<${NS}atStream>"|"<${NS}repoTarget>"|"<${NS}definesVocabulary>")
+          "<http://www.w3.org/1999/02/22-rdf-syntax-ns#type>"|"<http://www.w3.org/2000/01/rdf-schema#label>"|"<http://www.w3.org/2000/01/rdf-schema#comment>"|"<${NS}label>"|"<${NS}comment>"|"<${NS}ownedBy>"|"<${NS}vision>"|"<${NS}valueProposition>"|"<${NS}audience>"|"<${NS}status>"|"<${NS}gaps>"|"<${NS}atStep>"|"<${NS}partOf>"|"<${NS}hasDomain>"|"<${NS}consumes>"|"<${NS}runsOn>"|"<${NS}purpose>"|"<${NS}repoTarget>"|"<${NS}definesVocabulary>")
             # skip literals the door refuses (pre-existing #3545 semicolon strings — already live)
             case "$o" in \"*\;*\") continue ;; esac
             printf 'INS\t%s\t%s\t%s\n' "$s" "$p" "$o"

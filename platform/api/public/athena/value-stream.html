@@ -4,7 +4,7 @@
 <!-- #3635 — the Jeff-approved value-stream page (2026-07-12 mock). Replaces the
      #3522 skeleton (value-stream.js retired with it). Hand-authored pending the
      generator upgrade (teach page_html to emit this design). The stream, its six
-     ordered steps (stageOrder, live), the products at each step (atStep, live),
+     ordered steps (stageOrder, live), the products at each step (their domains' atStep, live),
      and the composed pipelines beneath (the other ValueStreams' contains folds).
      Nothing hardcoded, nothing fabricated. -->
 <script>window.OWL_PORT = 3360;</script>
@@ -40,8 +40,9 @@ var s=document.createElement('script');s.src=window.basePath('/js/base-path.js')
 (async function () {
   const main = document.getElementById('main');
   try {
-    const [streamsEnv, stepsEnv, prodsEnv] = await Promise.all([
-      fetchJSON('/valuestreams'), fetchJSON('/valuestreamsteps'), fetchJSON('/products')]);
+    const [streamsEnv, stepsEnv, prodsEnv, domEnv] = await Promise.all([
+      fetchJSON('/valuestreams'), fetchJSON('/valuestreamsteps'), fetchJSON('/products'), fetchJSON('/domains').catch(() => null)]);
+    const domains = (domEnv || {}).data || [];
     const streams = streamsEnv.data || [];
     const steps = stepsEnv.data || [];
     const prods = prodsEnv.data || [];
@@ -59,8 +60,8 @@ var s=document.createElement('script');s.src=window.basePath('/js/base-path.js')
     prods.forEach((r, i) => { r._children = (kidFolds[i] && kidFolds[i].hasChild) || []; });
     const byStep = {};
     for (const p of prods) {
-      const st = stepLocal(p.atStep);
-      (byStep[st] = byStep[st] || []).push(p);
+      // #4482 — read up the chain: a product sits at each step its domains sit at
+      for (const st of productSteps(p, domains)) (byStep[st] = byStep[st] || []).push(p);
     }
 
     function col(step) {
@@ -73,7 +74,7 @@ var s=document.createElement('script');s.src=window.basePath('/js/base-path.js')
           (kids.length ? `<span class="child" style="padding-left:10px">&#8627; parent of ${kids.sort().join(', ')}</span>` : '');
       }).join('') || '<div class="empty">no products at this step</div>';
       return `<div class="step-col ${key}"><h2>${esc(step.label || key)}</h2>
-<div class="count">${at.length} product${at.length !== 1 ? 's' : ''} (atStep, live)</div>${items}</div>`;
+<div class="count">${at.length} product${at.length !== 1 ? 's' : ''} (from their domains, live)</div>${items}</div>`;
     }
 
     // composed pipelines: each remaining stream's own step sequence (contains fold)
@@ -97,7 +98,7 @@ ${top && top.outcome ? `<div class="promise">${esc(top.outcome)}</div>` : ''}
 <div class="stream">${ordered.map(col).join('\n')}</div>
 <div class="layer-label">Pipelines compose beneath the stream &mdash; each product's own verb sequence (its ValueStream)</div>
 ${pipeHtml}
-${srcNote('GET /valuestreams · /valuestreamsteps (stageOrder, inStream) · /products (atStep)')}`;
+${srcNote('GET /valuestreams · /valuestreamsteps (stageOrder, inStream) · /products (hasDomain) · /domains (atStep)')}`;
   } catch (e) { fetchFailed(main, e); }
 })();
 </script>

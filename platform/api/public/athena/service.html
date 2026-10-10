@@ -29,7 +29,8 @@ var s=document.createElement('script');s.src=window.basePath('/js/base-path.js')
   document.getElementById('crumb').textContent = s;
   if (!s) { main.innerHTML = '<p class="empty">no service named &mdash; try <a href="services.html">the services list</a>.</p>'; return; }
   try {
-    const env = await fetchJSON(`/services/${encodeURIComponent(s)}`);
+    const [env, domEnv] = await Promise.all([fetchJSON(`/services/${encodeURIComponent(s)}`), fetchJSON('/domains').catch(() => null)]);
+    const steps = serviceSteps(s, (domEnv || {}).data);   // #4482 — the hosting domain's step
     const e = env.data || {};
     const links = env.links || {};
     document.getElementById('title').innerHTML = `${esc(e.label || s)} <span class="kind">&mdash; Service</span>`;
@@ -57,7 +58,7 @@ var s=document.createElement('script');s.src=window.basePath('/js/base-path.js')
     main.innerHTML = `
 <div class="stats">
   <div class="stat"><div class="v">${ownerDot(links.ownedBy)}</div><div class="l">Owner (ownedBy)</div></div>
-  <div class="stat"><div class="v">${stepBadge(links.atStep)}</div><div class="l">Step (atStep)</div></div>
+  <div class="stat"><div class="v">${stepBadges(steps)}</div><div class="l">Step (hosting domain)</div></div>
   <div class="stat"><div class="v">${esc(e.status || 'no status')}</div><div class="l">Status</div></div>
   <div class="stat"><div class="v">${SECTIONS.filter(([k]) => e[k]).length}/${SECTIONS.length}</div><div class="l">Design sections served</div></div>
   <div class="stat"><div class="v">${e.version ? 'v' + esc(String(e.version)) + (e.docState ? ' · ' + esc(String(e.docState)) : '') + ' · ' + esc((d => isNaN(d) ? String(e.changedAt || '').slice(0, 10) : `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`)(new Date(String(e.changedAt || '')))) : '<span class="empty">not yet saved through the API</span>'}</div><div class="l">Version · state · last changed</div></div>

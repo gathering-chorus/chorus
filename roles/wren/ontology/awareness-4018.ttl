@@ -184,7 +184,6 @@ chorus:awareness a chorus:Domain ;
     chorus:purpose "Let the team and Jeff read the team's state at a glance instead of asking for it." ;
     chorus:ownedBy chorus:principal-wren ;
     # One parent (Silas model-chain draft, 2026-10-10): the step is the parent; no partOf.
-    # atStream stays only because DomainShape still requires it; it goes when that rule changes.
-    chorus:atStep chorus:Directing ; chorus:atStream chorus:value-stream-chorus ;
+    chorus:atStep chorus:value-stream-step-directing ;
     chorus:repoTarget "platform/pulse" ;
     chorus:definesVocabulary chorus:RoleState , chorus:Heartbeat , chorus:Reading , chorus:WaitingOn .

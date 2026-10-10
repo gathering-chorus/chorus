@@ -18,8 +18,7 @@
         "rdfs:label": { "required": true, "cardinality": "1" },
         "rdfs:comment": { "required": false, "cardinality": "0..1" },
         "chorus:ownedBy": { "required": true, "cardinality": "1", "range": "chorus:Role" },
-        "chorus:hasDomain": { "required": false, "cardinality": "0..*", "range": "chorus:Domain" },
-        "chorus:primaryStep": { "required": false, "cardinality": "0..1", "range": "chorus:Vertebra" }
+        "chorus:hasDomain": { "required": false, "cardinality": "0..*", "range": "chorus:Domain" }
       }
     },
     "chorus:Role": {
@@ -68,12 +67,12 @@
     {
       "name": "domain-detail-page",
       "owner": "kade",
-      "depends_on": ["chorus:SubProduct", "chorus:ownedBy", "chorus:primaryStep", "chorus:consumes", "chorus:hasDomain", "rdfs:label", "rdfs:comment"]
+      "depends_on": ["chorus:SubProduct", "chorus:ownedBy", "chorus:consumes", "chorus:hasDomain", "rdfs:label", "rdfs:comment"]
     },
     {
       "name": "value-stream-page",
       "owner": "kade",
-      "depends_on": ["chorus:ValueStream", "chorus:Vertebra", "chorus:SubProduct", "chorus:hasDomain", "chorus:primaryStep", "rdfs:label"]
+      "depends_on": ["chorus:ValueStream", "chorus:Vertebra", "chorus:SubProduct", "chorus:hasDomain", "rdfs:label"]
     },
     {
       "name": "crawler-service",

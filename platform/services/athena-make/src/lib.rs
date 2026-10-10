@@ -3473,21 +3473,23 @@ pub fn handle_write_scoped(method: &str, path: &str, body: &str, table: &RouteTa
                 let field = field_of(k);
                 let edge_class = field.as_deref().and_then(|f| f.split_once("|edge:")).map(|(_, c)| c.to_string());
                 let result = if let Some(class) = edge_class {
-                    // A link field: unlink what is no longer named, link what is new.
+                    // A link field: remove what is no longer named, link what is new.
                     let tkind = kind_of_class(&class);
                     let pred = format!("{}{}", NS, k);
-                    let current: Vec<String> = sparql_json(&format!(
+                    // Keep each stored value's full IRI: a wrong-kind value (c:Proving where
+                    // value-stream-step-proving belongs) can only be removed by the IRI the store
+                    // holds; the DAL unlink rebuilds <kind>-<name> and missed it (#4482).
+                    let current: Vec<(String, String)> = sparql_json(&format!(
                         "SELECT ?v WHERE {{ GRAPH <{g}> {{ <{s}> <{p}> ?o }} BIND(STR(?o) AS ?v) }}", g = graph, s = subject, p = pred))
                         .map(|b| select_v(&b)).unwrap_or_default()
-                        .into_iter().map(|iri| iri.rsplit('#').next().unwrap_or(&iri).to_string()).collect();
+                        .into_iter().map(|iri| (iri.rsplit('#').next().unwrap_or(&iri).to_string(), iri)).collect();
                     let want: Vec<String> = vs.iter().map(|v| v.rsplit(['#', ':']).next().unwrap_or(v).to_string()).collect();
                     let strip = |n: &str| n.strip_prefix(&format!("{}-", tkind)).unwrap_or(n).to_string();
-                    let mut r: R<()> = Ok(());
-                    for gone in current.iter().filter(|c| !want.iter().any(|w| strip(w) == strip(c))) {
-                        r = r.and_then(|_| dal_run(&["unlink".into(), "--kind".into(), kind.clone(), "--name".into(), name.to_string(),
-                            "--graph".into(), graph.clone(), "--edge".into(), format!("{}={}:{}", k, tkind, strip(gone))], token));
-                    }
-                    for new in want.iter().filter(|w| !current.iter().any(|c| strip(c) == strip(w))) {
+                    let gone: Vec<(String, String, String)> = current.iter()
+                        .filter(|(c, _)| !want.iter().any(|w| strip(w) == strip(c)))
+                        .map(|(_, iri)| (format!("<{}>", subject), format!("<{}>", pred), format!("<{}>", iri))).collect();
+                    let mut r: R<()> = if gone.is_empty() { Ok(()) } else { dal_batch(&graph, &gone, &[], token) };
+                    for new in want.iter().filter(|w| !current.iter().any(|(c, _)| strip(c) == strip(w))) {
                         r = r.and_then(|_| dal_run(&["link".into(), "--kind".into(), kind.clone(), "--name".into(), name.to_string(),
                             "--graph".into(), graph.clone(), "--edge".into(), format!("{}={}:{}", k, tkind, strip(new))], token));
                     }

@@ -4,7 +4,7 @@
   "id": null,
   "panels": [
     { "type": "row", "gridPos": { "h": 1, "w": 24, "x": 0, "y": 0 }, "id": 1,
-      "title": "owl-api — generated domain API (generated dashboard — do not hand-edit)" },
+      "title": "athena-make — generated domain API (generated dashboard — do not hand-edit)" },
     { "type": "logs", "datasource": { "type": "loki", "uid": "loki" },
       "gridPos": { "h": 8, "w": 24, "x": 0, "y": 1 }, "id": 2,
       "title": "requests (telemetry envelope)",
@@ -22,6 +22,6 @@
   "schemaVersion": 38,
   "time": { "from": "now-6h", "to": "now" },
   "title": "OWL API — domain",
-  "uid": "owl-api-domain",
+  "uid": "athena-make-domain",
   "version": 1
 }

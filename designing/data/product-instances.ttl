@@ -35,7 +35,6 @@ chorus:athena a chorus:Product ;
     chorus:audience """The people and agents who build inside the platform, the automated checks that gate their work, and anyone reading the generated pages to understand what the system is made of.""" ;
     chorus:status """building""" ;
     chorus:gaps """An older generation of relationships still being retired; a thin service layer; two vocabularies for the same things; three naming conventions for identifiers; design documents seeded into a graph the document API does not read.""" ;
-    chorus:atStep chorus:value-stream-step-designing ;
     chorus:hasDesignDoc chorus:document-athena-product-design ;
     chorus:hasDomain chorus:products, chorus:services, chorus:domains, chorus:value-streams ;
     chorus:publishesPreAuth """true""" ;
@@ -103,7 +102,6 @@ flowchart LR
     chorus:audience """The roles building the system, who use it to notice a peer gone dark or a service drifting before the owner does; and the owner, who consumes outcomes only.""" ;
     chorus:status """building""" ;
     chorus:gaps """No AC checks on cards and no verdict or route on the card; chorus-make does not exist yet, so no borg pipeline runs; no single prod service list (83 running against 13 designed); no canary (one copy of everything); no liveness signal; alerts routed by hand.""" ;
-    chorus:atStep chorus:value-stream-step-proving ;
     chorus:hasDesignDoc chorus:document-borg-product-design ;
     chorus:hasDomain chorus:infrastructure, chorus:builds, chorus:deploys, chorus:time, chorus:heralds, chorus:toolchain, chorus:analytics, chorus:security, chorus:properties, chorus:alerts, chorus:monitors, chorus:logs, chorus:identity, chorus:metrics ;
     chorus:publishesPreAuth """true""" ;
@@ -148,7 +146,6 @@ chorus:chorus a chorus:Product ;
     chorus:audience """The team working inside it today, and any team that wants to compose people and agents into something that holds together without a person in the middle of every message.""" ;
     chorus:status """operating""" ;
     chorus:gaps """Self-regulation is the frontier: the system has the structure to hold its own health but not yet the reflex, so a person still tends to notice drift first. Several memory sources have no ingestion path.""" ;
-    chorus:atStep chorus:value-stream-step-directing ;
     chorus:hasDesignDoc chorus:document-chorus-as-platform ;
     chorus:hasDomain chorus:search, chorus:memory ;
     # #4130 — NO partOf here, and this is a measured limit, not an oversight.
@@ -221,7 +218,6 @@ chorus:clearing a chorus:Product ;
     chorus:audience """The owner, watching the team work in real time; the roles, coordinating with one another; and guests observing a session.""" ;
     chorus:status """operating""" ;
     chorus:gaps """No per-participant identity on the public door; delivery into an agent session is terminal injection rather than subscription; the verb family is designed but not yet modeled, so its surfaces are not generated.""" ;
-    chorus:atStep chorus:value-stream-step-directing ;
     chorus:hasDesignDoc chorus:document-clearing-value-stream-design ;
     chorus:hasDomain chorus:cards, chorus:messages ;   # #4018: streams moved to pulse
     chorus:publishesPreAuth """true""" ;
@@ -283,7 +279,6 @@ flowchart LR
     chorus:audience """The people writing integrations, the model as the destination, and the contract gate as the enforcement point between them.""" ;
     chorus:status """building""" ;
     chorus:gaps """Mostly design: the contract gate and a few harvesters run, but the ingest, map and reconcile pipeline is not yet built, and the photo pipeline's flow engine is down.""" ;
-    chorus:atStep chorus:value-stream-step-building ;
     chorus:hasDesignDoc chorus:document-convergence-value-stream-design ;
     chorus:hasDomain chorus:integrations ;
     chorus:publishesPreAuth """true""" ;
@@ -330,7 +325,6 @@ chorus:loom a chorus:Product ;
     chorus:audience """The team, for whom Loom holds the persistent operating frame; and any team adopting the method, which receives a working normative model rather than a pile of documents.""" ;
     chorus:status """exploring""" ;
     chorus:gaps """Decisions still live as text with no API and no check that they are enforced; skills are files rather than queryable entries; root-cause analyses are not yet modeled.""" ;
-    chorus:atStep chorus:value-stream-step-shaping ;
     chorus:hasDesignDoc chorus:document-loom-subproduct-design ;
     chorus:hasDomain chorus:rcas, chorus:roles, chorus:principles, chorus:policies, chorus:practices, chorus:skills, chorus:decisions ;
     chorus:publishesPreAuth """true""" ;
@@ -380,7 +374,6 @@ chorus:pulse a chorus:Product ;
     chorus:audience """The owner first, on one screen with no interpretation required; the roles second, as the way they see each other without interrupting; alerting third, as a consumer of the same reading.""" ;
     chorus:status """operating""" ;
     chorus:gaps """No relation between roles, so who is blocked on whom cannot be answered; machine load is missing from the reading; some activity arrives without a known author; consumers do not yet read the age of what they are shown.""" ;
-    chorus:atStep chorus:value-stream-step-directing ;
     chorus:hasDesignDoc chorus:document-product-design-pulse ;
     chorus:hasDomain chorus:awareness, chorus:streams ;   # #4018: its own domain + streams (from the Clearing); knowledge was the model, never pulse's
     chorus:consumes chorus:code, chorus:logs, chorus:roles, chorus:alerts, chorus:monitors, chorus:messages, chorus:streams, chorus:events, chorus:cards, chorus:security, chorus:memory, chorus:knowledge, chorus:tests ;
@@ -455,7 +448,6 @@ flowchart LR
     chorus:audience """The owner, the roles, and every other product in the platform, all of which read it.""" ;
     chorus:status """operating""" ;
     chorus:gaps """Reach is broken: readers take a fixed tail of a large log, so anything older than a few hours is out of reach. The event types are not yet modeled; the occurrence read serves a stub.""" ;
-    chorus:atStep chorus:value-stream-step-directing ;
     chorus:hasDesignDoc chorus:document-spine-product-design ;
     chorus:hasDomain chorus:events ;
     chorus:promise """The Spine is the team's memory of what happened. It is an append-only record of every event the system and the people in it give off — a card pulled, a build finished, a message delivered, a gate refusing an action — together with a catalogue of every kind of event that can happen.
@@ -552,7 +544,6 @@ flowchart TB
     chorus:audience """The roles building the platform and the owner accepting the work. The external customer never touches Werk; what they buy is the trust it makes possible.""" ;
     chorus:status """operating""" ;
     chorus:gaps """Per-test results are not yet ingested; acceptance does not yet advance an artifact's status in the model; the code review step is advisory; rollback across version control, build and deploy is structurally hard.""" ;
-    chorus:atStep chorus:value-stream-step-building ;
     chorus:hasDesignDoc chorus:document-werk-product-design ;
     chorus:hasDomain chorus:tests, chorus:code, chorus:version-control, chorus:cicd, chorus:pipelines ;
     chorus:publishesPreAuth """true""" ;
@@ -619,12 +610,6 @@ chorus:gathering a chorus:Product ;
     # #4319 — the ProductShape floor: its design doc and its content domains (the 12 domains Jeff owns).
     chorus:gaps "The 12 content domains predate the ProductShape floor (#3603) and have no design docs of their own yet." ;
     chorus:hasDesignDoc chorus:document-gathering-vision ;
-    chorus:hasDomain chorus:blog, chorus:books, chorus:documents, chorus:music, chorus:notes, chorus:people, chorus:photos, chorus:property, chorus:sexuality, chorus:social, chorus:stories, chorus:video ;
-    # #4390 — gathering owns its own stream (value-stream-gathering, Jeff's Life
-    # stream), so it is not at a Chorus step. atStep is required on ProductShape,
-    # so it names that stream's entry step; chorus:Operating was an EventCategory
-    # and every model land failed at the seed step with 422 unknown-target.
-    # (Wren 2026-09-28: atStep optional for a product that owns a stream is her card.)
-    chorus:atStep chorus:value-stream-step-gathering-sowing .
+    chorus:hasDomain chorus:blog, chorus:books, chorus:documents, chorus:music, chorus:notes, chorus:people, chorus:photos, chorus:property, chorus:sexuality, chorus:social, chorus:stories, chorus:video .
 
 
