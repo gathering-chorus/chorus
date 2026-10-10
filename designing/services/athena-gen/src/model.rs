@@ -17,7 +17,8 @@ pub const NS: &str = "https://jeffbridwell.com/chorus#";
 const PREFIXES: &str = "PREFIX c: <https://jeffbridwell.com/chorus#> \
 PREFIX sh: <http://www.w3.org/ns/shacl#> \
 PREFIX rdf: <http://www.w3.org/1999/02/22-rdf-syntax-ns#> \
-PREFIX xsd: <http://www.w3.org/2001/XMLSchema#> ";
+PREFIX xsd: <http://www.w3.org/2001/XMLSchema#> \
+PREFIX rdfs: <http://www.w3.org/2000/01/rdf-schema#> ";
 
 /// What a field holds: a typed literal, or a link to a row of a class.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -215,7 +216,7 @@ fn class(store: &Store, domain: &str, name: &str) -> Result<Class, ModelError> {
     let props = select(store, &format!(
         "SELECT ?path (SAMPLE(?dt) AS ?datatype) (SAMPLE(?cl) AS ?class) (SAMPLE(?nk) AS ?nodeKind) \
          (MAX(?mn) AS ?min) (MIN(?mx) AS ?max) WHERE {{ \
-           ?s sh:targetClass c:{name} ; sh:property ?p . ?p sh:path ?path . \
+           c:{name} rdfs:subClassOf* ?anc . ?s sh:targetClass ?anc ; sh:property ?p . ?p sh:path ?path . \
            OPTIONAL {{ ?p sh:datatype ?dt }} OPTIONAL {{ ?p sh:class ?cl }} OPTIONAL {{ ?p sh:nodeKind ?nk }} \
            OPTIONAL {{ ?p sh:minCount ?mn }} OPTIONAL {{ ?p sh:maxCount ?mx }} \
          }} GROUP BY ?path ORDER BY ?path"))?;
@@ -224,7 +225,7 @@ fn class(store: &Store, domain: &str, name: &str) -> Result<Class, ModelError> {
         let fname = p["path"].clone();
         // sh:in in model order: a member's position is how many list cells precede it
         let allowed: Vec<String> = select(store, &format!(
-            "SELECT ?v (COUNT(?mid) AS ?pos) WHERE {{ ?s sh:targetClass c:{name} ; sh:property ?p . \
+            "SELECT ?v (COUNT(?mid) AS ?pos) WHERE {{ c:{name} rdfs:subClassOf* ?anc . ?s sh:targetClass ?anc ; sh:property ?p . \
              ?p sh:path c:{fname} ; sh:in ?l . ?l rdf:rest* ?mid . ?mid rdf:rest* ?node . ?node rdf:first ?v }} \
              GROUP BY ?v ?node ORDER BY ?pos"))?
             .into_iter().map(|r| r["v"].clone()).collect();

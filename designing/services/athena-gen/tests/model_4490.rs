@@ -70,3 +70,21 @@ fn negative_proof_a_file_that_does_not_parse_is_named_never_half_loaded() {
     assert_eq!(skipped.len(), 1);
     assert!(skipped[0].contains("m.ttl"));
 }
+
+#[test]
+fn a_class_serves_its_parents_fields_as_v1_does() {
+    let ttl = r#"
+@prefix c: <https://jeffbridwell.com/chorus#> .
+@prefix sh: <http://www.w3.org/ns/shacl#> .
+@prefix rdfs: <http://www.w3.org/2000/01/rdf-schema#> .
+c:pulse a c:Product ; c:hasDomain c:awareness .
+c:awareness c:definesVocabulary c:RoleState .
+c:RoleState rdfs:subClassOf c:Memory .
+c:MemoryShape sh:targetClass c:Memory ; sh:property [ sh:path c:comment ; sh:maxCount 1 ] .
+c:RoleStateShape sh:targetClass c:RoleState ; sh:property [ sh:path c:stateValue ; sh:maxCount 1 ] .
+"#;
+    let (store, _) = load(&[fixture("inherit", ttl)]).unwrap();
+    let p = product(&store, "pulse").unwrap();
+    let names: Vec<_> = p.domains[0].classes[0].fields.iter().map(|f| f.name.as_str()).collect();
+    assert_eq!(names, ["comment", "stateValue"], "the parent's field is served too");
+}

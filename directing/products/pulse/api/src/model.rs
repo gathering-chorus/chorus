@@ -41,6 +41,8 @@ pub const CLASSES: &[ClassDef] = &[
     ClassDef {
         domain: "awareness", name: "Heartbeat", kind: "heartbeat", plural: "heartbeats", segment: "heartbeats", graph: "urn:chorus:domains:awareness",
         fields: &[
+            FieldDef { name: "comment", link: false, datatype: "string", required: true, many: false, allowed: &[] },
+            FieldDef { name: "label", link: false, datatype: "string", required: true, many: false, allowed: &[] },
             FieldDef { name: "aboutPrincipal", link: true, datatype: "", required: true, many: false, allowed: &[] },
             FieldDef { name: "currentTool", link: false, datatype: "string", required: false, many: false, allowed: &[] },
             FieldDef { name: "inSession", link: true, datatype: "", required: true, many: false, allowed: &[] },
@@ -52,6 +54,8 @@ pub const CLASSES: &[ClassDef] = &[
     ClassDef {
         domain: "awareness", name: "Reading", kind: "reading", plural: "readings", segment: "readings", graph: "urn:chorus:domains:awareness",
         fields: &[
+            FieldDef { name: "comment", link: false, datatype: "string", required: true, many: false, allowed: &[] },
+            FieldDef { name: "label", link: false, datatype: "string", required: true, many: false, allowed: &[] },
             FieldDef { name: "observedAt", link: false, datatype: "dateTime", required: true, many: false, allowed: &[] },
             FieldDef { name: "ownedBy", link: true, datatype: "", required: true, many: false, allowed: &[] },
             FieldDef { name: "readFrom", link: false, datatype: "string", required: true, many: false, allowed: &[] },
@@ -61,6 +65,8 @@ pub const CLASSES: &[ClassDef] = &[
     ClassDef {
         domain: "awareness", name: "RoleState", kind: "role-state", plural: "rolestates", segment: "rolestates", graph: "urn:chorus:domains:awareness",
         fields: &[
+            FieldDef { name: "comment", link: false, datatype: "string", required: true, many: false, allowed: &[] },
+            FieldDef { name: "label", link: false, datatype: "string", required: true, many: false, allowed: &[] },
             FieldDef { name: "aboutPrincipal", link: true, datatype: "", required: true, many: false, allowed: &[] },
             FieldDef { name: "currentCard", link: true, datatype: "", required: false, many: false, allowed: &[] },
             FieldDef { name: "observedAt", link: false, datatype: "dateTime", required: true, many: false, allowed: &[] },
@@ -72,6 +78,8 @@ pub const CLASSES: &[ClassDef] = &[
     ClassDef {
         domain: "awareness", name: "WaitingOn", kind: "waiting-on", plural: "waitingons", segment: "waitingons", graph: "urn:chorus:domains:awareness",
         fields: &[
+            FieldDef { name: "comment", link: false, datatype: "string", required: true, many: false, allowed: &[] },
+            FieldDef { name: "label", link: false, datatype: "string", required: true, many: false, allowed: &[] },
             FieldDef { name: "observedAt", link: false, datatype: "dateTime", required: true, many: false, allowed: &[] },
             FieldDef { name: "ownedBy", link: true, datatype: "", required: true, many: false, allowed: &[] },
             FieldDef { name: "stateSource", link: false, datatype: "string", required: true, many: false, allowed: &["declared", "observed"] },
