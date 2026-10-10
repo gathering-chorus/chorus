@@ -1443,6 +1443,7 @@ pub enum WriteOp {
     CreateBatch,
     DeleteBatch,
     ReplaceEntity { name: String },
+    PatchEntity { name: String },   // #4475
     DeleteEntity { name: String },
     AddEdge { name: String, edge: String },
     RemoveEdge { name: String, edge: String },
@@ -1461,6 +1462,7 @@ pub fn parse_write(method: &str, path: &str, plural: &str) -> Option<WriteOp> {
         ("POST", 2) if parts[1] == "batch" => Some(WriteOp::CreateBatch),
         ("POST", 2) if parts[1] == "delete-batch" => Some(WriteOp::DeleteBatch),
         ("PUT", 2) => Some(WriteOp::ReplaceEntity { name: parts[1].to_string() }),
+        ("PATCH", 2) => Some(WriteOp::PatchEntity { name: parts[1].to_string() }),
         ("DELETE", 2) => Some(WriteOp::DeleteEntity { name: parts[1].to_string() }),
         ("POST", 3) => Some(WriteOp::AddEdge { name: parts[1].to_string(), edge: parts[2].to_string() }),
         ("DELETE", 3) => Some(WriteOp::RemoveEdge { name: parts[1].to_string(), edge: parts[2].to_string() }),
@@ -1565,6 +1567,16 @@ pub fn json_field(body: &str, key: &str) -> Option<String> {
 /// sources). One string parses as a one-element list. An empty array, a nested
 /// object/array, or a non-string element is a refusal: the door does not guess.
 fn parse_create_object(body: &str) -> R<std::collections::BTreeMap<String, Vec<String>>> {
+    parse_json_object(body, false)
+}
+
+/// #4475 — a JSON merge patch (RFC 7396): the same strict object, plus `null`,
+/// which reads as an empty list — "this field has no value now".
+fn parse_patch_object(body: &str) -> R<std::collections::BTreeMap<String, Vec<String>>> {
+    parse_json_object(body, true)
+}
+
+fn parse_json_object(body: &str, allow_null: bool) -> R<std::collections::BTreeMap<String, Vec<String>>> {
     fn skip_ws(bytes: &[u8], mut i: usize) -> usize {
         while i < bytes.len() && matches!(bytes[i], b' ' | b'\t' | b'\r' | b'\n') {
             i += 1;
@@ -1637,7 +1649,10 @@ fn parse_create_object(body: &str) -> R<std::collections::BTreeMap<String, Vec<S
             return Err(format!("create property '{}' must be followed by ':'", key));
         }
         i = skip_ws(bytes, i + 1);
-        let value: Vec<String> = if bytes.get(i) == Some(&b'[') {
+        let value: Vec<String> = if allow_null && body[i..].starts_with("null") {
+            i += 4;
+            Vec::new()
+        } else if bytes.get(i) == Some(&b'[') {
             i = skip_ws(bytes, i + 1);
             let mut items = Vec::new();
             loop {
@@ -3307,6 +3322,7 @@ pub fn handle_write_scoped(method: &str, path: &str, body: &str, table: &RouteTa
         // #4185 — delete-batch checks each named row's owner in its own handler.
         WriteOp::CreateEntity | WriteOp::CreateBatch | WriteOp::DeleteBatch => None,
         WriteOp::ReplaceEntity { name }
+        | WriteOp::PatchEntity { name }
         | WriteOp::DeleteEntity { name }
         | WriteOp::AddEdge { name, .. }
         | WriteOp::RemoveEdge { name, .. } => Some(name.clone()),
@@ -3398,6 +3414,108 @@ pub fn handle_write_scoped(method: &str, path: &str, body: &str, table: &RouteTa
         WriteOp::CreateEntity => handle_create(body, table, caller_role, token, landed_commit),
         WriteOp::CreateBatch => handle_create_batch(body, table, caller_role, token, landed_commit),
         WriteOp::DeleteBatch => handle_delete_batch(body, table, caller_role, token, scope),
+        // #4475 — PATCH: change or remove single fields by the row's key (RFC 7396).
+        // A PUT restates the whole row, so every field it does not name is lost and
+        // a link the shape cannot type is saved as text (pulse's 13 consumes links,
+        // 2026-10-10 08:41). A PATCH touches only what it names: a value is written,
+        // null removes the field, and every other triple — rdf:type, rdfs:subClassOf,
+        // the links nobody named — stays exactly as it was.
+        WriteOp::PatchEntity { name } => {
+            if !entity_exists(&table.class, name, &table.instances_graph) {
+                return write_resp("not-found", "entity does not exist; PATCH changes a row, it never creates one");
+            }
+            let values = match parse_patch_object(body) {
+                Ok(v) => v,
+                Err(e) => return write_resp("validation", &format!("patch body: {}", e)),
+            };
+            if values.is_empty() {
+                return write_resp("validation", "patch names no field");
+            }
+            let kind = kind_of_class(class_local);
+            let graph = table.instances_graph.clone();
+            let subject = entity_subject(&table.class, name);
+            let field_of = |k: &str| table.fields.iter().find(|f| f.split('|').next() == Some(k)).cloned();
+            // Refuse before writing anything: a half-applied patch is the failure this verb exists to end.
+            for (k, vs) in &values {
+                if matches!(k.as_str(), "name" | "ownedBy" | "type" | "iri") {
+                    return write_resp("validation", &format!("'{}' cannot be patched: the row's key, owner and type are not fields", k));
+                }
+                match field_of(k) {
+                    // A field the shape no longer lists may only be REMOVED (a retired
+                    // predicate left on a row, #4471's implementedIn); never set.
+                    None if !vs.is_empty() => {
+                        emit_write_spine(caller_role, "patch", name, k, "off-model");
+                        return write_resp("validation", &format!("off-model property '{}' is not in the shape; a patch may remove it (null) but not set it", k));
+                    }
+                    Some(f) if vs.len() > 1 && !f.contains("|edge:") => {
+                        return write_resp("validation", &format!("'{}' is a text field; a patch sets one value (a repeated text field still goes through PUT)", k));
+                    }
+                    _ => {}
+                }
+            }
+            // Keep the version being changed, as PUT does (#4102): no revision, no patch.
+            let same_change = same_change_as_current(&table.class, name, &graph, landed_commit);
+            if !same_change {
+                match build_revision(table, name, caller_role) {
+                    Ok(rev) => if let Err(e) = dal_write_many(&prepared_create_ndjson(std::slice::from_ref(&rev)), token) {
+                        emit_write_spine(caller_role, "patch", name, "", "revision-fail");
+                        return write_resp("validation", &format!("could not keep the prior version as a revision, patch refused: {}", e));
+                    },
+                    Err(e) if e == "not-found" => {}
+                    Err(e) => {
+                        emit_write_spine(caller_role, "patch", name, "", "revision-fail");
+                        return write_resp("validation", &format!("could not keep the prior version as a revision, patch refused: {}", e));
+                    }
+                }
+            }
+            let mut changed: Vec<String> = Vec::new();
+            for (k, vs) in &values {
+                let field = field_of(k);
+                let edge_class = field.as_deref().and_then(|f| f.split_once("|edge:")).map(|(_, c)| c.to_string());
+                let result = if let Some(class) = edge_class {
+                    // A link field: unlink what is no longer named, link what is new.
+                    let tkind = kind_of_class(&class);
+                    let pred = format!("{}{}", NS, k);
+                    let current: Vec<String> = sparql_json(&format!(
+                        "SELECT ?v WHERE {{ GRAPH <{g}> {{ <{s}> <{p}> ?o }} BIND(STR(?o) AS ?v) }}", g = graph, s = subject, p = pred))
+                        .map(|b| select_v(&b)).unwrap_or_default()
+                        .into_iter().map(|iri| iri.rsplit('#').next().unwrap_or(&iri).to_string()).collect();
+                    let want: Vec<String> = vs.iter().map(|v| v.rsplit(['#', ':']).next().unwrap_or(v).to_string()).collect();
+                    let strip = |n: &str| n.strip_prefix(&format!("{}-", tkind)).unwrap_or(n).to_string();
+                    let mut r: R<()> = Ok(());
+                    for gone in current.iter().filter(|c| !want.iter().any(|w| strip(w) == strip(c))) {
+                        r = r.and_then(|_| dal_run(&["unlink".into(), "--kind".into(), kind.clone(), "--name".into(), name.to_string(),
+                            "--graph".into(), graph.clone(), "--edge".into(), format!("{}={}:{}", k, tkind, strip(gone))], token));
+                    }
+                    for new in want.iter().filter(|w| !current.iter().any(|c| strip(c) == strip(w))) {
+                        r = r.and_then(|_| dal_run(&["link".into(), "--kind".into(), kind.clone(), "--name".into(), name.to_string(),
+                            "--graph".into(), graph.clone(), "--edge".into(), format!("{}={}:{}", k, tkind, strip(new))], token));
+                    }
+                    r
+                } else if vs.is_empty() {
+                    // null: remove every value of this one predicate, nothing else.
+                    dal_batch(&graph, &[(format!("<{}>", subject), format!("<{}{}>", NS, k), "?o".to_string())], &[], token)
+                } else {
+                    dal_run(&["set".into(), "--kind".into(), kind.clone(), "--name".into(), name.to_string(),
+                        "--graph".into(), graph.clone(), "--field".into(), format!("{}={}", k, vs[0])], token)
+                };
+                if let Err(e) = result {
+                    emit_write_spine(caller_role, "patch", name, k, "error");
+                    return write_resp("validation", &format!("patch stopped at '{}' ({} field(s) already changed: {}): {}", k, changed.len(), changed.join(", "), e));
+                }
+                changed.push(k.clone());
+            }
+            // The stamps follow the change, as on PUT (#4101).
+            let prev = query_version(&table.class, name, &graph);
+            let mut stamps = write_stamps(table, landed_commit);
+            if !same_change { if let Some(v) = version_stamp(table, prev.as_deref()) { stamps.push(v); } }
+            for (k, v) in stamps {
+                let _ = dal_run(&["set".into(), "--kind".into(), kind.clone(), "--name".into(), name.to_string(),
+                    "--graph".into(), graph.clone(), "--field".into(), format!("{}={}", k, v)], token);
+            }
+            emit_write_spine(caller_role, "patch", name, &changed.join(","), "ok");
+            write_resp("ok", &format!("patched {}: {}", name, changed.join(", ")))
+        }
         WriteOp::ReplaceEntity { name } => {
             // REPLACE: authZ (ownedBy == caller) already enforced in the entity block
             // above. Must exist (404 otherwise).

@@ -557,8 +557,9 @@ fn world() -> &'static World {
         let dal = home.join("dal-stub.sh");
         let dal_batch_log = home.join("dal-add-batch.log");
         let dal_script = format!(
-            "#!/bin/sh\nif [ \"$1\" = \"add-batch\" ]; then\n  batch_input=$(cat)\n  {{\n    printf 'ARGV\\t%s\\n' \"$*\"\n    printf 'TOKEN\\t%s\\n' \"$CHORUS_IDENTITY_TOKEN\"\n    printf 'STDIN\\n%s\\nEND\\n' \"$batch_input\"\n  }} > '{}'\n  case \"$batch_input\" in\n    *testresult-existing*) echo \"add-batch: entity 'test-result:testresult-existing': already-exists\" >&2; exit 1;;\n    *\\\"name\\\":\\\"pulse\\\"*) echo \"add-batch: entity 'domain:pulse': already-exists: entity already exists\" >&2; exit 1;;\n    *shapefail*) echo 'shape-violation: comment missing' >&2; exit 1;;\n    *retiredstub*) echo 'chorus-model is RETIRED (#3718) - use athena-model instead.' >&2; exit 1;;\n  esac\nfi\ncase \"$*\" in\n  *shapefail*) echo 'shape-violation: comment missing' >&2; exit 1;;\n  *dalboom*) echo kaboom >&2; exit 1;;\n  *retiredstub*) echo 'chorus-model is RETIRED (#3718) - use athena-model instead.' >&2; exit 1;;\nesac\nexit 0\n",
+            "#!/bin/sh\nprintf '%s\\n' \"$*\" >> '{calls}'\nif [ \"$1\" = \"add-batch\" ]; then\n  batch_input=$(cat)\n  {{\n    printf 'ARGV\\t%s\\n' \"$*\"\n    printf 'TOKEN\\t%s\\n' \"$CHORUS_IDENTITY_TOKEN\"\n    printf 'STDIN\\n%s\\nEND\\n' \"$batch_input\"\n  }} > '{}'\n  case \"$batch_input\" in\n    *testresult-existing*) echo \"add-batch: entity 'test-result:testresult-existing': already-exists\" >&2; exit 1;;\n    *\\\"name\\\":\\\"pulse\\\"*) echo \"add-batch: entity 'domain:pulse': already-exists: entity already exists\" >&2; exit 1;;\n    *shapefail*) echo 'shape-violation: comment missing' >&2; exit 1;;\n    *retiredstub*) echo 'chorus-model is RETIRED (#3718) - use athena-model instead.' >&2; exit 1;;\n  esac\nfi\ncase \"$*\" in\n  *shapefail*) echo 'shape-violation: comment missing' >&2; exit 1;;\n  *dalboom*) echo kaboom >&2; exit 1;;\n  *retiredstub*) echo 'chorus-model is RETIRED (#3718) - use athena-model instead.' >&2; exit 1;;\nesac\nexit 0\n",
             dal_batch_log.display(),
+            calls = home.join("dal-calls.log").display(),
         );
         std::fs::write(
             &dal,
@@ -1397,4 +1398,50 @@ fn a_required_edge_at_an_unserved_class_refuses_and_the_repoint_restores_it() {
         "the required edge is published on the CREATE contract after the repoint: {:?}", t.write_required);
     assert!(!t.mandatory.iter().any(|m| m == "betweenA"),
         "and still absent from the read gauge, by design: {:?}", t.mandatory);
+}
+
+
+/// #4475 — PATCH changes only what it names. A PUT restates the whole row; on
+/// 2026-10-10 that turned pulse's 13 consumes links into text. Every DAL call is
+/// logged by the stub, so the test can see that a patch of one field writes that
+/// one field and nothing else, and that null removes one predicate only.
+#[test]
+fn patch_changes_only_the_named_fields() {
+    let tok = mint_token(WREN_WEBID, None);
+    let auth = bearer(&tok);
+    let hdrs: &[(&str, &str)] = &[("Authorization", &auth)];
+    let calls = || std::fs::read_to_string(std::env::temp_dir()
+        .join(format!("owl3701-home-{}", std::process::id())).join("dal-calls.log")).unwrap_or_default();
+
+    let (c, _, b) = http("PATCH", "/domains/pulse", hdrs, "{\"comment\":\"patched-4475 text\"}");
+    assert_eq!(c, 200, "{}", b);
+    assert!(b.contains("patched pulse: comment"), "{}", b);
+    let log = calls();
+    assert!(log.lines().any(|l| l.starts_with("set ") && l.contains("--name pulse") && l.contains("--field comment=patched-4475 text")), "no single-field set:\n{}", log);
+    // negative proof: the whole-row write PUT does is never used for a patch
+    assert!(!log.lines().any(|l| (l.starts_with("add ") || l.starts_with("write-many")) && l.contains("patched-4475")), "patch rewrote the row:\n{}", log);
+
+    // null removes one predicate on the row, nothing else — even one the shape retired
+    let (c, _, b) = http("PATCH", "/domains/pulse", hdrs, "{\"implementedIn\":null}");
+    assert_eq!(c, 200, "{}", b);
+    let log = calls();
+    assert!(log.lines().any(|l| l.starts_with("batch ") && l.contains("--del") && l.contains("#pulse>") && l.contains("#implementedIn>") && l.contains("?o")), "null did not remove the one predicate:\n{}", log);
+
+    // negative proofs: setting a field the shape does not list, a row that is not there,
+    // an empty patch, and the owner are all refused; none is a create
+    let (c, _, b) = http("PATCH", "/domains/pulse", hdrs, "{\"evil\":\"x\"}");
+    assert_eq!(c, 422, "{}", b);
+    assert!(b.contains("off-model property 'evil'"), "{}", b);
+    let (c, _, b) = http("PATCH", "/domains/ghost", hdrs, "{\"comment\":\"x\"}");
+    assert_eq!(c, 404, "{}", b);
+    let (c, _, b) = http("PATCH", "/domains/pulse", hdrs, "{}");
+    assert_eq!(c, 422, "{}", b);
+    assert!(b.contains("patch names no field"), "{}", b);
+    let (c, _, b) = http("PATCH", "/domains/pulse", hdrs, "{\"ownedBy\":\"kade\"}");
+    assert_eq!(c, 422, "{}", b);
+    assert!(b.contains("cannot be patched"), "{}", b);
+    // and someone who does not own the row is refused like a PUT
+    let nobody = bearer(&mint_token(NOBODY_WEBID, None));
+    let (c, _, b) = http("PATCH", "/domains/orphan", &[("Authorization", nobody.as_str())], "{\"comment\":\"x\"}");
+    assert_eq!(c, 403, "{}", b);
 }
