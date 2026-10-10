@@ -186,7 +186,6 @@ const BINARIES: &[(&str, &str)] = &[
     ("chorus-inject", "messages"),
     ("chorus-model", "domains"),
     ("service-harvest", "services"),
-    ("service-drift", "services"),
     ("log-harvest", "logs"),
     ("authn-coverage", "security"),
     ("authz-coverage", "security"),

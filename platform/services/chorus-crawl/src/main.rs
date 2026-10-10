@@ -670,39 +670,6 @@ mod served_name_4290 {
     }
 }
 
-/// Deterministic row key: a readable slug plus a digest of the EXACT path.
-///
-/// The slug alone is not injective. The first live run against 6,172 files
-/// found it in one batch: `designing/docs/LOG_RELATEDNESS.html` and
-/// `designing/docs/log-relatedness.html` are different files that lowercase to
-/// the same slug, so the door refused the batch with a duplicate-name conflict.
-/// Two files must never share a row. The suffix is FNV-1a over the raw bytes —
-/// case, punctuation and all — so distinct paths stay distinct while the name
-/// remains something a human can read in a query result.
-pub fn stable_name(rel: &str) -> String {
-    let mut out = String::with_capacity(rel.len() + 8);
-    let mut last_dash = false;
-    for c in rel.chars() {
-        if c.is_ascii_alphanumeric() {
-            out.push(c.to_ascii_lowercase());
-            last_dash = false;
-        } else if !last_dash {
-            out.push('-');
-            last_dash = true;
-        }
-    }
-    let mut h: u64 = 0xcbf2_9ce4_8422_2325;
-    for b in rel.as_bytes() {
-        h ^= *b as u64;
-        h = h.wrapping_mul(0x1000_0000_01b3);
-    }
-    format!(
-        "file-{}-{:08x}",
-        out.trim_matches('-'),
-        (h & 0xffff_ffff) as u32
-    )
-}
-
 #[cfg(test)]
 mod stable_name_4173 {
     use super::stable_name;
@@ -890,6 +857,18 @@ fn fetch_rows(api: &str, token: &str, kind: &str) -> Result<Vec<Vec<(String, Str
 /// #4433 — `fetch_rows` narrowed by the door's field filter (`field=value`, ""
 /// for every row). The door carries the filter on its own `links.next`.
 fn fetch_rows_where(api: &str, token: Option<&str>, kind: &str, filter: &str) -> Result<Vec<Vec<(String, String)>>, String> {
+    fetch_rows_with(api, token, kind, filter, |page| row_objects(page).into_iter().map(row_fields).collect())
+}
+
+/// The paging loop, with the page→rows reading passed in (#4472: the services
+/// crawl reads array fields, which `row_fields` skips).
+fn fetch_rows_with(
+    api: &str,
+    token: Option<&str>,
+    kind: &str,
+    filter: &str,
+    rows_of: impl Fn(&str) -> Vec<Vec<(String, String)>>,
+) -> Result<Vec<Vec<(String, String)>>, String> {
     let coll = collection_for(api, kind)?;
     let mut out = Vec::new();
     let mut next = if filter.is_empty() { format!("{coll}?limit=1000") } else { format!("{coll}?limit=1000&{filter}") };
@@ -899,9 +878,7 @@ fn fetch_rows_where(api: &str, token: Option<&str>, kind: &str, filter: &str) ->
         // #4178 — read the WHOLE row, not two strings. An update has to put the
         // complete entity back (the DAL is full-replace, #3345), so anything
         // dropped here is deleted from the graph on the next content change.
-        for obj in row_objects(&page) {
-            out.push(row_fields(obj));
-        }
+        out.extend(rows_of(&page));
         pages += 1;
         // The door's own "next", with the /v1 prefix stripped the way every
         // other caller addresses it. No next link means this was the last page.
@@ -1314,6 +1291,372 @@ mod wrote_nothing_4201 {
     }
 }
 
+// #4472 — the services crawl's I/O. Every rule is in services.rs.
+//
+// chorus-crawl services [--dry-run] [--timestamp ISO]
+//                       [--mapping FILE --services-ttl FILE]
+// Walks launchd on both machines, writes the changed rows through the door
+// as CHORUS_ROLE, and reports every finding; any finding exits 1.
+fn run_services(args: &[String]) -> i32 {
+    use chorus_crawl::services::*;
+    if args.first().map(String::as_str) == Some("--changed") {
+        return run_services_changed(&args[1..]);
+    }
+    const WITH_VALUE: &[&str] = &["--timestamp", "--mapping", "--services-ttl"];
+    let mut i = 0;
+    while i < args.len() {
+        let a = args[i].as_str();
+        if WITH_VALUE.contains(&a) {
+            i += 2;
+        } else if a == "--dry-run" || a == "--check-mapping" {
+            i += 1;
+        } else {
+            eprintln!("chorus-crawl services: unknown arg {a} — nothing ran");
+            return 2;
+        }
+    }
+    let flag = |name: &str| args.iter().position(|a| a == name).and_then(|i| args.get(i + 1)).cloned();
+    let dry_run = args.iter().any(|a| a == "--dry-run");
+    let root = std::env::var("CHORUS_ROOT").unwrap_or_else(|_| ".".to_string());
+    let mapping_path = flag("--mapping").unwrap_or_else(|| format!("{root}/platform/config/service-instance-map.json"));
+    let ttl_path = flag("--services-ttl").unwrap_or_else(|| format!("{root}/designing/data/service-instances.ttl"));
+    let mapping = {
+        let parsed = std::fs::read_to_string(&mapping_path).map_err(|e| e.to_string()).and_then(|t| parse_mapping(&t));
+        let ttl = std::fs::read_to_string(&ttl_path);
+        match (parsed, ttl) {
+            (Ok(map), Ok(ttl)) => {
+                let bad = unknown_targets(&map, &authored_services(&ttl));
+                if !bad.is_empty() {
+                    eprintln!("chorus-crawl services: REFUSE — mapping targets unknown Service(s): {}", bad.join(", "));
+                    return 2;
+                }
+                // a werk slot is service-werk by rule (service_for); an entry for
+                // one goes stale the moment its card's env comes down
+                let slots: Vec<&str> = map.iter().map(|(k, _)| k.as_str()).filter(|k| k.contains(".werk.")).collect();
+                if !slots.is_empty() {
+                    eprintln!("chorus-crawl services: REFUSE — werk-slot labels need no mapping entry: {}", slots.join(", "));
+                    return 2;
+                }
+                map
+            }
+            (Err(e), _) => { eprintln!("chorus-crawl services: mapping {mapping_path}: {e}"); return 2; }
+            (_, Err(e)) => { eprintln!("chorus-crawl services: services TTL {ttl_path}: {e}"); return 2; }
+        }
+    };
+    // the mapping alone, checked without walking anything (its test's seam)
+    if args.iter().any(|a| a == "--check-mapping") {
+        println!("services: mapping {mapping_path} — {} entries, every target an authored Service or none", mapping.len());
+        return 0;
+    }
+    let now = now_secs();
+    let ts = flag("--timestamp").unwrap_or_else(|| chorus_crawl::iso_from_secs(now));
+    let machines: Vec<(String, MachineWalk)> = vec![("library".into(), walk_local_units()), ("bedroom".into(), walk_bedroom_units())];
+    let n = |w: &MachineWalk| match w { Ok(u) => u.len().to_string(), Err(e) => format!("error:{}", e.chars().take(40).collect::<String>()) };
+    println!("services: walked library {} units, bedroom {}", n(&machines[0].1), n(&machines[1].1));
+    let walked: Vec<&str> = machines.iter().filter(|(_, w)| w.is_ok()).map(|(m, _)| m.as_str()).collect();
+    let unwalked: Vec<(String, String)> = machines.iter().filter_map(|(m, w)| w.as_ref().err().map(|e| (m.clone(), e.clone()))).collect();
+    let desired: Vec<(&String, &Unit)> = machines
+        .iter()
+        .filter_map(|(m, w)| w.as_ref().ok().map(|us| (m, us)))
+        .flat_map(|(m, us)| us.iter().map(move |u| (m, u)))
+        .collect();
+
+    let api = std::env::var("CHORUS_OWL_API").unwrap_or_else(|_| "http://localhost:3360".to_string());
+    let role = match declared_role(std::env::var("CHORUS_ROLE").ok()) {
+        Ok(r) => r,
+        Err(e) => { eprintln!("chorus-crawl services: {e}"); return 2; }
+    };
+    let ident = match Identity::open(&root, &role) {
+        Ok(i) => std::cell::RefCell::new(i),
+        Err(e) => { eprintln!("chorus-crawl services: {e}"); return 2; }
+    };
+    // #4472 AC2 — where each library unit's code came from
+    let prov = {
+        let token = match ident.borrow_mut().bearer() { Ok(t) => t, Err(e) => { eprintln!("chorus-crawl services: {e}"); return 2; } };
+        let codefiles = match fetch_rows(&api, &token, "CodeFile") {
+            Ok(rows) => rows.iter().filter_map(|r| r.iter().find(|(k, _)| k == "name").map(|(_, v)| v.clone())).collect(),
+            Err(e) => { eprintln!("chorus-crawl services: cannot read CodeFile rows — {e}"); return 2; }
+        };
+        let deploys = match spine_deploys(dry_run) { Ok(d) => d, Err(e) => { eprintln!("chorus-crawl services: spine: {e}"); return 2; } };
+        Provenance { deploys, sources: repo_bins(&root), codefiles }
+    };
+    let desired: Vec<DoorRow> = desired
+        .into_iter()
+        .map(|(m, u)| {
+            let row = desired_row(m, u, &mapping, &ts);
+            if m == "library" { with_provenance(row, u, &prov) } else { row }
+        })
+        .collect();
+    let has = |k: &str| desired.iter().filter(|r| !r.get(k).is_empty()).count();
+    println!(
+        "services: evidence — {} listening, {} with deployedCommit, {} with cdhash, {} with sourcePath",
+        has("listensOn"), has("deployedCommit"), has("cdhash"), has("sourcePath")
+    );
+    let mut current: Vec<DoorRow> = Vec::new();
+    let mut legacy = 0usize;
+    let mut colls: Vec<(UnitClass, String)> = Vec::new();
+    for (class, kind) in [(UnitClass::ServiceInstance, "ServiceInstance"), (UnitClass::ScheduledJob, "ScheduledJob")] {
+        let token = match ident.borrow_mut().bearer() { Ok(t) => t, Err(e) => { eprintln!("chorus-crawl services: {e}"); return 2; } };
+        let coll = match collection_for(&api, kind) { Ok(c) => c, Err(e) => { eprintln!("chorus-crawl services: {e}"); return 2; } };
+        let rows = match fetch_rows_with(&api, Some(&token), kind, "", door_page_rows) { Ok(r) => r, Err(e) => { eprintln!("chorus-crawl services: cannot read {kind} rows — {e}"); return 2; } };
+        for fields in rows {
+            let name = fields.iter().find(|(k, _)| k == "name").map(|(_, v)| v.clone()).unwrap_or_default();
+            // #3870 rows were written straight to the store with urn: names the
+            // door cannot address; they are counted, never planned against.
+            if name.starts_with("urn:") {
+                legacy += 1;
+                continue;
+            }
+            let fields = written_form(fields.into_iter().filter(|(k, _)| k != "name").collect());
+            current.push(DoorRow { class, name, fields });
+        }
+        colls.push((class, coll));
+    }
+    let coll_of = |c: UnitClass| colls.iter().find(|(k, _)| *k == c).map(|(_, v)| v.clone()).unwrap_or_default();
+    let p = plan(desired.clone(), &current, &walked, now, &secs_from_iso);
+    let mut found = findings(&desired, &p, &mapping, &unwalked);
+    // rows the run did not touch and nothing has refreshed in a day
+    let touched: Vec<&str> = p.update.iter().chain(p.retire.iter()).map(|r| r.name.as_str()).collect();
+    let untouched: Vec<DoorRow> = current.iter().filter(|c| !touched.contains(&c.name.as_str()) && !desired.iter().any(|d| d.name == c.name)).cloned().collect();
+    found.extend(stale_rows(&untouched, now, &secs_from_iso));
+    // AC4 — the #3870 rows are retired by the model deploy (staged in
+    // model-retirements.jsonl); one still here is reported, never ignored
+    if legacy > 0 {
+        found.push(format!("legacy: {legacy} #3870 rows with urn: names the door cannot address are still in the graph"));
+    }
+    println!(
+        "services: {} rows observed · create {} · update {} · retire {} · unchanged {} · old #3870 rows still in the graph {}",
+        desired.len(), p.create.len(), p.update.len(), p.retire.len(), p.unchanged, legacy
+    );
+    let mut failed: Vec<String> = Vec::new();
+    if dry_run {
+        println!("services: dry-run — NOTHING WRITTEN");
+    } else {
+        let body = |r: &DoorRow| {
+            let mut f = vec![("name".to_string(), r.name.clone())];
+            f.extend(r.fields.iter().cloned());
+            fields_json(&f)
+        };
+        for class in [UnitClass::ServiceInstance, UnitClass::ScheduledJob] {
+            let coll = coll_of(class);
+            let batch: Vec<String> = p.create.iter().filter(|r| r.class == class).map(body).collect();
+            for chunk in batch.chunks(200) {
+                if let Err(e) = write(&ident, &api, "POST", &format!("{coll}/batch"), Some(&format!("[{}]", chunk.join(",")))) {
+                    failed.push(format!("create batch of {}: {e}", chunk.len()));
+                }
+            }
+        }
+        for r in &p.update {
+            if let Err(e) = write(&ident, &api, "PUT", &format!("{}/{}", coll_of(r.class), r.name), Some(&body(r))) {
+                failed.push(format!("update {}: {e}", r.name));
+            }
+        }
+        for r in &p.retire {
+            if let Err(e) = write(&ident, &api, "DELETE", &format!("{}/{}", coll_of(r.class), r.name), None) {
+                failed.push(format!("retire {}: {e}", r.name));
+            }
+        }
+    }
+    // AC6 — one number, read back from the door, against what launchd listed
+    let launchd = prod_count(&desired);
+    if dry_run || !failed.is_empty() {
+        println!("services: launchd lists {launchd} of our service instances on {}", walked.join(" + "));
+    } else {
+        let token = ident.borrow_mut().bearer().unwrap_or_default();
+        match fetch_rows_with(&api, Some(&token), "ServiceInstance", "", door_page_rows) {
+            Ok(rows) => {
+                let rows: Vec<DoorRow> = rows
+                    .into_iter()
+                    .map(|f| DoorRow { class: UnitClass::ServiceInstance, name: f.iter().find(|(k, _)| k == "name").map(|(_, v)| v.clone()).unwrap_or_default(), fields: f })
+                    .filter(|r| !r.name.starts_with("urn:") && walked.contains(&r.get("onMachine")))
+                    .collect();
+                let door = prod_count(&rows);
+                println!("services in prod: {door} (door) · launchd lists {launchd} on {}", walked.join(" + "));
+                if door != launchd {
+                    found.push(format!("count: the door says {door} service instances, launchd lists {launchd}"));
+                }
+            }
+            Err(e) => found.push(format!("count: could not read the rows back — {e}")),
+        }
+    }
+    for f in &found {
+        println!("  finding: {f}");
+    }
+    for f in &failed {
+        eprintln!("  FAILED: {f}");
+    }
+    if !failed.is_empty() {
+        return 2;
+    }
+    if found.is_empty() {
+        println!("services: green — every unit is mapped or external, nothing stale");
+        0
+    } else {
+        println!("services: RED — {} finding(s)", found.len());
+        1
+    }
+}
+
+/// AC7 — `services --changed <path>…`: the units a change touches, read from
+/// the door (sourcePath → the CodeFile's filePath), one `machine label` line
+/// each. Read-only. env-up asks this to know which services to start.
+fn run_services_changed(paths: &[String]) -> i32 {
+    use chorus_crawl::services::*;
+    if paths.is_empty() {
+        eprintln!("chorus-crawl services --changed: name at least one repo-relative path");
+        return 2;
+    }
+    let api = std::env::var("CHORUS_OWL_API").unwrap_or_else(|_| "http://localhost:3360".to_string());
+    let read = |kind: &str| fetch_rows_with(&api, None, kind, "", door_page_rows);
+    let files: Vec<(String, String)> = match read("CodeFile") {
+        Ok(rows) => rows
+            .iter()
+            .filter_map(|r| {
+                let get = |k: &str| r.iter().find(|(f, _)| f == k).map(|(_, v)| v.clone());
+                Some((get("name")?, get("filePath")?))
+            })
+            .collect(),
+        Err(e) => { eprintln!("chorus-crawl services --changed: cannot read CodeFile rows — {e}"); return 2; }
+    };
+    let mut hits: Vec<String> = Vec::new();
+    for kind in ["ServiceInstance", "ScheduledJob"] {
+        let rows = match read(kind) { Ok(r) => r, Err(e) => { eprintln!("chorus-crawl services --changed: cannot read {kind} rows — {e}"); return 2; } };
+        for r in rows {
+            let r = written_form(r);
+            let get = |k: &str| r.iter().find(|(f, _)| f == k).map(|(_, v)| v.as_str()).unwrap_or("");
+            if get("runState") == "absent" {
+                continue;
+            }
+            let Some((_, source)) = files.iter().find(|(n, _)| n == get("sourcePath")) else { continue };
+            if paths.iter().any(|p| touched_by(p, source)) {
+                hits.push(format!("{} {}", get("onMachine"), get("launchdLabel")));
+            }
+        }
+    }
+    hits.sort();
+    for h in &hits {
+        println!("{h}");
+    }
+    0
+}
+
+fn walk_local_units() -> chorus_crawl::services::MachineWalk {
+    use chorus_crawl::services::*;
+    let list = sh("launchctl", &["list"], "/").map_err(|e| e.to_string())?;
+    let home = std::env::var("HOME").unwrap_or_default();
+    let dirs = [format!("{home}/Library/LaunchAgents"), "/Library/LaunchAgents".into(), "/Library/LaunchDaemons".into()];
+    let uid = sh("id", &["-u"], "/").map(|s| s.trim().to_string()).unwrap_or_default();
+    let listens = parse_lsof_listen(&sh("lsof", &["-nP", "-iTCP", "-sTCP:LISTEN", "-F", "pn"], "/").unwrap_or_default());
+    let tree = parse_ps(&sh("ps", &["-axo", "pid=,ppid="], "/").unwrap_or_default());
+    Ok(parse_launchctl_list(&list)
+        .into_iter()
+        .map(|u| {
+            let mut meta = dirs
+                .iter()
+                .map(|d| format!("{d}/{}.plist", u.label))
+                .find(|p| std::path::Path::new(p).exists())
+                .and_then(|p| sh("plutil", &["-convert", "json", "-o", "-", &p], "/").ok())
+                .and_then(|j| parse_json(&j).ok())
+                .map(|j| plist_meta(&j))
+                .unwrap_or_default();
+            if meta.argv.is_empty() {
+                let text = sh("launchctl", &["print", &format!("gui/{uid}/{}", u.label)], "/").unwrap_or_default();
+                let (argv, bundle) = parse_launchctl_print(&text);
+                meta.argv = argv;
+                meta.bundle_id = bundle;
+            }
+            let ports = u.pid.as_deref().and_then(|p| p.parse().ok()).map(|p| ports_of(p, &listens, &tree)).unwrap_or_default();
+            Unit { run_state: u.run_state().into(), label: u.label, meta, evidence_unavailable: false, ports }
+        })
+        .collect())
+}
+
+/// Bedroom over ssh: the list, then each plist as JSON. No `launchctl print`
+/// remotely — the gui domain is not reachable from a non-interactive session.
+/// `find`, never a shell glob: bedroom's zsh makes an unmatched glob fatal.
+fn walk_bedroom_units() -> chorus_crawl::services::MachineWalk {
+    use chorus_crawl::services::*;
+    let cmd = "launchctl list ; echo ---PLISTS--- ; \
+        for f in $(find ~/Library/LaunchAgents /Library/LaunchAgents /Library/LaunchDaemons -maxdepth 1 -name 'com.*.plist' 2>/dev/null); do \
+        case \"$f\" in *com.apple*) continue;; esac; \
+        [ -f \"$f\" ] && echo \"FILE:$f\" && plutil -convert json -o - \"$f\" 2>/dev/null && echo; done ; \
+        echo ---LSOF--- ; lsof -nP -iTCP -sTCP:LISTEN -F pn 2>/dev/null ; echo ---PS--- ; ps -axo pid=,ppid=";
+    let remote = sh("ssh", &["-o", "ConnectTimeout=5", "bedroom", cmd], "/").map_err(|e| e.to_string())?;
+    let (head, rest) = remote.split_once("---PLISTS---").unwrap_or((&remote, ""));
+    let (plists, rest) = rest.split_once("---LSOF---").unwrap_or((rest, ""));
+    let (lsof, ps) = rest.split_once("---PS---").unwrap_or((rest, ""));
+    let (listens, tree) = (parse_lsof_listen(lsof), parse_ps(ps));
+    let mut units: Vec<Unit> = parse_launchctl_list(head)
+        .into_iter()
+        .map(|u| {
+            let ports = u.pid.as_deref().and_then(|p| p.parse().ok()).map(|p| ports_of(p, &listens, &tree)).unwrap_or_default();
+            Unit { run_state: u.run_state().into(), label: u.label, meta: UnitMeta::default(), evidence_unavailable: true, ports }
+        })
+        .collect();
+    for block in plists.split("FILE:").skip(1) {
+        let (path, json) = block.split_once('\n').unwrap_or((block, ""));
+        let label = path.trim().rsplit('/').next().unwrap_or("").trim_end_matches(".plist");
+        let (Some(u), Ok(j)) = (units.iter_mut().find(|u| u.label == label), parse_json(json.trim())) else { continue };
+        u.meta = plist_meta(&j);
+        u.evidence_unavailable = false;
+    }
+    Ok(units)
+}
+
+/// #4472 AC2 — the latest promoted deploy of each binary, from the spine.
+/// The spine is never rotated (it is the memory layer), so a ledger beside it
+/// records how far it was read and the answer so far; each run folds in only
+/// what was appended. A spine shorter than the ledger's offset is reread
+/// whole. A dry run reads but does not move the ledger.
+fn spine_deploys(dry_run: bool) -> Result<chorus_crawl::services::Deploys, String> {
+    use chorus_crawl::services::*;
+    use std::io::{BufRead, Seek};
+    let home = std::env::var("HOME").map_err(|_| "HOME unset".to_string())?;
+    let spine = std::env::var("CHORUS_SPINE").unwrap_or_else(|_| format!("{home}/.chorus/chorus.log"));
+    let ledger = std::env::var("CHORUS_SERVICE_LEDGER").unwrap_or_else(|_| format!("{home}/.chorus/service-deploys.ledger"));
+    let len = std::fs::metadata(&spine).map_err(|e| format!("{spine}: {e}"))?.len();
+    let (mut offset, mut deploys) = std::fs::read_to_string(&ledger).ok().and_then(|t| parse_ledger(&t)).unwrap_or((0, Deploys::new()));
+    if offset > len {
+        (offset, deploys) = (0, Deploys::new());
+    }
+    let mut f = std::fs::File::open(&spine).map_err(|e| format!("{spine}: {e}"))?;
+    f.seek(std::io::SeekFrom::Start(offset)).map_err(|e| e.to_string())?;
+    let mut r = std::io::BufReader::with_capacity(1 << 20, f);
+    let mut line = Vec::new();
+    loop {
+        line.clear();
+        let n = r.read_until(b'\n', &mut line).map_err(|e| e.to_string())?;
+        if n == 0 || line.last() != Some(&b'\n') {
+            break; // EOF, or a line still being written: read it next run
+        }
+        offset += n as u64;
+        if line.windows(15).any(|w| w == b"binary.deployed") {
+            fold_deploys(&mut deploys, &String::from_utf8_lossy(&line));
+        }
+    }
+    if !dry_run {
+        let tmp = format!("{ledger}.tmp");
+        std::fs::write(&tmp, ledger_text(offset, &deploys)).and_then(|_| std::fs::rename(&tmp, &ledger)).map_err(|e| format!("{ledger}: {e}"))?;
+    }
+    Ok(deploys)
+}
+
+/// #4472 AC2 — every crate binary in the repo → its source file.
+fn repo_bins(root: &str) -> Vec<(String, String)> {
+    let mut out = Vec::new();
+    let Ok(dirs) = std::fs::read_dir(format!("{root}/platform/services")) else { return out };
+    let mut dirs: Vec<_> = dirs.flatten().map(|d| d.file_name().to_string_lossy().to_string()).collect();
+    dirs.sort();
+    for d in dirs {
+        let rel = format!("platform/services/{d}");
+        if let Ok(toml) = std::fs::read_to_string(format!("{root}/{rel}/Cargo.toml")) {
+            let has_main = std::path::Path::new(&format!("{root}/{rel}/src/main.rs")).exists();
+            out.extend(chorus_crawl::services::crate_bins(&rel, &toml, has_main));
+        }
+    }
+    out
+}
+
 const PASS_FLAGS: &[&str] = &["--undo", "--dry-run", "--reconcile", "--validate"];
 
 // #4446 — a scheduled job logs its own failure.
@@ -1328,6 +1671,10 @@ fn main() {
     let argv: Vec<String> = std::env::args().collect();
     if seam(&argv) {
         return;
+    }
+    // #4472 — `services`: the launchd crawl.
+    if argv.get(1).map(String::as_str) == Some("services") {
+        std::process::exit(run_services(&argv[2..]));
     }
     // #4419 — an unknown flag is refused, never read as "run a write pass":
     // a seam name the installed binary did not have yet started a full pass

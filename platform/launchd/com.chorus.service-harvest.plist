@@ -5,8 +5,9 @@
   <key>Label</key><string>com.chorus.service-harvest</string>
   <key>ProgramArguments</key>
   <array>
-    <string>/bin/bash</string>
-    <string>/Users/jeffbridwell/CascadeProjects/chorus/platform/scripts/service-harvest-cycle.sh</string>
+    <!-- #4472 — the services crawl is chorus-crawl's `services` subcommand -->
+    <string>/Users/jeffbridwell/.chorus/bin/chorus-crawl</string>
+    <string>services</string>
   </array>
   <key>StartInterval</key><integer>3600</integer>
   <key>StandardOutPath</key><string>/tmp/service-harvest.log</string>
@@ -15,6 +16,9 @@
   <dict>
     <key>PATH</key><string>/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin</string>
     <key>CHORUS_ROOT</key><string>/Users/jeffbridwell/CascadeProjects/chorus</string>
+    <!-- the principal that owns urn:chorus:domains:services (it writes through the door) -->
+    <key>CHORUS_ROLE</key><string>silas</string>
+    <key>CHORUS_OWL_API</key><string>http://localhost:3360</string>
   </dict>
 </dict>
 </plist>

@@ -68,7 +68,7 @@ com.chorus.reindex-worker	platform/scripts/chorus-reindex-worker.sh
 com.chorus.restore-drill	platform/scripts/fuseki-restore-dump.sh
 com.chorus.security-scan-weekly	platform/scripts/test-security-scan.sh
 com.chorus.seed-probe	platform/scripts/seed-probe.sh
-com.chorus.service-harvest	platform/scripts/service-harvest-cycle.sh
+com.chorus.service-harvest	platform/services/chorus-crawl/src/main.rs
 com.chorus.standards-surface	platform/scripts/standards-surface-cron.sh
 com.chorus.tm-thin	platform/scripts/tm-thin.sh
 com.chorus.tmp-reaper	platform/scripts/tmp-reaper.sh
@@ -76,6 +76,7 @@ com.chorus.jeff-input-monitor	WRAP: binary with no source in the repo
 com.chorus.session-watcher	WRAP: script lives only in ~/.chorus/scripts
 com.chorus.heartbeat-probe	WRAP: script lives only in ~/.chorus/scripts
 com.chorus.buzz-tunnel	WRAP: ssh, not our code
+com.chorus.dagu	WRAP: dagu (Homebrew), not our code
 com.chorus.alert-notifier	WRAP: shared-observability repo
 com.chorus.harvest-exporter	WRAP: shared-observability repo
 com.chorus.launchagent-metrics	WRAP: shared-observability repo
