@@ -375,10 +375,10 @@ mod render_4472 {
 
     #[test]
     fn launchctl_print_yields_arguments_and_bundle() {
-        let t = "gui/501/com.docker.helper = {\n\tparent bundle identifier = com.docker.docker\n\targuments = {\n\t\t/Applications/Docker.app/x\n\t\t--flag\n\t}\n}\n";
+        let t = "gui/501/com.example.helper = {\n\tparent bundle identifier = com.example.app\n\targuments = {\n\t\t/Applications/Example.app/x\n\t\t--flag\n\t}\n}\n";
         let (argv, b) = parse_launchctl_print(t);
-        assert_eq!(argv, ["/Applications/Docker.app/x", "--flag"]);
-        assert_eq!(b.as_deref(), Some("com.docker.docker"));
+        assert_eq!(argv, ["/Applications/Example.app/x", "--flag"]);
+        assert_eq!(b.as_deref(), Some("com.example.app"));
     }
 
     #[test]
@@ -826,7 +826,7 @@ mod plan_4472 {
 
     #[test]
     fn evidence_rules_carry_into_rows() {
-        let bundle_only = Unit { label: "com.docker.helper".into(), run_state: "running".into(), meta: UnitMeta { scheduled: false, argv: vec![], bundle_id: Some("com.docker.docker".into()) }, evidence_unavailable: false, ports: vec![], last_exit_code: None };
+        let bundle_only = Unit { label: "com.example.helper".into(), run_state: "running".into(), meta: UnitMeta { scheduled: false, argv: vec![], bundle_id: Some("com.example.app".into()) }, evidence_unavailable: false, ports: vec![], last_exit_code: None };
         assert_eq!(desired_row("library", &bundle_only, &[], "T").get("external"), "true");
         let unseen = Unit { label: "com.x.y".into(), run_state: "loaded".into(), meta: UnitMeta::default(), evidence_unavailable: true, ports: vec![], last_exit_code: None };
         let r = desired_row("bedroom", &unseen, &[], "T");

@@ -162,4 +162,24 @@ describe('fusekiWriteAuthFromEnv', () => {
     expect(fusekiWriteAuthFromEnv({ FUSEKI_ADMIN_PASSWORD: 'p', FUSEKI_ADMIN_USER: 'chorus-writer' } as NodeJS.ProcessEnv))
       .toEqual({ user: 'chorus-writer', password: 'p' });
   });
+
+  // #4451 — a demo variant's launch file carries only the credential file's path
+  const FILE = 'FUSEKI_ADMIN_USER=admin\nFUSEKI_ADMIN_PASSWORD=FIXTURE-NOT-A-PASSWORD\n';
+  it('reads the credential from FUSEKI_WRITE_ENV when the environment has none', () => {
+    const read = (p: string) => (p === '/cred/fuseki-write.env' ? FILE : null);
+    expect(fusekiWriteAuthFromEnv({ FUSEKI_WRITE_ENV: '/cred/fuseki-write.env' } as NodeJS.ProcessEnv, read))
+      .toEqual({ user: 'admin', password: 'FIXTURE-NOT-A-PASSWORD' });
+  });
+
+  it('prod is unchanged: an exported credential wins and the file is never read', () => {
+    const read = jest.fn(() => FILE);
+    expect(fusekiWriteAuthFromEnv({ FUSEKI_ADMIN_PASSWORD: 'env', FUSEKI_WRITE_ENV: '/cred' } as NodeJS.ProcessEnv, read))
+      .toEqual({ user: 'admin', password: 'env' });
+    expect(read).not.toHaveBeenCalled();
+  });
+
+  it('NEGATIVE PROOF: an unreadable or empty file leaves writers unauthenticated, as before', () => {
+    expect(fusekiWriteAuthFromEnv({ FUSEKI_WRITE_ENV: '/missing' } as NodeJS.ProcessEnv, () => null)).toBeUndefined();
+    expect(fusekiWriteAuthFromEnv({ FUSEKI_WRITE_ENV: '/x' } as NodeJS.ProcessEnv, () => 'FUSEKI_ADMIN_PASSWORD=\n')).toBeUndefined();
+  });
 });

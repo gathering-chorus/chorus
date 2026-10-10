@@ -634,13 +634,12 @@ pub fn generate_plist(
         ("CHORUS_API_ENV", "werk".to_string()),
         ("CHORUS_ROOT", werk_root.to_string()),
     ]);
-    // The Fuseki admin credential every variant needs to WRITE to its own store.
-    // Without it a reload answers 401 and the service turns that into a 500 —
-    // which reads as the variant being broken rather than unauthenticated.
-    // launchd gives a plist no inherited environment, so it has to be written in.
-    if let Some((user, pw)) = fuseki_admin_creds() {
-        env_pairs.push(("FUSEKI_ADMIN_USER", user));
-        env_pairs.push(("FUSEKI_ADMIN_PASSWORD", pw));
+    // A variant needs the Fuseki admin credential to WRITE (a 401 there reads as
+    // a broken variant). #4451: the plist is 0644 in ~/Library/LaunchAgents, so
+    // it carries only the PATH of the 0600 credential file; each service reads
+    // the credential from that file at start, as the prod launchers do.
+    if let Some(path) = fuseki_write_env_path() {
+        env_pairs.push(("FUSEKI_WRITE_ENV", path));
     }
     for (k, v) in extra_env {
         env_pairs.push((k, v.to_string()));
@@ -804,47 +803,27 @@ fn build_service_dist(svc: &EnvService, werk_root: &str, role: &str) -> R<()> {
     }
 }
 
+/// #4451 — the 0600 Fuseki credential file a variant reads at start, if it
+/// exists. Only its path goes into the plist, never its contents.
+fn fuseki_write_env_path() -> Option<String> {
+    let path = std::env::var("FUSEKI_WRITE_ENV").unwrap_or_else(|_| {
+        format!("{}/.gathering/data/fuseki-write.env", std::env::var("HOME").unwrap_or_default())
+    });
+    Path::new(&path).is_file().then_some(path)
+}
+
+/// #4451 — the guard: a launch file that holds the Fuseki credential itself.
+/// env-up refuses to write one; the key name is enough to refuse on.
+pub fn plist_holds_fuseki_credential(plist: &str) -> bool {
+    plist.contains("<key>FUSEKI_ADMIN_PASSWORD</key>")
+}
+
 /// Stand up the role's demo environment: build dist for each service in the
 /// werk, generate plists, bootstrap launchd, smoke, write markers. Idempotent
 /// — re-running refreshes against current werk source (this is also the
 /// "deploy a change to demo" path; no separate verb needed).
 ///
 /// Returns a summary like `env_up role=silas chorus-api=:3343 chorus-mcp=:3351`.
-/// #4047 — create the werk's in-memory dataset (idempotent: an existing one is
-/// left alone) and load the WERK's model into it, so the variant serves the
-/// shapes and claims of the branch under demo rather than prod's. Best-effort
-/// by design: a store that cannot be prepared must not block env-up, but it
-/// says so loudly instead of silently falling back to prod's data.
-/// #4047 follow-on (Silas, 2026-09-02): Fuseki's admin endpoint requires
-/// basic auth, and both the create and the drop posted anonymously — 401, then
-/// a model seed against a dataset that was never made, which surfaced as a
-/// confusing 405. The credential is the same one every bash writer uses via
-/// fuseki-auth.sh; read it from the environment rather than inventing a path.
-fn fuseki_admin_creds() -> Option<(String, String)> {
-    let from_env = std::env::var("FUSEKI_ADMIN_PASSWORD").ok().filter(|p| !p.is_empty());
-    let (user, pw) = match from_env {
-        Some(pw) => (std::env::var("FUSEKI_ADMIN_USER").unwrap_or_else(|_| "admin".to_string()), pw),
-        None => {
-            // The pipeline runs under act/launchd, where nothing exports this —
-            // which is exactly where the 401 showed up. fuseki-auth.sh has read
-            // the credential from this file since #3611; do the same rather than
-            // require every caller to source a shell script first. Extract the
-            // two keys only, and never log the value.
-            let path = std::env::var("FUSEKI_WRITE_ENV").unwrap_or_else(|_| {
-                format!("{}/.gathering/data/fuseki-write.env",
-                        std::env::var("HOME").unwrap_or_default())
-            });
-            let body = std::fs::read_to_string(path).ok()?;
-            let pick = |k: &str| body.lines()
-                .find_map(|l| l.strip_prefix(&format!("{}=", k)))
-                .map(|v| v.trim().to_string());
-            let pw = pick("FUSEKI_ADMIN_PASSWORD").filter(|p| !p.is_empty())?;
-            (pick("FUSEKI_ADMIN_USER").unwrap_or_else(|| "admin".to_string()), pw)
-        }
-    };
-    Some((user, pw))
-}
-
 pub fn env_up(role: &str, werk_root: &str, canonical_root: &str, card: u64, trace: &str) -> R<String> {
     let home_p = Path::new(canonical_root);
     let mut summary = Vec::new();
@@ -1017,6 +996,9 @@ pub fn env_up(role: &str, werk_root: &str, canonical_root: &str, card: u64, trac
         };
 
         let plist = generate_plist(&svc, role, werk_root, port, &extra_env);
+        if plist_holds_fuseki_credential(&plist) {
+            return Err(format!("env_up: refusing to write {}: it would hold the Fuseki credential in a 0644 launch file (#4451)", plist_path));
+        }
         fs::write(&plist_path, &plist)
             .map_err(|e| format!("env_up: write {}: {}", plist_path, e))?;
 
@@ -1562,5 +1544,40 @@ mod services_for_diff_4398 {
         // kade is slot 1: put pulse's kade port on the Clearing's kade HTTPS port.
         pulse.base_port = clearing_https_port(env_port_for("clearing", "kade").unwrap()) - 1;
         assert!(env_ports_collide(&svcs).is_some());
+    }
+}
+
+#[cfg(test)]
+mod credential_4451 {
+    use super::*;
+
+    fn api() -> EnvService {
+        env_services()[0].clone()
+    }
+
+    /// A variant plist carries the credential file's path, never the credential.
+    #[test]
+    fn a_variant_plist_carries_the_path_not_the_password() {
+        let dir = std::env::temp_dir().join(format!("wd-4451-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let cred = dir.join("fuseki-write.env");
+        std::fs::write(&cred, "FUSEKI_ADMIN_USER=admin\nFUSEKI_ADMIN_PASSWORD=FIXTURE-NOT-A-PASSWORD-4451\n").unwrap();
+        std::env::set_var("FUSEKI_WRITE_ENV", &cred);
+        std::env::set_var("FUSEKI_ADMIN_PASSWORD", "FIXTURE-NOT-A-PASSWORD-4451");
+        let plist = generate_plist(&api(), "kade", "/werk/kade-4451", 3344, &[]);
+        std::env::remove_var("FUSEKI_ADMIN_PASSWORD");
+        std::env::remove_var("FUSEKI_WRITE_ENV");
+        assert!(!plist.contains("FIXTURE-NOT-A-PASSWORD-4451"), "the password reached the plist");
+        assert!(plist.contains(&format!("<key>FUSEKI_WRITE_ENV</key><string>{}</string>", cred.display())), "{plist}");
+        assert!(!plist_holds_fuseki_credential(&plist));
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    /// NEGATIVE PROOF (#3734): a launch file holding the credential fails the guard.
+    #[test]
+    fn a_plist_holding_the_credential_fails_the_guard() {
+        let bad = "<dict>\n    <key>FUSEKI_ADMIN_PASSWORD</key><string>x</string>\n</dict>";
+        assert!(plist_holds_fuseki_credential(bad));
+        assert!(!plist_holds_fuseki_credential("<key>FUSEKI_WRITE_ENV</key><string>/p</string>"));
     }
 }
