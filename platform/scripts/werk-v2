@@ -1,0 +1,23 @@
+#!/usr/bin/env bash
+# @domain: cicd
+# werk-v2 <card> <role> — run a card through werk v2: the dagu workflow
+# chorus-make generates from the graph (#4474).
+#
+# The run is ENQUEUED, never started from this shell: com.chorus.dagu (launchd)
+# runs it, so it survives the session that asked for it (#4474 run 10 died with
+# the shell that ran `dagu start`). The workflow is the card's werk copy, the
+# same file v1 builds from. Status: /cws <card> (dagu's own state).
+set -euo pipefail
+
+card="${1:-}"; role="${2:-}"
+if [[ ! "$card" =~ ^[0-9]+$ || ! "$role" =~ ^[a-z][a-z0-9-]*$ ]]; then
+  echo "usage: werk-v2 <card> <role>" >&2
+  exit 1
+fi
+: "${CHORUS_HOME:?werk-v2: CHORUS_HOME not set}"
+: "${CHORUS_WERK_BASE:?werk-v2: CHORUS_WERK_BASE not set}"
+workflow="$CHORUS_WERK_BASE/$role-$card/platform/pipelines/cicd.yaml"
+[ -f "$workflow" ] || { echo "werk-v2: no workflow at $workflow" >&2; exit 1; }
+
+exec "${DAGU:-/opt/homebrew/bin/dagu}" --config "$CHORUS_HOME/platform/config/dagu.yaml" \
+  enqueue "$workflow" -- "CARD=$card" "ROLE=$role"
