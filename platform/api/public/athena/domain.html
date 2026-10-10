@@ -78,6 +78,7 @@ ${e.hasDesignDoc ? `<details class="fold" open><summary>Design doc <span class="
 <details class="fold" open><summary>Gaps <span class="src">chorus:gaps from the model &middot; gap rows from the graph</span></summary><div class="body">${e.gaps ? `<p>${esc(e.gaps)}</p>` : '<p class="empty">the model names no gap for this domain</p>'}<div id="gaps-facet"></div></div></details>
 <div id="mfold-slot"></div>
 <div id="svc-slot"></div>
+<div id="files-slot"></div>
 <div id="model-facets"></div>
 <div id="facets"><p class="empty">loading the materialized view (cards, code, alerts, &hellip;)&hellip;</p></div>
 ${srcNote(`GET /domains/${esc(d)} + the materialized facet endpoints (/api/chorus/domain)`)}`;
@@ -88,6 +89,7 @@ ${srcNote(`GET /domains/${esc(d)} + the materialized facet endpoints (/api/choru
     renderModelFold(document.getElementById('mfold-slot'), d, { compact: true });
     renderFacets(d);
     renderServices(d);
+    renderFiles(d);
   } catch (e) { fetchFailed(main, e); }
 })();
 
@@ -112,6 +114,21 @@ async function renderServices(d) {
         (mine.length ? `<table><thead><tr><th>Unit</th><th>Kind</th><th>Machine</th><th>State</th></tr></thead><tbody>${rows}</tbody></table>` : '<p class="empty">the crawl found no launchd unit running this service</p>');
     }).join(''));
   } catch (e) { el.innerHTML = fold(`<p class="empty"><strong>Cannot reach the model</strong> for services &mdash; fetch failure. ${esc(String(e && e.message || e))}</p>`); }
+}
+
+// #4235 — the files the crawl tagged with this domain (CodeFile hasDomain), from the
+// graph. A file is listed because the crawl measured it, never because a list said so.
+async function renderFiles(d) {
+  const el = document.getElementById('files-slot');
+  const fold = (n, body) => `<details class="fold"${n && n <= 40 ? ' open' : ''}><summary>Files (${n}) <span class="src">chorus:CodeFile &rarr; chorus:hasDomain (the code crawl)</span></summary><div class="body">${body}</div></details>`;
+  try {
+    const q = `PREFIX chorus: <https://jeffbridwell.com/chorus#> SELECT DISTINCT ?path WHERE { GRAPH ?g { ?f a chorus:CodeFile ; chorus:hasDomain <https://jeffbridwell.com/chorus#${encodeURIComponent(d)}> ; chorus:filePath ?path } } ORDER BY ?path`;
+    const r = await fetch(window.basePath('/sparql-read'), { method: 'POST', headers: { 'Content-Type': 'application/json', Accept: 'application/sparql-results+json' }, body: JSON.stringify({ query: q }) });
+    if (!r.ok) throw new Error(`sparql-read ${r.status}`);
+    const paths = (((await r.json()).results || {}).bindings || []).map(b => String(b.path.value));
+    if (!paths.length) { el.innerHTML = fold(0, `<p class="empty">The crawl tagged no file with this domain.</p>`); return; }
+    el.innerHTML = fold(paths.length, `<div class="tbl"><table><tbody>${paths.map(p => `<tr><td><code>${esc(p)}</code></td></tr>`).join('')}</tbody></table></div>`);
+  } catch (e) { el.innerHTML = fold('?', `<p class="empty"><strong>Cannot reach the model</strong> for files &mdash; fetch failure. ${esc(String(e && e.message || e))}</p>`); }
 }
 
 // ---- the materialized view (#3635, Jeff's ruling 2026-07-12): the domain instance

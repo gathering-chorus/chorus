@@ -2714,17 +2714,19 @@ app.get('/api/athena/ownership/:iri', (req: Request, res: Response) => {
 });
 // #4419 AC1 — blast radius reads the live graph's edges (hasDomain, partOf,
 // consumes, hosts), not the hand-written June tree.json.
-import { blastRadiusFromEdges, blastRadiusEdgesQuery, edgesFromCsv } from './handlers/athena-blast-radius-graph';
+import { blastRadiusFromEdges, blastRadiusEdgesQuery, edgesFromCsv, fileTagsQuery, fileTagsFromCsv } from './handlers/athena-blast-radius-graph';
+const blastRadiusRead = (query: string): Promise<globalThis.Response> => fetch(nightlyFuseki(), {
+  method: 'POST',
+  headers: { 'Content-Type': 'application/x-www-form-urlencoded', Accept: 'text/csv' },
+  body: new URLSearchParams({ query }).toString(),
+  signal: AbortSignal.timeout(10_000),
+});
 app.get('/api/athena/blast-radius/:iri', async (req: Request, res: Response) => {
   try {
-    const r0 = await fetch(nightlyFuseki(), {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/x-www-form-urlencoded', Accept: 'text/csv' },
-      body: new URLSearchParams({ query: blastRadiusEdgesQuery() }).toString(),
-      signal: AbortSignal.timeout(10_000),
-    });
-    if (!r0.ok) return res.status(503).json({ ok: false, reason: 'store-unreachable', status: r0.status });
-    const r = blastRadiusFromEdges(edgesFromCsv(await r0.text()), req.params.iri);
+    // #4235 — the edges and the crawl's file tags, both from the store
+    const [r0, r1] = await Promise.all([blastRadiusRead(blastRadiusEdgesQuery()), blastRadiusRead(fileTagsQuery())]);
+    if (!r0.ok || !r1.ok) return res.status(503).json({ ok: false, reason: 'store-unreachable', status: r0.ok ? r1.status : r0.status });
+    const r = blastRadiusFromEdges(edgesFromCsv(await r0.text()), req.params.iri, fileTagsFromCsv(await r1.text()));
     if (!r) return res.status(404).json({ ok: false, reason: 'not-found', iri: req.params.iri });
     res.status(200).json({ ...r, source: 'graph' });
   } catch (err) {
