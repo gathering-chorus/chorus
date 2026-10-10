@@ -301,6 +301,9 @@ pub fn model_version(store: &Store) -> Result<String, ModelError> {
         .into_iter().next().map(|r| r["v"].clone()).unwrap_or_else(|| "unclassified".into()))
 }
 <<<<<<< HEAD
+<<<<<<< HEAD
+=======
+>>>>>>> 5f9aadb25 (wren: #4490 — settings come from the model: 7 Property rows on pulse (pulse-settings-4490.ttl, in the model set), the generator emits the loader from them and refuses a product missing a runtime setting; v1 freeze guard (4490-v1-freeze.sh, athena-make frozen at 9975 lines, negative proofs: a 200-line feature and a missing target both go red))
 
 /// The settings a product's API reads, from its Property rows (#3433/#3435):
 /// `c:<product> c:hasProperty ?p . ?p c:propertyKey ?k ; c:propertyValue ?v`.
@@ -319,7 +322,10 @@ pub const RUNTIME_SETTINGS: &[&str] =
 pub fn missing_settings(declared: &[(String, String)]) -> Vec<&'static str> {
     RUNTIME_SETTINGS.iter().copied().filter(|k| !declared.iter().any(|(d, _)| d == k)).collect()
 }
+<<<<<<< HEAD
 =======
 >>>>>>> a0f8b1ded (wren: #4490 — athena-gen reads a product's slice of the model from TTL (in-memory Oxigraph, no Fuseki): domains, classes, fields, sh:in in order, v1 path segments; 4 tests incl. 2 negative proofs)
 =======
 >>>>>>> 3795eee59 (wren: #4490 — athena-gen generate writes the pulse-api crate (RowStore trait, remote SPARQL backend, settings env then file then default, versioned envelope); pulse-api compiles and serves the 5 pulse collections read-only on :3392; emitter tests incl. same-model-same-bytes and a model-change negative proof)
+=======
+>>>>>>> 5f9aadb25 (wren: #4490 — settings come from the model: 7 Property rows on pulse (pulse-settings-4490.ttl, in the model set), the generator emits the loader from them and refuses a product missing a runtime setting; v1 freeze guard (4490-v1-freeze.sh, athena-make frozen at 9975 lines, negative proofs: a 200-line feature and a missing target both go red))

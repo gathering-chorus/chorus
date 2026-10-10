@@ -8,6 +8,9 @@ pub const MODEL_VERSION: &str = "1.30.0";
 pub const NS: &str = "https://jeffbridwell.com/chorus#";
 
 <<<<<<< HEAD
+<<<<<<< HEAD
+=======
+>>>>>>> 5f9aadb25 (wren: #4490 — settings come from the model: 7 Property rows on pulse (pulse-settings-4490.ttl, in the model set), the generator emits the loader from them and refuses a product missing a runtime setting; v1 freeze guard (4490-v1-freeze.sh, athena-make frozen at 9975 lines, negative proofs: a 200-line feature and a missing target both go red))
 /// Declared settings and their defaults, from the product's Property rows (see settings.rs for the lookup order).
 pub const SETTINGS: &[(&str, &str)] = &[
     ("events.command", ""),

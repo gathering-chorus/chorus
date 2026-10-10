@@ -13,7 +13,7 @@
 // @domain: domains
 //! athena-gen (#4490):
 //!   athena-gen model    --root <repo> --product <name>              prints the product's slice of the model
-//!   athena-gen generate --root <repo> --product <name> --out <dir> --port <n>
+//!   athena-gen generate --root <repo> --product <name> --out <dir>
 //!                                                                    writes the product's API crate
 >>>>>>> 3795eee59 (wren: #4490 — athena-gen generate writes the pulse-api crate (RowStore trait, remote SPARQL backend, settings env then file then default, versioned envelope); pulse-api compiles and serves the 5 pulse collections read-only on :3392; emitter tests incl. same-model-same-bytes and a model-change negative proof)
 
@@ -75,7 +75,7 @@ fn main() {
     let cmd = args.get(1).cloned().unwrap_or_default();
     let root = PathBuf::from(arg(&args, "--root").unwrap_or_else(|| ".".into()));
     let Some(product) = arg(&args, "--product") else {
-        eprintln!("usage: athena-gen model|generate --root <repo> --product <name> [--out <dir> --port <n>]");
+        eprintln!("usage: athena-gen model|generate --root <repo> --product <name> [--out <dir>]");
         std::process::exit(2);
     };
     let files = athena_gen::model::model_files(&root);
@@ -88,9 +88,13 @@ fn main() {
         "model" => println!("{p:#?}"),
         "generate" => {
             let out = PathBuf::from(arg(&args, "--out").unwrap_or_else(|| die("generate needs --out <dir>")));
-            let port: u16 = arg(&args, "--port").and_then(|v| v.parse().ok()).unwrap_or_else(|| die("generate needs --port <n>"));
             let mv = athena_gen::model::model_version(&store).unwrap_or_else(|e| die(e));
-            for (path, text) in athena_gen::emit::crate_files(&p, &mv, port) {
+            let settings = athena_gen::model::settings(&store, &product).unwrap_or_else(|e| die(e));
+            let missing = athena_gen::model::missing_settings(&settings);
+            if !missing.is_empty() {
+                die(format!("{product} declares no setting for {missing:?}: add a Property row (c:{product} c:hasProperty …) for each"));
+            }
+            for (path, text) in athena_gen::emit::crate_files(&p, &mv, &settings) {
                 let f = out.join(&path);
                 if let Some(dir) = f.parent() {
                     std::fs::create_dir_all(dir).unwrap_or_else(|e| die(e));
