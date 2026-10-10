@@ -77,6 +77,7 @@ ${vocab.length ? `<table><tr><th>Class</th><th>Generated collection</th></tr>${v
 ${e.hasDesignDoc ? `<details class="fold" open><summary>Design doc <span class="src">chorus:hasDesignDoc</span></summary><div class="body"><p><a class="edge" href="/${esc(e.hasDesignDoc)}">${esc(e.hasDesignDoc)}</a></p></div></details>` : ''}
 <details class="fold" open><summary>Gaps <span class="src">chorus:gaps from the model &middot; gap rows from the graph</span></summary><div class="body">${e.gaps ? `<p>${esc(e.gaps)}</p>` : '<p class="empty">the model names no gap for this domain</p>'}<div id="gaps-facet"></div></div></details>
 <div id="mfold-slot"></div>
+<div id="svc-slot"></div>
 <div id="model-facets"></div>
 <div id="facets"><p class="empty">loading the materialized view (cards, code, alerts, &hellip;)&hellip;</p></div>
 ${srcNote(`GET /domains/${esc(d)} + the materialized facet endpoints (/api/chorus/domain)`)}`;
@@ -86,8 +87,32 @@ ${srcNote(`GET /domains/${esc(d)} + the materialized facet endpoints (/api/choru
     // altitude ladder, not a second dashboard — collapsed by default.
     renderModelFold(document.getElementById('mfold-slot'), d, { compact: true });
     renderFacets(d);
+    renderServices(d);
   } catch (e) { fetchFailed(main, e); }
 })();
+
+// #4472 — the services this domain hosts (chorus:hosts) and the launchd units the services
+// crawl found running them (runsService). Both come from the graph; nothing is listed here.
+async function renderServices(d) {
+  const el = document.getElementById('svc-slot');
+  const fold = (body) => `<details class="fold" open><summary>Services and running units <span class="src">chorus:hosts &rarr; chorus:Service &larr; chorus:runsService (the services crawl)</span></summary><div class="body">${body}</div></details>`;
+  try {
+    const q = `PREFIX chorus: <https://jeffbridwell.com/chorus#> SELECT DISTINCT ?svc WHERE { GRAPH ?g { <https://jeffbridwell.com/chorus#${encodeURIComponent(d)}> chorus:hosts ?svc } }`;
+    const r = await fetch(window.basePath('/sparql-read'), { method: 'POST', headers: { 'Content-Type': 'application/json', Accept: 'application/sparql-results+json' }, body: JSON.stringify({ query: q }) });
+    if (!r.ok) throw new Error(`sparql-read ${r.status}`);
+    const svcs = (((await r.json()).results || {}).bindings || []).map(b => String(b.svc.value).split('#').pop());
+    if (!svcs.length) { el.innerHTML = fold(`<p class="empty">The model names no service this domain hosts &mdash; add <code>chorus:${esc(d)} chorus:hosts &lt;service&gt;</code>.</p>`); return; }
+    const [inst, jobs] = await Promise.all([fetchJSON('/serviceinstances?limit=500'), fetchJSON('/scheduledjobs?limit=500')]);
+    const units = [...(inst.data || []).map(u => ({ ...u, kind: 'instance' })), ...(jobs.data || []).map(u => ({ ...u, kind: 'job' }))];
+    el.innerHTML = fold(svcs.map(full => {
+      const name = full.replace(/^service-/, '');
+      const mine = units.filter(u => runsServiceNames(u.runsService, name));
+      const rows = mine.map(u => `<tr><td>${esc(u.launchdLabel || u.label || u.name)}</td><td>${esc(u.kind)}</td><td>${esc(u.onMachine || '')}</td><td>${esc(unitState(u))}</td></tr>`).join('');
+      return `<h3><a class="edge" href="service.html?s=${encodeURIComponent(name)}">${esc(name)}</a> <small>${mine.length} unit(s)</small></h3>` +
+        (mine.length ? `<table><thead><tr><th>Unit</th><th>Kind</th><th>Machine</th><th>State</th></tr></thead><tbody>${rows}</tbody></table>` : '<p class="empty">the crawl found no launchd unit running this service</p>');
+    }).join(''));
+  } catch (e) { el.innerHTML = fold(`<p class="empty"><strong>Cannot reach the model</strong> for services &mdash; fetch failure. ${esc(String(e && e.message || e))}</p>`); }
+}
 
 // ---- the materialized view (#3635, Jeff's ruling 2026-07-12): the domain instance
 // page MUST conform to the 17-facet materialized view (domain-renderer.js contract) —

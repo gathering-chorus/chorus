@@ -36,6 +36,26 @@ function fetchFailed(el, e) {
     `this is a fetch failure, not an empty model. ${esc(String(e.message || e))}</div>`;
 }
 
+// #4472 — does a crawled unit's runsService name this service? The door serves the edge
+// as the target's IRI local name, which carries the class slug (service-werk), while the
+// pages are opened by the row name (werk).
+function runsServiceNames(v, s) { v = String(v || ''); return v === s || v === 'service-' + s || v.endsWith(':' + s); }
+
+// #4472 — what a crawled unit is doing: an instance's runState, or how a job's last run
+// ended (launchd's exit status). No code means none was recorded: the job has not
+// run, or the crawl could not tell (bedroom reports only failures).
+function unitState(u) {
+  if (u.runState) return u.runState;
+  const c = u.lastExitCode;
+  return (c === '' || c == null) ? 'no exit recorded' : (String(c) === '0' ? 'last run ok' : `last run exit ${c}`);
+}
+
+// #4472 — a stored UTC timestamp, shown in the viewer's own time zone.
+function localTime(iso) {
+  const d = new Date(iso || '');
+  return isNaN(d) ? '' : d.toLocaleString([], { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' });
+}
+
 function asArray(v) {
   if (Array.isArray(v)) return v;
   if (v === undefined || v === null || v === '') return [];
