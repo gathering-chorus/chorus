@@ -36,6 +36,11 @@ function fetchFailed(el, e) {
     `this is a fetch failure, not an empty model. ${esc(String(e.message || e))}</div>`;
 }
 
+// #4472 — does a crawled unit's runsService name this service? The door serves the edge
+// as the target's IRI local name, which carries the class slug (service-werk), while the
+// pages are opened by the row name (werk).
+function runsServiceNames(v, s) { v = String(v || ''); return v === s || v === 'service-' + s || v.endsWith(':' + s); }
+
 function asArray(v) {
   if (Array.isArray(v)) return v;
   if (v === undefined || v === null || v === '') return [];
