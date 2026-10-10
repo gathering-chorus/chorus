@@ -1098,11 +1098,28 @@ pub fn unit_times() -> &'static std::sync::Mutex<std::collections::HashMap<Strin
     TIMES.get_or_init(|| std::sync::Mutex::new(std::collections::HashMap::new()))
 }
 
+/// #4007 — the nightly sets this on its runner child: each unit then prints
+/// when it starts and ends, so the run can name what is in flight.
+pub const UNIT_MARKS_ENV: &str = "WERK_TEST_UNIT_MARKS";
+
+/// #4007 — `nightly-unit-<start|end>|<item>|<epoch ms>`.
+pub fn unit_mark_line(edge: &str, item: &str) -> String {
+    let ms = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).map(|d| d.as_millis()).unwrap_or(0);
+    format!("nightly-unit-{}|{}|{}", edge, item, ms)
+}
+
 pub fn time_unit<T>(item: &str, f: impl FnOnce() -> T) -> T {
+    let marks = std::env::var(UNIT_MARKS_ENV).as_deref() == Ok("1");
+    if marks {
+        println!("{}", unit_mark_line("start", item));
+    }
     let t0 = std::time::Instant::now();
     let r = f();
     if let Ok(mut m) = unit_times().lock() {
         m.insert(item.to_string(), t0.elapsed().as_millis() as u64);
+    }
+    if marks {
+        println!("{}", unit_mark_line("end", item));
     }
     r
 }

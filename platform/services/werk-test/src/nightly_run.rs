@@ -967,6 +967,48 @@ pub fn suite_row_name(run_ts: &str, order: usize) -> String {
     format!("nightly-suite-{}-{}", run_ts.replace(':', "-").to_ascii_lowercase(), order)
 }
 
+/// #4007 — a unit's start or end mark from the runner child:
+/// `nightly-unit-start|<item>|<epoch ms>` / `nightly-unit-end|…`.
+pub fn parse_unit_mark(line: &str) -> Option<(&'static str, String, u128)> {
+    let rest = line.strip_prefix("nightly-unit-")?;
+    let (edge, rest) = if let Some(r) = rest.strip_prefix("start|") {
+        ("start", r)
+    } else if let Some(r) = rest.strip_prefix("end|") {
+        ("end", r)
+    } else {
+        return None;
+    };
+    let (item, ms) = rest.rsplit_once('|')?;
+    if item.is_empty() {
+        return None;
+    }
+    Some((edge, item.to_string(), ms.trim().parse().ok()?))
+}
+
+/// #4007 — the live row for a unit in flight. The item (a path, `crate#stem`)
+/// is not a safe name, so it is hashed; the row carries the item as filePath.
+pub fn live_row_name(run_ts: &str, item: &str) -> String {
+    let mut h: u64 = 0xcbf29ce484222325;
+    for b in item.bytes() {
+        h = (h ^ b as u64).wrapping_mul(0x100000001b3);
+    }
+    format!("nightly-live-{}-{:016x}", run_ts.replace(':', "-").to_ascii_lowercase(), h)
+}
+
+/// #4007 — the live row: result `running` and no suiteOrder, so the readers of
+/// finished rows never count it. The unit's timeout rides in the summary so the
+/// page can call a unit past it wedged.
+pub fn live_row_payload(run_ts: &str, item: &str, started_ms: u128, timeout_secs: u64) -> String {
+    format!(
+        "{{\"name\":\"{}\",\"runTs\":\"{}\",\"suiteKind\":\"live\",\"filePath\":\"{}\",\"result\":\"running\",\"suiteSummary\":\"timeout={}s\",\"ts\":\"{}\"}}",
+        live_row_name(run_ts, item),
+        crate::json_escape(run_ts),
+        crate::json_escape(item),
+        timeout_secs,
+        started_ms
+    )
+}
+
 /// The per-row `test.suite.result` fields (`emit_suite_results`), with the
 /// reporter-contradiction repair (#3753 AC4) applied on the way out.
 pub fn suite_result_fields(row: &SuiteRow, reason: Option<&str>) -> (Vec<(String, String)>, bool) {

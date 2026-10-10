@@ -149,6 +149,29 @@ impl Ctx {
             self.graph.failed.set(self.graph.failed.get() + 1);
         }
     }
+    /// #4007 — a unit started or ended. The log keeps both edges, so a run that
+    /// dies mid-lane names what was in flight; a start goes on the spine with
+    /// the run_id; the graph holds a live row while the unit runs, which the
+    /// /nightly page reads, and the end removes it.
+    fn unit_mark(&self, edge: &str, item: &str, ms: u128) {
+        let tag = if edge == "start" { "SUITESTART" } else { "SUITEEND" };
+        self.append_log(&format!("{}|{}|{}", tag, item, ms));
+        if edge == "start" {
+            self.spine("test.suite.started", &[("unit".into(), item.into())]);
+        }
+        if !self.graph.enabled {
+            return;
+        }
+        let role = env_or("WERK_NIGHTLY_MINT_ROLE", "nightly");
+        let run_ts = self.graph.run_ts.borrow().clone();
+        if edge == "start" {
+            let body = werk_test::nightly_run::live_row_payload(&run_ts, item, ms, werk_test::unit_timeout().as_secs());
+            self.post_graph("testsuiteruns", &role, &body, &self.graph.token);
+        } else {
+            let name = werk_test::nightly_run::live_row_name(&run_ts, item);
+            self.send_graph("DELETE", &format!("testsuiteruns/{}", name), &role, "", &self.graph.token);
+        }
+    }
     /// POST one row through athena-make.
     fn post_graph(&self, collection: &str, role: &str, body: &str, cache: &std::cell::RefCell<Option<String>>) -> bool {
         self.send_graph("POST", collection, role, body, cache).starts_with('2')
@@ -552,6 +575,7 @@ fn run_runner(ctx: &Ctx, box_over_load: bool) -> LaneResult {
         cmd.arg("--nightly");
     }
     cmd.env("CHORUS_ROOT", &ctx.root).env("CHORUS_HOME", &ctx.home).env("ROLE", &ctx.role).stdout(Stdio::piped()).stderr(Stdio::piped());
+    cmd.env(werk_test::UNIT_MARKS_ENV, "1");
     let mut child = match cmd.spawn() {
         Ok(c) => c,
         Err(e) => {
@@ -608,6 +632,10 @@ fn run_runner(ctx: &Ctx, box_over_load: bool) -> LaneResult {
             let abs = if p.starts_with('/') { p.to_string() } else { format!("{}/{}", ctx.root, p) };
             std::path::Path::new(&abs).exists()
         };
+        if let Some((edge, item, ms)) = werk_test::nightly_run::parse_unit_mark(&line) {
+            ctx.unit_mark(edge, &item, ms);
+            continue;
+        }
         if let Some((key, ms)) = werk_test::nightly_run::parse_unit_time_line(&line) {
             unit_ms.insert(key, ms);
             continue;
@@ -1578,6 +1606,50 @@ mod lanes_4278 {
         assert!(text.contains("chorus-crawl: full (stub)") && text.contains("03:00 nightly"), "{text}");
         std::env::remove_var("NIGHTLY_CRAWL_BIN");
         std::env::remove_var("CRAWL_NIGHTLY_LOG");
+    }
+
+    // #4007 — the run names the suite in flight. A runner that dies with one
+    // unit started and not ended leaves the log saying which. NEGATIVE PROOF:
+    // the unit that ended is closed, so the two states stay separable.
+    #[test]
+    fn a_runner_that_dies_mid_unit_leaves_the_unit_in_flight_in_the_log() {
+        let dir = std::env::temp_dir().join(format!("wt-4007-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let stub = dir.join("runner-stub.sh");
+        std::fs::write(&stub, format!(
+            "#!/bin/sh\n[ \"${}\" = 1 ] || exit 9\necho 'nightly-unit-start|a.bats|1000'\necho 'nightly-unit-end|a.bats|2000'\necho 'nightly-unit-start|b.bats|3000'\nexit 137\n",
+            werk_test::UNIT_MARKS_ENV)).unwrap();
+        use std::os::unix::fs::PermissionsExt;
+        std::fs::set_permissions(&stub, std::fs::Permissions::from_mode(0o755)).unwrap();
+        std::env::set_var("NIGHTLY_RUNNER_CMD", &stub);
+        let root = dir.to_str().unwrap();
+        let ctx = ctx_for(root);
+        let _ = run_runner(&ctx, false);
+        std::env::remove_var("NIGHTLY_RUNNER_CMD");
+        let log = std::fs::read_to_string(&ctx.log).unwrap_or_default();
+        assert!(log.contains("SUITESTART|a.bats|1000") && log.contains("SUITEEND|a.bats|2000"), "{log}");
+        assert!(log.contains("SUITESTART|b.bats|3000"), "the unit in flight is named: {log}");
+        assert!(!log.contains("SUITEEND|b.bats"), "a unit that never ended reads ended: {log}");
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn unit_marks_parse_and_other_unit_lines_do_not() {
+        use werk_test::nightly_run::{live_row_name, live_row_payload, parse_unit_mark};
+        assert_eq!(parse_unit_mark("nightly-unit-start|platform/tests/x.bats|1700"), Some(("start", "platform/tests/x.bats".into(), 1700)));
+        assert_eq!(parse_unit_mark("nightly-unit-end|werk-test#units|9"), Some(("end", "werk-test#units".into(), 9)));
+        // NEGATIVE PROOF: the time line and the result line are not marks
+        assert_eq!(parse_unit_mark("nightly-unit-time|bats|x.bats|5"), None);
+        assert_eq!(parse_unit_mark("nightly-unit|bats|x.bats|pass|1 pass, 0 fail"), None);
+        assert_eq!(parse_unit_mark("nightly-unit-start||5"), None);
+        // what the runner child prints is what the parent reads
+        let (edge, item, ms) = parse_unit_mark(&werk_test::unit_mark_line("start", "c.bats")).expect("round trip");
+        assert!(edge == "start" && item == "c.bats" && ms > 1_700_000_000_000, "{ms}");
+        let a = live_row_name("2026-10-10T03:00:03", "a.bats");
+        assert!(a.starts_with("nightly-live-2026-10-10t03-00-03-"), "{a}");
+        assert_ne!(a, live_row_name("2026-10-10T03:00:03", "b.bats"), "two units share one live row");
+        let body = live_row_payload("2026-10-10T03:00:03", "a.bats", 5, 1200);
+        assert!(body.contains("\"result\":\"running\"") && body.contains("timeout=1200s") && !body.contains("suiteOrder"), "{body}");
     }
 
 

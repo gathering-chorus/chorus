@@ -9,7 +9,7 @@
 //
 // The rows become the same NightlyRun objects the page always rendered, so the
 // renderer and the readout did not change: one record, two sources became one.
-import { csvCells, type NightlyRun, type NightlyRow, type NightlyTally } from './nightly-report';
+import { csvCells, type InFlightUnit, type NightlyRun, type NightlyRow, type NightlyTally } from './nightly-report';
 import type { NightlyRunRecord } from './nightly-readout';
 
 /** A SPARQL read that answers CSV text, or null when the store did not answer. */
@@ -32,6 +32,27 @@ export function suiteRowsQuery(oldest: string): string {
     + ' c:suiteOwner ?owner ; c:result ?res ; c:ts ?ts . OPTIONAL { ?r c:suiteSummary ?sum }'
     + ' OPTIONAL { ?r c:suiteSeconds ?secs }'
     + ` FILTER(STR(?runTs) >= "${oldest.replace(/"/g, '')}") } }`;
+}
+
+/** #4007 — the live rows of one run: a unit the runner started and has not
+ *  ended. They carry no suiteOrder, so the finished-row queries never see them. */
+export function liveRowsQuery(runTs: string): string {
+  return `${P} SELECT ?fp ?ts ?sum WHERE { GRAPH ${TESTS} {`
+    + ' ?r a c:TestSuiteRun ; c:runTs ?runTs ; c:result "running" ; c:filePath ?fp ; c:ts ?ts .'
+    + ' OPTIONAL { ?r c:suiteSummary ?sum } FILTER NOT EXISTS { ?r c:suiteOrder ?o }'
+    + ` FILTER(STR(?runTs) = "${runTs.replace(/"/g, '')}") } }`;
+}
+
+/** #4007 — live rows to units in flight, as of `nowMs`. */
+export function inFlightFromCsv(csv: string, nowMs: number): InFlightUnit[] {
+  return csvRecords(csv).map((r) => {
+    const t = /timeout=(\d+)s/.exec(r.sum ?? '');
+    return {
+      unit: r.fp,
+      elapsedMs: Math.max(0, nowMs - tsMs(r.ts)),
+      ...(t ? { timeoutMs: Number(t[1]) * 1000 } : {}),
+    };
+  });
 }
 
 /** The run records (the tail the run wrote when it ended or was stopped). */
@@ -152,7 +173,14 @@ export async function loadRunsFromGraph(query: CsvQuery, limit = 14, nowMs = Dat
   const oldest = [...ids].sort()[0];
   const [suites, records] = await Promise.all([query(suiteRowsQuery(oldest)), query(runRecordsQuery(oldest))]);
   if (suites === null || records === null) return null;
-  return runsFromGraph(suites, records, nowMs);
+  const runs = runsFromGraph(suites, records, nowMs);
+  // #4007 — the newest run, still going: which suites are running now
+  const newest = runs[runs.length - 1];
+  if (newest && !newest.completed && !newest.stoppedAt) {
+    const live = await query(liveRowsQuery(newest.runId));
+    if (live !== null) newest.inFlight = inFlightFromCsv(live, nowMs);
+  }
+  return runs;
 }
 
 /** The CsvQuery the routes use: Fuseki's query endpoint, CSV out. */

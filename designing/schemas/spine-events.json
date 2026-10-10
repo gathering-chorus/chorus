@@ -5555,6 +5555,19 @@
         "suite": "Suite name (basename of the suite path)"
       }
     },
+    "test.suite.started": {
+      "producer": "tests",
+      "about": "TestResult",
+      "category": "fact",
+      "version": "1",
+      "vertebra": "proving",
+      "source": "nightly-suites",
+      "description": "A nightly suite begins (#4007), carrying the run's run_id, so one query returns the whole run and a suite that hangs reads started with no result.",
+      "fields": {
+        "run_id": "The nightly run this suite belongs to",
+        "unit": "The unit the runner started (suite path, crate or package)"
+      }
+    },
     "test.unit.timed": {
       "producer": "tests",
       "about": "TestResult",
