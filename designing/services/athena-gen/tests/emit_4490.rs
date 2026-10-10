@@ -56,6 +56,7 @@ fn the_crate_carries_the_product_its_routes_and_its_versions() {
 <<<<<<< HEAD
     let files = crate_files(&pulse(), "1.30.0", &settings());
     assert_eq!(files.keys().collect::<Vec<_>>(), ["Cargo.toml", "src/auth.rs", "src/main.rs", "src/model.rs", "src/requirements_tests.rs", "src/rules.rs", "src/settings.rs", "src/store.rs", "tests/model.rs"]);
+<<<<<<< HEAD
 =======
     let files = crate_files(&pulse(), "1.30.0", 3392);
 <<<<<<< HEAD
@@ -75,6 +76,8 @@ fn the_crate_carries_the_product_its_routes_and_its_versions() {
 >>>>>>> 5f9aadb25 (wren: #4490 — settings come from the model: 7 Property rows on pulse (pulse-settings-4490.ttl, in the model set), the generator emits the loader from them and refuses a product missing a runtime setting; v1 freeze guard (4490-v1-freeze.sh, athena-make frozen at 9975 lines, negative proofs: a 200-line feature and a missing target both go red))
     assert_eq!(files.keys().collect::<Vec<_>>(), ["Cargo.toml", "src/auth.rs", "src/main.rs", "src/model.rs", "src/requirements_tests.rs", "src/rules.rs", "src/settings.rs", "src/store.rs"]);
 >>>>>>> ba777c764 (wren: #4490 — the v1 requirements are generated tests in every product API (9 in pulse-api: patch names only, link removal by wildcard, many-links, dangling target refused, ownerless needs Permission, not-owner refused, names round-trip, versions kept); negative proof: removing the owner rule turns req5 and req5b red)
+=======
+>>>>>>> be528d717 (wren: #4490 — tests that exercise every crate file for werk-test selection: athena-gen crates_4490 (manifests by path, committed pulse-api equals a fresh generate, hand-edit negative proof) and a generated pulse-api tests/model.rs)
     assert!(files["Cargo.toml"].contains("name = \"pulse-api\""));
     let m = &files["src/model.rs"];
     for want in ["PRODUCT: &str = \"pulse\"", "MODEL_VERSION: &str = \"1.30.0\"", "segment: \"rolestates\"",

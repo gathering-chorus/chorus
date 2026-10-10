@@ -18,6 +18,7 @@ const RULES: &str = include_str!("../templates/rules.rs");
 <<<<<<< HEAD
 const REQUIREMENTS: &str = include_str!("../templates/requirements_tests.rs");
 const MODEL_TEST: &str = include_str!("../templates/model_test.rs");
+<<<<<<< HEAD
 =======
 >>>>>>> 3795eee59 (wren: #4490 — athena-gen generate writes the pulse-api crate (RowStore trait, remote SPARQL backend, settings env then file then default, versioned envelope); pulse-api compiles and serves the 5 pulse collections read-only on :3392; emitter tests incl. same-model-same-bytes and a model-change negative proof)
 =======
@@ -28,6 +29,8 @@ const AUTH: &str = include_str!("../templates/auth.rs");
 =======
 const REQUIREMENTS: &str = include_str!("../templates/requirements_tests.rs");
 >>>>>>> ba777c764 (wren: #4490 — the v1 requirements are generated tests in every product API (9 in pulse-api: patch names only, link removal by wildcard, many-links, dangling target refused, ownerless needs Permission, not-owner refused, names round-trip, versions kept); negative proof: removing the owner rule turns req5 and req5b red)
+=======
+>>>>>>> be528d717 (wren: #4490 — tests that exercise every crate file for werk-test selection: athena-gen crates_4490 (manifests by path, committed pulse-api equals a fresh generate, hand-edit negative proof) and a generated pulse-api tests/model.rs)
 
 /// The crate's own version. Step 1 starts every product at 1.0.0; the bump rule
 /// (#4478 Versions: removed field = major, added = minor) arrives with the diff check.
@@ -214,6 +217,7 @@ pub fn crate_files(p: &Product, model_version: &str, settings: &[(String, String
     out.insert("src/rules.rs".into(), retag(RULES, domain));
     out.insert("src/requirements_tests.rs".into(), retag(REQUIREMENTS, domain));
     out.insert("tests/model.rs".into(), retag(MODEL_TEST, domain));
+<<<<<<< HEAD
     out.insert("src/store.rs".into(), retag(STORE, domain));
     out.insert("src/settings.rs".into(), retag(SETTINGS, domain));
     out.insert("src/model.rs".into(), format!("// @domain: {domain}\n{}", model_rs(p, model_version, settings)));
@@ -229,6 +233,8 @@ pub fn crate_files(p: &Product, model_version: &str, settings: &[(String, String
     out.insert("src/main.rs".into(), retag(MAIN, domain));
     out.insert("src/rules.rs".into(), retag(RULES, domain));
     out.insert("src/requirements_tests.rs".into(), retag(REQUIREMENTS, domain));
+=======
+>>>>>>> be528d717 (wren: #4490 — tests that exercise every crate file for werk-test selection: athena-gen crates_4490 (manifests by path, committed pulse-api equals a fresh generate, hand-edit negative proof) and a generated pulse-api tests/model.rs)
     out.insert("src/store.rs".into(), retag(STORE, domain));
     out.insert("src/settings.rs".into(), retag(SETTINGS, domain));
 <<<<<<< HEAD
