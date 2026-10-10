@@ -32,6 +32,7 @@ pub const SETTINGS: &[(&str, &str)] = &[
     ("store.kind", "sparql"),
     ("store.password_var", "FUSEKI_ADMIN_PASSWORD"),
     ("store.path", "/Users/jeffbridwell/.chorus/data/pulse-api"),
+    ("store.row", "persistence-store-pods"),
     ("store.user_var", "FUSEKI_ADMIN_USER"),
 ];
 

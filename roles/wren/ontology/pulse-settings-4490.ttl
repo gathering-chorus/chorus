@@ -49,3 +49,11 @@ chorus:property-pulse-store-path a chorus:Property ;
     rdfs:label "pulse-api: the embedded store's folder (used when store.kind is embedded)" ;
     chorus:propertyKey "store.path" ; chorus:propertyValue "/Users/jeffbridwell/.chorus/data/pulse-api" ;
     chorus:propertyValueType "string" ; chorus:propertyScope "instance" .
+
+# #4493 — which store row this deployment uses (Jeff 2026-10-10: stores are instances of
+# Persistence). The rows themselves are PersistenceStore rows in the infrastructure
+# domain (Silas): persistence-store-pods (our Fuseki) and persistence-store-pulse-api-embedded.
+chorus:property-pulse-store-row a chorus:Property ;
+    rdfs:label "pulse-api: the PersistenceStore row it reads and writes" ;
+    chorus:propertyKey "store.row" ; chorus:propertyValue "persistence-store-pods" ;
+    chorus:propertyValueType "string" ; chorus:propertyScope "instance" .
