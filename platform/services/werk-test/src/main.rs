@@ -1909,6 +1909,12 @@ fn apply_suite_world(cmd: &mut Command, werk: &str) {
     // and not overridable from outside the run.
     cmd.env("WERK_TEST_NIGHTLY", "1");
     cmd.env("NIGHTLY_UNIT_TIMEOUT", werk_test::unit_timeout().as_secs().to_string());
+    // #4474 run 19 — every suite is rooted in the tree under test. v1 pinned
+    // this from outside (`CHORUS_ROOT="$WERK" werk-test`, #3701); under werk v2
+    // the scheduler's CHORUS_ROOT is canonical, so athena-tree.test.ts read
+    // main's tree.json and failed the card's own rename. bats had the pin
+    // (#4392); jest and cargo did not.
+    cmd.env("CHORUS_ROOT", werk);
     // OUTSIDE the werk tree: an untracked dir inside it would trip the
     // teardown's refuse-if-dirty at accept (#3431).
     let slot = Path::new(werk).file_name().and_then(|s| s.to_str()).unwrap_or("werk");
@@ -3203,6 +3209,21 @@ echo '=== Results: 1 passed, 0 failed ==='\n");
         std::env::remove_var("CHORUS_MCP_NUDGE_URL");
         let werk = std::fs::canonicalize(&dir).unwrap();
         assert!(matches!(run_bats(werk.to_str().unwrap(), &s).0, BatsOutcome::Pass));
+    }
+
+    /// #4474 — every runner, not only bats, hands the suite the werk as its root
+    #[test]
+    fn every_suite_child_is_rooted_in_the_werk_4474() {
+        let mut cmd = Command::new("true");
+        apply_suite_world(&mut cmd, "/tmp/some-werk");
+        let root = cmd.get_envs().find(|(k, _)| *k == "CHORUS_ROOT").and_then(|(_, v)| v);
+        assert_eq!(root, Some(std::ffi::OsStr::new("/tmp/some-werk")));
+        // NEGATIVE PROOF — a scheduler's canonical root must not leak through
+        let mut cmd2 = Command::new("true");
+        cmd2.env("CHORUS_ROOT", "/canonical");
+        apply_suite_world(&mut cmd2, "/tmp/other-werk");
+        let root2 = cmd2.get_envs().find(|(k, _)| *k == "CHORUS_ROOT").and_then(|(_, v)| v);
+        assert_eq!(root2, Some(std::ffi::OsStr::new("/tmp/other-werk")));
     }
 
     /// NEGATIVE PROOF — the same suite run with the live nudge path fails, so
