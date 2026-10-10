@@ -400,13 +400,33 @@ def dagu_summary(run):
     return status, ""
 
 
+def dagu_state(runs, i):
+    """(result, step) for runs[i] (newest first). Only the newest run can be at
+    the go: an older run still waiting there is superseded, never live."""
+    status, step = dagu_summary(runs[i])
+    if status == "waiting" and i > 0:
+        return "superseded", step
+    return status, step
+
+
+def dagu_go(card, run):
+    """The go for a v2 run waiting at its human step, in dagu's own words."""
+    node = next((n for n in run.get("nodes", []) if n.get("statusLabel") == "waiting"), None)
+    if not node:
+        return ""
+    step_id = node["step"].get("id") or node["step"]["name"].replace("-", "_")
+    return (f" · go: dagu human-task complete {DAGU_DAG} --run-id {run.get('dagRunId')}"
+            f" --step {step_id} --input accepter=jeff")
+
+
 def dagu_line(card, role, runs):
     if runs is None:
         return f"#{card} [{role}] v2 dagu unreadable at {DAGU}"
     if not runs:
         return None
-    status, step = dagu_summary(runs[0])
-    return f"#{card} [{role}] v2 {status}" + (f" at {step}" if step else "") + f" · {len(runs)} run{'s' if len(runs) != 1 else ''} · dagu {runs[0].get('dagRunId', '?')}"
+    status, step = dagu_state(runs, 0)
+    line = f"#{card} [{role}] v2 {status}" + (f" at {step}" if step else "") + f" · {len(runs)} run{'s' if len(runs) != 1 else ''}"
+    return line + (dagu_go(card, runs[0]) if status == "waiting" else f" · dagu {runs[0].get('dagRunId', '?')}")
 
 
 def dagu_detail(card, runs):
@@ -415,14 +435,15 @@ def dagu_detail(card, runs):
         return
     if not runs:
         return
-    print("\n  v2 (dagu)")
-    print("  run  start        finish  result     step")
+    print("\n  " + dagu_line(card, "v2", runs).split("] ", 1)[1])
+    print("  run  start        finish  result      step")
+    n = len(runs)
     for i, r in enumerate(reversed(runs), 1):
-        status, step = dagu_summary(r)
+        status, step = dagu_state(runs, n - i)
         st, fin = parse_ts(r.get("startedAt")), parse_ts(r.get("finishedAt"))
         start = hm(st / 1000) if st else "     ?     "
         end = datetime.fromtimestamp(fin / 1000).strftime("%H:%M") if fin and status not in ("running", "waiting") else "  -  "
-        print(f"  {i:>3}  {start}  {end}   {status:<9}  {step}")
+        print(f"  {i:>3}  {start}  {end}   {status:<10}  {step}")
 
 
 def wip_cards():

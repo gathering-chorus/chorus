@@ -12,6 +12,7 @@ env:
   - WERK_SILAS_BIN: ${WERK_SILAS_BIN}
   - WERK_ABBY_NORMAL_BIN: ${WERK_ABBY_NORMAL_BIN}
   - CHORUS_TRACE_ID: ${DAG_RUN_ID}
+  - PATH: ${CHORUS_WERK_BASE}/${ROLE}-bin:${PATH}
 steps:
   - name: skill-werk-commit
     description: "werk-commit"

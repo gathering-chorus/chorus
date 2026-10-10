@@ -123,6 +123,15 @@ fn the_go_names_the_accepter_and_only_the_land_steps_read_it() {
 }
 
 #[test]
+fn the_cards_own_verbs_come_first_on_the_path() {
+    // #4474 run 12: the scheduler's PATH found the installed werk-demo, not the card's
+    let out = generate("cicd", &cicd()).unwrap();
+    let base = out.find("  - CHORUS_WERK_BASE: ").expect("base");
+    let path = out.find("  - PATH: ${CHORUS_WERK_BASE}/${ROLE}-bin:${PATH}\n").expect("the role slot leads PATH");
+    assert!(base < path, "PATH reads CHORUS_WERK_BASE, so it must come after it");
+}
+
+#[test]
 fn negative_proof_one_skill_called_twice_is_refused() {
     let mut rows = cicd();
     rows[4].skill = rows[3].skill.clone(); // review now calls skill-werk-test again

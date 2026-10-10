@@ -139,6 +139,10 @@ pub fn generate(pipeline: &str, rows: &[Row]) -> Result<String, Vec<String>> {
         "  - WERK_SILAS_BIN: ${WERK_SILAS_BIN}\n",
         "  - WERK_ABBY_NORMAL_BIN: ${WERK_ABBY_NORMAL_BIN}\n",
         "  - CHORUS_TRACE_ID: ${DAG_RUN_ID}\n",
+        // #4474 run 12: under the scheduler the verbs resolved to the installed
+        // ones, so the card's own werk-demo never ran. The role's slot comes
+        // first, as chorus-env-setup.sh does for a role's shell (#2995).
+        "  - PATH: ${CHORUS_WERK_BASE}/${ROLE}-bin:${PATH}\n",
     ));
     out.push_str("steps:\n");
     let mut prev: Option<String> = None;
