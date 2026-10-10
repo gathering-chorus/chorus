@@ -14,6 +14,9 @@
   <key>EnvironmentVariables</key>
   <dict>
     <key>CHORUS_ROOT</key><string>/Users/jeffbridwell/CascadeProjects/chorus</string>
+    <key>CHORUS_HOME</key><string>/Users/jeffbridwell/CascadeProjects/chorus</string>
+    <key>CHORUS_WERK_BASE</key><string>/Users/jeffbridwell/CascadeProjects/chorus-werk</string>
+    <key>CHORUS_BIN</key><string>/Users/jeffbridwell/.chorus/bin</string>
     <key>PATH</key><string>/Users/jeffbridwell/.chorus/bin:/Users/jeffbridwell/CascadeProjects/chorus/platform/scripts:/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin</string>
   </dict>
   <key>RunAtLoad</key><true/>

@@ -48,3 +48,28 @@ ok_bind() {
   run ok_bind "$bad"
   [ "$status" -ne 0 ]
 }
+
+# #4474: the generated workflow passes the machine's paths through from dagu's
+# own env (dagu hands a step only a short list). Each one the workflow names
+# must be set by the LaunchAgent, or every verb dies "<VAR> not set".
+passthrough_unset() {
+  local wf="$ROOT/platform/pipelines/cicd.yaml" missing="" v
+  for v in $(sed -n '/^env:/,/^steps:/p' "$wf" | grep -oE '\$\{[A-Z_]+\}' | tr -d '${}' | sort -u); do
+    [ "$v" = DAG_RUN_ID ] && continue  # dagu sets its own run id
+    plutil -extract "EnvironmentVariables.$v" raw "$1" >/dev/null 2>&1 || missing="$missing $v"
+  done
+  echo "$missing"
+}
+
+@test "every variable the generated workflow passes through is set by the LaunchAgent" {
+  run passthrough_unset "$PLIST"
+  [ "$status" -eq 0 ]
+  [ -z "$output" ] || { echo "unset in plist:$output"; return 1; }
+}
+
+@test "negative proof: a LaunchAgent without CHORUS_WERK_BASE is caught" {
+  bad="$BATS_TEST_TMPDIR/dagu.plist"
+  grep -v CHORUS_WERK_BASE "$PLIST" > "$bad"
+  run passthrough_unset "$bad"
+  [[ "$output" == *CHORUS_WERK_BASE* ]] || return 1
+}

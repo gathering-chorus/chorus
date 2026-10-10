@@ -71,6 +71,7 @@ pub fn check(rows: &[Row]) -> Vec<String> {
         errs.push("no rows: a pipeline with no steps is refused, never written empty".into());
     }
     let mut seen = std::collections::BTreeSet::new();
+    let mut names = std::collections::BTreeSet::new();
     for r in rows {
         match r.executor.as_str() {
             "deterministic" if r.implemented_by.is_empty() => errs.push(format!(
@@ -80,6 +81,9 @@ pub fn check(rows: &[Row]) -> Vec<String> {
                 "{}: an agent skill cannot run inside the v2 workflow yet", r.skill)),
             other => errs.push(format!("{}: unknown executor '{}'", r.skill, other)),
         }
+        if !names.insert(step_name(r)) {
+            errs.push(format!("{}: called twice in one pipeline; dagu step names must be unique", r.skill));
+        }
         if !seen.insert((r.step.clone(), r.skill_order)) {
             errs.push(format!("{}: two skills hold order {} in step {}", r.skill, r.skill_order, r.step));
         }
@@ -87,18 +91,12 @@ pub fn check(rows: &[Row]) -> Vec<String> {
     errs
 }
 
-/// dagu step id: `<step>_<skill local name>`, lowercase. dagu 2.18 refuses
-/// any id outside ^[a-zA-Z][a-zA-Z0-9_]*$ (found by loading the first
-/// generated file), so every other character becomes '_'.
-pub fn step_id(r: &Row) -> String {
-    let local = r.skill.rsplit(['#', '/']).next().unwrap_or(&r.skill);
-    let local = local.strip_prefix("skill-").unwrap_or(local);
-    let id: String = format!("{}_{}", r.step, local)
-        .to_lowercase()
-        .chars()
-        .map(|c| if c.is_ascii_alphanumeric() { c } else { '_' })
-        .collect();
-    if id.starts_with(|c: char| c.is_ascii_alphabetic()) { id } else { format!("s_{id}") }
+/// dagu step name: the Skill row's own name (`skill-werk-deploy-werk`),
+/// never one chorus-make makes up (Jeff via Silas 2026-10-09 20:34). dagu's
+/// `name` takes hyphens; its `id` does not, so no id is written. The verb
+/// alone is not unique (werk-deploy runs three skills).
+pub fn step_name(r: &Row) -> String {
+    r.skill.rsplit(['#', '/']).next().unwrap_or(&r.skill).to_string()
 }
 
 fn quote(s: &str) -> String {
@@ -117,16 +115,32 @@ pub fn generate(pipeline: &str, rows: &[Row]) -> Result<String, Vec<String>> {
     let mut out = String::from(HEADER);
     out.push_str(&format!("description: {}\n", quote(&format!("werk v2 — pipeline {pipeline}, generated from the graph"))));
     out.push_str("params:\n  - CARD: \"\"\n  - ROLE: \"\"\n");
+    // dagu hands a step only a short list of its own env (#4474 runs 1-2:
+    // "CHORUS_HOME not set", then "CHORUS_WERK_BASE not set"). The machine's
+    // paths pass through from the scheduler's env (launchd unit, or the shell
+    // that ran `dagu start`), and dagu's run id is the trace, so every verb's
+    // spine events name the run. No DEPLOY_ROLE: it is a self-declared
+    // identity (ADR-052 retires it), and a run param must not assert one.
+    out.push_str(concat!(
+        "env:\n",
+        "  - CHORUS_HOME: ${CHORUS_HOME}\n",
+        "  - CHORUS_WERK_BASE: ${CHORUS_WERK_BASE}\n",
+        "  - CHORUS_BIN: ${CHORUS_BIN}\n",
+        "  - CHORUS_TRACE_ID: ${DAG_RUN_ID}\n",
+    ));
     out.push_str("steps:\n");
     let mut prev: Option<String> = None;
     for r in &rows {
-        let id = step_id(r);
-        out.push_str(&format!("  - id: {id}\n"));
-        out.push_str(&format!("    description: {}\n", quote(&format!("{} · {}", r.step, r.label))));
+        let id = step_name(r);
+        out.push_str(&format!("  - name: {id}\n"));
+        out.push_str(&format!("    description: {}\n", quote(&r.label)));
         if let Some(p) = &prev {
             out.push_str(&format!("    depends: [{p}]\n"));
         }
         if r.executor == "human" {
+            // dagu 2.18 refuses a human.task with no id, and an id takes no
+            // hyphens: the same row name, '-' as '_'.
+            out.push_str(&format!("    id: {}\n", id.replace('-', "_")));
             out.push_str("    action: human.task\n    with:\n");
             out.push_str(&format!("      prompt: {}\n", quote(&format!("{} for #${{CARD}}?", r.label))));
         } else {

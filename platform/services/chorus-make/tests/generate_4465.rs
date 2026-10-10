@@ -28,14 +28,20 @@ fn the_same_rows_give_byte_identical_output_in_any_row_order() {
 #[test]
 fn steps_run_in_order_and_the_go_waits_between_demo_and_land() {
     let out = generate("cicd", &cicd()).unwrap();
-    let ids: Vec<&str> = out.lines().filter_map(|l| l.strip_prefix("  - id: ")).collect();
-    assert_eq!(ids.first(), Some(&"commit_werk_commit"));
-    assert_eq!(ids.last(), Some(&"land_werk_accept"));
-    let go = ids.iter().position(|i| *i == "demo_go").expect("the go is a step");
-    assert_eq!(ids[go - 1], "demo_demo");
-    assert_eq!(ids[go + 1], "land_werk_merge");
-    assert!(out.contains("  - id: demo_go\n    description: \"demo · Jeff's go\"\n    depends: [demo_demo]\n    action: human.task\n"));
+    let ids: Vec<&str> = out.lines().filter_map(|l| l.strip_prefix("  - name: ")).collect();
+    assert_eq!(ids.first(), Some(&"skill-werk-commit"));
+    assert_eq!(ids.last(), Some(&"skill-werk-accept"));
+    let go = ids.iter().position(|i| *i == "skill-go").expect("the go is a step");
+    assert_eq!(ids[go - 1], "skill-demo");
+    assert_eq!(ids[go + 1], "skill-werk-merge");
+    assert!(out.contains("  - name: skill-go\n    description: \"Jeff's go\"\n    depends: [skill-demo]\n    id: skill_go\n    action: human.task\n"));
     assert!(out.starts_with(chorus_make::HEADER));
+    // #4474 run 1: dagu does not pass CHORUS_HOME through; every verb refused
+    for v in ["CHORUS_HOME: ${CHORUS_HOME}", "CHORUS_WERK_BASE: ${CHORUS_WERK_BASE}"] {
+        assert!(out.contains(&format!("  - {v}\n")), "workflow env is missing {v}");
+    }
+    // Jeff 21:06: DEPLOY_ROLE is identity; a run param must never assert it
+    assert!(!out.contains("DEPLOY_ROLE") && !out.contains("CHORUS_ROLE"), "the workflow claims an identity");
 }
 
 #[test]
@@ -69,15 +75,28 @@ fn negative_proof_two_skills_at_one_order_and_no_rows_are_refused() {
     assert!(generate("cicd", &[]).is_err(), "no rows is refused, never an empty workflow");
 }
 
+// Jeff via Silas 2026-10-09 20:34: the names in the workflow are the model's.
 #[test]
-fn every_step_id_is_one_dagu_accepts() {
-    // dagu 2.18: ^[a-zA-Z][a-zA-Z0-9_]*$ — the first generated file used '-'
-    // and dagu refused all 13 steps.
-    let out = generate("cicd", &cicd()).unwrap();
-    for id in out.lines().filter_map(|l| l.strip_prefix("  - id: ")) {
-        let ok = id.starts_with(|c: char| c.is_ascii_alphabetic()) && id.chars().all(|c| c.is_ascii_alphanumeric() || c == '_');
-        assert!(ok, "dagu would refuse step id {id}");
+fn every_step_is_named_by_its_skill_row_and_nothing_is_minted() {
+    let rows = cicd();
+    let out = generate("cicd", &rows).unwrap();
+    let names: Vec<&str> = out.lines().filter_map(|l| l.strip_prefix("  - name: ")).collect();
+    let skills: Vec<&str> = rows.iter().map(|r| r.skill.as_str()).collect();
+    assert_eq!(names.len(), skills.len());
+    for n in &names {
+        assert!(skills.contains(n), "{n} is not a Skill row name");
     }
+    // the one id dagu demands (a human.task) is the row name with '_' for '-'
+    let ids: Vec<&str> = out.lines().filter_map(|l| l.strip_prefix("    id: ")).collect();
+    assert_eq!(ids, vec!["skill_go"]);
+    assert!(out.contains("    description: \"werk-deploy --target werk\"\n"), "description is the row's label");
+}
+
+#[test]
+fn negative_proof_one_skill_called_twice_is_refused() {
+    let mut rows = cicd();
+    rows[4].skill = rows[3].skill.clone(); // review now calls skill-werk-test again
+    assert!(check(&rows).iter().any(|e| e.contains("skill-werk-test: called twice")), "{:?}", check(&rows));
 }
 
 #[test]
