@@ -16,8 +16,12 @@ pub const SETTINGS: &[(&str, &str)] = &[
 /// Declared settings and their defaults (see settings.rs for the lookup order).
 pub const SETTINGS: &[(&str, &str)] = &[
 <<<<<<< HEAD
+<<<<<<< HEAD
 >>>>>>> 3795eee59 (wren: #4490 — athena-gen generate writes the pulse-api crate (RowStore trait, remote SPARQL backend, settings env then file then default, versioned envelope); pulse-api compiles and serves the 5 pulse collections read-only on :3392; emitter tests incl. same-model-same-bytes and a model-change negative proof)
 =======
+=======
+    ("events.command", ""),
+>>>>>>> 9ac820daf (wren: #4490 — pulse-api writes (create, replace, patch, delete) with the door rules generated in: shape checks (off-model, sh:in, one-value, required), links as IRIs with dangling targets refused, owner or Write Permission, prior version kept before every change, owl.write event per outcome; live: wren's RoleState created and patched, v1 reads it back, version-rolestates-wren-1 kept)
     ("identity.issuer", "https://id.lightlifeurbangardens.com/"),
 >>>>>>> 4c9755287 (wren: #4490 — pulse-api writes require a signed caller: ES256 token through the shared chorus-oidc verifier, principal and grants read from the model, typed refusals (no-token 401, token-invalid 401, identity-unreachable 503, not-a-principal 403); live check: wren's token resolves to principal wren)
     ("server.bind", "127.0.0.1:3392"),
@@ -31,9 +35,13 @@ pub struct FieldDef {
     pub name: &'static str,
     pub link: bool,
 <<<<<<< HEAD
+<<<<<<< HEAD
     pub datatype: &'static str,
 =======
 >>>>>>> 3795eee59 (wren: #4490 — athena-gen generate writes the pulse-api crate (RowStore trait, remote SPARQL backend, settings env then file then default, versioned envelope); pulse-api compiles and serves the 5 pulse collections read-only on :3392; emitter tests incl. same-model-same-bytes and a model-change negative proof)
+=======
+    pub datatype: &'static str,
+>>>>>>> 9ac820daf (wren: #4490 — pulse-api writes (create, replace, patch, delete) with the door rules generated in: shape checks (off-model, sh:in, one-value, required), links as IRIs with dangling targets refused, owner or Write Permission, prior version kept before every change, owl.write event per outcome; live: wren's RoleState created and patched, v1 reads it back, version-rolestates-wren-1 kept)
     pub required: bool,
     pub many: bool,
     pub allowed: &'static [&'static str],
@@ -44,9 +52,13 @@ pub struct ClassDef {
     pub name: &'static str,
     pub kind: &'static str,
 <<<<<<< HEAD
+<<<<<<< HEAD
     pub plural: &'static str,
 =======
 >>>>>>> 3795eee59 (wren: #4490 — athena-gen generate writes the pulse-api crate (RowStore trait, remote SPARQL backend, settings env then file then default, versioned envelope); pulse-api compiles and serves the 5 pulse collections read-only on :3392; emitter tests incl. same-model-same-bytes and a model-change negative proof)
+=======
+    pub plural: &'static str,
+>>>>>>> 9ac820daf (wren: #4490 — pulse-api writes (create, replace, patch, delete) with the door rules generated in: shape checks (off-model, sh:in, one-value, required), links as IRIs with dangling targets refused, owner or Write Permission, prior version kept before every change, owl.write event per outcome; live: wren's RoleState created and patched, v1 reads it back, version-rolestates-wren-1 kept)
     pub segment: &'static str,
     pub graph: &'static str,
     pub fields: &'static [FieldDef],
@@ -54,6 +66,7 @@ pub struct ClassDef {
 
 pub const CLASSES: &[ClassDef] = &[
     ClassDef {
+<<<<<<< HEAD
 <<<<<<< HEAD
         domain: "awareness", name: "Heartbeat", kind: "heartbeat", plural: "heartbeats", segment: "heartbeats", graph: "urn:chorus:domains:awareness",
         fields: &[
@@ -113,54 +126,64 @@ pub const CLASSES: &[ClassDef] = &[
             FieldDef { name: "streamTs", link: false, datatype: "string", required: true, many: false, allowed: &[] },
 =======
         domain: "awareness", name: "Heartbeat", kind: "heartbeat", segment: "heartbeats", graph: "urn:chorus:domains:awareness",
+=======
+        domain: "awareness", name: "Heartbeat", kind: "heartbeat", plural: "heartbeats", segment: "heartbeats", graph: "urn:chorus:domains:awareness",
+>>>>>>> 9ac820daf (wren: #4490 — pulse-api writes (create, replace, patch, delete) with the door rules generated in: shape checks (off-model, sh:in, one-value, required), links as IRIs with dangling targets refused, owner or Write Permission, prior version kept before every change, owl.write event per outcome; live: wren's RoleState created and patched, v1 reads it back, version-rolestates-wren-1 kept)
         fields: &[
-            FieldDef { name: "aboutPrincipal", link: true, required: true, many: false, allowed: &[] },
-            FieldDef { name: "currentTool", link: false, required: false, many: false, allowed: &[] },
-            FieldDef { name: "inSession", link: true, required: true, many: false, allowed: &[] },
-            FieldDef { name: "observedAt", link: false, required: true, many: false, allowed: &[] },
-            FieldDef { name: "ownedBy", link: true, required: true, many: false, allowed: &[] },
-            FieldDef { name: "phase", link: false, required: false, many: false, allowed: &[] },
+            FieldDef { name: "aboutPrincipal", link: true, datatype: "", required: true, many: false, allowed: &[] },
+            FieldDef { name: "currentTool", link: false, datatype: "string", required: false, many: false, allowed: &[] },
+            FieldDef { name: "inSession", link: true, datatype: "", required: true, many: false, allowed: &[] },
+            FieldDef { name: "observedAt", link: false, datatype: "dateTime", required: true, many: false, allowed: &[] },
+            FieldDef { name: "ownedBy", link: true, datatype: "", required: true, many: false, allowed: &[] },
+            FieldDef { name: "phase", link: false, datatype: "string", required: false, many: false, allowed: &[] },
         ],
     },
     ClassDef {
-        domain: "awareness", name: "Reading", kind: "reading", segment: "readings", graph: "urn:chorus:domains:awareness",
+        domain: "awareness", name: "Reading", kind: "reading", plural: "readings", segment: "readings", graph: "urn:chorus:domains:awareness",
         fields: &[
-            FieldDef { name: "observedAt", link: false, required: true, many: false, allowed: &[] },
-            FieldDef { name: "ownedBy", link: true, required: true, many: false, allowed: &[] },
-            FieldDef { name: "readFrom", link: false, required: true, many: false, allowed: &[] },
-            FieldDef { name: "section", link: false, required: true, many: false, allowed: &["roles", "board", "health", "alerts", "events", "index_freshness", "nudges"] },
+            FieldDef { name: "observedAt", link: false, datatype: "dateTime", required: true, many: false, allowed: &[] },
+            FieldDef { name: "ownedBy", link: true, datatype: "", required: true, many: false, allowed: &[] },
+            FieldDef { name: "readFrom", link: false, datatype: "string", required: true, many: false, allowed: &[] },
+            FieldDef { name: "section", link: false, datatype: "string", required: true, many: false, allowed: &["roles", "board", "health", "alerts", "events", "index_freshness", "nudges"] },
         ],
     },
     ClassDef {
-        domain: "awareness", name: "RoleState", kind: "role-state", segment: "rolestates", graph: "urn:chorus:domains:awareness",
+        domain: "awareness", name: "RoleState", kind: "role-state", plural: "rolestates", segment: "rolestates", graph: "urn:chorus:domains:awareness",
         fields: &[
-            FieldDef { name: "aboutPrincipal", link: true, required: true, many: false, allowed: &[] },
-            FieldDef { name: "currentCard", link: true, required: false, many: false, allowed: &[] },
-            FieldDef { name: "observedAt", link: false, required: true, many: false, allowed: &[] },
-            FieldDef { name: "ownedBy", link: true, required: true, many: false, allowed: &[] },
-            FieldDef { name: "stateSource", link: false, required: true, many: false, allowed: &["declared", "observed"] },
-            FieldDef { name: "stateValue", link: false, required: true, many: false, allowed: &["idle", "building", "waiting", "blocked", "observing", "unmeasured"] },
+            FieldDef { name: "aboutPrincipal", link: true, datatype: "", required: true, many: false, allowed: &[] },
+            FieldDef { name: "currentCard", link: true, datatype: "", required: false, many: false, allowed: &[] },
+            FieldDef { name: "observedAt", link: false, datatype: "dateTime", required: true, many: false, allowed: &[] },
+            FieldDef { name: "ownedBy", link: true, datatype: "", required: true, many: false, allowed: &[] },
+            FieldDef { name: "stateSource", link: false, datatype: "string", required: true, many: false, allowed: &["declared", "observed"] },
+            FieldDef { name: "stateValue", link: false, datatype: "string", required: true, many: false, allowed: &["idle", "building", "waiting", "blocked", "observing", "unmeasured"] },
         ],
     },
     ClassDef {
-        domain: "awareness", name: "WaitingOn", kind: "waiting-on", segment: "waitingons", graph: "urn:chorus:domains:awareness",
+        domain: "awareness", name: "WaitingOn", kind: "waiting-on", plural: "waitingons", segment: "waitingons", graph: "urn:chorus:domains:awareness",
         fields: &[
-            FieldDef { name: "observedAt", link: false, required: true, many: false, allowed: &[] },
-            FieldDef { name: "ownedBy", link: true, required: true, many: false, allowed: &[] },
-            FieldDef { name: "stateSource", link: false, required: true, many: false, allowed: &["declared", "observed"] },
-            FieldDef { name: "waitReason", link: false, required: true, many: false, allowed: &[] },
-            FieldDef { name: "waiter", link: true, required: true, many: false, allowed: &[] },
-            FieldDef { name: "waitsFor", link: true, required: true, many: false, allowed: &[] },
+            FieldDef { name: "observedAt", link: false, datatype: "dateTime", required: true, many: false, allowed: &[] },
+            FieldDef { name: "ownedBy", link: true, datatype: "", required: true, many: false, allowed: &[] },
+            FieldDef { name: "stateSource", link: false, datatype: "string", required: true, many: false, allowed: &["declared", "observed"] },
+            FieldDef { name: "waitReason", link: false, datatype: "string", required: true, many: false, allowed: &[] },
+            FieldDef { name: "waiter", link: true, datatype: "", required: true, many: false, allowed: &[] },
+            FieldDef { name: "waitsFor", link: true, datatype: "", required: true, many: false, allowed: &[] },
         ],
     },
     ClassDef {
-        domain: "streams", name: "StreamEvent", kind: "stream-event", segment: "events", graph: "urn:chorus:domains:streams",
+        domain: "streams", name: "StreamEvent", kind: "stream-event", plural: "streamevents", segment: "events", graph: "urn:chorus:domains:streams",
         fields: &[
+<<<<<<< HEAD
             FieldDef { name: "streamPhase", link: false, required: true, many: false, allowed: &[] },
             FieldDef { name: "streamRole", link: false, required: true, many: false, allowed: &[] },
             FieldDef { name: "streamTool", link: false, required: true, many: false, allowed: &[] },
             FieldDef { name: "streamTs", link: false, required: true, many: false, allowed: &[] },
 >>>>>>> 3795eee59 (wren: #4490 — athena-gen generate writes the pulse-api crate (RowStore trait, remote SPARQL backend, settings env then file then default, versioned envelope); pulse-api compiles and serves the 5 pulse collections read-only on :3392; emitter tests incl. same-model-same-bytes and a model-change negative proof)
+=======
+            FieldDef { name: "streamPhase", link: false, datatype: "string", required: true, many: false, allowed: &[] },
+            FieldDef { name: "streamRole", link: false, datatype: "string", required: true, many: false, allowed: &[] },
+            FieldDef { name: "streamTool", link: false, datatype: "string", required: true, many: false, allowed: &[] },
+            FieldDef { name: "streamTs", link: false, datatype: "string", required: true, many: false, allowed: &[] },
+>>>>>>> 9ac820daf (wren: #4490 — pulse-api writes (create, replace, patch, delete) with the door rules generated in: shape checks (off-model, sh:in, one-value, required), links as IRIs with dangling targets refused, owner or Write Permission, prior version kept before every change, owl.write event per outcome; live: wren's RoleState created and patched, v1 reads it back, version-rolestates-wren-1 kept)
         ],
     },
 ];

@@ -8,6 +8,7 @@
 mod auth;
 mod model;
 mod rules;
+<<<<<<< HEAD
 mod settings;
 mod store;
 #[cfg(test)]
@@ -21,12 +22,18 @@ use std::io::Read;
 mod auth;
 >>>>>>> 4c9755287 (wren: #4490 — pulse-api writes require a signed caller: ES256 token through the shared chorus-oidc verifier, principal and grants read from the model, typed refusals (no-token 401, token-invalid 401, identity-unreachable 503, not-a-principal 403); live check: wren's token resolves to principal wren)
 mod model;
+=======
+>>>>>>> 9ac820daf (wren: #4490 — pulse-api writes (create, replace, patch, delete) with the door rules generated in: shape checks (off-model, sh:in, one-value, required), links as IRIs with dangling targets refused, owner or Write Permission, prior version kept before every change, owl.write event per outcome; live: wren's RoleState created and patched, v1 reads it back, version-rolestates-wren-1 kept)
 mod settings;
 mod store;
 
 use model::{ClassDef, API_VERSION, CLASSES, CRATE_VERSION, MODEL_VERSION, PRODUCT};
 use serde_json::{json, Value};
+<<<<<<< HEAD
 >>>>>>> 3795eee59 (wren: #4490 — athena-gen generate writes the pulse-api crate (RowStore trait, remote SPARQL backend, settings env then file then default, versioned envelope); pulse-api compiles and serves the 5 pulse collections read-only on :3392; emitter tests incl. same-model-same-bytes and a model-change negative proof)
+=======
+use std::io::Read;
+>>>>>>> 9ac820daf (wren: #4490 — pulse-api writes (create, replace, patch, delete) with the door rules generated in: shape checks (off-model, sh:in, one-value, required), links as IRIs with dangling targets refused, owner or Write Permission, prior version kept before every change, owl.write event per outcome; live: wren's RoleState created and patched, v1 reads it back, version-rolestates-wren-1 kept)
 use store::RowStore;
 
 fn envelope(class: &ClassDef, path: &str, data: Value) -> Value {
@@ -52,6 +59,9 @@ fn query_param(query: &str, key: &str) -> Option<usize> {
 
 <<<<<<< HEAD
 <<<<<<< HEAD
+<<<<<<< HEAD
+=======
+>>>>>>> 9ac820daf (wren: #4490 — pulse-api writes (create, replace, patch, delete) with the door rules generated in: shape checks (off-model, sh:in, one-value, required), links as IRIs with dangling targets refused, owner or Write Permission, prior version kept before every change, owl.write event per outcome; live: wren's RoleState created and patched, v1 reads it back, version-rolestates-wren-1 kept)
 pub struct Ctx<'a> {
     pub store: &'a dyn RowStore,
     pub who: &'a auth::Auth,
@@ -64,7 +74,11 @@ fn refused(r: rules::Refusal) -> (u16, Value) {
 
 /// A write, after the caller is known: shape check → owner or Permission → keep the
 /// displaced version → one atomic store write → event. Nothing is written on a refusal.
+<<<<<<< HEAD
 pub fn write(ctx: &Ctx, caller: &auth::Caller, method: &str, class: &ClassDef, name: Option<&str>, body: &str) -> (u16, Value) {
+=======
+fn write(ctx: &Ctx, caller: &auth::Caller, method: &str, class: &ClassDef, name: Option<&str>, body: &str) -> (u16, Value) {
+>>>>>>> 9ac820daf (wren: #4490 — pulse-api writes (create, replace, patch, delete) with the door rules generated in: shape checks (off-model, sh:in, one-value, required), links as IRIs with dangling targets refused, owner or Write Permission, prior version kept before every change, owl.write event per outcome; live: wren's RoleState created and patched, v1 reads it back, version-rolestates-wren-1 kept)
     let parsed: Value = if body.trim().is_empty() && method == "DELETE" { json!({}) } else {
         match serde_json::from_str(body) { Ok(v) => v, Err(e) => return error(400, "bad-json", &e.to_string()) }
     };
@@ -121,12 +135,15 @@ pub fn write(ctx: &Ctx, caller: &auth::Caller, method: &str, class: &ClassDef, n
 
 pub fn route(ctx: &Ctx, method: &str, url: &str, authorization: Option<&str>, body: &str) -> (u16, Value) {
     let (store, who) = (ctx.store, ctx.who);
+<<<<<<< HEAD
 =======
 pub fn route(store: &dyn RowStore, method: &str, url: &str) -> (u16, Value) {
 >>>>>>> 3795eee59 (wren: #4490 — athena-gen generate writes the pulse-api crate (RowStore trait, remote SPARQL backend, settings env then file then default, versioned envelope); pulse-api compiles and serves the 5 pulse collections read-only on :3392; emitter tests incl. same-model-same-bytes and a model-change negative proof)
 =======
 pub fn route(store: &dyn RowStore, who: &auth::Auth, method: &str, url: &str, authorization: Option<&str>) -> (u16, Value) {
 >>>>>>> 4c9755287 (wren: #4490 — pulse-api writes require a signed caller: ES256 token through the shared chorus-oidc verifier, principal and grants read from the model, typed refusals (no-token 401, token-invalid 401, identity-unreachable 503, not-a-principal 403); live check: wren's token resolves to principal wren)
+=======
+>>>>>>> 9ac820daf (wren: #4490 — pulse-api writes (create, replace, patch, delete) with the door rules generated in: shape checks (off-model, sh:in, one-value, required), links as IRIs with dangling targets refused, owner or Write Permission, prior version kept before every change, owl.write event per outcome; live: wren's RoleState created and patched, v1 reads it back, version-rolestates-wren-1 kept)
     let (path, query) = url.split_once('?').unwrap_or((url, ""));
     if path == "/health" {
         return (200, json!({ "status": "ok", "product": PRODUCT, "productVersion": CRATE_VERSION, "apiVersion": API_VERSION }));
@@ -152,6 +169,7 @@ pub fn route(store: &dyn RowStore, who: &auth::Auth, method: &str, url: &str, au
             }
         };
 <<<<<<< HEAD
+<<<<<<< HEAD
         let name = if parts.len() == 4 { Some(parts[3]) } else if parts.len() == 3 { None } else { return error(404, "unknown-route", "not a route of this API") };
         return write(ctx, &caller, method, class, name, body);
 =======
@@ -160,6 +178,10 @@ pub fn route(store: &dyn RowStore, who: &auth::Auth, method: &str, url: &str, au
 =======
         return error(501, "not-yet", &format!("{} is signed in; writes arrive in the next step of #4490", caller.principal));
 >>>>>>> 4c9755287 (wren: #4490 — pulse-api writes require a signed caller: ES256 token through the shared chorus-oidc verifier, principal and grants read from the model, typed refusals (no-token 401, token-invalid 401, identity-unreachable 503, not-a-principal 403); live check: wren's token resolves to principal wren)
+=======
+        let name = if parts.len() == 4 { Some(parts[3]) } else if parts.len() == 3 { None } else { return error(404, "unknown-route", "not a route of this API") };
+        return write(ctx, &caller, method, class, name, body);
+>>>>>>> 9ac820daf (wren: #4490 — pulse-api writes (create, replace, patch, delete) with the door rules generated in: shape checks (off-model, sh:in, one-value, required), links as IRIs with dangling targets refused, owner or Write Permission, prior version kept before every change, owl.write event per outcome; live: wren's RoleState created and patched, v1 reads it back, version-rolestates-wren-1 kept)
     }
     match parts.len() {
         3 => {
@@ -191,12 +213,15 @@ fn main() {
     let (endpoint, creds) = (s.store_endpoint.clone(), s.store_auth());
     let who = auth::build(&s.identity_issuer, move |q| store::sparql_body(&endpoint, &creds, q).ok());
     let ctx = Ctx { store: store.as_ref(), who: &who, events: s.events_command.clone() };
+<<<<<<< HEAD
 =======
 >>>>>>> 3795eee59 (wren: #4490 — athena-gen generate writes the pulse-api crate (RowStore trait, remote SPARQL backend, settings env then file then default, versioned envelope); pulse-api compiles and serves the 5 pulse collections read-only on :3392; emitter tests incl. same-model-same-bytes and a model-change negative proof)
 =======
     let (endpoint, creds) = (s.store_endpoint.clone(), s.store_auth());
     let who = auth::build(&s.identity_issuer, move |q| store::sparql_body(&endpoint, &creds, q).ok());
 >>>>>>> 4c9755287 (wren: #4490 — pulse-api writes require a signed caller: ES256 token through the shared chorus-oidc verifier, principal and grants read from the model, typed refusals (no-token 401, token-invalid 401, identity-unreachable 503, not-a-principal 403); live check: wren's token resolves to principal wren)
+=======
+>>>>>>> 9ac820daf (wren: #4490 — pulse-api writes (create, replace, patch, delete) with the door rules generated in: shape checks (off-model, sh:in, one-value, required), links as IRIs with dangling targets refused, owner or Write Permission, prior version kept before every change, owl.write event per outcome; live: wren's RoleState created and patched, v1 reads it back, version-rolestates-wren-1 kept)
     let server = match tiny_http::Server::http(&s.bind) {
         Ok(sv) => sv,
         Err(e) => {
@@ -205,6 +230,7 @@ fn main() {
         }
     };
     eprintln!("{PRODUCT}-api {CRATE_VERSION} serving {} classes on {}", CLASSES.len(), s.bind);
+<<<<<<< HEAD
 <<<<<<< HEAD
     for mut req in server.incoming_requests() {
         let mut body = String::new();
@@ -215,11 +241,20 @@ fn main() {
         let resp = tiny_http::Response::from_string(out.to_string()).with_status_code(code).with_header(header);
 =======
     for req in server.incoming_requests() {
+=======
+    for mut req in server.incoming_requests() {
+        let mut body = String::new();
+        let _ = std::io::Read::take(req.as_reader(), 1 << 20).read_to_string(&mut body);
+>>>>>>> 9ac820daf (wren: #4490 — pulse-api writes (create, replace, patch, delete) with the door rules generated in: shape checks (off-model, sh:in, one-value, required), links as IRIs with dangling targets refused, owner or Write Permission, prior version kept before every change, owl.write event per outcome; live: wren's RoleState created and patched, v1 reads it back, version-rolestates-wren-1 kept)
         let authorization = req.headers().iter().find(|h| h.field.equiv("Authorization")).map(|h| h.value.as_str().to_string());
-        let (code, body) = route(store.as_ref(), &who, req.method().as_str(), req.url(), authorization.as_deref());
+        let (code, out) = route(&ctx, req.method().as_str(), req.url(), authorization.as_deref(), &body);
         let header = tiny_http::Header::from_bytes(&b"Content-Type"[..], &b"application/json"[..]).expect("static header");
+<<<<<<< HEAD
         let resp = tiny_http::Response::from_string(body.to_string()).with_status_code(code).with_header(header);
 >>>>>>> 3795eee59 (wren: #4490 — athena-gen generate writes the pulse-api crate (RowStore trait, remote SPARQL backend, settings env then file then default, versioned envelope); pulse-api compiles and serves the 5 pulse collections read-only on :3392; emitter tests incl. same-model-same-bytes and a model-change negative proof)
+=======
+        let resp = tiny_http::Response::from_string(out.to_string()).with_status_code(code).with_header(header);
+>>>>>>> 9ac820daf (wren: #4490 — pulse-api writes (create, replace, patch, delete) with the door rules generated in: shape checks (off-model, sh:in, one-value, required), links as IRIs with dangling targets refused, owner or Write Permission, prior version kept before every change, owl.write event per outcome; live: wren's RoleState created and patched, v1 reads it back, version-rolestates-wren-1 kept)
         let _ = req.respond(resp);
     }
 }

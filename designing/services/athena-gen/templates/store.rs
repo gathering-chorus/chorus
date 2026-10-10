@@ -16,6 +16,9 @@ pub trait RowStore: Send + Sync {
     /// One row by name, or None.
     fn get(&self, class: &ClassDef, name: &str) -> Result<Option<Row>, String>;
 <<<<<<< HEAD
+<<<<<<< HEAD
+=======
+>>>>>>> 9ac820daf (wren: #4490 — pulse-api writes (create, replace, patch, delete) with the door rules generated in: shape checks (off-model, sh:in, one-value, required), links as IRIs with dangling targets refused, owner or Write Permission, prior version kept before every change, owl.write event per outcome; live: wren's RoleState created and patched, v1 reads it back, version-rolestates-wren-1 kept)
     /// Is there any row with this IRI, in any graph (a link's target check)?
     fn exists(&self, iri: &str) -> Result<bool, String>;
     /// How many versions of a row are kept.
@@ -64,8 +67,11 @@ pub fn write_update(graph: &str, subject: &str, type_of: Option<&str>, fields: &
         ops.push(format!("INSERT DATA {{ GRAPH <{graph}> {{ {} }} }}", inserts.join(" ")));
     }
     ops.join(" ;\n")
+<<<<<<< HEAD
 =======
 >>>>>>> 3795eee59 (wren: #4490 — athena-gen generate writes the pulse-api crate (RowStore trait, remote SPARQL backend, settings env then file then default, versioned envelope); pulse-api compiles and serves the 5 pulse collections read-only on :3392; emitter tests incl. same-model-same-bytes and a model-change negative proof)
+=======
+>>>>>>> 9ac820daf (wren: #4490 — pulse-api writes (create, replace, patch, delete) with the door rules generated in: shape checks (off-model, sh:in, one-value, required), links as IRIs with dangling targets refused, owner or Write Permission, prior version kept before every change, owl.write event per outcome; live: wren's RoleState created and patched, v1 reads it back, version-rolestates-wren-1 kept)
 }
 
 /// A row's IRI from its name: `<kind>-<name>`, where kind is the class in kebab case
@@ -127,9 +133,12 @@ pub fn sparql_update(endpoint: &str, auth: &Option<(String, String)>, update: &s
     req.send_form(&[("update", update)]).map(|_| ()).map_err(|e| format!("store: {e}"))
 }
 
+<<<<<<< HEAD
 =======
 /// One SELECT against a remote SPARQL endpoint, as the raw SPARQL-JSON body.
 >>>>>>> 4c9755287 (wren: #4490 — pulse-api writes require a signed caller: ES256 token through the shared chorus-oidc verifier, principal and grants read from the model, typed refusals (no-token 401, token-invalid 401, identity-unreachable 503, not-a-principal 403); live check: wren's token resolves to principal wren)
+=======
+>>>>>>> 9ac820daf (wren: #4490 — pulse-api writes (create, replace, patch, delete) with the door rules generated in: shape checks (off-model, sh:in, one-value, required), links as IRIs with dangling targets refused, owner or Write Permission, prior version kept before every change, owl.write event per outcome; live: wren's RoleState created and patched, v1 reads it back, version-rolestates-wren-1 kept)
 pub fn sparql_body(endpoint: &str, auth: &Option<(String, String)>, query: &str) -> Result<String, String> {
     let mut req = ureq::post(&format!("{}/query", endpoint.trim_end_matches('/')))
         .set("Accept", "application/sparql-results+json");
@@ -231,6 +240,9 @@ impl RowStore for Sparql {
         Ok(self.rows(class, &[s])?.into_iter().next())
     }
 <<<<<<< HEAD
+<<<<<<< HEAD
+=======
+>>>>>>> 9ac820daf (wren: #4490 — pulse-api writes (create, replace, patch, delete) with the door rules generated in: shape checks (off-model, sh:in, one-value, required), links as IRIs with dangling targets refused, owner or Write Permission, prior version kept before every change, owl.write event per outcome; live: wren's RoleState created and patched, v1 reads it back, version-rolestates-wren-1 kept)
 
     fn exists(&self, iri: &str) -> Result<bool, String> {
         Ok(!self.select(&format!("SELECT ?p WHERE {{ GRAPH ?g {{ <{iri}> ?p ?o }} }} LIMIT 1"))?.is_empty())
@@ -250,6 +262,9 @@ impl RowStore for Sparql {
     fn delete(&self, graph: &str, subject: &str) -> Result<(), String> {
         sparql_update(&self.endpoint, &self.auth, &format!("DELETE WHERE {{ GRAPH <{graph}> {{ <{subject}> ?p ?o }} }}"))
     }
+<<<<<<< HEAD
 =======
 >>>>>>> 3795eee59 (wren: #4490 — athena-gen generate writes the pulse-api crate (RowStore trait, remote SPARQL backend, settings env then file then default, versioned envelope); pulse-api compiles and serves the 5 pulse collections read-only on :3392; emitter tests incl. same-model-same-bytes and a model-change negative proof)
+=======
+>>>>>>> 9ac820daf (wren: #4490 — pulse-api writes (create, replace, patch, delete) with the door rules generated in: shape checks (off-model, sh:in, one-value, required), links as IRIs with dangling targets refused, owner or Write Permission, prior version kept before every change, owl.write event per outcome; live: wren's RoleState created and patched, v1 reads it back, version-rolestates-wren-1 kept)
 }
