@@ -7,7 +7,7 @@ pub const API_VERSION: &str = "v1";
 pub const MODEL_VERSION: &str = "1.30.0";
 pub const NS: &str = "https://jeffbridwell.com/chorus#";
 
-/// Declared settings and their defaults (see settings.rs for the lookup order).
+/// Declared settings and their defaults, from the product's Property rows (see settings.rs for the lookup order).
 pub const SETTINGS: &[(&str, &str)] = &[
     ("events.command", ""),
     ("identity.issuer", "https://id.lightlifeurbangardens.com/"),

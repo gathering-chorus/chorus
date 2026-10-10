@@ -1,6 +1,6 @@
 // @domain: domains
 //! #4490 — the generator reads one product's slice of the model from TTL alone.
-use athena_gen::model::{load, product, segment, Kind};
+use athena_gen::model::{load, missing_settings, product, segment, settings, Kind};
 use std::path::PathBuf;
 
 const FIXTURE: &str = r#"
@@ -87,4 +87,20 @@ c:RoleStateShape sh:targetClass c:RoleState ; sh:property [ sh:path c:stateValue
     let p = product(&store, "pulse").unwrap();
     let names: Vec<_> = p.domains[0].classes[0].fields.iter().map(|f| f.name.as_str()).collect();
     assert_eq!(names, ["comment", "stateValue"], "the parent's field is served too");
+}
+
+#[test]
+fn settings_come_from_the_products_property_rows() {
+    let ttl = r#"
+@prefix c: <https://jeffbridwell.com/chorus#> .
+c:pulse a c:Product ; c:hasProperty c:p1, c:p2 .
+c:p1 c:propertyKey "store.kind" ; c:propertyValue "sparql" .
+c:p2 c:propertyKey "server.bind" ; c:propertyValue "127.0.0.1:3392" .
+"#;
+    let (store, _) = load(&[fixture("settings", ttl)]).unwrap();
+    let s = settings(&store, "pulse").unwrap();
+    assert_eq!(s, [("server.bind".to_string(), "127.0.0.1:3392".to_string()), ("store.kind".into(), "sparql".into())]);
+    // NEGATIVE PROOF: a product missing runtime settings is named, not defaulted
+    let missing = missing_settings(&s);
+    assert!(missing.contains(&"identity.issuer") && missing.contains(&"store.endpoint"), "{missing:?}");
 }

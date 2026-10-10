@@ -3,6 +3,10 @@
 use athena_gen::emit::{crate_files, kebab};
 use athena_gen::model::{Class, Domain, Field, Kind, Product};
 
+fn settings() -> Vec<(String, String)> {
+    vec![("server.bind".into(), "127.0.0.1:3392".into()), ("store.kind".into(), "sparql".into())]
+}
+
 fn pulse() -> Product {
     Product {
         name: "pulse".into(),
@@ -26,12 +30,12 @@ fn pulse() -> Product {
 
 #[test]
 fn same_model_same_bytes() {
-    assert_eq!(crate_files(&pulse(), "1.30.0", 3392), crate_files(&pulse(), "1.30.0", 3392));
+    assert_eq!(crate_files(&pulse(), "1.30.0", &settings()), crate_files(&pulse(), "1.30.0", &settings()));
 }
 
 #[test]
 fn the_crate_carries_the_product_its_routes_and_its_versions() {
-    let files = crate_files(&pulse(), "1.30.0", 3392);
+    let files = crate_files(&pulse(), "1.30.0", &settings());
     assert_eq!(files.keys().collect::<Vec<_>>(), ["Cargo.toml", "src/auth.rs", "src/main.rs", "src/model.rs", "src/requirements_tests.rs", "src/rules.rs", "src/settings.rs", "src/store.rs"]);
     assert!(files["Cargo.toml"].contains("name = \"pulse-api\""));
     let m = &files["src/model.rs"];
@@ -45,7 +49,7 @@ fn the_crate_carries_the_product_its_routes_and_its_versions() {
 fn negative_proof_a_model_change_changes_the_crate() {
     let mut changed = pulse();
     changed.domains[0].classes[0].fields[0].allowed.push("waiting".into());
-    assert_ne!(crate_files(&pulse(), "1.30.0", 3392)["src/model.rs"], crate_files(&changed, "1.30.0", 3392)["src/model.rs"]);
+    assert_ne!(crate_files(&pulse(), "1.30.0", &settings())["src/model.rs"], crate_files(&changed, "1.30.0", &settings())["src/model.rs"]);
 }
 
 #[test]

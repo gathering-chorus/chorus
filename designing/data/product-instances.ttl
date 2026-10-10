@@ -411,6 +411,11 @@ Search queries, file edits, commits, the owner's typing, tool-call logs — retr
     chorus:references """Public design: designing/docs/product-design-pulse.html (the experience, who it is for, product not domain, the bet, what good looks like — 2026-08-25) and service-design-pulse.html (two rhythms, the event catalogue, memory layers, signal hierarchy, the measured state — 2026-03-31, refreshed 2026-08-25).
 Internal notes for the team: chorus-pulse-asis.html and chorus-pulse-tobe.html; pulse-service-design.md (read-through cache with freshness, 2026-04-21); memory-attention-awareness.html, MEMORY_ARCHITECTURE.html. Owner's words: "pulse is a product not a domain" and "derive state from streams" (2026-08-25); the focus problem (2026-03-31). Cards: #4010 (the designs; domain typing retired), #4028 (derived role state), #2442 (alert suppression), #3202 (durable reading), #1887 (the bridge layer), #3613 (identity).
 Chorus · Pulse · rewritten for readers outside the team 2026-09-03""" ;
+    # #4490 — the settings pulse-api reads (rows in roles/wren/ontology/pulse-settings-4490.ttl)
+    chorus:hasProperty chorus:property-pulse-server-bind, chorus:property-pulse-store-kind,
+        chorus:property-pulse-store-endpoint, chorus:property-pulse-store-user-var,
+        chorus:property-pulse-store-password-var, chorus:property-pulse-identity-issuer,
+        chorus:property-pulse-events-command ;
     chorus:partOf chorus:chorus .
 
 chorus:spine a chorus:Product ;

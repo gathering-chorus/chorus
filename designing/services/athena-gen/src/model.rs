@@ -254,3 +254,21 @@ pub fn model_version(store: &Store) -> Result<String, ModelError> {
     Ok(select(store, "SELECT ?v WHERE { c:model c:vocabVersion ?v } LIMIT 1")?
         .into_iter().next().map(|r| r["v"].clone()).unwrap_or_else(|| "unclassified".into()))
 }
+
+/// The settings a product's API reads, from its Property rows (#3433/#3435):
+/// `c:<product> c:hasProperty ?p . ?p c:propertyKey ?k ; c:propertyValue ?v`.
+/// Sorted by key. The runtime reads exactly these; nothing else is a setting.
+pub fn settings(store: &Store, product: &str) -> Result<Vec<(String, String)>, ModelError> {
+    Ok(select(store, &format!(
+        "SELECT ?k ?v WHERE {{ c:{product} c:hasProperty ?p . ?p c:propertyKey ?k ; c:propertyValue ?v }} ORDER BY ?k"))?
+        .into_iter().map(|r| (r["k"].clone(), r.get("v").cloned().unwrap_or_default())).collect())
+}
+
+/// The keys the generated runtime reads. A product whose model declares fewer cannot
+/// be generated: the refusal names the missing key instead of a default being invented.
+pub const RUNTIME_SETTINGS: &[&str] =
+    &["events.command", "identity.issuer", "server.bind", "store.endpoint", "store.kind", "store.password_var", "store.user_var"];
+
+pub fn missing_settings(declared: &[(String, String)]) -> Vec<&'static str> {
+    RUNTIME_SETTINGS.iter().copied().filter(|k| !declared.iter().any(|(d, _)| d == k)).collect()
+}
