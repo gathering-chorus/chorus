@@ -5,11 +5,13 @@
 
 mod auth;
 mod model;
+mod rules;
 mod settings;
 mod store;
 
 use model::{ClassDef, API_VERSION, CLASSES, CRATE_VERSION, MODEL_VERSION, PRODUCT};
 use serde_json::{json, Value};
+use std::io::Read;
 use store::RowStore;
 
 fn envelope(class: &ClassDef, path: &str, data: Value) -> Value {
@@ -33,7 +35,75 @@ fn query_param(query: &str, key: &str) -> Option<usize> {
     query.split('&').find_map(|kv| kv.strip_prefix(&format!("{key}=")).and_then(|v| v.parse().ok()))
 }
 
-pub fn route(store: &dyn RowStore, who: &auth::Auth, method: &str, url: &str, authorization: Option<&str>) -> (u16, Value) {
+pub struct Ctx<'a> {
+    pub store: &'a dyn RowStore,
+    pub who: &'a auth::Auth,
+    pub events: String,
+}
+
+fn refused(r: rules::Refusal) -> (u16, Value) {
+    error(r.code, r.kind, &r.message)
+}
+
+/// A write, after the caller is known: shape check → owner or Permission → keep the
+/// displaced version → one atomic store write → event. Nothing is written on a refusal.
+fn write(ctx: &Ctx, caller: &auth::Caller, method: &str, class: &ClassDef, name: Option<&str>, body: &str) -> (u16, Value) {
+    let parsed: Value = if body.trim().is_empty() && method == "DELETE" { json!({}) } else {
+        match serde_json::from_str(body) { Ok(v) => v, Err(e) => return error(400, "bad-json", &e.to_string()) }
+    };
+    let Some(obj) = parsed.as_object() else { return error(400, "bad-json", "the body must be a JSON object") };
+    let name = match (method, name) {
+        ("POST", None) => match obj.get("name").and_then(Value::as_str) {
+            Some(n) if !n.is_empty() && n.chars().all(|c| c.is_ascii_lowercase() || c.is_ascii_digit() || c == '-') => n.to_string(),
+            Some(n) => return error(422, "bad-name", &format!("'{n}': a name is lowercase letters, digits and -")),
+            None => return error(422, "no-name", "POST needs a name"),
+        },
+        (_, Some(n)) => n.to_string(),
+        _ => return error(405, "method", "this route takes GET and POST"),
+    };
+    let s = rules::subject(class, &name);
+    let prior = match ctx.store.get(class, &name) { Ok(p) => p, Err(m) => return error(503, "store", &m) };
+    let op = match method { "POST" => "create", "PUT" => "replace", "PATCH" => "patch", "DELETE" => "delete", _ => return error(405, "method", "unknown method") };
+    if op == "create" && prior.is_some() { return error(409, "exists", &format!("{name} already exists; PATCH or PUT it")); }
+    if op != "create" && prior.is_none() { return error(404, "not-found", &format!("no {} named {name}; a {op} never creates", class.name)); }
+    if op != "create" {
+        if let Err(r) = rules::may_write(class, prior.as_ref(), caller) { rules::event(&ctx.events, &caller.principal, op, class, &name, r.kind); return refused(r); }
+    } else if let Err(r) = rules::may_write(class, Some(&json!({ "ownedBy": format!("principal-{}", caller.principal) }).as_object().cloned().unwrap_or_default()), caller) {
+        return refused(r);
+    }
+    let mut cells = if op == "delete" { Vec::new() } else {
+        match rules::cells(ctx.store, class, obj, op == "patch") { Ok(c) => c, Err(r) => { rules::event(&ctx.events, &caller.principal, op, class, &name, r.kind); return refused(r); } }
+    };
+    if op == "patch" && cells.is_empty() { return error(422, "empty-patch", "the patch names no field"); }
+    if matches!(op, "create" | "replace") {
+        if let Some(m) = rules::required_missing(class, &cells) { return error(422, "required", &format!("{m} is required")); }
+        if rules::field(class, "ownedBy").is_some() {
+            let owner = prior.as_ref().and_then(|r| r.get("ownedBy")).and_then(Value::as_str).map(String::from).unwrap_or_else(|| format!("principal-{}", caller.principal));
+            cells.push(("ownedBy".into(), vec![rules::Cell::Link(format!("{}{owner}", model::NS))]));
+        }
+        if !cells.iter().any(|(k, _)| k == "label") { cells.push(("label".into(), vec![rules::Cell::Literal(name.clone(), "string")])); }
+    }
+    if let Some(p) = &prior {
+        let n = match ctx.store.version_count(&format!("{}/{name}", class.plural)) { Ok(n) => n + 1, Err(m) => return error(503, "store", &m) };
+        let (vs, vcells) = rules::version_row(class, &name, p, n);
+        if let Err(m) = ctx.store.write("urn:chorus:domains:provenance", &vs, Some("Version"), &vcells, true) {
+            return error(503, "store", &format!("could not keep the prior version, nothing written: {m}"));
+        }
+    }
+    let result = match op {
+        "delete" => ctx.store.delete(class.graph, &s),
+        "create" => ctx.store.write(class.graph, &s, Some(class.name), &cells, false),
+        "replace" => ctx.store.write(class.graph, &s, Some(class.name), &cells, true),
+        _ => ctx.store.write(class.graph, &s, None, &cells, false),
+    };
+    if let Err(m) = result { rules::event(&ctx.events, &caller.principal, op, class, &name, "store-error"); return error(503, "store", &m); }
+    rules::event(&ctx.events, &caller.principal, op, class, &name, "ok");
+    let code = if op == "create" { 201 } else { 200 };
+    (code, json!({ "status": "ok", "op": op, "name": name, "by": caller.principal }))
+}
+
+pub fn route(ctx: &Ctx, method: &str, url: &str, authorization: Option<&str>, body: &str) -> (u16, Value) {
+    let (store, who) = (ctx.store, ctx.who);
     let (path, query) = url.split_once('?').unwrap_or((url, ""));
     if path == "/health" {
         return (200, json!({ "status": "ok", "product": PRODUCT, "productVersion": CRATE_VERSION, "apiVersion": API_VERSION }));
@@ -54,7 +124,8 @@ pub fn route(store: &dyn RowStore, who: &auth::Auth, method: &str, url: &str, au
                 return error(code, kind, &format!("{e:?}"));
             }
         };
-        return error(501, "not-yet", &format!("{} is signed in; writes arrive in the next step of #4490", caller.principal));
+        let name = if parts.len() == 4 { Some(parts[3]) } else if parts.len() == 3 { None } else { return error(404, "unknown-route", "not a route of this API") };
+        return write(ctx, &caller, method, class, name, body);
     }
     match parts.len() {
         3 => {
@@ -83,6 +154,7 @@ fn main() {
     let store = store::open(&s);
     let (endpoint, creds) = (s.store_endpoint.clone(), s.store_auth());
     let who = auth::build(&s.identity_issuer, move |q| store::sparql_body(&endpoint, &creds, q).ok());
+    let ctx = Ctx { store: store.as_ref(), who: &who, events: s.events_command.clone() };
     let server = match tiny_http::Server::http(&s.bind) {
         Ok(sv) => sv,
         Err(e) => {
@@ -91,11 +163,13 @@ fn main() {
         }
     };
     eprintln!("{PRODUCT}-api {CRATE_VERSION} serving {} classes on {}", CLASSES.len(), s.bind);
-    for req in server.incoming_requests() {
+    for mut req in server.incoming_requests() {
+        let mut body = String::new();
+        let _ = std::io::Read::take(req.as_reader(), 1 << 20).read_to_string(&mut body);
         let authorization = req.headers().iter().find(|h| h.field.equiv("Authorization")).map(|h| h.value.as_str().to_string());
-        let (code, body) = route(store.as_ref(), &who, req.method().as_str(), req.url(), authorization.as_deref());
+        let (code, out) = route(&ctx, req.method().as_str(), req.url(), authorization.as_deref(), &body);
         let header = tiny_http::Header::from_bytes(&b"Content-Type"[..], &b"application/json"[..]).expect("static header");
-        let resp = tiny_http::Response::from_string(body.to_string()).with_status_code(code).with_header(header);
+        let resp = tiny_http::Response::from_string(out.to_string()).with_status_code(code).with_header(header);
         let _ = req.respond(resp);
     }
 }

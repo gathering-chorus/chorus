@@ -15,6 +15,54 @@ pub trait RowStore: Send + Sync {
     fn list(&self, class: &ClassDef, limit: usize, offset: usize) -> Result<(Vec<Row>, usize), String>;
     /// One row by name, or None.
     fn get(&self, class: &ClassDef, name: &str) -> Result<Option<Row>, String>;
+    /// Is there any row with this IRI, in any graph (a link's target check)?
+    fn exists(&self, iri: &str) -> Result<bool, String>;
+    /// How many versions of a row are kept.
+    fn version_count(&self, of_row: &str) -> Result<usize, String>;
+    /// One atomic write in one graph: for each named field, drop every stored value and
+    /// write the given ones; `type_of` adds the rdf:type; `whole` drops the row first.
+    fn write(&self, graph: &str, subject: &str, type_of: Option<&str>, fields: &[(String, Vec<Cell>)], whole: bool) -> Result<(), String>;
+    /// Remove every triple of a row in its graph.
+    fn delete(&self, graph: &str, subject: &str) -> Result<(), String>;
+}
+
+pub use crate::rules::Cell;
+
+fn term(c: &Cell) -> String {
+    match c {
+        Cell::Link(iri) => format!("<{iri}>"),
+        Cell::Literal(v, dt) => {
+            let esc = v.replace('\\', "\\\\").replace('"', "\\\"").replace('\n', "\\n").replace('\r', "\\r");
+            match *dt {
+                "string" | "" => format!("\"{esc}\""),
+                other => format!("\"{esc}\"^^<http://www.w3.org/2001/XMLSchema#{other}>"),
+            }
+        }
+    }
+}
+
+/// The SPARQL Update for one write (pure, so it is tested without a store).
+pub fn write_update(graph: &str, subject: &str, type_of: Option<&str>, fields: &[(String, Vec<Cell>)], whole: bool) -> String {
+    let mut ops = Vec::new();
+    if whole {
+        ops.push(format!("DELETE WHERE {{ GRAPH <{graph}> {{ <{subject}> ?p ?o }} }}"));
+    }
+    let mut inserts = Vec::new();
+    if let Some(t) = type_of {
+        inserts.push(format!("<{subject}> a <{NS}{t}> ."));
+    }
+    for (k, cells) in fields {
+        if !whole {
+            ops.push(format!("DELETE WHERE {{ GRAPH <{graph}> {{ <{subject}> <{NS}{k}> ?o }} }}"));
+        }
+        for c in cells {
+            inserts.push(format!("<{subject}> <{NS}{k}> {} .", term(c)));
+        }
+    }
+    if !inserts.is_empty() {
+        ops.push(format!("INSERT DATA {{ GRAPH <{graph}> {{ {} }} }}", inserts.join(" ")));
+    }
+    ops.join(" ;\n")
 }
 
 /// A row's IRI from its name: `<kind>-<name>`, where kind is the class in kebab case
@@ -66,6 +114,14 @@ fn local(v: &str) -> String {
 }
 
 /// One SELECT against a remote SPARQL endpoint, as the raw SPARQL-JSON body.
+pub fn sparql_update(endpoint: &str, auth: &Option<(String, String)>, update: &str) -> Result<(), String> {
+    let mut req = ureq::post(&format!("{}/update", endpoint.trim_end_matches('/')));
+    if let Some((u, p)) = auth {
+        req = req.set("Authorization", &format!("Basic {}", b64(format!("{u}:{p}").as_bytes())));
+    }
+    req.send_form(&[("update", update)]).map(|_| ()).map_err(|e| format!("store: {e}"))
+}
+
 pub fn sparql_body(endpoint: &str, auth: &Option<(String, String)>, query: &str) -> Result<String, String> {
     let mut req = ureq::post(&format!("{}/query", endpoint.trim_end_matches('/')))
         .set("Accept", "application/sparql-results+json");
@@ -146,5 +202,24 @@ impl RowStore for Sparql {
             return Ok(None);
         }
         Ok(self.rows(class, &[s])?.into_iter().next())
+    }
+
+    fn exists(&self, iri: &str) -> Result<bool, String> {
+        Ok(!self.select(&format!("SELECT ?p WHERE {{ GRAPH ?g {{ <{iri}> ?p ?o }} }} LIMIT 1"))?.is_empty())
+    }
+
+    fn version_count(&self, of_row: &str) -> Result<usize, String> {
+        let lit = of_row.replace('"', "");
+        let r = self.select(&format!(
+            "SELECT (COUNT(?v) AS ?n) WHERE {{ GRAPH <urn:chorus:domains:provenance> {{ ?v <{NS}ofRow> \"{lit}\" }} }}"))?;
+        Ok(r.first().and_then(|x| x["n"]["value"].as_str()).and_then(|n| n.parse().ok()).unwrap_or(0))
+    }
+
+    fn write(&self, graph: &str, subject: &str, type_of: Option<&str>, fields: &[(String, Vec<Cell>)], whole: bool) -> Result<(), String> {
+        sparql_update(&self.endpoint, &self.auth, &write_update(graph, subject, type_of, fields, whole))
+    }
+
+    fn delete(&self, graph: &str, subject: &str) -> Result<(), String> {
+        sparql_update(&self.endpoint, &self.auth, &format!("DELETE WHERE {{ GRAPH <{graph}> {{ <{subject}> ?p ?o }} }}"))
     }
 }

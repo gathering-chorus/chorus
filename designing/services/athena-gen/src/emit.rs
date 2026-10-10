@@ -11,6 +11,7 @@ const MAIN: &str = include_str!("../templates/main.rs");
 const STORE: &str = include_str!("../templates/store.rs");
 const SETTINGS: &str = include_str!("../templates/settings.rs");
 const AUTH: &str = include_str!("../templates/auth.rs");
+const RULES: &str = include_str!("../templates/rules.rs");
 
 /// The crate's own version. Step 1 starts every product at 1.0.0; the bump rule
 /// (#4478 Versions: removed field = major, added = minor) arrives with the diff check.
@@ -44,6 +45,7 @@ fn lit(s: &str) -> String {
 /// AC6 moves them into the model as Property rows on the product (#3435).
 pub fn settings(port: u16) -> Vec<(String, String)> {
     vec![
+        ("events.command".into(), "".into()),
         ("identity.issuer".into(), "https://id.lightlifeurbangardens.com/".into()),
         ("server.bind".into(), format!("127.0.0.1:{port}")),
         ("store.endpoint".into(), "http://localhost:3030/pods".into()),
@@ -67,21 +69,26 @@ pub fn model_rs(p: &Product, model_version: &str, port: u16) -> String {
     }
     s.push_str("];\n\n");
     s.push_str(
-        "pub struct FieldDef {\n    pub name: &'static str,\n    pub link: bool,\n    pub required: bool,\n    pub many: bool,\n    pub allowed: &'static [&'static str],\n}\n\n\
-         pub struct ClassDef {\n    pub domain: &'static str,\n    pub name: &'static str,\n    pub kind: &'static str,\n    pub segment: &'static str,\n    pub graph: &'static str,\n    pub fields: &'static [FieldDef],\n}\n\n\
+        "pub struct FieldDef {\n    pub name: &'static str,\n    pub link: bool,\n    pub datatype: &'static str,\n    pub required: bool,\n    pub many: bool,\n    pub allowed: &'static [&'static str],\n}\n\n\
+         pub struct ClassDef {\n    pub domain: &'static str,\n    pub name: &'static str,\n    pub kind: &'static str,\n    pub plural: &'static str,\n    pub segment: &'static str,\n    pub graph: &'static str,\n    pub fields: &'static [FieldDef],\n}\n\n\
          pub const CLASSES: &[ClassDef] = &[\n",
     );
     for d in &p.domains {
         for c in &d.classes {
             s.push_str(&format!(
-                "    ClassDef {{\n        domain: {}, name: {}, kind: {}, segment: {}, graph: {},\n        fields: &[\n",
-                lit(&d.name), lit(&c.name), lit(&kebab(&c.name)), lit(&c.segment), lit(&c.graph)
+                "    ClassDef {{\n        domain: {}, name: {}, kind: {}, plural: {}, segment: {}, graph: {},\n        fields: &[\n",
+                lit(&d.name), lit(&c.name), lit(&kebab(&c.name)), lit(&crate::model::pluralize(&c.name)), lit(&c.segment), lit(&c.graph)
             ));
             for f in &c.fields {
                 let allowed: Vec<String> = f.allowed.iter().map(|a| lit(a)).collect();
                 s.push_str(&format!(
-                    "            FieldDef {{ name: {}, link: {}, required: {}, many: {}, allowed: &[{}] }},\n",
-                    lit(&f.name), matches!(f.kind, Kind::Link { .. }), f.required, f.many, allowed.join(", ")
+                    "            FieldDef {{ name: {}, link: {}, datatype: {}, required: {}, many: {}, allowed: &[{}] }},\n",
+                    lit(&f.name),
+                    matches!(f.kind, Kind::Link { .. }),
+                    lit(match &f.kind { Kind::Literal { datatype } => datatype.as_str(), Kind::Link { .. } => "" }),
+                    f.required,
+                    f.many,
+                    allowed.join(", ")
                 ));
             }
             s.push_str("        ],\n    },\n");
@@ -116,6 +123,7 @@ pub fn crate_files(p: &Product, model_version: &str, port: u16) -> BTreeMap<Stri
     out.insert("Cargo.toml".into(), cargo_toml(p));
     out.insert("src/auth.rs".into(), retag(AUTH, domain));
     out.insert("src/main.rs".into(), retag(MAIN, domain));
+    out.insert("src/rules.rs".into(), retag(RULES, domain));
     out.insert("src/store.rs".into(), retag(STORE, domain));
     out.insert("src/settings.rs".into(), retag(SETTINGS, domain));
     out.insert("src/model.rs".into(), format!("// @domain: {domain}\n{}", model_rs(p, model_version, port)));
