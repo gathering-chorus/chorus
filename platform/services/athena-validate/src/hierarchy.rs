@@ -173,6 +173,53 @@ SELECT DISTINCT ?s ?field ?o WHERE {
 }"##,
 };
 
+/// The door refuses any link a class's shape does not name, and any target not
+/// of the shape's sh:class (athena-model, #4157). So the door can only accept a
+/// cross-hierarchy link if some shape allows one. This check is the door's half
+/// of the rule: a shape that lets a class link into another hierarchy through a
+/// property that is not a named exception. The subject is the shape.
+pub const SHAPE_ALLOWS_CROSSING: Check = Check {
+    id: "shape-allows-crossing",
+    question: "does every shape allow only the named kinds of link across hierarchies",
+    query: r##"PREFIX c: <https://jeffbridwell.com/chorus#>
+PREFIX sh: <http://www.w3.org/ns/shacl#>
+SELECT DISTINCT ?s ?field ?target WHERE {
+  BIND(<urn:chorus:ontology> AS ?g)
+  FILTER(STRSTARTS(STR(?g), "urn:chorus:"))
+  GRAPH ?g {
+    ?s sh:targetClass ?c1 ; sh:property ?pp .
+    ?pp sh:path ?p ; sh:class ?c2 .
+    FILTER(isIRI(?p))
+    ?c1 c:inHierarchy ?h1 . ?c2 c:inHierarchy ?h2 .
+    FILTER(?h1 != ?h2)
+    FILTER NOT EXISTS { ?p c:crossesHierarchy ?why }
+  }
+  BIND(REPLACE(STR(?p), "^.*[#/]", "") AS ?field)
+  BIND(REPLACE(STR(?c2), "^.*[#/]", "") AS ?target)
+}"##,
+};
+
+/// A shape that lets a class store a step or stream it should read up the chain
+/// (ServiceShape and ProductShape require atStep today). While a shape allows it,
+/// the door accepts it; #4482 takes these out as the pages learn to read up.
+pub const SHAPE_STORES_DERIVED: Check = Check {
+    id: "shape-stores-derived-position",
+    question: "does every shape leave step and stream to be read up the chain",
+    query: r##"PREFIX c: <https://jeffbridwell.com/chorus#>
+PREFIX sh: <http://www.w3.org/ns/shacl#>
+SELECT DISTINCT ?s ?field WHERE {
+  BIND(<urn:chorus:ontology> AS ?g)
+  FILTER(STRSTARTS(STR(?g), "urn:chorus:"))
+  GRAPH ?g {
+    ?s sh:targetClass ?cls ; sh:property ?pp .
+    ?pp sh:path ?p .
+    ?p c:chainPosition true .
+    FILTER NOT EXISTS { ?cls c:parentVia ?p }
+  }
+  BIND(REPLACE(STR(?p), "^.*[#/]", "") AS ?field)
+}"##,
+};
+
 /// A parent chain that comes back to where it started. The chain has five
 /// levels, so a loop that stays inside it is at most five links long; the query
 /// follows one to five parent links. Longer loops would need rows outside the
@@ -202,7 +249,7 @@ SELECT DISTINCT ?s ?hops WHERE {
 };
 
 pub fn all() -> Vec<&'static Check> {
-    vec![&ONE_PARENT, &STORED_DERIVED, &CROSS_HIERARCHY, &UNTYPED_LINK, &LINK_AS_LITERAL, &LINK_WRONG_TARGET, &PARENT_LOOP]
+    vec![&ONE_PARENT, &STORED_DERIVED, &CROSS_HIERARCHY, &UNTYPED_LINK, &LINK_AS_LITERAL, &LINK_WRONG_TARGET, &PARENT_LOOP, &SHAPE_ALLOWS_CROSSING, &SHAPE_STORES_DERIVED]
 }
 
 #[cfg(test)]
@@ -372,6 +419,22 @@ mod tests {
         let mut got = run(&LINK_WRONG_TARGET, "neg", fx);
         got.sort();
         assert_eq!(got, vec![("bad".into(), "atStep,vert".into()), ("lost".into(), "dependsOn,nowhere".into())]);
+    }
+
+    /// NEGATIVE PROOF: a DomainShape that names partOf → Product (not an
+    /// exception) and a ServiceShape that names atStep are each named; hasDomain
+    /// on ProductShape (an exception) and atStep on DomainShape (its parent) are not.
+    #[test]
+    fn negative_proof_shapes_that_allow_violations_are_named() {
+        let fx = r##"<urn:chorus:ontology> {
+  c:DomainShape sh:targetClass c:Domain ;
+    sh:property [ sh:path c:atStep ; sh:class c:ValueStreamStep ] ;
+    sh:property [ sh:path c:partOf ; sh:class c:Product ] .
+  c:ProductShape sh:targetClass c:Product ; sh:property [ sh:path c:hasDomain ; sh:class c:Domain ] .
+  c:ServiceShape sh:targetClass c:Service ; sh:property [ sh:path c:atStep ; sh:class c:ValueStreamStep ] .
+}"##;
+        assert_eq!(run(&SHAPE_ALLOWS_CROSSING, "neg", fx), vec![("DomainShape".into(), "partOf,Product".into())]);
+        assert_eq!(run(&SHAPE_STORES_DERIVED, "neg", fx), vec![("ServiceShape".into(), "atStep".into())]);
     }
 
     #[test]
