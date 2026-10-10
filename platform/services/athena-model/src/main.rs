@@ -24,7 +24,8 @@ fn usage() -> String {
                     --kind/--ttl repeat as pairs; several kinds load as ONE transaction (#3839)\n\
        athena-model seed --deploy|--post (--kind <kind> --ttl <file>)...   each kind's domain graph (#4187), output-verified (#3895)\n\
        athena-model mint   --kind <kind> --name <name>\n\
-       athena-model kinds"
+       athena-model kinds
+       athena-model patch  --path /v1/<domain>/<class>/<name> --json '<merge patch>'   # #4475: through the door, never around it"
         .to_string()
 }
 
@@ -780,6 +781,29 @@ fn run() -> Result<String, String> {
         }
         // #3686 — set: field-level single-predicate update, the datatype-prop
         // sibling of link/unlink. Exactly ONE --field k=v; edges stay link/unlink.
+        // #4475 — patch is the door's PATCH, called through the door: one write path,
+        // the door's owner check, revision and stamps. This verb only carries it.
+        Some("patch") => {
+            let (mut path, mut json) = (String::new(), String::new());
+            let mut i = 1;
+            while i < args.len() {
+                match args[i].as_str() {
+                    "--path" => { path = args.get(i + 1).ok_or("--path needs a value")?.clone(); i += 2; }
+                    "--json" => { json = args.get(i + 1).ok_or("--json needs a value")?.clone(); i += 2; }
+                    other => return Err(format!("patch: unknown arg '{}'\n{}", other, usage())),
+                }
+            }
+            let base = std::env::var("ATHENA_MAKE_URL").unwrap_or_else(|_| "http://localhost:3360".to_string());
+            let token = std::env::var("CHORUS_IDENTITY_TOKEN").unwrap_or_default();
+            let curl = patch_curl_args(&base, &path, &json, &token)?;
+            let out = std::process::Command::new("curl").args(&curl).output()
+                .map_err(|e| format!("patch: could not run curl: {}", e))?;
+            let text = String::from_utf8_lossy(&out.stdout).to_string();
+            let (body, code) = text.rsplit_once('\n').unwrap_or(("", text.as_str()));
+            let code: u16 = code.trim().parse().unwrap_or(0);
+            if (200..300).contains(&code) { Ok(format!("patch {} {}: {}", code, path, body.trim())) }
+            else { Err(format!("patch refused {} {}: {}", code, path, body.trim())) }
+        }
         Some("set") => {
             let (req, _) = parse_req(&args[1..])?;
             if req.fields.len() != 1 || !req.edges.is_empty() {
@@ -1047,5 +1071,50 @@ fn with_kind_refusals(res: Result<athena_model::PostReport, String>, kind_refuse
             kind_refused.len(), rep.created, rep.replaced, listed
         )),
         Err(e) => Err(format!("{}\n  {}", e, listed)),
+    }
+}
+
+
+/// #4475 — the curl argv for a door PATCH. The path must be a generated row route
+/// (/v1/<domain>/<class>/<name>, safe characters only) and the body a JSON object.
+fn patch_curl_args(base: &str, path: &str, json: &str, token: &str) -> Result<Vec<String>, String> {
+    let segs: Vec<&str> = path.trim_matches('/').split('/').collect();
+    if !path.starts_with("/v1/") || segs.len() != 4
+        || !segs.iter().all(|s| !s.is_empty() && s.chars().all(|c| c.is_ascii_alphanumeric() || c == '-' || c == '_')) {
+        return Err(format!("patch: --path must be /v1/<domain>/<class>/<name>, got '{}'", path));
+    }
+    if !json.trim_start().starts_with('{') {
+        return Err("patch: --json must be a JSON object (an RFC 7396 merge patch)".to_string());
+    }
+    if token.is_empty() {
+        return Err("patch: no CHORUS_IDENTITY_TOKEN — the door refuses an unsigned write".to_string());
+    }
+    Ok(vec!["-s".into(), "-m".into(), "30".into(), "-X".into(), "PATCH".into(),
+        "-H".into(), "Content-Type: application/json".into(),
+        "-H".into(), format!("Authorization: Bearer {}", token),
+        "--data-binary".into(), json.to_string(),
+        "-w".into(), "\n%{http_code}".into(),
+        format!("{}{}", base.trim_end_matches('/'), path)])
+}
+
+#[cfg(test)]
+mod patch_tests {
+    use super::patch_curl_args;
+
+    #[test]
+    fn patch_goes_to_the_door_row_route_with_the_token() {
+        let a = patch_curl_args("http://localhost:3360", "/v1/security/gates/gate-code", "{\"implementedIn\":null}", "tok").unwrap();
+        assert!(a.iter().any(|x| x == "PATCH"));
+        assert!(a.iter().any(|x| x == "Authorization: Bearer tok"));
+        assert_eq!(a.last().unwrap(), "http://localhost:3360/v1/security/gates/gate-code");
+    }
+
+    #[test]
+    fn negative_proof_patch_refuses_a_bad_path_a_non_object_or_no_token() {
+        assert!(patch_curl_args("http://x", "/v1/security/gates", "{}", "t").is_err());
+        assert!(patch_curl_args("http://x", "/v1/security/gates/a b", "{}", "t").is_err());
+        assert!(patch_curl_args("http://x", "/sparql/x/y/z", "{}", "t").is_err());
+        assert!(patch_curl_args("http://x", "/v1/security/gates/g", "null", "t").is_err());
+        assert!(patch_curl_args("http://x", "/v1/security/gates/g", "{}", "").is_err());
     }
 }
