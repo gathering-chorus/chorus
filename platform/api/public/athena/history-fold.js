@@ -21,9 +21,12 @@ function rowWithLinks(env) {
 }
 
 async function historyFold(plural, rowname, current) {
-  const revEnv = await fetchJSON('/revisions').catch(() => null);
+  // #4018 — the door serves versions at /versions now (the /revisions route went away),
+  // so this fold read a 404 as "no prior versions kept yet" while pulse had 49. Ask for
+  // this row's versions only: the whole collection is ~38,000 rows.
+  const revEnv = await fetchJSON(`/versions?ofRow=${encodeURIComponent(`${plural}/${rowname}`)}`).catch(() => null);
   const mine = (((revEnv || {}).data) || []).filter(r => r.ofRow === `${plural}/${rowname}`)
-    .map(r => { let snap = {}; try { snap = JSON.parse(r.snapshot || '{}'); } catch (_) {} return { v: Number(r.version) || 0, at: r.changedAt || snap.changedAt || '', snap }; })
+    .map(r => { let snap = {}; try { snap = JSON.parse(r.snapshot || '{}'); } catch (_) {} return { v: Number(r.writeCount || r.version) || 0, at: r.changedAt || snap.changedAt || '', snap }; })
     .sort((a, b) => b.v - a.v);
   const SKIP = ['version', 'changedAt', 'changedIn', 'modified', 'created', 'name', 'iri', 'type'];
   const diffOf = (older, newer) => {
