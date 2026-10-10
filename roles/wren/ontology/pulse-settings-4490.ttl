@@ -1,0 +1,45 @@
+@prefix chorus: <https://jeffbridwell.com/chorus#> .
+@prefix rdfs:   <http://www.w3.org/2000/01/rdf-schema#> .
+
+# #4490 — the settings pulse-api reads, declared in the model (#4478 AC6; the Property
+# model is #3433/#3435). athena-gen emits the settings loader from these rows, so a
+# setting no row declares cannot be read. Each deployment supplies its own values:
+# env PULSE_<KEY> first, then pulse.toml, then the value below.
+# Secrets are NAMED, never written: the store.*_var settings hold the name of the
+# environment variable that carries the credential.
+# The pulse → property edges live with the product row (designing/data/product-instances.ttl).
+
+chorus:property-pulse-server-bind a chorus:Property ;
+    rdfs:label "pulse-api: where it listens" ;
+    chorus:propertyKey "server.bind" ; chorus:propertyValue "127.0.0.1:3392" ;
+    chorus:propertyValueType "string" ; chorus:propertyScope "instance" .
+
+chorus:property-pulse-store-kind a chorus:Property ;
+    rdfs:label "pulse-api: which store backend (sparql today; embedded next)" ;
+    chorus:propertyKey "store.kind" ; chorus:propertyValue "sparql" ;
+    chorus:propertyValueType "string" ; chorus:propertyScope "instance" .
+
+chorus:property-pulse-store-endpoint a chorus:Property ;
+    rdfs:label "pulse-api: the SPARQL endpoint of the store row it uses" ;
+    chorus:propertyKey "store.endpoint" ; chorus:propertyValue "http://localhost:3030/pods" ;
+    chorus:propertyValueType "string" ; chorus:propertyScope "instance" .
+
+chorus:property-pulse-store-user-var a chorus:Property ;
+    rdfs:label "pulse-api: NAME of the env var holding the store user" ;
+    chorus:propertyKey "store.user_var" ; chorus:propertyValue "FUSEKI_ADMIN_USER" ;
+    chorus:propertyValueType "string" ; chorus:propertyScope "instance" .
+
+chorus:property-pulse-store-password-var a chorus:Property ;
+    rdfs:label "pulse-api: NAME of the env var holding the store password" ;
+    chorus:propertyKey "store.password_var" ; chorus:propertyValue "FUSEKI_ADMIN_PASSWORD" ;
+    chorus:propertyValueType "string" ; chorus:propertyScope "instance" .
+
+chorus:property-pulse-identity-issuer a chorus:Property ;
+    rdfs:label "pulse-api: the identity issuer whose tokens it accepts" ;
+    chorus:propertyKey "identity.issuer" ; chorus:propertyValue "https://id.lightlifeurbangardens.com/" ;
+    chorus:propertyValueType "string" ; chorus:propertyScope "instance" .
+
+chorus:property-pulse-events-command a chorus:Property ;
+    rdfs:label "pulse-api: the logger that writes its events to the spine (empty = stderr)" ;
+    chorus:propertyKey "events.command" ; chorus:propertyValue "" ;
+    chorus:propertyValueType "string" ; chorus:propertyScope "instance" .
