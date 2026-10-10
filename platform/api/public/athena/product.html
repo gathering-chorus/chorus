@@ -87,6 +87,8 @@ var s=document.createElement('script');s.src=window.basePath('/js/base-path.js')
   .doms { display: flex; flex-wrap: wrap; gap: 6px; }
   .doms a { display: inline-flex; align-items: center; gap: 6px; padding: 5px 11px; border: 1px solid var(--border); border-radius: 12px; background: var(--bg); color: var(--accent); text-decoration: none; font-size: .86rem; }
   .doms a .c { color: var(--muted); font-size: .74rem; }
+  h2.builders { font-size: .95rem; color: var(--muted); margin: 26px 0 8px; display: flex; gap: 8px; align-items: baseline; }
+  h2.builders .src { font-size: .68rem; font-weight: 400; }
   .prov { font-size: .72rem; color: var(--muted); margin-top: 18px; line-height: 1.6; }
   .prov code { font-size: .72rem; }
 </style>
@@ -147,19 +149,29 @@ var s=document.createElement('script');s.src=window.basePath('/js/base-path.js')
       return html;
     };
 
-    // ── the design order: what a product design says, chapter by chapter
+    // ── the design order. #4018 (Jeff 2026-10-10: "the product designs read like service designs";
+    //    "a product design must show page flow and value stream flow and downstream product and
+    //    domain and service dependencies"). Ten chapters written for the people the product serves,
+    //    drawn from PR/FAQ, jobs to be done, Cagan, Torres and common PRDs; the engineering
+    //    sections follow under "For the builders", on their way to the service design.
     const chapters = [
-      ['promise',       'Promise'],
-      ['audience',      'Audience'],
-      ['structure',     'Structure'],
+      ['promise',          'The press release'],
+      ['audience',         'Who it is for'],
+      ['job',              'The job'],
+      ['whyNow',           'Why it matters now'],
+      ['valueProposition', 'What it is'],
+      ['pagesAndFlow',     'Page flow'],
+      ['valueStream',      'Value stream flow'],      // drawn from atStep, never typed
+      ['dependencies',     'Dependencies'],           // drawn from the edges, both directions
+      ['outcomes',         'How we will know it worked'],
+      ['notInScope',       'Not in scope, and open bets'],
+    ];
+    const builders = [
       ['composition',   'Composition'],          // rendered from hasDomain, not a string
+      ['structure',     'Structure'],
       ['model',         'The Model (OWL + SHACL)'],
-      ['pagesAndFlow',  'Pages & Flow'],
       ['diagram',       'Flows'],                // rendered from chorus:diagram (repeatable mermaid), #4094
       ['apiSurface',    'API Surface'],
-      ['asIs',          'As-Is'],
-      ['toBe',          'To-Be'],
-      ['notInScope',    'Not in scope'],
       ['gaps',          'Gaps'],
       ['references',    'References'],
       ['comment',       'Notes'],
@@ -170,23 +182,71 @@ var s=document.createElement('script');s.src=window.basePath('/js/base-path.js')
     // the stamp is UTC; show the viewer's own day (it read 2026-09-04 at 20:50 Boston on round 3)
     const localDay = (iso) => { const d = new Date(String(iso || '')); return isNaN(d) ? String(iso || '').slice(0, 10) : `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`; };
     const diagrams = () => asArray(e.diagram).map(String).map(v => { const ls = v.trim().split('\n'); const cap = ls[0].startsWith('%%') ? ls.shift().replace(/^%%\s*/, '') : ''; return { caption: cap, src: ls.join('\n').trim() }; }).filter(d => d.src);
-    const has = k => k === 'composition' ? doms.length > 0 : k === 'diagram' ? diagrams().length > 0 : !!(e[k] && String(e[k]).trim());
+    // #4018 — the two pictures the graph can draw by itself, so they cannot drift from it
+    const STEPS = ['shaping', 'directing', 'designing', 'building', 'proving', 'reflecting'];
+    const node = x => String(x).replace(/[^A-Za-z0-9_]/g, '_');
+    const vsSrc = () => {
+      const at = (stepLocal(e.atStep) || '').toLowerCase();
+      return 'flowchart LR\n' + STEPS.map(st => `  ${st}["${st[0].toUpperCase() + st.slice(1)}"]`).join('\n') + '\n  ' +
+        STEPS.join(' --> ') + '\n' + (at ? `  classDef here fill:#e5f0ec,stroke:#2f6f5e,stroke-width:3px\n  class ${at} here\n` : '');
+    };
+    const bareName = x => String(x).replace(/^.*[#/]/, '').replace(/^chorus:/, '');   // the store hands back full IRIs on some reads
+    const uses = asArray(e.consumes).map(bareName).sort();
+    const usesEvents = asArray(e.consumesEvent).map(bareName).sort();
+    const usedBy = (collEnv.data || []).filter(r => r.name !== p && asArray(r.consumes).map(bareName).some(c => c === p || doms.map(bareName).includes(c))).map(r => r.name).sort();
+    const depSrc = () => {
+      // Top-down: the product on top, one column per kind of link beneath it. Items in a column are
+      // chained with invisible links so they stack; edges go to a column's first item, not to the
+      // subgraph, because mermaid drops a subgraph's own direction once an edge targets it.
+      const me = node(p), L = [`flowchart TB`, `  ${me}(["${esc(label)}"])`];
+      const group = (id, title, items, shape, link, arrow) => {
+        if (!items.length) return;
+        L.push(`  subgraph ${id}["${title}"]`);
+        items.forEach(x => L.push(`    ${id}_${node(x)}${shape(x)}`));
+        if (items.length > 1) L.push('    ' + items.map(x => `${id}_${node(x)}`).join(' ~~~ '));
+        L.push(`  end`);
+        if (link) items.forEach(x => L.push(`  click ${id}_${node(x)} "${link(x)}"`));
+        L.push(arrow(`${id}_${node(items[0])}`));
+      };
+      group('made', 'Made of', doms.map(bareName), x => `["${x}"]`, x => `domain.html?d=${encodeURIComponent(x)}`, f => `  ${me} --> ${f}`);
+      group('uses', 'Uses', uses, x => `["${x}"]`, x => `domain.html?d=${encodeURIComponent(x)}`, f => `  ${me} -.-> ${f}`);
+      group('reads', 'Reads events', usesEvents.map(x => x.replace(/^eventtype-/, '')), x => `{{"${x}"}}`, null, f => `  ${me} -.-> ${f}`);
+      group('usedby', 'Used by', usedBy, x => `(["${x}"])`, x => `product.html?p=${encodeURIComponent(x)}`, f => `  ${f} -.-> ${me}`);
+      return L.join('\n');
+    };
+    const figs = [];
+    const fig = (caption, src) => { figs.push({ caption, src }); return `<figure class="dg"><figcaption>${esc(caption)}</figcaption><div class="mmd" data-i="${figs.length - 1}"></div></figure>`; };
+    const fieldText = k => k === 'outcomes' ? [e.outcomes, e.asIs && `As-is: ${e.asIs}`, e.toBe && `To-be: ${e.toBe}`].filter(Boolean).join('\n')
+      : k === 'notInScope' ? [e.notInScope, e.openBets && `Open bets: ${e.openBets}`].filter(Boolean).join('\n') : e[k];
+    const has = k => k === 'composition' ? doms.length > 0 : k === 'diagram' ? diagrams().length > 0
+      : k === 'valueStream' ? !!stepLocal(e.atStep) : k === 'dependencies' ? (doms.length + uses.length + usedBy.length) > 0
+      : !!(fieldText(k) && String(fieldText(k)).trim());
     const toc = chapters.map(([k, t]) => `<a href="#${k}" class="${has(k) ? 'filled' : ''}">${esc(t)}</a>`).join('');
-    const chapterHtml = chapters.map(([k, t], n) => {
-      const src = k === 'composition' ? 'chorus:hasDomain' : `chorus:${k}`;
-      if (!has(k)) return `<section class="ch empty" id="${k}"><h2><span class="n">${n + 1}</span>${esc(t)}<span class="src">${src} &middot; not written</span></h2></section>`;
+    const chapterOf = ([k, t], n) => {
+      const src = k === 'composition' ? 'chorus:hasDomain' : k === 'valueStream' ? 'drawn from chorus:atStep' : k === 'dependencies' ? 'drawn from hasDomain, consumes, consumesEvent' : `chorus:${k}`;
+      if (!has(k)) return `<section class="ch empty" id="${k}"><h2><span class="n">${n}</span>${esc(t)}<span class="src">${src} &middot; not written</span></h2></section>`;
       let body;
       if (k === 'composition') {
         body = `<div class="doms">${doms.map(d => { const de = domsByName[d] || {}; const v = asArray(de.definesVocabulary).length;
           return `<a href="domain.html?d=${encodeURIComponent(d)}">${ownerDot(de.ownedBy)}${esc(d)} <span class="c">${v} class${v !== 1 ? 'es' : ''}</span></a>`; }).join('')}</div>`;
       } else if (k === 'diagram') {
-        body = diagrams().map((d, di) => `<figure class="dg"><figcaption>${esc(d.caption || `Diagram ${di + 1}`)}</figcaption><div class="mmd" data-i="${di}"></div></figure>`).join('');
-      } else body = render(e[k]);
-      return `<details class="ch" id="${k}"${foldOpen(k) ? ' open' : ''}><summary><h2><span class="n">${n + 1}</span>${esc(t)}<span class="src">${src}</span></h2></summary>${body}</details>`;
-    }).join('');
+        body = diagrams().map((d, di) => fig(d.caption || `Diagram ${di + 1}`, d.src)).join('');
+      } else if (k === 'valueStream') {
+        body = fig(`${label} serves ${stepLocal(e.atStep)}`, vsSrc());
+      } else if (k === 'dependencies') {
+        body = fig(`What ${label} is made of, what it uses, and what uses it`, depSrc()) +
+          (usedBy.length ? '' : '<p class="unwritten">No other product records that it uses this one.</p>');
+      } else if (k === 'pagesAndFlow') {
+        body = render(e[k]) + diagrams().filter(d => /page/i.test(d.caption)).map(d => fig(d.caption, d.src)).join('');
+      } else body = render(fieldText(k));
+      return `<details class="ch" id="${k}"${foldOpen(k) ? ' open' : ''}><summary><h2><span class="n">${n}</span>${esc(t)}<span class="src">${src}</span></h2></summary>${body}</details>`;
+    };
+    const chapterHtml = chapters.map((c, n) => chapterOf(c, n + 1)).join('') +
+      `<h2 class="builders">For the builders <span class="src">moving to the service design</span></h2>` +
+      builders.map((c, n) => chapterOf(c, `b${n + 1}`)).join('');
 
     // ── anything the shape declares that the chapters did not place (so nothing served is invisible)
-    const placed = new Set(chapters.map(([k]) => k).concat(['hasDomain', 'label', 'vision', 'valueProposition', 'status', 'ownedBy', 'atStep', 'hasDesignDoc', 'iri', 'type', 'created', 'creator', 'modified']));
+    const placed = new Set(chapters.concat(builders).map(([k]) => k).concat(['asIs', 'toBe', 'openBets', 'consumes', 'consumesEvent', 'hasDomain', 'label', 'vision', 'valueProposition', 'status', 'ownedBy', 'atStep', 'hasDesignDoc', 'iri', 'type', 'created', 'creator', 'modified']));
     const rest = Object.keys(shape).filter(k => !placed.has(k)).sort();
     const restHtml = rest.length ? `<section class="ch" id="more"><h2><span class="n">&middot;</span>Also on the shape<span class="src">${rest.length} more</span></h2>` +
       `<p>${rest.map(k => `<code>${esc(k)}</code>: ${e[k] ? esc(asArray(e[k]).join(', ')) : '<span class="unwritten">not set</span>'}`).join(' &nbsp;&middot;&nbsp; ')}</p></section>` : '';
@@ -214,7 +274,6 @@ var s=document.createElement('script');s.src=window.basePath('/js/base-path.js')
   </div>
 </div>
 <div class="vision"><span class="k">vision</span>${esc(e.vision || '')}</div>
-<p class="lede"><span class="k">Value proposition</span>${esc(e.valueProposition || '')}</p>
 <nav class="toc">${toc}</nav>
 <div class="foldall"><a data-fold="open">expand all</a><a data-fold="close">collapse all</a></div>
 ${chapterHtml}
@@ -231,9 +290,8 @@ ${restHtml}
     // #4094 — draw each diagram from its mermaid source; a bad source says so instead of an empty box
     if (window.mermaid) {
       mermaid.initialize({ startOnLoad: false, securityLevel: 'loose', theme: 'neutral' });
-      const ds = diagrams();
       for (const el of main.querySelectorAll('figure.dg .mmd')) {
-        const d = ds[Number(el.dataset.i)];
+        const d = figs[Number(el.dataset.i)];
         try { const { svg } = await mermaid.render(`dg_${p}_${el.dataset.i}`, d.src); el.innerHTML = svg; }
         catch (err) { el.innerHTML = `<div class="mmd-err">diagram source did not render: ${esc(String(err && err.message || err).slice(0, 120))}</div>`; }
       }

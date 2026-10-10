@@ -1,0 +1,25 @@
+{
+  "_about": "#4018 post-land: pulse and the Clearing rewritten in the product design template (Jeff 2026-10-10). Applied by roles/wren/notes/4018-postland.py after the model run deploys product-design-4018.ttl. The door keeps the replaced text as a version (#4102).",
+  "pulse": {
+    "promise": "Jeff looks at one screen and knows whether his team is working: who is moving, who is stuck, and who is waiting on whom. He no longer types \"are you working?\". \"I check it the way you check a pulse,\" he says.",
+    "audience": "Jeff first, often on his phone and away from the desk; the roles second, so they can see each other without interrupting; alerting third, as a reader and never the author.",
+    "job": "When I come back to the team after an hour away, I want to see at a glance what everyone is doing and what is stuck, so I can step in only where I am needed.",
+    "whyNow": "The day pulse was designed, Jeff had to ask \"are you working?\" six times, and each answer was already in the log. Every ask spends his attention on relaying instead of thinking.",
+    "valueProposition": "The team's state right now, read and never asked for:\n- each role's state and current card, observed from what it did\n- who is alive, and how old each reading is\n- who is waiting on whom\n- the same reading in the Clearing, in every agent's turn, and on the phone",
+    "pagesAndFlow": "The Clearing's role tiles are the first place Jeff looks; from a tile he opens the role's card or its stream.\nEvery agent turn starts with the same reading, so the roles see what Jeff sees.\nWanted: the reading on the phone, away from home.",
+    "outcomes": "Outcome | Today | Target\nTimes a day Jeff asks \"are you working?\" | 6 on the design day | 0\nDeclared state disagreeing with observed state | not measured | trending to 0\nReadings Jeff can reach away from home | 0 | all",
+    "notInScope": "Keeping history: long-term memory.\nWho someone is: identity.\nWhat an alert may say: alerting.",
+    "openBets": "That state observed from activity can replace every declared state.",
+    "hasDomain": ["awareness", "streams"]
+  },
+  "clearing": {
+    "promise": "Jeff and the three roles meet in one place: he sees the team's state, reads what each role is saying, types to any of them, and gives his go, all without switching tools.",
+    "audience": "Jeff first, at the desk or on his phone; the roles second, as the room they talk to him and each other in.",
+    "job": "When I want to steer the work, I want one place to see the team, talk to it, and say go, so I can direct without chasing anyone down.",
+    "whyNow": "Today Jeff relays between terminals and the board to find out what is happening and to answer roles; the Clearing is meant to end that relay.",
+    "valueProposition": "Where Jeff and the roles meet:\n- it renders pulse, the team's state right now\n- it carries Jeff's keyboard: his messages and his go\n- it holds the board, the cards that sit still",
+    "outcomes": "Outcome | Today | Target\nMessages from Jeff that reach the role they were sent to | not measured | all\nGos given in the Clearing rather than a terminal | not measured | most",
+    "notInScope": "Deciding what goes on the board: Jeff and the product role.\nThe team's live state itself: pulse; the Clearing renders it.\nThe event log: the Spine.",
+    "openBets": "That one room can replace the terminals as the place Jeff directs from."
+  }
+}

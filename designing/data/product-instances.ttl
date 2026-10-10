@@ -223,7 +223,7 @@ chorus:clearing a chorus:Product ;
     chorus:gaps """No per-participant identity on the public door; delivery into an agent session is terminal injection rather than subscription; the verb family is designed but not yet modeled, so its surfaces are not generated.""" ;
     chorus:atStep chorus:value-stream-step-directing ;
     chorus:hasDesignDoc chorus:document-clearing-value-stream-design ;
-    chorus:hasDomain chorus:cards, chorus:streams, chorus:messages ;
+    chorus:hasDomain chorus:cards, chorus:messages ;   # #4018: streams moved to pulse
     chorus:publishesPreAuth """true""" ;
     chorus:promise """The Clearing is where the team and the running system meet. It has three faces: the board (input — what we choose to do), the messages (output — how something reaches a person or an agent session), and the record (what happened). Your choices on the board and the system's own events land in the same log.
 For the owner, the promise reads like this: I see the team working in real time. Tiles show who is building what; the stream shows decisions and demos as they happen; alerts surface without my checking terminals. When the Clearing works, I manage by glancing. When it breaks, I am back to watching three terminals and guessing who is stuck.
@@ -382,7 +382,7 @@ chorus:pulse a chorus:Product ;
     chorus:gaps """No relation between roles, so who is blocked on whom cannot be answered; machine load is missing from the reading; some activity arrives without a known author; consumers do not yet read the age of what they are shown.""" ;
     chorus:atStep chorus:value-stream-step-directing ;
     chorus:hasDesignDoc chorus:document-product-design-pulse ;
-    chorus:hasDomain chorus:knowledge ;
+    chorus:hasDomain chorus:awareness, chorus:streams ;   # #4018: its own domain + streams (from the Clearing); knowledge was the model, never pulse's
     chorus:consumes chorus:code, chorus:logs, chorus:roles, chorus:alerts, chorus:monitors, chorus:messages, chorus:streams, chorus:events, chorus:cards, chorus:security, chorus:memory, chorus:knowledge, chorus:tests ;
     chorus:consumesEvent chorus:eventtype-card-pulled ;
     chorus:publishesPreAuth """true""" ;

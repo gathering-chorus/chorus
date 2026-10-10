@@ -1,0 +1,52 @@
+# #4018 — the product design template, as attributes on Product.
+#
+# Jeff, 2026-10-10: "the product designs read like service designs — a product
+# design is less technical"; "a product design must show page flow and value
+# stream flow and downstream product and domain and service dependencies".
+# Researched the same morning (PR/FAQ, jobs to be done, Cagan, Torres, common
+# PRDs): a product design says who it is for, the job, why now, what it is, how
+# we will know it worked, and its edges. The engineering sections already on
+# ProductShape (apiSurface, model, structure) stay optional; they belong to the
+# service design.
+#
+# Existing words are kept where they fit (ADR-060, ground the vocabulary in what
+# Chorus already is): promise is the press release, audience is who it is for,
+# valueProposition is what it is, pagesAndFlow is page flow, notInScope is the
+# non-goals, asIs/toBe sit under the outcomes. Four words are new. The value
+# stream and dependency pictures are drawn from atStep and the edges, so they
+# have no attribute of their own.
+#
+# Optional, like the other design sections, so the eight products not yet
+# rewritten stay valid until their own bed is weeded.
+
+@prefix chorus: <https://jeffbridwell.com/chorus#> .
+@prefix rdfs: <http://www.w3.org/2000/01/rdf-schema#> .
+@prefix owl: <http://www.w3.org/2002/07/owl#> .
+@prefix sh: <http://www.w3.org/ns/shacl#> .
+@prefix xsd: <http://www.w3.org/2001/XMLSchema#> .
+
+chorus:job a owl:DatatypeProperty ;
+    rdfs:label "the job" ; rdfs:domain chorus:Product ; rdfs:range xsd:string ;
+    rdfs:comment "The job the people it serves hire it for, in their words and free of any solution: When…, I want to…, so I can…." .
+
+chorus:whyNow a owl:DatatypeProperty ;
+    rdfs:label "why it matters now" ; rdfs:domain chorus:Product ; rdfs:range xsd:string ;
+    rdfs:comment "What it costs them today without it, in their terms, and why this is the time." .
+
+chorus:outcomes a owl:DatatypeProperty ;
+    rdfs:label "how we will know it worked" ; rdfs:domain chorus:Product ; rdfs:range xsd:string ;
+    rdfs:comment "Two or three outcomes we can count, each with where it stands and where we want it. Lines with ' | ' are a table." .
+
+chorus:openBets a owl:DatatypeProperty ;
+    rdfs:label "open bets" ; rdfs:domain chorus:Product ; rdfs:range xsd:string ;
+    rdfs:comment "The riskiest assumptions the product rests on that have not been tested yet." .
+
+chorus:ProductShape
+    sh:property [ sh:path chorus:job ; sh:maxCount 1 ; sh:datatype xsd:string ;
+                  sh:name "the job" ; sh:description "Optional until each product is rewritten. When…, I want to…, so I can…, with no solution in it." ] ;
+    sh:property [ sh:path chorus:whyNow ; sh:maxCount 1 ; sh:datatype xsd:string ;
+                  sh:name "why it matters now" ; sh:description "Optional until each product is rewritten. What it costs today without it." ] ;
+    sh:property [ sh:path chorus:outcomes ; sh:maxCount 1 ; sh:datatype xsd:string ;
+                  sh:name "how we will know it worked" ; sh:description "Optional until each product is rewritten. Countable outcomes, today and target." ] ;
+    sh:property [ sh:path chorus:openBets ; sh:maxCount 1 ; sh:datatype xsd:string ;
+                  sh:name "open bets" ; sh:description "Optional until each product is rewritten. Untested assumptions it rests on." ] .
