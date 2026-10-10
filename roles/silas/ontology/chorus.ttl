@@ -3058,6 +3058,8 @@ chorus:tests chorus:hosts chorus:service-tests .              # #4089 — the te
 chorus:infrastructure chorus:hosts chorus:service-gathering-app .
 chorus:alerts-monitors-domain chorus:hosts chorus:service-observability .
 chorus:convergence-domain chorus:hosts chorus:service-integration .
+chorus:memory chorus:hosts chorus:service-memory .                  # #4482: every service has one hosting domain (Wren 16:46)
+chorus:pipelines chorus:hosts chorus:service-pipelines .
 
 # ============================================================================
 # #4084 — logs domain becomes a graph writer (ADR-060: borrow the semantics,
