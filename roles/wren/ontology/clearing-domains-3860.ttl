@@ -214,10 +214,13 @@ chorus:messages a chorus:Domain ;
 
 chorus:streams a chorus:Domain ;
   rdfs:label "streams" ;
-  chorus:comment "Live event streams — the Clearing's real-time feed of spine, session, and log flow." ;
+  chorus:comment "Live event streams — each role's session, tailed, and the spine and log flow pulse derives state from." ;
   chorus:purpose "Turn the spine into something watchable live — streams a person or role can sit on." ;
-  chorus:ownedBy chorus:principal-silas ; chorus:partOf chorus:product-clearing ;
+  chorus:ownedBy chorus:principal-wren ;
   chorus:atStep chorus:Directing ; chorus:atStream chorus:value-stream-chorus ;
   chorus:repoTarget "platform/api" .
-  # ownedBy silas — observation layer (CLAUDE.md ownership split), matching the
-  # V1 streams-domain Domain attribution.
+  # #4018 (Jeff 2026-10-10 08:53 "yes agree"): streams moves from the Clearing to pulse —
+  # live session tails, the raw material pulse derives role state from. The product's
+  # hasDomain edge says so; the domain stores no partOf (one parent: its step — Silas's
+  # model-chain rule). ownedBy wren per Jeff 2026-10-01 ("clearing and messages and
+  # streams and cards are all yours"); it was silas from the V1 attribution.
