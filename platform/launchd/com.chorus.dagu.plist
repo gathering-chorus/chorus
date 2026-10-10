@@ -24,7 +24,7 @@
     <key>WERK_WREN_BIN</key><string>/Users/jeffbridwell/CascadeProjects/chorus-werk/wren-bin</string>
     <key>WERK_SILAS_BIN</key><string>/Users/jeffbridwell/CascadeProjects/chorus-werk/silas-bin</string>
     <key>WERK_ABBY_NORMAL_BIN</key><string>/Users/jeffbridwell/CascadeProjects/chorus-werk/abby-normal-bin</string>
-    <key>PATH</key><string>/Users/jeffbridwell/.chorus/bin:/Users/jeffbridwell/CascadeProjects/chorus/platform/scripts:/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin</string>
+    <key>PATH</key><string>/Users/jeffbridwell/.chorus/bin:/Users/jeffbridwell/.nvm/versions/node/v20.20.2/bin:/Users/jeffbridwell/CascadeProjects/chorus/platform/scripts:/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin</string>
   </dict>
   <key>RunAtLoad</key><true/>
   <key>KeepAlive</key><true/>

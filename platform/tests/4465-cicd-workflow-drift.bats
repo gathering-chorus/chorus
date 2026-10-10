@@ -40,7 +40,7 @@ setup() {
 
 @test "negative proof: dagu refuses a go step with no id" {
   command -v dagu >/dev/null || { echo "dagu not installed: unmeasured, not green"; false; }
-  grep -v '    id: skill_go' "$WF" > "$BATS_TEST_TMPDIR/noid.yaml"
+  grep -v '    id: skill_werk_go' "$WF" > "$BATS_TEST_TMPDIR/noid.yaml"
   run env DAGU_HOME="$BATS_TEST_TMPDIR/dagu" dagu dry "$BATS_TEST_TMPDIR/noid.yaml"
   [ "$status" -ne 0 ]
 }

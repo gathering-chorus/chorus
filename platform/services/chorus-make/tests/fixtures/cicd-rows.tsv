@@ -8,8 +8,8 @@ test	3	1	skill-werk-test	werk-test	deterministic	werk-test	${CARD} ${ROLE}
 test	3	2	skill-werk-review	werk-review	deterministic	werk-review	${CARD} ${ROLE}
 demo	4	1	skill-werk-deploy-werk	werk-deploy --target werk	deterministic	werk-deploy	${CARD} ${ROLE} --target werk
 demo	4	2	skill-werk-deploy-env-up	werk-deploy env-up	deterministic	werk-deploy	env-up ${ROLE} ${CARD}
-demo	4	3	skill-demo	/demo	deterministic	werk-demo	${CARD} ${ROLE}
-demo	4	4	skill-go	Jeff's go	human		
+demo	4	3	skill-werk-demo	/demo	deterministic	werk-demo	${CARD} ${ROLE}
+demo	4	4	skill-werk-go	Jeff's go	human		
 land	5	1	skill-werk-merge	werk-merge	deterministic	werk-merge	${CARD} ${ROLE} --atomic
 land	5	2	skill-werk-sync	werk-sync	deterministic	werk-sync	
 land	5	3	skill-werk-deploy-canonical	werk-deploy --target canonical	deterministic	werk-deploy	${CARD} ${ROLE} --target canonical

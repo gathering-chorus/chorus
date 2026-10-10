@@ -29,10 +29,10 @@
   chorus:stepskill-cicd-demo-1 a chorus:StepSkill ; chorus:forStep chorus:pipeline-step-cicd-demo ; chorus:callsSkill chorus:skill-werk-deploy-werk ; chorus:skillOrder 1 .
   chorus:skill-werk-deploy-env-up a chorus:Skill ; rdfs:label "werk-deploy env-up" ; chorus:executor "deterministic" ; chorus:implementedBy "werk-deploy" ; chorus:arguments "env-up ${ROLE} ${CARD}" .
   chorus:stepskill-cicd-demo-2 a chorus:StepSkill ; chorus:forStep chorus:pipeline-step-cicd-demo ; chorus:callsSkill chorus:skill-werk-deploy-env-up ; chorus:skillOrder 2 .
-  chorus:skill-demo a chorus:Skill ; rdfs:label "/demo" ; chorus:executor "deterministic" ; chorus:implementedBy "werk-demo" ; chorus:arguments "${CARD} ${ROLE}" .
-  chorus:stepskill-cicd-demo-3 a chorus:StepSkill ; chorus:forStep chorus:pipeline-step-cicd-demo ; chorus:callsSkill chorus:skill-demo ; chorus:skillOrder 3 .
-  chorus:skill-go a chorus:Skill ; rdfs:label "Jeff's go" ; chorus:executor "human" .
-  chorus:stepskill-cicd-demo-4 a chorus:StepSkill ; chorus:forStep chorus:pipeline-step-cicd-demo ; chorus:callsSkill chorus:skill-go ; chorus:skillOrder 4 .
+  chorus:skill-werk-demo a chorus:Skill ; rdfs:label "/demo" ; chorus:executor "deterministic" ; chorus:implementedBy "werk-demo" ; chorus:arguments "${CARD} ${ROLE}" .
+  chorus:stepskill-cicd-demo-3 a chorus:StepSkill ; chorus:forStep chorus:pipeline-step-cicd-demo ; chorus:callsSkill chorus:skill-werk-demo ; chorus:skillOrder 3 .
+  chorus:skill-werk-go a chorus:Skill ; rdfs:label "Jeff's go" ; chorus:executor "human" .
+  chorus:stepskill-cicd-demo-4 a chorus:StepSkill ; chorus:forStep chorus:pipeline-step-cicd-demo ; chorus:callsSkill chorus:skill-werk-go ; chorus:skillOrder 4 .
   chorus:skill-werk-merge a chorus:Skill ; rdfs:label "werk-merge" ; chorus:executor "deterministic" ; chorus:implementedBy "werk-merge" ; chorus:arguments "${CARD} ${ROLE} --atomic" .
   chorus:stepskill-cicd-land-1 a chorus:StepSkill ; chorus:forStep chorus:pipeline-step-cicd-land ; chorus:callsSkill chorus:skill-werk-merge ; chorus:skillOrder 1 .
   chorus:skill-werk-sync a chorus:Skill ; rdfs:label "werk-sync" ; chorus:executor "deterministic" ; chorus:implementedBy "werk-sync" .
@@ -71,8 +71,8 @@
   chorus:skill-werk-review chorus:hasDomain chorus:code .
   chorus:skill-werk-deploy-werk chorus:hasDomain chorus:deploys .
   chorus:skill-werk-deploy-env-up chorus:hasDomain chorus:deploys .
-  chorus:skill-demo chorus:hasDomain chorus:pipelines .
-  chorus:skill-go chorus:hasDomain chorus:cards .
+  chorus:skill-werk-demo chorus:hasDomain chorus:pipelines .
+  chorus:skill-werk-go chorus:hasDomain chorus:cards .
   chorus:skill-werk-merge chorus:hasDomain chorus:version-control .
   chorus:skill-werk-sync chorus:hasDomain chorus:version-control .
   chorus:skill-werk-deploy-canonical chorus:hasDomain chorus:deploys .

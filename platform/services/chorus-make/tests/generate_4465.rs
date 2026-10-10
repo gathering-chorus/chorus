@@ -31,10 +31,10 @@ fn steps_run_in_order_and_the_go_waits_between_demo_and_land() {
     let ids: Vec<&str> = out.lines().filter_map(|l| l.strip_prefix("  - name: ")).collect();
     assert_eq!(ids.first(), Some(&"skill-werk-commit"));
     assert_eq!(ids.last(), Some(&"skill-werk-accept"));
-    let go = ids.iter().position(|i| *i == "skill-go").expect("the go is a step");
-    assert_eq!(ids[go - 1], "skill-demo");
+    let go = ids.iter().position(|i| *i == "skill-werk-go").expect("the go is a step");
+    assert_eq!(ids[go - 1], "skill-werk-demo");
     assert_eq!(ids[go + 1], "skill-werk-merge");
-    assert!(out.contains("  - name: skill-go\n    description: \"Jeff's go\"\n    depends: [skill-demo]\n    id: skill_go\n    action: human.task\n"));
+    assert!(out.contains("  - name: skill-werk-go\n    description: \"Jeff's go\"\n    depends: [skill-werk-demo]\n    id: skill_werk_go\n    action: human.task\n"));
     assert!(out.starts_with(chorus_make::HEADER));
     // #4474 run 1: dagu does not pass CHORUS_HOME through; every verb refused
     for v in ["CHORUS_HOME: ${CHORUS_HOME}", "CHORUS_WERK_BASE: ${CHORUS_WERK_BASE}"] {
@@ -88,7 +88,7 @@ fn every_step_is_named_by_its_skill_row_and_nothing_is_minted() {
     }
     // the one id dagu demands (a human.task) is the row name with '_' for '-'
     let ids: Vec<&str> = out.lines().filter_map(|l| l.strip_prefix("    id: ")).collect();
-    assert_eq!(ids, vec!["skill_go"]);
+    assert_eq!(ids, vec!["skill_werk_go"]);
     assert!(out.contains("    description: \"werk-deploy --target werk\"\n"), "description is the row's label");
 }
 
@@ -99,7 +99,7 @@ fn only_the_step_before_the_go_treats_presented_as_success() {
     let out = generate("cicd", &cicd()).unwrap();
     let held = "    continue_on:\n      exit_code: [2]\n      mark_success: true\n";
     assert_eq!(out.matches(held).count(), 1, "exactly one step may hold");
-    let demo = out.split("  - name: ").find(|s| s.starts_with("skill-demo\n")).unwrap();
+    let demo = out.split("  - name: ").find(|s| s.starts_with("skill-werk-demo\n")).unwrap();
     assert!(demo.contains(held), "the demo step holds for the go");
 }
 
@@ -107,18 +107,18 @@ fn only_the_step_before_the_go_treats_presented_as_success() {
 fn the_go_names_the_accepter_and_only_the_land_steps_read_it() {
     // #4474 run 9: werk-merge refused "no-approval" because no step set $ACCEPTER
     let out = generate("cicd", &cicd()).unwrap();
-    let go = out.split("  - name: ").find(|s| s.starts_with("skill-go\n")).unwrap();
+    let go = out.split("  - name: ").find(|s| s.starts_with("skill-werk-go\n")).unwrap();
     assert!(go.contains("        required: [accepter]\n"), "the go asks who: {go}");
     assert!(go.contains("enum: [jeff, wren, kade, silas]"), "{go}");
-    let reads = "      - ACCEPTER: ${skill_go.outputs.accepter}\n";
+    let reads = "      - ACCEPTER: ${skill_werk_go.outputs.accepter}\n";
     let steps: Vec<&str> = out.split("  - name: ").skip(1).collect();
-    let after: Vec<&str> = steps.iter().skip_while(|s| !s.starts_with("skill-go\n")).skip(1).copied().collect();
+    let after: Vec<&str> = steps.iter().skip_while(|s| !s.starts_with("skill-werk-go\n")).skip(1).copied().collect();
     assert!(!after.is_empty());
     for s in &after {
         assert!(s.contains(reads), "a land step without the accepter: {s}");
     }
     // negative proof: no step before the go may claim an accepter
-    let before = steps.iter().take_while(|s| !s.starts_with("skill-go\n")).filter(|s| s.contains("ACCEPTER")).count();
+    let before = steps.iter().take_while(|s| !s.starts_with("skill-werk-go\n")).filter(|s| s.contains("ACCEPTER")).count();
     assert_eq!(before, 0, "a step before the go reads an accepter nobody gave");
 }
 

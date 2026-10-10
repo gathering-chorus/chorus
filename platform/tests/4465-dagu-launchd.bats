@@ -103,3 +103,29 @@ logs_ok() {
   run logs_ok "$bad"
   [ "$status" -ne 0 ] || return 1
 }
+
+# The node a LaunchAgent PATH finds first, and its major version. werk-test
+# reads node's test output as TAP; node 23 prints spec by default, so a v2
+# test step under homebrew's node 23 counted 0 cases (#4474 run 11).
+node_major() {
+  local path dir
+  path=$(/usr/libexec/PlistBuddy -c 'Print :EnvironmentVariables:PATH' "$1")
+  IFS=: read -ra dirs <<< "$path"
+  for dir in "${dirs[@]}"; do
+    if [ -x "$dir/node" ]; then "$dir/node" -p 'process.versions.node.split(".")[0]'; return; fi
+  done
+  echo none
+}
+
+@test "dagu's steps run the team's node (20), not whatever homebrew has" {
+  run node_major "$PLIST"
+  [ "$output" = "20" ] || { echo "node major on the dagu PATH: $output"; return 1; }
+}
+
+@test "negative proof: a PATH that finds homebrew's node first is caught" {
+  bad="$BATS_TEST_TMPDIR/dagu.plist"
+  cp "$PLIST" "$bad"
+  /usr/libexec/PlistBuddy -c "Set :EnvironmentVariables:PATH /opt/homebrew/bin:/usr/bin:/bin" "$bad"
+  run node_major "$bad"
+  [ "$output" != "20" ] || return 1
+}
