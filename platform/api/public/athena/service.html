@@ -106,7 +106,7 @@ ${srcNote(`GET /services/${esc(s)} &middot; /serviceinstances &middot; /schedule
     const rows = [...(inst.data || []).filter(mine).map(r => ({ ...r, kind: 'instance' })), ...(jobs.data || []).filter(mine).map(r => ({ ...r, kind: 'job' }))];
     if (!rows.length) { body.innerHTML = `<p class="empty">No harvested unit names this service (${(inst.data || []).length} instances, ${(jobs.data || []).length} jobs served). If one should, map it in platform/config/service-instance-map.json.</p>`; }
     else {
-      const tr = rows.map(r => `<tr><td>${esc(r.launchdLabel || r.label || r.name)}</td><td>${esc(r.kind)}</td><td>${esc(r.onMachine || '')}</td><td>${esc(r.runState || r.lastExitCode || '')}</td><td>${esc(String(r.lastObserved || '').slice(0, 16))}</td></tr>`).join('');
+      const tr = rows.map(r => `<tr><td>${esc(r.launchdLabel || r.label || r.name)}</td><td>${esc(r.kind)}</td><td>${esc(r.onMachine || '')}</td><td>${esc(unitState(r))}</td><td>${esc(localTime(r.lastObserved))}</td></tr>`).join('');
       body.innerHTML = `<p><strong>${rows.length}</strong> unit(s)</p><table><thead><tr><th>Unit</th><th>Kind</th><th>Machine</th><th>State</th><th>Observed</th></tr></thead><tbody>${tr}</tbody></table>`;
     }
   } catch (e) { const b = document.getElementById('runsas-body'); if (b) b.innerHTML = `<p class="empty"><strong>Cannot reach the model</strong> for units &mdash; fetch failure. ${esc(String(e && e.message || e))}</p>`; }

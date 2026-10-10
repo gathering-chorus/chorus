@@ -48,3 +48,29 @@ matches() {
 @test "the service page asks for its hosting domain under the row's name, in any graph" {
   grep -qF 'VALUES ?svc { chorus:${s} chorus:service-${s} } GRAPH ?g' "$ATHENA/service.html"
 }
+
+# state <runState> <lastExitCode> → the text the pages show for a unit
+state() {
+  node -e '
+    const src = require("fs").readFileSync(process.argv[1], "utf8");
+    const m = src.match(/function unitState\(u\) \{[\s\S]*?\n\}/);
+    if (!m) { console.log("helper-missing"); process.exit(0); }
+    const f = eval("(" + m[0] + ")");
+    console.log(f({ runState: process.argv[2], lastExitCode: process.argv[3] }));
+  ' "$PAGE" "$1" "$2"
+}
+
+@test "a job shows how its last run ended, an instance its run state" {
+  [ "$(state '' 0)" = "last run ok" ]
+  [ "$(state '' 78)" = "last run exit 78" ]
+  [ "$(state running '')" = "running" ]
+}
+
+@test "negative proof: a job with no recorded exit is not shown as ok" {
+  [ "$(state '' '')" = "no exit recorded" ]
+}
+
+@test "both pages show unit state through the shared helper" {
+  grep -qF '${esc(unitState(r))}' "$ATHENA/service.html"
+  grep -qF '${esc(unitState(u))}' "$ATHENA/domain.html"
+}

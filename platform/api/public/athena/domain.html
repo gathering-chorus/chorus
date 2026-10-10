@@ -107,7 +107,7 @@ async function renderServices(d) {
     el.innerHTML = fold(svcs.map(full => {
       const name = full.replace(/^service-/, '');
       const mine = units.filter(u => runsServiceNames(u.runsService, name));
-      const rows = mine.map(u => `<tr><td>${esc(u.launchdLabel || u.label || u.name)}</td><td>${esc(u.kind)}</td><td>${esc(u.onMachine || '')}</td><td>${esc(u.runState || '')}</td></tr>`).join('');
+      const rows = mine.map(u => `<tr><td>${esc(u.launchdLabel || u.label || u.name)}</td><td>${esc(u.kind)}</td><td>${esc(u.onMachine || '')}</td><td>${esc(unitState(u))}</td></tr>`).join('');
       return `<h3><a class="edge" href="service.html?s=${encodeURIComponent(name)}">${esc(name)}</a> <small>${mine.length} unit(s)</small></h3>` +
         (mine.length ? `<table><thead><tr><th>Unit</th><th>Kind</th><th>Machine</th><th>State</th></tr></thead><tbody>${rows}</tbody></table>` : '<p class="empty">the crawl found no launchd unit running this service</p>');
     }).join(''));

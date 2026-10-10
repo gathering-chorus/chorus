@@ -1559,14 +1559,17 @@ fn walk_local_units() -> chorus_crawl::services::MachineWalk {
                 .and_then(|j| parse_json(&j).ok())
                 .map(|j| plist_meta(&j))
                 .unwrap_or_default();
+            // print is read for every unit: it is where argv lives for app-bundle units,
+            // and the only place that tells a clean exit from a job that never ran
+            let text = sh("launchctl", &["print", &format!("gui/{uid}/{}", u.label)], "/").unwrap_or_default();
             if meta.argv.is_empty() {
-                let text = sh("launchctl", &["print", &format!("gui/{uid}/{}", u.label)], "/").unwrap_or_default();
                 let (argv, bundle) = parse_launchctl_print(&text);
                 meta.argv = argv;
                 meta.bundle_id = bundle;
             }
+            let last_exit_code = last_exit_from_print(&text);
             let ports = u.pid.as_deref().and_then(|p| p.parse().ok()).map(|p| ports_of(p, &listens, &tree)).unwrap_or_default();
-            Unit { run_state: u.run_state().into(), label: u.label, meta, evidence_unavailable: false, ports }
+            Unit { run_state: u.run_state().into(), last_exit_code, label: u.label, meta, evidence_unavailable: false, ports }
         })
         .collect())
 }
@@ -1590,7 +1593,10 @@ fn walk_bedroom_units() -> chorus_crawl::services::MachineWalk {
         .into_iter()
         .map(|u| {
             let ports = u.pid.as_deref().and_then(|p| p.parse().ok()).map(|p| ports_of(p, &listens, &tree)).unwrap_or_default();
-            Unit { run_state: u.run_state().into(), label: u.label, meta: UnitMeta::default(), evidence_unavailable: true, ports }
+            // no launchctl print over ssh, and list's 0 cannot tell a clean exit from
+            // never-run, so only a nonzero status is recorded for bedroom
+            let last_exit_code = u.last_exit_code.filter(|c| *c != 0);
+            Unit { run_state: u.run_state().into(), last_exit_code, label: u.label, meta: UnitMeta::default(), evidence_unavailable: true, ports }
         })
         .collect();
     for block in plists.split("FILE:").skip(1) {
