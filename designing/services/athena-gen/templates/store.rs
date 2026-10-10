@@ -11,7 +11,7 @@ use serde_json::{json, Map, Value};
 pub type Row = Map<String, Value>;
 
 pub trait RowStore: Send + Sync {
-    /// A page of rows, ordered by name, and the total count.
+    /// A page of rows in the store's order (sorted within the page), and the total count.
     fn list(&self, class: &ClassDef, limit: usize, offset: usize) -> Result<(Vec<Row>, usize), String>;
     /// One row by name, or None.
     fn get(&self, class: &ClassDef, name: &str) -> Result<Option<Row>, String>;
@@ -331,10 +331,14 @@ impl RowStore for Sparql {
         ))?;
         let total = count.first().and_then(|r| r["n"]["value"].as_str()).and_then(|n| n.parse().ok()).unwrap_or(0);
         let page = self.select(&format!(
-            "SELECT DISTINCT ?s WHERE {{ GRAPH <{g}> {{ ?s a <{NS}{c}> }} }} ORDER BY ?s LIMIT {limit} OFFSET {offset}",
+            // #4493 benchmark, 834,316 rows on embedded Oxigraph: ORDER BY ?s made every page
+            // a full sort (37 s); the store's own index order serves the same page in 0.4 s,
+            // and it is stable while the graph does not change. Rows inside a page are sorted below.
+            "SELECT DISTINCT ?s WHERE {{ GRAPH <{g}> {{ ?s a <{NS}{c}> }} }} LIMIT {limit} OFFSET {offset}",
             g = class.graph, c = class.name
         ))?;
-        let subjects: Vec<String> = page.iter().filter_map(|r| r["s"]["value"].as_str().map(String::from)).collect();
+        let mut subjects: Vec<String> = page.iter().filter_map(|r| r["s"]["value"].as_str().map(String::from)).collect();
+        subjects.sort();
         Ok((self.rows(class, &subjects)?, total))
     }
 
