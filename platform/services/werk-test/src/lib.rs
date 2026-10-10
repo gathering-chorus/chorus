@@ -274,6 +274,26 @@ pub enum GateOutcome {
     AdvisoryFail,
 }
 
+/// #3983 — what a card run proves about the card's OWN tests: how many cases
+/// of registered tests covering its diff ran. Recorded with the verdict, shown
+/// on the demo and carried by accept. The states are typed, never a silence:
+/// - `registry-unreadable` — the tests registry did not answer, so nothing can
+///   be said about coverage (the plan fell back to lanes)
+/// - `no-code` — the diff touched no testable unit
+/// - `zero-coverage` — it touched units and no registered test of theirs ran
+/// - `covered` — N registered cases ran
+pub fn card_coverage(plan_source: &str, units: usize, registered_ran: usize) -> (&'static str, usize) {
+    if plan_source != "model" {
+        ("registry-unreadable", registered_ran)
+    } else if units == 0 {
+        ("no-code", 0)
+    } else if registered_ran == 0 {
+        ("zero-coverage", 0)
+    } else {
+        ("covered", registered_ran)
+    }
+}
+
 /// Decide the gate outcome. A failure blocks the land UNLESS the diff is
 /// self-modifying, where it degrades to advisory to avoid the canonical-`werk.yml`
 /// bootstrap deadlock (#3397). No affected units → nothing to prove → passes.
@@ -6621,5 +6641,30 @@ mod untagged_refused_4419 {
     #[test]
     fn a_file_in_no_unit_is_not_refused() {
         assert!(untagged_in_a_unit(&["README.md".into()], &unit).is_empty());
+    }
+}
+
+#[cfg(test)]
+mod card_coverage_3983 {
+    use super::card_coverage;
+
+    #[test]
+    fn a_card_whose_covering_tests_ran_is_covered_with_the_count() {
+        assert_eq!(card_coverage("model", 2, 14), ("covered", 14));
+    }
+
+    /// NEGATIVE PROOF: units touched and none of their registered tests ran is
+    /// its own state, never covered and never quiet
+    #[test]
+    fn a_card_whose_covering_tests_did_not_run_is_zero_coverage() {
+        assert_eq!(card_coverage("model", 2, 0), ("zero-coverage", 0));
+        assert_ne!(card_coverage("model", 2, 0).0, card_coverage("model", 2, 1).0);
+    }
+
+    #[test]
+    fn no_units_and_an_unread_registry_are_their_own_states() {
+        assert_eq!(card_coverage("model", 0, 0), ("no-code", 0));
+        assert_eq!(card_coverage("fallback", 3, 9).0, "registry-unreadable");
+        assert_eq!(card_coverage("fallback", 0, 0).0, "registry-unreadable");
     }
 }

@@ -1114,7 +1114,9 @@
       "description": "Card accepted after demo (DEC-048 Proving gate)",
       "fields": {
         "board": "Board name",
-        "card_id": "Card identifier"
+        "card_id": "Card identifier",
+        "coverage": "The card's own-test evidence (#3983): covered | zero-coverage | no-code | registry-unreadable | not-recorded",
+        "covering_ran": "Registered cases covering the card's diff that ran"
       }
     },
     "card.authorization.guest_refused": {
@@ -5566,6 +5568,20 @@
       "fields": {
         "run_id": "The nightly run this suite belongs to",
         "unit": "The unit the runner started (suite path, crate or package)"
+      }
+    },
+    "test.card.coverage": {
+      "producer": "tests",
+      "about": "TestResult",
+      "category": "fact",
+      "version": "1",
+      "vertebra": "proving",
+      "source": "werk",
+      "description": "A card run's own-test evidence (#3983): how many cases of registered tests covering the card's diff ran. state = covered | zero-coverage | no-code | registry-unreadable. Carried by the demo badge and card.accepted.",
+      "fields": {
+        "state": "covered | zero-coverage | no-code | registry-unreadable",
+        "ran": "Registered cases covering the diff that ran",
+        "units": "Testable units the diff touched"
       }
     },
     "test.unit.timed": {

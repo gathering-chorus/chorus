@@ -584,6 +584,42 @@ pub fn test_result_recorded(witness: &str, card: u64) -> Option<String> {
         .find_map(|l| json_str_field(l, "result"))
 }
 
+/// #3983 — the `,"coverage":"<state>:<n>"` field, or nothing when the run
+/// carried none. Only the four typed states are written.
+pub fn coverage_field(coverage: &str) -> String {
+    let state = coverage.split(':').next().unwrap_or("");
+    if ["covered", "zero-coverage", "no-code", "registry-unreadable"].contains(&state)
+        && coverage.split(':').nth(1).map(|n| n.parse::<u64>().is_ok()).unwrap_or(false)
+    {
+        format!(",\"coverage\":\"{}\"", coverage)
+    } else {
+        String::new()
+    }
+}
+
+/// #3983 — the coverage recorded with this card's latest test result, if any.
+pub fn coverage_recorded(witness: &str, card: u64) -> Option<String> {
+    let card_key = format!("\"card_id\":{},", card);
+    witness
+        .lines()
+        .rev()
+        .find(|l| l.contains("\"event\":\"demo.test_result\"") && l.contains(&card_key))
+        .and_then(|l| json_str_field(l, "coverage"))
+}
+
+/// #3983 — the card's own-test evidence in words, for the badge and accept.
+pub fn coverage_words(coverage: Option<&str>) -> String {
+    let Some(c) = coverage else { return "own tests: not recorded".to_string() };
+    let (state, n) = c.split_once(':').unwrap_or((c, "0"));
+    match state {
+        "covered" => format!("own tests: {} registered case(s) ran", n),
+        "zero-coverage" => "own tests: ZERO-COVERAGE — no registered test of the touched code ran".to_string(),
+        "no-code" => "own tests: none needed — no testable code touched".to_string(),
+        "registry-unreadable" => "own tests: UNKNOWN — the tests registry did not answer".to_string(),
+        other => format!("own tests: {}", other),
+    }
+}
+
 /// #3638 — the `demo.test_result` recorded under THIS run's trace, if any. The
 /// pipeline's BLOCKING werk-test step records its verdict (via `werk-demo
 /// test-result`) under the run's shared CHORUS_TRACE_ID moments before the demo
@@ -1250,7 +1286,7 @@ pub fn demo(card: u64, role: &str, home: &Path) -> R<DemoOutcome> {
             });
             let werk = format!("{}/{}-{}", werk_base, role, card);
             let res = card_test_verdict(&werk);
-            record_test_result(home, role, card, res);
+            record_test_result(home, role, card, res, "");
             jsonl(home, role, card, &trace, "demo.test_ran", &format!(",\"result\":\"{}\"", res));
         }
     }
@@ -1480,7 +1516,7 @@ pub fn demo(card: u64, role: &str, home: &Path) -> R<DemoOutcome> {
     // tested: did the demo's test run record a result? (informational on the surface)
     let test_res = test_result_recorded(&witness, card);
     let test_summary = match &test_res {
-        Some(r) => format!("tests: {}", r),
+        Some(r) => format!("tests: {} · {}", r, coverage_words(coverage_recorded(&witness, card).as_deref())),
         None => "tests: NOT run".to_string(),
     };
 
@@ -2399,14 +2435,14 @@ fn run_gates(home: &Path, role: &str, card: u64, round: &str, trace: &str) {
 /// step via `werk-demo test-result <card> pass|fail`. pass AND fail are recorded —
 /// a red test is VISIBLE, not hidden; blocking-on-red is #3190's promotion, but the
 /// result existing at all is what makes "I didn't/can't test" unreachable for a go.
-fn record_test_result(home: &Path, role: &str, card: u64, result: &str) {
+fn record_test_result(home: &Path, role: &str, card: u64, result: &str, coverage: &str) {
     let trace = env::var("CHORUS_TRACE_ID").unwrap_or_else(|_| trace_id());
     // #4012 — stamp the CONTENT this verdict was measured against, so a later
     // round at the same patch can reuse it instead of re-running (and so a round
     // at DIFFERENT content cannot).
     let patch = current_patch_id(card);
     jsonl(home, role, card, &trace, "demo.test_result",
-          &format!(",\"result\":\"{}\",\"patch_id\":\"{}\"", result, patch));
+          &format!(",\"result\":\"{}\",\"patch_id\":\"{}\"{}", result, patch, coverage_field(coverage)));
     emit_spine(home, "demo.test_result", role, card, &trace);
 }
 
@@ -2558,7 +2594,9 @@ pub fn run_demo() -> R<DemoOutcome> {
             .and_then(|s| s.parse().ok())
             .ok_or("usage: werk-demo test-result <card> <pass|fail>")?;
         let result = args.next().unwrap_or_else(|| "pass".to_string());
-        record_test_result(&home, role.trim(), card, &result);
+        // #3983 — werk-test passes the card's own-test coverage as `<state>:<n>`
+        let coverage = args.next().unwrap_or_default();
+        record_test_result(&home, role.trim(), card, &result, &coverage);
         return Ok(DemoOutcome {
             message: format!("test result recorded for #{}: {}", card, result),
             exit: 0,
@@ -3495,5 +3533,40 @@ mod variant_port_4458 {
     fn negative_proof_an_unknown_role_gets_production() {
         assert_eq!(variant_port("abby", 3343, 3340), 3340);
         assert_eq!(clearing_url_for("ghost"), "http://localhost:3470/");
+    }
+}
+
+#[cfg(test)]
+mod own_tests_3983 {
+    use super::{coverage_field, coverage_recorded, coverage_words};
+
+    fn line(card: u64, extra: &str) -> String {
+        format!("{{\"event\":\"demo.test_result\",\"card_id\":{},\"result\":\"pass\",\"patch_id\":\"p\"{}}}", card, extra)
+    }
+
+    #[test]
+    fn the_badge_says_how_many_of_the_cards_own_tests_ran() {
+        let w = line(3983, &coverage_field("covered:14"));
+        assert_eq!(coverage_recorded(&w, 3983).as_deref(), Some("covered:14"));
+        assert_eq!(coverage_words(Some("covered:14")), "own tests: 14 registered case(s) ran");
+    }
+
+    /// NEGATIVE PROOF: a card whose covering tests did not run reads
+    /// ZERO-COVERAGE, and a run that recorded nothing reads "not recorded",
+    /// never a count
+    #[test]
+    fn zero_coverage_and_nothing_recorded_are_visible_states() {
+        let w = line(3983, &coverage_field("zero-coverage:0"));
+        assert!(coverage_words(coverage_recorded(&w, 3983).as_deref()).contains("ZERO-COVERAGE"));
+        assert_eq!(coverage_words(coverage_recorded(&line(3983, ""), 3983).as_deref()), "own tests: not recorded");
+        assert_eq!(coverage_recorded(&line(39830, &coverage_field("covered:1")), 3983), None, "another card's line");
+    }
+
+    #[test]
+    fn only_the_typed_states_are_written() {
+        assert_eq!(coverage_field(""), "");
+        assert_eq!(coverage_field("covered"), "");
+        assert_eq!(coverage_field("made-up:3"), "");
+        assert_eq!(coverage_field("no-code:0"), ",\"coverage\":\"no-code:0\"");
     }
 }

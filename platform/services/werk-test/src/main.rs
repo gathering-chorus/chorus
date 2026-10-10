@@ -56,10 +56,17 @@ fn demo_verdict_call(args: &[String], code: i32) -> Option<(String, String, &'st
     Some((card.clone(), role.clone(), if code == 0 { "pass" } else { "fail" }))
 }
 
+/// #3983 — `<state>:<n>` from this card run, for the demo and accept.
+static CARD_COVERAGE: std::sync::OnceLock<String> = std::sync::OnceLock::new();
+
 fn record_demo_verdict(args: &[String], code: i32) {
     if let Some((card, role, verdict)) = demo_verdict_call(args, code) {
+        let mut argv = vec!["test-result".to_string(), card.clone(), verdict.to_string()];
+        if let Some(c) = CARD_COVERAGE.get() {
+            argv.push(c.clone());
+        }
         let ok = std::process::Command::new("werk-demo")
-            .args(["test-result", &card, verdict])
+            .args(&argv)
             .env("DEPLOY_ROLE", &role)
             .status()
             .map(|s| s.success())
@@ -756,6 +763,12 @@ fn run(args: &[String]) -> Result<i32, String> {
         println!("{}", werk_test::integration_measured_report(selected_ns_tests, executed_ns));
     }
     let (joined, unregistered) = werk_test::join_cases(&all_cases, &rows, &row_names, &row_entities);
+    // #3983 — the card's own tests: recorded with the verdict, read at accept
+    let (cov_state, cov_ran) = werk_test::card_coverage(plan_source, units.len(), joined.len());
+    println!("card-coverage: {} ({} registered case(s) covering this diff ran)", cov_state, cov_ran);
+    emit_spine("test.card.coverage", &role, &card, &trace,
+        &[("state", cov_state), ("ran", &cov_ran.to_string()), ("units", &units.len().to_string())]);
+    let _ = CARD_COVERAGE.set(format!("{}:{}", cov_state, cov_ran));
     if unregistered > 0 {
         emit_spine("testresult.unregistered", &role, &card, &trace,
             &[("count", &unregistered.to_string())]);

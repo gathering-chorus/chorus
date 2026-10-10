@@ -285,6 +285,20 @@ fn gate_decision(card: u64, role: &str, accepter: &str, home: &Path, trace: &str
     Ok(json_str_field(&cj, "status").unwrap_or_default())
 }
 
+/// #3983 — the own-test coverage recorded with the card's latest test result
+/// (`werk-demo test-result … <state>:<n>`), as (state, n). A card whose run
+/// recorded none is `not-recorded`, a typed state of its own.
+pub fn own_tests_at_accept(witness: &str, card: u64) -> (String, String) {
+    let card_key = format!("\"card_id\":{},", card);
+    witness
+        .lines()
+        .rev()
+        .find(|l| l.contains("\"event\":\"demo.test_result\"") && l.contains(&card_key))
+        .and_then(|l| json_str_field(l, "coverage"))
+        .and_then(|c| c.split_once(':').map(|(a, b)| (a.to_string(), b.to_string())))
+        .unwrap_or_else(|| ("not-recorded".to_string(), "0".to_string()))
+}
+
 /// Append a demo.decision line to the witness werk-demo polls (ops/logs/werk-demo.jsonl).
 /// Byte-exact via demo_decision_line so the comma-terminated card_id can't drift.
 fn write_decision(home: &Path, card: u64, decision: &str, accepter: &str, trace: &str) {
@@ -356,7 +370,12 @@ pub fn finalize(card: u64, role: &str, home: &Path) -> R<String> {
 
     run(&script_path(home, "cards"), &["done", &card.to_string()])
         .map_err(|e| format!("cards-done failed (re-run finalize to finish): {}", e))?;
-    let _ = run(&script_path(home, "chorus-log"), &["card.accepted", role, &format!("card={}", card)]);
+    // #3983 — the accept carries the card's own-test evidence, typed: what the
+    // card's test run recorded, or `not-recorded` — never silent
+    let witness = fs::read_to_string(home.join("ops/logs/werk-demo.jsonl")).unwrap_or_default();
+    let (cov_state, cov_ran) = own_tests_at_accept(&witness, card);
+    let _ = run(&script_path(home, "chorus-log"), &["card.accepted", role, &format!("card={}", card),
+        &format!("coverage={}", cov_state), &format!("covering_ran={}", cov_ran)]);
     jsonl(home, role, card, &trace, "card.done", "");
 
     // env-down BEFORE chorus-werk remove so variant services release handles into the
@@ -411,5 +430,5 @@ pub fn finalize(card: u64, role: &str, home: &Path) -> R<String> {
     }
 
     jsonl(home, role, card, &trace, "accept.completed", "");
-    Ok(format!("#{} accepted (board Done + closed)", card))
+    Ok(format!("#{} accepted (board Done + closed) · own tests: {} ({} case(s) ran)", card, cov_state, cov_ran))
 }
