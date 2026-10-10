@@ -36,6 +36,11 @@ PY
 LAUNCH="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)/directing/products/pulse/api/pulse-api-launch.sh"
 bash -n "$LAUNCH" || { echo "FAIL: pulse-api-launch.sh does not parse"; exit 1; }
 if grep -qE 'echo.*(PASSWORD|USER)|set -x' "$LAUNCH"; then echo "FAIL: pulse-api-launch.sh could print a credential"; exit 1; fi
+# the LaunchAgent (platform/scripts/launchagents-canonical/com.chorus.pulse-api.plist) runs the
+# wrapper and carries no credential, only paths (Silas's review, 2026-10-10)
+PLIST="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)/platform/scripts/launchagents-canonical/com.chorus.pulse-api.plist"
+grep -q '/.chorus/bin/pulse-api-launch.sh' "$PLIST" || { echo "FAIL: the pulse-api LaunchAgent does not run its launch wrapper"; exit 1; }
+if grep -qiE 'PASSWORD|SECRET|TOKEN' "$PLIST"; then echo "FAIL: the pulse-api LaunchAgent names a credential"; exit 1; fi
 if [ "${1:-}" = "--self-test" ]; then
   # NEGATIVE PROOF: two answers that differ in one field must be reported as different
   T=$(mktemp -d); trap 'rm -rf "$T"' EXIT
