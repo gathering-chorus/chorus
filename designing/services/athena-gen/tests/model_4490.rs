@@ -1,6 +1,11 @@
+<<<<<<< HEAD
 // @domain: domains
 //! #4490 — the generator reads one product's slice of the model from TTL alone.
 use athena_gen::model::{load, missing_settings, product, segment, settings, Kind};
+=======
+//! #4490 — the generator reads one product's slice of the model from TTL alone.
+use athena_gen::model::{load, product, segment, Kind};
+>>>>>>> a0f8b1ded (wren: #4490 — athena-gen reads a product's slice of the model from TTL (in-memory Oxigraph, no Fuseki): domains, classes, fields, sh:in in order, v1 path segments; 4 tests incl. 2 negative proofs)
 use std::path::PathBuf;
 
 const FIXTURE: &str = r#"
@@ -41,11 +46,18 @@ fn reads_domains_classes_fields_in_model_order() {
     assert!(sv.required && !sv.many);
     let owner = rs.fields.iter().find(|f| f.name == "ownedBy").unwrap();
     assert_eq!(owner.kind, Kind::Link { class: Some("Principal".into()) });
+<<<<<<< HEAD
     // a class with no instancesGraph lives in its domain's graph; an uncapped LITERAL is
     // served as one value (v1's rule), only an uncapped link is many
     let ev = &p.domains[1].classes[0];
     assert_eq!((ev.segment.as_str(), ev.graph.as_str()), ("events", "urn:chorus:domains:streams"));
     assert!(!ev.fields[0].many && !ev.fields[0].required);
+=======
+    // a class with no instancesGraph lives in its domain's graph; no maxCount means many
+    let ev = &p.domains[1].classes[0];
+    assert_eq!((ev.segment.as_str(), ev.graph.as_str()), ("events", "urn:chorus:domains:streams"));
+    assert!(ev.fields[0].many && !ev.fields[0].required);
+>>>>>>> a0f8b1ded (wren: #4490 — athena-gen reads a product's slice of the model from TTL (in-memory Oxigraph, no Fuseki): domains, classes, fields, sh:in in order, v1 path segments; 4 tests incl. 2 negative proofs)
 }
 
 #[test]
@@ -70,6 +82,7 @@ fn negative_proof_a_file_that_does_not_parse_is_named_never_half_loaded() {
     assert_eq!(skipped.len(), 1);
     assert!(skipped[0].contains("m.ttl"));
 }
+<<<<<<< HEAD
 
 #[test]
 fn a_class_serves_its_parents_fields_as_v1_does() {
@@ -104,3 +117,5 @@ c:p2 c:propertyKey "server.bind" ; c:propertyValue "127.0.0.1:3392" .
     let missing = missing_settings(&s);
     assert!(missing.contains(&"identity.issuer") && missing.contains(&"store.endpoint"), "{missing:?}");
 }
+=======
+>>>>>>> a0f8b1ded (wren: #4490 — athena-gen reads a product's slice of the model from TTL (in-memory Oxigraph, no Fuseki): domains, classes, fields, sh:in in order, v1 path segments; 4 tests incl. 2 negative proofs)

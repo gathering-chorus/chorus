@@ -1,8 +1,13 @@
+<<<<<<< HEAD
 // @domain: domains
 //! athena-gen (#4490):
 //!   athena-gen model    --root <repo> --product <name>              prints the product's slice of the model
 //!   athena-gen generate --root <repo> --product <name> --out <dir>
 //!                                                                    writes the product's API crate
+=======
+//! athena-gen — `athena-gen model --root <repo> --product <name>` prints the product's
+//! slice of the model; `generate` (next) writes its API crate.
+>>>>>>> a0f8b1ded (wren: #4490 — athena-gen reads a product's slice of the model from TTL (in-memory Oxigraph, no Fuseki): domains, classes, fields, sh:in in order, v1 path segments; 4 tests incl. 2 negative proofs)
 
 use std::path::PathBuf;
 
@@ -10,6 +15,7 @@ fn arg(args: &[String], flag: &str) -> Option<String> {
     args.iter().position(|a| a == flag).and_then(|i| args.get(i + 1).cloned())
 }
 
+<<<<<<< HEAD
 fn die(msg: impl std::fmt::Display) -> ! {
     eprintln!("athena-gen: {msg}");
     std::process::exit(1);
@@ -49,5 +55,31 @@ fn main() {
             }
         }
         other => die(format!("unknown command '{other}' (model | generate)")),
+=======
+fn main() {
+    let args: Vec<String> = std::env::args().collect();
+    let root = PathBuf::from(arg(&args, "--root").unwrap_or_else(|| ".".into()));
+    let Some(product) = arg(&args, "--product") else {
+        eprintln!("usage: athena-gen model --root <repo> --product <name>");
+        std::process::exit(2);
+    };
+    let files = athena_gen::model::model_files(&root);
+    let (store, skipped) = match athena_gen::model::load(&files) {
+        Ok(v) => v,
+        Err(e) => {
+            eprintln!("athena-gen: {e}");
+            std::process::exit(1);
+        }
+    };
+    for s in &skipped {
+        eprintln!("athena-gen: skipped (does not parse): {s}");
+    }
+    match athena_gen::model::product(&store, &product) {
+        Ok(p) => println!("{p:#?}"),
+        Err(e) => {
+            eprintln!("athena-gen: {e}");
+            std::process::exit(1);
+        }
+>>>>>>> a0f8b1ded (wren: #4490 — athena-gen reads a product's slice of the model from TTL (in-memory Oxigraph, no Fuseki): domains, classes, fields, sh:in in order, v1 path segments; 4 tests incl. 2 negative proofs)
     }
 }
