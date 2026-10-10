@@ -1308,7 +1308,7 @@ fn run_services(args: &[String]) -> i32 {
         let a = args[i].as_str();
         if WITH_VALUE.contains(&a) {
             i += 2;
-        } else if a == "--dry-run" {
+        } else if a == "--dry-run" || a == "--check-mapping" {
             i += 1;
         } else {
             eprintln!("chorus-crawl services: unknown arg {a} — nothing ran");
@@ -1330,12 +1330,24 @@ fn run_services(args: &[String]) -> i32 {
                     eprintln!("chorus-crawl services: REFUSE — mapping targets unknown Service(s): {}", bad.join(", "));
                     return 2;
                 }
+                // a werk slot is service-werk by rule (service_for); an entry for
+                // one goes stale the moment its card's env comes down
+                let slots: Vec<&str> = map.iter().map(|(k, _)| k.as_str()).filter(|k| k.contains(".werk.")).collect();
+                if !slots.is_empty() {
+                    eprintln!("chorus-crawl services: REFUSE — werk-slot labels need no mapping entry: {}", slots.join(", "));
+                    return 2;
+                }
                 map
             }
             (Err(e), _) => { eprintln!("chorus-crawl services: mapping {mapping_path}: {e}"); return 2; }
             (_, Err(e)) => { eprintln!("chorus-crawl services: services TTL {ttl_path}: {e}"); return 2; }
         }
     };
+    // the mapping alone, checked without walking anything (its test's seam)
+    if args.iter().any(|a| a == "--check-mapping") {
+        println!("services: mapping {mapping_path} — {} entries, every target an authored Service or none", mapping.len());
+        return 0;
+    }
     let now = now_secs();
     let ts = flag("--timestamp").unwrap_or_else(|| chorus_crawl::iso_from_secs(now));
     let machines: Vec<(String, MachineWalk)> = vec![("library".into(), walk_local_units()), ("bedroom".into(), walk_bedroom_units())];
