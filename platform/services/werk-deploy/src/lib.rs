@@ -28,6 +28,7 @@ use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 
 // #3513 — the ONE shared failure classifier (failure_class / fail_extra).
 include!("../../shared/failure_class.rs");
+include!("../../shared/crate_dirs.rs");
 
 // #3092 — per-role demo env lifecycle (env_start / env_deploy / env_stop).
 // Encapsulated in demo_env.rs so the per-service plist/marker logic has ONE
@@ -577,8 +578,8 @@ pub fn target_class_in(name: &str, werk_root: &Path) -> R<TargetClass> {
         return Ok(TargetClass::CliVerb { bin: name.to_string() });
     }
 
-    // Rust crate? platform/services/<name>/Cargo.toml.
-    let crate_dir = werk_root.join(format!("platform/services/{}", name));
+    // Rust crate? Any crate home (crate_dirs.rs, #4491).
+    let crate_dir = werk_root.join(crate_rel_dir(werk_root, name));
     if crate_dir.join("Cargo.toml").is_file() {
         // #3317 — the service binary comes from structural discovery (the binary named
         // like the crate = cargo's package binary), not a hardcoded crate→bin map.
@@ -1596,16 +1597,17 @@ fn deploy_crate_canonical(home: &Path, role: &str, card: u64, trace: &str, name:
         let class = target_class_in(name, Path::new(&root))?;
         match &class {
             TargetClass::RustService { svc, bin } => {
-                let built = file_cdhash(&format!("{}/platform/services/{}/target/release/{}", root, name, bin))
+                let built = file_cdhash(&format!("{}/{}/target/release/{}", root, crate_rel_dir(Path::new(&root), name), bin))
                     .unwrap_or_default();
                 deploy_rust_service(home, &root, role, card, "canonical", trace, name, &built, svc, bin)?;
                 artifact_class = "rust-daemon";
             }
             TargetClass::CliVerb { bin } => {
-                let built = file_cdhash(&format!("{}/platform/services/{}/target/release/{}", root, name, bin))
+                let rel = crate_rel_dir(Path::new(&root), name);
+                let built = file_cdhash(&format!("{}/{}/target/release/{}", root, rel, bin))
                     .ok_or_else(|| format!(
-                        "binary missing for {} — run werk-build --target canonical first ({}/platform/services/{}/target/release/{})",
-                        name, root, name, bin
+                        "binary missing for {} — run werk-build --target canonical first ({}/{}/target/release/{})",
+                        name, root, rel, bin
                     ))?;
                 deploy_cli_verb(home, &root, role, card, "canonical", trace, name, &built, bin)?;
                 // #3896 — deploy the crate's OTHER binaries too. The #3895 land
@@ -1613,12 +1615,12 @@ fn deploy_crate_canonical(home: &Path, role: &str, card: u64, trace: &str, name:
                 // RETIRED STUB, so the deploy shipped the stub and left the real
                 // verb (athena-model) stale at ~/.chorus/bin — landed ≠ running.
                 // Structural, not a name map: every discovered [[bin]] deploys.
-                let crate_dir = Path::new(&root).join(format!("platform/services/{}", name));
+                let crate_dir = Path::new(&root).join(&rel);
                 for (sibling, _) in crate_binaries_with_service_in(&crate_dir, name) {
                     if sibling == *bin {
                         continue;
                     }
-                    let sib_path = format!("{}/platform/services/{}/target/release/{}", root, name, sibling);
+                    let sib_path = format!("{}/{}/target/release/{}", root, rel, sibling);
                     let sib_built = file_cdhash(&sib_path).ok_or_else(|| format!(
                         "binary missing for {} sibling {} — run werk-build --target canonical first ({})",
                         name, sibling, sib_path
@@ -1680,7 +1682,7 @@ fn run_crate_mode(args: &[String]) -> R<String> {
         }
         // Rust crate: restore each binary via chorus-bin-install --rollback, then
         // kickstart + liveness when it's a service.
-        let crate_dir = Path::new(&root).join(format!("platform/services/{}", name));
+        let crate_dir = Path::new(&root).join(crate_rel_dir(Path::new(&root), &name));
         let cbi = chorus_bin_install_cmd(&home, &root);
         for (b, _) in crate_binaries_with_service_in(&crate_dir, &name) {
             run_env(Some(&root), &[("CHORUS_ROLE", &role)], &cbi, &["--target", "canonical", "--rollback", &b])
@@ -1724,6 +1726,28 @@ pub fn changed_service_crates(diff: &str) -> Vec<String> {
     out
 }
 
+/// #4491 — the changed crates in every crate home, by package name, read from
+/// the tree at `root` (a product API dir is `api`; its crate is `pulse-api`).
+pub fn changed_crates_in(root: &Path, diff: &str) -> Vec<String> {
+    let mut out = changed_service_crates(diff);
+    for line in diff.lines() {
+        let Some(dir) = crate_dir_of_path(line.trim(), &|d: &str| !d.starts_with("platform/services/") && root.join(d).join("Cargo.toml").is_file())
+        else { continue };
+        let name = fs::read_to_string(root.join(&dir).join("Cargo.toml")).ok()
+            .and_then(|t| cargo_package_name(&t))
+            .unwrap_or_else(|| dir.rsplit('/').next().unwrap_or(&dir).to_string());
+        if !out.contains(&name) {
+            out.push(name);
+        }
+    }
+    out
+}
+
+/// #4491 — does the diff touch any crate, in any home (no tree needed).
+fn touches_a_crate(diff: &str) -> bool {
+    diff.lines().any(|l| crate_dir_of_path(l.trim(), &|_: &str| true).is_some())
+}
+
 #[allow(dead_code)] // only scope_declared_edges is used here
 mod scope_core { include!("../../shared/scope_units.rs"); }
 
@@ -1738,7 +1762,7 @@ pub fn with_lib_dependents(root: &Path, crates: &[String], lib_only: &[String], 
         for (provider, dependent) in edges {
             if provider != &lib || seen.contains(dependent) { continue; }
             seen.push(dependent.clone());
-            let dir = root.join("platform/services").join(dependent);
+            let dir = root.join(crate_rel_dir(root, dependent));
             if !dir.join("Cargo.toml").is_file() { continue; }
             if crate_binaries_in(&dir).is_empty() { queue.push(dependent.clone()); }
             else if !out.contains(dependent) { out.push(dependent.clone()); }
@@ -1766,15 +1790,15 @@ pub fn shared_includers(root: &Path, diff: &str) -> Vec<String> {
         }
     }
     let mut out: Vec<String> = Vec::new();
-    let Ok(rd) = fs::read_dir(root.join("platform/services")) else { return out };
-    for e in rd.flatten() {
-        let dir = e.path();
-        if !dir.join("Cargo.toml").is_file() || crate_binaries_in(&dir).is_empty() { continue; }
+    // #4491 — every crate home
+    for (name, rel) in crate_dirs(root) {
+        let dir = root.join(rel);
+        if crate_binaries_in(&dir).is_empty() { continue; }
         let mut files = Vec::new();
         rs_files(&dir.join("src"), &mut files);
         let hit = files.iter().any(|f| fs::read_to_string(f)
             .map(|t| changed.iter().any(|c| t.contains(c.as_str()))).unwrap_or(false));
-        if hit { if let Some(n) = dir.file_name().and_then(|n| n.to_str()) { out.push(n.to_string()); } }
+        if hit { out.push(name); }
     }
     out.sort();
     out
@@ -1951,7 +1975,7 @@ pub fn partition_lib_only(root: &Path, crates: &[String]) -> (Vec<String>, Vec<S
     let mut deployable = Vec::new();
     let mut lib_only = Vec::new();
     for c in crates {
-        let dir = root.join("platform/services").join(c);
+        let dir = root.join(crate_rel_dir(root, c));
         // #3821 fallout — a platform/services dir that EXISTS but has no
         // Cargo.toml (shared/: source-include files compiled INSIDE their
         // includers) is not a crate and can never deploy; it rides with
@@ -2032,7 +2056,7 @@ fn deploy_canonical(home: &Path, werk_s: &str, role: &str, card: u64, trace: &st
     // #3638 — lib-only changed crates (werk-teardown class) are partitioned out with a
     // witnessed skip: they emit no binary, and sending them to deploy_crate_canonical
     // dies on a phantom target/release path (this card's own first land failure).
-    let all_crates = changed_service_crates(&diff);
+    let all_crates = changed_crates_in(Path::new(werk_s), &diff);
     let (crates, lib_only) = partition_lib_only(Path::new(&canonical_root_path(home)), &all_crates);
     for c in &lib_only {
         jsonl(home, role, card, trace, "deploy.skipped",
@@ -2101,7 +2125,7 @@ fn deploy_canonical(home: &Path, werk_s: &str, role: &str, card: u64, trace: &st
     // #4446 — always-on services whose code this land changed, restarted after the
     // installs below (a script daemon has nothing to install: canonical IS its code).
     let bins: Vec<String> = crates.iter()
-        .flat_map(|c| crate_binaries_in(&canon.join("platform/services").join(c)))
+        .flat_map(|c| crate_binaries_in(&canon.join(crate_rel_dir(&canon, c))))
         .collect();
     let skip: Vec<String> = crates.iter().chain(ts.iter()).map(|c| service_for_crate(c)).collect();
     let restarts = daemons_on_changed_code(&installed_agents(home), &canon.to_string_lossy(), &diff, &bins, &skip,
@@ -2305,9 +2329,10 @@ fn deploy_rust_service(
     // the crate's own Cargo.toml + src/bin (no hardcoded list to drift). `werk_s` is the
     // SOURCE ROOT the built artifacts live under — the card's werk for in-werk deploys,
     // canonical for build-from-main canonical deploys (#3317).
-    let crate_dir = Path::new(werk_s).join(format!("platform/services/{}", crate_name));
+    let rel = crate_rel_dir(Path::new(werk_s), crate_name);
+    let crate_dir = Path::new(werk_s).join(&rel);
     let bins = crate_binaries_with_service_in(&crate_dir, crate_name);
-    let built_path = |b: &str| format!("{}/platform/services/{}/target/release/{}", werk_s, crate_name, b);
+    let built_path = |b: &str| format!("{}/{}/target/release/{}", werk_s, rel, b);
 
     // AC2 stale-build guard + #3132 hash-gate (canonical only). Skip install+kickstart
     // only when EVERY binary is already installed == built AND source unchanged.
@@ -2684,7 +2709,7 @@ pub fn slots_to_refresh_with(
 /// wrong refresh is one re-deploy; the cost of wrongly protecting is the exact
 /// stale-slot class this card exists to kill.
 pub fn werk_diff_touches_crate(werk_dir: &str, crate_name: &str) -> bool {
-    let needle = format!("platform/services/{}/", crate_name);
+    let needle = format!("{}/", crate_rel_dir(Path::new(werk_dir), crate_name));
     std::process::Command::new("git")
         .args(["-C", werk_dir, "diff", "--name-only", "origin/main...HEAD"])
         .output()
@@ -2740,7 +2765,7 @@ fn deploy_cli_verb(
     home: &Path, werk_s: &str, role: &str, card: u64, target: &str, trace: &str,
     crate_name: &str, built_cdhash: &str, bin: &str,
 ) -> R<()> {
-    let built_path = format!("{}/platform/services/{}/target/release/{}", werk_s, crate_name, bin);
+    let built_path = format!("{}/{}/target/release/{}", werk_s, crate_rel_dir(Path::new(werk_s), crate_name), bin);
 
     // target=werk: install raw binary at WERK_<ROLE>_BIN/<name> (existing path).
     // target=canonical: install at CHORUS_BIN/<name>-bin via chorus-bin-install,
@@ -3267,7 +3292,7 @@ fn deploy_ts_package(
 /// The crate's files this card changed (vs origin/main), as paths under `werk_s`.
 fn crate_changed_files(werk_s: &str, crate_name: &str) -> Vec<String> {
     let diff = run_env(Some(werk_s), &[], "git", &["-C", werk_s, "diff", "origin/main", "--name-only"]).unwrap_or_default();
-    let prefix = format!("platform/services/{}/", crate_name);
+    let prefix = format!("{}/", crate_rel_dir(Path::new(werk_s), crate_name));
     diff.lines().map(|l| l.trim().to_string()).filter(|l| l.starts_with(&prefix)).collect()
 }
 
@@ -3513,7 +3538,7 @@ pub fn empty_summary_is_model_only(diff: &str) -> bool {
     // html as a chorus-api TS change, was neither config-only nor model-only,
     // and died "no crate=cdhash pairs" (#3487 class, hit 08-27 and again here).
     let buildable = drop_build_irrelevant(diff);
-    changed_service_crates(&buildable).is_empty()
+    !touches_a_crate(&buildable)
         && changed_ts_services(&buildable).is_empty()
         && !changed_model_sources(&buildable).is_empty()
 }
@@ -3538,7 +3563,7 @@ pub fn drop_build_irrelevant(diff: &str) -> String {
 
 pub fn empty_summary_is_config_only(diff: &str) -> bool {
     let buildable = drop_build_irrelevant(diff);
-    changed_service_crates(&buildable).is_empty()
+    !touches_a_crate(&buildable)
         && changed_ts_services(&buildable).is_empty()
         && changed_model_sources(&buildable).is_empty()
 }

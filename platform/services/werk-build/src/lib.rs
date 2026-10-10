@@ -26,6 +26,7 @@ use std::thread::sleep;
 include!("../../shared/failure_class.rs");
 // #3821 — the ONE diff→units scoping core, shared with werk-test (source-include).
 include!("../../shared/scope_units.rs");
+include!("../../shared/crate_dirs.rs");
 use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 
 extern "C" {
@@ -87,7 +88,7 @@ pub enum BuildUnit {
     /// then cascade a rebuild of every consumer that imports it (#3126). Sorts FIRST
     /// so it builds before consumers (a consumer's tsc needs the lib's fresh .d.ts).
     SharedLib(String),
-    /// Rust crate at platform/services/<name>/ — cargo+codesign+cdhash.
+    /// Rust crate in any crate home (crate_dirs.rs, #4491) — cargo+codesign+cdhash.
     RustCrate(String),
     /// TS service at platform/api/ etc. — `npm run build` in service dir, hash dist.
     TsService(String),
@@ -159,29 +160,21 @@ pub fn has_build_script(pkg_json: &str) -> bool {
 pub fn discover_build_units_in_tree(werk_root: &Path) -> Vec<BuildUnit> {
     let mut units: BTreeSet<BuildUnit> = BTreeSet::new();
 
-    // Rust crates: platform/services/<name>/Cargo.toml — BINARY crates only.
+    // Rust crates — BINARY crates only.
     // A lib-only sibling (no src/main.rs, no [[bin]], no src/bin/*.rs — e.g.
     // werk-teardown, #3431) is compiled inside its dependents' cargo builds via
     // the path dep; as a standalone unit it has no binary for build-signed.sh
     // to sign, so it can never emit a cdhash and would fail every run.
-    let services = werk_root.join("platform/services");
-    if let Ok(entries) = fs::read_dir(&services) {
-        for e in entries.flatten() {
-            let dir = e.path();
-            if !dir.join("Cargo.toml").is_file() {
-                continue;
-            }
-            let has_binary_root = dir.join("src/main.rs").is_file()
-                || dir.join("src/bin").is_dir()
-                || fs::read_to_string(dir.join("Cargo.toml"))
-                    .map(|t| t.contains("[[bin]]"))
-                    .unwrap_or(false);
-            if !has_binary_root {
-                continue;
-            }
-            if let Some(n) = e.file_name().to_str() {
-                units.insert(BuildUnit::RustCrate(n.to_string()));
-            }
+    // #4491 — every crate home, not only platform/services (crate_dirs.rs).
+    for (n, rel) in crate_dirs(werk_root) {
+        let dir = werk_root.join(&rel);
+        let has_binary_root = dir.join("src/main.rs").is_file()
+            || dir.join("src/bin").is_dir()
+            || fs::read_to_string(dir.join("Cargo.toml"))
+                .map(|t| t.contains("[[bin]]"))
+                .unwrap_or(false);
+        if has_binary_root {
+            units.insert(BuildUnit::RustCrate(n));
         }
     }
 
@@ -449,7 +442,7 @@ fn npm_path(werk_s: &str) -> String {
 }
 
 fn build_crate(werk_s: &str, crate_name: &str) -> R<String> {
-    let crate_dir = format!("{}/platform/services/{}", werk_s, crate_name);
+    let crate_dir = format!("{}/{}", werk_s, crate_rel_dir(Path::new(werk_s), crate_name));
     let (identifier, binary) = crate_spec(crate_name);
     // #3168 — resolve build-signed.sh by absolute path inside the werk. The build env's
     // PATH does not include platform/scripts where it lives, so a bare "build-signed.sh"
@@ -1167,7 +1160,7 @@ pub fn discover_unit_dirs(werk_root: &Path) -> Vec<UnitMap> {
     for unit in discover_build_units_in_tree(werk_root) {
         match &unit {
             BuildUnit::RustCrate(n) => {
-                out.push(UnitMap { unit: unit.clone(), dir: format!("platform/services/{}", n) });
+                out.push(UnitMap { unit: unit.clone(), dir: crate_rel_dir(werk_root, n) });
             }
             BuildUnit::SharedLib(n) | BuildUnit::TsService(n) => {
                 for pj in find_files(werk_root, "package.json") {
