@@ -28,8 +28,12 @@ ok_bind() {
 @test "the LaunchAgent starts dagu start-all with the repo config" {
   plutil -lint "$PLIST"
   [ "$(plutil -extract Label raw "$PLIST")" = "com.chorus.dagu" ]
-  [ "$(plutil -extract ProgramArguments.1 raw "$PLIST")" = "start-all" ]
-  [ "$(basename "$(plutil -extract ProgramArguments.3 raw "$PLIST")")" = "dagu.yaml" ]
+  # #4474: run through service-run so starts, stops and failures reach Loki (#4446)
+  [ "$(basename "$(plutil -extract ProgramArguments.0 raw "$PLIST")")" = "service-run" ]
+  [ "$(plutil -extract ProgramArguments.2 raw "$PLIST")" = "daemon" ]
+  [ "$(basename "$(plutil -extract ProgramArguments.3 raw "$PLIST")")" = "dagu" ]
+  [ "$(plutil -extract ProgramArguments.4 raw "$PLIST")" = "start-all" ]
+  [ "$(basename "$(plutil -extract ProgramArguments.6 raw "$PLIST")")" = "dagu.yaml" ]
 }
 
 @test "auth is set explicitly and dagu binds loopback only" {

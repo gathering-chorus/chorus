@@ -99,6 +99,9 @@ pub fn step_name(r: &Row) -> String {
     r.skill.rsplit(['#', '/']).next().unwrap_or(&r.skill).to_string()
 }
 
+/// werk-demo's exit contract (#3237): 0 go, 2 presented and held, 1 error.
+pub const PRESENTED_EXIT: u8 = 2;
+
 fn quote(s: &str) -> String {
     format!("\"{}\"", s.replace('\\', "\\\\").replace('"', "\\\""))
 }
@@ -135,7 +138,8 @@ pub fn generate(pipeline: &str, rows: &[Row]) -> Result<String, Vec<String>> {
     ));
     out.push_str("steps:\n");
     let mut prev: Option<String> = None;
-    for r in &rows {
+    for (i, r) in rows.iter().enumerate() {
+        let before_a_human = rows.get(i + 1).is_some_and(|n| n.executor == "human");
         let id = step_name(r);
         out.push_str(&format!("  - name: {id}\n"));
         out.push_str(&format!("    description: {}\n", quote(&r.label)));
@@ -151,6 +155,15 @@ pub fn generate(pipeline: &str, rows: &[Row]) -> Result<String, Vec<String>> {
         } else {
             let cmd = if r.mode.is_empty() { r.implemented_by.clone() } else { format!("{} {}", r.implemented_by, r.mode) };
             out.push_str(&format!("    command: {}\n", quote(&cmd)));
+            if before_a_human {
+                // #4474 run 6: the verb before a human go presents and exits
+                // PRESENTED_EXIT ("held for the go", werk-demo #3237); in v2 the
+                // go is the next dagu step, so held is this step's success.
+                // Any other non-zero exit still fails the run.
+                out.push_str(&format!(
+                    "    continue_on:\n      exit_code: [{PRESENTED_EXIT}]\n      mark_success: true\n"
+                ));
+            }
         }
         prev = Some(id);
     }

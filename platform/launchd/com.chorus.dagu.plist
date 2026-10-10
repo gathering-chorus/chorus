@@ -6,6 +6,9 @@
   <key>Label</key><string>com.chorus.dagu</string>
   <key>ProgramArguments</key>
   <array>
+    <string>/Users/jeffbridwell/CascadeProjects/chorus/platform/scripts/service-run</string>
+    <string>com.chorus.dagu</string>
+    <string>daemon</string>
     <string>/opt/homebrew/bin/dagu</string>
     <string>start-all</string>
     <string>--config</string>

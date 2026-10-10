@@ -92,6 +92,17 @@ fn every_step_is_named_by_its_skill_row_and_nothing_is_minted() {
     assert!(out.contains("    description: \"werk-deploy --target werk\"\n"), "description is the row's label");
 }
 
+// #4474 run 6: werk-demo presented, exited 2 (held for the go) and dagu
+// failed the run before the go step it was waiting for.
+#[test]
+fn only_the_step_before_the_go_treats_presented_as_success() {
+    let out = generate("cicd", &cicd()).unwrap();
+    let held = "    continue_on:\n      exit_code: [2]\n      mark_success: true\n";
+    assert_eq!(out.matches(held).count(), 1, "exactly one step may hold");
+    let demo = out.split("  - name: ").find(|s| s.starts_with("skill-demo\n")).unwrap();
+    assert!(demo.contains(held), "the demo step holds for the go");
+}
+
 #[test]
 fn negative_proof_one_skill_called_twice_is_refused() {
     let mut rows = cicd();
