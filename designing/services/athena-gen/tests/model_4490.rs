@@ -1,0 +1,70 @@
+//! #4490 — the generator reads one product's slice of the model from TTL alone.
+use athena_gen::model::{load, product, segment, Kind};
+use std::path::PathBuf;
+
+const FIXTURE: &str = r#"
+@prefix c: <https://jeffbridwell.com/chorus#> .
+@prefix sh: <http://www.w3.org/ns/shacl#> .
+@prefix xsd: <http://www.w3.org/2001/XMLSchema#> .
+c:pulse a c:Product ; c:hasDomain c:awareness, c:streams .
+c:awareness c:definesVocabulary c:RoleState .
+c:streams c:definesVocabulary c:StreamEvent .
+c:RoleStateShape a sh:NodeShape ; sh:targetClass c:RoleState ;
+  c:instancesGraph "urn:chorus:domains:awareness" ;
+  sh:property [ sh:path c:stateValue ; sh:minCount 1 ; sh:maxCount 1 ; sh:datatype xsd:string ;
+                sh:in ( "idle" "building" "waiting" "blocked" ) ] ;
+  sh:property [ sh:path c:ownedBy ; sh:minCount 1 ; sh:maxCount 1 ; sh:nodeKind sh:IRI ; sh:class c:Principal ] .
+c:StreamEventShape a sh:NodeShape ; sh:targetClass c:StreamEvent ;
+  sh:property [ sh:path c:streamTs ; sh:datatype xsd:dateTime ] .
+"#;
+
+fn fixture(name: &str, ttl: &str) -> PathBuf {
+    let dir = std::env::temp_dir().join(format!("athena-gen-4490-{}-{name}", std::process::id()));
+    std::fs::create_dir_all(&dir).unwrap();
+    let f = dir.join("m.ttl");
+    std::fs::write(&f, ttl).unwrap();
+    f
+}
+
+#[test]
+fn reads_domains_classes_fields_in_model_order() {
+    let (store, skipped) = load(&[fixture("ok", FIXTURE)]).unwrap();
+    assert!(skipped.is_empty(), "{skipped:?}");
+    let p = product(&store, "pulse").unwrap();
+    let names: Vec<_> = p.domains.iter().map(|d| d.name.as_str()).collect();
+    assert_eq!(names, ["awareness", "streams"]);
+    let rs = &p.domains[0].classes[0];
+    assert_eq!((rs.name.as_str(), rs.segment.as_str(), rs.graph.as_str()), ("RoleState", "rolestates", "urn:chorus:domains:awareness"));
+    let sv = rs.fields.iter().find(|f| f.name == "stateValue").unwrap();
+    assert_eq!(sv.allowed, ["idle", "building", "waiting", "blocked"], "sh:in must keep the model's order");
+    assert!(sv.required && !sv.many);
+    let owner = rs.fields.iter().find(|f| f.name == "ownedBy").unwrap();
+    assert_eq!(owner.kind, Kind::Link { class: Some("Principal".into()) });
+    // a class with no instancesGraph lives in its domain's graph; no maxCount means many
+    let ev = &p.domains[1].classes[0];
+    assert_eq!((ev.segment.as_str(), ev.graph.as_str()), ("events", "urn:chorus:domains:streams"));
+    assert!(ev.fields[0].many && !ev.fields[0].required);
+}
+
+#[test]
+fn paths_match_v1_segments() {
+    assert_eq!(segment("streams", "StreamEvent"), "events");
+    assert_eq!(segment("awareness", "WaitingOn"), "waitingons");
+    assert_eq!(segment("tests", "TestResult"), "results");
+    assert_eq!(segment("tests", "Test"), "tests");
+    assert_eq!(segment("value-streams", "ValueStreamStep"), "steps");
+}
+
+#[test]
+fn negative_proof_a_product_with_no_domains_is_refused_not_empty() {
+    let (store, _) = load(&[fixture("none", "@prefix c: <https://jeffbridwell.com/chorus#> . c:ghost a c:Product .")]).unwrap();
+    let e = product(&store, "ghost").unwrap_err();
+    assert!(e.0.contains("has no domains"), "{e}");
+}
+
+#[test]
+fn negative_proof_a_file_that_does_not_parse_is_named_never_half_loaded() {
+    let (_, skipped) = load(&[fixture("bad", "this is not turtle .")]).unwrap();
+    assert_eq!(skipped.len(), 1);
+    assert!(skipped[0].contains("m.ttl"));
+}

@@ -1,0 +1,16 @@
+[package]
+name = "athena-gen"
+version = "0.1.0"
+edition = "2021"
+description = "#4490: athena-make v2. Reads the OWL/SHACL model and writes one compiled Rust API per product."
+
+[dependencies]
+oxigraph = { version = "=0.5.11", default-features = false }
+serde_json = "1"
+
+[[bin]]
+name = "athena-gen"
+path = "src/main.rs"
+
+[lib]
+path = "src/lib.rs"
