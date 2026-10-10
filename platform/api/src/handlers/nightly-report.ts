@@ -80,7 +80,37 @@ export type NightlyRun = {
    *  quietForMs is the gap since the last row; the page names it. */
   quietForMs?: number;
   lastRowAt?: string;
+  /** #4007 — the suites running right now, from the run's live rows: how long
+   *  each has run and the timeout the runner holds it to. */
+  inFlight?: InFlightUnit[];
 };
+
+export type InFlightUnit = { unit: string; elapsedMs: number; timeoutMs?: number };
+
+const minSec = (ms: number): string => {
+  const s = Math.max(0, Math.round(ms / 1000));
+  return s >= 60 ? `${Math.floor(s / 60)}m ${s % 60}s` : `${s}s`;
+};
+
+/** #4007 — a suite running at or past its own timeout is wedged: the runner
+ *  should have ended it by then. A suite with no known timeout is never called
+ *  wedged, only shown with its time. */
+export function isWedged(u: InFlightUnit): boolean {
+  return u.timeoutMs !== undefined && u.elapsedMs >= u.timeoutMs;
+}
+
+/** #4007 — what is running now, and for how long. Wedged suites first. */
+export function inFlightLine(run: NightlyRun): string {
+  const units = run.inFlight ?? [];
+  if (run.completed || units.length === 0) return '';
+  const wedged = units.filter(isWedged);
+  const live = units.filter((u) => !isWedged(u)).sort((a, b) => b.elapsedMs - a.elapsedMs);
+  const parts = [
+    ...wedged.map((u) => `<b>WEDGED</b> ${esc(displayPath(u.unit))} ${minSec(u.elapsedMs)} (past its ${minSec(u.timeoutMs ?? 0)} timeout)`),
+    ...live.map((u) => `${esc(displayPath(u.unit))} ${minSec(u.elapsedMs)}`),
+  ];
+  return `<span class="state">Running now: ${parts.join(' · ')}</span>`;
+}
 
 /** One `SUITE|kind|path|owner|status|summary` row, or null for any other line.
  *  The summary may itself contain '|', so it takes everything after field 5. */
@@ -522,6 +552,7 @@ function renderBanner(run: NightlyRun, o: NightlyPageOpts | undefined): string {
   <div class="verdict">${verdict}</div>
   <div class="when">${esc(run.startedAt)}${run.completedAt ? ' → ' + esc(run.completedAt.slice(11)) : ''}${dur}</div>
   ${notFinishedLine(run)}
+  ${inFlightLine(run)}
   <div class="counts"><span><span class="u">suites</span> ${counts('pass')} passed · ${reds} failed · ${counts('slow')} slow · ${other} unmeasured · ${counts('skip')} skipped</span>${tests}${errs}</div>
   ${r ? `<div class="split">${splitLine(r)}${deltaLine(r)}</div>` : ''}
 </div>`;
