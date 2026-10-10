@@ -14,18 +14,8 @@ pub struct Settings {
     pub store_path: String,
     pub store_user_var: String,
     pub store_password_var: String,
-<<<<<<< HEAD
-<<<<<<< HEAD
     pub identity_issuer: String,
     pub events_command: String,
-<<<<<<< HEAD
-=======
->>>>>>> 3795eee59 (wren: #4490 — athena-gen generate writes the pulse-api crate (RowStore trait, remote SPARQL backend, settings env then file then default, versioned envelope); pulse-api compiles and serves the 5 pulse collections read-only on :3392; emitter tests incl. same-model-same-bytes and a model-change negative proof)
-=======
-    pub identity_issuer: String,
->>>>>>> 4c9755287 (wren: #4490 — pulse-api writes require a signed caller: ES256 token through the shared chorus-oidc verifier, principal and grants read from the model, typed refusals (no-token 401, token-invalid 401, identity-unreachable 503, not-a-principal 403); live check: wren's token resolves to principal wren)
-=======
->>>>>>> 9ac820daf (wren: #4490 — pulse-api writes (create, replace, patch, delete) with the door rules generated in: shape checks (off-model, sh:in, one-value, required), links as IRIs with dangling targets refused, owner or Write Permission, prior version kept before every change, owl.write event per outcome; live: wren's RoleState created and patched, v1 reads it back, version-rolestates-wren-1 kept)
 }
 
 impl Settings {
@@ -72,17 +62,7 @@ pub fn load() -> Settings {
         store_path: value("store.path", &file),
         store_user_var: value("store.user_var", &file),
         store_password_var: value("store.password_var", &file),
-<<<<<<< HEAD
-<<<<<<< HEAD
         identity_issuer: value("identity.issuer", &file),
         events_command: value("events.command", &file),
-<<<<<<< HEAD
-=======
->>>>>>> 3795eee59 (wren: #4490 — athena-gen generate writes the pulse-api crate (RowStore trait, remote SPARQL backend, settings env then file then default, versioned envelope); pulse-api compiles and serves the 5 pulse collections read-only on :3392; emitter tests incl. same-model-same-bytes and a model-change negative proof)
-=======
-        identity_issuer: value("identity.issuer", &file),
->>>>>>> 4c9755287 (wren: #4490 — pulse-api writes require a signed caller: ES256 token through the shared chorus-oidc verifier, principal and grants read from the model, typed refusals (no-token 401, token-invalid 401, identity-unreachable 503, not-a-principal 403); live check: wren's token resolves to principal wren)
-=======
->>>>>>> 9ac820daf (wren: #4490 — pulse-api writes (create, replace, patch, delete) with the door rules generated in: shape checks (off-model, sh:in, one-value, required), links as IRIs with dangling targets refused, owner or Write Permission, prior version kept before every change, owl.write event per outcome; live: wren's RoleState created and patched, v1 reads it back, version-rolestates-wren-1 kept)
     }
 }

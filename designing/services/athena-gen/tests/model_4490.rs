@@ -1,18 +1,6 @@
-<<<<<<< HEAD
-<<<<<<< HEAD
 // @domain: domains
 //! #4490 — the generator reads one product's slice of the model from TTL alone.
 use athena_gen::model::{load, missing_settings, product, segment, settings, Kind};
-<<<<<<< HEAD
-=======
-=======
-// @domain: domains
->>>>>>> 3795eee59 (wren: #4490 — athena-gen generate writes the pulse-api crate (RowStore trait, remote SPARQL backend, settings env then file then default, versioned envelope); pulse-api compiles and serves the 5 pulse collections read-only on :3392; emitter tests incl. same-model-same-bytes and a model-change negative proof)
-//! #4490 — the generator reads one product's slice of the model from TTL alone.
-use athena_gen::model::{load, product, segment, Kind};
->>>>>>> a0f8b1ded (wren: #4490 — athena-gen reads a product's slice of the model from TTL (in-memory Oxigraph, no Fuseki): domains, classes, fields, sh:in in order, v1 path segments; 4 tests incl. 2 negative proofs)
-=======
->>>>>>> 5f9aadb25 (wren: #4490 — settings come from the model: 7 Property rows on pulse (pulse-settings-4490.ttl, in the model set), the generator emits the loader from them and refuses a product missing a runtime setting; v1 freeze guard (4490-v1-freeze.sh, athena-make frozen at 9975 lines, negative proofs: a 200-line feature and a missing target both go red))
 use std::path::PathBuf;
 
 const FIXTURE: &str = r#"
@@ -53,26 +41,11 @@ fn reads_domains_classes_fields_in_model_order() {
     assert!(sv.required && !sv.many);
     let owner = rs.fields.iter().find(|f| f.name == "ownedBy").unwrap();
     assert_eq!(owner.kind, Kind::Link { class: Some("Principal".into()) });
-<<<<<<< HEAD
-<<<<<<< HEAD
     // a class with no instancesGraph lives in its domain's graph; an uncapped LITERAL is
     // served as one value (v1's rule), only an uncapped link is many
     let ev = &p.domains[1].classes[0];
     assert_eq!((ev.segment.as_str(), ev.graph.as_str()), ("events", "urn:chorus:domains:streams"));
     assert!(!ev.fields[0].many && !ev.fields[0].required);
-=======
-    // a class with no instancesGraph lives in its domain's graph; no maxCount means many
-    let ev = &p.domains[1].classes[0];
-    assert_eq!((ev.segment.as_str(), ev.graph.as_str()), ("events", "urn:chorus:domains:streams"));
-    assert!(ev.fields[0].many && !ev.fields[0].required);
->>>>>>> a0f8b1ded (wren: #4490 — athena-gen reads a product's slice of the model from TTL (in-memory Oxigraph, no Fuseki): domains, classes, fields, sh:in in order, v1 path segments; 4 tests incl. 2 negative proofs)
-=======
-    // a class with no instancesGraph lives in its domain's graph; an uncapped LITERAL is
-    // served as one value (v1's rule), only an uncapped link is many
-    let ev = &p.domains[1].classes[0];
-    assert_eq!((ev.segment.as_str(), ev.graph.as_str()), ("events", "urn:chorus:domains:streams"));
-    assert!(!ev.fields[0].many && !ev.fields[0].required);
->>>>>>> 3795eee59 (wren: #4490 — athena-gen generate writes the pulse-api crate (RowStore trait, remote SPARQL backend, settings env then file then default, versioned envelope); pulse-api compiles and serves the 5 pulse collections read-only on :3392; emitter tests incl. same-model-same-bytes and a model-change negative proof)
 }
 
 #[test]
@@ -97,10 +70,6 @@ fn negative_proof_a_file_that_does_not_parse_is_named_never_half_loaded() {
     assert_eq!(skipped.len(), 1);
     assert!(skipped[0].contains("m.ttl"));
 }
-<<<<<<< HEAD
-<<<<<<< HEAD
-=======
->>>>>>> 13712141b (wren: #4490 — pulse-api matches today's door on every pulse route (platform/tests/4490-pulse-parity.sh: 5/5, 0 differences; UNMEASURED when either is down; --self-test negative proof); generator serves parent-class fields as v1 does (inheritance test))
 
 #[test]
 fn a_class_serves_its_parents_fields_as_v1_does() {
@@ -119,10 +88,6 @@ c:RoleStateShape sh:targetClass c:RoleState ; sh:property [ sh:path c:stateValue
     let names: Vec<_> = p.domains[0].classes[0].fields.iter().map(|f| f.name.as_str()).collect();
     assert_eq!(names, ["comment", "stateValue"], "the parent's field is served too");
 }
-<<<<<<< HEAD
-<<<<<<< HEAD
-=======
->>>>>>> 5f9aadb25 (wren: #4490 — settings come from the model: 7 Property rows on pulse (pulse-settings-4490.ttl, in the model set), the generator emits the loader from them and refuses a product missing a runtime setting; v1 freeze guard (4490-v1-freeze.sh, athena-make frozen at 9975 lines, negative proofs: a 200-line feature and a missing target both go red))
 
 #[test]
 fn settings_come_from_the_products_property_rows() {
@@ -139,10 +104,3 @@ c:p2 c:propertyKey "server.bind" ; c:propertyValue "127.0.0.1:3392" .
     let missing = missing_settings(&s);
     assert!(missing.contains(&"identity.issuer") && missing.contains(&"store.endpoint"), "{missing:?}");
 }
-<<<<<<< HEAD
-=======
->>>>>>> a0f8b1ded (wren: #4490 — athena-gen reads a product's slice of the model from TTL (in-memory Oxigraph, no Fuseki): domains, classes, fields, sh:in in order, v1 path segments; 4 tests incl. 2 negative proofs)
-=======
->>>>>>> 13712141b (wren: #4490 — pulse-api matches today's door on every pulse route (platform/tests/4490-pulse-parity.sh: 5/5, 0 differences; UNMEASURED when either is down; --self-test negative proof); generator serves parent-class fields as v1 does (inheritance test))
-=======
->>>>>>> 5f9aadb25 (wren: #4490 — settings come from the model: 7 Property rows on pulse (pulse-settings-4490.ttl, in the model set), the generator emits the loader from them and refuses a product missing a runtime setting; v1 freeze guard (4490-v1-freeze.sh, athena-make frozen at 9975 lines, negative proofs: a 200-line feature and a missing target both go red))
