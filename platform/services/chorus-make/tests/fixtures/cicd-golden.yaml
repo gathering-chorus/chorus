@@ -54,19 +54,34 @@ steps:
     action: human.task
     with:
       prompt: "Jeff's go for #${CARD}?"
+      form:
+        type: object
+        properties:
+          accepter:
+            type: string
+            enum: [jeff, wren, kade, silas]
+        required: [accepter]
   - name: skill-werk-merge
     description: "werk-merge"
     depends: [skill-go]
     command: "werk-merge ${CARD} ${ROLE} --atomic"
+    env:
+      - ACCEPTER: ${skill_go.outputs.accepter}
   - name: skill-werk-sync
     description: "werk-sync"
     depends: [skill-werk-merge]
     command: "werk-sync"
+    env:
+      - ACCEPTER: ${skill_go.outputs.accepter}
   - name: skill-werk-deploy-canonical
     description: "werk-deploy --target canonical"
     depends: [skill-werk-sync]
     command: "werk-deploy ${CARD} ${ROLE} --target canonical"
+    env:
+      - ACCEPTER: ${skill_go.outputs.accepter}
   - name: skill-werk-accept
     description: "werk-accept"
     depends: [skill-werk-deploy-canonical]
     command: "werk-accept ${CARD} ${ROLE} --atomic"
+    env:
+      - ACCEPTER: ${skill_go.outputs.accepter}

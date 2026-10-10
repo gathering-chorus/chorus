@@ -104,6 +104,25 @@ fn only_the_step_before_the_go_treats_presented_as_success() {
 }
 
 #[test]
+fn the_go_names_the_accepter_and_only_the_land_steps_read_it() {
+    // #4474 run 9: werk-merge refused "no-approval" because no step set $ACCEPTER
+    let out = generate("cicd", &cicd()).unwrap();
+    let go = out.split("  - name: ").find(|s| s.starts_with("skill-go\n")).unwrap();
+    assert!(go.contains("        required: [accepter]\n"), "the go asks who: {go}");
+    assert!(go.contains("enum: [jeff, wren, kade, silas]"), "{go}");
+    let reads = "      - ACCEPTER: ${skill_go.outputs.accepter}\n";
+    let steps: Vec<&str> = out.split("  - name: ").skip(1).collect();
+    let after: Vec<&str> = steps.iter().skip_while(|s| !s.starts_with("skill-go\n")).skip(1).copied().collect();
+    assert!(!after.is_empty());
+    for s in &after {
+        assert!(s.contains(reads), "a land step without the accepter: {s}");
+    }
+    // negative proof: no step before the go may claim an accepter
+    let before = steps.iter().take_while(|s| !s.starts_with("skill-go\n")).filter(|s| s.contains("ACCEPTER")).count();
+    assert_eq!(before, 0, "a step before the go reads an accepter nobody gave");
+}
+
+#[test]
 fn negative_proof_one_skill_called_twice_is_refused() {
     let mut rows = cicd();
     rows[4].skill = rows[3].skill.clone(); // review now calls skill-werk-test again

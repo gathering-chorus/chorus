@@ -102,6 +102,10 @@ pub fn step_name(r: &Row) -> String {
 /// werk-demo's exit contract (#3237): 0 go, 2 presented and held, 1 error.
 pub const PRESENTED_EXIT: u8 = 2;
 
+/// Who may give the go (DEC-048: GO = accept). The same set chorus_werk's
+/// `accepter` takes; werk-merge refuses a land without $ACCEPTER (#4474 run 9).
+pub const ACCEPTERS: [&str; 4] = ["jeff", "wren", "kade", "silas"];
+
 fn quote(s: &str) -> String {
     format!("\"{}\"", s.replace('\\', "\\\\").replace('"', "\\\""))
 }
@@ -138,6 +142,7 @@ pub fn generate(pipeline: &str, rows: &[Row]) -> Result<String, Vec<String>> {
     ));
     out.push_str("steps:\n");
     let mut prev: Option<String> = None;
+    let mut go: Option<String> = None;
     for (i, r) in rows.iter().enumerate() {
         let before_a_human = rows.get(i + 1).is_some_and(|n| n.executor == "human");
         let id = step_name(r);
@@ -152,9 +157,21 @@ pub fn generate(pipeline: &str, rows: &[Row]) -> Result<String, Vec<String>> {
             out.push_str(&format!("    id: {}\n", id.replace('-', "_")));
             out.push_str("    action: human.task\n    with:\n");
             out.push_str(&format!("      prompt: {}\n", quote(&format!("{} for #${{CARD}}?", r.label))));
+            // the one who gives the go is the accepter (DEC-048): the form
+            // asks who, and every later step reads it as $ACCEPTER
+            out.push_str(concat!(
+                "      form:\n        type: object\n        properties:\n",
+                "          accepter:\n            type: string\n",
+            ));
+            out.push_str(&format!("            enum: [{}]\n", ACCEPTERS.join(", ")));
+            out.push_str("        required: [accepter]\n");
+            go = Some(id.replace('-', "_"));
         } else {
             let cmd = if r.mode.is_empty() { r.implemented_by.clone() } else { format!("{} {}", r.implemented_by, r.mode) };
             out.push_str(&format!("    command: {}\n", quote(&cmd)));
+            if let Some(g) = &go {
+                out.push_str(&format!("    env:\n      - ACCEPTER: ${{{g}.outputs.accepter}}\n"));
+            }
             if before_a_human {
                 // #4474 run 6: the verb before a human go presents and exits
                 // PRESENTED_EXIT ("held for the go", werk-demo #3237); in v2 the
