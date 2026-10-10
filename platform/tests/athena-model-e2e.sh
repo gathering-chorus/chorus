@@ -3,7 +3,7 @@
 #
 # Three proofs:
 #   1. CONVENTION MATCH (the #3242 slice, zero hand-edits): the mint re-derives
-#      the canonical IRIs byte-identical — the entities the #3242
+#      the canonical tree.json IRIs byte-identical — the entities the #3242
 #      slice hand-typed wrong come out right through (kind, name) alone.
 #   2. GOVERNED WRITE, live: a sacrificial role is written through the full
 #      path (shape check → referential integrity → idempotent UPDATE), verified
@@ -42,7 +42,7 @@ echo "— proof 1: the mint re-derives canonical IRIs (the #3242 slice, zero han
 for s in shaping designing directing building proving; do
   check_mint value-stream-step "$s" "value-stream-step-$s"
 done
-# roles + a service + bare-grain spine entities, all live canon
+# roles + a service + bare-grain spine entities, all live tree.json canon
 check_mint role wren  "role-wren"
 check_mint role jeff  "role-jeff"
 check_mint service crawler "service-crawler"
