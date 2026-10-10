@@ -95,6 +95,9 @@ fn negative_proof_a_file_that_does_not_parse_is_named_never_half_loaded() {
     assert!(skipped[0].contains("m.ttl"));
 }
 <<<<<<< HEAD
+<<<<<<< HEAD
+=======
+>>>>>>> 13712141b (wren: #4490 — pulse-api matches today's door on every pulse route (platform/tests/4490-pulse-parity.sh: 5/5, 0 differences; UNMEASURED when either is down; --self-test negative proof); generator serves parent-class fields as v1 does (inheritance test))
 
 #[test]
 fn a_class_serves_its_parents_fields_as_v1_does() {
@@ -113,6 +116,7 @@ c:RoleStateShape sh:targetClass c:RoleState ; sh:property [ sh:path c:stateValue
     let names: Vec<_> = p.domains[0].classes[0].fields.iter().map(|f| f.name.as_str()).collect();
     assert_eq!(names, ["comment", "stateValue"], "the parent's field is served too");
 }
+<<<<<<< HEAD
 
 #[test]
 fn settings_come_from_the_products_property_rows() {
@@ -131,3 +135,5 @@ c:p2 c:propertyKey "server.bind" ; c:propertyValue "127.0.0.1:3392" .
 }
 =======
 >>>>>>> a0f8b1ded (wren: #4490 — athena-gen reads a product's slice of the model from TTL (in-memory Oxigraph, no Fuseki): domains, classes, fields, sh:in in order, v1 path segments; 4 tests incl. 2 negative proofs)
+=======
+>>>>>>> 13712141b (wren: #4490 — pulse-api matches today's door on every pulse route (platform/tests/4490-pulse-parity.sh: 5/5, 0 differences; UNMEASURED when either is down; --self-test negative proof); generator serves parent-class fields as v1 does (inheritance test))

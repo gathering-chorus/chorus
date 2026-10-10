@@ -72,6 +72,7 @@ pub const CLASSES: &[ClassDef] = &[
         fields: &[
             FieldDef { name: "comment", link: false, datatype: "string", required: true, many: false, allowed: &[] },
             FieldDef { name: "label", link: false, datatype: "string", required: true, many: false, allowed: &[] },
+<<<<<<< HEAD
             FieldDef { name: "aboutPrincipal", link: true, datatype: "", required: true, many: false, allowed: &[] },
             FieldDef { name: "currentTool", link: false, datatype: "string", required: false, many: false, allowed: &[] },
             FieldDef { name: "inSession", link: true, datatype: "", required: true, many: false, allowed: &[] },
@@ -130,6 +131,8 @@ pub const CLASSES: &[ClassDef] = &[
         domain: "awareness", name: "Heartbeat", kind: "heartbeat", plural: "heartbeats", segment: "heartbeats", graph: "urn:chorus:domains:awareness",
 >>>>>>> 9ac820daf (wren: #4490 — pulse-api writes (create, replace, patch, delete) with the door rules generated in: shape checks (off-model, sh:in, one-value, required), links as IRIs with dangling targets refused, owner or Write Permission, prior version kept before every change, owl.write event per outcome; live: wren's RoleState created and patched, v1 reads it back, version-rolestates-wren-1 kept)
         fields: &[
+=======
+>>>>>>> 13712141b (wren: #4490 — pulse-api matches today's door on every pulse route (platform/tests/4490-pulse-parity.sh: 5/5, 0 differences; UNMEASURED when either is down; --self-test negative proof); generator serves parent-class fields as v1 does (inheritance test))
             FieldDef { name: "aboutPrincipal", link: true, datatype: "", required: true, many: false, allowed: &[] },
             FieldDef { name: "currentTool", link: false, datatype: "string", required: false, many: false, allowed: &[] },
             FieldDef { name: "inSession", link: true, datatype: "", required: true, many: false, allowed: &[] },
@@ -141,6 +144,8 @@ pub const CLASSES: &[ClassDef] = &[
     ClassDef {
         domain: "awareness", name: "Reading", kind: "reading", plural: "readings", segment: "readings", graph: "urn:chorus:domains:awareness",
         fields: &[
+            FieldDef { name: "comment", link: false, datatype: "string", required: true, many: false, allowed: &[] },
+            FieldDef { name: "label", link: false, datatype: "string", required: true, many: false, allowed: &[] },
             FieldDef { name: "observedAt", link: false, datatype: "dateTime", required: true, many: false, allowed: &[] },
             FieldDef { name: "ownedBy", link: true, datatype: "", required: true, many: false, allowed: &[] },
             FieldDef { name: "readFrom", link: false, datatype: "string", required: true, many: false, allowed: &[] },
@@ -150,6 +155,8 @@ pub const CLASSES: &[ClassDef] = &[
     ClassDef {
         domain: "awareness", name: "RoleState", kind: "role-state", plural: "rolestates", segment: "rolestates", graph: "urn:chorus:domains:awareness",
         fields: &[
+            FieldDef { name: "comment", link: false, datatype: "string", required: true, many: false, allowed: &[] },
+            FieldDef { name: "label", link: false, datatype: "string", required: true, many: false, allowed: &[] },
             FieldDef { name: "aboutPrincipal", link: true, datatype: "", required: true, many: false, allowed: &[] },
             FieldDef { name: "currentCard", link: true, datatype: "", required: false, many: false, allowed: &[] },
             FieldDef { name: "observedAt", link: false, datatype: "dateTime", required: true, many: false, allowed: &[] },
@@ -161,6 +168,8 @@ pub const CLASSES: &[ClassDef] = &[
     ClassDef {
         domain: "awareness", name: "WaitingOn", kind: "waiting-on", plural: "waitingons", segment: "waitingons", graph: "urn:chorus:domains:awareness",
         fields: &[
+            FieldDef { name: "comment", link: false, datatype: "string", required: true, many: false, allowed: &[] },
+            FieldDef { name: "label", link: false, datatype: "string", required: true, many: false, allowed: &[] },
             FieldDef { name: "observedAt", link: false, datatype: "dateTime", required: true, many: false, allowed: &[] },
             FieldDef { name: "ownedBy", link: true, datatype: "", required: true, many: false, allowed: &[] },
             FieldDef { name: "stateSource", link: false, datatype: "string", required: true, many: false, allowed: &["declared", "observed"] },

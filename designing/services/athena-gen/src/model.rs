@@ -25,11 +25,16 @@ const PREFIXES: &str = "PREFIX c: <https://jeffbridwell.com/chorus#> \
 PREFIX sh: <http://www.w3.org/ns/shacl#> \
 PREFIX rdf: <http://www.w3.org/1999/02/22-rdf-syntax-ns#> \
 <<<<<<< HEAD
+<<<<<<< HEAD
 PREFIX xsd: <http://www.w3.org/2001/XMLSchema#> \
 PREFIX rdfs: <http://www.w3.org/2000/01/rdf-schema#> ";
 =======
 PREFIX xsd: <http://www.w3.org/2001/XMLSchema#> ";
 >>>>>>> a0f8b1ded (wren: #4490 — athena-gen reads a product's slice of the model from TTL (in-memory Oxigraph, no Fuseki): domains, classes, fields, sh:in in order, v1 path segments; 4 tests incl. 2 negative proofs)
+=======
+PREFIX xsd: <http://www.w3.org/2001/XMLSchema#> \
+PREFIX rdfs: <http://www.w3.org/2000/01/rdf-schema#> ";
+>>>>>>> 13712141b (wren: #4490 — pulse-api matches today's door on every pulse route (platform/tests/4490-pulse-parity.sh: 5/5, 0 differences; UNMEASURED when either is down; --self-test negative proof); generator serves parent-class fields as v1 does (inheritance test))
 
 /// What a field holds: a typed literal, or a link to a row of a class.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -228,10 +233,14 @@ fn class(store: &Store, domain: &str, name: &str) -> Result<Class, ModelError> {
         "SELECT ?path (SAMPLE(?dt) AS ?datatype) (SAMPLE(?cl) AS ?class) (SAMPLE(?nk) AS ?nodeKind) \
          (MAX(?mn) AS ?min) (MIN(?mx) AS ?max) WHERE {{ \
 <<<<<<< HEAD
+<<<<<<< HEAD
            c:{name} rdfs:subClassOf* ?anc . ?s sh:targetClass ?anc ; sh:property ?p . ?p sh:path ?path . \
 =======
            ?s sh:targetClass c:{name} ; sh:property ?p . ?p sh:path ?path . \
 >>>>>>> a0f8b1ded (wren: #4490 — athena-gen reads a product's slice of the model from TTL (in-memory Oxigraph, no Fuseki): domains, classes, fields, sh:in in order, v1 path segments; 4 tests incl. 2 negative proofs)
+=======
+           c:{name} rdfs:subClassOf* ?anc . ?s sh:targetClass ?anc ; sh:property ?p . ?p sh:path ?path . \
+>>>>>>> 13712141b (wren: #4490 — pulse-api matches today's door on every pulse route (platform/tests/4490-pulse-parity.sh: 5/5, 0 differences; UNMEASURED when either is down; --self-test negative proof); generator serves parent-class fields as v1 does (inheritance test))
            OPTIONAL {{ ?p sh:datatype ?dt }} OPTIONAL {{ ?p sh:class ?cl }} OPTIONAL {{ ?p sh:nodeKind ?nk }} \
            OPTIONAL {{ ?p sh:minCount ?mn }} OPTIONAL {{ ?p sh:maxCount ?mx }} \
          }} GROUP BY ?path ORDER BY ?path"))?;
@@ -241,10 +250,14 @@ fn class(store: &Store, domain: &str, name: &str) -> Result<Class, ModelError> {
         // sh:in in model order: a member's position is how many list cells precede it
         let allowed: Vec<String> = select(store, &format!(
 <<<<<<< HEAD
+<<<<<<< HEAD
             "SELECT ?v (COUNT(?mid) AS ?pos) WHERE {{ c:{name} rdfs:subClassOf* ?anc . ?s sh:targetClass ?anc ; sh:property ?p . \
 =======
             "SELECT ?v (COUNT(?mid) AS ?pos) WHERE {{ ?s sh:targetClass c:{name} ; sh:property ?p . \
 >>>>>>> a0f8b1ded (wren: #4490 — athena-gen reads a product's slice of the model from TTL (in-memory Oxigraph, no Fuseki): domains, classes, fields, sh:in in order, v1 path segments; 4 tests incl. 2 negative proofs)
+=======
+            "SELECT ?v (COUNT(?mid) AS ?pos) WHERE {{ c:{name} rdfs:subClassOf* ?anc . ?s sh:targetClass ?anc ; sh:property ?p . \
+>>>>>>> 13712141b (wren: #4490 — pulse-api matches today's door on every pulse route (platform/tests/4490-pulse-parity.sh: 5/5, 0 differences; UNMEASURED when either is down; --self-test negative proof); generator serves parent-class fields as v1 does (inheritance test))
              ?p sh:path c:{fname} ; sh:in ?l . ?l rdf:rest* ?mid . ?mid rdf:rest* ?node . ?node rdf:first ?v }} \
              GROUP BY ?v ?node ORDER BY ?pos"))?
             .into_iter().map(|r| r["v"].clone()).collect();
