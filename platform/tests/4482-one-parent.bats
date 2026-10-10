@@ -55,9 +55,11 @@ retired_in() { grep -lE '\b(primaryStep|atStream)\b' "$@"; }
 }
 
 @test "the generated Domain door serves atStep as its one step link and no retired link" {
-  G="$ROOT/platform/services/athena-make/generated"
-  grep -q '"atStep|edge:ValueStreamStep"' "$G/routes-domain.json"
-  run retired_in "$G/routes-domain.json" "$G/openapi-domain.json" "$G/dashboard-domain.json"
+  # full paths, literal: the pipeline maps a changed file to the tests that name it
+  grep -q '"atStep|edge:ValueStreamStep"' "$ROOT/platform/services/athena-make/generated/routes-domain.json"
+  run retired_in "$ROOT/platform/services/athena-make/generated/routes-domain.json" \
+    "$ROOT/platform/services/athena-make/generated/openapi-domain.json" \
+    "$ROOT/platform/services/athena-make/generated/dashboard-domain.json"
   [ "$status" -ne 0 ] || { echo "still generated in: $output"; false; }
 }
 
