@@ -151,24 +151,41 @@ SELECT DISTINCT ?s ?field ?value WHERE {
 pub const LINK_WRONG_TARGET: Check = Check {
     id: "link-target-wrong-kind",
     question: "does every link point at a row of the kind its type says",
+    // Two stages, measured on prod 2026-10-10. Judged per link, the 1.66M links
+    // in the tests graph ran past the 180s cap (187s with the filter below fixed).
+    // Judged per distinct target first, then joined back to the links that use
+    // it, the whole store answers in about 10s. The first form also wrapped its
+    // single-class branch as { FILTER(isIRI(?r)) BIND(?r AS ?allowed) }, which
+    // Fuseki evaluates with ?r unbound inside NOT EXISTS: every Test and Message
+    // target read as the wrong kind. The FILTER below sees ?r and ?allowed both.
     query: r##"PREFIX owl: <http://www.w3.org/2002/07/owl#>
 PREFIX rdf: <http://www.w3.org/1999/02/22-rdf-syntax-ns#>
 PREFIX rdfs: <http://www.w3.org/2000/01/rdf-schema#>
 SELECT DISTINCT ?s ?field ?o WHERE {
-  GRAPH <urn:chorus:ontology> { ?p a owl:ObjectProperty ; rdfs:range ?r . FILTER(?r != owl:Thing) }
+  {
+    SELECT DISTINCT ?p ?o WHERE {
+      {
+        SELECT DISTINCT ?p ?o ?r WHERE {
+          GRAPH <urn:chorus:ontology> { ?p a owl:ObjectProperty ; rdfs:range ?r . FILTER(?r != owl:Thing) }
+          GRAPH ?gl { ?l ?p ?o }
+          FILTER(STRSTARTS(STR(?gl), "urn:chorus:") && ?gl != <urn:chorus:ontology>)
+          FILTER(isIRI(?o))
+        }
+      }
+      FILTER NOT EXISTS {
+        # any graph: a class target (definesVocabulary, eventAbout) is typed owl:Class
+        # in the ontology graph, and that is where it belongs
+        GRAPH ?g2 { ?o a ?t }
+        GRAPH <urn:chorus:ontology> {
+          ?t rdfs:subClassOf* ?allowed .
+          FILTER(?allowed = ?r || EXISTS { ?r owl:unionOf/rdf:rest*/rdf:first ?allowed })
+        }
+      }
+    }
+  }
   GRAPH ?g { ?s ?p ?o }
   FILTER(STRSTARTS(STR(?g), "urn:chorus:"))
   FILTER(?g != <urn:chorus:ontology>)
-  FILTER(isIRI(?o))
-  FILTER NOT EXISTS {
-    # any graph: a class target (definesVocabulary, eventAbout) is typed owl:Class
-    # in the ontology graph, and that is where it belongs
-    GRAPH ?g2 { ?o a ?t }
-    GRAPH <urn:chorus:ontology> {
-      ?t rdfs:subClassOf* ?allowed .
-      { ?r owl:unionOf/rdf:rest*/rdf:first ?allowed } UNION { FILTER(isIRI(?r)) BIND(?r AS ?allowed) }
-    }
-  }
   BIND(REPLACE(STR(?p), "^.*[#/]", "") AS ?field)
 }"##,
 };
@@ -419,6 +436,25 @@ mod tests {
         let mut got = run(&LINK_WRONG_TARGET, "neg", fx);
         got.sort();
         assert_eq!(got, vec![("bad".into(), "atStep,vert".into()), ("lost".into(), "dependsOn,nowhere".into())]);
+    }
+
+    /// NEGATIVE PROOF for the two-stage form: targets are judged once, so every
+    /// link to a wrong target must still be named by the row that holds it, in
+    /// whichever graph; a right target used by many rows names none of them.
+    #[test]
+    fn negative_proof_every_link_to_a_wrong_target_is_named() {
+        let fx = r##"<urn:chorus:domains:domains> {
+  c:vert a c:Vertebra .
+  c:d1 a c:Domain ; c:atStep c:vert .
+  c:d2 a c:Domain ; c:atStep c:vert .
+  c:ok1 a c:Domain ; c:atStep c:building .
+  c:ok2 a c:Domain ; c:atStep c:building .
+}
+<urn:chorus:domains:other> { c:d3 a c:Domain ; c:atStep c:vert . }"##;
+        let mut got = run(&LINK_WRONG_TARGET, "join", fx);
+        got.sort();
+        let want: Vec<(String, String)> = ["d1", "d2", "d3"].iter().map(|s| (s.to_string(), "atStep,vert".to_string())).collect();
+        assert_eq!(got, want);
     }
 
     /// NEGATIVE PROOF: a DomainShape that names partOf → Product (not an
