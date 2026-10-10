@@ -156,6 +156,24 @@ fn run(args: &[String]) -> Result<i32, String> {
             deleted.join(", ")
         );
     }
+    // #4442 — a card that changes werk-test is judged by its own build. Hand the
+    // run to the werk's werk-test (exec: same args, same env, one verdict record).
+    let current = std::env::current_exe().unwrap_or_default();
+    let already_own = std::env::var(werk_test::OWN_BUILD_ENV).as_deref() == Ok("1");
+    match werk_test::own_build_to_run(&werk, &changed, &current, already_own, &|p| p.is_file()) {
+        Ok(Some(own)) => {
+            use std::os::unix::process::CommandExt;
+            println!("werk-test: this card changes werk-test — handing the run to its own build {}", own.display());
+            let err = std::process::Command::new(&own).args(args).env(werk_test::OWN_BUILD_ENV, "1").exec();
+            return Err(format!("could not start the card's own werk-test {}: {}", own.display(), err));
+        }
+        Ok(None) => {}
+        Err(why) => {
+            println!("werk-test: BLOCK — {}", why);
+            emit_spine("test.own_build.missing", &role, &card, &trace, &[("message", &why)]);
+            return Ok(1);
+        }
+    }
     let legacy_units = affected_units(&changed);
     // #3634 — stage 2: derive the plan from the tests domain. Model rows (filePath,
     // covers) widen the legacy path-derived units to every unit holding tests that
@@ -329,7 +347,7 @@ fn run(args: &[String]) -> Result<i32, String> {
             println!("  unit: {}", unit_name(u));
         }
         if units.is_empty() {
-            println!("  {} — this diff would be waved through", gate_outcome(0, false, false).label());
+            println!("  {} — this diff would be waved through", gate_outcome(0, false).label());
         }
         return Ok(0);
     }
@@ -419,7 +437,7 @@ fn run(args: &[String]) -> Result<i32, String> {
         role,
         units.len(),
         plan.len(),
-        if self_mod { ", self-modifying → advisory" } else { "" }
+        if self_mod { ", changes the test gate — judged by its own build, a red blocks" } else { "" }
     );
 
     // #3621 — canonical run evidence: started at plan time, completed ALWAYS.
@@ -730,7 +748,7 @@ fn run(args: &[String]) -> Result<i32, String> {
         println!("   UNMEASURED: {} suite(s) scored nothing — {}",
                  unmeasured.len(), unmeasured.join(", "));
     }
-    let outcome = gate_outcome(units.len(), any_failed, self_mod);
+    let outcome = gate_outcome(units.len(), any_failed);
     let execution_duration_ms = started_at.elapsed().as_millis();
     let execution_extras = werk_test::completed_extras(
         &outcome,
@@ -1429,7 +1447,7 @@ fn run_nightly(args: &[String]) -> Result<i32, String> {
     }
     let total_units = crates.len() + ts_pkgs.len() + bats_suites.len();
 
-    let outcome = gate_outcome(total_units, any_failed, false);
+    let outcome = gate_outcome(total_units, any_failed);
     let execution_duration_ms = started_at.elapsed().as_millis();
     let execution_extras = werk_test::completed_extras(
         &outcome,
