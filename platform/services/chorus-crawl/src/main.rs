@@ -1407,7 +1407,7 @@ fn run_services(args: &[String]) -> i32 {
                 legacy += 1;
                 continue;
             }
-            let fields = fields.into_iter().filter(|(k, _)| k != "name").collect();
+            let fields = written_form(fields.into_iter().filter(|(k, _)| k != "name").collect());
             current.push(DoorRow { class, name, fields });
         }
         colls.push((class, coll));
@@ -1522,6 +1522,7 @@ fn run_services_changed(paths: &[String]) -> i32 {
     for kind in ["ServiceInstance", "ScheduledJob"] {
         let rows = match read(kind) { Ok(r) => r, Err(e) => { eprintln!("chorus-crawl services --changed: cannot read {kind} rows — {e}"); return 2; } };
         for r in rows {
+            let r = written_form(r);
             let get = |k: &str| r.iter().find(|(f, _)| f == k).map(|(_, v)| v.as_str()).unwrap_or("");
             if get("runState") == "absent" {
                 continue;

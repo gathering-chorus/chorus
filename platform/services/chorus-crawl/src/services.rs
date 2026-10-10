@@ -382,10 +382,13 @@ mod render_4472 {
 /// The door's row name for a unit. The door takes `[A-Za-z0-9_-]` only
 /// (athena-make is_safe_local), so the #3870 IRI `urn:chorus:instance-…`
 /// with its dots cannot be addressed there at all: dots become hyphens.
+/// Lowercase too: the door stores the name slugged, so a capital in a label
+/// (com.google.GoogleUpdater.wake) created a fresh row every run and retired
+/// the one it made last time (measured on the staging door, 2026-10-10).
 pub fn door_name(machine: &str, label: &str) -> String {
     let n: String = format!("instance-{machine}-{label}")
         .chars()
-        .map(|c| if c.is_ascii_alphanumeric() || c == '-' || c == '_' { c } else { '-' })
+        .map(|c| if c.is_ascii_alphanumeric() || c == '-' || c == '_' { c.to_ascii_lowercase() } else { '-' })
         .collect();
     n.chars().take(128).collect()
 }
@@ -450,8 +453,11 @@ pub fn desired_row(machine: &str, u: &Unit, mapping: &[(String, String)], ts: &s
     if let Some(bp) = binary_path(&u.meta) {
         f.push(("binaryPath".into(), bp.into()));
     }
+    // The door names a Service row without its kind prefix: service-werk is
+    // the row the door calls "werk", and an edge spelled "service-werk" is
+    // refused as a double prefix (measured on the staging door, 2026-10-10).
     if let Some(svc) = service_for(&u.label, mapping).filter(|s| *s != NO_DESIGN) {
-        f.push(("runsService".into(), svc.to_string()));
+        f.push(("runsService".into(), svc.strip_prefix("service-").unwrap_or(svc).to_string()));
     }
     for port in &u.ports {
         f.push(("listensOn".into(), port.to_string()));
@@ -684,6 +690,8 @@ mod plan_4472 {
         assert_eq!(door_name("library", "com.chorus.api"), "instance-library-com-chorus-api");
         let long = door_name("library", &"x".repeat(300));
         assert_eq!(long.len(), 128);
+        // NEGATIVE PROOF (#3734): a capital would name a row the door never serves back
+        assert_eq!(door_name("library", "com.google.GoogleUpdater.wake"), "instance-library-com-google-googleupdater-wake");
     }
 
     #[test]
@@ -811,7 +819,7 @@ mod report_4472 {
         let u = |l: &str| Unit { label: l.into(), run_state: "running".into(), meta: UnitMeta { scheduled: false, argv: vec!["/Users/jeffbridwell/.chorus/bin/x".into()], bundle_id: None }, evidence_unavailable: false, ports: vec![] };
         let mapping = vec![("com.chorus.bare".to_string(), NO_DESIGN.to_string())];
         let slot = desired_row("library", &u("com.chorus.api.werk.kade"), &mapping, "T");
-        assert_eq!(slot.get("runsService"), "service-werk");
+        assert_eq!(slot.get("runsService"), "werk");
         let bare = desired_row("library", &u("com.chorus.bare"), &mapping, "T");
         assert_eq!(bare.get("runsService"), "", "none writes no edge");
         let orphan = desired_row("library", &u("com.chorus.orphan"), &mapping, "T");
@@ -1061,6 +1069,27 @@ pub fn touched_by(changed: &str, source: &str) -> bool {
     changed == source || matches!((crate_dir(changed), crate_dir(source)), (Some(a), Some(b)) if a == b)
 }
 
+/// A reference field as the door serves it in a list is the target's IRI
+/// local name (`service-loom`, `code-file-file-…`); as it is written, it is
+/// the target's door name (`loom`, `file-…`) — the door adds the kind prefix
+/// and refuses one already there. Rows read back are put in the written form,
+/// or every edge would read as changed on every run (measured on the staging
+/// door, 2026-10-10: 104 of 122 rows rewritten on the second run).
+pub const REF_PREFIXES: &[(&str, &str)] = &[("runsService", "service-"), ("sourcePath", "code-file-")];
+
+pub fn written_form(fields: Vec<(String, String)>) -> Vec<(String, String)> {
+    fields
+        .into_iter()
+        .map(|(k, v)| match REF_PREFIXES.iter().find(|(f, _)| *f == k) {
+            Some((_, pre)) => {
+                let w = v.strip_prefix(pre).map(String::from).unwrap_or(v);
+                (k, w)
+            }
+            None => (k, v),
+        })
+        .collect()
+}
+
 #[cfg(test)]
 mod provenance_4472 {
     use super::*;
@@ -1144,6 +1173,16 @@ mod provenance_4472 {
         assert!(!touched_by("platform/services/chorus-crawler/src/main.rs", main));
         assert!(!touched_by("platform/services/werk-test/src/main.rs", main));
         assert!(!touched_by("platform/scripts/service-run-2", "platform/scripts/service-run"));
+    }
+
+    #[test]
+    fn a_served_edge_reads_back_in_the_form_it_was_written() {
+        let served = vec![("runsService".to_string(), "service-loom".to_string()), ("sourcePath".into(), "code-file-file-x-1".into()), ("label".into(), "service-x".into())];
+        let w = written_form(served);
+        assert_eq!(w[0].1, "loom");
+        assert_eq!(w[1].1, "file-x-1");
+        // NEGATIVE PROOF (#3734): a field that is not a reference keeps its prefix
+        assert_eq!(w[2].1, "service-x");
     }
 
     #[test]
