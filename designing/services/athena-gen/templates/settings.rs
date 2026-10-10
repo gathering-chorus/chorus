@@ -13,8 +13,11 @@ pub struct Settings {
     pub store_endpoint: String,
     pub store_user_var: String,
     pub store_password_var: String,
+<<<<<<< HEAD
     pub identity_issuer: String,
     pub events_command: String,
+=======
+>>>>>>> 3795eee59 (wren: #4490 — athena-gen generate writes the pulse-api crate (RowStore trait, remote SPARQL backend, settings env then file then default, versioned envelope); pulse-api compiles and serves the 5 pulse collections read-only on :3392; emitter tests incl. same-model-same-bytes and a model-change negative proof)
 }
 
 impl Settings {
@@ -60,7 +63,10 @@ pub fn load() -> Settings {
         store_endpoint: value("store.endpoint", &file),
         store_user_var: value("store.user_var", &file),
         store_password_var: value("store.password_var", &file),
+<<<<<<< HEAD
         identity_issuer: value("identity.issuer", &file),
         events_command: value("events.command", &file),
+=======
+>>>>>>> 3795eee59 (wren: #4490 — athena-gen generate writes the pulse-api crate (RowStore trait, remote SPARQL backend, settings env then file then default, versioned envelope); pulse-api compiles and serves the 5 pulse collections read-only on :3392; emitter tests incl. same-model-same-bytes and a model-change negative proof)
     }
 }

@@ -6,7 +6,10 @@ edition = "2021"
 description = "The pulse product's API, generated from the Chorus model."
 
 [dependencies]
+<<<<<<< HEAD
 chorus-oidc = { path = "../../../../platform/services/chorus-oidc" }
+=======
+>>>>>>> 3795eee59 (wren: #4490 — athena-gen generate writes the pulse-api crate (RowStore trait, remote SPARQL backend, settings env then file then default, versioned envelope); pulse-api compiles and serves the 5 pulse collections read-only on :3392; emitter tests incl. same-model-same-bytes and a model-change negative proof)
 serde_json = "1"
 tiny_http = "0.12"
 ureq = { version = "2", features = ["json"] }

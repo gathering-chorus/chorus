@@ -7,10 +7,15 @@ pub const API_VERSION: &str = "v1";
 pub const MODEL_VERSION: &str = "1.30.0";
 pub const NS: &str = "https://jeffbridwell.com/chorus#";
 
+<<<<<<< HEAD
 /// Declared settings and their defaults, from the product's Property rows (see settings.rs for the lookup order).
 pub const SETTINGS: &[(&str, &str)] = &[
     ("events.command", ""),
     ("identity.issuer", "https://id.lightlifeurbangardens.com/"),
+=======
+/// Declared settings and their defaults (see settings.rs for the lookup order).
+pub const SETTINGS: &[(&str, &str)] = &[
+>>>>>>> 3795eee59 (wren: #4490 — athena-gen generate writes the pulse-api crate (RowStore trait, remote SPARQL backend, settings env then file then default, versioned envelope); pulse-api compiles and serves the 5 pulse collections read-only on :3392; emitter tests incl. same-model-same-bytes and a model-change negative proof)
     ("server.bind", "127.0.0.1:3392"),
     ("store.endpoint", "http://localhost:3030/pods"),
     ("store.kind", "sparql"),
@@ -21,7 +26,10 @@ pub const SETTINGS: &[(&str, &str)] = &[
 pub struct FieldDef {
     pub name: &'static str,
     pub link: bool,
+<<<<<<< HEAD
     pub datatype: &'static str,
+=======
+>>>>>>> 3795eee59 (wren: #4490 — athena-gen generate writes the pulse-api crate (RowStore trait, remote SPARQL backend, settings env then file then default, versioned envelope); pulse-api compiles and serves the 5 pulse collections read-only on :3392; emitter tests incl. same-model-same-bytes and a model-change negative proof)
     pub required: bool,
     pub many: bool,
     pub allowed: &'static [&'static str],
@@ -31,7 +39,10 @@ pub struct ClassDef {
     pub domain: &'static str,
     pub name: &'static str,
     pub kind: &'static str,
+<<<<<<< HEAD
     pub plural: &'static str,
+=======
+>>>>>>> 3795eee59 (wren: #4490 — athena-gen generate writes the pulse-api crate (RowStore trait, remote SPARQL backend, settings env then file then default, versioned envelope); pulse-api compiles and serves the 5 pulse collections read-only on :3392; emitter tests incl. same-model-same-bytes and a model-change negative proof)
     pub segment: &'static str,
     pub graph: &'static str,
     pub fields: &'static [FieldDef],
@@ -39,6 +50,7 @@ pub struct ClassDef {
 
 pub const CLASSES: &[ClassDef] = &[
     ClassDef {
+<<<<<<< HEAD
         domain: "awareness", name: "Heartbeat", kind: "heartbeat", plural: "heartbeats", segment: "heartbeats", graph: "urn:chorus:domains:awareness",
         fields: &[
             FieldDef { name: "comment", link: false, datatype: "string", required: true, many: false, allowed: &[] },
@@ -95,6 +107,56 @@ pub const CLASSES: &[ClassDef] = &[
             FieldDef { name: "streamRole", link: false, datatype: "string", required: true, many: false, allowed: &[] },
             FieldDef { name: "streamTool", link: false, datatype: "string", required: true, many: false, allowed: &[] },
             FieldDef { name: "streamTs", link: false, datatype: "string", required: true, many: false, allowed: &[] },
+=======
+        domain: "awareness", name: "Heartbeat", kind: "heartbeat", segment: "heartbeats", graph: "urn:chorus:domains:awareness",
+        fields: &[
+            FieldDef { name: "aboutPrincipal", link: true, required: true, many: false, allowed: &[] },
+            FieldDef { name: "currentTool", link: false, required: false, many: false, allowed: &[] },
+            FieldDef { name: "inSession", link: true, required: true, many: false, allowed: &[] },
+            FieldDef { name: "observedAt", link: false, required: true, many: false, allowed: &[] },
+            FieldDef { name: "ownedBy", link: true, required: true, many: false, allowed: &[] },
+            FieldDef { name: "phase", link: false, required: false, many: false, allowed: &[] },
+        ],
+    },
+    ClassDef {
+        domain: "awareness", name: "Reading", kind: "reading", segment: "readings", graph: "urn:chorus:domains:awareness",
+        fields: &[
+            FieldDef { name: "observedAt", link: false, required: true, many: false, allowed: &[] },
+            FieldDef { name: "ownedBy", link: true, required: true, many: false, allowed: &[] },
+            FieldDef { name: "readFrom", link: false, required: true, many: false, allowed: &[] },
+            FieldDef { name: "section", link: false, required: true, many: false, allowed: &["roles", "board", "health", "alerts", "events", "index_freshness", "nudges"] },
+        ],
+    },
+    ClassDef {
+        domain: "awareness", name: "RoleState", kind: "role-state", segment: "rolestates", graph: "urn:chorus:domains:awareness",
+        fields: &[
+            FieldDef { name: "aboutPrincipal", link: true, required: true, many: false, allowed: &[] },
+            FieldDef { name: "currentCard", link: true, required: false, many: false, allowed: &[] },
+            FieldDef { name: "observedAt", link: false, required: true, many: false, allowed: &[] },
+            FieldDef { name: "ownedBy", link: true, required: true, many: false, allowed: &[] },
+            FieldDef { name: "stateSource", link: false, required: true, many: false, allowed: &["declared", "observed"] },
+            FieldDef { name: "stateValue", link: false, required: true, many: false, allowed: &["idle", "building", "waiting", "blocked", "observing", "unmeasured"] },
+        ],
+    },
+    ClassDef {
+        domain: "awareness", name: "WaitingOn", kind: "waiting-on", segment: "waitingons", graph: "urn:chorus:domains:awareness",
+        fields: &[
+            FieldDef { name: "observedAt", link: false, required: true, many: false, allowed: &[] },
+            FieldDef { name: "ownedBy", link: true, required: true, many: false, allowed: &[] },
+            FieldDef { name: "stateSource", link: false, required: true, many: false, allowed: &["declared", "observed"] },
+            FieldDef { name: "waitReason", link: false, required: true, many: false, allowed: &[] },
+            FieldDef { name: "waiter", link: true, required: true, many: false, allowed: &[] },
+            FieldDef { name: "waitsFor", link: true, required: true, many: false, allowed: &[] },
+        ],
+    },
+    ClassDef {
+        domain: "streams", name: "StreamEvent", kind: "stream-event", segment: "events", graph: "urn:chorus:domains:streams",
+        fields: &[
+            FieldDef { name: "streamPhase", link: false, required: true, many: false, allowed: &[] },
+            FieldDef { name: "streamRole", link: false, required: true, many: false, allowed: &[] },
+            FieldDef { name: "streamTool", link: false, required: true, many: false, allowed: &[] },
+            FieldDef { name: "streamTs", link: false, required: true, many: false, allowed: &[] },
+>>>>>>> 3795eee59 (wren: #4490 — athena-gen generate writes the pulse-api crate (RowStore trait, remote SPARQL backend, settings env then file then default, versioned envelope); pulse-api compiles and serves the 5 pulse collections read-only on :3392; emitter tests incl. same-model-same-bytes and a model-change negative proof)
         ],
     },
 ];

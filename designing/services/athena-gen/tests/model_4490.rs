@@ -1,8 +1,12 @@
 <<<<<<< HEAD
+<<<<<<< HEAD
 // @domain: domains
 //! #4490 — the generator reads one product's slice of the model from TTL alone.
 use athena_gen::model::{load, missing_settings, product, segment, settings, Kind};
 =======
+=======
+// @domain: domains
+>>>>>>> 3795eee59 (wren: #4490 — athena-gen generate writes the pulse-api crate (RowStore trait, remote SPARQL backend, settings env then file then default, versioned envelope); pulse-api compiles and serves the 5 pulse collections read-only on :3392; emitter tests incl. same-model-same-bytes and a model-change negative proof)
 //! #4490 — the generator reads one product's slice of the model from TTL alone.
 use athena_gen::model::{load, product, segment, Kind};
 >>>>>>> a0f8b1ded (wren: #4490 — athena-gen reads a product's slice of the model from TTL (in-memory Oxigraph, no Fuseki): domains, classes, fields, sh:in in order, v1 path segments; 4 tests incl. 2 negative proofs)
@@ -47,6 +51,7 @@ fn reads_domains_classes_fields_in_model_order() {
     let owner = rs.fields.iter().find(|f| f.name == "ownedBy").unwrap();
     assert_eq!(owner.kind, Kind::Link { class: Some("Principal".into()) });
 <<<<<<< HEAD
+<<<<<<< HEAD
     // a class with no instancesGraph lives in its domain's graph; an uncapped LITERAL is
     // served as one value (v1's rule), only an uncapped link is many
     let ev = &p.domains[1].classes[0];
@@ -58,6 +63,13 @@ fn reads_domains_classes_fields_in_model_order() {
     assert_eq!((ev.segment.as_str(), ev.graph.as_str()), ("events", "urn:chorus:domains:streams"));
     assert!(ev.fields[0].many && !ev.fields[0].required);
 >>>>>>> a0f8b1ded (wren: #4490 — athena-gen reads a product's slice of the model from TTL (in-memory Oxigraph, no Fuseki): domains, classes, fields, sh:in in order, v1 path segments; 4 tests incl. 2 negative proofs)
+=======
+    // a class with no instancesGraph lives in its domain's graph; an uncapped LITERAL is
+    // served as one value (v1's rule), only an uncapped link is many
+    let ev = &p.domains[1].classes[0];
+    assert_eq!((ev.segment.as_str(), ev.graph.as_str()), ("events", "urn:chorus:domains:streams"));
+    assert!(!ev.fields[0].many && !ev.fields[0].required);
+>>>>>>> 3795eee59 (wren: #4490 — athena-gen generate writes the pulse-api crate (RowStore trait, remote SPARQL backend, settings env then file then default, versioned envelope); pulse-api compiles and serves the 5 pulse collections read-only on :3392; emitter tests incl. same-model-same-bytes and a model-change negative proof)
 }
 
 #[test]

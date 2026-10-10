@@ -1,7 +1,11 @@
 <<<<<<< HEAD
+<<<<<<< HEAD
 // @domain: domains
 =======
 >>>>>>> a0f8b1ded (wren: #4490 — athena-gen reads a product's slice of the model from TTL (in-memory Oxigraph, no Fuseki): domains, classes, fields, sh:in in order, v1 path segments; 4 tests incl. 2 negative proofs)
+=======
+// @domain: domains
+>>>>>>> 3795eee59 (wren: #4490 — athena-gen generate writes the pulse-api crate (RowStore trait, remote SPARQL backend, settings env then file then default, versioned envelope); pulse-api compiles and serves the 5 pulse collections read-only on :3392; emitter tests incl. same-model-same-bytes and a model-change negative proof)
 //! #4490 — read one product's slice of the model from the source TTL files.
 //!
 //! The generator reads the model the repo authors (roles/*/ontology, designing/data),
@@ -255,18 +259,27 @@ fn class(store: &Store, domain: &str, name: &str) -> Result<Class, ModelError> {
             kind,
             required: p.get("min").and_then(|m| m.parse::<u32>().ok()).unwrap_or(0) > 0,
 <<<<<<< HEAD
+<<<<<<< HEAD
             // v1's rule, kept for route parity: only a LINK with no cap is many-valued;
             // an uncapped literal is served as one value
             many: is_link && p.get("max").and_then(|m| m.parse::<u32>().ok()).is_none_or(|m| m > 1),
 =======
             many: p.get("max").and_then(|m| m.parse::<u32>().ok()).is_none_or(|m| m > 1),
 >>>>>>> a0f8b1ded (wren: #4490 — athena-gen reads a product's slice of the model from TTL (in-memory Oxigraph, no Fuseki): domains, classes, fields, sh:in in order, v1 path segments; 4 tests incl. 2 negative proofs)
+=======
+            // v1's rule, kept for route parity: only a LINK with no cap is many-valued;
+            // an uncapped literal is served as one value
+            many: is_link && p.get("max").and_then(|m| m.parse::<u32>().ok()).is_none_or(|m| m > 1),
+>>>>>>> 3795eee59 (wren: #4490 — athena-gen generate writes the pulse-api crate (RowStore trait, remote SPARQL backend, settings env then file then default, versioned envelope); pulse-api compiles and serves the 5 pulse collections read-only on :3392; emitter tests incl. same-model-same-bytes and a model-change negative proof)
             allowed,
         });
     }
     Ok(Class { name: name.to_string(), segment: segment(domain, name), graph, fields })
 }
 <<<<<<< HEAD
+<<<<<<< HEAD
+=======
+>>>>>>> 3795eee59 (wren: #4490 — athena-gen generate writes the pulse-api crate (RowStore trait, remote SPARQL backend, settings env then file then default, versioned envelope); pulse-api compiles and serves the 5 pulse collections read-only on :3392; emitter tests incl. same-model-same-bytes and a model-change negative proof)
 
 /// The model's version (designing/data/model-version.ttl), so every response can say
 /// which model it was generated from. "unclassified" when the model declares none.
@@ -274,6 +287,7 @@ pub fn model_version(store: &Store) -> Result<String, ModelError> {
     Ok(select(store, "SELECT ?v WHERE { c:model c:vocabVersion ?v } LIMIT 1")?
         .into_iter().next().map(|r| r["v"].clone()).unwrap_or_else(|| "unclassified".into()))
 }
+<<<<<<< HEAD
 
 /// The settings a product's API reads, from its Property rows (#3433/#3435):
 /// `c:<product> c:hasProperty ?p . ?p c:propertyKey ?k ; c:propertyValue ?v`.
@@ -294,3 +308,5 @@ pub fn missing_settings(declared: &[(String, String)]) -> Vec<&'static str> {
 }
 =======
 >>>>>>> a0f8b1ded (wren: #4490 — athena-gen reads a product's slice of the model from TTL (in-memory Oxigraph, no Fuseki): domains, classes, fields, sh:in in order, v1 path segments; 4 tests incl. 2 negative proofs)
+=======
+>>>>>>> 3795eee59 (wren: #4490 — athena-gen generate writes the pulse-api crate (RowStore trait, remote SPARQL backend, settings env then file then default, versioned envelope); pulse-api compiles and serves the 5 pulse collections read-only on :3392; emitter tests incl. same-model-same-bytes and a model-change negative proof)
