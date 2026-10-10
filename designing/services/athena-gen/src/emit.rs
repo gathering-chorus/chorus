@@ -12,6 +12,7 @@ const STORE: &str = include_str!("../templates/store.rs");
 const SETTINGS: &str = include_str!("../templates/settings.rs");
 const AUTH: &str = include_str!("../templates/auth.rs");
 const RULES: &str = include_str!("../templates/rules.rs");
+const REQUIREMENTS: &str = include_str!("../templates/requirements_tests.rs");
 
 /// The crate's own version. Step 1 starts every product at 1.0.0; the bump rule
 /// (#4478 Versions: removed field = major, added = minor) arrives with the diff check.
@@ -124,6 +125,7 @@ pub fn crate_files(p: &Product, model_version: &str, port: u16) -> BTreeMap<Stri
     out.insert("src/auth.rs".into(), retag(AUTH, domain));
     out.insert("src/main.rs".into(), retag(MAIN, domain));
     out.insert("src/rules.rs".into(), retag(RULES, domain));
+    out.insert("src/requirements_tests.rs".into(), retag(REQUIREMENTS, domain));
     out.insert("src/store.rs".into(), retag(STORE, domain));
     out.insert("src/settings.rs".into(), retag(SETTINGS, domain));
     out.insert("src/model.rs".into(), format!("// @domain: {domain}\n{}", model_rs(p, model_version, port)));
