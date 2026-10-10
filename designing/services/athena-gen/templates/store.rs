@@ -85,20 +85,126 @@ pub fn name_of(class: &ClassDef, iri: &str) -> String {
     local.strip_prefix(&format!("{}-", class.kind)).unwrap_or(local).to_string()
 }
 
-pub fn open(s: &Settings) -> Box<dyn RowStore> {
-    match s.store_kind.as_str() {
-        "sparql" => Box::new(Sparql { endpoint: s.store_endpoint.clone(), auth: s.store_auth() }),
-        other => {
-            eprintln!("{}: store kind '{other}' is not built yet (sparql is); refusing to start", crate::model::PRODUCT);
-            std::process::exit(2);
-        }
+/// Who runs the SPARQL: a remote endpoint (Fuseki here) or an embedded store in a
+/// folder (#4493: no Fuseki at all). The row logic above it is the same for both, so
+/// the same tests prove both.
+pub trait Engine: Send + Sync {
+    /// SELECT solutions, each as SPARQL-JSON bindings: var → {"type", "value"}.
+    fn select(&self, query: &str) -> Result<Vec<Map<String, Value>>, String>;
+    fn update(&self, update: &str) -> Result<(), String>;
+    /// The embedded store itself, for the backup and restore drill; None for a remote one.
+    fn as_embedded(&self) -> Option<&Embedded> {
+        None
     }
 }
 
-/// Remote SPARQL 1.1 (Fuseki here). Reads only in this step.
-pub struct Sparql {
+pub struct Remote {
     endpoint: String,
     auth: Option<(String, String)>,
+}
+
+impl Engine for Remote {
+    fn select(&self, query: &str) -> Result<Vec<Map<String, Value>>, String> {
+        let text = sparql_body(&self.endpoint, &self.auth, query)?;
+        let body: Value = serde_json::from_str(&text).map_err(|e| format!("store: {e}"))?;
+        let rows = body["results"]["bindings"].as_array().cloned().unwrap_or_default();
+        Ok(rows.into_iter().filter_map(|r| r.as_object().cloned()).collect())
+    }
+    fn update(&self, update: &str) -> Result<(), String> {
+        sparql_update(&self.endpoint, &self.auth, update)
+    }
+}
+
+/// Embedded Oxigraph (RocksDB in a folder). One process writes it at a time.
+pub struct Embedded {
+    store: oxigraph::store::Store,
+}
+
+impl Embedded {
+    pub fn open(path: &str) -> Result<Self, String> {
+        Ok(Embedded { store: oxigraph::store::Store::open(path).map_err(|e| format!("store {path}: {e}"))? })
+    }
+    #[cfg(test)]
+    pub fn memory() -> Self {
+        Embedded { store: oxigraph::store::Store::new().expect("in-memory store") }
+    }
+    /// Load a TriG dump (the move from another store, and the restore half of the drill).
+    pub fn load_trig(&self, trig: &[u8]) -> Result<(), String> {
+        self.store.load_from_slice(oxigraph::io::RdfFormat::TriG, trig).map_err(|e| format!("load: {e}"))
+    }
+    /// Dump every named graph as TriG (the backup half of the drill).
+    pub fn dump_trig(&self) -> Result<Vec<u8>, String> {
+        self.store.dump_to_writer(oxigraph::io::RdfSerializer::from_format(oxigraph::io::RdfFormat::TriG), Vec::new())
+            .map_err(|e| format!("dump: {e}"))
+    }
+}
+
+impl Engine for Embedded {
+    fn select(&self, query: &str) -> Result<Vec<Map<String, Value>>, String> {
+        use oxigraph::model::Term;
+        use oxigraph::sparql::{QueryResults, SparqlEvaluator};
+        let results = SparqlEvaluator::new().parse_query(query).map_err(|e| format!("store: {e}"))?
+            .on_store(&self.store).execute().map_err(|e| format!("store: {e}"))?;
+        let mut out = Vec::new();
+        if let QueryResults::Solutions(solutions) = results {
+            for s in solutions {
+                let s = s.map_err(|e| format!("store: {e}"))?;
+                let mut row = Map::new();
+                for (v, t) in s.iter() {
+                    let (ty, val) = match t {
+                        Term::NamedNode(n) => ("uri", n.as_str().to_string()),
+                        Term::Literal(l) => ("literal", l.value().to_string()),
+                        other => ("bnode", other.to_string()),
+                    };
+                    row.insert(v.as_str().to_string(), json!({ "type": ty, "value": val }));
+                }
+                out.push(row);
+            }
+        }
+        Ok(out)
+    }
+    fn update(&self, update: &str) -> Result<(), String> {
+        oxigraph::sparql::SparqlEvaluator::new().parse_update(update).map_err(|e| format!("store: {e}"))?
+            .on_store(&self.store).execute().map_err(|e| format!("store: {e}"))
+    }
+    fn as_embedded(&self) -> Option<&Embedded> {
+        Some(self)
+    }
+}
+
+pub fn open(s: &Settings) -> Box<dyn RowStore> {
+    let engine: Box<dyn Engine> = match s.store_kind.as_str() {
+        "sparql" => Box::new(Remote { endpoint: s.store_endpoint.clone(), auth: s.store_auth() }),
+        "embedded" => match Embedded::open(&s.store_path) {
+            Ok(e) => Box::new(e),
+            Err(m) => {
+                eprintln!("{}: {m}; refusing to start", crate::model::PRODUCT);
+                std::process::exit(2);
+            }
+        },
+        other => {
+            eprintln!("{}: store kind '{other}' is not one of sparql, embedded; refusing to start", crate::model::PRODUCT);
+            std::process::exit(2);
+        }
+    };
+    Box::new(Sparql { engine })
+}
+
+/// The row store over any SPARQL engine.
+pub struct Sparql {
+    engine: Box<dyn Engine>,
+}
+
+impl Sparql {
+    pub fn over(engine: Box<dyn Engine>) -> Self {
+        Sparql { engine }
+    }
+    pub fn engine(&self) -> &dyn Engine {
+        self.engine.as_ref()
+    }
+    pub fn embedded(&self) -> Option<&Embedded> {
+        self.engine.as_embedded()
+    }
 }
 
 fn b64(bytes: &[u8]) -> String {
@@ -152,6 +258,7 @@ pub fn sparql_body(endpoint: &str, auth: &Option<(String, String)>, query: &str)
 <<<<<<< HEAD
 impl Sparql {
     fn select(&self, query: &str) -> Result<Vec<Map<String, Value>>, String> {
+<<<<<<< HEAD
         let text = sparql_body(&self.endpoint, &self.auth, query)?;
         let body: Value = serde_json::from_str(&text).map_err(|e| format!("store: {e}"))?;
 =======
@@ -174,6 +281,9 @@ impl Sparql {
 >>>>>>> 4c9755287 (wren: #4490 — pulse-api writes require a signed caller: ES256 token through the shared chorus-oidc verifier, principal and grants read from the model, typed refusals (no-token 401, token-invalid 401, identity-unreachable 503, not-a-principal 403); live check: wren's token resolves to principal wren)
         let rows = body["results"]["bindings"].as_array().cloned().unwrap_or_default();
         Ok(rows.into_iter().filter_map(|r| r.as_object().cloned()).collect())
+=======
+        self.engine.select(query)
+>>>>>>> cd24e3b18 (wren: #4493 — pulse-api runs with no Fuseki: store engines split (Remote, Embedded Oxigraph), store.kind=embedded + store.path from the model, load/dump commands; 5 embedded tests incl. wrong-kind link removal on the real update and the backup/restore drill with a negative proof; live: pulse graphs loaded from a Fuseki export, parity with today's door 5/5 on the embedded store; hash crates pinned to one digest)
     }
 
     fn rows(&self, class: &ClassDef, subjects: &[String]) -> Result<Vec<Row>, String> {
@@ -256,11 +366,11 @@ impl RowStore for Sparql {
     }
 
     fn write(&self, graph: &str, subject: &str, type_of: Option<&str>, fields: &[(String, Vec<Cell>)], whole: bool) -> Result<(), String> {
-        sparql_update(&self.endpoint, &self.auth, &write_update(graph, subject, type_of, fields, whole))
+        self.engine.update(&write_update(graph, subject, type_of, fields, whole))
     }
 
     fn delete(&self, graph: &str, subject: &str) -> Result<(), String> {
-        sparql_update(&self.endpoint, &self.auth, &format!("DELETE WHERE {{ GRAPH <{graph}> {{ <{subject}> ?p ?o }} }}"))
+        self.engine.update(&format!("DELETE WHERE {{ GRAPH <{graph}> {{ <{subject}> ?p ?o }} }}"))
     }
 <<<<<<< HEAD
 =======

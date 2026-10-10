@@ -55,6 +55,7 @@ fn the_crate_carries_the_product_its_routes_and_its_versions() {
 <<<<<<< HEAD
 <<<<<<< HEAD
     let files = crate_files(&pulse(), "1.30.0", &settings());
+<<<<<<< HEAD
     assert_eq!(files.keys().collect::<Vec<_>>(), ["Cargo.toml", "src/auth.rs", "src/main.rs", "src/model.rs", "src/requirements_tests.rs", "src/rules.rs", "src/settings.rs", "src/store.rs", "tests/model.rs"]);
 <<<<<<< HEAD
 =======
@@ -78,6 +79,9 @@ fn the_crate_carries_the_product_its_routes_and_its_versions() {
 >>>>>>> ba777c764 (wren: #4490 — the v1 requirements are generated tests in every product API (9 in pulse-api: patch names only, link removal by wildcard, many-links, dangling target refused, ownerless needs Permission, not-owner refused, names round-trip, versions kept); negative proof: removing the owner rule turns req5 and req5b red)
 =======
 >>>>>>> be528d717 (wren: #4490 — tests that exercise every crate file for werk-test selection: athena-gen crates_4490 (manifests by path, committed pulse-api equals a fresh generate, hand-edit negative proof) and a generated pulse-api tests/model.rs)
+=======
+    assert_eq!(files.keys().collect::<Vec<_>>(), ["Cargo.toml", "src/auth.rs", "src/embedded_tests.rs", "src/main.rs", "src/model.rs", "src/requirements_tests.rs", "src/rules.rs", "src/settings.rs", "src/store.rs", "tests/model.rs"]);
+>>>>>>> cd24e3b18 (wren: #4493 — pulse-api runs with no Fuseki: store engines split (Remote, Embedded Oxigraph), store.kind=embedded + store.path from the model, load/dump commands; 5 embedded tests incl. wrong-kind link removal on the real update and the backup/restore drill with a negative proof; live: pulse graphs loaded from a Fuseki export, parity with today's door 5/5 on the embedded store; hash crates pinned to one digest)
     assert!(files["Cargo.toml"].contains("name = \"pulse-api\""));
     let m = &files["src/model.rs"];
     for want in ["PRODUCT: &str = \"pulse\"", "MODEL_VERSION: &str = \"1.30.0\"", "segment: \"rolestates\"",

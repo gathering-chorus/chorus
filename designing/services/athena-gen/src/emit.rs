@@ -19,6 +19,7 @@ const RULES: &str = include_str!("../templates/rules.rs");
 const REQUIREMENTS: &str = include_str!("../templates/requirements_tests.rs");
 const MODEL_TEST: &str = include_str!("../templates/model_test.rs");
 <<<<<<< HEAD
+<<<<<<< HEAD
 =======
 >>>>>>> 3795eee59 (wren: #4490 — athena-gen generate writes the pulse-api crate (RowStore trait, remote SPARQL backend, settings env then file then default, versioned envelope); pulse-api compiles and serves the 5 pulse collections read-only on :3392; emitter tests incl. same-model-same-bytes and a model-change negative proof)
 =======
@@ -31,6 +32,9 @@ const REQUIREMENTS: &str = include_str!("../templates/requirements_tests.rs");
 >>>>>>> ba777c764 (wren: #4490 — the v1 requirements are generated tests in every product API (9 in pulse-api: patch names only, link removal by wildcard, many-links, dangling target refused, ownerless needs Permission, not-owner refused, names round-trip, versions kept); negative proof: removing the owner rule turns req5 and req5b red)
 =======
 >>>>>>> be528d717 (wren: #4490 — tests that exercise every crate file for werk-test selection: athena-gen crates_4490 (manifests by path, committed pulse-api equals a fresh generate, hand-edit negative proof) and a generated pulse-api tests/model.rs)
+=======
+const EMBEDDED_TESTS: &str = include_str!("../templates/embedded_tests.rs");
+>>>>>>> cd24e3b18 (wren: #4493 — pulse-api runs with no Fuseki: store engines split (Remote, Embedded Oxigraph), store.kind=embedded + store.path from the model, load/dump commands; 5 embedded tests incl. wrong-kind link removal on the real update and the backup/restore drill with a negative proof; live: pulse graphs loaded from a Fuseki export, parity with today's door 5/5 on the embedded store; hash crates pinned to one digest)
 
 /// The crate's own version. Step 1 starts every product at 1.0.0; the bump rule
 /// (#4478 Versions: removed field = major, added = minor) arrives with the diff check.
@@ -182,7 +186,11 @@ fn cargo_toml(p: &Product) -> String {
          description = \"The {n} product's API, generated from the Chorus model.\"\n\n\
 <<<<<<< HEAD
 <<<<<<< HEAD
+<<<<<<< HEAD
          [dependencies]\nchorus-oidc = {{ path = \"{oidc}\" }}\nserde_json = \"1\"\ntiny_http = \"0.12\"\nureq = {{ version = \"2\", features = [\"json\"] }}\n\n\
+=======
+         [dependencies]\nchorus-oidc = {{ path = \"{oidc}\" }}\nserde_json = \"1\"\ntiny_http = \"0.12\"\noxigraph = \"=0.5.11\"\nureq = {{ version = \"2\", features = [\"json\"] }}\n\n\
+>>>>>>> cd24e3b18 (wren: #4493 — pulse-api runs with no Fuseki: store engines split (Remote, Embedded Oxigraph), store.kind=embedded + store.path from the model, load/dump commands; 5 embedded tests incl. wrong-kind link removal on the real update and the backup/restore drill with a negative proof; live: pulse graphs loaded from a Fuseki export, parity with today's door 5/5 on the embedded store; hash crates pinned to one digest)
          [[bin]]\nname = \"{n}-api\"\npath = \"src/main.rs\"\n",
         n = p.name, oidc = OIDC_PATH
 =======
@@ -216,6 +224,7 @@ pub fn crate_files(p: &Product, model_version: &str, settings: &[(String, String
     out.insert("src/main.rs".into(), retag(MAIN, domain));
     out.insert("src/rules.rs".into(), retag(RULES, domain));
     out.insert("src/requirements_tests.rs".into(), retag(REQUIREMENTS, domain));
+    out.insert("src/embedded_tests.rs".into(), retag(EMBEDDED_TESTS, domain));
     out.insert("tests/model.rs".into(), retag(MODEL_TEST, domain));
 <<<<<<< HEAD
     out.insert("src/store.rs".into(), retag(STORE, domain));

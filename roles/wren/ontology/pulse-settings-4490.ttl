@@ -43,3 +43,9 @@ chorus:property-pulse-events-command a chorus:Property ;
     rdfs:label "pulse-api: the logger that writes its events to the spine (empty = stderr)" ;
     chorus:propertyKey "events.command" ; chorus:propertyValue "" ;
     chorus:propertyValueType "string" ; chorus:propertyScope "instance" .
+
+# #4493 — the folder the embedded store keeps its rows in when store.kind = embedded.
+chorus:property-pulse-store-path a chorus:Property ;
+    rdfs:label "pulse-api: the embedded store's folder (used when store.kind is embedded)" ;
+    chorus:propertyKey "store.path" ; chorus:propertyValue "/Users/jeffbridwell/.chorus/data/pulse-api" ;
+    chorus:propertyValueType "string" ; chorus:propertyScope "instance" .

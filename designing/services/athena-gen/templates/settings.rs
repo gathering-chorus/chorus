@@ -11,6 +11,7 @@ pub struct Settings {
     pub bind: String,
     pub store_kind: String,
     pub store_endpoint: String,
+    pub store_path: String,
     pub store_user_var: String,
     pub store_password_var: String,
 <<<<<<< HEAD
@@ -68,6 +69,7 @@ pub fn load() -> Settings {
         bind: value("server.bind", &file),
         store_kind: value("store.kind", &file),
         store_endpoint: value("store.endpoint", &file),
+        store_path: value("store.path", &file),
         store_user_var: value("store.user_var", &file),
         store_password_var: value("store.password_var", &file),
 <<<<<<< HEAD
