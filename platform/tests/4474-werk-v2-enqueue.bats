@@ -32,3 +32,35 @@ setup() {
   [[ "$output" == *"no workflow"* ]] || return 1
   [ ! -f "$BATS_TEST_TMPDIR/args" ]
 }
+
+# #4492 — a stale slot verb is refreshed from the installed one before enqueue,
+# unless the card changes that verb (then the card's own build stays).
+slot_fixture() {
+  W="$CHORUS_WERK_BASE/kade-4474"
+  git -C "$W" init -q && git -C "$W" config user.email t@t && git -C "$W" config user.name t
+  git -C "$W" add -A && git -C "$W" commit -qm base && git -C "$W" update-ref refs/remotes/origin/main HEAD
+  mkdir -p "$W/platform/services/werk-test/src"
+  printf '[package]\nname = "werk-test"\n' > "$W/platform/services/werk-test/Cargo.toml"
+  echo x > "$W/platform/services/werk-test/src/main.rs"
+  git -C "$W" add -A && git -C "$W" commit -qm card
+  export CHORUS_BIN="$BATS_TEST_TMPDIR/bin"; mkdir -p "$CHORUS_BIN" "$CHORUS_WERK_BASE/kade-bin"
+  printf 'NEW-build' > "$CHORUS_BIN/werk-build-bin"; printf 'NEW-test' > "$CHORUS_BIN/werk-test-bin"
+  printf 'OLD-build' > "$CHORUS_WERK_BASE/kade-bin/werk-build"
+  printf 'CARD-test' > "$CHORUS_WERK_BASE/kade-bin/werk-test"
+}
+
+@test "a stale slot verb the card does not change is refreshed before enqueue" {
+  slot_fixture
+  run "$ROOT/platform/scripts/werk-v2" 4474 kade
+  [ "$status" -eq 0 ]
+  [ "$(cat "$CHORUS_WERK_BASE/kade-bin/werk-build")" = "NEW-build" ] || return 1
+  [[ "$output" == *"refreshed kade-bin/werk-build"* ]] || return 1
+}
+
+@test "negative proof: a verb the card changes keeps the card's own build" {
+  slot_fixture
+  run "$ROOT/platform/scripts/werk-v2" 4474 kade
+  [ "$status" -eq 0 ]
+  [ "$(cat "$CHORUS_WERK_BASE/kade-bin/werk-test")" = "CARD-test" ] || return 1
+  [[ "$output" != *"refreshed kade-bin/werk-test"* ]] || return 1
+}
