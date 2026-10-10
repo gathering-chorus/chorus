@@ -1,3 +1,4 @@
+// @domain: domains
 //! #4490 — the generator reads one product's slice of the model from TTL alone.
 use athena_gen::model::{load, product, segment, Kind};
 use std::path::PathBuf;
@@ -40,10 +41,11 @@ fn reads_domains_classes_fields_in_model_order() {
     assert!(sv.required && !sv.many);
     let owner = rs.fields.iter().find(|f| f.name == "ownedBy").unwrap();
     assert_eq!(owner.kind, Kind::Link { class: Some("Principal".into()) });
-    // a class with no instancesGraph lives in its domain's graph; no maxCount means many
+    // a class with no instancesGraph lives in its domain's graph; an uncapped LITERAL is
+    // served as one value (v1's rule), only an uncapped link is many
     let ev = &p.domains[1].classes[0];
     assert_eq!((ev.segment.as_str(), ev.graph.as_str()), ("events", "urn:chorus:domains:streams"));
-    assert!(ev.fields[0].many && !ev.fields[0].required);
+    assert!(!ev.fields[0].many && !ev.fields[0].required);
 }
 
 #[test]

@@ -1,3 +1,4 @@
+// @domain: domains
 //! #4490 — read one product's slice of the model from the source TTL files.
 //!
 //! The generator reads the model the repo authors (roles/*/ontology, designing/data),
@@ -237,9 +238,18 @@ fn class(store: &Store, domain: &str, name: &str) -> Result<Class, ModelError> {
             name: fname,
             kind,
             required: p.get("min").and_then(|m| m.parse::<u32>().ok()).unwrap_or(0) > 0,
-            many: p.get("max").and_then(|m| m.parse::<u32>().ok()).is_none_or(|m| m > 1),
+            // v1's rule, kept for route parity: only a LINK with no cap is many-valued;
+            // an uncapped literal is served as one value
+            many: is_link && p.get("max").and_then(|m| m.parse::<u32>().ok()).is_none_or(|m| m > 1),
             allowed,
         });
     }
     Ok(Class { name: name.to_string(), segment: segment(domain, name), graph, fields })
+}
+
+/// The model's version (designing/data/model-version.ttl), so every response can say
+/// which model it was generated from. "unclassified" when the model declares none.
+pub fn model_version(store: &Store) -> Result<String, ModelError> {
+    Ok(select(store, "SELECT ?v WHERE { c:model c:vocabVersion ?v } LIMIT 1")?
+        .into_iter().next().map(|r| r["v"].clone()).unwrap_or_else(|| "unclassified".into()))
 }
