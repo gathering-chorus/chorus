@@ -1936,11 +1936,44 @@ chorus:Principal       chorus:inHierarchy "principal" .
 chorus:Document        chorus:inHierarchy "document" .
 chorus:EventType       chorus:inHierarchy "event" .
 
-chorus:hasDomain     chorus:crossesHierarchy "A product groups domains. It is not their parent: Chorus is an assemblage, and one product (werk) spans two steps." .
-chorus:consumes      chorus:crossesHierarchy "A product uses something it does not group." .
-chorus:consumesEvent chorus:crossesHierarchy "It reads an event type another hierarchy emits." .
-chorus:ownedBy       chorus:crossesHierarchy "Every row names the principal who owns it." .
-chorus:hasDesignDoc  chorus:crossesHierarchy "The design lives in a document, outside the model's hierarchies." .
+# Five kinds of link may cross, a fixed set (Jeff 2026-10-10 11:03), not a list that grows:
+# ownership, design, grouping, tag, event flow. A tag (a document, log, alert, skill or
+# gate saying what it is about) points at ONE place in the chain, the lowest it knows;
+# product and step are read up the chain. So a document's hasProduct is not on this list.
+chorus:ownedBy       chorus:crossesHierarchy "ownership: every row names the principal who owns it." .
+chorus:hasDesignDoc  chorus:crossesHierarchy "design: a product, domain or service links to the document that holds its design." .
+chorus:hasDomain     chorus:crossesHierarchy "grouping and tag: a product groups domains (not their parent: Chorus is an assemblage, and werk spans two steps); an artifact tags the domain it is about." .
+chorus:consumes      chorus:crossesHierarchy "grouping: a product uses something it does not group." .
+chorus:consumesEvent chorus:crossesHierarchy "event flow: who reads an event type." .
+chorus:producedBy    chorus:crossesHierarchy "event flow: who emits an event type; the pair of consumesEvent." .
+
+# --- #4481: every link type in use says what it links from and to ---
+# Several had their rdfs:domain dropped because two classes share them, and two rdfs:domain
+# triples mean BOTH (an intersection). A union says EITHER, which is what was meant.
+# Types read from the store on 2026-10-10 (which classes actually use each link).
+# owl:Thing is written only where any row may carry the link (ownership, tags).
+# Nine link types no row uses (writes, reads, produces, indexes, sourceAlert,
+# propertyValueRef, writeOwner, memoryLayer, writtenInSession) are left for #4482 to
+# retire or type with their owners; athena-validate keeps naming them until then.
+chorus:sourcePath    rdfs:domain [ owl:unionOf ( chorus:ServiceInstance chorus:ScheduledJob ) ] .
+chorus:runsService   rdfs:domain [ owl:unionOf ( chorus:ServiceInstance chorus:ScheduledJob ) ] .
+chorus:onMachine     rdfs:domain [ owl:unionOf ( chorus:ServiceInstance chorus:ScheduledJob chorus:LogSource chorus:Presence ) ] .
+chorus:hasDesignDoc  rdfs:domain [ owl:unionOf ( chorus:Product chorus:Domain chorus:Service ) ] ; rdfs:range chorus:Document .
+chorus:consumesEvent rdfs:domain [ owl:unionOf ( chorus:Product chorus:Domain chorus:Service ) ] .
+chorus:overChannel   rdfs:domain [ owl:unionOf ( chorus:Message chorus:Delivery ) ] .
+chorus:ownedBy       rdfs:domain owl:Thing .
+chorus:hasDomain     rdfs:domain owl:Thing ; rdfs:range chorus:Domain .
+chorus:atStep        rdfs:domain chorus:Domain .
+chorus:dependsOn     rdfs:domain [ owl:unionOf ( chorus:Domain chorus:Product chorus:Service ) ] ;
+                     rdfs:range  [ owl:unionOf ( chorus:Domain chorus:Service chorus:Skill ) ] .
+chorus:delegatesTo   rdfs:domain chorus:Skill ; rdfs:range chorus:Skill .
+chorus:callsSkill    rdfs:domain chorus:StepSkill ; rdfs:range chorus:Skill .
+chorus:forStep       rdfs:domain chorus:StepSkill ; rdfs:range chorus:PipelineStep .
+chorus:eventAbout    rdfs:range [ owl:unionOf ( owl:Class chorus:ArtifactType ) ] .
+chorus:boundTo       rdfs:domain chorus:GovernanceCheck ; rdfs:range [ owl:unionOf ( chorus:ADR chorus:Practice ) ] .
+# contains: a value stream's steps (which duplicate each step's inStream, for #4482) and a
+# domain's collection members (Principles contains its Principle rows).
+chorus:contains      rdfs:domain [ owl:unionOf ( chorus:ValueStream chorus:Domain ) ] ; rdfs:range owl:Thing .
 
 # --- DomainShape (supersedes DomainCoordinateShape; + purpose [the capability] + definesVocabulary [DDD mark] per ADR-045 + the capability ruling) ---
 chorus:DomainShape a sh:NodeShape ;

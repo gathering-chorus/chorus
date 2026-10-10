@@ -144,6 +144,35 @@ SELECT DISTINCT ?s ?field ?value WHERE {
 }"##,
 };
 
+/// A link whose target is not the kind of thing its type says: a Domain whose
+/// step points at a v1 Vertebra row instead of a ValueStreamStep (40 rows on
+/// 2026-10-10), or a tag that names a row no graph holds. Typing the links is
+/// what makes this checkable; a range of owl:Thing says "anything" and is skipped.
+pub const LINK_WRONG_TARGET: Check = Check {
+    id: "link-target-wrong-kind",
+    question: "does every link point at a row of the kind its type says",
+    query: r##"PREFIX owl: <http://www.w3.org/2002/07/owl#>
+PREFIX rdf: <http://www.w3.org/1999/02/22-rdf-syntax-ns#>
+PREFIX rdfs: <http://www.w3.org/2000/01/rdf-schema#>
+SELECT DISTINCT ?s ?field ?o WHERE {
+  GRAPH <urn:chorus:ontology> { ?p a owl:ObjectProperty ; rdfs:range ?r . FILTER(?r != owl:Thing) }
+  GRAPH ?g { ?s ?p ?o }
+  FILTER(STRSTARTS(STR(?g), "urn:chorus:"))
+  FILTER(?g != <urn:chorus:ontology>)
+  FILTER(isIRI(?o))
+  FILTER NOT EXISTS {
+    # any graph: a class target (definesVocabulary, eventAbout) is typed owl:Class
+    # in the ontology graph, and that is where it belongs
+    GRAPH ?g2 { ?o a ?t }
+    GRAPH <urn:chorus:ontology> {
+      ?t rdfs:subClassOf* ?allowed .
+      { ?r owl:unionOf/rdf:rest*/rdf:first ?allowed } UNION { FILTER(isIRI(?r)) BIND(?r AS ?allowed) }
+    }
+  }
+  BIND(REPLACE(STR(?p), "^.*[#/]", "") AS ?field)
+}"##,
+};
+
 /// A parent chain that comes back to where it started. The chain has five
 /// levels, so a loop that stays inside it is at most five links long; the query
 /// follows one to five parent links. Longer loops would need rows outside the
@@ -173,7 +202,7 @@ SELECT DISTINCT ?s ?hops WHERE {
 };
 
 pub fn all() -> Vec<&'static Check> {
-    vec![&ONE_PARENT, &STORED_DERIVED, &CROSS_HIERARCHY, &UNTYPED_LINK, &LINK_AS_LITERAL, &PARENT_LOOP]
+    vec![&ONE_PARENT, &STORED_DERIVED, &CROSS_HIERARCHY, &UNTYPED_LINK, &LINK_AS_LITERAL, &LINK_WRONG_TARGET, &PARENT_LOOP]
 }
 
 #[cfg(test)]
@@ -322,6 +351,27 @@ mod tests {
             let body = String::from_utf8_lossy(&out.stdout).to_string();
             assert!(body.lines().skip(1).any(|l| l.starts_with(want)), "{}: {body:?}", check.id);
         }
+    }
+
+    /// NEGATIVE PROOF: a domain whose step is a Vertebra row, and a tag naming a
+    /// row no graph types, are named; a step that is a ValueStreamStep, a target
+    /// in a union range, and a subclass of the range are not.
+    #[test]
+    fn negative_proof_wrong_target_names_the_wrong_kind_and_the_missing_row() {
+        let fx = r##"<urn:chorus:ontology> {
+  c:dependsOn a owl:ObjectProperty ; rdfs:range [ owl:unionOf ( c:Domain c:Service ) ] .
+  c:Subdomain rdfs:subClassOf c:Domain .
+}
+<urn:chorus:domains:domains> {
+  c:vert a c:Vertebra .
+  c:bad a c:Domain ; c:atStep c:vert .
+  c:good a c:Domain ; c:atStep c:building ; c:dependsOn c:svc, c:sub .
+  c:svc a c:Service . c:sub a c:Subdomain .
+  c:lost a c:Domain ; c:atStep c:building ; c:dependsOn c:nowhere .
+}"##;
+        let mut got = run(&LINK_WRONG_TARGET, "neg", fx);
+        got.sort();
+        assert_eq!(got, vec![("bad".into(), "atStep,vert".into()), ("lost".into(), "dependsOn,nowhere".into())]);
     }
 
     #[test]
