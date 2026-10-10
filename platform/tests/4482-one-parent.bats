@@ -54,6 +54,13 @@ retired_in() { grep -lE '\b(primaryStep|atStream)\b' "$@"; }
   [ "$status" -ne 0 ] || { echo "still named in: $output"; false; }
 }
 
+@test "the generated Domain door serves atStep as its one step link and no retired link" {
+  G="$ROOT/platform/services/athena-make/generated"
+  grep -q '"atStep|edge:ValueStreamStep"' "$G/routes-domain.json"
+  run retired_in "$G/routes-domain.json" "$G/openapi-domain.json" "$G/dashboard-domain.json"
+  [ "$status" -ne 0 ] || { echo "still generated in: $output"; false; }
+}
+
 @test "negative proof: the word check finds a retired link when one is there" {
   f="$BATS_TEST_TMPDIR/x.ttl"
   printf 'chorus:d a chorus:Domain ;\n    chorus:atStream chorus:value-stream-chorus .\n' > "$f"
