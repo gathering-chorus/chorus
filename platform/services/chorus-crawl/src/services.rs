@@ -385,8 +385,10 @@ mod render_4472 {
 /// Lowercase too: the door stores the name slugged, so a capital in a label
 /// (com.google.GoogleUpdater.wake) created a fresh row every run and retired
 /// the one it made last time (measured on the staging door, 2026-10-10).
+/// No "instance-" of our own: the door already prefixes the class slug
+/// (service-instance-, scheduled-job-), and ours doubled it (Jeff, 2026-10-10).
 pub fn door_name(machine: &str, label: &str) -> String {
-    let n: String = format!("instance-{machine}-{label}")
+    let n: String = format!("{machine}-{label}")
         .chars()
         .map(|c| if c.is_ascii_alphanumeric() || c == '-' || c == '_' { c.to_ascii_lowercase() } else { '-' })
         .collect();
@@ -687,11 +689,13 @@ mod plan_4472 {
 
     #[test]
     fn door_names_have_no_dots_and_fit_the_door_rule() {
-        assert_eq!(door_name("library", "com.chorus.api"), "instance-library-com-chorus-api");
+        assert_eq!(door_name("library", "com.chorus.api"), "library-com-chorus-api");
+        // NEGATIVE PROOF: the served IRI must not carry "instance-" twice
+        assert!(!format!("service-instance-{}", door_name("library", "com.chorus.api")).contains("instance-instance"));
         let long = door_name("library", &"x".repeat(300));
         assert_eq!(long.len(), 128);
         // NEGATIVE PROOF (#3734): a capital would name a row the door never serves back
-        assert_eq!(door_name("library", "com.google.GoogleUpdater.wake"), "instance-library-com-google-googleupdater-wake");
+        assert_eq!(door_name("library", "com.google.GoogleUpdater.wake"), "library-com-google-googleupdater-wake");
     }
 
     #[test]
