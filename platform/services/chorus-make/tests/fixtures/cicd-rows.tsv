@@ -11,6 +11,6 @@ demo	4	2	skill-werk-deploy-env-up	werk-deploy env-up	deterministic	werk-deploy	e
 demo	4	3	skill-werk-demo	/demo	deterministic	werk-demo	${CARD} ${ROLE}
 demo	4	4	skill-werk-go	Jeff's go	human		
 land	5	1	skill-werk-merge	werk-merge	deterministic	werk-merge	${CARD} ${ROLE} --atomic
-land	5	2	skill-werk-sync	werk-sync	deterministic	werk-sync	
+land	5	2	skill-werk-sync	werk-sync	deterministic	werk-sync	ff
 land	5	3	skill-werk-deploy-canonical	werk-deploy --target canonical	deterministic	werk-deploy	${CARD} ${ROLE} --target canonical
 land	5	4	skill-werk-accept	werk-accept	deterministic	werk-accept	${CARD} ${ROLE} --atomic

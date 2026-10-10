@@ -149,7 +149,7 @@ pub fn generate(pipeline: &str, rows: &[Row]) -> Result<String, Vec<String>> {
     // own failure handler tells the builder role, through the one nudge door.
     out.push_str(concat!(
         "handler_on:\n  failure:\n",
-        "    command: 'ops-nudge ${ROLE} \"werk v2 #${CARD} failed · dagu ${DAG_RUN_ID} · /cws ${CARD}\"'\n",
+        "    command: '${CHORUS_HOME}/platform/scripts/ops-nudge ${ROLE} \"werk v2 #${CARD} failed · dagu ${DAG_RUN_ID} · /cws ${CARD}\"'\n",
     ));
     out.push_str("steps:\n");
     let mut prev: Option<String> = None;

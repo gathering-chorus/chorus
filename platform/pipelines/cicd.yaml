@@ -15,7 +15,7 @@ env:
   - PATH: ${CHORUS_WERK_BASE}/${ROLE}-bin:${PATH}
 handler_on:
   failure:
-    command: 'ops-nudge ${ROLE} "werk v2 #${CARD} failed · dagu ${DAG_RUN_ID} · /cws ${CARD}"'
+    command: '${CHORUS_HOME}/platform/scripts/ops-nudge ${ROLE} "werk v2 #${CARD} failed · dagu ${DAG_RUN_ID} · /cws ${CARD}"'
 steps:
   - name: skill-werk-commit
     description: "werk-commit"
@@ -74,7 +74,7 @@ steps:
   - name: skill-werk-sync
     description: "werk-sync"
     depends: [skill-werk-merge]
-    command: "werk-sync"
+    command: "werk-sync ff"
     env:
       - ACCEPTER: ${skill_werk_go.outputs.accepter}
   - name: skill-werk-deploy-canonical

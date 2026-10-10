@@ -9,7 +9,7 @@ use std::path::{Path, PathBuf};
 use std::process::Command;
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::time::{SystemTime, UNIX_EPOCH};
-use werk_sync::{recover, repair};
+use werk_sync::{ff, recover, repair};
 
 static TMP_SEQ: AtomicU64 = AtomicU64::new(0);
 fn tmp(tag: &str) -> PathBuf {
@@ -151,4 +151,31 @@ fn not_a_git_repo_fails_loud() {
     let bad = tmp("notrepo");
     assert!(repair(&bad).unwrap_err().contains("not a git repo"));
     assert!(recover(&bad, &tmp("r"), "t").unwrap_err().contains("not a git repo"));
+}
+
+// #4474 — the land's sync step as a verb. Unrelated dirt in canonical (role
+// edits, untracked files) must not block the fast-forward, and must not be moved.
+#[test]
+fn ff_fast_forwards_past_unrelated_dirt_and_leaves_it_in_place() {
+    let (origin, home, _cap) = scenario();
+    fs::write(home.join("tracked.md"), "a role's uncommitted edit\n").unwrap();
+    fs::write(home.join("untracked.txt"), "scratch\n").unwrap();
+    let out = ff(&home).expect("ff past unrelated dirt");
+    assert!(out.contains("werk-sync: ff"), "{out}");
+    assert_eq!(git_out(&home, &["rev-parse", "HEAD"]), git_out(&origin, &["rev-parse", "HEAD"]));
+    assert_eq!(fs::read_to_string(home.join("tracked.md")).unwrap(), "a role's uncommitted edit\n");
+    assert!(home.join("untracked.txt").exists());
+}
+
+/// NEGATIVE PROOF — a diverged canonical is refused, never stashed or forced
+#[test]
+fn ff_refuses_a_diverged_canonical_and_names_recover() {
+    let (_origin, home, _cap) = scenario();
+    fs::write(home.join("local.txt"), "local\n").unwrap();
+    git(&home, &["add", "."]);
+    git(&home, &["commit", "-q", "-m", "local divergence"]);
+    let before = git_out(&home, &["rev-parse", "HEAD"]);
+    let err = ff(&home).expect_err("diverged → refuse");
+    assert!(err.contains("werk-sync recover"), "{err}");
+    assert_eq!(git_out(&home, &["rev-parse", "HEAD"]), before, "a refusal moves nothing");
 }
