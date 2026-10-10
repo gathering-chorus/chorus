@@ -274,6 +274,18 @@ pub fn parse_launchctl_print(text: &str) -> (Vec<String>, Option<String>) {
     (argv, bundle)
 }
 
+/// `launchctl print` → how the unit's last run ended. `launchctl list` prints 0
+/// both for a clean exit and for a job that has never run, so its status column
+/// cannot tell the two apart; print says "(never exited)" for the second.
+pub fn last_exit_from_print(text: &str) -> Option<i64> {
+    text.lines()
+        .find_map(|l| l.trim().strip_prefix("last exit code = "))
+        .and_then(|v| v.split(':').next().unwrap_or("").trim().parse().ok())
+}
+
+/// lsof lives in /usr/sbin, which launchd's PATH for the crawl job does not include.
+pub const LSOF: &str = "/usr/sbin/lsof";
+
 /// One observed unit, ready to become a row.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Unit {
@@ -284,6 +296,8 @@ pub struct Unit {
     pub evidence_unavailable: bool,
     /// #4472 AC2 — TCP ports the unit's process tree listens on, sorted
     pub ports: Vec<u16>,
+    /// launchctl list's status column: how the last run ended (a job's only state)
+    pub last_exit_code: Option<i64>,
 }
 
 /// What one machine's walk returned: its units, or why it could not be walked.
@@ -421,7 +435,7 @@ impl DoorRow {
 /// writer and is put back untouched.
 pub const OWNED_FIELDS: &[&str] = &[
     "label", "launchdLabel", "onMachine", "runState", "binaryPath", "runsService", "external", "evidenceState",
-    "listensOn", "deployedCommit", "cdhash", "sourcePath",
+    "listensOn", "deployedCommit", "cdhash", "sourcePath", "lastExitCode",
 ];
 
 /// The mapping value that names a unit as ours with no design behind it
@@ -451,6 +465,8 @@ pub fn desired_row(machine: &str, u: &Unit, mapping: &[(String, String)], ts: &s
     ];
     if class == UnitClass::ServiceInstance {
         f.push(("runState".into(), u.run_state.clone()));
+    } else if let Some(code) = u.last_exit_code {
+        f.push(("lastExitCode".into(), code.to_string()));
     }
     if let Some(bp) = binary_path(&u.meta) {
         f.push(("binaryPath".into(), bp.into()));
@@ -684,7 +700,39 @@ mod plan_4472 {
         s.strip_prefix("T").and_then(|n| n.parse().ok())
     }
     fn unit(label: &str) -> Unit {
-        Unit { label: label.into(), run_state: "running".into(), meta: UnitMeta { scheduled: false, argv: vec!["/Users/jeffbridwell/.chorus/bin/x".into()], bundle_id: None }, evidence_unavailable: false, ports: vec![] }
+        Unit { label: label.into(), run_state: "running".into(), meta: UnitMeta { scheduled: false, argv: vec!["/Users/jeffbridwell/.chorus/bin/x".into()], bundle_id: None }, evidence_unavailable: false, ports: vec![], last_exit_code: None }
+    }
+
+    #[test]
+    fn lsof_is_named_by_a_path_that_exists_not_looked_up_on_path() {
+        assert!(LSOF.starts_with('/'));
+        assert!(std::path::Path::new(LSOF).exists(), "{LSOF} missing on this box");
+    }
+
+    #[test]
+    fn last_exit_comes_from_print_and_a_job_never_run_has_none() {
+        assert_eq!(last_exit_from_print("\truns = 15\n\tlast exit code = 0\n"), Some(0));
+        assert_eq!(last_exit_from_print("\tlast exit code = 78: EX_CONFIG\n"), Some(78));
+        assert_eq!(last_exit_from_print("\tlast exit code = 78\n"), Some(78));
+        // NEGATIVE PROOF: launchctl list would say 0 here; print says it never ran
+        assert_eq!(last_exit_from_print("\truns = 0\n\tlast exit code = (never exited)\n"), None);
+    }
+
+    #[test]
+    fn a_job_carries_how_its_last_run_ended_and_an_instance_does_not() {
+        let m: Vec<(String, String)> = vec![];
+        let job = Unit { label: "com.chorus.tmp-reaper".into(), run_state: "loaded".into(), meta: UnitMeta { scheduled: true, argv: vec!["/bin/bash".into()], bundle_id: None }, evidence_unavailable: false, ports: vec![], last_exit_code: Some(1) };
+        let r = desired_row("library", &job, &m, "T");
+        assert_eq!(r.class, UnitClass::ScheduledJob);
+        assert_eq!(r.all("lastExitCode"), vec!["1"]);
+        // NEGATIVE PROOF: a job launchd has never run has no code, and none is invented
+        let never = Unit { last_exit_code: None, ..job.clone() };
+        assert!(desired_row("library", &never, &m, "T").all("lastExitCode").is_empty());
+        // an instance keeps runState and writes no exit code
+        let inst = Unit { meta: UnitMeta::default(), last_exit_code: Some(0), ..job };
+        let ri = desired_row("library", &inst, &m, "T");
+        assert_eq!(ri.class, UnitClass::ServiceInstance);
+        assert!(ri.all("lastExitCode").is_empty());
     }
 
     #[test]
@@ -762,14 +810,14 @@ mod plan_4472 {
 
     #[test]
     fn evidence_rules_carry_into_rows() {
-        let bundle_only = Unit { label: "com.docker.helper".into(), run_state: "running".into(), meta: UnitMeta { scheduled: false, argv: vec![], bundle_id: Some("com.docker.docker".into()) }, evidence_unavailable: false, ports: vec![] };
+        let bundle_only = Unit { label: "com.docker.helper".into(), run_state: "running".into(), meta: UnitMeta { scheduled: false, argv: vec![], bundle_id: Some("com.docker.docker".into()) }, evidence_unavailable: false, ports: vec![], last_exit_code: None };
         assert_eq!(desired_row("library", &bundle_only, &[], "T").get("external"), "true");
-        let unseen = Unit { label: "com.x.y".into(), run_state: "loaded".into(), meta: UnitMeta::default(), evidence_unavailable: true, ports: vec![] };
+        let unseen = Unit { label: "com.x.y".into(), run_state: "loaded".into(), meta: UnitMeta::default(), evidence_unavailable: true, ports: vec![], last_exit_code: None };
         let r = desired_row("bedroom", &unseen, &[], "T");
         assert_eq!(r.get("evidenceState"), "unknown");
         assert_eq!(r.get("external"), "");
         // NEGATIVE PROOF: a wrapper around OUR script is ours (the css case)
-        let css = Unit { label: "com.security.css".into(), run_state: "running".into(), meta: UnitMeta { scheduled: false, argv: vec!["/bin/bash".into(), "/Users/jeffbridwell/CascadeProjects/x/start.sh".into()], bundle_id: None }, evidence_unavailable: false, ports: vec![] };
+        let css = Unit { label: "com.security.css".into(), run_state: "running".into(), meta: UnitMeta { scheduled: false, argv: vec!["/bin/bash".into(), "/Users/jeffbridwell/CascadeProjects/x/start.sh".into()], bundle_id: None }, evidence_unavailable: false, ports: vec![], last_exit_code: None };
         assert_eq!(desired_row("library", &css, &[], "T").get("external"), "");
     }
 
@@ -799,7 +847,7 @@ mod report_4472 {
 
     #[test]
     fn findings_name_unmapped_stale_retired_and_unwalked() {
-        let u = |l: &str, ext: bool| Unit { label: l.into(), run_state: "running".into(), meta: UnitMeta { scheduled: false, argv: vec![if ext { "/opt/x".into() } else { "/Users/jeffbridwell/.chorus/bin/x".into() }], bundle_id: None }, evidence_unavailable: false, ports: vec![] };
+        let u = |l: &str, ext: bool| Unit { label: l.into(), run_state: "running".into(), meta: UnitMeta { scheduled: false, argv: vec![if ext { "/opt/x".into() } else { "/Users/jeffbridwell/.chorus/bin/x".into() }], bundle_id: None }, evidence_unavailable: false, ports: vec![], last_exit_code: None };
         let mapping = vec![("com.chorus.mapped".to_string(), "service-a".to_string()), ("com.gone".to_string(), "service-b".to_string())];
         let desired = vec![
             desired_row("library", &u("com.chorus.mapped", false), &mapping, "T"),
@@ -820,7 +868,7 @@ mod report_4472 {
 
     #[test]
     fn a_werk_slot_is_the_werk_and_none_is_named_not_unmapped() {
-        let u = |l: &str| Unit { label: l.into(), run_state: "running".into(), meta: UnitMeta { scheduled: false, argv: vec!["/Users/jeffbridwell/.chorus/bin/x".into()], bundle_id: None }, evidence_unavailable: false, ports: vec![] };
+        let u = |l: &str| Unit { label: l.into(), run_state: "running".into(), meta: UnitMeta { scheduled: false, argv: vec!["/Users/jeffbridwell/.chorus/bin/x".into()], bundle_id: None }, evidence_unavailable: false, ports: vec![], last_exit_code: None };
         let mapping = vec![("com.chorus.bare".to_string(), NO_DESIGN.to_string())];
         let slot = desired_row("library", &u("com.chorus.api.werk.kade"), &mapping, "T");
         assert_eq!(slot.get("runsService"), "werk");
@@ -1218,7 +1266,7 @@ mod provenance_4472 {
             sources: vec![("werk-test".into(), rel.into())],
             codefiles: vec![crate::stable_name(rel)],
         };
-        let u = Unit { label: "com.chorus.nightly-suites".into(), run_state: "loaded".into(), meta: meta(&["/Users/jeffbridwell/.chorus/bin/werk-test-bin"]), evidence_unavailable: false, ports: vec![] };
+        let u = Unit { label: "com.chorus.nightly-suites".into(), run_state: "loaded".into(), meta: meta(&["/Users/jeffbridwell/.chorus/bin/werk-test-bin"]), evidence_unavailable: false, ports: vec![], last_exit_code: None };
         let r = with_provenance(desired_row("library", &u, &[], "T"), &u, &prov);
         assert_eq!(r.get("deployedCommit"), "abc123");
         assert_eq!(r.get("cdhash"), "cd1");
@@ -1235,7 +1283,7 @@ mod provenance_4472 {
 
     #[test]
     fn a_port_change_is_a_write_and_the_same_ports_are_not() {
-        let mut u = Unit { label: "com.chorus.api".into(), run_state: "running".into(), meta: meta(&["/Users/jeffbridwell/.chorus/bin/x"]), evidence_unavailable: false, ports: vec![3340, 3341] };
+        let mut u = Unit { label: "com.chorus.api".into(), run_state: "running".into(), meta: meta(&["/Users/jeffbridwell/.chorus/bin/x"]), evidence_unavailable: false, ports: vec![3340, 3341], last_exit_code: None };
         let cur = desired_row("library", &u, &[], "T");
         let now = 100;
         let fresh = |_: &str| Some(now);
