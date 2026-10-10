@@ -607,9 +607,9 @@ chorus:gathering a chorus:Product ;
     chorus:audience "Jeff, and family and friends where he chooses to share." ;
     chorus:status "operating" ;
     chorus:docState "current" ;
-    # #4319 — the ProductShape floor: its design doc and its content domains (the 12 domains Jeff owns).
-    chorus:gaps "The 12 content domains predate the ProductShape floor (#3603) and have no design docs of their own yet." ;
+    # #4319 — the ProductShape floor: its design doc and its content domains (the 13 domains Jeff owns; #4482 adds seeds, the proto domain from 2026-02 — Jeff 2026-10-10).
+    chorus:gaps "The 13 content domains predate the ProductShape floor (#3603) and have no design docs of their own yet." ;
     chorus:hasDesignDoc chorus:document-gathering-vision ;
-    chorus:hasDomain chorus:blog, chorus:books, chorus:documents, chorus:music, chorus:notes, chorus:people, chorus:photos, chorus:property, chorus:sexuality, chorus:social, chorus:stories, chorus:video .
+    chorus:hasDomain chorus:blog, chorus:books, chorus:documents, chorus:music, chorus:notes, chorus:people, chorus:photos, chorus:property, chorus:seeds, chorus:sexuality, chorus:social, chorus:stories, chorus:video .
 
 
