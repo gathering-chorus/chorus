@@ -469,7 +469,7 @@ fn run(args: &[String]) -> Result<i32, String> {
     // counted SKIPPED state — never green-by-default, never silence.
     let ns_all = werk_test::needs_stack_files(&rows);
     let in_units = |f: &str| units.iter().any(|u| match u {
-        TestUnit::RustCrate(c) => f.starts_with(&format!("platform/services/{}/", c)),
+        TestUnit::RustCrate(c) => f.starts_with(&format!("{}/", crate_dir(&werk, c))),
         TestUnit::TsPackage(p) => f.starts_with(&format!("{}/", p)),
         TestUnit::BatsSuite(_) => false,
     });
@@ -568,7 +568,7 @@ fn run(args: &[String]) -> Result<i32, String> {
             (CheckKind::CargoTest, Some(TestUnit::RustCrate(c))) => {
                 // stack-down: this crate's needs-stack integration binaries
                 // (tests/<stem>.rs → binary <stem>) drop out of the run, typed.
-                let crate_prefix = format!("platform/services/{}/tests/", c);
+                let crate_prefix = format!("{}/tests/", crate_dir(&werk, c));
                 let ns_bins: Vec<String> = ns_excluded.iter()
                     .filter_map(|f| f.strip_prefix(&crate_prefix))
                     .filter_map(|rest| rest.strip_suffix(".rs"))
@@ -586,7 +586,7 @@ fn run(args: &[String]) -> Result<i32, String> {
                     let (ok, cases, _) = run_cargo_sel(&werk, c, &q_names, &ns_refs, &only_refs);
                     (ok, cases)
                 };
-                let crate_dir = format!("platform/services/{}", c);
+                let crate_dir = crate_dir(&werk, c);
                 for (path, result) in cases {
                     match werk_test::match_cargo_case_path(&path, &crate_dir, &rows, &row_names) {
                         Some(fp) => all_cases.push(CaseResult {
@@ -879,7 +879,7 @@ fn run_nightly(args: &[String]) -> Result<i32, String> {
     let crates: Vec<String> = werk_test::nightly_cargo_crates(&rows)
         .into_iter()
         .filter(|c| only.as_deref().map(|o| o == c).unwrap_or(true))
-        .filter(|c| Path::new(&format!("{}/platform/services/{}/Cargo.toml", root, c)).is_file())
+        .filter(|c| Path::new(&format!("{}/{}/Cargo.toml", root, crate_dir(&root, c))).is_file())
         .collect();
     if let Some(o) = &only {
         if crates.is_empty() {
@@ -1133,7 +1133,7 @@ fn run_nightly(args: &[String]) -> Result<i32, String> {
     }
     let ns_bins_for = |c: &str| -> Vec<String> {
         if stack_down.is_some() {
-            let crate_prefix = format!("platform/services/{}/tests/", c);
+            let crate_prefix = format!("{}/tests/", crate_dir(&root, c));
             ns_all.iter()
                 .filter_map(|f| f.strip_prefix(&crate_prefix))
                 .filter_map(|rest| rest.strip_suffix(".rs"))
@@ -1242,7 +1242,7 @@ fn run_nightly(args: &[String]) -> Result<i32, String> {
                 }
             };
             // #4030 AC3 — join + store THIS unit's cases now, in the worker
-            let crate_dir = format!("platform/services/{}", c);
+            let crate_dir = crate_dir(&root, c);
             // #4155 — each failed case's panic block, keyed the way the case
             // is stored; the crate's tail when nextest printed none
             let panics = werk_test::why::nextest_case_reasons(&text);
@@ -1731,14 +1731,15 @@ fn build_for_suites(werk: &str, units: &[werk_test::TestUnit]) -> std::collectio
 fn build_one(werk: &str, t: &werk_test::BuildTarget) -> Result<(), String> {
     match t {
         werk_test::BuildTarget::Crate(c) => {
-            let dir = format!("{}/platform/services/{}", werk, c);
+            let rel = crate_dir(werk, c);
+            let dir = format!("{}/{}", werk, rel);
             if !Path::new(&format!("{}/Cargo.toml", dir)).exists() {
-                return Err(format!("no crate at platform/services/{}", c));
+                return Err(format!("no crate at {}", rel));
             }
-            println!("   build: cargo build --release in platform/services/{} (a selected suite runs it)", c);
+            println!("   build: cargo build --release in {} (a selected suite runs it)", rel);
             let ok = Command::new("cargo").args(["build", "--release", "--quiet"]).current_dir(&dir)
                 .status().map(|s| s.success()).unwrap_or(false);
-            if ok { Ok(()) } else { Err(format!("cargo build --release failed in platform/services/{}", c)) }
+            if ok { Ok(()) } else { Err(format!("cargo build --release failed in {}", rel)) }
         }
         werk_test::BuildTarget::Package(p) => {
             let dir = format!("{}/{}", werk, p);
@@ -1827,7 +1828,7 @@ fn on_disk_test_files(werk: &str, units: &[TestUnit]) -> Vec<String> {
     let mut found: Vec<String> = Vec::new();
     for unit in units {
         let (dir, suffix): (String, &str) = match unit {
-            TestUnit::RustCrate(c) => (format!("platform/services/{}/tests", c), ".rs"),
+            TestUnit::RustCrate(c) => (format!("{}/tests", crate_dir(werk, c)), ".rs"),
             TestUnit::TsPackage(p) => (format!("{}/tests", p), ".test.ts"),
             // A bats suite IS its own file — there is no directory to crawl, and
             // the file is already the unit. Skip rather than invent a convention.
@@ -2066,7 +2067,7 @@ fn run_cargo(werk: &str, name: &str, quarantined: &[&str], ns_bins: &[&str]) -> 
 /// #4155 — the output text comes back too, so each failed case's panic
 /// block can be read as its reason.
 fn run_cargo_sel(werk: &str, name: &str, quarantined: &[&str], exclude_bins: &[&str], only_bins: &[&str]) -> (bool, Vec<(String, String)>, String) {
-    let dir = format!("{}/platform/services/{}", werk, name);
+    let dir = format!("{}/{}", werk, crate_dir(werk, name));
     if !Path::new(&format!("{}/Cargo.toml", dir)).is_file() {
         return (true, Vec::new(), String::new());
     }
@@ -3025,17 +3026,9 @@ fn suite_texts(root: &Path) -> Vec<(String, String)> {
 fn diff_scoped_units_inner(werk: &str, changed: &[String]) -> (Option<Vec<TestUnit>>, String) {
     let root = Path::new(werk);
     let mut units: Vec<ScopeUnit> = Vec::new();
-    if let Ok(entries) = std::fs::read_dir(root.join("platform/services")) {
-        for e in entries.flatten() {
-            if e.path().join("Cargo.toml").is_file() {
-                if let Some(n) = e.file_name().to_str() {
-                    units.push(ScopeUnit {
-                        name: n.to_string(),
-                        dir: format!("platform/services/{}", n),
-                    });
-                }
-            }
-        }
+    // #4491 — every crate home (crate_dirs.rs), not only platform/services
+    for (name, dir) in werk_test::crate_dirs(root) {
+        units.push(ScopeUnit { name, dir });
     }
     let mut ts_name_to_dir: Vec<(String, String)> = Vec::new();
     for pkg in discover_ts_packages(root) {
@@ -3092,7 +3085,7 @@ fn diff_scoped_units_inner(werk: &str, changed: &[String]) -> (Option<Vec<TestUn
                 .map(|u| {
                     if is_test_suite_path(&u.dir) {
                         TestUnit::BatsSuite(u.dir)
-                    } else if u.dir.starts_with("platform/services/") {
+                    } else if root.join(&u.dir).join("Cargo.toml").is_file() {
                         TestUnit::RustCrate(u.name)
                     } else {
                         TestUnit::TsPackage(u.name)
@@ -3518,9 +3511,17 @@ fn card_diff_of(werk: &str, f: &str) -> String {
 
 /// #4419 — the Rust crate a path lives in.
 fn crate_of(path: &str) -> Option<String> {
-    let rest = path.strip_prefix("platform/services/")?;
-    let c = rest.split('/').next()?;
-    if c.is_empty() { None } else { Some(format!("platform/services/{c}")) }
+    // #4491 — any crate home; the manifest is checked in the tree under test
+    // (platform/services keeps its old answer with or without a tree to look in)
+    let root = std::env::var("WERK_TEST_TREE_ROOT").unwrap_or_default();
+    werk_test::crate_dir_of_path(path, &|d: &str| {
+        d.starts_with("platform/services/") || Path::new(&root).join(d).join("Cargo.toml").is_file()
+    })
+}
+
+/// #4491 — the repo-relative dir of a crate named by its package name.
+fn crate_dir(werk: &str, name: &str) -> String {
+    werk_test::crate_rel_dir(Path::new(werk), name)
 }
 
 /// #4419 — the unit that runs a selected test file (or a whole package path).
@@ -3531,11 +3532,12 @@ fn unit_for_test(path: &str) -> Option<TestUnit> {
     if werk_test::is_bats_suite(path) || werk_test::is_shell_suite(path) {
         return Some(TestUnit::BatsSuite(path.to_string()));
     }
-    if let Some(c) = path.strip_prefix("platform/services/") {
-        let name = c.split('/').next().unwrap_or("");
-        if !name.is_empty() {
-            return Some(TestUnit::RustCrate(name.to_string()));
-        }
+    if let Some(dir) = crate_of(path) {
+        let root = std::env::var("WERK_TEST_TREE_ROOT").unwrap_or_default();
+        let name = std::fs::read_to_string(Path::new(&root).join(&dir).join("Cargo.toml")).ok()
+            .and_then(|t| werk_test::cargo_package_name(&t))
+            .unwrap_or_else(|| dir.rsplit('/').next().unwrap_or(&dir).to_string());
+        return Some(TestUnit::RustCrate(name));
     }
     // #4419 — only a REAL package (a package.json in the tree): the first live
     // domain-lane run invented tsc:platform, platform/scripts and proving/scripts
