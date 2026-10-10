@@ -35,7 +35,7 @@
   chorus:stepskill-cicd-demo-4 a chorus:StepSkill ; chorus:forStep chorus:pipeline-step-cicd-demo ; chorus:callsSkill chorus:skill-werk-go ; chorus:skillOrder 4 .
   chorus:skill-werk-merge a chorus:Skill ; rdfs:label "werk-merge" ; chorus:executor "deterministic" ; chorus:implementedBy "werk-merge" ; chorus:arguments "${CARD} ${ROLE} --atomic" .
   chorus:stepskill-cicd-land-1 a chorus:StepSkill ; chorus:forStep chorus:pipeline-step-cicd-land ; chorus:callsSkill chorus:skill-werk-merge ; chorus:skillOrder 1 .
-  chorus:skill-werk-sync a chorus:Skill ; rdfs:label "werk-sync" ; chorus:executor "deterministic" ; chorus:implementedBy "werk-sync" .
+  chorus:skill-werk-sync a chorus:Skill ; rdfs:label "werk-sync" ; chorus:executor "deterministic" ; chorus:implementedBy "werk-sync" ; chorus:arguments "ff" .
   chorus:stepskill-cicd-land-2 a chorus:StepSkill ; chorus:forStep chorus:pipeline-step-cicd-land ; chorus:callsSkill chorus:skill-werk-sync ; chorus:skillOrder 2 .
   chorus:skill-werk-deploy-canonical a chorus:Skill ; rdfs:label "werk-deploy --target canonical" ; chorus:executor "deterministic" ; chorus:implementedBy "werk-deploy" ; chorus:arguments "${CARD} ${ROLE} --target canonical" .
   chorus:stepskill-cicd-land-3 a chorus:StepSkill ; chorus:forStep chorus:pipeline-step-cicd-land ; chorus:callsSkill chorus:skill-werk-deploy-canonical ; chorus:skillOrder 3 .

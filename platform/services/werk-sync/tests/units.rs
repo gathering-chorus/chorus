@@ -12,6 +12,7 @@ fn args(v: &[&str]) -> Vec<String> {
 fn parse_recognizes_repair_and_recover_and_nothing_else() {
     assert_eq!(parse_sync_args(&args(&["repair"])).unwrap(), Mode::Repair);
     assert_eq!(parse_sync_args(&args(&["recover"])).unwrap(), Mode::Recover);
+    assert_eq!(parse_sync_args(&args(&["ff"])).unwrap(), Mode::Ff);
     // No default mode: sync-proper was retired by #2863 — bare invocation is usage.
     assert_eq!(parse_sync_args(&args(&[])).unwrap_err(), USAGE);
     assert!(parse_sync_args(&args(&["sync"])).is_err(), "no resurrected sync verb");

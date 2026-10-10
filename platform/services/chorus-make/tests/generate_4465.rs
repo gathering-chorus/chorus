@@ -135,7 +135,7 @@ fn the_cards_own_verbs_come_first_on_the_path() {
 fn a_failed_run_nudges_the_builder() {
     // #4474 run 15 failed at 09:25; nobody knew until 10:06
     let out = generate("cicd", &cicd()).unwrap();
-    let h = out.find("handler_on:\n  failure:\n    command: 'ops-nudge ${ROLE} ").expect("a failure handler");
+    let h = out.find("handler_on:\n  failure:\n    command: '${CHORUS_HOME}/platform/scripts/ops-nudge ${ROLE} ").expect("a failure handler");
     assert!(h < out.find("steps:\n").unwrap(), "handler_on is DAG-level, before the steps");
     // negative proof: the handler is on failure only, never on every exit or success
     assert!(!out.contains("  success:") && !out.contains("  exit:"), "{out}");

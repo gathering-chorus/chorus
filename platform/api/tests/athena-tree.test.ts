@@ -49,7 +49,7 @@ describe('loadTree — fixture round-trip against TreeSchema (#2928 Silas gate:a
     // the acp skill was retired, #3422)
     expect(tree.instances.length).toBeGreaterThanOrEqual(94);
     // AC3: ownership_lookup answers at the leaf, with Jeff's validated owners
-    expect(lookupOwnership(tree, 'chorus:skill-demo')?.owner).toBe('chorus:role-wren');
+    expect(lookupOwnership(tree, 'chorus:skill-werk-demo')?.owner).toBe('chorus:role-wren');
     expect(lookupOwnership(tree, 'chorus:verb-werk-commit')?.owner).toBe('chorus:role-kade');
     expect(lookupOwnership(tree, 'chorus:verb-werk-demo')?.owner).toBe('chorus:role-wren'); // proving verb → wren
     expect(lookupOwnership(tree, 'chorus:hook-icd-write-gate')?.owner).toBe('chorus:role-kade'); // convergence, not silas

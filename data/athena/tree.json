@@ -898,7 +898,7 @@
       "ownedBy": "chorus:role-wren"
     },
     {
-      "iri": "chorus:skill-demo",
+      "iri": "chorus:skill-werk-demo",
       "label": "demo",
       "instanceType": "skill",
       "inDomain": "chorus:skills",

@@ -39,15 +39,17 @@ pub type R<T> = Result<T, String>;
 pub enum Mode {
     Repair,
     Recover,
+    Ff,
 }
 
-pub const USAGE: &str = "usage: werk-sync {repair|recover}\n  repair   — re-attach HEAD to main, ff to origin/main (detached-HEAD recovery)\n  recover  — auto-stash dirty files to ~/.chorus/recovery/<ts>/, then ff to origin/main (#2909)\n  Sync is automatic inside the build path (#2863). Use these only when it aborts.";
+pub const USAGE: &str = "usage: werk-sync {ff|repair|recover}\n  ff       — fast-forward canonical to origin/main; refuses if it can't (the land's sync step, #4474)\n  repair   — re-attach HEAD to main, ff to origin/main (detached-HEAD recovery)\n  recover  — auto-stash dirty files to ~/.chorus/recovery/<ts>/, then ff to origin/main (#2909)\n  Sync is automatic inside the build path (#2863). Use these only when it aborts.";
 
 /// #3300 — the CLI seam (the #3294 pattern: parsing pure + unit-tested).
 pub fn parse_sync_args(args: &[String]) -> R<Mode> {
     match args.first().map(|s| s.as_str()) {
         Some("repair") => Ok(Mode::Repair),
         Some("recover") => Ok(Mode::Recover),
+        Some("ff") => Ok(Mode::Ff),
         _ => Err(USAGE.to_string()),
     }
 }
@@ -160,6 +162,27 @@ fn require_git_repo(home: &Path) -> R<String> {
     home.to_str()
         .map(|s| s.to_string())
         .ok_or_else(|| format!("non-utf8 path: {}", home.display()))
+}
+
+/// `werk-sync ff` — #4474: the land's sync step as a verb. v1 does this as inline
+/// script in werk.yml (fetch + `merge --ff-only`); werk v2 runs only verbs, and its
+/// bare `werk-sync` hit the usage error after merge. Unrelated dirty or untracked
+/// files in canonical don't block a fast-forward; anything that does is a refusal,
+/// never a stash (that is `recover`, a human's call).
+pub fn ff(home: &Path) -> R<String> {
+    let home_s = require_git_repo(home)?;
+    let _lock = lock(home, Duration::from_secs(30))?;
+    let _ = run_in(&home_s, "git", &["fetch", "--quiet", "origin", "main"]);
+    let from = run_in(&home_s, "git", &["rev-parse", "HEAD"]).map(|s| s.trim().to_string()).unwrap_or_default();
+    run_in(&home_s, "git", &["merge", "--ff-only", "--quiet", "origin/main"])
+        .map_err(|e| format!("ff refused: canonical can't fast-forward to origin/main ({}) — run werk-sync recover", e.trim()))?;
+    let to = run_in(&home_s, "git", &["rev-parse", "HEAD"]).map(|s| s.trim().to_string()).unwrap_or_default();
+    let origin = run_in(&home_s, "git", &["rev-parse", "origin/main"]).map(|s| s.trim().to_string()).unwrap_or_default();
+    if to != origin {
+        return Err(format!("ff refused: canonical at {} after the merge, origin/main at {}", to, origin));
+    }
+    emit(home, "canonical.synced", &[("from", &from), ("to", &to)]);
+    Ok(format!("werk-sync: ff — {} → {}", from, to))
 }
 
 /// `werk-sync repair` — detached/corrupted canonical → attached at origin/main.
@@ -325,6 +348,7 @@ pub fn run_sync() -> R<String> {
     let home = PathBuf::from(env::var("CHORUS_HOME").map_err(|_| "CHORUS_HOME not set".to_string())?);
     match mode {
         Mode::Repair => repair(&home),
+        Mode::Ff => ff(&home),
         Mode::Recover => {
             let base = env::var("CHORUS_RECOVERY_BASE")
                 .map(PathBuf::from)
