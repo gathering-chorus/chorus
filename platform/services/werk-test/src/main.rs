@@ -3133,6 +3133,31 @@ fn ensure_ui_service_built(werk: &str, pkg: &str, artifact: &str) {
 
 /// #4154 — `None` = UNMEASURED (playwright selected no spec: nothing ran,
 /// nothing crashed). `Some(false)` is a real failure, `Some(true)` a pass.
+/// The ui-flows child's environment. #4235 run 1: under werk v2 the scheduler
+/// sets no CHORUS_ROOT, so every spec that starts its own Clearing died on
+/// "CHORUS_ROOT must be set" (7 red, none about the card). The flows are rooted
+/// in the tree under test, as every other suite is (apply_suite_world, #4474).
+fn ui_flows_env(werk: &str) -> Vec<(&'static str, String)> {
+    vec![
+        ("CHORUS_CONTEXT", String::new()), // #3918 — test child stays refusable
+        ("CHORUS_ROOT", werk.to_string()),
+        // #4454 — the specs' own events (fixtures, each case starting and ending)
+        ("CHORUS_TEST_EVENTS", test_events_path(werk)),
+    ]
+}
+
+#[cfg(test)]
+mod ui_flows_env_4235 {
+    #[test]
+    fn the_flows_are_rooted_in_the_werk_under_test() {
+        let env = super::ui_flows_env("/w/kade-4235");
+        assert!(env.contains(&("CHORUS_ROOT", "/w/kade-4235".to_string())), "{env:?}");
+        // NEGATIVE PROOF: without the pin the own-Clearing fixture refuses to start
+        assert!(!super::ui_flows_env("/w/x").iter().any(|(k, v)| *k == "CHORUS_ROOT" && v.is_empty()));
+        assert!(env.iter().any(|(k, v)| *k == "CHORUS_CONTEXT" && v.is_empty()));
+    }
+}
+
 fn run_ui_flows(werk: &str, files: &std::collections::BTreeSet<String>, quarantined: &[werk_test::Quarantined]) -> (Option<bool>, String) {
     ensure_ui_service_built(werk, "directing/clearing", "dist/server.js");
     let mut cmd = Command::new("npx");
@@ -3154,9 +3179,9 @@ fn run_ui_flows(werk: &str, files: &std::collections::BTreeSet<String>, quaranti
         cmd.arg(f);
     }
     cmd.current_dir(werk);
-    cmd.env("CHORUS_CONTEXT", ""); // #3918 — test child stays refusable
-    // #4454 — the specs' own events (fixtures, each case starting and ending)
-    cmd.env("CHORUS_TEST_EVENTS", test_events_path(werk));
+    for (k, v) in ui_flows_env(werk) {
+        cmd.env(k, v);
+    }
     let out = cmd.output();
     forward_test_events(werk);
     match out {
