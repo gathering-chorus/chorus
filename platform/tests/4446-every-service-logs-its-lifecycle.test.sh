@@ -76,6 +76,7 @@ com.chorus.jeff-input-monitor	WRAP: binary with no source in the repo
 com.chorus.session-watcher	WRAP: script lives only in ~/.chorus/scripts
 com.chorus.heartbeat-probe	WRAP: script lives only in ~/.chorus/scripts
 com.chorus.buzz-tunnel	WRAP: ssh, not our code
+com.chorus.dagu	WRAP: dagu (Homebrew), not our code
 com.chorus.alert-notifier	WRAP: shared-observability repo
 com.chorus.harvest-exporter	WRAP: shared-observability repo
 com.chorus.launchagent-metrics	WRAP: shared-observability repo
