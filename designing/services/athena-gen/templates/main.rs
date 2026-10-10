@@ -26,6 +26,8 @@ mod model;
 >>>>>>> 9ac820daf (wren: #4490 — pulse-api writes (create, replace, patch, delete) with the door rules generated in: shape checks (off-model, sh:in, one-value, required), links as IRIs with dangling targets refused, owner or Write Permission, prior version kept before every change, owl.write event per outcome; live: wren's RoleState created and patched, v1 reads it back, version-rolestates-wren-1 kept)
 mod settings;
 mod store;
+#[cfg(test)]
+mod requirements_tests;
 
 use model::{ClassDef, API_VERSION, CLASSES, CRATE_VERSION, MODEL_VERSION, PRODUCT};
 use serde_json::{json, Value};
@@ -75,10 +77,14 @@ fn refused(r: rules::Refusal) -> (u16, Value) {
 /// A write, after the caller is known: shape check → owner or Permission → keep the
 /// displaced version → one atomic store write → event. Nothing is written on a refusal.
 <<<<<<< HEAD
+<<<<<<< HEAD
 pub fn write(ctx: &Ctx, caller: &auth::Caller, method: &str, class: &ClassDef, name: Option<&str>, body: &str) -> (u16, Value) {
 =======
 fn write(ctx: &Ctx, caller: &auth::Caller, method: &str, class: &ClassDef, name: Option<&str>, body: &str) -> (u16, Value) {
 >>>>>>> 9ac820daf (wren: #4490 — pulse-api writes (create, replace, patch, delete) with the door rules generated in: shape checks (off-model, sh:in, one-value, required), links as IRIs with dangling targets refused, owner or Write Permission, prior version kept before every change, owl.write event per outcome; live: wren's RoleState created and patched, v1 reads it back, version-rolestates-wren-1 kept)
+=======
+pub fn write(ctx: &Ctx, caller: &auth::Caller, method: &str, class: &ClassDef, name: Option<&str>, body: &str) -> (u16, Value) {
+>>>>>>> ba777c764 (wren: #4490 — the v1 requirements are generated tests in every product API (9 in pulse-api: patch names only, link removal by wildcard, many-links, dangling target refused, ownerless needs Permission, not-owner refused, names round-trip, versions kept); negative proof: removing the owner rule turns req5 and req5b red)
     let parsed: Value = if body.trim().is_empty() && method == "DELETE" { json!({}) } else {
         match serde_json::from_str(body) { Ok(v) => v, Err(e) => return error(400, "bad-json", &e.to_string()) }
     };

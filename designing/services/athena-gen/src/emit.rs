@@ -15,6 +15,7 @@ const SETTINGS: &str = include_str!("../templates/settings.rs");
 const AUTH: &str = include_str!("../templates/auth.rs");
 const RULES: &str = include_str!("../templates/rules.rs");
 <<<<<<< HEAD
+<<<<<<< HEAD
 const REQUIREMENTS: &str = include_str!("../templates/requirements_tests.rs");
 const MODEL_TEST: &str = include_str!("../templates/model_test.rs");
 =======
@@ -24,6 +25,9 @@ const AUTH: &str = include_str!("../templates/auth.rs");
 >>>>>>> 4c9755287 (wren: #4490 — pulse-api writes require a signed caller: ES256 token through the shared chorus-oidc verifier, principal and grants read from the model, typed refusals (no-token 401, token-invalid 401, identity-unreachable 503, not-a-principal 403); live check: wren's token resolves to principal wren)
 =======
 >>>>>>> 9ac820daf (wren: #4490 — pulse-api writes (create, replace, patch, delete) with the door rules generated in: shape checks (off-model, sh:in, one-value, required), links as IRIs with dangling targets refused, owner or Write Permission, prior version kept before every change, owl.write event per outcome; live: wren's RoleState created and patched, v1 reads it back, version-rolestates-wren-1 kept)
+=======
+const REQUIREMENTS: &str = include_str!("../templates/requirements_tests.rs");
+>>>>>>> ba777c764 (wren: #4490 — the v1 requirements are generated tests in every product API (9 in pulse-api: patch names only, link removal by wildcard, many-links, dangling target refused, ownerless needs Permission, not-owner refused, names round-trip, versions kept); negative proof: removing the owner rule turns req5 and req5b red)
 
 /// The crate's own version. Step 1 starts every product at 1.0.0; the bump rule
 /// (#4478 Versions: removed field = major, added = minor) arrives with the diff check.
@@ -211,6 +215,7 @@ pub fn crate_files(p: &Product, model_version: &str, port: u16) -> BTreeMap<Stri
     out.insert("src/auth.rs".into(), retag(AUTH, domain));
     out.insert("src/main.rs".into(), retag(MAIN, domain));
     out.insert("src/rules.rs".into(), retag(RULES, domain));
+    out.insert("src/requirements_tests.rs".into(), retag(REQUIREMENTS, domain));
     out.insert("src/store.rs".into(), retag(STORE, domain));
     out.insert("src/settings.rs".into(), retag(SETTINGS, domain));
     out.insert("src/model.rs".into(), format!("// @domain: {domain}\n{}", model_rs(p, model_version, port)));
