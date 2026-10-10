@@ -144,6 +144,13 @@ pub fn generate(pipeline: &str, rows: &[Row]) -> Result<String, Vec<String>> {
         // first, as chorus-env-setup.sh does for a role's shell (#2995).
         "  - PATH: ${CHORUS_WERK_BASE}/${ROLE}-bin:${PATH}\n",
     ));
+    // #4474 run 15: a v2 run failed at test and nobody heard for 40 minutes; v1's
+    // pipeline nudges, and no role polls (Jeff: "the pipeline nudges you"). dagu's
+    // own failure handler tells the builder role, through the one nudge door.
+    out.push_str(concat!(
+        "handler_on:\n  failure:\n",
+        "    command: 'ops-nudge ${ROLE} \"werk v2 #${CARD} failed · dagu ${DAG_RUN_ID} · /cws ${CARD}\"'\n",
+    ));
     out.push_str("steps:\n");
     let mut prev: Option<String> = None;
     let mut go: Option<String> = None;

@@ -13,6 +13,9 @@ env:
   - WERK_ABBY_NORMAL_BIN: ${WERK_ABBY_NORMAL_BIN}
   - CHORUS_TRACE_ID: ${DAG_RUN_ID}
   - PATH: ${CHORUS_WERK_BASE}/${ROLE}-bin:${PATH}
+handler_on:
+  failure:
+    command: 'ops-nudge ${ROLE} "werk v2 #${CARD} failed · dagu ${DAG_RUN_ID} · /cws ${CARD}"'
 steps:
   - name: skill-werk-commit
     description: "werk-commit"
