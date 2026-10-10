@@ -8,6 +8,7 @@
 //! because a sweep that could not run must never be reported as a healthy graph.
 mod checks;
 mod door;
+mod hierarchy;
 mod ported;
 mod registry;
 mod store;
@@ -138,6 +139,8 @@ fn main() {
     // at the door, swept over what is already in the store.
     store_checks.push(&ALLOWED_VALUES);
     store_checks.push(&PATTERN);
+    // #4481 — one parent per row, position read up the chain, no unlisted links across hierarchies
+    store_checks.extend(hierarchy::all());
     if matches!(&exact, Some(g) if g.is_empty()) {
         store_checks.clear();
     }
