@@ -17,6 +17,10 @@
     <key>CHORUS_HOME</key><string>/Users/jeffbridwell/CascadeProjects/chorus</string>
     <key>CHORUS_WERK_BASE</key><string>/Users/jeffbridwell/CascadeProjects/chorus-werk</string>
     <key>CHORUS_BIN</key><string>/Users/jeffbridwell/.chorus/bin</string>
+    <key>WERK_KADE_BIN</key><string>/Users/jeffbridwell/CascadeProjects/chorus-werk/kade-bin</string>
+    <key>WERK_WREN_BIN</key><string>/Users/jeffbridwell/CascadeProjects/chorus-werk/wren-bin</string>
+    <key>WERK_SILAS_BIN</key><string>/Users/jeffbridwell/CascadeProjects/chorus-werk/silas-bin</string>
+    <key>WERK_ABBY_NORMAL_BIN</key><string>/Users/jeffbridwell/CascadeProjects/chorus-werk/abby-normal-bin</string>
     <key>PATH</key><string>/Users/jeffbridwell/.chorus/bin:/Users/jeffbridwell/CascadeProjects/chorus/platform/scripts:/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin</string>
   </dict>
   <key>RunAtLoad</key><true/>

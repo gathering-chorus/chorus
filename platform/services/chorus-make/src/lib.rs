@@ -119,13 +119,18 @@ pub fn generate(pipeline: &str, rows: &[Row]) -> Result<String, Vec<String>> {
     // "CHORUS_HOME not set", then "CHORUS_WERK_BASE not set"). The machine's
     // paths pass through from the scheduler's env (launchd unit, or the shell
     // that ran `dagu start`), and dagu's run id is the trace, so every verb's
-    // spine events name the run. No DEPLOY_ROLE: it is a self-declared
+    // spine events name the run. WERK_<ROLE>_BIN are the role bin slots
+    // chorus-bin-install reads (run 4); paths, not identity. No DEPLOY_ROLE: it is a self-declared
     // identity (ADR-052 retires it), and a run param must not assert one.
     out.push_str(concat!(
         "env:\n",
         "  - CHORUS_HOME: ${CHORUS_HOME}\n",
         "  - CHORUS_WERK_BASE: ${CHORUS_WERK_BASE}\n",
         "  - CHORUS_BIN: ${CHORUS_BIN}\n",
+        "  - WERK_KADE_BIN: ${WERK_KADE_BIN}\n",
+        "  - WERK_WREN_BIN: ${WERK_WREN_BIN}\n",
+        "  - WERK_SILAS_BIN: ${WERK_SILAS_BIN}\n",
+        "  - WERK_ABBY_NORMAL_BIN: ${WERK_ABBY_NORMAL_BIN}\n",
         "  - CHORUS_TRACE_ID: ${DAG_RUN_ID}\n",
     ));
     out.push_str("steps:\n");
