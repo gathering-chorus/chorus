@@ -1,6 +1,9 @@
 //! #4485 — the infrastructure crawl: machines and their disks, measured on the
 //! machines themselves. The df fixtures are real output from Library and
 //! Bedroom (2026-10-11), so what is proven is what a pass reads.
+//! Fixtures by repo path:
+//!   platform/services/chorus-crawl/tests/fixtures/infra-4485/df-library.txt
+//!   platform/services/chorus-crawl/tests/fixtures/infra-4485/df-bedroom.txt
 //!
 //! The two negative proofs Wren asked for come first: a disk over 90% is a
 //! finding, and a machine the crawl could not walk reads UNMEASURED for its
