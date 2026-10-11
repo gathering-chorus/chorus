@@ -642,6 +642,14 @@ fn run(args: &[String]) -> Result<i32, String> {
                 if unbuilt.contains_key(s) {
                     unmeasured.push(target.to_string());
                     true
+                } else if std::fs::read_to_string(format!("{}/{}", werk, s))
+                    .is_ok_and(|t| werk_test::header_says_sends_live_alerts(&t)) {
+                    // #4393 rule 4 — a suite that sends live alerts never runs in
+                    // a card run (3968 and 4027 paged Silas and Jeff on #4335);
+                    // the nightly or a deliberate hand run still runs it
+                    println!("   bats:{} — sends live alerts: not run in a card run (UNMEASURED; the nightly runs it)", s);
+                    unmeasured.push(target.to_string());
+                    true
                 } else {
                     let (outcome, cases) = run_bats(&werk, s);
                     all_cases.extend(cases);
@@ -1755,6 +1763,19 @@ fn build_one(werk: &str, t: &werk_test::BuildTarget) -> Result<(), String> {
     }
 }
 
+/// #4393 — the card's diff of one suite (from where the werk left main) is
+/// assertion lines only.
+fn assert_only_in_card(werk: &str, suite: &str) -> bool {
+    let base = Command::new("git").args(["-C", werk, "merge-base", "origin/main", "HEAD"]).output().ok()
+        .map(|o| String::from_utf8_lossy(&o.stdout).trim().to_string()).unwrap_or_default();
+    if base.is_empty() {
+        return false;
+    }
+    let diff = Command::new("git").args(["-C", werk, "diff", "-U0", &base, "--", suite]).output().ok()
+        .map(|o| String::from_utf8_lossy(&o.stdout).into_owned()).unwrap_or_default();
+    werk_test::assert_only_change(&diff)
+}
+
 fn run_bats(werk: &str, suite: &str) -> (BatsOutcome, Vec<CaseResult>) {
     let tmp = std::env::temp_dir().join(format!("werk-test-bats-{}", std::process::id()));
     let _ = std::fs::create_dir_all(&tmp);
@@ -1777,6 +1798,13 @@ fn run_bats(werk: &str, suite: &str) -> (BatsOutcome, Vec<CaseResult>) {
     // #4454 — each case's time on its TAP line
     if runner == "bats" {
         cmd.arg("-T");
+        // #4393 rule 1 — an edit to assertion lines only runs the suite's
+        // hermetic cases: a case tagged needs-stack stands up what the edit
+        // cannot have changed
+        if assert_only_in_card(werk, suite) {
+            println!("   bats:{} — assert-only edit: hermetic cases only (--filter-tags '!needs-stack')", suite);
+            cmd.args(["--filter-tags", "!needs-stack"]);
+        }
     }
     // #4454 — output to a FILE (a leaked server cannot hold it open, #4022),
     // echoed to the run log as before, then read for each case's verdict,

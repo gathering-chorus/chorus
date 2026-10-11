@@ -2281,6 +2281,7 @@ fn post_once(endpoint: &str, token: &str, payload: &str) -> String {
 // #3821 — the ONE shared diff→units scoping core (also compiled by werk-build).
 include!("../../shared/scope_units.rs");
 include!("../../shared/crate_dirs.rs");
+include!("suite_header.rs");
 include!("../../shared/target_seed.rs");
 
 /// #3821 — the diff-scoped TEST plan. Some(units) = scoped (possibly empty:
