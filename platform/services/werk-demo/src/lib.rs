@@ -1858,18 +1858,20 @@ pub fn parse_free_pct(out: &str) -> Option<u8> {
 }
 
 /// true = proceed. A metric that can't be measured never blocks (hosted CI,
-/// non-macOS); a measurable metric past its floor always does.
+/// non-macOS); free memory under its floor always does.
+///
+/// #4497 — swap used no longer blocks. macOS keeps swap allocated long after a
+/// spike, so on 2026-10-10 swap sat at 16.7 of 18.4 GB from 18:51 while 29% of
+/// memory was free, and every demo gate waited 5 minutes on a number that had
+/// stopped meaning anything. Free memory is the live signal; swap is still
+/// sampled and recorded on the deferred event (and alerting owns "swap full").
 pub fn memory_floor_verdict(
     swap_used: Option<u64>,
     free_pct: Option<u8>,
     swap_floor: u64,
     free_floor: u8,
 ) -> bool {
-    if let Some(swap) = swap_used {
-        if swap > swap_floor {
-            return false;
-        }
-    }
+    let _ = (swap_used, swap_floor);
     if let Some(free) = free_pct {
         if free < free_floor {
             return false;
@@ -1914,9 +1916,9 @@ fn sample_memory() -> (Option<u64>, Option<u8>) {
 }
 
 /// Block until the box has headroom for one more headless claude, bounded.
-/// Floors/wait are env-tunable (CHORUS_MEM_SWAP_FLOOR_GB, default 8 — same
-/// threshold as the LibrarySwapPressure alert; CHORUS_MEM_FREE_FLOOR_PCT,
-/// default 10; CHORUS_MEM_WAIT_SECS, default 300). CHORUS_MEM_FLOOR_DISABLE
+/// Floors/wait are env-tunable (CHORUS_MEM_FREE_FLOOR_PCT, default 10;
+/// CHORUS_MEM_WAIT_SECS, default 300). CHORUS_MEM_SWAP_FLOOR_GB is still read
+/// and recorded but no longer blocks (#4497). CHORUS_MEM_FLOOR_DISABLE
 /// skips entirely. Returns false when pressure never cleared — the caller
 /// records a visible refusal, never spawns anyway.
 fn wait_for_memory_floor(home: &Path, role: &str, card: u64, label: &str, round: &str) -> bool {

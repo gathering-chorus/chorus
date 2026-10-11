@@ -22,3 +22,7 @@ CHORUS_ROOT = { value = "../../..", relative = true, force = false }
 # assert on spine content still bring their own path (force = false — caller
 # env wins).
 CHORUS_LOG_FILE = { value = "target/test-spine.log", relative = true, force = false }
+# #4497 — no test asks Finder for the free disk space. A test build of the shim
+# has no TCC grant, so each session-start test waited on that AppleEvent until
+# it gave up (683 s for the crate on 2026-10-10). The shim reads this instead.
+CHORUS_FREE_DISK_BYTES = { value = "200000000000", force = false }

@@ -115,11 +115,7 @@ pub fn run(args: &[String]) -> ExitCode {
     // Health checks — APFS disk via Finder free space (includes purgeable, matches Finder)
     let disk_pct = {
         // osascript returns Finder's free space which includes purgeable — matches what Jeff sees
-        let finder_free = Cmd::new("osascript")
-            .args(["-e", "tell application \"Finder\" to get free space of startup disk"])
-            .output().ok()
-            .and_then(|o| String::from_utf8(o.stdout).ok())
-            .and_then(|s| s.trim().parse::<f64>().ok());
+        let finder_free = super::health::finder_free_bytes();
         let container_total = Cmd::new("diskutil").args(["info", "/"])
             .output().ok()
             .and_then(|o| String::from_utf8(o.stdout).ok())

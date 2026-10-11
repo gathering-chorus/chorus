@@ -8,6 +8,22 @@ use std::process::{Command as Cmd, ExitCode};
 use crate::process;
 use crate::shared::state_paths::repo_root;
 
+/// #4497 — Finder's free space on the startup disk (APFS-aware: it counts
+/// purgeable space, which df does not, #1868). `CHORUS_FREE_DISK_BYTES` is the
+/// test seam: set, it is the answer and no AppleEvent is sent. A test build of
+/// the shim has no TCC grant for Finder, so the AppleEvent waited ~a minute per
+/// session-start test (683 s for the crate, Silas 2026-10-10).
+pub fn finder_free_bytes() -> Option<f64> {
+    if let Ok(v) = std::env::var("CHORUS_FREE_DISK_BYTES") {
+        return v.trim().parse::<f64>().ok();
+    }
+    Cmd::new("osascript")
+        .args(["-e", "tell application \"Finder\" to get free space of startup disk"])
+        .output().ok()
+        .and_then(|o| String::from_utf8(o.stdout).ok())
+        .and_then(|s| s.trim().parse::<f64>().ok())
+}
+
 // ---------------------------------------------------------------------------
 // Private helpers
 // ---------------------------------------------------------------------------
@@ -96,11 +112,7 @@ pub fn cruft_scan() -> ExitCode {
 
     // Disk check — APFS-aware via Finder free space (includes purgeable, matches Finder)
     out.push_str("## Disk\n");
-    let finder_free = Cmd::new("osascript")
-        .args(["-e", "tell application \"Finder\" to get free space of startup disk"])
-        .output().ok()
-        .and_then(|o| String::from_utf8(o.stdout).ok())
-        .and_then(|s| s.trim().parse::<f64>().ok());
+    let finder_free = finder_free_bytes();
     let container_total = Cmd::new("diskutil").args(["info", "/"])
         .output().ok()
         .and_then(|o| String::from_utf8(o.stdout).ok())
@@ -209,11 +221,7 @@ pub fn health_hourly(args: &[String]) -> ExitCode {
 
     // Disk check — APFS-aware via Finder free space (includes purgeable, matches Finder)
     let disk_pct: u32 = {
-        let finder_free = Cmd::new("osascript")
-            .args(["-e", "tell application \"Finder\" to get free space of startup disk"])
-            .output().ok()
-            .and_then(|o| String::from_utf8(o.stdout).ok())
-            .and_then(|s| s.trim().parse::<f64>().ok());
+        let finder_free = finder_free_bytes();
         let container_total = Cmd::new("diskutil").args(["info", "/"])
             .output().ok()
             .and_then(|o| String::from_utf8(o.stdout).ok())
@@ -518,11 +526,7 @@ pub fn health_weekly(args: &[String]) -> ExitCode {
     // 3. Disk trend
     println!("\n--- Disk Trend ---");
     let trend_file = "/Users/jeffbridwell/Library/Logs/Chorus/disk-trend.log";
-    let finder_free = Cmd::new("osascript")
-        .args(["-e", "tell application \"Finder\" to get free space of startup disk"])
-        .output().ok()
-        .and_then(|o| String::from_utf8(o.stdout).ok())
-        .and_then(|s| s.trim().parse::<f64>().ok());
+    let finder_free = finder_free_bytes();
     let container_total = Cmd::new("diskutil").args(["info", "/"])
         .output().ok()
         .and_then(|o| String::from_utf8(o.stdout).ok())
@@ -593,5 +597,29 @@ mod log_rotate_path_tests {
                 log_dir
             );
         }
+    }
+}
+
+#[cfg(test)]
+mod free_disk_seam_4497 {
+    use super::finder_free_bytes;
+
+    /// Every cargo test context carries the seam (.cargo/config.toml), so no
+    /// test and no shim a test spawns ever sends the Finder AppleEvent.
+    #[test]
+    fn tests_never_ask_finder() {
+        assert!(std::env::var("CHORUS_FREE_DISK_BYTES").is_ok(), "the seam is missing from .cargo/config.toml");
+        assert_eq!(finder_free_bytes(), Some(200_000_000_000.0));
+    }
+
+    /// NEGATIVE PROOF: an unreadable value is no reading (the disk line says
+    /// "unknown"), never a number made up and never a fall-through to Finder.
+    #[test]
+    fn a_bad_seam_value_is_no_reading() {
+        let old = std::env::var("CHORUS_FREE_DISK_BYTES").ok();
+        std::env::set_var("CHORUS_FREE_DISK_BYTES", "lots");
+        let got = finder_free_bytes();
+        match old { Some(v) => std::env::set_var("CHORUS_FREE_DISK_BYTES", v), None => std::env::remove_var("CHORUS_FREE_DISK_BYTES") }
+        assert_eq!(got, None);
     }
 }
