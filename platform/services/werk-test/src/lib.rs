@@ -6704,6 +6704,10 @@ pub fn runnable_test(f: &str, in_ts_package: bool) -> bool {
     f.ends_with(".bats")
         || (in_ts_package && [".test.", ".spec."].iter().any(|m| name.contains(m)))
         || (f.ends_with(".rs") && f.contains("/tests/"))
+        // #4474 — a shell suite runs on the card lane by its shebang since
+        // #4440 reopened (unit_for_test); refusing a changed one as unrunnable
+        // contradicted the lane, which had run the same file one run earlier
+        || is_shell_suite(f)
 }
 
 /// Source a card can break: code by extension, or an extension-less script.

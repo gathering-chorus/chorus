@@ -160,7 +160,9 @@ fn negative_proof_the_4420_diff_is_refused() {
     let s = domain_selection(&changed, &HashMap::new(), &[]);
     let unrun = werk_test::unrun_changes(&changed, &s, &runnable);
     let names: Vec<&str> = unrun.iter().map(|(f, _)| f.as_str()).collect();
-    assert_eq!(names, vec!["platform/scripts/chorus-werk-status", "platform/tests/test-cws-3782.sh"]);
+    // #4474 — test-cws-3782.sh itself runs on the lane now (#4440 reopened);
+    // the code no test exercises is still refused
+    assert_eq!(names, vec!["platform/scripts/chorus-werk-status"]);
 }
 
 #[test]
@@ -181,11 +183,15 @@ fn docs_and_data_with_no_test_are_named_not_refused() {
 }
 
 #[test]
-fn a_jest_test_in_a_package_runs_a_bare_shell_test_does_not() {
+fn a_jest_test_in_a_package_runs_and_so_does_a_shell_suite() {
     assert!(werk_test::runnable_test("platform/api/tests/a.test.ts", true));
     assert!(werk_test::runnable_test("platform/tests/x.bats", false));
     assert!(werk_test::runnable_test("platform/services/werk-test/tests/a.rs", false));
-    assert!(!werk_test::runnable_test("platform/tests/test-cws-3782.sh", false));
+    assert!(werk_test::runnable_test("platform/tests/test-cws-3782.sh", false));
+    assert!(werk_test::runnable_test("proving/scripts/tests/test-land-reads-model-deploy-4228.sh", false));
+    // NEGATIVE PROOF: a script that is not a suite is not a test
+    assert!(!werk_test::runnable_test("platform/scripts/werk-v2.sh", false));
+    assert!(!werk_test::runnable_test("platform/tests/lib/helpers.sh", false));
 }
 
 #[test]
