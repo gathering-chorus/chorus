@@ -1679,6 +1679,110 @@ mod service_lifecycle {
     include!("../../shared/service_lifecycle.rs");
 }
 
+/// #4485 — the infrastructure crawl: walk each machine (df and its own facts,
+/// measured there, never config), write Machine and Disk rows through the door
+/// changed-only, then report. Findings exit 1; a machine not walked is one.
+fn run_infra(args: &[String]) -> i32 {
+    use chorus_crawl::infra::*;
+    if let Some(bad) = args.iter().find(|a| a.as_str() != "--dry-run") {
+        eprintln!("chorus-crawl infra: unknown arg {bad} — nothing ran");
+        return 2;
+    }
+    let dry_run = !args.is_empty();
+    let root = std::env::var("CHORUS_ROOT").unwrap_or_else(|_| ".".to_string());
+    let now = now_secs();
+    let ts = chorus_crawl::iso_from_secs(now);
+    let walk = |out: Result<String, String>| -> Result<(MachineFacts, Vec<DiskReading>), String> { out.and_then(|t| parse_walk(&t)) };
+    let machines: Vec<(&str, Result<(MachineFacts, Vec<DiskReading>), String>)> = vec![
+        ("library", walk(sh("sh", &["-c", WALK_CMD], "/"))),
+        ("bedroom", walk(sh("ssh", &["-o", "ConnectTimeout=5", "-o", "BatchMode=yes", "bedroom", WALK_CMD], "/"))),
+    ];
+    let mut desired: Vec<Row> = Vec::new();
+    let mut found: Vec<Finding> = Vec::new();
+    for (m, w) in &machines {
+        match w {
+            Ok((facts, disks)) => {
+                println!("infra: walked {m} — {} disks", disks.len());
+                desired.push(machine_row(m, facts, &ts));
+                desired.extend(disks.iter().map(|d| disk_row(m, d, &ts)));
+                // stores sit on disks through onDisk (#4422); none are linked yet
+                let store_mounts: &[&str] = &[];
+                found.extend(disk_findings(m, &Walk::Walked(disks.clone()), store_mounts));
+                for d in full_archives(disks, store_mounts) {
+                    println!("infra: {m} {} {}% full — archive (no store on it), not a finding", d.mount, d.percent());
+                }
+            }
+            Err(e) => {
+                println!("infra: could not walk {m} — {e}");
+                found.extend(disk_findings(m, &Walk::Unwalkable(e.clone()), &[]));
+            }
+        }
+    }
+
+    let api = std::env::var("CHORUS_OWL_API").unwrap_or_else(|_| "http://localhost:3360".to_string());
+    let role = match declared_role(std::env::var("CHORUS_ROLE").ok()) {
+        Ok(r) => r,
+        Err(e) => { eprintln!("chorus-crawl infra: {e}"); return 2; }
+    };
+    let ident = match Identity::open(&root, &role) {
+        Ok(i) => std::cell::RefCell::new(i),
+        Err(e) => { eprintln!("chorus-crawl infra: {e}"); return 2; }
+    };
+    let mut current: Vec<Row> = Vec::new();
+    let mut colls: Vec<(&str, String)> = Vec::new();
+    for kind in ["Machine", "Disk"] {
+        let token = match ident.borrow_mut().bearer() { Ok(t) => t, Err(e) => { eprintln!("chorus-crawl infra: {e}"); return 2; } };
+        let coll = match collection_for(&api, kind) { Ok(c) => c, Err(e) => { eprintln!("chorus-crawl infra: {e}"); return 2; } };
+        let rows = match fetch_rows_with(&api, Some(&token), kind, "", chorus_crawl::services::door_page_rows) {
+            Ok(r) => r,
+            Err(e) => { eprintln!("chorus-crawl infra: cannot read {kind} rows — {e}"); return 2; }
+        };
+        for fields in rows {
+            let name = fields.iter().find(|(k, _)| k == "name").map(|(_, v)| v.clone()).unwrap_or_default();
+            let fields = chorus_crawl::services::written_form(fields.into_iter().filter(|(k, _)| k != "name").collect());
+            current.push(Row { kind, name, fields });
+        }
+        colls.push((kind, coll));
+    }
+    let coll_of = |k: &str| colls.iter().find(|(c, _)| *c == k).map(|(_, v)| v.clone()).unwrap_or_default();
+    let p = plan(desired, &current, now, &chorus_crawl::services::secs_from_iso);
+    println!("infra: create {} · update {} · unchanged {}", p.create.len(), p.update.len(), p.unchanged);
+    let mut failed: Vec<String> = Vec::new();
+    if dry_run {
+        println!("infra: dry-run — NOTHING WRITTEN");
+    } else {
+        let body = |r: &Row| {
+            let mut f = vec![("name".to_string(), r.name.clone())];
+            f.extend(r.fields.iter().cloned());
+            fields_json(&f)
+        };
+        let creates: Vec<String> = p.create.iter().map(body).collect();
+        for chunk in creates.chunks(200) {
+            if let Err(e) = write(&ident, &api, "POST", &format!("{}/batch", coll_of("Disk")), Some(&format!("[{}]", chunk.join(",")))) {
+                failed.push(format!("create batch of {}: {e}", chunk.len()));
+            }
+        }
+        for r in &p.update {
+            if let Err(e) = write(&ident, &api, "PUT", &format!("{}/{}", coll_of(r.kind), r.name), Some(&body(r))) {
+                failed.push(format!("update {}: {e}", r.name));
+            }
+        }
+        if failed.is_empty() {
+            println!("infra: wrote {}", p.create.len() + p.update.len());
+        }
+    }
+    for f in &failed {
+        println!("infra: WRITE FAILED {f}");
+    }
+    for f in &found {
+        match f {
+            Finding::DiskFull { machine, mount, percent } => println!("infra: FINDING {machine} {mount} {percent}% full"),
+            Finding::Unmeasured { machine, reason } => println!("infra: FINDING {machine} UNMEASURED — {reason}"),
+        }
+    }
+    if !failed.is_empty() { 2 } else if !found.is_empty() { 1 } else { 0 }
+}
+
 fn main() {
     // #4446 — under launchd, a failed run is logged as service.failed (shared/service_lifecycle.rs).
     service_lifecycle::run_as_job();
@@ -1689,6 +1793,10 @@ fn main() {
     // #4472 — `services`: the launchd crawl.
     if argv.get(1).map(String::as_str) == Some("services") {
         std::process::exit(run_services(&argv[2..]));
+    }
+    // #4485 — `infra`: machines and their disks.
+    if argv.get(1).map(String::as_str) == Some("infra") {
+        std::process::exit(run_infra(&argv[2..]));
     }
     // #4419 — an unknown flag is refused, never read as "run a write pass":
     // a seam name the installed binary did not have yet started a full pass

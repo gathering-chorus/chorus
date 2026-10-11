@@ -2176,7 +2176,10 @@ pub fn entity_subject(class: &str, name: &str) -> String {
         // 0 prefixed. Minting `principle-<name>` meant the entity read looked for a
         // subject nobody ever wrote, so /principles listed 28 rows and every single
         // read of one 404'd, which is why sessions booted with no principles at all.
-        "Product" | "Domain" | "Test" | "Principle" => format!("{}{}", NS, name),
+        // #4485 — Machine too: chorus:library and chorus:bedroom are authored bare, and
+        // 269 onMachine links point at those IRIs. Minting `machine-library` made every
+        // write to a listed machine 404 (measured on the staging door, 2026-10-11).
+        "Product" | "Domain" | "Test" | "Principle" | "Machine" => format!("{}{}", NS, name),
         _ => format!("{}{}-{}", NS, kind_of_class(local), name),
     }
 }
@@ -2202,7 +2205,7 @@ pub fn served_name(class: &str, subject: &str) -> String {
         // the same un-prefixed kinds as `entity_subject` — the two lists are one
         // rule seen from both ends, and the round-trip test fails the moment they
         // stop agreeing.
-        "Product" | "Domain" | "Test" | "Principle" => local.to_string(),
+        "Product" | "Domain" | "Test" | "Principle" | "Machine" => local.to_string(),
         _ => {
             let prefix = format!("{}-", kind_of_class(class_local));
             local.strip_prefix(&prefix).unwrap_or(local).to_string()
@@ -8108,6 +8111,8 @@ mod tests {
         assert_eq!(entity_subject("https://jeffbridwell.com/chorus#Document", "spine-product-design"), format!("{}document-spine-product-design", NS));
         assert_eq!(entity_subject("https://jeffbridwell.com/chorus#ValueStreamStep", "directing"), format!("{}value-stream-step-directing", NS));
         assert_ne!(entity_subject("https://jeffbridwell.com/chorus#Document", "x"), format!("{}x", NS));
+        // #4485 — a Machine is addressed by the bare IRI its 269 onMachine links name
+        assert_eq!(entity_subject("https://jeffbridwell.com/chorus#Machine", "library"), format!("{}library", NS));
     }
 
     /// #4114 — the name a list serves must be the name its own read accepts.
@@ -8122,6 +8127,7 @@ mod tests {
             ("Principle", "xp-humanity"),
             ("Product", "spine"),
             ("Domain", "events"),
+            ("Machine", "library"),
         ] {
             let subject = entity_subject(&c(class), name);
             assert_eq!(

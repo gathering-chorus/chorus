@@ -15,6 +15,8 @@ pub mod domain;
 pub mod pages;
 /// #4472 — the services crawl (launchd units → instance and job rows).
 pub mod services;
+/// #4485 — the infrastructure crawl (machines and their disks).
+pub mod infra;
 
 /// What a file is, from the model's served CodeKind individuals (#4157):
 /// code · config · doc · log · test, plus `data` (#4173). Never a free string.

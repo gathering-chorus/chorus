@@ -1,0 +1,36 @@
+Filesystem     1024-blocks        Used  Available Capacity  Mounted on
+/dev/disk3s1s1  1948455240    12343248 1427669576     1%    /
+devfs                  324         324          0   100%    /dev
+/dev/disk3s6    1948455240     7340056 1427669576     1%    /System/Volumes/VM
+/dev/disk3s2    1948455240     8763680 1427669576     1%    /System/Volumes/Preboot
+/dev/disk3s4    1948455240        7072 1427669576     1%    /System/Volumes/Update
+/dev/disk1s2        512000        6164     490148     2%    /System/Volumes/xarts
+/dev/disk1s1        512000        5720     490148     2%    /System/Volumes/iSCPreboot
+/dev/disk1s3        512000        5108     490148     2%    /System/Volumes/Hardware
+/dev/disk3s5    1948455240   490786072 1427669576    26%    /System/Volumes/Data
+map auto_home            0           0          0   100%    /System/Volumes/Data/home
+/dev/disk12s1   3906250000  3734041940  171734284    96%    /Volumes/VideosMaria-Mega
+/dev/disk10s1   9765622220  9412063456  352542124    97%    /Volumes/VideosLeb-Luci
+/dev/disk17s1  16601559720 16517180456   82729248   100%    /Volumes/VideosRiley-Te
+/dev/disk14s1   7812500000  7604610360  207053924    98%    /Volumes/VideosTo-Wh
+/dev/disk15s1   2929687500  2449328188  479976008    84%    /Volumes/VideosHa-Haz
+/dev/disk33s1   4883492248  4662222032  220705876    96%    /Volumes/VideosLucj-Maria
+/dev/disk38s2   1950102116   706834196 1242975400    37%    /Volumes/VideosMega-Mia
+/dev/disk39s2   9766098944  9635617904  130481040    99%    /Volumes/VideosJayl-Kata
+/dev/disk47s1   9766231020  9515018536  250195776    98%    /Volumes/VideosAnn-Bag
+/dev/disk43s1   9766231020  7065560556 2699653756    73%    /Volumes/VideosNew
+/dev/disk41s1   7813820740  7790555008   22429888   100%    /Volumes/VideosMia-Nat
+/dev/disk37s1   5863718624  5689813780  173249656    98%    /Volumes/VideosCb-Clat
+/dev/disk35s1   7813894468  7682185536  130873076    99%    /Volumes/VideosAa-Alexa
+/dev/disk32s1   4882812500  4716505928  165742296    97%    /Volumes/VideosEliza-Es
+/dev/disk30s1   9766231020  9619871180  145343132    99%    /Volumes/VideosKey-Lea
+/dev/disk28s1   9766231020  9683925660   81288652   100%    /Volumes/VideosNat-Rec
+/dev/disk26s1   9766231020  9515998624  249215688    98%    /Volumes/VideosClau-Eliza
+/dev/disk25s1   9766232024  7661258404 2103956912    79%    /Volumes/VideosMulti
+/dev/disk20s1   9766231020  9554788196  210426116    98%    /Volumes/VideosBai-Ca
+/dev/disk18s1    976562500   436909276  539450924    45%    /Volumes/PhotosNew
+/dev/disk9s1    7812500000  7790670188   20994088   100%    /Volumes/VideosAlexa-Ana
+/dev/disk7s1    7813821744  7584841428  228144472    98%    /Volumes/VideosHe-Jaz
+/dev/disk22s1   9766232024  3058976100 6706239268    32%    /Volumes/VideosAna-Ann
+/dev/disk13s1   2929684720  2793449848  135851568    96%    /Volumes/VideosRed-Riley
+/dev/disk44s1   9766231020  8190329664 1570753024    84%    /Volumes/VideosEt-G
