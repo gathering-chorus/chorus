@@ -1,0 +1,484 @@
+{
+  "_about": "#4422 — every place Chorus keeps data, with its one role. A role is a fact about data flow and cannot be observed, so it is authored here; the stores crawl discovers what exists and writes rows through the door. A discovered store with no entry is a finding (unmapped), never a guessed role. Source: 'Persistence: Who Owns What' (2026-10-02, platform/api/public/persistence-who-owns-what.pdf), re-measured 2026-10-11. basis: measured = seen running/on disk 2026-10-11; inventory = the 10-02 doc's reading of how data moves.",
+  "stores": [
+    {
+      "name": "git-chorus",
+      "label": "git — chorus repo",
+      "machine": "library",
+      "storeType": "git",
+      "match": {
+        "kind": "path",
+        "value": "/Users/jeffbridwell/CascadeProjects/chorus/.git"
+      },
+      "role": "systemOfRecord",
+      "basis": "inventory"
+    },
+    {
+      "name": "fuseki-pods",
+      "label": "Fuseki /pods dataset",
+      "machine": "library",
+      "storeType": "fuseki-dataset",
+      "match": {
+        "kind": "fuseki-dataset",
+        "value": "/pods"
+      },
+      "servedBy": "library-com-gathering-fuseki",
+      "role": "systemOfRecord",
+      "basis": "inventory"
+    },
+    {
+      "name": "fuseki-staging",
+      "label": "Fuseki /staging dataset",
+      "machine": "library",
+      "storeType": "fuseki-dataset",
+      "match": {
+        "kind": "fuseki-dataset",
+        "value": "/staging"
+      },
+      "servedBy": "library-com-gathering-fuseki",
+      "role": "copyOf",
+      "source": "fuseki-pods",
+      "basis": "measured"
+    },
+    {
+      "name": "fuseki-test",
+      "label": "Fuseki test datasets (werk and test copies)",
+      "machine": "library",
+      "storeType": "fuseki-dataset",
+      "match": {
+        "kind": "fuseki-dataset",
+        "prefix": [
+          "/werk-",
+          "/chorus-test"
+        ],
+        "perMatch": true
+      },
+      "servedBy": "library-com-gathering-fuseki",
+      "role": "copyOf",
+      "source": "fuseki-pods",
+      "basis": "inventory"
+    },
+    {
+      "name": "pods-ontology",
+      "label": "/pods ontology graph",
+      "storeType": "graph-family",
+      "inStore": "fuseki-pods",
+      "match": {
+        "kind": "graph",
+        "value": "urn:chorus:ontology"
+      },
+      "role": "copyOf",
+      "source": "git-chorus",
+      "basis": "inventory"
+    },
+    {
+      "name": "pods-security",
+      "label": "/pods security graph",
+      "storeType": "graph-family",
+      "inStore": "fuseki-pods",
+      "match": {
+        "kind": "graph",
+        "value": "urn:chorus:domains:security"
+      },
+      "role": "copyOf",
+      "source": "git-chorus",
+      "basis": "inventory"
+    },
+    {
+      "name": "pods-cards",
+      "label": "/pods cards graph",
+      "storeType": "graph-family",
+      "inStore": "fuseki-pods",
+      "match": {
+        "kind": "graph",
+        "value": "urn:chorus:domains:cards"
+      },
+      "role": "copyOf",
+      "source": "vikunja",
+      "basis": "inventory"
+    },
+    {
+      "name": "pods-identity",
+      "label": "/pods identity graph",
+      "storeType": "graph-family",
+      "inStore": "fuseki-pods",
+      "match": {
+        "kind": "graph",
+        "value": "urn:chorus:domains:identity"
+      },
+      "role": "copyOf",
+      "source": "git-chorus",
+      "basis": "inferred",
+      "_note": "no Domain row names this graph, so only the map finds it (measured 2026-10-11); deployed from the security set (#3726)"
+    },
+    {
+      "name": "pods-vocabulary",
+      "label": "/pods vocabulary graph",
+      "storeType": "graph-family",
+      "inStore": "fuseki-pods",
+      "match": {
+        "kind": "graph",
+        "value": "urn:chorus:domains:vocabulary"
+      },
+      "role": "derivedFrom",
+      "source": "pods-ontology",
+      "basis": "inferred",
+      "_note": "no Domain row names this graph; generated from the model (#4254)"
+    },
+    {
+      "name": "pods-domain",
+      "label": "/pods domain graph",
+      "storeType": "graph-family",
+      "inStore": "fuseki-pods",
+      "match": {
+        "kind": "graph",
+        "prefix": [
+          "urn:chorus:domains:"
+        ],
+        "perMatch": true
+      },
+      "role": "systemOfRecord",
+      "basis": "inventory"
+    },
+    {
+      "name": "pods-documents",
+      "label": "/pods documents graph",
+      "storeType": "graph-family",
+      "inStore": "fuseki-pods",
+      "match": {
+        "kind": "graph",
+        "value": "urn:chorus:documents"
+      },
+      "role": "systemOfRecord",
+      "basis": "inferred"
+    },
+    {
+      "name": "pods-borg",
+      "label": "/pods borg graphs",
+      "storeType": "graph-family",
+      "inStore": "fuseki-pods",
+      "match": {
+        "kind": "graph",
+        "prefix": [
+          "urn:borg:",
+          "urn:chorus:previous:"
+        ]
+      },
+      "role": "systemOfRecord",
+      "basis": "inferred"
+    },
+    {
+      "name": "pods-gathering",
+      "label": "/pods Gathering graphs",
+      "storeType": "graph-family",
+      "inStore": "fuseki-pods",
+      "match": {
+        "kind": "graph",
+        "prefix": [
+          "urn:gathering:",
+          "http://jeffbridwell.com/gathering/"
+        ]
+      },
+      "role": "systemOfRecord",
+      "basis": "inferred"
+    },
+    {
+      "name": "pods-jb",
+      "label": "/pods personal data graphs (urn:jb)",
+      "storeType": "graph-family",
+      "inStore": "fuseki-pods",
+      "match": {
+        "kind": "graph",
+        "prefix": [
+          "urn:jb:"
+        ]
+      },
+      "role": "systemOfRecord",
+      "basis": "inferred"
+    },
+    {
+      "name": "vikunja",
+      "label": "Vikunja SQLite (cards)",
+      "machine": "library",
+      "storeType": "sqlite",
+      "match": {
+        "kind": "path",
+        "value": "/Users/jeffbridwell/.chorus/vikunja/db/vikunja.db"
+      },
+      "role": "systemOfRecord",
+      "basis": "inventory"
+    },
+    {
+      "name": "solid-css",
+      "label": "Community Solid Server files (accounts, keys)",
+      "machine": "library",
+      "storeType": "files",
+      "match": {
+        "kind": "path",
+        "value": "/Users/jeffbridwell/CascadeProjects/shared-security/data/css"
+      },
+      "role": "systemOfRecord",
+      "basis": "inventory",
+      "servedBy": "library-com-security-css"
+    },
+    {
+      "name": "spine",
+      "label": "Spine chorus.log",
+      "machine": "library",
+      "storeType": "log-file",
+      "match": {
+        "kind": "path",
+        "value": "/Users/jeffbridwell/.chorus/chorus.log"
+      },
+      "role": "systemOfRecord",
+      "basis": "inventory"
+    },
+    {
+      "name": "claude-transcripts",
+      "label": "Claude session transcripts",
+      "machine": "library",
+      "storeType": "jsonl-files",
+      "match": {
+        "kind": "path",
+        "value": "/Users/jeffbridwell/.claude/projects"
+      },
+      "role": "systemOfRecord",
+      "basis": "measured"
+    },
+    {
+      "name": "claude-memory",
+      "label": "Role memory files (Claude auto-memory)",
+      "machine": "library",
+      "storeType": "markdown-files",
+      "match": {
+        "kind": "path",
+        "value": "/Users/jeffbridwell/.claude/projects/-Users-jeffbridwell-CascadeProjects-chorus/memory"
+      },
+      "role": "systemOfRecord",
+      "basis": "measured"
+    },
+    {
+      "name": "loki",
+      "label": "Loki (spine and every service log, via promtail)",
+      "machine": "library",
+      "storeType": "loki",
+      "match": {
+        "kind": "port",
+        "value": 3102
+      },
+      "role": "derivedFrom",
+      "source": "spine",
+      "basis": "inventory",
+      "servedBy": "library-com-gathering-loki"
+    },
+    {
+      "name": "index-db",
+      "label": "index.db (search index of transcripts, spine, docs, memory)",
+      "machine": "library",
+      "storeType": "sqlite",
+      "match": {
+        "kind": "path",
+        "value": "/Users/jeffbridwell/.chorus/index.db"
+      },
+      "role": "derivedFrom",
+      "source": "claude-transcripts",
+      "basis": "inventory"
+    },
+    {
+      "name": "lance",
+      "label": "Lance vectors",
+      "machine": "library",
+      "storeType": "lance",
+      "match": {
+        "kind": "path",
+        "value": "/Users/jeffbridwell/.chorus/lance"
+      },
+      "role": "derivedFrom",
+      "source": "index-db",
+      "basis": "inventory"
+    },
+    {
+      "name": "messages-db",
+      "label": "messages.db (nudges, messages)",
+      "machine": "library",
+      "storeType": "sqlite",
+      "match": {
+        "kind": "path",
+        "value": "/Users/jeffbridwell/CascadeProjects/chorus/platform/pulse/messages.db"
+      },
+      "role": "systemOfRecord",
+      "basis": "inventory"
+    },
+    {
+      "name": "grafana",
+      "label": "Grafana DB (dashboards)",
+      "machine": "library",
+      "storeType": "grafana",
+      "match": {
+        "kind": "port",
+        "value": 3100
+      },
+      "role": "copyOf",
+      "source": "git-chorus",
+      "basis": "inventory",
+      "servedBy": "library-com-gathering-grafana"
+    },
+    {
+      "name": "prometheus",
+      "label": "Prometheus (metrics)",
+      "machine": "library",
+      "storeType": "prometheus",
+      "match": {
+        "kind": "port",
+        "value": 9090
+      },
+      "role": "systemOfRecord",
+      "basis": "measured",
+      "servedBy": "library-com-gathering-prometheus"
+    },
+    {
+      "name": "mysql-wordpress",
+      "label": "MySQL wordpress (blog)",
+      "machine": "library",
+      "storeType": "mysql",
+      "match": {
+        "kind": "port",
+        "value": 3306
+      },
+      "role": "systemOfRecord",
+      "basis": "inventory",
+      "servedBy": "library-com-gathering-mysql"
+    },
+    {
+      "name": "site-search",
+      "label": "personal site search.db",
+      "machine": "library",
+      "storeType": "sqlite",
+      "match": {
+        "kind": "path",
+        "value": "/Users/jeffbridwell/CascadeProjects/jeff-bridwell-personal-site/data/search.db"
+      },
+      "role": "derivedFrom",
+      "source": "fuseki-pods",
+      "basis": "inferred"
+    },
+    {
+      "name": "site-sessions",
+      "label": "personal site sessions.db (logins)",
+      "machine": "library",
+      "storeType": "sqlite",
+      "match": {
+        "kind": "path",
+        "value": "/Users/jeffbridwell/CascadeProjects/jeff-bridwell-personal-site/data/sessions.db"
+      },
+      "role": "systemOfRecord",
+      "basis": "inventory"
+    },
+    {
+      "name": "bedroom-mongodb",
+      "label": "MongoDB (Bedroom)",
+      "machine": "bedroom",
+      "storeType": "mongodb",
+      "match": {
+        "kind": "path",
+        "value": "/opt/homebrew/var/mongodb"
+      },
+      "role": "systemOfRecord",
+      "basis": "measured"
+    },
+    {
+      "name": "bedroom-navidrome",
+      "label": "Navidrome music DB (Bedroom)",
+      "machine": "bedroom",
+      "storeType": "sqlite",
+      "match": {
+        "kind": "path",
+        "value": "/Users/jeffbridwell/.navidrome"
+      },
+      "role": "derivedFrom",
+      "source": "bedroom-music",
+      "basis": "measured",
+      "servedBy": "bedroom-com-gathering-navidrome"
+    },
+    {
+      "name": "bedroom-music",
+      "label": "Music library files (Bedroom)",
+      "machine": "bedroom",
+      "storeType": "files",
+      "match": {
+        "kind": "path",
+        "value": "/Volumes/VideosNew/Gathering/Music/Music"
+      },
+      "role": "systemOfRecord",
+      "basis": "measured"
+    },
+    {
+      "name": "bedroom-photos",
+      "label": "Photo library files (Bedroom)",
+      "machine": "bedroom",
+      "storeType": "files",
+      "match": {
+        "kind": "path",
+        "value": "/Volumes/PhotosNew"
+      },
+      "role": "systemOfRecord",
+      "basis": "measured"
+    },
+    {
+      "name": "bedroom-video",
+      "label": "Video archive drive (Bedroom)",
+      "machine": "bedroom",
+      "storeType": "files",
+      "match": {
+        "kind": "path-prefix",
+        "prefix": "/Volumes/Videos"
+      },
+      "role": "systemOfRecord",
+      "writeMode": "closed",
+      "basis": "inferred",
+      "_note": "filled on purpose and no longer written (Wren 2026-10-11): a full drive here is not a finding. VideosNew is still written, so it has its own entry."
+    },
+    {
+      "name": "bedroom-video-new",
+      "label": "Video drive still being filled (Bedroom VideosNew)",
+      "machine": "bedroom",
+      "storeType": "files",
+      "match": {
+        "kind": "path",
+        "value": "/Volumes/VideosNew"
+      },
+      "role": "systemOfRecord",
+      "basis": "inferred"
+    },
+    {
+      "name": "bedroom-nifi",
+      "label": "NiFi repositories (Bedroom)",
+      "machine": "bedroom",
+      "storeType": "nifi",
+      "match": {
+        "kind": "path",
+        "value": "/opt/homebrew/Cellar/nifi/2.8.0/libexec"
+      },
+      "role": "cacheOf",
+      "source": "bedroom-photos",
+      "basis": "inferred",
+      "servedBy": "bedroom-com-apache-nifi"
+    }
+  ],
+  "report": {
+    "_about": "Found and named, but not stores: residue a run left behind, and stray files. Reported every run, never rows (Wren 2026-10-11).",
+    "graphs": [
+      "urn:chorus:instances-",
+      "urn:chorus:ontology-test-",
+      "urn:chorus:scopeproof",
+      "urn:chorus:verbs-sandbox"
+    ],
+    "paths": [
+      "/Users/jeffbridwell/.chorus/messages.db",
+      "/Users/jeffbridwell/.chorus/vikunja/db/vikunja.db.bak-"
+    ],
+    "notStores": [
+      "athena-make memory (the served model, read once at boot): a cache held in a process, not on any disk — no parent, so not a store row; named here so the 10-02 inventory is fully accounted for"
+    ]
+  }
+}

@@ -1697,6 +1697,20 @@ fn run_infra(args: &[String]) -> i32 {
         ("library", walk(sh("sh", &["-c", WALK_CMD], "/"))),
         ("bedroom", walk(sh("ssh", &["-o", "ConnectTimeout=5", "-o", "BatchMode=yes", "bedroom", WALK_CMD], "/"))),
     ];
+    // #4422 — the disks a live store sits on can be findings; a closed store (the
+    // video archive) never makes its disk one. No store rows → system volumes only.
+    let store_disks: Vec<String> = {
+        let api = std::env::var("CHORUS_OWL_API").unwrap_or_else(|_| "http://localhost:3360".to_string());
+        match fetch_rows_with(&api, None, "PersistenceStore", "", chorus_crawl::services::door_page_rows) {
+            Ok(rows) => chorus_crawl::stores::live_store_disks(
+                &rows.into_iter().map(|f| Row { kind: "PersistenceStore", name: String::new(), fields: chorus_crawl::services::written_form(f) }).collect::<Vec<_>>(),
+            ),
+            Err(e) => {
+                println!("infra: no store rows read ({e}) — only the system volumes can be findings");
+                Vec::new()
+            }
+        }
+    };
     let mut desired: Vec<Row> = Vec::new();
     let mut found: Vec<Finding> = Vec::new();
     for (m, w) in &machines {
@@ -1705,8 +1719,8 @@ fn run_infra(args: &[String]) -> i32 {
                 println!("infra: walked {m} — {} disks", disks.len());
                 desired.push(machine_row(m, facts, &ts));
                 desired.extend(disks.iter().map(|d| disk_row(m, d, &ts)));
-                // stores sit on disks through onDisk (#4422); none are linked yet
-                let store_mounts: &[&str] = &[];
+                let mounts: Vec<&str> = disks.iter().filter(|d| store_disks.contains(&disk_name(m, &d.mount))).map(|d| d.mount.as_str()).collect();
+                let store_mounts: &[&str] = &mounts;
                 found.extend(disk_findings(m, &Walk::Walked(disks.clone()), store_mounts));
                 for d in full_archives(disks, store_mounts) {
                     println!("infra: {m} {} {}% full — archive (no store on it), not a finding", d.mount, d.percent());
@@ -1929,6 +1943,239 @@ fn run_code(args: &[String]) -> i32 {
     }
 }
 
+/// #4422 — does this named graph exist? Fuseki's Graph Store Protocol answers a
+/// HEAD with 200 or 404: HTTP, not SPARQL (#4433). None = could not ask.
+fn fuseki_graph_exists(base: &str, dataset: &str, graph: &str) -> Option<bool> {
+    let out = fuseki_curl(&["-s", "-o", "/dev/null", "-w", "%{http_code}", "-I", "--max-time", "20", &format!("{base}{dataset}/data?graph={graph}")])?;
+    match out.trim() {
+        "200" => Some(true),
+        "404" => Some(false),
+        _ => None,
+    }
+}
+
+fn fuseki_read(url: &str) -> Option<String> {
+    fuseki_curl(&["-sf", "--max-time", "60", url])
+}
+
+fn fuseki_curl(curl_args: &[&str]) -> Option<String> {
+    use std::io::Write;
+    let env = std::env::var("FUSEKI_WRITE_ENV")
+        .unwrap_or_else(|_| format!("{}/.gathering/data/fuseki-write.env", std::env::var("HOME").unwrap_or_default()));
+    let text = std::fs::read_to_string(&env).ok();
+    let key = |k: &str| {
+        std::env::var(k).ok().or_else(|| {
+            text.as_deref()?.lines().find_map(|l| l.strip_prefix(&format!("{k}=")).map(|v| v.trim().trim_matches('"').to_string()))
+        })
+    };
+    let (user, pass) = (key("FUSEKI_ADMIN_USER").unwrap_or_else(|| "admin".into()), key("FUSEKI_ADMIN_PASSWORD")?);
+    let mut args: Vec<&str> = vec!["-K", "-"];
+    args.extend_from_slice(curl_args);
+    let mut child = std::process::Command::new("curl")
+        .args(&args)
+        .stdin(std::process::Stdio::piped())
+        .stdout(std::process::Stdio::piped())
+        .stderr(std::process::Stdio::null())
+        .spawn()
+        .ok()?;
+    child.stdin.take()?.write_all(format!("user = \"{user}:{pass}\"\n").as_bytes()).ok()?;
+    let out = child.wait_with_output().ok()?;
+    // a HEAD that answers 404 is a status, not a failure: the caller reads the code
+    (out.status.success() || curl_args.contains(&"-w")).then(|| String::from_utf8_lossy(&out.stdout).into_owned())
+}
+
+/// #4422 — the stores crawl: discover what exists (Fuseki's datasets and graphs,
+/// the mapped paths and ports on each machine), give each the role the map
+/// authors, write the rows through the door changed-only, mark the gone absent.
+/// Unmapped and unmeasured are findings, exit 1.
+fn run_stores(args: &[String]) -> i32 {
+    use chorus_crawl::infra::{plan, Row};
+    use chorus_crawl::stores::*;
+    if let Some(bad) = args.iter().find(|a| a.as_str() != "--dry-run") {
+        eprintln!("chorus-crawl stores: unknown arg {bad} — nothing ran");
+        return 2;
+    }
+    let dry_run = !args.is_empty();
+    let root = std::env::var("CHORUS_ROOT").unwrap_or_else(|_| ".".to_string());
+    let map_path = format!("{root}/platform/config/store-map.json");
+    let map = match std::fs::read_to_string(&map_path).map_err(|e| e.to_string()).and_then(|t| parse_map(&t)) {
+        Ok(m) => m,
+        Err(e) => { eprintln!("chorus-crawl stores: map {map_path}: {e}"); return 2; }
+    };
+    let now = now_secs();
+    let ts = chorus_crawl::iso_from_secs(now);
+    let fuseki = std::env::var("CHORUS_FUSEKI_BASE").unwrap_or_else(|_| "http://localhost:3030".into());
+    let datasets = fuseki_read(&format!("{fuseki}/$/datasets")).map(|t| {
+        t.split("\"ds.name\"").skip(1).filter_map(|s| s.split('"').nth(1).map(String::from)).collect::<Vec<_>>()
+    });
+    // #4422 / #4433 — no SPARQL from the crawler (Jeff: "we must not craft custom sparql
+    // to do what apis do"). The chorus graphs are each Domain row's instancesGraph, read
+    // from the door; the other families (urn:jb, urn:gathering, urn:borg) and the model
+    // graphs are the map's own entries. The known gap (Wren, 2026-10-11): a graph family
+    // nobody mapped and no Domain names is not seen.
+    let api = std::env::var("CHORUS_OWL_API").unwrap_or_else(|_| "http://localhost:3360".to_string());
+    // Each Domain's graph is the instancesGraph its row names — read, never guessed
+    // from a naming rule (Wren 2026-10-11: missing data is fixed in the graph, not
+    // worked around in code). Each is checked with a Graph Store HEAD, so a domain
+    // with no rows yet is not written as a store that exists.
+    let graphs = fetch_rows_with(&api, None, "Domain", "", chorus_crawl::services::door_page_rows).ok().and_then(|rows| {
+        let mut g: Vec<String> = Vec::new();
+        for r in &rows {
+            let get = |k: &str| r.iter().find(|(f, _)| f == k).map(|(_, v)| v.clone()).unwrap_or_default();
+            let home = get("instancesGraph");
+            if home.is_empty() {
+                continue;
+            }
+            match fuseki_graph_exists(&fuseki, "/pods", &home) {
+                Some(true) => g.push(home),
+                Some(false) => {}
+                None => return None, // could not ask: the graph rows read unmeasured
+            }
+        }
+        g.extend(map_graphs(&map));
+        g.sort();
+        g.dedup();
+        Some(g)
+    });
+    // one walk per machine: which mapped paths exist and the mount each sits on,
+    // the home volume's mount (for port and dataset stores), listening ports, and
+    // the scanned directories for the unmapped check
+    let walk = |machine: &str| -> Result<MachineSeen, String> {
+        let paths: Vec<String> = map
+            .entries
+            .iter()
+            .filter(|e| e.machine == machine)
+            .filter_map(|e| match &e.matcher { Match::Path(p) => Some(p.clone()), _ => None })
+            .collect();
+        let prefixes: Vec<String> = map
+            .entries
+            .iter()
+            .filter(|e| e.machine == machine)
+            .filter_map(|e| match &e.matcher { Match::PathPrefix(p) => Some(p.clone()), _ => None })
+            .collect();
+        let mut cmd = String::from("H=$(df -P \"$HOME\" | tail -1 | awk '{print $NF}'); echo \"MOUNT:\t$H\"; ");
+        for p in &paths {
+            cmd.push_str(&format!("if [ -e '{p}' ]; then echo 'PATH:{p}'; echo \"MOUNT:{p}\t$(df -P '{p}' | tail -1 | awk '{{print $NF}}')\"; fi; "));
+        }
+        for pre in &prefixes {
+            let (dir, stem) = pre.rsplit_once('/').unwrap_or(("/", pre.as_str()));
+            cmd.push_str(&format!("find '{dir}' -mindepth 1 -maxdepth 1 -name '{stem}*' 2>/dev/null | while read p; do echo \"PATH:$p\"; echo \"MOUNT:$p\t$(df -P \"$p\" | tail -1 | awk '{{print $NF}}')\"; done; "));
+        }
+        cmd.push_str("lsof -nP -iTCP -sTCP:LISTEN 2>/dev/null | awk 'NR>1{n=split($9,a,\":\"); print \"PORT:\" a[n]}' | sort -u; ");
+        // find, not a glob: Bedroom's login shell is zsh, where a glob that matches
+        // nothing aborts the whole line (measured 2026-10-11)
+        cmd.push_str("find \"$HOME/.chorus\" -maxdepth 1 -name '*.db' 2>/dev/null | sed 's/^/SCAN:/'; find \"$HOME/.chorus/vikunja/db\" -maxdepth 1 -type f 2>/dev/null | sed 's/^/SCAN:/'; echo END");
+        let out = if machine == "library" {
+            sh("sh", &["-c", &cmd], "/")
+        } else {
+            sh("ssh", &["-o", "ConnectTimeout=5", "-o", "BatchMode=yes", machine, &cmd], "/")
+        }?;
+        if !out.contains("\nEND") && !out.starts_with("END") {
+            return Err("the walk did not finish".into());
+        }
+        let mut seen = MachineSeen::default();
+        for l in out.lines() {
+            if let Some(p) = l.strip_prefix("PATH:") {
+                seen.paths.push(p.to_string());
+            } else if let Some(m) = l.strip_prefix("MOUNT:") {
+                let (p, mount) = m.split_once('\t').unwrap_or((m, ""));
+                seen.mounts.push((p.to_string(), mount.to_string()));
+            } else if let Some(p) = l.strip_prefix("PORT:") {
+                if let Ok(n) = p.trim().parse() { seen.ports.push(n); }
+            } else if let Some(f) = l.strip_prefix("SCAN:") {
+                seen.scanned.push(f.to_string());
+            }
+        }
+        Ok(seen)
+    };
+    let seen = Seen { machines: vec![("library".into(), walk("library")), ("bedroom".into(), walk("bedroom"))], datasets, graphs };
+    for (m, w) in &seen.machines {
+        match w {
+            Ok(ms) => println!("stores: walked {m} — {} mapped paths present, {} ports listening", ms.paths.len(), ms.ports.len()),
+            Err(e) => println!("stores: could not walk {m} — {e}"),
+        }
+    }
+    println!(
+        "stores: Fuseki — {} datasets, {} graphs",
+        seen.datasets.as_ref().map_or("UNMEASURED".into(), |d| d.len().to_string()),
+        seen.graphs.as_ref().map_or("UNMEASURED".into(), |g| g.len().to_string())
+    );
+    let want = desired(&map, &seen, &ts);
+
+    let role = match declared_role(std::env::var("CHORUS_ROLE").ok()) { Ok(r) => r, Err(e) => { eprintln!("chorus-crawl stores: {e}"); return 2; } };
+    let ident = match Identity::open(&root, &role) { Ok(i) => std::cell::RefCell::new(i), Err(e) => { eprintln!("chorus-crawl stores: {e}"); return 2; } };
+    let token = match ident.borrow_mut().bearer() { Ok(t) => t, Err(e) => { eprintln!("chorus-crawl stores: {e}"); return 2; } };
+    let coll = match collection_for(&api, "PersistenceStore") { Ok(c) => c, Err(e) => { eprintln!("chorus-crawl stores: {e}"); return 2; } };
+    let current: Vec<Row> = match fetch_rows_with(&api, Some(&token), "PersistenceStore", "", chorus_crawl::services::door_page_rows) {
+        Ok(rows) => rows
+            .into_iter()
+            .map(|fields| {
+                let name = fields.iter().find(|(k, _)| k == "name").map(|(_, v)| v.clone()).unwrap_or_default();
+                Row { kind: "PersistenceStore", name, fields: door_form(fields) }
+            })
+            .collect(),
+        Err(e) => { eprintln!("chorus-crawl stores: cannot read PersistenceStore rows — {e}"); return 2; }
+    };
+    let gone = absent(&current, &want);
+    let mut p = plan(want.rows.clone(), &current, now, &chorus_crawl::services::secs_from_iso);
+    p.update.extend(gone.iter().cloned());
+    println!("stores: {} rows observed · create {} · update {} (absent {}) · unchanged {}", want.rows.len(), p.create.len(), p.update.len(), gone.len(), p.unchanged);
+    let mut failed: Vec<String> = Vec::new();
+    if dry_run {
+        println!("stores: dry-run — NOTHING WRITTEN");
+    } else {
+        let body = |r: &Row| {
+            let mut f = vec![("name".to_string(), r.name.clone())];
+            f.extend(r.fields.iter().cloned());
+            fields_json(&f)
+        };
+        // a row's parent or source must exist before it is written: datasets and
+        // files first, the graph families that sit in them after
+        let (first, then): (Vec<&Row>, Vec<&Row>) = p.create.iter().partition(|r| r.get("inStore").is_empty() && r.get("roleSource").is_empty());
+        let (sources, rest): (Vec<&Row>, Vec<&Row>) = then.into_iter().partition(|r| r.get("inStore").is_empty());
+        for group in [first, sources, rest] {
+            let batch: Vec<String> = group.iter().map(|r| body(r)).collect();
+            for chunk in batch.chunks(200) {
+                if let Err(e) = write(&ident, &api, "POST", &format!("{coll}/batch"), Some(&format!("[{}]", chunk.join(",")))) {
+                    failed.push(format!("create batch of {}: {e}", chunk.len()));
+                }
+            }
+        }
+        for r in &p.update {
+            if let Err(e) = write(&ident, &api, "PUT", &format!("{coll}/{}", r.name), Some(&body(r))) {
+                failed.push(format!("update {}: {e}", r.name));
+            }
+        }
+        if failed.is_empty() {
+            println!("stores: wrote {}", p.create.len() + p.update.len());
+        }
+    }
+    // AC2 — one number, read back from the door: the present rows it holds must
+    // equal what this run discovered. A difference is a failure, not a note.
+    let mut short = false;
+    if !dry_run && failed.is_empty() {
+        let token = ident.borrow_mut().bearer().unwrap_or_default();
+        match fetch_rows_with(&api, Some(&token), "PersistenceStore", "", chorus_crawl::services::door_page_rows) {
+            Ok(rows) => {
+                let present = rows.iter().filter(|r| r.iter().any(|(k, v)| k == "storeStatus" && v == "present")).count();
+                println!("stores: read back {present} present rows from the door — discovered {}", want.rows.len());
+                short = present != want.rows.len();
+            }
+            Err(e) => { println!("stores: read-back UNMEASURED — {e}"); short = true; }
+        }
+    }
+    for f in &failed { println!("stores: WRITE FAILED {f}"); }
+    for r in &want.reported { println!("stores: reported (not a store) {r}"); }
+    for r in &gone { println!("stores: {} is gone — marked absent", r.name); }
+    for f in &want.findings {
+        match f {
+            Finding::Unmapped { what } => println!("stores: FINDING unmapped {what} — add it to {map_path} with its role"),
+            Finding::Unmeasured { store, reason } => println!("stores: FINDING {store} UNMEASURED — {reason}"),
+        }
+    }
+    if !failed.is_empty() || short { 2 } else if !want.findings.is_empty() { 1 } else { 0 }
+}
+
 fn main() {
     // #4446 — under launchd, a failed run is logged as service.failed (shared/service_lifecycle.rs).
     service_lifecycle::run_as_job();
@@ -1943,6 +2190,10 @@ fn main() {
     // #4499 — `code`: units of code and what they depend on.
     if argv.get(1).map(String::as_str) == Some("code") {
         std::process::exit(run_code(&argv[2..]));
+    }
+    // #4422 — `stores`: every place Chorus keeps data.
+    if argv.get(1).map(String::as_str) == Some("stores") {
+        std::process::exit(run_stores(&argv[2..]));
     }
     // #4485 — `infra`: machines and their disks.
     if argv.get(1).map(String::as_str) == Some("infra") {

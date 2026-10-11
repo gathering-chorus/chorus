@@ -196,11 +196,22 @@ chorus:infrastructure a chorus:Domain ;
   chorus:purpose "Hold the physical substrate the team runs on — host machines, stores, and LaunchAgents." ;
   chorus:ownedBy chorus:principal-silas ;
   chorus:atStep chorus:value-stream-step-proving ;
-  chorus:repoTarget "platform/apps" ; chorus:definesVocabulary chorus:Machine, chorus:Disk, chorus:PersistenceStore, chorus:UnitDomainMapping ;
+  chorus:repoTarget "platform/apps" ; chorus:definesVocabulary chorus:Machine, chorus:Disk, chorus:UnitDomainMapping ;
+  # #4422 — PersistenceStore moved to the persistence domain (one claimer).
   # #4485 — a Machine's one parent is this domain (chain hierarchy, #4481); its Disks hang off it by onMachine.
   chorus:hosts chorus:library, chorus:bedroom ;
   # #4084 — UnitDomainMapping is the authored unit → domain edge every harvester joins on (ADR-027); homed here because units are infrastructure.
   chorus:instancesGraph "urn:chorus:domains:infrastructure" .
+
+# #4422 — Jeff 2026-10-03: "persistence is a great pair ... model owl and make deploy - enhance
+# crawler to discover and use api to register and synch". Its rows are crawled, never seeded.
+chorus:persistence a chorus:Domain ;
+  rdfs:label "persistence" ; chorus:comment "Every place Chorus keeps data: datasets, file databases, the repo, and graph families, each marked system of record, copy, derived or cache." ;
+  chorus:purpose "Say which store is the system of record and which are copies, so a writer collision is found by a query, not by Jeff." ;
+  chorus:ownedBy chorus:principal-silas ;
+  chorus:atStep chorus:value-stream-step-proving ;
+  chorus:repoTarget "platform/services/chorus-crawl" ; chorus:definesVocabulary chorus:PersistenceStore ;
+  chorus:instancesGraph "urn:chorus:domains:persistence" .
 
 chorus:analytics a chorus:Domain ;
   rdfs:label "analytics" ; chorus:comment "Usage analytics and behavioral signals — attention, interaction patterns." ;
@@ -290,6 +301,7 @@ chorus:StreamEventShape a sh:NodeShape ;
 # cmdb-layers-4293.ttl, which deploys into the domains graph and replaced every row it
 # named: the 2026-10-02 15:51 land wiped 12 domains to one inLayer triple).
 chorus:infrastructure chorus:inLayer chorus:layer-foundation .
+chorus:persistence    chorus:inLayer chorus:layer-foundation ; chorus:dependsOn chorus:infrastructure .
 chorus:time           chorus:inLayer chorus:layer-foundation ; chorus:dependsOn chorus:infrastructure .
 chorus:logs           chorus:inLayer chorus:layer-foundation ; chorus:dependsOn chorus:infrastructure , chorus:time ;
                       chorus:hosts chorus:logs-domain-service-loki .

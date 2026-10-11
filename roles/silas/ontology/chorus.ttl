@@ -297,6 +297,50 @@ chorus:storeStatus a owl:DatatypeProperty ;
     rdfs:label "status" ;
     rdfs:domain chorus:PersistenceStore .
 
+# --- #4422: the persistence domain. Every place Chorus keeps data is a row, written by the
+# stores crawl, never by a file deploy. A row is a dataset, a file database, a repo, or a
+# family of named graphs inside a dataset (roles differ per graph: /pods is a copy of git
+# for the ontology and the system of record for API rows — the 2026-10-02 lockout).
+# Chain (#4481): a dataset, file or repo sits on a Disk (onDisk); a graph family sits in its
+# dataset (inStore). Two parentVia values, exactly one stored per row, counted by
+# athena-validate row-parent-count across both. Reviewed with Wren 2026-10-11 (/tmp/pair-4422.md).
+chorus:PersistenceStore chorus:inHierarchy "chain" ; chorus:parentVia chorus:onDisk , chorus:inStore .
+
+chorus:onDisk a owl:ObjectProperty ; rdfs:label "on disk" ; rdfs:domain chorus:PersistenceStore ; rdfs:range chorus:Disk ;
+    rdfs:comment "The disk a dataset, file database or repo sits on: its parent. A full disk with a store on it is a finding (#4485)." .
+chorus:inStore a owl:ObjectProperty ; rdfs:label "in store" ; rdfs:domain chorus:PersistenceStore ; rdfs:range chorus:PersistenceStore ;
+    rdfs:comment "The dataset a family of named graphs lives in: its parent, in place of onDisk." .
+chorus:storeServedBy a owl:ObjectProperty ; rdfs:label "store served by" ; rdfs:domain chorus:PersistenceStore ; rdfs:range chorus:ServiceInstance ;
+    rdfs:comment "The running unit that serves the store (Fuseki, Loki, MySQL). A plain link, not the parent. Not chorus:servedBy, which is an APISurface's Service (#3618)." .
+chorus:storeRole a owl:DatatypeProperty ; rdfs:label "store role" ; rdfs:domain chorus:PersistenceStore ; rdfs:range xsd:string ;
+    rdfs:comment "Exactly one of systemOfRecord, copyOf, derivedFrom, cacheOf. From the authored map, never guessed: a role is a fact about data flow and cannot be observed." .
+chorus:writeMode a owl:DatatypeProperty ; rdfs:label "write mode" ; rdfs:domain chorus:PersistenceStore ; rdfs:range xsd:string ;
+    rdfs:comment "live: still written. closed: filled on purpose and no longer written (the Bedroom video archive drives). A full disk is a finding only when a live store sits on it (#4485, Wren 2026-10-11)." .
+chorus:roleSource a owl:ObjectProperty ; rdfs:label "role source" ; rdfs:domain chorus:PersistenceStore ; rdfs:range chorus:PersistenceStore ;
+    rdfs:comment "The store this one copies, derives from or caches. Required unless storeRole is systemOfRecord, refused when it is." .
+
+chorus:PersistenceStoreShape a sh:NodeShape ;
+    sh:targetClass chorus:PersistenceStore ;
+    chorus:instancesGraph "urn:chorus:domains:persistence" ;
+    sh:property [ sh:path rdfs:label            ; sh:minCount 1 ; sh:datatype xsd:string ; chorus:exposure chorus:public ] ;
+    sh:property [ sh:path chorus:storeType      ; sh:minCount 1 ; sh:maxCount 1 ; sh:datatype xsd:string ; chorus:exposure chorus:public ] ;
+    sh:property [ sh:path chorus:storeNamespace ; sh:minCount 0 ; sh:maxCount 1 ; sh:datatype xsd:string ; chorus:exposure chorus:public ] ;
+    sh:property [ sh:path chorus:storeStatus    ; sh:minCount 1 ; sh:maxCount 1 ; sh:in ( "present" "absent" "unmeasured" ) ; chorus:exposure chorus:public ] ;
+    sh:property [ sh:path chorus:storeRecordCount ; sh:minCount 0 ; sh:maxCount 1 ; sh:datatype xsd:integer ; chorus:exposure chorus:public ] ;
+    sh:property [ sh:path chorus:storeRole      ; sh:minCount 1 ; sh:maxCount 1 ; sh:in ( "systemOfRecord" "copyOf" "derivedFrom" "cacheOf" ) ; chorus:exposure chorus:public ] ;
+    sh:property [ sh:path chorus:roleSource     ; sh:minCount 0 ; sh:maxCount 1 ; sh:class chorus:PersistenceStore ; chorus:exposure chorus:public ] ;
+    sh:property [ sh:path chorus:writeMode      ; sh:minCount 1 ; sh:maxCount 1 ; sh:in ( "live" "closed" ) ; chorus:exposure chorus:public ] ;
+    sh:property [ sh:path chorus:onDisk         ; sh:minCount 0 ; sh:maxCount 1 ; sh:class chorus:Disk ; chorus:exposure chorus:public ] ;
+    sh:property [ sh:path chorus:inStore        ; sh:minCount 0 ; sh:maxCount 1 ; sh:class chorus:PersistenceStore ; chorus:exposure chorus:public ] ;
+    sh:property [ sh:path chorus:storeServedBy  ; sh:minCount 0 ; sh:class chorus:ServiceInstance ; chorus:exposure chorus:public ] ;
+    sh:property [ sh:path chorus:lastObserved   ; sh:minCount 1 ; sh:maxCount 1 ; sh:datatype xsd:dateTime ; chorus:exposure chorus:public ] ;
+    sh:property [ sh:path chorus:ownedBy        ; sh:class chorus:Principal ] ;
+    # exactly one parent: onDisk or inStore, never both, never neither
+    sh:xone ( [ sh:path chorus:onDisk ; sh:minCount 1 ] [ sh:path chorus:inStore ; sh:minCount 1 ] ) ;
+    # a role source exactly when the role is not systemOfRecord: one of the two holds, never both
+    sh:xone ( [ sh:property [ sh:path chorus:storeRole ; sh:hasValue "systemOfRecord" ] ]
+              [ sh:property [ sh:path chorus:roleSource ; sh:minCount 1 ] ] ) .
+
 # --- Code Files (#1868) ---
 
 chorus:CodeFile a owl:Class ;
@@ -1999,6 +2043,7 @@ chorus:contains      rdfs:domain [ owl:unionOf ( chorus:ValueStream chorus:Domai
 
 # --- DomainShape (supersedes DomainCoordinateShape; + purpose [the capability] + definesVocabulary [DDD mark] per ADR-045 + the capability ruling) ---
 chorus:DomainShape a sh:NodeShape ;
+    sh:property [ sh:path chorus:instancesGraph  ; sh:maxCount 1 ; sh:datatype xsd:string ; chorus:exposure chorus:public ] ;   # #4422 — every Domain row carries it, the door never served it (0 of 57, 2026-10-11); the stores crawl reads the chorus graphs from here, not by SPARQL (#4433)
     sh:property [ sh:path chorus:diagram         ; sh:minCount 0 ; sh:datatype xsd:string ] ;   # #4094 — repeatable mermaid source, %% caption first line
     sh:property [ sh:path chorus:publishesPreAuth ; sh:maxCount 1 ; sh:datatype xsd:string ] ;   # #3777 — opt-in publication to the pre-auth sign-in page. OPTIONAL by design: absent means NOT published, so fail-closed comes from the data model rather than from generator code a later edit could soften.
     sh:targetClass chorus:Domain ;
@@ -2923,7 +2968,7 @@ chorus:runsService a owl:ObjectProperty ;   # #4472 — jobs run Services too: n
 chorus:lastObserved a owl:DatatypeProperty ;
     rdfs:label "last observed" ;
     rdfs:comment "When the harvester last saw this unit. MANDATORY (Wren pin #3): a running instance and one unseen for 24h are different facts. Ephemeral instances (werk variants) age out — that is information, not noise." ;
-    rdfs:domain [ owl:unionOf ( chorus:ServiceInstance chorus:ScheduledJob chorus:Machine chorus:Disk ) ] ;   # #4485: shared, so a union (two domains would intersect)
+    rdfs:domain [ owl:unionOf ( chorus:ServiceInstance chorus:ScheduledJob chorus:Machine chorus:Disk chorus:PersistenceStore ) ] ;   # #4485, #4422: shared, so a union (two domains would intersect)
     rdfs:range xsd:dateTime .
 
 chorus:launchdLabel a owl:DatatypeProperty ;
