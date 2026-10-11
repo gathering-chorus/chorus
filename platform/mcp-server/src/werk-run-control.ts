@@ -28,12 +28,25 @@ export interface ControlDeps {
   writeRun: (run: WerkRun) => void;
   appendLog: (file: string, line: string) => void;
   sleep: (ms: number) => Promise<void>;
+  /** Live werk verbs for this card wherever they run (#4420, 10-11: werk-build is chorus-api's child, not act's). */
+  cardVerbs: (role: string, card: number) => Array<{ pid: number; command: string }>;
+  killPid: (pid: number, signal: NodeJS.Signals) => void;
   now: () => Date;
 }
 
 export type ControlResult =
   | { ok: true; phase: WerkRun['phase']; paused?: boolean; note: string }
-  | { ok: false; refusal: 'no-run' | 'not-running'; note: string };
+  | { ok: false; refusal: 'no-run' | 'not-running' | 'still-running'; note: string };
+
+/**
+ * A werk verb working this card: the program is a `werk-<verb>` binary and its
+ * arguments name this card and this role exactly. Nothing else is signalled.
+ */
+export function isCardVerb(command: string, role: string, card: number): boolean {
+  const [prog, ...args] = command.trim().split(/\s+/);
+  if (!prog || !/^werk-[a-z]+(-bin)?$/.test(path.basename(prog))) return false;
+  return args.includes(String(card)) && args.includes(role);
+}
 
 export function holdFilePath(card: number, runsDir: string): string {
   return path.join(runsDir, `${card}.hold`);
@@ -44,28 +57,52 @@ export function isHeld(card: number, runsDir: string): boolean {
   return fs.existsSync(holdFilePath(card, runsDir));
 }
 
-/** Cancel a live run: TERM the group, KILL whatever is left after `graceMs`. */
+/** TERM act's process group, KILL whatever is left after `graceMs`. */
+async function stopActGroup(run: WerkRun, deps: ControlDeps, graceMs: number): Promise<void> {
+  // A pid outlives its run: on 2026-10-06 a Sep 19 pin still named pid 30554,
+  // and a TERM by pid alone hit whatever process holds that number now. Signal
+  // only the process that started when this run did.
+  if (typeof run.pid !== 'number' || !deps.isAlive(run.pid) || !sameProcess(run, deps)) return;
+  const pid = run.pid;
+  try { deps.killGroup(pid, 'SIGTERM'); } catch { /* already gone */ }
+  for (let waited = 0; waited < graceMs && deps.isAlive(pid); waited += 250) await deps.sleep(250);
+  if (deps.isAlive(pid)) {
+    try { deps.killGroup(pid, 'SIGKILL'); } catch { /* already gone */ }
+  }
+}
+
+/**
+ * The verbs act reaches through chorus-api (werk-build, werk-deploy …) are
+ * chorus-api's children, outside act's group (Silas, 10-11 17:30: werk-build
+ * pid 50896 outlived a cancel and held the werk lock). Stop them by name;
+ * return how many there were and which are still alive.
+ */
+async function stopCardVerbs(run: WerkRun, deps: ControlDeps, graceMs: number): Promise<{ stopped: number; left: Array<{ pid: number; command: string }> }> {
+  const signal = (sig: NodeJS.Signals): void => {
+    for (const v of deps.cardVerbs(run.role, run.card)) { try { deps.killPid(v.pid, sig); } catch { /* already gone */ } }
+  };
+  const stopped = deps.cardVerbs(run.role, run.card).length;
+  signal('SIGTERM');
+  for (let waited = 0; waited < graceMs && deps.cardVerbs(run.role, run.card).length; waited += 250) await deps.sleep(250);
+  signal('SIGKILL');
+  return { stopped, left: deps.cardVerbs(run.role, run.card) };
+}
+
+/** Cancel a live run: act's group and the card's verbs; "stopped" only when none is left. */
 export async function cancelRun(run: WerkRun | null, deps: ControlDeps, runsDir: string, graceMs = 5000): Promise<ControlResult> {
   if (!run) return { ok: false, refusal: 'no-run', note: 'No run on record for this card — nothing to cancel.' };
   if (run.phase !== 'running') {
     return { ok: false, refusal: 'not-running', note: `The run on record is '${run.phase}', not running — nothing to cancel.` };
   }
-  // A pid outlives its run: on 2026-10-06 a Sep 19 pin still named pid 30554,
-  // and a TERM by pid alone hit whatever process holds that number now. Signal
-  // only the process that started when this run did.
-  if (typeof run.pid === 'number' && deps.isAlive(run.pid) && sameProcess(run, deps)) {
-    try { deps.killGroup(run.pid, 'SIGTERM'); } catch { /* already gone */ }
-    const step = 250;
-    for (let waited = 0; waited < graceMs && deps.isAlive(run.pid); waited += step) await deps.sleep(step);
-    if (deps.isAlive(run.pid)) {
-      try { deps.killGroup(run.pid, 'SIGKILL'); } catch { /* already gone */ }
-    }
-  }
+  await stopActGroup(run, deps, graceMs);
+  const { stopped, left } = await stopCardVerbs(run, deps, graceMs);
   try { fs.rmSync(holdFilePath(run.card, runsDir), { force: true }); } catch { /* none */ }
   if (run.logFile) deps.appendLog(run.logFile, `${CANCEL_MARKER}\n`);
-  const cancelled: WerkRun = { ...run, phase: 'cancelled', failureReason: `cancelled at ${deps.now().toISOString()}` };
-  deps.writeRun(cancelled);
-  return { ok: true, phase: 'cancelled', note: `Run ${run.runId} cancelled: act and its children stopped, the run record and its log say cancelled.` };
+  deps.writeRun({ ...run, phase: 'cancelled', failureReason: `cancelled at ${deps.now().toISOString()}` });
+  if (left.length) {
+    return { ok: false, refusal: 'still-running', note: `Run ${run.runId} cancelled, but ${left.map((v) => `pid ${v.pid} (${v.command})`).join('; ')} is still alive and may hold the werk lock.` };
+  }
+  return { ok: true, phase: 'cancelled', note: `Run ${run.runId} cancelled: act, its children and ${stopped} werk verb(s) for #${run.card} stopped, the run record and its log say cancelled.` };
 }
 
 /** The live pid is this run's own process: it started within a minute of the run. */
@@ -117,6 +154,15 @@ export function liveControlDeps(writeRun: (run: WerkRun) => void): ControlDeps {
     appendLog: (file, line) => fs.appendFileSync(file, line),
     sleep: (ms) => new Promise((r) => setTimeout(r, ms)),
     now: () => new Date(),
+    cardVerbs: (role, card) => {
+      try {
+        return execFileSync('ps', ['-axo', 'pid=,command='], { encoding: 'utf8' }).split('\n')
+          .map((l) => /^\s*(\d+)\s+(.*)$/.exec(l))
+          .filter((m): m is RegExpExecArray => m !== null && isCardVerb(m[2], role, card))
+          .map((m) => ({ pid: Number(m[1]), command: m[2] }));
+      } catch { return []; }
+    },
+    killPid: (pid, signal) => process.kill(pid, signal),
   };
 }
 

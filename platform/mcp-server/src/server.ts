@@ -459,7 +459,7 @@ const WerkRunInput = z.object({
   represent: z.boolean().optional().describe('Explicitly start a fresh demo round on a presented card. Without this, re-invoking a presented run only reports state.'),
   // #4420 — checking on a run never starts one; retry is the explicit relaunch.
   retry: z.boolean().optional().describe('Run again after a failed, cancelled or superseded run. Without it a call only reports state.'),
-  action: z.enum(['cancel', 'pause', 'resume']).optional().describe('cancel: stop the running run (act and its children). pause: hold it after the step in flight. resume: continue.'),
+  action: z.enum(['cancel', 'pause', 'resume']).optional().describe('cancel: stop the running run (act, its children and the werk verbs for this card; refuses still-running naming any that outlive it). pause: hold it after the step in flight. resume: continue.'),
 });
 
 // #4186 — the MODEL pipeline as its own MCP verb (Jeff: "get athena out of werk").
@@ -591,7 +591,7 @@ const CHORUS_WERK_TOOL_DEF = {
       go: { type: 'boolean', description: 'The human GO. false/absent = run to the demo stop and present. true = resume past the stop: merge → deploy-prod → accept.' },
       represent: { type: 'boolean', description: 'Start a fresh demo round on a presented card.' },
       retry: { type: 'boolean', description: 'Run again after a failed, cancelled or superseded run. A plain call only reports state and never launches over an existing run (#4420).' },
-      action: { type: 'string', enum: ['cancel', 'pause', 'resume'], description: 'cancel: stop the running run (act and its children; log + spine say cancelled). pause: hold the run after the step in flight. resume: continue from the next step.' },
+      action: { type: 'string', enum: ['cancel', 'pause', 'resume'], description: 'cancel: stop the running run (act, its children and the werk verbs for this card; log + spine say cancelled; refuses still-running naming any verb that outlives it). pause: hold the run after the step in flight. resume: continue from the next step.' },
     },
     required: ['role', 'card_id'],
     additionalProperties: false,
@@ -2893,7 +2893,8 @@ async function executeWerkControl(
   const result = args.action === 'cancel'
     ? await cancelRun(run, liveControlDeps((r) => writeRunAtomic(r, runsDir)), dir)
     : args.action === 'pause' ? pauseRun(run, dir) : resumeRun(run, dir);
-  if (result.ok && args.action === 'cancel' && run) {
+  // a cancel that left a verb alive still cancelled the run: the variant goes down and the spine says so
+  if ((result.ok || result.refusal === 'still-running') && args.action === 'cancel' && run) {
     const { binDir, scriptsDir } = werkRunPaths();
     afterCancel(args.role, args.card_id, run.runId, binDir, scriptsDir);
   }
