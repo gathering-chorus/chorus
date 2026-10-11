@@ -23,6 +23,12 @@ setup() {
   if [[ "$output" == *FAIL* ]]; then return 1; fi
 }
 
+@test "the sign-in row carries the hostAccount SessionShape requires, or is not written" {
+  run python3 "$ROOT/platform/tests/fixtures/person-session-4412.py"
+  grep -qF "PASS it carries the hostAccount the shape requires" <<<"$output" || return 1
+  grep -qF "PASS NEGATIVE: no hostAccount -> no row, said in the log" <<<"$output" || return 1
+}
+
 @test "the guard is a public client named by a document it serves, with no registration" {
   G="$ROOT/platform/scripts/chorus-share-guard.py"
   grep -q 'AUTH_PREFIX + "clientid.jsonld"' "$G"
