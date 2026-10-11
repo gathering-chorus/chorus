@@ -1116,6 +1116,29 @@ async function enforceWipBlastRadius(
 }
 
 // Pre-move gates — runs before the actual status change. Exits process on gate failure.
+/**
+ * Hard WIP limit (Jeff 2026-10-11 09:06, #4494): three cards on the board,
+ * two card runs and one land. A fourth card is refused before it moves; a card
+ * already in WIP may move to WIP again. Returns the refusal line, or null.
+ */
+export const WIP_LIMIT = 3;
+export function wipLimitRefusal(wipIndexes: number[], index: number, limit = WIP_LIMIT): string | null {
+  if (wipIndexes.includes(index) || wipIndexes.length < limit) return null;
+  const held = wipIndexes.map((i) => `#${i}`).join(', ');
+  return `ERROR: WIP is full: ${wipIndexes.length} of ${limit} (${held}). Land or unpull one before #${index} enters WIP.`;
+}
+
+async function enforceWipLimit(client: BoardClient, index: number, title: string): Promise<void> {
+  const wip = ((await client.listGrouped()).get('WIP') || []).map((t) => t.index);
+  const refusal = wipLimitRefusal(wip, index);
+  if (!refusal) return;
+  console.error(refusal);
+  emitSpineEvent(EVENT_CARD_QUALITY_BLOCKED, detectRole(), {
+    card_id: String(index), title, gate: 'wip_limit', stage: 'building', board: client.boardName,
+  });
+  process.exit(1);
+}
+
 async function enforcePreMoveGates(
   client: BoardClient, index: number, title: string, card: BoardTask, status: string,
 ): Promise<void> {
@@ -1124,6 +1147,7 @@ async function enforcePreMoveGates(
   if (isNow && !enforceNowDescriptionGate(index, title, card.description, client.boardName)) process.exit(1);
   if (isWip && !enforceACGate(index, title, card.description, client.boardName)) process.exit(1);
   if (isWip && !enforceExperienceGate(index, title, card.description, client.boardName)) process.exit(1);
+  if (isWip) await enforceWipLimit(client, index, title);
   if (isNow || isWip) enforceTaxonomyGate(index, title, card.domains, client.boardName);
   if (isWip) await enforceWipBlastRadius(client, index, title, card);
 }
