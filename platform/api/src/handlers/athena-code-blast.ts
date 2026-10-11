@@ -126,7 +126,9 @@ export function builtFromFromCsv(csv: string): [string, string][] {
   return csvRows(csv).map(([s, u]) => [local(s), local(u).replace(/^code-unit-/, '')] as [string, string]);
 }
 export function filesFromCsv(csv: string): FileRow[] {
-  return csvRows(csv).map(([path, kind, domain, route]) => ({
-    path, kind: local(kind ?? '').replace(/^code-kind-/, ''), domain: local(domain ?? '').replace(/^domain-/, ''), route: route ?? '',
-  }));
+  // a row with an absent OPTIONAL has fewer cells: pad, so every field is a string
+  return csvRows(csv).map((cells) => {
+    const [path = '', kind = '', domain = '', route = ''] = cells;
+    return { path, kind: local(kind).replace(/^code-kind-/, ''), domain: local(domain).replace(/^domain-/, ''), route };
+  });
 }

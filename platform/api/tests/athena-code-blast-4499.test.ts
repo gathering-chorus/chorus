@@ -55,8 +55,7 @@ describe('#4499 the blast radius of a change, from the code units', () => {
 
   it('NEGATIVE PROOF — a file in no unit is UNMEASURED, never "no blast radius"', () => {
     const r = codeBlast('designing/docs/x.html', units, built, files);
-    expect(r.measured).toBe(false);
-    if (!r.measured) expect(r.reason).toContain('in no code unit');
+    expect(r).toEqual({ target: 'designing/docs/x.html', measured: false, reason: 'designing/docs/x.html is in no code unit' });
   });
 
   it('NEGATIVE PROOF — a store with no units yet is UNMEASURED, not empty', () => {

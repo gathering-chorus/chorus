@@ -2734,7 +2734,7 @@ app.get('/api/athena/blast-radius/:iri', async (req: Request, res: Response) => 
 // from the crawler's code units in services, domains, tests and pages.
 import { codeBlast, unitsQuery, builtFromQuery, filesQuery, unitsFromCsv, builtFromFromCsv, filesFromCsv } from './handlers/athena-code-blast';
 app.get('/api/athena/code-blast', async (req: Request, res: Response) => {
-  const target = String(req.query.target ?? '').trim();
+  const target = typeof req.query.target === 'string' ? req.query.target.trim() : '';
   if (!target) return res.status(400).json({ ok: false, reason: 'target-missing', hint: '?target=<repo path or service-name>' });
   try {
     const [u, b, f] = await Promise.all([blastRadiusRead(unitsQuery()), blastRadiusRead(builtFromQuery()), blastRadiusRead(filesQuery())]);
