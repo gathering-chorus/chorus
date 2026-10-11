@@ -1,8 +1,21 @@
 // #4456 AC4 — the 2026-10-07 replay rows parse, one file per card, each with a
 // runnable check or a stated reason. Fixtures by repo path:
-//   platform/tests/fixtures/ac-1007/{4446,4420,4419,4440,4444,4445,4447,4432,4452,4358,4438}.tsv
+//   platform/tests/fixtures/ac-1007/4446.tsv
+//   platform/tests/fixtures/ac-1007/4420.tsv
+//   platform/tests/fixtures/ac-1007/4419.tsv
+//   platform/tests/fixtures/ac-1007/4440.tsv
+//   platform/tests/fixtures/ac-1007/4444.tsv
+//   platform/tests/fixtures/ac-1007/4445.tsv
+//   platform/tests/fixtures/ac-1007/4447.tsv
+//   platform/tests/fixtures/ac-1007/4432.tsv
+//   platform/tests/fixtures/ac-1007/4452.tsv
+//   platform/tests/fixtures/ac-1007/4358.tsv
+//   platform/tests/fixtures/ac-1007/4438.tsv
 //   platform/tests/fixtures/ac-1007/README
 //   platform/tests/fixtures/ac-4456.tsv
+// The crate these tests build:
+//   platform/services/borg-prove/Cargo.toml
+//   platform/services/borg-prove/Cargo.lock
 use borg_prove::checks_from_tsv;
 
 fn root() -> std::path::PathBuf {

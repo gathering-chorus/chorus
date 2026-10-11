@@ -1,4 +1,6 @@
 #!/usr/bin/env bash
+# Covers: platform/tests/fixtures/card-ac-4456.ttl
+# Covers: platform/tests/fixtures/card-ac-4456-bad.ttl
 # @test-type: unit — validates fixtures against the shipped CardAC shape with Jena shacl; no store, no network
 # @domain: cards
 #
