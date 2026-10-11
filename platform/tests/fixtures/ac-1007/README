@@ -4,3 +4,6 @@
 unmeasured (no read-only check yet) #4420 #4444 #4432 #4452.
 Flips explained by later lands (Wren, 10-11 10:20): #4446 5614e2034 (10-07 17:40) · #4440 3be70f80a (10-07 20:03)
 · #4445 d3894aefd, 05b0a3d41, c87086673 (10-08) · #4358 30636b544, 5cd83014d (10-07), c179f7f42 (10-08).
+#4419: same verdict, different reason (10-07 :3000; 10-11 the Clearing's blast radius has 0 edges, read from urn:chorus:ontology) — not an AC4 hold (Wren).
+#4452: PART → met: dagu's cicd-land runs succeed with no hand step (v2 lands since 10-10). Weak check: it does not name a chorus-mcp-deploying card.
+#4420: unmeasured, and stays so read-only: its finding (a poll launched a run) was chorus_werk v1; v2 runs start only by enqueue.
