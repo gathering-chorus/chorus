@@ -58,7 +58,7 @@ def open_role_sessions(listing):
             and str(r.get("actsAs", "")).startswith("role-") and r.get("name")]
 
 
-def session_row(principal, id_token, roles, now, lasts, name):
+def session_row(principal, id_token, roles, now, lasts, name, host_account):
     row = {
         "name": name,
         "label": f"{principal} signed in at the shared door {iso(now)}",
@@ -71,6 +71,10 @@ def session_row(principal, id_token, roles, now, lasts, name):
         "startedAt": iso(now),
         "lastSeenAt": iso(now),
         "sessionState": "open",
+        # SessionShape requires it (minCount 1): the account the session runs
+        # under. For a person it is their Principal's hostAccount (#4412: every
+        # sign-in row was refused without it, 2026-10-10 23:15).
+        "hostAccount": host_account,
     }
     if roles:
         row["binds"] = roles
@@ -80,19 +84,22 @@ def session_row(principal, id_token, roles, now, lasts, name):
 def principal_query(webid):
     """The Principal that owns this WebID, by the model; never parsed from it."""
     w = webid.replace("\\", "").replace(">", "")
-    return ("PREFIX chorus: <https://jeffbridwell.com/chorus#> SELECT ?p WHERE { GRAPH ?g { "
-            f"?p a chorus:Principal ; chorus:webId ?w }} FILTER(STR(?w) = \"{w}\") }} LIMIT 1")
+    return ("PREFIX chorus: <https://jeffbridwell.com/chorus#> SELECT ?p ?h WHERE { GRAPH ?g { "
+            f"?p a chorus:Principal ; chorus:webId ?w }} FILTER(STR(?w) = \"{w}\") "
+            "OPTIONAL { GRAPH ?g2 { ?p chorus:hostAccount ?h } } } LIMIT 1")
 
 
 def principal_for(webid, sparql):
-    """sparql(query) -> parsed JSON or None. Returns a bare name like 'jeff'."""
+    """sparql(query) -> parsed JSON or None. Returns (bare name like 'jeff', hostAccount or None)."""
     body = sparql(principal_query(webid))
     try:
-        iri = body["results"]["bindings"][0]["p"]["value"]
+        b = body["results"]["bindings"][0]
+        iri = b["p"]["value"]
     except Exception:
         return None
     name = iri.rsplit("#", 1)[-1].rsplit("/", 1)[-1]
-    return name[len("principal-"):] if name.startswith("principal-") else name
+    name = name[len("principal-"):] if name.startswith("principal-") else name
+    return name, (b.get("h") or {}).get("value")
 
 
 def open_session(webid, tok, now, lasts, sparql, http, api, log):
@@ -100,9 +107,13 @@ def open_session(webid, tok, now, lasts, sparql, http, api, log):
 
     Returns the stored record (row name + tokens) for sign-out, or None.
     """
-    principal = principal_for(webid, sparql)
-    if not principal:
+    found = principal_for(webid, sparql)
+    if not found:
         log(f"person-session: no Principal owns {webid}; no Session row written")
+        return None
+    principal, host_account = found
+    if not host_account:
+        log(f"person-session: principal-{principal} has no hostAccount; no Session row written")
         return None
     id_token = tok.get("id_token", "")
     try:
@@ -111,7 +122,7 @@ def open_session(webid, tok, now, lasts, sparql, http, api, log):
     except Exception:
         roles = []
     name = slug(f"{principal}-browser-{int(now)}")
-    row = session_row(principal, id_token, roles, now, lasts, name)
+    row = session_row(principal, id_token, roles, now, lasts, name, host_account)
     try:
         status, reply = http("POST", f"{api}/v1/identity/sessions", id_token, row)
     except Exception as e:

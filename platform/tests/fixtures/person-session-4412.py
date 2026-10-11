@@ -26,11 +26,14 @@ def check(name, cond):
         FAILS.append(name)
 
 
-def sparql_for(owner):
+def sparql_for(owner, host="jeffbridwell"):
     def q(_query):
         if owner is None:
             return {"results": {"bindings": []}}
-        return {"results": {"bindings": [{"p": {"value": f"https://jeffbridwell.com/chorus#principal-{owner}"}}]}}
+        b = {"p": {"value": f"https://jeffbridwell.com/chorus#principal-{owner}"}}
+        if host:
+            b["h"] = {"value": host}
+        return {"results": {"bindings": [b]}}
     return q
 
 
@@ -62,6 +65,7 @@ check("the row is his: ownedBy and actsAs jeff, browser, open",
       and row.get("channel") == "browser" and row.get("sessionState") == "open")
 check("it binds only the open ROLE sessions", row.get("binds") == ["silas-pane-1"])
 check("it names the token, never holds it", row.get("tokenId") == "tok-1" and TOK["id_token"] not in str(row))
+check("it carries the hostAccount the shape requires", row.get("hostAccount") == "jeffbridwell")
 check("it lasts as long as the door's cookie", row.get("expiresAt") == ps.iso(NOW + 12 * 3600))
 check("the record keeps what sign-out needs", rec and rec["row"]["name"] == row["name"] and rec["refresh_token"] == "rt-1")
 
@@ -70,6 +74,12 @@ door2, logs2 = Door(), []
 none = ps.open_session(JEFF, TOK, NOW, 3600, sparql_for(None), door2, "http://door", logs2.append)
 check("NEGATIVE: no Principal for the WebID -> no row, said in the log",
       none is None and not [c for c in door2.calls if c[0] == "POST"] and "no Principal" in " ".join(logs2))
+
+# NEGATIVE PROOF: a Principal with no hostAccount writes nothing (the shape would refuse it)
+door_h, logs_h = Door(), []
+noh = ps.open_session(JEFF, TOK, NOW, 3600, sparql_for("jeff", host=None), door_h, "http://door", logs_h.append)
+check("NEGATIVE: no hostAccount -> no row, said in the log",
+      noh is None and not [c for c in door_h.calls if c[0] == "POST"] and "no hostAccount" in " ".join(logs_h))
 
 # NEGATIVE PROOF: a refused write returns nothing and never raises
 door3, logs3 = Door(post_status=403), []
