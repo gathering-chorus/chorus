@@ -7,8 +7,7 @@
 # a file belongs-to a domain when it IS that domain's surface (defines /
 # implements / tests it), NOT because of where it sits in the tree.
 #
-# fileInDomain = domain-radius (what a file IS). Its sibling
-# enrichment-write-fileDependsOn.sh = blast-radius (what a file USES).
+# fileInDomain = domain-radius (what a file IS).
 #
 # BELONGS_MAP is the owner-confirmed core per domain: <rel-path>|<domain>|<owner>,
 # each entry a file whose FUNCTION constitutes the domain. This is the

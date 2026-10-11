@@ -203,7 +203,7 @@ chorus:CodeUnitShape a sh:NodeShape ;
     sh:property [ sh:path chorus:hasDomain ; sh:class chorus:Domain ] ;
     sh:property [ sh:path chorus:ownedBy ; sh:class chorus:Principal ] ;
     chorus:instancesGraph "urn:chorus:domains:code" ;
-    chorus:generatedBy "chorus-crawl" .
+    chorus:generatedBy "athena-model" .
 
 chorus:builtFrom a owl:ObjectProperty ;
     rdfs:label "builtFrom" ;
