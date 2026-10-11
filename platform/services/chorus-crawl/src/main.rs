@@ -1783,6 +1783,152 @@ fn run_infra(args: &[String]) -> i32 {
     if !failed.is_empty() { 2 } else if !found.is_empty() { 1 } else { 0 }
 }
 
+/// #4499 — the code crawl: every unit of code (crate, package, model, shared
+/// include) and its dependsOn edges, from the build files, written through the
+/// door changed-only. A unit no build file states any more is deleted, and its
+/// edges go with it: the data is rebuilt from the tree on every land.
+fn run_code(args: &[String]) -> i32 {
+    use chorus_crawl::code::*;
+    if let Some(bad) = args.iter().find(|a| a.as_str() != "--dry-run") {
+        eprintln!("chorus-crawl code: unknown arg {bad} — nothing ran");
+        return 2;
+    }
+    let dry_run = !args.is_empty();
+    let root = std::env::var("CHORUS_ROOT").unwrap_or_else(|_| ".".to_string());
+    let ls = |pat: &str| -> Vec<String> {
+        sh("git", &["ls-files", "--", pat], &root).unwrap_or_default().lines()
+            .filter(|l| is_unit_file(l)).map(String::from).collect()
+    };
+    let read = |f: &str| std::fs::read_to_string(format!("{root}/{f}")).ok();
+    let sources = |dir: &str| -> Vec<String> {
+        std::fs::read_dir(format!("{root}/{dir}/src")).map(|rd| rd.flatten()
+            .filter(|e| e.path().extension().is_some_and(|x| x == "rs"))
+            .filter_map(|e| std::fs::read_to_string(e.path()).ok()).collect()).unwrap_or_default()
+    };
+    let all = units(&ls("*Cargo.toml"), &ls("*package.json"), &read, &sources);
+    let edges: usize = all.iter().map(|u| u.deps.len()).sum();
+    println!("code: {} units ({} crates, {} packages) · {} dependsOn edges",
+        all.len(), all.iter().filter(|u| u.kind == "crate").count(), all.iter().filter(|u| u.kind == "package").count(), edges);
+    if dry_run {
+        for u in all.iter().filter(|u| !u.deps.is_empty()) {
+            println!("code:   {} ({}) → {}", u.path, u.kind, u.deps.join(", "));
+        }
+    }
+    let desired: Vec<(String, Vec<(String, String)>)> = all.iter().map(|u| {
+        let f = unit_fields(u);
+        (f[0].1.clone(), f[1..].to_vec())
+    }).collect();
+
+    let api = std::env::var("CHORUS_OWL_API").unwrap_or_else(|_| "http://localhost:3360".to_string());
+    let role = match declared_role(std::env::var("CHORUS_ROLE").ok()) {
+        Ok(r) => r,
+        Err(e) => { eprintln!("chorus-crawl code: {e}"); return 2; }
+    };
+    let ident = match Identity::open(&root, &role) {
+        Ok(i) => std::cell::RefCell::new(i),
+        Err(e) => { eprintln!("chorus-crawl code: {e}"); return 2; }
+    };
+    let token = match ident.borrow_mut().bearer() { Ok(t) => t, Err(e) => { eprintln!("chorus-crawl code: {e}"); return 2; } };
+    // the class must be served: a store that has not loaded CodeUnit is
+    // UNMEASURED, never "no units"
+    let coll = match collection_for(&api, "CodeUnit") {
+        Ok(c) => c,
+        // a dry run still shows what it would write against an empty store
+        Err(e) if dry_run => { println!("code: (the door does not serve CodeUnit yet: {e})"); String::new() }
+        Err(e) => { println!("code: UNMEASURED — the door does not serve CodeUnit yet ({e}); nothing written"); return 1; }
+    };
+    let current: Vec<(String, Vec<(String, String)>)> = if coll.is_empty() { Vec::new() } else { match fetch_rows_with(&api, Some(&token), "CodeUnit", "", chorus_crawl::services::door_page_rows) {
+        Ok(rows) => rows.into_iter().map(|fields| {
+            let name = fields.iter().find(|(k, _)| k == "name").map(|(_, v)| v.clone()).unwrap_or_default();
+            (name, chorus_crawl::services::written_form(fields.into_iter().filter(|(k, _)| k != "name").collect()))
+        }).collect(),
+        Err(e) => { eprintln!("chorus-crawl code: cannot read CodeUnit rows — {e}"); return 2; }
+    } };
+    let p = plan_units(&desired, &current);
+    println!("code: create {} · update {} · delete {} · unchanged {}", p.create.len(), p.update.len(), p.delete.len(), p.unchanged);
+    // services → the units they are built from, through their instances' source files
+    let instances: Vec<(String, String)> = {
+        let rows = fetch_rows_with(&api, Some(&token), "ServiceInstance", "", chorus_crawl::services::door_page_rows).unwrap_or_default();
+        let cf = collection_for(&api, "CodeFile").unwrap_or_default();
+        let mut paths: Vec<(String, String)> = Vec::new();
+        let mut out = Vec::new();
+        for r in rows {
+            let get = |k: &str| r.iter().find(|(f, _)| f == k).map(|(_, v)| v.clone()).unwrap_or_default();
+            let (svc, src) = (get("runsService"), get("sourcePath"));
+            if svc.is_empty() || src.is_empty() || cf.is_empty() {
+                continue;
+            }
+            let file = match paths.iter().find(|(n, _)| *n == src) {
+                Some((_, f)) => f.clone(),
+                None => {
+                    // the edge holds the row's IRI local name (code-file-<name>); the door names it <name>
+                    let door = src.strip_prefix("code-file-").unwrap_or(&src);
+                    let f = curl(&api, "GET", &format!("{cf}/{door}"), None, Some(&token)).ok()
+                        .and_then(|b| b.split("\"filePath\"").nth(1).and_then(|t| t.split('"').nth(1)).map(String::from))
+                        .unwrap_or_default();
+                    paths.push((src.clone(), f.clone()));
+                    f
+                }
+            };
+            if !file.is_empty() {
+                out.push((svc.strip_prefix("service-").unwrap_or(&svc).to_string(), file));
+            }
+        }
+        out
+    };
+    let built = built_from(&instances, &all);
+    println!("code: {} services built from {} unit links", built.len(), built.iter().map(|(_, v)| v.len()).sum::<usize>());
+    if dry_run {
+        for (svc, us) in &built {
+            println!("code:   service {svc} ← {}", us.join(", "));
+        }
+        println!("code: dry-run — NOTHING WRITTEN");
+        return 0;
+    }
+    let body = |name: &str, fields: &[(String, String)]| {
+        let mut f = vec![("name".to_string(), name.to_string())];
+        f.extend(fields.iter().cloned());
+        fields_json(&f)
+    };
+    let mut failed: Vec<String> = Vec::new();
+    // units first without edges, so every edge's target exists when it is written
+    let bare: Vec<String> = p.create.iter().map(|(n, f)| body(n, &f.iter().filter(|(k, _)| k != "dependsOn").cloned().collect::<Vec<_>>())).collect();
+    if !bare.is_empty() {
+        if let Err(e) = write(&ident, &api, "POST", &format!("{coll}/batch"), Some(&format!("[{}]", bare.join(",")))) {
+            failed.push(format!("create batch of {}: {e}", bare.len()));
+        }
+    }
+    for (n, f) in p.create.iter().chain(p.update.iter()) {
+        if let Err(e) = write(&ident, &api, "PUT", &format!("{coll}/{n}"), Some(&body(n, f))) {
+            failed.push(format!("write {n}: {e}"));
+        }
+    }
+    for n in &p.delete {
+        if let Err(e) = write(&ident, &api, "DELETE", &format!("{coll}/{n}"), None) {
+            failed.push(format!("delete {n}: {e}"));
+        }
+    }
+    // the services' builtFrom, merged onto their rows (PATCH: the rest of a
+    // Service row belongs to other writers)
+    if let Ok(svc_coll) = collection_for(&api, "Service") {
+        for (svc, us) in &built {
+            let patch = fields_json(&us.iter().map(|u| ("builtFrom".to_string(), u.clone())).collect::<Vec<_>>());
+            if let Err(e) = write(&ident, &api, "PATCH", &format!("{svc_coll}/{svc}"), Some(&patch)) {
+                failed.push(format!("builtFrom {svc}: {e}"));
+            }
+        }
+    }
+    for f in &failed {
+        println!("code: WRITE FAILED {f}");
+    }
+    if failed.is_empty() {
+        println!("code: wrote {}", p.create.len() + p.update.len() + p.delete.len());
+        0
+    } else {
+        2
+    }
+}
+
 fn main() {
     // #4446 — under launchd, a failed run is logged as service.failed (shared/service_lifecycle.rs).
     service_lifecycle::run_as_job();
@@ -1793,6 +1939,10 @@ fn main() {
     // #4472 — `services`: the launchd crawl.
     if argv.get(1).map(String::as_str) == Some("services") {
         std::process::exit(run_services(&argv[2..]));
+    }
+    // #4499 — `code`: units of code and what they depend on.
+    if argv.get(1).map(String::as_str) == Some("code") {
+        std::process::exit(run_code(&argv[2..]));
     }
     // #4485 — `infra`: machines and their disks.
     if argv.get(1).map(String::as_str) == Some("infra") {
@@ -1832,6 +1982,13 @@ fn main() {
         std::process::id(),
         if reconciling { "validate" } else if dry_run { "dry-run" } else { "write" }
     );
+    // #4499 — first, the code units and their dependsOn edges: seconds, and the
+    // blast radius reads them, so every pass (each land kicks one) refreshes them
+    if !reconciling {
+        let code_args: Vec<String> = if dry_run { vec!["--dry-run".to_string()] } else { Vec::new() };
+        let rc = run_code(&code_args);
+        println!("chorus-crawl: code leg rc={rc}");
+    }
 
     let head = match head_commit(&root) {
         Ok(h) => h,

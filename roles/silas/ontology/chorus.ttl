@@ -2045,6 +2045,7 @@ chorus:ServiceShape a sh:NodeShape ;
     sh:property [ sh:path chorus:diagram         ; sh:minCount 0 ; sh:datatype xsd:string ; chorus:exposure chorus:public ] ;   # #4094 — repeatable mermaid source, %% caption first line   # #4093 — Service fields are tiered (#4010); without an exposure the diagram was withheld from the page like gaps/notInScope
     sh:property [ sh:path chorus:publishesPreAuth ; sh:maxCount 1 ; sh:datatype xsd:string ] ;   # #3777 — opt-in publication to the pre-auth sign-in page. OPTIONAL by design: absent means NOT published, so fail-closed comes from the data model rather than from generator code a later edit could soften.
     sh:property [ sh:path chorus:oidcClientId     ; sh:datatype xsd:string ] ;   # #4412 — the OIDC client id people sign in through, when this service is a sign-in surface
+    sh:property [ sh:path chorus:builtFrom        ; sh:class chorus:CodeUnit ] ;   # #4499 — the code units this service is built from (crawler-written)
     sh:targetClass chorus:Service ;
     # #4010 — MOVED off the ontology graph. #3675 parked Service instances in
     # urn:chorus:ontology to fix a READ (the serve defaulted to the empty
@@ -2865,13 +2866,6 @@ chorus:fileHasOwner a owl:ObjectProperty ;
     rdfs:range chorus:Role ;
     chorus:writeOwner chorus:enrichment .
 
-chorus:fileDependsOn a owl:ObjectProperty ;
-    rdfs:label "file depends on" ;
-    rdfs:comment "Domain this file USES (as opposed to belongs-to / fileInDomain). Derived by function: enrichment detects call-sites / imports of a domain's surface (e.g. a chorus-log emit makes the file dependsOn chorus:spine). Multi-valued. The inbound set per domain = that domain's file-level blast-radius. #3017." ;
-    rdfs:domain chorus:File ;
-    rdfs:range chorus:Domain ;
-    chorus:writeOwner chorus:enrichment .
-
 chorus:stale a owl:DatatypeProperty ;
     rdfs:label "stale" ;
     rdfs:comment "Set true by deletes-reconciliation when the file's filesystem path no longer exists. NOT a remove from the graph — visibility-not-removal so consumers choose how to treat. Cleared if the file reappears." ;
@@ -2894,7 +2888,6 @@ chorus:FileShape a sh:NodeShape ;
     sh:property [ sh:path chorus:fileLastModified ; sh:datatype xsd:dateTime ] ;
     sh:property [ sh:path chorus:fileInDomain     ; sh:class chorus:Domain ] ;
     sh:property [ sh:path chorus:fileHasOwner     ; sh:class chorus:Role ] ;
-    sh:property [ sh:path chorus:fileDependsOn    ; sh:class chorus:Domain ] ;
     sh:property [ sh:path chorus:stale            ; sh:datatype xsd:boolean ] .
 
 

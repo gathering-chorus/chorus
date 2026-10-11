@@ -140,6 +140,10 @@ const KINDS: &[(&str, &str, bool)] = &[
     // code-kind-<name>, language-<name>); the crawler writes CodeFile through
     // /v1/code/files, the seed writes kinds and languages once.
     ("code-file", "CodeFile", false),
+    // #4499 — a unit of code (crate, package, model, include) and its dependsOn
+    // edges, written by the code crawl; Service builtFrom names it, so the DAL
+    // must mint it or that edge fails closed (4237)
+    ("code-unit", "CodeUnit", false),
     ("code-kind", "CodeKind", false),
     ("language", "Language", false),
     // #4214 — Page and Endpoint are subclasses of CodeFile and the generator
