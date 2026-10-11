@@ -101,9 +101,17 @@ pub fn intake(checks: &[Check]) -> Result<(), Vec<String>> {
     if errs.is_empty() { Ok(()) } else { Err(errs) }
 }
 
-/// The verdict over every AC: Proven only when every one is met.
+/// The verdict over every AC: Proven only when every one is met; Failed when
+/// any is not met; Unproven when none failed but some could not be measured
+/// (an unmeasured AC is never a pass, and never a regression either).
 pub fn verdict(results: &[(Check, Outcome)]) -> &'static str {
-    if !results.is_empty() && results.iter().all(|(_, o)| matches!(o, Outcome::Met(_))) { "Proven" } else { "Failed" }
+    if results.iter().any(|(_, o)| matches!(o, Outcome::NotMet(_))) {
+        "Failed"
+    } else if !results.is_empty() && results.iter().all(|(_, o)| matches!(o, Outcome::Met(_))) {
+        "Proven"
+    } else {
+        "Unproven"
+    }
 }
 
 /// `step=route,…` (what chorus-make writes) → pairs.

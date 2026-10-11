@@ -1,2 +1,3 @@
 ?ac	?statement	?kind	?target	?expect
-<https://jeffbridwell.com/chorus#ac-4444-1>	"Abby's pane has her gitconfig"	"none"	""	""
+<https://jeffbridwell.com/chorus#ac-4444-1>	"chorus-principal login abby-normal opens interactive gemini in her pane"	"test"	"platform/services/chorus-principal/tests/gemini_pane_4444.rs"	"pass"
+<https://jeffbridwell.com/chorus#ac-4444-3>	"a nudge appears in her Gemini screen and her reply reaches the sender"	"none"

@@ -1,2 +1,2 @@
 ?ac	?statement	?kind	?target	?expect
-<https://jeffbridwell.com/chorus#ac-4432-1>	"Abby joins on another LLM (3 AC superseded)"	"none"	""	""
+<https://jeffbridwell.com/chorus#ac-4432-1>	"Abby holds her role grant (PM, SA, EL, OL) and the API reply shows it"	"sparql"	"PREFIX chorus: <https://jeffbridwell.com/chorus#> ASK { GRAPH ?g { chorus:principal-abby-normal chorus:holdsRole chorus:role-abby-normal ; chorus:wearsHat chorus:hat-product-manager, chorus:hat-solutions-architect, chorus:hat-engineering-lead, chorus:hat-operations-lead } }"	"true"

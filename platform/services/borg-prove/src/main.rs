@@ -117,7 +117,7 @@ fn main() {
         }
         "prod" => {
             let r = run_checks(card, &env("BORG_PROD_BASE", "http://localhost:3340"));
-            let v = if verdict(&r) == "Proven" { "Proven" } else { "Regressed" };
+            let v = match verdict(&r) { "Failed" => "Regressed", v => v };
             println!("#{card} verify in prod: {v}");
             if v != "Proven" { exit(1) }
         }
