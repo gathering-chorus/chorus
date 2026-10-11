@@ -2694,15 +2694,16 @@ app.get('/api/athena/health', async (_req: Request, res: Response) => {
 // #4235 — the tree and ownership answer from the live graph (the proto-graph
 // file is gone). A store that does not answer is a 503, never a file.
 import { loadTreeFromGraph, lookupOwnership } from './handlers/athena-tree-graph';
+const STORE_UNREACHABLE = 'store-unreachable';
 const athenaTree = () => loadTreeFromGraph(fusekiCsv(nightlyFuseki()));
 app.get('/api/athena/tree', async (_req: Request, res: Response) => {
   const tree = await athenaTree();
-  if (!tree) { res.status(503).json({ ok: false, reason: 'store-unreachable' }); return; }
+  if (!tree) { res.status(503).json({ ok: false, reason: STORE_UNREACHABLE }); return; }
   res.status(200).json(tree);
 });
 app.get('/api/athena/ownership/:iri', async (req: Request, res: Response) => {
   const tree = await athenaTree();
-  if (!tree) { res.status(503).json({ ok: false, reason: 'store-unreachable' }); return; }
+  if (!tree) { res.status(503).json({ ok: false, reason: STORE_UNREACHABLE }); return; }
   const r = lookupOwnership(tree, req.params.iri);
   if (!r) { res.status(404).json({ ok: false, reason: 'not-found', iri: req.params.iri }); return; }
   res.status(200).json(r);
@@ -2720,12 +2721,12 @@ app.get('/api/athena/blast-radius/:iri', async (req: Request, res: Response) => 
   try {
     // #4235 — the edges and the crawl's file tags, both from the store
     const [r0, r1] = await Promise.all([blastRadiusRead(blastRadiusEdgesQuery()), blastRadiusRead(fileTagsQuery())]);
-    if (!r0.ok || !r1.ok) return res.status(503).json({ ok: false, reason: 'store-unreachable', status: r0.ok ? r1.status : r0.status });
+    if (!r0.ok || !r1.ok) return res.status(503).json({ ok: false, reason: STORE_UNREACHABLE, status: r0.ok ? r1.status : r0.status });
     const r = blastRadiusFromEdges(edgesFromCsv(await r0.text()), req.params.iri, fileTagsFromCsv(await r1.text()));
     if (!r) return res.status(404).json({ ok: false, reason: 'not-found', iri: req.params.iri });
     res.status(200).json({ ...r, source: 'graph' });
   } catch (err) {
-    res.status(503).json({ ok: false, reason: 'store-unreachable', error: (err as Error).message });
+    res.status(503).json({ ok: false, reason: STORE_UNREACHABLE, error: (err as Error).message });
   }
 });
 

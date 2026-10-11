@@ -32,32 +32,40 @@ export interface OwnershipResult {
 
 const short = (v: string): string => (v.startsWith(C) ? `chorus:${v.slice(C.length)}` : v);
 const LISTS = new Set(['hasDomain', 'hosts', 'consumes', 'gaps']);
-const FIELDS: Record<string, string> = {
-  [`${RDFS}label`]: 'label', [`${C}label`]: 'label', [`${RDFS}comment`]: 'comment', [`${C}comment`]: 'comment',
-  [`${C}ownedBy`]: 'ownedBy', [`${C}status`]: 'status', [`${C}atStep`]: 'atStep', [`${C}gaps`]: 'gaps',
-  [`${C}hasDomain`]: 'hasDomain', [`${C}hosts`]: 'hosts', [`${C}consumes`]: 'consumes', [`${C}partOf`]: 'partOf',
-};
+const FIELDS = new Map<string, string>([
+  [`${RDFS}label`, 'label'], [`${C}label`, 'label'], [`${RDFS}comment`, 'comment'], [`${C}comment`, 'comment'],
+  [`${C}ownedBy`, 'ownedBy'], [`${C}status`, 'status'], [`${C}atStep`, 'atStep'], [`${C}gaps`, 'gaps'],
+  [`${C}hasDomain`, 'hasDomain'], [`${C}hosts`, 'hosts'], [`${C}consumes`, 'consumes'], [`${C}partOf`, 'partOf'],
+]);
+type Building = TreeNode & { kind: string; partOf?: string[] };
+
+/** One field onto a node: list fields collect distinct values, the first label wins. */
+function addField(node: Building, f: string, v: string): void {
+  if (f === 'partOf' || LISTS.has(f)) {
+    const list = (Reflect.get(node, f) as string[] | undefined) ?? [];
+    if (!list.includes(v)) list.push(v);
+    Reflect.set(node, f, list);
+  } else if (!(f === 'label' && node.label)) {
+    Reflect.set(node, f, v);
+  }
+}
 
 /** Every Product, Domain and Service with the fields the tree carries. */
 export function structureQuery(): string {
-  const preds = Object.keys(FIELDS).map((p) => `<${p}>`).join(', ');
+  const preds = [...FIELDS.keys()].map((p) => `<${p}>`).join(', ');
   return `SELECT ?s ?k ?p ?o WHERE { GRAPH ?g { ?s a ?k . FILTER(?k IN (<${C}Product>, <${C}Domain>, <${C}Service>))`
     + ` OPTIONAL { ?s ?p ?o . FILTER(?p IN (${preds})) } } }`;
 }
 
 /** Rows → the tree. A product's children are the products partOf it. */
 export function treeFromCsv(csv: string): GraphTree {
-  const nodes = new Map<string, TreeNode & { kind: string; partOf?: string[] }>();
+  const nodes = new Map<string, Building>();
   for (const r of csvRecords(csv)) {
     const iri = short(r.s);
     const node = nodes.get(iri) ?? { iri, label: '', kind: r.k.slice(r.k.lastIndexOf('#') + 1) };
     nodes.set(iri, node);
-    const f = FIELDS[r.p];
-    if (!f || r.o === '') continue;
-    const v = short(r.o);
-    if (f === 'partOf') (node.partOf ??= []).push(v);
-    else if (LISTS.has(f)) { const a = ((node as unknown as Record<string, string[]>)[f] ??= []); if (!a.includes(v)) a.push(v); }
-    else if (!(f === 'label' && node.label)) (node as unknown as Record<string, string>)[f] = v; // the first label wins
+    const f = FIELDS.get(r.p);
+    if (f && r.o !== '') addField(node, f, short(r.o));
   }
   for (const n of nodes.values()) {
     if (!n.label) n.label = n.iri.replace(/^chorus:/, '');
