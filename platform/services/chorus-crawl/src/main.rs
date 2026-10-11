@@ -2116,6 +2116,13 @@ fn run_stores(args: &[String]) -> i32 {
             .collect(),
         Err(e) => { eprintln!("chorus-crawl stores: cannot read PersistenceStore rows — {e}"); return 2; }
     };
+    // a store can only link to a disk that is already a row (#4485's crawl writes them)
+    let disks: Vec<String> = match fetch_rows_with(&api, Some(&token), "Disk", "", chorus_crawl::services::door_page_rows) {
+        Ok(rows) => rows.iter().filter_map(|r| r.iter().find(|(k, _)| k == "name").map(|(_, v)| v.clone())).collect(),
+        Err(e) => { eprintln!("chorus-crawl stores: cannot read Disk rows — {e}"); return 2; }
+    };
+    let mut want = want;
+    hold_unwritten_disks(&mut want, &disks);
     let gone = absent(&current, &want);
     let mut p = plan(want.rows.clone(), &current, now, &chorus_crawl::services::secs_from_iso);
     p.update.extend(gone.iter().cloned());

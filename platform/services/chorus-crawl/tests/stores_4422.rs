@@ -265,3 +265,16 @@ fn every_row_says_how_its_role_is_known() {
     let lance = d.rows.iter().find(|r| r.name == "pods-jb").unwrap();
     assert_eq!(lance.get("roleBasis"), "inferred");
 }
+
+#[test]
+fn negative_proof_a_store_on_a_disk_with_no_row_is_held_and_named() {
+    let m = map();
+    let mut d = desired(&m, &today(&m), "t");
+    let before = d.rows.len();
+    // every disk written except Bedroom's photo volume
+    let mut disks: Vec<String> = d.rows.iter().map(|r| r.get("onDisk").to_string()).filter(|x| !x.is_empty()).collect();
+    disks.retain(|x| x != "bedroom-volumes-photosnew");
+    chorus_crawl::stores::hold_unwritten_disks(&mut d, &disks);
+    assert_eq!(d.rows.len(), before - 1);
+    assert!(d.findings.iter().any(|f| matches!(f, Finding::Unmeasured { store, reason } if store == "bedroom-photos" && reason.contains("chorus-crawl infra"))));
+}

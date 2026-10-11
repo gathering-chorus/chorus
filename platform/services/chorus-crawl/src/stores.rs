@@ -411,3 +411,21 @@ pub fn door_form(fields: Vec<(String, String)>) -> Vec<(String, String)> {
         })
         .collect()
 }
+
+/// A store's disk must be a row before the store can link to it (the writer
+/// refuses a link to a row that does not exist, and refuses the whole batch with
+/// it). A store on a disk the infra crawl has not written yet is held back and
+/// named, not sent: run `chorus-crawl infra` first. 2026-10-11: a Bedroom drive
+/// renamed since the last infra run took 38 stores down with it.
+pub fn hold_unwritten_disks(want: &mut Desired, disks: &[String]) {
+    let (keep, held): (Vec<Row>, Vec<Row>) = std::mem::take(&mut want.rows)
+        .into_iter()
+        .partition(|r| r.get("onDisk").is_empty() || disks.iter().any(|d| d == r.get("onDisk")));
+    for r in &held {
+        want.findings.push(Finding::Unmeasured {
+            store: r.name.clone(),
+            reason: format!("its disk {} has no row yet — run `chorus-crawl infra` first", r.get("onDisk")),
+        });
+    }
+    want.rows = keep;
+}
