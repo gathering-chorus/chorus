@@ -451,7 +451,9 @@ RUN="$TREE/platform/scripts/service-run"
   write_job "<string>$RUN</string><string>com.chorus.fixture-wrap</string><string>daemon</string><string>/bin/sleep</string><string>600</string>"
   first="$(wait_pid_change "")"
   restarted_with_start "$first"
-  kid="$(pgrep -P "$first" sleep)"
+  # the start event is written before the wrapper forks its child, so on a busy
+  # box the child can be a beat behind; wait up to 5s for it (#4412 run 6)
+  kid=""; for _ in $(seq 1 50); do kid="$(pgrep -P "$first" sleep)" && break; sleep 0.1; done
   [[ -n "$kid" ]] || return 1
   launchctl kickstart -k "gui/$UIDN/$LABEL"
   second="$(wait_pid_change "$first")"

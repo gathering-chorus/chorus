@@ -13,6 +13,7 @@
 # review point #1).
 
 chorus:service-clearing a chorus:Service ;
+    chorus:oidcClientId "https://clearing.lightlifeurbangardens.com/clientid.jsonld" ;   # #4412
     rdfs:label "The Clearing service" ; chorus:label "The Clearing service" ;
     chorus:overview "Browser-based multi-party chat where Jeff and the three agent roles align in real time. Serves the room at :3470 (com.chorus.clearing) and a public door at clearing.lightlifeurbangardens.com via Cloudflare tunnel. Messages persist to the messaging store, transcripts index into the Chorus memory, DECISION: lines are captured to the decision log, and outbound delivery to agent sessions rides pulse through the session registry (tty, vscode, and tmux pane-first transports)." ;
     chorus:ownedBy chorus:principal-wren ;
@@ -38,6 +39,7 @@ chorus:service-clearing a chorus:Service ;
 # token: outside. authorized-users.ts deciding access: outside (authZ).
 
 chorus:service-identity a chorus:Service ;
+    chorus:oidcClientId "https://chorus.lightlifeurbangardens.com/_auth/clientid.jsonld" ;   # #4412 — the shared sign-in page
     rdfs:label "Identity" ; chorus:label "Identity" ;
     chorus:overview "Who anyone is, human or agent — the one place identity is MINTED for the whole system. The CSS Solid pod on :3001 is the OIDC issuer (public door id.lightlifeurbangardens.com via the tunnel); the #3613 seam issues agents client-credential identities (ES256, JWKS published for consumers to verify with); the shared-session cookie key (~/.chorus/share-oidc.json) lets surfaces verify a browser session without re-asking. Everything downstream that decides permissions consumes this service's answers; nothing else may mint them." ;
     chorus:ownedBy chorus:principal-silas ;

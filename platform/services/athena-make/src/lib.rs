@@ -5963,7 +5963,9 @@ pub fn serve(port: u16, tables: &[RouteTable]) -> R<()> {
     // #4196 — WHO the caller is, as a Principal name, from the same graph on
     // the same cadence. The door stamps this on rows it creates and compares
     // it to a row's owner; the hat (agent_id) no longer gates a write.
-    .with_principal_names(|| oidc::resolve_principal_names(|q| sparql_json(q).ok()));
+    .with_principal_names(|| oidc::resolve_principal_names(|q| sparql_json(q).ok()))
+    // #4412 — the apps a person signs in through, named in the model.
+    .with_person_clients(|| oidc::resolve_person_clients(|q| sparql_json(q).ok()));
     let boot_now = std::time::SystemTime::now()
         .duration_since(std::time::UNIX_EPOCH)
         .map(|d| d.as_secs())

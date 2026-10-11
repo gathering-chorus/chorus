@@ -24,6 +24,7 @@ import { decideBind } from './room-bind';
 import { startRoom } from './buzz-room-wiring';
 import { ClearingChat } from './chat';
 import { lanAddress, bonjourHost, startupLanLines, detectIpDrift } from './lan-url';
+import { lanOrigins, callbackFor, lanAccess } from './lan-sign-in';
 import { isLocalConnection, isTunneled } from './connection-auth';
 import { isWebIdAllowed, principalForWebId, primeAllowSetGraph, personNames, normalizeSpeaker } from './solid-auth';
 
@@ -182,9 +183,10 @@ function readSessionCookie(req: Request): { webid: string; psk?: string } | null
 
 function oidcCfg(req: Request): OidcConfig {
   const onTunnel = isTunneled(req.headers);
-  const redirectUri = onTunnel
-    ? 'https://clearing.lightlifeurbangardens.com/auth/callback'
-    : `http://localhost:${PORT}/auth/callback`;
+  // #4412 — the callback follows the Host the browser used: on a phone over
+  // the LAN, localhost is the phone, so its sign-in could never come back.
+  const redirectUri = callbackFor(req.headers.host, onTunnel, LAN_ORIGINS, PORT,
+    'https://clearing.lightlifeurbangardens.com/auth/callback');
   return {
     issuer: CSS_PUBLIC_ISSUER,
     clientId: CLIENT_ID,
@@ -226,6 +228,13 @@ const LAN_IP_FILE = `${CHORUS_HOME}/clearing-lan-ip`;
     try { require('fs').writeFileSync(LAN_IP_FILE, currentLanIp); } catch { /* non-fatal */ }
   }
 }
+
+// #4412 — every LAN origin a browser may sign in from, derived at boot like
+// the URLs above; the client document lists each one's callback.
+const LAN_ORIGINS = lanOrigins(LOCAL_HOST_NAME, lanAddress(), PORT);
+// #4412 — a LAN browser signs in like anywhere else (Jeff, 2026-10-10). Ships
+// OFF; flipped on after one phone sign-in over the LAN is proven.
+const LAN_SIGN_IN = process.env.CHORUS_CLEARING_LAN_SIGNIN === '1';
 
 const app = express();
 const server = createServer(app);
@@ -389,10 +398,12 @@ const CLIENTID_DOC = JSON.stringify({
   redirect_uris: [
     'http://localhost:3470/auth/callback',
     'https://clearing.lightlifeurbangardens.com/auth/callback',
+    ...LAN_ORIGINS.map((o) => `${o}/auth/callback`),
   ],
   post_logout_redirect_uris: [
     'http://localhost:3470/',
     'https://clearing.lightlifeurbangardens.com/',
+    ...LAN_ORIGINS.map((o) => `${o}/`),
   ],
   grant_types: ['authorization_code', 'refresh_token'],
   response_types: ['code'],
@@ -509,11 +520,25 @@ async function isAuthed(req: Request): Promise<boolean> {
   return sessionAuthed || tokenAuthed;
 }
 
+/** #4412 — answers a LAN request that must sign in first; true when it did. */
+async function lanRefused(req: Request, res: Response, local: boolean): Promise<boolean> {
+  if (!local || !LAN_SIGN_IN) return false;
+  const lan = lanAccess({
+    flagOn: LAN_SIGN_IN, local, ip: req.ip || req.socket.remoteAddress || '',
+    method: req.method, accept: req.headers.accept, authed: await isAuthed(req),
+  });
+  if (lan === 'sign-in') res.status(401).send(interstitialPage(safeReturnPath(req.originalUrl)));
+  else if (lan === 'refuse') res.status(401).json({ error: 'sign-in required', signIn: '/auth/login' });
+  return lan !== 'pass';
+}
+
 async function gate(req: Request, res: Response, next: NextFunction): Promise<unknown> {
   const preAuth = preAuthRoute(req, res, next);
   if (preAuth) return preAuth();
 
   const local = isLocal(req);
+  // #4412 — on the LAN a person's page load signs in first (flagged, see LAN_SIGN_IN).
+  if (await lanRefused(req, res, local)) return;
   // Both auth paths feed the #3667 gateDecision policy, which owns the
   // admin-forbid + read-pair GET-only rules — so those survive the human-login
   // path unchanged.
