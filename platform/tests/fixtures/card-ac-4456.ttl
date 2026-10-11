@@ -1,0 +1,20 @@
+@prefix chorus: <https://jeffbridwell.com/chorus#> .
+@prefix rdfs:   <http://www.w3.org/2000/01/rdf-schema#> .
+@prefix xsd:    <http://www.w3.org/2001/XMLSchema#> .
+# #4456 fixtures: the card and owner these rows point at, then one row per case.
+chorus:card-4456 a chorus:Card ; rdfs:label "borg-prove" ; chorus:ownedBy chorus:principal-wren .
+chorus:principal-wren a chorus:Principal .
+
+# good: an http check, a sparql check, a test check, and an AC no machine can check
+chorus:ac-4456-1 a chorus:CardAC ; rdfs:label "ac-4456-1" ; chorus:ownedBy chorus:principal-wren ;
+  chorus:acFor chorus:card-4456 ; chorus:acIndex 1 ; chorus:acStatement "borg-prove reports each AC as met, not met or unmeasured" ;
+  chorus:checkKind "http" ; chorus:checkTarget "/health" ; chorus:checkExpect "200" .
+chorus:ac-4456-2 a chorus:CardAC ; rdfs:label "ac-4456-2" ; chorus:ownedBy chorus:principal-wren ;
+  chorus:acFor chorus:card-4456 ; chorus:acIndex 2 ; chorus:acStatement "an AC with no runnable check reports unmeasured" ;
+  chorus:checkKind "sparql" ; chorus:checkTarget "ASK { ?a a <https://jeffbridwell.com/chorus#CardAC> }" ; chorus:checkExpect "true" .
+chorus:ac-4456-3 a chorus:CardAC ; rdfs:label "ac-4456-3" ; chorus:ownedBy chorus:principal-wren ;
+  chorus:acFor chorus:card-4456 ; chorus:acIndex 3 ; chorus:acStatement "negative proof" ;
+  chorus:checkKind "test" ; chorus:checkTarget "platform/tests/4456-card-ac-model.test.sh" ; chorus:checkExpect "pass" .
+chorus:ac-4456-4 a chorus:CardAC ; rdfs:label "ac-4456-4" ; chorus:ownedBy chorus:principal-wren ;
+  chorus:acFor chorus:card-4456 ; chorus:acIndex 4 ; chorus:acStatement "the result matches what the roles found by hand" ;
+  chorus:checkKind "none" .

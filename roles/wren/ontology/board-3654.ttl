@@ -174,3 +174,56 @@ chorus:cardType a owl:DatatypeProperty ;
     rdfs:comment "A card's type label on the board: new, enhance, fix, chore, swat or issue." ;
     rdfs:domain chorus:Card ;
     rdfs:range xsd:string .
+
+# ── #4456 CardAC — one check row per acceptance criterion ─────────────────────
+# Jeff 2026-10-08: "we need a borg-prove". On 10-07 the roles checked their
+# last day's cards against prod by hand and 1 of 11 met its AC. A CardAC row is
+# that check, written once and run by borg-prove in the demo copy before go and
+# in prod after the land. Card text is never executed: the check is the row's
+# checkKind + checkTarget + checkExpect, nothing else. A kind of "none" is an AC
+# no machine can check; borg-prove reports it unmeasured, never met (AC2).
+# Name: ac-<card>-<n>, n the AC's 1-based position on the card.
+chorus:CardAC a owl:Class ;
+  rdfs:label "Card AC" ;
+  rdfs:comment "One acceptance criterion of a card, with the check borg-prove runs against the running system: met, not met, or unmeasured." .
+
+chorus:acFor a owl:ObjectProperty ;
+  rdfs:label "AC for" ; rdfs:domain chorus:CardAC ; rdfs:range chorus:Card .
+chorus:acIndex a owl:DatatypeProperty ;
+  rdfs:label "AC index" ; rdfs:domain chorus:CardAC ; rdfs:range xsd:integer ;
+  rdfs:comment "The AC's 1-based position on its card." .
+chorus:acStatement a owl:DatatypeProperty ;
+  rdfs:label "AC statement" ; rdfs:domain chorus:CardAC ; rdfs:range xsd:string ;
+  rdfs:comment "The AC as written on the card, for the report. Never executed." .
+chorus:checkKind a owl:DatatypeProperty ;
+  rdfs:label "check kind" ; rdfs:domain chorus:CardAC ; rdfs:range xsd:string ;
+  rdfs:comment "How the AC is checked: http (a GET whose answer is compared), sparql (an ASK or count), test (a registered test file), or none (no machine check: unmeasured)." .
+chorus:checkTarget a owl:DatatypeProperty ;
+  rdfs:label "check target" ; rdfs:domain chorus:CardAC ; rdfs:range xsd:string ;
+  rdfs:comment "What the check runs: a URL path for http, a query for sparql, a repo-relative test path for test." .
+chorus:checkExpect a owl:DatatypeProperty ;
+  rdfs:label "check expect" ; rdfs:domain chorus:CardAC ; rdfs:range xsd:string ;
+  rdfs:comment "What a met AC returns: a status and body match for http, true or a count for sparql, pass for test." .
+
+chorus:CardACShape a sh:NodeShape ;
+  sh:targetClass chorus:CardAC ;
+  sh:property [ sh:path rdfs:label ; sh:minCount 1 ; sh:datatype xsd:string ] ;
+  sh:property [ sh:path chorus:ownedBy ; sh:minCount 1 ; sh:class chorus:Principal ] ;
+  sh:property [ sh:path chorus:acFor ; sh:minCount 1 ; sh:maxCount 1 ; sh:class chorus:Card ] ;
+  sh:property [ sh:path chorus:acIndex ; sh:minCount 1 ; sh:maxCount 1 ; sh:datatype xsd:integer ; sh:minInclusive 1 ] ;
+  sh:property [ sh:path chorus:acStatement ; sh:minCount 1 ; sh:maxCount 1 ; sh:datatype xsd:string ] ;
+  sh:property [ sh:path chorus:checkKind ; sh:minCount 1 ; sh:maxCount 1 ; sh:datatype xsd:string ;
+                sh:in ( "http" "sparql" "test" "none" ) ] ;
+  sh:property [ sh:path chorus:checkTarget ; sh:maxCount 1 ; sh:datatype xsd:string ] ;
+  sh:property [ sh:path chorus:checkExpect ; sh:maxCount 1 ; sh:datatype xsd:string ] ;
+  # a runnable kind names what it runs and what met looks like; "none" names neither
+  sh:sparql [
+    sh:message "a CardAC with a runnable check kind needs checkTarget and checkExpect; kind none carries neither" ;
+    sh:select """
+      PREFIX chorus: <https://jeffbridwell.com/chorus#>
+      SELECT $this WHERE {
+        $this chorus:checkKind ?k .
+        OPTIONAL { $this chorus:checkTarget ?t }
+        OPTIONAL { $this chorus:checkExpect ?e }
+        FILTER ( (?k != "none" && (!BOUND(?t) || !BOUND(?e))) || (?k = "none" && (BOUND(?t) || BOUND(?e))) )
+      }""" ] .

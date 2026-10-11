@@ -1,0 +1,18 @@
+@prefix chorus: <https://jeffbridwell.com/chorus#> .
+@prefix rdfs:   <http://www.w3.org/2000/01/rdf-schema#> .
+# each row breaks exactly one rule
+chorus:bad-no-card a chorus:CardAC ; rdfs:label "bad-no-card" ; chorus:ownedBy chorus:principal-wren ;
+  chorus:acIndex 1 ; chorus:acStatement "x" ; chorus:checkKind "none" .
+chorus:bad-shell a chorus:CardAC ; rdfs:label "bad-shell" ; chorus:ownedBy chorus:principal-wren ;
+  chorus:acFor chorus:card-4456 ; chorus:acIndex 1 ; chorus:acStatement "x" ;
+  chorus:checkKind "shell" ; chorus:checkTarget "rm -rf /" ; chorus:checkExpect "0" .
+chorus:bad-http-no-expect a chorus:CardAC ; rdfs:label "bad-http-no-expect" ; chorus:ownedBy chorus:principal-wren ;
+  chorus:acFor chorus:card-4456 ; chorus:acIndex 1 ; chorus:acStatement "x" ;
+  chorus:checkKind "http" ; chorus:checkTarget "/health" .
+chorus:bad-none-with-target a chorus:CardAC ; rdfs:label "bad-none-with-target" ; chorus:ownedBy chorus:principal-wren ;
+  chorus:acFor chorus:card-4456 ; chorus:acIndex 1 ; chorus:acStatement "x" ;
+  chorus:checkKind "none" ; chorus:checkTarget "/health" .
+chorus:bad-index-zero a chorus:CardAC ; rdfs:label "bad-index-zero" ; chorus:ownedBy chorus:principal-wren ;
+  chorus:acFor chorus:card-4456 ; chorus:acIndex 0 ; chorus:acStatement "x" ; chorus:checkKind "none" .
+chorus:bad-no-owner a chorus:CardAC ; rdfs:label "bad-no-owner" ;
+  chorus:acFor chorus:card-4456 ; chorus:acIndex 1 ; chorus:acStatement "x" ; chorus:checkKind "none" .
