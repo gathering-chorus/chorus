@@ -28,7 +28,7 @@ function jwt(payload: Record<string, unknown>): string {
   return `h.${Buffer.from(JSON.stringify(payload)).toString('base64url')}.s`;
 }
 
-function world(opts: { postStatus?: number; putStatus?: number; listDown?: boolean; refreshed?: SignInClaims | null } = {}) {
+function world(opts: { postStatus?: number; putStatus?: number; listDown?: boolean; refreshed?: SignInClaims | null; hostAccount?: string | null } = {}) {
   const calls: Call[] = [];
   let t = Date.parse('2026-09-30T18:00:00Z');
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'ps-4412-'));
@@ -36,6 +36,12 @@ function world(opts: { postStatus?: number; putStatus?: number; listDown?: boole
     const method = init?.method ?? 'GET';
     const headers = (init?.headers ?? {}) as Record<string, string>;
     calls.push({ method, url, auth: headers.Authorization, body: init?.body ? JSON.parse(String(init.body)) : undefined });
+    if (method === 'GET' && url.includes('/v1/identity/principals/')) {
+      const host = opts.hostAccount === undefined ? 'jeffbridwell' : opts.hostAccount;
+      const data: Record<string, unknown> = { iri: 'https://jeffbridwell.com/chorus#principal-jeff' };
+      if (host) data.hostAccount = host;
+      return { ok: true, status: 200, json: async () => ({ data }) } as Response;
+    }
     if (method === 'GET') {
       if (opts.listDown) throw new Error('connect ECONNREFUSED');
       return { ok: true, status: 200, json: async () => LIST } as Response;
@@ -71,6 +77,9 @@ describe('#4412 — his Clearing sign-in writes his browser Session', () => {
     expect(post[0].url).toBe('http://api/v1/identity/sessions');
     expect(post[0].auth).toBe(`Bearer ${w.claims.idToken}`);
     expect(post[0].body).toMatchObject({ ownedBy: 'jeff', actsAs: 'jeff', channel: 'browser', sessionState: 'open', tokenId: 'tok-1' });
+    // SessionShape requires hostAccount (2026-10-11: every Clearing sign-in was refused 422 without it)
+    expect(w.calls.some((c) => c.url === 'http://api/v1/identity/principals/jeff')).toBe(true);
+    expect(post[0].body?.hostAccount).toBe('jeffbridwell');
     // NEGATIVE PROOF: a closed role session and another person's row are not bound
     expect(post[0].body?.binds).toEqual(['kade-a-1', 'silas-b-2']);
     // role rows are never written by the person
@@ -90,6 +99,12 @@ describe('#4412 — his Clearing sign-in writes his browser Session', () => {
     const w = world({ postStatus: 403 });
     expect(await openPersonSession(w.deps, 'jeff', w.claims)).toBeNull();
     expect(fs.existsSync(w.deps.storePath)).toBe(false);
+  });
+
+  it('NEGATIVE PROOF — a principal with no hostAccount writes no row and returns no key', async () => {
+    const w = world({ hostAccount: null });
+    expect(await openPersonSession(w.deps, 'jeff', w.claims)).toBeNull();
+    expect(w.calls.filter((c) => c.method === 'POST')).toHaveLength(0);
   });
 
   it('with the list unreadable the row still goes out, binding nothing', async () => {
