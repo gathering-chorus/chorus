@@ -254,11 +254,17 @@ def card_detail(card, pin_status):
     end = runs[-1]["finish"] if runs and runs[-1]["result"] == "landed" else time.time()
     # the pin says where the pipeline is now (with its trust rules); the logs
     # say what every run did
-    if pin_status:
+    v2 = dagu_runs(card)
+    if v2 and not runs:
+        # #4494 — a v2-only card opens with the same line the board view shows
+        head = card_line(card, (re.search(r"ROLE=(\S+)", v2[0].get("params") or "") or [None, "?"])[1],
+                         v2, dagu_runs(card, f"{DAGU_DAG}-land"), queue_positions())
+    elif pin_status:
         head = render(pin_status, pid_start_times(), time.time() * 1000)
     else:
         head = f"#{card} [?] " + (runs[-1]["result"].split()[0] if runs else "no runs")
-    head += f" · {len(runs)} run{'s' if len(runs) != 1 else ''}"
+    if runs or not v2:
+        head += f" · {len(runs)} run{'s' if len(runs) != 1 else ''}"
     print(head)
     lc = []
     lc.append(f"lead {fmt_dur(end - filed)} (filed {hm(filed)})" if filed else "lead unknown (card not read)")
@@ -270,7 +276,7 @@ def card_detail(card, pin_status):
     for i, r in enumerate(runs, 1):
         fin = datetime.fromtimestamp(r["finish"]).strftime("%H:%M") if r["finish"] else "  -  "
         print(f"  {i:>3}  {hm(r['start'])}  {fin}   {r['result']:<22}  {r['why']}")
-    dagu_detail(card, dagu_runs(card))
+    dagu_detail(card, v2)
 
 
 def classify(pin, pid_starts, now_ms):
@@ -378,25 +384,46 @@ def fixture_mode():
         return 1
 
 
+def dagu_get(path, query=""):
+    import urllib.request
+    # a file:// fixture is one file per path: the query only goes to a live dagu
+    url = f"{DAGU}{path}" + (f"?{query}" if query and DAGU.startswith("http") else "")
+    with urllib.request.urlopen(url, timeout=10) as r:
+        return json.load(r)
+
+
 def dagu_runs(card, dag=None):
     """This card's v2 runs, newest first, as dagu reports them; None when dagu cannot be read.
-    #4494 — `dag` names the land half (`cicd-land`), which runs on its own queue."""
+    #4494 — `dag` names the land half (`cicd-land`), which runs on its own queue.
+    #4494 — read from dagu's run list with a 30-day window: the per-workflow list
+    stops at its 30 newest runs across every card, so a card's count came out short."""
+    name = dag or DAGU_DAG
     try:
-        import urllib.request
-        with urllib.request.urlopen(f"{DAGU}/api/v1/dags/{dag or DAGU_DAG}/dag-runs", timeout=10) as r:
-            runs = json.load(r)["dagRuns"]
+        runs = dagu_get("/api/v1/dag-runs", f"name={name}&fromDate={int(time.time()) - 30 * 86400}")["dagRuns"]
     except Exception:
         return None
-    # CARD=4474 must not match CARD=44740
+    # CARD=4474 must not match CARD=44740; name=cicd also matches cicd-land
     want = re.compile(r"(?:^|\s)CARD=\"?%s\"?(?:\s|$)" % re.escape(str(card)))
-    return [r for r in runs if want.search(r.get("params") or "")]
+    mine = [r for r in runs if r.get("name", name) == name and want.search(r.get("params") or "")]
+    return sorted(mine, key=lambda r: parse_ts(r.get("startedAt") or r.get("queuedAt")) or 0, reverse=True)
+
+
+def nodes_of(run):
+    """The run's steps; the run list leaves them out, so read the one run."""
+    if "nodes" not in run:
+        try:
+            d = dagu_get(f"/api/v1/dag-runs/{run.get('name', DAGU_DAG)}/{run.get('dagRunId')}")
+            run["nodes"] = (d.get("dagRunDetails") or {}).get("nodes") or []
+        except Exception:
+            run["nodes"] = []
+    return run["nodes"]
 
 
 def dagu_summary(run):
     """(result, step) in dagu's own words: the step that failed, waits or runs."""
     status = run.get("statusLabel", "?")
     for want in ("failed", "waiting", "running"):
-        step = next((n["step"]["name"] for n in run.get("nodes", []) if n.get("statusLabel") == want), None)
+        step = next((n["step"]["name"] for n in nodes_of(run) if n.get("statusLabel") == want), None)
         if step:
             return status, step
     return status, ""
@@ -413,7 +440,7 @@ def dagu_state(runs, i):
 
 def dagu_go(card, run):
     """The go for a v2 run waiting at its human step, in dagu's own words."""
-    node = next((n for n in run.get("nodes", []) if n.get("statusLabel") == "waiting"), None)
+    node = next((n for n in nodes_of(run) if n.get("statusLabel") == "waiting"), None)
     if not node:
         return ""
     step_id = node["step"].get("id") or node["step"]["name"].replace("-", "_")
@@ -441,6 +468,63 @@ def dagu_land_line(card, role):
     status, step = dagu_summary(lands[0])
     return (f"#{card} [{role}] v2 land {status}" + (f" at {step}" if step else "")
             + f" · {len(lands)} land{'s' if len(lands) != 1 else ''} · dagu {lands[0].get('dagRunId', '?')}")
+
+
+def queue_positions():
+    """{run id: place in line} for every queued run, from dagu's queues."""
+    pos = {}
+    for q in ("werk", "werk-land"):
+        try:
+            items = [i for i in dagu_get(f"/api/v1/queues/{q}/items")["items"] if i.get("statusLabel") == "queued"]
+        except Exception:
+            continue
+        for n, i in enumerate(items, 1):
+            pos[i.get("dagRunId")] = n
+    return pos
+
+
+def ordinal(n):
+    return f"{n}{'th' if 10 <= n % 100 <= 20 else {1: 'st', 2: 'nd', 3: 'rd'}.get(n % 10, 'th')}"
+
+
+def card_line(card, role, runs, lands, places, now=None):
+    """#4494 — one line per card: where it is now, for how long, which run.
+    Jeff, 2026-10-10: "the cws output is confusing" — a dead v1 line, the build
+    and its land on separate lines, and two different run counts for one card."""
+    now = now or time.time()
+    newest = runs[0]
+    started = parse_ts(newest.get("startedAt") or newest.get("queuedAt")) or 0
+    # a land belongs to the newest run only if it was queued after that run began
+    land = next((l for l in lands or [] if (parse_ts(l.get("queuedAt") or l.get("startedAt")) or 0) >= started), None)
+    run = land or newest
+    status, step = dagu_summary(run)
+    if land is None and status == "waiting" and len(runs) > 0:
+        status, step = dagu_state(runs, 0)
+    word = step.replace("skill-werk-", "")
+    node = next((n for n in nodes_of(run) if n["step"]["name"] == step), {})
+    since = parse_ts(node.get("startedAt") or run.get("queuedAt") or run.get("startedAt"))
+    ended = parse_ts(run.get("finishedAt") or node.get("finishedAt"))
+    pre = "land: " if land else ""
+    go = ""
+    if status == "queued":
+        place = places.get(run.get("dagRunId"))
+        where = f"{pre}waiting in line" + (f" ({ordinal(place)})" if place else "")
+    elif status == "running":
+        where = f"{pre}{word}"
+    elif status == "waiting":
+        where, go = "waiting for your go", dagu_go(card, run)
+    elif status == "succeeded":
+        where = "landed" if land else "go given, land not queued"
+    else:
+        where = f"{pre}{status} at {word}" if word else f"{pre}{status}"
+    live = status in ("queued", "running", "waiting")
+    if live and since:
+        when = fmt_dur(now - since / 1000)
+    elif ended:
+        when = "(" + datetime.fromtimestamp(ended / 1000).strftime("%H:%M") + ")"
+    else:
+        when = ""
+    return f"#{card} {role:<6} {where:<34} {when:>7} · run {len(runs)}{go}"
 
 
 def dagu_detail(card, runs):
@@ -497,27 +581,26 @@ def main():
         print("board unreadable — showing live runs only")
         wip = []
     pins = {str(p.get("card")): p for p in load_pins(role=role)}
+    places = queue_positions()
     shown = 0
     for cid, owner in wip:
         if role and owner.lower() != role:
             continue
+        who = owner.lower()
+        v2 = dagu_runs(cid)
         pin = pins.get(str(cid))
         logs = run_logs(cid)
-        if pin:
-            state = render(pin, pid_starts, now_ms)
-        else:
-            state = f"#{cid} [{owner.lower()}] no pipeline run yet"
-        last = run_summary(logs[-1]) if logs else None
-        tail = f" · {len(logs)} run{'s' if len(logs) != 1 else ''}"
-        if last and last["result"].startswith("failed"):
-            tail += f" · last: {last['result']}" + (f" — {last['why']}" if last["why"] else "")
-        print(state + tail)
-        v2 = dagu_line(cid, owner.lower(), dagu_runs(cid))
         if v2:
-            print(v2)
-            land = dagu_land_line(cid, owner.lower())
-            if land:
-                print(land)
+            # #4494 — one line per card, from dagu, the one source of a v2 run
+            print(card_line(cid, who, v2, dagu_runs(cid, f"{DAGU_DAG}-land"), places))
+        elif pin:
+            last = run_summary(logs[-1]) if logs else None
+            tail = f" · {len(logs)} run{'s' if len(logs) != 1 else ''}"
+            if last and last["result"].startswith("failed"):
+                tail += f" · last: {last['result']}" + (f" — {last['why']}" if last["why"] else "")
+            print(render(pin, pid_starts, now_ms) + tail)
+        else:
+            print(f"#{cid} {who:<6} no run yet" + (" (dagu unreadable)" if v2 is None else ""))
         shown += 1
     if shown == 0:
         print("no WIP cards" + (f" for {role}" if role else ""))
