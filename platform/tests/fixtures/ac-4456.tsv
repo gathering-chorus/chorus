@@ -1,0 +1,5 @@
+?ac	?statement	?kind	?target	?expect
+<https://jeffbridwell.com/chorus#ac-4456-1>	"borg-prove reports each AC as met, not met or unmeasured"	"http"	"/health"	"200"
+<https://jeffbridwell.com/chorus#ac-4456-2>	"an AC with no runnable check reports unmeasured"	"sparql"	"ASK { ?a a <https://jeffbridwell.com/chorus#CardAC> }"	"true"
+<https://jeffbridwell.com/chorus#ac-4456-3>	"negative proof"	"test"	"platform/tests/4456-card-ac-model.test.sh"	"pass"
+<https://jeffbridwell.com/chorus#ac-4456-4>	"the result matches what the roles found by hand"	"none"
