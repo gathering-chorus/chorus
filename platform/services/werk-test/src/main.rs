@@ -3536,17 +3536,15 @@ fn domain_select(werk: &str, changed: &[String], rows: &[TestRow]) -> Option<wer
 
 /// The crates whose source include!()s or #[path]s a shared Rust file.
 fn including_crates(werk: &str, f: &str) -> Vec<String> {
-    let name = f.rsplit('/').nth(1).zip(f.rsplit('/').next()).map(|(d, n)| format!("{d}/{n}")).unwrap_or_default();
-    let out = Command::new("git").args(["-C", werk, "grep", "-l", "-E", &format!(r#"(include!|#\[path).*{}"#, regex_escape(&name)), "--", "platform/services/*/src/*.rs"]).output();
-    let mut crates: Vec<String> = out.ok().map(|o| String::from_utf8_lossy(&o.stdout).lines().filter_map(crate_of).collect()).unwrap_or_default();
+    // #4499 — from the one code-unit generator (the edges the crawler writes),
+    // not a grep of crate sources here
+    let mut crates: Vec<String> = werk_test::code_units::units_in(Path::new(werk)).unwrap_or_default().into_iter()
+        .filter(|u| u.includes.iter().any(|i| i == f)).map(|u| u.path).collect();
     crates.sort();
     crates.dedup();
     crates
 }
 
-fn regex_escape(s: &str) -> String {
-    s.chars().flat_map(|c| if ".+*?()[]{}|^$\\".contains(c) { vec!['\\', c] } else { vec![c] }).collect()
-}
 
 /// A TS package's tracked source files (tests excluded).
 fn package_sources(werk: &str, pkg: &str) -> Vec<String> {

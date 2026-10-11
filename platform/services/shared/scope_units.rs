@@ -194,124 +194,47 @@ pub fn scope_unit_names(
 }
 
 /// DECLARED dependency edges from the tree, provider→dependent: every TS
-/// `file:` dep and every cargo path dep between platform/services crates.
-/// fs-reading but crate-agnostic; both verbs call it against their root.
+/// `file:` dep, every cargo path dep, and every shared file a crate compiles in.
+/// #4499 — read from the one code-unit generator the crawler writes to the
+/// graph (code_units.rs), from the build files git tracks: no folder walk, and
+/// crates in every home (#4491), not only platform/services. Names: a crate or
+/// package by its stated name (dir name when it states none), a shared file
+/// by its repo path.
 pub fn scope_declared_edges(root: &std::path::Path) -> Vec<(String, String)> {
-    use std::fs;
-    let mut edges: Vec<(String, String)> = Vec::new();
-    // TS file: deps — walk package.json files (skip node_modules/.git/target).
-    let mut stack = vec![root.to_path_buf()];
-    let mut pkg_files: Vec<std::path::PathBuf> = Vec::new();
-    while let Some(dir) = stack.pop() {
-        let Ok(entries) = fs::read_dir(&dir) else { continue };
-        for e in entries.flatten() {
-            let p = e.path();
-            let name = e.file_name();
-            let name = name.to_string_lossy().to_string();
-            if p.is_dir() {
-                if name == "node_modules" || name == ".git" || name == "target" {
-                    continue;
-                }
-                stack.push(p);
-            } else if name == "package.json" {
-                pkg_files.push(p);
-            }
-        }
-    }
-    let pkg_name_of = |content: &str| -> Option<String> {
-        let i = content.find("\"name\"")?;
-        let rest = &content[i + 6..];
-        let c = rest.find(':')?;
-        let rest = rest[c + 1..].trim_start();
-        let rest = rest.strip_prefix('"')?;
-        let e = rest.find('"')?;
-        Some(rest[..e].to_string())
+    let Some(units) = code_units::units_in(root) else {
+        eprintln!("scope: UNMEASURED — git cannot list the build files under {}; no declared edges read", root.display());
+        return Vec::new();
     };
-    for pj in &pkg_files {
-        let Ok(content) = fs::read_to_string(pj) else { continue };
-        let Some(dep_name) = pkg_name_of(&content) else { continue };
-        let pkg_dir = pj.parent().unwrap_or(root);
-        let mut rest = content.as_str();
-        while let Some(i) = rest.find("\"file:") {
-            let tail = &rest[i + 6..];
-            if let Some(e) = tail.find('"') {
-                let target = &tail[..e];
-                if let Ok(canon) = fs::canonicalize(pkg_dir.join(target)) {
-                    if let Ok(lib_pj) = fs::read_to_string(canon.join("package.json")) {
-                        if let Some(lib_name) = pkg_name_of(&lib_pj) {
-                            edges.push((lib_name, dep_name.clone()));
-                        }
-                    }
-                }
-                rest = &tail[e..];
-            } else {
-                break;
+    let name_of = |path: &str| -> String {
+        units.iter().find(|u| u.path == path)
+            .map(|u| if u.name.is_empty() { path.rsplit('/').next().unwrap_or(path).to_string() } else { u.name.clone() })
+            .unwrap_or_else(|| path.rsplit('/').next().unwrap_or(path).to_string())
+    };
+    let mut edges: Vec<(String, String)> = Vec::new();
+    for u in &units {
+        if u.kind != "crate" && u.kind != "package" {
+            continue;
+        }
+        let dependent = name_of(&u.path);
+        for d in &u.deps {
+            let kind = units.iter().find(|x| &x.path == d).map(|x| x.kind).unwrap_or("");
+            // the shared dir is one unit in the graph; here each file it holds
+            // is its own provider, so only the includers of a changed file rebuild
+            if kind == "crate" || kind == "package" {
+                edges.push((name_of(d), dependent.clone()));
             }
         }
-    }
-    // #4173 — `include!("../../shared/x.rs")` edges: a source-included file is a
-    // real build input with no manifest entry anywhere, so it is invisible to
-    // both scanners above. Provider is the shared file's werk-relative path.
-    let services = root.join("platform/services");
-    if let Ok(entries) = fs::read_dir(&services) {
-        for e in entries.flatten() {
-            let Some(dep_crate) = e.file_name().to_str().map(|s| s.to_string()) else { continue };
-            let src = e.path().join("src");
-            let Ok(files) = fs::read_dir(&src) else { continue };
-            for f in files.flatten() {
-                let Ok(text) = fs::read_to_string(f.path()) else { continue };
-                for line in text.lines() {
-                    // #4186 — `#[path = "../../shared/x.rs"] mod x;` is the same build
-                    // input as `include!` and was invisible here: a card that used it
-                    // failed its own test leg "unmapped:platform/services/shared/…".
-                    let target = if let Some(i) = line.find("include!(\"") {
-                        let rest = &line[i + "include!(\"".len()..];
-                        let Some(q) = rest.find('"') else { continue };
-                        &rest[..q]
-                    } else if let Some(i) = line.find("#[path = \"") {
-                        let rest = &line[i + "#[path = \"".len()..];
-                        let Some(q) = rest.find('"') else { continue };
-                        &rest[..q]
-                    } else { continue };
-                    let Some(name) = std::path::Path::new(target).file_name().and_then(|n| n.to_str())
-                    else { continue };
-                    if services.join("shared").join(name).is_file() {
-                        edges.push((format!("platform/services/shared/{name}"), dep_crate.clone()));
-                    }
-                }
-            }
-        }
-    }
-
-    // Cargo path deps among platform/services.
-    if let Ok(entries) = fs::read_dir(&services) {
-        for e in entries.flatten() {
-            let dir = e.path();
-            let Ok(toml) = fs::read_to_string(dir.join("Cargo.toml")) else { continue };
-            let Some(dep_crate) = e.file_name().to_str().map(|s| s.to_string()) else { continue };
-            for line in toml.lines() {
-                if let Some(i) = line.find("path") {
-                    let rest = &line[i..];
-                    if let Some(q1) = rest.find('"') {
-                        if let Some(q2) = rest[q1 + 1..].find('"') {
-                            let target = &rest[q1 + 1..q1 + 1 + q2];
-                            if let Some(provider) =
-                                std::path::Path::new(target).file_name().and_then(|n| n.to_str())
-                            {
-                                if services.join(provider).join("Cargo.toml").is_file() {
-                                    edges.push((provider.to_string(), dep_crate.clone()));
-                                }
-                            }
-                        }
-                    }
-                }
-            }
+        for inc in &u.includes {
+            edges.push((inc.clone(), dependent.clone()));
         }
     }
     edges.sort();
     edges.dedup();
     edges
 }
+
+#[allow(dead_code)] // each includer uses the part it needs
+pub mod code_units { include!("code_units.rs"); }
 
 /// #4169 — Jeff, 2026-09-13: "we must never fall back to the whole tree that is
 /// always wrong for a card we fail immediately and fix the data".
@@ -437,6 +360,13 @@ mod scope_refusal_4169 {
         std::fs::write(services.join("crate-b/src/lib.rs"), "mod t { include!(\"../../shared/thing.rs\"); }\n").unwrap();
         // NEGATIVE: a #[path] to a file that is NOT under shared/ must add no edge
         std::fs::write(services.join("crate-a/src/other.rs"), "#[path = \"local/helper.rs\"]\nmod h;\n").unwrap();
+        // #4499 — edges come from the build files git tracks: a crate states
+        // itself with a Cargo.toml, and the tree is a repo
+        std::fs::write(services.join("crate-a/Cargo.toml"), "[package]\nname = \"crate-a\"\n").unwrap();
+        std::fs::write(services.join("crate-b/Cargo.toml"), "[package]\nname = \"crate-b\"\n").unwrap();
+        let git = |a: &[&str]| std::process::Command::new("git").arg("-C").arg(&tmp).args(a).output().unwrap();
+        git(&["init", "-q"]);
+        git(&["add", "."]);
         let edges = scope_declared_edges(&tmp);
         let shared: Vec<_> = edges.iter().filter(|(p, _)| p == "platform/services/shared/thing.rs").map(|(_, c)| c.clone()).collect();
         assert!(shared.contains(&"crate-a".to_string()), "#[path] include maps: {:?}", edges);

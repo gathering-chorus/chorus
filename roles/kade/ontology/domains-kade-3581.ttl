@@ -170,3 +170,43 @@ chorus:EndpointShape a sh:NodeShape ;
     sh:property [ sh:path chorus:routePath ; sh:minCount 1 ; sh:datatype xsd:string ] ;
     sh:property [ sh:path chorus:httpMethod ; sh:minCount 1 ; sh:datatype xsd:string ] ;
     chorus:generatedBy "athena-model" .
+
+# #4499 — a unit of code that builds or is built as one: a Rust crate, a TS
+# package, the model a generated API comes from, a shared include. Jeff,
+# 2026-10-11 10:00: the blast radius is "a volatile data set" — so these rows
+# and their edges are written by the crawler from the build files on every
+# land, never by hand. One class with a kind (Silas, 16:40), and the existing
+# chorus:dependsOn for its edges (Wren, 16:41) — no second "depends" word.
+chorus:CodeUnit a owl:Class ;
+    rdfs:label "CodeUnit" ;
+    rdfs:comment "A unit of code that builds or is built as one: a Rust crate, a TS package, a model a generated API is made from, or a shared include. Its edges come from its own build files (Cargo.toml, package.json), regenerated on every land." .
+chorus:code chorus:definesVocabulary chorus:CodeUnit .
+
+chorus:unitPath a owl:DatatypeProperty ;
+    rdfs:label "unitPath" ;
+    rdfs:comment "The repo path of a CodeUnit's directory (platform/services/werk-test). A file belongs to the unit whose unitPath is its longest prefix." ;
+    rdfs:domain chorus:CodeUnit ;
+    rdfs:range xsd:string .
+
+chorus:unitKind a owl:DatatypeProperty ;
+    rdfs:label "unitKind" ;
+    rdfs:comment "What builds this unit: crate (cargo), package (npm/tsc), model (athena-gen input), include (compiled into its includers)." ;
+    rdfs:domain chorus:CodeUnit ;
+    rdfs:range xsd:string .
+
+chorus:CodeUnitShape a sh:NodeShape ;
+    sh:targetClass chorus:CodeUnit ;
+    sh:property [ sh:path chorus:unitPath ; sh:minCount 1 ; sh:maxCount 1 ; sh:datatype xsd:string ] ;
+    sh:property [ sh:path chorus:unitKind ; sh:minCount 1 ; sh:maxCount 1 ; sh:datatype xsd:string ;
+                  sh:in ( "crate" "package" "model" "include" ) ] ;
+    sh:property [ sh:path chorus:dependsOn ; sh:class chorus:CodeUnit ] ;
+    sh:property [ sh:path chorus:hasDomain ; sh:class chorus:Domain ] ;
+    sh:property [ sh:path chorus:ownedBy ; sh:class chorus:Principal ] ;
+    chorus:instancesGraph "urn:chorus:domains:code" ;
+    chorus:generatedBy "chorus-crawl" .
+
+chorus:builtFrom a owl:ObjectProperty ;
+    rdfs:label "builtFrom" ;
+    rdfs:comment "The CodeUnit a Service's binary or dist is built from. A ServiceInstance reaches it through runsService (#4472), so the blast radius of a unit names the services that rebuild and restart." ;
+    rdfs:domain chorus:Service ;
+    rdfs:range chorus:CodeUnit .

@@ -2045,6 +2045,7 @@ chorus:ServiceShape a sh:NodeShape ;
     sh:property [ sh:path chorus:diagram         ; sh:minCount 0 ; sh:datatype xsd:string ; chorus:exposure chorus:public ] ;   # #4094 — repeatable mermaid source, %% caption first line   # #4093 — Service fields are tiered (#4010); without an exposure the diagram was withheld from the page like gaps/notInScope
     sh:property [ sh:path chorus:publishesPreAuth ; sh:maxCount 1 ; sh:datatype xsd:string ] ;   # #3777 — opt-in publication to the pre-auth sign-in page. OPTIONAL by design: absent means NOT published, so fail-closed comes from the data model rather than from generator code a later edit could soften.
     sh:property [ sh:path chorus:oidcClientId     ; sh:datatype xsd:string ] ;   # #4412 — the OIDC client id people sign in through, when this service is a sign-in surface
+    sh:property [ sh:path chorus:builtFrom        ; sh:class chorus:CodeUnit ] ;   # #4499 — the code units this service is built from (crawler-written)
     sh:targetClass chorus:Service ;
     # #4010 — MOVED off the ontology graph. #3675 parked Service instances in
     # urn:chorus:ontology to fix a READ (the serve defaulted to the empty

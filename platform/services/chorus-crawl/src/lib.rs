@@ -17,6 +17,10 @@ pub mod pages;
 pub mod services;
 /// #4485 — the infrastructure crawl (machines and their disks).
 pub mod infra;
+pub mod code {
+    // #4499 — the one code-unit generator, shared with werk-build/test/deploy
+    include!("../../shared/code_units.rs");
+}
 
 /// What a file is, from the model's served CodeKind individuals (#4157):
 /// code · config · doc · log · test, plus `data` (#4173). Never a free string.

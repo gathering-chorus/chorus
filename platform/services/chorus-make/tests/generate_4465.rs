@@ -184,7 +184,8 @@ fn a_successful_land_hands_its_commit_to_athena_and_only_the_land_does() {
     // #4494 — the land event triggers athena (#4177); v2's land never passed
     // through chorus-mcp's werk-merge, so #4496's model never reached the store.
     let land = generate_land("cicd", &cicd()).unwrap();
-    assert!(land.contains("  success:\n    command: '${CHORUS_HOME}/platform/scripts/athena-land ${CARD} ${ROLE}'\n"), "{land}");
+    assert!(land.contains("  success:\n    command: '${CHORUS_HOME}/platform/scripts/athena-land ${CARD} ${ROLE}; ${CHORUS_HOME}/platform/scripts/crawl-detached.sh'\n"), "{land}");
+    // #4499 — every land rebuilds the code units the blast radius reads
     // NEGATIVE PROOF: the card half never deploys a model (nothing has landed)
     let card = generate("cicd", &cicd()).unwrap();
     assert!(!card.contains("athena-land"), "{card}");

@@ -208,7 +208,10 @@ fn preamble(out: &mut String, description: &str, queue: &str, params: &[&str], w
     // PolicyShape never reached the store (Wren, 22:48). On success only, after
     // accept: a slow or failed model run never holds the card's accept.
     if what == "land" {
-        out.push_str("  success:\n    command: '${CHORUS_HOME}/platform/scripts/athena-land ${CARD} ${ROLE}'\n");
+        // #4499 — then the crawl, as v1's crawl-delta did: launchd's crawler
+        // job (its own identity; the workflow claims none) rebuilds the code
+        // units and dependsOn edges the blast radius reads, every land
+        out.push_str("  success:\n    command: '${CHORUS_HOME}/platform/scripts/athena-land ${CARD} ${ROLE}; ${CHORUS_HOME}/platform/scripts/crawl-detached.sh'\n");
     }
     out.push_str("steps:\n");
 }

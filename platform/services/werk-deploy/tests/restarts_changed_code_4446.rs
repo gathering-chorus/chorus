@@ -38,6 +38,10 @@ fn a_changed_shared_file_deploys_every_crate_that_includes_it() {
     krate(&root, "werk-test", "mod x { include!(\"../../shared/service_lifecycle.rs\"); }\nfn main(){}");
     krate(&root, "chorus-messaging", "fn main(){}");
     fs::create_dir_all(root.join("platform/services/shared")).unwrap();
+    // #4499 — the include edges are read from the build files git tracks
+    let git = |a: &[&str]| std::process::Command::new("git").arg("-C").arg(&root).args(a).output().unwrap();
+    git(&["init", "-q"]);
+    git(&["add", "."]);
     let diff = "platform/services/shared/service_lifecycle.rs\nplatform/scripts/x.sh\n";
     assert_eq!(shared_includers(&root, diff), vec!["pair-heartbeat".to_string(), "werk-test".to_string()]);
 }

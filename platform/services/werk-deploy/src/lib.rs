@@ -1882,28 +1882,17 @@ pub fn with_lib_dependents(root: &Path, crates: &[String], lib_only: &[String], 
 /// the hook shim and werk-test kept round 1's code. Returns the binary crates whose
 /// sources name a changed shared file, sorted.
 pub fn shared_includers(root: &Path, diff: &str) -> Vec<String> {
-    let changed: Vec<String> = diff.lines()
-        .filter_map(|l| l.trim().strip_prefix("platform/services/shared/").map(|r| format!("shared/{}", r)))
-        .collect();
+    let changed: Vec<&str> = diff.lines().map(str::trim)
+        .filter(|l| l.starts_with("platform/services/shared/")).collect();
     if changed.is_empty() { return Vec::new(); }
-    fn rs_files(dir: &Path, out: &mut Vec<PathBuf>) {
-        if let Ok(rd) = fs::read_dir(dir) {
-            for e in rd.flatten() {
-                let p = e.path();
-                if p.is_dir() { rs_files(&p, out); } else if p.extension().map(|x| x == "rs").unwrap_or(false) { out.push(p); }
-            }
-        }
-    }
+    // #4499 — the include edges come from the one code-unit generator (the same
+    // edges the crawler writes and werk-build/werk-test scope by), not a walk
+    // of every crate's sources here
     let mut out: Vec<String> = Vec::new();
-    // #4491 — every crate home
-    for (name, rel) in crate_dirs(root) {
-        let dir = root.join(rel);
-        if crate_binaries_in(&dir).is_empty() { continue; }
-        let mut files = Vec::new();
-        rs_files(&dir.join("src"), &mut files);
-        let hit = files.iter().any(|f| fs::read_to_string(f)
-            .map(|t| changed.iter().any(|c| t.contains(c.as_str()))).unwrap_or(false));
-        if hit { out.push(name); }
+    for (provider, dependent) in scope_core::scope_declared_edges(root) {
+        if !changed.contains(&provider.as_str()) || out.contains(&dependent) { continue; }
+        let dir = root.join(crate_rel_dir(root, &dependent));
+        if !crate_binaries_in(&dir).is_empty() { out.push(dependent); }
     }
     out.sort();
     out
