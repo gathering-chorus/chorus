@@ -27,6 +27,7 @@ include!("../../shared/failure_class.rs");
 // #3821 — the ONE diff→units scoping core, shared with werk-test (source-include).
 include!("../../shared/scope_units.rs");
 include!("../../shared/crate_dirs.rs");
+include!("../../shared/target_seed.rs");
 use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 
 extern "C" {
@@ -441,6 +442,16 @@ fn npm_path(werk_s: &str) -> String {
     }
 }
 
+/// #4494 — seed a werk crate's target/ from canonical's (target_seed.rs). Never
+/// in canonical itself: a prod build keeps its own cache.
+fn seed_from_canonical(werk_s: &str, crate_rel: &str) {
+    let canonical = env::var("CHORUS_HOME")
+        .unwrap_or_else(|_| format!("{}/CascadeProjects/chorus", env::var("HOME").unwrap_or_default()));
+    if Path::new(werk_s) != Path::new(&canonical) {
+        println!("build-cache: {}", seed_target(werk_s, &canonical, crate_rel));
+    }
+}
+
 fn build_crate(werk_s: &str, crate_name: &str) -> R<String> {
     let crate_dir = format!("{}/{}", werk_s, crate_rel_dir(Path::new(werk_s), crate_name));
     let (identifier, binary) = crate_spec(crate_name);
@@ -449,6 +460,8 @@ fn build_crate(werk_s: &str, crate_name: &str) -> R<String> {
     // fails to start ("No such file or directory") — same daemon-PATH/bare-name class as
     // the #3151 werk-pull fix. Surfaced once the cascade gate above stopped masking the
     // crate-build stage.
+    // #4494 — start from prod's build cache when this werk has none
+    seed_from_canonical(werk_s, &crate_rel_dir(Path::new(werk_s), crate_name));
     let build_signed = format!("{}/platform/scripts/build-signed.sh", werk_s);
     let out = run_in_env(
         werk_s,

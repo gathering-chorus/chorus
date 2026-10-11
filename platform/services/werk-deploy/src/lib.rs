@@ -2150,6 +2150,94 @@ pub use model_scope::{changed_model_sources, is_model_source};
 /// derive which crates changed (merge-base diff — survives the squash-merge: the merge-base
 /// is the stable fork point even after origin/main moves ahead). NOTHING is built from the
 /// werk: prod binaries are structurally a build of main (the merged≠live fix).
+/// #4494 — the repo paths a crate's binary is built from: its own directory,
+/// the shared include files, and every `path = "…"` dependency in its
+/// Cargo.toml (resolved against the crate). Pure: the manifest text comes in.
+pub fn build_inputs(crate_rel: &str, cargo_toml: &str) -> Vec<String> {
+    let mut out = vec![crate_rel.to_string(), "platform/services/shared".to_string()];
+    for line in cargo_toml.lines() {
+        let Some(i) = line.find("path") else { continue };
+        let rest = line[i + 4..].trim_start();
+        let Some(rest) = rest.strip_prefix('=') else { continue };
+        let Some(q) = rest.trim_start().strip_prefix('"') else { continue };
+        let Some(end) = q.find('"') else { continue };
+        let mut parts: Vec<&str> = crate_rel.split('/').collect();
+        for seg in q[..end].split('/') {
+            match seg {
+                "" | "." => {}
+                ".." => { parts.pop(); }
+                s => parts.push(s),
+            }
+        }
+        let p = parts.join("/");
+        if !out.contains(&p) {
+            out.push(p);
+        }
+    }
+    out
+}
+
+/// #4494 — may prod ship the demo's binary? Only when every input has the same
+/// git tree in the card's werk (`werk`) and on main (`main`): then the demo
+/// built exactly what main holds. One differing input — another card moved the
+/// crate under this one — and prod builds from main, so no change is dropped
+/// (Silas, 2026-10-11 09:19; #3517's one-sha rule holds). Pure.
+pub fn may_promote(werk: &[(String, String)], main: &[(String, String)]) -> bool {
+    !werk.is_empty() && werk.len() == main.len()
+        && werk.iter().zip(main).all(|((p1, t1), (p2, t2))| p1 == p2 && !t1.is_empty() && t1 == t2)
+}
+
+/// #4494 — split the card's crates into (promoted pairs, crates to rebuild).
+/// A promoted crate's binaries are cloned (cp -c) from the werk into
+/// canonical's target/release, where the install path already reads them.
+fn promote_crates(home: &Path, werk_s: &str, role: &str, card: u64, trace: &str, canon: &Path, crates: &[String])
+    -> (Vec<(String, String)>, Vec<String>) {
+    let mut promoted = Vec::new();
+    let mut rebuild = Vec::new();
+    let tree = |rev: &str, p: &str| run_env(Some(werk_s), &[], "git", &["-C", werk_s, "rev-parse", &format!("{}:{}", rev, p)])
+        .map(|s| s.trim().to_string()).unwrap_or_default();
+    for c in crates {
+        let rel = crate_rel_dir(Path::new(werk_s), c);
+        let manifest = fs::read_to_string(Path::new(werk_s).join(&rel).join("Cargo.toml")).unwrap_or_default();
+        let inputs = build_inputs(&rel, &manifest);
+        let werk_trees: Vec<(String, String)> = inputs.iter().map(|p| (p.clone(), tree("HEAD", p))).collect();
+        let main_trees: Vec<(String, String)> = inputs.iter().map(|p| (p.clone(), tree("origin/main", p))).collect();
+        let bins = crate_binaries_in(&Path::new(werk_s).join(&rel));
+        let built: Vec<String> = bins.iter().map(|b| format!("{}/{}/target/release/{}", werk_s, rel, b)).collect();
+        let ready = !bins.is_empty() && built.iter().all(|b| Path::new(b).is_file());
+        if !(ready && may_promote(&werk_trees, &main_trees)) {
+            let why = if !ready { "no-demo-binary" } else { "main-moved-under-the-crate" };
+            jsonl(home, role, card, trace, "deploy.rebuild",
+                &format!(",\"target\":\"canonical\",\"crate\":\"{}\",\"reason\":\"{}\"", c, why));
+            rebuild.push(c.clone());
+            continue;
+        }
+        let dst_dir = canon.join(&rel).join("target/release");
+        let _ = fs::create_dir_all(&dst_dir);
+        let mut ok = true;
+        for (b, src) in bins.iter().zip(&built) {
+            let dst = dst_dir.join(b);
+            let tmp = dst_dir.join(format!(".{}.promoting", b));
+            let _ = fs::remove_file(&tmp);
+            ok &= run_env(None, &[], "cp", &["-c", src, &tmp.to_string_lossy()]).is_ok()
+                && fs::rename(&tmp, &dst).is_ok();
+        }
+        match (ok, file_cdhash(&built[0])) {
+            (true, Some(h)) => {
+                jsonl(home, role, card, trace, "deploy.promoted",
+                    &format!(",\"target\":\"canonical\",\"crate\":\"{}\",\"cdhash\":\"{}\"", c, h));
+                promoted.push((c.clone(), h));
+            }
+            _ => {
+                jsonl(home, role, card, trace, "deploy.rebuild",
+                    &format!(",\"target\":\"canonical\",\"crate\":\"{}\",\"reason\":\"promote-copy-failed\"", c));
+                rebuild.push(c.clone());
+            }
+        }
+    }
+    (promoted, rebuild)
+}
+
 fn deploy_canonical(home: &Path, werk_s: &str, role: &str, card: u64, trace: &str, landed_commit: Option<&str>) -> R<String> {
     let _ = run_env(Some(werk_s), &[], "git", &["-C", werk_s, "fetch", "-q", "origin", "main"]);
     let base = run_env(Some(werk_s), &[], "git", &["-C", werk_s, "merge-base", "origin/main", "HEAD"])
@@ -2249,8 +2337,12 @@ fn deploy_canonical(home: &Path, werk_s: &str, role: &str, card: u64, trace: &st
     // acp, no coupling the card's deploy to unrelated crates' health on main). TS services are
     // NOT built here — the native TS-daemon path npm-builds them from canonical below (#3317).
     let mut prod_hashes: Vec<(String, String)> = Vec::new();
-    if !crates.is_empty() {
-        let only = crates.join(",");
+    // #4494 — build once: a crate whose inputs are the same in the werk and on
+    // main ships the binary the demo ran; any other crate builds from main.
+    let (promoted, rebuild) = promote_crates(home, werk_s, role, card, trace, &canon, &crates);
+    prod_hashes.extend(promoted);
+    if !rebuild.is_empty() {
+        let only = rebuild.join(",");
         let build_out = run_env(
             Some(werk_s),
             &[("CHORUS_TRACE_ID", trace), ("DEPLOY_ROLE", role), ("CHORUS_ROLE", role)],
@@ -2259,7 +2351,7 @@ fn deploy_canonical(home: &Path, werk_s: &str, role: &str, card: u64, trace: &st
         )
         .map_err(|e| died(home, role, card, trace, "canonical-build-fail",
             format!("werk-build --target canonical failed; nothing installed: {}", e)))?;
-        prod_hashes = parse_build_summary(&build_out);
+        prod_hashes.extend(parse_build_summary(&build_out));
     }
 
     // #3316 — prove "what you demo is what ships". Prod builds from merged main (NOT a copy

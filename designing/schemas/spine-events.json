@@ -2430,6 +2430,30 @@
         "trace_id": "Werk trace join key"
       }
     },
+    "deploy.promoted": {
+      "producer": "deploys",
+      "category": "fact",
+      "version": "1",
+      "vertebra": "building",
+      "source": "werk",
+      "description": "Werk `deploy` verb (canonical): prod ships the binary the card's demo ran, because every build input has the same git tree in the werk and on main (#4494 build once).",
+      "fields": {
+        "crate": "The crate",
+        "cdhash": "The shipped binary's code hash"
+      }
+    },
+    "deploy.rebuild": {
+      "producer": "deploys",
+      "category": "fact",
+      "version": "1",
+      "vertebra": "building",
+      "source": "werk",
+      "description": "Werk `deploy` verb (canonical): a crate builds from main instead of shipping the demo binary — main moved under it, the demo binary is missing, or the copy failed (#4494).",
+      "fields": {
+        "crate": "The crate",
+        "reason": "main-moved-under-the-crate | no-demo-binary | promote-copy-failed"
+      }
+    },
     "deploy.restart.deferred": {
       "producer": "deploys",
       "category": "fact",
