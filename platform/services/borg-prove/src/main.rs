@@ -75,6 +75,7 @@ fn checks(card: u32) -> Vec<Check> {
 }
 
 fn run_checks(card: u32, base: &str) -> Vec<(Check, Outcome)> {
+    println!("#{card} against {base}");
     let cs = checks(card);
     let results: Vec<(Check, Outcome)> = cs.into_iter().map(|c| { let o = judge(&c, &probe(&c, base)); (c, o) }).collect();
     for (c, o) in &results {
