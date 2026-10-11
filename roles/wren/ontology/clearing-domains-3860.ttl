@@ -24,7 +24,7 @@
 # raw material of shared awareness; Pulse's own vocabulary rides #4018.
 
 # --- cards: claim the classes that already exist --------------------------
-chorus:cards chorus:definesVocabulary chorus:Card .
+chorus:cards chorus:definesVocabulary chorus:Card, chorus:CardAC .   # #4456: one check row per AC
 # chorus:Chunk is claimed by board (board-3654.ttl) — one claimer per served class (wren, folded into #4029).
 
 # --- events: the spine event, modelled ------------------------------------

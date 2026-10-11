@@ -28,6 +28,9 @@ pub struct Row {
     pub executor: String,
     pub implemented_by: String,
     pub mode: String,
+    /// #4456 — the value-stream step a failure of this step routes to (the
+    /// step's `onFail`), as its local name; empty when the step names none.
+    pub on_fail: String,
 }
 
 /// Rows from TSV. A line with the wrong column count or a non-number order is
@@ -41,8 +44,8 @@ pub fn parse_rows(tsv: &str) -> Result<Vec<Row>, Vec<String>> {
             continue;
         }
         let f: Vec<&str> = line.split('\t').collect();
-        if f.len() != 8 {
-            errs.push(format!("line {}: {} columns, want 8", i + 1, f.len()));
+        if f.len() != 9 {
+            errs.push(format!("line {}: {} columns, want 9", i + 1, f.len()));
             continue;
         }
         let (so, ko) = (f[1].trim().parse::<u32>(), f[2].trim().parse::<u32>());
@@ -56,6 +59,7 @@ pub fn parse_rows(tsv: &str) -> Result<Vec<Row>, Vec<String>> {
                 executor: f[5].trim().into(),
                 implemented_by: f[6].trim().into(),
                 mode: f[7].trim().into(),
+                on_fail: local(f[8].trim()),
             }),
             _ => errs.push(format!("line {}: stepOrder and skillOrder must be numbers", i + 1)),
         }
@@ -134,8 +138,24 @@ fn sorted(rows: &[Row]) -> Result<Vec<Row>, Vec<String>> {
     Ok(rows)
 }
 
+/// An IRI's local name (`…#value-stream-step-build` → `value-stream-step-build`).
+fn local(s: &str) -> String {
+    s.rsplit(['#', '/']).next().unwrap_or(s).to_string()
+}
+
+/// #4456 — `step=route,…` for every step that names where its failure goes, in
+/// step order; empty when none does (cicd today), so that output is unchanged.
+pub fn fail_routes(rows: &[Row]) -> String {
+    let mut seen = std::collections::BTreeSet::new();
+    rows.iter()
+        .filter(|r| !r.on_fail.is_empty() && seen.insert(r.step.clone()))
+        .map(|r| format!("{}={}", step_name(r), r.on_fail))
+        .collect::<Vec<_>>()
+        .join(",")
+}
+
 /// The header both halves share: params, the machine's env, the failure nudge.
-fn preamble(out: &mut String, description: &str, queue: &str, params: &[&str], what: &str) {
+fn preamble(out: &mut String, description: &str, queue: &str, params: &[&str], what: &str, routes: &str) {
     out.push_str(HEADER);
     out.push_str(&format!("description: {}\n", quote(description)));
     out.push_str(&format!("queue: {queue}\n"));
@@ -168,9 +188,20 @@ fn preamble(out: &mut String, description: &str, queue: &str, params: &[&str], w
     // #4474 run 15: a v2 run failed at test and nobody heard for 40 minutes; v1's
     // pipeline nudges, and no role polls (Jeff: "the pipeline nudges you"). dagu's
     // own failure handler tells the builder role, through the one nudge door.
-    out.push_str(&format!(
-        "handler_on:\n  failure:\n    command: '${{CHORUS_HOME}}/platform/scripts/ops-nudge ${{ROLE}} \"werk v2 #${{CARD}} {what} failed · dagu ${{DAG_RUN_ID}} · /cws ${{CARD}}\"'\n"
-    ));
+    // #4456 — when the rows say where each step's failure goes (onFail), the
+    // failure writes that verdict instead: borg-prove route finds the failed
+    // step in this run, reopens the card at its route (or opens a ticket card
+    // when the route is in Operating), and nudges the builder itself. If the
+    // route itself fails, the plain nudge still reaches the builder (Kade).
+    if routes.is_empty() {
+        out.push_str(&format!(
+            "handler_on:\n  failure:\n    command: '${{CHORUS_HOME}}/platform/scripts/ops-nudge ${{ROLE}} \"werk v2 #${{CARD}} {what} failed · dagu ${{DAG_RUN_ID}} · /cws ${{CARD}}\"'\n"
+        ));
+    } else {
+        out.push_str(&format!(
+            "handler_on:\n  failure:\n    command: '${{CHORUS_HOME}}/platform/scripts/borg-prove route ${{CARD}} ${{ROLE}} ${{DAG_RUN_ID}} {routes} || ${{CHORUS_HOME}}/platform/scripts/ops-nudge ${{ROLE}} \"werk v2 #${{CARD}} {what} failed and its route failed too · dagu ${{DAG_RUN_ID}} · /cws ${{CARD}}\"'\n"
+        ));
+    }
     // #4494 — the land event triggers athena (#4177): a land whose commit
     // carried model sources deploys the model. v1 fired it from chorus-mcp's
     // werk-merge case; v2's land never passes through there, so #4496's
@@ -208,8 +239,10 @@ fn command_step(out: &mut String, r: &Row, prev: &Option<String>, before_a_human
 /// of a pipeline.
 pub fn generate(pipeline: &str, rows: &[Row]) -> Result<String, Vec<String>> {
     let rows = sorted(rows)?;
+    // the card half routes only the steps it runs: up to and including the go
+    let card_end = rows.iter().position(|r| r.executor == "human").map_or(rows.len(), |g| g + 1);
     let mut out = String::new();
-    preamble(&mut out, &format!("werk v2 — pipeline {pipeline}, generated from the graph"), CARD_QUEUE, &["CARD", "ROLE"], "run");
+    preamble(&mut out, &format!("werk v2 — pipeline {pipeline}, generated from the graph"), CARD_QUEUE, &["CARD", "ROLE"], "run", &fail_routes(&rows[..card_end]));
     let mut prev: Option<String> = None;
     for (i, r) in rows.iter().enumerate() {
         let before_a_human = rows.get(i + 1).is_some_and(|n| n.executor == "human");
@@ -263,7 +296,7 @@ pub fn generate_land(pipeline: &str, rows: &[Row]) -> Result<String, Vec<String>
         return Err(vec!["no human go in the rows: nothing to land".to_string()]);
     };
     let mut out = String::new();
-    preamble(&mut out, &format!("werk v2 — the land of pipeline {pipeline}, generated from the graph"), LAND_QUEUE, &["CARD", "ROLE", "ACCEPTER"], "land");
+    preamble(&mut out, &format!("werk v2 — the land of pipeline {pipeline}, generated from the graph"), LAND_QUEUE, &["CARD", "ROLE", "ACCEPTER"], "land", &fail_routes(&rows[go + 1..]));
     let mut prev: Option<String> = None;
     for r in &rows[go + 1..] {
         command_step(&mut out, r, &prev, false);
@@ -308,13 +341,14 @@ pub fn drift(expected: &str, on_disk: &str) -> Result<(), String> {
 /// domain graphs (pipelines, skills). `{PIPELINE}` is the pipeline's label.
 pub const ROWS_QUERY: &str = r#"PREFIX chorus: <https://jeffbridwell.com/chorus#>
 PREFIX rdfs: <http://www.w3.org/2000/01/rdf-schema#>
-SELECT ?step ?stepOrder ?skillOrder ?skill ?label ?executor ?implementedBy ?mode WHERE {
+SELECT ?step ?stepOrder ?skillOrder ?skill ?label ?executor ?implementedBy ?mode ?onFail WHERE {
   GRAPH ?g0 { ?pipeline a chorus:Pipeline ; rdfs:label "{PIPELINE}" ; chorus:hasStep ?s . }
   GRAPH ?g1 { ?s rdfs:label ?step ; chorus:stepOrder ?stepOrder . }
   GRAPH ?g2 { ?ss a chorus:StepSkill ; chorus:forStep ?s ; chorus:callsSkill ?skill ; chorus:skillOrder ?skillOrder . }
   GRAPH ?g3 { ?skill rdfs:label ?label ; chorus:executor ?executor .
               OPTIONAL { ?skill chorus:implementedBy ?implementedBy }
               OPTIONAL { ?skill chorus:arguments ?mode } }
+  OPTIONAL { GRAPH ?g4 { ?s chorus:onFail ?onFail } }
 }
 ORDER BY ?stepOrder ?skillOrder
 "#;
@@ -350,7 +384,7 @@ pub fn rows_from_sparql_tsv(tsv: &str) -> Result<Vec<Row>, Vec<String>> {
         .filter(|l| !l.trim().is_empty())
         .map(|l| {
             let mut f: Vec<String> = l.split('\t').map(term).collect();
-            f.resize(8, String::new()); // trailing OPTIONALs may be absent
+            f.resize(9, String::new()); // trailing OPTIONALs may be absent
             f.join("\t") + "\n"
         })
         .collect();

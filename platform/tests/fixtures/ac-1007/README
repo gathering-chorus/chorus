@@ -1,0 +1,12 @@
+#4456 AC4 — one check row per 2026-10-07 hand finding (Wren's index.db record,
+2026-10-07T19:33:38Z). Run: BORG_CHECKS_TSV=<card>.tsv borg-prove prod <card> <role>
+10-07 → 10-11 prod: same #4447 (not met) #4419 (not met: Clearing blast radius has 0 edges) #4438 (met); not → met #4446 #4440 #4445 #4358;
+unmeasured (no read-only check yet) #4420 #4444 #4432 #4452.
+Flips explained by later lands (Wren, 10-11 10:20): #4446 5614e2034 (10-07 17:40) · #4440 3be70f80a (10-07 20:03)
+· #4445 d3894aefd, 05b0a3d41, c87086673 (10-08) · #4358 30636b544, 5cd83014d (10-07), c179f7f42 (10-08).
+#4419: same verdict, different reason (10-07 :3000; 10-11 the Clearing's blast radius has 0 edges, read from urn:chorus:ontology) — not an AC4 hold (Wren).
+#4452: PART → met: dagu's cicd-land runs succeed with no hand step (v2 lands since 10-10). Weak check: it does not name a chorus-mcp-deploying card.
+#4420: unmeasured, and stays so read-only: its finding (a poll launched a run) was chorus_werk v1; v2 runs start only by enqueue.
+#4432: met, same as 10-07: the grant is holdsRole + wearsHat ×4 on her Principal; 0 Appointment rows is by design (Wren 10-05: qualified, no post).
+#4444: unmeasured: its test has no recorded result, and pane / on-screen ACs have no read-only probe.
+Tally 10-11: 7 hold (same verdict or flip explained by a later land) · 1 reason changed (#4419) · 2 unmeasured (#4420, #4444) · 1 weak check (#4452).

@@ -1,0 +1,2 @@
+?ac	?statement	?kind	?target	?expect
+<https://jeffbridwell.com/chorus#ac-4358-1>	"the door accepts principle writes in prod"	"sparql"	"PREFIX chorus: <https://jeffbridwell.com/chorus#> PREFIX dcterms: <http://purl.org/dc/terms/> ASK { GRAPH ?g { ?p a chorus:Principle ; dcterms:modified ?m . FILTER(STR(?m) > \"2026-10-07\") } }"	"true"

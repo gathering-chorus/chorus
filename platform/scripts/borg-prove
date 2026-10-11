@@ -1,0 +1,4 @@
+#!/bin/sh
+# #4456 — borg-prove is a Rust verb (platform/services/borg-prove); this path is
+# what generated workflows call, so it hands off to the installed binary.
+exec "$HOME/.chorus/bin/borg-prove" "$@"

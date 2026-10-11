@@ -1,0 +1,2 @@
+?ac	?statement	?kind	?target	?expect
+<https://jeffbridwell.com/chorus#ac-4452-1>	"a land deploys prod by itself, go to accepted with no hand step"	"http"	"http://127.0.0.1:8526/api/v1/dag-runs?name=cicd-land&perPage=10"	"\"statusLabel\":\"succeeded\""
