@@ -4,7 +4,7 @@
  * Sibling to parseAppRoutes (which scans gathering-app's src/app.ts). Tags
  * routes by URL pattern:
  *   /api/loom/<slug>(/.*)? → domain `loom-<slug>` (when in valid set)
- *   anything else (concrete) → `chorus-domain` (operational substrate)
+ *   anything else (concrete) → `awareness` (Chorus's self-awareness domain; chorus-domain retired #4489)
  *   parameterized routes with :id / :name → skipped (would need per-domain
  *     instantiation; deferred until the contract model supports applies-to-all).
  *
@@ -25,7 +25,7 @@ function routeToDomainId(routePath: string, validDomainIds: Set<string>): string
     const candidate = `loom-${loomMatch[1]}`;
     if (validDomainIds.has(candidate)) return candidate;
   }
-  if (validDomainIds.has('chorus-domain')) return 'chorus-domain';
+  if (validDomainIds.has('awareness')) return 'awareness';
   return null;
 }
 

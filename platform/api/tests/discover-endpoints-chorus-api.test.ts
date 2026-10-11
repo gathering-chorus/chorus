@@ -10,7 +10,7 @@ describe('parseChorusApiRoutes', () => {
       app.get('/api/loom/decisions', handler);
       app.get('/api/loom/principles', handler);
     `;
-    const valid = new Set(['loom-decisions', 'loom-principles', 'chorus-domain']);
+    const valid = new Set(['loom-decisions', 'loom-principles', 'awareness']);
     const entries = parseChorusApiRoutes(src, valid);
     const decisions = entries.find((e) => e.path === '/api/loom/decisions');
     expect(decisions).toBeDefined();
@@ -20,11 +20,11 @@ describe('parseChorusApiRoutes', () => {
     expect(principles && principles.domainId).toBe('loom-principles');
   });
 
-  test('falls back to chorus-domain for routes that do not match loom-*', () => {
+  test('falls back to awareness for routes that do not match loom-*', () => {
     const src = `app.get('/api/athena/health', handler);`;
-    const entries = parseChorusApiRoutes(src, new Set(['chorus-domain']));
+    const entries = parseChorusApiRoutes(src, new Set(['awareness']));
     expect(entries).toHaveLength(1);
-    expect(entries[0].domainId).toBe('chorus-domain');
+    expect(entries[0].domainId).toBe('awareness');
     expect(entries[0].path).toBe('/api/athena/health');
   });
 
@@ -33,7 +33,7 @@ describe('parseChorusApiRoutes', () => {
       app.get('/api/athena/blast-radius/:iri', handler);
       app.get('/api/chorus/domain/:name/tests', handler);
     `;
-    const entries = parseChorusApiRoutes(src, new Set(['chorus-domain']));
+    const entries = parseChorusApiRoutes(src, new Set(['awareness']));
     expect(entries).toEqual([]);
   });
 
@@ -42,7 +42,7 @@ describe('parseChorusApiRoutes', () => {
       app.get('/api/athena/health', handler);
       app.post('/api/athena/health', handler);
     `;
-    const entries = parseChorusApiRoutes(src, new Set(['chorus-domain']));
+    const entries = parseChorusApiRoutes(src, new Set(['awareness']));
     expect(entries).toHaveLength(2);
     const methods = entries.map((e) => e.method).sort();
     expect(methods).toEqual(['GET', 'POST']);
@@ -50,9 +50,9 @@ describe('parseChorusApiRoutes', () => {
 
   test('does not tag loom-<slug> when that domain is not in valid set', () => {
     const src = `app.get('/api/loom/cookbook-substrate-class-domain', handler);`;
-    const valid = new Set(['loom-decisions', 'chorus-domain']);
+    const valid = new Set(['loom-decisions', 'awareness']);
     const entries = parseChorusApiRoutes(src, valid);
     expect(entries).toHaveLength(1);
-    expect(entries[0].domainId).toBe('chorus-domain');
+    expect(entries[0].domainId).toBe('awareness');
   });
 });

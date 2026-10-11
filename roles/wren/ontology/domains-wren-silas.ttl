@@ -157,13 +157,8 @@ chorus:logs a chorus:Domain ;
   chorus:hasDesignDoc chorus:document-domain-design-logs .
 
 
-chorus:alerts-monitors a chorus:Domain ;
-  rdfs:label "alerts-monitors" ; chorus:comment "Grafana dashboards, alert rules, and on-call signal management." ;
-  chorus:purpose "Watch the system — dashboards, alert rules, and the on-call signal that surfaces trouble." ;
-  chorus:ownedBy chorus:principal-silas ;
-  chorus:atStep chorus:value-stream-step-proving ;
-  chorus:repoTarget "proving/domains/alerts" .
-  # FLAG: no clean owl:Class vocab (Gate/GateResult are gate-level, not alerts) — omitted, not faked.
+# chorus:alerts-monitors — REMOVED #4489: split into alerts and monitors (#4085); retired in
+# designing/schemas/model-retirements.jsonl (graph urn:chorus:domains:domains).
 
 # chorus:security — REMOVED #3735 (Wren blessed 2026-08-02). It was a competing,
 # stale V1 definition (atStep Proving, ownedBy chorus:silas not role-silas,

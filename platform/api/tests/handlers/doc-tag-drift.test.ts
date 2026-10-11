@@ -4,7 +4,7 @@
  */
 import { detectDrift, type DocWithTags } from '../../src/handlers/doc-tag-drift';
 
-const VALID = ['loom-decisions', 'loom-principles', 'athena-domain', 'photos-domain'];
+const VALID = ['loom-decisions', 'loom-principles', 'domains', 'photos-domain'];
 
 function doc(href: string, domain?: string): DocWithTags {
   return {

@@ -47,34 +47,6 @@ chorus:appt-alerts-operations-lead a chorus:Appointment ;
     chorus:appointedHat chorus:hat-operations-lead ;
     chorus:overAnchor chorus:alerts .
 
-chorus:appt-alerts-monitors-product-manager a chorus:Appointment ;
-    rdfs:label "product manager over alerts-monitors" ;
-    chorus:label "product manager over alerts-monitors" ;
-    chorus:appointee chorus:role-silas ;
-    chorus:appointedHat chorus:hat-product-manager ;
-    chorus:overAnchor chorus:alerts-monitors .
-
-chorus:appt-alerts-monitors-solutions-architect a chorus:Appointment ;
-    rdfs:label "solutions architect over alerts-monitors" ;
-    chorus:label "solutions architect over alerts-monitors" ;
-    chorus:appointee chorus:role-silas ;
-    chorus:appointedHat chorus:hat-solutions-architect ;
-    chorus:overAnchor chorus:alerts-monitors .
-
-chorus:appt-alerts-monitors-engineering-lead a chorus:Appointment ;
-    rdfs:label "engineering lead over alerts-monitors" ;
-    chorus:label "engineering lead over alerts-monitors" ;
-    chorus:appointee chorus:role-silas ;
-    chorus:appointedHat chorus:hat-engineering-lead ;
-    chorus:overAnchor chorus:alerts-monitors .
-
-chorus:appt-alerts-monitors-operations-lead a chorus:Appointment ;
-    rdfs:label "operations lead over alerts-monitors" ;
-    chorus:label "operations lead over alerts-monitors" ;
-    chorus:appointee chorus:role-silas ;
-    chorus:appointedHat chorus:hat-operations-lead ;
-    chorus:overAnchor chorus:alerts-monitors .
-
 chorus:appt-analytics-product-manager a chorus:Appointment ;
     rdfs:label "product manager over analytics" ;
     chorus:label "product manager over analytics" ;

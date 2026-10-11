@@ -87,12 +87,12 @@ describe('inferDomain', () => {
   });
 
   it('matches when a path segment equals the alias', () => {
-    const aliases = { chorus: 'chorus-domain' };
-    expect(inferDomain('tests/chorus/foo.ts', aliases, FAKE_PATH)).toBe('chorus-domain');
+    const aliases = { chorus: 'awareness' };
+    expect(inferDomain('tests/chorus/foo.ts', aliases, FAKE_PATH)).toBe('awareness');
   });
 
   it('returns null when no alias matches', () => {
-    expect(inferDomain('tests/foo.ts', { chorus: 'chorus-domain' }, FAKE_PATH)).toBeNull();
+    expect(inferDomain('tests/foo.ts', { chorus: 'awareness' }, FAKE_PATH)).toBeNull();
   });
 });
 

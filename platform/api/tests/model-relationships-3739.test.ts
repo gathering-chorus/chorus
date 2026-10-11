@@ -21,10 +21,10 @@ describe('induceModel', () => {
     const edges = [
       edgeRow('hasVerbRun', 'Card', 'VerbRun', 'cards', 'werk'),
       edgeRow('hasWitness', 'Card', 'Witness', 'cards', 'werk'),
-      edgeRow('gatekeeper', 'Gate', 'Role', 'gates', 'roles'),
+      edgeRow('gatekeeper', 'Gate', 'Role', 'policies', 'roles'),
     ];
     const vocab = [vocabRow('cards', 'Card'), vocabRow('werk', 'VerbRun'), vocabRow('werk', 'Witness'),
-      vocabRow('gates', 'Gate'), vocabRow('roles', 'Role')];
+      vocabRow('policies', 'Gate'), vocabRow('roles', 'Role')];
     const m = induceModel(edges, vocab);
     expect(m.classEdges).toHaveLength(3);
     expect(m.classEdges[0]).toEqual(
@@ -34,17 +34,17 @@ describe('induceModel', () => {
     expect(cw).toBeDefined();
     expect(cw!.count).toBe(2);
     expect(cw!.properties).toEqual(expect.arrayContaining(['hasVerbRun', 'hasWitness']));
-    expect(m.domainEdges.find(e => e.from === 'gates' && e.to === 'roles')!.count).toBe(1);
+    expect(m.domainEdges.find(e => e.from === 'policies' && e.to === 'roles')!.count).toBe(1);
   });
 
   it('names isolated domains instead of hiding them (AC3)', () => {
-    const edges = [edgeRow('gatekeeper', 'Gate', 'Role', 'gates', 'roles')];
-    const vocab = [vocabRow('gates', 'Gate'), vocabRow('roles', 'Role'), vocabRow('principles', 'Principle')];
+    const edges = [edgeRow('gatekeeper', 'Gate', 'Role', 'policies', 'roles')];
+    const vocab = [vocabRow('policies', 'Gate'), vocabRow('roles', 'Role'), vocabRow('principles', 'Principle')];
     const m = induceModel(edges, vocab);
     expect(m.isolatedDomains).toEqual(['principles']);
-    expect(m.domains).toEqual(expect.arrayContaining(['gates', 'roles', 'principles']));
+    expect(m.domains).toEqual(expect.arrayContaining(['policies', 'roles', 'principles']));
     // the drill needs domain → owned classes (AC4)
-    expect(m.vocabulary).toEqual({ gates: ['Gate'], roles: ['Role'], principles: ['Principle'] });
+    expect(m.vocabulary).toEqual({ policies: ['Gate'], roles: ['Role'], principles: ['Principle'] });
   });
 
   it('keeps an edge whose classes have no owning domain as a class edge, induces no domain edge', () => {
@@ -85,8 +85,8 @@ describe('modelRelationshipsHandler', () => {
 
   it('serves domainEdges + classEdges + isolatedDomains from the store', async () => {
     const fetchFn = jest.fn()
-      .mockResolvedValueOnce(okSparql([edgeRow('gatekeeper', 'Gate', 'Role', 'gates', 'roles')]))
-      .mockResolvedValueOnce(okSparql([vocabRow('gates', 'Gate'), vocabRow('roles', 'Role')]));
+      .mockResolvedValueOnce(okSparql([edgeRow('gatekeeper', 'Gate', 'Role', 'policies', 'roles')]))
+      .mockResolvedValueOnce(okSparql([vocabRow('policies', 'Gate'), vocabRow('roles', 'Role')]));
     const res = await run(modelRelationshipsHandler({ fetchFn }));
     expect(res.statusCode).toBe(200);
     expect(res.body.storeReachable).toBe(true);

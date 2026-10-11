@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # @test-type: unit — runs refusals-after-gate on fixture transcripts; reads no live transcript
-# @domain: gates
+# @domain: policies
 #
 # #4391 — the count that found the "show your reasoning" gate must tell a refusal
 # after a gate from a refusal after anything else, and count nothing when there

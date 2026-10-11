@@ -21,7 +21,7 @@ describe('#4438 — consume by producer and by subject', () => {
 
   it('about=Card names card.pulled; producer and about combine', () => {
     expect(typesFor(registry, { about: 'Card' })).toContain('card.pulled');
-    expect(typesFor(registry, { producer: 'gates', about: 'Card' })).toEqual([]);
+    expect(typesFor(registry, { producer: 'policies', about: 'Card' })).toEqual([]);
   });
 
   it('no producer or about asked = no type filter', () => {

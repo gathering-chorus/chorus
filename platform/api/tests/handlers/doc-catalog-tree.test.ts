@@ -24,7 +24,7 @@ const ATHENA: AthenaShape = {
   domains: [
     { id: 'loom-decisions', label: 'Decisions', subproduct: 'loom' },
     { id: 'loom-principles', label: 'Principles', subproduct: 'loom' },
-    { id: 'athena-domain', label: 'Athena', subproduct: 'athena-product' },
+    { id: 'domains', label: 'Athena', subproduct: 'athena-product' },
     { id: 'cards-service', label: 'Cards', subproduct: 'werk-product' },
     { id: 'photos-domain', label: 'Photos', subproduct: null, product: 'gathering' },
     { id: 'blog-domain', label: 'Blog', subproduct: null, product: 'gathering' },
@@ -77,7 +77,7 @@ describe('buildHierarchyTree (#2521)', () => {
     const docs = [
       doc('/a', 'chorus', 'loom', 'loom-decisions'),
       doc('/b', 'chorus', 'loom', 'loom-principles'),
-      doc('/c', 'chorus', 'athena-product', 'athena-domain'),
+      doc('/c', 'chorus', 'athena-product', 'domains'),
     ];
     const tree = buildHierarchyTree(docs, ATHENA);
     const chorus = tree.products.find(p => p.label === 'Chorus');

@@ -18,7 +18,7 @@ setup() {
   { "eventName": "card.pulled", "producedBy": "cards", "eventAbout": "https://jeffbridwell.com/chorus#Card",
     "eventCategory": "fact", "eventVersion": "1", "atVertebra": "building", "emitterSource": "chorus-events",
     "comment": "Card pulled to WIP", "joinKeys": "card_id", "payloadField": "card_id: Card identifier" },
-  { "eventName": "hook.decision", "producedBy": "https://jeffbridwell.com/chorus#gates",
+  { "eventName": "hook.decision", "producedBy": "https://jeffbridwell.com/chorus#policies",
     "eventCategory": "diagnostic", "eventVersion": "1",
     "payloadField": ["hook: Dispatch point", "decision: allow or deny"] },
   { "eventName": "batch.progress", "producedBy": "integrations", "eventAbout": "",
@@ -42,7 +42,7 @@ assert e == {'producer': 'cards', 'about': 'Card', 'category': 'fact', 'version'
              'source': 'chorus-events', 'description': 'Card pulled to WIP', 'keys': ['card_id'],
              'fields': {'card_id': 'Card identifier'}}, e
 h = d['events']['hook.decision']
-assert h['producer'] == 'gates' and h['fields'] == {'decision': 'allow or deny', 'hook': 'Dispatch point'}, h
+assert h['producer'] == 'policies' and h['fields'] == {'decision': 'allow or deny', 'hook': 'Dispatch point'}, h
 b = d['events']['batch.progress']
 assert b['fields'] == {} and 'about' not in b, b   # the API serves absent fields as ""
 "
