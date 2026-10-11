@@ -70,6 +70,7 @@ export function personSessionRow(
   openRoleSessions: string[],
   nowMs: number,
   name: string,
+  hostAccount: string,
 ): Record<string, unknown> {
   const row: Record<string, unknown> = {
     name,
@@ -83,6 +84,9 @@ export function personSessionRow(
     startedAt: iso(nowMs),
     lastSeenAt: iso(nowMs),
     sessionState: 'open',
+    // SessionShape requires it (minCount 1): the account the session runs under,
+    // the person's Principal hostAccount. Without it every sign-in was refused 422.
+    hostAccount,
   };
   if (openRoleSessions.length) row.binds = openRoleSessions;
   return row;
@@ -187,6 +191,16 @@ function storedName(reply: Record<string, unknown>, sent: string): string {
   return name || sent;
 }
 
+/** The account his Principal runs under (SessionShape requires it), or null. */
+async function hostAccountOf(deps: PersonSessionDeps, principal: string): Promise<string | null> {
+  try {
+    const r = await deps.fetchImpl(`${deps.api}/v1/identity/principals/${encodeURIComponent(principal)}`);
+    if (!r.ok) return null;
+    const data = ((await r.json()) as { data?: { hostAccount?: unknown } }).data;
+    return typeof data?.hostAccount === 'string' && data.hostAccount ? data.hostAccount : null;
+  } catch { return null; }
+}
+
 async function listOpenRoleSessions(deps: PersonSessionDeps): Promise<string[] | null> {
   try {
     const r = await deps.fetchImpl(`${deps.api}/v1/identity/sessions?limit=5000`);
@@ -205,11 +219,16 @@ export async function openPersonSession(
   claims: SignInClaims,
 ): Promise<string | null> {
   const log = deps.log ?? (() => {});
+  const hostAccount = await hostAccountOf(deps, principal);
+  if (!hostAccount) {
+    log(`person-session: principal-${principal} has no hostAccount; no Session row written`);
+    return null;
+  }
   // no list: the row goes out with no binds, and the log line says 0
   const roles = (await listOpenRoleSessions(deps)) ?? [];
   const nowMs = deps.now();
   const name = slug(`${principal}-browser-${nowMs.toString(36)}`);
-  const row = personSessionRow(principal, claims, roles, nowMs, name);
+  const row = personSessionRow(principal, claims, roles, nowMs, name, hostAccount);
   let reply;
   try {
     reply = await send(deps, 'POST', `${deps.api}/v1/identity/sessions`, claims.idToken, row);
