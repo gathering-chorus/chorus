@@ -15,8 +15,9 @@ ROOT="$(cd "$(dirname "$0")/../.." && pwd)"
 NAMES='alerts-monitors|athena-domain|chorus-domain|convergence-domain|gates'
 # Not a domain use: a card relation key ('gates' between cards), a source FILE
 # name key in the crawler's module table, one history comment, and the ledger
-# deployer's own merge fixture (gates-domain into gates, #4338). TTL comments are history.
-ALLOW='^directing/products/cards/src/sdk\.ts:|^platform/services/chorus-crawl/src/domain\.rs:[0-9]+:    \("chorus-domain", "domains"\)|^platform/api/tests/domain-borg-services\.integration\.test\.ts:[0-9]+: \* |^platform/services/athena-deploy/src/lib\.rs:'
+# deployer's own merge fixture (gates-domain into gates, #4338), and this card's own
+# negative proof that the retired athena-domain admits no page. TTL comments are history.
+ALLOW='^directing/products/cards/src/sdk\.ts:|^platform/services/chorus-crawl/src/domain\.rs:[0-9]+:    \("chorus-domain", "domains"\)|^platform/api/tests/domain-borg-services\.integration\.test\.ts:[0-9]+: \* |^platform/services/athena-deploy/src/lib\.rs:|^platform/api/tests/discover-pages-athena-4489\.test\.ts:'
 
 uses() { # $1 = repo root; prints each use of a retired name as a domain
   local E='([^-a-zA-Z0-9]|$)'
