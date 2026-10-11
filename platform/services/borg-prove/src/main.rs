@@ -117,7 +117,8 @@ fn main() {
         }
         "prod" => {
             let r = run_checks(card, &env("BORG_PROD_BASE", "http://localhost:3340"));
-            let v = match verdict(&r) { "Failed" => "Regressed", v => v };
+            // "Not met", not "Regressed": a card that never worked did not regress (Wren)
+            let v = verdict(&r);
             println!("#{card} verify in prod: {v}");
             if v != "Proven" { exit(1) }
         }

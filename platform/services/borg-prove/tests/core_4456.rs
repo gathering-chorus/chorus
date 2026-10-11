@@ -36,7 +36,7 @@ fn the_verdict_is_proven_only_when_every_ac_is_met() {
     assert_eq!(verdict(&[met.clone()]), "Proven");
     let no = (c("http", "/b", "ok"), Outcome::NotMet("e".into()));
     assert_eq!(verdict(&[met.clone(), un.clone()]), "Unproven", "unmeasured is never a pass");
-    assert_eq!(verdict(&[met, un, no]), "Failed", "one not met fails the card");
+    assert_eq!(verdict(&[met, un, no]), "Not met", "one not met fails the card");
     assert_eq!(verdict(&[]), "Unproven", "a card with no AC is not proven");
 }
 
