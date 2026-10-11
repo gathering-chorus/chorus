@@ -477,10 +477,10 @@ jobs:
           # the witness verdict below — no self-accept hole (#3410): a go with no
           # recorded witness for this patch stays unproven and HELD.
           if [ "${{ steps.provenround.outputs.skip_prove }}" = "true" ]; then
-            PATH="$HOME/.local/bin:$PATH" DEPLOY_ROLE="${ROLE}" werk-demo "${CARD_ID}" "${GO}" || true
+            PATH="$HOME/.local/bin:$PATH" DEPLOY_ROLE="${ROLE}" werk-demo "${CARD_ID}" "${ROLE}" || true
             echo "[demo] proven-round fast path: go recorded, verdict decides"
           else
-            PATH="$HOME/.local/bin:$PATH" DEPLOY_ROLE="${ROLE}" werk-demo "${CARD_ID}" "${GO}"
+            PATH="$HOME/.local/bin:$PATH" DEPLOY_ROLE="${ROLE}" werk-demo "${CARD_ID}" "${ROLE}"
             drc=$?
             if [ "$drc" != 0 ] && [ "$drc" != 2 ]; then echo "[demo] present error rc=$drc"; exit "$drc"; fi
           fi

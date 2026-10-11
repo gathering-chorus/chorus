@@ -2093,6 +2093,21 @@ pub fn parse_review_verdict(stdout: &str) -> (String, String) {
     (verdict.to_string(), findings)
 }
 
+/// #4474 reopen — the card's branch diff (`origin/main...HEAD`) in its werk,
+/// or why it could not be read: no werk at that path, or git refused. Never an
+/// empty string standing in for "could not read" (Silas, 2026-10-11 15:10).
+pub fn branch_diff(werk: &str) -> Result<String, String> {
+    if !Path::new(werk).is_dir() {
+        return Err(format!("no werk at {}", werk));
+    }
+    let o = Command::new("git").arg("-C").arg(werk).args(["diff", "origin/main...HEAD"]).output()
+        .map_err(|e| format!("git could not run in {}: {}", werk, e))?;
+    if !o.status.success() {
+        return Err(format!("git diff failed in {}: {}", werk, String::from_utf8_lossy(&o.stderr).trim()));
+    }
+    Ok(String::from_utf8_lossy(&o.stdout).into_owned())
+}
+
 fn run_one_gate(home: &Path, role: &str, card: u64, gate: &str, round: &str) {
     if !wait_for_memory_floor(home, role, card, gate, round) {
         record_gate(home, role, card, gate, "error",
@@ -2115,12 +2130,16 @@ fn run_one_gate(home: &Path, role: &str, card: u64, gate: &str, round: &str) {
     });
     let werk = format!("{}/{}-{}", werk_base, role, card);
     let card_view = run(&script_path(home, "cards"), &["view", &card.to_string()]).unwrap_or_default();
-    let diff = Command::new("git")
-        .arg("-C").arg(&werk)
-        .args(["diff", "origin/main...HEAD"])
-        .output()
-        .map(|o| String::from_utf8_lossy(&o.stdout).into_owned())
-        .unwrap_or_default();
+    // #4474 reopen (Silas, 2026-10-11): a diff that could not be read refuses
+    // the gate. With role=false every in-run gate since 10-10 reviewed the
+    // empty diff of chorus-werk/false-<card> and could only pass.
+    let diff = match branch_diff(&werk) {
+        Ok(d) => d,
+        Err(why) => {
+            record_gate(home, role, card, gate, "error", &format!("no branch diff to review: {}", why), round);
+            return;
+        }
+    };
     // Cap the diff so a huge change can't blow the context budget.
     let diff_capped: String = diff.chars().take(60_000).collect();
     let base_ctx = format!(
@@ -2289,12 +2308,14 @@ fn run_one_review(home: &Path, role: &str, card: u64, peer: &str, round: &str) {
     });
     let werk = format!("{}/{}-{}", werk_base, role, card);
     let card_view = run(&script_path(home, "cards"), &["view", &card.to_string()]).unwrap_or_default();
-    let diff = Command::new("git")
-        .arg("-C").arg(&werk)
-        .args(["diff", "origin/main...HEAD"])
-        .output()
-        .map(|o| String::from_utf8_lossy(&o.stdout).into_owned())
-        .unwrap_or_default();
+    // #4474 reopen — a review of a diff that could not be read is no review
+    let diff = match branch_diff(&werk) {
+        Ok(d) => d,
+        Err(why) => {
+            record_gather_replied(home, role, card, peer, "error", &format!("no branch diff to review: {}", why));
+            return;
+        }
+    };
     let diff_capped: String = diff.chars().take(60_000).collect();
     let ctx = format!(
         "CARD #{}\n{}\n\n=== BRANCH DIFF (origin/main...HEAD) ===\n{}",
