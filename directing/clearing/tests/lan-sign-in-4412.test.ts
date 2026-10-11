@@ -11,6 +11,9 @@ const TUNNEL = 'https://clearing.lightlifeurbangardens.com/auth/callback';
 const ORIGINS = lanOrigins('jeffs-mac-mini-m1-3', '192.168.86.23', 3470);
 
 describe('#4412 — the LAN callback follows the Host the browser used', () => {
+  it('NEGATIVE PROOF — a dotted hostname never becomes name.lan.local', () => {
+    expect(lanOrigins('jeffs-mini-m1-3.lan', null, 3481)).toEqual(['http://jeffs-mini-m1-3.local:3481']);
+  });
   it('lists the .local name and the current IP', () => {
     expect(ORIGINS).toEqual(['http://jeffs-mac-mini-m1-3.local:3470', 'http://192.168.86.23:3470']);
   });

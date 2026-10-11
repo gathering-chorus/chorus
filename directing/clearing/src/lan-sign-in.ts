@@ -12,10 +12,18 @@
  * Loopback stays trusted: that is the box's own services, not a person.
  */
 
-/** Every origin a LAN browser may use: the .local name and the current IP. */
+import { bonjourHost } from './lan-url';
+
+/**
+ * Every origin a LAN browser may use: the .local name and the current IP. The
+ * name goes through bonjourHost, the same rule the startup URLs use, so a
+ * hostname like jeffs-mini-m1-3.lan becomes jeffs-mini-m1-3.local, never
+ * jeffs-mini-m1-3.lan.local (seen on the #4412 demo).
+ */
 export function lanOrigins(localHostName: string | null, lanIp: string | null, port: number): string[] {
   const out: string[] = [];
-  if (localHostName) out.push(`http://${localHostName}.local:${port}`);
+  const host = bonjourHost(localHostName);
+  if (host) out.push(`http://${host}:${port}`);
   if (lanIp) out.push(`http://${lanIp}:${port}`);
   return out;
 }
