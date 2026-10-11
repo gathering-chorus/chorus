@@ -46,3 +46,22 @@ machines_carry_no_prose() {
   run machines_carry_no_prose "$bad"
   [ "$status" -ne 0 ]
 }
+
+owner_rule() { # the athena-validate owner-rule-missing question, asked of one shape file
+  [ "$(ask "chorus:$2Shape sh:property [ sh:path chorus:ownedBy ; sh:class chorus:Principal ]" "$1")" = "true" ]
+}
+
+@test "Machine and Disk say what an owner is (owner-rule-missing)" {
+  owner_rule "$MODEL" Machine
+  owner_rule "$MODEL" Disk
+}
+
+@test "NEGATIVE PROOF: a Disk shape without the owner rule fails the check" {
+  bad="$BATS_TEST_TMPDIR/chorus.ttl"
+  # the Disk shape's owner path renamed: still valid turtle, no longer the owner rule
+  awk '/^chorus:DiskShape a sh:NodeShape/{d=1} d && /sh:path chorus:ownedBy /{sub(/chorus:ownedBy /,"chorus:notOwnedBy ");d=0} {print}' "$MODEL" > "$bad"
+  grep -q 'chorus:notOwnedBy' "$bad"
+  riot --validate "$bad" >/dev/null 2>&1
+  run owner_rule "$bad" Disk
+  [ "$status" -ne 0 ]
+}
