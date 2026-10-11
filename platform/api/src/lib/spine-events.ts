@@ -110,6 +110,27 @@ export function filterSpineEvents(rows: SpineEventRow[], q: SpineEventQuery): Sp
   return q.limit !== undefined && q.limit >= 0 ? out.slice(-q.limit) : out;
 }
 
+/** The whole lines in buf up to its last newline (end), parsed, with each line's byte length.
+ *  A fresh tail cut mid-line leaves a partial first line; parseSpineLine drops it. */
+function takeLines(buf: Buffer, end: number): { rows: SpineEventRow[]; lens: number[] } {
+  const rows: SpineEventRow[] = [];
+  const lens: number[] = [];
+  if (end < 0) return { rows, lens };
+  for (const line of buf.subarray(0, end).toString('utf-8').split('\n')) {
+    const r = parseSpineLine(line);
+    if (r) { rows.push(r); lens.push(Buffer.byteLength(line) + 1); }
+  }
+  return { rows, lens };
+}
+
+/** Drops the oldest rows until the window's lines fit in maxBytes. */
+function keepWithin(rows: SpineEventRow[], lens: number[], maxBytes: number): { rows: SpineEventRow[]; lens: number[] } {
+  let bytes = lens.reduce((a, b) => a + b, 0);
+  let drop = 0;
+  while (bytes > maxBytes && drop < lens.length) bytes -= lens[drop++];
+  return drop > 0 ? { rows: rows.slice(drop), lens: lens.slice(drop) } : { rows, lens };
+}
+
 export class SpineEventsReader {
   private readonly path: string;
   private readonly tailBytes: number;
@@ -168,25 +189,15 @@ export class SpineEventsReader {
       if (buf.length > 0) await fh.read(buf, 0, buf.length, start);
       this.bytesRead += buf.length;
       const end = buf.lastIndexOf(0x0a);
-      let rows = fresh ? [] : this.rows;
-      let lens = fresh ? [] : this.lens;
-      const added: SpineEventRow[] = [];
-      const addedLens: number[] = [];
-      if (end >= 0) {
-        // A fresh tail cut mid-line leaves a partial first line; parseSpineLine drops it.
-        for (const line of buf.subarray(0, end).toString('utf-8').split('\n')) {
-          const r = parseSpineLine(line);
-          if (r) { added.push(r); addedLens.push(Buffer.byteLength(line) + 1); }
-        }
-      }
-      this.offset = end >= 0 ? start + end + 1 : (fresh ? start : this.offset);
-      rows = rows.concat(added);
-      lens = lens.concat(addedLens);
-      let bytes = lens.reduce((a, b) => a + b, 0);
-      let drop = 0;
-      while (bytes > this.tailBytes && drop < lens.length) bytes -= lens[drop++];
-      this.rows = drop > 0 ? rows.slice(drop) : rows;
-      this.lens = drop > 0 ? lens.slice(drop) : lens;
+      const taken = takeLines(buf, end);
+      if (end >= 0) this.offset = start + end + 1;
+      else if (fresh) this.offset = start;
+      const kept = keepWithin(
+        (fresh ? [] : this.rows).concat(taken.rows),
+        (fresh ? [] : this.lens).concat(taken.lens),
+        this.tailBytes);
+      this.rows = kept.rows;
+      this.lens = kept.lens;
       return this.rows;
     } finally {
       if (fh) await fh.close();
