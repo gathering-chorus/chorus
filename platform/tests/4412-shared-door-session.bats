@@ -11,6 +11,8 @@
 # Covers: platform/tests/fixtures/person-session-4412.py
 # Covers: platform/scripts/chorus-share-guard.py
 # Covers: designing/data/service-instances.ttl
+# Covers: platform/services/athena-model/src/lib.rs
+# Covers: platform/services/athena-make/src/lib.rs
 
 setup() {
   ROOT="${BATS_TEST_DIRNAME}/../.."
@@ -42,4 +44,28 @@ setup() {
   F="$ROOT/designing/data/service-instances.ttl"
   grep -q 'oidcClientId "https://clearing.lightlifeurbangardens.com/clientid.jsonld"' "$F"
   grep -q 'oidcClientId "https://chorus.lightlifeurbangardens.com/_auth/clientid.jsonld"' "$F"
+}
+
+# Every token verifier the door's write path builds must know the model's
+# sign-in clients. On 10-11 athena-make's did and athena-model's (the writer the
+# door hands a row to) did not, so the guard's sign-in was refused at the write.
+unwired() { # src files... → names each file that builds a verifier without the clients
+  for f in "$@"; do
+    n=$(grep -c 'OidcVerifier::new(' "$f"); w=$(grep -c 'with_person_clients(' "$f")
+    [ "$n" -eq 0 ] || [ "$w" -ge "$n" ] || echo "$f"
+  done
+}
+
+@test "every verifier on the write path reads the model's sign-in clients" {
+  srcs=("$ROOT/platform/services/athena-make/src/lib.rs" "$ROOT/platform/services/athena-model/src/lib.rs")
+  for f in "${srcs[@]}"; do grep -q 'OidcVerifier::new(' "$f" || { echo "no verifier in $f (guard target gone)"; return 1; }; done
+  out="$(unwired "${srcs[@]}")"
+  [ -z "$out" ] || { echo "builds a verifier without with_person_clients: $out"; return 1; }
+}
+
+@test "NEGATIVE PROOF: a verifier built without the sign-in clients is named" {
+  cp "$ROOT/platform/services/athena-model/src/lib.rs" "$BATS_TEST_TMPDIR/lib.rs"
+  sed -i '' 's/\.with_person_clients(/.dropped(/' "$BATS_TEST_TMPDIR/lib.rs"
+  out="$(unwired "$BATS_TEST_TMPDIR/lib.rs")"
+  [ "$out" = "$BATS_TEST_TMPDIR/lib.rs" ] || return 1
 }

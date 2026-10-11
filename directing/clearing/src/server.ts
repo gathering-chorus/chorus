@@ -295,10 +295,29 @@ export function stripBase(url: string): { url: string; base: string } {
   return { url: url.slice(CLEARING_BASE.length) || '/', base: CLEARING_BASE };
 }
 
-app.use((req: Request, _res, next) => {
+/**
+ * Root-absolute links in a page ('/auth/login', '/account', fetch('/api/...'))
+ * resolve against the apex, not the mount, so under /clearing each one lands on
+ * the apex and 404s ("Cannot GET /auth/login", Jeff 2026-10-11). Prefix them with
+ * the base the page was served under. Protocol-relative '//' URLs are left alone.
+ */
+export function withBase(html: string, base: string): string {
+  if (!base) return html;
+  return html
+    .replace(/(src|href|action)="\/(?!\/)/g, `$1="${base}/`)
+    .replace(/fetch\('\/(?!\/)/g, `fetch('${base}/`);
+}
+
+app.use((req: Request, res, next) => {
   const { url, base } = stripBase(req.url);
   req.url = url;
   (req as Request & { basePath?: string }).basePath = base;
+  // Every page this server writes (sign-in, sign-out, account, refusals) is
+  // served under the same mount, so its links get the same prefix (#4412).
+  if (base) {
+    const send = res.send.bind(res);
+    res.send = ((body?: unknown) => send(typeof body === 'string' && /^\s*</.test(body) ? withBase(body, base) : body)) as typeof res.send;
+  }
   next();
 });
 
@@ -791,7 +810,7 @@ app.get(['/', '/clearing'], async (req: Request, res) => {
   // stripBase middleware above dual-mounts every route: '/x' and '/clearing/x'
   // are now the same route. No protocol-relative URLs exist in this page
   // (asserted by test), so `="/` cannot match an external host.
-  if (basePath) html = html.replace(/(src|href)="\//g, `$1="${basePath}/`);
+  // (the res.send wrapper above applies withBase to this page too)
   res.setHeader('Cache-Control', 'no-store');
   res.setHeader('Content-Type', 'text/html');
   res.send(html);

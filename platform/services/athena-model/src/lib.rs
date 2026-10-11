@@ -1235,6 +1235,7 @@ impl OidcTokenVerifier {
             std::env::var("CHORUS_FUSEKI").unwrap_or_else(|_| FUSEKI.to_string());
         let role_endpoint = allow_endpoint.clone();
         let scope_endpoint = allow_endpoint.clone();
+        let client_endpoint = allow_endpoint.clone();
         let inner = chorus_oidc::oidc::OidcVerifier::new(
             &css_issuer,
             // allow-set: re-resolve lazily on the ALLOW_TTL cadence so a model
@@ -1277,7 +1278,13 @@ impl OidcTokenVerifier {
                 }
                 Some(String::from_utf8_lossy(&out.stdout).into_owned())
             },
-        );
+        )
+        // #4412 — the apps a person signs in through, named in the model. The
+        // door's verifier has this; without it here the write the door hands
+        // over refuses every sign-in but the Clearing's (the guard's, 10-11).
+        .with_person_clients(move || {
+            chorus_oidc::oidc::resolve_person_clients(|q| fuseki_query_json(&client_endpoint, q).ok())
+        });
         inner.warm_allow(now_secs);
         inner.warm_fetch(now_secs);
         Self { inner }
