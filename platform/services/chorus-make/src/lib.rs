@@ -171,6 +171,14 @@ fn preamble(out: &mut String, description: &str, queue: &str, params: &[&str], w
     out.push_str(&format!(
         "handler_on:\n  failure:\n    command: '${{CHORUS_HOME}}/platform/scripts/ops-nudge ${{ROLE}} \"werk v2 #${{CARD}} {what} failed · dagu ${{DAG_RUN_ID}} · /cws ${{CARD}}\"'\n"
     ));
+    // #4494 — the land event triggers athena (#4177): a land whose commit
+    // carried model sources deploys the model. v1 fired it from chorus-mcp's
+    // werk-merge case; v2's land never passes through there, so #4496's
+    // PolicyShape never reached the store (Wren, 22:48). On success only, after
+    // accept: a slow or failed model run never holds the card's accept.
+    if what == "land" {
+        out.push_str("  success:\n    command: '${CHORUS_HOME}/platform/scripts/athena-land ${CARD} ${ROLE}'\n");
+    }
     out.push_str("steps:\n");
 }
 
