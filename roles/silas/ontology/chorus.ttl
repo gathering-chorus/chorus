@@ -612,7 +612,10 @@ chorus:MachineShape a sh:NodeShape ;
     sh:property [ sh:path chorus:osVersion     ; sh:minCount 0 ; sh:maxCount 1 ; sh:datatype xsd:string ; chorus:exposure chorus:public ] ;
     # minCount 0 on the measured fields, deliberately: a machine the crawl could not
     # walk keeps its row with no measurement, so a reader sees UNMEASURED, never a guess.
-    sh:property [ sh:path chorus:lastObserved  ; sh:minCount 0 ; sh:maxCount 1 ; sh:datatype xsd:dateTime ; chorus:exposure chorus:public ] .
+    sh:property [ sh:path chorus:lastObserved  ; sh:minCount 0 ; sh:maxCount 1 ; sh:datatype xsd:dateTime ; chorus:exposure chorus:public ] ;
+    # #4485 reopen — the door stamps ownedBy on every write; the shape says what an owner is
+    # (athena-validate owner-rule-missing counted Machine and Disk after the land).
+    sh:property [ sh:path chorus:ownedBy       ; sh:class chorus:Principal ] .
 
 chorus:DiskShape a sh:NodeShape ;
     sh:targetClass chorus:Disk ;
@@ -623,7 +626,8 @@ chorus:DiskShape a sh:NodeShape ;
     sh:property [ sh:path chorus:capacityBytes ; sh:minCount 1 ; sh:maxCount 1 ; sh:datatype xsd:integer ; chorus:exposure chorus:public ] ;
     sh:property [ sh:path chorus:usedBytes     ; sh:minCount 1 ; sh:maxCount 1 ; sh:datatype xsd:integer ; chorus:exposure chorus:public ] ;
     sh:property [ sh:path chorus:availableBytes ; sh:minCount 1 ; sh:maxCount 1 ; sh:datatype xsd:integer ; chorus:exposure chorus:public ] ;
-    sh:property [ sh:path chorus:lastObserved  ; sh:minCount 1 ; sh:maxCount 1 ; sh:datatype xsd:dateTime ; chorus:exposure chorus:public ] .
+    sh:property [ sh:path chorus:lastObserved  ; sh:minCount 1 ; sh:maxCount 1 ; sh:datatype xsd:dateTime ; chorus:exposure chorus:public ] ;
+    sh:property [ sh:path chorus:ownedBy       ; sh:class chorus:Principal ] .
 
 
 
