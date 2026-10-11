@@ -5,7 +5,7 @@
 // listed 1,748 files for clearing and could not find a service. Wren 16:41:
 // services, domains, tests and pages — never a file list — direct, then through
 // dependencies, the same for a file and a service.
-import { codeBlast, unitsFromCsv, builtFromFromCsv, filesFromCsv, type UnitRow, type FileRow } from '../src/handlers/athena-code-blast';
+import { codeBlast, filesQuery, unitsFromCsv, builtFromFromCsv, filesFromCsv, type UnitRow, type FileRow } from '../src/handlers/athena-code-blast';
 
 const C = 'https://jeffbridwell.com/chorus#';
 const UNITS = [
@@ -60,5 +60,12 @@ describe('#4499 the blast radius of a change, from the code units', () => {
 
   it('NEGATIVE PROOF — a store with no units yet is UNMEASURED, not empty', () => {
     expect(codeBlast('platform/api/src/server.ts', [], built, files).measured).toBe(false);
+  });
+
+  it('NEGATIVE PROOF — files come from the code graph, never every graph (the tests graph holds ~900k filePath rows)', () => {
+    const q = filesQuery();
+    expect(q).toContain('GRAPH <urn:chorus:domains:code>');
+    expect(q).toContain('CodeFile>');
+    expect(q).not.toContain('GRAPH ?g');
   });
 });

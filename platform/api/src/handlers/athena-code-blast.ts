@@ -90,8 +90,13 @@ export function unitsQuery(): string {
 export function builtFromQuery(): string {
   return `SELECT ?s ?u WHERE { GRAPH ?g { ?s <${C}builtFrom> ?u } }`;
 }
+/**
+ * Code files only, from the code graph: the tests graph holds ~900k test
+ * results that also carry filePath, and a GRAPH ?g read of them ran past 60s
+ * (measured on the #4499 run 2 demo, 2026-10-11).
+ */
 export function filesQuery(): string {
-  return `SELECT ?path ?kind ?domain ?route WHERE { GRAPH ?g { ?f <${C}filePath> ?path . OPTIONAL { ?f <${C}hasKind> ?kind } OPTIONAL { ?f <${C}hasDomain> ?domain } OPTIONAL { ?f <${C}route> ?route } } }`;
+  return `SELECT ?path ?kind ?domain ?route WHERE { GRAPH <urn:chorus:domains:code> { ?f a <${C}CodeFile> ; <${C}filePath> ?path . OPTIONAL { ?f <${C}hasKind> ?kind } OPTIONAL { ?f <${C}hasDomain> ?domain } OPTIONAL { ?f <${C}route> ?route } } }`;
 }
 
 /** SPARQL CSV rows as string arrays (header dropped); quoted cells unwrapped. */
