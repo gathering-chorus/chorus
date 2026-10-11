@@ -26,10 +26,11 @@ auth:
 # a scratch dagu 2026-10-10 by Kade: 3 builds ran at once, lands ran in turn.
 # A land must be ENQUEUED on werk-land, not called as a sub-run: a sub-run
 # ignores its queue and two lands overlapped.
+# Jeff 2026-10-11 09:06: two card runs at once, one land (load 28 with three).
 queues:
   enabled: true
   config:
     - name: werk
-      max_concurrency: 3
+      max_concurrency: 2
     - name: werk-land
       max_concurrency: 1
