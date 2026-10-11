@@ -1,0 +1,22 @@
+<!DOCTYPE html>
+<html lang="en"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Rows — Athena</title>
+<!-- #4081 — any class the door serves, one column per served field: rows.html?kind=<Class>. No per-class code. -->
+<script>window.OWL_PORT = 3360;</script>
+<link rel="stylesheet" href="athena-flow.css"><script src="athena-flow.js"></script><script>mountJourneyNav('services');</script><script>/* #3810 — the page teaches itself its mount, with nothing to fetch. */
+(function(){var m=document.querySelector('meta[name="chorus-base"]'),b=m&&m.getAttribute('content')||null;
+if(b===null){var p=(location&&location.pathname)||'';b=(p==='/chorus'||p.indexOf('/chorus/')===0)?'/chorus':'';}
+b=b.replace(/\/+$/,'');window.CHORUS_BASE=b;
+window.basePath=function(x){if(!x)return b||'/';if(/^[a-z]+:\/\//i.test(x)||x.indexOf('//')===0)return x;
+return b+(x.charAt(0)==='/'?x:'/'+x);};
+var s=document.createElement('script');s.src=window.basePath('/js/base-path.js');document.head.appendChild(s);}());</script>
+</head>
+<body><div class="wrap">
+<div class="crumb"><a href="value-stream.html">value stream</a> &rarr; rows</div>
+<h1><span id="kind-title">Rows</span> <span class="kind">&mdash; Chorus</span></h1>
+<div id="main"><p class="empty">loading live from the model&hellip;</p></div>
+</div>
+<style>table.rows{border-collapse:collapse;font-size:13px}table.rows th,table.rows td{border-bottom:1px solid var(--line,#ddd);padding:4px 8px;text-align:left;vertical-align:top}.table-scroll{overflow-x:auto}</style>
+
+<script src="rows.js"></script>
+</body></html>

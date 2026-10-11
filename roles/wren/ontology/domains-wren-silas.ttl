@@ -214,11 +214,29 @@ chorus:infrastructure a chorus:Domain ;
 # crawler to discover and use api to register and synch". Its rows are crawled, never seeded.
 chorus:persistence a chorus:Domain ;
   rdfs:label "persistence" ; chorus:comment "Every place Chorus keeps data: datasets, file databases, the repo, and graph families, each marked system of record, copy, derived or cache." ;
+  rdfs:comment "Every place Chorus keeps data: datasets, file databases, the repo, and graph families, each marked system of record, copy, derived or cache." ;
+  chorus:status "building" ;
+  chorus:gaps "32 of 90 store roles are inferred, not measured (roleBasis on each row). A new graph family that no Domain names is not seen by the crawl." ;
+  chorus:hasDesignDoc chorus:document-domain-design-persistence ;
   chorus:purpose "Say which store is the system of record and which are copies, so a writer collision is found by a query, not by Jeff." ;
   chorus:ownedBy chorus:principal-silas ;
   chorus:atStep chorus:value-stream-step-proving ;
   chorus:repoTarget "platform/services/chorus-crawl" ; chorus:definesVocabulary chorus:PersistenceStore ;
   chorus:instancesGraph "urn:chorus:domains:persistence" .
+
+# #4081 — Jeff 2026-09-03: "if we model a schedule domain in owl via athena-* + integrate graph
+# instances with launchd its a dynamic view" ... "yes this is a roughly borg scope domain".
+chorus:schedule a chorus:Domain ;
+  rdfs:label "schedule" ; chorus:comment "What runs when: every timed launchd unit on Library and Bedroom, with its schedule, run count, last exit and log." ;
+  rdfs:comment "What runs when: every timed launchd unit on Library and Bedroom, with its schedule, run count, last exit and log." ;
+  chorus:status "building" ;
+  chorus:gaps "Last-run time is not read (launchctl print has no timestamp; the run count and last exit are)." ;
+  chorus:hasDesignDoc chorus:document-domain-design-schedule ;
+  chorus:purpose "Answer 'what runs when' from the machines themselves, so a job that went silent is seen against the schedule it was meant to keep." ;
+  chorus:ownedBy chorus:principal-silas ;
+  chorus:atStep chorus:value-stream-step-proving ;
+  chorus:repoTarget "platform/services/chorus-crawl" ; chorus:definesVocabulary chorus:ScheduledJob ;
+  chorus:instancesGraph "urn:chorus:domains:schedule" .
 
 chorus:analytics a chorus:Domain ;
   rdfs:label "analytics" ; chorus:comment "Usage analytics and behavioral signals — attention, interaction patterns." ;
@@ -312,6 +330,7 @@ chorus:StreamEventShape a sh:NodeShape ;
 # named: the 2026-10-02 15:51 land wiped 12 domains to one inLayer triple).
 chorus:infrastructure chorus:inLayer chorus:layer-foundation .
 chorus:persistence    chorus:inLayer chorus:layer-foundation ; chorus:dependsOn chorus:infrastructure .
+chorus:schedule       chorus:inLayer chorus:layer-foundation ; chorus:dependsOn chorus:infrastructure .
 chorus:time           chorus:inLayer chorus:layer-foundation ; chorus:dependsOn chorus:infrastructure .
 chorus:logs           chorus:inLayer chorus:layer-foundation ; chorus:dependsOn chorus:infrastructure , chorus:time ;
                       chorus:hosts chorus:logs-domain-service-loki .

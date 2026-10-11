@@ -1,0 +1,56 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Persistence — Domain Design</title>
+<style>
+  :root { --ink:#1a1a1a; --muted:#666; --line:#ddd; --accent:#2d5a27; --box:#f6f8f4; }
+  body { font-family: Georgia, serif; margin: 40px 5%; max-width: 900px; color: var(--ink); line-height: 1.6; background:#fff; }
+  h1 { font-size: 1.6em; border-bottom: 2px solid #333; padding-bottom: 8px; margin-bottom: 4px; }
+  h1 span { color: #d97706; font-weight: normal; font-size: 0.6em; }
+  .date { color: #999; font-size: 0.82em; margin-bottom: 16px; }
+  h2 { font-size: 1.1em; margin-top: 28px; color: var(--accent); }
+  pre { background: var(--box); border: 1px solid var(--line); padding: 12px 14px; overflow-x: auto; font-size: 0.85em; line-height: 1.45; }
+  table { border-collapse: collapse; width: 100%; font-size: 0.9em; }
+  th, td { border-bottom: 1px solid var(--line); padding: 6px 8px; text-align: left; vertical-align: top; }
+  th { color: var(--muted); font-weight: normal; }
+  code { font-size: 0.9em; }
+  .note { color: var(--muted); font-size: 0.9em; }
+</style>
+</head><body>
+<h1>Persistence — Domain Design <span>persistence domain · #4422</span></h1>
+<div class="date">Silas (owner) · drafted by Wren · 2026-10-11 · live rows: <code>GET /v1/persistence/…</code> on the model door</div>
+
+<p>Every place Chorus keeps data is one row, and each row says whether it is the original, a copy, something derived, or a cache. A writer collision then shows up in a query, so nobody has to find it by hand.</p>
+<h2>Where it sits</h2>
+<pre>Borg operating stream
+  Read     the hourly crawl (com.chorus.infra-stores-crawl: infra, then stores)
+  Surface  findings: an unmapped store; a full disk that a live store sits on
+
+domain  persistence  (owner silas, step proving, graph urn:chorus:domains:persistence)
+  └─ PersistenceStore            one class
+       parent  onDisk  → Disk     (a dataset or a file store)
+            or inStore → its dataset row  (a graph family inside /pods)
+       exactly one of the two, enforced by sh:xone</pre>
+<h2>What a row says</h2>
+<table>
+<tr><th>field</th><th>meaning</th></tr>
+<tr><td>storeRole</td><td>systemOfRecord · copyOf · derivedFrom · cacheOf (exactly one)</td></tr>
+<tr><td>roleSource</td><td>the store it copies, derives from or caches. Required unless it is the system of record, and refused when it is.</td></tr>
+<tr><td>roleBasis</td><td>measured · inventory · inferred: how we know the role. A guess is labelled as one.</td></tr>
+<tr><td>writeMode</td><td>live · closed. A closed archive filling its disk is not a finding.</td></tr>
+<tr><td>servedBy</td><td>the running unit that serves it (a plain link, not the parent)</td></tr>
+<tr><td>storeStatus</td><td>present · absent (gone from the machine, kept with its last-seen time) · unmeasured</td></tr>
+</table>
+<h2>Where the facts come from</h2>
+<pre>discovered   Fuseki $/datasets, each Domain row's instancesGraph (checked with HEAD),
+             files on disk, listening ports joined to ServiceInstance
+role         platform/config/store-map.json, authored. A role is a fact about data flow
+             and can't be observed, so a store missing from the map is a FINDING, never a guess.</pre>
+<h2>Rules the crawl keeps</h2>
+<pre>changed-only     a second run writes 0
+gone ≠ unknown   a store not found → absent; a check that could not run → unmeasured, row untouched
+no file writes   no model or seed file may carry a PersistenceStore row (guarded by a bats test)
+disk not known   a store whose disk has no row yet is held back and named, not dropped</pre>
+<h2>Open</h2>
+<p class="note">32 of 90 roles are inferred (roleBasis says which). A new graph family that no Domain row names is not discovered.</p>
+
+</body></html>

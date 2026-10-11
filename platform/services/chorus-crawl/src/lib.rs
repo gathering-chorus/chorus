@@ -15,6 +15,8 @@ pub mod domain;
 pub mod pages;
 /// #4472 — the services crawl (launchd units → instance and job rows).
 pub mod services;
+/// #4081 — the schedule domain (what runs when).
+pub mod schedule;
 /// #4485 — the infrastructure crawl (machines and their disks).
 pub mod infra;
 /// #4422 — the stores crawl (every place Chorus keeps data, with its one role).

@@ -257,3 +257,19 @@ chorus:document-gathering-vision a chorus:Document ;
     rdfs:comment """The Gathering product's vision; its design doc (#4390).""" ;
     chorus:hasDomain chorus:products ;
     chorus:ownedBy chorus:principal-jeff .
+
+chorus:document-domain-design-persistence a chorus:Document ;
+    chorus:docState "current" ;
+  chorus:label """Domain Design — Persistence""" ; rdfs:label """Domain Design — Persistence""" ; chorus:docTitle """Domain Design — Persistence""" ;
+  chorus:docHref """/designing/docs/persistence-domain-design.html""" ;
+  chorus:comment """Every store one row with one role (system of record, copy, derived, cache), how the role is known, and the crawl rules (#4422).""" ;
+  rdfs:comment """Persistence domain design (#4422).""" ;
+  chorus:hasDomain chorus:persistence ; chorus:ownedBy chorus:principal-silas ; chorus:hasProduct chorus:borg .
+
+chorus:document-domain-design-schedule a chorus:Document ;
+    chorus:docState "current" ;
+  chorus:label """Domain Design — Schedule""" ; rdfs:label """Domain Design — Schedule""" ; chorus:docTitle """Domain Design — Schedule""" ;
+  chorus:docHref """/designing/docs/schedule-domain-design.html""" ;
+  chorus:comment """What runs when: every timed launchd unit as a ScheduledJob row with its schedule, measured from plist and launchctl on both machines (#4081).""" ;
+  rdfs:comment """Schedule domain design (#4081).""" ;
+  chorus:hasDomain chorus:schedule ; chorus:ownedBy chorus:principal-silas ; chorus:hasProduct chorus:borg .

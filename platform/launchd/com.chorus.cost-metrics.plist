@@ -1,0 +1,24 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+  <key>Label</key><string>com.chorus.cost-metrics</string>
+  <!-- #4081 AC4 — was the crontab line "*/5 * * * * cost-metrics > cost_metrics.prom.tmp && mv … cost_metrics.prom".
+       Same command every 300 s; the write-then-move keeps the textfile collector from reading half a file. -->
+  <key>ProgramArguments</key>
+  <array>
+    <!-- #4446: an inline sh -c logs its start, stop and failure through service-run -->
+    <string>/Users/jeffbridwell/CascadeProjects/chorus/platform/scripts/service-run</string>
+    <string>com.chorus.cost-metrics</string>
+    <string>job</string>
+    <string>/bin/sh</string>
+    <string>-c</string>
+    <string>D=/Users/jeffbridwell/CascadeProjects/shared-observability/data/textfile_collector; /Users/jeffbridwell/CascadeProjects/chorus/platform/scripts/cost-metrics &gt; "$D/cost_metrics.prom.tmp" 2&gt;/dev/null &amp;&amp; mv "$D/cost_metrics.prom.tmp" "$D/cost_metrics.prom"</string>
+  </array>
+  <key>StartInterval</key><integer>300</integer>
+  <key>StandardOutPath</key><string>/Users/jeffbridwell/Library/Logs/Chorus/cost-metrics.log</string>
+  <key>StandardErrorPath</key><string>/Users/jeffbridwell/Library/Logs/Chorus/cost-metrics.log</string>
+  <key>EnvironmentVariables</key>
+  <dict><key>PATH</key><string>/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin</string></dict>
+</dict>
+</plist>

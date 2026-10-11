@@ -3064,6 +3064,18 @@ chorus:evidenceState a owl:DatatypeProperty ;   # #4472 — shared by ServiceIns
     rdfs:comment "Wren's third state (#3870): unknown = the harvester could not look (no plist reachable, no print access). Cleared by the per-machine agent. Distinct from unmapped and external by construction." ;
     rdfs:range xsd:string .
 
+# --- #4081: the schedule domain — what runs when. Every value read from the machine. ---
+chorus:scheduleKind a owl:DatatypeProperty ; rdfs:label "schedule kind" ; rdfs:domain chorus:ScheduledJob ; rdfs:range xsd:string ;
+    rdfs:comment "calendar (StartCalendarInterval) or interval (StartInterval), from the plist." .
+chorus:scheduleSpec a owl:DatatypeProperty ; rdfs:label "schedule" ; rdfs:domain chorus:ScheduledJob ; rdfs:range xsd:string ;
+    rdfs:comment "When it runs, as a person reads it ('daily 03:00', 'Mon 09:30', 'every 3600s'). REPEATABLE: one value per calendar entry, all kept (Wren 2026-10-11)." .
+chorus:intervalSecs a owl:DatatypeProperty ; rdfs:label "interval (seconds)" ; rdfs:domain chorus:ScheduledJob ; rdfs:range xsd:integer ;
+    rdfs:comment "StartInterval, for interval jobs." .
+chorus:runCount a owl:DatatypeProperty ; rdfs:label "runs" ; rdfs:domain chorus:ScheduledJob ; rdfs:range xsd:integer ;
+    rdfs:comment "launchctl print's run count since launchd loaded the job. Absent = not looked at, never zero." .
+chorus:enabled a owl:DatatypeProperty ; rdfs:label "enabled" ; rdfs:domain chorus:ScheduledJob ; rdfs:range xsd:boolean ;
+    rdfs:comment "From launchctl print-disabled, which launchd obeys — not the plist's Disabled key (they disagree after a manual disable)." .
+
 chorus:ScheduledJob a owl:Class ;
     rdfs:label "Scheduled Job" ;
     rdfs:comment "A launchd unit with StartCalendarInterval/StartInterval that runs and exits (nightly-suites, backups, probes). Harvested like ServiceInstance; classified from its own plist. Not a Service and never counted as one (#3870)." .
@@ -3082,7 +3094,14 @@ chorus:lastExitCode a owl:DatatypeProperty ;
 
 chorus:ScheduledJobShape a sh:NodeShape ;
     sh:targetClass chorus:ScheduledJob ;
-    chorus:instancesGraph "urn:chorus:domains:services" ;   # Silas ruling: ADR-051 domain-named; harvester owns it, OUT of MODEL_SET
+    chorus:instancesGraph "urn:chorus:domains:schedule" ;   # #4081 — its own domain now (was services); the crawl owns it, OUT of MODEL_SET
+    # #4081 — the schedule itself, read from the plist and launchctl, never typed
+    sh:property [ sh:path chorus:scheduleKind ; sh:minCount 0 ; sh:maxCount 1 ; sh:in ( "calendar" "interval" ) ; chorus:exposure chorus:public ] ;
+    sh:property [ sh:path chorus:scheduleSpec ; sh:minCount 0 ; sh:datatype xsd:string ; chorus:exposure chorus:public ] ;
+    sh:property [ sh:path chorus:intervalSecs ; sh:minCount 0 ; sh:maxCount 1 ; sh:datatype xsd:integer ; chorus:exposure chorus:public ] ;
+    sh:property [ sh:path chorus:logPath      ; sh:minCount 0 ; sh:maxCount 1 ; sh:datatype xsd:string ; chorus:exposure chorus:public ] ;
+    sh:property [ sh:path chorus:runCount     ; sh:minCount 0 ; sh:maxCount 1 ; sh:datatype xsd:integer ; chorus:exposure chorus:public ] ;
+    sh:property [ sh:path chorus:enabled      ; sh:minCount 0 ; sh:maxCount 1 ; sh:datatype xsd:boolean ; chorus:exposure chorus:public ] ;
     sh:property [ sh:path rdfs:label          ; sh:minCount 1 ; sh:datatype xsd:string ; chorus:exposure chorus:public ] ;
     sh:property [ sh:path chorus:launchdLabel ; sh:minCount 1 ; sh:maxCount 1 ; sh:datatype xsd:string ; chorus:exposure chorus:public ] ;
     sh:property [ sh:path chorus:onMachine    ; sh:minCount 1 ; sh:maxCount 1 ; sh:class chorus:Machine ; chorus:exposure chorus:public ] ;
@@ -3132,7 +3151,7 @@ chorus:ScheduledJobShape a sh:NodeShape ;
 
 # Claim the runtime vocabulary so owl-api mounts /serviceinstances
 # (DECLARED ⊃ CLAIMED ⊃ SERVED — claiming MOUNTS the surface).
-chorus:services chorus:definesVocabulary chorus:ServiceInstance , chorus:ScheduledJob .   # Commitment retired 2026-10-01 (#4064)
+chorus:services chorus:definesVocabulary chorus:ServiceInstance .   # Commitment retired 2026-10-01 (#4064); ScheduledJob moved to the schedule domain (#4081)
 # chorus:Service is claimed by the V2 services Domain (domains-builds-decisions-rcas-4022.ttl) — one claimer per served class (vocab-claim-authority, #4029).
 
 # --- hosts / atStep edges for the six Services authored 2026-08-15 ---
@@ -3164,7 +3183,7 @@ chorus:logPath a owl:DatatypeProperty ;
     rdfs:label "log path" ;
     rdfs:comment "Absolute path launchd routes the unit's stdout/stderr to (StandardOutPath / StandardErrorPath). ADR-023: ~/Library/Logs/{Chorus,Gathering}/ is the rule; anything else is a finding, not a style." ;
     chorus:adoptedFrom "otel:log.file.path" ;
-    rdfs:domain chorus:LogSource ; rdfs:range xsd:string .
+    rdfs:domain [ owl:unionOf ( chorus:LogSource chorus:ScheduledJob ) ] ; rdfs:range xsd:string .   # #4081: a job's StandardOutPath too — shared, so a union
 
 chorus:lokiJob a owl:DatatypeProperty ;
     rdfs:label "loki job" ;
