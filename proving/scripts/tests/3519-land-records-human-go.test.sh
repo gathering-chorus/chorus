@@ -13,7 +13,7 @@ echo "$demo_block" | grep -qE 'ACCEPTER.*refusing|refusing.*DEC-048' \
   || { echo "FAIL: GO with no accepter is not refused (DEC-048 self-accept guard)"; fail=1; }
 # the go-record must come BEFORE the prove call
 rec_line=$(echo "$demo_block" | grep -n 'werk-demo go' | head -1 | cut -d: -f1)
-prove_line=$(echo "$demo_block" | grep -n 'werk-demo "\${CARD_ID}" "\${GO}"' | head -1 | cut -d: -f1)
+prove_line=$(echo "$demo_block" | grep -n 'werk-demo "\${CARD_ID}" "\${ROLE}"' | head -1 | cut -d: -f1)
 if [ -n "$rec_line" ] && [ -n "$prove_line" ] && [ "$rec_line" -lt "$prove_line" ]; then :; else
   echo "FAIL: go-record must precede the prove step"; fail=1; fi
 [ "$fail" -eq 0 ] && { echo "PASS: land records the human go under accepter, before prove, accepter-required"; exit 0; }
