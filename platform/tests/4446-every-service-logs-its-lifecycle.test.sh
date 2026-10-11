@@ -69,6 +69,8 @@ com.chorus.restore-drill	platform/scripts/fuseki-restore-dump.sh
 com.chorus.security-scan-weekly	platform/scripts/test-security-scan.sh
 com.chorus.seed-probe	platform/scripts/seed-probe.sh
 com.chorus.service-harvest	platform/services/chorus-crawl/src/main.rs
+com.chorus.infra-stores-crawl	platform/services/chorus-crawl/src/main.rs
+com.chorus.cost-metrics	WRAP: an inline sh -c (cost-metrics, then a move) runs under service-run (#4081)
 com.chorus.standards-surface	platform/scripts/standards-surface-cron.sh
 com.chorus.tm-thin	platform/scripts/tm-thin.sh
 com.chorus.tmp-reaper	platform/scripts/tmp-reaper.sh

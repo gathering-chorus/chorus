@@ -32,8 +32,10 @@ describe('#4093 service page engineering half', () => {
     expect(s).not.toContain('/commitments');
     expect(s).toContain("renderFacetTables(");
     expect(s).toContain("'API Contract', 'Persistence', 'Dependencies', 'Tests'");
-    // the hosting domain is asked of the read-only SPARQL door, never guessed from the name
-    expect(s).toContain('chorus:hosts chorus:${s}');
+    // the hosting domain is asked of the read-only SPARQL door, never guessed from the name;
+    // #4472 — the edge names the service row (service-werk) or the bare name, so both are asked
+    expect(s).toContain('VALUES ?svc { chorus:${s} chorus:service-${s} }');
+    expect(s).toContain('?d chorus:hosts ?svc');
   });
 
   test('every chapter tells an empty model apart from a fetch failure', () => {
