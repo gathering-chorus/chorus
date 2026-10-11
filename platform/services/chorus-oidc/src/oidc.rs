@@ -199,7 +199,10 @@ impl OidcVerifier {
                     cl.ids = v;
                     cl.fetched_at = now_secs;
                 }
-                None => cl.ids.clear(),
+                None => {
+                    eprintln!("chorus-oidc: WARNING — person sign-in clients unreadable from the model; person tokens refused until it answers (#4412)");
+                    cl.ids.clear()
+                }
             }
         }
         cl.ids.iter().any(|c| c == aud)
@@ -416,6 +419,9 @@ impl OidcVerifier {
         //    sign-in surface is a model row, not a code change.
         let aud = auth::json_string(payload, "aud").ok_or(AuthError::Malformed)?;
         if aud != "chorus" && aud != "solid" && !self.is_person_client(&aud, now_secs) {
+            // #4412 — name the audience refused: a client id is public, and
+            // without it a refused sign-in cannot say which app it came from.
+            eprintln!("chorus-oidc: refused audience {:?} — not chorus, solid, or a model-named sign-in client (#4412)", aud);
             return Err(AuthError::WrongAudience);
         }
         // 4. Expiry.

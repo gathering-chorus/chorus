@@ -73,7 +73,7 @@ Chorus · Athena · rewritten for readers outside the team 2026-09-03""" ;
 
 chorus:borg a chorus:Product ;
     chorus:docState """current""" ;
-    chorus:diagram """%% Structure (#4470, 2026-10-09)
+    chorus:diagram """%% Structure
 flowchart LR
   CARD["card<br/><i>AC + checks</i>"] --> A["athena-*<br/>writes modelSha"] --> W["werk-*<br/>writes round: sha"] --> P
   subgraph P["Proving — per card, ends"]
