@@ -81,4 +81,75 @@ describe('#4431 SpineEventsReader', () => {
     expect(rows.every((x) => typeof x.event === 'string' && Number.isFinite(x.ts))).toBe(true);
     expect(parseSpineLine('"role":"wren","event":"card.pulled"}')).toBeNull();
   });
+  // #4431 reopen — 2026-10-10 20:34 the reader blocked chorus-api 3012 ms (4564 ms on
+  // 10-07) re-parsing the whole 4 MB tail every refresh. A refresh reads what was added.
+  test('a refresh reads only the bytes added since the last read', async () => {
+    const big = Array.from({ length: 5000 }, (_, i) => line('system.heartbeat', 'silas', '2026-10-06T09:00:00Z', { n: i })).join('\n') + '\n';
+    fs.appendFileSync(file, big);
+    let t = 0;
+    const r = new SpineEventsReader({ path: file, refreshMs: 2000, now: () => t });
+    await r.recent();
+    const first = r.bytesRead;
+    expect(first).toBeGreaterThan(200_000);
+    const added = line('demo.verdict', 'jeff', '2026-10-06T10:00:04Z') + '\n';
+    fs.appendFileSync(file, added);
+    t = 2000;
+    const rows = await r.recent();
+    expect(r.bytesRead - first).toBe(Buffer.byteLength(added));
+    expect(rows[rows.length - 1].event).toBe('demo.verdict');
+    expect(rows.length).toBe(5005);
+  });
+
+  test('NEGATIVE PROOF — a reader that forgot where it was reads the whole tail again', async () => {
+    fs.appendFileSync(file, Array.from({ length: 5000 }, (_, i) => line('system.heartbeat', 'silas', '2026-10-06T09:00:00Z', { n: i })).join('\n') + '\n');
+    let t = 0;
+    const r = new SpineEventsReader({ path: file, refreshMs: 2000, now: () => t });
+    await r.recent();
+    const first = r.bytesRead;
+    (r as unknown as { offset: number }).offset = -1; // the old behaviour: no memory of the last read
+    fs.appendFileSync(file, line('demo.verdict', 'jeff', '2026-10-06T10:00:04Z') + '\n');
+    t = 2000;
+    await r.recent();
+    expect(r.bytesRead - first).toBeGreaterThan(first - 1);
+  });
+
+  test('a line written in two halves is taken once, whole', async () => {
+    let t = 0;
+    const r = new SpineEventsReader({ path: file, refreshMs: 2000, now: () => t });
+    await r.recent();
+    const whole = line('demo.verdict', 'jeff', '2026-10-06T10:00:04Z');
+    fs.appendFileSync(file, whole.slice(0, 20));
+    t = 2000;
+    expect((await r.recent()).length).toBe(4);
+    fs.appendFileSync(file, whole.slice(20) + '\n');
+    t = 4000;
+    const rows = await r.recent();
+    expect(rows.length).toBe(5);
+    expect(rows[4].event).toBe('demo.verdict');
+  });
+
+  test('the window stays within tailBytes as lines arrive', async () => {
+    let t = 0;
+    const r = new SpineEventsReader({ path: file, tailBytes: 300, refreshMs: 2000, now: () => t });
+    await r.recent();
+    for (let i = 0; i < 20; i++) {
+      fs.appendFileSync(file, line('system.heartbeat', 'kade', '2026-10-06T11:00:00Z', { n: i }) + '\n');
+      t += 2000;
+      await r.recent();
+    }
+    const rows = await r.recent();
+    const bytes = rows.reduce((a, x) => a + Buffer.byteLength(JSON.stringify({ timestamp: x.timestamp, event: x.event, role: x.role })) + 1, 0);
+    expect(bytes).toBeLessThanOrEqual(400);
+    expect(rows[rows.length - 1].role).toBe('kade');
+  });
+
+  test('a file that shrank is read afresh from its tail', async () => {
+    let t = 0;
+    const r = new SpineEventsReader({ path: file, refreshMs: 2000, now: () => t });
+    await r.recent();
+    fs.writeFileSync(file, line('card.pulled', 'kade', '2026-10-07T10:00:00Z') + '\n');
+    t = 2000;
+    const rows = await r.recent();
+    expect(rows.map((x) => x.role)).toEqual(['kade']);
+  });
 });

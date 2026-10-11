@@ -110,6 +110,27 @@ export function filterSpineEvents(rows: SpineEventRow[], q: SpineEventQuery): Sp
   return q.limit !== undefined && q.limit >= 0 ? out.slice(-q.limit) : out;
 }
 
+/** The whole lines in buf up to its last newline (end), parsed, with each line's byte length.
+ *  A fresh tail cut mid-line leaves a partial first line; parseSpineLine drops it. */
+function takeLines(buf: Buffer, end: number): { rows: SpineEventRow[]; lens: number[] } {
+  const rows: SpineEventRow[] = [];
+  const lens: number[] = [];
+  if (end < 0) return { rows, lens };
+  for (const line of buf.subarray(0, end).toString('utf-8').split('\n')) {
+    const r = parseSpineLine(line);
+    if (r) { rows.push(r); lens.push(Buffer.byteLength(line) + 1); }
+  }
+  return { rows, lens };
+}
+
+/** Drops the oldest rows until the window's lines fit in maxBytes. */
+function keepWithin(rows: SpineEventRow[], lens: number[], maxBytes: number): { rows: SpineEventRow[]; lens: number[] } {
+  let bytes = lens.reduce((a, b) => a + b, 0);
+  let drop = 0;
+  while (bytes > maxBytes && drop < lens.length) bytes -= lens[drop++];
+  return drop > 0 ? { rows: rows.slice(drop), lens: lens.slice(drop) } : { rows, lens };
+}
+
 export class SpineEventsReader {
   private readonly path: string;
   private readonly tailBytes: number;
@@ -120,6 +141,12 @@ export class SpineEventsReader {
   private inflight: Promise<SpineEventRow[]> | null = null;
   /** How many times the file has been read; tests use it as the negative proof. */
   reads = 0;
+  /** Bytes read from the file, all reads together; a refresh reads only what was added. */
+  bytesRead = 0;
+  /** File position just past the last whole line taken in; -1 before the first read. */
+  private offset = -1;
+  /** Byte length of each row's line, in step with rows, so the window stays tailBytes. */
+  private lens: number[] = [];
 
   constructor(o: SpineEventsReaderOptions) {
     this.path = o.path;
@@ -143,23 +170,35 @@ export class SpineEventsReader {
     return filterSpineEvents(await this.recent(), q);
   }
 
+  /**
+   * Reads only the bytes appended since the last read (#4431 reopen: re-parsing the
+   * whole 4 MB tail every refresh blocked chorus-api's event loop for 3–4.5 s). The
+   * first read, a file that shrank, or a gap wider than the window read the tail
+   * afresh. Only whole lines are taken: a line still being written waits for its
+   * newline, so it is never parsed in halves.
+   */
   private async readTail(): Promise<SpineEventRow[]> {
     this.reads += 1;
     let fh: import('fs').promises.FileHandle | null = null;
     try {
       fh = await fsp.open(this.path, 'r');
       const { size } = await fh.stat();
-      const len = Math.min(size, this.tailBytes);
-      const buf = Buffer.alloc(len);
-      await fh.read(buf, 0, len, size - len);
-      const text = buf.toString('utf-8');
-      // A tail cut mid-line leaves a partial first line; parseSpineLine drops it.
-      const out: SpineEventRow[] = [];
-      for (const line of text.split('\n')) {
-        const r = parseSpineLine(line);
-        if (r) out.push(r);
-      }
-      return out;
+      const fresh = this.offset < 0 || size < this.offset || size - this.offset > this.tailBytes;
+      const start = fresh ? Math.max(0, size - this.tailBytes) : this.offset;
+      const buf = Buffer.alloc(size - start);
+      if (buf.length > 0) await fh.read(buf, 0, buf.length, start);
+      this.bytesRead += buf.length;
+      const end = buf.lastIndexOf(0x0a);
+      const taken = takeLines(buf, end);
+      if (end >= 0) this.offset = start + end + 1;
+      else if (fresh) this.offset = start;
+      const kept = keepWithin(
+        (fresh ? [] : this.rows).concat(taken.rows),
+        (fresh ? [] : this.lens).concat(taken.lens),
+        this.tailBytes);
+      this.rows = kept.rows;
+      this.lens = kept.lens;
+      return this.rows;
     } finally {
       if (fh) await fh.close();
     }
