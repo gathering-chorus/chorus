@@ -2072,6 +2072,12 @@ fn run_cargo_sel(werk: &str, name: &str, quarantined: &[&str], exclude_bins: &[&
     if !Path::new(&format!("{}/Cargo.toml", dir)).is_file() {
         return (true, Vec::new(), String::new());
     }
+    // #4494 — start from prod's build cache when this werk has none
+    let canonical = std::env::var("CHORUS_HOME")
+        .unwrap_or_else(|_| format!("{}/CascadeProjects/chorus", std::env::var("HOME").unwrap_or_default()));
+    if Path::new(werk) != Path::new(&canonical) {
+        println!("build-cache: {}", werk_test::seed_target(werk, &canonical, &crate_dir(werk, name)));
+    }
     if let Err(reason) = nextest_gate(werk) {
         eprintln!("REFUSED cargo lane for {}: {}", name, reason);
         return (false, Vec::new(), format!("REFUSED cargo lane: {}", reason));
