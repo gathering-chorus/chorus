@@ -43,7 +43,11 @@ pub fn judge(c: &Check, seen: &Seen) -> Outcome {
         "none" | "" => Outcome::Unmeasured("no runnable check on this AC".into()),
         "http" | "sparql" | "test" => {
             let Some(body) = seen else {
-                return Outcome::Unmeasured(format!("{} {} did not answer", c.kind, c.target));
+                return Outcome::Unmeasured(if c.kind == "test" {
+                    format!("test {}: no recorded result in the store", c.target)
+                } else {
+                    format!("{} {} did not answer", c.kind, c.target)
+                });
             };
             let want = c.expect.trim();
             if want.is_empty() {
@@ -52,6 +56,8 @@ pub fn judge(c: &Check, seen: &Seen) -> Outcome {
             let got = if c.kind == "sparql" { ask_value(body) } else { None };
             let ok = match got {
                 Some(b) => b.to_string() == want,
+                // a status or a test result is the whole answer, not a substring
+                None if is_status(want) || c.kind == "test" => body.trim() == want,
                 None => body.contains(want),
             };
             let line = first_line_with(body, want);
@@ -196,4 +202,16 @@ pub fn failed_in_status(status: &str) -> String {
         .and_then(|l| l.split_whitespace().next())
         .unwrap_or_default()
         .to_string()
+}
+
+/// Three digits: an HTTP status code.
+pub fn is_status(s: &str) -> bool {
+    let s = s.trim();
+    s.len() == 3 && s.chars().all(|c| c.is_ascii_digit())
+}
+
+/// The single value of a one-column SPARQL TSV result; None when it has no row.
+pub fn tsv_value(tsv: &str) -> Option<String> {
+    let v = tsv.lines().nth(1)?.split('\t').next()?.trim();
+    (!v.is_empty()).then(|| term(v))
 }

@@ -74,3 +74,12 @@ fn the_failed_step_is_read_from_the_runs_status() {
     assert_eq!(failed_in_status(st), "skill-prove-stage");
     assert_eq!(failed_in_status("├─skill-a (1s) [success]\n"), "", "no failed step names none");
 }
+
+#[test]
+fn a_status_expect_is_the_whole_answer_and_a_test_with_no_result_is_unmeasured() {
+    assert_eq!(judge(&c("http", "/health", "200"), &Some("200".into())).word(), "met");
+    assert_eq!(judge(&c("http", "/health", "200"), &Some("2004".into())).word(), "not met", "200 is not a substring match");
+    assert_eq!(judge(&c("test", "t.sh", "pass"), &Some("fail".into())).word(), "not met");
+    assert_eq!(tsv_value("?result\n"), None, "no recorded result → the probe saw nothing");
+    assert_eq!(tsv_value("?result\n\"pass\"\n").as_deref(), Some("pass"));
+}

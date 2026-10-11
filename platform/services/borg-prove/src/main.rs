@@ -14,9 +14,23 @@ fn curl(args: &[&str]) -> Option<String> {
     out.status.success().then(|| String::from_utf8_lossy(&out.stdout).into_owned())
 }
 
+/// The store needs its admin credential for reads of most graphs. It goes to
+/// curl on stdin (-K -), never on argv, and is never printed.
 fn sparql(query: &str, accept: &str) -> Option<String> {
+    use std::io::Write;
     let q = format!("query={query}");
-    curl(&["-H", &format!("Accept: {accept}"), "--data-urlencode", &q, &env("FUSEKI_QUERY", "http://localhost:3030/pods/query")])
+    let endpoint = env("FUSEKI_QUERY", "http://localhost:3030/pods/query");
+    let mut cmd = Command::new("curl");
+    cmd.args(["-sf", "--max-time", "30", "-K", "-", "-H", &format!("Accept: {accept}"), "--data-urlencode", &q, &endpoint])
+        .stdin(std::process::Stdio::piped())
+        .stdout(std::process::Stdio::piped());
+    let mut child = cmd.spawn().ok()?;
+    if let (Ok(u), Ok(p)) = (std::env::var("FUSEKI_ADMIN_USER"), std::env::var("FUSEKI_ADMIN_PASSWORD")) {
+        let _ = writeln!(child.stdin.as_mut()?, "user = \"{u}:{p}\"");
+    }
+    drop(child.stdin.take());
+    let out = child.wait_with_output().ok()?;
+    out.status.success().then(|| String::from_utf8_lossy(&out.stdout).into_owned())
 }
 
 /// What the running system answers for one check. Read-only: GETs and ASKs.
@@ -24,23 +38,33 @@ fn probe(c: &Check, base: &str) -> Seen {
     match c.kind.as_str() {
         "http" => {
             let url = if c.target.starts_with("http") { c.target.clone() } else { format!("{base}{}", c.target) };
-            curl(&[&url])
+            if is_status(&c.expect) {
+                // an expect of three digits is the HTTP status, not body text
+                let out = Command::new("curl").args(["-s", "-o", "/dev/null", "-w", "%{http_code}", "--max-time", "15", &url]).output().ok()?;
+                let code = String::from_utf8_lossy(&out.stdout).trim().to_string();
+                (code != "000").then_some(code)
+            } else {
+                curl(&[&url])
+            }
         }
         "sparql" => sparql(&c.target, "application/sparql-results+json"),
         "test" => {
-            // the latest recorded result of the named test, as the store holds it
+            // the latest recorded result of the test, named by file or by test name
+            let t = c.target.replace(['"', '\\'], "");
             let q = format!(
-                "PREFIX chorus: <https://jeffbridwell.com/chorus#> SELECT ?status WHERE {{ GRAPH ?g {{ ?r a chorus:TestResult ; chorus:testName {:?} ; chorus:status ?status ; chorus:ranAt ?t }} }} ORDER BY DESC(?t) LIMIT 1",
-                c.target
+                "PREFIX chorus: <https://jeffbridwell.com/chorus#> SELECT ?result WHERE {{ GRAPH ?g {{ ?r a chorus:TestResult ; chorus:result ?result ; chorus:runTs ?t . {{ ?r chorus:filePath \"{t}\" }} UNION {{ ?r chorus:testName \"{t}\" }} }} }} ORDER BY DESC(?t) LIMIT 1"
             );
-            sparql(&q, "text/tab-separated-values")
+            sparql(&q, "text/tab-separated-values").and_then(|b| tsv_value(&b))
         }
         _ => None,
     }
 }
 
 fn checks(card: u32) -> Vec<Check> {
-    let Some(tsv) = sparql(&checks_query(card), "text/tab-separated-values") else {
+    // BORG_CHECKS_TSV: read the rows from a file (a fixture, or rows not yet in
+    // the store); the probes still go to the running system, read-only
+    let file = std::env::var("BORG_CHECKS_TSV").ok().and_then(|p| std::fs::read_to_string(p).ok());
+    let Some(tsv) = file.or_else(|| sparql(&checks_query(card), "text/tab-separated-values")) else {
         eprintln!("borg-prove: the store did not answer for #{card}'s CardAC rows");
         exit(1);
     };
