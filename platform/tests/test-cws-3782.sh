@@ -124,14 +124,20 @@ t "a quoted marker is not an exit" "running                 at deploy-werk" "$ou
 
 # #4474 — werk v2 runs come from dagu (a file:// fixture stands in for its API).
 # Negative proof: a run for CARD=1090 is a different card and must not count.
-mkdir -p "$TD/dagu/api/v1/dags/cicd"
-cat > "$TD/dagu/api/v1/dags/cicd/dag-runs" <<'EOF'
+# #4494 — both workflows come from dagu's one run list (cicd and cicd-land by name).
+mkdir -p "$TD/dagu/api/v1/dags/cicd" "$TD/dagu/api/v1/queues/werk-land"
+cat > "$TD/dagu/api/v1/dag-runs" <<'EOF'
 {"dagRuns":[
- {"dagRunId":"r3","params":"CARD=1090 ROLE=kade","statusLabel":"failed","startedAt":"2026-10-09T23:00:00-04:00","finishedAt":"2026-10-09T23:01:00-04:00","nodes":[{"statusLabel":"failed","step":{"name":"skill-werk-build"}}]},
- {"dagRunId":"r2","params":"CARD=109 ROLE=kade","statusLabel":"waiting","startedAt":"2026-10-09T22:14:19-04:00","finishedAt":"2026-10-09T22:54:28-04:00","nodes":[{"statusLabel":"succeeded","step":{"name":"skill-werk-demo"}},{"statusLabel":"waiting","step":{"name":"skill-werk-go"}}]},
- {"dagRunId":"r1","params":"CARD=109 ROLE=kade","statusLabel":"failed","startedAt":"2026-10-09T21:03:31-04:00","finishedAt":"2026-10-09T21:03:32-04:00","nodes":[{"statusLabel":"failed","step":{"name":"skill-werk-commit"}},{"statusLabel":"aborted","step":{"name":"skill-werk-push"}}]},
- {"dagRunId":"r0","params":"CARD=109 ROLE=kade","statusLabel":"waiting","startedAt":"2026-10-09T21:00:00-04:00","finishedAt":"2026-10-09T21:02:00-04:00","nodes":[{"statusLabel":"waiting","step":{"name":"skill-werk-go","id":"skill_werk_go"}}]}
+ {"name":"cicd","dagRunId":"r3","params":"CARD=1090 ROLE=kade","statusLabel":"failed","startedAt":"2026-10-09T23:00:00-04:00","finishedAt":"2026-10-09T23:01:00-04:00","nodes":[{"statusLabel":"failed","step":{"name":"skill-werk-build"}}]},
+ {"name":"cicd","dagRunId":"r2","params":"CARD=109 ROLE=kade","statusLabel":"waiting","startedAt":"2026-10-09T22:14:19-04:00","finishedAt":"2026-10-09T22:54:28-04:00","nodes":[{"statusLabel":"succeeded","step":{"name":"skill-werk-demo"}},{"statusLabel":"waiting","step":{"name":"skill-werk-go"}}]},
+ {"name":"cicd","dagRunId":"r1","params":"CARD=109 ROLE=kade","statusLabel":"failed","startedAt":"2026-10-09T21:03:31-04:00","finishedAt":"2026-10-09T21:03:32-04:00","nodes":[{"statusLabel":"failed","step":{"name":"skill-werk-commit"}},{"statusLabel":"aborted","step":{"name":"skill-werk-push"}}]},
+ {"name":"cicd","dagRunId":"r0","params":"CARD=109 ROLE=kade","statusLabel":"waiting","startedAt":"2026-10-09T21:00:00-04:00","finishedAt":"2026-10-09T21:02:00-04:00","nodes":[{"statusLabel":"waiting","step":{"name":"skill-werk-go","id":"skill_werk_go"}}]}
 ]}
+EOF
+# NEGATIVE PROOF for the count: the per-workflow list stops at dagu's 30 newest
+# runs; a decoy there holding one run for 109 must not become the count.
+cat > "$TD/dagu/api/v1/dags/cicd/dag-runs" <<'EOF'
+{"dagRuns":[{"name":"cicd","dagRunId":"r2","params":"CARD=109 ROLE=kade","statusLabel":"waiting","nodes":[]}]}
 EOF
 out=$(CWS_RUNS_DIR=$TD CWS_DAGU="file://$TD/dagu" "$CWS" 109)
 t "v2 runs come from dagu" "  v2 waiting at skill-werk-go · 3 runs" "$out"
@@ -144,19 +150,64 @@ t "the go names dagu's config" "go: dagu --config /x/platform/config/dagu.yaml h
 t "an older run still waiting at the go is superseded" "superseded  skill-werk-go" "$out"
 if [[ "$out" == *"--run-id r0"* ]]; then echo "FAIL a superseded run is offered a go"; fails=$((fails+1)); fi
 t "dagu down says so, never silent" "v2 (dagu): unreadable" "$(CWS_RUNS_DIR=$TD "$CWS" 109)"
+t "a v2-only card opens with its one line" "#109 kade   waiting for your go" "$out"
+if [[ "$out" == *"no runs"* ]]; then echo "FAIL a v2-only card opens with the dead v1 line"; fails=$((fails+1)); fi
 
-# #4494 — the land runs as its own DAG on the land queue; /cws follows it.
+# #4494 — the land runs as its own workflow on the land queue; /cws follows it.
 # NEGATIVE PROOF: another card's land (CARD=1090) is not this card's.
-mkdir -p "$TD/dagu/api/v1/dags/cicd-land"
-cat > "$TD/dagu/api/v1/dags/cicd-land/dag-runs" <<'EOF2'
-{"dagRuns":[
- {"dagRunId":"L2","params":"CARD=1090 ROLE=kade ACCEPTER=jeff","statusLabel":"failed","nodes":[{"statusLabel":"failed","step":{"name":"skill-werk-sync"}}]},
- {"dagRunId":"L1","params":"CARD=109 ROLE=kade ACCEPTER=jeff","statusLabel":"running","nodes":[{"statusLabel":"succeeded","step":{"name":"skill-werk-merge"}},{"statusLabel":"running","step":{"name":"skill-werk-deploy-canonical"}}]}
-]}
+python3 - "$TD/dagu/api/v1/dag-runs" <<'EOF2'
+import json, sys
+p = sys.argv[1]; d = json.load(open(p))
+d["dagRuns"][:0] = [
+ {"name":"cicd-land","dagRunId":"L2","params":"CARD=1090 ROLE=kade ACCEPTER=jeff","statusLabel":"failed","queuedAt":"2026-10-09T23:30:00-04:00","nodes":[{"statusLabel":"failed","step":{"name":"skill-werk-sync"}}]},
+ {"name":"cicd-land","dagRunId":"L1","params":"CARD=109 ROLE=kade ACCEPTER=jeff","statusLabel":"running","queuedAt":"2026-10-09T23:00:00-04:00","nodes":[{"statusLabel":"succeeded","step":{"name":"skill-werk-merge"}},{"statusLabel":"running","step":{"name":"skill-werk-deploy-canonical"}}]}]
+json.dump(d, open(p, "w"))
 EOF2
 out=$(CWS_RUNS_DIR=$TD CWS_DAGU="file://$TD/dagu" "$CWS" 109)
 t "the card's land shows on the land queue" "v2 land running at skill-werk-deploy-canonical · 1 land · dagu L1" "$out"
 if [[ "$out" == *"dagu L2"* ]]; then echo "FAIL another card's land (CARD=1090) counted for 109"; fails=$((fails+1)); fi
+
+# #4494 — a go can be a no; the go line offers both, and a no reads "rejected"
+out=$(CWS_RUNS_DIR=$TD CWS_DAGU="file://$TD/dagu" "$CWS" 109)
+t "the go line offers the no" "--input decision=no" "$out"
+t "the go itself says go" "--input decision=go" "$out"
+
+# #4494 — the board view: one line per card, where it is now, which run.
+# Jeff 2026-10-10: "the cws output is confusing".
+mkdir -p "$TD/api/api/chorus/context/board"
+echo '{"data":{"cards":[{"id":109,"owner":"Kade"},{"id":110,"owner":"Wren"}]}}' > "$TD/api/api/chorus/context/board/wip"
+board() { CWS_RUNS_DIR=$TD CWS_DAGU="file://$TD/dagu" CWS_API="file://$TD/api" "$CWS"; }
+out=$(board)
+t "a landing card reads where its land is" "#109 kade   land: deploy-canonical" "$out"
+t "its run number is the card's own count" "· run 3" "$out"
+t "a card with no run says so plainly" "#110 wren   no run yet" "$out"
+n=$(grep -c '^#109' <<<"$out")
+[ "$n" = 1 ] || { echo "FAIL #109 takes $n lines, wanted one"; fails=$((fails+1)); }
+if [[ "$out" == *"no pipeline run yet"* ]]; then echo "FAIL the dead v1 line is back"; fails=$((fails+1)); fi
+# a queued land names its place in line, from dagu's queue
+python3 - "$TD/dagu/api/v1/dag-runs" <<'EOF3'
+import json, sys
+p = sys.argv[1]; d = json.load(open(p))
+for r in d["dagRuns"]:
+    if r["dagRunId"] == "L1": r["statusLabel"] = "queued"; r["nodes"] = []
+json.dump(d, open(p, "w"))
+EOF3
+echo '{"items":[{"dagRunId":"Lx","statusLabel":"queued"},{"dagRunId":"L1","statusLabel":"queued"}]}' > "$TD/dagu/api/v1/queues/werk-land/items"
+t "a queued land names its place in line" "#109 kade   land: waiting in line (2nd)" "$(board)"
+# a no at the go: the land was skipped and the run ended (no land row for it)
+python3 - "$TD/dagu/api/v1/dag-runs" <<'EOF4'
+import json, sys
+p = sys.argv[1]; d = json.load(open(p))
+d["dagRuns"] = [r for r in d["dagRuns"] if r.get("name") != "cicd-land"]
+for r in d["dagRuns"]:
+    if r["dagRunId"] == "r2":
+        r["statusLabel"] = "succeeded"
+        r["nodes"] = [{"statusLabel":"succeeded","step":{"name":"skill-werk-go"}},{"statusLabel":"skipped","step":{"name":"cicd-land"}}]
+json.dump(d, open(p, "w"))
+EOF4
+out=$(board)
+t "a no at the go reads rejected" "#109 kade   rejected at the go" "$out"
+if [[ "$out" == *"#109 kade   landed"* ]]; then echo "FAIL a rejected run reads landed"; fails=$((fails+1)); fi
 
 rm -rf "$TD"
 if [ $fails -gt 0 ]; then echo "test-cws-3782: $fails FAILURE(S)"; exit 1; fi

@@ -149,7 +149,7 @@ fn the_go_names_the_accepter_and_only_the_land_steps_read_it() {
     // #4474 run 9: werk-merge refused "no-approval" because no step set $ACCEPTER
     let out = generate("cicd", &cicd()).unwrap();
     let go = out.split("  - name: ").find(|s| s.starts_with("skill-werk-go\n")).unwrap();
-    assert!(go.contains("        required: [accepter]\n"), "the go asks who: {go}");
+    assert!(go.contains("        required: [accepter, decision]\n"), "the go asks who and go-or-no: {go}");
     assert!(go.contains("enum: [jeff, wren, kade, silas]"), "{go}");
     // #4494 — the go's accepter rides into the land as its ACCEPTER param (a
     // dagu param is env in every step: measured, a land step read envacc=jeff)
@@ -160,6 +160,34 @@ fn the_go_names_the_accepter_and_only_the_land_steps_read_it() {
     // negative proof: no step before the go may claim an accepter
     let before = out.split("  - name: ").skip(1).take_while(|s| !s.starts_with("skill-werk-go\n")).filter(|s| s.contains("ACCEPTER")).count();
     assert_eq!(before, 0, "a step before the go reads an accepter nobody gave");
+}
+
+#[test]
+fn a_no_at_the_go_skips_the_land_and_ends_the_run() {
+    // #4494 — a run waiting at the go could not be stopped, dequeued or
+    // deleted (dagu 2.18, measured 2026-10-10 22:2x). "no" is the way out:
+    // the enqueue only runs when the decision is go (measured in a scratch
+    // dagu 23:40: decision=no → land skipped, run ended; go → landed).
+    let out = generate("cicd", &cicd()).unwrap();
+    let go = out.split("  - name: ").find(|s| s.starts_with("skill-werk-go\n")).unwrap();
+    assert!(go.contains("          decision:\n            type: string\n            enum: [go, no]\n"), "{go}");
+    let enq = out.split("  - name: ").find(|s| s.starts_with("cicd-land\n")).unwrap();
+    assert!(enq.contains("    preconditions:\n      - condition: \"${skill_werk_go.outputs.decision}\"\n        expected: \"go\"\n"), "{enq}");
+    // NEGATIVE PROOF: the enqueue is the only step after the go, so nothing
+    // else can carry a no into a land
+    let after: Vec<&str> = out.split("  - name: ").skip_while(|s| !s.starts_with("skill-werk-go\n")).skip(1).collect();
+    assert_eq!(after.len(), 1, "steps after the go: {after:?}");
+}
+
+#[test]
+fn a_successful_land_hands_its_commit_to_athena_and_only_the_land_does() {
+    // #4494 — the land event triggers athena (#4177); v2's land never passed
+    // through chorus-mcp's werk-merge, so #4496's model never reached the store.
+    let land = generate_land("cicd", &cicd()).unwrap();
+    assert!(land.contains("  success:\n    command: '${CHORUS_HOME}/platform/scripts/athena-land ${CARD} ${ROLE}'\n"), "{land}");
+    // NEGATIVE PROOF: the card half never deploys a model (nothing has landed)
+    let card = generate("cicd", &cicd()).unwrap();
+    assert!(!card.contains("athena-land"), "{card}");
 }
 
 #[test]

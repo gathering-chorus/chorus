@@ -18,6 +18,8 @@ env:
 handler_on:
   failure:
     command: '${CHORUS_HOME}/platform/scripts/ops-nudge ${ROLE} "werk v2 #${CARD} land failed · dagu ${DAG_RUN_ID} · /cws ${CARD}"'
+  success:
+    command: '${CHORUS_HOME}/platform/scripts/athena-land ${CARD} ${ROLE}'
 steps:
   - name: skill-werk-merge
     description: "werk-merge"

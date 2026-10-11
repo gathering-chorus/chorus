@@ -35,15 +35,26 @@ One line per run. No re-narration, no summary on top.
 
 ## What the lines mean
 
-- `running · 9m in · stage: demo` — live (pid verified against the pin's own
-  startedAt, the #3781 identity rule; a dead or reused pid reports
-  **abandoned (pin stale)**, never running)
-- `presented · round matches HEAD ✓ · go: …` — waiting on Jeff, with the go
-  command verbatim
-- `presented · ⚠ STALE-PRESENT` — a commit landed after the present; a go now
-  would land a witness missing content. Supersede + re-present first.
-- No-arg view shows LIVE runs only — the ~190 landed/stale pins on record are
-  history, not status.
+The no-arg view is one line per WIP card (#4494): where it is now, for how
+long, and which run of the card this is.
+
+```
+#4235 kade   land: waiting in line (1st)        6m · run 6
+#4493 wren   land: deploy-canonical             7m · run 2
+#4494 kade   failed at deploy-canonical    (22:24) · run 2
+```
+
+- `build` / `test` / `demo` … — a run is at that step, for that long
+- `waiting for your go` — the demo is up; the go command follows on the line
+- `land: waiting in line (2nd)` — the go is in; lands go one at a time
+- `land: <step>` — the land is running that step
+- `failed at <step> (HH:MM)` — the run stopped there, at that time
+- `run N` — the card's own run count, from dagu's run list
+- A card with only old-pipeline runs keeps its old line (pid verified against
+  the pin's own startedAt, the #3781 identity rule; a dead or reused pid reports
+  **abandoned (pin stale)**, never running).
+
+`/cws <card>` opens with the same line, then every run in a table.
 
 ## Hard rules
 

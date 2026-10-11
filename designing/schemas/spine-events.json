@@ -2430,6 +2430,31 @@
         "trace_id": "Werk trace join key"
       }
     },
+    "deploy.restart.deferred": {
+      "producer": "deploys",
+      "category": "fact",
+      "version": "1",
+      "vertebra": "building",
+      "source": "werk",
+      "description": "Werk `deploy` verb (canonical): the orchestrator (com.chorus.dagu) needed a restart for this land's changes; restarting it inline kills every running pipeline run, so a detached waiter restarts it once dagu runs nothing (#4494).",
+      "fields": {
+        "service": "The launchd label whose restart waits",
+        "reason": "orchestrator-waits-for-idle",
+        "pid": "The detached waiter's pid"
+      }
+    },
+    "deploy.restart.abandoned": {
+      "producer": "deploys",
+      "category": "fact",
+      "version": "1",
+      "vertebra": "building",
+      "source": "werk",
+      "description": "Werk `deploy` verb: a deferred orchestrator restart gave up — dagu was never idle within 6h; restart it by hand when no run is running (#4494).",
+      "fields": {
+        "service": "The launchd label not restarted",
+        "reason": "never-idle-in-6h"
+      }
+    },
     "deploy.dependent.added": {
       "producer": "deploys",
       "category": "fact",

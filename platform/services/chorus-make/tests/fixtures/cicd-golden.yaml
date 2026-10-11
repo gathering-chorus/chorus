@@ -65,10 +65,16 @@ steps:
           accepter:
             type: string
             enum: [jeff, wren, kade, silas]
-        required: [accepter]
+          decision:
+            type: string
+            enum: [go, no]
+        required: [accepter, decision]
   - name: cicd-land
     description: "enqueue the land on the werk-land queue"
     depends: [skill-werk-go]
+    preconditions:
+      - condition: "${skill_werk_go.outputs.decision}"
+        expected: "go"
     action: dag.enqueue
     with:
       dag: cicd-land

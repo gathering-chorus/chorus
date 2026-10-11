@@ -535,7 +535,25 @@ fn service_label_for_dir(werk_root: &Path, dir_rel: &str) -> Option<String> {
 }
 
 /// #3132 — committed `*.plist` files under the werk (any depth), excl node_modules.
-fn find_plists(root: &Path) -> Vec<PathBuf> {
+/// #4494 — "committed" is git's answer, not a walk: canonical holds 658,446
+/// retirement backups under platform/backups, and stat-ing each one per unit
+/// held #4493's deploy-canonical for 10+ minutes (Wren, 2026-10-10). A root git
+/// cannot read (a test dir) is walked, still skipping the backups.
+pub fn find_plists(root: &Path) -> Vec<PathBuf> {
+    let listed = Command::new("git")
+        .args(["-C", &root.to_string_lossy(), "ls-files", "-z", "--", "*.plist"])
+        .output()
+        .ok()
+        .filter(|o| o.status.success());
+    if let Some(o) = listed {
+        let mut out: Vec<PathBuf> = o.stdout.split(|b| *b == 0)
+            .filter(|f| !f.is_empty())
+            .map(|f| root.join(String::from_utf8_lossy(f).as_ref()))
+            .filter(|p| p.is_file())
+            .collect();
+        out.sort();
+        return out;
+    }
     let mut out = Vec::new();
     let mut stack = vec![root.to_path_buf()];
     while let Some(dir) = stack.pop() {
@@ -545,7 +563,7 @@ fn find_plists(root: &Path) -> Vec<PathBuf> {
             let nm = e.file_name();
             let nm = nm.to_string_lossy();
             if p.is_dir() {
-                if nm == "node_modules" || nm == ".git" || nm == "target" {
+                if nm == "node_modules" || nm == ".git" || nm == "target" || nm == "backups" {
                     continue;
                 }
                 stack.push(p);
@@ -820,6 +838,8 @@ pub fn run_deploy() -> R<String> {
             // #3317 — crate-scoped canonical deploy, the standalone surface that
             // replaced bash `chorus-deploy <crate> [--rollback]`.
             "crate" => return run_crate_mode(&argv[1..]),
+            // #4494 — the deferred orchestrator restart (see restart_when_idle)
+            "restart-when-idle" => return restart_when_idle(&argv[1..]),
             _ => {}
         }
     }
@@ -1416,6 +1436,91 @@ fn ts_daemon(name: &str) -> Option<(&'static str, &'static str, String, bool)> {
         )),
         _ => None,
     }
+}
+
+/// #4494 — the LaunchAgent that runs the pipelines. Restarting it kills every
+/// running pipeline run, the one doing the restart included.
+pub const ORCHESTRATOR: &str = "com.chorus.dagu";
+
+/// #4494 — (restart now, restart when idle): the orchestrator always waits.
+pub fn split_orchestrator(restarts: Vec<String>) -> (Vec<String>, Vec<String>) {
+    restarts.into_iter().partition(|l| l != ORCHESTRATOR)
+}
+
+/// #4494 — how many runs dagu is running right now, summed over its queues
+/// (`GET /api/v1/queues`). None when the body is not dagu's queue list: an
+/// unreadable answer is never read as "idle".
+pub fn running_runs(body: &str) -> Option<u64> {
+    if !body.contains("\"queues\"") {
+        return None;
+    }
+    let key = "\"runningCount\":";
+    let mut total = 0u64;
+    let mut seen = false;
+    let mut rest = body;
+    while let Some(i) = rest.find(key) {
+        rest = &rest[i + key.len()..];
+        let digits: String = rest.trim_start().chars().take_while(|c| c.is_ascii_digit()).collect();
+        total += digits.parse::<u64>().ok()?;
+        seen = true;
+    }
+    seen.then_some(total)
+}
+
+fn dagu_url() -> String {
+    env::var("CHORUS_DAGU_URL").unwrap_or_else(|_| "http://127.0.0.1:8526".to_string())
+}
+
+/// #4494 — start the waiting restart in its own process group, so it outlives
+/// the deploy step (and the dagu run) that started it.
+fn defer_restart(home: &Path, role: &str, card: u64, trace: &str, label: &str) -> R<u32> {
+    use std::os::unix::process::CommandExt;
+    let exe = match env::var("WERK_DEPLOY_SELF_BIN") {
+        Ok(p) if !p.trim().is_empty() => PathBuf::from(p),
+        _ => env::current_exe().map_err(|e| format!("current_exe for the deferred restart failed: {}", e))?,
+    };
+    let log_dir = home.join("ops/logs");
+    let _ = fs::create_dir_all(&log_dir);
+    let log = OpenOptions::new().create(true).append(true).open(log_dir.join("werk-deploy-detached.log"))
+        .map_err(|e| format!("detached log open failed: {}", e))?;
+    let err_log = log.try_clone().map_err(|e| format!("detached log clone failed: {}", e))?;
+    let child = Command::new(&exe)
+        .args(["restart-when-idle", label, &card.to_string(), role])
+        .env("CHORUS_TRACE_ID", trace)
+        .stdin(std::process::Stdio::null())
+        .stdout(log)
+        .stderr(err_log)
+        .process_group(0)
+        .spawn()
+        .map_err(|e| format!("deferred restart of {} could not start: {}", label, e))?;
+    Ok(child.id())
+}
+
+/// #4494 — `werk-deploy restart-when-idle <label> <card> <role>`: wait until dagu
+/// runs nothing, then restart <label>. Gives up loudly after six hours.
+fn restart_when_idle(args: &[String]) -> R<String> {
+    let label = args.first().ok_or("usage: werk-deploy restart-when-idle <label> <card> <role>")?.clone();
+    let card: u64 = args.get(1).and_then(|c| c.parse().ok()).unwrap_or(0);
+    let role = args.get(2).cloned().unwrap_or_else(|| "system".to_string());
+    let home = PathBuf::from(env::var("CHORUS_HOME").unwrap_or_else(|_| format!("{}/CascadeProjects/chorus", env::var("HOME").unwrap_or_default())));
+    let trace = env::var("CHORUS_TRACE_ID").unwrap_or_default();
+    let url = format!("{}/api/v1/queues", dagu_url());
+    let deadline = std::time::Instant::now() + Duration::from_secs(6 * 3600);
+    while std::time::Instant::now() < deadline {
+        let body = Command::new("curl").args(["-s", "-m", "5", &url]).output()
+            .ok().map(|o| String::from_utf8_lossy(&o.stdout).to_string()).unwrap_or_default();
+        if running_runs(&body) == Some(0) {
+            run_env(None, &[], "launchctl", &["kickstart", "-k", &format!("gui/{}/{}", uid(), label)])
+                .map_err(|e| format!("restart of {} failed: {}", label, e))?;
+            jsonl(&home, &role, card, &trace, "deploy.restarted",
+                &format!(",\"target\":\"canonical\",\"service\":\"{}\",\"reason\":\"code-changed-restarted-when-idle\"", label));
+            return Ok(format!("{} restarted (dagu idle)", label));
+        }
+        std::thread::sleep(Duration::from_secs(20));
+    }
+    jsonl(&home, &role, card, &trace, "deploy.restart.abandoned",
+        &format!(",\"target\":\"canonical\",\"service\":\"{}\",\"reason\":\"never-idle-in-6h\"", label));
+    Err(format!("{} not restarted: dagu was never idle in 6h — restart it by hand when no run is running", label).into())
 }
 
 /// #3320 — the self-deploy case: deploying chorus-mcp FROM chorus-mcp. The inline
@@ -2211,6 +2316,16 @@ fn deploy_canonical(home: &Path, werk_s: &str, role: &str, card: u64, trace: &st
     }
     // #4446 — restart the always-on services running code this land changed. A
     // restart that fails names its service and fails the deploy (#4452 AC4).
+    // #4494 — never restart the orchestrator a pipeline is running on: #4494's own
+    // land changed dagu.yaml, restarted dagu, and killed itself at 22:22 (with
+    // every other role's run). Its restart waits, detached, until no run is running.
+    let (restarts, deferred) = split_orchestrator(restarts);
+    for label in &deferred {
+        let pid = defer_restart(home, role, card, trace, label)?;
+        jsonl(home, role, card, trace, "deploy.restart.deferred",
+            &format!(",\"target\":\"canonical\",\"service\":\"{}\",\"reason\":\"orchestrator-waits-for-idle\",\"pid\":{}", label, pid));
+        labels.push(format!("restart-when-idle:{}", label));
+    }
     for label in &restarts {
         run_env(None, &[], "launchctl", &["kickstart", "-k", &format!("gui/{}/{}", uid(), label)])
             .map_err(|e| died(home, role, card, trace, "restart-fail",
