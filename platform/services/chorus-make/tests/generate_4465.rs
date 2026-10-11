@@ -232,7 +232,7 @@ fn negative_proof_one_skill_called_twice_is_refused() {
 
 #[test]
 fn a_bad_row_is_refused_by_line_never_skipped() {
-    let errs = parse_rows("step\tstepOrder\tskillOrder\tskill\tlabel\texecutor\timplementedBy\tmode\ncommit\tone\t1\ts\tl\tdeterministic\tb\t\n")
+    let errs = parse_rows("step\tstepOrder\tskillOrder\tskill\tlabel\texecutor\timplementedBy\tmode\tonFail\ncommit\tone\t1\ts\tl\tdeterministic\tb\t\t\n")
         .expect_err("a non-number order is refused");
     assert_eq!(errs, vec!["line 2: stepOrder and skillOrder must be numbers".to_string()]);
 }
