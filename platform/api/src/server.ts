@@ -2730,6 +2730,22 @@ app.get('/api/athena/blast-radius/:iri', async (req: Request, res: Response) => 
   }
 });
 
+// #4499 — "what breaks if I change X": a file, a unit or a service, answered
+// from the crawler's code units in services, domains, tests and pages.
+import { codeBlast, unitsQuery, builtFromQuery, filesQuery, unitsFromCsv, builtFromFromCsv, filesFromCsv } from './handlers/athena-code-blast';
+app.get('/api/athena/code-blast', async (req: Request, res: Response) => {
+  const target = String(req.query.target ?? '').trim();
+  if (!target) return res.status(400).json({ ok: false, reason: 'target-missing', hint: '?target=<repo path or service-name>' });
+  try {
+    const [u, b, f] = await Promise.all([blastRadiusRead(unitsQuery()), blastRadiusRead(builtFromQuery()), blastRadiusRead(filesQuery())]);
+    if (!u.ok || !b.ok || !f.ok) return res.status(503).json({ ok: false, reason: STORE_UNREACHABLE });
+    const r = codeBlast(target, unitsFromCsv(await u.text()), builtFromFromCsv(await b.text()), filesFromCsv(await f.text()));
+    res.status(200).json({ ...r, source: 'graph' });
+  } catch (err) {
+    res.status(503).json({ ok: false, reason: STORE_UNREACHABLE, error: (err as Error).message });
+  }
+});
+
 // #3603: GET /api/chorus/products + GET /api/athena/subproducts RETIRED —
 // SubProduct is gone from the model; athena-make :3360/products (generated from
 // chorus:ProductShape) is the only product serving surface.

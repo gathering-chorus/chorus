@@ -64,6 +64,12 @@ export type BlastRadiusResult = { consumers: unknown[]; [k: string]: unknown };
 
 /** Inferred blast-radius from the graph. null = not found. */
 export function computeBlastRadius(_tree: TreeHandle, iri: string): BlastRadiusResult | null {
+  // #4499 — a repo path (file or code unit) or a service answers from the code
+  // units: services, domains, tests and pages, never a file list
+  if (iri.includes('/') || /^(chorus:)?service-/.test(iri)) {
+    const code = getter(`/api/athena/code-blast?target=${encodeURIComponent(iri)}`) as Record<string, unknown> | null | undefined;
+    return code ? ({ consumers: [], ...code } as BlastRadiusResult) : null;
+  }
   const res = getter(`/api/athena/blast-radius/${encodeURIComponent(iri)}`) as
     | { consumers?: unknown[] }
     | null

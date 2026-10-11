@@ -303,3 +303,29 @@ pub fn units_in(root: &std::path::Path) -> Option<Vec<Unit>> {
     };
     Some(units(&cargo, &pkgs, &read, &sources))
 }
+
+/// #4499 — which units each Service is built from, through its running
+/// instances: an instance runs a service (runsService, #4472) from a source
+/// file (sourcePath), and that file's unit is what the service is built from.
+/// Input: (service, source file repo path) per instance. Output: service →
+/// unit door names, sorted. An instance whose file is in no unit adds nothing.
+pub fn built_from(instances: &[(String, String)], units: &[Unit]) -> Vec<(String, Vec<String>)> {
+    let mut out: Vec<(String, Vec<String>)> = Vec::new();
+    for (svc, file) in instances {
+        let Some(u) = unit_of(file, units) else { continue };
+        let name = unit_name(&u.path);
+        match out.iter_mut().find(|(s, _)| s == svc) {
+            Some((_, v)) => {
+                if !v.contains(&name) {
+                    v.push(name);
+                }
+            }
+            None => out.push((svc.clone(), vec![name])),
+        }
+    }
+    for (_, v) in out.iter_mut() {
+        v.sort();
+    }
+    out.sort();
+    out
+}

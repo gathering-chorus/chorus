@@ -1833,18 +1833,55 @@ fn run_code(args: &[String]) -> i32 {
     // UNMEASURED, never "no units"
     let coll = match collection_for(&api, "CodeUnit") {
         Ok(c) => c,
+        // a dry run still shows what it would write against an empty store
+        Err(e) if dry_run => { println!("code: (the door does not serve CodeUnit yet: {e})"); String::new() }
         Err(e) => { println!("code: UNMEASURED — the door does not serve CodeUnit yet ({e}); nothing written"); return 1; }
     };
-    let current: Vec<(String, Vec<(String, String)>)> = match fetch_rows_with(&api, Some(&token), "CodeUnit", "", chorus_crawl::services::door_page_rows) {
+    let current: Vec<(String, Vec<(String, String)>)> = if coll.is_empty() { Vec::new() } else { match fetch_rows_with(&api, Some(&token), "CodeUnit", "", chorus_crawl::services::door_page_rows) {
         Ok(rows) => rows.into_iter().map(|fields| {
             let name = fields.iter().find(|(k, _)| k == "name").map(|(_, v)| v.clone()).unwrap_or_default();
             (name, chorus_crawl::services::written_form(fields.into_iter().filter(|(k, _)| k != "name").collect()))
         }).collect(),
         Err(e) => { eprintln!("chorus-crawl code: cannot read CodeUnit rows — {e}"); return 2; }
-    };
+    } };
     let p = plan_units(&desired, &current);
     println!("code: create {} · update {} · delete {} · unchanged {}", p.create.len(), p.update.len(), p.delete.len(), p.unchanged);
+    // services → the units they are built from, through their instances' source files
+    let instances: Vec<(String, String)> = {
+        let rows = fetch_rows_with(&api, Some(&token), "ServiceInstance", "", chorus_crawl::services::door_page_rows).unwrap_or_default();
+        let cf = collection_for(&api, "CodeFile").unwrap_or_default();
+        let mut paths: Vec<(String, String)> = Vec::new();
+        let mut out = Vec::new();
+        for r in rows {
+            let get = |k: &str| r.iter().find(|(f, _)| f == k).map(|(_, v)| v.clone()).unwrap_or_default();
+            let (svc, src) = (get("runsService"), get("sourcePath"));
+            if svc.is_empty() || src.is_empty() || cf.is_empty() {
+                continue;
+            }
+            let file = match paths.iter().find(|(n, _)| *n == src) {
+                Some((_, f)) => f.clone(),
+                None => {
+                    // the edge holds the row's IRI local name (code-file-<name>); the door names it <name>
+                    let door = src.strip_prefix("code-file-").unwrap_or(&src);
+                    let f = curl(&api, "GET", &format!("{cf}/{door}"), None, Some(&token)).ok()
+                        .and_then(|b| b.split("\"filePath\"").nth(1).and_then(|t| t.split('"').nth(1)).map(String::from))
+                        .unwrap_or_default();
+                    paths.push((src.clone(), f.clone()));
+                    f
+                }
+            };
+            if !file.is_empty() {
+                out.push((svc.strip_prefix("service-").unwrap_or(&svc).to_string(), file));
+            }
+        }
+        out
+    };
+    let built = built_from(&instances, &all);
+    println!("code: {} services built from {} unit links", built.len(), built.iter().map(|(_, v)| v.len()).sum::<usize>());
     if dry_run {
+        for (svc, us) in &built {
+            println!("code:   service {svc} ← {}", us.join(", "));
+        }
         println!("code: dry-run — NOTHING WRITTEN");
         return 0;
     }
@@ -1869,6 +1906,16 @@ fn run_code(args: &[String]) -> i32 {
     for n in &p.delete {
         if let Err(e) = write(&ident, &api, "DELETE", &format!("{coll}/{n}"), None) {
             failed.push(format!("delete {n}: {e}"));
+        }
+    }
+    // the services' builtFrom, merged onto their rows (PATCH: the rest of a
+    // Service row belongs to other writers)
+    if let Ok(svc_coll) = collection_for(&api, "Service") {
+        for (svc, us) in &built {
+            let patch = fields_json(&us.iter().map(|u| ("builtFrom".to_string(), u.clone())).collect::<Vec<_>>());
+            if let Err(e) = write(&ident, &api, "PATCH", &format!("{svc_coll}/{svc}"), Some(&patch)) {
+                failed.push(format!("builtFrom {svc}: {e}"));
+            }
         }
     }
     for f in &failed {
