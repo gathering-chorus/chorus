@@ -1,1 +1,37 @@
+# #4496 — a policy names the hook that enforces it.
+# Jeff 2026-10-10: "are gates actually policies?" then "i believe you might be able
+# to declare a policy for most of our gates (aka hooks)". The policies domain already
+# said so ("Rules that enforce principles in practice — hooks, guards, gates"), but
+# the Policy class had no shape and no edge to the code that holds the line: 15 rows,
+# 47 hooks, nothing joining them. A gate is where a rule is checked; the rule is the
+# Policy. The hook is the CodeFile row the crawler already keeps for every hook module
+# (its name is a hash of its path, so it holds still across crawls).
 
+@prefix chorus: <https://jeffbridwell.com/chorus#> .
+@prefix sh: <http://www.w3.org/ns/shacl#> .
+@prefix rdfs: <http://www.w3.org/2000/01/rdf-schema#> .
+@prefix owl: <http://www.w3.org/2002/07/owl#> .
+
+chorus:enforcedBy a owl:ObjectProperty ;
+    rdfs:label "enforced by" ;
+    rdfs:comment "The hook module that refuses what this policy forbids. A policy without one is enforced by reading, like English only." ;
+    rdfs:domain chorus:Policy ;
+    rdfs:range chorus:CodeFile .
+
+chorus:PolicyShape a sh:NodeShape ;
+    sh:targetClass chorus:Policy ;
+    rdfs:comment "A binary team rule, in plain words, and the hook that holds it when one does." ;
+    sh:pattern "^https://jeffbridwell\\.com/chorus#policy-[a-z0-9]+(-[a-z0-9]+)*$" ;
+    sh:message "a policy row is named policy-<name>, lowercase, e.g. policy-word-cap" ;
+    sh:property [ sh:path rdfs:label ; sh:minCount 1 ; sh:maxCount 1 ; sh:name "rule" ;
+                  sh:description "Required. The rule in a few plain words: No raw process killing." ] ;
+    sh:property [ sh:path rdfs:comment ; sh:minCount 1 ; sh:maxCount 1 ; sh:name "what it means" ;
+                  sh:description "Required. What is allowed, what is refused, and what to do instead." ] ;
+    sh:property [ sh:path chorus:enforcedBy ; sh:nodeKind sh:IRI ; sh:class chorus:CodeFile ; sh:name "enforced by" ;
+                  sh:description "Optional. The hook modules that refuse what this policy forbids." ] ;
+    sh:property [ sh:path chorus:derivedFrom ; sh:nodeKind sh:IRI ; sh:name "derived from" ;
+                  sh:description "Optional. The principle this rule serves." ] ;
+    sh:property [ sh:path chorus:ownedBy ; sh:minCount 1 ; sh:maxCount 1 ; sh:nodeKind sh:IRI ; sh:class chorus:Principal ;
+                  sh:name "owned by" ; sh:description "Required, set by the door." ] ;
+    chorus:instancesGraph "urn:chorus:domains:policies" ;
+    chorus:generatedBy "athena-model" .

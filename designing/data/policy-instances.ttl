@@ -130,3 +130,157 @@ chorus:policy-english-only a chorus:Policy ;
     rdfs:label "English only" ;
     rdfs:comment "A reply to Jeff uses words a colleague with no context would follow. Name the specific file, service, count or person; never a name the team coined, never a borrowed architecture word standing in for the thing. If the specific thing cannot be named, say so. Enforced by reading, not by a filter: Jeff says \"ainglish\" and the reply is rewritten in that turn." ;
     chorus:derivedFrom chorus:hemenway-observe .
+
+# --- #4496: one policy per rule a hook refuses (Jeff 2026-10-10: "declare a policy for most of our gates (aka hooks)") ---
+
+chorus:policy-act-dont-ask a chorus:Policy ;
+    rdfs:label "Act, don't ask" ;
+    rdfs:comment "A turn may not end by asking permission for obvious work, or by promising an action the turn never took. Do the work, then report it." ;
+    chorus:enforcedBy chorus:code-file-file-platform-services-chorus-hooks-src-hooks-autonomy-guard-rs-dd7be227 ;
+    chorus:ownedBy chorus:principal-wren .
+
+chorus:policy-declared-surfaces-only a chorus:Policy ;
+    rdfs:label "New verbs and skills are declared first" ;
+    rdfs:comment "A new werk verb or role skill may not be created unless it is listed in canonical-surfaces.json. Declare it there, then build it." ;
+    chorus:enforcedBy chorus:code-file-file-platform-services-chorus-hooks-src-hooks-bounded-surfaces-rs-a86cdaa9 ;
+    chorus:ownedBy chorus:principal-wren .
+
+chorus:policy-edit-in-your-own-werk a chorus:Policy ;
+    rdfs:label "Edit in your own werk" ;
+    rdfs:comment "A role may not edit the shared canonical tree or another role's werk. Edits go in the card's own worktree." ;
+    chorus:enforcedBy chorus:code-file-file-platform-services-chorus-hooks-src-hooks-canonical-write-guard-rs-7d6acdab ;
+    chorus:ownedBy chorus:principal-wren .
+
+chorus:policy-daemon-cards-carry-a-deploy-probe a chorus:Policy ;
+    rdfs:label "Daemon cards carry a deploy probe" ;
+    rdfs:comment "A card that touches files a running daemon loads may not be filed without a Deploy Probe section saying how the running service is checked." ;
+    chorus:enforcedBy chorus:code-file-file-platform-services-chorus-hooks-src-hooks-card-add-probe-rs-81c9509a ;
+    chorus:ownedBy chorus:principal-wren .
+
+chorus:policy-no-unasked-chrome-tabs a chorus:Policy ;
+    rdfs:label "No unasked Chrome tabs" ;
+    rdfs:comment "A role may not open pages in Jeff's Chrome unless Jeff asked. Use chrome-window.sh when he does." ;
+    chorus:enforcedBy chorus:code-file-file-platform-services-chorus-hooks-src-hooks-chrome-tab-gate-rs-76d2ba43 ;
+    chorus:ownedBy chorus:principal-wren .
+
+chorus:policy-no-pipeline-data-in-tmp a chorus:Policy ;
+    rdfs:label "Pipeline data does not go in /tmp" ;
+    rdfs:comment "Pipeline output may not be written to /tmp, where a reboot wipes it. Domain data belongs on the Gathering volume." ;
+    chorus:enforcedBy chorus:code-file-file-platform-services-chorus-hooks-src-hooks-csc-guard-rs-a8743af8 ;
+    chorus:ownedBy chorus:principal-wren .
+
+chorus:policy-no-credentials-in-shared-text a chorus:Policy ;
+    rdfs:label "No credentials in shared text" ;
+    rdfs:comment "A password, key or other credential may not be written into a shared file, a message, a comment or a commit message. Refer to the variable's name, never its value." ;
+    chorus:enforcedBy chorus:code-file-file-platform-services-chorus-hooks-src-hooks-write-scrubber-rs-4b3d3dfb, chorus:code-file-file-platform-services-chorus-hooks-src-hooks-emit-guard-rs-4f407304 ;
+    chorus:ownedBy chorus:principal-wren .
+
+chorus:policy-git-through-werk-verbs a chorus:Policy ;
+    rdfs:label "Git goes through the werk verbs" ;
+    rdfs:comment "A role may not run git add, commit, push or rebase directly in the chorus repo, change the keychain, or restart the hooks service while it is running. The werk verbs do these." ;
+    chorus:enforcedBy chorus:code-file-file-platform-services-chorus-hooks-src-hooks-infra-guardrails-rs-19c28c78 ;
+    chorus:ownedBy chorus:principal-wren .
+
+chorus:policy-read-the-logs-before-a-fix a chorus:Policy ;
+    rdfs:label "Read the logs before a fix" ;
+    rdfs:comment "A bug fix may not be written until the role has read the logs and said what they showed." ;
+    chorus:enforcedBy chorus:code-file-file-platform-services-chorus-hooks-src-hooks-log-first-gate-rs-afc3c012 ;
+    chorus:ownedBy chorus:principal-wren .
+
+chorus:policy-logs-through-loki a chorus:Policy ;
+    rdfs:label "Logs through Loki" ;
+    rdfs:comment "A live log file may not be read directly. Query Loki; the refusal hands back the query." ;
+    chorus:enforcedBy chorus:code-file-file-platform-services-chorus-hooks-src-hooks-loki-first-gate-rs-006c5fb9 ;
+    chorus:ownedBy chorus:principal-wren .
+
+chorus:policy-no-subagents-under-memory-pressure a chorus:Policy ;
+    rdfs:label "No subagents when memory is short" ;
+    rdfs:comment "No subagent may be started while the machine is past its memory or swap floor." ;
+    chorus:enforcedBy chorus:code-file-file-platform-services-chorus-hooks-src-hooks-memory-pressure-guard-rs-20c6dd68 ;
+    chorus:ownedBy chorus:principal-wren .
+
+chorus:policy-answer-a-peer-before-moving-on a chorus:Policy ;
+    rdfs:label "Answer a peer before moving on" ;
+    rdfs:comment "A role that owes a peer a reply may not use other tools or end its turn until it replies." ;
+    chorus:enforcedBy chorus:code-file-file-platform-services-chorus-hooks-src-hooks-nudge-drain-rs-bbf532ad ;
+    chorus:ownedBy chorus:principal-wren .
+
+chorus:policy-no-secret-files a chorus:Policy ;
+    rdfs:label "No secret files" ;
+    rdfs:comment "A role may not read or write .env files, SSH keys, credential stores, Terraform state or files listed as private. Files listed as internal ask first." ;
+    chorus:enforcedBy chorus:code-file-file-platform-services-chorus-hooks-src-hooks-sensitive-paths-rs-e0d10c5a ;
+    chorus:ownedBy chorus:principal-wren .
+
+chorus:policy-boot-before-work a chorus:Policy ;
+    rdfs:label "Boot before work" ;
+    rdfs:comment "A role may not write files or run commands until its session boot has finished." ;
+    chorus:enforcedBy chorus:code-file-file-platform-services-chorus-hooks-src-hooks-session-init-gate-rs-b5b911d6 ;
+    chorus:ownedBy chorus:principal-wren .
+
+chorus:policy-stop-on-error a chorus:Policy ;
+    rdfs:label "Stop on error" ;
+    rdfs:comment "After a command fails, the role may not carry on. It finds the cause and fixes it first." ;
+    chorus:enforcedBy chorus:code-file-file-platform-services-chorus-hooks-src-hooks-stop-on-error-rs-551b3dec ;
+    chorus:ownedBy chorus:principal-wren .
+
+chorus:policy-stories-go-to-the-graph a chorus:Policy ;
+    rdfs:label "Stories go to the graph" ;
+    rdfs:comment "Jeff's stories may not be written into markdown files. They go to the graph through write-story.sh." ;
+    chorus:enforcedBy chorus:code-file-file-platform-services-chorus-hooks-src-hooks-story-write-gate-rs-2f899004 ;
+    chorus:ownedBy chorus:principal-wren .
+
+chorus:policy-tests-call-real-code a chorus:Policy ;
+    rdfs:label "Tests call real code" ;
+    rdfs:comment "A new test may not leave out both a call to production code and an assertion." ;
+    chorus:enforcedBy chorus:code-file-file-platform-services-chorus-hooks-src-hooks-test-quality-gate-rs-bb76bb43 ;
+    chorus:ownedBy chorus:principal-wren .
+
+chorus:policy-word-cap a chorus:Policy ;
+    rdfs:label "Replies stay under the word cap" ;
+    rdfs:comment "A reply may not run past the role's word cap. Code, commands and links do not count; a longer reply is rewritten shorter." ;
+    chorus:enforcedBy chorus:code-file-file-platform-services-chorus-hooks-src-hooks-word-cap-rs-ea0ccf7e ;
+    chorus:ownedBy chorus:principal-wren .
+
+# --- #4496: the rules that were already policies name their hooks ---
+
+chorus:policy-no-self-acp chorus:enforcedBy chorus:code-file-file-platform-services-chorus-hooks-src-hooks-accept-gate-rs-adeac39d .
+chorus:policy-demo-gate chorus:enforcedBy chorus:code-file-file-platform-services-chorus-hooks-src-hooks-accept-gate-rs-adeac39d .
+chorus:policy-no-raw-process-kill chorus:enforcedBy chorus:code-file-file-platform-services-chorus-hooks-src-hooks-infra-guardrails-rs-19c28c78 .
+chorus:policy-chorus-search-first chorus:enforcedBy chorus:code-file-file-platform-services-chorus-hooks-src-hooks-memory-first-rs-908c58b1, chorus:code-file-file-platform-services-chorus-hooks-src-hooks-search-hierarchy-rs-7b0263df .
+chorus:policy-tdd-gate chorus:enforcedBy chorus:code-file-file-platform-services-chorus-hooks-src-hooks-tdd-gate-rs-bce6c19d .
+
+# --- #4496: PolicyShape requires an owner; the policies domain is Wren's ---
+
+chorus:policy-working-hours chorus:ownedBy chorus:principal-wren .
+chorus:policy-no-raw-process-kill chorus:ownedBy chorus:principal-wren .
+chorus:policy-response-window-60s chorus:ownedBy chorus:principal-wren .
+chorus:policy-no-self-acp chorus:ownedBy chorus:principal-wren .
+chorus:policy-chorus-search-first chorus:ownedBy chorus:principal-wren .
+chorus:policy-tdd-gate chorus:ownedBy chorus:principal-wren .
+chorus:policy-demo-gate chorus:ownedBy chorus:principal-wren .
+chorus:policy-accept-gate chorus:ownedBy chorus:principal-wren .
+chorus:policy-handoff-logger chorus:ownedBy chorus:principal-wren .
+chorus:policy-demo-provenance chorus:ownedBy chorus:principal-wren .
+chorus:policy-nudge-blast-radius chorus:ownedBy chorus:principal-wren .
+chorus:policy-pair-enforcement chorus:ownedBy chorus:principal-wren .
+chorus:policy-icd-write-gate chorus:ownedBy chorus:principal-wren .
+chorus:policy-quality-gate chorus:ownedBy chorus:principal-wren .
+chorus:policy-english-only chorus:ownedBy chorus:principal-wren .
+chorus:policy-act-dont-ask chorus:ownedBy chorus:principal-wren .
+chorus:policy-declared-surfaces-only chorus:ownedBy chorus:principal-wren .
+chorus:policy-edit-in-your-own-werk chorus:ownedBy chorus:principal-wren .
+chorus:policy-daemon-cards-carry-a-deploy-probe chorus:ownedBy chorus:principal-wren .
+chorus:policy-no-unasked-chrome-tabs chorus:ownedBy chorus:principal-wren .
+chorus:policy-no-pipeline-data-in-tmp chorus:ownedBy chorus:principal-wren .
+chorus:policy-no-credentials-in-shared-text chorus:ownedBy chorus:principal-wren .
+chorus:policy-git-through-werk-verbs chorus:ownedBy chorus:principal-wren .
+chorus:policy-read-the-logs-before-a-fix chorus:ownedBy chorus:principal-wren .
+chorus:policy-logs-through-loki chorus:ownedBy chorus:principal-wren .
+chorus:policy-no-subagents-under-memory-pressure chorus:ownedBy chorus:principal-wren .
+chorus:policy-answer-a-peer-before-moving-on chorus:ownedBy chorus:principal-wren .
+chorus:policy-no-secret-files chorus:ownedBy chorus:principal-wren .
+chorus:policy-boot-before-work chorus:ownedBy chorus:principal-wren .
+chorus:policy-stop-on-error chorus:ownedBy chorus:principal-wren .
+chorus:policy-stories-go-to-the-graph chorus:ownedBy chorus:principal-wren .
+chorus:policy-tests-call-real-code chorus:ownedBy chorus:principal-wren .
+chorus:policy-word-cap chorus:ownedBy chorus:principal-wren .
