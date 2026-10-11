@@ -154,7 +154,7 @@ pub fn unit_name(path: &str) -> String {
 pub fn unit_of<'a>(file: &str, units: &'a [Unit]) -> Option<&'a Unit> {
     units
         .iter()
-        .filter(|u| file.starts_with(&format!("{}/", u.path)))
+        .filter(|u| file == u.path || file.starts_with(&format!("{}/", u.path)))
         .max_by_key(|u| u.path.len())
 }
 
@@ -302,6 +302,78 @@ pub fn units_in(root: &std::path::Path) -> Option<Vec<Unit>> {
             .filter_map(|e| std::fs::read_to_string(e.path()).ok()).collect()).unwrap_or_default()
     };
     Some(units(&cargo, &pkgs, &read, &sources))
+}
+
+/// The binaries a crate builds, as (binary name, crate path): its package name
+/// and every `[[bin]] name`. What `~/.chorus/bin/<x>` was built from.
+pub fn cargo_bins(crate_path: &str, cargo_toml: &str) -> Vec<(String, String)> {
+    let mut names = vec![package_name(cargo_toml, false)];
+    let mut in_bin = false;
+    for l in cargo_toml.lines().map(str::trim) {
+        if l.starts_with('[') {
+            in_bin = l == "[[bin]]";
+        } else if in_bin {
+            if let Some(n) = l.strip_prefix("name").map(str::trim_start).and_then(|r| r.strip_prefix('=')) {
+                names.push(n.trim().trim_matches('"').to_string());
+            }
+        }
+    }
+    names.retain(|n| !n.is_empty());
+    names.dedup();
+    names.into_iter().map(|n| (n, crate_path.to_string())).collect()
+}
+
+/// The repo paths an instance runs, from what launchd starts — never from a
+/// name. Its source file when that sits in a unit; the binary launchd runs: a
+/// `~/.chorus/bin/<x>` (or the deploy's `<x>-bin`, or a werk's
+/// `target/release/<x>`) is the crate whose Cargo.toml builds `x`; a repo path
+/// is itself; and a script in no unit is read once for the paths it names. A generic runner whose target lives in the plist names
+/// nothing and links nothing.
+pub fn run_paths(
+    source: &str,
+    binary: &str,
+    repo_root: &str,
+    home: &str,
+    units: &[Unit],
+    bins: &[(String, String)],
+    read_abs: &dyn Fn(&str) -> Option<String>,
+) -> Vec<String> {
+    let bin_dir = format!("{home}/.chorus/bin/");
+    let resolve = |abs: &str| -> Option<String> {
+        // a cargo build output (a werk's target/release) is its crate's binary too
+        let built = abs.rsplit_once("/target/release/").map(|(_, n)| n);
+        if let Some(name) = abs.strip_prefix(&bin_dir).or(built) {
+            let name = name.strip_suffix("-bin").unwrap_or(name);
+            return bins.iter().find(|(b, _)| b == name).map(|(_, c)| c.clone());
+        }
+        abs.strip_prefix(repo_root).and_then(|r| r.strip_prefix('/')).filter(|r| unit_of(r, units).is_some()).map(String::from)
+    };
+    let expand = |t: &str| -> String {
+        let t = t.replace("${HOME}", home).replace("$HOME", home);
+        let t = if let Some(r) = t.strip_prefix("~/") { format!("{home}/{r}") } else { t };
+        ["${CHORUS_ROOT}", "$CHORUS_ROOT", "${CHORUS_HOME}", "$CHORUS_HOME"].iter().fold(t, |t, v| t.replace(v, repo_root))
+    };
+    let mut out: Vec<String> = Vec::new();
+    let mut push = |p: String| if !out.contains(&p) { out.push(p) };
+    if !source.is_empty() && unit_of(source, units).is_some() {
+        push(source.to_string());
+    }
+    if !binary.is_empty() {
+        match resolve(binary) {
+            Some(p) => push(p),
+            None => {
+                let script = read_abs(binary).unwrap_or_default();
+                for line in script.lines().filter(|l| !l.trim_start().starts_with('#')) {
+                    for tok in line.split(|c: char| c.is_whitespace() || matches!(c, '"' | '\'' | '=' | '(' | ')' | ';')) {
+                        if let Some(p) = resolve(&expand(tok)) {
+                            push(p);
+                        }
+                    }
+                }
+            }
+        }
+    }
+    out
 }
 
 /// #4499 — which units each Service is built from, through its running

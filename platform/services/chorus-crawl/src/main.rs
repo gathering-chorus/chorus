@@ -1860,32 +1860,43 @@ fn run_code(args: &[String]) -> i32 {
     } };
     let p = plan_units(&desired, &current);
     println!("code: create {} · update {} · delete {} · unchanged {}", p.create.len(), p.update.len(), p.delete.len(), p.unchanged);
-    // services → the units they are built from, through their instances' source files
+    // services → the units they are built from, through what each instance
+    // runs: its source file, its binary, or the code its launch script names
+    let bins: Vec<(String, String)> = ls("*Cargo.toml").iter()
+        .filter_map(|f| f.rsplit_once('/').map(|(d, _)| (d.to_string(), read(f).unwrap_or_default())))
+        .flat_map(|(d, t)| cargo_bins(&d, &t)).collect();
+    let abs_root = std::fs::canonicalize(&root).map(|p| p.to_string_lossy().to_string()).unwrap_or_else(|_| root.clone());
+    let home = std::env::var("HOME").unwrap_or_default();
     let instances: Vec<(String, String)> = {
-        let rows = fetch_rows_with(&api, Some(&token), "ServiceInstance", "", chorus_crawl::services::door_page_rows).unwrap_or_default();
+        // a scheduled job runs a service's code as much as a resident instance does
+        let mut rows = fetch_rows_with(&api, Some(&token), "ServiceInstance", "", chorus_crawl::services::door_page_rows).unwrap_or_default();
+        rows.extend(fetch_rows_with(&api, Some(&token), "ScheduledJob", "", chorus_crawl::services::door_page_rows).unwrap_or_default());
         let cf = collection_for(&api, "CodeFile").unwrap_or_default();
         let mut paths: Vec<(String, String)> = Vec::new();
         let mut out = Vec::new();
         for r in rows {
             let get = |k: &str| r.iter().find(|(f, _)| f == k).map(|(_, v)| v.clone()).unwrap_or_default();
-            let (svc, src) = (get("runsService"), get("sourcePath"));
-            if svc.is_empty() || src.is_empty() || cf.is_empty() {
+            let (svc, src, bin) = (get("runsService"), get("sourcePath"), get("binaryPath"));
+            if svc.is_empty() {
                 continue;
             }
-            let file = match paths.iter().find(|(n, _)| *n == src) {
-                Some((_, f)) => f.clone(),
-                None => {
-                    // the edge holds the row's IRI local name (code-file-<name>); the door names it <name>
-                    let door = src.strip_prefix("code-file-").unwrap_or(&src);
-                    let f = curl(&api, "GET", &format!("{cf}/{door}"), None, Some(&token)).ok()
-                        .and_then(|b| b.split("\"filePath\"").nth(1).and_then(|t| t.split('"').nth(1)).map(String::from))
-                        .unwrap_or_default();
-                    paths.push((src.clone(), f.clone()));
-                    f
+            let file = if src.is_empty() || cf.is_empty() { String::new() } else {
+                match paths.iter().find(|(n, _)| *n == src) {
+                    Some((_, f)) => f.clone(),
+                    None => {
+                        // the edge holds the row's IRI local name (code-file-<name>); the door names it <name>
+                        let door = src.strip_prefix("code-file-").unwrap_or(&src);
+                        let f = curl(&api, "GET", &format!("{cf}/{door}"), None, Some(&token)).ok()
+                            .and_then(|b| b.split("\"filePath\"").nth(1).and_then(|t| t.split('"').nth(1)).map(String::from))
+                            .unwrap_or_default();
+                        paths.push((src.clone(), f.clone()));
+                        f
+                    }
                 }
             };
-            if !file.is_empty() {
-                out.push((svc.strip_prefix("service-").unwrap_or(&svc).to_string(), file));
+            let svc = svc.strip_prefix("service-").unwrap_or(&svc).to_string();
+            for p in run_paths(&file, &bin, &abs_root, &home, &all, &bins, &|a: &str| std::fs::read_to_string(a).ok()) {
+                out.push((svc.clone(), p));
             }
         }
         out
