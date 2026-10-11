@@ -6389,6 +6389,40 @@ pub fn is_test_file(f: &str) -> bool {
         || is_test_suite_path(f)
 }
 
+/// #4419 reopen — a file tests read rather than run or import: not code and
+/// not a test (a .tsv fixture, a golden .yaml, a .ttl, Cargo.toml, a config).
+pub fn is_data_file(f: &str) -> bool {
+    !is_code(f) && !is_test_file(f) && f.rsplit('/').next().is_some_and(|n| n.contains('.'))
+}
+
+/// #4419 reopen — the names a test uses for a data file: the file name, its
+/// stem, and its own folder when that folder is specific (`ac-1007`, not
+/// `fixtures`). A stem shorter than 4 characters is too common to count.
+pub fn data_file_keys(f: &str) -> Vec<String> {
+    const GENERIC: [&str; 12] = ["fixtures", "tests", "test", "data", "testdata", "golden", "src", "config",
+                                 "Cargo", "package", "index", "README"];
+    let p = std::path::Path::new(f);
+    let mut keys = Vec::new();
+    // a generic name (Cargo.toml, config.toml) is named by every test; its
+    // crate's tests cover it instead (exercisers_of falls back to them)
+    let stem = p.file_stem().and_then(|s| s.to_str()).unwrap_or("");
+    if !GENERIC.contains(&stem) {
+        if let Some(n) = p.file_name().and_then(|n| n.to_str()) {
+            keys.push(n.to_string());
+        }
+        if stem.len() >= 4 {
+            keys.push(stem.to_string());
+        }
+    }
+    if let Some(d) = p.parent().and_then(|d| d.file_name()).and_then(|d| d.to_str()) {
+        if !GENERIC.contains(&d) && !d.starts_with('.') && p.parent().map(|x| x.components().count() > 2).unwrap_or(false) {
+            keys.push(d.to_string());
+        }
+    }
+    keys.dedup();
+    keys
+}
+
 pub fn mention_key(path: &str) -> Option<String> {
     if path.ends_with(".rs") {
         return None;
@@ -6493,6 +6527,22 @@ pub fn exercisers_of(
         }
         (None, None) => Vec::new(),
     };
+    // #4419 reopen — a data file (fixture, golden, manifest, config) is read by
+    // tests, never imported: a test that names its file, its stem or its own
+    // folder exercises it, and a crate's data falls to the crate's tests. 8 card
+    // runs on 8 cards were refused on 2026-10-09/10 for files their own tests
+    // read (fixtures/ac-1007/*.tsv, card-ac-4456.ttl, .cargo/config.toml).
+    if out.is_empty() && is_data_file(f) {
+        let keys = data_file_keys(f);
+        out = rows.iter().map(|r| &r.file_path)
+            .filter(|p| text_of(p).is_some_and(|t| keys.iter().any(|k| mentions(&t, k))))
+            .cloned().collect();
+        if out.is_empty() {
+            if let Some(c) = crate_of(f) {
+                out = rows.iter().map(|r| &r.file_path).filter(|p| p.starts_with(&format!("{c}/"))).cloned().collect();
+            }
+        }
+    }
     if out.len() > HUB_EXERCISERS {
         if let Some(routes) = changed_routes {
             // every test that calls a changed route, whether it imports the
