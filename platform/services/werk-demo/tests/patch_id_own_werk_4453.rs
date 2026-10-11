@@ -26,8 +26,12 @@ fn werk(base: &Path, origin: &Path, name: &str, content: &str) {
 }
 
 fn world() -> PathBuf {
+    // a counter beside the clock: macOS times to the microsecond, and the two
+    // tests run in parallel threads — on 2026-10-11 they once built one world
+    static NEXT: std::sync::atomic::AtomicU32 = std::sync::atomic::AtomicU32::new(0);
+    let k = NEXT.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
     let n = SystemTime::now().duration_since(UNIX_EPOCH).unwrap().as_nanos();
-    let root = std::env::temp_dir().join(format!("wd-4453-{}", n));
+    let root = std::env::temp_dir().join(format!("wd-4453-{}-{}-{}", std::process::id(), n, k));
     let seed = root.join("seed");
     fs::create_dir_all(&seed).unwrap();
     git(&seed, &["init", "-q", "-b", "main"]);
