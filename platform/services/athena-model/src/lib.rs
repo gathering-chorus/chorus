@@ -169,6 +169,15 @@ const KINDS: &[(&str, &str, bool)] = &[
     // #4199 — a LogSource's onMachine edge targets a Machine; the two rows
     // (library, bedroom) are bare IRIs, so bare_grain reproduces them exactly.
     ("machine", "Machine", true),
+    // #4485 / #4422 — the infrastructure and persistence crawls. A PersistenceStore's
+    // shape names Disk (onDisk), PersistenceStore (inStore, roleSource) and
+    // ServiceInstance (storeServedBy) by sh:class, so all three must be mintable or
+    // a create that carries those edges fails closed (4237 caught it, 2026-10-11).
+    // Type-prefixed, as the door mints them: disk-<…>, persistence-store-<…>,
+    // service-instance-<…>.
+    ("disk", "Disk", false),
+    ("persistence-store", "PersistenceStore", false),
+    ("service-instance", "ServiceInstance", false),
     // #3654 (Wren, Jeff-driven 2026-07-24) — the board domain's kinds. Chunk +
     // ChunkMembership are board-native; Card is a THIN FK stub (Vikunja SoR until
     // #2159 — the board mints id+label only so a membership resolves). All three

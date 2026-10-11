@@ -146,6 +146,7 @@ chorus:ChunkMembershipShape a sh:NodeShape ;
 # is not yet a registered chorus:Document; registering it is the domain-completeness
 # follow-on, tracked in chorus:gaps. Do not fake an edge to a non-existent Document.
 chorus:board a chorus:Domain ;
+  chorus:instancesGraph "urn:chorus:domains:board" ;  # #4422 (wren): the crawl reads this, never a guessed name
   rdfs:label "board" ;
   rdfs:comment "The team's work board — cards grouped into chunks and ordered for execution." ;
   chorus:comment "The team's work board — cards grouped into chunks and ordered for execution." ;

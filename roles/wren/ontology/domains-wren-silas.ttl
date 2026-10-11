@@ -24,6 +24,7 @@
 
 # ── loom (Shaping, ownedBy wren, partOf chorusProduct) ────────────────────────
 chorus:roles a chorus:Domain ;
+  chorus:instancesGraph "urn:chorus:domains:roles" ;  # #4422 (wren): the crawl reads this, never a guessed name
   rdfs:label "roles" ; chorus:comment "Team member identities, capabilities, and session lifecycle." ;
   chorus:purpose "Define who the team is — each role's identity, accountability, and session lifecycle." ;
   chorus:ownedBy chorus:principal-wren ;
@@ -31,6 +32,7 @@ chorus:roles a chorus:Domain ;
   chorus:repoTarget "roles" ; chorus:definesVocabulary chorus:Role, chorus:AgentRole, chorus:HumanRole .
 
 chorus:principles a chorus:Domain ;
+  chorus:instancesGraph "urn:chorus:domains:principles" ;  # #4422 (wren): the crawl reads this, never a guessed name
   rdfs:label "principles" ; chorus:comment "Values and constraints governing team decisions and priorities." ;
   chorus:purpose "Hold the values and constraints that govern how the team decides and prioritizes." ;
   chorus:ownedBy chorus:principal-wren ;
@@ -42,6 +44,7 @@ chorus:principles a chorus:Domain ;
 # serves EXACTLY definesVocabulary-claimed classes, so an unclaimed chorus:Value
 # is inert no matter how many instances sit in the store.
 chorus:values a chorus:Domain ;
+  chorus:instancesGraph "urn:chorus:domains:values" ;  # #4422 (wren): the crawl reads this, never a guessed name
   rdfs:label "values" ; chorus:comment "What the team cares about — the level the principles answer to." ;
   chorus:purpose "Hold the handful of values the principles serve, so a principle can say what it is in service of." ;
   chorus:ownedBy chorus:principal-wren ;
@@ -49,6 +52,7 @@ chorus:values a chorus:Domain ;
   chorus:repoTarget "loom/values" ; chorus:definesVocabulary chorus:Value .
 
 chorus:policies a chorus:Domain ;
+  chorus:instancesGraph "urn:chorus:domains:policies" ;  # #4422 (wren): the crawl reads this, never a guessed name
   rdfs:label "policies" ; chorus:comment "Rules that enforce principles in practice — hooks, guards, gates." ;
   chorus:purpose "Turn principles into enforced rules — the hooks, guards, and gates that hold the line." ;
   chorus:ownedBy chorus:principal-wren ;
@@ -56,6 +60,7 @@ chorus:policies a chorus:Domain ;
   chorus:repoTarget "loom/policies" ; chorus:definesVocabulary chorus:Policy .
 
 chorus:practices a chorus:Domain ;
+  chorus:instancesGraph "urn:chorus:domains:practices" ;  # #4422 (wren): the crawl reads this, never a guessed name
   rdfs:label "practices" ; chorus:comment "Repeatable patterns the team uses — how we work, not just what we value." ;
   chorus:purpose "Capture the repeatable ways the team works — the how, distinct from the values." ;
   chorus:ownedBy chorus:principal-wren ;
@@ -63,6 +68,7 @@ chorus:practices a chorus:Domain ;
   chorus:repoTarget "loom/practices" ; chorus:definesVocabulary chorus:Practice .
 
 chorus:skills a chorus:Domain ;
+  chorus:instancesGraph "urn:chorus:domains:skills" ;  # #4422 (wren): the crawl reads this, never a guessed name
   rdfs:label "skills" ; chorus:comment "Invokable capabilities — /skill-name commands that automate team workflows." ;
   chorus:purpose "Provide the team's invokable capabilities — the /skill commands that automate workflows." ;
   chorus:ownedBy chorus:principal-wren ;
@@ -185,6 +191,7 @@ chorus:heralds a chorus:Domain ;
   # FLAG: no real owl:Class vocab (no chorus:Herald class) — omitted, not faked.
 
 chorus:toolchain a chorus:Domain ;
+  chorus:instancesGraph "urn:chorus:domains:toolchain" ;  # #4422 (wren): the crawl reads this, never a guessed name
   rdfs:label "toolchain" ; chorus:comment "Development tools and their configuration — Claude Code, Node, Rust, git." ;
   chorus:purpose "Hold the team's development tools and their configuration — the toolchain it builds with." ;
   chorus:ownedBy chorus:principal-silas ;
@@ -196,11 +203,22 @@ chorus:infrastructure a chorus:Domain ;
   chorus:purpose "Hold the physical substrate the team runs on — host machines, stores, and LaunchAgents." ;
   chorus:ownedBy chorus:principal-silas ;
   chorus:atStep chorus:value-stream-step-proving ;
-  chorus:repoTarget "platform/apps" ; chorus:definesVocabulary chorus:Machine, chorus:Disk, chorus:PersistenceStore, chorus:UnitDomainMapping ;
+  chorus:repoTarget "platform/apps" ; chorus:definesVocabulary chorus:Machine, chorus:Disk, chorus:UnitDomainMapping ;
+  # #4422 — PersistenceStore moved to the persistence domain (one claimer).
   # #4485 — a Machine's one parent is this domain (chain hierarchy, #4481); its Disks hang off it by onMachine.
   chorus:hosts chorus:library, chorus:bedroom ;
   # #4084 — UnitDomainMapping is the authored unit → domain edge every harvester joins on (ADR-027); homed here because units are infrastructure.
   chorus:instancesGraph "urn:chorus:domains:infrastructure" .
+
+# #4422 — Jeff 2026-10-03: "persistence is a great pair ... model owl and make deploy - enhance
+# crawler to discover and use api to register and synch". Its rows are crawled, never seeded.
+chorus:persistence a chorus:Domain ;
+  rdfs:label "persistence" ; chorus:comment "Every place Chorus keeps data: datasets, file databases, the repo, and graph families, each marked system of record, copy, derived or cache." ;
+  chorus:purpose "Say which store is the system of record and which are copies, so a writer collision is found by a query, not by Jeff." ;
+  chorus:ownedBy chorus:principal-silas ;
+  chorus:atStep chorus:value-stream-step-proving ;
+  chorus:repoTarget "platform/services/chorus-crawl" ; chorus:definesVocabulary chorus:PersistenceStore ;
+  chorus:instancesGraph "urn:chorus:domains:persistence" .
 
 chorus:analytics a chorus:Domain ;
   rdfs:label "analytics" ; chorus:comment "Usage analytics and behavioral signals — attention, interaction patterns." ;
@@ -211,6 +229,7 @@ chorus:analytics a chorus:Domain ;
   # FLAG: no clean owl:Class vocab (Metric is metrics-domain's) — omitted, not faked.
 
 chorus:metrics a chorus:Domain ;
+  chorus:instancesGraph "urn:chorus:domains:metrics" ;  # #4422 (wren): the crawl reads this, never a guessed name
   rdfs:label "metrics" ; chorus:comment "Quantitative measurements of system health — latency, cost, throughput." ;
   chorus:purpose "Measure system health quantitatively — latency, cost, throughput, and their trends." ;
   chorus:ownedBy chorus:principal-silas ;
@@ -224,6 +243,7 @@ chorus:metrics a chorus:Domain ;
 # domains lost in the 08-28 graph wipe (see RCA).
 
 chorus:products a chorus:Domain ;
+  chorus:instancesGraph "urn:chorus:domains:products" ;  # #4422 (wren): the crawl reads this, never a guessed name
   rdfs:label "products" ; chorus:comment "The set of all Products — the product tree from the chorus parent down, each with what it claims." ;
   chorus:purpose "Hold the product tree — the products, their children, and what each claims — so structure questions resolve to one answer." ;
   chorus:ownedBy chorus:principal-wren ;
@@ -231,6 +251,7 @@ chorus:products a chorus:Domain ;
   chorus:repoTarget "designing/products" ; chorus:definesVocabulary chorus:Product .   # #4211 — Version left here: 547 of 15,630 rows revise a product, so it was never a products class
 
 chorus:value-streams a chorus:Domain ;
+  chorus:instancesGraph "urn:chorus:domains:value-streams" ;  # #4422 (wren): the crawl reads this, never a guessed name
   rdfs:label "value-streams" ; chorus:comment "The value streams and their ordered steps — Chorus's Shaping → Directing → Designing → Building → Proving → Reflecting, and the child streams a step composes." ;
   chorus:purpose "Hold the value streams and their steps — the ordered shape every product and domain hangs off — so the walk from stream to product to domain resolves to one answer." ;
   chorus:ownedBy chorus:principal-wren ;
@@ -290,6 +311,7 @@ chorus:StreamEventShape a sh:NodeShape ;
 # cmdb-layers-4293.ttl, which deploys into the domains graph and replaced every row it
 # named: the 2026-10-02 15:51 land wiped 12 domains to one inLayer triple).
 chorus:infrastructure chorus:inLayer chorus:layer-foundation .
+chorus:persistence    chorus:inLayer chorus:layer-foundation ; chorus:dependsOn chorus:infrastructure .
 chorus:time           chorus:inLayer chorus:layer-foundation ; chorus:dependsOn chorus:infrastructure .
 chorus:logs           chorus:inLayer chorus:layer-foundation ; chorus:dependsOn chorus:infrastructure , chorus:time ;
                       chorus:hosts chorus:logs-domain-service-loki .

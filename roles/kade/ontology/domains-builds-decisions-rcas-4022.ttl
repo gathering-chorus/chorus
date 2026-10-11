@@ -16,6 +16,7 @@
 # =============================================================================
 
 chorus:decisions a chorus:Domain ;
+  chorus:instancesGraph "urn:chorus:domains:decisions" ;  # #4422 (wren): the crawl reads this, never a guessed name
   rdfs:label "decisions" ; chorus:comment "Decision log with context, rationale, and tradeoffs recorded." ;
   chorus:purpose "Record the team's decisions with their context, rationale, and tradeoffs — the why behind the system." ;
   chorus:ownedBy chorus:principal-wren ;
@@ -43,6 +44,7 @@ chorus:builds a chorus:Domain ;
 
 # ---- the other four dropped by #3982 in the same diff, verbatim ---------------
 chorus:domains a chorus:Domain ;
+  chorus:instancesGraph "urn:chorus:domains:domains" ;  # #4422 (wren): the crawl reads this, never a guessed name
   rdfs:label "domains" ; chorus:comment "The canonical product/domain/service structural model — this tree." ;
   chorus:purpose "Hold the canonical structural model of the system — products, domains, services and their edges." ;
   chorus:ownedBy chorus:principal-wren ;
@@ -54,6 +56,7 @@ chorus:domains a chorus:Domain ;
 
 
 chorus:services a chorus:Domain ;
+  chorus:instancesGraph "urn:chorus:domains:services" ;  # #4422 (wren): the crawl reads this, never a guessed name
   rdfs:label "services" ; chorus:comment "Service definitions, interfaces, and ownership within the product model." ;
   chorus:purpose "Define the system's services — their interfaces, ownership, and place in the product model." ;
   chorus:ownedBy chorus:principal-wren ;
@@ -73,6 +76,7 @@ chorus:search a chorus:Domain ;
 # ── clearing (Directing, ownedBy wren, partOf chorusProduct) ──────────────────
 
 chorus:spine a chorus:Domain ;
+  chorus:instancesGraph "urn:chorus:domains:spine" ;  # #4422 (wren): the crawl reads this, never a guessed name
   rdfs:label "spine" ; chorus:comment "The audit trail — structured log of all team activity and state changes." ;
   chorus:purpose "Be the system's audit trail — the structured event log of all activity and state changes." ;
   chorus:ownedBy chorus:principal-wren ;

@@ -16,6 +16,7 @@
 # tests is ROUND 2 (re-deploy Test/TestResult/TestSuiteRun classes + the tests domain).
 
 chorus:code a chorus:Domain ;
+  chorus:instancesGraph "urn:chorus:domains:code" ;  # #4422 (wren): the crawl reads this, never a guessed name
   rdfs:label "code" ; chorus:comment "Source code quality — linting, type-checking, and static analysis." ;
   chorus:purpose "Keep the source trustworthy at rest — lint, type-check, and static-analysis ratchets that only tighten — so quality is enforced continuously, not audited after the fact." ;
   chorus:ownedBy chorus:principal-kade ;
@@ -24,6 +25,7 @@ chorus:code a chorus:Domain ;
   chorus:definesVocabulary chorus:CodeFile .
 
 chorus:pipelines a chorus:Domain ;
+  chorus:instancesGraph "urn:chorus:domains:pipelines" ;  # #4422 (wren): the crawl reads this, never a guessed name
   rdfs:label "pipelines" ; chorus:comment "CI/CD and build orchestration — how code moves from commit to production. Parent of the cicd child domain (#3275)." ;
   chorus:purpose "Own how a change travels from commit to running production — the typed, composable build->land pipeline — so every card follows one proven path with witnesses at each step, not ad-hoc scripting." ;
   chorus:ownedBy chorus:principal-kade ;

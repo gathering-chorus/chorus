@@ -17,6 +17,8 @@ pub mod pages;
 pub mod services;
 /// #4485 — the infrastructure crawl (machines and their disks).
 pub mod infra;
+/// #4422 — the stores crawl (every place Chorus keeps data, with its one role).
+pub mod stores;
 pub mod code {
     // #4499 — the one code-unit generator, shared with werk-build/test/deploy
     include!("../../shared/code_units.rs");
