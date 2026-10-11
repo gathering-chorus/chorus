@@ -305,7 +305,20 @@ export function withBase(html: string, base: string): string {
   if (!base) return html;
   return html
     .replace(/(src|href|action)="\/(?!\/)/g, `$1="${base}/`)
-    .replace(/fetch\('\/(?!\/)/g, `fetch('${base}/`);
+    .replace(/fetch\('\/(?!\/)/g, `fetch('${base}/`)
+    .replace(/url\((['"]?)\/(?!\/)/g, `url($1${base}/`);
+}
+
+/**
+ * The same rule for a redirect: a root-absolute target ('/', '/account', the
+ * sign-in's return path) gets the mount, so it lands inside the Clearing and not
+ * on the apex ("Cannot GET /account" after sign-in, Jeff 2026-10-11 09:44). A
+ * target already under the mount, a full URL, or '//' is left alone.
+ */
+export function withBaseLocation(target: string, base: string): string {
+  if (!base || !target.startsWith('/') || target.startsWith('//')) return target;
+  if (target === base || target.startsWith(`${base}/`) || target.startsWith(`${base}?`)) return target;
+  return `${base}${target}`;
 }
 
 app.use((req: Request, res, next) => {
@@ -317,6 +330,11 @@ app.use((req: Request, res, next) => {
   if (base) {
     const send = res.send.bind(res);
     res.send = ((body?: unknown) => send(typeof body === 'string' && /^\s*</.test(body) ? withBase(body, base) : body)) as typeof res.send;
+    // and every redirect it sends: '/', the sign-in's return path, sign-out
+    const redirect = res.redirect.bind(res) as (a: number | string, b?: string) => void;
+    res.redirect = ((a: number | string, b?: string) => (typeof a === 'number'
+      ? redirect(a, withBaseLocation(String(b), base))
+      : redirect(withBaseLocation(a, base)))) as typeof res.redirect;
   }
   next();
 });
