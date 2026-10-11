@@ -130,7 +130,7 @@ fn every_step_is_named_by_its_skill_row_and_nothing_is_minted() {
     let out = generate("cicd", &rows).unwrap();
     let ids: Vec<&str> = out.lines().filter_map(|l| l.strip_prefix("    id: ")).collect();
     assert_eq!(ids, vec!["skill_werk_go"]);
-    assert!(out.contains("    description: \"werk-deploy --target werk\"\n"), "description is the row's label");
+    assert!(out.contains("    description: \"deploy-demo\"\n"), "description is the row's label");
 }
 
 // #4474 run 6: werk-demo presented, exited 2 (held for the go) and dagu
@@ -188,6 +188,20 @@ fn a_successful_land_hands_its_commit_to_athena_and_only_the_land_does() {
     // NEGATIVE PROOF: the card half never deploys a model (nothing has landed)
     let card = generate("cicd", &cicd()).unwrap();
     assert!(!card.contains("athena-land"), "{card}");
+}
+
+#[test]
+fn the_deploy_steps_say_demo_and_prod() {
+    // #4465 reopen — Jeff 2026-10-11 08:40: "canonical = prod?" … "that seems
+    // clearer to me". The step names are the Skill rows' names.
+    let card = generate("cicd", &cicd()).unwrap();
+    let land = generate_land("cicd", &cicd()).unwrap();
+    assert!(card.contains("  - name: skill-deploy-demo\n"), "{card}");
+    assert!(land.contains("  - name: skill-deploy-prod\n"), "{land}");
+    // NEGATIVE PROOF: no step is named for werk-internal words any more
+    for out in [&card, &land] {
+        assert!(!out.contains("deploy-canonical") && !out.contains("deploy-werk"), "{out}");
+    }
 }
 
 #[test]

@@ -91,7 +91,7 @@ pub fn check(rows: &[Row]) -> Vec<String> {
     errs
 }
 
-/// dagu step name: the Skill row's own name (`skill-werk-deploy-werk`),
+/// dagu step name: the Skill row's own name (`skill-deploy-demo`),
 /// never one chorus-make makes up (Jeff via Silas 2026-10-09 20:34). dagu's
 /// `name` takes hyphens; its `id` does not, so no id is written. The verb
 /// alone is not unique (werk-deploy runs three skills).
