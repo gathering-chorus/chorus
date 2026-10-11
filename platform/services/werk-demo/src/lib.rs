@@ -165,7 +165,15 @@ fn git_short12(werk: &str) -> Option<String> {
 /// content-preserving rebase: the sha churns when a peer lands, the patch-id does
 /// not. Empty string when uncomputable — the merge side then refuses (never
 /// silently allows).
-pub fn patch_id_for_card(werk_base: &str, card: u64) -> String {
+/// #4453 — the presenting role's werk first. A fixed wren, silas, kade order
+/// made a peer's leftover werk for the same card (silas-4446) the presented
+/// patch-id for three rounds, so every go on #4446 refused (2026-10-07 12:42,
+/// 13:21). Another role's werk is only a fallback, as in current_round.
+pub fn patch_id_for_card(werk_base: &str, role: &str, card: u64) -> String {
+    let own = format!("{}/{}-{}", werk_base, role, card);
+    if Path::new(&own).is_dir() {
+        return git_patch_id(&own);
+    }
     for r in ["wren", "silas", "kade"] {
         let werk = format!("{}/{}-{}", werk_base, r, card);
         if Path::new(&werk).is_dir() {
@@ -260,11 +268,11 @@ fn extract_field<'a>(line: &'a str, field: &str) -> Option<&'a str> {
 
 /// #3461 — the current werk's patch-id (mirrors current_round). I/O (git), so
 /// callers of the pure matchers compute it and pass it in; the matchers stay pure.
-pub fn current_patch_id(card: u64) -> String {
+pub fn current_patch_id(role: &str, card: u64) -> String {
     let werk_base = env::var("CHORUS_WERK_BASE").unwrap_or_else(|_| {
         format!("{}/CascadeProjects/chorus-werk", env::var("HOME").unwrap_or_default())
     });
-    patch_id_for_card(&werk_base, card)
+    patch_id_for_card(&werk_base, role, card)
 }
 
 /// #3305 AC2/AC3 — the peers actually OWED a gather nudge this round: exactly
@@ -902,7 +910,7 @@ pub fn mcp_nudge_body(to: &str, message: &str) -> String {
 /// (dedup key for gathers_unsent so re-invokes don't re-fire). Distinct from the
 /// demo.gather.replied the peer's ack records.
 fn record_gather_sent(home: &Path, role: &str, card: u64, peer: &str, round: &str, trace: &str) {
-    let pid = current_patch_id(card); // #3461 — survive rebase-churn
+    let pid = current_patch_id(role, card); // #3461 — survive rebase-churn
     jsonl(home, role, card, trace, "demo.gather.sent",
           &format!(",\"peer\":\"{}\",\"round\":\"{}\",\"patch_id\":\"{}\"", peer, round, pid));
     emit_spine(home, "demo.gather.sent", role, card, trace);
@@ -919,7 +927,7 @@ fn record_gather_sent(home: &Path, role: &str, card: u64, peer: &str, round: &st
 /// makes the feedback that already happens actually register.
 pub fn record_gather_replied(home: &Path, role: &str, card: u64, peer: &str, verdict: &str, note: &str) {
     let round = current_round(role, card);
-    let pid = current_patch_id(card);
+    let pid = current_patch_id(role, card);
     let trace = env::var("CHORUS_TRACE_ID").unwrap_or_else(|_| trace_id());
     let n = note.replace('\\', " ").replace('"', "'").replace('\n', " ");
     jsonl(home, role, card, &trace, "demo.gather.replied",
@@ -971,7 +979,7 @@ pub fn should_emit_announce(witness: &str, card: u64, role: &str, round: &str, p
 /// behind their auto/focus-mode work.
 fn fire_gathers(home: &Path, role: &str, card: u64, trace: &str, round: &str) {
     let witness = fs::read_to_string(home.join("ops/logs/werk-demo.jsonl")).unwrap_or_default();
-    let patch = current_patch_id(card); // #3461 — patch-id tolerant matching across rebase-churn
+    let patch = current_patch_id(role, card); // #3461 — patch-id tolerant matching across rebase-churn
     if !gates_missing(&witness, card, round, &patch).is_empty() {
         return; // gates not recorded yet — don't ask peers to review un-gated work
     }
@@ -1219,7 +1227,7 @@ pub fn demo(card: u64, role: &str, home: &Path) -> R<DemoOutcome> {
     // evidence (gates, gathers, announce) must carry it; prior rounds' records
     // never satisfy this one.
     let round = current_round(role, card);
-    let patch = current_patch_id(card); // #3461 — patch-id tolerant matching across rebase-churn
+    let patch = current_patch_id(role, card); // #3461 — patch-id tolerant matching across rebase-churn
     // #3443 AC1 — RUN the gates ourselves before enforcing their presence. Where
     // claude is available (Jeff's box, local act) the binary self-gates: one
     // headless `claude -p` per absent gate, recorded via record_gate. This kills
@@ -1598,7 +1606,7 @@ pub fn demo(card: u64, role: &str, home: &Path) -> R<DemoOutcome> {
     // #3459 — record the card's patch-id alongside the round so werk-merge can
     // accept a content-preserving rebase (sha moved, change identical) on land.
     let patch = std::env::var("CHORUS_WERK_BASE").ok()
-        .map(|wb| patch_id_for_card(&wb, card))
+        .map(|wb| patch_id_for_card(&wb, role, card))
         .unwrap_or_default();
     jsonl(home, role, card, &trace, "demo.presented",
           &format!(",\"ac\":\"{}/{}\",\"round\":\"{}\",\"variant\":\"{}\",\"patch_id\":\"{}\"",
@@ -1640,7 +1648,7 @@ fn record_gate(home: &Path, role: &str, card: u64, gate: &str, result: &str, fin
     // #3284 — feedback is REQUIRED: a gate carries WHAT it found, not just pass/fail,
     // so the announce shows real feedback. Sanitized for the one-line JSONL witness.
     let f = findings.replace('\\', " ").replace('"', "'").replace('\n', " ");
-    let pid = current_patch_id(card); // #3461 — record patch-id so the result survives a rebase-churn
+    let pid = current_patch_id(role, card); // #3461 — record patch-id so the result survives a rebase-churn
     jsonl(home, role, card, &trace, "demo.gate.result",
           &format!(",\"gate\":\"{}\",\"result\":\"{}\",\"round\":\"{}\",\"patch_id\":\"{}\",\"findings\":\"{}\"", gate, result, round, pid, f));
     emit_spine(home, "demo.gate.result", role, card, &trace);
@@ -2390,7 +2398,7 @@ fn run_one_review(home: &Path, role: &str, card: u64, peer: &str, round: &str) {
 /// keyed, survive churn) are not re-run.
 fn run_reviews(home: &Path, role: &str, card: u64, round: &str, trace: &str) {
     let witness = fs::read_to_string(home.join("ops/logs/werk-demo.jsonl")).unwrap_or_default();
-    let patch = current_patch_id(card);
+    let patch = current_patch_id(role, card);
     if !gates_missing(&witness, card, round, &patch).is_empty() {
         return; // don't review un-gated work
     }
@@ -2421,7 +2429,7 @@ fn run_reviews(home: &Path, role: &str, card: u64, round: &str, trace: &str) {
 /// are not re-run. The demo no longer depends on a demoer agent to spawn gates.
 fn run_gates(home: &Path, role: &str, card: u64, round: &str, trace: &str) {
     let witness = fs::read_to_string(home.join("ops/logs/werk-demo.jsonl")).unwrap_or_default();
-    let patch = current_patch_id(card); // #3461 — patch-id tolerant across rebase-churn
+    let patch = current_patch_id(role, card); // #3461 — patch-id tolerant across rebase-churn
     let absent = gates_missing(&witness, card, round, &patch);
     if absent.is_empty() {
         return;
@@ -2442,7 +2450,7 @@ fn record_test_result(home: &Path, role: &str, card: u64, result: &str, coverage
     // #4012 — stamp the CONTENT this verdict was measured against, so a later
     // round at the same patch can reuse it instead of re-running (and so a round
     // at DIFFERENT content cannot).
-    let patch = current_patch_id(card);
+    let patch = current_patch_id(role, card);
     jsonl(home, role, card, &trace, "demo.test_result",
           &format!(",\"result\":\"{}\",\"patch_id\":\"{}\"{}", result, patch, coverage_field(coverage)));
     emit_spine(home, "demo.test_result", role, card, &trace);
@@ -2617,7 +2625,7 @@ pub fn run_demo() -> R<DemoOutcome> {
             .ok_or("usage: werk-demo go <card>")?;
         let trace = env::var("CHORUS_TRACE_ID").unwrap_or_else(|_| trace_id());
         let round = current_round(role.trim(), card);
-        let patch = current_patch_id(card);
+        let patch = current_patch_id(&role, card);
         jsonl(&home, role.trim(), card, &trace, "demo.go",
               &format!(",\"round\":\"{}\",\"patch_id\":\"{}\"", round, patch));
         emit_spine(&home, "demo.go", role.trim(), card, &trace);
@@ -2640,7 +2648,7 @@ pub fn run_demo() -> R<DemoOutcome> {
             .ok_or("usage: werk-demo verdict <card>")?;
         let witness = fs::read_to_string(home.join("ops/logs/werk-demo.jsonl")).unwrap_or_default();
         let round = current_round(role.trim(), card);
-        let patch = current_patch_id(card);
+        let patch = current_patch_id(&role, card);
         let proven = verdict_proven(&witness, card, role.trim(), &round, &patch);
         return Ok(DemoOutcome {
             message: if proven {

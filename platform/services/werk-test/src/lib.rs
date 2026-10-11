@@ -552,6 +552,45 @@ pub fn parse_nextest_case_paths(out: &str) -> Vec<(String, String)> {
         .collect()
 }
 
+/// #4453 — a cargo unit's progress while it runs, read from nextest's live
+/// lines: the planned case count ("Starting N tests across M binaries") and
+/// each case's PASS/FAIL as it finishes. Jeff, 2026-10-10 20:20 (#4235 run 4):
+/// chorus-hooks ran 15 minutes with no count visible. A case nextest prints
+/// twice (live, then in the failure summary) counts once.
+#[derive(Debug, Default)]
+pub struct CargoProgress {
+    pub total: Option<u64>,
+    pub passed: u64,
+    pub failed: u64,
+    seen: std::collections::HashSet<String>,
+}
+
+impl CargoProgress {
+    pub fn feed(&mut self, line: &str) {
+        let t = line.trim();
+        if let Some(rest) = t.strip_prefix("Starting ") {
+            if let Some(n) = rest.split_whitespace().next().and_then(|x| x.parse().ok()) {
+                self.total = Some(n);
+            }
+            return;
+        }
+        let pass = t.starts_with("PASS ");
+        if !pass && !t.starts_with("FAIL ") {
+            return;
+        }
+        let Some(path) = t.split(']').nth(1).and_then(|a| a.split_whitespace().last()) else { return };
+        if self.seen.insert(path.to_string()) {
+            if pass { self.passed += 1 } else { self.failed += 1 }
+        }
+    }
+
+    /// `12 passed · 1 failed of 476` (or `… so far` before nextest says how many).
+    pub fn line(&self) -> String {
+        let of = self.total.map(|n| format!(" of {}", n)).unwrap_or_else(|| " so far".to_string());
+        format!("{} passed · {} failed{}", self.passed, self.failed, of)
+    }
+}
+
 /// #4454 reopen — the same lines as `parse_nextest_case_paths`, in the same
 /// order, also keeping the nextest binary id (`chorus-hooks`,
 /// `chorus-hooks::bin/chorus-hooks`, `chorus-hooks::pulse_roles_4077`). A crate

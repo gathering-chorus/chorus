@@ -172,13 +172,19 @@ def why_stopped(text, step):
         if reds:
             names = ", ".join(reds[:2])
             return f"{len(reds)} red{'s' if len(reds) != 1 else ''}: {names}" + (" …" if len(reds) > 2 else "")
-        return ""
+        return "no red named in the run log"
     if step == "prove-live":
         n = len(re.findall(r"\| not ok ", text.split("Run Main prove-live")[-1]))
         if n:
             return f"{n} live case{'s' if n != 1 else ''} failed"
     m = re.search(r"\|\s+(\S[^\n]*(?:refus|error|missing|no acceptance)[^\n]*)", text.split(f"Run Main {step}")[-1])
-    return m.group(1).strip()[:70] if m else ""
+    if m:
+        return m.group(1).strip()[:70]
+    # #4453 — #4447 run 4 read "failed build (3s)" with no why: the refusal
+    # ("resume-refused: werk tree changed") printed before the step began.
+    # Every failed row names a reason, the log's own or that it has none.
+    m = re.search(r"((?:resume-refused|REFUSED)[^\n]*)", text)
+    return m.group(1).strip()[:70] if m else "no reason in the run log"
 
 
 def run_summary(log):
@@ -261,6 +267,12 @@ def card_detail(card, pin_status):
                          v2, dagu_runs(card, f"{DAGU_DAG}-land"), queue_positions())
     elif pin_status:
         head = render(pin_status, pid_start_times(), time.time() * 1000)
+        # #4453 — #4444: the header said "running · deploy-canonical" while the
+        # run's own log had ended (presented). The log is what happened; a pin
+        # still saying running after its log ended is stale, and says so.
+        if runs and runs[-1]["result"] != "running" and head.split("] ", 1)[-1].startswith("running"):
+            head = (f"#{card} [{pin_status.get('role', '?')}] {runs[-1]['result']}"
+                    " (the pin still says running; the run's log has ended)")
     else:
         head = f"#{card} [?] " + (runs[-1]["result"].split()[0] if runs else "no runs")
     if runs or not v2:
@@ -472,6 +484,119 @@ def dagu_land_line(card, role):
             + f" · {len(lands)} land{'s' if len(lands) != 1 else ''} · dagu {lands[0].get('dagRunId', '?')}")
 
 
+def run_test_events(trace, since_s):
+    """#4453 — a run's test events from Loki, oldest first; None when Loki cannot
+    be read. Every passed case is counted, not fetched (a run can have thousands).
+    A file:// LOKI is a fixture dir holding <trace>.jsonl."""
+    if LOKI.startswith("file://"):
+        try:
+            text = Path(LOKI[len("file://"):], f"{trace}.jsonl").read_text()
+        except FileNotFoundError:
+            return []
+        except Exception:
+            return None
+        events = [json.loads(l) for l in text.splitlines() if l.strip()]
+        return sorted(events, key=lambda e: e.get("timestamp", ""))
+    import urllib.parse, urllib.request
+    pick = r'"event":"test\.(started|failed|unit\.(started|timed|progress)|case\.failed)"'
+    q = '{job="platform-chorus"} |= `%s` |~ `%s`' % (trace, pick)
+    start = str(int((since_s - 60) * 1e9))
+    try:
+        qs = urllib.parse.urlencode({"query": q, "limit": 5000, "direction": "forward", "start": start})
+        with urllib.request.urlopen(f"{LOKI}/loki/api/v1/query_range?{qs}", timeout=15) as r:
+            res = json.load(r)["data"]["result"]
+        events = [json.loads(v[1]) for s_ in res for v in s_["values"]]
+        cq = 'sum by (unit) (count_over_time({job="platform-chorus"} |= `%s` |= `"event":"test.case.passed"` | json [%ds]))' % (
+            trace, max(60, int(time.time() - since_s) + 120))
+        with urllib.request.urlopen(f"{LOKI}/loki/api/v1/query?{urllib.parse.urlencode({'query': cq})}", timeout=15) as r:
+            for row in json.load(r)["data"]["result"]:
+                events.append({"event": "test.case.passed.count", "unit": row["metric"].get("unit", ""),
+                               "count": int(float(row["value"][1])), "timestamp": "~"})
+    except Exception:
+        return None
+    return sorted(events, key=lambda e: e.get("timestamp", ""))
+
+
+def run_began(run):
+    """When a run began, in ms. A run resumed after the go restarts its
+    startedAt (#4235 run 6: 23:29, its tests ran 23:05-23:28), so the first
+    step's start is the truth."""
+    times = [parse_ts(n.get("startedAt")) for n in nodes_of(run)]
+    times += [parse_ts(run.get("queuedAt")), parse_ts(run.get("startedAt"))]
+    return min([t for t in times if t] or [0])
+
+
+def tests_state(events):
+    """#4453 — suites in run order with their state, failed cases under the
+    suite that ran them, and the planned count. Pure: events in, state out."""
+    planned, suites, passed = None, {}, {}
+    for e in events:
+        ev = e.get("event", "")
+        key = f"{e.get('check', '')}:{e.get('unit', '')}"
+        if ev == "test.started":
+            planned = int(e.get("checks_planned") or 0) or None
+        elif ev == "test.unit.started":
+            suites[key] = {"name": key, "unit": e.get("unit", ""), "status": "running", "cases": [], "progress": "", "secs": None}
+        elif ev == "test.unit.progress" and key in suites:
+            suites[key]["progress"] = (e.get("message") or "").split(": ", 1)[-1]
+        elif ev == "test.unit.timed":
+            s = suites.setdefault(key, {"name": key, "unit": e.get("unit", ""), "cases": [], "progress": ""})
+            v = e.get("verdict", "")
+            s["status"] = "ok" if v == "ok" else "failed" if v == "FAIL" else "unmeasured"
+            s["secs"] = float(e.get("seconds") or 0)
+        elif ev == "test.case.failed":
+            owners = [s for s in suites.values() if s["unit"] == e.get("unit")]
+            owner = next((s for s in reversed(owners) if s["status"] == "failed"), owners[-1] if owners else None)
+            if owner is None:
+                owner = suites.setdefault(f"?:{e.get('unit', '')}", {"name": e.get("unit", "?"), "unit": e.get("unit", ""),
+                                                                     "status": "failed", "cases": [], "progress": "", "secs": None})
+            owner["cases"].append((e.get("file", ""), e.get("case", ""), e.get("reason", "")))
+        elif ev == "test.case.passed":
+            passed[e.get("unit", "")] = passed.get(e.get("unit", ""), 0) + 1
+        elif ev == "test.case.passed.count":
+            passed[e.get("unit", "")] = passed.get(e.get("unit", ""), 0) + int(e.get("count") or 0)
+    order = list(suites.values())
+    count = {k: sum(1 for s in order if s["status"] == k) for k in ("ok", "failed", "running", "unmeasured")}
+    return {"planned": planned, "suites": order, "count": count, "passed": passed}
+
+
+def tests_summary(state):
+    """`tests 7 ok · 1 failed · running` — the one-line form."""
+    c = state["count"]
+    if not state["suites"]:
+        return ""
+    parts = [f"{c['ok']} ok"]
+    if c["failed"]:
+        parts.append(f"{c['failed']} failed")
+    if c["unmeasured"]:
+        parts.append(f"{c['unmeasured']} unmeasured")
+    if c["running"]:
+        parts.append("running")
+    done = c["ok"] + c["failed"] + c["unmeasured"]
+    of = f" ({done} of {state['planned']})" if state["planned"] else ""
+    return "tests " + " · ".join(parts) + of
+
+
+def tests_detail(state, label, live=True):
+    """The /wts shape for one run: suites, then every failed case under its suite."""
+    if not state["suites"]:
+        return [f"  tests ({label}): " + ("none reported yet" if live else "no test events on this run")]
+    out = [f"  tests ({label}): {tests_summary(state)[len('tests '):]}"]
+    for s in state["suites"]:
+        if s["status"] == "failed":
+            secs = f"  {fmt_dur(s['secs'])}" if s.get("secs") else ""
+            out.append(f"    ✗ {s['name']}{secs}")
+            for f, c, why in s["cases"]:
+                why = "" if why.startswith("no reason captured") else why
+                out.append(f"        {Path(f).name} — {c}" + (f" — {why[:120]}" if why else ""))
+        elif s["status"] == "running":
+            so_far = s["progress"] or (f"{state['passed'].get(s['unit'], 0)} passed so far" if state["passed"].get(s["unit"]) else "")
+            out.append(f"    … {s['name']} running" + (f" — {so_far}" if so_far else ""))
+        elif s["status"] == "unmeasured":
+            out.append(f"    ? {s['name']} unmeasured")
+    return out
+
+
 def queue_positions():
     """{run id: place in line} for every queued run, from dagu's queues."""
     pos = {}
@@ -529,7 +654,13 @@ def card_line(card, role, runs, lands, places, now=None):
         when = "(" + datetime.fromtimestamp(ended / 1000).strftime("%H:%M") + ")"
     else:
         when = ""
-    return f"#{card} {role:<6} {where:<34} {when:>7} · run {len(runs)}{go}"
+    tests = ""
+    if land is None and status in ("running", "failed") and newest.get("dagRunId"):
+        began = run_began(newest)
+        ev = run_test_events(newest["dagRunId"], began / 1000 if began else now - 86400)
+        tests = (" · " + tests_summary(tests_state(ev))) if ev else ""
+        tests = "" if tests == " · " else tests
+    return f"#{card} {role:<6} {where:<34} {when:>7} · run {len(runs)}{tests}{go}"
 
 
 def dagu_detail(card, runs):
@@ -550,6 +681,15 @@ def dagu_detail(card, runs):
     land = dagu_land_line(card, "v2")
     if land:
         print("  " + land.split("] ", 1)[1])
+    # #4453 — the newest run's tests, in the /wts shape
+    st = run_began(runs[0])
+    ev = run_test_events(runs[0].get("dagRunId", ""), st / 1000 if st else time.time() - 86400)
+    print()
+    if ev is None:
+        print(f"  tests (run {n}): unreadable — Loki did not answer at {LOKI}")
+    else:
+        live = runs[0].get("statusLabel") in ("running", "queued", "waiting")
+        print("\n".join(tests_detail(tests_state(ev), f"run {n}", live)))
 
 
 def wip_cards():

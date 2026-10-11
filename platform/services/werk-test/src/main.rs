@@ -453,6 +453,7 @@ fn run(args: &[String]) -> Result<i32, String> {
         emit_spine("test.plan.degraded", &role, &card, &trace,
             &[("reason", "tests-domain-unreachable"), ("plan", "legacy-lanes")]);
     }
+    let _ = PROGRESS_CTX.set((role.clone(), card.clone(), trace.clone()));
     emit_spine(
         "test.started",
         &role,
@@ -2098,7 +2099,7 @@ fn run_cargo_sel(werk: &str, name: &str, quarantined: &[&str], exclude_bins: &[&
     cmd.env("CHORUS_CONTEXT", "");
     cmd.args(&args).current_dir(&dir);
     apply_suite_world(&mut cmd, werk);
-    match cmd.output() {
+    match output_with_progress(&mut cmd, name) {
         Ok(o) => {
             let ok = o.status.success();
             let text = format!(
@@ -2122,6 +2123,46 @@ fn run_cargo_sel(werk: &str, name: &str, quarantined: &[&str], exclude_bins: &[&
         }
         Err(e) => (false, Vec::new(), format!("cargo could not start: {}", e)),
     }
+}
+
+/// #4453 — who a card run's progress events belong to (role, card, trace);
+/// set once when the run starts. Unset (the nightly), no progress is emitted.
+static PROGRESS_CTX: std::sync::OnceLock<(String, String, String)> = std::sync::OnceLock::new();
+
+/// #4453 — `cmd.output()`, but nextest's live lines are read as they come and
+/// a `test.unit.progress` event goes on the run's trace every 15 seconds, so a
+/// long crate shows cases passed and failed while it is still running.
+fn output_with_progress(cmd: &mut Command, unit: &str) -> std::io::Result<std::process::Output> {
+    use std::io::{BufRead, Read};
+    let Some((role, card, trace)) = PROGRESS_CTX.get() else { return cmd.output() };
+    let mut child = cmd.stdout(std::process::Stdio::piped()).stderr(std::process::Stdio::piped()).spawn()?;
+    let mut out = child.stdout.take().expect("piped stdout");
+    let reader = std::thread::spawn(move || {
+        let mut buf = Vec::new();
+        let _ = out.read_to_end(&mut buf);
+        buf
+    });
+    let mut err_buf = Vec::new();
+    let mut progress = werk_test::CargoProgress::default();
+    let mut last = std::time::Instant::now();
+    let mut lines = std::io::BufReader::new(child.stderr.take().expect("piped stderr"));
+    let mut line = Vec::new();
+    while lines.read_until(b'\n', &mut line).unwrap_or(0) > 0 {
+        progress.feed(&String::from_utf8_lossy(&line));
+        err_buf.extend_from_slice(&line);
+        line.clear();
+        if last.elapsed() >= std::time::Duration::from_secs(15) {
+            last = std::time::Instant::now();
+            emit_spine("test.unit.progress", role, card, trace,
+                &[("check", "cargo-test"), ("unit", unit), ("passed", &progress.passed.to_string()),
+                  ("failed", &progress.failed.to_string()),
+                  ("total", &progress.total.map(|n| n.to_string()).unwrap_or_default()),
+                  ("message", &format!("cargo-test {}: {}", unit, progress.line()))]);
+        }
+    }
+    let status = child.wait()?;
+    let stdout = reader.join().unwrap_or_default();
+    Ok(std::process::Output { status, stdout, stderr: err_buf })
 }
 
 /// Fetch the quarantined test cases from the tests domain (athena-make `/tests`), via a
