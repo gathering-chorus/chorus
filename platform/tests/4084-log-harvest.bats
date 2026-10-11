@@ -26,7 +26,7 @@ PL
   mk com.chorus.buzz-tunnel
   echo "line" > "$T/logs/alert-runner.log"
   echo "old" > "$T/logs/silent.log"; touch -t 202601010000 "$T/logs/silent.log"
-  printf 'com.chorus.alert-runner\talerts-monitors\ncom.chorus.silent\tspine\ncom.chorus.missing\tspine\ncom.chorus.buzz-tunnel\tintegrations\n' > "$T/map.tsv"
+  printf 'com.chorus.alert-runner\talerts\ncom.chorus.silent\tspine\ncom.chorus.missing\tspine\ncom.chorus.buzz-tunnel\tintegrations\n' > "$T/map.tsv"
   printf 'alert-runner\nchorus-api\n' > "$T/jobs.txt"
 }
 teardown() { rm -rf "$T"; }
@@ -36,7 +36,7 @@ teardown() { rm -rf "$T"; }
   [ "$status" -eq 0 ]
   [ "$(grep -c 'a chorus:LogSource' <<<"$output")" -eq 4 ]
   grep -q '<urn:chorus:logsource-library-com.chorus.alert-runner>' <<<"$output"
-  grep -q 'chorus:hasDomain chorus:alerts-monitors' <<<"$output"
+  grep -q 'chorus:hasDomain chorus:alerts' <<<"$output"
   grep -q 'chorus:lokiJob "alert-runner"' <<<"$output"
   grep -q 'chorus:onMachine chorus:library' <<<"$output"
 }
@@ -59,13 +59,13 @@ teardown() { rm -rf "$T"; }
   mk com.chorus.alert-runner.werk.kade "$T/logs/ar-kade.log"
   run python3 "$GEN" --plists "$T/la" --mapping "$T/map.tsv" --loki-jobs "$T/jobs.txt"
   [ "$status" -eq 0 ]
-  grep -A12 'logsource-library-com.chorus.alert-runner.werk.kade>' <<<"$output" | grep -q 'chorus:hasDomain chorus:alerts-monitors'
+  grep -A12 'logsource-library-com.chorus.alert-runner.werk.kade>' <<<"$output" | grep -q 'chorus:hasDomain chorus:alerts'
   run python3 "$GEN" --plists "$T/la" --mapping "$T/map.tsv" --loki-jobs "$T/jobs.txt" --check
   [ "$status" -eq 0 ]
 }
 
 @test "NEGATIVE PROOF: a unit with no mapping row is emitted WITHOUT a domain edge and --check goes red naming it" {
-  printf 'com.chorus.alert-runner\talerts-monitors\n' > "$T/map.tsv"
+  printf 'com.chorus.alert-runner\talerts\n' > "$T/map.tsv"
   run python3 "$GEN" --plists "$T/la" --mapping "$T/map.tsv" --loki-jobs "$T/jobs.txt"
   [ "$status" -eq 0 ]
   [ "$(grep -c 'a chorus:LogSource' <<<"$output")" -eq 4 ]      # the row is NOT hidden

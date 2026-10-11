@@ -450,7 +450,7 @@
       }
     },
     "athena.deploy.completed": {
-      "producer": "athena-domain",
+      "producer": "domains",
       "category": "fact",
       "version": "1",
       "vertebra": "operations",
@@ -465,7 +465,7 @@
       }
     },
     "athena.deploy.failed": {
-      "producer": "athena-domain",
+      "producer": "domains",
       "category": "fact",
       "version": "1",
       "vertebra": "operations",
@@ -477,7 +477,7 @@
       }
     },
     "athena.deploy.started": {
-      "producer": "athena-domain",
+      "producer": "domains",
       "category": "fact",
       "version": "1",
       "vertebra": "building",
@@ -489,7 +489,7 @@
       }
     },
     "athena.deployed": {
-      "producer": "athena-domain",
+      "producer": "domains",
       "category": "fact",
       "version": "1",
       "vertebra": "operations",
@@ -501,7 +501,7 @@
       }
     },
     "athena.pipeline.completed": {
-      "producer": "athena-domain",
+      "producer": "domains",
       "category": "fact",
       "version": "1",
       "vertebra": "building",
@@ -515,7 +515,7 @@
       }
     },
     "athena.pipeline.started": {
-      "producer": "athena-domain",
+      "producer": "domains",
       "category": "fact",
       "version": "1",
       "vertebra": "building",
@@ -529,7 +529,7 @@
       }
     },
     "athena.seed.completed": {
-      "producer": "athena-domain",
+      "producer": "domains",
       "category": "fact",
       "version": "1",
       "vertebra": "building",
@@ -541,7 +541,7 @@
       }
     },
     "athena.serve.kickstarted": {
-      "producer": "athena-domain",
+      "producer": "domains",
       "category": "fact",
       "version": "1",
       "vertebra": "building",
@@ -552,7 +552,7 @@
       }
     },
     "athena.serve.ready": {
-      "producer": "athena-domain",
+      "producer": "domains",
       "category": "fact",
       "version": "1",
       "vertebra": "building",
@@ -565,7 +565,7 @@
       }
     },
     "athena.serve.refused": {
-      "producer": "athena-domain",
+      "producer": "domains",
       "category": "fact",
       "version": "1",
       "vertebra": "building",
@@ -579,14 +579,14 @@
       }
     },
     "athena.trigger.skipped": {
-      "producer": "athena-domain",
+      "producer": "domains",
       "category": "fact",
       "version": "1",
       "description": "Observed on the spine 2026-10-05 but never registered; payload unknown (#4438).",
       "fields": {}
     },
     "athena.trigger.started": {
-      "producer": "athena-domain",
+      "producer": "domains",
       "category": "fact",
       "version": "1",
       "vertebra": "operations",
@@ -2924,7 +2924,7 @@
       }
     },
     "gate.quality.tests.consulted": {
-      "producer": "gates",
+      "producer": "policies",
       "category": "fact",
       "version": "1",
       "vertebra": "proving",
@@ -2958,7 +2958,7 @@
       "fields": {}
     },
     "guard.classify.decided": {
-      "producer": "gates",
+      "producer": "security",
       "category": "fact",
       "version": "1",
       "vertebra": "building",
@@ -2972,7 +2972,7 @@
       }
     },
     "guard.rule.decided": {
-      "producer": "gates",
+      "producer": "security",
       "category": "fact",
       "version": "1",
       "vertebra": "building",
@@ -2986,7 +2986,7 @@
       }
     },
     "guard.scrub.blocked": {
-      "producer": "gates",
+      "producer": "security",
       "category": "fact",
       "version": "1",
       "vertebra": "building",
@@ -3001,7 +3001,7 @@
       }
     },
     "guard.sparql.warned": {
-      "producer": "gates",
+      "producer": "security",
       "category": "fact",
       "version": "1",
       "vertebra": "building",
@@ -3079,7 +3079,7 @@
       "fields": {}
     },
     "hook.decision": {
-      "producer": "gates",
+      "producer": "policies",
       "category": "diagnostic",
       "version": "1",
       "vertebra": "proving",
@@ -3099,14 +3099,14 @@
       }
     },
     "hooks.started": {
-      "producer": "gates",
+      "producer": "policies",
       "category": "fact",
       "version": "1",
       "description": "Observed on the spine 2026-10-05 but never registered; payload unknown (#4438).",
       "fields": {}
     },
     "hooks.terminating": {
-      "producer": "gates",
+      "producer": "policies",
       "category": "fact",
       "version": "1",
       "description": "Observed on the spine 2026-10-05 but never registered; payload unknown (#4438).",
@@ -3237,7 +3237,7 @@
       "fields": {}
     },
     "membrane.violation": {
-      "producer": "gates",
+      "producer": "security",
       "category": "fact",
       "version": "1",
       "vertebra": "proving",
@@ -4235,7 +4235,7 @@
       }
     },
     "quality.review.completed": {
-      "producer": "gates",
+      "producer": "policies",
       "category": "fact",
       "version": "1",
       "description": "Observed on the spine 2026-10-05 but never registered; payload unknown (#4438).",
@@ -5163,14 +5163,14 @@
       }
     },
     "stated.intent.stall": {
-      "producer": "gates",
+      "producer": "policies",
       "category": "fact",
       "version": "1",
       "description": "Observed on the spine 2026-10-05 but never registered; payload unknown (#4438).",
       "fields": {}
     },
     "stop.gate.yielded": {
-      "producer": "gates",
+      "producer": "policies",
       "category": "fact",
       "version": "1",
       "description": "Observed on the spine 2026-10-05 but never registered; payload unknown (#4438).",
@@ -6061,7 +6061,7 @@
       "fields": {}
     },
     "word.cap.blocked": {
-      "producer": "gates",
+      "producer": "policies",
       "category": "diagnostic",
       "version": "1",
       "description": "Observed on the spine 2026-10-05 but never registered; payload unknown (#4438).",

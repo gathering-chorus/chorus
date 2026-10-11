@@ -37,10 +37,10 @@ export const SUBPRODUCT_DOMAINS: Record<string, string[]> = {
     'practices', 'principles', 'rcas',
   ],
   werk: ['cards', 'roles'],
-  athena: ['athena-domain', 'domains', 'knowledge', 'integrations', 'services'],
-  convergence: ['convergence-domain'],
+  athena: ['domains', 'knowledge', 'services'],
+  convergence: ['integrations'],
   clearing: ['messages'],
-  quality: ['gates', 'tests'],
+  quality: ['tests'],
 };
 
 const DOMAIN_TO_SUBPRODUCT: Record<string, string> = {};

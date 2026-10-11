@@ -60,10 +60,9 @@ const REGISTRY: Record<string, RegistryEntry> = {
   'metrics':    { aliases: ['loom'], cardSequenceTags: ['loom'], cardDomainTags: ['chorus', 'loom'] },
   'analytics':  { aliases: ['loom'], cardSequenceTags: ['loom'], cardDomainTags: ['chorus', 'loom'] },
   'rcas':       { aliases: ['loom'], cardSequenceTags: ['loom'], cardDomainTags: ['chorus', 'loom'] },
-  // Quality/code/gates folds — pre-existing special cases.
+  // Quality/code folds — pre-existing special cases (gates retired into policies, #4489).
   'tests': { aliases: ['quality'], cardDomainTags: ['quality'] },
   'code':  { aliases: ['code'],    cardDomainTags: ['code'] },
-  'gates': { aliases: ['gates'],   cardDomainTags: ['gates'] },
 };
 
 /**

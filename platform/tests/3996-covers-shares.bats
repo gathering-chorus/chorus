@@ -31,7 +31,7 @@ cov() { "$BIN" --covers-of "$1" 2>/dev/null; }
 @test "#4201: a path alone answers nothing — the rules read the FILE" {
   # These paths carry no file, so no route, class, import or card can be read
   # from them. The folder rule that used to map directing/products/cards/** to
-  # cards, and a basename keyword like `alert` to alerts-monitors, is retired:
+  # cards, and a basename keyword like `alert` to alerts, is retired:
   # a name is not evidence. Unplaced falls to the tests domain and is listed.
   eq "$(cov directing/products/cards/tests/card-lifecycle-flow.test.ts)" "tests"
   eq "$(cov platform/api/tests/eventloop-alert.test.ts)" "tests"
@@ -44,7 +44,7 @@ cov() { "$BIN" --covers-of "$1" 2>/dev/null; }
   # comes out of what is written in the file.
   a="$BATS_TEST_TMPDIR/eventloop-alert.test.ts"
   printf '%s\n' "await request(app).get('/api/chorus/cards');" > "$a"
-  eq "$(CHORUS_VALID_DOMAINS="cards,alerts-monitors,tests" "$BIN" --covers-of "$a" 2>/dev/null)" "cards"
+  eq "$(CHORUS_VALID_DOMAINS="cards,alerts,tests" "$BIN" --covers-of "$a" 2>/dev/null)" "cards"
 
   b="$BATS_TEST_TMPDIR/server-unit.test.ts"
   printf '%s\n' "it('boots', () => {});" > "$b"

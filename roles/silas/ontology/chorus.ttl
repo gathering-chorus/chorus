@@ -783,12 +783,9 @@ chorus:pulse a owl:Class ;
 
 # Chorus domains → chorusStream
 chorus:code chorus:builtBy chorus:value-stream-chorus .
-chorus:gates chorus:builtBy chorus:value-stream-chorus .
 chorus:toolchain-domain chorus:builtBy chorus:value-stream-chorus .
 chorus:domains chorus:builtBy chorus:value-stream-chorus .
 chorus:services chorus:builtBy chorus:value-stream-chorus .
-chorus:chorus-domain chorus:builtBy chorus:value-stream-chorus .
-chorus:convergence-domain chorus:builtBy chorus:value-stream-chorus .
 
 # Gathering domains → gatheringStream
 chorus:music chorus:builtBy chorus:value-stream-gathering .
@@ -813,8 +810,6 @@ chorus:video chorus:builtBy chorus:value-stream-gathering .
 # #3603: the per-product hasDomain edges formerly scattered here now live ON each
 # typed Product's definition above (one declaration site per product). Only edges
 # for products without inline lists (gathering, borgProduct) remain in this block.
-# Loom: chorus-domain (meta) — kept here, not in the inline list, pending the
-# V1/V2 domain-layer convergence call on chorus-domain itself.
 
 # Borg/Observability: infrastructure, security, toolchain, properties, time (infra concerns)
 chorus:observability chorus:hasDomain chorus:time .
@@ -847,14 +842,14 @@ chorus:gathering chorus:hasDomain chorus:music, chorus:photos, chorus:books,
 
 # observability-product consumes moved to borgProduct
 chorus:borg chorus:consumes chorus:infrastructure, chorus:logs-domain,
-                                   chorus:alerts-monitors-domain, chorus:deploys-domain .
+                                   chorus:alerts, chorus:monitors, chorus:deploys-domain .
 
 # --- Product → Service provision edges ---
 
 chorus:chorus chorus:provides chorus:observability, chorus:infrastructure,
-                                     chorus:logs-domain, chorus:alerts-monitors-domain,
+                                     chorus:logs-domain, chorus:alerts, chorus:monitors,
                                      chorus:deploys-domain, chorus:cards,
-                                     chorus:skills, chorus:gates,
+                                     chorus:skills, chorus:policies,
                                      chorus:spine .
 
 # --- Product → SubProduct containment (hasSubProduct) — RETIRED #3603 ---
@@ -869,12 +864,11 @@ chorus:borg chorus:hasDomain chorus:heralds .
 chorus:gathering chorus:hasServiceDesign chorus:gathering-service-design .
 chorus:chorus chorus:hasServiceDesign chorus:chorus-api-service-design .
 
-# (#3603: athena-domain hasDomain edge is on athenaProduct's definition above.)
 
 # --- Pipelines consumption edges ---
 chorus:pipelines chorus:consumes chorus:infrastructure,
                                         chorus:observability,
-                                        chorus:gates .
+                                        chorus:policies .
 
 # --- Cross-cutting consumption: Properties, Security, and Time ---
 # Properties consumed by infrastructure services; Security and Time consumed by all domains.
@@ -886,17 +880,12 @@ chorus:deploys-domain chorus:consumes chorus:properties .
 chorus:logs-domain chorus:consumes chorus:properties .
 
 chorus:code chorus:consumes chorus:security .
-chorus:gates chorus:consumes chorus:security .
 chorus:toolchain-domain chorus:consumes chorus:security .
-chorus:athena-domain chorus:consumes chorus:security .
-chorus:convergence-domain chorus:consumes chorus:security .
 chorus:domains chorus:consumes chorus:security .
 chorus:integrations chorus:consumes chorus:security .
 chorus:knowledge chorus:consumes chorus:security .
 chorus:services chorus:consumes chorus:security .
 chorus:cards chorus:consumes chorus:security .
-chorus:alerts-monitors-domain chorus:consumes chorus:security .
-chorus:chorus-domain chorus:consumes chorus:security .
 chorus:deploys-domain chorus:consumes chorus:security .
 chorus:infrastructure chorus:consumes chorus:security .
 chorus:logs-domain chorus:consumes chorus:security .
@@ -917,17 +906,12 @@ chorus:spine chorus:consumes chorus:security .
 chorus:roles chorus:consumes chorus:security .
 
 chorus:code chorus:consumes chorus:time .
-chorus:gates chorus:consumes chorus:time .
 chorus:toolchain-domain chorus:consumes chorus:time .
-chorus:athena-domain chorus:consumes chorus:time .
-chorus:convergence-domain chorus:consumes chorus:time .
 chorus:domains chorus:consumes chorus:time .
 chorus:integrations chorus:consumes chorus:time .
 chorus:knowledge chorus:consumes chorus:time .
 chorus:services chorus:consumes chorus:time .
 chorus:cards chorus:consumes chorus:time .
-chorus:alerts-monitors-domain chorus:consumes chorus:time .
-chorus:chorus-domain chorus:consumes chorus:time .
 chorus:deploys-domain chorus:consumes chorus:time .
 chorus:infrastructure chorus:consumes chorus:time .
 chorus:logs-domain chorus:consumes chorus:time .
@@ -3057,14 +3041,14 @@ chorus:services chorus:definesVocabulary chorus:ServiceInstance , chorus:Schedul
 # --- hosts / atStep edges for the six Services authored 2026-08-15 ---
 # Silas gate-arch ruling 2026-08-15 15:15 applied: v2 step grammar, ruled domains.
 chorus:services chorus:hosts chorus:service-athena .        # model surface
-chorus:chorus-domain chorus:hosts chorus:service-knowledge-store . # context+memory+knowledge
-chorus:chorus-domain chorus:hosts chorus:service-werk .            # pipeline
+chorus:knowledge chorus:hosts chorus:service-knowledge-store .     # context+memory+knowledge (#4489: chorus-domain retired)
+chorus:pipelines chorus:hosts chorus:service-werk .               # pipeline (#4489)
 chorus:tests chorus:hosts chorus:service-tests .              # #4089 — the tests service: registry, runner, evidence, readout (atStep rides on the row in service-instances.ttl: an edge in this graph never reaches the served row — "no step" on every service page)
 # gathering-app hosted under infrastructure for now (Silas ruling) — MIGRATES
 # to a gathering product domain the day one exists in this graph.
 chorus:infrastructure chorus:hosts chorus:service-gathering-app .
-chorus:alerts-monitors-domain chorus:hosts chorus:service-observability .
-chorus:convergence-domain chorus:hosts chorus:service-integration .
+chorus:monitors chorus:hosts chorus:service-observability .        # #4489: alerts-monitors-domain retired
+chorus:integrations chorus:hosts chorus:service-integration .     # #4489: convergence-domain is integrations (Jeff 10-10)
 chorus:memory chorus:hosts chorus:service-memory .                  # #4482: every service has one hosting domain (Wren 16:46)
 chorus:pipelines chorus:hosts chorus:service-pipelines .
 

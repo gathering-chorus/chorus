@@ -20,7 +20,7 @@ describe('resolveDomainIdentity — normalization', () => {
   });
 
   it('strips -domain suffix', () => {
-    expect(resolveDomainIdentity('chorus-domain').primary).toBe('chorus');
+    expect(resolveDomainIdentity('photos-domain').primary).toBe('photos');
     expect(resolveDomainIdentity('tests').primary).toBe('tests');
   });
 
@@ -71,10 +71,6 @@ describe('resolveDomainIdentity — special cases (tests/code/gates)', () => {
     expect(id.aliases).toContain('code');
   });
 
-  it('gates domain aliases to gates', () => {
-    const id = resolveDomainIdentity('gates');
-    expect(id.aliases).toContain('gates');
-  });
 });
 
 describe('resolveDomainIdentity — default behavior for unregistered domains', () => {
@@ -91,7 +87,7 @@ describe('resolveDomainIdentity — default behavior for unregistered domains', 
   });
 
   it('defaults ontologyGraph to urn:chorus:ontology', () => {
-    const id = resolveDomainIdentity('chorus-domain');
+    const id = resolveDomainIdentity('awareness');
     expect(id.ontologyGraph).toBe('urn:chorus:ontology');
   });
 

@@ -251,7 +251,7 @@ async function load() {
   vocab.domains = ((domainsR.data || []).map(sd => (sd.id || (sd.uri || '').split('#').pop() || '').toLowerCase()).filter(Boolean));
   // Fallback: union with tagger-known set so the dropdown isn't empty if Athena underreports
   if (vocab.domains.length < 20) {
-    const taggerKnown = ['analytics','decisions','metrics','policies','practices','principles','rcas','cards','roles','athena-domain','domains','knowledge','integrations','services','convergence-domain','messages','gates','tests','blog','books','cooking-domain','documents','glimmers-domain','music','notes','photos','property','social','video','people','sexuality','stories','self-domain','seeds','reading-domain','watching-domain'];
+    const taggerKnown = ['analytics','decisions','metrics','policies','practices','principles','rcas','cards','roles','domains','knowledge','integrations','services','messages','tests','blog','books','cooking-domain','documents','glimmers-domain','music','notes','photos','property','social','video','people','sexuality','stories','self-domain','seeds','reading-domain','watching-domain'];
     vocab.domains = Array.from(new Set([...vocab.domains, ...taggerKnown])).sort();
   }
   driftByHref = new Map(((driftR.data || {}).drift || []).map(e => [e.href, e.divergence_fields || []]));

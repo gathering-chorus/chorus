@@ -92,7 +92,7 @@ describe('fetchDomainTests', () => {
         total: 42,
       }),
     });
-    const r = await fetchDomainTests(d, 'chorus-domain');
+    const r = await fetchDomainTests(d, 'awareness');
     expect(r.status).toBe(200);
     const body = r.body as { data: { tests: Array<{ path: string; type: string }>; byType: Record<string, number>; total: number } };
     expect(body.data.tests.length).toBe(2);
@@ -103,7 +103,7 @@ describe('fetchDomainTests', () => {
 
   test('scanner throws returns empty envelope (200, no 500)', async () => {
     const d = deps({ qualityByDomain: async () => { throw new Error('scan failed'); } });
-    const r = await fetchDomainTests(d, 'chorus-domain');
+    const r = await fetchDomainTests(d, 'awareness');
     expect(r.status).toBe(200);
     const body = r.body as { data: { tests: unknown[] } };
     expect(body.data.tests).toEqual([]);
@@ -114,8 +114,8 @@ describe('fetchDomainTests', () => {
     const d = deps({
       qualityByDomain: async (domain: string) => { seenDomain = domain; return { layers: [] }; },
     });
-    await fetchDomainTests(d, 'chorus-domain');
-    expect(seenDomain).toBe('chorus');
+    await fetchDomainTests(d, 'photos-domain');
+    expect(seenDomain).toBe('photos');
   });
 
   test('#2485 — falls back to chorus:TestCoverage SPARQL when scanner has no data', async () => {
@@ -164,7 +164,7 @@ describe('fetchDomainTests', () => {
       qualityByDomain: async () => ({ layers: [{ key: 'unit', files: [{ name: 'projected/y.test.ts' }] }], total: 1 }),
       sparql: async () => sparqlResult,
     });
-    const r = await fetchDomainTests(d, 'chorus-domain');
+    const r = await fetchDomainTests(d, 'awareness');
     const body = r.body as { data: { tests: Array<{ path: string; type: string }> } };
     expect(body.data.tests.length).toBe(1);
     expect(body.data.tests[0].path).toBe('projected/y.test.ts');
@@ -185,7 +185,7 @@ describe('fetchDomainServices', () => {
       },
     };
     const d = deps({ sparql: async () => result });
-    const r = await fetchDomainServices(d, 'chorus-domain');
+    const r = await fetchDomainServices(d, 'awareness');
     const body = r.body as { data: { endpoints: unknown[]; byMethod: Record<string, number> } };
     expect(body.data.endpoints.length).toBe(3);
     expect(body.data.byMethod.GET).toBe(2);
@@ -194,7 +194,7 @@ describe('fetchDomainServices', () => {
 
   test('empty result gives empty endpoints + byMethod', async () => {
     const d = deps();
-    const r = await fetchDomainServices(d, 'chorus-domain');
+    const r = await fetchDomainServices(d, 'awareness');
     const body = r.body as { data: { endpoints: unknown[]; byMethod: Record<string, number> } };
     expect(body.data.endpoints).toEqual([]);
     expect(body.data.byMethod).toEqual({});
@@ -216,7 +216,7 @@ describe('fetchDomainDecisions', () => {
       },
     };
     const d = deps({ sparql: async () => result });
-    const r = await fetchDomainDecisions(d, 'chorus-domain');
+    const r = await fetchDomainDecisions(d, 'awareness');
     const body = r.body as { data: { decisions: unknown[]; byEnforcement: Record<string, number> } };
     expect(body.data.decisions.length).toBe(3);
     expect(body.data.byEnforcement.binding).toBe(2);
@@ -233,7 +233,7 @@ describe('fetchDomainDecisions', () => {
 
   test('SPARQL throws returns empty envelope', async () => {
     const d = deps({ sparql: async () => { throw new Error('oops'); } });
-    const r = await fetchDomainDecisions(d, 'chorus-domain');
+    const r = await fetchDomainDecisions(d, 'awareness');
     expect(r.status).toBe(200);
     const body = r.body as { data: { decisions: unknown[] } };
     expect(body.data.decisions).toEqual([]);
@@ -256,7 +256,7 @@ describe('fetchDomainInfra', () => {
       },
     };
     const d = deps({ sparql: async () => result });
-    const r = await fetchDomainInfra(d, 'chorus-domain');
+    const r = await fetchDomainInfra(d, 'awareness');
     const body = r.body as { data: { environments: Array<{ name: string; dependsOn: string[] }> } };
     expect(body.data.environments.length).toBe(2);
     const fuseki = body.data.environments.find((e) => e.name === 'fuseki')!;
@@ -302,7 +302,7 @@ describe('fetchDomainRadius', () => {
       },
     };
     const d = deps({ sparql: async () => result });
-    const r = await fetchDomainRadius(d, 'chorus-domain');
+    const r = await fetchDomainRadius(d, 'awareness');
     const body = r.body as { data: { edges: Array<{ target: string; relationship: string; direction: string }> } };
     expect(body.data.edges.length).toBe(2);
     expect(body.data.edges[0].target).toBe('API');
@@ -333,7 +333,7 @@ describe('fetchDomainBlastRadius', () => {
       },
     };
     const d = deps({ sparql: async () => result });
-    const r = await fetchDomainBlastRadius(d, 'chorus-domain');
+    const r = await fetchDomainBlastRadius(d, 'awareness');
     const body = r.body as { data: { edges: unknown[] } };
     // duplicate of (a|consumes) should collapse; (a|ownerProduct) is distinct
     expect(body.data.edges.length).toBe(2);
@@ -341,7 +341,7 @@ describe('fetchDomainBlastRadius', () => {
 
   test('empty bindings → empty envelope', async () => {
     const d = deps();
-    const r = await fetchDomainBlastRadius(d, 'chorus-domain');
+    const r = await fetchDomainBlastRadius(d, 'awareness');
     const body = r.body as { data: { edges: unknown[] } };
     expect(body.data.edges).toEqual([]);
   });
