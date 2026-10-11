@@ -37,6 +37,29 @@ fn the_committed_pulse_api_is_what_the_generator_writes_today() {
     assert!(read("directing/products/pulse/api/Cargo.lock").contains("name = \"pulse-api\""));
 }
 
+// #4493 — the embedded store pulls oxigraph into pulse-api, and the hash crates it brings
+// must agree on one digest version (sha2 0.10 against md-5 0.11 broke the first build).
+#[test]
+fn pulse_api_carries_the_embedded_store_on_one_digest() {
+    assert!(read("directing/products/pulse/api/Cargo.toml").contains("oxigraph = \"=0.5.11\""));
+    let lock = read("directing/products/pulse/api/Cargo.lock");
+    let version_of = |name: &str| -> Vec<String> {
+        let mut out = Vec::new();
+        let mut lines = lock.lines();
+        while let Some(l) = lines.next() {
+            if l == format!("name = \"{name}\"") {
+                if let Some(v) = lines.next() { out.push(v.trim_start_matches("version = ").trim_matches('"').to_string()); }
+            }
+        }
+        out
+    };
+    assert_eq!(version_of("oxigraph"), ["0.5.11"]);
+    for d in ["md-5", "sha1", "sha2"] {
+        let v = version_of(d);
+        assert!(v.len() == 1 && v[0].starts_with("0.10."), "{d} must be one 0.10.x, got {v:?}");
+    }
+}
+
 #[test]
 fn negative_proof_a_hand_edit_to_the_generated_crate_is_caught() {
     let root = repo();
