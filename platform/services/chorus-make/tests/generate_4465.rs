@@ -196,8 +196,9 @@ fn a_bad_row_is_refused_by_line_never_skipped() {
 }
 
 // Fixtures by their repo path, so the pipeline's test step sees which files these tests read.
-const REPO_FIXTURES: [&str; 4] = [
+const REPO_FIXTURES: [&str; 5] = [
     "platform/services/chorus-make/tests/fixtures/cicd-golden.yaml",
+    "platform/services/chorus-make/tests/fixtures/cicd-land-golden.yaml",
     "platform/services/chorus-make/tests/fixtures/cicd-rows.tsv",
     "platform/services/chorus-make/tests/fixtures/cicd-graph.trig",
     "platform/services/chorus-make/tests/fixtures/mcp-server-names-20261009.txt",
