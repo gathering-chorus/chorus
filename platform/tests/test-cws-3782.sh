@@ -167,6 +167,11 @@ out=$(CWS_RUNS_DIR=$TD CWS_DAGU="file://$TD/dagu" "$CWS" 109)
 t "the card's land shows on the land queue" "v2 land running at skill-werk-deploy-canonical · 1 land · dagu L1" "$out"
 if [[ "$out" == *"dagu L2"* ]]; then echo "FAIL another card's land (CARD=1090) counted for 109"; fails=$((fails+1)); fi
 
+# #4494 — a go can be a no; the go line offers both, and a no reads "rejected"
+out=$(CWS_RUNS_DIR=$TD CWS_DAGU="file://$TD/dagu" "$CWS" 109)
+t "the go line offers the no" "--input decision=no" "$out"
+t "the go itself says go" "--input decision=go" "$out"
+
 # #4494 — the board view: one line per card, where it is now, which run.
 # Jeff 2026-10-10: "the cws output is confusing".
 mkdir -p "$TD/api/api/chorus/context/board"
@@ -189,6 +194,20 @@ json.dump(d, open(p, "w"))
 EOF3
 echo '{"items":[{"dagRunId":"Lx","statusLabel":"queued"},{"dagRunId":"L1","statusLabel":"queued"}]}' > "$TD/dagu/api/v1/queues/werk-land/items"
 t "a queued land names its place in line" "#109 kade   land: waiting in line (2nd)" "$(board)"
+# a no at the go: the land was skipped and the run ended (no land row for it)
+python3 - "$TD/dagu/api/v1/dag-runs" <<'EOF4'
+import json, sys
+p = sys.argv[1]; d = json.load(open(p))
+d["dagRuns"] = [r for r in d["dagRuns"] if r.get("name") != "cicd-land"]
+for r in d["dagRuns"]:
+    if r["dagRunId"] == "r2":
+        r["statusLabel"] = "succeeded"
+        r["nodes"] = [{"statusLabel":"succeeded","step":{"name":"skill-werk-go"}},{"statusLabel":"skipped","step":{"name":"cicd-land"}}]
+json.dump(d, open(p, "w"))
+EOF4
+out=$(board)
+t "a no at the go reads rejected" "#109 kade   rejected at the go" "$out"
+if [[ "$out" == *"#109 kade   landed"* ]]; then echo "FAIL a rejected run reads landed"; fails=$((fails+1)); fi
 
 rm -rf "$TD"
 if [ $fails -gt 0 ]; then echo "test-cws-3782: $fails FAILURE(S)"; exit 1; fi

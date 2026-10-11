@@ -446,8 +446,10 @@ def dagu_go(card, run):
     step_id = node["step"].get("id") or node["step"]["name"].replace("-", "_")
     # Wren 2026-10-10: without --config the CLI looks in its default home and
     # answers "run not found"
-    return (f" · go: dagu --config {DAGU_CONFIG} human-task complete {DAGU_DAG} --run-id {run.get('dagRunId')}"
-            f" --step {step_id} --input accepter=jeff")
+    cmd = (f"dagu --config {DAGU_CONFIG} human-task complete {DAGU_DAG} --run-id {run.get('dagRunId')}"
+           f" --step {step_id} --input accepter=jeff")
+    # #4494 — a go can be a no: the land is skipped and the run ends
+    return f" · go: {cmd} --input decision=go · no: {cmd} --input decision=no"
 
 
 def dagu_line(card, role, runs):
@@ -513,6 +515,9 @@ def card_line(card, role, runs, lands, places, now=None):
         where = f"{pre}{word}"
     elif status == "waiting":
         where, go = "waiting for your go", dagu_go(card, run)
+    elif status == "succeeded" and not land and any(
+            n.get("statusLabel") == "skipped" and n["step"]["name"] == f"{DAGU_DAG}-land" for n in nodes_of(run)):
+        where = "rejected at the go"
     elif status == "succeeded":
         where = "landed" if land else "go given, land not queued"
     else:

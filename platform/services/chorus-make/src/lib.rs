@@ -225,11 +225,18 @@ pub fn generate(pipeline: &str, rows: &[Row]) -> Result<String, Vec<String>> {
                 "          accepter:\n            type: string\n",
             ));
             out.push_str(&format!("            enum: [{}]\n", ACCEPTERS.join(", ")));
-            out.push_str("        required: [accepter]\n");
+            // #4494 — a go can be a no: a run waiting here could not be
+            // stopped, dequeued or deleted (dagu 2.18), so "no" is the way
+            // out — the land below is skipped and the run ends.
+            out.push_str("          decision:\n            type: string\n            enum: [go, no]\n");
+            out.push_str("        required: [accepter, decision]\n");
             let land = land_dag(pipeline);
             out.push_str(&format!("  - name: {land}\n"));
             out.push_str(&format!("    description: {}\n", quote(&format!("enqueue the land on the {LAND_QUEUE} queue"))));
             out.push_str(&format!("    depends: [{id}]\n"));
+            out.push_str(&format!(
+                "    preconditions:\n      - condition: \"${{{go}.outputs.decision}}\"\n        expected: \"go\"\n"
+            ));
             out.push_str("    action: dag.enqueue\n    with:\n");
             out.push_str(&format!("      dag: {land}\n"));
             out.push_str(&format!("      params: \"CARD=${{CARD}} ROLE=${{ROLE}} ACCEPTER=${{{go}.outputs.accepter}}\"\n"));
