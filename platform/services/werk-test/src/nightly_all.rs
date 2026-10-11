@@ -31,6 +31,15 @@ extern "C" fn on_stop(sig: i32) {
     STOP_SIGNAL.store(sig, Ordering::SeqCst);
     STOP_REQUESTED.store(true, Ordering::SeqCst);
 }
+
+/// #4253 — a leg row with the time its leg took, unless it already has one,
+/// so every SUITE row carries its seconds. Untimed stays unknown, never 0.
+fn timed(mut row: SuiteRow, started: Instant) -> SuiteRow {
+    if row.millis.is_none() {
+        row.millis = Some(started.elapsed().as_millis() as u64);
+    }
+    row
+}
 fn install_stop_handler() {
     unsafe {
         signal(15, on_stop); // SIGTERM
@@ -377,6 +386,7 @@ fn leg_coverage(ctx: &Ctx) -> Vec<SuiteRow> {
     let workers = env_or("NIGHTLY_COVERAGE_WORKERS", "2");
     let mut rows = Vec::new();
     for (lang, rel, floor) in parse_floors(&yaml) {
+        let t = Instant::now();
         let owner = ctx.owner(&rel);
         let dir = format!("{}/{}", ctx.root, rel);
         let (rc, pct) = if let Some(fx) = &fixtures {
@@ -415,9 +425,10 @@ fn leg_coverage(ctx: &Ctx) -> Vec<SuiteRow> {
             let _ = std::fs::remove_file(&tmp);
             (rc, if rc == 0 { read_pct_rust(&sj) } else { None })
         };
-        rows.push(coverage_row(&rel, &owner, floor, rc, pct));
+        rows.push(timed(coverage_row(&rel, &owner, floor, rc, pct), t));
     }
-    if let Some(d) = leg_denominator(ctx, &yaml) {
+    let t = Instant::now();
+    if let Some(d) = leg_denominator(ctx, &yaml).map(|d| timed(d, t)) {
         rows.push(d);
     }
     rows
@@ -908,20 +919,26 @@ fn run_locked(ctx: &mut Ctx, _args: &[String]) -> Result<i32, String> {
     if std::env::var("NIGHTLY_LEGS_NOOP").is_err() {
         // #4290 — first, because it is the prerequisite for everything that
         // reads the graph: is the graph what git is, on every crawler domain?
-        push(ctx, leg_crawler_validate(ctx), &mut rows);
+        // #4253 — every leg row carries the time its leg took (the runner's
+        // units are timed by their own SUITETIME lines)
+        let t = Instant::now();
+        push(ctx, timed(leg_crawler_validate(ctx), t), &mut rows);
         // #4160 — Jeff's order (2026-09-12): coverage, then lint (eslint is
         // lint), then smoke; the runner then runs security → … → perf.
         for r in leg_coverage(ctx) {
             push(ctx, r, &mut rows);
         }
+        let t = Instant::now();
         if let Some(r) = leg_lint(ctx) {
-            push(ctx, r, &mut rows);
+            push(ctx, timed(r, t), &mut rows);
         }
+        let t = Instant::now();
         if let Some(r) = leg_app_eslint(ctx) {
-            push(ctx, r, &mut rows);
+            push(ctx, timed(r, t), &mut rows);
         }
+        let t = Instant::now();
         if let Some(r) = leg_smoke(ctx) {
-            push(ctx, r, &mut rows);
+            push(ctx, timed(r, t), &mut rows);
         }
     }
     let (over, _) = load_gate();
@@ -953,8 +970,10 @@ fn run_locked(ctx: &mut Ctx, _args: &[String]) -> Result<i32, String> {
         // stage (after e2e, before perf), so its row arrives with the runner's.
         // #4292 — bdd is no longer one summary row here: each feature runs
         // in the runner's file-suite lane and stores one result per scenario.
-        push(ctx, leg_daemons(ctx, &daemons_at_start, &sample_daemons()), &mut rows);
-        push(ctx, leg_duration(run_clock.elapsed().as_secs(), lane.gate_holds), &mut rows);
+        let t = Instant::now();
+        push(ctx, timed(leg_daemons(ctx, &daemons_at_start, &sample_daemons()), t), &mut rows);
+        let t = Instant::now();
+        push(ctx, timed(leg_duration(run_clock.elapsed().as_secs(), lane.gate_holds), t), &mut rows);
     }
     // #4247 — the census from the run's own record, in one unit, before the
     // completion line so a reader sees the tally with the run it belongs to.
@@ -1653,4 +1672,25 @@ mod lanes_4278 {
     }
 
 
+}
+
+#[cfg(test)]
+mod leg_times_4253 {
+    use super::*;
+
+    #[test]
+    fn a_leg_row_carries_the_time_its_leg_took() {
+        let t = Instant::now();
+        std::thread::sleep(Duration::from_millis(20));
+        let r = timed(SuiteRow::new("lint", "/x", "kade", "pass", "1 pass, 0 fail"), t);
+        assert!(r.millis.is_some_and(|ms| ms >= 20), "{:?}", r.millis);
+        assert!(r.time_line().is_some(), "the row writes its SUITETIME line");
+    }
+
+    #[test]
+    fn negative_proof_a_row_already_timed_keeps_its_own_time() {
+        let mut row = SuiteRow::new("bats", "a.bats", "kade", "pass", "1 pass, 0 fail");
+        row.millis = Some(531_000);
+        assert_eq!(timed(row, Instant::now()).millis, Some(531_000));
+    }
 }

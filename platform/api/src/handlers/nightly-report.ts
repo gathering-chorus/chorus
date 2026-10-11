@@ -160,6 +160,14 @@ export function parseNightlyLog(text: string): NightlyRun | null {
       run.errors = l.slice('RUN|errors|'.length);
       continue;
     }
+    // #4253 — the time line the runner writes beside a SUITE row (#4416)
+    if (l.startsWith('SUITETIME|')) {
+      const [, kind, path, secs] = l.split('|');
+      const row = [...run.rows].reverse().find((r) => r.kind === kind && r.path === path);
+      const n = Number(secs);
+      if (row && secs !== '' && Number.isFinite(n)) row.seconds = n;
+      continue;
+    }
     const row = parseSuiteLine(l);
     if (row) run.rows.push(row);
   }
@@ -275,12 +283,28 @@ export function slowestSuites(rows: NightlyRow[], n = 10): NightlyRow[] {
     .sort((a, b) => (b.seconds as number) - (a.seconds as number)).slice(0, n);
 }
 
+/** #4253 — a suite's time as the page shows it: seconds when the run timed
+ *  it, a dash when it did not. Never "0 s": an untimed suite took unknown time. */
+export function secsCell(r: { seconds?: number }): string {
+  return typeof r.seconds === 'number'
+    ? `<span class="secs">${r.seconds.toFixed(1)} s</span>`
+    : '<span class="secs unknown" title="the run did not time this suite">—</span>';
+}
+
+function slowRow(r: NightlyRow): string {
+  return `<li class="suite"><span class="kind">${esc(r.kind)}</span>${secsCell(r)}`
+    + `<span class="path">${esc(displayPath(r.path))}</span><span class="owner">${esc(r.owner)}</span></li>`;
+}
+
 function renderSlowest(rows: NightlyRow[]): string {
   const top = slowestSuites(rows);
   if (!top.length) return '';
-  const items = top.map((r) => `<li class="suite"><span class="kind">${esc(r.kind)}</span><span class="secs">${(r.seconds as number).toFixed(1)} s</span>`
-    + `<span class="path">${esc(displayPath(r.path))}</span><span class="owner">${esc(r.owner)}</span></li>`).join('');
-  return `<details class="slowest" open><summary><span class="lbl">${top.length} slowest suites</span></summary><ul class="suites">${items}</ul></details>`;
+  // #4253 — every timed suite, slowest first: the page sorted by time
+  const all = slowestSuites(rows, Number.MAX_SAFE_INTEGER);
+  const rest = all.length > top.length
+    ? `<details class="sub"><summary><span class="lbl">all ${all.length} timed suites, slowest first</span></summary><ul class="suites">${all.map(slowRow).join('')}</ul></details>`
+    : '';
+  return `<details class="slowest" open><summary><span class="lbl">${top.length} slowest suites</span></summary><ul class="suites">${top.map(slowRow).join('')}</ul>${rest}</details>`;
 }
 
 function renderHistory(o: NightlyPageOpts | undefined, current: string): string {
@@ -450,7 +474,7 @@ const pillClass = (status: string): string => PILL.get(status) ?? 'unm';
 
 function suiteLine(r: NightlyRow): string {
   return `<li class="suite ${esc(r.status)}"><span class="pill ${pillClass(r.status)}">${esc(r.status)}</span>`
-    + `<span class="kind">${esc(r.kind)}</span><span class="path">${esc(displayPath(r.path))}</span>`
+    + `<span class="kind">${esc(r.kind)}</span>${secsCell(r)}<span class="path">${esc(displayPath(r.path))}</span>`
     + `<span class="owner">${esc(r.owner)}</span><span class="sum">${esc(oneDecimal(r.summary))}</span></li>`;
 }
 
@@ -492,7 +516,7 @@ function redFold(r: NightlyRow, o: NightlyPageOpts | undefined): string {
   const hit = o?.readout?.reds?.find((x) => x.suite === displayPath(r.path));
   const label = hit?.label ?? '';
   const cases = casesFor(o?.cases, r.path) ?? casesFor(o?.cases, displayPath(r.path));
-  return `<details class="red" open><summary><span class="pill red">fail</span><span class="kind">${esc(r.kind)}</span>`
+  return `<details class="red" open><summary><span class="pill red">fail</span><span class="kind">${esc(r.kind)}</span>${secsCell(r)}`
     + `<span class="path">${esc(displayPath(r.path))}</span><span class="label ${esc(label)}">${labelText(label)}</span>`
     + `<span class="sum">${esc(r.owner)} · ${esc(oneDecimal(r.summary))}</span></summary><ul class="cases">${caseList(cases, r)}</ul></details>`;
 }

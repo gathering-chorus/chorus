@@ -27,7 +27,10 @@ describe('#4416 the slowest suites, from the seconds the run wrote', () => {
   it('the page shows the fold with each suite and its seconds', () => {
     const html = renderNightlyPage(run(['3.0', '600.5']));
     expect(html).toContain('2 slowest suites');
-    expect(html.indexOf('600.5 s')).toBeLessThan(html.indexOf('3.0 s'));
+    // #4253 — every suite row now shows its seconds too, so read the order
+    // inside the slowest fold only
+    const fold = html.slice(html.indexOf('slowest suites'));
+    expect(fold.indexOf('600.5 s')).toBeLessThan(fold.indexOf('3.0 s'));
     expect(html).toContain('s2.bats');
   });
 
