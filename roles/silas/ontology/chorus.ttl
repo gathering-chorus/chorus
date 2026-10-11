@@ -314,6 +314,8 @@ chorus:storeServedBy a owl:ObjectProperty ; rdfs:label "store served by" ; rdfs:
     rdfs:comment "The running unit that serves the store (Fuseki, Loki, MySQL). A plain link, not the parent. Not chorus:servedBy, which is an APISurface's Service (#3618)." .
 chorus:storeRole a owl:DatatypeProperty ; rdfs:label "store role" ; rdfs:domain chorus:PersistenceStore ; rdfs:range xsd:string ;
     rdfs:comment "Exactly one of systemOfRecord, copyOf, derivedFrom, cacheOf. From the authored map, never guessed: a role is a fact about data flow and cannot be observed." .
+chorus:roleBasis a owl:DatatypeProperty ; rdfs:label "role basis" ; rdfs:domain chorus:PersistenceStore ; rdfs:range xsd:string ;
+    rdfs:comment "How the role is known: measured (seen running or on disk), inventory (the 2026-10-02 reading of how data moves) or inferred (a guess, to be measured). On the row, so a guess is never read as a fact (Wren 2026-10-11; Jeff: unlabelled guesses are a major flaw)." .
 chorus:writeMode a owl:DatatypeProperty ; rdfs:label "write mode" ; rdfs:domain chorus:PersistenceStore ; rdfs:range xsd:string ;
     rdfs:comment "live: still written. closed: filled on purpose and no longer written (the Bedroom video archive drives). A full disk is a finding only when a live store sits on it (#4485, Wren 2026-10-11)." .
 chorus:roleSource a owl:ObjectProperty ; rdfs:label "role source" ; rdfs:domain chorus:PersistenceStore ; rdfs:range chorus:PersistenceStore ;
@@ -330,6 +332,7 @@ chorus:PersistenceStoreShape a sh:NodeShape ;
     sh:property [ sh:path chorus:storeRole      ; sh:minCount 1 ; sh:maxCount 1 ; sh:in ( "systemOfRecord" "copyOf" "derivedFrom" "cacheOf" ) ; chorus:exposure chorus:public ] ;
     sh:property [ sh:path chorus:roleSource     ; sh:minCount 0 ; sh:maxCount 1 ; sh:class chorus:PersistenceStore ; chorus:exposure chorus:public ] ;
     sh:property [ sh:path chorus:writeMode      ; sh:minCount 1 ; sh:maxCount 1 ; sh:in ( "live" "closed" ) ; chorus:exposure chorus:public ] ;
+    sh:property [ sh:path chorus:roleBasis      ; sh:minCount 1 ; sh:maxCount 1 ; sh:in ( "measured" "inventory" "inferred" ) ; chorus:exposure chorus:public ] ;
     sh:property [ sh:path chorus:onDisk         ; sh:minCount 0 ; sh:maxCount 1 ; sh:class chorus:Disk ; chorus:exposure chorus:public ] ;
     sh:property [ sh:path chorus:inStore        ; sh:minCount 0 ; sh:maxCount 1 ; sh:class chorus:PersistenceStore ; chorus:exposure chorus:public ] ;
     sh:property [ sh:path chorus:storeServedBy  ; sh:minCount 0 ; sh:class chorus:ServiceInstance ; chorus:exposure chorus:public ] ;

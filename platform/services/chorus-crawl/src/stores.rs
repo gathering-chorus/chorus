@@ -39,6 +39,8 @@ pub struct Entry {
     pub disk_path: Option<String>,
     /// live (still written) or closed (filled on purpose); default live
     pub write_mode: String,
+    /// how the role is known: measured, inventory or inferred — required
+    pub basis: String,
 }
 
 #[derive(Debug)]
@@ -49,6 +51,7 @@ pub struct StoreMap {
 }
 
 pub const ROLES: &[&str] = &["systemOfRecord", "copyOf", "derivedFrom", "cacheOf"];
+pub const BASES: &[&str] = &["measured", "inventory", "inferred"];
 
 fn strs(j: Option<&Json>) -> Vec<String> {
     match j {
@@ -93,6 +96,10 @@ pub fn parse_map(text: &str) -> Result<StoreMap, String> {
         if write_mode != "live" && write_mode != "closed" {
             return Err(format!("{name}: writeMode {write_mode:?} is not live or closed"));
         }
+        let basis = s(o, "basis").unwrap_or_default();
+        if !BASES.contains(&basis.as_str()) {
+            return Err(format!("{name}: basis {basis:?} is not one of {} — say how the role is known", BASES.join(", ")));
+        }
         let in_store = s(o, "inStore");
         let machine = s(o, "machine").unwrap_or_default();
         if in_store.is_none() && machine.is_empty() {
@@ -103,7 +110,7 @@ pub fn parse_map(text: &str) -> Result<StoreMap, String> {
             store_type: s(o, "storeType").ok_or(format!("{name}: no storeType"))?,
             served_by: s(o, "servedBy"),
             disk_path: s(o, "diskPath"),
-            name, machine, matcher, role, source, in_store, write_mode,
+            name, machine, matcher, role, source, in_store, write_mode, basis,
         });
     }
     let names: Vec<&str> = entries.iter().map(|e| e.name.as_str()).collect();
@@ -178,6 +185,7 @@ fn row(e: &Entry, name: String, namespace: &str, count: Option<usize>) -> Row {
         ("storeNamespace".to_string(), namespace.to_string()),
         ("storeRole".to_string(), e.role.clone()),
         ("writeMode".to_string(), e.write_mode.clone()),
+        ("roleBasis".to_string(), e.basis.clone()),
     ];
     if let Some(s) = &e.source {
         f.push(("roleSource".into(), s.clone()));

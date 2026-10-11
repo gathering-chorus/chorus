@@ -180,12 +180,15 @@ fn ac4_second_run_writes_nothing_and_a_dropped_dataset_is_marked_absent() {
 
 #[test]
 fn negative_proof_the_map_refuses_a_copy_without_a_source_and_a_dangling_source() {
-    let bad = r#"{"stores":[{"name":"a","machine":"library","storeType":"x","match":{"kind":"path","value":"/a"},"role":"copyOf"}]}"#;
+    let bad = r#"{"stores":[{"name":"a","machine":"library","storeType":"x","match":{"kind":"path","value":"/a"},"role":"copyOf","basis":"measured"}]}"#;
     assert!(parse_map(bad).unwrap_err().contains("must name a source"));
-    let dangling = r#"{"stores":[{"name":"a","machine":"library","storeType":"x","match":{"kind":"path","value":"/a"},"role":"copyOf","source":"nowhere"}]}"#;
+    let dangling = r#"{"stores":[{"name":"a","machine":"library","storeType":"x","match":{"kind":"path","value":"/a"},"role":"copyOf","source":"nowhere","basis":"measured"}]}"#;
     assert!(parse_map(dangling).unwrap_err().contains("names no store"));
-    let sor = r#"{"stores":[{"name":"a","machine":"library","storeType":"x","match":{"kind":"path","value":"/a"},"role":"systemOfRecord","source":"a"}]}"#;
+    let sor = r#"{"stores":[{"name":"a","machine":"library","storeType":"x","match":{"kind":"path","value":"/a"},"role":"systemOfRecord","source":"a","basis":"measured"}]}"#;
     assert!(parse_map(sor).unwrap_err().contains("cannot name"));
+    // a role with no word on how it is known is refused: a guess is never unlabelled
+    let unlabelled = r#"{"stores":[{"name":"a","machine":"library","storeType":"x","match":{"kind":"path","value":"/a"},"role":"systemOfRecord"}]}"#;
+    assert!(parse_map(unlabelled).unwrap_err().contains("say how the role is known"));
 }
 
 #[test]
@@ -235,7 +238,7 @@ fn a_row_as_the_door_lists_it_compares_unchanged() {
         ("name", "pods-ontology"), ("label", "/pods ontology graph"), ("status", ""), ("inStore", "persistence-store-fuseki-pods"),
         ("lastObserved", "2026-10-11T21:00:54Z"), ("onDisk", ""), ("roleSource", "persistence-store-git-chorus"),
         ("storeNamespace", "urn:chorus:ontology"), ("storeRole", "copyOf"), ("storeServedBy", ""), ("storeStatus", "present"),
-        ("storeType", "graph-family"), ("writeMode", "live"),
+        ("storeType", "graph-family"), ("writeMode", "live"), ("roleBasis", "inventory"),
     ]
     .iter()
     .map(|(k, v)| (k.to_string(), v.to_string()))
@@ -250,4 +253,15 @@ fn a_row_as_the_door_lists_it_compares_unchanged() {
     let raw = vec![Row { kind: "PersistenceStore", name: "pods-ontology".into(), fields: listed }];
     let p = plan(want, &raw, iso("2026-10-11T21:01:00Z").unwrap(), &iso);
     assert_eq!(p.update.len(), 1);
+}
+
+#[test]
+fn every_row_says_how_its_role_is_known() {
+    let m = map();
+    let d = desired(&m, &today(&m), "t");
+    for r in &d.rows {
+        assert!(["measured", "inventory", "inferred"].contains(&r.get("roleBasis")), "{} has roleBasis {:?}", r.name, r.get("roleBasis"));
+    }
+    let lance = d.rows.iter().find(|r| r.name == "pods-jb").unwrap();
+    assert_eq!(lance.get("roleBasis"), "inferred");
 }

@@ -175,7 +175,7 @@ pub fn owned_fields(kind: &str) -> &'static [&'static str] {
         // #4422 — the stores crawl writes PersistenceStore rows through the same plan
         "PersistenceStore" => &[
             "label", "storeType", "storeNamespace", "storeRole", "roleSource", "inStore", "onDisk", "storeServedBy",
-            "storeRecordCount", "storeStatus", "writeMode",
+            "storeRecordCount", "storeStatus", "writeMode", "roleBasis",
         ],
         _ => &["label", "onMachine", "mountPoint", "capacityBytes", "usedBytes", "availableBytes"],
     }

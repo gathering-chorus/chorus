@@ -100,13 +100,14 @@ for s in stores:
     role, src = s.get("role"), s.get("source")
     if role not in ("systemOfRecord", "copyOf", "derivedFrom", "cacheOf"): bad.append(f"{s['name']}: role {role!r}")
     if (role == "systemOfRecord") == (src is not None): bad.append(f"{s['name']}: role {role} with source {src!r}")
+    if s.get("basis") not in ("measured", "inventory", "inferred"): bad.append(f"{s['name']}: no basis for its role")
     for k in ("source", "inStore"):
         if s.get(k) and s[k] not in names: bad.append(f"{s['name']}: {k} {s[k]!r} names no store")
 print("\n".join(bad)); sys.exit(1 if bad else 0)
 PY
 }
 
-@test "the store map: every store has one role, a source exactly when it copies, and no dangling names" {
+@test "the store map: every store has one role, says how it is known, a source exactly when it copies, no dangling names" {
   run map_roles_are_whole "$MAP"
   [ "$status" -eq 0 ] || { echo "$output"; false; }
 }
