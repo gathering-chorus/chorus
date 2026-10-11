@@ -52,6 +52,7 @@ PRESENTED_TTL_MS = 24 * 3600 * 1000
 # of each step's state (Jeff: "cws is broken" when v2 runs never showed).
 DAGU = os.environ.get("CWS_DAGU", "http://127.0.0.1:8526")
 DAGU_DAG = os.environ.get("CWS_DAGU_DAG", "cicd")
+DAGU_CONFIG = os.environ.get("CWS_DAGU_CONFIG", os.path.join(os.environ.get("CHORUS_HOME", os.path.expanduser("~/CascadeProjects/chorus")), "platform/config/dagu.yaml"))
 
 # act stage markers, in pipeline order — last one seen in the log wins
 STAGE_RE = re.compile(r"\[werk/werk\]\s+(?:⭐\s+Run|✅\s+Success -)\s+(?:Main\s+)?([a-zA-Z-]+(?:\s[a-zA-Z-]+)?)")
@@ -377,11 +378,12 @@ def fixture_mode():
         return 1
 
 
-def dagu_runs(card):
-    """This card's v2 runs, newest first, as dagu reports them; None when dagu cannot be read."""
+def dagu_runs(card, dag=None):
+    """This card's v2 runs, newest first, as dagu reports them; None when dagu cannot be read.
+    #4494 — `dag` names the land half (`cicd-land`), which runs on its own queue."""
     try:
         import urllib.request
-        with urllib.request.urlopen(f"{DAGU}/api/v1/dags/{DAGU_DAG}/dag-runs", timeout=10) as r:
+        with urllib.request.urlopen(f"{DAGU}/api/v1/dags/{dag or DAGU_DAG}/dag-runs", timeout=10) as r:
             runs = json.load(r)["dagRuns"]
     except Exception:
         return None
@@ -415,7 +417,9 @@ def dagu_go(card, run):
     if not node:
         return ""
     step_id = node["step"].get("id") or node["step"]["name"].replace("-", "_")
-    return (f" · go: dagu human-task complete {DAGU_DAG} --run-id {run.get('dagRunId')}"
+    # Wren 2026-10-10: without --config the CLI looks in its default home and
+    # answers "run not found"
+    return (f" · go: dagu --config {DAGU_CONFIG} human-task complete {DAGU_DAG} --run-id {run.get('dagRunId')}"
             f" --step {step_id} --input accepter=jeff")
 
 
@@ -427,6 +431,16 @@ def dagu_line(card, role, runs):
     status, step = dagu_state(runs, 0)
     line = f"#{card} [{role}] v2 {status}" + (f" at {step}" if step else "") + f" · {len(runs)} run{'s' if len(runs) != 1 else ''}"
     return line + (dagu_go(card, runs[0]) if status == "waiting" else f" · dagu {runs[0].get('dagRunId', '?')}")
+
+
+def dagu_land_line(card, role):
+    """#4494 — the card's land, enqueued on the land queue after the go."""
+    lands = dagu_runs(card, f"{DAGU_DAG}-land")
+    if not lands:
+        return None
+    status, step = dagu_summary(lands[0])
+    return (f"#{card} [{role}] v2 land {status}" + (f" at {step}" if step else "")
+            + f" · {len(lands)} land{'s' if len(lands) != 1 else ''} · dagu {lands[0].get('dagRunId', '?')}")
 
 
 def dagu_detail(card, runs):
@@ -444,6 +458,9 @@ def dagu_detail(card, runs):
         start = hm(st / 1000) if st else "     ?     "
         end = datetime.fromtimestamp(fin / 1000).strftime("%H:%M") if fin and status not in ("running", "waiting") else "  -  "
         print(f"  {i:>3}  {start}  {end}   {status:<10}  {step}")
+    land = dagu_land_line(card, "v2")
+    if land:
+        print("  " + land.split("] ", 1)[1])
 
 
 def wip_cards():
@@ -498,6 +515,9 @@ def main():
         v2 = dagu_line(cid, owner.lower(), dagu_runs(cid))
         if v2:
             print(v2)
+            land = dagu_land_line(cid, owner.lower())
+            if land:
+                print(land)
         shown += 1
     if shown == 0:
         print("no WIP cards" + (f" for {role}" if role else ""))

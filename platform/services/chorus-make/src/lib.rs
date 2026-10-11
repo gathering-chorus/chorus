@@ -110,18 +110,39 @@ fn quote(s: &str) -> String {
     format!("\"{}\"", s.replace('\\', "\\\\").replace('"', "\\\""))
 }
 
-/// The workflow text. Refuses (with every reason) rather than writing a file
-/// that would run part of a pipeline.
-pub fn generate(pipeline: &str, rows: &[Row]) -> Result<String, Vec<String>> {
+/// #4494 — the queues the two halves run on (platform/config/dagu.yaml):
+/// cards on `werk`, several at once; lands on `werk-land`, one at a time,
+/// because a land writes main and prod.
+pub const CARD_QUEUE: &str = "werk";
+pub const LAND_QUEUE: &str = "werk-land";
+
+/// The land half's DAG name, `<pipeline>-land`. A card enqueues it BY NAME, so
+/// dagu runs main's copy (its dags_dir is canonical): a card never rewrites how
+/// it lands itself (Silas, #4494; the #3197 shape). A called sub-run would
+/// ignore the land queue (measured 2026-10-10: two lands overlapped).
+pub fn land_dag(pipeline: &str) -> String {
+    format!("{pipeline}-land")
+}
+
+fn sorted(rows: &[Row]) -> Result<Vec<Row>, Vec<String>> {
     let errs = check(rows);
     if !errs.is_empty() {
         return Err(errs);
     }
     let mut rows = rows.to_vec();
     rows.sort_by(|a, b| (a.step_order, &a.step, a.skill_order).cmp(&(b.step_order, &b.step, b.skill_order)));
-    let mut out = String::from(HEADER);
-    out.push_str(&format!("description: {}\n", quote(&format!("werk v2 — pipeline {pipeline}, generated from the graph"))));
-    out.push_str("params:\n  - CARD: \"\"\n  - ROLE: \"\"\n");
+    Ok(rows)
+}
+
+/// The header both halves share: params, the machine's env, the failure nudge.
+fn preamble(out: &mut String, description: &str, queue: &str, params: &[&str], what: &str) {
+    out.push_str(HEADER);
+    out.push_str(&format!("description: {}\n", quote(description)));
+    out.push_str(&format!("queue: {queue}\n"));
+    out.push_str("params:\n");
+    for p in params {
+        out.push_str(&format!("  - {p}: \"\"\n"));
+    }
     // dagu hands a step only a short list of its own env (#4474 runs 1-2:
     // "CHORUS_HOME not set", then "CHORUS_WERK_BASE not set"). The machine's
     // paths pass through from the scheduler's env (launchd unit, or the shell
@@ -147,55 +168,107 @@ pub fn generate(pipeline: &str, rows: &[Row]) -> Result<String, Vec<String>> {
     // #4474 run 15: a v2 run failed at test and nobody heard for 40 minutes; v1's
     // pipeline nudges, and no role polls (Jeff: "the pipeline nudges you"). dagu's
     // own failure handler tells the builder role, through the one nudge door.
-    out.push_str(concat!(
-        "handler_on:\n  failure:\n",
-        "    command: '${CHORUS_HOME}/platform/scripts/ops-nudge ${ROLE} \"werk v2 #${CARD} failed · dagu ${DAG_RUN_ID} · /cws ${CARD}\"'\n",
+    out.push_str(&format!(
+        "handler_on:\n  failure:\n    command: '${{CHORUS_HOME}}/platform/scripts/ops-nudge ${{ROLE}} \"werk v2 #${{CARD}} {what} failed · dagu ${{DAG_RUN_ID}} · /cws ${{CARD}}\"'\n"
     ));
     out.push_str("steps:\n");
+}
+
+fn command_step(out: &mut String, r: &Row, prev: &Option<String>, before_a_human: bool) {
+    let id = step_name(r);
+    out.push_str(&format!("  - name: {id}\n"));
+    out.push_str(&format!("    description: {}\n", quote(&r.label)));
+    if let Some(p) = prev {
+        out.push_str(&format!("    depends: [{p}]\n"));
+    }
+    let cmd = if r.mode.is_empty() { r.implemented_by.clone() } else { format!("{} {}", r.implemented_by, r.mode) };
+    out.push_str(&format!("    command: {}\n", quote(&cmd)));
+    if before_a_human {
+        // #4474 run 6: the verb before a human go presents and exits
+        // PRESENTED_EXIT ("held for the go", werk-demo #3237); in v2 the
+        // go is the next dagu step, so held is this step's success.
+        // Any other non-zero exit still fails the run.
+        out.push_str(&format!(
+            "    continue_on:\n      exit_code: [{PRESENTED_EXIT}]\n      mark_success: true\n"
+        ));
+    }
+}
+
+/// The card half: every step up to and including the human go, then one step
+/// that enqueues the land half on the land queue with the go's accepter.
+/// Refuses (with every reason) rather than writing a file that would run part
+/// of a pipeline.
+pub fn generate(pipeline: &str, rows: &[Row]) -> Result<String, Vec<String>> {
+    let rows = sorted(rows)?;
+    let mut out = String::new();
+    preamble(&mut out, &format!("werk v2 — pipeline {pipeline}, generated from the graph"), CARD_QUEUE, &["CARD", "ROLE"], "run");
     let mut prev: Option<String> = None;
-    let mut go: Option<String> = None;
     for (i, r) in rows.iter().enumerate() {
         let before_a_human = rows.get(i + 1).is_some_and(|n| n.executor == "human");
         let id = step_name(r);
-        out.push_str(&format!("  - name: {id}\n"));
-        out.push_str(&format!("    description: {}\n", quote(&r.label)));
-        if let Some(p) = &prev {
-            out.push_str(&format!("    depends: [{p}]\n"));
-        }
         if r.executor == "human" {
+            out.push_str(&format!("  - name: {id}\n"));
+            out.push_str(&format!("    description: {}\n", quote(&r.label)));
+            if let Some(p) = &prev {
+                out.push_str(&format!("    depends: [{p}]\n"));
+            }
             // dagu 2.18 refuses a human.task with no id, and an id takes no
             // hyphens: the same row name, '-' as '_'.
-            out.push_str(&format!("    id: {}\n", id.replace('-', "_")));
+            let go = id.replace('-', "_");
+            out.push_str(&format!("    id: {go}\n"));
             out.push_str("    action: human.task\n    with:\n");
             out.push_str(&format!("      prompt: {}\n", quote(&format!("{} for #${{CARD}}?", r.label))));
             // the one who gives the go is the accepter (DEC-048): the form
-            // asks who, and every later step reads it as $ACCEPTER
+            // asks who, and the land half reads it as $ACCEPTER
             out.push_str(concat!(
                 "      form:\n        type: object\n        properties:\n",
                 "          accepter:\n            type: string\n",
             ));
             out.push_str(&format!("            enum: [{}]\n", ACCEPTERS.join(", ")));
             out.push_str("        required: [accepter]\n");
-            go = Some(id.replace('-', "_"));
-        } else {
-            let cmd = if r.mode.is_empty() { r.implemented_by.clone() } else { format!("{} {}", r.implemented_by, r.mode) };
-            out.push_str(&format!("    command: {}\n", quote(&cmd)));
-            if let Some(g) = &go {
-                out.push_str(&format!("    env:\n      - ACCEPTER: ${{{g}.outputs.accepter}}\n"));
-            }
-            if before_a_human {
-                // #4474 run 6: the verb before a human go presents and exits
-                // PRESENTED_EXIT ("held for the go", werk-demo #3237); in v2 the
-                // go is the next dagu step, so held is this step's success.
-                // Any other non-zero exit still fails the run.
-                out.push_str(&format!(
-                    "    continue_on:\n      exit_code: [{PRESENTED_EXIT}]\n      mark_success: true\n"
-                ));
-            }
+            let land = land_dag(pipeline);
+            out.push_str(&format!("  - name: {land}\n"));
+            out.push_str(&format!("    description: {}\n", quote(&format!("enqueue the land on the {LAND_QUEUE} queue"))));
+            out.push_str(&format!("    depends: [{id}]\n"));
+            out.push_str("    action: dag.enqueue\n    with:\n");
+            out.push_str(&format!("      dag: {land}\n"));
+            out.push_str(&format!("      params: \"CARD=${{CARD}} ROLE=${{ROLE}} ACCEPTER=${{{go}.outputs.accepter}}\"\n"));
+            return Ok(out);
         }
+        command_step(&mut out, r, &prev, before_a_human);
         prev = Some(id);
     }
+    Err(vec!["no human go in the rows: a pipeline with no go has no land to enqueue".to_string()])
+}
+
+/// The land half: every step after the go, on the land queue, one land at a time.
+pub fn generate_land(pipeline: &str, rows: &[Row]) -> Result<String, Vec<String>> {
+    let rows = sorted(rows)?;
+    let Some(go) = rows.iter().position(|r| r.executor == "human") else {
+        return Err(vec!["no human go in the rows: nothing to land".to_string()]);
+    };
+    let mut out = String::new();
+    preamble(&mut out, &format!("werk v2 — the land of pipeline {pipeline}, generated from the graph"), LAND_QUEUE, &["CARD", "ROLE", "ACCEPTER"], "land");
+    let mut prev: Option<String> = None;
+    for r in &rows[go + 1..] {
+        command_step(&mut out, r, &prev, false);
+        prev = Some(step_name(r));
+    }
     Ok(out)
+}
+
+/// The workflow a file is named for: `<pipeline>` is the card half,
+/// `<pipeline>-land` the land half, both from the pipeline's rows.
+pub fn generate_named(name: &str, rows: &[Row]) -> Result<String, Vec<String>> {
+    match name.strip_suffix("-land") {
+        Some(pipeline) => generate_land(pipeline, rows),
+        None => generate(name, rows),
+    }
+}
+
+/// The pipeline whose rows a name reads (`cicd-land` reads `cicd`).
+pub fn pipeline_of(name: &str) -> &str {
+    name.strip_suffix("-land").unwrap_or(name)
 }
 
 /// The drift check: regenerate from the rows and compare with the file on

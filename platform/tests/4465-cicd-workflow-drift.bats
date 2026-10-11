@@ -44,3 +44,23 @@ setup() {
   run env DAGU_HOME="$BATS_TEST_TMPDIR/dagu" dagu dry "$BATS_TEST_TMPDIR/noid.yaml"
   [ "$status" -ne 0 ]
 }
+
+# #4494 — the land half is its own file on its own queue, generated the same way
+@test "the committed land workflow matches what chorus-make generates" {
+  [ -f "$ROOT/platform/pipelines/cicd-land.yaml" ]
+  run "$CM" check cicd-land "$ROWS" "$ROOT/platform/pipelines/cicd-land.yaml"
+  [ "$status" -eq 0 ]
+}
+
+@test "negative proof: a hand-edited land workflow is drift" {
+  sed 's/werk-merge/werk-merge --force/' "$ROOT/platform/pipelines/cicd-land.yaml" > "$BATS_TEST_TMPDIR/land-edited.yaml"
+  run "$CM" check cicd-land "$ROWS" "$BATS_TEST_TMPDIR/land-edited.yaml"
+  [ "$status" -eq 1 ]
+}
+
+@test "dagu itself loads and dry-runs the committed land workflow" {
+  command -v dagu >/dev/null || { echo "dagu not installed: unmeasured, not green"; false; }
+  run env DAGU_HOME="$BATS_TEST_TMPDIR/dagu" dagu dry "$ROOT/platform/pipelines/cicd-land.yaml" -- CARD=1 ROLE=kade ACCEPTER=jeff
+  [ "$status" -eq 0 ]
+  [[ "$output" == *"Result: Succeeded"* ]] || return 1
+}

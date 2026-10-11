@@ -1,6 +1,6 @@
 //! #4465 — chorus-make turns a pipeline's rows into the werk v2 workflow, the
 //! same rows always give the same bytes, and a hand edit is caught.
-use chorus_make::{check, drift, generate, parse_rows};
+use chorus_make::{check, drift, generate, generate_land, parse_rows};
 
 fn fixture(name: &str) -> String {
     // run time, not env!(): the werk-test 4030 guard refuses a compile-time path
@@ -16,6 +16,8 @@ fn cicd() -> Vec<chorus_make::Row> {
 fn the_cicd_rows_generate_the_golden_workflow() {
     let out = generate("cicd", &cicd()).expect("generates");
     assert_eq!(out, fixture("fixtures/cicd-golden.yaml"));
+    let land = generate_land("cicd", &cicd()).expect("generates the land");
+    assert_eq!(land, fixture("fixtures/cicd-land-golden.yaml"));
 }
 
 #[test]
@@ -30,18 +32,56 @@ fn steps_run_in_order_and_the_go_waits_between_demo_and_land() {
     let out = generate("cicd", &cicd()).unwrap();
     let ids: Vec<&str> = out.lines().filter_map(|l| l.strip_prefix("  - name: ")).collect();
     assert_eq!(ids.first(), Some(&"skill-werk-commit"));
-    assert_eq!(ids.last(), Some(&"skill-werk-accept"));
     let go = ids.iter().position(|i| *i == "skill-werk-go").expect("the go is a step");
     assert_eq!(ids[go - 1], "skill-werk-demo");
-    assert_eq!(ids[go + 1], "skill-werk-merge");
+    // #4494 — after the go the card enqueues its land; the land steps are in the land half
+    assert_eq!(&ids[go + 1..], &["cicd-land"]);
+    let land = generate_land("cicd", &cicd()).unwrap();
+    let land_ids: Vec<&str> = land.lines().filter_map(|l| l.strip_prefix("  - name: ")).collect();
+    assert_eq!(land_ids.first(), Some(&"skill-werk-merge"));
+    assert_eq!(land_ids.last(), Some(&"skill-werk-accept"));
     assert!(out.contains("  - name: skill-werk-go\n    description: \"Jeff's go\"\n    depends: [skill-werk-demo]\n    id: skill_werk_go\n    action: human.task\n"));
-    assert!(out.starts_with(chorus_make::HEADER));
-    // #4474 run 1: dagu does not pass CHORUS_HOME through; every verb refused
-    for v in ["CHORUS_HOME: ${CHORUS_HOME}", "CHORUS_WERK_BASE: ${CHORUS_WERK_BASE}"] {
-        assert!(out.contains(&format!("  - {v}\n")), "workflow env is missing {v}");
+    for half in [&out, &land] {
+        assert!(half.starts_with(chorus_make::HEADER));
+        // #4474 run 1: dagu does not pass CHORUS_HOME through; every verb refused
+        for v in ["CHORUS_HOME: ${CHORUS_HOME}", "CHORUS_WERK_BASE: ${CHORUS_WERK_BASE}"] {
+            assert!(half.contains(&format!("  - {v}\n")), "workflow env is missing {v}");
+        }
+        // Jeff 21:06: DEPLOY_ROLE is identity; a run param must never assert it
+        assert!(!half.contains("DEPLOY_ROLE") && !half.contains("CHORUS_ROLE"), "the workflow claims an identity");
     }
-    // Jeff 21:06: DEPLOY_ROLE is identity; a run param must never assert it
-    assert!(!out.contains("DEPLOY_ROLE") && !out.contains("CHORUS_ROLE"), "the workflow claims an identity");
+}
+
+// #4494 — cards run on the werk queue, several at once; lands on werk-land, one
+// at a time. The land is ENQUEUED by name (main's copy), never a called sub-run:
+// on a scratch dagu a sub-run ignored its queue and two lands overlapped.
+#[test]
+fn cards_and_lands_run_on_their_own_queues() {
+    let card = generate("cicd", &cicd()).unwrap();
+    let land = generate_land("cicd", &cicd()).unwrap();
+    assert!(card.contains("\nqueue: werk\n"), "{card}");
+    assert!(land.contains("\nqueue: werk-land\n"), "{land}");
+    let enq = card.split("  - name: ").find(|s| s.starts_with("cicd-land\n")).expect("the card enqueues its land");
+    assert!(enq.contains("    action: dag.enqueue\n    with:\n      dag: cicd-land\n"), "{enq}");
+    // NEGATIVE PROOF: never a call (dag.run) and never a file path, which dagu refuses
+    assert!(!card.contains("dag.run") && !enq.contains(".yaml"), "{enq}");
+}
+
+#[test]
+fn every_land_step_runs_after_the_go_and_none_before_it() {
+    let rows = cicd();
+    let card = generate("cicd", &rows).unwrap();
+    let land = generate_land("cicd", &rows).unwrap();
+    let card_names: Vec<&str> = card.lines().filter_map(|l| l.strip_prefix("  - name: ")).collect();
+    let land_names: Vec<&str> = land.lines().filter_map(|l| l.strip_prefix("  - name: ")).collect();
+    for n in &land_names {
+        assert!(!card_names.contains(n), "{n} runs in both halves");
+    }
+    // every skill row is a step in exactly one half; the enqueue step is the one extra
+    assert_eq!(card_names.len() + land_names.len(), rows.len() + 1);
+    // NEGATIVE PROOF: rows with no go have no land and are refused, never half-written
+    let no_go: Vec<_> = rows.iter().filter(|r| r.executor != "human").cloned().collect();
+    assert!(generate("cicd", &no_go).is_err() && generate_land("cicd", &no_go).is_err());
 }
 
 #[test]
@@ -79,14 +119,15 @@ fn negative_proof_two_skills_at_one_order_and_no_rows_are_refused() {
 #[test]
 fn every_step_is_named_by_its_skill_row_and_nothing_is_minted() {
     let rows = cicd();
-    let out = generate("cicd", &rows).unwrap();
-    let names: Vec<&str> = out.lines().filter_map(|l| l.strip_prefix("  - name: ")).collect();
     let skills: Vec<&str> = rows.iter().map(|r| r.skill.as_str()).collect();
-    assert_eq!(names.len(), skills.len());
-    for n in &names {
-        assert!(skills.contains(n), "{n} is not a Skill row name");
+    for half in [generate("cicd", &rows).unwrap(), generate_land("cicd", &rows).unwrap()] {
+        for n in half.lines().filter_map(|l| l.strip_prefix("  - name: ")) {
+            // the one step not a skill row is the card's land enqueue, named for the land DAG
+            assert!(skills.contains(&n) || n == "cicd-land", "{n} is not a Skill row name");
+        }
     }
     // the one id dagu demands (a human.task) is the row name with '_' for '-'
+    let out = generate("cicd", &rows).unwrap();
     let ids: Vec<&str> = out.lines().filter_map(|l| l.strip_prefix("    id: ")).collect();
     assert_eq!(ids, vec!["skill_werk_go"]);
     assert!(out.contains("    description: \"werk-deploy --target werk\"\n"), "description is the row's label");
@@ -110,15 +151,14 @@ fn the_go_names_the_accepter_and_only_the_land_steps_read_it() {
     let go = out.split("  - name: ").find(|s| s.starts_with("skill-werk-go\n")).unwrap();
     assert!(go.contains("        required: [accepter]\n"), "the go asks who: {go}");
     assert!(go.contains("enum: [jeff, wren, kade, silas]"), "{go}");
-    let reads = "      - ACCEPTER: ${skill_werk_go.outputs.accepter}\n";
-    let steps: Vec<&str> = out.split("  - name: ").skip(1).collect();
-    let after: Vec<&str> = steps.iter().skip_while(|s| !s.starts_with("skill-werk-go\n")).skip(1).copied().collect();
-    assert!(!after.is_empty());
-    for s in &after {
-        assert!(s.contains(reads), "a land step without the accepter: {s}");
-    }
+    // #4494 — the go's accepter rides into the land as its ACCEPTER param (a
+    // dagu param is env in every step: measured, a land step read envacc=jeff)
+    let enq = out.split("  - name: ").find(|s| s.starts_with("cicd-land\n")).unwrap();
+    assert!(enq.contains("ACCEPTER=${skill_werk_go.outputs.accepter}"), "{enq}");
+    let land = generate_land("cicd", &cicd()).unwrap();
+    assert!(land.contains("params:\n  - CARD: \"\"\n  - ROLE: \"\"\n  - ACCEPTER: \"\"\n"), "{land}");
     // negative proof: no step before the go may claim an accepter
-    let before = steps.iter().take_while(|s| !s.starts_with("skill-werk-go\n")).filter(|s| s.contains("ACCEPTER")).count();
+    let before = out.split("  - name: ").skip(1).take_while(|s| !s.starts_with("skill-werk-go\n")).filter(|s| s.contains("ACCEPTER")).count();
     assert_eq!(before, 0, "a step before the go reads an accepter nobody gave");
 }
 
@@ -156,8 +196,9 @@ fn a_bad_row_is_refused_by_line_never_skipped() {
 }
 
 // Fixtures by their repo path, so the pipeline's test step sees which files these tests read.
-const REPO_FIXTURES: [&str; 4] = [
+const REPO_FIXTURES: [&str; 5] = [
     "platform/services/chorus-make/tests/fixtures/cicd-golden.yaml",
+    "platform/services/chorus-make/tests/fixtures/cicd-land-golden.yaml",
     "platform/services/chorus-make/tests/fixtures/cicd-rows.tsv",
     "platform/services/chorus-make/tests/fixtures/cicd-graph.trig",
     "platform/services/chorus-make/tests/fixtures/mcp-server-names-20261009.txt",
