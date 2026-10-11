@@ -8,6 +8,8 @@
 # from a file (AC5). Model files read:
 #   roles/silas/ontology/chorus.ttl
 #   roles/wren/ontology/domains-wren-silas.ttl
+# The store map (roles are authored there, never guessed):
+#   platform/config/store-map.json
 # Fixtures:
 #   platform/tests/fixtures/persistence-4422/good.ttl
 #   platform/tests/fixtures/persistence-4422/bad-two-parents.ttl
@@ -82,5 +84,36 @@ model_files() { ls "$ROOT"/roles/*/ontology/*.ttl "$ROOT"/designing/data/*.ttl 2
   bad="$BATS_TEST_TMPDIR/seed.ttl"
   printf '@prefix chorus: <https://jeffbridwell.com/chorus#> .\nchorus:persistence-store-x a chorus:PersistenceStore .\n' > "$bad"
   run no_seeded_stores $(model_files) "$bad"
+  [ "$status" -ne 0 ]
+}
+
+MAP="$ROOT/platform/config/store-map.json"
+
+map_roles_are_whole() { # every store has one of the four roles, a source exactly when it is not the record,
+                        # and every source or parent names a store in the map
+  python3 -I - "$1" <<'PY'
+import json, sys
+stores = json.load(open(sys.argv[1]))["stores"]
+names = {s["name"] for s in stores}
+bad = []
+for s in stores:
+    role, src = s.get("role"), s.get("source")
+    if role not in ("systemOfRecord", "copyOf", "derivedFrom", "cacheOf"): bad.append(f"{s['name']}: role {role!r}")
+    if (role == "systemOfRecord") == (src is not None): bad.append(f"{s['name']}: role {role} with source {src!r}")
+    for k in ("source", "inStore"):
+        if s.get(k) and s[k] not in names: bad.append(f"{s['name']}: {k} {s[k]!r} names no store")
+print("\n".join(bad)); sys.exit(1 if bad else 0)
+PY
+}
+
+@test "the store map: every store has one role, a source exactly when it copies, and no dangling names" {
+  run map_roles_are_whole "$MAP"
+  [ "$status" -eq 0 ] || { echo "$output"; false; }
+}
+
+@test "NEGATIVE PROOF: a copy with no source in the map fails the check" {
+  bad="$BATS_TEST_TMPDIR/map.json"
+  python3 -I -c 'import json,sys; d=json.load(open(sys.argv[1])); s=[x for x in d["stores"] if x.get("source")][0]; del s["source"]; json.dump(d,open(sys.argv[2],"w"))' "$MAP" "$bad"
+  run map_roles_are_whole "$bad"
   [ "$status" -ne 0 ]
 }
