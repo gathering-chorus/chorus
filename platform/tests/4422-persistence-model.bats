@@ -118,3 +118,32 @@ PY
   run map_roles_are_whole "$bad"
   [ "$status" -ne 0 ]
 }
+
+# The schedule (Wren 2026-10-11): infra before stores, every hour, and an infra
+# finding never stops the stores crawl. Unit file:
+#   platform/launchd/com.chorus.infra-stores-crawl.plist
+UNIT="$ROOT/platform/launchd/com.chorus.infra-stores-crawl.plist"
+
+infra_then_stores() {
+  plutil -lint "$1" >/dev/null || return 1
+  cmd=$(plutil -extract ProgramArguments.2 raw -o - "$1") || return 1
+  every=$(plutil -extract StartInterval raw -o - "$1") || return 1
+  [ "$every" -le 3600 ] || { echo "runs every ${every}s"; return 1; }
+  case "$cmd" in
+    *"chorus-crawl infra; "*"chorus-crawl stores"*) return 0 ;;
+    *) echo "not infra-then-stores with ';': $cmd"; return 1 ;;
+  esac
+}
+
+@test "the crawl unit runs infra, then stores, hourly, and a finding in infra does not stop stores" {
+  run infra_then_stores "$UNIT"
+  [ "$status" -eq 0 ] || { echo "$output"; false; }
+}
+
+@test "NEGATIVE PROOF: stores before infra, or joined by &&, fails the check" {
+  bad="$BATS_TEST_TMPDIR/swapped.plist"
+  sed 's|chorus-crawl infra; \(.*\)chorus-crawl stores|chorus-crawl stores; \1chorus-crawl infra|' "$UNIT" > "$bad"
+  run infra_then_stores "$bad"; [ "$status" -ne 0 ]
+  sed 's|chorus-crawl infra; |chorus-crawl infra \&amp;\&amp; |' "$UNIT" > "$bad"
+  run infra_then_stores "$bad"; [ "$status" -ne 0 ]
+}

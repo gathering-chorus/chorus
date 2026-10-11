@@ -2061,7 +2061,9 @@ fn run_stores(args: &[String]) -> i32 {
             let (dir, stem) = pre.rsplit_once('/').unwrap_or(("/", pre.as_str()));
             cmd.push_str(&format!("find '{dir}' -mindepth 1 -maxdepth 1 -name '{stem}*' 2>/dev/null | while read p; do echo \"PATH:$p\"; echo \"MOUNT:$p\t$(df -P \"$p\" | tail -1 | awk '{{print $NF}}')\"; done; "));
         }
-        cmd.push_str("lsof -nP -iTCP -sTCP:LISTEN 2>/dev/null | awk 'NR>1{n=split($9,a,\":\"); print \"PORT:\" a[n]}' | sort -u; ");
+        // lsof lives in /usr/sbin, which launchd's PATH leaves out: named by its full
+        // path, and a listing that could not run says so instead of reading as "no ports"
+        cmd.push_str("if [ -x /usr/sbin/lsof ]; then /usr/sbin/lsof -nP -iTCP -sTCP:LISTEN 2>/dev/null | awk 'NR>1{n=split($9,a,\":\"); print \"PORT:\" a[n]}' | sort -u; else echo PORTS-UNMEASURED; fi; ");
         // find, not a glob: Bedroom's login shell is zsh, where a glob that matches
         // nothing aborts the whole line (measured 2026-10-11)
         cmd.push_str("find \"$HOME/.chorus\" -maxdepth 1 -name '*.db' 2>/dev/null | sed 's/^/SCAN:/'; find \"$HOME/.chorus/vikunja/db\" -maxdepth 1 -type f 2>/dev/null | sed 's/^/SCAN:/'; echo END");
@@ -2082,6 +2084,8 @@ fn run_stores(args: &[String]) -> i32 {
                 seen.mounts.push((p.to_string(), mount.to_string()));
             } else if let Some(p) = l.strip_prefix("PORT:") {
                 if let Ok(n) = p.trim().parse() { seen.ports.push(n); }
+            } else if l.trim() == "PORTS-UNMEASURED" {
+                seen.ports_unmeasured = true;
             } else if let Some(f) = l.strip_prefix("SCAN:") {
                 seen.scanned.push(f.to_string());
             }

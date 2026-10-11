@@ -42,8 +42,8 @@ fn today(map: &StoreMap) -> Seen {
                 format!("{HOME}/.chorus/index.db"),
                 format!("{HOME}/.chorus/messages.db"),
                 format!("{HOME}/.chorus/vikunja/db/vikunja.db.bak-chunk-final"),
-            ] })),
-            ("bedroom".into(), Ok(MachineSeen { paths: bed_paths, ports: vec![], mounts: bed_mounts, scanned: vec![] })),
+            ], ports_unmeasured: false })),
+            ("bedroom".into(), Ok(MachineSeen { paths: bed_paths, ports: vec![], mounts: bed_mounts, scanned: vec![], ports_unmeasured: false })),
         ],
         datasets: Some(["/pods", "/staging", "/chorus-test", "/chorus-test-proto", "/werk-silas", "/werk-kade-4224", "/werk-kade-4154"].map(String::from).to_vec()),
         graphs: Some(
@@ -277,4 +277,18 @@ fn negative_proof_a_store_on_a_disk_with_no_row_is_held_and_named() {
     chorus_crawl::stores::hold_unwritten_disks(&mut d, &disks);
     assert_eq!(d.rows.len(), before - 1);
     assert!(d.findings.iter().any(|f| matches!(f, Finding::Unmeasured { store, reason } if store == "bedroom-photos" && reason.contains("chorus-crawl infra"))));
+}
+
+#[test]
+fn negative_proof_a_port_listing_that_could_not_run_is_unmeasured_not_absent() {
+    let m = map();
+    let first = desired(&m, &today(&m), "t");
+    let mut s = today(&m);
+    if let Ok(ms) = &mut s.machines[0].1 {
+        ms.ports.clear();
+        ms.ports_unmeasured = true;
+    }
+    let d = desired(&m, &s, "t2");
+    assert!(d.findings.iter().any(|f| matches!(f, Finding::Unmeasured { store, .. } if store == "loki")));
+    assert!(!absent(&first.rows, &d).iter().any(|r| r.name == "loki"), "loki marked absent when the listing never ran");
 }

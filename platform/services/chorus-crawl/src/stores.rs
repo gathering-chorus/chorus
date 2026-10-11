@@ -141,6 +141,8 @@ pub struct MachineSeen {
     pub mounts: Vec<(String, String)>,
     /// files found in the scanned directories, for the unmapped check
     pub scanned: Vec<String>,
+    /// the port listing could not run: a port store reads unmeasured, never absent
+    pub ports_unmeasured: bool,
 }
 
 pub struct Seen {
@@ -247,6 +249,7 @@ pub fn desired(map: &StoreMap, seen: &Seen, ts: &str) -> Desired {
                 None => unmeasured = Some(format!("machine {} is not walked", e.machine)),
             },
             Match::Port(port) => match machine(&e.machine) {
+                Some(Ok(ms)) if ms.ports_unmeasured => unmeasured = Some("the port listing (lsof) could not run".into()),
                 Some(Ok(ms)) if ms.ports.contains(port) => made.push(row(e, e.name.clone(), &format!(":{port}"), None)),
                 Some(Ok(_)) => {}
                 Some(Err(r)) => unmeasured = Some(r.clone()),
