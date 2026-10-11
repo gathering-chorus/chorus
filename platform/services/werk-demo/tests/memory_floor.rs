@@ -53,9 +53,12 @@ fn proceeds_when_both_metrics_are_healthy() {
 }
 
 #[test]
-fn defers_when_swap_is_over_the_floor() {
-    // The incident signature: swap past 8GB while % free still looked okay.
-    assert!(!memory_floor_verdict(Some(9 * GB), Some(30), 8 * GB, 10));
+fn high_swap_with_free_memory_proceeds_4497() {
+    // #4497 — 2026-10-10 21:28: swap 16.7 of 18.4 GB held since an 18:51 spike,
+    // 29% free; every gate waited 5 min on the stale swap number. Free memory
+    // is the live signal.
+    assert!(memory_floor_verdict(Some(17 * GB), Some(29), 8 * GB, 10));
+    assert!(memory_floor_verdict(Some(17 * GB), Some(35), 8 * GB, 10));
 }
 
 #[test]
@@ -69,8 +72,9 @@ fn unmeasurable_metrics_fail_open() {
     assert!(memory_floor_verdict(None, None, 8 * GB, 10));
     // One measurable + healthy, one absent → still proceed.
     assert!(memory_floor_verdict(Some(2 * GB), None, 8 * GB, 10));
-    // But a measurable BAD metric still defers even if the other is absent.
-    assert!(!memory_floor_verdict(Some(9 * GB), None, 8 * GB, 10));
+    // NEGATIVE PROOF (#4497): low free memory still defers whatever swap says
+    assert!(!memory_floor_verdict(None, Some(5), 8 * GB, 10));
+    assert!(!memory_floor_verdict(Some(1 * GB), Some(9), 8 * GB, 10));
 }
 
 // --- the bounded wait ---
@@ -86,9 +90,9 @@ fn wait_returns_immediately_when_first_sample_is_healthy() {
 #[test]
 fn wait_clears_when_pressure_drains_mid_wait() {
     let samples = vec![
-        (Some(9 * GB), Some(20)), // tight
-        (Some(9 * GB), Some(25)), // still tight
-        (Some(5 * GB), Some(35)), // drained — go
+        (Some(9 * GB), Some(5)),  // tight
+        (Some(9 * GB), Some(8)),  // still tight
+        (Some(9 * GB), Some(35)), // free again — go, swap or not
     ];
     let (ok, checks) = wait_for_floor_core(samples.into_iter(), 8 * GB, 10, 20);
     assert!(ok);
