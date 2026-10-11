@@ -126,19 +126,6 @@
       "_note": "no Domain row names this graph; generated from the model (#4254)"
     },
     {
-      "name": "pods-domain-documents",
-      "label": "/pods documents domain graph",
-      "storeType": "graph-family",
-      "inStore": "fuseki-pods",
-      "match": {
-        "kind": "graph",
-        "value": "urn:chorus:domains:documents"
-      },
-      "role": "systemOfRecord",
-      "basis": "measured",
-      "_note": "the documents Domain has no row in the model files, so its instancesGraph cannot be set there (Wren 2026-10-11); mapped here until it does"
-    },
-    {
       "name": "pods-domain",
       "label": "/pods domain graph",
       "storeType": "graph-family",
