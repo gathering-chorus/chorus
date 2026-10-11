@@ -13,10 +13,10 @@ verify-in-prod\t6\t1\tskill-prove-in-prod\tprove-in-prod\tdeterministic\tborg-pr
 fn every_step_that_names_a_route_is_routed_by_its_failure() {
     let rows = parse_rows(ROWS).unwrap();
     let card = generate("borg-prove", &rows).unwrap();
-    assert!(card.contains("command: 'borg-prove route ${CARD} ${ROLE} ${DAG_RUN_ID} skill-prove-intake=value-stream-step-designing,skill-prove-stage=value-stream-step-build'"), "{card}");
-    assert!(!card.contains("ops-nudge"), "a routed failure nudges through borg-prove, not twice");
+    assert!(card.contains("command: '${CHORUS_HOME}/platform/scripts/borg-prove route ${CARD} ${ROLE} ${DAG_RUN_ID} skill-prove-intake=value-stream-step-designing,skill-prove-stage=value-stream-step-build || ${CHORUS_HOME}/platform/scripts/ops-nudge ${ROLE}"), "{card}");
+    assert!(card.contains("its route failed too"), "a failed route still reaches the builder");
     let land = generate_land("borg-prove", &rows).unwrap();
-    assert!(land.contains("skill-prove-in-prod=value-stream-step-borg-surface'"), "{land}");
+    assert!(land.contains("skill-prove-in-prod=value-stream-step-borg-surface ||"), "{land}");
     assert!(!land.contains("skill-prove-intake="), "the land routes only its own steps");
 }
 

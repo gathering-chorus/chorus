@@ -191,14 +191,15 @@ fn preamble(out: &mut String, description: &str, queue: &str, params: &[&str], w
     // #4456 — when the rows say where each step's failure goes (onFail), the
     // failure writes that verdict instead: borg-prove route finds the failed
     // step in this run, reopens the card at its route (or opens a ticket card
-    // when the route is in Operating), and nudges the builder itself.
+    // when the route is in Operating), and nudges the builder itself. If the
+    // route itself fails, the plain nudge still reaches the builder (Kade).
     if routes.is_empty() {
         out.push_str(&format!(
             "handler_on:\n  failure:\n    command: '${{CHORUS_HOME}}/platform/scripts/ops-nudge ${{ROLE}} \"werk v2 #${{CARD}} {what} failed · dagu ${{DAG_RUN_ID}} · /cws ${{CARD}}\"'\n"
         ));
     } else {
         out.push_str(&format!(
-            "handler_on:\n  failure:\n    command: 'borg-prove route ${{CARD}} ${{ROLE}} ${{DAG_RUN_ID}} {routes}'\n"
+            "handler_on:\n  failure:\n    command: '${{CHORUS_HOME}}/platform/scripts/borg-prove route ${{CARD}} ${{ROLE}} ${{DAG_RUN_ID}} {routes} || ${{CHORUS_HOME}}/platform/scripts/ops-nudge ${{ROLE}} \"werk v2 #${{CARD}} {what} failed and its route failed too · dagu ${{DAG_RUN_ID}} · /cws ${{CARD}}\"'\n"
         ));
     }
     // #4494 — the land event triggers athena (#4177): a land whose commit
