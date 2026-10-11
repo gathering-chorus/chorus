@@ -196,7 +196,9 @@ chorus:infrastructure a chorus:Domain ;
   chorus:purpose "Hold the physical substrate the team runs on — host machines, stores, and LaunchAgents." ;
   chorus:ownedBy chorus:principal-silas ;
   chorus:atStep chorus:value-stream-step-proving ;
-  chorus:repoTarget "platform/apps" ; chorus:definesVocabulary chorus:Machine, chorus:PersistenceStore, chorus:UnitDomainMapping ;
+  chorus:repoTarget "platform/apps" ; chorus:definesVocabulary chorus:Machine, chorus:Disk, chorus:PersistenceStore, chorus:UnitDomainMapping ;
+  # #4485 — a Machine's one parent is this domain (chain hierarchy, #4481); its Disks hang off it by onMachine.
+  chorus:hosts chorus:library, chorus:bedroom ;
   # #4084 — UnitDomainMapping is the authored unit → domain edge every harvester joins on (ADR-027); homed here because units are infrastructure.
   chorus:instancesGraph "urn:chorus:domains:infrastructure" .
 

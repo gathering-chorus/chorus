@@ -22,10 +22,10 @@
 # home from its shape, so they land in their own domain graph.
 
 
+# #4485 — names only: hostname, model, OS and disks are measured by the infra crawl,
+# and the hand-typed prose (model, IP) went with it, since it had gone wrong.
 chorus:library a chorus:Machine ;
-    rdfs:label "Library" ;
-    rdfs:comment "M1 MacBook Air. Primary development machine. 192.168.86.36." .
+    rdfs:label "Library" .
 
 chorus:bedroom a chorus:Machine ;
-    rdfs:label "Bedroom" ;
-    rdfs:comment "M2 Pro Mac Mini. Data services, harvesting, bulk ops. 192.168.86.242." .
+    rdfs:label "Bedroom" .

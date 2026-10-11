@@ -575,6 +575,56 @@ chorus:Machine a owl:Class ;
     rdfs:label "Machine" ;
     rdfs:comment "Physical hardware that hosts services." .
 
+# --- #4485: the infrastructure crawl. Machine and Disk rows are written by the crawl,
+# measured on the machine itself (hostname, sysctl, sw_vers, df), never hand-typed.
+# Both sit in the chain (#4481): a Machine's parent is the infrastructure domain that
+# hosts it, a Disk's parent is its Machine. onMachine from a running unit is then a
+# link inside one hierarchy, not a crossing. Percent full is computed, never stored.
+# Reviewed with Wren 2026-10-11 (/tmp/pair-4485.md).
+chorus:Machine chorus:inHierarchy "chain" ; chorus:parentVia [ sh:inversePath chorus:hosts ] .
+
+chorus:Disk a owl:Class ;
+    rdfs:label "Disk" ;
+    rdfs:comment "A mounted volume on a Machine, as df reports it: where it is mounted, how big it is and how much is used, when last measured (#4485)." .
+chorus:Disk chorus:inHierarchy "chain" ; chorus:parentVia chorus:onMachine .
+
+chorus:hostname      a owl:DatatypeProperty ; rdfs:label "hostname" ; rdfs:domain chorus:Machine ; rdfs:range xsd:string ;
+    rdfs:comment "The machine's own name (scutil LocalHostName), measured by the crawl." .
+chorus:hardwareModel a owl:DatatypeProperty ; rdfs:label "hardware model" ; rdfs:domain chorus:Machine ; rdfs:range xsd:string ;
+    rdfs:comment "sysctl hw.model, measured by the crawl (e.g. Mac14,12)." .
+chorus:osVersion     a owl:DatatypeProperty ; rdfs:label "OS version" ; rdfs:domain chorus:Machine ; rdfs:range xsd:string ;
+    rdfs:comment "sw_vers ProductVersion, measured by the crawl." .
+chorus:mountPoint    a owl:DatatypeProperty ; rdfs:label "mount point" ; rdfs:domain chorus:Disk ; rdfs:range xsd:string ;
+    rdfs:comment "Where the volume is mounted (df). With onMachine it names the disk." .
+chorus:capacityBytes a owl:DatatypeProperty ; rdfs:label "capacity bytes" ; rdfs:domain chorus:Disk ; rdfs:range xsd:integer ;
+    rdfs:comment "Volume size in bytes (df)." .
+chorus:usedBytes     a owl:DatatypeProperty ; rdfs:label "used bytes" ; rdfs:domain chorus:Disk ; rdfs:range xsd:integer ;
+    rdfs:comment "Bytes in use on the volume (df)." .
+chorus:availableBytes a owl:DatatypeProperty ; rdfs:label "available bytes" ; rdfs:domain chorus:Disk ; rdfs:range xsd:integer ;
+    rdfs:comment "Bytes free on the volume (df). Percent full is df's: usedBytes / (usedBytes + availableBytes), rounded up, computed by the reader. On APFS capacityBytes is the shared container's, so usedBytes / capacityBytes understates a volume." .
+
+chorus:MachineShape a sh:NodeShape ;
+    sh:targetClass chorus:Machine ;
+    chorus:instancesGraph "urn:chorus:domains:infrastructure" ;
+    sh:property [ sh:path rdfs:label           ; sh:minCount 1 ; sh:datatype xsd:string ; chorus:exposure chorus:public ] ;
+    sh:property [ sh:path chorus:hostname      ; sh:minCount 0 ; sh:maxCount 1 ; sh:datatype xsd:string ; chorus:exposure chorus:public ] ;
+    sh:property [ sh:path chorus:hardwareModel ; sh:minCount 0 ; sh:maxCount 1 ; sh:datatype xsd:string ; chorus:exposure chorus:public ] ;
+    sh:property [ sh:path chorus:osVersion     ; sh:minCount 0 ; sh:maxCount 1 ; sh:datatype xsd:string ; chorus:exposure chorus:public ] ;
+    # minCount 0 on the measured fields, deliberately: a machine the crawl could not
+    # walk keeps its row with no measurement, so a reader sees UNMEASURED, never a guess.
+    sh:property [ sh:path chorus:lastObserved  ; sh:minCount 0 ; sh:maxCount 1 ; sh:datatype xsd:dateTime ; chorus:exposure chorus:public ] .
+
+chorus:DiskShape a sh:NodeShape ;
+    sh:targetClass chorus:Disk ;
+    chorus:instancesGraph "urn:chorus:domains:infrastructure" ;
+    sh:property [ sh:path rdfs:label           ; sh:minCount 1 ; sh:datatype xsd:string ; chorus:exposure chorus:public ] ;
+    sh:property [ sh:path chorus:onMachine     ; sh:minCount 1 ; sh:maxCount 1 ; sh:class chorus:Machine ; chorus:exposure chorus:public ] ;
+    sh:property [ sh:path chorus:mountPoint    ; sh:minCount 1 ; sh:maxCount 1 ; sh:datatype xsd:string ; chorus:exposure chorus:public ] ;
+    sh:property [ sh:path chorus:capacityBytes ; sh:minCount 1 ; sh:maxCount 1 ; sh:datatype xsd:integer ; chorus:exposure chorus:public ] ;
+    sh:property [ sh:path chorus:usedBytes     ; sh:minCount 1 ; sh:maxCount 1 ; sh:datatype xsd:integer ; chorus:exposure chorus:public ] ;
+    sh:property [ sh:path chorus:availableBytes ; sh:minCount 1 ; sh:maxCount 1 ; sh:datatype xsd:integer ; chorus:exposure chorus:public ] ;
+    sh:property [ sh:path chorus:lastObserved  ; sh:minCount 1 ; sh:maxCount 1 ; sh:datatype xsd:dateTime ; chorus:exposure chorus:public ] .
+
 
 
 
@@ -1758,8 +1808,8 @@ chorus:gaps               a owl:DatatypeProperty ; rdfs:label "gaps" ; rdfs:rang
 chorus:atStep        a owl:ObjectProperty ; rdfs:label "at step" ; rdfs:range chorus:ValueStreamStep ;
     rdfs:comment "subject (Product|Domain|Service) -> its primary value-stream step (chorus:ValueStreamStep, ADR-040)." .
 chorus:hasDesignDoc  a owl:ObjectProperty ; rdfs:label "has design doc" ; rdfs:range chorus:Document .
-chorus:hosts         a owl:ObjectProperty ; rdfs:label "hosts" ; rdfs:domain chorus:Domain ; rdfs:range chorus:Service ;
-    rdfs:comment "Domain hosts Service (1:* from Domain). Inverse drives the Service 'exactly one hosting Domain' constraint." .
+chorus:hosts         a owl:ObjectProperty ; rdfs:label "hosts" ; rdfs:domain chorus:Domain ; rdfs:range [ owl:unionOf ( chorus:Service chorus:Machine ) ] ;
+    rdfs:comment "Domain hosts Service, or a Machine (#4485, the infrastructure domain) (1:* from Domain). Inverse drives the Service 'exactly one hosting Domain' constraint." .
 
 # --- layers (#4293, 2026-09-24) — the CMDB's tiers. Jeff 16:04: "security and logs and
 # infra may be foundational dependencies"; 17:23: "these edges are very cmdbish".
@@ -1925,7 +1975,7 @@ chorus:producedBy    chorus:crossesHierarchy "event flow: who emits an event typ
 # retire or type with their owners; athena-validate keeps naming them until then.
 chorus:sourcePath    rdfs:domain [ owl:unionOf ( chorus:ServiceInstance chorus:ScheduledJob ) ] .
 chorus:runsService   rdfs:domain [ owl:unionOf ( chorus:ServiceInstance chorus:ScheduledJob ) ] .
-chorus:onMachine     rdfs:domain [ owl:unionOf ( chorus:ServiceInstance chorus:ScheduledJob chorus:LogSource chorus:Presence ) ] .
+chorus:onMachine     rdfs:domain [ owl:unionOf ( chorus:ServiceInstance chorus:ScheduledJob chorus:LogSource chorus:Presence chorus:Disk ) ] .
 chorus:hasDesignDoc  rdfs:domain [ owl:unionOf ( chorus:Product chorus:Domain chorus:Service ) ] ; rdfs:range chorus:Document .
 chorus:consumesEvent rdfs:domain [ owl:unionOf ( chorus:Product chorus:Domain chorus:Service ) ] .
 chorus:overChannel   rdfs:domain [ owl:unionOf ( chorus:Message chorus:Delivery ) ] .
@@ -2876,7 +2926,7 @@ chorus:runsService a owl:ObjectProperty ;   # #4472 — jobs run Services too: n
 chorus:lastObserved a owl:DatatypeProperty ;
     rdfs:label "last observed" ;
     rdfs:comment "When the harvester last saw this unit. MANDATORY (Wren pin #3): a running instance and one unseen for 24h are different facts. Ephemeral instances (werk variants) age out — that is information, not noise." ;
-    rdfs:domain chorus:ServiceInstance ;
+    rdfs:domain [ owl:unionOf ( chorus:ServiceInstance chorus:ScheduledJob chorus:Machine chorus:Disk ) ] ;   # #4485: shared, so a union (two domains would intersect)
     rdfs:range xsd:dateTime .
 
 chorus:launchdLabel a owl:DatatypeProperty ;
