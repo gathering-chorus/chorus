@@ -190,11 +190,11 @@ import json, sys
 p = sys.argv[1]; d = json.load(open(p))
 d["dagRuns"][:0] = [
  {"name":"cicd-land","dagRunId":"L2","params":"CARD=1090 ROLE=kade ACCEPTER=jeff","statusLabel":"failed","queuedAt":"2026-10-09T23:30:00-04:00","nodes":[{"statusLabel":"failed","step":{"name":"skill-werk-sync"}}]},
- {"name":"cicd-land","dagRunId":"L1","params":"CARD=109 ROLE=kade ACCEPTER=jeff","statusLabel":"running","queuedAt":"2026-10-09T23:00:00-04:00","nodes":[{"statusLabel":"succeeded","step":{"name":"skill-werk-merge"}},{"statusLabel":"running","step":{"name":"skill-werk-deploy-canonical"}}]}]
+ {"name":"cicd-land","dagRunId":"L1","params":"CARD=109 ROLE=kade ACCEPTER=jeff","statusLabel":"running","queuedAt":"2026-10-09T23:00:00-04:00","nodes":[{"statusLabel":"succeeded","step":{"name":"skill-werk-merge"}},{"statusLabel":"running","step":{"name":"skill-deploy-prod"}}]}]
 json.dump(d, open(p, "w"))
 EOF2
 out=$(CWS_RUNS_DIR=$TD CWS_DAGU="file://$TD/dagu" "$CWS" 109)
-t "the card's land shows on the land queue" "v2 land running at skill-werk-deploy-canonical · 1 land · dagu L1" "$out"
+t "the card's land shows on the land queue" "v2 land running at skill-deploy-prod · 1 land · dagu L1" "$out"
 if [[ "$out" == *"dagu L2"* ]]; then echo "FAIL another card's land (CARD=1090) counted for 109"; fails=$((fails+1)); fi
 
 # #4494 — a go can be a no; the go line offers both, and a no reads "rejected"
@@ -208,7 +208,7 @@ mkdir -p "$TD/api/api/chorus/context/board"
 echo '{"data":{"cards":[{"id":109,"owner":"Kade"},{"id":110,"owner":"Wren"}]}}' > "$TD/api/api/chorus/context/board/wip"
 board() { CWS_RUNS_DIR=$TD CWS_DAGU="file://$TD/dagu" CWS_API="file://$TD/api" "$CWS"; }
 out=$(board)
-t "a landing card reads where its land is" "#109 kade   land: deploy-canonical" "$out"
+t "a landing card reads where its land is" "#109 kade   land: deploy-prod" "$out"
 t "its run number is the card's own count" "· run 3" "$out"
 t "a card with no run says so plainly" "#110 wren   no run yet" "$out"
 n=$(grep -c '^#109' <<<"$out")

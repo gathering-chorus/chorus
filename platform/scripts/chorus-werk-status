@@ -627,7 +627,7 @@ def card_line(card, role, runs, lands, places, now=None):
     status, step = dagu_summary(run)
     if land is None and status == "waiting" and len(runs) > 0:
         status, step = dagu_state(runs, 0)
-    word = step.replace("skill-werk-", "")
+    word = step.replace("skill-werk-", "").replace("skill-", "")
     node = next((n for n in nodes_of(run) if n["step"]["name"] == step), {})
     since = parse_ts(node.get("startedAt") or run.get("queuedAt") or run.get("startedAt"))
     ended = parse_ts(run.get("finishedAt") or node.get("finishedAt"))

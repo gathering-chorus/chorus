@@ -37,13 +37,13 @@ steps:
     description: "werk-review"
     depends: [skill-werk-test]
     command: "werk-review ${CARD} ${ROLE}"
-  - name: skill-werk-deploy-werk
-    description: "werk-deploy --target werk"
+  - name: skill-deploy-demo
+    description: "deploy-demo"
     depends: [skill-werk-review]
     command: "werk-deploy ${CARD} ${ROLE} --target werk"
   - name: skill-werk-deploy-env-up
     description: "werk-deploy env-up"
-    depends: [skill-werk-deploy-werk]
+    depends: [skill-deploy-demo]
     command: "werk-deploy env-up ${ROLE} ${CARD}"
   - name: skill-werk-demo
     description: "/demo"

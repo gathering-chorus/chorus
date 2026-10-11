@@ -40,8 +40,8 @@ long, and which run of the card this is.
 
 ```
 #4235 kade   land: waiting in line (1st)        6m · run 6
-#4493 wren   land: deploy-canonical             7m · run 2
-#4494 kade   failed at deploy-canonical    (22:24) · run 2
+#4493 wren   land: deploy-prod                  7m · run 2
+#4494 kade   failed at deploy-prod         (22:24) · run 2
 ```
 
 - `build` / `test` / `demo` … — a run is at that step, for that long
