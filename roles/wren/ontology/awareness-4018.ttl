@@ -179,6 +179,7 @@ chorus:WaitingOnShape a sh:NodeShape ;
 # product row and moves through the door, not in this file.
 
 chorus:awareness a chorus:Domain ;
+  chorus:instancesGraph "urn:chorus:domains:awareness" ;  # #4422 (wren): the crawl reads this, never a guessed name
     rdfs:label "awareness" ;
     chorus:comment "Shared awareness: who is in what state now, who is alive, how old each reading is, and who is waiting on whom." ;
     chorus:purpose "Let the team and Jeff read the team's state at a glance instead of asking for it." ;

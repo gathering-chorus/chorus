@@ -58,6 +58,7 @@ chorus:MemoryShape a sh:NodeShape ;
 # the subjects into a deployed file cannot wipe them (#3587 wipe class).
 
 chorus:memory a chorus:Domain ;
+  chorus:instancesGraph "urn:chorus:domains:memory" ;  # #4422 (wren): the crawl reads this, never a guessed name
     rdfs:label "memory" ;
     chorus:comment "Persistent context across sessions — indexed sessions and artifacts." ;
     chorus:purpose "Keep persistent context across sessions — indexed sessions, artifacts, and recall." ;
@@ -67,6 +68,7 @@ chorus:memory a chorus:Domain ;
     chorus:definesVocabulary chorus:Memory, chorus:ShortTermMemory, chorus:LongTermMemory .
 
 chorus:knowledge a chorus:Domain ;
+  chorus:instancesGraph "urn:chorus:domains:knowledge" ;  # #4422 (wren): the crawl reads this, never a guessed name
     rdfs:label "knowledge" ;
     chorus:comment "Structured facts about the team, products, and their history." ;
     chorus:purpose "Hold structured, queryable facts about the team, its products, and their history." ;

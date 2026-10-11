@@ -187,6 +187,7 @@ chorus:messages chorus:definesVocabulary chorus:Message , chorus:Nudge .
 # Template = domains-wren-silas.ttl / live spine+memory floors.
 
 chorus:cards a chorus:Domain ;
+  chorus:instancesGraph "urn:chorus:domains:cards" ;  # #4422 (wren): the crawl reads this, never a guessed name
   rdfs:label "cards" ;
   chorus:comment "Work items and their chunks — the team's one board." ;
   chorus:purpose "Hold the team's work as cards and chunks — one board, one WIP discipline, every commitment visible." ;
@@ -197,6 +198,7 @@ chorus:cards a chorus:Domain ;
   # context; cheap model edit if overruled") — chorus.ttl already claims it.
 
 chorus:events a chorus:Domain ;
+  chorus:instancesGraph "urn:chorus:domains:events" ;  # #4422 (wren): the crawl reads this, never a guessed name
   rdfs:label "events" ;
   chorus:comment "The spine's event lines — timestamped, role-attributed history of everything the team does." ;
   chorus:purpose "Make the team's history observable as data: one event vocabulary every emitter shares." ;
@@ -205,6 +207,7 @@ chorus:events a chorus:Domain ;
   chorus:repoTarget "platform/scripts/chorus-log" .
 
 chorus:messages a chorus:Domain ;
+  chorus:instancesGraph "urn:chorus:domains:messages" ;  # #4422 (wren): the crawl reads this, never a guessed name
   rdfs:label "messages" ;
   chorus:comment "Direct role-to-role and Jeff-to-role communication — persisted, attributable, deliverable." ;
   chorus:purpose "Carry the team's conversations as data: every message persisted and attributed, every nudge answerable." ;
@@ -213,6 +216,7 @@ chorus:messages a chorus:Domain ;
   chorus:repoTarget "platform/api" .
 
 chorus:streams a chorus:Domain ;
+  chorus:instancesGraph "urn:chorus:domains:streams" ;  # #4422 (wren): the crawl reads this, never a guessed name
   rdfs:label "streams" ;
   chorus:comment "Live event streams — each role's session, tailed, and the spine and log flow pulse derives state from." ;
   chorus:purpose "Turn the spine into something watchable live — streams a person or role can sit on." ;

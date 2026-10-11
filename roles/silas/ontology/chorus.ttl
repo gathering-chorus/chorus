@@ -1822,6 +1822,7 @@ chorus:snapshot        a owl:DatatypeProperty ; rdfs:label "snapshot" ; rdfs:ran
 # this IRI for the domain, because a domain's slug must match its graph and a
 # property and a domain sharing one IRI is the #4237 shape that broke prod today.
 chorus:provenance a chorus:Domain ;
+  chorus:instancesGraph "urn:chorus:domains:provenance" ;  # #4422 (wren): the crawl reads this, never a guessed name
     rdfs:label "provenance" ;
     rdfs:comment "Version history — what a row looked like before it was replaced, so two versions can be diffed field by field." ;
     chorus:comment "Version history — what a row looked like before it was replaced." ;
@@ -2140,6 +2141,7 @@ chorus:ServiceShape a sh:NodeShape ;
 
 # the properties domain-class itself (punned)
 chorus:properties a chorus:Domain ;
+  chorus:instancesGraph "urn:chorus:domains:properties" ;  # #4422 (wren): the crawl reads this, never a guessed name
     rdfs:label "properties" ;
     rdfs:comment "Config-as-data domain: service configuration + runtime properties governed as a registry (PropertyKey register-before-use). ADR-045 first worked example of domain-as-owl-class." ;
     chorus:atStep chorus:value-stream-step-proving ;
