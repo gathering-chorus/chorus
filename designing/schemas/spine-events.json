@@ -5636,6 +5636,23 @@
         "verdict": "ok | FAIL | UNMEASURED"
       }
     },
+    "test.unit.progress": {
+      "producer": "tests",
+      "about": "TestResult",
+      "category": "fact",
+      "version": "1",
+      "vertebra": "proving",
+      "source": "werk",
+      "description": "werk-test (card run): a cargo unit's count while it is still running — cases passed and failed so far of the planned total, every 15s (#4453).",
+      "fields": {
+        "check": "cargo-test",
+        "unit": "The crate",
+        "passed": "Cases passed so far",
+        "failed": "Cases failed so far",
+        "total": "Cases nextest planned (empty until it says)",
+        "message": "One readable line"
+      }
+    },
     "test.unmeasured": {
       "producer": "tests",
       "about": "TestResult",

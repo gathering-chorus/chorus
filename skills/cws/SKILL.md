@@ -54,7 +54,11 @@ long, and which run of the card this is.
   the pin's own startedAt, the #3781 identity rule; a dead or reused pid reports
   **abandoned (pin stale)**, never running).
 
-`/cws <card>` opens with the same line, then every run in a table.
+`/cws <card>` opens with the same line, then every run in a table, then the
+newest run's tests (#4453): suites done of planned, ok / failed / running, every
+failed case under its suite with its reason, and a running Rust crate's count
+so far (`120 passed · 0 failed of 476`). The board line carries the short form:
+`tests 7 ok · 1 failed · running (8 of 24)`.
 
 ## Hard rules
 

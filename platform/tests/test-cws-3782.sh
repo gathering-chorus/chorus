@@ -122,6 +122,36 @@ EOF
 out=$(CWS_RUNS_DIR=$TD "$CWS" 108)
 t "a quoted marker is not an exit" "running                 at deploy-werk" "$out"
 
+# #4453 — every failed row names its reason. #4447 run 4 read "failed build
+# (3s)" with an empty why; the refusal printed before the step began.
+cat > "$TD/112.json" <<EOF
+{"card":112,"role":"kade","phase":"failed","pid":999905,"startedAt":"$NOW","runId":"112-t-10"}
+EOF
+cat > "$TD/112-112-t-10.log" <<'EOF'
+resume-refused: werk tree changed since the failed run — rerun from the start
+[werk/werk] ⭐ Run Main build
+[werk/werk]   ❌  Failure - Main build [3s]
+WERK_EXIT=1
+EOF
+t "a refusal before the step is the failed row's why" "resume-refused: werk tree changed" "$(CWS_RUNS_DIR=$TD "$CWS" 112)"
+cat > "$TD/114.json" <<EOF
+{"card":114,"role":"kade","phase":"failed","pid":999906,"startedAt":"$NOW","runId":"114-t-11"}
+EOF
+printf '[werk/werk] ⭐ Run Main build\n[werk/werk]   ❌  Failure - Main build [3s]\nWERK_EXIT=1\n' > "$TD/114-114-t-11.log"
+t "NEGATIVE PROOF: a log with no reason says so, never blank" "no reason in the run log" "$(CWS_RUNS_DIR=$TD "$CWS" 114)"
+# #4453 — #4444: the header said running while the run's own log had ended.
+cat > "$TD/113.json" <<EOF
+{"card":113,"role":"kade","phase":"running","pid":$$,"startedAt":"$NOW","runId":"113-t-12"}
+EOF
+cat > "$TD/113-113-t-12.log" <<'EOF'
+[werk/werk] ⭐ Run Main demo
+[werk/werk]   ✅  Success - Main demo [6s]
+WERK_EXIT=0
+EOF
+out=$(CWS_RUNS_DIR=$TD "$CWS" 113)
+t "a pin left saying running after its log ended reads the log" "#113 [kade] presented (the pin still says running" "$out"
+if [[ "$(head -1 <<<"$out")" == *"] running"* ]]; then echo "FAIL the header still says running"; fails=$((fails+1)); fi
+
 # #4474 — werk v2 runs come from dagu (a file:// fixture stands in for its API).
 # Negative proof: a run for CARD=1090 is a different card and must not count.
 # #4494 — both workflows come from dagu's one run list (cicd and cicd-land by name).
@@ -208,6 +238,43 @@ EOF4
 out=$(board)
 t "a no at the go reads rejected" "#109 kade   rejected at the go" "$out"
 if [[ "$out" == *"#109 kade   landed"* ]]; then echo "FAIL a rejected run reads landed"; fails=$((fails+1)); fi
+
+# #4453 — a card run's tests, from the run's own events (Loki; a file:// dir
+# holding <trace>.jsonl stands in). NEGATIVE PROOF: another run's failed case
+# (trace r9, card 1110) never shows on card 111.
+mkdir -p "$TD/d2/api/v1" "$TD/loki" "$TD/api2/api/chorus/context/board"
+cat > "$TD/d2/api/v1/dag-runs" <<'EOF5'
+{"dagRuns":[
+ {"name":"cicd","dagRunId":"r9","params":"CARD=1110 ROLE=wren","statusLabel":"failed","startedAt":"2026-10-11T06:00:00-04:00","nodes":[{"statusLabel":"failed","step":{"name":"skill-werk-test"}}]},
+ {"name":"cicd","dagRunId":"r5","params":"CARD=111 ROLE=kade","statusLabel":"running","startedAt":"2026-10-11T07:00:00-04:00","nodes":[{"statusLabel":"succeeded","step":{"name":"skill-werk-build"},"startedAt":"2026-10-11T07:00:00-04:00"},{"statusLabel":"running","step":{"name":"skill-werk-test"},"startedAt":"2026-10-11T07:01:00-04:00"}]}
+]}
+EOF5
+cat > "$TD/loki/r5.jsonl" <<'EOF5'
+{"timestamp":"2026-10-11T07:01:00","event":"test.started","checks_planned":"4"}
+{"timestamp":"2026-10-11T07:01:01","event":"test.unit.started","check":"tsc","unit":"platform/api"}
+{"timestamp":"2026-10-11T07:01:09","event":"test.unit.timed","check":"tsc","unit":"platform/api","verdict":"ok","seconds":"8.0"}
+{"timestamp":"2026-10-11T07:01:10","event":"test.unit.started","check":"jest","unit":"platform/api"}
+{"timestamp":"2026-10-11T07:02:10","event":"test.case.failed","unit":"platform/api","file":"platform/api/tests/tree.test.ts","case":"the tree answers from the graph","reason":"expected 10 got 0"}
+{"timestamp":"2026-10-11T07:02:11","event":"test.unit.timed","check":"jest","unit":"platform/api","verdict":"FAIL","seconds":"61.0"}
+{"timestamp":"2026-10-11T07:02:12","event":"test.unit.started","check":"cargo-test","unit":"chorus-hooks"}
+{"timestamp":"2026-10-11T07:02:30","event":"test.unit.progress","check":"cargo-test","unit":"chorus-hooks","message":"cargo-test chorus-hooks: 120 passed · 0 failed of 476"}
+EOF5
+cat > "$TD/loki/r9.jsonl" <<'EOF5'
+{"timestamp":"2026-10-11T06:01:00","event":"test.unit.started","check":"jest","unit":"platform/api"}
+{"timestamp":"2026-10-11T06:02:00","event":"test.case.failed","unit":"platform/api","file":"platform/api/tests/other.test.ts","case":"ANOTHER CARD'S CASE","reason":"x"}
+EOF5
+cws2() { CWS_RUNS_DIR=$TD CWS_DAGU="file://$TD/d2" CWS_LOKI="file://$TD/loki" "$CWS" "$@"; }
+out=$(cws2 111)
+t "the run's tests: done of planned, ok, failed, running" "tests (run 1): 1 ok · 1 failed · running (2 of 4)" "$out"
+t "a failed suite names itself" "✗ jest:platform/api" "$out"
+t "its failed case sits under it, with the reason" "tree.test.ts — the tree answers from the graph — expected 10 got 0" "$out"
+t "a long unit shows its count while it runs" "… cargo-test:chorus-hooks running — 120 passed · 0 failed of 476" "$out"
+if [[ "$out" == *"ANOTHER CARD'S CASE"* ]]; then echo "FAIL another run's case shows on #111"; fails=$((fails+1)); fi
+t "Loki down says so, never silent" "unreadable — Loki did not answer" "$(CWS_RUNS_DIR=$TD CWS_DAGU="file://$TD/d2" CWS_LOKI="http://127.0.0.1:9" "$CWS" 111)"
+echo '{"data":{"cards":[{"id":111,"owner":"Kade"}]}}' > "$TD/api2/api/chorus/context/board/wip"
+out=$(CWS_RUNS_DIR=$TD CWS_DAGU="file://$TD/d2" CWS_LOKI="file://$TD/loki" CWS_API="file://$TD/api2" "$CWS")
+t "the board line carries the run's tests" "#111 kade   test" "$out"
+t "…as one short summary" "· tests 1 ok · 1 failed · running (2 of 4)" "$out"
 
 rm -rf "$TD"
 if [ $fails -gt 0 ]; then echo "test-cws-3782: $fails FAILURE(S)"; exit 1; fi
