@@ -138,10 +138,25 @@ t "v2 runs come from dagu" "  v2 waiting at skill-werk-go · 3 runs" "$out"
 t "a failed v2 run names the step dagu failed" "failed      skill-werk-commit" "$out"
 t "a waiting v2 run names the step it waits at" "waiting     skill-werk-go" "$out"
 if [[ "$out" == *skill-werk-build* ]]; then echo "FAIL another card's dagu run (CARD=1090) counted for 109"; fails=$((fails+1)); fi
-t "the newest run waiting at the go prints the go" "go: dagu human-task complete cicd --run-id r2 --step skill_werk_go --input accepter=jeff" "$out"
+t "the newest run waiting at the go prints the go" "human-task complete cicd --run-id r2 --step skill_werk_go --input accepter=jeff" "$out"
+# Wren 2026-10-10: without --config the CLI answers "run not found"
+t "the go names dagu's config" "go: dagu --config /x/platform/config/dagu.yaml human-task complete cicd" "$(CWS_RUNS_DIR=$TD CWS_DAGU="file://$TD/dagu" CWS_DAGU_CONFIG=/x/platform/config/dagu.yaml "$CWS" 109)"
 t "an older run still waiting at the go is superseded" "superseded  skill-werk-go" "$out"
 if [[ "$out" == *"--run-id r0"* ]]; then echo "FAIL a superseded run is offered a go"; fails=$((fails+1)); fi
 t "dagu down says so, never silent" "v2 (dagu): unreadable" "$(CWS_RUNS_DIR=$TD "$CWS" 109)"
+
+# #4494 — the land runs as its own DAG on the land queue; /cws follows it.
+# NEGATIVE PROOF: another card's land (CARD=1090) is not this card's.
+mkdir -p "$TD/dagu/api/v1/dags/cicd-land"
+cat > "$TD/dagu/api/v1/dags/cicd-land/dag-runs" <<'EOF2'
+{"dagRuns":[
+ {"dagRunId":"L2","params":"CARD=1090 ROLE=kade ACCEPTER=jeff","statusLabel":"failed","nodes":[{"statusLabel":"failed","step":{"name":"skill-werk-sync"}}]},
+ {"dagRunId":"L1","params":"CARD=109 ROLE=kade ACCEPTER=jeff","statusLabel":"running","nodes":[{"statusLabel":"succeeded","step":{"name":"skill-werk-merge"}},{"statusLabel":"running","step":{"name":"skill-werk-deploy-canonical"}}]}
+]}
+EOF2
+out=$(CWS_RUNS_DIR=$TD CWS_DAGU="file://$TD/dagu" "$CWS" 109)
+t "the card's land shows on the land queue" "v2 land running at skill-werk-deploy-canonical · 1 land · dagu L1" "$out"
+if [[ "$out" == *"dagu L2"* ]]; then echo "FAIL another card's land (CARD=1090) counted for 109"; fails=$((fails+1)); fi
 
 rm -rf "$TD"
 if [ $fails -gt 0 ]; then echo "test-cws-3782: $fails FAILURE(S)"; exit 1; fi

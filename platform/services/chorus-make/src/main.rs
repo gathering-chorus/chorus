@@ -1,4 +1,5 @@
 //! chorus-make generate <pipeline> <rows.tsv>            write the workflow to stdout
+//!                                                       (`<pipeline>-land` writes the land half, #4494)
 //! chorus-make check    <pipeline> <rows.tsv> <file>     exit 1 on drift (pre-commit / pipeline)
 //! chorus-make graph    <pipeline>                       read the rows from the store (FUSEKI_QUERY), write the workflow
 //! chorus-make walk     <stream label>                   walk stream → steps → pipeline → skills → domains; exit 1 on a broken link (AC7)
@@ -41,7 +42,7 @@ fn main() {
     let a: Vec<String> = std::env::args().collect();
     let usage = "usage: chorus-make generate <pipeline> <rows.tsv> | check <pipeline> <rows.tsv> <file> | graph <pipeline> | parity <rows.tsv> <server.ts> | walk <stream>";
     let text = |pipeline: &str, tsv: &str| {
-        chorus_make::generate(pipeline, &rows(tsv)).unwrap_or_else(|errs| {
+        chorus_make::generate_named(pipeline, &rows(tsv)).unwrap_or_else(|errs| {
             for e in errs {
                 eprintln!("chorus-make: refused: {e}");
             }
@@ -74,11 +75,11 @@ fn main() {
             }
         }
         Some("graph") if a.len() == 3 => {
-            let rows = chorus_make::rows_from_sparql_tsv(&sparql(&chorus_make::rows_query(&a[2]))).unwrap_or_else(|errs| {
+            let rows = chorus_make::rows_from_sparql_tsv(&sparql(&chorus_make::rows_query(chorus_make::pipeline_of(&a[2])))).unwrap_or_else(|errs| {
                 for e in errs { eprintln!("chorus-make: {e}"); }
                 exit(1)
             });
-            match chorus_make::generate(&a[2], &rows) {
+            match chorus_make::generate_named(&a[2], &rows) {
                 Ok(t) => print!("{t}"),
                 Err(errs) => { for e in errs { eprintln!("chorus-make: refused: {e}"); } exit(1) }
             }

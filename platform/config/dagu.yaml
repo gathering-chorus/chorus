@@ -18,3 +18,18 @@ log_dir: /Users/jeffbridwell/Library/Logs/Chorus/dagu
 log_format: json
 auth:
   mode: none
+
+# #4494 — two queues. A card's run (commit through demo) goes on `werk`, three
+# at once, so each role's card tests without waiting on another's. The land
+# (merge, sync, deploy to canonical, accept) goes on `werk-land`, one at a
+# time across every card, because those steps write main and prod. Proven on
+# a scratch dagu 2026-10-10 by Kade: 3 builds ran at once, lands ran in turn.
+# A land must be ENQUEUED on werk-land, not called as a sub-run: a sub-run
+# ignores its queue and two lands overlapped.
+queues:
+  enabled: true
+  config:
+    - name: werk
+      max_concurrency: 3
+    - name: werk-land
+      max_concurrency: 1
