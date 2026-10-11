@@ -9,6 +9,8 @@ mod rules;
 mod settings;
 mod store;
 #[cfg(test)]
+mod embedded_tests;
+#[cfg(test)]
 mod requirements_tests;
 
 use model::{ClassDef, API_VERSION, CLASSES, CRATE_VERSION, MODEL_VERSION, PRODUCT};
@@ -153,6 +155,24 @@ pub fn route(ctx: &Ctx, method: &str, url: &str, authorization: Option<&str>, bo
 
 fn main() {
     let s = settings::load();
+    // `<product>-api load <file.trig>`: fill the embedded store (a move from another
+    // store, or a restore). `dump <file.trig>`: back it up. Both refuse a remote store.
+    let args: Vec<String> = std::env::args().collect();
+    if let (Some(cmd), Some(file)) = (args.get(1), args.get(2)) {
+        if s.store_kind != "embedded" {
+            eprintln!("{PRODUCT}-api {cmd}: store.kind is '{}', not embedded", s.store_kind);
+            std::process::exit(2);
+        }
+        let e = store::Embedded::open(&s.store_path).unwrap_or_else(|m| { eprintln!("{m}"); std::process::exit(2) });
+        let r = match cmd.as_str() {
+            "load" => std::fs::read(file).map_err(|x| x.to_string()).and_then(|b| e.load_trig(&b)),
+            "dump" => e.dump_trig().and_then(|b| std::fs::write(file, b).map_err(|x| x.to_string())),
+            other => Err(format!("unknown command '{other}' (load | dump)")),
+        };
+        if let Err(m) = r { eprintln!("{PRODUCT}-api {cmd}: {m}"); std::process::exit(1); }
+        eprintln!("{PRODUCT}-api {cmd} {file}: ok");
+        return;
+    }
     let store = store::open(&s);
     let (endpoint, creds) = (s.store_endpoint.clone(), s.store_auth());
     let who = auth::build(&s.identity_issuer, move |q| store::sparql_body(&endpoint, &creds, q).ok());

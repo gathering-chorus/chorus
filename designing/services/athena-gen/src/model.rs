@@ -267,7 +267,7 @@ pub fn settings(store: &Store, product: &str) -> Result<Vec<(String, String)>, M
 /// The keys the generated runtime reads. A product whose model declares fewer cannot
 /// be generated: the refusal names the missing key instead of a default being invented.
 pub const RUNTIME_SETTINGS: &[&str] =
-    &["events.command", "identity.issuer", "server.bind", "store.endpoint", "store.kind", "store.password_var", "store.user_var"];
+    &["events.command", "identity.issuer", "server.bind", "store.endpoint", "store.kind", "store.password_var", "store.path", "store.user_var"];
 
 pub fn missing_settings(declared: &[(String, String)]) -> Vec<&'static str> {
     RUNTIME_SETTINGS.iter().copied().filter(|k| !declared.iter().any(|(d, _)| d == k)).collect()
