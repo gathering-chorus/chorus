@@ -95,47 +95,37 @@ fi
 
 ### 4. Domain registration
 
-**Source of truth (#2940 Move 0):** `data/athena/tree.json` is canonical. Verify the card's `domain:<slug>` label resolves to a `chorus:<slug>` IRI in the tree. After Move 1 ships SHACL, the same check runs against the graph; for now JSON is the answer.
+**Source of truth (#4235):** the live graph, through `GET /api/athena/tree` (products, domains, services). Verify the card's `domain:<slug>` label resolves to a `chorus:<slug>` IRI there.
 
 ```bash
 # Extract domain slug from card labels
 DOMAIN=$(echo "$CARD_VIEW" | grep -oE 'domain:\w+' | head -1 | sed 's/domain://')
 
 if [ -n "$DOMAIN" ]; then
-  # Move 0 path — check tree.json for chorus:<slug> OR chorus:<slug>
-  # (Products are bare `chorus:<slug>`; Domains are `chorus:<slug>`).
-  TREE_JSON=$(curl -s http://localhost:3340/api/athena/tree 2>/dev/null)
-  if [ -z "$TREE_JSON" ]; then
-    # Fallback: read from disk in canonical path
-    TREE_JSON=$(cat "${CHORUS_ROOT:-$HOME/CascadeProjects/chorus}/data/athena/tree.json" 2>/dev/null)
-  fi
-  if [ -n "$TREE_JSON" ]; then
-    DOMAIN_HIT=$(echo "$TREE_JSON" | python3 -c "
+  TREE=$(curl -s -f --max-time 10 http://localhost:3340/api/athena/tree 2>/dev/null)
+  if [ -n "$TREE" ]; then
+    DOMAIN_HIT=$(echo "$TREE" | python3 -c "
 import json,sys
 d=json.load(sys.stdin)
-slug='$DOMAIN'
-candidates={f'chorus:{slug}'}
-hit = any(p['iri'] in candidates for p in d.get('products',[]))
-hit = hit or any(dm['iri'] in candidates for dm in d.get('domains',[]))
-hit = hit or any(s['iri'] in candidates for s in d.get('services',[]))
-print('yes' if hit else 'no')
+iri='chorus:$DOMAIN'
+print('yes' if any(n['iri']==iri for k in ('products','domains','services') for n in d.get(k,[])) else 'no')
 " 2>/dev/null)
     if [ "$DOMAIN_HIT" = "yes" ]; then
-      echo "PASS: domain '${DOMAIN}' resolves to a tree.json IRI"
+      echo "PASS: domain '${DOMAIN}' resolves to a graph IRI"
     else
-      echo "FAIL: domain '${DOMAIN}' does NOT exist in data/athena/tree.json — add it to the tree before claiming this domain on a card, or correct the card label"
+      echo "FAIL: domain '${DOMAIN}' does NOT exist in the graph — add it to the model before claiming this domain on a card, or correct the card label"
     fi
   else
-    echo "WARN: tree.json unavailable (api + disk both failed) — can't verify domain"
+    echo "WARN: the graph did not answer (/api/athena/tree) — can't verify domain"
   fi
 else
   echo "WARN: no domain label on card — can't verify registration"
 fi
 ```
 
-**Pass:** Card's domain resolves to a tree.json IRI.
-**Fail:** Domain claimed but not in tree — refuse the gate. Closes the "I named a domain that isn't a domain" failure mode (#2940).
-**Warn:** No domain label OR tree.json unreachable.
+**Pass:** Card's domain resolves to a graph IRI.
+**Fail:** Domain claimed but not in the graph — refuse the gate. Closes the "I named a domain that isn't a domain" failure mode (#2940).
+**Warn:** No domain label OR the graph did not answer.
 
 ### 5. Spine contract
 

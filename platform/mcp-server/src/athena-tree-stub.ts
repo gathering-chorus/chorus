@@ -1,18 +1,9 @@
-// #3025 AC6 — Athena lookups read the v2 JSON tree, NOT the AS-IS Fuseki surface.
-//
-// CORRECTED 2026-05-22: a prior pass had v1/v2 inverted. It repointed these
-// lookups to the old per-domain Fuseki routes — which the design
-// (designing/docs/athena-product-design.html, line 541) names as the AS-IS
-// surface that "Athena v2 replaces", a 4-field Fuseki record with no products.
-// That dropped every product that lives only in the v2 JSON tree — e.g. The
-// Clearing (owner Wren) — so the lookups handed callers confidently-wrong
-// answers. v2's operational source is Move 0: the hand-authored JSON tree
-// data/athena/tree.json, served by chorus-api at:
+// #3025 AC6 / #4235 — the Athena lookups are served by chorus-api, which reads
+// the live graph (products, domains and services as the model holds them):
 //   /api/athena/tree                 (full tree)
 //   /api/athena/ownership/:iri       (owner + containing path)
-//   /api/athena/blast-radius/:iri    (consumers / dependents / hosts)
-// These routes return the result object directly (no {data} envelope). This
-// reverts to the routes the file proxied before the regression.
+//   /api/athena/blast-radius/:iri    (consumers / dependents / hosts / files)
+// These routes return the result object directly (no {data} envelope).
 //
 // Function signatures are preserved so the server.ts handlers compile unchanged.
 // An injectable getter (__setAthenaGetter) is the test seam.
@@ -50,13 +41,13 @@ export function loadTree(): TreeHandle {
   return {};
 }
 
-/** Full structural tree (v2 JSON tree, data/athena/tree.json) — backs chorus_tree_get. */
+/** Full structural tree from the graph — backs chorus_tree_get. */
 export function getTree(): unknown {
   return getter('/api/athena/tree');
 }
 
 /**
- * Who owns this IRI + where it sits — v2 tree.json ownership lookup.
+ * Who owns this IRI + where it sits — ownership from the graph.
  * Returns the chorus-api ownership object ({ iri, kind, owner, product, domain?, service? }).
  * null = not found (caller must surface not-found, never a confidently-wrong answer).
  */
@@ -71,7 +62,7 @@ export function lookupOwnership(_tree: TreeHandle, iri: string): unknown {
 
 export type BlastRadiusResult = { consumers: unknown[]; [k: string]: unknown };
 
-/** Inferred blast-radius — v2 tree.json blast-radius. null = not found. */
+/** Inferred blast-radius from the graph. null = not found. */
 export function computeBlastRadius(_tree: TreeHandle, iri: string): BlastRadiusResult | null {
   const res = getter(`/api/athena/blast-radius/${encodeURIComponent(iri)}`) as
     | { consumers?: unknown[] }

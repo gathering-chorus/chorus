@@ -2691,44 +2691,42 @@ app.get('/api/athena/health', async (_req: Request, res: Response) => {
 
 // #3603: GET /api/athena/products RETIRED — athena-make :3360/products serves products.
 
-// #2940 — Athena Move 0 tree endpoints. Same Zod-validated source as
-// chorus_tree_get / chorus_ownership_lookup / chorus_blast_radius MCP tools.
-import { loadTree, lookupOwnership } from './handlers/athena-tree';
-app.get('/api/athena/tree', (_req: Request, res: Response) => {
-  try {
-    const tree = loadTree();
-    res.status(200).json(tree);
-  } catch (err) {
-    const code = (err as NodeJS.ErrnoException).code === 'ENOENT' ? 404 : 422;
-    res.status(code).json({ ok: false, reason: code === 404 ? 'tree-not-found' : 'schema-violation', error: (err as Error).message });
-  }
+// #4235 — the tree and ownership answer from the live graph (the proto-graph
+// file is gone). A store that does not answer is a 503, never a file.
+import { loadTreeFromGraph, lookupOwnership } from './handlers/athena-tree-graph';
+const STORE_UNREACHABLE = 'store-unreachable';
+const athenaTree = () => loadTreeFromGraph(fusekiCsv(nightlyFuseki()));
+app.get('/api/athena/tree', async (_req: Request, res: Response) => {
+  const tree = await athenaTree();
+  if (!tree) { res.status(503).json({ ok: false, reason: STORE_UNREACHABLE }); return; }
+  res.status(200).json(tree);
 });
-app.get('/api/athena/ownership/:iri', (req: Request, res: Response) => {
-  try {
-    const r = lookupOwnership(loadTree(), req.params.iri);
-    if (!r) return res.status(404).json({ ok: false, reason: 'not-found', iri: req.params.iri });
-    res.status(200).json(r);
-  } catch (err) {
-    res.status(422).json({ ok: false, reason: 'schema-violation', error: (err as Error).message });
-  }
+app.get('/api/athena/ownership/:iri', async (req: Request, res: Response) => {
+  const tree = await athenaTree();
+  if (!tree) { res.status(503).json({ ok: false, reason: STORE_UNREACHABLE }); return; }
+  const r = lookupOwnership(tree, req.params.iri);
+  if (!r) { res.status(404).json({ ok: false, reason: 'not-found', iri: req.params.iri }); return; }
+  res.status(200).json(r);
 });
 // #4419 AC1 — blast radius reads the live graph's edges (hasDomain, partOf,
-// consumes, hosts), not the hand-written June tree.json.
-import { blastRadiusFromEdges, blastRadiusEdgesQuery, edgesFromCsv } from './handlers/athena-blast-radius-graph';
+// consumes, hosts).
+import { blastRadiusFromEdges, blastRadiusEdgesQuery, edgesFromCsv, fileTagsQuery, fileTagsFromCsv } from './handlers/athena-blast-radius-graph';
+const blastRadiusRead = (query: string): Promise<globalThis.Response> => fetch(nightlyFuseki(), {
+  method: 'POST',
+  headers: { 'Content-Type': 'application/x-www-form-urlencoded', Accept: 'text/csv' },
+  body: new URLSearchParams({ query }).toString(),
+  signal: AbortSignal.timeout(10_000),
+});
 app.get('/api/athena/blast-radius/:iri', async (req: Request, res: Response) => {
   try {
-    const r0 = await fetch(nightlyFuseki(), {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/x-www-form-urlencoded', Accept: 'text/csv' },
-      body: new URLSearchParams({ query: blastRadiusEdgesQuery() }).toString(),
-      signal: AbortSignal.timeout(10_000),
-    });
-    if (!r0.ok) return res.status(503).json({ ok: false, reason: 'store-unreachable', status: r0.status });
-    const r = blastRadiusFromEdges(edgesFromCsv(await r0.text()), req.params.iri);
+    // #4235 — the edges and the crawl's file tags, both from the store
+    const [r0, r1] = await Promise.all([blastRadiusRead(blastRadiusEdgesQuery()), blastRadiusRead(fileTagsQuery())]);
+    if (!r0.ok || !r1.ok) return res.status(503).json({ ok: false, reason: STORE_UNREACHABLE, status: r0.ok ? r1.status : r0.status });
+    const r = blastRadiusFromEdges(edgesFromCsv(await r0.text()), req.params.iri, fileTagsFromCsv(await r1.text()));
     if (!r) return res.status(404).json({ ok: false, reason: 'not-found', iri: req.params.iri });
     res.status(200).json({ ...r, source: 'graph' });
   } catch (err) {
-    res.status(503).json({ ok: false, reason: 'store-unreachable', error: (err as Error).message });
+    res.status(503).json({ ok: false, reason: STORE_UNREACHABLE, error: (err as Error).message });
   }
 });
 

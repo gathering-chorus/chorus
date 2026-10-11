@@ -15,6 +15,8 @@ import { createAthenaSparqlClient, createSparqlLoader } from './athena-sparql';
 import { fusekiWriteAuthFromEnv } from './icd-sparql';
 import { fetchLoomPrinciples } from './handlers/loom-principles';
 import { fetchLoomPolicies } from './handlers/loom-policies';
+import { fusekiCsv } from './handlers/nightly-graph';
+import { structureQuery, treeFromCsv } from './handlers/athena-tree-graph';
 import { collectAllDocs } from './handlers/doc-catalog';
 
 export interface IndexAllSourcesEnv {
@@ -71,6 +73,18 @@ async function fetchGraphKnowledge(repoRoot: string): Promise<GraphRow[]> {
     const uri = b.practice?.value;
     if (!uri) continue;
     rows.push({ source: 'practice', id: `practice:${uri.split('#').pop()}`, content: lines(b.label?.value, b.comment?.value) });
+  }
+
+  // #4235 — products, domains and services from the graph (was a hand-written file)
+  const stCsv = await fusekiCsv(FUSEKI_SPARQL)(structureQuery());
+  if (stCsv === null) throw new Error('structure read: the store did not answer');
+  const st = treeFromCsv(stCsv);
+  for (const [kind, nodes] of [['product', st.products], ['domain', st.domains], ['service', st.services]] as const) {
+    for (const n of nodes) {
+      rows.push({ source: 'domain', id: `domain:${n.iri}`, content: lines(
+        `${n.label} (${kind})`, n.comment, n.ownedBy && `owner: ${n.ownedBy}`, n.atStep && `step: ${n.atStep}`,
+        n.status && `status: ${n.status}`, (n.gaps ?? []).length > 0 && `gaps: ${(n.gaps ?? []).join('; ')}`) });
+    }
   }
   return rows;
 }
