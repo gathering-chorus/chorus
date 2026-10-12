@@ -231,8 +231,12 @@ pub fn units(
     if shared_used {
         out.push(Unit { path: SHARED.to_string(), kind: "include", deps: Vec::new(), includes: Vec::new(), name: String::new() });
     }
-    for m in MODEL_DIRS {
-        out.push(Unit { path: m.to_string(), kind: "model", deps: Vec::new(), includes: Vec::new(), name: String::new() });
+    // #4405 — the model folders are units only where a generated API reads
+    // them; every other repository got four phantom "model" units
+    if out.iter().any(|u| u.deps.iter().any(|d| MODEL_DIRS.contains(&d.as_str()))) {
+        for m in MODEL_DIRS {
+            out.push(Unit { path: m.to_string(), kind: "model", deps: Vec::new(), includes: Vec::new(), name: String::new() });
+        }
     }
     // an edge to a path that is not a unit is a build file pointing nowhere:
     // kept off the graph, so no dangling dependsOn is ever written

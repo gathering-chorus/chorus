@@ -56,3 +56,11 @@ fn a_row_the_door_returns_with_the_kind_prefix_still_reads_as_its_repo() {
     assert_eq!(rows_of_repo(current.clone(), "chorus", "chorus").len(), 1);
     assert!(rows_of_repo(current, "wordpress-blog", "chorus").is_empty());
 }
+
+#[test]
+fn a_repo_with_no_generated_api_has_no_model_units() {
+    use chorus_crawl::code::units;
+    let read = |f: &str| match f { "app/package.json" => Some("{\"name\":\"app\"}".to_string()), _ => None };
+    let us = units(&[], &["app/package.json".to_string()], &read, &|_: &str| vec![]);
+    assert_eq!(us.iter().map(|u| u.path.as_str()).collect::<Vec<_>>(), vec!["app"], "no phantom model units");
+}
