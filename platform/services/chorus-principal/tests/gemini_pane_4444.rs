@@ -1,7 +1,7 @@
 // @domain: identity
 //! #4444 — Abby logs in to her own Gemini screen in her pane (Jeff 2026-10-06:
 //! "thats my user interface — a background job that i cant interact with").
-use chorus_principal::rows::{gemini_git_setup, gemini_pane_cmd, pane_process_is, pane_runtime, PaneRuntime};
+use chorus_principal::rows::{gemini_pane_cmd, GEMINI_GIT_ENV, pane_process_is, pane_runtime, PaneRuntime};
 
 fn role_dir(name: &str, with: &[&str]) -> std::path::PathBuf {
     let d = std::env::temp_dir().join(format!("gp4444-{}-{}", name, std::process::id()));
@@ -101,20 +101,25 @@ fn negative_proof_a_shim_outside_the_agent_bin_dir_is_not_found() {
     assert!(!shim_resolves_under(&cmd, &bin), "{cmd}");
 }
 
-/// #4444 reopen 2 — Jeff kept approving Abby's `git -c safe.directory=* -C …` calls.
-/// Gemini's policy engine treats any `git -c` as dangerous and asks whatever the
-/// policy allows (gemini-cli bundle: gitHasConfigOverrideGlobalOption). She needed
-/// `-c` only because git refuses repos another account owns. Her login sets that
-/// once in her own git config, so plain `git -C` passes. Proof at the boundary:
-/// run the setup as a shell would, in a fresh HOME, and read git's config back.
-fn safe_directories_after(setup: &str, home: &std::path::Path, runs: usize) -> Vec<String> {
-    for _ in 0..runs {
-        let ok = std::process::Command::new("/bin/bash").arg("-c").arg(setup)
-            .env("HOME", home).env("GIT_CONFIG_NOSYSTEM", "1").status().unwrap().success();
-        assert!(ok, "setup failed: {setup}");
+/// #4444 reopen 3 — Jeff kept approving Abby's `git -c safe.directory=* …` calls.
+/// Gemini's policy engine asks on any `git -c`; she needs it only because git
+/// refuses repos another account owns. Her ~/.gitconfig never reaches git:
+/// Gemini's shell sets GIT_CONFIG_GLOBAL=/dev/null. It keeps inherited
+/// GIT_CONFIG_KEY_n/VALUE_n and appends its own 8 after them. Proof at the
+/// boundary: git run under the environment Gemini builds for a shell call.
+fn gemini_shell_git(inherited: &[(&str, &str)], home: &std::path::Path) -> Vec<String> {
+    let mut c = std::process::Command::new("git");
+    c.args(["config", "--get-all", "safe.directory"]).env_clear().env("PATH", "/usr/bin:/bin:/opt/homebrew/bin").env("HOME", home);
+    for (k, v) in inherited { c.env(k, v); }
+    // what gemini-cli does to every shell call (bundle: sanitize → git overlay)
+    let mut n: usize = inherited.iter().find(|(k, _)| *k == "GIT_CONFIG_COUNT").map(|(_, v)| v.parse().unwrap()).unwrap_or(0);
+    c.env("GIT_CONFIG_GLOBAL", "/dev/null").env("GIT_CONFIG_SYSTEM", "/dev/null").env("GIT_CONFIG_NOSYSTEM", "1");
+    for (k, v) in [("credential.helper", ""), ("core.fsmonitor", ""), ("core.hooksPath", ""), ("core.sshCommand", ""), ("core.pager", "cat"), ("core.editor", ""), ("sequence.editor", ""), ("diff.external", "")] {
+        c.env(format!("GIT_CONFIG_KEY_{n}"), k).env(format!("GIT_CONFIG_VALUE_{n}"), v);
+        n += 1;
     }
-    let out = std::process::Command::new("git").args(["config", "--global", "--get-all", "safe.directory"])
-        .env("HOME", home).env("GIT_CONFIG_NOSYSTEM", "1").output().unwrap();
+    c.env("GIT_CONFIG_COUNT", n.to_string());
+    let out = c.output().unwrap();
     String::from_utf8_lossy(&out.stdout).lines().map(str::to_string).collect()
 }
 
@@ -126,14 +131,17 @@ fn fresh_home(tag: &str) -> std::path::PathBuf {
 }
 
 #[test]
-fn her_login_lets_git_read_jeffs_repos_without_a_dash_c() {
+fn her_login_exports_the_setting_and_git_under_geminis_shell_reads_it() {
     let cmd = gemini_pane_cmd("/b/chorus-agent", "/b/gemini", "/r", "abby-normal-run-1a2b").unwrap();
-    assert!(cmd.contains(gemini_git_setup()), "{cmd}");
-    // set once, and a second login does not add a duplicate
-    assert_eq!(safe_directories_after(gemini_git_setup(), &fresh_home("twice"), 2), vec!["*".to_string()]);
+    for (k, v) in GEMINI_GIT_ENV { assert!(cmd.contains(&format!("{k}='{v}'")), "{k} missing: {cmd}"); }
+    assert!(!cmd.contains("git config --global"), "a global gitconfig never reaches Gemini's shell: {cmd}");
+    assert_eq!(gemini_shell_git(&GEMINI_GIT_ENV, &fresh_home("env")), vec!["*".to_string()]);
 }
 
 #[test]
-fn negative_proof_without_the_setup_git_trusts_no_other_owner() {
-    assert!(safe_directories_after("true", &fresh_home("none"), 1).is_empty());
+fn negative_proof_her_own_gitconfig_does_not_reach_geminis_shell() {
+    // the 10-07 fix: safe.directory in ~/.gitconfig — git under Gemini never reads it
+    let home = fresh_home("global");
+    std::fs::write(home.join(".gitconfig"), "[safe]\n\tdirectory = *\n").unwrap();
+    assert!(gemini_shell_git(&[], &home).is_empty());
 }
