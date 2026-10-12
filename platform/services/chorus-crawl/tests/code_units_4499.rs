@@ -56,7 +56,7 @@ fn negative_proof_a_dropped_dependency_disappears_on_the_next_crawl() {
     let p = plan_units(&desired(&after), &current);
     assert_eq!(p.update.len(), 1, "{p:?}");
     let (name, fields) = &p.update[0];
-    assert_eq!(name, "chorus--platform-services-werk-accept");
+    assert_eq!(name, "chorus-platform-services-werk-accept");
     assert!(!fields.iter().any(|(k, v)| k == "dependsOn" && v.ends_with("werk-teardown")), "the old edge must not be written back");
     // and a second crawl over the same tree writes nothing
     assert_eq!(plan_units(&desired(&after), &desired(&after)).unchanged, after.len());

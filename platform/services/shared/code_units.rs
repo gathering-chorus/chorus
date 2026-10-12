@@ -147,10 +147,26 @@ pub fn package_deps(pkg_path: &str, package_json: &str, tsconfig: Option<&str>) 
 
 /// The door's name for a unit: its path, `/` as `-` (platform-services-werk-test).
 /// #4405 — a unit's door name carries its repository, so two repos' units
-/// never collide ("chorus--platform-services-werk-test").
+/// keep apart ("chorus-platform-services-werk-test"), built with the door's own slug.
 pub fn unit_name(repo: &str, path: &str) -> String {
-    let p = if path == ROOT { "root".to_string() } else { path.replace('/', "-") };
-    format!("{}--{}", repo, p)
+    let p = if path == ROOT { "root" } else { path };
+    door_slug(&format!("{repo}-{p}"))
+}
+
+/// #4405 — the name the door stores: lowercase, anything outside a-z0-9
+/// becomes "-", runs of "-" collapse, the ends are trimmed. A name built any
+/// other way is created under one name and then written to under another
+/// (`shared-security--root` was stored as `shared-security-root`, so the PUT
+/// that followed was a 404 and the next plan deleted the row it had made).
+pub fn door_slug(s: &str) -> String {
+    let mut out = String::new();
+    for c in s.to_lowercase().chars() {
+        let c = if c.is_ascii_alphanumeric() { c } else { '-' };
+        if !(c == '-' && out.ends_with('-')) {
+            out.push(c);
+        }
+    }
+    out.trim_matches('-').to_string()
 }
 
 /// #4405 — a build file at the repository root (a plain Node or Rust repo is

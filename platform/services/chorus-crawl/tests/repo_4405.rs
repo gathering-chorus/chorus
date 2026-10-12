@@ -23,7 +23,7 @@ fn a_units_row_names_its_repository_and_two_repos_never_collide() {
     assert_ne!(unit_name("chorus", "src"), unit_name("wordpress-blog", "src"));
     let f = unit_fields(&u("platform/api"), "chorus");
     assert!(f.contains(&("inRepository".to_string(), "chorus".to_string())), "{f:?}");
-    assert_eq!(f[0].1, "chorus--platform-api");
+    assert_eq!(f[0].1, "chorus-platform-api");
 }
 
 #[test]
@@ -71,7 +71,7 @@ fn a_root_build_file_is_a_unit_that_holds_what_no_deeper_unit_does() {
     assert_eq!(us[0].deps, vec!["media-server".to_string()], "a root package's file: dep resolves");
     assert_eq!(unit_of("src/server.ts", &us).unwrap().path, ROOT);
     assert_eq!(unit_of("media-server/index.js", &us).unwrap().path, "media-server", "the deeper unit wins");
-    assert_eq!(unit_name("site", ROOT), "site--root");
+    assert_eq!(unit_name("site", ROOT), "site-root");
 }
 
 #[test]
@@ -80,7 +80,7 @@ fn negative_proof_the_root_unit_never_becomes_what_a_service_is_built_from() {
     let read = |f: &str| match f { "package.json" => Some("{\"name\":\"ws\"}".to_string()), "platform/api/package.json" => Some("{\"name\":\"api\"}".to_string()), _ => None };
     let us = units(&[], &["package.json".to_string(), "platform/api/package.json".to_string()], &[], &read, &|_: &str| vec![]);
     let b = built_from(&[("svc".into(), "platform/scripts/run.sh".into()), ("api".into(), "platform/api/src/server.ts".into())], &us, "chorus");
-    assert_eq!(b, vec![("api".to_string(), vec!["chorus--platform-api".to_string()])], "a script in no deeper unit links nothing, not the root");
+    assert_eq!(b, vec![("api".to_string(), vec!["chorus-platform-api".to_string()])], "a script in no deeper unit links nothing, not the root");
 }
 
 #[test]
