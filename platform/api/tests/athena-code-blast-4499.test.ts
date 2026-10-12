@@ -5,15 +5,15 @@
 // listed 1,748 files for clearing and could not find a service. Wren 16:41:
 // services, domains, tests and pages — never a file list — direct, then through
 // dependencies, the same for a file and a service.
-import { codeBlast, filesQuery, withPages, pagesFromCsv, unitsFromCsv, builtFromFromCsv, filesFromCsv, type UnitRow, type FileRow } from '../src/handlers/athena-code-blast';
+import { codeBlast, filesQuery, withPages, pagesFromCsv, unitsFromCsv, builtFromFromCsv, filesFromCsv, repoEdgesFromCsv, dependentRepos, type UnitRow, type FileRow } from '../src/handlers/athena-code-blast';
 
 const C = 'https://jeffbridwell.com/chorus#';
 const UNITS = [
-  'u,path,kind,dep',
-  `${C}code-unit-platform-services-werk-teardown,platform/services/werk-teardown,crate,`,
-  `${C}code-unit-platform-services-werk-accept,platform/services/werk-accept,crate,${C}code-unit-platform-services-werk-teardown`,
-  `${C}code-unit-platform-services-werk-push,platform/services/werk-push,crate,${C}code-unit-platform-services-werk-teardown`,
-  `${C}code-unit-platform-api,platform/api,package,`,
+  'u,path,kind,dep,repo',
+  `${C}code-unit-platform-services-werk-teardown,platform/services/werk-teardown,crate,,${C}repository-chorus`,
+  `${C}code-unit-platform-services-werk-accept,platform/services/werk-accept,crate,${C}code-unit-platform-services-werk-teardown,${C}repository-chorus`,
+  `${C}code-unit-platform-services-werk-push,platform/services/werk-push,crate,${C}code-unit-platform-services-werk-teardown,${C}repository-chorus`,
+  `${C}code-unit-platform-api,platform/api,package,,${C}repository-chorus`,
 ].join('\n');
 const BUILT = ['s,u', `${C}service-werk,${C}code-unit-platform-services-werk-accept`, `${C}service-knowledge-store,${C}code-unit-platform-api`].join('\n');
 const FILES = [
@@ -92,8 +92,12 @@ describe('#4405 code-blast reads one repository', () => {
     `${C}code-unit-wordpress-blog--src,src,package,,${C}repository-wordpress-blog`,
     `${C}code-unit-platform-api,platform/api,package,,`,
   ].join('\n');
-  it('home repo by default: its own rows and rows written before units had a repo', () => {
-    expect(unitsFromCsv(MIXED).map((u) => u.name).sort()).toEqual(['chorus--src', 'platform-api']);
+  it('chorus by default, and only rows that name chorus', () => {
+    expect(unitsFromCsv(MIXED).map((u) => u.name)).toEqual(['chorus--src']);
+  });
+  it('NEGATIVE PROOF — a unit that names no repository answers for no repository (#4405 reopen)', () => {
+    expect(unitsFromCsv(MIXED, 'chorus').map((u) => u.name)).not.toContain('platform-api');
+    expect(unitsFromCsv(MIXED, 'wordpress-blog').map((u) => u.name)).not.toContain('platform-api');
   });
   it("NEGATIVE PROOF — another repo's unit with the same path never answers for the home repo", () => {
     const r = codeBlast('src/index.ts', unitsFromCsv(MIXED), [], []);
@@ -118,5 +122,29 @@ describe('#4405 a root build file is a unit', () => {
   it("NEGATIVE PROOF — the root unit never claims a deeper unit's files", () => {
     const r = codeBlast('src/server.ts', ROOTED, [], F);
     expect(r.measured && r.domains).toEqual([{ name: 'web', files: 1 }]);
+  });
+});
+
+// #4405 reopen — repositories depend on repositories (Jeff, 2026-10-12: "chorus
+// repo depends on shared-security and shared-observability and gathering"); a
+// change in one names every repository that needs it, transitively.
+describe('#4405 repositories a change reaches', () => {
+  const EDGES = [
+    'r,dep',
+    `${C}repository-chorus,${C}repository-shared-security`,
+    `${C}repository-chorus,${C}repository-jeff-bridwell-personal-site`,
+    `${C}repository-wine-diary,${C}repository-shared-security`,
+    `${C}repository-ops-console,${C}repository-chorus`,
+  ].join('\n');
+  it('a shared-security change names chorus, wine-diary, and what depends on chorus', () => {
+    expect(dependentRepos('shared-security', repoEdgesFromCsv(EDGES))).toEqual(['chorus', 'wine-diary', 'ops-console']);
+  });
+  it('NEGATIVE PROOF — a repository nothing depends on reaches no other', () => {
+    expect(dependentRepos('wine-diary', repoEdgesFromCsv(EDGES))).toEqual([]);
+  });
+  it('the answer carries the repository and its dependents', () => {
+    const units: UnitRow[] = [{ name: 'shared-security--root', path: '.', kind: 'package', deps: [] }];
+    const r = codeBlast('bin/start.sh', units, [], [], { repo: 'shared-security', edges: repoEdgesFromCsv(EDGES) });
+    expect(r.measured && r.repositories).toEqual({ name: 'shared-security', dependents: ['chorus', 'wine-diary', 'ops-console'] });
   });
 });

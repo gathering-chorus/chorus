@@ -1779,13 +1779,16 @@ fn run_infra(args: &[String]) -> i32 {
 fn run_code(args: &[String]) -> i32 {
     use chorus_crawl::code::*;
     // #4405 — `--target <dir>` points the code leg at another repository; the
-    // tool's own home (identity, door) stays CHORUS_ROOT.
+    // tool's own home (identity, door) stays CHORUS_ROOT. `--adopt` claims
+    // stored units that name no repository for this pass (one-time, by hand).
     let mut dry_run = false;
+    let mut adopt = false;
     let mut target: Option<String> = None;
     let mut it = args.iter();
     while let Some(a) = it.next() {
         match a.as_str() {
             "--dry-run" => dry_run = true,
+            "--adopt" => adopt = true,
             "--target" => match it.next() {
                 Some(t) => target = Some(t.clone()),
                 None => { eprintln!("chorus-crawl code: --target needs a directory — nothing ran"); return 2; }
@@ -1841,7 +1844,15 @@ fn run_code(args: &[String]) -> i32 {
         Err(e) => { println!("code: UNMEASURED — the door does not serve CodeUnit yet ({e}); nothing written"); return 1; }
     };
     let current: Vec<(String, Vec<(String, String)>)> = if coll.is_empty() { Vec::new() } else { match fetch_rows_with(&api, Some(&token), "CodeUnit", "", chorus_crawl::services::door_page_rows) {
-        Ok(rows) => chorus_crawl::code_run::rows_of_repo(chorus_crawl::code_run::current_rows(rows), &repo, &home_repo),
+        Ok(rows) => {
+            let all_rows = chorus_crawl::code_run::current_rows(rows);
+            let loose = chorus_crawl::code_run::unowned(&all_rows);
+            if !loose.is_empty() {
+                println!("code: {} stored units name no repository{}", loose.len(),
+                    if adopt { format!(" — adopted by {repo}") } else { " — left alone; `--adopt` claims them for this repository".to_string() });
+            }
+            chorus_crawl::code_run::rows_of_repo(all_rows, &repo, adopt)
+        }
         Err(e) => { eprintln!("chorus-crawl code: cannot read CodeUnit rows — {e}"); return 2; }
     } };
     let p = plan_units(&desired, &current);
@@ -1887,12 +1898,23 @@ fn run_code(args: &[String]) -> i32 {
         Ok(c) => c,
         Err(e) => { println!("code: UNMEASURED — the door does not serve Repository yet ({e}); nothing written"); return 1; }
     };
-    let mut repo_fields = vec![("name".to_string(), repo.clone())];
-    if let Some(r) = &remote {
-        repo_fields.push(("repoRemote".to_string(), r.clone()));
+    // what the repository declares about itself: what it depends on, what it is part of
+    let decl = match read(".repository").map(|t| chorus_crawl::code_run::parse_repo_decl(&t)).unwrap_or(Ok(Default::default())) {
+        Ok(d) => d,
+        Err(e) => { println!("code: {e} — nothing written"); return 2; }
+    };
+    let stored: Vec<String> = match fetch_rows_with(&api, Some(&token), "Repository", "", chorus_crawl::services::door_page_rows) {
+        Ok(rows) => rows.iter().filter_map(|f| f.iter().find(|(k, _)| k == "name").map(|(_, v)| v.clone())).collect(),
+        Err(e) => { eprintln!("chorus-crawl code: cannot read Repository rows — {e}"); return 2; }
+    };
+    let (repo_fields, missing) = chorus_crawl::code_run::repository_fields(remote.as_deref(), &decl, &stored);
+    if !missing.is_empty() {
+        println!("code: {repo} declares {} not crawled yet — crawl them, then this repository again", missing.join(", "));
     }
-    if let Err(e) = write(&ident, &api, "PUT", &format!("{repo_coll}/{repo}"), Some(&fields_json(&repo_fields))) {
-        println!("code: WRITE FAILED repository {repo}: {e}");
+    let rw = chorus_crawl::code_run::repository_write(&repo_coll, &repo, &repo_fields, stored.contains(&repo));
+    let body = if rw.method == "POST" { format!("[{}]", fields_json(&rw.rows[0])) } else { fields_json(&rw.rows[0]) };
+    if let Err(e) = write(&ident, &api, rw.method, &rw.path, Some(&body)) {
+        println!("code: WRITE FAILED {}: {e}", rw.what);
         return 2;
     }
     let svc_coll = collection_for(&api, "Service").ok();
