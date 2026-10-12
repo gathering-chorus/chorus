@@ -107,6 +107,8 @@ chorus:LanguageShape a sh:NodeShape ;
 chorus:CodeFileShape a sh:NodeShape ;
     sh:targetClass chorus:CodeFile ;
     sh:property [ sh:path chorus:filePath ; sh:minCount 1 ; sh:datatype xsd:string ] ;
+    # #4405 reopen 3 — a file names the repository it lives in, like a CodeUnit
+    sh:property [ sh:path chorus:inRepository ; sh:maxCount 1 ; sh:class chorus:Repository ] ;
     sh:property [ sh:path chorus:hasKind ; sh:minCount 1 ; sh:class chorus:CodeKind ] ;
     # #4154 — hasLanguage is TYPED but not required. #4157 shipped it at minCount 1;
     # the first real walk refused 200 rows of .conf / .plist / .feature files that
@@ -225,8 +227,8 @@ chorus:RepositoryShape a sh:NodeShape ;
 
 chorus:inRepository a owl:ObjectProperty ;
     rdfs:label "inRepository" ;
-    rdfs:comment "The Repository a CodeUnit lives in. Its unitPath is relative to that repository's root." ;
-    rdfs:domain chorus:CodeUnit ;
+    rdfs:comment "The Repository a CodeUnit or a CodeFile lives in. Its unitPath or filePath is relative to that repository's root." ;
+    rdfs:domain [ owl:unionOf ( chorus:CodeUnit chorus:CodeFile ) ] ;
     rdfs:range chorus:Repository .
 
 chorus:CodeUnitShape a sh:NodeShape ;

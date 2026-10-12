@@ -437,6 +437,12 @@ fn curl(
 }
 
 
+/// The repository a checkout is: its remote's last segment, else its directory.
+fn repo_of_dir(dir: &str) -> String {
+    let abs = std::fs::canonicalize(dir).map(|p| p.to_string_lossy().to_string()).unwrap_or_else(|_| dir.to_string());
+    chorus_crawl::code::repo_id(sh("git", &["remote", "get-url", "origin"], dir).ok().as_deref(), std::path::Path::new(&abs))
+}
+
 /// #4214 — the gathering checkout, whose absence makes two page sources a
 /// reported SKIP rather than an error (#3097).
 const GATHERING_ROOT: &str = "../jeff-bridwell-personal-site";
@@ -444,10 +450,11 @@ const GATHERING_ROOT: &str = "../jeff-bridwell-personal-site";
 /// A Page row as the door expects it: the parent CodeFile floor plus the two
 /// fields a page adds. `hasDomain` is present only when the rules placed it —
 /// an unplaced page is listed by name, never filed under a default.
-fn page_fields(row: &pages::PageRow, domain: Option<&str>) -> Vec<(String, String)> {
+fn page_fields(row: &pages::PageRow, domain: Option<&str>, repo: &str) -> Vec<(String, String)> {
     let mut f = vec![
         ("name".to_string(), pages::page_row_name(&row.route)),
         ("filePath".to_string(), row.path.clone()),
+        ("inRepository".to_string(), repo.to_string()),
         ("hasKind".to_string(), "code".to_string()),
         ("route".to_string(), row.route.clone()),
         ("pageType".to_string(), row.page_type.clone()),
@@ -459,13 +466,14 @@ fn page_fields(row: &pages::PageRow, domain: Option<&str>) -> Vec<(String, Strin
 }
 
 /// An Endpoint row: the same floor, keyed on method AND path together.
-fn endpoint_fields(row: &pages::EndpointRow, domain: Option<&str>) -> Vec<(String, String)> {
+fn endpoint_fields(row: &pages::EndpointRow, domain: Option<&str>, repo: &str) -> Vec<(String, String)> {
     let mut f = vec![
         (
             "name".to_string(),
             pages::endpoint_row_name(&row.http_method, &row.route_path),
         ),
         ("filePath".to_string(), row.path.clone()),
+        ("inRepository".to_string(), repo.to_string()),
         ("hasKind".to_string(), "code".to_string()),
         ("routePath".to_string(), row.route_path.clone()),
         ("httpMethod".to_string(), row.http_method.clone()),
@@ -1798,9 +1806,8 @@ fn run_code(args: &[String]) -> i32 {
     }
     let home = std::env::var("CHORUS_ROOT").unwrap_or_else(|_| ".".to_string());
     let root = target.clone().unwrap_or_else(|| home.clone());
-    let repo_of = |dir: &str| repo_id(sh("git", &["remote", "get-url", "origin"], dir).ok().as_deref(), std::path::Path::new(&std::fs::canonicalize(dir).map(|p| p.to_string_lossy().to_string()).unwrap_or_else(|_| dir.to_string())));
-    let repo = repo_of(&root);
-    let home_repo = repo_of(&home);
+    let repo = repo_of_dir(&root);
+    let home_repo = repo_of_dir(&home);
     let remote = sh("git", &["remote", "get-url", "origin"], &root).ok().map(|r| r.trim().to_string()).filter(|r| !r.is_empty());
     println!("code: repository {repo}{}", remote.as_deref().map(|r| format!(" ({r})")).unwrap_or_default());
     let ls = |pat: &str| -> Vec<String> {
@@ -1911,11 +1918,12 @@ fn run_code(args: &[String]) -> i32 {
     if !missing.is_empty() {
         println!("code: {repo} declares {} not crawled yet — crawl them, then this repository again", missing.join(", "));
     }
-    let rw = chorus_crawl::code_run::repository_write(&repo_coll, &repo, &repo_fields, stored.contains(&repo));
-    let body = if rw.method == "POST" { format!("[{}]", fields_json(&rw.rows[0])) } else { fields_json(&rw.rows[0]) };
-    if let Err(e) = write(&ident, &api, rw.method, &rw.path, Some(&body)) {
-        println!("code: WRITE FAILED {}: {e}", rw.what);
-        return 2;
+    if let Some(rw) = chorus_crawl::code_run::repository_write(&repo_coll, &repo, &repo_fields, stored.contains(&repo)) {
+        let body = if rw.method == "POST" { format!("[{}]", fields_json(&rw.rows[0])) } else { fields_json(&rw.rows[0]) };
+        if let Err(e) = write(&ident, &api, rw.method, &rw.path, Some(&body)) {
+            println!("code: WRITE FAILED {}: {e}", rw.what);
+            return 2;
+        }
     }
     let svc_coll = collection_for(&api, "Service").ok();
     let mut failed: Vec<String> = Vec::new();
@@ -2152,6 +2160,8 @@ fn main() {
         std::process::exit(2);
     }
     let root = std::env::var("CHORUS_ROOT").unwrap_or_else(|_| ".".to_string());
+    // #4405 reopen 3 — every file row names the repository it lives in
+    let home_repo = repo_of_dir(&root);
     // #4214 — `--undo <file>`: delete exactly the rows a previous run created,
     // by the names that run recorded. Runs alone, writes nothing else, and says
     // what it could not delete rather than reporting a clean sweep.
@@ -2445,6 +2455,11 @@ fn main() {
             let Some(g) = in_graph.get(path.as_str()) else {
                 continue;
             };
+            if chorus_crawl::code_run::file_needs_repo(&g.other, &home_repo) {
+                restated += 1;
+                *a = Action::Replace { path: path.clone() };
+                continue;
+            }
             // #4222 — an unreadable file (image, binary) never reached the
             // restate pass, so 362 PNGs whose sha never moves could never pick
             // up a rule: they are Unchanged forever. Same path chain here.
@@ -2731,12 +2746,12 @@ fn main() {
         page_plan = pages::settle_replaces(page_plan, &page_graph, &|r: &pages::PageRow| r.route.clone(), &|r: &pages::PageRow| {
             let d = pages::page_domain(&r.route, &valid_domains)
                 .or_else(|| place_row(&root, &r.path, &unit_rows, &dir_rows, &valid_domains, &card_domain));
-            with_domain(page_fields(r, d.as_deref()), d)
+            with_domain(page_fields(r, d.as_deref(), &home_repo), d)
         });
         endpoint_plan = pages::settle_replaces(endpoint_plan, &endpoint_graph, &|r: &pages::EndpointRow| format!("{} {}", r.http_method, r.route_path), &|r: &pages::EndpointRow| {
             let d = pages::endpoint_domain(&r.route_path, &valid_domains, &route_rows)
                 .or_else(|| place_row(&root, &r.path, &unit_rows, &dir_rows, &valid_domains, &card_domain));
-            with_domain(endpoint_fields(r, d.as_deref()), d)
+            with_domain(endpoint_fields(r, d.as_deref(), &home_repo), d)
         });
         let pc = pages::counts(&page_plan);
         let ec = pages::counts(&endpoint_plan);
@@ -2875,6 +2890,7 @@ fn main() {
                         ("filePath".to_string(), f.path.clone()),
                         ("hasKind".to_string(), k.as_str().to_string()),
                         ("fileSha".to_string(), f.sha.clone()),
+                        ("inRepository".to_string(), home_repo.clone()),
                     ];
                     if let Some(lang) = l {
                         fields.push(("hasLanguage".to_string(), lang.to_string()));
@@ -2911,6 +2927,7 @@ fn main() {
                     ("filePath".to_string(), path.clone()),
                     ("fileSha".to_string(), f.sha.clone()),
                     ("hasKind".to_string(), k.as_str().to_string()),
+                    ("inRepository".to_string(), home_repo.clone()),
                 ];
                 if let Some(lang) = l {
                     owned.push(("hasLanguage".to_string(), lang.to_string()));
@@ -3198,7 +3215,7 @@ fn main() {
                         pages::RowAction::Post(row) => {
                             let d = pages::page_domain(&row.route, &valid_domains)
                                 .or_else(|| place_row(&root, &row.path, &unit_rows, &dir_rows, &valid_domains, &card_domain));
-                            let body = fields_json(&page_fields(row, d.as_deref()));
+                            let body = fields_json(&page_fields(row, d.as_deref(), &home_repo));
                             if !batch_accepts(batch_bytes(&pbatch), body.len(), BATCH_BODY_BUDGET) || pbatch.len() >= 200 {
                                 flush_batch(&mut pbatch, ident, &api, &page_coll, "page", &mut failed, &mut wrote);
                             }
@@ -3211,7 +3228,7 @@ fn main() {
                                 .get(name.as_str())
                                 .map(|g| g.fields.as_slice())
                                 .unwrap_or(&[]);
-                            let mut fields = merge_row(existing, &page_fields(row, d.as_deref()));
+                            let mut fields = merge_row(existing, &page_fields(row, d.as_deref(), &home_repo));
                             if d.is_none() {
                                 fields.retain(|(k, _)| k != "hasDomain");
                             }
@@ -3236,7 +3253,7 @@ fn main() {
                             // signal; the file it sits in is the fallback.
                             let d = pages::endpoint_domain(&row.route_path, &valid_domains, &route_rows)
                                 .or_else(|| place_row(&root, &row.path, &unit_rows, &dir_rows, &valid_domains, &card_domain));
-                            let body = fields_json(&endpoint_fields(row, d.as_deref()));
+                            let body = fields_json(&endpoint_fields(row, d.as_deref(), &home_repo));
                             if !batch_accepts(batch_bytes(&ebatch), body.len(), BATCH_BODY_BUDGET) || ebatch.len() >= 200 {
                                 flush_batch(&mut ebatch, ident, &api, &endpoint_coll, "endpoint", &mut failed, &mut wrote);
                             }
@@ -3249,7 +3266,7 @@ fn main() {
                                 .get(name.as_str())
                                 .map(|g| g.fields.as_slice())
                                 .unwrap_or(&[]);
-                            let mut fields = merge_row(existing, &endpoint_fields(row, d.as_deref()));
+                            let mut fields = merge_row(existing, &endpoint_fields(row, d.as_deref(), &home_repo));
                             if d.is_none() {
                                 fields.retain(|(k, _)| k != "hasDomain");
                             }
@@ -4053,15 +4070,15 @@ mod row_body_tests {
     #[test]
     fn a_page_or_endpoint_with_no_domain_carries_no_domain_field_never_an_empty_one() {
         let p = pages::PageRow { path: "platform/api/public/athena/schedule.html".into(), route: "/athena/schedule.html".into(), page_type: "athena".into() };
-        let f = page_fields(&p, None);
+        let f = page_fields(&p, None, "chorus");
         assert!(!f.iter().any(|(k, _)| k == "hasDomain"));
         assert!(f.iter().any(|(k, v)| k == "route" && v == "/athena/schedule.html"));
-        assert!(page_fields(&p, Some("schedule")).contains(&("hasDomain".to_string(), "schedule".to_string())));
+        assert!(page_fields(&p, Some("schedule"), "chorus").contains(&("hasDomain".to_string(), "schedule".to_string())));
         let e = pages::EndpointRow { path: "src/routes.ts".into(), route_path: "/v1/schedule/scheduledjobs".into(), http_method: "GET".into() };
-        let f = endpoint_fields(&e, None);
+        let f = endpoint_fields(&e, None, "chorus");
         assert!(!f.iter().any(|(k, _)| k == "hasDomain"));
         assert!(f.iter().any(|(k, v)| k == "httpMethod" && v == "GET"));
-        assert_ne!(f[0].1, endpoint_fields(&pages::EndpointRow { http_method: "POST".into(), ..e.clone() }, None)[0].1, "method and path together name the row");
+        assert_ne!(f[0].1, endpoint_fields(&pages::EndpointRow { http_method: "POST".into(), ..e.clone() }, None, "chorus")[0].1, "method and path together name the row");
     }
 
     #[test]

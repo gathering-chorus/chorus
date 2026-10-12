@@ -48,11 +48,29 @@ fn edges_name_only_repositories_the_store_holds_and_the_rest_are_reported() {
 #[test]
 fn a_new_repository_is_created_and_a_stored_one_is_replaced() {
     let f = vec![("repoRemote".to_string(), "r".to_string())];
-    let w = repository_write("/code/repositories", "jeff-bridwell-personal-site", &f, false);
+    let w = repository_write("/code/repositories", "jeff-bridwell-personal-site", &f, false).unwrap();
     assert_eq!((w.method, w.path.as_str()), ("POST", "/code/repositories/batch"));
     assert_eq!(w.rows[0][0], ("name".to_string(), "jeff-bridwell-personal-site".to_string()));
-    let w = repository_write("/code/repositories", "chorus", &f, true);
+    let w = repository_write("/code/repositories", "chorus", &f, true).unwrap();
     assert_eq!((w.method, w.path.as_str()), ("PUT", "/code/repositories/chorus"));
+}
+
+#[test]
+fn negative_proof_a_stored_repository_with_nothing_to_state_is_not_written() {
+    // shared-security: no remote, no edges — an empty replace is a 422 at the door
+    assert!(repository_write("/code/repositories", "shared-security", &[], true).is_none());
+    // a new one is still created, so its units have a row to name
+    assert!(repository_write("/code/repositories", "shared-security", &[], false).is_some());
+}
+
+#[test]
+fn a_file_row_that_does_not_name_its_repository_is_restated() {
+    use chorus_crawl::code_run::file_needs_repo;
+    let door_unset = vec![("inRepository".to_string(), String::new())];
+    assert!(file_needs_repo(&door_unset, "chorus"), "the 6,570 rows as the door returned them");
+    assert!(file_needs_repo(&vec![], "chorus"));
+    assert!(!file_needs_repo(&vec![("inRepository".to_string(), "repository-chorus".to_string())], "chorus"));
+    assert!(file_needs_repo(&vec![("inRepository".to_string(), "repository-chorus".to_string())], "wine-diary"));
 }
 
 #[test]
