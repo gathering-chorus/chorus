@@ -4220,8 +4220,12 @@ mod deadline_4030 {
     /// a small margin. Under `cmd.output()` this test would never return.
     #[test]
     fn a_unit_past_its_cap_is_killed_with_its_whole_process_group() {
+        // #4030 reopen (Kade, 2026-10-12): a duration no other run uses. A plain
+        // "sleep 600" matched another werk-test run's sleeps machine-wide, so two
+        // overlapping runs read each other's live children as survivors.
+        let nonce = format!("{}.{}", 600, std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).unwrap().subsec_nanos());
         let mut cmd = std::process::Command::new("bash");
-        cmd.args(["-c", "sleep 600 & sleep 600 & wait"])
+        cmd.args(["-c", &format!("sleep {nonce} & sleep {nonce} & wait")])
             .stdout(std::process::Stdio::null())
             .stderr(std::process::Stdio::null());
         let started = std::time::Instant::now();
@@ -4232,7 +4236,7 @@ mod deadline_4030 {
         // the forked sleeps are gone too — a cap that only kills the leader
         // leaves jest workers pegging the box (the 2026-08-29 11:15 shape)
         std::thread::sleep(std::time::Duration::from_millis(300));
-        let left = std::process::Command::new("pgrep").args(["-f", "sleep 600"]).output().expect("pgrep");
+        let left = std::process::Command::new("pgrep").args(["-f", &format!("sleep {nonce}")]).output().expect("pgrep");
         assert!(
             String::from_utf8_lossy(&left.stdout).trim().is_empty(),
             "process group survivors: {}", String::from_utf8_lossy(&left.stdout)
