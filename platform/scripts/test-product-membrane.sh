@@ -96,6 +96,19 @@ probe_gathering() {
 }
 
 STOPPED=()
+RESTORE_FAILED=()
+# #4004 reopen — a bootout returns before launchd has unloaded the agent. The
+# 2026-10-12 08:07 run bootstrapped com.chorus.session-watcher while it was
+# still unloading, three times in three seconds, and left it down. Wait for the
+# label to leave the domain first, up to this many seconds.
+MEMBRANE_UNLOAD_WAIT="${MEMBRANE_UNLOAD_WAIT:-30}"
+wait_unloaded() {
+  local label="$1" waited=0
+  while launchctl print "gui/$UID_N/$label" >/dev/null 2>&1; do
+    [ "$waited" -lt "$MEMBRANE_UNLOAD_WAIT" ] || return 1
+    sleep 1; waited=$((waited + 1))
+  done
+}
 restore_chorus() {
   # 2026-07-22 run finding: bootstrap right after bootout can fail transiently
   # (launchd I/O error) — the first run left com.chorus.hooks unloaded, which is
@@ -104,6 +117,7 @@ restore_chorus() {
   # (the label no longer exists in the domain), so it is not a fallback.
   local failed=()
   for label in "${STOPPED[@]+"${STOPPED[@]}"}"; do
+    wait_unloaded "$label" || true
     local ok=1
     for _try in 1 2 3; do
       if launchctl bootstrap "gui/$UID_N" "$HOME/Library/LaunchAgents/$label.plist" 2>/dev/null; then
@@ -113,6 +127,12 @@ restore_chorus() {
     done
     [ "$ok" -eq 0 ] || failed+=("$label")
   done
+  # a bootstrap that returned 0 is not proof: every stopped agent is checked by name
+  local running; running=$(chorus_running)
+  for label in "${STOPPED[@]+"${STOPPED[@]}"}"; do
+    grep -qxF "$label" <<<"$running" || [[ " ${failed[*]-} " == *" $label "* ]] || failed+=("$label")
+  done
+  RESTORE_FAILED=("${failed[@]+"${failed[@]}"}")
   echo "[restore] chorus services restarted: $(( ${#STOPPED[@]} - ${#failed[@]} ))/${#STOPPED[@]}" | tee -a "$RESULTS"
   if [ "${#failed[@]}" -gt 0 ]; then
     echo "[restore] STILL DOWN — fix by hand NOW (hooks down = team lockout): ${failed[*]}" | tee -a "$RESULTS"
@@ -167,6 +187,8 @@ main() {
   sleep 2
   echo "[verify] com.chorus.* running after restore: $(chorus_running | wc -l | tr -d ' ')" | tee -a "$RESULTS"
   echo "results: $RESULTS"
+  # a membrane proven while an agent stayed down is still a failed run
+  [ "${#RESTORE_FAILED[@]}" -eq 0 ] || rc=4
   exit "$rc"
 }
 
