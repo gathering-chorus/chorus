@@ -13,7 +13,8 @@
 #   FROZEN_LINES history:
 #     9975  2026-10-10  #4490 baseline (after #4475 PATCH and #4482's link-removal fix)
 #     9977  2026-10-11  #4412 the door asks the model for person sign-in clients (with_person_clients, 2 lines)
-FROZEN_LINES=9977
+#     9983  2026-10-12  #4485 Machine rows mint bare IRIs like Product/Domain (entity_subject: 3 comment, 3 test lines)
+FROZEN_LINES=9983
 set -u
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 count() { cat "$1"/*.rs 2>/dev/null | wc -l | tr -d ' '; }
