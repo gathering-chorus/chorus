@@ -38,3 +38,12 @@ setup() {
   [ "$status" -ne 0 ]
   printf '%s\n' "$output" | grep -q '^FAIL two sign-ins from one browser leave one open session'
 }
+
+@test "every branch of a sign-in names its step in the trace: started, returned, signed-in, failed, abandoned, logout" {
+  for step in login.started login.returned login.signed-in login.abandoned logout; do
+    grep -q "login_trace(\"$step\"" "$GUARD" || { echo "no trace for $step"; return 1; }
+  done
+  for why in unknown-or-expired-state token-exchange no-webid; do
+    grep -q "login_trace(\"login.failed\", state, reason=\"$why\"" "$GUARD" || { echo "no failed trace for $why"; return 1; }
+  done
+}

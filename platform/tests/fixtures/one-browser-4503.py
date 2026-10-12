@@ -82,4 +82,17 @@ with contextlib.redirect_stderr(buf):
 line = buf.getvalue().strip()
 check("the access line carries a UTC time", re.match(r"^\[guard\] \d{4}-\d\d-\d\dT\d\d:\d\d:\d\dZ 127\.0\.0\.1 anon ", line) is not None)
 check("and the client's user agent, quotes made safe", line.endswith("ua=\"Mozilla/5.0 'quoted'\""))
+
+# --- one sign-in attempt reads as one trace (#4503, Jeff 13:06 "strong trace on our login flow") ---
+STATE = "AbCdEfGhIjKlMnOpQrStUv"
+buf = io.StringIO()
+with contextlib.redirect_stderr(buf):
+    g["login_trace"]("login.started", STATE, next="/clearing", ua="Mozilla 5.0")
+    g["login_trace"]("login.returned", STATE, after_secs=3)
+    g["login_trace"]("login.signed-in", STATE, webid="jeff", sid="jeff-browser-1")
+lines = buf.getvalue().strip().splitlines()
+check("every step of one attempt carries the same trace id", len(lines) == 3 and all(" trace=AbCdEfGhIjKl " in l for l in lines))
+check("NEGATIVE: the trace id is never the whole OIDC state", all(STATE not in l for l in lines))
+check("a step line names its step and a UTC time", re.match(r"^\[login\] \d{4}-\d\d-\d\dT\d\d:\d\d:\d\dZ login\.started ", lines[0]) is not None)
+check("a field with spaces stays one field", "ua=Mozilla_5.0" in lines[0])
 sys.exit(1 if FAILS else 0)

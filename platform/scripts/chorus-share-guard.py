@@ -738,6 +738,17 @@ def open_person_session(webid, tok):
         return None
 
 
+def login_trace(step, state, **fields):
+    """#4503 — one sign-in attempt, traced end to end (Jeff 2026-10-12: "its very
+    important to have strong trace on our login flow"). Every step of one attempt
+    carries the same trace id (the start of its OIDC state, never the whole value),
+    so started → provider → callback → signed-in, or where it stopped, reads as one
+    story. Never logs a code, a token or a secret."""
+    when = time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime())
+    extra = " ".join(f"{k}={str(v).replace(' ', '_')[:120]}" for k, v in fields.items())
+    print(f"[login] {when} {step} trace={(state or '-')[:12]} {extra}".rstrip(), file=sys.stderr)
+
+
 def sign_in_session(old, webid, tok):
     """#4503 — one browser, one session. A sign-in that carries this browser's
     earlier cookie for the same person closes that Session first, so signing in
@@ -927,10 +938,13 @@ Nothing is wrong with your account. Try again in a moment.</p>""")
             challenge = b64u(hashlib.sha256(verifier.encode()).digest())
             state = b64u(secrets.token_bytes(16))
             PENDING[state] = (verifier, args.get("next", ["/"])[0], time.time())
-            # forget stale attempts rather than growing without bound
+            login_trace("login.started", state, next=args.get("next", ["/"])[0], ua=self.headers.get("User-Agent", "")[:60])
+            # forget stale attempts rather than growing without bound, and say so:
+            # an attempt that never came back is the trace's most important line
             for k, v in list(PENDING.items()):
                 if time.time() - v[2] > 600:
                     PENDING.pop(k, None)
+                    login_trace("login.abandoned", k, after_secs=int(time.time() - v[2]), reason="the identity provider never sent it back")
             q = urllib.parse.urlencode({
                 "response_type": "code",
                 "client_id": client["client_id"],
@@ -953,7 +967,9 @@ Nothing is wrong with your account. Try again in a moment.</p>""")
             pending = PENDING.pop(state, None)
             if not pending:
                 # unknown state = not a sign-in we started (or a replay)
+                login_trace("login.failed", state, reason="unknown-or-expired-state")
                 return self._deny(400, "sign-in expired or not recognised\n")
+            login_trace("login.returned", state, after_secs=int(time.time() - pending[2]))
             verifier, return_path, _ = pending
             code = args.get("code", [""])[0]
             # #4412 — a public client (Client ID Document): PKCE proves the
@@ -970,14 +986,17 @@ Nothing is wrong with your account. Try again in a moment.</p>""")
                     "Content-Type": "application/x-www-form-urlencoded",
                 }) as r:
                     tok = json.load(r)
-            except Exception:
+            except Exception as e:
+                login_trace("login.failed", state, reason="token-exchange", error=type(e).__name__)
                 return self._deny(502, "could not complete sign-in with the identity provider\n")
             webid = webid_from_id_token(tok.get("id_token", ""))
             if not webid:
+                login_trace("login.failed", state, reason="no-webid")
                 return self._deny(502, "identity provider returned no WebID\n")
             # NOTE: the allow-set is NOT consulted here. Signing in always
             # succeeds; reach is decided per request, so revocation is immediate.
             sid = sign_in_session(self._session_claims(), webid, tok)
+            login_trace("login.signed-in", state, webid=webid.split("/")[3] if webid.count("/") > 3 else webid, sid=sid or "none-written")
             cookie = self._session_cookie(sign_session(webid, COOKIE_KEY, sid=sid))
             # #3791 — validated, so a cross-host return works and an attacker's
             # host does not. The old check accepted any string starting with "/"
@@ -1045,6 +1064,7 @@ Nothing is wrong with your account. Try again in a moment.</p>""")
             return True
 
         if path == AUTH_PREFIX + "logout":
+            login_trace("logout", "", signed_in=bool(self._session_claims()), ua=self.headers.get("User-Agent", "")[:60], referer=self.headers.get("Referer", "")[:80])
             close_person_session(self._session_claims())
             # Cleared at the SAME scope it was minted at — a cookie deleted at a
             # narrower scope than it was set leaves the original in place, so
