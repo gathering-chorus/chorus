@@ -38,11 +38,13 @@ Feature: Clearing access paths
     When Jeff enters the name "jeff" via the public URL with token auth
     Then the door does not admit the name
 
+  # #4412 — the LAN is not an identity: a LAN page load goes to the public
+  # Clearing, where the door's cookie reaches. A signed-in caller still talks
+  # to the room over the LAN.
   @lan @iphone
   Scenario: Jeff via LAN URL on iPhone wifi
     When Jeff loads the LAN URL without auth
-    Then the page returns 200
-    And the page contains "The Clearing"
+    Then the page redirects to the public Clearing
     When Jeff enters the name "jeff" via LAN
     Then the name is accepted
     When Jeff sends a message "lan-probe" via the API from LAN

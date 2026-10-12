@@ -22,22 +22,51 @@ export function isTunneled(headers: Record<string, unknown>): boolean {
   return Boolean(headers['cf-connecting-ip'] || headers['cf-ray']);
 }
 
-/** Loopback + Jeff's home LAN — the address ranges that skip the token. */
+/**
+ * Loopback only — the box's own agents and tools. #4412: the home LAN used to
+ * be here too, which let any browser on the network in with no sign-in. Being
+ * on the home network is not an identity (Jeff, 2026-10-10).
+ */
 export function isLocalAddress(ip: string): boolean {
-  if (!ip) return false;
-  if (ip === '127.0.0.1' || ip === '::1' || ip === '::ffff:127.0.0.1') return true;
-  if (ip.startsWith('192.168.86.') || ip.startsWith('::ffff:192.168.86.')) return true;
-  return false;
+  return ip === '127.0.0.1' || ip === '::1' || ip === '::ffff:127.0.0.1';
 }
 
 /**
  * The single locality decision for both transports. LOCAL (token-exempt) only
- * when the connection is NOT tunneled AND its source address is local. A
- * tunneled request is never local even from 127.0.0.1 — that is the whole bug.
+ * when the connection is NOT tunneled AND it comes from loopback. A tunneled
+ * request is never local even from 127.0.0.1 — that is the whole #3669 bug.
  */
 export function isLocalConnection(headers: Record<string, unknown>, ip: string): boolean {
   if (isTunneled(headers)) return false;
   return isLocalAddress(ip);
+}
+
+/** The door's cookie is scoped to this parent domain; only these Hosts can carry it. */
+const COOKIE_DOMAIN = 'lightlifeurbangardens.com';
+
+/** True when the browser's Host can receive the door's parent-domain cookie. */
+export function hostCarriesDoorCookie(host: string): boolean {
+  const name = host.trim().toLowerCase().replace(/:\d+$/, '');
+  return name === COOKIE_DOMAIN || name.endsWith(`.${COOKIE_DOMAIN}`);
+}
+
+/**
+ * #4412 — a home-network browser (Host an IP or a .local name) can never carry
+ * the door's cookie, so it could never sign in here. Send it to the public
+ * Clearing with the same path, where the door's cookie reaches. Returns null
+ * for loopback, the tunnel, and any Host that can carry the cookie.
+ */
+export function lanRedirect(
+  headers: Record<string, unknown>,
+  ip: string,
+  originalUrl: string,
+  publicUrl: string,
+): string | null {
+  if (isTunneled(headers) || isLocalAddress(ip)) return null;
+  if (hostCarriesDoorCookie(String(headers.host || ''))) return null;
+  const safe = originalUrl.startsWith('/') && !originalUrl.startsWith('//') && !originalUrl.startsWith('/\\')
+    ? originalUrl : '/';
+  return `${publicUrl.replace(/\/+$/, '')}${safe}`;
 }
 
 /**

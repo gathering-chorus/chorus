@@ -24,8 +24,7 @@ import { decideBind } from './room-bind';
 import { startRoom } from './buzz-room-wiring';
 import { ClearingChat } from './chat';
 import { lanAddress, bonjourHost, startupLanLines, detectIpDrift } from './lan-url';
-import { lanOrigins, callbackFor, lanAccess } from './lan-sign-in';
-import { isLocalConnection, isTunneled } from './connection-auth';
+import { isLocalConnection, lanRedirect } from './connection-auth';
 import { isWebIdAllowed, principalForWebId, primeAllowSetGraph, personNames, normalizeSpeaker } from './solid-auth';
 
 // #4220 — ask the model where Principal rows live before the first sign-in is
@@ -37,13 +36,6 @@ import { isWebIdAllowed, principalForWebId, primeAllowSetGraph, personNames, nor
 // gone, because a startup note is not worth a red run.
 primeAllowSetGraph().catch(() => {});
 import { resolveSenderIdentity } from './sender-identity';
-import {
-  makePkce, makeState, signCookie, verifyCookie, safeReturnPath, buildAuthUrl,
-  exchangeCode, refreshSignIn, type OidcConfig,
-} from './solid-oidc';
-import {
-  openPersonSession, touchPersonSession, closePersonSession, getRecord, SIGN_IN_LASTS_MS, type PersonSessionDeps,
-} from './person-session';
 import { gateDecision } from './server-auth';
 import { changePassword } from './account';
 
@@ -121,80 +113,20 @@ try {
 }
 console.log(`[clearing] remote access token: ${BRIDGE_TOKEN}`);
 
-// #3669 lane 3 — human browser login (Solid-OIDC). Persistent HMAC secret for the
-// signed login/session cookies (own secret, not BRIDGE_TOKEN — different lifetime
-// and blast radius). 0600, generated once.
-const SESSION_SECRET_FILE = `${CHORUS_HOME}/clearing-session-secret`;
-let SESSION_SECRET: string;
-try {
-  SESSION_SECRET = require('fs').readFileSync(SESSION_SECRET_FILE, 'utf-8').trim();
-} catch {
-  SESSION_SECRET = crypto.randomBytes(32).toString('hex');
-  require('fs').mkdirSync(CHORUS_HOME, { recursive: true });
-  require('fs').writeFileSync(SESSION_SECRET_FILE, SESSION_SECRET, { mode: 0o600 });
-}
-// The public issuer is browser-facing; the token exchange runs LOCALLY with the
-// Host-override (hardening 3) so it never hairpins Cloudflare or dies with the LAN.
-const CSS_PUBLIC_ISSUER = process.env.CSS_ISSUER || 'https://id.lightlifeurbangardens.com';
-const CSS_LOCAL_TOKEN = process.env.CSS_LOCAL_TOKEN || 'http://localhost:3001/.oidc/token';
-const CSS_TOKEN_HOST = new URL(CSS_PUBLIC_ISSUER).host;
-const CLIENT_ID = 'https://clearing.lightlifeurbangardens.com/clientid.jsonld';
-// #3669 — the flag Wren named the finish line: default OFF ships the login redirect
-// as the default tunneled experience with the bridge token still accepted as the
-// migration fallback; flip ON to retire the token (login required, token refused).
+// #4412 — one sign-in for Chorus (Jeff, 2026-10-12: "only 1 login / sign in
+// flow", "its for chorus not a page"). The door (the share guard, /_auth/)
+// signs a person in; the Clearing only trusts its cookie. It has no sign-in
+// of its own, no cookie of its own, and no fallback when the door is unset.
 const REQUIRE_DPOP = process.env.CHORUS_CLEARING_REQUIRE_DPOP === '1';
-// #3669 (Wren) — server-side session lifetime. The signed cookie is otherwise
-// valid forever on signature alone (maxAge is only browser-advisory), so a
-// captured cookie would never die. The gate enforces this against the payload iat.
-const SESSION_MAX_AGE_MS = SIGN_IN_LASTS_MS; // #4412 — one number: the cookie and his Session row expire together
+const SIGN_OUT_URL = process.env.CHORUS_SIGNOUT_URL || 'https://chorus.lightlifeurbangardens.com/_auth/logout';
+// A home-network browser is sent here: its Host can carry the door's cookie.
+const CLEARING_PUBLIC_URL = process.env.CLEARING_PUBLIC_URL || 'https://clearing.lightlifeurbangardens.com';
 
-/** Per-request OIDC config — redirect_uri matches the origin the browser is on. */
-// #4412 — Jeff's browser Session row: written as him, kept in one 0600 file.
-const PERSON_SESSIONS_FILE = process.env.CLEARING_PERSON_SESSIONS || `${CHORUS_HOME}/clearing-person-sessions.json`;
-function personDeps(req: Request): PersonSessionDeps {
-  return {
-    api: process.env.ATHENA_MAKE_URL || 'http://localhost:3360',
-    fetchImpl: fetch,
-    now: Date.now,
-    storePath: PERSON_SESSIONS_FILE,
-    refresh: (rt) => refreshSignIn(oidcCfg(req), rt),
-    log: (line) => console.log(line),
-  };
-}
-
-type SessionCookie = { webid?: string; iat?: number; psk?: string };
-
-/** #4412 — the session cookie; an expired one closes his row as it is seen. */
-function readSessionCookie(req: Request): { webid: string; psk?: string } | null {
-  const s = verifyCookie<SessionCookie>(req.cookies?.clearing_session, SESSION_SECRET, 'session');
-  if (!s?.webid) return null;
-  const fresh = !!s.iat && Date.now() - s.iat <= SESSION_MAX_AGE_MS;
-  if (!fresh) {
-    if (s.psk) void closePersonSession(personDeps(req), s.psk).catch(() => {});
-    return null;
-  }
-  // #4412 — a cookie with no Session row behind it (signed in before #4412,
-  // or the row write failed) is not a sign-in roles can see. Treat it as
-  // signed out so the next visit signs in again and writes the row; otherwise
-  // "sign in at the Clearing" lands on a page that says he already is.
-  if (!s.psk || !getRecord(personDeps(req), s.psk)) return null;
-  return { webid: s.webid, psk: s.psk };
-}
-
-function oidcCfg(req: Request): OidcConfig {
-  const onTunnel = isTunneled(req.headers);
-  // #4412 — the callback follows the Host the browser used: on a phone over
-  // the LAN, localhost is the phone, so its sign-in could never come back.
-  const redirectUri = callbackFor(req.headers.host, onTunnel, LAN_ORIGINS, PORT,
-    'https://clearing.lightlifeurbangardens.com/auth/callback');
-  return {
-    issuer: CSS_PUBLIC_ISSUER,
-    clientId: CLIENT_ID,
-    redirectUri,
-    scope: 'openid webid offline_access',
-    tokenEndpoint: CSS_LOCAL_TOKEN,
-    tokenHost: CSS_TOKEN_HOST,
-  };
+/** Open-redirect guard: only a same-origin path survives, anything else is '/'. */
+export function safeReturnPath(raw: string | undefined): string {
+  if (!raw || typeof raw !== 'string') return '/';
+  if (!raw.startsWith('/') || raw.startsWith('//') || raw.startsWith('/\\')) return '/';
+  return raw;
 }
 
 // #3366: LAN URLs derived at boot, never hardcoded — DHCP moved this machine
@@ -228,13 +160,6 @@ const LAN_IP_FILE = `${CHORUS_HOME}/clearing-lan-ip`;
     try { require('fs').writeFileSync(LAN_IP_FILE, currentLanIp); } catch { /* non-fatal */ }
   }
 }
-
-// #4412 — every LAN origin a browser may sign in from, derived at boot like
-// the URLs above; the client document lists each one's callback.
-const LAN_ORIGINS = lanOrigins(LOCAL_HOST_NAME, lanAddress(), PORT);
-// #4412 — a LAN browser signs in like anywhere else (Jeff, 2026-10-10). Ships
-// OFF; flipped on after one phone sign-in over the LAN is proven.
-const LAN_SIGN_IN = process.env.CHORUS_CLEARING_LAN_SIGNIN === '1';
 
 const app = express();
 const server = createServer(app);
@@ -296,9 +221,9 @@ export function stripBase(url: string): { url: string; base: string } {
 }
 
 /**
- * Root-absolute links in a page ('/auth/login', '/account', fetch('/api/...'))
+ * Root-absolute links in a page ('/account', '/logout', fetch('/api/...'))
  * resolve against the apex, not the mount, so under /clearing each one lands on
- * the apex and 404s ("Cannot GET /auth/login", Jeff 2026-10-11). Prefix them with
+ * the apex and 404s (Jeff 2026-10-11, the account page's button). Prefix them with
  * the base the page was served under. Protocol-relative '//' URLs are left alone.
  */
 export function withBase(html: string, base: string): string {
@@ -374,7 +299,7 @@ app.use((req: Request, _res, next) => {
   next();
 });
 
-// Auth middleware — local/LAN requests pass, remote requests need token (#1719).
+// Auth middleware — loopback requests pass, everything else needs the door's session or the token (#1719, #4412).
 // #3669 — the tunnel + address logic now lives in one classifier shared with the
 // Socket.IO gate below, so the two transports can never drift again (the WS gate
 // had drifted: it skipped the cf-header tunnel check and was bypassable).
@@ -403,7 +328,7 @@ async function handleAuthenticated(req: Request, res: Response, next: NextFuncti
   if (req.query.token && !req.cookies?.bridge_token) {
     res.cookie('bridge_token', BRIDGE_TOKEN, TOKEN_COOKIE_OPTS);
   }
-  // #3743 — a CSS-authenticated session already told us who this is; the name
+  // #3743 — a door-authenticated session already told us who this is; the name
   // page fires ONLY for token/guest flows with no identity at all.
   const hasName = req.cookies?.bridge_name;
   if (!hasName && req.path !== '/set-name' && req.path !== '/bridge-og.jpg'
@@ -422,31 +347,6 @@ function handleLoginPost(req: Request, res: Response) {
   }
   return res.status(401).send(loginPage('Wrong token'));
 }
-
-// #3669 — the Solid-OIDC public client-id document. CSS dereferences this URL
-// (client_id) UNAUTHENTICATED during the auth-code flow, so it must be served
-// before the token gate. Content is Wren's verified draft, verbatim; the
-// client_id/redirect_uris are the tunnel origin + localhost. token_endpoint_auth
-// _method:none = public client (PKCE, no client secret).
-const CLIENTID_DOC = JSON.stringify({
-  '@context': 'https://www.w3.org/ns/solid/oidc-context.jsonld',
-  client_id: 'https://clearing.lightlifeurbangardens.com/clientid.jsonld',
-  client_name: 'The Clearing',
-  redirect_uris: [
-    'http://localhost:3470/auth/callback',
-    'https://clearing.lightlifeurbangardens.com/auth/callback',
-    ...LAN_ORIGINS.map((o) => `${o}/auth/callback`),
-  ],
-  post_logout_redirect_uris: [
-    'http://localhost:3470/',
-    'https://clearing.lightlifeurbangardens.com/',
-    ...LAN_ORIGINS.map((o) => `${o}/`),
-  ],
-  grant_types: ['authorization_code', 'refresh_token'],
-  response_types: ['code'],
-  scope: 'openid webid offline_access',
-  token_endpoint_auth_method: 'none',
-}, null, 2);
 
 // #4500 — keep his shared-door sign-in alive while he uses the Clearing.
 const SHARE_GUARD_URL = process.env.SHARE_GUARD_URL || 'http://127.0.0.1:8899';
@@ -467,38 +367,32 @@ app.use((req, res, next) => {
 });
 
 /**
- * #3669 — routes that must answer BEFORE any auth check: the OG image, the
- * public client-id doc CSS fetches during OIDC, and the two login legs (the
- * user has no session yet). Returns a handler when the path is pre-auth.
+ * #3669 — routes that must answer BEFORE any auth check: the OG image (link
+ * previews fetch it unsigned). #4412 — the Clearing's own sign-in legs and its
+ * OIDC client document are gone; the door signs people in.
  */
 function preAuthRoute(
-  req: Request, res: Response, next: NextFunction,
+  req: Request, _res: Response, next: NextFunction,
 ): (() => unknown) | null {
   if (req.path === '/bridge-og.jpg') return () => next();
-  if (req.path === '/clientid.jsonld') {
-    return () => { res.type('application/ld+json').send(CLIENTID_DOC); };
-  }
-  if (req.path === '/auth/login') return () => handleAuthLogin(req, res);
-  if (req.path === '/auth/callback') return () => handleAuthCallback(req, res);
-  if (req.path === '/auth/signout') return () => handleSignOut(req, res);
   return null;
 }
 
 /**
- * #3669 — "authenticated" means EITHER the CSS session cookie (the human's
- * primary tunneled auth — signed typ:session, WebID re-checked against the live
- * allow-set every request so a revoked identity loses access within one TTL) OR
+ * #3669, #4412 — "authenticated" means EITHER the door's session cookie
+ * (chorus_share_session — WebID re-checked against the live allow-set every
+ * request so a revoked identity loses access within one TTL) OR
  * the static bridge token (migration fallback, retired when REQUIRE_DPOP flips).
  */
 /**
- * #3743 — the Principal behind the request's verified CSS session, or null.
+ * #3743 — the Principal behind the request's verified door session, or null.
  * The login already established who this is; asking again (the name page) or
  * trusting a hand-set cookie over it is the hole Mark fell through.
  */
 // #3966 — a message WRITE requires a caller identity. Two admitted paths,
 // mirroring the existing #3669 gate: (1) the BRIDGE_TOKEN, which server-side
 // callers (clearing-probe, e2e-responder, roles) present via query/cookie/
-// Bearer; (2) a CSS-authenticated browser session. Anything else is anonymous
+// Bearer; (2) a door-authenticated browser session. Anything else is anonymous
 // and refused. Pure-ish + exported for the negative-proof test.
 // The pure decision, extracted so the negative proof (#3734) can exercise every
 // state without the module-level token or an async WebID lookup: a presented
@@ -526,14 +420,10 @@ async function sessionPrincipal(req: Request): Promise<{ id: string; name: strin
   // #3775 — a visitor arriving on the guard's session is the same person as one
   // arriving on the Clearing's own: message attribution and jeffAuthority
   // (#3743) resolve identically, because both paths end at WebID → Principal.
+  // #4412 — the door's cookie is the only session there is.
   const guardWebId = shareSessionWebId(req);
-  if (guardWebId) {
-    const p = await principalForWebId(guardWebId, Date.now());
-    if (p) return p;
-  }
-  const session = readSessionCookie(req);
-  if (!session) return null;
-  return principalForWebId(session.webid, Date.now());
+  if (!guardWebId) return null;
+  return principalForWebId(guardWebId, Date.now());
 }
 
 /**
@@ -560,25 +450,8 @@ async function isAuthed(req: Request): Promise<boolean> {
   const guardWebId = shareSessionWebId(req);
   if (guardWebId && (await isWebIdAllowed(guardWebId, Date.now()))) return true;
 
-  const session = readSessionCookie(req);
-  const sessionAuthed = !!(session && (await isWebIdAllowed(session.webid, Date.now())));
-  // #4412 — he is here: keep his Session's lastSeenAt current (≤ once a minute).
-  if (session && sessionAuthed && session.psk) void touchPersonSession(personDeps(req), session.psk).catch(() => {});
   // BRIDGE_TOKEN is a long random value; tunnel auth gate, migration fallback only.
-  const tokenAuthed = !REQUIRE_DPOP && extractToken(req) === BRIDGE_TOKEN;
-  return sessionAuthed || tokenAuthed;
-}
-
-/** #4412 — answers a LAN request that must sign in first; true when it did. */
-async function lanRefused(req: Request, res: Response, local: boolean): Promise<boolean> {
-  if (!local || !LAN_SIGN_IN) return false;
-  const lan = lanAccess({
-    flagOn: LAN_SIGN_IN, local, ip: req.ip || req.socket.remoteAddress || '',
-    method: req.method, accept: req.headers.accept, authed: await isAuthed(req),
-  });
-  if (lan === 'sign-in') res.status(401).send(interstitialPage(safeReturnPath(req.originalUrl)));
-  else if (lan === 'refuse') res.status(401).json({ error: 'sign-in required', signIn: '/auth/login' });
-  return lan !== 'pass';
+  return !REQUIRE_DPOP && extractToken(req) === BRIDGE_TOKEN;
 }
 
 async function gate(req: Request, res: Response, next: NextFunction): Promise<unknown> {
@@ -586,25 +459,26 @@ async function gate(req: Request, res: Response, next: NextFunction): Promise<un
   if (preAuth) return preAuth();
 
   const local = isLocal(req);
-  // #4412 — on the LAN a person's page load signs in first (flagged, see LAN_SIGN_IN).
-  if (await lanRefused(req, res, local)) return;
+  // #4412 — a home-network browser (Host an IP or a .local name) can never
+  // carry the door's parent-domain cookie, so it is sent to the public
+  // Clearing, same path, where it can. Before #4412 the LAN counted as local
+  // and every request from it passed with no sign-in at all.
+  const authed = await isAuthed(req);
+  const toPublic = authed ? null : lanRedirect(req.headers, req.ip || req.socket.remoteAddress || '', req.originalUrl, CLEARING_PUBLIC_URL);
+  if (toPublic) {
+    if (req.method === 'GET' && !req.path.startsWith('/api/')) return res.redirect(toPublic);
+    return res.status(401).json({ error: 'sign-in required', signIn: toPublic });
+  }
   // Both auth paths feed the #3667 gateDecision policy, which owns the
   // admin-forbid + read-pair GET-only rules — so those survive the human-login
   // path unchanged.
-  const outcome = gateDecision(req.path, req.method, local, await isAuthed(req));
+  const outcome = gateDecision(req.path, req.method, local, authed);
   if (outcome === 'forbid') return res.status(403).json({ error: 'forbidden' });
   if (outcome === 'pass') return local ? next() : handleAuthenticated(req, res, next);
 
   // auth-required — the migration token login POST still works until the flag flips.
   if (!REQUIRE_DPOP && req.path === '/login' && req.method === 'POST') return handleLoginPost(req, res);
-  // #3775 (DEC-2209 clause 1) — ONE sign-in surface for the system. When the
-  // common door exists (CHORUS_SIGNIN_URL, set once the guard cookie is
-  // parent-domain scoped per Silas's #3785 follow-on), the Clearing stops
-  // serving its own login and sends the visitor there, preserving where they
-  // were headed. Unset, the local interstitial survives as the fallback — the
-  // flag flips when the door's cookie actually reaches this host, not
-  // before (host-only cookies never cross; flipping early is an infinite loop
-  // wearing a login page).
+  // #3775 (DEC-2209 clause 1), #4412 — ONE sign-in for the system: the door.
   // #3795 — REFUSED IS NOT UNKNOWN. A session we cannot verify is NOBODY: send
   // them to the door. A session we CAN verify, for a person this app does not
   // admit, is a KNOWN PERSON TOLD NO: refuse, and never redirect. Bouncing them
@@ -618,97 +492,29 @@ async function gate(req: Request, res: Response, next: NextFunction): Promise<un
     return res.status(403).send(refusedPage(knownWebId));
   }
 
+  return sendToDoor(req, res);
+}
+
+/**
+ * #4412 — the only answer an unsigned visitor gets: the door, with where they
+ * were headed. With no door configured the answer is 503 naming that — never
+ * a sign-in of the Clearing's own (Jeff, 2026-10-12: "only 1 login").
+ */
+function sendToDoor(req: Request, res: Response): unknown {
   const commonDoor = process.env.CHORUS_SIGNIN_URL || '';
-  if (commonDoor && req.method === 'GET') {
-    // #3792 — the guard's parameter is `next`, NOT `return`: chorus-share-guard.py
-    // reads args.get("next") at :617 (stashing it against the OIDC state) and at
-    // :687 (rendering the sign-in page). #3775 shipped `return`, which the guard
-    // silently ignores — the visitor signs in and lands on the DOOR'S ROOT
-    // instead of the page they asked for. Read from the guard's source on the
-    // running host, because its prose contract and its code disagreed.
-    const ret = encodeURIComponent(`https://${req.headers.host || ''}${safeReturnPath(req.originalUrl)}`);
-    return res.redirect(`${commonDoor}?next=${ret}`);
+  // an API read is a fetch from a page, not a page load: it gets 401 + where to
+  // sign in, never a redirect to an HTML door it cannot follow (#4412 run 15)
+  if (req.method !== 'GET' || req.path.startsWith('/api/')) return res.status(401).json({ error: 'sign-in required', signIn: commonDoor || null });
+  if (!commonDoor) {
+    return res.status(503).send(authShell(
+      'The sign-in door isn’t configured, so nobody can sign in right now. The room itself is fine.', ''));
   }
-  res.status(401).send(interstitialPage(safeReturnPath(req.originalUrl)));
-}
-
-// #3669 — kick off CSS login: PKCE + CSRF state, stashed in a SIGNED short-lived
-// cookie (survives a Clearing restart mid-login), then redirect to CSS.
-function handleAuthLogin(req: Request, res: Response): void {
-  const cfg = oidcCfg(req);
-  const { verifier, challenge } = makePkce();
-  const state = makeState();
-  const returnPath = safeReturnPath((req.query.return as string) || '/');
-  // #3669 (Wren) — carry the redirect_uri in the signed cookie so the exchange
-  // presents the EXACT value the auth request used; re-deriving it on the callback
-  // risks a random 400 if request classification drifts between the two legs.
-  const loginCookie = signCookie(
-    { typ: 'login', verifier, state, returnPath, redirectUri: cfg.redirectUri }, SESSION_SECRET);
-  res.cookie('clearing_login', loginCookie, {
-    httpOnly: true, sameSite: 'lax', secure: isTunneled(req.headers), maxAge: 10 * 60 * 1000, path: '/',
-  });
-  res.redirect(buildAuthUrl(cfg, state, challenge));
-}
-
-// #3669 — CSS redirect-back: verify state (CSRF), exchange the code locally for the
-// WebID, check the allow-set, issue the long-lived session cookie, land in the room.
-async function handleAuthCallback(req: Request, res: Response): Promise<void> {
-  const login = verifyCookie<{ verifier: string; state: string; returnPath: string; redirectUri: string }>(
-    req.cookies?.clearing_login, SESSION_SECRET, 'login');
-  if (req.query.error) {
-    res.status(400).send(errorPage('Login was cancelled or refused. Tap Sign in to try again.'));
-    return;
-  }
-  if (!login || !req.query.state || req.query.state !== login.state) {
-    res.status(400).send(errorPage('That login attempt expired or didn’t match — tap Sign in to try again.'));
-    return;
-  }
-  const code = String(req.query.code || '');
-  if (!code) {
-    res.status(400).send(errorPage('The login didn’t complete — tap Sign in to try again.'));
-    return;
-  }
-  // Exchange with the redirect_uri from the LOGIN leg (cookie), never re-derived.
-  const claims = await exchangeCode({ ...oidcCfg(req), redirectUri: login.redirectUri }, code, login.verifier);
-  const webid = claims?.webid ?? null;
-  if (!claims || !webid) {
-    res.status(502).send(errorPage('The identity server isn’t answering — the room is fine, try again in a minute.'));
-    return;
-  }
-  if (!(await isWebIdAllowed(webid, Date.now()))) {
-    res.status(403).send(errorPage('This identity isn’t on the team list.'));
-    return;
-  }
-  // #4412 — his browser Session row, written as him. A failed write is logged
-  // and never blocks the sign-in; login then refuses and names the fix.
-  const principal = await principalForWebId(webid, Date.now());
-  const psk = principal ? await openPersonSession(personDeps(req), principal.name, claims).catch(() => null) : null;
-  const sessionCookie = signCookie({ typ: 'session', webid, iat: Date.now(), ...(psk ? { psk } : {}) }, SESSION_SECRET);
-  res.cookie('clearing_session', sessionCookie, {
-    httpOnly: true, sameSite: 'lax', secure: isTunneled(req.headers), maxAge: 30 * 24 * 60 * 60 * 1000, path: '/',
-  });
-  res.clearCookie('clearing_login', { path: '/' });
-  res.redirect(login.returnPath);
-}
-
-// #4412 — sign-out: close his browser Session (its role bindings end with it)
-// and drop the session cookie. The CSS session itself is left alone.
-async function handleSignOut(req: Request, res: Response): Promise<void> {
-  const s = verifyCookie<SessionCookie>(req.cookies?.clearing_session, SESSION_SECRET, 'session');
-  const closed = s?.psk ? await closePersonSession(personDeps(req), s.psk).catch(() => false) : false;
-  res.clearCookie('clearing_session', { path: '/' });
-  res.send(authShell(
-    closed ? 'Signed out. Roles can no longer log in until you sign in again.' : 'Signed out.',
-    '<a href="/auth/login" style="text-decoration:none"><button type="button">Sign in</button></a>'));
-}
-
-// #3669 — the login interstitial: the DEFAULT unauth experience on the public arm.
-// One button → CSS login. NO token language anywhere (Wren spec item 1). Preserves
-// where the user was heading so the callback lands them in that room (spec item 2).
-function interstitialPage(returnPath: string): string {
-  const q = returnPath && returnPath !== '/' ? `?return=${encodeURIComponent(returnPath)}` : '';
-  return authShell('Where the team gathers.',
-    `<a href="/auth/login${q}" style="text-decoration:none"><button type="button">Sign in</button></a>`);
+  // #3792 — the guard's parameter is `next`, NOT `return`: chorus-share-guard.py
+  // reads args.get("next") (stashing it against the OIDC state) and renders the
+  // sign-in page with it. Read from the guard's source, because its prose
+  // contract and its code disagreed.
+  const ret = encodeURIComponent(`https://${req.headers.host || ''}${safeReturnPath(req.originalUrl)}`);
+  return res.redirect(`${commonDoor}?next=${ret}`);
 }
 
 // #3795 — the refusal page. Reached only by someone whose identity VERIFIED and
@@ -720,12 +526,12 @@ function refusedPage(webid: string): string {
   const short = webid.replace(/^https?:\/\//, '').replace(/\/profile\/card#me$/, '');
   return authShell(
     `You're signed in as ${short.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')}, but this identity isn't on the Clearing's list.`,
-    '<a href="/logout" style="text-decoration:none"><button type="button">Sign out</button></a>');
+    `<a href="${SIGN_OUT_URL}" style="text-decoration:none"><button type="button">Sign out</button></a>`);
 }
 
 // #3669 — errors are sentences, not codes (Wren spec item 4).
 function errorPage(message: string): string {
-  return authShell(message, '<a href="/auth/login" style="text-decoration:none"><button type="button">Sign in</button></a>');
+  return authShell(message, '<a href="/" style="text-decoration:none"><button type="button">Try again</button></a>');
 }
 
 // Shared dark shell for the interstitial + error pages — mirrors the namePage look.
@@ -833,6 +639,7 @@ app.get(['/', '/clearing'], async (req: Request, res) => {
   const basePath = (req as Request & { basePath?: string }).basePath ?? '';
   html = html.replace('</head>', `<script>window.BRIDGE_USER="${userName.replace(/"/g, '')}";`
     + `window.CLEARING_BASE="${basePath}";`
+    + `window.CHORUS_SIGNOUT_URL="${SIGN_OUT_URL.replace(/"/g, '')}";`
     + `window.CHORUS_WEBID="${sessionWebId.replace(/"/g, '')}";</script></head>`);
   // Root-absolute src/href in the markup (socket.io.js, room-key.js, /account,
   // /logout, /vendor/...) resolve against the apex, not the mount, so each one
@@ -873,10 +680,10 @@ app.use(express.static(path.join(__dirname, '../public'), {
 }));
 // Body parsers moved before auth middleware (#1782)
 
-// #3679 — the session WebID from the SIGNED session cookie (server-verified),
+// #3679 — the session WebID from the door's SIGNED cookie (server-verified),
 // never any client-sent value (Silas hardening 1). null when unauthenticated.
 function sessionWebid(req: Request): string | null {
-  return readSessionCookie(req)?.webid ?? null;
+  return shareSessionWebId(req);
 }
 
 // #3679 — the account page: shows the signed-in identity + a change-password form.
@@ -931,7 +738,7 @@ finally{b.disabled=false;b.textContent='Change password';}});
 // re-checked here defense-in-depth).
 app.get('/account', (req: Request, res) => {
   const webid = sessionWebid(req);
-  if (!webid) return res.status(401).send(interstitialPage('/account'));
+  if (!webid) return sendToDoor(req, res);
   res.setHeader('Cache-Control', 'no-store');
   return res.send(accountPage(webid));
 });
@@ -952,13 +759,12 @@ app.post('/api/account/password', async (req: Request, res) => {
   return res.status(status).json({ ok: false, message: result.message });
 });
 
-// Guest logout (#1719)
+// Guest logout (#1719). #4412 — drops the bridge-token cookies, then signs out
+// at the door: there is one sign-out for Chorus, as there is one sign-in.
 app.get('/logout', (_req, res) => {
   res.clearCookie('bridge_token');
   res.clearCookie('bridge_name');
-  res.send(`<!DOCTYPE html><html><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1">
-<style>body{background:#0d1117;color:#e6edf3;font-family:system-ui;display:flex;align-items:center;justify-content:center;height:100vh;margin:0}
-h2{font-size:1.2rem}</style></head><body><h2>Signed out. Close this tab.</h2></body></html>`);
+  res.redirect(SIGN_OUT_URL);
 });
 
 // Guest name registration (#1719)
@@ -1533,7 +1339,7 @@ app.get('/api/messages', (req, res) => {
 // POST a message (or a fake DECISION) into the room whose transcripts index
 // into team memory. The `from` field was self-asserted, exactly the assert-vs-
 // verify gap. Require a caller identity: the BRIDGE_TOKEN (server-side callers
-// — probe, responder, roles) or a CSS-authenticated session (browser users).
+// — probe, responder, roles) or a door-authenticated session (browser users).
 // Anonymous is refused. Read views stay open; this guards the WRITE only.
 app.post('/api/message', async (req, res) => {
   if (!(await isMessageWriteAuthed(req))) {
@@ -1570,32 +1376,21 @@ io.use((socket, next) => {
     .catch(() => next(new Error('Authentication required')));
 });
 
-// #3669 — the WS gate must accept the SAME auth the HTTP gate does. Before this it
-// only knew the bridge token, so a human logged in via CSS (clearing_session cookie,
-// no bridge token) connected the page but the live socket was refused → "connecting…"
-// forever + no data. Now: local → allow; else the CSS session cookie (verified WebID
-// in the allow-set, fresh) → allow; else the bridge token as migration fallback.
-/** The CSS session cookie leg of socket auth — same contract as the HTTP gate. */
+// #3669 — the WS gate must accept the SAME auth the HTTP gate does: local →
+// allow; else the door's session (verified WebID in the allow-set) → allow;
+// else the bridge token as migration fallback.
+/** The door-session leg of socket auth — same contract as the HTTP gate. */
 async function socketSessionAuthed(cookieHeader: string): Promise<boolean> {
-  // #3797 — the GUARD session first. Signing in at the Chorus door mints
-  // chorus_share_session; it never mints clearing_session. Before this, the
-  // socket matched only /clearing_session=/, so a person who signed in once
-  // loaded the page and then watched "connecting…" forever: authenticated for
-  // reading, anonymous for speaking. (Jeff, 2026-08-08.)
+  // #3797 — signing in at the Chorus door mints chorus_share_session; a socket
+  // that did not read it left a signed-in person watching "connecting…"
+  // forever (Jeff, 2026-08-08). #4412 — it is the only session there is.
   //
   // Identity is SHARED; admission stays LOCAL. Holding a guard cookie proves
   // WHO you are, never that this app admits you — so the WebID still goes
-  // through the Clearing's own isWebIdAllowed, exactly as the clearing_session
-  // leg below does. Widening this to "guard cookie means admitted" is the thing
-  // per-app authorization exists to prevent.
+  // through the Clearing's own isWebIdAllowed. Widening this to "guard cookie
+  // means admitted" is the thing per-app authorization exists to prevent.
   const guardWebId = shareSessionWebId({ headers: { cookie: cookieHeader } } as unknown as Request);
-  if (guardWebId && (await isWebIdAllowed(guardWebId, Date.now()))) return true;
-
-  const sessMatch = cookieHeader.match(/clearing_session=([^;]+)/);
-  if (!sessMatch) return false;
-  const sess = verifyCookie<{ webid?: string; iat?: number }>(decodeURIComponent(sessMatch[1]), SESSION_SECRET, 'session');
-  const fresh = !!sess?.iat && Date.now() - sess.iat <= SESSION_MAX_AGE_MS;
-  return !!(sess?.webid && fresh && (await isWebIdAllowed(sess.webid, Date.now())));
+  return !!(guardWebId && (await isWebIdAllowed(guardWebId, Date.now())));
 }
 
 /** The static bridge-token leg — migration fallback, gone when REQUIRE_DPOP flips. */
@@ -1660,14 +1455,9 @@ io.on('connection', (socket) => {
         // the socket but carries no identity here, so the message arrives
         // unattributed even though the sender is known.
         const guardRaw = shareSessionFromHeader(cookieHeader);
-        if (guardRaw) {
-          const v = verifyShareSession(guardRaw, readCookieKey());
-          if (v.ok) return { webid: v.webid, fresh: true };
-        }
-        const m = cookieHeader.match(/clearing_session=([^;]+)/);
-        if (!m) return null;
-        const sess = verifyCookie<{ webid?: string; iat?: number }>(decodeURIComponent(m[1]), SESSION_SECRET, 'session');
-        return sess ? { webid: sess.webid, fresh: !!sess.iat && Date.now() - sess.iat <= SESSION_MAX_AGE_MS } : null;
+        if (!guardRaw) return null;
+        const v = verifyShareSession(guardRaw, readCookieKey());
+        return v.ok ? { webid: v.webid, fresh: true } : null;
       },
       principalFor: (webid) => principalForWebId(webid, Date.now()),
     });
@@ -1922,9 +1712,8 @@ if (require.main === module) {
   // #3390 — :3470 INTENTIONALLY serves the LAN: #3366 made
   // http://jeffs-mac-mini-m1-3.local:3470 the IP-proof phone-over-wifi URL
   // (a direct LAN hit, not via the tunnel). Binding loopback would kill it.
-  // The real exposure here is that LAN access is UNAUTHENTICATED (isLocal()
-  // treats 192.168.86.x as local, no token) — that's an auth-model question,
-  // not a bind question, escalated to Jeff (LAN-exception in ADR-042 §8).
+  // #4412 closed the LAN exposure: only loopback is local now, and a LAN
+  // browser is sent to the public Clearing, where the door's cookie reaches.
   server.listen(PORT, () => {
     console.log(`The Clearing listening on http://localhost:${PORT} (also LAN :${PORT})`);
     // Handlers are installed here, where the server actually starts, so a test

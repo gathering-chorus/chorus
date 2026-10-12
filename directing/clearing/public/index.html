@@ -489,7 +489,12 @@
 </div>
 <script>
 if (window.BRIDGE_USER && window.BRIDGE_USER !== 'jeff') {
-  document.getElementById('guest-logout').innerHTML = '<a href="/logout" style="color:var(--text-muted);font-size:0.75rem;text-decoration:none;margin-left:0.5rem">(' + window.BRIDGE_USER + ' · sign out)</a>';
+  // #4412 — one sign-out for Chorus: the door's (the server sets the URL).
+  var signOut = document.createElement('a');
+  signOut.href = window.CHORUS_SIGNOUT_URL || '/logout';
+  signOut.style.cssText = 'color:var(--text-muted);font-size:0.75rem;text-decoration:none;margin-left:0.5rem';
+  signOut.textContent = '(' + window.BRIDGE_USER + ' · sign out)';
+  document.getElementById('guest-logout').appendChild(signOut);
 }
 </script>
 

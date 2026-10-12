@@ -34,7 +34,7 @@ function deps(webid: string | null, opts: { isLocal?: boolean } = {}) {
 describe('#3743 resolveSenderIdentity', () => {
   test('Mark\'s authenticated session shows Mark — no identify step, no jeff default', async () => {
     const id = await resolveSenderIdentity({
-      cookieHeader: 'clearing_session=x',
+      cookieHeader: 'chorus_share_session=x',
       ...deps(MARK_WEBID),
     });
     expect(id.name).toBe('marknakib');
@@ -44,7 +44,7 @@ describe('#3743 resolveSenderIdentity', () => {
 
   test('Jeff\'s authenticated session is jeff with jeff-authority', async () => {
     const id = await resolveSenderIdentity({
-      cookieHeader: 'clearing_session=x',
+      cookieHeader: 'chorus_share_session=x',
       ...deps(JEFF_WEBID),
     });
     expect(id.name).toBe('jeff');
@@ -53,7 +53,7 @@ describe('#3743 resolveSenderIdentity', () => {
 
   test('NEGATIVE: Mark\'s session does NOT carry jeff-authority', async () => {
     const id = await resolveSenderIdentity({
-      cookieHeader: 'clearing_session=x',
+      cookieHeader: 'chorus_share_session=x',
       ...deps(MARK_WEBID),
     });
     expect(id.jeffAuthority).toBe(false);
@@ -61,7 +61,7 @@ describe('#3743 resolveSenderIdentity', () => {
 
   test('NEGATIVE: a spoofed fromField cannot override the authenticated identity', async () => {
     const id = await resolveSenderIdentity({
-      cookieHeader: 'clearing_session=x',
+      cookieHeader: 'chorus_share_session=x',
       fromField: 'jeff',
       ...deps(MARK_WEBID),
     });
@@ -98,7 +98,7 @@ describe('#3743 resolveSenderIdentity', () => {
 
   test('NEGATIVE: an allowed WebID with no Principal mapping is not silently jeff', async () => {
     const id = await resolveSenderIdentity({
-      cookieHeader: 'clearing_session=x',
+      cookieHeader: 'chorus_share_session=x',
       isLocal: false,
       verifySession: () => ({ webid: 'https://id.example/unknown#me', fresh: true }),
       principalFor: async () => null,

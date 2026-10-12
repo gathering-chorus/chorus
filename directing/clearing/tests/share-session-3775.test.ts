@@ -116,7 +116,7 @@ describe('#3775 verifier properties beyond the vectors', () => {
   });
 
   test('the cookie is found among others, and absent when absent', () => {
-    expect(shareSessionFromHeader(`a=1; ${SHARE_COOKIE_NAME}=${valid}; clearing_session=z`)).toBe(valid);
+    expect(shareSessionFromHeader(`a=1; ${SHARE_COOKIE_NAME}=${valid}; other_cookie=z`)).toBe(valid);
     expect(shareSessionFromHeader('nothing=here')).toBeUndefined();
     expect(shareSessionFromHeader(undefined)).toBeUndefined();
   });

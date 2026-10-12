@@ -1041,6 +1041,44 @@ pub fn is_feature_suite(path: &str) -> bool {
     path.starts_with("platform/tests/features/") && path.ends_with(".feature")
 }
 
+/// #4412 — a cucumber step-definition file of the bdd lane.
+pub fn is_step_definition(path: &str) -> bool {
+    path.starts_with("platform/tests/features/step_definitions/") && (path.ends_with(".ts") || path.ends_with(".js"))
+}
+
+/// #4412 — the literal start of each step a step-definition file registers
+/// (`Given/When/Then('…'`), up to its first parameter, optional or alternative.
+/// Prefixes under 8 characters are dropped: too short to name one step.
+pub fn step_prefixes(text: &str) -> Vec<String> {
+    let mut out = Vec::new();
+    for kw in ["Given(", "When(", "Then("] {
+        for (i, _) in text.match_indices(kw) {
+            let rest = &text[i + kw.len()..];
+            let Some(q) = rest.chars().next().filter(|c| matches!(c, '\'' | '"' | '`')) else { continue };
+            let body = &rest[1..];
+            let Some(end) = body.find(q) else { continue };
+            let expr = &body[..end];
+            let lit = expr.split(['{', '(', '/']).next().unwrap_or("").trim_end();
+            if lit.len() >= 8 {
+                out.push(lit.to_string());
+            }
+        }
+    }
+    out.sort();
+    out.dedup();
+    out
+}
+
+/// #4412 — a feature file has a step line starting with one of the prefixes.
+pub fn feature_uses_step(feature: &str, prefixes: &[String]) -> bool {
+    feature.lines().any(|l| {
+        let l = l.trim_start();
+        let body = ["Given ", "When ", "Then ", "And ", "But ", "* "].iter()
+            .find_map(|k| l.strip_prefix(k));
+        body.is_some_and(|b| prefixes.iter().any(|p| b.starts_with(p.as_str())))
+    })
+}
+
 /// #4292 — a python unittest file (`test_*.py`).
 pub fn is_unittest_suite(path: &str) -> bool {
     let name = path.rsplit('/').next().unwrap_or(path);
@@ -6707,6 +6745,14 @@ pub fn exercisers_of(
             }
         }
     }
+    // #4412 — a cucumber step definition is exercised by the feature files
+    // that use its steps; nothing imports it, so it was refused as untagged
+    if out.is_empty() && is_step_definition(f) {
+        let prefixes = text_of(f).map(|t| step_prefixes(&t)).unwrap_or_default();
+        out = rows.iter().map(|r| &r.file_path)
+            .filter(|p| is_feature_suite(p) && text_of(p).is_some_and(|t| feature_uses_step(&t, &prefixes)))
+            .cloned().collect();
+    }
     if out.len() > HUB_EXERCISERS {
         if let Some(routes) = changed_routes {
             // every test that calls a changed route, whether it imports the
@@ -6866,6 +6912,9 @@ pub fn runnable_test(f: &str, in_ts_package: bool) -> bool {
     let name = f.rsplit('/').next().unwrap_or(f);
     f.ends_with(".bats")
         || (in_ts_package && [".test.", ".spec."].iter().any(|m| name.contains(m)))
+        // #4412 — the UI lane runs proving/flows/ (ui_lane_fires, playwright
+        // testDir); a changed flow spec was refused as having no runner
+        || (f.starts_with("proving/flows/") && name.contains(".spec."))
         || (f.ends_with(".rs") && f.contains("/tests/"))
         // #4474 — a shell suite runs on the card lane by its shebang since
         // #4440 reopened (unit_for_test); refusing a changed one as unrunnable

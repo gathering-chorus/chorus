@@ -5,8 +5,8 @@
  * #3797 — a person who signed in ONCE can send, not just read.
  *
  * Jeff, 2026-08-08: "i log in ... then clearing shows and says connecting... and
- * never connected." The socket matched only /clearing_session=/ while the Chorus
- * door mints chorus_share_session, so a remote signed-in person was refused
+ * never connected." The socket matched only the Clearing's own cookie (#4412
+ * deleted it) while the Chorus door mints chorus_share_session, so a remote signed-in person was refused
  * forever — authenticated for reading, anonymous for speaking.
  *
  * These call the ACTUAL function. Every previous socket test connected from

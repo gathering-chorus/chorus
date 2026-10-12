@@ -100,7 +100,7 @@ base.describe('Clearing: chat session lifecycle', () => {
       // #4417 — a decision in Jeff's name comes from Jeff's signed-in session;
       // the machine credential is refused when it claims a person.
       const response = await request.post(`${BRIDGE_URL}/api/message`, {
-        headers: { cookie: `clearing_session=${CLEARING_TARGET.session()}` },
+        headers: { cookie: `chorus_share_session=${CLEARING_TARGET.session()}` },
         data: { from: 'jeff', text: decisionText },
       });
       expect(response.status()).toBe(200);

@@ -3,11 +3,10 @@
 // @owner: wren
 // network-touching seams (CSS token exchange, allow-set) mocked. Brings its own world.
 /**
- * #3606 — the OIDC login/callback flow was the largest uncovered region of
- * clearing's server.ts (functions 71.31% vs floor 75): the #3669 human-login
- * path had NO tests at all. These exercise it end to end through real HTTP
- * against the real handlers — real PKCE, real signed cookies, real state
- * checks — with only the two network seams faked.
+ * #3606 — routes of clearing's server.ts that had no tests, driven through real
+ * HTTP with only the network seams faked. #4412 deleted the Clearing's own
+ * OIDC sign-in (one sign-in for Chorus: the door), so the session here is the
+ * door's signed cookie, minted with a temp key.
  */
 
 import type { AddressInfo } from 'net';
@@ -32,8 +31,7 @@ jest.mock('child_process', () => {
   return { ...actual, execSync: mockExecSync };
 });
 
-// The two network seams: allow-set + principal map (Fuseki) and the CSS code
-// exchange. Everything else in solid-oidc/solid-auth runs REAL.
+// The network seam: allow-set + principal map (Fuseki). The rest of solid-auth runs REAL.
 var mockAllowed: jest.Mock;
 var mockPrincipal: jest.Mock;
 jest.mock('../src/solid-auth', () => {
@@ -41,28 +39,6 @@ jest.mock('../src/solid-auth', () => {
   mockAllowed = jest.fn().mockResolvedValue(true);
   mockPrincipal = jest.fn().mockResolvedValue({ id: 'principal-jeff', name: 'jeff' });
   return { ...actual, isWebIdAllowed: mockAllowed, principalForWebId: mockPrincipal };
-});
-var mockExchange: jest.Mock;
-jest.mock('../src/solid-oidc', () => {
-  const actual = jest.requireActual('../src/solid-oidc');
-  mockExchange = jest.fn();
-  // #4412 — the callback keeps the whole sign-in; the tests still say only WHO.
-  const exchangeCode = async (...a: unknown[]) => {
-    const webid = await mockExchange(...a);
-    return webid ? { webid, idToken: 'id-token', refreshToken: 'rt', iat: 0, exp: 9e9 } : null;
-  };
-  return { ...actual, exchangeCodeForWebId: mockExchange, exchangeCode };
-});
-// #4412 — his browser Session row: the seam to athena-make.
-var mockOpenPerson: jest.Mock;
-var mockClosePerson: jest.Mock;
-jest.mock('../src/person-session', () => {
-  const actual = jest.requireActual('../src/person-session');
-  mockOpenPerson = jest.fn().mockResolvedValue('psk-1');
-  mockClosePerson = jest.fn().mockResolvedValue(true);
-  // #4412 — a sign-in counts only with its Session row record behind it
-  const getRecord = jest.fn((_d: unknown, k: string) => (k === 'psk-1' ? { key: 'psk-1' } : null));
-  return { ...actual, openPersonSession: mockOpenPerson, closePersonSession: mockClosePerson, touchPersonSession: jest.fn().mockResolvedValue(true), getRecord };
 });
 var mockChangePassword: jest.Mock;
 jest.mock('../src/account', () => {
@@ -74,12 +50,17 @@ jest.mock('../src/account', () => {
 import * as fs from 'fs';
 import * as os from 'os';
 import * as path from 'path';
+import * as crypto from 'crypto';
 const TMP = fs.mkdtempSync(path.join(os.tmpdir(), 'server-oidc-'));
 process.env.CLEARING_SCAN_DIR = TMP;
 process.env.CLEARING_PULSE_FILE = path.join(TMP, 'pulse.json');
 process.env.CLEARING_PROJECTS_DIR = TMP;
 process.env.CHORUS_ROOT = TMP;
 process.env.PULSE_URL = 'http://127.0.0.1:1';
+// The door's key: share-session reads SHARE_STATE_FILE on each verify.
+const KEY = crypto.randomBytes(32);
+const b64u = (b: Buffer): string => b.toString('base64').replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
+fs.writeFileSync(process.env.SHARE_STATE_FILE!, JSON.stringify({ cookie_key: b64u(KEY) }));
 
 import { server, io } from '../src/server';
 
@@ -97,153 +78,38 @@ afterAll(async () => {
   try { fs.rmSync(TMP, { recursive: true, force: true }); } catch { /* ignore */ }
 });
 
-const cookieOf = (res: Response, name: string): string => {
-  const all = res.headers.getSetCookie?.() || [];
-  const hit = all.find((c: string) => c.startsWith(name + '='));
-  return hit ? hit.split(';')[0] : '';
-};
-
-/** Run the real /auth/login leg and return its state + login cookie. */
-async function startLogin() {
-  const res = await fetch(`${baseUrl}/auth/login`, { redirect: 'manual' });
-  expect(res.status).toBe(302);
-  const loc = res.headers.get('location') || '';
-  const state = new URL(loc).searchParams.get('state') || '';
-  return { loc, state, loginCookie: cookieOf(res as unknown as Response, 'clearing_login') };
+/** The door's signed session cookie for a WebID (what chorus-share-guard.py mints). */
+function doorSession(webid: string): string {
+  const payload = b64u(Buffer.from(JSON.stringify({ webid, exp: Math.floor(Date.now() / 1000) + 600 })));
+  return `chorus_share_session=${payload}.${b64u(crypto.createHmac('sha256', KEY).update(payload).digest())}`;
 }
 
-describe('#3606 /auth/login', () => {
-  test('redirects to the CSS authorize URL with PKCE + state, and stashes the signed login cookie', async () => {
-    const { loc, state, loginCookie } = await startLogin();
-    expect(loc).toContain('code_challenge');
-    expect(state).not.toBe('');
-    expect(loginCookie).toMatch(/^clearing_login=./);
-  });
-});
-
-describe('#3606 /auth/callback', () => {
-  test('NEGATIVE: no login cookie → refused, never a session', async () => {
-    const res = await fetch(`${baseUrl}/auth/callback?code=x&state=y`, { redirect: 'manual' });
-    expect(res.status).toBeGreaterThanOrEqual(400);
-    expect(cookieOf(res as unknown as Response, 'clearing_session')).toBe('');
-  });
-
-  test('NEGATIVE: state mismatch (CSRF) → refused, never a session', async () => {
-    const { loginCookie } = await startLogin();
-    const res = await fetch(`${baseUrl}/auth/callback?code=x&state=WRONG`, {
-      redirect: 'manual', headers: { cookie: loginCookie },
-    });
-    expect(res.status).toBeGreaterThanOrEqual(400);
-    expect(cookieOf(res as unknown as Response, 'clearing_session')).toBe('');
-  });
-
-  test('happy path: exchange → allow-set → session cookie + redirect into the room', async () => {
-    mockExchange.mockResolvedValueOnce(JEFF_WEBID);
-    const { state, loginCookie } = await startLogin();
-    const res = await fetch(`${baseUrl}/auth/callback?code=abc&state=${encodeURIComponent(state)}`, {
-      redirect: 'manual', headers: { cookie: loginCookie },
-    });
-    expect(res.status).toBe(302);
-    expect(res.headers.get('location')).toBe('/');
-    expect(cookieOf(res as unknown as Response, 'clearing_session')).toMatch(/^clearing_session=./);
-  });
-
-  test('NEGATIVE: identity server down (exchange resolves null — its no-throw contract) → 502, the room is not blamed', async () => {
-    expect(server.listening).toBe(true); // the real server under test, not a stub
-    mockExchange.mockResolvedValueOnce(null);
-    const { state, loginCookie } = await startLogin();
-    const res = await fetch(`${baseUrl}/auth/callback?code=abc&state=${encodeURIComponent(state)}`, {
-      redirect: 'manual', headers: { cookie: loginCookie },
-    });
-    expect(res.status).toBe(502);
-  });
-
-  test('NEGATIVE: authenticated but NOT on the team allow-set → 403, never a session', async () => {
-    mockExchange.mockResolvedValueOnce('https://id.example/stranger#me');
-    mockAllowed.mockResolvedValueOnce(false);
-    const { state, loginCookie } = await startLogin();
-    const res = await fetch(`${baseUrl}/auth/callback?code=abc&state=${encodeURIComponent(state)}`, {
-      redirect: 'manual', headers: { cookie: loginCookie },
-    });
-    expect(res.status).toBe(403);
-    expect(cookieOf(res as unknown as Response, 'clearing_session')).toBe('');
-  });
-
-  test('upstream error param short-circuits before any exchange', async () => {
-    const { loginCookie } = await startLogin();
-    const res = await fetch(`${baseUrl}/auth/callback?error=access_denied`, {
-      redirect: 'manual', headers: { cookie: loginCookie },
-    });
-    expect(res.status).toBeGreaterThanOrEqual(400);
-    expect(mockExchange).not.toHaveBeenCalledWith(expect.anything(), 'access_denied', expect.anything());
-  });
-});
-
 describe('#3606 session identity on / (#3743 seam)', () => {
-  test('a session-authenticated request skips the name page and renders the Principal name', async () => {
-    mockExchange.mockResolvedValueOnce(JEFF_WEBID);
-    const { state, loginCookie } = await startLogin();
-    const cb = await fetch(`${baseUrl}/auth/callback?code=abc&state=${encodeURIComponent(state)}`, {
-      redirect: 'manual', headers: { cookie: loginCookie },
-    });
-    const session = cookieOf(cb as unknown as Response, 'clearing_session');
-    const home = await fetch(`${baseUrl}/`, { headers: { cookie: session } });
+  test('a door-session request skips the name page and renders the Principal name', async () => {
+    const home = await fetch(`${baseUrl}/`, { headers: { cookie: doorSession(JEFF_WEBID) } });
     const html = await home.text();
     expect(home.status).toBe(200);
     expect(html).toContain('window.BRIDGE_USER="jeff"');
   });
 
-  test('#4412 sign-in writes his browser Session as him, and sign-out closes it', async () => {
-    mockExchange.mockResolvedValueOnce(JEFF_WEBID);
-    const { state, loginCookie } = await startLogin();
-    const cb = await fetch(`${baseUrl}/auth/callback?code=abc&state=${encodeURIComponent(state)}`, {
-      redirect: 'manual', headers: { cookie: loginCookie },
-    });
-    expect(cb.status).toBe(302);
-    expect(mockOpenPerson).toHaveBeenCalledWith(expect.anything(), 'jeff', expect.objectContaining({ webid: JEFF_WEBID, idToken: 'id-token' }));
-    const session = cookieOf(cb as unknown as Response, 'clearing_session');
-    const out = await fetch(`${baseUrl}/auth/signout`, { headers: { cookie: session } });
-    expect(out.status).toBe(200);
-    expect(mockClosePerson).toHaveBeenCalledWith(expect.anything(), 'psk-1');
-    expect(await out.text()).toContain('Roles can no longer log in');
-    // NEGATIVE PROOF: the session cookie is gone after sign-out
-    expect(out.headers.get('set-cookie') || '').toMatch(/clearing_session=;/);
-  });
-
-  test('NEGATIVE: a sign-in whose Session row fails still signs him in, with nothing to close', async () => {
-    mockOpenPerson.mockResolvedValueOnce(null);
-    mockClosePerson.mockClear();
-    mockExchange.mockResolvedValueOnce(JEFF_WEBID);
-    const { state, loginCookie } = await startLogin();
-    const cb = await fetch(`${baseUrl}/auth/callback?code=abc&state=${encodeURIComponent(state)}`, {
-      redirect: 'manual', headers: { cookie: loginCookie },
-    });
-    expect(cb.status).toBe(302);
-    const out = await fetch(`${baseUrl}/auth/signout`, { headers: { cookie: cookieOf(cb as unknown as Response, 'clearing_session') } });
-    expect(mockClosePerson).not.toHaveBeenCalled();
-    expect(await out.text()).not.toContain('Roles can no longer log in');
-  });
-
-  test('/logout clears the cookies and says so', async () => {
+  test('/logout drops the bridge cookies and signs out at the door (#4412)', async () => {
     const res = await fetch(`${baseUrl}/logout`, { redirect: 'manual' });
-    expect([200, 302]).toContain(res.status);
+    expect(res.status).toBe(302);
+    expect(res.headers.get('location')).toBe('https://chorus.lightlifeurbangardens.com/_auth/logout');
   });
 });
 
 describe('#3606 account page + password change (#3679 routes, previously untested)', () => {
   async function jeffSession(): Promise<string> {
-    mockExchange.mockResolvedValueOnce(JEFF_WEBID);
-    const { state, loginCookie } = await startLogin();
-    const cb = await fetch(`${baseUrl}/auth/callback?code=abc&state=${encodeURIComponent(state)}`, {
-      redirect: 'manual', headers: { cookie: loginCookie },
-    });
-    return cookieOf(cb as unknown as Response, 'clearing_session');
+    return doorSession(JEFF_WEBID);
   }
 
-  test('NEGATIVE: /account without a session → 401 interstitial, never the page', async () => {
+  test('NEGATIVE: /account without a session → sent to the door (503 when none is configured), never the page', async () => {
     expect(server.listening).toBe(true);
+    delete process.env.CHORUS_SIGNIN_URL;
     const res = await fetch(`${baseUrl}/account`);
-    expect(res.status).toBe(401);
+    expect(res.status).toBe(503);
+    expect(await res.text()).not.toContain('Your account');
   });
 
   test('/account with a session renders the signed-in identity', async () => {
@@ -251,13 +117,6 @@ describe('#3606 account page + password change (#3679 routes, previously unteste
     const res = await fetch(`${baseUrl}/account`, { headers: { cookie: session } });
     expect(res.status).toBe(200);
     expect(await res.text()).toContain('id.lightlifeurbangardens.com/jeff');
-  });
-
-  test('#4412 NEGATIVE: a sign-in whose Session row was never written is signed out, so the next visit signs in again', async () => {
-    mockOpenPerson.mockResolvedValueOnce(null);
-    const session = await jeffSession();
-    const res = await fetch(`${baseUrl}/account`, { headers: { cookie: session } });
-    expect(res.status).toBe(401);
   });
 
   test('NEGATIVE: password change without a session → 401, changePassword never called', async () => {

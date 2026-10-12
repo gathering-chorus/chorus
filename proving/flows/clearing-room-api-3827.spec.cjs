@@ -19,7 +19,7 @@ test.describe.configure({ mode: 'serial' });
 
 const bind = (request, pubkey, signedIn = true) => request.post(`${CLEARING}/api/room/bind`, {
   data: { pubkey },
-  headers: signedIn ? { cookie: `clearing_session=${CLEARING_TARGET.session()}` } : {},
+  headers: signedIn ? { cookie: `chorus_share_session=${CLEARING_TARGET.session()}` } : {},
 });
 const bindings = async (request) => (await request.get(`${CLEARING}/api/room/bindings`)).json();
 
@@ -52,7 +52,7 @@ test.describe('#3827 binding a browser key to a person', () => {
   test('signed in: the key binds to the session\'s WebID, never one the body names, and the list shows it', async ({ request }) => {
     const r = await request.post(`${CLEARING}/api/room/bind`, {
       data: { pubkey: PUBKEY, webid: 'https://pods.example/impostor/profile/card#me' },
-      headers: { cookie: `clearing_session=${CLEARING_TARGET.session()}` },
+      headers: { cookie: `chorus_share_session=${CLEARING_TARGET.session()}` },
     });
     expect(r.status()).toBe(200);
     const body = await r.json();

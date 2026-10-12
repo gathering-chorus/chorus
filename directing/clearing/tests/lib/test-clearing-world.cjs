@@ -1,7 +1,7 @@
 // @test-type: unit — fixture helper, not a suite
 // #4417 — the one place a test Clearing gets its world. Every file the server
 // would otherwise read or write under the live defaults goes into `dir`:
-// HOME (so ~/.chorus — token, room journal, tailer offsets, person sessions),
+// HOME (so ~/.chorus — token, room journal, tailer offsets),
 // the projects dir it tails (live default: every role's transcripts), the
 // message file (/tmp/bridge-messages.json), scan and pulse files, the spine
 // log and messages.db. Pulse is dead-ported and the nudge binary is a no-op,
@@ -42,8 +42,8 @@ function testClearingEnv(dir, port, token) {
     PULSE_URL: 'http://127.0.0.1:1',
     NUDGE_BINARY: nudge,
     BUZZ_ROOM_ENABLED: '0',
-    // Session-row writes (touchPersonSession) and allow-set reads would reach the
-    // live athena-make and Fuseki; a test Clearing talks to neither.
+    // Allow-set reads and any athena-make call would reach the live services;
+    // a test Clearing talks to neither.
     ATHENA_MAKE_URL: 'http://127.0.0.1:1',
     CHORUS_FUSEKI_QUERY: 'http://127.0.0.1:1/query',
     // the account page's password change talks to the identity server (CSS);
@@ -58,21 +58,16 @@ function testClearingEnv(dir, port, token) {
 const b64u = (b) => b.toString('base64').replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
 
 /**
- * A signed-in browser for the test Clearing: writes its session secret and one
- * person-session record into the world, and returns the clearing_session cookie
- * value the server will verify (signCookie in solid-oidc.ts). Call before the
- * server starts; it reads the secret once, at load.
+ * #4412 — a browser signed in at the Chorus door, for the test Clearing: writes
+ * the door's cookie key into the world (SHARE_STATE_FILE) and returns the
+ * chorus_share_session value the server will verify. The Clearing has no
+ * sign-in of its own; this is the only session it trusts.
  */
-function signedInSession(dir, webid) {
-  const chorusHome = path.join(dir, 'home', '.chorus');
-  fs.mkdirSync(chorusHome, { recursive: true });
-  const secret = crypto.randomBytes(32).toString('hex');
-  fs.writeFileSync(path.join(chorusHome, 'clearing-session-secret'), secret, { mode: 0o600 });
-  const psk = `test-psk-${process.pid}-${Date.now()}`;
-  const record = { key: psk, principal: 'jeff', rowName: psk, row: {}, idToken: '', exp: Math.floor(Date.now() / 1000) + 3600, lastSeenWrite: Date.now() };
-  fs.writeFileSync(path.join(chorusHome, 'clearing-person-sessions.json'), JSON.stringify({ [psk]: record }));
-  const body = b64u(Buffer.from(JSON.stringify({ typ: 'session', webid, iat: Date.now(), psk })));
-  return `${body}.${b64u(crypto.createHmac('sha256', secret).update(body).digest())}`;
+function doorSession(dir, webid) {
+  const key = crypto.randomBytes(32);
+  fs.writeFileSync(path.join(dir, 'share-state.json'), JSON.stringify({ cookie_key: b64u(key) }), { mode: 0o600 });
+  const payload = b64u(Buffer.from(JSON.stringify({ webid, exp: Math.floor(Date.now() / 1000) + 3600 })));
+  return `${payload}.${b64u(crypto.createHmac('sha256', key).update(payload).digest())}`;
 }
 
-module.exports = { testClearingEnv, signedInSession };
+module.exports = { testClearingEnv, doorSession };
