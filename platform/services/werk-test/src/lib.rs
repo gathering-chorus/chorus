@@ -6866,6 +6866,9 @@ pub fn runnable_test(f: &str, in_ts_package: bool) -> bool {
     let name = f.rsplit('/').next().unwrap_or(f);
     f.ends_with(".bats")
         || (in_ts_package && [".test.", ".spec."].iter().any(|m| name.contains(m)))
+        // #4412 — the UI lane runs proving/flows/ (ui_lane_fires, playwright
+        // testDir); a changed flow spec was refused as having no runner
+        || (f.starts_with("proving/flows/") && name.contains(".spec."))
         || (f.ends_with(".rs") && f.contains("/tests/"))
         // #4474 — a shell suite runs on the card lane by its shebang since
         // #4440 reopened (unit_for_test); refusing a changed one as unrunnable
