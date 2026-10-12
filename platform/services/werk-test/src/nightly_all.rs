@@ -237,10 +237,9 @@ impl Ctx {
         owner_for(path, &self.owners, &self.root, &self.app_root)
     }
     fn write_fail_log(&self, row: &SuiteRow, body: &str) {
-        let _ = std::fs::create_dir_all(&self.fail_dir);
-        let p = format!("{}/{}", self.fail_dir, fail_log_name(&row.kind, &row.path));
         let head = format!("# unit: {} ({}) — verdict {}\n# summary: {}\n---\n", row.path, row.kind, row.status, row.summary);
-        let _ = std::fs::write(p, format!("{}{}", head, body));
+        // #4144 AC5 — also under runs/<run_id>, so the next run cannot overwrite it
+        werk_test::nightly_run::keep_fail_text(&self.fail_dir, &self.run_id, &fail_log_name(&row.kind, &row.path), &format!("{}{}", head, body));
     }
 }
 
@@ -984,6 +983,12 @@ fn run_locked(ctx: &mut Ctx, _args: &[String]) -> Result<i32, String> {
     ctx.append_log(&format!("RUN|errors|{}", errors));
     let completed_at = now_stamp();
     ctx.append_log(&format!("RUN|complete|{}|suites={}", completed_at, rows.len()));
+    // #4144 AC5 — the lane's whole output stays with its run; two weeks of runs kept
+    let run_dir = werk_test::nightly_run::run_fail_dir(&ctx.fail_dir, &ctx.run_id);
+    let _ = std::fs::create_dir_all(&run_dir);
+    let _ = std::fs::copy(format!("{}/_lane-output.log", ctx.fail_dir), format!("{}/_lane-output.log", run_dir));
+    let pruned = werk_test::nightly_run::prune_run_dirs(&ctx.fail_dir, 14);
+    eprintln!("nightly: failure text kept in {} ({} older run folder(s) pruned, #4144)", run_dir, pruned);
     if ctx.graph.enabled {
         eprintln!("nightly: graph suite rows — {} written, {} failed (#4156)", ctx.graph.written.get(), ctx.graph.failed.get());
         ctx.spine("nightly.graph.rows", &[("written".into(), ctx.graph.written.get().to_string()), ("failed".into(), ctx.graph.failed.get().to_string())]);

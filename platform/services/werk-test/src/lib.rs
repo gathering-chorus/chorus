@@ -1470,6 +1470,27 @@ pub fn plan_source_label(fetch_ok: bool, rows_len: usize) -> &'static str {
 
 // ---- #3592 — per-test result capture + reconcile ----
 
+/// #4144 AC3 — one unit's results, handed from a pool worker to the poster.
+pub struct PostJob<T> {
+    pub unit: String,
+    pub payload: T,
+    /// how many results this job should store, for the lost-results count
+    pub expected: usize,
+}
+
+/// #4144 AC3 — one poster thread, so a worker hands its unit's results off and
+/// starts the next unit instead of waiting ~1 s on the post. Jobs post in the
+/// order they were sent; joining the handle waits for every queued post and
+/// answers how many results were stored in all, which the run compares with
+/// what it expected (#4015), so a post that stored nothing is counted short.
+pub fn spawn_poster<T: Send + 'static>(
+    post: impl Fn(&PostJob<T>) -> usize + Send + 'static,
+) -> (std::sync::mpsc::Sender<PostJob<T>>, std::thread::JoinHandle<usize>) {
+    let (tx, rx) = std::sync::mpsc::channel::<PostJob<T>>();
+    let handle = std::thread::spawn(move || rx.iter().map(|job| post(&job)).sum());
+    (tx, handle)
+}
+
 /// One executed test case, keyed to the registered chorus:Test identity
 /// (filePath + testName). `result` is the graph vocab: pass | fail | skip.
 #[derive(Debug, PartialEq, Eq, Clone)]

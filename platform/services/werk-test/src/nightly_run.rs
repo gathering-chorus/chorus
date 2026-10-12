@@ -1042,6 +1042,33 @@ pub fn fail_log_name(kind: &str, path: &str) -> String {
     format!("{}.log", id)
 }
 
+/// #4144 AC5 — where one run's failure text is kept: `<fail_dir>/runs/<run_id>`.
+pub fn run_fail_dir(fail_dir: &str, run_id: &str) -> String {
+    format!("{}/runs/{}", fail_dir, run_id)
+}
+
+/// Write a unit's failure text twice: the top-level file stays "the latest" for
+/// the readers that read it, and the run's own folder keeps it after the next
+/// run overwrites the top level (the 03:00 detail survives an 08:00 run).
+pub fn keep_fail_text(fail_dir: &str, run_id: &str, name: &str, text: &str) {
+    let run_dir = run_fail_dir(fail_dir, run_id);
+    for dir in [fail_dir, run_dir.as_str()] {
+        let _ = std::fs::create_dir_all(dir);
+        let _ = std::fs::write(format!("{}/{}", dir, name), text);
+    }
+}
+
+/// Keep the newest `keep` run folders and delete the rest; answers how many
+/// went. Run ids are `nr-<epoch>-<pid>`, so name order is start order.
+pub fn prune_run_dirs(fail_dir: &str, keep: usize) -> usize {
+    let mut runs: Vec<std::path::PathBuf> = std::fs::read_dir(format!("{}/runs", fail_dir))
+        .map(|rd| rd.flatten().map(|e| e.path()).filter(|p| p.is_dir()).collect())
+        .unwrap_or_default();
+    runs.sort();
+    let old = runs.len().saturating_sub(keep);
+    runs.iter().take(old).filter(|p| std::fs::remove_dir_all(p).is_ok()).count()
+}
+
 /// The slice of the lane output that belongs to one unit (#4004): lines that
 /// name it, plus the runner's `!! kind:unit` verdict lines.
 pub fn unit_slice<'a>(lane: &'a str, unit: &str) -> Vec<&'a str> {
