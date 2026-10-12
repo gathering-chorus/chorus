@@ -7,11 +7,11 @@ use crate::code::{run_paths, unit_fields, Unit, UnitPlan};
 pub type Fields = Vec<(String, String)>;
 
 /// The CodeUnit rows the build files state: (name, fields without the name).
-pub fn desired_rows(units: &[Unit]) -> Vec<(String, Fields)> {
+pub fn desired_rows(units: &[Unit], repo: &str) -> Vec<(String, Fields)> {
     units
         .iter()
         .map(|u| {
-            let f = unit_fields(u);
+            let f = unit_fields(u, repo);
             (f[0].1.clone(), f[1..].to_vec())
         })
         .collect()
@@ -23,6 +23,21 @@ pub fn current_rows(rows: Vec<Fields>) -> Vec<(String, Fields)> {
         .map(|fields| {
             let name = fields.iter().find(|(k, _)| k == "name").map(|(_, v)| v.clone()).unwrap_or_default();
             (name, crate::services::written_form(fields.into_iter().filter(|(k, _)| k != "name").collect()))
+        })
+        .collect()
+}
+
+/// #4405 — the stored rows this pass may change: the ones in its own
+/// repository. Crawling a second repo must never delete the first one's units
+/// (the plan deletes every current row it does not want). A row written before
+/// rows carried a repository belongs to the home repo, and only the home repo's
+/// pass may adopt or retire it.
+pub fn rows_of_repo(current: Vec<(String, Fields)>, repo: &str, home_repo: &str) -> Vec<(String, Fields)> {
+    current
+        .into_iter()
+        .filter(|(_, f)| match f.iter().find(|(k, _)| k == "inRepository") {
+            Some((_, r)) => r.rsplit("repository-").next() == Some(repo),
+            None => repo == home_repo,
         })
         .collect()
 }

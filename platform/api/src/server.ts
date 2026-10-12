@@ -2740,7 +2740,8 @@ app.get('/api/athena/code-blast', async (req: Request, res: Response) => {
     const [u, b, f, p] = await Promise.all([unitsQuery(), builtFromQuery(), filesQuery(), pagesQuery()].map(blastRadiusRead));
     if (!u.ok || !b.ok || !f.ok || !p.ok) return res.status(503).json({ ok: false, reason: STORE_UNREACHABLE });
     const files = withPages(filesFromCsv(await f.text()), pagesFromCsv(await p.text()));
-    const r = codeBlast(target, unitsFromCsv(await u.text()), builtFromFromCsv(await b.text()), files);
+    const repo = typeof req.query.repo === 'string' && req.query.repo.trim() ? req.query.repo.trim() : undefined;
+    const r = codeBlast(target, unitsFromCsv(await u.text(), repo), builtFromFromCsv(await b.text()), files);
     res.status(200).json({ ...r, source: 'graph' });
   } catch (err) {
     res.status(503).json({ ok: false, reason: STORE_UNREACHABLE, error: (err as Error).message });

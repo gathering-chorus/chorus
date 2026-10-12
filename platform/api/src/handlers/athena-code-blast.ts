@@ -85,7 +85,7 @@ export function codeBlast(
 }
 
 export function unitsQuery(): string {
-  return `SELECT ?u ?path ?kind ?dep WHERE { GRAPH ?g { ?u a <${C}CodeUnit> ; <${C}unitPath> ?path ; <${C}unitKind> ?kind . OPTIONAL { ?u <${C}dependsOn> ?dep } } }`;
+  return `SELECT ?u ?path ?kind ?dep ?repo WHERE { GRAPH ?g { ?u a <${C}CodeUnit> ; <${C}unitPath> ?path ; <${C}unitKind> ?kind . OPTIONAL { ?u <${C}dependsOn> ?dep } OPTIONAL { ?u <${C}inRepository> ?repo } } }`;
 }
 export function builtFromQuery(): string {
   return `SELECT ?s ?u WHERE { GRAPH ?g { ?s <${C}builtFrom> ?u } }`;
@@ -131,9 +131,13 @@ export function csvRows(csv: string): string[][] {
   });
 }
 
-export function unitsFromCsv(csv: string): UnitRow[] {
+/** #4405 — the repository a blast radius is asked in; rows written before units carried one are the home repo's. */
+export const HOME_REPO = 'chorus';
+export function unitsFromCsv(csv: string, repo: string = HOME_REPO): UnitRow[] {
   const m = new Map<string, UnitRow>();
-  for (const [u, path, kind, dep] of csvRows(csv)) {
+  for (const [u, path, kind, dep, r] of csvRows(csv)) {
+    const rowRepo = r ? local(r).replace(/^repository-/, '') : HOME_REPO;
+    if (rowRepo !== repo) continue;
     const name = local(u).replace(/^code-unit-/, '');
     const row = m.get(name) ?? { name, path, kind, deps: [] };
     if (dep) {

@@ -146,8 +146,24 @@ pub fn package_deps(pkg_path: &str, package_json: &str, tsconfig: Option<&str>) 
 }
 
 /// The door's name for a unit: its path, `/` as `-` (platform-services-werk-test).
-pub fn unit_name(path: &str) -> String {
-    path.replace('/', "-")
+/// #4405 — a unit's door name carries its repository, so two repos' units
+/// never collide ("chorus--platform-services-werk-test").
+pub fn unit_name(repo: &str, path: &str) -> String {
+    format!("{}--{}", repo, path.replace('/', "-"))
+}
+
+/// #4405 — the repository a tree is: the remote's last segment without .git
+/// (gathering-chorus/chorus.git → chorus), else the directory's own name.
+pub fn repo_id(remote: Option<&str>, dir: &std::path::Path) -> String {
+    let from_remote = remote
+        .map(|r| r.trim().trim_end_matches('/').trim_end_matches(".git"))
+        .and_then(|r| r.rsplit(['/', ':']).next())
+        .filter(|n| !n.is_empty());
+    let raw = from_remote
+        .map(String::from)
+        .or_else(|| dir.file_name().map(|n| n.to_string_lossy().to_string()))
+        .unwrap_or_else(|| "repo".to_string());
+    raw.chars().map(|c| if c.is_ascii_alphanumeric() || c == '-' { c.to_ascii_lowercase() } else { '-' }).collect()
 }
 
 /// The unit a file belongs to: the one whose path is the longest prefix of it.
@@ -232,13 +248,14 @@ pub fn units(
 
 /// The row the door holds for a unit: its path and kind, and one dependsOn per
 /// edge, by the target unit's door name.
-pub fn unit_fields(u: &Unit) -> Vec<(String, String)> {
+pub fn unit_fields(u: &Unit, repo: &str) -> Vec<(String, String)> {
     let mut f = vec![
-        ("name".to_string(), unit_name(&u.path)),
+        ("name".to_string(), unit_name(repo, &u.path)),
+        ("inRepository".to_string(), repo.to_string()),
         ("unitPath".to_string(), u.path.clone()),
         ("unitKind".to_string(), u.kind.to_string()),
     ];
-    f.extend(u.deps.iter().map(|d| ("dependsOn".to_string(), unit_name(d))));
+    f.extend(u.deps.iter().map(|d| ("dependsOn".to_string(), unit_name(repo, d))));
     f
 }
 
@@ -262,7 +279,7 @@ pub struct UnitPlan {
 fn canon(fields: &[(String, String)]) -> Vec<(String, String)> {
     let mut f: Vec<(String, String)> = fields
         .iter()
-        .filter(|(k, v)| !v.is_empty() && matches!(k.as_str(), "unitPath" | "unitKind" | "dependsOn"))
+        .filter(|(k, v)| !v.is_empty() && matches!(k.as_str(), "inRepository" | "unitPath" | "unitKind" | "dependsOn"))
         .cloned()
         .collect();
     f.sort();
@@ -381,11 +398,11 @@ pub fn run_paths(
 /// file (sourcePath), and that file's unit is what the service is built from.
 /// Input: (service, source file repo path) per instance. Output: service →
 /// unit door names, sorted. An instance whose file is in no unit adds nothing.
-pub fn built_from(instances: &[(String, String)], units: &[Unit]) -> Vec<(String, Vec<String>)> {
+pub fn built_from(instances: &[(String, String)], units: &[Unit], repo: &str) -> Vec<(String, Vec<String>)> {
     let mut out: Vec<(String, Vec<String>)> = Vec::new();
     for (svc, file) in instances {
         let Some(u) = unit_of(file, units) else { continue };
-        let name = unit_name(&u.path);
+        let name = unit_name(repo, &u.path);
         match out.iter_mut().find(|(s, _)| s == svc) {
             Some((_, v)) => {
                 if !v.contains(&name) {

@@ -48,7 +48,7 @@ fn the_blast_radius_of_a_unit_is_its_dependents_through_the_graph() {
 #[test]
 fn negative_proof_a_dropped_dependency_disappears_on_the_next_crawl() {
     let before = tree();
-    let desired = |us: &[Unit]| us.iter().map(|u| { let f = unit_fields(u); (f[0].1.clone(), f[1..].to_vec()) }).collect::<Vec<_>>();
+    let desired = |us: &[Unit]| us.iter().map(|u| { let f = unit_fields(u, "chorus"); (f[0].1.clone(), f[1..].to_vec()) }).collect::<Vec<_>>();
     let current = desired(&before);
     // werk-accept drops werk-teardown from its Cargo.toml
     let mut after = before.clone();
@@ -56,7 +56,7 @@ fn negative_proof_a_dropped_dependency_disappears_on_the_next_crawl() {
     let p = plan_units(&desired(&after), &current);
     assert_eq!(p.update.len(), 1, "{p:?}");
     let (name, fields) = &p.update[0];
-    assert_eq!(name, "platform-services-werk-accept");
+    assert_eq!(name, "chorus--platform-services-werk-accept");
     assert!(!fields.iter().any(|(k, v)| k == "dependsOn" && v.ends_with("werk-teardown")), "the old edge must not be written back");
     // and a second crawl over the same tree writes nothing
     assert_eq!(plan_units(&desired(&after), &desired(&after)).unchanged, after.len());
@@ -65,7 +65,7 @@ fn negative_proof_a_dropped_dependency_disappears_on_the_next_crawl() {
 #[test]
 fn a_unit_no_build_file_states_is_deleted() {
     let us = tree();
-    let mut current: Vec<(String, Vec<(String, String)>)> = us.iter().map(|u| { let f = unit_fields(u); (f[0].1.clone(), f[1..].to_vec()) }).collect();
+    let mut current: Vec<(String, Vec<(String, String)>)> = us.iter().map(|u| { let f = unit_fields(u, "chorus"); (f[0].1.clone(), f[1..].to_vec()) }).collect();
     current.push(("platform-services-gone".into(), vec![("unitPath".into(), "platform/services/gone".into())]));
     let desired: Vec<_> = current[..current.len() - 1].to_vec();
     assert_eq!(plan_units(&desired, &current).delete, vec!["platform-services-gone"]);

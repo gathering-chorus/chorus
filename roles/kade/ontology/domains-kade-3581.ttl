@@ -196,8 +196,37 @@ chorus:unitKind a owl:DatatypeProperty ;
     rdfs:domain chorus:CodeUnit ;
     rdfs:range xsd:string .
 
+# #4405 — the crawler is a sensor pointed at a target (Jeff, 2026-10-12: "imagine
+# a use case where we pointed crawler at my other gh projects"). A unit belongs
+# to one repository; without it, crawling a second repo would delete every
+# Chorus unit (the plan diffed against all rows) and two repos' "src" collide.
+chorus:Repository a owl:Class ;
+    rdfs:label "Repository" ;
+    rdfs:comment "A source repository the crawler reads: its name (the repo's own name, e.g. chorus) and the remote it is cloned from. Every CodeUnit names the repository it lives in." .
+chorus:code chorus:definesVocabulary chorus:Repository .
+
+chorus:repoRemote a owl:DatatypeProperty ;
+    rdfs:label "repoRemote" ;
+    rdfs:comment "The git remote a Repository is cloned from (https://github.com/gathering-chorus/chorus.git)." ;
+    rdfs:domain chorus:Repository ;
+    rdfs:range xsd:string .
+
+chorus:RepositoryShape a sh:NodeShape ;
+    sh:targetClass chorus:Repository ;
+    sh:property [ sh:path chorus:repoRemote ; sh:maxCount 1 ; sh:datatype xsd:string ] ;
+    sh:property [ sh:path chorus:ownedBy ; sh:class chorus:Principal ] ;
+    chorus:instancesGraph "urn:chorus:domains:code" ;
+    chorus:generatedBy "athena-model" .
+
+chorus:inRepository a owl:ObjectProperty ;
+    rdfs:label "inRepository" ;
+    rdfs:comment "The Repository a CodeUnit lives in. Its unitPath is relative to that repository's root." ;
+    rdfs:domain chorus:CodeUnit ;
+    rdfs:range chorus:Repository .
+
 chorus:CodeUnitShape a sh:NodeShape ;
     sh:targetClass chorus:CodeUnit ;
+    sh:property [ sh:path chorus:inRepository ; sh:maxCount 1 ; sh:class chorus:Repository ] ;
     sh:property [ sh:path chorus:unitPath ; sh:minCount 1 ; sh:maxCount 1 ; sh:datatype xsd:string ] ;
     sh:property [ sh:path chorus:unitKind ; sh:minCount 1 ; sh:maxCount 1 ; sh:datatype xsd:string ;
                   sh:in ( "crate" "package" "model" "include" ) ] ;
