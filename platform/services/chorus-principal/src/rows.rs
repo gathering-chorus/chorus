@@ -566,10 +566,20 @@ pub fn pane_runtime(role_dir: &std::path::Path) -> PaneRuntime {
 /// #4444 — Abby runs as her own account, so git refuses Jeff's repos ("dubious
 /// ownership") unless told they are safe. Passing `-c safe.directory=*` on each call
 /// made Gemini ask Jeff every time: its policy engine treats any `git -c` as
-/// dangerous whatever the policy allows. Set once in her own git config instead;
-/// idempotent, so every login can run it.
-pub fn gemini_git_setup() -> &'static str {
-    "{ git config --global --get-all safe.directory | grep -qxF '*' || git config --global --add safe.directory '*'; }"
+/// dangerous whatever the policy allows. Her own ~/.gitconfig does not reach
+/// either: Gemini's shell sets GIT_CONFIG_GLOBAL=/dev/null (gemini-cli
+/// getSafeGitEnv), so the 10-07 fix wrote a file git never read (measured
+/// 10-12 16:5x: her pane waiting on `git -c safe.directory=* status`). It does
+/// keep GIT_CONFIG_KEY_n/VALUE_n it inherits and numbers its own after them,
+/// so the setting rides in her environment.
+pub const GEMINI_GIT_ENV: [(&str, &str); 3] = [
+    ("GIT_CONFIG_COUNT", "1"),
+    ("GIT_CONFIG_KEY_0", "safe.directory"),
+    ("GIT_CONFIG_VALUE_0", "*"),
+];
+
+fn gemini_git_exports() -> String {
+    GEMINI_GIT_ENV.iter().map(|(k, v)| format!("{k}='{v}'")).collect::<Vec<_>>().join(" ")
 }
 
 /// #4444 — the command typed into a Gemini role's pane (it runs as the role's
@@ -591,8 +601,8 @@ pub fn gemini_pane_cmd(agent_bin: &str, gemini_bin: &str, allow_rules: &str, run
         return Err(format!("refusing to launch with a quote in the bin dir {:?}", bin_dir));
     }
     Ok(format!(
-        "export PATH='{}':/opt/homebrew/bin:$PATH CHORUS_SESSION_ID='{}' GEMINI_API_KEY=\"$(cat ~/.chorus/secrets/gemini.key)\" && {} && CHORUS_ALLOW_RULES_FILE='{}' '{}' allowed-tools >/dev/null && '{}' --policy ~/.chorus/gemini-allowed.toml",
-        bin_dir, run, gemini_git_setup(), allow_rules, agent_bin, gemini_bin
+        "export PATH='{}':/opt/homebrew/bin:$PATH CHORUS_SESSION_ID='{}' GEMINI_API_KEY=\"$(cat ~/.chorus/secrets/gemini.key)\" {} && CHORUS_ALLOW_RULES_FILE='{}' '{}' allowed-tools >/dev/null && '{}' --policy ~/.chorus/gemini-allowed.toml",
+        bin_dir, run, gemini_git_exports(), allow_rules, agent_bin, gemini_bin
     ))
 }
 
