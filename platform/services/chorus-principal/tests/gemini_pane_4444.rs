@@ -1,7 +1,7 @@
 // @domain: identity
 //! #4444 — Abby logs in to her own Gemini screen in her pane (Jeff 2026-10-06:
 //! "thats my user interface — a background job that i cant interact with").
-use chorus_principal::rows::{gemini_pane_cmd, GEMINI_GIT_ENV, pane_process_is, pane_runtime, PaneRuntime};
+use chorus_principal::rows::{gemini_pane_cmd, gemini_quiet_ui_setup, GEMINI_GIT_ENV, GEMINI_QUIET_UI, pane_process_is, pane_runtime, PaneRuntime};
 
 fn role_dir(name: &str, with: &[&str]) -> std::path::PathBuf {
     let d = std::env::temp_dir().join(format!("gp4444-{}-{}", name, std::process::id()));
@@ -144,4 +144,29 @@ fn negative_proof_her_own_gitconfig_does_not_reach_geminis_shell() {
     let home = fresh_home("global");
     std::fs::write(home.join(".gitconfig"), "[safe]\n\tdirectory = *\n").unwrap();
     assert!(gemini_shell_git(&[], &home).is_empty());
+}
+
+/// #4444 reopen 4 — her login quiets Gemini's screen and keeps her model.
+fn settings_after(setup: Option<&str>, home: &std::path::Path) -> serde_json::Value {
+    std::fs::create_dir_all(home.join(".gemini")).unwrap();
+    std::fs::write(home.join(".gemini/settings.json"), r#"{"model":{"name":"gemini-3.8-flash"}}"#).unwrap();
+    if let Some(cmd) = setup {
+        assert!(std::process::Command::new("/bin/sh").arg("-c").arg(cmd).env("HOME", home).status().unwrap().success(), "{cmd}");
+    }
+    serde_json::from_str(&std::fs::read_to_string(home.join(".gemini/settings.json")).unwrap()).unwrap()
+}
+
+#[test]
+fn her_login_quiets_geminis_screen_and_keeps_her_model() {
+    let cmd = gemini_pane_cmd("/b/chorus-agent", "/b/gemini", "/r", "abby-normal-run-1a2b").unwrap();
+    assert!(cmd.contains(&gemini_quiet_ui_setup()), "{cmd}");
+    let d = settings_after(Some(&gemini_quiet_ui_setup()), &fresh_home("quiet"));
+    for k in GEMINI_QUIET_UI { assert_eq!(d["ui"][k], serde_json::json!(true), "{k}: {d}"); }
+    assert_eq!(d["model"]["name"], "gemini-3.8-flash", "her model is kept: {d}");
+}
+
+#[test]
+fn negative_proof_without_the_setup_her_screen_keeps_tips_and_banner() {
+    let d = settings_after(None, &fresh_home("loud"));
+    assert!(d.get("ui").is_none(), "{d}");
 }
