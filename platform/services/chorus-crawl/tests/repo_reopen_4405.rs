@@ -77,3 +77,28 @@ fn negative_proof_the_doors_empty_edge_is_no_repository() {
     assert!(rows_of_repo(door.clone(), "chorus", false).is_empty());
     assert_eq!(rows_of_repo(door, "chorus", true).len(), 1);
 }
+
+/// The door's own slug, as measured 2026-10-12: a unit sent as
+/// `shared-security--root` was stored as `shared-security-root`. Lowercase,
+/// anything outside a-z0-9 becomes "-", runs of "-" collapse, ends trimmed.
+fn door_slug(s: &str) -> String {
+    let mut out = String::new();
+    for c in s.to_lowercase().chars() {
+        let c = if c.is_ascii_alphanumeric() { c } else { '-' };
+        if !(c == '-' && out.ends_with('-')) {
+            out.push(c);
+        }
+    }
+    out.trim_matches('-').to_string()
+}
+
+#[test]
+fn negative_proof_a_units_name_survives_the_door_unchanged() {
+    use chorus_crawl::code::unit_name;
+    // the shape that broke every real crawl: the name sent was not the name stored
+    assert_ne!(door_slug("shared-security--root"), "shared-security--root", "the hazard this test exists for");
+    for (repo, path) in [("shared-security", "."), ("chorus", "platform/services/werk-test"), ("jeff-bridwell-personal-site", "media-server"), ("my-repo", "src/My_Thing.v2"), ("wine-diary", "--odd//path-")] {
+        let n = unit_name(repo, path);
+        assert_eq!(door_slug(&n), n, "{repo} {path}");
+    }
+}
