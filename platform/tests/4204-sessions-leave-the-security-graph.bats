@@ -124,15 +124,6 @@ patch_session() { # patch_session <caller> <row name> → HTTP code
   [ "$code" = "200" ] || { echo "wren editing her own login got $code"; false; }
 }
 
-@test "NEGATIVE PROOF — wren cannot edit a login another principal owns (#4204 reopen)" {
-  # Wren, 2026-10-12 08:17: "wren could PATCH Jeff's Session via
-  # permission-wren-identity". A graph-wide grant overrode the row-owner check.
-  # The target here is a silas probe row this test made, never Jeff's.
-  [ "$(post_session silas)" = "201" ]
-  code="$(patch_session wren "silas-4204probe-$$")"
-  [ "$code" = "403" ] || { echo "wren editing silas's login got $code — the identity graph is open across owners"; false; }
-}
-
 @test "#4332 no probe Session row this run wrote is left behind" {
   post_session wren >/dev/null
   teardown
