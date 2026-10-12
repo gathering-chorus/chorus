@@ -3,9 +3,10 @@
  * #4235 — the Athena structure (products, domains, services) read from the live
  * graph. Jeff, 2026-10-10: "i honestly dont think we want any tree.json
  * dependencies tree.json was our proto graph". This module replaces the
- * hand-written proto-graph file, which #4235 deleted; GET /api/athena/tree and
- * /api/athena/ownership (chorus_tree_get, chorus_ownership_lookup) answer from
- * the store, and a store that does not answer is an error, never a file.
+ * hand-written proto-graph file, which #4235 deleted; GET /api/athena/tree
+ * (chorus_tree_get) answers from the store, and a store that does not answer
+ * is an error, never a file. #4508 — ownership is the model door's
+ * links.ownedBy; the second ownership route here was deleted.
  */
 import { csvRecords, type CsvQuery } from './nightly-graph';
 
@@ -26,9 +27,6 @@ export interface TreeNode {
   consumes?: string[];
 }
 export interface GraphTree { source: 'graph'; products: TreeNode[]; domains: TreeNode[]; services: TreeNode[] }
-export interface OwnershipResult {
-  iri: string; kind: 'product' | 'domain' | 'service'; owner: string; product?: string; domain?: string; service?: string;
-}
 
 const short = (v: string): string => (v.startsWith(C) ? `chorus:${v.slice(C.length)}` : v);
 const LISTS = new Set(['hasDomain', 'hosts', 'consumes', 'gaps']);
@@ -83,25 +81,4 @@ export function treeFromCsv(csv: string): GraphTree {
 export async function loadTreeFromGraph(query: CsvQuery): Promise<GraphTree | null> {
   const csv = await query(structureQuery());
   return csv === null ? null : treeFromCsv(csv);
-}
-
-/**
- * Who owns an IRI and where it sits: products, then domains (their product
- * through hasDomain), then services (their domain through hosts). null = not found.
- */
-export function lookupOwnership(tree: GraphTree, iri: string): OwnershipResult | null {
-  const product = tree.products.find((p) => p.iri === iri);
-  if (product) return { iri, kind: 'product', owner: product.ownedBy ?? '', product: iri };
-  const domain = tree.domains.find((d) => d.iri === iri);
-  if (domain) {
-    const owning = tree.products.find((p) => (p.hasDomain ?? []).includes(iri));
-    return { iri, kind: 'domain', owner: domain.ownedBy ?? '', product: owning?.iri, domain: iri };
-  }
-  const service = tree.services.find((s) => s.iri === iri);
-  if (service) {
-    const hosting = tree.domains.find((d) => (d.hosts ?? []).includes(iri));
-    const owning = hosting ? tree.products.find((p) => (p.hasDomain ?? []).includes(hosting.iri)) : undefined;
-    return { iri, kind: 'service', owner: service.ownedBy ?? '', product: owning?.iri, domain: hosting?.iri, service: iri };
-  }
-  return null;
 }

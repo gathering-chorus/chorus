@@ -13,6 +13,9 @@ export function formatAccessLine(
   path: string,
   status: number,
   ms: number,
+  bytes?: number | null,
 ): string {
-  return `[chorus-api] ${new Date(startMs).toISOString()} ${method} ${path} ${status} ${ms}ms`;
+  // #4508 — size when known, so a slow file serve shows how big it was
+  const size = typeof bytes === 'number' ? ` ${bytes}b` : '';
+  return `[chorus-api] ${new Date(startMs).toISOString()} ${method} ${path} ${status} ${ms}ms${size}`;
 }

@@ -1,8 +1,8 @@
 // @test-type: unit
 // @domain: tests · @card: 4235 · owner: kade
-// #4235 — the Athena tree and ownership lookups answer from the live graph.
+// #4235 — the Athena tree answers from the live graph.
 // Jeff, 2026-10-10: "i honestly dont think we want any tree.json dependencies".
-import { treeFromCsv, lookupOwnership, loadTreeFromGraph, structureQuery } from '../src/handlers/athena-tree-graph';
+import { treeFromCsv, loadTreeFromGraph, structureQuery } from '../src/handlers/athena-tree-graph';
 
 const C = 'https://jeffbridwell.com/chorus#';
 const RDFS = 'http://www.w3.org/2000/01/rdf-schema#';
@@ -36,17 +36,7 @@ describe('#4235 the tree is built from the graph', () => {
     expect(treeFromCsv(CSV).domains.find((d) => d.iri === 'chorus:identity')!.label).toBe('identity');
   });
 
-  it('ownership: a domain names its product, a service its domain and product', () => {
-    const tree = treeFromCsv(CSV);
-    expect(lookupOwnership(tree, 'chorus:messages')).toEqual({
-      iri: 'chorus:messages', kind: 'domain', owner: 'chorus:principal-wren', product: 'chorus:clearing', domain: 'chorus:messages' });
-    expect(lookupOwnership(tree, 'chorus:service-pulse')).toEqual({
-      iri: 'chorus:service-pulse', kind: 'service', owner: 'chorus:principal-kade',
-      product: 'chorus:clearing', domain: 'chorus:messages', service: 'chorus:service-pulse' });
-  });
-
-  it('NEGATIVE PROOF — a name the graph does not hold is not-found, and a store that does not answer is null', async () => {
-    expect(lookupOwnership(treeFromCsv(CSV), 'chorus:nowhere')).toBeNull();
+  it('NEGATIVE PROOF — a store that does not answer is null', async () => {
     expect(await loadTreeFromGraph(async () => null)).toBeNull();
     const added = treeFromCsv(`${CSV}\n${row('borg', 'Product', `${RDFS}label`, 'Borg')}`);
     expect(added.products.map((p) => p.iri)).toContain('chorus:borg');

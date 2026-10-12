@@ -96,12 +96,16 @@ export function firstAppFrame(frames: string[]): string | undefined {
   return frames.find((f) => !isPlumbing(f)) ?? frames[0];
 }
 
-export function formatBlockAlert(durationMs: number, ts: string, op: string, stack?: string[]): BlockAlert {
+/** #4508 — `inFlight` is the request ledger's sentence (what overlapped the
+ *  stall). When given it replaces the "grep the access log" pointer: the
+ *  alert names the requests itself. */
+export function formatBlockAlert(durationMs: number, ts: string, op: string, stack?: string[], inFlight?: string, measuredEnd = false): BlockAlert {
   const display = boston(ts);
   // #3753 AC5 — a reading at the probe ceiling is a FLOOR, not a duration: the
   // probe caps at PROBE_CEILING_MS (#3750's constant — one source), so "8000ms"
   // institutionalized a misread (one ~20s freeze read as two 8s blocks, #3742).
-  const durationLabel = durationMs >= PROBE_CEILING_MS
+  // #4508 — a length measured start-to-recovery is not capped by the probe
+  const durationLabel = durationMs >= PROBE_CEILING_MS && !measuredEnd
     ? `≥${Math.round(PROBE_CEILING_MS / 1000)}s (probe ceiling — true duration unknown)`
     : `${durationMs}ms`;
   const frames = (stack ?? []).map((f) => f.trim()).filter((f) => f.length > 0);
@@ -110,7 +114,8 @@ export function formatBlockAlert(durationMs: number, ts: string, op: string, sta
     : `Captured op: ${op}.`;
   // A captured stack replaces the correlate-it-yourself pointer: the frame is
   // the measured call site, still no inferred story beyond it.
-  const causeNote = frames.length > 0 ? `Blocked at: ${firstAppFrame(frames)}.` : opNote;
+  const causeNote = (frames.length > 0 ? `Blocked at: ${firstAppFrame(frames)}.` : opNote)
+    + (inFlight ? ` ${inFlight}` : '');
   return {
     duration_ms: durationMs,
     ts,
@@ -137,6 +142,8 @@ export interface EventloopAlertDeps {
   emit: (a: BlockAlert) => void;
   /** call-to-action delivery — throttled */
   nudge: (a: BlockAlert) => void;
+  /** #4508 — names the requests that overlapped [from, to] (the request ledger) */
+  describeInFlight?: (from: number, to: number) => string;
   threshold?: number;     // ms; default 1000
   bootDelayMs?: number;   // delay before monitoring, excludes cold-start; default 10000
   throttleMs?: number;    // min gap between nudges; default 300000 (5m)
@@ -154,7 +161,9 @@ export function startEventloopAlert(deps: EventloopAlertDeps): void {
   let lastNudge = 0;
 
   const fire = (ms: number, stack?: string[]): void => {
-    const a = formatBlockAlert(Math.round(ms), new Date(now()).toISOString(), getCurrentOp(), stack);
+    const t = now();
+    const a = formatBlockAlert(Math.round(ms), new Date(t).toISOString(), getCurrentOp(), stack,
+      deps.describeInFlight?.(t - ms, t));
     deps.emit(a);
     if (now() - lastNudge >= throttleMs) {
       lastNudge = now();

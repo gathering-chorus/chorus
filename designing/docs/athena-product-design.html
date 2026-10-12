@@ -61,7 +61,7 @@
   <li><strong>Gates</strong> — <code>/gate-product</code> verifies a card's <code>Domains:</code> label resolves to a real tree IRI; refuses if not.</li>
   <li><strong>SessionStart</strong> — per-role envelope injection: owned units, most-active and needs-work lists, flat ownership map, tree URL.</li>
   <li><strong>Blast-radius</strong> — <code>chorus_blast_radius</code> walks <code>consumes</code> + <code>hosts</code> + <code>dependsOn</code> recursively; "what does changing X affect" for gates and cards.</li>
-  <li><strong>Role-nudge routing</strong> — "who owns this?" resolves via <code>chorus_ownership_lookup</code>, not pattern-matching role files.</li>
+  <li><strong>Role-nudge routing</strong> — "who owns this?" resolves via the model door's <code>links.ownedBy</code>, not pattern-matching role files (#4508).</li>
   <li><strong>/demo feedback</strong> — product-impact answers cite tree IRIs, not memory.</li>
   <li><strong>Jeff &amp; the team</strong> — the rendered tree page; a shared visual artifact every demo can reference.</li>
   <li><strong>Tagging layer</strong> — tree IRIs are the canonical tag enumeration for cards (<code>domain:&lt;slug&gt;</code> etc.), code (per-file owning-Service tags), and tests (per-domain CI routing).</li>
@@ -72,7 +72,7 @@
 <ul>
   <li><strong>Domains</strong> (per the chorus tree): <code>domains</code>, <code>services</code>, <code>knowledge</code>, <code>domain-context</code>. The <code>domains</code> domain's page renders THE SET — the generated catalog live.</li>
   <li><strong>Child products:</strong> none — Athena is a leaf Product.</li>
-  <li><strong>Surfaces:</strong> MCP tools (<code>chorus_tree_get</code> / <code>chorus_ownership_lookup</code> / <code>chorus_blast_radius</code>); the athena pages (<code>tree.html</code>, <code>domain-detail.html</code>, the flow mock + anatomy — §6); the generated domain APIs (<code>:3360</code>).</li>
+  <li><strong>Surfaces:</strong> MCP tools (<code>chorus_tree_get</code> / <code>chorus_blast_radius</code>); the athena pages (<code>tree.html</code>, <code>domain-detail.html</code>, the flow mock + anatomy — §6); the generated domain APIs (<code>:3360</code>).</li>
   <li><strong>Overlays</strong> (TO-BE): non-containment annotations — authority, ownership, deploy-route, customer-happiness — queryable as their own predicates (<code>overlay_get</code> / <code>overlay_query</code>). The AS-IS Athena has no overlay surface at all.</li>
 </ul>
 
@@ -118,7 +118,7 @@ Artifacts: <a href="athena-flow-mock/index.html">the walkable mock</a> (domain p
 <ul>
   <li><strong>v1</strong> — SPARQL/Fuseki (<code>localhost:3030</code>, <code>urn:chorus:instances</code>): 49 subdomains, ~88 consumers. Legacy read surface (<code>subdomains_get</code> / <code>subdomains_list</code>) live. <code>chorus-instance-explorer.html</code> queries Fuseki direct, bypassing the API.</li>
   <li><strong>v2</strong> — <code>tree.json</code> + the generated Domain API at <code>:3360</code> live, 34 domains + CORS. <code>chorus-v2.ttl</code> + shapes landed. v1 and v2 are bridged.</li>
-  <li><strong>Operational layer</strong> — MCP tools (<code>chorus_tree_get</code> / <code>chorus_ownership_lookup</code> / <code>chorus_blast_radius</code>), SessionStart envelope injection, the rendered tree page, the card/code/test tagging convention.</li>
+  <li><strong>Operational layer</strong> — MCP tools (<code>chorus_tree_get</code> / <code>chorus_blast_radius</code>), SessionStart envelope injection, the rendered tree page, the card/code/test tagging convention.</li>
 </ul>
 
 <h3>TO-BE <span style="color:#d97706;font-size:0.8em;"></span></h3>

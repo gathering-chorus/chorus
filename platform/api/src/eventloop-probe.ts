@@ -48,6 +48,11 @@ export interface EventloopProbeDeps {
   emit: (a: BlockAlert) => void;
   /** call-to-action delivery — throttled */
   nudge: (a: BlockAlert) => void;
+  /** #4508 — once chorus-api answers again, the requests that overlapped the
+   *  stall (its request ledger). When given, the nudge waits for recovery and
+   *  carries the measured length and those requests; while the loop is stuck
+   *  nobody inside it can say what it is doing. */
+  inFlight?: (from: number, to: number) => Promise<string>;
   threshold?: number;     // ms; default 1000
   throttleMs?: number;    // min gap between nudges; default 300000 (5m)
   intervalMs?: number;    // gap between probes; default 2000
@@ -73,6 +78,8 @@ export async function runEventloopProbe(deps: EventloopProbeDeps): Promise<void>
   const bounded = typeof deps.ticks === 'number';
   let lastNudge = Number.NEGATIVE_INFINITY;
   let inBlock = false; // edge state: are we inside an ongoing block episode?
+  let blockStart = 0;
+  let firstAlert: BlockAlert | null = null;
   let t = 0;
 
   while (!bounded || t < (deps.ticks as number)) {
@@ -88,14 +95,24 @@ export async function runEventloopProbe(deps: EventloopProbeDeps): Promise<void>
       if (!inBlock) {
         // rising edge: a NEW block episode — emit the witness once, nudge if past throttle.
         inBlock = true;
+        blockStart = now() - latencyMs;
+        firstAlert = a;
         deps.emit(a);
-        if (now() - lastNudge >= throttleMs) {
+        if (!deps.inFlight && now() - lastNudge >= throttleMs) {
           lastNudge = now();
           deps.nudge(a);
         }
       }
       // still blocked (inBlock): suppress — one episode, one alert. No flood.
     } else {
+      if (inBlock && deps.inFlight && firstAlert && now() - lastNudge >= throttleMs) {
+        // #4508 — falling edge: the loop answers again, so ask it what overlapped
+        const end = now() - latencyMs;
+        let named = '';
+        try { named = await deps.inFlight(blockStart, end); } catch { named = 'chorus-api did not say what was in flight.'; }
+        lastNudge = now();
+        deps.nudge(formatBlockAlert(Math.round(end - blockStart), new Date(blockStart).toISOString(), firstAlert.op, undefined, named, true));
+      }
       inBlock = false; // recovered → re-arm for the next episode
     }
     await sleep(intervalMs);
@@ -180,6 +197,13 @@ if (require.main === module) {
         op: a.op,
       })) return;
       execFile('bash', [OPS_NUDGE, 'wren', a.message], () => {});
+    },
+    // #4508 — once the loop answers, ask chorus-api what overlapped the stall
+    inFlight: async (from, to) => {
+      const r = await fetch(`${apiBase}/api/chorus/context/eventloop/in-flight?from=${Math.floor(from)}&to=${Math.ceil(to)}`,
+        { signal: AbortSignal.timeout(timeoutMs) });
+      const body = (await r.json()) as { text?: string };
+      return body.text ?? 'chorus-api did not say what was in flight.';
     },
     threshold: 3000,
   });

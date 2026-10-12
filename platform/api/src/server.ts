@@ -23,6 +23,7 @@ import fs from 'fs';
 // initialized before the `app.use(makeRequestOpMiddleware())` call below
 // (CJS compile evaluates imports in source order → TDZ if used before).
 import { startEventloopAlert, setCurrentOp, makeRequestOpMiddleware, firstAppFrame } from './eventloop-alert';
+import { RequestLedger, describeOverlap } from './request-ledger';
 // #3742 — cross-process episode gate; the probe worker opens the same file.
 import { FileEpisodeGate } from './eventloop-episode';
 const EVENTLOOP_EPISODE_GATE = new FileEpisodeGate(
@@ -71,6 +72,31 @@ app.use(express.text({ type: ['application/sparql-query', 'text/plain'], limit: 
 // route handlers so it fires on entry; clearing on `finish` + `close` so the op
 // doesn't leak past the response.
 app.use(makeRequestOpMiddleware());
+
+// Request logging — every request writes to stdout so the log stays fresh.
+// The line carries the request START timestamp (#3058) so an event-loop-block
+// alert at time T can be matched to the request whose [start, start+ms]
+// window contains T. Format is the pure formatAccessLine() (unit-tested).
+// #4508 — mounted before express.static, so served files are logged too (with
+// their size), and every request enters the ledger the stall alerts read.
+const REQUEST_LEDGER = new RequestLedger();
+app.use((req, res, next) => {
+  const start = Date.now();
+  const id = REQUEST_LEDGER.start(req.method, req.path, start);
+  let done = false;
+  const end = () => {
+    if (done) return;
+    done = true;
+    const ms = Date.now() - start;
+    const len = Number(res.getHeader('content-length'));
+    const bytes = Number.isFinite(len) ? len : null;
+    REQUEST_LEDGER.finish(id, res.statusCode, bytes, start + ms);
+    console.log(formatAccessLine(start, req.method, req.path, res.statusCode, ms, bytes));
+  };
+  res.on('finish', end);
+  res.on('close', end);
+  next();
+});
 
 // #3618 — the security envelope: gates model-declared mutation surfaces.
 // Mounted here (before route handlers) but DEPLOY-SAFE: enabled only when
@@ -979,18 +1005,6 @@ app.get('/api/chorus/sessions/:id/log', async (req, res) => {
   res.status(r.status).json(r.body);
 });
 
-// Request logging — every request writes to stdout so the log stays fresh.
-// The line carries the request START timestamp (#3058) so an event-loop-block
-// alert at time T can be matched to the request whose [start, start+ms]
-// window contains T. Format is the pure formatAccessLine() (unit-tested).
-app.use((req, res, next) => {
-  const start = Date.now();
-  res.on('finish', () => {
-    const ms = Date.now() - start;
-    console.log(formatAccessLine(start, req.method, req.path, res.statusCode, ms));
-  });
-  next();
-});
 const PORT = parseInt(process.env.CHORUS_API_PORT || '3340', 10);
 // #3379 — env-overridable: demo VARIANTS must not open production's stores
 // (three api processes sharing index.db+lance was the day's wedge root; the
@@ -1905,6 +1919,18 @@ app.get('/api/chorus/context/roles', async (req: Request, res: Response) => {
   res.status(r.status).json(r.body);
 });
 
+// #4508 — what overlapped a stall, for the out-of-process probe to ask once
+// the loop answers again. from/to are epoch ms.
+app.get('/api/chorus/context/eventloop/in-flight', (req: Request, res: Response) => {
+  const from = Number(req.query.from);
+  const to = Number(req.query.to);
+  if (!Number.isFinite(from) || !Number.isFinite(to) || to < from) {
+    return res.status(400).json({ error: 'from and to are epoch milliseconds, from <= to' });
+  }
+  const entries = REQUEST_LEDGER.overlapping(from, to);
+  return res.json({ text: describeOverlap(entries, Date.now()), entries });
+});
+
 app.get('/api/chorus/context/health', async (req: Request, res: Response) => {
   const r = await fetchContextHealth(
     { sparql: _athena, readPulse: readPulseFile },
@@ -2696,22 +2722,15 @@ app.get('/api/athena/health', async (_req: Request, res: Response) => {
 
 // #3603: GET /api/athena/products RETIRED — athena-make :3360/products serves products.
 
-// #4235 — the tree and ownership answer from the live graph (the proto-graph
-// file is gone). A store that does not answer is a 503, never a file.
-import { loadTreeFromGraph, lookupOwnership } from './handlers/athena-tree-graph';
+// #4235 — the tree answers from the live graph (the proto-graph file is gone).
+// #4508 — ownership is the model door's links.ownedBy; its copy here is gone. A store that does not answer is a 503, never a file.
+import { loadTreeFromGraph } from './handlers/athena-tree-graph';
 const STORE_UNREACHABLE = 'store-unreachable';
 const athenaTree = () => loadTreeFromGraph(fusekiCsv(nightlyFuseki()));
 app.get('/api/athena/tree', async (_req: Request, res: Response) => {
   const tree = await athenaTree();
   if (!tree) { res.status(503).json({ ok: false, reason: STORE_UNREACHABLE }); return; }
   res.status(200).json(tree);
-});
-app.get('/api/athena/ownership/:iri', async (req: Request, res: Response) => {
-  const tree = await athenaTree();
-  if (!tree) { res.status(503).json({ ok: false, reason: STORE_UNREACHABLE }); return; }
-  const r = lookupOwnership(tree, req.params.iri);
-  if (!r) { res.status(404).json({ ok: false, reason: 'not-found', iri: req.params.iri }); return; }
-  res.status(200).json(r);
 });
 // #4419 AC1 — blast radius reads the live graph's edges (hasDomain, partOf,
 // consumes, hosts).
@@ -3552,6 +3571,7 @@ if (require.main === module) {
   // the probe's (detector=probe) during the overlap, so the retirement is provable
   // from the data. This whole block is retired by the follow-on once the probe is proven.
   startEventloopAlert({
+    describeInFlight: (from, to) => describeOverlap(REQUEST_LEDGER.overlapping(from, to), to),
     emit: (a) =>
       execFile('bash', [CHORUS_LOG, 'eventloop.blocked', 'silas',
         'domain=chorus',
