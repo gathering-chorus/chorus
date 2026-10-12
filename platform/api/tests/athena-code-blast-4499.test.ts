@@ -17,12 +17,12 @@ const UNITS = [
 ].join('\n');
 const BUILT = ['s,u', `${C}service-werk,${C}code-unit-platform-services-werk-accept`, `${C}service-knowledge-store,${C}code-unit-platform-api`].join('\n');
 const FILES = [
-  'path,kind,domain,route',
-  `platform/services/werk-accept/src/lib.rs,${C}code,${C}version-control,`,
-  `platform/services/werk-accept/tests/a.rs,${C}test,${C}version-control,`,
-  `platform/services/werk-push/src/lib.rs,${C}code,${C}version-control,`,
-  `platform/services/werk-teardown/src/lib.rs,${C}code,${C}version-control,`,
-  `platform/api/public/werk/index.html,${C}code,${C}cicd,/werk/`,
+  'path,kind,domain,route,repo',
+  `platform/services/werk-accept/src/lib.rs,${C}code,${C}version-control,,${C}repository-chorus`,
+  `platform/services/werk-accept/tests/a.rs,${C}test,${C}version-control,,${C}repository-chorus`,
+  `platform/services/werk-push/src/lib.rs,${C}code,${C}version-control,,${C}repository-chorus`,
+  `platform/services/werk-teardown/src/lib.rs,${C}code,${C}version-control,,${C}repository-chorus`,
+  `platform/api/public/werk/index.html,${C}code,${C}cicd,/werk/,${C}repository-chorus`,
 ].join('\n');
 
 const units: UnitRow[] = unitsFromCsv(UNITS);
@@ -72,7 +72,7 @@ describe('#4499 the blast radius of a change, from the code units', () => {
   // #4499 reopen — pages came back 0 for every target: Page rows are typed only
   // as Page, so the CodeFile read never carried a route.
   it('the pages a change reaches come from the Page rows', () => {
-    const pages = pagesFromCsv('path,route\nplatform/api/public/athena/x.html,/athena/x.html\ndirecting/elsewhere/y.html,/y.html\n');
+    const pages = pagesFromCsv(`path,route,repo\nplatform/api/public/athena/x.html,/athena/x.html,${C}repository-chorus\ndirecting/elsewhere/y.html,/y.html,${C}repository-chorus\n`);
     const codeFiles = files.map((f) => ({ ...f, route: '' })); // live CodeFile rows carry no route
     const r = codeBlast('platform/api/src/server.ts', units, built, withPages(codeFiles, pages));
     expect(r.measured && r.pages).toEqual(['/athena/x.html']);
@@ -146,5 +146,29 @@ describe('#4405 repositories a change reaches', () => {
     const units: UnitRow[] = [{ name: 'shared-security--root', path: '.', kind: 'package', deps: [] }];
     const r = codeBlast('bin/start.sh', units, [], [], { repo: 'shared-security', edges: repoEdgesFromCsv(EDGES) });
     expect(r.measured && r.repositories).toEqual({ name: 'shared-security', dependents: ['chorus', 'wine-diary', 'ops-console'] });
+  });
+});
+
+// #4405 reopen 3 — files carry their repository. Before, another repo's root
+// unit claimed every chorus file: shared-security answered 1,332 tests, 21 pages.
+describe('#4405 files answer for their own repository', () => {
+  const MIXED_FILES = [
+    'path,kind,domain,route,repo',
+    `src/index.ts,${C}code,${C}cards,,${C}repository-chorus`,
+    `tests/a.test.ts,${C}test,${C}cards,,${C}repository-chorus`,
+    `bin/start.sh,${C}code,${C}identity,,${C}repository-shared-security`,
+    `old/no-repo.ts,${C}test,${C}cards,,`,
+  ].join('\n');
+  const root: UnitRow[] = [{ name: 'shared-security-root', path: '.', kind: 'package', deps: [] }];
+  it("NEGATIVE PROOF — another repo's root unit never claims chorus's files", () => {
+    const r = codeBlast('bin/start.sh', root, [], filesFromCsv(MIXED_FILES, 'shared-security'));
+    expect(r.measured && [r.tests, r.domains]).toEqual([0, [{ name: 'identity', files: 1 }]]);
+  });
+  it('a file that names no repository answers for none', () => {
+    expect(filesFromCsv(MIXED_FILES, 'chorus').map((f) => f.path)).toEqual(['src/index.ts', 'tests/a.test.ts']);
+  });
+  it('a page answers only for its own repository', () => {
+    const pages = pagesFromCsv(`path,route,repo\na.html,/a,${C}repository-chorus\nb.html,/b,${C}repository-shared-security\n`, 'shared-security');
+    expect(pages).toEqual([['b.html', '/b']]);
   });
 });

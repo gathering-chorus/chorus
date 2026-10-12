@@ -125,7 +125,7 @@ export function builtFromQuery(): string {
  * (measured on the #4499 run 2 demo, 2026-10-11).
  */
 export function filesQuery(): string {
-  return `SELECT ?path ?kind ?domain ?route WHERE { GRAPH <urn:chorus:domains:code> { ?f a <${C}CodeFile> ; <${C}filePath> ?path . OPTIONAL { ?f <${C}hasKind> ?kind } OPTIONAL { ?f <${C}hasDomain> ?domain } OPTIONAL { ?f <${C}route> ?route } } }`;
+  return `SELECT ?path ?kind ?domain ?route ?repo WHERE { GRAPH <urn:chorus:domains:code> { ?f a <${C}CodeFile> ; <${C}filePath> ?path . OPTIONAL { ?f <${C}hasKind> ?kind } OPTIONAL { ?f <${C}hasDomain> ?domain } OPTIONAL { ?f <${C}route> ?route } OPTIONAL { ?f <${C}inRepository> ?repo } } }`;
 }
 
 /**
@@ -133,7 +133,7 @@ export function filesQuery(): string {
  * so the files query never sees their routes: read them apart and fold them in.
  */
 export function pagesQuery(): string {
-  return `SELECT ?path ?route WHERE { GRAPH <urn:chorus:domains:code> { ?f a <${C}Page> ; <${C}filePath> ?path ; <${C}route> ?route } }`;
+  return `SELECT ?path ?route ?repo WHERE { GRAPH <urn:chorus:domains:code> { ?f a <${C}Page> ; <${C}filePath> ?path ; <${C}route> ?route . OPTIONAL { ?f <${C}inRepository> ?repo } } }`;
 }
 export function withPages(files: FileRow[], pages: [string, string][]): FileRow[] {
   const out = files.map((f) => ({ ...f }));
@@ -182,12 +182,16 @@ export function unitsFromCsv(csv: string, repo: string = DEFAULT_REPO): UnitRow[
 export function builtFromFromCsv(csv: string): [string, string][] {
   return csvRows(csv).map(([s, u]) => [local(s), local(u).replace(/^code-unit-/, '')] as [string, string]);
 }
-export function pagesFromCsv(csv: string): [string, string][] {
-  return csvRows(csv).map(([path = '', route = '']) => [path, route] as [string, string]).filter(([p, r]) => p && r);
+/** #4405 reopen 3 — a file or page answers only for the repository it names; one that names none answers for none. */
+const inRepo = (r: string | undefined, repo: string): boolean => !!r && local(r).replace(/^repository-/, '') === repo;
+export function pagesFromCsv(csv: string, repo: string = DEFAULT_REPO): [string, string][] {
+  return csvRows(csv)
+    .filter(([, , r]) => inRepo(r, repo))
+    .map(([path = '', route = '']) => [path, route] as [string, string]).filter(([p, r]) => p && r);
 }
-export function filesFromCsv(csv: string): FileRow[] {
+export function filesFromCsv(csv: string, repo: string = DEFAULT_REPO): FileRow[] {
   // a row with an absent OPTIONAL has fewer cells: pad, so every field is a string
-  return csvRows(csv).map((cells) => {
+  return csvRows(csv).filter((cells) => inRepo(cells[4], repo)).map((cells) => {
     const [path = '', kind = '', domain = '', route = ''] = cells;
     return { path, kind: local(kind).replace(/^code-kind-/, ''), domain: local(domain).replace(/^domain-/, ''), route };
   });
