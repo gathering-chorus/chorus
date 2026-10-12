@@ -40,6 +40,7 @@
 pub mod lifecycle;
 pub mod rows;
 pub mod msgs;
+pub mod links;
 
 use serde_json::Value;
 use std::env;

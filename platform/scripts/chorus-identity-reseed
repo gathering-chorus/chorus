@@ -1,0 +1,24 @@
+#!/bin/bash
+# #4503 — copy a role's login into the role's own Mac account after
+# `chorus-principal move <role> --apply` gave it its own identity account.
+# Each role runs as its own Mac user (#4383) with its own copy of the login,
+# which only root can write. Run by Jeff:  sudo chorus-identity-reseed <role>
+# It installs ~jeffbridwell/.chorus/identity/<role>/cred.json into
+# /Users/chorus-<role>/.chorus/identity/<role>/ (mode 600, owned by the role)
+# and drops that copy's cached token, so the role's next login mints from
+# its own account. Nothing else is touched.
+set -euo pipefail
+role="${1:-}"
+case "$role" in
+  ""|*/*|*..*) echo "usage: sudo chorus-identity-reseed <role>" >&2; exit 2 ;;
+esac
+[ "$(id -u)" -eq 0 ] || { echo "chorus-identity-reseed: run with sudo (it writes into /Users/chorus-$role)" >&2; exit 2; }
+src="/Users/jeffbridwell/.chorus/identity/$role/cred.json"
+home="/Users/chorus-$role"
+dst="$home/.chorus/identity/$role"
+[ -f "$src" ] || { echo "chorus-identity-reseed: no $src — nothing copied" >&2; exit 2; }
+[ -d "$home" ] || { echo "chorus-identity-reseed: no Mac account $home — nothing copied" >&2; exit 2; }
+install -d -m 700 -o "chorus-$role" -g "$(id -gn "chorus-$role")" "$dst"
+install -m 600 -o "chorus-$role" -g "$(id -gn "chorus-$role")" "$src" "$dst/cred.json"
+rm -f "$dst/token.cache"
+echo "chorus-identity-reseed: $role's login copied into $dst; its next login mints from its own account"

@@ -41,15 +41,85 @@ chorus:service-clearing a chorus:Service ;
 chorus:service-identity a chorus:Service ;
     chorus:oidcClientId "https://chorus.lightlifeurbangardens.com/_auth/clientid.jsonld" ;   # #4412 — the shared sign-in page
     rdfs:label "Identity" ; chorus:label "Identity" ;
-    chorus:overview "Who anyone is, human or agent — the one place identity is MINTED for the whole system. The CSS Solid pod on :3001 is the OIDC issuer (public door id.lightlifeurbangardens.com via the tunnel); the #3613 seam issues agents client-credential identities (ES256, JWKS published for consumers to verify with); the shared-session cookie key (~/.chorus/share-oidc.json) lets surfaces verify a browser session without re-asking. Everything downstream that decides permissions consumes this service's answers; nothing else may mint them." ;
     chorus:ownedBy chorus:principal-silas ;
-    chorus:status "operating" ;
-    chorus:asIs "Live: CSS pod issues for jeff + all three role Principals (webIds reconciled #3726, reproducible from MODEL_SET); seam verification is deployed on chorus-api's envelope door; login on the gathering app performs the client-credentials grant server-side, spoofing the public issuer Host because Cloudflare 1010-blocks the direct call. Hard truths from the live walk: login FAILS HARD when :3001 is down (no fallback page, error render), and Identity is a single instance on one machine." ;
-    chorus:toBe "Every participant on every public surface authenticates through this seam — the Clearing door included (#3669 lanes 2-3): agents via client-credentials with DPoP, humans via browser OIDC against id.lightlifeurbangardens.com, verified against the seam's JWKS everywhere. The Host-spoof workaround retired by fixing the tunnel path. Fail-closed stays, but fails LOUD: an identity outage renders as 'identity is down', never as a generic error page." ;
-    chorus:implementationPlan "(1) #3878's /clearing move forces the Clearing-door decision — route its auth through the seam in the same change rather than porting the static token. (2) Retire the Cloudflare Host-spoof: tunnel config gains a direct id.* path for server-side grants (Silas, tunnel owner). (3) Loud-fail login page distinguishing identity-down from bad-credentials (the gate-refusal-names-its-state rule applied to the front door)." ;
-    chorus:pathToClose "Closed when every public surface's login flows through the seam, the Host-spoof is gone, and an identity outage names itself to the visitor." ;
-    chorus:gaps "Single instance, hard-fail dependency for all login (observed: CSS down = login error page). Host-spoof workaround in login.handler.ts is load-bearing. Clearing public door still uses a static bridge token, not seam identity. No Document instance linked yet (hasDesignDoc floor unmet across all Services — Silas review point 3)." ;
-    chorus:notInScope "AuthZ of any kind: allow-lists, role grants, per-surface permissions (roles domain / consuming apps). Session STORAGE (gathering's sessions.db). Nostr key derivation for Buzz (#3674 bar: derived creds bound to Principals — a consumer of this seam, not part of it)." .
+    chorus:status "building" ;
+    # #4503 — the design, in ADR-029's order, in the graph (Jeff 2026-10-12: "only 1 login /
+    # sign in flow", "its for chorus not a page", "accidental architecture"). overview is §2.
+    chorus:overview """You sign in to Chorus once, as yourself, and every Chorus surface knows who you are without asking again. An agent proves who it is the same way every time, and no one, person or agent, can act as someone else. Identity answers only who; what that principal may do is the roles domain's answer.""" ;
+    chorus:contract """Person's browser to the door: GET /_auth/login, the identity provider, then /_auth/callback. Returns a signed session cookie for .lightlifeurbangardens.com naming the WebID, the Session row (sid) and when it was signed in. Fails: identity-provider-down, no-webid. Side effect: one open Session row for this browser; a sign-in that carries the browser's earlier cookie closes that row first.""" , """Every Chorus surface (pages behind the door, the Clearing, the app) to the door: GET /_auth/whoami with the cookie returns 200 {webid, allowed} or 401; GET /_auth/renew returns 204 with a renewed cookie or 401. Fails: anonymous, logged-out, expired, not-authorized. Side effect: on renew, the Session's lastSeenAt and expiresAt move. No surface keeps a sign-in or a session of its own.""" , """Person to the door: GET /_auth/logout. Clears the cookie at the scope it was set and closes the Session row. Every surface reads the person as signed out on its next request. The only sign-out.""" , """Agent (chorus-principal login <role>) to the identity provider: a client-credentials grant from the agent's own account returns a token naming its WebID. The agent then writes its own Session, SessionRun and Presence through the model door. Fails: identity-provider-down, not-owner (403 on any row it does not own).""" , """Any API door (athena-make, chorus-api) to chorus-oidc: verify a bearer token against the provider's keys and resolve its Principal. Returns the principal, or 401 invalid-token. Writes are then judged on the row's owner: 403 not-owner, 403 deploy-only for Principal rows.""" ;
+    chorus:contract """chorus-api's roles view (the Clearing tile) to the model door: GET /v1/identity/sessions and /v1/identity/presences, read-only. Returns each principal's open sessions; a person shows one per browser. Fails: unavailable (the store did not answer), never an empty list in its place. No side effect.""" ,
+        """chorus-principal (login <role>, the agent half of identity) to the model door: reads the person's open browser Session before starting a role in his name (#4412). Returns the open Session, or refuses the start when there is none: no-person-session. Side effect: none on his row; the agent writes only its own rows.""" ;
+    chorus:validation """The door validates on every request before anything is proxied or written: the cookie's signature, its expiry (12 hours idle), its sign-in time (30 days at most), and that its Session row is still open. API doors verify a bearer token before any write. A failed check returns its named state (anonymous, logged-out, expired, not-authorized) as a 401 or 403 and never proxies, writes or renews.""" ;
+    chorus:failureMode """identity-provider-down: the sign-in page says identity is down; never a generic error.""" , """anonymous: no valid cookie. A browser gets the sign-in page, a script gets 401.""" , """logged-out: the cookie names a Session that was signed out. Fails on its next request, however recently used.""" , """expired: idle past 12 hours, or past 30 days since sign-in however recently used.""" , """not-authorized: signed in, not in the allow-set for this surface (403).""" , """not-owner: a write to a Session, SessionRun or Presence row another principal owns (403). No Permission row opens it.""" , """deploy-only: a session tried to create or change a Principal. Who exists is written by the model deploy only (403).""" ;
+    chorus:asIs """Measured 2026-10-12: three sign-ins (the door; the Clearing's own /auth/login, /auth/callback and /auth/signout; the app's /login form on :3000), so Jeff held 5 open sessions at once, 2 of them 30-day Clearing sign-ins. 15 agent and service WebIDs are pods of Jeff's identity-provider account (seed-css.sh), so his sign-in page offers a picker of 12 and a person can sign in as a role. The door renews on use and replaces a same-browser sign-in (#4500). No role holds a grant on the identity graph, so each writes only its own rows (#4204).""" ;
+    chorus:toBe """One door. Every Chorus surface trusts it and none signs in or out by itself, the home network included. One browser holds one session. Each agent and service has its own identity-provider account, so a person's sign-in names only that person and shows no picker.""" ;
+    chorus:implementationPlan """A (#4412 reopen, Wren for the Clearing, Kade for the app): delete the Clearing's /auth/login, /auth/callback, its own Session writes and its sign-out, and the app's /login form; both ask the door. B (#4503, Silas): a check that two sign-ins from one browser leave one open row, and Jeff's tile shows one session per browser. A and B land together. C (#4503, Silas): move each agent and service WebID to its own account, keeping its IRI: new account, link the WebID, new client credential, swap identity/<name>/cred.json, check its login, then unlink it from Jeff's account. zzz-test first (unlink only), then the services, then each role.""" ;
+    chorus:filesInScope "platform/scripts/chorus-share-guard.py" , "platform/scripts/lib/person_session.py" ,
+        "platform/services/chorus-principal" , "platform/services/chorus-oidc" , "platform/scripts/seed-css.sh" ,
+        "directing/clearing/src/server.ts" , "directing/clearing/src/person-session.ts" ,
+        "jeff-bridwell-personal-site (the app's /login)" ;
+    chorus:reference """ADR-029: every service design follows the template, consumers before providers.""" ,
+        """ADR-048 §3: field exposure tiers; #4503 makes every design section public, since the door already signs a reader in.""" ,
+        """#4204: no Permission row opens the identity graph; each principal writes only its own rows.""" ,
+        """#4220: Principal is deploy-only; who exists is not session-writable.""" ,
+        """#4383: each principal runs as its own Mac account.""" ,
+        """#4412: login is bound to the person's live browser session; the Clearing half of one sign-in (A).""" ,
+        """#4500: the door renews a session on use (12 hours idle, 30 days at most) and replaces a same-browser sign-in.""" ,
+        """#4503: one sign-in to Chorus, one session per browser, each principal its own account.""" ,
+        """no-app-owns-the-door (2026-08-08): no product holds the sign-in decision.""" ;
+    chorus:pathToClose """Closed when Jeff signs in once with no picker, every Chorus surface trusts that sign-in, his tile shows one session per browser, and no WebID but his can be chosen from his account.""" ;
+    chorus:gaps """The identity provider is a single instance, a hard-fail dependency for every login. The door and person_session.py are scripts, not code units, so blast radius cannot see a sign-in change. The Host-spoof the app's old login needed is unverified since August.""" ;
+    chorus:notInScope """Authorization of any kind: allow-sets, role grants, per-surface permissions (roles domain). Nostr key derivation for Buzz.""" ;
+    chorus:diagram """%% As is: three doors (measured 2026-10-12)
+flowchart LR
+  browser[Person's browser] -->|sign in| door[The door]
+  browser -->|its own sign-in| clearing[Clearing]
+  browser -->|its own /login| app[Gathering app]
+  door -->|OIDC| idp[Identity provider]
+  clearing -->|OIDC| idp
+  door -->|Session rows| make[Model door]
+  clearing -->|Session rows| make
+  idp -->|15 WebIDs on Jeff's account| browser""" , """%% To be: one door
+flowchart LR
+  browser[Person's browser] -->|sign in / sign out| door[The door]
+  door -->|OIDC, his WebID only| idp[Identity provider]
+  door -->|one Session per browser| make[Model door]
+  clearing[Clearing] -->|whoami / renew| door
+  app[Gathering app] -->|whoami| door
+  agent[chorus-principal] -->|own account, client credentials| idp
+  agent -->|own Session rows| make""" ,
+        """%% Consumers: who calls identity (ADR-029 consumer diagram)
+flowchart LR
+  browser[Person's browser] -->|sign in / sign out| door[The door]
+  door -->|OIDC| idp[Identity provider]
+  clearing[Clearing] -->|whoami / renew| door
+  app[Gathering app] -->|whoami| door
+  pages[Pages behind the door] -->|proxied after whoami| door
+  agent[chorus-principal] -->|client credentials| idp
+  agent -->|own Session rows| make[Model door]
+  make -->|verify bearer| oidc[chorus-oidc]""" , """%% Sign-in, the critical path (ADR-029 sequence)
+sequenceDiagram
+  participant B as Browser
+  participant D as The door
+  participant P as Identity provider
+  participant M as Model door
+  B->>D: GET /_auth/login
+  D->>P: authorize (his WebID only)
+  P-->>D: code
+  D->>P: token
+  alt provider down
+    D-->>B: identity is down
+  else ok
+    D->>M: close this browser's old Session, open one
+    D-->>B: Set-Cookie (webid, sid, iat)
+  end
+  B->>D: any page, cookie
+  D->>D: verify signature, expiry, sid open
+  alt logged-out or expired
+    D-->>B: sign-in page (401)
+  else ok
+    D-->>B: page, renewed cookie
+  end""" .
 
 # Instances observed (from instances-observed.json; the harvester will own
 # these rows in the graph — listed here only as the deploys-mapping spec):
@@ -188,3 +258,8 @@ chorus:service-integration a chorus:Service ;
     chorus:pathToClose "Closed when every active flow maps to an ICD provider and the placement decision is recorded." ;
     chorus:gaps "Flow inventory not yet mapped to ICDs. Placement decision open. hasDesignDoc unfilled." ;
     chorus:notInScope "Store persistence (Knowledge Store). App-side rendering of converged data (Gathering App). One-shot scripts that aren't contracted flows." .
+# #4503 — ADR-029 §3: the services that sign people in through, or verify principals with, identity.
+chorus:service-clearing chorus:dependsOn chorus:service-identity .
+chorus:service-gathering-app chorus:dependsOn chorus:service-identity .
+chorus:service-athena chorus:dependsOn chorus:service-identity .
+chorus:service-knowledge-store chorus:dependsOn chorus:service-identity .

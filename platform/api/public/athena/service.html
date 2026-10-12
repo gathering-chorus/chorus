@@ -29,25 +29,48 @@ var s=document.createElement('script');s.src=window.basePath('/js/base-path.js')
   document.getElementById('crumb').textContent = s;
   if (!s) { main.innerHTML = '<p class="empty">no service named &mdash; try <a href="services.html">the services list</a>.</p>'; return; }
   try {
-    const [env, domEnv] = await Promise.all([fetchJSON(`/services/${encodeURIComponent(s)}`), fetchJSON('/domains').catch(() => null)]);
+    const [env, domEnv, colEnv] = await Promise.all([fetchJSON(`/services/${encodeURIComponent(s)}`), fetchJSON('/domains').catch(() => null), fetchJSON('/services?limit=300').catch(() => null)]);
     const steps = serviceSteps(s, (domEnv || {}).data);   // #4482 — the hosting domain's step
     const e = env.data || {};
     const links = env.links || {};
     document.getElementById('title').innerHTML = `${esc(e.label || s)} <span class="kind">&mdash; Service</span>`;
 
-    // The design, in the order it is read: what it is, where it stands, where
-    // it is going, what is missing, what it deliberately is not, how it closes.
+    // #4503 — the design in ADR-029's order, consumers before the provider: Promise,
+    // Consumers, Contracts, Validation, Failure modes, then As is, To be, Migration plan,
+    // Files in scope. A repeated literal is served whole only on the collection row
+    // (#4094), so repeatable sections read it there. Consumers are never typed on this
+    // row: they are the services whose dependsOn names this one.
+    const asList = v => Array.isArray(v) ? v.map(String) : (v === undefined || v === null || v === '' ? [] : [String(v)]);
+    const all = (colEnv && (colEnv.data || colEnv.items)) || null;
+    const crow = (all || []).find(r => r.name === s) || {};
+    const consumers = all === null ? null : all.filter(r => asList(r.dependsOn).some(d => d === s || d === `service-${s}` || d.endsWith(`#service-${s}`)));
     const SECTIONS = [
-      ['overview',    'Overview',      'chorus:overview',    'public'],
-      ['asIs',        'As is',         'chorus:asIs',        'public'],
-      ['toBe',        'To be',         'chorus:toBe',        'public'],
-      ['gaps',        'Gaps',          'chorus:gaps',        'signed-in'],
-      ['notInScope',  'Not in scope',  'chorus:notInScope',  'signed-in'],
-      ['pathToClose', 'Path to close', 'chorus:pathToClose', 'signed-in'],
+      ['overview',           'Promise',        'chorus:overview',           'public',    'one'],
+      ['consumers',          'Consumers',      'chorus:dependsOn (inverse)', 'public',   'consumers'],
+      ['contract',           'Contracts',      'chorus:contract',           'public',    'many'],
+      ['validation',         'Validation',     'chorus:validation',         'public',    'one'],
+      ['failureMode',        'Failure modes',  'chorus:failureMode',        'public',    'many'],
+      ['asIs',               'As is',          'chorus:asIs',               'public',    'one'],
+      ['toBe',               'To be',          'chorus:toBe',               'public',    'one'],
+      ['implementationPlan', 'Migration plan', 'chorus:implementationPlan', 'public',    'one'],
+      ['filesInScope',       'Files in scope', 'chorus:filesInScope',       'public',    'many'],
+      ['gaps',               'Gaps',           'chorus:gaps',               'public',    'one'],
+      ['notInScope',         'Not in scope',   'chorus:notInScope',         'public',    'one'],
+      ['pathToClose',        'Path to close',  'chorus:pathToClose',        'public',    'one'],
+      ['reference',          'References',     'chorus:reference',          'public',    'many'],
     ];
-    const folds = SECTIONS.map(([k, label, path, tier]) => e[k]
-      ? `<details class="fold" open><summary>${esc(label)} <span class="src">${esc(path)}</span></summary><div class="body"><p>${esc(e[k])}</p></div></details>`
-      : `<details class="fold"><summary>${esc(label)} <span class="src">${esc(path)} &mdash; withheld (${esc(tier)})</span></summary><div class="body"><p class="empty">Present in the model, not returned to this caller. ADR-048 exposure, not a missing field.</p></div></details>`
+    const bodyOf = (k, how) => {
+      if (how === 'consumers') {
+        if (consumers === null) return '<p class="empty"><strong>Cannot read the services list</strong> &mdash; fetch failure, not zero consumers.</p>';
+        return consumers.length ? `<ul>${consumers.map(r => `<li><a href="service.html?s=${encodeURIComponent(r.name)}">${esc(r.label || r.name)}</a></li>`).join('')}</ul>` : '';
+      }
+      if (how === 'many') { const vs = asList(crow[k]).length ? asList(crow[k]) : asList(e[k]); return vs.length ? `<ul>${vs.map(v => `<li>${esc(v)}</li>`).join('')}</ul>` : ''; }
+      return e[k] ? `<p>${esc(e[k])}</p>` : '';
+    };
+    const served = SECTIONS.map(([k, , , , how]) => bodyOf(k, how));
+    const folds = SECTIONS.map(([k, label, path, tier], i) => served[i]
+      ? `<details class="fold" open><summary>${esc(label)} <span class="src">${esc(path)}</span></summary><div class="body">${served[i]}</div></details>`
+      : `<details class="fold"><summary>${esc(label)} <span class="src">${esc(path)} &mdash; not on this row</span></summary><div class="body"><p class="empty">The model holds no ${esc(label)} for this service yet. Every design section is public (#4503), so this is a gap in the design, not a withheld field.</p></div></details>`
     );
 
     const PLURAL = 'services', ROWNAME = s, CURRENT = e;
@@ -60,7 +83,7 @@ var s=document.createElement('script');s.src=window.basePath('/js/base-path.js')
   <div class="stat"><div class="v">${ownerDot(links.ownedBy)}</div><div class="l">Owner (ownedBy)</div></div>
   <div class="stat"><div class="v">${stepBadges(steps)}</div><div class="l">Step (hosting domain)</div></div>
   <div class="stat"><div class="v">${esc(e.status || 'no status')}</div><div class="l">Status</div></div>
-  <div class="stat"><div class="v">${SECTIONS.filter(([k]) => e[k]).length}/${SECTIONS.length}</div><div class="l">Design sections served</div></div>
+  <div class="stat"><div class="v">${served.filter(Boolean).length}/${SECTIONS.length}</div><div class="l">Design sections served</div></div>
   <div class="stat"><div class="v">${e.version ? 'v' + esc(String(e.version)) + (e.docState ? ' · ' + esc(String(e.docState)) : '') + ' · ' + esc((d => isNaN(d) ? String(e.changedAt || '').slice(0, 10) : `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`)(new Date(String(e.changedAt || '')))) : '<span class="empty">not yet saved through the API</span>'}</div><div class="l">Version · state · last changed</div></div>
 </div>
 ${folds.join('\n')}
