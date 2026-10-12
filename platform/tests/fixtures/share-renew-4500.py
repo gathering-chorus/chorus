@@ -120,4 +120,10 @@ check("NEGATIVE: an expired token that cannot be refreshed writes nothing", out 
 out = ps.touch_session(dict(rec), T + 2 * HOUR, T + 14 * HOUR, lambda *a: (403, {}), "http://door", lambda rt: None, lambda m: None)
 check("NEGATIVE: a refused PUT is not reported as renewed", out is None)
 
+# --- one browser, one session (reopen 2, 10-12 10:21) ---------------------------
+rs = g["replaced_sid"]
+check("signing in again with his own old cookie replaces that session", rs({"webid": JEFF, "sid": SID}, JEFF) == SID)
+check("NEGATIVE: another person's cookie closes nothing", rs({"webid": JEFF, "sid": SID}, "https://id.example.test/anne#me") is None)
+check("NEGATIVE: a cookie with no session id, or no cookie, closes nothing", rs({"webid": JEFF}, JEFF) is None and rs(None, JEFF) is None)
+
 sys.exit(1 if FAILS else 0)
