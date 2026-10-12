@@ -54,6 +54,16 @@ export interface OpenSession { channel: string; startedAt: string; lastSeenAt: s
 /** #4432 — a logged-in principal and its open sessions (one tile, many sessions). */
 export interface LoggedInRole { name: string; sessions: OpenSession[] }
 
+/** #4500 reopen — one rule with chorus-principal (rows.rs expired_open): a session
+ * is over once expiresAt has passed, unless it was seen in the last hour. Agent
+ * rows carry a 10-minute expiry that renews, so a lapse between renewals is not
+ * a logout (Kade 2026-10-12 09:42: Jeff's tile row lost Wren and Silas). */
+const SEEN_KEEPS_LIVE_MS = 60 * 60 * 1000;
+function sessionLive(r: { expiresAt?: string; lastSeenAt?: string }, nowMs: number): boolean {
+  if (!r.expiresAt || Date.parse(r.expiresAt) > nowMs) return true;
+  return !!r.lastSeenAt && nowMs - Date.parse(r.lastSeenAt) < SEEN_KEEPS_LIVE_MS;
+}
+
 /**
  * #4432 — Jeff 2026-10-05 18:57: "the clearing needs to dynamically render
  * logged in principals." The roles (Jeff's and the agents') with an open Session (login → logout,
@@ -80,7 +90,7 @@ export function loggedInRoles(sessionsBody: unknown, rolesBody: unknown, nowMs: 
   const open = new Map<string, OpenSession[]>();
   for (const r of rows as Array<Partial<OpenSession> & { sessionState?: string; ownedBy?: string; expiresAt?: string }>) {
     if (r.sessionState !== 'open' || !r.ownedBy) continue;
-    if (r.expiresAt && Date.parse(r.expiresAt) <= nowMs) continue;
+    if (!sessionLive(r, nowMs)) continue;
     const role = String(r.ownedBy).replace(/^principal-/, '');
     const list = open.get(role) ?? [];
     list.push({ channel: r.channel ?? '', startedAt: r.startedAt ?? '', lastSeenAt: r.lastSeenAt ?? '' });

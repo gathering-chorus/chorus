@@ -103,6 +103,18 @@ describe('fetchContextRoles (#4028 — derived, never declared)', () => {
     expect(loggedInRoles(expired, DOOR, Date.parse('2026-10-12T11:59:00Z')).map((r) => r.name)).toEqual(['kade']);
   });
 
+  it('#4500 reopen: an agent seen in the last hour keeps its tile though its 10-minute expiry lapsed (Kade 10-12 09:42: Jeff could not see Wren or Silas)', () => {
+    const now = Date.parse('2026-10-12T13:43:00Z');
+    const live = { data: [{ ownedBy: 'principal-silas', sessionState: 'open', channel: 'pane', startedAt: '2026-10-12T12:43:50Z', lastSeenAt: '2026-10-12T13:38:00Z', expiresAt: '2026-10-12T13:42:00Z' }] };
+    expect(loggedInRoles(live, DOOR, now).map((r) => r.name)).toEqual(['silas']);
+  });
+
+  it('#4500 reopen NEGATIVE PROOF: lapsed and not seen for over an hour has no tile', () => {
+    const now = Date.parse('2026-10-12T13:43:00Z');
+    const gone = { data: [{ ownedBy: 'principal-silas', sessionState: 'open', channel: 'pane', lastSeenAt: '2026-10-12T12:42:59Z', expiresAt: '2026-10-12T12:52:59Z' }] };
+    expect(loggedInRoles(gone, DOOR, now)).toEqual([]);
+  });
+
   it('#4432 a human or unkinded row never gets an agent tile', () => {
     expect(agentRolesFrom(DOOR)).not.toContain('jeff');
     expect(agentRolesFrom(DOOR)).not.toContain('nightly');
