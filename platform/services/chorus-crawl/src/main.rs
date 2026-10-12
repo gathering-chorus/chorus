@@ -1858,10 +1858,7 @@ fn run_code(args: &[String]) -> i32 {
             println!("code:   {} ({}) → {}", u.path, u.kind, u.deps.join(", "));
         }
     }
-    let desired: Vec<(String, Vec<(String, String)>)> = all.iter().map(|u| {
-        let f = unit_fields(u);
-        (f[0].1.clone(), f[1..].to_vec())
-    }).collect();
+    let desired = chorus_crawl::code_run::desired_rows(&all);
 
     let api = std::env::var("CHORUS_OWL_API").unwrap_or_else(|_| "http://localhost:3360".to_string());
     let role = match declared_role(std::env::var("CHORUS_ROLE").ok()) {
@@ -1882,10 +1879,7 @@ fn run_code(args: &[String]) -> i32 {
         Err(e) => { println!("code: UNMEASURED — the door does not serve CodeUnit yet ({e}); nothing written"); return 1; }
     };
     let current: Vec<(String, Vec<(String, String)>)> = if coll.is_empty() { Vec::new() } else { match fetch_rows_with(&api, Some(&token), "CodeUnit", "", chorus_crawl::services::door_page_rows) {
-        Ok(rows) => rows.into_iter().map(|fields| {
-            let name = fields.iter().find(|(k, _)| k == "name").map(|(_, v)| v.clone()).unwrap_or_default();
-            (name, chorus_crawl::services::written_form(fields.into_iter().filter(|(k, _)| k != "name").collect()))
-        }).collect(),
+        Ok(rows) => chorus_crawl::code_run::current_rows(rows),
         Err(e) => { eprintln!("chorus-crawl code: cannot read CodeUnit rows — {e}"); return 2; }
     } };
     let p = plan_units(&desired, &current);
@@ -1902,34 +1896,16 @@ fn run_code(args: &[String]) -> i32 {
         let mut rows = fetch_rows_with(&api, Some(&token), "ServiceInstance", "", chorus_crawl::services::door_page_rows).unwrap_or_default();
         rows.extend(fetch_rows_with(&api, Some(&token), "ScheduledJob", "", chorus_crawl::services::door_page_rows).unwrap_or_default());
         let cf = collection_for(&api, "CodeFile").unwrap_or_default();
-        let mut paths: Vec<(String, String)> = Vec::new();
-        let mut out = Vec::new();
-        for r in rows {
-            let get = |k: &str| r.iter().find(|(f, _)| f == k).map(|(_, v)| v.clone()).unwrap_or_default();
-            let (svc, src, bin) = (get("runsService"), get("sourcePath"), get("binaryPath"));
-            if svc.is_empty() {
-                continue;
+        let mut file_of = |src: &str| -> String {
+            if cf.is_empty() {
+                return String::new();
             }
-            let file = if src.is_empty() || cf.is_empty() { String::new() } else {
-                match paths.iter().find(|(n, _)| *n == src) {
-                    Some((_, f)) => f.clone(),
-                    None => {
-                        // the edge holds the row's IRI local name (code-file-<name>); the door names it <name>
-                        let door = src.strip_prefix("code-file-").unwrap_or(&src);
-                        let f = curl(&api, "GET", &format!("{cf}/{door}"), None, Some(&token)).ok()
-                            .and_then(|b| b.split("\"filePath\"").nth(1).and_then(|t| t.split('"').nth(1)).map(String::from))
-                            .unwrap_or_default();
-                        paths.push((src.clone(), f.clone()));
-                        f
-                    }
-                }
-            };
-            let svc = svc.strip_prefix("service-").unwrap_or(&svc).to_string();
-            for p in run_paths(&file, &bin, &abs_root, &home, &all, &bins, &|a: &str| std::fs::read_to_string(a).ok()) {
-                out.push((svc.clone(), p));
-            }
-        }
-        out
+            let door = chorus_crawl::code_run::code_file_door_name(src);
+            curl(&api, "GET", &format!("{cf}/{door}"), None, Some(&token)).ok()
+                .and_then(|b| b.split("\"filePath\"").nth(1).and_then(|t| t.split('"').nth(1)).map(String::from))
+                .unwrap_or_default()
+        };
+        chorus_crawl::code_run::instance_links(&rows, &mut file_of, &abs_root, &home, &all, &bins, &|a: &str| std::fs::read_to_string(a).ok())
     };
     let built = built_from(&instances, &all);
     println!("code: {} services built from {} unit links", built.len(), built.iter().map(|(_, v)| v.len()).sum::<usize>());
@@ -1940,37 +1916,16 @@ fn run_code(args: &[String]) -> i32 {
         println!("code: dry-run — NOTHING WRITTEN");
         return 0;
     }
-    let body = |name: &str, fields: &[(String, String)]| {
-        let mut f = vec![("name".to_string(), name.to_string())];
-        f.extend(fields.iter().cloned());
-        fields_json(&f)
-    };
+    let svc_coll = collection_for(&api, "Service").ok();
     let mut failed: Vec<String> = Vec::new();
-    // units first without edges, so every edge's target exists when it is written
-    let bare: Vec<String> = p.create.iter().map(|(n, f)| body(n, &f.iter().filter(|(k, _)| k != "dependsOn").cloned().collect::<Vec<_>>())).collect();
-    if !bare.is_empty() {
-        if let Err(e) = write(&ident, &api, "POST", &format!("{coll}/batch"), Some(&format!("[{}]", bare.join(",")))) {
-            failed.push(format!("create batch of {}: {e}", bare.len()));
-        }
-    }
-    for (n, f) in p.create.iter().chain(p.update.iter()) {
-        if let Err(e) = write(&ident, &api, "PUT", &format!("{coll}/{n}"), Some(&body(n, f))) {
-            failed.push(format!("write {n}: {e}"));
-        }
-    }
-    for n in &p.delete {
-        if let Err(e) = write(&ident, &api, "DELETE", &format!("{coll}/{n}"), None) {
-            failed.push(format!("delete {n}: {e}"));
-        }
-    }
-    // the services' builtFrom, merged onto their rows (PATCH: the rest of a
-    // Service row belongs to other writers)
-    if let Ok(svc_coll) = collection_for(&api, "Service") {
-        for (svc, us) in &built {
-            let patch = fields_json(&us.iter().map(|u| ("builtFrom".to_string(), u.clone())).collect::<Vec<_>>());
-            if let Err(e) = write(&ident, &api, "PATCH", &format!("{svc_coll}/{svc}"), Some(&patch)) {
-                failed.push(format!("builtFrom {svc}: {e}"));
-            }
+    for w in chorus_crawl::code_run::code_writes(&coll, svc_coll.as_deref(), &p, &built) {
+        let body = match w.rows.len() {
+            0 => None,
+            1 if w.method != "POST" => Some(fields_json(&w.rows[0])),
+            _ => Some(format!("[{}]", w.rows.iter().map(|r| fields_json(r)).collect::<Vec<_>>().join(","))),
+        };
+        if let Err(e) = write(&ident, &api, w.method, &w.path, body.as_deref()) {
+            failed.push(format!("{}: {e}", w.what));
         }
     }
     for f in &failed {
