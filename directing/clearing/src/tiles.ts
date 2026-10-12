@@ -163,13 +163,16 @@ function bostonClock(iso: string | undefined, now: Date): string {
 /**
  * #4432 — Jeff 2026-10-06: tiles are logged-in principals, not sessions, but
  * "that visibility is important so i can see - at least until we stabilize
- * clearing". One line inside the tile: how many sessions, and for each its
- * channel, when it started and when it was last seen.
+ * clearing". One line inside the tile: how many sessions, and the newest
+ * one's channel, when it started and when it was last seen.
  */
 export function sessionsLine(sessions: DerivedRoleRow['sessions'], now: Date = new Date()): string {
   if (!sessions || sessions.length === 0) return '';
-  const each = sessions.map((x) => `${x.channel || '?'} ${bostonClock(x.startedAt, now)} (seen ${bostonClock(x.lastSeenAt, now)})`);
-  return `${sessions.length} session${sessions.length === 1 ? '' : 's'} · ${each.join(' · ')}`;
+  // #4500 — Jeff 2026-10-12: "when i have 4 sessions … it eats up a lot of real
+  // estate on my phone/clearing". The count, and the newest session in full.
+  const newest = [...sessions].sort((a, b) => (a.startedAt ?? '').localeCompare(b.startedAt ?? '')).at(-1)!;
+  const one = `${newest.channel || '?'} ${bostonClock(newest.startedAt, now)} (seen ${bostonClock(newest.lastSeenAt, now)})`;
+  return sessions.length === 1 ? `1 session · ${one}` : `${sessions.length} sessions · newest ${one}`;
 }
 
 export class TilePoller {

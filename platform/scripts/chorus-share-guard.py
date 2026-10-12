@@ -395,6 +395,17 @@ def session_claims(cookie, key, now=None, max_life=SESSION_MAX_LIFE):
         return None
 
 
+def replaced_sid(old_claims, webid):
+    """#4500 — signing in again from a browser that still carries this door's
+    cookie for the SAME person replaces that session: its sid is closed, so one
+    browser holds one session (Jeff 2026-10-12: "when i have 4 sessions (not my
+    choice) it eats up a lot of real estate"). Another person's cookie, or one
+    without a sid, closes nothing."""
+    if old_claims and old_claims.get("sid") and old_claims.get("webid") == webid:
+        return old_claims["sid"]
+    return None
+
+
 def cookie_exp(value):
     """The exp a signed cookie value carries (the caller signed or verified it)."""
     return json.loads(b64u_decode(value.split(".", 1)[0]))["exp"]
@@ -956,6 +967,9 @@ Nothing is wrong with your account. Try again in a moment.</p>""")
                 return self._deny(502, "identity provider returned no WebID\n")
             # NOTE: the allow-set is NOT consulted here. Signing in always
             # succeeds; reach is decided per request, so revocation is immediate.
+            old = self._session_claims()
+            if replaced_sid(old, webid):
+                close_person_session(old)
             sid = open_person_session(webid, tok)
             cookie = self._session_cookie(sign_session(webid, COOKIE_KEY, sid=sid))
             # #3791 — validated, so a cross-host return works and an attacker's
