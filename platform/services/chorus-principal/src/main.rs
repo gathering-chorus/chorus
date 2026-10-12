@@ -35,6 +35,7 @@ chorus-principal — create a user everywhere, or nowhere
 
   chorus-principal census            who exists incompletely
   chorus-principal unlink <name> [--apply]  take a WebID with no login off Jeff's sign-in (#4503; dry run by default)
+  chorus-principal move <name> [--apply]    give a principal its own identity account, keeping its WebID (#4503; dry run by default)
   chorus-principal plan <name>       what would be created, writes nothing
   chorus-principal create <name>     create the user, all of it or none of it
 
@@ -69,6 +70,7 @@ fn main() {
         // it is this crate's library now, so the verbs run here, not forwarded.
         Some("login" | "logout" | "on" | "off" | "status" | "up" | "relogin" | "seen" | "seen-write" | "sweep" | "project-messages" | "credentials") => chorus_principal::run(&args),
         Some("census") => cmd_census(),
+        Some("move") => match args.get(1) { Some(n) => cmd_move(n, args.iter().any(|a| a == "--apply")), None => { eprintln!("chorus-principal: move needs a name"); 2 } },
         Some("unlink") => match args.get(1) { Some(n) => cmd_unlink(n, args.iter().any(|a| a == "--apply")), None => { eprintln!("chorus-principal: unlink needs a name"); 2 } },
         Some("create") => match args.get(1) {
             Some(n) => match Kind::from_args(&args[2..]) {
@@ -1593,4 +1595,177 @@ fn cmd_unlink(name: &str, apply: bool) -> i32 {
     let left = webid_links(&read(&links_url)).iter().any(|(w, _)| webid_name(w) == Some(name)) as usize + credentials_for(&read(&creds_url), name).len();
     println!("unlink {name}: read back — {} left on Jeff's account", left);
     if failed > 0 || left > 0 { 1 } else { 0 }
+}
+
+
+/// #4503 — give a principal its own identity-provider account, keeping its
+/// WebID, so Jeff's sign-in stops offering it and its login no longer rides on
+/// his account. Measured flow (zzz-test, 2026-10-12 11:45): the provider links
+/// a WebID to a second account only after its profile carries a verification
+/// line, which the pod owner writes. Nothing on Jeff's account changes until
+/// the new credential has minted a token; then his link and credentials for
+/// the name are removed and the account is read back. Dry run by default.
+fn cmd_move(name: &str, apply: bool) -> i32 {
+    use chorus_principal::links::*;
+    let css = env_or("CSS_URL", "http://localhost:3001");
+    let issuer = env_or("CSS_ISSUER", "https://id.lightlifeurbangardens.com").trim_end_matches('/').to_string();
+    let local = |u: &str| u.replacen(&issuer, &css, 1);
+    if name == "jeff" {
+        eprintln!("chorus-principal: REFUSED — jeff is the account's own person; he does not move. Nothing was changed.");
+        return 2;
+    }
+    let dir = format!("{}/.chorus/identity/{name}", owner_home());
+    let cred_path = format!("{dir}/cred.json");
+    let Ok(cred_old) = std::fs::read_to_string(&cred_path) else {
+        eprintln!("chorus-principal: REFUSED — no {cred_path}: {name} has no login to move (use unlink). Nothing was changed.");
+        return 2;
+    };
+    let webid = json_field(&cred_old, "webId").unwrap_or_default();
+    if webid_name(&webid) != Some(name) {
+        eprintln!("chorus-principal: REFUSED — {cred_path} names WebID '{webid}', not {name}'s. Nothing was changed.");
+        return 2;
+    }
+    let card = format!("{}/{name}/profile/card$.ttl", env_or("CSS_DATA_DIR", &format!("{}/CascadeProjects/shared-security/data/css", owner_home())));
+    let Ok(card_text) = std::fs::read_to_string(&card) else {
+        eprintln!("chorus-principal: REFUSED — no profile at {card}. Nothing was changed.");
+        return 2;
+    };
+    let jar = jar_path();
+    if css_login(&css, &jar).is_none() {
+        eprintln!("chorus-principal: REFUSED — could not sign in to Jeff's identity-provider account. Nothing was changed.");
+        return 2;
+    }
+    let jread = |u: &str| curl_css(None, &["-s", "--max-time", "20", "-b", &jar, "-H", "Accept: application/json", &local(u)]).unwrap_or_default();
+    let jctl = jread(&format!("{css}/.account/"));
+    let (Some(jlinks), Some(jcreds)) = (between(&jctl, "\"webId\":\"", "\""), between(&jctl, "\"clientCredentials\":\"", "\"")) else {
+        eprintln!("chorus-principal: REFUSED — Jeff's account answered without its controls (UNMEASURED). Nothing was changed.");
+        return 2;
+    };
+    let on_jeff = webid_links(&jread(&jlinks)).into_iter().find(|(w, _)| webid_name(w) == Some(name)).map(|(_, u)| u);
+    let old_creds = credentials_for(&jread(&jcreds), name);
+    println!("move {name}: on Jeff's account — link {} · {} credential(s); its login is {cred_path}", if on_jeff.is_some() { "yes" } else { "no" }, old_creds.len());
+    if on_jeff.is_none() {
+        println!("move {name}: not linked to Jeff's account — nothing to move");
+        return 0;
+    }
+    let role_home = format!("/Users/chorus-{name}");
+    let is_role_account = std::path::Path::new(&role_home).exists();
+    if !apply {
+        println!("move {name}: dry run — NOTHING CHANGED. --apply would: open {name}'s own account, link its WebID, mint a credential there, rewrite cred.json (old kept as cred.json.pre-4503), then remove Jeff's link and {} credential(s)", old_creds.len());
+        if is_role_account { println!("move {name}: {role_home} holds its own copy of the login; Jeff runs the reseed for it afterwards"); }
+        return 0;
+    }
+    // 1. its own account, login kept beside its credential (0600)
+    let acct_path = format!("{dir}/account.json");
+    // a GET with a JSON content type and no body is a 500 on this provider (measured): two header sets
+    let tok_cfg = |t: &str| format!("header = \"Authorization: CSS-Account-Token {}\"\nheader = \"Accept: application/json\"\n", cfg_escape(t));
+    let tok_post = |t: &str| format!("{}header = \"Content-Type: application/json\"\n", tok_cfg(t));
+    let login = |email: &str, pw: &str| -> Option<String> {
+        let body = format!("{{\"email\":\"{}\",\"password\":\"{}\"}}", email, pw);
+        let r = curl_css(Some(format!("header = \"Content-Type: application/json\"\nheader = \"Accept: application/json\"\ndata = \"{}\"\n", cfg_escape(&body))), &["-s", "--max-time", "20", "-X", "POST", &format!("{css}/.account/login/password/")])?;
+        between(&r, "\"authorization\":\"", "\"")
+    };
+    let tok = match std::fs::read_to_string(&acct_path) {
+        Ok(a) => login(&json_field(&a, "email").unwrap_or_default(), &json_field(&a, "password").unwrap_or_default()),
+        Err(_) => {
+            let made = curl_css(Some("header = \"Accept: application/json\"\n".into()), &["-s", "--max-time", "20", "-X", "POST", &format!("{css}/.account/account/")]).unwrap_or_default();
+            between(&made, "\"authorization\":\"", "\"").and_then(|t| {
+                let ctl = curl_css(Some(tok_cfg(&t)), &["-s", "--max-time", "20", &format!("{css}/.account/")]).unwrap_or_default();
+                let create = control(&ctl, "password", "create")?;
+                let pw = random_hex(24)?;
+                let email = format!("{name}@chorus.invalid");
+                let body = format!("{{\"email\":\"{email}\",\"password\":\"{pw}\"}}");
+                curl_css(Some(format!("{}data = \"{}\"\n", tok_post(&t), cfg_escape(&body))), &["-s", "--max-time", "20", "-X", "POST", &local(&create)])?;
+                write_private(&acct_path, &format!("{{\"email\":\"{email}\",\"password\":\"{pw}\"}}\n")).ok()?;
+                Some(t)
+            })
+        }
+    };
+    let Some(tok) = tok else {
+        eprintln!("chorus-principal: FAILED — could not open {name}'s own account. Jeff's account is unchanged.");
+        return 1;
+    };
+    let ctl = curl_css(Some(tok_cfg(&tok)), &["-s", "--max-time", "20", &format!("{css}/.account/")]).unwrap_or_default();
+    let (Some(links_url), Some(creds_url)) = (control(&ctl, "account", "webId"), control(&ctl, "account", "clientCredentials")) else {
+        eprintln!("chorus-principal: FAILED — {name}'s account answered without its controls. Jeff's account is unchanged.");
+        return 1;
+    };
+    // 2. link its WebID: the provider asks for a verification line the pod owner writes
+    let post = |u: &str, body: &str| curl_css(Some(format!("{}data = \"{}\"\n", tok_post(&tok), cfg_escape(body))), &["-s", "--max-time", "20", "-w", "\n%{http_code}", "-X", "POST", &local(u)]).unwrap_or_default();
+    let code_of = |r: &str| r.rsplit('\n').next().unwrap_or("").to_string();
+    let link_body = format!("{{\"webId\":\"{webid}\"}}");
+    let mut r = post(&links_url, &link_body);
+    if code_of(&r) == "400" {
+        let Some(t) = registration_token(&r) else {
+            eprintln!("chorus-principal: FAILED — the link was refused without a verification token ({}). Jeff's account is unchanged.", r.lines().next().unwrap_or(""));
+            return 1;
+        };
+        if std::fs::write(&card, format!("{card_text}{}", registration_line(&webid, &t))).is_err() {
+            eprintln!("chorus-principal: FAILED — could not write the verification line to {card}. Jeff's account is unchanged.");
+            return 1;
+        }
+        r = post(&links_url, &link_body);
+        let _ = std::fs::write(&card, without_registration_line(&std::fs::read_to_string(&card).unwrap_or(card_text.clone()), &webid, &t));
+    }
+    if !code_of(&r).starts_with('2') && !r.contains("already") {
+        eprintln!("chorus-principal: FAILED — linking {name}'s WebID to its own account answered HTTP {}. Jeff's account is unchanged.", code_of(&r));
+        return 1;
+    }
+    println!("move {name}: its WebID is linked to its own account; profile restored");
+    // 3. a credential on its own account, proven by minting a token
+    let cc = post(&creds_url, &format!("{{\"name\":\"chorus-agent-{name}\",\"webId\":\"{webid}\"}}"));
+    let (Some(id), Some(secret)) = (between(&cc, "\"id\":\"", "\""), between(&cc, "\"secret\":\"", "\"")) else {
+        eprintln!("chorus-principal: FAILED — {name}'s own account gave no credential (HTTP {}). Jeff's account is unchanged.", code_of(&cc));
+        return 1;
+    };
+    let mints = |id: &str, secret: &str| -> bool {
+        let enc = |v: &str| v.bytes().map(|b| if b.is_ascii_alphanumeric() || b"-._~".contains(&b) { (b as char).to_string() } else { format!("%{b:02X}") }).collect::<String>();
+        let r = curl_css(Some(format!("user = \"{}:{}\"\n", cfg_escape(&enc(id)), cfg_escape(&enc(secret)))), &["-s", "--max-time", "20", "-X", "POST", "-H", "Content-Type: application/x-www-form-urlencoded", "--data", "grant_type=client_credentials&scope=webid", &format!("{css}/.oidc/token")]).unwrap_or_default();
+        r.contains("\"access_token\"")
+    };
+    if !mints(&id, &secret) {
+        eprintln!("chorus-principal: FAILED — the new credential did not mint a token. cred.json and Jeff's account are unchanged.");
+        return 1;
+    }
+    // 4. the login now rides on its own account
+    let Some(new_cred) = swapped_credential(&cred_old, &id, &secret) else {
+        eprintln!("chorus-principal: FAILED — {cred_path} is not the expected shape; left as it was. Jeff's account is unchanged.");
+        return 1;
+    };
+    if write_private(&format!("{cred_path}.pre-4503"), &cred_old).is_err() || write_private(&cred_path, &new_cred).is_err() {
+        eprintln!("chorus-principal: FAILED — could not rewrite {cred_path}. Jeff's account is unchanged.");
+        return 1;
+    }
+    let _ = std::fs::remove_file(format!("{dir}/token.cache"));
+    println!("move {name}: cred.json now names its own account's credential (old kept as cred.json.pre-4503); minted a token with it");
+    // 5. off Jeff's account
+    let del = |u: &str| curl_css(None, &["-s", "-o", "/dev/null", "-w", "%{http_code}", "--max-time", "20", "-b", &jar, "-X", "DELETE", &local(u)]).unwrap_or_default();
+    let mut failed = 0;
+    for u in old_creds.iter().chain(on_jeff.iter()) {
+        let c = del(u);
+        if !c.starts_with('2') { failed += 1; eprintln!("  delete {u} → HTTP {c}"); }
+    }
+    let left = webid_links(&jread(&jlinks)).iter().any(|(w, _)| webid_name(w) == Some(name)) as usize + credentials_for(&jread(&jcreds), name).len();
+    let still = mints(&id, &secret);
+    println!("move {name}: read back — {left} left on Jeff's account; its own credential {} a token", if still { "still mints" } else { "NO LONGER mints" });
+    if is_role_account {
+        println!("move {name}: {role_home} still holds the old login. Jeff runs: sudo platform/scripts/chorus-identity-reseed {name}");
+    }
+    if failed > 0 || left > 0 || !still { 1 } else { 0 }
+}
+
+/// A random login password for an agent's own account, from the system's source.
+fn random_hex(bytes: usize) -> Option<String> {
+    use std::io::Read;
+    let mut buf = vec![0u8; bytes];
+    std::fs::File::open("/dev/urandom").ok()?.read_exact(&mut buf).ok()?;
+    Some(buf.iter().map(|b| format!("{b:02x}")).collect())
+}
+
+fn write_private(path: &str, text: &str) -> std::io::Result<()> {
+    use std::os::unix::fs::OpenOptionsExt;
+    let tmp = format!("{path}.tmp");
+    let mut f = std::fs::OpenOptions::new().write(true).create(true).truncate(true).mode(0o600).open(&tmp)?;
+    f.write_all(text.as_bytes())?;
+    std::fs::rename(&tmp, path)
 }
