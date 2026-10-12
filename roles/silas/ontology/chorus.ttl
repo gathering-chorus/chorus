@@ -2047,7 +2047,10 @@ chorus:contains      rdfs:domain [ owl:unionOf ( chorus:ValueStream chorus:Domai
 
 # --- DomainShape (supersedes DomainCoordinateShape; + purpose [the capability] + definesVocabulary [DDD mark] per ADR-045 + the capability ruling) ---
 chorus:DomainShape a sh:NodeShape ;
-    sh:property [ sh:path chorus:instancesGraph  ; sh:maxCount 1 ; sh:datatype xsd:string ; chorus:exposure chorus:public ] ;   # #4422 — every Domain row carries it, the door never served it (0 of 57, 2026-10-11); the stores crawl reads the chorus graphs from here, not by SPARQL (#4433)
+    # #4081 — NO chorus:exposure here: exposure is per-shape opt-in, and one annotated field
+    # turned DomainShape fail-closed, hiding every other Domain field on the detail read
+    # (purpose, label, comment …) from 2026-10-11 19:00 (#4422) — live_envelope caught it.
+    sh:property [ sh:path chorus:instancesGraph  ; sh:maxCount 1 ; sh:datatype xsd:string ] ;   # #4422 — every Domain row carries it, the door never served it (0 of 57, 2026-10-11); the stores crawl reads the chorus graphs from here, not by SPARQL (#4433)
     sh:property [ sh:path chorus:diagram         ; sh:minCount 0 ; sh:datatype xsd:string ] ;   # #4094 — repeatable mermaid source, %% caption first line
     sh:property [ sh:path chorus:publishesPreAuth ; sh:maxCount 1 ; sh:datatype xsd:string ] ;   # #3777 — opt-in publication to the pre-auth sign-in page. OPTIONAL by design: absent means NOT published, so fail-closed comes from the data model rather than from generator code a later edit could soften.
     sh:targetClass chorus:Domain ;
