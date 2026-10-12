@@ -26,7 +26,8 @@ export interface Unmeasured { target: string; measured: false; reason: string }
 /** The unit a repo path sits in: the longest unitPath that is the path or its prefix. */
 export function unitOf(path: string, units: UnitRow[]): UnitRow | undefined {
   return units
-    .filter((u) => path === u.path || path.startsWith(`${u.path}/`))
+    // #4405 — the root unit (".") holds every file no deeper unit does
+    .filter((u) => u.path === '.' || path === u.path || path.startsWith(`${u.path}/`))
     .sort((a, b) => b.path.length - a.path.length)[0];
 }
 
@@ -67,8 +68,9 @@ export function codeBlast(
   }
   const through = dependentsOf(direct, units);
   const all = [...direct, ...through];
-  const paths = units.filter((u) => all.includes(u.name)).map((u) => u.path);
-  const inScope = files.filter((f) => paths.some((p) => f.path.startsWith(`${p}/`)));
+  // a file counts for the unit it belongs to (its deepest unit), so a root
+  // unit never claims files that sit in a deeper one
+  const inScope = files.filter((f) => { const own = unitOf(f.path, units); return !!own && all.includes(own.name); });
   const servicesOf = (us: string[]): string[] => [...new Set(builtFrom.filter(([, u]) => us.includes(u)).map(([s]) => s))].sort();
   const directSvc = servicesOf(direct);
   const domains = new Map<string, number>();

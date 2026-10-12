@@ -29,7 +29,7 @@ pub const SHARED: &str = "platform/services/shared";
 
 /// `a/b/c` joined with `../../x` → `a/x`. None when it climbs out of the repo.
 pub fn join(base: &str, rel: &str) -> Option<String> {
-    let mut parts: Vec<&str> = base.split('/').filter(|p| !p.is_empty()).collect();
+    let mut parts: Vec<&str> = base.split('/').filter(|p| !p.is_empty() && *p != ".").collect();
     for seg in rel.split('/') {
         match seg {
             "" | "." => {}
@@ -149,7 +149,17 @@ pub fn package_deps(pkg_path: &str, package_json: &str, tsconfig: Option<&str>) 
 /// #4405 — a unit's door name carries its repository, so two repos' units
 /// never collide ("chorus--platform-services-werk-test").
 pub fn unit_name(repo: &str, path: &str) -> String {
-    format!("{}--{}", repo, path.replace('/', "-"))
+    let p = if path == ROOT { "root".to_string() } else { path.replace('/', "-") };
+    format!("{}--{}", repo, p)
+}
+
+/// #4405 — a build file at the repository root (a plain Node or Rust repo is
+/// one) is a unit whose path is ".": it holds every file no deeper unit does.
+pub const ROOT: &str = ".";
+
+/// Is `file` inside the unit at `path`? The root unit holds every file.
+pub fn within(file: &str, path: &str) -> bool {
+    path == ROOT || file == path || file.starts_with(&format!("{}/", path))
 }
 
 /// #4405 — the repository a tree is: the remote's last segment without .git
@@ -170,8 +180,16 @@ pub fn repo_id(remote: Option<&str>, dir: &std::path::Path) -> String {
 pub fn unit_of<'a>(file: &str, units: &'a [Unit]) -> Option<&'a Unit> {
     units
         .iter()
-        .filter(|u| file == u.path || file.starts_with(&format!("{}/", u.path)))
+        .filter(|u| within(file, &u.path))
         .max_by_key(|u| u.path.len())
+}
+
+/// The unit a file belongs to, not counting the root unit: what a service's
+/// run path resolves to. A root build file (Chorus's is the lint workspace)
+/// is not what a service runs, and a script in no deeper unit is read for
+/// the code it names instead.
+pub fn unit_below_root<'a>(file: &str, units: &'a [Unit]) -> Option<&'a Unit> {
+    unit_of(file, units).filter(|u| u.path != ROOT)
 }
 
 /// Every unit that depends on `path`, directly or through other units, nearest
@@ -198,14 +216,11 @@ pub fn units(
     read: &dyn Fn(&str) -> Option<String>,
     crate_sources: &dyn Fn(&str) -> Vec<String>,
 ) -> Vec<Unit> {
-    let dir = |f: &str| f.rsplit_once('/').map(|(d, _)| d.to_string()).unwrap_or_default();
+    let dir = |f: &str| f.rsplit_once('/').map(|(d, _)| d.to_string()).unwrap_or_else(|| ROOT.to_string());
     let mut out: Vec<Unit> = Vec::new();
     let mut shared_used = false;
     for f in cargo_tomls {
         let path = dir(f);
-        if path.is_empty() {
-            continue;
-        }
         let toml = read(f).unwrap_or_default();
         let mut deps = crate_deps(&path, &toml);
         let includes = shared_includes(&crate_sources(&path));
@@ -221,9 +236,6 @@ pub fn units(
     }
     for f in package_jsons {
         let path = dir(f);
-        if path.is_empty() {
-            continue;
-        }
         let pj = read(f).unwrap_or_default();
         let ts = read(&format!("{path}/tsconfig.json"));
         out.push(Unit { deps: package_deps(&path, &pj, ts.as_deref()), name: package_name(&pj, true), path, kind: "package", includes: Vec::new() });
@@ -265,7 +277,9 @@ pub fn unit_fields(u: &Unit, repo: &str) -> Vec<(String, String)> {
 
 /// Is a build-file path a real unit, not a fixture or vendored tree?
 pub fn is_unit_file(path: &str) -> bool {
-    !path.contains("/node_modules/") && !path.contains("/fixtures/") && !path.contains("/tests/") && !path.contains("/target/")
+    // #4405 — by path component, so a top-level tests/ or fixtures/ (another
+    // repo's layout) is excluded the same as a nested one
+    !path.split('/').any(|c| matches!(c, "node_modules" | "fixtures" | "tests" | "target"))
 }
 
 /// What to write: units to create, units whose fields changed (their edges
@@ -367,7 +381,7 @@ pub fn run_paths(
             let name = name.strip_suffix("-bin").unwrap_or(name);
             return bins.iter().find(|(b, _)| b == name).map(|(_, c)| c.clone());
         }
-        abs.strip_prefix(repo_root).and_then(|r| r.strip_prefix('/')).filter(|r| unit_of(r, units).is_some()).map(String::from)
+        abs.strip_prefix(repo_root).and_then(|r| r.strip_prefix('/')).filter(|r| unit_below_root(r, units).is_some()).map(String::from)
     };
     let expand = |t: &str| -> String {
         let t = t.replace("${HOME}", home).replace("$HOME", home);
@@ -376,7 +390,7 @@ pub fn run_paths(
     };
     let mut out: Vec<String> = Vec::new();
     let mut push = |p: String| if !out.contains(&p) { out.push(p) };
-    if !source.is_empty() && unit_of(source, units).is_some() {
+    if !source.is_empty() && unit_below_root(source, units).is_some() {
         push(source.to_string());
     }
     if !binary.is_empty() {
@@ -405,7 +419,7 @@ pub fn run_paths(
 pub fn built_from(instances: &[(String, String)], units: &[Unit], repo: &str) -> Vec<(String, Vec<String>)> {
     let mut out: Vec<(String, Vec<String>)> = Vec::new();
     for (svc, file) in instances {
-        let Some(u) = unit_of(file, units) else { continue };
+        let Some(u) = unit_below_root(file, units) else { continue };
         let name = unit_name(repo, &u.path);
         match out.iter_mut().find(|(s, _)| s == svc) {
             Some((_, v)) => {

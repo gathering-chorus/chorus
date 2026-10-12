@@ -101,3 +101,22 @@ describe('#4405 code-blast reads one repository', () => {
     expect(unitsFromCsv(MIXED, 'wordpress-blog').map((u) => u.name)).toEqual(['wordpress-blog--src']);
   });
 });
+
+describe('#4405 a root build file is a unit', () => {
+  const ROOTED: UnitRow[] = [
+    { name: 'site--root', path: '.', kind: 'package', deps: [] },
+    { name: 'site--media-server', path: 'media-server', kind: 'package', deps: [] },
+  ];
+  const F: FileRow[] = [
+    { path: 'src/server.ts', kind: 'code', domain: 'web', route: '' },
+    { path: 'media-server/index.js', kind: 'code', domain: 'media', route: '' },
+  ];
+  it('a file in no deeper unit belongs to the root unit', () => {
+    const r = codeBlast('src/server.ts', ROOTED, [], F);
+    expect(r.measured && r.units.direct).toEqual(['site--root']);
+  });
+  it("NEGATIVE PROOF — the root unit never claims a deeper unit's files", () => {
+    const r = codeBlast('src/server.ts', ROOTED, [], F);
+    expect(r.measured && r.domains).toEqual([{ name: 'web', files: 1 }]);
+  });
+});
