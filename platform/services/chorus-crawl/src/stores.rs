@@ -432,3 +432,97 @@ pub fn hold_unwritten_disks(want: &mut Desired, disks: &[String]) {
     }
     want.rows = keep;
 }
+
+/// The one shell line that walks a machine for the stores crawl: the home
+/// volume's mount, each mapped path that exists and its mount, each path under a
+/// mapped prefix, the listening ports, and the scanned directories. Ends `END`
+/// so a walk cut short is told from one that found nothing.
+pub fn walk_cmd(map: &StoreMap, machine: &str) -> String {
+    let mine = || map.entries.iter().filter(move |e| e.machine == machine);
+    let paths: Vec<&String> = mine().filter_map(|e| match &e.matcher { Match::Path(p) => Some(p), _ => None }).collect();
+    let prefixes: Vec<&String> = mine().filter_map(|e| match &e.matcher { Match::PathPrefix(p) => Some(p), _ => None }).collect();
+    let mut cmd = String::from("H=$(df -P \"$HOME\" | tail -1 | awk '{print $NF}'); echo \"MOUNT:\t$H\"; ");
+    for p in &paths {
+        cmd.push_str(&format!("if [ -e '{p}' ]; then echo 'PATH:{p}'; echo \"MOUNT:{p}\t$(df -P '{p}' | tail -1 | awk '{{print $NF}}')\"; fi; "));
+    }
+    for pre in &prefixes {
+        let (dir, stem) = pre.rsplit_once('/').unwrap_or(("/", pre.as_str()));
+        cmd.push_str(&format!("find '{dir}' -mindepth 1 -maxdepth 1 -name '{stem}*' 2>/dev/null | while read p; do echo \"PATH:$p\"; echo \"MOUNT:$p\t$(df -P \"$p\" | tail -1 | awk '{{print $NF}}')\"; done; "));
+    }
+    // lsof lives in /usr/sbin, which launchd's PATH leaves out: named by its full
+    // path, and a listing that could not run says so instead of reading as "no ports"
+    cmd.push_str("if [ -x /usr/sbin/lsof ]; then /usr/sbin/lsof -nP -iTCP -sTCP:LISTEN 2>/dev/null | awk 'NR>1{n=split($9,a,\":\"); print \"PORT:\" a[n]}' | sort -u; else echo PORTS-UNMEASURED; fi; ");
+    // find, not a glob: Bedroom's login shell is zsh, where a glob that matches
+    // nothing aborts the whole line (measured 2026-10-11)
+    cmd.push_str("find \"$HOME/.chorus\" -maxdepth 1 -name '*.db' 2>/dev/null | sed 's/^/SCAN:/'; find \"$HOME/.chorus/vikunja/db\" -maxdepth 1 -type f 2>/dev/null | sed 's/^/SCAN:/'; echo END");
+    cmd
+}
+
+/// What `walk_cmd` printed → what the machine showed. No `END` line = the walk
+/// did not finish, an error, never an empty machine.
+pub fn parse_seen(out: &str) -> Result<MachineSeen, String> {
+    if !out.lines().any(|l| l.trim() == "END") {
+        return Err("the walk did not finish".into());
+    }
+    let mut seen = MachineSeen::default();
+    for l in out.lines() {
+        if let Some(p) = l.strip_prefix("PATH:") {
+            seen.paths.push(p.to_string());
+        } else if let Some(m) = l.strip_prefix("MOUNT:") {
+            let (p, mount) = m.split_once('\t').unwrap_or((m, ""));
+            seen.mounts.push((p.to_string(), mount.to_string()));
+        } else if let Some(p) = l.strip_prefix("PORT:") {
+            if let Ok(n) = p.trim().parse() {
+                seen.ports.push(n);
+            }
+        } else if l.trim() == "PORTS-UNMEASURED" {
+            seen.ports_unmeasured = true;
+        } else if let Some(f) = l.strip_prefix("SCAN:") {
+            seen.scanned.push(f.to_string());
+        }
+    }
+    Ok(seen)
+}
+
+/// Fuseki's `$/datasets` answer → the dataset names ("/pods", …).
+pub fn datasets_from(text: &str) -> Vec<String> {
+    text.split("\"ds.name\"").skip(1).filter_map(|s| s.split('"').nth(1).map(String::from)).collect()
+}
+
+/// Creates in the order the door needs: a row's parent or role source must exist
+/// first. Datasets and files (no parent, no source), then the sources the rest
+/// read from, then the graph families that sit in a dataset.
+pub fn create_groups(creates: &[Row]) -> [Vec<&Row>; 3] {
+    let (first, then): (Vec<&Row>, Vec<&Row>) = creates.iter().partition(|r| r.get("inStore").is_empty() && r.get("roleSource").is_empty());
+    let (sources, rest): (Vec<&Row>, Vec<&Row>) = then.into_iter().partition(|r| r.get("inStore").is_empty());
+    [first, sources, rest]
+}
+
+/// AC2's read-back number: the rows the door holds as present.
+pub fn present_count(rows: &[Vec<(String, String)>]) -> usize {
+    rows.iter().filter(|r| r.iter().any(|(k, v)| k == "storeStatus" && v == "present")).count()
+}
+
+/// The chorus graphs that are stores: each Domain row's instancesGraph (read
+/// from the row, never guessed from a naming rule) that the store says exists,
+/// plus the map's own graphs. `exists` is the Graph Store HEAD: Some(false) =
+/// no rows yet, not a store; None = could not ask, so every graph row reads
+/// unmeasured (the whole answer is None).
+pub fn domain_graphs(domains: &[Vec<(String, String)>], map: &StoreMap, exists: &dyn Fn(&str) -> Option<bool>) -> Option<Vec<String>> {
+    let mut g: Vec<String> = Vec::new();
+    for r in domains {
+        let home = r.iter().find(|(f, _)| f == "instancesGraph").map(|(_, v)| v.as_str()).unwrap_or("");
+        if home.is_empty() {
+            continue;
+        }
+        match exists(home) {
+            Some(true) => g.push(home.to_string()),
+            Some(false) => {}
+            None => return None,
+        }
+    }
+    g.extend(map_graphs(map));
+    g.sort();
+    g.dedup();
+    Some(g)
+}
