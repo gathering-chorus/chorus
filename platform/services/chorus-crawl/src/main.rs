@@ -1556,6 +1556,8 @@ fn walk_local_units() -> chorus_crawl::services::MachineWalk {
         }
     };
     let tree = parse_ps(&sh("ps", &["-axo", "pid=,ppid="], "/").unwrap_or_default());
+    // #4081 — what launchd will actually run: print-disabled, not the plist's Disabled key
+    let disabled = sh("launchctl", &["print-disabled", &format!("gui/{uid}")], "/").ok().map(|t| chorus_crawl::schedule::disabled_labels(&t));
     Ok(parse_launchctl_list(&list)
         .into_iter()
         .map(|u| {
@@ -1576,6 +1578,11 @@ fn walk_local_units() -> chorus_crawl::services::MachineWalk {
                 meta.bundle_id = bundle;
             }
             let last_exit_code = last_exit_from_print(&text);
+            meta.runs = chorus_crawl::schedule::runs_from_print(&text);
+            meta.never_exited = chorus_crawl::schedule::never_exited(&text);
+            meta.disabled = disabled.as_ref().map(|d| d.contains(&u.label));
+            meta.log_written = meta.log_path.as_ref().and_then(|p| std::fs::metadata(p).ok()).and_then(|m| m.modified().ok())
+                .and_then(|t| t.duration_since(std::time::UNIX_EPOCH).ok()).map(|d| d.as_secs());
             let ports = u.pid.as_deref().and_then(|p| p.parse().ok()).map(|p| ports_of(p, &listens, &tree)).unwrap_or_default();
             Unit { run_state: u.run_state().into(), last_exit_code, label: u.label, meta, evidence_unavailable: false, ports }
         })
@@ -1591,10 +1598,24 @@ fn walk_bedroom_units() -> chorus_crawl::services::MachineWalk {
         for f in $(find ~/Library/LaunchAgents /Library/LaunchAgents /Library/LaunchDaemons -maxdepth 1 -name 'com.*.plist' 2>/dev/null); do \
         case \"$f\" in *com.apple*) continue;; esac; \
         [ -f \"$f\" ] && echo \"FILE:$f\" && plutil -convert json -o - \"$f\" 2>/dev/null && echo; done ; \
-        echo ---LSOF--- ; lsof -nP -iTCP -sTCP:LISTEN -F pn 2>/dev/null ; echo ---PS--- ; ps -axo pid=,ppid=";
+        echo ---PRINT--- ; U=$(id -u); for f in $(find ~/Library/LaunchAgents -maxdepth 1 -name 'com.*.plist' 2>/dev/null); do \
+        l=$(basename \"$f\" .plist); echo \"UNIT:$l\"; launchctl print gui/$U/$l 2>/dev/null | grep -E 'runs = |last exit code = '; \
+        lp=$(plutil -extract StandardOutPath raw -o - \"$f\" 2>/dev/null); [ -n \"$lp\" ] && [ -e \"$lp\" ] && echo \"logmtime = $(stat -f %m \"$lp\")\"; done ; \
+        echo ---DISABLED--- ; launchctl print-disabled gui/$(id -u) 2>/dev/null ; \
+        echo ---LSOF--- ; /usr/sbin/lsof -nP -iTCP -sTCP:LISTEN -F pn 2>/dev/null ; echo ---PS--- ; ps -axo pid=,ppid=";
     let remote = sh("ssh", &["-o", "ConnectTimeout=5", "bedroom", cmd], "/").map_err(|e| e.to_string())?;
     let (head, rest) = remote.split_once("---PLISTS---").unwrap_or((&remote, ""));
-    let (plists, rest) = rest.split_once("---LSOF---").unwrap_or((rest, ""));
+    let (plists, rest) = rest.split_once("---PRINT---").map(|(p, r)| (p, r)).unwrap_or((rest, ""));
+    let (prints, rest) = rest.split_once("---DISABLED---").unwrap_or(("", rest));
+    let (disabled_text, rest) = rest.split_once("---LSOF---").unwrap_or(("", rest));
+    // #4081 — print for each LaunchAgent: run count and how the last run ended
+    let print_of = |label: &str| -> Option<String> {
+        prints.split("UNIT:").skip(1).find_map(|b| {
+            let (l, body) = b.split_once('\n').unwrap_or((b, ""));
+            (l.trim() == label).then(|| body.to_string())
+        })
+    };
+    let disabled = (!disabled_text.trim().is_empty()).then(|| chorus_crawl::schedule::disabled_labels(disabled_text));
     let (lsof, ps) = rest.split_once("---PS---").unwrap_or((rest, ""));
     let (listens, tree) = (parse_lsof_listen(lsof), parse_ps(ps));
     let mut units: Vec<Unit> = parse_launchctl_list(head)
@@ -1613,6 +1634,15 @@ fn walk_bedroom_units() -> chorus_crawl::services::MachineWalk {
         let (Some(u), Ok(j)) = (units.iter_mut().find(|u| u.label == label), parse_json(json.trim())) else { continue };
         u.meta = plist_meta(&j);
         u.evidence_unavailable = false;
+        if let Some(text) = print_of(label) {
+            u.meta.runs = chorus_crawl::schedule::runs_from_print(&text);
+            u.meta.never_exited = chorus_crawl::schedule::never_exited(&text);
+            if let Some(code) = last_exit_from_print(&text) {
+                u.last_exit_code = Some(code);
+            }
+        }
+        u.meta.disabled = disabled.as_ref().map(|d| d.contains(&u.label));
+        u.meta.log_written = print_of(label).and_then(|p| p.lines().find_map(|l| l.trim().strip_prefix("logmtime = ").and_then(|v| v.trim().parse().ok())));
     }
     Ok(units)
 }

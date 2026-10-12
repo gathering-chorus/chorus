@@ -53,6 +53,19 @@ pub struct UnitMeta {
     pub scheduled: bool,
     pub argv: Vec<String>,
     pub bundle_id: Option<String>,
+    /// #4081 — every StartCalendarInterval entry, as a person reads it
+    pub calendar: Vec<String>,
+    pub interval_secs: Option<u64>,
+    pub log_path: Option<String>,
+    /// #4081 — from `launchctl print`: None = not looked at, never zero
+    pub runs: Option<u64>,
+    /// "(never exited)": the job has not finished a run — never exit 0
+    pub never_exited: bool,
+    /// from `launchctl print-disabled`: None = not looked at
+    pub disabled: Option<bool>,
+    /// #4081 — when the job's log was last written (seconds since the epoch).
+    /// Not the last run: a job can run without writing it (read with runs).
+    pub log_written: Option<u64>,
 }
 
 /// The trees that are ours: a path in one of them is evidence of ownership.
@@ -244,6 +257,10 @@ pub fn plist_meta(p: &Json) -> UnitMeta {
         scheduled: p.get("StartCalendarInterval").is_some() || p.get("StartInterval").is_some(),
         argv,
         bundle_id: None,
+        calendar: crate::schedule::calendar_lines(p),
+        interval_secs: crate::schedule::interval_secs(p),
+        log_path: crate::schedule::log_path(p),
+        ..Default::default()
     }
 }
 
@@ -436,6 +453,8 @@ impl DoorRow {
 pub const OWNED_FIELDS: &[&str] = &[
     "label", "launchdLabel", "onMachine", "runState", "binaryPath", "runsService", "external", "evidenceState",
     "listensOn", "deployedCommit", "cdhash", "sourcePath", "lastExitCode",
+    // #4081 — the schedule
+    "scheduleKind", "scheduleSpec", "intervalSecs", "logPath", "runCount", "enabled", "logWrittenAt",
 ];
 
 /// The mapping value that names a unit as ours with no design behind it
@@ -465,8 +484,36 @@ pub fn desired_row(machine: &str, u: &Unit, mapping: &[(String, String)], ts: &s
     ];
     if class == UnitClass::ServiceInstance {
         f.push(("runState".into(), u.run_state.clone()));
-    } else if let Some(code) = u.last_exit_code {
-        f.push(("lastExitCode".into(), code.to_string()));
+    } else {
+        // "(never exited)" is a job that has not finished a run: no exit code, never 0
+        if let Some(code) = u.last_exit_code.filter(|_| !u.meta.never_exited) {
+            f.push(("lastExitCode".into(), code.to_string()));
+        }
+        // #4081 — the schedule itself, read from the plist and launchctl
+        let m = &u.meta;
+        if !m.calendar.is_empty() {
+            f.push(("scheduleKind".into(), "calendar".into()));
+            for line in &m.calendar {
+                f.push(("scheduleSpec".into(), line.clone()));
+            }
+        } else if let Some(secs) = m.interval_secs {
+            f.push(("scheduleKind".into(), "interval".into()));
+            f.push(("intervalSecs".into(), secs.to_string()));
+            f.push(("scheduleSpec".into(), format!("every {secs}s")));
+        }
+        if let Some(p) = &m.log_path {
+            f.push(("logPath".into(), p.clone()));
+        }
+        if let Some(t) = m.log_written {
+            // the log's write time, named as that: a job can run without writing its log
+            f.push(("logWrittenAt".into(), crate::iso_from_secs(t)));
+        }
+        if let Some(n) = m.runs {
+            f.push(("runCount".into(), n.to_string()));
+        }
+        if let Some(d) = m.disabled {
+            f.push(("enabled".into(), (!d).to_string()));
+        }
     }
     if let Some(bp) = binary_path(&u.meta) {
         f.push(("binaryPath".into(), bp.into()));
@@ -658,7 +705,7 @@ mod parity_4472 {
     }
 
     fn meta(argv: &[&str]) -> UnitMeta {
-        UnitMeta { scheduled: false, argv: argv.iter().map(|s| s.to_string()).collect(), bundle_id: None }
+        UnitMeta { scheduled: false, argv: argv.iter().map(|s| s.to_string()).collect(), bundle_id: None, ..Default::default() }
     }
 
     #[test]
@@ -704,7 +751,7 @@ mod plan_4472 {
         s.strip_prefix("T").and_then(|n| n.parse().ok())
     }
     fn unit(label: &str) -> Unit {
-        Unit { label: label.into(), run_state: "running".into(), meta: UnitMeta { scheduled: false, argv: vec!["/Users/jeffbridwell/.chorus/bin/x".into()], bundle_id: None }, evidence_unavailable: false, ports: vec![], last_exit_code: None }
+        Unit { label: label.into(), run_state: "running".into(), meta: UnitMeta { scheduled: false, argv: vec!["/Users/jeffbridwell/.chorus/bin/x".into()], bundle_id: None, ..Default::default() }, evidence_unavailable: false, ports: vec![], last_exit_code: None }
     }
 
     #[test]
@@ -725,7 +772,7 @@ mod plan_4472 {
     #[test]
     fn a_job_carries_how_its_last_run_ended_and_an_instance_does_not() {
         let m: Vec<(String, String)> = vec![];
-        let job = Unit { label: "com.chorus.tmp-reaper".into(), run_state: "loaded".into(), meta: UnitMeta { scheduled: true, argv: vec!["/bin/bash".into()], bundle_id: None }, evidence_unavailable: false, ports: vec![], last_exit_code: Some(1) };
+        let job = Unit { label: "com.chorus.tmp-reaper".into(), run_state: "loaded".into(), meta: UnitMeta { scheduled: true, argv: vec!["/bin/bash".into()], bundle_id: None, ..Default::default() }, evidence_unavailable: false, ports: vec![], last_exit_code: Some(1) };
         let r = desired_row("library", &job, &m, "T");
         assert_eq!(r.class, UnitClass::ScheduledJob);
         assert_eq!(r.all("lastExitCode"), vec!["1"]);
@@ -826,14 +873,14 @@ mod plan_4472 {
 
     #[test]
     fn evidence_rules_carry_into_rows() {
-        let bundle_only = Unit { label: "com.example.helper".into(), run_state: "running".into(), meta: UnitMeta { scheduled: false, argv: vec![], bundle_id: Some("com.example.app".into()) }, evidence_unavailable: false, ports: vec![], last_exit_code: None };
+        let bundle_only = Unit { label: "com.example.helper".into(), run_state: "running".into(), meta: UnitMeta { scheduled: false, argv: vec![], bundle_id: Some("com.example.app".into()), ..Default::default() }, evidence_unavailable: false, ports: vec![], last_exit_code: None };
         assert_eq!(desired_row("library", &bundle_only, &[], "T").get("external"), "true");
         let unseen = Unit { label: "com.x.y".into(), run_state: "loaded".into(), meta: UnitMeta::default(), evidence_unavailable: true, ports: vec![], last_exit_code: None };
         let r = desired_row("bedroom", &unseen, &[], "T");
         assert_eq!(r.get("evidenceState"), "unknown");
         assert_eq!(r.get("external"), "");
         // NEGATIVE PROOF: a wrapper around OUR script is ours (the css case)
-        let css = Unit { label: "com.security.css".into(), run_state: "running".into(), meta: UnitMeta { scheduled: false, argv: vec!["/bin/bash".into(), "/Users/jeffbridwell/CascadeProjects/x/start.sh".into()], bundle_id: None }, evidence_unavailable: false, ports: vec![], last_exit_code: None };
+        let css = Unit { label: "com.security.css".into(), run_state: "running".into(), meta: UnitMeta { scheduled: false, argv: vec!["/bin/bash".into(), "/Users/jeffbridwell/CascadeProjects/x/start.sh".into()], bundle_id: None, ..Default::default() }, evidence_unavailable: false, ports: vec![], last_exit_code: None };
         assert_eq!(desired_row("library", &css, &[], "T").get("external"), "");
     }
 
@@ -863,7 +910,7 @@ mod report_4472 {
 
     #[test]
     fn findings_name_unmapped_stale_retired_and_unwalked() {
-        let u = |l: &str, ext: bool| Unit { label: l.into(), run_state: "running".into(), meta: UnitMeta { scheduled: false, argv: vec![if ext { "/opt/x".into() } else { "/Users/jeffbridwell/.chorus/bin/x".into() }], bundle_id: None }, evidence_unavailable: false, ports: vec![], last_exit_code: None };
+        let u = |l: &str, ext: bool| Unit { label: l.into(), run_state: "running".into(), meta: UnitMeta { scheduled: false, argv: vec![if ext { "/opt/x".into() } else { "/Users/jeffbridwell/.chorus/bin/x".into() }], bundle_id: None, ..Default::default() }, evidence_unavailable: false, ports: vec![], last_exit_code: None };
         let mapping = vec![("com.chorus.mapped".to_string(), "service-a".to_string()), ("com.gone".to_string(), "service-b".to_string())];
         let desired = vec![
             desired_row("library", &u("com.chorus.mapped", false), &mapping, "T"),
@@ -884,7 +931,7 @@ mod report_4472 {
 
     #[test]
     fn a_werk_slot_is_the_werk_and_none_is_named_not_unmapped() {
-        let u = |l: &str| Unit { label: l.into(), run_state: "running".into(), meta: UnitMeta { scheduled: false, argv: vec!["/Users/jeffbridwell/.chorus/bin/x".into()], bundle_id: None }, evidence_unavailable: false, ports: vec![], last_exit_code: None };
+        let u = |l: &str| Unit { label: l.into(), run_state: "running".into(), meta: UnitMeta { scheduled: false, argv: vec!["/Users/jeffbridwell/.chorus/bin/x".into()], bundle_id: None, ..Default::default() }, evidence_unavailable: false, ports: vec![], last_exit_code: None };
         let mapping = vec![("com.chorus.bare".to_string(), NO_DESIGN.to_string())];
         let slot = desired_row("library", &u("com.chorus.api.werk.kade"), &mapping, "T");
         assert_eq!(slot.get("runsService"), "werk");
@@ -1164,7 +1211,7 @@ mod provenance_4472 {
     use crate::row_fields;
 
     fn meta(argv: &[&str]) -> UnitMeta {
-        UnitMeta { scheduled: false, argv: argv.iter().map(|s| s.to_string()).collect(), bundle_id: None }
+        UnitMeta { scheduled: false, argv: argv.iter().map(|s| s.to_string()).collect(), bundle_id: None, ..Default::default() }
     }
 
     #[test]

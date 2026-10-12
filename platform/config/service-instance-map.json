@@ -3,6 +3,7 @@
   "com.security.css": "service-identity",
   "com.chorus.clearing": "service-clearing",
   "com.chorus.pulse": "service-clearing",
+  "com.chorus.pulse-api": "service-clearing",
   "com.chorus.jeff-input-monitor": "service-clearing",
   "com.chorus.buzz-tunnel": "service-clearing",
   "com.gathering.fuseki": "service-knowledge-store",
