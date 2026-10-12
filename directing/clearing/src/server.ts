@@ -285,7 +285,7 @@ for (const ev of ['request', 'upgrade'] as const) {
   });
 }
 
-// Cookie parser (minimal — just need bridge_token) — must be before auth
+// Cookie parser (minimal — the door's session and bridge_name) — must be before auth
 app.use((req: Request, _res, next) => {
   const r = req as Request & { cookies?: Record<string, string> };
   if (!r.cookies) {
@@ -308,26 +308,17 @@ function isLocal(req: express.Request): boolean {
   return isLocalConnection(req.headers, ip);
 }
 
-// Body parsers BEFORE auth — login form needs req.body parsed (#1782)
+// Body parsers BEFORE auth (#1782)
 app.use(express.json());
 app.use(express.urlencoded({ extended: false }));
 
-const TOKEN_COOKIE_OPTS = {
-  maxAge: 365 * 24 * 60 * 60 * 1000,
-  httpOnly: true,
-  sameSite: 'lax' as const,
-};
-
+// #4412 reopen — the machine credential is a header for scripts, never a way
+// in for a browser: no login form, no cookie, no ?token= link. One sign-in.
 function extractToken(req: Request): string | undefined {
-  return (req.query.token as string)
-    || req.cookies?.bridge_token
-    || req.headers.authorization?.replace('Bearer ', '');
+  return req.headers.authorization?.replace('Bearer ', '');
 }
 
 async function handleAuthenticated(req: Request, res: Response, next: NextFunction) {
-  if (req.query.token && !req.cookies?.bridge_token) {
-    res.cookie('bridge_token', BRIDGE_TOKEN, TOKEN_COOKIE_OPTS);
-  }
   // #3743 — a door-authenticated session already told us who this is; the name
   // page fires ONLY for token/guest flows with no identity at all.
   const hasName = req.cookies?.bridge_name;
@@ -337,15 +328,6 @@ async function handleAuthenticated(req: Request, res: Response, next: NextFuncti
     return res.send(namePage());
   }
   return next();
-}
-
-function handleLoginPost(req: Request, res: Response) {
-  const { token: submittedToken } = req.body || {};
-  if (submittedToken === BRIDGE_TOKEN) {
-    res.cookie('bridge_token', BRIDGE_TOKEN, TOKEN_COOKIE_OPTS);
-    return res.redirect('/');
-  }
-  return res.status(401).send(loginPage('Wrong token'));
 }
 
 // #4500 — keep his shared-door sign-in alive while he uses the Clearing.
@@ -476,8 +458,6 @@ async function gate(req: Request, res: Response, next: NextFunction): Promise<un
   if (outcome === 'forbid') return res.status(403).json({ error: 'forbidden' });
   if (outcome === 'pass') return local ? next() : handleAuthenticated(req, res, next);
 
-  // auth-required — the migration token login POST still works until the flag flips.
-  if (!REQUIRE_DPOP && req.path === '/login' && req.method === 'POST') return handleLoginPost(req, res);
   // #3775 (DEC-2209 clause 1), #4412 — ONE sign-in for the system: the door.
   // #3795 — REFUSED IS NOT UNKNOWN. A session we cannot verify is NOBODY: send
   // them to the door. A session we CAN verify, for a person this app does not
@@ -571,30 +551,6 @@ button:hover{background:#2ea043}</style></head>
 <body><div class="login"><h2>The Clearing</h2><p>Welcome — what's your first name?</p><form method="POST" action="/set-name">
 <input name="name" type="text" placeholder="Your name" autofocus autocomplete="given-name">
 <button type="submit">Join</button>
-</form></div></body></html>`;
-}
-
-function loginPage(error?: string): string {
-  return `<!DOCTYPE html><html><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1">
-<title>The Clearing — Chorus</title>
-<meta property="og:title" content="The Clearing — Chorus">
-<meta property="og:description" content="Where the team gathers. Three AI roles, one human, real-time.">
-<meta property="og:image" content="https://bridge.lightlifeurbangardens.com/bridge-og.jpg">
-<meta property="og:type" content="website">
-<meta name="twitter:card" content="summary_large_image">
-<meta name="twitter:title" content="The Clearing — Chorus">
-<meta name="twitter:image" content="https://bridge.lightlifeurbangardens.com/bridge-og.jpg">
-<style>body{background:#0d1117;color:#e6edf3;font-family:system-ui;display:flex;align-items:center;justify-content:center;height:100vh;margin:0}
-.login{background:#161b22;padding:2rem;border-radius:12px;border:1px solid #30363d;width:300px}
-h2{margin:0 0 1rem;font-size:1.2rem}
-input{width:100%;padding:0.6rem;background:#0d1117;border:1px solid #30363d;color:#e6edf3;border-radius:6px;font-size:1rem;box-sizing:border-box}
-button{width:100%;padding:0.6rem;background:#238636;border:none;color:white;border-radius:6px;font-size:1rem;cursor:pointer;margin-top:0.8rem}
-button:hover{background:#2ea043}
-.error{color:#f85149;font-size:0.85rem;margin-top:0.5rem}</style></head>
-<body><div class="login"><h2>The Clearing</h2><form method="POST" action="/login">
-<input name="token" type="password" placeholder="Access token" autofocus>
-<button type="submit">Enter</button>
-${error ? `<div class="error">${error}</div>` : ''}
 </form></div></body></html>`;
 }
 
@@ -759,10 +715,9 @@ app.post('/api/account/password', async (req: Request, res) => {
   return res.status(status).json({ ok: false, message: result.message });
 });
 
-// Guest logout (#1719). #4412 — drops the bridge-token cookies, then signs out
-// at the door: there is one sign-out for Chorus, as there is one sign-in.
+// Guest logout (#1719). #4412 — drops the name cookie, then signs out at the
+// door: there is one sign-out for Chorus, as there is one sign-in.
 app.get('/logout', (_req, res) => {
-  res.clearCookie('bridge_token');
   res.clearCookie('bridge_name');
   res.redirect(SIGN_OUT_URL);
 });
@@ -1393,26 +1348,20 @@ async function socketSessionAuthed(cookieHeader: string): Promise<boolean> {
   return !!(guardWebId && (await isWebIdAllowed(guardWebId, Date.now())));
 }
 
-/** The static bridge-token leg — migration fallback, gone when REQUIRE_DPOP flips. */
-function socketTokenAuthed(cookieHeader: string, authToken?: string, queryToken?: unknown): boolean {
+/** The static machine-credential leg — a socket client's handshake auth only;
+ * never a cookie or a ?token= link (#4412 reopen: one sign-in for a browser). */
+function socketTokenAuthed(authToken?: string): boolean {
   if (REQUIRE_DPOP) return false;
-  // #3710 — narrow instead of String()-ing an `unknown`. socket.io hands back
-  // string | string[] | undefined; a non-string would stringify to "a,b" or
-  // "[object Object]" and then be compared against the bridge token — never a
-  // match, but never an honest comparison either.
-  const token = authToken || (typeof queryToken === 'string' ? queryToken : '');
-  const cookieMatch = cookieHeader.match(/bridge_token=([^;]+)/);
-  const cookieToken = cookieMatch ? decodeURIComponent(cookieMatch[1]) : '';
-  return token === BRIDGE_TOKEN || cookieToken === BRIDGE_TOKEN;
+  return !!authToken && authToken === BRIDGE_TOKEN;
 }
 
-async function socketAuth(socket: { handshake: { address?: string; headers: Record<string, unknown>; auth: { token?: string }; query: { token?: unknown } } }): Promise<boolean> {
-  const { address, headers, auth, query } = socket.handshake;
+async function socketAuth(socket: { handshake: { address?: string; headers: Record<string, unknown>; auth: { token?: string } } }): Promise<boolean> {
+  const { address, headers, auth } = socket.handshake;
   if (isLocalConnection(headers, address || '')) return true;
   // #3710 — headers is Record<string, unknown>; narrow rather than stringify.
   const cookieHeader = typeof headers.cookie === 'string' ? headers.cookie : '';
   if (await socketSessionAuthed(cookieHeader)) return true;
-  return socketTokenAuthed(cookieHeader, auth.token, query.token);
+  return socketTokenAuthed(auth.token);
 }
 
 // Socket.IO
