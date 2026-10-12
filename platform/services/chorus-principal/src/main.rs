@@ -34,6 +34,7 @@ const USAGE: &str = "\
 chorus-principal — create a user everywhere, or nowhere
 
   chorus-principal census            who exists incompletely
+  chorus-principal unlink <name> [--apply]  take a WebID with no login off Jeff's sign-in (#4503; dry run by default)
   chorus-principal plan <name>       what would be created, writes nothing
   chorus-principal create <name>     create the user, all of it or none of it
 
@@ -68,6 +69,7 @@ fn main() {
         // it is this crate's library now, so the verbs run here, not forwarded.
         Some("login" | "logout" | "on" | "off" | "status" | "up" | "relogin" | "seen" | "seen-write" | "sweep" | "project-messages" | "credentials") => chorus_principal::run(&args),
         Some("census") => cmd_census(),
+        Some("unlink") => match args.get(1) { Some(n) => cmd_unlink(n, args.iter().any(|a| a == "--apply")), None => { eprintln!("chorus-principal: unlink needs a name"); 2 } },
         Some("create") => match args.get(1) {
             Some(n) => match Kind::from_args(&args[2..]) {
                 Some(Kind::Human) => match Person::from_args(&args[2..]) {
@@ -1539,4 +1541,56 @@ fn hats_held(name: &str) -> usize {
         "-H", "Accept: application/sparql-results+json",
     ]).unwrap_or_default();
     between(&body, "\"value\":\"", "\"").and_then(|v| v.parse().ok()).unwrap_or(0)
+}
+
+
+/// #4503 — take a WebID off Jeff's identity-provider account, so his sign-in
+/// stops offering it. Only for a name with no login and no Principal row
+/// (zzz-test); a principal that logs in must move to its own account first.
+/// Dry run by default: names the link and the client credentials it would
+/// delete. --apply deletes them and reads the account back to prove it.
+fn cmd_unlink(name: &str, apply: bool) -> i32 {
+    use chorus_principal::links::*;
+    let css = env_or("CSS_URL", "http://localhost:3001");
+    let issuer = env_or("CSS_ISSUER", "https://id.lightlifeurbangardens.com");
+    let local = |u: &str| u.replacen(issuer.trim_end_matches('/'), &css, 1);
+    let has_cred = std::path::Path::new(&format!("{}/.chorus/identity/{name}/cred.json", owner_home())).exists();
+    let api = env_or("ATHENA_MAKE_URL", "http://localhost:3360");
+    let has_principal = status_of(&format!("{api}/v1/identity/principals/principal-{name}")) == "200";
+    if let Some(why) = unlink_refusal(name, has_cred, has_principal) {
+        eprintln!("chorus-principal: REFUSED — {why}. Nothing was changed.");
+        return 2;
+    }
+    let jar = jar_path();
+    if css_login(&css, &jar).is_none() {
+        eprintln!("chorus-principal: REFUSED — could not sign in to Jeff's identity-provider account. Nothing was changed.");
+        return 2;
+    }
+    let read = |u: &str| curl_css(None, &["-s", "--max-time", "20", "-b", &jar, "-H", "Accept: application/json", &local(u)]).unwrap_or_default();
+    let ctl = read(&format!("{css}/.account/"));
+    let (Some(links_url), Some(creds_url)) = (between(&ctl, "\"webId\":\"", "\""), between(&ctl, "\"clientCredentials\":\"", "\"")) else {
+        eprintln!("chorus-principal: REFUSED — the account answered without its controls (UNMEASURED). Nothing was changed.");
+        return 2;
+    };
+    let links = webid_links(&read(&links_url));
+    let link = links.iter().find(|(w, _)| webid_name(w) == Some(name)).map(|(_, u)| u.clone());
+    let creds = credentials_for(&read(&creds_url), name);
+    println!("unlink {name}: link {} · {} client credential(s)", if link.is_some() { "found" } else { "none" }, creds.len());
+    if link.is_none() && creds.is_empty() {
+        println!("unlink {name}: nothing on Jeff's account names it — done");
+        return 0;
+    }
+    if !apply {
+        println!("unlink {name}: dry run — NOTHING CHANGED (pass --apply)");
+        return 0;
+    }
+    let del = |u: &str| curl_css(None, &["-s", "-o", "/dev/null", "-w", "%{http_code}", "--max-time", "20", "-b", &jar, "-X", "DELETE", &local(u)]).unwrap_or_default();
+    let mut failed = 0;
+    for u in creds.iter().chain(link.iter()) {
+        let code = del(u);
+        if !code.starts_with('2') { failed += 1; eprintln!("  delete {u} → HTTP {code}"); }
+    }
+    let left = webid_links(&read(&links_url)).iter().any(|(w, _)| webid_name(w) == Some(name)) as usize + credentials_for(&read(&creds_url), name).len();
+    println!("unlink {name}: read back — {} left on Jeff's account", left);
+    if failed > 0 || left > 0 { 1 } else { 0 }
 }
