@@ -62,6 +62,28 @@ export interface EventloopProbeDeps {
   ticks?: number;
 }
 
+function probeSettings(deps: EventloopProbeDeps) {
+  return {
+    threshold: deps.threshold ?? 1000,
+    throttleMs: deps.throttleMs ?? 300_000,
+    intervalMs: deps.intervalMs ?? 2000,
+    now: deps.now ?? Date.now,
+    sleep: deps.sleep ?? ((ms: number) => new Promise<void>((r) => setTimeout(r, ms))),
+  };
+}
+
+/** #4508 — falling edge: the loop answers again, so ask it what overlapped
+ *  the stall; the length is measured start-to-recovery, not capped. */
+async function recoveredAlert(
+  inFlight: (from: number, to: number) => Promise<string>,
+  start: number,
+  end: number,
+  op: string,
+): Promise<BlockAlert> {
+  const named = await inFlight(start, end).catch(() => 'chorus-api did not say what was in flight.');
+  return formatBlockAlert(Math.round(end - start), new Date(start).toISOString(), op, undefined, named, true);
+}
+
 /** The probe loop: measure → on the RISING EDGE of a block (healthy→blocked) emit once
  *  + nudge (throttled); re-arm on recovery. Emits the same BlockAlert shape as the
  *  in-process detector, and the SAME once-per-block-episode semantics — a sustained or
@@ -70,51 +92,34 @@ export interface EventloopProbeDeps {
  *  The only difference from the in-process detector is the vantage: this can't be
  *  starved by the block it's measuring. */
 export async function runEventloopProbe(deps: EventloopProbeDeps): Promise<void> {
-  const threshold = deps.threshold ?? 1000;
-  const throttleMs = deps.throttleMs ?? 300_000;
-  const intervalMs = deps.intervalMs ?? 2000;
-  const now = deps.now ?? Date.now;
-  const sleep = deps.sleep ?? ((ms: number) => new Promise<void>((r) => setTimeout(r, ms)));
+  const { threshold, throttleMs, intervalMs, now, sleep } = probeSettings(deps);
   const bounded = typeof deps.ticks === 'number';
   let lastNudge = Number.NEGATIVE_INFINITY;
-  let inBlock = false; // edge state: are we inside an ongoing block episode?
-  let blockStart = 0;
-  let firstAlert: BlockAlert | null = null;
+  const mayNudge = (): boolean => now() - lastNudge >= throttleMs;
+  const nudge = (a: BlockAlert): void => { lastNudge = now(); deps.nudge(a); };
+  // edge state: the open block episode, if any (its start and first reading)
+  const st: { episode: { start: number; first: BlockAlert } | null } = { episode: null };
   let t = 0;
+
+  const rise = (a: BlockAlert, latencyMs: number): void => {
+    // rising edge: a NEW block episode — emit the witness once; without a way
+    // to ask what overlapped, nudge now (still blocked readings are suppressed)
+    st.episode = { start: now() - latencyMs, first: a };
+    deps.emit(a);
+    if (!deps.inFlight && mayNudge()) nudge(a);
+  };
+  const fall = async (latencyMs: number): Promise<void> => {
+    // #4508 — falling edge: the loop answers again, so it can say what ran
+    const open = st.episode;
+    st.episode = null; // recovered → re-arm for the next episode
+    if (open && deps.inFlight && mayNudge()) nudge(await recoveredAlert(deps.inFlight, open.start, now() - latencyMs, open.first.op));
+  };
 
   while (!bounded || t < (deps.ticks as number)) {
     const { latencyMs, timedOut } = await deps.probe();
-    const a = evaluateProbe({
-      latencyMs,
-      threshold,
-      ts: new Date(now()).toISOString(),
-      op: 'probe',
-      timedOut,
-    });
-    if (a) {
-      if (!inBlock) {
-        // rising edge: a NEW block episode — emit the witness once, nudge if past throttle.
-        inBlock = true;
-        blockStart = now() - latencyMs;
-        firstAlert = a;
-        deps.emit(a);
-        if (!deps.inFlight && now() - lastNudge >= throttleMs) {
-          lastNudge = now();
-          deps.nudge(a);
-        }
-      }
-      // still blocked (inBlock): suppress — one episode, one alert. No flood.
-    } else {
-      if (inBlock && deps.inFlight && firstAlert && now() - lastNudge >= throttleMs) {
-        // #4508 — falling edge: the loop answers again, so ask it what overlapped
-        const end = now() - latencyMs;
-        let named = '';
-        try { named = await deps.inFlight(blockStart, end); } catch { named = 'chorus-api did not say what was in flight.'; }
-        lastNudge = now();
-        deps.nudge(formatBlockAlert(Math.round(end - blockStart), new Date(blockStart).toISOString(), firstAlert.op, undefined, named, true));
-      }
-      inBlock = false; // recovered → re-arm for the next episode
-    }
+    const a = evaluateProbe({ latencyMs, threshold, ts: new Date(now()).toISOString(), op: 'probe', timedOut });
+    if (a && !st.episode) rise(a, latencyMs);
+    else if (!a && st.episode) await fall(latencyMs);
     await sleep(intervalMs);
     t++;
   }
