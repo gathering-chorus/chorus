@@ -56,6 +56,14 @@ async function backupLiveInto(live, dest) {
 }
 
 module.exports = async function indexDbGlobalSetup() {
+  // #4405 — no test ever runs the live `cards list`: the board cache and the
+  // card-ac route read CHORUS_CARDS_BIN, so every worker gets a stub that
+  // prints an empty board. A test that wants cards sets its own stub.
+  if (!process.env.CHORUS_CARDS_BIN) {
+    const stub = path.join(os.tmpdir(), `chorus-cards-stub-${process.pid}.sh`);
+    fs.writeFileSync(stub, '#!/bin/sh\nexit 0\n', { mode: 0o755 });
+    process.env.CHORUS_CARDS_BIN = stub;
+  }
   const live = path.join(os.homedir(), '.chorus', 'index.db');
   if (!fs.existsSync(live)) return; // nothing to isolate; the app answers 503 by itself
   const preset = process.env.CHORUS_DB_PATH;
