@@ -214,6 +214,23 @@ t "a card with no run says so plainly" "#110 wren   no run yet" "$out"
 n=$(grep -c '^#109' <<<"$out")
 [ "$n" = 1 ] || { echo "FAIL #109 takes $n lines, wanted one"; fails=$((fails+1)); }
 if [[ "$out" == *"no pipeline run yet"* ]]; then echo "FAIL the dead v1 line is back"; fails=$((fails+1)); fi
+# #4494 reopen — Jeff 2026-10-12: "#4004 silas build" while Kade built it. The
+# line names the role whose run it is (the run's ROLE), not the board owner.
+# NEGATIVE PROOF: card 112 is Wren's on the board, its run is Kade's.
+echo '{"data":{"cards":[{"id":109,"owner":"Kade"},{"id":110,"owner":"Wren"},{"id":112,"owner":"Wren"}]}}' > "$TD/api/api/chorus/context/board/wip"
+python3 - "$TD/dagu/api/v1/dag-runs" <<'EOF5'
+import json, sys
+p = sys.argv[1]; d = json.load(open(p))
+d["dagRuns"].append({"name":"cicd","dagRunId":"r12","params":"CARD=112 ROLE=kade","statusLabel":"running","startedAt":"2026-10-09T23:10:00-04:00","nodes":[{"statusLabel":"running","step":{"name":"skill-werk-build"}}]})
+json.dump(d, open(p, "w"))
+EOF5
+out=$(board)
+t "a run names the role that runs it, not the card's owner" "#112 kade   build" "$out"
+if [[ "$out" == *"#112 wren"* ]]; then echo "FAIL #112 reads the board owner"; fails=$((fails+1)); fi
+t "a card with no run still names its owner" "#110 wren   no run yet" "$out"
+roled() { CWS_RUNS_DIR=$TD CWS_DAGU="file://$TD/dagu" CWS_API="file://$TD/api" "$CWS" --role "$1"; }
+t "--role follows the run's role" "#112 kade" "$(roled kade)"
+if [[ "$(roled wren)" == *"#112"* ]]; then echo "FAIL --role wren shows Kade's run of #112"; fails=$((fails+1)); fi
 # a queued land names its place in line, from dagu's queue
 python3 - "$TD/dagu/api/v1/dag-runs" <<'EOF3'
 import json, sys

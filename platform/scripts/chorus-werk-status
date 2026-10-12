@@ -729,10 +729,14 @@ def main():
     places = queue_positions()
     shown = 0
     for cid, owner in wip:
-        if role and owner.lower() != role:
-            continue
-        who = owner.lower()
         v2 = dagu_runs(cid)
+        # #4494 reopen — the line names the role whose run it is (the newest
+        # run's ROLE), not the card's board owner: Kade building Silas's #4004
+        # read "silas". The owner stands in only when the card has no run.
+        ran = re.search(r"ROLE=(\S+)", (v2[0].get("params") or "")) if v2 else None
+        who = ran.group(1).lower() if ran else owner.lower()
+        if role and who != role:
+            continue
         pin = pins.get(str(cid))
         logs = run_logs(cid)
         if v2:
