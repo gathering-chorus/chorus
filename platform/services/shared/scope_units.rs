@@ -172,6 +172,13 @@ pub fn scope_unit_names(
             names.insert("werk-test".to_string());
             continue;
         }
+        // #4405 — .repository is the repo-root file where a repository declares
+        // what it depends on and what it is part of; the code herald
+        // (chorus-crawl) reads it, so it scopes to that crate.
+        if f == ".repository" {
+            names.insert("chorus-crawl".to_string());
+            continue;
+        }
         // #4000 — proving/flows is LANE-handled, not unit-built: the #3920 ui
         // lane already fires on these paths (ui_lane_fires), so a specs-only
         // diff scopes to the well-known "ui-flows" name instead of forcing
@@ -440,6 +447,17 @@ mod coverage_floors_scope_4270 {
         let units = vec![u("werk-test", "platform/services/werk-test")];
         let v = scope_unit_names(&["something-else.yml".to_string()], &units, &[], false);
         assert!(v == ScopeVerdict::Full("unmapped:something-else.yml".to_string()), "got {:?}", v);
+    }
+
+    /// #4405 — the repository declaration runs the crate that reads it.
+    #[test]
+    fn the_repository_declaration_scopes_to_the_code_herald() {
+        let units = vec![u("chorus-crawl", "platform/services/chorus-crawl")];
+        let v = scope_unit_names(&[".repository".to_string()], &units, &[], false);
+        assert!(v == ScopeVerdict::Scoped(vec!["chorus-crawl".to_string()]), "got {:?}", v);
+        // negative proof: a look-alike root dotfile still refuses by name
+        let v = scope_unit_names(&[".repositories".to_string()], &units, &[], false);
+        assert!(v == ScopeVerdict::Full("unmapped:.repositories".to_string()), "got {:?}", v);
     }
 
     /// And it is NOT irrelevant — a floors change that ran nothing would be the
