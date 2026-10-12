@@ -16,7 +16,7 @@ import { TilePoller } from './tiles';
 import { MessageRouter, isRoleName, type ChannelMessage } from './router';
 import { RoomJournal } from './room-journal';
 import { randomUUID } from 'crypto';
-import { verifyShareSession, shareSessionFromHeader, readCookieKey } from './share-session';
+import { verifyShareSession, shareSessionFromHeader, readCookieKey, relayRenew } from './share-session';
 import { ChorusLogTailer } from './tailer';
 import { processJeffInput } from './jeff-input';
 import { SessionTailer } from './session-tailer';
@@ -447,6 +447,18 @@ const CLIENTID_DOC = JSON.stringify({
   scope: 'openid webid offline_access',
   token_endpoint_auth_method: 'none',
 }, null, 2);
+
+// #4500 — keep his shared-door sign-in alive while he uses the Clearing.
+const SHARE_GUARD_URL = process.env.SHARE_GUARD_URL || 'http://127.0.0.1:8899';
+const renewAsked = new Map<string, number>();
+app.use((req, res, next) => {
+  const raw = shareSessionFromHeader(req.headers.cookie);
+  const v = raw ? verifyShareSession(raw, readCookieKey()) : null;
+  if (!v || !v.ok || !v.sid) return next();
+  void relayRenew(req.headers.cookie, v.sid, renewAsked, SHARE_GUARD_URL)
+    .then((cookie) => { if (cookie && !res.headersSent) res.append('Set-Cookie', cookie); })
+    .finally(() => next());
+});
 
 app.use((req, res, next) => {
   void gate(req, res, next).catch(() => {

@@ -62,8 +62,11 @@ export interface LoggedInRole { name: string; sessions: OpenSession[] }
  * Jeff 2026-10-06 08:05: tiles are principals, not sessions, but he wants to
  * see each principal's sessions inside its tile "until we stabilize clearing",
  * so every row carries its open sessions, oldest first.
+ * #4500 — a session past its expiresAt is over even if no sign-out closed it
+ * (Jeff 2026-10-12: his tile showed 5 sessions, 4 of them yesterday's expired
+ * sign-ins). The door that signed him in set expiresAt; nothing here invents one.
  */
-export function loggedInRoles(sessionsBody: unknown, rolesBody: unknown): LoggedInRole[] {
+export function loggedInRoles(sessionsBody: unknown, rolesBody: unknown, nowMs: number = Date.now()): LoggedInRole[] {
   // Jeff and the agents alike (Wren 18:59: "logged in principals", not agent
   // roles): every agent or human role row, Jeff first by rolePriority 0.
   const body = rolesBody as { data?: unknown } | null;
@@ -75,8 +78,9 @@ export function loggedInRoles(sessionsBody: unknown, rolesBody: unknown): Logged
   const rows = (sessionsBody as { data?: unknown } | null)?.data;
   if (!Array.isArray(rows)) throw new Error('the sessions door answered with no data list');
   const open = new Map<string, OpenSession[]>();
-  for (const r of rows as Array<Partial<OpenSession> & { sessionState?: string; ownedBy?: string }>) {
+  for (const r of rows as Array<Partial<OpenSession> & { sessionState?: string; ownedBy?: string; expiresAt?: string }>) {
     if (r.sessionState !== 'open' || !r.ownedBy) continue;
+    if (r.expiresAt && Date.parse(r.expiresAt) <= nowMs) continue;
     const role = String(r.ownedBy).replace(/^principal-/, '');
     const list = open.get(role) ?? [];
     list.push({ channel: r.channel ?? '', startedAt: r.startedAt ?? '', lastSeenAt: r.lastSeenAt ?? '' });

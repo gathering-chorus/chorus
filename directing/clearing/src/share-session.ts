@@ -36,7 +36,7 @@ const STATE_FILE = process.env.SHARE_STATE_FILE
   || path.join(process.env.HOME || '', '.chorus', 'share-oidc.json');
 
 export type SessionVerdict =
-  | { ok: true; webid: string; exp: number }
+  | { ok: true; webid: string; exp: number; sid?: string }
   /** malformed / bad signature / expired — this is NOBODY, not a denied person.
    *  Callers send these to the door (302), never to a 403 (Silas, #3785 rationale). */
   | { ok: false; reason: 'malformed' | 'bad-signature' | 'expired' | 'no-key' };
@@ -116,7 +116,7 @@ export function verifyShareSession(
 
   // 3. decode + expiry. Absent or unparseable exp REFUSES — a session with no
   //    stated end is not a long session, it is an unverifiable claim.
-  let claims: { webid?: unknown; exp?: unknown };
+  let claims: { webid?: unknown; exp?: unknown; sid?: unknown };
   try {
     claims = JSON.parse(b64urlDecode(payloadStr).toString('utf-8'));
   } catch {
@@ -128,7 +128,47 @@ export function verifyShareSession(
 
   // 4. the allow-set check is the CALLER's next step (isWebIdAllowed), per
   //    request — deliberately not folded in here so the two questions stay two.
-  return { ok: true, webid: claims.webid, exp: claims.exp };
+  return { ok: true, webid: claims.webid, exp: claims.exp, ...sidOf(claims.sid) };
+}
+
+/** #4500 — the guard's session id, when the cookie carries one. */
+function sidOf(sid: unknown): { sid?: string } {
+  return typeof sid === 'string' && sid ? { sid } : {};
+}
+
+/** #4500 — how often the Clearing asks the guard to renew one session. */
+export const RENEW_EVERY_MS = 10 * 60 * 1000;
+
+/**
+ * #4500 — Jeff, 2026-10-12: "if i go to sleep and then return when i wake i
+ * typically must login again". The guard renews a cookie on use, but he uses
+ * the Clearing, which is served on its own host, so the guard never sees it.
+ * The Clearing relays his cookie to the guard (loopback) at most once per
+ * RENEW_EVERY_MS per session, and hands the renewed Set-Cookie back to his
+ * browser. The guard holds his tokens and his Session row; the Clearing only
+ * carries the cookie. Returns the Set-Cookie value, or null (not due, not
+ * renewed, or the guard unreachable — which never refuses the request).
+ */
+export async function relayRenew(
+  cookieHeader: string | undefined,
+  sid: string | undefined,
+  lastAsked: Map<string, number>,
+  guardUrl: string,
+  nowMs: number = Date.now(),
+  fetchImpl: typeof fetch = fetch,
+): Promise<string | null> {
+  if (!sid || !cookieHeader) return null;
+  const last = lastAsked.get(sid);
+  if (last !== undefined && nowMs - last < RENEW_EVERY_MS) return null;
+  lastAsked.set(sid, nowMs);
+  try {
+    const r = await fetchImpl(`${guardUrl.replace(/\/$/, '')}/_auth/renew`, {
+      headers: { cookie: cookieHeader }, signal: AbortSignal.timeout(1500),
+    });
+    return r.status === 204 ? r.headers.get('set-cookie') : null;
+  } catch {
+    return null;
+  }
 }
 
 /** Pull the cookie out of a Cookie header without a parser dependency. */
