@@ -132,6 +132,8 @@ assert "#4500 renew: a session two hours in answers 204 with a renewed cookie" \
   bash -c '[[ "$1" == *" 204"* && "$1" == *"Set-Cookie: chorus_share_session="* ]]' _ "$(hdrs "$SESS_DUE" "$G/_auth/renew")"
 assert "#4500 a page used two hours in carries the renewed cookie" \
   bash -c '[[ "$1" == *" 200"* && "$1" == *"Set-Cookie: chorus_share_session="* ]]' _ "$(hdrs "$SESS_DUE" "$G/about/x.html")"
+assert "#4500 with the door down, the record still takes the renewed expiry (next sign-in's cleanup must not close a live row)" \
+  python3 -c 'import json,sys,time; r=json.load(open(sys.argv[1]))["alice-browser-1"]["row"]; sys.exit(0 if r.get("expiresAt","") > time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime(time.time()+11*3600)) else 1)' "$SHARE_PERSON_SESSIONS"
 assert "#4500 a session minted this minute is not re-issued" \
   bash -c '[[ "$1" == *" 204"* && "$1" != *"Set-Cookie"* ]]' _ "$(hdrs "$SESS_NEW" "$G/_auth/renew")"
 assert "#4500 NEGATIVE PROOF: a signed-out session (no record) is refused on its next request" \

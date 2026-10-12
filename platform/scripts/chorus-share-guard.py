@@ -749,7 +749,13 @@ def renew_person_session(sid, cookie_value):
         rec = load_state(SESSIONS_FILE).get(sid)
         if not rec:
             return
-        fresh = person_session.touch_session(rec, time.time(), cookie_exp(cookie_value), _http, ATHENA_URL, _refresh, _log)
+        exp = cookie_exp(cookie_value)
+        fresh = person_session.touch_session(rec, time.time(), exp, _http, ATHENA_URL, _refresh, _log)
+        if not fresh:
+            # Silas, review 08:21: the door can be down (it restarted at 07:5x
+            # that morning). The record still follows the cookie, or the next
+            # sign-in's cleanup would read the old expiry and close his live row.
+            fresh = dict(rec, row=dict(rec["row"], expiresAt=person_session.iso(exp)))
         if fresh:
             with SESSIONS_LOCK:
                 recs = load_state(SESSIONS_FILE)
