@@ -1650,6 +1650,34 @@ pub fn read_served_from(api: &str, query: &str) -> Result<String, String> {
     served_snapshot(&disco, &count)
 }
 
+/// #4452 — the land restarts athena-make while the athena run reads it: athena
+/// starts at merge and deploy-prod restarts the door a minute later, so a read
+/// can land mid-restart (2026-10-12 #4081: "the discovery document lists no
+/// collection", and the model never reached the store). An unmeasured read is
+/// retried until the door answers or `tries` run out; then the LAST reason is
+/// returned, still a refusal. A snapshot is never taken of a half-started door.
+pub fn wait_until_served(mut read: impl FnMut() -> Result<String, String>, tries: u32, pause: &dyn Fn(u32)) -> Result<String, String> {
+    let mut last = String::from("served-snapshot: never read");
+    for i in 0..tries.max(1) {
+        match read() {
+            Ok(s) => return Ok(s),
+            Err(e) => last = e,
+        }
+        if i + 1 < tries {
+            pause(i);
+        }
+    }
+    Err(format!("{last} (still so after {} tries — the door was restarting or down)", tries.max(1)))
+}
+
+/// `read_served`, waiting (bounded) for a door that is mid-restart. Default 24
+/// tries 5 s apart, about two minutes: a restart that has not answered by then
+/// is a real failure, named.
+pub fn read_served_ready(api: &str) -> Result<String, String> {
+    let tries = env_or("ATHENA_SERVED_TRIES", "24").parse().unwrap_or(24);
+    wait_until_served(|| read_served(api), tries, &|_| std::thread::sleep(std::time::Duration::from_secs(5)))
+}
+
 /// Where the store is and who is deploying. Threaded rather than re-read per
 /// set so every leg of one run talks to the same store.
 pub struct StoreCtx {
