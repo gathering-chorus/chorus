@@ -44,7 +44,7 @@ pub fn rows_of_repo(current: Vec<(String, Fields)>, repo: &str, adopt: bool) -> 
 
 /// The repository a stored row names. The door returns an unset edge as an
 /// empty string, not an absent field: both mean no repository.
-fn repo_of_row(f: &Fields) -> Option<&str> {
+pub fn repo_of_row(f: &Fields) -> Option<&str> {
     f.iter().find(|(k, v)| k == "inRepository" && !v.is_empty()).and_then(|(_, r)| r.rsplit("repository-").next())
 }
 
@@ -103,12 +103,16 @@ pub fn repository_fields(remote: Option<&str>, decl: &RepoDecl, stored: &[String
 }
 
 /// A new repository is created (a PUT of an absent row is a 404 at the door);
-/// a stored one is replaced whole — the crawler is its only writer.
-pub fn repository_write(coll: &str, repo: &str, fields: &[(String, String)], stored: bool) -> Write {
-    if stored {
-        Write { method: "PUT", path: format!("{coll}/{repo}"), rows: vec![row(repo, fields)], what: format!("repository {repo}") }
+/// a stored one is replaced whole — the crawler is its only writer. A stored
+/// repository with nothing to state is left as it is: the door refuses an
+/// empty replace (shared-security, no remote and no edges, got a 422).
+pub fn repository_write(coll: &str, repo: &str, fields: &[(String, String)], stored: bool) -> Option<Write> {
+    if stored && fields.is_empty() {
+        None
+    } else if stored {
+        Some(Write { method: "PUT", path: format!("{coll}/{repo}"), rows: vec![row(repo, fields)], what: format!("repository {repo}") })
     } else {
-        Write { method: "POST", path: format!("{coll}/batch"), rows: vec![row(repo, fields)], what: format!("create repository {repo}") }
+        Some(Write { method: "POST", path: format!("{coll}/batch"), rows: vec![row(repo, fields)], what: format!("create repository {repo}") })
     }
 }
 
@@ -203,3 +207,11 @@ pub fn code_writes(coll: &str, svc_coll: Option<&str>, plan: &UnitPlan, built: &
     w
 }
 
+
+/// #4405 reopen 3 — a stored file row that does not name `repo` is restated,
+/// even when its content has not moved, so every file comes to name the
+/// repository it lives in (6,570 CodeFile rows named none, and another repo's
+/// root unit claimed all of them in the blast radius).
+pub fn file_needs_repo(stored: &Fields, repo: &str) -> bool {
+    repo_of_row(stored) != Some(repo)
+}
