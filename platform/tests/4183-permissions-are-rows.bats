@@ -28,7 +28,7 @@ teardown() { rm -rf "$T"; }
 
 rows() { arq --results csv --query "$T/q.rq" "$@" 2>/dev/null | tail -n +2 | grep -c . || true; }
 
-@test "the permissions file holds every grant it replaced, and the three #4204 added" {
+@test "the permissions file holds every grant it replaced, less the three identity grants #4204 retired" {
   # 42 was the hasScope set this file replaced. #4204 (2026-09-18) moved Session rows
   # out of the security graph into identity and opened that graph to the three roles,
   # which is three more rows — not drift. The count is asserted, not floored, so a row
@@ -49,7 +49,9 @@ rows() { arq --results csv --query "$T/q.rq" "$@" 2>/dev/null | tail -n +2 | gre
     'SELECT (COUNT(DISTINCT ?p) AS ?n) WHERE { ?p a chorus:Permission }' > "$T/n.rq"
   n=$(arq --results csv --query "$T/n.rq" --data "$PERMS" 2>/dev/null | tail -1 | tr -d '\r')
   # 49 since #4432 (2026-10-06): permission-wren-events, for Wren's events domain (#4438).
-  test "$n" -eq 49
+  # 46 since the #4204 reopen (2026-10-12): the three identity grants are retired.
+  # They overrode the row-owner check, so every role could edit every login.
+  test "$n" -eq 46
 }
 
 @test "the scope query grants from Permission rows joined to real principals" {

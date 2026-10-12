@@ -109,6 +109,30 @@ post_principal() {
   [ "$code" = "403" ]
 }
 
+patch_session() { # patch_session <caller> <row name> → HTTP code
+  local role="$1" name="$2" h code
+  h="$(hdr_for "$role")"
+  code="$(curl -s -o /dev/null -w '%{http_code}' -X PATCH -H 'Content-Type: application/json' \
+          -H "@$h" --data '{"hostAccount":"probe-edited"}' "$API/v1/identity/sessions/$name")"
+  rm -f "$h"
+  printf '%s' "$code"
+}
+
+@test "a role still edits its own login with no identity grant" {
+  [ "$(post_session wren)" = "201" ]
+  code="$(patch_session wren "wren-4204probe-$$")"
+  [ "$code" = "200" ] || { echo "wren editing her own login got $code"; false; }
+}
+
+@test "NEGATIVE PROOF — wren cannot edit a login another principal owns (#4204 reopen)" {
+  # Wren, 2026-10-12 08:17: "wren could PATCH Jeff's Session via
+  # permission-wren-identity". A graph-wide grant overrode the row-owner check.
+  # The target here is a silas probe row this test made, never Jeff's.
+  [ "$(post_session silas)" = "201" ]
+  code="$(patch_session wren "silas-4204probe-$$")"
+  [ "$code" = "403" ] || { echo "wren editing silas's login got $code — the identity graph is open across owners"; false; }
+}
+
 @test "#4332 no probe Session row this run wrote is left behind" {
   post_session wren >/dev/null
   teardown
