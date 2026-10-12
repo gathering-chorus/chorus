@@ -487,17 +487,56 @@ pub fn boot_read_instruction(role: &str) -> String {
     )
 }
 
+/// #4444 — may `name` boot-read? The three Claude roles always; any other
+/// name only when the roles door lists it (Abby: "usage: … <wren|silas|kade>"
+/// at 17:32 sent her grepping the repo). The name goes into a URL, so it must
+/// be a plain slug first.
+pub fn boot_read_allowed(name: &str, door_roles: &[String]) -> bool {
+    let slug = !name.is_empty() && name.len() <= 40 && name.bytes().all(|b| b.is_ascii_lowercase() || b.is_ascii_digit() || b == b'-');
+    slug && (matches!(name, "wren" | "silas" | "kade") || door_roles.iter().any(|r| r == name))
+}
+
+/// #4444 — only the role's own session messages. The search treats a channel
+/// it has never indexed as no filter at all (measured 17:39: channel
+/// session:abby-normal answered with Wren's and Kade's turns), so every result
+/// is checked here; a role with none gets one plain line, never someone else's.
+pub fn own_messages(search_body: &str, role: &str) -> String {
+    let want = format!("session:{role}");
+    let Ok(mut v) = serde_json::from_str::<serde_json::Value>(search_body) else {
+        return format!("No session messages could be read for {role} (search answered: not JSON). Start from briefs/ and the board.");
+    };
+    let Some(results) = v.get_mut("results").and_then(|r| r.as_array_mut()) else {
+        return format!("No session messages are recorded for {role} yet. Start from briefs/ and the board.");
+    };
+    results.retain(|r| r.get("channel").and_then(|c| c.as_str()) == Some(want.as_str()));
+    if results.is_empty() {
+        return format!("No session messages are recorded for {role} yet. Start from briefs/ and the board.");
+    }
+    v.to_string()
+}
+
+fn door_role_names() -> Vec<String> {
+    let api = std::env::var("ATHENA_MAKE_URL").unwrap_or_else(|_| "http://localhost:3360".into());
+    let Ok(out) = std::process::Command::new("curl").args(["-s", "--max-time", "10", &format!("{api}/v1/roles/roles?limit=500")]).output() else { return vec![] };
+    let Ok(v) = serde_json::from_slice::<serde_json::Value>(&out.stdout) else { return vec![] };
+    let rows = v.get("data").or_else(|| v.get("items")).cloned().unwrap_or(v);
+    let rows = rows.as_array().cloned().or_else(|| rows.get("items").and_then(|i| i.as_array()).cloned()).unwrap_or_default();
+    rows.iter().filter_map(|r| r.get("name").and_then(|n| n.as_str()).map(str::to_string)).collect()
+}
+
 /// `chorus-hook-shim boot-read <role>` — fetch the role's recent session
 /// messages and print them through `boot_messages`.
 pub fn boot_read(args: &[String]) -> std::process::ExitCode {
-    let Some(role) = args.first().filter(|r| matches!(r.as_str(), "wren" | "silas" | "kade")) else {
-        eprintln!("usage: chorus-hook-shim boot-read <wren|silas|kade>");
+    let builtin = args.first().is_some_and(|r| matches!(r.as_str(), "wren" | "silas" | "kade"));
+    let listed = if builtin { vec![] } else { door_role_names() };
+    let Some(role) = args.first().filter(|r| boot_read_allowed(r, &listed)) else {
+        eprintln!("usage: chorus-hook-shim boot-read <role>   (a role the roles door lists)");
         return std::process::ExitCode::from(2);
     };
     let url = format!("http://localhost:3340/api/chorus/search?q=the&channel=session:{}&order=recent&limit=30", role);
     match std::process::Command::new("curl").args(["-s", "--max-time", "20", &url]).output() {
         Ok(out) => {
-            println!("{}", boot_messages(&String::from_utf8_lossy(&out.stdout)));
+            println!("{}", boot_messages(&own_messages(&String::from_utf8_lossy(&out.stdout), role)));
             std::process::ExitCode::SUCCESS
         }
         Err(e) => {
@@ -530,6 +569,32 @@ mod boot_read_tests_4426 {
     fn a_clean_conversation_prints_as_today() {
         assert_eq!(boot_messages(CLEAN), CLEAN);
     }
+
+    // #4444 — Abby can boot-read; a name the door does not list cannot.
+    #[test]
+    fn a_role_the_door_lists_may_boot_read_and_nothing_else() {
+        let door = vec!["abby-normal".to_string(), "kade".to_string()];
+        assert!(boot_read_allowed("abby-normal", &door));
+        assert!(boot_read_allowed("wren", &[]), "the Claude roles need no door");
+        assert!(!boot_read_allowed("abby-normal", &[]), "NEGATIVE: not listed, refused");
+        assert!(!boot_read_allowed("nobody", &door), "NEGATIVE: unknown name refused");
+        assert!(!boot_read_allowed("abby-normal&channel=x", &["abby-normal&channel=x".to_string()]), "NEGATIVE: not a slug, refused");
+    }
+
+    // #4444 — the search ignores an unindexed channel; another role's turns
+    // must never reach this role's boot.
+    #[test]
+    fn only_the_roles_own_messages_are_replayed() {
+        let mixed = r#"{"results":[{"channel":"session:wren","content":"wren text"},{"channel":"session:abby-normal","content":"abby text"}]}"#;
+        let out = own_messages(mixed, "abby-normal");
+        assert!(out.contains("abby text") && !out.contains("wren text"), "{out}");
+        let others = r#"{"results":[{"channel":"session:wren","content":"wren text"},{"channel":"session:kade","content":"kade text"}]}"#;
+        let none = own_messages(others, "abby-normal");
+        assert!(none.contains("No session messages are recorded for abby-normal") && !none.contains("text\""), "NEGATIVE: {none}");
+        assert!(!none.contains("wren text") && !none.contains("kade text"));
+        assert_eq!(own_messages(CLEAN_OWN, "kade"), serde_json::from_str::<serde_json::Value>(CLEAN_OWN).unwrap().to_string(), "a role's own messages pass through");
+    }
+    const CLEAN_OWN: &str = r#"{"results":[{"channel":"session:kade","author":"user","content":"pull 4425"}]}"#;
 
     #[test]
     fn the_boot_step_uses_the_filtered_read() {

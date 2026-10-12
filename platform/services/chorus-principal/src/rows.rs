@@ -582,6 +582,19 @@ fn gemini_git_exports() -> String {
     GEMINI_GIT_ENV.iter().map(|(k, v)| format!("{k}='{v}'")).collect::<Vec<_>>().join(" ")
 }
 
+/// #4444 reopen 4 — Jeff, 10-12 17:33: "much noisier", "hard for me to process
+/// signal vs noise". Gemini's own quiet settings, merged into her settings file
+/// at each login (keeps every other key, e.g. her model). Tool output is
+/// already compact by default (gemini-cli schema: compactToolOutput default true).
+pub const GEMINI_QUIET_UI: [&str; 3] = ["hideTips", "hideBanner", "hideContextSummary"];
+
+pub fn gemini_quiet_ui_setup() -> String {
+    let keys = GEMINI_QUIET_UI.iter().map(|k| format!("'{k}'")).collect::<Vec<_>>().join(",");
+    format!(
+        "/usr/bin/python3 -c \"import json,os;p=os.path.expanduser('~/.gemini/settings.json');d=json.load(open(p)) if os.path.exists(p) else {{}};u=d.setdefault('ui',{{}});[u.__setitem__(k,True) for k in ({keys},)];os.makedirs(os.path.dirname(p),exist_ok=True);open(p,'w').write(json.dumps(d,indent=2))\""
+    )
+}
+
 /// #4444 — the command typed into a Gemini role's pane (it runs as the role's
 /// own account, inside launch_line). Node goes on PATH (launchd and sudo give a
 /// PATH without it — measured 10-06 18:16: "env: node: No such file or
@@ -601,8 +614,8 @@ pub fn gemini_pane_cmd(agent_bin: &str, gemini_bin: &str, allow_rules: &str, run
         return Err(format!("refusing to launch with a quote in the bin dir {:?}", bin_dir));
     }
     Ok(format!(
-        "export PATH='{}':/opt/homebrew/bin:$PATH CHORUS_SESSION_ID='{}' GEMINI_API_KEY=\"$(cat ~/.chorus/secrets/gemini.key)\" {} && CHORUS_ALLOW_RULES_FILE='{}' '{}' allowed-tools >/dev/null && '{}' --policy ~/.chorus/gemini-allowed.toml",
-        bin_dir, run, gemini_git_exports(), allow_rules, agent_bin, gemini_bin
+        "export PATH='{}':/opt/homebrew/bin:$PATH CHORUS_SESSION_ID='{}' GEMINI_API_KEY=\"$(cat ~/.chorus/secrets/gemini.key)\" {} && {} && CHORUS_ALLOW_RULES_FILE='{}' '{}' allowed-tools >/dev/null && '{}' --policy ~/.chorus/gemini-allowed.toml",
+        bin_dir, run, gemini_git_exports(), gemini_quiet_ui_setup(), allow_rules, agent_bin, gemini_bin
     ))
 }
 
