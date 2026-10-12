@@ -518,72 +518,50 @@ describe('server — remaining routes', () => {
 });
 
 describe('server — authenticated tunneled paths', () => {
-  test('tunneled request WITH valid bridge token cookie bypasses login (root path)', async () => {
-    // Read generated token from the test CHORUS_HOME (TMP is CHORUS_ROOT, home lives under test hom)
+  // #4412 reopen — one sign-in: the machine credential works only as an
+  // Authorization header (scripts, alert delivery). A browser can no longer
+  // enter with it: no login form, no cookie, no ?token= link.
+  const readToken = (): string => {
     let token = '';
     try {
       token = fs.readFileSync(path.join(process.env.CLEARING_CHORUS_HOME as string, 'bridge-auth-token'), 'utf-8').trim();
     } catch { /* ignore */ }
+    return token;
+  };
+  const TUN = { 'cf-connecting-ip': '1.2.3.4', 'cf-ray': 'abc' };
+
+  test('the credential as an Authorization header still authenticates a tunneled API read', async () => {
+    const token = readToken();
     expect(token).toBeTruthy(); // #4417 — the setup file writes it; a missing token is a red, never a skip
-
-    const r = await call('/', {
-      headers: {
-        'cf-connecting-ip': '1.2.3.4',
-        'cf-ray': 'abc',
-        cookie: `bridge_token=${token}; bridge_name=TestGuest`,
-      },
-    });
-    expect([200, 302]).toContain(r.status);
-  });
-
-  test('tunneled request WITH token but no name gets name prompt', async () => {
-    let token = '';
-    try {
-      token = fs.readFileSync(path.join(process.env.CLEARING_CHORUS_HOME as string, 'bridge-auth-token'), 'utf-8').trim();
-    } catch { /* ignore */ }
-    expect(token).toBeTruthy(); // #4417 — the setup file writes it; a missing token is a red, never a skip
-
-    const r = await call('/', {
-      headers: {
-        'cf-connecting-ip': '1.2.3.4',
-        cookie: `bridge_token=${token}`,
-      },
-    });
-    expect(r.status).toBe(200);
-    // eslint-disable-next-line jest/no-conditional-expect -- response body may be string or object depending on accept header
-    if (typeof r.body === 'string') expect(r.body).toMatch(/name/i);
-  });
-
-  test('token via query param also authenticates', async () => {
-    let token = '';
-    try {
-      token = fs.readFileSync(path.join(process.env.CLEARING_CHORUS_HOME as string, 'bridge-auth-token'), 'utf-8').trim();
-    } catch { /* ignore */ }
-    expect(token).toBeTruthy(); // #4417 — the setup file writes it; a missing token is a red, never a skip
-
-    const r = await call(`/api/tiles?token=${token}`, {
-      headers: { 'cf-connecting-ip': '1.2.3.4' },
-    });
+    const r = await call('/api/tiles', { headers: { ...TUN, authorization: `Bearer ${token}` } });
     expect(r.status).toBe(200);
   });
 
-  test('POST /login with correct token sets cookie and redirects', async () => {
-    let token = '';
-    try {
-      token = fs.readFileSync(path.join(process.env.CLEARING_CHORUS_HOME as string, 'bridge-auth-token'), 'utf-8').trim();
-    } catch { /* ignore */ }
-    expect(token).toBeTruthy(); // #4417 — the setup file writes it; a missing token is a red, never a skip
+  test('the credential as a cookie no longer gets in (was the login form’s cookie)', async () => {
+    const token = readToken();
+    expect(token).toBeTruthy();
+    const r = await call('/api/tiles', { headers: { ...TUN, cookie: `bridge_token=${token}` } });
+    expect(r.status).toBe(401);
+  });
 
+  test('the credential in a ?token= link no longer gets in', async () => {
+    const token = readToken();
+    expect(token).toBeTruthy();
+    const r = await call(`/api/tiles?token=${token}`, { headers: TUN });
+    expect(r.status).toBe(401);
+  });
+
+  test('POST /login with the right credential is not a sign-in: no cookie is set', async () => {
+    const token = readToken();
+    expect(token).toBeTruthy();
     const r = await call('/login', {
       method: 'POST',
-      headers: {
-        'cf-connecting-ip': '1.2.3.4',
-        'Content-Type': 'application/x-www-form-urlencoded',
-      },
+      headers: { ...TUN, 'Content-Type': 'application/x-www-form-urlencoded' },
       body: `token=${encodeURIComponent(token)}`,
       redirect: 'manual',
     });
-    expect([200, 302]).toContain(r.status);
+    expect(r.status).toBe(401);
+    expect(r.headers.get('set-cookie') || '').not.toMatch(/bridge_token/);
   });
 });
 

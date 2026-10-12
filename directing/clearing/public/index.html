@@ -604,9 +604,6 @@ if (window.BRIDGE_USER && window.BRIDGE_USER !== 'jeff') {
 </script>
 <script type="module" src="/room-key.js"></script>
 <script>
-// Pass auth token to Socket.IO for remote connections (#1719)
-const bridgeCookie = document.cookie.match(/bridge_token=([^;]+)/);
-const bridgeToken = bridgeCookie ? bridgeCookie[1] : (new URLSearchParams(location.search).get('token') || '');
 // #3872 — every fetch in this page is written root-absolute ('/api/...'). Under
 // the /clearing mount those resolve against the apex and 404. One wrapper fixes
 // all of them at once, rather than 16 call sites where the 17th would be missed.
@@ -623,7 +620,6 @@ const socket = io({
   // Clearing at all — the handshake 404s and socket.io retries a 404 in silence,
   // leaving the room on "connecting…" forever. That was Jeff's phone, 08-20.
   path: CLEARING_BASE + '/socket.io',
-  auth: { token: bridgeToken },
   reconnection: true,
   reconnectionAttempts: Infinity,
   reconnectionDelay: 1000,
