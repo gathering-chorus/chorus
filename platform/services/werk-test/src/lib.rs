@@ -2464,6 +2464,54 @@ mod npm_lane_4173 {
 }
 
 #[cfg(test)]
+mod scope_unclaimed_4198 {
+    // #4198 — 54 paths were refused at a card's test step in 28 days (90
+    // refusals, 37 cards). These are the classes that still ran nothing or
+    // refused when checked on 2026-10-12 against the live tree.
+    use super::{scoped_test_reason, ScopeUnit};
+
+    fn units() -> Vec<ScopeUnit> {
+        vec![
+            ScopeUnit { name: "athena-gen".into(), dir: "designing/services/athena-gen".into() },
+            ScopeUnit { name: "chorus-crawl".into(), dir: "platform/services/chorus-crawl".into() },
+            ScopeUnit { name: "platform/api".into(), dir: "platform/api".into() },
+            ScopeUnit { name: "ui-flows".into(), dir: "proving/flows".into() },
+        ]
+    }
+    fn scope(f: &str) -> Result<Vec<String>, String> {
+        scoped_test_reason(&[f.to_string()], &units(), &[]).map(|v| v.into_iter().map(|u| u.name).collect())
+    }
+
+    #[test]
+    fn a_crates_lockfile_runs_that_crate_even_under_designing() {
+        // ran nothing before: designing/ was an irrelevant directory
+        assert_eq!(scope("designing/services/athena-gen/Cargo.lock"), Ok(vec!["athena-gen".to_string()]));
+    }
+
+    #[test]
+    fn a_test_fixture_runs_the_crate_it_feeds() {
+        // ran nothing before: .txt was an irrelevant extension
+        assert_eq!(scope("platform/services/chorus-crawl/tests/fixtures/infra-4485/df-bedroom.txt"), Ok(vec!["chorus-crawl".to_string()]));
+    }
+
+    #[test]
+    fn a_units_prose_still_runs_nothing() {
+        // the fix must not widen: a README inside a unit is not a test input
+        assert_eq!(scope("platform/api/README.md"), Ok(vec![]));
+        assert_eq!(scope("platform/services/chorus-crawl/NOTES.txt"), Ok(vec![]));
+    }
+
+    #[test]
+    fn the_playwright_config_runs_the_ui_flows() {
+        assert_eq!(scope("playwright.config.cjs"), Ok(vec!["ui-flows".to_string()]));
+    }
+
+    #[test]
+    fn negative_proof_a_path_in_no_class_still_refuses_by_name() {
+        assert_eq!(scope("zz-nowhere/some.bin"), Err("unmapped:zz-nowhere/some.bin".to_string()));
+    }
+}
+
 mod scope_vcs_metadata_4173 {
     use super::{expand_by_naming_suites, is_test_suite_path, scope_irrelevant, scoped_test_reason, text_names_path, ScopeUnit};
 

@@ -105,6 +105,13 @@ fn run(args: &[String]) -> Result<i32, String> {
     // per-case TestResult posts (#3592) apply at 03:00 identically to the gate.
     // #4145 — `--nightly --run-all`: the whole run (pre-checks, lanes, census,
     // record, nudges, readout) in the runner; launchd's 03:00 job.
+    // #4198 — `werk-test --scope-of [--root <dir>] <path>...`: what each path,
+    // changed on its own, would run on a card — read-only, nothing runs. The
+    // answer to "is this file claimed by a unit, or refused?" without making a
+    // card find out at its test step.
+    if args.first().map(String::as_str) == Some("--scope-of") {
+        return Ok(scope_of(&args[1..]));
+    }
     if args.iter().any(|a| a == "--nightly") {
         // read-only modes first (--last-run / --load-gate / --lock-probe): they
         // must never fall through to a real run (a test's --lock-probe did, 19:30)
@@ -219,6 +226,14 @@ fn run(args: &[String]) -> Result<i32, String> {
                       ("of", &full_units.len().to_string())]);
                 println!("scope(diff): {} unit(s) of {} (shared scope core, #3821)",
                     scoped_units.len(), full_units.len());
+                // #4198 — a changed file that runs nothing says so by name, so a
+                // script no test reads is visible on the card, not silently passed
+                for f in changed.iter().filter(|f| werk_test::scope_irrelevant(f)) {
+                    if matches!(diff_scoped_units(&werk, std::slice::from_ref(f)), Some(u) if u.is_empty()) {
+                        println!("scope(diff): {} runs nothing: no unit claims it and no test names it", f);
+                        emit_spine("test.scope.nothing", &role, &card, &trace, &[("path", f)]);
+                    }
+                }
                 scoped_units
             }
             None => {
@@ -3100,6 +3115,38 @@ fn mint_token(role: &str) -> Option<String> {
 /// unit construction and asks the shared core what it actually said, so the
 /// caller can refuse a data defect ("unmapped:<file>") while letting a
 /// deliberate full run ("forced" / "empty-diff") through.
+/// #4198 — one line per path: `scoped <units>`, `runs nothing (<why>)`, or
+/// `REFUSED unmapped`. Exit 2 when any path is refused, so a check can gate on it.
+fn scope_of(args: &[String]) -> i32 {
+    let mut root = std::env::var("CHORUS_ROOT").unwrap_or_else(|_| ".".to_string());
+    let mut paths: Vec<String> = Vec::new();
+    let mut it = args.iter();
+    while let Some(a) = it.next() {
+        if a == "--root" {
+            if let Some(r) = it.next() {
+                root = r.clone();
+            }
+        } else {
+            paths.push(a.clone());
+        }
+    }
+    let mut refused = 0;
+    for p in &paths {
+        let (units, reason) = diff_scoped_units_inner(&root, std::slice::from_ref(p));
+        let verdict = match units {
+            Some(u) if u.is_empty() => "runs nothing (no build or test input)".to_string(),
+            Some(u) => format!("scoped {}", u.iter().map(|t| format!("{:?}", t)).collect::<Vec<_>>().join(", ")),
+            None if unmapped_path(&reason).is_some() => {
+                refused += 1;
+                "REFUSED unmapped".to_string()
+            }
+            None => format!("full ({})", reason),
+        };
+        println!("{}\t{}", p, verdict);
+    }
+    if refused > 0 { 2 } else { 0 }
+}
+
 fn diff_scope_reason(werk: &str, changed: &[String]) -> String {
     diff_scoped_units_inner(werk, changed).1
 }
