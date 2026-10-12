@@ -128,7 +128,12 @@ export function verifyShareSession(
 
   // 4. the allow-set check is the CALLER's next step (isWebIdAllowed), per
   //    request — deliberately not folded in here so the two questions stay two.
-  return { ok: true, webid: claims.webid, exp: claims.exp, ...(typeof claims.sid === 'string' && claims.sid ? { sid: claims.sid } : {}) };
+  return { ok: true, webid: claims.webid, exp: claims.exp, ...sidOf(claims.sid) };
+}
+
+/** #4500 — the guard's session id, when the cookie carries one. */
+function sidOf(sid: unknown): { sid?: string } {
+  return typeof sid === 'string' && sid ? { sid } : {};
 }
 
 /** #4500 — how often the Clearing asks the guard to renew one session. */
