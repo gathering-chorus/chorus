@@ -306,7 +306,7 @@ PY
   run "$SCRIPT" on silas
   test "$status" -eq 0
   test "$(bodies | grep -c security_credentials || true)" -eq 0 || return 1
-  run "$SCRIPT" credentials silas
+  run env CHORUS_ROLE=silas "$SCRIPT" credentials silas
   test "$status" -eq 0
   test "$(bodies | grep -c POST-security_credentials)" -eq 2
   c=$(cat "$T"/bodies/*POST-security_credentials*); has "$c" '"credentialKind":"css-client"'; has "$c" '"credentialKind":"nostr-key"'; has "$c" '/silas/cred.json"'
@@ -316,10 +316,18 @@ PY
 
 @test "#4344 #4447 an unchanged credential is not written again" {
   printf '{"secret":"s"}' > "$T/identity/silas/cred.json"
-  run "$SCRIPT" credentials silas
+  run env CHORUS_ROLE=silas "$SCRIPT" credentials silas
   n=$(bodies | grep -c security_credentials)
   test "$n" -ge 1
-  run "$SCRIPT" credentials silas
+  run env CHORUS_ROLE=silas "$SCRIPT" credentials silas
   test "$status" -eq 0
   test "$(bodies | grep -c security_credentials)" -eq "$n"
+}
+
+@test "#4447 credentials with no writer named is refused, never written" {
+  printf '{"secret":"s"}' > "$T/identity/silas/cred.json"
+  run env -u CHORUS_ROLE "$SCRIPT" credentials silas
+  test "$status" -eq 2
+  printf '%s' "$output" | grep -q 'needs CHORUS_ROLE'
+  test "$(bodies | grep -c security_credentials || true)" -eq 0
 }
