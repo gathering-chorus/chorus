@@ -43,7 +43,7 @@ fn print_gives_runs_and_never_exited_is_not_exit_zero() {
 
 #[test]
 fn print_disabled_names_the_disabled_labels() {
-    let text = "\tdisabled services = {\n\t\t\"com.docker.helper\" => enabled\n\t\t\"com.chorus.session-health\" => disabled\n\t\t\"com.logitech.logitune.launcher\" => disabled\n\t}\n";
+    let text = "\tdisabled services = {\n\t\t\"com.example.helper\" => enabled\n\t\t\"com.chorus.session-health\" => disabled\n\t\t\"com.logitech.logitune.launcher\" => disabled\n\t}\n";
     assert_eq!(disabled_labels(text), vec!["com.chorus.session-health", "com.logitech.logitune.launcher"]);
 }
 
