@@ -3082,7 +3082,7 @@ chorus:ScheduledJob a owl:Class ;
 
 chorus:lastRunAt a owl:DatatypeProperty ;
     rdfs:label "last run at" ;
-    rdfs:comment "When the job last fired, from launchd/log evidence at harvest." ;
+    rdfs:comment "When the job last fired, from launchd/log evidence at harvest. #4081: the last write time of its StandardOutPath log (launchctl print carries no time); absent when the job has no log." ;
     rdfs:domain chorus:ScheduledJob ;
     rdfs:range xsd:dateTime .
 
@@ -3102,6 +3102,9 @@ chorus:ScheduledJobShape a sh:NodeShape ;
     sh:property [ sh:path chorus:logPath      ; sh:minCount 0 ; sh:maxCount 1 ; sh:datatype xsd:string ; chorus:exposure chorus:public ] ;
     sh:property [ sh:path chorus:runCount     ; sh:minCount 0 ; sh:maxCount 1 ; sh:datatype xsd:integer ; chorus:exposure chorus:public ] ;
     sh:property [ sh:path chorus:enabled      ; sh:minCount 0 ; sh:maxCount 1 ; sh:datatype xsd:boolean ; chorus:exposure chorus:public ] ;
+    # #4081 — the door writes a job's owner and checks it; the shape says what an owner is
+    # (without it, a write into the new schedule graph had no owner rule and no Permission row: 403)
+    sh:property [ sh:path chorus:ownedBy      ; sh:class chorus:Principal ] ;
     sh:property [ sh:path rdfs:label          ; sh:minCount 1 ; sh:datatype xsd:string ; chorus:exposure chorus:public ] ;
     sh:property [ sh:path chorus:launchdLabel ; sh:minCount 1 ; sh:maxCount 1 ; sh:datatype xsd:string ; chorus:exposure chorus:public ] ;
     sh:property [ sh:path chorus:onMachine    ; sh:minCount 1 ; sh:maxCount 1 ; sh:class chorus:Machine ; chorus:exposure chorus:public ] ;

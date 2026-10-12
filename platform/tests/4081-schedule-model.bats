@@ -97,3 +97,7 @@ generic() { # the rows script names no class and reads only the door
   run generic "$bad"
   [ "$status" -ne 0 ]
 }
+
+@test "the schedule page is a tile off /chorus (platform/api/public/index.html)" {
+  grep -q 'href="/athena/schedule.html"' "$ROOT/platform/api/public/index.html"
+}

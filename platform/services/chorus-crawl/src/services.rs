@@ -63,6 +63,9 @@ pub struct UnitMeta {
     pub never_exited: bool,
     /// from `launchctl print-disabled`: None = not looked at
     pub disabled: Option<bool>,
+    /// #4081 — when the job's log was last written (seconds since the epoch):
+    /// the run's own trace on disk. launchctl print carries no time.
+    pub log_written: Option<u64>,
 }
 
 /// The trees that are ours: a path in one of them is evidence of ownership.
@@ -500,6 +503,9 @@ pub fn desired_row(machine: &str, u: &Unit, mapping: &[(String, String)], ts: &s
         }
         if let Some(p) = &m.log_path {
             f.push(("logPath".into(), p.clone()));
+        }
+        if let Some(t) = m.log_written {
+            f.push(("lastRunAt".into(), crate::iso_from_secs(t)));
         }
         if let Some(n) = m.runs {
             f.push(("runCount".into(), n.to_string()));

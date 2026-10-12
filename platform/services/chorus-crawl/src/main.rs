@@ -1581,6 +1581,8 @@ fn walk_local_units() -> chorus_crawl::services::MachineWalk {
             meta.runs = chorus_crawl::schedule::runs_from_print(&text);
             meta.never_exited = chorus_crawl::schedule::never_exited(&text);
             meta.disabled = disabled.as_ref().map(|d| d.contains(&u.label));
+            meta.log_written = meta.log_path.as_ref().and_then(|p| std::fs::metadata(p).ok()).and_then(|m| m.modified().ok())
+                .and_then(|t| t.duration_since(std::time::UNIX_EPOCH).ok()).map(|d| d.as_secs());
             let ports = u.pid.as_deref().and_then(|p| p.parse().ok()).map(|p| ports_of(p, &listens, &tree)).unwrap_or_default();
             Unit { run_state: u.run_state().into(), last_exit_code, label: u.label, meta, evidence_unavailable: false, ports }
         })
@@ -1597,7 +1599,8 @@ fn walk_bedroom_units() -> chorus_crawl::services::MachineWalk {
         case \"$f\" in *com.apple*) continue;; esac; \
         [ -f \"$f\" ] && echo \"FILE:$f\" && plutil -convert json -o - \"$f\" 2>/dev/null && echo; done ; \
         echo ---PRINT--- ; U=$(id -u); for f in $(find ~/Library/LaunchAgents -maxdepth 1 -name 'com.*.plist' 2>/dev/null); do \
-        l=$(basename \"$f\" .plist); echo \"UNIT:$l\"; launchctl print gui/$U/$l 2>/dev/null | grep -E 'runs = |last exit code = '; done ; \
+        l=$(basename \"$f\" .plist); echo \"UNIT:$l\"; launchctl print gui/$U/$l 2>/dev/null | grep -E 'runs = |last exit code = '; \
+        lp=$(plutil -extract StandardOutPath raw -o - \"$f\" 2>/dev/null); [ -n \"$lp\" ] && [ -e \"$lp\" ] && echo \"logmtime = $(stat -f %m \"$lp\")\"; done ; \
         echo ---DISABLED--- ; launchctl print-disabled gui/$(id -u) 2>/dev/null ; \
         echo ---LSOF--- ; /usr/sbin/lsof -nP -iTCP -sTCP:LISTEN -F pn 2>/dev/null ; echo ---PS--- ; ps -axo pid=,ppid=";
     let remote = sh("ssh", &["-o", "ConnectTimeout=5", "bedroom", cmd], "/").map_err(|e| e.to_string())?;
@@ -1639,6 +1642,7 @@ fn walk_bedroom_units() -> chorus_crawl::services::MachineWalk {
             }
         }
         u.meta.disabled = disabled.as_ref().map(|d| d.contains(&u.label));
+        u.meta.log_written = print_of(label).and_then(|p| p.lines().find_map(|l| l.trim().strip_prefix("logmtime = ").and_then(|v| v.trim().parse().ok())));
     }
     Ok(units)
 }
