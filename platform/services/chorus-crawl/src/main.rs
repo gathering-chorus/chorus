@@ -1778,12 +1778,28 @@ fn run_infra(args: &[String]) -> i32 {
 /// edges go with it: the data is rebuilt from the tree on every land.
 fn run_code(args: &[String]) -> i32 {
     use chorus_crawl::code::*;
-    if let Some(bad) = args.iter().find(|a| a.as_str() != "--dry-run") {
-        eprintln!("chorus-crawl code: unknown arg {bad} — nothing ran");
-        return 2;
+    // #4405 — `--target <dir>` points the code leg at another repository; the
+    // tool's own home (identity, door) stays CHORUS_ROOT.
+    let mut dry_run = false;
+    let mut target: Option<String> = None;
+    let mut it = args.iter();
+    while let Some(a) = it.next() {
+        match a.as_str() {
+            "--dry-run" => dry_run = true,
+            "--target" => match it.next() {
+                Some(t) => target = Some(t.clone()),
+                None => { eprintln!("chorus-crawl code: --target needs a directory — nothing ran"); return 2; }
+            },
+            bad => { eprintln!("chorus-crawl code: unknown arg {bad} — nothing ran"); return 2; }
+        }
     }
-    let dry_run = !args.is_empty();
-    let root = std::env::var("CHORUS_ROOT").unwrap_or_else(|_| ".".to_string());
+    let home = std::env::var("CHORUS_ROOT").unwrap_or_else(|_| ".".to_string());
+    let root = target.clone().unwrap_or_else(|| home.clone());
+    let repo_of = |dir: &str| repo_id(sh("git", &["remote", "get-url", "origin"], dir).ok().as_deref(), std::path::Path::new(&std::fs::canonicalize(dir).map(|p| p.to_string_lossy().to_string()).unwrap_or_else(|_| dir.to_string())));
+    let repo = repo_of(&root);
+    let home_repo = repo_of(&home);
+    let remote = sh("git", &["remote", "get-url", "origin"], &root).ok().map(|r| r.trim().to_string()).filter(|r| !r.is_empty());
+    println!("code: repository {repo}{}", remote.as_deref().map(|r| format!(" ({r})")).unwrap_or_default());
     let ls = |pat: &str| -> Vec<String> {
         sh("git", &["ls-files", "--", pat], &root).unwrap_or_default().lines()
             .filter(|l| is_unit_file(l)).map(String::from).collect()
@@ -1794,7 +1810,8 @@ fn run_code(args: &[String]) -> i32 {
             .filter(|e| e.path().extension().is_some_and(|x| x == "rs"))
             .filter_map(|e| std::fs::read_to_string(e.path()).ok()).collect()).unwrap_or_default()
     };
-    let all = units(&ls("*Cargo.toml"), &ls("*package.json"), &read, &sources);
+    let python: Vec<String> = ["*pyproject.toml", "*setup.py", "*requirements.txt"].iter().flat_map(|p| ls(p)).collect();
+    let all = units(&ls("*Cargo.toml"), &ls("*package.json"), &python, &read, &sources);
     let edges: usize = all.iter().map(|u| u.deps.len()).sum();
     println!("code: {} units ({} crates, {} packages) · {} dependsOn edges",
         all.len(), all.iter().filter(|u| u.kind == "crate").count(), all.iter().filter(|u| u.kind == "package").count(), edges);
@@ -1803,14 +1820,14 @@ fn run_code(args: &[String]) -> i32 {
             println!("code:   {} ({}) → {}", u.path, u.kind, u.deps.join(", "));
         }
     }
-    let desired = chorus_crawl::code_run::desired_rows(&all);
+    let desired = chorus_crawl::code_run::desired_rows(&all, &repo);
 
     let api = std::env::var("CHORUS_OWL_API").unwrap_or_else(|_| "http://localhost:3360".to_string());
     let role = match declared_role(std::env::var("CHORUS_ROLE").ok()) {
         Ok(r) => r,
         Err(e) => { eprintln!("chorus-crawl code: {e}"); return 2; }
     };
-    let ident = match Identity::open(&root, &role) {
+    let ident = match Identity::open(&home, &role) {
         Ok(i) => std::cell::RefCell::new(i),
         Err(e) => { eprintln!("chorus-crawl code: {e}"); return 2; }
     };
@@ -1824,7 +1841,7 @@ fn run_code(args: &[String]) -> i32 {
         Err(e) => { println!("code: UNMEASURED — the door does not serve CodeUnit yet ({e}); nothing written"); return 1; }
     };
     let current: Vec<(String, Vec<(String, String)>)> = if coll.is_empty() { Vec::new() } else { match fetch_rows_with(&api, Some(&token), "CodeUnit", "", chorus_crawl::services::door_page_rows) {
-        Ok(rows) => chorus_crawl::code_run::current_rows(rows),
+        Ok(rows) => chorus_crawl::code_run::rows_of_repo(chorus_crawl::code_run::current_rows(rows), &repo, &home_repo),
         Err(e) => { eprintln!("chorus-crawl code: cannot read CodeUnit rows — {e}"); return 2; }
     } };
     let p = plan_units(&desired, &current);
@@ -1852,7 +1869,9 @@ fn run_code(args: &[String]) -> i32 {
         };
         chorus_crawl::code_run::instance_links(&rows, &mut file_of, &abs_root, &home, &all, &bins, &|a: &str| std::fs::read_to_string(a).ok())
     };
-    let built = built_from(&instances, &all);
+    // #4405 — services are the home repo's: another repo's pass links none and
+    // never touches a Service row's builtFrom
+    let built = if repo == home_repo { built_from(&instances, &all, &repo) } else { Vec::new() };
     println!("code: {} services built from {} unit links", built.len(), built.iter().map(|(_, v)| v.len()).sum::<usize>());
     if dry_run {
         for (svc, us) in &built {
@@ -1860,6 +1879,21 @@ fn run_code(args: &[String]) -> i32 {
         }
         println!("code: dry-run — NOTHING WRITTEN");
         return 0;
+    }
+    // #4405 — the repository row first, so every unit's inRepository edge
+    // names a row that exists; a door that does not serve Repository yet is
+    // UNMEASURED and nothing is written.
+    let repo_coll = match collection_for(&api, "Repository") {
+        Ok(c) => c,
+        Err(e) => { println!("code: UNMEASURED — the door does not serve Repository yet ({e}); nothing written"); return 1; }
+    };
+    let mut repo_fields = vec![("name".to_string(), repo.clone())];
+    if let Some(r) = &remote {
+        repo_fields.push(("repoRemote".to_string(), r.clone()));
+    }
+    if let Err(e) = write(&ident, &api, "PUT", &format!("{repo_coll}/{repo}"), Some(&fields_json(&repo_fields))) {
+        println!("code: WRITE FAILED repository {repo}: {e}");
+        return 2;
     }
     let svc_coll = collection_for(&api, "Service").ok();
     let mut failed: Vec<String> = Vec::new();

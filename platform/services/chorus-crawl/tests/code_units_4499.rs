@@ -19,7 +19,7 @@ fn tree() -> Vec<Unit> {
     let cargo: Vec<String> = TREE.iter().filter(|(f, _)| f.ends_with("Cargo.toml")).map(|(f, _)| f.to_string()).collect();
     let pkgs: Vec<String> = TREE.iter().filter(|(f, _)| f.ends_with("package.json")).map(|(f, _)| f.to_string()).collect();
     let sources = |d: &str| if d.ends_with("werk-accept") { vec!["include!(\"../../shared/crate_dirs.rs\");".to_string()] } else { vec![] };
-    units(&cargo, &pkgs, &read_from(TREE), &sources)
+    units(&cargo, &pkgs, &[], &read_from(TREE), &sources)
 }
 
 fn unit<'a>(us: &'a [Unit], p: &str) -> &'a Unit {
@@ -48,7 +48,7 @@ fn the_blast_radius_of_a_unit_is_its_dependents_through_the_graph() {
 #[test]
 fn negative_proof_a_dropped_dependency_disappears_on_the_next_crawl() {
     let before = tree();
-    let desired = |us: &[Unit]| us.iter().map(|u| { let f = unit_fields(u); (f[0].1.clone(), f[1..].to_vec()) }).collect::<Vec<_>>();
+    let desired = |us: &[Unit]| us.iter().map(|u| { let f = unit_fields(u, "chorus"); (f[0].1.clone(), f[1..].to_vec()) }).collect::<Vec<_>>();
     let current = desired(&before);
     // werk-accept drops werk-teardown from its Cargo.toml
     let mut after = before.clone();
@@ -56,7 +56,7 @@ fn negative_proof_a_dropped_dependency_disappears_on_the_next_crawl() {
     let p = plan_units(&desired(&after), &current);
     assert_eq!(p.update.len(), 1, "{p:?}");
     let (name, fields) = &p.update[0];
-    assert_eq!(name, "platform-services-werk-accept");
+    assert_eq!(name, "chorus--platform-services-werk-accept");
     assert!(!fields.iter().any(|(k, v)| k == "dependsOn" && v.ends_with("werk-teardown")), "the old edge must not be written back");
     // and a second crawl over the same tree writes nothing
     assert_eq!(plan_units(&desired(&after), &desired(&after)).unchanged, after.len());
@@ -65,7 +65,7 @@ fn negative_proof_a_dropped_dependency_disappears_on_the_next_crawl() {
 #[test]
 fn a_unit_no_build_file_states_is_deleted() {
     let us = tree();
-    let mut current: Vec<(String, Vec<(String, String)>)> = us.iter().map(|u| { let f = unit_fields(u); (f[0].1.clone(), f[1..].to_vec()) }).collect();
+    let mut current: Vec<(String, Vec<(String, String)>)> = us.iter().map(|u| { let f = unit_fields(u, "chorus"); (f[0].1.clone(), f[1..].to_vec()) }).collect();
     current.push(("platform-services-gone".into(), vec![("unitPath".into(), "platform/services/gone".into())]));
     let desired: Vec<_> = current[..current.len() - 1].to_vec();
     assert_eq!(plan_units(&desired, &current).delete, vec!["platform-services-gone"]);
@@ -77,7 +77,7 @@ fn negative_proof_a_file_in_no_unit_has_no_unit_and_an_edge_to_nowhere_is_never_
     assert!(unit_of("designing/docs/x.html", &us).is_none(), "a file in no unit must read as unknown, not as no blast radius");
     assert_eq!(unit_of("platform/services/werk-accept/src/lib.rs", &us).unwrap().path, "platform/services/werk-accept");
     // a path dependency on a crate that is not in the tree is dropped, not dangled
-    let lone = units(&["platform/services/a/Cargo.toml".into()], &[],
+    let lone = units(&["platform/services/a/Cargo.toml".into()], &[], &[],
         &|_| Some("x = { path = \"../missing\" }".to_string()), &|_| vec![]);
     assert!(lone.iter().find(|u| u.path == "platform/services/a").unwrap().deps.is_empty());
 }
@@ -98,7 +98,7 @@ mod run_paths_4499 {
         ];
         let read = move |p: &str| tomls.iter().find(|(f, _)| *f == p).map(|(_, t)| t.to_string());
         let cargo: Vec<String> = tomls.iter().map(|(f, _)| f.to_string()).collect();
-        let mut us = units(&cargo, &[], &read, &|_| vec![]);
+        let mut us = units(&cargo, &[], &[], &read, &|_| vec![]);
         us.push(Unit { path: "platform/api".into(), kind: "package", deps: vec![], includes: vec![], name: "chorus-api".into() });
         us
     }

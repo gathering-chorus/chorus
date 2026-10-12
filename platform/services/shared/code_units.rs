@@ -29,7 +29,7 @@ pub const SHARED: &str = "platform/services/shared";
 
 /// `a/b/c` joined with `../../x` → `a/x`. None when it climbs out of the repo.
 pub fn join(base: &str, rel: &str) -> Option<String> {
-    let mut parts: Vec<&str> = base.split('/').filter(|p| !p.is_empty()).collect();
+    let mut parts: Vec<&str> = base.split('/').filter(|p| !p.is_empty() && *p != ".").collect();
     for seg in rel.split('/') {
         match seg {
             "" | "." => {}
@@ -146,16 +146,50 @@ pub fn package_deps(pkg_path: &str, package_json: &str, tsconfig: Option<&str>) 
 }
 
 /// The door's name for a unit: its path, `/` as `-` (platform-services-werk-test).
-pub fn unit_name(path: &str) -> String {
-    path.replace('/', "-")
+/// #4405 — a unit's door name carries its repository, so two repos' units
+/// never collide ("chorus--platform-services-werk-test").
+pub fn unit_name(repo: &str, path: &str) -> String {
+    let p = if path == ROOT { "root".to_string() } else { path.replace('/', "-") };
+    format!("{}--{}", repo, p)
+}
+
+/// #4405 — a build file at the repository root (a plain Node or Rust repo is
+/// one) is a unit whose path is ".": it holds every file no deeper unit does.
+pub const ROOT: &str = ".";
+
+/// Is `file` inside the unit at `path`? The root unit holds every file.
+pub fn within(file: &str, path: &str) -> bool {
+    path == ROOT || file == path || file.starts_with(&format!("{}/", path))
+}
+
+/// #4405 — the repository a tree is: the remote's last segment without .git
+/// (gathering-chorus/chorus.git → chorus), else the directory's own name.
+pub fn repo_id(remote: Option<&str>, dir: &std::path::Path) -> String {
+    let from_remote = remote
+        .map(|r| r.trim().trim_end_matches('/').trim_end_matches(".git"))
+        .and_then(|r| r.rsplit(['/', ':']).next())
+        .filter(|n| !n.is_empty());
+    let raw = from_remote
+        .map(String::from)
+        .or_else(|| dir.file_name().map(|n| n.to_string_lossy().to_string()))
+        .unwrap_or_else(|| "repo".to_string());
+    raw.chars().map(|c| if c.is_ascii_alphanumeric() || c == '-' { c.to_ascii_lowercase() } else { '-' }).collect()
 }
 
 /// The unit a file belongs to: the one whose path is the longest prefix of it.
 pub fn unit_of<'a>(file: &str, units: &'a [Unit]) -> Option<&'a Unit> {
     units
         .iter()
-        .filter(|u| file == u.path || file.starts_with(&format!("{}/", u.path)))
+        .filter(|u| within(file, &u.path))
         .max_by_key(|u| u.path.len())
+}
+
+/// The unit a file belongs to, not counting the root unit: what a service's
+/// run path resolves to. A root build file (Chorus's is the lint workspace)
+/// is not what a service runs, and a script in no deeper unit is read for
+/// the code it names instead.
+pub fn unit_below_root<'a>(file: &str, units: &'a [Unit]) -> Option<&'a Unit> {
+    unit_of(file, units).filter(|u| u.path != ROOT)
 }
 
 /// Every unit that depends on `path`, directly or through other units, nearest
@@ -179,17 +213,15 @@ pub fn dependents(path: &str, units: &[Unit]) -> Vec<String> {
 pub fn units(
     cargo_tomls: &[String],
     package_jsons: &[String],
+    python: &[String],
     read: &dyn Fn(&str) -> Option<String>,
     crate_sources: &dyn Fn(&str) -> Vec<String>,
 ) -> Vec<Unit> {
-    let dir = |f: &str| f.rsplit_once('/').map(|(d, _)| d.to_string()).unwrap_or_default();
+    let dir = |f: &str| f.rsplit_once('/').map(|(d, _)| d.to_string()).unwrap_or_else(|| ROOT.to_string());
     let mut out: Vec<Unit> = Vec::new();
     let mut shared_used = false;
     for f in cargo_tomls {
         let path = dir(f);
-        if path.is_empty() {
-            continue;
-        }
         let toml = read(f).unwrap_or_default();
         let mut deps = crate_deps(&path, &toml);
         let includes = shared_includes(&crate_sources(&path));
@@ -205,18 +237,31 @@ pub fn units(
     }
     for f in package_jsons {
         let path = dir(f);
-        if path.is_empty() {
-            continue;
-        }
         let pj = read(f).unwrap_or_default();
         let ts = read(&format!("{path}/tsconfig.json"));
         out.push(Unit { deps: package_deps(&path, &pj, ts.as_deref()), name: package_name(&pj, true), path, kind: "package", includes: Vec::new() });
     }
+    // #4405 — a Python project (pyproject.toml, setup.py or requirements.txt)
+    // is a package; one unit per directory however many of those it has
+    for f in python {
+        if !matches!(f.rsplit('/').next(), Some("pyproject.toml" | "setup.py" | "requirements.txt")) {
+            continue;
+        }
+        let path = dir(f);
+        if out.iter().any(|u| u.path == path) {
+            continue;
+        }
+        out.push(Unit { path, kind: "package", deps: Vec::new(), includes: Vec::new(), name: String::new() });
+    }
     if shared_used {
         out.push(Unit { path: SHARED.to_string(), kind: "include", deps: Vec::new(), includes: Vec::new(), name: String::new() });
     }
-    for m in MODEL_DIRS {
-        out.push(Unit { path: m.to_string(), kind: "model", deps: Vec::new(), includes: Vec::new(), name: String::new() });
+    // #4405 — the model folders are units only where a generated API reads
+    // them; every other repository got four phantom "model" units
+    if out.iter().any(|u| u.deps.iter().any(|d| MODEL_DIRS.contains(&d.as_str()))) {
+        for m in MODEL_DIRS {
+            out.push(Unit { path: m.to_string(), kind: "model", deps: Vec::new(), includes: Vec::new(), name: String::new() });
+        }
     }
     // an edge to a path that is not a unit is a build file pointing nowhere:
     // kept off the graph, so no dangling dependsOn is ever written
@@ -232,19 +277,22 @@ pub fn units(
 
 /// The row the door holds for a unit: its path and kind, and one dependsOn per
 /// edge, by the target unit's door name.
-pub fn unit_fields(u: &Unit) -> Vec<(String, String)> {
+pub fn unit_fields(u: &Unit, repo: &str) -> Vec<(String, String)> {
     let mut f = vec![
-        ("name".to_string(), unit_name(&u.path)),
+        ("name".to_string(), unit_name(repo, &u.path)),
+        ("inRepository".to_string(), repo.to_string()),
         ("unitPath".to_string(), u.path.clone()),
         ("unitKind".to_string(), u.kind.to_string()),
     ];
-    f.extend(u.deps.iter().map(|d| ("dependsOn".to_string(), unit_name(d))));
+    f.extend(u.deps.iter().map(|d| ("dependsOn".to_string(), unit_name(repo, d))));
     f
 }
 
 /// Is a build-file path a real unit, not a fixture or vendored tree?
 pub fn is_unit_file(path: &str) -> bool {
-    !path.contains("/node_modules/") && !path.contains("/fixtures/") && !path.contains("/tests/") && !path.contains("/target/")
+    // #4405 — by path component, so a top-level tests/ or fixtures/ (another
+    // repo's layout) is excluded the same as a nested one
+    !path.split('/').any(|c| matches!(c, "node_modules" | "fixtures" | "tests" | "target"))
 }
 
 /// What to write: units to create, units whose fields changed (their edges
@@ -262,7 +310,7 @@ pub struct UnitPlan {
 fn canon(fields: &[(String, String)]) -> Vec<(String, String)> {
     let mut f: Vec<(String, String)> = fields
         .iter()
-        .filter(|(k, v)| !v.is_empty() && matches!(k.as_str(), "unitPath" | "unitKind" | "dependsOn"))
+        .filter(|(k, v)| !v.is_empty() && matches!(k.as_str(), "inRepository" | "unitPath" | "unitKind" | "dependsOn"))
         .cloned()
         .collect();
     f.sort();
@@ -295,13 +343,16 @@ pub fn units_in(root: &std::path::Path) -> Option<Vec<Unit>> {
         o.status.success().then(|| String::from_utf8_lossy(&o.stdout).lines().filter(|l| is_unit_file(l)).map(String::from).collect())
     };
     let (cargo, pkgs) = (ls("*Cargo.toml")?, ls("*package.json")?);
+    let mut py = ls("*pyproject.toml")?;
+    py.extend(ls("*setup.py")?);
+    py.extend(ls("*requirements.txt")?);
     let read = |f: &str| std::fs::read_to_string(root.join(f)).ok();
     let sources = |dir: &str| -> Vec<String> {
         std::fs::read_dir(root.join(dir).join("src")).map(|rd| rd.flatten()
             .filter(|e| e.path().extension().is_some_and(|x| x == "rs"))
             .filter_map(|e| std::fs::read_to_string(e.path()).ok()).collect()).unwrap_or_default()
     };
-    Some(units(&cargo, &pkgs, &read, &sources))
+    Some(units(&cargo, &pkgs, &py, &read, &sources))
 }
 
 /// The binaries a crate builds, as (binary name, crate path): its package name
@@ -346,7 +397,7 @@ pub fn run_paths(
             let name = name.strip_suffix("-bin").unwrap_or(name);
             return bins.iter().find(|(b, _)| b == name).map(|(_, c)| c.clone());
         }
-        abs.strip_prefix(repo_root).and_then(|r| r.strip_prefix('/')).filter(|r| unit_of(r, units).is_some()).map(String::from)
+        abs.strip_prefix(repo_root).and_then(|r| r.strip_prefix('/')).filter(|r| unit_below_root(r, units).is_some()).map(String::from)
     };
     let expand = |t: &str| -> String {
         let t = t.replace("${HOME}", home).replace("$HOME", home);
@@ -355,7 +406,7 @@ pub fn run_paths(
     };
     let mut out: Vec<String> = Vec::new();
     let mut push = |p: String| if !out.contains(&p) { out.push(p) };
-    if !source.is_empty() && unit_of(source, units).is_some() {
+    if !source.is_empty() && unit_below_root(source, units).is_some() {
         push(source.to_string());
     }
     if !binary.is_empty() {
@@ -381,11 +432,11 @@ pub fn run_paths(
 /// file (sourcePath), and that file's unit is what the service is built from.
 /// Input: (service, source file repo path) per instance. Output: service →
 /// unit door names, sorted. An instance whose file is in no unit adds nothing.
-pub fn built_from(instances: &[(String, String)], units: &[Unit]) -> Vec<(String, Vec<String>)> {
+pub fn built_from(instances: &[(String, String)], units: &[Unit], repo: &str) -> Vec<(String, Vec<String>)> {
     let mut out: Vec<(String, Vec<String>)> = Vec::new();
     for (svc, file) in instances {
-        let Some(u) = unit_of(file, units) else { continue };
-        let name = unit_name(&u.path);
+        let Some(u) = unit_below_root(file, units) else { continue };
+        let name = unit_name(repo, &u.path);
         match out.iter_mut().find(|(s, _)| s == svc) {
             Some((_, v)) => {
                 if !v.contains(&name) {

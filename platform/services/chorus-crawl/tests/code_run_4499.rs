@@ -18,7 +18,7 @@ fn units() -> Vec<Unit> {
 
 #[test]
 fn desired_rows_drop_the_name_from_fields_and_keep_one_dependson_per_edge() {
-    let d = desired_rows(&units());
+    let d = desired_rows(&units(), "chorus");
     assert_eq!(d.len(), 2);
     let (name, fields) = &d[0];
     assert!(!name.is_empty());
@@ -29,7 +29,7 @@ fn desired_rows_drop_the_name_from_fields_and_keep_one_dependson_per_edge() {
 
 #[test]
 fn current_rows_match_desired_so_an_unchanged_store_plans_no_writes() {
-    let d = desired_rows(&units());
+    let d = desired_rows(&units(), "chorus");
     let stored: Vec<Vec<(String, String)>> = d
         .iter()
         .map(|(n, f)| {
@@ -89,7 +89,7 @@ fn code_file_door_name_strips_the_iri_prefix_only() {
 
 #[test]
 fn writes_go_bare_units_first_then_whole_units_then_deletes_then_builtfrom() {
-    let d = desired_rows(&units());
+    let d = desired_rows(&units(), "chorus");
     let current = vec![s("gone", "x")].into_iter().map(|(n, _)| (n, vec![s("unitPath", "old"), s("unitKind", "crate")])).collect::<Vec<_>>();
     let p = plan_units(&d, &current);
     let built = vec![("werk".to_string(), vec!["platform-services-werk-accept".to_string()])];

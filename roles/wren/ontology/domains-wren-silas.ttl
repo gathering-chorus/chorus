@@ -182,12 +182,15 @@ chorus:time a chorus:Domain ;
   chorus:repoTarget "platform/launchagents" .
   # FLAG: no real owl:Class vocab (no chorus:Schedule class) — omitted, not faked.
 
+# #4405 — Jeff, 2026-10-12: "crawler is an instance of borg heralds domain";
+# "one of u owns the abstraction and the core"; "the rest of u plug into that".
+# The old text described notification delivery (chorus-inject), a different thing.
 chorus:heralds a chorus:Domain ;
-  rdfs:label "heralds" ; chorus:comment "Notification delivery — nudge routing, chorus-inject, and push delivery." ;
-  chorus:purpose "Deliver notifications — nudge routing, chorus-inject, and push to the right terminal." ;
+  rdfs:label "heralds" ; chorus:comment "Borg's heralds: what looks at a target (a repository, a machine, a running system) and records what it finds. The crawler is one herald; each source it reads (code, services, stores, infra, pages, tests) is a plugin its owner ships and answers for." ;
+  chorus:purpose "Look at a target and record what is there, so Borg can reflect on any system it can reach." ;
   chorus:ownedBy chorus:principal-silas ;
   chorus:atStep chorus:value-stream-step-proving ;
-  chorus:repoTarget "platform/services/chorus-inject" .
+  chorus:repoTarget "platform/services/chorus-crawl" .
   # FLAG: no real owl:Class vocab (no chorus:Herald class) — omitted, not faked.
 
 chorus:toolchain a chorus:Domain ;

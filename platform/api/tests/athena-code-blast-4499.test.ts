@@ -83,3 +83,40 @@ describe('#4499 the blast radius of a change, from the code units', () => {
     expect(r.measured && r.pages).toEqual([]);
   });
 });
+
+// #4405 — units carry their repository; a blast radius is asked in one repo
+describe('#4405 code-blast reads one repository', () => {
+  const MIXED = [
+    'u,path,kind,dep,repo',
+    `${C}code-unit-chorus--src,src,package,,${C}repository-chorus`,
+    `${C}code-unit-wordpress-blog--src,src,package,,${C}repository-wordpress-blog`,
+    `${C}code-unit-platform-api,platform/api,package,,`,
+  ].join('\n');
+  it('home repo by default: its own rows and rows written before units had a repo', () => {
+    expect(unitsFromCsv(MIXED).map((u) => u.name).sort()).toEqual(['chorus--src', 'platform-api']);
+  });
+  it("NEGATIVE PROOF — another repo's unit with the same path never answers for the home repo", () => {
+    const r = codeBlast('src/index.ts', unitsFromCsv(MIXED), [], []);
+    expect(r.measured && r.units.direct).toEqual(['chorus--src']);
+    expect(unitsFromCsv(MIXED, 'wordpress-blog').map((u) => u.name)).toEqual(['wordpress-blog--src']);
+  });
+});
+
+describe('#4405 a root build file is a unit', () => {
+  const ROOTED: UnitRow[] = [
+    { name: 'site--root', path: '.', kind: 'package', deps: [] },
+    { name: 'site--media-server', path: 'media-server', kind: 'package', deps: [] },
+  ];
+  const F: FileRow[] = [
+    { path: 'src/server.ts', kind: 'code', domain: 'web', route: '' },
+    { path: 'media-server/index.js', kind: 'code', domain: 'media', route: '' },
+  ];
+  it('a file in no deeper unit belongs to the root unit', () => {
+    const r = codeBlast('src/server.ts', ROOTED, [], F);
+    expect(r.measured && r.units.direct).toEqual(['site--root']);
+  });
+  it("NEGATIVE PROOF — the root unit never claims a deeper unit's files", () => {
+    const r = codeBlast('src/server.ts', ROOTED, [], F);
+    expect(r.measured && r.domains).toEqual([{ name: 'web', files: 1 }]);
+  });
+});

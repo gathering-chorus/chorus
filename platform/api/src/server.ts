@@ -1019,7 +1019,9 @@ import { createBoardCache, CachedCard } from './board-cache';
 
 const boardCache = createBoardCache({
   run: async () => {
-    const boardTs = path.join(REPO_SCRIPTS, 'cards');
+    // #4405 — CHORUS_CARDS_BIN, the same seam as the card-ac route (#4417):
+    // under jest it names a stub, never the live board
+    const boardTs = process.env.CHORUS_CARDS_BIN || path.join(REPO_SCRIPTS, 'cards');
     const envOpts = {
       encoding: 'utf-8' as const, timeout: 15000,
       env: { ...process.env, PATH: '/Users/jeffbridwell/.nvm/versions/node/v20.11.1/bin:/opt/homebrew/bin:/usr/local/bin:/usr/sbin:/usr/bin:/bin:/sbin', HOME: '/Users/jeffbridwell' }
@@ -1037,15 +1039,18 @@ const boardCache = createBoardCache({
 
 const getBoardCards = (): CachedCard[] => boardCache.getCards();
 
-void boardCache.refresh();
-// .unref() so this background refresh timer never keeps the process alive on
-// its own — in prod the HTTP listener holds the loop; in tests (which import
-// server.ts via startTestApp) an un-unref'd interval kept the jest worker alive
-// → "worker failed to exit gracefully" force-exit → the pipeline read a passing
-// suite as tests:fail. The recurring flake. The timer still fires every 60s.
-setInterval(() => {
+// #4405 — the eager refresh and its 60s timer start only when this file IS the
+// server (the require.main block below). Every jest file imports server.ts;
+// starting them on import launched `cards list` from every test file, and in a
+// werk with no built cards CLI each one compiled TypeScript: 63 at once, load
+// 144, the Clearing unreachable (2026-10-12 12:40).
+function startBoardRefresh(): void {
   void boardCache.refresh();
-}, 60_000).unref();
+  // .unref() so the timer never keeps the process alive on its own.
+  setInterval(() => {
+    void boardCache.refresh();
+  }, 60_000).unref();
+}
 
 // --- LanceDB semantic search — OFF-PROCESS (#3382) ---
 // The lance handle + searchInTable moved out of chorus-api entirely. lance's
@@ -2740,7 +2745,8 @@ app.get('/api/athena/code-blast', async (req: Request, res: Response) => {
     const [u, b, f, p] = await Promise.all([unitsQuery(), builtFromQuery(), filesQuery(), pagesQuery()].map(blastRadiusRead));
     if (!u.ok || !b.ok || !f.ok || !p.ok) return res.status(503).json({ ok: false, reason: STORE_UNREACHABLE });
     const files = withPages(filesFromCsv(await f.text()), pagesFromCsv(await p.text()));
-    const r = codeBlast(target, unitsFromCsv(await u.text()), builtFromFromCsv(await b.text()), files);
+    const repo = typeof req.query.repo === 'string' && req.query.repo.trim() ? req.query.repo.trim() : undefined;
+    const r = codeBlast(target, unitsFromCsv(await u.text(), repo), builtFromFromCsv(await b.text()), files);
     res.status(200).json({ ...r, source: 'graph' });
   } catch (err) {
     res.status(503).json({ ok: false, reason: STORE_UNREACHABLE, error: (err as Error).message });
@@ -3524,6 +3530,7 @@ process.on('SIGTERM', () => {
 // that the harness worked at all).
 const BIND_HOST = process.env.CHORUS_BIND || '0.0.0.0';
 if (require.main === module) {
+  startBoardRefresh();
   // #3039 — start Node default-metric collection (event-loop lag, heap, GC) under
   // the live server. Idempotent; the /metrics route renders from the same registry.
   startMetrics();
