@@ -79,3 +79,14 @@ fn a_control_is_found_inside_its_block_whatever_the_key_order() {
     assert_eq!(control(c, "account", "create").as_deref(), Some("https://x/account/"), "NEGATIVE: another block's create is never taken");
     assert_eq!(control(c, "pod", "create"), None);
 }
+
+#[test]
+fn his_sign_in_offers_exactly_his_own_webid_or_the_check_fails() {
+    let one = r#"{"webIdLinks":{"https://id.example.test/jeff/profile/card#me":"https://id.example.test/.account/account/A/webid/1/"}}"#;
+    assert_eq!(sign_in_choice_refusal(one, "jeff"), None);
+    let why = sign_in_choice_refusal(LINKS, "jeff").expect("NEGATIVE: a second WebID fails");
+    assert!(why.contains("offers 3 WebIDs") && why.contains("zzz-test, silas"), "{why}");
+    assert!(sign_in_choice_refusal("{}", "jeff").is_some(), "NEGATIVE: an unreadable answer never passes");
+    let someone_else = r#"{"webIdLinks":{"https://id.example.test/silas/profile/card#me":"u"}}"#;
+    assert!(sign_in_choice_refusal(someone_else, "jeff").is_some(), "NEGATIVE: one WebID that is not his fails");
+}

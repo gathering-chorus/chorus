@@ -113,3 +113,18 @@ pub fn control(json: &str, block: &str, key: &str) -> Option<String> {
     let end = json[start..].find('}')? + start;
     json_field(&json[start..end], key)
 }
+
+/// #4503 AC4 — why `person`'s sign-in would ask them to pick a WebID, or None
+/// when their account offers exactly their own. Jeff: "i dont want to have to
+/// pick amongst webids".
+pub fn sign_in_choice_refusal(links_json: &str, person: &str) -> Option<String> {
+    let names: Vec<String> = webid_links(links_json).iter().map(|(w, _)| webid_name(w).unwrap_or(w).to_string()).collect();
+    match names.as_slice() {
+        [only] if only == person => None,
+        [] => Some(format!("{person}'s account lists no WebID (UNMEASURED or unlinked): sign-in cannot reach one")),
+        _ => {
+            let extra: Vec<&str> = names.iter().map(String::as_str).filter(|n| *n != person).collect();
+            Some(format!("{person}'s sign-in offers {} WebIDs; not theirs: {}", names.len(), extra.join(", ")))
+        }
+    }
+}

@@ -71,6 +71,7 @@ fn main() {
         Some("login" | "logout" | "on" | "off" | "status" | "up" | "relogin" | "seen" | "seen-write" | "sweep" | "project-messages" | "credentials") => chorus_principal::run(&args),
         Some("census") => cmd_census(),
         Some("move") => match args.get(1) { Some(n) => cmd_move(n, args.iter().any(|a| a == "--apply")), None => { eprintln!("chorus-principal: move needs a name"); 2 } },
+        Some("one-webid") => cmd_one_webid(args.get(1).map(String::as_str).unwrap_or("jeff")),
         Some("unlink") => match args.get(1) { Some(n) => cmd_unlink(n, args.iter().any(|a| a == "--apply")), None => { eprintln!("chorus-principal: unlink needs a name"); 2 } },
         Some("create") => match args.get(1) {
             Some(n) => match Kind::from_args(&args[2..]) {
@@ -1551,6 +1552,30 @@ fn hats_held(name: &str) -> usize {
 /// (zzz-test); a principal that logs in must move to its own account first.
 /// Dry run by default: names the link and the client credentials it would
 /// delete. --apply deletes them and reads the account back to prove it.
+/// #4503 AC4 — read-only: does `person`'s identity-provider account offer
+/// exactly their own WebID at sign-in? Exit 0 yes, 1 no (named), 2 unmeasured.
+fn cmd_one_webid(person: &str) -> i32 {
+    use chorus_principal::links::*;
+    let css = env_or("CSS_URL", "http://localhost:3001");
+    let issuer = env_or("CSS_ISSUER", "https://id.lightlifeurbangardens.com");
+    let local = |u: &str| u.replacen(issuer.trim_end_matches('/'), &css, 1);
+    let jar = jar_path();
+    if css_login(&css, &jar).is_none() {
+        eprintln!("chorus-principal: one-webid UNMEASURED — could not sign in to {person}'s identity-provider account");
+        return 2;
+    }
+    let read = |u: &str| curl_css(None, &["-s", "--max-time", "20", "-b", &jar, "-H", "Accept: application/json", &local(u)]).unwrap_or_default();
+    let ctl = read(&format!("{css}/.account/"));
+    let Some(links_url) = between(&ctl, "\"webId\":\"", "\"") else {
+        eprintln!("chorus-principal: one-webid UNMEASURED — the account answered without its controls");
+        return 2;
+    };
+    match sign_in_choice_refusal(&read(&links_url), person) {
+        None => { println!("one-webid {person}: sign-in offers exactly {person}'s own WebID"); 0 }
+        Some(why) => { println!("one-webid {person}: FAIL — {why}"); 1 }
+    }
+}
+
 fn cmd_unlink(name: &str, apply: bool) -> i32 {
     use chorus_principal::links::*;
     let css = env_or("CSS_URL", "http://localhost:3001");
@@ -1749,7 +1774,7 @@ fn cmd_move(name: &str, apply: bool) -> i32 {
     let still = mints(&id, &secret);
     println!("move {name}: read back — {left} left on Jeff's account; its own credential {} a token", if still { "still mints" } else { "NO LONGER mints" });
     if is_role_account {
-        println!("move {name}: {role_home} still holds the old login. Jeff runs: sudo platform/scripts/chorus-identity-reseed {name}");
+        println!("move {name}: {role_home} still holds the old login. Jeff runs: sudo {}/platform/scripts/chorus-identity-reseed {name}", env_or("CHORUS_ROOT", "/Users/jeffbridwell/CascadeProjects/chorus"));
     }
     if failed > 0 || left > 0 || !still { 1 } else { 0 }
 }
