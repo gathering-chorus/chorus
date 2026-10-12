@@ -1,4 +1,4 @@
-//! #4405 — the code sensor pointed at more than one repository. Jeff,
+//! #4405 — the code herald pointed at more than one repository. Jeff,
 //! 2026-10-12: "imagine a use case where we pointed crawler at my other gh
 //! projects". Before this, a unit's row had no repository: crawling a second
 //! repo planned a delete of every Chorus unit, and two repos' "src" collided.

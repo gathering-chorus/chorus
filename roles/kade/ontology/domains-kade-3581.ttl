@@ -196,7 +196,7 @@ chorus:unitKind a owl:DatatypeProperty ;
     rdfs:domain chorus:CodeUnit ;
     rdfs:range xsd:string .
 
-# #4405 — the crawler is a sensor pointed at a target (Jeff, 2026-10-12: "imagine
+# #4405 — the crawler (a Borg herald) pointed at a target (Jeff, 2026-10-12: "imagine
 # a use case where we pointed crawler at my other gh projects"). A unit belongs
 # to one repository; without it, crawling a second repo would delete every
 # Chorus unit (the plan diffed against all rows) and two repos' "src" collide.
