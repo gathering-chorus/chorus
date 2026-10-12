@@ -214,6 +214,11 @@ chorus:repoRemote a owl:DatatypeProperty ;
 chorus:RepositoryShape a sh:NodeShape ;
     sh:targetClass chorus:Repository ;
     sh:property [ sh:path chorus:repoRemote ; sh:maxCount 1 ; sh:datatype xsd:string ] ;
+    # #4405 reopen — repositories nest and depend like products and domains
+    # (Jeff, 2026-10-12): partOf is the one parent, dependsOn what it needs to
+    # build or run. Each repository declares both in its .repository file.
+    sh:property [ sh:path chorus:partOf ; sh:maxCount 1 ; sh:class chorus:Repository ] ;
+    sh:property [ sh:path chorus:dependsOn ; sh:class chorus:Repository ] ;
     sh:property [ sh:path chorus:ownedBy ; sh:class chorus:Principal ] ;
     chorus:instancesGraph "urn:chorus:domains:code" ;
     chorus:generatedBy "athena-model" .
@@ -226,7 +231,7 @@ chorus:inRepository a owl:ObjectProperty ;
 
 chorus:CodeUnitShape a sh:NodeShape ;
     sh:targetClass chorus:CodeUnit ;
-    sh:property [ sh:path chorus:inRepository ; sh:maxCount 1 ; sh:class chorus:Repository ] ;
+    sh:property [ sh:path chorus:inRepository ; sh:minCount 1 ; sh:maxCount 1 ; sh:class chorus:Repository ] ;
     sh:property [ sh:path chorus:unitPath ; sh:minCount 1 ; sh:maxCount 1 ; sh:datatype xsd:string ] ;
     sh:property [ sh:path chorus:unitKind ; sh:minCount 1 ; sh:maxCount 1 ; sh:datatype xsd:string ;
                   sh:in ( "crate" "package" "model" "include" ) ] ;

@@ -1,0 +1,5 @@
+# #4405 — what this repository needs and belongs to, read by the code herald
+# (chorus-crawl code). One line each: `dependsOn <repository>` or `partOf <repository>`.
+dependsOn shared-security
+dependsOn shared-observability
+dependsOn jeff-bridwell-personal-site

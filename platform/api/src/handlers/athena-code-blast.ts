@@ -20,6 +20,8 @@ export interface CodeBlast {
   domains: { name: string; files: number }[];
   tests: number;
   pages: string[];
+  /** #4405 reopen — the repository asked in, and every repository that depends on it */
+  repositories?: { name: string; dependents: string[] };
 }
 export interface Unmeasured { target: string; measured: false; reason: string }
 
@@ -47,6 +49,22 @@ export function dependentsOf(start: string[], units: UnitRow[]): string[] {
   return out;
 }
 
+/** #4405 reopen — every repository that depends on `repo`, transitively, nearest first. */
+export function dependentRepos(repo: string, edges: [string, string][]): string[] {
+  const out: string[] = [];
+  const queue = [repo];
+  while (queue.length) {
+    const n = queue.shift() as string;
+    for (const [r, dep] of edges) {
+      if (dep === n && r !== repo && !out.includes(r)) {
+        out.push(r);
+        queue.push(r);
+      }
+    }
+  }
+  return out;
+}
+
 /**
  * The answer for a repo path (file or unit) or a service (`service-x` or
  * `chorus:service-x`). Unmeasured — never "no blast radius" — when the target
@@ -54,6 +72,7 @@ export function dependentsOf(start: string[], units: UnitRow[]): string[] {
  */
 export function codeBlast(
   target: string, units: UnitRow[], builtFrom: [string, string][], files: FileRow[],
+  repos?: { repo: string; edges: [string, string][] },
 ): CodeBlast | Unmeasured {
   if (!units.length) return { target, measured: false, reason: 'the store holds no code units yet (the crawl has not run on this tree)' };
   let direct: string[];
@@ -83,11 +102,19 @@ export function codeBlast(
     domains: [...domains].map(([name, n]) => ({ name, files: n })).sort((a, b) => b.files - a.files || a.name.localeCompare(b.name)),
     tests: inScope.filter((f) => f.kind === 'test').length,
     pages: [...new Set(inScope.filter((f) => f.route).map((f) => f.route))].sort(),
+    ...(repos ? { repositories: { name: repos.repo, dependents: dependentRepos(repos.repo, repos.edges) } } : {}),
   };
 }
 
 export function unitsQuery(): string {
   return `SELECT ?u ?path ?kind ?dep ?repo WHERE { GRAPH ?g { ?u a <${C}CodeUnit> ; <${C}unitPath> ?path ; <${C}unitKind> ?kind . OPTIONAL { ?u <${C}dependsOn> ?dep } OPTIONAL { ?u <${C}inRepository> ?repo } } }`;
+}
+export function repositoriesQuery(): string {
+  return `SELECT ?r ?dep WHERE { GRAPH <urn:chorus:domains:code> { ?r a <${C}Repository> ; <${C}dependsOn> ?dep } }`;
+}
+export function repoEdgesFromCsv(csv: string): [string, string][] {
+  const name = (iri: string): string => local(iri).replace(/^repository-/, '');
+  return csvRows(csv).filter(([r, d]) => r && d).map(([r, d]) => [name(r), name(d)] as [string, string]);
 }
 export function builtFromQuery(): string {
   return `SELECT ?s ?u WHERE { GRAPH ?g { ?s <${C}builtFrom> ?u } }`;
@@ -133,13 +160,15 @@ export function csvRows(csv: string): string[][] {
   });
 }
 
-/** #4405 — the repository a blast radius is asked in; rows written before units carried one are the home repo's. */
-export const HOME_REPO = 'chorus';
-export function unitsFromCsv(csv: string, repo: string = HOME_REPO): UnitRow[] {
+/**
+ * #4405 — the repository a blast radius is asked in (chorus when the caller
+ * names none). A unit that names no repository answers for none of them.
+ */
+export const DEFAULT_REPO = 'chorus';
+export function unitsFromCsv(csv: string, repo: string = DEFAULT_REPO): UnitRow[] {
   const m = new Map<string, UnitRow>();
   for (const [u, path, kind, dep, r] of csvRows(csv)) {
-    const rowRepo = r ? local(r).replace(/^repository-/, '') : HOME_REPO;
-    if (rowRepo !== repo) continue;
+    if (!r || local(r).replace(/^repository-/, '') !== repo) continue;
     const name = local(u).replace(/^code-unit-/, '');
     const row = m.get(name) ?? { name, path, kind, deps: [] };
     if (dep) {

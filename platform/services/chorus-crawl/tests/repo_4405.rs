@@ -36,25 +36,16 @@ fn negative_proof_crawling_another_repo_never_deletes_the_home_repos_units() {
     let unscoped = plan_units(&other, &current);
     assert_eq!(unscoped.delete.len(), 3, "the hazard this card closes");
     // scoped to its own repo, the other pass deletes nothing
-    let p = plan_units(&other, &rows_of_repo(current.clone(), "wordpress-blog", "chorus"));
+    let p = plan_units(&other, &rows_of_repo(current.clone(), "wordpress-blog", false));
     assert!(p.delete.is_empty(), "{p:?}");
     assert_eq!(p.create.len(), 1);
 }
 
 #[test]
-fn the_home_repos_pass_retires_rows_written_before_rows_had_a_repo() {
-    let mut current = desired_rows(&[u("platform/api")], "chorus");
-    current.push(("platform-api".into(), vec![("unitPath".into(), "platform/api".into()), ("unitKind".into(), "package".into())]));
-    let p = plan_units(&desired_rows(&[u("platform/api")], "chorus"), &rows_of_repo(current, "chorus", "chorus"));
-    assert_eq!(p.delete, vec!["platform-api".to_string()]);
-    assert_eq!(p.unchanged, 1);
-}
-
-#[test]
 fn a_row_the_door_returns_with_the_kind_prefix_still_reads_as_its_repo() {
     let current = vec![("x".to_string(), vec![("inRepository".to_string(), "repository-chorus".to_string())])];
-    assert_eq!(rows_of_repo(current.clone(), "chorus", "chorus").len(), 1);
-    assert!(rows_of_repo(current, "wordpress-blog", "chorus").is_empty());
+    assert_eq!(rows_of_repo(current.clone(), "chorus", false).len(), 1);
+    assert!(rows_of_repo(current, "wordpress-blog", false).is_empty());
 }
 
 #[test]
