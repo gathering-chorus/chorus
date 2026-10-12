@@ -1202,7 +1202,11 @@ being allowed in. Access is granted per person; ask Jeff to add you.</p>
         # The audit line names WHO, not just "authed" — a shared password could
         # only ever say that someone knew it. This is the point of #3770.
         authed = self._session_webid() or "anon"
-        print(f"[guard] {self.address_string()} {authed} {fmt % args}", file=sys.stderr)
+        # #4503 — when, and from what client. On 2026-10-12 a sign-out → sign-in loop
+        # ran 13 times and nobody could say who made it or when: the line had neither.
+        when = time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime())
+        ua = (self.headers.get("User-Agent", "") if getattr(self, "headers", None) else "").replace('"', "'")[:120]
+        print(f'[guard] {when} {self.address_string()} {authed} {fmt % args} ua="{ua}"', file=sys.stderr)
 
 
 if __name__ == "__main__" and len(sys.argv) > 2 and sys.argv[1] == "--sign-session":

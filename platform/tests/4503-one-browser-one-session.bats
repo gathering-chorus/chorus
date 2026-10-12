@@ -9,6 +9,7 @@
 #
 # Covers: platform/scripts/chorus-share-guard.py
 # Covers: platform/tests/fixtures/one-browser-4503.py
+# Also checks the access line: a UTC time and the user agent (the 2026-10-12 loop had neither).
 
 setup() {
   ROOT="${BATS_TEST_DIRNAME}/../.."

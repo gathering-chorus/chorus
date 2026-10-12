@@ -69,4 +69,17 @@ other = g["sign_in_session"](None, JEFF, {})
 check("a second browser (no cookie) is a second session, not a replace", OPEN == {third, other})
 g["sign_in_session"](cookie_claims(other, ANNE), JEFF, {})
 check("NEGATIVE: another person's cookie closes none of his sessions", {third, other} <= OPEN)
+
+# --- the access line says when and from what client (#4503, the 13:00 loop) ---
+import io, contextlib, re
+H = g["Guard"].__new__(g["Guard"])
+H.headers = {"User-Agent": 'Mozilla/5.0 "quoted"', "Cookie": ""}
+H.client_address = ("127.0.0.1", 1)
+H.address_string = lambda: "127.0.0.1"
+buf = io.StringIO()
+with contextlib.redirect_stderr(buf):
+    H.log_message('"%s" %s %s', "GET /_auth/logout HTTP/1.1", "302", "-")
+line = buf.getvalue().strip()
+check("the access line carries a UTC time", re.match(r"^\[guard\] \d{4}-\d\d-\d\dT\d\d:\d\d:\d\dZ 127\.0\.0\.1 anon ", line) is not None)
+check("and the client's user agent, quotes made safe", line.endswith("ua=\"Mozilla/5.0 'quoted'\""))
 sys.exit(1 if FAILS else 0)
