@@ -182,6 +182,15 @@ if [[ "$out" == *"--run-id r0"* ]]; then echo "FAIL a superseded run is offered 
 t "dagu down says so, never silent" "v2 (dagu): unreadable" "$(CWS_RUNS_DIR=$TD "$CWS" 109)"
 t "a v2-only card opens with its one line" "#109 kade   waiting for your go" "$out"
 if [[ "$out" == *"no runs"* ]]; then echo "FAIL a v2-only card opens with the dead v1 line"; fails=$((fails+1)); fi
+# #4494 reopen — #4004 read "[?] landed · 18 runs" from its old v1 pin while
+# its v2 land ran. A card with v1 history AND v2 runs opens with the v2 line.
+# NEGATIVE PROOF: 109 gets a v1 pin + log saying landed; the header stays v2.
+echo "{\"card\":109,\"role\":\"kade\",\"phase\":\"landed\",\"pid\":999909,\"startedAt\":\"$NOW\",\"runId\":\"109-t-13\"}" > "$TD/109.json"
+printf '[werk/werk] ⭐ Run Main land\n[werk/werk]   ✅  Success - Main land [6s]\nWERK_EXIT=0\n' > "$TD/109-109-t-13.log"
+out=$(CWS_RUNS_DIR=$TD CWS_DAGU="file://$TD/dagu" "$CWS" 109)
+t "a card with v1 history still opens with its v2 line" "#109 kade   waiting for your go" "$out"
+if [[ "$(head -1 <<<"$out")" == *"[kade] landed"* ]]; then echo "FAIL the v1 pin's landed is the header"; fails=$((fails+1)); fi
+rm -f "$TD/109.json" "$TD/109-109-t-13.log"
 
 # #4494 — the land runs as its own workflow on the land queue; /cws follows it.
 # NEGATIVE PROOF: another card's land (CARD=1090) is not this card's.
@@ -214,6 +223,23 @@ t "a card with no run says so plainly" "#110 wren   no run yet" "$out"
 n=$(grep -c '^#109' <<<"$out")
 [ "$n" = 1 ] || { echo "FAIL #109 takes $n lines, wanted one"; fails=$((fails+1)); }
 if [[ "$out" == *"no pipeline run yet"* ]]; then echo "FAIL the dead v1 line is back"; fails=$((fails+1)); fi
+# #4494 reopen — Jeff 2026-10-12: "#4004 silas build" while Kade built it. The
+# line names the role whose run it is (the run's ROLE), not the board owner.
+# NEGATIVE PROOF: card 112 is Wren's on the board, its run is Kade's.
+echo '{"data":{"cards":[{"id":109,"owner":"Kade"},{"id":110,"owner":"Wren"},{"id":112,"owner":"Wren"}]}}' > "$TD/api/api/chorus/context/board/wip"
+python3 - "$TD/dagu/api/v1/dag-runs" <<'EOF5'
+import json, sys
+p = sys.argv[1]; d = json.load(open(p))
+d["dagRuns"].append({"name":"cicd","dagRunId":"r12","params":"CARD=112 ROLE=kade","statusLabel":"running","startedAt":"2026-10-09T23:10:00-04:00","nodes":[{"statusLabel":"running","step":{"name":"skill-werk-build"}}]})
+json.dump(d, open(p, "w"))
+EOF5
+out=$(board)
+t "a run names the role that runs it, not the card's owner" "#112 kade   build" "$out"
+if [[ "$out" == *"#112 wren"* ]]; then echo "FAIL #112 reads the board owner"; fails=$((fails+1)); fi
+t "a card with no run still names its owner" "#110 wren   no run yet" "$out"
+roled() { CWS_RUNS_DIR=$TD CWS_DAGU="file://$TD/dagu" CWS_API="file://$TD/api" "$CWS" --role "$1"; }
+t "--role follows the run's role" "#112 kade" "$(roled kade)"
+if [[ "$(roled wren)" == *"#112"* ]]; then echo "FAIL --role wren shows Kade's run of #112"; fails=$((fails+1)); fi
 # a queued land names its place in line, from dagu's queue
 python3 - "$TD/dagu/api/v1/dag-runs" <<'EOF3'
 import json, sys

@@ -261,8 +261,10 @@ def card_detail(card, pin_status):
     # the pin says where the pipeline is now (with its trust rules); the logs
     # say what every run did
     v2 = dagu_runs(card)
-    if v2 and not runs:
-        # #4494 — a v2-only card opens with the same line the board view shows
+    if v2:
+        # #4494 — a card with v2 runs opens with the same line the board view
+        # shows, even when it also has old v1 runs: #4004 read "[?] landed · 18
+        # runs" from its v1 pin while its v2 land was still running.
         head = card_line(card, (re.search(r"ROLE=(\S+)", v2[0].get("params") or "") or [None, "?"])[1],
                          v2, dagu_runs(card, f"{DAGU_DAG}-land"), queue_positions())
     elif pin_status:
@@ -729,10 +731,14 @@ def main():
     places = queue_positions()
     shown = 0
     for cid, owner in wip:
-        if role and owner.lower() != role:
-            continue
-        who = owner.lower()
         v2 = dagu_runs(cid)
+        # #4494 reopen — the line names the role whose run it is (the newest
+        # run's ROLE), not the card's board owner: Kade building Silas's #4004
+        # read "silas". The owner stands in only when the card has no run.
+        ran = re.search(r"ROLE=(\S+)", (v2[0].get("params") or "")) if v2 else None
+        who = ran.group(1).lower() if ran else owner.lower()
+        if role and who != role:
+            continue
         pin = pins.get(str(cid))
         logs = run_logs(cid)
         if v2:
