@@ -213,6 +213,7 @@ pub fn dependents(path: &str, units: &[Unit]) -> Vec<String> {
 pub fn units(
     cargo_tomls: &[String],
     package_jsons: &[String],
+    python: &[String],
     read: &dyn Fn(&str) -> Option<String>,
     crate_sources: &dyn Fn(&str) -> Vec<String>,
 ) -> Vec<Unit> {
@@ -239,6 +240,18 @@ pub fn units(
         let pj = read(f).unwrap_or_default();
         let ts = read(&format!("{path}/tsconfig.json"));
         out.push(Unit { deps: package_deps(&path, &pj, ts.as_deref()), name: package_name(&pj, true), path, kind: "package", includes: Vec::new() });
+    }
+    // #4405 — a Python project (pyproject.toml, setup.py or requirements.txt)
+    // is a package; one unit per directory however many of those it has
+    for f in python {
+        if !matches!(f.rsplit('/').next(), Some("pyproject.toml" | "setup.py" | "requirements.txt")) {
+            continue;
+        }
+        let path = dir(f);
+        if out.iter().any(|u| u.path == path) {
+            continue;
+        }
+        out.push(Unit { path, kind: "package", deps: Vec::new(), includes: Vec::new(), name: String::new() });
     }
     if shared_used {
         out.push(Unit { path: SHARED.to_string(), kind: "include", deps: Vec::new(), includes: Vec::new(), name: String::new() });
@@ -330,13 +343,16 @@ pub fn units_in(root: &std::path::Path) -> Option<Vec<Unit>> {
         o.status.success().then(|| String::from_utf8_lossy(&o.stdout).lines().filter(|l| is_unit_file(l)).map(String::from).collect())
     };
     let (cargo, pkgs) = (ls("*Cargo.toml")?, ls("*package.json")?);
+    let mut py = ls("*pyproject.toml")?;
+    py.extend(ls("*setup.py")?);
+    py.extend(ls("*requirements.txt")?);
     let read = |f: &str| std::fs::read_to_string(root.join(f)).ok();
     let sources = |dir: &str| -> Vec<String> {
         std::fs::read_dir(root.join(dir).join("src")).map(|rd| rd.flatten()
             .filter(|e| e.path().extension().is_some_and(|x| x == "rs"))
             .filter_map(|e| std::fs::read_to_string(e.path()).ok()).collect()).unwrap_or_default()
     };
-    Some(units(&cargo, &pkgs, &read, &sources))
+    Some(units(&cargo, &pkgs, &py, &read, &sources))
 }
 
 /// The binaries a crate builds, as (binary name, crate path): its package name

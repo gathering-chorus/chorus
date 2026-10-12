@@ -61,7 +61,7 @@ fn a_row_the_door_returns_with_the_kind_prefix_still_reads_as_its_repo() {
 fn a_repo_with_no_generated_api_has_no_model_units() {
     use chorus_crawl::code::units;
     let read = |f: &str| match f { "app/package.json" => Some("{\"name\":\"app\"}".to_string()), _ => None };
-    let us = units(&[], &["app/package.json".to_string()], &read, &|_: &str| vec![]);
+    let us = units(&[], &["app/package.json".to_string()], &[], &read, &|_: &str| vec![]);
     assert_eq!(us.iter().map(|u| u.path.as_str()).collect::<Vec<_>>(), vec!["app"], "no phantom model units");
 }
 
@@ -74,7 +74,7 @@ fn a_root_build_file_is_a_unit_that_holds_what_no_deeper_unit_does() {
         "media-server/package.json" => Some("{\"name\":\"media\"}".to_string()),
         _ => None,
     };
-    let us = units(&[], &["package.json".to_string(), "media-server/package.json".to_string()], &read, &|_: &str| vec![]);
+    let us = units(&[], &["package.json".to_string(), "media-server/package.json".to_string()], &[], &read, &|_: &str| vec![]);
     let paths: Vec<&str> = us.iter().map(|u| u.path.as_str()).collect();
     assert_eq!(paths, vec![".", "media-server"]);
     assert_eq!(us[0].deps, vec!["media-server".to_string()], "a root package's file: dep resolves");
@@ -87,7 +87,7 @@ fn a_root_build_file_is_a_unit_that_holds_what_no_deeper_unit_does() {
 fn negative_proof_the_root_unit_never_becomes_what_a_service_is_built_from() {
     use chorus_crawl::code::{built_from, units};
     let read = |f: &str| match f { "package.json" => Some("{\"name\":\"ws\"}".to_string()), "platform/api/package.json" => Some("{\"name\":\"api\"}".to_string()), _ => None };
-    let us = units(&[], &["package.json".to_string(), "platform/api/package.json".to_string()], &read, &|_: &str| vec![]);
+    let us = units(&[], &["package.json".to_string(), "platform/api/package.json".to_string()], &[], &read, &|_: &str| vec![]);
     let b = built_from(&[("svc".into(), "platform/scripts/run.sh".into()), ("api".into(), "platform/api/src/server.ts".into())], &us, "chorus");
     assert_eq!(b, vec![("api".to_string(), vec!["chorus--platform-api".to_string()])], "a script in no deeper unit links nothing, not the root");
 }
@@ -100,4 +100,13 @@ fn a_top_level_tests_or_fixtures_folder_is_not_a_unit() {
     assert!(!is_unit_file("platform/services/x/tests/fixtures/y/package.json"));
     assert!(is_unit_file("package.json"));
     assert!(is_unit_file("platform/api/package.json"));
+}
+
+#[test]
+fn a_python_project_is_a_package_unit_once_per_directory() {
+    use chorus_crawl::code::units;
+    // workflow-tracker: one requirements.txt at the root
+    let us = units(&[], &[], &["requirements.txt".into(), "tools/pyproject.toml".into(), "tools/requirements.txt".into(), "x/my_setup.py".into()], &|_: &str| None, &|_: &str| vec![]);
+    let got: Vec<(&str, &str)> = us.iter().map(|u| (u.path.as_str(), u.kind)).collect();
+    assert_eq!(got, vec![(".", "package"), ("tools", "package")], "my_setup.py is not a manifest");
 }

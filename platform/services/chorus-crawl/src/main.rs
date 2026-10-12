@@ -1810,7 +1810,8 @@ fn run_code(args: &[String]) -> i32 {
             .filter(|e| e.path().extension().is_some_and(|x| x == "rs"))
             .filter_map(|e| std::fs::read_to_string(e.path()).ok()).collect()).unwrap_or_default()
     };
-    let all = units(&ls("*Cargo.toml"), &ls("*package.json"), &read, &sources);
+    let python: Vec<String> = ["*pyproject.toml", "*setup.py", "*requirements.txt"].iter().flat_map(|p| ls(p)).collect();
+    let all = units(&ls("*Cargo.toml"), &ls("*package.json"), &python, &read, &sources);
     let edges: usize = all.iter().map(|u| u.deps.len()).sum();
     println!("code: {} units ({} crates, {} packages) · {} dependsOn edges",
         all.len(), all.iter().filter(|u| u.kind == "crate").count(), all.iter().filter(|u| u.kind == "package").count(), edges);
