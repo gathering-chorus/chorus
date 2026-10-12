@@ -182,6 +182,15 @@ if [[ "$out" == *"--run-id r0"* ]]; then echo "FAIL a superseded run is offered 
 t "dagu down says so, never silent" "v2 (dagu): unreadable" "$(CWS_RUNS_DIR=$TD "$CWS" 109)"
 t "a v2-only card opens with its one line" "#109 kade   waiting for your go" "$out"
 if [[ "$out" == *"no runs"* ]]; then echo "FAIL a v2-only card opens with the dead v1 line"; fails=$((fails+1)); fi
+# #4494 reopen — #4004 read "[?] landed · 18 runs" from its old v1 pin while
+# its v2 land ran. A card with v1 history AND v2 runs opens with the v2 line.
+# NEGATIVE PROOF: 109 gets a v1 pin + log saying landed; the header stays v2.
+echo "{\"card\":109,\"role\":\"kade\",\"phase\":\"landed\",\"pid\":999909,\"startedAt\":\"$NOW\",\"runId\":\"109-t-13\"}" > "$TD/109.json"
+printf '[werk/werk] ⭐ Run Main land\n[werk/werk]   ✅  Success - Main land [6s]\nWERK_EXIT=0\n' > "$TD/109-109-t-13.log"
+out=$(CWS_RUNS_DIR=$TD CWS_DAGU="file://$TD/dagu" "$CWS" 109)
+t "a card with v1 history still opens with its v2 line" "#109 kade   waiting for your go" "$out"
+if [[ "$(head -1 <<<"$out")" == *"[kade] landed"* ]]; then echo "FAIL the v1 pin's landed is the header"; fails=$((fails+1)); fi
+rm -f "$TD/109.json" "$TD/109-109-t-13.log"
 
 # #4494 — the land runs as its own workflow on the land queue; /cws follows it.
 # NEGATIVE PROOF: another card's land (CARD=1090) is not this card's.

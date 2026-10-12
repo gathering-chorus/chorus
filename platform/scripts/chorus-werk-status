@@ -261,8 +261,10 @@ def card_detail(card, pin_status):
     # the pin says where the pipeline is now (with its trust rules); the logs
     # say what every run did
     v2 = dagu_runs(card)
-    if v2 and not runs:
-        # #4494 — a v2-only card opens with the same line the board view shows
+    if v2:
+        # #4494 — a card with v2 runs opens with the same line the board view
+        # shows, even when it also has old v1 runs: #4004 read "[?] landed · 18
+        # runs" from its v1 pin while its v2 land was still running.
         head = card_line(card, (re.search(r"ROLE=(\S+)", v2[0].get("params") or "") or [None, "?"])[1],
                          v2, dagu_runs(card, f"{DAGU_DAG}-land"), queue_positions())
     elif pin_status:
