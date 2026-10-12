@@ -35,7 +35,7 @@ setup() {
   G="$ROOT/platform/scripts/chorus-share-guard.py"
   grep -q 'AUTH_PREFIX + "clientid.jsonld"' "$G"
   grep -q 'open_person_session(webid, tok)' "$G"
-  grep -q 'close_person_session(self._session_webid())' "$G"
+  grep -q 'close_person_session(self._session_claims())' "$G"
   if grep -q 'def register_client' "$G"; then echo "dynamic registration still present"; return 1; fi
   if grep -q 'client_secret' "$G"; then echo "a client secret is still sent"; return 1; fi
 }

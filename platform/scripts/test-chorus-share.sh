@@ -47,6 +47,10 @@ PRINCIPALS="$TEST_ROOT/principals.txt"
 printf 'https://example.test/alice#me\n' > "$PRINCIPALS"
 STATE="$TEST_ROOT/oidc-state.json"
 export SHARE_PRINCIPALS_FILE="$PRINCIPALS" SHARE_STATE_FILE="$STATE" SHARE_OIDC_OFFLINE=1
+# #4500 — the guard's sign-in records, its own; and a door that is not prod, so a
+# renewal never writes a real Session row (port 9 refuses).
+export SHARE_PERSON_SESSIONS="$TEST_ROOT/person-sessions.json" ATHENA_MAKE_URL="http://127.0.0.1:9"
+printf '{"alice-browser-1": {"principal": "alice", "row": {"name": "alice-browser-1"}}}' > "$SHARE_PERSON_SESSIONS"
 
 # guard: allow /about only
 SHARE_UPSTREAM="http://127.0.0.1:$UP_PORT" SHARE_ALLOW="/about" \
@@ -116,6 +120,26 @@ SESS_STRANGER="$(mint 'https://example.test/mallory#me')"
 as_alice()      { curl -s -H "Cookie: chorus_share_session=$SESS_ALICE" "$@"; }
 code_alice()    { curl -s -o /dev/null -w "%{http_code}" -H "Cookie: chorus_share_session=$SESS_ALICE" "$@"; }
 code_stranger() { curl -s -o /dev/null -w "%{http_code}" -H "Cookie: chorus_share_session=$SESS_STRANGER" "$@"; }
+
+# #4500 — renewal on use, refusal after sign-out (Jeff 2026-10-12: re-login every morning)
+G="http://127.0.0.1:$G_PORT"
+SESS_DUE="$(python3 "$GUARD" --sign-session 'https://example.test/alice#me' alice-browser-1 7200)"
+SESS_NEW="$(python3 "$GUARD" --sign-session 'https://example.test/alice#me' alice-browser-1 0)"
+SESS_OUT="$(python3 "$GUARD" --sign-session 'https://example.test/alice#me' alice-browser-gone 7200)"
+SESS_REVOKED="$(python3 "$GUARD" --sign-session 'https://example.test/mallory#me' alice-browser-1 7200)"
+hdrs() { curl -s -D - -o /dev/null -H "Cookie: chorus_share_session=$1" "$2"; }
+assert "#4500 renew: a session two hours in answers 204 with a renewed cookie" \
+  bash -c '[[ "$1" == *" 204"* && "$1" == *"Set-Cookie: chorus_share_session="* ]]' _ "$(hdrs "$SESS_DUE" "$G/_auth/renew")"
+assert "#4500 a page used two hours in carries the renewed cookie" \
+  bash -c '[[ "$1" == *" 200"* && "$1" == *"Set-Cookie: chorus_share_session="* ]]' _ "$(hdrs "$SESS_DUE" "$G/about/x.html")"
+assert "#4500 a session minted this minute is not re-issued" \
+  bash -c '[[ "$1" == *" 204"* && "$1" != *"Set-Cookie"* ]]' _ "$(hdrs "$SESS_NEW" "$G/_auth/renew")"
+assert "#4500 NEGATIVE PROOF: a signed-out session (no record) is refused on its next request" \
+  test "$(code -H "Cookie: chorus_share_session=$SESS_OUT" "$G/about/x.html")" = "302"
+assert "#4500 NEGATIVE PROOF: a signed-out session is not renewed" \
+  bash -c '[[ "$1" == *" 401"* && "$1" != *"Set-Cookie"* ]]' _ "$(hdrs "$SESS_OUT" "$G/_auth/renew")"
+assert "#4500 NEGATIVE PROOF: a revoked person (off the allow-set) is not renewed" \
+  bash -c '[[ "$1" == *" 401"* && "$1" != *"Set-Cookie"* ]]' _ "$(hdrs "$SESS_REVOKED" "$G/_auth/renew")"
 
 # auth
 assert "no session -> redirected to sign-in (302)" test "$(code http://127.0.0.1:$G_PORT/about/x.html)" = "302"

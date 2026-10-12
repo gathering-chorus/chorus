@@ -40,6 +40,7 @@ import json
 import os
 import secrets
 import sys
+import threading
 import time
 import urllib.error
 import urllib.parse
@@ -70,6 +71,13 @@ SESSION_COOKIE = "chorus_share_session"
 # something that should not be trusted with a Chorus identity.
 COOKIE_DOMAIN = os.environ.get("SHARE_COOKIE_DOMAIN", ".lightlifeurbangardens.com").strip()
 SESSION_TTL = int(os.environ.get("SHARE_SESSION_TTL", str(12 * 3600)))
+# #4500 — Jeff, 2026-10-12: "if i go to sleep and then return when i wake i
+# typically must login again". SESSION_TTL is now the IDLE window: every use
+# renews the cookie (at most every RENEW_EVERY seconds), up to SESSION_MAX_LIFE
+# after sign-in, which no amount of use extends — the same 30 days the
+# Clearing's own sign-in lasts.
+SESSION_MAX_LIFE = int(os.environ.get("SHARE_SESSION_MAX_LIFE", str(30 * 24 * 3600)))
+RENEW_EVERY = int(os.environ.get("SHARE_RENEW_EVERY", "600"))
 AUTH_PREFIX = "/_auth/"
 
 # The public path this guard is mounted under, e.g. "/chorus". Empty means it is
@@ -338,8 +346,12 @@ def b64u_decode(txt):
     return base64.urlsafe_b64decode(txt + "=" * (-len(txt) % 4))
 
 
-def sign_session(webid, key, ttl=SESSION_TTL, now=None):
+def sign_session(webid, key, ttl=SESSION_TTL, now=None, iat=None, sid=None, max_life=SESSION_MAX_LIFE):
     """A session is a signed statement of WHO, with an expiry. Nothing else.
+
+    #4500 — plus when he signed in (iat), which caps every renewal at
+    iat + max_life, and the Session row it opened (sid), which sign-out removes
+    so the cookie stops working on its next request.
 
     Deliberately not a store: no server-side session table to leak or to grow.
     The cookie carries the WebID; the signature is what makes it trustworthy, and
@@ -348,13 +360,24 @@ def sign_session(webid, key, ttl=SESSION_TTL, now=None):
     session happens to expire.
     """
     now = int(time.time()) if now is None else now
-    payload = b64u(json.dumps({"webid": webid, "exp": now + ttl}).encode())
+    iat = now if iat is None else int(iat)
+    claims = {"webid": webid, "exp": min(now + ttl, iat + max_life), "iat": iat}
+    if sid:
+        claims["sid"] = sid
+    payload = b64u(json.dumps(claims).encode())
     mac = b64u(hmac.new(key, payload.encode(), hashlib.sha256).digest())
     return f"{payload}.{mac}"
 
 
 def verify_session(cookie, key, now=None):
     """Return the WebID a valid session names, or None. Never raises on garbage."""
+    claims = session_claims(cookie, key, now)
+    return claims["webid"] if claims else None
+
+
+def session_claims(cookie, key, now=None, max_life=SESSION_MAX_LIFE):
+    """The claims of a valid session, or None. Past exp, or past iat + max_life
+    however recently it was renewed, is no session. Never raises on garbage."""
     now = int(time.time()) if now is None else now
     try:
         payload, mac = cookie.split(".", 1)
@@ -365,9 +388,40 @@ def verify_session(cookie, key, now=None):
         claims = json.loads(b64u_decode(payload))
         if int(claims.get("exp", 0)) <= now:
             return None
-        return claims.get("webid") or None
+        if "iat" in claims and int(claims["iat"]) + max_life <= now:
+            return None
+        return claims if claims.get("webid") else None
     except Exception:
         return None
+
+
+def cookie_exp(value):
+    """The exp a signed cookie value carries (the caller signed or verified it)."""
+    return json.loads(b64u_decode(value.split(".", 1)[0]))["exp"]
+
+
+def session_decision(claims, recs, principals, key, now, ttl=SESSION_TTL,
+                     renew_every=RENEW_EVERY, max_life=SESSION_MAX_LIFE):
+    """#4500 — one request's answer: (state, renewed cookie value or None).
+
+    state: "anonymous" (no valid cookie), "logged-out" (its Session was signed
+    out: no record for its sid), "not-authorized" (signed in, not in the
+    allow-set), or "ok". Only "ok" renews, so a revoked or logged-out session
+    fails on its next request however recently it was used. A cookie with no
+    sid (minted before #4500, or when the row could not be written) is never
+    renewed and simply runs out.
+    """
+    if not claims:
+        return "anonymous", None
+    sid = claims.get("sid")
+    if sid and sid not in recs:
+        return "logged-out", None
+    if claims["webid"] not in principals:
+        return "not-authorized", None
+    if not sid or int(claims.get("exp", 0)) - now > ttl - renew_every:
+        return "ok", None
+    renewed = sign_session(claims["webid"], key, ttl, now, claims.get("iat", now), sid, max_life)
+    return "ok", (renewed if cookie_exp(renewed) > int(claims["exp"]) else None)
 
 
 ALLOW, ALLOW_SOURCE = load_allow()
@@ -635,29 +689,75 @@ def _refresh(refresh_token):
         return None
 
 
+# #4500 — ThreadingHTTPServer: a renewal saving a stale copy of the records
+# would drop a sign-in written meanwhile, and that cookie would read as signed
+# out on its next request. Every read-modify-write holds this lock.
+SESSIONS_LOCK = threading.Lock()
+
+
 def open_person_session(webid, tok):
-    """Never raises and never blocks the sign-in; the record is kept 0600 for sign-out."""
+    """Never raises and never blocks the sign-in; the record is kept 0600 for sign-out.
+
+    #4500 — records are keyed by the row name (the cookie's sid), so a second
+    browser is a second session instead of overwriting the first record and
+    orphaning its row open. Rows whose sign-in has run out are closed here, the
+    next time anyone signs in. Returns the sid, or None when no row was written.
+    """
+    now = time.time()
     try:
-        rec = person_session.open_session(webid, tok, time.time(), SESSION_TTL, _sparql, _http, ATHENA_URL, _log)
-        if rec:
+        with SESSIONS_LOCK:
             recs = load_state(SESSIONS_FILE)
-            recs[webid] = rec
+            ended = {k: r for k, r in recs.items()
+                     if (r.get("row") or {}).get("expiresAt", "") and r["row"]["expiresAt"] <= person_session.iso(now)}
+            for key in ended:
+                recs.pop(key)
             save_state(SESSIONS_FILE, recs)
+        for old in ended.values():
+            person_session.close_session(old, now, _http, ATHENA_URL, _refresh, _log)
+        rec = person_session.open_session(webid, tok, now, SESSION_TTL, _sparql, _http, ATHENA_URL, _log)
+        sid = rec["row"]["name"] if rec else None
+        if sid:
+            with SESSIONS_LOCK:
+                recs = load_state(SESSIONS_FILE)
+                recs[sid] = rec
+                save_state(SESSIONS_FILE, recs)
+        return sid
     except Exception as e:
         _log(f"person-session: sign-in row NOT written: {e}")
+        return None
 
 
-def close_person_session(webid):
-    if not webid:
+def close_person_session(claims):
+    if not claims:
         return
     try:
-        recs = load_state(SESSIONS_FILE)
-        rec = recs.pop(webid, None)
+        with SESSIONS_LOCK:
+            recs = load_state(SESSIONS_FILE)
+            # a pre-#4500 record is keyed by the WebID
+            rec = recs.pop(claims.get("sid") or claims["webid"], None)
+            if rec:
+                save_state(SESSIONS_FILE, recs)
         if rec:
             person_session.close_session(rec, time.time(), _http, ATHENA_URL, _refresh, _log)
-            save_state(SESSIONS_FILE, recs)
     except Exception as e:
         _log(f"person-session: sign-out close failed: {e}")
+
+
+def renew_person_session(sid, cookie_value):
+    """#4500 — the row follows the renewed cookie: lastSeenAt now, expiresAt its exp."""
+    try:
+        rec = load_state(SESSIONS_FILE).get(sid)
+        if not rec:
+            return
+        fresh = person_session.touch_session(rec, time.time(), cookie_exp(cookie_value), _http, ATHENA_URL, _refresh, _log)
+        if fresh:
+            with SESSIONS_LOCK:
+                recs = load_state(SESSIONS_FILE)
+                if sid in recs:  # signed out meanwhile stays signed out
+                    recs[sid] = fresh
+                    save_state(SESSIONS_FILE, recs)
+    except Exception as e:
+        _log(f"person-session: renewal touch failed: {e}")
 
 class Guard(BaseHTTPRequestHandler):
     server_version = "chorus-share-guard"
@@ -742,13 +842,34 @@ class Guard(BaseHTTPRequestHandler):
         self.send_header("Content-Length", "0")
         self.end_headers()
 
-    def _session_webid(self):
+    def _session_claims(self):
+        """Valid claims whose Session was not signed out (#4500), or None."""
         raw = self.headers.get("Cookie", "")
         for part in raw.split(";"):
             name, _, value = part.strip().partition("=")
             if name == SESSION_COOKIE:
-                return verify_session(value, COOKIE_KEY)
+                claims = session_claims(value, COOKIE_KEY)
+                if claims and claims.get("sid") and claims["sid"] not in load_state(SESSIONS_FILE):
+                    return None
+                return claims
         return None
+
+    def _session_webid(self):
+        claims = self._session_claims()
+        return claims["webid"] if claims else None
+
+    def _renewal(self, claims):
+        """#4500 — (state, Set-Cookie header or None) for this request's session."""
+        state, renewed = session_decision(claims, load_state(SESSIONS_FILE), current_principals(),
+                                          COOKIE_KEY, int(time.time()))
+        if not renewed:
+            return state, None
+        renew_person_session(claims["sid"], renewed)
+        return state, self._session_cookie(renewed)
+
+    def _session_cookie(self, value):
+        return (f"{SESSION_COOKIE}={value}; Path=/; HttpOnly; "
+                f"Secure; SameSite=Lax; Max-Age={SESSION_TTL}{cookie_domain_attr()}")
 
     def _auth_routes(self):
         """Sign-in endpoints. Served BY the guard, never proxied upstream.
@@ -829,9 +950,8 @@ Nothing is wrong with your account. Try again in a moment.</p>""")
                 return self._deny(502, "identity provider returned no WebID\n")
             # NOTE: the allow-set is NOT consulted here. Signing in always
             # succeeds; reach is decided per request, so revocation is immediate.
-            open_person_session(webid, tok)
-            cookie = (f"{SESSION_COOKIE}={sign_session(webid, COOKIE_KEY)}; Path=/; HttpOnly; "
-                      f"Secure; SameSite=Lax; Max-Age={SESSION_TTL}{cookie_domain_attr()}")
+            sid = open_person_session(webid, tok)
+            cookie = self._session_cookie(sign_session(webid, COOKIE_KEY, sid=sid))
             # #3791 — validated, so a cross-host return works and an attacker's
             # host does not. The old check accepted any string starting with "/"
             # and dropped everything else, which is why a visitor bounced here
@@ -847,6 +967,18 @@ Nothing is wrong with your account. Try again in a moment.</p>""")
             self.send_header("Content-Length", str(len(payload)))
             self.end_headers()
             self.wfile.write(payload)
+            return True
+
+        if path == AUTH_PREFIX + "renew":
+            # #4500 — the Clearing is served on its own host, so his use of it
+            # never passes through this door. It relays his cookie here (from
+            # loopback) and passes the renewed one back to his browser.
+            state, renew_cookie = self._renewal(self._session_claims())
+            self.send_response(204 if state == "ok" else 401)
+            if renew_cookie:
+                self.send_header("Set-Cookie", renew_cookie)
+            self.send_header("Content-Length", "0")
+            self.end_headers()
             return True
 
         if path == AUTH_PREFIX + "welcome":
@@ -886,7 +1018,7 @@ Nothing is wrong with your account. Try again in a moment.</p>""")
             return True
 
         if path == AUTH_PREFIX + "logout":
-            close_person_session(self._session_webid())
+            close_person_session(self._session_claims())
             # Cleared at the SAME scope it was minted at — a cookie deleted at a
             # narrower scope than it was set leaves the original in place, so
             # sign-out would appear to work and do nothing.
@@ -946,7 +1078,8 @@ page may have moved or was never public.</p>
 <p><a class="btn" href="{pub('/')}">Go to the entrance</a></p>""")
             return self._deny(404, "path not shared\n")
 
-        webid = self._session_webid()
+        claims = self._session_claims()
+        webid = claims["webid"] if claims else None
         if not webid:
             # A person gets a page; a script gets a status. Bouncing a browser
             # straight to the identity provider means the first thing a visitor
@@ -968,11 +1101,15 @@ being allowed in. Access is granted per person; ask Jeff to add you.</p>
 <p><a class="btn" href="{AUTH_PREFIX}logout">Sign out</a></p>""")
             return self._deny(403, "signed in, but not authorized for this surface\n")
 
+        # #4500 — signed in, on the list, and using it: renew. After both checks,
+        # so revoked or signed-out never renews.
+        _state, renew_cookie = self._renewal(claims)
+
         # After the identity checks, deliberately: an anonymous caller asking for
         # /clearing signs in HERE first and is then sent over, so the flow proves
         # one sign-in carries across hosts rather than sidestepping the door.
         if self.path.split("?")[0] in ("/clearing", "/clearing/"):
-            return self._redirect(CLEARING_URL)
+            return self._redirect(CLEARING_URL, renew_cookie)
 
         upstream = route(self.path.split("?")[0], current_allow(), UPSTREAM)
 
@@ -987,7 +1124,7 @@ being allowed in. Access is granted per person; ask Jeff to add you.</p>
         # the two must not move at once: the fallback keeps pointing at a page that
         # exists whichever way the allowlist is configured.
         if upstream is None and self.path.split("?")[0] in ("/", ""):
-            return self._redirect(pub(LANDING))
+            return self._redirect(pub(LANDING), renew_cookie)
 
         if upstream is None:
             return self._deny(404, "path not shared\n")
@@ -1005,6 +1142,8 @@ being allowed in. Access is granted per person; ask Jeff to add you.</p>
                 for h in ("Content-Type", "Cache-Control", "ETag", "Last-Modified"):
                     if r.headers.get(h):
                         self.send_header(h, r.headers[h])
+                if renew_cookie:
+                    self.send_header("Set-Cookie", renew_cookie)
                 self.send_header("Content-Length", str(len(data)))
                 self.end_headers()
                 if body_allowed:
@@ -1046,7 +1185,11 @@ if __name__ == "__main__" and len(sys.argv) > 2 and sys.argv[1] == "--sign-sessi
     # wrong. This grants no access it did not already have: producing a session
     # requires reading the cookie key from the 0600 state file, and anyone who
     # can read that file can already forge sessions directly.
-    print(sign_session(sys.argv[2], COOKIE_KEY))
+    # #4500 — optional session id and age: --sign-session <webid> [sid] [seconds-ago],
+    # so a test can hold a session that is due for renewal.
+    _ago = int(sys.argv[4]) if len(sys.argv) > 4 else 0
+    print(sign_session(sys.argv[2], COOKIE_KEY, now=int(time.time()) - _ago,
+                       sid=sys.argv[3] if len(sys.argv) > 3 and sys.argv[3] else None))
     sys.exit(0)
 
 if __name__ == "__main__":

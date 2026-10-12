@@ -85,6 +85,24 @@ describe('fetchContextRoles (#4028 — derived, never declared)', () => {
     expect(rows[0].sessions).toEqual([{ channel: 'pane', startedAt: '2026-10-06T11:00:00Z', lastSeenAt: '' }]);
   });
 
+  it('#4500 a session past its expiresAt is not listed: Jeff signed out overnight is not still in (his tile showed 5, 4 dead)', () => {
+    const now = Date.parse('2026-10-12T12:00:00Z');
+    const sessions = { data: [
+      { ownedBy: 'principal-jeff', sessionState: 'open', channel: 'browser', startedAt: '2026-10-11T13:46:18Z', expiresAt: '2026-10-12T01:46:18Z' },
+      { ownedBy: 'principal-jeff', sessionState: 'open', channel: 'browser', startedAt: '2026-10-12T11:57:42Z', expiresAt: '2026-10-12T23:57:42Z' },
+      { ownedBy: 'principal-jeff', sessionState: 'open', channel: 'browser', startedAt: '2026-10-12T11:58:00Z' },
+    ] };
+    const rows = loggedInRoles(sessions, DOOR, now);
+    expect(rows[0].sessions.map((x) => x.startedAt)).toEqual(['2026-10-12T11:57:42Z', '2026-10-12T11:58:00Z']);
+  });
+
+  it('#4500 NEGATIVE PROOF: a principal whose only session expired has no tile', () => {
+    const now = Date.parse('2026-10-12T12:00:00Z');
+    const expired = { data: [{ ownedBy: 'principal-kade', sessionState: 'open', expiresAt: '2026-10-12T11:59:59Z' }] };
+    expect(loggedInRoles(expired, DOOR, now)).toEqual([]);
+    expect(loggedInRoles(expired, DOOR, Date.parse('2026-10-12T11:59:00Z')).map((r) => r.name)).toEqual(['kade']);
+  });
+
   it('#4432 a human or unkinded row never gets an agent tile', () => {
     expect(agentRolesFrom(DOOR)).not.toContain('jeff');
     expect(agentRolesFrom(DOOR)).not.toContain('nightly');

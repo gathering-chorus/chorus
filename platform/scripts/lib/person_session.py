@@ -138,15 +138,43 @@ def open_session(webid, tok, now, lasts, sparql, http, api, log):
             "exp": int(tok.get("expires_in", 0) or 0) + int(now)}
 
 
+def live_bearer(rec, now, refresh, log, why):
+    """His id token, refreshed when it has under a minute left; None when it cannot be."""
+    if rec.get("exp", 0) - now >= 60:
+        return rec.get("id_token", "")
+    fresh = refresh(rec.get("refresh_token", "")) if rec.get("refresh_token") else None
+    if not fresh or not fresh.get("id_token"):
+        log(f"person-session: {rec.get('principal')} {why} {rec['row']['name']}: token expired, no refresh")
+        return None
+    rec["id_token"] = fresh["id_token"]
+    rec["refresh_token"] = fresh.get("refresh_token") or rec.get("refresh_token", "")
+    rec["exp"] = int(fresh.get("expires_in", 0) or 0) + int(now)
+    return rec["id_token"]
+
+
+def touch_session(rec, now, expires_at, http, api, refresh, log):
+    """#4500 — he is still here: his row's lastSeenAt is now and its expiresAt follows
+    the renewed cookie. Returns the updated record (tokens may be fresh), or None."""
+    bearer = live_bearer(rec, now, refresh, log, "renewal could not touch")
+    if not bearer:
+        return None
+    row = dict(rec["row"], lastSeenAt=iso(now), expiresAt=iso(expires_at))
+    try:
+        status, _ = http("PUT", f"{api}/v1/identity/sessions/{urllib.parse.quote(row['name'])}", bearer, row)
+    except Exception as e:
+        log(f"person-session: touch failed: {e}")
+        return None
+    if status not in (200, 204):
+        log(f"person-session: {rec.get('principal')} session {row['name']} NOT renewed (HTTP {status})")
+        return None
+    return dict(rec, row=row)
+
+
 def close_session(rec, now, http, api, refresh, log):
     """Sign-out: PUT his row closed. refresh(rt) -> tok dict or None."""
-    bearer = rec.get("id_token", "")
-    if rec.get("exp", 0) - now < 60:
-        fresh = refresh(rec.get("refresh_token", "")) if rec.get("refresh_token") else None
-        if not fresh or not fresh.get("id_token"):
-            log(f"person-session: {rec.get('principal')} sign-out could not close {rec['row']['name']}: token expired, no refresh")
-            return False
-        bearer = fresh["id_token"]
+    bearer = live_bearer(rec, now, refresh, log, "sign-out could not close")
+    if not bearer:
+        return False
     row = dict(rec["row"], sessionState="closed", endedAt=iso(now))
     try:
         status, _ = http("PUT", f"{api}/v1/identity/sessions/{urllib.parse.quote(row['name'])}", bearer, row)
