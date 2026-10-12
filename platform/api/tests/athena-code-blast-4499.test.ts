@@ -5,7 +5,7 @@
 // listed 1,748 files for clearing and could not find a service. Wren 16:41:
 // services, domains, tests and pages — never a file list — direct, then through
 // dependencies, the same for a file and a service.
-import { codeBlast, filesQuery, unitsFromCsv, builtFromFromCsv, filesFromCsv, type UnitRow, type FileRow } from '../src/handlers/athena-code-blast';
+import { codeBlast, filesQuery, withPages, pagesFromCsv, unitsFromCsv, builtFromFromCsv, filesFromCsv, type UnitRow, type FileRow } from '../src/handlers/athena-code-blast';
 
 const C = 'https://jeffbridwell.com/chorus#';
 const UNITS = [
@@ -67,5 +67,19 @@ describe('#4499 the blast radius of a change, from the code units', () => {
     expect(q).toContain('GRAPH <urn:chorus:domains:code>');
     expect(q).toContain('CodeFile>');
     expect(q).not.toContain('GRAPH ?g');
+  });
+
+  // #4499 reopen — pages came back 0 for every target: Page rows are typed only
+  // as Page, so the CodeFile read never carried a route.
+  it('the pages a change reaches come from the Page rows', () => {
+    const pages = pagesFromCsv('path,route\nplatform/api/public/athena/x.html,/athena/x.html\ndirecting/elsewhere/y.html,/y.html\n');
+    const codeFiles = files.map((f) => ({ ...f, route: '' })); // live CodeFile rows carry no route
+    const r = codeBlast('platform/api/src/server.ts', units, built, withPages(codeFiles, pages));
+    expect(r.measured && r.pages).toEqual(['/athena/x.html']);
+  });
+
+  it('NEGATIVE PROOF — without the Page rows no page is reported', () => {
+    const r = codeBlast('platform/api/src/server.ts', units, built, files.map((f) => ({ ...f, route: '' })));
+    expect(r.measured && r.pages).toEqual([]);
   });
 });

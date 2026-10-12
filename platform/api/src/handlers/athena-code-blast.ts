@@ -99,6 +99,23 @@ export function filesQuery(): string {
   return `SELECT ?path ?kind ?domain ?route WHERE { GRAPH <urn:chorus:domains:code> { ?f a <${C}CodeFile> ; <${C}filePath> ?path . OPTIONAL { ?f <${C}hasKind> ?kind } OPTIONAL { ?f <${C}hasDomain> ?domain } OPTIONAL { ?f <${C}route> ?route } } }`;
 }
 
+/**
+ * Pages are their own rows (chorus:Page, a CodeFile child typed only as Page),
+ * so the files query never sees their routes: read them apart and fold them in.
+ */
+export function pagesQuery(): string {
+  return `SELECT ?path ?route WHERE { GRAPH <urn:chorus:domains:code> { ?f a <${C}Page> ; <${C}filePath> ?path ; <${C}route> ?route } }`;
+}
+export function withPages(files: FileRow[], pages: [string, string][]): FileRow[] {
+  const out = files.map((f) => ({ ...f }));
+  for (const [path, route] of pages) {
+    const hit = out.find((f) => f.path === path);
+    if (hit) hit.route = route;
+    else out.push({ path, kind: '', domain: '', route });
+  }
+  return out;
+}
+
 /** SPARQL CSV rows as string arrays (header dropped); quoted cells unwrapped. */
 export function csvRows(csv: string): string[][] {
   return csv.split('\n').slice(1).filter((l) => l.trim()).map((l) => {
@@ -129,6 +146,9 @@ export function unitsFromCsv(csv: string): UnitRow[] {
 }
 export function builtFromFromCsv(csv: string): [string, string][] {
   return csvRows(csv).map(([s, u]) => [local(s), local(u).replace(/^code-unit-/, '')] as [string, string]);
+}
+export function pagesFromCsv(csv: string): [string, string][] {
+  return csvRows(csv).map(([path = '', route = '']) => [path, route] as [string, string]).filter(([p, r]) => p && r);
 }
 export function filesFromCsv(csv: string): FileRow[] {
   // a row with an absent OPTIONAL has fewer cells: pad, so every field is a string

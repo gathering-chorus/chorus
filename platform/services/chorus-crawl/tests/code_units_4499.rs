@@ -81,3 +81,68 @@ fn negative_proof_a_file_in_no_unit_has_no_unit_and_an_edge_to_nowhere_is_never_
         &|_| Some("x = { path = \"../missing\" }".to_string()), &|_| vec![]);
     assert!(lone.iter().find(|u| u.path == "platform/services/a").unwrap().deps.is_empty());
 }
+
+// #4499 reopen (Jeff 2026-10-11 18:32: "does it work" — no): 3 of 13 services
+// linked, because an instance's sourcePath is usually its launch wrapper, a
+// script in no unit. What launchd runs is evidence; a name is not.
+mod run_paths_4499 {
+    use chorus_crawl::code::*;
+
+    const ROOT: &str = "/r/chorus";
+    const HOME: &str = "/h";
+
+    fn units_() -> Vec<Unit> {
+        let tomls: &[(&str, &str)] = &[
+            ("platform/services/chorus-hooks/Cargo.toml", "[package]\nname = \"chorus-hooks\"\n[[bin]]\nname = \"chorus-hooks\"\n[[bin]]\nname = \"chorus-hook-shim\"\n"),
+            ("platform/services/athena-make/Cargo.toml", "[package]\nname = \"athena-make\"\n"),
+        ];
+        let read = move |p: &str| tomls.iter().find(|(f, _)| *f == p).map(|(_, t)| t.to_string());
+        let cargo: Vec<String> = tomls.iter().map(|(f, _)| f.to_string()).collect();
+        let mut us = units(&cargo, &[], &read, &|_| vec![]);
+        us.push(Unit { path: "platform/api".into(), kind: "package", deps: vec![], includes: vec![], name: "chorus-api".into() });
+        us
+    }
+    fn bins() -> Vec<(String, String)> {
+        let mut b = cargo_bins("platform/services/chorus-hooks", "[package]\nname = \"chorus-hooks\"\n[[bin]]\nname = \"chorus-hooks\"\n[[bin]]\nname = \"chorus-hook-shim\"\n");
+        b.extend(cargo_bins("platform/services/athena-make", "[package]\nname = \"athena-make\"\n"));
+        b
+    }
+    fn scripts(p: &str) -> Option<String> {
+        match p {
+            "/r/chorus/platform/scripts/chorus-api-wrapper.sh" => Some("# runs the api\nAPI_DIR=\"$CHORUS_ROOT/platform/api\"\ncd \"$API_DIR\"\nexec node dist/server.js\n".into()),
+            "/h/.chorus/bin/athena-make-launch.sh" => Some("#!/bin/sh\nexec \"$HOME/.chorus/bin/athena-make\" \"$@\"\n".into()),
+            "/r/chorus/platform/scripts/service-run" => Some("#!/bin/sh\nexec \"$@\"\n".into()),
+            _ => None,
+        }
+    }
+    fn paths(source: &str, binary: &str) -> Vec<String> {
+        run_paths(source, binary, ROOT, HOME, &units_(), &bins(), &scripts)
+    }
+
+    #[test]
+    fn a_deployed_binary_is_the_crate_whose_cargo_toml_builds_it() {
+        assert_eq!(paths("", "/h/.chorus/bin/chorus-hooks"), vec!["platform/services/chorus-hooks"]);
+        assert_eq!(paths("", "/h/.chorus/bin/chorus-hook-shim"), vec!["platform/services/chorus-hooks"]);
+        assert_eq!(paths("", "/h/.chorus/bin/athena-make-bin"), vec!["platform/services/athena-make"], "the deploy's -bin beside its shim");
+        assert_eq!(paths("", "/w/kade-4499/platform/services/chorus-hooks/target/release/chorus-hooks"), vec!["platform/services/chorus-hooks"], "a werk's build output");
+    }
+
+    #[test]
+    fn a_wrapper_in_no_unit_is_read_once_for_the_code_it_runs() {
+        assert_eq!(paths("platform/scripts/chorus-api-wrapper.sh", "/r/chorus/platform/scripts/chorus-api-wrapper.sh"), vec!["platform/api"]);
+        assert_eq!(paths("", "/h/.chorus/bin/athena-make-launch.sh"), vec!["platform/services/athena-make"]);
+    }
+
+    #[test]
+    fn a_source_file_inside_a_unit_counts_as_it_is() {
+        assert_eq!(paths("platform/services/athena-make/src/main.rs", ""), vec!["platform/services/athena-make/src/main.rs"]);
+    }
+
+    // NEGATIVE PROOF — a name alike is not evidence, and a generic runner names nothing.
+    #[test]
+    fn negative_proof_no_evidence_no_link() {
+        assert!(paths("", "/h/.chorus/bin/chorus-hooks-probe").is_empty(), "a name that starts like a bin is not that bin");
+        assert!(paths("", "/r/chorus/platform/scripts/service-run").is_empty(), "service-run's real target is in the plist, not the script");
+        assert!(paths("", "/opt/homebrew/bin/prometheus").is_empty());
+    }
+}
