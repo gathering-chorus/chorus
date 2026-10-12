@@ -13,7 +13,7 @@ const fs = require('fs');
 const os = require('os');
 const path = require('path');
 const { spawn } = require('child_process');
-const { testClearingEnv, signedInSession } = require('../../../directing/clearing/tests/lib/test-clearing-world.cjs');
+const { testClearingEnv, doorSession } = require('../../../directing/clearing/tests/lib/test-clearing-world.cjs');
 const { startSecurityGraphStub } = require('../../../directing/clearing/tests/lib/security-graph-stub.cjs');
 const { testEvent } = require('../../../platform/tests/lib/test-events.cjs');
 
@@ -30,7 +30,7 @@ function isLiveClearing(url) {
 }
 
 /** opts.spine: lines written to the own Clearing's spine log before it starts.
- *  opts.signedInAs: a WebID; the result's .session() is then a clearing_session cookie for it.
+ *  opts.signedInAs: a WebID; the result's .session() is then the door's chorus_share_session cookie for it (#4412).
  *  opts.env: extra env for the Clearing (e.g. a stub's address). */
 function ownClearing(test, opts = {}) {
   const given = process.env.CLEARING_URL;
@@ -59,7 +59,7 @@ function ownClearing(test, opts = {}) {
     graph = await startSecurityGraphStub({ persons: ['jeff'], principals: opts.signedInAs ? { [opts.signedInAs]: 'principal-jeff' } : {} });
     env.CHORUS_FUSEKI_QUERY = graph.url;
     if (opts.spine && opts.spine.length) fs.writeFileSync(env.CHORUS_LOG_FILE, opts.spine.join('\n') + '\n');
-    if (opts.signedInAs) sessionCookie = signedInSession(dir, opts.signedInAs);
+    if (opts.signedInAs) sessionCookie = doorSession(dir, opts.signedInAs);
     child = spawn(process.execPath, [entry], {
       cwd: CLEARING_SRC,
       env: { ...process.env, ...env, ...(opts.env || {}) },

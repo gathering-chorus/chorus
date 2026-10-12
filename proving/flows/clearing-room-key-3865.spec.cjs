@@ -72,7 +72,7 @@ test.describe('#3827 the page joins the room on load', () => {
   test('signed in: the page POSTs the bind on load and reports bound', async ({ page, context }) => {
     test.skip(!CLEARING_TARGET.own, 'needs a session in the Clearing this spec started');
     const u = new URL(CLEARING);
-    await context.addCookies([{ name: 'clearing_session', value: CLEARING_TARGET.session(), domain: u.hostname, path: '/' }]);
+    await context.addCookies([{ name: 'chorus_share_session', value: CLEARING_TARGET.session(), domain: u.hostname, path: '/' }]);
     const bind = page.waitForRequest((r) => r.url().endsWith('/api/room/bind') && r.method() === 'POST', { timeout: 15000 });
     await page.goto(CLEARING, { waitUntil: 'domcontentloaded' });
     const req = await bind;
@@ -83,7 +83,7 @@ test.describe('#3827 the page joins the room on load', () => {
   test('NEGATIVE PROOF: a refused bind is reported as failed, never swallowed', async ({ page, context }) => {
     test.skip(!CLEARING_TARGET.own, 'needs a session in the Clearing this spec started');
     const u = new URL(CLEARING);
-    await context.addCookies([{ name: 'clearing_session', value: CLEARING_TARGET.session(), domain: u.hostname, path: '/' }]);
+    await context.addCookies([{ name: 'chorus_share_session', value: CLEARING_TARGET.session(), domain: u.hostname, path: '/' }]);
     await page.route('**/api/room/bind', (route) => route.fulfill({ status: 500, body: 'stub refused' }));
     await page.goto(CLEARING, { waitUntil: 'domcontentloaded' });
     await expect.poll(() => page.evaluate(() => window.roomKeyStatus && window.roomKeyStatus.state), { timeout: 15000 }).toBe('failed');

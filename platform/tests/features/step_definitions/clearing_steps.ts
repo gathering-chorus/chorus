@@ -5,7 +5,7 @@ import * as assert from 'assert';
 import * as fs from 'fs';
 import * as os from 'os';
 import * as path from 'path';
-const { testClearingEnv, signedInSession } = require('../../../../directing/clearing/tests/lib/test-clearing-world.cjs');
+const { testClearingEnv, doorSession } = require('../../../../directing/clearing/tests/lib/test-clearing-world.cjs');
 const { spawnSecurityGraphStub } = require('../../../../directing/clearing/tests/lib/security-graph-stub.cjs');
 let graph: { url: string; close: () => Promise<void> } | null = null;
 const JEFF_WEBID = 'https://pods.example/jeff/profile/card#me';
@@ -45,7 +45,7 @@ Before({ tags: '@clearing', timeout: 20000 }, async function () {
   // #4417 — Jeff speaks as himself: a signed-in session (his WebID is principal-jeff
   // in the stub graph), never the shared machine credential, which cannot post as a person.
   graph = await spawnSecurityGraphStub({ persons: ['jeff'], principals: { [JEFF_WEBID]: 'principal-jeff' } });
-  jeffSession = signedInSession(testWorld, JEFF_WEBID);
+  jeffSession = doorSession(testWorld, JEFF_WEBID); // #4412 — the door's cookie is the only session
   const log: string[] = [];
   testClearing = spawn('node', [CLEARING_SERVER], {
     env: { ...process.env, ...testClearingEnv(testWorld, TEST_PORT, testToken), CHORUS_FUSEKI_QUERY: graph!.url },
@@ -128,7 +128,17 @@ When('Jeff loads {string} without auth', function (url: string) {
 // #3366: the LAN URL lives in one place (the LAN constant above) so the
 // scenario text never carries a DHCP-volatile literal address.
 When('Jeff loads the LAN URL without auth', function () {
-  lastResponse = curl(LAN, '-L');
+  lastResponse = curl(LAN, '-H "Accept: text/html"');
+});
+
+// #4412 — the home network is not an identity, and a LAN Host can never carry
+// the door's parent-domain cookie: a person's LAN page load is sent to the
+// public Clearing, same path. Before #4412 it served the room with no sign-in.
+Then('the page redirects to the public Clearing', function () {
+  const loc = execSync(`curl -s -o /dev/null -w '%{redirect_url}' -H "Accept: text/html" "${LAN}" --connect-timeout 5 --max-time 10`,
+    { encoding: 'utf-8', timeout: 15000 }).trim();
+  assert.strictEqual(lastResponse.status, 302, `LAN page load served ${lastResponse.status}, expected a redirect`);
+  assert.ok(loc.startsWith(PUBLIC), `LAN page load redirected to ${loc}, expected ${PUBLIC}`);
 });
 
 Then('the page does not return 200', function () {
@@ -169,7 +179,7 @@ When('Jeff enters the name {string} via LAN', function (name: string) {
   const r = curlPost(
     `${TEST_LAN}/api/message`,
     JSON.stringify({ from: name, text: `[e2e-identity] ${name} joined` }),
-    `-b "clearing_session=${jeffSession}"`
+    `-b "chorus_share_session=${jeffSession}"`
   );
   nameAccepted = r.status === 200;
   lastResponse = r;
@@ -181,7 +191,7 @@ When('Jeff enters the name {string} via localhost', function (name: string) {
   const r = curlPost(
     `${TEST_LOCAL}/api/message`,
     JSON.stringify({ from: name, text: `[e2e-identity] ${name} joined` }),
-    `-b "clearing_session=${jeffSession}"`
+    `-b "chorus_share_session=${jeffSession}"`
   );
   nameAccepted = r.status === 200;
   lastResponse = r;
@@ -215,7 +225,7 @@ When('Jeff sends a message {string} via the API from LAN', function (label: stri
   lastResponse = curlPost(
     `${TEST_LAN}/api/message`,
     JSON.stringify({ from: 'jeff', text: probeMarker }),
-    `-b "clearing_session=${jeffSession}"` // #4278 — identity is required since #3966
+    `-b "chorus_share_session=${jeffSession}"` // #4278 — identity is required since #3966
   );
   assert.strictEqual(lastResponse.status, 200, `POST failed: ${lastResponse.status} ${lastResponse.body}`);
 });
@@ -225,7 +235,7 @@ When('Jeff sends a message {string} via the API from localhost', function (label
   lastResponse = curlPost(
     `${TEST_LOCAL}/api/message`,
     JSON.stringify({ from: 'jeff', text: probeMarker }),
-    `-b "clearing_session=${jeffSession}"` // #4278 — identity is required since #3966
+    `-b "chorus_share_session=${jeffSession}"` // #4278 — identity is required since #3966
   );
   assert.strictEqual(lastResponse.status, 200, `POST failed: ${lastResponse.status} ${lastResponse.body}`);
 });

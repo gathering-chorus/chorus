@@ -3,7 +3,7 @@
 // @owner: wren
 /**
  * #3913 — server.ts's module-init CATCH branches: first-boot generation of
- * the bridge token and session secret (lines ~100-116) fire only when the
+ * the bridge token (#4412 removed the session secret) fire only when the
  * files DON'T exist. The whole suite always ran with them present, so these
  * statements were permanently uncovered — the coverage red's actual cause.
  */
@@ -27,7 +27,7 @@ jest.mock('../src/tailer', () => {
 });
 
 describe('#3913 first-boot secret generation', () => {
-  test('missing token + secret files are generated (catch branches covered)', () => {
+  test('a missing token file is generated (catch branch covered)', () => {
     const home = path.join(FAKE_HOME, '.chorus');
     jest.isolateModules(() => {
       const prev = { ...process.env };
@@ -43,8 +43,7 @@ describe('#3913 first-boot secret generation', () => {
       }
     });
     expect(fs.existsSync(path.join(home, 'bridge-auth-token'))).toBe(true);
-    expect(fs.existsSync(path.join(home, 'clearing-session-secret'))).toBe(true);
-    const mode = fs.statSync(path.join(home, 'clearing-session-secret')).mode & 0o777;
-    expect(mode).toBe(0o600);
+    // #4412 — the Clearing has no session cookie of its own, so no secret for one.
+    expect(fs.existsSync(path.join(home, 'clearing-session-secret'))).toBe(false);
   });
 });

@@ -489,10 +489,10 @@ describe('server — auth gate', () => {
     expect(r.status).toBe(403);
   });
 
-  test('tunneled request to index hits login page when no token', async () => {
+  test('tunneled request to index, no token, no door configured → 503, never the room (#4412)', async () => {
     const r = await call('/', { headers: { 'cf-connecting-ip': '5.6.7.8', 'cf-ray': 'x' } });
-    // Tunneled requests without token → 401 login OR 200 login page.
-    expect([200, 401]).toContain(r.status);
+    // #4412 — no local sign-in page: with CHORUS_SIGNIN_URL unset the answer is 503.
+    expect(r.status).toBe(503);
   });
 });
 
@@ -730,11 +730,11 @@ describe('server — HEIC upload path', () => {
 });
 
 describe('server — auth middleware edge cases', () => {
-  test('tunneled /api/stream without token → 401 auth-required (#3667: read pair opened to token holders)', async () => {
+  test('tunneled /api/stream without token is not served (#3667: read pair opened to token holders; #4412: 503 with no door)', async () => {
     const r = await call('/api/stream', {
       headers: { 'cf-connecting-ip': '1.2.3.4', 'cf-ray': 'abc' },
     });
-    expect(r.status).toBe(401);
+    expect(r.status).toBe(503);
   });
 
   test('tunneled /api/commands/kade also blocked', async () => {

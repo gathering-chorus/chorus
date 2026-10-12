@@ -65,12 +65,12 @@ describe('#3775 the one door, driven', () => {
     expect(r.location).toBe(`https://door.example/signin?next=${encodeURIComponent('https://team.example.com/stream')}`);
   });
 
-  test('no session, door unset: the local sign-in page serves, no redirect', async () => {
+  test('no session, door unset: 503 naming the missing door — no local sign-in page (#4412)', async () => {
     delete process.env.CHORUS_SIGNIN_URL;
     const r = await visit('GET', '/');
-    expect(r.status).toBe(401);
+    expect(r.status).toBe(503);
     expect(r.location).toBeNull();
-    expect(r.body).toContain('Sign in');
+    expect(r.body).not.toContain('Sign in');
   });
 
   test('no session, door set: a POST is refused, never bounced to a sign-in page', async () => {

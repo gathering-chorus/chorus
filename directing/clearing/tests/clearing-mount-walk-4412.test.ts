@@ -3,7 +3,8 @@
 // @owner: wren
 /**
  * #4412 — Jeff, 2026-10-11 morning, on the apex (lightlifeurbangardens.com/clearing):
- * Account → Sign in gave "Cannot GET /auth/login"; after signing in he landed on
+ * Account → Sign in gave a 404 on the Clearing's own sign-in (since removed, one
+ * sign-in for Chorus is the door's); after signing in he landed on
  * "Cannot GET /account"; the background image 404'd on every load. One class: a
  * root-absolute link or redirect leaves the mount and lands on the apex.
  *
@@ -31,10 +32,9 @@ const leaving = (links: string[]) => links.filter((u) => u !== '/clearing' && !u
 describe('#4412 every page under /clearing keeps its links inside the mount', () => {
   const pages: Array<[string, string, boolean]> = [
     ['the room, signed in', '/clearing/', true],
-    ['the room, signed out (sign-in page)', '/clearing/', false],
+    ['the room, signed out (door not configured)', '/clearing/', false],
     ['account, signed in', '/clearing/account', true],
-    ['account, signed out (sign-in page)', '/clearing/account', false],
-    ['sign-out', '/clearing/auth/signout', true],
+    ['account, signed out (door not configured)', '/clearing/account', false],
   ];
 
   for (const [label, path, signedIn] of pages) {
@@ -47,13 +47,12 @@ describe('#4412 every page under /clearing keeps its links inside the mount', ()
     });
   }
 
-  test('the sign-in button reaches sign-in, not a 404', async () => {
-    const page = await gate.visit('GET', '/clearing/account');
-    const signIn = rootLinks(page.body).find((u) => u.includes('/auth/login'));
-    expect(signIn).toBeDefined();
-    const r = await gate.visit('GET', signIn!);
+  test('#4412 signed out under the mount: the door is asked to bring him back inside /clearing', async () => {
+    process.env.CHORUS_SIGNIN_URL = 'https://door.example/_auth/login';
+    const r = await gate.visit('GET', '/clearing/account');
+    delete process.env.CHORUS_SIGNIN_URL;
     expect(r.status).toBe(302);
-    expect(r.location).toMatch(/^https:\/\//); // handed to the identity server
+    expect(r.location).toBe(`https://door.example/_auth/login?next=${encodeURIComponent('https://team.example.com/clearing/account')}`);
   });
 
   test('every same-mount link on the signed-in room answers (no 404)', async () => {

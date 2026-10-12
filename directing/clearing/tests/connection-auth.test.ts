@@ -32,8 +32,9 @@ describe('#3669: one connection-locality classifier for both transports', () => 
       expect(isLocalAddress('::1')).toBe(true);
       expect(isLocalAddress('::ffff:127.0.0.1')).toBe(true);
     });
-    test('home LAN is local', () => {
-      expect(isLocalAddress('192.168.86.42')).toBe(true);
+    test('NEGATIVE PROOF (#4412): the home LAN is NOT local — being on the network is not an identity', () => {
+      expect(isLocalAddress('192.168.86.42')).toBe(false);
+      expect(isLocalAddress('::ffff:192.168.86.42')).toBe(false);
     });
     test('a public address is not local', () => {
       expect(isLocalAddress('203.0.113.7')).toBe(false);
@@ -56,8 +57,8 @@ describe('#3669: one connection-locality classifier for both transports', () => 
       expect(isLocalConnection({}, '127.0.0.1')).toBe(true);
     });
 
-    test('genuine home LAN (no tunnel) stays local', () => {
-      expect(isLocalConnection({ host: 'jeffs-mac-mini-m1-3.local' }, '192.168.86.42')).toBe(true);
+    test('#4412: a home LAN connection (no tunnel) is no longer local', () => {
+      expect(isLocalConnection({ host: 'jeffs-mac-mini-m1-3.local' }, '192.168.86.42')).toBe(false);
     });
 
     test('remote non-tunneled address is not local', () => {

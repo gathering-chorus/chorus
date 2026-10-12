@@ -50,7 +50,7 @@ test.beforeEach(() => { seen.length = 0; accountOwner = WEBID; cssMode = 'up'; }
 
 const change = (request, data, signedIn = true) => request.post(`${CLEARING}/api/account/password`, {
   data,
-  headers: signedIn ? { cookie: `clearing_session=${CLEARING_TARGET.session()}` } : {},
+  headers: signedIn ? { cookie: `chorus_share_session=${CLEARING_TARGET.session()}` } : {},
 });
 
 test.describe('#3679 change password', () => {
