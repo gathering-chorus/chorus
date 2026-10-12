@@ -35,7 +35,7 @@ fn main() {
     // after the restart, and fails on any drop (a route gone, fewer Domains).
     if args.get(1).map(String::as_str) == Some("served-snapshot") {
         match (args.get(2), args.get(3)) {
-            (Some(api), Some(out)) => match athena_deploy::read_served(api)
+            (Some(api), Some(out)) => match athena_deploy::read_served_ready(api)
                 .and_then(|s| std::fs::write(out, &s).map(|_| s).map_err(|e| format!("{out}: {e}"))) {
                 Ok(s) => { println!("served-snapshot: {} route(s), {}", s.lines().count() - 1, s.lines().last().unwrap_or("")); std::process::exit(0); }
                 Err(e) => { eprintln!("athena-deploy: {}", e); std::process::exit(1); }
@@ -49,7 +49,7 @@ fn main() {
                 let before = std::fs::read_to_string(before).unwrap_or_else(|e| {
                     eprintln!("athena-deploy: served-compare: no before snapshot at {before}: {e} — unmeasured"); std::process::exit(1)
                 });
-                let after = athena_deploy::read_served(api).unwrap_or_else(|e| { eprintln!("athena-deploy: {}", e); std::process::exit(1) });
+                let after = athena_deploy::read_served_ready(api).unwrap_or_else(|e| { eprintln!("athena-deploy: {}", e); std::process::exit(1) });
                 let all = athena_deploy::served_drops(&before, &after);
                 let allow = std::env::var("ATHENA_ALLOW_DROPS").unwrap_or_default();
                 for d in all.iter().filter(|d| allow.lines().any(|l| l.trim() == d.as_str())) {
