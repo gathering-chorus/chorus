@@ -1358,3 +1358,52 @@ mod provenance_4472 {
         assert_eq!(moved.update[0].all("listensOn"), vec!["3340"]);
     }
 }
+
+/// #4081 — Bedroom's one ssh walk → its units. The walk prints the list, then
+/// `---PLISTS---` (each plist as JSON after `FILE:<path>`), `---PRINT---`
+/// (runs and last exit per LaunchAgent after `UNIT:<label>`, plus its log's
+/// mtime), `---DISABLED---`, `---LSOF---` and `---PS---`. A unit with no plist
+/// read stays evidence-unavailable; list's exit 0 is never read as a clean run.
+pub fn parse_bedroom_walk(remote: &str) -> Vec<Unit> {
+    let (head, rest) = remote.split_once("---PLISTS---").unwrap_or((remote, ""));
+    let (plists, rest) = rest.split_once("---PRINT---").unwrap_or((rest, ""));
+    let (prints, rest) = rest.split_once("---DISABLED---").unwrap_or(("", rest));
+    let (disabled_text, rest) = rest.split_once("---LSOF---").unwrap_or(("", rest));
+    // #4081 — print for each LaunchAgent: run count and how the last run ended
+    let print_of = |label: &str| -> Option<String> {
+        prints.split("UNIT:").skip(1).find_map(|b| {
+            let (l, body) = b.split_once('\n').unwrap_or((b, ""));
+            (l.trim() == label).then(|| body.to_string())
+        })
+    };
+    let disabled = (!disabled_text.trim().is_empty()).then(|| crate::schedule::disabled_labels(disabled_text));
+    let (lsof, ps) = rest.split_once("---PS---").unwrap_or((rest, ""));
+    let (listens, tree) = (parse_lsof_listen(lsof), parse_ps(ps));
+    let mut units: Vec<Unit> = parse_launchctl_list(head)
+        .into_iter()
+        .map(|u| {
+            let ports = u.pid.as_deref().and_then(|p| p.parse().ok()).map(|p| ports_of(p, &listens, &tree)).unwrap_or_default();
+            // no launchctl print over ssh, and list's 0 cannot tell a clean exit from
+            // never-run, so only a nonzero status is recorded for bedroom
+            let last_exit_code = u.last_exit_code.filter(|c| *c != 0);
+            Unit { run_state: u.run_state().into(), last_exit_code, label: u.label, meta: UnitMeta::default(), evidence_unavailable: true, ports }
+        })
+        .collect();
+    for block in plists.split("FILE:").skip(1) {
+        let (path, json) = block.split_once('\n').unwrap_or((block, ""));
+        let label = path.trim().rsplit('/').next().unwrap_or("").trim_end_matches(".plist");
+        let (Some(u), Ok(j)) = (units.iter_mut().find(|u| u.label == label), parse_json(json.trim())) else { continue };
+        u.meta = plist_meta(&j);
+        u.evidence_unavailable = false;
+        if let Some(text) = print_of(label) {
+            u.meta.runs = crate::schedule::runs_from_print(&text);
+            u.meta.never_exited = crate::schedule::never_exited(&text);
+            if let Some(code) = last_exit_from_print(&text) {
+                u.last_exit_code = Some(code);
+            }
+        }
+        u.meta.disabled = disabled.as_ref().map(|d| d.contains(&u.label));
+        u.meta.log_written = print_of(label).and_then(|p| p.lines().find_map(|l| l.trim().strip_prefix("logmtime = ").and_then(|v| v.trim().parse().ok())));
+    }
+    units
+}

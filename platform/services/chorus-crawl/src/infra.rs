@@ -266,3 +266,47 @@ pub fn plan(desired: Vec<Row>, current: &[Row], now_secs: u64, iso_secs: &dyn Fn
     }
     p
 }
+
+/// Creates grouped by kind, in first-seen order, so each batch goes to its own
+/// kind's collection: a new Machine is never posted into the Disk batch.
+pub fn creates_by_kind(creates: &[Row]) -> Vec<(&'static str, Vec<&Row>)> {
+    let mut out: Vec<(&'static str, Vec<&Row>)> = Vec::new();
+    for r in creates {
+        match out.iter_mut().find(|(k, _)| *k == r.kind) {
+            Some((_, v)) => v.push(r),
+            None => out.push((r.kind, vec![r])),
+        }
+    }
+    out
+}
+
+/// Each machine's walk → the rows it wants, its findings, and notes for the log.
+/// A disk with a live store on it can be full (a finding); a full disk with no
+/// store on it is an archive, noted, never a finding. A machine not walked is
+/// an UNMEASURED finding, never a machine with no disks.
+pub fn walk_results(
+    machines: &[(&str, Result<(MachineFacts, Vec<DiskReading>), String>)],
+    store_disks: &[String],
+    ts: &str,
+) -> (Vec<Row>, Vec<Finding>, Vec<String>) {
+    let (mut desired, mut found, mut notes) = (Vec::new(), Vec::new(), Vec::new());
+    for (m, w) in machines {
+        match w {
+            Ok((facts, disks)) => {
+                notes.push(format!("walked {m} — {} disks", disks.len()));
+                desired.push(machine_row(m, facts, ts));
+                desired.extend(disks.iter().map(|d| disk_row(m, d, ts)));
+                let mounts: Vec<&str> = disks.iter().filter(|d| store_disks.contains(&disk_name(m, &d.mount))).map(|d| d.mount.as_str()).collect();
+                found.extend(disk_findings(m, &Walk::Walked(disks.clone()), &mounts));
+                for d in full_archives(disks, &mounts) {
+                    notes.push(format!("{m} {} {}% full — archive (no store on it), not a finding", d.mount, d.percent()));
+                }
+            }
+            Err(e) => {
+                notes.push(format!("could not walk {m} — {e}"));
+                found.extend(disk_findings(m, &Walk::Unwalkable(e.clone()), &[]));
+            }
+        }
+    }
+    (desired, found, notes)
+}

@@ -1604,47 +1604,7 @@ fn walk_bedroom_units() -> chorus_crawl::services::MachineWalk {
         echo ---DISABLED--- ; launchctl print-disabled gui/$(id -u) 2>/dev/null ; \
         echo ---LSOF--- ; /usr/sbin/lsof -nP -iTCP -sTCP:LISTEN -F pn 2>/dev/null ; echo ---PS--- ; ps -axo pid=,ppid=";
     let remote = sh("ssh", &["-o", "ConnectTimeout=5", "bedroom", cmd], "/").map_err(|e| e.to_string())?;
-    let (head, rest) = remote.split_once("---PLISTS---").unwrap_or((&remote, ""));
-    let (plists, rest) = rest.split_once("---PRINT---").map(|(p, r)| (p, r)).unwrap_or((rest, ""));
-    let (prints, rest) = rest.split_once("---DISABLED---").unwrap_or(("", rest));
-    let (disabled_text, rest) = rest.split_once("---LSOF---").unwrap_or(("", rest));
-    // #4081 — print for each LaunchAgent: run count and how the last run ended
-    let print_of = |label: &str| -> Option<String> {
-        prints.split("UNIT:").skip(1).find_map(|b| {
-            let (l, body) = b.split_once('\n').unwrap_or((b, ""));
-            (l.trim() == label).then(|| body.to_string())
-        })
-    };
-    let disabled = (!disabled_text.trim().is_empty()).then(|| chorus_crawl::schedule::disabled_labels(disabled_text));
-    let (lsof, ps) = rest.split_once("---PS---").unwrap_or((rest, ""));
-    let (listens, tree) = (parse_lsof_listen(lsof), parse_ps(ps));
-    let mut units: Vec<Unit> = parse_launchctl_list(head)
-        .into_iter()
-        .map(|u| {
-            let ports = u.pid.as_deref().and_then(|p| p.parse().ok()).map(|p| ports_of(p, &listens, &tree)).unwrap_or_default();
-            // no launchctl print over ssh, and list's 0 cannot tell a clean exit from
-            // never-run, so only a nonzero status is recorded for bedroom
-            let last_exit_code = u.last_exit_code.filter(|c| *c != 0);
-            Unit { run_state: u.run_state().into(), last_exit_code, label: u.label, meta: UnitMeta::default(), evidence_unavailable: true, ports }
-        })
-        .collect();
-    for block in plists.split("FILE:").skip(1) {
-        let (path, json) = block.split_once('\n').unwrap_or((block, ""));
-        let label = path.trim().rsplit('/').next().unwrap_or("").trim_end_matches(".plist");
-        let (Some(u), Ok(j)) = (units.iter_mut().find(|u| u.label == label), parse_json(json.trim())) else { continue };
-        u.meta = plist_meta(&j);
-        u.evidence_unavailable = false;
-        if let Some(text) = print_of(label) {
-            u.meta.runs = chorus_crawl::schedule::runs_from_print(&text);
-            u.meta.never_exited = chorus_crawl::schedule::never_exited(&text);
-            if let Some(code) = last_exit_from_print(&text) {
-                u.last_exit_code = Some(code);
-            }
-        }
-        u.meta.disabled = disabled.as_ref().map(|d| d.contains(&u.label));
-        u.meta.log_written = print_of(label).and_then(|p| p.lines().find_map(|l| l.trim().strip_prefix("logmtime = ").and_then(|v| v.trim().parse().ok())));
-    }
-    Ok(units)
+    Ok(parse_bedroom_walk(&remote))
 }
 
 /// #4472 AC2 — the latest promoted deploy of each binary, from the spine.
@@ -1741,26 +1701,9 @@ fn run_infra(args: &[String]) -> i32 {
             }
         }
     };
-    let mut desired: Vec<Row> = Vec::new();
-    let mut found: Vec<Finding> = Vec::new();
-    for (m, w) in &machines {
-        match w {
-            Ok((facts, disks)) => {
-                println!("infra: walked {m} — {} disks", disks.len());
-                desired.push(machine_row(m, facts, &ts));
-                desired.extend(disks.iter().map(|d| disk_row(m, d, &ts)));
-                let mounts: Vec<&str> = disks.iter().filter(|d| store_disks.contains(&disk_name(m, &d.mount))).map(|d| d.mount.as_str()).collect();
-                let store_mounts: &[&str] = &mounts;
-                found.extend(disk_findings(m, &Walk::Walked(disks.clone()), store_mounts));
-                for d in full_archives(disks, store_mounts) {
-                    println!("infra: {m} {} {}% full — archive (no store on it), not a finding", d.mount, d.percent());
-                }
-            }
-            Err(e) => {
-                println!("infra: could not walk {m} — {e}");
-                found.extend(disk_findings(m, &Walk::Unwalkable(e.clone()), &[]));
-            }
-        }
+    let (desired, found, notes) = walk_results(&machines, &store_disks, &ts);
+    for n in &notes {
+        println!("infra: {n}");
     }
 
     let api = std::env::var("CHORUS_OWL_API").unwrap_or_else(|_| "http://localhost:3360".to_string());
@@ -1800,10 +1743,12 @@ fn run_infra(args: &[String]) -> i32 {
             f.extend(r.fields.iter().cloned());
             fields_json(&f)
         };
-        let creates: Vec<String> = p.create.iter().map(body).collect();
-        for chunk in creates.chunks(200) {
-            if let Err(e) = write(&ident, &api, "POST", &format!("{}/batch", coll_of("Disk")), Some(&format!("[{}]", chunk.join(",")))) {
-                failed.push(format!("create batch of {}: {e}", chunk.len()));
+        for (kind, rows) in creates_by_kind(&p.create) {
+            let creates: Vec<String> = rows.into_iter().map(body).collect();
+            for chunk in creates.chunks(200) {
+                if let Err(e) = write(&ident, &api, "POST", &format!("{}/batch", coll_of(kind)), Some(&format!("[{}]", chunk.join(",")))) {
+                    failed.push(format!("create batch of {} {kind}: {e}", chunk.len()));
+                }
             }
         }
         for r in &p.update {
@@ -2001,9 +1946,7 @@ fn run_stores(args: &[String]) -> i32 {
     let now = now_secs();
     let ts = chorus_crawl::iso_from_secs(now);
     let fuseki = std::env::var("CHORUS_FUSEKI_BASE").unwrap_or_else(|_| "http://localhost:3030".into());
-    let datasets = fuseki_read(&format!("{fuseki}/$/datasets")).map(|t| {
-        t.split("\"ds.name\"").skip(1).filter_map(|s| s.split('"').nth(1).map(String::from)).collect::<Vec<_>>()
-    });
+    let datasets = fuseki_read(&format!("{fuseki}/$/datasets")).map(|t| datasets_from(&t));
     // #4422 / #4433 — no SPARQL from the crawler (Jeff: "we must not craft custom sparql
     // to do what apis do"). The chorus graphs are each Domain row's instancesGraph, read
     // from the door; the other families (urn:jb, urn:gathering, urn:borg) and the model
@@ -2014,79 +1957,20 @@ fn run_stores(args: &[String]) -> i32 {
     // from a naming rule (Wren 2026-10-11: missing data is fixed in the graph, not
     // worked around in code). Each is checked with a Graph Store HEAD, so a domain
     // with no rows yet is not written as a store that exists.
-    let graphs = fetch_rows_with(&api, None, "Domain", "", chorus_crawl::services::door_page_rows).ok().and_then(|rows| {
-        let mut g: Vec<String> = Vec::new();
-        for r in &rows {
-            let get = |k: &str| r.iter().find(|(f, _)| f == k).map(|(_, v)| v.clone()).unwrap_or_default();
-            let home = get("instancesGraph");
-            if home.is_empty() {
-                continue;
-            }
-            match fuseki_graph_exists(&fuseki, "/pods", &home) {
-                Some(true) => g.push(home),
-                Some(false) => {}
-                None => return None, // could not ask: the graph rows read unmeasured
-            }
-        }
-        g.extend(map_graphs(&map));
-        g.sort();
-        g.dedup();
-        Some(g)
-    });
+    let graphs = fetch_rows_with(&api, None, "Domain", "", chorus_crawl::services::door_page_rows)
+        .ok()
+        .and_then(|rows| domain_graphs(&rows, &map, &|g| fuseki_graph_exists(&fuseki, "/pods", g)));
     // one walk per machine: which mapped paths exist and the mount each sits on,
     // the home volume's mount (for port and dataset stores), listening ports, and
     // the scanned directories for the unmapped check
     let walk = |machine: &str| -> Result<MachineSeen, String> {
-        let paths: Vec<String> = map
-            .entries
-            .iter()
-            .filter(|e| e.machine == machine)
-            .filter_map(|e| match &e.matcher { Match::Path(p) => Some(p.clone()), _ => None })
-            .collect();
-        let prefixes: Vec<String> = map
-            .entries
-            .iter()
-            .filter(|e| e.machine == machine)
-            .filter_map(|e| match &e.matcher { Match::PathPrefix(p) => Some(p.clone()), _ => None })
-            .collect();
-        let mut cmd = String::from("H=$(df -P \"$HOME\" | tail -1 | awk '{print $NF}'); echo \"MOUNT:\t$H\"; ");
-        for p in &paths {
-            cmd.push_str(&format!("if [ -e '{p}' ]; then echo 'PATH:{p}'; echo \"MOUNT:{p}\t$(df -P '{p}' | tail -1 | awk '{{print $NF}}')\"; fi; "));
-        }
-        for pre in &prefixes {
-            let (dir, stem) = pre.rsplit_once('/').unwrap_or(("/", pre.as_str()));
-            cmd.push_str(&format!("find '{dir}' -mindepth 1 -maxdepth 1 -name '{stem}*' 2>/dev/null | while read p; do echo \"PATH:$p\"; echo \"MOUNT:$p\t$(df -P \"$p\" | tail -1 | awk '{{print $NF}}')\"; done; "));
-        }
-        // lsof lives in /usr/sbin, which launchd's PATH leaves out: named by its full
-        // path, and a listing that could not run says so instead of reading as "no ports"
-        cmd.push_str("if [ -x /usr/sbin/lsof ]; then /usr/sbin/lsof -nP -iTCP -sTCP:LISTEN 2>/dev/null | awk 'NR>1{n=split($9,a,\":\"); print \"PORT:\" a[n]}' | sort -u; else echo PORTS-UNMEASURED; fi; ");
-        // find, not a glob: Bedroom's login shell is zsh, where a glob that matches
-        // nothing aborts the whole line (measured 2026-10-11)
-        cmd.push_str("find \"$HOME/.chorus\" -maxdepth 1 -name '*.db' 2>/dev/null | sed 's/^/SCAN:/'; find \"$HOME/.chorus/vikunja/db\" -maxdepth 1 -type f 2>/dev/null | sed 's/^/SCAN:/'; echo END");
+        let cmd = walk_cmd(&map, machine);
         let out = if machine == "library" {
             sh("sh", &["-c", &cmd], "/")
         } else {
             sh("ssh", &["-o", "ConnectTimeout=5", "-o", "BatchMode=yes", machine, &cmd], "/")
         }?;
-        if !out.contains("\nEND") && !out.starts_with("END") {
-            return Err("the walk did not finish".into());
-        }
-        let mut seen = MachineSeen::default();
-        for l in out.lines() {
-            if let Some(p) = l.strip_prefix("PATH:") {
-                seen.paths.push(p.to_string());
-            } else if let Some(m) = l.strip_prefix("MOUNT:") {
-                let (p, mount) = m.split_once('\t').unwrap_or((m, ""));
-                seen.mounts.push((p.to_string(), mount.to_string()));
-            } else if let Some(p) = l.strip_prefix("PORT:") {
-                if let Ok(n) = p.trim().parse() { seen.ports.push(n); }
-            } else if l.trim() == "PORTS-UNMEASURED" {
-                seen.ports_unmeasured = true;
-            } else if let Some(f) = l.strip_prefix("SCAN:") {
-                seen.scanned.push(f.to_string());
-            }
-        }
-        Ok(seen)
+        parse_seen(&out)
     };
     let seen = Seen { machines: vec![("library".into(), walk("library")), ("bedroom".into(), walk("bedroom"))], datasets, graphs };
     for (m, w) in &seen.machines {
@@ -2138,9 +2022,7 @@ fn run_stores(args: &[String]) -> i32 {
         };
         // a row's parent or source must exist before it is written: datasets and
         // files first, the graph families that sit in them after
-        let (first, then): (Vec<&Row>, Vec<&Row>) = p.create.iter().partition(|r| r.get("inStore").is_empty() && r.get("roleSource").is_empty());
-        let (sources, rest): (Vec<&Row>, Vec<&Row>) = then.into_iter().partition(|r| r.get("inStore").is_empty());
-        for group in [first, sources, rest] {
+        for group in create_groups(&p.create) {
             let batch: Vec<String> = group.iter().map(|r| body(r)).collect();
             for chunk in batch.chunks(200) {
                 if let Err(e) = write(&ident, &api, "POST", &format!("{coll}/batch"), Some(&format!("[{}]", chunk.join(",")))) {
@@ -2164,7 +2046,7 @@ fn run_stores(args: &[String]) -> i32 {
         let token = ident.borrow_mut().bearer().unwrap_or_default();
         match fetch_rows_with(&api, Some(&token), "PersistenceStore", "", chorus_crawl::services::door_page_rows) {
             Ok(rows) => {
-                let present = rows.iter().filter(|r| r.iter().any(|(k, v)| k == "storeStatus" && v == "present")).count();
+                let present = present_count(&rows);
                 println!("stores: read back {present} present rows from the door — discovered {}", want.rows.len());
                 short = present != want.rows.len();
             }
@@ -4105,5 +3987,31 @@ mod multi_domain_4222 {
             signals: vec![],
         };
         assert_eq!(super::domain_fields(&p), f(&[("hasDomain", "code")]));
+    }
+}
+
+#[cfg(test)]
+mod row_body_tests {
+    use super::*;
+
+    #[test]
+    fn a_page_or_endpoint_with_no_domain_carries_no_domain_field_never_an_empty_one() {
+        let p = pages::PageRow { path: "platform/api/public/athena/schedule.html".into(), route: "/athena/schedule.html".into(), page_type: "athena".into() };
+        let f = page_fields(&p, None);
+        assert!(!f.iter().any(|(k, _)| k == "hasDomain"));
+        assert!(f.iter().any(|(k, v)| k == "route" && v == "/athena/schedule.html"));
+        assert!(page_fields(&p, Some("schedule")).contains(&("hasDomain".to_string(), "schedule".to_string())));
+        let e = pages::EndpointRow { path: "src/routes.ts".into(), route_path: "/v1/schedule/scheduledjobs".into(), http_method: "GET".into() };
+        let f = endpoint_fields(&e, None);
+        assert!(!f.iter().any(|(k, _)| k == "hasDomain"));
+        assert!(f.iter().any(|(k, v)| k == "httpMethod" && v == "GET"));
+        assert_ne!(f[0].1, endpoint_fields(&pages::EndpointRow { http_method: "POST".into(), ..e.clone() }, None)[0].1, "method and path together name the row");
+    }
+
+    #[test]
+    fn a_body_with_a_repeated_field_writes_a_list_and_escapes_what_json_needs() {
+        let f = vec![("name".to_string(), "a\"b".to_string()), ("scheduleSpec".to_string(), "Mon 09:30".to_string()), ("scheduleSpec".to_string(), "Thu\t09:30".to_string())];
+        assert_eq!(fields_json(&f), r#"{"name":"a\"b","scheduleSpec":["Mon 09:30","Thu\t09:30"]}"#);
+        assert_eq!(json_escape("\u{1}"), "\\u0001");
     }
 }
