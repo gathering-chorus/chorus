@@ -959,6 +959,43 @@ fn run_nightly(args: &[String]) -> Result<i32, String> {
     if withheld {
         println!("!! werk nightly: results will NOT be written to the prod test ledger — root {} is a werk; set OWL_API_TESTRESULTS to the werk's store to write (#4063)", root);
     }
+    // #4144 AC3 — one poster for the run: a unit's results are stored, then
+    // its census lines printed, off the worker's path. A killed run loses only
+    // what is still queued; the run joins the poster before it counts.
+    let (post_tx, poster) = {
+        let (mint_role, card, trace) = (mint_role.clone(), card.clone(), trace.clone());
+        werk_test::spawn_poster(move |job: &werk_test::PostJob<(Vec<(CaseResult, String, String)>, Vec<String>, usize)>| {
+            let (joined, reasons, idx_base) = &job.payload;
+            let unit = job.unit.as_str();
+            let reason_of = |c: &CaseResult| -> String {
+                joined.iter().position(|(j, _, _)| j == c).and_then(|i| reasons.get(i).cloned()).unwrap_or_default()
+            };
+            let stored = post_test_results(&mint_role, &card, &trace, joined, run_epoch_ms, *idx_base, &reason_of);
+            // #4145 — the run's own record of what it posted, one line per case,
+            // so the census is "registry minus these" and never a ledger walk.
+            // #4247 — the result rides with the identity. Without it the log had a
+            // result per SUITE and an identity per TEST, two units that cannot be
+            // compared; the census below reads this same line.
+            for (c, _, registered) in joined.iter() {
+                // #4271 — four fields now. The case's own name is its identity; the
+                // registered row it answers for is a SUFFIX of that name, so the
+                // line carries the suffix's byte LENGTH rather than a second copy
+                // of the name. A second copy is a second record of one fact, and
+                // two records that must agree is the defect this card exists to
+                // kill. A name cannot be swallowed by the split because digits
+                // cannot, and an old three-field line still parses.
+                println!(
+                    "nightly-case|{}|{}|{}|{}",
+                    c.file_path,
+                    c.test_name,
+                    c.result,
+                    werk_test::nightly_run::registered_suffix_len(&c.test_name, registered)
+                );
+            }
+            println!("nightly-stored|{}|{} of {}", unit, stored, joined.len());
+            stored
+        })
+    };
     // #4155 — `reasons` are (file, case, text) as the runner read them; a
     // failed case takes its own, else its file's (a suite that died before
     // any case ran), else the unit's (an empty file and case name).
@@ -1016,31 +1053,12 @@ fn run_nightly(args: &[String]) -> Result<i32, String> {
         // #4033 — claim this unit's slice of the run's index space first, so
         // concurrent units never mint the same name (fetch_add is the claim).
         let idx_base = werk_test::claim_index_base(&expected_total, joined.len());
-        let stored = post_test_results(&mint_role, &card, &trace, &joined, run_epoch_ms, idx_base, &reason_of);
-        stored_total.fetch_add(stored, Ordering::SeqCst);
         unregistered_total.fetch_add(unregistered, Ordering::SeqCst);
-        // #4145 — the run's own record of what it posted, one line per case,
-        // so the census is "registry minus these" and never a ledger walk.
-        // #4247 — the result rides with the identity. Without it the log had a
-        // result per SUITE and an identity per TEST, two units that cannot be
-        // compared; the census below reads this same line.
-        for (c, _, registered) in &joined {
-            // #4271 — four fields now. The case's own name is its identity; the
-            // registered row it answers for is a SUFFIX of that name, so the
-            // line carries the suffix's byte LENGTH rather than a second copy
-            // of the name. A second copy is a second record of one fact, and
-            // two records that must agree is the defect this card exists to
-            // kill. A name cannot be swallowed by the split because digits
-            // cannot, and an old three-field line still parses.
-            println!(
-                "nightly-case|{}|{}|{}|{}",
-                c.file_path,
-                c.test_name,
-                c.result,
-                werk_test::nightly_run::registered_suffix_len(&c.test_name, registered)
-            );
-        }
-        println!("nightly-stored|{}|{} of {}", unit, stored, joined.len());
+        // #4144 AC3 — the post goes to the poster; this worker starts its next
+        // unit now. Each failed case's reason travels with the job.
+        let reasons_owned: Vec<String> = joined.iter().map(|(c, _, _)| reason_of(c)).collect();
+        let expected = joined.len();
+        let _ = post_tx.send(werk_test::PostJob { unit: unit.to_string(), payload: (joined, reasons_owned, idx_base), expected });
     };
     // #3974 — npm lane: every registered TS/node package, full selection.
     // jest packages run jest; non-jest packages run their own `npm test`
@@ -1470,6 +1488,11 @@ fn run_nightly(args: &[String]) -> Result<i32, String> {
         .map(|(k, v)| (k.as_str(), v.as_str()))
         .collect();
     emit_spine("test.execution.completed", &role, &card, &trace, &execution_refs);
+    // #4144 AC3 — every queued unit post lands before the run counts what it stored
+    drop(post_tx);
+    let poster_wait = std::time::Instant::now();
+    stored_total.fetch_add(poster.join().unwrap_or(0), Ordering::SeqCst);
+    println!("nightly: poster drained in {} ms after the last unit (#4144)", poster_wait.elapsed().as_millis());
     let writeback_started = std::time::Instant::now();
     post_suite_run(&mint_role, &card, &trace, plan_source, crates.len(), failed_count,
         execution_duration_ms, outcome.label());
