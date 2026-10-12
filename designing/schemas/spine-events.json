@@ -5517,6 +5517,24 @@
         "trace_id": "Werk trace join key"
       }
     },
+    "test.scope.nothing": {
+      "producer": "tests",
+      "about": "TestResult",
+      "category": "fact",
+      "version": "1",
+      "vertebra": "proving",
+      "source": "werk-test",
+      "description": "A changed file on a card runs nothing: no unit claims it and no test names it (a script no test reads, a plist). Named on the card so a silent pass is visible. #4198.",
+      "keys": [
+        "path"
+      ],
+      "fields": {
+        "card_id": "Card whose diff holds the file",
+        "path": "The changed file that runs nothing",
+        "role": "Acting role",
+        "trace_id": "Werk trace join key"
+      }
+    },
     "test.scoped": {
       "producer": "tests",
       "about": "TestResult",

@@ -116,11 +116,21 @@ pub fn scope_unit_names(
     }
     let mut names: BTreeSet<String> = BTreeSet::new();
     for f in changed {
-        if scope_irrelevant(f) {
-            continue;
+        // #4198 — a file inside a unit belongs to that unit before any
+        // irrelevant rule: a crate's Cargo.lock, a test fixture (.txt) or a
+        // crate living under designing/ (#4491) ran NOTHING, because the
+        // extension or directory rule fired first.
+        // A unit's prose (README.md, a diagram) still runs nothing; its test
+        // data (tests/fixtures/*.txt) is an input.
+        let prose = [".md", ".html", ".png", ".jpg", ".jpeg", ".gif", ".svg", ".pdf"].iter().any(|e| f.ends_with(e))
+            || (f.ends_with(".txt") && !f.contains("/tests/"));
+        if !prose {
+            if let Some(u) = units.iter().find(|u| f.starts_with(&format!("{}/", u.dir))) {
+                names.insert(u.name.clone());
+                continue;
+            }
         }
-        if let Some(u) = units.iter().find(|u| f.starts_with(&format!("{}/", u.dir))) {
-            names.insert(u.name.clone());
+        if scope_irrelevant(f) {
             continue;
         }
         // #4173 — platform/services/shared/ is not a crate: its files are
@@ -168,7 +178,9 @@ pub fn scope_unit_names(
         // FULL. Deliberately NOT scope_irrelevant — these are real tests and
         // irrelevant would silently skip them. Other proving/ paths stay on
         // the loud FULL escape (the unmapped defense is untouched).
-        if f.starts_with("proving/flows/") {
+        // #4198 — the playwright config decides how every ui flow runs: it
+        // scopes to the flows lane like the specs do (refused #4358 as unmapped).
+        if f.starts_with("proving/flows/") || f.starts_with("playwright.config.") {
             names.insert("ui-flows".to_string());
             continue;
         }
