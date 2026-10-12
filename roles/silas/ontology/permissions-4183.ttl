@@ -376,35 +376,13 @@ chorus:permission-jeff-security a chorus:Permission ;
 
 # ── #4204 — logging in, and nothing more ────────────────────────────────────
 #
-# Each role may write its own Session rows into urn:chorus:domains:identity.
-# That graph holds logins only; Principals, Credentials and Permission rows stay
-# in urn:chorus:domains:security, which none of these three rows opens. Measured
-# 2026-09-18 07:36: wren and kade were refused 403 at /v1/identity/sessions
-# because the only grant that would have let them log in was Write on the
-# security graph — i.e. the power to rewrite who exists, handed out so a pane
-# could start. Permission is graph-scoped (agent, accessTo, mode), so a narrow
-# grant only became possible once Sessions had a graph of their own.
-
-chorus:permission-silas-identity a chorus:Permission ;
-    rdfs:label "silas may write urn:chorus:domains:identity" ;
-    chorus:agent chorus:principal-silas ;
-    chorus:accessTo "urn:chorus:domains:identity"^^xsd:anyURI ;
-    chorus:mode acl:Write ;
-    chorus:ownedBy chorus:principal-silas .
-
-chorus:permission-wren-identity a chorus:Permission ;
-    rdfs:label "wren may write urn:chorus:domains:identity" ;
-    chorus:agent chorus:principal-wren ;
-    chorus:accessTo "urn:chorus:domains:identity"^^xsd:anyURI ;
-    chorus:mode acl:Write ;
-    chorus:ownedBy chorus:principal-wren .
-
-chorus:permission-kade-identity a chorus:Permission ;
-    rdfs:label "kade may write urn:chorus:domains:identity" ;
-    chorus:agent chorus:principal-kade ;
-    chorus:accessTo "urn:chorus:domains:identity"^^xsd:anyURI ;
-    chorus:mode acl:Write ;
-    chorus:ownedBy chorus:principal-kade .
+# No Permission row opens urn:chorus:domains:identity. Every class there
+# (Session, SessionRun, Presence) carries ownedBy, so a role creates its own
+# rows (the door stamps it as owner) and edits only those, with no grant at all.
+# The three Write rows that stood here (2026-09-18) were meant as "each role
+# may write its own Session rows", but a Permission is graph-wide and overrides
+# the owner check, so they let every role edit everyone's logins, Jeff's
+# included (Wren, 2026-10-12 08:17). Retired through the ledger, card 4204.
 
 # #4229 — kade writes the pipelines graph. Measured by Wren 2026-09-20: he owns
 # 120 of its 130 rows and could not write it, so the live PipelineRun check
