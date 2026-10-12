@@ -466,7 +466,7 @@ async function gate(req: Request, res: Response, next: NextFunction): Promise<un
   const authed = await isAuthed(req);
   const toPublic = authed ? null : lanRedirect(req.headers, req.ip || req.socket.remoteAddress || '', req.originalUrl, CLEARING_PUBLIC_URL);
   if (toPublic) {
-    if (req.method === 'GET') return res.redirect(toPublic);
+    if (req.method === 'GET' && !req.path.startsWith('/api/')) return res.redirect(toPublic);
     return res.status(401).json({ error: 'sign-in required', signIn: toPublic });
   }
   // Both auth paths feed the #3667 gateDecision policy, which owns the
@@ -502,7 +502,9 @@ async function gate(req: Request, res: Response, next: NextFunction): Promise<un
  */
 function sendToDoor(req: Request, res: Response): unknown {
   const commonDoor = process.env.CHORUS_SIGNIN_URL || '';
-  if (req.method !== 'GET') return res.status(401).json({ error: 'sign-in required', signIn: commonDoor || null });
+  // an API read is a fetch from a page, not a page load: it gets 401 + where to
+  // sign in, never a redirect to an HTML door it cannot follow (#4412 run 15)
+  if (req.method !== 'GET' || req.path.startsWith('/api/')) return res.status(401).json({ error: 'sign-in required', signIn: commonDoor || null });
   if (!commonDoor) {
     return res.status(503).send(authShell(
       'The sign-in door isn’t configured, so nobody can sign in right now. The room itself is fine.', ''));

@@ -730,11 +730,11 @@ describe('server — HEIC upload path', () => {
 });
 
 describe('server — auth middleware edge cases', () => {
-  test('tunneled /api/stream without token is not served (#3667: read pair opened to token holders; #4412: 503 with no door)', async () => {
+  test('tunneled /api/stream without token is not served (#3667: read pair opened to token holders; #4412: an API read gets 401, never the door page)', async () => {
     const r = await call('/api/stream', {
       headers: { 'cf-connecting-ip': '1.2.3.4', 'cf-ray': 'abc' },
     });
-    expect(r.status).toBe(503);
+    expect(r.status).toBe(401);
   });
 
   test('tunneled /api/commands/kade also blocked', async () => {
