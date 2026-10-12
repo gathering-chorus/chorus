@@ -4115,6 +4115,12 @@ pub struct Finished {
     pub code: Option<i32>,
     pub success: bool,
     pub timed_out: bool,
+    /// #4128 — what the unit left running in its process group after the
+    /// leader exited, as "<command> (pid N, up <etime>)", reaped before return.
+    pub strays: Vec<String>,
+    /// #4128 — strays still alive after the reap (nothing the runner can do
+    /// about them; named so they are found now, not with ps a week later).
+    pub unreaped: Vec<String>,
 }
 
 /// #4030 — run a child to completion OR a wall-clock deadline, in its own
@@ -4136,20 +4142,56 @@ pub fn run_with_deadline(
     loop {
         match child.try_wait() {
             Ok(Some(status)) => {
-                return Ok(Finished { code: status.code(), success: status.success(), timed_out: false })
+                // #4128 — a leader that exits normally can leave its background
+                // children in the group: 27 test-share-path-prefix runs from
+                // 09-25 to 10-08 each left an http.server and a share guard
+                // running for up to 17 days. Anything still in the group is a stray.
+                let (strays, unreaped) = reap_group(pid);
+                return Ok(Finished { code: status.code(), success: status.success(), timed_out: false, strays, unreaped });
             }
             Ok(None) => {
                 if std::time::Instant::now() >= deadline {
                     kill_group(pid);
                     let _ = child.kill();
                     let _ = child.wait();
-                    return Ok(Finished { code: None, success: false, timed_out: true });
+                    let unreaped = group_members(pid);
+                    return Ok(Finished { code: None, success: false, timed_out: true, strays: Vec::new(), unreaped });
                 }
                 std::thread::sleep(std::time::Duration::from_millis(250));
             }
             Err(e) => return Err(e.to_string()),
         }
     }
+}
+
+/// #4128 — the live members of process group `pgid`, as
+/// "<command> (pid N, up <etime>)". Empty when the group is gone.
+pub fn group_members(pgid: u32) -> Vec<String> {
+    let out = std::process::Command::new("ps").args(["-axo", "pid=,pgid=,etime=,command="]).output();
+    let Ok(out) = out else { return Vec::new() };
+    let me = std::process::id();
+    String::from_utf8_lossy(&out.stdout)
+        .lines()
+        .filter_map(|l| {
+            let mut it = l.split_whitespace();
+            let (pid, g, etime) = (it.next()?, it.next()?, it.next()?);
+            let cmd: Vec<&str> = it.collect();
+            let pid: u32 = pid.parse().ok()?;
+            (g.parse::<u32>().ok()? == pgid && pid != me).then(|| format!("{} (pid {}, up {})", cmd.join(" "), pid, etime))
+        })
+        .collect()
+}
+
+/// #4128 — kill whatever a finished unit left in its group; return
+/// (what was there, what is still alive after the kill).
+pub fn reap_group(pgid: u32) -> (Vec<String>, Vec<String>) {
+    let strays = group_members(pgid);
+    if strays.is_empty() {
+        return (strays, Vec::new());
+    }
+    kill_group(pgid);
+    std::thread::sleep(std::time::Duration::from_millis(200));
+    (strays, group_members(pgid))
 }
 
 /// SIGKILL a whole process group (pgid == the leader's pid after
@@ -4195,6 +4237,54 @@ mod deadline_4030 {
             String::from_utf8_lossy(&left.stdout).trim().is_empty(),
             "process group survivors: {}", String::from_utf8_lossy(&left.stdout)
         );
+    }
+
+    /// #4128 — a unit that EXITS NORMALLY but leaves a background child: the
+    /// 27 test-share-path-prefix leftovers (09-25..10-08) were exactly this.
+    /// The child is reaped and named. Negative proof: before the reap, the
+    /// child is alive (the old code returned here and left it for days).
+    #[test]
+    fn a_unit_that_exits_leaving_a_child_has_the_child_reaped_and_named() {
+        // a duration no other run uses, so pgrep sees only this test's child
+        let nonce = format!("{}.{}", 700, std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).unwrap().subsec_nanos());
+        let mut cmd = std::process::Command::new("bash");
+        cmd.args(["-c", &format!("sleep {} & exit 0", nonce)])
+            .stdout(std::process::Stdio::null())
+            .stderr(std::process::Stdio::null());
+        let fin = run_with_deadline(&mut cmd, std::time::Duration::from_secs(10)).expect("spawn");
+        assert!(fin.success && !fin.timed_out, "the unit itself passed");
+        assert_eq!(fin.strays.len(), 1, "{:?}", fin.strays);
+        assert!(fin.strays[0].contains(&format!("sleep {}", nonce)), "named: {:?}", fin.strays);
+        assert!(fin.strays[0].contains("up "), "with its age: {:?}", fin.strays);
+        assert!(fin.unreaped.is_empty(), "{:?}", fin.unreaped);
+        let left = std::process::Command::new("pgrep").args(["-f", &format!("sleep {}", nonce)]).output().unwrap();
+        assert!(String::from_utf8_lossy(&left.stdout).trim().is_empty(), "the child is gone");
+    }
+
+    #[test]
+    fn group_members_sees_a_live_child_until_the_group_is_killed() {
+        // the negative proof for reap_group: the state it exists to catch is reachable
+        let nonce = format!("{}.{}", 701, std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).unwrap().subsec_nanos());
+        use std::os::unix::process::CommandExt;
+        let mut c = std::process::Command::new("bash");
+        c.args(["-c", &format!("sleep {} & exit 0", nonce)]).process_group(0);
+        let mut ch = c.spawn().unwrap();
+        let pg = ch.id();
+        ch.wait().unwrap();
+        let before = group_members(pg);
+        assert!(before.iter().any(|m| m.contains(&nonce)), "a leader's exit leaves the child alive: {:?}", before);
+        let (strays, unreaped) = reap_group(pg);
+        assert_eq!(strays.len(), 1);
+        assert!(unreaped.is_empty());
+        assert!(group_members(pg).is_empty());
+    }
+
+    /// A clean unit reports no strays.
+    #[test]
+    fn a_unit_with_no_children_reports_no_strays() {
+        let mut ok = std::process::Command::new("true");
+        let fin = run_with_deadline(&mut ok, std::time::Duration::from_secs(5)).expect("spawn");
+        assert!(fin.strays.is_empty() && fin.unreaped.is_empty());
     }
 
     /// Control: a unit that finishes inside the cap reports its own exit.

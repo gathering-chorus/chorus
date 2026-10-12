@@ -1644,7 +1644,10 @@ fn run_bats_cases(werk: &str, suite: &str) -> (bool, Vec<(String, String)>, Stri
             cmd.stdout(f).stderr(ferr);
             werk_test::run_with_deadline(&mut cmd, std::time::Duration::from_secs(timeout_secs))
         })
-        .map(|fin| (fin.code, fin.success, fin.timed_out));
+        .map(|fin| {
+            report_strays(suite, &fin);
+            (fin.code, fin.success, fin.timed_out)
+        });
     match outcome {
         Ok((code, success, timed_out)) => {
             let mut text = std::fs::read_to_string(&out_path).unwrap_or_default();
@@ -2370,6 +2373,20 @@ fn run_jest_project(werk: &str, pkg: &str, max_workers: Option<usize>, project: 
     }
 }
 
+/// #4128 — name what a unit left running: reaped strays and any that survived
+/// the reap, one lane line each (`nightly-stray|<unit>|reaped|<what>`), so a
+/// leak is reported the night it happens.
+fn report_strays(unit: &str, fin: &werk_test::Finished) {
+    for s in &fin.strays {
+        println!("nightly-stray|{}|reaped|{}", unit, s);
+        eprintln!("!! {} left a process running — reaped: {}", unit, s);
+    }
+    for s in &fin.unreaped {
+        println!("nightly-stray|{}|STILL RUNNING|{}", unit, s);
+        eprintln!("!! {} left a process the runner could not stop: {}", unit, s);
+    }
+}
+
 /// #4030 — run one npm-side unit under `unit_timeout()`, output captured to
 /// files (wait on child exit, never pipe-EOF). Returns (ok, stdout, stderr);
 /// None when the child could not be spawned. A capped unit is `ok=false` with
@@ -2386,6 +2403,7 @@ fn run_capped_unit(cmd: &mut Command, label: &str) -> Option<(bool, String, Stri
         cmd.stdout(f).stderr(e);
         werk_test::run_with_deadline(cmd, timeout).ok()
     })?;
+    report_strays(label, &fin);
     let stdout = std::fs::read_to_string(&out_path).unwrap_or_default();
     let mut stderr = std::fs::read_to_string(&err_path).unwrap_or_default();
     let _ = std::fs::remove_file(&out_path);
