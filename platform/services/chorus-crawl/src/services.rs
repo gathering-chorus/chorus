@@ -63,8 +63,8 @@ pub struct UnitMeta {
     pub never_exited: bool,
     /// from `launchctl print-disabled`: None = not looked at
     pub disabled: Option<bool>,
-    /// #4081 — when the job's log was last written (seconds since the epoch):
-    /// the run's own trace on disk. launchctl print carries no time.
+    /// #4081 — when the job's log was last written (seconds since the epoch).
+    /// Not the last run: a job can run without writing it (read with runs).
     pub log_written: Option<u64>,
 }
 
@@ -454,7 +454,7 @@ pub const OWNED_FIELDS: &[&str] = &[
     "label", "launchdLabel", "onMachine", "runState", "binaryPath", "runsService", "external", "evidenceState",
     "listensOn", "deployedCommit", "cdhash", "sourcePath", "lastExitCode",
     // #4081 — the schedule
-    "scheduleKind", "scheduleSpec", "intervalSecs", "logPath", "runCount", "enabled",
+    "scheduleKind", "scheduleSpec", "intervalSecs", "logPath", "runCount", "enabled", "logWrittenAt",
 ];
 
 /// The mapping value that names a unit as ours with no design behind it
@@ -505,7 +505,8 @@ pub fn desired_row(machine: &str, u: &Unit, mapping: &[(String, String)], ts: &s
             f.push(("logPath".into(), p.clone()));
         }
         if let Some(t) = m.log_written {
-            f.push(("lastRunAt".into(), crate::iso_from_secs(t)));
+            // the log's write time, named as that: a job can run without writing its log
+            f.push(("logWrittenAt".into(), crate::iso_from_secs(t)));
         }
         if let Some(n) = m.runs {
             f.push(("runCount".into(), n.to_string()));

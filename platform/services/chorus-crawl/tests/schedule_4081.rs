@@ -82,13 +82,14 @@ fn negative_proof_never_exited_writes_no_exit_code_and_unlooked_writes_no_runs()
 }
 
 #[test]
-fn last_run_is_the_log_write_time_and_absent_without_a_log() {
+fn the_log_write_time_is_named_as_that_never_as_the_last_run() {
     let p = parse_json(r#"{"StartInterval":300,"StandardOutPath":"/tmp/c.log"}"#).unwrap();
     let mut m = plist_meta(&p);
     m.log_written = Some(1_791_763_200);
     let r = desired_row("library", &job(m.clone(), Some(0)), &[], "t");
-    assert!(r.fields.iter().any(|(f, v)| f == "lastRunAt" && v == "2026-10-12T00:00:00Z"));
+    assert!(r.fields.iter().any(|(f, v)| f == "logWrittenAt" && v == "2026-10-12T00:00:00Z"));
+    assert!(!r.fields.iter().any(|(f, _)| f == "lastRunAt"), "a log write is not a run");
     m.log_written = None;
     let r = desired_row("library", &job(m, Some(0)), &[], "t");
-    assert!(!r.fields.iter().any(|(f, _)| f == "lastRunAt"), "no log, no last-run guess");
+    assert!(!r.fields.iter().any(|(f, _)| f == "logWrittenAt" || f == "lastRunAt"), "no log, no guess");
 }

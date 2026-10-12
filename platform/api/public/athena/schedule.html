@@ -17,6 +17,6 @@ var s=document.createElement('script');s.src=window.basePath('/js/base-path.js')
 <div id="main"><p class="empty">loading live from the model&hellip;</p></div>
 </div>
 <style>table.rows{border-collapse:collapse;font-size:13px}table.rows th,table.rows td{border-bottom:1px solid var(--line,#ddd);padding:4px 8px;text-align:left;vertical-align:top}.table-scroll{overflow-x:auto}</style>
-<script>window.ROWS_KIND="ScheduledJob";window.ROWS_TITLE="Schedule — what runs when";window.ROWS_SORT="label";window.ROWS_COLUMNS=["label","onMachine","scheduleKind","scheduleSpec","enabled","runCount","lastExitCode","logPath","lastObserved"];</script>
+<script>window.ROWS_KIND="ScheduledJob";window.ROWS_TITLE="Schedule — what runs when";window.ROWS_SORT="label";window.ROWS_COLUMNS=["label","onMachine","scheduleKind","scheduleSpec","enabled","runCount","lastExitCode","logWrittenAt","logPath","lastObserved"];window.ROWS_HEADERS={logWrittenAt:"log last written",runCount:"runs",scheduleSpec:"schedule",lastExitCode:"last exit"};</script>
 <script src="rows.js"></script>
 </body></html>

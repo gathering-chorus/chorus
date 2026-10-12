@@ -32,7 +32,7 @@
     const cell = v => Array.isArray(v) ? v.map(esc).join('<br>') : esc(v === undefined || v === null ? '' : String(v));
     main.innerHTML =
       '<p class="meta">' + rows.length + ' rows · from <code>' + esc(m[1]) + '</code> · columns are the fields the door serves for ' + esc(kind) + '</p>' +
-      '<div class="table-scroll"><table class="rows"><thead><tr>' + cols.map(c => '<th>' + esc(c) + '</th>').join('') + '</tr></thead><tbody>' +
+      '<div class="table-scroll"><table class="rows"><thead><tr>' + cols.map(c => '<th>' + esc((window.ROWS_HEADERS || {})[c] || c) + '</th>').join('') + '</tr></thead><tbody>' +
       rows.map(r => '<tr>' + cols.map(c => '<td>' + cell(r[c]) + '</td>').join('') + '</tr>').join('') +
       '</tbody></table></div>';
   } catch (e) { fetchFailed(main, e); }
