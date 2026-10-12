@@ -738,6 +738,16 @@ def open_person_session(webid, tok):
         return None
 
 
+def sign_in_session(old, webid, tok):
+    """#4503 — one browser, one session. A sign-in that carries this browser's
+    earlier cookie for the same person closes that Session first, so signing in
+    again replaces it instead of leaving it open beside the new one. Returns the
+    new sid, or None when no row was written."""
+    if replaced_sid(old, webid):
+        close_person_session(old)
+    return open_person_session(webid, tok)
+
+
 def close_person_session(claims):
     if not claims:
         return
@@ -967,10 +977,7 @@ Nothing is wrong with your account. Try again in a moment.</p>""")
                 return self._deny(502, "identity provider returned no WebID\n")
             # NOTE: the allow-set is NOT consulted here. Signing in always
             # succeeds; reach is decided per request, so revocation is immediate.
-            old = self._session_claims()
-            if replaced_sid(old, webid):
-                close_person_session(old)
-            sid = open_person_session(webid, tok)
+            sid = sign_in_session(self._session_claims(), webid, tok)
             cookie = self._session_cookie(sign_session(webid, COOKIE_KEY, sid=sid))
             # #3791 — validated, so a cross-host return works and an attacker's
             # host does not. The old check accepted any string starting with "/"

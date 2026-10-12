@@ -2134,11 +2134,39 @@ chorus:ServiceShape a sh:NodeShape ;
     sh:property [ sh:path chorus:status             ; sh:minCount 1 ; sh:in ( "exploring" "building" "operating" "retiring" ) ; chorus:exposure chorus:public ] ;
     sh:property [ sh:path chorus:asIs               ; sh:minCount 1 ; sh:datatype xsd:string ; chorus:exposure chorus:public ] ;
     sh:property [ sh:path chorus:toBe               ; sh:minCount 1 ; sh:datatype xsd:string ; chorus:exposure chorus:public ] ;
-    sh:property [ sh:path chorus:implementationPlan ; sh:minCount 1 ; sh:datatype xsd:string ; chorus:exposure chorus:secret ] ;
-    sh:property [ sh:path chorus:pathToClose        ; sh:minCount 1 ; sh:datatype xsd:string ; chorus:exposure chorus:internal ] ;
-    sh:property [ sh:path chorus:gaps               ; sh:minCount 1 ; sh:datatype xsd:string ; chorus:exposure chorus:internal ] ;
-    sh:property [ sh:path chorus:notInScope         ; sh:minCount 1 ; sh:datatype xsd:string ; chorus:exposure chorus:internal ] ;
-    sh:property [ sh:path chorus:hasDesignDoc       ; sh:minCount 1 ; sh:class chorus:Document ] .
+    sh:property [ sh:path chorus:implementationPlan ; sh:minCount 1 ; sh:datatype xsd:string ; chorus:exposure chorus:public ] ;
+    sh:property [ sh:path chorus:pathToClose        ; sh:minCount 1 ; sh:datatype xsd:string ; chorus:exposure chorus:public ] ;
+    sh:property [ sh:path chorus:gaps               ; sh:minCount 1 ; sh:datatype xsd:string ; chorus:exposure chorus:public ] ;
+    sh:property [ sh:path chorus:notInScope         ; sh:minCount 1 ; sh:datatype xsd:string ; chorus:exposure chorus:public ] ;
+    sh:property [ sh:path chorus:hasDesignDoc       ; sh:minCount 1 ; sh:class chorus:Document ] ;
+    # #4503 — ADR-029's consumer half, in the graph (Jeff 2026-10-12: the design uses the
+    # graph and the service template). overview is §2 Promise; the rest were prose only.
+    # §3 Consumers are the services that dependsOn this one (read inversely, never typed twice).
+    sh:property [ sh:path chorus:dependsOn          ; sh:class chorus:Service ; chorus:exposure chorus:public ] ;    # ADR-029 §3, from the consumer's side
+    sh:property [ sh:path chorus:contract           ; sh:datatype xsd:string ; chorus:exposure chorus:public ] ;  # ADR-029 §4, one per consumer, repeatable
+    sh:property [ sh:path chorus:validation         ; sh:maxCount 1 ; sh:datatype xsd:string ; chorus:exposure chorus:public ] ;  # ADR-029 §5
+    sh:property [ sh:path chorus:failureMode        ; sh:datatype xsd:string ; chorus:exposure chorus:public ] ;  # ADR-029 §6, repeatable
+    sh:property [ sh:path chorus:filesInScope       ; sh:datatype xsd:string ; chorus:exposure chorus:public ] ;  # ADR-029 §10, repeatable repo paths
+    sh:property [ sh:path chorus:reference          ; sh:datatype xsd:string ; chorus:exposure chorus:public ] .  # ADR-029 §11, repeatable: a card, ADR or DEC with the clause it is cited for
+    # #4503 (Wren 11:19): every design section is public. The pages sit behind the door,
+    # which already signs a reader in, and a design that reads "withheld" to Jeff is an
+    # empty design. Supersedes the 2026-08-27 tiers (#4010) for these fields.
+
+chorus:contract a owl:DatatypeProperty ;
+    rdfs:label "contract" ;
+    rdfs:comment "ADR-029 §4: one consumer's contract with this service: what it calls, what it gets back, each typed failure, the side effect. One value per consumer (#4503)." .
+chorus:validation a owl:DatatypeProperty ;
+    rdfs:label "validation" ;
+    rdfs:comment "ADR-029 §5: where this service validates a call before any side effect, and what a caller gets when validation fails (#4503)." .
+chorus:failureMode a owl:DatatypeProperty ;
+    rdfs:label "failure mode" ;
+    rdfs:comment "ADR-029 §6: one refusal class the service emits, matching a failure named in a contract (#4503)." .
+chorus:reference a owl:DatatypeProperty ;
+    rdfs:label "reference" ;
+    rdfs:comment "ADR-029 §11: a card, ADR or decision the design cites, with the clause it is cited for (#4503)." .
+chorus:filesInScope a owl:DatatypeProperty ;
+    rdfs:label "files in scope" ;
+    rdfs:comment "ADR-029 §10: a repo path this service's design governs (#4503)." .
 
 
 # --- Commitment (#4064/#4089) RETIRED 2026-10-01 (#4064 reopened). Jeff asked why
@@ -2252,7 +2280,7 @@ chorus:derivedFrom a owl:ObjectProperty ;
 
 chorus:dependsOn a owl:ObjectProperty ;
     rdfs:label "depends on" ;
-    rdfs:comment "A product or domain depends on another for its function — if the target is unavailable or broken, the source is degraded. Distinct from chorus:consumes (read-only data flow). Dependency implies lifecycle coupling." .
+    rdfs:comment "A product, domain or service depends on another for its function — if the target is unavailable or broken, the source is degraded. Between services it is ADR-029 §3: the consumers of a service are the services that depend on it (#4503). Distinct from chorus:consumes (read-only data flow). Dependency implies lifecycle coupling." .
 
 chorus:reads a owl:ObjectProperty ;
     rdfs:label "reads" ;
