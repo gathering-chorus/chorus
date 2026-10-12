@@ -35,6 +35,8 @@ setup() {
   # when the box is busy; a test brings its own load, or it reads the box.
   export NIGHTLY_LOAD_STUB=0.1
   # three probes, all refused: nothing listens on these loopback ports
+  # the Gathering app and Caddy checks refuse too (#4138 reopen): no test reads the live :3002/:3000
+  export HEALTH_GATHERING_URL=http://127.0.0.1:39494/ HEALTH_CADDY_URL=http://127.0.0.1:39495/
   export HEALTH_ENDPOINTS_FILE="$W/endpoints.txt"
   printf '%s\n' \
     "http://127.0.0.1:39491/health|fixture-a|refused a" \
@@ -106,6 +108,40 @@ STUB
   [[ "$output" == *"failure(s)"* ]] || return 1
   # the herd finding is a WARNING tier row: it lands in the JSON the pulse reads
   grep -q '"boot-herd: 1 interval LaunchAgent' "$W/health.json" || { cat "$W/health.json"; return 1; }
+}
+
+# #4138 reopen (Jeff "ok" 2026-10-12 14:58) — the 10-12 runs died with exit 7
+# near line 349: the Gathering-app and Caddy checks were bare $(curl) under
+# set -e, outside the guarded probe loop, and hard-wired to the live ports, so
+# this file never saw them refuse. Both now take a URL seam.
+@test "Gathering app and Caddy refused: each is named DOWN in the summary, the run never dies" {
+  run bash "$DEEP_HEALTH"
+  [ "$status" -eq 0 ] || { echo "$output"; return 1; }
+  [[ "$output" != *"DIED before summary"* ]] || { echo "$output"; return 1; }
+  [[ "$output" == *"gathering-app: 127.0.0.1:39494 returned 000"* ]] || { echo "$output"; return 1; }
+  [[ "$output" == *"caddy-edge: 127.0.0.1:39495 returned 000"* ]] || { echo "$output"; return 1; }
+}
+
+# Every command substitution that runs curl must carry its own || — under
+# set -e a refused port is otherwise the death of the whole run.
+# A statement continued with a trailing backslash is read as one line; inside
+# or after the substitution, any || keeps a refused port from ending the run.
+unguarded_curls() {
+  awk '{ if (buf == "") start = NR; buf = buf $0 }
+       /\\$/ { sub(/\\$/, "", buf); next }
+       { if (buf ~ /=\$\(curl / && buf !~ /\|\|/) print start ":" buf; buf = "" }' "$1"
+}
+
+@test "no curl assignment in deep-health is left without its own || guard" {
+  found=$(unguarded_curls "$DEEP_HEALTH")
+  [ -z "$found" ] || { echo "unguarded: $found"; return 1; }
+}
+
+@test "NEGATIVE PROOF: the guard check names an unguarded curl assignment" {
+  printf 'ok=$(curl -s http://x/) || ok=000\nalso=$(curl -s \\\n  http://x/ || echo 000)\nbad=$(curl -s http://x/ 2>/dev/null)\n' > "$W/sample.sh"
+  found=$(unguarded_curls "$W/sample.sh")
+  [[ "$found" == "4:bad="* ]] || { echo "got: $found"; return 1; }
+  [[ "$found" != *"ok="* && "$found" != *"also="* ]] || return 1
 }
 
 @test "deep-health syntax is valid bash" {

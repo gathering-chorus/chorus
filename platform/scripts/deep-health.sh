@@ -346,14 +346,21 @@ fi
 # --- 8. Gathering app reachable ---
 # Post #2122: Gathering lives on :3001; Caddy edge-proxy owns :3000. /health
 # returns 401 unauthorized by design (auth-gated), so check / for 200/301/302.
-GATHERING_CODE=$(curl -s --max-time 5 -o /dev/null -w '%{http_code}' http://localhost:3002/ 2>/dev/null)
+# #4138 — each curl carries its own || : a refused port under set -e killed the
+# whole run here (exit 7, 10-12). HEALTH_GATHERING_URL / HEALTH_CADDY_URL are
+# the hermetic test's seams.
+GATHERING_URL="${HEALTH_GATHERING_URL:-http://localhost:3002/}"
+GATHERING_AT="${GATHERING_URL#*://}"; GATHERING_AT="${GATHERING_AT%%/*}"
+GATHERING_CODE=$(curl -s --max-time 5 -o /dev/null -w '%{http_code}' "$GATHERING_URL" 2>/dev/null) || true
 if ! [[ "$GATHERING_CODE" =~ ^(200|204|301|302)$ ]]; then
-  FAILURES+=("gathering-app: localhost:3002 returned ${GATHERING_CODE:-000} — app down (post-#2122 moved from :3000 to :3002 when Caddy took :3000)")
+  FAILURES+=("gathering-app: ${GATHERING_AT} returned ${GATHERING_CODE:-000} — app down (post-#2122 moved from :3000 to :3002 when Caddy took :3000)")
 fi
 # Caddy edge-proxy (#2122) fronts :3000, routes /borg/* to chorus-api.
-CADDY_CODE=$(curl -s --max-time 5 -o /dev/null -w '%{http_code}' http://localhost:3000/ 2>/dev/null)
+CADDY_URL="${HEALTH_CADDY_URL:-http://localhost:3000/}"
+CADDY_AT="${CADDY_URL#*://}"; CADDY_AT="${CADDY_AT%%/*}"
+CADDY_CODE=$(curl -s --max-time 5 -o /dev/null -w '%{http_code}' "$CADDY_URL" 2>/dev/null) || true
 if ! [[ "$CADDY_CODE" =~ ^(200|204|301|302)$ ]]; then
-  FAILURES+=("caddy-edge: localhost:3000 returned ${CADDY_CODE:-000} — edge proxy down, inbound bookmarks broken")
+  FAILURES+=("caddy-edge: ${CADDY_AT} returned ${CADDY_CODE:-000} — edge proxy down, inbound bookmarks broken")
 fi
 
 # --- 9. Nudge delivery (post-#2808: ops-nudge wrapper, not bash nudge) ---
