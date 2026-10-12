@@ -894,15 +894,20 @@ fn build_unit(home: &Path, role: &str, card: u64, trace: &str, werk_s: &str, uni
 /// instead of being hand-deployed. Returns the count of (re)linked packages.
 /// (Open item flagged on #3169: build_shared_lib's cascade `npm install` fights a
 /// symlinked consumer when chorus-sdk actually changes — rare path, not resolved here.)
-pub fn ensure_node_modules(werk_s: &str, home: &Path) -> usize {
+pub fn ensure_node_modules(werk_s: &str, home: &Path) -> R<usize> {
     let mut linked = 0usize;
-    for pj in find_files(home, "package.json") {
-        let Some(canon_dir) = pj.parent() else { continue };
-        let canon_nm = canon_dir.join("node_modules");
+    // #3783 reopen — the packages are the package.json files git TRACKS in the
+    // werk, not every file on disk: walking canonical read 752,757 files (721,162
+    // in untracked platform/backups) and took 2m14s of a build that built nothing.
+    // git cannot list them → the build refuses; never a silent fall back to a walk.
+    let tracked = run("git", &["-C", werk_s, "ls-files", "--", "package.json", "*/package.json"])
+        .map_err(|e| format!("cannot list the werk's package.json files from git: {}", e))?;
+    for rel_pj in tracked.lines().map(str::trim).filter(|l| !l.is_empty()) {
+        let Some(rel) = Path::new(rel_pj).parent() else { continue };
+        let canon_nm = home.join(rel).join("node_modules");
         if !canon_nm.is_dir() {
             continue;
         }
-        let Ok(rel) = canon_dir.strip_prefix(home) else { continue };
         let werk_nm = Path::new(werk_s).join(rel).join("node_modules");
         if !werk_nm.parent().map(|p| p.is_dir()).unwrap_or(false) {
             continue; // package not present in the werk
@@ -919,7 +924,7 @@ pub fn ensure_node_modules(werk_s: &str, home: &Path) -> usize {
             linked += 1;
         }
     }
-    linked
+    Ok(linked)
 }
 
 /// The unit's name (crate / TS-package / shared-lib name) — the filter key for `only`.
@@ -983,7 +988,10 @@ pub fn build(card: u64, role: &str, home: &Path, werk_base: &Path, target: &str,
         // #3169 — node_modules ensure (werk only): symlink each werk package's node_modules
         // to canonical's complete tree so in-werk tsc resolves @types. Canonical builds from
         // its own real node_modules, so this is skipped for target=canonical.
-        let nm_linked = ensure_node_modules(&werk_s, home);
+        let nm_linked = ensure_node_modules(&werk_s, home).map_err(|e| {
+            jsonl(home, role, card, &trace, "build.refused", &fail_extra("package-list-unreadable"));
+            e
+        })?;
         jsonl(home, role, card, &trace, "node-modules.ensured", &format!(",\"linked\":{}", nm_linked));
         werk
     };

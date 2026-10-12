@@ -277,15 +277,63 @@ fn ensure_node_modules_replaces_partial_with_canonical_symlink() {
     // werk: same package, but a PARTIAL real node_modules (no @types/node)
     write(&werk, "platform/api/package.json", r#"{"name":"chorus-api","scripts":{"build":"tsc"}}"#);
     fs::create_dir_all(werk.join("platform/api/node_modules")).unwrap();
+    git_track(&werk, &["platform/api/package.json"]);
 
-    let n = ensure_node_modules(werk.to_str().unwrap(), &home);
+    let n = ensure_node_modules(werk.to_str().unwrap(), &home).unwrap();
     let werk_nm = werk.join("platform/api/node_modules");
     assert_eq!(n, 1, "relinked exactly the one package");
     assert!(werk_nm.is_symlink(), "werk node_modules is now a symlink, not the partial real dir");
     assert!(werk_nm.join("@types/node").exists(), "resolves canonical's @types/node through the symlink");
 
     // idempotent: a second run is a no-op (already the right symlink)
-    assert_eq!(ensure_node_modules(werk.to_str().unwrap(), &home), 0, "idempotent — no relink on re-run");
+    assert_eq!(ensure_node_modules(werk.to_str().unwrap(), &home).unwrap(), 0, "idempotent — no relink on re-run");
+}
+
+/// A git repo at `dir` tracking `files` (the werk is a worktree; git is what lists its packages).
+fn git_track(dir: &Path, files: &[&str]) {
+    let g = |args: &[&str]| {
+        let ok = std::process::Command::new("git").arg("-C").arg(dir).args(args).output().unwrap().status.success();
+        assert!(ok, "git {:?}", args);
+    };
+    g(&["init", "-q"]);
+    let mut add = vec!["add", "--"];
+    add.extend_from_slice(files);
+    g(&add);
+}
+
+// #3783 reopen — #4004's build spent 2m14s walking 752,757 files (721,162 in
+// untracked platform/backups) to find 13 package.json files, then built nothing.
+// The packages are the ones git tracks in the werk.
+#[test]
+fn ensure_node_modules_reads_only_the_packages_git_tracks() {
+    let root = fixture("ensure-nm-tracked");
+    let home = root.join("chorus");
+    let werk = root.join("chorus-werk/kade-3783");
+    for base in [&home, &werk] {
+        write(base, "platform/api/package.json", r#"{"name":"chorus-api"}"#);
+        // an untracked copy of a package inside a backup folder
+        write(base, "platform/backups/old/package.json", r#"{"name":"old"}"#);
+    }
+    fs::create_dir_all(home.join("platform/api/node_modules")).unwrap();
+    fs::create_dir_all(home.join("platform/backups/old/node_modules")).unwrap();
+    git_track(&werk, &["platform/api/package.json"]);
+
+    assert_eq!(ensure_node_modules(werk.to_str().unwrap(), &home).unwrap(), 1);
+    assert!(werk.join("platform/api/node_modules").is_symlink(), "the tracked package is linked");
+    // negative proof: the old walk would have linked this one too
+    assert!(!werk.join("platform/backups/old/node_modules").exists(), "an untracked package.json is never read");
+}
+
+#[test]
+fn ensure_node_modules_refuses_when_git_cannot_list_the_werk() {
+    let root = fixture("ensure-nm-nogit");
+    let home = root.join("chorus");
+    let werk = root.join("not-a-repo");
+    write(&werk, "platform/api/package.json", "{}");
+    fs::create_dir_all(home.join("platform/api/node_modules")).unwrap();
+    let e = ensure_node_modules(werk.to_str().unwrap(), &home).unwrap_err();
+    assert!(e.contains("cannot list"), "{e}");
+    assert!(!werk.join("platform/api/node_modules").exists(), "no fall back to a walk");
 }
 
 #[test]
