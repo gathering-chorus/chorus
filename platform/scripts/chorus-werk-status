@@ -488,8 +488,63 @@ def dagu_land_line(card, role):
     if not lands:
         return None
     status, step = dagu_summary(lands[0])
+    model = athena_result(lands[0]) if status == "succeeded" else None
     return (f"#{card} [{role}] v2 land {status}" + (f" at {step}" if step else "")
+            + (f" · athena {model}" if model else "")
             + f" · {len(lands)} land{'s' if len(lands) != 1 else ''} · dagu {lands[0].get('dagRunId', '?')}")
+
+
+ATHENA_RESULT = re.compile(r"athena-land #(\d+): result=(\w+)")
+
+
+def athena_result(land):
+    """#4186 reopen — the model half of a land: athena-land's result line in the
+    land's success handler ("deployed", "failed", "none"), or None when there is
+    no handler output yet. #4513's model failed at 12:05 on 2026-10-13 and the
+    card read "landed"; only that handler's log said otherwise."""
+    h = land.get("onSuccess")
+    if h is None:
+        try:
+            d = dagu_get(f"/api/v1/dag-runs/{land.get('name', DAGU_DAG + '-land')}/{land.get('dagRunId')}")
+        except Exception:
+            return None
+        h = land["onSuccess"] = (d.get("dagRunDetails") or {}).get("onSuccess") or {}
+    try:
+        with open(h.get("stdout") or "") as f:
+            text = f.read()
+    except OSError:
+        text = ""
+    found = ATHENA_RESULT.findall(text)
+    if found:
+        return found[-1][1]
+    # athena-land before #4186 printed no result line and always exited 0
+    if "did not finish clean" in text or ": scope failed for " in text:
+        return "failed"
+    # an older athena-land printed no result line: its red handler still says failed
+    return "failed" if h.get("statusLabel") == "failed" else None
+
+
+def athena_failed_lands(wip_ids, now=None):
+    """Lands in the last day whose model failed, newest per card, for cards no
+    longer on the WIP list: a landed card leaves WIP, so its failed model would
+    otherwise be on no line at all."""
+    now = now or time.time()
+    try:
+        runs = dagu_get("/api/v1/dag-runs", f"name={DAGU_DAG}-land&fromDate={int(now) - 86400}")["dagRuns"]
+    except Exception:
+        return []
+    seen, out = set(), []
+    for r in sorted(runs, key=lambda r: parse_ts(r.get("startedAt") or r.get("queuedAt")) or 0, reverse=True):
+        m = re.search(r"CARD=\"?(\d+)", r.get("params") or "")
+        if r.get("name", f"{DAGU_DAG}-land") != f"{DAGU_DAG}-land" or not m or m.group(1) in seen:
+            continue
+        seen.add(m.group(1))
+        if m.group(1) in wip_ids or r.get("statusLabel") != "succeeded":
+            continue
+        if athena_result(r) == "failed":
+            role = re.search(r"ROLE=\"?([\w-]+)", r.get("params") or "")
+            out.append((m.group(1), role.group(1).lower() if role else "?"))
+    return out
 
 
 def run_test_events(trace, since_s):
@@ -655,6 +710,9 @@ def card_line(card, role, runs, lands, places, now=None):
         where = "rejected at the go"
     elif status == "succeeded":
         where = "landed" if land else "go given, land not queued"
+        # #4186 reopen — the model half rides the card's own line
+        if land and athena_result(land) == "failed":
+            where = "landed · athena failed"
     else:
         where = f"{pre}{status} at {word}" if word else f"{pre}{status}"
     live = status in ("queued", "running", "waiting")
@@ -761,6 +819,14 @@ def main():
         else:
             print(f"#{cid} {who:<6} no run yet" + (" (dagu unreadable)" if v2 is None else ""))
         shown += 1
+    # #4186 reopen — a card that landed but whose model did not deploy stays on the board view
+    for cid, who in athena_failed_lands({str(c) for c, _ in wip}):
+        if role and who != role:
+            continue
+        runs = dagu_runs(cid)
+        if runs:
+            print(card_line(cid, who, runs, dagu_runs(cid, f"{DAGU_DAG}-land"), places))
+            shown += 1
     if shown == 0:
         print("no WIP cards" + (f" for {role}" if role else ""))
 

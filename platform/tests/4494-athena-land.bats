@@ -63,11 +63,36 @@ scope() { printf '#!/usr/bin/env bash\necho "$@" >> "%s/scoped"\n%s\n' "$T" "$1"
   [ ! -e "$T/calls" ]
 }
 
-@test "a failed scope never reads as no model, and never fails the land" {
+@test "a failed scope never reads as no model: result=failed, exit 1 (#4186)" {
   scope 'echo boom >&2; exit 3'
   run "$AL" 77 kade
-  [ "$status" -eq 0 ]
+  [ "$status" -eq 1 ]
   [[ "$output" == *"scope failed"* ]] || false
   [[ "$output" != *"no model source"* ]] || false
+  [[ "$(tail -1 <<<"$output")" == "athena-land #77: result=failed" ]] || false
   [ ! -e "$T/calls" ]
+}
+
+# #4186 reopen — #4513's model failed at 12:05 on 2026-10-13 and its land read
+# "landed": the result line is what /cws puts on the card's own line.
+@test "a model run that finishes ends result=deployed, exit 0" {
+  scope 'echo designing/model/x.ttl'
+  run "$AL" 77 kade
+  [ "$status" -eq 0 ]
+  [[ "$(tail -1 <<<"$output")" == "athena-land #77: result=deployed" ]] || false
+}
+
+@test "NEGATIVE PROOF: a model run that fails ends result=failed, exit 1 — never deployed" {
+  scope 'echo designing/model/x.ttl'
+  printf '#!/usr/bin/env bash\necho "$@" >> "%s/calls"\nexit 1\n' "$T" > "$T/mcp-call"
+  run "$AL" 77 kade
+  [ "$status" -eq 1 ]
+  [[ "$(tail -1 <<<"$output")" == "athena-land #77: result=failed" ]] || false
+  [[ "$output" != *"result=deployed"* ]] || false
+}
+
+@test "no model source ends result=none" {
+  scope 'true'
+  run "$AL" 77 kade
+  [[ "$(tail -1 <<<"$output")" == "athena-land #77: result=none" ]] || false
 }

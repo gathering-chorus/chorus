@@ -9,9 +9,11 @@
 # chorus-mcp's werk-merge case; v2's land calls werk-merge directly, so #4496's
 # model never reached the store (Wren, 2026-10-10 22:48).
 #
-# It never fails the land: the card is already accepted when this runs, and a
-# failed model run reports itself (chorus_athena nudges the role and Jeff).
-# Exit 0 always; what happened is the last line it prints.
+# It never holds the land (#4177): the card is already accepted when this runs.
+# #4186 reopen — but a failed model run must not read as landed: #4513's model
+# failed at 12:05 on 2026-10-13 and only this handler's log said so. The last
+# line is "athena-land #<card>: result=<deployed|failed|none>", which /cws puts
+# on the card's own line, and a failure exits 1 so dagu marks the handler red.
 set -uo pipefail
 
 card="${1:?usage: athena-land <card> <role>}"
@@ -25,22 +27,27 @@ git -C "$home" fetch --quiet origin main 2>/dev/null || true
 sha="$(git -C "$home" log origin/main -1 --format=%H --grep="^#${card} (${role})" --grep="^${role}: #${card} ")"
 if [ -z "$sha" ]; then
   echo "athena-land #${card}: no landed commit for #${card} (${role}) on origin/main — model not deployed"
+  echo "athena-land #${card}: result=none"
   exit 0
 fi
 
 if ! scope="$("$scope_bin" scope "$home" "${sha}^..${sha}" 2>&1)"; then
   echo "athena-land #${card}: scope failed for ${sha:0:12} — model not deployed: ${scope:0:200}"
-  exit 0
+  echo "athena-land #${card}: result=failed"
+  exit 1
 fi
 if [ -z "$scope" ]; then
   echo "athena-land #${card}: ${sha:0:12} carries no model source — nothing for athena"
+  echo "athena-land #${card}: result=none"
   exit 0
 fi
 
 echo "athena-land #${card}: ${sha:0:12} carries $(printf '%s\n' "$scope" | grep -c .) model file(s) — running chorus_athena canonical"
 if "$mcp_call" "$role" chorus_athena "{\"role\":\"${role}\",\"card_id\":${card},\"target\":\"canonical\",\"landed_commit\":\"${sha}\"}"; then
   echo "athena-land #${card}: chorus_athena canonical finished"
-else
-  echo "athena-land #${card}: chorus_athena canonical did not finish clean — it reports its own failure"
+  echo "athena-land #${card}: result=deployed"
+  exit 0
 fi
-exit 0
+echo "athena-land #${card}: chorus_athena canonical did not finish clean"
+echo "athena-land #${card}: result=failed"
+exit 1
