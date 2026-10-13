@@ -1830,8 +1830,12 @@ pub fn run(args: &[String]) -> i32 {
         }
         "relogin" => match role_arg(1) { Ok(r) => relogin(&ctx, &r), Err(c) => c },
         // #4328 — the UserPromptSubmit hook, every turn; never refused, never slow
-        "seen" => match role_arg(1) { Ok(r) => seen(&ctx, &r), Err(c) => c },
-        "seen-write" => match role_arg(1) {
+        // #4520 reopen 1 — the per-turn stamp takes the role by name. Reading
+        // the whole roles door on every prompt (and exiting 2 when it was slow)
+        // stopped every one of Abby's prompts on 2026-10-13; revocation, which
+        // may stop a prompt, reads its own row and fails open on a slow door.
+        "seen" => match name_arg(1) { Ok(r) => seen(&ctx, &r), Err(c) => c },
+        "seen-write" => match name_arg(1) {
             Ok(r) => seen_write(&ctx, &r, args.get(2).map(String::as_str).unwrap_or(""), args.get(3).map(String::as_str).unwrap_or("turn")),
             Err(c) => c,
         },
