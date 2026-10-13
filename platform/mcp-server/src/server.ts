@@ -550,6 +550,8 @@ const CHORUS_BUILD_TOOL_DEF = {
   },
 } as const;
 
+const CALLING_ROLE_PROP = { type: 'string', pattern: ROLE_PATTERN, description: 'Calling role.' } as const;
+
 const CHORUS_DEPLOY_TOOL_DEF = {
   // #3311 — renamed chorus_deploy → werk-deploy (same ADR-031/032 family cleanup).
   name: 'werk-deploy',
@@ -557,7 +559,7 @@ const CHORUS_DEPLOY_TOOL_DEF = {
   inputSchema: {
     type: 'object',
     properties: {
-      role: { type: 'string', pattern: ROLE_PATTERN, description: 'Calling role.' },
+      role: CALLING_ROLE_PROP,
       card_id: { type: 'integer', minimum: 1, description: 'Card id whose werk holds the build artifacts to deploy.' },
       target: { type: 'string', enum: ['canonical', 'werk'], description: 'Install target — canonical (~/.chorus/bin/) or werk (per-card slot). Default: canonical.' },
       landedCommit: { type: 'string', description: '#3517 — the trigger\'s landed origin/main sha; deploy gates deployed-commit==landedCommit (empty=RED).' },
@@ -1359,7 +1361,7 @@ const ATHENA_MAKE_TOOL_DEF = {
   inputSchema: {
     type: 'object',
     properties: {
-      role: { type: 'string', pattern: ROLE_PATTERN, description: 'Calling role.' },
+      role: CALLING_ROLE_PROP,
       args: { type: 'array', items: { type: 'string' }, description: 'Verb args, e.g. ["generate-page","--class","Service"].' },
     },
     required: ['role', 'args'],
@@ -1386,7 +1388,7 @@ const HERALD_RUN_TOOL_DEF = {
   inputSchema: {
     type: 'object',
     properties: {
-      role: { type: 'string', pattern: ROLE_PATTERN, description: 'Calling role.' },
+      role: CALLING_ROLE_PROP,
       sensor: { type: 'string', enum: [...HERALD_SENSORS], description: 'Which sensor to run.' },
       target: { type: 'string', description: 'Code sensor only: the repository root to look at. Defaults to chorus.' },
       dry_run: { type: 'boolean', description: 'Plan and print, write nothing.' },
@@ -1421,7 +1423,7 @@ const ATHENA_DEPLOY_TOOL_DEF = {
   inputSchema: {
     type: 'object',
     properties: {
-      role: { type: 'string', pattern: ROLE_PATTERN, description: 'Calling role.' },
+      role: CALLING_ROLE_PROP,
       args: { type: 'array', items: { type: 'string' }, description: 'Verb args. [] deploys the model set. Otherwise one of scope, prove-trace, served-snapshot, served-compare; any other argument is refused (exit 2, #4338), never read as deploy.' },
     },
     required: ['role', 'args'],
@@ -1436,7 +1438,7 @@ const ATHENA_VALIDATE_TOOL_DEF = {
   inputSchema: {
     type: 'object',
     properties: {
-      role: { type: 'string', pattern: ROLE_PATTERN, description: 'Calling role.' },
+      role: CALLING_ROLE_PROP,
       args: { type: 'array', items: { type: 'string' }, description: 'Verb args.' },
     },
     required: ['role', 'args'],
