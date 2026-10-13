@@ -272,11 +272,12 @@ fn class(store: &Store, domain: &str, iri: &str, prefix: Option<&str>, product: 
         let path = p["path"].clone();
         let fname = local_name(&path);
         // sh:in in model order: a member's position is how many list cells precede it
-        let allowed: Vec<String> = select(store, &format!(
+        // #4514 — a path that is not an IRI (a blank-node sh:inversePath) has no sh:in to read
+        let allowed: Vec<String> = if !path.starts_with("http") { Vec::new() } else { select(store, &format!(
             "SELECT ?v (COUNT(?mid) AS ?pos) WHERE {{ <{iri}> rdfs:subClassOf* ?anc . ?s sh:targetClass ?anc ; sh:property ?p . \
              ?p sh:path <{path}> ; sh:in ?l . ?l rdf:rest* ?mid . ?mid rdf:rest* ?node . ?node rdf:first ?v }} \
              GROUP BY ?v ?node ORDER BY ?pos"))?
-            .into_iter().map(|r| r["v"].clone()).collect();
+            .into_iter().map(|r| r["v"].clone()).collect() };
         let is_link = p.contains_key("class") || p.get("nodeKind").is_some_and(|k| k.ends_with("#IRI"));
         let kind = if is_link {
             Kind::Link { class: p.get("class").map(|c| local_name(c)) }

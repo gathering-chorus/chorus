@@ -1,0 +1,16 @@
+@prefix chorus: <https://jeffbridwell.com/chorus#> .
+@prefix rdfs:   <http://www.w3.org/2000/01/rdf-schema#> .
+
+# #4519 follow-through (found by #4514's run 3): athena-gen refuses a product that
+# declares no namespace, never reading it as Chorus by default. Athena is Chorus's
+# own product, so it declares Chorus's values. Without these, athena-gen cannot read
+# the athena product at all, and 4509-product-partof.bats went red at #4519's land.
+chorus:property-athena-model-namespace a chorus:Property ;
+    rdfs:label "athena: the namespace its terms and rows use" ;
+    chorus:propertyKey "model.namespace" ; chorus:propertyValue "https://jeffbridwell.com/chorus#" ;
+    chorus:propertyValueType "string" ; chorus:propertyScope "instance" .
+
+chorus:property-athena-store-graph-prefix a chorus:Property ;
+    rdfs:label "athena: the prefix its graphs live under" ;
+    chorus:propertyKey "store.graph_prefix" ; chorus:propertyValue "urn:chorus:domains:" ;
+    chorus:propertyValueType "string" ; chorus:propertyScope "instance" .
