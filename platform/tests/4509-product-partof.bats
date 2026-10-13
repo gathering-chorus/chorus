@@ -1,5 +1,6 @@
 #!/usr/bin/env bats
 # @test-type: unit
+# @domain: products — the product domain this suite guards (#4334)
 # #4509 — a product's parent is on-model. Seven product rows carried partOf from the
 # seed while ProductShape never declared it, so the door refused moving Convergence
 # under Athena as off-model (422, Kade 2026-10-12 20:34). The model the generators
