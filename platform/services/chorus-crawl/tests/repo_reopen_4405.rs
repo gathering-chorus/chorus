@@ -164,3 +164,38 @@ fn negative_proof_one_changed_unit_plans_exactly_one_update() {
     assert!(p.create.is_empty() && p.delete.is_empty(), "{p:?}");
     assert_eq!(p.unchanged, 1);
 }
+
+// #4405 reopen 6 — Silas for Jeff (#4518): `sensor files --target` wrote nothing
+// for personal-site (0 of 6,605 file rows) because the pass refused the flag.
+// Each pass owns only its own repository's rows.
+mod files_target_r6 {
+    use chorus_crawl::code_run::row_in_pass;
+    fn row(repo: &str) -> Vec<(String, String)> {
+        vec![("filePath".into(), "a".into()), ("inRepository".into(), if repo.is_empty() { String::new() } else { format!("chorus:repository-{repo}") })]
+    }
+
+    #[test]
+    fn a_target_pass_owns_only_its_repository() {
+        assert!(row_in_pass(&row("jeff-bridwell-personal-site"), "jeff-bridwell-personal-site", false));
+    }
+
+    #[test]
+    fn negative_proof_a_target_pass_never_owns_a_chorus_row() {
+        assert!(!row_in_pass(&row("chorus"), "jeff-bridwell-personal-site", false));
+        assert!(!row_in_pass(&row(""), "jeff-bridwell-personal-site", false), "a row naming no repository is never another repo's to delete");
+    }
+
+    #[test]
+    fn negative_proof_the_home_pass_never_owns_another_repositorys_row() {
+        assert!(!row_in_pass(&row("jeff-bridwell-personal-site"), "chorus", true));
+        assert!(row_in_pass(&row("chorus"), "chorus", true));
+        assert!(row_in_pass(&row(""), "chorus", true), "legacy rows stay the home pass's");
+    }
+
+    #[test]
+    fn target_with_no_directory_is_refused_and_nothing_runs() {
+        let out = std::process::Command::new(env!("CARGO_BIN_EXE_chorus-crawl")).args(["--target"]).env("CHORUS_ROLE", "kade").output().unwrap();
+        assert_eq!(out.status.code(), Some(2));
+        assert!(String::from_utf8_lossy(&out.stderr).contains("--target needs a directory"));
+    }
+}
