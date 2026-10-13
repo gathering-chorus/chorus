@@ -15,7 +15,7 @@ fn every_class_has_a_route_a_graph_and_a_kind() {
 
 #[test]
 fn every_setting_the_runtime_reads_is_declared() {
-    for k in ["events.command", "identity.issuer", "server.bind", "store.endpoint", "store.kind", "store.password_var", "store.path", "store.user_var"] {
+    for k in ["events.command", "identity.issuer", "model.namespace", "model.prefix", "server.bind", "store.endpoint", "store.graph_prefix", "store.kind", "store.password_var", "store.path", "store.user_var"] {
         assert!(model::SETTINGS.iter().any(|(d, _)| *d == k), "{k} is not declared");
     }
 }

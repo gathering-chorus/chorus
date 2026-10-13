@@ -90,7 +90,7 @@ pub fn write(ctx: &Ctx, caller: &auth::Caller, method: &str, class: &ClassDef, n
     if let Some(p) = &prior {
         let n = match ctx.store.version_count(&format!("{}/{name}", class.plural)) { Ok(n) => n + 1, Err(m) => return error(503, "store", &m) };
         let (vs, vcells) = rules::version_row(class, &name, p, n);
-        if let Err(m) = ctx.store.write("urn:chorus:domains:provenance", &vs, Some("Version"), &vcells, true) {
+        if let Err(m) = ctx.store.write(&format!("{}provenance", model::GRAPH_PREFIX), &vs, Some("Version"), &vcells, true) {
             return error(503, "store", &format!("could not keep the prior version, nothing written: {m}"));
         }
     }

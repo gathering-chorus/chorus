@@ -57,3 +57,21 @@ chorus:property-pulse-store-row a chorus:Property ;
     rdfs:label "pulse-api: the PersistenceStore row it reads and writes" ;
     chorus:propertyKey "store.row" ; chorus:propertyValue "persistence-store-pods" ;
     chorus:propertyValueType "string" ; chorus:propertyScope "instance" .
+
+# #4519 — the API is the product's own: its namespace, the short prefix callers may
+# write, and the prefix its graphs live under. pulse is Chorus's, so these are
+# Chorus's values; a client product (the wine diary) declares its own.
+chorus:property-pulse-model-namespace a chorus:Property ;
+    rdfs:label "pulse-api: the namespace its terms and rows use" ;
+    chorus:propertyKey "model.namespace" ; chorus:propertyValue "https://jeffbridwell.com/chorus#" ;
+    chorus:propertyValueType "string" ; chorus:propertyScope "instance" .
+
+chorus:property-pulse-model-prefix a chorus:Property ;
+    rdfs:label "pulse-api: the short prefix a caller may write before a name (prefix:name)" ;
+    chorus:propertyKey "model.prefix" ; chorus:propertyValue "chorus" ;
+    chorus:propertyValueType "string" ; chorus:propertyScope "instance" .
+
+chorus:property-pulse-store-graph-prefix a chorus:Property ;
+    rdfs:label "pulse-api: the prefix its graphs live under (<prefix><domain>, <prefix>provenance)" ;
+    chorus:propertyKey "store.graph_prefix" ; chorus:propertyValue "urn:chorus:domains:" ;
+    chorus:propertyValueType "string" ; chorus:propertyScope "instance" .

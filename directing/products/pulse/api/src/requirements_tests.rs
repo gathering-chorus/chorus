@@ -213,6 +213,6 @@ fn every_change_keeps_the_version_it_displaces() {
 #[test]
 fn req2_store_side_a_field_change_deletes_every_stored_value_by_wildcard() {
     let u = crate::store::write_update("urn:g", "https://x#s", None, &[("f".into(), vec![Cell::Link(format!("{NS}new"))])], false);
-    assert!(u.contains("DELETE WHERE { GRAPH <urn:g> { <https://x#s> <https://jeffbridwell.com/chorus#f> ?o } }"), "{u}");
+    assert!(u.contains(&format!("DELETE WHERE {{ GRAPH <urn:g> {{ <https://x#s> <{NS}f> ?o }} }}")), "{u}");
     assert!(u.find("DELETE").unwrap() < u.find("INSERT").unwrap(), "delete first, then insert: {u}");
 }
