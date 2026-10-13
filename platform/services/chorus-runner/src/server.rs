@@ -292,5 +292,8 @@ pub fn router(verifier: Arc<OidcVerifier>, collections: Arc<RwLock<Vec<String>>>
     let config = StreamableHttpServerConfig::default().with_json_response(true).with_sse_keep_alive(None);
     let service: StreamableHttpService<Runner, LocalSessionManager> =
         StreamableHttpService::new(move || Ok(runner.clone()), Default::default(), config);
-    axum::Router::new().nest_service("/mcp", service).layer(middleware::from_fn_with_state(verifier, gate))
+    // #4514 — /health answers status only (no rows, no settings; Silas 18:55),
+    // outside the gate, so a demo env can smoke the runner without signing
+    let health = axum::Router::new().route("/health", axum::routing::get(|| async { axum::Json(serde_json::json!({ "status": "ok", "service": "chorus-runner" })) }));
+    axum::Router::new().nest_service("/mcp", service).layer(middleware::from_fn_with_state(verifier, gate)).merge(health)
 }
