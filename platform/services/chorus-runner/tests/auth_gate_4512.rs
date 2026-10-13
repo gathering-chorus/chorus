@@ -20,7 +20,9 @@ async fn no_token_is_refused_and_says_so() {
 async fn a_token_signed_under_an_unknown_kid_is_refused() {
     let (status, body) = send(initialize("2025-11-25", Some(&mint("not-our-key", now() + 600)))).await;
     assert_eq!(status, StatusCode::UNAUTHORIZED, "{body}");
-    assert!(body.contains("signature does not verify"), "{body}");
+    // #4183 reopen 2 — an unknown kid is its own reason, never "forged"
+    assert!(body.contains("signing key unknown"), "{body}");
+    assert!(!body.contains("signature does not verify"), "{body}");
 }
 
 #[tokio::test]

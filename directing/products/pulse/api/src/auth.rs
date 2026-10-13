@@ -48,6 +48,7 @@ pub fn refusal(e: &AuthError) -> (u16, &'static str) {
         AuthError::Expired => (401, "token-expired"),
         AuthError::WrongAudience => (401, "token-wrong-audience"),
         AuthError::JwksUnreachable => (503, "identity-unreachable"),
+        AuthError::UnknownKey => (401, "token-unknown-key"), // #4183 reopen 2: a rotated or unpublished key, not a forgery
         AuthError::WebIdNotAllowed => (403, "not-a-principal"),
     }
 }

@@ -30,6 +30,7 @@ pub enum AuthError {
     UnknownAlg,      // header alg is neither HS256 nor ES256 territory
     IssuerMismatch,  // validly signed, but iss != the CSS issuer
     JwksUnreachable, // kid uncached AND the JWKS endpoint unreachable — fail-closed
+    UnknownKey,      // #4183 reopen 2 — the JWKS answered and does not hold this kid: a rotated or never-published key, not a forged signature
 }
 
 #[derive(Debug, PartialEq, Eq)]

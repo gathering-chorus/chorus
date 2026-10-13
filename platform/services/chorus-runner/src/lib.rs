@@ -40,6 +40,7 @@ pub fn refusal_reason(e: &AuthError) -> &'static str {
         AuthError::UnknownAlg => "token algorithm is not ES256",
         AuthError::IssuerMismatch => "token was not issued by the chorus identity provider",
         AuthError::JwksUnreachable => "the issuer's signing keys could not be fetched, so no token can be checked",
+        AuthError::UnknownKey => "signing key unknown: rotated, or never published",
     }
 }
 
