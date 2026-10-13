@@ -317,7 +317,7 @@ pub fn settings(store: &Store, product: &str) -> Result<Vec<(String, String)>, M
 /// #4519 — `model.namespace`, `model.prefix` and `store.graph_prefix` make the API the
 /// product's own: its terms, the short prefix callers may write, and where its rows live.
 pub const RUNTIME_SETTINGS: &[&str] = &[
-    "events.command", "identity.issuer", "model.namespace", "model.prefix", "server.bind",
+    "events.command", "identity.graph_prefix", "identity.issuer", "model.namespace", "model.prefix", "server.bind",
     "store.endpoint", "store.graph_prefix", "store.kind", "store.password_var", "store.path", "store.user_var",
 ];
 

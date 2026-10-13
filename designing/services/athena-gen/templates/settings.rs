@@ -15,6 +15,8 @@ pub struct Settings {
     pub store_user_var: String,
     pub store_password_var: String,
     pub identity_issuer: String,
+    /// #4519 — the graphs the shared verifier reads this product's people from
+    pub identity_graph_prefix: String,
     pub events_command: String,
 }
 
@@ -48,12 +50,13 @@ pub fn value(key: &str, file: &BTreeMap<String, String>) -> String {
     let Some((_, default)) = SETTINGS.iter().find(|(k, _)| *k == key) else {
         panic!("setting '{key}' is not declared in the model for {PRODUCT}");
     };
-    let env = format!("{}_{}", PRODUCT.to_uppercase(), key.to_uppercase().replace(['.', '-'], "_"));
+    // #4519 — a product named with a hyphen (wine-diary) still gets a settable name: WINE_DIARY_SERVER_BIND
+    let env = format!("{}_{}", PRODUCT.to_uppercase().replace('-', "_"), key.to_uppercase().replace(['.', '-'], "_"));
     std::env::var(&env).ok().or_else(|| file.get(key).cloned()).unwrap_or_else(|| default.to_string())
 }
 
 pub fn load() -> Settings {
-    let path = std::env::var(format!("{}_SETTINGS", PRODUCT.to_uppercase())).unwrap_or_else(|_| format!("{PRODUCT}.toml"));
+    let path = std::env::var(format!("{}_SETTINGS", PRODUCT.to_uppercase().replace('-', "_"))).unwrap_or_else(|_| format!("{PRODUCT}.toml"));
     let file = file_values(&path);
     Settings {
         bind: value("server.bind", &file),
@@ -63,6 +66,7 @@ pub fn load() -> Settings {
         store_user_var: value("store.user_var", &file),
         store_password_var: value("store.password_var", &file),
         identity_issuer: value("identity.issuer", &file),
+        identity_graph_prefix: value("identity.graph_prefix", &file),
         events_command: value("events.command", &file),
     }
 }
