@@ -190,6 +190,22 @@ printf '[werk/werk] ⭐ Run Main land\n[werk/werk]   ✅  Success - Main land [6
 out=$(CWS_RUNS_DIR=$TD CWS_DAGU="file://$TD/dagu" "$CWS" 109)
 t "a card with v1 history still opens with its v2 line" "#109 kade   waiting for your go" "$out"
 if [[ "$(head -1 <<<"$out")" == *"[kade] landed"* ]]; then echo "FAIL the v1 pin's landed is the header"; fails=$((fails+1)); fi
+# #4494 reopen 2 — Jeff 2026-10-13 (via Wren): "/cws looks broken". The per-card
+# header read "run 3 · 1 run" (v2's count beside v1's), and the go/no commands
+# rode the header AND the v2 line. The header says the v1 runs are the old
+# pipeline's, and the commands print once, under the v2 runs.
+hd="$(head -1 <<<"$out")"
+t "the per-card header names the old pipeline's runs as such" "· 1 old-pipeline run" "$hd"
+if [[ "$hd" =~ "run 3 · 1 run"$ ]]; then echo "FAIL the header mixes v2's run count with v1's"; fails=$((fails+1)); fi
+n=$(grep -o "human-task complete" <<<"$out" | wc -l | tr -d ' ')
+[ "$n" = 2 ] || { echo "FAIL the go/no commands print $n times on /cws 109, wanted once each"; fails=$((fails+1)); }
+# The board view: a card waiting at the go reads its status only; the commands
+# live on /cws <card>. NEGATIVE PROOF: the line must not carry human-task.
+mkdir -p "$TD/apiw/api/chorus/context/board"
+echo '{"data":{"cards":[{"id":109,"owner":"Kade"}]}}' > "$TD/apiw/api/chorus/context/board/wip"
+out=$(CWS_RUNS_DIR=$TD CWS_DAGU="file://$TD/dagu" CWS_API="file://$TD/apiw" "$CWS")
+t "board: a card waiting at the go reads its status" "#109 kade   waiting for your go" "$out"
+if [[ "$out" == *"human-task"* ]]; then echo "FAIL the board line carries the go/no commands"; fails=$((fails+1)); fi
 rm -f "$TD/109.json" "$TD/109-109-t-13.log"
 
 # #4494 — the land runs as its own workflow on the land queue; /cws follows it.
