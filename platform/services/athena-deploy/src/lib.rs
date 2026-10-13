@@ -258,6 +258,32 @@ pub fn retirement_action(r: &Retirement, default_graph: &str) -> RetireAction {
 /// IRI alone left its property shapes behind as orphans — the deploy never
 /// removes a dropped sh:property block (2026-09-20, #4250), and a retirement
 /// that did the same would leave the ghosts it exists to clear.
+/// #3752 reopen 1 — which of these subjects still have triples in `graph`, in
+/// one query. The retirement replay used to ask each retired subject with its
+/// own count + dump: 644 subjects, all long gone, were 26.4s of a 27.4s deploy.
+pub fn subjects_present_query(graph: &str, iris: &[&str]) -> String {
+    let values: Vec<String> = iris.iter().map(|i| format!("<{i}>")).collect();
+    format!("SELECT DISTINCT ?s WHERE {{ VALUES ?s {{ {} }} GRAPH <{graph}> {{ ?s ?p ?o }} }}", values.join(" "))
+}
+
+/// The subjects a SELECT ?s answer names. None when the store did not answer
+/// (no `bindings`): the caller then checks each subject itself, never reading an
+/// unanswered query as "all absent".
+pub fn subjects_from_answer(body: &str) -> Option<std::collections::BTreeSet<String>> {
+    let b = body.find("\"bindings\"")?;
+    let mut out = std::collections::BTreeSet::new();
+    let mut rest = &body[b..];
+    while let Some(v) = rest.find("\"value\"") {
+        rest = &rest[v + 7..];
+        let Some(q) = rest.find('"') else { break };
+        let inner = &rest[q + 1..];
+        let Some(end) = inner.find('"') else { break };
+        out.insert(inner[..end].to_string());
+        rest = &inner[end..];
+    }
+    Some(out)
+}
+
 pub fn subject_retirement_sparql(iri: &str, graph: &str) -> (String, String, String) {
     const SH: &str = "http://www.w3.org/ns/shacl#";
     const RDF: &str = "http://www.w3.org/1999/02/22-rdf-syntax-ns#";
@@ -1303,6 +1329,7 @@ pub fn run_athena_deploy() -> Result<String, String> {
             gsp: gsp.clone(), query: query.clone(), update: update.clone(),
             chorus_log: chorus_log.clone(), role: role.clone(),
         };
+        let mut actions = Vec::new();
         for (i, line) in text.lines().enumerate() {
             let n = i + 1;
             let entry = match parse_retirement(line) {
@@ -1316,7 +1343,19 @@ pub fn run_athena_deploy() -> Result<String, String> {
                     return Err(fail(&format!("retirement-staging-malformed:line-{n}")));
                 }
             };
-            run_retirement(&retirement_action(&entry, &ontology), n, &ctx)?;
+            actions.push((n, retirement_action(&entry, &ontology)));
+        }
+        // #3752 reopen 1 — one presence query per graph for every subject
+        // retirement; only a subject still there goes through backup + delete.
+        let gone = absent_subjects(&ctx, &actions);
+        for (n, action) in &actions {
+            if let RetireAction::Subject { iri, graph } = action {
+                if gone.contains(&(graph.clone(), iri.clone())) {
+                    println!("athena-deploy: <{graph}> subject <{iri}> already absent (idempotent — previously retired)");
+                    continue;
+                }
+            }
+            run_retirement(action, *n, &ctx)?;
         }
     }
 
@@ -1724,6 +1763,34 @@ fn run_shacl_report(root: &str, set: &[String]) -> ShaclReport {
     }
 }
 
+/// The (graph, subject) pairs of subject retirements the store says are gone,
+/// asked in chunks of 200 per graph. A chunk the store does not answer adds
+/// nothing, so those subjects take the per-subject path as before.
+fn absent_subjects(ctx: &StoreCtx, actions: &[(usize, RetireAction)]) -> std::collections::BTreeSet<(String, String)> {
+    let mut by_graph: std::collections::BTreeMap<&str, Vec<&str>> = std::collections::BTreeMap::new();
+    for (_, a) in actions {
+        if let RetireAction::Subject { iri, graph } = a {
+            by_graph.entry(graph.as_str()).or_default().push(iri.as_str());
+        }
+    }
+    let mut gone = std::collections::BTreeSet::new();
+    for (graph, iris) in by_graph {
+        for chunk in iris.chunks(200) {
+            let q = subjects_present_query(graph, chunk);
+            let body = curl(&["-s", "--data-urlencode", &format!("query={q}"),
+                "-H", "Accept: application/sparql-results+json", &ctx.query]).unwrap_or_default();
+            if let Some(present) = subjects_from_answer(&body) {
+                for iri in chunk {
+                    if !present.contains(*iri) {
+                        gone.insert((graph.to_string(), iri.to_string()));
+                    }
+                }
+            }
+        }
+    }
+    gone
+}
+
 /// Execute one decided retirement. Every delete asks `delete_guard` first, so
 /// subject and class retirement get the backup rule the bash gives only to
 /// whole-graph — AC3, and subject retirement is the leg #4216's 226 rows went
@@ -1991,6 +2058,16 @@ fn guarded_delete(
     let live = curl(&["-s", "--data-urlencode", &format!("query={count_q}"),
         "-H", "Accept: application/sparql-results+json", &ctx.query])
         .ok().and_then(|b| count_from_answer(&b));
+    // #3752 reopen 1 — nothing left to retire writes no backup. Every replay
+    // used to dump an empty .nt per absent target: 762k empty files (#4022).
+    if live == Some(0) {
+        if target.starts_with("graph ") {
+            println!("athena-deploy: {target} already empty (idempotent — previously retired)");
+        } else {
+            println!("athena-deploy: {target} already absent (idempotent — previously retired)");
+        }
+        return Ok(());
+    }
     let dir = env_or(
         "GRAPH_BACKUP_DIR",
         &format!("{}/platform/backups/graph-retirements", env_or("CHORUS_ROOT", ".")),
