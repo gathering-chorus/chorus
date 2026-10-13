@@ -8,20 +8,56 @@ use std::process::{Command as Cmd, ExitCode};
 use crate::process;
 use crate::shared::state_paths::repo_root;
 
-/// #4497 — Finder's free space on the startup disk (APFS-aware: it counts
+/// #4497 — free space on the startup disk (APFS-aware: it counts
 /// purgeable space, which df does not, #1868). `CHORUS_FREE_DISK_BYTES` is the
 /// test seam: set, it is the answer and no AppleEvent is sent. A test build of
 /// the shim has no TCC grant for Finder, so the AppleEvent waited ~a minute per
 /// session-start test (683 s for the crate, Silas 2026-10-10).
-pub fn finder_free_bytes() -> Option<f64> {
+pub fn free_disk_bytes() -> Option<f64> {
     if let Ok(v) = std::env::var("CHORUS_FREE_DISK_BYTES") {
         return v.trim().parse::<f64>().ok();
     }
-    Cmd::new("osascript")
-        .args(["-e", "tell application \"Finder\" to get free space of startup disk"])
-        .output().ok()
-        .and_then(|o| String::from_utf8(o.stdout).ok())
-        .and_then(|s| s.trim().parse::<f64>().ok())
+    // #4497 reopen 1 — no Finder. In prod Finder left the AppleEvent
+    // unanswered for 121 s (-1712), and every context-cache build, the 5-minute
+    // cron included, waited on it (151 s, Kade 2026-10-13). Foundation's
+    // "available for important usage" is the same APFS-aware number (it counts
+    // purgeable space, #1868) and sends no AppleEvent: measured 654.2 GB free
+    // against df's 580.8 GB, instantly. Still bounded: no answer in time is no
+    // reading, and the disk line says "unknown".
+    bounded_stdout(
+        "osascript",
+        &["-l", "JavaScript", "-e", IMPORTANT_USAGE_JXA],
+        std::time::Duration::from_secs(5),
+    )
+    .and_then(|s| s.trim().parse::<f64>().ok())
+}
+
+const IMPORTANT_USAGE_JXA: &str = "ObjC.import('Foundation'); var v = Ref(); \
+    $.NSURL.fileURLWithPath('/').getResourceValueForKeyError(v, $.NSURLVolumeAvailableCapacityForImportantUsageKey, null); \
+    ObjC.unwrap(v[0]).toString()";
+
+/// A command's stdout if it exits within `limit`; otherwise it is killed and
+/// there is no answer.
+pub fn bounded_stdout(cmd: &str, args: &[&str], limit: std::time::Duration) -> Option<String> {
+    use std::io::Read;
+    let mut child = Cmd::new(cmd).args(args)
+        .stdout(std::process::Stdio::piped()).stderr(std::process::Stdio::null())
+        .spawn().ok()?;
+    let start = std::time::Instant::now();
+    loop {
+        match child.try_wait() {
+            Ok(Some(_)) => break,
+            Ok(None) if start.elapsed() < limit => std::thread::sleep(std::time::Duration::from_millis(50)),
+            _ => {
+                let _ = child.kill();
+                let _ = child.wait();
+                return None;
+            }
+        }
+    }
+    let mut out = String::new();
+    child.stdout.take()?.read_to_string(&mut out).ok()?;
+    Some(out)
 }
 
 // ---------------------------------------------------------------------------
@@ -110,9 +146,9 @@ pub fn cruft_scan() -> ExitCode {
         .map(|m| m.len()).unwrap_or(0);
     out.push_str(&format!("Size: {} bytes\n\n", activity_size));
 
-    // Disk check — APFS-aware via Finder free space (includes purgeable, matches Finder)
+    // Disk check — APFS-aware free space (includes purgeable, matches Finder, #4497)
     out.push_str("## Disk\n");
-    let finder_free = finder_free_bytes();
+    let disk_free = free_disk_bytes();
     let container_total = Cmd::new("diskutil").args(["info", "/"])
         .output().ok()
         .and_then(|o| String::from_utf8(o.stdout).ok())
@@ -123,7 +159,7 @@ pub fn cruft_scan() -> ExitCode {
                 .and_then(|s| s.split_whitespace().next())
                 .and_then(|n| n.parse::<u64>().ok())
         });
-    let disk_pct = match (container_total, finder_free) {
+    let disk_pct = match (container_total, disk_free) {
         (Some(total), Some(free)) if total > 0 => {
             format!("{}%", ((total as f64 - free) / total as f64 * 100.0) as u64)
         }
@@ -219,9 +255,9 @@ pub fn health_hourly(args: &[String]) -> ExitCode {
         _ => unreachable!(),
     };
 
-    // Disk check — APFS-aware via Finder free space (includes purgeable, matches Finder)
+    // Disk check — APFS-aware free space (includes purgeable, matches Finder, #4497)
     let disk_pct: u32 = {
-        let finder_free = finder_free_bytes();
+        let disk_free = free_disk_bytes();
         let container_total = Cmd::new("diskutil").args(["info", "/"])
             .output().ok()
             .and_then(|o| String::from_utf8(o.stdout).ok())
@@ -232,7 +268,7 @@ pub fn health_hourly(args: &[String]) -> ExitCode {
                     .and_then(|s| s.split_whitespace().next())
                     .and_then(|n| n.parse::<u64>().ok())
             });
-        match (container_total, finder_free) {
+        match (container_total, disk_free) {
             (Some(total), Some(free)) if total > 0 => {
                 ((total as f64 - free) / total as f64 * 100.0) as u32
             }
@@ -526,7 +562,7 @@ pub fn health_weekly(args: &[String]) -> ExitCode {
     // 3. Disk trend
     println!("\n--- Disk Trend ---");
     let trend_file = "/Users/jeffbridwell/Library/Logs/Chorus/disk-trend.log";
-    let finder_free = finder_free_bytes();
+    let disk_free = free_disk_bytes();
     let container_total = Cmd::new("diskutil").args(["info", "/"])
         .output().ok()
         .and_then(|o| String::from_utf8(o.stdout).ok())
@@ -537,7 +573,7 @@ pub fn health_weekly(args: &[String]) -> ExitCode {
                 .and_then(|s| s.split_whitespace().next())
                 .and_then(|n| n.parse::<u64>().ok())
         });
-    let disk_pct = match (container_total, finder_free) {
+    let disk_pct = match (container_total, disk_free) {
         (Some(total), Some(free)) if total > 0 => {
             ((total as f64 - free) / total as f64 * 100.0) as u32
         }
@@ -602,14 +638,26 @@ mod log_rotate_path_tests {
 
 #[cfg(test)]
 mod free_disk_seam_4497 {
-    use super::finder_free_bytes;
+    use super::free_disk_bytes;
 
     /// Every cargo test context carries the seam (.cargo/config.toml), so no
     /// test and no shim a test spawns ever sends the Finder AppleEvent.
     #[test]
     fn tests_never_ask_finder() {
         assert!(std::env::var("CHORUS_FREE_DISK_BYTES").is_ok(), "the seam is missing from .cargo/config.toml");
-        assert_eq!(finder_free_bytes(), Some(200_000_000_000.0));
+        assert_eq!(free_disk_bytes(), Some(200_000_000_000.0));
+    }
+
+    /// #4497 reopen 1 — NEGATIVE PROOF: a command that never answers (Finder
+    /// leaving the AppleEvent open) is killed at the bound, with no answer.
+    #[test]
+    fn a_command_that_never_answers_returns_at_the_bound() {
+        let t = std::time::Instant::now();
+        let got = super::bounded_stdout("sleep", &["30"], std::time::Duration::from_millis(500));
+        assert_eq!(got, None);
+        assert!(t.elapsed() < std::time::Duration::from_secs(3), "waited {:?}", t.elapsed());
+        // and one that answers in time is read
+        assert_eq!(super::bounded_stdout("echo", &["42"], std::time::Duration::from_secs(5)).as_deref(), Some("42\n"));
     }
 
     /// NEGATIVE PROOF: an unreadable value is no reading (the disk line says
@@ -618,7 +666,7 @@ mod free_disk_seam_4497 {
     fn a_bad_seam_value_is_no_reading() {
         let old = std::env::var("CHORUS_FREE_DISK_BYTES").ok();
         std::env::set_var("CHORUS_FREE_DISK_BYTES", "lots");
-        let got = finder_free_bytes();
+        let got = free_disk_bytes();
         match old { Some(v) => std::env::set_var("CHORUS_FREE_DISK_BYTES", v), None => std::env::remove_var("CHORUS_FREE_DISK_BYTES") }
         assert_eq!(got, None);
     }
