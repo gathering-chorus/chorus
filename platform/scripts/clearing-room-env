@@ -11,8 +11,10 @@ if [ -r "$SECRET_FILE" ]; then
   BUZZ_ROOM_SECRET="$(cat "$SECRET_FILE")"
   export BUZZ_ROOM_SECRET
   export BUZZ_ROOM_ENABLED=1
-  # the relay routes by Host header (#3907)
-  export BUZZ_RELAY_HOST_HEADER="${BUZZ_RELAY_HOST_HEADER:-192.168.86.242:3000}"
+  # #4445 reopen 1 — no Host header pinned here. The relay routes by Host
+  # (#3907), and dialing BUZZ_RELAY_URL directly already sends the relay's own
+  # host:port; a caller reaching it through a tunnel sets BUZZ_RELAY_HOST_HEADER
+  # itself, and it passes through untouched.
 else
   echo "clearing-room-env: no readable room secret at $SECRET_FILE; the room stays off" >&2
 fi
