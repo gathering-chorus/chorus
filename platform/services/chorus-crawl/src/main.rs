@@ -1669,7 +1669,7 @@ fn repo_bins(root: &str) -> Vec<(String, String)> {
     out
 }
 
-const PASS_FLAGS: &[&str] = &["--undo", "--dry-run", "--reconcile", "--validate"];
+const PASS_FLAGS: &[&str] = &["--undo", "--dry-run", "--reconcile", "--validate", "--target"];
 
 // #4446 — a scheduled job logs its own failure.
 #[allow(dead_code)] // each crate uses part of the shared helper
@@ -2311,9 +2311,22 @@ fn main() {
         eprintln!("chorus-crawl: unknown flag {bad} — nothing ran");
         std::process::exit(2);
     }
-    let root = std::env::var("CHORUS_ROOT").unwrap_or_else(|_| ".".to_string());
+    // #4405 reopen 6 — `--target <dir>` walks another repository's files (Silas
+    // for Jeff, #4518: personal-site had 0 file rows because the pass refused the
+    // flag). `home` keeps the identity and chorus's own model files; `root` is
+    // the tree walked, and every row it writes names that tree's repository.
+    let home = std::env::var("CHORUS_ROOT").unwrap_or_else(|_| ".".to_string());
+    let target: Option<String> = argv.iter().position(|a| a == "--target").map(|i| match argv.get(i + 1) {
+        Some(t) if !t.starts_with("--") => t.clone(),
+        _ => { eprintln!("chorus-crawl: --target needs a directory — nothing ran"); std::process::exit(2); }
+    });
+    let foreign = target.is_some();
+    let root = target.clone().unwrap_or_else(|| home.clone());
     // #4405 reopen 3 — every file row names the repository it lives in
     let home_repo = repo_of_dir(&root);
+    if foreign {
+        println!("chorus-crawl: files of {home_repo} ({root}) — the code, case, log, page and endpoint legs are chorus's and do not run");
+    }
     // #4214 — `--undo <file>`: delete exactly the rows a previous run created,
     // by the names that run recorded. Runs alone, writes nothing else, and says
     // what it could not delete rather than reporting a clean sweep.
@@ -2342,7 +2355,7 @@ fn main() {
     );
     // #4499 — first, the code units and their dependsOn edges: seconds, and the
     // blast radius reads them, so every pass (each land kicks one) refreshes them
-    if !reconciling {
+    if !reconciling && !foreign {
         let code_args: Vec<String> = if dry_run { vec!["--dry-run".to_string()] } else { Vec::new() };
         let rc = run_code(&code_args);
         println!("chorus-crawl: code leg rc={rc}");
@@ -2362,7 +2375,7 @@ fn main() {
     // reported "clean" having compared ZERO files against 5,533 rows — a check
     // that passes because it looked at nothing is the hollow gate #3734 exists
     // to forbid, and this one was in the reconcile itself.
-    let watermark: Option<String> = if reconciling {
+    let watermark: Option<String> = if reconciling || foreign {
         None
     } else {
         std::env::var("CHORUS_CRAWL_WATERMARK")
@@ -2382,6 +2395,7 @@ fn main() {
         Scope::Full { .. } if reconciling => Scope::Full {
             why: "--reconcile: forced full walk",
         },
+        Scope::Full { .. } if foreign => Scope::Full { why: "--target: another repository is always walked full" },
         // #4185 — the nightly job sets CHORUS_CRAWL_WATERMARK="" on purpose: the
         // 04:30 pass is the full reconcile. It said "no watermark on the graph —
         // first run" every night (and on every land-triggered kickstart of the
@@ -2457,7 +2471,7 @@ fn main() {
     let ident: Option<std::cell::RefCell<Identity>> = if dry_run && !reconciling {
         None
     } else {
-        match Identity::open(&root, &role) {
+        match Identity::open(&home, &role) {
             Ok(i) => Some(std::cell::RefCell::new(i)),
             Err(e) => {
                 eprintln!("chorus-crawl: {e} — refusing to write without an identity");
@@ -2479,7 +2493,7 @@ fn main() {
         Vec::new()
     } else {
         match existing_rows(&api, &token) {
-            Ok(g) => g,
+            Ok(g) => g.into_iter().filter(|r| chorus_crawl::code_run::row_in_pass(&r.other, &home_repo, !foreign)).collect(),
             Err(e) => {
                 eprintln!("chorus-crawl: cannot read existing rows ({e}) — refusing to plan against an unknown graph");
                 std::process::exit(2);
@@ -2489,7 +2503,7 @@ fn main() {
 
     // #4185 — the case registry, read under the same identity and the same
     // "read before deciding" rule. Empty in a token-less dry run, like `graph`.
-    let case_graph: Vec<CaseInGraph> = if token.is_empty() {
+    let case_graph: Vec<CaseInGraph> = if token.is_empty() || foreign {
         Vec::new()
     } else {
         match existing_case_rows(&api, &token) {
@@ -2560,6 +2574,7 @@ fn main() {
     // #4185 — the case pass: every kind=test file this run walked, parsed.
     let test_files: Vec<&str> = disk
         .iter()
+        .filter(|_| !foreign)
         .filter(|f| f.classified)
         .filter(|f| {
             matches!(
@@ -2592,10 +2607,10 @@ fn main() {
     // Replace for exactly those rows, and for nothing else.
     {
         let unit_rows = domain::unit_domain_rows(
-            &std::fs::read_to_string(format!("{root}/{UNIT_DOMAIN_TTL}")).unwrap_or_default(),
+            &std::fs::read_to_string(format!("{home}/{UNIT_DOMAIN_TTL}")).unwrap_or_default(),
         );
     let dir_rows = domain::surface_domain_rows(
-        &std::fs::read_to_string(format!("{root}/{SURFACE_DOMAIN_TTL}")).unwrap_or_default(),
+        &std::fs::read_to_string(format!("{home}/{SURFACE_DOMAIN_TTL}")).unwrap_or_default(),
         "chorus:pathPrefix",
     );
         let read_file = |q: &str| std::fs::read_to_string(std::path::Path::new(&root).join(q)).ok();
@@ -2706,14 +2721,15 @@ fn main() {
     // A missing file is not a default — it is zero rows, and every surface that
     // needed one is reported unplaced by name.
     let surface_ttl =
-        std::fs::read_to_string(format!("{root}/{SURFACE_DOMAIN_TTL}")).unwrap_or_default();
+        std::fs::read_to_string(format!("{home}/{SURFACE_DOMAIN_TTL}")).unwrap_or_default();
     let route_rows = domain::surface_domain_rows(&surface_ttl, "chorus:routePath");
     let log_file_rows = domain::surface_domain_rows(&surface_ttl, "chorus:logFileName");
 
     // #4199 — the log leg: every log file the box writes has a LogSource row.
     // A full pass refreshes the rows it owns; a delta adds and retires only.
-    let log_files = box_log_files(&root);
-    let log_graph = match existing_log_rows(&api, &token) {
+    let log_files = if foreign { Vec::new() } else { box_log_files(&root) };
+    let log_graph = if foreign { Ok(Vec::new()) } else { existing_log_rows(&api, &token) };
+    let log_graph = match log_graph {
         Ok(r) => r,
         Err(e) => {
             eprintln!("chorus-crawl: cannot read existing LogSource rows ({e}) — refusing to plan the log leg against an unknown registry");
@@ -2839,21 +2855,22 @@ fn main() {
         // #4201's authored unit rows, read here because planning now happens
         // before the write section that used to own them.
         let unit_rows = domain::unit_domain_rows(
-            &std::fs::read_to_string(format!("{root}/{UNIT_DOMAIN_TTL}")).unwrap_or_default(),
+            &std::fs::read_to_string(format!("{home}/{UNIT_DOMAIN_TTL}")).unwrap_or_default(),
         );
     let dir_rows = domain::surface_domain_rows(
-        &std::fs::read_to_string(format!("{root}/{SURFACE_DOMAIN_TTL}")).unwrap_or_default(),
+        &std::fs::read_to_string(format!("{home}/{SURFACE_DOMAIN_TTL}")).unwrap_or_default(),
         "chorus:pathPrefix",
     );
         let gathering_present = std::path::Path::new(GATHERING_ROOT).is_dir();
         let read_file = |q: &str| std::fs::read_to_string(std::path::Path::new(&root).join(q)).ok();
+        let no_paths: Vec<String> = Vec::new();
         let (want_pages, want_endpoints, skipped) =
-            pages::desired_rows(&paths, &read_file, gathering_present);
+            pages::desired_rows(if foreign { &no_paths } else { &paths }, &read_file, gathering_present);
         for dir in &skipped {
             println!("chorus-crawl: pages SKIPPED {dir} — that checkout is not present on this box");
         }
-        let page_graph = rows_as_in_graph(&api, &token, "Page", "route").unwrap_or_default();
-        let endpoint_graph = rows_as_in_graph(&api, &token, "Endpoint", "routePath").unwrap_or_default();
+        let page_graph = if foreign { Vec::new() } else { rows_as_in_graph(&api, &token, "Page", "route").unwrap_or_default() };
+        let endpoint_graph = if foreign { Vec::new() } else { rows_as_in_graph(&api, &token, "Endpoint", "routePath").unwrap_or_default() };
         let full = scope_was_full_walk(&scope) && read == TreeRead::Complete;
         let mut page_plan = pages::plan_rows(
             &want_pages,
@@ -2946,10 +2963,10 @@ fn main() {
     let by_path: HashMap<&str, &OnDisk> = disk.iter().map(|f| (f.path.as_str(), f)).collect();
     // #4201 — the authored unit rows, for tagging each code row's domain.
     let unit_rows = domain::unit_domain_rows(
-        &std::fs::read_to_string(format!("{root}/{UNIT_DOMAIN_TTL}")).unwrap_or_default(),
+        &std::fs::read_to_string(format!("{home}/{UNIT_DOMAIN_TTL}")).unwrap_or_default(),
     );
     let dir_rows = domain::surface_domain_rows(
-        &std::fs::read_to_string(format!("{root}/{SURFACE_DOMAIN_TTL}")).unwrap_or_default(),
+        &std::fs::read_to_string(format!("{home}/{SURFACE_DOMAIN_TTL}")).unwrap_or_default(),
         "chorus:pathPrefix",
     );
     let mut wrote = 0usize;
@@ -3508,7 +3525,9 @@ fn main() {
     match watermark_after(&head, read_for_watermark, failed.len(), scope_was_full) {
         Watermark::Advance(sha) => {
             println!("chorus-crawl: watermark -> {}", &sha[..sha.len().min(9)]);
-            if let Err(e) = std::fs::write(format!("{root}/.chorus-crawl-watermark"), &sha) {
+            if foreign {
+                println!("chorus-crawl: no watermark kept for {home_repo} — every --target pass walks full");
+            } else if let Err(e) = std::fs::write(format!("{root}/.chorus-crawl-watermark"), &sha) {
                 eprintln!(
                     "chorus-crawl: could not record the watermark ({e}) — next run walks full"
                 );

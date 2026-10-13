@@ -291,3 +291,14 @@ pub fn exercise_patches(
     }
     out
 }
+
+/// #4405 reopen 6 — whether a stored file row belongs to this pass. A pass over
+/// another repository (`--target`) owns only that repository's rows; the home
+/// pass owns its own and the legacy rows that name none. Nothing else is ever
+/// planned for a delete: a personal-site pass must not delete chorus's 6,605.
+pub fn row_in_pass(stored: &Fields, repo: &str, home_pass: bool) -> bool {
+    match repo_of_row(stored) {
+        Some(r) => r == repo,
+        None => home_pass,
+    }
+}
