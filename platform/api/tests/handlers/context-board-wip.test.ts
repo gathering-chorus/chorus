@@ -1,3 +1,4 @@
+// @test-type: unit
 /**
  * context-board-wip handler tests (#2234 Step 3).
  */
@@ -61,15 +62,32 @@ describe('fetchContextBoardWip', () => {
     expect((r.body as { error: string }).error).toMatch(/unparseable/);
   });
 
-  it('pulse with no board section → empty cards list, 200', async () => {
+  // #4510 — this case used to answer "0 WIP"; that was the "No WIP cards" bug
+  it('pulse with no board section → 503 board unreadable, never an empty list', async () => {
     const r = await fetchContextBoardWip({
       sparql: stubSparql(),
       readPulse: () => JSON.stringify({ health: { status: 'ok' } }),
     }, '/api/chorus/context/board/wip');
+    expect(r.status).toBe(503);
+    expect((r.body as { error: string }).error).toMatch(/board unreadable/);
+  });
+
+  it('#4510 — pulse says the board snapshot is unreadable → 503 naming the reason', async () => {
+    const r = await fetchContextBoardWip({
+      sparql: stubSparql(),
+      readPulse: () => JSON.stringify({ board: { wip_count: 'unknown', unreadable: 'board snapshot is not valid JSON (half-written?)', swat_cards: [] } }),
+    }, '/api/chorus/context/board/wip');
+    expect(r.status).toBe(503);
+    expect((r.body as { error: string }).error).toMatch(/half-written/);
+  });
+
+  it('#4510 — a real empty board (wip_cards []) still answers 200 with total 0', async () => {
+    const r = await fetchContextBoardWip({
+      sparql: stubSparql(),
+      readPulse: () => JSON.stringify({ board: { wip_count: 0, wip_cards: [] } }),
+    }, '/api/chorus/context/board/wip');
     expect(r.status).toBe(200);
-    const body = r.body as { data: { total: number; cards: unknown[] } };
-    expect(body.data.total).toBe(0);
-    expect(body.data.cards).toEqual([]);
+    expect((r.body as { data: { total: number } }).data.total).toBe(0);
   });
 
   it('envelope is domain-scoped to chorus (step + product + domain present)', async () => {

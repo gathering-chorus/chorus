@@ -105,13 +105,48 @@ pub fn durable_pulse_path() -> std::path::PathBuf {
 /// for not-yet-migrated readers — never a second source of truth; it is retired
 /// as readers move to the durable path.
 fn write_pulse(out: &str) {
-    let path = durable_pulse_path();
-    let tmp = path.with_extension("json.tmp");
-    if fs::write(&tmp, out).is_ok() {
-        let _ = fs::rename(&tmp, &path);
-    }
+    write_atomic(&durable_pulse_path(), out);
     // derived cache (back-compat); the durable file above is the source of truth.
-    let _ = fs::write("/tmp/pulse-latest.json", out);
+    write_atomic(std::path::Path::new("/tmp/pulse-latest.json"), out);
+}
+
+/// #4510 — temp file then rename, so a reader on another prompt never sees a
+/// half-written file. The temp name carries the pid: two writers never share one.
+pub fn write_atomic(path: &std::path::Path, data: &str) {
+    let tmp = path.with_extension(format!("tmp.{}", std::process::id()));
+    if fs::write(&tmp, data).is_ok() && fs::rename(&tmp, path).is_err() {
+        let _ = fs::remove_file(&tmp);
+    }
+}
+
+/// #4510 — the board read from a snapshot's text. A snapshot that is missing,
+/// empty, half-written or has no wip_cards list is UNREADABLE and says so with a
+/// reason; it is never an empty board. "No WIP cards" while a card was in WIP
+/// (2026-10-12 13:11, 18:59, 19:12) was exactly that confusion.
+pub fn board_from_snapshot(content: Option<&str>, stale: Option<&str>) -> serde_json::Value {
+    let unreadable = |why: &str| serde_json::json!({
+        "wip_count": "unknown", "unreadable": why, "swat_cards": [], "next_cards": [],
+    });
+    let Some(text) = content else { return unreadable("board snapshot not found") };
+    let Ok(v) = serde_json::from_str::<serde_json::Value>(text) else {
+        return unreadable("board snapshot is not valid JSON (half-written?)");
+    };
+    let (wip, swat, next) = if let Some(obj) = v.as_object() {
+        let Some(wip) = obj.get("wip_cards").and_then(|c| c.as_array()).cloned() else {
+            return unreadable("board snapshot has no wip_cards list");
+        };
+        let list = |k: &str| obj.get(k).and_then(|c| c.as_array()).cloned().unwrap_or_default();
+        (wip, list("swat_cards"), list("next_cards"))
+    } else if let Some(cards) = v.as_array() {
+        (cards.clone(), Vec::new(), Vec::new()) // legacy format: a flat wip list
+    } else {
+        return unreadable("board snapshot has an unknown shape");
+    };
+    let mut out = serde_json::json!({
+        "wip_count": wip.len(), "wip_cards": wip, "swat_cards": swat, "next_cards": next,
+    });
+    if let Some(why) = stale { out["stale"] = serde_json::json!(why); }
+    out
 }
 
 /// Hook-invocation entry point. Writes pulse file and prints compact JSON
@@ -265,8 +300,9 @@ fn assemble_health() -> serde_json::Value {
 fn assemble_board() -> serde_json::Value {
     // #2168 AC-12 — cache-primary read path. Shell-out to `cards list` is
     // ~390ms (Vikunja round-trip), far over the sub-100ms budget. Read
-    // snapshot first; only refresh when stale. Cards CLI also writes the
-    // snapshot on its own mutations, so staleness is bounded by pulse cadence.
+    // snapshot first; only refresh when stale. Pulse is the only writer of the
+    // snapshot (#4510: the cards CLI no longer writes it), so staleness is
+    // bounded by pulse cadence.
     const SNAPSHOT_TTL_SECS: u64 = 10;
     let snapshot_file = "/tmp/board-wip-snapshot.json";
 
@@ -278,31 +314,9 @@ fn assemble_board() -> serde_json::Value {
         .unwrap_or(u64::MAX);
 
     if snapshot_age <= SNAPSHOT_TTL_SECS {
-        if let Ok(content) = fs::read_to_string(snapshot_file) {
-            if let Ok(v) = serde_json::from_str::<serde_json::Value>(&content) {
-                if let Some(obj) = v.as_object() {
-                    // New snapshot format: {wip_cards, swat_cards, next_cards}.
-                    // next_cards added #2252 — symmetric with wip+swat, read
-                    // path for /api/chorus/context/board/next.
-                    let wip = obj.get("wip_cards").and_then(|c| c.as_array()).cloned().unwrap_or_default();
-                    let swat = obj.get("swat_cards").and_then(|c| c.as_array()).cloned().unwrap_or_default();
-                    let next = obj.get("next_cards").and_then(|c| c.as_array()).cloned().unwrap_or_default();
-                    return serde_json::json!({
-                        "wip_count": wip.len(),
-                        "wip_cards": wip,
-                        "swat_cards": swat,
-                        "next_cards": next,
-                    });
-                } else if let Some(cards) = v.as_array() {
-                    // Legacy snapshot format: flat array of wip_cards only
-                    return serde_json::json!({
-                        "wip_count": cards.len(),
-                        "wip_cards": cards,
-                        "swat_cards": [],
-                        "next_cards": [],
-                    });
-                }
-            }
+        let fresh = board_from_snapshot(fs::read_to_string(snapshot_file).ok().as_deref(), None);
+        if fresh.get("unreadable").is_none() {
+            return fresh;
         }
     }
 
@@ -323,25 +337,10 @@ fn assemble_board() -> serde_json::Value {
         .and_then(|t| t.elapsed().ok())
         .map(|d| d.as_secs() > 60)
         .unwrap_or(true);
+    // Serve the last-known snapshot whatever its age (stale beats a pile), or
+    // say it cannot be read: never an empty board (#4510).
     let serve_stale = || -> serde_json::Value {
-        // Serve the last-known snapshot whatever its age — stale beats a pile.
-        if let Ok(content) = fs::read_to_string(snapshot_file) {
-            if let Ok(v) = serde_json::from_str::<serde_json::Value>(&content) {
-                if let Some(obj) = v.as_object() {
-                    let wip = obj.get("wip_cards").and_then(|c| c.as_array()).cloned().unwrap_or_default();
-                    let swat = obj.get("swat_cards").and_then(|c| c.as_array()).cloned().unwrap_or_default();
-                    let next = obj.get("next_cards").and_then(|c| c.as_array()).cloned().unwrap_or_default();
-                    return serde_json::json!({
-                        "wip_count": wip.len(),
-                        "wip_cards": wip,
-                        "swat_cards": swat,
-                        "next_cards": next,
-                        "stale": "refresh-in-flight",
-                    });
-                }
-            }
-        }
-        serde_json::json!({"wip_count": 0, "wip_cards": [], "swat_cards": [], "next_cards": [], "stale": "refresh-in-flight"})
+        board_from_snapshot(fs::read_to_string(snapshot_file).ok().as_deref(), Some("refresh-in-flight"))
     };
     if !lock_stale {
         return serve_stale(); // refresh already in flight elsewhere
@@ -373,7 +372,7 @@ fn assemble_board() -> serde_json::Value {
                     "swat_cards": &swat_cards,
                     "next_cards": &next_cards,
                 });
-                let _ = fs::write(snapshot_file, serde_json::to_string(&snapshot).unwrap_or_default());
+                write_atomic(std::path::Path::new(snapshot_file), &serde_json::to_string(&snapshot).unwrap_or_default());
                 return serde_json::json!({
                     "wip_count": wip_cards.len(),
                     "wip_cards": wip_cards,
@@ -385,20 +384,9 @@ fn assemble_board() -> serde_json::Value {
     }
 
     // Last resort: stale-but-present snapshot is better than "unknown."
-    if let Ok(content) = fs::read_to_string(snapshot_file) {
-        if let Ok(v) = serde_json::from_str::<serde_json::Value>(&content) {
-            if let Some(cards) = v.as_array() {
-                return serde_json::json!({
-                    "wip_count": cards.len(),
-                    "wip_cards": cards,
-                    "swat_cards": [],
-                    "snapshot_stale": true,
-                });
-            }
-        }
-    }
-
-    serde_json::json!({"wip_count": "unknown", "swat_cards": [], "note": "board snapshot not found"})
+    let mut last = board_from_snapshot(fs::read_to_string(snapshot_file).ok().as_deref(), None);
+    if last.get("unreadable").is_none() { last["snapshot_stale"] = serde_json::json!(true); }
+    last
 }
 
 /// Parse `cards list` stdout into WIP card records.
@@ -574,6 +562,49 @@ fn parse_epoch_approx(ts: &str) -> Option<u64> {
 
 #[cfg(test)]
 mod tests {
+    // #4510 — an unreadable snapshot is reported as unreadable, never as an empty board
+    #[test]
+    fn a_readable_snapshot_lists_its_cards() {
+        let b = super::board_from_snapshot(Some(r#"{"wip_cards":[{"id":4508,"owner":"Wren"}],"swat_cards":[],"next_cards":[]}"#), None);
+        assert_eq!(b["wip_count"], 1);
+        assert_eq!(b["wip_cards"][0]["id"], 4508);
+        assert!(b.get("unreadable").is_none());
+    }
+
+    #[test]
+    fn negative_proof_a_half_written_or_missing_snapshot_is_unreadable_not_empty() {
+        for (text, why) in [
+            (Some(r#"{"wip_cards":[{"id":45"#), "not valid JSON"),
+            (Some(""), "not valid JSON"),
+            (Some(r#"{"swat_cards":[]}"#), "no wip_cards list"),
+            (None, "not found"),
+        ] {
+            let b = super::board_from_snapshot(text, Some("refresh-in-flight"));
+            assert!(b.get("wip_cards").is_none(), "{text:?} must not read as a board: {b}");
+            assert_eq!(b["wip_count"], "unknown");
+            assert!(b["unreadable"].as_str().unwrap().contains(why), "{b}");
+        }
+    }
+
+    #[test]
+    fn a_stale_but_readable_snapshot_keeps_its_cards_and_says_stale() {
+        let b = super::board_from_snapshot(Some(r#"{"wip_cards":[{"id":1}]}"#), Some("refresh-in-flight"));
+        assert_eq!(b["wip_count"], 1);
+        assert_eq!(b["stale"], "refresh-in-flight");
+    }
+
+    #[test]
+    fn write_atomic_leaves_no_temp_file_and_the_whole_text() {
+        let dir = std::env::temp_dir().join(format!("pulse-4510-{}", std::process::id()));
+        let _ = std::fs::create_dir_all(&dir);
+        let path = dir.join("snap.json");
+        super::write_atomic(&path, r#"{"wip_cards":[]}"#);
+        assert_eq!(std::fs::read_to_string(&path).unwrap(), r#"{"wip_cards":[]}"#);
+        let left: Vec<_> = std::fs::read_dir(&dir).unwrap().filter_map(|e| e.ok()).map(|e| e.file_name()).collect();
+        assert_eq!(left.len(), 1, "{left:?}");
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
     use super::parse_wip_list;
 
     const SAMPLE: &str = concat!(
