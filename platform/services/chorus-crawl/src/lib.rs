@@ -191,11 +191,23 @@ pub fn stable_name(rel: &str) -> String {
         h ^= *b as u64;
         h = h.wrapping_mul(0x1000_0000_01b3);
     }
-    format!(
-        "file-{}-{:08x}",
-        out.trim_matches('-'),
-        (h & 0xffff_ffff) as u32
-    )
+    // #4405 R6.4 — the door takes names up to 128 characters; 11 personal-site
+    // paths ran past it. The slug is cut, never the hash, so the name stays
+    // unique; every name that already fit is unchanged.
+    let slug = out.trim_matches('-');
+    let slug = slug[..slug.len().min(MAX_SLUG)].trim_end_matches('-');
+    format!("file-{}-{:08x}", slug, (h & 0xffff_ffff) as u32)
+}
+
+/// 128 (the door's limit) minus `file-`, `-` and the 8-digit hash.
+const MAX_SLUG: usize = 128 - 5 - 1 - 8;
+
+/// #4405 R6.4 — a file row's name. Chorus's rows keep the names they have; a
+/// file of another repository carries the repository in its name, because the
+/// same path in two repos (`.gitignore`, `eslint.config.js`) is two files, and
+/// one name for both made the door refuse a whole batch of 200.
+pub fn file_row_name(repo: &str, rel: &str, home_repo: bool) -> String {
+    if home_repo { stable_name(rel) } else { stable_name(&format!("{repo}/{rel}")) }
 }
 
 /// Is this path a test, by the repo's own conventions? Ported verbatim from
