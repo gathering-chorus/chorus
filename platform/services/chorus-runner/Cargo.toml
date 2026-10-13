@@ -1,0 +1,31 @@
+[package]
+name = "chorus-runner"
+version = "0.1.0"
+edition = "2021"
+
+# #4512 — the Services tool runner core (Services product design, #4509):
+# one MCP runner on the 2026-07-28 release, beside the old platform/mcp-server.
+# rmcp is pinned exactly: 3.5.1 is the release that serves 2026-07-28
+# (ProtocolVersion::V_2026_07_28 = LATEST) and still answers 2025 clients.
+# Identity is chorus-oidc as a library (the one verifier, never a copy), and
+# the store query is athena-make's.
+[dependencies]
+rmcp = { version = "=3.5.1", features = ["server", "transport-streamable-http-server"] }
+tokio = { version = "1", features = ["rt-multi-thread", "macros", "net", "signal"] }
+axum = "0.8"
+tower = { version = "0.5", features = ["util"] }
+http = "1"
+serde_json = "1"
+chorus-oidc = { path = "../chorus-oidc" }
+athena-make = { path = "../athena-make" }
+
+[dev-dependencies]
+p256 = { version = "0.13", features = ["ecdsa"] }
+
+[lib]
+name = "chorus_runner"
+path = "src/lib.rs"
+
+[[bin]]
+name = "chorus-runner"
+path = "src/main.rs"
