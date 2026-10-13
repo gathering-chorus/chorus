@@ -56,6 +56,9 @@ fn a_wine_diary_api_names_its_own_namespace_and_graphs() {
     assert!(model.contains("pub const NS: &str = \"https://wine.example/diary#\";"), "{model}");
     assert!(model.contains("pub const PREFIX: &str = \"wine\";"), "{model}");
     assert!(model.contains("pub const GRAPH_PREFIX: &str = \"urn:wine:\";"), "{model}");
+    // #4519 reopen 2 — the verifier is told whose people to read, at boot
+    assert!(files["src/main.rs"].contains("IdentityModel::new(model::NS, &s.identity_graph_prefix)"), "boot never configures the verifier");
+    assert!(files["src/settings.rs"].contains("value(\"identity.graph_prefix\""), "identity.graph_prefix is not read");
     let left = chorus_names(&files);
     assert!(left.is_empty(), "the wine diary's own code still names Chorus:\n{}", left.join("\n"));
 }
@@ -82,7 +85,7 @@ fn negative_proof_no_graph_prefix_is_refused_never_a_chorus_default() {
     let e2 = product(&store2, "wine").unwrap_err().to_string();
     assert!(e2.contains("store.graph_prefix"), "{e2}");
     let missing = missing_settings(&settings(&store, "wine").unwrap());
-    for k in ["model.namespace", "model.prefix", "store.graph_prefix"] {
+    for k in ["identity.graph_prefix", "model.namespace", "model.prefix", "store.graph_prefix"] {
         assert!(missing.contains(&k), "{k} missing is not named: {missing:?}");
     }
 }

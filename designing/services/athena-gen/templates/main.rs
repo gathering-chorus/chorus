@@ -174,6 +174,12 @@ fn main() {
         return;
     }
     let store = store::open(&s);
+    // #4519 — the shared verifier reads THIS product's people (its namespace, its
+    // identity graphs), never Chorus's; a verifier already set to another model is refused
+    if let Err(m) = chorus_oidc::identity_model::configure(chorus_oidc::identity_model::IdentityModel::new(model::NS, &s.identity_graph_prefix)) {
+        eprintln!("{PRODUCT}-api: {m}");
+        std::process::exit(2);
+    }
     let (endpoint, creds) = (s.store_endpoint.clone(), s.store_auth());
     let who = auth::build(&s.identity_issuer, move |q| store::sparql_body(&endpoint, &creds, q).ok());
     let ctx = Ctx { store: store.as_ref(), who: &who, events: s.events_command.clone() };

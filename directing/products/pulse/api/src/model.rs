@@ -12,6 +12,7 @@ pub const GRAPH_PREFIX: &str = "urn:chorus:domains:";
 /// Declared settings and their defaults, from the product's Property rows (see settings.rs for the lookup order).
 pub const SETTINGS: &[(&str, &str)] = &[
     ("events.command", ""),
+    ("identity.graph_prefix", "urn:chorus:"),
     ("identity.issuer", "https://id.lightlifeurbangardens.com/"),
     ("model.namespace", "https://jeffbridwell.com/chorus#"),
     ("model.prefix", "chorus"),
