@@ -6,13 +6,18 @@ pub const CRATE_VERSION: &str = env!("CARGO_PKG_VERSION");
 pub const API_VERSION: &str = "v1";
 pub const MODEL_VERSION: &str = "1.30.0";
 pub const NS: &str = "https://jeffbridwell.com/chorus#";
+pub const PREFIX: &str = "chorus";
+pub const GRAPH_PREFIX: &str = "urn:chorus:domains:";
 
 /// Declared settings and their defaults, from the product's Property rows (see settings.rs for the lookup order).
 pub const SETTINGS: &[(&str, &str)] = &[
     ("events.command", ""),
     ("identity.issuer", "https://id.lightlifeurbangardens.com/"),
+    ("model.namespace", "https://jeffbridwell.com/chorus#"),
+    ("model.prefix", "chorus"),
     ("server.bind", "127.0.0.1:3392"),
     ("store.endpoint", "http://localhost:3030/pods"),
+    ("store.graph_prefix", "urn:chorus:domains:"),
     ("store.kind", "sparql"),
     ("store.password_var", "FUSEKI_ADMIN_PASSWORD"),
     ("store.path", "/Users/jeffbridwell/.chorus/data/pulse-api"),

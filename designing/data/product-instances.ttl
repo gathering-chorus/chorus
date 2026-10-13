@@ -415,7 +415,8 @@ Chorus · Pulse · rewritten for readers outside the team 2026-09-03""" ;
     chorus:hasProperty chorus:property-pulse-server-bind, chorus:property-pulse-store-kind,
         chorus:property-pulse-store-endpoint, chorus:property-pulse-store-user-var,
         chorus:property-pulse-store-password-var, chorus:property-pulse-identity-issuer,
-        chorus:property-pulse-events-command, chorus:property-pulse-store-path, chorus:property-pulse-store-row ;
+        chorus:property-pulse-events-command, chorus:property-pulse-store-path, chorus:property-pulse-store-row,
+        chorus:property-pulse-model-namespace, chorus:property-pulse-model-prefix, chorus:property-pulse-store-graph-prefix ;
     chorus:partOf chorus:chorus .
 
 chorus:spine a chorus:Product ;

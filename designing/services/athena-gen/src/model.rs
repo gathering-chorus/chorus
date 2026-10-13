@@ -13,6 +13,9 @@ use oxigraph::store::Store;
 use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};
 
+/// The modelling language's namespace: the vocabulary the model is AUTHORED in
+/// (c:Product, c:hasDomain, sh shapes). Build time only. A product's own namespace,
+/// the one its API serves, is its `model.namespace` setting (#4519).
 pub const NS: &str = "https://jeffbridwell.com/chorus#";
 const PREFIXES: &str = "PREFIX c: <https://jeffbridwell.com/chorus#> \
 PREFIX sh: <http://www.w3.org/ns/shacl#> \
@@ -197,22 +200,32 @@ pub fn product(store: &Store, name: &str) -> Result<Product, ModelError> {
         return Err(ModelError(format!("product '{name}' has no domains in the model (c:{name} a c:Product ; c:hasDomain …)")));
     }
     let mut out = Product { name: name.to_string(), domains: Vec::new() };
+    // #4519 — a class with no instancesGraph lives under the product's own graph
+    // prefix, never a Chorus default
+    let declared = settings(store, name)?;
+    let prefix = declared.iter().find(|(k, _)| k == "store.graph_prefix").map(|(_, v)| v.clone());
     for d in domains {
         let dname = d["d"].clone();
         let mut domain = Domain { name: dname.clone(), classes: Vec::new() };
         for c in select(store, &format!("SELECT DISTINCT ?c WHERE {{ c:{dname} c:definesVocabulary ?c }} ORDER BY ?c"))? {
-            domain.classes.push(class(store, &dname, &c["c"])?);
+            domain.classes.push(class(store, &dname, &c["c"], prefix.as_deref(), name)?);
         }
         out.domains.push(domain);
     }
     Ok(out)
 }
 
-fn class(store: &Store, domain: &str, name: &str) -> Result<Class, ModelError> {
-    let graph = select(store, &format!(
+fn class(store: &Store, domain: &str, name: &str, prefix: Option<&str>, product: &str) -> Result<Class, ModelError> {
+    let graph = match select(store, &format!(
         "SELECT ?g WHERE {{ ?s sh:targetClass c:{name} ; c:instancesGraph ?g }} ORDER BY ?g LIMIT 1"))?
-        .into_iter().next().map(|r| r["g"].clone())
-        .unwrap_or_else(|| format!("urn:chorus:domains:{domain}"));
+        .into_iter().next() {
+        Some(r) => r["g"].clone(),
+        None => match prefix {
+            Some(p) => format!("{p}{domain}"),
+            None => return Err(ModelError(format!(
+                "{name} names no instancesGraph and {product} declares no store.graph_prefix: add one or the other"))),
+        },
+    };
     let props = select(store, &format!(
         "SELECT ?path (SAMPLE(?dt) AS ?datatype) (SAMPLE(?cl) AS ?class) (SAMPLE(?nk) AS ?nodeKind) \
          (MAX(?mn) AS ?min) (MIN(?mx) AS ?max) WHERE {{ \
@@ -266,8 +279,12 @@ pub fn settings(store: &Store, product: &str) -> Result<Vec<(String, String)>, M
 
 /// The keys the generated runtime reads. A product whose model declares fewer cannot
 /// be generated: the refusal names the missing key instead of a default being invented.
-pub const RUNTIME_SETTINGS: &[&str] =
-    &["events.command", "identity.issuer", "server.bind", "store.endpoint", "store.kind", "store.password_var", "store.path", "store.user_var"];
+/// #4519 — `model.namespace`, `model.prefix` and `store.graph_prefix` make the API the
+/// product's own: its terms, the short prefix callers may write, and where its rows live.
+pub const RUNTIME_SETTINGS: &[&str] = &[
+    "events.command", "identity.issuer", "model.namespace", "model.prefix", "server.bind",
+    "store.endpoint", "store.graph_prefix", "store.kind", "store.password_var", "store.path", "store.user_var",
+];
 
 pub fn missing_settings(declared: &[(String, String)]) -> Vec<&'static str> {
     RUNTIME_SETTINGS.iter().copied().filter(|k| !declared.iter().any(|(d, _)| d == k)).collect()
