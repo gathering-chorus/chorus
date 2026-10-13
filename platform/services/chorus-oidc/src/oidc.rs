@@ -550,7 +550,7 @@ pub fn allow_set_graph() -> String {
         return g.clone();
     }
     std::env::var("CHORUS_ALLOW_SET_GRAPH")
-        .unwrap_or_else(|_| "urn:chorus:domains:security".to_string())
+        .unwrap_or_else(|_| crate::identity_model::identity_model().graph("domains:security"))
 }
 
 /// #4220 — WHERE PRINCIPALS LIVE IS A MODEL FACT, NOT A CONFIG FACT.
@@ -579,7 +579,8 @@ pub const PRINCIPAL_HOME_QUERY: &str = "PREFIX chorus: <https://jeffbridwell.com
 /// Pure: pick the home from what the model answered. `rows` is the select's
 /// values; anything unusable leaves the current answer alone.
 pub fn principal_home_from(rows: &[String], current: &str) -> String {
-    match rows.iter().find(|r| r.starts_with("urn:chorus:")) {
+    let prefix = &crate::identity_model::identity_model().graph_prefix;
+    match rows.iter().find(|r| r.starts_with(prefix.as_str())) {
         Some(g) => g.clone(),
         None => current.to_string(),
     }
@@ -588,9 +589,10 @@ pub fn principal_home_from(rows: &[String], current: &str) -> String {
 /// Called once at boot, before the first token is verified. Returns the graph
 /// every reader in this process will use, and says so to the log.
 pub fn prime_allow_set_graph(query: impl Fn(&str) -> Option<String>) -> String {
+    let model = crate::identity_model::identity_model();
     let current = std::env::var("CHORUS_ALLOW_SET_GRAPH")
-        .unwrap_or_else(|_| "urn:chorus:domains:security".to_string());
-    let resolved = match query(PRINCIPAL_HOME_QUERY) {
+        .unwrap_or_else(|_| model.graph("domains:security"));
+    let resolved = match query(&model.localize(PRINCIPAL_HOME_QUERY)) {
         Some(body) => principal_home_from(&crate::select_v(&body), &current),
         None => current.clone(),
     };
@@ -619,7 +621,7 @@ pub fn graph_provenance(count: usize, reason: &str) -> String {
 /// The variable is `?v` because select_v (the DAL's proven single-var
 /// extractor) parses exactly that seam.
 pub fn principal_allow_query() -> String {
-    format!("PREFIX chorus: <https://jeffbridwell.com/chorus#> SELECT ?v WHERE {{ GRAPH <{}> {{ ?p a chorus:Principal ; chorus:webId ?v }} }}", allow_set_graph())
+    crate::identity_model::identity_model().localize(&format!("PREFIX chorus: <https://jeffbridwell.com/chorus#> SELECT ?v WHERE {{ GRAPH <{}> {{ ?p a chorus:Principal ; chorus:webId ?v }} }}", allow_set_graph()))
 }
 
 /// None = graph unreachable (caller decides the fail-closed posture);
@@ -639,14 +641,14 @@ pub const PERSON_CLIENT_QUERY: &str = "PREFIX chorus: <https://jeffbridwell.com/
 
 /// None = graph unreachable (caller fails closed); Some(empty) = none named.
 pub fn resolve_person_clients(query: impl Fn(&str) -> Option<String>) -> Option<Vec<String>> {
-    query(PERSON_CLIENT_QUERY).map(|body| crate::select_v(&body).into_iter().filter(|v| !v.is_empty()).collect())
+    query(&crate::identity_model::identity_model().localize(PERSON_CLIENT_QUERY)).map(|body| crate::select_v(&body).into_iter().filter(|v| !v.is_empty()).collect())
 }
 
 pub fn principal_name_query() -> String {
-    format!(
+    crate::identity_model::identity_model().localize(&format!(
         "PREFIX chorus: <https://jeffbridwell.com/chorus#> SELECT ?v WHERE {{ GRAPH <{}> {{ ?p a chorus:Principal ; chorus:webId ?w }} BIND(CONCAT(STR(?w), \" \", REPLACE(REPLACE(STR(?p), \".*[#/]\", \"\"), \"^principal-\", \"\")) AS ?v) }}",
         allow_set_graph()
-    )
+    ))
 }
 
 /// None = graph unreachable (caller fails closed); Some(empty) = no principals.
@@ -677,7 +679,7 @@ pub fn resolve_principal_names(
 /// Principals with no `holdsRole` are simply absent: allowed to authenticate,
 /// holding no role.
 pub fn principal_role_query() -> String {
-    format!("PREFIX chorus: <https://jeffbridwell.com/chorus#> SELECT ?v WHERE {{ GRAPH <{}> {{ ?p a chorus:Principal ; chorus:webId ?w ; chorus:holdsRole ?r }} BIND(CONCAT(STR(?w), \" \", STR(?r)) AS ?v) }}", allow_set_graph())
+    crate::identity_model::identity_model().localize(&format!("PREFIX chorus: <https://jeffbridwell.com/chorus#> SELECT ?v WHERE {{ GRAPH <{}> {{ ?p a chorus:Principal ; chorus:webId ?w ; chorus:holdsRole ?r }} BIND(CONCAT(STR(?w), \" \", STR(?r)) AS ?v) }}", allow_set_graph()))
 }
 
 /// A role IRI's name: the local part after the last `#`, `/` or `:`, minus a
@@ -763,7 +765,7 @@ pub fn principal_scope_query() -> String {
 /// query looks like for a home that is NOT the default without touching the
 /// process-wide resolved graph.
 pub fn principal_scope_query_for(home: &str) -> String {
-    PRINCIPAL_SCOPE_QUERY_TEMPLATE.replace(PRINCIPAL_HOME_MARKER, home)
+    crate::identity_model::identity_model().localize(&PRINCIPAL_SCOPE_QUERY_TEMPLATE.replace(PRINCIPAL_HOME_MARKER, home))
 }
 
 /// None = graph unreachable (caller fails closed); Some(empty) = reachable and

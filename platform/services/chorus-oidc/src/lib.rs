@@ -4,6 +4,7 @@
 //! Behavior-preserving: auth.rs + oidc.rs are the athena-make originals, unedited; query.rs
 //! holds the pure helpers they call (athena-make re-exports all of it).
 pub mod auth;
+pub mod identity_model;
 pub mod oidc;
 pub mod query;
 pub use query::select_v;
