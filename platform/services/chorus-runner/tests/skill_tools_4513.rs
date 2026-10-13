@@ -111,3 +111,20 @@ fn the_child_runs_as_the_skill_owner() {
     assert!(seen.lines().any(|l| l == "DEPLOY_ROLE=silas"), "child env: {seen}");
     assert!(seen.lines().any(|l| l == "CHORUS_TRACE=00-trace"), "child env: {seen}");
 }
+
+// #4514 (Silas 19:07) — an athena verb's args is a list: each item is its own
+// word, in order, never one JSON string; a non-string item is refused.
+#[test]
+fn a_list_argument_is_spliced_one_word_per_item_and_checked_item_by_item() {
+    use chorus_runner::skills::coerce_args;
+    let schema = json!({ "type": "object", "properties": { "args": { "type": "array", "items": { "type": "string" } } }, "required": ["args"] })
+        .as_object().unwrap().clone();
+    let a = args(json!({ "args": ["scope", "/r", "a..b"] }));
+    check_args(&a, &schema).unwrap();
+    assert_eq!(argv("{args}", &a, "wren"), vec!["scope", "/r", "a..b"]);
+    // NEGATIVE PROOF: a number inside the list is refused, not stringified
+    assert!(check_args(&args(json!({ "args": ["scope", 7] })), &schema).is_err());
+    assert!(check_args(&args(json!({ "args": [] })), &schema).is_err(), "an empty list passed");
+    // a lone value from a command line becomes a one-item list
+    assert_eq!(coerce_args(&args(json!({ "args": "scope" })), &schema)["args"], json!(["scope"]));
+}

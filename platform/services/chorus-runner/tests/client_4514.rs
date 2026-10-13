@@ -6,9 +6,9 @@ use chorus_runner::client::{args_from_pairs, finished, parse_result, task_id};
 use serde_json::json;
 
 #[test]
-fn pairs_become_typed_arguments() {
-    let a = args_from_pairs(&["card=4514".into(), "dry_run=true".into(), "target=werk".into()]).unwrap();
-    assert_eq!(a, json!({ "card": 4514, "dry_run": true, "target": "werk" }));
+fn pairs_become_text_arguments_and_a_repeated_key_a_list() {
+    let a = args_from_pairs(&["card=4514".into(), "dry_run=true".into(), "args=scope".into(), "args=.".into()]).unwrap();
+    assert_eq!(a, json!({ "card": "4514", "dry_run": "true", "args": ["scope", "."] }));
     assert!(args_from_pairs(&["card".into()]).is_err(), "a pair without = is refused");
 }
 

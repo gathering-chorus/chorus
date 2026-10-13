@@ -103,7 +103,16 @@ fn identity_token(principal: &str) -> Option<String> {
     out.status.success().then(|| String::from_utf8_lossy(&out.stdout).trim().to_string()).filter(|t| !t.is_empty())
 }
 
-fn binary_path(name: &str) -> String {
+/// Which binary a tool runs. #4514 — the caller's werk bin slot first, as the
+/// cicd pipeline's PATH does today (${CHORUS_WERK_BASE}/<role>-bin first), so a
+/// card that changes a verb runs its own build; then the installed copy.
+pub fn binary_path(name: &str, who: &str) -> String {
+    if let Ok(base) = std::env::var("CHORUS_WERK_BASE") {
+        let slot = format!("{base}/{who}-bin/{name}");
+        if !who.is_empty() && std::path::Path::new(&slot).is_file() {
+            return slot;
+        }
+    }
     let installed = format!("{}/.chorus/bin/{name}", std::env::var("HOME").unwrap_or_default());
     if std::path::Path::new(&installed).exists() { installed } else { name.to_string() }
 }
@@ -115,10 +124,11 @@ async fn run_skill(tool: &SkillTool, args: &serde_json::Map<String, serde_json::
         Ok(w) => w,
         Err(e) => return (false, e, 403),
     };
+    let args = &crate::skills::coerce_args(args, &tool.schema);
     if let Err(e) = check_args(args, &tool.schema) {
         return (false, e, 400);
     }
-    let argv = argv(&tool.template, args, caller);
+    let argv = argv(&tool.template, args, crate::skills::bare(caller));
     let as_who = who.clone();
     let Some(token) = tokio::task::spawn_blocking(move || identity_token(&as_who)).await.ok().flatten() else {
         return (false, format!("could not mint {who}'s identity to run as them"), 503);
@@ -128,12 +138,12 @@ async fn run_skill(tool: &SkillTool, args: &serde_json::Map<String, serde_json::
     if tool.long_running {
         let id = format!("{}-{trace}", tool.name);
         let env = crate::skills::child_env(&who, &token, trace);
-        return match crate::tasks::spawn(&crate::tasks::tasks_dir(), &id, &binary_path(&tool.binary), &argv, &env, crate::skills::bare(caller)) {
+        return match crate::tasks::spawn(&crate::tasks::tasks_dir(), &id, &binary_path(&tool.binary, &who), &argv, &env, crate::skills::bare(caller)) {
             Ok(_) => (true, format!("started {} as task {id}: call task_status with this id", tool.name), 202),
             Err(e) => (false, e, 500),
         };
     }
-    let mut cmd = tokio::process::Command::new(binary_path(&tool.binary));
+    let mut cmd = tokio::process::Command::new(binary_path(&tool.binary, &who));
     cmd.args(&argv)
         .envs(crate::skills::child_env(&who, &token, trace))
         .stdin(std::process::Stdio::null())

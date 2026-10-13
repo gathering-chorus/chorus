@@ -27,20 +27,20 @@ pub fn call_body(tool: &str, args: &Value) -> String {
     .to_string()
 }
 
-/// `key=value` pairs as tool arguments: a whole number is sent as a number,
-/// true/false as a boolean, anything else as a string. A pair without `=` is refused.
+/// `key=value` pairs as tool arguments, as text; the runner turns each into
+/// the type its schema declares. A key given twice becomes a list, in order.
+/// A pair without `=` is refused.
 pub fn args_from_pairs(pairs: &[String]) -> Result<Value, String> {
     let mut m = serde_json::Map::new();
     for p in pairs {
         let (k, v) = p.split_once('=').ok_or_else(|| format!("{p}: arguments are key=value"))?;
-        let val = if let Ok(n) = v.parse::<i64>() {
-            json!(n)
-        } else if v == "true" || v == "false" {
-            json!(v == "true")
-        } else {
-            json!(v)
-        };
-        m.insert(k.to_string(), val);
+        match m.get_mut(k) {
+            Some(Value::Array(a)) => a.push(json!(v)),
+            Some(prev) => *prev = json!([prev.clone(), v]),
+            None => {
+                m.insert(k.to_string(), json!(v));
+            }
+        }
     }
     Ok(Value::Object(m))
 }

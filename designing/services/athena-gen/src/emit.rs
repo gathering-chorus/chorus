@@ -182,13 +182,15 @@ pub fn tool_inputs_json(inputs: &[(String, Vec<crate::model::ToolArg>)]) -> Stri
                 "decimal" | "double" | "float" => "number",
                 _ => "string",
             };
-            let mut p = Map::new();
-            p.insert("type".into(), json!(ty));
+            let mut item = Map::new();
+            item.insert("type".into(), json!(ty));
+            if !a.allowed.is_empty() {
+                item.insert("enum".into(), json!(a.allowed));
+            }
+            // #4514 — no sh:maxCount: an ordered list of that type
+            let mut p = if a.many { let mut m = Map::new(); m.insert("type".into(), json!("array")); m.insert("items".into(), Value::Object(item)); m } else { item };
             if !a.description.is_empty() {
                 p.insert("description".into(), json!(a.description));
-            }
-            if !a.allowed.is_empty() {
-                p.insert("enum".into(), json!(a.allowed));
             }
             props.insert(a.name.clone(), Value::Object(p));
             if a.required {

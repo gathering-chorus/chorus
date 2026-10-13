@@ -16,10 +16,11 @@ const FIXTURE: &str = r#"
 @prefix sh: <http://www.w3.org/ns/shacl#> .
 @prefix xsd: <http://www.w3.org/2001/XMLSchema#> .
 chorus:PingInput a sh:NodeShape , chorus:ToolInput ;
-    sh:property [ sh:path chorus:host ; sh:minCount 1 ; sh:datatype xsd:string ; sh:order 1 ; sh:name "host" ;
+    sh:property [ sh:path chorus:host ; sh:minCount 1 ; sh:maxCount 1 ; sh:datatype xsd:string ; sh:order 1 ; sh:name "host" ;
                   sh:in ( "a" "b" ) ; sh:description "Which host." ] ;
-    sh:property [ sh:path chorus:times ; sh:datatype xsd:integer ; sh:order 2 ; sh:name "times" ] ;
-    sh:property [ sh:path chorus:quiet ; sh:datatype xsd:boolean ; sh:order 3 ; sh:name "quiet" ] .
+    sh:property [ sh:path chorus:times ; sh:maxCount 1 ; sh:datatype xsd:integer ; sh:order 2 ; sh:name "times" ] ;
+    sh:property [ sh:path chorus:quiet ; sh:maxCount 1 ; sh:datatype xsd:boolean ; sh:order 3 ; sh:name "quiet" ] ;
+    sh:property [ sh:path chorus:extra ; sh:datatype xsd:string ; sh:order 4 ; sh:name "extra" ] .
 # A class shape: a door collection, never a tool input.
 chorus:WidgetShape a sh:NodeShape ; sh:targetClass chorus:Widget ;
     sh:property [ sh:path chorus:size ; sh:datatype xsd:integer ] .
@@ -46,6 +47,17 @@ fn a_tool_input_shape_becomes_a_json_schema() {
     assert_eq!(ping["properties"]["times"]["type"], "integer");
     assert_eq!(ping["properties"]["quiet"]["type"], "boolean");
     assert_eq!(ping["additionalProperties"], false);
+}
+
+/// #4514 — no sh:maxCount is a list (an athena verb's args, in order).
+/// NEGATIVE PROOF: a field WITH sh:maxCount 1 never becomes a list.
+#[test]
+fn a_field_with_no_max_count_is_a_list_and_one_with_is_not() {
+    let v: serde_json::Value = serde_json::from_str(&athena_gen::emit::tool_inputs_json(&fixture_inputs())).unwrap();
+    let p = &v["PingInput"]["properties"];
+    assert_eq!(p["extra"]["type"], "array");
+    assert_eq!(p["extra"]["items"]["type"], "string");
+    assert_eq!(p["host"]["type"], "string", "a single field became a list");
 }
 
 /// NEGATIVE PROOF: a class shape is a door collection, never a tool input, so

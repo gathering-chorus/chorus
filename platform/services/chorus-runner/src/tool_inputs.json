@@ -1,4 +1,20 @@
 {
+  "AthenaVerbInput": {
+    "additionalProperties": false,
+    "properties": {
+      "args": {
+        "description": "The verb's arguments in order, e.g. [\"scope\", \"<root>\", \"<git-range>\"].",
+        "items": {
+          "type": "string"
+        },
+        "type": "array"
+      }
+    },
+    "required": [
+      "args"
+    ],
+    "type": "object"
+  },
   "HeraldRunInput": {
     "additionalProperties": false,
     "properties": {
@@ -28,6 +44,163 @@
     },
     "required": [
       "sensor"
+    ],
+    "type": "object"
+  },
+  "WerkBuildInput": {
+    "additionalProperties": false,
+    "properties": {
+      "atomic": {
+        "description": "Run the verb's atomic path.",
+        "type": "boolean"
+      },
+      "card": {
+        "description": "The card number.",
+        "type": "string"
+      },
+      "target": {
+        "description": "Build the card's werk or canonical. Defaults to werk.",
+        "enum": [
+          "werk",
+          "canonical"
+        ],
+        "type": "string"
+      }
+    },
+    "required": [
+      "card"
+    ],
+    "type": "object"
+  },
+  "WerkCardInput": {
+    "additionalProperties": false,
+    "properties": {
+      "atomic": {
+        "description": "Run the verb's atomic path.",
+        "type": "boolean"
+      },
+      "card": {
+        "description": "The card number.",
+        "type": "string"
+      }
+    },
+    "required": [
+      "card"
+    ],
+    "type": "object"
+  },
+  "WerkCommitInput": {
+    "additionalProperties": false,
+    "properties": {
+      "abort": {
+        "description": "Abandon an interrupted commit.",
+        "type": "boolean"
+      },
+      "atomic": {
+        "description": "Commit, push and merge in one step (the usual).",
+        "type": "boolean"
+      },
+      "card": {
+        "description": "The card number.",
+        "type": "string"
+      },
+      "continue": {
+        "description": "Finish an interrupted commit.",
+        "type": "boolean"
+      },
+      "summary": {
+        "description": "The commit summary.",
+        "type": "string"
+      }
+    },
+    "required": [
+      "card"
+    ],
+    "type": "object"
+  },
+  "WerkDeployCrateInput": {
+    "additionalProperties": false,
+    "properties": {
+      "crate": {
+        "description": "The crate to ship.",
+        "type": "string"
+      },
+      "rollback": {
+        "description": "Roll the crate back to its previous binary.",
+        "type": "boolean"
+      }
+    },
+    "required": [
+      "crate"
+    ],
+    "type": "object"
+  },
+  "WerkDeployEnvInput": {
+    "additionalProperties": false,
+    "properties": {
+      "card": {
+        "description": "The card number. Defaults to the caller's card in WIP.",
+        "type": "string"
+      },
+      "env": {
+        "description": "Bring the card's demo env up or down.",
+        "enum": [
+          "env-up",
+          "env-down"
+        ],
+        "type": "string"
+      }
+    },
+    "required": [
+      "env"
+    ],
+    "type": "object"
+  },
+  "WerkDeployInput": {
+    "additionalProperties": false,
+    "properties": {
+      "card": {
+        "description": "The card number.",
+        "type": "string"
+      },
+      "target": {
+        "description": "Deploy the card's werk or canonical.",
+        "enum": [
+          "werk",
+          "canonical"
+        ],
+        "type": "string"
+      }
+    },
+    "required": [
+      "card"
+    ],
+    "type": "object"
+  },
+  "WerkReviewVerdictInput": {
+    "additionalProperties": false,
+    "properties": {
+      "card": {
+        "description": "The card number.",
+        "type": "string"
+      },
+      "findings": {
+        "description": "What the review found.",
+        "type": "string"
+      },
+      "verdict": {
+        "description": "pass or fail.",
+        "enum": [
+          "pass",
+          "fail"
+        ],
+        "type": "string"
+      }
+    },
+    "required": [
+      "card",
+      "verdict",
+      "findings"
     ],
     "type": "object"
   }

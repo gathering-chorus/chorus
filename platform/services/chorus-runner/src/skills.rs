@@ -134,6 +134,38 @@ pub fn task_status_schema() -> Map<String, Value> {
 
 /// The arguments checked against the generated schema: required present,
 /// nothing undeclared, types and enums as declared.
+/// #4514 — arguments from a command line arrive as text: turn each into the
+/// type its schema declares ("true" → true, "42" → 42, a lone value → a
+/// one-item list). Anything that does not convert is left as it is, and
+/// check_args then refuses it by name.
+pub fn coerce_args(args: &Map<String, Value>, schema: &Map<String, Value>) -> Map<String, Value> {
+    let props = schema.get("properties").and_then(Value::as_object).cloned().unwrap_or_default();
+    let one = |v: &Value, ty: &str| -> Value {
+        match (ty, v) {
+            ("boolean", Value::String(s)) if s == "true" || s == "false" => Value::Bool(s == "true"),
+            ("integer", Value::String(s)) => s.parse::<i64>().map(Value::from).unwrap_or_else(|_| v.clone()),
+            ("string", Value::Number(n)) => Value::String(n.to_string()),
+            _ => v.clone(),
+        }
+    };
+    args.iter()
+        .map(|(k, v)| {
+            let p = props.get(k);
+            let ty = p.and_then(|p| p.get("type")).and_then(Value::as_str).unwrap_or("string");
+            let out = if ty == "array" {
+                let item_ty = p.and_then(|p| p.get("items")).and_then(|i| i.get("type")).and_then(Value::as_str).unwrap_or("string");
+                match v {
+                    Value::Array(a) => Value::Array(a.iter().map(|x| one(x, item_ty)).collect()),
+                    other => Value::Array(vec![one(other, item_ty)]),
+                }
+            } else {
+                one(v, ty)
+            };
+            (k.clone(), out)
+        })
+        .collect()
+}
+
 pub fn check_args(args: &Map<String, Value>, schema: &Map<String, Value>) -> Result<(), String> {
     let props = schema.get("properties").and_then(Value::as_object).cloned().unwrap_or_default();
     for r in schema.get("required").and_then(Value::as_array).into_iter().flatten().filter_map(Value::as_str) {
@@ -143,35 +175,53 @@ pub fn check_args(args: &Map<String, Value>, schema: &Map<String, Value>) -> Res
     }
     for (k, v) in args {
         let Some(p) = props.get(k) else { return Err(format!("{k} is not an argument of this tool")) };
-        let ok = match p.get("type").and_then(Value::as_str).unwrap_or("string") {
-            "boolean" => v.is_boolean(),
-            "integer" => v.is_i64() || v.is_u64(),
-            "number" => v.is_number(),
-            _ => v.is_string(),
+        // #4514 — a list checks each of its items against the item schema
+        let (items, item_schema): (Vec<&Value>, &Value) = if p.get("type").and_then(Value::as_str) == Some("array") {
+            match v.as_array() {
+                Some(a) if !a.is_empty() => (a.iter().collect(), p.get("items").unwrap_or(&Value::Null)),
+                Some(_) => return Err(format!("{k} is an empty list")),
+                None => return Err(format!("{k} must be a list")),
+            }
+        } else {
+            (vec![v], p)
         };
-        if !ok {
-            return Err(format!("{k} has the wrong type"));
-        }
-        if let Some(allowed) = p.get("enum").and_then(Value::as_array) {
-            if !allowed.contains(v) {
-                return Err(format!("{k} must be one of {}", allowed.iter().filter_map(Value::as_str).collect::<Vec<_>>().join(", ")));
+        for it in items {
+            let ok = match item_schema.get("type").and_then(Value::as_str).unwrap_or("string") {
+                "boolean" => it.is_boolean(),
+                "integer" => it.is_i64() || it.is_u64(),
+                "number" => it.is_number(),
+                _ => it.is_string(),
+            };
+            if !ok {
+                return Err(format!("{k} has the wrong type"));
+            }
+            if let Some(allowed) = item_schema.get("enum").and_then(Value::as_array) {
+                if !allowed.contains(it) {
+                    return Err(format!("{k} must be one of {}", allowed.iter().filter_map(Value::as_str).collect::<Vec<_>>().join(", ")));
+                }
             }
         }
     }
     Ok(())
 }
 
-fn render(tok: &str, args: &Map<String, Value>, caller: &str) -> Option<Option<String>> {
-    // Some(Some(text)) = emit; Some(None) = a true boolean, emit nothing; None = absent
-    let Some(name) = tok.strip_prefix('{').and_then(|t| t.strip_suffix('}')) else { return Some(Some(tok.to_string())) };
+fn render(tok: &str, args: &Map<String, Value>, caller: &str) -> Option<Vec<String>> {
+    // Some(tokens) = emit them (a true boolean emits none); None = absent
+    let Some(name) = tok.strip_prefix('{').and_then(|t| t.strip_suffix('}')) else { return Some(vec![tok.to_string()]) };
     if name == "caller" {
-        return Some(Some(caller.to_string()));
+        return Some(vec![caller.to_string()]);
     }
+    let text = |v: &Value| match v {
+        Value::String(s) => s.clone(),
+        other => other.to_string(),
+    };
     match args.get(name) {
         None | Some(Value::Null) | Some(Value::Bool(false)) => None,
-        Some(Value::Bool(true)) => Some(None),
-        Some(Value::String(v)) => Some(Some(v.clone())),
-        Some(other) => Some(Some(other.to_string())),
+        Some(Value::Bool(true)) => Some(vec![]),
+        // #4514 — a list is its items, each its own argument, in order
+        Some(Value::Array(a)) if a.is_empty() => None,
+        Some(Value::Array(a)) => Some(a.iter().map(text).collect()),
+        Some(other) => Some(vec![text(other)]),
     }
 }
 
@@ -191,13 +241,12 @@ pub fn argv(template: &str, args: &Map<String, Value>, caller: &str) -> Vec<Stri
         }
         let closes = tok.ends_with(']');
         let tok = tok.strip_suffix(']').unwrap_or(tok);
-        let rendered = if tok.is_empty() { Some(None) } else { render(tok, args, caller) };
+        let rendered = if tok.is_empty() { Some(vec![]) } else { render(tok, args, caller) };
         match (&mut group, rendered) {
             (Some(_), None) => group_ok = false,
-            (Some(g), Some(Some(t))) => g.push(t),
-            (Some(_), Some(None)) => {}
-            (None, Some(Some(t))) => out.push(t),
-            (None, _) => {}
+            (Some(g), Some(t)) => g.extend(t),
+            (None, Some(t)) => out.extend(t),
+            (None, None) => {}
         }
         if closes {
             if let Some(g) = group.take() {

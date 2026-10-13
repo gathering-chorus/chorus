@@ -330,6 +330,8 @@ pub fn missing_settings(declared: &[(String, String)]) -> Vec<&'static str> {
 pub struct ToolArg {
     /// The JSON name the tool takes it by (sh:name).
     pub name: String,
+    /// #4514 — no sh:maxCount: a list of values, in order (an athena verb's args).
+    pub many: bool,
     pub datatype: String,
     pub required: bool,
     pub allowed: Vec<String>,
@@ -345,10 +347,10 @@ pub fn tool_inputs(store: &Store) -> Result<Vec<(String, Vec<ToolArg>)>, ModelEr
     for s in shapes {
         let shape = s["s"].clone();
         let props = select(store, &format!(
-            "SELECT ?path (SAMPLE(?n) AS ?name) (SAMPLE(?dt) AS ?datatype) (SAMPLE(?mn) AS ?min) \
+            "SELECT ?path (SAMPLE(?n) AS ?name) (SAMPLE(?dt) AS ?datatype) (SAMPLE(?mn) AS ?min) (SAMPLE(?mx) AS ?max) \
                     (SAMPLE(?d) AS ?desc) (SAMPLE(?o) AS ?order) WHERE {{ \
                c:{shape} sh:property ?p . ?p sh:path ?path . \
-               OPTIONAL {{ ?p sh:name ?n }} OPTIONAL {{ ?p sh:datatype ?dt }} OPTIONAL {{ ?p sh:minCount ?mn }} \
+               OPTIONAL {{ ?p sh:name ?n }} OPTIONAL {{ ?p sh:datatype ?dt }} OPTIONAL {{ ?p sh:minCount ?mn }} OPTIONAL {{ ?p sh:maxCount ?mx }} \
                OPTIONAL {{ ?p sh:description ?d }} OPTIONAL {{ ?p sh:order ?o }} \
              }} GROUP BY ?path"))?;
         let mut args: Vec<(i64, ToolArg)> = Vec::new();
@@ -361,6 +363,7 @@ pub fn tool_inputs(store: &Store) -> Result<Vec<(String, Vec<ToolArg>)>, ModelEr
             let order = p.get("order").and_then(|o| o.parse::<f64>().ok()).unwrap_or(f64::MAX) as i64;
             args.push((order, ToolArg {
                 name: p.get("name").cloned().unwrap_or(path),
+                many: !p.contains_key("max"),
                 datatype: p.get("datatype").cloned().unwrap_or_else(|| "string".into()),
                 required: p.get("min").and_then(|m| m.parse::<u32>().ok()).unwrap_or(0) > 0,
                 allowed,
