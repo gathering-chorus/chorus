@@ -277,7 +277,11 @@ def card_detail(card, pin_status):
                     " (the pin still says running; the run's log has ended)")
     else:
         head = f"#{card} [?] " + (runs[-1]["result"].split()[0] if runs else "no runs")
-    if runs or not v2:
+    if v2 and runs:
+        # #4494 reopen 2 — "run 3 · 14 runs" read as one count; the v1 runs are
+        # the old pipeline's, listed first, and say so.
+        head += f" · {len(runs)} old-pipeline run{'s' if len(runs) != 1 else ''}"
+    elif not v2:
         head += f" · {len(runs)} run{'s' if len(runs) != 1 else ''}"
     print(head)
     lc = []
@@ -286,6 +290,8 @@ def card_detail(card, pin_status):
     print("  " + " · ".join(lc))
     if runs:
         print()
+        if v2:
+            print("  old pipeline (v1)")
         print("  run  start        finish  result                  why")
     for i, r in enumerate(runs, 1):
         fin = datetime.fromtimestamp(r["finish"]).strftime("%H:%M") if r["finish"] else "  -  "
@@ -634,14 +640,16 @@ def card_line(card, role, runs, lands, places, now=None):
     since = parse_ts(node.get("startedAt") or run.get("queuedAt") or run.get("startedAt"))
     ended = parse_ts(run.get("finishedAt") or node.get("finishedAt"))
     pre = "land: " if land else ""
-    go = ""
     if status == "queued":
         place = places.get(run.get("dagRunId"))
         where = f"{pre}waiting in line" + (f" ({ordinal(place)})" if place else "")
     elif status == "running":
         where = f"{pre}{word}"
     elif status == "waiting":
-        where, go = "waiting for your go", dagu_go(card, run)
+        # #4494 reopen 2 — Jeff 2026-10-13 "/cws looks broken": the go/no
+        # commands buried the status. The line is the status; the commands
+        # print once, under the v2 runs, on /cws <card>.
+        where = "waiting for your go"
     elif status == "succeeded" and not land and any(
             n.get("statusLabel") == "skipped" and n["step"]["name"] == f"{DAGU_DAG}-land" for n in nodes_of(run)):
         where = "rejected at the go"
@@ -662,7 +670,7 @@ def card_line(card, role, runs, lands, places, now=None):
         ev = run_test_events(newest["dagRunId"], began / 1000 if began else now - 86400)
         tests = (" · " + tests_summary(tests_state(ev))) if ev else ""
         tests = "" if tests == " · " else tests
-    return f"#{card} {role:<6} {where:<34} {when:>7} · run {len(runs)}{tests}{go}"
+    return f"#{card} {role:<6} {where:<34} {when:>7} · run {len(runs)}{tests}"
 
 
 def dagu_detail(card, runs):
