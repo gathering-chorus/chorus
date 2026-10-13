@@ -1,0 +1,82 @@
+@prefix chorus: <https://jeffbridwell.com/chorus#> .
+@prefix rdfs:   <http://www.w3.org/2000/01/rdf-schema#> .
+@prefix owl:    <http://www.w3.org/2002/07/owl#> .
+@prefix sh:     <http://www.w3.org/ns/shacl#> .
+@prefix xsd:    <http://www.w3.org/2001/XMLSchema#> .
+
+# #4405 reopen 4 — the sensors (Jeff, 2026-10-12 21:08: "herald is a product
+# name ... these are sensor"; 21:11: "make sure our runner is properly aligned
+# integrated and visible as a sensor"). In the standard agent picture (Russell
+# & Norvig) an agent perceives through sensors and acts through actuators, and
+# is judged by a performance measure. Heralds is the product; each pass of the
+# herald core (chorus-crawl) is a Sensor; the rows it writes are what it
+# perceived; a SensorRun is one pass, so a reader can tell a sensor that looked
+# an hour ago from one that has not looked in a week.
+#
+# Ownership (Jeff, 2026-10-12 21:23: "i dont think of crawler as a principal u
+# are the owner"): a sensor runs as its owner, the role that ships it, and the
+# rows it writes are that owner's. The Sensor row's ownedBy names that role.
+
+chorus:Sensor a owl:Class ;
+    rdfs:label "Sensor" ;
+    rdfs:comment "One way the herald core looks at a target and records what it finds: code, files, services, stores, infra. Run through the herald_run MCP tool; owned by the role that ships it." .
+
+chorus:SensorRun a owl:Class ;
+    rdfs:label "Sensor run" ;
+    rdfs:comment "One pass of a Sensor over a target: when it started and ended, what it planned to create, update and delete, and whether it finished green or red." .
+
+chorus:heralds chorus:definesVocabulary chorus:Sensor, chorus:SensorRun .
+
+chorus:sensorPass a owl:DatatypeProperty ; rdfs:label "sensor pass" ; rdfs:domain chorus:Sensor ; rdfs:range xsd:string ;
+    rdfs:comment "The chorus-crawl pass that is this sensor (code, services, stores, infra; files is the default pass)." .
+chorus:sensorReads a owl:DatatypeProperty ; rdfs:label "reads" ; rdfs:domain chorus:Sensor ; rdfs:range xsd:string ;
+    rdfs:comment "What the sensor looks at in its target, in plain words (build files; launchctl and ssh; df and sysctl)." .
+chorus:sensorWrites a owl:DatatypeProperty ; rdfs:label "writes" ; rdfs:domain chorus:Sensor ; rdfs:range xsd:string ;
+    rdfs:comment "A kind of row the sensor records (CodeUnit, ServiceInstance, Machine). One value per kind." .
+chorus:takesTarget a owl:DatatypeProperty ; rdfs:label "takes a target" ; rdfs:domain chorus:Sensor ; rdfs:range xsd:boolean ;
+    rdfs:comment "Whether the sensor can be pointed at another repository (only code, today)." .
+chorus:sensorWindowMinutes a owl:DatatypeProperty ; rdfs:label "window minutes" ; rdfs:domain chorus:Sensor ; rdfs:range xsd:integer ;
+    rdfs:comment "How often the sensor should look. A sensor whose last run is older than this reads stale, never green." .
+
+chorus:runOfSensor a owl:ObjectProperty ; rdfs:label "run of" ; rdfs:domain chorus:SensorRun ; rdfs:range chorus:Sensor ;
+    rdfs:comment "The Sensor this pass was." .
+chorus:runTarget a owl:DatatypeProperty ; rdfs:label "target" ; rdfs:domain chorus:SensorRun ; rdfs:range xsd:string ;
+    rdfs:comment "What the pass looked at: a repository name, or the machine for services, stores and infra." .
+chorus:sensorEndedAt a owl:DatatypeProperty ; rdfs:label "ended at" ; rdfs:domain chorus:SensorRun ; rdfs:range xsd:string ;
+    rdfs:comment "When the pass finished. Absent while it runs." .
+chorus:sensorOutcome a owl:DatatypeProperty ; rdfs:label "outcome" ; rdfs:domain chorus:SensorRun ; rdfs:range xsd:string ;
+    rdfs:comment "running, green or red." .
+chorus:plannedCreate a owl:DatatypeProperty ; rdfs:label "planned create" ; rdfs:domain chorus:SensorRun ; rdfs:range xsd:integer .
+chorus:plannedUpdate a owl:DatatypeProperty ; rdfs:label "planned update" ; rdfs:domain chorus:SensorRun ; rdfs:range xsd:integer ;
+    rdfs:comment "Rows the pass changed. On an unchanged target this is 0: a sensor that rewrites what it already recorded is broken (#4405 reopen 4)." .
+chorus:plannedDelete a owl:DatatypeProperty ; rdfs:label "planned delete" ; rdfs:domain chorus:SensorRun ; rdfs:range xsd:integer .
+chorus:plannedUnchanged a owl:DatatypeProperty ; rdfs:label "unchanged" ; rdfs:domain chorus:SensorRun ; rdfs:range xsd:integer .
+chorus:requestedBy a owl:ObjectProperty ; rdfs:label "requested by" ; rdfs:domain chorus:SensorRun ; rdfs:range chorus:Principal ;
+    rdfs:comment "Who asked for the pass (a role, Jeff, or launchd). The rows are still written as the sensor's owner." .
+
+chorus:SensorShape a sh:NodeShape ;
+    sh:targetClass chorus:Sensor ;
+    chorus:instancesGraph "urn:chorus:domains:heralds" ;
+    chorus:generatedBy "athena-model" ;
+    sh:property [ sh:path chorus:sensorPass ; sh:minCount 1 ; sh:maxCount 1 ; sh:in ( "files" "code" "services" "stores" "infra" ) ; chorus:exposure chorus:public ] ;
+    sh:property [ sh:path chorus:sensorReads ; sh:maxCount 1 ; sh:datatype xsd:string ; chorus:exposure chorus:public ] ;
+    sh:property [ sh:path chorus:sensorWrites ; sh:minCount 1 ; sh:datatype xsd:string ; chorus:exposure chorus:public ] ;
+    sh:property [ sh:path chorus:takesTarget ; sh:maxCount 1 ; sh:datatype xsd:boolean ; chorus:exposure chorus:public ] ;
+    sh:property [ sh:path chorus:sensorWindowMinutes ; sh:minCount 1 ; sh:maxCount 1 ; sh:datatype xsd:integer ; chorus:exposure chorus:public ] ;
+    sh:property [ sh:path chorus:ownedBy ; sh:minCount 1 ; sh:maxCount 1 ; sh:class chorus:Principal ] .
+
+chorus:SensorRunShape a sh:NodeShape ;
+    sh:targetClass chorus:SensorRun ;
+    chorus:instancesGraph "urn:chorus:domains:heralds" ;
+    chorus:generatedBy "athena-model" ;
+    sh:property [ sh:path chorus:runOfSensor ; sh:minCount 1 ; sh:maxCount 1 ; sh:class chorus:Sensor ; chorus:exposure chorus:public ] ;
+    sh:property [ sh:path chorus:runTarget ; sh:minCount 1 ; sh:maxCount 1 ; sh:datatype xsd:string ; chorus:exposure chorus:public ] ;
+    sh:property [ sh:path chorus:startedAt ; sh:minCount 1 ; sh:maxCount 1 ; sh:datatype xsd:string ; chorus:exposure chorus:public ] ;
+    sh:property [ sh:path chorus:sensorEndedAt ; sh:maxCount 1 ; sh:datatype xsd:string ; chorus:exposure chorus:public ] ;
+    sh:property [ sh:path chorus:sensorOutcome ; sh:minCount 1 ; sh:maxCount 1 ; sh:in ( "running" "green" "red" ) ; chorus:exposure chorus:public ] ;
+    sh:property [ sh:path chorus:plannedCreate ; sh:maxCount 1 ; sh:datatype xsd:integer ; chorus:exposure chorus:public ] ;
+    sh:property [ sh:path chorus:plannedUpdate ; sh:maxCount 1 ; sh:datatype xsd:integer ; chorus:exposure chorus:public ] ;
+    sh:property [ sh:path chorus:plannedDelete ; sh:maxCount 1 ; sh:datatype xsd:integer ; chorus:exposure chorus:public ] ;
+    sh:property [ sh:path chorus:plannedUnchanged ; sh:maxCount 1 ; sh:datatype xsd:integer ; chorus:exposure chorus:public ] ;
+    sh:property [ sh:path chorus:requestedBy ; sh:maxCount 1 ; sh:class chorus:Principal ; chorus:exposure chorus:public ] ;
+    sh:property [ sh:path chorus:ownedBy ; sh:class chorus:Principal ] .

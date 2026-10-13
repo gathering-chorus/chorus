@@ -45,6 +45,7 @@ import { vocabularyHandler } from './handlers/vocabulary';
 import { renderNightlyPage, suiteType, fetchFailingCases, type FetchLike } from './handlers/nightly-report';
 import { loadRunsFromGraph, fusekiCsv } from './handlers/nightly-graph';
 import { readRecords, renderCrawlerValidatePage, validateDir } from './handlers/crawler-validate';
+import { loadSensors, renderSensorsSection } from './handlers/sensors-panel';
 import { findRun, buildReadout, renderReadoutText, previousFinished, type NightlyRunRecord } from './handlers/nightly-readout';
 import { fetchLoomAnalytics, LoomCardRow } from './handlers/loom-analytics';
 
@@ -634,17 +635,22 @@ app.get('/nightly', async (req: Request, res: Response) => {
 // #4290 — crawler-validate: the control report of git vs graph, both
 // directions, every crawler-generated domain. Records are kept by the
 // crawler's own reconcile; this page and its JSON read them.
-app.get('/crawler-validate', (_req: Request, res: Response) => {
+// #4405 reopen 4 — and the sensors: each one's latest run, stale when overdue.
+const doorBase = (): string => process.env.OWL_API_URL || 'http://localhost:3360';
+app.get('/crawler-validate', async (_req: Request, res: Response) => {
   const history = readRecords(validateDir());
   const latest = history.length ? history[history.length - 1] : null;
-  res.type('html').send(renderCrawlerValidatePage(latest, history));
+  const sensors = await loadSensors(doorBase(), Date.now());
+  res.type('html').send(renderCrawlerValidatePage(latest, history, renderSensorsSection(sensors)));
 });
-app.get('/api/crawler/validate', (_req: Request, res: Response) => {
+app.get('/api/crawler/validate', async (_req: Request, res: Response) => {
   const history = readRecords(validateDir());
   const latest = history.length ? history[history.length - 1] : null;
+  const sensors = await loadSensors(doorBase(), Date.now());
   res.json({
     data: {
       latest,
+      sensors,
       history: history.map((h) => ({ ts: h.ts, head: h.head, clean: h.clean, gaps: h.gaps })),
     },
     _meta: { timestamp: bostonNow(), dir: validateDir(), records: history.length },

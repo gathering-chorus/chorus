@@ -1784,6 +1784,110 @@ fn run_infra(args: &[String]) -> i32 {
 /// include) and its dependsOn edges, from the build files, written through the
 /// door changed-only. A unit no build file states any more is deleted, and its
 /// edges go with it: the data is rebuilt from the tree on every land.
+/// #4405 reopen 4 — `sensor <name> [--target T] [--dry-run] [--requested-by R]`:
+/// one sensor pass, recorded. It writes a SensorRun row (running), runs the
+/// pass as a child of this same binary with its output passed through, reads
+/// the pass's tally line back, and closes the row green or red with the
+/// counts. herald_run starts this detached, so a 40-minute pass has no wall.
+/// A store that does not serve SensorRun yet is said out loud and the pass
+/// still runs: the record is missing, the look is not.
+fn a_sensor(args: &[String]) -> &str {
+    args.first().map(String::as_str).unwrap_or("")
+}
+
+fn run_sensor(args: &[String]) -> i32 {
+    use chorus_crawl::sensor_run::*;
+    let Some(sensor) = args.first().filter(|a| SENSORS.contains(&a.as_str())).cloned() else {
+        eprintln!("chorus-crawl sensor: name one of {} — nothing ran", SENSORS.join(", "));
+        return 2;
+    };
+    let (mut target, mut dry_run, mut requested_by, mut run) = (None::<String>, false, None::<String>, None::<String>);
+    let mut it = args[1..].iter();
+    while let Some(a) = it.next() {
+        match a.as_str() {
+            "--dry-run" => dry_run = true,
+            "--target" => target = it.next().cloned(),
+            "--requested-by" => requested_by = it.next().cloned(),
+            // herald_run names the run so it can hand the name back before the pass ends
+            "--run" => match it.next() {
+                Some(r) if is_run_name(r, a_sensor(args)) => run = Some(r.clone()),
+                _ => { eprintln!("chorus-crawl sensor: --run needs a name like sensor-run-<sensor>-<stamp>, lowercase — nothing ran"); return 2; }
+            },
+            bad => { eprintln!("chorus-crawl sensor: unknown arg {bad} — nothing ran"); return 2; }
+        }
+    }
+    let mut pass: Vec<String> = if sensor == "files" { vec![] } else { vec![sensor.clone()] };
+    if let Some(t) = &target { pass.extend(["--target".to_string(), t.clone()]); }
+    if dry_run { pass.push("--dry-run".to_string()); }
+    let home = std::env::var("CHORUS_ROOT").unwrap_or_else(|_| ".".to_string());
+    let what = target.as_deref().map(repo_of_dir).unwrap_or_else(|| {
+        if matches!(sensor.as_str(), "code" | "files") { repo_of_dir(&home) } else { sh("scutil", &["--get", "LocalHostName"], &home).map(|h| h.trim().to_lowercase()).unwrap_or_else(|_| "localhost".into()) }
+    });
+    let now = || sh("date", &["-u", "+%Y-%m-%dT%H:%M:%SZ"], ".").map(|d| d.trim().to_string()).unwrap_or_default();
+    let started = now();
+    let name = run.unwrap_or_else(|| run_name(&sensor, &started));
+
+    // the record, when the store can hold it; never on a dry run (it writes nothing)
+    let api = std::env::var("CHORUS_OWL_API").unwrap_or_else(|_| "http://localhost:3360".to_string());
+    let record = if dry_run { None } else {
+        let ident = declared_role(std::env::var("CHORUS_ROLE").ok()).and_then(|r| Identity::open(&home, &r));
+        match (ident, collection_for(&api, "SensorRun")) {
+            (Ok(i), Ok(coll)) => Some((std::cell::RefCell::new(i), coll)),
+            (Err(e), _) | (_, Err(e)) => { println!("sensor {sensor}: run NOT recorded ({e}) — UNMEASURED, the pass still runs"); None }
+        }
+    };
+    // the Sensor row, written by its first run as its owner (rows live in the store)
+    if let Some((ident, _)) = &record {
+        match collection_for(&api, "Sensor") {
+            Ok(sc) => {
+                if curl(&api, "GET", &format!("{sc}/{sensor}"), None, None).is_err() {
+                    let mut body = vec![("name".to_string(), sensor.clone())];
+                    body.extend(sensor_fields(&sensor).unwrap_or_default());
+                    match write(ident, &api, "POST", &format!("{sc}/batch"), Some(&format!("[{}]", fields_json(&body)))) {
+                        Ok(_) => println!("sensor {sensor}: Sensor row created"),
+                        Err(e) => println!("sensor {sensor}: Sensor row NOT created ({e})"),
+                    }
+                }
+            }
+            Err(e) => println!("sensor {sensor}: Sensor row NOT checked ({e})"),
+        }
+    }
+    if let Some((ident, coll)) = &record {
+        let row = run_fields(&sensor, &what, &started, None, "running", None, requested_by.as_deref());
+        let mut body = vec![("name".to_string(), name.clone())];
+        body.extend(row);
+        if let Err(e) = write(ident, &api, "POST", &format!("{coll}/batch"), Some(&format!("[{}]", fields_json(&body)))) {
+            println!("sensor {sensor}: run NOT recorded ({e}) — the pass still runs");
+        }
+    }
+    println!("sensor {sensor}: run {name} on {what} started {started}");
+
+    let exe = std::env::current_exe().map(|p| p.to_string_lossy().into_owned()).unwrap_or_else(|_| "chorus-crawl".into());
+    let out = Command::new(&exe).args(&pass).output();
+    let (exit, text) = match out {
+        Ok(o) => {
+            let t = format!("{}{}", String::from_utf8_lossy(&o.stdout), String::from_utf8_lossy(&o.stderr));
+            (o.status.code().unwrap_or(1), t)
+        }
+        Err(e) => (1, format!("sensor {sensor}: could not start the pass: {e}")),
+    };
+    print!("{text}");
+    let counts = tally(&sensor, &text);
+    let result = outcome(exit, counts);
+    let ended = now();
+    if let Some((ident, coll)) = &record {
+        // only what the end adds: the door's PATCH merges, and the fields set
+        // at the start do not change
+        let row: Vec<(String, String)> = run_fields(&sensor, &what, &started, Some(&ended), result, counts, None)
+            .into_iter().filter(|(k, _)| !matches!(k.as_str(), "runOfSensor" | "runTarget" | "startedAt")).collect();
+        if let Err(e) = write(ident, &api, "PATCH", &format!("{coll}/{name}"), Some(&fields_json(&row))) {
+            println!("sensor {sensor}: run {name} could not be closed ({e})");
+        }
+    }
+    println!("sensor {sensor}: run {name} {result} at {ended}");
+    if result == "green" { 0 } else if exit != 0 { exit } else { 1 }
+}
+
 fn run_code(args: &[String]) -> i32 {
     use chorus_crawl::code::*;
     // #4405 — `--target <dir>` points the code leg at another repository; the
@@ -2139,6 +2243,10 @@ fn main() {
     // #4472 — `services`: the launchd crawl.
     if argv.get(1).map(String::as_str) == Some("services") {
         std::process::exit(run_services(&argv[2..]));
+    }
+    // #4405 reopen 4 — `sensor`: one pass, recorded as a SensorRun.
+    if argv.get(1).map(String::as_str) == Some("sensor") {
+        std::process::exit(run_sensor(&argv[2..]));
     }
     // #4499 — `code`: units of code and what they depend on.
     if argv.get(1).map(String::as_str) == Some("code") {

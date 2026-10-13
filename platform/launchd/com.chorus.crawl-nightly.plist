@@ -24,7 +24,14 @@
   <string>com.chorus.crawl-nightly</string>
   <key>ProgramArguments</key>
   <array>
-    <string>/Users/jeffbridwell/.chorus/bin/chorus-crawl</string>
+    <!-- #4405 reopen 4 — the files sensor through the one runner, herald_run, which runs
+         it as its owner (kade) and records a SensorRun. Background, not wait: a delta
+         is seconds but the first pass after a long gap is not, and the tool's own wall
+         is 10 minutes; the SensorRun row carries the outcome. -->
+    <string>/Users/jeffbridwell/CascadeProjects/chorus/platform/scripts/chorus-mcp-call.sh</string>
+    <string>kade</string>
+    <string>herald_run</string>
+    <string>{"role":"kade","sensor":"files"}</string>
   </array>
   <key>EnvironmentVariables</key>
   <dict>
