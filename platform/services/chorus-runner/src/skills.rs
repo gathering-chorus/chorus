@@ -207,7 +207,20 @@ pub fn check_args(args: &Map<String, Value>, schema: &Map<String, Value>) -> Res
 
 fn render(tok: &str, args: &Map<String, Value>, caller: &str) -> Option<Vec<String>> {
     // Some(tokens) = emit them (a true boolean emits none); None = absent
-    let Some(name) = tok.strip_prefix('{').and_then(|t| t.strip_suffix('}')) else { return Some(vec![tok.to_string()]) };
+    let Some(name) = tok.strip_prefix('{').and_then(|t| t.strip_suffix('}')) else {
+        // #4514 — a placeholder inside a word (`--domain={domain}`, werk-test's
+        // only form): the word is kept only when the value is present
+        if let (Some(i), Some(j)) = (tok.find('{'), tok.find('}')) {
+            if i < j {
+                let inner = &tok[i + 1..j];
+                return match args.get(inner) {
+                    None | Some(Value::Null) | Some(Value::Bool(false)) | Some(Value::Array(_)) => None,
+                    Some(v) => Some(vec![format!("{}{}{}", &tok[..i], if inner == "caller" { caller.to_string() } else { v.as_str().map(String::from).unwrap_or_else(|| v.to_string()) }, &tok[j + 1..])]),
+                };
+            }
+        }
+        return Some(vec![tok.to_string()]);
+    };
     if name == "caller" {
         return Some(vec![caller.to_string()]);
     }

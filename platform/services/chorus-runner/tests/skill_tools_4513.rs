@@ -128,3 +128,11 @@ fn a_list_argument_is_spliced_one_word_per_item_and_checked_item_by_item() {
     // a lone value from a command line becomes a one-item list
     assert_eq!(coerce_args(&args(json!({ "args": "scope" })), &schema)["args"], json!(["scope"]));
 }
+
+// #4514 part 2 (Silas) — werk-test reads only `--domain=value`: a placeholder
+// inside a word is filled, and the word is dropped when the value is absent.
+#[test]
+fn a_placeholder_inside_a_word_is_filled_or_the_word_dropped() {
+    let a = args(json!({ "card": "4514", "domain": "services" }));
+    assert_eq!(argv("{card} {caller} [--domain={domain}] [--type={type}]", &a, "wren"), vec!["4514", "wren", "--domain=services"]);
+}

@@ -79,21 +79,13 @@ impl Runner {
 /// but cannot be offered is logged as unmeasured, never dropped silently; a
 /// failed read keeps the last list.
 pub fn refresh_skills(into: &Arc<RwLock<Vec<SkillTool>>>) {
-    let (status, body) = door_get("/v1/skills/skills?limit=500", &new_trace_id(), 15);
-    let rows = serde_json::from_str::<serde_json::Value>(&body)
-        .ok()
-        .and_then(|v| v.get("items").or_else(|| v.get("data")).and_then(|r| r.as_array()).cloned());
-    match rows {
-        Some(rows) if (200..300).contains(&status) => {
-            let (tools, unmeasured) = skill_tools(&rows, &input_table());
-            for u in unmeasured {
-                eprintln!("{}", serde_json::json!({"event": "runner.tool.unmeasured", "skill": u.skill, "reason": u.reason}));
-            }
+    match load_skill_tools() {
+        Ok(tools) => {
             if let Ok(mut s) = into.write() {
                 *s = tools;
             }
         }
-        _ => eprintln!("{}", error_line("runner", "tools/list", "skill rows unreadable; kept the last list", status, &new_trace_id())),
+        Err(e) => eprintln!("{}", error_line("runner", "tools/list", &format!("{e}; kept the last list"), 503, &new_trace_id())),
     }
 }
 
@@ -117,37 +109,44 @@ pub fn binary_path(name: &str, who: &str) -> String {
     if std::path::Path::new(&installed).exists() { installed } else { name.to_string() }
 }
 
-/// #4513 — run a Skill tool: authz, argument check, then its binary as the
-/// Skill's owner with the caller recorded, under the row's timeout.
+/// #4514 — everything a tool call decides before it runs, shared by the MCP
+/// server and `chorus-runner call` (one path, Silas 19:11): who it runs as,
+/// its arguments checked against the generated schema, its argv, the binary
+/// (the caller's werk slot first), and the child's environment.
+pub struct Prepared {
+    pub who: String,
+    pub binary: String,
+    pub argv: Vec<String>,
+    pub env: Vec<(&'static str, String)>,
+}
+
+pub fn prepare(tool: &SkillTool, args: &serde_json::Map<String, serde_json::Value>, caller: &str, trace: &str) -> Result<Prepared, (String, u16)> {
+    let who = crate::skills::run_identity(tool, caller).map_err(|e| (e, 403))?;
+    let args = crate::skills::coerce_args(args, &tool.schema);
+    check_args(&args, &tool.schema).map_err(|e| (e, 400))?;
+    let argv = argv(&tool.template, &args, crate::skills::bare(caller));
+    let token = identity_token(&who).ok_or_else(|| (format!("could not mint {who}'s identity to run as them"), 503))?;
+    Ok(Prepared { binary: binary_path(&tool.binary, &who), argv, env: crate::skills::child_env(&who, &token, trace), who })
+}
+
+/// #4513 — run a Skill tool for an MCP caller, under the row's timeout; a long
+/// one starts as a Task (#4514 AC2) and returns its run id at once.
 async fn run_skill(tool: &SkillTool, args: &serde_json::Map<String, serde_json::Value>, caller: &str, trace: &str) -> (bool, String, u16) {
-    let who = match crate::skills::run_identity(tool, caller) {
-        Ok(w) => w,
-        Err(e) => return (false, e, 403),
+    let (t, a, c, tr) = (tool.clone(), args.clone(), caller.to_string(), trace.to_string());
+    let p = match tokio::task::spawn_blocking(move || prepare(&t, &a, &c, &tr)).await {
+        Ok(Ok(p)) => p,
+        Ok(Err((e, code))) => return (false, e, code),
+        Err(e) => return (false, format!("prepare failed: {e}"), 500),
     };
-    let args = &crate::skills::coerce_args(args, &tool.schema);
-    if let Err(e) = check_args(args, &tool.schema) {
-        return (false, e, 400);
-    }
-    let argv = argv(&tool.template, args, crate::skills::bare(caller));
-    let as_who = who.clone();
-    let Some(token) = tokio::task::spawn_blocking(move || identity_token(&as_who)).await.ok().flatten() else {
-        return (false, format!("could not mint {who}'s identity to run as them"), 503);
-    };
-    // #4514 AC2 — a long verb starts as a Task and returns its run id at once;
-    // task_status reads it, from its files, whether or not this runner restarted
     if tool.long_running {
         let id = format!("{}-{trace}", tool.name);
-        let env = crate::skills::child_env(&who, &token, trace);
-        return match crate::tasks::spawn(&crate::tasks::tasks_dir(), &id, &binary_path(&tool.binary, &who), &argv, &env, crate::skills::bare(caller)) {
+        return match crate::tasks::spawn(&crate::tasks::tasks_dir(), &id, &p.binary, &p.argv, &p.env, crate::skills::bare(caller)) {
             Ok(_) => (true, format!("started {} as task {id}: call task_status with this id", tool.name), 202),
             Err(e) => (false, e, 500),
         };
     }
-    let mut cmd = tokio::process::Command::new(binary_path(&tool.binary, &who));
-    cmd.args(&argv)
-        .envs(crate::skills::child_env(&who, &token, trace))
-        .stdin(std::process::Stdio::null())
-        .kill_on_drop(true);
+    let mut cmd = tokio::process::Command::new(&p.binary);
+    cmd.args(&p.argv).envs(p.env.clone()).stdin(std::process::Stdio::null()).kill_on_drop(true);
     match tokio::time::timeout(std::time::Duration::from_secs(tool.timeout_s), cmd.output()).await {
         Err(_) => (false, format!("stopped after {}s (the row's timeout)", tool.timeout_s), 504),
         Ok(Err(e)) => (false, format!("{} did not start: {e}", tool.binary), 500),
@@ -155,9 +154,45 @@ async fn run_skill(tool: &SkillTool, args: &serde_json::Map<String, serde_json::
             let text = format!("{}{}", String::from_utf8_lossy(&out.stdout), String::from_utf8_lossy(&out.stderr));
             let tail: Vec<&str> = text.trim().lines().rev().take(12).collect::<Vec<_>>().into_iter().rev().collect();
             let code = out.status.code().unwrap_or(-1);
-            (out.status.success(), format!("{} {} → exit {code}\n{}", tool.binary, argv.join(" "), tail.join("\n")), if out.status.success() { 200 } else { 500 })
+            (out.status.success(), format!("{} {} → exit {code}\n{}", tool.binary, p.argv.join(" "), tail.join("\n")), if out.status.success() { 200 } else { 500 })
         }
     }
+}
+
+/// #4514 (Silas + Wren 19:12) — the Skill rows, read from the skills graph in
+/// the store, not through the door: the door serves main's SkillShape, so a
+/// card that adds a field (runsAs) could not be read by its own run. One read
+/// for the server and `call` alike. Each row is the door's shape: field → value,
+/// IRIs as local names, the row's name without its class prefix.
+pub const SKILLS_QUERY: &str = "SELECT ?s ?p ?o WHERE { GRAPH <urn:chorus:domains:skills> { ?s a <https://jeffbridwell.com/chorus#Skill> ; ?p ?o } }";
+
+pub fn rows_from_sparql(body: &str) -> Result<Vec<serde_json::Value>, String> {
+    let v: serde_json::Value = serde_json::from_str(body).map_err(|e| format!("skills read: {e}"))?;
+    let local = |x: &str| x.rsplit(['#', '/']).next().unwrap_or(x).to_string();
+    let mut rows: std::collections::BTreeMap<String, serde_json::Map<String, serde_json::Value>> = Default::default();
+    for b in v["results"]["bindings"].as_array().ok_or("skills read: no bindings")? {
+        let (s, p, o) = (b["s"]["value"].as_str().unwrap_or(""), b["p"]["value"].as_str().unwrap_or(""), &b["o"]);
+        let row = rows.entry(s.to_string()).or_insert_with(|| {
+            let n = local(s);
+            let mut m = serde_json::Map::new();
+            m.insert("name".into(), serde_json::json!(n.strip_prefix("skill-").unwrap_or(&n)));
+            m
+        });
+        let val = o["value"].as_str().unwrap_or("");
+        let val = if o["type"] == "uri" { local(val) } else { val.to_string() };
+        row.entry(local(p)).or_insert(serde_json::json!(val));
+    }
+    Ok(rows.into_values().map(serde_json::Value::Object).collect())
+}
+
+pub fn load_skill_tools() -> Result<Vec<SkillTool>, String> {
+    let body = athena_make::sparql_json(SKILLS_QUERY).map_err(|e| format!("the skills graph is unreadable: {e}"))?;
+    let rows = rows_from_sparql(&body)?;
+    let (tools, unmeasured) = skill_tools(&rows, &input_table());
+    for u in unmeasured {
+        eprintln!("{}", serde_json::json!({"event": "runner.tool.unmeasured", "skill": u.skill, "reason": u.reason}));
+    }
+    Ok(tools)
 }
 
 /// #4514 AC2 — a Task's state for its caller (or jeff), from its files.
