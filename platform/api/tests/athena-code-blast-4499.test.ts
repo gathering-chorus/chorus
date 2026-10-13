@@ -5,7 +5,7 @@
 // listed 1,748 files for clearing and could not find a service. Wren 16:41:
 // services, domains, tests and pages — never a file list — direct, then through
 // dependencies, the same for a file and a service.
-import { codeBlast, filesQuery, withPages, pagesFromCsv, unitsFromCsv, builtFromFromCsv, filesFromCsv, repoEdgesFromCsv, dependentRepos, type UnitRow, type FileRow } from '../src/handlers/athena-code-blast';
+import { codeBlast, runningFromCsv, runsQuery, filesQuery, withPages, pagesFromCsv, unitsFromCsv, builtFromFromCsv, filesFromCsv, repoEdgesFromCsv, dependentRepos, type UnitRow, type FileRow } from '../src/handlers/athena-code-blast';
 
 const C = 'https://jeffbridwell.com/chorus#';
 const UNITS = [
@@ -28,6 +28,8 @@ const FILES = [
 const units: UnitRow[] = unitsFromCsv(UNITS);
 const built = builtFromFromCsv(BUILT);
 const files: FileRow[] = filesFromCsv(FILES);
+// a file the crawl holds that carries no domain (the targets below must be known files)
+const SERVER: FileRow = { path: 'platform/api/src/server.ts', kind: 'code', domain: '', route: '' };
 
 describe('#4499 the blast radius of a change, from the code units', () => {
   it('a file resolves to its unit, then everything depending on it', () => {
@@ -54,12 +56,12 @@ describe('#4499 the blast radius of a change, from the code units', () => {
   });
 
   it('NEGATIVE PROOF — a file in no unit is UNMEASURED, never "no blast radius"', () => {
-    const r = codeBlast('designing/docs/x.html', units, built, files);
+    const r = codeBlast('designing/docs/x.html', units, built, [...files, { path: 'designing/docs/x.html', kind: 'doc', domain: '', route: '' }]);
     expect(r).toEqual({ target: 'designing/docs/x.html', measured: false, reason: 'designing/docs/x.html is in no code unit' });
   });
 
   it('NEGATIVE PROOF — a store with no units yet is UNMEASURED, not empty', () => {
-    expect(codeBlast('platform/api/src/server.ts', [], built, files).measured).toBe(false);
+    expect(codeBlast('platform/api/src/server.ts', [], built, [...files, SERVER]).measured).toBe(false);
   });
 
   it('NEGATIVE PROOF — files come from the code graph, never every graph (the tests graph holds ~900k filePath rows)', () => {
@@ -73,13 +75,13 @@ describe('#4499 the blast radius of a change, from the code units', () => {
   // as Page, so the CodeFile read never carried a route.
   it('the pages a change reaches come from the Page rows', () => {
     const pages = pagesFromCsv(`path,route,repo\nplatform/api/public/athena/x.html,/athena/x.html,${C}repository-chorus\ndirecting/elsewhere/y.html,/y.html,${C}repository-chorus\n`);
-    const codeFiles = files.map((f) => ({ ...f, route: '' })); // live CodeFile rows carry no route
+    const codeFiles = [...files, SERVER].map((f) => ({ ...f, route: '' })); // live CodeFile rows carry no route
     const r = codeBlast('platform/api/src/server.ts', units, built, withPages(codeFiles, pages));
     expect(r.measured && r.pages).toEqual(['/athena/x.html']);
   });
 
   it('NEGATIVE PROOF — without the Page rows no page is reported', () => {
-    const r = codeBlast('platform/api/src/server.ts', units, built, files.map((f) => ({ ...f, route: '' })));
+    const r = codeBlast('platform/api/src/server.ts', units, built, [...files, SERVER].map((f) => ({ ...f, route: '' })));
     expect(r.measured && r.pages).toEqual([]);
   });
 });
@@ -100,7 +102,7 @@ describe('#4405 code-blast reads one repository', () => {
     expect(unitsFromCsv(MIXED, 'wordpress-blog').map((u) => u.name)).not.toContain('platform-api');
   });
   it("NEGATIVE PROOF — another repo's unit with the same path never answers for the home repo", () => {
-    const r = codeBlast('src/index.ts', unitsFromCsv(MIXED), [], []);
+    const r = codeBlast('src/index.ts', unitsFromCsv(MIXED), [], [{ path: 'src/index.ts', kind: 'code', domain: '', route: '' }]);
     expect(r.measured && r.units.direct).toEqual(['chorus--src']);
     expect(unitsFromCsv(MIXED, 'wordpress-blog').map((u) => u.name)).toEqual(['wordpress-blog--src']);
   });
@@ -144,7 +146,7 @@ describe('#4405 repositories a change reaches', () => {
   });
   it('the answer carries the repository and its dependents', () => {
     const units: UnitRow[] = [{ name: 'shared-security--root', path: '.', kind: 'package', deps: [] }];
-    const r = codeBlast('bin/start.sh', units, [], [], { repo: 'shared-security', edges: repoEdgesFromCsv(EDGES) });
+    const r = codeBlast('bin/start.sh', units, [], [{ path: 'bin/start.sh', kind: 'code', domain: '', route: '' }], { repo: 'shared-security', edges: repoEdgesFromCsv(EDGES) });
     expect(r.measured && r.repositories).toEqual({ name: 'shared-security', dependents: ['chorus', 'wine-diary', 'ops-console'] });
   });
 });
@@ -170,5 +172,71 @@ describe('#4405 files answer for their own repository', () => {
   it('a page answers only for its own repository', () => {
     const pages = pagesFromCsv(`path,route,repo\na.html,/a,${C}repository-chorus\nb.html,/b,${C}repository-shared-security\n`, 'shared-security');
     expect(pages).toEqual([['b.html', '/b']]);
+  });
+});
+
+// #4499 reopen 3 — Jeff, 2026-10-13: "is blast radius healthy now". Measured:
+// `chorus-crawl` by name, `pulse` and every platform/scripts file answered as
+// chorus-root (56 domains, 452 tests, no service) with measured:true, and
+// service-pulse said "names no code unit" for a service that does not exist.
+describe('#4499 reopen 3 — a target is placed or refused, never guessed', () => {
+  const ROOTED: UnitRow[] = [{ name: 'chorus-root', path: '.', kind: 'package', deps: [] }, ...units];
+  const F: FileRow[] = [...files,
+    { path: 'platform/scripts/index-crawler-snapshots.sh', kind: 'code', domain: 'knowledge', route: '' },
+    { path: 'platform/tests/x.bats', kind: 'test', domain: 'tests', route: '' }];
+  const running = runningFromCsv(
+    ['s', `${C}service-werk`, `${C}service-knowledge-store`, `${C}service-integration`, `${C}service-memory`].join('\n'),
+    ['s,path,bin',
+      `${C}service-knowledge-store,platform/scripts/index-crawler-snapshots.sh,/x/chorus/platform/scripts/index-crawler-snapshots.sh`,
+      `${C}service-integration,,/opt/homebrew/bin/nifi.sh`].join('\n'));
+
+  it('a unit answers by its name or its folder name', () => {
+    const r = codeBlast('werk-accept', ROOTED, built, F, undefined, running);
+    expect(r.measured && r.units.direct).toEqual(['platform-services-werk-accept']);
+    const n = codeBlast('platform-services-werk-push', ROOTED, built, F, undefined, running);
+    expect(n.measured && n.units.direct).toEqual(['platform-services-werk-push']);
+  });
+
+  it('a service answers by its bare name too', () => {
+    const r = codeBlast('werk', ROOTED, built, F, undefined, running);
+    expect(r.measured && r.services.direct).toEqual(['service-werk']);
+  });
+
+  it('NEGATIVE PROOF — an unknown name is refused and named, not answered as the root unit', () => {
+    expect(codeBlast('pulse', ROOTED, built, F, undefined, running)).toEqual({ target: 'pulse', measured: false, reason: 'pulse names no file, code unit or service' });
+  });
+
+  it('NEGATIVE PROOF — a path the crawl does not hold is refused and named', () => {
+    expect(codeBlast('platform/scripts/no-such.sh', ROOTED, built, F, undefined, running))
+      .toEqual({ target: 'platform/scripts/no-such.sh', measured: false, reason: 'platform/scripts/no-such.sh is no file or folder the crawl holds' });
+  });
+
+  it('NEGATIVE PROOF — a service that does not exist is refused as that, not as "no code unit"', () => {
+    expect(codeBlast('service-pulse', ROOTED, built, F, undefined, running)).toEqual({ target: 'service-pulse', measured: false, reason: 'there is no service named service-pulse' });
+  });
+
+  it('a service that runs no crawled code says what it runs', () => {
+    expect(codeBlast('service-integration', ROOTED, built, F, undefined, running))
+      .toEqual({ target: 'service-integration', measured: false, reason: 'service-integration is built from no code unit; it runs code the crawl does not hold: /opt/homebrew/bin/nifi.sh' });
+    const loose = runningFromCsv(`s\n${C}service-identity`, `s,path,bin\n${C}service-identity,platform/scripts/share-guard-wrapper.sh,/x/share-guard-wrapper.sh`);
+    expect(codeBlast('service-identity', ROOTED, built, F, undefined, loose))
+      .toEqual({ target: 'service-identity', measured: false, reason: 'service-identity is built from no code unit; it runs files in no crate or package: platform/scripts/share-guard-wrapper.sh' });
+    expect(codeBlast('service-memory', ROOTED, built, F, undefined, running).measured).toBe(false);
+  });
+
+  it('a script only the root unit holds names the services that run it', () => {
+    const r = codeBlast('platform/scripts/index-crawler-snapshots.sh', ROOTED, built, F, undefined, running);
+    if (!r.measured) throw new Error(r.reason);
+    expect(r.units.direct).toEqual(['chorus-root']);
+    expect(r.services.direct).toEqual(['service-knowledge-store']);
+  });
+
+  it('NEGATIVE PROOF — a root file nothing runs names no service', () => {
+    const r = codeBlast('platform/tests/x.bats', ROOTED, built, F, undefined, running);
+    expect(r.measured && r.services.direct).toEqual([]);
+  });
+
+  it('NEGATIVE PROOF — what runs a file is joined per instance, never every file against every instance', () => {
+    expect(runsQuery()).toMatch(/OPTIONAL \{ GRAPH \?h \{ \?i <[^>]+sourcePath> \?f \} GRAPH/);
   });
 });
