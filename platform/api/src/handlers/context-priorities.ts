@@ -24,7 +24,6 @@ import {
 } from '../lib/context-envelope';
 
 const NS = 'https://jeffbridwell.com/chorus#';
-const ROLES = ['wren', 'silas', 'kade', 'jeff'] as const;
 
 export interface ContextPrioritiesDeps {
   sparql: StampSparqlClient;
@@ -40,6 +39,10 @@ export interface ContextPrioritiesDeps {
    *  route read through it (Jeff's governed-paths steer); levels without one
    *  (Role — route collision; Card — thin-shape skip) stay SPARQL, labeled. */
   owl: (path: string) => Promise<unknown>;
+  /** #4404 reopen 1 — the role names the roles door serves (prod: GET
+   *  /v1/roles/roles through roleNames). Its own seam, so a failing level read
+   *  never blocks the walk while a failing roles read refuses it (503). */
+  listRoles: () => Promise<string[]>;
   /** #4350 — every card on the board with its column, so "unsequenced" covers
    *  every open column (Keep, Later, a column added tomorrow), not the three
    *  lanes the pulse mirror carries. Absent or empty → the pulse mirror, labeled. */
@@ -96,14 +99,30 @@ export interface ContextPrioritiesResponse {
   body: ContextEnvelope<PrioritiesData> | { error: string };
 }
 
+/** #4404 reopen 1 — the role names the roles door serves (items[].name). */
+export function roleNames(doc: unknown): string[] {
+  const d = doc as { items?: { name?: unknown }[]; data?: { name?: unknown }[] } | null;
+  const rows = (d && (d.items || d.data)) || [];
+  return rows.map((x) => (typeof x?.name === 'string' ? x.name.toLowerCase() : '')).filter(Boolean);
+}
+
 export async function fetchContextPriorities(
   deps: ContextPrioritiesDeps,
   sourceUrl: string,
   role: string,
 ): Promise<ContextPrioritiesResponse> {
   const r = role.toLowerCase();
-  if (!(ROLES as readonly string[]).includes(r)) {
-    return { status: 400, body: { error: `unknown role '${role}' — one of ${ROLES.join('/')}` } };
+  // #4404 reopen 1 — the roles come from the roles door, never a hard-coded
+  // list (abby-normal got 400 here on 2026-10-13). The door down is a 503 that
+  // says so, never a fall back to a list that goes stale.
+  let roles: string[];
+  try {
+    roles = await deps.listRoles();
+  } catch (e) {
+    return { status: 503, body: { error: `the roles door did not answer: ${(e as Error).message}` } };
+  }
+  if (!roles.includes(r)) {
+    return { status: 400, body: { error: `unknown role '${role}' — the roles door lists ${roles.join('/')}` } };
   }
 
   // #4187 — Chunk/ChunkMembership live in urn:chorus:domains:board (21 + 218 rows);

@@ -64,6 +64,7 @@ const deps = (bindings = walkFixture, pulse: string | null = pulseFixture) => ({
   sparql: sparqlStub(bindings),
   readPulse: () => pulse,
   owl: async (path: string) => owlFixture[path] ?? { data: [] },
+  listRoles: async () => ['wren', 'silas', 'kade', 'jeff', 'abby-normal'],
 });
 
 const URL_ = '/api/chorus/context/priorities?role=silas';
@@ -195,6 +196,7 @@ describe('#4301 /sup reads the graphs and owner form the store actually holds', 
   }
   const liveDeps = () => ({
     sparql: storeLikeSparql(),
+    listRoles: async () => ['wren', 'silas', 'kade', 'jeff', 'abby-normal'],
     readPulse: () => pulseFixture,
     owl: async (path: string) =>
       path.startsWith('/domains')
