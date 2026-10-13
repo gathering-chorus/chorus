@@ -13,11 +13,11 @@
 //! accessTo, mode, oidcClientId) in its own namespace. Modelling terms
 //! (instancesGraph on a shape) stay Chorus's. The keys
 //! match what a product row declares for athena-gen (#4519): `model.namespace`
-//! and `store.graph_prefix`.
+//! and `identity.graph_prefix` (its own row, not derived from store.graph_prefix).
 //!
 //! Set once per process, before the first token: by `configure` (a generated app
 //! calls it at boot) or by env (`CHORUS_OIDC_MODEL_NAMESPACE`,
-//! `CHORUS_OIDC_STORE_GRAPH_PREFIX`). Neither set = Chorus, so every existing
+//! `CHORUS_OIDC_IDENTITY_GRAPH_PREFIX`). Neither set = Chorus, so every existing
 //! door reads exactly what it read before.
 
 use std::sync::OnceLock;
@@ -65,7 +65,7 @@ impl IdentityModel {
 
     fn from_env() -> Self {
         let ns = std::env::var("CHORUS_OIDC_MODEL_NAMESPACE").ok().filter(|s| !s.is_empty());
-        let gp = std::env::var("CHORUS_OIDC_STORE_GRAPH_PREFIX").ok().filter(|s| !s.is_empty());
+        let gp = std::env::var("CHORUS_OIDC_IDENTITY_GRAPH_PREFIX").ok().filter(|s| !s.is_empty());
         IdentityModel {
             namespace: ns.unwrap_or_else(|| CHORUS_NAMESPACE.into()),
             graph_prefix: gp.unwrap_or_else(|| CHORUS_GRAPH_PREFIX.into()),
