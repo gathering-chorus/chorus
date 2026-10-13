@@ -68,8 +68,14 @@ export async function fetchContextBoardWip(
 
   const header = await stampHeader(deps.sparql, 'chorus');
 
-  const wipRaw = (pulse as { board?: { wip_cards?: unknown } }).board?.wip_cards;
-  const source = Array.isArray(wipRaw) ? wipRaw : [];
+  // #4510 — a board pulse could not read is unreadable, never an empty board
+  const board = (pulse as { board?: { wip_cards?: unknown; unreadable?: unknown } }).board;
+  const wipRaw = board?.wip_cards;
+  if (!Array.isArray(wipRaw)) {
+    const why = typeof board?.unreadable === 'string' ? board.unreadable : 'pulse has no wip_cards list';
+    return { status: 503, body: { error: `board unreadable: ${why}` } };
+  }
+  const source = wipRaw;
 
   const all: WipCard[] = source
     .filter((c): c is Record<string, unknown> => !!c && typeof c === 'object')
