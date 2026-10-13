@@ -912,6 +912,37 @@ pub fn ensure_node_modules(werk_s: &str, home: &Path) -> R<usize> {
         if !werk_nm.parent().map(|p| p.is_dir()).unwrap_or(false) {
             continue; // package not present in the werk
         }
+        // #4511 — a werk whose lockfile differs from canonical's (a dependency
+        // bump, a new dependency) cannot borrow canonical's tree: it would build
+        // and demo against the old versions. It gets its own install from its own
+        // lock. The symlink is removed first, so npm never writes through it into
+        // canonical's live tree. A stamp of the lock it was installed from makes a
+        // re-run a no-op.
+        // Canonical's tree is borrowed only when it satisfies the werk's lock:
+        // the same lockfile AND `npm ls` passing on canonical. On 2026-10-13 the
+        // locks matched (1.31.0) while canonical still ran 1.29.0, so a lock
+        // compare alone would have demoed the old version.
+        let werk_lock = fs::read(Path::new(werk_s).join(rel).join("package-lock.json")).ok();
+        let canon_lock = fs::read(home.join(rel).join("package-lock.json")).ok();
+        let npm = env::var("CHORUS_NPM").unwrap_or_else(|_| "npm".to_string());
+        let canon_ok = || run_in_env(&home.join(rel).to_string_lossy(), &[], &npm, &["ls", "--depth=0"]).is_ok();
+        if werk_lock.is_some() && (werk_lock != canon_lock || !canon_ok()) {
+            let stamp = werk_nm.join(".chorus-installed-lock");
+            if !werk_nm.is_symlink() && fs::read(&stamp).ok() == werk_lock {
+                continue; // already installed from this lock — idempotent
+            }
+            if werk_nm.is_symlink() {
+                fs::remove_file(&werk_nm).map_err(|e| format!("cannot unlink {}: {}", werk_nm.display(), e))?;
+            }
+            let dir = Path::new(werk_s).join(rel);
+            run_in_env(&dir.to_string_lossy(), &[], &npm, &["ci", "--no-audit", "--no-fund"])
+                .map_err(|e| format!("the werk cannot borrow canonical's node_modules for {} and npm ci failed: {}", rel.display(), e))?;
+            if let Some(lock) = &werk_lock {
+                let _ = fs::write(&stamp, lock);
+            }
+            linked += 1;
+            continue;
+        }
         if fs::read_link(&werk_nm).ok().as_deref() == Some(canon_nm.as_path()) {
             continue; // already the right symlink — idempotent
         }
