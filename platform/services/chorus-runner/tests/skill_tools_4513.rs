@@ -5,7 +5,7 @@
 //! may call it, its arguments are checked against the schema, and its argv is
 //! an array filled one element per placeholder, never a shell string.
 
-use chorus_runner::skills::{argv, check_args, input_table, may_invoke, skill_tools};
+use chorus_runner::skills::{argv, check_args, child_env, input_table, may_invoke, skill_tools};
 use serde_json::{json, Map, Value};
 
 fn row(v: Value) -> Value {
@@ -95,4 +95,19 @@ fn a_hostile_value_is_one_literal_argument() {
     let t = "sensor {sensor} [--target {target}]";
     let v = argv(t, &args(json!({"sensor": "code", "target": "/repo; rm -rf ~"})), "silas");
     assert_eq!(v, vec!["sensor", "code", "--target", "/repo; rm -rf ~"]);
+}
+
+// #4513 reopen 1 — Silas measured herald-run exiting 2 on live :3342:
+// CHORUS_ROLE was unset in the child. A real child must see the owner.
+#[test]
+fn the_child_runs_as_the_skill_owner() {
+    let out = std::process::Command::new("/usr/bin/env")
+        .env_clear()
+        .envs(child_env("silas", "t", "00-trace"))
+        .output()
+        .expect("env runs");
+    let seen = String::from_utf8_lossy(&out.stdout);
+    assert!(seen.lines().any(|l| l == "CHORUS_ROLE=silas"), "child env: {seen}");
+    assert!(seen.lines().any(|l| l == "DEPLOY_ROLE=silas"), "child env: {seen}");
+    assert!(seen.lines().any(|l| l == "CHORUS_TRACE=00-trace"), "child env: {seen}");
 }

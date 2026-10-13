@@ -120,8 +120,7 @@ async fn run_skill(tool: &SkillTool, args: &serde_json::Map<String, serde_json::
     };
     let mut cmd = tokio::process::Command::new(binary_path(&tool.binary));
     cmd.args(&argv)
-        .env("CHORUS_IDENTITY_TOKEN", token)
-        .env("CHORUS_TRACE", trace)
+        .envs(crate::skills::child_env(&tool.owner, &token, trace))
         .stdin(std::process::Stdio::null())
         .kill_on_drop(true);
     match tokio::time::timeout(std::time::Duration::from_secs(tool.timeout_s), cmd.output()).await {
