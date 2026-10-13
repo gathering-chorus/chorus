@@ -17,7 +17,7 @@ fn herald_row() -> Value {
         "name": "herald-run", "executor": "deterministic", "inputShape": "HeraldRunInput",
         "implementedBy": "chorus-crawl",
         "arguments": "sensor {sensor} [--target {target}] [--dry-run {dry_run}] --requested-by {caller}",
-        "ownedBy": "principal-silas", "comment": "Run one sensor pass.", "timeoutSeconds": 600
+        "ownedBy": "principal-silas", "comment": "Run one sensor pass.", "timeoutSeconds": 600, "runsAs": "owner"
     }))
 }
 

@@ -66,7 +66,11 @@ impl Runner {
             .map(|t| Tool::new(t.name, t.description, Arc::new(t.input_schema)))
             .collect();
         let skills = self.skills.read().map(|s| s.clone()).unwrap_or_default();
+        let any_long = skills.iter().any(|t| t.long_running);
         tools.extend(skills.into_iter().map(|t| Tool::new(t.name, t.description, Arc::new(t.schema))));
+        if any_long {
+            tools.push(Tool::new("task_status", "Where a long tool's run is: running, done with its exit code, or lost; and its last output lines.", Arc::new(crate::skills::task_status_schema())));
+        }
         tools
     }
 }
@@ -107,20 +111,31 @@ fn binary_path(name: &str) -> String {
 /// #4513 — run a Skill tool: authz, argument check, then its binary as the
 /// Skill's owner with the caller recorded, under the row's timeout.
 async fn run_skill(tool: &SkillTool, args: &serde_json::Map<String, serde_json::Value>, caller: &str, trace: &str) -> (bool, String, u16) {
-    if !may_invoke(caller, &tool.owner) {
-        return (false, format!("{caller} may not run {}: it runs as {} with their write rights; only {} and jeff may call it", tool.name, tool.owner, tool.owner), 403);
-    }
+    let who = match crate::skills::run_identity(tool, caller) {
+        Ok(w) => w,
+        Err(e) => return (false, e, 403),
+    };
     if let Err(e) = check_args(args, &tool.schema) {
         return (false, e, 400);
     }
     let argv = argv(&tool.template, args, caller);
-    let owner = tool.owner.clone();
-    let Some(token) = tokio::task::spawn_blocking(move || identity_token(&owner)).await.ok().flatten() else {
-        return (false, format!("could not mint {}'s identity to run as them", tool.owner), 503);
+    let as_who = who.clone();
+    let Some(token) = tokio::task::spawn_blocking(move || identity_token(&as_who)).await.ok().flatten() else {
+        return (false, format!("could not mint {who}'s identity to run as them"), 503);
     };
+    // #4514 AC2 — a long verb starts as a Task and returns its run id at once;
+    // task_status reads it, from its files, whether or not this runner restarted
+    if tool.long_running {
+        let id = format!("{}-{trace}", tool.name);
+        let env = crate::skills::child_env(&who, &token, trace);
+        return match crate::tasks::spawn(&crate::tasks::tasks_dir(), &id, &binary_path(&tool.binary), &argv, &env, crate::skills::bare(caller)) {
+            Ok(_) => (true, format!("started {} as task {id}: call task_status with this id", tool.name), 202),
+            Err(e) => (false, e, 500),
+        };
+    }
     let mut cmd = tokio::process::Command::new(binary_path(&tool.binary));
     cmd.args(&argv)
-        .envs(crate::skills::child_env(&tool.owner, &token, trace))
+        .envs(crate::skills::child_env(&who, &token, trace))
         .stdin(std::process::Stdio::null())
         .kill_on_drop(true);
     match tokio::time::timeout(std::time::Duration::from_secs(tool.timeout_s), cmd.output()).await {
@@ -133,6 +148,23 @@ async fn run_skill(tool: &SkillTool, args: &serde_json::Map<String, serde_json::
             (out.status.success(), format!("{} {} → exit {code}\n{}", tool.binary, argv.join(" "), tail.join("\n")), if out.status.success() { 200 } else { 500 })
         }
     }
+}
+
+/// #4514 AC2 — a Task's state for its caller (or jeff), from its files.
+pub fn task_status_text(id: &str, caller: &str) -> Result<String, String> {
+    if id.is_empty() || id.contains(['/', '.']) {
+        return Err("id must be a run id a long tool returned".into());
+    }
+    let dir = crate::tasks::tasks_dir();
+    let rec: serde_json::Value = std::fs::read_to_string(dir.join(format!("{id}.json")))
+        .ok()
+        .and_then(|s| serde_json::from_str(&s).ok())
+        .ok_or_else(|| format!("no task {id}"))?;
+    let c = crate::skills::bare(caller);
+    if rec["caller"].as_str() != Some(c) && c != "jeff" {
+        return Err(format!("task {id} is {}'s; {c} may not read it", rec["caller"].as_str().unwrap_or("?")));
+    }
+    Ok(format!("{id}: {}\n{}", crate::tasks::status(&dir, id).word(), crate::tasks::tail(&dir, id, 12)))
 }
 
 fn caller_of(ctx: &RequestContext<RoleServer>) -> String {
@@ -175,6 +207,14 @@ impl ServerHandler for Runner {
         let tool = request.name.to_string();
         let trace = new_trace_id();
         let args = request.arguments.unwrap_or_default();
+        if tool == "task_status" {
+            let id = args.get("id").and_then(|v| v.as_str()).unwrap_or("").to_string();
+            let text = task_status_text(&id, &caller);
+            return Ok(CallToolResponse::Complete(match text {
+                Ok(t) => CallToolResult::success(vec![Content::text(t)]),
+                Err(e) => CallToolResult::error(vec![Content::text(format!("{e} (trace {trace})"))]),
+            }));
+        }
         let skill = self.skills.read().ok().and_then(|s| s.iter().find(|t| t.name == tool).cloned());
         if let Some(st) = skill {
             let (ok, text, status) = run_skill(&st, &args, &caller, &trace).await;

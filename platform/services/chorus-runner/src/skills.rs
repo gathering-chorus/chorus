@@ -24,6 +24,19 @@ pub struct SkillTool {
     pub owner: String,
     pub timeout_s: u64,
     pub schema: Map<String, Value>,
+    /// #4514 — whose identity the binary runs with.
+    pub runs_as: RunsAs,
+    /// #4514 AC2 — start it as a Task and return a run id at once.
+    pub long_running: bool,
+}
+
+/// #4514 (Silas + Wren, 2026-10-13): a verb a role runs on its own card runs as
+/// the verified caller (werk-commit); a tool that acts with one principal's
+/// rights runs as its owner (herald-run). A row that says neither is refused.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum RunsAs {
+    Caller,
+    Owner,
 }
 
 /// A Skill row that asks to be a tool but cannot be offered, and why. Never
@@ -65,6 +78,14 @@ pub fn skill_tools(rows: &[Value], inputs: &Map<String, Value>) -> (Vec<SkillToo
             unmeasured.push(Unmeasured { skill: name, reason: "names no binary (implementedBy)".into() });
             continue;
         }
+        let runs_as = match s(row, "runsAs").rsplit(['#', '/', ':']).next().unwrap_or("") {
+            "caller" => RunsAs::Caller,
+            "owner" => RunsAs::Owner,
+            other => {
+                unmeasured.push(Unmeasured { skill: name, reason: format!("runsAs is '{other}': it must say caller or owner, never a default") });
+                continue;
+            }
+        };
         tools.push(SkillTool {
             name,
             description: s(row, "comment").to_string(),
@@ -73,16 +94,42 @@ pub fn skill_tools(rows: &[Value], inputs: &Map<String, Value>) -> (Vec<SkillToo
             owner: bare(s(row, "ownedBy")).to_string(),
             timeout_s: row.get("timeoutSeconds").and_then(|v| v.as_u64().or_else(|| v.as_str()?.parse().ok())).unwrap_or(60),
             schema: schema.clone(),
+            runs_as,
+            long_running: row.get("longRunning").is_some_and(|v| v.as_bool() == Some(true) || v.as_str() == Some("true")),
         });
     }
     (tools, unmeasured)
 }
 
-/// Authz for a tool: it runs with its owner's write rights, so only the owner
-/// and Jeff may call it.
+/// Authz for a tool run as its owner: it carries the owner's write rights, so
+/// only the owner and Jeff may call it.
 pub fn may_invoke(caller: &str, owner: &str) -> bool {
     let c = bare(caller);
     c == bare(owner) || c == "jeff"
+}
+
+/// #4514 — who may call a tool, and whose identity it runs with. A caller-run
+/// tool runs as the verified caller (the verb then decides what that caller may
+/// touch); an unverified caller never runs anything.
+pub fn run_identity(tool: &SkillTool, caller: &str) -> Result<String, String> {
+    let c = bare(caller);
+    if c.is_empty() || c == "unverified" {
+        return Err(format!("{} needs a verified caller", tool.name));
+    }
+    match tool.runs_as {
+        RunsAs::Caller => Ok(c.to_string()),
+        RunsAs::Owner if may_invoke(c, &tool.owner) => Ok(bare(&tool.owner).to_string()),
+        RunsAs::Owner => Err(format!("{c} may not run {}: it runs as {} with their write rights; only {} and jeff may call it", tool.name, tool.owner, tool.owner)),
+    }
+}
+
+/// #4514 AC2 — the status tool every long verb reports through.
+pub fn task_status_schema() -> Map<String, Value> {
+    serde_json::json!({
+        "type": "object",
+        "properties": { "id": { "type": "string", "description": "The run id a long tool returned" } },
+        "required": ["id"]
+    }).as_object().cloned().unwrap_or_default()
 }
 
 /// The arguments checked against the generated schema: required present,
