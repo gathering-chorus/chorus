@@ -162,3 +162,15 @@ pub fn argv(template: &str, args: &Map<String, Value>, caller: &str) -> Vec<Stri
     }
     out
 }
+
+/// #4513 reopen 1 — the child runs as the Skill's owner: its identity token,
+/// and CHORUS_ROLE / DEPLOY_ROLE naming the owner, as the TS herald_run did.
+/// herald-run exits 2 without CHORUS_ROLE.
+pub fn child_env(owner: &str, token: &str, trace: &str) -> Vec<(&'static str, String)> {
+    vec![
+        ("CHORUS_IDENTITY_TOKEN", token.to_string()),
+        ("CHORUS_ROLE", owner.to_string()),
+        ("DEPLOY_ROLE", owner.to_string()),
+        ("CHORUS_TRACE", trace.to_string()),
+    ]
+}
