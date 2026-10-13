@@ -70,3 +70,16 @@ fn the_verifier_path_follows_where_the_crate_is_written() {
     // NEGATIVE PROOF: a crate written outside the repo is refused, never given a broken path
     assert!(athena_gen::emit::oidc_path(&root, &std::env::temp_dir().join("elsewhere-4490")).is_err());
 }
+
+// #4519 — a product repo outside Chorus (the wine diary) names the verifier checkout
+#[test]
+fn a_crate_outside_the_repo_finds_the_verifier_it_is_given() {
+    let base = std::env::temp_dir().join(format!("athena-gen-ver-{}", std::process::id()));
+    let verifier = base.join("chorus/platform/services/chorus-oidc");
+    std::fs::create_dir_all(&verifier).unwrap();
+    std::fs::write(verifier.join("Cargo.toml"), "[package]\nname = \"chorus-oidc\"\n").unwrap();
+    let out = base.join("wine-diary/directing/products/wine-diary/api");
+    assert_eq!(athena_gen::emit::verifier_path(&verifier, &out).unwrap(), "../../../../../chorus/platform/services/chorus-oidc");
+    // NEGATIVE PROOF: a folder that is not a crate is refused, never written as a dependency
+    assert!(athena_gen::emit::verifier_path(&base.join("wine-diary"), &out).is_err());
+}
