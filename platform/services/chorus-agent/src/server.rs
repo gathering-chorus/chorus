@@ -1102,7 +1102,45 @@ fn hook_file_present(runtime: &Runtime, cwd: &std::path::Path) -> Result<()> {
             "{name} guards are not installed: {file} in the workspace must call chorus-hook-shim runtime-hook {name}"
         ));
     }
+    if matches!(runtime, Runtime::Gemini) {
+        let missing = gemini_hooks_missing(&text);
+        if !missing.is_empty() {
+            return Err(format!(
+                "gemini guards are not installed: {file} has no runtime-hook for {}",
+                missing.join(", ")
+            ));
+        }
+    }
     Ok(())
+}
+
+/// #4520 — the events a Gemini role must route through the runtime adapter.
+/// BeforeTool guards each tool call; BeforeAgent is the per-prompt Chorus
+/// context the Claude roles get from UserPromptSubmit; AfterAgent is the stop.
+/// The old check passed on any one of them: Abby's settings had BeforeTool and
+/// AfterAgent, so she got no per-prompt context (0 injects in 6h vs Wren's 137,
+/// measured 2026-10-13 13:35) while the guard read "installed".
+pub const GEMINI_HOOK_EVENTS: [&str; 3] = ["BeforeTool", "BeforeAgent", "AfterAgent"];
+
+/// Which of GEMINI_HOOK_EVENTS have no `runtime-hook gemini <Event>` command.
+/// Unparseable settings miss all of them.
+pub fn gemini_hooks_missing(settings: &str) -> Vec<String> {
+    let parsed: Value = serde_json::from_str(settings).unwrap_or(Value::Null);
+    GEMINI_HOOK_EVENTS
+        .iter()
+        .filter(|ev| {
+            let want = format!("runtime-hook gemini {ev}");
+            let wired = parsed["hooks"][**ev].as_array().is_some_and(|groups| {
+                groups.iter().any(|g| {
+                    g["hooks"].as_array().is_some_and(|hs| {
+                        hs.iter().any(|h| h["command"].as_str().is_some_and(|c| c.contains(&want)))
+                    })
+                })
+            });
+            !wired
+        })
+        .map(|ev| ev.to_string())
+        .collect()
 }
 
 fn error(message: String) -> (StatusCode, Json<Value>) {
