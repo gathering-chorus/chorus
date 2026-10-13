@@ -1,0 +1,35 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+    <key>Label</key>
+    <string>com.chorus.runner</string>
+    <!-- #4512 — the Rust MCP runner, beside the old server on 3341. Supervised
+         from day one (KeepAlive), served from the installed binary in
+         ~/.chorus/bin, bound to 127.0.0.1:3342 only. -->
+    <key>ProgramArguments</key>
+    <array>
+        <string>/Users/jeffbridwell/.chorus/bin/chorus-runner</string>
+    </array>
+    <key>EnvironmentVariables</key>
+    <dict>
+        <key>CHORUS_HOME</key>
+        <string>/Users/jeffbridwell/CascadeProjects/chorus</string>
+        <key>CHORUS_RUNNER_PORT</key>
+        <string>3342</string>
+        <!-- the identity issuer athena-make-launch.sh gives the door; not a secret -->
+        <key>CSS_ISSUER</key>
+        <string>https://id.lightlifeurbangardens.com/</string>
+        <key>PATH</key>
+        <string>/Users/jeffbridwell/.chorus/bin:/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin</string>
+    </dict>
+    <key>KeepAlive</key>
+    <true/>
+    <key>RunAtLoad</key>
+    <true/>
+    <key>StandardOutPath</key>
+    <string>/Users/jeffbridwell/Library/Logs/Chorus/chorus-runner.log</string>
+    <key>StandardErrorPath</key>
+    <string>/Users/jeffbridwell/Library/Logs/Chorus/chorus-runner.log</string>
+</dict>
+</plist>
