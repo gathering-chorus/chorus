@@ -16,6 +16,7 @@ mod requirements_tests;
 use model::{ClassDef, API_VERSION, CLASSES, CRATE_VERSION, MODEL_VERSION, PRODUCT};
 use serde_json::{json, Value};
 use std::io::Read;
+use store::Engine as _;
 use store::RowStore;
 
 fn envelope(class: &ClassDef, path: &str, data: Value) -> Value {
@@ -43,6 +44,8 @@ pub struct Ctx<'a> {
     pub store: &'a dyn RowStore,
     pub who: &'a auth::Auth,
     pub events: String,
+    /// #4524 — `reads.public`: true lets anyone read; false (the default) filters every read to its caller
+    pub reads_public: bool,
 }
 
 fn refused(r: rules::Refusal) -> (u16, Value) {
@@ -131,11 +134,25 @@ pub fn route(ctx: &Ctx, method: &str, url: &str, authorization: Option<&str>, bo
         let name = if parts.len() == 4 { Some(parts[3]) } else if parts.len() == 3 { None } else { return error(404, "unknown-route", "not a route of this API") };
         return write(ctx, &caller, method, class, name, body);
     }
+    // #4524 — reads name their caller too, unless the product declares its data public:
+    // a signed caller sees the rows it owns and the rows a Permission grants it, nothing else.
+    let viewer = if ctx.reads_public {
+        None
+    } else {
+        match who.caller(authorization) {
+            Ok(c) => Some(format!("{}principal-{}", model::NS, c.principal)),
+            Err(e) => {
+                let (code, kind) = auth::refusal(&e);
+                return error(code, kind, &format!("{e:?}"));
+            }
+        }
+    };
     match parts.len() {
         3 => {
             let limit = query_param(query, "limit").unwrap_or(100).min(1000);
             let offset = query_param(query, "offset").unwrap_or(0);
-            match store.list(class, limit, offset) {
+            let page = match &viewer { Some(v) => store.list_seen_by(class, limit, offset, v), None => store.list(class, limit, offset) };
+            match page {
                 Ok((rows, total)) => {
                     let mut e = envelope(class, path, json!(rows));
                     e["count"] = json!(total);
@@ -144,7 +161,7 @@ pub fn route(ctx: &Ctx, method: &str, url: &str, authorization: Option<&str>, bo
                 Err(m) => error(503, "store", &m),
             }
         }
-        4 => match store.get(class, parts[3]) {
+        4 => match (match &viewer { Some(v) => store.get_seen_by(class, parts[3], v), None => store.get(class, parts[3]) }) {
             Ok(Some(row)) => (200, envelope(class, path, json!(row))),
             Ok(None) => error(404, "not-found", "no row with that name"),
             Err(m) => error(503, "store", &m),
@@ -173,16 +190,18 @@ fn main() {
         eprintln!("{PRODUCT}-api {cmd} {file}: ok");
         return;
     }
-    let store = store::open(&s);
+    // #4524 — one engine for rows and for sign-in: an embedded product never reaches
+    // for a remote store (or its credential) to learn who its people are.
+    let engine = store::open_engine(&s);
+    let store: Box<dyn store::RowStore> = Box::new(store::Sparql::shared(engine.clone()));
     // #4519 — the shared verifier reads THIS product's people (its namespace, its
     // identity graphs), never Chorus's; a verifier already set to another model is refused
     if let Err(m) = chorus_oidc::identity_model::configure(chorus_oidc::identity_model::IdentityModel::new(model::NS, &s.identity_graph_prefix)) {
         eprintln!("{PRODUCT}-api: {m}");
         std::process::exit(2);
     }
-    let (endpoint, creds) = (s.store_endpoint.clone(), s.store_auth());
-    let who = auth::build(&s.identity_issuer, move |q| store::sparql_body(&endpoint, &creds, q).ok());
-    let ctx = Ctx { store: store.as_ref(), who: &who, events: s.events_command.clone() };
+    let who = auth::build(&s.identity_issuer, move |q| engine.select_json(q).ok());
+    let ctx = Ctx { store: store.as_ref(), who: &who, events: s.events_command.clone(), reads_public: s.reads_public };
     let server = match tiny_http::Server::http(&s.bind) {
         Ok(sv) => sv,
         Err(e) => {

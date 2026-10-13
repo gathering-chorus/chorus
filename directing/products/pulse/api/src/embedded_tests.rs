@@ -42,7 +42,7 @@ fn body_for(c: &ClassDef, name: &str) -> String {
 
 fn ctx<'a>(store: &'a Sparql) -> Ctx<'a> {
     let who = Box::leak(Box::new(auth::build("http://127.0.0.1:9/", |_| None)));
-    Ctx { store, who, events: String::new() }
+    Ctx { store, who, events: String::new(), reads_public: true }
 }
 
 #[test]
@@ -127,4 +127,76 @@ fn store_engine(s: &Sparql) -> &dyn Engine {
 
 fn store_embedded(s: &Sparql) -> &Embedded {
     s.embedded().expect("an embedded engine")
+}
+
+// ── #4524: reads show a caller only their own rows and the rows granted to them ──
+
+fn any_class() -> &'static ClassDef {
+    CLASSES.iter().find(|c| c.fields.iter().any(|f| f.name == "ownedBy")).expect("a class with an owner")
+}
+
+/// Two members, Art and Jennifer, each owning one row; a stranger owning nothing.
+fn two_owners(grant: Option<(&str, &str)>) -> Sparql {
+    let c = any_class();
+    let e = Embedded::memory();
+    let row = |who: &str| format!("<{s}> a <{NS}{cls}> ; <{NS}ownedBy> <{NS}principal-{who}> .", s = iri(c, &format!("row-{who}")), cls = c.name);
+    e.update(&format!("INSERT DATA {{ GRAPH <{g}> {{ {a} {j} }} }}", g = c.graph, a = row("art"), j = row("jennifer"))).unwrap();
+    if let Some((mode, target)) = grant {
+        e.update(&format!(
+            "INSERT DATA {{ GRAPH <urn:test:grants> {{ <{NS}permission-t> a <{NS}Permission> ; <{NS}agent> <{NS}principal-jennifer> ; <{NS}accessTo> \"{target}\" ; <{NS}mode> <http://www.w3.org/ns/auth/acl#{mode}> }} }}"
+        )).unwrap();
+    }
+    Sparql::over(Box::new(e))
+}
+
+fn names(rows: &[crate::store::Row]) -> Vec<String> {
+    let mut n: Vec<String> = rows.iter().map(|r| r["name"].as_str().unwrap_or("").to_string()).collect();
+    n.sort();
+    n
+}
+
+#[test]
+fn each_member_sees_only_their_own_rows_and_count() {
+    let (c, s) = (any_class(), two_owners(None));
+    let (rows, total) = s.list_seen_by(c, 10, 0, &format!("{NS}principal-art")).unwrap();
+    assert_eq!((names(&rows), total), (vec!["row-art".to_string()], 1), "the count is Art's, not the store's");
+    let (rows, total) = s.list_seen_by(c, 10, 0, &format!("{NS}principal-stranger")).unwrap();
+    assert_eq!((rows.len(), total), (0, 0), "a stranger sees nothing, and not even how much there is");
+    assert!(s.get_seen_by(c, "row-art", &format!("{NS}principal-jennifer")).unwrap().is_none(), "Art's row is not Jennifer's");
+}
+
+#[test]
+fn a_read_grant_on_one_row_opens_that_row() {
+    let c = any_class();
+    let s = two_owners(Some(("Read", &iri(c, "row-art"))));
+    let (rows, _) = s.list_seen_by(c, 10, 0, &format!("{NS}principal-jennifer")).unwrap();
+    assert_eq!(names(&rows), vec!["row-art".to_string(), "row-jennifer".to_string()]);
+}
+
+#[test]
+fn a_read_grant_on_a_member_opens_everything_they_own() {
+    let c = any_class();
+    let s = two_owners(Some(("Read", &format!("{NS}principal-art"))));
+    assert!(s.get_seen_by(c, "row-art", &format!("{NS}principal-jennifer")).unwrap().is_some());
+}
+
+#[test]
+fn negative_proof_an_append_grant_does_not_open_reads() {
+    let c = any_class();
+    let s = two_owners(Some(("Append", &iri(c, "row-art"))));
+    let (rows, total) = s.list_seen_by(c, 10, 0, &format!("{NS}principal-jennifer")).unwrap();
+    assert_eq!((names(&rows), total), (vec!["row-jennifer".to_string()], 1));
+}
+
+#[test]
+fn sign_in_reads_this_store_not_a_remote_one() {
+    // #4524 S1: the checker's queries are answered by the product's own engine. The
+    // closure here is the one main() builds; no endpoint exists in this test at all.
+    let e = Embedded::memory();
+    let home = format!("{}domains:security", chorus_oidc::identity_model::identity_model().graph_prefix);
+    e.update(&format!("INSERT DATA {{ GRAPH <{home}> {{ <{NS}principal-art> a <{NS}Principal> ; <{NS}webId> \"https://id.example/art#me\" }} }}")).unwrap();
+    let engine: std::sync::Arc<dyn Engine> = std::sync::Arc::new(e);
+    let q = { let e = engine.clone(); move |q: &str| e.select_json(q).ok() };
+    let ids = chorus_oidc::oidc::resolve_principal_webids(&q).expect("the store answered");
+    assert_eq!(ids, vec!["https://id.example/art#me".to_string()]);
 }

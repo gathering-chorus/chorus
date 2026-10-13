@@ -24,6 +24,24 @@ pub trait RowStore: Send + Sync {
     fn write(&self, graph: &str, subject: &str, type_of: Option<&str>, fields: &[(String, Vec<Cell>)], whole: bool) -> Result<(), String>;
     /// Remove every triple of a row in its graph.
     fn delete(&self, graph: &str, subject: &str) -> Result<(), String>;
+    /// #4524 — a page of the rows `viewer` may see, and THEIR count (the total of all
+    /// rows would leak how many other people's rows exist): rows it owns, plus rows a
+    /// Read or Write Permission names for it (the row, its owner, or the whole graph).
+    fn list_seen_by(&self, class: &ClassDef, limit: usize, offset: usize, viewer: &str) -> Result<(Vec<Row>, usize), String>;
+    /// One row by name if `viewer` may see it; None otherwise (never "exists, but not yours").
+    fn get_seen_by(&self, class: &ClassDef, name: &str, viewer: &str) -> Result<Option<Row>, String>;
+}
+
+/// #4524 — the visibility filter, one pattern for list, count and get. `?s` is the row in
+/// `graph`; `viewer` is the caller's Principal IRI. A Permission whose accessTo is a
+/// member's Principal IRI opens everything that member owns.
+pub fn seen_by(viewer: &str, graph: &str) -> String {
+    format!(
+        "OPTIONAL {{ GRAPH <{graph}> {{ ?s <{NS}ownedBy> ?own }} }} \
+         FILTER( (BOUND(?own) && ?own = <{viewer}>) || EXISTS {{ GRAPH ?pg {{ ?perm a <{NS}Permission> ; <{NS}agent> <{viewer}> ; <{NS}accessTo> ?t ; <{NS}mode> ?m }} \
+           FILTER( (STR(?t) = STR(?s) || (BOUND(?own) && STR(?t) = STR(?own)) || STR(?t) = \"{graph}\") \
+                && (STR(?m) = \"http://www.w3.org/ns/auth/acl#Read\" || STR(?m) = \"http://www.w3.org/ns/auth/acl#Write\") ) }} )"
+    )
 }
 
 pub use crate::rules::Cell;
@@ -83,6 +101,14 @@ pub trait Engine: Send + Sync {
     /// SELECT solutions, each as SPARQL-JSON bindings: var → {"type", "value"}.
     fn select(&self, query: &str) -> Result<Vec<Map<String, Value>>, String>;
     fn update(&self, update: &str) -> Result<(), String>;
+    /// #4524 — the same SELECT as a SPARQL-JSON body: what the shared sign-in checker
+    /// (chorus-oidc) reads. Sign-in therefore asks THIS store, embedded or remote,
+    /// never a second endpoint.
+    fn select_json(&self, query: &str) -> Result<String, String> {
+        let rows = self.select(query)?;
+        let vars: Vec<String> = rows.first().map(|r| r.keys().cloned().collect()).unwrap_or_default();
+        Ok(json!({ "head": { "vars": vars }, "results": { "bindings": rows } }).to_string())
+    }
     /// The embedded store itself, for the backup and restore drill; None for a remote one.
     fn as_embedded(&self) -> Option<&Embedded> {
         None
@@ -163,11 +189,12 @@ impl Engine for Embedded {
     }
 }
 
-pub fn open(s: &Settings) -> Box<dyn RowStore> {
-    let engine: Box<dyn Engine> = match s.store_kind.as_str() {
-        "sparql" => Box::new(Remote { endpoint: s.store_endpoint.clone(), auth: s.store_auth() }),
+/// The engine settings pick, shared by the row store and the sign-in checker (#4524).
+pub fn open_engine(s: &Settings) -> std::sync::Arc<dyn Engine> {
+    match s.store_kind.as_str() {
+        "sparql" => std::sync::Arc::new(Remote { endpoint: s.store_endpoint.clone(), auth: s.store_auth() }),
         "embedded" => match Embedded::open(&s.store_path) {
-            Ok(e) => Box::new(e),
+            Ok(e) => std::sync::Arc::new(e),
             Err(m) => {
                 eprintln!("{}: {m}; refusing to start", crate::model::PRODUCT);
                 std::process::exit(2);
@@ -177,17 +204,23 @@ pub fn open(s: &Settings) -> Box<dyn RowStore> {
             eprintln!("{}: store kind '{other}' is not one of sparql, embedded; refusing to start", crate::model::PRODUCT);
             std::process::exit(2);
         }
-    };
-    Box::new(Sparql { engine })
+    }
+}
+
+pub fn open(s: &Settings) -> Box<dyn RowStore> {
+    Box::new(Sparql { engine: open_engine(s) })
 }
 
 /// The row store over any SPARQL engine.
 pub struct Sparql {
-    engine: Box<dyn Engine>,
+    engine: std::sync::Arc<dyn Engine>,
 }
 
 impl Sparql {
     pub fn over(engine: Box<dyn Engine>) -> Self {
+        Sparql { engine: std::sync::Arc::from(engine) }
+    }
+    pub fn shared(engine: std::sync::Arc<dyn Engine>) -> Self {
         Sparql { engine }
     }
     pub fn engine(&self) -> &dyn Engine {
@@ -297,6 +330,26 @@ impl RowStore for Sparql {
         let mut subjects: Vec<String> = page.iter().filter_map(|r| r["s"]["value"].as_str().map(String::from)).collect();
         subjects.sort();
         Ok((self.rows(class, &subjects)?, total))
+    }
+
+    fn list_seen_by(&self, class: &ClassDef, limit: usize, offset: usize, viewer: &str) -> Result<(Vec<Row>, usize), String> {
+        let (g, c, f) = (class.graph, class.name, seen_by(viewer, class.graph));
+        let count = self.select(&format!("SELECT (COUNT(DISTINCT ?s) AS ?n) WHERE {{ GRAPH <{g}> {{ ?s a <{NS}{c}> }} {f} }}"))?;
+        let total = count.first().and_then(|r| r["n"]["value"].as_str()).and_then(|n| n.parse().ok()).unwrap_or(0);
+        let page = self.select(&format!("SELECT DISTINCT ?s WHERE {{ GRAPH <{g}> {{ ?s a <{NS}{c}> }} {f} }} LIMIT {limit} OFFSET {offset}"))?;
+        let mut subjects: Vec<String> = page.iter().filter_map(|r| r["s"]["value"].as_str().map(String::from)).collect();
+        subjects.sort();
+        Ok((self.rows(class, &subjects)?, total))
+    }
+
+    fn get_seen_by(&self, class: &ClassDef, name: &str, viewer: &str) -> Result<Option<Row>, String> {
+        let s = iri(class, name);
+        let (g, c, f) = (class.graph, class.name, seen_by(viewer, class.graph));
+        let hit = self.select(&format!("SELECT ?s WHERE {{ BIND(<{s}> AS ?s) GRAPH <{g}> {{ ?s a <{NS}{c}> }} {f} }} LIMIT 1"))?;
+        if hit.is_empty() {
+            return Ok(None);
+        }
+        Ok(self.rows(class, &[s])?.into_iter().next())
     }
 
     fn get(&self, class: &ClassDef, name: &str) -> Result<Option<Row>, String> {
