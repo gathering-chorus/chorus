@@ -72,7 +72,9 @@ test('the code sensor takes a target and a dry run', async () => {
 test('NEGATIVE PROOF — a red pass is reported red with its exit and output, never ok', async () => {
   const RED = '#!/bin/bash\necho "code: create 0 · update 0 · delete 0 · unchanged 50"\necho "refused: mass delete" >&2\nexit 3\n';
   await withServer(RED, async (client) => {
-    const r = await run(client, { sensor: 'code' });
+    const res = await client.callTool({ name: 'herald_run', arguments: { role: 'silas', sensor: 'code' } });
+    assert.equal(res.isError, true, 'a red pass must be an MCP error, or chorus-mcp-call.sh exits 0 for launchd');
+    const r = JSON.parse((res.content as Array<{ text: string }>)[0].text);
     assert.equal(r.ok, false, JSON.stringify(r));
     assert.equal(r.exit, 3);
     assert.ok(r.tail.includes('refused: mass delete'), r.tail);

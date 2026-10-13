@@ -3896,8 +3896,10 @@ export function buildMcpServer(getCallerRole: () => string, deps: McpServerDeps 
         // owns what a pass means, and its exit and output come back whole.
         const pathMod = require('path') as typeof import('path');
         const r = await runAthenaVerb(pathMod.join(chorusBinDir(pathMod), 'chorus-crawl'), args, role, 'herald_run');
-        return mcpJson({ ok: r.exitCode === 0, sensor, target: target ?? null, role, exit: r.exitCode,
-          tail: (r.stdout + r.stderr).trim().split('\n').slice(-12).join('\n') });
+        // A red pass is an MCP error too, so launchd through chorus-mcp-call.sh
+        // exits 1 and the scheduler sees the red, not a quiet ok:false.
+        return { ...mcpJson({ ok: r.exitCode === 0, sensor, target: target ?? null, role, exit: r.exitCode,
+          tail: (r.stdout + r.stderr).trim().split('\n').slice(-12).join('\n') }), isError: r.exitCode !== 0 };
       }
       case 'werk-pull': {
         const parsed = PullCardInput.safeParse(req.params.arguments);
