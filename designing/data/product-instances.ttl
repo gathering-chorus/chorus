@@ -618,3 +618,31 @@ chorus:gathering a chorus:Product ;
     chorus:hasDomain chorus:blog, chorus:books, chorus:documents, chorus:music, chorus:notes, chorus:people, chorus:photos, chorus:property, chorus:seeds, chorus:sexuality, chorus:social, chorus:stories, chorus:video .
 
 
+
+# #4509 — the Services product (Jeff 2026-10-12 19:55: "i agree w decisions lets write
+# this into graph as services product design"). Its IRI is not chorus:services, which is
+# the domain: one identifier carrying both meanings is the Pulse lesson.
+chorus:services-product a chorus:Product ;
+    chorus:docState """draft""" ;
+    chorus:label """Services""" ;
+    rdfs:label """Services""" ;
+    chorus:comment """How every service's tools are declared, generated and run: one tool runner, written once, and each tool a row in the model. A child product of Chorus.""" ;
+    rdfs:comment """How every service's tools are declared, generated and run: one tool runner, written once, and each tool a row in the model. A child product of Chorus.""" ;
+    chorus:ownedBy chorus:principal-wren ;
+    chorus:vision """An agent adds or changes a tool by writing one model row through the door. The runner serves it, with the same caller check, timeout, trace and error as every other tool, and nobody edits server code.""" ;
+    chorus:valueProposition """The services API gives the agents one consistent way to manage their own tools (Jeff, 2026-10-12). Today a tool is hand-written twice and its errors name nothing; after this a tool is one row, and every error says who called which tool and why it failed.""" ;
+    chorus:audience """The agents first, who call tools all day and now also declare them; the owner second, who reads one error line instead of an alert that names nothing; every product third, since each gets its own generated runner, the wine diary included.""" ;
+    chorus:status """building""" ;
+    chorus:gaps """No runner exists yet; tools are hand-written in one 4,211-line file. Skill has no input shape, binding or timeout fields yet. athena-gen generates APIs but no tools. The installed MCP library (1.29) cannot speak the 2026-07-28 release, and the pinned 1.31 security fix was never installed.""" ;
+    chorus:hasDesignDoc chorus:document-services-product-design ;
+    chorus:hasDomain chorus:services ;
+    chorus:promise """This is the Services product, the way tools are made and run. It is not a Service row: identity, the Clearing and the rest are services whose tools it serves. One way to make a tool, one way to run it, one way to read what went wrong. An agent declares a tool as a model row; athena-gen generates it; the runner serves it on the current MCP release; the caller is verified; the error names the caller, the tool and the reason.""" ;
+    chorus:structure """Two halves. The runner core is written once: transport for MCP 2026-07-28 with a fallback for 2025 clients, caller identity from a verified token, dispatch from a generated tool table, per-tool timeouts, one trace id passed to whatever a tool runs, one error line, and the Tasks extension for long-running tools. A tool is a Skill row with more fields: input shape, output shape, owner, what it runs (a door collection, a binary or a chorus-api route), timeout, and whether it is long-running. Door collections need no row: athena-gen generates their list, get and add tools by the ADR-031 naming.
+Reviewed 2026-10-12 by Silas and Kade, and the core owns these too: a tool that can run past about two minutes returns a run id and status instead of blocking (a full crawl takes about 35 minutes), on the Tasks extension; a running task survives a runner restart, or a land refuses to start while one could be lost; callers outside a session (launchd as the crawler principal) are checked like any session; there is one path, so dagu steps and launchd call the runner, never the binaries directly; deadlines and process-group reaping stay inside each verb (#4128).""" ;
+    chorus:asIs """Measured 2026-10-12. One MCP server serves 52 tools through one hand-written switch, each tool's input written twice. The caller is an unchecked header, and some calls arrive as unknown. The server answers the 2026-07-28 handshake with 400, which Claude Code 2.1.296 tries first and then falls back from; that is most of the MCP 400 alerts, found on 08-21 and 09-02 and lost twice. Errors go to three places and a minted trace id is never passed on. About a dozen tools copy what the model door already serves. The same idea was drafted in April (services-service-design.md) and never built.""" ;
+    chorus:toBe """Agents manage tools through the services API: write a tool row through the door and the runner serves it after the next generate. One runner per product, generated the way athena-gen generates each product's API, so the wine diary gets tools without calling Chorus. The old server's file is deleted and a check fails if a hand-written tool comes back. The MCP 400 alerts stop because their cause is gone.""" ;
+    chorus:notInScope """Changing a tool row for werk-merge or deploy by a plain door write: those rows land through werk with Jeff's go (Kade, 2026-10-12). The tools' own logic: a werk verb, a herald or a door collection stays with its owner. Identity issuance belongs to the identity service; the runner only verifies. Pipelines (chorus-make) and the heralds core (#4405) are siblings that plug in, not parts of this product.""" ;
+    chorus:references """Decisions Jeff agreed 2026-10-12 19:55: (1) the core is Rust on rmcp, since athena-gen already emits Rust crates and rmcp implements 2026-07-28 as stable; (2) a tool is more fields on Skill, not a new class, per the August ruling that a verb is an automated deterministic skill; (3) one runner generated per product; (4) Wren owns the core, Silas owns herald_run, Kade owns the werk verbs.
+Order of work: reinstall the MCP library so the 1.31 fix is in; the runner core serving door collections beside the old server; tool rows on Skill and athena-gen emitting the tool table, first plugin herald_run; werk and athena verbs as plugins, long ones on Tasks; the old server retires.
+Sources: modelcontextprotocol.io/specification/2026-07-28/changelog; github.com/modelcontextprotocol/rust-sdk; card #4405 plugin contract; designing/docs/services-product-design.html.""" ;
+    chorus:partOf chorus:chorus .

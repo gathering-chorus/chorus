@@ -273,3 +273,14 @@ chorus:document-domain-design-schedule a chorus:Document ;
   chorus:comment """What runs when: every timed launchd unit as a ScheduledJob row with its schedule, measured from plist and launchctl on both machines (#4081).""" ;
   rdfs:comment """Schedule domain design (#4081).""" ;
   chorus:hasDomain chorus:schedule ; chorus:ownedBy chorus:principal-silas ; chorus:hasProduct chorus:borg .
+
+# #4509 — the Services product design
+chorus:document-services-product-design a chorus:Document ;
+    chorus:docState """draft""" ;
+    chorus:docTitle """Product Design — Services""" ;
+    chorus:docHref """/designing/docs/services-product-design.html""" ;
+    chorus:comment """One tool runner, written once, and each tool a model row that athena-gen generates, on MCP 2026-07-28. Agreed by Jeff 2026-10-12.""" ;
+    rdfs:comment """One tool runner, written once, and each tool a model row that athena-gen generates, on MCP 2026-07-28. Agreed by Jeff 2026-10-12.""" ;
+    chorus:hasDomain chorus:services ;
+    chorus:ownedBy chorus:principal-wren ;
+    chorus:hasProduct chorus:services-product .

@@ -1,0 +1,150 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Chorus Tool Runner</title>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@400;600&family=IBM+Plex+Mono:wght@400;500&family=Fraunces:opsz,wght@9..144,600&display=swap">
+<style>
+/* Layout: one reading column; a flow diagram, then three tables (core / plugin / plan), then the decisions. */
+:root{
+  --bg:#f7f8f6; --fg:#1d2321; --muted:#5d6a65; --line:#dde3df; --panel:#eef2ef;
+  --accent:#1f6f5c; --accent-soft:#dcece6; --warn:#9a5a12; --bad:#a3302b;
+  --display:"Fraunces",Georgia,serif; --body:"IBM Plex Sans",system-ui,sans-serif; --mono:"IBM Plex Mono",ui-monospace,monospace;
+}
+@media (prefers-color-scheme: dark){:root:not([data-theme="light"]){
+  --bg:#151a18; --fg:#e6ece9; --muted:#9aa8a2; --line:#2c3532; --panel:#1d2421;
+  --accent:#6fc6ad; --accent-soft:#1f3a33; --warn:#e2a95c; --bad:#ec8a84; color-scheme:dark}}
+:root[data-theme="dark"]{
+  --bg:#151a18; --fg:#e6ece9; --muted:#9aa8a2; --line:#2c3532; --panel:#1d2421;
+  --accent:#6fc6ad; --accent-soft:#1f3a33; --warn:#e2a95c; --bad:#ec8a84; color-scheme:dark}
+body{background:var(--bg);color:var(--fg);font:16px/1.6 var(--body)}
+main{max-width:800px;margin:0 auto;padding-inline:20px;padding-block:36px 64px;display:grid;gap:36px}
+h1,h2{font-family:var(--display);margin:0;line-height:1.15;text-wrap:balance}
+h1{font-size:2.1rem} h2{font-size:1.3rem;color:var(--accent)}
+p{margin:0;max-width:66ch} section{display:grid;gap:12px}
+.eyebrow{font-size:.75rem;letter-spacing:.08em;text-transform:uppercase;color:var(--muted)}
+.thesis{padding:18px 22px;background:var(--accent-soft);border-radius:6px;font-size:1.08rem}
+.tbl{overflow-x:auto} table{border-collapse:collapse;width:100%;font-size:.93rem}
+th,td{text-align:left;vertical-align:top;padding:7px 9px;border-bottom:1px solid var(--line)}
+th{font-size:.72rem;letter-spacing:.07em;text-transform:uppercase;color:var(--muted);font-weight:600}
+code{font-family:var(--mono);font-size:.86em}
+.m{color:var(--accent);font-weight:600}.i{color:var(--warn);font-weight:600}
+.small{font-size:.88rem;color:var(--muted)}
+pre.mermaid{background:transparent;margin:0;overflow-x:auto}
+ol,ul{margin:0;padding-left:22px;display:grid;gap:6px}
+a{color:var(--accent)}
+</style>
+</head><body><main>
+<header style="display:grid;gap:8px">
+  <div class="eyebrow">Design draft · Wren · 12 Oct 2026 · for Jeff, Silas, Kade</div>
+  <h1>Chorus Tool Runner</h1>
+  <p>One MCP runner that every role, every launchd job and Jeff call into. The runner is written once. Each tool is a row in the model, and athena-gen generates the tool from that row. This is what #4405 did for the heralds, applied to MCP, on the summer MCP release.</p>
+</header>
+
+<div class="thesis">Today a tool is hand-written twice and its errors name nothing. After this, a tool is one model row, and every error says who called which tool and why it failed.</div>
+
+<section>
+  <h2>Where we are (measured today)</h2>
+  <div class="tbl"><table>
+    <tr><th>Fact</th><th>Basis</th></tr>
+    <tr><td>One 4,211-line file serves 52 tools through one hand-written switch. Each tool's input is written twice (JSON Schema and zod).</td><td class="m">measured</td></tr>
+    <tr><td>The caller is a plain <code>X-Chorus-Role</code> header. Nothing checks it. Some calls arrive as <code>from:"unknown"</code>.</td><td class="m">measured</td></tr>
+    <tr><td>Our server answers the summer protocol (2026-07-28) with 400 "Unsupported protocol version". Claude Code 2.1.296 tries that first, then falls back. That is most of the MCP 400 alerts. The team found this on 08-21 and 09-02 and lost it twice.</td><td class="m">measured (curl, 19:49)</td></tr>
+    <tr><td>package.json pins SDK 1.31.0 for a CVE fix; 1.29.0 is what is installed. The fix never took effect.</td><td class="m">measured</td></tr>
+    <tr><td>The 1.x SDK line will never support 2026-07-28. The 2.x TypeScript SDK and the Rust SDK (rmcp 3.5) do.</td><td class="m">SDK docs</td></tr>
+    <tr><td>Errors go to three different places. A trace id is minted per call and never passed on.</td><td class="m">measured</td></tr>
+    <tr><td>About a dozen tools copy what the model door already serves (principles, decisions, products, domains, the tree).</td><td class="m">measured</td></tr>
+    <tr><td>We designed "declare a service once, generate its MCP tools" in April (services-service-design.md). It was never built.</td><td class="m">measured</td></tr>
+  </table></div>
+</section>
+
+<section>
+  <h2>The shape</h2>
+  <pre class="mermaid">
+flowchart LR
+  subgraph callers[Callers]
+    R[role sessions]:::c
+    L[launchd jobs]:::c
+    J[Jeff]:::c
+  end
+  subgraph runner[Tool runner · written once]
+    T[transport<br/>2026-07-28 + 2025 fallback]
+    I[caller identity<br/>verified token]
+    D[dispatch from tool table]
+    E[one error · one trace · one log]
+  end
+  subgraph model[Model]
+    S[tool rows<br/>name · input shape · owner · target]
+  end
+  G[athena-gen] --> TT[generated tool table]
+  S --> G
+  TT --> D
+  callers --> T --> I --> D --> E
+  D --> A[model door /owl/v1]
+  D --> B[Rust verbs ~/.chorus/bin]
+  D --> C[chorus-api]
+  </pre>
+</section>
+
+<section>
+  <h2>Runner core: written once</h2>
+  <div class="tbl"><table>
+    <tr><th>The core owns</th><th>What it replaces</th></tr>
+    <tr><td>Transport: speaks 2026-07-28 (no sessions, method and tool in headers) and still answers 2025 clients.</td><td>The 400s; the fake session id the hooks client needs</td></tr>
+    <tr><td>Caller identity: a verified token (the same ES256 check pulse-api uses); unknown callers are refused, never "unknown".</td><td>The unchecked role header</td></tr>
+    <tr><td>Dispatch from the generated tool table; per-tool timeout from the row.</td><td>The 52-case switch and the scattered timeouts</td></tr>
+    <tr><td>One error line: caller, tool, reason, status, trace. Version probes are counted apart from real faults.</td><td>Three error paths; alerts that name nothing</td></tr>
+    <tr><td>One trace id, passed to whatever the tool runs (the <code>traceparent</code> the new spec defines).</td><td>The orphan trace id</td></tr>
+    <tr><td>Long-running tools (werk, athena, deploys) use the spec's Tasks extension: start, then check status.</td><td>15-minute blocking calls</td></tr>
+  </table></div>
+</section>
+
+<section>
+  <h2>A tool: one model row</h2>
+  <p>Jeff's rule from August stands: a verb is an automated, deterministic Skill. So a tool is a Skill row with a few more fields, not a new class.</p>
+  <div class="tbl"><table>
+    <tr><th>Field</th><th>Example (herald_run)</th></tr>
+    <tr><td>name, description</td><td><code>herald_run</code> · run one herald against one target</td></tr>
+    <tr><td>input shape (SHACL → JSON Schema)</td><td><code>herald</code> (one of the heralds) · <code>target</code> (a Repository)</td></tr>
+    <tr><td>owner</td><td>principal-silas</td></tr>
+    <tr><td>runs</td><td>binary <code>chorus-crawl</code>, or a door collection, or a chorus-api route</td></tr>
+    <tr><td>timeout, long-running</td><td>600 s · yes (Tasks)</td></tr>
+  </table></div>
+  <p class="small">Model collections need no row at all: athena-gen generates list / get / add tools for every class the door serves (ADR-031 naming). That deletes the hand-written principles, decisions and tree tools.</p>
+</section>
+
+<section>
+  <h2>The cards, in order</h2>
+  <ol>
+    <li><b>Today, tiny:</b> reinstall the SDK so the 1.31 CVE fix is actually in place.</li>
+    <li><b>Runner core</b> on the summer release, serving the door collections only. The 400 alerts stop because the cause is gone. It runs beside the old server.</li>
+    <li><b>Tool rows</b> on Skill, and athena-gen emits the tool table. First plugin: <code>herald_run</code> (Silas).</li>
+    <li><b>Werk and athena verbs</b> move over as plugins, long ones on Tasks.</li>
+    <li><b>The old server retires.</b> Its file is deleted, and a check fails if a hand-written tool comes back.</li>
+  </ol>
+</section>
+
+<section>
+  <h2>Decisions for Jeff</h2>
+  <div class="tbl"><table>
+    <tr><th>Question</th><th>My position</th></tr>
+    <tr><td>Rust (rmcp 3.5) or TypeScript (SDK 2.x) for the core?</td><td>Rust. athena-gen already emits Rust crates (pulse-api), the verbs are Rust, and rmcp implements 2026-07-28 as stable.</td></tr>
+    <tr><td>A tool as more fields on Skill, or a new Tool class?</td><td>Fields on Skill, per your August ruling.</td></tr>
+    <tr><td>One runner for Chorus, or one generated per product (pulse, the wine diary)?</td><td>One per product, generated, the same as athena-gen does for APIs. The wine diary then gets MCP for free and never calls Chorus.</td></tr>
+    <tr><td>Who owns the core?</td><td>Wren (services domain, Chorus product). Silas owns herald_run; Kade owns the werk verbs.</td></tr>
+  </table></div>
+</section>
+
+<section>
+  <h2>Sources</h2>
+  <ul class="small">
+    <li>Spec 2026-07-28 changelog: <a href="https://modelcontextprotocol.io/specification/2026-07-28/changelog">modelcontextprotocol.io/specification/2026-07-28/changelog</a></li>
+    <li>Release post: <a href="https://blog.modelcontextprotocol.io/posts/2026-07-28/">blog.modelcontextprotocol.io/posts/2026-07-28</a></li>
+    <li>TS SDK v2 and 2026-07-28 support: <a href="https://ts.sdk.modelcontextprotocol.io/v2/migration/support-2026-07-28">ts.sdk.modelcontextprotocol.io/v2/migration/support-2026-07-28</a></li>
+    <li>Rust SDK: <a href="https://github.com/modelcontextprotocol/rust-sdk">github.com/modelcontextprotocol/rust-sdk</a></li>
+    <li>Claude Code MCP (protocol negotiation, timeouts): <a href="https://code.claude.com/docs/en/mcp">code.claude.com/docs/en/mcp</a></li>
+    <li>In the repo: platform/mcp-server/src/server.ts, transport.ts · designing/services/athena-gen · card #4405 plugin contract · designing/docs/services-service-design.md</li>
+  </ul>
+</section>
+</main>
+
+<script src="https://cdn.jsdelivr.net/npm/mermaid@11.4.1/dist/mermaid.min.js"></script><script>mermaid.initialize({startOnLoad:true});</script>
+</body></html>
