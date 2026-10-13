@@ -253,7 +253,10 @@ assert 'Stack functions' in ctx, 'principles section missing'
   # carry the named cases. (Running them needs RUN_INTEGRATION: they write the
   # same live /tmp paths.)
   command -v cargo >/dev/null || skip "UNMEASURED — cargo absent (#4336)"
-  run bash -c "cd '${CHORUS_ROOT}/platform/services/chorus-hooks' && cargo test --release --quiet \
+  # #4022 — debug, not --release: the nightly's cargo lane has already built
+  # these test binaries in debug (shared CARGO_TARGET_DIR); --release rebuilt
+  # the crate a second time whenever chorus-hooks changed (119s).
+  run bash -c "cd '${CHORUS_ROOT}/platform/services/chorus-hooks' && cargo test --quiet \
     --test session_start_additional_context --test session_start_pulse --test session_opening_narrative -- --list 2>/dev/null"
   [ "$status" -eq 0 ]
   [[ "$output" == *"session_start_emits_additional_context_json: test"* ]] || return 1
