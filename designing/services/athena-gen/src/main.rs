@@ -3,6 +3,7 @@
 //!   athena-gen model    --root <repo> --product <name>              prints the product's slice of the model
 //!   athena-gen generate --root <repo> --product <name> --out <dir>
 //!                                                                    writes the product's API crate
+//!   athena-gen tool-inputs --root <repo> --out <file>                writes the tool runner's input table (#4513)
 
 use std::path::PathBuf;
 
@@ -19,6 +20,18 @@ fn main() {
     let args: Vec<String> = std::env::args().collect();
     let cmd = args.get(1).cloned().unwrap_or_default();
     let root = PathBuf::from(arg(&args, "--root").unwrap_or_else(|| ".".into()));
+    if cmd == "tool-inputs" {
+        let out = PathBuf::from(arg(&args, "--out").unwrap_or_else(|| die("tool-inputs needs --out <file>")));
+        let files = athena_gen::model::model_files(&root);
+        let (store, skipped) = athena_gen::model::load(&files).unwrap_or_else(|e| die(e));
+        if !skipped.is_empty() {
+            die(format!("{} model file(s) do not parse; nothing generated:\n  {}", skipped.len(), skipped.join("\n  ")));
+        }
+        let inputs = athena_gen::model::tool_inputs(&store).unwrap_or_else(|e| die(e));
+        std::fs::write(&out, athena_gen::emit::tool_inputs_json(&inputs)).unwrap_or_else(|e| die(e));
+        println!("wrote {} ({} tool input shape(s))", out.display(), inputs.len());
+        return;
+    }
     let Some(product) = arg(&args, "--product") else {
         eprintln!("usage: athena-gen model|generate --root <repo> --product <name> [--out <dir>]");
         std::process::exit(2);

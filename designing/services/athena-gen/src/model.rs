@@ -272,3 +272,51 @@ pub const RUNTIME_SETTINGS: &[&str] =
 pub fn missing_settings(declared: &[(String, String)]) -> Vec<&'static str> {
     RUNTIME_SETTINGS.iter().copied().filter(|k| !declared.iter().any(|(d, _)| d == k)).collect()
 }
+
+/// #4513 — one argument of a tool, from a ToolInput shape's property.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ToolArg {
+    /// The JSON name the tool takes it by (sh:name).
+    pub name: String,
+    pub datatype: String,
+    pub required: bool,
+    pub allowed: Vec<String>,
+    pub description: String,
+}
+
+/// #4513 — a tool's arguments: every `c:ToolInput` shape in the model (a SHACL
+/// node shape with no target class, so it never becomes a door collection),
+/// its properties in sh:order. Sorted by shape name so the output is stable.
+pub fn tool_inputs(store: &Store) -> Result<Vec<(String, Vec<ToolArg>)>, ModelError> {
+    let shapes = select(store, "SELECT ?s WHERE { ?s a c:ToolInput , sh:NodeShape } ORDER BY ?s")?;
+    let mut out = Vec::new();
+    for s in shapes {
+        let shape = s["s"].clone();
+        let props = select(store, &format!(
+            "SELECT ?path (SAMPLE(?n) AS ?name) (SAMPLE(?dt) AS ?datatype) (SAMPLE(?mn) AS ?min) \
+                    (SAMPLE(?d) AS ?desc) (SAMPLE(?o) AS ?order) WHERE {{ \
+               c:{shape} sh:property ?p . ?p sh:path ?path . \
+               OPTIONAL {{ ?p sh:name ?n }} OPTIONAL {{ ?p sh:datatype ?dt }} OPTIONAL {{ ?p sh:minCount ?mn }} \
+               OPTIONAL {{ ?p sh:description ?d }} OPTIONAL {{ ?p sh:order ?o }} \
+             }} GROUP BY ?path"))?;
+        let mut args: Vec<(i64, ToolArg)> = Vec::new();
+        for p in props {
+            let path = p["path"].clone();
+            let allowed: Vec<String> = select(store, &format!(
+                "SELECT ?v (COUNT(?mid) AS ?pos) WHERE {{ c:{shape} sh:property ?p . ?p sh:path c:{path} ; sh:in ?l . \
+                 ?l rdf:rest* ?mid . ?mid rdf:rest* ?node . ?node rdf:first ?v }} GROUP BY ?v ?node ORDER BY ?pos"))?
+                .into_iter().map(|r| r["v"].clone()).collect();
+            let order = p.get("order").and_then(|o| o.parse::<f64>().ok()).unwrap_or(f64::MAX) as i64;
+            args.push((order, ToolArg {
+                name: p.get("name").cloned().unwrap_or(path),
+                datatype: p.get("datatype").cloned().unwrap_or_else(|| "string".into()),
+                required: p.get("min").and_then(|m| m.parse::<u32>().ok()).unwrap_or(0) > 0,
+                allowed,
+                description: p.get("desc").cloned().unwrap_or_default(),
+            }));
+        }
+        args.sort_by(|a, b| a.0.cmp(&b.0).then_with(|| a.1.name.cmp(&b.1.name)));
+        out.push((shape, args.into_iter().map(|(_, a)| a).collect()));
+    }
+    Ok(out)
+}

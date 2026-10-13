@@ -60,8 +60,51 @@ chorus:SkillShape a sh:NodeShape ;
                   sh:description "Required. The domain this skill belongs to; its value-stream step comes through the domain." ] ;
     sh:property [ sh:path chorus:ownedBy ; sh:minCount 1 ; sh:maxCount 1 ; sh:nodeKind sh:IRI ; sh:class chorus:Principal ;
                   sh:name "owned by" ; sh:description "Required, set by the door." ] ;
+    # #4513 — a tool is a Skill row (Jeff 08-22: a verb is an automated
+    # deterministic skill; Services design #4509: tools as model rows). A
+    # deterministic skill with an input shape is offered by the tool runner.
+    sh:property [ sh:path chorus:inputShape ; sh:maxCount 1 ; sh:nodeKind sh:IRI ; sh:name "input shape" ;
+                  sh:description "Optional. The chorus:ToolInput shape its arguments must fit. A deterministic skill with one is a tool the runner offers." ] ;
+    sh:property [ sh:path chorus:forService ; sh:maxCount 1 ; sh:nodeKind sh:IRI ; sh:class chorus:Service ; sh:name "service" ;
+                  sh:description "Optional. The Service this skill runs as part of." ] ;
+    sh:property [ sh:path chorus:timeoutSeconds ; sh:maxCount 1 ; sh:datatype xsd:integer ; sh:minInclusive 1 ; sh:name "timeout (s)" ;
+                  sh:description "Optional. How long the runner waits before it stops the call; 60 when absent." ] ;
+    sh:property [ sh:path chorus:longRunning ; sh:maxCount 1 ; sh:datatype xsd:boolean ; sh:name "long running" ;
+                  sh:description "Optional. True: the runner returns a run id at once and reports status by it (the MCP Tasks extension)." ] ;
     chorus:instancesGraph "urn:chorus:domains:skills" ;
     chorus:generatedBy "athena-model" .
+
+chorus:inputShape a owl:ObjectProperty ; rdfs:label "input shape" ;
+    rdfs:comment "The shape a tool's arguments must fit (#4513)." .
+chorus:forService a owl:ObjectProperty ; rdfs:label "for service" ;
+    rdfs:comment "The Service a skill runs as part of (#4513)." .
+chorus:timeoutSeconds a owl:DatatypeProperty ; rdfs:label "timeout seconds" .
+chorus:longRunning a owl:DatatypeProperty ; rdfs:label "long running" .
+
+# #4513 — the shape of a tool's arguments. A ToolInput is a SHACL node shape
+# with no target class: it never becomes a door collection; athena-gen turns
+# each one into the JSON Schema the runner offers for the tool.
+chorus:ToolInput a owl:Class ; rdfs:label "Tool input" ;
+    rdfs:comment "The arguments a tool takes, as a SHACL shape; athena-gen generates its JSON Schema." .
+
+# herald_run (Silas, #4405): one pass of a sensor, the same arguments as the
+# old server's schema (platform/mcp-server/src/server.ts HERALD_RUN_TOOL_DEF).
+# sh:name is the argument's JSON name; sh:order is its place.
+chorus:HeraldRunInput a sh:NodeShape , chorus:ToolInput ;
+    rdfs:label "herald_run input" ;
+    sh:property [ sh:path chorus:sensor ; sh:minCount 1 ; sh:maxCount 1 ; sh:datatype xsd:string ; sh:order 1 ;
+                  sh:in ( "files" "code" "services" "stores" "infra" ) ; sh:name "sensor" ;
+                  sh:description "Which sensor to run." ] ;
+    sh:property [ sh:path chorus:target ; sh:maxCount 1 ; sh:datatype xsd:string ; sh:order 2 ; sh:name "target" ;
+                  sh:description "Code sensor only: the repository root to look at. Defaults to chorus." ] ;
+    sh:property [ sh:path chorus:dryRun ; sh:maxCount 1 ; sh:datatype xsd:boolean ; sh:order 3 ; sh:name "dry_run" ;
+                  sh:description "Plan and print, write nothing." ] ;
+    sh:property [ sh:path chorus:wait ; sh:maxCount 1 ; sh:datatype xsd:boolean ; sh:order 4 ; sh:name "wait" ;
+                  sh:description "Run to the end and return the output." ] .
+
+chorus:sensor a owl:DatatypeProperty ; rdfs:label "sensor" ; rdfs:comment "Which herald sensor a herald_run call runs (#4513)." .
+chorus:dryRun a owl:DatatypeProperty ; rdfs:label "dry run" ; rdfs:comment "Plan and print, write nothing (#4513)." .
+chorus:wait a owl:DatatypeProperty ; rdfs:label "wait" ; rdfs:comment "Run to the end and return the output (#4513)." .
 
 # Ordered join, a row per (step, skill): the door handles rows, not rdf:Lists.
 chorus:StepSkillShape a sh:NodeShape ;
