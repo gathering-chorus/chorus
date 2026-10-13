@@ -112,10 +112,10 @@ pub fn run(args: &[String]) -> ExitCode {
     let handoff_text = handoff_check.join().unwrap_or_default();
     ok_sources.push("handoffs"); // handoffs returning empty is normal (no pending)
 
-    // Health checks — APFS disk via Finder free space (includes purgeable, matches Finder)
+    // Health checks — APFS disk free space (includes purgeable, matches Finder, #4497)
     let disk_pct = {
-        // osascript returns Finder's free space which includes purgeable — matches what Jeff sees
-        let finder_free = super::health::finder_free_bytes();
+        // Foundation's important-usage free space includes purgeable — matches what Jeff sees in Finder
+        let disk_free = super::health::free_disk_bytes();
         let container_total = Cmd::new("diskutil").args(["info", "/"])
             .output().ok()
             .and_then(|o| String::from_utf8(o.stdout).ok())
@@ -126,7 +126,7 @@ pub fn run(args: &[String]) -> ExitCode {
                     .and_then(|s| s.split_whitespace().next())
                     .and_then(|n| n.parse::<u64>().ok())
             });
-        match (container_total, finder_free) {
+        match (container_total, disk_free) {
             (Some(total), Some(free)) if total > 0 => {
                 format!("{}%", ((total as f64 - free) / total as f64 * 100.0) as u64)
             }
