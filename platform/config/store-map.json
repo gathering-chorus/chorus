@@ -234,7 +234,24 @@
       },
       "role": "systemOfRecord",
       "basis": "inventory",
-      "servedBy": "library-com-security-css"
+      "servedBy": "library-com-security-css",
+      "backup": "tar",
+      "backupMinBytes": 262144
+    },
+    {
+      "name": "solid-css-wine-diary",
+      "label": "Community Solid Server files for wine-diary's own sign-in (accounts, keys)",
+      "machine": "library",
+      "storeType": "files",
+      "match": {
+        "kind": "path",
+        "value": "/Users/jeffbridwell/CascadeProjects/shared-security/data/wine-diary-css"
+      },
+      "role": "systemOfRecord",
+      "basis": "inventory",
+      "servedBy": "library-com-security-css-wine-diary",
+      "backup": "tar",
+      "backupMinBytes": 1000
     },
     {
       "name": "spine",

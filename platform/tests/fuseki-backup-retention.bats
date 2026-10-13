@@ -82,7 +82,7 @@ run_backup() {
 run_all() {
   run env -i PATH="$TMP/bin:/usr/bin:/bin" HOME="$TMP" \
     FUSEKI_BACKUP_REMOTE=stub FUSEKI_BACKUP_DEST="$REMOTE_BASE" FUSEKI_BACKUP_LOCAL="$LOCAL" \
-    FUSEKI_URL=http://127.0.0.1:9 CHORUS_LOG="$TMP/bin/chorus-log" STORE_MAP="$1" \
+    FUSEKI_URL=http://127.0.0.1:9 CHORUS_LOG="$TMP/bin/chorus-log" STORE_MAP="$1" FILES_BACKUP=0 \
     bash "$TMP/scripts/fuseki-backup.sh"
 }
 

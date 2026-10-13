@@ -57,6 +57,12 @@ for s in json.load(open(sys.argv[1]))["stores"]:
   [ -n "$DATASETS" ] || { echo "store map names no Fuseki system of record — refusing to back up nothing" >&2; exit 1; }
   rc=0
   for ds in $DATASETS; do FUSEKI_DATASET="$ds" bash "$0" || rc=1; done
+  # The same nightly carries the file-tree systems of record (the sign-in
+  # servers' accounts and keys), so a new store needs a store-map entry, not a
+  # new LaunchAgent. FILES_BACKUP=0 skips it (the retention tests do).
+  if [ "${FILES_BACKUP:-1}" = 1 ]; then
+    bash "$(dirname "$0")/files-backup.sh" || rc=1
+  fi
   exit $rc
 fi
 DATASET="$FUSEKI_DATASET"
