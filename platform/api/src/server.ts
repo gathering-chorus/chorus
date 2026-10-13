@@ -2762,16 +2762,16 @@ app.get('/api/athena/blast-radius/:iri', async (req: Request, res: Response) => 
 
 // #4499 — "what breaks if I change X": a file, a unit or a service, answered
 // from the crawler's code units in services, domains, tests and pages.
-import { codeBlast, unitsQuery, builtFromQuery, filesQuery, pagesQuery, repositoriesQuery, servicesQuery, runsQuery, unitsFromCsv, builtFromFromCsv, filesFromCsv, pagesFromCsv, repoEdgesFromCsv, runningFromCsv, withPages, DEFAULT_REPO } from './handlers/athena-code-blast';
+import { codeBlast, unitsQuery, builtFromQuery, filesQuery, pagesQuery, repositoriesQuery, servicesQuery, runsQuery, exercisesQuery, unitsFromCsv, builtFromFromCsv, filesFromCsv, pagesFromCsv, repoEdgesFromCsv, runningFromCsv, withPages, DEFAULT_REPO } from './handlers/athena-code-blast';
 app.get('/api/athena/code-blast', async (req: Request, res: Response) => {
   const target = typeof req.query.target === 'string' ? req.query.target.trim() : '';
   if (!target) return res.status(400).json({ ok: false, reason: 'target-missing', hint: '?target=<repo path or service-name>' });
   try {
-    const [u, b, f, p, rp, sv, rn] = await Promise.all([unitsQuery(), builtFromQuery(), filesQuery(), pagesQuery(), repositoriesQuery(), servicesQuery(), runsQuery()].map(blastRadiusRead));
-    if (![u, b, f, p, rp, sv, rn].every((x) => x.ok)) return res.status(503).json({ ok: false, reason: STORE_UNREACHABLE });
+    const [u, b, f, p, rp, sv, rn, ex] = await Promise.all([unitsQuery(), builtFromQuery(), filesQuery(), pagesQuery(), repositoriesQuery(), servicesQuery(), runsQuery(), exercisesQuery()].map(blastRadiusRead));
+    if (![u, b, f, p, rp, sv, rn, ex].every((x) => x.ok)) return res.status(503).json({ ok: false, reason: STORE_UNREACHABLE });
     const repo = typeof req.query.repo === 'string' && req.query.repo.trim() ? req.query.repo.trim() : DEFAULT_REPO;
     const files = withPages(filesFromCsv(await f.text(), repo), pagesFromCsv(await p.text(), repo));
-    const r = codeBlast(target, unitsFromCsv(await u.text(), repo), builtFromFromCsv(await b.text()), files, { repo, edges: repoEdgesFromCsv(await rp.text()) }, runningFromCsv(await sv.text(), await rn.text()));
+    const r = codeBlast(target, unitsFromCsv(await u.text(), repo), builtFromFromCsv(await b.text()), files, { repo, edges: repoEdgesFromCsv(await rp.text()) }, runningFromCsv(await sv.text(), await rn.text(), await ex.text()));
     res.status(200).json({ ...r, source: 'graph' });
   } catch (err) {
     res.status(503).json({ ok: false, reason: STORE_UNREACHABLE, error: (err as Error).message });

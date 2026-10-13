@@ -231,6 +231,36 @@ describe('#4499 reopen 3 — a target is placed or refused, never guessed', () =
     expect(r.services.direct).toEqual(['service-knowledge-store']);
   });
 
+  // part 2 — Jeff 11:35 "can we fix that gap here?": the root package answered
+  // 452 tests for any script; now the tests that exercise it (chorus:exercises)
+  const RF: FileRow[] = [...F,
+    { path: 'platform/tests/crawler.bats', kind: 'test', domain: 'tests', route: '' },
+    { path: 'platform/tests/unrelated.bats', kind: 'test', domain: 'cards', route: '' },
+    { path: 'platform/scripts/lonely.sh', kind: 'code', domain: 'toolchain', route: '' }];
+  const withEx = runningFromCsv(
+    ['s', `${C}service-knowledge-store`].join('\n'), 's,path,bin',
+    ['test,file', 'platform/tests/crawler.bats,platform/scripts/index-crawler-snapshots.sh'].join('\n'));
+
+  it('a root-package script answers with the tests that exercise it, not the root package', () => {
+    const r = codeBlast('platform/scripts/index-crawler-snapshots.sh', ROOTED, built, RF, undefined, withEx);
+    if (!r.measured) throw new Error(r.reason);
+    expect(r.tests).toBe(1);
+    expect(r.domains).toEqual([{ name: 'knowledge', files: 1 }, { name: 'tests', files: 1 }]);
+    expect(r.unexercised).toBeUndefined();
+  });
+
+  it('NEGATIVE PROOF — a script no test exercises reports 0 tests and names itself, never the root package', () => {
+    const r = codeBlast('platform/scripts/lonely.sh', ROOTED, built, RF, undefined, withEx);
+    if (!r.measured) throw new Error(r.reason);
+    expect(r.tests).toBe(0);
+    expect(r.unexercised).toEqual(['platform/scripts/lonely.sh']);
+  });
+
+  it('NEGATIVE PROOF — a crate file still answers for its whole crate and what depends on it', () => {
+    const r = codeBlast('platform/services/werk-teardown/src/lib.rs', ROOTED, built, RF, undefined, withEx);
+    expect(r.measured && r.units.through.sort()).toEqual(['platform-services-werk-accept', 'platform-services-werk-push']);
+  });
+
   it('NEGATIVE PROOF — a root file nothing runs names no service', () => {
     const r = codeBlast('platform/tests/x.bats', ROOTED, built, F, undefined, running);
     expect(r.measured && r.services.direct).toEqual([]);
