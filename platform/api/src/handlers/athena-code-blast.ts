@@ -118,7 +118,8 @@ function placePath(target: string, units: UnitRow[], files: FileRow[], running?:
   const runBy = [...new Set((running?.runs ?? []).filter((r) => under(r.path)).map((r) => r.service))].sort();
   // a file only the root package holds answers for itself and the tests that
   // exercise it — never the whole root package (452 tests for any script)
-  const own = files.filter((f) => under(f.path) && unitOf(f.path, units)?.path === '.').map((f) => f.path);
+  // a file can come back as several rows (one per domain it carries): one path each
+  const own = [...new Set(files.filter((f) => under(f.path) && unitOf(f.path, units)?.path === '.').map((f) => f.path))];
   const hits = (running?.exercises ?? []).filter(([, f]) => own.includes(f));
   const tests = [...new Set(hits.map(([t]) => t))];
   const unexercised = own.filter((f) => !hits.some(([, x]) => x === f) && !files.some((r) => r.path === f && r.kind === 'test'));

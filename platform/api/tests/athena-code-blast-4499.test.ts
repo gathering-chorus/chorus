@@ -256,6 +256,14 @@ describe('#4499 reopen 3 — a target is placed or refused, never guessed', () =
     expect(r.unexercised).toEqual(['platform/scripts/lonely.sh']);
   });
 
+  // reopen 4 — the live answer named index-crawler-snapshots.sh twice: the
+  // file came back as two rows, one per domain it carries
+  it('NEGATIVE PROOF — a file held as two rows is named once', () => {
+    const twice: FileRow[] = [...RF, { path: 'platform/scripts/lonely.sh', kind: 'code', domain: 'cicd', route: '' }];
+    const r = codeBlast('platform/scripts/lonely.sh', ROOTED, built, twice, undefined, withEx);
+    expect(r.measured && r.unexercised).toEqual(['platform/scripts/lonely.sh']);
+  });
+
   it('NEGATIVE PROOF — a crate file still answers for its whole crate and what depends on it', () => {
     const r = codeBlast('platform/services/werk-teardown/src/lib.rs', ROOTED, built, RF, undefined, withEx);
     expect(r.measured && r.units.through.sort()).toEqual(['platform-services-werk-accept', 'platform-services-werk-push']);
