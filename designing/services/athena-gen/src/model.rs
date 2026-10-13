@@ -80,7 +80,8 @@ fn err(e: impl std::fmt::Display) -> ModelError {
 /// sorted so the load order (and so the output) never depends on the filesystem.
 pub fn model_files(root: &Path) -> Vec<PathBuf> {
     let mut out = Vec::new();
-    let mut dirs: Vec<PathBuf> = vec![root.join("designing/data")];
+    // #4519 — a product repo (the wine diary) keeps its model in designing/ontology
+    let mut dirs: Vec<PathBuf> = vec![root.join("designing/data"), root.join("designing/ontology")];
     if let Ok(roles) = std::fs::read_dir(root.join("roles")) {
         for r in roles.flatten() {
             dirs.push(r.path().join("ontology"));
@@ -138,6 +139,28 @@ fn select(store: &Store, q: &str) -> Result<Vec<BTreeMap<String, String>>, Model
         }
     }
     Ok(rows)
+}
+
+/// #4519 — like `select`, but IRIs stay whole: a product's classes and fields live in
+/// the product's own namespace, so a local name alone cannot find them again.
+fn select_iri(store: &Store, q: &str) -> Result<Vec<BTreeMap<String, String>>, ModelError> {
+    let query = format!("{PREFIXES}{q}");
+    let results = SparqlEvaluator::new().parse_query(&query).map_err(err)?.on_store(store).execute().map_err(err)?;
+    let mut rows = Vec::new();
+    if let QueryResults::Solutions(solutions) = results {
+        for s in solutions {
+            let s = s.map_err(err)?;
+            rows.push(s.iter().map(|(v, t)| (v.as_str().to_string(), match t {
+                Term::NamedNode(n) => n.as_str().to_string(),
+                other => local(other),
+            })).collect());
+        }
+    }
+    Ok(rows)
+}
+
+fn local_name(iri: &str) -> String {
+    iri.rsplit(['#', '/']).next().unwrap_or(iri).to_string()
 }
 
 /// v1's English plural (athena-make lib.rs pluralize), kept so generated paths match.
@@ -204,20 +227,31 @@ pub fn product(store: &Store, name: &str) -> Result<Product, ModelError> {
     // prefix, never a Chorus default
     let declared = settings(store, name)?;
     let prefix = declared.iter().find(|(k, _)| k == "store.graph_prefix").map(|(_, v)| v.clone());
+    // #4519 reopen — the product's classes are named in its own namespace (wine-diary:Wine).
+    // A product that declares none is refused, never read as a Chorus product.
+    let Some(ns) = declared.iter().find(|(k, _)| k == "model.namespace").map(|(_, v)| v.clone()) else {
+        return Err(ModelError(format!("{name} declares no model.namespace: add a Property row (c:{name} c:hasProperty …)")));
+    };
     for d in domains {
         let dname = d["d"].clone();
         let mut domain = Domain { name: dname.clone(), classes: Vec::new() };
-        for c in select(store, &format!("SELECT DISTINCT ?c WHERE {{ c:{dname} c:definesVocabulary ?c }} ORDER BY ?c"))? {
-            domain.classes.push(class(store, &dname, &c["c"], prefix.as_deref(), name)?);
+        for c in select_iri(store, &format!("SELECT DISTINCT ?c WHERE {{ c:{dname} c:definesVocabulary ?c }} ORDER BY ?c"))? {
+            let iri = &c["c"];
+            if !iri.starts_with(&ns) {
+                return Err(ModelError(format!(
+                    "{dname} defines {iri}, which is not in {name}'s namespace {ns}: a product serves only its own classes")));
+            }
+            domain.classes.push(class(store, &dname, iri, prefix.as_deref(), name)?);
         }
         out.domains.push(domain);
     }
     Ok(out)
 }
 
-fn class(store: &Store, domain: &str, name: &str, prefix: Option<&str>, product: &str) -> Result<Class, ModelError> {
+fn class(store: &Store, domain: &str, iri: &str, prefix: Option<&str>, product: &str) -> Result<Class, ModelError> {
+    let name = local_name(iri);
     let graph = match select(store, &format!(
-        "SELECT ?g WHERE {{ ?s sh:targetClass c:{name} ; c:instancesGraph ?g }} ORDER BY ?g LIMIT 1"))?
+        "SELECT ?g WHERE {{ ?s sh:targetClass <{iri}> ; c:instancesGraph ?g }} ORDER BY ?g LIMIT 1"))?
         .into_iter().next() {
         Some(r) => r["g"].clone(),
         None => match prefix {
@@ -226,27 +260,28 @@ fn class(store: &Store, domain: &str, name: &str, prefix: Option<&str>, product:
                 "{name} names no instancesGraph and {product} declares no store.graph_prefix: add one or the other"))),
         },
     };
-    let props = select(store, &format!(
+    let props = select_iri(store, &format!(
         "SELECT ?path (SAMPLE(?dt) AS ?datatype) (SAMPLE(?cl) AS ?class) (SAMPLE(?nk) AS ?nodeKind) \
          (MAX(?mn) AS ?min) (MIN(?mx) AS ?max) WHERE {{ \
-           c:{name} rdfs:subClassOf* ?anc . ?s sh:targetClass ?anc ; sh:property ?p . ?p sh:path ?path . \
+           <{iri}> rdfs:subClassOf* ?anc . ?s sh:targetClass ?anc ; sh:property ?p . ?p sh:path ?path . \
            OPTIONAL {{ ?p sh:datatype ?dt }} OPTIONAL {{ ?p sh:class ?cl }} OPTIONAL {{ ?p sh:nodeKind ?nk }} \
            OPTIONAL {{ ?p sh:minCount ?mn }} OPTIONAL {{ ?p sh:maxCount ?mx }} \
          }} GROUP BY ?path ORDER BY ?path"))?;
     let mut fields = Vec::new();
     for p in props {
-        let fname = p["path"].clone();
+        let path = p["path"].clone();
+        let fname = local_name(&path);
         // sh:in in model order: a member's position is how many list cells precede it
         let allowed: Vec<String> = select(store, &format!(
-            "SELECT ?v (COUNT(?mid) AS ?pos) WHERE {{ c:{name} rdfs:subClassOf* ?anc . ?s sh:targetClass ?anc ; sh:property ?p . \
-             ?p sh:path c:{fname} ; sh:in ?l . ?l rdf:rest* ?mid . ?mid rdf:rest* ?node . ?node rdf:first ?v }} \
+            "SELECT ?v (COUNT(?mid) AS ?pos) WHERE {{ <{iri}> rdfs:subClassOf* ?anc . ?s sh:targetClass ?anc ; sh:property ?p . \
+             ?p sh:path <{path}> ; sh:in ?l . ?l rdf:rest* ?mid . ?mid rdf:rest* ?node . ?node rdf:first ?v }} \
              GROUP BY ?v ?node ORDER BY ?pos"))?
             .into_iter().map(|r| r["v"].clone()).collect();
-        let is_link = p.contains_key("class") || p.get("nodeKind").is_some_and(|k| k == "IRI");
+        let is_link = p.contains_key("class") || p.get("nodeKind").is_some_and(|k| k.ends_with("#IRI"));
         let kind = if is_link {
-            Kind::Link { class: p.get("class").cloned() }
+            Kind::Link { class: p.get("class").map(|c| local_name(c)) }
         } else {
-            Kind::Literal { datatype: p.get("datatype").cloned().unwrap_or_else(|| "string".into()) }
+            Kind::Literal { datatype: p.get("datatype").map_or_else(|| "string".into(), |d| local_name(d)) }
         };
         fields.push(Field {
             name: fname,
@@ -258,7 +293,7 @@ fn class(store: &Store, domain: &str, name: &str, prefix: Option<&str>, product:
             allowed,
         });
     }
-    Ok(Class { name: name.to_string(), segment: segment(domain, name), graph, fields })
+    Ok(Class { segment: segment(domain, &name), name, graph, fields })
 }
 
 /// The model's version (designing/data/model-version.ttl), so every response can say
