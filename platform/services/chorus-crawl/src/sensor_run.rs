@@ -76,15 +76,18 @@ pub fn tally(sensor: &str, output: &str) -> Option<Counts> {
 
 /// A run's name: lowercase, because the door slugs names and one capital
 /// letter made a row the door created unreadable by the name it was sent as.
+/// No kind prefix: the door adds `sensor-run-` itself and refuses a name that
+/// already carries it (422 double-prefix, measured on prod after the land).
 pub fn run_name(sensor: &str, iso_utc: &str) -> String {
     let stamp: String = iso_utc.chars().filter(|c| c.is_ascii_alphanumeric()).collect::<String>().to_lowercase();
-    format!("sensor-run-{sensor}-{stamp}")
+    format!("{sensor}-{stamp}")
 }
 
 /// A run name handed in from outside: this sensor's, lowercase letters,
 /// digits and single dashes, so the door stores it under the same name.
 pub fn is_run_name(name: &str, sensor: &str) -> bool {
-    name.starts_with(&format!("sensor-run-{sensor}-"))
+    name.starts_with(&format!("{sensor}-"))
+        && !name.starts_with("sensor-")
         && name.chars().all(|c| c.is_ascii_lowercase() || c.is_ascii_digit() || c == '-')
         && !name.contains("--")
         && !name.ends_with('-')
@@ -155,18 +158,21 @@ mod tests_4405 {
     #[test]
     fn a_run_name_survives_the_doors_slug() {
         let n = run_name("code", "2026-10-12T21:30:05Z");
-        assert_eq!(n, "sensor-run-code-20261012t213005z");
+        assert_eq!(n, "code-20261012t213005z");
+        assert!(!n.starts_with("sensor-run-"), "the door adds the kind prefix and refuses a second one");
         assert_eq!(n, n.to_lowercase());
         assert!(!n.contains("--"));
     }
 
     #[test]
     fn negative_proof_a_handed_in_run_name_must_be_this_sensors_and_slug_safe() {
-        assert!(is_run_name("sensor-run-code-20261012t213005z", "code"));
-        assert!(!is_run_name("sensor-run-infra-20261012t213005z", "code"), "another sensor's run");
-        assert!(!is_run_name("sensor-run-code-2026T21", "code"), "a capital is stored under another name");
-        assert!(!is_run_name("sensor-run-code--x", "code"));
-        assert!(!is_run_name("sensor-run-code-x y", "code"));
+        assert!(is_run_name("code-20261012t213005z", "code"));
+        assert!(!is_run_name("infra-20261012t213005z", "code"), "another sensor's run");
+        assert!(!is_run_name("code-2026T21", "code"), "a capital is stored under another name");
+        assert!(!is_run_name("code--x", "code"));
+        assert!(!is_run_name("code-x y", "code"));
+        // NEGATIVE PROOF (reopen 5): the old prefixed name is the one the door refused
+        assert!(!is_run_name("sensor-run-code-20261012t213005z", "code"), "a kind-prefixed name is a 422 at the door");
     }
 
     #[test]

@@ -77,7 +77,7 @@ test('by default the pass starts in the background and the run name comes back a
       const r = JSON.parse((res.content as Array<{ text: string }>)[0].text);
       assert.ok(Date.now() - t0 < 1500, 'the call waited for the pass');
       assert.equal(r.state, 'running');
-      assert.match(r.run, /^sensor-run-infra-\d{8}t\d{6}z$/);
+      assert.match(r.run, /^infra-\d{8}t\d{6}z$/);
       assert.equal(r.written_as, 'silas');
       // the pass is handed the same name, so its SensorRun row is the one returned
       for (let i = 0; i < 40 && !fs.readFileSync(r.log, 'utf-8').includes('done'); i++) await new Promise((ok) => setTimeout(ok, 100));
