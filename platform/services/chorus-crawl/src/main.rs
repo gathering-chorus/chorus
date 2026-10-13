@@ -2003,6 +2003,34 @@ fn run_code(args: &[String]) -> i32 {
     // never touches a Service row's builtFrom
     let built = if repo == home_repo { built_from(&instances, &all, &repo) } else { Vec::new() };
     println!("code: {} services built from {} unit links", built.len(), built.iter().map(|(_, v)| v.len()).sum::<usize>());
+    // #4499 reopen 3 — what each test file exercises, by werk-test's own rule
+    // (Jeff 2026-10-13: a script in no unit answered with the root package's
+    // 452 tests). Changed rows only; a test that names nothing is cleared.
+    let exercise_plan: Option<Vec<(String, String)>> = match fetch_rows_with(&api, Some(&token), "CodeFile", "", chorus_crawl::services::door_page_rows) {
+        Err(e) => { println!("code: exercises UNMEASURED — cannot read CodeFile rows ({e})"); None }
+        Ok(rows) => {
+            let get = |r: &Vec<(String, String)>, k: &str| r.iter().find(|(f, _)| f == k).map(|(_, v)| v.clone()).unwrap_or_default();
+            let bare = |v: &str| v.trim_start_matches("chorus:").trim_start_matches("code-file-").to_string();
+            let mine: Vec<&Vec<(String, String)>> = rows.iter().filter(|r| get(r, "inRepository").ends_with(&format!("repository-{repo}"))).collect();
+            let kind_of = |r: &Vec<(String, String)>| get(r, "hasKind").rsplit('-').next().unwrap_or_default().to_string();
+            let tests: Vec<String> = mine.iter().filter(|r| kind_of(r) == "test").map(|r| get(r, "filePath")).collect();
+            let files: Vec<String> = mine.iter()
+                .filter(|r| matches!(kind_of(r).as_str(), "code" | "config" | "data" | "query" | "template"))
+                .map(|r| get(r, "filePath")).collect();
+            let stored: std::collections::HashMap<String, Vec<String>> = mine.iter()
+                .map(|r| (get(r, "filePath"), r.iter().filter(|(k, _)| k == "exercises").map(|(_, v)| bare(v)).collect()))
+                .collect();
+            let text_of = |q: &str| std::fs::read_to_string(format!("{root}/{q}")).ok();
+            let crate_of = |q: &str| werk_test::crate_dir_of_path(q, &|d: &str| std::path::Path::new(&root).join(d).join("Cargo.toml").is_file());
+            let started = std::time::Instant::now();
+            let want = chorus_crawl::code_run::exercise_edges(&tests, &files, &text_of, &crate_of);
+            let edges: usize = want.iter().map(|(_, v)| v.len()).sum();
+            let patches = chorus_crawl::code_run::exercise_patches(&want, &|t: &str| stored.get(t).cloned().unwrap_or_default(), &stable_name);
+            println!("code: exercises — {} test files name {} files ({} edges) in {:.1}s · {} rows to write",
+                tests.len(), want.iter().flat_map(|(_, v)| v.iter()).collect::<std::collections::BTreeSet<_>>().len(), edges, started.elapsed().as_secs_f64(), patches.len());
+            Some(patches)
+        }
+    };
     if dry_run {
         for (svc, us) in &built {
             println!("code:   service {svc} ← {}", us.join(", "));
@@ -2047,6 +2075,14 @@ fn run_code(args: &[String]) -> i32 {
         };
         if let Err(e) = write(&ident, &api, w.method, &w.path, body.as_deref()) {
             failed.push(format!("{}: {e}", w.what));
+        }
+    }
+    // #4499 reopen 3 — written last, after the units they name exist
+    if let (Some(patches), Ok(cf)) = (&exercise_plan, collection_for(&api, "CodeFile")) {
+        for (name, body) in patches {
+            if let Err(e) = write(&ident, &api, "PATCH", &format!("{cf}/{name}"), Some(body)) {
+                failed.push(format!("exercises {name}: {e}"));
+            }
         }
     }
     for f in &failed {

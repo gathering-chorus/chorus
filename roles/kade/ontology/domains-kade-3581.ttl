@@ -91,6 +91,19 @@ chorus:hasLanguage a owl:ObjectProperty ;
     rdfs:domain chorus:CodeFile ;
     rdfs:range chorus:Language .
 
+# #4499 reopen 3 — Jeff, 2026-10-13: "can we fix that gap here?" A script in no
+# crate or package answered with the whole root package (452 tests). A test file
+# names the files it exercises, by werk-test's own selection rule (exercisers_of,
+# #4419), written by the crawler's code leg on every land. On the file, not on
+# each Test case: a case exercises what its file does (Silas, 11:41 — 1,240
+# rows, not 9,831). Only a test says it: athena-validate's
+# exercises-from-a-non-test names any other file that does.
+chorus:exercises a owl:ObjectProperty ;
+    rdfs:label "exercises" ;
+    rdfs:comment "A test file → a file it runs, imports or reads, by the rule werk-test selects a card's tests with. Written by the crawler on every land; the subject is always a test (hasKind test)." ;
+    rdfs:domain chorus:CodeFile ;
+    rdfs:range chorus:CodeFile .
+
 chorus:CodeKindShape a sh:NodeShape ;
     sh:targetClass chorus:CodeKind ;
     sh:property [ sh:path rdfs:label ; sh:minCount 1 ; sh:datatype xsd:string ] ;
@@ -119,6 +132,8 @@ chorus:CodeFileShape a sh:NodeShape ;
     sh:property [ sh:path chorus:hasDomain ; sh:class chorus:Domain ] ;
     sh:property [ sh:path chorus:fileSha ; sh:datatype xsd:string ] ;
     sh:property [ sh:path chorus:fileLastModified ; sh:datatype xsd:dateTime ] ;
+    # #4499 reopen 3 — what a test file exercises (only a test carries it)
+    sh:property [ sh:path chorus:exercises ; sh:class chorus:CodeFile ] ;
     # #4178 — ownedBy is WRITTEN on every row (the door stamps it from the caller)
     # and was served on none of 5,548, so the one fact that decides whether a write
     # is allowed could not be read by anyone. Ownership had to be checked with raw

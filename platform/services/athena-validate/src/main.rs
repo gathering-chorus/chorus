@@ -13,7 +13,7 @@ mod ported;
 mod registry;
 mod store;
 
-use checks::{Verdict, ALLOWED_VALUES, COMPLETENESS, PATTERN, SURVIVES_THE_DOOR};
+use checks::{Verdict, ALLOWED_VALUES, COMPLETENESS, EXERCISES_FROM_A_TEST, PATTERN, SURVIVES_THE_DOOR};
 use std::io::Write;
 
 /// Every line the run produced, printed AND written to the report file.
@@ -139,6 +139,8 @@ fn main() {
     // at the door, swept over what is already in the store.
     store_checks.push(&ALLOWED_VALUES);
     store_checks.push(&PATTERN);
+    // #4499 — only a test says what it exercises
+    store_checks.push(&EXERCISES_FROM_A_TEST);
     // #4481 — one parent per row, position read up the chain, no unlisted links across hierarchies
     store_checks.extend(hierarchy::all());
     if matches!(&exact, Some(g) if g.is_empty()) {

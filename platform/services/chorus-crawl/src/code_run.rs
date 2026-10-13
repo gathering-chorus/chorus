@@ -215,3 +215,79 @@ pub fn code_writes(coll: &str, svc_coll: Option<&str>, plan: &UnitPlan, built: &
 pub fn file_needs_repo(stored: &Fields, repo: &str) -> bool {
     repo_of_row(stored) != Some(repo)
 }
+
+/// #4499 reopen 3 — the files each test file exercises, by the rule werk-test
+/// selects a card's tests with (`exercisers_of`, #4419), so the graph and the
+/// selection cannot disagree. Every test gets an entry, an empty one when it
+/// names nothing. `files` are the crawled non-test files; `crate_of` names the
+/// crate a path sits in.
+pub fn exercise_edges(
+    tests: &[String],
+    files: &[String],
+    text_of: &dyn Fn(&str) -> Option<String>,
+    crate_of: &dyn Fn(&str) -> Option<String>,
+) -> Vec<(String, Vec<String>)> {
+    let rows: Vec<werk_test::TestRow> = tests
+        .iter()
+        .map(|t| werk_test::TestRow { file_path: t.clone(), covers: String::new(), pyramid_layer: String::new(), hermeticity: String::new(), test_concern: String::new() })
+        .collect();
+    let mut out: std::collections::BTreeMap<String, Vec<String>> = tests.iter().map(|t| (t.clone(), Vec::new())).collect();
+    let texts: std::collections::HashMap<&str, String> = tests.iter().filter_map(|t| text_of(t).map(|x| (t.as_str(), x))).collect();
+    // a test's text from memory; anything else (a step definition's own text) from the reader
+    let read = |p: &str| texts.get(p).cloned().or_else(|| text_of(p));
+    for f in files {
+        // Only for speed (87s → seconds on 1,253 tests): every way the rule
+        // can pick a test needs the test to name the file's stem or a data
+        // key, to be a feature suite, or to sit in the file's crate — so the
+        // rule is asked over those rows alone and answers exactly the same.
+        // the stem as the rule takes it (a dotfile's stem is its whole name)
+        let stem = std::path::Path::new(f).file_stem().and_then(|x| x.to_str()).unwrap_or("").to_string();
+        let mut keys = werk_test::data_file_keys(f);
+        if !stem.is_empty() {
+            keys.push(stem);
+        }
+        let home = crate_of(f).map(|c| format!("{c}/"));
+        let candidates: Vec<werk_test::TestRow> = rows.iter()
+            .filter(|r| werk_test::is_feature_suite(&r.file_path)
+                || home.as_deref().is_some_and(|h| r.file_path.starts_with(h))
+                || texts.get(r.file_path.as_str()).is_some_and(|t| keys.iter().any(|k| t.contains(k.as_str()))))
+            .cloned().collect();
+        if candidates.is_empty() {
+            continue;
+        }
+        for t in werk_test::exercisers_of(f, &candidates, &read, crate_of, None) {
+            if let Some(v) = out.get_mut(&t) {
+                v.push(f.clone());
+            }
+        }
+    }
+    out.into_iter().map(|(t, mut v)| { v.sort(); v.dedup(); (t, v) }).collect()
+}
+
+/// #4499 reopen 3 — the PATCH bodies that bring each test row's `exercises`
+/// to what the rule says: only rows whose stored set differs, and an empty set
+/// is written as null (a JSON merge patch clears the field). `stored` is the
+/// row's current values as door names; `name_of` turns a path into its row name.
+pub fn exercise_patches(
+    want: &[(String, Vec<String>)],
+    stored: &dyn Fn(&str) -> Vec<String>,
+    name_of: &dyn Fn(&str) -> String,
+) -> Vec<(String, String)> {
+    let mut out = Vec::new();
+    for (test, files) in want {
+        let mut names: Vec<String> = files.iter().map(|f| name_of(f)).collect();
+        names.sort();
+        let mut held = stored(test);
+        held.sort();
+        if names == held {
+            continue;
+        }
+        let body = if names.is_empty() {
+            "{\"exercises\":null}".to_string()
+        } else {
+            format!("{{\"exercises\":[{}]}}", names.iter().map(|n| format!("\"{n}\"")).collect::<Vec<_>>().join(","))
+        };
+        out.push((name_of(test), body));
+    }
+    out
+}

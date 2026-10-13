@@ -6646,12 +6646,28 @@ pub fn mentions(text: &str, key: &str) -> bool {
     })
 }
 
+/// #4499 — a path with its file's last extension dropped. Only the file name
+/// counts: `roles/silas/.sensitive-paths` stays whole (it was cut to
+/// `roles/silas/`, so every test naming that folder exercised the file).
+pub fn without_extension(f: &str) -> String {
+    let (dir, name) = f.rsplit_once('/').map(|(d, n)| (Some(d), n)).unwrap_or((None, f));
+    let name = match name.rsplit_once('.') {
+        Some((a, _)) if !a.is_empty() => a,
+        _ => name,
+    };
+    dir.map(|d| format!("{d}/{name}")).unwrap_or_else(|| name.to_string())
+}
+
 /// How a test at `test` imports `f` relatively, extension dropped:
 /// `platform/pulse/src/a.test.ts` → `platform/pulse/src/peers.ts` is `./peers`.
 pub fn relative_import(test: &str, f: &str) -> Option<String> {
     let tdir: Vec<&str> = test.rsplit_once('/')?.0.split('/').collect();
     let (fdir, fname) = f.rsplit_once('/')?;
-    let stem = fname.split('.').next().filter(|s| !s.is_empty())?;
+    // #4499 — the last extension only: `com.chorus.x.plist` imports as
+    // `com.chorus.x`, never `com` (which named every plist in the folder),
+    // and a dotfile has no import name
+    let stem = fname.rsplit_once('.').map(|(a, _)| a).unwrap_or(fname);
+    let stem = Some(stem).filter(|s| !s.is_empty() && !fname.starts_with('.'))?;
     let fdir: Vec<&str> = fdir.split('/').collect();
     let common = tdir.iter().zip(&fdir).take_while(|(a, b)| a == b).count();
     let ups = tdir.len() - common;
@@ -6717,7 +6733,7 @@ pub fn exercisers_of(
         // package, so only the exact relative import or the full path counts
         // (#4432 replay: clearing's server.ts matched 79 platform/api tests)
         (Some(key), _) => {
-            let full = f.rsplit_once('.').map(|(a, _)| a).unwrap_or(f).to_string();
+            let full = without_extension(f);
             let in_pkg = ts_package_of(f).is_some();
             rows.iter().map(|r| &r.file_path)
                 .filter(|p| text_of(p).is_some_and(|t| {
@@ -7039,3 +7055,37 @@ mod own_build_4442 {
     }
 }
 
+
+// #4499 reopen 3 — found by writing the rule into the graph: a test that named
+// one plist exercised all 16 in its folder (`com.chorus.x.plist` imported as
+// `com`), and a test naming `roles/silas/` exercised `.sensitive-paths` there.
+#[cfg(test)]
+mod extension_4499 {
+    use super::*;
+    fn row(p: &str) -> TestRow {
+        TestRow { file_path: p.into(), covers: String::new(), pyramid_layer: String::new(), hermeticity: String::new(), test_concern: String::new() }
+    }
+
+    #[test]
+    fn a_dotted_name_imports_by_its_whole_stem() {
+        assert_eq!(relative_import("platform/scripts/t.sh", "config/launchagents/com.chorus.share-guard.plist").as_deref(), Some("../../config/launchagents/com.chorus.share-guard"));
+        assert_eq!(without_extension("roles/silas/.sensitive-paths"), "roles/silas/.sensitive-paths");
+        assert_eq!(without_extension("platform/api/src/server.ts"), "platform/api/src/server");
+    }
+
+    #[test]
+    fn negative_proof_naming_one_plist_does_not_exercise_its_neighbours() {
+        let text = |_: &str| Some("REPO_PLIST=\"$SCRIPT_DIR/../../config/launchagents/com.chorus.share-guard.plist\"".to_string());
+        let rows = [row("platform/scripts/t.sh")];
+        let none = |_: &str| None;
+        assert_eq!(exercisers_of("config/launchagents/com.chorus.share-guard.plist", &rows, &text, &none, None), vec!["platform/scripts/t.sh"]);
+        assert!(exercisers_of("config/launchagents/com.chorus.athena-make.plist", &rows, &text, &none, None).is_empty());
+    }
+
+    #[test]
+    fn negative_proof_naming_a_folder_does_not_exercise_its_dotfile() {
+        let text = |_: &str| Some("ls roles/silas/ | wc -l".to_string());
+        let none = |_: &str| None;
+        assert!(exercisers_of("roles/silas/.sensitive-paths", &[row("platform/tests/x.bats")], &text, &none, None).is_empty());
+    }
+}

@@ -92,6 +92,24 @@ SELECT ?s ?cls ?field WHERE {
 }"##,
 };
 
+/// #4499 reopen 3 — `exercises` says what a TEST file runs (Silas, 2026-10-13:
+/// the subject is a test, next to `covers`). The door types the edge but cannot
+/// say "only when hasKind is test", so this finds a non-test file carrying one.
+/// The subject's kind is looked for across graphs, like COMPLETENESS.
+pub const EXERCISES_FROM_A_TEST: Check = Check {
+    id: "exercises-from-a-non-test",
+    question: "is every file that says what it exercises a test",
+    query: r##"PREFIX c: <https://jeffbridwell.com/chorus#>
+SELECT DISTINCT ?s ?kind WHERE {
+  GRAPH ?g { ?s c:exercises ?f }
+  FILTER(STRSTARTS(STR(?g), "urn:chorus:"))
+  FILTER(?g != <urn:chorus:ontology>)
+  OPTIONAL { GRAPH ?g2 { ?s c:hasKind ?k } }
+  FILTER(!BOUND(?k) || ?k != c:code-kind-test)
+  BIND(IF(BOUND(?k), REPLACE(STR(?k), "^.*#code-kind-", ""), "none") AS ?kind)
+}"##,
+};
+
 /// #4358 — a row value outside its property's sh:in list. The DAL refuses such
 /// a value at the door; this finds the ones that got in before the door did, or
 /// around it. Comparison is by lexical form, the same rule the DAL applies
@@ -263,6 +281,31 @@ mod tests {
     sh:property [ sh:path c:code ; sh:pattern "^ab$" ; sh:flags "i" ] .
 }
 "##;
+
+    /// #4499 — a test's exercises edge is clean.
+    #[test]
+    fn exercises_from_a_test_is_clean() {
+        let fx = r##"@prefix c: <https://jeffbridwell.com/chorus#> .
+<urn:chorus:domains:code> { c:t a c:CodeFile ; c:hasKind c:code-kind-test ; c:exercises c:s . c:s a c:CodeFile ; c:hasKind c:code-kind-code . }
+"##;
+        assert_eq!(run_on_fixture(&EXERCISES_FROM_A_TEST, "4499-ex-ok", fx), vec![]);
+    }
+
+    /// NEGATIVE PROOF (#3734 / #4499): a code file and a file with no kind that
+    /// carry exercises are both named; the test file is not.
+    #[test]
+    fn negative_proof_exercises_from_a_non_test_is_named() {
+        let fx = r##"@prefix c: <https://jeffbridwell.com/chorus#> .
+<urn:chorus:domains:code> {
+  c:t a c:CodeFile ; c:hasKind c:code-kind-test ; c:exercises c:s .
+  c:s a c:CodeFile ; c:hasKind c:code-kind-code ; c:exercises c:t .
+  c:n a c:CodeFile ; c:exercises c:s .
+}
+"##;
+        let mut got = run_on_fixture(&EXERCISES_FROM_A_TEST, "4499-ex", fx);
+        got.sort();
+        assert_eq!(got, vec![("n".to_string(), "none".to_string()), ("s".to_string(), "code".to_string())], "{got:?}");
+    }
 
     /// The ALLOWED_VALUES positive half: rows whose values are all in the list
     /// produce no findings — so a red on the negative proof is about the value.

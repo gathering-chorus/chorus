@@ -22,6 +22,8 @@ export interface CodeBlast {
   pages: string[];
   /** #4405 reopen — the repository asked in, and every repository that depends on it */
   repositories?: { name: string; dependents: string[] };
+  /** #4499 reopen 3 — files in no crate or package that no test exercises, named (never a silent 0) */
+  unexercised?: string[];
 }
 export interface Unmeasured { target: string; measured: false; reason: string }
 
@@ -66,32 +68,101 @@ export function dependentRepos(repo: string, edges: [string, string][]): string[
 }
 
 /**
- * The answer for a repo path (file or unit) or a service (`service-x` or
- * `chorus:service-x`). Unmeasured — never "no blast radius" — when the target
- * is in no unit or the store holds no units at all.
+ * #4499 reopen 3 — what runs: one row per ServiceInstance or ScheduledJob that
+ * names a service, with the repo path of the file it runs (when the crawl has
+ * that file) and the binary launchd starts.
+ */
+export interface RunRow { service: string; path: string; binary: string }
+export interface Running {
+  services: string[];
+  runs: RunRow[];
+  /** #4499 reopen 3 part 2 — (test file, file it exercises), from chorus:exercises */
+  exercises?: [string, string][];
+}
+
+/** The unit a bare name means: its door name, or the last segment of its path, when exactly one unit has it. */
+export function unitNamed(name: string, units: UnitRow[]): UnitRow | undefined {
+  const exact = units.find((u) => u.name === name);
+  if (exact) return exact;
+  const byDir = units.filter((u) => u.path.split('/').pop() === name);
+  return byDir.length === 1 ? byDir[0] : undefined;
+}
+
+/** Where a target sits: its units, the services that run it, and — for a file only the root package holds — the only files in scope. */
+interface Placed { direct: string[]; runBy: string[]; only?: string[]; unexercised?: string[] }
+
+/** A service's own units, or why it has none: it does not exist, nothing runs it, or what it runs is no unit. */
+function placeService(svc: string, builtFrom: [string, string][], running?: Running): Placed | { reason: string } {
+  if (running && !running.services.includes(svc)) return { reason: `there is no service named ${svc}` };
+  const direct = [...new Set(builtFrom.filter(([s]) => s === svc).map(([, u]) => u))];
+  if (direct.length) return { direct, runBy: [] };
+  const mine = (running?.runs ?? []).filter((r) => r.service === svc);
+  if (!mine.length) return { reason: `${svc} names no code unit it is built from and nothing runs it` };
+  // say what it does run: files in no crate or package, or code outside this repository
+  const loose = [...new Set(mine.filter((r) => r.path).map((r) => r.path))].sort();
+  const outside = [...new Set(mine.filter((r) => !r.path && r.binary).map((r) => r.binary))].sort();
+  const said = [loose.length ? `files in no crate or package: ${loose.join(', ')}` : '', outside.length ? `code the crawl does not hold: ${outside.join(', ')}` : ''].filter(Boolean);
+  return { reason: `${svc} is built from no code unit; it runs ${said.join('; and ') || 'nothing it names'}` };
+}
+
+/** A repo path's unit; a file only the root unit holds also names the services that run it. */
+function placePath(target: string, units: UnitRow[], files: FileRow[], running?: Running): Placed | { reason: string } {
+  const path = target.replace(/^\/+|\/+$/g, '');
+  const asUnit = units.find((u) => u.path === path);
+  const known = asUnit || files.some((f) => f.path === path || f.path.startsWith(`${path}/`));
+  if (!known) return { reason: `${target} is no file or folder the crawl holds` };
+  const u = asUnit ?? unitOf(path, units);
+  if (!u) return { reason: `${target} is in no code unit` };
+  if (u.path !== '.') return { direct: [u.name], runBy: [] };
+  const under = (p: string): boolean => p === path || p.startsWith(`${path}/`);
+  const runBy = [...new Set((running?.runs ?? []).filter((r) => under(r.path)).map((r) => r.service))].sort();
+  // a file only the root package holds answers for itself and the tests that
+  // exercise it — never the whole root package (452 tests for any script)
+  const own = files.filter((f) => under(f.path) && unitOf(f.path, units)?.path === '.').map((f) => f.path);
+  const hits = (running?.exercises ?? []).filter(([, f]) => own.includes(f));
+  const tests = [...new Set(hits.map(([t]) => t))];
+  const unexercised = own.filter((f) => !hits.some(([, x]) => x === f) && !files.some((r) => r.path === f && r.kind === 'test'));
+  return { direct: [u.name], runBy, only: [...new Set([...own, ...tests])], unexercised };
+}
+
+/** #4499 reopen 3 — what a target means: a service, a unit's name, or a repo path; or why it means nothing. */
+export function placeTarget(
+  target: string, units: UnitRow[], builtFrom: [string, string][], files: FileRow[], running?: Running,
+): Placed | { reason: string } {
+  if (target.includes('/')) return placePath(target, units, files, running);
+  const bare = target.replace(/^chorus:/, '');
+  const unit = unitNamed(bare, units);
+  if (unit) return { direct: [unit.name], runBy: [] };
+  if (bare.startsWith('service-')) return placeService(bare, builtFrom, running);
+  if (running?.services.includes(`service-${bare}`)) return placeService(`service-${bare}`, builtFrom, running);
+  return { reason: `${target} names no file, code unit or service` };
+}
+
+/**
+ * The answer for a repo path (file or unit), a unit's name, or a service
+ * (`service-x` or `chorus:service-x`). Unmeasured — never "no blast radius" —
+ * when the store holds no units. #4499 reopen 3: a target the crawl does not
+ * know is refused and named, never answered as a root-unit file.
  */
 export function codeBlast(
   target: string, units: UnitRow[], builtFrom: [string, string][], files: FileRow[],
   repos?: { repo: string; edges: [string, string][] },
+  running?: Running,
 ): CodeBlast | Unmeasured {
   if (!units.length) return { target, measured: false, reason: 'the store holds no code units yet (the crawl has not run on this tree)' };
-  let direct: string[];
-  const svc = target.replace(/^chorus:/, '');
-  if (svc.startsWith('service-') && !target.includes('/')) {
-    direct = [...new Set(builtFrom.filter(([s]) => s === svc).map(([, u]) => u))];
-    if (!direct.length) return { target, measured: false, reason: `${svc} names no code unit it is built from` };
-  } else {
-    const u = unitOf(target.replace(/^\/+|\/+$/g, ''), units);
-    if (!u) return { target, measured: false, reason: `${target} is in no code unit` };
-    direct = [u.name];
-  }
-  const through = dependentsOf(direct, units);
+  const placed = placeTarget(target, units, builtFrom, files, running);
+  if ('reason' in placed) return { target, measured: false, reason: placed.reason };
+  const { direct, runBy, only, unexercised } = placed;
+  // the root package has no dependents to walk: its files share no build
+  const through = only ? [] : dependentsOf(direct, units);
   const all = [...direct, ...through];
   // a file counts for the unit it belongs to (its deepest unit), so a root
   // unit never claims files that sit in a deeper one
-  const inScope = files.filter((f) => { const own = unitOf(f.path, units); return !!own && all.includes(own.name); });
+  const inScope = only
+    ? files.filter((f) => only.includes(f.path))
+    : files.filter((f) => { const own = unitOf(f.path, units); return !!own && all.includes(own.name); });
   const servicesOf = (us: string[]): string[] => [...new Set(builtFrom.filter(([, u]) => us.includes(u)).map(([s]) => s))].sort();
-  const directSvc = servicesOf(direct);
+  const directSvc = [...new Set([...servicesOf(direct), ...runBy])].sort();
   const domains = new Map<string, number>();
   for (const f of inScope) if (f.domain) domains.set(f.domain, (domains.get(f.domain) ?? 0) + 1);
   return {
@@ -103,6 +174,7 @@ export function codeBlast(
     tests: inScope.filter((f) => f.kind === 'test').length,
     pages: [...new Set(inScope.filter((f) => f.route).map((f) => f.route))].sort(),
     ...(repos ? { repositories: { name: repos.repo, dependents: dependentRepos(repos.repo, repos.edges) } } : {}),
+    ...(unexercised?.length ? { unexercised: unexercised.sort() } : {}),
   };
 }
 
@@ -115,6 +187,24 @@ export function repositoriesQuery(): string {
 export function repoEdgesFromCsv(csv: string): [string, string][] {
   const name = (iri: string): string => local(iri).replace(/^repository-/, '');
   return csvRows(csv).filter(([r, d]) => r && d).map(([r, d]) => [name(r), name(d)] as [string, string]);
+}
+/** #4499 reopen 3 — every Service, and what each instance or job runs (its file's repo path, its binary). */
+export function servicesQuery(): string {
+  return `SELECT ?s WHERE { GRAPH ?g { ?s a <${C}Service> } }`;
+}
+export function runsQuery(): string {
+  return `SELECT ?s ?path ?bin WHERE { GRAPH ?g { ?i <${C}runsService> ?s . OPTIONAL { ?i <${C}binaryPath> ?bin } } OPTIONAL { GRAPH ?h { ?i <${C}sourcePath> ?f } GRAPH <urn:chorus:domains:code> { ?f <${C}filePath> ?path } } }`;
+}
+/** #4499 reopen 3 part 2 — (test file, file it exercises), both as repo paths. */
+export function exercisesQuery(): string {
+  return `SELECT ?test ?file WHERE { GRAPH <urn:chorus:domains:code> { ?t <${C}exercises> ?f . ?t <${C}filePath> ?test . ?f <${C}filePath> ?file } }`;
+}
+export function runningFromCsv(services: string, runs: string, exercises = ''): Running {
+  return {
+    services: csvRows(services).map(([s]) => local(s)).filter(Boolean),
+    runs: csvRows(runs).map(([s = '', path = '', binary = '']) => ({ service: local(s), path, binary })).filter((r) => r.service),
+    exercises: csvRows(exercises).filter(([t, f]) => t && f).map(([t, f]) => [t, f] as [string, string]),
+  };
 }
 export function builtFromQuery(): string {
   return `SELECT ?s ?u WHERE { GRAPH ?g { ?s <${C}builtFrom> ?u } }`;

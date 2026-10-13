@@ -7,6 +7,9 @@ edition = "2021"
 # dependencies, std only, with `git` and `curl` as subprocesses. Same contract
 # as werk-commit / werk-pull (#3045) — the v2 verb-binary blueprint.
 [dependencies]
+# #4499 reopen 3 — what a test exercises is werk-test's own rule (exercisers_of,
+# #4419), read here so the graph and a card's test selection never disagree
+werk-test = { path = "../werk-test" }
 
 [lib]
 name = "chorus_crawl"
