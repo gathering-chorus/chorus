@@ -143,7 +143,7 @@ function latestHtml(latest: ValidateRecord | null): string {
     + `<tbody>${latest.rows.map(rowHtml).join('')}</tbody></table>`;
 }
 
-export function renderCrawlerValidatePage(latest: ValidateRecord | null, history: ValidateRecord[]): string {
+export function renderCrawlerValidatePage(latest: ValidateRecord | null, history: ValidateRecord[], sensorsHtml = ''): string {
   const body = latestHtml(latest);
   return `<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
 <title>crawler-validate</title>
@@ -156,7 +156,7 @@ main{max-width:1100px;margin:0 auto}h1{font-size:24px;margin:0 0 4px}h2{font-siz
 .sub{color:var(--muted);margin:0 0 18px;max-width:78ch}
 .banner{padding:12px 14px;border-radius:6px;margin:0 0 16px}.banner.green{background:var(--green-bg);color:var(--green)}.banner.red{background:var(--red-bg);color:var(--red)}
 table{border-collapse:collapse;width:100%;table-layout:fixed}.banner,td,code{overflow-wrap:anywhere;min-width:0}
-table.rows th:nth-child(1){width:11%}table.rows th:nth-child(2){width:13%}table.rows th:nth-child(3),table.rows th:nth-child(4){width:9%}table.rows th:nth-child(5){width:12%}th,td{text-align:left;vertical-align:top;padding:8px 8px;border-bottom:1px solid var(--rule)}th{font-size:12px;letter-spacing:.06em;text-transform:uppercase;color:var(--muted)}
+table.sensors td:nth-child(6){font-variant-numeric:tabular-nums}table.rows th:nth-child(1){width:11%}table.rows th:nth-child(2){width:13%}table.rows th:nth-child(3),table.rows th:nth-child(4){width:9%}table.rows th:nth-child(5){width:12%}th,td{text-align:left;vertical-align:top;padding:8px 8px;border-bottom:1px solid var(--rule)}th{font-size:12px;letter-spacing:.06em;text-transform:uppercase;color:var(--muted)}
 td.n{text-align:right;font-variant-numeric:tabular-nums}
 .pill{display:inline-block;padding:2px 9px;border-radius:999px;font-family:ui-monospace,Menlo,monospace;font-size:12px;white-space:nowrap}
 .pill.green{background:var(--green-bg);color:var(--green)}.pill.red{background:var(--red-bg);color:var(--red)}.pill.amber{background:var(--amber-bg);color:var(--amber)}
@@ -165,8 +165,9 @@ details summary{cursor:pointer;color:var(--muted)}details ul{margin:6px 0 10px;p
 @media (max-width:760px){th:nth-child(2),td:nth-child(2){display:none}}
 </style></head><body><main>
 <h1>crawler-validate</h1>
-<p class="sub">Is the graph what git is? One row per domain the crawler generates: what is in git (or on the box) with no row, and what row has no source. Green only when every row reads 0 / 0. Beside <a href="/api/athena/validate">athena-validate</a>, which checks the model; this checks the data.</p>
+<p class="sub">Is the graph what git is? One row per domain the crawler generates, then the sensors that keep it current: what is in git (or on the box) with no row, and what row has no source. Green only when every row reads 0 / 0. Beside <a href="/api/athena/validate">athena-validate</a>, which checks the model; this checks the data.</p>
 ${body}
+${sensorsHtml}
 ${trendHtml(history)}
 </main></body></html>`;
 }
