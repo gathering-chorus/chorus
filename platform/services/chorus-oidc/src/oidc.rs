@@ -381,7 +381,8 @@ impl OidcVerifier {
         // kid → public key: cache first; on miss, one cooldown-bounded refetch
         // (key rotation lands here). Fail-closed boundary (spec 7 vs 8): no
         // cached key + no reachable JWKS = JwksUnreachable; a SUCCESSFUL fetch
-        // that still lacks the kid = a key CSS never published = BadSignature.
+        // that still lacks the kid = a key CSS never published = UnknownKey (#4183
+        // reopen 2: its own reason, so a rotated key never reads as a forgery).
         let point = {
             let mut st = self.state.lock().unwrap_or_else(|e| e.into_inner());
             if !st.keys.contains_key(&kid) {
@@ -398,12 +399,12 @@ impl OidcVerifier {
                             st.keys.insert(k, p);
                         }
                         if !st.keys.contains_key(&kid) {
-                            return Err(AuthError::BadSignature);
+                            return Err(AuthError::UnknownKey);
                         }
                     }
                 }
             }
-            st.keys.get(&kid).cloned().ok_or(AuthError::BadSignature)?
+            st.keys.get(&kid).cloned().ok_or(AuthError::UnknownKey)?
         };
 
         // 1. Signature FIRST (never trust a claim before the sig). JWS ES256
@@ -1006,7 +1007,7 @@ mod tests {
         // cooldown-suppressed lookup is (correctly) JwksUnreachable, not this arm.
         let v2 = verifier();
         let t2 = mint_es256(&foreign_key(), "foreign-kid", &payload(ISSUER, "chorus", &wren_webid(), NOW + 3600));
-        assert_eq!(v2.verify(&t2, NOW), Err(AuthError::BadSignature));
+        assert_eq!(v2.verify(&t2, NOW), Err(AuthError::UnknownKey));
     }
 
     // case 5 — wrong-audience-401: valid signature is NOT sufficient.
@@ -1107,7 +1108,7 @@ mod tests {
         assert_eq!(calls.load(Ordering::SeqCst), 1, "cooldown suppressed the refetch");
         // after the cooldown: refetch happens (rotation pickup path) — the stub
         // still lacks the kid, so it refuses as an unpublished key.
-        assert_eq!(v.verify(&rotated, NOW + JWKS_FETCH_COOLDOWN_SECS + 1), Err(AuthError::BadSignature));
+        assert_eq!(v.verify(&rotated, NOW + JWKS_FETCH_COOLDOWN_SECS + 1), Err(AuthError::UnknownKey));
         assert_eq!(calls.load(Ordering::SeqCst), 2, "post-cooldown verify refetched the JWKS");
     }
 

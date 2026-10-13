@@ -734,6 +734,20 @@ pub fn grants_changed(class_iri: &str) -> bool {
     class_iri.rsplit('#').next() == Some("Permission")
 }
 
+/// #4183 reopen 2 — the age of the scope the current write was judged by, set by
+/// the serve loop before it hands the write on (the refusal sites below are pure
+/// functions with no verifier in reach). Negative = not known.
+static WRITE_SCOPE_AGE: std::sync::atomic::AtomicI64 = std::sync::atomic::AtomicI64::new(-1);
+
+pub fn set_write_scope_age(age: Option<u64>) {
+    WRITE_SCOPE_AGE.store(age.map(|a| a as i64).unwrap_or(-1), std::sync::atomic::Ordering::Relaxed);
+}
+
+fn scope_age_secs() -> Option<u64> {
+    let a = WRITE_SCOPE_AGE.load(std::sync::atomic::Ordering::Relaxed);
+    (a >= 0).then_some(a as u64)
+}
+
 /// #4183 reopen 1 — the tail a scope refusal carries: how old its scope was.
 pub fn scope_age_note(age_secs: Option<u64>) -> String {
     match age_secs {
@@ -2149,7 +2163,7 @@ fn handle_batch(graph: &str, body: &str, caller_role: &str, token: &str) -> (u16
 pub fn create_refusal(op: &WriteOp, graph: &str, scope: &[String], caller: &str) -> Option<(u16, String)> {
     let creates = matches!(op, WriteOp::CreateEntity | WriteOp::CreateBatch);
     if creates && !scope_allows(graph, scope) && !appends_to(graph, scope) {
-        Some(write_resp("authz", &format!("no Write row for '{}' on <{}>; {}", caller, graph, row_that_would_open(caller, graph))))
+        Some(write_resp("authz", &format!("no Write row for '{}' on <{}>; {}{}", caller, graph, row_that_would_open(caller, graph), scope_age_note(scope_age_secs()))))
     } else {
         None
     }
@@ -2179,7 +2193,7 @@ pub fn ownerless_edit_refusal(op: &WriteOp, table_fields: &[String], graph: &str
 /// and falls through to the ordinary pen-error mapping.
 pub fn pen_refusal_resp(e: &str, caller: &str, graph: &str) -> Option<(u16, String)> {
     if e.contains("graph-dba-only") {
-        Some(write_resp("authz", &format!("no Write row for '{}' on <{}>; {}", caller, graph, row_that_would_open(caller, graph))))
+        Some(write_resp("authz", &format!("no Write row for '{}' on <{}>; {}{}", caller, graph, row_that_would_open(caller, graph), scope_age_note(scope_age_secs()))))
     } else {
         None
     }
@@ -6384,6 +6398,7 @@ pub fn serve(port: u16, tables: &[RouteTable]) -> R<()> {
                                 // which `continue`s — it can't reach here. One site, no drift.)
                                 // #4101 — the land names the commit that is changing the row
                                 let landed_commit = header("x-landed-commit");
+                                set_write_scope_age(oidc_verifier.scopes_age_secs(now_secs));
                                 let (c, b) = handle_write_scoped(&method, &path, body_str, table, &role, token, &landed_commit, &claims.scope);
                                 // #4183 reopen 1 — a Permission row just changed: drop the cached
                                 // scopes so the grant (or revoke) holds on the very next write.
