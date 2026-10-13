@@ -82,6 +82,8 @@ teardown() {
   done
 }
 
+# #4022 — CHORUS_FREE_DISK_BYTES is the #4497 seam: without it every boot sent
+# the Finder free-space AppleEvent, which timed out at 120s (790s for the suite).
 # boot [extra write allows] — session-start silas, sandboxed, in this test's world.
 #   READ_CHECKPOINT=1  let the shim read the live checkpoint (crash-recovery case)
 #   READ_CACHE=1       let the shim read the live cache (stale-cache case)
@@ -98,7 +100,7 @@ boot() {
     CHORUS_CONTEXT=test CHORUS_LOG_FILE="$T/spine.log" CHORUS_SESSIONS_DIR="$T/sessions" \
     CHORUS_PULSE_PATH="$T/pulse.json" CHORUS_PRINCIPLES_FIXTURE_FILE="$FIXTURES/principles.json" \
     CHORUS_PRINCIPLES_CACHE_FILE="$T/principles-cache.json" CHORUS_SESSION_ROWS_FIXTURE_DIR="$FIXTURES" \
-    TMPDIR="$T" REGEN_EXIT="${REGEN_EXIT:-0}" \
+    TMPDIR="$T" REGEN_EXIT="${REGEN_EXIT:-0}" CHORUS_FREE_DISK_BYTES=200000000000 \
     sandbox-exec -p "$profile" "$SHIM" session-start silas
 }
 
