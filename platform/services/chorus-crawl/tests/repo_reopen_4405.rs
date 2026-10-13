@@ -224,3 +224,30 @@ mod row_names_r64 {
         assert_ne!(n, file_row_name("jeff-bridwell-personal-site", &format!("{long}x"), false));
     }
 }
+
+// #4405 R6.5 — every pass rewrote ~500 unchanged personal-site rows.
+mod domain_sets_r65 {
+    use chorus_crawl::domain_set;
+
+    #[test]
+    fn negative_proof_the_unplaced_marker_is_no_domain_on_either_side() {
+        assert_eq!(domain_set([""].into_iter()), domain_set(std::iter::empty()));
+    }
+
+    #[test]
+    fn a_two_domain_row_compares_equal_in_any_order() {
+        assert_eq!(domain_set(["version-control", "identity", ""].into_iter()), domain_set(["identity", "version-control"].into_iter()));
+    }
+
+    #[test]
+    fn negative_proof_a_real_domain_change_still_differs() {
+        assert_ne!(domain_set(["identity"].into_iter()), domain_set(["identity", "security"].into_iter()));
+    }
+
+    #[test]
+    fn the_door_page_reader_keeps_both_domains_of_a_row() {
+        let page = r#"{"data":[{"name":"f","filePath":"a","hasDomain":["identity","version-control"]}]}"#;
+        let rows = chorus_crawl::services::door_page_rows(page);
+        assert_eq!(rows[0].iter().filter(|(k, _)| k == "hasDomain").count(), 2);
+    }
+}
