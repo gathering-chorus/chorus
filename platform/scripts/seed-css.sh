@@ -42,7 +42,7 @@ ENV_FILE="${GATHERING_APP_ENV:-$HOME/CascadeProjects/jeff-bridwell-personal-site
 EMAIL="${CSS_EMAIL:-$(grep -m1 '^CSS_EMAIL=' "$ENV_FILE" 2>/dev/null | cut -d= -f2- | tr -d '"')}"
 EMAIL="${EMAIL:-jeff@jeffbridwell.com}"
 IDENTITY_HOME="$HOME/.chorus/identity"
-AGENTS="${AGENTS:-silas wren kade bridge chorus-sdk nightly crawler}"  # nightly: #3975 machine principal for the 03:00 runner; crawler: #4154 machine principal for the code/tests walker
+AGENTS="${AGENTS:-silas wren kade bridge chorus-sdk nightly crawler quartet}"  # quartet: #3613 reopen, the API quartet test principal; nightly: #3975 machine principal for the 03:00 runner; crawler: #4154 machine principal for the code/tests walker
 CK="$(mktemp -t css-seed-XXXXXX)"
 trap 'rm -f "$CK"' EXIT
 

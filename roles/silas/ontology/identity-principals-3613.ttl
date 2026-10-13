@@ -101,6 +101,19 @@ chorus:principal-nightly a chorus:Principal ;
     chorus:holdsRole chorus:role-nightly ;
     chorus:canSignIn "false" .
 
+# #3613 reopen 1 (2026-10-13) — the API quartet's test principal. Jeff, 07:43:
+# "i dont see why the api test must be bound to agent principals". The 4279
+# walk runs once as quartet instead of once per agent. Write rows cover the row
+# graphs it walks and never security, identity or ontology (a test identity that
+# can write Permission or Principal rows can grant itself anything). The
+# credential VALUE is never modeled.
+chorus:principal-quartet a chorus:Principal ;
+    rdfs:label "quartet (API quartet test principal)" ;
+    chorus:webId "https://id.lightlifeurbangardens.com/quartet/profile/card#me" ;
+    chorus:principalKind "service" ;
+    chorus:hostAccount "jeffbridwell" ;
+    chorus:canSignIn "false" .
+
 # #4154 — the crawler service principal. The walker writes CodeFile / Test rows
 # through the generated API; without a machine principal the door refuses
 # (POST /codefiles → 401 authn-missing, Wren 2026-09-12 17:44). Scope grant
