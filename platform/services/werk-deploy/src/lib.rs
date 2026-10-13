@@ -1616,6 +1616,56 @@ fn detach_self_deploy(
     ))
 }
 
+/// #4511 — the packages a TS daemon runs are the ones its lockfile pins. The
+/// deploy only ever ran `npm run build`, so a lock change (the 1.31.0 MCP SDK
+/// security pin, #4468) never reached node_modules: canonical ran 1.29.0 for
+/// days. `npm ls` exits non-zero when what is installed does not satisfy
+/// package.json; then the lock is installed into a staging dir beside the live
+/// tree and swapped in, so the running server never reads a half-installed
+/// node_modules. `npm ls` must pass on the swapped tree, or the old tree is put
+/// back and the deploy stops before the build and the restart. Returns whether
+/// it reinstalled. `npm` is the binary to call (the tests hand in a fake).
+pub fn ensure_installed(dir: &str, npm: &str) -> R<bool> {
+    if run_env(Some(dir), &[], npm, &["ls", "--depth=0"]).is_ok() {
+        return Ok(false);
+    }
+    let d = Path::new(dir);
+    let stage = d.join(".npm-stage");
+    let live = d.join("node_modules");
+    let prev = d.join(".node_modules.prev");
+    let _ = fs::remove_dir_all(&stage);
+    fs::create_dir_all(&stage).map_err(|e| format!("cannot make {}: {}", stage.display(), e))?;
+    for f in ["package.json", "package-lock.json", ".npmrc"] {
+        if d.join(f).is_file() {
+            fs::copy(d.join(f), stage.join(f)).map_err(|e| format!("cannot stage {}: {}", f, e))?;
+        }
+    }
+    run_env(Some(&stage.to_string_lossy()), &[], npm, &["ci", "--no-audit", "--no-fund"])
+        .map_err(|e| { let _ = fs::remove_dir_all(&stage); format!("npm ci failed for {}: {}", dir, e) })?;
+    let _ = fs::remove_dir_all(&prev);
+    let had_live = live.exists() || live.is_symlink();
+    if had_live {
+        fs::rename(&live, &prev).map_err(|e| format!("cannot move {} aside: {}", live.display(), e))?;
+    }
+    fs::rename(stage.join("node_modules"), &live).map_err(|e| {
+        if had_live { let _ = fs::rename(&prev, &live); }
+        format!("cannot swap in the new node_modules for {}: {}", dir, e)
+    })?;
+    let _ = fs::remove_dir_all(&stage);
+    if let Err(e) = run_env(Some(dir), &[], npm, &["ls", "--depth=0"]) {
+        let _ = fs::remove_dir_all(&live);
+        if had_live { let _ = fs::rename(&prev, &live); }
+        return Err(format!("after npm ci, what is installed in {} still does not match package.json (old tree put back): {}", dir, e));
+    }
+    let _ = fs::remove_dir_all(&prev);
+    Ok(true)
+}
+
+/// The npm a deploy calls: CHORUS_NPM when set (tests), else npm on PATH.
+fn npm_bin() -> String {
+    env::var("CHORUS_NPM").unwrap_or_else(|_| "npm".to_string())
+}
+
 /// #3317 — native canonical deploy of a TS daemon (chorus-api / chorus-mcp), the
 /// bash branches ported: preserve dist→dist.prev, npm-build IN canonical, kickstart
 /// (warn-only, like bash), smoke-gate deploy.completed, restore dist.prev on build
@@ -1662,6 +1712,16 @@ fn deploy_ts_daemon_canonical(
     if Path::new(&dist).is_dir() {
         let _ = fs::remove_dir_all(&prev);
         fs::rename(&dist, &prev).map_err(|e| format!("preserve {} → {}: {}", dist, prev, e))?;
+    }
+    // #4511 — install what the lock pins before building against it. A failed
+    // install stops here: dist is restored and nothing is restarted.
+    if let Err(e) = ensure_installed(&dir, &npm_bin()) {
+        if Path::new(&prev).is_dir() {
+            let _ = fs::remove_dir_all(&dist);
+            let _ = fs::rename(&prev, &dist);
+        }
+        emit_spine(home, "deploy.failed", role, card, trace, &[("crate", name), ("reason", "npm-ci-fail"), ("failureClass", failure_class("npm-ci-fail"))]);
+        return Err(died(home, role, card, trace, "npm-ci-fail", e));
     }
     if let Err(e) = run_env(Some(&dir), &[], "npm", &["run", "build"]) {
         // restore disk to match the still-running prior code.
