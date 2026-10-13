@@ -199,3 +199,28 @@ mod files_target_r6 {
         assert!(String::from_utf8_lossy(&out.stderr).contains("--target needs a directory"));
     }
 }
+
+// #4405 R6.4 — found on prod by R6.3: 600 of 1,792 personal-site rows refused.
+mod row_names_r64 {
+    use chorus_crawl::{file_row_name, stable_name};
+
+    #[test]
+    fn chorus_names_do_not_move() {
+        assert_eq!(file_row_name("chorus", ".gitignore", true), stable_name(".gitignore"));
+    }
+
+    #[test]
+    fn negative_proof_the_same_path_in_two_repos_is_two_rows() {
+        assert_ne!(file_row_name("jeff-bridwell-personal-site", ".gitignore", false), file_row_name("chorus", ".gitignore", true));
+    }
+
+    #[test]
+    fn negative_proof_a_long_path_still_gives_a_name_the_door_takes() {
+        let long = format!("public/{}/index.html", "very-long-directory-name/".repeat(8));
+        let n = file_row_name("jeff-bridwell-personal-site", &long, false);
+        assert!(n.len() <= 128, "{} chars", n.len());
+        assert!(n.bytes().all(|b| b.is_ascii_alphanumeric() || b == b'-' || b == b'_'), "{n}");
+        // two long paths that differ only past the cut still differ
+        assert_ne!(n, file_row_name("jeff-bridwell-personal-site", &format!("{long}x"), false));
+    }
+}

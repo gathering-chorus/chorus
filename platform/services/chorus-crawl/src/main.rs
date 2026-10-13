@@ -2025,7 +2025,10 @@ fn run_code(args: &[String]) -> i32 {
             let started = std::time::Instant::now();
             let want = chorus_crawl::code_run::exercise_edges(&tests, &files, &text_of, &crate_of);
             let edges: usize = want.iter().map(|(_, v)| v.len()).sum();
-            let patches = chorus_crawl::code_run::exercise_patches(&want, &|t: &str| stored.get(t).cloned().unwrap_or_default(), &stable_name);
+            // a row's name as the door serves it (another repo's names carry the repo, #4405 R6.4)
+            let served: std::collections::HashMap<String, String> = mine.iter().map(|r| (get(r, "filePath"), get(r, "name"))).filter(|(_, n)| !n.is_empty()).collect();
+            let name_of = |p: &str| served.get(p).cloned().unwrap_or_else(|| stable_name(p));
+            let patches = chorus_crawl::code_run::exercise_patches(&want, &|t: &str| stored.get(t).cloned().unwrap_or_default(), &name_of);
             println!("code: exercises — {} test files name {} files ({} edges) in {:.1}s · {} rows to write",
                 tests.len(), want.iter().flat_map(|(_, v)| v.iter()).collect::<std::collections::BTreeSet<_>>().len(), edges, started.elapsed().as_secs_f64(), patches.len());
             Some(patches)
@@ -3055,7 +3058,7 @@ fn main() {
                 };
                 if let Verdict::Classified(k, l) = verdict_for(&root, path) {
                     let mut fields = vec![
-                        ("name".to_string(), stable_name(&f.path)),
+                        ("name".to_string(), chorus_crawl::file_row_name(&home_repo, &f.path, !foreign)),
                         ("filePath".to_string(), f.path.clone()),
                         ("hasKind".to_string(), k.as_str().to_string()),
                         ("fileSha".to_string(), f.sha.clone()),
@@ -3109,7 +3112,8 @@ fn main() {
                 // the rules cannot agree, exactly as for a test.
                 owned.extend(place_file(path));
                 let mut fields = merge_row(existing, &owned);
-                let name = stable_name(path);
+                // the name the door serves for this row, else the one this pass mints
+                let name = served_name_for(&graph, path).unwrap_or_else(|| chorus_crawl::file_row_name(&home_repo, path, !foreign));
                 // The door names the prefix its mint adds; a refusal that names
                 // one is retried once with those values bared, never guessed at
                 // from a table kept in step by hand — and once learned, the
@@ -3129,7 +3133,7 @@ fn main() {
                 // writer created (the 09-23 quartet probe) has a different
                 // name, so stable_name(path) 404'd every night, the run went
                 // red and the watermark held. The report named it first.
-                let name = served_name_for(&graph, path).unwrap_or_else(|| stable_name(path));
+                let name = served_name_for(&graph, path).unwrap_or_else(|| chorus_crawl::file_row_name(&home_repo, path, !foreign));
                 if let Err(e) = write(ident, &api, "DELETE", &format!("{coll}/{name}"), None) {
                     failed.push(format!("delete {path}: {e}"));
                 }
