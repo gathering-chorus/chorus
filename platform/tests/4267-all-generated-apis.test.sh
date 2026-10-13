@@ -123,6 +123,9 @@ for CLASS in $CLASSES; do
   # #4279 — QUARTET_ONLY=<Class> runs one class, for reading a single red by hand
   # instead of re-walking 55 against production.
   if [ -n "${QUARTET_ONLY:-}" ] && [ "$CLASS" != "$QUARTET_ONLY" ]; then continue; fi
+  # #4022 — QUARTET_CLASSES="<Class> <Class> …" walks only those (the live
+  # write-scope check walks each role's planned classes, not all of them).
+  if [ -n "${QUARTET_CLASSES:-}" ] && [[ " $QUARTET_CLASSES " != *" $CLASS "* ]]; then continue; fi
   M="$WORK/$CLASS.json"
   if ! "$GEN" generate-tests --class "$CLASS" >"$M" 2>/dev/null || [ ! -s "$M" ]; then
     emit "$CLASS" UNMEASURED "the generator emitted no manifest"
