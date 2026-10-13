@@ -2123,25 +2123,47 @@ fn handle_batch(graph: &str, body: &str, caller_role: &str, token: &str) -> (u16
     }
 }
 
-/// Map a DAL refusal string onto athena-make's typed write response.
-/// #4196 req 6 — the pen refuses a create when the caller holds no Write row on
-/// the graph (graph-dba-only). That is an authorization refusal, not an upstream
-/// error: 403, naming the row that would open the door. Anything else is None
-/// and falls through to the ordinary pen-error mapping.
 /// #4517 — a create needs a Write row on the graph it lands in (Jeff 2026-10-13
 /// 07:55: "isnt that why we have permissions?"). Before this, an owned class let
 /// anyone signed in create, so a graph nobody was granted was open to every
 /// role. Checked before any body check, so a refused caller learns nothing of
 /// the shape. Owner rules still govern a row once it exists.
+///
+/// #4517 reopen 1 — an acl:Append row also opens a create (WAC: append adds,
+/// never changes what is there). It arrives in the scope as `append:<graph>`
+/// and opens nothing else: scope_allows stays exact-match, so Append never
+/// opens another owner's row (#4185) or an ownerless class's existing rows.
 pub fn create_refusal(op: &WriteOp, graph: &str, scope: &[String], caller: &str) -> Option<(u16, String)> {
     let creates = matches!(op, WriteOp::CreateEntity | WriteOp::CreateBatch);
-    if creates && !scope_allows(graph, scope) {
+    if creates && !scope_allows(graph, scope) && !appends_to(graph, scope) {
         Some(write_resp("authz", &format!("no Write row for '{}' on <{}>; {}", caller, graph, row_that_would_open(caller, graph))))
     } else {
         None
     }
 }
 
+/// #4517 reopen 1 — the caller holds an acl:Append row on this graph.
+pub fn appends_to(graph: &str, scope: &[String]) -> bool {
+    scope.iter().any(|s| s.strip_prefix("append:") == Some(graph))
+}
+
+/// #4517 reopen 1 — anything but a create on an ownerless class needs Write:
+/// its rows have no owner to protect them, so Append (which passed the serve
+/// gate for its creates) must not reach them.
+pub fn ownerless_edit_refusal(op: &WriteOp, table_fields: &[String], graph: &str, scope: &[String], caller: &str) -> Option<(u16, String)> {
+    let creates = matches!(op, WriteOp::CreateEntity | WriteOp::CreateBatch);
+    if !creates && !row_owner_governed(table_fields) && !scope_allows(graph, scope) {
+        Some(write_resp("authz", &format!("write to '{}' refused (this class carries no row owner): {}", graph, row_that_would_open(caller, graph))))
+    } else {
+        None
+    }
+}
+
+/// Map a DAL refusal string onto athena-make's typed write response.
+/// #4196 req 6 — the pen refuses a create when the caller holds no Write row on
+/// the graph (graph-dba-only). That is an authorization refusal, not an upstream
+/// error: 403, naming the row that would open the door. Anything else is None
+/// and falls through to the ordinary pen-error mapping.
 pub fn pen_refusal_resp(e: &str, caller: &str, graph: &str) -> Option<(u16, String)> {
     if e.contains("graph-dba-only") {
         Some(write_resp("authz", &format!("no Write row for '{}' on <{}>; {}", caller, graph, row_that_would_open(caller, graph))))
@@ -3320,7 +3342,8 @@ pub fn handle_write_scoped(method: &str, path: &str, body: &str, table: &RouteTa
         Some(o) => o,
         None => return write_resp("not-found", "no such write route"),
     };
-    if let Some(refused) = create_refusal(&op, &table.instances_graph, scope, caller_role) {
+    if let Some(refused) = create_refusal(&op, &table.instances_graph, scope, caller_role)
+        .or_else(|| ownerless_edit_refusal(&op, &table.fields, &table.instances_graph, scope, caller_role)) {
         emit_write_spine(caller_role, method, "", "", "authz");
         return refused;
     }
@@ -6326,9 +6349,12 @@ pub fn serve(port: u16, tables: &[RouteTable]) -> R<()> {
                                 // consulted, so no grant anywhere can open it.
                                 ((403u16, format!("{{ \"error\": \"deploy-only\", \"message\": \"'{}' is written by the model deploy, not by a session: who exists is not session-writable\" }}", json_escape(&table.class))),
                                  ReqMeta { route: "write-authz-deploy-only".into(), ..Default::default() })
-                            } else if !scope_allows(effective_target, &claims.scope) && !row_owner_governed(&table.fields) {
+                            } else if !scope_allows(effective_target, &claims.scope) && !row_owner_governed(&table.fields)
+                                && !appends_to(effective_target, &claims.scope) {
                                 // #4096 — an owned class is governed by the row's owner (checked in
                                 // handle_write); only an ownerless class needs the graph in scope.
+                                // #4517 — an Append row passes here for its creates only;
+                                // handle_write_scoped refuses its other ops on this class.
                                 ((403u16, format!("{{ \"error\": \"out-of-scope\", \"message\": \"write to '{}' refused (this class carries no row owner): {}\" }}", json_escape(effective_target), json_escape(&row_that_would_open(&caller_name, effective_target)))),
                                  ReqMeta { route: "write-authz-scope".into(), ..Default::default() })
                             } else {
