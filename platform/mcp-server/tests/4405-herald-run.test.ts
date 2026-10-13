@@ -91,3 +91,14 @@ test('NEGATIVE PROOF — a sensor the crawler does not have, or a target on one 
     assert.ok(!text.includes('ran=chorus-crawl'), 'the binary ran anyway');
   });
 });
+
+test('a sensor writes as principal-crawler, whoever asked for the pass', async () => {
+  // measured 2026-10-12 21:20: the two crawl plists ran as CHORUS_ROLE kade and
+  // silas, so every sensor row was written as a person. The caller is who
+  // asked; the crawler is who looks and writes (#4154).
+  await withServer('#!/bin/bash\necho "as=$CHORUS_ROLE deploy=$DEPLOY_ROLE"\n', async (client) => {
+    const r = await run(client, { sensor: 'infra' });
+    assert.ok(r.tail.includes('as=crawler deploy=crawler'), r.tail);
+    assert.equal(r.requested_by, 'silas');
+  });
+});

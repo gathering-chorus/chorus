@@ -1371,6 +1371,7 @@ const ATHENA_MAKE_TOOL_DEF = {
 // runner is properly aligned integrated and visible as a sensor"). Each sensor
 // is a pass of the one chorus-crawl binary; launchd, people and agents call
 // this same tool. Wren's #4509 runner absorbs it later as a Skill row.
+const HERALD_PRINCIPAL_ROLE = 'crawler';
 const HERALD_SENSORS = ['files', 'code', 'services', 'stores', 'infra'] as const;
 
 const HERALD_RUN_TOOL_DEF = {
@@ -3895,10 +3896,12 @@ export function buildMcpServer(getCallerRole: () => string, deps: McpServerDeps 
         // No refusal parsing here, the same rule as the athena arm: the binary
         // owns what a pass means, and its exit and output come back whole.
         const pathMod = require('path') as typeof import('path');
-        const r = await runAthenaVerb(pathMod.join(chorusBinDir(pathMod), 'chorus-crawl'), args, role, 'herald_run');
+        // The pass writes as principal-crawler (#4154), never as the caller:
+        // the caller is who asked, the crawler is who looked.
+        const r = await runAthenaVerb(pathMod.join(chorusBinDir(pathMod), 'chorus-crawl'), args, HERALD_PRINCIPAL_ROLE, 'herald_run');
         // A red pass is an MCP error too, so launchd through chorus-mcp-call.sh
         // exits 1 and the scheduler sees the red, not a quiet ok:false.
-        return { ...mcpJson({ ok: r.exitCode === 0, sensor, target: target ?? null, role, exit: r.exitCode,
+        return { ...mcpJson({ ok: r.exitCode === 0, sensor, target: target ?? null, requested_by: role, exit: r.exitCode,
           tail: (r.stdout + r.stderr).trim().split('\n').slice(-12).join('\n') }), isError: r.exitCode !== 0 };
       }
       case 'werk-pull': {
