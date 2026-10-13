@@ -1942,6 +1942,17 @@ pub fn dal_bin() -> String {
     std::env::var("CHORUS_MODEL_BIN").unwrap_or_else(|_| "athena-model".to_string())
 }
 
+/// #4499 reopen 4 — the DAL `link` argv for several new values of one link
+/// field: one `--edge` each, written in one update or refused together.
+pub fn link_args(kind: &str, name: &str, graph: &str, field: &str, tkind: &str, targets: &[String]) -> Vec<String> {
+    let mut a: Vec<String> = vec!["link".into(), "--kind".into(), kind.into(), "--name".into(), name.into(), "--graph".into(), graph.into()];
+    for t in targets {
+        a.push("--edge".into());
+        a.push(format!("{}={}:{}", field, tkind, t));
+    }
+    a
+}
+
 fn dal_run(args: &[String], token: &str) -> R<()> {
     let bin = dal_bin();
     let out = Command::new(&bin)
@@ -3559,12 +3570,12 @@ pub fn handle_write_scoped(method: &str, path: &str, body: &str, table: &RouteTa
                     let gone: Vec<(String, String, String)> = current.iter()
                         .filter(|(c, _)| !want.iter().any(|w| strip(w) == strip(c)))
                         .map(|(_, iri)| (format!("<{}>", subject), format!("<{}>", pred), format!("<{}>", iri))).collect();
-                    let mut r: R<()> = if gone.is_empty() { Ok(()) } else { dal_batch(&graph, &gone, &[], token) };
-                    for new in want.iter().filter(|w| !current.iter().any(|(c, _)| strip(c) == strip(w))) {
-                        r = r.and_then(|_| dal_run(&["link".into(), "--kind".into(), kind.clone(), "--name".into(), name.to_string(),
-                            "--graph".into(), graph.clone(), "--edge".into(), format!("{}={}:{}", k, tkind, strip(new))], token));
-                    }
-                    r
+                    let r: R<()> = if gone.is_empty() { Ok(()) } else { dal_batch(&graph, &gone, &[], token) };
+                    // #4499 reopen 4 — every new link in ONE DAL call: one process
+                    // per link cost ~0.45 s (22,675 exercises links ≈ 2.8 h). One
+                    // missing target still refuses them all, naming it.
+                    let new: Vec<String> = want.iter().filter(|w| !current.iter().any(|(c, _)| strip(c) == strip(w))).map(|w| strip(w)).collect();
+                    r.and_then(|_| if new.is_empty() { Ok(()) } else { dal_run(&link_args(&kind, name, &graph, k, &tkind, &new), token) })
                 } else if vs.is_empty() {
                     // null: remove every value of this one predicate, nothing else.
                     dal_batch(&graph, &[(format!("<{}>", subject), format!("<{}{}>", NS, k), "?o".to_string())], &[], token)
@@ -8742,5 +8753,19 @@ mod item_route_multi_valued_4273 {
         let old = r#"{ "diagram": "%% a", "diagram": "%% b" }"#;
         let kept = parse_create_object(old).map(|d| d.get("diagram").map(|v| v.len()).unwrap_or(0)).unwrap_or(0);
         assert_ne!(kept, 2, "a duplicate key never yields both values (got {kept})");
+    }
+}
+
+// #4499 reopen 4 — a PATCH that adds N links makes ONE DAL call, not N.
+#[cfg(test)]
+mod patch_links_4499 {
+    use super::link_args;
+
+    #[test]
+    fn every_new_link_rides_one_call() {
+        let a = link_args("code-file", "file-t", "urn:chorus:domains:code", "exercises", "code-file", &["file-a".into(), "file-b".into()]);
+        assert_eq!(a.iter().filter(|x| *x == "--edge").count(), 2);
+        assert!(a.contains(&"exercises=code-file:file-a".to_string()) && a.contains(&"exercises=code-file:file-b".to_string()));
+        assert_eq!(a[0], "link");
     }
 }

@@ -2609,18 +2609,37 @@ pub fn add_edge(store: &dyn Store, kind: &str, name: &str, prop: &str, tkind: &s
 /// history that says the row never moved.
 #[allow(clippy::too_many_arguments)]
 pub fn add_edge_keeping(store: &dyn Store, kind: &str, name: &str, prop: &str, tkind: &str, tname: &str, graph: Option<&str>, id: &Identity, revision: Option<&WriteReq>) -> R<String> {
-    // #4294 — the link verb is a second door onto ownedBy; same rule as plan_writes.
-    if prop == "ownedBy" && tkind != "principal" {
-        witness("model.refused", &[("kind", kind), ("name", name), ("reason", "owner-not-principal")]);
-        return Err(format!(
-            "owner-not-principal: ownedBy must point at a Principal (rdfs:range chorus:Principal), not a {} ({})",
-            tkind, tname
-        ));
+    add_edges_keeping(store, kind, name, &[(prop.to_string(), tkind.to_string(), tname.to_string())], graph, id, revision)
+}
+
+/// #4499 reopen 4 — several edges from one row in ONE update. The door's PATCH
+/// linked each new value with its own process (~0.45 s each: 22,675 exercises
+/// links took ~2.8 h). Every edge is checked before anything is written, and
+/// one missing endpoint refuses them all, naming it — never a partial write.
+#[allow(clippy::too_many_arguments)]
+pub fn add_edges_keeping(store: &dyn Store, kind: &str, name: &str, edges: &[(String, String, String)], graph: Option<&str>, id: &Identity, revision: Option<&WriteReq>) -> R<String> {
+    if edges.is_empty() {
+        return Err("link needs --edge prop=kind:name".to_string());
     }
-    check_property_local(prop)?;
+    for (prop, tkind, tname) in edges {
+        // #4294 — the link verb is a second door onto ownedBy; same rule as plan_writes.
+        if prop == "ownedBy" && tkind != "principal" {
+            witness("model.refused", &[("kind", kind), ("name", name), ("reason", "owner-not-principal")]);
+            return Err(format!(
+                "owner-not-principal: ownedBy must point at a Principal (rdfs:range chorus:Principal), not a {} ({})",
+                tkind, tname
+            ));
+        }
+        check_property_local(prop)?;
+    }
     let subject = mint(kind, name)?;
-    let target = mint(tkind, tname)?;
-    for iri in [&subject, &target] {
+    let mut triples: Vec<(String, String)> = Vec::new();
+    for (prop, tkind, tname) in edges {
+        triples.push((prop.clone(), mint(tkind, tname)?));
+    }
+    let mut endpoints: Vec<&String> = vec![&subject];
+    endpoints.extend(triples.iter().map(|(_, t)| t));
+    for iri in endpoints {
         if !store.ask(&format!("ASK {{ GRAPH ?g {{ <{}> ?p ?o }} }}", iri))? {
             witness("model.refused", &[("kind", kind), ("name", name), ("reason", "unknown-endpoint"), ("iri", iri.as_str())]);
             return Err(format!("unknown-endpoint: <{}> does not exist — referential integrity, fail-closed", iri));
@@ -2629,12 +2648,12 @@ pub fn add_edge_keeping(store: &dyn Store, kind: &str, name: &str, prop: &str, t
     let home = instance_home(store, kind, graph)?; // #3647 / #4187 — explicit, pinned, or derived home
     let g = home.as_str();
     assert_dal_writable(g)?; // #3356 AC4
-    let edge_block = format!(
-        "INSERT DATA {{ GRAPH <{g}> {{ <{s}> <{ns}{p}> <{t}> }} }}",
-        g = g, ns = NS, s = subject, p = prop, t = target
-    );
+    let body: String = triples.iter().map(|(p, t)| format!("<{s}> <{ns}{p}> <{t}> . ", s = subject, ns = NS, p = p, t = t)).collect();
+    let edge_block = format!("INSERT DATA {{ GRAPH <{g}> {{ {body}}} }}", g = g, body = body);
     commit_edge_with_revision(store, id, revision, &edge_block)?;
-    witness("model.link", &[("subject", subject.as_str()), ("prop", prop), ("target", target.as_str())]);
+    for (p, t) in &triples {
+        witness("model.link", &[("subject", subject.as_str()), ("prop", p.as_str()), ("target", t.as_str())]);
+    }
     Ok(subject)
 }
 
@@ -4340,6 +4359,32 @@ mod tests {
         let e = add_edge(&store, "domain", "tests", "partOf", "product", "ghost", None, &tid()).unwrap_err();
         assert!(e.starts_with("unknown-endpoint"), "{}", e);
         assert!(store.updates.borrow().is_empty(), "no edge written when an endpoint is missing");
+    }
+
+    /// #4499 reopen 4 — several edges, one update.
+    #[test]
+    fn add_edges_writes_every_edge_in_one_update() {
+        let subj = format!("{}tests", NS);
+        let (a, b) = (format!("{}athena", NS), format!("{}borg", NS));
+        let store = stub(&[subj.as_str(), a.as_str(), b.as_str()], &[]);
+        let edges = [("partOf".to_string(), "product".to_string(), "athena".to_string()), ("partOf".to_string(), "product".to_string(), "borg".to_string())];
+        add_edges_keeping(&store, "domain", "tests", &edges, None, &tid(), None).unwrap();
+        let ups = store.updates.borrow();
+        assert_eq!(ups.len(), 1, "one update for every edge");
+        assert!(ups[0].contains("athena") && ups[0].contains("borg"), "{}", ups[0]);
+    }
+
+    /// NEGATIVE PROOF (Wren 13:11) — one missing target refuses the whole set,
+    /// names it, and writes nothing.
+    #[test]
+    fn add_edges_refuses_all_when_one_target_is_missing() {
+        let subj = format!("{}tests", NS);
+        let a = format!("{}athena", NS);
+        let store = stub(&[subj.as_str(), a.as_str()], &[]);
+        let edges = [("partOf".to_string(), "product".to_string(), "athena".to_string()), ("partOf".to_string(), "product".to_string(), "ghost".to_string())];
+        let e = add_edges_keeping(&store, "domain", "tests", &edges, None, &tid(), None).unwrap_err();
+        assert!(e.starts_with("unknown-endpoint") && e.contains("ghost"), "{}", e);
+        assert!(store.updates.borrow().is_empty(), "no edge written when one target is missing");
     }
 
     #[test]

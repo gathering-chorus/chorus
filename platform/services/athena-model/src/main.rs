@@ -7,7 +7,7 @@
 //! Callers never pass IRIs — fields are literals, edges are (property, kind:name)
 //! pairs the mint resolves. --dry-run prints the Turtle and writes nothing.
 
-use athena_model::{add_batch, add_edge, add_edge_keeping, remove_edge_keeping, batch, curl_http, delete_batch, delete_entity, delete_iri, deploy_home, deploy_partitions, mint, post_all, post_rows, seed_multi_at, parse_add_batch_ndjson, parse_ntriples, remove_edge, seed_multi, OwnerTokens, SeedGroup, set_field, to_turtle, write, write_many, FusekiStore, Identity, Store, WriteReq};
+use athena_model::{add_batch, add_edge, add_edges_keeping, remove_edge_keeping, batch, curl_http, delete_batch, delete_entity, delete_iri, deploy_home, deploy_partitions, mint, post_all, post_rows, seed_multi_at, parse_add_batch_ndjson, parse_ntriples, remove_edge, seed_multi, OwnerTokens, SeedGroup, set_field, to_turtle, write, write_many, FusekiStore, Identity, Store, WriteReq};
 use std::io::Read;
 use std::process::ExitCode;
 
@@ -825,6 +825,10 @@ fn run() -> Result<String, String> {
                 .edges
                 .first()
                 .ok_or(format!("{} needs --edge prop=kind:name", verb))?;
+            // #4499 reopen 4 — `link` takes every --edge given, in one update
+            if verb == "unlink" && req.edges.len() > 1 {
+                return Err("unlink takes one --edge".to_string());
+            }
             let store = FusekiStore::new();
             let id = Identity::resolve(&store)?; // #3651
             // #4102 — an edge is data: if the caller pipes the Revision recording
@@ -842,11 +846,12 @@ fn run() -> Result<String, String> {
                     .ok_or_else(|| format!("{}: --revision-stdin got no record", verb))?)
             };
             let subject = if verb == "link" {
-                add_edge_keeping(&store, &req.kind, &req.name, prop, tkind, tname, req.graph.as_deref(), &id, revision.as_ref())?
+                add_edges_keeping(&store, &req.kind, &req.name, &req.edges, req.graph.as_deref(), &id, revision.as_ref())?
             } else {
                 remove_edge_keeping(&store, &req.kind, &req.name, prop, tkind, tname, req.graph.as_deref(), &id, revision.as_ref())?
             };
-            Ok(format!("{}: {} {} {}:{}", verb, subject, prop, tkind, tname))
+            Ok(format!("{}: {} {} {}:{}{}", verb, subject, prop, tkind, tname,
+                if req.edges.len() > 1 { format!(" (+{} more)", req.edges.len() - 1) } else { String::new() }))
         }
         // #3573 — governed BATCH: the migration target athena-make's /batch delegates to.
         // Typed slots only (no writer SPARQL text), structural single-graph, empty/
