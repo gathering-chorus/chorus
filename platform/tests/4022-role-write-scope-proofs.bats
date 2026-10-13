@@ -94,3 +94,10 @@ deny Credential
 allow Language
 deny Policy" ] || return 1
 }
+
+@test "verdict: a door-managed class on an allowed graph is not a disagreement either" {
+  printf 'allow Version\n' > "$T/plan"
+  printf 'Version                NOT-PERM door-managed class, not writable by any principal: x\n' > "$T/out"
+  run python3 "$PLAN" verdict "$T/plan" "$T/out"
+  [ "$status" -eq 0 ] || return 1
+}

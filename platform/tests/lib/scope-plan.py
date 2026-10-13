@@ -75,12 +75,11 @@ def verdict(planned, results):
             wrong.append(f"{cls}: the door did not say which graph serves it, so its scope is unmeasured")
             continue
         got, detail = results.get(cls, ("MISSING", "the runner printed no line"))
-        door_managed = "door-managed" in detail
+        if "door-managed" in detail:
+            continue  # no principal may write it, either way; not a scope question
         if want == "deny":
-            if got == "NOT-PERM" and not door_managed:
+            if got == "NOT-PERM":
                 continue
-            if door_managed:
-                continue  # no principal may write it; not a scope question
             wrong.append(f"{cls}: rows deny, door answered {got} {detail[:80]}".rstrip())
         elif got != "PASS":
             wrong.append(f"{cls}: rows allow, door answered {got} {detail[:80]}".rstrip())
