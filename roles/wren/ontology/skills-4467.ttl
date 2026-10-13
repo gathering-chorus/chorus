@@ -71,6 +71,11 @@ chorus:SkillShape a sh:NodeShape ;
                   sh:description "Optional. How long the runner waits before it stops the call; 60 when absent." ] ;
     sh:property [ sh:path chorus:longRunning ; sh:maxCount 1 ; sh:datatype xsd:boolean ; sh:name "long running" ;
                   sh:description "Optional. True: the runner returns a run id at once and reports status by it (the MCP Tasks extension)." ] ;
+    # #4514 (Silas + Wren, 2026-10-13) — whose identity a tool runs with. A verb a
+    # role runs on its own card runs as the verified caller; a tool with one
+    # principal's rights runs as its owner. The runner refuses a tool with neither.
+    sh:property [ sh:path chorus:runsAs ; sh:maxCount 1 ; sh:datatype xsd:string ; sh:in ( "caller" "owner" ) ; sh:name "runs as" ;
+                  sh:description "Required for a tool. caller: runs as the verified caller. owner: runs as the skill's owner; only the owner and jeff may call it." ] ;
     chorus:instancesGraph "urn:chorus:domains:skills" ;
     chorus:generatedBy "athena-model" .
 
@@ -80,6 +85,8 @@ chorus:forService a owl:ObjectProperty ; rdfs:label "for service" ;
     rdfs:comment "The Service a skill runs as part of (#4513)." .
 chorus:timeoutSeconds a owl:DatatypeProperty ; rdfs:label "timeout seconds" .
 chorus:longRunning a owl:DatatypeProperty ; rdfs:label "long running" .
+chorus:runsAs a owl:DatatypeProperty ; rdfs:label "runs as" ;
+    rdfs:comment "Whose identity a tool runs with: caller or owner (#4514)." .
 
 # #4513 — the shape of a tool's arguments. A ToolInput is a SHACL node shape
 # with no target class: it never becomes a door collection; athena-gen turns
