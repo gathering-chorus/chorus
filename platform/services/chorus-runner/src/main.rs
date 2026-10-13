@@ -50,6 +50,23 @@ fn build_verifier() -> OidcVerifier {
 }
 
 fn main() {
+    // #4514 AC4 — `chorus-runner call <tool> [key=value…]`: a client call, not a
+    // service start, so it never logs a lifecycle event
+    let a: Vec<String> = std::env::args().collect();
+    if a.get(1).map(String::as_str) == Some("call") {
+        let Some(tool) = a.get(2) else {
+            eprintln!("usage: chorus-runner call <tool> [key=value …]   (signs as $ROLE)");
+            std::process::exit(2);
+        };
+        let code = match chorus_runner::client::args_from_pairs(&a[3..]) {
+            Ok(args) => chorus_runner::client::run(tool, &args),
+            Err(e) => {
+                eprintln!("chorus-runner call: {e}");
+                2
+            }
+        };
+        std::process::exit(code);
+    }
     // Before the runtime starts any thread: they inherit the blocked stop signals.
     let label = service_label();
     let pid = std::process::id();
