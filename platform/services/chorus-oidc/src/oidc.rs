@@ -328,6 +328,23 @@ impl OidcVerifier {
             .unwrap_or_default()
     }
 
+    /// #4183 reopen 1 — a Permission row written through the door drops the
+    /// cached scopes, so the next write re-reads them. Without this a fresh grant
+    /// waited up to ALLOW_TTL_SECS and was refused as missing meanwhile (quartet,
+    /// 2026-10-13: granted 08:19, refused until 08:24).
+    pub fn invalidate_scopes(&self) {
+        let mut sc = self.scopes.lock().unwrap_or_else(|e| e.into_inner());
+        sc.fetched_at = 0;
+        sc.last_attempt = 0;
+    }
+
+    /// How old the cached scopes are, for a refusal to say what it judged by.
+    /// None when they have never been read.
+    pub fn scopes_age_secs(&self, now_secs: u64) -> Option<u64> {
+        let sc = self.scopes.lock().unwrap_or_else(|e| e.into_inner());
+        (sc.fetched_at != 0).then(|| now_secs.saturating_sub(sc.fetched_at))
+    }
+
     /// Boot warm-fetch (ADR-052 §2a): populate the cache so a CSS blip after
     /// boot still verifies cached kids. CSS-down-at-boot is a LOUD warning,
     /// never a boot blocker. Returns how many keys were cached.
@@ -1487,6 +1504,28 @@ mod tests {
 
     /// Scope revocation is a model edit and lands within one TTL, no restart —
     /// the same drill as the allow-set and holdsRole.
+    #[test]
+    fn a_grant_through_the_door_is_seen_on_the_next_write_4183() {
+        // the store's answer changes between two reads: no scope, then a grant
+        let granted = Arc::new(AtomicBool::new(false));
+        let g = Arc::clone(&granted);
+        let v = OidcVerifier::new(
+            ISSUER, || Some(allow()), || Some(roles()),
+            move || Some(if g.load(Ordering::SeqCst) {
+                vec![("https://id.example/q#me".to_string(), vec!["urn:chorus:domains:code".to_string()])]
+            } else { vec![] }),
+            || None,
+        );
+        assert_eq!(v.scopes_age_secs(1_000), None, "never read");
+        assert!(v.scopes_for("https://id.example/q#me", 1_000).is_empty(), "before the grant");
+        assert_eq!(v.scopes_age_secs(1_010), Some(10));
+        granted.store(true, Ordering::SeqCst);
+        // NEGATIVE PROOF: inside the TTL, without the drop, the grant is not seen
+        assert!(v.scopes_for("https://id.example/q#me", 1_060).is_empty(), "cached: still the old answer");
+        v.invalidate_scopes();
+        assert_eq!(v.scopes_for("https://id.example/q#me", 1_061), vec!["urn:chorus:domains:code".to_string()], "the next write after the drop sees the grant");
+    }
+
     #[test]
     fn scope_revocation_lands_within_one_ttl() {
         let jwks = jwks_json(&css_key(), KID);

@@ -729,6 +729,19 @@ pub fn row_that_would_open(principal: &str, graph: &str) -> String {
     )
 }
 
+/// #4183 reopen 1 — a write to this class changes who may write what.
+pub fn grants_changed(class_iri: &str) -> bool {
+    class_iri.rsplit('#').next() == Some("Permission")
+}
+
+/// #4183 reopen 1 — the tail a scope refusal carries: how old its scope was.
+pub fn scope_age_note(age_secs: Option<u64>) -> String {
+    match age_secs {
+        Some(a) => format!(" (scopes read {a}s ago)"),
+        None => String::new(),
+    }
+}
+
 pub fn scope_allows(target_graph: &str, scope: &[String]) -> bool {
     scope.iter().any(|g| g == target_graph)
 }
@@ -6355,7 +6368,10 @@ pub fn serve(port: u16, tables: &[RouteTable]) -> R<()> {
                                 // handle_write); only an ownerless class needs the graph in scope.
                                 // #4517 — an Append row passes here for its creates only;
                                 // handle_write_scoped refuses its other ops on this class.
-                                ((403u16, format!("{{ \"error\": \"out-of-scope\", \"message\": \"write to '{}' refused (this class carries no row owner): {}\" }}", json_escape(effective_target), json_escape(&row_that_would_open(&caller_name, effective_target)))),
+                                // #4183 reopen 1 — say how old the scope this judged by is, so a
+                                // grant written seconds ago is never reported as missing.
+                                let age = scope_age_note(oidc_verifier.scopes_age_secs(now_secs));
+                                ((403u16, format!("{{ \"error\": \"out-of-scope\", \"message\": \"write to '{}' refused (this class carries no row owner): {}{}\" }}", json_escape(effective_target), json_escape(&row_that_would_open(&caller_name, effective_target)), age)),
                                  ReqMeta { route: "write-authz-scope".into(), ..Default::default() })
                             } else {
                                 // #4196 — the caller by NAME (a Principal), stamped as the row's
@@ -6369,6 +6385,11 @@ pub fn serve(port: u16, tables: &[RouteTable]) -> R<()> {
                                 // #4101 — the land names the commit that is changing the row
                                 let landed_commit = header("x-landed-commit");
                                 let (c, b) = handle_write_scoped(&method, &path, body_str, table, &role, token, &landed_commit, &claims.scope);
+                                // #4183 reopen 1 — a Permission row just changed: drop the cached
+                                // scopes so the grant (or revoke) holds on the very next write.
+                                if (200..300).contains(&c) && grants_changed(&table.class) {
+                                    oidc_verifier.invalidate_scopes();
+                                }
                                 ((c, b), ReqMeta { route: format!("write:{}", method.to_ascii_lowercase()), ..Default::default() })
                             }
                         }
