@@ -49,4 +49,9 @@ chorus:ProductShape
     sh:property [ sh:path chorus:outcomes ; sh:maxCount 1 ; sh:datatype xsd:string ;
                   sh:name "how we will know it worked" ; sh:description "Optional until each product is rewritten. Countable outcomes, today and target." ] ;
     sh:property [ sh:path chorus:openBets ; sh:maxCount 1 ; sh:datatype xsd:string ;
-                  sh:name "open bets" ; sh:description "Optional until each product is rewritten. Untested assumptions it rests on." ] .
+                  sh:name "open bets" ; sh:description "Optional until each product is rewritten. Untested assumptions it rests on." ] ;
+    # #4509 — the parent product. Seven product rows carried partOf from the seed, but the
+    # shape never declared it, so the door refused it as off-model (Kade 2026-10-12 20:34,
+    # moving Convergence under Athena: 422). One parent at most (#4482).
+    sh:property [ sh:path chorus:partOf ; sh:maxCount 1 ; sh:class chorus:Product ;
+                  sh:name "part of" ; sh:description "The parent product, if this product is a child of another." ] .
