@@ -129,8 +129,9 @@ infra_then_stores() {
   cmd=$(plutil -extract ProgramArguments.2 raw -o - "$1") || return 1
   every=$(plutil -extract StartInterval raw -o - "$1") || return 1
   [ "$every" -le 3600 ] || { echo "runs every ${every}s"; return 1; }
+  # #4405 reopen 4 — each pass is a herald_run call (the one runner)
   case "$cmd" in
-    *"chorus-crawl infra; "*"chorus-crawl stores"*) return 0 ;;
+    *'"sensor":"infra"'*'; '*'"sensor":"stores"'*) return 0 ;;
     *) echo "not infra-then-stores with ';': $cmd"; return 1 ;;
   esac
 }
@@ -142,8 +143,8 @@ infra_then_stores() {
 
 @test "NEGATIVE PROOF: stores before infra, or joined by &&, fails the check" {
   bad="$BATS_TEST_TMPDIR/swapped.plist"
-  sed 's|chorus-crawl infra; \(.*\)chorus-crawl stores|chorus-crawl stores; \1chorus-crawl infra|' "$UNIT" > "$bad"
+  sed 's|"sensor":"infra"|"sensor":"SWAP"|; s|"sensor":"stores"|"sensor":"infra"|; s|"sensor":"SWAP"|"sensor":"stores"|' "$UNIT" > "$bad"
   run infra_then_stores "$bad"; [ "$status" -ne 0 ]
-  sed 's|chorus-crawl infra; |chorus-crawl infra \&amp;\&amp; |' "$UNIT" > "$bad"
+  sed 's|}'"'"'; |}'"'"' \&amp;\&amp; |g' "$UNIT" > "$bad"
   run infra_then_stores "$bad"; [ "$status" -ne 0 ]
 }

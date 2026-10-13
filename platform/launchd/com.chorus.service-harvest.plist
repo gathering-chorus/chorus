@@ -5,9 +5,13 @@
   <key>Label</key><string>com.chorus.service-harvest</string>
   <key>ProgramArguments</key>
   <array>
-    <!-- #4472 — the services crawl is chorus-crawl's `services` subcommand -->
-    <string>/Users/jeffbridwell/.chorus/bin/chorus-crawl</string>
-    <string>services</string>
+    <!-- #4472 — the services crawl is chorus-crawl's `services` subcommand.
+         #4405 reopen 4 — run through the one runner, herald_run, as its owner, recorded
+         as a SensorRun; wait:true so a red pass exits 1 and launchd sees it. -->
+    <string>/Users/jeffbridwell/CascadeProjects/chorus/platform/scripts/chorus-mcp-call.sh</string>
+    <string>silas</string>
+    <string>herald_run</string>
+    <string>{"role":"silas","sensor":"services","wait":true}</string>
   </array>
   <key>StartInterval</key><integer>3600</integer>
   <key>StandardOutPath</key><string>/tmp/service-harvest.log</string>
