@@ -48,7 +48,6 @@ import { mintServiceToken } from './service-token';
 import {
   loadTree as athenaLoadTree,
   getTree as athenaGetTree,
-  lookupOwnership as athenaLookupOwnership,
   computeBlastRadius as athenaComputeBlastRadius,
 } from './athena-tree-stub';
 // #3818 — the word cap: counting is shared with Kade's Rust Stop-hook leg via
@@ -1682,12 +1681,6 @@ const PAIN_CARD_TOOL_DEF = {
 
 const TreeGetInput = z.object({});
 
-const OwnershipLookupInput = z.object({
-  iri: z
-    .string()
-    .regex(/^chorus:[a-z0-9][a-z0-9-]*$/i, 'IRI must match chorus:<slug>')
-    .describe('IRI to look up — e.g., chorus:athena, chorus:cards'),
-});
 
 const BlastRadiusInput = z.object({
   iri: z
@@ -1699,26 +1692,8 @@ const BlastRadiusInput = z.object({
 const TREE_GET_TOOL_DEF = {
   name: 'chorus_tree_get',
   description:
-    'Use this to fetch the full Athena structural tree — every Product, Domain, Service with their stored attributes (label, comment, vision, audience, status, gaps, ownership, value-stream-step, design-doc edges) and containment edges (hasChild, hasDomain, hosts, contains, consumes). Source: the live graph via chorus-api /api/athena/tree (#4235). Use when you need the whole tree at once. Do NOT call repeatedly per IRI — use chorus_ownership_lookup for single-IRI lookups (cheaper). Refusal taxonomy: store-unreachable (the graph did not answer).',
+    'Use this to fetch the full Athena structural tree — every Product, Domain, Service with their stored attributes (label, comment, vision, audience, status, gaps, ownership, value-stream-step, design-doc edges) and containment edges (hasChild, hasDomain, hosts, contains, consumes). Source: the live graph via chorus-api /api/athena/tree (#4235). Use when you need the whole tree at once. For the owner of one row, read links.ownedBy from the model door (/owl/v1/...). Refusal taxonomy: store-unreachable (the graph did not answer).',
   inputSchema: { type: 'object', properties: {}, required: [], additionalProperties: false },
-} as const;
-
-const OWNERSHIP_LOOKUP_TOOL_DEF = {
-  name: 'chorus_ownership_lookup',
-  description:
-    'Use this to answer "who owns this IRI and where does it sit in the tree?" Returns { iri, kind: product|domain|service, owner: role-iri, product, domain, service } — the containing-path filled in for the IRI\'s kind. Source: the live graph via chorus-api /api/athena/ownership (#4235). Use for role-nudge routing (resolve the IRI to a role before nudging), /gate-product domain-existence checks, demo product-impact framing. Do NOT use to fetch the IRI\'s full attribute set — use chorus_tree_get for that. Refusal taxonomy: not-found (IRI not in tree) | schema-violation.',
-  inputSchema: {
-    type: 'object',
-    properties: {
-      iri: {
-        type: 'string',
-        pattern: '^chorus:[a-z0-9][a-z0-9-]*$',
-        description: 'IRI to look up — e.g., chorus:athena, chorus:cards',
-      },
-    },
-    required: ['iri'],
-    additionalProperties: false,
-  },
 } as const;
 
 const BLAST_RADIUS_TOOL_DEF = {
@@ -3582,9 +3557,8 @@ export function buildMcpServer(getCallerRole: () => string, deps: McpServerDeps 
       DECISIONS_LIST_TOOL_DEF,
       DECISIONS_GET_TOOL_DEF,
       // #3177: v1 SPARQL ownership tools removed from the advertised list so the
-      // team has ONE place to look for ownership — the v2 tree. Use
-      // chorus_tree_get / chorus_ownership_lookup (answered from the graph,
-      // #4235) instead. v1 SPARQL stays live for the ~80 detail/facet/coverage
+      // team has ONE place to look for ownership. #4508 — that place is the
+      // model door's links.ownedBy; the chorus_ownership_lookup copy is gone. v1 SPARQL stays live for the ~80 detail/facet/coverage
       // consumers v2 doesn't cover yet; only the duplicate ownership path is cut.
       CARDS_ADD_TOOL_DEF,
       CARD_ADD_JEFF_TOOL_DEF,
@@ -3622,7 +3596,6 @@ export function buildMcpServer(getCallerRole: () => string, deps: McpServerDeps 
       PAIN_ROLLUP_TOOL_DEF,
       PAIN_CARD_TOOL_DEF,
       TREE_GET_TOOL_DEF,
-      OWNERSHIP_LOOKUP_TOOL_DEF,
       BLAST_RADIUS_TOOL_DEF,
     ],
   }));
@@ -4085,42 +4058,6 @@ export function buildMcpServer(getCallerRole: () => string, deps: McpServerDeps 
           const reason = (err as Error).message.includes('ENOENT') ? 'tree-not-found' : 'schema-violation';
           emitSpineEvent(EVT_ATHENA_TREE_QUERIED, {
             tool: 'chorus_tree_get',
-            from,
-            ok: false,
-            reason,
-            error: (err as Error).message,
-          });
-          return {
-            content: [{ type: 'text' as const, text: JSON.stringify({ ok: false, reason, error: (err as Error).message }) }],
-          };
-        }
-      }
-      case 'chorus_ownership_lookup': {
-        const parsed = OwnershipLookupInput.safeParse(req.params.arguments);
-        if (!parsed.success) {
-          throw new Error(`Invalid arguments: ${parsed.error.issues.map((i) => i.message).join(', ')}`);
-        }
-        try {
-          const tree = athenaLoadTree();
-          const result = athenaLookupOwnership(tree, parsed.data.iri);
-          if (!result) {
-            emitSpineEvent(EVT_ATHENA_TREE_QUERIED, {
-              tool: 'chorus_ownership_lookup',
-              from,
-              ok: false,
-              reason: 'not-found',
-              iri: parsed.data.iri,
-            });
-            return {
-              content: [{ type: 'text' as const, text: JSON.stringify({ ok: false, reason: 'not-found', iri: parsed.data.iri }) }],
-            };
-          }
-          emitSpineEvent(EVT_ATHENA_TREE_QUERIED, { tool: 'chorus_ownership_lookup', from, ok: true, iri: parsed.data.iri });
-          return { content: [{ type: 'text' as const, text: JSON.stringify(result) }] };
-        } catch (err) {
-          const reason = 'schema-violation';
-          emitSpineEvent(EVT_ATHENA_TREE_QUERIED, {
-            tool: 'chorus_ownership_lookup',
             from,
             ok: false,
             reason,

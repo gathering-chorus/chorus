@@ -4,10 +4,7 @@ Chorus is the coordination protocol for the Gathering team. It's the nervous sys
 
 ## Ownership
 
-Chorus has **shared ownership** across all three roles:
-- **Wren** owns the interaction layer (coordination tooling, context service, skill)
-- **Silas** owns the observation layer (dashboards, alerting, gates, infrastructure)
-- **Kade** owns the presentation layer (if/when Chorus gets a UI)
+Ownership is checked via the API: the model door's `links.ownedBy` on any `/owl/v1/...` row.
 
 All three roles can commit to this repo. Use your role prefix: `wren:`, `silas:`, `kade:`.
 
