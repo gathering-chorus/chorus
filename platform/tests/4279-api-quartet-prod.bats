@@ -32,13 +32,9 @@ OWNERS="${QUARTET_OWNERS:-quartet}"
 PLAN="$ROOT/platform/tests/lib/scope-plan.py"
 REFUSED_GRAPHS="${QUARTET_REFUSED_GRAPHS:-urn:chorus:domains:security urn:chorus:domains:identity urn:chorus:domains:roles}"
 
-gate_reason() {
-  if [ "${WERK_TEST_NIGHTLY:-}" != "1" ] && [ "${QUARTET_PROD_CONFIRM:-}" != "yes" ]; then
-    echo "not the nightly and no QUARTET_PROD_CONFIRM=yes — this suite writes PRODUCTION on purpose (#4279)"; return
-  fi
-  [ -x "$RUNNER" ] || { echo "runner missing: $RUNNER"; return; }
-  curl -sf --max-time 5 "$API/health" >/dev/null 2>&1 || echo "$API not answering"
-}
+# shellcheck disable=SC1091
+source "$ROOT/platform/tests/lib/prod-gate.sh"
+gate_reason() { prod_gate_reason "$ROOT" "$RUNNER" "$API"; }
 
 setup_file() {
   export RUN_ID

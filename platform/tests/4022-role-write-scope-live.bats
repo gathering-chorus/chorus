@@ -22,13 +22,9 @@ PLAN="$ROOT/platform/tests/lib/scope-plan.py"
 API="${QUARTET_API:-http://localhost:3360}"
 ROLES="${SCOPE_ROLES:-kade wren silas}"
 
-gate_reason() {
-  if [ "${WERK_TEST_NIGHTLY:-}" != "1" ] && [ "${QUARTET_PROD_CONFIRM:-}" != "yes" ]; then
-    echo "not the nightly and no QUARTET_PROD_CONFIRM=yes — this suite writes PRODUCTION on purpose (#4022)"; return
-  fi
-  [ -x "$RUNNER" ] || { echo "runner missing: $RUNNER"; return; }
-  curl -sf --max-time 5 "$API/health" >/dev/null 2>&1 || echo "$API not answering"
-}
+# shellcheck disable=SC1091
+source "$ROOT/platform/tests/lib/prod-gate.sh"
+gate_reason() { prod_gate_reason "$ROOT" "$RUNNER" "$API"; }
 
 setup_file() {
   export GATE; GATE="$(gate_reason)"
@@ -39,9 +35,14 @@ setup_file() {
   local run_id; run_id="scope-$(date -u +%Y%m%dt%H%M%Sz)"
   for role in $ROLES; do
     python3 "$PLAN" plan "$d/perms.json" "$d/graphs.json" "$role" > "$d/$role.plan"
-    API_BASE="$API" CHORUS_CONTEXT=prod QUARTET_PROD=1 QUARTET_RECORD=0 CHORUS_ROLE="$role" \
-      QUARTET_RUN_ID="$run_id-$$-$role" QUARTET_CLASSES="$(awk '{print $2}' "$d/$role.plan" | tr '\n' ' ')" \
-      bash "$RUNNER" > "$d/$role.out" 2>&1 || true
+    : > "$d/$role.out"
+    # One runner call per planned class (QUARTET_ONLY), so the shared runner
+    # stays as it is; the verdict reads every class's line from one file.
+    while read -r _ cls; do
+      API_BASE="$API" CHORUS_CONTEXT=prod QUARTET_PROD=1 QUARTET_RECORD=0 CHORUS_ROLE="$role" \
+        QUARTET_RUN_ID="$run_id-$$-$role" QUARTET_ONLY="$cls" \
+        bash "$RUNNER" >> "$d/$role.out" 2>&1 || true
+    done < "$d/$role.plan"
   done
 }
 

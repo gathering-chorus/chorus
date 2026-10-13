@@ -101,3 +101,19 @@ deny Policy" ] || return 1
   run python3 "$PLAN" verdict "$T/plan" "$T/out"
   [ "$status" -eq 0 ] || return 1
 }
+
+# NEGATIVE PROOF (2026-10-13): werk-test sets WERK_TEST_NIGHTLY=1 for card runs
+# too, and a card pipeline ran the prod suites. A werk tree must refuse.
+@test "prod gate: a card's werk refuses even with WERK_TEST_NIGHTLY=1" {
+  source "$BATS_TEST_DIRNAME/lib/prod-gate.sh"
+  r="$(WERK_TEST_NIGHTLY=1 prod_gate_reason /x/chorus-werk/kade-1 /bin/sh http://127.0.0.1:9)"
+  [[ "$r" == *"never writes production"* ]] || return 1
+}
+
+@test "prod gate: the nightly in canonical passes the werk check, a person can override in a werk" {
+  source "$BATS_TEST_DIRNAME/lib/prod-gate.sh"
+  r="$(WERK_TEST_NIGHTLY=1 prod_gate_reason /x/chorus /bin/sh http://127.0.0.1:9)"
+  [[ "$r" == *"not answering"* ]] || return 1
+  r="$(QUARTET_PROD_CONFIRM=yes prod_gate_reason /x/chorus-werk/kade-1 /bin/sh http://127.0.0.1:9)"
+  [[ "$r" == *"not answering"* ]] || return 1
+}
