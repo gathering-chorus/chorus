@@ -73,6 +73,16 @@ impl RowStore for Mem {
         self.0.lock().unwrap().remove(subject);
         Ok(())
     }
+    // owner only: the grant rules are proven on the real SPARQL store (embedded_tests)
+    fn list_seen_by(&self, class: &ClassDef, l: usize, o: usize, viewer: &str) -> Result<(Vec<Row>, usize), String> {
+        let (rows, _) = self.list(class, l, o)?;
+        let mine: Vec<Row> = rows.into_iter().filter(|r| r.get("ownedBy").and_then(|v| v.as_str()).is_some_and(|v| viewer.ends_with(v))).collect();
+        let n = mine.len();
+        Ok((mine, n))
+    }
+    fn get_seen_by(&self, class: &ClassDef, name: &str, viewer: &str) -> Result<Option<Row>, String> {
+        Ok(self.get(class, name)?.filter(|r| r.get("ownedBy").and_then(|v| v.as_str()).is_some_and(|v| viewer.ends_with(v))))
+    }
 }
 
 fn class_with_link() -> &'static ClassDef {
@@ -81,7 +91,7 @@ fn class_with_link() -> &'static ClassDef {
 
 fn ctx(store: &Mem) -> Ctx<'_> {
     let who = Box::leak(Box::new(auth::build("http://127.0.0.1:9/", |_| None)));
-    Ctx { store, who, events: String::new() }
+    Ctx { store, who, events: String::new(), reads_public: true }
 }
 
 fn caller(name: &str, scopes: &[&str]) -> Caller {
@@ -215,4 +225,19 @@ fn req2_store_side_a_field_change_deletes_every_stored_value_by_wildcard() {
     let u = crate::store::write_update("urn:g", "https://x#s", None, &[("f".into(), vec![Cell::Link(format!("{NS}new"))])], false);
     assert!(u.contains(&format!("DELETE WHERE {{ GRAPH <urn:g> {{ <https://x#s> <{NS}f> ?o }} }}")), "{u}");
     assert!(u.find("DELETE").unwrap() < u.find("INSERT").unwrap(), "delete first, then insert: {u}");
+}
+
+// #4524 — a private product (the default) refuses a read that names no caller.
+#[test]
+fn an_unsigned_read_of_a_private_product_is_refused() {
+    let store = Mem(Mutex::new(BTreeMap::new()));
+    let who = Box::leak(Box::new(auth::build("http://127.0.0.1:9/", |_| None)));
+    let private = Ctx { store: &store, who, events: String::new(), reads_public: false };
+    let c = CLASSES.first().expect("a class");
+    let (code, out) = crate::route(&private, "GET", &format!("/{}/{}/{}", crate::model::API_VERSION, c.domain, c.segment), None, "");
+    assert_eq!(code, 401, "{out}");
+    // negative proof: the same read on a public product answers
+    let public = Ctx { store: &store, who, events: String::new(), reads_public: true };
+    let (code, _) = crate::route(&public, "GET", &format!("/{}/{}/{}", crate::model::API_VERSION, c.domain, c.segment), None, "");
+    assert_eq!(code, 200);
 }

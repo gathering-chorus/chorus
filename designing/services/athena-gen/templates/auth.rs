@@ -26,7 +26,7 @@ fn now() -> u64 {
 pub fn build(issuer: &str, query: impl Fn(&str) -> Option<String> + Clone + Send + Sync + 'static) -> Auth {
     let jwks = format!("{}/.oidc/jwks", issuer.trim_end_matches('/'));
     oidc::prime_allow_set_graph(query.clone());
-    let (q1, q2, q3, q4) = (query.clone(), query.clone(), query.clone(), query);
+    let (q1, q2, q3, q4, q5) = (query.clone(), query.clone(), query.clone(), query.clone(), query);
     let verifier = OidcVerifier::new(
         issuer,
         move || oidc::resolve_principal_webids(&q1),
@@ -34,7 +34,10 @@ pub fn build(issuer: &str, query: impl Fn(&str) -> Option<String> + Clone + Send
         move || oidc::resolve_principal_scopes(&q3),
         move || ureq::get(&jwks).timeout(std::time::Duration::from_secs(3)).call().ok()?.into_string().ok(),
     )
-    .with_principal_names(move || oidc::resolve_principal_names(&q4));
+    .with_principal_names(move || oidc::resolve_principal_names(&q4))
+    // #4524 — the sign-in clients this product accepts (its web page, a phone app with
+    // PKCE) are rows in its own model (`oidcClientId`); an unknown client is refused.
+    .with_person_clients(move || oidc::resolve_person_clients(&q5));
     Auth { verifier }
 }
 

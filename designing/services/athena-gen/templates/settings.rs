@@ -18,6 +18,10 @@ pub struct Settings {
     /// #4519 — the graphs the shared verifier reads this product's people from
     pub identity_graph_prefix: String,
     pub events_command: String,
+    /// #4524 — may anyone read without signing in? Default no: every read names its caller
+    /// and returns only that caller's rows and grants. A product that serves public data
+    /// (pulse) declares `reads.public = true` in its model, so nothing changes by accident.
+    pub reads_public: bool,
 }
 
 impl Settings {
@@ -55,6 +59,11 @@ pub fn value(key: &str, file: &BTreeMap<String, String>) -> String {
     std::env::var(&env).ok().or_else(|| file.get(key).cloned()).unwrap_or_else(|| default.to_string())
 }
 
+/// A setting the model may leave undeclared: its value, or `default` when no row declares it.
+pub fn optional(key: &str, file: &BTreeMap<String, String>, default: &str) -> String {
+    if SETTINGS.iter().any(|(k, _)| *k == key) { value(key, file) } else { default.to_string() }
+}
+
 pub fn load() -> Settings {
     let path = std::env::var(format!("{}_SETTINGS", PRODUCT.to_uppercase().replace('-', "_"))).unwrap_or_else(|_| format!("{PRODUCT}.toml"));
     let file = file_values(&path);
@@ -68,5 +77,6 @@ pub fn load() -> Settings {
         identity_issuer: value("identity.issuer", &file),
         identity_graph_prefix: value("identity.graph_prefix", &file),
         events_command: value("events.command", &file),
+        reads_public: optional("reads.public", &file, "false") == "true",
     }
 }

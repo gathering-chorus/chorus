@@ -82,3 +82,11 @@ chorus:property-pulse-identity-graph-prefix a chorus:Property ;
     rdfs:label "pulse-api: the graph prefix its people and grants live under, for the verifier" ;
     chorus:propertyKey "identity.graph_prefix" ; chorus:propertyValue "urn:chorus:" ;
     chorus:propertyValueType "string" ; chorus:propertyScope "instance" .
+
+# #4524 — reads are private by default in every generated API: a read names its caller
+# and returns only that caller's rows and grants. Pulse serves team-wide awareness to
+# anonymous readers today, so it declares that, rather than losing it by accident.
+chorus:property-pulse-reads-public a chorus:Property ;
+    rdfs:label "pulse-api: anyone may read without signing in" ;
+    chorus:propertyKey "reads.public" ; chorus:propertyValue "true" ;
+    chorus:propertyValueType "string" ; chorus:propertyScope "instance" .

@@ -16,6 +16,7 @@ pub const SETTINGS: &[(&str, &str)] = &[
     ("identity.issuer", "https://id.lightlifeurbangardens.com/"),
     ("model.namespace", "https://jeffbridwell.com/chorus#"),
     ("model.prefix", "chorus"),
+    ("reads.public", "true"),
     ("server.bind", "127.0.0.1:3392"),
     ("store.endpoint", "http://localhost:3030/pods"),
     ("store.graph_prefix", "urn:chorus:domains:"),
