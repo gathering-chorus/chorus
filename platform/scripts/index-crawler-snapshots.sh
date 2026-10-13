@@ -9,6 +9,7 @@
 #   No args = crawl all known domains
 # #4446 — each run logs service.started, then service.stopped or service.failed (com.chorus.crawler-index).
 . "$(dirname "${BASH_SOURCE[0]}")/lib/service-lifecycle.sh"
+. "$(dirname "${BASH_SOURCE[0]}")/lib/changed-since.sh"
 service_lifecycle_job com.chorus.crawler-index "$@"
 
 set -euo pipefail
@@ -40,7 +41,9 @@ if [ -f "$LAST_RUN_FILE" ]; then
     # fires when find is still producing when head exits, so it reproduces on a
     # big tree and hides on a small one. `-quit` stops find itself after the
     # first hit — no pipe to break, same answer, no early exit.
-    newest=$(find "$watched" -type f -newer "$LAST_RUN_FILE" -not -path "*/node_modules/*" -not -path "*/target/*" -not -path "*/dist/*" -print -quit 2>/dev/null)
+    # #4022 — pruned walk (lib/changed-since.sh): the -not -path form above
+    # still walked every node_modules/target tree, 73.5s per run.
+    newest=$(changed_since "$LAST_RUN_FILE" "$watched" 2>/dev/null || true)
     if [ -n "$newest" ]; then TRIGGER="file-watch"; break; fi
   done
 fi

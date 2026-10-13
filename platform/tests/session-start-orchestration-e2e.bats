@@ -82,6 +82,8 @@ teardown() {
   done
 }
 
+# #4022 — CHORUS_FREE_DISK_BYTES is the #4497 seam: without it every boot sent
+# the Finder free-space AppleEvent, which timed out at 120s (790s for the suite).
 # boot [extra write allows] — session-start silas, sandboxed, in this test's world.
 #   READ_CHECKPOINT=1  let the shim read the live checkpoint (crash-recovery case)
 #   READ_CACHE=1       let the shim read the live cache (stale-cache case)
@@ -98,7 +100,7 @@ boot() {
     CHORUS_CONTEXT=test CHORUS_LOG_FILE="$T/spine.log" CHORUS_SESSIONS_DIR="$T/sessions" \
     CHORUS_PULSE_PATH="$T/pulse.json" CHORUS_PRINCIPLES_FIXTURE_FILE="$FIXTURES/principles.json" \
     CHORUS_PRINCIPLES_CACHE_FILE="$T/principles-cache.json" CHORUS_SESSION_ROWS_FIXTURE_DIR="$FIXTURES" \
-    TMPDIR="$T" REGEN_EXIT="${REGEN_EXIT:-0}" \
+    TMPDIR="$T" REGEN_EXIT="${REGEN_EXIT:-0}" CHORUS_FREE_DISK_BYTES=200000000000 \
     sandbox-exec -p "$profile" "$SHIM" session-start silas
 }
 
@@ -251,7 +253,10 @@ assert 'Stack functions' in ctx, 'principles section missing'
   # carry the named cases. (Running them needs RUN_INTEGRATION: they write the
   # same live /tmp paths.)
   command -v cargo >/dev/null || skip "UNMEASURED — cargo absent (#4336)"
-  run bash -c "cd '${CHORUS_ROOT}/platform/services/chorus-hooks' && cargo test --release --quiet \
+  # #4022 — debug, not --release: the nightly's cargo lane has already built
+  # these test binaries in debug (shared CARGO_TARGET_DIR); --release rebuilt
+  # the crate a second time whenever chorus-hooks changed (119s).
+  run bash -c "cd '${CHORUS_ROOT}/platform/services/chorus-hooks' && cargo test --quiet \
     --test session_start_additional_context --test session_start_pulse --test session_opening_narrative -- --list 2>/dev/null"
   [ "$status" -eq 0 ]
   [[ "$output" == *"session_start_emits_additional_context_json: test"* ]] || return 1
