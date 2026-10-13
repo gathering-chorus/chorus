@@ -19,6 +19,7 @@
   "com.chorus.lance-maintain": "service-knowledge-store",
   "com.chorus.fuseki-compact": "service-knowledge-store",
   "com.chorus.mcp": "service-werk",
+  "com.chorus.runner": "service-werk",
   "com.chorus.building-pipeline": "service-werk",
   "com.gathering.vikunja": "service-werk",
   "com.gathering.app": "service-gathering-app",
