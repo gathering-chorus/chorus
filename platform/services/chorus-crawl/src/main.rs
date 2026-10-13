@@ -1811,7 +1811,7 @@ fn run_sensor(args: &[String]) -> i32 {
             // herald_run names the run so it can hand the name back before the pass ends
             "--run" => match it.next() {
                 Some(r) if is_run_name(r, a_sensor(args)) => run = Some(r.clone()),
-                _ => { eprintln!("chorus-crawl sensor: --run needs a name like sensor-run-<sensor>-<stamp>, lowercase — nothing ran"); return 2; }
+                _ => { eprintln!("chorus-crawl sensor: --run needs a name like <sensor>-<stamp>, lowercase — nothing ran"); return 2; }
             },
             bad => { eprintln!("chorus-crawl sensor: unknown arg {bad} — nothing ran"); return 2; }
         }
@@ -1852,12 +1852,16 @@ fn run_sensor(args: &[String]) -> i32 {
             Err(e) => println!("sensor {sensor}: Sensor row NOT checked ({e})"),
         }
     }
+    // #4405 reopen 5 — a run the store did not take is not closed and does not
+    // read green: on prod the first runs were refused (422) and still said green.
+    let mut recorded = false;
     if let Some((ident, coll)) = &record {
         let row = run_fields(&sensor, &what, &started, None, "running", None, requested_by.as_deref());
         let mut body = vec![("name".to_string(), name.clone())];
         body.extend(row);
-        if let Err(e) = write(ident, &api, "POST", &format!("{coll}/batch"), Some(&format!("[{}]", fields_json(&body)))) {
-            println!("sensor {sensor}: run NOT recorded ({e}) — the pass still runs");
+        match write(ident, &api, "POST", &format!("{coll}/batch"), Some(&format!("[{}]", fields_json(&body)))) {
+            Ok(_) => recorded = true,
+            Err(e) => println!("sensor {sensor}: run NOT recorded ({e}) — the pass still runs"),
         }
     }
     println!("sensor {sensor}: run {name} on {what} started {started}");
@@ -1875,7 +1879,7 @@ fn run_sensor(args: &[String]) -> i32 {
     let counts = tally(&sensor, &text);
     let result = outcome(exit, counts);
     let ended = now();
-    if let Some((ident, coll)) = &record {
+    if let (true, Some((ident, coll))) = (recorded, &record) {
         // only what the end adds: the door's PATCH merges, and the fields set
         // at the start do not change
         let row: Vec<(String, String)> = run_fields(&sensor, &what, &started, Some(&ended), result, counts, None)
@@ -1883,6 +1887,10 @@ fn run_sensor(args: &[String]) -> i32 {
         if let Err(e) = write(ident, &api, "PATCH", &format!("{coll}/{name}"), Some(&fields_json(&row))) {
             println!("sensor {sensor}: run {name} could not be closed ({e})");
         }
+    }
+    if !dry_run && !recorded {
+        println!("sensor {sensor}: run {name} UNMEASURED at {ended} (the pass was {result}, but the store holds no record of it)");
+        return if exit != 0 { exit } else { 1 };
     }
     println!("sensor {sensor}: run {name} {result} at {ended}");
     if result == "green" { 0 } else if exit != 0 { exit } else { 1 }

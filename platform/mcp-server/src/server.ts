@@ -1402,7 +1402,7 @@ const HERALD_RUN_TOOL_DEF = {
 /** A run's name: lowercase, because the door slugs names (chorus-crawl
  * sensor_run::is_run_name refuses any other shape). */
 export function heraldRunName(sensor: string, now: Date): string {
-  return `sensor-run-${sensor}-${now.toISOString().replace(/\.\d+Z$/, 'Z').replace(/[^0-9A-Za-z]/g, '').toLowerCase()}`;
+  return `${sensor}-${now.toISOString().replace(/\.\d+Z$/, 'Z').replace(/[^0-9A-Za-z]/g, '').toLowerCase()}`;
 }
 
 /** The chorus-crawl argv for a sensor pass, or the reason it is refused. */

@@ -121,7 +121,14 @@ export async function loadSensors(base: string, nowMs: number, fetchFn: typeof f
       }
       return out;
     };
-    const [sensors, runs] = await Promise.all([all(sc), all(rc)]);
+    const [listed, runs] = await Promise.all([all(sc), all(rc)]);
+    // #4405 reopen 5 — the door serves a row's owner only on the row itself
+    // (links.ownedBy, "chorus:principal-silas"); the list leaves it out.
+    const sensors = await Promise.all(listed.map(async (s) => {
+      const one = await get(`${sc}/${encodeURIComponent(str(s.name))}`);
+      const owner = str((one.links as Row | undefined)?.ownedBy);
+      return { ...s, ownedBy: owner.startsWith('chorus:') ? owner.slice('chorus:'.length) : owner };
+    }));
     return { measured: true, rows: sensorStates(sensors, runs, nowMs) };
   } catch (e) {
     return { measured: false, reason: `the door did not answer (${(e as Error).message})` };
