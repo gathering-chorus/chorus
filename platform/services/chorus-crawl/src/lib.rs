@@ -3091,3 +3091,12 @@ mod crawler_validate_4290 {
         let _ = std::fs::remove_dir_all(&dir);
     }
 }
+
+/// #4405 R6.5 — a row's domains as a set to compare: sorted, once each, and
+/// the unplaced marker "" is no domain.
+pub fn domain_set<'a>(values: impl Iterator<Item = &'a str>) -> Vec<String> {
+    let mut v: Vec<String> = values.filter(|d| !d.is_empty()).map(String::from).collect();
+    v.sort();
+    v.dedup();
+    v
+}

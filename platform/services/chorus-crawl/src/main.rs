@@ -717,7 +717,9 @@ mod stable_name_4173 {
 /// to exhaustion rather than stopping at a ceiling.
 fn existing_rows(api: &str, token: &str) -> Result<Vec<InGraph>, String> {
     let mut out = Vec::new();
-    for fields in fetch_rows(api, token, "CodeFile")? {
+    // #4405 R6.5 — read with array fields: a file with two domains was read
+    // back as none, so ~500 unchanged rows were rewritten on every pass
+    for fields in fetch_rows_with(api, Some(token), "CodeFile", "", chorus_crawl::services::door_page_rows)? {
         let get = |k: &str| fields.iter().find(|(f, _)| f == k).map(|(_, v)| v.clone());
         let Some(path) = get("filePath").filter(|p| !p.is_empty()) else {
             continue;
@@ -2639,14 +2641,8 @@ fn main() {
                     .or_else(|| domain::place_by_dir(path, &valid_domains, &dir_rows))
                     .map(|s| vec![s.domain])
                     .unwrap_or_default();
-                let mut held_path: Vec<String> = g
-                    .other
-                    .iter()
-                    .filter(|(k, _)| k == "hasDomain")
-                    .map(|(_, v)| v.clone())
-                    .collect();
-                held_path.sort();
-                held_path.dedup();
+                let want_path = chorus_crawl::domain_set(want_path.iter().map(String::as_str));
+                let held_path = chorus_crawl::domain_set(g.other.iter().filter(|(k, _)| k == "hasDomain").map(|(_, v)| v.as_str()));
                 if want_path != held_path {
                     restated += 1;
                     *a = Action::Replace { path: path.clone() };
@@ -2666,18 +2662,10 @@ fn main() {
             );
             // #4222 — the stored value may now be a set. Compare sets, not one
             // string, or every multi-domain row restates on every run.
-            let want_set = want.domains();
-            let mut held_set: Vec<String> = g
-                .other
-                .iter()
-                // #4416 — an unplaced row is written with hasDomain "" (so the
-                // write clears a stored domain); that empty value is no domain,
-                // or every unplaced row restated on every full pass
-                .filter(|(k, v)| k == "hasDomain" && !v.is_empty())
-                .map(|(_, v)| v.clone())
-                .collect();
-            held_set.sort();
-            held_set.dedup();
+            // #4416 / #4405 R6.5 — the unplaced marker "" is no domain on EITHER
+            // side; it counted on one side only, so unplaced rows restated forever
+            let want_set = chorus_crawl::domain_set(want.domains().iter().map(String::as_str));
+            let held_set = chorus_crawl::domain_set(g.other.iter().filter(|(k, _)| k == "hasDomain").map(|(_, v)| v.as_str()));
             if want_set != held_set {
                 restated += 1;
                 *a = Action::Replace { path: path.clone() };
