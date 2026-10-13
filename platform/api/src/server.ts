@@ -1698,7 +1698,7 @@ app.get('/api/chorus/pulse/latest', (_req: Request, res: Response) => {
 // Three endpoints for the proof-of-shape: board/wip, roles, health.
 
 import { fetchContextBoardWip } from './handlers/context-board-wip';
-import { fetchContextPriorities, statusesFromBucketRows } from './handlers/context-priorities';
+import { fetchContextPriorities, roleNames, statusesFromBucketRows } from './handlers/context-priorities';
 import { fetchContextSpine } from './handlers/context-spine';
 import { fetchContextAlerts } from './handlers/context-alerts';
 import { fetchContextQualitySummary } from './handlers/context-quality-summary';
@@ -1815,6 +1815,11 @@ app.get('/api/chorus/context/priorities', async (req: Request, res: Response) =>
         const resp = await fetch(`${owlBase}${path}`);
         if (!resp.ok) throw new Error(`athena-make ${resp.status} on ${path}`);
         return resp.json();
+      },
+      listRoles: async () => {
+        const resp = await fetch(`${owlBase}/v1/roles/roles?limit=500`, { signal: AbortSignal.timeout(3000) });
+        if (!resp.ok) throw new Error(`roles door ${resp.status}`);
+        return roleNames(await resp.json());
       },
       // #3885 — read each sequenced card's real status from the board, so a
       // landed card leaves the walk. Read-only, ids parameterised, and a failure

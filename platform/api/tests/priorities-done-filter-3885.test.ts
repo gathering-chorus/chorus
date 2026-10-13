@@ -47,6 +47,7 @@ function deps(readCardStatuses?: Reader) {
     },
     readPulse: () => JSON.stringify({ board: { wip_cards: [], next_cards: [], swat_cards: [] } }),
     owl: async () => ({ data: [] }),
+    listRoles: async () => ['wren', 'silas', 'kade', 'jeff', 'abby-normal'],
     ...(readCardStatuses && { readCardStatuses }),
   } as unknown as Parameters<typeof fetchContextPriorities>[0];
 }
