@@ -35,13 +35,7 @@ setup_file() {
   [ -z "$GATE" ] || return 0
   local d="$BATS_FILE_TMPDIR"
   curl -sf --max-time 20 "$API/v1/security/permissions?limit=1000" > "$d/perms.json"
-  curl -sf --max-time 20 "$API/" | python3 -c '
-import json,sys,urllib.request
-api=sys.argv[1]; out={}
-for p in json.load(sys.stdin)["primitives"]:
-    try: out[p["kind"]]=json.load(urllib.request.urlopen(api+p["collection"]+"?limit=1",timeout=40)).get("servedFrom","")
-    except Exception: out[p["kind"]]=""
-json.dump(out,sys.stdout)' "$API" > "$d/graphs.json"
+  python3 "$PLAN" graphs "$API" > "$d/graphs.json"
   local run_id; run_id="scope-$(date -u +%Y%m%dt%H%M%Sz)"
   for role in $ROLES; do
     python3 "$PLAN" plan "$d/perms.json" "$d/graphs.json" "$role" > "$d/$role.plan"

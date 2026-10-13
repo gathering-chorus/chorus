@@ -85,3 +85,12 @@ allow CodeFile" ]
   [ "$status" -eq 1 ]
   [[ "$output" == *"TestResult: the door did not say which graph"* ]] || return 1
 }
+
+@test "expect: classes on a refused graph must be refused, every other class written" {
+  run python3 "$PLAN" expect "$T/graphs.json" urn:g:security
+  [ "$status" -eq 0 ] || return 1
+  [ "$output" = "allow CodeFile
+deny Credential
+allow Language
+deny Policy" ] || return 1
+}

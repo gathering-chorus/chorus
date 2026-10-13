@@ -9,6 +9,11 @@ write should be let in. This compares that with what the door actually does.
           prints one line per class: "deny <Class>" for every class the rows
           refuse the role, then "allow <Class>" for ONE class they let it write.
           A class whose serving graph could not be read is "unknown" (red).
+  expect  <class-graphs.json> <refused graph> ...
+          the single API walk's plan (#4022): "deny" for every class on a graph
+          the walking identity must be refused, "allow" for every other class.
+  graphs  <api>
+          prints {class: servedFrom graph} for every class the door serves.
   verdict <plan.txt> <runner.out>
           reads the 4267 runner's lines for those classes and prints every class
           where the door disagrees with the rows. Exit 1 if any, 0 if none.
@@ -32,6 +37,24 @@ def plan(perms, graphs, role):
     allow = sorted(c for c, g in known.items() if g in writable)
     return ([("unknown", c) for c in unknown] + [("deny", c) for c in deny]
             + [("allow", c) for c in allow[:1]])
+
+
+def expect(graphs, refused):
+    known = {c: g for c, g in graphs.items() if g.startswith("urn:")}
+    return ([("unknown", c) for c in sorted(set(graphs) - set(known))]
+            + [("deny" if g in refused else "allow", c) for c, g in sorted(known.items())])
+
+
+def fetch_graphs(api):
+    import urllib.request
+    out = {}
+    for p in json.load(urllib.request.urlopen(api + "/", timeout=20))["primitives"]:
+        try:
+            out[p["kind"]] = json.load(urllib.request.urlopen(
+                api + p["collection"] + "?limit=1", timeout=40)).get("servedFrom", "")
+        except Exception:
+            out[p["kind"]] = ""
+    return out
 
 
 def runner_results(lines):
@@ -68,6 +91,13 @@ def main(argv):
     if len(argv) == 5 and argv[1] == "plan":
         for want, cls in plan(json.load(open(argv[2])), json.load(open(argv[3])), argv[4]):
             print(want, cls)
+        return 0
+    if len(argv) >= 3 and argv[1] == "expect":
+        for want, cls in expect(json.load(open(argv[2])), set(argv[3:])):
+            print(want, cls)
+        return 0
+    if len(argv) == 3 and argv[1] == "graphs":
+        json.dump(fetch_graphs(argv[2]), sys.stdout)
         return 0
     if len(argv) == 4 and argv[1] == "verdict":
         planned = [tuple(l.split()) for l in open(argv[2]) if l.strip()]
