@@ -24,7 +24,22 @@
       },
       "servedBy": "library-com-gathering-fuseki",
       "role": "systemOfRecord",
-      "basis": "inventory"
+      "basis": "inventory",
+      "backupMinBytes": 52428800
+    },
+    {
+      "name": "fuseki-wine-diary",
+      "label": "Fuseki /wine-diary dataset (Art's wine diary, its own store)",
+      "machine": "library",
+      "storeType": "fuseki-dataset",
+      "match": {
+        "kind": "fuseki-dataset",
+        "value": "/wine-diary"
+      },
+      "servedBy": "library-com-gathering-fuseki",
+      "role": "systemOfRecord",
+      "basis": "inventory",
+      "backupMinBytes": 1000
     },
     {
       "name": "fuseki-staging",
