@@ -58,3 +58,43 @@ fn a_refused_caller_gets_403_before_any_body_check() {
     let (allowed, abody) = handle_write_scoped("POST", "/policies", bad, &table(), "kade", "", "", &granted());
     assert_eq!(allowed, 422, "{abody}");
 }
+
+// ── Reopen 1: acl:Append (Silas's negative proof, 08:25) ────────────────
+// The quartet test principal held Write on 33 graphs and PATCHed Silas's own
+// Sensor, because a Write row opens other owners' rows (#4185). Append is the
+// WAC mode for "add, never change what is there".
+
+use athena_make::{ownerless_edit_refusal, permission_opens, OwnerVerdict};
+
+fn appends() -> Vec<String> { vec![format!("append:{GRAPH}")] }
+
+#[test]
+fn an_append_row_opens_a_create() {
+    assert!(create_refusal(&WriteOp::CreateEntity, GRAPH, &appends(), "quartet").is_none());
+    let (code, _) = handle_write_scoped("POST", "/policies", r#"{"zz-invalid":1}"#, &table(), "quartet", "", "", &appends());
+    assert_eq!(code, 422, "past authz, stopped by the body check");
+}
+
+/// NEGATIVE PROOF: the row that broke on 10-13. Append must leave another
+/// owner's row closed; Write opens it (the #4185 rule, unchanged).
+#[test]
+fn an_append_row_never_opens_another_owners_row() {
+    let held = OwnerVerdict::NotOwner(Some("silas".into()));
+    assert_eq!(permission_opens(held.clone(), GRAPH, &appends()), held, "Append opened a silas-owned row");
+    assert_eq!(permission_opens(held, GRAPH, &granted()), OwnerVerdict::Allow, "Write still opens it");
+}
+
+#[test]
+fn an_append_row_is_for_its_own_graph_only() {
+    let other = vec!["append:urn:chorus:domains:tests".to_string()];
+    assert!(create_refusal(&WriteOp::CreateEntity, GRAPH, &other, "quartet").is_some());
+}
+
+#[test]
+fn on_an_ownerless_class_append_creates_but_cannot_change_rows() {
+    let ownerless = vec!["comment|datatype:string".to_string()];
+    let patch = WriteOp::PatchEntity { name: "p1".into() };
+    assert!(ownerless_edit_refusal(&WriteOp::CreateEntity, &ownerless, GRAPH, &appends(), "quartet").is_none());
+    assert!(ownerless_edit_refusal(&patch, &ownerless, GRAPH, &appends(), "quartet").is_some(), "Append changed an ownerless row");
+    assert!(ownerless_edit_refusal(&patch, &ownerless, GRAPH, &granted(), "quartet").is_none(), "Write still may");
+}
