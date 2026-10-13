@@ -92,13 +92,15 @@ test('NEGATIVE PROOF — a sensor the crawler does not have, or a target on one 
   });
 });
 
-test('a sensor writes as principal-crawler, whoever asked for the pass', async () => {
-  // measured 2026-10-12 21:20: the two crawl plists ran as CHORUS_ROLE kade and
-  // silas, so every sensor row was written as a person. The caller is who
-  // asked; the crawler is who looks and writes (#4154).
+test('a sensor writes as its owner, whoever asked for the pass', async () => {
+  // Jeff, 2026-10-12 21:23: "i dont think of crawler as a principal u are the
+  // owner". The caller is who asked; the sensor's owner answers for the rows.
   await withServer('#!/bin/bash\necho "as=$CHORUS_ROLE deploy=$DEPLOY_ROLE"\n', async (client) => {
-    const r = await run(client, { sensor: 'infra' });
-    assert.ok(r.tail.includes('as=crawler deploy=crawler'), r.tail);
-    assert.equal(r.requested_by, 'silas');
+    const res = await client.callTool({ name: 'herald_run', arguments: { role: 'kade', sensor: 'infra' } });
+    const r = JSON.parse((res.content as Array<{ text: string }>)[0].text);
+    assert.ok(r.tail.includes('as=silas deploy=silas'), r.tail);
+    assert.equal(r.requested_by, 'kade');
+    const c = await run(client, { sensor: 'code' });
+    assert.ok(c.tail.includes('as=kade'), c.tail);
   });
 });

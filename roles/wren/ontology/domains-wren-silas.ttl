@@ -190,8 +190,10 @@ chorus:heralds a chorus:Domain ;
   chorus:purpose "Look at a target and record what is there, so Borg can reflect on any system it can reach." ;
   chorus:ownedBy chorus:principal-silas ;
   chorus:atStep chorus:value-stream-step-proving ;
-  chorus:repoTarget "platform/services/chorus-crawl" .
-  # FLAG: no real owl:Class vocab (no chorus:Herald class) — omitted, not faked.
+  chorus:repoTarget "platform/services/chorus-crawl" ;
+  # #4405 reopen 4 — Heralds is the product; what it holds are Sensors and
+  # their runs (sensors-4405.ttl: definesVocabulary Sensor, SensorRun).
+  chorus:instancesGraph "urn:chorus:domains:heralds" .
 
 chorus:toolchain a chorus:Domain ;
   chorus:instancesGraph "urn:chorus:domains:toolchain" ;  # #4422 (wren): the crawl reads this, never a guessed name
