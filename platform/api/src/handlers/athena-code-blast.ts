@@ -81,6 +81,45 @@ export function unitNamed(name: string, units: UnitRow[]): UnitRow | undefined {
   return byDir.length === 1 ? byDir[0] : undefined;
 }
 
+/** A service's own units, or why it has none: it does not exist, nothing runs it, or what it runs is no unit. */
+function placeService(svc: string, builtFrom: [string, string][], running?: Running): { direct: string[]; runBy: string[] } | { reason: string } {
+  if (running && !running.services.includes(svc)) return { reason: `there is no service named ${svc}` };
+  const direct = [...new Set(builtFrom.filter(([s]) => s === svc).map(([, u]) => u))];
+  if (direct.length) return { direct, runBy: [] };
+  const mine = (running?.runs ?? []).filter((r) => r.service === svc);
+  if (!mine.length) return { reason: `${svc} names no code unit it is built from and nothing runs it` };
+  // say what it does run: files in no crate or package, or code outside this repository
+  const loose = [...new Set(mine.filter((r) => r.path).map((r) => r.path))].sort();
+  const outside = [...new Set(mine.filter((r) => !r.path && r.binary).map((r) => r.binary))].sort();
+  const said = [loose.length ? `files in no crate or package: ${loose.join(', ')}` : '', outside.length ? `code the crawl does not hold: ${outside.join(', ')}` : ''].filter(Boolean);
+  return { reason: `${svc} is built from no code unit; it runs ${said.join('; and ') || 'nothing it names'}` };
+}
+
+/** A repo path's unit; a file only the root unit holds also names the services that run it. */
+function placePath(target: string, units: UnitRow[], files: FileRow[], running?: Running): { direct: string[]; runBy: string[] } | { reason: string } {
+  const path = target.replace(/^\/+|\/+$/g, '');
+  const asUnit = units.find((u) => u.path === path);
+  const known = asUnit || files.some((f) => f.path === path || f.path.startsWith(`${path}/`));
+  if (!known) return { reason: `${target} is no file or folder the crawl holds` };
+  const u = asUnit ?? unitOf(path, units);
+  if (!u) return { reason: `${target} is in no code unit` };
+  const runBy = u.path !== '.' ? [] : [...new Set((running?.runs ?? []).filter((r) => r.path === path || r.path.startsWith(`${path}/`)).map((r) => r.service))].sort();
+  return { direct: [u.name], runBy };
+}
+
+/** #4499 reopen 3 — what a target means: a service, a unit's name, or a repo path; or why it means nothing. */
+export function placeTarget(
+  target: string, units: UnitRow[], builtFrom: [string, string][], files: FileRow[], running?: Running,
+): { direct: string[]; runBy: string[] } | { reason: string } {
+  if (target.includes('/')) return placePath(target, units, files, running);
+  const bare = target.replace(/^chorus:/, '');
+  const unit = unitNamed(bare, units);
+  if (unit) return { direct: [unit.name], runBy: [] };
+  if (bare.startsWith('service-')) return placeService(bare, builtFrom, running);
+  if (running?.services.includes(`service-${bare}`)) return placeService(`service-${bare}`, builtFrom, running);
+  return { reason: `${target} names no file, code unit or service` };
+}
+
 /**
  * The answer for a repo path (file or unit), a unit's name, or a service
  * (`service-x` or `chorus:service-x`). Unmeasured — never "no blast radius" —
@@ -93,40 +132,9 @@ export function codeBlast(
   running?: Running,
 ): CodeBlast | Unmeasured {
   if (!units.length) return { target, measured: false, reason: 'the store holds no code units yet (the crawl has not run on this tree)' };
-  const bare = target.replace(/^chorus:/, '');
-  const asService = !target.includes('/') && (bare.startsWith('service-') || !!running?.services.includes(`service-${bare}`)) && !unitNamed(bare, units);
-  const svc = asService ? (bare.startsWith('service-') ? bare : `service-${bare}`) : '';
-  let direct: string[];
-  let runBy: string[] = [];
-  if (asService) {
-    if (running && !running.services.includes(svc)) return { target, measured: false, reason: `there is no service named ${svc}` };
-    direct = [...new Set(builtFrom.filter(([s]) => s === svc).map(([, u]) => u))];
-    if (!direct.length) {
-      const mine = (running?.runs ?? []).filter((r) => r.service === svc);
-      if (!mine.length) return { target, measured: false, reason: `${svc} names no code unit it is built from and nothing runs it` };
-      // say what it does run: files in no crate or package, or code outside this repository
-      const loose = [...new Set(mine.filter((r) => r.path).map((r) => r.path))].sort();
-      const outside = [...new Set(mine.filter((r) => !r.path && r.binary).map((r) => r.binary))].sort();
-      const said = [loose.length ? `files in no crate or package: ${loose.join(', ')}` : '', outside.length ? `code the crawl does not hold: ${outside.join(', ')}` : ''].filter(Boolean);
-      return { target, measured: false, reason: `${svc} is built from no code unit; it runs ${said.join('; and ') || 'nothing it names'}` };
-    }
-  } else if (!target.includes('/')) {
-    const u = unitNamed(bare, units);
-    if (!u) return { target, measured: false, reason: `${target} names no file, code unit or service` };
-    direct = [u.name];
-  } else {
-    const path = target.replace(/^\/+|\/+$/g, '');
-    const asUnit = units.find((u) => u.path === path);
-    const known = asUnit || files.some((f) => f.path === path || f.path.startsWith(`${path}/`));
-    if (!known) return { target, measured: false, reason: `${target} is no file or folder the crawl holds` };
-    const u = asUnit ?? unitOf(path, units);
-    if (!u) return { target, measured: false, reason: `${target} is in no code unit` };
-    direct = [u.name];
-    // a file only the root unit holds: what runs it is its blast radius too
-    if (u.path === '.') {
-      runBy = [...new Set((running?.runs ?? []).filter((r) => r.path === path || r.path.startsWith(`${path}/`)).map((r) => r.service))].sort();
-    }
-  }
+  const placed = placeTarget(target, units, builtFrom, files, running);
+  if ('reason' in placed) return { target, measured: false, reason: placed.reason };
+  const { direct, runBy } = placed;
   const through = dependentsOf(direct, units);
   const all = [...direct, ...through];
   // a file counts for the unit it belongs to (its deepest unit), so a root
