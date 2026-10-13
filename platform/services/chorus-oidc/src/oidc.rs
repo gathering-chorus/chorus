@@ -574,7 +574,7 @@ pub fn allow_set_graph() -> String {
 /// "any graph" or narrow to none; it means keep reading where we read before.
 static RESOLVED_ALLOW_GRAPH: std::sync::OnceLock<String> = std::sync::OnceLock::new();
 
-pub const PRINCIPAL_HOME_QUERY: &str = "PREFIX chorus: <https://jeffbridwell.com/chorus#> PREFIX sh: <http://www.w3.org/ns/shacl#> SELECT ?g WHERE { GRAPH <urn:chorus:ontology> { ?shape sh:targetClass chorus:Principal ; chorus:instancesGraph ?g } } LIMIT 1";
+pub const PRINCIPAL_HOME_QUERY: &str = "PREFIX chorus: <https://jeffbridwell.com/chorus#> PREFIX sh: <http://www.w3.org/ns/shacl#> SELECT ?g WHERE { GRAPH <urn:chorus:ontology> { ?shape sh:targetClass chorus:Principal ; <https://jeffbridwell.com/chorus#instancesGraph> ?g } } LIMIT 1";
 
 /// Pure: pick the home from what the model answered. `rows` is the select's
 /// values; anything unusable leaves the current answer alone.

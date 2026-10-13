@@ -48,9 +48,20 @@ fn no_query_can_reach_chorus_identity() {
     // namespace or graphs would let Chorus's people into the diary. Removing the
     // localize call from any one resolver in src/oidc.rs turns this red.
     for q in every_query() {
-        assert!(!q.contains("jeffbridwell.com/chorus#"), "Chorus vocabulary leaked: {q}");
+        assert!(!q.contains("PREFIX chorus: <https://jeffbridwell.com/chorus#>"), "Chorus vocabulary leaked: {q}");
         assert!(!q.contains("urn:chorus:"), "Chorus graph leaked: {q}");
+        // The one Chorus term allowed is the modelling term on a shape.
+        let rest = q.replace("<https://jeffbridwell.com/chorus#instancesGraph>", "");
+        assert!(!rest.contains("jeffbridwell.com/chorus#"), "a Chorus term other than instancesGraph: {q}");
     }
+}
+
+#[test]
+fn the_principal_home_is_read_from_the_products_shapes_with_chorus_modelling_terms() {
+    let home = every_query().into_iter().find(|q| q.contains("sh:targetClass")).expect("the home query");
+    assert!(home.contains("GRAPH <urn:wine-diary:ontology>"), "{home}");
+    assert!(home.contains("<https://jeffbridwell.com/wine-diary#>"), "Principal is the product's: {home}");
+    assert!(home.contains("<https://jeffbridwell.com/chorus#instancesGraph>"), "instancesGraph stays Chorus's: {home}");
 }
 
 #[test]

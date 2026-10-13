@@ -8,9 +8,10 @@
 //! sign-in server and its own store, and this ONE verifier reads that app's model.
 //!
 //! The queries stay written once, in the Chorus vocabulary. `localize` maps the
-//! Chorus namespace and graph prefix onto the product's, so a product declares
+//! `chorus:` prefix and the graph prefix onto the product's, so a product declares
 //! the same identity terms (Principal, webId, holdsRole, Permission, agent,
-//! accessTo, mode, oidcClientId, instancesGraph) in its own namespace. The keys
+//! accessTo, mode, oidcClientId) in its own namespace. Modelling terms
+//! (instancesGraph on a shape) stay Chorus's. The keys
 //! match what a product row declares for athena-gen (#4519): `model.namespace`
 //! and `store.graph_prefix`.
 //!
@@ -48,7 +49,13 @@ impl IdentityModel {
         if self.is_chorus() {
             return q.to_string();
         }
-        q.replace(CHORUS_NAMESPACE, &self.namespace).replace(CHORUS_GRAPH_PREFIX, &self.graph_prefix)
+        // Only the `chorus:` PREFIX declaration moves: product terms (Principal,
+        // webId, Permission…) are written `chorus:X` and land in the product's
+        // namespace. Chorus's modelling terms (instancesGraph on a shape) are
+        // build-time language every product shares (Wren + Silas, 2026-10-13),
+        // so queries spell those as full IRIs, which this leaves alone.
+        q.replace(&format!("PREFIX chorus: <{CHORUS_NAMESPACE}>"), &format!("PREFIX chorus: <{}>", self.namespace))
+            .replace(CHORUS_GRAPH_PREFIX, &self.graph_prefix)
     }
 
     /// A graph under this product's prefix, e.g. `graph("domains:security")`.
