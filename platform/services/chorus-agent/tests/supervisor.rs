@@ -664,7 +664,7 @@ fn gemini_is_refused_unless_its_folder_is_trusted() {
     let work = tempfile::tempdir().unwrap();
     let cwd = work.path().canonicalize().unwrap();
     fs::create_dir_all(cwd.join(".gemini")).unwrap();
-    fs::write(cwd.join(".gemini/settings.json"), r#"{"hooks":{"BeforeTool":[{"hooks":[{"command":"chorus-hook-shim runtime-hook gemini BeforeTool"}]}]}}"#).unwrap();
+    fs::write(cwd.join(".gemini/settings.json"), r#"{"hooks":{"BeforeTool":[{"hooks":[{"command":"chorus-hook-shim runtime-hook gemini BeforeTool"}]}],"BeforeAgent":[{"hooks":[{"command":"chorus-hook-shim runtime-hook gemini BeforeAgent"}]}],"AfterAgent":[{"hooks":[{"command":"chorus-hook-shim runtime-hook gemini AfterAgent"}]}]}}"#).unwrap();
     fs::create_dir_all(home.path().join(".gemini")).unwrap();
     let trust = home.path().join(".gemini/trustedFolders.json");
     // No trust file: refused even though the hook file is there.
