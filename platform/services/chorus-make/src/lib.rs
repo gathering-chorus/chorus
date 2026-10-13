@@ -211,7 +211,10 @@ fn preamble(out: &mut String, description: &str, queue: &str, params: &[&str], w
         // #4499 — then the crawl, as v1's crawl-delta did: launchd's crawler
         // job (its own identity; the workflow claims none) rebuilds the code
         // units and dependsOn edges the blast radius reads, every land
-        out.push_str("  success:\n    command: '${CHORUS_HOME}/platform/scripts/athena-land ${CARD} ${ROLE}; ${CHORUS_HOME}/platform/scripts/crawl-detached.sh'\n");
+        // #4186 reopen — a failed model run turns this handler red (athena-land
+        // exits 1) and still crawls; /cws reads its result line onto the card's
+        // line. No shell variables: dagu expands $NAME in a command itself.
+        out.push_str("  success:\n    command: '${CHORUS_HOME}/platform/scripts/athena-land ${CARD} ${ROLE} || { ${CHORUS_HOME}/platform/scripts/crawl-detached.sh; exit 1; }; ${CHORUS_HOME}/platform/scripts/crawl-detached.sh'\n");
     }
     out.push_str("steps:\n");
 }

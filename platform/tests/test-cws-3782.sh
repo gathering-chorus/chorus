@@ -318,6 +318,33 @@ out=$(CWS_RUNS_DIR=$TD CWS_DAGU="file://$TD/d2" CWS_LOKI="file://$TD/loki" CWS_A
 t "the board line carries the run's tests" "#111 kade   test" "$out"
 t "…as one short summary" "· tests 1 ok · 1 failed · running (2 of 4)" "$out"
 
+# #4186 reopen — #4513's model failed at 12:05 on 2026-10-13 and the card read
+# "landed"; only the land's success handler log said so. The handler's result
+# line rides the card's own line, and a landed card (off WIP) whose model failed
+# stays on the board view. NEGATIVE PROOF: a deployed model adds nothing.
+mkdir -p "$TD/d3/api/v1" "$TD/api3/api/chorus/context/board"
+echo 'athena-land #120: chorus_athena canonical did not finish clean
+athena-land #120: result=failed' > "$TD/h120.out"
+echo 'athena-land #121: result=deployed' > "$TD/h121.out"
+cat > "$TD/d3/api/v1/dag-runs" <<EOF6
+{"dagRuns":[
+ {"name":"cicd","dagRunId":"c120","params":"CARD=120 ROLE=wren","statusLabel":"succeeded","startedAt":"2026-10-13T11:58:00-04:00","finishedAt":"2026-10-13T12:03:00-04:00","nodes":[{"statusLabel":"succeeded","step":{"name":"skill-werk-go"}},{"statusLabel":"succeeded","step":{"name":"cicd-land"}}]},
+ {"name":"cicd-land","dagRunId":"A120","params":"CARD=120 ROLE=wren ACCEPTER=jeff","statusLabel":"succeeded","queuedAt":"2026-10-13T12:03:10-04:00","startedAt":"2026-10-13T12:03:20-04:00","finishedAt":"2026-10-13T12:05:00-04:00","nodes":[{"statusLabel":"succeeded","step":{"name":"skill-werk-accept"}}],"onSuccess":{"statusLabel":"failed","stdout":"$TD/h120.out"}},
+ {"name":"cicd","dagRunId":"c121","params":"CARD=121 ROLE=kade","statusLabel":"succeeded","startedAt":"2026-10-13T11:50:00-04:00","finishedAt":"2026-10-13T11:52:00-04:00","nodes":[{"statusLabel":"succeeded","step":{"name":"cicd-land"}}]},
+ {"name":"cicd-land","dagRunId":"A121","params":"CARD=121 ROLE=kade ACCEPTER=jeff","statusLabel":"succeeded","queuedAt":"2026-10-13T11:52:10-04:00","startedAt":"2026-10-13T11:52:20-04:00","finishedAt":"2026-10-13T11:54:00-04:00","nodes":[{"statusLabel":"succeeded","step":{"name":"skill-werk-accept"}}],"onSuccess":{"statusLabel":"succeeded","stdout":"$TD/h121.out"}}
+]}
+EOF6
+echo '{"data":{"cards":[]}}' > "$TD/api3/api/chorus/context/board/wip"
+cws3() { CWS_RUNS_DIR=$TD CWS_DAGU="file://$TD/d3" CWS_API="file://$TD/api3" "$CWS" "$@"; }
+t "a land whose model failed says so on the card's line" "#120 wren   landed · athena failed" "$(cws3 120)"
+t "…and in the land line" "v2 land succeeded · athena failed" "$(cws3 120)"
+out=$(cws3)
+t "board: a landed card whose model failed stays on the board" "#120 wren   landed · athena failed" "$out"
+if [[ "$out" == *"#121"* ]]; then echo "FAIL a land whose model deployed is on the board"; fails=$((fails+1)); fi
+out=$(cws3 121)
+t "a land whose model deployed reads landed" "#121 kade   landed " "$out"
+if [[ "$(head -1 <<<"$out")" == *"athena failed"* ]]; then echo "FAIL a deployed model reads failed"; fails=$((fails+1)); fi
+
 rm -rf "$TD"
 if [ $fails -gt 0 ]; then echo "test-cws-3782: $fails FAILURE(S)"; exit 1; fi
 echo "test-cws-3782: all green"
