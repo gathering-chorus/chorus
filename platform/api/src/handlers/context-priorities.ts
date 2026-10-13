@@ -101,7 +101,8 @@ export interface ContextPrioritiesResponse {
 
 /** #4404 reopen 1 — the role names the roles door serves (items[].name). */
 export function roleNames(doc: unknown): string[] {
-  const d = doc as { items?: { name?: unknown }[]; data?: { name?: unknown }[] } | null;
+  type Row = { name?: unknown } | null;
+  const d = doc as { items?: Row[]; data?: Row[] } | null;
   const rows = (d && (d.items || d.data)) || [];
   return rows.map((x) => (typeof x?.name === 'string' ? x.name.toLowerCase() : '')).filter(Boolean);
 }
