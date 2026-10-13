@@ -24,7 +24,22 @@
       },
       "servedBy": "library-com-gathering-fuseki",
       "role": "systemOfRecord",
-      "basis": "inventory"
+      "basis": "inventory",
+      "backupMinBytes": 52428800
+    },
+    {
+      "name": "fuseki-wine-diary",
+      "label": "Fuseki /wine-diary dataset (Art's wine diary, its own store)",
+      "machine": "library",
+      "storeType": "fuseki-dataset",
+      "match": {
+        "kind": "fuseki-dataset",
+        "value": "/wine-diary"
+      },
+      "servedBy": "library-com-gathering-fuseki",
+      "role": "systemOfRecord",
+      "basis": "inventory",
+      "backupMinBytes": 1000
     },
     {
       "name": "fuseki-staging",
@@ -219,7 +234,24 @@
       },
       "role": "systemOfRecord",
       "basis": "inventory",
-      "servedBy": "library-com-security-css"
+      "servedBy": "library-com-security-css",
+      "backup": "tar",
+      "backupMinBytes": 262144
+    },
+    {
+      "name": "solid-css-wine-diary",
+      "label": "Community Solid Server files for wine-diary's own sign-in (accounts, keys)",
+      "machine": "library",
+      "storeType": "files",
+      "match": {
+        "kind": "path",
+        "value": "/Users/jeffbridwell/CascadeProjects/shared-security/data/wine-diary-css"
+      },
+      "role": "systemOfRecord",
+      "basis": "inventory",
+      "servedBy": "library-com-security-css-wine-diary",
+      "backup": "tar",
+      "backupMinBytes": 1000
     },
     {
       "name": "spine",

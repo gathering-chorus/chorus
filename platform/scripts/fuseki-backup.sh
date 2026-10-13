@@ -41,7 +41,38 @@ set -euo pipefail
 
 REMOTE="${FUSEKI_BACKUP_REMOTE:-Jeffs-Mac-mini.local}"
 DEST_BASE="${FUSEKI_BACKUP_DEST:?FUSEKI_BACKUP_DEST unset — chorus-env-setup.sh missing?}"
-DATASET="${FUSEKI_DATASET:-pods}"
+STORE_MAP="${STORE_MAP:-$(dirname "${BASH_SOURCE[0]}")/../config/store-map.json}"
+
+# #4518 — WHICH datasets: every Fuseki dataset the store map names as a system of
+# record, not a hard-coded "pods". Until today the nightly backed up /pods only,
+# so a new product's store (/wine-diary) had no backup at all and nothing said so.
+# The store map is a file, not a Chorus service, so this still runs with Chorus
+# stopped. With no FUSEKI_DATASET set, run once per dataset and fail if any fails.
+if [ -z "${FUSEKI_DATASET:-}" ]; then
+  DATASETS="$(python3 -c '
+import json,sys
+for s in json.load(open(sys.argv[1]))["stores"]:
+    if s.get("storeType")=="fuseki-dataset" and s.get("role")=="systemOfRecord" and s["match"].get("value"):
+        print(s["match"]["value"].lstrip("/"))' "$STORE_MAP")" || { echo "store map unreadable: $STORE_MAP" >&2; exit 1; }
+  [ -n "$DATASETS" ] || { echo "store map names no Fuseki system of record — refusing to back up nothing" >&2; exit 1; }
+  rc=0
+  for ds in $DATASETS; do FUSEKI_DATASET="$ds" bash "$0" || rc=1; done
+  # The same nightly carries the file-tree systems of record (the sign-in
+  # servers' accounts and keys), so a new store needs a store-map entry, not a
+  # new LaunchAgent. FILES_BACKUP=0 skips it (the retention tests do).
+  if [ "${FILES_BACKUP:-1}" = 1 ]; then
+    bash "$(dirname "$0")/files-backup.sh" || rc=1
+  fi
+  exit $rc
+fi
+DATASET="$FUSEKI_DATASET"
+# The floor is per store: 50 MB means "data is in it" for /pods and nothing for a
+# 175-triple diary. The stub this guards against is 20 bytes either way.
+MIN_BYTES="$(python3 -c '
+import json,sys
+for s in json.load(open(sys.argv[1]))["stores"]:
+    if s.get("storeType")=="fuseki-dataset" and s["match"].get("value")=="/"+sys.argv[2]:
+        print(s.get("backupMinBytes","")); break' "$STORE_MAP" "$DATASET" 2>/dev/null || true)"
 FUSEKI="${FUSEKI_URL:-http://localhost:3030}"
 BACKUP_DIR="${FUSEKI_BACKUP_LOCAL:-$HOME/.gathering/data/backups}"
 KEEP="${FUSEKI_BACKUP_KEEP:-7}"     # a dump is ~300 MB, so a week costs ~2 GB
@@ -110,7 +141,9 @@ DUMP="$(ls -1t "$BACKUP_DIR"/${DATASET}_*.nq.gz 2>/dev/null | head -1)"
 [ -n "$DUMP" ] && [ -f "$DUMP" ] || die "no dump file appeared in $BACKUP_DIR" no-dump
 [ "$DUMP" -nt "$STARTED_MARK" ] || die "newest dump $(basename "$DUMP") predates this run — the dump we asked for never landed" stale-dump
 SIZE=$(stat -f %z "$DUMP")
-MIN=$(( ${FUSEKI_BACKUP_MIN_MB:-50} * 1024 * 1024 ))
+if [ -n "${FUSEKI_BACKUP_MIN_MB:-}" ]; then MIN=$(( FUSEKI_BACKUP_MIN_MB * 1024 * 1024 ))
+elif [ -n "$MIN_BYTES" ]; then MIN="$MIN_BYTES"
+else MIN=$(( 50 * 1024 * 1024 )); fi
 [ "$SIZE" -ge "$MIN" ] || die "dump is only $SIZE bytes (floor $MIN) — refusing to ship a stub" dump-too-small
 
 # 4. Ship it off the machine.

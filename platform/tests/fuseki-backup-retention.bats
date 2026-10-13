@@ -61,7 +61,7 @@ setup() {
   # stamped later than the run's start mark (a real dump takes minutes; -nt is per-second)
   printf '%s\n' '#!/bin/bash' \
     'case "$*" in' \
-    "  *'/\$/backup/'*) head -c 2048 /dev/zero > \"$LOCAL/pods_2026-09-15_03-00-00.nq.gz\"; touch -t 209901010000 \"$LOCAL/pods_2026-09-15_03-00-00.nq.gz\"; echo '{\"taskId\":\"42\"}' ;;" \
+    "  *'/\$/backup/'*) ds=\"\${@: -1}\"; ds=\"\${ds##*/}\"; head -c 2048 /dev/zero > \"$LOCAL/\${ds}_2026-09-15_03-00-00.nq.gz\"; touch -t 209901010000 \"$LOCAL/\${ds}_2026-09-15_03-00-00.nq.gz\"; echo \"\$ds\" >> \"$TMP/asked\"; echo '{\"taskId\":\"42\"}' ;;" \
     "  *'/\$/tasks'*) echo '[{\"taskId\":\"42\",\"finished\":\"2026-09-15T03:04:25\",\"success\":true}]' ;;" \
     '  *) exit 7 ;;' 'esac' > "$TMP/bin/curl"
   printf '#!/bin/bash\nexit 0\n' > "$TMP/bin/chorus-log"
@@ -75,7 +75,26 @@ run_backup() {
   run env -i PATH="$TMP/bin:/usr/bin:/bin" HOME="$TMP" \
     FUSEKI_BACKUP_REMOTE=stub FUSEKI_BACKUP_DEST="$REMOTE_BASE" FUSEKI_BACKUP_LOCAL="$LOCAL" \
     FUSEKI_BACKUP_MIN_MB=0 FUSEKI_URL=http://127.0.0.1:9 CHORUS_LOG="$TMP/bin/chorus-log" \
-    ${keep[@]+"${keep[@]}"} bash "$TMP/scripts/fuseki-backup.sh"
+    FUSEKI_DATASET=pods ${keep[@]+"${keep[@]}"} bash "$TMP/scripts/fuseki-backup.sh"
+}
+
+# run_all MAP — no FUSEKI_DATASET: the script picks its datasets from the store map (#4518).
+run_all() {
+  run env -i PATH="$TMP/bin:/usr/bin:/bin" HOME="$TMP" \
+    FUSEKI_BACKUP_REMOTE=stub FUSEKI_BACKUP_DEST="$REMOTE_BASE" FUSEKI_BACKUP_LOCAL="$LOCAL" \
+    FUSEKI_URL=http://127.0.0.1:9 CHORUS_LOG="$TMP/bin/chorus-log" STORE_MAP="$1" FILES_BACKUP=0 \
+    bash "$TMP/scripts/fuseki-backup.sh"
+}
+
+# store_map PODS_FLOOR [DIARY_FLOOR] — pods and wine-diary are systems of record; staging and a werk copy are not.
+store_map() {
+  cat > "$TMP/store-map.json" <<EOF
+{"stores":[
+ {"name":"fuseki-pods","storeType":"fuseki-dataset","match":{"kind":"fuseki-dataset","value":"/pods"},"role":"systemOfRecord","backupMinBytes":${1}},
+ {"name":"fuseki-wine-diary","storeType":"fuseki-dataset","match":{"kind":"fuseki-dataset","value":"/wine-diary"},"role":"systemOfRecord","backupMinBytes":${2:-$1}},
+ {"name":"fuseki-staging","storeType":"fuseki-dataset","match":{"kind":"fuseki-dataset","value":"/staging"},"role":"copyOf"},
+ {"name":"fuseki-test","storeType":"fuseki-dataset","match":{"kind":"fuseki-dataset","prefix":["/werk-"]},"role":"copyOf"}]}
+EOF
 }
 
 held() { ls -1 "$DUMPS" | wc -l | tr -d ' '; }
@@ -145,4 +164,32 @@ held() { ls -1 "$DUMPS" | wc -l | tr -d ' '; }
   [ "$status" -eq 0 ]
   [ "$(held)" = "6" ]
   echo "$output" | grep -q "nothing over the keep limit of 9"
+}
+
+# ── #4518: which datasets are backed up comes from the store map ──────────────
+
+@test "with no dataset named, every Fuseki system of record is backed up, and only those" {
+  store_map 1000
+  run_all "$TMP/store-map.json"
+  [ "$status" -eq 0 ]
+  [ "$(sort "$TMP/asked" | tr '\n' ' ')" = "pods wine-diary " ]
+  [ -f "$DUMPS/wine-diary_2026-09-15_03-00-00.nq.gz" ]
+  [ -f "$DUMPS/pods_2026-09-15_03-00-00.nq.gz" ]
+}
+
+@test "NEGATIVE PROOF — a store map with no system of record refuses instead of backing up nothing" {
+  printf '{"stores":[{"name":"fuseki-staging","storeType":"fuseki-dataset","match":{"kind":"fuseki-dataset","value":"/staging"},"role":"copyOf"}]}' > "$TMP/store-map.json"
+  run_all "$TMP/store-map.json"
+  [ "$status" -ne 0 ]
+  [ ! -f "$TMP/asked" ]
+  echo "$output" | grep -q "names no Fuseki system of record"
+}
+
+@test "NEGATIVE PROOF — the floor is per store: a dump under its store's floor is refused" {
+  store_map 1000 4096   # the stub dump is 2048 bytes: over the pods floor, under the diary's
+  run_all "$TMP/store-map.json"
+  [ "$status" -ne 0 ]
+  [ -f "$DUMPS/pods_2026-09-15_03-00-00.nq.gz" ]
+  [ ! -f "$DUMPS/wine-diary_2026-09-15_03-00-00.nq.gz" ]
+  echo "$output" | grep -q "refusing to ship a stub"
 }
