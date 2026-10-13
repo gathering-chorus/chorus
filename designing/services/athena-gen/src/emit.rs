@@ -139,3 +139,39 @@ pub fn crate_files_with(p: &Product, model_version: &str, settings: &[(String, S
     out.insert("src/model.rs".into(), format!("// @domain: {domain}\n{}", model_rs(p, model_version, settings)));
     out
 }
+
+/// #4513 — the tool runner's input table: one JSON Schema per ToolInput shape,
+/// keyed by the shape's name. The runner reads this file; nothing in it is
+/// hand-written.
+pub fn tool_inputs_json(inputs: &[(String, Vec<crate::model::ToolArg>)]) -> String {
+    use serde_json::{json, Map, Value};
+    let mut table = Map::new();
+    for (shape, args) in inputs {
+        let mut props = Map::new();
+        let mut required = Vec::new();
+        for a in args {
+            let ty = match a.datatype.as_str() {
+                "boolean" => "boolean",
+                "integer" | "int" | "long" | "nonNegativeInteger" | "positiveInteger" => "integer",
+                "decimal" | "double" | "float" => "number",
+                _ => "string",
+            };
+            let mut p = Map::new();
+            p.insert("type".into(), json!(ty));
+            if !a.description.is_empty() {
+                p.insert("description".into(), json!(a.description));
+            }
+            if !a.allowed.is_empty() {
+                p.insert("enum".into(), json!(a.allowed));
+            }
+            props.insert(a.name.clone(), Value::Object(p));
+            if a.required {
+                required.push(json!(a.name));
+            }
+        }
+        table.insert(shape.clone(), json!({ "type": "object", "properties": props, "required": required, "additionalProperties": false }));
+    }
+    let mut s = serde_json::to_string_pretty(&Value::Object(table)).unwrap_or_default();
+    s.push('\n');
+    s
+}

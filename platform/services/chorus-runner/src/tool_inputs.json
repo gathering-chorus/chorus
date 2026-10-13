@@ -1,0 +1,34 @@
+{
+  "HeraldRunInput": {
+    "additionalProperties": false,
+    "properties": {
+      "dry_run": {
+        "description": "Plan and print, write nothing.",
+        "type": "boolean"
+      },
+      "sensor": {
+        "description": "Which sensor to run.",
+        "enum": [
+          "files",
+          "code",
+          "services",
+          "stores",
+          "infra"
+        ],
+        "type": "string"
+      },
+      "target": {
+        "description": "Code sensor only: the repository root to look at. Defaults to chorus.",
+        "type": "string"
+      },
+      "wait": {
+        "description": "Run to the end and return the output.",
+        "type": "boolean"
+      }
+    },
+    "required": [
+      "sensor"
+    ],
+    "type": "object"
+  }
+}

@@ -10,6 +10,7 @@
 //! wires them to rmcp, axum, the door and the store.
 
 pub mod server;
+pub mod skills;
 
 use chorus_oidc::auth::AuthError;
 use chorus_oidc::oidc::{verify_any, OidcVerifier};
