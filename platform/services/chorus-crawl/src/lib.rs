@@ -23,6 +23,8 @@ pub mod infra;
 pub mod stores;
 /// #4499 — the code crawl's decisions as data (main.rs only does the I/O).
 pub mod code_run;
+// #4405 reopen 4 — a sensor pass as a SensorRun record
+pub mod sensor_run;
 pub mod code {
     // #4499 — the one code-unit generator, shared with werk-build/test/deploy
     include!("../../shared/code_units.rs");

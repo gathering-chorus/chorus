@@ -34,7 +34,7 @@ async function withServer(stub: string, fn: (client: Client) => Promise<void>) {
 const ECHO = '#!/bin/bash\necho "ran=chorus-crawl args=$*"\n';
 
 async function run(client: Client, args: Record<string, unknown>) {
-  const res = await client.callTool({ name: 'herald_run', arguments: { role: 'silas', ...args } });
+  const res = await client.callTool({ name: 'herald_run', arguments: { role: 'silas', wait: true, ...args } });
   return JSON.parse((res.content as Array<{ text: string }>)[0].text);
 }
 
@@ -48,31 +48,52 @@ test('herald_run is listed, so a session sees the sensors it can run', async () 
   });
 });
 
-test('each sensor runs chorus-crawl with its own subcommand', async () => {
+test('each sensor runs chorus-crawl sensor <name>, which records the run', async () => {
   await withServer(ECHO, async (client) => {
-    for (const sensor of ['code', 'services', 'stores', 'infra']) {
+    for (const sensor of ['files', 'code', 'services', 'stores', 'infra']) {
       const r = await run(client, { sensor });
       assert.equal(r.ok, true, JSON.stringify(r));
       assert.equal(r.sensor, sensor);
-      assert.ok(r.tail.includes(`args=${sensor}`), r.tail);
+      assert.ok(r.tail.includes(`args=sensor ${sensor} --requested-by silas`), r.tail);
     }
-    // the files sensor is the crawler's default pass: no subcommand
-    const r = await run(client, { sensor: 'files' });
-    assert.ok(/args=\s*$/m.test(r.tail), r.tail);
   });
 });
 
 test('the code sensor takes a target and a dry run', async () => {
   await withServer(ECHO, async (client) => {
     const r = await run(client, { sensor: 'code', target: '/repos/wine-diary', dry_run: true });
-    assert.ok(r.tail.includes('args=code --target /repos/wine-diary --dry-run'), r.tail);
+    assert.ok(r.tail.includes('args=sensor code --target /repos/wine-diary --dry-run --requested-by silas'), r.tail);
   });
+});
+
+test('by default the pass starts in the background and the run name comes back at once', async () => {
+  // a full files pass ran 35-49 min (Kade, 21:19); the tool's own wall is 10
+  const logs = fs.mkdtempSync(path.join(os.tmpdir(), 'herald-logs-'));
+  const prev = process.env.CHORUS_SENSOR_RUN_LOGS; process.env.CHORUS_SENSOR_RUN_LOGS = logs;
+  try {
+    await withServer('#!/bin/bash\nsleep 2\necho "done args=$*"\n', async (client) => {
+      const t0 = Date.now();
+      const res = await client.callTool({ name: 'herald_run', arguments: { role: 'kade', sensor: 'infra' } });
+      const r = JSON.parse((res.content as Array<{ text: string }>)[0].text);
+      assert.ok(Date.now() - t0 < 1500, 'the call waited for the pass');
+      assert.equal(r.state, 'running');
+      assert.match(r.run, /^sensor-run-infra-\d{8}t\d{6}z$/);
+      assert.equal(r.written_as, 'silas');
+      // the pass is handed the same name, so its SensorRun row is the one returned
+      for (let i = 0; i < 40 && !fs.readFileSync(r.log, 'utf-8').includes('done'); i++) await new Promise((ok) => setTimeout(ok, 100));
+      const out = fs.readFileSync(r.log, 'utf-8');
+      assert.ok(out.includes(`--run ${r.run}`), out);
+      assert.ok(out.includes('--requested-by kade'), out);
+    });
+  } finally {
+    if (prev === undefined) delete process.env.CHORUS_SENSOR_RUN_LOGS; else process.env.CHORUS_SENSOR_RUN_LOGS = prev;
+  }
 });
 
 test('NEGATIVE PROOF — a red pass is reported red with its exit and output, never ok', async () => {
   const RED = '#!/bin/bash\necho "code: create 0 · update 0 · delete 0 · unchanged 50"\necho "refused: mass delete" >&2\nexit 3\n';
   await withServer(RED, async (client) => {
-    const res = await client.callTool({ name: 'herald_run', arguments: { role: 'silas', sensor: 'code' } });
+    const res = await client.callTool({ name: 'herald_run', arguments: { role: 'silas', sensor: 'code', wait: true } });
     assert.equal(res.isError, true, 'a red pass must be an MCP error, or chorus-mcp-call.sh exits 0 for launchd');
     const r = JSON.parse((res.content as Array<{ text: string }>)[0].text);
     assert.equal(r.ok, false, JSON.stringify(r));
@@ -96,7 +117,7 @@ test('a sensor writes as its owner, whoever asked for the pass', async () => {
   // Jeff, 2026-10-12 21:23: "i dont think of crawler as a principal u are the
   // owner". The caller is who asked; the sensor's owner answers for the rows.
   await withServer('#!/bin/bash\necho "as=$CHORUS_ROLE deploy=$DEPLOY_ROLE"\n', async (client) => {
-    const res = await client.callTool({ name: 'herald_run', arguments: { role: 'kade', sensor: 'infra' } });
+    const res = await client.callTool({ name: 'herald_run', arguments: { role: 'kade', sensor: 'infra', wait: true } });
     const r = JSON.parse((res.content as Array<{ text: string }>)[0].text);
     assert.ok(r.tail.includes('as=silas deploy=silas'), r.tail);
     assert.equal(r.requested_by, 'kade');

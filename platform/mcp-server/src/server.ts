@@ -1382,7 +1382,7 @@ const HERALD_SENSORS = ['files', 'code', 'services', 'stores', 'infra'] as const
 const HERALD_RUN_TOOL_DEF = {
   name: 'herald_run',
   description:
-    'Use this to RUN A SENSOR: one pass of the herald core (chorus-crawl) that looks at a target and records what it finds through the door. Sensors: files (the default repo pass), code (units; takes a target repository), services, stores, infra. A red pass comes back ok:false with its exit and output. Do NOT shell out to chorus-crawl or kick its plist — this is the one runner.',
+    'Use this to RUN A SENSOR: one pass of the herald core (chorus-crawl) that looks at a target and records what it finds through the door, as a SensorRun row (running, then green or red with what it changed). Sensors: files (the default repo pass), code (units; takes a target repository), services, stores, infra. By default the pass starts in the background and the run name comes back at once (a full files pass takes ~40 min); wait:true runs it to the end (10-min cap) and a red pass is an MCP error. dry_run plans and writes nothing, and always waits. Do NOT shell out to chorus-crawl or kick its plist — this is the one runner.',
   inputSchema: {
     type: 'object',
     properties: {
@@ -1390,18 +1390,27 @@ const HERALD_RUN_TOOL_DEF = {
       sensor: { type: 'string', enum: [...HERALD_SENSORS], description: 'Which sensor to run.' },
       target: { type: 'string', description: 'Code sensor only: the repository root to look at. Defaults to chorus.' },
       dry_run: { type: 'boolean', description: 'Plan and print, write nothing.' },
+      wait: { type: 'boolean', description: 'Run to the end and return the output (10-min cap). Default: start in the background and return the run name.' },
     },
     required: ['role', 'sensor'],
     additionalProperties: false,
   },
 } as const;
 
+/** A run's name: lowercase, because the door slugs names (chorus-crawl
+ * sensor_run::is_run_name refuses any other shape). */
+export function heraldRunName(sensor: string, now: Date): string {
+  return `sensor-run-${sensor}-${now.toISOString().replace(/\.\d+Z$/, 'Z').replace(/[^0-9A-Za-z]/g, '').toLowerCase()}`;
+}
+
 /** The chorus-crawl argv for a sensor pass, or the reason it is refused. */
-export function heraldArgs(sensor: string, target?: string, dryRun?: boolean): string[] | string {
-  if (target !== undefined && sensor !== 'code') return `herald_run: only the code sensor takes a target (asked ${sensor})`;
-  const args = sensor === 'files' ? [] : [sensor];
-  if (target !== undefined) args.push('--target', target);
-  if (dryRun) args.push('--dry-run');
+export function heraldArgs(sensor: string, opts: { target?: string; dryRun?: boolean; requestedBy: string; run?: string }): string[] | string {
+  if (opts.target !== undefined && sensor !== 'code') return `herald_run: only the code sensor takes a target (asked ${sensor})`;
+  const args = ['sensor', sensor];
+  if (opts.target !== undefined) args.push('--target', opts.target);
+  if (opts.dryRun) args.push('--dry-run');
+  args.push('--requested-by', opts.requestedBy);
+  if (opts.run) args.push('--run', opts.run);
   return args;
 }
 
@@ -3891,23 +3900,50 @@ export function buildMcpServer(getCallerRole: () => string, deps: McpServerDeps 
           sensor: z.enum(HERALD_SENSORS),
           target: z.string().min(1).optional(),
           dry_run: z.boolean().optional(),
+          wait: z.boolean().optional(),
         }).safeParse(req.params.arguments);
         if (!parsed.success) {
           return { content: [{ type: 'text', text: `herald_run: invalid arguments — ${parsed.error.message}` }] };
         }
-        const { role, sensor, target, dry_run } = parsed.data;
-        const args = heraldArgs(sensor, target, dry_run);
-        if (typeof args === 'string') return { content: [{ type: 'text', text: args }] };
-        // No refusal parsing here, the same rule as the athena arm: the binary
-        // owns what a pass means, and its exit and output come back whole.
+        const { role, sensor, target, dry_run, wait } = parsed.data;
+        const owner = HERALD_SENSOR_OWNER[sensor];
         const pathMod = require('path') as typeof import('path');
-        // The pass writes as the sensor's owner, never as the caller: the
-        // caller is who asked, the owner answers for the rows.
-        const r = await runAthenaVerb(pathMod.join(chorusBinDir(pathMod), 'chorus-crawl'), args, HERALD_SENSOR_OWNER[sensor], 'herald_run');
-        // A red pass is an MCP error too, so launchd through chorus-mcp-call.sh
-        // exits 1 and the scheduler sees the red, not a quiet ok:false.
-        return { ...mcpJson({ ok: r.exitCode === 0, sensor, target: target ?? null, written_as: HERALD_SENSOR_OWNER[sensor], requested_by: role, exit: r.exitCode,
-          tail: (r.stdout + r.stderr).trim().split('\n').slice(-12).join('\n') }), isError: r.exitCode !== 0 };
+        const bin = pathMod.join(chorusBinDir(pathMod), 'chorus-crawl');
+        if (dry_run || wait) {
+          const args = heraldArgs(sensor, { target, dryRun: dry_run, requestedBy: role });
+          if (typeof args === 'string') return { content: [{ type: 'text', text: args }] };
+          // No refusal parsing here, the same rule as the athena arm: the binary
+          // owns what a pass means, and its exit and output come back whole.
+          // The pass writes as the sensor's owner, never as the caller: the
+          // caller is who asked, the owner answers for the rows.
+          const r = await runAthenaVerb(bin, args, owner, 'herald_run');
+          // A red pass is an MCP error too, so launchd through chorus-mcp-call.sh
+          // exits 1 and the scheduler sees the red, not a quiet ok:false.
+          return { ...mcpJson({ ok: r.exitCode === 0, sensor, target: target ?? null, written_as: owner, requested_by: role, exit: r.exitCode,
+            tail: (r.stdout + r.stderr).trim().split('\n').slice(-12).join('\n') }), isError: r.exitCode !== 0 };
+        }
+        // In the background: the run name comes back now, the pass records
+        // itself as a SensorRun (running → green/red), and its output goes to
+        // a log named after the run. A 40-minute pass has no 10-minute wall.
+        const run = heraldRunName(sensor, new Date());
+        const args = heraldArgs(sensor, { target, requestedBy: role, run });
+        if (typeof args === 'string') return { content: [{ type: 'text', text: args }] };
+        const fsMod = require('fs') as typeof import('fs');
+        const logDir = pathMod.join(process.env.CHORUS_SENSOR_RUN_LOGS || pathMod.join(process.env.HOME || '', '.chorus', 'sensor-runs'));
+        fsMod.mkdirSync(logDir, { recursive: true });
+        const log = pathMod.join(logDir, `${run}.log`);
+        const fd = fsMod.openSync(log, 'a');
+        try {
+          const child = spawn(bin, args, {
+            detached: true, stdio: ['ignore', fd, fd],
+            env: { ...process.env, DEPLOY_ROLE: owner, CHORUS_ROLE: owner, CHORUS_HOME: process.env.CHORUS_HOME || DEFAULT_CHORUS_HOME },
+          });
+          child.on('error', (e) => fsMod.appendFileSync(log, `herald_run: could not start: ${e.message}\n`));
+          child.unref();
+        } finally {
+          fsMod.closeSync(fd);
+        }
+        return mcpJson({ ok: true, state: 'running', run, sensor, target: target ?? null, written_as: owner, requested_by: role, log });
       }
       case 'werk-pull': {
         const parsed = PullCardInput.safeParse(req.params.arguments);
