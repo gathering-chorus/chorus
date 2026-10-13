@@ -89,6 +89,19 @@
     ],
     "type": "object"
   },
+  "WerkCardOnlyInput": {
+    "additionalProperties": false,
+    "properties": {
+      "card": {
+        "description": "The card number.",
+        "type": "string"
+      }
+    },
+    "required": [
+      "card"
+    ],
+    "type": "object"
+  },
   "WerkCommitInput": {
     "additionalProperties": false,
     "properties": {
@@ -201,6 +214,51 @@
       "card",
       "verdict",
       "findings"
+    ],
+    "type": "object"
+  },
+  "WerkSyncInput": {
+    "additionalProperties": false,
+    "properties": {
+      "mode": {
+        "description": "ff fast-forwards canonical to origin/main; repair re-attaches a detached canonical; recover saves tracked changes to ~/.chorus/recovery first (a human's call).",
+        "enum": [
+          "ff",
+          "repair",
+          "recover"
+        ],
+        "type": "string"
+      }
+    },
+    "required": [
+      "mode"
+    ],
+    "type": "object"
+  },
+  "WerkTestInput": {
+    "additionalProperties": false,
+    "properties": {
+      "card": {
+        "description": "The card number.",
+        "type": "string"
+      },
+      "domain": {
+        "description": "Only the tests of this domain.",
+        "type": "string"
+      },
+      "type": {
+        "description": "Only tests of this type.",
+        "enum": [
+          "unit",
+          "integration",
+          "bdd",
+          "e2e"
+        ],
+        "type": "string"
+      }
+    },
+    "required": [
+      "card"
     ],
     "type": "object"
   }
