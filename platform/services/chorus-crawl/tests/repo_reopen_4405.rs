@@ -120,3 +120,47 @@ fn negative_proof_a_units_name_survives_the_door_unchanged() {
         assert_eq!(door_slug(&n), n, "{repo} {path}");
     }
 }
+
+/// #4405 reopen 4 — a second pass over an unchanged repository plans nothing
+/// (Jeff, 2026-10-12: "make sure our runner is properly aligned integrated
+/// and visible as a sensor"). The door serves edges as IRI local names with
+/// the target's kind prefix, and an unset edge as "": the shape measured on
+/// /code/units at 21:13. Before this, every pass rewrote all 50 units.
+fn door_row(path: &str, dep: Option<&str>) -> Vec<(String, String)> {
+    vec![
+        ("name".into(), chorus_crawl::code::unit_name("chorus", path)),
+        ("status".into(), String::new()),
+        ("dependsOn".into(), dep.map(|d| format!("code-unit-{}", chorus_crawl::code::unit_name("chorus", d))).unwrap_or_default()),
+        ("hasDomain".into(), String::new()),
+        ("inRepository".into(), "repository-chorus".into()),
+        ("ownedBy".into(), "principal-kade".into()),
+        ("unitKind".into(), "package".into()),
+        ("unitPath".into(), path.into()),
+    ]
+}
+
+fn dep_unit(path: &str, dep: &str) -> Unit {
+    Unit { deps: vec![dep.to_string()], ..u(path) }
+}
+
+#[test]
+fn a_second_pass_over_the_doors_own_rows_plans_nothing() {
+    use chorus_crawl::code_run::current_rows;
+    let units = [dep_unit("platform/api", "designing/data"), u("designing/data")];
+    let door = vec![door_row("platform/api", Some("designing/data")), door_row("designing/data", None)];
+    let p = plan_units(&desired_rows(&units, "chorus"), &current_rows(door));
+    assert!(p.create.is_empty() && p.update.is_empty() && p.delete.is_empty(), "{p:?}");
+    assert_eq!(p.unchanged, 2);
+}
+
+#[test]
+fn negative_proof_one_changed_unit_plans_exactly_one_update() {
+    use chorus_crawl::code_run::current_rows;
+    // the same door rows, but the build files now say api depends on nothing
+    let units = [u("platform/api"), u("designing/data")];
+    let door = vec![door_row("platform/api", Some("designing/data")), door_row("designing/data", None)];
+    let p = plan_units(&desired_rows(&units, "chorus"), &current_rows(door));
+    assert_eq!(p.update.len(), 1, "{p:?}");
+    assert!(p.create.is_empty() && p.delete.is_empty(), "{p:?}");
+    assert_eq!(p.unchanged, 1);
+}

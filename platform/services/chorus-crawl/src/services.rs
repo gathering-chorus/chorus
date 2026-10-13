@@ -1190,7 +1190,15 @@ pub fn touched_by(changed: &str, source: &str) -> bool {
 /// and refuses one already there. Rows read back are put in the written form,
 /// or every edge would read as changed on every run (measured on the staging
 /// door, 2026-10-10: 104 of 122 rows rewritten on the second run).
-pub const REF_PREFIXES: &[(&str, &str)] = &[("runsService", "service-"), ("sourcePath", "code-file-")];
+/// #4405 reopen 4: a CodeUnit's repository and dependencies come back the
+/// same way (`repository-chorus`, `code-unit-chorus-api`), which made every
+/// code pass rewrite all 50 units.
+pub const REF_PREFIXES: &[(&str, &str)] = &[
+    ("runsService", "service-"),
+    ("sourcePath", "code-file-"),
+    ("inRepository", "repository-"),
+    ("dependsOn", "code-unit-"),
+];
 
 pub fn written_form(fields: Vec<(String, String)>) -> Vec<(String, String)> {
     fields

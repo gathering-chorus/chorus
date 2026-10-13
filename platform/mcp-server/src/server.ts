@@ -1367,6 +1367,38 @@ const ATHENA_MAKE_TOOL_DEF = {
   },
 } as const;
 
+// #4405 reopen 4 — the sensors' one runner (Jeff, 2026-10-12: "make sure our
+// runner is properly aligned integrated and visible as a sensor"). Each sensor
+// is a pass of the one chorus-crawl binary; launchd, people and agents call
+// this same tool. Wren's #4509 runner absorbs it later as a Skill row.
+const HERALD_SENSORS = ['files', 'code', 'services', 'stores', 'infra'] as const;
+
+const HERALD_RUN_TOOL_DEF = {
+  name: 'herald_run',
+  description:
+    'Use this to RUN A SENSOR: one pass of the herald core (chorus-crawl) that looks at a target and records what it finds through the door. Sensors: files (the default repo pass), code (units; takes a target repository), services, stores, infra. A red pass comes back ok:false with its exit and output. Do NOT shell out to chorus-crawl or kick its plist — this is the one runner.',
+  inputSchema: {
+    type: 'object',
+    properties: {
+      role: { type: 'string', pattern: ROLE_PATTERN, description: 'Calling role.' },
+      sensor: { type: 'string', enum: [...HERALD_SENSORS], description: 'Which sensor to run.' },
+      target: { type: 'string', description: 'Code sensor only: the repository root to look at. Defaults to chorus.' },
+      dry_run: { type: 'boolean', description: 'Plan and print, write nothing.' },
+    },
+    required: ['role', 'sensor'],
+    additionalProperties: false,
+  },
+} as const;
+
+/** The chorus-crawl argv for a sensor pass, or the reason it is refused. */
+export function heraldArgs(sensor: string, target?: string, dryRun?: boolean): string[] | string {
+  if (target !== undefined && sensor !== 'code') return `herald_run: only the code sensor takes a target (asked ${sensor})`;
+  const args = sensor === 'files' ? [] : [sensor];
+  if (target !== undefined) args.push('--target', target);
+  if (dryRun) args.push('--dry-run');
+  return args;
+}
+
 const ATHENA_DEPLOY_TOOL_DEF = {
   name: 'athena-deploy',
   description:
@@ -3580,6 +3612,7 @@ export function buildMcpServer(getCallerRole: () => string, deps: McpServerDeps 
       ATHENA_MAKE_TOOL_DEF,
       ATHENA_DEPLOY_TOOL_DEF,
       ATHENA_VALIDATE_TOOL_DEF,
+      HERALD_RUN_TOOL_DEF,
       LOOM_GEMBA_TOOL_DEF,
       WERK_PUSH_TOOL_DEF,
       WERK_MERGE_TOOL_DEF,
@@ -3845,6 +3878,26 @@ export function buildMcpServer(getCallerRole: () => string, deps: McpServerDeps 
         // exit 1 threw "work-fail exit=1" and the report (the gap list Jeff asked for)
         // was lost with it (measured 2026-09-16 14:03: the tool exits 1 with no report).
         return await executeAthenaVerb(req.params.name as 'athena-model' | 'athena-make' | 'athena-deploy' | 'athena-validate', parsed.data.args, parsed.data.role);
+      }
+      case 'herald_run': {
+        const parsed = z.object({
+          role: AgentRole,
+          sensor: z.enum(HERALD_SENSORS),
+          target: z.string().min(1).optional(),
+          dry_run: z.boolean().optional(),
+        }).safeParse(req.params.arguments);
+        if (!parsed.success) {
+          return { content: [{ type: 'text', text: `herald_run: invalid arguments — ${parsed.error.message}` }] };
+        }
+        const { role, sensor, target, dry_run } = parsed.data;
+        const args = heraldArgs(sensor, target, dry_run);
+        if (typeof args === 'string') return { content: [{ type: 'text', text: args }] };
+        // No refusal parsing here, the same rule as the athena arm: the binary
+        // owns what a pass means, and its exit and output come back whole.
+        const pathMod = require('path') as typeof import('path');
+        const r = await runAthenaVerb(pathMod.join(chorusBinDir(pathMod), 'chorus-crawl'), args, role, 'herald_run');
+        return mcpJson({ ok: r.exitCode === 0, sensor, target: target ?? null, role, exit: r.exitCode,
+          tail: (r.stdout + r.stderr).trim().split('\n').slice(-12).join('\n') });
       }
       case 'werk-pull': {
         const parsed = PullCardInput.safeParse(req.params.arguments);
