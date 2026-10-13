@@ -2128,6 +2128,20 @@ fn handle_batch(graph: &str, body: &str, caller_role: &str, token: &str) -> (u16
 /// the graph (graph-dba-only). That is an authorization refusal, not an upstream
 /// error: 403, naming the row that would open the door. Anything else is None
 /// and falls through to the ordinary pen-error mapping.
+/// #4517 — a create needs a Write row on the graph it lands in (Jeff 2026-10-13
+/// 07:55: "isnt that why we have permissions?"). Before this, an owned class let
+/// anyone signed in create, so a graph nobody was granted was open to every
+/// role. Checked before any body check, so a refused caller learns nothing of
+/// the shape. Owner rules still govern a row once it exists.
+pub fn create_refusal(op: &WriteOp, graph: &str, scope: &[String], caller: &str) -> Option<(u16, String)> {
+    let creates = matches!(op, WriteOp::CreateEntity | WriteOp::CreateBatch);
+    if creates && !scope_allows(graph, scope) {
+        Some(write_resp("authz", &format!("no Write row for '{}' on <{}>; {}", caller, graph, row_that_would_open(caller, graph))))
+    } else {
+        None
+    }
+}
+
 pub fn pen_refusal_resp(e: &str, caller: &str, graph: &str) -> Option<(u16, String)> {
     if e.contains("graph-dba-only") {
         Some(write_resp("authz", &format!("no Write row for '{}' on <{}>; {}", caller, graph, row_that_would_open(caller, graph))))
@@ -3306,6 +3320,10 @@ pub fn handle_write_scoped(method: &str, path: &str, body: &str, table: &RouteTa
         Some(o) => o,
         None => return write_resp("not-found", "no such write route"),
     };
+    if let Some(refused) = create_refusal(&op, &table.instances_graph, scope, caller_role) {
+        emit_write_spine(caller_role, method, "", "", "authz");
+        return refused;
+    }
     // #3573 (bounds) — cap the structured write body before any graph work. A single
     // entity write is < 1 KiB; an unbounded body is the runaway/oversized vector.
     if body.len() > MAX_WRITE_BYTES {
