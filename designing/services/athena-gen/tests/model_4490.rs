@@ -9,6 +9,7 @@ const FIXTURE: &str = r#"
 @prefix xsd: <http://www.w3.org/2001/XMLSchema#> .
 c:pulse a c:Product ; c:hasDomain c:awareness, c:streams ; c:hasProperty c:gp .
 c:gp c:propertyKey "store.graph_prefix" ; c:propertyValue "urn:chorus:domains:" .
+c:pulse c:hasProperty c:ns . c:ns c:propertyKey "model.namespace" ; c:propertyValue "https://jeffbridwell.com/chorus#" .
 c:awareness c:definesVocabulary c:RoleState .
 c:streams c:definesVocabulary c:StreamEvent .
 c:RoleStateShape a sh:NodeShape ; sh:targetClass c:RoleState ;
@@ -80,6 +81,7 @@ fn a_class_serves_its_parents_fields_as_v1_does() {
 @prefix rdfs: <http://www.w3.org/2000/01/rdf-schema#> .
 c:pulse a c:Product ; c:hasDomain c:awareness ; c:hasProperty c:gp .
 c:gp c:propertyKey "store.graph_prefix" ; c:propertyValue "urn:chorus:domains:" .
+c:pulse c:hasProperty c:ns . c:ns c:propertyKey "model.namespace" ; c:propertyValue "https://jeffbridwell.com/chorus#" .
 c:awareness c:definesVocabulary c:RoleState .
 c:RoleState rdfs:subClassOf c:Memory .
 c:MemoryShape sh:targetClass c:Memory ; sh:property [ sh:path c:comment ; sh:maxCount 1 ] .

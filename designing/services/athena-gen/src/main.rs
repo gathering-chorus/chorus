@@ -1,7 +1,7 @@
 // @domain: domains
 //! athena-gen (#4490):
 //!   athena-gen model    --root <repo> --product <name>              prints the product's slice of the model
-//!   athena-gen generate --root <repo> --product <name> --out <dir>
+//!   athena-gen generate --root <repo> --product <name> --out <dir> [--verifier <chorus-oidc dir>]
 //!                                                                    writes the product's API crate
 //!   athena-gen tool-inputs --root <repo> --out <file>                writes the tool runner's input table (#4513)
 
@@ -54,7 +54,12 @@ fn main() {
             if !missing.is_empty() {
                 die(format!("{product} declares no setting for {missing:?}: add a Property row (c:{product} c:hasProperty …) for each"));
             }
-            let oidc = athena_gen::emit::oidc_path(&root, &out).unwrap_or_else(|e| die(e));
+            // #4519 — a product repo outside Chorus names the verifier checkout with --verifier
+            let oidc = match arg(&args, "--verifier") {
+                Some(v) => athena_gen::emit::verifier_path(&PathBuf::from(v), &out),
+                None => athena_gen::emit::oidc_path(&root, &out),
+            }
+            .unwrap_or_else(|e| die(e));
             for (path, text) in athena_gen::emit::crate_files_with(&p, &mv, &settings, &oidc) {
                 let f = out.join(&path);
                 if let Some(dir) = f.parent() {

@@ -36,6 +36,23 @@ pub fn oidc_path(root: &std::path::Path, out: &std::path::Path) -> Result<String
     Ok(format!("{}platform/services/chorus-oidc", "../".repeat(rel.components().count())))
 }
 
+/// #4519 — the verifier's path from a crate written outside the Chorus repo (a product
+/// repo like the wine diary): `--verifier <dir>` names the checkout of the shared
+/// verifier. Build time only; the running API reaches no Chorus service.
+pub fn verifier_path(verifier: &std::path::Path, out: &std::path::Path) -> Result<String, String> {
+    let verifier = std::fs::canonicalize(verifier).map_err(|e| format!("verifier {}: {e}", verifier.display()))?;
+    if !verifier.join("Cargo.toml").is_file() {
+        return Err(format!("{} holds no Cargo.toml: not a verifier crate", verifier.display()));
+    }
+    std::fs::create_dir_all(out).map_err(|e| format!("out: {e}"))?;
+    let out = std::fs::canonicalize(out).map_err(|e| format!("out: {e}"))?;
+    let (a, b): (Vec<_>, Vec<_>) = (out.components().collect(), verifier.components().collect());
+    let common = a.iter().zip(&b).take_while(|(x, y)| x == y).count();
+    let up = "../".repeat(a.len() - common);
+    let down: Vec<String> = b[common..].iter().map(|c| c.as_os_str().to_string_lossy().into_owned()).collect();
+    Ok(format!("{up}{}", down.join("/")))
+}
+
 /// StreamEvent → stream-event: the kind that prefixes a row's IRI (v1's mint rule).
 pub fn kebab(class: &str) -> String {
     let mut out = String::new();

@@ -11,14 +11,17 @@ const WINE: &str = r#"
 @prefix c: <https://jeffbridwell.com/chorus#> .
 @prefix sh: <http://www.w3.org/ns/shacl#> .
 @prefix xsd: <http://www.w3.org/2001/XMLSchema#> .
+@prefix wd: <https://wine.example/diary#> .
+# #4519 reopen (Silas + Wren, 15:09): modelling terms are Chorus's (c:), product terms are the product's (wd:)
 c:wine a c:Product ; c:hasDomain c:cellar ;
   c:hasProperty c:w1, c:w2, c:w3 .
 c:w1 c:propertyKey "model.namespace" ; c:propertyValue "https://wine.example/diary#" .
 c:w2 c:propertyKey "model.prefix" ; c:propertyValue "wine" .
 c:w3 c:propertyKey "store.graph_prefix" ; c:propertyValue "urn:wine:" .
-c:cellar c:definesVocabulary c:Bottle .
-c:BottleShape a sh:NodeShape ; sh:targetClass c:Bottle ;
-  sh:property [ sh:path c:vintage ; sh:datatype xsd:integer ] .
+c:cellar c:definesVocabulary wd:Bottle .
+wd:BottleShape a sh:NodeShape ; sh:targetClass wd:Bottle ;
+  sh:property [ sh:path wd:vintage ; sh:datatype xsd:integer ] ;
+  sh:property [ sh:path wd:wine ; sh:class wd:Wine ] .
 "#;
 
 fn fixture(name: &str, ttl: &str) -> PathBuf {
@@ -44,6 +47,10 @@ fn a_wine_diary_api_names_its_own_namespace_and_graphs() {
     let (store, _) = load(&[fixture("wine", WINE)]).unwrap();
     let p = product(&store, "wine").unwrap();
     assert_eq!(p.domains[0].classes[0].graph, "urn:wine:cellar", "a class with no instancesGraph lives under the product's prefix");
+    let bottle = &p.domains[0].classes[0];
+    assert_eq!(bottle.name, "Bottle");
+    let names: Vec<_> = bottle.fields.iter().map(|f| f.name.as_str()).collect();
+    assert_eq!(names, ["vintage", "wine"], "fields found by their own-namespace paths");
     let files = crate_files(&p, &model_version(&store).unwrap(), &settings(&store, "wine").unwrap());
     let model = &files["src/model.rs"];
     assert!(model.contains("pub const NS: &str = \"https://wine.example/diary#\";"), "{model}");
@@ -56,7 +63,7 @@ fn a_wine_diary_api_names_its_own_namespace_and_graphs() {
 #[test]
 fn negative_proof_the_check_catches_chorus_names_in_a_chorus_api() {
     // the same check over an API whose settings are Chorus's must find them, or it proves nothing
-    let chorus = WINE.replace("https://wine.example/diary#", "https://jeffbridwell.com/chorus#").replace("urn:wine:", "urn:chorus:domains:");
+    let chorus = WINE.replace("<https://wine.example/diary#>", "<https://jeffbridwell.com/chorus#>").replace("\"https://wine.example/diary#\"", "\"https://jeffbridwell.com/chorus#\"").replace("urn:wine:", "urn:chorus:domains:");
     let (store, _) = load(&[fixture("chorus", &chorus)]).unwrap();
     let p = product(&store, "wine").unwrap();
     let files = crate_files(&p, &model_version(&store).unwrap(), &settings(&store, "wine").unwrap());
@@ -68,9 +75,22 @@ fn negative_proof_no_graph_prefix_is_refused_never_a_chorus_default() {
     let bare = WINE.replace("c:hasProperty c:w1, c:w2, c:w3 .", ".");
     let (store, _) = load(&[fixture("bare", &bare)]).unwrap();
     let e = product(&store, "wine").unwrap_err().to_string();
-    assert!(e.contains("store.graph_prefix"), "{e}");
+    assert!(e.contains("model.namespace"), "{e}");
+    // with a namespace but no graph prefix, the graph prefix is what is named
+    let half = WINE.replace("c:hasProperty c:w1, c:w2, c:w3 .", "c:hasProperty c:w1 .");
+    let (store2, _) = load(&[fixture("half", &half)]).unwrap();
+    let e2 = product(&store2, "wine").unwrap_err().to_string();
+    assert!(e2.contains("store.graph_prefix"), "{e2}");
     let missing = missing_settings(&settings(&store, "wine").unwrap());
     for k in ["model.namespace", "model.prefix", "store.graph_prefix"] {
         assert!(missing.contains(&k), "{k} missing is not named: {missing:?}");
     }
+}
+
+#[test]
+fn negative_proof_a_class_outside_the_products_namespace_is_refused_by_name() {
+    let stray = WINE.replace("c:cellar c:definesVocabulary wd:Bottle .", "c:cellar c:definesVocabulary wd:Bottle, c:RoleState .");
+    let (store, _) = load(&[fixture("stray", &stray)]).unwrap();
+    let e = product(&store, "wine").unwrap_err().to_string();
+    assert!(e.contains("RoleState") && e.contains("not in wine's namespace"), "{e}");
 }
