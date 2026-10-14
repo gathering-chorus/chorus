@@ -2768,6 +2768,27 @@ pub fn prepare_linked_creates(body: &str, tables: &[RouteTable], caller_role: &s
     Ok(reqs)
 }
 
+/// #4522 (Wren's review) — the bearer credential from an Authorization header,
+/// one copy for every write block (it was written out three times).
+pub fn bearer_token(auth_hdr: &str) -> &str {
+    auth_hdr.strip_prefix("Bearer ").or_else(|| auth_hdr.strip_prefix("bearer ")).unwrap_or(auth_hdr)
+}
+
+fn unix_now_secs() -> u64 {
+    std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).map(|d| d.as_secs()).unwrap_or(0)
+}
+
+/// #4522 (Wren's review) — a refused linked create names the graph of the row the
+/// DAL refused, read from its "entity '<kind>:<name>'", not the first row's.
+pub fn refused_row_graph(e: &str, reqs: &[PreparedCreate]) -> String {
+    let named = e.split("entity '").nth(1).and_then(|r| r.split('\'').next()).unwrap_or("");
+    reqs.iter()
+        .find(|r| format!("{}:{}", r.kind, r.name) == named)
+        .or_else(|| reqs.first())
+        .map(|r| r.graph.clone())
+        .unwrap_or_default()
+}
+
 /// #4522 — POST /create-linked: the rows above, written in one governed add-batch.
 pub fn handle_create_linked(body: &str, tables: &[RouteTable], caller_role: &str, token: &str, landed_commit: &str, scope: &[String]) -> (u16, String) {
     let reqs = match prepare_linked_creates(body, tables, caller_role, landed_commit, scope) {
@@ -2785,7 +2806,7 @@ pub fn handle_create_linked(body: &str, tables: &[RouteTable], caller_role: &str
         }
         Err(e) => {
             emit_write_spine(caller_role, "create-linked", &reqs.len().to_string(), "", "error");
-            let graph = reqs.first().map(|r| r.graph.clone()).unwrap_or_default();
+            let graph = refused_row_graph(&e, &reqs);
             pen_refusal_resp(&e, caller_role, &graph).unwrap_or_else(|| dal_err_resp(&e))
         }
     }
@@ -6362,15 +6383,9 @@ pub fn serve(port: u16, tables: &[RouteTable]) -> R<()> {
                 // one DAL add-batch. Cross-class, so handled before table selection like
                 // /batch; every row is then gated as its own class's create would be.
                 if method == "POST" && (path == "/create-linked" || path == "/v1/create-linked") {
-                    let now_secs = std::time::SystemTime::now()
-                        .duration_since(std::time::UNIX_EPOCH)
-                        .map(|d| d.as_secs())
-                        .unwrap_or(0);
+                    let now_secs = unix_now_secs();
                     let auth_hdr = header("authorization");
-                    let token = auth_hdr
-                        .strip_prefix("Bearer ")
-                        .or_else(|| auth_hdr.strip_prefix("bearer "))
-                        .unwrap_or(&auth_hdr);
+                    let token = bearer_token(&auth_hdr);
                     let (code, body) = match oidc::verify_any(token, &oidc_verifier, now_secs) {
                         Err(_) => (
                             401u16,
@@ -6391,15 +6406,9 @@ pub fn serve(port: u16, tables: &[RouteTable]) -> R<()> {
                     return;
                 }
                 if method == "POST" && path == "/batch" {
-                    let now_secs = std::time::SystemTime::now()
-                        .duration_since(std::time::UNIX_EPOCH)
-                        .map(|d| d.as_secs())
-                        .unwrap_or(0);
+                    let now_secs = unix_now_secs();
                     let auth_hdr = header("authorization");
-                    let token = auth_hdr
-                        .strip_prefix("Bearer ")
-                        .or_else(|| auth_hdr.strip_prefix("bearer "))
-                        .unwrap_or(&auth_hdr);
+                    let token = bearer_token(&auth_hdr);
                     let (code, body) = match oidc::verify_any(token, &oidc_verifier, now_secs) {
                         Err(_) => (
                             401u16,
@@ -6462,20 +6471,14 @@ pub fn serve(port: u16, tables: &[RouteTable]) -> R<()> {
                 // THE SEAM (#3402): auth injects here, ONCE, before route logic. A secured
                 // surface with a missing/invalid credential short-circuits to 401/403; every
                 // other surface falls through untouched (mixed-state). Local verify only.
-                let now_secs = std::time::SystemTime::now()
-                    .duration_since(std::time::UNIX_EPOCH)
-                    .map(|d| d.as_secs())
-                    .unwrap_or(0);
+                let now_secs = unix_now_secs();
                 let ((code, body), meta) = if method != "GET" {
                     // #3454 — the WRITE path. authN is ALWAYS required on a write (a write is
                     // never open, unlike a read), then handle_write does authZ-from-ownedBy,
                     // shape rejection, the SPARQL-UPDATE, the spine event, and a typed status.
                     // A write can NEVER reach a read handler (the "POST returns 200" anti-pattern).
                     let auth_hdr = header("authorization");
-                    let token = auth_hdr
-                        .strip_prefix("Bearer ")
-                        .or_else(|| auth_hdr.strip_prefix("bearer "))
-                        .unwrap_or(&auth_hdr);
+                    let token = bearer_token(&auth_hdr);
                     match oidc::verify_any(token, &oidc_verifier, now_secs) {
                         Err(_) => {
                             let (c, t) = write_status("authn-missing");
@@ -6693,6 +6696,17 @@ mod tests {
         let (code, msg) = prepare_linked_creates(&body, &linked_tables(), "silas", "", &both_graphs()).err().expect("refused");
         assert_eq!(code, 422, "{msg}");
         assert!(msg.contains("row 2") && msg.contains("purpose"), "{msg}");
+    }
+
+    /// NEGATIVE PROOF (Wren's review): the refusal names the refused row's graph.
+    /// The old code named the first row's, so a refused second row read as the first.
+    #[test]
+    fn a_dal_refusal_names_the_refused_rows_graph_not_the_first() {
+        let reqs = prepare_linked_creates(LINKED, &linked_tables(), "silas", "", &both_graphs()).unwrap();
+        let kind = reqs[1].kind.clone();
+        let e = format!("athena-model: add-batch: entity '{}:wines': unknown-target", kind);
+        assert_eq!(refused_row_graph(&e, &reqs), "urn:chorus:domains:domains");
+        assert_eq!(refused_row_graph("no entity named", &reqs), "urn:chorus:domains:documents", "falls back to the first row");
     }
 
     #[test]
