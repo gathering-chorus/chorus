@@ -35,11 +35,13 @@ com.chorus.chorus-runner	platform/services/chorus-runner/src/main.rs
 com.chorus.crawl-nightly	platform/services/chorus-crawl/src/main.rs
 com.chorus.messages-project	platform/services/chorus-principal/src/main.rs
 com.chorus.roles-up	platform/services/chorus-principal/src/main.rs
+com.chorus.session-sweep	platform/services/chorus-principal/src/main.rs
 com.chorus.nightly-suites	platform/services/werk-test/src/main.rs
 com.chorus.pair-heartbeat	platform/services/pair-heartbeat/src/main.rs
 com.chorus.heartbeat	platform/services/chorus-hooks/src/shim.rs
 com.chorus.api	platform/api/src/server.ts
 com.chorus.eventloop-probe	platform/api/src/eventloop-probe.ts
+com.chorus.mcp	GAP: #4515 retired the old MCP server; it is booted out at land (retire-old-mcp-server-4515.sh) and this row goes with it
 com.chorus.pulse	platform/pulse/src/service.ts
 com.chorus.clearing	directing/clearing/src/server.ts
 com.chorus.bridge-subscriber-kade	platform/scripts/bridge-subscriber.js

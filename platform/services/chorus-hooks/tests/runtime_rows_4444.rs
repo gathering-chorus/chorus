@@ -122,3 +122,35 @@ fn the_row_driven_adapter_types_no_runtime_or_event_name() {
     assert_eq!(typed_values(&src), Vec::<String>::new());
     assert_eq!(typed_values(&format!("{src}\nif name == \"PreInvocation\" {{}}")), vec!["PreInvocation".to_string()]);
 }
+
+/// #4444 reopen — Jeff 13:20 "fix abbys edit approvals now". agy's two edit
+/// tools (names and argument keys from Abby, 13:21) reach the guard as Write and
+/// Edit with the path the guard reads, so the guard decides, not Jeff.
+#[test]
+fn agys_file_write_reaches_the_guard_as_write() {
+    let c = canonical(&agy(), Moment::BeforeTool, &fixture("pre-tool-use-write.json")).unwrap();
+    assert_eq!(c["tool_name"], "Write");
+    assert_eq!(c["tool_input"]["file_path"], "/Users/jeffbridwell/CascadeProjects/chorus-werk/abby-normal-4520/notes.md");
+    assert_eq!(c["tool_input"]["content"], "hello\n");
+}
+
+#[test]
+fn agys_file_edit_reaches_the_guard_as_edit() {
+    let c = canonical(&agy(), Moment::BeforeTool, &fixture("pre-tool-use-edit.json")).unwrap();
+    assert_eq!(c["tool_name"], "Edit");
+    assert_eq!(c["tool_input"]["file_path"], "/Users/jeffbridwell/CascadeProjects/chorus/roles/silas/CLAUDE.md");
+    assert_eq!((c["tool_input"]["old_string"].as_str(), c["tool_input"]["new_string"].as_str()), (Some("old"), Some("new")));
+}
+
+/// NEGATIVE PROOF: mapped is not allowed. An agy edit under canonical carries
+/// its path as file_path, the field the canonical write guard reads, so a
+/// mapping that dropped TargetFile (the guard would see no path) fails here.
+#[test]
+fn an_agy_edit_keeps_the_path_the_canonical_guard_reads() {
+    let mut raw = fixture("pre-tool-use-edit.json");
+    let c = canonical(&agy(), Moment::BeforeTool, &raw).unwrap();
+    assert!(c["tool_input"].get("TargetFile").is_none(), "the native key must be renamed: {c}");
+    raw["toolCall"]["args"].as_object_mut().unwrap().remove("TargetFile");
+    let c = canonical(&agy(), Moment::BeforeTool, &raw).unwrap();
+    assert!(c["tool_input"].get("file_path").is_none(), "{c}");
+}
