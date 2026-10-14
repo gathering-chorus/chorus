@@ -122,5 +122,16 @@ SPINE_CONTENT=$(cat "$SPINE_LOG" 2>/dev/null || echo "")
 assert "the fixture binary is signed (else this test proves nothing)" test -n "$WANT"
 assert "spine event carries the installed cdhash, not unknown" contains "$SPINE_CONTENT" "cdhash=$WANT "
 
+# --- #4444 reopen 2: --target werk finds a hyphenated role's slot ---
+# abby-normal's deploy-demo died with exit 7 because the installer listed only
+# kade, wren and silas (14 Oct 17:22). The slot variable is derived from the role.
+ABBY_SLOT="$TEST_HOME/abby-normal-bin"; mkdir -p "$ABBY_SLOT"
+CHORUS_ROLE=abby-normal WERK_ABBY_NORMAL_BIN="$ABBY_SLOT" "$INSTALL" --target werk "$SRC" chorus-test-werk > /dev/null 2>&1
+assert "abby-normal --target werk installs into WERK_ABBY_NORMAL_BIN" test -x "$ABBY_SLOT/chorus-test-werk"
+# NEGATIVE PROOF (#3734): a role with no slot exported is still refused, exit 7,
+# so deriving the name never opens a default slot.
+CHORUS_ROLE=nobody-here "$INSTALL" --target werk "$SRC" chorus-test-werk > /dev/null 2>&1; rc=$?
+assert "a role with no WERK_<ROLE>_BIN is refused (exit 7)" test "$rc" = 7
+
 echo "=== Results: $PASS passed, $FAIL failed ==="
 [ "$FAIL" -eq 0 ]

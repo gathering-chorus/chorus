@@ -24,8 +24,12 @@
       "replyStopOk": "{\"decision\":\"stop\"}",
       "runtimeArgMap": [
         "AbsolutePath=file_path",
+        "CodeContent=content",
         "CommandLine=command",
-        "Cwd=cwd"
+        "Cwd=cwd",
+        "ReplacementContent=new_string",
+        "TargetContent=old_string",
+        "TargetFile=file_path"
       ],
       "runtimeAuth": "google-login",
       "runtimeBinary": "agy",
@@ -33,8 +37,10 @@
       "runtimeHooksLayout": "named-hooks",
       "runtimeMcpFile": ".gemini/config/mcp_config.json",
       "runtimeToolMap": [
+        "replace_file_content=Edit",
         "run_command=Bash",
-        "view_file=Read"
+        "view_file=Read",
+        "write_to_file=Write"
       ],
       "transcriptPromptTag": "USER_REQUEST",
       "transcriptPromptType": "USER_INPUT"

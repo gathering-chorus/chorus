@@ -79,12 +79,14 @@ fi
 # ambiguity), so falling back to canonical would silently corrupt the
 # /acp promote contract.
 if [ "$TARGET" = "werk" ]; then
-  case "${CHORUS_ROLE:-}" in
-    kade)  BIN_DIR="${WERK_KADE_BIN:-}"  ;;
-    wren)  BIN_DIR="${WERK_WREN_BIN:-}"  ;;
-    silas) BIN_DIR="${WERK_SILAS_BIN:-}" ;;
-    *)     BIN_DIR=""                    ;;
-  esac
+  # #4444 reopen 2 — the slot variable is derived from the role, not typed per
+  # role: abby-normal's deploy-demo died here (exit 7) because only kade, wren
+  # and silas were listed (14 Oct 17:22, #4530 run 5). abby-normal → WERK_ABBY_NORMAL_BIN.
+  BIN_DIR=""
+  if [ -n "${CHORUS_ROLE:-}" ]; then
+    __slot_var="WERK_$(printf '%s' "$CHORUS_ROLE" | tr 'a-z-' 'A-Z_')_BIN"
+    BIN_DIR="${!__slot_var:-}"
+  fi
   if [ -z "$BIN_DIR" ]; then
     echo "chorus-bin-install: --target werk requires WERK_<ROLE>_BIN exported (CHORUS_ROLE=${CHORUS_ROLE:-<unset>}); source chorus-env-setup.sh from a role+werk context" >&2
     exit 7
