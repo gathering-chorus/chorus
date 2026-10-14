@@ -114,7 +114,7 @@ RS
 @test "a client that lists tools is not a tool server" {
   d="$BATS_TEST_TMPDIR/client"; clean_fixture "$d"
   mkdir -p "$d/platform/services/hooks/src"
-  printf 'pub fn list_tools(session: &McpSession) -> Vec<Tool> { call(session, "tools/list") }\n' > "$d/platform/services/hooks/src/mcp_client.rs"
+  printf 'pub fn list_tools(session: &McpSession) -> Vec<Tool> { call(session, "tools/list") }\n' > "$d/platform/services/hooks/src/tools_client.rs"
   out=$(scan "$d")
   [ -z "$out" ] || { echo "$out"; false; }
 }

@@ -19,11 +19,6 @@ use std::fs;
 
 const DEFAULT_API_URL: &str = "http://localhost:3360/v1/principles/principles";
 const DEFAULT_CACHE_PATH: &str = "/tmp/principles-cache.json";
-// #3007 — MCP transport moved off chorus-api (:3340) to chorus-mcp (:3341) in
-// #2998. Default must target the dedicated server; the chorus-api /mcp mount
-// returns 404 and every session-start falls into Stale fallback. The constant
-// is named so a future port move is a one-line edit + one-line test update.
-const DEFAULT_MCP_BASE: &str = "http://localhost:3341";
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Principle {
@@ -44,9 +39,39 @@ pub struct Principle {
 struct ApiEnvelope {
     data: ApiData,
 }
+/// #4515 — the door answers `data: [ {name, label, …} ]`; the last-known-good
+/// cache (and the test fixtures) keep `data: {principles: [ {id, …} ]}`.
 #[derive(Debug, Deserialize)]
-struct ApiData {
-    principles: Vec<Principle>,
+#[serde(untagged)]
+enum ApiData {
+    Door(Vec<DoorPrinciple>),
+    Cached { principles: Vec<Principle> },
+}
+#[derive(Debug, Deserialize)]
+struct DoorPrinciple {
+    name: String,
+    #[serde(default)]
+    label: String,
+    #[serde(default)]
+    comment: String,
+    #[serde(default, rename = "techReading")]
+    tech_reading: String,
+    #[serde(default, rename = "jeffReading")]
+    jeff_reading: String,
+    #[serde(default)]
+    order: serde_json::Value,
+}
+impl ApiData {
+    fn principles(self) -> Vec<Principle> {
+        match self {
+            ApiData::Cached { principles } => principles,
+            ApiData::Door(rows) => rows
+                .into_iter()
+                .filter(|r| !r.name.is_empty())
+                .map(|r| Principle { id: r.name, label: r.label, comment: r.comment, tech_reading: r.tech_reading, jeff_reading: r.jeff_reading, order: r.order })
+                .collect(),
+        }
+    }
 }
 
 pub enum FetchResult {
@@ -85,20 +110,16 @@ pub fn fetch() -> FetchResult {
         }
     }
 
-    // #2477 — typed MCP surface replaces direct HTTP.
-    // #2964 — wrap the MCP path in a retry-with-backoff loop. Transient errors
-    // (init failure, call_tool failure) are common at session boot when the
-    // chorus-api process is restarting or slow to bind. Single-attempt → cache
-    // produces Stale events that pollute Jeff's signal channel.
+    // #4515 — the door, read directly: the old MCP server and its
+    // chorus_principles_list tool are gone. Retries as before (#2964).
     let role = std::env::var("CHORUS_ROLE").unwrap_or_else(|_| "shim".to_string());
-    let mcp_base = std::env::var("CHORUS_MCP_BASE_URL")
-        .unwrap_or_else(|_| DEFAULT_MCP_BASE.to_string());
+    let url = api_url();
 
     let mut last_error: Option<String> = None;
     let mut backoff_ms = INITIAL_BACKOFF_MS;
 
     for attempt in 0..MAX_FETCH_RETRIES {
-        match try_fetch_once(&mcp_base, &role) {
+        match try_fetch_once(&url) {
             Ok(result) => return result,
             Err(e) => {
                 last_error = Some(e.clone());
@@ -124,131 +145,36 @@ pub fn fetch() -> FetchResult {
     fallback_to_cache(last_error.unwrap_or_else(|| "unknown".to_string()))
 }
 
-/// One attempt at the full MCP fetch path. Returns Ok(FetchResult) on success
-/// (either Fresh or EmptyFromApi — both are non-error terminal outcomes), or
-/// Err(reason) on failure that should trigger a retry. #2964 retry-with-backoff.
-fn try_fetch_once(mcp_base: &str, role: &str) -> Result<FetchResult, String> {
-    let session = crate::mcp_client::init_session(mcp_base, role)
-        .map_err(|e| format!("mcp init: {}", e))?;
-
-    let _ = crate::chorus_log::run_silent(&[
-        "mcp.tool.invoked".to_string(),
-        role.to_string(),
-        "tool=chorus_principles_list".to_string(),
-        "source=shim".to_string(),
-    ]);
-
-    let result = crate::mcp_client::call_tool(
-        &session,
-        "chorus_principles_list",
-        serde_json::json!({}),
-    )
-    .map_err(|e| format!("mcp call_tool: {}", e))?;
-
-    // #3010 — prefer structuredContent.principles (JSON array) over the
-    // text content block. The text-parse path (parse_tool_text below) used
-    // a greedy rfind('(') for the id, which fragmented principles whose
-    // comments contained parens (e.g. Hemenway catch-and-store's
-    // "(in slope, charge, temperature, or otherwise)" captured a comment
-    // fragment as the id, dropping three real principles). When the MCP
-    // server returns structuredContent we deserialize directly, no parse.
-    //
-    // text-parse path retained as fallback for one rollout window:
-    // covers older chorus-mcp builds that haven't shipped the
-    // structuredContent path yet. Retire parse_tool_text in a follow-on
-    // card once chorus-mcp is fully shipped (#3010 AC4).
-    let principles: Vec<Principle> =
-        if let Some(arr) = result.get("structuredContent").and_then(|sc| sc.get("principles")).and_then(|p| p.as_array()) {
-            arr.iter()
-                .filter_map(|v| serde_json::from_value::<Principle>(v.clone()).ok())
-                .collect()
-        } else {
-            // Fallback: text content block parse. The text shape is
-            // "<N> principles:\n- <Label> (<id>) — <comment>\n- ...".
-            let text = result
-                .get("content")
-                .and_then(|c| c.get(0))
-                .and_then(|c| c.get("text"))
-                .and_then(|t| t.as_str())
-                .unwrap_or("");
-            parse_tool_text(text)
-        };
-
+/// One GET of the door's principles. Ok = a terminal answer (Fresh or
+/// EmptyFromApi); Err = a failure worth a retry. #2964 retry-with-backoff.
+fn try_fetch_once(url: &str) -> Result<FetchResult, String> {
+    let resp = ureq::get(&format!("{url}?limit=500"))
+        .timeout(std::time::Duration::from_secs(3))
+        .call()
+        .map_err(|e| format!("door GET: {e}"))?;
+    let body = resp.into_string().map_err(|e| format!("door body: {e}"))?;
+    let principles = serde_json::from_str::<ApiEnvelope>(&body)
+        .map_err(|e| format!("door parse: {e}"))?
+        .data
+        .principles();
     if principles.is_empty() {
         return Ok(FetchResult::EmptyFromApi);
     }
-
-    // Update cache with a JSON-shaped representation for the existing
-    // fallback_to_cache path. Uses the same envelope shape parse_or_unavailable
-    // expects, so future Stale fallback works.
-    if let Ok(envelope) = serde_json::to_string(&serde_json::json!({
-        "data": {"principles": principles}
-    })) {
+    // The cache keeps the {principles: [...]} shape fallback_to_cache reads.
+    if let Ok(envelope) = serde_json::to_string(&serde_json::json!({ "data": { "principles": principles } })) {
         let _ = fs::write(cache_path(), envelope);
     }
     Ok(FetchResult::Fresh(principles))
 }
 
-/// Parse the chorus_principles_list tool's text output back into structured
-/// records. Format produced by the MCP tool: "N principles:\n- Label (id) — comment".
-fn parse_tool_text(text: &str) -> Vec<Principle> {
-    let mut principles = Vec::new();
-    for line in text.lines() {
-        // Each principle line looks like "- **Label** (id) — comment" or
-        // "- Label (id) — comment". Strip leading "-" + bold markers.
-        let trimmed = line.trim_start();
-        let Some(rest) = trimmed.strip_prefix("- ") else { continue };
-        // Remove ** if present
-        let rest = rest.trim_start_matches("**");
-
-        // Pull out (id) — find the LAST `(...)` before any em-dash.
-        let (label_part, after_paren) = match rest.rfind('(') {
-            Some(idx) => {
-                let close = rest[idx..].find(')').map(|c| idx + c);
-                if let Some(c) = close {
-                    (&rest[..idx], &rest[c + 1..])
-                } else {
-                    continue;
-                }
-            }
-            None => continue,
-        };
-        let id_open = match rest.rfind('(') { Some(i) => i, None => continue };
-        let id_close = match rest[id_open..].find(')') { Some(c) => id_open + c, None => continue };
-        let id = rest[id_open + 1..id_close].trim().to_string();
-        if id.is_empty() {
-            continue;
-        }
-
-        let label = label_part.trim_end_matches("**").trim().trim_end_matches(' ').to_string();
-
-        // Comment after `— ` (em-dash) or `- ` if present
-        let comment = after_paren
-            .trim_start_matches(' ')
-            .trim_start_matches('—')
-            .trim_start_matches('-')
-            .trim_start()
-            .to_string();
-
-        principles.push(Principle {
-            id,
-            label,
-            comment,
-            tech_reading: String::new(),
-            jeff_reading: String::new(),
-            order: serde_json::Value::Null,
-        });
-    }
-    principles
-}
-
 fn parse_or_unavailable(body: &str) -> FetchResult {
     match serde_json::from_str::<ApiEnvelope>(body) {
         Ok(env) => {
-            if env.data.principles.is_empty() {
+            let principles = env.data.principles();
+            if principles.is_empty() {
                 FetchResult::EmptyFromApi
             } else {
-                FetchResult::Fresh(env.data.principles)
+                FetchResult::Fresh(principles)
             }
         }
         Err(e) => FetchResult::Unavailable(format!("parse: {}", e)),
@@ -258,8 +184,11 @@ fn parse_or_unavailable(body: &str) -> FetchResult {
 fn fallback_to_cache(reason: String) -> FetchResult {
     match fs::read_to_string(cache_path()) {
         Ok(body) => match serde_json::from_str::<ApiEnvelope>(&body) {
-            Ok(env) if !env.data.principles.is_empty() => FetchResult::Stale(env.data.principles),
-            _ => FetchResult::Unavailable(reason),
+            Ok(env) => {
+                let principles = env.data.principles();
+                if principles.is_empty() { FetchResult::Unavailable(reason) } else { FetchResult::Stale(principles) }
+            }
+            Err(_) => FetchResult::Unavailable(reason),
         },
         Err(_) => FetchResult::Unavailable(reason),
     }
@@ -327,84 +256,37 @@ pub fn write_hash(role: &str, hash: &str) -> std::io::Result<()> {
 mod tests {
     use super::*;
 
-    // #3007 regression pin: chorus-mcp split off chorus-api in #2998. If this
-    // default drifts back to :3340, every session-start emits
-    // session.principles.stale on the 404 from chorus-api's removed /mcp mount.
+    // #4515 — the door's own answer: `data` is the list of rows, id is `name`.
+    // The Hemenway comment holds nested parens: the old MCP text parse took a
+    // comment fragment for the id (#3010); reading rows has no parse to break.
+    const DOOR: &str = r#"{"apiVersion":"v1","kind":"Principle","data":[
+      {"name":"hemenway-catch-and-store","label":"Catch and store energy and materials","status":"",
+       "comment":"every gradient (in slope, charge, temperature, or otherwise) is an opportunity","techReading":"t","jeffReading":"j","order":"3"},
+      {"name":"","label":"a row with no name is not a principle"}]}"#;
+
     #[test]
-    fn default_mcp_base_points_to_chorus_mcp_port_3341() {
-        assert_eq!(DEFAULT_MCP_BASE, "http://localhost:3341");
+    fn the_doors_rows_become_principles_with_their_names_as_ids() {
+        let FetchResult::Fresh(ps) = parse_or_unavailable(DOOR) else { panic!("door rows did not parse") };
+        assert_eq!(ps.len(), 1, "the nameless row is dropped");
+        assert_eq!(ps[0].id, "hemenway-catch-and-store");
+        assert_eq!(ps[0].tech_reading, "t");
     }
 
-    // #3010 AC3 — receipt: canonical Hemenway principle shape from
-    // roles/silas/ontology/chorus.ttl. Comment contains nested parens.
-    fn hemenway_fixture() -> serde_json::Value {
-        serde_json::json!({
-            "id": "hemenway-catch-and-store",
-            "label": "Catch and store energy and materials",
-            "comment": "Identify, collect, and hold useful flows. Every cycle is an opportunity for yield; every gradient (in slope, charge, temperature, or otherwise) is an opportunity for energy."
-        })
+    #[test]
+    fn the_cache_shape_still_reads() {
+        let cached = r#"{"data":{"principles":[{"id":"hemenway-observe","label":"Observe"}]}}"#;
+        let FetchResult::Fresh(ps) = parse_or_unavailable(cached) else { panic!("cache shape did not parse") };
+        assert_eq!(ps[0].id, "hemenway-observe");
     }
 
-    // #3010 AC2 — when the MCP response includes structuredContent.principles,
-    // the client deserializes the JSON array directly. No prose parse.
+    // NEGATIVE PROOF: a door with no rows is the empty alarm, never Fresh.
     #[test]
-    fn structured_content_principles_deserialize_directly() {
-        let result = serde_json::json!({
-            "content": [{"type": "text", "text": "1 principles:\n- Catch and store energy and materials (hemenway-catch-and-store) — ..."}],
-            "structuredContent": {
-                "principles": [hemenway_fixture()]
-            }
-        });
-
-        let principles: Vec<Principle> = result
-            .get("structuredContent")
-            .and_then(|sc| sc.get("principles"))
-            .and_then(|p| p.as_array())
-            .expect("structuredContent.principles should be present")
-            .iter()
-            .filter_map(|v| serde_json::from_value::<Principle>(v.clone()).ok())
-            .collect();
-
-        assert_eq!(principles.len(), 1, "exactly one principle in fixture");
+    fn an_empty_door_is_empty_not_fresh() {
+        assert!(matches!(parse_or_unavailable(r#"{"data":[]}"#), FetchResult::EmptyFromApi));
     }
 
-    // #3010 AC3 — the Hemenway id is intact via the structuredContent path,
-    // not fragmented to the comment's nested-paren content.
     #[test]
-    fn hemenway_id_intact_via_structured_content() {
-        let p: Principle = serde_json::from_value(hemenway_fixture()).expect("deserialize");
-        assert_eq!(
-            p.id, "hemenway-catch-and-store",
-            "Hemenway id should be the canonical id, not a comment fragment"
-        );
-        assert_ne!(
-            p.id, "in slope, charge, temperature, or otherwise",
-            "regression guard: comment-fragment id is exactly the parse_tool_text bug shape"
-        );
-        assert_eq!(p.label, "Catch and store energy and materials");
-    }
-
-    // #3010 — regression pin documenting why we route around parse_tool_text
-    // when structuredContent is present. Greedy rfind('(') in parse_tool_text
-    // captures the LAST open-paren in the line, which falls inside the comment
-    // for any principle whose comment contains parens. This test does NOT
-    // assert correctness of parse_tool_text — it documents the buggy behavior
-    // so the structuredContent path's value is visible.
-    #[test]
-    fn parse_tool_text_fragments_hemenway_id_documenting_bug() {
-        let prose = "1 principles:\n- Catch and store energy and materials (hemenway-catch-and-store) — Identify, collect, and hold useful flows. Every cycle is an opportunity for yield; every gradient (in slope, charge, temperature, or otherwise) is an opportunity for energy.";
-        let parsed = parse_tool_text(prose);
-        // The fallback parser produces ONE principle but with the WRONG id —
-        // captured from the comment's nested parens, not the real id.
-        // structuredContent path bypasses this entirely.
-        assert_eq!(parsed.len(), 1, "parse_tool_text recovers one entry from the prose");
-        assert_eq!(
-            parsed[0].id, "in slope, charge, temperature, or otherwise",
-            "buggy id-fragment from rfind('(') greedy match — this is the bug #3010 routes around"
-        );
-        assert_ne!(
-            parsed[0].id, "hemenway-catch-and-store",
-            "the canonical id never survives parse_tool_text when comment has parens"
-        );
+    fn the_default_source_is_the_door_not_an_mcp_server() {
+        assert_eq!(DEFAULT_API_URL, "http://localhost:3360/v1/principles/principles");
     }
 }

@@ -27,8 +27,6 @@ mod chorus_log;
 mod process;
 #[path = "ops.rs"]
 mod ops;
-#[path = "mcp_client.rs"]
-mod mcp_client;
 pub mod shared;
 mod commands;
 

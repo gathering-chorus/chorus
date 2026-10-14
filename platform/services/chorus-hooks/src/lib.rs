@@ -12,7 +12,6 @@
 #![allow(dead_code)]
 
 pub mod agent_socket;
-pub mod mcp_client;
 pub mod runtime_tools;
 pub mod runtime_hook;
 pub mod runtime_rows;
