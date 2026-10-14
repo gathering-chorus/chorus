@@ -290,7 +290,8 @@ export async function fetchServed(base: string): Promise<ServedInfo[]> {
     const rows = (disco.primitives ?? []).filter((p) => p.kind && p.collection) as Array<{ kind: string; collection: string }>;
     return await Promise.all(rows.map(async (p): Promise<ServedInfo> => {
       try {
-        const c = await fetch(base + p.collection.replace(/^\/v1/, ''));
+        // #4531 — the door counts a collection only when asked.
+        const c = await fetch(base + p.collection.replace(/^\/v1/, '') + '?limit=1&count=true');
         if (!c.ok) return { kind: p.kind, collection: p.collection };
         const body = (await c.json()) as { count?: number };
         return typeof body.count === 'number'

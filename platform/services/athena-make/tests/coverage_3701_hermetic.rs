@@ -145,7 +145,7 @@ fn rows_for(q: &str) -> Vec<String> {
     //
     // The reason the split exists: the old path fetched every row to count them,
     // which on the tests domain meant 190,941 rows / 74.6MB / 22.3s and a 502.
-    if q.contains("COUNT(DISTINCT ?s)") && q.contains("?s a <") {
+    if q.contains("COUNT(?s)") && q.contains("?s a <") {
         return vec![s("2")];
     }
     // ---- generate()-time shape queries ----
@@ -775,6 +775,12 @@ fn serve_collection_is_enveloped_and_paginated() {
     let (c, _, b) = http("GET", "/domains", &[], "");
     assert_eq!(c, 200);
     assert!(b.contains("\"apiVersion\": \"v1\""), "{}", b);
+    // #4531 — the total is counted only on request: a plain read carries no count
+    // (never a page length posing as a total) ...
+    assert!(!b.contains("\"count\""), "a plain read must not count the collection: {}", b);
+    // ... and count=true carries the total.
+    let (c, _, b) = http("GET", "/domains?count=true", &[], "");
+    assert_eq!(c, 200);
     assert!(b.contains("\"count\": 2"), "{}", b);
     assert!(b.contains("\"name\": \"pulse\""), "{}", b);
     assert!(b.contains("\"requiresAuth\": true"), "Domain schema surface is secured: {}", b);
