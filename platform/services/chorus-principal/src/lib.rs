@@ -1482,17 +1482,18 @@ fn sweep(ctx: &Ctx) -> i32 {
     let keep: Vec<String> = roles.iter().filter_map(|r| read_row(ctx, r, "session").map(|v| row_name(&v))).collect();
     let now = iso_utc(now_ms() as u64 / 1000);
     let (kept, mut failed) = keep_live_sessions(ctx, &roles);
-    let mut closed = 0;
+    let (mut closed, mut skipped) = (0, 0);
     for row in rows::expired_open(&listing, &now, &keep) {
         let owner = row.get("ownedBy").and_then(|o| o.as_str()).unwrap_or("").trim_start_matches("principal-").to_string();
         let name = row_name(&row);
-        let Some(done) = lifecycle::closed_row(&row.to_string(), &name, &now) else { failed += 1; continue };
-        if !roles.iter().any(|r| *r == owner) { failed += 1; continue; }
+        let Some(done) = lifecycle::closed_row(&row.to_string(), &name, &now) else { failed += 1; eprintln!("  {} not closed: the row could not be read", name); continue };
+        // a person's sign-in (Jeff's browser) is closed by its own door, never by an agent's credential
+        if !roles.iter().any(|r| *r == owner) { skipped += 1; continue; }
         let (code, _) = api_send(ctx, &owner, "identity/sessions", Some(&name), &done, "sweep");
         if ok_code(&code) { closed += 1 } else { failed += 1; eprintln!("  {} not closed (HTTP {})", name, code) }
     }
-    ctx.spine(&["session.sweep", &format!("kept={}", kept), &format!("closed={}", closed), &format!("failed={}", failed)]);
-    println!("sweep: {} live session(s) kept open, {} expired session(s) closed, {} failed", kept, closed, failed);
+    ctx.spine(&["session.sweep", &format!("kept={}", kept), &format!("closed={}", closed), &format!("skipped={}", skipped), &format!("failed={}", failed)]);
+    println!("sweep: {} live session(s) kept open, {} expired session(s) closed, {} not an agent's (left to their own door), {} failed", kept, closed, skipped, failed);
     if failed > 0 { 1 } else { 0 }
 }
 
