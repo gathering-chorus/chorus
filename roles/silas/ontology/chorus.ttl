@@ -1964,6 +1964,7 @@ chorus:ProductShape a sh:NodeShape ;
     sh:property [ sh:path chorus:provides         ; sh:minCount 0 ;
                   sh:or ( [ sh:class chorus:Service ] [ sh:class chorus:Domain ] ) ] ;
     sh:property [ sh:path chorus:hasServiceDesign ; sh:minCount 0 ; sh:class chorus:Document ] ;
+    sh:property [ sh:path chorus:hasProperty      ; sh:minCount 0 ; sh:class chorus:Property ] ;   # #4522 — a product built by Chorus but run elsewhere names its own model.namespace here
     # #4045 — design-doc sections as attributes (see the property block above).
     sh:property [ sh:path chorus:promise         ; sh:minCount 0 ; sh:datatype xsd:string ] ;
     sh:property [ sh:path chorus:structure       ; sh:minCount 0 ; sh:datatype xsd:string ] ;
@@ -2071,7 +2072,13 @@ chorus:DomainShape a sh:NodeShape ;
     sh:property [ sh:path rdfs:comment             ; sh:minCount 1 ; sh:datatype xsd:string ] ;
     sh:property [ sh:path chorus:ownedBy           ; sh:minCount 1 ; sh:class chorus:Principal ] ;
     sh:property [ sh:path chorus:purpose           ; sh:minCount 1 ; sh:datatype xsd:string ] ;   # the capability the domain expresses
-    sh:property [ sh:path chorus:definesVocabulary ; sh:minCount 1 ; sh:class owl:Class ] ;        # the DDD ubiquitous-language mark
+    # #4522 — optional at the door so another product's domain can be RECORDED here
+    # (the wine diary's five) without being SERVED here: the door mounts exactly the
+    # classes a domain claims (athena-make lib.rs), so a domain with no claim mounts
+    # nothing. A domain Chorus serves still must claim: athena-validate's
+    # domain-claims-no-vocabulary check names any domain with no claim unless every
+    # product composing it names its own model.namespace through hasProperty.
+    sh:property [ sh:path chorus:definesVocabulary ; sh:minCount 0 ; sh:class owl:Class ] ;        # the DDD ubiquitous-language mark
     # #4481 — a domain's stream is its step's stream, read up the chain; it is never stored.
     sh:property [ sh:path chorus:atStep            ; sh:minCount 1 ; sh:maxCount 1 ; sh:class chorus:ValueStreamStep ] ;   # #4481 — its one parent
     sh:property [ sh:path chorus:status            ; sh:minCount 1 ; sh:in ( "exploring" "building" "operating" "retiring" ) ] ;

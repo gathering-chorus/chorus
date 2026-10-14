@@ -292,7 +292,7 @@ mod tests {
     #[test]
     fn every_store_check_is_bound_when_scoped() {
         let mut checks = crate::ported::all();
-        checks.extend([&crate::checks::COMPLETENESS, &crate::checks::ALLOWED_VALUES, &crate::checks::PATTERN, &crate::checks::EXERCISES_FROM_A_TEST]);
+        checks.extend([&crate::checks::COMPLETENESS, &crate::checks::ALLOWED_VALUES, &crate::checks::PATTERN, &crate::checks::EXERCISES_FROM_A_TEST, &crate::checks::DOMAIN_CLAIMS_VOCABULARY]);
         for c in checks {
             let q = scoped_to_skills(c.query);
             assert!(q.contains("VALUES ?g { <urn:chorus:domains:skills> }"), "{} is not bound", c.id);
