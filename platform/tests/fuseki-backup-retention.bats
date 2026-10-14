@@ -57,11 +57,14 @@ setup() {
   printf '%s\n' '#!/bin/bash' \
     'args=(); while [ $# -gt 0 ]; do case "$1" in -o) shift 2 ;; -*) shift ;; *) args+=("$1"); shift ;; esac; done' \
     'cp "${args[0]}" "${args[1]#*:}"' > "$TMP/bin/scp"
-  # curl: a Fuseki whose backup task finishes at once and leaves tonight's dump,
-  # stamped later than the run's start mark (a real dump takes minutes; -nt is per-second)
+  # curl: a Fuseki whose backup task finishes at once and leaves tonight's dump.
+  # #4522 — stamped NOW, in the same second as the run's start mark, as a small
+  # dataset's dump really is (/wine-diary, 2026-10-14 00:04:48). Before, the stub
+  # stamped 2099 to step around -nt's whole seconds, and the script failed every
+  # night on /wine-diary while this suite stayed green.
   printf '%s\n' '#!/bin/bash' \
     'case "$*" in' \
-    "  *'/\$/backup/'*) ds=\"\${@: -1}\"; ds=\"\${ds##*/}\"; head -c 2048 /dev/zero > \"$LOCAL/\${ds}_2026-09-15_03-00-00.nq.gz\"; touch -t 209901010000 \"$LOCAL/\${ds}_2026-09-15_03-00-00.nq.gz\"; echo \"\$ds\" >> \"$TMP/asked\"; echo '{\"taskId\":\"42\"}' ;;" \
+    "  *'/\$/backup/'*) ds=\"\${@: -1}\"; ds=\"\${ds##*/}\"; head -c 2048 /dev/zero > \"$LOCAL/\${ds}_2026-09-15_03-00-00.nq.gz\"; [ -n \"\${STUB_DUMP_STAMP:-}\" ] && touch -t \"\$STUB_DUMP_STAMP\" \"$LOCAL/\${ds}_2026-09-15_03-00-00.nq.gz\"; echo \"\$ds\" >> \"$TMP/asked\"; echo '{\"taskId\":\"42\"}' ;;" \
     "  *'/\$/tasks'*) echo '[{\"taskId\":\"42\",\"finished\":\"2026-09-15T03:04:25\",\"success\":true}]' ;;" \
     '  *) exit 7 ;;' 'esac' > "$TMP/bin/curl"
   printf '#!/bin/bash\nexit 0\n' > "$TMP/bin/chorus-log"
@@ -75,7 +78,7 @@ run_backup() {
   run env -i PATH="$TMP/bin:/usr/bin:/bin" HOME="$TMP" \
     FUSEKI_BACKUP_REMOTE=stub FUSEKI_BACKUP_DEST="$REMOTE_BASE" FUSEKI_BACKUP_LOCAL="$LOCAL" \
     FUSEKI_BACKUP_MIN_MB=0 FUSEKI_URL=http://127.0.0.1:9 CHORUS_LOG="$TMP/bin/chorus-log" \
-    FUSEKI_DATASET=pods ${keep[@]+"${keep[@]}"} bash "$TMP/scripts/fuseki-backup.sh"
+    FUSEKI_DATASET=pods STUB_DUMP_STAMP="${STUB_DUMP_STAMP:-}" ${keep[@]+"${keep[@]}"} bash "$TMP/scripts/fuseki-backup.sh"
 }
 
 # run_all MAP — no FUSEKI_DATASET: the script picks its datasets from the store map (#4518).
@@ -192,4 +195,17 @@ held() { ls -1 "$DUMPS" | wc -l | tr -d ' '; }
   [ -f "$DUMPS/pods_2026-09-15_03-00-00.nq.gz" ]
   [ ! -f "$DUMPS/wine-diary_2026-09-15_03-00-00.nq.gz" ]
   echo "$output" | grep -q "refusing to ship a stub"
+}
+
+@test "a dump that lands in the same second the run started is tonight's, not a stale one" {
+  run_backup 9
+  [ "$status" -eq 0 ] || { echo "$output"; return 1; }
+  echo "$output" | grep -q "OK: pods_2026-09-15_03-00-00.nq.gz" || return 1
+}
+
+@test "NEGATIVE PROOF — a dump older than the run is still refused as stale" {
+  export STUB_DUMP_STAMP=202001010000
+  run_backup 9
+  [ "$status" -ne 0 ] || return 1
+  echo "$output" | grep -q "predates this run" || return 1
 }

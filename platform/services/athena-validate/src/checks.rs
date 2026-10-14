@@ -110,6 +110,36 @@ SELECT DISTINCT ?s ?kind WHERE {
 }"##,
 };
 
+/// #4522 — DomainShape's definesVocabulary is optional at the door so another
+/// product's domain (the wine diary's five) can be recorded here without being
+/// served here: the door mounts exactly the classes a domain claims. The door
+/// cannot say "optional only for a product that runs elsewhere", so this does.
+/// A domain with no claim is named once per composing product that does NOT
+/// name its own model.namespace (a Property through hasProperty), and once as
+/// "none" when no product composes it at all.
+pub const DOMAIN_CLAIMS_VOCABULARY: Check = Check {
+    id: "domain-claims-no-vocabulary",
+    question: "does every domain Chorus serves claim the classes it defines",
+    query: r##"PREFIX c: <https://jeffbridwell.com/chorus#>
+SELECT DISTINCT ?s ?product WHERE {
+  GRAPH ?g { ?s a c:Domain }
+  FILTER(STRSTARTS(STR(?g), "urn:chorus:"))
+  FILTER(?g != <urn:chorus:ontology>)
+  FILTER NOT EXISTS { GRAPH ?g2 { ?s c:definesVocabulary ?v } }
+  OPTIONAL {
+    GRAPH ?g3 { ?p c:hasDomain ?s }
+    GRAPH ?g4 { ?p a c:Product }
+    FILTER NOT EXISTS {
+      GRAPH ?g5 { ?p c:hasProperty ?prop }
+      GRAPH ?g6 { ?prop c:propertyKey ?k ; c:propertyValue ?ns }
+      FILTER(STR(?k) = "model.namespace" && STR(?ns) != "https://jeffbridwell.com/chorus#")
+    }
+  }
+  FILTER(BOUND(?p) || NOT EXISTS { GRAPH ?g7 { ?q c:hasDomain ?s } GRAPH ?g8 { ?q a c:Product } })
+  BIND(IF(BOUND(?p), REPLACE(STR(?p), "^.*#", ""), "none") AS ?product)
+}"##,
+};
+
 /// #4358 — a row value outside its property's sh:in list. The DAL refuses such
 /// a value at the door; this finds the ones that got in before the door did, or
 /// around it. Comparison is by lexical form, the same rule the DAL applies
@@ -307,6 +337,58 @@ mod tests {
         assert_eq!(got, vec![("n".to_string(), "none".to_string()), ("s".to_string(), "code".to_string())], "{got:?}");
     }
 
+    const DOMAINS_4522: &str = r##"@prefix c: <https://jeffbridwell.com/chorus#> .
+<urn:chorus:domains:domains> {
+  c:served a c:Domain ; c:definesVocabulary c:Card .
+  c:diary-wines a c:Domain .
+}
+<urn:chorus:domains:products> {
+  c:chorus a c:Product ; c:hasDomain c:served .
+  c:wine-diary a c:Product ; c:hasDomain c:diary-wines ; c:hasProperty c:wd-ns .
+}
+<urn:chorus:domains:properties> { c:wd-ns c:propertyKey "model.namespace" ; c:propertyValue "https://jeffbridwell.com/wine-diary#" . }
+"##;
+
+    /// #4522 — a claiming Chorus domain and an unclaimed domain of a product
+    /// with its own namespace are both clean: recorded, not served.
+    #[test]
+    fn a_recorded_domain_of_a_product_run_elsewhere_is_clean() {
+        let fx = format!("{DOMAINS_4522}");
+        assert_eq!(run_on_fixture(&DOMAIN_CLAIMS_VOCABULARY, "4522-ok", &fx), vec![]);
+    }
+
+    /// NEGATIVE PROOF (#3734 / #4522): relaxing definesVocabulary must not let a
+    /// domain Chorus serves skip its claim. lost has no claim and chorus (no
+    /// namespace of its own) composes it; shared has no claim and is composed
+    /// by the diary AND by chorus; orphan has no product. All three are named,
+    /// shared only for chorus; served and diary-wines never. A namespace that
+    /// IS Chorus's own does not count as running elsewhere.
+    #[test]
+    fn negative_proof_a_chorus_domain_without_a_claim_is_named() {
+        let fx = format!(r##"{DOMAINS_4522}<urn:chorus:domains:domains> {{
+  c:lost a c:Domain . c:shared a c:Domain . c:orphan a c:Domain . c:fake a c:Domain .
+}}
+<urn:chorus:domains:products> {{
+  c:chorus c:hasDomain c:lost , c:shared .
+  c:wine-diary c:hasDomain c:shared .
+  c:sneaky a c:Product ; c:hasDomain c:fake ; c:hasProperty c:own-ns .
+}}
+<urn:chorus:domains:properties> {{ c:own-ns c:propertyKey "model.namespace" ; c:propertyValue "https://jeffbridwell.com/chorus#" . }}
+"##);
+        let mut got = run_on_fixture(&DOMAIN_CLAIMS_VOCABULARY, "4522-red", &fx);
+        got.sort();
+        assert_eq!(
+            got,
+            vec![
+                ("fake".to_string(), "sneaky".to_string()),
+                ("lost".to_string(), "chorus".to_string()),
+                ("orphan".to_string(), "none".to_string()),
+                ("shared".to_string(), "chorus".to_string()),
+            ],
+            "{got:?}"
+        );
+    }
+
     /// The ALLOWED_VALUES positive half: rows whose values are all in the list
     /// produce no findings — so a red on the negative proof is about the value.
     #[test]
@@ -383,7 +465,7 @@ mod tests {
     /// Both new checks select rows, not counts, and honour the graph scope.
     #[test]
     fn new_checks_select_rows_and_carry_the_scope_literal() {
-        for c in [&ALLOWED_VALUES, &PATTERN] {
+        for c in [&ALLOWED_VALUES, &PATTERN, &DOMAIN_CLAIMS_VOCABULARY] {
             assert!(c.query.contains("SELECT DISTINCT ?s"), "{}", c.id);
             assert!(!c.query.contains("COUNT("), "{}", c.id);
             assert!(c.query.contains(r#"STRSTARTS(STR(?g), "urn:chorus:")"#), "{}", c.id);

@@ -254,6 +254,21 @@
       "backupMinBytes": 1000
     },
     {
+      "name": "wine-diary-photos",
+      "label": "Wine diary label photos (bottles domain's file store; each image named by its sha256)",
+      "machine": "library",
+      "storeType": "files",
+      "match": {
+        "kind": "path",
+        "value": "/Users/jeffbridwell/.wine-diary/data/photos"
+      },
+      "role": "systemOfRecord",
+      "basis": "inventory",
+      "backup": "tar",
+      "backupMinBytes": 1000,
+      "_note": "#4522 — the bottles domain's LabelPhoto rows live in the diary's store; the images they name live here. A row restored without its image is a broken bottle, so both are backed up."
+    },
+    {
       "name": "spine",
       "label": "Spine chorus.log",
       "machine": "library",
