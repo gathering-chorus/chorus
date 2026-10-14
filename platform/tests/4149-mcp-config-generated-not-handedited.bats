@@ -80,3 +80,18 @@ PY
   [ "$status" -ne 0 ]
   [[ "$output" == *wren* ]] || return 1
 }
+
+@test "#4515: a werk slot's mcp-grafana ahead on PATH never replaces the installed one" {
+  [ -x "$HOME/.chorus/bin/mcp-grafana" ] || { echo "no installed mcp-grafana: unmeasured, not green"; false; }
+  slot="$BATS_TEST_TMPDIR/slot"; mkdir -p "$slot"
+  printf '#!/bin/sh\n' > "$slot/mcp-grafana"; chmod +x "$slot/mcp-grafana"
+  root="$BATS_TEST_TMPDIR/tree"; mkdir -p "$root/platform/scripts" "$root/roles/wren"
+  cp "$BATS_TEST_DIRNAME/../scripts/gen-role-mcp.sh" "$root/platform/scripts/"
+  PATH="$slot:$PATH" bash "$root/platform/scripts/gen-role-mcp.sh" wren --root "$root" >/dev/null 2>&1 \
+    || PATH="$slot:$PATH" CHORUS_HOME="$root" bash "$root/platform/scripts/gen-role-mcp.sh" wren >/dev/null 2>&1 || true
+  f="$(ls "$root"/roles/wren/.mcp.json 2>/dev/null)"
+  [ -n "$f" ] || { echo "generator wrote no file into the fixture tree"; false; }
+  grep -q "$HOME/.chorus/bin/mcp-grafana" "$f" || { cat "$f"; return 1; }
+  # NEGATIVE PROOF: the slot path must not appear
+  ! grep -q "$slot/mcp-grafana" "$f" || return 1
+}
