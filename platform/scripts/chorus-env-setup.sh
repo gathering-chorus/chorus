@@ -145,7 +145,7 @@ export WERK_KADE_BIN="$CHORUS_WERK_BASE/kade-bin"
 export WERK_WREN_BIN="$CHORUS_WERK_BASE/wren-bin"
 export WERK_SILAS_BIN="$CHORUS_WERK_BASE/silas-bin"
 export WERK_ABBY_NORMAL_BIN="$CHORUS_WERK_BASE/abby-normal-bin"
-mkdir -p "$WERK_KADE_BIN" "$WERK_WREN_BIN" "$WERK_SILAS_BIN" 2>/dev/null || true
+mkdir -p "$WERK_KADE_BIN" "$WERK_WREN_BIN" "$WERK_SILAS_BIN" "$WERK_ABBY_NORMAL_BIN" 2>/dev/null || true
 
 # PATH-prefix only the CURRENT role's slot — that part IS session-scoped: a role
 # resolves its own in-flight build before canonical. A role-less daemon skips
