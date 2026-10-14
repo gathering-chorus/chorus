@@ -15,32 +15,32 @@
   chorus:pipeline-step-cicd-land a chorus:PipelineStep ; rdfs:label "land" ; chorus:stepOrder 5 .
 }
 <urn:chorus:domains:skills> {
-  chorus:skill-werk-commit a chorus:Skill ; rdfs:label "werk-commit" ; chorus:executor "deterministic" ; chorus:implementedBy "werk-commit" ; chorus:arguments "${CARD} ${ROLE} --atomic" .
-  chorus:stepskill-cicd-commit-1 a chorus:StepSkill ; chorus:forStep chorus:pipeline-step-cicd-commit ; chorus:callsSkill chorus:skill-werk-commit ; chorus:skillOrder 1 .
-  chorus:skill-werk-push a chorus:Skill ; rdfs:label "werk-push" ; chorus:executor "deterministic" ; chorus:implementedBy "werk-push" ; chorus:arguments "${CARD} ${ROLE} --atomic" .
-  chorus:stepskill-cicd-commit-2 a chorus:StepSkill ; chorus:forStep chorus:pipeline-step-cicd-commit ; chorus:callsSkill chorus:skill-werk-push ; chorus:skillOrder 2 .
-  chorus:skill-werk-build a chorus:Skill ; rdfs:label "werk-build" ; chorus:executor "deterministic" ; chorus:implementedBy "werk-build" ; chorus:arguments "${CARD} ${ROLE} --target werk" .
-  chorus:stepskill-cicd-build-1 a chorus:StepSkill ; chorus:forStep chorus:pipeline-step-cicd-build ; chorus:callsSkill chorus:skill-werk-build ; chorus:skillOrder 1 .
-  chorus:skill-werk-test a chorus:Skill ; rdfs:label "werk-test" ; chorus:executor "deterministic" ; chorus:implementedBy "werk-test" ; chorus:arguments "${CARD} ${ROLE}" .
+  chorus:skill-werk-commit a chorus:Skill ; rdfs:label "werk-commit" ; chorus:executor "deterministic" ; chorus:implementedBy "werk-commit" ; chorus:arguments "{card} {caller} [{summary}] [--atomic {atomic}] [--continue {continue}] [--abort {abort}]" ; chorus:inputShape chorus:WerkCommitInput .
+  chorus:stepskill-cicd-commit-1 a chorus:StepSkill ; chorus:forStep chorus:pipeline-step-cicd-commit ; chorus:callsSkill chorus:skill-werk-commit ; chorus:skillOrder 1 ; chorus:withArguments "atomic=true" .
+  chorus:skill-werk-push a chorus:Skill ; rdfs:label "werk-push" ; chorus:executor "deterministic" ; chorus:implementedBy "werk-push" ; chorus:arguments "{card} {caller} [--atomic {atomic}]" ; chorus:inputShape chorus:WerkCardInput .
+  chorus:stepskill-cicd-commit-2 a chorus:StepSkill ; chorus:forStep chorus:pipeline-step-cicd-commit ; chorus:callsSkill chorus:skill-werk-push ; chorus:skillOrder 2 ; chorus:withArguments "atomic=true" .
+  chorus:skill-werk-build a chorus:Skill ; rdfs:label "werk-build" ; chorus:executor "deterministic" ; chorus:implementedBy "werk-build" ; chorus:arguments "{card} {caller} [--target {target}] [--atomic {atomic}]" ; chorus:inputShape chorus:WerkBuildInput .
+  chorus:stepskill-cicd-build-1 a chorus:StepSkill ; chorus:forStep chorus:pipeline-step-cicd-build ; chorus:callsSkill chorus:skill-werk-build ; chorus:skillOrder 1 ; chorus:withArguments "target=werk" .
+  chorus:skill-werk-test a chorus:Skill ; rdfs:label "werk-test" ; chorus:executor "deterministic" ; chorus:implementedBy "werk-test" ; chorus:arguments "{card} {caller} [--domain={domain}] [--type={type}]" ; chorus:inputShape chorus:WerkTestInput .
   chorus:stepskill-cicd-test-1 a chorus:StepSkill ; chorus:forStep chorus:pipeline-step-cicd-test ; chorus:callsSkill chorus:skill-werk-test ; chorus:skillOrder 1 .
-  chorus:skill-werk-review a chorus:Skill ; rdfs:label "werk-review" ; chorus:executor "deterministic" ; chorus:implementedBy "werk-review" ; chorus:arguments "${CARD} ${ROLE}" .
+  chorus:skill-werk-review a chorus:Skill ; rdfs:label "werk-review" ; chorus:executor "deterministic" ; chorus:implementedBy "werk-review" ; chorus:arguments "{card} {caller}" ; chorus:inputShape chorus:WerkCardOnlyInput .
   chorus:stepskill-cicd-test-2 a chorus:StepSkill ; chorus:forStep chorus:pipeline-step-cicd-test ; chorus:callsSkill chorus:skill-werk-review ; chorus:skillOrder 2 .
-  chorus:skill-deploy-demo a chorus:Skill ; rdfs:label "deploy-demo" ; chorus:executor "deterministic" ; chorus:implementedBy "werk-deploy" ; chorus:arguments "${CARD} ${ROLE} --target werk" .
+  chorus:skill-deploy-demo a chorus:Skill ; rdfs:label "deploy-demo" ; chorus:executor "deterministic" ; chorus:implementedBy "werk-deploy" ; chorus:arguments "{card} {caller} --target werk" ; chorus:inputShape chorus:WerkCardOnlyInput .
   chorus:stepskill-cicd-demo-1 a chorus:StepSkill ; chorus:forStep chorus:pipeline-step-cicd-demo ; chorus:callsSkill chorus:skill-deploy-demo ; chorus:skillOrder 1 .
-  chorus:skill-werk-deploy-env-up a chorus:Skill ; rdfs:label "werk-deploy env-up" ; chorus:executor "deterministic" ; chorus:implementedBy "werk-deploy" ; chorus:arguments "env-up ${ROLE} ${CARD}" .
+  chorus:skill-werk-deploy-env-up a chorus:Skill ; rdfs:label "werk-deploy env-up" ; chorus:executor "deterministic" ; chorus:implementedBy "werk-deploy" ; chorus:arguments "env-up {caller} {card}" ; chorus:inputShape chorus:WerkCardOnlyInput .
   chorus:stepskill-cicd-demo-2 a chorus:StepSkill ; chorus:forStep chorus:pipeline-step-cicd-demo ; chorus:callsSkill chorus:skill-werk-deploy-env-up ; chorus:skillOrder 2 .
-  chorus:skill-werk-demo a chorus:Skill ; rdfs:label "/demo" ; chorus:executor "deterministic" ; chorus:implementedBy "werk-demo" ; chorus:arguments "${CARD} ${ROLE}" .
+  chorus:skill-werk-demo a chorus:Skill ; rdfs:label "/demo" ; chorus:executor "deterministic" ; chorus:implementedBy "werk-demo" ; chorus:arguments "{card} {caller}" ; chorus:inputShape chorus:WerkCardOnlyInput .
   chorus:stepskill-cicd-demo-3 a chorus:StepSkill ; chorus:forStep chorus:pipeline-step-cicd-demo ; chorus:callsSkill chorus:skill-werk-demo ; chorus:skillOrder 3 .
   chorus:skill-werk-go a chorus:Skill ; rdfs:label "Jeff's go" ; chorus:executor "human" .
   chorus:stepskill-cicd-demo-4 a chorus:StepSkill ; chorus:forStep chorus:pipeline-step-cicd-demo ; chorus:callsSkill chorus:skill-werk-go ; chorus:skillOrder 4 .
-  chorus:skill-werk-merge a chorus:Skill ; rdfs:label "werk-merge" ; chorus:executor "deterministic" ; chorus:implementedBy "werk-merge" ; chorus:arguments "${CARD} ${ROLE} --atomic" .
-  chorus:stepskill-cicd-land-1 a chorus:StepSkill ; chorus:forStep chorus:pipeline-step-cicd-land ; chorus:callsSkill chorus:skill-werk-merge ; chorus:skillOrder 1 .
-  chorus:skill-werk-sync a chorus:Skill ; rdfs:label "werk-sync" ; chorus:executor "deterministic" ; chorus:implementedBy "werk-sync" ; chorus:arguments "ff" .
-  chorus:stepskill-cicd-land-2 a chorus:StepSkill ; chorus:forStep chorus:pipeline-step-cicd-land ; chorus:callsSkill chorus:skill-werk-sync ; chorus:skillOrder 2 .
-  chorus:skill-deploy-prod a chorus:Skill ; rdfs:label "deploy-prod" ; chorus:executor "deterministic" ; chorus:implementedBy "werk-deploy" ; chorus:arguments "${CARD} ${ROLE} --target canonical" .
+  chorus:skill-werk-merge a chorus:Skill ; rdfs:label "werk-merge" ; chorus:executor "deterministic" ; chorus:implementedBy "werk-merge" ; chorus:arguments "{card} {caller} [--atomic {atomic}]" ; chorus:inputShape chorus:WerkCardInput .
+  chorus:stepskill-cicd-land-1 a chorus:StepSkill ; chorus:forStep chorus:pipeline-step-cicd-land ; chorus:callsSkill chorus:skill-werk-merge ; chorus:skillOrder 1 ; chorus:withArguments "atomic=true" .
+  chorus:skill-werk-sync a chorus:Skill ; rdfs:label "werk-sync" ; chorus:executor "deterministic" ; chorus:implementedBy "werk-sync" ; chorus:arguments "{mode}" ; chorus:inputShape chorus:WerkSyncInput .
+  chorus:stepskill-cicd-land-2 a chorus:StepSkill ; chorus:forStep chorus:pipeline-step-cicd-land ; chorus:callsSkill chorus:skill-werk-sync ; chorus:skillOrder 2 ; chorus:withArguments "mode=ff" .
+  chorus:skill-deploy-prod a chorus:Skill ; rdfs:label "deploy-prod" ; chorus:executor "deterministic" ; chorus:implementedBy "werk-deploy" ; chorus:arguments "{card} {caller} --target canonical" ; chorus:inputShape chorus:WerkCardOnlyInput .
   chorus:stepskill-cicd-land-3 a chorus:StepSkill ; chorus:forStep chorus:pipeline-step-cicd-land ; chorus:callsSkill chorus:skill-deploy-prod ; chorus:skillOrder 3 .
-  chorus:skill-werk-accept a chorus:Skill ; rdfs:label "werk-accept" ; chorus:executor "deterministic" ; chorus:implementedBy "werk-accept" ; chorus:arguments "${CARD} ${ROLE} --atomic" .
-  chorus:stepskill-cicd-land-4 a chorus:StepSkill ; chorus:forStep chorus:pipeline-step-cicd-land ; chorus:callsSkill chorus:skill-werk-accept ; chorus:skillOrder 4 .
+  chorus:skill-werk-accept a chorus:Skill ; rdfs:label "werk-accept" ; chorus:executor "deterministic" ; chorus:implementedBy "werk-accept" ; chorus:arguments "{card} {caller} [--atomic {atomic}]" ; chorus:inputShape chorus:WerkCardInput .
+  chorus:stepskill-cicd-land-4 a chorus:StepSkill ; chorus:forStep chorus:pipeline-step-cicd-land ; chorus:callsSkill chorus:skill-werk-accept ; chorus:skillOrder 4 ; chorus:withArguments "atomic=true" .
 }
 # #4465 AC7 — the walk: stream ← automates ← pipeline; pipeline step coversStep stream steps; skills name domains.
 <urn:chorus:domains:value-streams> {
