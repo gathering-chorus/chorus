@@ -34,6 +34,9 @@ pub struct Row {
     /// #4514 AC4 — the skill's input shape when it is a runner tool. Such a step
     /// calls the verb through the runner (one path: dagu calls the runner too).
     pub input_shape: String,
+    /// #4514 reopen 1 — the step's own key=value pairs for a runner tool
+    /// (atomic=true, mode=ff): the pipeline's choices, from the StepSkill row.
+    pub with_args: String,
 }
 
 /// Rows from TSV. A line with the wrong column count or a non-number order is
@@ -48,8 +51,8 @@ pub fn parse_rows(tsv: &str) -> Result<Vec<Row>, Vec<String>> {
         }
         let f: Vec<&str> = line.split('\t').collect();
         // #4514 — a 10th column (inputShape) is optional, so older row files still read
-        if f.len() != 9 && f.len() != 10 {
-            errs.push(format!("line {}: {} columns, want 9 or 10", i + 1, f.len()));
+        if !(9..=11).contains(&f.len()) {
+            errs.push(format!("line {}: {} columns, want 9 to 11", i + 1, f.len()));
             continue;
         }
         let (so, ko) = (f[1].trim().parse::<u32>(), f[2].trim().parse::<u32>());
@@ -65,6 +68,7 @@ pub fn parse_rows(tsv: &str) -> Result<Vec<Row>, Vec<String>> {
                 mode: f[7].trim().into(),
                 on_fail: local(f[8].trim()),
                 input_shape: f.get(9).map(|x| local(x.trim())).unwrap_or_default(),
+                with_args: f.get(10).map(|x| x.trim().to_string()).unwrap_or_default(),
             }),
             _ => errs.push(format!("line {}: stepOrder and skillOrder must be numbers", i + 1)),
         }
@@ -76,6 +80,13 @@ pub fn parse_rows(tsv: &str) -> Result<Vec<Row>, Vec<String>> {
 /// lib.rs:4453), chorus-make refuses before it writes anything.
 pub fn check(rows: &[Row]) -> Vec<String> {
     let mut errs = Vec::new();
+    // #4514 — a runner step that cannot fill a required argument never runs
+    for r in rows.iter().filter(|r| !r.input_shape.is_empty()) {
+        let (_, missing) = runner_pairs(r);
+        if !missing.is_empty() {
+            errs.push(format!("step {} calls {} without {}: add it to the step's withArguments", r.step, runner_tool_name(r), missing.join(", ")));
+        }
+    }
     if rows.is_empty() {
         errs.push("no rows: a pipeline with no steps is refused, never written empty".into());
     }
@@ -228,26 +239,55 @@ fn preamble(out: &mut String, description: &str, queue: &str, params: &[&str], w
 /// one pair per `{name}` its arguments template takes (the caller signs as
 /// $ROLE, so `{caller}` is not passed). The verb's exit code is the step's.
 pub fn runner_call(r: &Row) -> String {
-    let mut names: Vec<String> = Vec::new();
-    let mut rest = r.mode.as_str();
-    while let Some(i) = rest.find('{') {
-        let Some(j) = rest[i..].find('}') else { break };
-        let n = &rest[i + 1..i + j];
-        if n != "caller" && !names.iter().any(|x| x == n) {
-            names.push(n.to_string());
-        }
-        rest = &rest[i + j + 1..];
-    }
-    let pairs: Vec<String> = names.iter().map(|n| format!("{n}=${{{}}}", n.to_uppercase())).collect();
-    // the door (and so the runner) names a Skill row without its class prefix:
-    // skill-werk-commit is served as werk-commit
-    let skill = local(&r.skill);
-    let mut cmd = format!("chorus-runner call {}", skill.strip_prefix("skill-").unwrap_or(&skill));
-    for p in pairs {
+    let mut cmd = format!("chorus-runner call {}", runner_tool_name(r));
+    for p in runner_pairs(r).0 {
         cmd.push(' ');
         cmd.push_str(&p);
     }
     cmd
+}
+
+/// The door (and so the runner) names a Skill row without its class prefix:
+/// skill-werk-commit is served as werk-commit.
+fn runner_tool_name(r: &Row) -> String {
+    let skill = local(&r.skill);
+    skill.strip_prefix("skill-").unwrap_or(&skill).to_string()
+}
+
+/// The pipeline params a runner step can pass (ROLE is the caller, never passed).
+const RUNNER_PARAMS: &[&str] = &["CARD", "ACCEPTER"];
+
+/// #4514 — a runner step's key=value pairs, and the required placeholders it
+/// cannot fill. A `{name}` the pipeline has a param for is passed as
+/// `name=${NAME}`; the step's withArguments come next. A placeholder outside a
+/// `[...]` group that neither fills is missing — refused at generate.
+pub fn runner_pairs(r: &Row) -> (Vec<String>, Vec<String>) {
+    let given: Vec<&str> = r.with_args.split_whitespace().filter_map(|p| p.split_once('=').map(|(k, _)| k)).collect();
+    let (mut pairs, mut missing) = (Vec::new(), Vec::new());
+    let mut depth = 0i32;
+    let mut seen: Vec<String> = Vec::new();
+    let mut chars = r.mode.chars();
+    while let Some(c) = chars.next() {
+        match c {
+            '[' => depth += 1,
+            ']' => depth -= 1,
+            '{' => {
+                let name: String = chars.by_ref().take_while(|c| *c != '}').collect();
+                if name == "caller" || seen.contains(&name) {
+                    continue;
+                }
+                seen.push(name.clone());
+                if RUNNER_PARAMS.contains(&name.to_uppercase().as_str()) {
+                    pairs.push(format!("{name}=${{{}}}", name.to_uppercase()));
+                } else if depth == 0 && !given.contains(&name.as_str()) {
+                    missing.push(name);
+                }
+            }
+            _ => {}
+        }
+    }
+    pairs.extend(r.with_args.split_whitespace().map(String::from));
+    (pairs, missing)
 }
 
 fn command_step(out: &mut String, r: &Row, prev: &Option<String>, before_a_human: bool) {
@@ -384,7 +424,7 @@ pub fn drift(expected: &str, on_disk: &str) -> Result<(), String> {
 /// domain graphs (pipelines, skills). `{PIPELINE}` is the pipeline's label.
 pub const ROWS_QUERY: &str = r#"PREFIX chorus: <https://jeffbridwell.com/chorus#>
 PREFIX rdfs: <http://www.w3.org/2000/01/rdf-schema#>
-SELECT ?step ?stepOrder ?skillOrder ?skill ?label ?executor ?implementedBy ?mode ?onFail ?inputShape WHERE {
+SELECT ?step ?stepOrder ?skillOrder ?skill ?label ?executor ?implementedBy ?mode ?onFail ?inputShape ?withArgs WHERE {
   GRAPH ?g0 { ?pipeline a chorus:Pipeline ; rdfs:label "{PIPELINE}" ; chorus:hasStep ?s . }
   GRAPH ?g1 { ?s rdfs:label ?step ; chorus:stepOrder ?stepOrder . }
   GRAPH ?g2 { ?ss a chorus:StepSkill ; chorus:forStep ?s ; chorus:callsSkill ?skill ; chorus:skillOrder ?skillOrder . }
@@ -392,6 +432,7 @@ SELECT ?step ?stepOrder ?skillOrder ?skill ?label ?executor ?implementedBy ?mode
               OPTIONAL { ?skill chorus:implementedBy ?implementedBy }
               OPTIONAL { ?skill chorus:arguments ?mode }
               OPTIONAL { ?skill chorus:inputShape ?inputShape } }
+  OPTIONAL { GRAPH ?g5 { ?ss chorus:withArguments ?withArgs } }
   OPTIONAL { GRAPH ?g4 { ?s chorus:onFail ?onFail } }
 }
 ORDER BY ?stepOrder ?skillOrder
@@ -428,7 +469,7 @@ pub fn rows_from_sparql_tsv(tsv: &str) -> Result<Vec<Row>, Vec<String>> {
         .filter(|l| !l.trim().is_empty())
         .map(|l| {
             let mut f: Vec<String> = l.split('\t').map(term).collect();
-            f.resize(10, String::new()); // trailing OPTIONALs may be absent
+            f.resize(11, String::new()); // trailing OPTIONALs may be absent
             f.join("\t") + "\n"
         })
         .collect();

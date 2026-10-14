@@ -85,6 +85,8 @@ chorus:forService a owl:ObjectProperty ; rdfs:label "for service" ;
     rdfs:comment "The Service a skill runs as part of (#4513)." .
 chorus:timeoutSeconds a owl:DatatypeProperty ; rdfs:label "timeout seconds" .
 chorus:longRunning a owl:DatatypeProperty ; rdfs:label "long running" .
+chorus:withArguments a owl:DatatypeProperty ; rdfs:label "with arguments" ;
+    rdfs:comment "The key=value pairs a pipeline step passes its runner tool (#4514)." .
 chorus:runsAs a owl:DatatypeProperty ; rdfs:label "runs as" ;
     rdfs:comment "Whose identity a tool runs with: caller or owner (#4514)." .
 
@@ -126,5 +128,10 @@ chorus:StepSkillShape a sh:NodeShape ;
                   sh:name "order" ; sh:description "Required. Its place within the step, from 1; no two skills share a place in one step." ] ;
     sh:property [ sh:path chorus:ownedBy ; sh:minCount 1 ; sh:maxCount 1 ; sh:nodeKind sh:IRI ; sh:class chorus:Principal ;
                   sh:name "owned by" ; sh:description "Required, set by the door." ] ;
+    # #4514 reopen 1 — what this step passes the skill when the skill is a
+    # runner tool: the pipeline's own choices (atomic, a sync mode), as the
+    # key=value pairs `chorus-runner call` takes. The card comes from the run.
+    sh:property [ sh:path chorus:withArguments ; sh:maxCount 1 ; sh:datatype xsd:string ; sh:name "with arguments" ;
+                  sh:description "Optional. key=value pairs, space-separated, this step passes its skill (e.g. atomic=true, mode=ff)." ] ;
     chorus:instancesGraph "urn:chorus:domains:skills" ;
     chorus:generatedBy "athena-model" .
