@@ -69,54 +69,17 @@ role_werk() {
   [ "$output" = "unset/unset" ]
 }
 
-# --- #3016: CHORUS_MCP_PORT — daemon try-before-buy endpoint resolution ---
+# --- #4515: the old per-role MCP port is gone ---
 
-mcp_port() {
-  local role="$1"
-  ( cd "$WERK_BASE"
-    unset KADE_WERK WREN_WERK SILAS_WERK CHORUS_MCP_PORT CHORUS_MCP_PORT_CANONICAL
-    export CHORUS_ROLE="$role"
-    source "$ENV_SETUP" >/dev/null 2>&1
-    echo "${CHORUS_MCP_PORT:-}" )
-}
-
-@test "no active werk: CHORUS_MCP_PORT falls back to canonical 3341" {
-  run mcp_port silas
-  [ "$output" = "3341" ]
-}
-
-@test "active werk but no daemon marker: CHORUS_MCP_PORT stays canonical 3341" {
-  mkdir -p "$WERK_BASE/silas-3016"
-  run mcp_port silas
-  [ "$output" = "3341" ]
-}
-
-@test "active werk with daemon marker: CHORUS_MCP_PORT resolves to the role's werk port" {
+@test "NEGATIVE PROOF: env-setup exports no CHORUS_MCP_PORT, even with an old werk marker" {
   mkdir -p "$WERK_BASE/silas-3016/.werk-mcp"
   touch "$WERK_BASE/silas-3016/.werk-mcp/active"
-  run mcp_port silas
-  [ "$output" = "3351" ]
-}
-
-@test "per-role werk ports are deterministic and distinct (silas/kade/wren)" {
-  for r in silas kade wren; do
-    mkdir -p "$WERK_BASE/$r-1/.werk-mcp"
-    touch "$WERK_BASE/$r-1/.werk-mcp/active"
-  done
-  s=$(mcp_port silas); k=$(mcp_port kade); w=$(mcp_port wren)
-  [ "$s" = "3351" ]
-  [ "$k" = "3352" ]
-  [ "$w" = "3353" ]
-  [ "$s" != "$k" ] && [ "$k" != "$w" ] && [ "$s" != "$w" ]
-}
-
-@test "canonical port is overridable via CHORUS_MCP_PORT_CANONICAL" {
-  run bash -c "cd '$WERK_BASE'; unset KADE_WERK WREN_WERK SILAS_WERK CHORUS_MCP_PORT; export CHORUS_ROLE=silas CHORUS_MCP_PORT_CANONICAL=4000; source '$ENV_SETUP' >/dev/null 2>&1; echo \$CHORUS_MCP_PORT"
-  [ "$output" = "4000" ]
+  run bash -c "cd '$WERK_BASE'; unset KADE_WERK WREN_WERK SILAS_WERK CHORUS_MCP_PORT CHORUS_MCP_PORT_CANONICAL CHORUS_MCP_WERK_PORT; export CHORUS_ROLE=silas; source '$ENV_SETUP' >/dev/null 2>&1; echo \"[\${CHORUS_MCP_PORT:-}\${CHORUS_MCP_PORT_CANONICAL:-}\${CHORUS_MCP_WERK_PORT:-}]\""
+  [ "$output" = "[]" ] || return 1
 }
 
 # #4458 — Abby (abby-normal) works cards like the other agents: her session and
-# her werk resolve her role, her werk var and her demo MCP port (slot 4: 3354).
+# her werk resolve her role and her werk var.
 @test "abby-normal: her werk resolves to ABBY_NORMAL_WERK" {
   mkdir -p "$WERK_BASE/abby-normal-4456"
   run bash -c "cd '$WERK_BASE' && unset ABBY_NORMAL_WERK && export CHORUS_ROLE=abby-normal && source '$ENV_SETUP' >/dev/null 2>&1 && echo \"\${ABBY_NORMAL_WERK:-}\""

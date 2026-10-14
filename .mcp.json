@@ -3,10 +3,8 @@
   "mcpServers": {
     "chorus-api": {
       "type": "http",
-      "url": "http://localhost:${CHORUS_MCP_PORT:-3341}/mcp",
-      "headers": {
-        "X-Chorus-Role": "${CHORUS_ROLE}"
-      }
+      "url": "http://localhost:3342/mcp",
+      "headersHelper": "${CHORUS_HOME:-/Users/jeffbridwell/CascadeProjects/chorus}/platform/scripts/chorus-mcp-headers ${CHORUS_ROLE}"
     }
   }
 }

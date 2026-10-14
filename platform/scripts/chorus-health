@@ -363,20 +363,36 @@ else
   fail "bedroom-reachable" "${BEDROOM_HOST} unreachable — ping AND SSH both failed"
 fi
 
-# #2998: MCP round-trip now hits chorus-mcp on :3341, not chorus-api on :3340.
-# chorus-api no longer hosts /mcp after the cutover.
-MCP_BASE="${MCP_BASE:-http://localhost:3341}"
-mcp_result=$(curl -s --max-time 5 -X POST "${MCP_BASE}/mcp" \
-  -H "Content-Type: application/json" \
-  -H "Accept: application/json, text/event-stream" \
-  -d '{"jsonrpc":"2.0","method":"tools/list","id":1}' 2>/dev/null \
-  | grep '^data:' | head -1 | sed 's/^data: //' \
-  | python3 -c "import json,sys; d=json.load(sys.stdin); tools=d.get('result',{}).get('tools',[]); print(f'ok:{len(tools)}')" 2>/dev/null || echo "fail:curl-or-parse")
+# #4515 — MCP round-trip against the tool runner (:3342), the way a session
+# calls it: the 2026-07-28 release (no handshake; protocol in each request's
+# _meta), signed with silas's own credential from the headers helper. The old
+# server on :3341 is gone. A refused credential or a missing tool list FAILs.
+RUNNER_MCP="${RUNNER_MCP:-http://127.0.0.1:3342/mcp}"
+mcp_result=$("${SCRIPTS}/chorus-mcp-headers" silas 2>/dev/null | python3 -c '
+import json, re, sys, urllib.request
+try:
+    headers = json.load(sys.stdin)
+except ValueError:
+    print("fail:no credential from chorus-mcp-headers"); sys.exit()
+meta = {"io.modelcontextprotocol/protocolVersion": "2026-07-28",
+        "io.modelcontextprotocol/clientCapabilities": {},
+        "io.modelcontextprotocol/clientInfo": {"name": "chorus-health", "version": "1"}}
+body = json.dumps({"jsonrpc": "2.0", "id": 1, "method": "tools/list", "params": {"_meta": meta}}).encode()
+req = urllib.request.Request(sys.argv[1], data=body, headers={**headers, "Content-Type": "application/json",
+      "Accept": "application/json, text/event-stream", "MCP-Protocol-Version": "2026-07-28", "Mcp-Method": "tools/list"})
+try:
+    text = urllib.request.urlopen(req, timeout=5).read().decode()
+except Exception as e:
+    print("fail:" + str(getattr(e, "code", e))); sys.exit()
+m = re.search(r"\{.*\}", text, re.S)
+tools = (json.loads(m.group(0)).get("result", {}).get("tools", []) if m else [])
+print(f"ok:{len(tools)}" if tools else "fail:empty tool list")
+' "$RUNNER_MCP" 2>/dev/null || echo "fail:probe-error")
 if echo "$mcp_result" | grep -q "^ok:"; then
   tool_count=$(echo "$mcp_result" | cut -d: -f2)
-  pass "mcp-round-trip" "${tool_count} tools listed via MCP"
+  pass "mcp-round-trip" "${tool_count} tools listed by the tool runner (MCP 2026-07-28)"
 else
-  fail "mcp-round-trip" "MCP tools/list failed: ${mcp_result#fail:}"
+  fail "mcp-round-trip" "tool runner tools/list failed: ${mcp_result#fail:}"
 fi
 
 # #3960 — authn coverage: one number for "can an unverified actor mutate a

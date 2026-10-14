@@ -1,0 +1,21 @@
+#!/usr/bin/env bash
+# chorus-mcp-headers — #4515. A session's MCP request headers, for the tool
+# runner (:3342). Claude Code runs this as the chorus-api server's
+# headersHelper: on connect, and again on a 401/403 before retrying, so a
+# credential that ages out mid-session is re-minted, never a dead session.
+#
+#   chorus-mcp-headers <role>      prints {"Authorization": "..."} on stdout
+#
+# The credential is the role's own (chorus-identity-token, cached and renewed
+# near expiry). FAIL-CLOSED: no role or no credential exits non-zero with
+# nothing on stdout, so the session shows the server failing to connect
+# instead of calling as nobody. Never a role header: the runner trusts only a
+# verified credential.
+set -euo pipefail
+
+ROLE="${1:-${CHORUS_ROLE:-}}"
+[ -n "$ROLE" ] || { echo "chorus-mcp-headers: no role (arg or CHORUS_ROLE)" >&2; exit 2; }
+MINT="${CHORUS_TOKEN_BIN:-$(dirname "$0")/chorus-identity-token}"
+CRED="$("$MINT" "$ROLE")" || { echo "chorus-mcp-headers: no credential for $ROLE" >&2; exit 3; }
+[ -n "$CRED" ] || { echo "chorus-mcp-headers: empty credential for $ROLE" >&2; exit 3; }
+python3 -c 'import json,sys; print(json.dumps({"Authorization": "Bearer " + sys.argv[1]}))' "$CRED"

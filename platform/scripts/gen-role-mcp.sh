@@ -49,6 +49,9 @@ CCLSP_BIN="$(command -v cclsp || echo "$HOME/.nvm/versions/node/v20.20.2/bin/ccl
 MCP_GRAFANA="$(command -v mcp-grafana || echo "$HOME/.chorus/bin/mcp-grafana")"
 GRAFANA_URL_VALUE="${GRAFANA_URL:-http://localhost:3100}"
 
+# #4515 — chorus-api is the tool runner (:3342), the old MCP server is gone.
+# The session sends its own verified credential through the headers helper
+# (re-run by Claude Code on connect and on a 401), never an asserted role header.
 ROLES=(wren silas kade)
 
 for role in "${ROLES[@]}"; do
@@ -60,8 +63,8 @@ for role in "${ROLES[@]}"; do
   "mcpServers": {
     "chorus-api": {
       "type": "http",
-      "url": "http://localhost:3341/mcp",
-      "headers": { "X-Chorus-Role": "$role" }
+      "url": "http://localhost:3342/mcp",
+      "headersHelper": "$RUNTIME_HOME/platform/scripts/chorus-mcp-headers $role"
     },
     "cclsp": {
       "command": "$NODE_BIN",

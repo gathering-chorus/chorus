@@ -3,8 +3,8 @@
   "mcpServers": {
     "chorus-api": {
       "type": "http",
-      "url": "http://localhost:3341/mcp",
-      "headers": { "X-Chorus-Role": "silas" }
+      "url": "http://localhost:3342/mcp",
+      "headersHelper": "/Users/jeffbridwell/CascadeProjects/chorus/platform/scripts/chorus-mcp-headers silas"
     },
     "cclsp": {
       "command": "/Users/jeffbridwell/.nvm/versions/node/v20.20.2/bin/node",
