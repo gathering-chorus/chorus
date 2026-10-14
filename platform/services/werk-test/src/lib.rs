@@ -5397,6 +5397,192 @@ where
     (out, waits.load(Ordering::SeqCst))
 }
 
+/// #4022 reopen 2026-10-14 — one queue for the whole nightly. Each stage used
+/// to run its cargo, npm and file pools one after another and wait for the
+/// last to drain: on 10-14 one suite or none was running for 3,134s of
+/// 6,961s. A job names its lane; a lane never runs more than its limit at
+/// once (the limits are the lane widths, which sum to one CPU budget). An
+/// `alone` job starts only when nothing else runs, and nothing starts beside
+/// it. Jobs start in queue order wherever a lane has room, so a stage's long
+/// tail overlaps the next stage's work. Results come back in INPUT order with
+/// the gate's hold count, the same contract as `run_pool_gated`.
+#[derive(Clone, Debug)]
+pub struct QueueJob {
+    pub key: String,
+    pub lane: String,
+    pub alone: bool,
+}
+
+pub fn run_queue_gated<T, F, L>(jobs: &[QueueJob], limits: &[(&str, usize)], cap: f64, load: L,
+    max_wait: std::time::Duration, tick: std::time::Duration, f: F) -> (Vec<(String, T)>, usize)
+where
+    T: Send + 'static,
+    F: Fn(&QueueJob) -> T + Send + Sync,
+    L: Fn() -> Option<f64> + Send + Sync,
+{
+    use std::collections::HashMap;
+    use std::sync::{Condvar, Mutex};
+    use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
+    if jobs.is_empty() { return (Vec::new(), 0); }
+    let limit = |lane: &str| limits.iter().find(|(l, _)| *l == lane).map(|(_, n)| (*n).max(1)).unwrap_or(1);
+    struct State { pending: Vec<usize>, lanes: HashMap<String, usize>, running: usize, alone: bool }
+    let state = Mutex::new(State { pending: (0..jobs.len()).collect(), lanes: HashMap::new(), running: 0, alone: false });
+    let cv = Condvar::new();
+    let waits = AtomicUsize::new(0);
+    let done = AtomicUsize::new(0);
+    let finished = AtomicBool::new(false);
+    let slots: Mutex<Vec<Option<(String, T)>>> = Mutex::new((0..jobs.len()).map(|_| None).collect());
+    let workers = limits.iter().map(|(_, n)| (*n).max(1)).sum::<usize>().max(1).min(jobs.len());
+    std::thread::scope(|s| {
+        s.spawn(|| {
+            let mut ticks = 0u32;
+            while !finished.load(Ordering::SeqCst) {
+                std::thread::sleep(std::time::Duration::from_secs(1));
+                ticks += 1;
+                if ticks % 60 == 0 {
+                    let st = state.lock().unwrap();
+                    println!("-- pool heartbeat: {}/{} done, {} in flight, {} gate hold(s) --",
+                        done.load(Ordering::SeqCst), jobs.len(), st.running, waits.load(Ordering::SeqCst));
+                }
+            }
+        });
+        for _ in 0..workers {
+            s.spawn(|| loop {
+                // take the first job that may start now, in queue order
+                let i = {
+                    let mut st = state.lock().unwrap();
+                    loop {
+                        if st.pending.is_empty() { break None; }
+                        let pick = if st.alone { None } else {
+                            st.pending.iter().position(|&j| {
+                                let job = &jobs[j];
+                                if job.alone { st.running == 0 }
+                                else { st.lanes.get(&job.lane).copied().unwrap_or(0) < limit(&job.lane) }
+                            })
+                        };
+                        match pick {
+                            Some(p) => {
+                                let j = st.pending.remove(p);
+                                st.running += 1;
+                                *st.lanes.entry(jobs[j].lane.clone()).or_insert(0) += 1;
+                                if jobs[j].alone { st.alone = true; }
+                                break Some(j);
+                            }
+                            None => { st = cv.wait(st).unwrap(); }
+                        }
+                    }
+                };
+                let Some(i) = i else { cv.notify_all(); break; };
+                let job = &jobs[i];
+                if !job.alone {
+                    let started = std::time::Instant::now();
+                    while let Some(l) = load() {
+                        if l <= cap || started.elapsed() >= max_wait { break; }
+                        waits.fetch_add(1, Ordering::SeqCst);
+                        std::thread::sleep(tick);
+                    }
+                }
+                let out = f(job);
+                slots.lock().unwrap()[i] = Some((job.key.clone(), out));
+                {
+                    let mut st = state.lock().unwrap();
+                    st.running -= 1;
+                    if let Some(n) = st.lanes.get_mut(&job.lane) { *n -= 1; }
+                    if job.alone { st.alone = false; }
+                }
+                if done.fetch_add(1, Ordering::SeqCst) + 1 == jobs.len() {
+                    finished.store(true, Ordering::SeqCst);
+                }
+                cv.notify_all();
+            });
+        }
+    });
+    finished.store(true, Ordering::SeqCst);
+    let out = slots.into_inner().unwrap().into_iter().flatten().collect();
+    (out, waits.load(Ordering::SeqCst))
+}
+
+#[cfg(test)]
+mod one_queue_4022 {
+    use super::*;
+    use std::sync::Mutex;
+    use std::time::Duration;
+
+    fn job(key: &str, lane: &str, alone: bool) -> QueueJob {
+        QueueJob { key: key.into(), lane: lane.into(), alone }
+    }
+
+    /// Runs the queue with each job sleeping `ms`, recording (key, start, end) in ms.
+    fn trace(jobs: &[QueueJob], limits: &[(&str, usize)], ms: &(dyn Fn(&str) -> u64 + Sync)) -> Vec<(String, u128, u128)> {
+        let t0 = std::time::Instant::now();
+        let log = Mutex::new(Vec::new());
+        let (out, _) = run_queue_gated(jobs, limits, 100.0, || Some(0.0), Duration::ZERO, Duration::ZERO, |j: &QueueJob| {
+            let a = t0.elapsed().as_millis();
+            std::thread::sleep(Duration::from_millis(ms(&j.key)));
+            log.lock().unwrap().push((j.key.clone(), a, t0.elapsed().as_millis()));
+        });
+        assert_eq!(out.iter().map(|(k, _)| k.clone()).collect::<Vec<_>>(),
+            jobs.iter().map(|j| j.key.clone()).collect::<Vec<_>>(), "results come back in input order");
+        log.into_inner().unwrap()
+    }
+
+    fn overlap(a: &(String, u128, u128), b: &(String, u128, u128)) -> bool { a.1 < b.2 && b.1 < a.2 }
+
+    #[test]
+    fn a_long_tail_overlaps_the_next_stages_work() {
+        // stage 1: one long security suite; stage 2: two short file suites
+        let jobs = [job("s1-long", "files", false), job("s2-a", "files", false), job("s2-b", "files", false)];
+        let t = trace(&jobs, &[("files", 2)], &|k| if k == "s1-long" { 300 } else { 50 });
+        let long = t.iter().find(|x| x.0 == "s1-long").unwrap();
+        assert!(t.iter().filter(|x| x.0.starts_with("s2")).any(|x| overlap(x, long)),
+            "the next stage waited for the long tail: {:?}", t);
+    }
+
+    #[test]
+    fn a_lane_never_runs_more_than_its_limit() {
+        use std::sync::atomic::{AtomicUsize, Ordering};
+        let jobs: Vec<QueueJob> = (0..6).map(|i| job(&format!("c{}", i), "cargo", false))
+            .chain((0..6).map(|i| job(&format!("f{}", i), "files", false))).collect();
+        let (now_c, max_c, now_f, max_f) = (AtomicUsize::new(0), AtomicUsize::new(0), AtomicUsize::new(0), AtomicUsize::new(0));
+        run_queue_gated(&jobs, &[("cargo", 2), ("files", 3)], 100.0, || Some(0.0), Duration::ZERO, Duration::ZERO, |j: &QueueJob| {
+            let (now, max) = if j.lane == "cargo" { (&now_c, &max_c) } else { (&now_f, &max_f) };
+            let n = now.fetch_add(1, Ordering::SeqCst) + 1;
+            max.fetch_max(n, Ordering::SeqCst);
+            std::thread::sleep(Duration::from_millis(40));
+            now.fetch_sub(1, Ordering::SeqCst);
+        });
+        assert_eq!(max_c.load(Ordering::SeqCst), 2, "cargo ran past its limit, or never filled it");
+        assert_eq!(max_f.load(Ordering::SeqCst), 3, "files ran past its limit, or never filled it");
+    }
+
+    #[test]
+    fn an_alone_job_runs_with_nothing_beside_it() {
+        let jobs = [job("a", "files", false), job("m", "files", true), job("b", "cargo", false), job("c", "files", false)];
+        let t = trace(&jobs, &[("files", 3), ("cargo", 2)], &|_| 60);
+        let m = t.iter().find(|x| x.0 == "m").unwrap();
+        assert!(t.iter().all(|x| x.0 == "m" || !overlap(x, m)), "a job ran beside the alone job: {:?}", t);
+    }
+
+    /// NEGATIVE PROOF: the old shape (a pool per stage, one after another) can
+    /// not overlap the tail, so the first test's check must fail on it.
+    #[test]
+    fn negative_proof_stage_by_stage_pools_leave_the_tail_alone() {
+        let t0 = std::time::Instant::now();
+        let log = Mutex::new(Vec::new());
+        let run = |k: &str, ms: u64| {
+            let a = t0.elapsed().as_millis();
+            std::thread::sleep(Duration::from_millis(ms));
+            log.lock().unwrap().push((k.to_string(), a, t0.elapsed().as_millis()));
+        };
+        run_pool_gated(&["s1-long".to_string()], 2, 100.0, || Some(0.0), Duration::ZERO, Duration::ZERO, |k| run(k, 300));
+        run_pool_gated(&["s2-a".to_string(), "s2-b".to_string()], 2, 100.0, || Some(0.0), Duration::ZERO, Duration::ZERO, |k| run(k, 50));
+        let t = log.into_inner().unwrap();
+        let long = t.iter().find(|x| x.0 == "s1-long").unwrap().clone();
+        assert!(!t.iter().filter(|x| x.0.starts_with("s2")).any(|x| overlap(x, &long)),
+            "the check cannot tell the two shapes apart");
+    }
+}
+
 #[cfg(test)]
 mod load_aware_4022 {
     use super::*;

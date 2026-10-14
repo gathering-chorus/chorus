@@ -117,3 +117,40 @@ deny Policy" ] || return 1
   r="$(QUARTET_PROD_CONFIRM=yes prod_gate_reason /x/chorus-werk/kade-1 /bin/sh http://127.0.0.1:9)"
   [[ "$r" == *"not answering"* ]] || return 1
 }
+
+# #4022 reopen 2026-10-14 — the nightly went red 3/3: an acl:Append row (#4517)
+# opens a create and the caller's own row, and the plan counted only Write, so
+# it expected a refusal the door rightly did not give.
+@test "plan: a class on an Append graph is walked as append, not denied" {
+  printf '{"data":[{"agent":"principal-kade","mode":"http://www.w3.org/ns/auth/acl#Append","accessTo":"urn:g:identity"},{"agent":"principal-kade","mode":"http://www.w3.org/ns/auth/acl#Write","accessTo":"urn:g:code"}]}\n' > "$T/pa.json"
+  printf '{"Session":"urn:g:identity","CodeFile":"urn:g:code","Credential":"urn:g:security"}\n' > "$T/ga.json"
+  run python3 "$PLAN" plan "$T/pa.json" "$T/ga.json" kade
+  [ "$output" = "deny Credential
+append Session
+allow CodeFile" ]
+}
+
+@test "verdict: an Append class whose own-row cycle passes is clean" {
+  printf 'deny Credential\nappend Session\n' > "$T/plan"
+  printf 'Credential NOT-PERM 403 authz\nSession PASS create read update delete\n' > "$T/out"
+  run python3 "$PLAN" verdict "$T/plan" "$T/out"
+  [ "$status" -eq 0 ]
+}
+
+@test "verdict: an Append class the door refuses is red, named as append" {
+  printf 'append Session\n' > "$T/plan"
+  printf 'Session NOT-PERM 403 write refused\n' > "$T/out"
+  run python3 "$PLAN" verdict "$T/plan" "$T/out"
+  [ "$status" -eq 1 ]
+  [[ "$output" == *"Session: rows append (own row), door answered NOT-PERM"* ]] || return 1
+}
+
+# NEGATIVE PROOF: a plan that drops Append (reads it as deny, the 10-13 code)
+# turns the door's correct create into a red.
+@test "negative proof: reading Append as deny makes a correct door red" {
+  printf 'deny Session\n' > "$T/plan"
+  printf 'Session PASS create read update delete\n' > "$T/out"
+  run python3 "$PLAN" verdict "$T/plan" "$T/out"
+  [ "$status" -eq 1 ]
+  [[ "$output" == *"Session: rows deny, door answered PASS"* ]] || return 1
+}

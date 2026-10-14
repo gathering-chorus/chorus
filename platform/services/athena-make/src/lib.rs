@@ -1153,6 +1153,19 @@ pub fn generate(class_local: &str) -> R<RouteTable> {
         g = ONTOLOGY_GRAPH, c = class
     );
     let mut allowed_values: Vec<String> = select_v(&sparql_json(&q_in)?);
+    // #4022 — an enum written as sh:pattern ^(open|closed)$ is the same rule as
+    // sh:in in another spelling; the DAL refuses anything else, so publish it too.
+    // These are probe values for a generated create, never a validity check: the
+    // whole regex decides validity (Silas, #4515 patch 7).
+    let q_pat = format!(
+        "PREFIX sh: <http://www.w3.org/ns/shacl#> PREFIX rdfs: <http://www.w3.org/2000/01/rdf-schema#> SELECT ?v WHERE {{ GRAPH <{g}> {{ <{c}> rdfs:subClassOf* ?tc . ?s sh:targetClass ?tc ; sh:property ?p . ?p sh:path ?path ; sh:pattern ?pat . BIND(CONCAT(REPLACE(STR(?path), '.*#', ''), '|', STR(?pat)) AS ?v) }} }} ORDER BY ?v",
+        g = ONTOLOGY_GRAPH, c = class
+    );
+    for row in select_v(&sparql_json(&q_pat)?) {
+        if let Some((field, pat)) = row.split_once('|') {
+            allowed_values.extend(pattern_alternatives(pat).into_iter().map(|v| format!("{}|{}", field, v)));
+        }
+    }
     allowed_values.sort();
     allowed_values.dedup();
     fields.sort();
@@ -8767,5 +8780,20 @@ mod patch_links_4499 {
         assert_eq!(a.iter().filter(|x| *x == "--edge").count(), 2);
         assert!(a.contains(&"exercises=code-file:file-a".to_string()) && a.contains(&"exercises=code-file:file-b".to_string()));
         assert_eq!(a[0], "link");
+    }
+}
+
+/// #4022 — the words of an enum pattern `^(a|b|c)$`; empty for any other
+/// pattern (a regex that is not a plain list of words names no values).
+pub fn pattern_alternatives(pat: &str) -> Vec<String> {
+    let inner = match pat.strip_prefix("^(").and_then(|p| p.strip_suffix(")$")) {
+        Some(i) => i,
+        None => return vec![],
+    };
+    let words: Vec<String> = inner.split('|').map(str::to_string).collect();
+    if words.iter().all(|w| !w.is_empty() && w.chars().all(|c| c.is_ascii_alphanumeric() || c == '-' || c == '_')) {
+        words
+    } else {
+        vec![]
     }
 }
