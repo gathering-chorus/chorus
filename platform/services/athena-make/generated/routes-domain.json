@@ -5,5 +5,5 @@
   "routes": ["GET /domains/domains", "GET /domains/domains/:name", "GET /domains/domains/:name/contains", "GET /domains/domains/:name/partof", "GET /domains/domains/:name/has-child", "GET /domains/domains/:name/completeness", "GET /schema/domain", "POST /domains/domains", "POST /domains/domains/batch", "POST /domains/domains/delete-batch", "PUT /domains/domains/:name", "DELETE /domains/domains/:name", "POST /domains/domains/:name/partof", "DELETE /domains/domains/:name/partof", "POST /domains/domains/:name/contains", "DELETE /domains/domains/:name/contains", "POST /domains/domains/:name/has-child", "DELETE /domains/domains/:name/has-child", "POST /domains/domains/:name/consumes-event", "DELETE /domains/domains/:name/consumes-event"],
   "secured": [],
   "mandatory": ["comment", "gaps", "label", "purpose", "status"],
-  "writeRequired": ["atStep", "comment", "definesVocabulary", "gaps", "hasDesignDoc", "label", "ownedBy", "purpose", "status"]
+  "writeRequired": ["atStep", "comment", "gaps", "hasDesignDoc", "label", "ownedBy", "purpose", "status"]
 }

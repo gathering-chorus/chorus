@@ -2364,7 +2364,7 @@ fn entity_exists(class: &str, entity: &str, instances_graph: &str) -> bool {
 /// kind + graph are fixed from the selected class table. Existing-identity
 /// conflicts remain inside the governed create-only DAL transaction.
 #[derive(Debug, Clone, PartialEq, Eq)]
-struct PreparedCreate {
+pub struct PreparedCreate {
     kind: String,
     name: String,
     fields: Vec<(String, String)>,
@@ -2710,6 +2710,104 @@ fn handle_create_batch(body: &str, table: &RouteTable, caller_role: &str, token:
         Err(e) => {
             emit_write_spine(caller_role, "create-batch", &reqs.len().to_string(), "", "error");
             pen_refusal_resp(&e, caller_role, &table.instances_graph).unwrap_or_else(|| dal_err_resp(&e))
+        }
+    }
+}
+
+/// #4522 — rows of different classes that must point at each other are created
+/// in ONE DAL add-batch. A Document needs its Domains (hasDomain) and a Domain
+/// needs its Document (hasDesignDoc): through the per-class routes neither can go
+/// first, and both answered 422 unknown-target (measured 2026-10-14 14:59). The DAL
+/// already resolves an edge whose target is "in this batch"; this route only gives
+/// it rows of more than one class at once.
+///
+/// Body: one row per line, `<collection path>\t<row JSON object>`, e.g.
+/// `/domains/domains\t{"name":"x",...}`. A tab cannot appear unescaped in JSON, so
+/// the split is exact (the same rule as POST /batch). Every row passes the gates its
+/// own class's create would: the Write/Append row for that class's graph,
+/// deploy-only classes, door stamps, the size cap and the class's shape.
+pub fn prepare_linked_creates(body: &str, tables: &[RouteTable], caller_role: &str, landed_commit: &str, scope: &[String]) -> Result<Vec<PreparedCreate>, (u16, String)> {
+    let lines: Vec<&str> = body.lines().map(str::trim).filter(|l| !l.is_empty()).collect();
+    if lines.is_empty() {
+        return Err(write_resp("validation", "linked create requires at least one row"));
+    }
+    if body.len() > MAX_WRITE_BYTES {
+        return Err(write_resp("validation", &format!("write body {} bytes exceeds {}-byte cap", body.len(), MAX_WRITE_BYTES)));
+    }
+    let mut reqs = Vec::with_capacity(lines.len());
+    let mut seen = std::collections::HashSet::new();
+    for (index, line) in lines.iter().enumerate() {
+        let n = index + 1;
+        let Some((path, row)) = line.split_once('\t') else {
+            return Err(write_resp("validation", &format!("row {}: expected '<collection path>\\t<row JSON>'", n)));
+        };
+        let path = path.trim();
+        let path = path.strip_prefix("/v1").unwrap_or(path);
+        let Some(table) = select_table(path, tables) else {
+            return Err(write_resp("not-found", &format!("row {}: no collection '{}'", n, path)));
+        };
+        if deploy_only(&table.write_authority) {
+            return Err(write_resp("authz", &format!("row {}: '{}' is written by the model deploy, not by a session", n, table.class)));
+        }
+        if table.class.ends_with("#Version") {
+            return Err(write_resp("validation", &format!("row {}: revisions are kept by the door and cannot be written directly", n)));
+        }
+        if let Some(refused) = create_refusal(&WriteOp::CreateEntity, &table.instances_graph, scope, caller_role) {
+            return Err(refused);
+        }
+        if let Some(k) = body_sets_a_stamp(row) {
+            return Err(write_resp("validation", &format!("row {}: '{}' is stamped by the door from the write itself; it cannot be set in the body", n, k)));
+        }
+        let req = prepare_create(row, table, caller_role, landed_commit)
+            .map_err(|e| write_resp(e.tag, &format!("row {}: {}", n, e.message)))?;
+        if !seen.insert((req.kind.clone(), req.name.clone())) {
+            return Err(write_resp("conflict", &format!("row {}: duplicate {} '{}' in request", n, req.kind, req.name)));
+        }
+        reqs.push(req);
+    }
+    Ok(reqs)
+}
+
+/// #4522 (Wren's review) — the bearer credential from an Authorization header,
+/// one copy for every write block (it was written out three times).
+pub fn bearer_token(auth_hdr: &str) -> &str {
+    auth_hdr.strip_prefix("Bearer ").or_else(|| auth_hdr.strip_prefix("bearer ")).unwrap_or(auth_hdr)
+}
+
+fn unix_now_secs() -> u64 {
+    std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).map(|d| d.as_secs()).unwrap_or(0)
+}
+
+/// #4522 (Wren's review) — a refused linked create names the graph of the row the
+/// DAL refused, read from its "entity '<kind>:<name>'", not the first row's.
+pub fn refused_row_graph(e: &str, reqs: &[PreparedCreate]) -> String {
+    let named = e.split("entity '").nth(1).and_then(|r| r.split('\'').next()).unwrap_or("");
+    reqs.iter()
+        .find(|r| format!("{}:{}", r.kind, r.name) == named)
+        .or_else(|| reqs.first())
+        .map(|r| r.graph.clone())
+        .unwrap_or_default()
+}
+
+/// #4522 — POST /create-linked: the rows above, written in one governed add-batch.
+pub fn handle_create_linked(body: &str, tables: &[RouteTable], caller_role: &str, token: &str, landed_commit: &str, scope: &[String]) -> (u16, String) {
+    let reqs = match prepare_linked_creates(body, tables, caller_role, landed_commit, scope) {
+        Ok(r) => r,
+        Err(resp) => {
+            emit_write_spine(caller_role, "create-linked", "", "", "refused");
+            return resp;
+        }
+    };
+    match dal_add_batch(&prepared_create_ndjson(&reqs), token) {
+        Ok(_) => {
+            emit_write_spine(caller_role, "create-linked", &reqs.len().to_string(), "", "ok");
+            let names: Vec<String> = reqs.iter().map(|r| format!("{} {}", r.kind, r.name)).collect();
+            write_resp("created", &format!("created {} linked rows via one DAL batch (ownedBy {}): {}", reqs.len(), caller_role, names.join(", ")))
+        }
+        Err(e) => {
+            emit_write_spine(caller_role, "create-linked", &reqs.len().to_string(), "", "error");
+            let graph = refused_row_graph(&e, &reqs);
+            pen_refusal_resp(&e, caller_role, &graph).unwrap_or_else(|| dal_err_resp(&e))
         }
     }
 }
@@ -6281,16 +6379,36 @@ pub fn serve(port: u16, tables: &[RouteTable]) -> R<()> {
                 // table), so it's handled here, before table-selection. Same gate as per-class
                 // writes: Bearer required (else 401), x-target-graph must be in the token scope
                 // (else 403). Delegates to handle_batch → the typed-slot chorus-model batch op.
-                if method == "POST" && path == "/batch" {
-                    let now_secs = std::time::SystemTime::now()
-                        .duration_since(std::time::UNIX_EPOCH)
-                        .map(|d| d.as_secs())
-                        .unwrap_or(0);
+                // #4522 — rows of several classes that point at each other, created in
+                // one DAL add-batch. Cross-class, so handled before table selection like
+                // /batch; every row is then gated as its own class's create would be.
+                if method == "POST" && (path == "/create-linked" || path == "/v1/create-linked") {
+                    let now_secs = unix_now_secs();
                     let auth_hdr = header("authorization");
-                    let token = auth_hdr
-                        .strip_prefix("Bearer ")
-                        .or_else(|| auth_hdr.strip_prefix("bearer "))
-                        .unwrap_or(&auth_hdr);
+                    let token = bearer_token(&auth_hdr);
+                    let (code, body) = match oidc::verify_any(token, &oidc_verifier, now_secs) {
+                        Err(_) => (
+                            401u16,
+                            "{ \"error\": \"authn-missing\", \"message\": \"a valid Bearer token is required for a linked create\" }".to_string(),
+                        ),
+                        Ok(claims) => {
+                            let role = oidc_verifier
+                                .principal_for(&claims.web_id, now_secs)
+                                .unwrap_or_else(|| claims.agent_id.clone());
+                            let body_str = req.splitn(2, "\r\n\r\n").nth(1).unwrap_or("");
+                            let landed_commit = header("x-landed-commit");
+                            set_write_scope_age(oidc_verifier.scopes_age_secs(now_secs));
+                            handle_create_linked(body_str, tables, &role, token, &landed_commit, &claims.scope)
+                        }
+                    };
+                    let resp = http_response_ct(status_line(code), &body, "application/json");
+                    let _ = stream.write_all(resp.as_bytes());
+                    return;
+                }
+                if method == "POST" && path == "/batch" {
+                    let now_secs = unix_now_secs();
+                    let auth_hdr = header("authorization");
+                    let token = bearer_token(&auth_hdr);
                     let (code, body) = match oidc::verify_any(token, &oidc_verifier, now_secs) {
                         Err(_) => (
                             401u16,
@@ -6353,20 +6471,14 @@ pub fn serve(port: u16, tables: &[RouteTable]) -> R<()> {
                 // THE SEAM (#3402): auth injects here, ONCE, before route logic. A secured
                 // surface with a missing/invalid credential short-circuits to 401/403; every
                 // other surface falls through untouched (mixed-state). Local verify only.
-                let now_secs = std::time::SystemTime::now()
-                    .duration_since(std::time::UNIX_EPOCH)
-                    .map(|d| d.as_secs())
-                    .unwrap_or(0);
+                let now_secs = unix_now_secs();
                 let ((code, body), meta) = if method != "GET" {
                     // #3454 — the WRITE path. authN is ALWAYS required on a write (a write is
                     // never open, unlike a read), then handle_write does authZ-from-ownedBy,
                     // shape rejection, the SPARQL-UPDATE, the spine event, and a typed status.
                     // A write can NEVER reach a read handler (the "POST returns 200" anti-pattern).
                     let auth_hdr = header("authorization");
-                    let token = auth_hdr
-                        .strip_prefix("Bearer ")
-                        .or_else(|| auth_hdr.strip_prefix("bearer "))
-                        .unwrap_or(&auth_hdr);
+                    let token = bearer_token(&auth_hdr);
                     match oidc::verify_any(token, &oidc_verifier, now_secs) {
                         Err(_) => {
                             let (c, t) = write_status("authn-missing");
@@ -6532,6 +6644,79 @@ mod tests {
             domain: "things".into(), base_path: "/things/widgets".into(),
             write_authority: String::new(), model_version: String::new(),
         }
+    }
+
+    /// #4522 — two classes whose required links point at each other: a doc needs
+    /// its domain, a domain needs its doc.
+    fn linked_tables() -> Vec<RouteTable> {
+        let mut doc = widget_table(&["docTitle"], &[]);
+        doc.class = format!("{}Document", NS);
+        doc.fields = vec!["docTitle|datatype:string".into(), "hasDomain|edge:Domain".into()];
+        doc.write_required = vec!["docTitle".into(), "hasDomain".into()];
+        doc.base_path = "/knowledge/documents".into();
+        doc.instances_graph = "urn:chorus:domains:documents".into();
+        let mut dom = widget_table(&["purpose"], &[]);
+        dom.class = format!("{}Domain", NS);
+        dom.fields = vec!["purpose|datatype:string".into(), "hasDesignDoc|edge:Document".into()];
+        dom.write_required = vec!["purpose".into(), "hasDesignDoc".into()];
+        dom.base_path = "/domains/domains".into();
+        dom.instances_graph = "urn:chorus:domains:domains".into();
+        vec![doc, dom]
+    }
+    fn both_graphs() -> Vec<String> {
+        vec!["urn:chorus:domains:documents".into(), "urn:chorus:domains:domains".into()]
+    }
+    const LINKED: &str = "/v1/knowledge/documents\t{\"name\":\"spec\",\"docTitle\":\"Spec\",\"hasDomain\":[\"wines\"]}\n/domains/domains\t{\"name\":\"wines\",\"purpose\":\"p\",\"hasDesignDoc\":\"spec\"}\n";
+
+    #[test]
+    fn linked_rows_of_two_classes_are_prepared_as_one_batch() {
+        let reqs = prepare_linked_creates(LINKED, &linked_tables(), "silas", "", &both_graphs()).expect("both rows prepare");
+        assert_eq!(reqs.len(), 2);
+        assert_eq!((reqs[0].name.as_str(), reqs[1].name.as_str()), ("spec", "wines"));
+        assert_ne!(reqs[0].graph, reqs[1].graph, "each row goes to its own class's graph");
+        let nd = prepared_create_ndjson(&reqs);
+        assert_eq!(nd.lines().count(), 2, "one NDJSON line per row, one DAL call");
+    }
+
+    /// NEGATIVE PROOF (#3734): a row whose class graph the caller may not write is
+    /// refused, even when the other row is allowed. Cross-class must never widen a grant.
+    #[test]
+    fn negative_proof_a_linked_row_outside_the_callers_scope_is_refused() {
+        let only_docs = vec!["urn:chorus:domains:documents".to_string()];
+        let (code, body) = prepare_linked_creates(LINKED, &linked_tables(), "silas", "", &only_docs).err().expect("refused");
+        assert_eq!(code, 403, "{body}");
+        assert!(body.contains("urn:chorus:domains:domains"), "{body}");
+    }
+
+    /// NEGATIVE PROOF: each row still meets its own class's shape. A domain with no
+    /// purpose is refused and named by its row number.
+    #[test]
+    fn negative_proof_a_linked_row_missing_a_required_field_is_refused() {
+        let body = LINKED.replace("\"purpose\":\"p\",", "");
+        let (code, msg) = prepare_linked_creates(&body, &linked_tables(), "silas", "", &both_graphs()).err().expect("refused");
+        assert_eq!(code, 422, "{msg}");
+        assert!(msg.contains("row 2") && msg.contains("purpose"), "{msg}");
+    }
+
+    /// NEGATIVE PROOF (Wren's review): the refusal names the refused row's graph.
+    /// The old code named the first row's, so a refused second row read as the first.
+    #[test]
+    fn a_dal_refusal_names_the_refused_rows_graph_not_the_first() {
+        let reqs = prepare_linked_creates(LINKED, &linked_tables(), "silas", "", &both_graphs()).unwrap();
+        let kind = reqs[1].kind.clone();
+        let e = format!("athena-model: add-batch: entity '{}:wines': unknown-target", kind);
+        assert_eq!(refused_row_graph(&e, &reqs), "urn:chorus:domains:domains");
+        assert_eq!(refused_row_graph("no entity named", &reqs), "urn:chorus:domains:documents", "falls back to the first row");
+    }
+
+    #[test]
+    fn a_linked_row_naming_no_collection_or_a_stamp_is_refused() {
+        let unknown = "/nowhere/things\t{\"name\":\"x\"}";
+        assert_eq!(prepare_linked_creates(unknown, &linked_tables(), "silas", "", &both_graphs()).err().unwrap().0, 404);
+        let no_tab = "/domains/domains {\"name\":\"x\"}";
+        assert_eq!(prepare_linked_creates(no_tab, &linked_tables(), "silas", "", &both_graphs()).err().unwrap().0, 422);
+        let dup = format!("{}{}", LINKED, LINKED.lines().nth(1).unwrap());
+        assert_eq!(prepare_linked_creates(&dup, &linked_tables(), "silas", "", &both_graphs()).err().unwrap().0, 409);
     }
 
     /// #4282 — NEGATIVE PROOF: a field the read hides (secret, or unmarked on an
