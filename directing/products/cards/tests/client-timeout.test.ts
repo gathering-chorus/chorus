@@ -39,6 +39,9 @@ describe('#3347 client timeout — slow API = fast typed failure', () => {
     stallServer.close(() => resolve());
   }));
 
+  const timing: { elapsed: number } = { elapsed: Number.POSITIVE_INFINITY };
+  const nightly = process.env.WERK_TEST_LANE === 'nightly';
+
   test('api call against a stalling server rejects within the timeout, not never', async () => {
     process.env.CARDS_API_TIMEOUT_MS = '500';
     const client = new BoardClient(`http://127.0.0.1:${port}`, 'test-token', { projectId: 1, buckets: {} } as never);
@@ -50,10 +53,15 @@ describe('#3347 client timeout — slow API = fast typed failure', () => {
     ).rejects.toThrow(/timeout/i);
     const elapsed = Date.now() - started;
 
-    // Must die promptly (timeout + small margin), not hang.
-    // #4531 — the time limit measures the box: nightly only. Rejecting with /timeout/ is the claim.
-    if (process.env.WERK_TEST_LANE === 'nightly') expect(elapsed).toBeLessThan(3000);
+    // Must die promptly (timeout + small margin), not hang. #4531 — a wall-clock
+    // limit measures the box, so it is checked in the nightly lane only.
+    timing.elapsed = elapsed;
     delete process.env.CARDS_API_TIMEOUT_MS;
+  });
+
+  test('the rejection came within 3s (checked in the nightly lane only, #4531)', () => {
+    if (!nightly) return;
+    expect(timing.elapsed).toBeLessThan(3000);
   });
 
   test('default timeout is seconds, not unbounded — and is configurable via env', () => {

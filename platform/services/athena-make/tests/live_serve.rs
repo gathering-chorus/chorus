@@ -85,7 +85,7 @@ fn live_serve_loop_contract() {
     // 2) the SAME envelope across every served primitive (≥3 = uniformity proof)
     let mut enveloped_primitives = 0;
     for plural in ["domains", "products", "value-streams", "services"] {
-        let (h, body) = curl(&format!("{}/{}", base, plural), &[]);
+        let (h, body) = curl(&format!("{}/{}?count=true", base, plural), &[]); // #4531: the door counts only on request
         // #4514 — the status line only: `h.contains("404")` also matched the
         // ETag "bf0404450e21629c" on a 200 (measured 2026-10-13 19:23), so a
         // served primitive was skipped whenever its data hashed to a "404"
