@@ -340,7 +340,18 @@ impl ServerHandler for Runner {
                 Err(e) => CallToolResult::error(vec![Content::text(format!("{e} (trace {trace})"))]),
             }));
         }
-        let skill = self.skills.read().ok().and_then(|s| s.iter().find(|t| t.name == tool).cloned());
+        let find = |k: &Arc<RwLock<Vec<SkillTool>>>| k.read().ok().and_then(|s| s.iter().find(|t| t.name == tool).cloned());
+        // #4515 — a call can come before any tools/list (a client that knows
+        // the name): read the rows once more before deciding it is not a Skill,
+        // or it falls through to the door and fails as "collection is required".
+        let skill = match find(&self.skills) {
+            Some(t) => Some(t),
+            None => {
+                let k = self.skills.clone();
+                let _ = tokio::task::spawn_blocking(move || refresh_skills(&k)).await;
+                find(&self.skills)
+            }
+        };
         if let Some(st) = skill {
             // the caller's own verified credential, only when the gate verified it
             let token = ctx
