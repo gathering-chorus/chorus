@@ -345,6 +345,22 @@ out=$(cws3 121)
 t "a land whose model deployed reads landed" "#121 kade   landed " "$out"
 if [[ "$(head -1 <<<"$out")" == *"athena failed"* ]]; then echo "FAIL a deployed model reads failed"; fails=$((fails+1)); fi
 
+# #4494 reopen 2026-10-14 — dagu pages its run list (100 a page, nextCursor);
+# cws read page 1 only, so #4474 counted 3 runs of 25+. Two pages, two runs of
+# 130 on each: the count is 2 only if page 2 is read. NEGATIVE PROOF: the same
+# card with page 1 alone (no cursor) counts 1.
+mkdir -p "$TD/d4/api/v1"
+cat > "$TD/d4/api/v1/dag-runs" <<'EOF7'
+{"dagRuns":[{"name":"cicd","dagRunId":"p1","params":"CARD=130 ROLE=kade","statusLabel":"failed","startedAt":"2026-10-14T08:00:00-04:00","finishedAt":"2026-10-14T08:01:00-04:00","nodes":[{"statusLabel":"failed","step":{"name":"skill-werk-build"}}]}],"nextCursor":"pg2"}
+EOF7
+cat > "$TD/d4/api/v1/dag-runs@pg2" <<'EOF7'
+{"dagRuns":[{"name":"cicd","dagRunId":"p0","params":"CARD=130 ROLE=kade","statusLabel":"failed","startedAt":"2026-10-13T08:00:00-04:00","finishedAt":"2026-10-13T08:01:00-04:00","nodes":[{"statusLabel":"failed","step":{"name":"skill-werk-build"}}]}]}
+EOF7
+t "runs on dagu's second page count" "· 2 runs" "$(CWS_RUNS_DIR=$TD CWS_DAGU="file://$TD/d4" "$CWS" 130)"
+mkdir -p "$TD/d5/api/v1"; python3 -c 'import json,sys; d=json.load(open(sys.argv[1])); d.pop("nextCursor"); json.dump(d,open(sys.argv[2],"w"))' "$TD/d4/api/v1/dag-runs" "$TD/d5/api/v1/dag-runs"
+out=$(CWS_RUNS_DIR=$TD CWS_DAGU="file://$TD/d5" "$CWS" 130)
+if [[ "$out" == *"· 2 runs"* ]]; then echo "FAIL page 1 alone counted the second page's run"; fails=$((fails+1)); fi
+
 rm -rf "$TD"
 if [ $fails -gt 0 ]; then echo "test-cws-3782: $fails FAILURE(S)"; exit 1; fi
 echo "test-cws-3782: all green"
