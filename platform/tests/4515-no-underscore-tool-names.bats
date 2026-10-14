@@ -25,14 +25,30 @@ OLD='chorus[_-](nudge[_-]message|cards[_-](add|set|view|move|done|tag)|card[_-]a
 # prefix (mcp__chorus-api__<name>). Exit 0 always; the caller reads the output.
 old_tool_names() {
   local root="$1"
-  grep -rIoE \
+  grep -rIE \
     --exclude='*.html' --exclude='*.jsonl' --exclude='activity.md' --exclude='*.consumed' \
     --exclude="$SELF" \
     --exclude-dir=.git --exclude-dir=node_modules --exclude-dir=target \
     --exclude-dir=briefs --exclude-dir=journal \
     --exclude-dir=journals --exclude-dir=adr --exclude-dir=notes \
     --exclude-dir=backups --exclude-dir=logs \
-    "(^|[^a-z0-9_-]|__|\\\\[tnr])(${OLD})([^a-z0-9_-]|\$)" "$root" 2>/dev/null || true
+    -n "(^|[^a-z0-9_-]|__|\\\\[tnr])(${OLD})([^a-z0-9_-]|\$)" "$root" 2>/dev/null \
+    | code_comments_dropped || true
+}
+
+# A name inside a code comment calls nothing (#4515 run 2: two old test files
+# kept a comment naming the old nudge tool; changing them only to reword the
+# comment makes werk-test refuse a change no test exercises). A hit is dropped
+# only when its whole line is a comment in a code file (.ts .js .sh .bats .rs
+# .py): `//`, `#`, `*`, `/*` first. Markdown, TOML, JSON and plists are prose or
+# config an agent or job reads, so every hit there stays.
+code_comments_dropped() {
+  awk '{
+    f=$0; sub(/:.*/, "", f)
+    line=$0; sub(/^[^:]*:[0-9]+:/, "", line)
+    if (f ~ /\.(ts|js|sh|bats|rs|py)$/ && line ~ /^[ \t]*(\/\/|#|\*|\/\*)/) next
+    print
+  }'
 }
 
 @test "no tool is called by an old name" {
@@ -74,4 +90,21 @@ old_tool_names() {
   printf 'mcp__chorus-api__%s\n' "chorus""_wip" > "$scan/roles/wren/briefs/old.md"
   hits="$(old_tool_names "$scan")"
   [[ -z "$hits" ]] || { echo "false fire: $hits"; false; }
+}
+
+@test "NEGATIVE PROOF: a comment line in code passes, the same name in a call does not" {
+  scan="$BATS_TEST_TMPDIR/comments"
+  mkdir -p "$scan/platform/tests" "$scan/skills/z"
+  n="chorus""_nudge_message"
+  printf '// delivered via the %s tool\n' "$n" > "$scan/platform/tests/steps.ts"
+  printf '# via the %s MCP tool\n' "$n" > "$scan/platform/tests/inject.sh"
+  hits="$(old_tool_names "$scan")"
+  [[ -z "$hits" ]] || { echo "a comment fired: $hits"; false; }
+  printf 'await call("%s", {});\n' "$n" >> "$scan/platform/tests/steps.ts"
+  printf 'the %s tool\n' "$n" > "$scan/skills/z/SKILL.md"
+  hits="$(old_tool_names "$scan")"
+  echo "caught: $hits"
+  [[ "$hits" == *"steps.ts:2:"* ]] || { echo "missed a call in code"; false; }
+  [[ "$hits" == *"SKILL.md"* ]] || { echo "missed prose an agent reads"; false; }
+  [[ "$hits" != *"inject.sh"* ]] || { echo "comment in a script fired"; false; }
 }
