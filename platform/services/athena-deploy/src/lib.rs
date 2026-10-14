@@ -23,6 +23,12 @@ fn env_or(key: &str, default: &str) -> String {
 pub mod model_scope { include!("../../shared/model_scope.rs"); }
 /// #4423 — data staging: Write-Audit-Publish for the model graphs.
 pub mod staging;
+/// #4515 — `--card <n>`: the card's werk and model change (shared with
+/// athena-validate and athena-gen).
+#[allow(dead_code)]
+pub mod card_scope { include!("../../shared/card_scope.rs"); }
+/// #4515 — what `athena-deploy [staging] --card <n>` loads, and the served check.
+pub mod card;
 
 /// `athena-deploy scope <root> <git range>` — list the model sources a diff
 /// touched, one per line as `model|<path>`. Exit 0 with no lines when
@@ -939,6 +945,14 @@ fn emit_spine(chorus_log: &str, event: &str, role: &str, fields: &[(&str, String
 }
 
 pub fn run_athena_deploy() -> Result<String, String> {
+    run_athena_deploy_plan(None)
+}
+
+/// #4515 — the deploy, optionally limited to one card's plan: its ontology files
+/// load into the ontology graph and only the domain sets its files belong to are
+/// deployed. A card run is a partial run (like `TTL=`), so the full manifest is
+/// not replayed; every refusal of a full run still applies to what it loads.
+pub fn run_athena_deploy_plan(plan: Option<&card::CardPlan>) -> Result<String, String> {
     let root = env_or("CHORUS_ROOT", "/Users/jeffbridwell/CascadeProjects/chorus");
     let ontology = env_or("ONTOLOGY_GRAPH", "urn:chorus:ontology");
     let gsp = env_or("FUSEKI_GSP", "http://localhost:3030/pods/data");
@@ -970,7 +984,12 @@ pub fn run_athena_deploy() -> Result<String, String> {
     }
 
     let ttl_override = std::env::var("TTL").ok();
-    let set = model_set(&root, ttl_override);
+    // #4515 — a card plan names its own files; otherwise the model set (or TTL=).
+    let set = match plan {
+        Some(p) => p.ontology.clone(),
+        None => model_set(&root, ttl_override),
+    };
+    let full = plan.is_none() && sets_run(std::env::var("TTL").ok().as_deref());
     let staging = format!("{ontology}-staging-deploy");
 
     let fail = |reason: &str| -> String {
@@ -1035,7 +1054,8 @@ pub fn run_athena_deploy() -> Result<String, String> {
     // whatever the set file says: the 2026-10-02 15:51 land lost 12 domains to
     // cmdb-layers-4293.ttl this way. Checked before any write, over the WHOLE
     // model set (a TTL= partial run still has to know which subjects are Domains).
-    if sets_run(std::env::var("TTL").ok().as_deref()) {
+    // #4515 — a card run that deploys a domain set is guarded the same way.
+    if full || plan.is_some_and(|p| !p.sets.is_empty()) {
         let manifest_path = env_or(
             "DOMAIN_SET_MANIFEST",
             &format!("{root}/platform/config/domain-set-manifest.txt"),
@@ -1361,7 +1381,7 @@ pub fn run_athena_deploy() -> Result<String, String> {
 
     // #3536 AC2 / #3731 — the SHACL report. Non-gating, three distinguishable
     // states, full deploys only (SHACL_REPORT=1 is the test seam).
-    if sets_run(std::env::var("TTL").ok().as_deref())
+    if full
         || std::env::var("SHACL_REPORT").as_deref() == Ok("1")
     {
         let report = run_shacl_report(&root, &set);
@@ -1390,7 +1410,7 @@ pub fn run_athena_deploy() -> Result<String, String> {
     // #4229 — then the eight domain sets, from the manifest. A TTL= partial
     // run deploys ONLY what it was given, the same gate the bash applies.
     let mut deployed: Vec<String> = Vec::new();
-    if sets_run(std::env::var("TTL").ok().as_deref()) {
+    if full {
         let manifest_path = env_or(
             "DOMAIN_SET_MANIFEST",
             &format!("{root}/platform/config/domain-set-manifest.txt"),
@@ -1466,6 +1486,18 @@ pub fn run_athena_deploy() -> Result<String, String> {
             role: role.clone(),
         };
         for ds in &sets {
+            deployed.push(deploy_domain_set(ds, &root, &ctx)?);
+        }
+    } else if let Some(p) = plan {
+        // #4515 — only the sets the card's files belong to, each whole.
+        let ctx = StoreCtx {
+            gsp: gsp.clone(),
+            query: query.clone(),
+            update: update.clone(),
+            chorus_log: chorus_log.clone(),
+            role: role.clone(),
+        };
+        for ds in &p.sets {
             deployed.push(deploy_domain_set(ds, &root, &ctx)?);
         }
     }

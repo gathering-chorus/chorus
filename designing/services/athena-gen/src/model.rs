@@ -143,7 +143,7 @@ fn select(store: &Store, q: &str) -> Result<Vec<BTreeMap<String, String>>, Model
 
 /// #4519 — like `select`, but IRIs stay whole: a product's classes and fields live in
 /// the product's own namespace, so a local name alone cannot find them again.
-fn select_iri(store: &Store, q: &str) -> Result<Vec<BTreeMap<String, String>>, ModelError> {
+pub(crate) fn select_iri(store: &Store, q: &str) -> Result<Vec<BTreeMap<String, String>>, ModelError> {
     let query = format!("{PREFIXES}{q}");
     let results = SparqlEvaluator::new().parse_query(&query).map_err(err)?.on_store(store).execute().map_err(err)?;
     let mut rows = Vec::new();

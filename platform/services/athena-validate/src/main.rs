@@ -6,6 +6,7 @@
 //! Jeff, 2026-09-19: "a job we keep chipping away at until it runs clean."
 //! Exit codes serve that: 0 clean, 1 dirty, 2 UNMEASURED. The third one exists
 //! because a sweep that could not run must never be reported as a healthy graph.
+mod card;
 mod checks;
 mod door;
 mod hierarchy;
@@ -95,6 +96,17 @@ mod service_lifecycle {
 fn main() {
     // #4446 — under launchd, a failed run is logged as service.failed (shared/service_lifecycle.rs).
     service_lifecycle::run_as_job();
+    // #4515 — `--card <n>`: the Model step for one card's change, not the store sweep.
+    let args: Vec<String> = std::env::args().collect();
+    if let Some(i) = args.iter().position(|a| a == "--card") {
+        match args.get(i + 1).filter(|v| !v.starts_with("--")) {
+            Some(n) => std::process::exit(card::run(n)),
+            None => {
+                eprintln!("athena-validate: --card needs a card number");
+                std::process::exit(2);
+            }
+        }
+    }
     // --store-only: run the store checks and skip the door comparison.
     //
     // Not a convenience flag. A suite that stubs the STORE but not the door gets

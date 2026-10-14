@@ -11,6 +11,24 @@ fn main() {
     // #4186 — `athena-deploy scope <root> <range>`: the one place the workflows
     // ask "did this land touch the model or the seed?"
     let args: Vec<String> = std::env::args().collect();
+    // #4515 — `athena-deploy --card <n>` (Land: prod) and `athena-deploy staging
+    // --card <n>` (Deploy: staging). Same legs, two targets.
+    if let Some(c) = athena_deploy::card_scope::card_arg(&args) {
+        let staging = match args.get(1).map(String::as_str) {
+            Some("--card") => false,
+            Some("staging") if args.get(2).map(String::as_str) == Some("--card") => true,
+            _ => {
+                eprintln!("usage: athena-deploy --card <n> | athena-deploy staging --card <n>");
+                std::process::exit(2);
+            }
+        };
+        let c = c.unwrap_or_else(|e| { eprintln!("athena-deploy: {e}"); std::process::exit(2) });
+        match athena_deploy::card::run(&c, staging) {
+            Ok(s) => { println!("{s}"); std::process::exit(0); }
+            Err(athena_deploy::card::CardError::Refused(e)) => { eprintln!("athena-deploy: REFUSED — {e}"); std::process::exit(2); }
+            Err(athena_deploy::card::CardError::Failed(e)) => { eprintln!("athena-deploy: {e}"); std::process::exit(1); }
+        }
+    }
     if args.get(1).map(String::as_str) == Some("scope") {
         match (args.get(2), args.get(3)) {
             (Some(root), Some(range)) => match athena_deploy::scope(root, range) {
