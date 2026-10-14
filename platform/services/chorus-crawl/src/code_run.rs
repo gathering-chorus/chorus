@@ -296,6 +296,13 @@ pub fn exercise_patches(
 /// another repository (`--target`) owns only that repository's rows; the home
 /// pass owns its own and the legacy rows that name none. Nothing else is ever
 /// planned for a delete: a personal-site pass must not delete chorus's 6,605.
+/// #4405 reopen 7 — the CodeFile rows a pass may compare or delete: its own
+/// repository's. The 10-14 nightly's full pass re-read every row unscoped and
+/// called all 1,792 personal-site files stale. Every read goes through here.
+pub fn rows_in_pass(rows: Vec<crate::InGraph>, repo: &str, home_pass: bool) -> Vec<crate::InGraph> {
+    rows.into_iter().filter(|r| row_in_pass(&r.other, repo, home_pass)).collect()
+}
+
 pub fn row_in_pass(stored: &Fields, repo: &str, home_pass: bool) -> bool {
     match repo_of_row(stored) {
         Some(r) => r == repo,
