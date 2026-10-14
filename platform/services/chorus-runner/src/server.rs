@@ -110,7 +110,14 @@ pub fn binary_path(name: &str, who: &str) -> String {
         }
     }
     let installed = format!("{}/.chorus/bin/{name}", std::env::var("HOME").unwrap_or_default());
-    if std::path::Path::new(&installed).exists() { installed } else { name.to_string() }
+    if std::path::Path::new(&installed).exists() {
+        return installed;
+    }
+    // #4515 — a row naming a Chorus script (cards, agent-state.sh): the
+    // runner's launchd PATH has ~/.chorus/bin only.
+    let home = std::env::var("CHORUS_HOME").unwrap_or_else(|_| format!("{}/CascadeProjects/chorus", std::env::var("HOME").unwrap_or_default()));
+    let script = format!("{home}/platform/scripts/{name}");
+    if !name.contains('/') && std::path::Path::new(&script).is_file() { script } else { name.to_string() }
 }
 
 /// #4514 — everything a tool call decides before it runs, shared by the MCP

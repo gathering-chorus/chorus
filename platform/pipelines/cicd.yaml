@@ -20,35 +20,35 @@ handler_on:
 steps:
   - name: skill-werk-commit
     description: "werk-commit"
-    command: "chorus-runner call werk-commit card=${CARD} atomic=true"
+    command: "${HOME}/.chorus/bin/chorus-runner call werk-commit card=${CARD} atomic=true"
   - name: skill-werk-push
     description: "werk-push"
     depends: [skill-werk-commit]
-    command: "chorus-runner call werk-push card=${CARD} atomic=true"
+    command: "${HOME}/.chorus/bin/chorus-runner call werk-push card=${CARD} atomic=true"
   - name: skill-werk-build
     description: "werk-build"
     depends: [skill-werk-push]
-    command: "chorus-runner call werk-build card=${CARD} target=werk"
+    command: "${HOME}/.chorus/bin/chorus-runner call werk-build card=${CARD} target=werk"
   - name: skill-werk-test
     description: "werk-test"
     depends: [skill-werk-build]
-    command: "chorus-runner call werk-test card=${CARD}"
+    command: "${HOME}/.chorus/bin/chorus-runner call werk-test card=${CARD}"
   - name: skill-werk-review
     description: "werk-review"
     depends: [skill-werk-test]
-    command: "chorus-runner call werk-review card=${CARD}"
+    command: "${HOME}/.chorus/bin/chorus-runner call werk-review card=${CARD}"
   - name: skill-deploy-demo
     description: "deploy-demo"
     depends: [skill-werk-review]
-    command: "chorus-runner call deploy-demo card=${CARD}"
+    command: "${HOME}/.chorus/bin/chorus-runner call deploy-demo card=${CARD}"
   - name: skill-werk-deploy-env-up
     description: "werk-deploy env-up"
     depends: [skill-deploy-demo]
-    command: "chorus-runner call werk-deploy-env-up card=${CARD}"
+    command: "${HOME}/.chorus/bin/chorus-runner call werk-deploy-env-up card=${CARD}"
   - name: skill-werk-demo
     description: "/demo"
     depends: [skill-werk-deploy-env-up]
-    command: "chorus-runner call werk-demo card=${CARD}"
+    command: "${HOME}/.chorus/bin/chorus-runner call werk-demo card=${CARD}"
     continue_on:
       exit_code: [2]
       mark_success: true

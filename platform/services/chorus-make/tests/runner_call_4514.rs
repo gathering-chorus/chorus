@@ -12,7 +12,7 @@ demo\t3\t1\tskill-werk-go\tJeff's go\thuman\t\t\t
 #[test]
 fn a_runner_tool_step_calls_the_runner_with_its_inputs_signed_as_role() {
     let y = generate("cicd", &parse_rows(ROWS).unwrap()).unwrap();
-    assert!(y.contains("command: \"chorus-runner call werk-commit card=${CARD} atomic=true\""), "{y}");
+    assert!(y.contains("command: \"${HOME}/.chorus/bin/chorus-runner call werk-commit card=${CARD} atomic=true\""), "{y}");
     assert!(!y.contains("caller="), "the caller is the signer, never an argument: {y}");
 }
 
@@ -34,4 +34,16 @@ demo\t2\t1\tskill-werk-go\tJeff's go\thuman\t\t\t\n";
     let fixed = rows.replace("\tWerkSyncInput\n", "\tWerkSyncInput\tmode=ff\n");
     let y = generate("cicd", &parse_rows(&fixed).unwrap()).unwrap();
     assert!(y.contains("chorus-runner call werk-sync mode=ff"), "{y}");
+}
+
+/// #4515 (Silas 06:27) — the pipeline PATH puts the role's werk bin slot first,
+/// so a bare `chorus-runner` ran a stale slot copy with no `call`, which fell
+/// through to serve ("bind 3342: Address already in use"). The step names the
+/// installed runner; the runner still picks the verb from the slot.
+/// NEGATIVE PROOF: no runner step is left to a PATH lookup.
+#[test]
+fn a_runner_step_names_the_installed_runner_never_a_path_lookup() {
+    let y = generate("cicd", &parse_rows(ROWS).unwrap()).unwrap();
+    assert!(!y.contains("command: \"chorus-runner "), "a bare chorus-runner resolves the role's slot first: {y}");
+    assert!(y.contains("${HOME}/.chorus/bin/chorus-runner call werk-commit"), "{y}");
 }

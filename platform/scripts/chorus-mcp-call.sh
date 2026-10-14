@@ -14,7 +14,9 @@ set -uo pipefail
 ROLE="${1:?usage: chorus-mcp-call.sh <role> <tool> <args-json>}"
 TOOL="${2:?usage: chorus-mcp-call.sh <role> <tool> <args-json>}"
 ARGS="${3:?usage: chorus-mcp-call.sh <role> <tool> <args-json>}"
-RUNNER="${CHORUS_RUNNER_BIN:-$(command -v chorus-runner || echo "$HOME/.chorus/bin/chorus-runner")}"
+# The installed runner, never a PATH lookup: a werk bin slot first on PATH can
+# hold a stale runner with no `call` (#4515, Silas 06:27).
+RUNNER="${CHORUS_RUNNER_BIN:-$HOME/.chorus/bin/chorus-runner}"
 
 exec python3 - "$RUNNER" "$ROLE" "$TOOL" "$ARGS" <<'PY'
 import json, os, sys

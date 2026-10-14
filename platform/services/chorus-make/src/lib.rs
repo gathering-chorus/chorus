@@ -238,8 +238,10 @@ fn preamble(out: &mut String, description: &str, queue: &str, params: &[&str], w
 /// #4514 AC4 — a runner tool's step: `chorus-runner call <skill> name=${NAME}…`,
 /// one pair per `{name}` its arguments template takes (the caller signs as
 /// $ROLE, so `{caller}` is not passed). The verb's exit code is the step's.
+/// #4515 — the installed runner by path: the pipeline PATH puts the role's
+/// werk bin slot first, and a stale slot runner has no `call` (Silas 06:27).
 pub fn runner_call(r: &Row) -> String {
-    let mut cmd = format!("chorus-runner call {}", runner_tool_name(r));
+    let mut cmd = format!("${{HOME}}/.chorus/bin/chorus-runner call {}", runner_tool_name(r));
     for p in runner_pairs(r).0 {
         cmd.push(' ');
         cmd.push_str(&p);
