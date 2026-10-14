@@ -60,3 +60,30 @@ chorus:CardsSetInput a sh:NodeShape , chorus:ToolInput ;
     sh:property [ sh:path chorus:toolSequence ;   sh:maxCount 1 ; sh:datatype xsd:string ; sh:order 8 ;  sh:name "sequence" ;   sh:description "Sequence label value." ] ;
     sh:property [ sh:path chorus:toolDomain ;     sh:maxCount 1 ; sh:datatype xsd:string ; sh:order 9 ;  sh:name "domain" ;     sh:description "Domain label value." ] ;
     sh:property [ sh:path chorus:toolChunk ;      sh:maxCount 1 ; sh:datatype xsd:string ; sh:order 10 ; sh:name "chunk" ;      sh:description "Chunk label value." ] .
+
+# #4515 (Wren, measured 17:25: the demo runner listed 30 tools and none of the
+# card tools, because these three shapes were never written).
+chorus:toolDesc      a owl:DatatypeProperty ; rdfs:label "description" ; rdfs:comment "A card's description, with its ## Experience and AC sections (#4515)." .
+
+# clearing-card and clearing-card-jeff — "add {title} --owner={owner} ...", implementedBy cards
+chorus:CardsAddInput a sh:NodeShape , chorus:ToolInput ;
+    rdfs:label "clearing-card input" ;
+    rdfs:comment "The cards CLI still checks the description's sections; the shape only names what a card needs." ;
+    sh:property [ sh:path chorus:toolTitle ;    sh:minCount 1 ; sh:maxCount 1 ; sh:datatype xsd:string ; sh:order 1 ; sh:name "title" ;    sh:description "Card title: <verb> <what> — <why or scope>." ] ;
+    sh:property [ sh:path chorus:toolOwner ;    sh:minCount 1 ; sh:maxCount 1 ; sh:datatype xsd:string ; sh:order 2 ; sh:name "owner" ;    chorus:namesRole "peer" ; sh:description "Owner role: any agent or human the roles door lists." ] ;
+    sh:property [ sh:path chorus:toolPriority ; sh:minCount 1 ; sh:maxCount 1 ; sh:datatype xsd:string ; sh:order 3 ; sh:in ( "P1" "P2" "P3" ) ; sh:name "priority" ; sh:description "P1, P2 or P3." ] ;
+    sh:property [ sh:path chorus:toolDomain ;   sh:minCount 1 ; sh:maxCount 1 ; sh:datatype xsd:string ; sh:order 4 ; sh:name "domain" ;   sh:description "Domain label value." ] ;
+    sh:property [ sh:path chorus:toolCardType ; sh:minCount 1 ; sh:maxCount 1 ; sh:datatype xsd:string ; sh:order 5 ; sh:in ( "new" "enhance" "fix" "chore" "swat" ) ; sh:name "type" ; sh:description "new, enhance, fix, chore or swat." ] ;
+    sh:property [ sh:path chorus:toolOrigin ;   sh:minCount 1 ; sh:maxCount 1 ; sh:datatype xsd:string ; sh:order 6 ; sh:in ( "reflective" "reactive" ) ; sh:name "origin" ; sh:description "reflective or reactive." ] ;
+    sh:property [ sh:path chorus:toolDesc ;     sh:minCount 1 ; sh:maxCount 1 ; sh:datatype xsd:string ; sh:order 7 ; sh:name "desc" ;     sh:description "Description with ## Experience and an AC checklist." ] ;
+    sh:property [ sh:path chorus:toolSequence ; sh:maxCount 1 ; sh:datatype xsd:string ; sh:order 8 ; sh:name "sequence" ; sh:description "Sequence label value." ] .
+
+# clearing-surface — "view {id}", implementedBy cards
+chorus:CardsViewInput a sh:NodeShape , chorus:ToolInput ;
+    rdfs:label "clearing-surface input" ;
+    sh:property [ sh:path chorus:toolCardId ; sh:minCount 1 ; sh:maxCount 1 ; sh:datatype xsd:integer ; sh:minInclusive 1 ; sh:order 1 ; sh:name "id" ; sh:description "Card id." ] .
+
+# clearing-sweep — "done {id}", implementedBy cards
+chorus:CardsDoneInput a sh:NodeShape , chorus:ToolInput ;
+    rdfs:label "clearing-sweep input" ;
+    sh:property [ sh:path chorus:toolCardId ; sh:minCount 1 ; sh:maxCount 1 ; sh:datatype xsd:integer ; sh:minInclusive 1 ; sh:order 1 ; sh:name "id" ; sh:description "Card id." ] .

@@ -51,6 +51,83 @@
     ],
     "type": "object"
   },
+  "CardsAddInput": {
+    "additionalProperties": false,
+    "properties": {
+      "desc": {
+        "description": "Description with ## Experience and an AC checklist.",
+        "type": "string"
+      },
+      "domain": {
+        "description": "Domain label value.",
+        "type": "string"
+      },
+      "origin": {
+        "description": "reflective or reactive.",
+        "enum": [
+          "reflective",
+          "reactive"
+        ],
+        "type": "string"
+      },
+      "owner": {
+        "description": "Owner role: any agent or human the roles door lists.",
+        "namesRole": "peer",
+        "type": "string"
+      },
+      "priority": {
+        "description": "P1, P2 or P3.",
+        "enum": [
+          "P1",
+          "P2",
+          "P3"
+        ],
+        "type": "string"
+      },
+      "sequence": {
+        "description": "Sequence label value.",
+        "type": "string"
+      },
+      "title": {
+        "description": "Card title: <verb> <what> — <why or scope>.",
+        "type": "string"
+      },
+      "type": {
+        "description": "new, enhance, fix, chore or swat.",
+        "enum": [
+          "new",
+          "enhance",
+          "fix",
+          "chore",
+          "swat"
+        ],
+        "type": "string"
+      }
+    },
+    "required": [
+      "title",
+      "owner",
+      "priority",
+      "domain",
+      "type",
+      "origin",
+      "desc"
+    ],
+    "type": "object"
+  },
+  "CardsDoneInput": {
+    "additionalProperties": false,
+    "properties": {
+      "id": {
+        "description": "Card id.",
+        "type": "integer"
+      }
+    },
+    "required": [
+      "id"
+    ],
+    "type": "object"
+  },
   "CardsMoveInput": {
     "additionalProperties": false,
     "properties": {
@@ -131,6 +208,19 @@
       "type": {
         "description": "new, enhance, fix, chore or swat.",
         "type": "string"
+      }
+    },
+    "required": [
+      "id"
+    ],
+    "type": "object"
+  },
+  "CardsViewInput": {
+    "additionalProperties": false,
+    "properties": {
+      "id": {
+        "description": "Card id.",
+        "type": "integer"
       }
     },
     "required": [
