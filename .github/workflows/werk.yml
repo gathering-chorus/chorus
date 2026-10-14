@@ -406,7 +406,7 @@ jobs:
             # #4335's prove-live ran chorus-health live and paged him), and
             # CHORUS_ROOT is the werk, never canonical.
             ( cd "$WERK" && CHORUS_CONTEXT=test CHORUS_ROOT="$WERK" CHORUS_LOG_FILE="$W/spine.log" CHORUS_SESSIONS_DIR="$W/sessions" CARDS_BRIEFS_ROOT="$W/briefs" \
-                CHORUS_MCP_NUDGE_URL="http://127.0.0.1:9/nudge" PULSE_URL="http://127.0.0.1:9" bats "$f" ) || src=$?
+                CHORUS_PULSE_URL="http://127.0.0.1:9/api/nudge" PULSE_URL="http://127.0.0.1:9" bats "$f" ) || src=$?
             # #4265 — exit 2 is a suite saying it measured NOTHING (its subject is
             # unserved), the same signal werk-test reads. It is not a pass and it
             # is not a failure, so it is named here and carried out of the leg

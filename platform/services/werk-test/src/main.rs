@@ -3455,10 +3455,10 @@ mod suite_deadline_tests {
     /// hands it the live nudge path or canonical fails this test.
     #[test]
     fn the_card_lane_runs_a_suite_caged_and_rooted_in_the_werk() {
-        let (dir, s) = world("cage.sh", "case \"$CHORUS_MCP_NUDGE_URL\" in *127.0.0.1:9*) ;; *) echo \"live nudge path: $CHORUS_MCP_NUDGE_URL\"; exit 1 ;; esac\n\
+        let (dir, s) = world("cage.sh", "case \"$CHORUS_PULSE_URL\" in *127.0.0.1:9*) ;; *) echo \"live nudge path: $CHORUS_PULSE_URL\"; exit 1 ;; esac\n\
 [ \"$CHORUS_ROOT\" = \"$PWD\" ] || { echo \"root $CHORUS_ROOT is not the werk $PWD\"; exit 1; }\n\
 echo '=== Results: 1 passed, 0 failed ==='\n");
-        std::env::remove_var("CHORUS_MCP_NUDGE_URL");
+        std::env::remove_var("CHORUS_PULSE_URL");
         let werk = std::fs::canonicalize(&dir).unwrap();
         assert!(matches!(run_bats(werk.to_str().unwrap(), &s).0, BatsOutcome::Pass));
     }
@@ -3482,9 +3482,9 @@ echo '=== Results: 1 passed, 0 failed ==='\n");
     /// the check above can go red.
     #[test]
     fn negative_proof_a_live_nudge_path_fails_the_cage_suite() {
-        let (dir, s) = world("cage2.sh", "case \"$CHORUS_MCP_NUDGE_URL\" in *127.0.0.1:9*) ;; *) exit 1 ;; esac\n");
+        let (dir, s) = world("cage2.sh", "case \"$CHORUS_PULSE_URL\" in *127.0.0.1:9*) ;; *) exit 1 ;; esac\n");
         let out = Command::new("bash").arg(&s).current_dir(&dir)
-            .env("CHORUS_MCP_NUDGE_URL", "http://127.0.0.1:3341/nudge").status().unwrap();
+            .env("CHORUS_PULSE_URL", "http://127.0.0.1:3475/api/nudge").status().unwrap();
         assert!(!out.success());
     }
 
