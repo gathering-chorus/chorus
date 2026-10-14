@@ -14,12 +14,8 @@
 pub mod agent_socket;
 pub mod runtime_tools;
 pub mod runtime_hook;
-<<<<<<< HEAD
 pub mod runtime_rows;
-// #4515 — the chorus-nudge-message tool, as the binary its Skill row names.
-=======
 // #4515 — the clearing-nudge tool, as the binary its Skill row names.
->>>>>>> 9837e80c5 (wren: #4515 — Naming rule (Jeff 10-14) as a model check: athena-validate TOOL_NAME refuses a runner tool whose name is not <product>-<step> (products read from the model) or has no chorus:forStreamStep; agent/human skills exempt. Runner: athena-get/list/add/set replace door_get/door_list (writes as the caller). athena-validate migration ports the kept migration readout. Rename sweep across 119 files + runner (clearing-*, borg-*, werk-deploy-demo/prod, chorus-werk/chorus-athena); 7 retired tools have no callers; old act workflows werk.yml and athena.yml deleted)
 pub mod nudge_send;
 // #2505 — expose `shared` so integration tests can call
 // `chorus_hooks::shared::state_paths::chorus_root()` instead of hardcoding
