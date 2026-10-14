@@ -159,8 +159,12 @@ chorus:runtime-agy a chorus:AgentRuntime ;
     chorus:fieldToolArgs "toolCall.args" ;
     # measured 08:32–08:42, 48 PreToolUse calls: run_command 41, view_file 4,
     # manage_task 3 (agy's own task list: not guarded, so it asks)
-    chorus:runtimeToolMap "run_command=Bash" , "view_file=Read" ;
-    chorus:runtimeArgMap "CommandLine=command" , "Cwd=cwd" , "AbsolutePath=file_path" ;
+    # 13:21 Abby named her edit tools (Jeff 13:20: "fix abbys edit approvals now"):
+    # write_to_file {TargetFile, CodeContent, Overwrite} and replace_file_content
+    # {TargetFile, TargetContent, ReplacementContent}. Unmapped, every edit asked Jeff.
+    chorus:runtimeToolMap "run_command=Bash" , "view_file=Read" , "write_to_file=Write" , "replace_file_content=Edit" ;
+    chorus:runtimeArgMap "CommandLine=command" , "Cwd=cwd" , "AbsolutePath=file_path" , "TargetFile=file_path" ,
+        "CodeContent=content" , "TargetContent=old_string" , "ReplacementContent=new_string" ;
     chorus:replyAsk "{\"decision\":\"ask\"}" ;
     chorus:replyNone "{}" ;
     chorus:replyStopOk "{\"decision\":\"stop\"}" ;
