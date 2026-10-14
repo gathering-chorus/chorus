@@ -942,6 +942,26 @@ app.get('/api/chorus/logs/trace/:traceId', async (req, res) => {
   const result = await logsForTrace({ trace_id: traceId, time_window: w }, painLokiDeps);
   res.status(result.ok ? 200 : 502).json(result);
 });
+// #4515 — chorus_flow_report's route (the old MCP server ran this CLI itself).
+// The report is computed off the serving loop, in its own node process, and
+// also refreshes ~/.chorus/reports/card-cycle-report.html. hours: 1..720.
+app.get('/api/chorus/flow-report', async (req, res) => {
+  const raw = req.query.hours;
+  const hours = raw === undefined || raw === '' ? 120 : Number(raw);
+  if (!Number.isInteger(hours) || hours < 1 || hours > 720) {
+    res.status(400).json({ ok: false, reason: 'bad-hours', allowed: '1..720' });
+    return;
+  }
+  const cli = path.join(__dirname, 'flow-report-cli.js');
+  const htmlOut = path.join(process.env.HOME || '', '.chorus/reports/card-cycle-report.html');
+  execFile(process.execPath, [cli, '--hours', String(hours), '--html', htmlOut], { timeout: 120_000, maxBuffer: 16 * 1024 * 1024 }, (err, stdout, stderr) => {
+    if (err) {
+      res.status(502).json({ ok: false, reason: 'flow-report-failed', detail: String(stderr || err.message).slice(0, 500) });
+      return;
+    }
+    res.type('application/json').send(stdout);
+  });
+});
 // #4515 — chorus_logs_recent_errors' route (the old MCP server built this LogQL itself)
 app.get('/api/chorus/logs/errors', async (req, res) => {
   const w = logWindow(req.query.window, '1h');

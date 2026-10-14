@@ -91,3 +91,10 @@ describe('#4515 the logs routes the runner calls', () => {
     },
   );
 });
+
+describe('#4515 the flow report route the runner calls', () => {
+  test.each(['0', '721', '1.5', 'week'])('NEGATIVE PROOF: hours=%s is refused before any report runs', async (h) => {
+    const r = await ask(app.listen(0), `/api/chorus/flow-report?hours=${h}`);
+    expect(r.status).toBe(400);
+  });
+});

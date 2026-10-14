@@ -55,3 +55,16 @@ chorus:DoorRowInput a sh:NodeShape , chorus:ToolInput ;
 # chorus_principles_list GET {door}/v1/principles/principles
 chorus:NoInput a sh:NodeShape , chorus:ToolInput ;
     rdfs:label "no arguments" .
+
+# chorus_pain_rollup  GET {api}/api/chorus/pain/rollup?window={window=7d}
+chorus:PainRollupInput a sh:NodeShape , chorus:ToolInput ;
+    rdfs:label "the pain rollup" ;
+    sh:property [ sh:path chorus:toolWindow ; sh:maxCount 1 ; sh:datatype xsd:string ; sh:order 1 ; sh:name "window" ;
+                  sh:description "How far back, e.g. 1d, 7d, 30d. Default 7d; a window the route cannot read is refused by it." ] .
+
+# chorus_flow_report  GET {api}/api/chorus/flow-report?hours={hours=120}
+chorus:toolHours a owl:DatatypeProperty ; rdfs:label "hours" ; rdfs:comment "How many hours back a report covers (#4515)." .
+chorus:FlowReportInput a sh:NodeShape , chorus:ToolInput ;
+    rdfs:label "the flow report" ;
+    sh:property [ sh:path chorus:toolHours ; sh:maxCount 1 ; sh:datatype xsd:integer ; sh:minInclusive 1 ; sh:maxInclusive 720 ; sh:order 1 ; sh:name "hours" ;
+                  sh:description "Hours back, 1 to 720. Default 120." ] .

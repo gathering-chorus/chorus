@@ -143,6 +143,17 @@
     ],
     "type": "object"
   },
+  "FlowReportInput": {
+    "additionalProperties": false,
+    "properties": {
+      "hours": {
+        "description": "Hours back, 1 to 720. Default 120.",
+        "type": "integer"
+      }
+    },
+    "required": [],
+    "type": "object"
+  },
   "HeraldRunInput": {
     "additionalProperties": false,
     "properties": {
@@ -281,6 +292,17 @@
       "to",
       "message"
     ],
+    "type": "object"
+  },
+  "PainRollupInput": {
+    "additionalProperties": false,
+    "properties": {
+      "window": {
+        "description": "How far back, e.g. 1d, 7d, 30d. Default 7d; a window the route cannot read is refused by it.",
+        "type": "string"
+      }
+    },
+    "required": [],
     "type": "object"
   },
   "RoleReadInput": {
