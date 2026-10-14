@@ -33,8 +33,9 @@ fn the_gemini_launch_runs_interactive_gemini_with_node_her_key_and_her_policy() 
     assert!(cmd.contains("CHORUS_SESSION_ID='abby-normal-run-1a2b'"), "{cmd}");
     // node is on PATH (launchd and sudo give a PATH without it — measured 10-06 18:16)
     assert!(cmd.contains(":/opt/homebrew/bin:"), "{cmd}");
-    // her own key, read as her
-    assert!(cmd.contains("GEMINI_API_KEY=\"$(cat ~/.chorus/secrets/gemini.key)\""), "{cmd}");
+    // her own key, read as her, and only when she has one (#4444 reopen 1:
+    // on Jeff's Google login there is no key file, and an export would win)
+    assert!(cmd.contains("{ [ ! -f ~/.chorus/secrets/gemini.key ] || export GEMINI_API_KEY=\"$(cat ~/.chorus/secrets/gemini.key)\"; }"), "{cmd}");
     // the allowed tools are generated from the Claude roles' rules before she starts
     assert!(cmd.contains("CHORUS_ALLOW_RULES_FILE='/j/.claude/settings.json' '/b/chorus-agent' allowed-tools"), "{cmd}");
     // interactive: no --acp, no -p; the policy she was given
