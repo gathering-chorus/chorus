@@ -53,6 +53,11 @@ pub fn run(tool: &str, args: &Value) -> i32 {
             return 1;
         }
     };
+    if let Some((method, url, body, token)) = &p.http {
+        let (ok, text, _) = crate::server::run_http(method, url, body, token, &trace, t.timeout_s);
+        println!("{text}");
+        return if ok { 0 } else { 1 };
+    }
     eprintln!("chorus-runner call: {tool} as {} → {} {}", p.who, p.binary, p.argv.join(" "));
     let mut child = match Command::new(&p.binary).args(&p.argv).envs(p.env.iter().map(|(k, v)| (*k, v.as_str()))).stdin(Stdio::null()).spawn() {
         Ok(c) => c,

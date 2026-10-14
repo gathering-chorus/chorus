@@ -28,6 +28,9 @@ pub struct SkillTool {
     pub runs_as: RunsAs,
     /// #4514 AC2 — start it as a Task and return a run id at once.
     pub long_running: bool,
+    /// #4515 — an "http" tool calls a route (implementedBy = "METHOD url") with
+    /// its checked arguments as the JSON body; a "deterministic" one runs a binary.
+    pub http: bool,
 }
 
 /// #4514 (Silas + Wren, 2026-10-13): a verb a role runs on its own card runs as
@@ -64,7 +67,8 @@ pub fn skill_tools(rows: &[Value], inputs: &Map<String, Value>) -> (Vec<SkillToo
     let mut unmeasured = Vec::new();
     for row in rows {
         let shape = s(row, "inputShape");
-        if s(row, "executor") != "deterministic" || shape.is_empty() {
+        let executor = s(row, "executor");
+        if !matches!(executor, "deterministic" | "http") || shape.is_empty() {
             continue;
         }
         let name = s(row, "name").to_string();
@@ -76,6 +80,10 @@ pub fn skill_tools(rows: &[Value], inputs: &Map<String, Value>) -> (Vec<SkillToo
         let binary = s(row, "implementedBy");
         if binary.is_empty() {
             unmeasured.push(Unmeasured { skill: name, reason: "names no binary (implementedBy)".into() });
+            continue;
+        }
+        if executor == "http" && http_target(binary, &Map::new()).is_err() {
+            unmeasured.push(Unmeasured { skill: name, reason: format!("implementedBy '{binary}' is not METHOD http://127.0.0.1:…") });
             continue;
         }
         let runs_as = match s(row, "runsAs").rsplit(['#', '/', ':']).next().unwrap_or("") {
@@ -96,6 +104,7 @@ pub fn skill_tools(rows: &[Value], inputs: &Map<String, Value>) -> (Vec<SkillToo
             schema: schema.clone(),
             runs_as,
             long_running: row.get("longRunning").is_some_and(|v| v.as_bool() == Some(true) || v.as_str() == Some("true")),
+            http: executor == "http",
         });
     }
     (tools, unmeasured)
@@ -282,4 +291,32 @@ pub fn child_env(owner: &str, token: &str, trace: &str) -> Vec<(&'static str, St
         ("DEPLOY_ROLE", owner.to_string()),
         ("CHORUS_TRACE", trace.to_string()),
     ]
+}
+
+/// #4515 — an http tool's method and URL from its implementedBy ("POST
+/// http://127.0.0.1:3475/api/messages"), with `{name}` in the URL filled from
+/// the arguments. Only loopback is allowed: the runner never carries a
+/// caller's credential off the machine.
+pub fn http_target(implemented_by: &str, args: &Map<String, Value>) -> Result<(String, String), String> {
+    let (method, url) = implemented_by.split_once(' ').ok_or_else(|| format!("'{implemented_by}' is not METHOD url"))?;
+    if !matches!(method, "GET" | "POST" | "PUT" | "PATCH" | "DELETE") {
+        return Err(format!("'{method}' is not an HTTP method"));
+    }
+    if !(url.starts_with("http://127.0.0.1:") || url.starts_with("http://localhost:")) {
+        return Err(format!("{url} is not a loopback address"));
+    }
+    let mut out = url.to_string();
+    while let (Some(i), Some(j)) = (out.find('{'), out.find('}')) {
+        if j < i {
+            break;
+        }
+        let k = out[i + 1..j].to_string();
+        let v = args.get(&k).map(|v| v.as_str().map(String::from).unwrap_or_else(|| v.to_string())).unwrap_or_default();
+        if v.is_empty() && !args.is_empty() {
+            return Err(format!("{k} is needed for {url}"));
+        }
+        let enc: String = v.bytes().map(|b| if b.is_ascii_alphanumeric() || b"-_.~".contains(&b) { (b as char).to_string() } else { format!("%{b:02X}") }).collect();
+        out.replace_range(i..=j, &enc);
+    }
+    Ok((method.to_string(), out))
 }

@@ -118,26 +118,89 @@ pub struct Prepared {
     pub binary: String,
     pub argv: Vec<String>,
     pub env: Vec<(&'static str, String)>,
+    /// #4515 — an http tool: method, URL, JSON body, and the credential it carries
+    pub http: Option<(String, String, String, String)>,
 }
 
 pub fn prepare(tool: &SkillTool, args: &serde_json::Map<String, serde_json::Value>, caller: &str, trace: &str) -> Result<Prepared, (String, u16)> {
+    prepare_with(tool, args, caller, trace, None)
+}
+
+/// `caller_token` is the caller's own verified credential when the call came
+/// through the gate. A caller-run http tool forwards exactly that (Silas 21:07:
+/// never a role header); a token is minted only when there is none (the CLI).
+pub fn prepare_with(tool: &SkillTool, args: &serde_json::Map<String, serde_json::Value>, caller: &str, trace: &str, caller_token: Option<&str>) -> Result<Prepared, (String, u16)> {
     let who = crate::skills::run_identity(tool, caller).map_err(|e| (e, 403))?;
     let args = crate::skills::coerce_args(args, &tool.schema);
     check_args(&args, &tool.schema).map_err(|e| (e, 400))?;
     let argv = argv(&tool.template, &args, crate::skills::bare(caller));
-    let token = identity_token(&who).ok_or_else(|| (format!("could not mint {who}'s identity to run as them"), 503))?;
-    Ok(Prepared { binary: binary_path(&tool.binary, &who), argv, env: crate::skills::child_env(&who, &token, trace), who })
+    let forwarded = if tool.runs_as == crate::skills::RunsAs::Caller { caller_token.map(String::from) } else { None };
+    let token = match forwarded {
+        Some(t) => t,
+        None => identity_token(&who).ok_or_else(|| (format!("could not mint {who}'s identity to run as them"), 503))?,
+    };
+    let http = if tool.http {
+        let (method, url) = crate::skills::http_target(&tool.binary, &args).map_err(|e| (e, 400))?;
+        Some((method, url, serde_json::Value::Object(args.clone()).to_string(), token.clone()))
+    } else {
+        None
+    };
+    Ok(Prepared { binary: binary_path(&tool.binary, &who), argv, env: crate::skills::child_env(&who, &token, trace), who, http })
+}
+
+/// #4515 — run an http tool. The credential and body go to curl through its
+/// stdin config and a 0600 file, never its argv. Returns (ok, text, status).
+pub fn run_http(method: &str, url: &str, body: &str, token: &str, trace: &str, timeout_s: u64) -> (bool, String, u16) {
+    use std::io::Write;
+    use std::os::unix::fs::OpenOptionsExt;
+    let dir = crate::tasks::tasks_dir();
+    let _ = std::fs::create_dir_all(&dir);
+    let body_file = dir.join(format!(".http-{}-{trace}.json", std::process::id()));
+    let wrote = std::fs::OpenOptions::new().write(true).create(true).truncate(true).mode(0o600).open(&body_file).and_then(|mut f| f.write_all(body.as_bytes()));
+    if let Err(e) = wrote {
+        return (false, format!("could not stage the body: {e}"), 500);
+    }
+    let config = format!(
+        "url = \"{url}\"\nrequest = \"{method}\"\nsilent\nmax-time = {timeout_s}\nwrite-out = \"\\n%{{http_code}}\"\nheader = \"Content-Type: application/json\"\nheader = \"traceparent: {}\"\nheader = \"Authorization: Bearer {token}\"\ndata-binary = \"@{}\"\n",
+        crate::traceparent(trace),
+        body_file.display()
+    );
+    let out = Command::new("curl")
+        .args(["-K", "-"])
+        .stdin(std::process::Stdio::piped())
+        .stdout(std::process::Stdio::piped())
+        .stderr(std::process::Stdio::piped())
+        .spawn()
+        .and_then(|mut c| {
+            if let Some(mut si) = c.stdin.take() {
+                si.write_all(config.as_bytes())?;
+            }
+            c.wait_with_output()
+        });
+    let _ = std::fs::remove_file(&body_file);
+    let Ok(out) = out else { return (false, "curl failed to run".into(), 500) };
+    let text = String::from_utf8_lossy(&out.stdout).to_string();
+    let (resp, code) = match text.rsplit_once('\n') {
+        Some((b, c)) => (b.to_string(), c.trim().parse::<u16>().unwrap_or(0)),
+        None => (String::new(), text.trim().parse::<u16>().unwrap_or(0)),
+    };
+    let ok = (200..300).contains(&code);
+    (ok, format!("{method} {url} → {code}\n{}", resp.chars().take(4000).collect::<String>()), if code == 0 { 502 } else { code })
 }
 
 /// #4513 — run a Skill tool for an MCP caller, under the row's timeout; a long
 /// one starts as a Task (#4514 AC2) and returns its run id at once.
-async fn run_skill(tool: &SkillTool, args: &serde_json::Map<String, serde_json::Value>, caller: &str, trace: &str) -> (bool, String, u16) {
+async fn run_skill(tool: &SkillTool, args: &serde_json::Map<String, serde_json::Value>, caller: &str, trace: &str, caller_token: Option<String>) -> (bool, String, u16) {
     let (t, a, c, tr) = (tool.clone(), args.clone(), caller.to_string(), trace.to_string());
-    let p = match tokio::task::spawn_blocking(move || prepare(&t, &a, &c, &tr)).await {
+    let p = match tokio::task::spawn_blocking(move || prepare_with(&t, &a, &c, &tr, caller_token.as_deref())).await {
         Ok(Ok(p)) => p,
         Ok(Err((e, code))) => return (false, e, code),
         Err(e) => return (false, format!("prepare failed: {e}"), 500),
     };
+    if let Some((method, url, body, token)) = p.http.clone() {
+        let (tr, to) = (trace.to_string(), tool.timeout_s);
+        return tokio::task::spawn_blocking(move || run_http(&method, &url, &body, &token, &tr, to)).await.unwrap_or((false, "http call failed".into(), 500));
+    }
     if tool.long_running {
         let id = format!("{}-{trace}", tool.name);
         return match crate::tasks::spawn(&crate::tasks::tasks_dir(), &id, &p.binary, &p.argv, &p.env, crate::skills::bare(caller)) {
@@ -262,7 +325,13 @@ impl ServerHandler for Runner {
         }
         let skill = self.skills.read().ok().and_then(|s| s.iter().find(|t| t.name == tool).cloned());
         if let Some(st) = skill {
-            let (ok, text, status) = run_skill(&st, &args, &caller, &trace).await;
+            // the caller's own verified credential, only when the gate verified it
+            let token = ctx
+                .extensions
+                .get::<http::request::Parts>()
+                .filter(|p| p.extensions.get::<Caller>().is_some())
+                .and_then(|p| crate::bearer(p.headers.get(http::header::AUTHORIZATION).and_then(|h| h.to_str().ok())).map(String::from));
+            let (ok, text, status) = run_skill(&st, &args, &caller, &trace, token).await;
             if ok {
                 return Ok(CallToolResponse::Complete(CallToolResult::success(vec![Content::text(text)])));
             }
