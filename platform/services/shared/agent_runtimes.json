@@ -1,0 +1,84 @@
+{
+  "runsOn": {
+    "abby-normal": "agy"
+  },
+  "runtimes": {
+    "agy": {
+      "eventAfterTool": "PostToolUse",
+      "eventBeforePrompt": "PreInvocation",
+      "eventBeforeTool": "PreToolUse",
+      "eventOnStop": "Stop",
+      "eventSessionStart": "SessionStart",
+      "fieldSessionId": "conversationId",
+      "fieldToolArgs": "toolCall.args",
+      "fieldToolName": "toolCall.name",
+      "fieldTranscript": "transcriptPath",
+      "fieldTurnStart": "invocationNum",
+      "label": "Antigravity CLI (agy)",
+      "replyAllow": "{\"decision\":\"auto_approve\"}",
+      "replyAsk": "{\"decision\":\"ask\"}",
+      "replyContext": "{\"injectSteps\":[{\"ephemeralMessage\":\"{context}\"}]}",
+      "replyDeny": "{\"decision\":\"deny\",\"reason\":\"{reason}\"}",
+      "replyNone": "{}",
+      "replyStopHold": "{\"decision\":\"continue\",\"reason\":\"{reason}\"}",
+      "replyStopOk": "{\"decision\":\"stop\"}",
+      "runtimeArgMap": [
+        "AbsolutePath=file_path",
+        "CommandLine=command",
+        "Cwd=cwd"
+      ],
+      "runtimeAuth": "google-login",
+      "runtimeBinary": "agy",
+      "runtimeHooksFile": ".gemini/config/hooks.json",
+      "runtimeHooksLayout": "named-hooks",
+      "runtimeMcpFile": ".gemini/config/mcp_config.json",
+      "runtimeToolMap": [
+        "run_command=Bash",
+        "view_file=Read"
+      ],
+      "transcriptPromptTag": "USER_REQUEST",
+      "transcriptPromptType": "USER_INPUT"
+    },
+    "claude-code": {
+      "eventBeforePrompt": "UserPromptSubmit",
+      "eventBeforeTool": "PreToolUse",
+      "eventOnStop": "Stop",
+      "eventSessionStart": "SessionStart",
+      "fieldPrompt": "prompt",
+      "fieldSessionId": "session_id",
+      "fieldToolArgs": "tool_input",
+      "fieldToolName": "tool_name",
+      "fieldTranscript": "transcript_path",
+      "label": "Claude Code",
+      "replyAllow": "{\"hookSpecificOutput\":{\"hookEventName\":\"PreToolUse\",\"permissionDecision\":\"allow\"}}",
+      "replyContext": "{\"hookSpecificOutput\":{\"hookEventName\":\"UserPromptSubmit\",\"additionalContext\":\"{context}\"}}",
+      "replyDeny": "{\"hookSpecificOutput\":{\"hookEventName\":\"PreToolUse\",\"permissionDecision\":\"deny\",\"permissionDecisionReason\":\"{reason}\"}}",
+      "runtimeAuth": "subscription",
+      "runtimeBinary": "claude",
+      "runtimeHooksFile": ".claude/settings.json",
+      "runtimeHooksLayout": "claude-settings",
+      "runtimeMcpFile": ".mcp.json"
+    },
+    "gemini-cli": {
+      "eventBeforePrompt": "BeforeAgent",
+      "eventBeforeTool": "BeforeTool",
+      "eventOnStop": "AfterAgent",
+      "fieldPrompt": "prompt",
+      "fieldSessionId": "session_id",
+      "fieldToolArgs": "tool_input",
+      "fieldToolName": "tool_name",
+      "fieldTranscript": "transcript_path",
+      "label": "Gemini CLI",
+      "replyAllow": "{\"decision\":\"allow\"}",
+      "replyContext": "{\"hookSpecificOutput\":{\"additionalContext\":\"{context}\"}}",
+      "replyDeny": "{\"decision\":\"deny\",\"reason\":\"{reason}\"}",
+      "runtimeAuth": "api-key",
+      "runtimeBinary": "gemini",
+      "runtimeHooksFile": ".gemini/settings.json",
+      "runtimeHooksLayout": "claude-settings",
+      "runtimeKeyEnv": "GEMINI_API_KEY",
+      "runtimeMcpFile": ".gemini/settings.json",
+      "runtimeRetired": "Google stopped serving Gemini CLI to personal accounts on 2026-06-18 (Google AI Pro included); a personal account runs on agy."
+    }
+  }
+}

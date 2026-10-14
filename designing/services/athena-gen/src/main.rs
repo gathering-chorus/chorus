@@ -4,6 +4,7 @@
 //!   athena-gen generate --root <repo> --product <name> --out <dir> [--verifier <chorus-oidc dir>]
 //!                                                                    writes the product's API crate
 //!   athena-gen tool-inputs --root <repo> --out <file>                writes the tool runner's input table (#4513)
+//!   athena-gen runtimes --root <repo> --out <file>                   writes the agent runtime table (#4444)
 
 use std::path::PathBuf;
 
@@ -30,6 +31,17 @@ fn main() {
         let inputs = athena_gen::model::tool_inputs(&store).unwrap_or_else(|e| die(e));
         std::fs::write(&out, athena_gen::emit::tool_inputs_json(&inputs)).unwrap_or_else(|e| die(e));
         println!("wrote {} ({} tool input shape(s))", out.display(), inputs.len());
+        return;
+    }
+    if cmd == "runtimes" {
+        let out = PathBuf::from(arg(&args, "--out").unwrap_or_else(|| die("runtimes needs --out <file>")));
+        let (store, skipped) = athena_gen::model::load(&athena_gen::model::model_files(&root)).unwrap_or_else(|e| die(e));
+        if !skipped.is_empty() {
+            die(format!("{} model file(s) do not parse; nothing generated:\n  {}", skipped.len(), skipped.join("\n  ")));
+        }
+        let t = athena_gen::model::agent_runtimes(&store).unwrap_or_else(|e| die(e));
+        std::fs::write(&out, athena_gen::emit::agent_runtimes_json(&t)).unwrap_or_else(|e| die(e));
+        println!("wrote {} ({} runtime(s), {} principal(s) assigned)", out.display(), t.runtimes.len(), t.runs_on.len());
         return;
     }
     let Some(product) = arg(&args, "--product") else {

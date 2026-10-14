@@ -375,8 +375,11 @@ mod scope_refusal_4169 {
         std::fs::create_dir_all(services.join("crate-a/src")).unwrap();
         std::fs::create_dir_all(services.join("crate-b/src")).unwrap();
         std::fs::write(services.join("shared/thing.rs"), "// shared").unwrap();
+        std::fs::write(services.join("shared/table.json"), "{}").unwrap();
         std::fs::write(services.join("crate-a/src/lib.rs"), "#[path = \"../../shared/thing.rs\"]\nmod thing;\n").unwrap();
         std::fs::write(services.join("crate-b/src/lib.rs"), "mod t { include!(\"../../shared/thing.rs\"); }\n").unwrap();
+        // #4444 — a data file compiled in with include_str! is an edge too
+        std::fs::write(services.join("crate-b/src/table.rs"), "const T: &str = include_str!(\"../../shared/table.json\");\n").unwrap();
         // NEGATIVE: a #[path] to a file that is NOT under shared/ must add no edge
         std::fs::write(services.join("crate-a/src/other.rs"), "#[path = \"local/helper.rs\"]\nmod h;\n").unwrap();
         // #4499 — edges come from the build files git tracks: a crate states
@@ -390,6 +393,7 @@ mod scope_refusal_4169 {
         let shared: Vec<_> = edges.iter().filter(|(p, _)| p == "platform/services/shared/thing.rs").map(|(_, c)| c.clone()).collect();
         assert!(shared.contains(&"crate-a".to_string()), "#[path] include maps: {:?}", edges);
         assert!(shared.contains(&"crate-b".to_string()), "include! still maps: {:?}", edges);
+        assert!(edges.iter().any(|(p, c)| p == "platform/services/shared/table.json" && c == "crate-b"), "include_str! maps: {:?}", edges);
         assert!(!edges.iter().any(|(p, _)| p.contains("helper.rs")), "a non-shared #[path] adds nothing: {:?}", edges);
         let _ = std::fs::remove_dir_all(&tmp);
     }

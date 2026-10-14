@@ -203,3 +203,22 @@ pub fn tool_inputs_json(inputs: &[(String, Vec<crate::model::ToolArg>)]) -> Stri
     s.push('\n');
     s
 }
+
+/// #4444 reopen 2 — the runtime table chorus-principal and chorus-hook-shim
+/// read (platform/services/shared/agent_runtimes.json). Generated from the
+/// AgentRuntime rows; nothing in it is hand-written.
+pub fn agent_runtimes_json(t: &crate::model::RuntimeTable) -> String {
+    use serde_json::{json, Map, Value};
+    let mut runtimes = Map::new();
+    for (name, row) in &t.runtimes {
+        let mut m = Map::new();
+        for (k, v) in row {
+            let one = k == "label" || t.single.iter().any(|s| s == k);
+            m.insert(k.clone(), if one && v.len() == 1 { json!(v[0]) } else { json!(v) });
+        }
+        runtimes.insert(name.clone(), Value::Object(m));
+    }
+    let mut s = serde_json::to_string_pretty(&json!({ "runtimes": runtimes, "runsOn": t.runs_on })).unwrap_or_default();
+    s.push('\n');
+    s
+}
