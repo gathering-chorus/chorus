@@ -614,9 +614,20 @@ pub fn gemini_pane_cmd(agent_bin: &str, gemini_bin: &str, allow_rules: &str, run
         return Err(format!("refusing to launch with a quote in the bin dir {:?}", bin_dir));
     }
     Ok(format!(
-        "export PATH='{}':/opt/homebrew/bin:$PATH CHORUS_SESSION_ID='{}' GEMINI_API_KEY=\"$(cat ~/.chorus/secrets/gemini.key)\" {} && {} && CHORUS_ALLOW_RULES_FILE='{}' '{}' allowed-tools >/dev/null && '{}' --policy ~/.chorus/gemini-allowed.toml",
+        "export PATH='{}':/opt/homebrew/bin:$PATH CHORUS_SESSION_ID='{}' && {{ [ ! -f ~/.chorus/secrets/gemini.key ] || export GEMINI_API_KEY=\"$(cat ~/.chorus/secrets/gemini.key)\"; }} && {} && {} && CHORUS_ALLOW_RULES_FILE='{}' '{}' allowed-tools >/dev/null && '{}' --policy ~/.chorus/gemini-allowed.toml",
         bin_dir, run, gemini_git_exports(), gemini_quiet_ui_setup(), allow_rules, agent_bin, gemini_bin
     ))
+}
+
+/// #4444 reopen 1 — Abby signs in with Jeff's Google login (his Pro plan,
+/// 2026-10-14), not a prepaid API key: the workspace settings Gemini reads
+/// win over her account's, so they must say oauth-personal.
+pub fn gemini_auth_is_google(settings_json: &str) -> Result<(), String> {
+    let v: Value = serde_json::from_str(settings_json).map_err(|e| format!("Gemini settings are not JSON: {e}"))?;
+    match v.pointer("/security/auth/selectedType").and_then(|s| s.as_str()) {
+        Some("oauth-personal") => Ok(()),
+        other => Err(format!("Gemini signs in with {:?}, not Google login (oauth-personal)", other.unwrap_or("nothing"))),
+    }
 }
 
 /// #4444 — does a process in the role's pane run the program that was started?
