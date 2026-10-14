@@ -92,6 +92,44 @@ pub fn shared_includes(sources: &[String]) -> Vec<String> {
     out
 }
 
+/// #4499 reopen 2026-10-14 — the shared files a shared file compiles in, so a
+/// crate's includes are closed: scope_units.rs carries `include!("code_units.rs")`
+/// (a name relative to shared/, no `shared/` in it), and werk-build, werk-test
+/// and werk-deploy reach code_units.rs only that way. Read directly, a change
+/// to it rebuilt chorus-crawl alone and the cache kept werk-test (Silas, #4444).
+pub fn shared_closure(direct: Vec<String>, read: &dyn Fn(&str) -> Option<String>) -> Vec<String> {
+    let mut out = direct;
+    let mut i = 0;
+    while i < out.len() {
+        let text = read(&out[i]).unwrap_or_default();
+        for line in text.lines() {
+            let target = if let Some(k) = line.find("include!(\"") {
+                let rest = &line[k + "include!(\"".len()..];
+                rest.find('"').map(|q| &rest[..q])
+            } else if let Some(k) = line.find("#[path = \"") {
+                let rest = &line[k + "#[path = \"".len()..];
+                rest.find('"').map(|q| &rest[..q])
+            } else {
+                None
+            };
+            let Some(t) = target else { continue };
+            // relative to the shared dir: a bare name, or one that names shared/
+            if t.contains('/') && !t.contains("shared/") {
+                continue;
+            }
+            if let Some(name) = t.rsplit('/').next() {
+                let p = format!("{SHARED}/{name}");
+                if !out.contains(&p) {
+                    out.push(p);
+                }
+            }
+        }
+        i += 1;
+    }
+    out.sort();
+    out
+}
+
 /// The `name` a Cargo.toml or package.json states for its package.
 pub fn package_name(text: &str, json: bool) -> String {
     if json {
@@ -240,7 +278,7 @@ pub fn units(
         let path = dir(f);
         let toml = read(f).unwrap_or_default();
         let mut deps = crate_deps(&path, &toml);
-        let includes = shared_includes(&crate_sources(&path));
+        let includes = shared_closure(shared_includes(&crate_sources(&path)), read);
         if !includes.is_empty() {
             deps.push(SHARED.to_string());
             shared_used = true;

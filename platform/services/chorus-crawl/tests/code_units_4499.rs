@@ -146,3 +146,41 @@ mod run_paths_4499 {
         assert!(paths("", "/opt/homebrew/bin/prometheus").is_empty());
     }
 }
+
+// #4499 reopen 2026-10-14 — Silas: #4444 changed shared/code_units.rs and the
+// build cache kept werk-test. werk-test reaches code_units.rs only through
+// scope_units.rs (`pub mod code_units { include!("code_units.rs"); }`).
+mod shared_closure_r1 {
+    use chorus_crawl::code::*;
+    const FILES: &[(&str, &str)] = &[
+        ("platform/services/werk-test/Cargo.toml", "[package]\nname = \"werk-test\"\n"),
+        ("platform/services/shared/scope_units.rs", "pub mod code_units { include!(\"code_units.rs\"); }\n"),
+        ("platform/services/shared/code_units.rs", "// leaf\n"),
+    ];
+    fn read(p: &str) -> Option<String> { FILES.iter().find(|(f, _)| *f == p).map(|(_, t)| t.to_string()) }
+    fn src(_: &str) -> Vec<String> { vec!["include!(\"../../shared/scope_units.rs\");".to_string()] }
+
+    #[test]
+    fn a_crate_includes_what_its_shared_files_include() {
+        let us = units(&["platform/services/werk-test/Cargo.toml".into()], &[], &[], &read, &src);
+        let wt = us.iter().find(|u| u.path == "platform/services/werk-test").unwrap();
+        assert_eq!(wt.includes, vec!["platform/services/shared/code_units.rs", "platform/services/shared/scope_units.rs"]);
+    }
+
+    /// NEGATIVE PROOF: the direct-only reading (10-14's) misses code_units.rs.
+    #[test]
+    fn negative_proof_the_direct_reading_misses_the_nested_include() {
+        assert_eq!(shared_includes(&src("")), vec!["platform/services/shared/scope_units.rs"]);
+    }
+
+    #[test]
+    fn a_path_outside_shared_is_not_an_include_and_a_loop_ends() {
+        let read2 = |p: &str| match p {
+            "platform/services/shared/a.rs" => Some("include!(\"b.rs\");\ninclude!(\"../other/x.rs\");".to_string()),
+            "platform/services/shared/b.rs" => Some("include!(\"a.rs\");".to_string()),
+            _ => None,
+        };
+        assert_eq!(shared_closure(vec!["platform/services/shared/a.rs".into()], &read2),
+            vec!["platform/services/shared/a.rs", "platform/services/shared/b.rs"]);
+    }
+}
