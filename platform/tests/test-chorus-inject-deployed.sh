@@ -38,8 +38,23 @@ assert "chorus-inject is executable" test -f "$BIN"
 # longer what lives at this path, so a codesign/Usage assertion here asserted
 # a retired product (nightly red 2026-09-17, read on #4196). What Jeff needs
 # from this path: it exists, it runs, and it points a caller at the real door.
-if [ -x "$BIN" ]; then
-  OUT=$("$BIN" 2>&1 || true)
+#
+# #4515 — the banner is the CODE's claim, so it is read from the binary this
+# tree builds (#3701: measure the tree under test), not from ~/.chorus/bin,
+# which holds main's build until the card lands. Measured against the installed
+# binary, a card that renames the supported path is red before it can land and
+# a card that breaks the banner is green until after. The two asserts above
+# stay on the installed path: they are the deploy guard (#2769).
+ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
+TREE_BIN="$ROOT/platform/services/chorus-inject/target/release/chorus-inject"
+if [ -x "$TREE_BIN" ]; then
+  UNDER_TEST="$TREE_BIN"
+else
+  UNDER_TEST="$BIN"
+  echo "NOTE: $TREE_BIN not built — the banner is read from the installed binary"
+fi
+if [ -x "$UNDER_TEST" ]; then
+  OUT=$(env -u _NUDGE_PULSE_INTERNAL "$UNDER_TEST" 2>&1 || true)
   assert "chorus-inject refuses direct invocation (not-canonical-caller)" \
     grep -q "not-canonical-caller" <<< "$OUT"
   assert "chorus-inject names the supported path (clearing-nudge)" \

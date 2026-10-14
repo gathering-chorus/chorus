@@ -2831,6 +2831,11 @@ fn bats_outcome(cmd: &mut Command) -> BatsOutcome {
     match cmd.status() {
         Ok(s) if s.success() => BatsOutcome::Pass,
         Ok(s) if s.code() == Some(2) => BatsOutcome::Unmeasured,
+        // #4515 — rc=3 is a suite's SELF-REFUSAL (#4016/#4256): it declined to
+        // run here (catalog-curation-api refuses to write into the live store).
+        // The nightly lane already scores it skip; this card lane scored it FAIL,
+        // so a suite doing the right thing was a red on every card that touched it.
+        Ok(s) if s.code() == Some(3) => BatsOutcome::Unmeasured,
         _ => BatsOutcome::Fail,
     }
 }
@@ -3552,9 +3557,11 @@ mod bats_unmeasured_4265 {
     }
 
     #[test]
-    fn exit_two_is_unmeasured_and_nothing_else_is() {
+    fn exit_two_and_three_are_unmeasured_and_nothing_else_is() {
         assert!(exiting(0) == BatsOutcome::Pass);
         assert!(exiting(2) == BatsOutcome::Unmeasured);
+        // #4515 — rc=3 self-refusal, same verdict the nightly lane gives it
+        assert!(exiting(3) == BatsOutcome::Unmeasured);
 
         // NEGATIVE PROOF (#3734): the codes this must NOT swallow. A suite that
         // fails, and a suite whose runner cannot even be launched, both stay

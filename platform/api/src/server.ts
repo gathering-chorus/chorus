@@ -941,7 +941,7 @@ app.get('/api/chorus/logs/trace/:traceId', async (req, res) => {
 // #4515 — borg-read-flow's route (the old MCP server ran this CLI itself).
 // The report is computed off the serving loop, in its own node process, and
 // also refreshes ~/.chorus/reports/card-cycle-report.html. hours: 1..720.
-app.get('/api/chorus/flow-report', async (req, res) => {
+app.get('/api/chorus/flow-report', (req, res) => {
   const raw = req.query.hours;
   const hours = raw === undefined || raw === '' ? 120 : Number(raw);
   if (!Number.isInteger(hours) || hours < 1 || hours > 720) {
