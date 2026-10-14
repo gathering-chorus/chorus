@@ -23,16 +23,16 @@ handler_on:
 steps:
   - name: skill-werk-merge
     description: "werk-merge"
-    command: "werk-merge ${CARD} ${ROLE} --atomic"
+    command: "chorus-runner call werk-merge card=${CARD} atomic=true"
   - name: skill-werk-sync
     description: "werk-sync"
     depends: [skill-werk-merge]
-    command: "werk-sync ff"
+    command: "chorus-runner call werk-sync mode=ff"
   - name: skill-deploy-prod
     description: "deploy-prod"
     depends: [skill-werk-sync]
-    command: "werk-deploy ${CARD} ${ROLE} --target canonical"
+    command: "chorus-runner call deploy-prod card=${CARD}"
   - name: skill-werk-accept
     description: "werk-accept"
     depends: [skill-deploy-prod]
-    command: "werk-accept ${CARD} ${ROLE} --atomic"
+    command: "chorus-runner call werk-accept card=${CARD} atomic=true"
