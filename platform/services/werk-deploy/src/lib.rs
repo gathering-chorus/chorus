@@ -1394,6 +1394,12 @@ fn ts_daemon(name: &str) -> Option<(&'static str, &'static str, String)> {
             "com.chorus.clearing",
             env::var("CHORUS_CLEARING_HEALTH_URL").unwrap_or_else(|_| "http://localhost:3470/health".to_string()),
         )),
+        "clearing-v2" => Some((
+            "directing/clearing-v2",
+            "com.chorus.clearing-v2",
+            env::var("CHORUS_CLEARING_V2_HEALTH_URL").unwrap_or_else(|_| "http://localhost:3472/health".to_string()),
+            false, // health-check smoke
+        )),
         _ => None,
     }
 }
@@ -2021,6 +2027,8 @@ pub fn changed_ts_services(diff: &str) -> Vec<String> {
             // #3352 — see ts_daemon: pulse/clearing join the discovery so a merged
             // change actually deploys (the merged-but-stale class, 3 specimens today).
             add("pulse");
+        } else if l.starts_with("directing/clearing-v2/") {
+            add("clearing-v2");
         } else if l.starts_with("directing/clearing/") {
             add("clearing");
         }

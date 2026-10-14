@@ -1,0 +1,38 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>The Clearing v2</title>
+  <link rel="stylesheet" href="/style.css">
+</head>
+<body>
+  <header class="app-header">
+    <div class="header-left">
+      <h1>The Clearing <span class="badge-v2">v2</span></h1>
+      <span class="relay-status" id="relay-indicator">Connecting...</span>
+    </div>
+    <div class="tiles-bar" id="tiles-container">
+      <!-- Live Role Tiles -->
+      <div class="tile" id="tile-jeff"><div class="tile-name">Jeff</div><div class="tile-state">idle</div></div>
+      <div class="tile" id="tile-wren"><div class="tile-name">Wren</div><div class="tile-state">idle</div></div>
+      <div class="tile" id="tile-silas"><div class="tile-name">Silas</div><div class="tile-state">idle</div></div>
+      <div class="tile" id="tile-kade"><div class="tile-name">Kade</div><div class="tile-state">idle</div></div>
+      <div class="tile" id="tile-abby-normal"><div class="tile-name">Abby Normal</div><div class="tile-state">idle</div></div>
+    </div>
+  </header>
+
+  <main class="chat-container">
+    <div class="messages" id="messages-stream"></div>
+  </main>
+
+  <footer class="composer-bar">
+    <form id="composer-form">
+      <input type="text" id="composer-input" placeholder="Message team or @role..." autocomplete="off">
+      <button type="submit" id="composer-send">Send</button>
+    </form>
+  </footer>
+
+  <script src="/app.js"></script>
+</body>
+</html>
