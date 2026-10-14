@@ -1241,25 +1241,43 @@ fn run_nightly(args: &[String]) -> Result<i32, String> {
         store_unit(b, &cases, &[], &reasons, &werk_test::bats_case_times(&r.2));
         r
     };
-    let (mut cargo_waits, mut npm_waits, mut bats_waits) = (0usize, 0usize, 0usize);
-
-    for sp in &stages {
-        let stage = sp.stage;
-        let ui_here = stage == "ui" && !legs_noop;
-        if sp.is_empty() && !ui_here {
-            // AC5 — a type with nothing registered says so; the outer legs own
-            // coverage, lint, smoke and the perf ratchet.
-            if !werk_test::LEG_COVERED_STAGES.contains(&stage) {
-                println!("{}", werk_test::nightly_stage_absent_line(stage));
-            }
-            continue;
-        }
-        println!("-- #4160 stage {}: {} cargo, {} npm, {} file suite(s){} --",
-            stage, sp.cargo.len(), sp.npm.len(), sp.files.len(), if ui_here { ", playwright" } else { "" });
-
-        // ── cargo: `crate` is its unit run, `crate#stem` one typed binary ──
-        let cargo_root = root.clone();
-        let (cargo_results, waits) = werk_test::run_pool_gated(&sp.cargo, cargo_workers, cap, read_loadavg, gate_wait, gate_tick, |item| werk_test::time_unit(item, || {
+    // #4022 reopen 2026-10-14 — ONE queue for every stage. Each stage used to
+    // run its cargo, npm and file pools one after another and wait for the
+    // last to drain: on 10-14 one suite or none ran for 3,134s of 6,961s.
+    // Every job now goes on one queue in stage order; a lane never runs past
+    // its width (the widths sum to one CPU budget), isolated jobs start only
+    // when nothing else runs, stack-readers stay at 2. The report below still
+    // prints stage by stage, so a red stays under its stage (Silas, 08:50).
+    struct QueuePlan { npm: Vec<String>, npm_alone: Vec<String>, files: Vec<String>, readers: Vec<String>, mutators: Vec<String> }
+    enum QueueOut {
+        Cargo((bool, Vec<(String, String)>, usize, bool)),
+        Npm((bool, Vec<CaseResult>)),
+        Files((bool, Vec<(String, String)>, String)),
+    }
+    let queue_plans: Vec<QueuePlan> = stages.iter().map(|sp| {
+        let npm_plan = werk_test::plan_parallel_units(&sp.npm,
+            &|u| explicit_iso.iter().any(|e| e == u.split('#').next().unwrap_or(u)));
+        let plan = werk_test::plan_parallel_units(&sp.files,
+            &|u| werk_test::unit_is_isolated(u, &rows, &explicit_iso));
+        let (readers, mutators) = werk_test::split_serialized(&plan.serialized, &explicit_iso);
+        QueuePlan { npm: npm_plan.parallel, npm_alone: npm_plan.serialized, files: plan.parallel, readers, mutators }
+    }).collect();
+    let mut jobs: Vec<werk_test::QueueJob> = Vec::new();
+    let job = |si: usize, tool: &str, item: &str, lane: &str, alone: bool| werk_test::QueueJob {
+        key: format!("{}|{}|{}", si, tool, item), lane: lane.to_string(), alone };
+    for (si, sp) in stages.iter().enumerate() {
+        let qp = &queue_plans[si];
+        jobs.extend(sp.cargo.iter().map(|c| job(si, "cargo", c, "cargo", false)));
+        jobs.extend(qp.npm.iter().map(|p| job(si, "npm", p, "npm", false)));
+        jobs.extend(qp.files.iter().map(|b| job(si, "files", b, "files", false)));
+        jobs.extend(qp.readers.iter().map(|b| job(si, "files", b, "reader", false)));
+    }
+    for (si, qp) in queue_plans.iter().enumerate() {
+        jobs.extend(qp.npm_alone.iter().map(|p| job(si, "npm", p, "alone", true)));
+        jobs.extend(qp.mutators.iter().map(|b| job(si, "files", b, "alone", true)));
+    }
+    let cargo_root = root.clone();
+    let run_cargo = |item: &str| werk_test::time_unit(item, || {
             // #4454 — the unit starts on the trace: a hung unit reads started, no end
             emit_spine("test.unit.started", &mint_role, &card, &trace,
                 &[("check", "cargo"), ("unit", item), ("message", &format!("cargo {} started", item))]);
@@ -1314,8 +1332,58 @@ fn run_nightly(args: &[String]) -> Result<i32, String> {
                 .into_iter().map(|(p, ms)| (werk_test::nextest_bare_name(&p).to_string(), ms)).collect();
             store_unit(item, &matched, &runs, &reasons, &times);
             (ok, cases, ns_len, stem.is_none() && !typed.is_empty())
-        }));
-        cargo_waits += waits;
+        });
+    let npm_root = root.clone();
+    let run_pkg = |item: &str| werk_test::time_unit(item, || {
+            // #4454 — the unit starts on the trace: a hung unit reads started, no end
+            emit_spine("test.unit.started", &mint_role, &card, &trace,
+                &[("check", "jest"), ("unit", item), ("message", &format!("jest {} started", item))]);
+            let (p, project) = match item.split_once('#') {
+                Some((p, proj)) => (p, Some(proj)),
+                None if split_pkgs.iter().any(|s| s == item) => (item, Some("hermetic")),
+                None => (item, None),
+            };
+            let (ok, cases, reasons) = run_jest_project(&npm_root, p, Some(jest_workers), project);
+            let jest_times = take_case_times(&cases);
+            // #4030 AC3 — stored the moment the package finishes
+            store_unit(item, &cases, &[], &reasons, &jest_times);
+            (ok, cases)
+        });
+    println!("-- #4022 one queue: {} jobs across {} stages · cargo {}, npm {}, files {}, stack-readers 2, isolated alone --",
+        jobs.len(), stages.len(), cargo_workers, npm_workers, bats_workers);
+    let (ran_list, gate_waits) = werk_test::run_queue_gated(&jobs,
+        &[("cargo", cargo_workers), ("npm", npm_workers), ("files", bats_workers), ("reader", 2), ("alone", 1)],
+        cap, read_loadavg, gate_wait, gate_tick, |j| {
+            let mut parts = j.key.splitn(3, '|');
+            let (_, tool, item) = (parts.next(), parts.next().unwrap_or(""), parts.next().unwrap_or(""));
+            match tool {
+                "cargo" => QueueOut::Cargo(run_cargo(item)),
+                "npm" => QueueOut::Npm(run_pkg(item)),
+                _ => QueueOut::Files(werk_test::time_unit(item, || run_bats_stored(&root, item))),
+            }
+        });
+    let mut ran: std::collections::HashMap<String, QueueOut> = ran_list.into_iter().collect();
+
+    for (si, sp) in stages.iter().enumerate() {
+        let stage = sp.stage;
+        let ui_here = stage == "ui" && !legs_noop;
+        if sp.is_empty() && !ui_here {
+            // AC5 — a type with nothing registered says so; the outer legs own
+            // coverage, lint, smoke and the perf ratchet.
+            if !werk_test::LEG_COVERED_STAGES.contains(&stage) {
+                println!("{}", werk_test::nightly_stage_absent_line(stage));
+            }
+            continue;
+        }
+        println!("-- #4160 stage {}: {} cargo, {} npm, {} file suite(s){} --",
+            stage, sp.cargo.len(), sp.npm.len(), sp.files.len(), if ui_here { ", playwright" } else { "" });
+
+        // ── cargo: `crate` is its unit run, `crate#stem` one typed binary ──
+        let cargo_results: Vec<(String, (bool, Vec<(String, String)>, usize, bool))> = sp.cargo.iter()
+            .map(|c| match ran.remove(&format!("{}|cargo|{}", si, c)) {
+                Some(QueueOut::Cargo(r)) => (c.clone(), r),
+                _ => (c.clone(), (false, Vec::new(), 0, false)),
+            }).collect();
         for (item, (ok, cases, ns_len, moved)) in cargo_results {
             let (kind, unit) = werk_test::stage_item_label(stage, "cargo", &item);
             werk_test::print_unit_time(&kind, &unit, &item);
@@ -1339,28 +1407,12 @@ fn run_nightly(args: &[String]) -> Result<i32, String> {
         // #4152 — a package named in nightly-isolation.conf runs ALONE after
         // the pool (directing/products/cards reads Vikunja's SQLite and saw
         // "database is locked" beside another jest package).
-        let npm_plan = werk_test::plan_parallel_units(&sp.npm,
-            &|u| explicit_iso.iter().any(|e| e == u.split('#').next().unwrap_or(u)));
-        let npm_root = root.clone();
-        let run_pkg = |item: &str| werk_test::time_unit(item, || {
-            // #4454 — the unit starts on the trace: a hung unit reads started, no end
-            emit_spine("test.unit.started", &mint_role, &card, &trace,
-                &[("check", "jest"), ("unit", item), ("message", &format!("jest {} started", item))]);
-            let (p, project) = match item.split_once('#') {
-                Some((p, proj)) => (p, Some(proj)),
-                None if split_pkgs.iter().any(|s| s == item) => (item, Some("hermetic")),
-                None => (item, None),
-            };
-            let (ok, cases, reasons) = run_jest_project(&npm_root, p, Some(jest_workers), project);
-            let jest_times = take_case_times(&cases);
-            // #4030 AC3 — stored the moment the package finishes
-            store_unit(item, &cases, &[], &reasons, &jest_times);
-            (ok, cases)
-        });
-        let (mut npm_results, w1) = werk_test::run_pool_gated(&npm_plan.parallel, npm_workers, cap, read_loadavg, gate_wait, gate_tick, run_pkg);
-        let (alone_results, w2) = werk_test::run_pool_gated(&npm_plan.serialized, 1, cap, read_loadavg, gate_wait, gate_tick, run_pkg);
-        npm_results.extend(alone_results);
-        npm_waits += w1 + w2;
+        let npm_results: Vec<(String, (bool, Vec<CaseResult>))> = queue_plans[si].npm.iter()
+            .chain(queue_plans[si].npm_alone.iter())
+            .map(|p| match ran.remove(&format!("{}|npm|{}", si, p)) {
+                Some(QueueOut::Npm(r)) => (p.clone(), r),
+                _ => (p.clone(), (false, Vec::new())),
+            }).collect();
         for (item, (ok, cases)) in npm_results {
             let p = item.split('#').next().unwrap_or(&item).to_string();
             let (kind, unit) = werk_test::stage_item_label(stage, npm_kind_of(&p), &item);
@@ -1407,24 +1459,17 @@ fn run_nightly(args: &[String]) -> Result<i32, String> {
         // ── file suites (bats / sh / feature / py) ──
         // #4022 — independent subprocesses fan out; needs-stack READERS overlap
         // at 2; conf-listed MUTATORS run alone. Report order is the plan's.
-        let plan = werk_test::plan_parallel_units(&sp.files,
-            &|u| werk_test::unit_is_isolated(u, &rows, &explicit_iso));
-        let (stack_readers, mutators) = werk_test::split_serialized(&plan.serialized, &explicit_iso);
+        let qp = &queue_plans[si];
         if !sp.files.is_empty() {
             println!("-- #4022 parallel plan ({}): {} suites fan out across {} workers, {} stack-readers at 2, {} mutators alone --",
-                stage, plan.parallel.len(), bats_workers, stack_readers.len(), mutators.len());
+                stage, qp.files.len(), bats_workers, qp.readers.len(), qp.mutators.len());
         }
-        let pool_root = root.clone();
-        let (mut lane_results, w1): (Vec<(String, (bool, Vec<(String, String)>, String))>, usize) =
-            werk_test::run_pool_gated(&plan.parallel, bats_workers, cap, read_loadavg, gate_wait, gate_tick, |b| werk_test::time_unit(b, || run_bats_stored(&pool_root, b)));
-        let reader_root = root.clone();
-        let (reader_results, w2) =
-            werk_test::run_pool_gated(&stack_readers, 2, cap, read_loadavg, gate_wait, gate_tick, |b| werk_test::time_unit(b, || run_bats_stored(&reader_root, b)));
-        lane_results.extend(reader_results);
-        bats_waits += w1 + w2;
-        for b in &mutators {
-            lane_results.push((b.clone(), werk_test::time_unit(b, || run_bats_stored(&root, b))));
-        }
+        let lane_results: Vec<(String, (bool, Vec<(String, String)>, String))> = qp.files.iter()
+            .chain(qp.readers.iter()).chain(qp.mutators.iter())
+            .map(|b| match ran.remove(&format!("{}|files|{}", si, b)) {
+                Some(QueueOut::Files(r)) => (b.clone(), r),
+                _ => (b.clone(), (false, Vec::new(), "the queue returned no result for this suite".to_string())),
+            }).collect();
         for (b, (ok, cases, text)) in lane_results {
             let b = &b;
             let kind = bats_kind(b);
@@ -1481,8 +1526,7 @@ fn run_nightly(args: &[String]) -> Result<i32, String> {
             }
         }
     }
-    println!("-- #4022 load gate: held {} time(s) at load > {:.0} (cargo {}, npm {}, bats {}) --",
-        cargo_waits + npm_waits + bats_waits, cap, cargo_waits, npm_waits, bats_waits);
+    println!("-- #4022 load gate: held {} time(s) at load > {:.0} (one queue) --", gate_waits, cap);
     // #4139 — the measured integration line: what ran, after it ran
     if stack_down.is_none() && ns_total > 0 {
         println!("{}", werk_test::integration_measured_report(ns_total, executed_ns.load(Ordering::SeqCst)));
