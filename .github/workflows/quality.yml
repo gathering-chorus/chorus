@@ -694,22 +694,8 @@ jobs:
           npm ci --no-audit --no-fund
           npm run build
 
-      # #3528 — /mcp moved off chorus-api to this separate daemon (#2998); it
-      # proxies the principles/nudge tools to chorus-api's REST. The job boots
-      # both: chorus-api (:3340, the proxy target) + chorus-mcp (:3341, /mcp).
-      - name: Build chorus-mcp
-        working-directory: platform/mcp-server
-        run: |
-          npm ci --no-audit --no-fund
-          npm run build
-
-      # #3528 — chorus-mcp's nudge tool POSTs to pulse (:3475); build it so the
-      # mcp-nudge round-trip has a delivery target.
-      - name: Build pulse
-        working-directory: platform/pulse
-        run: |
-          npm ci --no-audit --no-fund
-          npm run build
+      # #4515 — the chorus-mcp daemon (:3341) and its pulse round-trip are
+      # retired; the Rust runner (chorus-runner, :3342) is the only MCP server.
 
       - name: Seed Fuseki with principles ontology
         # Loads chorus.ttl into urn:chorus:instances.
@@ -733,62 +719,6 @@ jobs:
         run: |
           nohup node dist/server.js > /tmp/chorus-api.log 2>&1 &
           echo $! > /tmp/chorus-api.pid
-
-      # #3528 — boot the chorus-mcp daemon that serves /mcp on :3341. It proxies
-      # the principles/nudge tools to chorus-api's REST (CHORUS_API_URL=:3340).
-      - name: Boot chorus-mcp (background)
-        working-directory: platform/mcp-server
-        env:
-          CHORUS_MCP_PORT: '3341'
-          CHORUS_API_URL: http://localhost:3340
-          # #3528 — write spine events (incl. nudge.emitted) to the SAME log the
-          # round-trip bats reads (server.ts:1805 honors CHORUS_LOG_FILE).
-          CHORUS_LOG_FILE: ${{ github.workspace }}/platform/logs/chorus.log
-        run: |
-          nohup node dist/main.js > /tmp/chorus-mcp.log 2>&1 &
-          echo $! > /tmp/chorus-mcp.pid
-
-      # #3528 — boot pulse (:3475) so chorus-mcp's nudge tool has a delivery
-      # target. PULSE_ALLOW_DIRECT_POST=1 opts out of the #3485 shared-secret
-      # gate for tests; the darwin-only TCC boot-smoke is skipped off-darwin.
-      - name: Boot pulse (background)
-        working-directory: platform/pulse
-        env:
-          MESSAGING_PORT: '3475'
-          PULSE_ALLOW_DIRECT_POST: '1'
-          CHORUS_LOG_FILE: ${{ github.workspace }}/platform/logs/chorus.log
-        run: |
-          nohup node dist/service.js > /tmp/pulse.log 2>&1 &
-          echo $! > /tmp/pulse.pid
-          for i in $(seq 1 30); do
-            if curl -s -o /dev/null "http://localhost:3475/health"; then break; fi
-            sleep 1
-          done
-          curl -s "http://localhost:3475/health" || (echo "pulse never came up; log:"; cat /tmp/pulse.log; exit 1)
-
-      - name: Wait for /mcp endpoint
-        run: |
-          for i in $(seq 1 60); do
-            code=$(curl -s -o /dev/null -w '%{http_code}' \
-              -X POST http://localhost:3341/mcp \
-              -H 'Content-Type: application/json' \
-              -H 'Accept: application/json, text/event-stream' \
-              -d '{"jsonrpc":"2.0","id":0,"method":"initialize","params":{"protocolVersion":"2025-06-18","capabilities":{},"clientInfo":{"name":"ci","version":"1.0"}}}' || echo 000)
-            if [ "$code" = "200" ] || [ "$code" = "202" ]; then exit 0; fi
-            sleep 1
-          done
-          echo "chorus-mcp (:3341) never became ready; tail logs:"
-          echo "--- chorus-mcp.log ---"; tail -100 /tmp/chorus-mcp.log || true
-          echo "--- chorus-api.log ---"; tail -50 /tmp/chorus-api.log || true
-          exit 1
-
-      - name: Run MCP round-trip bats
-        env:
-          MCP_URL: http://localhost:3341/mcp
-          CHORUS_LOG_FILE: ${{ github.workspace }}/platform/logs/chorus.log
-        run: |
-          bats platform/tests/mcp-nudge.test.sh
-          bats platform/tests/mcp-principles.test.sh
 
       # #2630: structural-test bats family — runs on every PR to enforce
       # the discipline (retirement-gates, drift audits, skill-text asserts)

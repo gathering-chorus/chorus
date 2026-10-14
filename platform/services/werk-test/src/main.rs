@@ -2369,7 +2369,7 @@ fn run_jest_project(werk: &str, pkg: &str, max_workers: Option<usize>, project: 
     }
     let jest = format!("{}/node_modules/.bin/jest", pkg_dir);
     if !Path::new(&jest).exists() {
-        // #3974 — a package without jest runs its OWN runner (mcp-server:
+        // #3974 — a package without jest runs its OWN runner (agent-adapters:
         // node:test via npm test). The old `return true` here was a silent
         // vacuous green for every non-jest package.
         let (ok, cases) = run_npm_test(werk, pkg);
@@ -2478,7 +2478,7 @@ fn run_capped_unit(cmd: &mut Command, label: &str) -> Option<(bool, String, Stri
     Some((fin.success, stdout, stderr))
 }
 
-/// #3974 — the non-jest package runner: `npm test` (mcp-server = node:test).
+/// #3974 — the non-jest package runner: `npm test` (agent-adapters = node:test).
 /// TAP lines become per-case results; a missing test script is FAIL LOUD,
 /// never a vacuous green.
 fn run_npm_test(werk: &str, pkg: &str) -> (bool, Vec<CaseResult>) {
@@ -2502,12 +2502,12 @@ fn run_npm_test_files(werk: &str, pkg: &str, only: Option<&[String]>) -> (bool, 
     // its TAP carries case names and no filename, even when handed many files.
     // Every case was therefore stored under the PACKAGE directory:
     //
-    //   registered  platform/mcp-server/tests/word-cap.test.ts :: <case>
-    //   stored      platform/mcp-server/                       :: <case>
+    //   registered  platform/<pkg>/tests/word-cap.test.ts :: <case>
+    //   stored      platform/<pkg>/                       :: <case>
     //
     // The reconcile census joins on (file, name), so nothing matched and 245
-    // passing mcp-server tests were counted as "never ran" every night — about
-    // half the whole never-ran gap, and none of it real.
+    // passing tests of the old MCP server (retired #4515) were counted as
+    // "never ran" every night — about half the whole never-ran gap, and none of it real.
     //
     // Running per file is the only way to know which file a case came from.
     // It costs one process start per test file and buys a ledger that
@@ -2627,9 +2627,9 @@ fn run_jest_selected(werk: &str, pkg: &str, files: &[String]) -> (bool, Vec<Case
         .map(|f| f.strip_prefix(&format!("{}/", pkg)).unwrap_or(f).to_string())
         .collect();
     if !Path::new(&jest).exists() {
-        // #4440 reopened — a package without jest (mcp-server: node:test) ran
+        // #4440 reopened — a package without jest (node:test, e.g. agent-adapters) ran
         // NOTHING here and returned pass: since #3912 (2026-08-17) a card never
-        // ran mcp-server's tests (#4420 run 12: 30 files selected, 0.0s). Its
+        // ran the old MCP server's tests (#4420 run 12: 30 files selected, 0.0s). Its
         // own runner runs the selected files; no runner at all is a red.
         if npm_test_runner(&pkg_dir).is_none() {
             eprintln!("!! {}: {} test file(s) selected and no runner for them (no jest, no node:test script) — FAIL LOUD", pkg, rel.len());

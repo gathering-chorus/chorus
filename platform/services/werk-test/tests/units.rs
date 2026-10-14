@@ -1338,7 +1338,7 @@ fn a_suite_is_run_by_what_its_shebang_says_not_its_extension_4106() {
     use werk_test::runner_for;
     // the violation: three suites in platform/tests are named *.test.sh and
     // declare bats. Handed to bash they die on `@test "..." {`.
-    assert_eq!(runner_for("#!/usr/bin/env bats", "platform/tests/mcp-nudge.test.sh"), "bats");
+    assert_eq!(runner_for("#!/usr/bin/env bats", "platform/tests/a-bats-suite.test.sh"), "bats");
     assert_eq!(runner_for("#!/usr/bin/env bats", "platform/tests/x.bats"), "bats");
     // control: a real shell suite still runs under bash (#4004 — handing a .sh
     // to bats makes it self-abort inside bats-gather-tests)

@@ -3,7 +3,7 @@
 # against the retired run_one_attempt walker).
 #
 # The invariant lives in the runner now: werk-test's npm lane runs jest where
-# jest exists and the package's OWN `npm test` (mcp-server: node:test) where it
+# jest exists and the package's OWN `npm test` (node:test, e.g. agent-adapters) where it
 # does not — and a package with NEITHER is a loud fail, never a vacuous green
 # (the #3606 blank-summary class). This suite guards that the invariant exists
 # where it moved to, and that the old vacuous-green branch cannot return.

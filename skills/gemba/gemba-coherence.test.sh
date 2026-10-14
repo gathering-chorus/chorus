@@ -52,7 +52,9 @@ assert "loom-gemba has unit tests" test -f "$ROOT/platform/services/loom-gemba/t
 assert "loom-gemba links pulse-gather (no second implementation)" grep -q 'path = "../pulse-gather"' "$ROOT/platform/services/loom-gemba/Cargo.toml"
 assert "gemba skill invokes the loom-gemba MCP tool" grep -q "loom-gemba" "$ROOT/skills/gemba/SKILL.md"
 assert "loom-gemba is structurally deployable (#3317: discovery, no registration list)" test -f "$ROOT/platform/services/loom-gemba/Cargo.toml"
-assert "MCP server exposes loom-gemba" grep -q "LOOM_GEMBA_TOOL_DEF" "$ROOT/platform/mcp-server/src/server.ts"
+# #4515 — the old MCP server's hand-written LOOM_GEMBA_TOOL_DEF is retired. The
+# runner serves loom-gemba from a Skill row in the store, which no file here holds,
+# so that exposure is not checkable offline; this assert is dropped, not faked.
 
 echo ""
 echo "Results: $PASS passed, $FAIL failed"

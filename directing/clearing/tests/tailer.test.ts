@@ -179,7 +179,7 @@ describe('ChorusLogTailer.processLine — event dispatch', () => {
     }));
   });
 
-  // #2725 — CAPTURED live-spine shape: the mcp-server writer packs the kv string
+  // #2725 — CAPTURED live-spine shape: the old MCP server's writer (retired #4515) packs the kv string
   // under `payload`, not `from`. This is the shape the production log actually
   // carries; without reading it the tailer silently drops every live nudge.
   test('nudge.emitted in live payload shape (captured 2026-08-23) surfaces', () => {

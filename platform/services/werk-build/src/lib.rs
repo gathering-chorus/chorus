@@ -890,7 +890,7 @@ fn build_unit(home: &Path, role: &str, card: u64, trace: &str, werk_s: &str, uni
 /// package's node_modules a SYMLINK to canonical's complete tree, replacing a stale
 /// partial real dir or a wrong/broken symlink. Idempotent. The werk never keeps its own
 /// (partial) node_modules — it mirrors canonical, so in-werk tsc resolves @types exactly
-/// like canonical. This is what lets the verbs build mcp-server/chorus-hooks in-werk
+/// like canonical. This is what lets the verbs build TS services/chorus-hooks in-werk
 /// instead of being hand-deployed. Returns the count of (re)linked packages.
 /// (Open item flagged on #3169: build_shared_lib's cascade `npm install` fights a
 /// symlinked consumer when chorus-sdk actually changes — rare path, not resolved here.)

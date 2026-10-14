@@ -52,7 +52,7 @@ run_fitness_with_verb() {
 @test "#4225 counts what the variant started and what it borrowed from prod" {
   run run_fitness "$BATS_TEST_TMPDIR/lc-full"
   echo "$output"
-  printf '%s' "$output" | grep -q "4 of 6 target pieces"
+  printf '%s' "$output" | grep -q "3 of 5 target pieces"
   printf '%s' "$output" | grep -q "MISSING : athena-model chorus-hooks"
   printf '%s' "$output" | grep -q "shared  : 3 prod service"
 }
@@ -60,9 +60,9 @@ run_fitness_with_verb() {
 @test "#4225 NEGATIVE PROOF: stop one variant service and the count drops" {
   run run_fitness "$BATS_TEST_TMPDIR/lc-degraded"
   echo "$output"
-  printf '%s' "$output" | grep -q "3 of 6 target pieces"
+  printf '%s' "$output" | grep -q "2 of 5 target pieces"
   printf '%s' "$output" | grep -q "MISSING : athena-model chorus-hooks clearing"
-  test -z "$(printf '%s' "$output" | grep -F '4 of 6' || true)"
+  test -z "$(printf '%s' "$output" | grep -F '3 of 5' || true)"
 }
 
 @test "#4225 the series is append-only, so a run can be read against the last" {
@@ -70,18 +70,18 @@ run_fitness_with_verb() {
   run_fitness "$BATS_TEST_TMPDIR/lc-degraded" >/dev/null
   test "$(grep -c . "$SERIES")" -eq 2
   run run_fitness "$BATS_TEST_TMPDIR/lc-full"
-  printf '%s' "$output" | grep -q "(prev 3)"
+  printf '%s' "$output" | grep -q "(prev 2)"
 }
 
 @test "#4227 a verb counts by its binary, and the same run without it does not" {
   run run_fitness_with_verb "$BATS_TEST_TMPDIR/lc-full"
   echo "$output"
-  printf '%s' "$output" | grep -q "5 of 6 target pieces"
-  printf '%s' "$output" | grep -q "own     : chorus-api chorus-mcp athena-make athena-model"
+  printf '%s' "$output" | grep -q "4 of 5 target pieces"
+  printf '%s' "$output" | grep -q "own     : chorus-api athena-make athena-model"
   # NEGATIVE PROOF: identical launchctl output, binary removed, count drops.
   run run_fitness "$BATS_TEST_TMPDIR/lc-full"
   echo "$output"
-  printf '%s' "$output" | grep -q "4 of 6 target pieces"
+  printf '%s' "$output" | grep -q "3 of 5 target pieces"
   printf '%s' "$output" | grep -q "MISSING : athena-model chorus-hooks"
 }
 

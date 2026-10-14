@@ -1,10 +1,11 @@
 // #3485 — shared-secret auth for POST /api/nudge so the endpoint accepts
-// ONLY the MCP server (the single execution path), not anything that sets a
+// ONLY the nudge sender (the single execution path; chorus-hook-shim
+// nudge-send since the old MCP server retired, #4515), not anything that sets a
 // guessable header. "all of them must point to mcp" (Jeff 2026-06-18).
 //
 // The secret lives in a 0600 file under ~/.chorus, generated race-safe on
 // first use (exclusive create; whoever wins writes, the rest read). Both pulse
-// and the mcp-server resolve the SAME path, so no LaunchAgent env wiring is
+// and chorus-hook-shim nudge-send (#4515) resolve the SAME path, so no LaunchAgent env wiring is
 // required for it to work. CHORUS_PULSE_SECRET (env) overrides for ops/CI.
 //
 // Fail-open ONLY if the secret is genuinely unresolvable (disk error) — a

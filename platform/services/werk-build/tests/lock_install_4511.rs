@@ -49,46 +49,46 @@ fn a_werk_with_its_own_lock_installs_from_it_and_leaves_canonical_alone() {
     let root = fixture("own-lock");
     let home = root.join("chorus");
     let werk = root.join("chorus-werk/silas-4511");
-    write(&home, "platform/mcp-server/package.json", r#"{"name":"chorus-mcp"}"#);
-    write(&home, "platform/mcp-server/package-lock.json", r#"{"sdk":"1.29.0"}"#);
-    fs::create_dir_all(home.join("platform/mcp-server/node_modules")).unwrap();
-    write(&werk, "platform/mcp-server/package.json", r#"{"name":"chorus-mcp"}"#);
-    write(&werk, "platform/mcp-server/package-lock.json", r#"{"sdk":"1.31.0"}"#);
-    git_track(&werk, &["platform/mcp-server/package.json"]);
+    write(&home, "directing/clearing/package.json", r#"{"name":"clearing"}"#);
+    write(&home, "directing/clearing/package-lock.json", r#"{"sdk":"1.29.0"}"#);
+    fs::create_dir_all(home.join("directing/clearing/node_modules")).unwrap();
+    write(&werk, "directing/clearing/package.json", r#"{"name":"clearing"}"#);
+    write(&werk, "directing/clearing/package-lock.json", r#"{"sdk":"1.31.0"}"#);
+    git_track(&werk, &["directing/clearing/package.json"]);
     // the werk starts on the old symlink, the way every werk does today
-    let werk_nm = werk.join("platform/mcp-server/node_modules");
-    std::os::unix::fs::symlink(home.join("platform/mcp-server/node_modules"), &werk_nm).unwrap();
+    let werk_nm = werk.join("directing/clearing/node_modules");
+    std::os::unix::fs::symlink(home.join("directing/clearing/node_modules"), &werk_nm).unwrap();
 
     std::env::set_var("CHORUS_NPM", fake_npm(&root, true));
     assert_eq!(ensure_node_modules(werk.to_str().unwrap(), &home).unwrap(), 1);
     assert!(!werk_nm.is_symlink(), "the werk has its own node_modules now");
     assert!(werk_nm.join("installed-from-own-lock").exists(), "npm ci ran in the werk");
-    assert!(!home.join("platform/mcp-server/node_modules/installed-from-own-lock").exists(),
+    assert!(!home.join("directing/clearing/node_modules/installed-from-own-lock").exists(),
         "NEGATIVE PROOF: nothing was written through the old symlink into canonical");
     let calls = fs::read_to_string(root.join("npm.log")).unwrap();
     assert_eq!(calls.lines().count(), 1);
-    assert!(calls.contains("silas-4511/platform/mcp-server ci"), "{calls}");
+    assert!(calls.contains("silas-4511/directing/clearing ci"), "{calls}");
 
     // a second build is a no-op: the stamp says it was installed from this lock
     assert_eq!(ensure_node_modules(werk.to_str().unwrap(), &home).unwrap(), 0);
     assert_eq!(fs::read_to_string(root.join("npm.log")).unwrap().lines().count(), 1, "no second npm ci");
 
     // the 2026-10-13 state: the locks match, but canonical never installed it
-    write(&werk, "platform/mcp-server/package-lock.json", r#"{"sdk":"1.29.0"}"#);
+    write(&werk, "directing/clearing/package-lock.json", r#"{"sdk":"1.29.0"}"#);
     fs::remove_dir_all(&werk_nm).unwrap();
     assert_eq!(ensure_node_modules(werk.to_str().unwrap(), &home).unwrap(), 1);
     assert!(!werk_nm.is_symlink(), "same lock, but canonical's tree does not satisfy it: own install");
 
     // NEGATIVE PROOF: same lock and canonical satisfies it, so it goes back to the symlink
-    fs::write(home.join("platform/mcp-server/node_modules/satisfied"), "").unwrap();
+    fs::write(home.join("directing/clearing/node_modules/satisfied"), "").unwrap();
     fs::remove_dir_all(&werk_nm).unwrap();
     assert_eq!(ensure_node_modules(werk.to_str().unwrap(), &home).unwrap(), 1);
     assert!(werk_nm.is_symlink(), "same lock and canonical is installed: borrow canonical's tree");
 
     // a failed install is a refusal that names the package, never a silent symlink
-    write(&werk, "platform/mcp-server/package-lock.json", r#"{"sdk":"9.9.9"}"#);
+    write(&werk, "directing/clearing/package-lock.json", r#"{"sdk":"9.9.9"}"#);
     std::env::set_var("CHORUS_NPM", fake_npm(&root, false));
     let e = ensure_node_modules(werk.to_str().unwrap(), &home).unwrap_err();
-    assert!(e.contains("platform/mcp-server") && e.contains("npm ci failed"), "{e}");
+    assert!(e.contains("directing/clearing") && e.contains("npm ci failed"), "{e}");
     std::env::remove_var("CHORUS_NPM");
 }

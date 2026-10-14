@@ -14,7 +14,7 @@
 //! no variant at all, which is why a binary deployed for one is live for both —
 //! measured twice on 2026-09-19/20 when a model move took every write down.
 //!
-//! The point is a number that moves: 4 of 6 today, and the missing two named,
+//! The point is a number that moves: 3 of 5 today (4 of 6 before #4515), and the missing two named,
 //! so werk-deploy has something to improve against instead of an argument.
 
 /// How a demo can own a piece of Chorus. The two are not the same question,
@@ -31,10 +31,11 @@ pub enum Piece {
     Verb,
 }
 
-/// The pieces of Chorus a demo must own its own copy of.
-pub const TARGET: [(&str, Piece); 6] = [
+/// The pieces of Chorus a demo must own its own copy of. #4515 — chorus-mcp
+/// left with the old MCP server; the tool runner that replaced it runs per
+/// demo only for a card that changes it, so it is not a piece every demo owns.
+pub const TARGET: [(&str, Piece); 5] = [
     ("chorus-api", Piece::Daemon),
-    ("chorus-mcp", Piece::Daemon),
     ("athena-make", Piece::Daemon),
     ("athena-model", Piece::Verb),
     ("chorus-hooks", Piece::Daemon),

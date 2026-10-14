@@ -23,11 +23,11 @@ fn own_model() -> Vec<String> {
 }
 
 #[test]
-fn a_demo_today_owns_four_of_the_six_and_the_two_it_lacks_are_named() {
+fn a_demo_today_owns_three_of_the_five_and_the_two_it_lacks_are_named() {
     let f = measure(FULL, "kade", &NO_VERBS);
-    assert_eq!(f.own, vec!["chorus-api", "chorus-mcp", "athena-make", "clearing"]);
+    assert_eq!(f.own, vec!["chorus-api", "athena-make", "clearing"]);
     assert_eq!(f.missing, vec!["athena-model", "chorus-hooks"]);
-    assert_eq!(f.target_total(), 6);
+    assert_eq!(f.target_total(), 5);
 }
 
 #[test]
@@ -57,7 +57,7 @@ fn negative_proof_stop_one_variant_service_and_the_count_drops_and_names_it() {
         .join("\n");
     let full = measure(FULL, "kade", &NO_VERBS);
     let less = measure(&degraded, "kade", &NO_VERBS);
-    assert_eq!(less.own.len(), 3);
+    assert_eq!(less.own.len(), 2);
     assert!(less.missing.contains(&"clearing".to_string()));
     assert_ne!(full.own.len(), less.own.len());
 }
@@ -68,7 +68,7 @@ fn another_roles_variant_does_not_count_as_mine() {
     // own would report a demo that does not exist.
     let f = measure(FULL, "silas", &NO_VERBS);
     assert_eq!(f.own.len(), 0);
-    assert_eq!(f.missing.len(), 6);
+    assert_eq!(f.missing.len(), 5);
 }
 
 #[test]
@@ -100,7 +100,7 @@ fn negative_proof_a_verb_the_werk_never_built_is_still_missing() {
     // not satisfy it, or the check passes for every demo forever.
     let f = measure(FULL, "kade", &["chorus-principal".to_string()]);
     assert!(f.missing.contains(&"athena-model".to_string()));
-    assert_eq!(f.own.len(), 4);
+    assert_eq!(f.own.len(), 3);
 }
 
 #[test]

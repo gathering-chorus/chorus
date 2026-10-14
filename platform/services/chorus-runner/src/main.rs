@@ -1,5 +1,6 @@
-//! #4512 — chorus-runner: the Services tool runner core, beside the old
-//! platform/mcp-server (:3341). Binds 127.0.0.1:3342 (CHORUS_RUNNER_PORT).
+//! #4512 — chorus-runner: the Services tool runner core. Since #4515 it is
+//! the only MCP server (the old TypeScript one is retired). Binds
+//! 127.0.0.1:3342 (CHORUS_RUNNER_PORT).
 
 use std::process::Command;
 use std::sync::{Arc, RwLock};

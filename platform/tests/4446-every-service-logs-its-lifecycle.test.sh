@@ -40,7 +40,6 @@ com.chorus.pair-heartbeat	platform/services/pair-heartbeat/src/main.rs
 com.chorus.heartbeat	platform/services/chorus-hooks/src/shim.rs
 com.chorus.api	platform/api/src/server.ts
 com.chorus.eventloop-probe	platform/api/src/eventloop-probe.ts
-com.chorus.mcp	platform/mcp-server/src/main.ts
 com.chorus.pulse	platform/pulse/src/service.ts
 com.chorus.clearing	directing/clearing/src/server.ts
 com.chorus.bridge-subscriber-kade	platform/scripts/bridge-subscriber.js

@@ -163,7 +163,7 @@ pub fn npm_lane_unmeasured(discovered: &[String], planned: &[String]) -> Option<
 /// #4440 reopen — which tree's TS packages a run sees. The nightly runs under
 /// launchd with no working directory (cwd `/`) and never named its root, so
 /// the walk up to `.git` found nothing: since #4424 (10-05) every unattended
-/// nightly planned 0 npm units and ran no TS test, mcp-server included. Order:
+/// nightly planned 0 npm units and ran no TS test, the old MCP server included. Order:
 /// the root a mode named, then CHORUS_ROOT/CHORUS_HOME, then the cwd walk.
 pub fn resolve_repo_root(
     named: Option<std::path::PathBuf>,
@@ -4624,7 +4624,7 @@ pub fn parse_bats_cases(out: &str) -> Vec<(String, String)> {
 /// description (node:test does; proven with `node --test --test-reporter=tap`
 /// on 2026-09-03). The registry holds the source title, so a case named
 /// "registry has it (#2996)" arrived as "registry has it (\#2996)", joined
-/// nothing, and was "never run" every night: 36 of the mcp-server package's
+/// nothing, and was "never run" every night: 36 of the old MCP server package's
 /// cases, all passing. Undo the escape so the case carries its own name.
 pub fn tap_unescape(name: &str) -> String {
     let mut out = String::with_capacity(name.len());
@@ -4814,11 +4814,11 @@ mod nightly_all_lanes_3974 {
     fn ts_and_bats_full_selection_from_the_registry() {
         let rows = vec![
             row("platform/api/tests/a.test.ts"),
-            row("platform/mcp-server/tests/b.test.ts"),
+            row("platform/agent-adapters/tests/b.test.cjs"),
             row("platform/tests/guard.bats"),
             row("platform/services/werk-test/tests/c.rs"),
         ];
-        assert_eq!(nightly_ts_packages(&rows), vec!["platform/api", "platform/mcp-server"]);
+        assert_eq!(nightly_ts_packages(&rows), vec!["platform/agent-adapters", "platform/api"]);
         let clearing = vec![row("directing/clearing/tests/ui.test.ts")];
         assert_eq!(nightly_ts_packages(&clearing), vec!["directing/clearing"]);
         assert_eq!(nightly_bats_suites(&rows), vec!["platform/tests/guard.bats"]);
@@ -5814,18 +5814,18 @@ mod never_ran_causes_4063 {
     /// fix exists to end, and the join must still refuse it (no guessing).
     #[test]
     fn escaped_name_does_not_join_the_registered_title() {
-        let rows = vec![row("platform/mcp-server/tests/card-add-jeff.test.ts")];
+        let rows = vec![row("platform/agent-adapters/tests/card-add-jeff.test.cjs")];
         let names = vec!["registry has it (#2996)".to_string()];
         let ents = vec!["test-card-add-jeff-registry".to_string()];
         let escaped = CaseResult {
-            file_path: "platform/mcp-server/tests/card-add-jeff.test.ts".into(),
+            file_path: "platform/agent-adapters/tests/card-add-jeff.test.cjs".into(),
             test_name: "registry has it (\\#2996)".into(),
             result: "pass".into(),
         };
         let (joined, unjoined) = join_cases(&[escaped], &rows, &names, &ents);
         assert!(joined.is_empty() && unjoined == 1, "escaped title must NOT join");
         let fixed = CaseResult {
-            file_path: "platform/mcp-server/tests/card-add-jeff.test.ts".into(),
+            file_path: "platform/agent-adapters/tests/card-add-jeff.test.cjs".into(),
             test_name: tap_unescape("registry has it (\\#2996)"),
             result: "pass".into(),
         };
@@ -6392,9 +6392,9 @@ pub fn node_test_plan(script: &str) -> Option<NodeTestPlan> {
     let steps: Vec<&str> = script.split("&&").map(str::trim).filter(|s| !s.is_empty()).collect();
     let (runner, before) = steps.split_last()?;
     let mut toks = runner.split_whitespace().peekable();
-    // #4440 — `CHORUS_SYNTHETIC=1 tsx --test …` (mcp-server since #4186,
+    // #4440 — `CHORUS_SYNTHETIC=1 tsx --test …` (the old MCP server since #4186,
     // 2026-10-04): the env words were read as the program, it could not be
-    // spawned, and the nightly scored mcp-server UNMEASURED from 10-05 on.
+    // spawned, and the nightly scored it UNMEASURED from 10-05 on (retired #4515).
     let mut env = Vec::new();
     while let Some((k, v)) = toks.peek().and_then(|t| t.split_once('=')).filter(|(k, _)| !k.is_empty() && k.chars().all(|c| c.is_ascii_alphanumeric() || c == '_')) {
         env.push((k.to_string(), v.to_string()));

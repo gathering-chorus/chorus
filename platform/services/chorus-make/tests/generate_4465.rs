@@ -182,7 +182,7 @@ fn a_no_at_the_go_skips_the_land_and_ends_the_run() {
 #[test]
 fn a_successful_land_hands_its_commit_to_athena_and_only_the_land_does() {
     // #4494 — the land event triggers athena (#4177); v2's land never passed
-    // through chorus-mcp's werk-merge, so #4496's model never reached the store.
+    // through the old MCP server's werk-merge, so #4496's model never reached the store.
     let land = generate_land("cicd", &cicd()).unwrap();
     assert!(land.contains("  success:\n    command: '${CHORUS_HOME}/platform/scripts/athena-land ${CARD} ${ROLE} || { ${CHORUS_HOME}/platform/scripts/crawl-detached.sh; exit 1; }; ${CHORUS_HOME}/platform/scripts/crawl-detached.sh'\n"), "{land}");
     // #4499 — every land rebuilds the code units the blast radius reads
@@ -244,7 +244,7 @@ const REPO_FIXTURES: [&str; 5] = [
     "platform/services/chorus-make/tests/fixtures/cicd-land-golden.yaml",
     "platform/services/chorus-make/tests/fixtures/cicd-rows.tsv",
     "platform/services/chorus-make/tests/fixtures/cicd-graph.trig",
-    "platform/services/chorus-make/tests/fixtures/mcp-server-names-20261009.txt",
+    "platform/services/chorus-make/tests/fixtures/tool-names-20261009.txt",
 ];
 
 #[test]

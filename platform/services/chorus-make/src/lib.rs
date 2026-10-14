@@ -219,7 +219,7 @@ fn preamble(out: &mut String, description: &str, queue: &str, params: &[&str], w
         ));
     }
     // #4494 — the land event triggers athena (#4177): a land whose commit
-    // carried model sources deploys the model. v1 fired it from chorus-mcp's
+    // carried model sources deploys the model. v1 fired it from the old MCP server's
     // werk-merge case; v2's land never passes through there, so #4496's
     // PolicyShape never reached the store (Wren, 22:48). On success only, after
     // accept: a slow or failed model run never holds the card's accept.
@@ -481,7 +481,8 @@ pub fn rows_from_sparql_tsv(tsv: &str) -> Result<Vec<Row>, Vec<String>> {
 
 // ---- ADR-062 decision 9: MCP and dagu wrap the same verb list ----
 
-/// The werk verbs the MCP server registers as tools: every `name: 'werk-…'`.
+/// The werk verbs a tool-name list registers: every `name: 'werk-…'`. #4515 — the
+/// old MCP server is retired; its list is frozen in tests/fixtures/tool-names-20261009.txt.
 /// chorus_werk is the pipeline trigger, not a verb, so it is not counted.
 pub fn mcp_verbs(server_ts: &str) -> std::collections::BTreeSet<String> {
     server_ts

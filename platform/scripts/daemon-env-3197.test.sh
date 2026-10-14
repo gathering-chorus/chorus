@@ -3,7 +3,7 @@
 # (Named *.test.sh so the TDD gate recognizes it; the repo's test-*.sh
 # convention is invisible to the gate — that gap is a separate follow-on.)
 #
-# The verb-spawning daemons (chorus-mcp, chorus-api) exec chorus verbs that
+# The verb-spawning daemons (chorus-api; chorus-mcp until #4515) exec chorus verbs that
 # need the same env a role shell has. The failure class: each daemon hand-copied
 # a SUBSET of the env into its plist, drifting from the one source — PATH gap
 # 2026-06-02, WERK_*_BIN gap 2026-06-03, both found only as a prod deploy ENOENT.
@@ -22,7 +22,8 @@ ok()  { echo "ok - $1"; }
 bad() { echo "not ok - $1"; fail=1; }
 
 # --- T1/T2: wrappers single-source the env ----------------------------------
-for wrapper in chorus-mcp-wrapper.sh chorus-api-wrapper.sh; do
+# #4515 — chorus-mcp-wrapper.sh left with the retired TS MCP server.
+for wrapper in chorus-api-wrapper.sh; do
   if grep -q 'chorus-env-setup.sh' "$DIR/$wrapper" 2>/dev/null; then
     ok "$wrapper sources chorus-env-setup.sh"
   else
@@ -31,7 +32,7 @@ for wrapper in chorus-mcp-wrapper.sh chorus-api-wrapper.sh; do
 done
 
 # --- T3: env-setup exports the werk slots GLOBALLY, even role-less -----------
-# The daemon (chorus-mcp / chorus-api) boots with NO CHORUS_ROLE. After sourcing
+# The daemon (chorus-api) boots with NO CHORUS_ROLE. After sourcing
 # env-setup it must still hold all three WERK_<ROLE>_BIN so a per-request role
 # resolves its slot. Pre-fix: role-gated → a role-less source exported none →
 # chorus-bin-install --target werk exit-7'd on every deploy.

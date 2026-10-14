@@ -11,7 +11,7 @@ fn fixture(name: &str) -> String {
 
 #[test]
 fn mcp_verbs_are_the_werk_tools_not_the_pipeline_trigger() {
-    let v = mcp_verbs(&fixture("fixtures/mcp-server-names-20261009.txt"));
+    let v = mcp_verbs(&fixture("fixtures/tool-names-20261009.txt"));
     assert!(v.contains("werk-pull") && v.contains("werk-review"));
     assert!(!v.contains("chorus_werk"), "the trigger is not a verb: {v:?}");
     assert_eq!(v.len(), 9);
@@ -33,7 +33,7 @@ fn skill_verbs_are_the_binaries_of_deterministic_rows() {
 #[test]
 fn todays_lists_differ_and_the_check_names_every_gap() {
     let rows = parse_rows(&fixture("fixtures/cicd-rows.tsv")).unwrap();
-    let err = verb_parity(&skill_verbs(&rows), &mcp_verbs(&fixture("fixtures/mcp-server-names-20261009.txt")))
+    let err = verb_parity(&skill_verbs(&rows), &mcp_verbs(&fixture("fixtures/tool-names-20261009.txt")))
         .expect_err("today's lists differ");
     for v in ["werk-pull", "werk-unpull", "werk-test", "werk-demo", "werk-sync"] {
         assert!(err.contains(v), "{v} not named in: {err}");

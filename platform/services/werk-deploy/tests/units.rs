@@ -2,7 +2,7 @@
 use werk_deploy::{
     branch_name, card_from_subject, cdhash_divergences, chorus_bin_install_cmd,
     crate_binaries_in, crate_binaries_with_service_in, demo_cdhashes, extract_running_cdhash,
-    landed_commit_ok, live_main_flag, mcp_init_ready, parse_build_summary, parse_target, partition_lib_only, require_approval,
+    landed_commit_ok, live_main_flag, parse_build_summary, parse_target, partition_lib_only, require_approval,
     running_verdict, RunVerdict,
     resolve_trace, service_for_crate, spine_args, target_class_in, TargetClass,
 };
@@ -113,23 +113,23 @@ fn crate_binaries_in_unions_explicit_bins_and_src_bin_autobins() {
 // demo'd cdhash. A divergence = source moved between demo and land (the integration trap).
 #[test]
 fn cdhash_divergences_flags_only_changed_crates_with_a_demo_baseline() {
-    let demo = vec![("werk-deploy".to_string(), "aaa".to_string()), ("chorus-mcp".to_string(), "bbb".to_string())];
-    // prod: matches werk-deploy, DIFFERS on chorus-mcp, and adds a crate with no demo baseline
+    let demo = vec![("werk-deploy".to_string(), "aaa".to_string()), ("chorus-runner".to_string(), "bbb".to_string())];
+    // prod: matches werk-deploy, DIFFERS on chorus-runner, and adds a crate with no demo baseline
     let prod = vec![
         ("werk-deploy".to_string(), "aaa".to_string()),
-        ("chorus-mcp".to_string(), "XXX".to_string()),
+        ("chorus-runner".to_string(), "XXX".to_string()),
         ("new-crate".to_string(), "ccc".to_string()),
     ];
     let d = cdhash_divergences(&demo, &prod);
-    assert_eq!(d.len(), 1, "only chorus-mcp diverged; new-crate has no demo baseline to compare");
-    assert_eq!(d[0], ("chorus-mcp".to_string(), "bbb".to_string(), "XXX".to_string())); // (crate, demo, prod)
+    assert_eq!(d.len(), 1, "only chorus-runner diverged; new-crate has no demo baseline to compare");
+    assert_eq!(d[0], ("chorus-runner".to_string(), "bbb".to_string(), "XXX".to_string())); // (crate, demo, prod)
     assert!(cdhash_divergences(&demo, &demo).is_empty(), "identical sets → no divergence");
 }
 
 #[test]
 fn demo_cdhashes_reads_the_last_rebuilt_event_for_the_card() {
     let jsonl = "{\"event\":\"deploy.started\",\"card_id\":3316}\n\
-                 {\"event\":\"rebuilt\",\"card_id\":3316,\"built\":\"werk-deploy=aaa,chorus-mcp=bbb\"}\n\
+                 {\"event\":\"rebuilt\",\"card_id\":3316,\"built\":\"werk-deploy=aaa,chorus-runner=bbb\"}\n\
                  {\"event\":\"rebuilt\",\"card_id\":9999,\"built\":\"other=zzz\"}\n\
                  {\"event\":\"rebuilt\",\"card_id\":3316,\"built\":\"werk-deploy=ccc\"}";
     assert_eq!(demo_cdhashes(jsonl, 3316), vec![("werk-deploy".to_string(), "ccc".to_string())]); // last 3316
@@ -183,13 +183,10 @@ fn werk_fixture(tag: &str) -> PathBuf {
         "<plist><array><string>node</string><string>platform/api/dist/server.js</string></array></plist>");
     w("config/launchagents/com.gathering.messaging.plist",
         "<plist><array><string>node</string><string>platform/pulse/dist/service.js</string></array></plist>");
-    w("config/launchagents/com.chorus.mcp.plist",
-        "<plist><string>WorkingDirectory</string><string>platform/mcp-server</string></plist>");
     // TS packages with build scripts. chorus-api declares its own health URL.
     w("platform/api/package.json",
         r#"{"name":"chorus-api","scripts":{"build":"tsc"},"chorus":{"health":"http://localhost:3340/api/chorus/health"}}"#);
     w("platform/pulse/package.json", r#"{"name":"chorus-messaging","scripts":{"build":"tsc"}}"#);
-    w("platform/mcp-server/package.json", r#"{"name":"chorus-mcp","scripts":{"build":"tsc"}}"#);
     // shared lib + a consumer that declares it as a file: dep.
     w("platform/chorus-sdk/package.json", r#"{"name":"chorus-sdk","scripts":{"build":"tsc"}}"#);
     w("directing/products/cards/package.json",
@@ -395,19 +392,6 @@ fn live_main_flag_true_only_when_neither_behind_nor_ahead() {
 }
 
 #[test]
-fn mcp_init_ready_requires_protocol_version_inside_a_result() {
-    // #2997 port — success = the SSE body carries protocolVersion in a result field:
-    // the unambiguous signal the MCP middleware answered as a valid server.
-    assert!(mcp_init_ready("data: {\"jsonrpc\":\"2.0\",\"id\":1,\"result\":{\"protocolVersion\":\"2024-11-05\"}}\n"));
-    // an error wrapper is NOT ready
-    assert!(!mcp_init_ready("data: {\"jsonrpc\":\"2.0\",\"error\":{\"code\":-32000}}\n"));
-    // a generic 200 from the wrong handler is NOT ready
-    assert!(!mcp_init_ready("<html>ok</html>"));
-    // protocolVersion outside a data: line is NOT ready (not an SSE answer)
-    assert!(!mcp_init_ready("{\"result\":{\"protocolVersion\":\"x\"}}"));
-}
-
-#[test]
 fn service_for_crate_strips_chorus_prefix() {
     assert_eq!(service_for_crate("chorus-hooks"), "com.chorus.hooks");
     assert_eq!(service_for_crate("chorus-api"), "com.chorus.api");
@@ -515,66 +499,28 @@ fn werk_root_for_uses_the_card_werk_and_refuses_without_a_card() {
     );
 }
 
-// #3243 — deploy_canonical must also deploy the TS services (chorus-mcp at
-// platform/mcp-server, chorus-api at platform/api), which live OUTSIDE platform/services/
+// #3243 — deploy_canonical must also deploy the TS services (chorus-api at
+// platform/api, pulse, clearing), which live OUTSIDE platform/services/
 // so changed_service_crates misses them (the merged≠live hole that bit #3239/#3241).
+// #4515 — the retired TS MCP server's dir is no longer a deploy target: the land
+// that deletes it must not try to build a gone dir.
 #[test]
-fn changed_ts_services_detects_mcp_and_api_distinct_from_rust_crates() {
+fn changed_ts_services_detects_api_distinct_from_rust_crates() {
     let diff = "platform/mcp-server/src/server.ts\n\
                 platform/api/src/server.ts\n\
                 platform/services/werk-deploy/src/lib.rs\n\
                 README.md\n";
     let ts = werk_deploy::changed_ts_services(diff);
-    assert!(ts.contains(&"chorus-mcp".to_string()), "platform/mcp-server → chorus-mcp, got {ts:?}");
     assert!(ts.contains(&"chorus-api".to_string()), "platform/api → chorus-api, got {ts:?}");
-    assert_eq!(ts.len(), 2, "only the two TS services, deduped: {ts:?}");
+    assert!(!ts.contains(&"chorus-mcp".to_string()), "#4515: the retired MCP server is not a deploy target, got {ts:?}");
+    assert_eq!(ts.len(), 1, "only chorus-api, deduped: {ts:?}");
     // the rust-crate detector is unchanged and disjoint — it sees only the platform/services/ crate
     assert_eq!(werk_deploy::changed_service_crates(diff), vec!["werk-deploy".to_string()]);
     // no false positive on a docs-only diff
     assert!(werk_deploy::changed_ts_services("README.md\ndesigning/docs/x.html\n").is_empty());
     // dedup: many touched files in one TS service collapse to one deploy target
-    let multi = "platform/mcp-server/src/a.ts\nplatform/mcp-server/src/b.ts\nplatform/mcp-server/package.json\n";
-    assert_eq!(werk_deploy::changed_ts_services(multi), vec!["chorus-mcp".to_string()]);
-}
-
-// #3320 — deploying chorus-mcp FROM chorus-mcp must detach: the inline kickstart
-// kills the invoking daemon, so the caller's MCP response drops (the transport-drop
-// class — bit chorus_werk_land live 2026-06-10). Detection is a pure half.
-#[test]
-fn self_deploy_detach_fires_only_for_mcp_invoked_by_mcp() {
-    use werk_deploy::self_deploy_detach_needed as need;
-    assert!(need("chorus-mcp", Some("chorus-mcp"), false), "mcp-from-mcp detaches");
-    assert!(!need("chorus-api", Some("chorus-mcp"), false), "non-self unit deploys inline");
-    assert!(!need("chorus-mcp", None, false), "CLI / agent-state invoker deploys inline");
-    assert!(!need("chorus-mcp", Some("chorus-api"), false), "other invokers deploy inline");
-    assert!(!need("werk-deploy", Some("chorus-mcp"), false), "rust crates never detach");
-    assert!(
-        !need("chorus-mcp", Some("chorus-mcp"), true),
-        "the detached continuation must NOT re-detach (no respawn loop)"
-    );
-}
-
-// #3320 — the detached continuation is a crate-mode redeploy of the ONE unit,
-// rollback flag preserved. Same surface as `werk-deploy crate <name> [--rollback]`.
-#[test]
-fn detach_argv_is_a_crate_mode_redeploy_of_the_one_unit() {
-    assert_eq!(werk_deploy::detach_argv("chorus-mcp", false), vec!["crate", "chorus-mcp"]);
-    assert_eq!(
-        werk_deploy::detach_argv("chorus-mcp", true),
-        vec!["crate", "chorus-mcp", "--rollback"]
-    );
-}
-
-// #3320 — a detach ack must never be mistaken for a completed deploy: callers skip
-// their deploy.completed emission for an ack (the child emits the real one).
-#[test]
-fn detached_ack_is_distinguishable_from_completed_deploys() {
-    assert!(werk_deploy::is_detached_ack(
-        "chorus-mcp deploy detached pid=123 — survives its own kickstart; poll spine deploy.completed trace=t"
-    ));
-    assert!(!werk_deploy::is_detached_ack("chorus-mcp deployed"));
-    assert!(!werk_deploy::is_detached_ack("chorus-mcp deployed target=canonical"));
-    assert!(!werk_deploy::is_detached_ack("chorus-mcp rolled back"));
+    let multi = "platform/api/src/a.ts\nplatform/api/src/b.ts\nplatform/api/package.json\n";
+    assert_eq!(werk_deploy::changed_ts_services(multi), vec!["chorus-api".to_string()]);
 }
 
 // #3352 — pulse + clearing join TS-service deploy discovery (the merged-but-stale
@@ -1091,14 +1037,14 @@ fn env_up_carries_no_model_deploy_or_row_post_4186() {
     let werk = include_str!("../../../../.github/workflows/werk.yml");
     assert!(!werk.contains("grep -qE '^roles/"), "werk.yml must call `athena-deploy scope`, not carry its own copy of the rule");
     // #4177 (Jeff: "what is athena-land why is that part of this flow!") — werk.yml has NO
-    // model step and NO athena call. The land event triggers athena from chorus-mcp's
-    // werk-merge case; that is where the trigger must live.
+    // model step and NO athena call. The land event triggered athena from the old MCP
+    // server's werk-merge case.
     for gone in ["chorus_athena", "athena-land", "workflows/athena.yml", "name: athena"] {
         assert!(!werk.contains(gone), "#4177: werk.yml is werk only; found `{}`", gone);
     }
-    let mcp = include_str!("../../../mcp-server/src/server.ts");
-    assert!(mcp.contains("case 'werk-merge': {") && mcp.contains("triggerAthenaOnLand(parsed.data.role"), "#4177: the merge case must trigger athena on the land event");
-    assert!(mcp.contains("detached: true, stdio: ['ignore', fd, fd]"), "#4177: the model run starts detached; the land never waits on it");
+    // #4515 — the old MCP server (and its triggerAthenaOnLand) is retired. The v2
+    // land triggers athena-land from the dagu success handler (#4494), proven in
+    // chorus-make's generate_4465 tests.
     for gone in ["athena-model", "athena-rows", "athena-werk", "werk-model", "werk-rows", "athena-bootstrap"] {
         assert!(!werk.contains(gone), "#4186 (Jeff): the demo reads the live store; werk.yml has no variant model step: found {}", gone);
     }

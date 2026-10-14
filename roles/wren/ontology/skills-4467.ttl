@@ -97,7 +97,7 @@ chorus:ToolInput a owl:Class ; rdfs:label "Tool input" ;
     rdfs:comment "The arguments a tool takes, as a SHACL shape; athena-gen generates its JSON Schema." .
 
 # herald_run (Silas, #4405): one pass of a sensor, the same arguments as the
-# old server's schema (platform/mcp-server/src/server.ts HERALD_RUN_TOOL_DEF).
+# old TypeScript MCP server's schema (HERALD_RUN_TOOL_DEF; retired #4515).
 # sh:name is the argument's JSON name; sh:order is its place.
 chorus:HeraldRunInput a sh:NodeShape , chorus:ToolInput ;
     rdfs:label "herald_run input" ;

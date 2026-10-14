@@ -155,7 +155,7 @@ export class ChorusLogTailer extends EventEmitter {
   // live inside entry.from. For back-compat during parallel-run the older
   // role.nudge.sent packed them under entry.target; accept both.
   private handleNudgeSent(parsed: SpineEntry, role: string): void {
-    // #2725 — the LIVE spine's nudge.emitted (mcp-server appendChorusLog) packs
+    // #2725 — the LIVE spine's nudge.emitted (the old MCP server's writer, retired #4515) packs
     // the kv string under `payload`; the older chorus-log CLI shape packed it
     // under `from`/`target`. Repointing to the live file without reading the
     // live field would be the same silent-stale defect one layer down.

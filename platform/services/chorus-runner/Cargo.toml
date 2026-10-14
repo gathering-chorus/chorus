@@ -4,7 +4,8 @@ version = "0.1.0"
 edition = "2021"
 
 # #4512 — the Services tool runner core (Services product design, #4509):
-# one MCP runner on the 2026-07-28 release, beside the old platform/mcp-server.
+# one MCP runner on the 2026-07-28 release. Since #4515 it is the only MCP
+# server; the old TypeScript one is retired.
 # rmcp is pinned exactly: 3.5.1 is the release that serves 2026-07-28
 # (ProtocolVersion::V_2026_07_28 = LATEST) and still answers 2025 clients.
 # Identity is chorus-oidc as a library (the one verifier, never a copy), and

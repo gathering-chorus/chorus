@@ -52,7 +52,7 @@ code_grep() { # pattern
 }
 a_files=$(code_grep "chorus-mint-token"); a_rc=$?
 b_files=$(grep -rlE 'alg.*HS256|createHmac.*sha256' \
-          "$C/platform/chorus-sdk/src" "$C/platform/mcp-server/src" 2>/dev/null); b_rc=$?
+          "$C/platform/chorus-sdk/src" 2>/dev/null); b_rc=$?  # TS MCP server retired #4515
 if [ $a_rc -ge 2 ] || [ $b_rc -ge 2 ]; then
   item hs256_minters unknown "grep failed — NOT measured"
 else
