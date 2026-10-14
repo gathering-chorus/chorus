@@ -35,6 +35,7 @@ com.chorus.chorus-runner	platform/services/chorus-runner/src/main.rs
 com.chorus.crawl-nightly	platform/services/chorus-crawl/src/main.rs
 com.chorus.messages-project	platform/services/chorus-principal/src/main.rs
 com.chorus.roles-up	platform/services/chorus-principal/src/main.rs
+com.chorus.session-sweep	platform/services/chorus-principal/src/main.rs
 com.chorus.nightly-suites	platform/services/werk-test/src/main.rs
 com.chorus.pair-heartbeat	platform/services/pair-heartbeat/src/main.rs
 com.chorus.heartbeat	platform/services/chorus-hooks/src/shim.rs

@@ -28,9 +28,13 @@ setup() {
   printf '%s' "$output" | grep -qF "unknown role 'nobody' (abby-normal | kade | silas | wren)"
 }
 
+# Driven through relogin, a verb that reads the role list. `seen` is the
+# every-turn hook and takes any principal name without asking the door
+# (#4328: never refused, never slow), so it cannot show the refusal; driving
+# it here exited 0 and reddened main from 10-14.
 @test "NEGATIVE PROOF: with the door down even wren is refused, loudly" {
   touch "$T/roles-door-down"
-  run bash -c "echo '{\"session_id\":\"c-4432\",\"prompt\":\"hi\"}' | AWAKE_SEEN_SYNC=1 '$SCRIPT' seen wren"
+  run "$SCRIPT" relogin wren
   test "$status" -eq 2
   printf '%s' "$output" | grep -qF "REFUSED"
 }
