@@ -412,6 +412,26 @@ def dagu_get(path, query=""):
         return json.load(r)
 
 
+def dagu_list(name, since):
+    """Every run of `name` since `since`, following dagu's `cursor` paging.
+    #4494 reopen 2026-10-14 — the list comes 100 runs a page; reading page 1 only
+    counted 100 of 290 cicd runs, so a card's run N came out short. A file://
+    fixture holds page 2 at `dag-runs@<cursor>`."""
+    import urllib.parse
+    runs, cursor = [], None
+    for _ in range(100):
+        if cursor and not DAGU.startswith("http"):
+            page = dagu_get(f"/api/v1/dag-runs@{cursor}")
+        else:
+            q = f"name={name}&fromDate={int(since)}" + (f"&cursor={urllib.parse.quote(cursor)}" if cursor else "")
+            page = dagu_get("/api/v1/dag-runs", q)
+        runs += page.get("dagRuns") or []
+        cursor = page.get("nextCursor")
+        if not cursor:
+            return runs
+    raise RuntimeError("dagu run list did not end after 100 pages")
+
+
 def dagu_runs(card, dag=None):
     """This card's v2 runs, newest first, as dagu reports them; None when dagu cannot be read.
     #4494 — `dag` names the land half (`cicd-land`), which runs on its own queue.
@@ -419,7 +439,7 @@ def dagu_runs(card, dag=None):
     stops at its 30 newest runs across every card, so a card's count came out short."""
     name = dag or DAGU_DAG
     try:
-        runs = dagu_get("/api/v1/dag-runs", f"name={name}&fromDate={int(time.time()) - 30 * 86400}")["dagRuns"]
+        runs = dagu_list(name, time.time() - 30 * 86400)
     except Exception:
         return None
     # CARD=4474 must not match CARD=44740; name=cicd also matches cicd-land
@@ -530,7 +550,7 @@ def athena_failed_lands(wip_ids, now=None):
     otherwise be on no line at all."""
     now = now or time.time()
     try:
-        runs = dagu_get("/api/v1/dag-runs", f"name={DAGU_DAG}-land&fromDate={int(now) - 86400}")["dagRuns"]
+        runs = dagu_list(f"{DAGU_DAG}-land", now - 86400)
     except Exception:
         return []
     seen, out = set(), []
