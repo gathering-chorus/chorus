@@ -22,7 +22,6 @@
 use std::fs;
 use std::process::ExitCode;
 
-const ROLES: &[&str] = &["wren", "silas", "kade"];
 const DERIVED_STATES: &[&str] = &["building", "waiting", "observing", "idle"];
 
 fn roles_endpoint() -> String {
@@ -67,8 +66,10 @@ pub fn run(args: &[String]) -> ExitCode {
     }
     let role = args[0].as_str();
     let state = args[1].as_str();
-    if !ROLES.contains(&role) {
-        eprintln!("Unknown role: {} (wren|silas|kade)", role);
+    // #4444 reopen 2 — the roles door names the agent roles, not a list of three:
+    // Abby's `role-state abby-normal blocked` was "Unknown role" (2026-10-14 08:42)
+    if let Err(why) = chorus_hooks::runtime_hook::agent_role_enrolled(role) {
+        eprintln!("role-state: {why}");
         return ExitCode::from(1);
     }
 
@@ -113,9 +114,11 @@ pub fn run(args: &[String]) -> ExitCode {
 
 /// Read the derived rows from chorus-api and print them. No file is consulted.
 fn query(target: &str) -> ExitCode {
-    if target != "all" && !ROLES.contains(&target) {
-        eprintln!("Unknown role: {}. Use wren, silas, kade, or all.", target);
-        return ExitCode::from(1);
+    if target != "all" {
+        if let Err(why) = chorus_hooks::runtime_hook::agent_role_enrolled(target) {
+            eprintln!("role-state query: {why}");
+            return ExitCode::from(1);
+        }
     }
     let url = roles_endpoint();
     let body: serde_json::Value = match ureq::get(&url).timeout(std::time::Duration::from_secs(5)).call() {

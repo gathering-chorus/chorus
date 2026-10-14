@@ -233,7 +233,7 @@ pub fn enrolled_in(role: &str, door: &Value) -> Result<(), String> {
     if agent { Ok(()) } else { Err(format!("runtime hook role is not enrolled: the roles door lists no agent role {role}")) }
 }
 
-fn agent_role_enrolled(role: &str) -> Result<(), String> {
+pub fn agent_role_enrolled(role: &str) -> Result<(), String> {
     let base = std::env::var("ATHENA_MAKE_URL").unwrap_or_else(|_| "http://localhost:3360".into());
     let url = format!("{base}/v1/roles/roles?limit=500");
     let door: Value = ureq::get(&url).timeout(std::time::Duration::from_millis(2000)).call()
@@ -243,7 +243,7 @@ fn agent_role_enrolled(role: &str) -> Result<(), String> {
 }
 
 fn evaluate(runtime: &str, ev: Event, raw: &Value) -> Result<Decision, String> {
-    if !matches!(runtime, "claude-code" | "claude" | "codex" | "gemini" | "opencode" | "openai-compatible" | "external") {
+    if !typed_runtime(runtime) {
         return Err(format!("unknown runtime {runtime}"));
     }
     if matches!(ev, Event::Start | Event::End | Event::Compact) { return Ok(Decision::default()); }
@@ -285,17 +285,84 @@ fn evaluate(runtime: &str, ev: Event, raw: &Value) -> Result<Decision, String> {
     Ok(result)
 }
 
-pub fn run(args: &[String]) -> ExitCode {
-    if args.len() != 2 { eprintln!("usage: chorus-hook-shim runtime-hook <runtime> <event>"); return ExitCode::from(2); }
-    let (runtime, name) = (&args[0], &args[1]);
+/// The runtimes whose hook shapes are still typed in this file. Any other
+/// runtime is read from its AgentRuntime row (#4444 reopen 2).
+fn typed_runtime(runtime: &str) -> bool {
+    matches!(runtime, "claude-code" | "claude" | "codex" | "gemini" | "opencode" | "openai-compatible" | "external")
+}
+
+fn read_input(name: &str) -> Result<Value, String> {
     let mut text = String::new();
-    let parsed = std::io::stdin().take(16 * 1024 * 1024 + 1).read_to_string(&mut text)
+    std::io::stdin().take(16 * 1024 * 1024 + 1).read_to_string(&mut text)
         .map_err(|e| e.to_string()).and_then(|_| {
             if text.len() > 16 * 1024 * 1024 { return Err("hook input exceeds 16 MiB".into()); }
             let mut raw=serde_json::from_str::<Value>(&text).map_err(|e| e.to_string())?;
             if name == "PostToolUseFailure" && raw.is_object() {raw["tool_output_is_error"]=json!(true);}
             Ok(raw)
-        });
+        })
+}
+
+fn print_and_ack(reply: &Value, receipt: &DeliveryReceipt) -> ExitCode {
+    let reply = format!("{reply}\n");
+    let mut stdout = std::io::stdout().lock();
+    if stdout.write_all(reply.as_bytes()).and_then(|_| stdout.flush()).is_err() {
+        return ExitCode::from(1);
+    }
+    if !receipt.ids.is_empty() || receipt.context_token.is_some() {
+        if let Ok(sid) = std::env::var("CHORUS_SESSION_ID") {
+            if !sid.is_empty() && sid.chars().all(|c| c.is_ascii_alphanumeric() || c == '-' || c == '_') {
+                if let Err(error) = daemon_post(&format!("/v1/sessions/{sid}/ack"), &json!({"ids":receipt.ids,"context_token":receipt.context_token})) {
+                    eprintln!("chorus runtime delivery acknowledgement unavailable: {error}");
+                }
+            }
+        }
+    }
+    ExitCode::SUCCESS
+}
+
+/// #4444 reopen 2 — a runtime known by its row: the native event and input are
+/// read through the row into the guard's vocabulary, the guard runs as for any
+/// runtime, and the reply is the row's template.
+fn run_row(row: &Value, name: &str) -> ExitCode {
+    use crate::runtime_rows::{canonical, is_turn_start, moment, reply, Moment};
+    let m = moment(row, name);
+    let none = || print_and_ack(&reply(row, Moment::Other, false, "", "", false), &DeliveryReceipt::default());
+    let ev = match m {
+        Moment::BeforePrompt => Event::Prompt, Moment::BeforeTool => Event::Before, Moment::AfterTool => Event::After,
+        Moment::OnStop => Event::Stop, Moment::SessionStart => Event::Start, Moment::Other => return none(),
+    };
+    let raw = match read_input(name) {
+        Ok(raw) => raw,
+        Err(why) => { eprintln!("chorus runtime hook: {why}"); return print_and_ack(&reply(row, m, true, &why, "", false), &DeliveryReceipt::default()); }
+    };
+    if m == Moment::BeforePrompt && !is_turn_start(row, &raw) { return none(); }
+    let canon = match canonical(row, m, &raw) {
+        Ok(c) => c,
+        Err(why) => {
+            if let Some(why) = why { eprintln!("chorus runtime hook: {why}"); }
+            return print_and_ack(&reply(row, m, false, "", "", true), &DeliveryReceipt::default());
+        }
+    };
+    let mut decision = evaluate("external", ev, &canon).unwrap_or_else(|reason| {
+        eprintln!("chorus runtime hook: {reason}");
+        Decision { denied: ev == Event::Before, reason, context: String::new() }
+    });
+    let mut receipt = DeliveryReceipt::default();
+    if let Some(boundary) = publish("external", ev, &canon, &decision) { receipt = append_boundary(&boundary, &mut decision); }
+    print_and_ack(&reply(row, m, decision.denied, &decision.reason, decision.context.trim(), false), &receipt)
+}
+
+pub fn run(args: &[String]) -> ExitCode {
+    if args.len() != 2 { eprintln!("usage: chorus-hook-shim runtime-hook <runtime> <event>"); return ExitCode::from(2); }
+    let (runtime, name) = (&args[0], &args[1]);
+    if !typed_runtime(runtime) {
+        let table = crate::runtime_rows::table();
+        return match crate::runtime_rows::row_in(&table, runtime) {
+            Some(row) => run_row(row, name),
+            None => { eprintln!("chorus runtime hook: no AgentRuntime row for {runtime}"); ExitCode::from(2) }
+        };
+    }
+    let parsed = read_input(name);
     let ev = event(name);
     let mut decision = match (&ev, &parsed) {
         (Ok(ev), Ok(raw)) => evaluate(runtime, *ev, raw).unwrap_or_else(|reason| {
@@ -315,23 +382,9 @@ pub fn run(args: &[String]) -> ExitCode {
     }
     // A successful stdout flush is the delivery boundary. If the native runtime
     // closes the pipe, leave the claims unacknowledged for idempotent redelivery.
-    let reply = format!("{}\n", native_reply(runtime, name, &decision));
-    let mut stdout = std::io::stdout().lock();
-    if stdout.write_all(reply.as_bytes()).and_then(|_| stdout.flush()).is_err() {
-        return ExitCode::from(1);
-    }
-    if !receipt.ids.is_empty() || receipt.context_token.is_some() {
-        if let Ok(sid) = std::env::var("CHORUS_SESSION_ID") {
-            if !sid.is_empty() && sid.chars().all(|c| c.is_ascii_alphanumeric() || c == '-' || c == '_') {
-                if let Err(error) = daemon_post(&format!("/v1/sessions/{sid}/ack"), &json!({"ids":receipt.ids,"context_token":receipt.context_token})) {
-                    eprintln!("chorus runtime delivery acknowledgement unavailable: {error}");
-                }
-            }
-        }
-    }
     // Native hooks read explicit structured decisions. OpenCode's generated
     // plugin additionally checks `decision`, never relies on exit zero alone.
-    ExitCode::SUCCESS
+    print_and_ack(&native_reply(runtime, name, &decision), &receipt)
 }
 
 #[cfg(test)]

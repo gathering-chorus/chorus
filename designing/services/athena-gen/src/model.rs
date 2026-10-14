@@ -376,3 +376,49 @@ pub fn tool_inputs(store: &Store) -> Result<Vec<(String, Vec<ToolArg>)>, ModelEr
     }
     Ok(out)
 }
+
+/// #4444 reopen 2 — every AgentRuntime row, read generically: each literal
+/// property by its local name, one value where the shape says sh:maxCount 1 and
+/// a sorted list otherwise. A row missing a property the shape requires is
+/// refused by name (nothing here knows which properties those are).
+#[derive(Debug, Clone, PartialEq, Eq, Default)]
+pub struct RuntimeTable {
+    /// runtime name (the row's local name without "runtime-") → property → values
+    pub runtimes: BTreeMap<String, BTreeMap<String, Vec<String>>>,
+    /// properties the shape allows at most once
+    pub single: Vec<String>,
+    /// principal name (without "principal-") → runtime name
+    pub runs_on: BTreeMap<String, String>,
+}
+
+pub fn agent_runtimes(store: &Store) -> Result<RuntimeTable, ModelError> {
+    let strip = |s: &str, p: &str| s.strip_prefix(p).unwrap_or(s).to_string();
+    let mut t = RuntimeTable::default();
+    let required: Vec<String> = select(store, "SELECT ?path WHERE { c:AgentRuntimeShape sh:property ?ps . ?ps sh:path ?path ; sh:minCount ?m FILTER(?m >= 1) }")?
+        .into_iter().map(|r| r["path"].clone()).collect();
+    t.single = select(store, "SELECT ?path WHERE { c:AgentRuntimeShape sh:property ?ps . ?ps sh:path ?path ; sh:maxCount 1 }")?
+        .into_iter().map(|r| r["path"].clone()).collect();
+    t.single.sort();
+    for r in select(store, "SELECT ?r ?p ?v WHERE { ?r a c:AgentRuntime ; ?p ?v FILTER(isLiteral(?v)) }")? {
+        let row = t.runtimes.entry(strip(&r["r"], "runtime-")).or_default();
+        let key = if r["p"] == "label" { "label".to_string() } else { r["p"].clone() };
+        row.entry(key).or_default().push(r["v"].clone());
+    }
+    for row in t.runtimes.values_mut() {
+        for v in row.values_mut() { v.sort(); }
+    }
+    for (name, row) in &t.runtimes {
+        let missing: Vec<&String> = required.iter().filter(|p| !row.contains_key(*p)).collect();
+        if !missing.is_empty() {
+            return Err(err(format!("AgentRuntime {name} is missing {}", missing.iter().map(|s| s.as_str()).collect::<Vec<_>>().join(", "))));
+        }
+    }
+    for r in select(store, "SELECT ?p ?r WHERE { ?p c:agentRuntime ?r }")? {
+        let runtime = strip(&r["r"], "runtime-");
+        if !t.runtimes.contains_key(&runtime) {
+            return Err(err(format!("{} runs on {runtime}, which is not an AgentRuntime row", r["p"])));
+        }
+        t.runs_on.insert(strip(&r["p"], "principal-"), runtime);
+    }
+    Ok(t)
+}

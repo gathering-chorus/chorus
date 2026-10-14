@@ -818,6 +818,11 @@ fn on(ctx: &Ctx, role: &str, attach: bool) -> Result<Came, (i32, String)> {
         Ok(_) => {}
         Err(e) => return Err((1, e)),
     }
+    // #4444 reopen 2 — a principal the model assigns a runtime starts on it
+    // (Abby on agy); the row says how, nothing here names the runtime
+    if let Some((runtime, row)) = rows::runtime_for(&rows::runtime_table(), role) {
+        return on_runtime(ctx, role, attach, &runtime, &row);
+    }
     // #4444 — a Gemini role (Abby) opens in Gemini's own screen in her pane.
     if rows::pane_runtime(Path::new(&role_dir)) == rows::PaneRuntime::Gemini {
         return on_gemini(ctx, role, attach);
@@ -1081,6 +1086,60 @@ fn on_gemini(ctx: &Ctx, role: &str, attach: bool) -> Result<Came, (i32, String)>
     let word = lifecycle::login_word(&st, Some(l.pid));
     ctx.set_bar(role, word);
     println!("{}", proof_line(role, &l, word, "gemini in its own pane"));
+    if attach { attach_to(ctx, role); }
+    Ok(came_of(&st))
+}
+
+/// #4444 reopen 2 — on_gemini generalised: the pane runs the principal's
+/// AgentRuntime row (binary, sign-in, hooks file, tools file), read from the model.
+fn on_runtime(ctx: &Ctx, role: &str, attach: bool, runtime: &str, row: &Value) -> Result<Came, (i32, String)> {
+    let tmux_session = Ctx::tmux_session(role);
+    let role_dir = ctx.role_dir(role);
+    let live = live_entries(&ctx.sessions_dir, role, &ctx.ps);
+    if let Some(l) = live.first() {
+        let st = ctx.read_state(role);
+        let word = lifecycle::login_word(&st, Some(l.pid));
+        println!("{}", proof_line(role, l, word, &format!("already awake ({runtime})")));
+        if attach { attach_to(ctx, role); }
+        return Ok(came_of(&st));
+    }
+    let st = match login_or_resume(ctx, role) { Ok(s) => s, Err(()) => return Err((1, "login refused".into())) };
+    ctx.write_state(role, &st);
+    // the run is the session id the guard hook needs, so it is written before Gemini starts
+    let LoginState::Recorded { session, .. } = &st else {
+        eprintln!("chorus-principal: REFUSED — {}'s login is pending; its runtime needs a recorded login (its run is the session id).", role);
+        return Err((1, "login pending".into()));
+    };
+    if !ctx.has_tmux(role) {
+        if let Err(e) = sh(&ctx.tmux, &["new-session", "-d", "-s", &tmux_session, "-c", &role_dir]) { return Err((1, format!("tmux new-session failed: {}", e.trim()))); }
+    }
+    let where_ = sh(&ctx.tmux, &["display-message", "-p", "-t", &tmux_session, "#{pane_id}|#{pane_tty}"]).unwrap_or_default();
+    let (pane, tty) = where_.trim().split_once('|').map(|(a, b)| (a.to_string(), b.to_string())).unwrap_or_default();
+    record_run(ctx, role, session, &Live { pid: 0, tty, host: "tmux".into(), pane }, "pending");
+    let run = read_row(ctx, role, "run").filter(|r| r.get("runEndedAt").and_then(|e| e.as_str()).unwrap_or("").is_empty()).map(|r| row_name(&r)).unwrap_or_default();
+    let token_file = PathBuf::from(&ctx.identity_dir).join(role).join("token.cache");
+    let bin_dir = envd("CHORUS_BIN", &format!("{}/.chorus/bin", ctx.home));
+    let hooks = rows::runtime_hooks_file(row, runtime, role, &format!("{bin_dir}/chorus-hook-shim"), &format!("{bin_dir}/chorus-principal")).map_err(|e| (1, e))?;
+    let mcp = rows::runtime_mcp_file(&format!("{bin_dir}/chorus-runner"), role, &ctx.root);
+    let hooks_run_dir = envd("CHORUS_HOOKS_RUN_DIR", &format!("{}/.chorus/run-agents", ctx.home));
+    let cmd = rows::runtime_pane_cmd(row, runtime, &bin_dir, &hooks_run_dir, &run, &hooks, &mcp).map_err(|e| (1, e))?;
+    let launch = launch_line(ctx, role, &role_dir, &token_file, &cmd)?;
+    if let Err(e) = sh(&ctx.tmux, &["send-keys", "-t", &tmux_session, &launch, "Enter"]) { return Err((1, format!("tmux send-keys failed: {}", e.trim()))); }
+    let binary = row.get("runtimeBinary").and_then(|b| b.as_str()).unwrap_or("").to_string();
+    let mut found: Option<Live> = None;
+    for i in 0..=ctx.wait {
+        found = register_from_pane_matching(ctx, role, &|c: &str| !binary.is_empty() && c.contains(binary.as_str()));
+        if found.is_some() || i == ctx.wait { break; }
+        std::thread::sleep(Duration::from_secs(1));
+    }
+    let Some(l) = found else {
+        eprintln!("awake: {}  {} did not start in {}s — look at the pane: {} attach -t {}", role, runtime, ctx.wait, ctx.tmux, tmux_session);
+        return Err((1, format!("{} did not start in {}s", runtime, ctx.wait)));
+    };
+    ctx.spine(&["session.runtime.started", role, &format!("runtime={runtime}"), &format!("run={}", run), &format!("pid={}", l.pid)]);
+    let word = lifecycle::login_word(&st, Some(l.pid));
+    ctx.set_bar(role, word);
+    println!("{}", proof_line(role, &l, word, &format!("{runtime} in its own pane")));
     if attach { attach_to(ctx, role); }
     Ok(came_of(&st))
 }
@@ -1536,13 +1595,18 @@ fn process_role(ctx: &Ctx, pid: u64) -> Option<String> {
 /// The claude process running in the role's pane, written into the registry
 /// the way the SessionStart hook writes it. None when the pane runs no claude.
 fn register_from_pane(ctx: &Ctx, role: &str, runtime: rows::PaneRuntime) -> Option<Live> {
+    register_from_pane_matching(ctx, role, &|c: &str| rows::pane_process_is(c, runtime))
+}
+
+/// The pane's process that runs `is`: registered as the role's live session.
+fn register_from_pane_matching(ctx: &Ctx, role: &str, is: &dyn Fn(&str) -> bool) -> Option<Live> {
     let out = sh(&ctx.tmux, &["list-panes", "-t", &Ctx::tmux_session(role), "-F", "#{pane_id} #{pane_tty} #{pane_pid}"]).ok()?;
     let mut it = out.lines().next()?.split_whitespace();
     let (pane, tty, shell_pid) = (it.next()?.to_string(), it.next()?.to_string(), it.next()?.to_string());
     let pgrep = envd("AWAKE_PGREP", "pgrep");
     let kids = sh(&pgrep, &["-P", &shell_pid]).unwrap_or_default();
     let pid = kids.lines().filter_map(|k| k.trim().parse::<u64>().ok()).find(|k| {
-        sh(&ctx.ps, &["-o", "command=", "-p", &k.to_string()]).map(|c| rows::pane_process_is(&c, runtime)).unwrap_or(false)
+        sh(&ctx.ps, &["-o", "command=", "-p", &k.to_string()]).map(|c| is(&c)).unwrap_or(false)
     })?;
     let entry = serde_json::json!({"role": role, "pid": pid, "tty": tty, "host": "tmux", "tmux": pane, "source": "chorus-principal (attach, #4328)"});
     let _ = fs::create_dir_all(&ctx.sessions_dir);

@@ -678,3 +678,96 @@ mod agent_launch_tests_4424 {
         assert!(!agent_enrolled("not json", "wren-run-1a2b"));
     }
 }
+
+// ------------------------------------------- #4444 reopen 2: runtimes from the model
+
+/// The runtime table athena-gen writes from the AgentRuntime rows (Jeff,
+/// 2026-10-14 08:15: "generating properties on agent config rather than hard
+/// coding"). Which runtime a principal runs on, and everything about starting
+/// it, is read here; no runtime, event or file name is typed below.
+const RUNTIMES: &str = include_str!("../../shared/agent_runtimes.json");
+
+pub fn runtime_table() -> Value { serde_json::from_str(RUNTIMES).unwrap_or(Value::Null) }
+
+/// The principal's runtime: (name, row), when the model assigns one.
+pub fn runtime_for(table: &Value, role: &str) -> Option<(String, Value)> {
+    let name = table.get("runsOn")?.get(role)?.as_str()?.to_string();
+    let row = table.get("runtimes")?.get(&name)?.clone();
+    Some((name, row))
+}
+
+fn rs<'a>(row: &'a Value, k: &str) -> Option<&'a str> { row.get(k).and_then(|v| v.as_str()) }
+
+fn rlist(row: &Value, k: &str) -> Vec<String> {
+    match row.get(k) {
+        Some(Value::Array(a)) => a.iter().filter_map(|v| v.as_str()).map(String::from).collect(),
+        Some(Value::String(s)) => vec![s.clone()],
+        _ => Vec::new(),
+    }
+}
+
+fn b64(bytes: &[u8]) -> String {
+    const A: &[u8] = b"ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
+    let mut s = String::new();
+    for c in bytes.chunks(3) {
+        let n = (c[0] as u32) << 16 | (*c.get(1).unwrap_or(&0) as u32) << 8 | *c.get(2).unwrap_or(&0) as u32;
+        for i in 0..4 { s.push(if i <= c.len() { A[(n >> (18 - 6 * i) & 63) as usize] as char } else { '=' }); }
+    }
+    s
+}
+
+/// The hooks file for a principal on this runtime: every one of our moments the
+/// row names, wired to the hook adapter under the row's native event name; the
+/// before-prompt moment also stamps the session seen. Only the named-hooks
+/// layout is rendered today; any other layout is refused by name.
+pub fn runtime_hooks_file(row: &Value, runtime: &str, role: &str, shim: &str, principal: &str) -> Result<Value, String> {
+    let layout = rs(row, "runtimeHooksLayout").unwrap_or("");
+    if layout != "named-hooks" { return Err(format!("{runtime}: hooks layout {layout:?} is not rendered yet")); }
+    let hook = |native: &str| json!({"type": "command", "command": format!("{shim} runtime-hook {runtime} {native}")});
+    let mut events = serde_json::Map::new();
+    for (ours, tool) in [("eventSessionStart", false), ("eventBeforePrompt", false), ("eventBeforeTool", true), ("eventAfterTool", true), ("eventOnStop", false)] {
+        let Some(native) = rs(row, ours) else { continue };
+        let mut handlers = vec![hook(native)];
+        if ours == "eventBeforePrompt" { handlers.insert(0, json!({"type": "command", "command": format!("{principal} seen {role}")})); }
+        let entry = if tool { json!([{"matcher": "*", "hooks": handlers}]) } else { Value::Array(handlers) };
+        events.insert(native.to_string(), entry);
+    }
+    Ok(json!({ "chorus": Value::Object(events) }))
+}
+
+/// The tools file: Chorus's tools through the runner, signed as the principal (#4515).
+pub fn runtime_mcp_file(runner: &str, role: &str, chorus_home: &str) -> Value {
+    json!({"mcpServers": {"chorus-api": {"command": runner, "args": ["stdio"], "env": {"CHORUS_ROLE": role, "CHORUS_HOME": chorus_home}}}})
+}
+
+/// The command typed into the principal's pane (inside launch_line, as its own
+/// account): PATH, the run as the session id, the key only when the row signs in
+/// by key and the key file exists, the hooks and tools files written from the
+/// row, then the row's binary and arguments. A retired runtime is refused with
+/// the row's own reason.
+/// `hooks_run_dir` is where the guard daemon's socket for agent accounts lives
+/// (the launcher's ~/.chorus/run-agents): without it a hook running as the
+/// principal's own account finds no daemon and refuses every tool (measured
+/// 2026-10-14 09:05, Abby's first agy login: "chorus-hooks daemon unreachable").
+pub fn runtime_pane_cmd(row: &Value, runtime: &str, bin_dir: &str, hooks_run_dir: &str, run: &str, hooks: &Value, mcp: &Value) -> Result<String, String> {
+    if let Some(why) = rs(row, "runtimeRetired") { return Err(format!("{runtime} is retired: {why}")); }
+    if run.is_empty() || !run.bytes().all(|b| b.is_ascii_alphanumeric() || b == b'-' || b == b'_') {
+        return Err(format!("refusing to launch on run name {:?}", run));
+    }
+    if bin_dir.contains('\'') || hooks_run_dir.contains('\'') { return Err(format!("refusing to launch with a quote in {:?} or {:?}", bin_dir, hooks_run_dir)); }
+    let safe = |s: &str| !s.is_empty() && s.bytes().all(|b| b.is_ascii_alphanumeric() || b"._-/".contains(&b));
+    let binary = rs(row, "runtimeBinary").filter(|b| safe(b)).ok_or(format!("{runtime}: no usable runtimeBinary"))?;
+    let mut parts = vec![format!("export PATH='{bin_dir}':/opt/homebrew/bin:$PATH CHORUS_SESSION_ID='{run}' CHORUS_HOOKS_RUN_DIR='{hooks_run_dir}' {}", gemini_git_exports())];
+    if rs(row, "runtimeAuth") == Some("api-key") {
+        let var = rs(row, "runtimeKeyEnv").filter(|v| v.bytes().all(|b| b.is_ascii_uppercase() || b == b'_')).ok_or(format!("{runtime}: api-key sign-in needs runtimeKeyEnv"))?;
+        parts.push(format!("{{ [ ! -f ~/.chorus/secrets/{binary}.key ] || export {var}=\"$(cat ~/.chorus/secrets/{binary}.key)\"; }}"));
+    }
+    for (file_key, content) in [("runtimeHooksFile", hooks), ("runtimeMcpFile", mcp)] {
+        let rel = rs(row, file_key).filter(|p| safe(p) && !p.contains("..")).ok_or(format!("{runtime}: no usable {file_key}"))?;
+        parts.push(format!("mkdir -p \"$(dirname ~/{rel})\" && echo {} | base64 -d > ~/{rel}", b64(content.to_string().as_bytes())));
+    }
+    let args: Vec<String> = rlist(row, "runtimeLaunchArg");
+    if args.iter().any(|a| a.contains('\'')) { return Err(format!("{runtime}: a launch argument holds a quote")); }
+    parts.push(std::iter::once(format!("'{binary}'")).chain(args.iter().map(|a| format!("'{a}'"))).collect::<Vec<_>>().join(" "));
+    Ok(parts.join(" && "))
+}

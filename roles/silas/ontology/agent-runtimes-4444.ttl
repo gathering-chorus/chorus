@@ -1,0 +1,222 @@
+@prefix chorus: <https://jeffbridwell.com/chorus#> .
+@prefix rdfs:   <http://www.w3.org/2000/01/rdf-schema#> .
+@prefix owl:    <http://www.w3.org/2002/07/owl#> .
+@prefix sh:     <http://www.w3.org/ns/shacl#> .
+@prefix xsd:    <http://www.w3.org/2001/XMLSchema#> .
+
+# #4444 reopen 2 — Jeff, 2026-10-14 08:15: "consider generating properties on
+# agent config rather than hard coding — gemini integration is a good spot to
+# start since we are iterating here a lot", and 08:19 "yes lets do that".
+#
+# A role session runs on a program: Claude Code, Gemini CLI, Antigravity CLI
+# (agy). Each has the same few things under different names: a binary, a file
+# its hooks live in, a native name for each moment Chorus hooks into, the field
+# its hook input carries the session in, and the JSON it expects back. Until
+# now every one of those was typed in code (27 files named "gemini"), so each
+# new runtime was a code change and Abby's pane broke three ways in one night.
+#
+# The moments are ours and named once (beforePrompt, beforeTool, onStop,
+# sessionStart); each runtime's row maps them to its own names. The pane launch
+# line and the hooks file are rendered from the row; the hook adapter reads the
+# row's field names and reply templates instead of matching runtime names.
+#
+# The rows below are configuration, authored here like the Principal rows they
+# hang off (a principal's chorus:agentRuntime names its runtime). athena-gen
+# turns them into platform/services/shared/agent_runtimes.json, which the
+# launcher (chorus-principal) and the hook adapter (chorus-hook-shim) read; a
+# test fails when that file is not what the rows say.
+
+chorus:AgentRuntime a owl:Class ;
+    rdfs:label "Agent runtime" ;
+    rdfs:comment "A program a role session runs on (Claude Code, Gemini CLI, Antigravity CLI): how to start it, where its hooks live, and how its hook input and replies are shaped." .
+
+chorus:identity chorus:definesVocabulary chorus:AgentRuntime .
+
+chorus:agentRuntime a owl:ObjectProperty ; rdfs:label "agent runtime" ; rdfs:domain chorus:Principal ; rdfs:range chorus:AgentRuntime ;
+    rdfs:comment "The runtime this principal's sessions start on. An agent principal with none cannot be started." .
+
+chorus:runtimeBinary a owl:DatatypeProperty ; rdfs:label "binary" ; rdfs:domain chorus:AgentRuntime ; rdfs:range xsd:string ;
+    rdfs:comment "The program to start, as a path or a name on PATH (agy, claude)." .
+chorus:runtimeLaunchArg a owl:DatatypeProperty ; rdfs:label "launch argument" ; rdfs:domain chorus:AgentRuntime ; rdfs:range xsd:string ;
+    rdfs:comment "One argument after the binary, in sh:order. {home} is the principal's home." .
+chorus:runtimeAuth a owl:DatatypeProperty ; rdfs:label "sign-in" ; rdfs:domain chorus:AgentRuntime ; rdfs:range xsd:string ;
+    rdfs:comment "How it signs in: subscription (the program's own login), api-key (a key file, billed per call), google-login." .
+chorus:runtimeKeyEnv a owl:DatatypeProperty ; rdfs:label "key variable" ; rdfs:domain chorus:AgentRuntime ; rdfs:range xsd:string ;
+    rdfs:comment "For api-key sign-in only: the environment variable the key is exported as, and only when the key file exists." .
+chorus:runtimeHooksFile a owl:DatatypeProperty ; rdfs:label "hooks file" ; rdfs:domain chorus:AgentRuntime ; rdfs:range xsd:string ;
+    rdfs:comment "Where the runtime reads its hooks, relative to the principal's home (.gemini/config/hooks.json)." .
+chorus:runtimeMcpFile a owl:DatatypeProperty ; rdfs:label "tools file" ; rdfs:domain chorus:AgentRuntime ; rdfs:range xsd:string ;
+    rdfs:comment "Where the runtime reads its MCP servers, relative to the principal's home. The Chorus entry rendered there is chorus-runner stdio as the principal (#4515)." .
+chorus:runtimeHooksLayout a owl:DatatypeProperty ; rdfs:label "hooks layout" ; rdfs:domain chorus:AgentRuntime ; rdfs:range xsd:string ;
+    rdfs:comment "How that file is laid out: claude-settings (hooks under a hooks key, matcher groups), named-hooks (top-level hook names, events inside; agy)." .
+chorus:eventBeforePrompt a owl:DatatypeProperty ; rdfs:label "before prompt" ; rdfs:domain chorus:AgentRuntime ; rdfs:range xsd:string ;
+    rdfs:comment "The runtime's name for the moment before a prompt runs, where Chorus adds context and stamps the session seen." .
+chorus:eventBeforeTool a owl:DatatypeProperty ; rdfs:label "before tool" ; rdfs:domain chorus:AgentRuntime ; rdfs:range xsd:string ;
+    rdfs:comment "The runtime's name for the moment before a tool runs, where the guard allows or refuses it." .
+chorus:eventOnStop a owl:DatatypeProperty ; rdfs:label "on stop" ; rdfs:domain chorus:AgentRuntime ; rdfs:range xsd:string ;
+    rdfs:comment "The runtime's name for the end of a turn, where the reply is published." .
+chorus:eventSessionStart a owl:DatatypeProperty ; rdfs:label "session start" ; rdfs:domain chorus:AgentRuntime ; rdfs:range xsd:string .
+chorus:eventAfterTool a owl:DatatypeProperty ; rdfs:label "after tool" ; rdfs:domain chorus:AgentRuntime ; rdfs:range xsd:string ;
+    rdfs:comment "The runtime's name for the moment after a tool ran, where the call is recorded." .
+chorus:fieldSessionId a owl:DatatypeProperty ; rdfs:label "session field" ; rdfs:domain chorus:AgentRuntime ; rdfs:range xsd:string ;
+    rdfs:comment "The hook input field that carries the runtime's own session id (session_id, conversationId)." .
+chorus:fieldPrompt a owl:DatatypeProperty ; rdfs:label "prompt field" ; rdfs:domain chorus:AgentRuntime ; rdfs:range xsd:string ;
+    rdfs:comment "The hook input field with the prompt text. Absent when the runtime does not send it (agy): the prompt is read from the transcript." .
+chorus:fieldTranscript a owl:DatatypeProperty ; rdfs:label "transcript field" ; rdfs:domain chorus:AgentRuntime ; rdfs:range xsd:string .
+chorus:fieldTurnStart a owl:DatatypeProperty ; rdfs:label "turn start field" ; rdfs:domain chorus:AgentRuntime ; rdfs:range xsd:string ;
+    rdfs:comment "When the before-prompt event fires more than once a turn (agy: once per model call), the input field that is 0 on the first one. Chorus acts only then." .
+chorus:transcriptPromptType a owl:DatatypeProperty ; rdfs:label "prompt step type" ; rdfs:domain chorus:AgentRuntime ; rdfs:range xsd:string ;
+    rdfs:comment "With no prompt field: the transcript line type that holds the prompt (agy: USER_INPUT)." .
+chorus:transcriptPromptTag a owl:DatatypeProperty ; rdfs:label "prompt tag" ; rdfs:domain chorus:AgentRuntime ; rdfs:range xsd:string ;
+    rdfs:comment "The tag the prompt text sits inside on that line, when it does (agy: USER_REQUEST)." .
+chorus:fieldToolName a owl:DatatypeProperty ; rdfs:label "tool name field" ; rdfs:domain chorus:AgentRuntime ; rdfs:range xsd:string ;
+    rdfs:comment "Dotted path to the tool's name in a before-tool input (tool_name, toolCall.name)." .
+chorus:fieldToolArgs a owl:DatatypeProperty ; rdfs:label "tool args field" ; rdfs:domain chorus:AgentRuntime ; rdfs:range xsd:string .
+chorus:runtimeToolMap a owl:DatatypeProperty ; rdfs:label "tool name map" ; rdfs:domain chorus:AgentRuntime ; rdfs:range xsd:string ;
+    rdfs:comment "One native tool name and the Chorus guard's name for it, as native=chorus (run_command=Bash). A tool not named here is not guarded: it gets the ask reply, so the person approves it." .
+chorus:runtimeArgMap a owl:DatatypeProperty ; rdfs:label "tool argument map" ; rdfs:domain chorus:AgentRuntime ; rdfs:range xsd:string ;
+    rdfs:comment "One native tool argument and the guard's name for it, as native=chorus (CommandLine=command)." .
+chorus:replyAsk a owl:DatatypeProperty ; rdfs:label "ask reply" ; rdfs:domain chorus:AgentRuntime ; rdfs:range xsd:string ;
+    rdfs:comment "The JSON a before-tool hook prints for a tool the guard does not know: the runtime asks the person." .
+chorus:replyNone a owl:DatatypeProperty ; rdfs:label "empty reply" ; rdfs:domain chorus:AgentRuntime ; rdfs:range xsd:string ;
+    rdfs:comment "The JSON for a hook event Chorus has nothing to say to (agy: {})." .
+chorus:replyStopOk a owl:DatatypeProperty ; rdfs:label "stop reply" ; rdfs:domain chorus:AgentRuntime ; rdfs:range xsd:string ;
+    rdfs:comment "The JSON an on-stop hook prints to let the turn end." .
+chorus:replyStopHold a owl:DatatypeProperty ; rdfs:label "hold reply" ; rdfs:domain chorus:AgentRuntime ; rdfs:range xsd:string ;
+    rdfs:comment "The JSON an on-stop hook prints to keep the turn going (an unanswered peer nudge). {reason} is filled." .
+chorus:replyAllow a owl:DatatypeProperty ; rdfs:label "allow reply" ; rdfs:domain chorus:AgentRuntime ; rdfs:range xsd:string ;
+    rdfs:comment "The JSON a before-tool hook prints to let the tool run. {reason} is filled." .
+chorus:replyDeny a owl:DatatypeProperty ; rdfs:label "deny reply" ; rdfs:domain chorus:AgentRuntime ; rdfs:range xsd:string ;
+    rdfs:comment "The JSON a before-tool hook prints to refuse it. {reason} is filled." .
+chorus:replyContext a owl:DatatypeProperty ; rdfs:label "context reply" ; rdfs:domain chorus:AgentRuntime ; rdfs:range xsd:string ;
+    rdfs:comment "The JSON a before-prompt hook prints to add context. {context} is filled." .
+chorus:runtimeRetired a owl:DatatypeProperty ; rdfs:label "retired" ; rdfs:domain chorus:AgentRuntime ; rdfs:range xsd:string ;
+    rdfs:comment "Why this runtime may no longer be started, when it may not. A launch on a retired runtime is refused with this text." .
+
+chorus:AgentRuntimeShape a sh:NodeShape ;
+    sh:targetClass chorus:AgentRuntime ;
+    chorus:instancesGraph "urn:chorus:domains:identity" ;
+    chorus:writeAuthority "deploy" ;
+    chorus:generatedBy "athena-model" ;
+    sh:property [ sh:path chorus:runtimeBinary ; sh:minCount 1 ; sh:maxCount 1 ; sh:datatype xsd:string ; chorus:exposure chorus:public ] ;
+    sh:property [ sh:path chorus:runtimeLaunchArg ; sh:datatype xsd:string ; chorus:exposure chorus:public ] ;
+    sh:property [ sh:path chorus:runtimeAuth ; sh:minCount 1 ; sh:maxCount 1 ; sh:in ( "subscription" "api-key" "google-login" ) ; chorus:exposure chorus:public ] ;
+    sh:property [ sh:path chorus:runtimeKeyEnv ; sh:maxCount 1 ; sh:datatype xsd:string ; chorus:exposure chorus:public ] ;
+    sh:property [ sh:path chorus:runtimeHooksFile ; sh:minCount 1 ; sh:maxCount 1 ; sh:datatype xsd:string ; chorus:exposure chorus:public ] ;
+    sh:property [ sh:path chorus:runtimeMcpFile ; sh:minCount 1 ; sh:maxCount 1 ; sh:datatype xsd:string ; chorus:exposure chorus:public ] ;
+    sh:property [ sh:path chorus:runtimeHooksLayout ; sh:minCount 1 ; sh:maxCount 1 ; sh:in ( "claude-settings" "named-hooks" ) ; chorus:exposure chorus:public ] ;
+    sh:property [ sh:path chorus:eventBeforePrompt ; sh:minCount 1 ; sh:maxCount 1 ; sh:datatype xsd:string ; chorus:exposure chorus:public ] ;
+    sh:property [ sh:path chorus:eventBeforeTool ; sh:minCount 1 ; sh:maxCount 1 ; sh:datatype xsd:string ; chorus:exposure chorus:public ] ;
+    sh:property [ sh:path chorus:eventOnStop ; sh:minCount 1 ; sh:maxCount 1 ; sh:datatype xsd:string ; chorus:exposure chorus:public ] ;
+    sh:property [ sh:path chorus:eventSessionStart ; sh:maxCount 1 ; sh:datatype xsd:string ; chorus:exposure chorus:public ] ;
+    sh:property [ sh:path chorus:fieldSessionId ; sh:minCount 1 ; sh:maxCount 1 ; sh:datatype xsd:string ; chorus:exposure chorus:public ] ;
+    sh:property [ sh:path chorus:fieldPrompt ; sh:maxCount 1 ; sh:datatype xsd:string ; chorus:exposure chorus:public ] ;
+    sh:property [ sh:path chorus:fieldTranscript ; sh:maxCount 1 ; sh:datatype xsd:string ; chorus:exposure chorus:public ] ;
+    sh:property [ sh:path chorus:fieldTurnStart ; sh:maxCount 1 ; sh:datatype xsd:string ; chorus:exposure chorus:public ] ;
+    sh:property [ sh:path chorus:transcriptPromptType ; sh:maxCount 1 ; sh:datatype xsd:string ; chorus:exposure chorus:public ] ;
+    sh:property [ sh:path chorus:transcriptPromptTag ; sh:maxCount 1 ; sh:datatype xsd:string ; chorus:exposure chorus:public ] ;
+    sh:property [ sh:path chorus:fieldToolName ; sh:minCount 1 ; sh:maxCount 1 ; sh:datatype xsd:string ; chorus:exposure chorus:public ] ;
+    sh:property [ sh:path chorus:fieldToolArgs ; sh:minCount 1 ; sh:maxCount 1 ; sh:datatype xsd:string ; chorus:exposure chorus:public ] ;
+    sh:property [ sh:path chorus:runtimeToolMap ; sh:datatype xsd:string ; chorus:exposure chorus:public ] ;
+    sh:property [ sh:path chorus:runtimeArgMap ; sh:datatype xsd:string ; chorus:exposure chorus:public ] ;
+    sh:property [ sh:path chorus:replyAsk ; sh:maxCount 1 ; sh:datatype xsd:string ; chorus:exposure chorus:public ] ;
+    sh:property [ sh:path chorus:eventAfterTool ; sh:maxCount 1 ; sh:datatype xsd:string ; chorus:exposure chorus:public ] ;
+    sh:property [ sh:path chorus:replyNone ; sh:maxCount 1 ; sh:datatype xsd:string ; chorus:exposure chorus:public ] ;
+    sh:property [ sh:path chorus:replyStopOk ; sh:maxCount 1 ; sh:datatype xsd:string ; chorus:exposure chorus:public ] ;
+    sh:property [ sh:path chorus:replyStopHold ; sh:maxCount 1 ; sh:datatype xsd:string ; chorus:exposure chorus:public ] ;
+    sh:property [ sh:path chorus:replyAllow ; sh:minCount 1 ; sh:maxCount 1 ; sh:datatype xsd:string ; chorus:exposure chorus:public ] ;
+    sh:property [ sh:path chorus:replyDeny ; sh:minCount 1 ; sh:maxCount 1 ; sh:datatype xsd:string ; chorus:exposure chorus:public ] ;
+    sh:property [ sh:path chorus:replyContext ; sh:minCount 1 ; sh:maxCount 1 ; sh:datatype xsd:string ; chorus:exposure chorus:public ] ;
+    sh:property [ sh:path chorus:runtimeRetired ; sh:maxCount 1 ; sh:datatype xsd:string ; chorus:exposure chorus:public ] .
+
+# ---------------------------------------------------------------- the rows
+# agy: Antigravity CLI 1.3.5. From https://antigravity.google/docs/hooks/ and
+# MEASURED 2026-10-14 08:32 (probe hooks.json, Abby's first agy turn, "hi"):
+# SessionStart 1, PreInvocation 5 and PostInvocation 3 per turn (one per model
+# call, invocationNum 0,1,2…), PreToolUse/PostToolUse per tool with
+# toolCall.name "run_command" and args.CommandLine. Every input carries
+# conversationId and transcriptPath; none carries the prompt: it is the
+# transcript line of type USER_INPUT. Reply shapes are still the documented
+# ones until the adapter's first live run.
+chorus:runtime-agy a chorus:AgentRuntime ;
+    rdfs:label "Antigravity CLI (agy)" ;
+    chorus:runtimeBinary "agy" ;
+    chorus:runtimeAuth "google-login" ;
+    chorus:runtimeHooksFile ".gemini/config/hooks.json" ;
+    chorus:runtimeMcpFile ".gemini/config/mcp_config.json" ;
+    chorus:runtimeHooksLayout "named-hooks" ;
+    chorus:eventBeforePrompt "PreInvocation" ;
+    chorus:eventBeforeTool "PreToolUse" ;
+    chorus:eventOnStop "Stop" ;
+    chorus:eventSessionStart "SessionStart" ;
+    chorus:eventAfterTool "PostToolUse" ;
+    chorus:fieldSessionId "conversationId" ;
+    chorus:fieldTranscript "transcriptPath" ;
+    chorus:fieldTurnStart "invocationNum" ;
+    chorus:transcriptPromptType "USER_INPUT" ;
+    chorus:transcriptPromptTag "USER_REQUEST" ;
+    chorus:fieldToolName "toolCall.name" ;
+    chorus:fieldToolArgs "toolCall.args" ;
+    # measured 08:32–08:42, 48 PreToolUse calls: run_command 41, view_file 4,
+    # manage_task 3 (agy's own task list: not guarded, so it asks)
+    chorus:runtimeToolMap "run_command=Bash" , "view_file=Read" ;
+    chorus:runtimeArgMap "CommandLine=command" , "Cwd=cwd" , "AbsolutePath=file_path" ;
+    chorus:replyAsk "{\"decision\":\"ask\"}" ;
+    chorus:replyNone "{}" ;
+    chorus:replyStopOk "{\"decision\":\"stop\"}" ;
+    chorus:replyStopHold "{\"decision\":\"continue\",\"reason\":\"{reason}\"}" ;
+    # Jeff, 2026-10-14 09:06 ("it kinda chains me to abby bc i never know what
+    # command will block" → "Guard decides"): when the guard allows a known tool,
+    # agy runs it without asking him (auto_approve). A tool the guard does not
+    # know still asks (replyAsk); a refusal is refused with its reason.
+    chorus:replyAllow "{\"decision\":\"auto_approve\"}" ;
+    chorus:replyDeny "{\"decision\":\"deny\",\"reason\":\"{reason}\"}" ;
+    chorus:replyContext "{\"injectSteps\":[{\"ephemeralMessage\":\"{context}\"}]}" .
+
+# gemini-cli: Google stopped serving personal accounts on 2026-06-18; kept as
+# a row so a launch on it is refused by name, not by a 402 or a sign-in error.
+chorus:runtime-gemini-cli a chorus:AgentRuntime ;
+    rdfs:label "Gemini CLI" ;
+    chorus:runtimeBinary "gemini" ;
+    chorus:runtimeAuth "api-key" ;
+    chorus:runtimeKeyEnv "GEMINI_API_KEY" ;
+    chorus:runtimeHooksFile ".gemini/settings.json" ;
+    chorus:runtimeMcpFile ".gemini/settings.json" ;
+    chorus:runtimeHooksLayout "claude-settings" ;
+    chorus:eventBeforePrompt "BeforeAgent" ;
+    chorus:eventBeforeTool "BeforeTool" ;
+    chorus:eventOnStop "AfterAgent" ;
+    chorus:fieldSessionId "session_id" ;
+    chorus:fieldPrompt "prompt" ;
+    chorus:fieldTranscript "transcript_path" ;
+    chorus:fieldToolName "tool_name" ;
+    chorus:fieldToolArgs "tool_input" ;
+    chorus:replyAllow "{\"decision\":\"allow\"}" ;
+    chorus:replyDeny "{\"decision\":\"deny\",\"reason\":\"{reason}\"}" ;
+    chorus:replyContext "{\"hookSpecificOutput\":{\"additionalContext\":\"{context}\"}}" ;
+    chorus:runtimeRetired "Google stopped serving Gemini CLI to personal accounts on 2026-06-18 (Google AI Pro included); a personal account runs on agy." .
+
+# claude-code: the three Claude roles. Their hooks are written by the Claude
+# settings today; this row is the first step to rendering those too.
+chorus:runtime-claude-code a chorus:AgentRuntime ;
+    rdfs:label "Claude Code" ;
+    chorus:runtimeBinary "claude" ;
+    chorus:runtimeAuth "subscription" ;
+    chorus:runtimeHooksFile ".claude/settings.json" ;
+    chorus:runtimeMcpFile ".mcp.json" ;
+    chorus:runtimeHooksLayout "claude-settings" ;
+    chorus:eventBeforePrompt "UserPromptSubmit" ;
+    chorus:eventBeforeTool "PreToolUse" ;
+    chorus:eventOnStop "Stop" ;
+    chorus:eventSessionStart "SessionStart" ;
+    chorus:fieldSessionId "session_id" ;
+    chorus:fieldPrompt "prompt" ;
+    chorus:fieldTranscript "transcript_path" ;
+    chorus:fieldToolName "tool_name" ;
+    chorus:fieldToolArgs "tool_input" ;
+    chorus:replyAllow "{\"hookSpecificOutput\":{\"hookEventName\":\"PreToolUse\",\"permissionDecision\":\"allow\"}}" ;
+    chorus:replyDeny "{\"hookSpecificOutput\":{\"hookEventName\":\"PreToolUse\",\"permissionDecision\":\"deny\",\"permissionDecisionReason\":\"{reason}\"}}" ;
+    chorus:replyContext "{\"hookSpecificOutput\":{\"hookEventName\":\"UserPromptSubmit\",\"additionalContext\":\"{context}\"}}" .
+
+# Abby runs on agy (Jeff, 2026-10-14 08:16: "abby").
+<https://jeffbridwell.com/chorus#principal-abby-normal> chorus:agentRuntime chorus:runtime-agy .
