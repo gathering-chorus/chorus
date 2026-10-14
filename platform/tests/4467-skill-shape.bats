@@ -33,6 +33,10 @@ chorus:skill-werk-deploy-env-up a chorus:Skill ;
 chorus:skill-werk-go a chorus:Skill ;
     rdfs:label "go" ; rdfs:comment "Jeff accepts the presented card." ;
     chorus:executor "human" ; chorus:hasDomain chorus:cicd ; chorus:ownedBy chorus:principal-wren .
+chorus:skill-chorus-wip a chorus:Skill ;
+    rdfs:label "chorus_wip" ; rdfs:comment "Reads a role's WIP cards." ;
+    chorus:executor "http" ; chorus:implementedBy "GET {api}/api/chorus/context/board/wip?role={role=@caller}" ;
+    chorus:runsAs "caller" ; chorus:hasDomain chorus:cicd ; chorus:ownedBy chorus:principal-wren .
 chorus:stepskill-cicd-demo-1 a chorus:StepSkill ;
     chorus:forStep chorus:pipeline-step-cicd-demo ; chorus:callsSkill chorus:skill-werk-deploy-env-up ;
     chorus:skillOrder 1 ; chorus:ownedBy chorus:principal-wren .
