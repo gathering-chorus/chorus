@@ -18,12 +18,16 @@ fn athena_schema() -> Map<String, Value> {
     all["AthenaVerbInput"].as_object().cloned().expect("AthenaVerbInput in tool_inputs.json")
 }
 
-/// The withArgs of the fixture row for (step, skill), with ${CARD} filled.
-fn with_args(step: &str) -> Vec<String> {
-    let tsv = std::fs::read_to_string(format!("{}/../chorus-make/tests/fixtures/athena-rows.tsv", dir())).unwrap();
+/// The withArgs of a fixture's row for a step, with ${CARD} filled.
+fn with_args_in(file: &str, step: &str) -> Vec<String> {
+    let tsv = std::fs::read_to_string(format!("{}/../chorus-make/tests/fixtures/{file}", dir())).unwrap();
     let row = tsv.lines().find(|l| l.split('\t').next() == Some(step)).unwrap_or_else(|| panic!("no {step} row"));
     let wa = row.split('\t').nth(10).unwrap_or("");
     wa.split_whitespace().map(|p| p.replace("${CARD}", "4515")).collect()
+}
+
+fn with_args(step: &str) -> Vec<String> {
+    with_args_in("athena-rows.tsv", step)
 }
 
 fn verb_argv(pairs: &[String]) -> Result<Vec<String>, String> {
@@ -39,13 +43,13 @@ fn each_athena_step_hands_its_verb_the_list_in_order() {
     assert_eq!(verb_argv(&with_args("shape")).unwrap(), vec!["--card", "4515"]);
     assert_eq!(verb_argv(&with_args("forge")).unwrap(), vec!["generate", "--card", "4515"]);
     assert_eq!(verb_argv(&with_args("seed")).unwrap(), vec!["staging", "--card", "4515"]);
-    assert_eq!(verb_argv(&with_args("land")).unwrap(), vec!["--card", "4515", "--landed", "--target", "canonical"]);
+    assert_eq!(verb_argv(&with_args_in("athena-land-rows.tsv", "land")).unwrap(), vec!["--card", "4515", "--landed", "--target", "canonical"]);
 }
 
 #[test]
 fn a_single_args_pair_is_still_a_list_of_one() {
     // args_from_pairs gives a string for one pair; the shape says list
-    assert_eq!(verb_argv(&with_args("validate")).unwrap(), vec!["--sweep"]);
+    assert_eq!(verb_argv(&with_args("validate")).unwrap(), vec!["--staging"]);
 }
 
 #[test]

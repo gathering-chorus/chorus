@@ -36,6 +36,62 @@ pub struct CardPlan {
     pub sets: Vec<DomainSet>,
     /// #4515 — the landed commit the deploy is stamped with (landed mode only).
     pub commit: Option<String>,
+    /// #4515 — where the model files are read from when that is not CHORUS_ROOT:
+    /// a landed card's snapshot of its merged commit (landed mode only).
+    pub files_root: Option<String>,
+}
+
+/// The paths of a commit's tree that a deploy reads: every roles/*/ontology
+/// file, designing's TTL and JSONL (data, ontology, the retirements ledger),
+/// and the domain-set manifest. Pure, over `git ls-tree -r --name-only`.
+pub fn model_paths(ls_tree: &str) -> Vec<String> {
+    ls_tree
+        .lines()
+        .map(str::trim)
+        .filter(|p| {
+            (p.starts_with("roles/") && p.contains("/ontology/"))
+                || (p.starts_with("designing/") && (p.ends_with(".ttl") || p.ends_with(".jsonl")))
+                || *p == "platform/config/domain-set-manifest.txt"
+        })
+        .map(String::from)
+        .collect()
+}
+
+/// #4515 — the model files AS OF a commit, written under `dest` (same layout):
+/// `git archive <sha> -- <model paths> | tar -x`. A landed card deploys what it
+/// landed, never what canonical's working tree holds now (a later edit, or a
+/// later card's change to the same file). Nothing is written into `home`.
+pub fn snapshot(home: &str, sha: &str, dest: &str) -> Result<(), String> {
+    let ls = Command::new("git").args(["-C", home, "ls-tree", "-r", "--name-only", sha]).output()
+        .map_err(|e| format!("git: {e}"))?;
+    if !ls.status.success() {
+        return Err(format!("git ls-tree {sha} failed in {home}: {}", String::from_utf8_lossy(&ls.stderr).trim()));
+    }
+    let paths = model_paths(&String::from_utf8_lossy(&ls.stdout));
+    if paths.is_empty() {
+        return Err(format!("commit {sha} holds no model file to snapshot"));
+    }
+    let _ = std::fs::remove_dir_all(dest);
+    std::fs::create_dir_all(dest).map_err(|e| format!("{dest}: {e}"))?;
+    let mut archive = Command::new("git").args(["-C", home, "archive", sha, "--"]).args(&paths)
+        .stdout(std::process::Stdio::piped()).spawn().map_err(|e| format!("git archive: {e}"))?;
+    let tar = Command::new("tar").args(["-x", "-C", dest]).stdin(archive.stdout.take().expect("piped"))
+        .output().map_err(|e| format!("tar: {e}"))?;
+    let a = archive.wait().map_err(|e| format!("git archive: {e}"))?;
+    if !a.success() || !tar.status.success() {
+        return Err(format!("could not snapshot {sha} into {dest}: {}", String::from_utf8_lossy(&tar.stderr).trim()));
+    }
+    Ok(())
+}
+
+/// Removes a landed card's snapshot when the run ends, whichever way.
+struct SnapshotDir(Option<String>);
+impl Drop for SnapshotDir {
+    fn drop(&mut self) {
+        if let Some(d) = &self.0 {
+            let _ = std::fs::remove_dir_all(d);
+        }
+    }
 }
 
 /// Split a card's changed TTL files (werk-relative) between the domain sets they
@@ -201,13 +257,24 @@ pub fn prepare(card_id: &str) -> Result<(Card, CardPlan, Vec<String>), CardError
     prepare_mode(card_id, Mode::Werk)
 }
 
-/// prepare, for a mode: a landed card is read from canonical.
+/// prepare, for a mode: a landed card is resolved on canonical and its model
+/// files are read from a snapshot of its merged commit (`card.werk` and the
+/// plan's files_root are that snapshot; the caller removes it).
 pub fn prepare_mode(card_id: &str, mode: Mode) -> Result<(Card, CardPlan, Vec<String>), CardError> {
-    let card = match mode {
+    let mut card = match mode {
         Mode::Landed => card_scope::resolve_landed(card_id),
         _ => card_scope::resolve(card_id),
     }
     .map_err(CardError::Refused)?;
+    let mut files_root = None;
+    if let (Mode::Landed, Some(sha)) = (mode, card.commit.clone()) {
+        let dest = std::env::temp_dir()
+            .join(format!("athena-deploy-landed-{}-{}-{}", card.card, &sha[..sha.len().min(12)], std::process::id()))
+            .display().to_string();
+        snapshot(&card.werk, &sha, &dest).map_err(|e| CardError::Refused(format!("card #{}: {e}", card.card)))?;
+        card.werk = dest.clone();
+        files_root = Some(dest);
+    }
     let ttl = card.ttl();
     let manifest = env_or("DOMAIN_SET_MANIFEST", &card.abs("platform/config/domain-set-manifest.txt"));
     let text = std::fs::read_to_string(&manifest)
@@ -215,6 +282,7 @@ pub fn prepare_mode(card_id: &str, mode: Mode) -> Result<(Card, CardPlan, Vec<St
     let sets = parse_domain_sets(&text).map_err(CardError::Refused)?;
     let mut p = plan(&ttl, &card.werk, &sets);
     p.commit = card.commit.clone();
+    p.files_root = files_root;
     let classes = card_classes(&card).map_err(CardError::Refused)?;
     Ok((card, p, classes))
 }
@@ -238,8 +306,9 @@ pub fn run(card_id: &str, mode: Mode, target: Option<&str>) -> Result<String, Ca
         }
     }
     let (card, p, classes) = prepare_mode(card_id, mode)?;
+    let _snapshot = SnapshotDir(p.files_root.clone());
     let from = match &card.commit {
-        Some(sha) => format!("{} at landed commit {}", card.werk, &sha[..sha.len().min(12)]),
+        Some(sha) => format!("a snapshot of landed commit {} ({})", &sha[..sha.len().min(12)], card.werk),
         None => card.werk.clone(),
     };
     let mut out = vec![format!(
@@ -264,7 +333,10 @@ pub fn run(card_id: &str, mode: Mode, target: Option<&str>) -> Result<String, Ca
     } else {
         (env_or("ATHENA_MAKE_URL", "http://localhost:3360"), env_or("ATHENA_MAKE_LABEL", "com.chorus.athena-make"))
     };
-    std::env::set_var("CHORUS_ROOT", &card.werk);
+    // git, the spine and the #4080 guard work on the card's tree: the werk, or
+    // for a landed card canonical (its files come from the snapshot, files_root)
+    let root = if mode == Mode::Landed { card_scope::chorus_home() } else { card.werk.clone() };
+    std::env::set_var("CHORUS_ROOT", &root);
     out.push(crate::run_athena_deploy_plan(Some(&p)).map_err(CardError::Failed)?);
 
     // athena-make reads the shapes at boot: restart it and wait for healthy.

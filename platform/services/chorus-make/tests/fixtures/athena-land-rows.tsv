@@ -1,0 +1,4 @@
+# #4515 fixture — the athena-land pipeline's rows (to-be): one step, the prod Land of a card a werk
+# land carried, read from canonical as of its merged commit. Started only by scripts/athena-land.
+step	stepOrder	skillOrder	skill	label	executor	implementedBy	mode	onFail	inputShape	withArgs
+land	1	1	skill-athena-deploy	athena-deploy	deterministic	athena-deploy	{args}		AthenaVerbInput	args=--card args=${CARD} args=--landed args=--target args=canonical

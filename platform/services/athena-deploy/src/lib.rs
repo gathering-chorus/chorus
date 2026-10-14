@@ -954,6 +954,10 @@ pub fn run_athena_deploy() -> Result<String, String> {
 /// not replayed; every refusal of a full run still applies to what it loads.
 pub fn run_athena_deploy_plan(plan: Option<&card::CardPlan>) -> Result<String, String> {
     let root = env_or("CHORUS_ROOT", "/Users/jeffbridwell/CascadeProjects/chorus");
+    // #4515 — where the model FILES are read from. A landed card's plan names a
+    // snapshot of its merged commit (files_root); git, the spine and the werk
+    // guard still work on CHORUS_ROOT. Otherwise the two are the same tree.
+    let src = plan.and_then(|p| p.files_root.clone()).unwrap_or_else(|| root.clone());
     let ontology = env_or("ONTOLOGY_GRAPH", "urn:chorus:ontology");
     let gsp = env_or("FUSEKI_GSP", "http://localhost:3030/pods/data");
     let query = env_or("FUSEKI_QUERY", "http://localhost:3030/pods/query");
@@ -987,7 +991,7 @@ pub fn run_athena_deploy_plan(plan: Option<&card::CardPlan>) -> Result<String, S
     // #4515 — a card plan names its own files; otherwise the model set (or TTL=).
     let set = match plan {
         Some(p) => p.ontology.clone(),
-        None => model_set(&root, ttl_override),
+        None => model_set(&src, ttl_override),
     };
     let full = plan.is_none() && sets_run(std::env::var("TTL").ok().as_deref());
     let staging = format!("{ontology}-staging-deploy");
@@ -1002,7 +1006,7 @@ pub fn run_athena_deploy_plan(plan: Option<&card::CardPlan>) -> Result<String, S
     let mut offences: Vec<String> = Vec::new();
     for ttl in &set {
         if let Ok(text) = std::fs::read_to_string(ttl) {
-            let label = ttl.strip_prefix(&format!("{root}/")).unwrap_or(ttl);
+            let label = ttl.strip_prefix(&format!("{src}/")).unwrap_or(ttl);
             offences.extend(role_owner_offences(label, &text));
         }
     }
@@ -1026,7 +1030,7 @@ pub fn run_athena_deploy_plan(plan: Option<&card::CardPlan>) -> Result<String, S
     let mut loaded: Vec<(String, String)> = Vec::new();
     for ttl in &set {
         if let Ok(text) = std::fs::read_to_string(ttl) {
-            let label = ttl.strip_prefix(&format!("{root}/")).unwrap_or(ttl).to_string();
+            let label = ttl.strip_prefix(&format!("{src}/")).unwrap_or(ttl).to_string();
             loaded.push((label, text));
         }
     }
@@ -1058,7 +1062,7 @@ pub fn run_athena_deploy_plan(plan: Option<&card::CardPlan>) -> Result<String, S
     if full || plan.is_some_and(|p| !p.sets.is_empty()) {
         let manifest_path = env_or(
             "DOMAIN_SET_MANIFEST",
-            &format!("{root}/platform/config/domain-set-manifest.txt"),
+            &format!("{src}/platform/config/domain-set-manifest.txt"),
         );
         let text = std::fs::read_to_string(&manifest_path)
             .map_err(|e| fail(&format!("domain-set-manifest-unreadable:{manifest_path}:{e}")))?;
@@ -1066,15 +1070,15 @@ pub fn run_athena_deploy_plan(plan: Option<&card::CardPlan>) -> Result<String, S
         // fail closed: a file the guard cannot read as triples is a refusal, not a pass
         let read_all = |paths: Vec<String>| -> Result<Vec<(String, String)>, String> {
             paths.into_iter().map(|p| {
-                let label = p.strip_prefix(&format!("{root}/")).unwrap_or(&p).to_string();
+                let label = p.strip_prefix(&format!("{src}/")).unwrap_or(&p).to_string();
                 to_ntriples(&p).map(|t| (label, t))
             }).collect()
         };
-        let homes = read_all(model_set(&root, None)).map_err(|e| fail(&e))?;
+        let homes = read_all(model_set(&src, None)).map_err(|e| fail(&e))?;
         // only sets merged into the graph Domain rows live in; a set into its own
         // graph (principles naming chorus:principles) replaces nothing of the row
         let set_files = read_all(sets.iter().filter(|ds| ds.graph == DOMAINS_GRAPH)
-            .flat_map(|ds| ds.files.iter().map(|f| format!("{root}/{f}"))).collect())
+            .flat_map(|ds| ds.files.iter().map(|f| format!("{src}/{f}"))).collect())
             .map_err(|e| fail(&e))?;
         let clobbers = domain_set_clobbers(&homes, &set_files);
         if !clobbers.is_empty() {
@@ -1122,7 +1126,7 @@ pub fn run_athena_deploy_plan(plan: Option<&card::CardPlan>) -> Result<String, S
         Some(prev) => {
             let staged_for_retirement: Vec<String> = std::fs::read_to_string(env_or(
                 "RETIREMENTS_FILE",
-                &format!("{root}/designing/schemas/model-retirements.jsonl"),
+                &format!("{src}/designing/schemas/model-retirements.jsonl"),
             ))
             .map(|t| {
                 t.lines()
@@ -1147,7 +1151,7 @@ pub fn run_athena_deploy_plan(plan: Option<&card::CardPlan>) -> Result<String, S
             }
             let mut gone: Vec<(String, String)> = Vec::new();
             for ttl in &set {
-                let rel = ttl.strip_prefix(&format!("{root}/")).unwrap_or(ttl).to_string();
+                let rel = ttl.strip_prefix(&format!("{src}/")).unwrap_or(ttl).to_string();
                 let Some(before) = run_git(&root, &["show", &format!("{prev}:{rel}")]) else {
                     continue; // file is new since the stamp
                 };
@@ -1343,7 +1347,7 @@ pub fn run_athena_deploy_plan(plan: Option<&card::CardPlan>) -> Result<String, S
     // every ask, idempotent on absent, and every delete backed up first (AC3).
     let retirements_file = env_or(
         "RETIREMENTS_FILE",
-        &format!("{root}/designing/schemas/model-retirements.jsonl"),
+        &format!("{src}/designing/schemas/model-retirements.jsonl"),
     );
     if Path::new(&retirements_file).is_file() {
         let text = std::fs::read_to_string(&retirements_file)
@@ -1416,7 +1420,7 @@ pub fn run_athena_deploy_plan(plan: Option<&card::CardPlan>) -> Result<String, S
     if full {
         let manifest_path = env_or(
             "DOMAIN_SET_MANIFEST",
-            &format!("{root}/platform/config/domain-set-manifest.txt"),
+            &format!("{src}/platform/config/domain-set-manifest.txt"),
         );
         // A missing manifest is a REFUSAL. Treating it as "no sets" is how a
         // run deploys 2 files where it was asked for 41 and reports success.
@@ -1436,7 +1440,7 @@ pub fn run_athena_deploy_plan(plan: Option<&card::CardPlan>) -> Result<String, S
         let mut vocab_files: Vec<(String, String)> = Vec::new();
         for ds in &sets {
             for f in &ds.files {
-                let path = format!("{root}/{f}");
+                let path = format!("{src}/{f}");
                 if let Ok(text) = std::fs::read_to_string(&path) {
                     vocab_files.push((f.clone(), text));
                 }
@@ -1489,7 +1493,7 @@ pub fn run_athena_deploy_plan(plan: Option<&card::CardPlan>) -> Result<String, S
             role: role.clone(),
         };
         for ds in &sets {
-            deployed.push(deploy_domain_set(ds, &root, &ctx)?);
+            deployed.push(deploy_domain_set(ds, &src, &ctx)?);
         }
     } else if let Some(p) = plan {
         // #4515 — only the sets the card's files belong to, each whole.
@@ -1501,7 +1505,7 @@ pub fn run_athena_deploy_plan(plan: Option<&card::CardPlan>) -> Result<String, S
             role: role.clone(),
         };
         for ds in &p.sets {
-            deployed.push(deploy_domain_set(ds, &root, &ctx)?);
+            deployed.push(deploy_domain_set(ds, &src, &ctx)?);
         }
     }
 

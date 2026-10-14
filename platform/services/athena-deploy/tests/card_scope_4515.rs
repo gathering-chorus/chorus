@@ -301,7 +301,7 @@ fn a_landed_land_runs_with_the_werk_torn_down_and_names_its_commit() {
     let (home, sha) = canonical("land");
     let (code, out) = run_landed(&home, &["--card", "9301", "--landed", "--target", "canonical"], &[("ATHENA_DEPLOY_TARGET_CHECK_ONLY", "1")]);
     assert_eq!(code, 0, "{out}");
-    assert!(out.contains(&format!("at landed commit {}", &sha[..12])), "{out}");
+    assert!(out.contains(&format!("from a snapshot of landed commit {}", &sha[..12])), "{out}");
     assert!(out.contains("target-check: ok"), "{out}");
 }
 
@@ -345,4 +345,30 @@ fn negative_proof_card_options_that_do_not_fit_are_refused() {
     assert!(a(&["athena-deploy", "staging", "--card", "1", "--target", "canonical"]).is_err());
     assert!(a(&["athena-deploy", "--card", "1", "--target", "werk"]).unwrap_err().contains("the only target is canonical"));
     assert!(a(&["athena-deploy", "--card", "1", "--force"]).unwrap_err().contains("unknown option '--force'"));
+}
+
+#[test]
+fn a_snapshot_takes_the_model_files_and_nothing_else() {
+    let ls = "roles/wren/ontology/a.ttl\nroles/wren/CLAUDE.md\ndesigning/data/x.ttl\ndesigning/schemas/model-retirements.jsonl\ndesigning/services/athena-gen/src/main.rs\nplatform/config/domain-set-manifest.txt\nplatform/config/dagu.yaml\n";
+    assert_eq!(athena_deploy::card::model_paths(ls), s(&[
+        "roles/wren/ontology/a.ttl", "designing/data/x.ttl", "designing/schemas/model-retirements.jsonl",
+        "platform/config/domain-set-manifest.txt",
+    ]));
+}
+
+#[test]
+fn negative_proof_a_working_tree_edit_after_the_land_is_never_deployed() {
+    // canonical's widgets.ttl is edited after #9301 landed (uncommitted): it now
+    // declares a second class. The Land reads the merged commit: one class.
+    let (home, sha) = canonical("wtedit");
+    write(&home, "roles/wren/ontology/widgets.ttl", &format!("{WIDGET}chorus:Gadget a owl:Class .\n"));
+    let (code, out) = run_landed(&home, &["--card", "9301", "--landed", "--target", "canonical"], &[("ATHENA_DEPLOY_TARGET_CHECK_ONLY", "1")]);
+    assert_eq!(code, 0, "{out}");
+    assert!(out.contains("1 ontology file(s), 0 domain set(s), 1 class(es) from a snapshot of landed commit"), "{out}");
+    // and the snapshot holds the commit's bytes, not the working tree's
+    let dest = std::env::temp_dir().join(format!("athena-deploy-4515-snap-{}", std::process::id()));
+    athena_deploy::card::snapshot(home.to_str().unwrap(), &sha, dest.to_str().unwrap()).unwrap();
+    assert_eq!(std::fs::read_to_string(dest.join("roles/wren/ontology/widgets.ttl")).unwrap(), WIDGET);
+    assert!(!dest.join("roles/wren/ontology/other.ttl").exists(), "a later card's file is not in #9301's commit");
+    let _ = std::fs::remove_dir_all(&dest);
 }

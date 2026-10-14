@@ -93,6 +93,10 @@ mod service_lifecycle {
     include!("../../shared/service_lifecycle.rs");
 }
 
+fn env_nonempty(key: &str, default: &str) -> String {
+    std::env::var(key).ok().filter(|v| !v.is_empty()).unwrap_or_else(|| default.to_string())
+}
+
 fn main() {
     // #4446 — under launchd, a failed run is logged as service.failed (shared/service_lifecycle.rs).
     service_lifecycle::run_as_job();
@@ -107,9 +111,22 @@ fn main() {
             }
         }
     }
-    // #4515 — `--sweep` names this full sweep (the default) for the athena
-    // pipeline's Validate step: a runner step's AthenaVerbInput `args` list
-    // cannot be empty, and the sweep takes no other argument.
+    // #4515 — `--staging`: the athena pipeline's Validate step sweeps the STAGING
+    // dataset its Deploy step just loaded, never prod. Store and door both move,
+    // the same way `athena-deploy staging` points its load and its served check:
+    // $CHORUS_FUSEKI_BASE/$STAGING_DATASET/query and the staging athena-make
+    // ($ATHENA_MAKE_STAGING_URL). The flag wins over an inherited FUSEKI_QUERY or
+    // CHORUS_OWL_API: a prod endpoint in the scheduler's env must not turn a
+    // staging check into a prod one.
+    if args.iter().any(|a| a == "--staging") {
+        let base = env_nonempty("CHORUS_FUSEKI_BASE", "http://localhost:3030");
+        let stg = env_nonempty("STAGING_DATASET", "staging");
+        let door = env_nonempty("ATHENA_MAKE_STAGING_URL", "http://localhost:3368");
+        let query = format!("{}/{stg}/query", base.trim_end_matches('/'));
+        std::env::set_var("FUSEKI_QUERY", &query);
+        std::env::set_var("CHORUS_OWL_API", &door);
+        println!("graph-target|staging|{query}|{door}");
+    }
     //
     // --store-only: run the store checks and skip the door comparison.
     //

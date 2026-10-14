@@ -17,6 +17,8 @@ env:
 handler_on:
   failure:
     command: '${CHORUS_HOME}/platform/scripts/ops-nudge ${ROLE} "werk v2 #${CARD} run failed · dagu ${DAG_RUN_ID} · /cws ${CARD}"'
+  success:
+    command: '${CHORUS_HOME}/platform/scripts/werk-v2 ${CARD} ${ROLE} || { ${CHORUS_HOME}/platform/scripts/ops-nudge ${ROLE} "chorus-athena #${CARD} passed but werk-v2 could not enqueue its werk run · dagu ${DAG_RUN_ID}"; exit 1; }'
 steps:
   - name: skill-athena-validate-shape
     description: "athena-validate"
@@ -25,38 +27,11 @@ steps:
     description: "athena-gen"
     depends: [skill-athena-validate-shape]
     command: "${HOME}/.chorus/bin/chorus-runner call athena-gen args=generate args=--card args=${CARD}"
-  - name: skill-athena-deploy-seed
+  - name: skill-athena-deploy
     description: "athena-deploy"
     depends: [skill-athena-gen]
     command: "${HOME}/.chorus/bin/chorus-runner call athena-deploy args=staging args=--card args=${CARD}"
   - name: skill-athena-validate-validate
     description: "athena-validate"
-    depends: [skill-athena-deploy-seed]
-    command: "${HOME}/.chorus/bin/chorus-runner call athena-validate args=--sweep"
-  - name: skill-werk-go
-    description: "Jeff's go"
-    depends: [skill-athena-validate-validate]
-    id: skill_werk_go
-    action: human.task
-    with:
-      prompt: "Jeff's go for #${CARD}?"
-      form:
-        type: object
-        properties:
-          accepter:
-            type: string
-            enum: [jeff, wren, kade, silas]
-          decision:
-            type: string
-            enum: [go, no]
-        required: [accepter, decision]
-  - name: athena-land
-    description: "enqueue the land on the athena-land queue"
-    depends: [skill-werk-go]
-    preconditions:
-      - condition: "${skill_werk_go.outputs.decision}"
-        expected: "go"
-    action: dag.enqueue
-    with:
-      dag: athena-land
-      params: "CARD=${CARD} ROLE=${ROLE} ACCEPTER=${skill_werk_go.outputs.accepter}"
+    depends: [skill-athena-deploy]
+    command: "${HOME}/.chorus/bin/chorus-runner call athena-validate args=--staging"

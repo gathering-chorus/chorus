@@ -45,7 +45,7 @@ scope() { printf '#!/usr/bin/env bash\necho "$@" >> "%s/scoped"\n%s\n' "$T" "$1"
   [[ "$output" == *"1 model file(s)"* ]] || false
   grep -q "scope $T/home ${LANDED}^..${LANDED}" "$T/scoped"
   # by NAME (dagu runs canonical's copy), with the card, its role, a run id naming the card
-  grep -q -- "--config $T/home/platform/config/dagu.yaml enqueue --run-id athena-land-77-[0-9]*-[0-9]* athena-land -- CARD=77 ROLE=kade ACCEPTER=" "$T/calls" || false
+  grep -q -- "--config $T/home/platform/config/dagu.yaml enqueue --run-id athena-land-77-[0-9]*-[0-9]* athena-land -- CARD=77 ROLE=kade$" "$T/calls" || false
   # and waited on that same run
   rid="$(grep -o 'enqueue --run-id [^ ]*' "$T/calls" | awk '{print $3}')"
   grep -q "status --run-id $rid athena-land" "$T/calls" || false

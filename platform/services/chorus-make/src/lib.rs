@@ -137,12 +137,6 @@ pub fn dagu_name(rows: &[Row], r: &Row) -> String {
 /// werk-demo's exit contract (#3237): 0 go, 2 presented and held, 1 error.
 pub const PRESENTED_EXIT: u8 = 2;
 
-/// #4515 — verbs whose exit 2 means REFUSED or UNMEASURED, never "presented
-/// and held": athena-validate exits 2 when the sweep could not run, athena-deploy
-/// when it refused before writing. Before a go they keep exit 2 a failure, or an
-/// unmeasured model would wait for Jeff's go looking green.
-pub const EXIT_2_IS_UNMEASURED: &[&str] = &["athena-validate", "athena-deploy", "athena-gen", "athena-model"];
-
 /// Who may give the go (DEC-048: GO = accept). The same set chorus_werk's
 /// `accepter` takes; werk-merge refuses a land without $ACCEPTER (#4474 run 9).
 pub const ACCEPTERS: [&str; 4] = ["jeff", "wren", "kade", "silas"];
@@ -165,20 +159,35 @@ pub fn land_dag(pipeline: &str) -> String {
     format!("{pipeline}-land")
 }
 
-/// #4515 — the model pipeline. A werk land's success handler (athena-land)
-/// enqueues this pipeline's land and waits for its result, so:
-///   - its land runs on its own queue, one model land at a time, never on
+/// #4515 — the model pipelines are GO-LESS (Jeff 2026-10-14): one go per card,
+/// and it is werk's. Two pipelines, each a straight run with no human step and
+/// no land half:
+///   - `athena`: Model → Make → Deploy (staging) → Validate. "If chorus-athena
+///     requires chorus-werk, it initiates chorus-werk" (Jeff): on success it
+///     enqueues the card's werk run (werk-v2); on failure nothing is enqueued.
+///   - `athena-land`: the prod Land, one step. Only a werk land starts it (its
+///     success handler, scripts/athena-land, enqueues it and waits for the
+///     result). It runs on its own queue, one model land at a time, never on
 ///     werk-land: the werk land holding werk-land would wait on a run queued
-///     behind itself;
-///   - its land carries no athena-land handler: it IS the model deploy, and
-///     a handler would enqueue itself again after every model land.
+///     behind itself. It carries no athena-land handler: it IS the model deploy.
+/// Every other pipeline without a go is still refused: a cicd whose go row went
+/// missing must never generate a land that runs without Jeff.
 pub const MODEL_PIPELINE: &str = "athena";
+pub const MODEL_LAND_PIPELINE: &str = "athena-land";
 pub const MODEL_LAND_QUEUE: &str = "athena-land";
 
-/// The queue a pipeline's land half runs on.
-pub fn land_queue(pipeline: &str) -> &'static str {
-    if pipeline == MODEL_PIPELINE { MODEL_LAND_QUEUE } else { LAND_QUEUE }
+/// Is this pipeline go-less by decision (the model pipelines)?
+pub fn go_less(name: &str) -> bool {
+    name == MODEL_PIPELINE || name == MODEL_LAND_PIPELINE
 }
+
+/// What `athena` does when it succeeds: the card's werk run, through werk-v2
+/// (its slot refresh, then the cicd enqueue). If that enqueue fails, the
+/// builder hears it; the handler goes red.
+pub const MODEL_THEN_WERK: &str = "${CHORUS_HOME}/platform/scripts/werk-v2 ${CARD} ${ROLE} || { ${CHORUS_HOME}/platform/scripts/ops-nudge ${ROLE} \"chorus-athena #${CARD} passed but werk-v2 could not enqueue its werk run · dagu ${DAG_RUN_ID}\"; exit 1; }";
+
+/// What every werk-style land does when it succeeds: athena-land, then the crawl.
+pub const LAND_THEN_MODEL: &str = "${CHORUS_HOME}/platform/scripts/athena-land ${CARD} ${ROLE} || { ${CHORUS_HOME}/platform/scripts/crawl-detached.sh; exit 1; }; ${CHORUS_HOME}/platform/scripts/crawl-detached.sh";
 
 fn sorted(rows: &[Row]) -> Result<Vec<Row>, Vec<String>> {
     let errs = check(rows);
@@ -212,7 +221,7 @@ fn fail_routes_in(all: &[Row], part: &[Row]) -> String {
 }
 
 /// The header both halves share: params, the machine's env, the failure nudge.
-fn preamble(out: &mut String, description: &str, queue: &str, params: &[&str], what: &str, routes: &str, land_hook: bool) {
+fn preamble(out: &mut String, description: &str, queue: &str, params: &[&str], what: &str, routes: &str, on_success: Option<&str>) {
     out.push_str(HEADER);
     out.push_str(&format!("description: {}\n", quote(description)));
     out.push_str(&format!("queue: {queue}\n"));
@@ -264,14 +273,16 @@ fn preamble(out: &mut String, description: &str, queue: &str, params: &[&str], w
     // werk-merge case; v2's land never passes through there, so #4496's
     // PolicyShape never reached the store (Wren, 22:48). On success only, after
     // accept: a slow or failed model run never holds the card's accept.
-    if land_hook {
+    if let Some(cmd) = on_success {
         // #4499 — then the crawl, as v1's crawl-delta did: launchd's crawler
         // job (its own identity; the workflow claims none) rebuilds the code
         // units and dependsOn edges the blast radius reads, every land
         // #4186 reopen — a failed model run turns this handler red (athena-land
         // exits 1) and still crawls; /cws reads its result line onto the card's
         // line. No shell variables: dagu expands $NAME in a command itself.
-        out.push_str("  success:\n    command: '${CHORUS_HOME}/platform/scripts/athena-land ${CARD} ${ROLE} || { ${CHORUS_HOME}/platform/scripts/crawl-detached.sh; exit 1; }; ${CHORUS_HOME}/platform/scripts/crawl-detached.sh'\n");
+        // #4515 — the athena pipeline's own success command (MODEL_THEN_WERK)
+        // rides the same slot.
+        out.push_str(&format!("  success:\n    command: '{cmd}'\n"));
     }
     out.push_str("steps:\n");
 }
@@ -348,7 +359,7 @@ fn command_step(out: &mut String, rows: &[Row], r: &Row, prev: &Option<String>, 
         format!("{} {}", r.implemented_by, r.mode)
     };
     out.push_str(&format!("    command: {}\n", quote(&cmd)));
-    if before_a_human && !EXIT_2_IS_UNMEASURED.contains(&r.implemented_by.as_str()) {
+    if before_a_human {
         // #4474 run 6: the verb before a human go presents and exits
         // PRESENTED_EXIT ("held for the go", werk-demo #3237); in v2 the
         // go is the next dagu step, so held is this step's success.
@@ -364,11 +375,14 @@ fn command_step(out: &mut String, rows: &[Row], r: &Row, prev: &Option<String>, 
 /// Refuses (with every reason) rather than writing a file that would run part
 /// of a pipeline.
 pub fn generate(pipeline: &str, rows: &[Row]) -> Result<String, Vec<String>> {
+    if go_less(pipeline) {
+        return generate_go_less(pipeline, rows);
+    }
     let rows = sorted(rows)?;
     // the card half routes only the steps it runs: up to and including the go
     let card_end = rows.iter().position(|r| r.executor == "human").map_or(rows.len(), |g| g + 1);
     let mut out = String::new();
-    preamble(&mut out, &format!("werk v2 — pipeline {pipeline}, generated from the graph"), CARD_QUEUE, &["CARD", "ROLE"], "run", &fail_routes_in(&rows, &rows[..card_end]), false);
+    preamble(&mut out, &format!("werk v2 — pipeline {pipeline}, generated from the graph"), CARD_QUEUE, &["CARD", "ROLE"], "run", &fail_routes_in(&rows, &rows[..card_end]), None);
     let mut prev: Option<String> = None;
     for (i, r) in rows.iter().enumerate() {
         let before_a_human = rows.get(i + 1).is_some_and(|n| n.executor == "human");
@@ -399,7 +413,7 @@ pub fn generate(pipeline: &str, rows: &[Row]) -> Result<String, Vec<String>> {
             out.push_str("        required: [accepter, decision]\n");
             let land = land_dag(pipeline);
             out.push_str(&format!("  - name: {land}\n"));
-            out.push_str(&format!("    description: {}\n", quote(&format!("enqueue the land on the {} queue", land_queue(pipeline)))));
+            out.push_str(&format!("    description: {}\n", quote(&format!("enqueue the land on the {LAND_QUEUE} queue"))));
             out.push_str(&format!("    depends: [{id}]\n"));
             out.push_str(&format!(
                 "    preconditions:\n      - condition: \"${{{go}.outputs.decision}}\"\n        expected: \"go\"\n"
@@ -415,14 +429,44 @@ pub fn generate(pipeline: &str, rows: &[Row]) -> Result<String, Vec<String>> {
     Err(vec!["no human go in the rows: a pipeline with no go has no land to enqueue".to_string()])
 }
 
+/// #4515 — a go-less pipeline (go_less): every step in order, no human step,
+/// no land half. A go row in its rows is refused: the decision is no go.
+pub fn generate_go_less(pipeline: &str, rows: &[Row]) -> Result<String, Vec<String>> {
+    let rows = sorted(rows)?;
+    if let Some(h) = rows.iter().find(|r| r.executor == "human") {
+        return Err(vec![format!(
+            "pipeline {pipeline} has no go (Jeff 2026-10-14: one go per card, in werk), but its rows call {}", h.skill)]);
+    }
+    let land = pipeline == MODEL_LAND_PIPELINE;
+    let mut out = String::new();
+    preamble(
+        &mut out,
+        &format!("werk v2 — pipeline {pipeline}, generated from the graph"),
+        if land { MODEL_LAND_QUEUE } else { CARD_QUEUE },
+        &["CARD", "ROLE"],
+        if land { "land" } else { "run" },
+        &fail_routes(&rows),
+        (pipeline == MODEL_PIPELINE).then_some(MODEL_THEN_WERK),
+    );
+    let mut prev: Option<String> = None;
+    for r in &rows {
+        command_step(&mut out, &rows, r, &prev, false);
+        prev = Some(dagu_name(&rows, r));
+    }
+    Ok(out)
+}
+
 /// The land half: every step after the go, on the land queue, one land at a time.
 pub fn generate_land(pipeline: &str, rows: &[Row]) -> Result<String, Vec<String>> {
+    if go_less(pipeline) {
+        return Err(vec![format!("pipeline {pipeline} is go-less: it has no land half")]);
+    }
     let rows = sorted(rows)?;
     let Some(go) = rows.iter().position(|r| r.executor == "human") else {
         return Err(vec!["no human go in the rows: nothing to land".to_string()]);
     };
     let mut out = String::new();
-    preamble(&mut out, &format!("werk v2 — the land of pipeline {pipeline}, generated from the graph"), land_queue(pipeline), &["CARD", "ROLE", "ACCEPTER"], "land", &fail_routes_in(&rows, &rows[go + 1..]), pipeline != MODEL_PIPELINE);
+    preamble(&mut out, &format!("werk v2 — the land of pipeline {pipeline}, generated from the graph"), LAND_QUEUE, &["CARD", "ROLE", "ACCEPTER"], "land", &fail_routes_in(&rows, &rows[go + 1..]), Some(LAND_THEN_MODEL));
     let mut prev: Option<String> = None;
     for r in &rows[go + 1..] {
         command_step(&mut out, &rows, r, &prev, false);
@@ -434,6 +478,9 @@ pub fn generate_land(pipeline: &str, rows: &[Row]) -> Result<String, Vec<String>
 /// The workflow a file is named for: `<pipeline>` is the card half,
 /// `<pipeline>-land` the land half, both from the pipeline's rows.
 pub fn generate_named(name: &str, rows: &[Row]) -> Result<String, Vec<String>> {
+    if go_less(name) {
+        return generate(name, rows);
+    }
     match name.strip_suffix("-land") {
         Some(pipeline) => generate_land(pipeline, rows),
         None => generate(name, rows),
@@ -442,6 +489,10 @@ pub fn generate_named(name: &str, rows: &[Row]) -> Result<String, Vec<String>> {
 
 /// The pipeline whose rows a name reads (`cicd-land` reads `cicd`).
 pub fn pipeline_of(name: &str) -> &str {
+    // #4515 — `athena-land` is a pipeline of its own, not athena's land half
+    if go_less(name) {
+        return name;
+    }
     name.strip_suffix("-land").unwrap_or(name)
 }
 
