@@ -889,7 +889,7 @@ app.get('/api/chorus/properties/resolve', async (req, res) => {
 // #3029 — pain board endpoints. Same queryPainRollup the MCP tool + regression
 // test use (one source, can't drift). Validated contract: {job} selector +
 // event-field anchor. The HTML pages under public/borg/ consume these.
-import { queryPainRollup, type RollupWindow, logsForCard, logsForTrace } from './handlers/logs-query';
+import { queryPainRollup, type RollupWindow, type TimeWindow, logsForCard, logsForTrace, recentErrors } from './handlers/logs-query';
 const painLokiDeps = {
   fetchImpl: fetch,
   lokiUrl: process.env.LOKI_URL ?? 'http://localhost:3102',
@@ -919,16 +919,35 @@ app.get('/api/chorus/pain/card/:id', async (req, res) => {
 // (logsForCard / logsForTrace); the /borg/trace.html page renders this verbatim
 // so a human view and an agent view can never diverge. Purpose-named routes
 // (vs /pain/card which is failure-triage-flavored) — same function underneath.
+// #4515 — ?window= picks the window (the runner's logs tools pass it); a bad
+// window is refused by name, never widened to a default.
+const LOG_WINDOWS: TimeWindow[] = ['5m', '15m', '1h', '6h', '1d', '7d'];
+function logWindow(q: unknown, dflt: TimeWindow): TimeWindow | null {
+  if (q === undefined || q === '') return dflt;
+  return LOG_WINDOWS.includes(q as TimeWindow) ? (q as TimeWindow) : null;
+}
 app.get('/api/chorus/logs/card/:id', async (req, res) => {
   const id = Number(req.params.id);
   if (!Number.isFinite(id)) { res.status(400).json({ ok: false, reason: 'bad-card-id' }); return; }
-  const result = await logsForCard({ card_id: id, time_window: '1d' }, painLokiDeps);
+  const w = logWindow(req.query.window, '1d');
+  if (!w) { res.status(400).json({ ok: false, reason: 'bad-window', allowed: LOG_WINDOWS }); return; }
+  const result = await logsForCard({ card_id: id, time_window: w }, painLokiDeps);
   res.status(result.ok ? 200 : 502).json(result);
 });
 app.get('/api/chorus/logs/trace/:traceId', async (req, res) => {
   const traceId = req.params.traceId;
   if (!traceId) { res.status(400).json({ ok: false, reason: 'bad-trace-id' }); return; }
-  const result = await logsForTrace({ trace_id: traceId, time_window: '1d' }, painLokiDeps);
+  const w = logWindow(req.query.window, '1d');
+  if (!w) { res.status(400).json({ ok: false, reason: 'bad-window', allowed: LOG_WINDOWS }); return; }
+  const result = await logsForTrace({ trace_id: traceId, time_window: w }, painLokiDeps);
+  res.status(result.ok ? 200 : 502).json(result);
+});
+// #4515 — chorus_logs_recent_errors' route (the old MCP server built this LogQL itself)
+app.get('/api/chorus/logs/errors', async (req, res) => {
+  const w = logWindow(req.query.window, '1h');
+  if (!w) { res.status(400).json({ ok: false, reason: 'bad-window', allowed: LOG_WINDOWS }); return; }
+  const role = typeof req.query.role === 'string' && req.query.role ? req.query.role : undefined;
+  const result = await recentErrors({ role, time_window: w }, painLokiDeps);
   res.status(result.ok ? 200 : 502).json(result);
 });
 

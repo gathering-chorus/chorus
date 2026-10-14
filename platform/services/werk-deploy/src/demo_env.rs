@@ -269,6 +269,8 @@ pub const OPTIONAL_TRIGGERS: &[(&str, &[&str])] = &[
 pub fn runner_extra_env(role: &str, demo_store_dir: &str, css_issuer: &str, chorus_home: &str, home: &str, path: &str) -> R<Vec<(String, String)>> {
     Ok(vec![
         ("CHORUS_DOOR".into(), format!("http://127.0.0.1:{}", env_port_for("athena-make", role)?)),
+        // #4515 — the runner's http tools reach the werk's own chorus-api ({api})
+        ("CHORUS_API_URL".into(), format!("http://127.0.0.1:{}", env_port_for("chorus-api", role)?)),
         ("CHORUS_RUNNER_TASKS".into(), format!("{}/runner-tasks", demo_store_dir)),
         ("CSS_ISSUER".into(), css_issuer.to_string()),
         ("CHORUS_HOME".into(), chorus_home.to_string()),
@@ -1532,6 +1534,7 @@ mod services_for_diff_4398 {
         let env = runner_extra_env("wren", "/w/.chorus-demo", "https://id.example/", "/c", "/Users/x", "/usr/bin").unwrap();
         let get = |k: &str| env.iter().find(|(a, _)| a == k).map(|(_, v)| v.clone()).unwrap();
         assert_eq!(get("CHORUS_DOOR"), format!("http://127.0.0.1:{}", env_port_for("athena-make", "wren").unwrap()));
+        assert_eq!(get("CHORUS_API_URL"), format!("http://127.0.0.1:{}", env_port_for("chorus-api", "wren").unwrap()));
         assert_eq!(get("CHORUS_RUNNER_TASKS"), "/w/.chorus-demo/runner-tasks");
         assert!(!get("CHORUS_RUNNER_TASKS").starts_with("/Users/x/.chorus"), "the variant would write prod's tasks");
         assert_eq!(env_port_for("chorus-runner", "wren").unwrap(), 3374);

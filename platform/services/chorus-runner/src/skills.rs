@@ -82,9 +82,11 @@ pub fn skill_tools(rows: &[Value], inputs: &Map<String, Value>) -> (Vec<SkillToo
             unmeasured.push(Unmeasured { skill: name, reason: "names no binary (implementedBy)".into() });
             continue;
         }
-        if executor == "http" && http_target(binary, &Map::new()).is_err() {
-            unmeasured.push(Unmeasured { skill: name, reason: format!("implementedBy '{binary}' is not METHOD http://127.0.0.1:…") });
-            continue;
+        if executor == "http" {
+            if let Err(e) = http_target(binary, &Map::new()) {
+                unmeasured.push(Unmeasured { skill: name, reason: format!("implementedBy '{binary}': {e}") });
+                continue;
+            }
         }
         let runs_as = match s(row, "runsAs").rsplit(['#', '/', ':']).next().unwrap_or("") {
             "caller" => RunsAs::Caller,
@@ -313,23 +315,40 @@ pub fn http_target(implemented_by: &str, args: &Map<String, Value>) -> Result<(S
     if !matches!(method, "GET" | "POST" | "PUT" | "PATCH" | "DELETE") {
         return Err(format!("'{method}' is not an HTTP method"));
     }
-    if !(url.starts_with("http://127.0.0.1:") || url.starts_with("http://localhost:")) {
-        return Err(format!("{url} is not a loopback address"));
-    }
-    let mut out = url.to_string();
+    // #4515 (Silas 21:33) — a route names one of the runner's own Chorus
+    // services, never an address: the caller's credential goes nowhere else
+    // (not Loki, not off the machine), and a demo runner reaches its werk's
+    // services because the base comes from its own settings.
+    let (service, rest) = url.split_once('}').filter(|(s, r)| s.starts_with('{') && r.starts_with('/')).ok_or_else(|| format!("{url} must start with {{api}}, {{door}} or {{pulse}}"))?;
+    let base = service_base(&service[1..]).ok_or_else(|| format!("{url} names {}}}, not one of {{api}}, {{door}}, {{pulse}}", service))?;
+    let mut out = rest.to_string();
     while let (Some(i), Some(j)) = (out.find('{'), out.find('}')) {
         if j < i {
             break;
         }
-        let k = out[i + 1..j].to_string();
-        let v = args.get(&k).map(|v| v.as_str().map(String::from).unwrap_or_else(|| v.to_string())).unwrap_or_default();
-        if v.is_empty() && !args.is_empty() {
+        // `{name=default}` fills an optional argument the caller left out
+        let inner = out[i + 1..j].to_string();
+        let (k, default) = inner.split_once('=').map(|(k, d)| (k.to_string(), Some(d.to_string()))).unwrap_or((inner, None));
+        let given = args.get(&k).map(|v| v.as_str().map(String::from).unwrap_or_else(|| v.to_string())).unwrap_or_default();
+        let v = if given.is_empty() { default.clone().unwrap_or_default() } else { given };
+        if v.is_empty() && default.is_none() && !args.is_empty() {
             return Err(format!("{k} is needed for {url}"));
         }
         let enc: String = v.bytes().map(|b| if b.is_ascii_alphanumeric() || b"-_.~".contains(&b) { (b as char).to_string() } else { format!("%{b:02X}") }).collect();
         out.replace_range(i..=j, &enc);
     }
-    Ok((method.to_string(), out))
+    Ok((method.to_string(), format!("{}{}", base.trim_end_matches('/'), out)))
+}
+
+/// The runner's own Chorus services, from its settings (env-up sets them per werk).
+pub fn service_base(name: &str) -> Option<String> {
+    let (var, dflt) = match name {
+        "api" => ("CHORUS_API_URL", "http://127.0.0.1:3340"),
+        "door" => ("CHORUS_DOOR", "http://127.0.0.1:3360"),
+        "pulse" => ("CHORUS_PULSE_URL", "http://127.0.0.1:3475"),
+        _ => return None,
+    };
+    Some(std::env::var(var).ok().filter(|v| !v.is_empty()).unwrap_or_else(|| dflt.to_string()))
 }
 
 /// #4515 — a tool argument that names a role (`chorus:namesRole` on its shape

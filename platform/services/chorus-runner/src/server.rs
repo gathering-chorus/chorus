@@ -174,9 +174,10 @@ pub fn run_http(method: &str, url: &str, body: &str, token: &str, trace: &str, t
         return (false, format!("could not stage the body: {e}"), 500);
     }
     let config = format!(
-        "url = \"{url}\"\nrequest = \"{method}\"\nsilent\nmax-time = {timeout_s}\nwrite-out = \"\\n%{{http_code}}\"\nheader = \"Content-Type: application/json\"\nheader = \"traceparent: {}\"\nheader = \"Authorization: Bearer {token}\"\ndata-binary = \"@{}\"\n",
+        "url = \"{url}\"\nrequest = \"{method}\"\nsilent\nmax-time = {timeout_s}\nwrite-out = \"\\n%{{http_code}}\"\nheader = \"Content-Type: application/json\"\nheader = \"traceparent: {}\"\nheader = \"Authorization: Bearer {token}\"\n{}",
         crate::traceparent(trace),
-        body_file.display()
+        // a GET carries its arguments in the route, never a body
+        if method == "GET" { String::new() } else { format!("data-binary = \"@{}\"\n", body_file.display()) }
     );
     let out = Command::new("curl")
         .args(["-K", "-"])
