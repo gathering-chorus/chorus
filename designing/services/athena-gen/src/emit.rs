@@ -192,6 +192,9 @@ pub fn tool_inputs_json(inputs: &[(String, Vec<crate::model::ToolArg>)]) -> Stri
             if !a.description.is_empty() {
                 p.insert("description".into(), json!(a.description));
             }
+            if let Some(r) = &a.names_role {
+                p.insert("namesRole".into(), json!(r));
+            }
             props.insert(a.name.clone(), Value::Object(p));
             if a.required {
                 required.push(json!(a.name));

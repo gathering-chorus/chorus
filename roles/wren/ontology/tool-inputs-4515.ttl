@@ -11,6 +11,8 @@
 @prefix owl:    <http://www.w3.org/2002/07/owl#> .
 @prefix rdfs:   <http://www.w3.org/2000/01/rdf-schema#> .
 
+chorus:namesRole     a owl:AnnotationProperty ; rdfs:label "names a role" ;
+    rdfs:comment "On a ToolInput property: its value must be a role the roles door lists. \"agent\" = a role that acts; \"peer\" = any agent or human (#4515)." .
 chorus:toolTo        a owl:DatatypeProperty ; rdfs:label "to" ;        rdfs:comment "A nudge's recipient role (#4515)." .
 chorus:toolMessage   a owl:DatatypeProperty ; rdfs:label "message" ;   rdfs:comment "A nudge's text (#4515)." .
 chorus:toolExpects   a owl:DatatypeProperty ; rdfs:label "expects" ;   rdfs:comment "What a nudge needs back (#3403, #4515)." .
@@ -52,7 +54,7 @@ chorus:CardsSetInput a sh:NodeShape , chorus:ToolInput ;
     rdfs:label "chorus_cards_set input" ;
     rdfs:comment "No status: status is a transition, not a field. Lanes go through chorus_cards_move, Done through chorus_cards_done." ;
     sh:property [ sh:path chorus:toolCardId ; sh:minCount 1 ; sh:maxCount 1 ; sh:datatype xsd:integer ; sh:minInclusive 1 ; sh:order 1 ; sh:name "id" ; sh:description "Card id." ] ;
-    sh:property [ sh:path chorus:toolOwner ;      sh:maxCount 1 ; sh:datatype xsd:string ; sh:order 2 ;  sh:name "owner" ;      sh:description "Owner role." ] ;
+    sh:property [ sh:path chorus:toolOwner ;      sh:maxCount 1 ; sh:datatype xsd:string ; sh:order 2 ;  sh:name "owner" ;      chorus:namesRole "peer" ; sh:description "Owner role: any agent or human the roles door lists." ] ;
     sh:property [ sh:path chorus:toolPriority ;   sh:maxCount 1 ; sh:datatype xsd:string ; sh:order 3 ;  sh:in ( "P1" "P2" "P3" ) ; sh:name "priority" ; sh:description "P1, P2 or P3." ] ;
     sh:property [ sh:path chorus:toolCardType ;   sh:maxCount 1 ; sh:datatype xsd:string ; sh:order 4 ;  sh:name "type" ;       sh:description "new, enhance, fix, chore or swat." ] ;
     sh:property [ sh:path chorus:toolOrigin ;     sh:maxCount 1 ; sh:datatype xsd:string ; sh:order 5 ;  sh:in ( "reflective" "reactive" ) ; sh:name "origin" ; sh:description "reflective or reactive." ] ;

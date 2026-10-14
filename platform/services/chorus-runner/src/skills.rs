@@ -331,3 +331,44 @@ pub fn http_target(implemented_by: &str, args: &Map<String, Value>) -> Result<(S
     }
     Ok((method.to_string(), out))
 }
+
+/// #4515 — a tool argument that names a role (`chorus:namesRole` on its shape
+/// property, athena-gen's `namesRole` key) must be one the roles door lists:
+/// "agent" for a role that acts, "peer" for any agent or human (Jeff owns cards
+/// too). The old server checked `role`/`owner`/`target` by hand in every tool
+/// (roles-arg.ts); here the shape says which arguments are roles, once.
+/// Returns (argument, value, kind) for each role argument present in the call.
+pub fn role_args(args: &Map<String, Value>, schema: &Map<String, Value>) -> Vec<(String, String, String)> {
+    let props = schema.get("properties").and_then(Value::as_object).cloned().unwrap_or_default();
+    let mut out = Vec::new();
+    for (k, p) in props {
+        let Some(kind) = p.get("namesRole").and_then(Value::as_str) else { continue };
+        if let Some(v) = args.get(&k).and_then(Value::as_str).filter(|v| !v.is_empty()) {
+            out.push((k.clone(), v.to_string(), kind.to_string()));
+        }
+    }
+    out
+}
+
+/// The first role argument the roles door does not list, as a refusal; or
+/// None. `rows` is the door's `/v1/roles/roles` answer. Pure.
+pub fn role_refusal(checks: &[(String, String, String)], rows: &Value) -> Option<String> {
+    let Some(rows) = rows.get("data").and_then(Value::as_array) else {
+        return Some("the roles door answered with no data list; nothing ran".into());
+    };
+    let kind = |r: &Value| r.get("roleKind").and_then(Value::as_str).unwrap_or("").to_string();
+    let names = |want: &dyn Fn(&str) -> bool| {
+        let mut v: Vec<String> = rows.iter().filter(|r| want(&kind(r))).filter_map(|r| r.get("name").and_then(Value::as_str).map(String::from)).collect();
+        v.sort();
+        v
+    };
+    let agents = names(&|k| k == "agent");
+    let peers = names(&|k| k == "agent" || k == "human");
+    for (arg, value, k) in checks {
+        let allowed = if k == "agent" { &agents } else { &peers };
+        if !allowed.contains(&value.to_lowercase()) {
+            return Some(format!("Unknown {arg} '{value}' — the roles door lists {}", allowed.join(" | ")));
+        }
+    }
+    None
+}

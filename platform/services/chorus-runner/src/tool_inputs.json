@@ -67,7 +67,8 @@
         "type": "string"
       },
       "owner": {
-        "description": "Owner role.",
+        "description": "Owner role: any agent or human the roles door lists.",
+        "namesRole": "peer",
         "type": "string"
       },
       "priority": {

@@ -133,6 +133,19 @@ pub fn prepare_with(tool: &SkillTool, args: &serde_json::Map<String, serde_json:
     let who = crate::skills::run_identity(tool, caller).map_err(|e| (e, 403))?;
     let args = crate::skills::coerce_args(args, &tool.schema);
     check_args(&args, &tool.schema).map_err(|e| (e, 400))?;
+    // #4515 — role arguments name roles the door lists; the door is read only
+    // when the call has one, and a door that does not answer refuses the call
+    let roles = crate::skills::role_args(&args, &tool.schema);
+    if !roles.is_empty() {
+        let (code, body) = door_get("/v1/roles/roles?limit=500", trace, 3);
+        if code != 200 {
+            return Err((format!("the roles door did not answer (HTTP {code}); {} names a role it must check, so nothing ran", tool.name), 503));
+        }
+        let rows: serde_json::Value = serde_json::from_str(&body).unwrap_or(serde_json::Value::Null);
+        if let Some(why) = crate::skills::role_refusal(&roles, &rows) {
+            return Err((why, 400));
+        }
+    }
     let argv = argv(&tool.template, &args, crate::skills::bare(caller));
     let forwarded = if tool.runs_as == crate::skills::RunsAs::Caller { caller_token.map(String::from) } else { None };
     let token = match forwarded {
