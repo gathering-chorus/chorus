@@ -270,6 +270,23 @@ pub fn declared_classes(nt: &str) -> Vec<String> {
     out
 }
 
+/// #4531 — classes whose instances are SHACL shapes (`rdfs:subClassOf
+/// sh:NodeShape`), e.g. ToolInput: the arguments a tool takes. They are schema,
+/// not rows, so no collection route serves them and a served check skips them.
+pub fn shape_classes(nt: &str) -> Vec<String> {
+    let mut out: Vec<String> = nt
+        .lines()
+        .filter_map(nt_triple)
+        .filter(|(_, p, o)| {
+            *p == "<http://www.w3.org/2000/01/rdf-schema#subClassOf>" && *o == "<http://www.w3.org/ns/shacl#NodeShape>"
+        })
+        .map(|(s, _, _)| s.to_string())
+        .collect();
+    out.sort();
+    out.dedup();
+    out
+}
+
 /// The shape a class has in the model, by local name: a node shape whose
 /// sh:targetClass is the class, else a node shape named `<Class>Shape` in the
 /// class's namespace (the old athena.yml `shape` step's rule). None = no shape.

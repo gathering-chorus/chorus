@@ -12,6 +12,8 @@ CHORUS_ROOT="${CHORUS_ROOT:-$(cd "$(dirname "$0")/../.." && pwd)}"
 SPINE="${WERK_BUDGET_SPINE:-$HOME/.chorus/chorus.log}"
 BUDGETS="${WERK_BUDGET_FILE:-$(cd "$(dirname "$0")/.." && pwd)/config/werk-phase-budgets.tsv}"
 WINDOW_H="${WERK_BUDGET_WINDOW_H:-24}"
+# #4531 — a perf check runs in the nightly lane only (Jeff 2026-10-14).
+[ "${WERK_TEST_LANE:-}" = "nightly" ] || { echo "SKIP: perf check, nightly lane only (WERK_TEST_LANE=${WERK_TEST_LANE:-unset})"; exit 0; }
 [ -f "$SPINE" ] || { echo "SKIP: no spine at $SPINE"; exit 0; }
 [ -f "$BUDGETS" ] || { echo "FAIL: budget file missing at $BUDGETS — a perf gate with no budgets is hollow"; exit 1; }
 

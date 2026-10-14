@@ -163,7 +163,8 @@ describe('#4417 the spine log in tests is a temp file', () => {
     expect(process.env.CHORUS_FUSEKI_QUERY).toBe('http://127.0.0.1:9/query');
     const t0 = Date.now();
     await expect(fetch(`${process.env.ATHENA_MAKE_URL}/v1/identity/sessions`, { method: 'PUT', body: '{}' })).rejects.toThrow();
-    expect(Date.now() - t0).toBeLessThan(2000);
+    // #4531 — the time limit measures the box: nightly only. The refusal above is the claim.
+    if (process.env.WERK_TEST_LANE === 'nightly') expect(Date.now() - t0).toBeLessThan(2000);
   });
 
   test('the guard key path is a temp file, never ~/.chorus/share-oidc.json', () => {

@@ -104,6 +104,7 @@ chorus:runsAs a owl:DatatypeProperty ; rdfs:label "runs as" ;
 # with no target class: it never becomes a door collection; athena-gen turns
 # each one into the JSON Schema the runner offers for the tool.
 chorus:ToolInput a owl:Class ; rdfs:label "Tool input" ;
+    rdfs:subClassOf sh:NodeShape ;  # #4531: its instances are shapes, so no route serves it
     rdfs:comment "The arguments a tool takes, as a SHACL shape; athena-gen generates its JSON Schema." .
 
 # borg-tend-herald (Silas, #4405): one pass of a sensor, the same arguments as the

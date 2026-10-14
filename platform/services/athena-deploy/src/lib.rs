@@ -224,6 +224,18 @@ pub fn parse_retirement(line: &str) -> Result<Option<Retirement>, String> {
     }))
 }
 
+/// #4531 — what a source-deleted refusal tells the caller to do. It named
+/// `athena-model retire-subject`, a command that does not exist (10-14, #4515's
+/// land). A retirement is a staged line in the retirements file, carried by a
+/// card's land like any other source change.
+pub fn stage_retirement_hint(name: &str) -> String {
+    format!(
+        "  -> stage it: append a line to designing/schemas/model-retirements.jsonl in your card, e.g.\n     \
+         {{\"retire_subject\": \"https://jeffbridwell.com/chorus#{name}\", \"reason\": \"<why>\", \"by\": \"<role>\", \"card\": \"<id>\", \"status\": \"staged\"}}\n     \
+         then land the card; or restore the subject to its file if the removal was accidental."
+    )
+}
+
 /// Decide what one entry does. Pure, so the #3788 lockout has a test.
 pub fn retirement_action(r: &Retirement, default_graph: &str) -> RetireAction {
     if r.status != "staged" {
@@ -1181,11 +1193,7 @@ pub fn run_athena_deploy_plan(plan: Option<&card::CardPlan>) -> Result<String, S
                 for (name, file) in gone.iter().take(5) {
                     eprintln!("  chorus:{name}  (was declared in {file})");
                 }
-                eprintln!(
-                    "  -> stage it: athena-model retire-subject <iri> --card <id>, then re-run \
-                     this deploy; or restore the subject to its file if the removal was \
-                     accidental."
-                );
+                eprintln!("{}", stage_retirement_hint(&gone[0].0));
                 return Err(fail(&format!("source-deleted-subjects:{}", gone.len())));
             }
         }

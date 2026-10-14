@@ -7277,3 +7277,15 @@ mod extension_4499 {
         assert!(exercisers_of("roles/silas/.sensitive-paths", &[row("platform/tests/x.bats")], &text, &none, None).is_empty());
     }
 }
+
+
+/// #4531 — the env var every spawned suite reads to learn its lane, and its
+/// value: `nightly` or `card`. Timing checks run only when it says nightly.
+pub const LANE_ENV: &str = "WERK_TEST_LANE";
+pub fn lane_name(nightly: bool) -> &'static str {
+    if nightly { "nightly" } else { "card" }
+}
+/// True only under the nightly lane; unset (a developer's shell) is not nightly.
+pub fn timing_checks_on() -> bool {
+    std::env::var(LANE_ENV).as_deref() == Ok("nightly")
+}
