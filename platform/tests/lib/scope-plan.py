@@ -7,7 +7,8 @@ write should be let in. This compares that with what the door actually does.
 
   plan    <permissions.json> <class-graphs.json> <role>
           prints one line per class: "deny <Class>" for every class the rows
-          refuse the role, then "allow <Class>" for ONE class they let it write.
+          refuse the role, "append <Class>" for every class on a graph the role
+          holds acl:Append on, then "allow <Class>" for ONE class it may write.
           A class whose serving graph could not be read is "unknown" (red).
   expect  <class-graphs.json> <refused graph> ...
           the single API walk's plan (#4022): "deny" for every class on a graph
@@ -25,18 +26,25 @@ import json
 import sys
 
 WRITE = "http://www.w3.org/ns/auth/acl#Write"
+APPEND = "http://www.w3.org/ns/auth/acl#Append"
 
 
 def plan(perms, graphs, role):
     rows = perms.get("data", perms) if isinstance(perms, dict) else perms
-    writable = {r["accessTo"] for r in rows
-                if r.get("agent") == f"principal-{role}" and r.get("mode") == WRITE}
+    mine = [r for r in rows if r.get("agent") == f"principal-{role}"]
+    writable = {r["accessTo"] for r in mine if r.get("mode") == WRITE}
+    # #4022 reopen 2026-10-14 — since #4517 an acl:Append row opens a create and
+    # the caller's own row, never another owner's. Counting only Write read every
+    # Append class as deny, and the door (rightly) let the create through: red 3/3.
+    # Each Append class is walked: its own-row cycle must pass.
+    appendable = {r["accessTo"] for r in mine if r.get("mode") == APPEND} - writable
     known = {c: g for c, g in graphs.items() if g.startswith("urn:")}
     unknown = sorted(c for c in graphs if c not in known)
-    deny = sorted(c for c, g in known.items() if g not in writable)
+    deny = sorted(c for c, g in known.items() if g not in writable | appendable)
+    append = sorted(c for c, g in known.items() if g in appendable)
     allow = sorted(c for c, g in known.items() if g in writable)
     return ([("unknown", c) for c in unknown] + [("deny", c) for c in deny]
-            + [("allow", c) for c in allow[:1]])
+            + [("append", c) for c in append] + [("allow", c) for c in allow[:1]])
 
 
 def expect(graphs, refused):
@@ -82,7 +90,8 @@ def verdict(planned, results):
                 continue
             wrong.append(f"{cls}: rows deny, door answered {got} {detail[:80]}".rstrip())
         elif got != "PASS":
-            wrong.append(f"{cls}: rows allow, door answered {got} {detail[:80]}".rstrip())
+            rows = "rows append (own row)" if want == "append" else "rows allow"
+            wrong.append(f"{cls}: {rows}, door answered {got} {detail[:80]}".rstrip())
     return wrong
 
 
