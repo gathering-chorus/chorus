@@ -36,7 +36,7 @@ setup() {
 }
 
 # #4432 — the places Abby has to show up read the role list; none types three names.
-# #4515 — the old MCP server's main-stdio.ts left the list with that server.
+# #4515 — the old MCP server's stdio entry left the list with that server.
 SCANNED=(
   directing/clearing/src/tiles.ts directing/clearing/src/tiles-spine.ts directing/clearing/src/router.ts
   directing/clearing/src/server.ts directing/clearing/src/spine-tail.ts directing/clearing/src/chat.ts

@@ -6,8 +6,7 @@
 # (chorus_nudge_message → chorus-nudge-message, herald_run → herald-run, ...)
 # must not be called by their old underscore names anywhere an agent, hook or
 # permission would read them. History (html, jsonl, briefs, journals, ADRs,
-# notes, backups, logs, activity.md) and the old server (platform/mcp-server,
-# being deleted) are left as they were written.
+# notes, backups, logs, activity.md) are left as they were written.
 #
 # The tools whose rename is still undecided (chorus_werk, chorus_athena, ...)
 # are not in RENAMED, so they do not trip this guard.
@@ -24,7 +23,7 @@ old_tool_names() {
   grep -rIoE \
     --exclude='*.html' --exclude='*.jsonl' --exclude='activity.md' \
     --exclude-dir=.git --exclude-dir=node_modules --exclude-dir=target \
-    --exclude-dir=mcp-server --exclude-dir=briefs --exclude-dir=journal \
+    --exclude-dir=briefs --exclude-dir=journal \
     --exclude-dir=journals --exclude-dir=adr --exclude-dir=notes \
     --exclude-dir=backups --exclude-dir=logs \
     "${prefix}(${RENAMED})([^a-z0-9_]|\$)" "$root" 2>/dev/null || true
