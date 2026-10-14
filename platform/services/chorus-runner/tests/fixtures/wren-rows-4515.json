@@ -162,5 +162,41 @@
   "ownedBy": "principal-wren",
   "timeoutSeconds": "600",
   "forStreamStep": "borg-prune"
+ },
+ {
+  "name": "chorus-werk",
+  "label": "chorus-werk",
+  "comment": "Starts the card's werk pipeline (cicd: commit, build, test, demo, go, land); enqueued, it outlives the session.",
+  "executor": "deterministic",
+  "implementedBy": "pipeline-start",
+  "arguments": "cicd {card} {caller}",
+  "inputShape": "PipelineStartInput",
+  "runsAs": "caller",
+  "hasDomain": "cicd",
+  "ownedBy": "principal-wren"
+ },
+ {
+  "name": "chorus-athena",
+  "label": "chorus-athena",
+  "comment": "Starts the card's athena pipeline (model checked on staging); on success it starts the card's werk pipeline.",
+  "executor": "deterministic",
+  "implementedBy": "pipeline-start",
+  "arguments": "athena {card} {caller}",
+  "inputShape": "PipelineStartInput",
+  "runsAs": "caller",
+  "hasDomain": "domains",
+  "ownedBy": "principal-wren"
+ },
+ {
+  "name": "chorus-borg",
+  "label": "chorus-borg",
+  "comment": "Starts the card's Borg pipeline for a stream: prove, or operate (refused by name until its pipeline is generated).",
+  "executor": "deterministic",
+  "implementedBy": "pipeline-start",
+  "arguments": "borg-{stream} {card} {caller}",
+  "inputShape": "BorgStartInput",
+  "runsAs": "caller",
+  "hasDomain": "deploys",
+  "ownedBy": "principal-wren"
  }
 ]

@@ -29,6 +29,28 @@
     ],
     "type": "object"
   },
+  "BorgStartInput": {
+    "additionalProperties": false,
+    "properties": {
+      "card": {
+        "description": "The card number. Its werk holds the generated workflow.",
+        "type": "integer"
+      },
+      "stream": {
+        "description": "prove (Borg Proving) or operate (Borg Operating).",
+        "enum": [
+          "prove",
+          "operate"
+        ],
+        "type": "string"
+      }
+    },
+    "required": [
+      "card",
+      "stream"
+    ],
+    "type": "object"
+  },
   "CardsMoveInput": {
     "additionalProperties": false,
     "properties": {
@@ -285,6 +307,19 @@
       }
     },
     "required": [],
+    "type": "object"
+  },
+  "PipelineStartInput": {
+    "additionalProperties": false,
+    "properties": {
+      "card": {
+        "description": "The card number. Its werk holds the generated workflow.",
+        "type": "integer"
+      }
+    },
+    "required": [
+      "card"
+    ],
     "type": "object"
   },
   "RoleReadInput": {
