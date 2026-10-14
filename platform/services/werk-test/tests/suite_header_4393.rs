@@ -10,15 +10,19 @@ fn suite(name: &str) -> String {
     std::fs::read_to_string(format!("{dir}/../../tests/{name}")).expect("suite")
 }
 
+// #4515 — the two suites that paged (3968, 4027) were deleted by Jeff: they
+// skipped in every run, card and nightly. The guard stays for any later live
+// suite, so its header is written here.
+const LIVE: &str = "#!/usr/bin/env bats\n# @test-type: integration, sends-live-alerts — posts real probes to the live bridge\n# @domain: alerts\n";
+
 #[test]
-fn the_two_suites_that_paged_say_so_in_their_headers() {
-    assert!(header_says_sends_live_alerts(&suite("3968-alert-delivery-bridge-token.bats")));
-    assert!(header_says_sends_live_alerts(&suite("4027-chorus-health-missing-check.bats")));
+fn a_suite_that_sends_live_alerts_says_so_in_its_header() {
+    assert!(header_says_sends_live_alerts(LIVE));
 }
 
 #[test]
 fn negative_proof_the_header_before_the_tag_runs_and_a_hermetic_stub_never_reads_as_live() {
-    let before = suite("3968-alert-delivery-bridge-token.bats").replacen("integration, sends-live-alerts —", "integration —", 1);
+    let before = LIVE.replacen("integration, sends-live-alerts —", "integration —", 1);
     assert!(!header_says_sends_live_alerts(&before), "before the tag the suite would still run in a card run");
     // 4039 drives a caged ops-nudge: it names the alert path but sends nothing
     assert!(!header_says_sends_live_alerts(&suite("4039-nudge-cage.bats")));
