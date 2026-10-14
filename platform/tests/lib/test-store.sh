@@ -96,6 +96,7 @@ private_door() {
   local bin="${ATHENA_MAKE_BIN:-$root/platform/services/athena-make/target/release/athena-make}"
   [ -x "$bin" ] || bin="$(command -v athena-make 2>/dev/null)"
   if [ -z "$bin" ] || [ ! -x "$bin" ]; then TEST_STORE_WHY="athena-make not built"; return 2; fi
+  private_door_sweep "$base" "${auth[@]+"${auth[@]}"}"
   PRIVATE_DOOR_DS="chorus-door-$$-${RANDOM}"
   if ! curl -sf --max-time 10 -o /dev/null "${auth[@]+"${auth[@]}"}" -X POST "$base/\$/datasets" \
       --data "dbName=$PRIVATE_DOOR_DS&dbType=mem"; then
@@ -149,13 +150,41 @@ private_door() {
   return 2
 }
 
+# #4416 reopen 2 — a private door left behind is a red elsewhere: on 10-14 the
+# stores sensor went red on chorus-door-88840-32658 (15,928 triples). A run
+# that is killed never reaches its teardown, so the next door sweeps first:
+# a dataset named chorus-door-<pid>-* whose pid is gone is an orphan.
+private_door_sweep() { # $1 base  $2.. curl auth args
+  local base="$1"; shift
+  local ds pid
+  for ds in $(curl -s --max-time 10 "$@" "$base/\$/datasets" 2>/dev/null \
+      | python3 -c 'import json,sys
+try: print("\n".join(d["ds.name"].lstrip("/") for d in json.load(sys.stdin)["datasets"]))
+except Exception: pass'); do
+    case "$ds" in chorus-door-*-*) ;; *) continue ;; esac
+    pid="${ds#chorus-door-}"; pid="${pid%%-*}"
+    case "$pid" in ''|*[!0-9]*) continue ;; esac
+    kill -0 "$pid" 2>/dev/null && continue
+    curl -sf --max-time 10 -o /dev/null "$@" -X DELETE "$base/\$/datasets/$ds" \
+      && echo "private door: swept orphan $ds (pid $pid gone)" >&2
+  done
+}
+
 private_door_stop() {
   [ -n "${PRIVATE_DOOR_PID:-}" ] && kill "$PRIVATE_DOOR_PID" 2>/dev/null
-  if [ -n "${PRIVATE_DOOR_DS:-}" ]; then
-    local auth=()
-    [ -n "${FUSEKI_ADMIN_PASSWORD:-}" ] && auth=(-u "${FUSEKI_ADMIN_USER:-admin}:${FUSEKI_ADMIN_PASSWORD}")
-    curl -s --max-time 10 -o /dev/null "${auth[@]+"${auth[@]}"}" -X DELETE \
-      "${FUSEKI_BASE_URL:-http://localhost:3030}/\$/datasets/$PRIVATE_DOOR_DS" || true
+  [ -n "${PRIVATE_DOOR_DS:-}" ] || return 0
+  if [ -z "${FUSEKI_ADMIN_PASSWORD:-}" ]; then
+    # shellcheck disable=SC1091
+    . "${CHORUS_ROOT_REAL:-$(cd "$(dirname "${BASH_SOURCE[0]}")/../../.." && pwd)}/platform/scripts/fuseki-auth.sh" >/dev/null 2>&1 || true
   fi
-  return 0
+  local auth=()
+  [ -n "${FUSEKI_ADMIN_PASSWORD:-}" ] && auth=(-u "${FUSEKI_ADMIN_USER:-admin}:${FUSEKI_ADMIN_PASSWORD}")
+  local code
+  code="$(curl -s --max-time 10 -o /dev/null -w '%{http_code}' "${auth[@]+"${auth[@]}"}" -X DELETE \
+    "${FUSEKI_BASE_URL:-http://localhost:3030}/\$/datasets/$PRIVATE_DOOR_DS" 2>/dev/null)"
+  case "$code" in
+    2*) return 0 ;;
+    *) echo "private door: dataset $PRIVATE_DOOR_DS NOT deleted (Fuseki answered ${code:-nothing}) — it is left in the running Fuseki" >&2
+       return 1 ;;
+  esac
 }
