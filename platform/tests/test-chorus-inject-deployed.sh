@@ -33,7 +33,7 @@ assert "chorus-inject is executable" test -f "$BIN"
 
 # #2804 retired chorus-inject as a direct primitive: since 2026-08-29 the
 # deploy artifact at ~/.chorus/bin/ is a small shell stub that refuses direct
-# invocation and names the one supported path (the chorus-nudge-message MCP
+# invocation and names the one supported path (the clearing-nudge MCP
 # tool). The Rust binary is the pulse worker's delivery primitive and is no
 # longer what lives at this path, so a codesign/Usage assertion here asserted
 # a retired product (nightly red 2026-09-17, read on #4196). What Jeff needs
@@ -42,8 +42,8 @@ if [ -x "$BIN" ]; then
   OUT=$("$BIN" 2>&1 || true)
   assert "chorus-inject refuses direct invocation (not-canonical-caller)" \
     grep -q "not-canonical-caller" <<< "$OUT"
-  assert "chorus-inject names the supported path (chorus-nudge-message)" \
-    grep -q "chorus-nudge-message" <<< "$OUT"
+  assert "chorus-inject names the supported path (clearing-nudge)" \
+    grep -q "clearing-nudge" <<< "$OUT"
   # NEGATIVE: a banner-less stub (empty output) must fail both asserts
   EMPTY=""
   if grep -q "not-canonical-caller" <<< "$EMPTY"; then

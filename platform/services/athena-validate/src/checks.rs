@@ -218,6 +218,46 @@ SELECT DISTINCT ?s ?field ?value ?re ?outcome WHERE {
 }"##,
 };
 
+/// #4515 — the tool naming rule (Jeff 2026-10-14). A runner tool is a Skill row
+/// with executor "deterministic" or "http"; its name is the row's IRI after
+/// `skill-` (what the runner offers). It is named `chorus-<product>` (starts that
+/// product's pipeline) or `<product>-<step>[-<object>]` (runs one value-stream
+/// step), and a step tool says which step it runs (chorus:forStreamStep).
+/// "agent" and "human" skills (ab, sb, lc, gate-*) are exempt.
+///
+/// `<product>` is read from the Product rows in the store, never typed here: a
+/// product that is not a row is no prefix at all. The door cannot run a rule that
+/// joins rows (it runs no sh:sparql), so the sweep runs it: one row per tool off
+/// the rule, with why: not-lowercase-hyphen, no-product-prefix or no-stream-step.
+pub const TOOL_NAME: Check = Check {
+    id: "tool-name-off-the-rule",
+    question: "is every tool named for its product and, when it runs a step, linked to that step",
+    query: r##"PREFIX c: <https://jeffbridwell.com/chorus#>
+SELECT DISTINCT ?s ?why WHERE {
+  GRAPH ?g { ?s a c:Skill }
+  FILTER(STRSTARTS(STR(?g), "urn:chorus:"))
+  FILTER(?g != <urn:chorus:ontology>)
+  GRAPH ?ge { ?s c:executor ?ex }
+  FILTER(?ge != <urn:chorus:ontology>)
+  FILTER(STR(?ex) = "deterministic" || STR(?ex) = "http")
+  BIND(STRAFTER(STR(?s), "#skill-") AS ?name)
+  BIND(EXISTS {
+    GRAPH ?gp { ?p a c:Product } FILTER(?gp != <urn:chorus:ontology>)
+    FILTER(?name = CONCAT("chorus-", STRAFTER(STR(?p), "#")))
+  } AS ?starter)
+  BIND(EXISTS {
+    GRAPH ?gq { ?q a c:Product } FILTER(?gq != <urn:chorus:ontology>)
+    FILTER(STRSTARTS(?name, CONCAT(STRAFTER(STR(?q), "#"), "-")))
+  } AS ?prefixed)
+  BIND(EXISTS { GRAPH ?gs { ?s c:forStreamStep ?step } FILTER(?gs != <urn:chorus:ontology>) } AS ?linked)
+  BIND(IF(!REGEX(?name, "^[a-z0-9]+(-[a-z0-9]+)+$"), "not-lowercase-hyphen",
+       IF(?starter, "",
+       IF(!?prefixed, "no-product-prefix",
+       IF(!?linked, "no-stream-step", "")))) AS ?why)
+  FILTER(?why != "")
+}"##,
+};
+
 /// The check nothing has ever run. A row can be in the right graph, carry every
 /// required field, and still be invisible: the generated door projects only what
 /// the route table says it projects. `werk` held five hasDomain edges in the
@@ -509,5 +549,71 @@ mod tests {
         assert!(got.contains(&("d2".into(), "Domain,label".into())), "{got:?}");
         assert!(got.iter().all(|(s, _)| s != "d1"), "d1 has both and was reported: {got:?}");
         assert_eq!(got.len(), 2, "{got:?}");
+    }
+
+    /// #4515 — Product rows and one stream step; each test adds its skills.
+    const PRODUCTS_4515: &str = r##"@prefix c: <https://jeffbridwell.com/chorus#> .
+<urn:chorus:domains:products> { c:borg a c:Product . c:werk a c:Product . c:clearing a c:Product . }
+<urn:chorus:domains:value-streams> { c:value-stream-step-borg-intake a c:ValueStreamStep . }
+"##;
+
+    fn tool_names(tag: &str, products: &str, skills: &str) -> Vec<(String, String)> {
+        let mut got = run_on_fixture(&TOOL_NAME, tag, &format!("{products}<urn:chorus:domains:skills> {{\n{skills}\n}}\n"));
+        got.sort();
+        got
+    }
+
+    /// The rule's good half: a step tool named for its product and linked to its
+    /// step, a pipeline starter, and agent / human skills (exempt) are all clean.
+    #[test]
+    fn tool_names_on_the_rule_are_clean() {
+        let got = tool_names("4515-ok", PRODUCTS_4515, r##"
+  c:skill-borg-intake a c:Skill ; c:executor "deterministic" ; c:forStreamStep c:value-stream-step-borg-intake .
+  c:skill-chorus-werk a c:Skill ; c:executor "deterministic" .
+  c:skill-ab a c:Skill ; c:executor "agent" .
+  c:skill-gate_code a c:Skill ; c:executor "agent" .
+  c:skill-go a c:Skill ; c:executor "human" ."##);
+        assert_eq!(got, vec![], "{got:?}");
+    }
+
+    /// NEGATIVE PROOF (#3734 / #4515): an underscore name, a name with no
+    /// product prefix (the old proving names), and a step tool with no stream
+    /// step are each named, with why; the good rows beside them never are.
+    #[test]
+    fn negative_proof_tool_names_off_the_rule_are_named() {
+        let got = tool_names("4515-bad", PRODUCTS_4515, r##"
+  c:skill-chorus_sup a c:Skill ; c:executor "http" .
+  c:skill-prove-intake a c:Skill ; c:executor "deterministic" ; c:forStreamStep c:value-stream-step-borg-intake .
+  c:skill-borg-verify a c:Skill ; c:executor "deterministic" .
+  c:skill-borg-intake a c:Skill ; c:executor "deterministic" ; c:forStreamStep c:value-stream-step-borg-intake .
+  c:skill-ab a c:Skill ; c:executor "agent" ."##);
+        assert_eq!(
+            got,
+            vec![
+                ("skill-borg-verify".to_string(), "no-stream-step".to_string()),
+                ("skill-chorus_sup".to_string(), "not-lowercase-hyphen".to_string()),
+                ("skill-prove-intake".to_string(), "no-product-prefix".to_string()),
+            ],
+            "{got:?}"
+        );
+    }
+
+    /// NEGATIVE PROOF: the products come from the store, not a list in the check.
+    /// The same borg-intake row that is clean above is refused once borg is not a
+    /// Product row, and so is chorus-borg, its starter.
+    #[test]
+    fn negative_proof_a_product_that_is_not_a_row_is_no_prefix() {
+        let no_borg = PRODUCTS_4515.replace("c:borg a c:Product . ", "");
+        let got = tool_names("4515-noprod", &no_borg, r##"
+  c:skill-borg-intake a c:Skill ; c:executor "deterministic" ; c:forStreamStep c:value-stream-step-borg-intake .
+  c:skill-chorus-borg a c:Skill ; c:executor "deterministic" ."##);
+        assert_eq!(
+            got,
+            vec![
+                ("skill-borg-intake".to_string(), "no-product-prefix".to_string()),
+                ("skill-chorus-borg".to_string(), "no-product-prefix".to_string()),
+            ],
+            "{got:?}"
+        );
     }
 }

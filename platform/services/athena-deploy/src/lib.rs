@@ -1730,7 +1730,7 @@ pub fn read_served_from(api: &str, query: &str) -> Result<String, String> {
 }
 
 /// #4452 — the land restarts athena-make while the athena run reads it: athena
-/// starts at merge and deploy-prod restarts the door a minute later, so a read
+/// starts at merge and werk-deploy-prod restarts the door a minute later, so a read
 /// can land mid-restart (2026-10-12 #4081: "the discovery document lists no
 /// collection", and the model never reached the store). An unmeasured read is
 /// retried until the door answers or `tries` run out; then the LAST reason is

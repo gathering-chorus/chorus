@@ -3,7 +3,7 @@
 //! shape athena-gen generated (tool_inputs.json, never hand-written), what it
 //! runs comes from the row (implementedBy + an arguments template), and it
 //! runs as the Skill's owner with the caller recorded (Jeff 10-12, as the old
-//! herald_run did). Who may call it is authz: the owner and Jeff.
+//! borg-tend-herald did). Who may call it is authz: the owner and Jeff.
 
 use serde_json::{Map, Value};
 
@@ -35,7 +35,7 @@ pub struct SkillTool {
 
 /// #4514 (Silas + Wren, 2026-10-13): a verb a role runs on its own card runs as
 /// the verified caller (werk-commit); a tool that acts with one principal's
-/// rights runs as its owner (herald-run). A row that says neither is refused.
+/// rights runs as its owner (borg-tend-herald). A row that says neither is refused.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum RunsAs {
     Caller,
@@ -303,8 +303,8 @@ pub fn argv(template: &str, args: &Map<String, Value>, caller: &str) -> Vec<Stri
 }
 
 /// #4513 reopen 1 — the child runs as the Skill's owner: its identity token,
-/// and CHORUS_ROLE / DEPLOY_ROLE naming the owner, as the TS herald_run did.
-/// herald-run exits 2 without CHORUS_ROLE.
+/// and CHORUS_ROLE / DEPLOY_ROLE naming the owner, as the TS borg-tend-herald did.
+/// borg-tend-herald exits 2 without CHORUS_ROLE.
 pub fn child_env(owner: &str, token: &str, trace: &str) -> Vec<(&'static str, String)> {
     vec![
         ("CHORUS_IDENTITY_TOKEN", token.to_string()),
@@ -338,7 +338,7 @@ pub fn http_target(implemented_by: &str, args: &Map<String, Value>) -> Result<(S
         let inner = out[i + 1..j].to_string();
         let (k, default) = inner.split_once('=').map(|(k, d)| (k.to_string(), Some(d.to_string()))).unwrap_or((inner, None));
         let given = args.get(&k).map(|v| v.as_str().map(String::from).unwrap_or_else(|| v.to_string())).unwrap_or_default();
-        // `{role=@caller}` defaults to the verified caller (chorus-wip, chorus-sup)
+        // `{role=@caller}` defaults to the verified caller (clearing-wip, clearing-prioritize)
         let fallback = match default.as_deref() {
             Some("@caller") => args.get("caller").and_then(|v| v.as_str()).unwrap_or_default().to_string(),
             other => other.unwrap_or_default().to_string(),

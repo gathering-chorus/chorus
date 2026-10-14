@@ -1,6 +1,6 @@
 // @test-type: unit
 // @domain: messages
-//! #4515 — chorus-nudge-message moved into `chorus-hook-shim nudge-send`.
+//! #4515 — clearing-nudge moved into `chorus-hook-shim nudge-send`.
 //! What a role sees: a nudge to a listed role arrives through pulse and says
 //! where it went; a nudge to anyone else, or over the nudge cap, is refused
 //! with the reason and leaves no trace of having been sent.

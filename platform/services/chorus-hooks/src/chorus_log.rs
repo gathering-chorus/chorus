@@ -184,7 +184,7 @@ fn emit_with(args: &[String], silent: bool, parsed: Option<&serde_json::Value>) 
                 continue;
             }
             // #2931: gate/demo skills historically write `card=NNNN` (string),
-            // but logs-query and chorus-logs-for-card key on `card_id` (numeric
+            // but logs-query and borg-read-logs-card key on `card_id` (numeric
             // — see #2876 unquoted-emit). Two shapes for the same identity
             // means gate.X.passed events vanish from card joins. Normalize at
             // the substrate: `card` is an alias for `card_id` on the way out.
@@ -199,7 +199,7 @@ fn emit_with(args: &[String], silent: bool, parsed: Option<&serde_json::Value>) 
             // #2876: keys with canonical-integer types emit unquoted when the
             // value parses cleanly as i64. logs-query regex `"card_id":NNN\b`
             // requires unquoted form; without this, env-bridge build.* / card.*
-            // events drop out of chorus-logs-for-card joins. Coerce here for
+            // events drop out of borg-read-logs-card joins. Coerce here for
             // the same reason events.ts coerces on the TS side.
             let is_numeric_key = matches!(key, "card_id" | "hop" | "latencyMs" | "exit_code" | "file_count" | "elapsed_ms");
             let value_repr = if is_numeric_key {
@@ -443,7 +443,7 @@ mod tests {
         let line = find_event_line("test.emit.writes").expect("event should be in log");
         assert!(line.contains("\"role\":\"kade\""));
         // #2931: `card=NNNN` input is normalized to canonical `card_id`:NNNN
-        // (unquoted, numeric) so chorus-logs-for-card finds it. Single shape
+        // (unquoted, numeric) so borg-read-logs-card finds it. Single shape
         // at the substrate; skill markdown can use either alias.
         assert!(line.contains("\"card_id\":1718"), "expected canonical card_id, got: {}", line);
         assert!(!line.contains("\"card\":\"1718\""), "legacy quoted-string card field should not appear: {}", line);
@@ -566,7 +566,7 @@ mod tests {
         // Direct substring check: unquoted integer form
         assert!(
             json_str.contains("\"card_id\":2876"),
-            "card_id should be unquoted integer for chorus-logs-for-card regex match: {}",
+            "card_id should be unquoted integer for borg-read-logs-card regex match: {}",
             json_str,
         );
         assert!(

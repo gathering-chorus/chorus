@@ -74,7 +74,7 @@ function extractToolsFromSource(srcPath) {
   // Match each tool literal: { name: '...', description: '...', inputSchema: {...} }
   // Description value can be a single string or string-concat across lines.
   const tools = [];
-  // Find patterns like:  name: 'chorus-nudge-message',  description: '...',  inputSchema: { ... },
+  // Find patterns like:  name: 'clearing-nudge',  description: '...',  inputSchema: { ... },
   const toolRegex = /name:\s*'([^']+)'\s*,\s*description:\s*'((?:\\.|[^'\\])*)'/g;
   let m;
   while ((m = toolRegex.exec(src)) !== null) {

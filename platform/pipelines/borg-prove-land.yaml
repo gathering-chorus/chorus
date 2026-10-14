@@ -17,14 +17,14 @@ env:
   - PATH: ${CHORUS_WERK_BASE}/${ROLE}-bin:${PATH}
 handler_on:
   failure:
-    command: '${CHORUS_HOME}/platform/scripts/borg-prove route ${CARD} ${ROLE} ${DAG_RUN_ID} skill-prove-in-prod=value-stream-step-borg-surface || ${CHORUS_HOME}/platform/scripts/ops-nudge ${ROLE} "werk v2 #${CARD} land failed and its route failed too · dagu ${DAG_RUN_ID} · /cws ${CARD}"'
+    command: '${CHORUS_HOME}/platform/scripts/borg-prove route ${CARD} ${ROLE} ${DAG_RUN_ID} skill-borg-verify-in-prod=value-stream-step-borg-surface || ${CHORUS_HOME}/platform/scripts/ops-nudge ${ROLE} "werk v2 #${CARD} land failed and its route failed too · dagu ${DAG_RUN_ID} · /cws ${CARD}"'
   success:
     command: '${CHORUS_HOME}/platform/scripts/athena-land ${CARD} ${ROLE} || { ${CHORUS_HOME}/platform/scripts/crawl-detached.sh; exit 1; }; ${CHORUS_HOME}/platform/scripts/crawl-detached.sh'
 steps:
-  - name: skill-prove-in-prod
-    description: "prove-in-prod"
+  - name: skill-borg-verify-in-prod
+    description: "borg-verify-in-prod"
     command: "borg-prove prod ${CARD} ${ROLE}"
-  - name: skill-prove-record
-    description: "prove-record"
-    depends: [skill-prove-in-prod]
+  - name: skill-borg-record
+    description: "borg-record"
+    depends: [skill-borg-verify-in-prod]
     command: "borg-prove record ${CARD} ${ROLE}"

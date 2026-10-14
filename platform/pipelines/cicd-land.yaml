@@ -28,11 +28,11 @@ steps:
     description: "werk-sync"
     depends: [skill-werk-merge]
     command: "${HOME}/.chorus/bin/chorus-runner call werk-sync mode=ff"
-  - name: skill-deploy-prod
-    description: "deploy-prod"
+  - name: skill-werk-deploy-prod
+    description: "werk-deploy-prod"
     depends: [skill-werk-sync]
-    command: "${HOME}/.chorus/bin/chorus-runner call deploy-prod card=${CARD}"
+    command: "${HOME}/.chorus/bin/chorus-runner call werk-deploy-prod card=${CARD}"
   - name: skill-werk-accept
     description: "werk-accept"
-    depends: [skill-deploy-prod]
+    depends: [skill-werk-deploy-prod]
     command: "${HOME}/.chorus/bin/chorus-runner call werk-accept card=${CARD} atomic=true"

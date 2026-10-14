@@ -1,3 +1,5 @@
+// @test-type: unit
+// @domain: werk
 // Test-first (DEC-1674): these reference werk_pull lib functions that don't exist
 // yet — RED until src/lib.rs is written.
 use werk_pull::{branch_name, jsonl_line, parse_pull_args, trace_id, resolve_trace_in, spine_args};
@@ -82,7 +84,7 @@ fn spine_args_carry_event_role_card_trace() {
     let a = spine_args("card.pulled", "kade", 3135, "abc-1", &[]);
     assert_eq!(a[0], "card.pulled", "event is first");
     assert_eq!(a[1], "kade", "role is second");
-    assert!(a.contains(&"card=3135".to_string()), "card stamped for chorus-logs-for-card join");
+    assert!(a.contains(&"card=3135".to_string()), "card stamped for borg-read-logs-card join");
     assert!(a.contains(&"trace=abc-1".to_string()), "trace stamped so pull correlates with demo+acp");
 }
 

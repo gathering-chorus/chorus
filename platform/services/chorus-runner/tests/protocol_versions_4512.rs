@@ -26,7 +26,7 @@ async fn a_2026_07_28_client_initializes_or_is_served_without_one() {
 async fn a_2026_07_28_client_lists_tools_with_no_session() {
     let (status, body) = send(rpc("tools/list", r#"{"_meta":{"io.modelcontextprotocol/protocolVersion":"2026-07-28","io.modelcontextprotocol/clientInfo":{"name":"t","version":"0"},"io.modelcontextprotocol/clientCapabilities":{}}}"#, "2026-07-28", &good_token())).await;
     assert_eq!(status, StatusCode::OK, "{body}");
-    assert!(body.contains("door_list") && body.contains("door_get"), "{body}");
+    assert!(body.contains("athena-get") && body.contains("athena-set"), "{body}");
 }
 
 #[tokio::test]

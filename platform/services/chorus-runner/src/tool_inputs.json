@@ -37,7 +37,7 @@
         "type": "integer"
       },
       "status": {
-        "description": "New lane. Done is not a lane here: it goes through chorus-cards-done, which records the acceptance (DEC-048).",
+        "description": "New lane. Done is not a lane here: it goes through clearing-sweep, which records the acceptance (DEC-048).",
         "enum": [
           "Now",
           "Next",
@@ -108,47 +108,6 @@
       },
       "type": {
         "description": "new, enhance, fix, chore or swat.",
-        "type": "string"
-      }
-    },
-    "required": [
-      "id"
-    ],
-    "type": "object"
-  },
-  "CardsTagInput": {
-    "additionalProperties": false,
-    "properties": {
-      "category": {
-        "description": "The label's axis.",
-        "enum": [
-          "sequence",
-          "domain",
-          "chunk"
-        ],
-        "type": "string"
-      },
-      "id": {
-        "description": "Card id.",
-        "type": "integer"
-      },
-      "value": {
-        "description": "The label value to remove.",
-        "type": "string"
-      }
-    },
-    "required": [
-      "id",
-      "category",
-      "value"
-    ],
-    "type": "object"
-  },
-  "DoorRowInput": {
-    "additionalProperties": false,
-    "properties": {
-      "id": {
-        "description": "The row's name, e.g. adr-041.",
         "type": "string"
       }
     },
@@ -286,12 +245,6 @@
     "required": [
       "trace_id"
     ],
-    "type": "object"
-  },
-  "NoInput": {
-    "additionalProperties": false,
-    "properties": {},
-    "required": [],
     "type": "object"
   },
   "NudgeMessageInput": {

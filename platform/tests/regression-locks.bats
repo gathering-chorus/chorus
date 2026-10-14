@@ -84,7 +84,7 @@ calls() { [ -f "$R/$1.calls" ] && wc -l < "$R/$1.calls" | tr -d ' ' || echo 0; }
       CHORUS_LOG_FILE="$R/spine.log" "$shim" "$verb" wren "hello-4336" < /dev/null
     echo "$verb: status=$status $output"
     [ "$status" -ne 0 ] || return 1
-    [[ "$output" == *"chorus-nudge-message"* ]] || return 1
+    [[ "$output" == *"clearing-nudge"* ]] || return 1
   done
   [ "$(calls osascript)" -eq 0 ]
 }

@@ -64,7 +64,7 @@ describe('#3485 pulse caller-check (shared-secret, supersedes #2804 presence-gat
         .send({ from: 'k', to: 'w', content: 'hi' });
       expect(res.status).toBe(403);
       expect(res.body.error).toBe('not-canonical-caller');
-      expect(res.body.message).toMatch(/chorus-nudge-message MCP/);
+      expect(res.body.message).toMatch(/clearing-nudge MCP/);
     } finally {
       process.env.PULSE_ALLOW_DIRECT_POST = '1';
     }

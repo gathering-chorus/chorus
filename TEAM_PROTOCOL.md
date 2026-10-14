@@ -34,7 +34,7 @@ curl -s 'http://localhost:3030/pods/query' -H 'Accept: text/csv' -G \
 | cards | `bash ../../platform/scripts/cards <command>` |
 | git-queue.sh | `cd /Users/jeffbridwell/CascadeProjects/chorus && DEPLOY_ROLE=<role> bash platform/scripts/git-queue.sh commit <dirs> -- -m "message"` |
 | role-state | `../../platform/scripts/role-state <role> <state>` |
-| nudge | `chorus-nudge-message` MCP tool from a Claude session (#2804 — bash `nudge` script retired, MCP is the only invocation path) |
+| nudge | `clearing-nudge` MCP tool from a Claude session (#2804 — bash `nudge` script retired, MCP is the only invocation path) |
 | chorus-log | `../../platform/scripts/chorus-log <event> <role> key=value` |
 | session-close | `chorus-hook-shim session-close <role>` (close-out introspection) |
 
@@ -246,7 +246,7 @@ Per-unit rollback shapes are intentionally asymmetric — Rust binaries are file
 
 ### Card-level enforcement — chorus-hooks `card_add_probe`
 
-A `## Deploy Probe` section is required on the card description. The chorus-hooks PreToolUse on `mcp__chorus-api__chorus-cards-add` (hook `card_add_probe.rs`) refuses card-adds that mention daemon-runtime trigger paths but lack a probe section. The refusal message includes a template the author can paste.
+A `## Deploy Probe` section is required on the card description. The chorus-hooks PreToolUse on `mcp__chorus-api__clearing-card` (hook `card_add_probe.rs`) refuses card-adds that mention daemon-runtime trigger paths but lack a probe section. The refusal message includes a template the author can paste.
 
 ### Per-machine settings (not in repo)
 

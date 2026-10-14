@@ -13,7 +13,7 @@ Tonight (2026-05-11) we demonstrated three failure modes in one stretch:
 - **Peer relay** — Silas hit the bouncer, saw the composed ask, then relayed a
   summary to Jeff via another path instead of forwarding the four-question
   articulation. Jeff received a meta-question, not the ask.
-- **chorus-nudge-message to jeff** — Wren sent via the MCP nudge primitive;
+- **clearing-nudge to jeff** — Wren sent via the MCP nudge primitive;
   trace logged success; Jeff received nothing on the surface he was watching.
 - **Bridge POST to `/api/message`** — Wren posted to the Bridge stream and
   received `{"ok":true}`; Jeff received nothing where his eyes were.

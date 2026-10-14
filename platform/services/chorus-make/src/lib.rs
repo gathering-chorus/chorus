@@ -111,7 +111,7 @@ pub fn check(rows: &[Row]) -> Vec<String> {
     errs
 }
 
-/// dagu step name: the Skill row's own name (`skill-deploy-demo`),
+/// dagu step name: the Skill row's own name (`skill-werk-deploy-demo`),
 /// never one chorus-make makes up (Jeff via Silas 2026-10-09 20:34). dagu's
 /// `name` takes hyphens; its `id` does not, so no id is written. The verb
 /// alone is not unique (werk-deploy runs three skills).
@@ -137,7 +137,7 @@ pub fn dagu_name(rows: &[Row], r: &Row) -> String {
 /// werk-demo's exit contract (#3237): 0 go, 2 presented and held, 1 error.
 pub const PRESENTED_EXIT: u8 = 2;
 
-/// Who may give the go (DEC-048: GO = accept). The same set chorus_werk's
+/// Who may give the go (DEC-048: GO = accept). The same set the go step's
 /// `accepter` takes; werk-merge refuses a land without $ACCEPTER (#4474 run 9).
 pub const ACCEPTERS: [&str; 4] = ["jeff", "wren", "kade", "silas"];
 
@@ -577,7 +577,7 @@ pub fn rows_from_sparql_tsv(tsv: &str) -> Result<Vec<Row>, Vec<String>> {
 
 /// The werk verbs a tool-name list registers: every `name: 'werk-…'`. #4515 — the
 /// old MCP server is retired; its list is frozen in tests/fixtures/tool-names-20261009.txt.
-/// chorus_werk is the pipeline trigger, not a verb, so it is not counted.
+/// chorus-werk is the pipeline trigger, not a verb, so it is not counted.
 pub fn mcp_verbs(server_ts: &str) -> std::collections::BTreeSet<String> {
     server_ts
         .lines()

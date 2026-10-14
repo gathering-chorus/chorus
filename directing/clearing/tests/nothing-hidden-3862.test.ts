@@ -95,7 +95,7 @@ describe('#3862 — machinery that must stay out of the room', () => {
     const r = new MessageRouter();
     r.ingest({
       from: 'jeff',
-      text: 'tool=chorus_nudge_message type=is-error msg=word-cap: 90 words, cap is 50.',
+      text: 'tool=clearing-nudge type=is-error msg=word-cap: 90 words, cap is 50.',
       ts: TS,
     });
     expect(r.getRecent(10, true)[0].visible).toBe(false);

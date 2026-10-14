@@ -1,5 +1,5 @@
 //! #4512 — the runner's HTTP surface: the auth gate in front of the rmcp
-//! service, and the door tools behind it. In the lib so tests drive the real
+//! service, and the athena row tools behind it. In the lib so tests drive the real
 //! router without a network.
 
 use std::process::Command;
@@ -21,13 +21,13 @@ use rmcp::transport::streamable_http_server::{
 use rmcp::{ErrorData as McpError, RoleServer, ServerHandler};
 
 use crate::skills::{argv, check_args, input_table, may_invoke, skill_tools, SkillTool};
-use crate::{authenticate, door_path, door_tools, error_line, new_trace_id, refusal_body, traceparent, Caller, Refusal};
+use crate::{athena_call, athena_tools, authenticate, error_line, is_athena_tool, loopback_base, new_trace_id, refusal_body, traceparent, Caller, Refusal};
 
 pub fn now_secs() -> u64 {
     SystemTime::now().duration_since(UNIX_EPOCH).map(|d| d.as_secs()).unwrap_or(0)
 }
 
-fn door_base() -> String {
+pub fn door_base() -> String {
     std::env::var("CHORUS_DOOR").unwrap_or_else(|_| "http://127.0.0.1:3360".into())
 }
 
@@ -65,7 +65,7 @@ pub struct Runner {
 impl Runner {
     fn tools(&self) -> Vec<Tool> {
         let cols = self.collections.read().map(|c| c.clone()).unwrap_or_default();
-        let mut tools: Vec<Tool> = door_tools(&cols)
+        let mut tools: Vec<Tool> = athena_tools(&cols)
             .into_iter()
             .map(|t| Tool::new(t.name, t.description, Arc::new(t.input_schema)))
             .collect();
@@ -216,6 +216,31 @@ pub fn run_http(method: &str, url: &str, body: &str, token: &str, trace: &str, t
     (ok, format!("{method} {url} → {code}\n{}", resp.chars().take(4000).collect::<String>()), if code == 0 { 502 } else { code })
 }
 
+/// #4515 (Jeff 2026-10-14) — one athena-get/-list/-add/-set call, made AS
+/// THE CALLER: the caller's own verified credential when the gate verified
+/// one, else a credential minted for the caller (stdio, the CLI) — never a
+/// service token. Checked before anything is sent; a 4xx from the door is a
+/// failed call carrying the door's message. Returns (ok, text, status).
+pub fn run_athena(base: &str, tool: &str, args: &serde_json::Map<String, serde_json::Value>, collections: &[String], caller: &str, caller_token: Option<&str>, trace: &str) -> (bool, String, u16) {
+    let (method, path, body) = match athena_call(tool, args, collections) {
+        Ok(c) => c,
+        Err(b) => return (false, b.reason, b.status),
+    };
+    let base = match loopback_base(base) {
+        Ok(b) => b,
+        Err(b) => return (false, b.reason, b.status),
+    };
+    let who = crate::skills::bare(caller);
+    if who.is_empty() || who == "unverified" {
+        return (false, format!("{tool} needs a verified caller"), 403);
+    }
+    let token = match caller_token.map(String::from).or_else(|| identity_token(who)) {
+        Some(t) => t,
+        None => return (false, format!("could not mint {who}'s identity to call the door as them"), 503),
+    };
+    run_http(&method, &format!("{base}{path}"), body.as_deref().unwrap_or(""), &token, trace, 20)
+}
+
 /// #4513 — run a Skill tool for an MCP caller, under the row's timeout; a long
 /// one starts as a Task (#4514 AC2) and returns its run id at once.
 async fn run_skill(tool: &SkillTool, args: &serde_json::Map<String, serde_json::Value>, caller: &str, trace: &str, caller_token: Option<String>) -> (bool, String, u16) {
@@ -357,7 +382,7 @@ impl ServerHandler for Runner {
         let find = |k: &Arc<RwLock<Vec<SkillTool>>>| k.read().ok().and_then(|s| s.iter().find(|t| t.name == tool).cloned());
         // #4515 — a call can come before any tools/list (a client that knows
         // the name): read the rows once more before deciding it is not a Skill,
-        // or it falls through to the door and fails as "collection is required".
+        // or it falls through to the athena tools and fails as "no such tool".
         let skill = match find(&self.skills) {
             Some(t) => Some(t),
             None => {
@@ -366,43 +391,37 @@ impl ServerHandler for Runner {
                 find(&self.skills)
             }
         };
+        // the caller's own verified credential, only when the gate verified it
+        let token = ctx
+            .extensions
+            .get::<http::request::Parts>()
+            .filter(|p| p.extensions.get::<Caller>().is_some())
+            .and_then(|p| crate::bearer(p.headers.get(http::header::AUTHORIZATION).and_then(|h| h.to_str().ok())).map(String::from));
         if let Some(st) = skill {
-            // the caller's own verified credential, only when the gate verified it
-            let token = ctx
-                .extensions
-                .get::<http::request::Parts>()
-                .filter(|p| p.extensions.get::<Caller>().is_some())
-                .and_then(|p| crate::bearer(p.headers.get(http::header::AUTHORIZATION).and_then(|h| h.to_str().ok())).map(String::from));
-            let (ok, text, status) = run_skill(&st, &args, &caller, &trace, token).await;
+            let (ok, text, status) = run_skill(&st, &args, &caller, &trace, token.clone()).await;
             if ok {
                 return Ok(CallToolResponse::Complete(CallToolResult::success(vec![Content::text(text)])));
             }
             eprintln!("{}", error_line(&caller, &tool, text.lines().next().unwrap_or(""), status, &trace));
             return Ok(CallToolResponse::Complete(CallToolResult::error(vec![Content::text(format!("{text} (trace {trace})"))])));
         }
+        // a call before any tools/list: read the served list once first
+        if is_athena_tool(&tool) && self.collections.read().map(|c| c.is_empty()).unwrap_or(true) {
+            let c = self.collections.clone();
+            let _ = tokio::task::spawn_blocking(move || refresh_collections(&c)).await;
+        }
         let cols = self.collections.read().map(|c| c.clone()).unwrap_or_default();
-        let path = match door_path(&tool, &args, &cols) {
-            Ok(p) => p,
-            Err(bad) => {
-                eprintln!("{}", error_line(&caller, &tool, &bad.reason, bad.status, &trace));
-                return Ok(CallToolResponse::Complete(CallToolResult::error(vec![Content::text(format!(
-                    "{} (trace {trace})",
-                    bad.reason
-                ))])));
-            }
-        };
-        let t = trace.clone();
-        let (status, body) = tokio::task::spawn_blocking(move || door_get(&path, &t, 20))
+        let (t, a, c, tr) = (tool.clone(), args.clone(), caller.clone(), trace.clone());
+        let (ok, text, status) = tokio::task::spawn_blocking(move || run_athena(&door_base(), &t, &a, &cols, &c, token.as_deref(), &tr))
             .await
-            .unwrap_or((0, "door call panicked".into()));
-        if (200..300).contains(&status) {
-            Ok(CallToolResponse::Complete(CallToolResult::success(vec![Content::text(body)])))
+            .unwrap_or((false, "door call panicked".into(), 500));
+        if ok {
+            Ok(CallToolResponse::Complete(CallToolResult::success(vec![Content::text(text)])))
         } else {
-            let reason = if status == 0 { "the door did not answer".to_string() } else { format!("the door answered {status}") };
-            eprintln!("{}", error_line(&caller, &tool, &reason, status, &trace));
+            eprintln!("{}", error_line(&caller, &tool, text.lines().next().unwrap_or(""), status, &trace));
             Ok(CallToolResponse::Complete(CallToolResult::error(vec![Content::text(format!(
-                "{reason} (trace {trace}): {}",
-                body.chars().take(600).collect::<String>()
+                "{} (trace {trace})",
+                text.chars().take(1200).collect::<String>()
             ))])))
         }
     }

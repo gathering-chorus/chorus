@@ -58,7 +58,7 @@ describe('#4405 the sensors panel', () => {
     const ok = renderSensorsSection({ measured: true, rows: sensorStates([sensor('infra', 60, 'silas')], [run('r2', 'infra', '2026-10-13T01:40:00Z', 'green', '2026-10-13T01:40:03Z')], NOW) });
     expect(ok).toContain('infra');
     expect(ok).toContain('pill green');
-    expect(ok).toContain('herald-run');
+    expect(ok).toContain('borg-tend-herald');
   });
 
   test('reopen 5 — the owner comes from the row itself, in the door\'s served shape', async () => {

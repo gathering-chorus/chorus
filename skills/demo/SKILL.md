@@ -86,7 +86,7 @@ The gate results are the quality gather. They are **not** the proving verdict �
 This is NOT a contradiction of #3263 ("the machine shows, it never vetoes your go"). The refusal blocks *presenting un-gated*; it never blocks Jeff's GO — gates inform the decision, they don't decide it. Jeff's go stays sovereign.
 
 The flow (#3443, replacing the #3284 demoer-runs-gates flow):
-- The pipeline (`chorus_werk` / `werk.yml`) builds → deploys → env-ups the variant, **then invokes `werk-demo`**, which runs the gates itself against the live variant and presents. There is no separate "standby, wait for a demoer to run gates" step.
+- The pipeline (`chorus-werk`, werk v2: `platform/pipelines/cicd.yaml`) builds → deploys → env-ups the variant, **then invokes `werk-demo`**, which runs the gates itself against the live variant and presents. There is no separate "standby, wait for a demoer to run gates" step.
 - `werk-demo` present shows the cockpit (verb checklist) + each gate's verdict. Jeff says **go** → it runs to completion (land). "Test in demo, accept in demo."
 
 Still true: the machine-checkable floor (work **tested** via `werk-demo test-result`, variant **up and reachable**) feeds the decision surface; an *uninformed* go is what the surface guards against.
@@ -107,7 +107,7 @@ The harness invokes it with `DEPLOY_ROLE`, `CHORUS_HOME`, `CHORUS_WERK_BASE`, `C
 
 `werk-accept` (step 8 of the flat sequence) finalizes a card **only** if a `demo.verdict=pass` exists for it on record. There is no `demo:preflight-pass` comment chain anymore and no 4-event `demo.*.completed` chain — one verdict, read from the werk-demo witness. DEC-048 (a builder can't self-accept a code card; Jeff is the human authority) stays enforced in `werk-accept`.
 
-**GO is one silent ceremony (#3327).** Jeff's GO at the demo IS the accept (GO=accept, #3311) — it's recorded once, at the demo. `werk-accept` then runs *inside* the same `go:true` pipeline (merge → deploy-prod → finalize); it records the go internally and finalizes **silently**. There is no second go to give and no copy-paste step — the only human-facing output is `#N finalized`. If you ever see `werk-accept` re-announce "go signaled… act continues to merge," that's the WIP-limbo recovery path (a transport drop left the card un-finalized), not the normal flow.
+**GO is one silent ceremony (#3327).** Jeff's GO at the demo IS the accept (GO=accept, #3311) — it's recorded once, at the demo. `werk-accept` then runs *inside* the same `go:true` pipeline (merge → werk-deploy-prod → finalize); it records the go internally and finalizes **silently**. There is no second go to give and no copy-paste step — the only human-facing output is `#N finalized`. If you ever see `werk-accept` re-announce "go signaled… act continues to merge," that's the WIP-limbo recovery path (a transport drop left the card un-finalized), not the normal flow.
 
 ## What this replaces (#3116)
 

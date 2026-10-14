@@ -76,9 +76,19 @@ chorus:SkillShape a sh:NodeShape ;
     # principal's rights runs as its owner. The runner refuses a tool with neither.
     sh:property [ sh:path chorus:runsAs ; sh:maxCount 1 ; sh:datatype xsd:string ; sh:in ( "caller" "owner" ) ; sh:name "runs as" ;
                   sh:description "Required for a tool. caller: runs as the verified caller. owner: runs as the skill's owner; only the owner and jeff may call it." ] ;
+    # #4515 (Jeff 2026-10-14) — a tool is named <product>-<step>[-<object>], or
+    # chorus-<product> when it starts that product's pipeline. A step tool names the
+    # value-stream step it runs. The name rule joins Product rows, which the door
+    # cannot run, so athena-validate's tool-name-off-the-rule check runs it
+    # (platform/services/athena-validate/src/checks.rs TOOL_NAME).
+    sh:property [ sh:path chorus:forStreamStep ; sh:maxCount 1 ; sh:nodeKind sh:IRI ; sh:class chorus:ValueStreamStep ;
+                  sh:name "stream step" ;
+                  sh:description "The value-stream step this tool runs. Required for a deterministic or http tool named <product>-<step>; a chorus-<product> starter and agent or human skills have none (athena-validate checks)." ] ;
     chorus:instancesGraph "urn:chorus:domains:skills" ;
     chorus:generatedBy "athena-model" .
 
+chorus:forStreamStep a owl:ObjectProperty ; rdfs:label "for stream step" ;
+    rdfs:comment "The value-stream step a tool runs (#4515): borg-intake runs value-stream-step-borg-intake." .
 chorus:inputShape a owl:ObjectProperty ; rdfs:label "input shape" ;
     rdfs:comment "The shape a tool's arguments must fit (#4513)." .
 chorus:forService a owl:ObjectProperty ; rdfs:label "for service" ;
@@ -96,11 +106,11 @@ chorus:runsAs a owl:DatatypeProperty ; rdfs:label "runs as" ;
 chorus:ToolInput a owl:Class ; rdfs:label "Tool input" ;
     rdfs:comment "The arguments a tool takes, as a SHACL shape; athena-gen generates its JSON Schema." .
 
-# herald-run (Silas, #4405): one pass of a sensor, the same arguments as the
+# borg-tend-herald (Silas, #4405): one pass of a sensor, the same arguments as the
 # old TypeScript MCP server's schema (HERALD_RUN_TOOL_DEF; retired #4515).
 # sh:name is the argument's JSON name; sh:order is its place.
 chorus:HeraldRunInput a sh:NodeShape , chorus:ToolInput ;
-    rdfs:label "herald-run input" ;
+    rdfs:label "borg-tend-herald input" ;
     sh:property [ sh:path chorus:sensor ; sh:minCount 1 ; sh:maxCount 1 ; sh:datatype xsd:string ; sh:order 1 ;
                   sh:in ( "files" "code" "services" "stores" "infra" ) ; sh:name "sensor" ;
                   sh:description "Which sensor to run." ] ;
@@ -111,7 +121,7 @@ chorus:HeraldRunInput a sh:NodeShape , chorus:ToolInput ;
     sh:property [ sh:path chorus:wait ; sh:maxCount 1 ; sh:datatype xsd:boolean ; sh:order 4 ; sh:name "wait" ;
                   sh:description "Run to the end and return the output." ] .
 
-chorus:sensor a owl:DatatypeProperty ; rdfs:label "sensor" ; rdfs:comment "Which herald sensor a herald-run call runs (#4513)." .
+chorus:sensor a owl:DatatypeProperty ; rdfs:label "sensor" ; rdfs:comment "Which herald sensor a borg-tend-herald call runs (#4513)." .
 chorus:dryRun a owl:DatatypeProperty ; rdfs:label "dry run" ; rdfs:comment "Plan and print, write nothing (#4513)." .
 chorus:wait a owl:DatatypeProperty ; rdfs:label "wait" ; rdfs:comment "Run to the end and return the output (#4513)." .
 

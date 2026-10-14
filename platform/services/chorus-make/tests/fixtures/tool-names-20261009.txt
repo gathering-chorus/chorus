@@ -1,6 +1,6 @@
   name: 'werk-build',
   name: 'werk-deploy',
-  name: 'chorus_werk',
+  name: 'chorus-werk',
   name: 'werk-commit',
   name: 'werk-unpull',
   name: 'werk-review',

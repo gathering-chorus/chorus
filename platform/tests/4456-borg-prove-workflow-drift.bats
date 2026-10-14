@@ -21,8 +21,8 @@ setup() {
 }
 
 @test "a failure routes through borg-prove with each step's onFail" {
-  grep -q 'borg-prove route ${CARD} ${ROLE} ${DAG_RUN_ID} skill-prove-intake=value-stream-step-designing' "$ROOT/platform/pipelines/borg-prove.yaml" || return 1
-  grep -q 'skill-prove-in-prod=value-stream-step-borg-surface' "$ROOT/platform/pipelines/borg-prove-land.yaml" || return 1
+  grep -q 'borg-prove route ${CARD} ${ROLE} ${DAG_RUN_ID} skill-borg-intake=value-stream-step-designing' "$ROOT/platform/pipelines/borg-prove.yaml" || return 1
+  grep -q 'skill-borg-verify-in-prod=value-stream-step-borg-surface' "$ROOT/platform/pipelines/borg-prove-land.yaml" || return 1
 }
 
 @test "negative proof: a hand-edited borg-prove workflow is drift" {

@@ -262,7 +262,7 @@ fn session_response_debt(role: &str, sid: &str, result: Result<Option<(String, S
 // --- #3672: the gate must never trap ---------------------------------------
 //
 // 2026-07-23, twice in one day: a role owed a reply, its session had no
-// chorus-nudge-message MCP tool attached (the post-crash default), and the gate
+// clearing-nudge MCP tool attached (the post-crash default), and the gate
 // refused every tool INCLUDING the Bash transport for the very reply it
 // demanded. Kade escaped via Bash (his variant only blocked at Stop); Silas had
 // zero escape — 125 stop fires, freed only by a human. Two invariants fix the
@@ -278,14 +278,14 @@ pub const PRETOOL_REFUSAL_CAP: usize = 3;
 pub const STOP_REFUSAL_CAP: usize = 2;
 
 /// Is this tool call the reply the gate is demanding? True for the
-/// chorus-nudge-message MCP tool under any server prefix, and for a Bash
+/// clearing-nudge MCP tool under any server prefix, and for a Bash
 /// invocation that carries the tool name (the chorus-mcp-call.sh transport —
 /// the documented fallback for sessions without the MCP attach).
 pub fn is_reply_path(tool: &str, bash_command: &str) -> bool {
-    if tool.ends_with("chorus-nudge-message") {
+    if tool.ends_with("clearing-nudge") {
         return true;
     }
-    tool == "Bash" && bash_command.contains("chorus-nudge-message")
+    tool == "Bash" && bash_command.contains("clearing-nudge")
 }
 
 /// What the gate should do for one tool call, given the refusal count so far

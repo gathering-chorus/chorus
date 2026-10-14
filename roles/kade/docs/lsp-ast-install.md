@@ -105,7 +105,7 @@ After reload, verify in a Claude Code session:
 # Ask Claude Code to find_code with pattern: 'let _ = run("curl", $$$)'
 # Expected: hits across werk-demo, chorus-hooks invokers, etc.
 
-# Sanity: existing chorus-api MCP tools still work (chorus_pull_card, chorus_cards_view, etc.)
+# Sanity: existing chorus-api MCP tools still work (chorus_pull_card, clearing-surface, etc.)
 ```
 
 ## Why this exists / context

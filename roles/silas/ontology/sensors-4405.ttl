@@ -19,7 +19,7 @@
 
 chorus:Sensor a owl:Class ;
     rdfs:label "Sensor" ;
-    rdfs:comment "One way the herald core looks at a target and records what it finds: code, files, services, stores, infra. Run through the herald-run MCP tool; owned by the role that ships it." .
+    rdfs:comment "One way the herald core looks at a target and records what it finds: code, files, services, stores, infra. Run through the borg-tend-herald MCP tool; owned by the role that ships it." .
 
 chorus:SensorRun a owl:Class ;
     rdfs:label "Sensor run" ;

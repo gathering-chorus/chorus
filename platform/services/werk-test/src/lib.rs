@@ -8,7 +8,7 @@
 //!   2. Bootstrap escape — a card that modifies the test gate's OWN surface
 //!      (`werk.yml` or this crate) runs ADVISORY, so it can't deadlock against
 //!      the CANONICAL `werk.yml` it is trying to fix (#3397 deadlock class:
-//!      `chorus_werk` runs act with `-W $CHORUS_HOME/.github/workflows/werk.yml`,
+//!      the old act pipeline ran `-W $CHORUS_HOME/.github/workflows/werk.yml`,
 //!      so a self-modifying card never validates on its own run).
 //!   3. Affected-unit detection on the card's DIFF, not the whole workspace.
 //!

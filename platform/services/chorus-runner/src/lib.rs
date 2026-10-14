@@ -124,41 +124,53 @@ pub struct ToolSpec {
     pub input_schema: Map<String, Value>,
 }
 
-/// The door tools: list and get, over exactly the collections the door
-/// serves. The collection is an enum generated from the door's own list, so
-/// a class the door adds appears here on the next refresh, and one it drops
-/// is gone.
-pub fn door_tools(collections: &[String]) -> Vec<ToolSpec> {
-    let enum_values: Vec<Value> = collections.iter().map(|c| Value::String(c.clone())).collect();
-    let collection = json!({ "type": "string", "enum": enum_values, "description": "A collection the model door serves, as /<domain>/<collection>" });
-    let list = json!({
-        "type": "object",
-        "properties": {
-            "collection": collection,
-            "limit": { "type": "integer", "minimum": 1, "maximum": 500, "description": "At most this many rows (default 50)" }
-        },
-        "required": ["collection"]
-    });
-    let get = json!({
-        "type": "object",
-        "properties": {
-            "collection": collection,
-            "name": { "type": "string", "description": "The row's name, as the door lists it" }
-        },
-        "required": ["collection", "name"]
-    });
-    vec![
-        ToolSpec {
-            name: "door_list",
-            description: format!("List rows of one of the {} collections the model door serves.", collections.len()),
-            input_schema: list.as_object().cloned().unwrap_or_default(),
-        },
-        ToolSpec {
-            name: "door_get",
-            description: "Get one row, by name, from a collection the model door serves.".into(),
-            input_schema: get.as_object().cloned().unwrap_or_default(),
-        },
-    ]
+/// #4515 (Jeff 2026-10-14) — rows are read and written with one family of
+/// tools named after the door's own URL shape, /v1/<domain>/<class>[/<id>]:
+/// (name, HTTP method, needs an id, carries fields, what it does).
+pub const ATHENA_TOOLS: [(&str, &str, bool, bool, &str); 4] = [
+    ("athena-get", "GET", true, false, "Get one row, by id, from a class the model door serves (GET /v1/<domain>/<class>/<id>)."),
+    ("athena-list", "GET", false, false, "List rows of a class the model door serves (GET /v1/<domain>/<class>)."),
+    ("athena-add", "POST", false, true, "Add a row to a class the model door serves, as the caller (POST /v1/<domain>/<class>)."),
+    ("athena-set", "PATCH", true, true, "Change fields of one row, as the caller (PATCH /v1/<domain>/<class>/<id>)."),
+];
+
+/// The athena tools, over exactly the collections the door serves: the
+/// served list is named in each description, and a call is checked against
+/// it, so a class the door adds is callable on the next refresh and one it
+/// drops is gone. One table, one constructor.
+pub fn athena_tools(collections: &[String]) -> Vec<ToolSpec> {
+    let served = collections.join(", ");
+    ATHENA_TOOLS
+        .iter()
+        .map(|(name, _, needs_id, has_fields, what)| {
+            let mut props = json!({
+                "domain": { "type": "string", "pattern": "^[a-z][a-z0-9-]*$", "description": "The domain, as in /v1/<domain>/<class>" },
+                "class": { "type": "string", "pattern": "^[a-z][a-z0-9-]*$", "description": "The class collection, as in /v1/<domain>/<class>" }
+            });
+            let mut required = vec!["domain", "class"];
+            if *needs_id {
+                props["id"] = json!({ "type": "string", "pattern": "^[a-z0-9][a-z0-9-]*$", "description": "The row's id, as the door lists it" });
+                required.push("id");
+            }
+            if *has_fields {
+                props["fields"] = json!({ "type": "object", "description": "The row's fields, as a JSON object" });
+                required.push("fields");
+            }
+            if *name == "athena-list" {
+                props["limit"] = json!({ "type": "integer", "minimum": 1, "maximum": 500, "description": "At most this many rows (default 50)" });
+            }
+            let schema = json!({ "type": "object", "properties": props, "required": required });
+            ToolSpec {
+                name,
+                description: format!("{what} The door serves {} collections: {served}", collections.len()),
+                input_schema: schema.as_object().cloned().unwrap_or_default(),
+            }
+        })
+        .collect()
+}
+
+pub fn is_athena_tool(name: &str) -> bool {
+    ATHENA_TOOLS.iter().any(|t| t.0 == name)
 }
 
 /// A door call refused before it reaches the door: the reason, and the HTTP
@@ -169,31 +181,84 @@ pub struct BadCall {
     pub status: u16,
 }
 
-fn safe_name(s: &str) -> bool {
-    !s.is_empty() && s.len() <= 200 && s.chars().all(|c| c.is_ascii_alphanumeric() || matches!(c, '-' | '_' | '.'))
+fn segment_ok(s: &str, first_may_be_digit: bool) -> bool {
+    let mut cs = s.chars();
+    match cs.next() {
+        Some(c) if c.is_ascii_lowercase() || (first_may_be_digit && c.is_ascii_digit()) => {}
+        _ => return false,
+    }
+    s.len() <= 200 && cs.all(|c| c.is_ascii_lowercase() || c.is_ascii_digit() || c == '-')
 }
 
-/// The door path a tool call reads, or why the call is refused. Only a
-/// collection the door serves, and only a plain row name, ever reach the door.
-pub fn door_path(tool: &str, args: &Map<String, Value>, collections: &[String]) -> Result<String, BadCall> {
+/// One athena call, decided before anything is sent: (method, door path,
+/// JSON body). Domain and class must match ^[a-z][a-z0-9-]*$ and the id
+/// ^[a-z0-9][a-z0-9-]*$ — anything else is refused by name, so no path can
+/// be smuggled in — and the collection must be one the door serves.
+pub fn athena_call(tool: &str, args: &Map<String, Value>, collections: &[String]) -> Result<(String, String, Option<String>), BadCall> {
     let bad = |reason: String| BadCall { reason, status: 400 };
-    let collection = args.get("collection").and_then(Value::as_str).ok_or_else(|| bad("collection is required".into()))?;
-    if !collections.iter().any(|c| c == collection) {
-        return Err(bad(format!("the door does not serve {collection}; it serves: {}", collections.join(", "))));
+    let Some((_, method, needs_id, has_fields, _)) = ATHENA_TOOLS.iter().find(|t| t.0 == tool) else {
+        return Err(BadCall { reason: format!("no such tool: {tool}"), status: 404 });
+    };
+    let text = |k: &str| -> Result<&str, BadCall> {
+        args.get(k).and_then(Value::as_str).ok_or_else(|| bad(format!("{tool}: {k} is required")))
+    };
+    let domain = text("domain")?;
+    if !segment_ok(domain, false) {
+        return Err(bad(format!("{tool}: domain {domain:?} is not a domain name (^[a-z][a-z0-9-]*$)")));
     }
-    match tool {
-        "door_list" => {
-            let limit = args.get("limit").and_then(Value::as_u64).unwrap_or(50).clamp(1, 500);
-            Ok(format!("/v1{collection}?limit={limit}"))
+    let class = text("class")?;
+    if !segment_ok(class, false) {
+        return Err(bad(format!("{tool}: class {class:?} is not a class name (^[a-z][a-z0-9-]*$)")));
+    }
+    let collection = format!("/{domain}/{class}");
+    if !collections.iter().any(|c| *c == collection) {
+        return Err(bad(format!("{tool}: the door does not serve {collection}; it serves: {}", collections.join(", "))));
+    }
+    let mut path = format!("/v1{collection}");
+    if *needs_id {
+        let id = text("id")?;
+        if !segment_ok(id, true) {
+            return Err(bad(format!("{tool}: id {id:?} is not a row id (^[a-z0-9][a-z0-9-]*$)")));
         }
-        "door_get" => {
-            let name = args.get("name").and_then(Value::as_str).ok_or_else(|| bad("name is required".into()))?;
-            if !safe_name(name) {
-                return Err(bad(format!("not a row name: {name:?}")));
-            }
-            Ok(format!("/v1{collection}/{name}"))
+        path = format!("{path}/{id}");
+    }
+    if tool == "athena-list" {
+        let limit = match args.get("limit") {
+            Some(Value::String(s)) => s.trim().parse::<u64>().ok(),
+            Some(v) => v.as_u64(),
+            None => Some(50),
         }
-        other => Err(BadCall { reason: format!("no such tool: {other}"), status: 404 }),
+        .ok_or_else(|| bad(format!("{tool}: limit is not a number")))?;
+        path = format!("{path}?limit={}", limit.clamp(1, 500));
+    }
+    let body = if *has_fields {
+        // an object from an MCP caller; a JSON string from `chorus-runner call … fields=`
+        let fields = match args.get("fields") {
+            Some(Value::Object(m)) => Some(m.clone()),
+            Some(Value::String(s)) => serde_json::from_str::<Value>(s).ok().and_then(|v| v.as_object().cloned()),
+            _ => None,
+        }
+        .ok_or_else(|| bad(format!("{tool}: fields is required, as a JSON object")))?;
+        if fields.is_empty() {
+            return Err(bad(format!("{tool}: fields is empty; there is nothing to write")));
+        }
+        Some(Value::Object(fields).to_string())
+    } else {
+        None
+    };
+    Ok((method.to_string(), path, body))
+}
+
+/// The door's base URL, only if it is on this machine: the caller's
+/// credential never leaves the box.
+pub fn loopback_base(base: &str) -> Result<String, BadCall> {
+    let rest = base.strip_prefix("http://").ok_or_else(|| BadCall { reason: format!("the door {base} is not a loopback http URL"), status: 503 })?;
+    let host = rest.split(['/', '?']).next().unwrap_or("");
+    let host = host.rsplit_once(':').map(|(h, p)| if p.chars().all(|c| c.is_ascii_digit()) { h } else { host }).unwrap_or(host);
+    if matches!(host, "127.0.0.1" | "localhost" | "[::1]") {
+        Ok(base.trim_end_matches('/').to_string())
+    } else {
+        Err(BadCall { reason: format!("the door {base} is not on this machine; the caller's credential stays on loopback"), status: 503 })
     }
 }
 

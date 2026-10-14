@@ -1791,7 +1791,7 @@ fn run_infra(args: &[String]) -> i32 {
 /// one sensor pass, recorded. It writes a SensorRun row (running), runs the
 /// pass as a child of this same binary with its output passed through, reads
 /// the pass's tally line back, and closes the row green or red with the
-/// counts. herald-run starts this detached, so a 40-minute pass has no wall.
+/// counts. borg-tend-herald starts this detached, so a 40-minute pass has no wall.
 /// A store that does not serve SensorRun yet is said out loud and the pass
 /// still runs: the record is missing, the look is not.
 fn a_sensor(args: &[String]) -> &str {
@@ -1811,7 +1811,7 @@ fn run_sensor(args: &[String]) -> i32 {
             "--dry-run" => dry_run = true,
             "--target" => target = it.next().cloned(),
             "--requested-by" => requested_by = it.next().cloned(),
-            // herald-run names the run so it can hand the name back before the pass ends
+            // borg-tend-herald names the run so it can hand the name back before the pass ends
             "--run" => match it.next() {
                 Some(r) if is_run_name(r, a_sensor(args)) => run = Some(r.clone()),
                 _ => { eprintln!("chorus-crawl sensor: --run needs a name like <sensor>-<stamp>, lowercase — nothing ran"); return 2; }

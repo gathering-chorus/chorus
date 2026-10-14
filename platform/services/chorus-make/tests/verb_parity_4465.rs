@@ -1,3 +1,5 @@
+// @test-type: unit
+// @domain: pipelines
 //! #4465 / ADR-062 decision 9 — MCP and dagu wrap the same verb list. Jeff,
 //! 2026-10-09 (via Silas): MCP exposes one verb to an agent, dagu runs them in
 //! order; neither has a verb the other lacks.
@@ -13,7 +15,7 @@ fn fixture(name: &str) -> String {
 fn mcp_verbs_are_the_werk_tools_not_the_pipeline_trigger() {
     let v = mcp_verbs(&fixture("fixtures/tool-names-20261009.txt"));
     assert!(v.contains("werk-pull") && v.contains("werk-review"));
-    assert!(!v.contains("chorus_werk"), "the trigger is not a verb: {v:?}");
+    assert!(!v.contains("chorus-werk"), "the trigger is not a verb: {v:?}");
     assert_eq!(v.len(), 9);
 }
 

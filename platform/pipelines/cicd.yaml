@@ -37,13 +37,13 @@ steps:
     description: "werk-review"
     depends: [skill-werk-test]
     command: "${HOME}/.chorus/bin/chorus-runner call werk-review card=${CARD}"
-  - name: skill-deploy-demo
-    description: "deploy-demo"
+  - name: skill-werk-deploy-demo
+    description: "werk-deploy-demo"
     depends: [skill-werk-review]
-    command: "${HOME}/.chorus/bin/chorus-runner call deploy-demo card=${CARD}"
+    command: "${HOME}/.chorus/bin/chorus-runner call werk-deploy-demo card=${CARD}"
   - name: skill-werk-deploy-env-up
     description: "werk-deploy env-up"
-    depends: [skill-deploy-demo]
+    depends: [skill-werk-deploy-demo]
     command: "${HOME}/.chorus/bin/chorus-runner call werk-deploy-env-up card=${CARD}"
   - name: skill-werk-demo
     description: "/demo"

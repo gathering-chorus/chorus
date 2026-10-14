@@ -2002,7 +2002,7 @@ pub fn partition_lib_only(root: &Path, crates: &[String]) -> (Vec<String>, Vec<S
 /// #3243 — the card's changed TS SERVICES: chorus-api (`platform/api`), pulse and
 /// clearing. #4515 — the retired TS MCP server is no longer one.
 /// These live OUTSIDE `platform/services/`, so `changed_service_crates`
-/// misses them — the merged≠live hole that made #3239 (env-up forward) and #3241 (chorus_werk)
+/// misses them — the merged≠live hole that made #3239 (env-up forward) and #3241 (the old act pipeline tool)
 /// merge to main but stay un-deployed until a manual deploy. They are npm-built in place
 /// (dist + kickstart), NOT by `werk-build` (target/release), so deploy_canonical routes
 /// them to the native TS-daemon path (#3317) and skips the werk-build step.

@@ -938,7 +938,7 @@ app.get('/api/chorus/logs/trace/:traceId', async (req, res) => {
   const result = await logsForTrace({ trace_id: traceId, time_window: w }, painLokiDeps);
   res.status(result.ok ? 200 : 502).json(result);
 });
-// #4515 — chorus-flow-report's route (the old MCP server ran this CLI itself).
+// #4515 — borg-read-flow's route (the old MCP server ran this CLI itself).
 // The report is computed off the serving loop, in its own node process, and
 // also refreshes ~/.chorus/reports/card-cycle-report.html. hours: 1..720.
 app.get('/api/chorus/flow-report', async (req, res) => {
@@ -958,7 +958,7 @@ app.get('/api/chorus/flow-report', async (req, res) => {
     res.type('application/json').send(stdout);
   });
 });
-// #4515 — chorus-logs-recent-errors' route (the old MCP server built this LogQL itself)
+// #4515 — borg-read-logs-errors' route (the old MCP server built this LogQL itself)
 app.get('/api/chorus/logs/errors', async (req, res) => {
   const w = logWindow(req.query.window, '1h');
   if (!w) { res.status(400).json({ ok: false, reason: 'bad-window', allowed: LOG_WINDOWS }); return; }

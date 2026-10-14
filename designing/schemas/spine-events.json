@@ -2765,7 +2765,7 @@
       "version": "1",
       "vertebra": "designing",
       "source": "chorus-events",
-      "description": "chorus_design_refresh MCP refused with typed reason (#2900). Refusal taxonomy: template-violation, design-not-found, manifest-missing, summary-missing, regenerate-fail.",
+      "description": "the design-refresh tool (retired #4515) refused with typed reason (#2900). Refusal taxonomy: template-violation, design-not-found, manifest-missing, summary-missing, regenerate-fail.",
       "fields": {
         "design_name": "Filename stem of the design",
         "detail": "Specific section / line / card_id that triggered the refusal",
@@ -2779,7 +2779,7 @@
       "version": "1",
       "vertebra": "designing",
       "source": "chorus-events",
-      "description": "Service-design refresh begun (#2900). Emitted by chorus_design_refresh MCP on entry. Paired with design.refreshed on success or design.refresh.failed on refusal.",
+      "description": "Service-design refresh begun (#2900). Emitted by the design-refresh tool (retired #4515) on entry. Paired with design.refreshed on success or design.refresh.failed on refusal.",
       "fields": {
         "cards_referenced_count": "Number of card refs found in the design at refresh entry",
         "design_name": "Filename stem of the design (e.g., build-and-deploy-service-design)"
@@ -2791,7 +2791,7 @@
       "version": "1",
       "vertebra": "designing",
       "source": "chorus-events",
-      "description": "Service-design cite-density layers regenerated from card statuses (#2900). Emitted by chorus_design_refresh MCP on success. Human-authored sections (summary block, Overview, As-Is, To-Be) are untouched; MCP-generated sections (Completeness Contract, Path-to-close, Gaps, Implementation Plan, References) are rewritten from current board state.",
+      "description": "Service-design cite-density layers regenerated from card statuses (#2900). Emitted by the design-refresh tool (retired #4515) on success. Human-authored sections (summary block, Overview, As-Is, To-Be) are untouched; MCP-generated sections (Completeness Contract, Path-to-close, Gaps, Implementation Plan, References) are rewritten from current board state.",
       "fields": {
         "cards_referenced": "Comma-separated list of card IDs whose status was pulled",
         "design_name": "Filename stem of the design",
@@ -2805,7 +2805,7 @@
       "version": "1",
       "vertebra": "designing",
       "source": "chorus-events",
-      "description": "chorus_design_refresh auto-conformed a service-design doc that lacked the canonical template structure (#2900). Inserted summary-block scaffold and/or data-section attributes on standard H2 headings so the same refresh command works on any next doc with one command. Emits before design.refreshed in the same run.",
+      "description": "the design-refresh tool (retired #4515) auto-conformed a service-design doc that lacked the canonical template structure (#2900). Inserted summary-block scaffold and/or data-section attributes on standard H2 headings so the same refresh command works on any next doc with one command. Emits before design.refreshed in the same run.",
       "fields": {
         "design_name": "Filename stem of the design",
         "scaffolded": "Comma-separated list of what was scaffolded — e.g. 'summary-block,path-to-close.data-section,gaps.data-section,references.data-section'"
@@ -5964,7 +5964,7 @@
       "version": "1",
       "vertebra": "building",
       "source": "werk",
-      "description": "chorus_werk {action:'cancel'} (#4420): the card's running pipeline was stopped (act and its children), its slot sent env-down, and the run record and log say cancelled.",
+      "description": "the v1 werk tool's cancel action (#4420; retired #4515): the card's running pipeline was stopped (act and its children), its slot sent env-down, and the run record and log say cancelled.",
       "fields": {
         "card": "The card whose run was cancelled",
         "run_id": "The cancelled run's id"

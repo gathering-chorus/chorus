@@ -8,7 +8,7 @@
  * flow (2026-08-27, kade: tile "3m ago" vs pane newest 690s): the pane skips
  * machinery digests (cards / nudge / role-state / chorus-log / smoke-check)
  * via OBS_SKIP_TOKENS, while the tile aged from the RAW last observation
- * line. A role whose newest activity was `mcp: chorus_cards_view` looked 3m
+ * line. A role whose newest activity was `mcp: clearing-surface` looked 3m
  * fresh on the tile while its newest line Jeff could actually see was 11m
  * old. Two surfaces, two event sets, one spine.
  *
@@ -26,7 +26,7 @@ import { isRenderableDigest, OBS_SKIP_TOKENS } from '../src/observations';
 describe('#4010 — one skip predicate for tile age and pane render', () => {
   test('machinery digests are not renderable', () => {
     for (const d of [
-      'mcp: chorus_cards_view',
+      'mcp: clearing-surface',
       'bash: nudge silas got-it',
       'bash: chorus-log interaction.pattern.detected',
       'bash: role-state wren building',
@@ -55,7 +55,7 @@ describe('#4010 — one skip predicate for tile age and pane render', () => {
   test('NEGATIVE: a machinery-only tail does not look like fresh activity', () => {
     const tail = [
       { ts: 'older', digest: 'edit: platform/api/public/athena/services.html' },
-      { ts: 'newer', digest: 'mcp: chorus_cards_view' },
+      { ts: 'newer', digest: 'mcp: clearing-surface' },
       { ts: 'newest', digest: 'bash: nudge kade re: red' },
     ];
     const newestRenderable = [...tail].reverse().find((l) => isRenderableDigest(l.digest));
@@ -67,7 +67,7 @@ describe('#4010 — one skip predicate for tile age and pane render', () => {
   // "older" is exactly as broken as one that always answers "newest".
   test('NEGATIVE-INVERSE: fresh real work ages from the newest line', () => {
     const tail = [
-      { ts: 'older', digest: 'mcp: chorus_cards_view' },
+      { ts: 'older', digest: 'mcp: clearing-surface' },
       { ts: 'newest', digest: 'edit: directing/clearing/src/observations.ts' },
     ];
     const newestRenderable = [...tail].reverse().find((l) => isRenderableDigest(l.digest));

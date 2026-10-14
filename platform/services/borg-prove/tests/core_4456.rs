@@ -1,3 +1,5 @@
+// @test-type: unit
+// @domain: borg
 // #4456 card AC: each AC is met, not met or unmeasured with evidence; an AC
 // with no runnable check is unmeasured, never met; a known-false AC is not met.
 use borg_prove::*;
@@ -51,11 +53,11 @@ fn intake_rejects_an_ac_with_no_runnable_check_and_names_it() {
 
 #[test]
 fn a_failure_routes_to_reopen_before_the_land_and_a_ticket_in_operating() {
-    let routes = parse_routes("skill-prove-stage=value-stream-step-build,skill-prove-in-prod=value-stream-step-borg-surface");
-    assert_eq!(route_for("skill-prove-stage", &routes, "silas"), Route::Reopen { step: "value-stream-step-build".into() });
+    let routes = parse_routes("skill-borg-stage=value-stream-step-build,skill-borg-verify-in-prod=value-stream-step-borg-surface");
+    assert_eq!(route_for("skill-borg-stage", &routes, "silas"), Route::Reopen { step: "value-stream-step-build".into() });
     assert_eq!(
-        route_for("skill-prove-in-prod", &routes, "silas"),
-        Route::Ticket { step: "value-stream-step-borg-surface".into(), key: "silas|skill-prove-in-prod|failed".into() }
+        route_for("skill-borg-verify-in-prod", &routes, "silas"),
+        Route::Ticket { step: "value-stream-step-borg-surface".into(), key: "silas|skill-borg-verify-in-prod|failed".into() }
     );
     assert_eq!(route_for("skill-nope", &routes, "silas"), Route::Unrouted, "never guessed");
 }
@@ -72,8 +74,8 @@ fn cardac_rows_read_from_the_store_answer_in_ac_order() {
 
 #[test]
 fn the_failed_step_is_read_from_the_runs_status() {
-    let st = "Running - x\n├─skill-prove-intake (1s) [success]\n├─skill-prove-stage (3s) [failed]\n└─skill-werk-go [none]\n";
-    assert_eq!(failed_in_status(st), "skill-prove-stage");
+    let st = "Running - x\n├─skill-borg-intake (1s) [success]\n├─skill-borg-stage (3s) [failed]\n└─skill-werk-go [none]\n";
+    assert_eq!(failed_in_status(st), "skill-borg-stage");
     assert_eq!(failed_in_status("├─skill-a (1s) [success]\n"), "", "no failed step names none");
 }
 

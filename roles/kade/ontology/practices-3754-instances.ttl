@@ -60,7 +60,7 @@ chorus:practice-continuous-integration a chorus:Practice ;
                      chorus:hemenway-collaborate-with-succession ,
                      chorus:xp-flow,
                      chorus:xp-improvement;
-    chorus:enactedBy "chorus_werk" .
+    chorus:enactedBy "chorus-werk" .
 
 chorus:practice-pair-programming a chorus:Practice ;
     chorus:ownedBy chorus:principal-wren ;
@@ -183,7 +183,7 @@ chorus:practice-nudge a chorus:Practice ;
                      chorus:hemenway-each-element-multiple-functions ,
                      chorus:xp-flow,
                      chorus:xp-humanity;
-    chorus:enactedBy "chorus-nudge-message" .
+    chorus:enactedBy "clearing-nudge" .
 
 chorus:practice-search-before-filesystem a chorus:Practice ;
     chorus:ownedBy chorus:principal-wren ;

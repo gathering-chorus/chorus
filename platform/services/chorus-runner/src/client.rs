@@ -33,6 +33,17 @@ pub fn run(tool: &str, args: &Value) -> i32 {
         eprintln!("chorus-runner call: no ROLE to run as");
         return 2;
     }
+    // #4515 — athena-get/-list/-add/-set: the same check and the same door
+    // call as the server, as $ROLE with a credential minted for $ROLE
+    if crate::is_athena_tool(tool) {
+        let cols = std::sync::Arc::new(std::sync::RwLock::new(Vec::new()));
+        crate::server::refresh_collections(&cols);
+        let cols = cols.read().map(|c| c.clone()).unwrap_or_default();
+        let map = args.as_object().cloned().unwrap_or_default();
+        let (ok, text, _) = crate::server::run_athena(&crate::server::door_base(), tool, &map, &cols, &role, None, &crate::new_trace_id());
+        if ok { println!("{text}") } else { eprintln!("chorus-runner call: {text}") }
+        return if ok { 0 } else { 1 };
+    }
     let tools = match crate::server::load_skill_tools() {
         Ok(t) => t,
         Err(e) => {

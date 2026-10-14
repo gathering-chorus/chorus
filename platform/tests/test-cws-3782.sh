@@ -215,11 +215,11 @@ import json, sys
 p = sys.argv[1]; d = json.load(open(p))
 d["dagRuns"][:0] = [
  {"name":"cicd-land","dagRunId":"L2","params":"CARD=1090 ROLE=kade ACCEPTER=jeff","statusLabel":"failed","queuedAt":"2026-10-09T23:30:00-04:00","nodes":[{"statusLabel":"failed","step":{"name":"skill-werk-sync"}}]},
- {"name":"cicd-land","dagRunId":"L1","params":"CARD=109 ROLE=kade ACCEPTER=jeff","statusLabel":"running","queuedAt":"2026-10-09T23:00:00-04:00","nodes":[{"statusLabel":"succeeded","step":{"name":"skill-werk-merge"}},{"statusLabel":"running","step":{"name":"skill-deploy-prod"}}]}]
+ {"name":"cicd-land","dagRunId":"L1","params":"CARD=109 ROLE=kade ACCEPTER=jeff","statusLabel":"running","queuedAt":"2026-10-09T23:00:00-04:00","nodes":[{"statusLabel":"succeeded","step":{"name":"skill-werk-merge"}},{"statusLabel":"running","step":{"name":"skill-werk-deploy-prod"}}]}]
 json.dump(d, open(p, "w"))
 EOF2
 out=$(CWS_RUNS_DIR=$TD CWS_DAGU="file://$TD/dagu" "$CWS" 109)
-t "the card's land shows on the land queue" "v2 land running at skill-deploy-prod · 1 land · dagu L1" "$out"
+t "the card's land shows on the land queue" "v2 land running at skill-werk-deploy-prod · 1 land · dagu L1" "$out"
 if [[ "$out" == *"dagu L2"* ]]; then echo "FAIL another card's land (CARD=1090) counted for 109"; fails=$((fails+1)); fi
 
 # #4494 — a go can be a no; the go line offers both, and a no reads "rejected"
@@ -323,7 +323,7 @@ t "…as one short summary" "· tests 1 ok · 1 failed · running (2 of 4)" "$ou
 # line rides the card's own line, and a landed card (off WIP) whose model failed
 # stays on the board view. NEGATIVE PROOF: a deployed model adds nothing.
 mkdir -p "$TD/d3/api/v1" "$TD/api3/api/chorus/context/board"
-echo 'athena-land #120: chorus_athena canonical did not finish clean
+echo 'athena-land #120: athena-deploy land did not finish clean
 athena-land #120: result=failed' > "$TD/h120.out"
 echo 'athena-land #121: result=deployed' > "$TD/h121.out"
 cat > "$TD/d3/api/v1/dag-runs" <<EOF6

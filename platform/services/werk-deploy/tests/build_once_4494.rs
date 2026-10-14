@@ -1,7 +1,9 @@
+// @test-type: unit
+// @domain: werk
 //! #4494 — build once: prod ships the binary the demo ran when the crate's
 //! inputs are the same in the card's werk and on main; otherwise it builds
 //! from main, so a change another card landed is never dropped (Silas,
-//! 2026-10-11 09:19). Today deploy-prod rebuilds every time: 6.1 min median.
+//! 2026-10-11 09:19). Today werk-deploy-prod rebuilds every time: 6.1 min median.
 use werk_deploy::{build_inputs, may_promote};
 
 fn t(p: &str, h: &str) -> (String, String) { (p.to_string(), h.to_string()) }

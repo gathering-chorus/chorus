@@ -1,5 +1,5 @@
-//! werk-unpull — the /pull inverse as a verb (#3299, ADR-038 port of the TS
-//! `chorus_unpull_card`; ADR-032 §1 blueprint: zero-dep std-only Rust, subprocess
+//! werk-unpull — the /pull inverse as a verb (#3299, ADR-038 port of the old TS
+//! unpull tool, retired #4515; ADR-032 §1 blueprint: zero-dep std-only Rust, subprocess
 //! CLIs at the absolute home path, spine emits, typed refusals).
 //!
 //! Reverses a pull WITHOUT losing work: validate (card is WIP + owned by the

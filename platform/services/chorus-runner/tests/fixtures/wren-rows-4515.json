@@ -1,124 +1,75 @@
 [
  {
-  "name": "chorus-wip",
-  "label": "chorus-wip",
-  "comment": "Reads a role's WIP cards; you when no role is given.",
-  "executor": "http",
-  "implementedBy": "GET {api}/api/chorus/context/board/wip?role={role=@caller}",
-  "inputShape": "RoleReadInput",
-  "runsAs": "caller",
-  "hasDomain": "cards",
-  "ownedBy": "principal-wren"
- },
- {
-  "name": "chorus-sup",
-  "label": "chorus-sup",
-  "comment": "Reads a role's priorities; you when no role is given.",
-  "executor": "http",
-  "implementedBy": "GET {api}/api/chorus/context/priorities?role={role=@caller}",
-  "inputShape": "RoleReadInput",
-  "runsAs": "caller",
-  "hasDomain": "cards",
-  "ownedBy": "principal-wren"
- },
- {
-  "name": "chorus-logs-for-card",
-  "label": "chorus-logs-for-card",
+  "name": "borg-read-logs-card",
+  "label": "borg-read-logs-card",
   "comment": "Reads one card's spine events from Loki over a window.",
   "executor": "http",
   "implementedBy": "GET {api}/api/chorus/logs/card/{card_id}?window={time_window=1d}",
   "inputShape": "LogsCardInput",
   "runsAs": "caller",
   "hasDomain": "logs",
-  "ownedBy": "principal-wren"
+  "ownedBy": "principal-wren",
+  "forStreamStep": "borg-read"
  },
  {
-  "name": "chorus-logs-for-trace",
-  "label": "chorus-logs-for-trace",
+  "name": "borg-read-logs-trace",
+  "label": "borg-read-logs-trace",
   "comment": "Reads one trace's spine events from Loki over a window.",
   "executor": "http",
   "implementedBy": "GET {api}/api/chorus/logs/trace/{trace_id}?window={time_window=1d}",
   "inputShape": "LogsTraceInput",
   "runsAs": "caller",
   "hasDomain": "logs",
-  "ownedBy": "principal-wren"
+  "ownedBy": "principal-wren",
+  "forStreamStep": "borg-read"
  },
  {
-  "name": "chorus-logs-recent-errors",
-  "label": "chorus-logs-recent-errors",
+  "name": "borg-read-logs-errors",
+  "label": "borg-read-logs-errors",
   "comment": "Reads recent error events, for one role or all.",
   "executor": "http",
   "implementedBy": "GET {api}/api/chorus/logs/errors?role={role=}&window={time_window=1h}",
   "inputShape": "LogsErrorsInput",
   "runsAs": "caller",
   "hasDomain": "logs",
-  "ownedBy": "principal-wren"
+  "ownedBy": "principal-wren",
+  "forStreamStep": "borg-read"
  },
  {
-  "name": "chorus-decisions-list",
-  "label": "chorus-decisions-list",
-  "comment": "Lists the team's decision records.",
-  "executor": "http",
-  "implementedBy": "GET {door}/v1/decisions/adrs",
-  "inputShape": "NoInput",
-  "runsAs": "caller",
-  "hasDomain": "decisions",
-  "ownedBy": "principal-wren"
- },
- {
-  "name": "chorus-decisions-get",
-  "label": "chorus-decisions-get",
-  "comment": "Reads one decision record by name, e.g. adr-041.",
-  "executor": "http",
-  "implementedBy": "GET {door}/v1/decisions/adrs/{id}",
-  "inputShape": "DoorRowInput",
-  "runsAs": "caller",
-  "hasDomain": "decisions",
-  "ownedBy": "principal-wren"
- },
- {
-  "name": "chorus-principles-list",
-  "label": "chorus-principles-list",
-  "comment": "Lists the team's principles.",
-  "executor": "http",
-  "implementedBy": "GET {door}/v1/principles/principles",
-  "inputShape": "NoInput",
-  "runsAs": "caller",
-  "hasDomain": "principles",
-  "ownedBy": "principal-wren"
- },
- {
-  "name": "chorus-pain-rollup",
-  "label": "chorus-pain-rollup",
+  "name": "borg-surface-pain",
+  "label": "borg-surface-pain",
   "comment": "Rolls up recorded pain over a window.",
   "executor": "http",
   "implementedBy": "GET {api}/api/chorus/pain/rollup?window={window=7d}",
   "inputShape": "PainRollupInput",
   "runsAs": "caller",
   "hasDomain": "metrics",
-  "ownedBy": "principal-wren"
+  "ownedBy": "principal-wren",
+  "forStreamStep": "borg-surface"
  },
  {
-  "name": "chorus-flow-report",
-  "label": "chorus-flow-report",
+  "name": "borg-read-flow",
+  "label": "borg-read-flow",
   "comment": "Reports card flow over the last hours.",
   "executor": "http",
   "implementedBy": "GET {api}/api/chorus/flow-report?hours={hours=120}",
   "inputShape": "FlowReportInput",
   "runsAs": "caller",
   "hasDomain": "metrics",
-  "ownedBy": "principal-wren"
+  "ownedBy": "principal-wren",
+  "forStreamStep": "borg-read"
  },
  {
-  "name": "chorus-blast-radius",
-  "label": "chorus-blast-radius",
+  "name": "borg-read-blast-radius",
+  "label": "borg-read-blast-radius",
   "comment": "Names who is affected if a Product, Domain or Service changes.",
   "executor": "http",
   "implementedBy": "GET {api}/api/athena/blast-radius/{iri}",
   "inputShape": "BlastRadiusInput",
   "runsAs": "caller",
   "hasDomain": "products",
-  "ownedBy": "principal-wren"
+  "ownedBy": "principal-wren",
+  "forStreamStep": "borg-read"
  },
  {
   "name": "loom-gemba",
@@ -133,8 +84,8 @@
   "ownedBy": "principal-wren"
  },
  {
-  "name": "chorus-service-status",
-  "label": "chorus-service-status",
+  "name": "borg-read-services",
+  "label": "borg-read-services",
   "comment": "Reads a chorus service's launchd state.",
   "executor": "deterministic",
   "implementedBy": "agent-state.sh",
@@ -142,11 +93,12 @@
   "inputShape": "ServiceInput",
   "runsAs": "caller",
   "hasDomain": "services",
-  "ownedBy": "principal-wren"
+  "ownedBy": "principal-wren",
+  "forStreamStep": "borg-read"
  },
  {
-  "name": "chorus-service-start",
-  "label": "chorus-service-start",
+  "name": "borg-prune-service-start",
+  "label": "borg-prune-service-start",
   "comment": "Starts a stopped chorus service.",
   "executor": "deterministic",
   "implementedBy": "agent-state.sh",
@@ -154,11 +106,12 @@
   "inputShape": "ServiceInput",
   "runsAs": "caller",
   "hasDomain": "services",
-  "ownedBy": "principal-wren"
+  "ownedBy": "principal-wren",
+  "forStreamStep": "borg-prune"
  },
  {
-  "name": "chorus-service-stop",
-  "label": "chorus-service-stop",
+  "name": "borg-prune-service-stop",
+  "label": "borg-prune-service-stop",
   "comment": "Stops a chorus service.",
   "executor": "deterministic",
   "implementedBy": "agent-state.sh",
@@ -166,11 +119,12 @@
   "inputShape": "ServiceInput",
   "runsAs": "caller",
   "hasDomain": "services",
-  "ownedBy": "principal-wren"
+  "ownedBy": "principal-wren",
+  "forStreamStep": "borg-prune"
  },
  {
-  "name": "chorus-service-restart",
-  "label": "chorus-service-restart",
+  "name": "borg-prune-service-restart",
+  "label": "borg-prune-service-restart",
   "comment": "Restarts a chorus service with its installed binary.",
   "executor": "deterministic",
   "implementedBy": "agent-state.sh",
@@ -178,11 +132,12 @@
   "inputShape": "ServiceInput",
   "runsAs": "caller",
   "hasDomain": "services",
-  "ownedBy": "principal-wren"
+  "ownedBy": "principal-wren",
+  "forStreamStep": "borg-prune"
  },
  {
-  "name": "chorus-service-deploy",
-  "label": "chorus-service-deploy",
+  "name": "borg-prune-service-deploy",
+  "label": "borg-prune-service-deploy",
   "comment": "Builds, installs and restarts a chorus crate.",
   "executor": "deterministic",
   "implementedBy": "agent-state.sh",
@@ -191,11 +146,12 @@
   "runsAs": "caller",
   "hasDomain": "services",
   "ownedBy": "principal-wren",
-  "timeoutSeconds": "600"
+  "timeoutSeconds": "600",
+  "forStreamStep": "borg-prune"
  },
  {
-  "name": "chorus-service-rollback",
-  "label": "chorus-service-rollback",
+  "name": "borg-prune-service-rollback",
+  "label": "borg-prune-service-rollback",
   "comment": "Restores a chorus crate's previous binary.",
   "executor": "deterministic",
   "implementedBy": "agent-state.sh",
@@ -204,6 +160,7 @@
   "runsAs": "caller",
   "hasDomain": "services",
   "ownedBy": "principal-wren",
-  "timeoutSeconds": "600"
+  "timeoutSeconds": "600",
+  "forStreamStep": "borg-prune"
  }
 ]

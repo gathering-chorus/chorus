@@ -15,10 +15,10 @@ The order is data: chunks in `roleSequence` order (loom position shown where dec
 ROLE=<optional — defaults to the invoking role; Jeff can name any role>
 ```
 
-## Step 1: Invoke `chorus-sup`
+## Step 1: Invoke `clearing-prioritize`
 
 ```
-mcp__chorus-api__chorus-sup({ role: "<role>" })   // omit role to use the calling role
+mcp__chorus-api__clearing-prioritize({ role: "<role>" })   // omit role to use the calling role
 ```
 
 ## Step 2: Paste the walk
@@ -28,7 +28,7 @@ mcp__chorus-api__chorus-sup({ role: "<role>" })   // omit role to use the callin
 ## Hard rules
 
 - **Do not re-sort, filter, or editorialize the walk.** The graph decided the order (#3654 + the #3681 uniqueness floor); the skill's job is delivery.
-- **No fallback** to `chorus_priorities_readout` (tagged-only label-scrape — superseded here), `cards chunk` (static-map, blind to real labels — the #3432 defect), or any board scraping.
+- **No fallback** to the retired priorities readout (tagged-only label-scrape — superseded here), `cards chunk` (static-map, blind to real labels — the #3432 defect), or any board scraping.
 - If the MCP errors, surface the exact error and stop.
 
 ## Re-sequencing (the other half of the loop)

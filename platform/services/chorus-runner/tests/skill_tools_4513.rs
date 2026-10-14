@@ -14,7 +14,7 @@ fn row(v: Value) -> Value {
 
 fn herald_row() -> Value {
     row(json!({
-        "name": "herald-run", "executor": "deterministic", "inputShape": "HeraldRunInput",
+        "name": "borg-tend-herald", "executor": "deterministic", "inputShape": "HeraldRunInput",
         "implementedBy": "chorus-crawl",
         "arguments": "sensor {sensor} [--target {target}] [--dry-run {dry_run}] --requested-by {caller}",
         "ownedBy": "principal-silas", "comment": "Run one sensor pass.", "timeoutSeconds": 600, "runsAs": "owner"
@@ -33,7 +33,7 @@ fn a_deterministic_skill_with_an_input_shape_is_a_tool() {
         json!({"name": "werk-build", "executor": "deterministic", "implementedBy": "werk-build"}),
     ];
     let (tools, unmeasured) = skill_tools(&rows, &input_table());
-    assert_eq!(tools.iter().map(|t| t.name.as_str()).collect::<Vec<_>>(), vec!["herald-run"]);
+    assert_eq!(tools.iter().map(|t| t.name.as_str()).collect::<Vec<_>>(), vec!["borg-tend-herald"]);
     assert!(unmeasured.is_empty(), "{unmeasured:?}");
     let t = &tools[0];
     assert_eq!((t.owner.as_str(), t.binary.as_str(), t.timeout_s), ("silas", "chorus-crawl", 600));
@@ -97,7 +97,7 @@ fn a_hostile_value_is_one_literal_argument() {
     assert_eq!(v, vec!["sensor", "code", "--target", "/repo; rm -rf ~"]);
 }
 
-// #4513 reopen 1 — Silas measured herald-run exiting 2 on live :3342:
+// #4513 reopen 1 — Silas measured borg-tend-herald exiting 2 on live :3342:
 // CHORUS_ROLE was unset in the child. A real child must see the owner.
 #[test]
 fn the_child_runs_as_the_skill_owner() {
@@ -137,8 +137,9 @@ fn a_placeholder_inside_a_word_is_filled_or_the_word_dropped() {
     assert_eq!(argv("{card} {caller} [--domain={domain}] [--type={type}]", &a, "wren"), vec!["4514", "wren", "--domain=services"]);
 }
 
-// #4515 (Silas) — chorus-cards-tag runs `untag {id} {category}:{value}`: every
-// placeholder in a word is filled, and the word drops if any one is absent.
+// #4515 (Silas) — a template like `untag {id} {category}:{value}` (the retired
+// card-tag tool): every placeholder in a word is filled, and the word drops
+// if any one is absent.
 #[test]
 fn every_placeholder_inside_a_word_is_filled() {
     let a = args(json!({ "id": 4515, "category": "chunk", "value": "ops" }));

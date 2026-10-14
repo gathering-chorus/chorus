@@ -10,11 +10,12 @@ mod card;
 mod checks;
 mod door;
 mod hierarchy;
+mod migration;
 mod ported;
 mod registry;
 mod store;
 
-use checks::{Verdict, ALLOWED_VALUES, COMPLETENESS, DOMAIN_CLAIMS_VOCABULARY, EXERCISES_FROM_A_TEST, PATTERN, SURVIVES_THE_DOOR};
+use checks::{Verdict, ALLOWED_VALUES, COMPLETENESS, DOMAIN_CLAIMS_VOCABULARY, EXERCISES_FROM_A_TEST, PATTERN, SURVIVES_THE_DOOR, TOOL_NAME};
 use std::io::Write;
 
 /// Every line the run produced, printed AND written to the report file.
@@ -100,8 +101,13 @@ fn env_nonempty(key: &str, default: &str) -> String {
 fn main() {
     // #4446 — under launchd, a failed run is logged as service.failed (shared/service_lifecycle.rs).
     service_lifecycle::run_as_job();
-    // #4515 — `--card <n>`: the Model step for one card's change, not the store sweep.
     let args: Vec<String> = std::env::args().collect();
+    // #4515 — `migration`: the V1→V2 per-domain stage matrix (was the MCP tool
+    // chorus_migration_readout). Its own report, not the sweep.
+    if args.get(1).map(String::as_str) == Some("migration") {
+        std::process::exit(migration::run());
+    }
+    // #4515 — `--card <n>`: the Model step for one card's change, not the store sweep.
     if let Some(i) = args.iter().position(|a| a == "--card") {
         match args.get(i + 1).filter(|v| !v.starts_with("--")) {
             Some(n) => std::process::exit(card::run(n)),
@@ -175,6 +181,8 @@ fn main() {
     // #4499 — only a test says what it exercises
     store_checks.push(&EXERCISES_FROM_A_TEST);
     store_checks.push(&DOMAIN_CLAIMS_VOCABULARY);
+    // #4515 — a tool is named for a Product row and linked to the step it runs
+    store_checks.push(&TOOL_NAME);
     // #4481 — one parent per row, position read up the chain, no unlisted links across hierarchies
     store_checks.extend(hierarchy::all());
     if matches!(&exact, Some(g) if g.is_empty()) {

@@ -434,7 +434,7 @@ fn main() -> ExitCode {
         // #4426 — the boot transcript read, without replaying a flagged conversation.
         "boot-read" => return commands::context_cache::boot_read(&args),
         "heartbeat" => return heartbeat_cmd(),
-        // #4515 — chorus-nudge-message's Skill row runs this, as the verified caller.
+        // #4515 — clearing-nudge's Skill row runs this, as the verified caller.
         "nudge-send" => return nudge_send_cmd(&args),
 
         // #2435 — "inject" subcommand retired alongside inject_by_tab_name.
@@ -483,7 +483,7 @@ fn main() -> ExitCode {
             "chorus-hook-shim: unknown subcommand '{}' — not a verb and not a hook endpoint.\n\
              Hook endpoints: {}\n\
              (retired verbs stay gone on purpose; `nudge` left in #2804 — agents send \
-             nudges via the chorus-nudge-message MCP tool)",
+             nudges via the clearing-nudge MCP tool)",
             endpoint,
             HOOK_ENDPOINTS.join(", ")
         );

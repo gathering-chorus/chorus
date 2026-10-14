@@ -78,7 +78,7 @@ fn the_runners_table_is_what_the_generator_writes_today() {
     let want = athena_gen::emit::tool_inputs_json(&athena_gen::model::tool_inputs(&store).unwrap());
     let have = std::fs::read_to_string(root.join("platform/services/chorus-runner/src/tool_inputs.json")).unwrap();
     assert_eq!(have, want, "regenerate: athena-gen tool-inputs --root . --out platform/services/chorus-runner/src/tool_inputs.json");
-    assert!(want.contains("HeraldRunInput"), "herald-run's input is in the model");
+    assert!(want.contains("HeraldRunInput"), "borg-tend-herald's input is in the model");
 }
 
 /// #4515 — `chorus:namesRole` reaches the runner's table, so the runner can

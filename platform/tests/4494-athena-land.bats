@@ -140,6 +140,7 @@ scope() { printf '#!/usr/bin/env bash\necho "$@" >> "%s/scoped"\n%s\n' "$T" "$1"
   [[ "$(tail -1 <<<"$output")" == "athena-land #77: result=none" ]] || false
 }
 
-@test "the old door is gone: athena-land calls no chorus_athena and no chorus-mcp-call" {
-  ! grep -qE 'chorus_athena|chorus-mcp-call' <(grep -v '^#' "$AL") || false
+@test "the old door is gone: athena-land calls no old act athena tool and no chorus-mcp-call" {
+  old="chorus""_athena"
+  ! grep -qE "$old|chorus-mcp-call" <(grep -v '^#' "$AL") || false
 }

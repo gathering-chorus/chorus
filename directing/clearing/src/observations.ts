@@ -5,7 +5,7 @@
  * parseObservation) SKIPS machinery digests — nudge/chorus-log/role-state/
  * cards/smoke-check — so they never render. The tile (tiles.ts
  * applyLastObservation) aged from the RAW last observation line, skip or not.
- * A role whose newest activity was `mcp: chorus_cards_view` showed a 3m tile
+ * A role whose newest activity was `mcp: clearing-surface` showed a 3m tile
  * age while the pane's newest renderable line for it was 11m old: two surfaces
  * reading two event sets from one spine, which is exactly what the #3976
  * reconciliation flow refuses (Jeff, 2026-08-22: "if u check the role state
@@ -16,7 +16,12 @@
  * import this predicate, so they cannot drift apart again without a diff that
  * says so.
  */
-export const OBS_SKIP_TOKENS = ['nudge', 'chorus-log', 'role-state', 'cards', 'smoke-check'];
+// #4515 — the card tools lost "cards" from their names (cards view →
+// clearing-surface, …), so they are named here, or a card read would age the tile.
+export const OBS_SKIP_TOKENS = [
+  'nudge', 'chorus-log', 'role-state', 'cards', 'smoke-check',
+  'clearing-card', 'clearing-tag', 'clearing-surface', 'clearing-sequence', 'clearing-sweep',
+];
 
 export function isRenderableDigest(digest: string): boolean {
   return !OBS_SKIP_TOKENS.some((t) => digest.includes(t));

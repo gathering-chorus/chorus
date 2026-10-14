@@ -20,9 +20,9 @@ const EVENT_LOOP_ALERT =
 const EVENT_LOOP_ALERT_2 =
   'chorus-api event loop blocked 6083ms at 2026-06-11 13:30:35 EDT. The slow request is in the access log at this timestamp.';
 const CARDS_REFUSAL =
-  '[mcp.error] mcp.tool.error tool=chorus_cards_tag — chorus_cards_tag refused: use-cards-set — setting a domain value is owned by chorus_cards_set (one writer per field, ADR-031).';
+  '[mcp.error] mcp.tool.error tool=clearing-sequence — clearing-sequence refused: wrong-status — Done is owned by clearing-sweep (one writer per field, ADR-031).';
 const REAL_MCP_ERROR =
-  '[mcp.error] mcp.tool.error tool=chorus_werk — spawn ENOENT: werk binary not found';
+  '[mcp.error] mcp.tool.error tool=chorus-werk — spawn ENOENT: werk binary not found';
 const ROLE_MESSAGE =
   '[#3339 ACK — silas] Read the card + the reconcile receipts. (1) Products: …';
 

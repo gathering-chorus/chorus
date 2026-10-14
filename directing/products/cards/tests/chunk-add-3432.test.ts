@@ -8,11 +8,11 @@
  * (coherent-model, loom-authoring, werk-reliability, core-reliability, cards,
  * proving, …) are NOT in that static map, so LABELS.chunk[value] === undefined
  * and the label was skipped. The card landed untagged → invisible in
- * chorus_priorities_readout (TAGGED-ONLY) until a manual chorus-cards-set.
+ * the priorities readout (TAGGED-ONLY) until a manual clearing-tag.
  *
  * Fix: apply chunk by NAME (find-or-create), the same path cards_set uses, so
  * any priority chunk sticks at add-time. Shared client.add code path = fixes
- * both /card (chorus-card-add-jeff) and the agent chorus-cards-add path.
+ * both /card (clearing-card-jeff) and the agent clearing-card path.
  *
  * Hermetic: stubs BoardClient.api (same harness as client-coverage-2652).
  */

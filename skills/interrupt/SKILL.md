@@ -1,6 +1,6 @@
 # /interrupt — Break Into a Role's Session
 
-> **Known gap (#2814):** Step 1's Escape-keystroke injection used `bash nudge "\x1b" --force` to send a raw control character via direct osascript. Post-#2804/#2809 the bash path is gone and the MCP `chorus-nudge-message` interface treats the message as text only — sending `"\x1b"` types the literal four characters `\x1b`, not an Escape key. `/interrupt` therefore cannot cancel a running generation today; only Step 3's redirect message works. Filed: see follow-on for an interrupt-specific primitive (Wren).
+> **Known gap (#2814):** Step 1's Escape-keystroke injection used `bash nudge "\x1b" --force` to send a raw control character via direct osascript. Post-#2804/#2809 the bash path is gone and the MCP `clearing-nudge` interface treats the message as text only — sending `"\x1b"` types the literal four characters `\x1b`, not an Escape key. `/interrupt` therefore cannot cancel a running generation today; only Step 3's redirect message works. Filed: see follow-on for an interrupt-specific primitive (Wren).
 
 Stop what a role is doing and redirect. Today this skill only delivers the redirect — the cancellation step is broken pending the follow-on.
 
@@ -18,7 +18,7 @@ Stop what a role is doing and redirect. Today this skill only delivers the redir
 ### Step 1: Send the redirect as a nudge
 
 ```
-mcp__chorus-api__chorus-nudge-message({
+mcp__chorus-api__clearing-nudge({
   to: "<role>",
   message: "<your-role-name>: [INTERRUPT] <message>"
 })

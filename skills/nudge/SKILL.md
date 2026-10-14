@@ -22,7 +22,7 @@ Inject a message directly into another role's terminal session. The message appe
 Call the MCP tool. One call. The substrate handles the rest.
 
 ```
-mcp__chorus-api__chorus-nudge-message({ to: "<role>", message: "<your-role-name>: <message>" })
+mcp__chorus-api__clearing-nudge({ to: "<role>", message: "<your-role-name>: <message>" })
 ```
 
 The MCP server:
@@ -35,7 +35,7 @@ Returns `nudge sent: <from> → <to>` on success, or a typed refusal (e.g. `reci
 
 ## What changed (#2804/#2808/#2809)
 
-Pre-#2804 this skill called `bash platform/scripts/nudge`. That path is gone — bash script deleted, `chorus-hook-shim nudge` retired, direct `chorus-inject` invocation refused without `_NUDGE_PULSE_INTERNAL=1`. **MCP `chorus-nudge-message` is the only path from a Claude session.** Operational scripts (alerts, health checks) use `platform/scripts/ops-nudge` which POSTs to the same pulse endpoint.
+Pre-#2804 this skill called `bash platform/scripts/nudge`. That path is gone — bash script deleted, `chorus-hook-shim nudge` retired, direct `chorus-inject` invocation refused without `_NUDGE_PULSE_INTERNAL=1`. **MCP `clearing-nudge` is the only path from a Claude session.** Operational scripts (alerts, health checks) use `platform/scripts/ops-nudge` which POSTs to the same pulse endpoint.
 
 ## When to use /nudge vs other tools
 

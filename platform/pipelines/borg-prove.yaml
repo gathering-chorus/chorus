@@ -16,29 +16,29 @@ env:
   - PATH: ${CHORUS_WERK_BASE}/${ROLE}-bin:${PATH}
 handler_on:
   failure:
-    command: '${CHORUS_HOME}/platform/scripts/borg-prove route ${CARD} ${ROLE} ${DAG_RUN_ID} skill-prove-intake=value-stream-step-designing,skill-prove-verify=value-stream-step-build,skill-prove-stage=value-stream-step-build,skill-prove-verdict=value-stream-step-build,skill-werk-go=value-stream-step-borg-intake || ${CHORUS_HOME}/platform/scripts/ops-nudge ${ROLE} "werk v2 #${CARD} run failed and its route failed too · dagu ${DAG_RUN_ID} · /cws ${CARD}"'
+    command: '${CHORUS_HOME}/platform/scripts/borg-prove route ${CARD} ${ROLE} ${DAG_RUN_ID} skill-borg-intake=value-stream-step-designing,skill-borg-verify=value-stream-step-build,skill-borg-stage=value-stream-step-build,skill-borg-review=value-stream-step-build,skill-werk-go=value-stream-step-borg-intake || ${CHORUS_HOME}/platform/scripts/ops-nudge ${ROLE} "werk v2 #${CARD} run failed and its route failed too · dagu ${DAG_RUN_ID} · /cws ${CARD}"'
 steps:
-  - name: skill-prove-intake
-    description: "prove-intake"
+  - name: skill-borg-intake
+    description: "borg-intake"
     command: "borg-prove intake ${CARD} ${ROLE}"
-  - name: skill-prove-verify
-    description: "prove-verify"
-    depends: [skill-prove-intake]
+  - name: skill-borg-verify
+    description: "borg-verify"
+    depends: [skill-borg-intake]
     command: "borg-prove verify ${CARD} ${ROLE}"
-  - name: skill-prove-stage
-    description: "prove-stage"
-    depends: [skill-prove-verify]
+  - name: skill-borg-stage
+    description: "borg-stage"
+    depends: [skill-borg-verify]
     command: "borg-prove stage ${CARD} ${ROLE}"
-  - name: skill-prove-verdict
-    description: "prove-verdict"
-    depends: [skill-prove-stage]
+  - name: skill-borg-review
+    description: "borg-review"
+    depends: [skill-borg-stage]
     command: "borg-prove verdict ${CARD} ${ROLE}"
     continue_on:
       exit_code: [2]
       mark_success: true
   - name: skill-werk-go
     description: "Jeff's go"
-    depends: [skill-prove-verdict]
+    depends: [skill-borg-review]
     id: skill_werk_go
     action: human.task
     with:
