@@ -456,7 +456,11 @@ fn cross_role_write_refused_regardless_of_flag() {
     std::env::set_var("CHORUS_WERK_BASE", "/Users/jeff/CascadeProjects/chorus-werk");
     std::env::remove_var("CHORUS_WERK_ENABLE");
 
-    let cross = write_input("/Users/jeff/CascadeProjects/chorus-werk/wren-3000/foo.md");
+    // The writer is named, as the shim names it in production. Left unnamed,
+    // input.role() asks the process ancestry (#4004), so the test read whoever
+    // ran cargo: run from Wren's session it was wren writing to wren-3000,
+    // its own werk, and the refusal correctly did not fire.
+    let cross = as_role(write_input("/Users/jeff/CascadeProjects/chorus-werk/wren-3000/foo.md"), "kade");
     let r = canonical_write_guard::check(&cross);
     assert!(
         r.stdout.is_some(),
