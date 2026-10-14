@@ -1,16 +1,17 @@
 # #4465 fixture — the cicd pipeline's rows as the SPARQL SELECT returns them. demo-fitness, prove-live
 # and crawl-delta are inline bash in werk.yml today, not verbs, so they are not rows yet (design §5).
-step	stepOrder	skillOrder	skill	label	executor	implementedBy	mode	onFail
-commit	1	1	skill-werk-commit	werk-commit	deterministic	werk-commit	${CARD} ${ROLE} --atomic	
-commit	1	2	skill-werk-push	werk-push	deterministic	werk-push	${CARD} ${ROLE} --atomic	
-build	2	1	skill-werk-build	werk-build	deterministic	werk-build	${CARD} ${ROLE} --target werk	
-test	3	1	skill-werk-test	werk-test	deterministic	werk-test	${CARD} ${ROLE}	
-test	3	2	skill-werk-review	werk-review	deterministic	werk-review	${CARD} ${ROLE}	
-demo	4	1	skill-deploy-demo	deploy-demo	deterministic	werk-deploy	${CARD} ${ROLE} --target werk	
-demo	4	2	skill-werk-deploy-env-up	werk-deploy env-up	deterministic	werk-deploy	env-up ${ROLE} ${CARD}	
-demo	4	3	skill-werk-demo	/demo	deterministic	werk-demo	${CARD} ${ROLE}	
-demo	4	4	skill-werk-go	Jeff's go	human			
-land	5	1	skill-werk-merge	werk-merge	deterministic	werk-merge	${CARD} ${ROLE} --atomic	
-land	5	2	skill-werk-sync	werk-sync	deterministic	werk-sync	ff	
-land	5	3	skill-deploy-prod	deploy-prod	deterministic	werk-deploy	${CARD} ${ROLE} --target canonical	
-land	5	4	skill-werk-accept	werk-accept	deterministic	werk-accept	${CARD} ${ROLE} --atomic	
+# #4514 reopen 2: refreshed from the graph 2026-10-13 21:26 (inputShape, withArgs columns added).
+step	stepOrder	skillOrder	skill	label	executor	implementedBy	mode	onFail	inputShape	withArgs
+commit	1	1	skill-werk-commit	werk-commit	deterministic	werk-commit	{card} {caller} [{summary}] [--atomic {atomic}] [--continue {continue}] [--abort {abort}]		WerkCommitInput	atomic=true
+commit	1	2	skill-werk-push	werk-push	deterministic	werk-push	{card} {caller} [--atomic {atomic}]		WerkCardInput	atomic=true
+build	2	1	skill-werk-build	werk-build	deterministic	werk-build	{card} {caller} [--target {target}] [--atomic {atomic}]		WerkBuildInput	target=werk
+test	3	1	skill-werk-test	werk-test	deterministic	werk-test	{card} {caller} [--domain={domain}] [--type={type}]		WerkTestInput	
+test	3	2	skill-werk-review	werk-review	deterministic	werk-review	{card} {caller}		WerkCardOnlyInput	
+demo	4	1	skill-deploy-demo	deploy-demo	deterministic	werk-deploy	{card} {caller} --target werk		WerkCardOnlyInput	
+demo	4	2	skill-werk-deploy-env-up	werk-deploy env-up	deterministic	werk-deploy	env-up {caller} {card}		WerkCardOnlyInput	
+demo	4	3	skill-werk-demo	/demo	deterministic	werk-demo	{card} {caller}		WerkCardOnlyInput	
+demo	4	4	skill-werk-go	Jeff's go	human					
+land	5	1	skill-werk-merge	werk-merge	deterministic	werk-merge	{card} {caller} [--atomic {atomic}]		WerkCardInput	atomic=true
+land	5	2	skill-werk-sync	werk-sync	deterministic	werk-sync	{mode}		WerkSyncInput	mode=ff
+land	5	3	skill-deploy-prod	deploy-prod	deterministic	werk-deploy	{card} {caller} --target canonical		WerkCardOnlyInput	
+land	5	4	skill-werk-accept	werk-accept	deterministic	werk-accept	{card} {caller} [--atomic {atomic}]		WerkCardInput	atomic=true

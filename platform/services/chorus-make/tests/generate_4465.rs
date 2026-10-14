@@ -88,10 +88,10 @@ fn every_land_step_runs_after_the_go_and_none_before_it() {
 fn negative_proof_a_hand_edited_step_goes_red_in_the_drift_check() {
     let expected = generate("cicd", &cicd()).unwrap();
     assert!(drift(&expected, &expected).is_ok(), "an untouched file matches");
-    let edited = expected.replace("werk-test ${CARD} ${ROLE}", "werk-test ${CARD} ${ROLE} --type=unit");
+    let edited = expected.replace("chorus-runner call werk-test card=${CARD}", "chorus-runner call werk-test card=${CARD} type=unit");
     assert_ne!(edited, expected, "the edit must change the file, or this proves nothing");
     let err = drift(&expected, &edited).expect_err("a hand edit must be caught");
-    assert!(err.contains("--type=unit"), "the failure names what changed: {err}");
+    assert!(err.contains("type=unit"), "the failure names what changed: {err}");
     let truncated: String = expected.lines().take(10).map(|l| format!("{l}\n")).collect();
     assert!(drift(&expected, &truncated).is_err(), "a cut-short file is drift too");
 }
