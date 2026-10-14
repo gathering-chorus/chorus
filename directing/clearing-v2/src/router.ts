@@ -1,6 +1,6 @@
 // @domain: messages
 
-import { ClearingMessage, PulseNudgePayload, RoleName } from './types';
+import { ClearingMessage, PulseNudgePayload } from './types';
 
 const KNOWN_ROLES: Set<string> = new Set(['jeff', 'wren', 'silas', 'kade', 'abby-normal']);
 
@@ -18,7 +18,7 @@ export class MessageRouter {
    * Returns true if newly ingested, or false if duplicate/dropped.
    */
   ingest(msg: ClearingMessage): boolean {
-    if (!msg || !msg.id) return false;
+    if (!msg.id) return false;
     if (this.seenIds.has(msg.id)) {
       return false;
     }
@@ -50,7 +50,7 @@ export class MessageRouter {
    * Extract @role mentions to generate Pulse nudge dispatch payloads.
    */
   extractNudges(msg: ClearingMessage): PulseNudgePayload[] {
-    if (!msg || !msg.text) return [];
+    if (!msg.text) return [];
 
     const mentionRegex = /@([a-z0-9-]+)/gi;
     const matches = Array.from(msg.text.matchAll(mentionRegex));

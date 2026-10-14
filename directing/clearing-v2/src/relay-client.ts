@@ -5,14 +5,14 @@ import { NostrEvent } from './types';
 export interface WebSocketLike {
   send(data: string): void;
   close(): void;
-  on(event: 'open' | 'message' | 'close' | 'error', listener: (...args: any[]) => void): void;
+  on(event: 'open' | 'message' | 'close' | 'error', listener: (...args: unknown[]) => void): void;
 }
 
 export class MockWebSocket implements WebSocketLike {
   public sentMessages: string[] = [];
-  private listeners: Map<string, Array<(...args: any[]) => void>> = new Map();
+  private listeners: Map<string, Array<(...args: unknown[]) => void>> = new Map();
 
-  on(event: 'open' | 'message' | 'close' | 'error', listener: (...args: any[]) => void): void {
+  on(event: 'open' | 'message' | 'close' | 'error', listener: (...args: unknown[]) => void): void {
     if (!this.listeners.has(event)) {
       this.listeners.set(event, []);
     }
@@ -39,7 +39,7 @@ export class MockWebSocket implements WebSocketLike {
     this.emit('error', err);
   }
 
-  private emit(event: string, ...args: any[]): void {
+  private emit(event: string, ...args: unknown[]): void {
     const handlers = this.listeners.get(event) || [];
     for (const h of handlers) {
       h(...args);
@@ -92,7 +92,7 @@ export class BuzzRelayClient {
       this.flushBuffer();
     });
 
-    ws.on('message', (data: any) => {
+    ws.on('message', (data: unknown) => {
       this.handleMessage(String(data));
     });
 

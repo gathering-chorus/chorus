@@ -18,6 +18,98 @@ const KNOWN_KEYS = new Map<string, string>([
   ['b9d4bfd85efd8aeeacaef985d4e12325cb1d7d527755be875a3813836e06d9b7', 'abby-normal'],
 ]);
 
+interface RouteContext {
+  app: express.Express;
+  router: MessageRouter;
+  tileService: TileService;
+  relay: BuzzRelayClient;
+  sseClients: Response[];
+  relayUrl: string;
+  pulseUrl: string;
+  broadcastSSE: (type: string, data: unknown) => void;
+  onInboundEvent: (event: NostrEvent) => void;
+}
+
+function registerRoutes(ctx: RouteContext): void {
+  const { app, router, tileService, relay, sseClients, relayUrl, pulseUrl, broadcastSSE, onInboundEvent } = ctx;
+
+  app.get('/health', (_req: Request, res: Response) => {
+    res.json({
+      status: 'ok',
+      ok: true,
+      service: 'clearing-v2',
+      version: '2.0.0',
+      port: PORT,
+      relayConnected: relay.isConnected(),
+      relayUrl,
+    });
+  });
+
+  app.get('/api/messages', (_req: Request, res: Response) => {
+    res.json(router.getRecent(100));
+  });
+
+  app.get('/api/tiles', async (_req: Request, res: Response) => {
+    const tiles = await tileService.refresh();
+    res.json(tiles);
+  });
+
+  app.post('/api/send', (req: Request, res: Response) => {
+    const { from, text, event } = req.body;
+
+    if (event && verifyNostrEvent(event)) {
+      relay.publish(event);
+      onInboundEvent(event);
+      res.json({ ok: true, id: event.id });
+      return;
+    }
+
+    if (!text || typeof text !== 'string') {
+      res.status(400).json({ ok: false, error: 'text is required' });
+      return;
+    }
+
+    const msg: ClearingMessage = {
+      id: `local-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
+      from: from || 'jeff',
+      text: text.trim(),
+      ts: new Date().toISOString(),
+      type: 'jeff-input',
+      visible: true,
+    };
+
+    router.ingest(msg);
+    broadcastSSE('message', msg);
+
+    const nudges = router.extractNudges(msg);
+    for (const nudge of nudges) {
+      fetch(`${pulseUrl}/api/nudge`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(nudge),
+      }).catch(() => {});
+    }
+
+    res.json({ ok: true, id: msg.id });
+  });
+
+  app.get('/api/events', (req: Request, res: Response) => {
+    res.setHeader('Content-Type', 'text/event-stream');
+    res.setHeader('Cache-Control', 'no-cache');
+    res.setHeader('Connection', 'keep-alive');
+    res.flushHeaders();
+
+    sseClients.push(res);
+
+    res.write(`event: init\ndata: ${JSON.stringify({ messages: router.getRecent(50), tiles: tileService.getTiles() })}\n\n`);
+
+    req.on('close', () => {
+      const idx = sseClients.indexOf(res);
+      if (idx !== -1) sseClients.splice(idx, 1);
+    });
+  });
+}
+
 export function createApp(options?: {
   relayUrl?: string;
   pulseUrl?: string;
@@ -28,17 +120,21 @@ export function createApp(options?: {
   app.use(express.static(path.join(__dirname, '../public')));
 
   const router = new MessageRouter(500);
-  const tileService = new TileService(options?.pulseUrl || PULSE_URL);
+  const pulseUrl = options?.pulseUrl || PULSE_URL;
+  const relayUrl = options?.relayUrl || BUZZ_RELAY_URL;
+  const tileService = new TileService(pulseUrl);
   const keys = options?.knownKeys || KNOWN_KEYS;
 
   // Track SSE clients
   const sseClients: Response[] = [];
 
-  function broadcastSSE(type: string, data: any) {
+  function broadcastSSE(type: string, data: unknown) {
     const payload = `event: ${type}\ndata: ${JSON.stringify(data)}\n\n`;
     for (let i = sseClients.length - 1; i >= 0; i--) {
+      const client = sseClients.at(i);
+      if (!client) continue;
       try {
-        sseClients[i].write(payload);
+        client.write(payload);
       } catch {
         sseClients.splice(i, 1);
       }
@@ -68,7 +164,7 @@ export function createApp(options?: {
       // Check for mentions and forward nudge to Pulse
       const nudges = router.extractNudges(msg);
       for (const nudge of nudges) {
-        fetch(`${options?.pulseUrl || PULSE_URL}/api/nudge`, {
+        fetch(`${pulseUrl}/api/nudge`, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify(nudge),
@@ -78,90 +174,21 @@ export function createApp(options?: {
   }
 
   const relay = new BuzzRelayClient({
-    relayUrl: options?.relayUrl || BUZZ_RELAY_URL,
+    relayUrl,
     topic: 'team',
     onEvent: onInboundEvent,
   });
 
-  // Endpoints
-  app.get('/health', (_req: Request, res: Response) => {
-    res.json({
-      status: 'ok',
-      ok: true,
-      service: 'clearing-v2',
-      version: '2.0.0',
-      port: PORT,
-      relayConnected: relay.isConnected(),
-      relayUrl: options?.relayUrl || BUZZ_RELAY_URL,
-    });
-  });
-
-  app.get('/api/messages', (_req: Request, res: Response) => {
-    res.json(router.getRecent(100));
-  });
-
-  app.get('/api/tiles', async (_req: Request, res: Response) => {
-    const tiles = await tileService.refresh();
-    res.json(tiles);
-  });
-
-  app.post('/api/send', (req: Request, res: Response) => {
-    const { from, text, event } = req.body;
-
-    if (event && verifyNostrEvent(event)) {
-      // Direct signed Nostr event from client
-      relay.publish(event);
-      onInboundEvent(event);
-      res.json({ ok: true, id: event.id });
-      return;
-    }
-
-    if (!text || typeof text !== 'string') {
-      res.status(400).json({ ok: false, error: 'text is required' });
-      return;
-    }
-
-    // Local unsigned message from browser UI (Jeff)
-    const msg: ClearingMessage = {
-      id: `local-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
-      from: from || 'jeff',
-      text: text.trim(),
-      ts: new Date().toISOString(),
-      type: 'jeff-input',
-      visible: true,
-    };
-
-    router.ingest(msg);
-    broadcastSSE('message', msg);
-
-    // Forward mentions to Pulse
-    const nudges = router.extractNudges(msg);
-    for (const nudge of nudges) {
-      fetch(`${options?.pulseUrl || PULSE_URL}/api/nudge`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(nudge),
-      }).catch(() => {});
-    }
-
-    res.json({ ok: true, id: msg.id });
-  });
-
-  app.get('/api/events', (req: Request, res: Response) => {
-    res.setHeader('Content-Type', 'text/event-stream');
-    res.setHeader('Cache-Control', 'no-cache');
-    res.setHeader('Connection', 'keep-alive');
-    res.flushHeaders();
-
-    sseClients.push(res);
-
-    // Send initial snapshot
-    res.write(`event: init\ndata: ${JSON.stringify({ messages: router.getRecent(50), tiles: tileService.getTiles() })}\n\n`);
-
-    req.on('close', () => {
-      const idx = sseClients.indexOf(res);
-      if (idx !== -1) sseClients.splice(idx, 1);
-    });
+  registerRoutes({
+    app,
+    router,
+    tileService,
+    relay,
+    sseClients,
+    relayUrl,
+    pulseUrl,
+    broadcastSSE,
+    onInboundEvent,
   });
 
   return { app, router, tileService, relay };

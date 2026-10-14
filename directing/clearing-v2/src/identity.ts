@@ -31,7 +31,7 @@ export function buildEventId(serialized: string): string {
  */
 export function verifyNostrEvent(event: NostrEvent): boolean {
   try {
-    if (!event || !event.id || !event.pubkey || !event.sig) return false;
+    if (!event.id || !event.pubkey || !event.sig) return false;
     if (event.id.length !== 64 || event.pubkey.length !== 64 || event.sig.length !== 128) {
       return false;
     }
