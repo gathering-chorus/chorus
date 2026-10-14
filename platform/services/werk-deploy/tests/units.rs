@@ -1,3 +1,5 @@
+// @test-type: unit
+// @domain: werk
 //! werk-deploy unit tests — pure helpers (no subprocess, no system mutation).
 use werk_deploy::{
     branch_name, card_from_subject, cdhash_divergences, chorus_bin_install_cmd,
@@ -1003,19 +1005,8 @@ fn deploy_canonical_carries_no_model_or_seed_engine_4186() {
         assert!(!body.contains(forbidden), "deploy_canonical still carries `{}` — the model/seed leg belongs to athena.yml (#4186)", forbidden);
     }
     assert!(body.contains("model.handoff.athena"), "the hand-off must be witnessed on the spine");
-    let yml = include_str!("../../../../.github/workflows/athena.yml");
-    for leg in ["name: scope", "name: validate", "name: deploy", "name: serve", "name: prove"] {
-        assert!(yml.contains(leg), "athena.yml is missing leg `{}`", leg);
-    }
-    // #4432 (Jeff 2026-10-06): no seed leg — a land never replays row files over the store.
-    assert!(!yml.contains("name: seed"), "athena.yml carries a seed leg again (#4432)");
-    assert!(!yml.contains("seed --post"), "athena.yml posts row files at land again (#4432)");
-    assert!(yml.contains("athena-serve \"${{ steps.resolve.outputs.label }}\""), "serve leg must use athena-serve on the resolved label, never launchd liveness");
-    // the cut (Jeff 2026-09-16 17:41): ONE target, the live service; a variant label in
-    // athena.yml would mean a demo store copy came back. (Caught red in the 09-17 nightly:
-    // this line still asked for both labels after the cut — test-wrong, #4195.)
-    assert!(yml.contains("LABEL=\"com.chorus.athena-make\""), "resolve names the live service label");
-    assert!(!yml.contains("athena-make.werk."), "athena.yml names no variant service: the demo reads the live store");
+    // #4515: the athena legs now live in the generated athena / athena-land pipelines
+    // (platform/pipelines, drift-checked by 4515-athena-workflow-drift.bats).
 }
 
 
@@ -1031,21 +1022,6 @@ fn env_up_carries_no_model_deploy_or_row_post_4186() {
     // the one home for the scope rule is the shared module, and both crates read it
     assert!(include_str!("../src/lib.rs").contains("include!(\"../../shared/model_scope.rs\")"));
     assert!(include_str!("../../athena-deploy/src/lib.rs").contains("include!(\"../../shared/model_scope.rs\")"));
-    let yml = include_str!("../../../../.github/workflows/athena.yml");
-    assert!(!yml.contains("grep -E '^roles/"), "athena.yml must call `athena-deploy scope`, not carry its own copy of the rule");
-    assert!(yml.contains("athena-deploy scope"));
-    let werk = include_str!("../../../../.github/workflows/werk.yml");
-    assert!(!werk.contains("grep -qE '^roles/"), "werk.yml must call `athena-deploy scope`, not carry its own copy of the rule");
-    // #4177 (Jeff: "what is athena-land why is that part of this flow!") — werk.yml has NO
-    // model step and NO athena call. The land event triggered athena from the old MCP
-    // server's werk-merge case.
-    for gone in ["chorus_athena", "athena-land", "workflows/athena.yml", "name: athena"] {
-        assert!(!werk.contains(gone), "#4177: werk.yml is werk only; found `{}`", gone);
-    }
-    // #4515 — the old MCP server (and its triggerAthenaOnLand) is retired. The v2
-    // land triggers athena-land from the dagu success handler (#4494), proven in
-    // chorus-make's generate_4465 tests.
-    for gone in ["athena-model", "athena-rows", "athena-werk", "werk-model", "werk-rows", "athena-bootstrap"] {
-        assert!(!werk.contains(gone), "#4186 (Jeff): the demo reads the live store; werk.yml has no variant model step: found {}", gone);
-    }
+    // #4515: the act workflows werk.yml/athena.yml are retired; the v2 pipelines are
+    // generated and drift-checked (4465-cicd-workflow-drift.bats, 4515-athena-workflow-drift.bats).
 }
