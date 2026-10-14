@@ -42,10 +42,10 @@ If args are ambiguous, surface the inferred values to Jeff in a one-line preview
 
 ## Step 1: File the card
 
-Invoke the dedicated MCP tool `chorus_card_add_jeff`. The tool spawns `cards add` with `DEPLOY_ROLE=jeff` hardcoded in env — bouncer's `requireJeffApprovalIfAgent` returns immediately (`isAgent` is false), card lands directly. No marker, no freshness window, no detector. (#3293 removed `--quick`: even a Jeff card must carry the Experience+AC floor — supply a `desc` with a `## Experience` line and an AC checklist, one line each for housekeeping cards. The six articulated sections remain agent-only.)
+Invoke the dedicated MCP tool `chorus-card-add-jeff`. The tool spawns `cards add` with `DEPLOY_ROLE=jeff` hardcoded in env — bouncer's `requireJeffApprovalIfAgent` returns immediately (`isAgent` is false), card lands directly. No marker, no freshness window, no detector. (#3293 removed `--quick`: even a Jeff card must carry the Experience+AC floor — supply a `desc` with a `## Experience` line and an AC checklist, one line each for housekeeping cards. The six articulated sections remain agent-only.)
 
 ```
-mcp__chorus-api__chorus_card_add_jeff({
+mcp__chorus-api__chorus-card-add-jeff({
   title: TITLE,
   owner: OWNER,
   priority: PRIORITY,
@@ -72,14 +72,14 @@ If Jeff says any axis is wrong on his next prompt, update via `cards update <id>
 
 ## Hard rules
 
-- **Always `chorus_card_add_jeff` MCP.** It's the only Jeff-attribution surface. The skill never falls back to bash or to the agent-attributed `chorus_cards_add` (which would fire the bouncer).
-- **No bouncer.** `chorus_card_add_jeff` spawns the CLI with `DEPLOY_ROLE=jeff`. The bouncer's `requireJeffApprovalIfAgent` returns immediately. If the bouncer fires after a `/card` invocation, that's a substrate bug — reopen the card it landed against and fix.
+- **Always `chorus-card-add-jeff` MCP.** It's the only Jeff-attribution surface. The skill never falls back to bash or to the agent-attributed `chorus-cards-add` (which would fire the bouncer).
+- **No bouncer.** `chorus-card-add-jeff` spawns the CLI with `DEPLOY_ROLE=jeff`. The bouncer's `requireJeffApprovalIfAgent` returns immediately. If the bouncer fires after a `/card` invocation, that's a substrate bug — reopen the card it landed against and fix.
 - **No retry loop.** One invocation, one card. If the MCP errors, surface the exact error and stop. Don't retry without Jeff's signal.
 - **Natural-form parsing is best-effort.** If the title contains ambiguity ("make a card for silas to fix X for kade") — pick the most-recently-mentioned role and ship. Jeff corrects on the next prompt if wrong.
 
 ## What /card replaces (#2996)
 
-This skill is the single canonical path for Jeff-initiated cards. The earlier natural-language directive-detector approach (`card_directive_detector` Rust hook + `consumeFreshDirectiveMarker` bouncer-skip in sdk.ts, shipped in #2964) was retired in #2996. It was a tuning loop: the detector missed natural forms ("making a card" vs "make a card"), the freshness window was too short for agent compose-time (60s vs ~2min observed), and the two mechanisms had no middle. `/card` + `chorus_card_add_jeff` removes the ambiguity. Invocation IS intent; no detection layer needed. Aligns with `chorus:principle-no-competing-implementations`.
+This skill is the single canonical path for Jeff-initiated cards. The earlier natural-language directive-detector approach (`card_directive_detector` Rust hook + `consumeFreshDirectiveMarker` bouncer-skip in sdk.ts, shipped in #2964) was retired in #2996. It was a tuning loop: the detector missed natural forms ("making a card" vs "make a card"), the freshness window was too short for agent compose-time (60s vs ~2min observed), and the two mechanisms had no middle. `/card` + `chorus-card-add-jeff` removes the ambiguity. Invocation IS intent; no detection layer needed. Aligns with `chorus:principle-no-competing-implementations`.
 
 ## When NOT to use /card
 

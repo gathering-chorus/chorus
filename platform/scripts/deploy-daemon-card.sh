@@ -26,7 +26,7 @@ _current_step=""
 _deploy_failed_emitted=""
 
 # #2931 — failure-emit trap. Any non-zero exit emits deploy.failed with
-# error=card=<id> exit=<N> step=<phase> so chorus_logs_for_card sees the
+# error=card=<id> exit=<N> step=<phase> so chorus-logs-for-card sees the
 # failure event with context.
 _emit_deploy_failed() {
   local exit_code="$?"
@@ -266,7 +266,7 @@ main() {
   # #2931 — inherit ACP trace_id from the HEAD commit's Chorus-Trace-Id git
   # trailer (written by chorus_acp). Without this, deploy.* events mint a
   # fresh trace_id and can't be joined to the ACP step in
-  # chorus_logs_for_trace. card_id is authoritative from the CLI arg;
+  # chorus-logs-for-trace. card_id is authoritative from the CLI arg;
   # trace_id comes from the commit. Env wins over trailer so a caller
   # passing CHORUS_TRACE_ID overrides.
   export CHORUS_CARD_ID="${CHORUS_CARD_ID:-$card_id}"

@@ -286,7 +286,7 @@ export class BoardClient {
     // LABELS.chunk[value] was undefined → cards landed untagged, invisible in
     // chorus_priorities_readout (TAGGED-ONLY) until a manual cards_set. Apply
     // it by NAME (find-or-create), the same path cards_set uses, so any chunk
-    // sticks at add-time. Same code path = fixes /card AND chorus_cards_add.
+    // sticks at add-time. Same code path = fixes /card AND chorus-cards-add.
     if (opts.chunk) {
       const name = `chunk:${opts.chunk.toLowerCase()}`;
       const existing = (await this.listLabels()).find((l) => l.title === name);

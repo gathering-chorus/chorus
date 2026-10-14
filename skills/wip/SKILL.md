@@ -13,10 +13,10 @@ Jeff (or a role) types `/wip` and gets the role's current WIP card(s). **One MCP
 ROLE=<optional — defaults to the invoking role>
 ```
 
-## Step 1: Invoke `chorus_wip`
+## Step 1: Invoke `chorus-wip`
 
 ```
-mcp__chorus-api__chorus_wip({ role: "<role>" })   // omit role to use the calling role
+mcp__chorus-api__chorus-wip({ role: "<role>" })   // omit role to use the calling role
 ```
 
 ## Step 2: Paste the answer

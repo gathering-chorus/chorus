@@ -131,7 +131,7 @@ PAGE_STATUS=$(curl -s -o /dev/null -w "%{http_code}" "$API_URL/loom/decisions.ht
 check "/loom/decisions.html returns 200" "200" "$PAGE_STATUS"
 
 # 9. Closing AC demo target: ADR-026 §a-d retrievable via API (pre-MCP probe).
-# This asserts the demo path is real before Move 5's chorus_decisions_get tool ships.
+# This asserts the demo path is real before Move 5's chorus-decisions-get tool ships.
 ADR026_BODY_LEN=$(curl -s "$API_URL/api/athena/decisions-not-yet-modelled/loom-decisions/decisions" | python3 -c "
 import json, sys
 d = json.load(sys.stdin)

@@ -340,6 +340,9 @@ pub struct ToolArg {
     /// #4515 — `chorus:namesRole "agent"|"peer"`: the value must be a role the
     /// roles door lists (the runner checks; the old server did it per tool).
     pub names_role: Option<String>,
+    /// #4515 — sh:pattern: the regex every value must match (the runner checks
+    /// it; before this athena-gen dropped it, so a shape's pattern was never enforced).
+    pub pattern: Option<String>,
 }
 
 /// #4513 — a tool's arguments: every `c:ToolInput` shape in the model (a SHACL
@@ -352,10 +355,10 @@ pub fn tool_inputs(store: &Store) -> Result<Vec<(String, Vec<ToolArg>)>, ModelEr
         let shape = s["s"].clone();
         let props = select(store, &format!(
             "SELECT ?path (SAMPLE(?n) AS ?name) (SAMPLE(?dt) AS ?datatype) (SAMPLE(?mn) AS ?min) (SAMPLE(?mx) AS ?max) \
-                    (SAMPLE(?d) AS ?desc) (SAMPLE(?o) AS ?order) (SAMPLE(?r) AS ?role) WHERE {{ \
+                    (SAMPLE(?d) AS ?desc) (SAMPLE(?o) AS ?order) (SAMPLE(?r) AS ?role) (SAMPLE(?pat) AS ?pattern) WHERE {{ \
                c:{shape} sh:property ?p . ?p sh:path ?path . \
                OPTIONAL {{ ?p sh:name ?n }} OPTIONAL {{ ?p sh:datatype ?dt }} OPTIONAL {{ ?p sh:minCount ?mn }} OPTIONAL {{ ?p sh:maxCount ?mx }} \
-               OPTIONAL {{ ?p sh:description ?d }} OPTIONAL {{ ?p sh:order ?o }} OPTIONAL {{ ?p c:namesRole ?r }} \
+               OPTIONAL {{ ?p sh:description ?d }} OPTIONAL {{ ?p sh:order ?o }} OPTIONAL {{ ?p c:namesRole ?r }} OPTIONAL {{ ?p sh:pattern ?pat }} \
              }} GROUP BY ?path"))?;
         let mut args: Vec<(i64, ToolArg)> = Vec::new();
         for p in props {
@@ -373,6 +376,7 @@ pub fn tool_inputs(store: &Store) -> Result<Vec<(String, Vec<ToolArg>)>, ModelEr
                 allowed,
                 description: p.get("desc").cloned().unwrap_or_default(),
                 names_role: p.get("role").cloned(),
+                pattern: p.get("pattern").cloned(),
             }));
         }
         args.sort_by(|a, b| a.0.cmp(&b.0).then_with(|| a.1.name.cmp(&b.1.name)));

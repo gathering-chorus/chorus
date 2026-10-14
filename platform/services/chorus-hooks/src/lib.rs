@@ -15,7 +15,7 @@ pub mod agent_socket;
 pub mod runtime_tools;
 pub mod runtime_hook;
 pub mod runtime_rows;
-// #4515 — the chorus_nudge_message tool, as the binary its Skill row names.
+// #4515 — the chorus-nudge-message tool, as the binary its Skill row names.
 pub mod nudge_send;
 // #2505 — expose `shared` so integration tests can call
 // `chorus_hooks::shared::state_paths::chorus_root()` instead of hardcoding

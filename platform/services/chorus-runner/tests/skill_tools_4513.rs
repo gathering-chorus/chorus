@@ -137,7 +137,7 @@ fn a_placeholder_inside_a_word_is_filled_or_the_word_dropped() {
     assert_eq!(argv("{card} {caller} [--domain={domain}] [--type={type}]", &a, "wren"), vec!["4514", "wren", "--domain=services"]);
 }
 
-// #4515 (Silas) — chorus_cards_tag runs `untag {id} {category}:{value}`: every
+// #4515 (Silas) — chorus-cards-tag runs `untag {id} {category}:{value}`: every
 // placeholder in a word is filled, and the word drops if any one is absent.
 #[test]
 fn every_placeholder_inside_a_word_is_filled() {
@@ -146,4 +146,21 @@ fn every_placeholder_inside_a_word_is_filled() {
     // NEGATIVE PROOF: one missing value drops the word, never leaves a literal {value}
     let half = args(json!({ "id": 4515, "category": "chunk" }));
     assert_eq!(argv("untag {id} [{category}:{value}]", &half, "silas"), vec!["untag", "4515"]);
+}
+
+/// #4515 — a value that does not match the shape's sh:pattern is refused by
+/// name. NEGATIVE PROOF: the same table with no pattern lets the value through,
+/// and a pattern that is not a regex refuses rather than passes.
+#[test]
+fn a_value_that_breaks_the_pattern_is_refused() {
+    let schema = |pat: Option<&str>| {
+        let mut to = json!({"type": "string"});
+        if let Some(p) = pat { to["pattern"] = json!(p); }
+        json!({"type": "object", "properties": {"to": to}, "required": ["to"]}).as_object().unwrap().clone()
+    };
+    let pat = schema(Some("^[a-z][a-z0-9-]*$"));
+    assert!(check_args(&args(json!({"to": "wren"})), &pat).is_ok());
+    assert_eq!(check_args(&args(json!({"to": "Wren; rm"})), &pat).unwrap_err(), "to must match ^[a-z][a-z0-9-]*$");
+    assert!(check_args(&args(json!({"to": "Wren; rm"})), &schema(None)).is_ok(), "no pattern, no check");
+    assert!(check_args(&args(json!({"to": "wren"})), &schema(Some("(["))).unwrap_err().contains("not a regex"));
 }

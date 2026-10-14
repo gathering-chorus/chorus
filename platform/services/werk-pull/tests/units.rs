@@ -82,7 +82,7 @@ fn spine_args_carry_event_role_card_trace() {
     let a = spine_args("card.pulled", "kade", 3135, "abc-1", &[]);
     assert_eq!(a[0], "card.pulled", "event is first");
     assert_eq!(a[1], "kade", "role is second");
-    assert!(a.contains(&"card=3135".to_string()), "card stamped for chorus_logs_for_card join");
+    assert!(a.contains(&"card=3135".to_string()), "card stamped for chorus-logs-for-card join");
     assert!(a.contains(&"trace=abc-1".to_string()), "trace stamped so pull correlates with demo+acp");
 }
 

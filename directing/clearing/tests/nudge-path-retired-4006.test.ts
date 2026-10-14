@@ -7,7 +7,7 @@
  * WHAT WAS HERE BEFORE. `tests/nudge.integration.test.ts` — 20 cases asserting
  * `chorus-hook-shim nudge <role> "<msg>"` prints `DRY-RUN: would inject to
  * <role>`. That path was retired in #2804: the bash `nudge` became a fail-loud
- * stub and agents send nudges through the `chorus_nudge_message` MCP tool.
+ * stub and agents send nudges through the `chorus-nudge-message` MCP tool.
  * Nobody noticed the suite had stopped testing anything real, because the file
  * carried an unused-variable compile error (TS6133) and jest reported the whole
  * file as ONE failure — "suite failed to run" — for however long that took.
@@ -52,7 +52,7 @@ describe('#4006 the shim nudge path is retired', () => {
     expect(/chorus-hook-shim['"`\s].*\bnudge\b|DRY-RUN: would inject/.test(retiredShape)).toBe(true);
 
     // And must NOT fire on ordinary nudge code that uses the live MCP path.
-    const liveShape = `await chorus_nudge_message({ to: 'silas', message: 'hello' });`;
+    const liveShape = `await chorus-nudge-message({ to: 'silas', message: 'hello' });`;
     expect(/chorus-hook-shim['"`\s].*\bnudge\b|DRY-RUN: would inject/.test(liveShape)).toBe(false);
   });
 });

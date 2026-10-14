@@ -63,7 +63,7 @@ result=$("$INJECT" "nonexistent" "test" 2>&1) && {
 }
 
 # Test 6 retired: bash nudge was retired in #2804/#2809; agents send nudges
-# via the chorus_nudge_message MCP tool. The osascript injection path that
+# via the chorus-nudge-message MCP tool. The osascript injection path that
 # this test was guarding is exercised end-to-end by the MCP layer's own
 # delivery tests; chorus-inject's regression surface here covers binary
 # resolution, role validation, and refusal taxonomy only.

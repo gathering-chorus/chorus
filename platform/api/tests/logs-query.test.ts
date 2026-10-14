@@ -83,7 +83,7 @@ describe('chorus_logs_query (#2840)', () => {
   });
 });
 
-describe('chorus_logs_for_trace (#2840)', () => {
+describe('chorus-logs-for-trace (#2840)', () => {
   it('builds the right LogQL filter for trace_id', async () => {
     let captured = '';
     const deps: LogsQueryDeps = {
@@ -120,7 +120,7 @@ describe('chorus_logs_for_trace (#2840)', () => {
   });
 });
 
-describe('chorus_logs_for_card (#2840)', () => {
+describe('chorus-logs-for-card (#2840)', () => {
   it('builds LogQL filter on card_id JSON field', async () => {
     let captured = '';
     const deps: LogsQueryDeps = {
@@ -164,7 +164,7 @@ describe('chorus_logs_for_branch (#3023)', () => {
   });
 });
 
-describe('chorus_logs_recent_errors (#2840)', () => {
+describe('chorus-logs-recent-errors (#2840)', () => {
   it('filters to error level and applies time_window', async () => {
     let captured = '';
     const deps: LogsQueryDeps = {

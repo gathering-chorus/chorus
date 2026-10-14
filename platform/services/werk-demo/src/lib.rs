@@ -885,12 +885,12 @@ pub fn feedback_message(card: u64, from: &str) -> String {
 }
 
 /// Send a feedback nudge to `other` via `chorus-hook-shim nudge-send` (#4515).
-/// The same path the chorus_nudge_message tool runs. Returns Err when the
+/// The same path the chorus-nudge-message tool runs. Returns Err when the
 /// send is refused or fails.
 /// Used by signal() for the initial round and by demo() for re-nudge on
 /// unacked peers (#3100 AC #2).
 /// #3305 — pure wire shape for the gather nudge: JSON-RPC tools/call on
-/// chorus_nudge_message. Unit-pinned (the e2e happy path now legitimately
+/// chorus-nudge-message. Unit-pinned (the e2e happy path now legitimately
 /// sends zero nudges, so the shape can't be pinned there).
 /// #3443 AC2/AC8 — the gather is REPLY-REQUIRED by construction: every demo
 /// nudge carries `expects:"reply"`, never the default `expects:"none"`. That is
@@ -900,7 +900,7 @@ pub fn feedback_message(card: u64, from: &str) -> String {
 /// hoping a fire-and-forget FYI gets noticed. The sender cannot downgrade it.
 pub fn nudge_send_args(from: &str, to: &str, message: &str) -> Vec<String> {
     // #4515 — the old MCP server is gone; nudges go through the same Rust path
-    // the chorus_nudge_message tool runs (`chorus-hook-shim nudge-send`):
+    // the chorus-nudge-message tool runs (`chorus-hook-shim nudge-send`):
     // word cap, recipient check, spine, pulse. The message is one argv item,
     // never spliced into JSON.
     vec!["nudge-send".into(), from.into(), to.into(), message.into(), "--expects".into(), "reply".into()]
@@ -1115,7 +1115,7 @@ fn signal(card: u64, role: &str, home: &Path, trace: &str, owed: &[&str]) -> Vec
         ],
     );
 
-    // Feedback nudges go through the chorus_nudge_message MCP tool — the team's
+    // Feedback nudges go through the chorus-nudge-message MCP tool — the team's
     // canonical nudge surface, via send_mcp_nudge() (shared with the re-nudge
     // path in demo() for AC #2).
     //

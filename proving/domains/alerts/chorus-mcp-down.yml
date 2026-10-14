@@ -4,7 +4,7 @@
 # MCP server on :3341 was retired and the tool runner (:3342) took its place.
 #
 # When the runner is down, every tool call fails, including
-# chorus_nudge_message. The full MCP round trip (credential + tools/list on the
+# chorus-nudge-message. The full MCP round trip (credential + tools/list on the
 # 2026-07-28 release) is chorus-health's mcp-round-trip check; this alert is the
 # fast liveness leg: the runner's /health, status only, no credential needed.
 
@@ -27,4 +27,4 @@ action: |
   fi
   touch "$COOLDOWN"
   OPS_NUDGE="/Users/jeffbridwell/CascadeProjects/chorus/platform/scripts/ops-nudge"
-  "$OPS_NUDGE" silas "chorus-mcp-down: the tool runner (:3342) /health is not answering. Every tool call (chorus_nudge_message, etc.) fails for every role. Check com.chorus.runner." 2>/dev/null || true
+  "$OPS_NUDGE" silas "chorus-mcp-down: the tool runner (:3342) /health is not answering. Every tool call (chorus-nudge-message, etc.) fails for every role. Check com.chorus.runner." 2>/dev/null || true

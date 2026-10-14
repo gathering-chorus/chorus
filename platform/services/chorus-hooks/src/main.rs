@@ -453,7 +453,7 @@ async fn pre_tool_use_inner(
     // #3218 RESPOND-FIRST gate (Jeff: "respond to them first — not later, not
     // never"). If the agent OWES a peer a response — its newest inbound nudge is
     // newer than its newest reply — every tool call is BLOCKED except the reply
-    // itself (chorus_nudge_message). The agent clears the block by replying; the
+    // itself (chorus-nudge-message). The agent clears the block by replying; the
     // reply advances its newest-outbound past the inbound, so no marking/drain is
     // needed. The signal is created_at, NOT delivery_status — osascript flips a
     // nudge to 'delivered' in ~1s, so a pending-based gate never caught a real
@@ -490,10 +490,10 @@ async fn pre_tool_use_inner(
                     "nudge_drain".into(),
                     HookResponse::block_with_stderr(&format!(
                         "RESPOND FIRST (#3218): you have unanswered peer nudge(s). Reply via \
-                         chorus_nudge_message BEFORE continuing your card — not later, not at turn \
+                         chorus-nudge-message BEFORE continuing your card — not later, not at turn \
                          end. A quick ack (\"got it, looking\") is enough to clear this and resume; \
                          then investigate and answer substantively. No MCP tool attached? Reply from \
-                         Bash: chorus-mcp-call.sh <role> chorus_nudge_message '{{\"to\":...,\"message\":...}}' \
+                         Bash: chorus-mcp-call.sh <role> chorus-nudge-message '{{\"to\":...,\"message\":...}}' \
                          — the reply path is never blocked. ({} of {} refusals before this gate \
                          stands down.)\n{block}",
                         refusals + 1,
@@ -790,7 +790,7 @@ async fn pre_tool_use_inner(
             }
         }
         // #2925 AC3: refuse daemon-runtime card-adds without a Deploy Probe section.
-        "mcp__chorus-api__chorus_cards_add" => {
+        "mcp__chorus-api__chorus-cards-add" => {
             _last_module = "card_add_probe".into();
             let r = hooks::card_add_probe::check(input).await;
             if r.exit_code != 0 {
@@ -1048,7 +1048,7 @@ async fn user_prompt_submit(
     // #2996: card-directive detector retired. The regex-based marker mechanism
     // (write ~/.chorus/pending-directives/<role>.json on prompt-pattern match,
     // bouncer reads it within a 60s freshness window) is replaced by the
-    // dedicated chorus_card_add_jeff MCP tool that /card calls. One mechanism,
+    // dedicated chorus-card-add-jeff MCP tool that /card calls. One mechanism,
     // not two. See card #2996 for the retirement rationale.
 
     // Card-approval responder (#2924 AC3/AC4) — detect `approve`/`deny` in
@@ -1444,7 +1444,7 @@ mod emit_guard_dispatch_3945 {
     fn nudge_input(message: &str) -> HookInput {
         HookInput {
             tool_use_id: None,
-            tool_name: Some("mcp__chorus-api__chorus_nudge_message".to_string()),
+            tool_name: Some("mcp__chorus-api__chorus-nudge-message".to_string()),
             tool_input: Some(json!({ "to": "kade", "message": message })),
             tool_response: None,
             session_id: None,

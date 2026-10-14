@@ -128,7 +128,7 @@ for. Treat the page as the source and this file as history.
   - Ping — Nudge requires action (DEC-1571: respond within 60s)
   - Alert — Nudge is role-to-role; alerts are system-to-role
   - Notification — Nudge targets the role's active terminal; notifications are broader
-- **Canonical sub-terms:** Nudge message, two-path delivery (osascript + API persist), messaging API at `localhost:3475`, `chorus_nudge_message` MCP tool.
+- **Canonical sub-terms:** Nudge message, two-path delivery (osascript + API persist), messaging API at `localhost:3475`, `chorus-nudge-message` MCP tool.
 - **Citations:** DEC-107 (locked two-path design); DEC-1571 (Attention Contract); clearing-service-design.html.
 - **Conflicts surfaced:** DEC-107 names two paths as locked but doesn't fully explain why both are necessary. Worth a one-line rationale addendum.
 

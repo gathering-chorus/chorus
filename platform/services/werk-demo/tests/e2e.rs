@@ -291,7 +291,7 @@ exit 0
     //      never re-asked, however many times the demo re-presents. (The old
     //      assertion here pinned exactly the re-fire bug — 2 unconditional nudges
     //      to already-replied peers; 8 live sightings on 2026-06-12 alone.)
-    //      The MCP wire shape (tools/call + chorus_nudge_message) is pinned by
+    //      The MCP wire shape (tools/call + chorus-nudge-message) is pinned by
     //      the mcp_nudge_body unit test; the legacy-endpoint ban stays here.
     let curl_calls = fs::read_to_string(&curl_log).unwrap_or_default();
     assert!(
@@ -299,7 +299,7 @@ exit 0
         "must NOT POST to the legacy 404 :3340/api/chorus/nudge; got:\n{}",
         curl_calls
     );
-    let mcp_post_count = curl_calls.lines().filter(|l| l.contains("chorus_nudge_message")).count();
+    let mcp_post_count = curl_calls.lines().filter(|l| l.contains("chorus-nudge-message")).count();
     assert_eq!(
         mcp_post_count, 0,
         "both peers already replied this round — re-presenting must re-fire ZERO gather nudges (#3305); got {} in:\n{}",

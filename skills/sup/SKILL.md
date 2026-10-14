@@ -15,10 +15,10 @@ The order is data: chunks in `roleSequence` order (loom position shown where dec
 ROLE=<optional — defaults to the invoking role; Jeff can name any role>
 ```
 
-## Step 1: Invoke `chorus_sup`
+## Step 1: Invoke `chorus-sup`
 
 ```
-mcp__chorus-api__chorus_sup({ role: "<role>" })   // omit role to use the calling role
+mcp__chorus-api__chorus-sup({ role: "<role>" })   // omit role to use the calling role
 ```
 
 ## Step 2: Paste the walk

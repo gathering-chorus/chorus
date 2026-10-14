@@ -208,12 +208,6 @@ chorus:unitdomain-com.chorus.log-harvest a chorus:UnitDomainMapping ;
     rdfs:comment "#4098: the log harvester is itself a unit with a log; found unmapped by its own first production run" ;
     chorus:hasDomain chorus:logs .
 
-chorus:unitdomain-com.chorus.mcp a chorus:UnitDomainMapping ;
-    rdfs:label "com.chorus.mcp → spine" ;
-    chorus:launchdLabel "com.chorus.mcp" ;
-    rdfs:comment "Jeff 2026-09-03: mcp is part of spine/events (mcp is to spine what act is to pipelines)" ;
-    chorus:hasDomain chorus:spine .
-
 chorus:unitdomain-com.chorus.mcp-config-herald a chorus:UnitDomainMapping ;
     rdfs:label "com.chorus.mcp-config-herald → heralds" ;
     chorus:launchdLabel "com.chorus.mcp-config-herald" ;

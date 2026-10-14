@@ -83,7 +83,7 @@ function every(minutes: number): string {
 }
 
 export function renderSensorsSection(panel: SensorsPanel): string {
-  const head = '<h2>Sensors</h2><p class="sub">Each sensor is one pass of the herald core, run through the <code>herald_run</code> tool as its owner. Its latest run, against what, and what it changed. A sensor that has not looked within its window reads stale.</p>';
+  const head = '<h2>Sensors</h2><p class="sub">Each sensor is one pass of the herald core, run through the <code>herald-run</code> tool as its owner. Its latest run, against what, and what it changed. A sensor that has not looked within its window reads stale.</p>';
   if (!panel.measured) {
     return `${head}<p class="banner red">UNMEASURED — ${esc(panel.reason)}. No sensor is shown as green.</p>`;
   }

@@ -1285,7 +1285,7 @@ app.get('/api/messages', (req, res) => {
 
 // #2895 proposal routes RETIRED in #2905 — Jeff direct: bouncer is just
 // nudge-based now. Agent cards add composes a structured nudge text and
-// refuses to file; agent decides whether to send via chorus_nudge_message;
+// refuses to file; agent decides whether to send via chorus-nudge-message;
 // Jeff sees the nudge, decides, files the card himself if approved.
 // No Bridge-side workflow surface needed.
 

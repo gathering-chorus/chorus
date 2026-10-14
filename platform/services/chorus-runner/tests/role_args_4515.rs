@@ -1,7 +1,7 @@
 // @test-type: unit
 // @domain: services
 //! #4515 — an argument whose shape says it names a role must be a role the
-//! roles door lists. What a role sees: `chorus_cards_set owner=bob` is refused
+//! roles door lists. What a role sees: `chorus-cards-set owner=bob` is refused
 //! with the list of real roles, before the cards CLI ever runs.
 use chorus_runner::skills::{role_args, role_refusal};
 use serde_json::{json, Map, Value};

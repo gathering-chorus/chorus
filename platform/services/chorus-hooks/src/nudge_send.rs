@@ -1,5 +1,5 @@
 // @domain: messages
-//! #4515 — `chorus-hook-shim nudge-send`: the chorus_nudge_message tool, moved
+//! #4515 — `chorus-hook-shim nudge-send`: the chorus-nudge-message tool, moved
 //! out of the old TS MCP server (server.ts executeNudge, word-cap.ts,
 //! nudge-transport.ts, peers.ts) into the binary its Skill row names.
 //!

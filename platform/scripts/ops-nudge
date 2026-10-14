@@ -10,7 +10,7 @@
 #
 # #3485 (Jeff 2026-06-18: "all of them must point to mcp"): one way to call
 # nudge. Since #4515 that one way is `chorus-hook-shim nudge-send`, the same
-# Rust path the chorus_nudge_message tool runs (word cap, recipient check,
+# Rust path the chorus-nudge-message tool runs (word cap, recipient check,
 # spine, pulse). The old MCP server and its /nudge route are gone.
 #
 # Usage:

@@ -211,6 +211,14 @@ pub fn check_args(args: &Map<String, Value>, schema: &Map<String, Value>) -> Res
                     return Err(format!("{k} must be one of {}", allowed.iter().filter_map(Value::as_str).collect::<Vec<_>>().join(", ")));
                 }
             }
+            // #4515 — the shape's sh:pattern: a value that does not match is refused
+            // by name; a pattern that is not a valid regex refuses too, never passes
+            if let Some(pat) = item_schema.get("pattern").and_then(Value::as_str) {
+                let re = regex::Regex::new(pat).map_err(|e| format!("{k} has a pattern that is not a regex ({pat}): {e}"))?;
+                if !re.is_match(it.as_str().unwrap_or_default()) {
+                    return Err(format!("{k} must match {pat}"));
+                }
+            }
         }
     }
     Ok(())
@@ -330,7 +338,7 @@ pub fn http_target(implemented_by: &str, args: &Map<String, Value>) -> Result<(S
         let inner = out[i + 1..j].to_string();
         let (k, default) = inner.split_once('=').map(|(k, d)| (k.to_string(), Some(d.to_string()))).unwrap_or((inner, None));
         let given = args.get(&k).map(|v| v.as_str().map(String::from).unwrap_or_else(|| v.to_string())).unwrap_or_default();
-        // `{role=@caller}` defaults to the verified caller (chorus_wip, chorus_sup)
+        // `{role=@caller}` defaults to the verified caller (chorus-wip, chorus-sup)
         let fallback = match default.as_deref() {
             Some("@caller") => args.get("caller").and_then(|v| v.as_str()).unwrap_or_default().to_string(),
             other => other.unwrap_or_default().to_string(),

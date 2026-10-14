@@ -875,7 +875,7 @@ mod tests {
     #[test]
     fn digest_mcp_nudge_names_recipient() {
         let input = make_post_input(
-            "mcp__chorus-api__chorus_nudge_message",
+            "mcp__chorus-api__chorus-nudge-message",
             json!({"to": "wren", "message": "hello"}),
             "/tmp",
         );

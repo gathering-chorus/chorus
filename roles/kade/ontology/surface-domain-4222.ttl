@@ -436,11 +436,6 @@ chorus:logdomain-chorus-api-log a chorus:UnitDomainMapping ;
     chorus:logFileName "chorus-api.log" ;
     chorus:hasDomain chorus:services .
 
-chorus:logdomain-chorus-mcp-log a chorus:UnitDomainMapping ;
-    rdfs:label "chorus-mcp.log → toolchain" ;
-    chorus:logFileName "chorus-mcp.log" ;
-    chorus:hasDomain chorus:toolchain .
-
 chorus:logdomain-chorus-ops-log a chorus:UnitDomainMapping ;
     rdfs:label "chorus-ops.log → services" ;
     chorus:logFileName "chorus-ops.log" ;

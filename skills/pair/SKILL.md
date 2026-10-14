@@ -79,7 +79,7 @@ If the card IS already in WIP (pulled earlier or by another role), skip to Step 
 
 4. **Nudge the navigator to load /pair** — the navigator MUST load the full skill, not just follow a text description:
    ```
-   mcp__chorus-api__chorus_nudge_message({
+   mcp__chorus-api__chorus-nudge-message({
      to: "<target-role>",
      message: "/pair <card-id> <your-role> — You navigate, <your-role> drives. Load this skill now so you have the full protocol."
    })

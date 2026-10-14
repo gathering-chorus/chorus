@@ -19,7 +19,8 @@
     "additionalProperties": false,
     "properties": {
       "iri": {
-        "description": "The Product, Domain or Service, e.g. chorus:service-werk. One the graph does not hold is answered not-found by the route.",
+        "description": "The Product, Domain or Service, e.g. chorus:service-werk. One the graph does not hold is answered not-found.",
+        "pattern": "^chorus:[a-z0-9][a-z0-9-]*$",
         "type": "string"
       }
     },
@@ -36,7 +37,7 @@
         "type": "integer"
       },
       "status": {
-        "description": "New lane. Done is not a lane here: it goes through chorus_cards_done, which records the acceptance (DEC-048).",
+        "description": "New lane. Done is not a lane here: it goes through chorus-cards-done, which records the acceptance (DEC-048).",
         "enum": [
           "Now",
           "Next",
@@ -81,6 +82,7 @@
       },
       "owner": {
         "description": "Owner role: any agent or human the roles door lists.",
+        "namesRole": "peer",
         "type": "string"
       },
       "priority": {
@@ -171,6 +173,7 @@
     "properties": {
       "target": {
         "description": "The role to watch. You are the watcher.",
+        "namesRole": "agent",
         "type": "string"
       }
     },
@@ -241,6 +244,7 @@
     "properties": {
       "role": {
         "description": "Only this role's errors. Default every role.",
+        "namesRole": "peer",
         "type": "string"
       },
       "time_window": {
@@ -309,6 +313,7 @@
       },
       "to": {
         "description": "Recipient — an agent role (silas, wren, kade, abby-normal) or the human (jeff), as the roles door lists them.",
+        "pattern": "^[a-z][a-z0-9-]*$",
         "type": "string"
       }
     },
@@ -334,6 +339,7 @@
     "properties": {
       "role": {
         "description": "The role to read for. Defaults to you.",
+        "namesRole": "peer",
         "type": "string"
       }
     },

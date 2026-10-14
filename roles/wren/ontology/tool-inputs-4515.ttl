@@ -1,9 +1,9 @@
 # #4515 (Silas) — input shapes for the tools whose old handlers held refusals.
 # The refusal moves INTO the shape, so the runner refuses before anything runs:
-#   chorus_cards_move  — no Done in the lanes: Done goes through chorus_cards_done (card.accepted, DEC-048)
-#   chorus_cards_set   — no status property: status is a transition, not a field
-#   chorus_cards_tag   — removal only: setting a label value is chorus_cards_set's (one writer per field, ADR-031)
-#   chorus_nudge_message — runs `chorus-hook-shim nudge-send` (word cap, recipient check, spine, pulse)
+#   chorus-cards-move  — no Done in the lanes: Done goes through chorus-cards-done (card.accepted, DEC-048)
+#   chorus-cards-set   — no status property: status is a transition, not a field
+#   chorus-cards-tag   — removal only: setting a label value is chorus-cards-set's (one writer per field, ADR-031)
+#   chorus-nudge-message — runs `chorus-hook-shim nudge-send` (word cap, recipient check, spine, pulse)
 
 @prefix chorus: <https://jeffbridwell.com/chorus#> .
 @prefix sh:     <http://www.w3.org/ns/shacl#> .
@@ -30,9 +30,9 @@ chorus:toolSequence  a owl:DatatypeProperty ; rdfs:label "sequence" ;  rdfs:comm
 chorus:toolDomain    a owl:DatatypeProperty ; rdfs:label "domain" ;    rdfs:comment "A card's domain label (#4515)." .
 chorus:toolChunk     a owl:DatatypeProperty ; rdfs:label "chunk" ;     rdfs:comment "A card's chunk label (#4515)." .
 
-# chorus_nudge_message — "nudge-send {caller} {to} {message} [--expects {expects}]", implementedBy chorus-hook-shim, runsAs caller
+# chorus-nudge-message — "nudge-send {caller} {to} {message} [--expects {expects}]", implementedBy chorus-hook-shim, runsAs caller
 chorus:NudgeMessageInput a sh:NodeShape , chorus:ToolInput ;
-    rdfs:label "chorus_nudge_message input" ;
+    rdfs:label "chorus-nudge-message input" ;
     sh:property [ sh:path chorus:toolTo ; sh:minCount 1 ; sh:maxCount 1 ; sh:datatype xsd:string ; sh:order 1 ; sh:pattern "^[a-z][a-z0-9-]*$" ;
                   sh:name "to" ; sh:description "Recipient — an agent role (silas, wren, kade, abby-normal) or the human (jeff), as the roles door lists them." ] ;
     sh:property [ sh:path chorus:toolMessage ; sh:minCount 1 ; sh:maxCount 1 ; sh:datatype xsd:string ; sh:order 2 ;
@@ -40,19 +40,19 @@ chorus:NudgeMessageInput a sh:NodeShape , chorus:ToolInput ;
     sh:property [ sh:path chorus:toolExpects ; sh:maxCount 1 ; sh:datatype xsd:string ; sh:order 3 ; sh:in ( "none" "reply" "decision" "action" ) ;
                   sh:name "expects" ; sh:description "What you need back. Default none. reply, decision or action make the recipient owe you an answer; use sparingly." ] .
 
-# chorus_cards_move — "move {id} {status}", implementedBy cards
+# chorus-cards-move — "move {id} {status}", implementedBy cards
 chorus:CardsMoveInput a sh:NodeShape , chorus:ToolInput ;
-    rdfs:label "chorus_cards_move input" ;
+    rdfs:label "chorus-cards-move input" ;
     sh:property [ sh:path chorus:toolCardId ; sh:minCount 1 ; sh:maxCount 1 ; sh:datatype xsd:integer ; sh:minInclusive 1 ; sh:order 1 ;
                   sh:name "id" ; sh:description "Card id." ] ;
     sh:property [ sh:path chorus:toolLane ; sh:minCount 1 ; sh:maxCount 1 ; sh:datatype xsd:string ; sh:order 2 ;
                   sh:in ( "Now" "Next" "Later" "WIP" "Blocked" "Won't Do" "Harvesting" "SWAT" ) ;
-                  sh:name "status" ; sh:description "New lane. Done is not a lane here: it goes through chorus_cards_done, which records the acceptance (DEC-048)." ] .
+                  sh:name "status" ; sh:description "New lane. Done is not a lane here: it goes through chorus-cards-done, which records the acceptance (DEC-048)." ] .
 
-# chorus_cards_set — "set {id} [owner={owner}] [priority={priority}] [type={type}] [origin={origin}] [title={title}] [subproduct={subproduct}] [sequence={sequence}] [domain={domain}] [chunk={chunk}]", implementedBy cards
+# chorus-cards-set — "set {id} [owner={owner}] [priority={priority}] [type={type}] [origin={origin}] [title={title}] [subproduct={subproduct}] [sequence={sequence}] [domain={domain}] [chunk={chunk}]", implementedBy cards
 chorus:CardsSetInput a sh:NodeShape , chorus:ToolInput ;
-    rdfs:label "chorus_cards_set input" ;
-    rdfs:comment "No status: status is a transition, not a field. Lanes go through chorus_cards_move, Done through chorus_cards_done." ;
+    rdfs:label "chorus-cards-set input" ;
+    rdfs:comment "No status: status is a transition, not a field. Lanes go through chorus-cards-move, Done through chorus-cards-done." ;
     sh:property [ sh:path chorus:toolCardId ; sh:minCount 1 ; sh:maxCount 1 ; sh:datatype xsd:integer ; sh:minInclusive 1 ; sh:order 1 ; sh:name "id" ; sh:description "Card id." ] ;
     sh:property [ sh:path chorus:toolOwner ;      sh:maxCount 1 ; sh:datatype xsd:string ; sh:order 2 ;  sh:name "owner" ;      chorus:namesRole "peer" ; sh:description "Owner role: any agent or human the roles door lists." ] ;
     sh:property [ sh:path chorus:toolPriority ;   sh:maxCount 1 ; sh:datatype xsd:string ; sh:order 3 ;  sh:in ( "P1" "P2" "P3" ) ; sh:name "priority" ; sh:description "P1, P2 or P3." ] ;
@@ -64,10 +64,10 @@ chorus:CardsSetInput a sh:NodeShape , chorus:ToolInput ;
     sh:property [ sh:path chorus:toolDomain ;     sh:maxCount 1 ; sh:datatype xsd:string ; sh:order 9 ;  sh:name "domain" ;     sh:description "Domain label value." ] ;
     sh:property [ sh:path chorus:toolChunk ;      sh:maxCount 1 ; sh:datatype xsd:string ; sh:order 10 ; sh:name "chunk" ;      sh:description "Chunk label value." ] .
 
-# chorus_cards_tag — "untag {id} {category}:{value}", implementedBy cards. Removal only.
+# chorus-cards-tag — "untag {id} {category}:{value}", implementedBy cards. Removal only.
 chorus:CardsTagInput a sh:NodeShape , chorus:ToolInput ;
-    rdfs:label "chorus_cards_tag input" ;
-    rdfs:comment "Removes a label. Setting a label value is chorus_cards_set's job (one writer per field, ADR-031)." ;
+    rdfs:label "chorus-cards-tag input" ;
+    rdfs:comment "Removes a label. Setting a label value is chorus-cards-set's job (one writer per field, ADR-031)." ;
     sh:property [ sh:path chorus:toolCardId ; sh:minCount 1 ; sh:maxCount 1 ; sh:datatype xsd:integer ; sh:minInclusive 1 ; sh:order 1 ; sh:name "id" ; sh:description "Card id." ] ;
     sh:property [ sh:path chorus:toolCategory ; sh:minCount 1 ; sh:maxCount 1 ; sh:datatype xsd:string ; sh:order 2 ; sh:in ( "sequence" "domain" "chunk" ) ;
                   sh:name "category" ; sh:description "The label's axis." ] ;

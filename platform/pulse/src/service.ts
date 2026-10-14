@@ -222,7 +222,7 @@ function registerNudgeRoutes(app: Express, store: MessageStore, metrics: Metrics
     if (!callerIsAuthorized(typeof providedSecret === 'string' ? providedSecret : undefined)) {
       return res.status(403).json({
         error: 'not-canonical-caller',
-        message: 'POST /api/nudge accepts only MCP-server calls. Use the chorus_nudge_message MCP tool from a Claude session.',
+        message: 'POST /api/nudge accepts only MCP-server calls. Use the chorus-nudge-message MCP tool from a Claude session.',
       });
     }
     const { from, to, content, traceId: bodyTraceId } = req.body;

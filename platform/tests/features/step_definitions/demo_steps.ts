@@ -5,7 +5,7 @@
 // load-bearing step delegates to a real substrate call:
 //   - cards view  → directing/products/cards CLI
 //   - chorus-log  → platform/services/chorus-hooks/.../chorus-hook-shim log
-//   - nudge       → messaging API at localhost:3475 (persist) + chorus_nudge_message MCP (deliver)
+//   - nudge       → messaging API at localhost:3475 (persist) + chorus-nudge-message MCP (deliver)
 //   - smoke check → platform/scripts/smoke-check.sh
 //
 // Tests call those substrates directly and assert against their observable
@@ -296,7 +296,7 @@ When('the demo signal step fires nudges from {word}', function (sender: string) 
   nudgeRecord = [];
   // /demo Step 5 nudges all roles except the sender. We verify by emitting
   // nudge.requested spine events (the same signal /demo would produce when
-  // calling chorus_nudge_message MCP) and reading them back. We don't call
+  // calling chorus-nudge-message MCP) and reading them back. We don't call
   // the MCP directly because it injects keystrokes into live role sessions —
   // unsafe under test. Verification at the spine layer is the MCP's
   // observable contract, which is what /demo's nudge step must satisfy.

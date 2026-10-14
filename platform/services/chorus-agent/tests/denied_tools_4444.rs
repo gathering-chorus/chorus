@@ -62,7 +62,7 @@ fn abbys_settings_give_her_every_chorus_api_tool() {
 
 #[test]
 fn negative_proof_a_tool_filter_is_caught() {
-    assert!(!includes_every_tool(&json!({"mcpServers":{"chorus-api":{"includeTools":["chorus_nudge_message"]}}})));
+    assert!(!includes_every_tool(&json!({"mcpServers":{"chorus-api":{"includeTools":["chorus-nudge-message"]}}})));
     assert!(!includes_every_tool(&json!({"mcpServers":{}})));
 }
 

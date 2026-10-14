@@ -920,7 +920,7 @@ export async function sendCardApprovalNudge(args: {
  * The CLI composes the structured approval-ask nudge from the description
  * the agent already wrote (validated to have the six required sections),
  * prints it to stdout for the agent to read + decide whether to send via
- * chorus_nudge_message to Jeff, and exits non-zero. The card is not filed.
+ * chorus-nudge-message to Jeff, and exits non-zero. The card is not filed.
  *
  * The agent may decide — after seeing what they wrote in the mirror —
  * not to send the nudge at all. That's the forcing function: many weak
@@ -935,7 +935,7 @@ export async function sendCardApprovalNudge(args: {
  *
  * No env-var bypass an agent can set in their shell.
  */
-// #2996: directive-marker retired. The dedicated `chorus_card_add_jeff` MCP
+// #2996: directive-marker retired. The dedicated `chorus-card-add-jeff` MCP
 // tool (spawned with DEPLOY_ROLE=jeff hardcoded) replaces the marker-handshake
 // path. /card invocation → MCP tool → DEPLOY_ROLE=jeff → requireJeffApprovalIfAgent
 // returns immediately because isAgent is false. One mechanism, deterministic.

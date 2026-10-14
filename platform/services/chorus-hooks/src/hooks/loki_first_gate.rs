@@ -91,7 +91,7 @@ pub fn refusal(path: &str, logql: &str) -> String {
         "Loki-first (#4149): reading {} as text is refused. Ask Loki instead — \
          it has the labels, a time window, and every machine; the flat file has none of that.\n\
          \n\
-         Named question?  chorus_logs_for_card / _for_trace / _for_branch / _recent_errors\n\
+         Named question?  chorus-logs-for-card / chorus-logs-for-trace / chorus_logs_for_branch / chorus-logs-recent-errors\n\
          Raw LogQL?       the grafana MCP server: query_loki_logs  {}\n\
          Unknown labels?  list_loki_label_names, then list_loki_label_values\n\
          \n\

@@ -96,11 +96,11 @@ chorus:runsAs a owl:DatatypeProperty ; rdfs:label "runs as" ;
 chorus:ToolInput a owl:Class ; rdfs:label "Tool input" ;
     rdfs:comment "The arguments a tool takes, as a SHACL shape; athena-gen generates its JSON Schema." .
 
-# herald_run (Silas, #4405): one pass of a sensor, the same arguments as the
+# herald-run (Silas, #4405): one pass of a sensor, the same arguments as the
 # old TypeScript MCP server's schema (HERALD_RUN_TOOL_DEF; retired #4515).
 # sh:name is the argument's JSON name; sh:order is its place.
 chorus:HeraldRunInput a sh:NodeShape , chorus:ToolInput ;
-    rdfs:label "herald_run input" ;
+    rdfs:label "herald-run input" ;
     sh:property [ sh:path chorus:sensor ; sh:minCount 1 ; sh:maxCount 1 ; sh:datatype xsd:string ; sh:order 1 ;
                   sh:in ( "files" "code" "services" "stores" "infra" ) ; sh:name "sensor" ;
                   sh:description "Which sensor to run." ] ;
@@ -111,7 +111,7 @@ chorus:HeraldRunInput a sh:NodeShape , chorus:ToolInput ;
     sh:property [ sh:path chorus:wait ; sh:maxCount 1 ; sh:datatype xsd:boolean ; sh:order 4 ; sh:name "wait" ;
                   sh:description "Run to the end and return the output." ] .
 
-chorus:sensor a owl:DatatypeProperty ; rdfs:label "sensor" ; rdfs:comment "Which herald sensor a herald_run call runs (#4513)." .
+chorus:sensor a owl:DatatypeProperty ; rdfs:label "sensor" ; rdfs:comment "Which herald sensor a herald-run call runs (#4513)." .
 chorus:dryRun a owl:DatatypeProperty ; rdfs:label "dry run" ; rdfs:comment "Plan and print, write nothing (#4513)." .
 chorus:wait a owl:DatatypeProperty ; rdfs:label "wait" ; rdfs:comment "Run to the end and return the output (#4513)." .
 

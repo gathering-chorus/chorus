@@ -111,7 +111,7 @@ pub fn fetch() -> FetchResult {
     }
 
     // #4515 — the door, read directly: the old MCP server and its
-    // chorus_principles_list tool are gone. Retries as before (#2964).
+    // chorus-principles-list tool are gone. Retries as before (#2964).
     let role = std::env::var("CHORUS_ROLE").unwrap_or_else(|_| "shim".to_string());
     let url = api_url();
 

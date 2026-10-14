@@ -16,7 +16,7 @@ fn inputs() -> Map<String, Value> {
 }
 
 fn row(implemented_by: &str) -> Value {
-    json!({ "name": "chorus_nudge_message", "executor": "http", "inputShape": "NudgeInput",
+    json!({ "name": "chorus-nudge-message", "executor": "http", "inputShape": "NudgeInput",
             "implementedBy": implemented_by, "ownedBy": "principal-wren", "runsAs": "caller" })
 }
 
@@ -110,7 +110,7 @@ fn a_get_sends_no_body() {
 #[test]
 fn a_route_can_default_to_the_verified_caller_and_the_caller_cannot_spoof_it() {
     let shapes = json!({ "WipInput": { "type": "object", "properties": { "role": { "type": "string" } } } }).as_object().unwrap().clone();
-    let r = json!({ "name": "chorus_wip", "executor": "http", "inputShape": "WipInput", "ownedBy": "principal-wren", "runsAs": "caller",
+    let r = json!({ "name": "chorus-wip", "executor": "http", "inputShape": "WipInput", "ownedBy": "principal-wren", "runsAs": "caller",
                     "implementedBy": "GET {api}/api/chorus/context/board/wip?role={role=@caller}&who={caller}" });
     let (tools, un) = skill_tools(&[r], &shapes);
     assert!(un.is_empty(), "{un:?}");

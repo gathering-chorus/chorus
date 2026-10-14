@@ -16,17 +16,17 @@ setup() {
 }
 
 @test "a launchd job's call reaches the runner as that role, with its arguments" {
-  run "$CALL" silas herald_run '{"role":"silas","sensor":"services","wait":true}'
+  run "$CALL" silas herald-run '{"role":"silas","sensor":"services","wait":true}'
   [ "$status" -eq 0 ] || return 1
   [[ "$output" == *"ROLE=silas"* ]] || return 1
   [[ "$output" == *"ARG=call"* ]] || return 1
-  [[ "$output" == *"ARG=herald_run"* ]] || return 1
+  [[ "$output" == *"ARG=herald-run"* ]] || return 1
   [[ "$output" == *"ARG=sensor=services"* ]] || return 1
   [[ "$output" == *"ARG=wait=true"* ]] || return 1
 }
 
 @test "NEGATIVE PROOF: a role key in the JSON never becomes an argument" {
-  run "$CALL" kade herald_run '{"role":"silas","sensor":"files"}'
+  run "$CALL" kade herald-run '{"role":"silas","sensor":"files"}'
   [[ "$output" == *"ROLE=kade"* ]] || return 1
   [[ "$output" != *"ARG=role="* ]] || return 1
 }
@@ -37,12 +37,12 @@ setup() {
 }
 
 @test "NEGATIVE PROOF: the runner's refusal is the caller's failure" {
-  FAKE_EXIT=1 run "$CALL" silas herald_run '{"sensor":"nope"}'
+  FAKE_EXIT=1 run "$CALL" silas herald-run '{"sensor":"nope"}'
   [ "$status" -eq 1 ] || return 1
 }
 
 @test "NEGATIVE PROOF: arguments that are not JSON fail loud and run nothing" {
-  run "$CALL" silas herald_run 'sensor=files'
+  run "$CALL" silas herald-run 'sensor=files'
   [ "$status" -ne 0 ] || return 1
   [[ "$output" != *"ARG=call"* ]] || return 1
 }

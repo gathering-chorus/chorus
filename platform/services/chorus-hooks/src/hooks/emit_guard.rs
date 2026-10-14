@@ -22,7 +22,7 @@ static ENV_DUMP_RE: LazyLock<Regex> =
 
 /// Which tool inputs count as EMITTED text, per tool. Pure — testable alone.
 pub fn emitted_text(tool_name: &str, command: &str, message: &str) -> Option<String> {
-    if tool_name == "mcp__chorus-api__chorus_nudge_message" && !message.is_empty() {
+    if tool_name == "mcp__chorus-api__chorus-nudge-message" && !message.is_empty() {
         return Some(message.to_string());
     }
     if tool_name == "Bash" {
@@ -102,7 +102,7 @@ mod tests {
     fn non_emit_tools_are_out_of_scope() {
         assert!(emitted_text("Bash", "grep -rn 'ghp_' src/", "").is_none());
         assert!(emitted_text("Read", "", "").is_none());
-        assert!(emitted_text("mcp__chorus-api__chorus_nudge_message", "", "hello").is_some());
+        assert!(emitted_text("mcp__chorus-api__chorus-nudge-message", "", "hello").is_some());
     }
 
     /// AC3 — bypass is scoped to the matching pattern, nothing wider.

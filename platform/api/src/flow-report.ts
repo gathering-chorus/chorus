@@ -6,7 +6,7 @@
  * cards. This is the standing form of the 06-06 one-off report
  * (~/.chorus/reports/card-cycle-report.html) and the measure behind #3266's
  * walk-away bar. Pure (no IO) — the CLI wrapper feeds it Loki events; the
- * chorus_flow_report MCP tool execs the CLI (never computes on a serving loop).
+ * chorus-flow-report MCP tool execs the CLI (never computes on a serving loop).
  */
 
 export interface FlowEvent {

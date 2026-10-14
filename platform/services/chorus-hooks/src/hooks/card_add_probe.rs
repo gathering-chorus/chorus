@@ -1,6 +1,6 @@
 //! Deploy probe check (#2925 AC3)
 //!
-//! PreToolUse on `mcp__chorus-api__chorus_cards_add` — inspects the new card's
+//! PreToolUse on `mcp__chorus-api__chorus-cards-add` — inspects the new card's
 //! description for daemon-runtime trigger paths. If the card touches
 //! daemon-runtime files (platform/api/src/, mcp/server.ts, platform/services/
 //! chorus-hooks/) but is missing a `## Deploy Probe` section, refuse the add.
