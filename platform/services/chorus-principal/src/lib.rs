@@ -1283,7 +1283,10 @@ fn seen(ctx: &Ctx, role: &str) -> i32 {
     let flag = if delivered { "delivered" } else if jeff { "jeff" } else { "turn" };
     if envd("AWAKE_SEEN_SYNC", "0") == "1" { return seen_write(ctx, role, &conv, flag); }
     if let Ok(me) = env::current_exe() {
-        let _ = Command::new(me).args(["seen-write", role, &conv, flag]).stdin(std::process::Stdio::null()).stdout(std::process::Stdio::null()).stderr(std::process::Stdio::null()).spawn();
+        // #4520 reopen 2 — its own process group: Gemini's hook runner ends the
+        // hook's group when the hook returns, and the write died with it
+        use std::os::unix::process::CommandExt;
+        let _ = Command::new(me).args(["seen-write", role, &conv, flag]).process_group(0).stdin(std::process::Stdio::null()).stdout(std::process::Stdio::null()).stderr(std::process::Stdio::null()).spawn();
     }
     let _ = flag;
     0
