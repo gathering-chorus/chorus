@@ -216,19 +216,30 @@ pub fn check_args(args: &Map<String, Value>, schema: &Map<String, Value>) -> Res
 
 fn render(tok: &str, args: &Map<String, Value>, caller: &str) -> Option<Vec<String>> {
     // Some(tokens) = emit them (a true boolean emits none); None = absent
-    let Some(name) = tok.strip_prefix('{').and_then(|t| t.strip_suffix('}')) else {
-        // #4514 — a placeholder inside a word (`--domain={domain}`, werk-test's
-        // only form): the word is kept only when the value is present
-        if let (Some(i), Some(j)) = (tok.find('{'), tok.find('}')) {
-            if i < j {
-                let inner = &tok[i + 1..j];
-                return match args.get(inner) {
-                    None | Some(Value::Null) | Some(Value::Bool(false)) | Some(Value::Array(_)) => None,
-                    Some(v) => Some(vec![format!("{}{}{}", &tok[..i], if inner == "caller" { caller.to_string() } else { v.as_str().map(String::from).unwrap_or_else(|| v.to_string()) }, &tok[j + 1..])]),
-                };
-            }
+    let whole = tok.strip_prefix('{').and_then(|t| t.strip_suffix('}')).filter(|n| !n.contains(['{', '}']));
+    let Some(name) = whole else {
+        // #4514 — placeholders inside a word (`--domain={domain}`, werk-test's
+        // only form; #4515 `{category}:{value}`, cards untag's): every one is
+        // filled, and the word is kept only when every value is present
+        let mut out = String::new();
+        let mut rest = tok;
+        while let (Some(i), Some(j)) = (rest.find('{'), rest.find('}')) {
+            if j < i { break; }
+            let inner = &rest[i + 1..j];
+            let value = if inner == "caller" {
+                caller.to_string()
+            } else {
+                match args.get(inner) {
+                    None | Some(Value::Null) | Some(Value::Bool(false)) | Some(Value::Array(_)) => return None,
+                    Some(v) => v.as_str().map(String::from).unwrap_or_else(|| v.to_string()),
+                }
+            };
+            out.push_str(&rest[..i]);
+            out.push_str(&value);
+            rest = &rest[j + 1..];
         }
-        return Some(vec![tok.to_string()]);
+        out.push_str(rest);
+        return Some(vec![out]);
     };
     if name == "caller" {
         return Some(vec![caller.to_string()]);

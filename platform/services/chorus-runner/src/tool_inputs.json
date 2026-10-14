@@ -15,6 +15,120 @@
     ],
     "type": "object"
   },
+  "CardsMoveInput": {
+    "additionalProperties": false,
+    "properties": {
+      "id": {
+        "description": "Card id.",
+        "type": "integer"
+      },
+      "status": {
+        "description": "New lane. Done is not a lane here: it goes through chorus_cards_done, which records the acceptance (DEC-048).",
+        "enum": [
+          "Now",
+          "Next",
+          "Later",
+          "WIP",
+          "Blocked",
+          "Won't Do",
+          "Harvesting",
+          "SWAT"
+        ],
+        "type": "string"
+      }
+    },
+    "required": [
+      "id",
+      "status"
+    ],
+    "type": "object"
+  },
+  "CardsSetInput": {
+    "additionalProperties": false,
+    "properties": {
+      "chunk": {
+        "description": "Chunk label value.",
+        "type": "string"
+      },
+      "domain": {
+        "description": "Domain label value.",
+        "type": "string"
+      },
+      "id": {
+        "description": "Card id.",
+        "type": "integer"
+      },
+      "origin": {
+        "description": "reflective or reactive.",
+        "enum": [
+          "reflective",
+          "reactive"
+        ],
+        "type": "string"
+      },
+      "owner": {
+        "description": "Owner role.",
+        "type": "string"
+      },
+      "priority": {
+        "description": "P1, P2 or P3.",
+        "enum": [
+          "P1",
+          "P2",
+          "P3"
+        ],
+        "type": "string"
+      },
+      "sequence": {
+        "description": "Sequence label value.",
+        "type": "string"
+      },
+      "subproduct": {
+        "description": "Subproduct label.",
+        "type": "string"
+      },
+      "title": {
+        "description": "Card title.",
+        "type": "string"
+      },
+      "type": {
+        "description": "new, enhance, fix, chore or swat.",
+        "type": "string"
+      }
+    },
+    "required": [
+      "id"
+    ],
+    "type": "object"
+  },
+  "CardsTagInput": {
+    "additionalProperties": false,
+    "properties": {
+      "category": {
+        "description": "The label's axis.",
+        "enum": [
+          "sequence",
+          "domain",
+          "chunk"
+        ],
+        "type": "string"
+      },
+      "id": {
+        "description": "Card id.",
+        "type": "integer"
+      },
+      "value": {
+        "description": "The label value to remove.",
+        "type": "string"
+      }
+    },
+    "required": [
+      "id",
+      "category",
+      "value"
+    ],
+    "type": "object"
+  },
   "HeraldRunInput": {
     "additionalProperties": false,
     "properties": {
@@ -44,6 +158,34 @@
     },
     "required": [
       "sensor"
+    ],
+    "type": "object"
+  },
+  "NudgeMessageInput": {
+    "additionalProperties": false,
+    "properties": {
+      "expects": {
+        "description": "What you need back. Default none. reply, decision or action make the recipient owe you an answer; use sparingly.",
+        "enum": [
+          "none",
+          "reply",
+          "decision",
+          "action"
+        ],
+        "type": "string"
+      },
+      "message": {
+        "description": "Message text the recipient sees. Nudges cap at 50 words; fenced blocks, inline code and URLs do not count.",
+        "type": "string"
+      },
+      "to": {
+        "description": "Recipient — an agent role (silas, wren, kade, abby-normal) or the human (jeff), as the roles door lists them.",
+        "type": "string"
+      }
+    },
+    "required": [
+      "to",
+      "message"
     ],
     "type": "object"
   },

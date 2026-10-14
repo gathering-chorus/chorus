@@ -136,3 +136,14 @@ fn a_placeholder_inside_a_word_is_filled_or_the_word_dropped() {
     let a = args(json!({ "card": "4514", "domain": "services" }));
     assert_eq!(argv("{card} {caller} [--domain={domain}] [--type={type}]", &a, "wren"), vec!["4514", "wren", "--domain=services"]);
 }
+
+// #4515 (Silas) — chorus_cards_tag runs `untag {id} {category}:{value}`: every
+// placeholder in a word is filled, and the word drops if any one is absent.
+#[test]
+fn every_placeholder_inside_a_word_is_filled() {
+    let a = args(json!({ "id": 4515, "category": "chunk", "value": "ops" }));
+    assert_eq!(argv("untag {id} {category}:{value}", &a, "silas"), vec!["untag", "4515", "chunk:ops"]);
+    // NEGATIVE PROOF: one missing value drops the word, never leaves a literal {value}
+    let half = args(json!({ "id": 4515, "category": "chunk" }));
+    assert_eq!(argv("untag {id} [{category}:{value}]", &half, "silas"), vec!["untag", "4515"]);
+}
