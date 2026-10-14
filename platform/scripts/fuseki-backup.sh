@@ -99,6 +99,12 @@ ssh -o ConnectTimeout=10 "$REMOTE" true 2>/dev/null \
 # and shipped an hour-old dump as tonight's backup, in 28 seconds, reporting OK.
 # A backup that can ship yesterday's file is not a backup.
 STARTED_MARK="$(mktemp)"; trap 'rm -f "$STARTED_MARK"' EXIT
+# #4522 — `-nt` compares whole seconds here (bash 3.2), and a small dataset's
+# dump lands in the same second as this mark: /wine-diary's 2026-10-14 00:04:48
+# dump was refused as "predates this run" though it was the one we asked for.
+# The mark is set one second back, so a dump from this second counts as ours
+# and anything from before the run still does not.
+touch -t "$(date -r $(( $(date +%s) - 1 )) +%Y%m%d%H%M.%S)" "$STARTED_MARK"
 log "requesting a dump of '$DATASET'"
 TASK_ID="$(curl -fsS -X POST --max-time 60 ${FUSEKI_AUTH[@]+"${FUSEKI_AUTH[@]}"} \
   "$FUSEKI/\$/backup/$DATASET" \
