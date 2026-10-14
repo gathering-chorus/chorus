@@ -1,0 +1,36 @@
+@prefix chorus: <https://jeffbridwell.com/chorus#> .
+@prefix sh:     <http://www.w3.org/ns/shacl#> .
+@prefix xsd:    <http://www.w3.org/2001/XMLSchema#> .
+@prefix owl:    <http://www.w3.org/2002/07/owl#> .
+@prefix rdfs:   <http://www.w3.org/2000/01/rdf-schema#> .
+
+# #4514 AC1 part 2 (Silas): the verbs whose usage part 1 did not fit, read from source.
+
+chorus:verbDomain   a owl:DatatypeProperty ; rdfs:label "domain" ;    rdfs:comment "Only the tests of this domain (#4514)." .
+chorus:verbTestType a owl:DatatypeProperty ; rdfs:label "test type" ; rdfs:comment "Only tests of this type (#4514)." .
+chorus:verbSyncMode a owl:DatatypeProperty ; rdfs:label "sync mode" ; rdfs:comment "What werk-sync does to canonical (#4514)." .
+
+# werk-demo, werk-review — "{card} {caller}"  (neither takes --atomic)
+chorus:WerkCardOnlyInput a sh:NodeShape , chorus:ToolInput ;
+    rdfs:label "werk verb input (card only)" ;
+    sh:property [ sh:path chorus:verbCard ; sh:minCount 1 ; sh:maxCount 1 ; sh:datatype xsd:string ; sh:order 1 ; sh:name "card" ;
+                  sh:description "The card number." ] .
+
+# werk-test — "{card} {caller} [--domain={domain}] [--type={type}]"
+# NEEDS RUNNER CODE: werk-test reads only the --flag=value form (flag_value,
+# werk-test/src/main.rs:1886), so render() must fill {x} inside a token.
+chorus:WerkTestInput a sh:NodeShape , chorus:ToolInput ;
+    rdfs:label "werk-test input" ;
+    sh:property [ sh:path chorus:verbCard ; sh:minCount 1 ; sh:maxCount 1 ; sh:datatype xsd:string ; sh:order 1 ; sh:name "card" ;
+                  sh:description "The card number." ] ;
+    sh:property [ sh:path chorus:verbDomain ; sh:maxCount 1 ; sh:datatype xsd:string ; sh:order 2 ; sh:name "domain" ;
+                  sh:description "Only the tests of this domain." ] ;
+    sh:property [ sh:path chorus:verbTestType ; sh:maxCount 1 ; sh:datatype xsd:string ; sh:order 3 ;
+                  sh:in ( "unit" "integration" "bdd" "e2e" ) ; sh:name "type" ; sh:description "Only tests of this type." ] .
+
+# werk-sync — "{mode}"
+chorus:WerkSyncInput a sh:NodeShape , chorus:ToolInput ;
+    rdfs:label "werk-sync input" ;
+    sh:property [ sh:path chorus:verbSyncMode ; sh:minCount 1 ; sh:maxCount 1 ; sh:datatype xsd:string ; sh:order 1 ;
+                  sh:in ( "ff" "repair" "recover" ) ; sh:name "mode" ;
+                  sh:description "ff fast-forwards canonical to origin/main; repair re-attaches a detached canonical; recover saves tracked changes to ~/.chorus/recovery first (a human's call)." ] .

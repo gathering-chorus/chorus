@@ -272,11 +272,12 @@ fn class(store: &Store, domain: &str, iri: &str, prefix: Option<&str>, product: 
         let path = p["path"].clone();
         let fname = local_name(&path);
         // sh:in in model order: a member's position is how many list cells precede it
-        let allowed: Vec<String> = select(store, &format!(
+        // #4514 — a path that is not an IRI (a blank-node sh:inversePath) has no sh:in to read
+        let allowed: Vec<String> = if !path.starts_with("http") { Vec::new() } else { select(store, &format!(
             "SELECT ?v (COUNT(?mid) AS ?pos) WHERE {{ <{iri}> rdfs:subClassOf* ?anc . ?s sh:targetClass ?anc ; sh:property ?p . \
              ?p sh:path <{path}> ; sh:in ?l . ?l rdf:rest* ?mid . ?mid rdf:rest* ?node . ?node rdf:first ?v }} \
              GROUP BY ?v ?node ORDER BY ?pos"))?
-            .into_iter().map(|r| r["v"].clone()).collect();
+            .into_iter().map(|r| r["v"].clone()).collect() };
         let is_link = p.contains_key("class") || p.get("nodeKind").is_some_and(|k| k.ends_with("#IRI"));
         let kind = if is_link {
             Kind::Link { class: p.get("class").map(|c| local_name(c)) }
@@ -330,6 +331,8 @@ pub fn missing_settings(declared: &[(String, String)]) -> Vec<&'static str> {
 pub struct ToolArg {
     /// The JSON name the tool takes it by (sh:name).
     pub name: String,
+    /// #4514 — no sh:maxCount: a list of values, in order (an athena verb's args).
+    pub many: bool,
     pub datatype: String,
     pub required: bool,
     pub allowed: Vec<String>,
@@ -345,10 +348,10 @@ pub fn tool_inputs(store: &Store) -> Result<Vec<(String, Vec<ToolArg>)>, ModelEr
     for s in shapes {
         let shape = s["s"].clone();
         let props = select(store, &format!(
-            "SELECT ?path (SAMPLE(?n) AS ?name) (SAMPLE(?dt) AS ?datatype) (SAMPLE(?mn) AS ?min) \
+            "SELECT ?path (SAMPLE(?n) AS ?name) (SAMPLE(?dt) AS ?datatype) (SAMPLE(?mn) AS ?min) (SAMPLE(?mx) AS ?max) \
                     (SAMPLE(?d) AS ?desc) (SAMPLE(?o) AS ?order) WHERE {{ \
                c:{shape} sh:property ?p . ?p sh:path ?path . \
-               OPTIONAL {{ ?p sh:name ?n }} OPTIONAL {{ ?p sh:datatype ?dt }} OPTIONAL {{ ?p sh:minCount ?mn }} \
+               OPTIONAL {{ ?p sh:name ?n }} OPTIONAL {{ ?p sh:datatype ?dt }} OPTIONAL {{ ?p sh:minCount ?mn }} OPTIONAL {{ ?p sh:maxCount ?mx }} \
                OPTIONAL {{ ?p sh:description ?d }} OPTIONAL {{ ?p sh:order ?o }} \
              }} GROUP BY ?path"))?;
         let mut args: Vec<(i64, ToolArg)> = Vec::new();
@@ -361,6 +364,7 @@ pub fn tool_inputs(store: &Store) -> Result<Vec<(String, Vec<ToolArg>)>, ModelEr
             let order = p.get("order").and_then(|o| o.parse::<f64>().ok()).unwrap_or(f64::MAX) as i64;
             args.push((order, ToolArg {
                 name: p.get("name").cloned().unwrap_or(path),
+                many: !p.contains_key("max"),
                 datatype: p.get("datatype").cloned().unwrap_or_else(|| "string".into()),
                 required: p.get("min").and_then(|m| m.parse::<u32>().ok()).unwrap_or(0) > 0,
                 allowed,

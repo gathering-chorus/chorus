@@ -236,6 +236,19 @@ pub fn env_services() -> Vec<EnvService> {
             smoke_path: "/health".to_string(),
             smoke_kind: SmokeKind::HttpGet,
         },
+        // #4514 — the werk's own tool runner, so a card that changes it can show
+        // a long Task surviving a runner restart on the demo, never on prod's.
+        // 3372-3375: clear of every other variant's ports. Binds 127.0.0.1.
+        EnvService {
+            name: "chorus-runner".to_string(),
+            kind: EnvServiceKind::RustService,
+            base_port: 3372,
+            source_dir_rel: "platform/services/chorus-runner".to_string(),
+            program_args_template: ProgramArgsTemplate::WerkBinBare { binary: "chorus-runner".to_string() },
+            port_env: "CHORUS_RUNNER_PORT".to_string(),
+            smoke_path: "/health".to_string(),
+            smoke_kind: SmokeKind::HttpGet,
+        },
     ]
 }
 
@@ -246,7 +259,23 @@ pub fn env_services() -> Vec<EnvService> {
 /// here is always started, which keeps today's demo for cards touching none.
 pub const OPTIONAL_TRIGGERS: &[(&str, &[&str])] = &[
     ("pulse", &["platform/pulse/", "platform/services/chorus-hooks/"]),
+    // #4514 — a demo runner only for cards that change the runner
+    ("chorus-runner", &["platform/services/chorus-runner/"]),
 ];
+
+/// #4514 — the variant runner's environment: its door is the werk's own
+/// athena-make, and its Tasks live in the werk's demo store, never prod's
+/// ~/.chorus/runner-tasks.
+pub fn runner_extra_env(role: &str, demo_store_dir: &str, css_issuer: &str, chorus_home: &str, home: &str, path: &str) -> R<Vec<(String, String)>> {
+    Ok(vec![
+        ("CHORUS_DOOR".into(), format!("http://127.0.0.1:{}", env_port_for("athena-make", role)?)),
+        ("CHORUS_RUNNER_TASKS".into(), format!("{}/runner-tasks", demo_store_dir)),
+        ("CSS_ISSUER".into(), css_issuer.to_string()),
+        ("CHORUS_HOME".into(), chorus_home.to_string()),
+        ("HOME".into(), home.to_string()),
+        ("PATH".into(), path.to_string()),
+    ])
+}
 
 /// #4398 — the env services a card's demo starts, given the files its diff
 /// changed: every always-on service, plus each optional one whose trigger a
@@ -910,6 +939,7 @@ pub fn env_up(role: &str, werk_root: &str, canonical_root: &str, card: u64, trac
             .ok().and_then(|t| relay_url_in_plist(&t));
         let clearing_owned = clearing_extra_env(role, &demo_store_dir, &css_issuer, &variant_path, prod_relay.as_deref())?;
         let pulse_owned = pulse_extra_env(role, &demo_store_dir, &home_dir, &variant_path)?;
+        let runner_owned = runner_extra_env(role, &demo_store_dir, &css_issuer, &chorus_home, &home_dir, &variant_path)?;
         if svc.name == "pulse" {
             if let Some(leak) = pulse_env_prod_leak(&pulse_owned, &home_dir) {
                 return Err(format!("env_up: refusing to start the variant pulse — {}", leak));
@@ -992,6 +1022,7 @@ pub fn env_up(role: &str, werk_root: &str, canonical_root: &str, card: u64, trac
             ],
             "clearing" => clearing_owned.iter().map(|(k, v)| (k.as_str(), v.as_str())).collect(),
             "pulse" => pulse_owned.iter().map(|(k, v)| (k.as_str(), v.as_str())).collect(),
+            "chorus-runner" => runner_owned.iter().map(|(k, v)| (k.as_str(), v.as_str())).collect(),
             _ => vec![],
         };
 
@@ -1489,6 +1520,21 @@ mod services_for_diff_4398 {
         let got = names(&["platform/tests/x.bats", "roles/kade/notes.md"]);
         for s in ALWAYS { assert!(got.contains(&s.to_string()), "{s} missing"); }
         assert!(!got.contains(&"pulse".to_string()), "pulse started for a card that never touched it");
+    }
+
+    /// #4514 — a card that changes the runner gets a demo runner, pointed at
+    /// the werk's door and Tasks folder. NEGATIVE PROOF: a card that does not
+    /// change it gets none, and the variant never points at prod's tasks.
+    #[test]
+    fn a_runner_change_gets_a_demo_runner_on_the_werks_door() {
+        assert!(names(&["platform/services/chorus-runner/src/tasks.rs"]).contains(&"chorus-runner".to_string()));
+        assert!(!names(&["platform/tests/x.bats"]).contains(&"chorus-runner".to_string()));
+        let env = runner_extra_env("wren", "/w/.chorus-demo", "https://id.example/", "/c", "/Users/x", "/usr/bin").unwrap();
+        let get = |k: &str| env.iter().find(|(a, _)| a == k).map(|(_, v)| v.clone()).unwrap();
+        assert_eq!(get("CHORUS_DOOR"), format!("http://127.0.0.1:{}", env_port_for("athena-make", "wren").unwrap()));
+        assert_eq!(get("CHORUS_RUNNER_TASKS"), "/w/.chorus-demo/runner-tasks");
+        assert!(!get("CHORUS_RUNNER_TASKS").starts_with("/Users/x/.chorus"), "the variant would write prod's tasks");
+        assert_eq!(env_port_for("chorus-runner", "wren").unwrap(), 3374);
     }
 
     #[test]

@@ -11,6 +11,8 @@
 
 pub mod server;
 pub mod skills;
+pub mod tasks;
+pub mod client;
 
 use chorus_oidc::auth::AuthError;
 use chorus_oidc::oidc::{verify_any, OidcVerifier};

@@ -69,6 +69,8 @@ Observing the running system — Borg.""" ;
     chorus:references """Public design: designing/docs/athena-product-design.html (product design, 2026-05-15, restructured 2026-06-12); athena-value-stream-design.html and value-stream-template.html (the shared structural model).
 Internal notes for the team — cards and decisions behind this page: ADR-040 (namespaces and identifier minting), ADR-028 (substrate-class domain contract), ADR-058 (model-only proving); reasoning-substrate-shift.html (2026-05-14); domain-model-asis-tobe.html; loom-subproduct-design.html (where the structural layer was first lifted); chorus-product-tree.html. Cards: #3345 / #3350 generated Domain API, #3351 value streams, #3257 the write door, #4045 products through the pipeline and design sections as attributes, #4080 this fill, #4062 the model pipeline trigger, #1772 one naming scheme, #4082 model versioning.
 Chorus · Athena · rewritten for readers outside the team 2026-09-03""" ;
+    # #4519 — athena declares its own namespace and graph prefix (athena-settings-4519.ttl)
+    chorus:hasProperty chorus:property-athena-model-namespace, chorus:property-athena-store-graph-prefix ;
     chorus:partOf chorus:chorus .
 
 chorus:borg a chorus:Product ;

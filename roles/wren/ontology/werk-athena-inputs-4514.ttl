@@ -1,0 +1,99 @@
+# #4514 AC1 — input shapes for every werk-* and athena-* verb (Silas, navigating).
+# The caller is never an argument: the runner passes {caller} from runsAs.
+
+@prefix chorus: <https://jeffbridwell.com/chorus#> .
+@prefix sh:     <http://www.w3.org/ns/shacl#> .
+@prefix xsd:    <http://www.w3.org/2001/XMLSchema#> .
+@prefix owl:    <http://www.w3.org/2002/07/owl#> .
+@prefix rdfs:   <http://www.w3.org/2000/01/rdf-schema#> .
+
+chorus:verbCard     a owl:DatatypeProperty ; rdfs:label "card" ;      rdfs:comment "The card a werk verb acts on (#4514)." .
+chorus:verbAtomic   a owl:DatatypeProperty ; rdfs:label "atomic" ;    rdfs:comment "Run the verb's atomic path (#4514)." .
+chorus:verbTarget   a owl:DatatypeProperty ; rdfs:label "target" ;    rdfs:comment "werk or canonical (#4514)." .
+chorus:verbSummary  a owl:DatatypeProperty ; rdfs:label "summary" ;   rdfs:comment "The commit summary (#4514)." .
+chorus:verbContinue a owl:DatatypeProperty ; rdfs:label "continue" ;  rdfs:comment "Finish an interrupted commit (#4514)." .
+chorus:verbAbort    a owl:DatatypeProperty ; rdfs:label "abort" ;     rdfs:comment "Abandon an interrupted commit (#4514)." .
+chorus:verbEnv      a owl:DatatypeProperty ; rdfs:label "env" ;       rdfs:comment "env-up or env-down (#4514)." .
+chorus:verbCrate    a owl:DatatypeProperty ; rdfs:label "crate" ;     rdfs:comment "The crate werk-deploy ships (#4514)." .
+chorus:verbRollback a owl:DatatypeProperty ; rdfs:label "rollback" ;  rdfs:comment "Roll the crate back (#4514)." .
+chorus:verbVerdict  a owl:DatatypeProperty ; rdfs:label "verdict" ;   rdfs:comment "pass or fail (#4514)." .
+chorus:verbFindings a owl:DatatypeProperty ; rdfs:label "findings" ;  rdfs:comment "Review findings, one line (#4514)." .
+chorus:verbArgs     a owl:DatatypeProperty ; rdfs:label "args" ;      rdfs:comment "An athena verb's arguments, in order (#4514)." .
+
+# werk-pull, werk-unpull, werk-push, werk-merge, werk-accept, werk-sync, werk, werk-go, werk-test
+#   arguments: "{card} {caller} [--atomic {atomic}]"
+chorus:WerkCardInput a sh:NodeShape , chorus:ToolInput ;
+    rdfs:label "werk verb input (card)" ;
+    sh:property [ sh:path chorus:verbCard ; sh:minCount 1 ; sh:maxCount 1 ; sh:datatype xsd:string ; sh:order 1 ; sh:name "card" ;
+                  sh:description "The card number." ] ;
+    sh:property [ sh:path chorus:verbAtomic ; sh:maxCount 1 ; sh:datatype xsd:boolean ; sh:order 2 ; sh:name "atomic" ;
+                  sh:description "Run the verb's atomic path." ] .
+
+# werk-build — "{card} {caller} [--target {target}] [--atomic {atomic}]"
+chorus:WerkBuildInput a sh:NodeShape , chorus:ToolInput ;
+    rdfs:label "werk-build input" ;
+    sh:property [ sh:path chorus:verbCard ; sh:minCount 1 ; sh:maxCount 1 ; sh:datatype xsd:string ; sh:order 1 ; sh:name "card" ;
+                  sh:description "The card number." ] ;
+    sh:property [ sh:path chorus:verbTarget ; sh:maxCount 1 ; sh:datatype xsd:string ; sh:order 2 ; sh:in ( "werk" "canonical" ) ;
+                  sh:name "target" ; sh:description "Build the card's werk or canonical. Defaults to werk." ] ;
+    sh:property [ sh:path chorus:verbAtomic ; sh:maxCount 1 ; sh:datatype xsd:boolean ; sh:order 3 ; sh:name "atomic" ;
+                  sh:description "Run the verb's atomic path." ] .
+
+# werk-commit — "{card} {caller} [{summary}] [--atomic {atomic}] [--continue {continue}] [--abort {abort}]"
+chorus:WerkCommitInput a sh:NodeShape , chorus:ToolInput ;
+    rdfs:label "werk-commit input" ;
+    sh:property [ sh:path chorus:verbCard ; sh:minCount 1 ; sh:maxCount 1 ; sh:datatype xsd:string ; sh:order 1 ; sh:name "card" ;
+                  sh:description "The card number." ] ;
+    sh:property [ sh:path chorus:verbSummary ; sh:maxCount 1 ; sh:datatype xsd:string ; sh:order 2 ; sh:name "summary" ;
+                  sh:description "The commit summary." ] ;
+    sh:property [ sh:path chorus:verbAtomic ; sh:maxCount 1 ; sh:datatype xsd:boolean ; sh:order 3 ; sh:name "atomic" ;
+                  sh:description "Commit, push and merge in one step (the usual)." ] ;
+    sh:property [ sh:path chorus:verbContinue ; sh:maxCount 1 ; sh:datatype xsd:boolean ; sh:order 4 ; sh:name "continue" ;
+                  sh:description "Finish an interrupted commit." ] ;
+    sh:property [ sh:path chorus:verbAbort ; sh:maxCount 1 ; sh:datatype xsd:boolean ; sh:order 5 ; sh:name "abort" ;
+                  sh:description "Abandon an interrupted commit." ] .
+
+# werk-deploy — one tool per form, so no argument changes another's meaning:
+#   werk-deploy        "{card} {caller} [--target {target}]"
+#   werk-deploy-env    "{env} {caller} [{card}]"
+#   werk-deploy-crate  "crate {crate} [--rollback {rollback}]"
+chorus:WerkDeployInput a sh:NodeShape , chorus:ToolInput ;
+    rdfs:label "werk-deploy input" ;
+    sh:property [ sh:path chorus:verbCard ; sh:minCount 1 ; sh:maxCount 1 ; sh:datatype xsd:string ; sh:order 1 ; sh:name "card" ;
+                  sh:description "The card number." ] ;
+    sh:property [ sh:path chorus:verbTarget ; sh:maxCount 1 ; sh:datatype xsd:string ; sh:order 2 ; sh:in ( "werk" "canonical" ) ;
+                  sh:name "target" ; sh:description "Deploy the card's werk or canonical." ] .
+
+chorus:WerkDeployEnvInput a sh:NodeShape , chorus:ToolInput ;
+    rdfs:label "werk-deploy env input" ;
+    sh:property [ sh:path chorus:verbEnv ; sh:minCount 1 ; sh:maxCount 1 ; sh:datatype xsd:string ; sh:order 1 ; sh:in ( "env-up" "env-down" ) ;
+                  sh:name "env" ; sh:description "Bring the card's demo env up or down." ] ;
+    sh:property [ sh:path chorus:verbCard ; sh:maxCount 1 ; sh:datatype xsd:string ; sh:order 2 ; sh:name "card" ;
+                  sh:description "The card number. Defaults to the caller's card in WIP." ] .
+
+chorus:WerkDeployCrateInput a sh:NodeShape , chorus:ToolInput ;
+    rdfs:label "werk-deploy crate input" ;
+    sh:property [ sh:path chorus:verbCrate ; sh:minCount 1 ; sh:maxCount 1 ; sh:datatype xsd:string ; sh:order 1 ; sh:name "crate" ;
+                  sh:description "The crate to ship." ] ;
+    sh:property [ sh:path chorus:verbRollback ; sh:maxCount 1 ; sh:datatype xsd:boolean ; sh:order 2 ; sh:name "rollback" ;
+                  sh:description "Roll the crate back to its previous binary." ] .
+
+# werk-review — two tools:
+#   werk-review          "{card} {caller}"
+#   werk-review-verdict  "verdict {card} {verdict} {findings}"
+chorus:WerkReviewVerdictInput a sh:NodeShape , chorus:ToolInput ;
+    rdfs:label "werk-review verdict input" ;
+    sh:property [ sh:path chorus:verbCard ; sh:minCount 1 ; sh:maxCount 1 ; sh:datatype xsd:string ; sh:order 1 ; sh:name "card" ;
+                  sh:description "The card number." ] ;
+    sh:property [ sh:path chorus:verbVerdict ; sh:minCount 1 ; sh:maxCount 1 ; sh:datatype xsd:string ; sh:order 2 ; sh:in ( "pass" "fail" ) ;
+                  sh:name "verdict" ; sh:description "pass or fail." ] ;
+    sh:property [ sh:path chorus:verbFindings ; sh:minCount 1 ; sh:maxCount 1 ; sh:datatype xsd:string ; sh:order 3 ; sh:name "findings" ;
+                  sh:description "What the review found." ] .
+
+# athena-model, athena-deploy, athena-validate, athena-gen — "{args...}"
+# NEEDS RUNNER CODE: args is a list (no sh:maxCount). check_args has no array
+# type and render() would emit one JSON token. See the nudge.
+chorus:AthenaVerbInput a sh:NodeShape , chorus:ToolInput ;
+    rdfs:label "athena verb input" ;
+    sh:property [ sh:path chorus:verbArgs ; sh:minCount 1 ; sh:datatype xsd:string ; sh:order 1 ; sh:name "args" ;
+                  sh:description "The verb's arguments in order, e.g. [\"scope\", \"<root>\", \"<git-range>\"]." ] .

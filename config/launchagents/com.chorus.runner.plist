@@ -15,6 +15,8 @@
     <dict>
         <key>CHORUS_HOME</key>
         <string>/Users/jeffbridwell/CascadeProjects/chorus</string>
+        <key>CHORUS_WERK_BASE</key>
+        <string>/Users/jeffbridwell/CascadeProjects/chorus-werk</string>
         <key>CHORUS_RUNNER_PORT</key>
         <string>3342</string>
         <!-- the identity issuer athena-make-launch.sh gives the door; not a secret -->

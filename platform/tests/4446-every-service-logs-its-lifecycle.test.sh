@@ -31,6 +31,7 @@ com.chorus.athena-make	platform/services/athena-make/src/main.rs
 com.chorus.athena-make.staging	platform/services/athena-make/src/main.rs
 com.chorus.athena-validate	platform/services/athena-validate/src/main.rs
 com.chorus.runner	platform/services/chorus-runner/src/main.rs
+com.chorus.chorus-runner	platform/services/chorus-runner/src/main.rs
 com.chorus.crawl-nightly	platform/services/chorus-crawl/src/main.rs
 com.chorus.messages-project	platform/services/chorus-principal/src/main.rs
 com.chorus.roles-up	platform/services/chorus-principal/src/main.rs

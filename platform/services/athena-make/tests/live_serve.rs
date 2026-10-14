@@ -34,6 +34,19 @@ impl Drop for Killer {
     }
 }
 
+/// The HTTP status from a response's header block (its first line), 0 if none.
+fn status_of(headers: &str) -> u16 {
+    headers.lines().next().and_then(|l| l.split_whitespace().nth(1)).and_then(|c| c.parse().ok()).unwrap_or(0)
+}
+
+/// NEGATIVE PROOF (#3734) for the check above: a 200 whose ETag holds "404"
+/// is served, and only a 404 status line is not.
+#[test]
+fn a_404_inside_a_header_value_is_not_a_404() {
+    assert_eq!(status_of("HTTP/1.1 200 OK\r\nETag: \"bf0404450e21629c\""), 200);
+    assert_eq!(status_of("HTTP/1.1 404 Not Found\r\n"), 404);
+}
+
 #[test]
 fn live_serve_loop_contract() {
     let port = 3897u16;
@@ -73,7 +86,10 @@ fn live_serve_loop_contract() {
     let mut enveloped_primitives = 0;
     for plural in ["domains", "products", "value-streams", "services"] {
         let (h, body) = curl(&format!("{}/{}", base, plural), &[]);
-        if h.contains("404") {
+        // #4514 — the status line only: `h.contains("404")` also matched the
+        // ETag "bf0404450e21629c" on a 200 (measured 2026-10-13 19:23), so a
+        // served primitive was skipped whenever its data hashed to a "404"
+        if status_of(&h) == 404 {
             continue; // primitive not served (no shape) — skip, not a failure
         }
         assert!(body.contains("\"apiVersion\": \"v1\""), "/{} enveloped: {}", plural, body);
@@ -103,7 +119,7 @@ fn live_serve_loop_contract() {
 
     // 5) served OpenAPI for a non-properties surface (everywhere, not just /borg/properties)
     let (oh, ob) = curl(&format!("{}/domains/openapi.json", base), &[]);
-    assert!(!oh.contains("404"), "/domains/openapi.json is served: {}", oh);
+    assert_ne!(status_of(&oh), 404, "/domains/openapi.json is served: {}", oh);
     assert!(ob.contains("openapi") || ob.contains("paths"), "openapi doc body: {}", ob);
 
     // 6) pagination: limit slices, links.next appears when more remain
