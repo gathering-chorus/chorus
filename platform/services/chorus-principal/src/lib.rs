@@ -1481,7 +1481,8 @@ fn sweep(ctx: &Ctx) -> i32 {
     let roles = match agent_roles(ctx) { Ok(r) => r, Err(why) => { eprintln!("chorus-principal: REFUSED — {}", why); return 2; } };
     let keep: Vec<String> = roles.iter().filter_map(|r| read_row(ctx, r, "session").map(|v| row_name(&v))).collect();
     let now = iso_utc(now_ms() as u64 / 1000);
-    let (mut closed, mut failed) = (0, 0);
+    let (kept, mut failed) = keep_live_sessions(ctx, &roles);
+    let mut closed = 0;
     for row in rows::expired_open(&listing, &now, &keep) {
         let owner = row.get("ownedBy").and_then(|o| o.as_str()).unwrap_or("").trim_start_matches("principal-").to_string();
         let name = row_name(&row);
@@ -1490,9 +1491,31 @@ fn sweep(ctx: &Ctx) -> i32 {
         let (code, _) = api_send(ctx, &owner, "identity/sessions", Some(&name), &done, "sweep");
         if ok_code(&code) { closed += 1 } else { failed += 1; eprintln!("  {} not closed (HTTP {})", name, code) }
     }
-    ctx.spine(&["session.sweep", &format!("closed={}", closed), &format!("failed={}", failed)]);
-    println!("sweep: {} expired session(s) closed, {} not closed", closed, failed);
+    ctx.spine(&["session.sweep", &format!("kept={}", kept), &format!("closed={}", closed), &format!("failed={}", failed)]);
+    println!("sweep: {} live session(s) kept open, {} expired session(s) closed, {} failed", kept, closed, failed);
     if failed > 0 { 1 } else { 0 }
+}
+
+/// #4377 reopen 1 — a session whose process is running stays open, idle or
+/// not (Jeff 2026-10-14: "see no sessions for wren and abby" — both running,
+/// both dropped 10 minutes after their last turn). Its login is renewed and
+/// the row's expiry follows, the same renewal a turn makes. A role whose
+/// process has exited is not renewed: its run already ended at exit, and its
+/// row drops from view at its expiry as before (#4500).
+fn keep_live_sessions(ctx: &Ctx, roles: &[String]) -> (u32, u32) {
+    let (mut kept, mut failed) = (0, 0);
+    for role in roles {
+        if !matches!(ctx.read_state(role), LoginState::Recorded { .. }) { continue; }
+        if live_entries(&ctx.sessions_dir, role, &ctx.ps).is_empty() { continue; }
+        let Some(session) = read_row(ctx, role, "session") else { continue };
+        let exp = current_login_expiry(ctx, role);
+        match rows::renewed_session(session, &exp) {
+            None if exp.is_empty() => { failed += 1; eprintln!("  {} not kept: no current login", role) }
+            None => kept += 1,
+            Some(s) => if put_row(ctx, role, "identity/sessions", "session", &s) { kept += 1 } else { failed += 1; eprintln!("  {} not kept: the row write was refused", role) },
+        }
+    }
+    (kept, failed)
 }
 
 /// Ids of the role's background sessions (`claude agents --json --cwd <role dir>`).

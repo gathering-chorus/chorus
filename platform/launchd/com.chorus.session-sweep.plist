@@ -1,0 +1,32 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+    <key>Label</key>
+    <string>com.chorus.session-sweep</string>
+    <!-- #4377 reopen 1 — Jeff 2026-10-14: "see no sessions for wren and abby".
+         Every minute: a role whose process is running keeps its session open
+         (login renewed, the row's expiry follows), idle or not; sessions long
+         past their expiry with no turn in an hour are closed. -->
+    <key>ProgramArguments</key>
+    <array>
+        <string>/Users/jeffbridwell/.chorus/bin/chorus-principal</string>
+        <string>sweep</string>
+    </array>
+    <key>EnvironmentVariables</key>
+    <dict>
+        <key>CHORUS_ROOT</key>
+        <string>/Users/jeffbridwell/CascadeProjects/chorus</string>
+        <key>PATH</key>
+        <string>/Users/jeffbridwell/.chorus/bin:/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin</string>
+    </dict>
+    <key>StartInterval</key>
+    <integer>60</integer>
+    <key>RunAtLoad</key>
+    <true/>
+    <key>StandardOutPath</key>
+    <string>/Users/jeffbridwell/Library/Logs/Gathering/session-sweep.log</string>
+    <key>StandardErrorPath</key>
+    <string>/Users/jeffbridwell/Library/Logs/Gathering/session-sweep.log</string>
+</dict>
+</plist>
