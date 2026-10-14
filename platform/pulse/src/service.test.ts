@@ -413,9 +413,12 @@ describe('#2766 E2E — pulse-owns-delivery lifecycle', () => {
     expect(MessageStore.prototype.getDeliveryRecord).toBeDefined();
     const { app, store } = freshWithWorker([{ rc: 0, stderr: '' }]);
     const r1 = await request(app).post('/api/nudge').send({ from: 'k', to: 'w', content: 'a', traceId: 'body-trace' });
+    // #4515 — failed twice in the card lane with id=undefined and never here; the status and body name which refusal it was.
+    expect({ status: r1.status, body: r1.body }).toMatchObject({ status: 200, body: { ok: true } });
     await waitForState(store, r1.body.id, 'delivered');
     expect(store.getDeliveryRecord(r1.body.id).trace_id).toBe('body-trace');
     const r2 = await request(app).post('/api/nudge').send({ from: 'k', to: 'w', content: 'b' });
+    expect({ status: r2.status, body: r2.body }).toMatchObject({ status: 200, body: { ok: true } });
     await waitForState(store, r2.body.id, 'delivered');
     expect(store.getDeliveryRecord(r2.body.id).trace_id).toBeNull();
   });
