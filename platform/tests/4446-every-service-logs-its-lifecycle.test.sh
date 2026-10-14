@@ -44,6 +44,7 @@ com.chorus.eventloop-probe	platform/api/src/eventloop-probe.ts
 com.chorus.mcp	GAP: #4515 retired the old MCP server; it is booted out at land (retire-old-mcp-server-4515.sh) and this row goes with it
 com.chorus.pulse	platform/pulse/src/service.ts
 com.chorus.clearing	directing/clearing/src/server.ts
+com.chorus.clearing-v2	GAP: #4525 side-by-side review on :3472 (Abby), installed by hand for the review; wire its lifecycle before it replaces com.chorus.clearing
 com.chorus.bridge-subscriber-kade	platform/scripts/bridge-subscriber.js
 com.chorus.bridge-subscriber-silas	platform/scripts/bridge-subscriber.js
 com.chorus.bridge-subscriber-wren	platform/scripts/bridge-subscriber.js
