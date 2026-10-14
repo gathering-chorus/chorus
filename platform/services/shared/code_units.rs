@@ -61,14 +61,18 @@ pub fn crate_deps(crate_path: &str, cargo_toml: &str) -> Vec<String> {
     out
 }
 
-/// The shared files a crate compiles in: `include!("../../shared/x.rs")` and
-/// `#[path = "../../shared/x.rs"]`, as repo paths. A change to one rebuilds it.
+/// The shared files a crate compiles in: `include!("../../shared/x.rs")`,
+/// `include_str!("../../shared/x.json")` (#4444: the generated runtime table)
+/// and `#[path = "../../shared/x.rs"]`, as repo paths. A change to one rebuilds it.
 pub fn shared_includes(sources: &[String]) -> Vec<String> {
     let mut out: Vec<String> = Vec::new();
     for text in sources {
         for line in text.lines() {
             let target = if let Some(i) = line.find("include!(\"") {
                 let rest = &line[i + "include!(\"".len()..];
+                rest.find('"').map(|q| &rest[..q])
+            } else if let Some(i) = line.find("include_str!(\"") {
+                let rest = &line[i + "include_str!(\"".len()..];
                 rest.find('"').map(|q| &rest[..q])
             } else if let Some(i) = line.find("#[path = \"") {
                 let rest = &line[i + "#[path = \"".len()..];
