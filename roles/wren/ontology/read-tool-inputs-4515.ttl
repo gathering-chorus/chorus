@@ -68,3 +68,25 @@ chorus:FlowReportInput a sh:NodeShape , chorus:ToolInput ;
     rdfs:label "the flow report" ;
     sh:property [ sh:path chorus:toolHours ; sh:maxCount 1 ; sh:datatype xsd:integer ; sh:minInclusive 1 ; sh:maxInclusive 720 ; sh:order 1 ; sh:name "hours" ;
                   sh:description "Hours back, 1 to 720. Default 120." ] .
+
+# chorus_service_status/start/stop/restart/deploy/rollback  agent-state.sh <verb> {service}
+#   (deterministic, runsAs caller: agent-state.sh decides who may change what, as before)
+chorus:toolService a owl:DatatypeProperty ; rdfs:label "service" ; rdfs:comment "A chorus service or crate name (#4515)." .
+chorus:ServiceInput a sh:NodeShape , chorus:ToolInput ;
+    rdfs:label "one chorus service" ;
+    sh:property [ sh:path chorus:toolService ; sh:minCount 1 ; sh:maxCount 1 ; sh:datatype xsd:string ; sh:minLength 1 ; sh:order 1 ; sh:name "service" ;
+                  sh:description "Service or crate name, e.g. chorus-api, chorus-hooks, com.chorus.api." ] .
+
+# loom-gemba  loom-gemba {target}  (the watcher is the caller, from CHORUS_ROLE)
+chorus:toolTarget a owl:DatatypeProperty ; rdfs:label "target" ; rdfs:comment "The role being observed (#4515)." .
+chorus:GembaInput a sh:NodeShape , chorus:ToolInput ;
+    rdfs:label "watch a role" ;
+    sh:property [ sh:path chorus:toolTarget ; sh:minCount 1 ; sh:maxCount 1 ; sh:datatype xsd:string ; sh:order 1 ; sh:name "target" ;
+                  chorus:namesRole "agent" ; sh:description "The role to watch. You are the watcher." ] .
+
+# chorus_blast_radius  GET {api}/api/athena/blast-radius/{iri}
+chorus:toolIri a owl:DatatypeProperty ; rdfs:label "iri" ; rdfs:comment "A model row's IRI, e.g. chorus:service-werk (#4515)." .
+chorus:BlastRadiusInput a sh:NodeShape , chorus:ToolInput ;
+    rdfs:label "blast radius of one row" ;
+    sh:property [ sh:path chorus:toolIri ; sh:minCount 1 ; sh:maxCount 1 ; sh:datatype xsd:string ; sh:order 1 ; sh:name "iri" ;
+                  sh:description "The Product, Domain or Service, e.g. chorus:service-werk. One the graph does not hold is answered not-found by the route." ] .

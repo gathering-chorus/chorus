@@ -15,6 +15,19 @@
     ],
     "type": "object"
   },
+  "BlastRadiusInput": {
+    "additionalProperties": false,
+    "properties": {
+      "iri": {
+        "description": "The Product, Domain or Service, e.g. chorus:service-werk. One the graph does not hold is answered not-found by the route.",
+        "type": "string"
+      }
+    },
+    "required": [
+      "iri"
+    ],
+    "type": "object"
+  },
   "CardsMoveInput": {
     "additionalProperties": false,
     "properties": {
@@ -68,7 +81,6 @@
       },
       "owner": {
         "description": "Owner role: any agent or human the roles door lists.",
-        "namesRole": "peer",
         "type": "string"
       },
       "priority": {
@@ -154,6 +166,19 @@
     "required": [],
     "type": "object"
   },
+  "GembaInput": {
+    "additionalProperties": false,
+    "properties": {
+      "target": {
+        "description": "The role to watch. You are the watcher.",
+        "type": "string"
+      }
+    },
+    "required": [
+      "target"
+    ],
+    "type": "object"
+  },
   "HeraldRunInput": {
     "additionalProperties": false,
     "properties": {
@@ -216,7 +241,6 @@
     "properties": {
       "role": {
         "description": "Only this role's errors. Default every role.",
-        "namesRole": "peer",
         "type": "string"
       },
       "time_window": {
@@ -310,11 +334,23 @@
     "properties": {
       "role": {
         "description": "The role to read for. Defaults to you.",
-        "namesRole": "peer",
         "type": "string"
       }
     },
     "required": [],
+    "type": "object"
+  },
+  "ServiceInput": {
+    "additionalProperties": false,
+    "properties": {
+      "service": {
+        "description": "Service or crate name, e.g. chorus-api, chorus-hooks, com.chorus.api.",
+        "type": "string"
+      }
+    },
+    "required": [
+      "service"
+    ],
     "type": "object"
   },
   "WerkBuildInput": {
