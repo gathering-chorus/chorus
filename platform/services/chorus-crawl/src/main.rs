@@ -715,7 +715,7 @@ mod stable_name_4173 {
 ///
 /// A row past the end would look absent, and absent means delete, so this walks
 /// to exhaustion rather than stopping at a ceiling.
-fn existing_rows(api: &str, token: &str) -> Result<Vec<InGraph>, String> {
+fn existing_rows(api: &str, token: &str, repo: &str, home_pass: bool) -> Result<Vec<InGraph>, String> {
     let mut out = Vec::new();
     // #4405 R6.5 — read with array fields: a file with two domains was read
     // back as none, so ~500 unchanged rows were rewritten on every pass
@@ -732,7 +732,8 @@ fn existing_rows(api: &str, token: &str) -> Result<Vec<InGraph>, String> {
             .collect();
         out.push(InGraph { path, sha, other });
     }
-    Ok(out)
+    // #4405 reopen 7 — scoped here, so no caller can compare another repo's rows
+    Ok(chorus_crawl::code_run::rows_in_pass(out, repo, home_pass))
 }
 
 /// #4185 — every Test (case) row the door serves. Identity is filePath +
@@ -2497,8 +2498,8 @@ fn main() {
     let graph = if token.is_empty() {
         Vec::new()
     } else {
-        match existing_rows(&api, &token) {
-            Ok(g) => g.into_iter().filter(|r| chorus_crawl::code_run::row_in_pass(&r.other, &home_repo, !foreign)).collect(),
+        match existing_rows(&api, &token, &home_repo, !foreign) {
+            Ok(g) => g,
             Err(e) => {
                 eprintln!("chorus-crawl: cannot read existing rows ({e}) — refusing to plan against an unknown graph");
                 std::process::exit(2);
@@ -3482,7 +3483,7 @@ fn main() {
             .filter(|p| registers_cases(p))
             .collect();
         match (
-            existing_rows(&api, &token),
+            existing_rows(&api, &token, &home_repo, !foreign),
             existing_case_rows(&api, &token),
         ) {
             (Ok(g2), Ok(cg2)) => {

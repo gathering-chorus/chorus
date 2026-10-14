@@ -251,3 +251,29 @@ mod domain_sets_r65 {
         assert_eq!(rows[0].iter().filter(|(k, _)| k == "hasDomain").count(), 2);
     }
 }
+
+// #4405 reopen 7 — the 10-14 nightly: chorus-crawl --validate red with 1,792
+// stale rows, every one a personal-site file. The full pass's re-read compared
+// chorus's tree with every CodeFile row, whatever repository it came from.
+mod validate_scoped_r7 {
+    use chorus_crawl::code_run::rows_in_pass;
+    use chorus_crawl::{reconcile, InGraph, OnDisk};
+    fn row(path: &str, repo: &str) -> InGraph {
+        InGraph { path: path.into(), sha: "s".into(), other: vec![("inRepository".into(), format!("chorus:repository-{repo}"))] }
+    }
+    fn disk() -> Vec<OnDisk> { vec![OnDisk { path: "a.rs".into(), sha: "s".into(), classified: true }] }
+    fn graph() -> Vec<InGraph> { vec![row("a.rs", "chorus"), row("app.js", "jeff-bridwell-personal-site")] }
+
+    #[test]
+    fn another_repositorys_row_is_never_stale() {
+        let d = reconcile(&disk(), &rows_in_pass(graph(), "chorus", true));
+        assert!(d.missing_from_tree.is_empty(), "foreign rows counted stale: {:?}", d.missing_from_tree);
+    }
+
+    /// NEGATIVE PROOF: the unscoped read (10-14's) calls the foreign row stale.
+    #[test]
+    fn negative_proof_the_unscoped_read_calls_it_stale() {
+        let d = reconcile(&disk(), &graph());
+        assert_eq!(d.missing_from_tree, vec!["app.js".to_string()]);
+    }
+}
