@@ -2832,7 +2832,7 @@ fn bats_outcome(cmd: &mut Command) -> BatsOutcome {
         Ok(s) if s.success() => BatsOutcome::Pass,
         Ok(s) if s.code() == Some(2) => BatsOutcome::Unmeasured,
         // #4515 — rc=3 is a suite's SELF-REFUSAL (#4016/#4256): it declined to
-        // run here (catalog-curation-api refuses to write into the live store).
+        // run here (e.g. a suite that will not write into the live store).
         // The nightly lane already scores it skip; this card lane scored it FAIL,
         // so a suite doing the right thing was a red on every card that touched it.
         Ok(s) if s.code() == Some(3) => BatsOutcome::Unmeasured,
