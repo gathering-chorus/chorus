@@ -187,10 +187,16 @@ pub fn tool_inputs_json(inputs: &[(String, Vec<crate::model::ToolArg>)]) -> Stri
             if !a.allowed.is_empty() {
                 item.insert("enum".into(), json!(a.allowed));
             }
+            if let Some(re) = &a.pattern {
+                item.insert("pattern".into(), json!(re));
+            }
             // #4514 — no sh:maxCount: an ordered list of that type
             let mut p = if a.many { let mut m = Map::new(); m.insert("type".into(), json!("array")); m.insert("items".into(), Value::Object(item)); m } else { item };
             if !a.description.is_empty() {
                 p.insert("description".into(), json!(a.description));
+            }
+            if let Some(r) = &a.names_role {
+                p.insert("namesRole".into(), json!(r));
             }
             props.insert(a.name.clone(), Value::Object(p));
             if a.required {

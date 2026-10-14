@@ -59,13 +59,13 @@ chorus:policy-tdd-gate a chorus:Policy ;
 
 chorus:policy-demo-gate a chorus:Policy ;
     rdfs:label "No accept without demo" ;
-    rdfs:comment "A code card cannot be marked Done without demo evidence. Builder cannot self-accept. DEC-048 Proving Gate. Enforced by demo_gate.rs hook and werk-accept (the GO step of chorus_werk)." ;
+    rdfs:comment "A code card cannot be marked Done without demo evidence. Builder cannot self-accept. DEC-048 Proving Gate. Enforced by demo_gate.rs hook and werk-accept (the land after the go step of chorus-werk)." ;
     chorus:derivedFrom chorus:hemenway-mistakes-are-tools-for-learning,
                        chorus:hemenway-biological-renewable-resources .
 
 chorus:policy-accept-gate a chorus:Policy ;
     rdfs:label "Accept = Done + spine + commit + push" ;
-    rdfs:comment "An acceptance must complete all four: move card to Done, emit card.accepted spine event, commit changes via git-queue, push. Partial acceptance is not acceptance. Enforced by werk-accept (the GO step of chorus_werk; GO=accept, #3311)." ;
+    rdfs:comment "An acceptance must complete all four: move card to Done, emit card.accepted spine event, commit changes via git-queue, push. Partial acceptance is not acceptance. Enforced by werk-accept (the land after the go step of chorus-werk; GO=accept, #3311)." ;
     chorus:derivedFrom chorus:hemenway-catch-and-store,
                        chorus:hemenway-biological-renewable-resources .
 

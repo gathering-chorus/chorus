@@ -349,7 +349,7 @@ def render(pin, pid_starts, now_ms):
         elif head != pin_patch:
             line += " · ⚠ STALE-PRESENT: round != werk HEAD — supersede + re-present before any go"
         else:
-            line += f" · round matches HEAD ✓ · go: chorus_werk {{role:\"{role}\", card_id:{card}, accepter:\"jeff\", go:true}}"
+            line += " · round matches HEAD ✓ · go: the run's own go step (v2)"
     return line
 
 

@@ -114,7 +114,7 @@ for. Treat the page as the source and this file as history.
   - Log — Spine events are typed and queryable, not unstructured text
   - Event bus — Spine is the chorus-specific event bus
   - Message bus — Spine records state-transitions, not just message-relay
-- **Canonical sub-terms:** Event (typed record: name, role, card_id, timestamp, trace_id, metadata). Event classes: card.pulled, card.accepted, service.deployed, interaction.pattern.detected, binary.deployed, demo.show.completed, etc. Storage: Loki via Promtail. Query: Loki API + `chorus_logs_for_card` / `chorus_logs_for_trace` MCP tools.
+- **Canonical sub-terms:** Event (typed record: name, role, card_id, timestamp, trace_id, metadata). Event classes: card.pulled, card.accepted, service.deployed, interaction.pattern.detected, binary.deployed, demo.show.completed, etc. Storage: Loki via Promtail. Query: Loki API + `borg-read-logs-card` / `borg-read-logs-trace` MCP tools.
 - **Citations:** ADR-024 (common message envelope); chorus-service-design.html.
 - **Conflicts surfaced:** No spine-service-design.html. The 2026-05-28 reframe (with Jeff): Spine and Werk are two faces of one substrate — Werk = action-face, Spine = record-face. They converge by construction (verbs emit, trace_id threads). Implication: one substrate doc covering both, not two parallel designs. MCP-on-spine becomes the natural completion — every action surface emits, period.
 
@@ -128,7 +128,7 @@ for. Treat the page as the source and this file as history.
   - Ping — Nudge requires action (DEC-1571: respond within 60s)
   - Alert — Nudge is role-to-role; alerts are system-to-role
   - Notification — Nudge targets the role's active terminal; notifications are broader
-- **Canonical sub-terms:** Nudge message, two-path delivery (osascript + API persist), messaging API at `localhost:3475`, `chorus_nudge_message` MCP tool.
+- **Canonical sub-terms:** Nudge message, two-path delivery (osascript + API persist), messaging API at `localhost:3475`, `clearing-nudge` MCP tool.
 - **Citations:** DEC-107 (locked two-path design); DEC-1571 (Attention Contract); clearing-service-design.html.
 - **Conflicts surfaced:** DEC-107 names two paths as locked but doesn't fully explain why both are necessary. Worth a one-line rationale addendum.
 

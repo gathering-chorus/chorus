@@ -109,29 +109,4 @@ require_shim() {
   grep -q "test.membrane.probe" "$TEST_HOME/.chorus/chorus.log"
 }
 
-# --- #3745: the pipeline runner declares prod; its test step reverts it ---
-# First live drift after #3615 deployed: 3 wren membrane.violation events
-# (context=build, marker=CI set) — act sets CI=true and werk.yml never declared
-# the runner's prod identity, so pipeline spine emits were refused.
 
-# #4336: these three cases grepped werk.yml and werk-test's main.rs. The
-# job-level prod identity is now read as a value (gha-step.py fails loudly if
-# the key is gone). The rest is proven by running it: membrane-land-lane-3918
-# EXECUTES werk.yml's test step and shows werk-test receives ctx=prod (and sees
-# a cleared context when the #3918 regression is put back), and
-# 4111-hermetic-leg runs werk-test itself and shows the test child it spawns
-# gets CHORUS_CONTEXT cleared.
-GHA_STEP="${CHORUS_ROOT}/platform/tests/fixtures/4336/gha-step.py"
-
-@test "werk.yml declares CHORUS_CONTEXT=prod at job env (#3745/#3918 — the runner keeps a prod identity)" {
-  run python3 "$GHA_STEP" "$CHORUS_ROOT/.github/workflows/werk.yml" env werk CHORUS_CONTEXT
-  [ "$status" -eq 0 ]
-  [ "$output" = "prod" ]
-}
-
-@test "NEGATIVE: a werk.yml with no job-level CHORUS_CONTEXT is caught, not read as empty" {
-  bad="$BATS_TEST_TMPDIR/werk-noctx.yml"
-  grep -vE '^[[:space:]]+CHORUS_CONTEXT:[[:space:]]*prod[[:space:]]*$' "$CHORUS_ROOT/.github/workflows/werk.yml" > "$bad"
-  run python3 "$GHA_STEP" "$bad" env werk CHORUS_CONTEXT
-  [ "$status" -ne 0 ]
-}

@@ -46,9 +46,16 @@ CCLSP_BIN="$(command -v cclsp || echo "$HOME/.nvm/versions/node/v20.20.2/bin/ccl
 # three read surfaces: Grafana dashboards, Loki logs (query_loki_logs) and
 # Prometheus metrics (query_prometheus), so there is no separate loki or
 # prometheus MCP to wire. Read-only by flag: -disable-admin -disable-write.
-MCP_GRAFANA="$(command -v mcp-grafana || echo "$HOME/.chorus/bin/mcp-grafana")"
+# #4515 — the INSTALLED copy first, never a PATH lookup first: a werk run puts
+# <role>-bin ahead on PATH, so `command -v` returned the werk slot's copy and every
+# committed role config read as drift (the nightly's 4149 check went red on main).
+if [ -x "$HOME/.chorus/bin/mcp-grafana" ]; then MCP_GRAFANA="$HOME/.chorus/bin/mcp-grafana"
+else MCP_GRAFANA="$(command -v mcp-grafana || echo "$HOME/.chorus/bin/mcp-grafana")"; fi
 GRAFANA_URL_VALUE="${GRAFANA_URL:-http://localhost:3100}"
 
+# #4515 — chorus-api is the tool runner (:3342), the old MCP server is gone.
+# The session sends its own verified credential through the headers helper
+# (re-run by Claude Code on connect and on a 401), never an asserted role header.
 ROLES=(wren silas kade)
 
 for role in "${ROLES[@]}"; do
@@ -60,8 +67,8 @@ for role in "${ROLES[@]}"; do
   "mcpServers": {
     "chorus-api": {
       "type": "http",
-      "url": "http://localhost:3341/mcp",
-      "headers": { "X-Chorus-Role": "$role" }
+      "url": "http://localhost:3342/mcp",
+      "headersHelper": "$RUNTIME_HOME/platform/scripts/chorus-mcp-headers $role"
     },
     "cclsp": {
       "command": "$NODE_BIN",

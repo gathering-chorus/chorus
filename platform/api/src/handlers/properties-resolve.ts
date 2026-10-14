@@ -2,8 +2,8 @@
  * #3863 — `GET /api/chorus/properties/resolve` — the door the word-cap
  * consumers have been knocking on since #3838.
  *
- * `mcp-server/src/word-cap.ts:118` and the chorus-hooks equivalent have always
- * called this route. It has never existed. Both consumers treat any non-ok
+ * The word cap (once in the old MCP server, retired #4515; now in chorus-hooks
+ * nudge-send) has always called this route. It has never existed. Both consumers treat any non-ok
  * response as "fail open and use the compiled constant", so a missing route is
  * indistinguishable from a working one at the call site — which is why every
  * cap Jeff mandated has been a hardcoded number wearing the costume of a

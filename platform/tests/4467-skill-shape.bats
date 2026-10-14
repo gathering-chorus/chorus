@@ -33,6 +33,10 @@ chorus:skill-werk-deploy-env-up a chorus:Skill ;
 chorus:skill-werk-go a chorus:Skill ;
     rdfs:label "go" ; rdfs:comment "Jeff accepts the presented card." ;
     chorus:executor "human" ; chorus:hasDomain chorus:cicd ; chorus:ownedBy chorus:principal-wren .
+chorus:skill-clearing-wip a chorus:Skill ;
+    rdfs:label "clearing-wip" ; rdfs:comment "Reads a role's WIP cards." ;
+    chorus:executor "http" ; chorus:implementedBy "GET {api}/api/chorus/context/board/wip?role={role=@caller}" ;
+    chorus:runsAs "caller" ; chorus:hasDomain chorus:cicd ; chorus:ownedBy chorus:principal-wren .
 chorus:stepskill-cicd-demo-1 a chorus:StepSkill ;
     chorus:forStep chorus:pipeline-step-cicd-demo ; chorus:callsSkill chorus:skill-werk-deploy-env-up ;
     chorus:skillOrder 1 ; chorus:ownedBy chorus:principal-wren .
@@ -126,4 +130,48 @@ TTL
   [ "$output" -eq 0 ]
   run grep -rlE 'chorus:(implementedIn|hasSkill)[[:space:]]' "$ROOT/roles" "$ROOT/designing/data" --include=*.ttl
   [ -z "$output" ] || { echo "still uses the old words: $output"; false; }
+}
+
+# #4515 — a step tool links the value-stream step it runs (Jeff 2026-10-14). The
+# shape holds the link's form; the name rule joins Product rows, so it is
+# athena-validate's tool-name-off-the-rule check (checks.rs TOOL_NAME, whose
+# negative proofs run there: an underscore name, a name with no product prefix,
+# a product that is not a row).
+@test "#4515 a step tool linked to its stream step, and an agent skill with none, conform" {
+  cat > "$T/good4515.ttl" <<'TTL'
+@prefix chorus: <https://jeffbridwell.com/chorus#> .
+@prefix rdfs: <http://www.w3.org/2000/01/rdf-schema#> .
+chorus:value-stream-step-borg-intake a chorus:ValueStreamStep .
+chorus:skill-borg-intake a chorus:Skill ;
+    rdfs:label "borg-intake" ; rdfs:comment "Runs the Borg Intake step." ; chorus:executor "deterministic" ;
+    chorus:implementedBy "borg-prove" ; chorus:hasDomain chorus:cicd ; chorus:ownedBy chorus:principal-wren ;
+    chorus:forStreamStep chorus:value-stream-step-borg-intake .
+chorus:skill-ab a chorus:Skill ;
+    rdfs:label "/ab" ; rdfs:comment "Analyzes the board." ; chorus:executor "agent" ;
+    chorus:hasDomain chorus:cicd ; chorus:ownedBy chorus:principal-wren .
+TTL
+  run report "$T/good4515.ttl"
+  [[ "$output" == *"sh:conforms  true"* ]] || { echo "$output"; false; }
+}
+
+@test "#4515 negative proof: a stream step that is not a step, or two of them, is refused" {
+  cat > "$T/bad4515.ttl" <<'TTL'
+@prefix chorus: <https://jeffbridwell.com/chorus#> .
+@prefix rdfs: <http://www.w3.org/2000/01/rdf-schema#> .
+chorus:value-stream-step-borg-intake a chorus:ValueStreamStep .
+chorus:value-stream-step-borg-verify a chorus:ValueStreamStep .
+chorus:skill-borg-intake a chorus:Skill ;
+    rdfs:label "borg-intake" ; rdfs:comment "Points at a domain." ; chorus:executor "deterministic" ;
+    chorus:implementedBy "borg-prove" ; chorus:hasDomain chorus:cicd ; chorus:ownedBy chorus:principal-wren ;
+    chorus:forStreamStep chorus:cicd .
+chorus:skill-borg-verify a chorus:Skill ;
+    rdfs:label "borg-verify" ; rdfs:comment "Runs two steps." ; chorus:executor "deterministic" ;
+    chorus:implementedBy "borg-prove" ; chorus:hasDomain chorus:cicd ; chorus:ownedBy chorus:principal-wren ;
+    chorus:forStreamStep chorus:value-stream-step-borg-intake , chorus:value-stream-step-borg-verify .
+TTL
+  run report "$T/bad4515.ttl"
+  [[ "$output" == *"sh:conforms  false"* ]] || { echo "$output"; false; }
+  [[ "$output" == *"skill-borg-intake"* ]] || { echo "$output"; false; }
+  [[ "$output" == *"skill-borg-verify"* ]] || { echo "$output"; false; }
+  [[ "$output" == *"forStreamStep"* ]] || false
 }

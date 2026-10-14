@@ -1,7 +1,9 @@
+// @test-type: unit
+// @domain: hooks
 //! #3672 — the respond-first gate (#3218) must never trap.
 //!
 //! 2026-07-23, twice in one day: a role owed a reply, its session had no
-//! chorus_nudge_message MCP attach (the post-crash default), and the gate
+//! clearing-nudge MCP attach (the post-crash default), and the gate
 //! refused every tool — including the Bash transport for the very reply it
 //! demanded. 125 stop fires; a human had to free the role. These tests ARE the
 //! trap: they fail on the pre-#3672 gate and pin the two invariants:
@@ -17,16 +19,16 @@ use chorus_hooks::nudge_gate::{
 
 #[test]
 fn mcp_nudge_tool_is_the_reply_path() {
-    assert!(is_reply_path("mcp__chorus-api__chorus_nudge_message", ""));
+    assert!(is_reply_path("mcp__chorus-api__clearing-nudge", ""));
 }
 
 #[test]
 fn bash_transport_for_the_reply_is_the_reply_path() {
     // The documented fallback for a session with no MCP attach — the exact
     // command that was refused ~15 times on 2026-07-23 while the gate demanded it.
-    let cmd = r#"~/.chorus/bin/chorus-mcp-call.sh silas chorus_nudge_message '{"to":"wren","message":"got it"}'"#;
+    let cmd = r#"~/.chorus/bin/chorus-mcp-call.sh silas clearing-nudge '{"to":"wren","message":"got it"}'"#;
     assert!(is_reply_path("Bash", cmd));
-    let canonical = r#"bash /Users/x/CascadeProjects/chorus/platform/scripts/chorus-mcp-call.sh silas chorus_nudge_message '{"to":"wren","message":"hi"}'"#;
+    let canonical = r#"bash /Users/x/CascadeProjects/chorus/platform/scripts/chorus-mcp-call.sh silas clearing-nudge '{"to":"wren","message":"hi"}'"#;
     assert!(is_reply_path("Bash", canonical));
 }
 

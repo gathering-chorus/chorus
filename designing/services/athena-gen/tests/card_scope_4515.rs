@@ -1,0 +1,143 @@
+// @test-type: unit
+// @domain: athena
+//! #4515 — `athena-gen generate --card <n>`, the Make step of the v2 athena
+//! pipeline. The card's werk ($CHORUS_WERK_BASE/<role>-<n>) and its model change
+//! (model sources since it left main) decide which products are generated: every
+//! product serving a class the card's files declare or shape, and every product
+//! whose own rows they change. A touched class no product serves, a change that
+//! touches no product, and a card with no model change are refused by name.
+
+use athena_gen::card::{products_for, touched};
+use std::path::{Path, PathBuf};
+use std::process::Command;
+
+const P: &str = "@prefix c: <https://jeffbridwell.com/chorus#> .\n\
+@prefix owl: <http://www.w3.org/2002/07/owl#> .\n\
+@prefix sh: <http://www.w3.org/ns/shacl#> .\n\
+@prefix xsd: <http://www.w3.org/2001/XMLSchema#> .\n";
+
+fn product_ttl() -> String {
+    let keys = athena_gen::model::RUNTIME_SETTINGS;
+    let mut s = format!("{P}c:gizmo a c:Product ; c:hasDomain c:widgets .\n");
+    for (i, k) in keys.iter().enumerate() {
+        let v = match *k {
+            "model.namespace" => "https://jeffbridwell.com/chorus#",
+            "store.graph_prefix" => "urn:gizmo:",
+            _ => "x",
+        };
+        s.push_str(&format!("c:gizmo c:hasProperty c:gz{i} . c:gz{i} c:propertyKey \"{k}\" ; c:propertyValue \"{v}\" .\n"));
+    }
+    s.push_str("c:widgets c:definesVocabulary c:Widget .\n");
+    s
+}
+
+const WIDGET: &str = "c:Widget a owl:Class .\nc:WidgetShape a sh:NodeShape ; sh:targetClass c:Widget ;\n  sh:property [ sh:path c:size ; sh:datatype xsd:integer ] .\n";
+
+fn bin() -> PathBuf {
+    let exe = std::env::current_exe().unwrap();
+    let b = exe.parent().unwrap().parent().unwrap().join("athena-gen");
+    assert!(b.is_file(), "athena-gen not built at {}", b.display());
+    b
+}
+
+fn git(dir: &Path, args: &[&str]) {
+    let o = Command::new("git")
+        .args(["-c", "user.name=t", "-c", "user.email=t@t", "-c", "core.hooksPath=/dev/null", "-c", "commit.gpgsign=false"])
+        .arg("-C").arg(dir).args(args).output().unwrap();
+    assert!(o.status.success(), "git {args:?}: {}", String::from_utf8_lossy(&o.stderr));
+}
+
+fn write(dir: &Path, rel: &str, body: &str) {
+    let p = dir.join(rel);
+    std::fs::create_dir_all(p.parent().unwrap()).unwrap();
+    std::fs::write(p, body).unwrap();
+}
+
+fn werk(name: &str, card: &str, changes: &[(&str, String)]) -> (PathBuf, PathBuf) {
+    let base = std::env::temp_dir().join(format!("athena-gen-4515-{}-{name}", std::process::id()));
+    let _ = std::fs::remove_dir_all(&base);
+    let w = base.join(format!("wren-{card}"));
+    std::fs::create_dir_all(&w).unwrap();
+    git(&w, &["init", "-q", "-b", "main"]);
+    write(&w, "designing/data/products.ttl", &product_ttl());
+    write(&w, "roles/wren/ontology/widgets.ttl", &format!("{P}{WIDGET}"));
+    git(&w, &["add", "-A"]);
+    git(&w, &["commit", "-q", "-m", "main"]);
+    git(&w, &["update-ref", "refs/remotes/origin/main", "HEAD"]);
+    for (rel, body) in changes {
+        write(&w, rel, body);
+    }
+    git(&w, &["add", "-A"]);
+    git(&w, &["commit", "-q", "--allow-empty", "-m", "card"]);
+    (base, w)
+}
+
+fn run(base: &Path, args: &[&str]) -> (i32, String) {
+    let o = Command::new(bin()).args(args).env("CHORUS_WERK_BASE", base).env("CHORUS_ROLE", "wren")
+        .env_remove("ROLE").output().unwrap();
+    (o.status.code().unwrap_or(-1), format!("{}{}", String::from_utf8_lossy(&o.stdout), String::from_utf8_lossy(&o.stderr)))
+}
+
+#[test]
+fn a_card_that_changes_a_served_class_generates_its_product() {
+    let (base, w) = werk("served", "9101", &[("roles/wren/ontology/widgets.ttl",
+        format!("{P}{WIDGET}c:WidgetShape sh:property [ sh:path c:colour ; sh:datatype xsd:string ] .\n"))]);
+    let (code, out) = run(&base, &["generate", "--card", "9101"]);
+    assert_eq!(code, 0, "{out}");
+    assert!(out.contains("card #9101: gizmo <- Widget"), "{out}");
+    let toml = w.join("directing/products/gizmo/api/Cargo.toml");
+    assert!(toml.is_file(), "{out}");
+    assert!(std::fs::read_to_string(toml).unwrap().contains("name = \"gizmo-api\""));
+    let model = std::fs::read_to_string(w.join("directing/products/gizmo/api/src/model.rs")).unwrap();
+    assert!(model.contains("colour"));
+}
+
+#[test]
+fn negative_proof_a_class_no_product_serves_is_refused_and_nothing_is_written() {
+    let (base, w) = werk("orphan", "9103", &[("roles/wren/ontology/orphan.ttl",
+        format!("{P}c:Orphan a owl:Class .\nc:OrphanShape a sh:NodeShape ; sh:targetClass c:Orphan .\n"))]);
+    let (code, out) = run(&base, &["generate", "--card", "9103"]);
+    assert_eq!(code, 1, "{out}");
+    assert!(out.contains("in no product's domain") && out.contains("Orphan"), "{out}");
+    assert!(!w.join("directing/products").exists());
+}
+
+#[test]
+fn negative_proof_a_change_that_touches_no_product_is_refused() {
+    let (base, _) = werk("noproduct", "9104", &[("roles/wren/ontology/rows.ttl",
+        format!("{P}c:some-row c:propertyKey \"k\" .\n"))]);
+    let (code, out) = run(&base, &["generate", "--card", "9104"]);
+    assert_eq!(code, 1, "{out}");
+    assert!(out.contains("card #9104: the card's model change touches no product"), "{out}");
+}
+
+#[test]
+fn negative_proof_a_card_with_no_model_change_or_no_werk_is_refused() {
+    let (base, _) = werk("nomodel", "9105", &[("README", "x\n".into())]);
+    let (code, out) = run(&base, &["generate", "--card", "9105"]);
+    assert_eq!(code, 1, "{out}");
+    assert!(out.contains("card #9105: no model change"), "{out}");
+    let (code, out) = run(&base, &["generate", "--card", "9199"]);
+    assert_eq!(code, 1, "{out}");
+    assert!(out.contains("card #9199: no werk at"), "{out}");
+}
+
+#[test]
+fn products_for_maps_classes_and_own_rows_and_names_the_unserved() {
+    let dir = std::env::temp_dir().join(format!("athena-gen-4515-{}-unit", std::process::id()));
+    std::fs::create_dir_all(&dir).unwrap();
+    let model = dir.join("model.ttl");
+    std::fs::write(&model, format!("{}{WIDGET}", product_ttl())).unwrap();
+    let (store, skipped) = athena_gen::model::load(&[model]).unwrap();
+    assert!(skipped.is_empty(), "{skipped:?}");
+    let card = dir.join("card.ttl");
+    std::fs::write(&card, format!("{P}c:WidgetShape sh:targetClass c:Widget .\nc:Loose a owl:Class .\n")).unwrap();
+    let t = touched(&[card]).unwrap();
+    let (products, unserved) = products_for(&store, &t).unwrap();
+    assert_eq!(products.get("gizmo").map(Vec::as_slice), Some(&["Widget".to_string()][..]));
+    assert_eq!(unserved, vec!["Loose".to_string()]);
+    let bad = dir.join("bad.ttl");
+    std::fs::write(&bad, "c:X a owl:Class .\n").unwrap();
+    let e = touched(&[bad]).unwrap_err().0;
+    assert!(e.contains("bad.ttl does not parse"), "{e}");
+}

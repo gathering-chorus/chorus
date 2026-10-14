@@ -533,7 +533,7 @@ fn digest_call(input: &HookInput) -> String {
             format!("searching: {}", truncate(&pat, 60))
         }
         t if t.starts_with("mcp__") => {
-            // #3884 — MCP verbs were the invisible class (chorus_werk, nudges,
+            // #3884 — MCP verbs were the invisible class (the werk pipeline, nudges,
             // card ops digested to empty; Jeff read "idle" during pipelines).
             // Name = verb after the server prefix; args = the identifying few.
             let verb = t.rsplit("__").next().unwrap_or(t);
@@ -860,7 +860,7 @@ mod tests {
     #[test]
     fn digest_mcp_werk_names_verb_and_card() {
         let input = make_post_input(
-            "mcp__chorus-api__chorus_werk",
+            "mcp__chorus-api__chorus-werk",
             json!({"role": "kade", "card_id": 3870, "go": true}),
             "/tmp",
         );
@@ -868,14 +868,14 @@ mod tests {
         // Jeff, 2026-08-15: "mcp: prefix would be meaningful i can easily
         // see bash and tool" — the class must be legible like bash:/tool:.
         assert!(d.starts_with("mcp: "), "class prefix visible: {d}");
-        assert!(d.contains("chorus_werk"), "verb visible: {d}");
+        assert!(d.contains("chorus-werk"), "verb visible: {d}");
         assert!(d.contains("3870"), "card visible: {d}");
     }
 
     #[test]
     fn digest_mcp_nudge_names_recipient() {
         let input = make_post_input(
-            "mcp__chorus-api__chorus_nudge_message",
+            "mcp__chorus-api__clearing-nudge",
             json!({"to": "wren", "message": "hello"}),
             "/tmp",
         );

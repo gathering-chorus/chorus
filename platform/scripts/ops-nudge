@@ -8,10 +8,10 @@
 # action for a role (Jeff 2026-05-08). They need a path that isn't the
 # deleted bash wrapper.
 #
-# #3485 (Jeff 2026-06-18: "all of them must point to mcp"): this no longer
-# POSTs pulse directly. It POSTs the mcp-server's /nudge route, which runs
-# the SAME executeNudge() the MCP tool uses — the single execution path and
-# the only thing that POSTs pulse. One way to call nudge.
+# #3485 (Jeff 2026-06-18: "all of them must point to mcp"): one way to call
+# nudge. Since #4515 that one way is `chorus-hook-shim nudge-send`, the same
+# Rust path the clearing-nudge tool runs (word cap, recipient check,
+# spine, pulse). The old MCP server and its /nudge route are gone.
 #
 # Usage:
 #   ops-nudge <to> <content> [from]
@@ -33,20 +33,14 @@ if [ -z "$TO" ] || [ -z "$CONTENT" ]; then
   exit 1
 fi
 
-# The single execution path: the mcp-server /nudge route (loopback :3341).
-MCP_NUDGE_URL="${CHORUS_MCP_NUDGE_URL:-http://127.0.0.1:3341/nudge}"
+# Tests cage this through CHORUS_PULSE_URL (nudge-send's pulse seam) or point
+# CHORUS_HOOK_SHIM at a build of their own.
+SHIM="${CHORUS_HOOK_SHIM:-$(command -v chorus-hook-shim || echo "$HOME/.chorus/bin/chorus-hook-shim")}"
 
-BODY=$(jq -nc --arg from "$FROM" --arg to "$TO" --arg content "$CONTENT" \
-  '{from:$from,to:$to,content:$content}')
-
-RESP=$(curl -s --max-time 5 -X POST "$MCP_NUDGE_URL" \
-  -H 'Content-Type: application/json' \
-  -d "$BODY" 2>&1) || {
-    echo "ops-nudge: transport error to $MCP_NUDGE_URL — $RESP" >&2
-    exit 2
-  }
-
-if ! echo "$RESP" | grep -q '"ok":true'; then
-  echo "ops-nudge: mcp rejected — $RESP" >&2
-  exit 3
+if OUT=$("$SHIM" nudge-send "$FROM" "$TO" "$CONTENT" 2>/dev/null); then
+  exit 0
 fi
+case "$OUT" in
+  *"did not answer"*|*"POST returned"*) echo "ops-nudge: transport error — $OUT" >&2; exit 2 ;;
+  *) echo "ops-nudge: refused — $OUT" >&2; exit 3 ;;
+esac

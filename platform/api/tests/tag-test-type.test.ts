@@ -24,7 +24,7 @@ describe('tagTestType — content signals', () => {
 
   it('api: startTestApp / callTool / curl to a :33xx port', () => {
     expect(tagTestType(`const app = await startTestApp()`, 'x.test.ts')).toBe('api');
-    expect(tagTestType(`await callTool('chorus_cards_add', {})`, 'x.test.ts')).toBe('api');
+    expect(tagTestType(`await callTool('clearing-card', {})`, 'x.test.ts')).toBe('api');
     expect(tagTestType(`fetch('http://localhost:3340/api/...')`, 'x.test.ts')).toBe('api');
   });
 

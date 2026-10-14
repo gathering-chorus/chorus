@@ -158,7 +158,7 @@ fn discover_in_tree_finds_pulse_and_every_service_not_just_an_allowlist() {
     write(&root, "platform/services/werk-teardown/src/lib.rs", "pub fn x(){}");
     write(&root, "platform/api/package.json", r#"{"name":"chorus-api","scripts":{"build":"tsc"}}"#);
     write(&root, "platform/pulse/package.json", r#"{"name":"chorus-messaging","scripts":{"build":"tsc"}}"#);
-    write(&root, "platform/mcp-server/package.json", r#"{"name":"chorus-mcp","scripts":{"build":"tsc"}}"#);
+    write(&root, "directing/clearing/package.json", r#"{"name":"clearing","scripts":{"build":"tsc"}}"#);
     // a docs dir + a no-build package are NOT build units.
     write(&root, "designing/docs/x.html", "<html>");
     write(&root, "platform/configonly/package.json", r#"{"name":"configonly","scripts":{"start":"node ."}}"#);
@@ -167,7 +167,7 @@ fn discover_in_tree_finds_pulse_and_every_service_not_just_an_allowlist() {
     assert!(units.contains(&BuildUnit::TsService("chorus-messaging".to_string())),
         "pulse (chorus-messaging) MUST be discovered structurally — this is the #3130/#3132 stale gap");
     assert!(units.contains(&BuildUnit::TsService("chorus-api".to_string())));
-    assert!(units.contains(&BuildUnit::TsService("chorus-mcp".to_string())));
+    assert!(units.contains(&BuildUnit::TsService("clearing".to_string())));
     assert!(units.contains(&BuildUnit::RustCrate("werk-build".to_string())));
     assert!(units.contains(&BuildUnit::RustCrate("chorus-hooks".to_string())));
     // no-build package, docs, and the lib-only crate are absent.
@@ -267,7 +267,7 @@ fn ensure_node_modules_replaces_partial_with_canonical_symlink() {
     // The bug: a werk package's node_modules is a stale PARTIAL real dir (missing
     // @types/node), so in-werk tsc fails. ensure must replace it with a symlink to
     // canonical's COMPLETE tree, so @types resolves — the keystone for #3174/#3171
-    // (build mcp-server/chorus-hooks in-werk instead of hand-deploying).
+    // (build TS services/chorus-hooks in-werk instead of hand-deploying).
     let root = fixture("ensure-nm");
     let home = root.join("chorus");
     let werk = root.join("chorus-werk/silas-3169");

@@ -1,0 +1,30 @@
+# #4515 (Wren) — input shapes for the pipeline starters (Jeff 2026-10-14:
+# `chorus-<product> [stream]` STARTS that product's pipeline for a card).
+# chorus-werk, chorus-athena and chorus-borg run platform/scripts/pipeline-start
+# <pipeline> {card} {caller}; the caller is never an argument (runsAs caller).
+# chorus-clearing has no row yet: Abby is modelling the Clearing pipeline and
+# no workflow is generated for it.
+
+@prefix chorus: <https://jeffbridwell.com/chorus#> .
+@prefix sh:     <http://www.w3.org/ns/shacl#> .
+@prefix xsd:    <http://www.w3.org/2001/XMLSchema#> .
+@prefix owl:    <http://www.w3.org/2002/07/owl#> .
+@prefix rdfs:   <http://www.w3.org/2000/01/rdf-schema#> .
+
+chorus:toolStream a owl:DatatypeProperty ; rdfs:label "stream" ; rdfs:comment "Which of a product's value streams a starter runs (#4515)." .
+
+# chorus-werk    pipeline-start cicd {card} {caller}
+# chorus-athena  pipeline-start athena {card} {caller}
+chorus:PipelineStartInput a sh:NodeShape , chorus:ToolInput ;
+    rdfs:label "start a pipeline for a card" ;
+    sh:property [ sh:path chorus:toolCardId ; sh:minCount 1 ; sh:maxCount 1 ; sh:datatype xsd:integer ; sh:minInclusive 1 ; sh:order 1 ; sh:name "card" ;
+                  sh:description "The card number. Its werk holds the generated workflow." ] .
+
+# chorus-borg    pipeline-start borg-{stream} {card} {caller}
+#   operate has no generated workflow yet: pipeline-start refuses it by name.
+chorus:BorgStartInput a sh:NodeShape , chorus:ToolInput ;
+    rdfs:label "start a Borg pipeline for a card" ;
+    sh:property [ sh:path chorus:toolCardId ; sh:minCount 1 ; sh:maxCount 1 ; sh:datatype xsd:integer ; sh:minInclusive 1 ; sh:order 1 ; sh:name "card" ;
+                  sh:description "The card number. Its werk holds the generated workflow." ] ;
+    sh:property [ sh:path chorus:toolStream ; sh:minCount 1 ; sh:maxCount 1 ; sh:datatype xsd:string ; sh:order 2 ; sh:name "stream" ;
+                  sh:in ( "prove" "operate" ) ; sh:description "prove (Borg Proving) or operate (Borg Operating)." ] .

@@ -215,14 +215,14 @@ function registerNudgeRoutes(app: Express, store: MessageStore, metrics: Metrics
   app.post('/api/nudge', async (req, res) => {
     // #3485 — only the MCP server is the canonical caller. The pre-#3485 gate
     // accepted any request carrying a guessable X-Chorus-MCP-Caller header;
-    // now the caller must present the shared secret (the mcp-server reads the
-    // same secret file). PULSE_ALLOW_DIRECT_POST=1 still opts out for tests.
+    // now the caller must present the shared secret (chorus-hook-shim
+    // nudge-send reads the same secret file, #4515). PULSE_ALLOW_DIRECT_POST=1 still opts out for tests.
     // "all of them must point to mcp" (Jeff 2026-06-18).
     const providedSecret = req.headers['x-chorus-pulse-secret'];
     if (!callerIsAuthorized(typeof providedSecret === 'string' ? providedSecret : undefined)) {
       return res.status(403).json({
         error: 'not-canonical-caller',
-        message: 'POST /api/nudge accepts only MCP-server calls. Use the chorus_nudge_message MCP tool from a Claude session.',
+        message: 'POST /api/nudge accepts only MCP-server calls. Use the clearing-nudge MCP tool from a Claude session.',
       });
     }
     const { from, to, content, traceId: bodyTraceId } = req.body;
@@ -509,9 +509,9 @@ if (require.main === module) {
   const worker = new DeliveryWorker(store, runInject, emitSpine, undefined, undefined, selfTest);
 
   // #3485 — generate the shared secret EAGERLY at boot (not lazily on first
-  // request), so the secret file exists before the mcp-server sends its first
-  // nudge. Lazy generation would 403 the first post-deploy nudge (mcp reads
-  // the file before pulse created it). Value is never logged.
+  // request), so the secret file exists before nudge-send sends its first
+  // nudge. Lazy generation would 403 the first post-deploy nudge (the sender
+  // reads the file before pulse created it). Value is never logged.
   {
     const ok = resolvePulseSecret() !== null;
     process.stderr.write(JSON.stringify({ event: 'startup.secret', resolved: ok }) + '\n');

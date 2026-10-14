@@ -1,0 +1,83 @@
+# #4515 (Wren) — input shapes for the read tools that become http Skill rows.
+# Each row's implementedBy names a Chorus service route ({api} or {door});
+# the runner fills the route from these arguments. Windows are the values the
+# chorus-api logs routes accept; anything else is refused before a call.
+
+@prefix chorus: <https://jeffbridwell.com/chorus#> .
+@prefix sh:     <http://www.w3.org/ns/shacl#> .
+@prefix xsd:    <http://www.w3.org/2001/XMLSchema#> .
+@prefix owl:    <http://www.w3.org/2002/07/owl#> .
+@prefix rdfs:   <http://www.w3.org/2000/01/rdf-schema#> .
+
+chorus:toolRole     a owl:DatatypeProperty ; rdfs:label "role" ;        rdfs:comment "The role a read tool answers for; the caller when left out (#4515)." .
+chorus:toolWindow   a owl:DatatypeProperty ; rdfs:label "time window" ; rdfs:comment "How far back a logs read looks (#4515)." .
+chorus:toolTraceId  a owl:DatatypeProperty ; rdfs:label "trace id" ;    rdfs:comment "The trace a logs read follows (#4515)." .
+
+# clearing-wip  GET {api}/api/chorus/context/board/wip?role={role=@caller}
+# clearing-prioritize  GET {api}/api/chorus/context/priorities?role={role=@caller}
+chorus:RoleReadInput a sh:NodeShape , chorus:ToolInput ;
+    rdfs:label "a read for one role" ;
+    sh:property [ sh:path chorus:toolRole ; sh:maxCount 1 ; sh:datatype xsd:string ; sh:order 1 ; sh:name "role" ;
+                  chorus:namesRole "peer" ; sh:description "The role to read for. Defaults to you." ] .
+
+# borg-read-logs-card  GET {api}/api/chorus/logs/card/{card_id}?window={time_window=1d}
+chorus:LogsCardInput a sh:NodeShape , chorus:ToolInput ;
+    rdfs:label "logs for a card" ;
+    sh:property [ sh:path chorus:toolCardId ; sh:minCount 1 ; sh:maxCount 1 ; sh:datatype xsd:integer ; sh:minInclusive 1 ; sh:order 1 ; sh:name "card_id" ;
+                  sh:description "The card number." ] ;
+    sh:property [ sh:path chorus:toolWindow ; sh:maxCount 1 ; sh:datatype xsd:string ; sh:order 2 ; sh:name "time_window" ;
+                  sh:in ( "5m" "15m" "1h" "6h" "1d" "7d" ) ; sh:description "How far back. Default 1d." ] .
+
+# borg-read-logs-trace  GET {api}/api/chorus/logs/trace/{trace_id}?window={time_window=1d}
+chorus:LogsTraceInput a sh:NodeShape , chorus:ToolInput ;
+    rdfs:label "logs for a trace" ;
+    sh:property [ sh:path chorus:toolTraceId ; sh:minCount 1 ; sh:maxCount 1 ; sh:datatype xsd:string ; sh:order 1 ; sh:name "trace_id" ;
+                  sh:description "The trace id." ] ;
+    sh:property [ sh:path chorus:toolWindow ; sh:maxCount 1 ; sh:datatype xsd:string ; sh:order 2 ; sh:name "time_window" ;
+                  sh:in ( "5m" "15m" "1h" "6h" "1d" "7d" ) ; sh:description "How far back. Default 1d." ] .
+
+# borg-read-logs-errors  GET {api}/api/chorus/logs/errors?role={role=}&window={time_window=1h}
+chorus:LogsErrorsInput a sh:NodeShape , chorus:ToolInput ;
+    rdfs:label "recent errors" ;
+    sh:property [ sh:path chorus:toolRole ; sh:maxCount 1 ; sh:datatype xsd:string ; sh:order 1 ; sh:name "role" ;
+                  chorus:namesRole "peer" ; sh:description "Only this role's errors. Default every role." ] ;
+    sh:property [ sh:path chorus:toolWindow ; sh:maxCount 1 ; sh:datatype xsd:string ; sh:order 2 ; sh:name "time_window" ;
+                  sh:in ( "5m" "15m" "1h" "6h" "1d" "7d" ) ; sh:description "How far back. Default 1h." ] .
+
+# Decisions and principles are read with the runner's athena-list / athena-get
+# <domain> <class> [id] (Jeff 2026-10-14); they have no tool of their own.
+
+# borg-surface-pain  GET {api}/api/chorus/pain/rollup?window={window=7d}
+chorus:PainRollupInput a sh:NodeShape , chorus:ToolInput ;
+    rdfs:label "the pain rollup" ;
+    sh:property [ sh:path chorus:toolWindow ; sh:maxCount 1 ; sh:datatype xsd:string ; sh:order 1 ; sh:name "window" ;
+                  sh:description "How far back, e.g. 1d, 7d, 30d. Default 7d; a window the route cannot read is refused by it." ] .
+
+# borg-read-flow  GET {api}/api/chorus/flow-report?hours={hours=120}
+chorus:toolHours a owl:DatatypeProperty ; rdfs:label "hours" ; rdfs:comment "How many hours back a report covers (#4515)." .
+chorus:FlowReportInput a sh:NodeShape , chorus:ToolInput ;
+    rdfs:label "the flow report" ;
+    sh:property [ sh:path chorus:toolHours ; sh:maxCount 1 ; sh:datatype xsd:integer ; sh:minInclusive 1 ; sh:maxInclusive 720 ; sh:order 1 ; sh:name "hours" ;
+                  sh:description "Hours back, 1 to 720. Default 120." ] .
+
+# borg-read-services/-start/-stop/-restart/-deploy/-rollback  agent-state.sh <verb> {service}
+#   (deterministic, runsAs caller: agent-state.sh decides who may change what, as before)
+chorus:toolService a owl:DatatypeProperty ; rdfs:label "service" ; rdfs:comment "A chorus service or crate name (#4515)." .
+chorus:ServiceInput a sh:NodeShape , chorus:ToolInput ;
+    rdfs:label "one chorus service" ;
+    sh:property [ sh:path chorus:toolService ; sh:minCount 1 ; sh:maxCount 1 ; sh:datatype xsd:string ; sh:minLength 1 ; sh:order 1 ; sh:name "service" ;
+                  sh:description "Service or crate name, e.g. chorus-api, chorus-hooks, com.chorus.api." ] .
+
+# loom-gemba  loom-gemba {target}  (the watcher is the caller, from CHORUS_ROLE)
+chorus:toolTarget a owl:DatatypeProperty ; rdfs:label "target" ; rdfs:comment "The role being observed (#4515)." .
+chorus:GembaInput a sh:NodeShape , chorus:ToolInput ;
+    rdfs:label "watch a role" ;
+    sh:property [ sh:path chorus:toolTarget ; sh:minCount 1 ; sh:maxCount 1 ; sh:datatype xsd:string ; sh:order 1 ; sh:name "target" ;
+                  chorus:namesRole "agent" ; sh:description "The role to watch. You are the watcher." ] .
+
+# borg-read-blast-radius  GET {api}/api/athena/blast-radius/{iri}
+chorus:toolIri a owl:DatatypeProperty ; rdfs:label "iri" ; rdfs:comment "A model row's IRI, e.g. chorus:service-werk (#4515)." .
+chorus:BlastRadiusInput a sh:NodeShape , chorus:ToolInput ;
+    rdfs:label "blast radius of one row" ;
+    sh:property [ sh:path chorus:toolIri ; sh:minCount 1 ; sh:maxCount 1 ; sh:datatype xsd:string ; sh:pattern "^chorus:[a-z0-9][a-z0-9-]*$" ; sh:order 1 ; sh:name "iri" ;
+                  sh:description "The Product, Domain or Service, e.g. chorus:service-werk. One the graph does not hold is answered not-found." ] .

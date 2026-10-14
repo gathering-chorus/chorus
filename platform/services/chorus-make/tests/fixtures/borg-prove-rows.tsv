@@ -1,9 +1,9 @@
 # #4456 fixture — the borg-prove pipeline's rows as ROWS_QUERY returns them (live graph 2026-10-11).
 step	stepOrder	skillOrder	skill	label	executor	implementedBy	mode	onFail
-intake	1	1	https://jeffbridwell.com/chorus#skill-prove-intake	prove-intake	deterministic	borg-prove	intake ${CARD} ${ROLE}	https://jeffbridwell.com/chorus#value-stream-step-designing
-verify	2	1	https://jeffbridwell.com/chorus#skill-prove-verify	prove-verify	deterministic	borg-prove	verify ${CARD} ${ROLE}	https://jeffbridwell.com/chorus#value-stream-step-build
-stage	3	1	https://jeffbridwell.com/chorus#skill-prove-stage	prove-stage	deterministic	borg-prove	stage ${CARD} ${ROLE}	https://jeffbridwell.com/chorus#value-stream-step-build
-ready	4	1	https://jeffbridwell.com/chorus#skill-prove-verdict	prove-verdict	deterministic	borg-prove	verdict ${CARD} ${ROLE}	https://jeffbridwell.com/chorus#value-stream-step-build
+intake	1	1	https://jeffbridwell.com/chorus#skill-borg-intake	borg-intake	deterministic	borg-prove	intake ${CARD} ${ROLE}	https://jeffbridwell.com/chorus#value-stream-step-designing
+verify	2	1	https://jeffbridwell.com/chorus#skill-borg-verify	borg-verify	deterministic	borg-prove	verify ${CARD} ${ROLE}	https://jeffbridwell.com/chorus#value-stream-step-build
+stage	3	1	https://jeffbridwell.com/chorus#skill-borg-stage	borg-stage	deterministic	borg-prove	stage ${CARD} ${ROLE}	https://jeffbridwell.com/chorus#value-stream-step-build
+ready	4	1	https://jeffbridwell.com/chorus#skill-borg-review	borg-review	deterministic	borg-prove	verdict ${CARD} ${ROLE}	https://jeffbridwell.com/chorus#value-stream-step-build
 accept	5	1	https://jeffbridwell.com/chorus#skill-werk-go	Jeff's go	human			https://jeffbridwell.com/chorus#value-stream-step-borg-intake
-verify-in-prod	6	1	https://jeffbridwell.com/chorus#skill-prove-in-prod	prove-in-prod	deterministic	borg-prove	prod ${CARD} ${ROLE}	https://jeffbridwell.com/chorus#value-stream-step-borg-surface
-record	7	1	https://jeffbridwell.com/chorus#skill-prove-record	prove-record	deterministic	borg-prove	record ${CARD} ${ROLE}	
+verify-in-prod	6	1	https://jeffbridwell.com/chorus#skill-borg-verify-in-prod	borg-verify-in-prod	deterministic	borg-prove	prod ${CARD} ${ROLE}	https://jeffbridwell.com/chorus#value-stream-step-borg-surface
+record	7	1	https://jeffbridwell.com/chorus#skill-borg-record	borg-record	deterministic	borg-prove	record ${CARD} ${ROLE}	

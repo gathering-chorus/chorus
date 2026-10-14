@@ -9,8 +9,23 @@
 
 OPS_NUDGE="$BATS_TEST_DIRNAME/../scripts/ops-nudge"
 
+# #4515 — ops-nudge sends through `chorus-hook-shim nudge-send`; the cage is
+# nudge-send's pulse seam (CHORUS_PULSE_URL). The shim under test is this
+# tree's own build: an installed one may predate nudge-send. No build is a
+# failure that says so, never a pass.
+setup() {
+  local hooks="$BATS_TEST_DIRNAME/../services/chorus-hooks/target"
+  SHIM=""
+  for b in "$hooks/release/chorus-hook-shim" "$hooks/debug/chorus-hook-shim"; do
+    [ -x "$b" ] && "$b" nudge-send 2>&1 | grep -q "usage: nudge-send" && { SHIM="$b"; break; }
+  done
+  [ -n "$SHIM" ] || { echo "no chorus-hook-shim build with nudge-send under $hooks: build chorus-hooks first"; return 1; }
+  # nudge-send writes nudge.requested to the spine; a test brings its own (#3615)
+  export CHORUS_LOG_FILE="$BATS_TEST_TMPDIR/spine.log"
+}
+
 @test "NEGATIVE PROOF: under the caged URL, ops-nudge reaches nothing (typed transport error)" {
-  run env CHORUS_MCP_NUDGE_URL="http://127.0.0.1:9/nudge" bash "$OPS_NUDGE" silas "caged probe — must not deliver"
+  run env CHORUS_HOOK_SHIM="$SHIM" CHORUS_PULSE_URL="http://127.0.0.1:9/api/nudge" bash "$OPS_NUDGE" silas "caged probe — must not deliver"
   [ "$status" -eq 2 ]
   [[ "$output" == *"transport error"* ]] || return 1
 }
@@ -23,6 +38,13 @@ import sys, json
 from http.server import BaseHTTPRequestHandler, HTTPServer
 port, out = int(sys.argv[1]), sys.argv[2]
 class H(BaseHTTPRequestHandler):
+    # #4515 — nudge-send asks the roles door who may be nudged, then POSTs pulse
+    def do_GET(self):
+        if self.path.startswith('/v1/roles/roles'):
+            self.send_response(200); self.send_header('Content-Type','application/json'); self.end_headers()
+            self.wfile.write(b'{"data":[{"name":"silas","roleKind":"agent"}]}')
+        else:
+            self.send_response(404); self.end_headers()
     def do_POST(self):
         body = self.rfile.read(int(self.headers.get('Content-Length', 0)))
         open(out, 'wb').write(body)
@@ -54,7 +76,8 @@ PY
   # #4454 — up, ready in how long, or why not, on the run's trace
   load lib/test-events.bash
   fixture_ready nudge-stub "$port" "$stub" 80 0.1 bash -c "echo > /dev/tcp/127.0.0.1/$port" || true
-  run env CHORUS_MCP_NUDGE_URL="http://127.0.0.1:$port/nudge" bash "$OPS_NUDGE" silas "stub probe"
+  run env CHORUS_HOOK_SHIM="$SHIM" ATHENA_MAKE_URL="http://127.0.0.1:$port" CHORUS_API_URL="http://127.0.0.1:$port" \
+    CHORUS_PULSE_URL="http://127.0.0.1:$port/api/nudge" bash "$OPS_NUDGE" silas "stub probe"
   wait "$stub" 2>/dev/null || true
   [ "$status" -eq 0 ]
   # An empty file means the stub timed out uncalled. Say so, instead of leaving a

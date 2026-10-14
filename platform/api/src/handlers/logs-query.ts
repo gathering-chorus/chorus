@@ -211,7 +211,7 @@ export async function logsForBranch(
 // class (role · event · reason) ranked by count, so a role sees its pain in
 // aggregate instead of fixing blind, one red line at a time. ONE implementation,
 // here, behind the chorus-api endpoint + the /borg/pain.html board (:3340).
-// Deliberately NOT copied into the mcp-server twin — an MCP tool would be a
+// Deliberately NOT copied into an MCP server — an MCP tool would be a
 // second implementation kept in sync by hand (rots). When the tool is wanted it
 // comes from extracting this into one shared module both packages import (the
 // #3031 no-competing-implementations follow-up), never a copy. Validated

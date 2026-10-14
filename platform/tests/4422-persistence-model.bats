@@ -129,7 +129,7 @@ infra_then_stores() {
   cmd=$(plutil -extract ProgramArguments.2 raw -o - "$1") || return 1
   every=$(plutil -extract StartInterval raw -o - "$1") || return 1
   [ "$every" -le 3600 ] || { echo "runs every ${every}s"; return 1; }
-  # #4405 reopen 4 — each pass is a herald_run call (the one runner)
+  # #4405 reopen 4 — each pass is a borg-tend-herald call (the one runner)
   case "$cmd" in
     *'"sensor":"infra"'*'; '*'"sensor":"stores"'*) return 0 ;;
     *) echo "not infra-then-stores with ';': $cmd"; return 1 ;;

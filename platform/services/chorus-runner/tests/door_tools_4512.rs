@@ -5,7 +5,7 @@
 //! collection the door does not serve never reaches it, and a row name is
 //! checked before it does.
 
-use chorus_runner::{door_path, door_tools, served_collections};
+use chorus_runner::{athena_call, athena_tools, served_collections};
 use serde_json::{json, Map, Value};
 
 const DISCOVERY: &str = r#"{"apiVersion":"v1","kind":"Discovery","count":4,"primitives":[
@@ -29,12 +29,11 @@ fn the_collections_are_the_doors_own_list() {
 #[test]
 fn the_tool_enum_is_exactly_what_the_door_serves() {
     let cols = served_collections(DISCOVERY).unwrap();
-    let tools = door_tools(&cols);
+    let tools = athena_tools(&cols);
     let names: Vec<&str> = tools.iter().map(|t| t.name).collect();
-    assert_eq!(names, vec!["door_list", "door_get"]);
+    assert_eq!(names, vec!["athena-get", "athena-list", "athena-add", "athena-set"]);
     for t in &tools {
-        let en = &t.input_schema["properties"]["collection"]["enum"];
-        assert_eq!(en, &json!(["/cards/cards", "/code/files", "/domains/domains"]), "{}", t.name);
+        assert!(t.description.contains("/cards/cards, /code/files, /domains/domains"), "{}: {}", t.name, t.description);
     }
 }
 
@@ -43,21 +42,21 @@ fn the_tool_enum_is_exactly_what_the_door_serves() {
 #[test]
 fn a_collection_the_door_does_not_serve_never_reaches_it() {
     let cols = served_collections(DISCOVERY).unwrap();
-    let bad = door_path("door_list", &args(json!({"collection":"/security/credentials"})), &cols).unwrap_err();
+    let bad = athena_call("athena-list", &args(json!({"domain":"security","class":"credentials"})), &cols).unwrap_err();
     assert_eq!(bad.status, 400);
     assert!(bad.reason.contains("does not serve /security/credentials"), "{}", bad.reason);
     assert!(bad.reason.contains("it serves: /cards/cards, /code/files, /domains/domains"), "names the served list: {}", bad.reason);
-    assert_eq!(door_path("door_list", &args(json!({"collection":"/cards/cards","limit":9999})), &cols).unwrap(),
+    assert_eq!(athena_call("athena-list", &args(json!({"domain":"cards","class":"cards","limit":9999})), &cols).unwrap().1,
         "/v1/cards/cards?limit=500", "limit is capped");
 }
 
 #[test]
 fn a_row_name_is_checked_before_it_reaches_the_door() {
     let cols = served_collections(DISCOVERY).unwrap();
-    assert_eq!(door_path("door_get", &args(json!({"collection":"/cards/cards","name":"card-4512"})), &cols).unwrap(),
+    assert_eq!(athena_call("athena-get", &args(json!({"domain":"cards","class":"cards","id":"card-4512"})), &cols).unwrap().1,
         "/v1/cards/cards/card-4512");
-    for evil in ["../security/credentials", "a b", "x?y=1", ""] {
-        assert!(door_path("door_get", &args(json!({"collection":"/cards/cards","name":evil})), &cols).is_err(), "{evil:?}");
+    for evil in ["../security/credentials", "a b", "x?y=1", "", "Card-1", "-x", "a/b"] {
+        assert!(athena_call("athena-get", &args(json!({"domain":"cards","class":"cards","id":evil})), &cols).is_err(), "{evil:?}");
     }
-    assert_eq!(door_path("door_delete", &args(json!({"collection":"/cards/cards"})), &cols).unwrap_err().status, 404);
+    assert_eq!(athena_call("athena-delete", &args(json!({"domain":"cards","class":"cards"})), &cols).unwrap_err().status, 404);
 }

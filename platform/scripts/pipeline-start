@@ -1,0 +1,62 @@
+#!/usr/bin/env bash
+# @domain: pipelines
+# pipeline-start <pipeline> <card> <role> — start one product's pipeline for a
+# card (#4515, Jeff 2026-10-14: `chorus-<product> [stream]` STARTS that
+# product's pipeline). The Skill rows chorus-werk (cicd), chorus-athena
+# (athena) and chorus-borg (borg-<stream>) all run this.
+#
+# The workflow is the one chorus-make generated into the card's werk
+# (platform/pipelines/<pipeline>.yaml). The run is ENQUEUED, never started from
+# this shell: com.chorus.dagu (launchd) runs it, so it outlives the session
+# that asked for it (#4474 run 10 died with the shell that ran `dagu start`).
+# A pipeline with no generated workflow is refused by name, before dagu, so
+# nothing pretends to run (borg-operate today). Status: /cws <card>.
+set -euo pipefail
+
+pipeline="${1:-}"; card="${2:-}"; role="${3:-}"
+if [[ ! "$pipeline" =~ ^[a-z][a-z0-9]*(-[a-z0-9]+)*$ || ! "$card" =~ ^[0-9]+$ || ! "$role" =~ ^[a-z][a-z0-9-]*$ ]]; then
+  echo "usage: pipeline-start <pipeline> <card> <role>   (pipeline e.g. cicd, athena, borg-prove)" >&2
+  exit 1
+fi
+: "${CHORUS_HOME:?pipeline-start: CHORUS_HOME not set}"
+: "${CHORUS_WERK_BASE:?pipeline-start: CHORUS_WERK_BASE not set}"
+werk="$CHORUS_WERK_BASE/$role-$card"
+workflow="$werk/platform/pipelines/$pipeline.yaml"
+if [ ! -f "$workflow" ]; then
+  echo "pipeline-start: $pipeline has no generated pipeline yet: no workflow at $workflow (chorus-make generates it from the graph); nothing was enqueued" >&2
+  exit 1
+fi
+
+# #4492 — every generated workflow puts the role's slot first on PATH (#4474),
+# so a slot copy older than the installed verb judges the card with old code
+# (silas-bin/werk-test from 05:05 failed #4412 run 2, 2026-10-10; same class
+# 09-13). Before enqueue, every slot verb the card does NOT change is refreshed
+# from the installed one. A verb the card changes keeps the card's own build
+# (deploy-werk puts it there).
+installed="${CHORUS_BIN:-$HOME/.chorus/bin}"
+slot="$CHORUS_WERK_BASE/$role-bin"
+changed_verbs() {
+  git -C "$werk" diff --name-only origin/main...HEAD 2>/dev/null |
+    awk -F/ '$2=="services" && NF>3 {print $1"/services/"$3} $2=="products" && $4=="api" && NF>4 {print $1"/products/"$3"/api"}' |
+    sort -u | while read -r dir; do
+      [ -f "$werk/$dir/Cargo.toml" ] || continue
+      sed -n 's/^name *= *"\(.*\)".*/\1/p' "$werk/$dir/Cargo.toml"
+    done
+}
+if [ -d "$slot" ]; then
+  mine=" $(changed_verbs | tr '\n' ' ') "
+  for f in "$slot"/*; do
+    name="$(basename "$f")"
+    case "$name" in *.*) continue ;; esac
+    [[ "$mine" == *" $name "* ]] && continue
+    src="$installed/$name-bin"
+    [ -f "$src" ] || src="$installed/$name"
+    [ -f "$src" ] && [ "$(head -c 2 "$src")" != "#!" ] || continue
+    cmp -s "$src" "$f" && continue
+    cp "$src" "$f.refresh.$$" && chmod +x "$f.refresh.$$" && mv -f "$f.refresh.$$" "$f" &&
+      echo "pipeline-start: refreshed $role-bin/$name from the installed verb (the card does not change it)" >&2
+  done
+fi
+
+exec "${DAGU:-/opt/homebrew/bin/dagu}" --config "$CHORUS_HOME/platform/config/dagu.yaml" \
+  enqueue "$workflow" -- "CARD=$card" "ROLE=$role"

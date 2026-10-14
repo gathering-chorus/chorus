@@ -40,7 +40,7 @@ echo "$OUT" | grep -qE "fuseki_anon_write +(0|1) +\(http [0-9]{3}\)|fuseki_anon_
 FAILROOT=$(mktemp -d)
 mkdir -p "$FAILROOT/platform/scripts"
 C_R="${CHORUS_ROOT:-/Users/jeffbridwell/CascadeProjects/chorus}"
-for d in services chorus-sdk mcp-server; do ln -s "$C_R/platform/$d" "$FAILROOT/platform/$d"; done
+for d in services chorus-sdk; do ln -s "$C_R/platform/$d" "$FAILROOT/platform/$d"; done
 ln -s "$C_R/platform/scripts/chorus-identity-token" "$FAILROOT/platform/scripts/chorus-identity-token" 2>/dev/null || true
 printf '#!/usr/bin/env bash\nexit 7\n' > "$FAILROOT/platform/scripts/cards"
 chmod +x "$FAILROOT/platform/scripts/cards"
@@ -70,7 +70,7 @@ fi
 FAKEROOT=$(mktemp -d); trap 'rm -rf "$FAKEROOT"' EXIT
 mkdir -p "$FAKEROOT/platform/scripts"
 C_REAL="${CHORUS_ROOT:-/Users/jeffbridwell/CascadeProjects/chorus}"
-for d in services chorus-sdk mcp-server; do ln -s "$C_REAL/platform/$d" "$FAKEROOT/platform/$d"; done
+for d in services chorus-sdk; do ln -s "$C_REAL/platform/$d" "$FAKEROOT/platform/$d"; done
 cat > "$FAKEROOT/platform/scripts/cards" <<'STUB'
 #!/usr/bin/env bash
 touch "$(dirname "$0")/.stub-invoked"

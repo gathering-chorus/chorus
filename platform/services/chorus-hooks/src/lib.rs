@@ -12,10 +12,11 @@
 #![allow(dead_code)]
 
 pub mod agent_socket;
-pub mod mcp_client;
 pub mod runtime_tools;
 pub mod runtime_hook;
 pub mod runtime_rows;
+// #4515 — the clearing-nudge tool, as the binary its Skill row names.
+pub mod nudge_send;
 // #2505 — expose `shared` so integration tests can call
 // `chorus_hooks::shared::state_paths::chorus_root()` instead of hardcoding
 // the Mac path. main.rs and shim.rs continue to declare `mod shared;` for
@@ -67,6 +68,7 @@ pub mod nudge_gate {
 pub mod word_cap {
     pub use crate::hooks::word_cap::{
         block_message, cap_context_line, check_cap, clear_cap_cache, count_words, note_refusal,
+        resolve_cap_for, CAP_KEY_NUDGE, CAP_KEY_RESPONSE, FAIL_OPEN_NUDGE_CAP,
         reset_refusals, resolve_cap, OverCap, CAP_TTL, FAIL_OPEN_CAP,
         WORD_CAP_REFUSAL_CAP,
     };

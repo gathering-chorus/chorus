@@ -22,7 +22,12 @@ MAX_BASENAME_DUP_GROUPS=39
 MAX_BROKEN_HREFS=1  # 2026-05-18 #2994 — lowered from 20 after fixing chorus-api routing (added 6 static mounts in server.ts for /skills, /diagrams, /roles/silas/docs, /roles/wren/{artifacts,docs,decisions}); 67 of the previous 68 broken-hrefs were routing gaps, not stale catalog entries. The remaining 1 is the last genuine stale entry. doc-coherence.sh now also auto-detects a side-port chorus-api on :3345 when CHORUS_API_HOST is unset (#2994), so the ratchet can see werk-dist routes before the deploy lands. Prior: 2026-05-06 #2752 cheat-bump 19→20 to unblock chorus_acp; 2026-05-03 #2704 lowered from 24 after /designing/{decisions,claudemd,domain-context,schemas} mounts landed.
 
 # Ensure the coherence report is fresh
-SKIP_HREF_PROBE="${SKIP_HREF_PROBE:-0}" bash "$CHORUS_REPO/platform/scripts/doc-coherence.sh" >/dev/null 2>&1
+# #4515 — hand the generator the tree under test. CHORUS_REPO was set here but
+# not exported, so doc-coherence.sh fell back to its canonical default: it read
+# canonical's inventory, wrote canonical's report, and this test then looked for
+# the report in the werk ("not generated"), or read a stale one left there.
+CHORUS_REPO="$CHORUS_REPO" REPORT="$REPORT" SKIP_HREF_PROBE="${SKIP_HREF_PROBE:-0}" \
+  bash "$CHORUS_REPO/platform/scripts/doc-coherence.sh" >/dev/null 2>&1
 
 if [ ! -f "$REPORT" ]; then
   echo "FAIL: $REPORT not generated"

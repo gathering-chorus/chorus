@@ -1,55 +1,40 @@
 #!/usr/bin/env bash
-# chorus-mcp-call.sh — #3236. ONE MCP tools/call, fail-loud, self-contained.
+# chorus-mcp-call.sh — one tool call, fail-loud (#3236; through the runner since #4515).
 #
-# The single toolchain. Every pipeline step (act workflow OR bash) invokes a verb
-# THROUGH this helper, never as a bare binary. Decided 2026-06-04 (Jeff): MCP is the
-# one toolchain; act is the one orchestrator. This is the seam that makes the collapse
-# coherent — extracted verbatim from werk-mcp.sh's mcp_call so the bash and act paths
-# share identical transport, SSE parsing, and error contract (no drift).
-#
-# Self-contained per invocation: inits its own MCP session then makes one tools/call.
-# Unlike werk-mcp.sh (one bash process, one shared session across calls), act runs each
-# step in a SEPARATE shell — so a shared session var can't cross steps. Per-call init is
-# the correct shape for the act orchestrator; the overhead is one extra round-trip.
-#
-# Usage:   chorus-mcp-call.sh <role> <tool> <args-json>
-# Example: chorus-mcp-call.sh kade werk-commit '{"role":"kade","card_id":3236}'
-# Exit:    0 on tool success; 1 on JSON-RPC error, isError result, no response, or
-#          no session (chorus-api down). Tool text output goes to stdout.
+# Same contract its callers have always had (3 launchd jobs, chat.sh; athena-land
+# enqueues the athena-land dagu run instead since #4515):
+#   chorus-mcp-call.sh <role> <tool> <args-json>
+#   exit 0 on tool success, non-zero on refusal or failure; tool output on stdout.
+# Since #4515 there is no old MCP server to call: this hands the call to
+# `chorus-runner call`, which runs the tool in-process from its Skill row, as
+# <role>, with the same checks the runner's MCP side makes. No HTTP, no session.
+# A "role" key in the JSON is dropped: who runs it is <role>, never an argument.
 
 set -uo pipefail
 
 ROLE="${1:?usage: chorus-mcp-call.sh <role> <tool> <args-json>}"
 TOOL="${2:?usage: chorus-mcp-call.sh <role> <tool> <args-json>}"
 ARGS="${3:?usage: chorus-mcp-call.sh <role> <tool> <args-json>}"
+# The installed runner, never a PATH lookup: a werk bin slot first on PATH can
+# hold a stale runner with no `call` (#4515, Silas 06:27).
+RUNNER="${CHORUS_RUNNER_BIN:-$HOME/.chorus/bin/chorus-runner}"
 
-PORT="${CHORUS_MCP_PORT:-3341}"
-URL="http://localhost:${PORT}/mcp"
-
-# --- handshake: a fresh session for this one call --------------------------
-SID="$(curl -sS -D - -o /dev/null -X POST "$URL" \
-  -H "Content-Type: application/json" -H "Accept: application/json, text/event-stream" -H "X-Chorus-Role: $ROLE" \
-  -d '{"jsonrpc":"2.0","id":0,"method":"initialize","params":{"protocolVersion":"2025-06-18","capabilities":{},"clientInfo":{"name":"chorus-mcp-call","version":"1.0"}}}' \
-  | awk -F': ' 'tolower($1)=="mcp-session-id"{gsub(/\r/,"",$2);print $2}')"
-[[ -n "$SID" ]] || { echo "FATAL: no MCP session id — is chorus-api up on :$PORT ?" >&2; exit 1; }
-curl -sS -o /dev/null -X POST "$URL" \
-  -H "Content-Type: application/json" -H "Accept: application/json, text/event-stream" -H "X-Chorus-Role: $ROLE" \
-  -H "Mcp-Session-Id: $SID" -d '{"jsonrpc":"2.0","method":"notifications/initialized"}'
-
-# --- one tools/call ---------------------------------------------------------
-body="$(printf '{"jsonrpc":"2.0","id":1,"method":"tools/call","params":{"name":"%s","arguments":%s}}' "$TOOL" "$ARGS")"
-resp="$(curl -sS -X POST "$URL" \
-  -H "Content-Type: application/json" -H "Accept: application/json, text/event-stream" -H "X-Chorus-Role: $ROLE" \
-  -H "Mcp-Session-Id: $SID" -d "$body")"
-data="$(printf '%s' "$resp" | sed -n 's/^data: //p' | tail -1)"
-[[ -n "$data" ]] || { echo "  <no response from MCP>" >&2; exit 1; }
-printf '%s' "$data" | python3 -c '
-import sys, json
-d = json.load(sys.stdin)
-if "error" in d:
-    print("  JSON-RPC ERROR:", json.dumps(d["error"])); sys.exit(1)
-r = d.get("result", {})
-txt = "\n".join(c.get("text","") for c in r.get("content", []) if c.get("type")=="text")
-print("  " + (txt or json.dumps(r)).replace("\n","\n  "))
-sys.exit(1 if r.get("isError") else 0)
-'
+exec python3 - "$RUNNER" "$ROLE" "$TOOL" "$ARGS" <<'PY'
+import json, os, sys
+runner, role, tool, raw = sys.argv[1:5]
+try:
+    args = json.loads(raw)
+except ValueError as e:
+    sys.exit(f"chorus-mcp-call: args are not JSON ({e}): {raw}")
+if not isinstance(args, dict):
+    sys.exit("chorus-mcp-call: args must be a JSON object")
+args.pop("role", None)
+def text(v):
+    return v if isinstance(v, str) else json.dumps(v)
+pairs = []
+for k, v in args.items():
+    for item in (v if isinstance(v, list) else [v]):
+        pairs.append(f"{k}={text(item)}")
+os.environ["ROLE"] = role
+os.execv(runner, [runner, "call", tool] + pairs)
+PY

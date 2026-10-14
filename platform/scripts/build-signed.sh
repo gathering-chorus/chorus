@@ -52,7 +52,7 @@ ROOT="${CHORUS_ROOT:-/Users/jeffbridwell/CascadeProjects/chorus}"
 # writes `Chorus-Trace-Id:` / `Chorus-Card-Id:` git trailers on every acp
 # commit; reading them here lets chorus-log's env-bridge (#2857) tag every
 # downstream build.* event with the same trace_id the ACP step used, so
-# chorus_logs_for_trace returns one continuous chain pull → acp → build →
+# borg-read-logs-trace returns one continuous chain pull → acp → build →
 # deploy. Env wins over trailer (caller can override); trailer fills the gap
 # when the pipeline picks up a commit cold.
 if [ -z "${CHORUS_TRACE_ID:-}" ] || [ -z "${CHORUS_CARD_ID:-}" ]; then
@@ -69,7 +69,7 @@ if [ -z "${CHORUS_TRACE_ID:-}" ] || [ -z "${CHORUS_CARD_ID:-}" ]; then
 fi
 
 # #2931 — failure-emit trap. AC5 of #2931: simulated failure at build produces
-# result=fail event with error= field visible in chorus_logs_for_card. ERR
+# result=fail event with error= field visible in borg-read-logs-card. ERR
 # trap fires on any uncaught nonzero (set -e in effect), captures the failing
 # line + command + exit code, emits build.failed via chorus-log, then exits.
 # chorus-log's env-bridge (#2857) attaches CHORUS_TRACE_ID / CHORUS_CARD_ID

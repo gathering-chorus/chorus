@@ -1,0 +1,89 @@
+# #4515 (Silas) — input shapes for the tools whose old handlers held refusals.
+# The refusal moves INTO the shape, so the runner refuses before anything runs:
+#   clearing-sequence  — no Done in the lanes: Done goes through clearing-sweep (card.accepted, DEC-048)
+#   clearing-tag   — no status property: status is a transition, not a field
+#   clearing-nudge — runs `chorus-hook-shim nudge-send` (word cap, recipient check, spine, pulse)
+
+@prefix chorus: <https://jeffbridwell.com/chorus#> .
+@prefix sh:     <http://www.w3.org/ns/shacl#> .
+@prefix xsd:    <http://www.w3.org/2001/XMLSchema#> .
+@prefix owl:    <http://www.w3.org/2002/07/owl#> .
+@prefix rdfs:   <http://www.w3.org/2000/01/rdf-schema#> .
+
+chorus:namesRole     a owl:AnnotationProperty ; rdfs:label "names a role" ;
+    rdfs:comment "On a ToolInput property: its value must be a role the roles door lists. \"agent\" = a role that acts; \"peer\" = any agent or human (#4515)." .
+chorus:toolTo        a owl:DatatypeProperty ; rdfs:label "to" ;        rdfs:comment "A nudge's recipient role (#4515)." .
+chorus:toolMessage   a owl:DatatypeProperty ; rdfs:label "message" ;   rdfs:comment "A nudge's text (#4515)." .
+chorus:toolExpects   a owl:DatatypeProperty ; rdfs:label "expects" ;   rdfs:comment "What a nudge needs back (#3403, #4515)." .
+chorus:toolCardId    a owl:DatatypeProperty ; rdfs:label "card id" ;   rdfs:comment "The card a cards tool acts on (#4515)." .
+chorus:toolLane      a owl:DatatypeProperty ; rdfs:label "lane" ;      rdfs:comment "The board lane a card moves to (#4515)." .
+chorus:toolOwner     a owl:DatatypeProperty ; rdfs:label "owner" ;     rdfs:comment "A card's owner (#4515)." .
+chorus:toolPriority  a owl:DatatypeProperty ; rdfs:label "priority" ;  rdfs:comment "A card's priority (#4515)." .
+chorus:toolCardType  a owl:DatatypeProperty ; rdfs:label "card type" ; rdfs:comment "A card's type (#4515)." .
+chorus:toolOrigin    a owl:DatatypeProperty ; rdfs:label "origin" ;    rdfs:comment "A card's origin (#4515)." .
+chorus:toolTitle     a owl:DatatypeProperty ; rdfs:label "title" ;     rdfs:comment "A card's title (#4515)." .
+chorus:toolSubproduct a owl:DatatypeProperty ; rdfs:label "subproduct" ; rdfs:comment "A card's subproduct (#4515)." .
+chorus:toolSequence  a owl:DatatypeProperty ; rdfs:label "sequence" ;  rdfs:comment "A card's sequence label (#4515)." .
+chorus:toolDomain    a owl:DatatypeProperty ; rdfs:label "domain" ;    rdfs:comment "A card's domain label (#4515)." .
+chorus:toolChunk     a owl:DatatypeProperty ; rdfs:label "chunk" ;     rdfs:comment "A card's chunk label (#4515)." .
+
+# clearing-nudge — "nudge-send {caller} {to} {message} [--expects {expects}]", implementedBy chorus-hook-shim, runsAs caller
+chorus:NudgeMessageInput a sh:NodeShape , chorus:ToolInput ;
+    rdfs:label "clearing-nudge input" ;
+    sh:property [ sh:path chorus:toolTo ; sh:minCount 1 ; sh:maxCount 1 ; sh:datatype xsd:string ; sh:order 1 ; sh:pattern "^[a-z][a-z0-9-]*$" ;
+                  sh:name "to" ; sh:description "Recipient — an agent role (silas, wren, kade, abby-normal) or the human (jeff), as the roles door lists them." ] ;
+    sh:property [ sh:path chorus:toolMessage ; sh:minCount 1 ; sh:maxCount 1 ; sh:datatype xsd:string ; sh:order 2 ;
+                  sh:name "message" ; sh:description "Message text the recipient sees. Nudges cap at 50 words; fenced blocks, inline code and URLs do not count." ] ;
+    sh:property [ sh:path chorus:toolExpects ; sh:maxCount 1 ; sh:datatype xsd:string ; sh:order 3 ; sh:in ( "none" "reply" "decision" "action" ) ;
+                  sh:name "expects" ; sh:description "What you need back. Default none. reply, decision or action make the recipient owe you an answer; use sparingly." ] .
+
+# clearing-sequence — "move {id} {status}", implementedBy cards
+chorus:CardsMoveInput a sh:NodeShape , chorus:ToolInput ;
+    rdfs:label "clearing-sequence input" ;
+    sh:property [ sh:path chorus:toolCardId ; sh:minCount 1 ; sh:maxCount 1 ; sh:datatype xsd:integer ; sh:minInclusive 1 ; sh:order 1 ;
+                  sh:name "id" ; sh:description "Card id." ] ;
+    sh:property [ sh:path chorus:toolLane ; sh:minCount 1 ; sh:maxCount 1 ; sh:datatype xsd:string ; sh:order 2 ;
+                  sh:in ( "Now" "Next" "Later" "WIP" "Blocked" "Won't Do" "Harvesting" "SWAT" ) ;
+                  sh:name "status" ; sh:description "New lane. Done is not a lane here: it goes through clearing-sweep, which records the acceptance (DEC-048)." ] .
+
+# clearing-tag — "set {id} [owner={owner}] [priority={priority}] [type={type}] [origin={origin}] [title={title}] [subproduct={subproduct}] [sequence={sequence}] [domain={domain}] [chunk={chunk}]", implementedBy cards
+chorus:CardsSetInput a sh:NodeShape , chorus:ToolInput ;
+    rdfs:label "clearing-tag input" ;
+    rdfs:comment "No status: status is a transition, not a field. Lanes go through clearing-sequence, Done through clearing-sweep." ;
+    sh:property [ sh:path chorus:toolCardId ; sh:minCount 1 ; sh:maxCount 1 ; sh:datatype xsd:integer ; sh:minInclusive 1 ; sh:order 1 ; sh:name "id" ; sh:description "Card id." ] ;
+    sh:property [ sh:path chorus:toolOwner ;      sh:maxCount 1 ; sh:datatype xsd:string ; sh:order 2 ;  sh:name "owner" ;      chorus:namesRole "peer" ; sh:description "Owner role: any agent or human the roles door lists." ] ;
+    sh:property [ sh:path chorus:toolPriority ;   sh:maxCount 1 ; sh:datatype xsd:string ; sh:order 3 ;  sh:in ( "P1" "P2" "P3" ) ; sh:name "priority" ; sh:description "P1, P2 or P3." ] ;
+    sh:property [ sh:path chorus:toolCardType ;   sh:maxCount 1 ; sh:datatype xsd:string ; sh:order 4 ;  sh:name "type" ;       sh:description "new, enhance, fix, chore or swat." ] ;
+    sh:property [ sh:path chorus:toolOrigin ;     sh:maxCount 1 ; sh:datatype xsd:string ; sh:order 5 ;  sh:in ( "reflective" "reactive" ) ; sh:name "origin" ; sh:description "reflective or reactive." ] ;
+    sh:property [ sh:path chorus:toolTitle ;      sh:maxCount 1 ; sh:datatype xsd:string ; sh:order 6 ;  sh:name "title" ;      sh:description "Card title." ] ;
+    sh:property [ sh:path chorus:toolSubproduct ; sh:maxCount 1 ; sh:datatype xsd:string ; sh:order 7 ;  sh:name "subproduct" ; sh:description "Subproduct label." ] ;
+    sh:property [ sh:path chorus:toolSequence ;   sh:maxCount 1 ; sh:datatype xsd:string ; sh:order 8 ;  sh:name "sequence" ;   sh:description "Sequence label value." ] ;
+    sh:property [ sh:path chorus:toolDomain ;     sh:maxCount 1 ; sh:datatype xsd:string ; sh:order 9 ;  sh:name "domain" ;     sh:description "Domain label value." ] ;
+    sh:property [ sh:path chorus:toolChunk ;      sh:maxCount 1 ; sh:datatype xsd:string ; sh:order 10 ; sh:name "chunk" ;      sh:description "Chunk label value." ] .
+
+# #4515 (Wren, measured 17:25: the demo runner listed 30 tools and none of the
+# card tools, because these three shapes were never written).
+chorus:toolDesc      a owl:DatatypeProperty ; rdfs:label "description" ; rdfs:comment "A card's description, with its ## Experience and AC sections (#4515)." .
+
+# clearing-card and clearing-card-jeff — "add {title} --owner={owner} ...", implementedBy cards
+chorus:CardsAddInput a sh:NodeShape , chorus:ToolInput ;
+    rdfs:label "clearing-card input" ;
+    rdfs:comment "The cards CLI still checks the description's sections; the shape only names what a card needs." ;
+    sh:property [ sh:path chorus:toolTitle ;    sh:minCount 1 ; sh:maxCount 1 ; sh:datatype xsd:string ; sh:order 1 ; sh:name "title" ;    sh:description "Card title: <verb> <what> — <why or scope>." ] ;
+    sh:property [ sh:path chorus:toolOwner ;    sh:minCount 1 ; sh:maxCount 1 ; sh:datatype xsd:string ; sh:order 2 ; sh:name "owner" ;    chorus:namesRole "peer" ; sh:description "Owner role: any agent or human the roles door lists." ] ;
+    sh:property [ sh:path chorus:toolPriority ; sh:minCount 1 ; sh:maxCount 1 ; sh:datatype xsd:string ; sh:order 3 ; sh:in ( "P1" "P2" "P3" ) ; sh:name "priority" ; sh:description "P1, P2 or P3." ] ;
+    sh:property [ sh:path chorus:toolDomain ;   sh:minCount 1 ; sh:maxCount 1 ; sh:datatype xsd:string ; sh:order 4 ; sh:name "domain" ;   sh:description "Domain label value." ] ;
+    sh:property [ sh:path chorus:toolCardType ; sh:minCount 1 ; sh:maxCount 1 ; sh:datatype xsd:string ; sh:order 5 ; sh:in ( "new" "enhance" "fix" "chore" "swat" ) ; sh:name "type" ; sh:description "new, enhance, fix, chore or swat." ] ;
+    sh:property [ sh:path chorus:toolOrigin ;   sh:minCount 1 ; sh:maxCount 1 ; sh:datatype xsd:string ; sh:order 6 ; sh:in ( "reflective" "reactive" ) ; sh:name "origin" ; sh:description "reflective or reactive." ] ;
+    sh:property [ sh:path chorus:toolDesc ;     sh:minCount 1 ; sh:maxCount 1 ; sh:datatype xsd:string ; sh:order 7 ; sh:name "desc" ;     sh:description "Description with ## Experience and an AC checklist." ] ;
+    sh:property [ sh:path chorus:toolSequence ; sh:maxCount 1 ; sh:datatype xsd:string ; sh:order 8 ; sh:name "sequence" ; sh:description "Sequence label value." ] .
+
+# clearing-surface — "view {id}", implementedBy cards
+chorus:CardsViewInput a sh:NodeShape , chorus:ToolInput ;
+    rdfs:label "clearing-surface input" ;
+    sh:property [ sh:path chorus:toolCardId ; sh:minCount 1 ; sh:maxCount 1 ; sh:datatype xsd:integer ; sh:minInclusive 1 ; sh:order 1 ; sh:name "id" ; sh:description "Card id." ] .
+
+# clearing-sweep — "done {id}", implementedBy cards
+chorus:CardsDoneInput a sh:NodeShape , chorus:ToolInput ;
+    rdfs:label "clearing-sweep input" ;
+    sh:property [ sh:path chorus:toolCardId ; sh:minCount 1 ; sh:maxCount 1 ; sh:datatype xsd:integer ; sh:minInclusive 1 ; sh:order 1 ; sh:name "id" ; sh:description "Card id." ] .

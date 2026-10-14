@@ -1,3 +1,5 @@
+// @test-type: unit
+// @domain: roles
 //! #4444 — Abby's Gemini policy carried none of the 21 deny rules the Claude
 //! roles run under and allowed every shell command (Wren measured 10-07 08:06).
 //! The deny rules now come from the same settings file as the allow rules and
@@ -62,7 +64,7 @@ fn abbys_settings_give_her_every_chorus_api_tool() {
 
 #[test]
 fn negative_proof_a_tool_filter_is_caught() {
-    assert!(!includes_every_tool(&json!({"mcpServers":{"chorus-api":{"includeTools":["chorus_nudge_message"]}}})));
+    assert!(!includes_every_tool(&json!({"mcpServers":{"chorus-api":{"includeTools":["clearing-nudge"]}}})));
     assert!(!includes_every_tool(&json!({"mcpServers":{}})));
 }
 

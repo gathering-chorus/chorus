@@ -348,7 +348,7 @@ pub fn signal(card: u64, role: &str, accepter: &str, home: &Path) -> R<String> {
 
 
 /// werk-finalize (#3237) — the MECHANICAL post-deploy finalize. NO authority gate (the
-/// authority was the go); act runs this after merge+deploy-prod succeed. Idempotent: board Done,
+/// authority was the go); act runs this after merge+werk-deploy-prod succeed. Idempotent: board Done,
 /// card.accepted, teardown (env-down then chorus-werk remove), and chorus/accept on origin/main HEAD.
 /// The HEAD sha is read from CANONICAL home (always present), NOT the werk, which this
 /// verb removes — so the gh status posts regardless of teardown order.

@@ -4,7 +4,7 @@
 <dict>
     <key>Label</key>
     <string>com.chorus.runner</string>
-    <!-- #4512 — the Rust MCP runner, beside the old server on 3341. Supervised
+    <!-- #4512 — the Rust MCP runner; the only MCP server since #4515. Supervised
          from day one (KeepAlive), served from the installed binary in
          ~/.chorus/bin, bound to 127.0.0.1:3342 only. -->
     <key>ProgramArguments</key>

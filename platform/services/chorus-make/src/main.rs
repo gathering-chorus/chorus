@@ -3,7 +3,7 @@
 //! chorus-make check    <pipeline> <rows.tsv> <file>     exit 1 on drift (pre-commit / pipeline)
 //! chorus-make graph    <pipeline>                       read the rows from the store (FUSEKI_QUERY), write the workflow
 //! chorus-make walk     <stream label>                   walk stream → steps → pipeline → skills → domains; exit 1 on a broken link (AC7)
-//! chorus-make parity   <rows.tsv> <mcp server.ts>       exit 1 when MCP and the skills wrap different verbs (ADR-062 §9)
+//! chorus-make parity   <rows.tsv> <tool names>          exit 1 when a tool-name list and the skills wrap different verbs (ADR-062 §9; the old MCP server is retired #4515, its names are a frozen fixture)
 use std::process::exit;
 
 fn read(p: &str) -> String {

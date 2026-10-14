@@ -1,7 +1,7 @@
 //! #3092 — per-role demo environment lifecycle.
 //!
 //! Encapsulates env start / deploy / stop for the per-role variant services
-//! (chorus-api, chorus-mcp). Per Jeff's design framing: the env is the unit,
+//! (chorus-api, athena-make, clearing, chorus-hooks, ...). Per Jeff's design framing: the env is the unit,
 //! not the per-service plumbing. chorus-werk remove calls env_stop;
 //! werk-deploy --target werk routes to env_deploy.
 //!
@@ -11,8 +11,8 @@
 //!   env_deploy — refresh (rebuild dist + restart variants + smoke)
 //!   env_stop   — destroy (bootout, remove markers, clean role-bin slot)
 //!
-//! Mirrors chorus-mcp's #3016 launchd pattern; extends it to chorus-api and
-//! formalizes the lifecycle. Process-isolated per role; state (DB, Fuseki,
+//! Grew from the old TS MCP server's #3016 launchd pattern (that server was
+//! retired by #4515); formalizes the lifecycle. Process-isolated per role; state (DB, Fuseki,
 //! Loki, Vikunja, log files) is shared with canonical by design.
 
 use std::fs;
@@ -29,7 +29,7 @@ pub enum EnvServiceKind {
     /// TypeScript service (chorus-api). Plist runs `node dist/server.js`.
     /// PORT env drives the listening port. Health smoke via HTTP GET.
     TsService,
-    /// Rust service (chorus-mcp). Plist runs the compiled binary directly.
+    /// Rust service (athena-make, chorus-hooks). Plist runs the compiled binary directly.
     /// PORT env drives the listening port. MCP smoke via initialize handshake.
     RustService,
 }
@@ -39,7 +39,7 @@ pub enum EnvServiceKind {
 #[derive(Debug, Clone)]
 pub struct EnvService {
     /// Service name as used by werk-build summary + target_class
-    /// (e.g., "chorus-api", "chorus-mcp").
+    /// (e.g., "chorus-api", "athena-make").
     pub name: String,
     /// Service kind drives plist shape + smoke.
     pub kind: EnvServiceKind,
@@ -56,7 +56,7 @@ pub struct EnvService {
     /// Health-smoke URL path (relative to http://localhost:<port>).
     pub smoke_path: String,
     /// How to smoke this service — GET (most HTTP services) or POST with an
-    /// MCP initialize body (chorus-mcp uses JSON-RPC; GET returns 406).
+    /// MCP initialize body (an MCP endpoint is JSON-RPC; GET returns 406).
     pub smoke_kind: SmokeKind,
 }
 
@@ -124,9 +124,9 @@ pub fn known_roles() -> &'static [&'static str] {
     &["silas", "kade", "wren", "abby-normal"]
 }
 
-/// The canonical service list for the demo env. Today: chorus-api + chorus-mcp.
-/// hooks/inject named in #3092 as next-slice (TCC grants + per-event invocation
-/// dispatch); not in env start/deploy/stop yet.
+/// The canonical service list for the demo env. #4515 — the old TS MCP server
+/// (chorus-mcp) is retired and no longer gets a demo copy; chorus-runner is the
+/// only MCP server and joins the env when a card changes it.
 pub fn env_services() -> Vec<EnvService> {
     vec![
         EnvService {
@@ -140,22 +140,6 @@ pub fn env_services() -> Vec<EnvService> {
             port_env: "CHORUS_API_PORT".to_string(),
             smoke_path: "/api/chorus/health".to_string(),
             smoke_kind: SmokeKind::HttpGet,
-        },
-        EnvService {
-            name: "chorus-mcp".to_string(),
-            // chorus-mcp is TypeScript living at platform/mcp-server (NOT
-            // platform/services/chorus-mcp — caught on the maiden voyage
-            // 2026-05-26). Source layout pre-dates the platform/services/
-            // convention. The TsService kind reflects truth.
-            kind: EnvServiceKind::TsService,
-            base_port: 3351,
-            source_dir_rel: "platform/mcp-server".to_string(),
-            program_args_template: ProgramArgsTemplate::Node {
-                entry: "dist/main.js".to_string(),
-            },
-            port_env: "CHORUS_MCP_PORT".to_string(),
-            smoke_path: "/mcp".to_string(),
-            smoke_kind: SmokeKind::McpInitialize,
         },
         // #4022 — the werk's own athena-make, so the api variant's /owl proxy
         // (and every Athena page through it) shows THIS card's model API.
@@ -269,6 +253,8 @@ pub const OPTIONAL_TRIGGERS: &[(&str, &[&str])] = &[
 pub fn runner_extra_env(role: &str, demo_store_dir: &str, css_issuer: &str, chorus_home: &str, home: &str, path: &str) -> R<Vec<(String, String)>> {
     Ok(vec![
         ("CHORUS_DOOR".into(), format!("http://127.0.0.1:{}", env_port_for("athena-make", role)?)),
+        // #4515 — the runner's http tools reach the werk's own chorus-api ({api})
+        ("CHORUS_API_URL".into(), format!("http://127.0.0.1:{}", env_port_for("chorus-api", role)?)),
         ("CHORUS_RUNNER_TASKS".into(), format!("{}/runner-tasks", demo_store_dir)),
         ("CSS_ISSUER".into(), css_issuer.to_string()),
         ("CHORUS_HOME".into(), chorus_home.to_string()),
@@ -715,7 +701,7 @@ fn xml_escape(s: &str) -> String {
         .replace('>', "&gt;")
 }
 
-/// Where the role's werk-root sits — same shape chorus-mcp #3016 uses
+/// Where the role's werk-root sits — same shape the old MCP server's #3016 used
 /// (the werk root the role's card is on). For env_start without a specific
 /// card, prefer the role's bin slot's parent (the werk-base) so plists point
 /// at a stable location even without a specific card werk. For env_deploy
@@ -794,7 +780,7 @@ fn wait_for_smoke(url: &str, kind: &SmokeKind, timeout: Duration) -> R<()> {
 
 // --- the two lifecycle verbs (env up / env down) ---
 //
-// Builds are cheap on this codebase (chorus-api ~2s, chorus-mcp ~1s cold), so
+// Builds are cheap on this codebase (chorus-api ~2s, clearing ~1s cold), so
 // the build/bootstrap/smoke phases collapse cleanly into one verb (env_up).
 // No separate "start vs deploy" boundary needed — re-running env_up is the
 // refresh path. env_down is the destroy path. Two verbs, one lifecycle.
@@ -814,8 +800,8 @@ fn build_service_dist(svc: &EnvService, werk_root: &str, role: &str) -> R<()> {
                 .map_err(|e| format!("env_up: npm run build in {} failed: {}", svc_dir, e))
         }
         ProgramArgsTemplate::Rust { binary: _ } => {
-            // Reserved for future actual-Rust services. Today's chorus-mcp is TS
-            // (Node template) even though it lives under platform/services/.
+            // Reserved for future Rust services built in place; today's Rust
+            // services use the WerkBin templates below.
             run_env(Some(&svc_dir), &[], "cargo", &["build", "--release", "--quiet"])
                 .map(|_| ())
                 .map_err(|e| format!("env_up: cargo build in {} failed: {}", svc_dir, e))
@@ -852,7 +838,7 @@ pub fn plist_holds_fuseki_credential(plist: &str) -> bool {
 /// — re-running refreshes against current werk source (this is also the
 /// "deploy a change to demo" path; no separate verb needed).
 ///
-/// Returns a summary like `env_up role=silas chorus-api=:3343 chorus-mcp=:3351`.
+/// Returns a summary like `env_up role=silas chorus-api=:3343 clearing=:3481`.
 pub fn env_up(role: &str, werk_root: &str, canonical_root: &str, card: u64, trace: &str) -> R<String> {
     let home_p = Path::new(canonical_root);
     let mut summary = Vec::new();
@@ -907,7 +893,7 @@ pub fn env_up(role: &str, werk_root: &str, canonical_root: &str, card: u64, trac
         // any other table. Kade's design call: the seed is generated by a versioned
         // sampler, and the SAME seed feeds runner tests. This provision-time read of
         // prod is NOT the running variant opening prod (AC3) — the booted variant
-        // opens only the demo db. chorus-api owns the db; mcp doesn't need it.
+        // opens only the demo db. chorus-api owns the db; the others don't need it.
         if svc.name == "chorus-api" {
             let seed_script = format!("{}/platform/scripts/demo-store-seed.sh", werk_root);
             let prod_db = format!(
@@ -921,7 +907,7 @@ pub fn env_up(role: &str, werk_root: &str, canonical_root: &str, card: u64, trac
         // Service-specific extra env. chorus-api has scheduled jobs
         // (boardCache, healthCache, reindex worker, crawler-sweep, watchdog)
         // that race on shared SQLite/Fuseki/spine — default OFF in werk-api
-        // (Wren hole 2). chorus-mcp doesn't have those; keep extras empty.
+        // (Wren hole 2). Other services don't have those; keep extras empty.
         // Add new service-specific gates here, not by kind.
         let owl_upstream = owl_upstream_for(role)?;
         let nightly_log = werk_nightly_log_path(werk_root);
@@ -1247,11 +1233,12 @@ mod tests {
     }
 
     #[test]
-    fn env_services_includes_api_and_mcp() {
+    fn env_services_includes_api_and_not_the_retired_mcp() {
         let svcs = env_services();
         let names: Vec<&str> = svcs.iter().map(|s| s.name.as_str()).collect();
         assert!(names.contains(&"chorus-api"), "expected chorus-api in env services");
-        assert!(names.contains(&"chorus-mcp"), "expected chorus-mcp in env services");
+        // #4515 — the old TS MCP server is retired; no demo copy of it.
+        assert!(!names.contains(&"chorus-mcp"), "chorus-mcp is retired (#4515) but still in env services");
         assert!(names.contains(&"athena-make"), "expected athena-make in env services (#4022)");
     }
 
@@ -1313,7 +1300,7 @@ mod tests {
         let ports: Vec<(String, u16)> = env_services().iter()
             .map(|s| (s.name.clone(), s.port_for("abby-normal").unwrap())).collect();
         assert!(ports.contains(&("chorus-api".to_string(), 3346)), "{:?}", ports);
-        assert!(ports.contains(&("chorus-mcp".to_string(), 3354)), "{:?}", ports);
+        assert!(ports.contains(&("athena-make".to_string(), 3366)), "{:?}", ports);
         assert!(ports.contains(&("clearing".to_string(), 3484)), "{:?}", ports);
         assert_eq!(env_ports_collide(&env_services()), None, "abby-normal's ports collide with another role's");
         assert_eq!(env_services()[0].label("abby-normal"), "com.chorus.api.werk.abby-normal");
@@ -1336,8 +1323,8 @@ mod tests {
     fn marker_dir_lives_under_canonical_root_with_stripped_prefix() {
         let api = &env_services()[0];
         assert_eq!(api.marker_dir("/x/canonical"), "/x/canonical/.werk-api");
-        let mcp = &env_services()[1];
-        assert_eq!(mcp.marker_dir("/x/canonical"), "/x/canonical/.werk-mcp");
+        let hooks = env_services().into_iter().find(|s| s.name == "chorus-hooks").unwrap();
+        assert_eq!(hooks.marker_dir("/x/canonical"), "/x/canonical/.werk-hooks");
     }
 
     #[test]
@@ -1513,7 +1500,7 @@ mod services_for_diff_4398 {
         services_for_diff(&c).into_iter().map(|s| s.name).collect()
     }
 
-    const ALWAYS: [&str; 5] = ["chorus-api", "chorus-mcp", "athena-make", "clearing", "chorus-hooks"];
+    const ALWAYS: [&str; 4] = ["chorus-api", "athena-make", "clearing", "chorus-hooks"];
 
     #[test]
     fn a_card_touching_none_keeps_todays_services_and_no_pulse() {
@@ -1532,6 +1519,7 @@ mod services_for_diff_4398 {
         let env = runner_extra_env("wren", "/w/.chorus-demo", "https://id.example/", "/c", "/Users/x", "/usr/bin").unwrap();
         let get = |k: &str| env.iter().find(|(a, _)| a == k).map(|(_, v)| v.clone()).unwrap();
         assert_eq!(get("CHORUS_DOOR"), format!("http://127.0.0.1:{}", env_port_for("athena-make", "wren").unwrap()));
+        assert_eq!(get("CHORUS_API_URL"), format!("http://127.0.0.1:{}", env_port_for("chorus-api", "wren").unwrap()));
         assert_eq!(get("CHORUS_RUNNER_TASKS"), "/w/.chorus-demo/runner-tasks");
         assert!(!get("CHORUS_RUNNER_TASKS").starts_with("/Users/x/.chorus"), "the variant would write prod's tasks");
         assert_eq!(env_port_for("chorus-runner", "wren").unwrap(), 3374);

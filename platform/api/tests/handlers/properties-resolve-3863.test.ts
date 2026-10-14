@@ -2,8 +2,8 @@
 /**
  * #3863 — `/api/chorus/properties/resolve` must exist and must proxy.
  *
- * Both word-cap consumers already call this route (mcp-server
- * word-cap.ts:118, chorus-hooks word_cap.rs). It has never existed:
+ * The word-cap consumer already calls this route (chorus-hooks word_cap.rs,
+ * used by nudge-send; the old MCP server's copy is retired #4515). It has never existed:
  * `GET :3340/api/chorus/properties/resolve` returns `Cannot GET`. The consumers
  * treat any non-ok response as "fail open", so every cap Jeff mandated has been
  * a compiled constant wearing the costume of a governed value — and a missing

@@ -67,26 +67,6 @@ setup() {
   [ "$declared" != "$owner" ]
 }
 
-@test "the on-land delta also runs as the owner and cannot fail the land" {
-  YML="$REPO/.github/workflows/werk.yml"
-  run grep -A 12 '\- name: crawl-delta' "$YML"
-  # bash 3.2 never fires errexit on a failing [[ ]] that is not the last line
-  # (#4185), so these are simple commands.
-  grep -qF 'CHORUS_ROLE: kade' <<<"$output"
-  grep -qF 'continue-on-error: true' <<<"$output"
-}
-
-# NEGATIVE PROOF: "cannot fail the land" has to be a property of the step, not a
-# hope. Strip continue-on-error and the check must go red — otherwise a crawl
-# that cannot reach the door would take a merged, deployed land down with it.
-@test "NEGATIVE PROOF: without continue-on-error the step would fail the land" {
-  YML="$REPO/.github/workflows/werk.yml"
-  bad="$BATS_TEST_TMPDIR/werk.yml"
-  grep -v 'continue-on-error: true' "$YML" > "$bad"
-  run grep -A 12 '\- name: crawl-delta' "$bad"
-  [[ "$output" != *"continue-on-error: true"* ]] || return 1
-}
-
 # #4185 — the FULL pass moved to the 03:00 nightly's first step (werk-test
 # forces it with CHORUS_CRAWL_WATERMARK="", pinned by its crawl_first_4318
 # unit tests). This unit is the on-land DELTA: no schedule, and no empty

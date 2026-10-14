@@ -186,7 +186,7 @@ echo "--------------------------------------------------------------------------
 # are protected, not gaps — classify them, don't count them as holes.
 ROOT="${CHORUS_ROOT:-$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)}"
 # enumerate every mutating route as "METHOD /path"
-ALL_ROUTES=$(for svc in platform/api/src platform/mcp-server/src directing/clearing/src platform/pulse/src; do
+ALL_ROUTES=$(for svc in platform/api/src directing/clearing/src platform/pulse/src; do  # TS MCP server retired #4515
   grep -rhoE "app\.(post|put|delete|patch)\((['\"][^'\"]+)" "$ROOT/$svc" --include='*.ts' 2>/dev/null | grep -v test
 done | sed -E "s/app\.(post|put|delete|patch)\(['\"]/\1 /" | awk '{print toupper($1), $2}' | sort -u)
 # declared surface prefixes as "METHOD /prefix" (from the model rows already read)

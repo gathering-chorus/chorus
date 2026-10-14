@@ -1,3 +1,5 @@
+// @test-type: unit — signal:security is fixture-data (the bouncer's pickup files, written to a temp dir)
+// @domain: cards
 /**
  * writePendingApprovalArtifacts — #2924 AC3 bridge.
  *
@@ -250,5 +252,5 @@ describe('writePendingApprovalArtifacts dedupe + retry refusal (#2964)', () => {
 
 // #2996: directive-marker tests retired — function and freshness window
 // were deleted along with the card_directive_detector hook. The replacement
-// path is the dedicated chorus_card_add_jeff MCP tool, exercised by MCP-server
+// path is the dedicated clearing-card-jeff MCP tool, exercised by MCP-server
 // tests in platform/api/.

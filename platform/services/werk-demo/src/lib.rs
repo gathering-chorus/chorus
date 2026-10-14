@@ -884,14 +884,13 @@ pub fn feedback_message(card: u64, from: &str) -> String {
     )
 }
 
-/// Send a feedback nudge to `other` via the chorus_nudge_message MCP path.
-/// The team's canonical nudge surface — JSON-RPC tools/call POST'd to the
-/// MCP server's HTTP endpoint. Body shape matches the MCP tool's NudgeInput.
-/// Returns Err with curl's exit if the POST fails (status check via -f).
+/// Send a feedback nudge to `other` via `chorus-hook-shim nudge-send` (#4515).
+/// The same path the clearing-nudge tool runs. Returns Err when the
+/// send is refused or fails.
 /// Used by signal() for the initial round and by demo() for re-nudge on
 /// unacked peers (#3100 AC #2).
 /// #3305 — pure wire shape for the gather nudge: JSON-RPC tools/call on
-/// chorus_nudge_message. Unit-pinned (the e2e happy path now legitimately
+/// clearing-nudge. Unit-pinned (the e2e happy path now legitimately
 /// sends zero nudges, so the shape can't be pinned there).
 /// #3443 AC2/AC8 — the gather is REPLY-REQUIRED by construction: every demo
 /// nudge carries `expects:"reply"`, never the default `expects:"none"`. That is
@@ -899,11 +898,18 @@ pub fn feedback_message(card: u64, from: &str) -> String {
 /// their session until they ack, so the demo's `gathers_missing` ready-gate
 /// (announce_ready_full) can actually be satisfied by a real reply instead of
 /// hoping a fire-and-forget FYI gets noticed. The sender cannot downgrade it.
-pub fn mcp_nudge_body(to: &str, message: &str) -> String {
-    format!(
-        r#"{{"jsonrpc":"2.0","id":1,"method":"tools/call","params":{{"name":"chorus_nudge_message","arguments":{{"to":"{}","message":"{}","expects":"reply"}}}}}}"#,
-        to, message
-    )
+pub fn nudge_send_args(from: &str, to: &str, message: &str) -> Vec<String> {
+    // #4515 — the old MCP server is gone; nudges go through the same Rust path
+    // the clearing-nudge tool runs (`chorus-hook-shim nudge-send`):
+    // word cap, recipient check, spine, pulse. The message is one argv item,
+    // never spliced into JSON.
+    vec!["nudge-send".into(), from.into(), to.into(), message.into(), "--expects".into(), "reply".into()]
+}
+
+/// #4515 — the nudge binary. Tests point CHORUS_HOOK_SHIM at a dead path so a
+/// test never reaches live pulse (#3995's rule, same as CHORUS_BRIDGE_URL).
+fn hook_shim() -> String {
+    std::env::var("CHORUS_HOOK_SHIM").ok().filter(|v| !v.is_empty()).unwrap_or_else(|| "chorus-hook-shim".to_string())
 }
 
 /// #3443 AC2 — record that a reply-required gather was SENT to a peer this round
@@ -920,7 +926,7 @@ fn record_gather_sent(home: &Path, role: &str, card: u64, peer: &str, round: &st
 /// requires). THE missing wire: the writer existed only behind a manual CLI nobody
 /// ran on a real reply, so gathers_missing never emptied → no demo.presented →
 /// forced override. This is the single canonical writer, called by both the CLI
-/// and the chorus_register_feedback MCP endpoint (the peer's explicit reply).
+/// and a peer's explicit reply (the old register-feedback tool retired with #4515).
 /// Keyed peer+round+patch_id so a reply survives rebase-churn (#3461 line_keyed),
 /// and carries the verdict (pass|concerns|block) + substance. The GATE is
 /// unchanged (Jeff's bar: tests+gates+feedback registered → presented); this only
@@ -974,7 +980,7 @@ pub fn should_emit_announce(witness: &str, card: u64, role: &str, round: &str, p
 /// "replied" until it's "sent", and sending was the deleted demoer step. Sends
 /// only after gates are recorded (gates → gathers → replies → announce) and only
 /// to peers with no demo.gather.sent this round. The expects=reply envelope
-/// (mcp_nudge_body) + the #3218 RESPOND-FIRST hook make the peer owe an ack; the
+/// (nudge_send_args) + the #3218 RESPOND-FIRST hook make the peer owe an ack; the
 /// hook fires at the recipient's turn-end so the gather never queues silently
 /// behind their auto/focus-mode work.
 fn fire_gathers(home: &Path, role: &str, card: u64, trace: &str, round: &str) {
@@ -1026,20 +1032,10 @@ fn bridge_url() -> String {
         .unwrap_or_else(|_| "http://localhost:3470/api/message".to_string())
 }
 
-fn send_mcp_nudge(from: &str, other: &str, card: u64, trace: &str) -> R<()> {
-    let mcp_url = std::env::var("CHORUS_MCP_URL")
-        .unwrap_or_else(|_| "http://localhost:3341/mcp".to_string());
-    let body = mcp_nudge_body(other, &feedback_message(card, from));
-    run("curl", &[
-        "-s", "-f", "-X", "POST",
-        &mcp_url,
-        "-H", "Content-Type: application/json",
-        // chorus-mcp requires BOTH content types in Accept (Silas #3092 trap).
-        "-H", "Accept: application/json, text/event-stream",
-        "-H", &format!("X-Chorus-Role: {}", from),
-        "-H", &format!("X-Chorus-Trace-Id: {}", trace),
-        "-d", &body,
-    ]).map(|_| ())
+fn send_mcp_nudge(from: &str, other: &str, card: u64, _trace: &str) -> R<()> {
+    let args = nudge_send_args(from, other, &feedback_message(card, from));
+    let argv: Vec<&str> = args.iter().map(String::as_str).collect();
+    run(&hook_shim(), &argv).map(|_| ())
 }
 
 /// #3511 — surface the demo to JEFF via the nudge wire (to=jeff), so he actually
@@ -1076,8 +1072,6 @@ fn announce_to_jeff(from: &str, card: u64, trace: &str, variant_url: &str, round
     // the same thing on every demo and taught nothing; `werk-demo go` stays
     // discoverable in docs, not in every announce.
     let msg = format!("Demo ready — #{} · round {} · {} · clearing {} · go / no / more", card, round, url, clearing);
-    let mcp_url = std::env::var("CHORUS_MCP_URL")
-        .unwrap_or_else(|_| "http://localhost:3341/mcp".to_string());
     // #3544 — the announce must DELIVER (osascript-inject) into the demoer's session,
     // not just persist. In the detached act pipeline there is no driving-role turn to
     // print DemoOutcome.message, so this nudge IS the only live surface Jeff sees. The
@@ -1087,15 +1081,11 @@ fn announce_to_jeff(from: &str, card: u64, trace: &str, variant_url: &str, round
     // a session, not a role echoing itself. Send from "system" (a MACHINE_SENDER) → to the
     // demoer: from≠to kills self-echo, machine lane delivers, it injects into the demoer's
     // terminal where Jeff is watching. `from` stays the RECIPIENT (the demoer's session).
-    let body = mcp_nudge_body(from, &msg); // to = the demoer's session (where Jeff watches)
-    let _ = run("curl", &[
-        "-s", "-f", "-X", "POST", &mcp_url,
-        "-H", "Content-Type: application/json",
-        "-H", "Accept: application/json, text/event-stream",
-        "-H", "X-Chorus-Role: system", // #3544 — system sender = ops-nudge lane, not self-echo
-        "-H", &format!("X-Chorus-Trace-Id: {}", trace),
-        "-d", &body,
-    ]);
+    // `from` stays the RECIPIENT (the demoer's session); the sender is "system".
+    let args = nudge_send_args("system", from, &msg);
+    let argv: Vec<&str> = args.iter().map(String::as_str).collect();
+    let _ = run(&hook_shim(), &argv);
+    let _ = trace;
 }
 
 /// Step 5: signal — cards demo + spine event + Bridge post + feedback nudges.
@@ -1125,7 +1115,7 @@ fn signal(card: u64, role: &str, home: &Path, trace: &str, owed: &[&str]) -> Vec
         ],
     );
 
-    // Feedback nudges go through the chorus_nudge_message MCP tool — the team's
+    // Feedback nudges go through the clearing-nudge MCP tool — the team's
     // canonical nudge surface, via send_mcp_nudge() (shared with the re-nudge
     // path in demo() for AC #2).
     //
@@ -1448,10 +1438,9 @@ pub fn demo(card: u64, role: &str, home: &Path) -> R<DemoOutcome> {
     // pause is a "comment window" with no surface to comment on; with it, the
     // pause becomes a real test window. Silas paired the framing on #3101.
     let api_port = variant_port(role, 3343, 3340);
-    let mcp_port = variant_port(role, 3351, 3341);
     let test_surface_body = format!(
-        r#"{{"from":"{}","text":"━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n🧪 [TEST SURFACE READY] — card #{}\n━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\nService variants: chorus-api http://localhost:{}/, chorus-mcp http://localhost:{}/mcp\nCLI verbs (if changed): resolve via {}'s session PATH (role-slot-first per #3101)\nWhat's new: read the card, the diff, then exercise the new code against the surfaces above.\nThis is the test window — substantive trial before /acp."}}"#,
-        role, card, api_port, mcp_port, role
+        r#"{{"from":"{}","text":"━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n🧪 [TEST SURFACE READY] — card #{}\n━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\nService variants: chorus-api http://localhost:{}/\nCLI verbs (if changed): resolve via {}'s session PATH (role-slot-first per #3101)\nWhat's new: read the card, the diff, then exercise the new code against the surfaces above.\nThis is the test window — substantive trial before /acp."}}"#,
+        role, card, api_port, role
     );
     let auth = bridge_auth_header();
     if let Err(e) = run("curl", &[
@@ -3096,20 +3085,19 @@ mod tests {
     // #3305 — the gather re-fire + cross-role round-unknown family.
 
     #[test]
-    fn mcp_nudge_body_pins_tools_call_shape() {
-        let b = mcp_nudge_body("silas", "msg");
-        assert!(b.contains("\"method\":\"tools/call\""));
-        assert!(b.contains("\"name\":\"chorus_nudge_message\""));
-        assert!(b.contains("\"to\":\"silas\""));
+    fn a_demo_nudge_goes_through_nudge_send_from_and_to() {
+        // #4515 — no old MCP server: the Rust nudge path, sender then recipient
+        let a = nudge_send_args("wren", "silas", "msg \"quoted\"");
+        assert_eq!(&a[..4], &["nudge-send", "wren", "silas", "msg \"quoted\""]);
     }
 
     #[test]
     fn mcp_nudge_body_is_reply_required_never_none() {
         // #3443 AC2/AC8 — the gather is reply-required by construction; a demo
         // nudge must never be fire-and-forget (expects=none).
-        let b = mcp_nudge_body("silas", "msg");
-        assert!(b.contains("\"expects\":\"reply\""), "gather must be expects=reply: {}", b);
-        assert!(!b.contains("\"expects\":\"none\""), "gather must never be expects=none: {}", b);
+        let a = nudge_send_args("wren", "silas", "msg");
+        assert_eq!(&a[4..], &["--expects", "reply"], "gather must be expects=reply: {:?}", a);
+        assert!(!a.contains(&"none".to_string()), "gather must never be expects=none: {:?}", a);
     }
 
     #[test]

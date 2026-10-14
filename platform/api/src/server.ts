@@ -179,13 +179,9 @@ app.use(securityEnvelope({
   },
 }));
 
-// #2998 — MCP transport REMOVED from chorus-api. /mcp now served by the
-// chorus-mcp daemon on :3341 (separate LaunchAgent com.chorus.mcp). Decouples
-// MCP from chorus-api's deploy lifecycle so chorus-api redeploys no longer
-// kill role-session MCP transports. See #2997 for the daemon stand-up.
-// platform/api/src/mcp/ stays in the tree for now — chorus-mcp consumes a
-// copy in platform/mcp-server/. Removing this dir is a separate retirement
-// card after the source-of-truth swap is verified stable.
+// #2998 — MCP transport REMOVED from chorus-api, so chorus-api redeploys no
+// longer kill role-session MCP transports. #4515 — the only MCP server is the
+// Rust tool runner (chorus-runner, :3342); the old TypeScript one is retired.
 
 import { getHooksSummary } from './hooks-summary';
 import { getCostSummary } from './cost-summary';
@@ -889,7 +885,7 @@ app.get('/api/chorus/properties/resolve', async (req, res) => {
 // #3029 — pain board endpoints. Same queryPainRollup the MCP tool + regression
 // test use (one source, can't drift). Validated contract: {job} selector +
 // event-field anchor. The HTML pages under public/borg/ consume these.
-import { queryPainRollup, type RollupWindow, logsForCard, logsForTrace } from './handlers/logs-query';
+import { queryPainRollup, type RollupWindow, type TimeWindow, logsForCard, logsForTrace, recentErrors } from './handlers/logs-query';
 const painLokiDeps = {
   fetchImpl: fetch,
   lokiUrl: process.env.LOKI_URL ?? 'http://localhost:3102',
@@ -919,16 +915,55 @@ app.get('/api/chorus/pain/card/:id', async (req, res) => {
 // (logsForCard / logsForTrace); the /borg/trace.html page renders this verbatim
 // so a human view and an agent view can never diverge. Purpose-named routes
 // (vs /pain/card which is failure-triage-flavored) — same function underneath.
+// #4515 — ?window= picks the window (the runner's logs tools pass it); a bad
+// window is refused by name, never widened to a default.
+const LOG_WINDOWS: TimeWindow[] = ['5m', '15m', '1h', '6h', '1d', '7d'];
+function logWindow(q: unknown, dflt: TimeWindow): TimeWindow | null {
+  if (q === undefined || q === '') return dflt;
+  return LOG_WINDOWS.includes(q as TimeWindow) ? (q as TimeWindow) : null;
+}
 app.get('/api/chorus/logs/card/:id', async (req, res) => {
   const id = Number(req.params.id);
   if (!Number.isFinite(id)) { res.status(400).json({ ok: false, reason: 'bad-card-id' }); return; }
-  const result = await logsForCard({ card_id: id, time_window: '1d' }, painLokiDeps);
+  const w = logWindow(req.query.window, '1d');
+  if (!w) { res.status(400).json({ ok: false, reason: 'bad-window', allowed: LOG_WINDOWS }); return; }
+  const result = await logsForCard({ card_id: id, time_window: w }, painLokiDeps);
   res.status(result.ok ? 200 : 502).json(result);
 });
 app.get('/api/chorus/logs/trace/:traceId', async (req, res) => {
   const traceId = req.params.traceId;
   if (!traceId) { res.status(400).json({ ok: false, reason: 'bad-trace-id' }); return; }
-  const result = await logsForTrace({ trace_id: traceId, time_window: '1d' }, painLokiDeps);
+  const w = logWindow(req.query.window, '1d');
+  if (!w) { res.status(400).json({ ok: false, reason: 'bad-window', allowed: LOG_WINDOWS }); return; }
+  const result = await logsForTrace({ trace_id: traceId, time_window: w }, painLokiDeps);
+  res.status(result.ok ? 200 : 502).json(result);
+});
+// #4515 — borg-read-flow's route (the old MCP server ran this CLI itself).
+// The report is computed off the serving loop, in its own node process, and
+// also refreshes ~/.chorus/reports/card-cycle-report.html. hours: 1..720.
+app.get('/api/chorus/flow-report', (req, res) => {
+  const raw = req.query.hours;
+  const hours = raw === undefined || raw === '' ? 120 : Number(raw);
+  if (!Number.isInteger(hours) || hours < 1 || hours > 720) {
+    res.status(400).json({ ok: false, reason: 'bad-hours', allowed: '1..720' });
+    return;
+  }
+  const cli = path.join(__dirname, 'flow-report-cli.js');
+  const htmlOut = path.join(process.env.HOME || '', '.chorus/reports/card-cycle-report.html');
+  execFile(process.execPath, [cli, '--hours', String(hours), '--html', htmlOut], { timeout: 120_000, maxBuffer: 16 * 1024 * 1024 }, (err, stdout, stderr) => {
+    if (err) {
+      res.status(502).json({ ok: false, reason: 'flow-report-failed', detail: String(stderr || err.message).slice(0, 500) });
+      return;
+    }
+    res.type('application/json').send(stdout);
+  });
+});
+// #4515 — borg-read-logs-errors' route (the old MCP server built this LogQL itself)
+app.get('/api/chorus/logs/errors', async (req, res) => {
+  const w = logWindow(req.query.window, '1h');
+  if (!w) { res.status(400).json({ ok: false, reason: 'bad-window', allowed: LOG_WINDOWS }); return; }
+  const role = typeof req.query.role === 'string' && req.query.role ? req.query.role : undefined;
+  const result = await recentErrors({ role, time_window: w }, painLokiDeps);
   res.status(result.ok ? 200 : 502).json(result);
 });
 

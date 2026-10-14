@@ -3,7 +3,7 @@
  * flow-report-cli — Loki → aggregateFlow → JSON stdout (#3269).
  *
  * The standing form of the 06-06 one-off report. Run OFF any serving loop
- * (the chorus_flow_report MCP tool execs this; a night-cycle can too):
+ * (the borg-read-flow MCP tool execs this; a night-cycle can too):
  *
  *   node dist/flow-report-cli.js [--hours N] [--html /path/report.html]
  *
@@ -108,7 +108,7 @@ th:hover{background:#444}.err{color:#a33;font-size:12px;padding:1px 0}.sub{color
   <span class="sub">· click a column header to sort (click again to flip)</span></div>
 <table><thead><tr id="hdr"></tr></thead><tbody id="rows"></tbody></table>
 <h2>Error classes ranked</h2><ul id="classes"></ul>
-<p class="sub">Standing instrument (#3269, chorus_flow_report) — regenerate via the MCP tool; the page is a snapshot of the last call.</p>
+<p class="sub">Standing instrument (#3269, borg-read-flow) — regenerate via the MCP tool; the page is a snapshot of the last call.</p>
 <script>
 const DATA = ${data};
 const COLS = [

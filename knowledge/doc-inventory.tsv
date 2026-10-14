@@ -412,7 +412,6 @@ chorus	designing/docs/ICD_TEST_STRATEGY.html	ok	chorus		Y		440c8471cd59
 chorus	designing/docs/cockpit-v0.md	ok	chorus		Y		41acf649a33a
 chorus	designing/docs/doc-ownership-schema.md	ok	chorus	wren	Y	doc-management, km	5f0f5e83a6e9
 chorus	designing/docs/quality-service-design.md	ok	chorus		Y		4b9d4a5fa82b
-chorus	designing/docs/mcp-server-design.md	ok	chorus		Y		c20e19ee1126
 chorus	designing/docs/cockpit-mockup.html	ok	chorus		Y		fc6dc4f7540c
 chorus	designing/docs/chorus-client-onboarding-design.html	ok	chorus		Y		eae0730c389c
 chorus	designing/docs/ATTENTION_ARCHITECTURE.html	ok	chorus		Y		e862adbde566

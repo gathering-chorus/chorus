@@ -83,7 +83,7 @@ describe('chorus_logs_query (#2840)', () => {
   });
 });
 
-describe('chorus_logs_for_trace (#2840)', () => {
+describe('borg-read-logs-trace (#2840)', () => {
   it('builds the right LogQL filter for trace_id', async () => {
     let captured = '';
     const deps: LogsQueryDeps = {
@@ -120,7 +120,7 @@ describe('chorus_logs_for_trace (#2840)', () => {
   });
 });
 
-describe('chorus_logs_for_card (#2840)', () => {
+describe('borg-read-logs-card (#2840)', () => {
   it('builds LogQL filter on card_id JSON field', async () => {
     let captured = '';
     const deps: LogsQueryDeps = {
@@ -136,7 +136,7 @@ describe('chorus_logs_for_card (#2840)', () => {
   });
 });
 
-describe('chorus_logs_for_branch (#3023)', () => {
+describe('logs for a branch (#3023)', () => {
   it('builds LogQL filter anchored on the branch JSON field', async () => {
     let captured = '';
     const deps: LogsQueryDeps = {
@@ -164,7 +164,7 @@ describe('chorus_logs_for_branch (#3023)', () => {
   });
 });
 
-describe('chorus_logs_recent_errors (#2840)', () => {
+describe('borg-read-logs-errors (#2840)', () => {
   it('filters to error level and applies time_window', async () => {
     let captured = '';
     const deps: LogsQueryDeps = {

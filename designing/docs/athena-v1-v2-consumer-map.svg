@@ -70,7 +70,7 @@
   <rect x="900" y="410" width="320" height="92" rx="8" fill="#eafaf1" stroke="#1e8449" stroke-width="2"/>
   <text x="1060" y="434" font-size="14" font-weight="700" fill="#1e8449" text-anchor="middle">v2 MCP tools  (repointed #3025)</text>
   <text x="1060" y="456" font-size="12.5" fill="#444" text-anchor="middle">chorus_tree_get</text>
-  <text x="1060" y="474" font-size="12.5" fill="#444" text-anchor="middle">chorus_blast_radius</text>
+  <text x="1060" y="474" font-size="12.5" fill="#444" text-anchor="middle">borg-read-blast-radius</text>
   <text x="1060" y="494" font-size="11" fill="#1e8449" text-anchor="middle" font-weight="600">sanctioned ownership path</text>
 
   <!-- ===================== API / ROUTES ===================== -->

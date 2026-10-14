@@ -143,11 +143,10 @@
 <p><b>chorus-env-setup.sh</b> runs at session start and sets env vars based on <span class="mono">CHORUS_ROLE</span> + presence of marker files:</p>
 <ul>
   <li><span class="mono">PATH</span>: prepend <span class="mono">$WERK_&lt;ROLE&gt;_BIN</span>, then <span class="mono">$CHORUS_BIN</span> — CLI verbs resolve to the role slot first</li>
-  <li><span class="mono">CHORUS_MCP_PORT</span>: if <span class="mono">$ROOT/.werk-mcp/active</span> exists → role's werk-mcp port; else <span class="mono">CHORUS_MCP_PORT_CANONICAL</span> (3341)</li>
   <li><span class="mono">CHORUS_API_PORT</span> (<b>#3092 new</b>): if <span class="mono">$ROOT/.werk-api/active</span> exists → role's werk-api port; else <span class="mono">CHORUS_API_PORT_CANONICAL</span> (3340)</li>
-  <li><span class="mono">.mcp.json</span> interpolates <span class="mono">$CHORUS_MCP_PORT</span> into the MCP server URL</li>
+  <li><b>#4515:</b> the old MCP server (:3341) and its per-role werk variants are retired. Every session's <span class="mono">.mcp.json</span> names the tool runner (:3342) with the role's own credential from <span class="mono">chorus-mcp-headers</span>; a card's demo gets its own runner from env-up. The MCP column above is history.</li>
 </ul>
-<p>Result: when the role is mid-card with a deployed demo env, its session resolves to its OWN werk-api/werk-mcp. Other roles + Jeff's browser + all cron/scripts stay on canonical :3340 / :3341.</p>
+<p>Result: when the role is mid-card with a deployed demo env, its session resolves to its OWN werk-api. Other roles + Jeff's browser + all cron/scripts stay on canonical :3340, and every session's tools come from the runner on :3342.</p>
 </div>
 
 <h2>Lifecycle — when each piece is born / dies</h2>

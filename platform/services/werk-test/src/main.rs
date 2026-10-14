@@ -2369,7 +2369,7 @@ fn run_jest_project(werk: &str, pkg: &str, max_workers: Option<usize>, project: 
     }
     let jest = format!("{}/node_modules/.bin/jest", pkg_dir);
     if !Path::new(&jest).exists() {
-        // #3974 — a package without jest runs its OWN runner (mcp-server:
+        // #3974 — a package without jest runs its OWN runner (agent-adapters:
         // node:test via npm test). The old `return true` here was a silent
         // vacuous green for every non-jest package.
         let (ok, cases) = run_npm_test(werk, pkg);
@@ -2478,7 +2478,7 @@ fn run_capped_unit(cmd: &mut Command, label: &str) -> Option<(bool, String, Stri
     Some((fin.success, stdout, stderr))
 }
 
-/// #3974 — the non-jest package runner: `npm test` (mcp-server = node:test).
+/// #3974 — the non-jest package runner: `npm test` (agent-adapters = node:test).
 /// TAP lines become per-case results; a missing test script is FAIL LOUD,
 /// never a vacuous green.
 fn run_npm_test(werk: &str, pkg: &str) -> (bool, Vec<CaseResult>) {
@@ -2502,12 +2502,12 @@ fn run_npm_test_files(werk: &str, pkg: &str, only: Option<&[String]>) -> (bool, 
     // its TAP carries case names and no filename, even when handed many files.
     // Every case was therefore stored under the PACKAGE directory:
     //
-    //   registered  platform/mcp-server/tests/word-cap.test.ts :: <case>
-    //   stored      platform/mcp-server/                       :: <case>
+    //   registered  platform/<pkg>/tests/word-cap.test.ts :: <case>
+    //   stored      platform/<pkg>/                       :: <case>
     //
     // The reconcile census joins on (file, name), so nothing matched and 245
-    // passing mcp-server tests were counted as "never ran" every night — about
-    // half the whole never-ran gap, and none of it real.
+    // passing tests of the old MCP server (retired #4515) were counted as
+    // "never ran" every night — about half the whole never-ran gap, and none of it real.
     //
     // Running per file is the only way to know which file a case came from.
     // It costs one process start per test file and buys a ledger that
@@ -2627,9 +2627,9 @@ fn run_jest_selected(werk: &str, pkg: &str, files: &[String]) -> (bool, Vec<Case
         .map(|f| f.strip_prefix(&format!("{}/", pkg)).unwrap_or(f).to_string())
         .collect();
     if !Path::new(&jest).exists() {
-        // #4440 reopened — a package without jest (mcp-server: node:test) ran
+        // #4440 reopened — a package without jest (node:test, e.g. agent-adapters) ran
         // NOTHING here and returned pass: since #3912 (2026-08-17) a card never
-        // ran mcp-server's tests (#4420 run 12: 30 files selected, 0.0s). Its
+        // ran the old MCP server's tests (#4420 run 12: 30 files selected, 0.0s). Its
         // own runner runs the selected files; no runner at all is a red.
         if npm_test_runner(&pkg_dir).is_none() {
             eprintln!("!! {}: {} test file(s) selected and no runner for them (no jest, no node:test script) — FAIL LOUD", pkg, rel.len());
@@ -2831,6 +2831,11 @@ fn bats_outcome(cmd: &mut Command) -> BatsOutcome {
     match cmd.status() {
         Ok(s) if s.success() => BatsOutcome::Pass,
         Ok(s) if s.code() == Some(2) => BatsOutcome::Unmeasured,
+        // #4515 — rc=3 is a suite's SELF-REFUSAL (#4016/#4256): it declined to
+        // run here (e.g. a suite that will not write into the live store).
+        // The nightly lane already scores it skip; this card lane scored it FAIL,
+        // so a suite doing the right thing was a red on every card that touched it.
+        Ok(s) if s.code() == Some(3) => BatsOutcome::Unmeasured,
         _ => BatsOutcome::Fail,
     }
 }
@@ -3455,10 +3460,10 @@ mod suite_deadline_tests {
     /// hands it the live nudge path or canonical fails this test.
     #[test]
     fn the_card_lane_runs_a_suite_caged_and_rooted_in_the_werk() {
-        let (dir, s) = world("cage.sh", "case \"$CHORUS_MCP_NUDGE_URL\" in *127.0.0.1:9*) ;; *) echo \"live nudge path: $CHORUS_MCP_NUDGE_URL\"; exit 1 ;; esac\n\
+        let (dir, s) = world("cage.sh", "case \"$CHORUS_PULSE_URL\" in *127.0.0.1:9*) ;; *) echo \"live nudge path: $CHORUS_PULSE_URL\"; exit 1 ;; esac\n\
 [ \"$CHORUS_ROOT\" = \"$PWD\" ] || { echo \"root $CHORUS_ROOT is not the werk $PWD\"; exit 1; }\n\
 echo '=== Results: 1 passed, 0 failed ==='\n");
-        std::env::remove_var("CHORUS_MCP_NUDGE_URL");
+        std::env::remove_var("CHORUS_PULSE_URL");
         let werk = std::fs::canonicalize(&dir).unwrap();
         assert!(matches!(run_bats(werk.to_str().unwrap(), &s).0, BatsOutcome::Pass));
     }
@@ -3482,9 +3487,9 @@ echo '=== Results: 1 passed, 0 failed ==='\n");
     /// the check above can go red.
     #[test]
     fn negative_proof_a_live_nudge_path_fails_the_cage_suite() {
-        let (dir, s) = world("cage2.sh", "case \"$CHORUS_MCP_NUDGE_URL\" in *127.0.0.1:9*) ;; *) exit 1 ;; esac\n");
+        let (dir, s) = world("cage2.sh", "case \"$CHORUS_PULSE_URL\" in *127.0.0.1:9*) ;; *) exit 1 ;; esac\n");
         let out = Command::new("bash").arg(&s).current_dir(&dir)
-            .env("CHORUS_MCP_NUDGE_URL", "http://127.0.0.1:3341/nudge").status().unwrap();
+            .env("CHORUS_PULSE_URL", "http://127.0.0.1:3475/api/nudge").status().unwrap();
         assert!(!out.success());
     }
 
@@ -3552,9 +3557,11 @@ mod bats_unmeasured_4265 {
     }
 
     #[test]
-    fn exit_two_is_unmeasured_and_nothing_else_is() {
+    fn exit_two_and_three_are_unmeasured_and_nothing_else_is() {
         assert!(exiting(0) == BatsOutcome::Pass);
         assert!(exiting(2) == BatsOutcome::Unmeasured);
+        // #4515 — rc=3 self-refusal, same verdict the nightly lane gives it
+        assert!(exiting(3) == BatsOutcome::Unmeasured);
 
         // NEGATIVE PROOF (#3734): the codes this must NOT swallow. A suite that
         // fails, and a suite whose runner cannot even be launched, both stay

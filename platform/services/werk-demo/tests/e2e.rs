@@ -1,3 +1,5 @@
+// @test-type: integration
+// @domain: werk
 //! End-to-end (#3116): PATH-shim every external CLI (cards / werk-build /
 //! werk-deploy / curl / chorus-log / gh), prove the stripped proving ceremony
 //! runs validate → AC-preflight (+evidence+trace) → gate-delegated → feedback
@@ -137,7 +139,7 @@ exit 0
     std::env::set_var("CHORUS_TRACE_ID", "e2e-trace-abc123");
     // #3100 AC#5: comment window default is 60s; force 0 in tests so we don't sleep.
     // #3995 — never speak to live services from a test: dead-port both HTTP seams.
-    std::env::set_var("CHORUS_MCP_URL", "http://127.0.0.1:9/mcp");
+    std::env::set_var("CHORUS_HOOK_SHIM", "/nonexistent/chorus-hook-shim-4515"); // #4515 dead nudge seam
     std::env::set_var("CHORUS_BRIDGE_URL", "http://127.0.0.1:9/api/message");
     std::env::set_var("CHORUS_DEMO_COMMENT_WINDOW_SECS", "0");
     // #3100 AC#2: ack window default is 60s; force 0 in tests for fast iteration.
@@ -175,7 +177,7 @@ exit 0
     assert_eq!(ungated.exit, 1, "un-gated demo must REFUSE to present (AC6): {}", ungated.message);
     assert!(ungated.message.contains("gates not run"), "typed gates-missing refusal: {}", ungated.message);
     // #3318: under act/CI (ACT set) the same un-gated demo SKIPS enforcement and presents
-    // — the pipeline-unbreak. Verified live (a chorus_werk Half A reaches present), not
+    // — the pipeline-unbreak. Verified live (a pipeline run reaches present), not
     // here, because demo() fires the feedback gather and would pollute the nudge count.
 
     // #3237: the blocking demo step (a) refuses unless all 5 gates recorded a
@@ -291,7 +293,7 @@ exit 0
     //      never re-asked, however many times the demo re-presents. (The old
     //      assertion here pinned exactly the re-fire bug — 2 unconditional nudges
     //      to already-replied peers; 8 live sightings on 2026-06-12 alone.)
-    //      The MCP wire shape (tools/call + chorus_nudge_message) is pinned by
+    //      The MCP wire shape (tools/call + clearing-nudge) is pinned by
     //      the mcp_nudge_body unit test; the legacy-endpoint ban stays here.
     let curl_calls = fs::read_to_string(&curl_log).unwrap_or_default();
     assert!(
@@ -299,7 +301,7 @@ exit 0
         "must NOT POST to the legacy 404 :3340/api/chorus/nudge; got:\n{}",
         curl_calls
     );
-    let mcp_post_count = curl_calls.lines().filter(|l| l.contains("chorus_nudge_message")).count();
+    let mcp_post_count = curl_calls.lines().filter(|l| l.contains("clearing-nudge")).count();
     assert_eq!(
         mcp_post_count, 0,
         "both peers already replied this round — re-presenting must re-fire ZERO gather nudges (#3305); got {} in:\n{}",
@@ -407,7 +409,7 @@ exit 0
     write_exec(&home.join("platform/scripts/smoke-check.sh"), "#!/bin/sh\nexit 0\n");
     write_exec(&home.join("platform/scripts/chorus-log"), "#!/bin/sh\nexit 0\n");
     // #3995 — never speak to live services from a test: dead-port both HTTP seams.
-    std::env::set_var("CHORUS_MCP_URL", "http://127.0.0.1:9/mcp");
+    std::env::set_var("CHORUS_HOOK_SHIM", "/nonexistent/chorus-hook-shim-4515"); // #4515 dead nudge seam
     std::env::set_var("CHORUS_BRIDGE_URL", "http://127.0.0.1:9/api/message");
     std::env::set_var("CHORUS_DEMO_COMMENT_WINDOW_SECS", "0");
     std::env::set_var("CHORUS_DEMO_ACK_WINDOW_SECS", "0");

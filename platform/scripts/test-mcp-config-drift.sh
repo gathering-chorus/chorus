@@ -10,7 +10,11 @@
 # where the fix exists. This one measures CANONICAL, so before a fix lands it
 # is honestly red — which is the state it exists to report.
 set -uo pipefail
-ROOT="${CHORUS_HOME:-/Users/jeffbridwell/CascadeProjects/chorus}"
+# #4515 — measure the tree this script ships in, never an inherited CHORUS_HOME
+# (the #3701 lesson): a card run's env points CHORUS_HOME at canonical, so a fix
+# in the card could never turn its own check green before it landed. The nightly
+# runs this from canonical, so it still measures canonical there.
+ROOT="$(cd "$(dirname "$0")/../.." && pwd)"
 if bash "$ROOT/platform/scripts/check-mcp-config-drift.sh" "$ROOT"; then
   echo "GREEN"
   exit 0

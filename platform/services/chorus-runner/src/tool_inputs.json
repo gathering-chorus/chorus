@@ -15,6 +15,244 @@
     ],
     "type": "object"
   },
+  "BlastRadiusInput": {
+    "additionalProperties": false,
+    "properties": {
+      "iri": {
+        "description": "The Product, Domain or Service, e.g. chorus:service-werk. One the graph does not hold is answered not-found.",
+        "pattern": "^chorus:[a-z0-9][a-z0-9-]*$",
+        "type": "string"
+      }
+    },
+    "required": [
+      "iri"
+    ],
+    "type": "object"
+  },
+  "BorgStartInput": {
+    "additionalProperties": false,
+    "properties": {
+      "card": {
+        "description": "The card number. Its werk holds the generated workflow.",
+        "type": "integer"
+      },
+      "stream": {
+        "description": "prove (Borg Proving) or operate (Borg Operating).",
+        "enum": [
+          "prove",
+          "operate"
+        ],
+        "type": "string"
+      }
+    },
+    "required": [
+      "card",
+      "stream"
+    ],
+    "type": "object"
+  },
+  "CardsAddInput": {
+    "additionalProperties": false,
+    "properties": {
+      "desc": {
+        "description": "Description with ## Experience and an AC checklist.",
+        "type": "string"
+      },
+      "domain": {
+        "description": "Domain label value.",
+        "type": "string"
+      },
+      "origin": {
+        "description": "reflective or reactive.",
+        "enum": [
+          "reflective",
+          "reactive"
+        ],
+        "type": "string"
+      },
+      "owner": {
+        "description": "Owner role: any agent or human the roles door lists.",
+        "namesRole": "peer",
+        "type": "string"
+      },
+      "priority": {
+        "description": "P1, P2 or P3.",
+        "enum": [
+          "P1",
+          "P2",
+          "P3"
+        ],
+        "type": "string"
+      },
+      "sequence": {
+        "description": "Sequence label value.",
+        "type": "string"
+      },
+      "title": {
+        "description": "Card title: <verb> <what> — <why or scope>.",
+        "type": "string"
+      },
+      "type": {
+        "description": "new, enhance, fix, chore or swat.",
+        "enum": [
+          "new",
+          "enhance",
+          "fix",
+          "chore",
+          "swat"
+        ],
+        "type": "string"
+      }
+    },
+    "required": [
+      "title",
+      "owner",
+      "priority",
+      "domain",
+      "type",
+      "origin",
+      "desc"
+    ],
+    "type": "object"
+  },
+  "CardsDoneInput": {
+    "additionalProperties": false,
+    "properties": {
+      "id": {
+        "description": "Card id.",
+        "type": "integer"
+      }
+    },
+    "required": [
+      "id"
+    ],
+    "type": "object"
+  },
+  "CardsMoveInput": {
+    "additionalProperties": false,
+    "properties": {
+      "id": {
+        "description": "Card id.",
+        "type": "integer"
+      },
+      "status": {
+        "description": "New lane. Done is not a lane here: it goes through clearing-sweep, which records the acceptance (DEC-048).",
+        "enum": [
+          "Now",
+          "Next",
+          "Later",
+          "WIP",
+          "Blocked",
+          "Won't Do",
+          "Harvesting",
+          "SWAT"
+        ],
+        "type": "string"
+      }
+    },
+    "required": [
+      "id",
+      "status"
+    ],
+    "type": "object"
+  },
+  "CardsSetInput": {
+    "additionalProperties": false,
+    "properties": {
+      "chunk": {
+        "description": "Chunk label value.",
+        "type": "string"
+      },
+      "domain": {
+        "description": "Domain label value.",
+        "type": "string"
+      },
+      "id": {
+        "description": "Card id.",
+        "type": "integer"
+      },
+      "origin": {
+        "description": "reflective or reactive.",
+        "enum": [
+          "reflective",
+          "reactive"
+        ],
+        "type": "string"
+      },
+      "owner": {
+        "description": "Owner role: any agent or human the roles door lists.",
+        "namesRole": "peer",
+        "type": "string"
+      },
+      "priority": {
+        "description": "P1, P2 or P3.",
+        "enum": [
+          "P1",
+          "P2",
+          "P3"
+        ],
+        "type": "string"
+      },
+      "sequence": {
+        "description": "Sequence label value.",
+        "type": "string"
+      },
+      "subproduct": {
+        "description": "Subproduct label.",
+        "type": "string"
+      },
+      "title": {
+        "description": "Card title.",
+        "type": "string"
+      },
+      "type": {
+        "description": "new, enhance, fix, chore or swat.",
+        "type": "string"
+      }
+    },
+    "required": [
+      "id"
+    ],
+    "type": "object"
+  },
+  "CardsViewInput": {
+    "additionalProperties": false,
+    "properties": {
+      "id": {
+        "description": "Card id.",
+        "type": "integer"
+      }
+    },
+    "required": [
+      "id"
+    ],
+    "type": "object"
+  },
+  "FlowReportInput": {
+    "additionalProperties": false,
+    "properties": {
+      "hours": {
+        "description": "Hours back, 1 to 720. Default 120.",
+        "type": "integer"
+      }
+    },
+    "required": [],
+    "type": "object"
+  },
+  "GembaInput": {
+    "additionalProperties": false,
+    "properties": {
+      "target": {
+        "description": "The role to watch. You are the watcher.",
+        "namesRole": "agent",
+        "type": "string"
+      }
+    },
+    "required": [
+      "target"
+    ],
+    "type": "object"
+  },
   "HeraldRunInput": {
     "additionalProperties": false,
     "properties": {
@@ -44,6 +282,158 @@
     },
     "required": [
       "sensor"
+    ],
+    "type": "object"
+  },
+  "LogsCardInput": {
+    "additionalProperties": false,
+    "properties": {
+      "card_id": {
+        "description": "The card number.",
+        "type": "integer"
+      },
+      "time_window": {
+        "description": "How far back. Default 1d.",
+        "enum": [
+          "5m",
+          "15m",
+          "1h",
+          "6h",
+          "1d",
+          "7d"
+        ],
+        "type": "string"
+      }
+    },
+    "required": [
+      "card_id"
+    ],
+    "type": "object"
+  },
+  "LogsErrorsInput": {
+    "additionalProperties": false,
+    "properties": {
+      "role": {
+        "description": "Only this role's errors. Default every role.",
+        "namesRole": "peer",
+        "type": "string"
+      },
+      "time_window": {
+        "description": "How far back. Default 1h.",
+        "enum": [
+          "5m",
+          "15m",
+          "1h",
+          "6h",
+          "1d",
+          "7d"
+        ],
+        "type": "string"
+      }
+    },
+    "required": [],
+    "type": "object"
+  },
+  "LogsTraceInput": {
+    "additionalProperties": false,
+    "properties": {
+      "time_window": {
+        "description": "How far back. Default 1d.",
+        "enum": [
+          "5m",
+          "15m",
+          "1h",
+          "6h",
+          "1d",
+          "7d"
+        ],
+        "type": "string"
+      },
+      "trace_id": {
+        "description": "The trace id.",
+        "type": "string"
+      }
+    },
+    "required": [
+      "trace_id"
+    ],
+    "type": "object"
+  },
+  "NudgeMessageInput": {
+    "additionalProperties": false,
+    "properties": {
+      "expects": {
+        "description": "What you need back. Default none. reply, decision or action make the recipient owe you an answer; use sparingly.",
+        "enum": [
+          "none",
+          "reply",
+          "decision",
+          "action"
+        ],
+        "type": "string"
+      },
+      "message": {
+        "description": "Message text the recipient sees. Nudges cap at 50 words; fenced blocks, inline code and URLs do not count.",
+        "type": "string"
+      },
+      "to": {
+        "description": "Recipient — an agent role (silas, wren, kade, abby-normal) or the human (jeff), as the roles door lists them.",
+        "pattern": "^[a-z][a-z0-9-]*$",
+        "type": "string"
+      }
+    },
+    "required": [
+      "to",
+      "message"
+    ],
+    "type": "object"
+  },
+  "PainRollupInput": {
+    "additionalProperties": false,
+    "properties": {
+      "window": {
+        "description": "How far back, e.g. 1d, 7d, 30d. Default 7d; a window the route cannot read is refused by it.",
+        "type": "string"
+      }
+    },
+    "required": [],
+    "type": "object"
+  },
+  "PipelineStartInput": {
+    "additionalProperties": false,
+    "properties": {
+      "card": {
+        "description": "The card number. Its werk holds the generated workflow.",
+        "type": "integer"
+      }
+    },
+    "required": [
+      "card"
+    ],
+    "type": "object"
+  },
+  "RoleReadInput": {
+    "additionalProperties": false,
+    "properties": {
+      "role": {
+        "description": "The role to read for. Defaults to you.",
+        "namesRole": "peer",
+        "type": "string"
+      }
+    },
+    "required": [],
+    "type": "object"
+  },
+  "ServiceInput": {
+    "additionalProperties": false,
+    "properties": {
+      "service": {
+        "description": "Service or crate name, e.g. chorus-api, chorus-hooks, com.chorus.api.",
+        "type": "string"
+      }
+    },
+    "required": [
+      "service"
     ],
     "type": "object"
   },

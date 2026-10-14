@@ -20,7 +20,9 @@ chorus:PingInput a sh:NodeShape , chorus:ToolInput ;
                   sh:in ( "a" "b" ) ; sh:description "Which host." ] ;
     sh:property [ sh:path chorus:times ; sh:maxCount 1 ; sh:datatype xsd:integer ; sh:order 2 ; sh:name "times" ] ;
     sh:property [ sh:path chorus:quiet ; sh:maxCount 1 ; sh:datatype xsd:boolean ; sh:order 3 ; sh:name "quiet" ] ;
-    sh:property [ sh:path chorus:extra ; sh:datatype xsd:string ; sh:order 4 ; sh:name "extra" ] .
+    sh:property [ sh:path chorus:extra ; sh:datatype xsd:string ; sh:order 4 ; sh:name "extra" ] ;
+    sh:property [ sh:path chorus:owner ; sh:maxCount 1 ; sh:datatype xsd:string ; sh:order 5 ; sh:name "owner" ; chorus:namesRole "peer" ] ;
+    sh:property [ sh:path chorus:slug ; sh:maxCount 1 ; sh:datatype xsd:string ; sh:order 6 ; sh:name "slug" ; sh:pattern "^[a-z][a-z0-9-]*$" ] .
 # A class shape: a door collection, never a tool input.
 chorus:WidgetShape a sh:NodeShape ; sh:targetClass chorus:Widget ;
     sh:property [ sh:path chorus:size ; sh:datatype xsd:integer ] .
@@ -76,5 +78,27 @@ fn the_runners_table_is_what_the_generator_writes_today() {
     let want = athena_gen::emit::tool_inputs_json(&athena_gen::model::tool_inputs(&store).unwrap());
     let have = std::fs::read_to_string(root.join("platform/services/chorus-runner/src/tool_inputs.json")).unwrap();
     assert_eq!(have, want, "regenerate: athena-gen tool-inputs --root . --out platform/services/chorus-runner/src/tool_inputs.json");
-    assert!(want.contains("HeraldRunInput"), "herald_run's input is in the model");
+    assert!(want.contains("HeraldRunInput"), "borg-tend-herald's input is in the model");
+}
+
+/// #4515 — `chorus:namesRole` reaches the runner's table, so the runner can
+/// refuse a role the door does not list. NEGATIVE PROOF: an unmarked field
+/// carries no namesRole, so it is never checked as a role.
+#[test]
+fn a_role_field_says_so_and_no_other_field_does() {
+    let v: serde_json::Value = serde_json::from_str(&athena_gen::emit::tool_inputs_json(&fixture_inputs())).unwrap();
+    let p = &v["PingInput"]["properties"];
+    assert_eq!(p["owner"]["namesRole"], "peer");
+    assert!(p["host"].get("namesRole").is_none(), "an unmarked field was marked a role");
+}
+
+/// #4515 — sh:pattern reaches the runner's table (athena-gen dropped it, so
+/// the nudge recipient's pattern was never checked). NEGATIVE PROOF: a field
+/// with no sh:pattern carries none.
+#[test]
+fn a_pattern_on_the_shape_reaches_the_table_and_no_other_field_gets_one() {
+    let v: serde_json::Value = serde_json::from_str(&athena_gen::emit::tool_inputs_json(&fixture_inputs())).unwrap();
+    let p = &v["PingInput"]["properties"];
+    assert_eq!(p["slug"]["pattern"], "^[a-z][a-z0-9-]*$");
+    assert!(p["host"].get("pattern").is_none(), "a field with no sh:pattern got one");
 }

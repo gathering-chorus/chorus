@@ -15,3 +15,17 @@ fn the_callers_slot_wins_and_another_roles_slot_is_never_used() {
     assert!(!binary_path("werk-build", "kade").contains("wren-bin"), "kade ran wren's slot");
     assert!(!binary_path("werk-build", "").contains("-bin/"), "no caller picked a slot");
 }
+
+/// #4515 — the runner's launchd PATH has ~/.chorus/bin but not the scripts, so a
+/// row naming a script (cards, agent-state.sh) runs Chorus's own copy.
+/// NEGATIVE PROOF: a name that is neither installed nor a Chorus script is
+/// left bare, never guessed into a path.
+#[test]
+fn a_script_row_runs_chorus_own_script_and_an_unknown_name_stays_bare() {
+    let home = std::env::temp_dir().join(format!("chorus-home-4515-{}", std::process::id()));
+    std::fs::create_dir_all(home.join("platform/scripts")).unwrap();
+    std::fs::write(home.join("platform/scripts/agent-state.sh"), "#!/bin/sh\n").unwrap();
+    std::env::set_var("CHORUS_HOME", &home);
+    assert_eq!(binary_path("agent-state.sh", ""), home.join("platform/scripts/agent-state.sh").display().to_string());
+    assert_eq!(binary_path("no-such-tool-4515", ""), "no-such-tool-4515");
+}

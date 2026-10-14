@@ -27,8 +27,6 @@ mod chorus_log;
 mod process;
 #[path = "ops.rs"]
 mod ops;
-#[path = "mcp_client.rs"]
-mod mcp_client;
 pub mod shared;
 mod commands;
 
@@ -436,6 +434,8 @@ fn main() -> ExitCode {
         // #4426 — the boot transcript read, without replaying a flagged conversation.
         "boot-read" => return commands::context_cache::boot_read(&args),
         "heartbeat" => return heartbeat_cmd(),
+        // #4515 — clearing-nudge's Skill row runs this, as the verified caller.
+        "nudge-send" => return nudge_send_cmd(&args),
 
         // #2435 — "inject" subcommand retired alongside inject_by_tab_name.
         // Nudge delivery is the spine-tick-poller reading chorus.log; callers
@@ -483,7 +483,7 @@ fn main() -> ExitCode {
             "chorus-hook-shim: unknown subcommand '{}' — not a verb and not a hook endpoint.\n\
              Hook endpoints: {}\n\
              (retired verbs stay gone on purpose; `nudge` left in #2804 — agents send \
-             nudges via the chorus_nudge_message MCP tool)",
+             nudges via the clearing-nudge MCP tool)",
             endpoint,
             HOOK_ENDPOINTS.join(", ")
         );
@@ -997,6 +997,16 @@ CREATE INDEX IF NOT EXISTS idx_messages_session ON messages(session_id);
 
 
 /// Wall clock in Boston timezone — replaces wall-clock.sh (#1621)
+fn nudge_send_cmd(args: &[String]) -> ExitCode {
+    let spine = |event: &str, role: &str, payload: &str| {
+        let _ = chorus_log::run_silent(&[event.to_string(), role.to_string(), format!("payload={payload}")]);
+    };
+    match chorus_hooks::nudge_send::send(args, &chorus_hooks::nudge_send::Deps::from_env(&spine)) {
+        Ok(line) => { println!("{line}"); ExitCode::SUCCESS }
+        Err(why) => { println!("{why}"); eprintln!("{why}"); ExitCode::from(1) }
+    }
+}
+
 fn wall_clock_cmd() -> ExitCode {
     let args: Vec<String> = std::env::args().skip(1).collect();
     // Skip "wall-clock" if passed as subcommand (vs argv[0] dispatch)

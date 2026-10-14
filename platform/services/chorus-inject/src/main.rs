@@ -32,7 +32,7 @@ fn main() -> ExitCode {
             "chorus-inject: not-canonical-caller. \
              This binary is the pulse worker's delivery primitive — direct \
              invocation is no longer supported. To send a nudge, use the \
-             chorus_nudge_message MCP tool from a Claude session."
+             clearing-nudge MCP tool from a Claude session."
         );
         return ExitCode::from(2);
     }

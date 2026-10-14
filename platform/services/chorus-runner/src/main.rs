@@ -1,5 +1,6 @@
-//! #4512 — chorus-runner: the Services tool runner core, beside the old
-//! platform/mcp-server (:3341). Binds 127.0.0.1:3342 (CHORUS_RUNNER_PORT).
+//! #4512 — chorus-runner: the Services tool runner core. Since #4515 it is
+//! the only MCP server (the old TypeScript one is retired). Binds
+//! 127.0.0.1:3342 (CHORUS_RUNNER_PORT).
 
 use std::process::Command;
 use std::sync::{Arc, RwLock};
@@ -67,6 +68,18 @@ fn main() {
         };
         std::process::exit(code);
     }
+    // #4515 — `chorus-runner stdio`: the same tools over stdin/stdout, for a
+    // client that cannot renew an HTTP credential (Abby's Gemini: its headers
+    // are fixed at launch and a credential lives 10 minutes). A client process,
+    // so no lifecycle events; stdout is the protocol, every log goes to stderr.
+    if a.get(1).map(String::as_str) == Some("stdio") {
+        let runtime = tokio::runtime::Builder::new_multi_thread().enable_all().build().expect("runtime");
+        if let Err(reason) = runtime.block_on(serve_stdio()) {
+            eprintln!("chorus-runner stdio: {reason}");
+            std::process::exit(1);
+        }
+        return;
+    }
     // Before the runtime starts any thread: they inherit the blocked stop signals.
     let label = service_label();
     let pid = std::process::id();
@@ -82,6 +95,40 @@ fn main() {
         emit_lifecycle(service_lifecycle::failed_event(&label, pid, &reason, 1));
         std::process::exit(1);
     }
+}
+
+/// #4515 — who a stdio runner serves: the role named in ROLE/CHORUS_ROLE,
+/// proven by minting its credential as this process's own account (#4202:
+/// a credential is usable only by the account it is bound to) and verifying
+/// it with the gate's own verifier. Refuses to start otherwise.
+async fn serve_stdio() -> Result<(), String> {
+    use rmcp::ServiceExt;
+    let role = std::env::var("ROLE").or_else(|_| std::env::var("CHORUS_ROLE")).unwrap_or_default();
+    if role.is_empty() {
+        return Err("no ROLE to serve as; nothing runs as nobody".into());
+    }
+    let r = role.clone();
+    let token = tokio::task::spawn_blocking(move || chorus_runner::server::identity_token(&r)).await.ok().flatten()
+        .ok_or_else(|| format!("could not mint {role}'s credential as this account"))?;
+    let verifier = Arc::new(tokio::task::spawn_blocking(build_verifier).await.expect("verifier"));
+    let v = verifier.clone();
+    let caller = tokio::task::spawn_blocking(move || chorus_runner::authenticate(Some(&format!("Bearer {token}")), &v, now_secs()))
+        .await
+        .map_err(|e| format!("verifier failed: {e}"))?
+        .map_err(|r| format!("{role}'s credential did not verify: {}", r.reason))?;
+    if chorus_runner::skills::bare(&caller.0) != chorus_runner::skills::bare(&role) {
+        return Err(format!("the credential verified as {}, not {role}", caller.0));
+    }
+    let collections = Arc::new(RwLock::new(Vec::new()));
+    {
+        let c = collections.clone();
+        tokio::task::spawn_blocking(move || refresh_collections(&c)).await.ok();
+    }
+    let runner = chorus_runner::server::Runner { collections, skills: Arc::new(RwLock::new(Vec::new())), stdio_caller: Some(caller.0.clone()) };
+    eprintln!("chorus-runner stdio: serving as {}", caller.0);
+    let service = runner.serve(rmcp::transport::stdio()).await.map_err(|e| format!("stdio: {e}"))?;
+    service.waiting().await.map_err(|e| format!("stdio: {e}"))?;
+    Ok(())
 }
 
 async fn serve() -> Result<(), String> {

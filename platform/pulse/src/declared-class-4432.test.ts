@@ -14,7 +14,8 @@ async function classOf(from: string, declared?: string): Promise<string> {
   const store = new MessageStore(':memory:');
   process.env.PULSE_ALLOW_DIRECT_POST = '1';
   const res = await request(createApp(store)).post('/api/nudge').send({ from, to: 'silas', content: `x ${from} ${declared}`, class: declared, expects: 'reply' });
-  expect(res.status).toBe(200);
+  // #4515 — a 404 once in the card lane, never here: the body names which refusal it was.
+  expect({ status: res.status, body: res.body }).toMatchObject({ status: 200 });
   const db = (store as unknown as { db: { prepare(q: string): { get(id: number): { nudge_class: string } } } }).db;
   return db.prepare('SELECT nudge_class FROM messages WHERE id = ?').get(res.body.id as number).nudge_class;
 }

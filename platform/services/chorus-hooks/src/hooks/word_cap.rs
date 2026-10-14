@@ -29,6 +29,13 @@ use std::time::{Duration, Instant};
 /// cannot be read or holds a refusable value.
 pub const FAIL_OPEN_CAP: u32 = 100;
 
+/// #4515 — the two caps are two acts (word-cap.ts, #3818 AC2): a response is
+/// Jeff reading an answer; a nudge is one role asking another for one thing,
+/// which caps tighter. Two property keys, two fail-open values.
+pub const CAP_KEY_RESPONSE: &str = "response.word.cap";
+pub const CAP_KEY_NUDGE: &str = "nudge.word.cap";
+pub const FAIL_OPEN_NUDGE_CAP: u32 = 50;
+
 /// How long a resolved cap is trusted. Long enough that the store is not on
 /// the hot path of every turn; short enough that Jeff editing the property
 /// takes effect while he is still thinking about it. (TS: CAP_TTL_MS.)
@@ -107,6 +114,7 @@ fn strip_urls(text: &str) -> String {
 
 struct CacheEntry {
     role: String,
+    key: &'static str,
     cap: u32,
     at: Instant,
 }
@@ -120,15 +128,22 @@ static CAP_CACHE: Mutex<Vec<CacheEntry>> = Mutex::new(Vec::new());
 /// FAIL-OPEN on every failure path; only a successful, positive value is
 /// cached (an outage is retried next turn, never remembered as a cap).
 pub fn resolve_cap(role: &str, api_base: &str) -> u32 {
+    resolve_cap_for(role, api_base, CAP_KEY_RESPONSE)
+}
+
+/// The cap for one key: the response cap or the nudge cap, each fail-open to
+/// its own value.
+pub fn resolve_cap_for(role: &str, api_base: &str, key: &'static str) -> u32 {
+    let fail_open = if key == CAP_KEY_NUDGE { FAIL_OPEN_NUDGE_CAP } else { FAIL_OPEN_CAP };
     if let Ok(cache) = CAP_CACHE.lock() {
-        if let Some(hit) = cache.iter().find(|e| e.role == role) {
+        if let Some(hit) = cache.iter().find(|e| e.role == role && e.key == key) {
             if hit.at.elapsed() < CAP_TTL {
                 return hit.cap;
             }
         }
     }
     let url = format!(
-        "{api_base}/api/chorus/properties/resolve?key=response.word.cap&scope=role&name={role}"
+        "{api_base}/api/chorus/properties/resolve?key={key}&scope=role&name={role}"
     );
     let cap = match ureq::get(&url).timeout(Duration::from_millis(1500)).call() {
         Ok(resp) => match resp.into_json::<serde_json::Value>() {
@@ -155,12 +170,12 @@ pub fn resolve_cap(role: &str, api_base: &str) -> u32 {
     match cap {
         Some(cap) => {
             if let Ok(mut cache) = CAP_CACHE.lock() {
-                cache.retain(|e| e.role != role);
-                cache.push(CacheEntry { role: role.to_string(), cap, at: Instant::now() });
+                cache.retain(|e| !(e.role == role && e.key == key));
+                cache.push(CacheEntry { role: role.to_string(), key, cap, at: Instant::now() });
             }
             cap
         }
-        None => FAIL_OPEN_CAP,
+        None => fail_open,
     }
 }
 

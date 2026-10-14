@@ -64,7 +64,7 @@ describe('#3485 pulse caller-check (shared-secret, supersedes #2804 presence-gat
         .send({ from: 'k', to: 'w', content: 'hi' });
       expect(res.status).toBe(403);
       expect(res.body.error).toBe('not-canonical-caller');
-      expect(res.body.message).toMatch(/chorus_nudge_message MCP/);
+      expect(res.body.message).toMatch(/clearing-nudge MCP/);
     } finally {
       process.env.PULSE_ALLOW_DIRECT_POST = '1';
     }
@@ -413,9 +413,12 @@ describe('#2766 E2E — pulse-owns-delivery lifecycle', () => {
     expect(MessageStore.prototype.getDeliveryRecord).toBeDefined();
     const { app, store } = freshWithWorker([{ rc: 0, stderr: '' }]);
     const r1 = await request(app).post('/api/nudge').send({ from: 'k', to: 'w', content: 'a', traceId: 'body-trace' });
+    // #4515 — failed twice in the card lane with id=undefined and never here; the status and body name which refusal it was.
+    expect({ status: r1.status, body: r1.body }).toMatchObject({ status: 200, body: { ok: true } });
     await waitForState(store, r1.body.id, 'delivered');
     expect(store.getDeliveryRecord(r1.body.id).trace_id).toBe('body-trace');
     const r2 = await request(app).post('/api/nudge').send({ from: 'k', to: 'w', content: 'b' });
+    expect({ status: r2.status, body: r2.body }).toMatchObject({ status: 200, body: { ok: true } });
     await waitForState(store, r2.body.id, 'delivered');
     expect(store.getDeliveryRecord(r2.body.id).trace_id).toBeNull();
   });

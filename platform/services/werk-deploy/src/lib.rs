@@ -1266,42 +1266,10 @@ pub fn canonical_ff_sync(root: &str) -> R<()> {
         .map_err(|e| format!("ff to origin/main failed; run 'werk-sync recover': {}", e))
 }
 
-/// #2997 port — did the MCP daemon answer a real JSON-RPC initialize as a valid
-/// server? The SSE body must carry `protocolVersion` inside a `result` (not an
-/// error wrapper, not a generic 200 from the wrong handler). Pure half.
-pub fn mcp_init_ready(body: &str) -> bool {
-    body.lines().any(|l| {
-        let l = l.trim();
-        l.starts_with("data:") && l.contains("\"result\"") && l.contains("\"protocolVersion\"")
-    })
-}
-
 fn smoke_timeout() -> Duration {
     Duration::from_secs(
         env::var("CHORUS_MCP_SMOKE_TIMEOUT_S").ok().and_then(|s| s.parse().ok()).unwrap_or(30),
     )
-}
-
-/// Poll a real MCP initialize until the daemon answers as a valid server (#2993/#2997).
-fn wait_for_mcp_ready(url: &str) -> R<()> {
-    let body = r#"{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"2024-11-05","capabilities":{},"clientInfo":{"name":"werk-deploy-smoke","version":"1.0"}}}"#;
-    let deadline = Instant::now() + smoke_timeout();
-    loop {
-        if let Ok(out) = Command::new("curl")
-            .args(["-s", "-m", "2", "-X", "POST", url,
-                   "-H", "Accept: application/json, text/event-stream",
-                   "-H", "Content-Type: application/json", "-d", body])
-            .output()
-        {
-            if mcp_init_ready(&String::from_utf8_lossy(&out.stdout)) {
-                return Ok(());
-            }
-        }
-        if Instant::now() >= deadline {
-            return Err(format!("MCP smoke at {} timed out after {:?}", url, smoke_timeout()));
-        }
-        sleep(Duration::from_millis(250));
-    }
 }
 
 /// #3375 — is this health body healthy? Pure half of the TS health smoke.
@@ -1400,39 +1368,31 @@ fn wait_for_service_up(svc: &str) -> R<()> {
     Ok(())
 }
 
-/// The two TS daemons bash chorus-deploy special-cased: (dir_rel, launchd svc,
-/// default smoke URL, smoke kind). They live OUTSIDE platform/services/ and are
+/// The TS daemons bash chorus-deploy special-cased: (dir_rel, launchd svc,
+/// default health URL). #4515 — the old TS MCP server (chorus-mcp) is retired;
+/// a diff deleting it must not route a deploy to its gone dir. They live OUTSIDE platform/services/ and are
 /// npm-built in place (no dist copy) — the canonical deploy builds them FROM
 /// canonical, mirroring the bash branches 1:1.
-fn ts_daemon(name: &str) -> Option<(&'static str, &'static str, String, bool)> {
+fn ts_daemon(name: &str) -> Option<(&'static str, &'static str, String)> {
     match name {
         "chorus-api" => Some((
             "platform/api",
             "com.chorus.api",
             env::var("CHORUS_API_HEALTH_URL").unwrap_or_else(|_| "http://localhost:3340/api/chorus/health".to_string()),
-            false, // health-check smoke
-        )),
-        "chorus-mcp" => Some((
-            "platform/mcp-server",
-            "com.chorus.mcp",
-            env::var("CHORUS_MCP_DAEMON_SMOKE_URL").unwrap_or_else(|_| "http://localhost:3341/mcp".to_string()),
-            true, // MCP-initialize smoke
         )),
         // #3352 — pulse + clearing were INVISIBLE to deploy discovery (Kade's specimen:
         // #3357's land reported deploy-success while the running pulse stayed stale;
         // the whole 2026-06-11 misdelivery fix needed a hand rebuild + kickstart).
-        // Same native TS-daemon path as api/mcp: npm-built in place, kickstart, smoke.
+        // Same native TS-daemon path as api: npm-built in place, kickstart, smoke.
         "pulse" => Some((
             "platform/pulse",
             "com.chorus.pulse",
             env::var("CHORUS_PULSE_HEALTH_URL").unwrap_or_else(|_| "http://localhost:3475/health".to_string()),
-            false, // health-check smoke
         )),
         "clearing" => Some((
             "directing/clearing",
             "com.chorus.clearing",
             env::var("CHORUS_CLEARING_HEALTH_URL").unwrap_or_else(|_| "http://localhost:3470/health".to_string()),
-            false, // health-check smoke
         )),
         _ => None,
     }
@@ -1523,98 +1483,8 @@ fn restart_when_idle(args: &[String]) -> R<String> {
     Err(format!("{} not restarted: dagu was never idle in 6h — restart it by hand when no run is running", label).into())
 }
 
-/// #3320 — the self-deploy case: deploying chorus-mcp FROM chorus-mcp. The inline
-/// kickstart would kill the invoking daemon mid-call — the deploy completes but the
-/// caller's MCP response drops (the transport-drop class). Fires ONLY for that exact
-/// pair, and never for the detached continuation itself (no respawn loop). Pure half.
-pub fn self_deploy_detach_needed(unit: &str, invoker: Option<&str>, already_detached: bool) -> bool {
-    unit == "chorus-mcp" && invoker == Some("chorus-mcp") && !already_detached
-}
-
-/// #3320 — argv for the detached continuation: a crate-mode redeploy of the ONE unit
-/// (the same standalone surface operators use), rollback flag preserved. Pure half.
-pub fn detach_argv(unit: &str, rollback: bool) -> Vec<String> {
-    let mut v = vec!["crate".to_string(), unit.to_string()];
-    if rollback {
-        v.push("--rollback".to_string());
-    }
-    v
-}
-
-/// #3320 — is this result the detach ack (not a completed deploy)? Callers must NOT
-/// emit deploy.completed for an ack — the detached child emits the real one when it
-/// finishes. House style: stringly result, marker-checked (like reason= refusals).
-pub fn is_detached_ack(s: &str) -> bool {
-    s.contains("deploy detached pid=")
-}
-
-/// #3320 — spawn the detached continuation and ack immediately. The child is its own
-/// process group (survives the parent chorus-mcp's kickstart), runs the normal
-/// crate-mode path with CHORUS_DETACHED=1 (so detection won't re-fire) and the SAME
-/// trace id, and emits the usual deploy.completed — that spine event is the caller's
-/// poll handle. Output goes to <home>/ops/logs/werk-deploy-detached.log. The npm build
-/// in the child (seconds) is the grace window that lets this ack reach the caller
-/// before the kickstart lands.
-fn detach_self_deploy(
-    home: &Path, role: &str, card: u64, trace: &str, name: &str, rollback: bool,
-) -> R<String> {
-    use std::os::unix::process::CommandExt;
-    let exe = match env::var("WERK_DEPLOY_SELF_BIN") {
-        Ok(p) if !p.trim().is_empty() => PathBuf::from(p),
-        _ => env::current_exe().map_err(|e| format!("current_exe for detach failed: {}", e))?,
-    };
-    let log_dir = home.join("ops/logs");
-    let _ = fs::create_dir_all(&log_dir);
-    let log = OpenOptions::new()
-        .create(true)
-        .append(true)
-        .open(log_dir.join("werk-deploy-detached.log"))
-        .map_err(|e| format!("detached log open failed: {}", e))?;
-    let err_log = log.try_clone().map_err(|e| format!("detached log clone failed: {}", e))?;
-    // #3323 — the detached child loses the user security session, so its gh keyring
-    // auth 401s (broke werk-pull/werk-merge team-wide after every self-deploy). The
-    // PARENT still has keychain access: capture `gh auth token` here and inject
-    // GH_TOKEN into the child's env — scoped to process env, never written to disk
-    // or logs. Capture failure is NON-FATAL but witnessed: a gh-less child is
-    // strictly better than no deploy.
-    let gh_token = Command::new("gh")
-        .args(["auth", "token"])
-        .output()
-        .ok()
-        .filter(|o| o.status.success())
-        .map(|o| String::from_utf8_lossy(&o.stdout).trim().to_string())
-        .filter(|t| !t.is_empty());
-    if gh_token.is_none() {
-        jsonl(home, role, card, trace, "gh-token-capture.failed",
-            &format!("{},\"detail\":\"parent could not capture gh auth token; detached child runs gh-less\"", fail_extra("gh-token-capture-failed")));
-        emit_spine(home, "deploy.detach.warn", role, card, trace,
-            &[("crate", name), ("reason", "gh-token-capture-failed"), ("failureClass", failure_class("gh-token-capture-failed"))]);
-    }
-    let mut cmd = Command::new(&exe);
-    cmd.args(detach_argv(name, rollback))
-        .env("CHORUS_DETACHED", "1")
-        .env("CHORUS_TRACE_ID", trace)
-        .env("DEPLOY_ROLE", role)
-        .env("CHORUS_ROLE", role)
-        .stdin(std::process::Stdio::null())
-        .stdout(log)
-        .stderr(err_log)
-        .process_group(0);
-    if let Some(t) = &gh_token {
-        cmd.env("GH_TOKEN", t);
-    }
-    let child = cmd
-        .spawn()
-        .map_err(|e| format!("detached self-deploy spawn failed: {}", e))?;
-    let pid = child.id().to_string();
-    emit_spine(home, "deploy.detached", role, card, trace, &[("crate", name), ("pid", &pid)]);
-    jsonl(home, role, card, trace, "deploy.detached",
-        &format!(",\"name\":\"{}\",\"kind\":\"ts-daemon\",\"pid\":{},\"rollback\":{}", name, pid, rollback));
-    Ok(format!(
-        "{} deploy detached pid={} — survives its own kickstart; poll spine deploy.completed trace={}",
-        name, pid, trace
-    ))
-}
+// #4515 — the #3320 self-deploy detach is gone: it fired only when the old TS
+// MCP server deployed itself, and that server is retired.
 
 /// #4511 — the packages a TS daemon runs are the ones its lockfile pins. The
 /// deploy only ever ran `npm run build`, so a lock change (the 1.31.0 MCP SDK
@@ -1666,23 +1536,14 @@ fn npm_bin() -> String {
     env::var("CHORUS_NPM").unwrap_or_else(|_| "npm".to_string())
 }
 
-/// #3317 — native canonical deploy of a TS daemon (chorus-api / chorus-mcp), the
+/// #3317 — native canonical deploy of a TS daemon (chorus-api / pulse / clearing), the
 /// bash branches ported: preserve dist→dist.prev, npm-build IN canonical, kickstart
 /// (warn-only, like bash), smoke-gate deploy.completed, restore dist.prev on build
 /// fail. `rollback=true` restores dist.prev + kickstart + smoke instead.
 fn deploy_ts_daemon_canonical(
     home: &Path, role: &str, card: u64, trace: &str, name: &str, rollback_mode: bool,
 ) -> R<String> {
-    // #3320 — mcp-from-mcp would kill its own caller at kickstart; hand off to the
-    // detached continuation and ack now, while the transport is still alive.
-    if self_deploy_detach_needed(
-        name,
-        env::var("CHORUS_INVOKER").ok().as_deref(),
-        env::var("CHORUS_DETACHED").is_ok(),
-    ) {
-        return detach_self_deploy(home, role, card, trace, name, rollback_mode);
-    }
-    let (dir_rel, svc, smoke_url, is_mcp) =
+    let (dir_rel, svc, smoke_url) =
         ts_daemon(name).ok_or_else(|| format!("{} is not a TS daemon", name))?;
     let root = canonical_root_path(home);
     let dir = format!("{}/{}", root, dir_rel);
@@ -1692,7 +1553,7 @@ fn deploy_ts_daemon_canonical(
         return Err(died(home, role, card, trace, "dir-not-found", format!("{} dir not found at {}", name, dir)));
     }
     let kickstart = || run_env(None, &[], "launchctl", &["kickstart", "-k", &format!("gui/{}/{}", uid(), svc)]);
-    let smoke = || if is_mcp { wait_for_mcp_ready(&smoke_url) } else { wait_for_api_healthy(&smoke_url) };
+    let smoke = || wait_for_api_healthy(&smoke_url);
 
     if rollback_mode {
         if !Path::new(&prev).is_dir() {
@@ -1751,12 +1612,7 @@ fn deploy_crate_canonical(home: &Path, role: &str, card: u64, trace: &str, name:
     let root = canonical_root_path(home);
     let artifact_class;
     if ts_daemon(name).is_some() {
-        let out = deploy_ts_daemon_canonical(home, role, card, trace, name, false)?;
-        // #3320 — a detach ack is NOT a completed deploy: the detached child emits
-        // the real deploy.completed when it finishes. Return the ack as-is.
-        if is_detached_ack(&out) {
-            return Ok(out);
-        }
+        deploy_ts_daemon_canonical(home, role, card, trace, name, false)?;
         artifact_class = "ts-daemon";
     } else {
         let class = target_class_in(name, Path::new(&root))?;
@@ -1863,11 +1719,7 @@ fn run_crate_mode(args: &[String]) -> R<String> {
         return Ok(format!("{} rolled back target=canonical", name));
     }
     jsonl(&home, &role, card, &trace, "deploy.started", &format!(",\"target\":\"canonical\",\"mode\":\"crate\",\"crate\":\"{}\"", name));
-    let out = deploy_crate_canonical(&home, &role, card, &trace, &name)?;
-    // #3320 — detach ack: the detached child writes the real deploy.completed.
-    if is_detached_ack(&out) {
-        return Ok(out);
-    }
+    deploy_crate_canonical(&home, &role, card, &trace, &name)?;
     // Witness the standalone crate deploy in the jsonl (the in-flow path writes its own
     // whole-deploy deploy.completed in deploy_canonical; this is the crate-mode analogue).
     jsonl(&home, &role, card, &trace, "deploy.completed", &format!(",\"target\":\"canonical\",\"mode\":\"crate\",\"deployed\":\"{}\"", name));
@@ -2147,9 +1999,10 @@ pub fn partition_lib_only(root: &Path, crates: &[String]) -> (Vec<String>, Vec<S
     (deployable, lib_only)
 }
 
-/// #3243 — the card's changed TS SERVICES: chorus-mcp (`platform/mcp-server`) and chorus-api
-/// (`platform/api`). These live OUTSIDE `platform/services/`, so `changed_service_crates`
-/// misses them — the merged≠live hole that made #3239 (env-up forward) and #3241 (chorus_werk)
+/// #3243 — the card's changed TS SERVICES: chorus-api (`platform/api`), pulse and
+/// clearing. #4515 — the retired TS MCP server is no longer one.
+/// These live OUTSIDE `platform/services/`, so `changed_service_crates`
+/// misses them — the merged≠live hole that made #3239 (env-up forward) and #3241 (the old act pipeline tool)
 /// merge to main but stay un-deployed until a manual deploy. They are npm-built in place
 /// (dist + kickstart), NOT by `werk-build` (target/release), so deploy_canonical routes
 /// them to the native TS-daemon path (#3317) and skips the werk-build step.
@@ -2162,9 +2015,7 @@ pub fn changed_ts_services(diff: &str) -> Vec<String> {
     };
     for line in diff.lines() {
         let l = line.trim();
-        if l.starts_with("platform/mcp-server/") {
-            add("chorus-mcp");
-        } else if l.starts_with("platform/api/") {
+        if l.starts_with("platform/api/") {
             add("chorus-api");
         } else if l.starts_with("platform/pulse/") {
             // #3352 — see ts_daemon: pulse/clearing join the discovery so a merged
@@ -2322,7 +2173,7 @@ fn deploy_canonical(home: &Path, werk_s: &str, role: &str, card: u64, trace: &st
             &format!(",\"target\":\"canonical\",\"crate\":\"{}\",\"reason\":\"includes-a-changed-shared-file\"", c));
         crates.push(c);
     }
-    // #3243 — TS services (chorus-mcp at platform/mcp-server, chorus-api at platform/api) live
+    // #3243 — TS services (chorus-api at platform/api, pulse, clearing) live
     // OUTSIDE platform/services/, so changed_service_crates misses them. They are npm-built
     // in place by the native TS-daemon path (#3317), WITHOUT a werk-build step.
     let ts = changed_ts_services(&diff);
@@ -2448,12 +2299,10 @@ fn deploy_canonical(home: &Path, werk_s: &str, role: &str, card: u64, trace: &st
     let deployed: Vec<String> = crates.iter().chain(ts.iter()).cloned().collect();
     let mut labels: Vec<String> = Vec::new();
     for c in &deployed {
-        let out = deploy_crate_canonical(home, role, card, trace, c)
+        deploy_crate_canonical(home, role, card, trace, c)
             .map_err(|e| died(home, role, card, trace, "canonical-deploy-fail",
                 format!("canonical deploy of {} failed: {}", c, e)))?;
-        // #3320 — a detached unit is in flight, not deployed; label it honestly in the
-        // whole-deploy envelope (its own deploy.completed comes from the child).
-        labels.push(if is_detached_ack(&out) { format!("{}(detached)", c) } else { c.clone() });
+        labels.push(c.clone());
     }
     // #4446 — restart the always-on services running code this land changed. A
     // restart that fails names its service and fails the deploy (#4452 AC4).
@@ -2481,7 +2330,8 @@ fn deploy_canonical(home: &Path, werk_s: &str, role: &str, card: u64, trace: &st
     // (model) and #4096 (seed), restarting athena-make and seeding against it before
     // it answered: POST → 0 on six lands across #4175 and #4179. The model now runs as
     // .github/workflows/athena.yml (scope → validate → deploy → serve → prove),
-    // triggered by the land event in chorus-mcp's werk-merge case (#4177); the seed leg
+    // triggered by the land event in the old MCP server's werk-merge case (#4177; that
+    // server is retired by #4515); the seed leg
     // is gone (#4432: rows live in the store). This verb ships CODE only; it says so on
     // the spine when the diff carried model sources so the hand-off is witnessed.
     if !model_files.is_empty() {
@@ -2527,7 +2377,7 @@ fn summary(built: &[(String, String)]) -> String {
     built.iter().map(|(c, h)| format!("{}={}", c, h)).collect::<Vec<_>>().join(",")
 }
 
-/// #3092 — deploy a Rust SERVICE crate (chorus-hooks/inject/mcp).
+/// #3092 — deploy a Rust SERVICE crate (chorus-hooks/inject/runner).
 /// Existing pre-#3092 behavior, extracted: chorus-bin-install → kickstart →
 /// codesign cdhash verify running==built. The stale-build guard (cdhash-divergence
 /// refuse) fires only on canonical (where there's a running binary to compare).
@@ -2755,8 +2605,8 @@ fn deploy_ts_service(
     // REAL for chorus-api: the role's session resolves to its werk port (via
     // chorus-env-setup.sh's CHORUS_API_PORT marker check), so the role tests
     // its own code in isolation while canonical :3340 stays serving everyone
-    // else. The plist/marker/bootstrap logic lives in demo_env so chorus-mcp
-    // and chorus-api (and future TS services) share one substrate.
+    // else. The plist/marker/bootstrap logic lives in demo_env so chorus-api,
+    // clearing and the Rust variants share one substrate.
     //
     // dist_dir_rel and the per-service smoke URL are owned by demo_env::env_services,
     // not by this call site — that's the encapsulation point Jeff named.

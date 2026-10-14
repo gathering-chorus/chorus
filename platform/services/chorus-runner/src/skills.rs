@@ -3,7 +3,7 @@
 //! shape athena-gen generated (tool_inputs.json, never hand-written), what it
 //! runs comes from the row (implementedBy + an arguments template), and it
 //! runs as the Skill's owner with the caller recorded (Jeff 10-12, as the old
-//! herald_run did). Who may call it is authz: the owner and Jeff.
+//! borg-tend-herald did). Who may call it is authz: the owner and Jeff.
 
 use serde_json::{Map, Value};
 
@@ -28,11 +28,14 @@ pub struct SkillTool {
     pub runs_as: RunsAs,
     /// #4514 AC2 — start it as a Task and return a run id at once.
     pub long_running: bool,
+    /// #4515 — an "http" tool calls a route (implementedBy = "METHOD url") with
+    /// its checked arguments as the JSON body; a "deterministic" one runs a binary.
+    pub http: bool,
 }
 
 /// #4514 (Silas + Wren, 2026-10-13): a verb a role runs on its own card runs as
 /// the verified caller (werk-commit); a tool that acts with one principal's
-/// rights runs as its owner (herald-run). A row that says neither is refused.
+/// rights runs as its owner (borg-tend-herald). A row that says neither is refused.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum RunsAs {
     Caller,
@@ -64,7 +67,8 @@ pub fn skill_tools(rows: &[Value], inputs: &Map<String, Value>) -> (Vec<SkillToo
     let mut unmeasured = Vec::new();
     for row in rows {
         let shape = s(row, "inputShape");
-        if s(row, "executor") != "deterministic" || shape.is_empty() {
+        let executor = s(row, "executor");
+        if !matches!(executor, "deterministic" | "http") || shape.is_empty() {
             continue;
         }
         let name = s(row, "name").to_string();
@@ -77,6 +81,12 @@ pub fn skill_tools(rows: &[Value], inputs: &Map<String, Value>) -> (Vec<SkillToo
         if binary.is_empty() {
             unmeasured.push(Unmeasured { skill: name, reason: "names no binary (implementedBy)".into() });
             continue;
+        }
+        if executor == "http" {
+            if let Err(e) = http_target(binary, &Map::new()) {
+                unmeasured.push(Unmeasured { skill: name, reason: format!("implementedBy '{binary}': {e}") });
+                continue;
+            }
         }
         let runs_as = match s(row, "runsAs").rsplit(['#', '/', ':']).next().unwrap_or("") {
             "caller" => RunsAs::Caller,
@@ -96,6 +106,7 @@ pub fn skill_tools(rows: &[Value], inputs: &Map<String, Value>) -> (Vec<SkillToo
             schema: schema.clone(),
             runs_as,
             long_running: row.get("longRunning").is_some_and(|v| v.as_bool() == Some(true) || v.as_str() == Some("true")),
+            http: executor == "http",
         });
     }
     (tools, unmeasured)
@@ -200,6 +211,14 @@ pub fn check_args(args: &Map<String, Value>, schema: &Map<String, Value>) -> Res
                     return Err(format!("{k} must be one of {}", allowed.iter().filter_map(Value::as_str).collect::<Vec<_>>().join(", ")));
                 }
             }
+            // #4515 — the shape's sh:pattern: a value that does not match is refused
+            // by name; a pattern that is not a valid regex refuses too, never passes
+            if let Some(pat) = item_schema.get("pattern").and_then(Value::as_str) {
+                let re = regex::Regex::new(pat).map_err(|e| format!("{k} has a pattern that is not a regex ({pat}): {e}"))?;
+                if !re.is_match(it.as_str().unwrap_or_default()) {
+                    return Err(format!("{k} must match {pat}"));
+                }
+            }
         }
     }
     Ok(())
@@ -207,19 +226,30 @@ pub fn check_args(args: &Map<String, Value>, schema: &Map<String, Value>) -> Res
 
 fn render(tok: &str, args: &Map<String, Value>, caller: &str) -> Option<Vec<String>> {
     // Some(tokens) = emit them (a true boolean emits none); None = absent
-    let Some(name) = tok.strip_prefix('{').and_then(|t| t.strip_suffix('}')) else {
-        // #4514 — a placeholder inside a word (`--domain={domain}`, werk-test's
-        // only form): the word is kept only when the value is present
-        if let (Some(i), Some(j)) = (tok.find('{'), tok.find('}')) {
-            if i < j {
-                let inner = &tok[i + 1..j];
-                return match args.get(inner) {
-                    None | Some(Value::Null) | Some(Value::Bool(false)) | Some(Value::Array(_)) => None,
-                    Some(v) => Some(vec![format!("{}{}{}", &tok[..i], if inner == "caller" { caller.to_string() } else { v.as_str().map(String::from).unwrap_or_else(|| v.to_string()) }, &tok[j + 1..])]),
-                };
-            }
+    let whole = tok.strip_prefix('{').and_then(|t| t.strip_suffix('}')).filter(|n| !n.contains(['{', '}']));
+    let Some(name) = whole else {
+        // #4514 — placeholders inside a word (`--domain={domain}`, werk-test's
+        // only form; #4515 `{category}:{value}`, cards untag's): every one is
+        // filled, and the word is kept only when every value is present
+        let mut out = String::new();
+        let mut rest = tok;
+        while let (Some(i), Some(j)) = (rest.find('{'), rest.find('}')) {
+            if j < i { break; }
+            let inner = &rest[i + 1..j];
+            let value = if inner == "caller" {
+                caller.to_string()
+            } else {
+                match args.get(inner) {
+                    None | Some(Value::Null) | Some(Value::Bool(false)) | Some(Value::Array(_)) => return None,
+                    Some(v) => v.as_str().map(String::from).unwrap_or_else(|| v.to_string()),
+                }
+            };
+            out.push_str(&rest[..i]);
+            out.push_str(&value);
+            rest = &rest[j + 1..];
         }
-        return Some(vec![tok.to_string()]);
+        out.push_str(rest);
+        return Some(vec![out]);
     };
     if name == "caller" {
         return Some(vec![caller.to_string()]);
@@ -273,8 +303,8 @@ pub fn argv(template: &str, args: &Map<String, Value>, caller: &str) -> Vec<Stri
 }
 
 /// #4513 reopen 1 — the child runs as the Skill's owner: its identity token,
-/// and CHORUS_ROLE / DEPLOY_ROLE naming the owner, as the TS herald_run did.
-/// herald-run exits 2 without CHORUS_ROLE.
+/// and CHORUS_ROLE / DEPLOY_ROLE naming the owner, as the TS borg-tend-herald did.
+/// borg-tend-herald exits 2 without CHORUS_ROLE.
 pub fn child_env(owner: &str, token: &str, trace: &str) -> Vec<(&'static str, String)> {
     vec![
         ("CHORUS_IDENTITY_TOKEN", token.to_string()),
@@ -282,4 +312,95 @@ pub fn child_env(owner: &str, token: &str, trace: &str) -> Vec<(&'static str, St
         ("DEPLOY_ROLE", owner.to_string()),
         ("CHORUS_TRACE", trace.to_string()),
     ]
+}
+
+/// #4515 — an http tool's method and URL from its implementedBy ("POST
+/// http://127.0.0.1:3475/api/messages"), with `{name}` in the URL filled from
+/// the arguments. Only loopback is allowed: the runner never carries a
+/// caller's credential off the machine.
+pub fn http_target(implemented_by: &str, args: &Map<String, Value>) -> Result<(String, String), String> {
+    let (method, url) = implemented_by.split_once(' ').ok_or_else(|| format!("'{implemented_by}' is not METHOD url"))?;
+    if !matches!(method, "GET" | "POST" | "PUT" | "PATCH" | "DELETE") {
+        return Err(format!("'{method}' is not an HTTP method"));
+    }
+    // #4515 (Silas 21:33) — a route names one of the runner's own Chorus
+    // services, never an address: the caller's credential goes nowhere else
+    // (not Loki, not off the machine), and a demo runner reaches its werk's
+    // services because the base comes from its own settings.
+    let (service, rest) = url.split_once('}').filter(|(s, r)| s.starts_with('{') && r.starts_with('/')).ok_or_else(|| format!("{url} must start with {{api}}, {{door}} or {{pulse}}"))?;
+    let base = service_base(&service[1..]).ok_or_else(|| format!("{url} names {}}}, not one of {{api}}, {{door}}, {{pulse}}", service))?;
+    let mut out = rest.to_string();
+    while let (Some(i), Some(j)) = (out.find('{'), out.find('}')) {
+        if j < i {
+            break;
+        }
+        // `{name=default}` fills an optional argument the caller left out
+        let inner = out[i + 1..j].to_string();
+        let (k, default) = inner.split_once('=').map(|(k, d)| (k.to_string(), Some(d.to_string()))).unwrap_or((inner, None));
+        let given = args.get(&k).map(|v| v.as_str().map(String::from).unwrap_or_else(|| v.to_string())).unwrap_or_default();
+        // `{role=@caller}` defaults to the verified caller (clearing-wip, clearing-prioritize)
+        let fallback = match default.as_deref() {
+            Some("@caller") => args.get("caller").and_then(|v| v.as_str()).unwrap_or_default().to_string(),
+            other => other.unwrap_or_default().to_string(),
+        };
+        let v = if given.is_empty() { fallback } else { given };
+        if v.is_empty() && default.is_none() && !args.is_empty() {
+            return Err(format!("{k} is needed for {url}"));
+        }
+        let enc: String = v.bytes().map(|b| if b.is_ascii_alphanumeric() || b"-_.~".contains(&b) { (b as char).to_string() } else { format!("%{b:02X}") }).collect();
+        out.replace_range(i..=j, &enc);
+    }
+    Ok((method.to_string(), format!("{}{}", base.trim_end_matches('/'), out)))
+}
+
+/// The runner's own Chorus services, from its settings (env-up sets them per werk).
+pub fn service_base(name: &str) -> Option<String> {
+    let (var, dflt) = match name {
+        "api" => ("CHORUS_API_URL", "http://127.0.0.1:3340"),
+        "door" => ("CHORUS_DOOR", "http://127.0.0.1:3360"),
+        "pulse" => ("CHORUS_PULSE_URL", "http://127.0.0.1:3475"),
+        _ => return None,
+    };
+    Some(std::env::var(var).ok().filter(|v| !v.is_empty()).unwrap_or_else(|| dflt.to_string()))
+}
+
+/// #4515 — a tool argument that names a role (`chorus:namesRole` on its shape
+/// property, athena-gen's `namesRole` key) must be one the roles door lists:
+/// "agent" for a role that acts, "peer" for any agent or human (Jeff owns cards
+/// too). The old server checked `role`/`owner`/`target` by hand in every tool
+/// (roles-arg.ts); here the shape says which arguments are roles, once.
+/// Returns (argument, value, kind) for each role argument present in the call.
+pub fn role_args(args: &Map<String, Value>, schema: &Map<String, Value>) -> Vec<(String, String, String)> {
+    let props = schema.get("properties").and_then(Value::as_object).cloned().unwrap_or_default();
+    let mut out = Vec::new();
+    for (k, p) in props {
+        let Some(kind) = p.get("namesRole").and_then(Value::as_str) else { continue };
+        if let Some(v) = args.get(&k).and_then(Value::as_str).filter(|v| !v.is_empty()) {
+            out.push((k.clone(), v.to_string(), kind.to_string()));
+        }
+    }
+    out
+}
+
+/// The first role argument the roles door does not list, as a refusal; or
+/// None. `rows` is the door's `/v1/roles/roles` answer. Pure.
+pub fn role_refusal(checks: &[(String, String, String)], rows: &Value) -> Option<String> {
+    let Some(rows) = rows.get("data").and_then(Value::as_array) else {
+        return Some("the roles door answered with no data list; nothing ran".into());
+    };
+    let kind = |r: &Value| r.get("roleKind").and_then(Value::as_str).unwrap_or("").to_string();
+    let names = |want: &dyn Fn(&str) -> bool| {
+        let mut v: Vec<String> = rows.iter().filter(|r| want(&kind(r))).filter_map(|r| r.get("name").and_then(Value::as_str).map(String::from)).collect();
+        v.sort();
+        v
+    };
+    let agents = names(&|k| k == "agent");
+    let peers = names(&|k| k == "agent" || k == "human");
+    for (arg, value, k) in checks {
+        let allowed = if k == "agent" { &agents } else { &peers };
+        if !allowed.contains(&value.to_lowercase()) {
+            return Some(format!("Unknown {arg} '{value}' — the roles door lists {}", allowed.join(" | ")));
+        }
+    }
+    None
 }
