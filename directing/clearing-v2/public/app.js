@@ -1,11 +1,25 @@
-const messagesContainer = document.getElementById('messages-stream');
-const composerForm = document.getElementById('composer-form');
-const composerInput = document.getElementById('composer-input');
-const relayIndicator = document.getElementById('relay-indicator');
-const tilesContainer = document.getElementById('tiles-container');
+// @domain: messages
+
+const messagesContainer = typeof document !== 'undefined' ? document.getElementById('messages-stream') : null;
+const composerForm = typeof document !== 'undefined' ? document.getElementById('composer-form') : null;
+const composerInput = typeof document !== 'undefined' ? document.getElementById('composer-input') : null;
+const relayIndicator = typeof document !== 'undefined' ? document.getElementById('relay-indicator') : null;
+const tilesContainer = typeof document !== 'undefined' ? document.getElementById('tiles-container') : null;
+
+function formatAuthor(role) {
+  return role === 'abby-normal' ? 'Abby Normal' : role;
+}
+
+function formatMessageTime(ts) {
+  try {
+    return new Date(ts).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+  } catch {
+    return ts;
+  }
+}
 
 function appendMessage(msg) {
-  if (!msg || !msg.visible) return;
+  if (!msg || !msg.visible || !messagesContainer) return;
 
   const existing = document.getElementById(`msg-${msg.id}`);
   if (existing) return; // avoid duplicates
@@ -19,15 +33,11 @@ function appendMessage(msg) {
 
   const author = document.createElement('span');
   author.className = `message-author ${msg.from}`;
-  author.textContent = msg.from === 'abby-normal' ? 'Abby Normal' : msg.from;
+  author.textContent = formatAuthor(msg.from);
 
   const time = document.createElement('span');
   time.className = 'message-time';
-  try {
-    time.textContent = new Date(msg.ts).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
-  } catch {
-    time.textContent = msg.ts;
-  }
+  time.textContent = formatMessageTime(msg.ts);
 
   header.appendChild(author);
   header.appendChild(time);
@@ -103,33 +113,41 @@ function initStream() {
 }
 
 // Form send handler
-composerForm.addEventListener('submit', async (e) => {
-  e.preventDefault();
-  const text = composerInput.value.trim();
-  if (!text) return;
+if (composerForm && composerInput) {
+  composerForm.addEventListener('submit', async (e) => {
+    e.preventDefault();
+    const text = composerInput.value.trim();
+    if (!text) return;
 
-  composerInput.value = '';
+    composerInput.value = '';
 
-  try {
-    await fetch('/api/send', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ from: 'jeff', text }),
-    });
-  } catch (err) {
-    console.error('Send failed', err);
-  }
-});
-
-// Periodic tile poll as fallback
-setInterval(async () => {
-  try {
-    const res = await fetch('/api/tiles');
-    if (res.ok) {
-      const tiles = await res.json();
-      updateTiles(tiles);
+    try {
+      await fetch('/api/send', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ from: 'jeff', text }),
+      });
+    } catch (err) {
+      console.error('Send failed', err);
     }
-  } catch {}
-}, 5000);
+  });
+}
 
-initStream();
+if (typeof window !== 'undefined') {
+  // Periodic tile poll as fallback
+  setInterval(async () => {
+    try {
+      const res = await fetch('/api/tiles');
+      if (res.ok) {
+        const tiles = await res.json();
+        updateTiles(tiles);
+      }
+    } catch {}
+  }, 5000);
+
+  initStream();
+}
+
+if (typeof module !== 'undefined' && module.exports) {
+  module.exports = { formatAuthor, formatMessageTime, appendMessage, updateTiles, initStream };
+}
