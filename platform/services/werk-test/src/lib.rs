@@ -2467,7 +2467,11 @@ pub fn suite_world_env(tmp: &str) -> Vec<(String, String)> {
         // seam: 127.0.0.1:9 (discard) refuses instantly, so a leaky suite fails
         // loudly instead of speaking with the team's live voice. Genuinely-live
         // integration tests gate via RUN_LIVE_INTEGRATION and set their own URLs.
-        ("CHORUS_MCP_URL".into(), "http://127.0.0.1:9/mcp".into()),
+        // #4515 — nudges go through `chorus-hook-shim nudge-send` now (the old
+        // MCP server is gone): dead-port its pulse seam, and point werk-demo's
+        // shim seam at nothing, so a suite can never send a live nudge.
+        ("CHORUS_PULSE_URL".into(), "http://127.0.0.1:9/api/nudge".into()),
+        ("CHORUS_HOOK_SHIM".into(), "/nonexistent/chorus-hook-shim-suite".into()),
         ("CHORUS_BRIDGE_URL".into(), "http://127.0.0.1:9/api/message".into()),
         // #4005 — PULSE_URL escaped #3995's cage: a spawned Clearing forwards
         // Jeff-input to it, defaulting to the LIVE pulse :3475, so a test marker
@@ -2832,13 +2836,15 @@ mod suite_world_tests {
     #[test]
     fn http_seams_are_dead_ported_and_refuse() {
         let env = suite_world_env("/tmp/w");
-        let mcp = env.iter().find(|(k, _)| k == "CHORUS_MCP_URL").expect("mcp seam present").1.clone();
-        assert!(mcp.starts_with("http://127.0.0.1:9/"), "dead port, not a live default: {mcp}");
+        let nudge = env.iter().find(|(k, _)| k == "CHORUS_PULSE_URL").expect("nudge seam present").1.clone();
+        assert!(nudge.starts_with("http://127.0.0.1:9/"), "dead port, not a live default: {nudge}");
         let rc = std::process::Command::new("curl")
-            .args(["-s", "-m", "2", "-X", "POST", &mcp, "-d", "{}"])
+            .args(["-s", "-m", "2", "-X", "POST", &nudge, "-d", "{}"])
             .status()
             .expect("curl spawns");
-        assert!(!rc.success(), "POST to the suite-world MCP seam must refuse (got success — a suite could page Jeff)");
+        assert!(!rc.success(), "POST to the suite-world nudge seam must refuse (got success — a suite could page Jeff)");
+        let shim = env.iter().find(|(k, _)| k == "CHORUS_HOOK_SHIM").expect("shim seam present").1.clone();
+        assert!(!std::path::Path::new(&shim).exists(), "werk-demo's nudge binary must not exist in the suite world: {shim}");
     }
 
     #[test]

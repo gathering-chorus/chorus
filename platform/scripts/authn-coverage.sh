@@ -96,7 +96,8 @@ mutate "owlapi-batch-write"  DB  3360 "$(_code -X POST http://localhost:3360/bat
 # #4417 — the /api/cards/* write routes are removed (no callers; X-Role was self-asserted).
 
 # MCP (agent action surface — no verified caller identity)
-mutate "mcp-tools-call-anon"  API 3341 "$(_code -X POST http://localhost:3341/mcp -H 'Content-Type: application/json' -H 'Accept: application/json, text/event-stream' -d '{"jsonrpc":"2.0","id":1,"method":"tools/call","params":{"name":"chorus_cards_add","arguments":{}}}')" "anon MCP tool-call, no role"
+# #4515 — the tool runner is the only MCP server; it refuses a call with no verified credential
+mutate "mcp-tools-call-anon"  API 3342 "$(_code -X POST http://localhost:3342/mcp -H 'Content-Type: application/json' -H 'Accept: application/json, text/event-stream' -d '{"jsonrpc":"2.0","id":1,"method":"tools/call","params":{"name":"chorus_cards_add","arguments":{}}}')" "anon MCP tool-call, no role"
 
 # UI
 mutate "clearing-post"        UI  3470 "$(_code -X POST http://localhost:3470/api/message -H 'Content-Type: application/json' -d '{"text":"probe"}')" "anon post into Clearing"
