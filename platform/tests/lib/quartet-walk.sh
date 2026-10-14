@@ -1,7 +1,11 @@
 #!/usr/bin/env bash
-# @test-type: integration — walks EVERY generated collection and runs the full
-# create/read/update/delete cycle against a live variant. Writes rows, so it
-# refuses production and refuses to run without an owner identity.
+# The quartet runner (was platform/tests/4267-all-generated-apis.test.sh): walks
+# EVERY generated collection and runs the full create/read/update/delete cycle.
+# Writes rows, so it refuses production unless the caller labels the write, and
+# refuses to run without an owner identity. It is not a suite of its own: run
+# alone it had no door and self-refused every night (#4416 reopened 10-14).
+# 4279-api-quartet-prod.bats, its proofs and 4022-role-write-scope-live.bats
+# call it.
 #
 # #4267 — Jeff: "done is one page, 53 green lines."
 #
@@ -49,7 +53,7 @@ esac
 RUN_ID="$(printf '%s' "${QUARTET_RUN_ID:-}" | tr 'A-Z' 'a-z')"
 RESIDUE_QUERY="${FUSEKI_QUERY:-http://localhost:3030/pods/query}"
 
-ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
+ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../../.." && pwd)"
 GEN="${CHORUS_ATHENA_MAKE:-$ROOT/platform/services/athena-make/target/release/athena-make}"
 [ -x "$GEN" ] || GEN="$(command -v athena-make || true)"
 if [ -z "$GEN" ] || [ ! -x "$GEN" ]; then

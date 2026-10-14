@@ -17,7 +17,7 @@
 # CHORUS_CONTEXT=prod). Proofs without prod: 4022-role-write-scope-proofs.bats.
 
 ROOT="$(cd "$(dirname "$BATS_TEST_FILENAME")/../.." && pwd)"
-RUNNER="$ROOT/platform/tests/4267-all-generated-apis.test.sh"
+RUNNER="$ROOT/platform/tests/lib/quartet-walk.sh"
 PLAN="$ROOT/platform/tests/lib/scope-plan.py"
 API="${QUARTET_API:-http://localhost:3360}"
 ROLES="${SCOPE_ROLES:-kade wren silas}"

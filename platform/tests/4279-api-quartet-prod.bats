@@ -25,7 +25,7 @@
 # Negative proofs live in 4279-api-quartet-prod-proofs.bats (no prod write).
 
 ROOT="$(cd "$(dirname "$BATS_TEST_FILENAME")/../.." && pwd)"
-RUNNER="$ROOT/platform/tests/4267-all-generated-apis.test.sh"
+RUNNER="$ROOT/platform/tests/lib/quartet-walk.sh"
 API="${QUARTET_API:-http://localhost:3360}"
 QUERY="${FUSEKI_QUERY:-http://localhost:3030/pods/query}"
 OWNERS="${QUARTET_OWNERS:-quartet}"

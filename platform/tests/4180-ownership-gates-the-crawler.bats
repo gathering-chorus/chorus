@@ -10,9 +10,11 @@
 setup_file() {
   if [ "${RUN_INTEGRATION:-}" = "true" ] && [ -z "${OWL_URL:-}" ]; then
     source "$BATS_TEST_DIRNAME/lib/test-store.sh"
-    # the private copy has no Write permission for kade on the code graph, so
-    # one principal here is refused where the crawler is let in
-    export PRIVATE_DOOR_PREP='DELETE WHERE { GRAPH <urn:chorus:domains:security> { <https://jeffbridwell.com/chorus#permission-kade-code> ?p ?o } }'
+    # the private copy turns kade's Write on the code graph into Append: since
+    # #4517 a create needs Write or Append, and Append opens a create only, so
+    # kade can still make a row but is refused on a row the crawler owns
+    # (#4416 reopened 10-14: deleting the row outright made kade's create 403)
+    export PRIVATE_DOOR_PREP="PREFIX acl: <http://www.w3.org/ns/auth/acl#> PREFIX c: <https://jeffbridwell.com/chorus#> DELETE { GRAPH <urn:chorus:domains:security> { c:permission-kade-code c:mode ?m } } INSERT { GRAPH <urn:chorus:domains:security> { c:permission-kade-code c:mode acl:Append } } WHERE { GRAPH <urn:chorus:domains:security> { c:permission-kade-code c:mode ?m } }"
     private_door || { export PRIVATE_DOOR_WHY="$TEST_STORE_WHY"; return 0; }
   fi
 }
@@ -39,15 +41,15 @@ put_as() { curl -s -o /dev/null -w '%{http_code}' -X PUT -H "Authorization: Bear
   # it skipped every night: a Write Permission on the row's graph opens a row
   # another principal owns. The negative half needs a store whose permissions
   # the test may shape, so it runs only on the private door, where kade holds
-  # no Write on urn:chorus:domains:code and the crawler does.
+  # Append (create only, #4517) on urn:chorus:domains:code and the crawler Write.
   [ -n "${PRIVATE_DOOR_DS:-}" ] || skip "UNMEASURED — the negative half needs a store without kade's permission; it runs only on the private door"
   # kade creates the row: kade owns it
   run curl -s -o /dev/null -w '%{http_code}' -X POST -H "Authorization: Bearer $TK" -H 'Content-Type: application/json' --max-time 15 -d "[{\"name\":\"$N\",$(echo "$BODY" | cut -c2-)]" "$OWL_URL/code/files/batch"
   echo "kade create: $output"; [ "$output" = "201" ]
   # the crawler holds Write on the graph, so kade's row opens to it
   run put_as "$TC"; echo "crawler put on kade's row: $output"; [ "$output" = "200" ]
-  # NEGATIVE (#3734): the crawler now owns a row; kade, with no Write
-  # permission here, is refused on it
+  # NEGATIVE (#3734): the crawler now owns a row; kade's Append opens creates
+  # only, never another owner's row, so kade is refused on it
   N2="file-probe-4180b-$$"
   run curl -s -o /dev/null -w '%{http_code}' -X POST -H "Authorization: Bearer $TC" -H 'Content-Type: application/json' --max-time 15 -d "[{\"name\":\"$N2\",$(echo "$BODY" | sed 's/4180\//4180b\//' | cut -c2-)]" "$OWL_URL/code/files/batch"
   echo "crawler create: $output"; [ "$output" = "201" ]

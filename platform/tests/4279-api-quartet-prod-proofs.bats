@@ -5,7 +5,7 @@
 # plants a probe row in a throwaway graph and proves the residue query finds it.
 
 ROOT="$(cd "$(dirname "$BATS_TEST_FILENAME")/../.." && pwd)"
-RUNNER="$ROOT/platform/tests/4267-all-generated-apis.test.sh"
+RUNNER="$ROOT/platform/tests/lib/quartet-walk.sh"
 API="${QUARTET_API:-http://localhost:3360}"
 QUERY="${FUSEKI_QUERY:-http://localhost:3030/pods/query}"
 UPDATE="${FUSEKI_UPDATE:-http://localhost:3030/pods/update}"
