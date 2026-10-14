@@ -40,6 +40,10 @@ pub struct SkillTool {
 pub enum RunsAs {
     Caller,
     Owner,
+    /// #4531 (Jeff 2026-10-14 19:13, "yes") — runs as the owner for ANY verified
+    /// caller: /card from an agent session files as Jeff. Only the owner can
+    /// write that row, so only Jeff can make a tool that runs as him.
+    OwnerAnyCaller,
 }
 
 /// A Skill row that asks to be a tool but cannot be offered, and why. Never
@@ -91,8 +95,9 @@ pub fn skill_tools(rows: &[Value], inputs: &Map<String, Value>) -> (Vec<SkillToo
         let runs_as = match s(row, "runsAs").rsplit(['#', '/', ':']).next().unwrap_or("") {
             "caller" => RunsAs::Caller,
             "owner" => RunsAs::Owner,
+            "owner-any-caller" => RunsAs::OwnerAnyCaller,
             other => {
-                unmeasured.push(Unmeasured { skill: name, reason: format!("runsAs is '{other}': it must say caller or owner, never a default") });
+                unmeasured.push(Unmeasured { skill: name, reason: format!("runsAs is '{other}': it must say caller, owner or owner-any-caller, never a default") });
                 continue;
             }
         };
@@ -130,6 +135,7 @@ pub fn run_identity(tool: &SkillTool, caller: &str) -> Result<String, String> {
     match tool.runs_as {
         RunsAs::Caller => Ok(c.to_string()),
         RunsAs::Owner if may_invoke(c, &tool.owner) => Ok(bare(&tool.owner).to_string()),
+        RunsAs::OwnerAnyCaller => Ok(bare(&tool.owner).to_string()),
         RunsAs::Owner => Err(format!("{c} may not run {}: it runs as {} with their write rights; only {} and jeff may call it", tool.name, tool.owner, tool.owner)),
     }
 }

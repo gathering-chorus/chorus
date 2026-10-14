@@ -74,8 +74,8 @@ chorus:SkillShape a sh:NodeShape ;
     # #4514 (Silas + Wren, 2026-10-13) — whose identity a tool runs with. A verb a
     # role runs on its own card runs as the verified caller; a tool with one
     # principal's rights runs as its owner. The runner refuses a tool with neither.
-    sh:property [ sh:path chorus:runsAs ; sh:maxCount 1 ; sh:datatype xsd:string ; sh:in ( "caller" "owner" ) ; sh:name "runs as" ;
-                  sh:description "Required for a tool. caller: runs as the verified caller. owner: runs as the skill's owner; only the owner and jeff may call it." ] ;
+    sh:property [ sh:path chorus:runsAs ; sh:maxCount 1 ; sh:datatype xsd:string ; sh:in ( "caller" "owner" "owner-any-caller" ) ; sh:name "runs as" ;
+                  sh:description "Required for a tool. caller: runs as the verified caller. owner: runs as the skill's owner; only the owner and jeff may call it. owner-any-caller: runs as the owner for any verified caller (#4531: /card files as Jeff)." ] ;
     # #4515 (Jeff 2026-10-14) — a tool is named <product>-<step>[-<object>], or
     # chorus-<product> when it starts that product's pipeline. A step tool names the
     # value-stream step it runs. The name rule joins Product rows, which the door

@@ -20,7 +20,7 @@
   "implementedBy": "cards",
   "arguments": "add {title} --owner={owner} --priority={priority} --domain={domain} --type={type} --origin={origin} --desc={desc} [--sequence={sequence}]",
   "inputShape": "CardsAddInput",
-  "runsAs": "owner",
+  "runsAs": "owner-any-caller",
   "hasDomain": "cards",
   "ownedBy": "principal-jeff",
   "forStreamStep": "clearing-card"
