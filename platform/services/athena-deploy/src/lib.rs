@@ -1318,7 +1318,10 @@ pub fn run_athena_deploy_plan(plan: Option<&card::CardPlan>) -> Result<String, S
     // diff the working tree against, so without the stamp that guard can never
     // run. Caught by the graph diff against the bash, not by reading the code
     // — it was the only real difference between the two, two triples.
-    let stamp_sha = run_git(&root, &["rev-parse", "HEAD"]).unwrap_or_else(|| "unknown".into());
+    // #4515 — a landed card's deploy is stamped with the card's merged commit,
+    // not whatever canonical's HEAD has moved on to since.
+    let stamp_sha = plan.and_then(|p| p.commit.clone())
+        .or_else(|| run_git(&root, &["rev-parse", "HEAD"])).unwrap_or_else(|| "unknown".into());
     let stamp_ts = Command::new("date").args(["-u", "+%Y-%m-%dT%H:%M:%SZ"]).output()
         .map(|o| String::from_utf8_lossy(&o.stdout).trim().to_string()).unwrap_or_default();
     let stamp = format!(

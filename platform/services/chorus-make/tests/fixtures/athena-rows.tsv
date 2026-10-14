@@ -1,0 +1,11 @@
+# #4515 fixture — the athena pipeline's rows as ROWS_QUERY will return them once the to-be StepSkill
+# rows land (live 2026-10-14: steps shape/forge/seed/validate exist with no StepSkill; go and land are new).
+# Model → Make → Deploy (staging) → Validate → Jeff's go → Land (prod, from canonical on the landed commit).
+# withArgs is the AthenaVerbInput list: each args= pair is one item, in order (chorus-runner args_from_pairs).
+step	stepOrder	skillOrder	skill	label	executor	implementedBy	mode	onFail	inputShape	withArgs
+shape	1	1	skill-athena-validate	athena-validate	deterministic	athena-validate	{args}		AthenaVerbInput	args=--card args=${CARD}
+forge	2	1	skill-athena-gen	athena-gen	deterministic	athena-gen	{args}		AthenaVerbInput	args=generate args=--card args=${CARD}
+seed	3	1	skill-athena-deploy	athena-deploy	deterministic	athena-deploy	{args}		AthenaVerbInput	args=staging args=--card args=${CARD}
+validate	4	1	skill-athena-validate	athena-validate	deterministic	athena-validate	{args}		AthenaVerbInput	args=--sweep
+go	5	1	skill-werk-go	Jeff's go	human					
+land	6	1	skill-athena-deploy	athena-deploy	deterministic	athena-deploy	{args}		AthenaVerbInput	args=--card args=${CARD} args=--landed args=--target args=canonical

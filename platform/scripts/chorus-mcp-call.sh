@@ -1,7 +1,8 @@
 #!/usr/bin/env bash
 # chorus-mcp-call.sh — one tool call, fail-loud (#3236; through the runner since #4515).
 #
-# Same contract its callers have always had (3 launchd jobs, chat.sh, athena-land):
+# Same contract its callers have always had (3 launchd jobs, chat.sh; athena-land
+# enqueues the athena-land dagu run instead since #4515):
 #   chorus-mcp-call.sh <role> <tool> <args-json>
 #   exit 0 on tool success, non-zero on refusal or failure; tool output on stdout.
 # Since #4515 there is no old MCP server to call: this hands the call to

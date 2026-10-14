@@ -107,6 +107,10 @@ fn main() {
             }
         }
     }
+    // #4515 — `--sweep` names this full sweep (the default) for the athena
+    // pipeline's Validate step: a runner step's AthenaVerbInput `args` list
+    // cannot be empty, and the sweep takes no other argument.
+    //
     // --store-only: run the store checks and skip the door comparison.
     //
     // Not a convenience flag. A suite that stubs the STORE but not the door gets

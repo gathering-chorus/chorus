@@ -244,3 +244,105 @@ fn negative_proof_the_prod_land_from_a_werk_still_needs_canonical_on_purpose() {
     assert_eq!(code, 0, "{out}");
     assert!(out.contains("target-check: ok"), "{out}");
 }
+
+// ---- #4515 landed mode: the athena pipeline's Land, after the werk land ----
+
+/// A canonical tree (NOT under chorus-werk) whose origin/main carries: base,
+/// "#9301 (wren) (#1)" adding widgets.ttl, "wren: #9302 — no model (#2)"
+/// touching a script, "#93010 (wren) (#3)" adding other.ttl. Returns (home, sha of #9301).
+fn canonical(name: &str) -> (PathBuf, String) {
+    let home = std::env::temp_dir().join(format!("athena-deploy-4515-landed-{}-{name}", std::process::id())).join("chorus");
+    let _ = std::fs::remove_dir_all(&home);
+    std::fs::create_dir_all(&home).unwrap();
+    git(&home, &["init", "-q", "-b", "main"]);
+    write(&home, "platform/config/domain-set-manifest.txt", "security|urn:chorus:domains:security|roles/silas/ontology/permissions-4183.ttl\n");
+    git(&home, &["add", "-A"]);
+    git(&home, &["commit", "-q", "-m", "base"]);
+    write(&home, "roles/wren/ontology/widgets.ttl", WIDGET);
+    git(&home, &["add", "-A"]);
+    git(&home, &["commit", "-q", "-m", "#9301 (wren) (#1)"]);
+    let o = Command::new("git").arg("-C").arg(&home).args(["rev-parse", "HEAD"]).output().unwrap();
+    let sha = String::from_utf8_lossy(&o.stdout).trim().to_string();
+    write(&home, "platform/scripts/x.sh", "echo\n");
+    git(&home, &["add", "-A"]);
+    git(&home, &["commit", "-q", "-m", "wren: #9302 — no model (#2)"]);
+    write(&home, "roles/wren/ontology/other.ttl", WIDGET);
+    git(&home, &["add", "-A"]);
+    git(&home, &["commit", "-q", "-m", "#93010 (wren) (#3)"]);
+    git(&home, &["update-ref", "refs/remotes/origin/main", "HEAD"]);
+    (home, sha)
+}
+
+/// Run a landed card: canonical is CHORUS_HOME, and the werk base is empty (the
+/// werk was torn down by the land).
+fn run_landed(home: &Path, args: &[&str], extra: &[(&str, &str)]) -> (i32, String) {
+    let gone = home.parent().unwrap().join("chorus-werk");
+    std::fs::create_dir_all(&gone).unwrap();
+    let mut e: Vec<(&str, &str)> = vec![("CHORUS_HOME", home.to_str().unwrap())];
+    e.extend_from_slice(extra);
+    run(&gone, args, &e)
+}
+
+#[test]
+fn a_landed_card_is_its_one_squash_commit_read_from_canonical() {
+    let (home, sha) = canonical("resolve");
+    let h = home.to_str().unwrap();
+    let c = athena_deploy::card_scope::resolve_landed_from("9301", Some("wren".into()), h).unwrap();
+    assert_eq!(c.sources, s(&["roles/wren/ontology/widgets.ttl"]), "only #9301's own commit, not the later #93010");
+    assert_eq!(c.commit.as_deref(), Some(sha.as_str()));
+    assert_eq!(c.werk, h, "the tree is canonical, the werk may be gone");
+    // #93010 is its own card, never #9301's
+    let c = athena_deploy::card_scope::resolve_landed_from("93010", Some("wren".into()), h).unwrap();
+    assert_eq!(c.sources, s(&["roles/wren/ontology/other.ttl"]));
+}
+
+#[test]
+fn a_landed_land_runs_with_the_werk_torn_down_and_names_its_commit() {
+    let (home, sha) = canonical("land");
+    let (code, out) = run_landed(&home, &["--card", "9301", "--landed", "--target", "canonical"], &[("ATHENA_DEPLOY_TARGET_CHECK_ONLY", "1")]);
+    assert_eq!(code, 0, "{out}");
+    assert!(out.contains(&format!("at landed commit {}", &sha[..12])), "{out}");
+    assert!(out.contains("target-check: ok"), "{out}");
+}
+
+#[test]
+fn negative_proof_a_card_with_no_landed_commit_is_refused_by_name() {
+    let (home, _) = canonical("nolanded");
+    let (code, out) = run_landed(&home, &["--card", "9399", "--landed", "--target", "canonical"], &[]);
+    assert_eq!(code, 2, "{out}");
+    assert!(out.contains("REFUSED — card #9399: no landed commit for #9399 (wren) on origin/main"), "{out}");
+}
+
+#[test]
+fn negative_proof_a_landed_commit_with_no_model_source_is_none_not_a_deploy() {
+    let (home, _) = canonical("none");
+    let (code, out) = run_landed(&home, &["--card", "9302", "--landed", "--target", "canonical"], &[]);
+    assert_eq!(code, 0, "{out}");
+    assert!(out.contains("carries no model source — nothing to deploy"), "{out}");
+    assert_eq!(out.lines().last(), Some("card #9302: result=none"), "{out}");
+    assert!(!out.contains("ontology file(s)"), "nothing was planned: {out}");
+}
+
+#[test]
+fn negative_proof_a_landed_prod_write_is_refused_unless_canonical_is_said() {
+    // #4080 — the pipeline's Land step passes --target canonical; the code never
+    // assumes it. The refusal comes before the store is looked at.
+    let (home, _) = canonical("notarget");
+    let (code, out) = run_landed(&home, &["--card", "9301", "--landed"], &[("ATHENA_DEPLOY_TARGET_CHECK_ONLY", "1")]);
+    assert_eq!(code, 2, "{out}");
+    assert!(out.contains("--landed writes prod: say --target canonical on purpose"), "{out}");
+    assert!(!out.contains("target-check: ok"), "{out}");
+}
+
+#[test]
+fn negative_proof_card_options_that_do_not_fit_are_refused() {
+    let a = |v: &[&str]| athena_deploy::card::card_mode(&v.iter().map(|x| x.to_string()).collect::<Vec<_>>());
+    use athena_deploy::card::Mode;
+    assert_eq!(a(&["athena-deploy", "--card", "1"]).unwrap(), (Mode::Werk, None));
+    assert_eq!(a(&["athena-deploy", "--card", "1", "--landed", "--target", "canonical"]).unwrap(), (Mode::Landed, Some("canonical".into())));
+    assert_eq!(a(&["athena-deploy", "staging", "--card", "1"]).unwrap(), (Mode::Staging, None));
+    assert!(a(&["athena-deploy", "staging", "--card", "1", "--landed"]).unwrap_err().contains("--landed is the prod Land only"));
+    assert!(a(&["athena-deploy", "staging", "--card", "1", "--target", "canonical"]).is_err());
+    assert!(a(&["athena-deploy", "--card", "1", "--target", "werk"]).unwrap_err().contains("the only target is canonical"));
+    assert!(a(&["athena-deploy", "--card", "1", "--force"]).unwrap_err().contains("unknown option '--force'"));
+}

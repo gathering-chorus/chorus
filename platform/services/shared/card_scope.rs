@@ -30,6 +30,9 @@ pub struct Card {
     pub werk: String,
     /// Werk-relative model sources the card changed (TTL and the retirements file).
     pub sources: Vec<String>,
+    /// #4515 landed mode: the card's squash commit on origin/main. `werk` is then
+    /// canonical ($CHORUS_HOME) and `sources` what that one commit changed.
+    pub commit: Option<String>,
 }
 
 impl Card {
@@ -92,7 +95,69 @@ pub fn resolve_from(card: &str, role: Option<String>, base: &str) -> Result<Card
             "card #{card}: no model change — {CARD_RANGE} in {werk} touches no model source (roles/*/ontology/*.ttl, designing/schemas/model-retirements.jsonl)"
         ));
     }
-    Ok(Card { card, role, werk, sources })
+    Ok(Card { card, role, werk, sources, commit: None })
+}
+
+// ---- #4515 landed mode: `--card <n> --landed` ----
+//
+// The athena land runs AFTER the werk land: the werk may already be torn down
+// (werk-accept), so the card's change is read from canonical instead, as the
+// one commit the land squashed onto origin/main. Range `<sha>^..<sha>`.
+
+/// `--landed` in argv.
+pub fn landed_arg(args: &[String]) -> bool {
+    args.iter().any(|a| a == "--landed")
+}
+
+/// Canonical: $CHORUS_HOME, else ~/CascadeProjects/chorus.
+pub fn chorus_home() -> String {
+    std::env::var("CHORUS_HOME").ok().filter(|h| !h.is_empty()).unwrap_or_else(|| {
+        format!("{}/CascadeProjects/chorus", std::env::var("HOME").unwrap_or_default())
+    })
+}
+
+/// The card's squash commit on origin/main, by the land's subject: "#<card>
+/// (<role>) (#<pr>)" or "<role>: #<card> — <summary> (#<pr>)" (the same grep
+/// scripts/athena-land uses). Ok(None) = the card has not landed. #77 is never
+/// #770: the subject must carry the number followed by " (" or " ".
+pub fn landed_commit(home: &str, card: &str, role: &str) -> Result<Option<String>, String> {
+    let out = std::process::Command::new("git")
+        .args(["-C", home, "log", "origin/main", "-1", "--format=%H"])
+        .arg(format!("--grep=^#{card} ({role})"))
+        .arg(format!("--grep=^{role}: #{card} "))
+        .output()
+        .map_err(|e| format!("git: {e}"))?;
+    if !out.status.success() {
+        return Err(format!("git log origin/main failed in {home}: {}", String::from_utf8_lossy(&out.stderr).trim()));
+    }
+    let sha = String::from_utf8_lossy(&out.stdout).trim().to_string();
+    Ok((!sha.is_empty()).then_some(sha))
+}
+
+/// Resolve a landed card from the environment (canonical = $CHORUS_HOME).
+pub fn resolve_landed(card: &str) -> Result<Card, String> {
+    resolve_landed_from(card, env_role(), &chorus_home())
+}
+
+/// Resolve a landed card: its squash commit must be on origin/main in `home`.
+/// No landed commit is REFUSED by name. A landed commit that touches no model
+/// source is NOT refused here: it resolves with no sources, and the caller says
+/// "none" (the land had nothing for athena; that is not an error after the fact).
+pub fn resolve_landed_from(card: &str, role: Option<String>, home: &str) -> Result<Card, String> {
+    let card = card.trim().trim_start_matches('#').to_string();
+    if card.is_empty() || !card.chars().all(|c| c.is_ascii_digit()) {
+        return Err(format!("card '{card}': not a card number — refusing"));
+    }
+    let role = role.ok_or_else(|| format!("card #{card}: no role — set CHORUS_ROLE (or ROLE) so the landed commit can be found"))?;
+    if !std::path::Path::new(home).is_dir() {
+        return Err(format!("card #{card}: no canonical tree at {home}"));
+    }
+    let sha = landed_commit(home, &card, &role)
+        .map_err(|e| format!("card #{card}: {e}"))?
+        .ok_or_else(|| format!("card #{card}: no landed commit for #{card} ({role}) on origin/main in {home} — nothing landed to deploy"))?;
+    let range = format!("{sha}^..{sha}");
+    let sources = changed_sources(home, &range).map_err(|e| format!("card #{card}: {e}"))?;
+    Ok(Card { card, role, werk: home.trim_end_matches('/').to_string(), sources, commit: Some(sha) })
 }
 
 /// The model sources a range touched in a tree. Deleted files are not sources

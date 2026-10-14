@@ -13,6 +13,15 @@
 //!      appear in a route of athena-make's discovery document, and that route must
 //!      answer. "Deployed but not served" is a named failure.
 //!
+//! #4515 landed mode — `athena-deploy --card <n> --landed --target canonical` is
+//! the athena pipeline's Land. It runs after the werk land, when the werk may be
+//! gone: the card's change is the one commit it squashed onto origin/main, read
+//! from canonical ($CHORUS_HOME), and the deploy is stamped with that commit. It
+//! writes prod, so the caller says `--target canonical` (the #4080 guard's
+//! DEPLOY_TARGET, passed by the pipeline step, never set by this code on its
+//! own); without it the run is REFUSED. A landed commit with no model source is
+//! `result=none`, exit 0.
+//!
 //! Staging first copies prod's model graphs into the staging dataset (staging copy)
 //! and points the load at it; the served check reads the staging athena-make.
 
@@ -25,6 +34,8 @@ use std::process::Command;
 pub struct CardPlan {
     pub ontology: Vec<String>,
     pub sets: Vec<DomainSet>,
+    /// #4515 — the landed commit the deploy is stamped with (landed mode only).
+    pub commit: Option<String>,
 }
 
 /// Split a card's changed TTL files (werk-relative) between the domain sets they
@@ -143,26 +154,102 @@ fn env_or(key: &str, default: &str) -> String {
     std::env::var(key).ok().filter(|v| !v.is_empty()).unwrap_or_else(|| default.to_string())
 }
 
+/// How `--card` finds the card's change.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Mode {
+    /// Deploy, staging: the card's werk, origin/main...HEAD.
+    Staging,
+    /// Land from the werk (prod): the card's werk, origin/main...HEAD.
+    Werk,
+    /// Land after the werk land (prod): canonical, the card's squash commit.
+    Landed,
+}
+
+/// The card options after `--card <n>`: `--landed`, `--target <t>`. Pure.
+/// The only target is canonical, and a landed run needs it said; staging reads
+/// the werk, so `--landed` there is refused. An unknown option is refused,
+/// never ignored.
+pub fn card_mode(args: &[String]) -> Result<(Mode, Option<String>), String> {
+    let staging = args.get(1).map(String::as_str) == Some("staging");
+    let mut rest = args.iter().skip(if staging { 2 } else { 1 });
+    let (mut landed, mut target) = (false, None);
+    while let Some(a) = rest.next() {
+        match a.as_str() {
+            "--card" => { rest.next(); }
+            "--landed" => landed = true,
+            "--target" => match rest.next().map(String::as_str) {
+                Some("canonical") => target = Some("canonical".to_string()),
+                Some(t) => return Err(format!("--target {t}: the only target is canonical (prod, on purpose); staging is `athena-deploy staging --card <n>`")),
+                None => return Err("--target needs a value (canonical)".into()),
+            },
+            other => return Err(format!("unknown option '{other}' with --card — refusing")),
+        }
+    }
+    match (staging, landed) {
+        (true, true) => Err("staging reads the card's werk; --landed is the prod Land only".into()),
+        (true, false) if target.is_some() => Err("staging writes the staging dataset; --target canonical is the prod Land only".into()),
+        (true, false) => Ok((Mode::Staging, None)),
+        (false, true) if target.is_none() => Err(
+            "--landed writes prod: say --target canonical on purpose (#4080), the pipeline's Land step passes it".into()),
+        (false, true) => Ok((Mode::Landed, target)),
+        (false, false) => Ok((Mode::Werk, target)),
+    }
+}
+
 /// Resolve the card and build its plan and class list. Nothing is written.
 pub fn prepare(card_id: &str) -> Result<(Card, CardPlan, Vec<String>), CardError> {
-    let card = card_scope::resolve(card_id).map_err(CardError::Refused)?;
+    prepare_mode(card_id, Mode::Werk)
+}
+
+/// prepare, for a mode: a landed card is read from canonical.
+pub fn prepare_mode(card_id: &str, mode: Mode) -> Result<(Card, CardPlan, Vec<String>), CardError> {
+    let card = match mode {
+        Mode::Landed => card_scope::resolve_landed(card_id),
+        _ => card_scope::resolve(card_id),
+    }
+    .map_err(CardError::Refused)?;
     let ttl = card.ttl();
     let manifest = env_or("DOMAIN_SET_MANIFEST", &card.abs("platform/config/domain-set-manifest.txt"));
     let text = std::fs::read_to_string(&manifest)
         .map_err(|e| CardError::Refused(format!("card #{}: domain-set manifest unreadable at {manifest}: {e}", card.card)))?;
     let sets = parse_domain_sets(&text).map_err(CardError::Refused)?;
-    let p = plan(&ttl, &card.werk, &sets);
+    let mut p = plan(&ttl, &card.werk, &sets);
+    p.commit = card.commit.clone();
     let classes = card_classes(&card).map_err(CardError::Refused)?;
     Ok((card, p, classes))
 }
 
-/// `athena-deploy [staging] --card <n>`.
-pub fn run(card_id: &str, staging: bool) -> Result<String, CardError> {
-    let (card, p, classes) = prepare(card_id)?;
+/// `athena-deploy [staging] --card <n> [--landed] [--target canonical]`.
+pub fn run(card_id: &str, mode: Mode, target: Option<&str>) -> Result<String, CardError> {
+    let staging = mode == Mode::Staging;
+    // the caller's explicit say-so feeds the #4080 guard; nothing here sets it unasked
+    if let Some(t) = target {
+        std::env::set_var("DEPLOY_TARGET", t);
+    }
+    if mode == Mode::Landed {
+        // a land that carried no model source has nothing for athena: none, not a refusal
+        let card = card_scope::resolve_landed(card_id).map_err(CardError::Refused)?;
+        if card.sources.is_empty() {
+            let sha = card.commit.clone().unwrap_or_default();
+            return Ok(format!(
+                "card #{}: landed commit {} carries no model source — nothing to deploy\ncard #{}: result=none",
+                card.card, &sha[..sha.len().min(12)], card.card
+            ));
+        }
+    }
+    let (card, p, classes) = prepare_mode(card_id, mode)?;
+    let from = match &card.commit {
+        Some(sha) => format!("{} at landed commit {}", card.werk, &sha[..sha.len().min(12)]),
+        None => card.werk.clone(),
+    };
     let mut out = vec![format!(
         "card #{}: {} ontology file(s), {} domain set(s), {} class(es) from {}",
-        card.card, p.ontology.len(), p.sets.len(), classes.len(), card.werk
+        card.card, p.ontology.len(), p.sets.len(), classes.len(), from
     )];
+    // the line a run that stops at the target check still shows (no store reached)
+    if std::env::var("ATHENA_DEPLOY_TARGET_CHECK_ONLY").as_deref() == Ok("1") {
+        println!("{}", out[0]);
+    }
     let (api, label) = if staging {
         let base = env_or("CHORUS_FUSEKI_BASE", "http://localhost:3030");
         let prod = env_or("STAGING_PROD_DATASET", "pods");

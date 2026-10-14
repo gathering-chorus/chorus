@@ -12,18 +12,20 @@ fn main() {
     // ask "did this land touch the model or the seed?"
     let args: Vec<String> = std::env::args().collect();
     // #4515 — `athena-deploy --card <n>` (Land: prod) and `athena-deploy staging
-    // --card <n>` (Deploy: staging). Same legs, two targets.
+    // --card <n>` (Deploy: staging). Same legs, two targets. `--landed --target
+    // canonical` is the athena pipeline's Land: the card's squash commit, from canonical.
     if let Some(c) = athena_deploy::card_scope::card_arg(&args) {
-        let staging = match args.get(1).map(String::as_str) {
-            Some("--card") => false,
-            Some("staging") if args.get(2).map(String::as_str) == Some("--card") => true,
-            _ => {
-                eprintln!("usage: athena-deploy --card <n> | athena-deploy staging --card <n>");
-                std::process::exit(2);
-            }
-        };
+        let usage = "usage: athena-deploy --card <n> [--landed --target canonical] | athena-deploy staging --card <n>";
+        if !matches!((args.get(1).map(String::as_str), args.get(2).map(String::as_str)), (Some("--card"), _) | (Some("staging"), Some("--card"))) {
+            eprintln!("{usage}");
+            std::process::exit(2);
+        }
         let c = c.unwrap_or_else(|e| { eprintln!("athena-deploy: {e}"); std::process::exit(2) });
-        match athena_deploy::card::run(&c, staging) {
+        let (mode, target) = athena_deploy::card::card_mode(&args).unwrap_or_else(|e| {
+            eprintln!("athena-deploy: REFUSED — card #{c}: {e}\n{usage}");
+            std::process::exit(2)
+        });
+        match athena_deploy::card::run(&c, mode, target.as_deref()) {
             Ok(s) => { println!("{s}"); std::process::exit(0); }
             Err(athena_deploy::card::CardError::Refused(e)) => { eprintln!("athena-deploy: REFUSED — {e}"); std::process::exit(2); }
             Err(athena_deploy::card::CardError::Failed(e)) => { eprintln!("athena-deploy: {e}"); std::process::exit(1); }
