@@ -330,7 +330,12 @@ pub fn http_target(implemented_by: &str, args: &Map<String, Value>) -> Result<(S
         let inner = out[i + 1..j].to_string();
         let (k, default) = inner.split_once('=').map(|(k, d)| (k.to_string(), Some(d.to_string()))).unwrap_or((inner, None));
         let given = args.get(&k).map(|v| v.as_str().map(String::from).unwrap_or_else(|| v.to_string())).unwrap_or_default();
-        let v = if given.is_empty() { default.clone().unwrap_or_default() } else { given };
+        // `{role=@caller}` defaults to the verified caller (chorus_wip, chorus_sup)
+        let fallback = match default.as_deref() {
+            Some("@caller") => args.get("caller").and_then(|v| v.as_str()).unwrap_or_default().to_string(),
+            other => other.unwrap_or_default().to_string(),
+        };
+        let v = if given.is_empty() { fallback } else { given };
         if v.is_empty() && default.is_none() && !args.is_empty() {
             return Err(format!("{k} is needed for {url}"));
         }

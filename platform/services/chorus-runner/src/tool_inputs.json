@@ -130,6 +130,19 @@
     ],
     "type": "object"
   },
+  "DoorRowInput": {
+    "additionalProperties": false,
+    "properties": {
+      "id": {
+        "description": "The row's name, e.g. adr-041.",
+        "type": "string"
+      }
+    },
+    "required": [
+      "id"
+    ],
+    "type": "object"
+  },
   "HeraldRunInput": {
     "additionalProperties": false,
     "properties": {
@@ -162,6 +175,86 @@
     ],
     "type": "object"
   },
+  "LogsCardInput": {
+    "additionalProperties": false,
+    "properties": {
+      "card_id": {
+        "description": "The card number.",
+        "type": "integer"
+      },
+      "time_window": {
+        "description": "How far back. Default 1d.",
+        "enum": [
+          "5m",
+          "15m",
+          "1h",
+          "6h",
+          "1d",
+          "7d"
+        ],
+        "type": "string"
+      }
+    },
+    "required": [
+      "card_id"
+    ],
+    "type": "object"
+  },
+  "LogsErrorsInput": {
+    "additionalProperties": false,
+    "properties": {
+      "role": {
+        "description": "Only this role's errors. Default every role.",
+        "namesRole": "peer",
+        "type": "string"
+      },
+      "time_window": {
+        "description": "How far back. Default 1h.",
+        "enum": [
+          "5m",
+          "15m",
+          "1h",
+          "6h",
+          "1d",
+          "7d"
+        ],
+        "type": "string"
+      }
+    },
+    "required": [],
+    "type": "object"
+  },
+  "LogsTraceInput": {
+    "additionalProperties": false,
+    "properties": {
+      "time_window": {
+        "description": "How far back. Default 1d.",
+        "enum": [
+          "5m",
+          "15m",
+          "1h",
+          "6h",
+          "1d",
+          "7d"
+        ],
+        "type": "string"
+      },
+      "trace_id": {
+        "description": "The trace id.",
+        "type": "string"
+      }
+    },
+    "required": [
+      "trace_id"
+    ],
+    "type": "object"
+  },
+  "NoInput": {
+    "additionalProperties": false,
+    "properties": {},
+    "required": [],
+    "type": "object"
+  },
   "NudgeMessageInput": {
     "additionalProperties": false,
     "properties": {
@@ -188,6 +281,18 @@
       "to",
       "message"
     ],
+    "type": "object"
+  },
+  "RoleReadInput": {
+    "additionalProperties": false,
+    "properties": {
+      "role": {
+        "description": "The role to read for. Defaults to you.",
+        "namesRole": "peer",
+        "type": "string"
+      }
+    },
+    "required": [],
     "type": "object"
   },
   "WerkBuildInput": {

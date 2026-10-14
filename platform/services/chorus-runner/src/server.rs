@@ -153,7 +153,10 @@ pub fn prepare_with(tool: &SkillTool, args: &serde_json::Map<String, serde_json:
         None => identity_token(&who).ok_or_else(|| (format!("could not mint {who}'s identity to run as them"), 503))?,
     };
     let http = if tool.http {
-        let (method, url) = crate::skills::http_target(&tool.binary, &args).map_err(|e| (e, 400))?;
+        // {caller} in a route is the verified caller, never an argument the caller sent
+        let mut route_args = args.clone();
+        route_args.insert("caller".into(), serde_json::Value::String(crate::skills::bare(caller).to_string()));
+        let (method, url) = crate::skills::http_target(&tool.binary, &route_args).map_err(|e| (e, 400))?;
         Some((method, url, serde_json::Value::Object(args.clone()).to_string(), token.clone()))
     } else {
         None

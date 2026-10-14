@@ -106,3 +106,20 @@ fn a_get_sends_no_body() {
     assert!(ok && req.starts_with("GET /x?q=1 "), "{req}");
     assert!(!req.contains(r#"{"a":1}"#) && !req.to_lowercase().contains("content-length"), "a GET carries no body: {req}");
 }
+
+#[test]
+fn a_route_can_default_to_the_verified_caller_and_the_caller_cannot_spoof_it() {
+    let shapes = json!({ "WipInput": { "type": "object", "properties": { "role": { "type": "string" } } } }).as_object().unwrap().clone();
+    let r = json!({ "name": "chorus_wip", "executor": "http", "inputShape": "WipInput", "ownedBy": "principal-wren", "runsAs": "caller",
+                    "implementedBy": "GET {api}/api/chorus/context/board/wip?role={role=@caller}&who={caller}" });
+    let (tools, un) = skill_tools(&[r], &shapes);
+    assert!(un.is_empty(), "{un:?}");
+    let url = |args: Value| prepare_with(&tools[0], args.as_object().unwrap(), "principal-wren", &new_trace_id(), Some("t")).map(|p| p.http.unwrap().1);
+    assert!(url(json!({})).unwrap().ends_with("?role=wren&who=wren"));
+    assert!(url(json!({ "role": "kade" })).unwrap().ends_with("?role=kade&who=wren"));
+    // NEGATIVE PROOF: sending `caller` never changes who the route says called
+    match url(json!({ "caller": "kade" })) {
+        Ok(u) => assert!(u.ends_with("&who=wren"), "{u}"),
+        Err((e, code)) => assert_eq!(code, 400, "{e}"),
+    }
+}

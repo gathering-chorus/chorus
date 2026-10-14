@@ -1,0 +1,57 @@
+# #4515 (Wren) — input shapes for the read tools that become http Skill rows.
+# Each row's implementedBy names a Chorus service route ({api} or {door});
+# the runner fills the route from these arguments. Windows are the values the
+# chorus-api logs routes accept; anything else is refused before a call.
+
+@prefix chorus: <https://jeffbridwell.com/chorus#> .
+@prefix sh:     <http://www.w3.org/ns/shacl#> .
+@prefix xsd:    <http://www.w3.org/2001/XMLSchema#> .
+@prefix owl:    <http://www.w3.org/2002/07/owl#> .
+@prefix rdfs:   <http://www.w3.org/2000/01/rdf-schema#> .
+
+chorus:toolRole     a owl:DatatypeProperty ; rdfs:label "role" ;        rdfs:comment "The role a read tool answers for; the caller when left out (#4515)." .
+chorus:toolWindow   a owl:DatatypeProperty ; rdfs:label "time window" ; rdfs:comment "How far back a logs read looks (#4515)." .
+chorus:toolTraceId  a owl:DatatypeProperty ; rdfs:label "trace id" ;    rdfs:comment "The trace a logs read follows (#4515)." .
+chorus:toolRowId    a owl:DatatypeProperty ; rdfs:label "id" ;          rdfs:comment "The name of one door row, e.g. adr-041 (#4515)." .
+
+# chorus_wip  GET {api}/api/chorus/context/board/wip?role={role=@caller}
+# chorus_sup  GET {api}/api/chorus/context/priorities?role={role=@caller}
+chorus:RoleReadInput a sh:NodeShape , chorus:ToolInput ;
+    rdfs:label "a read for one role" ;
+    sh:property [ sh:path chorus:toolRole ; sh:maxCount 1 ; sh:datatype xsd:string ; sh:order 1 ; sh:name "role" ;
+                  chorus:namesRole "peer" ; sh:description "The role to read for. Defaults to you." ] .
+
+# chorus_logs_for_card  GET {api}/api/chorus/logs/card/{card_id}?window={time_window=1d}
+chorus:LogsCardInput a sh:NodeShape , chorus:ToolInput ;
+    rdfs:label "logs for a card" ;
+    sh:property [ sh:path chorus:toolCardId ; sh:minCount 1 ; sh:maxCount 1 ; sh:datatype xsd:integer ; sh:minInclusive 1 ; sh:order 1 ; sh:name "card_id" ;
+                  sh:description "The card number." ] ;
+    sh:property [ sh:path chorus:toolWindow ; sh:maxCount 1 ; sh:datatype xsd:string ; sh:order 2 ; sh:name "time_window" ;
+                  sh:in ( "5m" "15m" "1h" "6h" "1d" "7d" ) ; sh:description "How far back. Default 1d." ] .
+
+# chorus_logs_for_trace  GET {api}/api/chorus/logs/trace/{trace_id}?window={time_window=1d}
+chorus:LogsTraceInput a sh:NodeShape , chorus:ToolInput ;
+    rdfs:label "logs for a trace" ;
+    sh:property [ sh:path chorus:toolTraceId ; sh:minCount 1 ; sh:maxCount 1 ; sh:datatype xsd:string ; sh:order 1 ; sh:name "trace_id" ;
+                  sh:description "The trace id." ] ;
+    sh:property [ sh:path chorus:toolWindow ; sh:maxCount 1 ; sh:datatype xsd:string ; sh:order 2 ; sh:name "time_window" ;
+                  sh:in ( "5m" "15m" "1h" "6h" "1d" "7d" ) ; sh:description "How far back. Default 1d." ] .
+
+# chorus_logs_recent_errors  GET {api}/api/chorus/logs/errors?role={role=}&window={time_window=1h}
+chorus:LogsErrorsInput a sh:NodeShape , chorus:ToolInput ;
+    rdfs:label "recent errors" ;
+    sh:property [ sh:path chorus:toolRole ; sh:maxCount 1 ; sh:datatype xsd:string ; sh:order 1 ; sh:name "role" ;
+                  chorus:namesRole "peer" ; sh:description "Only this role's errors. Default every role." ] ;
+    sh:property [ sh:path chorus:toolWindow ; sh:maxCount 1 ; sh:datatype xsd:string ; sh:order 2 ; sh:name "time_window" ;
+                  sh:in ( "5m" "15m" "1h" "6h" "1d" "7d" ) ; sh:description "How far back. Default 1h." ] .
+
+# chorus_decisions_get  GET {door}/v1/decisions/adrs/{id}
+chorus:DoorRowInput a sh:NodeShape , chorus:ToolInput ;
+    rdfs:label "one door row by name" ;
+    sh:property [ sh:path chorus:toolRowId ; sh:minCount 1 ; sh:maxCount 1 ; sh:datatype xsd:string ; sh:order 1 ; sh:name "id" ;
+                  sh:description "The row's name, e.g. adr-041." ] .
+
+# chorus_decisions_list  GET {door}/v1/decisions/adrs
+# chorus_principles_list GET {door}/v1/principles/principles
+chorus:NoInput a sh:NodeShape , chorus:ToolInput ;
+    rdfs:label "no arguments" .
