@@ -1,4 +1,5 @@
 // @card: #4534
+/* eslint-disable @typescript-eslint/require-await, sonarjs/no-duplicate-string -- test doubles model async injectors; repeated fixture literals are per-case readability (as service.test.ts) */
 // @owner: wren
 // @test-type: integration — supertest drives POST /api/nudge with real ES256 tokens signed by a test key
 /**

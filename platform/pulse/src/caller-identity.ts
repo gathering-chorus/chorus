@@ -62,13 +62,10 @@ function hairpinHeaders(): Record<string, string> {
   }
 }
 
-async function keyFor(kid: string): Promise<crypto.KeyObject | null> {
-  const now = deps.nowSecs();
-  const fresh = jwks !== null && jwks.expires > now;
-  if (fresh && jwks!.keys.has(kid)) return jwks!.keys.get(kid) ?? null;
+async function fetchKeys(): Promise<Map<string, crypto.KeyObject> | null> {
   try {
     const res = await deps.fetchFn(deps.jwksUrl, { headers: hairpinHeaders() });
-    if (!res.ok) return fresh ? (jwks!.keys.get(kid) ?? null) : null;
+    if (!res.ok) return null;
     const body = (await res.json()) as { keys?: Array<Record<string, string>> };
     const keys = new Map<string, crypto.KeyObject>();
     for (const jwk of body.keys ?? []) {
@@ -79,11 +76,21 @@ async function keyFor(kid: string): Promise<crypto.KeyObject | null> {
         /* one bad key must not blind the check to the rest */
       }
     }
-    jwks = { keys, expires: now + deps.ttlSecs };
-    return keys.get(kid) ?? null;
+    return keys;
   } catch {
-    return fresh ? (jwks!.keys.get(kid) ?? null) : null;
+    return null;
   }
+}
+
+/** A cached key while fresh; else refetch. With no fresh keys, fail closed. */
+async function keyFor(kid: string): Promise<crypto.KeyObject | null> {
+  const now = deps.nowSecs();
+  const cached = jwks !== null && jwks.expires > now ? jwks.keys : null;
+  if (cached?.has(kid)) return cached.get(kid) ?? null;
+  const keys = await fetchKeys();
+  if (!keys) return cached?.get(kid) ?? null;
+  jwks = { keys, expires: now + deps.ttlSecs };
+  return keys.get(kid) ?? null;
 }
 
 /** The role a WebID names: https://<issuer host>/<role>/profile/card#me. */
@@ -101,14 +108,12 @@ export function roleFromWebId(webId: string, issuer: string): string | null {
   return m ? m[1] : null;
 }
 
-/** The role an `Authorization: Bearer <token>` header proves, or null. */
-export async function callerRole(authorization: string | undefined): Promise<string | null> {
-  const m = /^Bearer\s+(\S+)$/.exec(authorization ?? '');
-  if (!m) return null;
-  const parts = m[1].split('.');
+/** The token's claims when its ES256 signature verifies against the issuer's keys. */
+async function verifiedClaims(token: string): Promise<Record<string, unknown> | null> {
+  const parts = token.split('.');
   if (parts.length !== 3) return null;
   const head = b64urlJson(parts[0]);
-  if (!head || head.alg !== 'ES256' || typeof head.kid !== 'string' || !head.kid) return null;
+  if (head?.alg !== 'ES256' || typeof head.kid !== 'string' || !head.kid) return null;
   const key = await keyFor(head.kid);
   if (!key) return null;
   const sigOk = crypto.verify(
@@ -117,11 +122,16 @@ export async function callerRole(authorization: string | undefined): Promise<str
     { key, dsaEncoding: 'ieee-p1363' },
     Buffer.from(parts[2], 'base64url'),
   );
-  if (!sigOk) return null;
-  const claims = b64urlJson(parts[1]);
-  if (!claims) return null;
-  if (typeof claims.iss !== 'string' || claims.iss.replace(/\/+$/, '') !== deps.issuer.replace(/\/+$/, '')) return null;
+  return sigOk ? b64urlJson(parts[1]) : null;
+}
+
+const sameIssuer = (a: string, b: string) => a.replace(/\/+$/, '') === b.replace(/\/+$/, '');
+
+/** The role an `Authorization: Bearer <token>` header proves, or null. */
+export async function callerRole(authorization: string | undefined): Promise<string | null> {
+  const m = /^Bearer\s+(\S+)$/.exec(authorization ?? '');
+  const claims = m ? await verifiedClaims(m[1]) : null;
+  if (!claims || typeof claims.iss !== 'string' || !sameIssuer(claims.iss, deps.issuer)) return null;
   if (typeof claims.exp !== 'number' || claims.exp <= deps.nowSecs()) return null;
-  if (typeof claims.webid !== 'string') return null;
-  return roleFromWebId(claims.webid, deps.issuer);
+  return typeof claims.webid === 'string' ? roleFromWebId(claims.webid, deps.issuer) : null;
 }

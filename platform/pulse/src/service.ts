@@ -212,6 +212,13 @@ async function peersOrRefusal(from: string, to: string): Promise<string[] | stri
   }
 }
 
+// #3485 the shared secret, or #4534 the sender's own identity token naming `from`.
+async function nudgeCallerOk(headers: express.Request['headers'], from: unknown): Promise<boolean> {
+  const secret = headers['x-chorus-pulse-secret'];
+  if (callerIsAuthorized(typeof secret === 'string' ? secret : undefined)) return true;
+  return typeof from === 'string' && (await callerRole(headers.authorization)) === from;
+}
+
 function registerNudgeRoutes(app: Express, store: MessageStore, metrics: Metrics, worker?: DeliveryWorker): void {
   app.post('/api/nudge', async (req, res) => {
     // #3485 — only the MCP server is the canonical caller. The pre-#3485 gate
@@ -221,10 +228,8 @@ function registerNudgeRoutes(app: Express, store: MessageStore, metrics: Metrics
     // "all of them must point to mcp" (Jeff 2026-06-18).
     // #4534 — or the sender's own identity token, whose WebID must name `from`:
     // a role on its own macOS user (Abby) cannot read the 0600 secret file.
-    const providedSecret = req.headers['x-chorus-pulse-secret'];
-    const bySecret = callerIsAuthorized(typeof providedSecret === 'string' ? providedSecret : undefined);
     const { from, to, content, traceId: bodyTraceId } = req.body;
-    if (!bySecret && (typeof from !== 'string' || (await callerRole(req.headers.authorization)) !== from)) {
+    if (!(await nudgeCallerOk(req.headers, from))) {
       return res.status(403).json({
         error: 'not-canonical-caller',
         message: 'POST /api/nudge accepts only MCP-server calls. Use the clearing-nudge MCP tool from a Claude session.',
