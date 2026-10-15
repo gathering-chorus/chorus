@@ -59,15 +59,37 @@ fn generate(store: &oxigraph::store::Store, root: &Path, product: &str, out: &Pa
     }
 }
 
+/// #4547 — the touched products the generator builds: those that declare their own
+/// settings. The rest are served by the v1 door and are named, never generated.
+fn generated_products<'a>(store: &oxigraph::store::Store, touched: impl Iterator<Item = &'a String>, card: &str) -> Vec<String> {
+    let mut built = Vec::new();
+    for p in touched {
+        let declared = athena_gen::model::settings(store, p).unwrap_or_else(|e| die(e));
+        if declared.iter().any(|(k, _)| k == "model.namespace") {
+            built.push(p.clone());
+        } else {
+            println!("card #{card}: {p} declares no settings — served by the v1 door, nothing to generate");
+        }
+    }
+    built
+}
+
 /// #4515 — the card's model change → the products it touches. Refuses (exit 1,
 /// named) on a card with no werk or no model change, on a touched class no
 /// product serves, and on a change that touches no product at all.
 fn card_mode(cmd: &str, card_id: &str, args: &[String]) {
-    use athena_gen::card::{card_scope, product_out, products_for, touched};
+    use athena_gen::card::{card_scope, changed_since_main, only_changed, product_out, products_for, touched};
     let card = card_scope::resolve(card_id).unwrap_or_else(|e| die(e));
     let ttl: Vec<PathBuf> = card.ttl().iter().map(|r| PathBuf::from(card.abs(r))).collect();
     println!("card #{}: {} model file(s) in {}", card.card, ttl.len(), card.werk);
     let t = touched(&ttl).unwrap_or_else(|e| die(format!("card #{}: {e}", card.card)));
+    // #4547 reopen 1 — only what the card changed, not every class in a file it touched
+    let changed = changed_since_main(&card.werk, &card.ttl()).unwrap_or_else(|e| die(format!("card #{}: {e}", card.card)));
+    let before = t.classes.len();
+    let t = only_changed(t, &changed);
+    if before > t.classes.len() {
+        println!("card #{}: {} class(es) unchanged from main — not this card's", card.card, before - t.classes.len());
+    }
     let root = PathBuf::from(&card.werk);
     let store = load_model(&root);
     let (products, unserved) = products_for(&store, &t).unwrap_or_else(|e| die(e));
@@ -89,12 +111,20 @@ fn card_mode(cmd: &str, card_id: &str, args: &[String]) {
     if products.is_empty() {
         die(format!("card #{}: the card's model change touches no product — nothing to generate", card.card));
     }
+    // #4547 — a product that declares no settings is served by the v1 door (athena-make),
+    // not generated. A card changing its model skips it here; naming it with --product
+    // still refuses (#4519: never read as Chorus by default).
+    let built = generated_products(&store, products.keys(), &card.card);
     if cmd == "model" {
+        return;
+    }
+    if built.is_empty() {
+        println!("card #{}: every touched product is served by the v1 door — nothing to generate", card.card);
         return;
     }
     let out_base = arg(args, "--out").map(PathBuf::from).unwrap_or_else(|| root.join("directing/products"));
     let verifier = arg(args, "--verifier");
-    for p in products.keys() {
+    for p in &built {
         generate(&store, &root, p, &product_out(&out_base, p), verifier.as_ref());
     }
 }

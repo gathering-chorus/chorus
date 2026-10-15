@@ -322,8 +322,12 @@ pub fn pulse_env_prod_leak(env: &[(String, String)], home: &str) -> Option<Strin
 /// state_paths::run_dir_from), which is exactly why a second daemon could
 /// never start before: on the shared path it loses the flock and exits.
 /// Under the werk, so env_down takes it with the rest of the demo.
+/// #4530 — named `hr`, not `hooks-run`: a unix socket path holds at most 103
+/// bytes on macOS, and abby-normal-4530's was 105, so her daemon could not
+/// bind and env-up timed out (run 14, 06:41). The longest role name with a
+/// five-digit card now fits (hooks_socket_fits_the_longest_role below).
 pub fn hooks_run_dir(werk_root: &str) -> String {
-    format!("{}/.chorus-demo/hooks-run", werk_root.trim_end_matches('/'))
+    format!("{}/.chorus-demo/hr", werk_root.trim_end_matches('/'))
 }
 
 /// #4227 — the socket a variant hooks daemon answers on. Mirrors
