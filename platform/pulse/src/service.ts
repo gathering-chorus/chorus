@@ -22,6 +22,7 @@ import { bostonOffsetIso } from './boston-iso';
 // #3879 — spine events carry role/card fields beyond reply-gap's minimal shape.
 type SpineEvExt = SpineEv & { card?: number | string; card_id?: number | string };
 import { callerIsAuthorized, resolvePulseSecret } from './pulse-secret';
+import { callerRole } from './caller-identity';
 import { Registry, Counter, Histogram, Gauge, collectDefaultMetrics } from 'prom-client';
 import { spawn, execFileSync } from 'child_process';
 import { appendFile, open as fsOpen } from 'fs/promises';
@@ -211,6 +212,13 @@ async function peersOrRefusal(from: string, to: string): Promise<string[] | stri
   }
 }
 
+// #3485 the shared secret, or #4534 the sender's own identity token naming `from`.
+async function nudgeCallerOk(headers: express.Request['headers'], from: unknown): Promise<boolean> {
+  const secret = headers['x-chorus-pulse-secret'];
+  if (callerIsAuthorized(typeof secret === 'string' ? secret : undefined)) return true;
+  return typeof from === 'string' && (await callerRole(headers.authorization)) === from;
+}
+
 function registerNudgeRoutes(app: Express, store: MessageStore, metrics: Metrics, worker?: DeliveryWorker): void {
   app.post('/api/nudge', async (req, res) => {
     // #3485 — only the MCP server is the canonical caller. The pre-#3485 gate
@@ -218,14 +226,15 @@ function registerNudgeRoutes(app: Express, store: MessageStore, metrics: Metrics
     // now the caller must present the shared secret (chorus-hook-shim
     // nudge-send reads the same secret file, #4515). PULSE_ALLOW_DIRECT_POST=1 still opts out for tests.
     // "all of them must point to mcp" (Jeff 2026-06-18).
-    const providedSecret = req.headers['x-chorus-pulse-secret'];
-    if (!callerIsAuthorized(typeof providedSecret === 'string' ? providedSecret : undefined)) {
+    // #4534 — or the sender's own identity token, whose WebID must name `from`:
+    // a role on its own macOS user (Abby) cannot read the 0600 secret file.
+    const { from, to, content, traceId: bodyTraceId } = req.body;
+    if (!(await nudgeCallerOk(req.headers, from))) {
       return res.status(403).json({
         error: 'not-canonical-caller',
         message: 'POST /api/nudge accepts only MCP-server calls. Use the clearing-nudge MCP tool from a Claude session.',
       });
     }
-    const { from, to, content, traceId: bodyTraceId } = req.body;
     if (!from || !to || !content) return res.status(400).json({ error: 'from, to, content required' });
     const traceId = resolveTraceId(req.headers['x-chorus-trace-id'], bodyTraceId);
     const marked = markNudge(from, content);
