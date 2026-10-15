@@ -141,3 +141,33 @@ fn products_for_maps_classes_and_own_rows_and_names_the_unserved() {
     let e = touched(&[bad]).unwrap_err().0;
     assert!(e.contains("bad.ttl does not parse"), "{e}");
 }
+
+// #4547 — a product that declares no settings is served by the v1 door, not
+// generated. #4536 (Kade, 2026-10-15) changed the Test shape; --card mapped it onto
+// chorus and werk, refused for missing settings, and once settings were added wrote a
+// whole chorus API into the werk. A card now skips such a product by name.
+const DOORWAY: &str = "c:doorway a c:Product ; c:hasDomain c:gadgets .\nc:gadgets c:definesVocabulary c:Gadget .\n\
+c:Gadget a owl:Class .\nc:GadgetShape a sh:NodeShape ; sh:targetClass c:Gadget ;\n  sh:property [ sh:path c:weight ; sh:datatype xsd:integer ] .\n";
+
+#[test]
+fn a_card_touching_only_a_door_served_product_generates_nothing_and_passes() {
+    let (base, w) = werk("doorway", "9106", &[
+        ("roles/wren/ontology/doorway.ttl", format!("{P}{DOORWAY}")),
+        ("roles/wren/ontology/doorway-change.ttl", format!("{P}c:GadgetShape sh:property [ sh:path c:colour ; sh:datatype xsd:string ] .\n")),
+    ]);
+    let (code, out) = run(&base, &["generate", "--card", "9106"]);
+    assert_eq!(code, 0, "{out}");
+    assert!(out.contains("doorway declares no settings — served by the v1 door"), "{out}");
+    assert!(!w.join("directing/products/doorway").exists(), "nothing is generated for a door-served product: {out}");
+}
+
+#[test]
+fn negative_proof_naming_a_door_served_product_still_refuses() {
+    let (_base, w) = werk("doorway-named", "9107", &[("roles/wren/ontology/doorway.ttl", format!("{P}{DOORWAY}"))]);
+    let out_dir = std::env::temp_dir().join(format!("athena-gen-4547-{}", std::process::id()));
+    let o = Command::new(bin()).args(["generate", "--root", w.to_str().unwrap(), "--product", "doorway", "--out", out_dir.to_str().unwrap()])
+        .output().unwrap();
+    let text = format!("{}{}", String::from_utf8_lossy(&o.stdout), String::from_utf8_lossy(&o.stderr));
+    assert_ne!(o.status.code(), Some(0), "{text}");
+    assert!(text.contains("doorway declares no model.namespace"), "{text}");
+}
