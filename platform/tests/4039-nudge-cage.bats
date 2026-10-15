@@ -22,6 +22,10 @@ setup() {
   [ -n "$SHIM" ] || { echo "no chorus-hook-shim build with nudge-send under $hooks: build chorus-hooks first"; return 1; }
   # nudge-send writes nudge.requested to the spine; a test brings its own (#3615)
   export CHORUS_LOG_FILE="$BATS_TEST_TMPDIR/spine.log"
+  # #4532 — ops-nudge refuses any caller with a role; the ops callers these
+  # tests stand in for have none, and a hand run from a role session must not
+  # change the verdict.
+  unset CHORUS_ROLE
 }
 
 @test "NEGATIVE PROOF: under the caged URL, ops-nudge reaches nothing (typed transport error)" {
@@ -87,4 +91,24 @@ PY
     false
   }
   grep -q "stub probe" "$BATS_TEST_TMPDIR/got.txt"
+}
+
+# #4532 — principals can't call ops-nudge (Jeff 2026-10-14). Abby's nudges sent
+# through it read "system" on Jeff's screen. The refusal must name the caller
+# and deliver nothing; the control above (no role, same seam) proves the role
+# is the only thing that separates the two states.
+@test "NEGATIVE PROOF #4532: a principal calling ops-nudge is refused by name and reaches nothing" {
+  run env CHORUS_ROLE=abby-normal CHORUS_HOOK_SHIM="$SHIM" CHORUS_PULSE_URL="http://127.0.0.1:9/api/nudge" bash "$OPS_NUDGE" silas "principal probe"
+  [ "$status" -eq 4 ] || { echo "want exit 4 (refused), got $status: $output"; return 1; }
+  [[ "$output" == *"abby-normal is a principal"* ]] || return 1
+  [[ "$output" == *"clearing-nudge"* ]] || return 1
+  # refused before the shim runs: a transport error here would mean it tried to send
+  [[ "$output" != *"transport error"* ]] || return 1
+}
+
+@test "#4532: every role name is refused, not only abby-normal" {
+  for r in silas wren kade jeff; do
+    run env CHORUS_ROLE="$r" CHORUS_HOOK_SHIM="$SHIM" CHORUS_PULSE_URL="http://127.0.0.1:9/api/nudge" bash "$OPS_NUDGE" silas "x"
+    [ "$status" -eq 4 ] || { echo "$r: want 4, got $status"; return 1; }
+  done
 }
