@@ -37,22 +37,6 @@ case "$MODE" in
     echo "usage: gate-test-type.sh staged | range <base> <head>" >&2; exit 2 ;;
 esac
 
-# #4538 — a staged file whose content is exactly main's is not a change to it:
-# restoring a test to main (here, undoing a header on a file no runner covers)
-# must not demand a header the restore is removing. Only a file identical to
-# origin/main is dropped; any real edit still reaches the gate.
-if [ "$MODE" = "staged" ] && git rev-parse --verify -q origin/main >/dev/null; then
-  KEEP=()
-  for f in "${CHANGED[@]}"; do
-    if git cat-file -e "origin/main:$f" 2>/dev/null && [ "$(git rev-parse ":$f" 2>/dev/null)" = "$(git rev-parse "origin/main:$f")" ]; then
-      continue
-    fi
-    KEEP+=("$f")
-  done
-  CHANGED=()
-  [ ${#KEEP[@]} -eq 0 ] || CHANGED=("${KEEP[@]}")
-fi
-
 # Hand ALL changed paths to the CLI; isTestFile() inside filters to test files,
 # so a change with no test files is a clean no-op (exit 0).
 if [ "${#CHANGED[@]}" -eq 0 ]; then exit 0; fi
