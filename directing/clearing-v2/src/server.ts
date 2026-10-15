@@ -6,8 +6,9 @@ import path from 'path';
 import { MessageRouter } from './router';
 import { TileService } from './tile-service';
 import { BuzzRelayClient } from './relay-client';
-import { verifyNostrEvent, resolveRoleByPubkey } from './identity';
+import { verifyNostrEvent, resolveRoleByPubkey, resolveSenderIdentity } from './identity';
 import { ClearingMessage, NostrEvent } from './types';
+
 import { renderTodayPage, renderRolesPage, renderRoomsPage } from './views';
 import { DataService } from './data-service';
 
@@ -166,24 +167,23 @@ function registerRoutes(ctx: RouteContext): void {
     res.json({ ok: true, card });
   });
 
+  // #3743 — resolveSenderIdentity: identity comes strictly from the verified cryptographic
+  // event/session; the client-supplied `from` field and 'jeff' default are RETIRED.
+  // (Ported from v1 server.ts:1700-1705 / sender-identity.ts — the exact hole Mark fell through in #3743).
   app.post('/api/send', (req: Request, res: Response) => {
     const event: NostrEvent | undefined = req.body?.event || (req.body?.id && req.body?.sig ? req.body : undefined);
 
-    if (!event || !verifyNostrEvent(event)) {
-      res.status(401).json({ ok: false, error: 'unsigned post refused: valid signed event required' });
+    const identity = resolveSenderIdentity(event, keys);
+    if (!identity) {
+      res.status(401).json({ ok: false, error: 'unsigned or unregistered post refused: valid signed event from registered key required (#3743)' });
       return;
     }
 
-    const role = resolveRoleByPubkey(event.pubkey, keys);
-    if (!role) {
-      res.status(401).json({ ok: false, error: 'unregistered key refused' });
-      return;
-    }
-
-    relay.publish(event);
-    onInboundEvent(event);
-    res.json({ ok: true, id: event.id, from: role });
+    relay.publish(event!);
+    onInboundEvent(event!);
+    res.json({ ok: true, id: event!.id, from: identity.role });
   });
+
 
 
   app.get('/api/events', (req: Request, res: Response) => {
