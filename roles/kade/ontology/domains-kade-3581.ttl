@@ -30,7 +30,7 @@ chorus:pipelines a chorus:Domain ;
   chorus:purpose "Own how a change travels from commit to running production — the typed, composable build->land pipeline — so every card follows one proven path with witnesses at each step, not ad-hoc scripting." ;
   chorus:ownedBy chorus:principal-kade ;
   chorus:atStep chorus:value-stream-step-building ;
-  chorus:repoTarget "platform/services" ; chorus:definesVocabulary chorus:Pipeline , chorus:PipelineRun , chorus:PipelineStep , chorus:GateResult ;  # GateResult: #4536 (Silas 11:46) — gate outcomes
+  chorus:repoTarget "platform/services" ; chorus:definesVocabulary chorus:Pipeline , chorus:PipelineRun , chorus:PipelineStep ;
   chorus:hasChild chorus:cicd .
 
 chorus:cicd a chorus:Domain ;

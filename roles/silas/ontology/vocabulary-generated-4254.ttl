@@ -1456,6 +1456,12 @@ vocab:gen-verb a skos:Concept ;
     skos:definition "The werk verb name on spine-family records." ;
     skos:exactMatch <https://jeffbridwell.com/chorus#verb> .
 
+vocab:gen-verifiedBy a skos:Concept ;
+    skos:inScheme vocab:model-attributes ;
+    skos:prefLabel "verifiedBy" ;
+    skos:definition "Authored intent bound to derived proof: a Scenario (core class, authored via the domains API) is verified by the Tests that exercise it. The completeness story's load-bearing edge; werk-test's eventual which-scenarios-does-this-card-threaten query." ;
+    skos:exactMatch <https://jeffbridwell.com/chorus#verifiedBy> .
+
 vocab:gen-version a skos:Concept ;
     skos:inScheme vocab:model-attributes ;
     skos:prefLabel "version" ;
