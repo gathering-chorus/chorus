@@ -1398,7 +1398,6 @@ fn ts_daemon(name: &str) -> Option<(&'static str, &'static str, String)> {
             "directing/clearing-v2",
             "com.chorus.clearing-v2",
             env::var("CHORUS_CLEARING_V2_HEALTH_URL").unwrap_or_else(|_| "http://localhost:3472/health".to_string()),
-            false, // health-check smoke
         )),
         _ => None,
     }
