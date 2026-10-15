@@ -78,11 +78,18 @@ fn generated_products<'a>(store: &oxigraph::store::Store, touched: impl Iterator
 /// named) on a card with no werk or no model change, on a touched class no
 /// product serves, and on a change that touches no product at all.
 fn card_mode(cmd: &str, card_id: &str, args: &[String]) {
-    use athena_gen::card::{card_scope, product_out, products_for, touched};
+    use athena_gen::card::{card_scope, changed_since_main, only_changed, product_out, products_for, touched};
     let card = card_scope::resolve(card_id).unwrap_or_else(|e| die(e));
     let ttl: Vec<PathBuf> = card.ttl().iter().map(|r| PathBuf::from(card.abs(r))).collect();
     println!("card #{}: {} model file(s) in {}", card.card, ttl.len(), card.werk);
     let t = touched(&ttl).unwrap_or_else(|e| die(format!("card #{}: {e}", card.card)));
+    // #4547 reopen 1 — only what the card changed, not every class in a file it touched
+    let changed = changed_since_main(&card.werk, &card.ttl()).unwrap_or_else(|e| die(format!("card #{}: {e}", card.card)));
+    let before = t.classes.len();
+    let t = only_changed(t, &changed);
+    if before > t.classes.len() {
+        println!("card #{}: {} class(es) unchanged from main — not this card's", card.card, before - t.classes.len());
+    }
     let root = PathBuf::from(&card.werk);
     let store = load_model(&root);
     let (products, unserved) = products_for(&store, &t).unwrap_or_else(|e| die(e));
