@@ -22,6 +22,9 @@ setup() {
   [ "$status" -eq 0 ] || skip "chorus-api not reachable at $API"
   [ "$output" = "200" ]
   run curl -s --max-time 8 "$API/owl/domains"
-  echo "$output" | grep -q '"count"'
+  echo "$output" | grep -q '"data"'
   echo "$output" | grep -q '"modelVersion"'
+  # #4531 — the door counts a collection only when asked; the page never reads it.
+  run curl -s --max-time 8 "$API/owl/domains?count=true"
+  echo "$output" | grep -q '"count"'
 }
