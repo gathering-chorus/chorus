@@ -50,6 +50,8 @@ fn sweep(args: &[&str]) -> (Vec<String>, Vec<String>, String) {
         .env("ATHENA_MAKE_STAGING_URL", &stg)
         .env("ATHENA_VALIDATE_NUDGE", "0")
         .env("ATHENA_VALIDATE_TIMEOUT", "5")
+        // #4536 — a test brings its own baseline home; the machine's must never decide it
+        .env("ATHENA_VALIDATE_BASELINE", std::env::var("TEST_BASELINE_4536").unwrap_or_else(|_| "/nonexistent/baseline-4536".into()))
         .env_remove("ATHENA_VALIDATE_REPORT")
         .env_remove("ATHENA_VALIDATE_GRAPHS")
         .env_remove("XPC_SERVICE_NAME")
@@ -75,4 +77,32 @@ fn negative_proof_without_staging_the_sweep_reads_prod() {
     let (prod, stg, out) = sweep(&[]);
     assert!(stg.is_empty(), "staging was asked {stg:?}\n{out}");
     assert!(prod.iter().any(|p| p == "/pods/query"), "prod store not asked: {prod:?}\n{out}");
+}
+
+/// #4536 — under --staging with no baseline, the sweep still runs and the
+/// verdict is UNMEASURED "no baseline", never a sweep-wide red.
+#[test]
+fn staging_with_no_baseline_is_unmeasured_never_red_4536() {
+    let (_, stg, out) = sweep(&["--staging"]);
+    assert!(stg.iter().any(|p| p == "/staging-4515/query"), "the sweep must still run: {out}");
+    assert!(out.contains("graph-summary|UNMEASURED|no baseline at /nonexistent/baseline-4536"), "{out}");
+    assert!(!out.contains("|dirty"), "no baseline must never read as dirty: {out}");
+}
+
+/// #4536 — the "before" step: a sweep that could not measure writes no
+/// baseline and never reads as "recorded" (an unmeasured baseline would hide
+/// gaps from the "after" step). NEGATIVE PROOF for the clean exit a written
+/// baseline gets: here nothing is written, so the step is UNMEASURED.
+#[test]
+fn a_before_step_that_cannot_measure_writes_no_baseline_4536() {
+    let dir = std::env::temp_dir().join(format!("athena-validate-4536-{}", std::process::id()));
+    let _ = std::fs::remove_dir_all(&dir);
+    std::fs::create_dir_all(&dir).unwrap();
+    let path = dir.join("run.baseline");
+    let p = path.to_str().unwrap().to_string();
+    let (_, _, out) = sweep(&["--staging", "--write-baseline", &p]);
+    assert!(!path.exists(), "an unmeasured sweep wrote a baseline: {out}");
+    assert!(out.contains("graph-baseline|NOT WRITTEN"), "{out}");
+    assert!(!out.contains("recorded, not judged"), "{out}");
+    let _ = std::fs::remove_dir_all(&dir);
 }
