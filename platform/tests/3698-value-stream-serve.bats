@@ -97,7 +97,8 @@ sq() {
   run curl -s --max-time 8 -o /dev/null -w '%{http_code}' "$OWL_URL/valuestreams"
   [ "$status" -eq 0 ] || skip "owl-api not reachable at $OWL_URL"
   [ "$output" = "200" ]
-  run curl -s --max-time 8 "$OWL_URL/valuestreams"
+  # #4531 — the door counts a collection only when asked.
+  run curl -s --max-time 8 "$OWL_URL/valuestreams?count=true"
   local count; count=$(echo "$output" | python3 -c "import sys,json; print(json.load(sys.stdin).get('count',0))" 2>/dev/null || echo 0)
   [ "${count:-0}" -ge 3 ]
 }
@@ -105,7 +106,8 @@ sq() {
   run curl -s --max-time 8 -o /dev/null -w '%{http_code}' "$OWL_URL/valuestreamsteps"
   [ "$status" -eq 0 ] || skip "owl-api not reachable at $OWL_URL"
   [ "$output" = "200" ]
-  run curl -s --max-time 8 "$OWL_URL/valuestreamsteps"
+  # #4531 — the door counts a collection only when asked.
+  run curl -s --max-time 8 "$OWL_URL/valuestreamsteps?count=true"
   local count; count=$(echo "$output" | python3 -c "import sys,json; print(json.load(sys.stdin).get('count',0))" 2>/dev/null || echo 0)
   [ "${count:-0}" -ge 1 ]
 }

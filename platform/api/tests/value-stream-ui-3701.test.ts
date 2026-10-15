@@ -63,7 +63,8 @@ describeLive('value-stream.html renders rows from the live /owl proxy (#3701)', 
     let body: { count?: number; data?: unknown[] } = {};
     let status = 0;
     for (let attempt = 0; attempt < 3; attempt++) {
-      const res = await fetch(`${API}/owl/valuestreams`);
+      // #4531 — the door counts a collection only when asked; the page counts rows itself.
+      const res = await fetch(`${API}/owl/valuestreams?count=true`);
       status = res.status;
       body = status === 200 ? await res.json() : {};
       if (status === 200 && Array.isArray(body.data) && body.data.length >= 1) break;
