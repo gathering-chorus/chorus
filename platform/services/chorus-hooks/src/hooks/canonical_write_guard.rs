@@ -107,10 +107,9 @@ pub fn check(input: &HookInput) -> HookResponse {
         let werk_slot = rest.split('/').next().unwrap_or("");
         // #4432 — a role name may hold '-' (abby-normal): the owner is the
         // slot minus its trailing -<card number>.
-        let other_role = match werk_slot.rsplit_once('-') {
-            Some((owner, card)) if !card.is_empty() && card.bytes().all(|b| b.is_ascii_digit()) => owner,
-            _ => werk_slot,
-        };
+        let card_slot = werk_slot.rsplit_once('-')
+            .filter(|(_, card)| !card.is_empty() && card.bytes().all(|b| b.is_ascii_digit()));
+        let other_role = card_slot.map(|(owner, _)| owner).unwrap_or(werk_slot);
         if !other_role.is_empty() && other_role != role {
             let msg = format!(
                 "BLOCKED: cross-role write — {role} cannot write to {other_role}'s werk at {file_path}. \
@@ -118,6 +117,22 @@ pub fn check(input: &HookInput) -> HookResponse {
                  If you need to coordinate, file a brief or open a PR."
             );
             return HookResponse::deny(&permission_deny_json(&msg));
+        }
+        // #4532 — a card werk exists only because werk-pull made it, and
+        // werk-pull refuses a card that is not on the board. So a slot with
+        // no worktree marker (`.git`) is a folder for a card nobody pulled:
+        // Write would create it with mkdir -p and the work would land outside
+        // any card. Refuse it by name.
+        if let Some((_, card)) = card_slot {
+            let slot_dir = format!("{}/{}", werk_base, werk_slot);
+            if !std::path::Path::new(&slot_dir).join(".git").exists() {
+                let msg = format!(
+                    "BLOCKED: no werk for card #{card} — {slot_dir} is not a worktree werk-pull made, \
+                     so #{card} was never pulled (or is not on the board). Pull the card first; \
+                     its werk is {werk_base}/{role}-{card}/."
+                );
+                return HookResponse::deny(&permission_deny_json(&msg));
+            }
         }
         // Own werk — allow.
         return HookResponse::allow();

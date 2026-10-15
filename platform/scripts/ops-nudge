@@ -21,6 +21,12 @@
 #   ops-nudge silas "infra-alert: disk 92%" system
 #
 # Returns 0 on success, non-zero on MCP rejection or transport error.
+#
+# #4532 (Jeff 2026-10-14: principals can't call ops-nudge). A principal's
+# nudge sent here went out as "system", so Jeff could not see who sent it.
+# Ops callers (launchd, dagu, health scripts) carry no CHORUS_ROLE; every
+# role session and chorus-agent child does. A caller with a role is refused
+# (exit 4) and told to use clearing-nudge, which signs the nudge with its name.
 
 set -eo pipefail
 
@@ -31,6 +37,11 @@ FROM="${3:-system}"
 if [ -z "$TO" ] || [ -z "$CONTENT" ]; then
   echo "usage: ops-nudge <to> <content> [from]" >&2
   exit 1
+fi
+
+if [ -n "${CHORUS_ROLE:-}" ]; then
+  echo "ops-nudge: refused — ${CHORUS_ROLE} is a principal; ops-nudge is for ops scripts. Send with clearing-nudge so the nudge carries your name (#4532)." >&2
+  exit 4
 fi
 
 # Tests cage this through CHORUS_PULSE_URL (nudge-send's pulse seam) or point

@@ -49,6 +49,21 @@ fn read_input(file_path: &str) -> HookInput {
     make_input("Read", json!({"file_path": file_path}))
 }
 
+/// #4532 — the guard allows a card werk only when werk-pull made it (a `.git`
+/// worktree marker in the slot). Tests that expect an own-werk allow bring a
+/// real werk base with those markers; a literal `/Users/jeff/...` path has none.
+/// Not under temp_dir: on macOS that is /var/folders, which the guard allows
+/// as a sketch surface before it looks at werks, so every case would pass.
+fn real_werk_base(slots: &[&str]) -> String {
+    let root = std::env::var("CARGO_MANIFEST_DIR").expect("cargo sets CARGO_MANIFEST_DIR for tests");
+    let base = std::path::Path::new(&root).join("target").join(format!("cwg-werks-{}-{}", std::process::id(), slots.join("+")));
+    for slot in slots {
+        std::fs::create_dir_all(base.join(slot)).unwrap();
+        std::fs::write(base.join(slot).join(".git"), "gitdir: /dev/null\n").unwrap();
+    }
+    base.to_string_lossy().to_string()
+}
+
 /// Helper: set CHORUS_HOME + <ROLE>_WERK + CHORUS_ROLE + CHORUS_WERK_BASE for
 /// the duration of a closure. `role_werk` is the role's ephemeral per-card
 /// werk path (#2913: chorus-werk/<role>-<card>/); CHORUS_WERK_BASE is derived
@@ -110,16 +125,15 @@ fn write_to_own_ephemeral_werk_allowed() {
     // worktree is allowed. Pre-patch the guard parsed the slot "kade-2913" as
     // the role, saw "kade-2913" != "kade", and DENIED every edit a role made
     // in its own werk.
+    let base = real_werk_base(&["kade-2913"]);
     with_env(
         "/Users/jeff/CascadeProjects/chorus",
         "kade",
-        "/Users/jeff/CascadeProjects/chorus-werk/kade-2913",
+        &format!("{base}/kade-2913"),
         || {
-            let input = write_input(
-                "/Users/jeff/CascadeProjects/chorus-werk/kade-2913/platform/scripts/foo.sh",
-            );
+            let input = write_input(&format!("{base}/kade-2913/platform/scripts/foo.sh"));
             let r = canonical_write_guard::check(&input);
-            assert!(r.stdout.is_none(), "expected allow for own ephemeral werk, got refusal");
+            assert!(r.stdout.is_none(), "expected allow for own ephemeral werk, got refusal {:?}", r.stdout);
             assert_eq!(r.exit_code, 0);
         },
     );
@@ -130,16 +144,15 @@ fn write_to_own_second_card_werk_allowed() {
     // #2913 enables >1 card per role. kade working on card 2914 while a
     // 2913 werk also exists — both kade-* slots parse to role "kade", both
     // allowed.
+    let base = real_werk_base(&["kade-2913", "kade-2914"]);
     with_env(
         "/Users/jeff/CascadeProjects/chorus",
         "kade",
-        "/Users/jeff/CascadeProjects/chorus-werk/kade-2913",
+        &format!("{base}/kade-2913"),
         || {
-            let input = write_input(
-                "/Users/jeff/CascadeProjects/chorus-werk/kade-2914/platform/api/x.ts",
-            );
+            let input = write_input(&format!("{base}/kade-2914/platform/api/x.ts"));
             let r = canonical_write_guard::check(&input);
-            assert!(r.stdout.is_none(), "kade's other card werk must also be allowed");
+            assert!(r.stdout.is_none(), "kade's other card werk must also be allowed {:?}", r.stdout);
         },
     );
 }
@@ -495,9 +508,11 @@ fn abby_normal_write_to_canonical_is_refused() {
 
 #[test]
 fn abby_normal_writes_to_tmp_and_her_own_werk_are_allowed() {
-    with_env("/Users/jeff/CascadeProjects/chorus", "abby-normal", "/Users/jeff/CascadeProjects/chorus-werk/abby-normal-4432", || {
+    let base = real_werk_base(&["abby-normal-4432"]);
+    with_env("/Users/jeff/CascadeProjects/chorus", "abby-normal", &format!("{base}/abby-normal-4432"), || {
         std::env::remove_var("CHORUS_ROLE");
-        for path in ["/tmp/abby.txt", "/Users/jeff/CascadeProjects/chorus-werk/abby-normal-4432/notes.md"] {
+        for path in ["/tmp/abby.txt".to_string(), format!("{base}/abby-normal-4432/notes.md")] {
+            let path = path.as_str();
             let r = canonical_write_guard::check(&as_role(write_input(path), "abby-normal"));
             assert!(r.stdout.is_none(), "{path}: expected allow, got {:?}", r.stdout);
         }
@@ -525,5 +540,35 @@ fn negative_proof_the_named_role_wins_over_the_cwd() {
         input.cwd = Some("/Users/jeff/CascadeProjects/chorus-werk/silas-4432/roles/abby-normal".into());
         let msg = canonical_write_guard::check(&input).stdout.unwrap_or_default();
         assert!(msg.contains("ABBY_NORMAL_WERK") && !msg.contains("SILAS"), "{msg}");
+    });
+}
+
+// ---- #4532: no werk for a card nobody pulled ----
+
+#[test]
+fn negative_proof_4532_write_into_a_werk_for_a_card_never_pulled_is_refused() {
+    // The slot parses as the role's own (abby-normal-9999), so before #4532
+    // the guard said "own werk — allow" and Write made the folder with mkdir.
+    let base = real_werk_base(&["abby-normal-4432"]);
+    with_env("/Users/jeff/CascadeProjects/chorus", "abby-normal", &format!("{base}/abby-normal-4432"), || {
+        std::env::remove_var("CHORUS_ROLE");
+        let r = canonical_write_guard::check(&as_role(write_input(&format!("{base}/abby-normal-9999/x.md")), "abby-normal"));
+        let msg = r.stdout.unwrap_or_default();
+        assert!(msg.contains("no werk for card #9999"), "expected refusal naming the card, got {msg:?}");
+        assert!(msg.contains("Pull the card first"), "{msg}");
+        // Control: the same role, same base, a werk werk-pull made — allowed.
+        let r = canonical_write_guard::check(&as_role(write_input(&format!("{base}/abby-normal-4432/x.md")), "abby-normal"));
+        assert!(r.stdout.is_none(), "pulled werk must be allowed, got {:?}", r.stdout);
+    });
+}
+
+#[test]
+fn negative_proof_4532_a_bare_folder_without_the_worktree_marker_is_refused() {
+    // A folder that exists but was made by hand (no .git) is not a werk either.
+    let base = real_werk_base(&["kade-2913"]);
+    std::fs::create_dir_all(format!("{base}/kade-7777")).unwrap();
+    with_env("/Users/jeff/CascadeProjects/chorus", "kade", &format!("{base}/kade-2913"), || {
+        let r = canonical_write_guard::check(&edit_input(&format!("{base}/kade-7777/a.rs")));
+        assert!(r.stdout.unwrap_or_default().contains("no werk for card #7777"));
     });
 }
