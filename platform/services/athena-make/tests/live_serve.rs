@@ -123,7 +123,7 @@ fn live_serve_loop_contract() {
     assert!(ob.contains("openapi") || ob.contains("paths"), "openapi doc body: {}", ob);
 
     // 6) pagination: limit slices, links.next appears when more remain
-    let (_, page) = curl(&format!("{}/domains?limit=5", base), &[]);
+    let (_, page) = curl(&format!("{}/domains?limit=5&count=true", base), &[]); // #4531: the door counts only on request
     assert!(page.contains("\"count\":"), "paginated list still enveloped: {}", page);
     // (cards domain set has 35 domains → a limit of 5 must yield a next cursor)
     assert!(page.contains("\"next\""), "links.next present when more remain: {}", page);
