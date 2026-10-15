@@ -1,5 +1,4 @@
 // @test-type: unit — pure parsing functions, no fs, no services.
-// @domain: products — placed by chorus-crawl's domain rules (#4538)
 import { describe, it } from 'node:test';
 import assert from 'node:assert/strict';
 import { parseSetFolder, getTagFromParent } from '../lib/parser.js';

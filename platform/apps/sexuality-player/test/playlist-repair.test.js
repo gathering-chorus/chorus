@@ -1,5 +1,4 @@
 // @test-type: unit — real files in a temp folder; no services.
-// @domain: video — placed by chorus-crawl's domain rules (#4538)
 // #4430: playlist videos that moved volumes are found again by file name.
 import { describe, it, beforeEach, afterEach } from 'node:test';
 import assert from 'node:assert/strict';

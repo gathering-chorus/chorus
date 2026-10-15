@@ -941,6 +941,19 @@ pub fn declared_domain(content: &str) -> Option<String> {
 /// and a header must name a domain the store lists: `@domain: nowhere` is
 /// named as unknown, never counted as declared.
 /// Returns (test files, files with no header, files whose header names an unknown domain).
+/// #4538 — a JS/TS test whose package does not run jest (or that sits in no
+/// package) has no runner in the pipeline: werk-test refuses a change to it.
+/// Such a file is named "no runner", one entry per file, never counted as
+/// declared or as missing. `package_test_script` gives the "test" script of
+/// the nearest package.json above the file, or None when there is none.
+pub fn has_no_runner(f: &str, package_test_script: &dyn Fn(&str) -> Option<String>) -> bool {
+    let js = [".test.js", ".test.ts", ".test.tsx", ".test.cjs", ".spec.js", ".spec.ts", ".spec.cjs"];
+    if !js.iter().any(|e| f.ends_with(e)) {
+        return false;
+    }
+    !package_test_script(f).map(|s| s.contains("jest")).unwrap_or(false)
+}
+
 pub fn undeclared_tests(files: &[String], read: &dyn Fn(&str) -> Option<String>, valid: &[String]) -> (usize, Vec<String>, Vec<String>) {
     let mut missing = Vec::new();
     let mut unknown = Vec::new();
@@ -1179,6 +1192,21 @@ mod declared_domain_4334 {
         assert_eq!((n, missing_f.len()), (1, 0), "fixture data is not a test file");
         assert_eq!(missing, vec!["b.bats".to_string(), "c.test.ts".to_string()]);
         assert!(unknown.is_empty());
+    }
+
+    /// #4538 — node --test and package-less tests have no runner; jest ones do.
+    /// NEGATIVE PROOF: a jest package's test is NOT named no-runner.
+    #[test]
+    fn a_test_whose_package_runs_no_jest_has_no_runner() {
+        let script = |f: &str| match f {
+            f if f.starts_with("apps/player/") => Some("node --test test/".to_string()),
+            f if f.starts_with("cards/") => Some("jest".to_string()),
+            _ => None,
+        };
+        assert!(has_no_runner("apps/player/test/a.test.js", &script));
+        assert!(has_no_runner("roles/x/docs/b.test.ts", &script));
+        assert!(!has_no_runner("cards/tests/c.test.ts", &script), "a jest package's test has a runner");
+        assert!(!has_no_runner("platform/tests/d.bats", &script), "bats is not a js test");
     }
 
     /// NEGATIVE PROOF (#4538) — a header naming a domain the store does not

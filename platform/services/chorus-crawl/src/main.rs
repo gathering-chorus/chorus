@@ -3648,6 +3648,22 @@ fn batch_bytes(batch: &[String]) -> usize {
     batch.iter().map(|b| b.len()).sum::<usize>() + batch.len().saturating_sub(1)
 }
 
+/// #4538 — the "test" script of the nearest package.json above `rel`, or None.
+fn package_test_script(root: &str, rel: &str) -> Option<String> {
+    let mut dir = std::path::Path::new(rel).parent();
+    while let Some(d) = dir {
+        let pj = std::path::Path::new(root).join(d).join("package.json");
+        if let Ok(text) = std::fs::read_to_string(&pj) {
+            // the crate has no JSON parser; the "test" key's string value is enough
+            let i = text.find("\"test\"")?;
+            let rest = text[i + 6..].trim_start().strip_prefix(':')?.trim_start().strip_prefix('"')?;
+            return rest.find('"').map(|e| rest[..e].to_string());
+        }
+        dir = d.parent();
+    }
+    None
+}
+
 /// #4199 — the graph-vs-project verdicts, printed after a FULL read of tree and
 /// graph. Read-only: nothing here writes. Returns whether everything was clean.
 #[allow(clippy::too_many_arguments)]
@@ -3702,7 +3718,15 @@ fn print_graph_vs_project(
                 .filter(|v| !v.is_empty())
                 .collect()
         });
-        let (n, mut missing, unknown) = domain::undeclared_tests(test_files, &read, valid.as_deref().unwrap_or(&[]));
+        let (n, all_missing, unknown) = domain::undeclared_tests(test_files, &read, valid.as_deref().unwrap_or(&[]));
+        // #4538 — a test with no runner is not a missing header: it is named,
+        // one line per file, UNMEASURED until #4537 gives it a runner
+        let script = |f: &str| package_test_script(root, f);
+        let (no_runner, mut missing): (Vec<String>, Vec<String>) =
+            all_missing.into_iter().partition(|f| domain::has_no_runner(f, &script));
+        for f in &no_runner {
+            println!("chorus-crawl: reconcile declared domains: UNMEASURED — no runner for {f} (#4537)");
+        }
         match &valid {
             // no Domain list: the unknown-name half cannot be measured, so it is
             // named UNMEASURED and the row says so, never clean
@@ -3720,7 +3744,7 @@ fn print_graph_vs_project(
             graph: n - missing.len(),
             missing,
             stale: Vec::new(),
-            excluded: Vec::new(),
+            excluded: no_runner,
             measured: valid.is_some(),
         });
     }

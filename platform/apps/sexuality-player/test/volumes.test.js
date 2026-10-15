@@ -1,5 +1,4 @@
 // @test-type: unit — real dirs in a temp folder stand in for /Volumes; no services.
-// @domain: products — placed by chorus-crawl's domain rules (#4538)
 // #4430: the player finds its folders from the mounted volumes, not a fixed list.
 import { describe, it, beforeEach, afterEach } from 'node:test';
 import assert from 'node:assert/strict';
@@ -88,3 +87,4 @@ describe('isUnder (the proxy allow-list)', () => {
     assert.equal(isUnder('', discoverVideoDirs(root)), false);
   });
 });
+// probe
