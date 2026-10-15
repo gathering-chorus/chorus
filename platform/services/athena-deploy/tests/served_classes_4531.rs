@@ -30,3 +30,23 @@ fn the_model_declares_tool_input_a_shape_class() {
     let end = decl.find(" .\n").unwrap_or(decl.len());
     assert!(decl[..end].contains("rdfs:subClassOf sh:NodeShape"), "{}", &decl[..end]);
 }
+
+// #4536 run 9 (10-15 13:15) — the staging served check failed 14 werk-v1
+// classes (Witness, GateResult, …) the card never touched, because it judged
+// every class in werk-domains.ttl. It answers only for classes the card changed.
+use athena_deploy::card::changed_served_classes;
+
+const SKILL_LABEL: &str = "<https://jeffbridwell.com/chorus#Skill> <http://www.w3.org/2000/01/rdf-schema#label> \"skill\" .\n";
+
+#[test]
+fn a_class_unchanged_from_main_is_not_the_cards_to_serve() {
+    let main = format!("{SKILL}{TOOL_INPUT}");
+    assert_eq!(changed_served_classes(&main, &main), Vec::<String>::new());
+}
+
+/// NEGATIVE PROOF: a class the card adds, or changes, in the same file is still checked.
+#[test]
+fn negative_proof_an_added_or_changed_class_is_still_checked() {
+    assert_eq!(changed_served_classes(&format!("{SKILL}{TOOL_INPUT}"), SKILL), vec!["ToolInput".to_string()]);
+    assert_eq!(changed_served_classes(&format!("{SKILL}{SKILL_LABEL}"), SKILL), vec!["Skill".to_string()]);
+}

@@ -98,7 +98,7 @@ fn negative_proof_a_discovery_with_no_routes_is_unmeasured_not_a_pass() {
 #[test]
 fn a_card_that_declares_no_class_says_so_out_loud() {
     let r = served_check("", &[], &|_| true).unwrap();
-    assert!(r[0].contains("declare no class"), "{r:?}");
+    assert!(r[0].contains("adds or changes no class"), "{r:?}");
 }
 
 /// A fake athena-make on loopback: `/` is the discovery document, the widgets

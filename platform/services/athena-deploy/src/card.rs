@@ -137,7 +137,7 @@ pub fn discovery_routes(disco: &str) -> Vec<(String, String)> {
 /// class is served" and never a pass.
 pub fn served_check(disco: &str, classes: &[String], answers: &dyn Fn(&str) -> bool) -> Result<Vec<String>, Vec<String>> {
     if classes.is_empty() {
-        return Ok(vec!["served: the card's model files declare no class — nothing to serve".into()]);
+        return Ok(vec!["served: the card adds or changes no class — nothing new to serve".into()]);
     }
     let routes = discovery_routes(disco);
     if routes.is_empty() {
@@ -195,12 +195,24 @@ pub fn served_classes(nt: &str) -> Vec<String> {
         .collect()
 }
 
-/// The local names of the classes the card's TTL files declare (through riot).
+/// #4536 — the served classes the card answers for: the ones it added or
+/// changed (card_scope::changed_classes, #4547's rule). A class declared in a
+/// touched file with the same triples as `base_nt` is not this card's: touching
+/// werk-domains.ttl must not make a card answer for 14 werk-v1 classes the door
+/// never served. Pure.
+pub fn changed_served_classes(nt: &str, base_nt: &str) -> Vec<String> {
+    let mine: Vec<String> = card_scope::changed_classes(nt, base_nt).iter().map(|c| card_scope::local_name(c)).collect();
+    served_classes(nt).into_iter().filter(|c| mine.contains(c)).collect()
+}
+
+/// The local names of the classes the card's TTL files add or change (through riot).
 pub fn card_classes(card: &Card) -> Result<Vec<String>, String> {
     let mut out: Vec<String> = Vec::new();
+    let base = card_scope::base_rev(card);
     for f in card.ttl() {
         let nt = card_scope::ntriples(&[card.abs(&f)]).map_err(|e| format!("card #{}: {f}: {e}", card.card))?;
-        for n in served_classes(&nt) {
+        let base_nt = card_scope::ntriples_at(&card.werk, &base, &f);
+        for n in changed_served_classes(&nt, &base_nt) {
             if !out.contains(&n) {
                 out.push(n);
             }
