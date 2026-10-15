@@ -34,9 +34,11 @@ case "$NAME" in
     fi ;;
   *)
     # verbs whose contract needs network/board: bare-invoke must be a TYPED
-    # refusal (usage/refusal exit ≤ 2), never a crash (>2 = broken binary).
+    # refusal, never a crash. A crash is a Rust panic (101) or a signal
+    # (128+). Any other code is the verb's own answer: werk-test REFUSED is 3
+    # by design (#4536, Jeff's plan 10-15), and ">2 = crash" refused it.
     "$BIN" >/dev/null 2>&1; RC=$?
-    if [ $RC -gt 2 ]; then
+    if [ $RC -eq 101 ] || [ $RC -ge 128 ]; then
       echo "verb-smoke FAIL ($NAME rc=$RC on bare invoke — crash, not refusal)" >&2; exit 1
     fi ;;
 esac
