@@ -63,7 +63,8 @@
     # (runTs, suiteOrder, suiteKind, filePath, suiteOwner, suiteSummary);
     # cardId is optional, because a nightly suite has no card.
     # 0.6.0 (#4416): TestSuiteRunShape gains suiteSeconds (optional).
-    # 0.7.0 (#4536): TestShape gains result, runTs, cardId, failureReason
+    # 0.7.0 (#4536): TestShape gains result, runTs, cardId, failureReason;
+    # 14 werk-v1 record classes retire (no product domain, no rows, no reader).
     # (optional): each Test row holds its latest result, updated in place.
     # The old "-converged-<date>" suffix form is retired; dcterms:date carries dates.
     owl:versionInfo "0.7.0" ;
@@ -119,40 +120,9 @@ chorus:result a owl:DatatypeProperty ;
 
 # =============================================================================
 
-chorus:VerbRun a owl:Class ;
-    chorus:mintKey ("traceId" "verb" "ts") ;
-    chorus:writeOrigin "derived-sweep" ;
-    rdfs:label "Verb Run" ;
-    rdfs:comment "One execution of a werk verb binary for a card: started/completed/refused, with trace, role, exit disposition. THE atom of werk observability." ;
-    chorus:dataSource "spine: <verb>.started/.completed/.refused + ops/logs/werk-<verb>.jsonl (one line per run, shared trace)" ;
-    chorus:ingestionStatus "ingestible" .
-
-chorus:TypedRefusal a owl:Class ;
-    chorus:mintKey ("traceId" "verb" "ts") ;
-    chorus:writeOrigin "derived-sweep" ;
-    rdfs:label "Typed Refusal" ;
-    rdfs:comment "A verb's typed refusal: reason drawn from that verb's taxonomy (e.g. no-werk, wrong-status, no-open-pr, gates-missing, no-ac, dirty-floor-inputs, ceremony-rejected)." ;
-    chorus:dataSource "jsonl witnesses: *.refused events with reason field; spine mirror" ;
-    chorus:ingestionStatus "ingestible" .
-
-chorus:Witness a owl:Class ;
-    chorus:mintKey ("verb") ;
-    chorus:writeOrigin "derived-crawl" ;
-    rdfs:label "Witness" ;
-    rdfs:comment "An append-only jsonl evidence stream owned by one verb (ops/logs/werk-<verb>.jsonl). The durable record a resume/recovery reads." ;
-    chorus:dataSource "filesystem: ops/logs/*.jsonl (file-per-verb)" ;
-    chorus:ingestionStatus "ingestible" .
-
-chorus:hasVerbRun a owl:ObjectProperty ;
-    rdfs:label "has verb run" ;
-    rdfs:domain chorus:Card ; rdfs:range chorus:VerbRun ;
-    rdfs:comment "Card → each verb execution in its lifecycle, ordered by ts on the shared trace." .
-
-chorus:refusedWith a owl:ObjectProperty ;
-    rdfs:domain chorus:VerbRun ; rdfs:range chorus:TypedRefusal .
-
 chorus:traceId a owl:DatatypeProperty ;
-    rdfs:domain chorus:VerbRun ; rdfs:range xsd:string ;
+    # #4536 — no rdfs:domain: VerbRun is retired; PipelineRun carries the trace.
+    rdfs:range xsd:string ;
     rdfs:comment "The shared trace threading both pipeline halves (CHORUS_TRACE_ID)." .
 
 # =============================================================================
@@ -169,43 +139,6 @@ chorus:PipelineRun a owl:Class ;
     chorus:dataSource "ops/logs/werk.jsonl: werk.started/werk.landed/werk.land.failed; act job tags" ;
     chorus:ingestionStatus "ingestible" .
 
-chorus:GateResult a owl:Class ;
-    chorus:mintKey ("cardId" "gate" "ts") ;
-    chorus:writeOrigin "derived-sweep" ;
-    rdfs:label "Gate Result" ;
-    rdfs:comment "One recorded demo gate (product|code|quality|arch|ops): pass/fail + findings. Five required to present (#3284)." ;
-    chorus:dataSource "ops/logs/werk-demo.jsonl: demo.gate.result {gate, result, findings}" ;
-    chorus:ingestionStatus "ingestible" .
-
-chorus:ReviewVerdict a owl:Class ;
-    chorus:mintKey ("cardId" "ts") ;
-    chorus:writeOrigin "derived-sweep" ;
-    rdfs:label "Review Verdict" ;
-    rdfs:comment "The cold-eyes review outcome (#3193): floor findings (review.floor) + agent verdict (review.verdict pass|fail with specific findings). Anti-ceremony-guarded at the recorder." ;
-    chorus:dataSource "ops/logs/werk-review.jsonl: review.floor / review.verdict / review.refused" ;
-    chorus:ingestionStatus "ingestible" .
-
-chorus:DemoVerdict a owl:Class ;
-    chorus:mintKey ("cardId" "ts") ;
-    chorus:writeOrigin "derived-sweep" ;
-    rdfs:label "Demo Verdict" ;
-    rdfs:comment "The human decision of record: pass/fail + prover + decision (go). GO=accept (#3311) — this verdict is what werk-accept finalizes against." ;
-    chorus:dataSource "ops/logs/werk-demo.jsonl: demo.verdict {verdict, prover, decision}" ;
-    chorus:ingestionStatus "ingestible" .
-
-chorus:Deployment a owl:Class ;
-    chorus:mintKey ("binary" "cdhash") ;
-    chorus:writeOrigin "derived-sweep" ;
-    chorus:dataSource "spine: binary.deployed {binary, cdhash, commit, role}; deploy.cdhash.matched; deploy.detached" ;
-    chorus:ingestionStatus "ingestible" ;
-    rdfs:comment "EXTENDS the canonical chorus:Deployment: a werk deploy event carries cdhash proof that deployed==running (#3222/#3232). Target: werk slot or canonical." .
-
-chorus:hasGateResult a owl:ObjectProperty ;
-    rdfs:domain chorus:Card ; rdfs:range chorus:GateResult .
-chorus:hasReviewVerdict a owl:ObjectProperty ;
-    rdfs:domain chorus:Card ; rdfs:range chorus:ReviewVerdict .
-chorus:hasDemoVerdict a owl:ObjectProperty ;
-    rdfs:domain chorus:Card ; rdfs:range chorus:DemoVerdict .
 chorus:cdhash a owl:DatatypeProperty ;
     rdfs:label "cdhash" ;
     rdfs:comment "Code-directory hash of the installed binary (the identity macOS TCC actually trusts, #2734). From binary.deployed; lets drift between installed and running binaries be asked as a query. No rdfs:domain — shared by ServiceInstance and Deployment, the deployed==running discriminator (#4250)." ;
@@ -216,68 +149,12 @@ chorus:cdhash a owl:DatatypeProperty ;
 # Query: "where is card N's code — werk, branch, PR, main — and how did it move?"
 # =============================================================================
 
-chorus:WerkSlot a owl:Class ;
-    chorus:mintKey ("role" "cardId") ;
-    chorus:writeOrigin "derived-sweep" ;
-    rdfs:label "Werk Slot" ;
-    rdfs:comment "An ephemeral per-card worktree (chorus-werk/<role>-<card>/, branch <role>/<card>), born on pull, removed on accept (#2913). Never branch-swapped in place." ;
-    chorus:dataSource "spine: card.pulled / card.unpulled / card.branch.closed; chorus-werk status CLI" ;
-    chorus:ingestionStatus "ingestible" .
-
-chorus:MergeEvent a owl:Class ;
-    chorus:mintKey ("cardId" "sha") ;
-    chorus:writeOrigin "derived-sweep" ;
-    rdfs:label "Merge Event" ;
-    rdfs:comment "A squash-merge to main: PR resolved by HEAD oid (#3175), content-verified, idempotent on already-landed (#3336). Carries the approval {accepter, what, when} (#3297)." ;
-    chorus:dataSource "ops/logs/werk-merge.jsonl: merge.approved / merge.idempotent / merge.refused; gh PR record" ;
-    chorus:ingestionStatus "ingestible" .
-
-chorus:ConflictHold a owl:Class ;
-    chorus:mintKey ("cardId" "ts") ;
-    chorus:writeOrigin "derived-sweep" ;
-    rdfs:label "Conflict Hold" ;
-    rdfs:comment "A rebase conflict held for in-verb resolution (#3304): markers in the werk, disposition held → continued|aborted." ;
-    chorus:dataSource "ops/logs/werk-commit.jsonl: rebase.conflict.held; spine commit.conflict {disposition}" ;
-    chorus:ingestionStatus "ingestible" .
-
-chorus:RecoveryAction a owl:Class ;
-    chorus:mintKey ("ts" "kind") ;
-    chorus:writeOrigin "derived-sweep" ;
-    rdfs:label "Recovery Action" ;
-    rdfs:comment "A canonical repair/recover or an unpull: the recovery-is-verbs surface (werk-sync #3300, werk-unpull #3299)." ;
-    chorus:dataSource "spine: canonical.repaired / recovery.stashed / recovery.completed / card.unpulled" ;
-    chorus:ingestionStatus "ingestible" .
-
 # =============================================================================
 # DOMAIN: code
 # Query: "what does card N's diff touch, and does it conform?"
 # =============================================================================
 
-chorus:CardDiff a owl:Class ;
-    chorus:mintKey ("cardId" "sha") ;
-    chorus:writeOrigin "derived-computed" ;
-    rdfs:label "Card Diff" ;
-    rdfs:comment "The merge-base diff of a card's werk vs origin/main (survives squash): changed files, changed units (crates/services), removed public symbols. Computed identically by deploy/review (the deploy_canonical commands)." ;
-    chorus:dataSource "review.floor {files_changed}; werk-deploy unit discovery; derivable on demand from git" ;
-    chorus:ingestionStatus "ingestible" .
-
-chorus:QualityFinding a owl:Class ;
-    chorus:mintKey ("cardId" "ts" "kind") ;
-    chorus:writeOrigin "derived-sweep" ;
-    rdfs:label "Quality Finding" ;
-    rdfs:comment "An objective code-quality signal on a card: floor findings (unchecked AC, src-without-test, removed-pub-symbol survivor check), lint/complexity refusals at commit, cog-override uses." ;
-    chorus:dataSource "review.floor findings; pre-commit refusal events; cog.override.used audit events" ;
-    chorus:ingestionStatus "ingestible" .
-
 # BlastRadius CUT 2026-06-11 (converged session): computed-on-demand by the review floor today; first-class entity defers to the werk-code verb (#3148 lineage). A class that does not serve a fold or a werk-test move was cut.
-
-chorus:SourceFile a owl:Class ;
-    chorus:mintKey ("filePath") ;
-    chorus:writeOrigin "derived-crawl" ;
-    rdfs:label "Source File" ;
-    rdfs:comment "ONE source file with durable identity: its repo-relative path (the IRI mint key per ADR-040 Rule 0: (SourceFile, path)). The crawler-lane noun the code domain joins through — CardDiff names paths, QualityFinding points at file:line, BlastRadius resolves symbols to files." ;
-    chorus:dataSource "crawler code-files collector (exists today, writes path-classified instances); also derivable from any CardDiff" ;
-    chorus:ingestionStatus "ingestible" .
 
 chorus:filePath a owl:DatatypeProperty ;
     rdfs:label "file path" ;
@@ -381,11 +258,6 @@ chorus:pyramidLayer a owl:DatatypeProperty ;
     rdfs:domain chorus:Test ; rdfs:range xsd:string ;
     rdfs:comment "RETIRED by #4162 (2026-09-25) — folded into chorus:testType. Declared only so the deploy does not read its removal as an unstaged delete; no shape serves it and the API refuses it as off-model." .
 
-chorus:verifiedBy a owl:ObjectProperty ;
-    rdfs:label "verified by" ;
-    rdfs:domain chorus:Scenario ; rdfs:range chorus:Test ;
-    rdfs:comment "Authored intent bound to derived proof: a Scenario (core class, authored via the domains API) is verified by the Tests that exercise it. The completeness story's load-bearing edge; werk-test's eventual which-scenarios-does-this-card-threaten query." .
-
 chorus:validityClass a owl:DatatypeProperty ;
     rdfs:domain chorus:Test ; rdfs:range xsd:string ;
     rdfs:comment "The #3324 taxonomy class — making test-value queryable, not a one-time audit." .
@@ -438,19 +310,17 @@ chorus:pipelines
     chorus:status "operating" ;
     chorus:hasDesignDoc "designing/docs/ci-pipeline-service-design.html" ;
     chorus:gaps "per-PR CI disconnected (cost stop); nightly not yet trusted" ;
-    chorus:hasRecordClass chorus:PipelineRun , chorus:GateResult , chorus:ReviewVerdict , chorus:DemoVerdict , chorus:Deployment .
+    chorus:hasRecordClass chorus:PipelineRun .
 
 chorus:version-control
     chorus:status "operating" ;
     chorus:hasDesignDoc "designing/docs/version-control-service-design.html" ;
-    chorus:gaps "phantom git-queue references in guard deny-text (#3290)" ;
-    chorus:hasRecordClass chorus:WerkSlot , chorus:MergeEvent , chorus:ConflictHold , chorus:RecoveryAction .
+    chorus:gaps "phantom git-queue references in guard deny-text (#3290)" .
 
 chorus:code
     chorus:status "building" ;
     chorus:hasDesignDoc "designing/docs/quality-service-design.html" ;
-    chorus:gaps "blast-radius first-class entity defers to werk-code (#3148 lineage)" ;
-    chorus:hasRecordClass chorus:SourceFile , chorus:CardDiff , chorus:QualityFinding .
+    chorus:gaps "blast-radius first-class entity defers to werk-code (#3148 lineage)" .
 
 # #3554/#2819 — the tests domain (V2 IRI chorus:tests), COMPLETED + deduped from the legacy
 # chorus:tests node. definesVocabulary mounts all three record kinds (Test/TestResult/
@@ -487,85 +357,9 @@ chorus:hasRecordClass a owl:AnnotationProperty ;
 # only place referential integrity exists.
 # =============================================================================
 
-chorus:VerbRunShape a sh:NodeShape ;
-    sh:targetClass chorus:VerbRun ;
-    sh:property [ sh:path chorus:traceId ; sh:minCount 1 ] ;
-    sh:property [ sh:path chorus:verb ; sh:minCount 1 ] ;
-    sh:property [ sh:path chorus:ts ; sh:minCount 1 ]  .
-
-chorus:TypedRefusalShape a sh:NodeShape ;
-    sh:targetClass chorus:TypedRefusal ;
-    sh:property [ sh:path chorus:traceId ; sh:minCount 1 ] ;
-    sh:property [ sh:path chorus:verb ; sh:minCount 1 ] ;
-    sh:property [ sh:path chorus:ts ; sh:minCount 1 ]  .
-
-chorus:WitnessShape a sh:NodeShape ;
-    sh:targetClass chorus:Witness ;
-    sh:property [ sh:path chorus:verb ; sh:minCount 1 ]  .
-
 chorus:PipelineRunShape a sh:NodeShape ;
     sh:targetClass chorus:PipelineRun ;
     sh:property [ sh:path chorus:traceId ; sh:minCount 1 ]  .
-
-chorus:GateResultShape a sh:NodeShape ;
-    sh:targetClass chorus:GateResult ;
-    # #4201 — the owner is a Principal, not a word. athena-make's
-    # verified_owner_projection writes a typed edge when the shape declares the
-    # class and a bare literal of the caller's role name when it does not
-    # (athena-make/src/lib.rs:2139). Undeclared here, every row this graph took
-    # today landed with ownedBy "kade" as a string, which the door can never
-    # write again. minCount stays off: the server stamps the value, the shape
-    # only says what kind of thing it is.
-    sh:property [ sh:path chorus:ownedBy ; sh:class chorus:Principal ] ;
-    sh:property [ sh:path chorus:cardId ; sh:minCount 1 ] ;
-    sh:property [ sh:path chorus:ts ; sh:minCount 1 ] ;
-    sh:property [ sh:path chorus:result ; sh:minCount 1 ]  .
-
-chorus:ReviewVerdictShape a sh:NodeShape ;
-    sh:targetClass chorus:ReviewVerdict ;
-    sh:property [ sh:path chorus:cardId ; sh:minCount 1 ] ;
-    sh:property [ sh:path chorus:ts ; sh:minCount 1 ] ;
-    sh:property [ sh:path chorus:result ; sh:minCount 1 ]  .
-
-chorus:DemoVerdictShape a sh:NodeShape ;
-    sh:targetClass chorus:DemoVerdict ;
-    sh:property [ sh:path chorus:cardId ; sh:minCount 1 ] ;
-    sh:property [ sh:path chorus:ts ; sh:minCount 1 ] ;
-    sh:property [ sh:path chorus:result ; sh:minCount 1 ]  .
-
-chorus:DeploymentShape a sh:NodeShape ;
-    sh:targetClass chorus:Deployment ;
-    sh:property [ sh:path chorus:cdhash ; sh:minCount 1 ]  .
-
-chorus:WerkSlotShape a sh:NodeShape ;
-    sh:targetClass chorus:WerkSlot ;
-    sh:property [ sh:path chorus:cardId ; sh:minCount 1 ]  .
-
-chorus:MergeEventShape a sh:NodeShape ;
-    sh:targetClass chorus:MergeEvent ;
-    sh:property [ sh:path chorus:cardId ; sh:minCount 1 ]  .
-
-chorus:ConflictHoldShape a sh:NodeShape ;
-    sh:targetClass chorus:ConflictHold ;
-    sh:property [ sh:path chorus:cardId ; sh:minCount 1 ] ;
-    sh:property [ sh:path chorus:ts ; sh:minCount 1 ]  .
-
-chorus:RecoveryActionShape a sh:NodeShape ;
-    sh:targetClass chorus:RecoveryAction ;
-    sh:property [ sh:path chorus:ts ; sh:minCount 1 ]  .
-
-chorus:CardDiffShape a sh:NodeShape ;
-    sh:targetClass chorus:CardDiff ;
-    sh:property [ sh:path chorus:cardId ; sh:minCount 1 ]  .
-
-chorus:QualityFindingShape a sh:NodeShape ;
-    sh:targetClass chorus:QualityFinding ;
-    sh:property [ sh:path chorus:cardId ; sh:minCount 1 ] ;
-    sh:property [ sh:path chorus:ts ; sh:minCount 1 ]  .
-
-chorus:SourceFileShape a sh:NodeShape ;
-    sh:targetClass chorus:SourceFile ;
-    sh:property [ sh:path chorus:filePath ; sh:minCount 1 ]  .
 
 chorus:TestShape a sh:NodeShape ;
     sh:targetClass chorus:Test ;
@@ -671,14 +465,6 @@ chorus:QuarantineShape a sh:NodeShape ;
             [ sh:path chorus:quarantineUntil ; sh:minCount 1 ]
         ) ]
     ) .
-
-chorus:VerbRunEdgesShape a sh:NodeShape ;
-    sh:targetClass chorus:VerbRun ;
-    sh:property [ sh:path chorus:refusedWith ; sh:class chorus:TypedRefusal ] .
-
-chorus:ScenarioVerifiedByShape a sh:NodeShape ;
-    sh:targetClass chorus:Scenario ;
-    sh:property [ sh:path chorus:verifiedBy ; sh:class chorus:Test ] .
 
 chorus:TestResultEdgesShape a sh:NodeShape ;
     sh:targetClass chorus:TestResult ;

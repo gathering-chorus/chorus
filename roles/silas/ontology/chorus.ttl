@@ -1143,14 +1143,9 @@ chorus:Gate a owl:Class ;
     rdfs:label "Gate" ;
     rdfs:comment "Quality gate between vertebrae. Failures bounce work backward." .
 
-chorus:GateResult a owl:Class ;
-    rdfs:label "Gate Result" .
-
-chorus:Pass a chorus:GateResult ; rdfs:label "Pass" .
-chorus:Fail a chorus:GateResult ; rdfs:label "Fail" .
-chorus:Override a chorus:GateResult ;
-    rdfs:label "Override" ;
-    rdfs:comment "Gate failed but Jeff overrode. Tracked for trust metrics." .
+# #4536 — GateResult and its Pass/Fail/Override individuals retired (Silas
+# 10:43): werk-v1 vocabulary, used only in an old backup; staged in
+# model-retirements.jsonl.
 
 
 
