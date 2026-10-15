@@ -93,6 +93,13 @@ fn run_fixture(tag: &str, card: &str, files: &[(&str, &str)], registry_rows: &[S
     std::fs::create_dir_all(&werk).unwrap();
     git(&werk, &["init", "-q"]);
     std::fs::write(werk.join("README"), "fixture\n").unwrap();
+    // #4537 — the repo's own guard scripts, as every real werk has them; a
+    // missing one is UNMEASURED now (row 1 must stay CLEAN)
+    for g in ["platform/tests/doc-coherence-ratchet.test.sh", "platform/scripts/clippy-ratchet.sh"] {
+        let p = werk.join(g);
+        std::fs::create_dir_all(p.parent().unwrap()).unwrap();
+        std::fs::write(&p, "#!/bin/sh\nexit 0\n").unwrap();
+    }
     git(&werk, &["add", "-A"]);
     git(&werk, &["commit", "-qm", "base"]);
     for (path, body) in files {
@@ -115,13 +122,82 @@ fn stub_path(base: &Path) -> String {
 }
 
 fn run_in(base: &Path, card: &str, registry_rows: &[String], patch_status: u16) -> Run {
+    run_in_path(base, card, registry_rows, patch_status, None, &[], None)
+}
+
+/// #4537 — a PATH holding only the system tools, git, and the named tools
+/// (`bats`, `cargo`): a row leaves out the one it is about.
+fn tools_path(base: &Path, with: &[&str]) -> String {
+    let tools = base.join("tools");
+    std::fs::create_dir_all(&tools).unwrap();
+    let real = |name: &str| -> PathBuf {
+        let out = Command::new("sh").arg("-c").arg(format!("command -v {}", name)).output().unwrap();
+        PathBuf::from(String::from_utf8_lossy(&out.stdout).trim())
+    };
+    for name in ["git"].iter().chain(with.iter()) {
+        let src = real(name);
+        assert!(src.is_file(), "the fixture needs {} on this box", name);
+        let _ = std::os::unix::fs::symlink(&src, tools.join(name));
+    }
+    let stub = stub_path(base);
+    let stub_dir = stub.split(':').next().unwrap().to_string();
+    format!("{}:{}:/usr/bin:/bin:/usr/sbin:/sbin", stub_dir, tools.display())
+}
+
+/// #4537 — one fixture with its own PATH.
+fn run_fixture_path(tag: &str, card: &str, files: &[(&str, &str)], registry_rows: &[String], with: &[&str]) -> Run {
+    run_fixture_full(tag, card, files, registry_rows, with, &[], None, |_| {})
+}
+
+/// #4537 — the same, with extra env, another werk-test binary, and a hook run
+/// on the werk just before werk-test starts.
+#[allow(clippy::too_many_arguments)]
+fn run_fixture_full(tag: &str, card: &str, files: &[(&str, &str)], registry_rows: &[String], with: &[&str],
+                    extra: &[(&str, String)], bin: Option<PathBuf>, before: impl Fn(&Path)) -> Run {
+    let base = std::env::temp_dir().join(format!("werk-test-4537-{}-{}", tag, std::process::id()));
+    let _ = std::fs::remove_dir_all(&base);
+    std::fs::create_dir_all(&base).unwrap();
+    let path = tools_path(&base, with);
+    let werk = base.join(format!("fix-{}", card));
+    std::fs::create_dir_all(&werk).unwrap();
+    git(&werk, &["init", "-q"]);
+    std::fs::write(werk.join("README"), "fixture\n").unwrap();
+    for g in ["platform/tests/doc-coherence-ratchet.test.sh", "platform/scripts/clippy-ratchet.sh"] {
+        let p = werk.join(g);
+        std::fs::create_dir_all(p.parent().unwrap()).unwrap();
+        std::fs::write(&p, "#!/bin/sh\nexit 0\n").unwrap();
+    }
+    // the repo's one nextest pin, as every werk carries it
+    let dir = std::env::var("CARGO_MANIFEST_DIR").unwrap();
+    let pin = std::fs::read_to_string(Path::new(&dir).join("../../../.config/nextest.toml")).unwrap();
+    std::fs::create_dir_all(werk.join(".config")).unwrap();
+    std::fs::write(werk.join(".config/nextest.toml"), pin).unwrap();
+    git(&werk, &["add", "-A"]);
+    git(&werk, &["commit", "-qm", "base"]);
+    for (path, body) in files {
+        let p = werk.join(path);
+        std::fs::create_dir_all(p.parent().unwrap()).unwrap();
+        std::fs::write(&p, body).unwrap();
+    }
+    git(&werk, &["add", "-A"]);
+    git(&werk, &["commit", "-qm", "card"]);
+    before(&werk);
+    run_in_path(&base, card, registry_rows, 200, Some(path), extra, bin)
+}
+
+fn run_in_path(base: &Path, card: &str, registry_rows: &[String], patch_status: u16, path: Option<String>,
+               extra: &[(&str, String)], bin: Option<PathBuf>) -> Run {
     std::fs::create_dir_all(base).unwrap();
     let registry = format!("{{\"data\":[{}]}}", registry_rows.join(","));
     let (port, patches) = stub(registry, patch_status);
     let door = format!("http://127.0.0.1:{}", port);
-    let out = Command::new(env!("CARGO_BIN_EXE_werk-test"))
+    let mut cmd = Command::new(bin.unwrap_or_else(|| PathBuf::from(env!("CARGO_BIN_EXE_werk-test"))));
+    for (k, v) in extra {
+        cmd.env(k, v);
+    }
+    let out = cmd
         .args([card, "fix"])
-        .env("PATH", stub_path(base))
+        .env("PATH", path.unwrap_or_else(|| stub_path(base)))
         .env("CHORUS_WERK_BASE", base)
         .env_remove("WERK_TEST_TREE")
         .env_remove("CHORUS_HOME")
@@ -248,4 +324,140 @@ fn a_werk_root_nightly_writes_nothing_even_pointed_at_a_door() {
         &[row("platform/tests/pass.bats", "p", "test-pass")], 200);
     assert!(r.patches.is_empty(), "a werk nightly wrote a Test row: {:?}\n{}", r.patches, r.out);
     assert!(r.out.contains("only the canonical nightly writes Test rows"), "{}", r.out);
+}
+
+// ── #4537 — the rows this card adds (plan rows 3, 4, 5, 11, 12) ──────────────
+
+const FX_TOML: &str = "[package]\nname = \"fx\"\nversion = \"0.1.0\"\nedition = \"2021\"\n\n[workspace]\n";
+const FX_LIB: &str = "pub fn one() -> u32 { 1 }\n";
+const FX_TEST: &str = "#[test]\nfn one_is_one() { assert_eq!(fx::one(), 1); }\n";
+
+fn crate_files(lib: &'static str) -> Vec<(&'static str, &'static str)> {
+    vec![("platform/services/fx/Cargo.toml", FX_TOML), ("platform/services/fx/src/lib.rs", lib),
+         ("platform/services/fx/tests/t.rs", FX_TEST)]
+}
+
+fn crate_row() -> String {
+    row("platform/services/fx/tests/t.rs", "one_is_one", "test-fx")
+}
+
+#[test]
+fn row_03_a_missing_tool_is_unmeasured_never_red() {
+    // bats is not on PATH
+    let r = run_fixture_path("r3", "91003", &[("platform/tests/pass.bats", PASS)],
+        &[row("platform/tests/pass.bats", "p", "test-pass")], &[]);
+    assert_eq!(r.code, 2, "{}", r.out);
+    assert!(r.out.contains("missing bats"), "{}", r.out);
+    assert!(!r.out.contains("werk-test: CLEAN") && !r.out.contains("werk-test: RED"), "{}", r.out);
+}
+
+#[test]
+fn row_04_a_build_that_cannot_start_is_unmeasured() {
+    // no cargo on PATH
+    let r = run_fixture_path("r4", "91004", &crate_files(FX_LIB), &[crate_row()], &[]);
+    assert_eq!(r.code, 2, "{}", r.out);
+    assert!(r.out.contains("build did not start"), "{}", r.out);
+    assert!(!r.out.contains("werk-test: CLEAN") && !r.out.contains("werk-test: RED"), "{}", r.out);
+}
+
+#[test]
+fn row_05_a_compile_error_in_the_cards_code_is_red() {
+    // cargo is there; the card's own code does not compile
+    let r = run_fixture_path("r5", "91005", &crate_files("pub fn one( {\n"), &[crate_row()], &["cargo"]);
+    assert_eq!(r.code, 1, "{}", r.out);
+    assert!(r.out.contains("werk-test: RED (exit 1)"), "{}", r.out);
+    assert!(r.out.contains("platform/services/fx"), "{}", r.out);
+}
+
+#[test]
+fn row_11_a_fail_and_a_missing_tool_together_is_red_and_still_lists_the_unmeasured() {
+    // bats runs and fails; the crate's build cannot start (no cargo)
+    let mut files = crate_files(FX_LIB);
+    files.push(("platform/tests/fail.bats", FAIL));
+    let r = run_fixture_path("r11", "91011", &files,
+        &[crate_row(), row("platform/tests/fail.bats", "f", "test-fail")], &["bats"]);
+    assert_eq!(r.code, 1, "{}", r.out);
+    assert!(r.out.contains("werk-test: RED (exit 1)"), "{}", r.out);
+    assert!(r.out.contains("build did not start"), "the unmeasured list must still print: {}", r.out);
+}
+
+#[test]
+fn row_12_a_case_that_tries_to_write_prod_is_unmeasured_and_named() {
+    // a real membrane-aware writer (chorus-log through the installed shim),
+    // asked to write the spine from inside a bats case with no test world
+    let home = std::env::var("HOME").unwrap();
+    let shim = format!("{}/.chorus/bin/chorus-hook-shim", home);
+    assert!(Path::new(&shim).is_file(), "row 12 needs the installed chorus-hook-shim at {}", shim);
+    let case = format!("#!/usr/bin/env bats\n@test \"writes the live spine\" {{\n  env -u CHORUS_LOG_FILE HOME=\"$BATS_TEST_TMPDIR/h\" {} chorus-log test.fixture kade x=1\n}}\n", shim);
+    let case: &'static str = Box::leak(case.into_boxed_str());
+    let r = run_fixture_path("r12", "91013", &[("platform/tests/prodwrite.bats", case)],
+        &[row("platform/tests/prodwrite.bats", "writes the live spine", "test-prodwrite")], &["bats"]);
+    assert_eq!(r.code, 2, "{}", r.out);
+    assert!(r.out.contains("test tried to write prod: writes the live spine"), "{}", r.out);
+}
+
+#[test]
+fn row_lock_a_build_lock_held_past_the_cap_is_unmeasured_and_names_the_holder() {
+    // another process holds the crate's cargo build lock; the cap is 2s
+    let holder = std::sync::Mutex::new(None::<std::process::Child>);
+    let r = run_fixture_full("rl", "91014", &crate_files(FX_LIB), &[crate_row()], &["cargo"],
+        &[("WERK_TEST_LOCK_CAP", "2".to_string())], None, |werk| {
+            let d = werk.join("platform/services/fx/target/debug");
+            std::fs::create_dir_all(&d).unwrap();
+            let child = Command::new("sh").arg("-c").arg("exec 9>>.cargo-lock; sleep 60").current_dir(&d).spawn().unwrap();
+            std::thread::sleep(std::time::Duration::from_millis(300));
+            *holder.lock().unwrap() = Some(child);
+        });
+    if let Some(mut c) = holder.lock().unwrap().take() { let _ = c.kill(); let _ = c.wait(); }
+    assert_eq!(r.code, 2, "{}", r.out);
+    assert!(r.out.contains("build did not start: lock held by pid"), "{}", r.out);
+}
+
+#[test]
+fn negative_proof_a_free_build_lock_builds_and_runs_clean() {
+    let r = run_fixture_full("rlf", "91015", &crate_files(FX_LIB), &[crate_row()], &["cargo"],
+        &[("WERK_TEST_LOCK_CAP", "2".to_string())], None, |_| {});
+    assert_eq!(r.code, 0, "{}", r.out);
+    assert!(!r.out.contains("lock held"), "{}", r.out);
+}
+
+/// Row 13: a werk-test slot copy older than the installed one, on a card that
+/// does not build werk-test, hands the run to the installed one and says so.
+fn slot_world(tag: &str, slot_older: bool) -> (PathBuf, PathBuf) {
+    let w = std::env::temp_dir().join(format!("werk-test-4537-{}-{}", tag, std::process::id()));
+    let _ = std::fs::remove_dir_all(&w);
+    let slot = w.join("kade-bin");
+    let home_bin = w.join("home/.chorus/bin");
+    std::fs::create_dir_all(&slot).unwrap();
+    std::fs::create_dir_all(&home_bin).unwrap();
+    let copy = slot.join("werk-test");
+    std::fs::copy(env!("CARGO_BIN_EXE_werk-test"), &copy).unwrap();
+    let installed = home_bin.join("werk-test-bin");
+    std::fs::write(&installed, "#!/bin/sh\necho INSTALLED-WERK-TEST-RAN\nexit 0\n").unwrap();
+    Command::new("chmod").arg("+x").arg(&installed).status().unwrap();
+    let (old, new) = if slot_older { (&copy, &installed) } else { (&installed, &copy) };
+    Command::new("touch").args(["-t", "202601010000"]).arg(old).status().unwrap();
+    Command::new("touch").arg(new).status().unwrap();
+    (copy, w.join("home"))
+}
+
+#[test]
+fn row_13_a_stale_slot_copy_hands_the_run_to_the_installed_werk_test() {
+    let (copy, home) = slot_world("r13", true);
+    let r = run_fixture_full("r13w", "91016", &[("platform/tests/pass.bats", PASS)],
+        &[row("platform/tests/pass.bats", "p", "test-pass")], &["bats"],
+        &[("HOME", home.display().to_string())], Some(copy), |_| {});
+    assert!(r.out.contains("is older than the installed one"), "{}", r.out);
+    assert!(r.out.contains("INSTALLED-WERK-TEST-RAN"), "{}", r.out);
+    assert_eq!(r.code, 0, "{}", r.out);
+}
+
+#[test]
+fn negative_proof_a_slot_copy_newer_than_the_installed_one_runs_itself() {
+    let (copy, home) = slot_world("r13n", false);
+    let r = run_fixture_full("r13nw", "91017", &[("platform/tests/pass.bats", PASS)],
+        &[row("platform/tests/pass.bats", "p", "test-pass")], &["bats"],
+        &[("HOME", home.display().to_string())], Some(copy), |_| {});
+    assert!(!r.out.contains("INSTALLED-WERK-TEST-RAN"), "{}", r.out);
+    assert!(r.out.contains("werk-test: CLEAN (exit 0)"), "{}", r.out);
 }

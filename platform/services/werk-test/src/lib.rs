@@ -2216,11 +2216,13 @@ pub fn run_lint_ratchet(werk: &str) -> bool {
     if !std::path::Path::new(&script).is_file() {
         let baseline = format!("{}/.eslint-baseline.json", werk);
         if std::path::Path::new(&baseline).is_file() {
+            // #4537 — a guard whose script is gone measured nothing: UNMEASURED
+            // (it still blocks a go), never a red with no failing case
             eprintln!(
-                "lint-ratchet: REFUSED — {} carries .eslint-baseline.json but platform/scripts/lint-ratchet.js is missing (guard target deleted, #3734)",
+                "lint-ratchet: UNMEASURED — {} carries .eslint-baseline.json but platform/scripts/lint-ratchet.js is missing (guard target deleted, #3734)",
                 werk
             );
-            return false;
+            return lane_unmeasured("missing lint-ratchet.js");
         }
         return true;
     }
@@ -2237,7 +2239,10 @@ pub fn run_lint_ratchet(werk: &str) -> bool {
             }
         }
     }
-    cmd.status().map(|s| s.success()).unwrap_or(false)
+    match cmd.status() {
+        Ok(st) => st.success(),
+        Err(e) => lane_unmeasured(did_not_start("node", &e)),
+    }
 }
 
 // ---- TestResult batch wire-back: bounded chunks + one token re-mint ----
@@ -4271,6 +4276,119 @@ pub fn nightly_lane_line_all_skipped(kind: &str, unit: &str, skipped: usize, rea
         "nightly-unit|{}|{}|skip|0 pass, 0 fail, {} skipped (ALL SKIPPED — {})",
         kind, unit, skipped, reason
     )
+}
+
+// ── #4537 — a lane that could not measure says so, with its reason ───────
+//
+// A missing tool, a build that cannot start, a script that is gone, a harness
+// killed at its cap: none of these is the product breaking (no RED) and none
+// is a pass (no silent green). The lane notes the reason here and answers
+// "not red"; whoever ran the lane (the card loop, a nightly worker) takes the
+// notes on the same thread and reports the unit UNMEASURED with them.
+
+thread_local! {
+    static LANE_UNMEASURED: std::cell::RefCell<Vec<String>> = const { std::cell::RefCell::new(Vec::new()) };
+}
+
+/// Note why this lane could not measure. Returns true (not red) so a lane can
+/// `return werk_test::lane_unmeasured(…)`.
+pub fn lane_unmeasured(reason: impl Into<String>) -> bool {
+    LANE_UNMEASURED.with(|v| v.borrow_mut().push(reason.into()));
+    true
+}
+
+/// Is a note waiting on this thread?
+pub fn lane_unmeasured_pending() -> bool {
+    LANE_UNMEASURED.with(|v| !v.borrow().is_empty())
+}
+
+/// Take this thread's notes (and clear them).
+pub fn take_lane_unmeasured() -> Vec<String> {
+    LANE_UNMEASURED.with(|v| std::mem::take(&mut *v.borrow_mut()))
+}
+
+/// #4537 — why a program could not run: "missing <tool>" when it is not
+/// installed, else "<tool> did not start: <error>". Pure.
+pub fn did_not_start(tool: &str, err: &std::io::Error) -> String {
+    if err.kind() == std::io::ErrorKind::NotFound {
+        format!("missing {}", tool)
+    } else {
+        format!("{} did not start: {}", tool, err)
+    }
+}
+
+/// #4537 — the failed bats cases whose failure is the membrane refusing a
+/// production write (#3615), and how many failed for any other reason. A case
+/// the membrane stopped measured nothing about the product: UNMEASURED, named.
+/// Pure, over bats TAP output.
+pub fn membrane_refused_cases(tap: &str) -> (Vec<String>, usize) {
+    let mut refused = Vec::new();
+    let mut other = 0usize;
+    let mut current: Option<(String, bool)> = None;
+    let mut close = |cur: &mut Option<(String, bool)>| {
+        if let Some((name, hit)) = cur.take() {
+            if hit { refused.push(name) } else { other += 1 }
+        }
+    };
+    for l in tap.lines() {
+        if let Some(rest) = l.strip_prefix("not ok ") {
+            close(&mut current);
+            let name = rest.split_once(' ').map(|(_, n)| n).unwrap_or("").trim();
+            let name = name.split(" # ").next().unwrap_or(name);
+            let name = name.rsplit_once(" in ").filter(|(_, t)| t.ends_with("ms")).map(|(n, _)| n).unwrap_or(name);
+            current = Some((name.to_string(), false));
+        } else if l.starts_with("ok ") || l.starts_with("1..") {
+            close(&mut current);
+        } else if l.contains("MEMBRANE REFUSED (#3615)") {
+            if let Some((_, hit)) = current.as_mut() {
+                *hit = true;
+            }
+        }
+    }
+    close(&mut current);
+    (refused, other)
+}
+
+/// #4537 — one top-level string field of a JSON document ("target_directory"
+/// in `cargo metadata`), without a JSON dependency. Pure.
+pub fn json_str_field(json: &str, key: &str) -> Option<String> {
+    let at = json.find(&format!("\"{}\":\"", key))? + key.len() + 4;
+    let rest = &json[at..];
+    let end = rest.find('"')?;
+    Some(rest[..end].replace("\\/", "/").replace("\\\\", "\\"))
+}
+
+/// #4537 row 13 — set on the installed werk-test a stale slot copy hands the
+/// run to, so the hand-off happens at most once.
+pub const STALE_SLOT_ENV: &str = "WERK_TEST_STALE_SLOT_SKIPPED";
+
+/// #4537 row 13 — a werk-test running from a role slot (`<role>-bin/`) that is
+/// older than the installed one, on a card that does not build werk-test, is a
+/// leftover (10-15: Abby's 15:40 slot copy kept refusing #4530 after #4536
+/// landed). Returns the installed binary to hand the run to. Pure.
+pub fn stale_slot_redirect(
+    current: &std::path::Path,
+    installed: &std::path::Path,
+    already: bool,
+    mtime: &dyn Fn(&std::path::Path) -> Option<std::time::SystemTime>,
+) -> Option<std::path::PathBuf> {
+    if already || current == installed {
+        return None;
+    }
+    let in_slot = current.parent().and_then(|d| d.file_name()).and_then(|n| n.to_str())
+        .is_some_and(|n| n.ends_with("-bin"));
+    if !in_slot {
+        return None;
+    }
+    match (mtime(current), mtime(installed)) {
+        (Some(c), Some(i)) if c < i => Some(installed.to_path_buf()),
+        _ => None,
+    }
+}
+
+/// #4537 — a nightly unit that could not measure.
+pub fn nightly_lane_line_unmeasured(kind: &str, unit: &str, reason: &str) -> String {
+    format!("nightly-unit|{}|{}|unmeasured|0 pass, 0 fail (UNMEASURED — {})", kind, unit, reason)
 }
 
 pub fn nightly_lane_line_refused(kind: &str, unit: &str) -> String {
