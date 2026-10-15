@@ -94,8 +94,11 @@ pub fn is_test_suite_path(f: &str) -> bool {
         return true;
     }
     let name = f.rsplit('/').next().unwrap_or(f);
-    let shell = f.ends_with(".sh") && (name.starts_with("test-") || name.contains(".test."));
-    shell && (f.starts_with("platform/tests/") || f.contains("/tests/"))
+    // #4538 — the crawler's rule (chorus-crawl is_test_path): a `test-*.sh` or
+    // `*.test.sh` is a test wherever it sits. Requiring a tests/ directory left
+    // proving/fitness/test-run-fitness-ceiling.sh and designing/docs suites
+    // "claimed by no unit", so a header edit to them refused the whole card run.
+    f.ends_with(".sh") && (name.starts_with("test-") || name.contains(".test."))
 }
 
 /// Diff → unit names + transitive DECLARED dependents. Any build/test-relevant
@@ -281,6 +284,22 @@ mod scope_refusal_4169 {
 
     fn u(name: &str, dir: &str) -> ScopeUnit {
         ScopeUnit { name: name.to_string(), dir: dir.to_string() }
+    }
+
+    // #4538 — a shell suite outside any tests/ directory scopes to itself, by
+    // the same rule the crawler uses. NEGATIVE PROOF: a plain script beside it
+    // (not test-named) still refuses as unmapped.
+    #[test]
+    fn a_shell_suite_outside_tests_scopes_to_itself_4538() {
+        let suite = "proving/fitness/test-run-fitness-ceiling.sh";
+        assert!(is_test_suite_path(suite));
+        assert!(is_test_suite_path("designing/docs/chorus-reference-model.test.sh"));
+        assert!(!is_test_suite_path("proving/fitness/run-ceiling.sh"), "a plain script is not a suite");
+        let units = [u(suite, suite)];
+        let ScopeVerdict::Scoped(names) = scope_unit_names(&[suite.to_string()], &units, &[], false) else {
+            panic!("a shell suite must scope to itself")
+        };
+        assert_eq!(names, vec![suite.to_string()]);
     }
 
     #[test]
