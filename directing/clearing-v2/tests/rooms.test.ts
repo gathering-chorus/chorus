@@ -4,23 +4,43 @@
 // @domain: messages
 
 import http from 'http';
+import { schnorr } from '@noble/curves/secp256k1';
+import { bytesToHex, hexToBytes } from '@noble/hashes/utils';
 import { createApp } from '../src/server';
 import { renderRoomsPage } from '../src/views';
 import { BuzzRelayClient, MockWebSocket } from '../src/relay-client';
+import { serializeEvent, buildEventId } from '../src/identity';
+import { NostrEvent } from '../src/types';
 
 describe('Rooms AC: Switching Rooms & Direct Conversations', () => {
   let server: http.Server;
   let port: number;
 
+  const testPrivKeyBytes = new Uint8Array(32).fill(42);
+  const testPubKeyHex = bytesToHex(schnorr.getPublicKey(testPrivKeyBytes));
+  const knownKeys = new Map([[testPubKeyHex, 'abby-normal']]);
+
+  function createSignedEvent(privKey: Uint8Array, content: string, room = 'team'): NostrEvent {
+    const pubkey = bytesToHex(schnorr.getPublicKey(privKey));
+    const createdAt = Math.floor(Date.now() / 1000);
+    const tags = [['t', room]];
+    const serialized = serializeEvent(pubkey, createdAt, 1, tags, content);
+    const id = buildEventId(serialized);
+    const sig = bytesToHex(schnorr.sign(hexToBytes(id), privKey));
+    return { id, pubkey, created_at: createdAt, kind: 1, tags, content, sig };
+  }
+
   beforeAll(async () => {
     const created = createApp({
       relayUrl: 'ws://127.0.0.1:3499', // dead port in all tests
       pulseUrl: 'http://127.0.0.1:3475',
+      knownKeys,
     });
     server = http.createServer(created.app);
     await new Promise<void>((resolve) => server.listen(0, '127.0.0.1', () => resolve()));
     port = (server.address() as any).port;
   });
+
 
   afterAll(async () => {
     await new Promise<void>((resolve) => server.close(() => resolve()));
@@ -93,16 +113,14 @@ describe('Rooms AC: Switching Rooms & Direct Conversations', () => {
     expect(rendered).toBeDefined();
 
     // Post to gathering room
+    const gatheringEvent = createSignedEvent(testPrivKeyBytes, 'Checking gathering status', 'gathering');
     const sendRes = await fetch(`http://127.0.0.1:${port}/api/send`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        room: 'gathering',
-        from: 'jeff',
-        text: 'Checking gathering status',
-      }),
+      body: JSON.stringify({ event: gatheringEvent }),
     });
     expect(sendRes.status).toBe(200);
+
 
     // Gathering room displays the message
     const gatheringRes = await fetch(`http://127.0.0.1:${port}/rooms/gathering`);
@@ -223,14 +241,20 @@ describe('Rooms AC: Switching Rooms & Direct Conversations', () => {
     const p = (s.address() as any).port;
 
     try {
-      // 1. Post to dead relay
-      await fetch(`http://127.0.0.1:${p}/api/send`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ from: 'jeff', text: 'Unconfirmed local post', room: 'team' }),
+      // 1. Unconfirmed local post without delivery tick
+      appInstance.router.ingest({
+        id: 'msg-local-unconfirmed',
+        from: 'jeff',
+        text: 'Unconfirmed local post',
+        ts: '2026-10-15T17:20:00.000Z',
+        type: 'jeff-input',
+        visible: true,
+        room: 'team',
+        tick: false,
       });
 
       const res1 = await fetch(`http://127.0.0.1:${p}/rooms/team`);
+
       const html1 = await res1.text();
       // Unconfirmed post must NOT have delivery tick
       expect(html1).toContain('Unconfirmed local post');
