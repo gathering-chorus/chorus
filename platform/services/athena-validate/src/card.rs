@@ -91,7 +91,9 @@ pub fn run(card_id: &str) -> i32 {
         }
     }
     if classes == 0 {
-        println!("card-shape|-|-|the card's model files declare no class — no shape to check");
+        // a card that changes only shapes or properties adds no class that could
+        // lack a shape; the changed shape itself is judged by the staging validate
+        println!("card-shape|-|-|the card adds or changes no class — no class needs a shape");
     }
     if fails > 0 {
         println!("card-summary|{fails}|dirty");
