@@ -216,11 +216,38 @@ pub fn copy(base: &str, prod: &str, staging: &str, manifest_path: &str) -> Resul
     }
     let _ = std::fs::remove_file(&tmp);
     std::fs::write(manifest_path, lines.join("\n") + "\n").map_err(|e| format!("{manifest_path}: {e}"))?;
+    // #4536 — the copy names the run that made it, so that run's card deploy can
+    // reuse it (never a second copy of a prod that moved meanwhile).
+    let stamp = trace_path(manifest_path);
+    match std::env::var("CHORUS_TRACE_ID").ok().filter(|t| !t.is_empty()) {
+        Some(t) => std::fs::write(&stamp, format!("{t}\n")).map_err(|e| format!("{stamp}: {e}"))?,
+        None => { let _ = std::fs::remove_file(&stamp); }
+    }
     let total: usize = parse_manifest(&lines.join("\n")).iter().map(|(_, n, _)| n).sum();
     Ok(format!("staging copy: {} graphs, {} triples, counts equal prod; manifest {}", lines.len(), total, manifest_path))
 }
 
 
+/// #4536 — the file beside the manifest naming the trace that made the copy.
+pub fn trace_path(manifest_path: &str) -> String {
+    std::path::Path::new(manifest_path).with_file_name("trace").display().to_string()
+}
+
+/// #4536 — may a card deploy reuse the staging copy? Only when the copy was
+/// made by this same run: prod moves between two copies (run 10: messages and
+/// provenance grew between the baseline copy and the seed copy, and the seed's
+/// validate counted the drift as the card's). A copy from another run, or no
+/// stamp, or no trace here, is REFUSED: a stale copy would be a stale baseline.
+/// Pure.
+pub fn copy_is_this_runs(stamp: Option<&str>, trace: Option<&str>) -> Result<String, String> {
+    let trace = trace.map(str::trim).filter(|t| !t.is_empty())
+        .ok_or("no CHORUS_TRACE_ID: a card deploy reuses its own run's staging copy and cannot tell which that is — run it from the athena pipeline")?;
+    match stamp.map(str::trim).filter(|s| !s.is_empty()) {
+        Some(s) if s == trace => Ok(format!("staging copy: reused, made by this run ({trace})")),
+        Some(s) => Err(format!("the staging copy is from run {s}, not this run {trace} — run `athena-deploy staging copy` in this run first")),
+        None => Err(format!("the staging copy names no run — run `athena-deploy staging copy` in this run ({trace}) first")),
+    }
+}
 
 /// The data-quality counts the 2026-10-02/03 cleanup measured, read from one
 /// dataset. Reported before -> after by the audit (they should go down); the

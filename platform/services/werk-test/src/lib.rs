@@ -339,6 +339,82 @@ pub fn gate_outcome(unit_count: usize, any_failed: bool) -> GateOutcome {
     }
 }
 
+/// #4536 — the one result a run ends in. A red means the product broke; anything
+/// that could not run is UNMEASURED with its reason; a run that never started is
+/// REFUSED. Jeff's rule: a clean run is 0 failed, 0 skipped, 0 unmeasured.
+#[derive(Debug, PartialEq, Eq, Clone)]
+pub enum Verdict {
+    /// Every selected case ran and passed.
+    Clean,
+    /// At least one case failed. Wins over UNMEASURED; the unmeasured list still prints.
+    Red,
+    /// Nothing failed, but something could not run. Each item names its reason.
+    Unmeasured(Vec<String>),
+    /// The run itself could not start (no werk, bad args). Not a test result.
+    Refused(String),
+}
+
+/// Decide the verdict from what ran. Zero cases is "ran nothing", never clean.
+pub fn verdict(cases_ran: usize, any_failed: bool, unmeasured: &[String]) -> Verdict {
+    if any_failed {
+        Verdict::Red
+    } else if !unmeasured.is_empty() {
+        Verdict::Unmeasured(unmeasured.to_vec())
+    } else if cases_ran == 0 {
+        Verdict::Unmeasured(vec!["ran nothing".into()])
+    } else {
+        Verdict::Clean
+    }
+}
+
+impl Verdict {
+    /// CLEAN 0 · RED 1 · UNMEASURED 2 · REFUSED 3.
+    pub fn exit_code(&self) -> i32 {
+        match self {
+            Verdict::Clean => 0,
+            Verdict::Red => 1,
+            Verdict::Unmeasured(_) => 2,
+            Verdict::Refused(_) => 3,
+        }
+    }
+
+    pub fn label(&self) -> String {
+        match self {
+            Verdict::Clean => "CLEAN".into(),
+            Verdict::Red => "RED".into(),
+            Verdict::Unmeasured(r) => format!("UNMEASURED — {}", r.join("; ")),
+            Verdict::Refused(why) => format!("REFUSED — {}", why),
+        }
+    }
+}
+
+/// #4536 — a lane that yields test cases (cargo, jest, bats) and passed with
+/// zero of them proved nothing. Lanes with no cases by design (tsc, ratchets,
+/// doc-coherence) are never "ran nothing".
+pub fn ran_nothing(kind: CheckKind, ok: bool, cases_ran: usize) -> bool {
+    ok && cases_ran == 0 && matches!(kind, CheckKind::CargoTest | CheckKind::Jest | CheckKind::Bats)
+}
+
+/// #4536 run 15 — does this unit report cases at all? A shell suite in the
+/// bats lane (`test-*.sh`, `*.test.sh`) prints its own "=== Results: N passed"
+/// and is judged by its exit, never by TAP lines: 8 of them passed in run 15
+/// and read as "ran nothing". A .bats file and the cargo/jest lanes do. Pure.
+pub fn reports_cases(kind: CheckKind, target: &str) -> bool {
+    !(kind == CheckKind::Bats && target.ends_with(".sh"))
+}
+
+/// #4536 — unmeasured entries read "<unit> — <reason>"; is this entry the unit's?
+pub fn unmeasured_is(entry: &str, unit: &str) -> bool {
+    entry == unit || entry.starts_with(&format!("{} — ", unit))
+}
+
+/// #4536 — results that were not stored get their own line and never touch the
+/// verdict: storage is not the product (#4532 run 1 went red on one HTTP 000).
+pub fn storage_line(expected: usize, stored: usize) -> Option<String> {
+    let lost = results_lost(expected, stored);
+    (lost > 0).then(|| format!("results not stored: {} of {}", lost, expected))
+}
+
 /// A single check the verb runs. Per-unit checks carry their unit; workspace-level
 /// ratchets (`ClippyRatchet`, `DocCoherence`) run once with `unit == None`.
 #[derive(Debug, PartialEq, Eq, Clone, Copy)]
@@ -1040,6 +1116,24 @@ pub fn suite_build_targets(text: &str, packages: &[String]) -> Vec<BuildTarget> 
 /// #4292 — a cucumber feature the bdd lane runs (the package's features dir).
 pub fn is_feature_suite(path: &str) -> bool {
     path.starts_with("platform/tests/features/") && path.ends_with(".feature")
+}
+
+/// #4530 (Wren 10-15) — a file a card adds as a test, before the crawler has
+/// registered it: a test file, or a cucumber feature the bdd lane runs. The
+/// four new clearing-v2 features were not tests here, so the step file that
+/// only they use was refused as "no registered test exercises it".
+pub fn is_card_test(f: &str) -> bool {
+    is_test_file(f) || is_feature_suite(f)
+}
+
+/// #4530 — the tests a card's selection searches: the registry, plus every
+/// test the card adds that the registry does not hold yet. Pure.
+pub fn card_candidates(changed: &[String], rows: &[TestRow]) -> Vec<TestRow> {
+    let mut out: Vec<TestRow> = rows.to_vec();
+    for f in changed.iter().filter(|f| is_card_test(f) && !rows.iter().any(|r| &r.file_path == *f)) {
+        out.push(TestRow { file_path: f.clone(), covers: String::new(), pyramid_layer: String::new(), hermeticity: String::new(), test_concern: String::new() });
+    }
+    out
 }
 
 /// #4412 — a cucumber step-definition file of the bdd lane.
@@ -1961,6 +2055,66 @@ pub fn parse_rows_and_names(tsv: &str) -> (Vec<TestRow>, Vec<String>, Vec<String
 }
 
 
+/// #4536 — the Test collection a row is PATCHed under: the registry URL
+/// without its query (`http://h/tests?limit=10000` → `http://h/tests`).
+pub fn test_collection_base(registry_url: &str) -> String {
+    registry_url.split('?').next().unwrap_or(registry_url).trim_end_matches('/').to_string()
+}
+
+/// #4536 — the `result` column (8th) of each registry row, aligned with
+/// `parse_rows_and_names` (same row filter), so a case's prior result is known.
+pub fn parse_prior_results(tsv: &str) -> Vec<String> {
+    let mut out = Vec::new();
+    for l in tsv.lines() {
+        let cols: Vec<&str> = l.trim_end_matches(['\n', '\r']).split('\t').collect();
+        let keep = cols.len() >= 2 && !cols[0].trim().is_empty() && !cols[1].trim().is_empty();
+        if keep {
+            out.push(cols.get(7).map(|x| x.trim().to_string()).unwrap_or_default());
+        }
+    }
+    out
+}
+
+/// #4536 — the Test row holds its latest result, updated in place. Returns
+/// (Test entity name, merge-patch body) for each case whose result FLIPPED
+/// against its row's prior result (or never ran). A non-fail removes the old
+/// failureReason (null); a nightly carries no cardId (typed absence).
+pub fn latest_patches(
+    joined: &[(CaseResult, String, String)],
+    entities: &[String],
+    priors: &[String],
+    card: &str,
+    ts_millis: u128,
+    reason_of: &dyn Fn(&CaseResult) -> String,
+) -> Vec<(String, String)> {
+    let prior: std::collections::HashMap<&str, &str> = entities.iter().zip(priors.iter())
+        .filter(|(e, _)| !e.is_empty())
+        .map(|(e, p)| (e.as_str(), p.as_str()))
+        .collect();
+    let run_ts = boston_offset_iso(ts_millis);
+    let mut out = Vec::new();
+    for (c, entity, _) in joined {
+        if prior.get(entity.as_str()).copied() == Some(c.result.as_str()) {
+            continue;
+        }
+        let card_field = if card.is_empty() || card == "0" {
+            String::new()
+        } else {
+            format!(",\"cardId\":\"{}\"", json_escape(card))
+        };
+        let reason = reason_of(c);
+        let reason_field = if c.result == "fail" && !reason.is_empty() {
+            format!(",\"failureReason\":\"{}\"", json_escape(&reason))
+        } else {
+            ",\"failureReason\":null".to_string()
+        };
+        out.push((entity.clone(), format!(
+            "{{\"result\":\"{}\",\"runTs\":\"{}\"{}{}}}",
+            json_escape(&c.result), run_ts, card_field, reason_field)));
+    }
+    out
+}
+
 /// #4015 — did this run's evidence survive? The nightly executed 7,411 tests on
 /// 2026-08-27, stored zero, and exited 0 with a verdict; the writeback's result
 /// was computed and discarded at the call site. A run that cannot save what it
@@ -1970,13 +2124,6 @@ pub fn parse_rows_and_names(tsv: &str) -> (Vec<TestRow>, Vec<String>, Vec<String
 /// the writeback says it wrote, how many were lost.
 pub fn results_lost(expected: usize, stored: usize) -> usize {
     expected.saturating_sub(stored)
-}
-
-/// The run's exit code, folding evidence survival into the test verdict. Kept
-/// separate from `results_lost` so the two questions — "did tests fail?" and
-/// "did we keep the answers?" — stay separable in the code as well as the report.
-pub fn run_exit_code(test_exit: i32, expected: usize, stored: usize) -> i32 {
-    if results_lost(expected, stored) > 0 { 1 } else { test_exit }
 }
 
 pub fn join_cases(
@@ -3216,7 +3363,7 @@ pub fn domain_selection(
     let covers = |t: &str| rows.iter().find(|r| r.file_path == t).map(|r| norm_domain(&r.covers)).filter(|d| !d.is_empty());
     for f in changed {
         // #4419 — a NEW test the registry has not crawled yet is still a test.
-        if rows.iter().any(|r| &r.file_path == f) || is_test_file(f) {
+        if rows.iter().any(|r| &r.file_path == f) || is_card_test(f) {
             sel.tests.insert(f.clone(), "changed".to_string());
             // a test with no runner of its own runs through the suite that runs it
             for t in exercisers.get(f).map(|v| v.as_slice()).unwrap_or(&[]) {
@@ -4150,11 +4297,13 @@ pub fn failed_case_lines(label: &str, cases: &[CaseResult]) -> Vec<String> {
 /// ledger. On 2026-09-02 a proof run in kade-4063 posted 6,770 TestResult rows
 /// to prod's tests domain in 20 minutes (#3722 isolated the log and the
 /// nudges, never the writeback), so /test-run's "most recent stored run" became
-/// a werk's. The gate's card-scoped runs keep writing (that is their design);
-/// only card-less nightly mode under a werk root is withheld — unless the
-/// caller pointed OWL_API_TESTRESULTS at another store on purpose.
-pub fn nightly_writeback_withheld(root: &str, endpoint_overridden: bool) -> bool {
-    root.contains("/chorus-werk/") && !endpoint_overridden
+/// a werk's. #4536 (Silas 07:55): a werk-root nightly is ALWAYS withheld — no
+/// endpoint override. Prod answers on :3360, through the :3340 proxy and by
+/// LAN name, so no list of prod URLs is complete; and nothing needs a werk
+/// nightly to write. Card runs never write Test rows either (Loki only): a
+/// branch's result is not the Test's latest. Only the canonical nightly writes.
+pub fn nightly_writeback_withheld(root: &str) -> bool {
+    root.contains("/chorus-werk/")
 }
 
 /// #4078 — count a lane's cases by what they ARE: pass / fail / skipped. For
@@ -4747,12 +4896,11 @@ mod nightly_via_runner_3920 {
     }
 
     #[test]
-    fn a_werk_nightly_withholds_the_prod_ledger_unless_pointed_elsewhere() {
-        // NEGATIVE PROOF (#3734): the violating state — werk root, no override —
-        // must be withheld; the two legitimate states must not.
-        assert!(nightly_writeback_withheld("/Users/j/CascadeProjects/chorus-werk/kade-4063", false));
-        assert!(!nightly_writeback_withheld("/Users/j/CascadeProjects/chorus-werk/kade-4063", true));
-        assert!(!nightly_writeback_withheld("/Users/j/CascadeProjects/chorus", false));
+    fn a_werk_nightly_always_withholds_the_prod_ledger() {
+        // NEGATIVE PROOF (#3734, #4536): a werk root is withheld whatever the
+        // endpoint says — no argument exists that could let it through.
+        assert!(nightly_writeback_withheld("/Users/j/CascadeProjects/chorus-werk/kade-4063"));
+        assert!(!nightly_writeback_withheld("/Users/j/CascadeProjects/chorus"));
     }
 
     #[test]
@@ -5021,36 +5169,25 @@ mod playwright_failure_naming_4004 {
 mod results_survival_4015 {
     use super::*;
 
+    // #4536 — a lost result is reported out loud on its own line and never
+    // changes the verdict. 2026-08-27 (7,411 run, 0 stored, exit 0) was a
+    // silence; the fix is the line, not a red.
     #[test]
-    fn negative_proof_a_run_that_stored_nothing_fails_even_with_zero_test_failures() {
-        // 2026-08-27 exactly: 7,411 executed, 0 stored, every test green, exit 0.
+    fn a_run_that_stored_nothing_says_so() {
         assert_eq!(results_lost(7411, 0), 7411);
-        assert_eq!(run_exit_code(0, 7411, 0), 1, "green tests must not rescue a run that lost its evidence");
-    }
-
-    #[test]
-    fn control_a_run_that_stored_everything_keeps_its_own_verdict() {
-        // Without this the gate could fail every run and still pass the proof above.
-        assert_eq!(results_lost(7411, 7411), 0);
-        assert_eq!(run_exit_code(0, 7411, 7411), 0);
+        assert_eq!(storage_line(7411, 0).as_deref(), Some("results not stored: 7411 of 7411"));
     }
 
     #[test]
     fn a_partial_write_is_a_loss_too_not_a_rounding_error() {
-        // The 2026-08-26 shape: 7,320 executed, 1,535 stored, reported clean.
         assert_eq!(results_lost(7320, 1535), 5785);
-        assert_eq!(run_exit_code(0, 7320, 1535), 1);
-    }
-
-    #[test]
-    fn a_real_test_failure_still_fails_when_everything_was_stored() {
-        assert_eq!(run_exit_code(1, 10, 10), 1);
+        assert!(storage_line(7320, 1535).is_some());
     }
 
     #[test]
     fn storing_more_than_expected_is_not_negative_loss() {
         assert_eq!(results_lost(5, 9), 0);
-        assert_eq!(run_exit_code(0, 5, 9), 0);
+        assert_eq!(storage_line(5, 9), None);
     }
 }
 
@@ -7125,6 +7262,9 @@ pub fn runnable_test(f: &str, in_ts_package: bool) -> bool {
         // #4440 reopened (unit_for_test); refusing a changed one as unrunnable
         // contradicted the lane, which had run the same file one run earlier
         || is_shell_suite(f)
+        // #4530 — a cucumber feature runs alone in the bdd lane (#4292); its
+        // step file's exercisers were dropped here as "not runnable"
+        || is_feature_suite(f)
 }
 
 /// Source a card can break: code by extension, or an extension-less script.

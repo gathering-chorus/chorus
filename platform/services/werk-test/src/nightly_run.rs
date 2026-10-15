@@ -855,13 +855,15 @@ pub fn suite_row_payload_timed(run_ts: &str, order: usize, row: &SuiteRow, ts_ms
 }
 
 /// #4156 — does this run write its record to the graph? A werk-rooted run
-/// never writes the team's store (#3722) unless the caller names a store with
-/// OWLAPI; NIGHTLY_GRAPH_ROWS=0 turns it off anywhere.
-pub fn graph_rows_enabled(root: &str, flag: Option<&str>, owlapi: Option<&str>) -> bool {
+/// never writes the team's store (#3722); NIGHTLY_GRAPH_ROWS=0 turns it off
+/// anywhere. #4536 (Silas 08:04): no OWLAPI override — prod answers on :3360,
+/// the :3340 proxy and LAN names, so "names a store" could name prod, and a
+/// werk's PipelineRun/TestSuiteRun rows would land on Jeff's /nightly page.
+pub fn graph_rows_enabled(root: &str, flag: Option<&str>) -> bool {
     if flag == Some("0") {
         return false;
     }
-    !root.contains("/chorus-werk/") || owlapi.map(|v| !v.is_empty()).unwrap_or(false)
+    !root.contains("/chorus-werk/")
 }
 
 /// #4156 — a run as the log recorded it, for the one-time backfill of runs
@@ -1886,12 +1888,12 @@ RUN|tally|registry unreadable — the run cannot say what it did not run\n";
 
     #[test]
     fn a_werk_run_writes_no_prod_graph_rows() {
-        assert!(graph_rows_enabled("/Users/j/CascadeProjects/chorus", None, None));
-        // NEGATIVE PROOF: a werk root is off unless it names a store
-        assert!(!graph_rows_enabled("/Users/j/CascadeProjects/chorus-werk/kade-4156", None, None));
-        assert!(!graph_rows_enabled("/Users/j/CascadeProjects/chorus-werk/kade-4156", None, Some("")));
-        assert!(graph_rows_enabled("/Users/j/CascadeProjects/chorus-werk/kade-4156", None, Some("http://localhost:3364")));
-        assert!(!graph_rows_enabled("/Users/j/CascadeProjects/chorus", Some("0"), None));
+        assert!(graph_rows_enabled("/Users/j/CascadeProjects/chorus", None));
+        // NEGATIVE PROOF: a werk root is off, and no argument exists that can
+        // turn it on (#4536: the OWLAPI escape could name prod)
+        assert!(!graph_rows_enabled("/Users/j/CascadeProjects/chorus-werk/kade-4156", None));
+        assert!(!graph_rows_enabled("/Users/j/CascadeProjects/chorus-werk/kade-4156", Some("1")));
+        assert!(!graph_rows_enabled("/Users/j/CascadeProjects/chorus", Some("0")));
     }
 }
 

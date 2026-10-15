@@ -236,3 +236,22 @@ EOS
   [ "$recovered" = "$started" ]
   grep -q "^RUN|start|$recovered|" "$T/nightly.log"
 }
+
+@test "#4536 one trace: every lane and the run's PipelineRun carry the same id" {
+  # 10-15: the lanes' case events said nightly-1792049381065-39455 and the
+  # PipelineRun said nightly-1792056711, so /nightly could not find its own
+  # cases in Loki. run-all mints ONE trace before any lane starts.
+  cat > "$T/runner-trace.sh" <<EOS
+#!/bin/bash
+echo "\${CHORUS_TRACE_ID:-<unset>}" >> "$T/lane-traces.txt"
+exec "$T/runner.sh"
+EOS
+  chmod +x "$T/runner-trace.sh"
+  RUNNER="$T/runner-trace.sh" run env -u CHORUS_TRACE_ID bash -c "$(declare -f run_all); T='$T' PORT='$PORT' BIN='$BIN' RUNNER='$T/runner-trace.sh' run_all"
+  [ -s "$T/lane-traces.txt" ] || { echo "no lane ran"; return 1; }
+  lanes=$(sort -u "$T/lane-traces.txt")
+  [ "$(printf '%s\n' "$lanes" | wc -l | tr -d ' ')" -eq 1 ] || { echo "lanes had: $lanes"; return 1; }
+  [[ "$lanes" =~ ^nightly-[0-9]+-[0-9]+$ ]] || { echo "lane trace: $lanes"; return 1; }
+  grep '^/pipelineruns' "$T/posts.txt" | grep -q "\"traceId\":\"$lanes\"" \
+    || { echo "PipelineRun: $(grep '^/pipelineruns' "$T/posts.txt")"; return 1; }
+}

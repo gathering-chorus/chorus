@@ -361,6 +361,20 @@ mkdir -p "$TD/d5/api/v1"; python3 -c 'import json,sys; d=json.load(open(sys.argv
 out=$(CWS_RUNS_DIR=$TD CWS_DAGU="file://$TD/d5" "$CWS" 130)
 if [[ "$out" == *"· 2 runs"* ]]; then echo "FAIL page 1 alone counted the second page's run"; fails=$((fails+1)); fi
 
+# #4536 — Jeff 2026-10-15 13:10 "that cws readout is wrong": #4536 had 8 athena
+# runs and /cws said "no runs · 0 runs". A card's run starts on the athena
+# pipeline, so its athena runs are its runs.
+mkdir -p "$TD/d6/api/v1"
+cat > "$TD/d6/api/v1/dag-runs" <<'EOF8'
+{"dagRuns":[{"name":"athena","dagRunId":"a2","params":"CARD=140 ROLE=kade","statusLabel":"failed","startedAt":"2026-10-15T12:04:00-04:00","finishedAt":"2026-10-15T12:10:00-04:00","nodes":[{"statusLabel":"failed","step":{"name":"skill-athena-validate-validate"}}]},{"name":"athena","dagRunId":"a1","params":"CARD=140 ROLE=kade","statusLabel":"failed","startedAt":"2026-10-15T11:04:00-04:00","finishedAt":"2026-10-15T11:05:00-04:00","nodes":[{"statusLabel":"failed","step":{"name":"skill-athena-gen"}}]},{"name":"athena","dagRunId":"x1","params":"CARD=1400 ROLE=kade","statusLabel":"failed","startedAt":"2026-10-15T11:00:00-04:00","finishedAt":"2026-10-15T11:01:00-04:00","nodes":[]},{"name":"cicd","dagRunId":"c1","params":"CARD=140 ROLE=kade","statusLabel":"failed","startedAt":"2026-10-15T12:20:00-04:00","finishedAt":"2026-10-15T12:21:00-04:00","nodes":[{"statusLabel":"failed","step":{"name":"skill-werk-build"}}]}]}
+EOF8
+out=$(CWS_RUNS_DIR=$TD CWS_DAGU="file://$TD/d6" "$CWS" 140)
+t "athena runs count as the card's runs" "· 3 runs" "$out"
+t "the newest run of either half leads" "failed at skill-werk-build" "$out"
+# NEGATIVE PROOF: with only cicd read, the athena runs vanish (the 13:10 readout)
+out=$(CWS_RUNS_DIR=$TD CWS_DAGU="file://$TD/d6" CWS_ATHENA_DAG=cicd "$CWS" 140)
+if [[ "$out" == *"· 3 runs"* ]]; then echo "FAIL athena runs counted with athena not read"; fails=$((fails+1)); fi
+
 rm -rf "$TD"
 if [ $fails -gt 0 ]; then echo "test-cws-3782: $fails FAILURE(S)"; exit 1; fi
 echo "test-cws-3782: all green"

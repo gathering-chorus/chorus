@@ -1,3 +1,4 @@
+// @test-type: integration — drives the built werk-test --nightly against a loopback stub door
 // @domain: builds — placed by chorus-crawl's domain rules (#4538)
 //! #4030 AC3 — results are stored PER UNIT, so a run killed mid-way keeps
 //! everything it finished. Negative proof (#3734): the violating state — the
@@ -41,8 +42,9 @@ fn read_request(stream: &mut impl Read) -> String {
     String::from_utf8_lossy(&data).into_owned()
 }
 
-/// GET /tests → the registry fixture; POST /testresults/batch → 201 and the
-/// body is kept; anything else → 201 (suite-run posts are best-effort).
+/// GET /tests → the registry fixture; PATCH /tests/<name> (#4536: the Test row
+/// holds its latest result) → 200 and the request is kept; anything else → 201
+/// (suite-run posts are best-effort).
 fn start_stub(registry: String) -> (u16, Arc<AtomicUsize>, Arc<Mutex<Vec<String>>>) {
     let l = TcpListener::bind("127.0.0.1:0").expect("stub bind");
     let port = l.local_addr().unwrap().port();
@@ -58,7 +60,7 @@ fn start_stub(registry: String) -> (u16, Arc<AtomicUsize>, Arc<Mutex<Vec<String>
                 format!("HTTP/1.1 200 OK\r\nContent-Type: application/json\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{}",
                     registry.len(), registry)
             } else {
-                if first.starts_with("POST ") && first.contains("/testresults/batch") {
+                if first.starts_with("PATCH ") && first.contains("/tests/") {
                     p2.fetch_add(1, Ordering::SeqCst);
                     b2.lock().unwrap().push(req.clone());
                 }
@@ -102,7 +104,6 @@ fn a_run_killed_mid_way_has_already_stored_the_suites_it_finished() {
         .env_remove("CHORUS_HOME")            // no spine, no token mint: the door takes the env token
         .env("CHORUS_WRITE_TOKEN", "fresh")
         .env("OWL_API_TESTS", format!("{base}/tests?limit=10000"))
-        .env("OWL_API_TESTRESULTS_BATCH", format!("{base}/testresults/batch"))
         .env("OWL_API_TESTSUITERUNS", format!("{base}/testsuiteruns"))
         .env("NIGHTLY_SUITE_WORKERS", "1")    // fast, then slow — one at a time
         .env("NIGHTLY_LOAD_CAP", "100000")    // the load gate is not under test

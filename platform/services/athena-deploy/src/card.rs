@@ -39,6 +39,11 @@ pub struct CardPlan {
     /// #4515 — where the model files are read from when that is not CHORUS_ROOT:
     /// a landed card's snapshot of its merged commit (landed mode only).
     pub files_root: Option<String>,
+    /// #4536 — where the card's changed-subject files are written (removed after the run).
+    pub scratch: Option<String>,
+    /// #4536 — the retirement lines this card added, as a file: the deploy runs
+    /// these, never the whole ledger.
+    pub retirements: Option<String>,
 }
 
 /// The paths of a commit's tree that a deploy reads: every roles/*/ontology
@@ -137,7 +142,7 @@ pub fn discovery_routes(disco: &str) -> Vec<(String, String)> {
 /// class is served" and never a pass.
 pub fn served_check(disco: &str, classes: &[String], answers: &dyn Fn(&str) -> bool) -> Result<Vec<String>, Vec<String>> {
     if classes.is_empty() {
-        return Ok(vec!["served: the card's model files declare no class — nothing to serve".into()]);
+        return Ok(vec!["served: the card adds or changes no class — nothing new to serve".into()]);
     }
     let routes = discovery_routes(disco);
     if routes.is_empty() {
@@ -195,12 +200,63 @@ pub fn served_classes(nt: &str) -> Vec<String> {
         .collect()
 }
 
-/// The local names of the classes the card's TTL files declare (through riot).
+/// #4536 — the served classes the card answers for: the ones it added or
+/// changed (card_scope::changed_classes, #4547's rule). A class declared in a
+/// touched file with the same triples as `base_nt` is not this card's: touching
+/// werk-domains.ttl must not make a card answer for 14 werk-v1 classes the door
+/// never served. Pure.
+pub fn changed_served_classes(nt: &str, base_nt: &str) -> Vec<String> {
+    let mine: Vec<String> = card_scope::changed_classes(nt, base_nt).iter().map(|c| card_scope::local_name(c)).collect();
+    served_classes(nt).into_iter().filter(|c| mine.contains(c)).collect()
+}
+
+/// A card file as it was before the card: main for a werk, the squash commit's
+/// parent for a landed card (read from canonical; the snapshot is no git tree).
+fn base_ntriples(card: &Card, rel: &str) -> String {
+    let git = if card.commit.is_some() { card_scope::chorus_home() } else { card.werk.clone() };
+    card_scope::ntriples_at(&git, &card_scope::base_rev(card), rel)
+}
+
+/// #4536 — the triples a card's deploy loads from one file: every subject whose
+/// triples differ from `base_nt` (card_scope::changed_subjects), with the blank
+/// nodes they reach (a shape's sh:property lists). A subject the card did not
+/// change is not loaded: run 10 re-staged werk-domains.ttl's untyped code,
+/// pipelines and version-control fragments into the ontology graph, rows that
+/// live in the domains graph and change through the door. Pure.
+pub fn changed_triples(nt: &str, base_nt: &str) -> String {
+    let subj = |l: &str| l.split_whitespace().next().unwrap_or("").to_string();
+    let mut keep: Vec<String> = card_scope::changed_subjects(nt, base_nt);
+    let mut i = 0;
+    while i < keep.len() {
+        let s = keep[i].clone();
+        for l in nt.lines().filter(|l| subj(l) == s) {
+            for t in l.split_whitespace().skip(1) {
+                if t.starts_with("_:") && !keep.iter().any(|k| k == t) {
+                    keep.push(t.to_string());
+                }
+            }
+        }
+        i += 1;
+    }
+    nt.lines().filter(|l| keep.contains(&subj(l))).map(|l| format!("{l}\n")).collect()
+}
+
+/// #4536 — the ledger lines a card added: lines in `werk` that `base` does not
+/// hold. Run 11 executed 16 old ledger retirements in staging (deploys-domain,
+/// borg, chorus, …) that prod still holds, and counted the edges they left
+/// dangling as the card's. Pure.
+pub fn added_lines(werk: &str, base: &str) -> String {
+    let old: std::collections::HashSet<&str> = base.lines().map(str::trim).collect();
+    werk.lines().filter(|l| !l.trim().is_empty() && !old.contains(l.trim())).map(|l| format!("{l}\n")).collect()
+}
+
+/// The local names of the classes the card's TTL files add or change (through riot).
 pub fn card_classes(card: &Card) -> Result<Vec<String>, String> {
     let mut out: Vec<String> = Vec::new();
     for f in card.ttl() {
         let nt = card_scope::ntriples(&[card.abs(&f)]).map_err(|e| format!("card #{}: {f}: {e}", card.card))?;
-        for n in served_classes(&nt) {
+        let base_nt = base_ntriples(card, &f);
+        for n in changed_served_classes(&nt, &base_nt) {
             if !out.contains(&n) {
                 out.push(n);
             }
@@ -294,6 +350,40 @@ pub fn prepare_mode(card_id: &str, mode: Mode) -> Result<(Card, CardPlan, Vec<St
     let mut p = plan(&ttl, &card.werk, &sets);
     p.commit = card.commit.clone();
     p.files_root = files_root;
+    let dir = std::env::temp_dir().join(format!("athena-deploy-card-{}-{}", card.card, std::process::id())).display().to_string();
+    std::fs::create_dir_all(&dir).map_err(|e| CardError::Failed(format!("{dir}: {e}")))?;
+    p.scratch = Some(dir.clone());
+    // #4536 — the deploy runs only the retirement lines this card added
+    let ledger = "designing/schemas/model-retirements.jsonl";
+    let added = if card.sources.iter().any(|s| s == ledger) {
+        let werk_text = std::fs::read_to_string(card.abs(ledger)).unwrap_or_default();
+        let git = if card.commit.is_some() { card_scope::chorus_home() } else { card.werk.clone() };
+        let base = Command::new("git").args(["-C", &git, "show", &format!("{}:{ledger}", card_scope::base_rev(&card))]).output()
+            .ok().filter(|o| o.status.success()).map(|o| String::from_utf8_lossy(&o.stdout).into_owned()).unwrap_or_default();
+        added_lines(&werk_text, &base)
+    } else {
+        String::new()
+    };
+    let rfile = format!("{dir}/retirements.jsonl");
+    std::fs::write(&rfile, added).map_err(|e| CardError::Failed(format!("{rfile}: {e}")))?;
+    p.retirements = Some(rfile);
+    // #4536 — an ontology file loads only the subjects the card changed
+    if !p.ontology.is_empty() {
+        let werk = format!("{}/", card.werk.trim_end_matches('/'));
+        let mut files = Vec::new();
+        for abs in &p.ontology {
+            let rel = abs.strip_prefix(&werk).unwrap_or(abs);
+            let nt = card_scope::ntriples(&[abs.clone()]).map_err(|e| CardError::Refused(format!("card #{}: {rel}: {e}", card.card)))?;
+            let changed = changed_triples(&nt, &base_ntriples(&card, rel));
+            if changed.is_empty() {
+                continue;
+            }
+            let out = format!("{dir}/{}.nt", rel.replace('/', "_"));
+            std::fs::write(&out, changed).map_err(|e| CardError::Failed(format!("{out}: {e}")))?;
+            files.push(out);
+        }
+        p.ontology = files;
+    }
     let classes = card_classes(&card).map_err(CardError::Refused)?;
     Ok((card, p, classes))
 }
@@ -318,6 +408,7 @@ pub fn run(card_id: &str, mode: Mode, target: Option<&str>) -> Result<String, Ca
     }
     let (card, p, classes) = prepare_mode(card_id, mode)?;
     let _snapshot = SnapshotDir(p.files_root.clone());
+    let _scratch = SnapshotDir(p.scratch.clone());
     let from = match &card.commit {
         Some(sha) => format!("a snapshot of landed commit {} ({})", &sha[..sha.len().min(12)], card.werk),
         None => card.werk.clone(),
@@ -332,10 +423,12 @@ pub fn run(card_id: &str, mode: Mode, target: Option<&str>) -> Result<String, Ca
     }
     let (api, label) = if staging {
         let base = env_or("CHORUS_FUSEKI_BASE", "http://localhost:3030");
-        let prod = env_or("STAGING_PROD_DATASET", "pods");
         let stg = env_or("STAGING_DATASET", "staging");
         let manifest = format!("{}/.chorus/staging/manifest.tsv", std::env::var("HOME").unwrap_or_default());
-        out.push(crate::staging::copy(&base, &prod, &stg, &manifest).map_err(|e| CardError::Failed(format!("staging copy: {e}")))?);
+        // #4536 — reuse the copy this run's baseline was measured on; never copy again
+        let stamp = std::fs::read_to_string(crate::staging::trace_path(&manifest)).ok();
+        let trace = std::env::var("CHORUS_TRACE_ID").ok();
+        out.push(crate::staging::copy_is_this_runs(stamp.as_deref(), trace.as_deref()).map_err(CardError::Refused)?);
         // the load goes to staging, never prod
         std::env::set_var("FUSEKI_GSP", format!("{base}/{stg}/data"));
         std::env::set_var("FUSEKI_QUERY", format!("{base}/{stg}/query"));
@@ -348,6 +441,9 @@ pub fn run(card_id: &str, mode: Mode, target: Option<&str>) -> Result<String, Ca
     // for a landed card canonical (its files come from the snapshot, files_root)
     let root = if mode == Mode::Landed { card_scope::chorus_home() } else { card.werk.clone() };
     std::env::set_var("CHORUS_ROOT", &root);
+    if let Some(r) = &p.retirements {
+        std::env::set_var("RETIREMENTS_FILE", r);
+    }
     out.push(crate::run_athena_deploy_plan(Some(&p)).map_err(CardError::Failed)?);
 
     // athena-make reads the shapes at boot: restart it and wait for healthy.

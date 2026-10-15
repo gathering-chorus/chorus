@@ -27,11 +27,19 @@ steps:
     description: "athena-gen"
     depends: [skill-athena-validate-shape]
     command: "${HOME}/.chorus/bin/chorus-runner call athena-gen args=generate args=--card args=${CARD}"
-  - name: skill-athena-deploy
+  - name: skill-athena-deploy-athena-baseline-copy
     description: "athena-deploy"
     depends: [skill-athena-gen]
+    command: "${HOME}/.chorus/bin/chorus-runner call athena-deploy args=staging args=copy"
+  - name: skill-athena-validate-athena-baseline
+    description: "athena-validate"
+    depends: [skill-athena-deploy-athena-baseline-copy]
+    command: "${HOME}/.chorus/bin/chorus-runner call athena-validate args=--staging args=--write-baseline"
+  - name: skill-athena-deploy-seed
+    description: "athena-deploy"
+    depends: [skill-athena-validate-athena-baseline]
     command: "${HOME}/.chorus/bin/chorus-runner call athena-deploy args=staging args=--card args=${CARD}"
   - name: skill-athena-validate-validate
     description: "athena-validate"
-    depends: [skill-athena-deploy]
+    depends: [skill-athena-deploy-seed]
     command: "${HOME}/.chorus/bin/chorus-runner call athena-validate args=--staging"

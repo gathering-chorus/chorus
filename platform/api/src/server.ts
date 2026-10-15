@@ -621,9 +621,10 @@ app.get('/nightly', async (req: Request, res: Response) => {
     res.status(wanted !== 'latest' ? 404 : 200).type('html').send(renderNightlyPage(null, { missingRun: wanted }));
     return;
   }
-  // #4277 — the failing cases are the run's own TestResult rows; one bounded
-  // store read per page, and a store that does not answer yields none.
-  const cases = await fetchFailingCases(found.run, nightlyFuseki(), fetch as unknown as FetchLike);
+  // #4277 — the failing cases are the run's own. #4536: read from Loki by the
+  // run's trace (TestResult rows are no longer written); one bounded read per
+  // page, and a Loki that does not answer yields none.
+  const cases = await fetchFailingCases(found.run, process.env.LOKI_URL || 'http://127.0.0.1:3102', fetch as unknown as FetchLike);
   res.type('html').send(renderNightlyPage(found.run, {
     readout: found.readout, history: found.runs, cases, typeOf: nightlySuiteType,
   }));

@@ -99,3 +99,23 @@ a.bats|one,pass'
   run "$DIFF" RUN_A RUN_B
   [ "$status" -eq 0 ]
 }
+
+@test "negative proof (#4536): a full-size run is compared, never read as 'no change'" {
+  # A whole nightly (~10,600 cases) once overflowed ARG_MAX on the way to the
+  # comparison; python never ran and the empty output said "no verdict changed".
+  python3 -c '
+print("?k,?res")
+for i in range(60000): print("suite.bats|case number %06d with a long enough name,pass" % i)' > "$TMP/a.csv"
+  sed 's/case number 000007 with a long enough name,pass/case number 000007 with a long enough name,fail/' "$TMP/a.csv" > "$TMP/b.csv"
+  cat > "$TMP/ask" <<EOF
+#!/bin/bash
+case "\$1" in
+  *RUN_A*) cat "$TMP/a.csv" ;;
+  *RUN_B*) cat "$TMP/b.csv" ;;
+esac
+EOF
+  chmod +x "$TMP/ask"
+  run "$DIFF" RUN_A RUN_B
+  [ "$status" -eq 1 ]
+  [[ "$output" == *"CHANGED  suite.bats|case number 000007 with a long enough name  pass -> fail"* ]] || return 1
+}

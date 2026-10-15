@@ -16,6 +16,7 @@ import { parseAllRuns, buildReadout, renderReadoutText } from '../src/handlers/n
 const ERRORS_LINE = 'RUN|errors|failed cases 3 · exceptions 1 · http 1 · assertions 0 · other 1';
 const RUN_LINES = [
   'RUN|start|2026-09-25T06:00:05',
+  'test.started | system trace_id=nightly-1790000000000-42 trace=nightly-1790000000000-42 units=2',
   'SUITE|npm|platform/api|kade|fail|Tests: 2 failed, 198 passed',
   'SUITE|shell|platform/scripts/test-x.sh|kade|fail|0 pass, 1 fail',
   ERRORS_LINE,
@@ -28,19 +29,22 @@ const TYPE_ERROR = 'TypeError: Cannot read properties of undefined (reading foo)
 const HTTP_500 = 'Error: expect(received).toBe(expected) · Expected: 200 · Received: 500';
 const SHELL_503 = 'FAIL: curl said 503 Service Unavailable';
 
-// the store's answer to failingCasesQuery, as Fuseki writes CSV
-const csvOf = (withReasons: boolean): string => [
-  'fp,tn,res,why',
-  `platform/api/tests/a.test.ts,throws a TypeError,fail,${withReasons ? TYPE_ERROR : ''}`,
-  `platform/api/tests/a.test.ts,harness answers 500,fail,${withReasons ? HTTP_500 : ''}`,
-  'platform/api/tests/a.test.ts,an old row from before 4155,fail,',
-  `platform/scripts/test-x.sh,platform/scripts/test-x.sh,fail,${withReasons ? SHELL_503 : ''}`,
-].join('\n');
+// #4536 — Loki's answer to failingCasesLogQL: the runner's test.case.failed
+// events (results live in Loki now, not TestResult rows)
+const ev = (file: string, name: string, reason: string): string =>
+  JSON.stringify({ event: 'test.case.failed', role: 'nightly', trace: 'nightly-1790000000000-42', file, case: name, ...(reason ? { reason } : {}) });
+const csvOf = (withReasons: boolean): string => JSON.stringify({ data: { result: [{ stream: {}, values: [
+  ['1', ev('platform/api/tests/a.test.ts', 'throws a TypeError', withReasons ? TYPE_ERROR : '')],
+  ['2', ev('platform/api/tests/a.test.ts', 'harness answers 500', withReasons ? HTTP_500 : '')],
+  ['3', ev('platform/api/tests/a.test.ts', 'an old row from before 4155', '')],
+  ['4', ev('platform/scripts/test-x.sh', 'platform/scripts/test-x.sh', withReasons ? SHELL_503 : '')],
+] }] } });
 
 describe('#4155 the store read carries the reason', () => {
-  it('asks for failureReason as optional, so rows written before it still come back', () => {
-    const q = failingCasesQuery({ startedAt: '2026-09-25T06:00:05' });
-    expect(q).toContain('OPTIONAL { ?r c:failureReason ?why }');
+  it('reads the nightly role\'s failed and skipped case events from Loki', () => {
+    const q = failingCasesQuery({ startedAt: '2026-09-25T06:00:05' }).query;
+    expect(q).toContain('test.case.(failed|skipped)');
+    expect(q).toContain('|= "\\"role\\":\\"nightly\\""');
   });
   it('keeps each case reason and leaves a reasonless row without one', () => {
     const cases = parseFailingCases(csvOf(true))['platform/api/tests/a.test.ts'];

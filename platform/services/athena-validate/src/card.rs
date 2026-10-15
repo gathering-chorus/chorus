@@ -68,7 +68,17 @@ pub fn run(card_id: &str) -> i32 {
                 continue;
             }
         };
-        for class in card_scope::declared_classes(&nt) {
+        // #4536 — the card answers only for the classes it added or changed:
+        // a class declared on main with the same triples is not this card's.
+        // Touching a big shared file (chorus.ttl: 28 unshaped classes) must not
+        // make the card answer for every gap already in it.
+        let main_nt = card_scope::main_ntriples(&card.werk, &s);
+        let changed = card_scope::changed_classes(&nt, &main_nt);
+        let untouched = card_scope::declared_classes(&nt).len() - changed.len();
+        if untouched > 0 {
+            println!("card-shape|{s}|-|{untouched} class(es) unchanged from main — not this card's");
+        }
+        for class in changed {
             classes += 1;
             let name = card_scope::local_name(&class);
             match card_scope::shape_for(&class, &model) {
@@ -81,7 +91,9 @@ pub fn run(card_id: &str) -> i32 {
         }
     }
     if classes == 0 {
-        println!("card-shape|-|-|the card's model files declare no class — no shape to check");
+        // a card that changes only shapes or properties adds no class that could
+        // lack a shape; the changed shape itself is judged by the staging validate
+        println!("card-shape|-|-|the card adds or changes no class — no class needs a shape");
     }
     if fails > 0 {
         println!("card-summary|{fails}|dirty");

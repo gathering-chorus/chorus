@@ -52,6 +52,7 @@ PRESENTED_TTL_MS = 24 * 3600 * 1000
 # of each step's state (Jeff: "cws is broken" when v2 runs never showed).
 DAGU = os.environ.get("CWS_DAGU", "http://127.0.0.1:8526")
 DAGU_DAG = os.environ.get("CWS_DAGU_DAG", "cicd")
+ATHENA_DAG = os.environ.get("CWS_ATHENA_DAG", "athena")
 DAGU_CONFIG = os.environ.get("CWS_DAGU_CONFIG", os.path.join(os.environ.get("CHORUS_HOME", os.path.expanduser("~/CascadeProjects/chorus")), "platform/config/dagu.yaml"))
 
 # act stage markers, in pipeline order — last one seen in the log wins
@@ -437,14 +438,21 @@ def dagu_runs(card, dag=None):
     #4494 — `dag` names the land half (`cicd-land`), which runs on its own queue.
     #4494 — read from dagu's run list with a 30-day window: the per-workflow list
     stops at its 30 newest runs across every card, so a card's count came out short."""
-    name = dag or DAGU_DAG
+    # #4536 — a card's run starts on the athena pipeline (model) and hands off to
+    # cicd; Jeff 10:31 "include athena in scope of cws". Read 13:10: #4536 had
+    # 8 athena runs and /cws said "no runs". The card's runs are both halves.
+    names = [dag] if dag else [DAGU_DAG, ATHENA_DAG]
+    runs = []
     try:
-        runs = dagu_list(name, time.time() - 30 * 86400)
+        for name in names:
+            runs += [dict(r, name=r.get("name", name)) for r in dagu_list(name, time.time() - 30 * 86400)]
     except Exception:
         return None
     # CARD=4474 must not match CARD=44740; name=cicd also matches cicd-land
     want = re.compile(r"(?:^|\s)CARD=\"?%s\"?(?:\s|$)" % re.escape(str(card)))
-    mine = [r for r in runs if r.get("name", name) == name and want.search(r.get("params") or "")]
+    seen = set()  # a file:// fixture answers both names from one list
+    mine = [r for r in runs if r["name"] in names and want.search(r.get("params") or "")
+            and not ((r["name"], r.get("dagRunId")) in seen or seen.add((r["name"], r.get("dagRunId"))))]
     return sorted(mine, key=lambda r: parse_ts(r.get("startedAt") or r.get("queuedAt")) or 0, reverse=True)
 
 

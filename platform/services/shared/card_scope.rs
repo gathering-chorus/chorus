@@ -311,8 +311,22 @@ pub fn shape_for(class_iri: &str, model_nt: &str) -> Option<String> {
 /// Main's version of a card file as N-Triples. Empty when main has no such file,
 /// so every class in it is the card's.
 pub fn main_ntriples(werk: &str, rel: &str) -> String {
+    ntriples_at(werk, "origin/main", rel)
+}
+
+/// #4536 — the revision a card's change is judged against: main for a werk,
+/// the squash commit's parent for a landed card (main already holds the change).
+pub fn base_rev(card: &Card) -> String {
+    match &card.commit {
+        Some(sha) => format!("{sha}^"),
+        None => "origin/main".to_string(),
+    }
+}
+
+/// A file as it was at `rev`, as N-Triples. Empty when `rev` has no such file.
+pub fn ntriples_at(werk: &str, rev: &str, rel: &str) -> String {
     let out = std::process::Command::new("git")
-        .args(["-C", werk, "show", &format!("origin/main:{rel}")])
+        .args(["-C", werk, "show", &format!("{rev}:{rel}")])
         .output();
     let Ok(out) = out else { return String::new() };
     if !out.status.success() {
