@@ -29,6 +29,19 @@ export function renderPageShell(
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>${title} · The Clearing v2</title>
   <link rel="stylesheet" href="/style.css">
+  <script type="importmap">
+  {
+    "imports": {
+      "@noble/hashes/utils": "/vendor/@noble/hashes/utils.js",
+      "@noble/hashes/": "/vendor/@noble/hashes/",
+      "@noble/curves/": "/vendor/@noble/curves/"
+    }
+  }
+  </script>
+  <script>
+    window.CHORUS_WEBID = "https://id.lightlifeurbangardens.com/jeff/profile/card#me";
+  </script>
+  <script type="module" src="/room-key.js"></script>
 </head>
 <body>
   <header class="app-header">
@@ -76,7 +89,7 @@ export function renderTodayPage(data: TodayData, sources: TrustStripSource[]): s
             </div>
           </div>
         ` : `
-          <div class="empty-state mono meta" style="padding:14px;color:var(--faint)">no source (part 2)</div>
+          <div class="empty-state mono meta" style="padding:4px 0;color:var(--faint)">no source (part 2)</div>
         `}
       </div>
 
@@ -104,17 +117,17 @@ export function renderTodayPage(data: TodayData, sources: TrustStripSource[]): s
               <div class="grow">${a.title}<div class="meta">${a.meta}${a.resolvingCard > 0 ? ` · <a class="cid alert-resolving-card" href="/board?card=${a.resolvingCard}">#${a.resolvingCard}</a>` : ''}</div></div>
             </div>
           `).join('') : `
-            <div class="empty-state mono meta" style="padding:10px;color:var(--faint)">no source (part 2)</div>
+            <div class="empty-state mono meta" style="padding:4px 0;color:var(--faint)">no source (part 2)</div>
           `}
         </div>
         <div class="sec-t working-now" style="margin-top:14px">Working now</div>
         <div class="list">
           ${data.workingRoles.length === 0 ? `
-            <div class="empty-state meta" style="padding:10px;color:var(--faint)">0 roles working now</div>
+            <div class="empty-state meta" style="padding:6px 0;color:var(--faint)">0 roles working now</div>
           ` : data.workingRoles.map(w => `
             <div class="li">
               <span class="av a-${w.role}">${w.name.charAt(0)}</span>
-              <div class="grow">${w.name} · <span class="st"><span class="dot ${w.state === 'working' ? 'd-ok' : 'd-warn'}"></span>${w.state}</span>
+              <div class="grow">${w.name} · <span class="st"><span class="dot ${w.state === 'working' ? 'd-ok' : (w.state === 'idle' ? 'd-info' : 'd-warn')}"></span>${w.state}</span>
                 <div class="meta">${w.cardId && w.cardId > 0 ? `<a class="cid" href="/board?card=${w.cardId}">#${w.cardId}</a> ${w.cardTitle}` : 'no active card'}</div>
               </div>
             </div>
@@ -218,6 +231,7 @@ export function renderRoomsPage(room: string = 'team', data: RoomsData, sources:
           <input type="text" id="composer-input" placeholder="Message ${isDirect ? '@' : '#'}${room}..." autocomplete="off">
           <button type="submit" id="composer-send">Send</button>
         </form>
+        <div id="send-error" class="send-error" role="alert"></div>
       </footer>
     </main>
     <aside class="card-drawer" id="card-drawer" style="display:none;width:320px;border-left:1px solid var(--border-color);padding:14px;background:var(--bg-secondary)">

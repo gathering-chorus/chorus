@@ -590,7 +590,7 @@ export class DataService {
     try {
       const rolesData = await this.getRolesData({ rolesUrl, boardUrl, lokiUrl, sessionsUrl, fixture });
       workingRoles = rolesData.principals
-        .filter((p) => p.state === 'working')
+        .filter((p) => p.roleKind === 'agent' && (p.state === 'working' || p.state === 'idle'))
         .map((p) => ({
           role: p.id,
           name: p.name,

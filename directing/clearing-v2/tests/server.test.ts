@@ -10,6 +10,7 @@ import { bytesToHex, hexToBytes } from '@noble/hashes/utils';
 import { createApp, loadConfig } from '../src/server';
 import { TileService } from '../src/tile-service';
 import { serializeEvent, buildEventId, verifyNostrEvent, resolveRoleByPubkey } from '../src/identity';
+import { mintShareSessionCookie } from '../src/share-session';
 import { NostrEvent } from '../src/types';
 
 describe('Clearing v2: Server App & Tile Service', () => {
@@ -254,6 +255,70 @@ describe('Clearing v2: Server App & Tile Service', () => {
       const recent = router.getRecent(1);
       expect(recent.length).toBe(1);
       expect(recent[0].from).toBe('abby-normal');
+    } finally {
+      await new Promise<void>((r) => server.close(() => r()));
+    }
+  });
+
+  test('POST /api/room/bind requires verified session cookie, refusing unauthenticated with 401 (#3827)', async () => {
+    const testCookieKey = Buffer.from('test-secret-cookie-key-for-session-32b');
+    const { app, router } = createApp({
+      relayUrl: 'ws://127.0.0.1:3499',
+      pulseUrl: 'http://127.0.0.1:3475',
+      knownKeys: new Map([[testPubKeyHex, 'abby-normal']]),
+      cookieKey: testCookieKey,
+    });
+    const server = http.createServer(app);
+    await new Promise<void>((r) => server.listen(0, '127.0.0.1', () => r()));
+    const port = (server.address() as any).port;
+
+    try {
+      const browserPrivKey = new Uint8Array(32).fill(77);
+      const browserPubKey = bytesToHex(schnorr.getPublicKey(browserPrivKey));
+      const jeffWebId = 'https://id.lightlifeurbangardens.com/jeff/profile/card#me';
+      const event = createSignedEvent(browserPrivKey, 'Hello team from Jeff browser');
+
+      // 1. NEGATIVE PROOF: /api/room/bind with no session gets 401
+      const unauthedBindRes = await fetch(`http://127.0.0.1:${port}/api/room/bind`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ pubkey: browserPubKey, webid: jeffWebId }),
+      });
+      expect(unauthedBindRes.status).toBe(401);
+      const unauthedJson = await unauthedBindRes.json() as any;
+      expect(unauthedJson.error).toBe('not-signed-in');
+
+      // 2. Browser joins with verified session cookie
+      const validCookie = mintShareSessionCookie(jeffWebId, testCookieKey);
+      const bindRes = await fetch(`http://127.0.0.1:${port}/api/room/bind`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Cookie': `chorus_share_session=${validCookie}`,
+        },
+        body: JSON.stringify({ pubkey: browserPubKey }),
+      });
+      expect(bindRes.status).toBe(200);
+      const bindJson = await bindRes.json() as any;
+      expect(bindJson.ok).toBe(true);
+      expect(bindJson.pubkey).toBe(browserPubKey);
+
+      // 3. After verified binding, /api/send accepts the signed event as 'jeff'
+      const postBindRes = await fetch(`http://127.0.0.1:${port}/api/send`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ event }),
+      });
+      expect(postBindRes.status).toBe(200);
+      const postBindJson = await postBindRes.json() as any;
+      expect(postBindJson.ok).toBe(true);
+      expect(postBindJson.from).toBe('jeff');
+
+      const recent = router.getRecent(1);
+      expect(recent.length).toBe(1);
+      expect(recent[0].from).toBe('jeff');
+      expect(recent[0].type).toBe('jeff-input');
+      expect(recent[0].tick).toBe(true);
     } finally {
       await new Promise<void>((r) => server.close(() => r()));
     }

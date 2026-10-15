@@ -7,6 +7,8 @@ import { MessageRouter } from './router';
 import { TileService } from './tile-service';
 import { BuzzRelayClient } from './relay-client';
 import { verifyNostrEvent, resolveRoleByPubkey, resolveSenderIdentity } from './identity';
+import { decideBind } from './room-bind';
+import { shareSessionFromHeader, verifyShareSession, readCookieKey } from './share-session';
 import { ClearingMessage, NostrEvent } from './types';
 
 import { renderTodayPage, renderRolesPage, renderRoomsPage } from './views';
@@ -59,6 +61,26 @@ const KNOWN_KEYS = new Map<string, string>([
   ['b9d4bfd85efd8aeeacaef985d4e12325cb1d7d527755be875a3813836e06d9b7', 'abby-normal'],
 ]);
 
+export function shareSessionWebId(req: Request, keyBuffer?: Buffer | null): string | null {
+  const raw = shareSessionFromHeader(req.headers.cookie);
+  if (!raw) return null;
+  const key = keyBuffer !== undefined ? keyBuffer : readCookieKey();
+  if (!key) return null;
+  const v = verifyShareSession(raw, key);
+  return v.ok ? v.webid : null;
+}
+
+export function sessionPrincipal(req: Request, keyBuffer?: Buffer | null): { id: string; name: string; webid: string } | null {
+  const webid = shareSessionWebId(req, keyBuffer);
+  if (!webid) return null;
+  if (webid === 'https://id.lightlifeurbangardens.com/jeff/profile/card#me' || webid.includes('/jeff/')) {
+    return { id: 'principal-jeff', name: 'jeff', webid };
+  }
+  const m = webid.match(/\/([^\/]+)\/profile\/card/);
+  const name = m ? m[1] : webid;
+  return { id: `principal-${name}`, name, webid };
+}
+
 interface RouteContext {
   app: express.Express;
   router: MessageRouter;
@@ -71,10 +93,11 @@ interface RouteContext {
   broadcastSSE: (type: string, data: unknown) => void;
   onInboundEvent: (event: NostrEvent) => void;
   keys: Map<string, string>;
+  cookieKey?: Buffer | null;
 }
 
 function registerRoutes(ctx: RouteContext): void {
-  const { app, router, tileService, dataService, relay, sseClients, relayUrl, pulseUrl, broadcastSSE, onInboundEvent, keys } = ctx;
+  const { app, router, tileService, dataService, relay, sseClients, relayUrl, pulseUrl, broadcastSSE, onInboundEvent, keys, cookieKey } = ctx;
 
   app.get('/health', (_req: Request, res: Response) => {
     res.json({
@@ -184,6 +207,19 @@ function registerRoutes(ctx: RouteContext): void {
     res.json({ ok: true, id: event!.id, from: identity.role });
   });
 
+  // #3827 — Room key bind endpoint: identity comes strictly from the verified session cookie,
+  // NEVER from a client-supplied header or body field.
+  app.post('/api/room/bind', (req: Request, res: Response) => {
+    const principal = sessionPrincipal(req, cookieKey);
+    const outcome = decideBind(principal?.webid, req.body?.pubkey);
+    if (!outcome.ok) {
+      res.status(outcome.status).json({ ok: false, error: outcome.error, detail: outcome.detail });
+      return;
+    }
+    keys.set(outcome.pubkey, principal!.name);
+    res.json({ ok: true, webid: outcome.webid, pubkey: outcome.pubkey, role: principal!.name });
+  });
+
 
 
   app.get('/api/events', (req: Request, res: Response) => {
@@ -214,10 +250,13 @@ export function createApp(options?: {
   lokiUrl?: string;
   knownKeys?: Map<string, string>;
   relayConfigured?: boolean;
+  cookieKey?: Buffer | null;
 }) {
   const app = express();
   app.use(express.json());
   app.use(express.static(path.join(__dirname, '../public'), { index: false }));
+  app.use('/vendor/@noble/curves', express.static(path.join(__dirname, '../node_modules/@noble/curves/esm')));
+  app.use('/vendor/@noble/hashes', express.static(path.join(__dirname, '../node_modules/@noble/hashes/esm')));
 
   const router = new MessageRouter(500);
   const pulseUrl = options?.pulseUrl || PULSE_URL;
@@ -316,6 +355,7 @@ export function createApp(options?: {
     broadcastSSE,
     onInboundEvent,
     keys,
+    cookieKey: options?.cookieKey,
   });
 
 

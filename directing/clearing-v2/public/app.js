@@ -6,6 +6,98 @@ const composerInput = typeof document !== 'undefined' ? document.getElementById(
 const relayIndicator = typeof document !== 'undefined' ? document.getElementById('relay-indicator') : null;
 const tilesContainer = typeof document !== 'undefined' ? document.getElementById('tiles-container') : null;
 
+const STORE = 'chorus.room.key.v1';
+
+let nodeSchnorr = null;
+let nodeSha256 = null;
+let nodeUtils = null;
+
+if (typeof require !== 'undefined') {
+  try {
+    nodeSchnorr = require('@noble/curves/secp256k1').schnorr;
+    nodeSha256 = require('@noble/hashes/sha256').sha256;
+    nodeUtils = require('@noble/hashes/utils');
+  } catch {}
+}
+
+const hexFromBytes = (b) => nodeUtils ? nodeUtils.bytesToHex(b) : Array.from(b).map((x) => x.toString(16).padStart(2, '0')).join('');
+const bytesFromHex = (h) => nodeUtils ? nodeUtils.hexToBytes(h) : new Uint8Array(h.match(/.{2}/g).map((b) => parseInt(b, 16)));
+const utf8Encode = (s) => new TextEncoder().encode(s);
+
+function getLocalStorage(custom) {
+  if (custom) return custom;
+  if (typeof localStorage !== 'undefined') return localStorage;
+  return null;
+}
+
+function loadOrCreateRoomKey(webid, customStorage) {
+  if (!webid) {
+    throw new Error('room-key: not signed in — no WebID to bind a key to. Sign in first; a key minted now would belong to nobody.');
+  }
+  const storage = getLocalStorage(customStorage);
+  let existing = null;
+  if (storage) {
+    try {
+      const all = JSON.parse(storage.getItem(STORE) || '{}');
+      existing = all[webid] || null;
+    } catch {}
+  }
+
+  if (existing) {
+    const skBytes = bytesFromHex(existing);
+    let pubkey = '';
+    if (nodeSchnorr) {
+      pubkey = hexFromBytes(nodeSchnorr.getPublicKey(skBytes));
+    } else if (typeof window !== 'undefined' && window.roomKey) {
+      pubkey = window.roomKey.pubkeyOf(skBytes);
+    }
+    return { sk: skBytes, pubkey, fresh: false };
+  }
+
+  const sk = (typeof crypto !== 'undefined' && crypto.getRandomValues)
+    ? crypto.getRandomValues(new Uint8Array(32))
+    : new Uint8Array(32).fill(1);
+  const skHex = hexFromBytes(sk);
+  if (storage) {
+    try {
+      const all = JSON.parse(storage.getItem(STORE) || '{}');
+      all[webid] = skHex;
+      storage.setItem(STORE, JSON.stringify(all));
+    } catch {}
+  }
+  let pubkey = '';
+  if (nodeSchnorr) {
+    pubkey = hexFromBytes(nodeSchnorr.getPublicKey(sk));
+  } else if (typeof window !== 'undefined' && window.roomKey) {
+    pubkey = window.roomKey.pubkeyOf(sk);
+  }
+  return { sk, pubkey, fresh: true };
+}
+
+function signEvent(sk, content, options = {}) {
+  const room = options.room || 'team';
+  const kind = options.kind || 1;
+  const tags = options.tags || [['room', room]];
+  let pubkey = '';
+  if (nodeSchnorr) {
+    pubkey = hexFromBytes(nodeSchnorr.getPublicKey(sk));
+  } else if (typeof window !== 'undefined' && window.roomKey) {
+    pubkey = window.roomKey.pubkeyOf(sk);
+  }
+  const created_at = Math.floor(Date.now() / 1000);
+  const serialized = JSON.stringify([0, pubkey.toLowerCase(), created_at, kind, tags, content]);
+
+  let id = '';
+  let sig = '';
+  if (nodeSha256 && nodeSchnorr) {
+    id = hexFromBytes(nodeSha256(utf8Encode(serialized)));
+    sig = hexFromBytes(nodeSchnorr.sign(bytesFromHex(id), sk));
+  } else if (typeof window !== 'undefined' && window.roomKey) {
+    return window.roomKey.signEvent(sk, kind, tags, content);
+  }
+  return { id, pubkey: pubkey.toLowerCase(), created_at, kind, tags, content, sig };
+}
+
 function formatAuthor(role) {
   return role === 'abby-normal' ? 'Abby Normal' : role;
 }
@@ -125,24 +217,107 @@ function initStream() {
   };
 }
 
+async function handleSendMessage(text, options = {}) {
+  const inputEl = options.inputEl || composerInput;
+  const statusEl = options.statusEl || (typeof document !== 'undefined' ? document.getElementById('send-error') : null);
+  const btnEl = options.btnEl || (typeof document !== 'undefined' && composerForm ? composerForm.querySelector('button[type="submit"]') : null);
+  const fetchFn = options.fetchFn || (typeof fetch !== 'undefined' ? fetch : null);
+
+  const cleanText = (text || '').trim();
+  if (!cleanText) return;
+
+  const savedText = cleanText;
+  if (inputEl) inputEl.value = '';
+
+  if (btnEl) {
+    btnEl.textContent = 'Sending...';
+    if (btnEl.classList) {
+      btnEl.classList.remove('delivery-failed', 'delivered');
+      btnEl.classList.add('sending');
+    }
+  }
+
+  try {
+    let signedEvent = null;
+    const webid = (typeof window !== 'undefined' && window.CHORUS_WEBID) ? window.CHORUS_WEBID : 'https://id.lightlifeurbangardens.com/jeff/profile/card#me';
+
+    if (typeof window !== 'undefined' && window.roomKey && typeof window.roomKey.signEvent === 'function') {
+      const { sk } = window.roomKey.loadOrCreate(webid);
+      signedEvent = window.roomKey.signEvent(sk, 1, [['room', 'team']], cleanText);
+    } else {
+      const { sk } = loadOrCreateRoomKey(webid);
+      signedEvent = signEvent(sk, cleanText, { room: 'team' });
+    }
+
+    if (!fetchFn) {
+      throw new Error('fetch is not defined');
+    }
+
+    const res = await fetchFn('/api/send', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ event: signedEvent, from: 'jeff', text: cleanText }),
+    });
+
+    if (!res.ok) {
+      let errName = `HTTP ${res.status}`;
+      try {
+        const json = await res.json();
+        if (json && json.error) errName = json.error;
+      } catch {
+        const txt = await res.text().catch(() => '');
+        if (txt) errName = txt;
+      }
+      throw new Error(errName);
+    }
+
+    // Success
+    if (statusEl) {
+      statusEl.textContent = '';
+      statusEl.style.display = 'none';
+    }
+    if (btnEl) {
+      if (btnEl.classList) {
+        btnEl.classList.remove('sending');
+        btnEl.classList.add('delivered');
+      }
+      btnEl.textContent = 'Sent';
+      setTimeout(() => {
+        if (btnEl.classList) btnEl.classList.remove('delivered');
+        btnEl.textContent = 'Send';
+      }, 1500);
+    }
+  } catch (err) {
+    const errName = (err && err.message) ? err.message : String(err);
+    console.error('Send failed:', errName);
+
+    // Restore input so typed text is not lost
+    if (inputEl) inputEl.value = savedText;
+
+    // Show failed send by name
+    if (statusEl) {
+      statusEl.textContent = `Failed: ${errName}`;
+      statusEl.style.display = 'block';
+    }
+    if (btnEl) {
+      if (btnEl.classList) {
+        btnEl.classList.remove('sending');
+        btnEl.classList.add('delivery-failed');
+      }
+      btnEl.textContent = `Failed: ${errName.slice(0, 24)}`;
+      setTimeout(() => {
+        if (btnEl.classList) btnEl.classList.remove('delivery-failed');
+        btnEl.textContent = 'Send';
+      }, 4000);
+    }
+  }
+}
+
 // Form send handler
 if (composerForm && composerInput) {
   composerForm.addEventListener('submit', async (e) => {
     e.preventDefault();
-    const text = composerInput.value.trim();
-    if (!text) return;
-
-    composerInput.value = '';
-
-    try {
-      await fetch('/api/send', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ from: 'jeff', text }),
-      });
-    } catch (err) {
-      console.error('Send failed', err);
-    }
+    await handleSendMessage(composerInput.value);
   });
 }
 
@@ -162,5 +337,14 @@ if (typeof window !== 'undefined') {
 }
 
 if (typeof module !== 'undefined' && module.exports) {
-  module.exports = { formatAuthor, formatMessageTime, appendMessage, updateTiles, initStream };
+  module.exports = {
+    formatAuthor,
+    formatMessageTime,
+    appendMessage,
+    updateTiles,
+    initStream,
+    loadOrCreateRoomKey,
+    signEvent,
+    handleSendMessage,
+  };
 }
