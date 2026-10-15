@@ -259,9 +259,13 @@ fn preamble(out: &mut String, description: &str, queue: &str, params: &[&str], w
     // step in this run, reopens the card at its route (or opens a ticket card
     // when the route is in Operating), and nudges the builder itself. If the
     // route itself fails, the plain nudge still reaches the builder (Kade).
+    // #4553 (Kade) — the nudge carries the run's own words from /cws --why: a
+    // run refused because another is live says "refused: cicd run N is live",
+    // not "run failed"; any other failure names its step and reason. dagu
+    // unreadable falls back to the plain words.
     if routes.is_empty() {
         out.push_str(&format!(
-            "handler_on:\n  failure:\n    command: '${{CHORUS_HOME}}/platform/scripts/ops-nudge ${{ROLE}} \"werk v2 #${{CARD}} {what} failed · dagu ${{DAG_RUN_ID}} · /cws ${{CARD}}\"'\n"
+            "handler_on:\n  failure:\n    command: '${{CHORUS_HOME}}/platform/scripts/ops-nudge ${{ROLE}} \"werk v2 #${{CARD}} $(python3 ${{CHORUS_HOME}}/platform/scripts/chorus-werk-status --why ${{DAG_NAME}} ${{DAG_RUN_ID}} || echo {what} failed) · dagu ${{DAG_RUN_ID}} · /cws ${{CARD}}\"'\n"
         ));
     } else {
         out.push_str(&format!(

@@ -17,7 +17,7 @@ env:
   - PATH: ${CHORUS_WERK_BASE}/${ROLE}-bin:${PATH}
 handler_on:
   failure:
-    command: '${CHORUS_HOME}/platform/scripts/ops-nudge ${ROLE} "werk v2 #${CARD} land failed · dagu ${DAG_RUN_ID} · /cws ${CARD}"'
+    command: '${CHORUS_HOME}/platform/scripts/ops-nudge ${ROLE} "werk v2 #${CARD} $(python3 ${CHORUS_HOME}/platform/scripts/chorus-werk-status --why ${DAG_NAME} ${DAG_RUN_ID} || echo land failed) · dagu ${DAG_RUN_ID} · /cws ${CARD}"'
   success:
     command: '${CHORUS_HOME}/platform/scripts/athena-land ${CARD} ${ROLE} || { ${CHORUS_HOME}/platform/scripts/crawl-detached.sh; exit 1; }; ${CHORUS_HOME}/platform/scripts/crawl-detached.sh'
 steps:

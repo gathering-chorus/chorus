@@ -710,6 +710,8 @@ def ordinal(n):
     return f"{n}{'th' if 10 <= n % 100 <= 20 else {1: 'st', 2: 'nd', 3: 'rd'}.get(n % 10, 'th')}"
 
 
+# #4553 (Kade) — werk-commit's words when another run of the card is live
+LIVE_REFUSAL = re.compile(r"refused: \S+ run \d+ is live \(dagu [^)]+\)")
 STEP_NOISE = re.compile(r"^(exit status \d+|recent stderr|chorus-runner call:|upstream failed)")
 STEP_WHY = re.compile(r"REFUSED|refus|error|FAIL|panicked|timed out|timeout|not found|missing", re.I)
 
@@ -833,7 +835,13 @@ def card_line(card, role, runs, lands, places, now=None, wip=False):
         tests = "" if tests == " · " else tests
     why = ""
     if status == "failed" and not tests and not (land and "landed on main" in where):
-        why = " · " + step_reason(node)
+        why = step_reason(node)
+        live = LIVE_REFUSAL.search(why)
+        if live:
+            # #4553 (Kade) — a run refused because another is live is not a
+            # broken commit: the line is the refusal
+            where, why = live.group(0), ""
+        why = f" · {why}" if why else ""
     many = len(live_runs(runs))
     many = f" · {many} runs live" if many > 1 else ""
     return f"#{card} {role:<6} {where:<34} {when:>7} · {run_count(runs)}{many}{tests}{why}"
@@ -889,6 +897,50 @@ def wip_cards():
         return None
 
 
+def why_run(name, run_id):
+    """#4553 (Kade) — `--why DAG_NAME RUN_ID`: the failure nudge's words for one
+    run. A run refused because another is live says so ("refused: cicd run 13
+    is live (dagu …)"), never "failed at werk-commit"; any other failure names
+    its step and its reason. Exit 2 when dagu cannot be read (the handler then
+    falls back to its plain words)."""
+    try:
+        d = dagu_get(f"/api/v1/dag-runs/{name}/{run_id}")
+    except Exception:
+        return 2
+    nodes = (d.get("dagRunDetails") or {}).get("nodes") or []
+    node = next((n for n in nodes if n.get("statusLabel") == "failed"), None)
+    if node is None:
+        return 2
+    why = step_reason(node)
+    live = LIVE_REFUSAL.search(why)
+    word = node["step"]["name"].replace("skill-werk-", "").replace("skill-", "")
+    print(live.group(0) if live else f"{name} failed at {word}: {why}")
+    return 0
+
+
+def live_other(card, me):
+    """#4553 — `--live-other CARD RUN_ID`: is another run of this card live?
+    The first step of a card run asks before it starts (#4536 15:35: a second
+    enqueue started and died on the first run's build lock 3 minutes in).
+    Exit 3 + the refusal line when one is; 0 when none; 2 when dagu is unreadable."""
+    runs = dagu_runs(card)
+    if runs is None:
+        print(f"dagu unreadable at {DAGU}: cannot tell whether another run of #{card} is live")
+        return 2
+    count, n = {}, {}
+    for r in reversed(runs):
+        name = r.get("name", DAGU_DAG)
+        count[name] = count.get(name, 0) + 1
+        n[r.get("dagRunId")] = count[name]
+    other = [r for r in live_runs(runs) if r.get("dagRunId") != me
+             and r.get("statusLabel") in ("running", "queued")]
+    if not other:
+        return 0
+    r = other[0]
+    print(f"refused: {r.get('name', DAGU_DAG)} run {n[r.get('dagRunId')]} is live (dagu {r.get('dagRunId')})")
+    return 3
+
+
 def fixture_4553():
     """#4553 — one row per wrong line /cws printed on 2026-10-15, each run
     against its violation: the row passes only if the true state and the state
@@ -935,6 +987,11 @@ def fixture_4553():
             ("an aborted run after the go does not hide the land",
              "landed" in line(156, [run("x", "cicd", "aborted", 8, [])] + [go], [landed])
              and "landed" not in line(156, [run("x", "cicd", "failed", 8, [node("failed", "skill-werk-build", "werk-build: error")])] + [go], [landed])),
+            ("a run refused because another is live reads refused, not failed at commit",
+             line(157, [run("r", "cicd", "failed", 0, [node("failed", "skill-werk-commit",
+                  "exit status 1\nwerk-commit: refused: cicd run 13 is live (dagu abc)")])], []).split()[2] == "refused:"
+             and "failed at commit" in line(157, [run("r", "cicd", "failed", 0, [node("failed", "skill-werk-commit",
+                  "exit status 1\nwerk-commit: commit failed (pre-commit gate?)")])], [])),
             ("two live runs say so",
              "2 runs live" in line(153, two, []) and "runs live" not in line(153, one, [])),
             ("run N names its pipeline",
@@ -950,6 +1007,12 @@ def main():
     args = sys.argv[1:]
     if "--fixture" in args:
         sys.exit(fixture_mode())
+    if "--why" in args:
+        i = args.index("--why")
+        sys.exit(why_run(args[i + 1], args[i + 2]))
+    if "--live-other" in args:
+        i = args.index("--live-other")
+        sys.exit(live_other(args[i + 1], args[i + 2]))
     role = None
     card = None
     if "--role" in args:

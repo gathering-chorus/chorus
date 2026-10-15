@@ -375,6 +375,35 @@ t "the newest run of either half leads" "failed at skill-werk-build" "$out"
 out=$(CWS_RUNS_DIR=$TD CWS_DAGU="file://$TD/d6" CWS_ATHENA_DAG=cicd "$CWS" 140)
 if [[ "$out" == *"· 3 runs"* ]]; then echo "FAIL athena runs counted with athena not read"; fails=$((fails+1)); fi
 
+# #4553 (Kade) — a second run of a card refuses at its first step while another
+# is live, naming that run; #4536 run 14 died 3 minutes in on the build lock.
+# NEGATIVE PROOF: the run asking (me) and a run waiting at an old go do not count.
+mkdir -p "$TD/d7/api/v1"
+cat > "$TD/d7/api/v1/dag-runs" <<'EOF9'
+{"dagRuns":[{"name":"cicd","dagRunId":"me","params":"CARD=160 ROLE=kade","statusLabel":"running","startedAt":"2026-10-15T15:38:00-04:00","nodes":[]},{"name":"cicd","dagRunId":"busy","params":"CARD=160 ROLE=kade","statusLabel":"running","startedAt":"2026-10-15T15:35:00-04:00","nodes":[]},{"name":"cicd","dagRunId":"old","params":"CARD=160 ROLE=kade","statusLabel":"failed","startedAt":"2026-10-15T15:00:00-04:00","nodes":[]},{"name":"cicd","dagRunId":"me2","params":"CARD=161 ROLE=kade","statusLabel":"running","startedAt":"2026-10-15T15:38:00-04:00","nodes":[]},{"name":"cicd","dagRunId":"go","params":"CARD=161 ROLE=kade","statusLabel":"waiting","startedAt":"2026-10-15T15:00:00-04:00","nodes":[]}]}
+EOF9
+out=$(CWS_DAGU="file://$TD/d7" "$CWS" --live-other 160 me); rc=$?
+t "another live run refuses, naming it" "refused: cicd run 2 is live (dagu busy)" "$out"
+[ $rc -eq 3 ] || { echo "FAIL live-other exit=$rc, wanted 3"; fails=$((fails+1)); }
+CWS_DAGU="file://$TD/d7" "$CWS" --live-other 161 me2 >/dev/null; rc=$?
+[ $rc -eq 0 ] || { echo "FAIL a run waiting at an old go blocked a new run (exit=$rc)"; fails=$((fails+1)); }
+out=$(CWS_DAGU="http://127.0.0.1:9" "$CWS" --live-other 160 me); rc=$?
+t "dagu unreadable says so" "dagu unreadable" "$out"
+[ $rc -eq 2 ] || { echo "FAIL unreadable dagu exit=$rc, wanted 2"; fails=$((fails+1)); }
+
+# #4553 (Kade) — the failure nudge's words: a refused run says "refused: … is
+# live", never "failed at commit". NEGATIVE PROOF: a real commit failure names
+# its step; an unknown run exits 2 so the handler keeps its plain words.
+mkdir -p "$TD/d8/api/v1/dag-runs/cicd"
+echo '{"dagRunDetails":{"nodes":[{"statusLabel":"failed","step":{"name":"skill-werk-commit"},"error":"exit status 1\nwerk-commit: refused: cicd run 13 is live (dagu busy)"}]}}' > "$TD/d8/api/v1/dag-runs/cicd/r1"
+echo '{"dagRunDetails":{"nodes":[{"statusLabel":"failed","step":{"name":"skill-werk-commit"},"error":"exit status 1\nwerk-commit: commit failed (pre-commit gate?)"}]}}' > "$TD/d8/api/v1/dag-runs/cicd/r2"
+out=$(CWS_DAGU="file://$TD/d8" "$CWS" --why cicd r1)
+t "a refused run's nudge says refused" "refused: cicd run 13 is live (dagu busy)" "$out"
+if [[ "$out" == *"failed at"* ]]; then echo "FAIL a refused run reads failed"; fails=$((fails+1)); fi
+t "a commit failure's nudge names its step" "cicd failed at commit: werk-commit: commit failed" "$(CWS_DAGU="file://$TD/d8" "$CWS" --why cicd r2)"
+CWS_DAGU="file://$TD/d8" "$CWS" --why cicd nope >/dev/null; rc=$?
+[ $rc -eq 2 ] || { echo "FAIL unknown run exit=$rc, wanted 2"; fails=$((fails+1)); }
+
 rm -rf "$TD"
 if [ $fails -gt 0 ]; then echo "test-cws-3782: $fails FAILURE(S)"; exit 1; fi
 echo "test-cws-3782: all green"
