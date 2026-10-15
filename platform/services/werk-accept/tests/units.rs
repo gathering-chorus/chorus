@@ -1,3 +1,4 @@
+// @domain: builds — placed by chorus-crawl's domain rules (#4538)
 //! Pure-helper unit tests (RED first). The NOVEL logic of accept is the authority
 //! gate (DEC-048: only Wren/Jeff finalize; a builder never self-accepts). That's a
 //! pure function — test it exhaustively here. Plus the shared verb-contract helpers.

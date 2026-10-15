@@ -1,4 +1,5 @@
 // @test-type: e2e
+// @domain: builds — placed by chorus-crawl's domain rules (#4538)
 //! Real end-to-end: actual `git` on temp repos + PATH-shimmed werk-build,
 //! chorus-bin-install, launchctl, codesign, gh. Proves deploy() against ADR-032 +
 //! #3062 AC: guaranteed rebuild; the TWO slot targets (test-in-demo = werk slot,

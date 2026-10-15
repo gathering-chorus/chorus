@@ -1,3 +1,4 @@
+// @domain: spine — placed by chorus-crawl's domain rules (#4538)
 //! Socket bind tests — #1939
 //! Verify exclusive socket bind with orphan detection.
 

@@ -1,3 +1,4 @@
+// @domain: builds — placed by chorus-crawl's domain rules (#4538)
 //! #4145 — the nightly run, whole, in the runner. Jeff, 2026-09-11 16:53:
 //! "delete the nightly script, change the launchd". Until this module the 03:00
 //! job was an 1,833-line bash wrapper (`nightly-suites.sh --run-all`) around

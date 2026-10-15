@@ -1,3 +1,5 @@
+// @test-type: integration — inferred by chorus-crawl --classify (needs-stack) (#4538)
+// @domain: services — placed by chorus-crawl's domain rules (#4538)
 /* global RequestInit */
 /**
  * codebase-topology handler — unit tests (#2173 AC4).

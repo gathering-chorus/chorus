@@ -1,4 +1,5 @@
 // @test-type: unit — reads this crate's own source; no services.
+// @domain: domains — placed by chorus-crawl's domain rules (#4538)
 //! #4433 — the crawler reads and writes the graph only through the API.
 //! Jeff, 2026-10-05: "we must not craft custom sparql to do what apis do".
 //! The crawler had two hand-written queries straight to the store; this fails

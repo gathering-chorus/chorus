@@ -1,4 +1,5 @@
 // @test-type: unit — stubbed dependencies; no live service.
+// @domain: domains — placed by chorus-crawl's domain rules (#4538)
 /**
  * doc-tag-drift unit tests (#2520 AC6).
  */

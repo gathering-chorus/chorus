@@ -1,4 +1,5 @@
 // @test-type: unit — #4152 the harness never opens the live index.db
+// @domain: spine — placed by chorus-crawl's domain rules (#4538)
 import fs from 'fs';
 import os from 'os';
 import path from 'path';

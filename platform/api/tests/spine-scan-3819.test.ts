@@ -1,4 +1,5 @@
 // @test-type: unit — writes and reads its own tmpdir files; no live spine, no service.
+// @domain: spine — placed by chorus-crawl's domain rules (#4538)
 /**
  * #3819 — reading the spine's tail instead of all 732MB of it.
  *

@@ -1,4 +1,5 @@
 #!/usr/bin/env bash
+# @domain: identity — placed by chorus-crawl's domain rules (#4538)
 # test-identity-refusal-rate-3737.sh — #3737: the check must FIRE when governed
 # writes are being refused for lack of identity, and stay quiet when they're not.
 # This is the alarm that would have caught the 2026-07-27→08-02 outage on day one.

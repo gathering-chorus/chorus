@@ -1,4 +1,5 @@
 // @test-type: integration — #3608 sweep tests touch a real tmpdir (mkdtemp); resolver tests are pure
+// @domain: messages — placed by chorus-crawl's domain rules (#4538)
 // @card: #3125
 // @owner: wren
 /* eslint-disable sonarjs/no-duplicate-string -- repeated fixture literals (session ids/paths) are intentional for per-case readability (#3429) */

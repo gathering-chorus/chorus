@@ -1,3 +1,4 @@
+// @domain: spine — placed by chorus-crawl's domain rules (#4538)
 //! #4328 — the rows a login writes, and the edits that keep them true. Pure.
 //!
 //! Jeff, 2026-09-26 08:29: "is ur session better now?" It was not: #4302 and

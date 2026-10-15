@@ -1,4 +1,5 @@
 // @test-type: unit — pure fold over CAPTURED bindings; no store, brings its own world.
+// @domain: domains — placed by chorus-crawl's domain rules (#4538)
 // #4053 — Jeff: "we need a definition of each attribute and the class this is the
 // semantic layer." The structural layer was already drawn; the semantic one was
 // absent, so the atlas could say a field exists but never what it means.

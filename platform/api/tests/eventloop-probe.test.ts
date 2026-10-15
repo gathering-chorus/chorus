@@ -1,3 +1,5 @@
+// @test-type: unit — inferred by chorus-crawl --classify (hermetic) (#4538)
+// @domain: monitors — placed by chorus-crawl's domain rules (#4538)
 // #3082 — external-probe eventloop detector tests (jest / ts-jest, the api package's runner).
 //
 // The bug: the in-process `blocked` detector (eventloop-alert.ts) rides the very loop

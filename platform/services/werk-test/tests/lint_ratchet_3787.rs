@@ -1,3 +1,4 @@
+// @domain: builds — placed by chorus-crawl's domain rules (#4538)
 //! #3787 — the lint-ratchet werk-test leg, proven against the REAL
 //! `lint-ratchet.js` with a stub eslint (a test brings its own world, #3528).
 //!

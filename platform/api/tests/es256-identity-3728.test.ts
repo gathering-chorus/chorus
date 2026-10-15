@@ -1,4 +1,5 @@
 // @test-type: unit
+// @domain: identity — placed by chorus-crawl's domain rules (#4538)
 /**
  * #3728 — es256-identity.ts to Rust (chorus-oidc) parity. #3719 introduced the
  * TS verifier with NO dedicated test while the Rust door has 30+; this brings

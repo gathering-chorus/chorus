@@ -2,6 +2,7 @@
 // @owner: wren
 /* eslint-disable @typescript-eslint/require-await -- injected async doubles document the Promise contract the watcher awaits */
 // @test-type: unit — pure functions + a fake-timer watch loop; no spine, no fs, no clock
+// @domain: messages — placed by chorus-crawl's domain rules (#4538)
 //
 // #4004 — reply-gap.ts sat at 28.57% function coverage while its watcher has
 // fired reply.delivery.gap 1,983 times in the live spine: the loop deciding

@@ -1,4 +1,5 @@
 #!/usr/bin/env bash
+# @domain: knowledge — placed by chorus-crawl's domain rules (#4538)
 # Hermetic tests for doc-inventory-classify.py + doc-inventory-reconcile.py (#2514).
 # Wraps two unittest modules so they run via the existing platform/tests/ entrypoint.
 set -uo pipefail

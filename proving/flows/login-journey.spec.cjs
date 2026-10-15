@@ -1,4 +1,5 @@
 // @test-type: e2e:ui — playwright browser flow (login-journey), live surface
+// @domain: identity — placed by chorus-crawl's domain rules (#4538)
 /**
  * THE LOGIN JOURNEY — a real browser, the real door, no backdoor.
  *

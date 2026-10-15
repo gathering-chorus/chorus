@@ -1,3 +1,4 @@
+// @domain: tests — placed by chorus-crawl's domain rules (#4538)
 //! chorus-crawl — the one herald (#4173).
 //!
 //! Walks the repo, keeps a row per tracked file in the graph through the
@@ -3692,13 +3693,25 @@ fn print_graph_vs_project(
     // #4290 — the fold rows of the control record, filled by the loop below.
     let mut fold_rows: Vec<chorus_crawl::ValidateRow> = Vec::new();
     // #4334 — every bats suite declares the domain it guards
+    // #4538 — every test file does, and the domain it names is one the store lists
     {
         let read = |q: &str| std::fs::read_to_string(std::path::Path::new(root).join(q)).ok();
-        let (n, missing) = domain::undeclared_bats(test_files, &read);
-        if missing.is_empty() {
-            println!("chorus-crawl: reconcile declared domains: clean — {n} bats suites, each with an @domain header");
-        } else {
-            println!("chorus-crawl: reconcile declared domains: DRIFT — {} of {n} bats suites carry no @domain header", missing.len());
+        let valid: Option<Vec<String>> = fetch_rows(api, token, "Domain").ok().map(|rows| {
+            rows.into_iter()
+                .filter_map(|f| f.into_iter().find(|(k, _)| k == "name").map(|(_, v)| v))
+                .filter(|v| !v.is_empty())
+                .collect()
+        });
+        let (n, mut missing, unknown) = domain::undeclared_tests(test_files, &read, valid.as_deref().unwrap_or(&[]));
+        match &valid {
+            // no Domain list: the unknown-name half cannot be measured, so it is
+            // named UNMEASURED and the row says so, never clean
+            None => println!("chorus-crawl: reconcile declared domains: UNMEASURED — the store did not list its Domains; {} of {n} test files carry no @domain header", missing.len()),
+            Some(_) if missing.is_empty() && unknown.is_empty() => println!("chorus-crawl: reconcile declared domains: clean — {n} test files, each with an @domain header naming a listed domain"),
+            Some(_) => println!("chorus-crawl: reconcile declared domains: DRIFT — {} of {n} test files carry no @domain header, {} name a domain the store does not list", missing.len(), unknown.len()),
+        }
+        if valid.is_some() {
+            missing.extend(unknown);
         }
         fold_rows.push(chorus_crawl::ValidateRow {
             domain: "tests".to_string(),
@@ -3708,7 +3721,7 @@ fn print_graph_vs_project(
             missing,
             stale: Vec::new(),
             excluded: Vec::new(),
-            measured: true,
+            measured: valid.is_some(),
         });
     }
     // #4214 — the folds, both directions. The classes shipped without this, so

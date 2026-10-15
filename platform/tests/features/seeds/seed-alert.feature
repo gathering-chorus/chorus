@@ -1,4 +1,5 @@
 # @test-type: bdd — steps simulate the alert decision; no live service is called
+# @domain: memory — placed by chorus-crawl's domain rules (#4538)
 @seed @alert
 Feature: Seed failure alerting
   When a seed write fails, Jeff sees an alert on the Bridge

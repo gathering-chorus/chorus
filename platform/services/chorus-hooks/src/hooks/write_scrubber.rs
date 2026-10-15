@@ -1,3 +1,4 @@
+// @domain: spine — placed by chorus-crawl's domain rules (#4538)
 use crate::state::chorus_log;
 use crate::types::{permission_deny_json, HookInput, HookResponse};
 use regex::Regex;

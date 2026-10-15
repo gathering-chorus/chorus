@@ -1,4 +1,5 @@
 #!/bin/bash
+# @domain: tests — placed by chorus-crawl's domain rules (#4538)
 # test-hook-daemon.sh — AC6 tests for Hook Daemon
 # Tests: health check, crash-to-shim fallback, socket-unavailable detection
 #

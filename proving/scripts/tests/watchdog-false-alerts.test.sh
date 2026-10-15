@@ -1,4 +1,5 @@
 #!/usr/bin/env bash
+# @domain: monitors — placed by chorus-crawl's domain rules (#4538)
 # watchdog-false-alerts.test.sh — Verify watchdog doesn't fire on accepted/wrong cards
 # Card #2033 AC #1-4
 # New file — no prior history.

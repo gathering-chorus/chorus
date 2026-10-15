@@ -1,3 +1,5 @@
+# @test-type: bdd — inferred by chorus-crawl --classify (hermetic) (#4538)
+# @domain: tests — placed by chorus-crawl's domain rules (#4538)
 @policy @behavioral
 Feature: Jeff's behavioral contracts with roles
   When Jeff interacts with a role, the role's response follows a known

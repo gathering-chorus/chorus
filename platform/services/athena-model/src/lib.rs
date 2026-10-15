@@ -1,3 +1,4 @@
+// @domain: domains — placed by chorus-crawl's domain rules (#4538)
 //! chorus-model — the governed RDF/OWL writer (#3257, model-2 of the coherent-model program).
 //!
 //! The ONLY sanctioned write path to the model store (`urn:chorus:instances`),

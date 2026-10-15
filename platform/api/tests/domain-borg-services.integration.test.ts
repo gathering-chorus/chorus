@@ -1,4 +1,5 @@
 // @test-type: integration:api — in-process TestApp harness
+// @domain: domains — placed by chorus-crawl's domain rules (#4538)
 /**
  * Borg services on domain page — #2080
  *

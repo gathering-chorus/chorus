@@ -1,4 +1,5 @@
 #!/usr/bin/env bash
+# @domain: toolchain — placed by chorus-crawl's domain rules (#4538)
 # test-mcp-config-drift.sh (#4149) — the nightly's canonical-tree guard: the
 # role .mcp.json files committed on main must be exactly what gen-role-mcp.sh
 # emits. A hand-edit into a generated file reads fine in review and is erased

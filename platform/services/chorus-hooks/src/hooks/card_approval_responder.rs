@@ -1,3 +1,4 @@
+// @domain: spine — placed by chorus-crawl's domain rules (#4538)
 //! Card-approval responder — #2924 AC3/AC4.
 //!
 //! UserPromptSubmit hook that closes the bouncer-approval loop:

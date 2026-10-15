@@ -1,3 +1,5 @@
+// @test-type: unit — inferred by chorus-crawl --classify (hermetic) (#4538)
+// @domain: search — placed by chorus-crawl's domain rules (#4538)
 // #3058 - the chorus-api access line must carry the request START timestamp so an
 // event-loop-block alert at time T can be matched to the request whose
 // [start, start+ms] window contains T. Before this, lines had no timestamp and

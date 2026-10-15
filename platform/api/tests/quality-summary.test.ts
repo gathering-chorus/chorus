@@ -1,4 +1,5 @@
 // @test-type: unit — hermetic. Brings its own athena-make stub (http.Server on an
+// @domain: analytics — placed by chorus-crawl's domain rules (#4538)
 // ephemeral port) + tempdir cache; no live :3360, no $HOME.
 /**
  * #3657 — quality summary is a projection of the tests domain.

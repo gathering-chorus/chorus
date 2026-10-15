@@ -1,4 +1,5 @@
 // @test-type: unit — the worker's message handler with an injected compute; no thread, no index.
+// @domain: spine — placed by chorus-crawl's domain rules (#4538)
 // #3060 — freshness-worker.ts answers the runner in the worker-pool reply shape:
 // { id, rows: [result] } on success, { id, error } when the recompute throws, so
 // a failed count reaches the caller as a rejection instead of a hung request.

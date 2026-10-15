@@ -1,3 +1,4 @@
+// @domain: spine — placed by chorus-crawl's domain rules (#4538)
 //! #3125 — tty-matched transport. Routing by tty (exact) instead of by
 //! window-title substring (fuzzy). Two failure classes this kills:
 //!   - stale same-named shell tab ("wren — -zsh") false-matching the role

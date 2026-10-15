@@ -1,3 +1,4 @@
+// @domain: builds — placed by chorus-crawl's domain rules (#4538)
 //! Real end-to-end for the push-only verb (#3056 split): actual `git` on temp
 //! repos + a PATH-shimmed `gh`. Proves werk-push PUSHES a locally-committed branch
 //! to origin and registers the gh chorus/push status — the visible state that

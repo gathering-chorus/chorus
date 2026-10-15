@@ -1,4 +1,5 @@
 // @test-type: e2e:ui — playwright browser flow (url-topology-3878), live surface
+// @domain: tests — placed by chorus-crawl's domain rules (#4538)
 /**
  * #3878 — the four public paths Jeff specified must resolve.
  *

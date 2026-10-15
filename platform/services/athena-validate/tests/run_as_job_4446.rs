@@ -1,3 +1,4 @@
+// @domain: domains — placed by chorus-crawl's domain rules (#4538)
 //! #4446 — athena-validate's first line is `service_lifecycle::run_as_job()`.
 //! Under launchd it re-runs the sweep as a child and logs a failed run as
 //! service.failed. Run by hand or from a suite it must step aside: return, so

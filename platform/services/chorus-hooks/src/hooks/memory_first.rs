@@ -1,3 +1,4 @@
+// @domain: spine — placed by chorus-crawl's domain rules (#4538)
 //! Memory-first search gate (#1951)
 //! PreToolUse on Grep/Glob/Bash: blocks filesystem searches for card/session
 //! context when the role hasn't queried the Memory domain endpoints first.

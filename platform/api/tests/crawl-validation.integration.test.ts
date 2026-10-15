@@ -1,4 +1,5 @@
 // @test-type: integration:api — in-process TestApp harness
+// @domain: seeds — placed by chorus-crawl's domain rules (#4538)
 /**
  * Crawl API input validation tests — #1886
  *

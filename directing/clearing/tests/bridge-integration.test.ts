@@ -1,4 +1,5 @@
 // @test-type: unit — signal is fixture-data: in-memory MessageRouter, no io, no live session
+// @domain: messages — placed by chorus-crawl's domain rules (#4538)
 // @card: #1827
 // @owner: wren
 /**

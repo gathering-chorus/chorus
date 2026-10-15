@@ -1,3 +1,4 @@
+// @domain: builds — placed by chorus-crawl's domain rules (#4538)
 //! #4491 — werk-deploy deploys a changed crate from any crate home, by its
 //! package name (a product API dir is `api`; its crate is `pulse-api`).
 

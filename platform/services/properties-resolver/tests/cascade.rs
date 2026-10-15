@@ -1,3 +1,4 @@
+// @domain: value-streams — placed by chorus-crawl's domain rules (#4538)
 //! #3437 cascade resolver — red-first hermetic tests (DEC-1674). No Fuseki.
 //!
 //! The PURE precedence core: given a TOTALLY-ORDERED scope chain (most-specific

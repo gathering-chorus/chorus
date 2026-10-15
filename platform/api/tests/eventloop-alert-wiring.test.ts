@@ -1,3 +1,5 @@
+// @test-type: unit — inferred by chorus-crawl --classify (hermetic) (#4538)
+// @domain: time — placed by chorus-crawl's domain rules (#4538)
 // #3050 — wiring behavior: every block is recorded (spine), nudges are throttled
 // (no spam on a hot loop), and the cold-start window is excluded (boot delay) so a
 // deploy restart can't false-fire — the exact failure mode of the old shell alert.

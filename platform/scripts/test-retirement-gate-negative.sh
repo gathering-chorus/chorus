@@ -1,4 +1,5 @@
 #!/usr/bin/env bash
+# @domain: toolchain — placed by chorus-crawl's domain rules (#4538)
 # test-retirement-gate-negative.sh — #3677 commit-moment negative suite for the
 # retirement gate (#3598): a deleted surface whose tests still reference it must
 # BLOCK. The gate has run in pre-commit since #3598 without a fixture proving it

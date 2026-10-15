@@ -1,4 +1,5 @@
 #!/usr/bin/env bash
+# @domain: tests — placed by chorus-crawl's domain rules (#4538)
 # test-nightly-npm-runner.sh — #3974 REDIRECT GUARD (was: #3606 own-runner tests
 # against the retired run_one_attempt walker).
 #

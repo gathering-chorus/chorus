@@ -1,3 +1,4 @@
+// @domain: spine — placed by chorus-crawl's domain rules (#4538)
 //! #3252 — Hook observability: pure helpers for the IoC interceptor.
 //!
 //! The dispatch wrappers (pre_tool_use / post_tool_use / user_prompt_submit /

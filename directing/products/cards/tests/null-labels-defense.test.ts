@@ -1,3 +1,5 @@
+// @test-type: unit — inferred by chorus-crawl --classify (hermetic) (#4538)
+// @domain: cards — placed by chorus-crawl's domain rules (#4538)
 /**
  * #2512 — `cards list` errored with "task.labels is not iterable" when
  * Vikunja returned `labels: null` (not `[]`) for tasks with no labels.

@@ -1,4 +1,5 @@
 // @test-type: unit — pure fs scanner against a tempdir; no services.
+// @domain: code — placed by chorus-crawl's domain rules (#4538)
 /**
  * #2485 Move 6 — discover-pages scanner extension for chorus/platform/api/public/loom/.
  *

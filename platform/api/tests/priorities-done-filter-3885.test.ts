@@ -1,4 +1,5 @@
 // @test-type: unit — pure handler with injected sparql/pulse/status stubs; no DB, no HTTP.
+// @domain: board — placed by chorus-crawl's domain rules (#4538)
 /**
  * #3885 — the walk shows what is left, uncluttered by what is done.
  *

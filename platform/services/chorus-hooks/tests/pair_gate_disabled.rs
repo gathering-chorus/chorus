@@ -1,3 +1,4 @@
+// @domain: spine — placed by chorus-crawl's domain rules (#4538)
 //! Test: pair gate should not block code edits (disabled per Jeff 2026-04-16)
 //! "the team uses either /pull or /pair — it should not be enforced below that level"
 

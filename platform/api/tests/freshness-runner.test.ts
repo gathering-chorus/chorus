@@ -1,4 +1,5 @@
 // @test-type: unit — real worker_threads in this process, worker bodies given inline;
+// @domain: spine — placed by chorus-crawl's domain rules (#4538)
 // no service, no store, no index.
 // #3060 (reopened 2026-10-07) — the freshness COUNT took 11-15s on chorus-api's
 // main thread and froze every request behind it, the Clearing included.

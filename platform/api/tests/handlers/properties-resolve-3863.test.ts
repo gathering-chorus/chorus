@@ -1,4 +1,5 @@
 // @test-type: unit — pure handler, injected fetch, no live services.
+// @domain: properties — placed by chorus-crawl's domain rules (#4538)
 /**
  * #3863 — `/api/chorus/properties/resolve` must exist and must proxy.
  *

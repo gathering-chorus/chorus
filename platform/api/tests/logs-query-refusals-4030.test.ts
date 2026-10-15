@@ -1,4 +1,5 @@
 // @test-type: unit — injects fetch + clock; no Loki, no live service, brings its own world.
+// @domain: cicd — placed by chorus-crawl's domain rules (#4538)
 // #4030 — the log-query tools' refusal shapes. Jeff's experience under test: when
 // Loki says no, the MCP tool tells him WHY (rate-limited vs syntax vs unreachable)
 // instead of an empty result, and an explicit start/end window is honoured or

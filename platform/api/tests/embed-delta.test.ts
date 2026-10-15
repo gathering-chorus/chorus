@@ -1,3 +1,5 @@
+// @test-type: unit — inferred by chorus-crawl --classify (hermetic) (#4538)
+// @domain: search — placed by chorus-crawl's domain rules (#4538)
 import { createEmbedDelta, singleFlight } from '../src/embed-delta';
 
 describe('singleFlight (#3214 — coalesce concurrent embedDelta runs)', () => {

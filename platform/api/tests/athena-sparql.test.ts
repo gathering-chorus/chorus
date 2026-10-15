@@ -1,4 +1,5 @@
 // @test-type: unit — injects a fake fetch; no Fuseki, no live service, brings its own world.
+// @domain: domains — placed by chorus-crawl's domain rules (#4538)
 /* global RequestInit */
 import { createAthenaSparqlClient, createEnvelopeBuilder, createSparqlLoader } from '../src/athena-sparql';
 

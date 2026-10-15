@@ -1,4 +1,5 @@
 // @test-type: integration — in-process TestApp harness (startTestApp); no live services.
+// @domain: services — placed by chorus-crawl's domain rules (#4538)
 /**
  * Borg landing tests — #2099
  *

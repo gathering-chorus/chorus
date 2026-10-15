@@ -1,3 +1,4 @@
+// @domain: builds — placed by chorus-crawl's domain rules (#4538)
 //! #3468/#3471 — the ops gate JUDGES a chorus-health report it cannot fetch
 //! (the headless gate runs `claude -p` with `--disallowedTools Bash`, so the
 //! SKILL's `bash chorus-health` call fails → the "no shell access" gate error).

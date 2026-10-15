@@ -1,4 +1,5 @@
 // @test-type: integration — hits service/remote/sibling, skip-if-absent in CI
+// @domain: services — placed by chorus-crawl's domain rules (#4538)
 /**
  * #2474 — resolveShimPath unit tests.
  *

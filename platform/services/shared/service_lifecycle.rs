@@ -1,3 +1,4 @@
+// @domain: code — placed by chorus-crawl's domain rules (#4538)
 // #4446 — a com.chorus.* service logs its own start, stop and failure.
 //
 // Jeff, 2026-10-06: "all services must be rigorous about structured logging of

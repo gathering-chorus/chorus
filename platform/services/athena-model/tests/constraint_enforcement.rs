@@ -1,3 +1,4 @@
+// @domain: domains — placed by chorus-crawl's domain rules (#4538)
 //! #3467 (B scope) — the generated write surface must be constraint-SAFE, not just
 //! well-formed. The DAL (chorus-model) is the one write authority, so datatype +
 //! edge-target-type enforcement lives here, derived from the shape (no hardcoded

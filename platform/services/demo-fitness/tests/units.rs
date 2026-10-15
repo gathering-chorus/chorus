@@ -1,3 +1,4 @@
+// @domain: roles — placed by chorus-crawl's domain rules (#4538)
 // #4225 — the numbers are fixtures, never this box: a check whose verdict
 // depends on what happens to be running cannot be read as red or green.
 use demo_fitness::*;

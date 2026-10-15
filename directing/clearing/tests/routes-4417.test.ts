@@ -1,4 +1,5 @@
 // @test-type: unit — the Clearing's remaining routes over HTTP, in-process; the cards CLI is a stub under a temp CHORUS_ROOT.
+// @domain: messages — placed by chorus-crawl's domain rules (#4538)
 // @card: #4417
 // @owner: wren
 /**

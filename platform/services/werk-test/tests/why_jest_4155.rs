@@ -1,3 +1,4 @@
+// @domain: builds — placed by chorus-crawl's domain rules (#4538)
 //! #4155 AC4 — a jest case that throws a TypeError and one whose harness
 //! answers 500 each come out of jest's real `--json` report as a reason line
 //! carrying that text, and a file that dies at import names its TypeError.

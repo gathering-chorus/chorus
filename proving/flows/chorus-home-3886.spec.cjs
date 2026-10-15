@@ -1,4 +1,5 @@
 // @test-type: e2e:ui — playwright browser flow (chorus-home-3886), live surface
+// @domain: tests — placed by chorus-crawl's domain rules (#4538)
 /**
  * #3886 — the chorus home page, and the way out of it.
  *

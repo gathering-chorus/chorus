@@ -1,4 +1,5 @@
 // @test-type: unit
+// @domain: spine — placed by chorus-crawl's domain rules (#4538)
 //! #3677 — the ADR-056 hollow-module resolution, pinned.
 //!
 //! Three modules documented themselves as blocking and returned allow

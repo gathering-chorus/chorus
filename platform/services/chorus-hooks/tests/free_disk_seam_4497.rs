@@ -1,3 +1,4 @@
+// @domain: spine — placed by chorus-crawl's domain rules (#4538)
 //! #4497 — no chorus-hooks test asks Finder for the free disk space. The seam
 //! lives in platform/services/chorus-hooks/.cargo/config.toml: every cargo
 //! context gets CHORUS_FREE_DISK_BYTES, and the shim reads it instead of

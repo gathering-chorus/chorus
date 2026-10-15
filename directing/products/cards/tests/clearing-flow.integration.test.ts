@@ -1,4 +1,5 @@
 // @test-type: integration
+// @domain: products — placed by chorus-crawl's domain rules (#4538)
 /**
  * Clearing Flow Tests — #1243
  *

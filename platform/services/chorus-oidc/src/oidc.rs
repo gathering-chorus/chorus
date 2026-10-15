@@ -1,3 +1,4 @@
+// @domain: identity — placed by chorus-crawl's domain rules (#4538)
 //! #3613 / ADR-052 — Solid-OIDC (CSS) identity at the athena-make write seam.
 //!
 //! CSS (:3001) is the one issuer: it signs ES256 tokens with a private key that

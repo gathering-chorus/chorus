@@ -1,3 +1,4 @@
+// @domain: domains — placed by chorus-crawl's domain rules (#4538)
 // #4183 reopen 1 — a Permission write drops the cached scopes; a scope refusal
 // says how old the scope it judged by is.
 use athena_make::{grants_changed, scope_age_note};

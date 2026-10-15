@@ -1,3 +1,4 @@
+// @domain: spine — placed by chorus-crawl's domain rules (#4538)
 //! Pair Enforcement (#1673)
 //!
 //! When /pair starts, ensure the target role also loads the /pair skill.

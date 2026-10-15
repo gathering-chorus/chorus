@@ -1,4 +1,5 @@
 // @test-type: unit — signal:integration is fixture-data (in-memory sqlite, pure handler, no live service)
+// @domain: spine — placed by chorus-crawl's domain rules (#4538)
 /**
  * chorus-freshness handler — unit tests (#2189).
  *

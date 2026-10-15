@@ -1,3 +1,4 @@
+// @domain: domains — placed by chorus-crawl's domain rules (#4538)
 //! #4358 — a door write puts each field at the path its shape names.
 //!
 //! The door wrote every field at chorus:<name>. PrincipleShape's comment field

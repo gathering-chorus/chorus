@@ -1,4 +1,5 @@
 // @test-type: unit — stubbed dependencies; no live service.
+// @domain: domains — placed by chorus-crawl's domain rules (#4538)
 /**
  * Regression: chorus-domain drops reads/writes when service has multiple rdfs:comment triples (#2212).
  *

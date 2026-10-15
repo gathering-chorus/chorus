@@ -1,3 +1,5 @@
+// @test-type: unit — inferred by chorus-crawl --classify (hermetic) (#4538)
+// @domain: search — placed by chorus-crawl's domain rules (#4538)
 import Database from 'better-sqlite3';
 import { buildSearchMeta, addStaleHeader, SOURCE_CADENCE, STALE_THRESHOLD_MS, reportWatermarksScan, WATERMARKS_SLOW_MS } from '../src/search-meta';
 import * as ela from '../src/eventloop-alert';

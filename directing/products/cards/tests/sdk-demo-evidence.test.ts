@@ -1,3 +1,5 @@
+// @test-type: unit — inferred by chorus-crawl --classify (hermetic) (#4538)
+// @domain: cards — placed by chorus-crawl's domain rules (#4538)
 /**
  * cards-done is a board primitive, not the accept authority. Card 3227.
  *

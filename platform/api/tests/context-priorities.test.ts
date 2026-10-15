@@ -1,4 +1,5 @@
 // @test-type: unit — injects sparql + pulse stubs; no Fuseki, no live service, brings its own world.
+// @domain: products — placed by chorus-crawl's domain rules (#4538)
 // #3683 — /sup's data contract: the role's priorities walk read from the GRAPH
 // (#3654 board domain), not a label-scrape. Chunks in roleSequence order, cards
 // in rank order within each chunk; open board cards with no chunk membership are

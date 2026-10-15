@@ -1,3 +1,4 @@
+// @domain: builds — placed by chorus-crawl's domain rules (#4538)
 //! #4155 — why a case failed, kept at the moment it fails.
 //!
 //! Jeff's spec line (2026-09-12): "all failures and exceptions caught and

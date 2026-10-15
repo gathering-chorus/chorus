@@ -1,3 +1,4 @@
+// @domain: spine — placed by chorus-crawl's domain rules (#4538)
 //! Tests for #1881 — Pulse service: structured team state JSON
 //! What Jeff sees: one JSON payload with full team state on every prompt cycle.
 

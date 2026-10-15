@@ -1,4 +1,5 @@
 // @test-type: unit — pure config resolution (bucket aliases, .env/env loading, role
+// @domain: cards — placed by chorus-crawl's domain rules (#4538)
 // detection). No network, no Vikunja: process.env + cwd only, restored after each test.
 // #3600 — covers config.ts's untested behavior (loadEnv, detectRole fallback,
 // resolveBucket aliases) — the real drag under the cards coverage floor.

@@ -1,3 +1,4 @@
+// @domain: builds — placed by chorus-crawl's domain rules (#4538)
 //! #3431 — hermetic real-git tests for the ported `chorus-werk remove` semantics.
 //! Every test brings its own world: a bare "origin", a canonical clone, and real
 //! worktrees under a temp werk_base. No shims for the teardown path — the point

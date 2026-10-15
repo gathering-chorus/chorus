@@ -1,4 +1,5 @@
 // @test-type: unit — signal:api is fixture-data (in-process harness on an ephemeral port, no live :3340)
+// @domain: tests — placed by chorus-crawl's domain rules (#4538)
 // #4060 — the readout is SERVED, so the nudge, the page and any role read one
 // source. #4156 — that source is the graph rows the run wrote. Hermetic: the
 // in-process harness on an ephemeral port, and a stand-in store answering the

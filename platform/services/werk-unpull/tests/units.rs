@@ -1,3 +1,4 @@
+// @domain: builds — placed by chorus-crawl's domain rules (#4538)
 //! Pure-helper unit tests (#3299) — the CLI seam, the board-state validation core
 //! (typed reasons), the zero-dep JSON field extractor, and the witness contracts.
 

@@ -1,4 +1,5 @@
 // @test-type: unit — pure functions over name tables; no store, no network.
+// @domain: domains — placed by chorus-crawl's domain rules (#4538)
 // @card: #4353
 // @owner: wren
 /**

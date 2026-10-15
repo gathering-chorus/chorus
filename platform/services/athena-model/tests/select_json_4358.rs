@@ -1,3 +1,4 @@
+// @domain: domains — placed by chorus-crawl's domain rules (#4538)
 //! #4358 (reopened 2026-10-07) — the DAL reads every shape SELECT through
 //! `parse_select_v`. It used to cut values out of Fuseki's JSON by hand and kept
 //! the JSON escapes, so the stored pattern `^https://jeffbridwell\.com/...` came

@@ -1,3 +1,4 @@
+// @domain: spine — placed by chorus-crawl's domain rules (#4538)
 //! #4340 — messages in the model: the rows the projector writes from messages.db.
 use chorus_principal::msgs::*;
 use serde_json::json;

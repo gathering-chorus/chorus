@@ -1,3 +1,4 @@
+// @domain: spine — placed by chorus-crawl's domain rules (#4538)
 //! Context cache command — extracted from shim.rs
 //! Builds /tmp/session-context-<role>.md with board state, briefs, health, memory.
 

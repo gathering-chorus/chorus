@@ -1,4 +1,5 @@
 // @test-type: integration — reads and writes a real tmpdir (mkdtemp) the test owns; no store, no crawler, no network
+// @domain: services — placed by chorus-crawl's domain rules (#4538)
 // #4290 — crawler-validate: the control report of git vs graph gaps in both
 // directions for every crawler domain. Hermetic: the record directory is a
 // tmpdir the test owns (CHORUS_VALIDATE_DIR seam); no store, no crawler.

@@ -1,4 +1,5 @@
 // @test-type: integration — hits the live Chorus API via startTestApp; RUN_INTEGRATION-gated tier.
+// @domain: search — placed by chorus-crawl's domain rules (#4538)
 /**
  * Search freshness metadata tests — #1878
  *

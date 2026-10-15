@@ -1,3 +1,4 @@
+// @domain: spine — placed by chorus-crawl's domain rules (#4538)
 //! #3288 — version coherence gate: the committed Werk version must agree
 //! with the committed constituent set, by construction.
 //!

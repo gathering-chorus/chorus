@@ -1,3 +1,4 @@
+// @domain: spine — placed by chorus-crawl's domain rules (#4538)
 //! #1820: Verify Silas role path is roles/silas, not platform/roles/silas.
 //! After DEC-1816 namespace move.
 

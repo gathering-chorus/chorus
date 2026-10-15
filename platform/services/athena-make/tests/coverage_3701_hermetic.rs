@@ -1,3 +1,4 @@
+// @domain: tests — placed by chorus-crawl's domain rules (#4538)
 //! #3701 — hermetic coverage: a full in-test Fuseki stub (std TcpListener, port 0)
 //! answers every SPARQL query athena-make issues with fixture rows, a stub DAL binary
 //! (CHORUS_MODEL_BIN) absorbs writes, and a REAL serve() loop runs on a scratch

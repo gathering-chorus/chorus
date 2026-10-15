@@ -1,3 +1,4 @@
+// @domain: spine — placed by chorus-crawl's domain rules (#4538)
 //! #3130 layer 2 — VS Code inject path. A session in VS Code's integrated
 //! terminal is hosted by the "Code" app (Electron), not Terminal.app, and its
 //! tty is a pseudo-tty that Terminal can't see — so the Terminal `--tty` match

@@ -1,3 +1,4 @@
+// @domain: builds — placed by chorus-crawl's domain rules (#4538)
 // #4511 — the canonical deploy installs what the lock pins before it builds.
 use std::fs;
 use std::os::unix::fs::PermissionsExt;

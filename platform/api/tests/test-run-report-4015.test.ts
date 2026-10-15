@@ -1,4 +1,5 @@
 // @test-type: unit — pure functions over fixture documents. No fs, no server, no store.
+// @domain: tests — placed by chorus-crawl's domain rules (#4538)
 //
 // #4015 — Jeff, 2026-08-26: "this is my rendered surface and you can fetch the same
 // data via api — api and ui match."

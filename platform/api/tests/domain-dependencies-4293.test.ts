@@ -1,4 +1,5 @@
 // @test-type: unit — stubs the store; no Fuseki, no live service, brings its own world.
+// @domain: domains — placed by chorus-crawl's domain rules (#4538)
 // #4293 — the domain page's Dependencies fold. Jeff's experience under test: a
 // domain page says which layer the domain sits in, which services it hosts, what
 // it depends on and what depends on it, from the graph. Before #4293 the fold read

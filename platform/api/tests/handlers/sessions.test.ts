@@ -1,5 +1,6 @@
 /**
  * @test-type: unit
+// @domain: services — placed by chorus-crawl's domain rules (#4538)
  *
  * sessions handlers — unit tests (#2173 AC4).
  *

@@ -1,4 +1,5 @@
 // @test-type: unit — signal:api is fixture-data (pure functions over log fixtures)
+// @domain: tests — placed by chorus-crawl's domain rules (#4538)
 // #4073 — every red carries one of three labels, DERIVED from the recorded run
 // history, never declared. Jeff, 2026-09-02: "our tests seem very brittle ·
 // its like whackamole · i never asked u to test mood". A red must say whether

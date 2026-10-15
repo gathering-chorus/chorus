@@ -1,3 +1,4 @@
+// @domain: domains — placed by chorus-crawl's domain rules (#4538)
 //! #4338 — a staged retirement must not delete a subject the model set declares.
 //! The deploy merges the model set into urn:chorus:ontology, then the ledger runs;
 //! a staged `retire_subject` naming a declared subject deletes it on every deploy.

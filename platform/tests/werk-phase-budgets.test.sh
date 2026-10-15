@@ -1,5 +1,6 @@
 #!/bin/bash
 # @test-type: perf — reads the spine (last 24h) only; skip when spine absent
+# @domain: cicd — placed by chorus-crawl's domain rules (#4538)
 #
 # #3921 — werk-level perf: every pipeline phase has a p95 budget, folded from
 # the spine's own werk.phase events. Jeff, 2026-08-20: "unacceptable to have

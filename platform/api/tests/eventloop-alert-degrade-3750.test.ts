@@ -1,4 +1,5 @@
 // @test-type: unit — injected deps, fake timers, no live services
+// @domain: time — placed by chorus-crawl's domain rules (#4538)
 // #3750 AC1 — the watchdog must NEVER take down the process it watches.
 // 2026-08-04 10:42: require('blocked-at') threw inside start() and wedged
 // chorus-api half-dead (port open, nothing answering). NEGATIVE PROOF (#3734):

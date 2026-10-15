@@ -1,4 +1,5 @@
 // @test-type: unit
+// @domain: messages — placed by chorus-crawl's domain rules (#4538)
 // @card: #4412
 // @owner: wren
 /**

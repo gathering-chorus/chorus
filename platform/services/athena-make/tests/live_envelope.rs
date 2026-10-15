@@ -1,4 +1,5 @@
 // @test-type: integration — needs-stack: reads the live ontology in Fuseki (localhost:3030/pods)
+// @domain: domains — placed by chorus-crawl's domain rules (#4538)
 //! #3506 / ADR-047 — LIVE proof: the envelope wraps a REAL primitive read against
 //! the running Fuseki, not just a unit fixture. This is the ADR's prove-one-first
 //! bar: one primitive, real data, through the contract.

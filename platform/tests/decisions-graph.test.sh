@@ -1,5 +1,6 @@
 #!/usr/bin/env bash
 # @test-type: integration — hits service/remote/sibling, skip-if-absent in CI
+# @domain: decisions — placed by chorus-crawl's domain rules (#4538)
 : "${CHORUS_ROOT:=$(cd "$(dirname "${BASH_SOURCE[0]:-$0}")/../.." && pwd)}"
 
 # Live-graph drift test for #2485 Move 3: decisions graph matches expected baseline.

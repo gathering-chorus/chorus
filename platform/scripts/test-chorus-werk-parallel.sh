@@ -1,4 +1,5 @@
 #!/usr/bin/env bash
+# @domain: cicd — placed by chorus-crawl's domain rules (#4538)
 # test-chorus-werk-parallel.sh — parallel-roles integration test (#2735, #2913).
 #
 # Demonstrates the structural fix: simulated roles work in parallel ephemeral

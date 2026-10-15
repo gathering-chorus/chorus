@@ -1,4 +1,5 @@
 #!/usr/bin/env bash
+# @domain: tests — placed by chorus-crawl's domain rules (#4538)
 # #3768 — serve proof for the undeclared-tenancy fix.
 #
 # Each class below had instances in urn:chorus:ontology while its shape declared

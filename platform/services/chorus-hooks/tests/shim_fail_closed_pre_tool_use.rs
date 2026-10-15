@@ -1,3 +1,4 @@
+// @domain: spine — placed by chorus-crawl's domain rules (#4538)
 //! #2790 — chorus-hook-shim must fail CLOSED on pre-tool-use when the
 //! daemon is unreachable.
 //!

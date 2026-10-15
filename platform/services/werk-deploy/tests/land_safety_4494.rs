@@ -1,3 +1,4 @@
+// @domain: builds — placed by chorus-crawl's domain rules (#4538)
 //! #4494 reopen — two ways a v2 land hurt itself on 2026-10-10.
 //! 22:22: #4494's land changed platform/config/dagu.yaml, the deploy restarted
 //! com.chorus.dagu, and the land (with every other running run) was killed.

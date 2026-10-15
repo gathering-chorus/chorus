@@ -1,3 +1,4 @@
+// @domain: spine — placed by chorus-crawl's domain rules (#4538)
 //! chorus-log — Emit structured JSON events to chorus.log (spine).
 //! Subcommand: `chorus-hook-shim log <event> <role> [key=value ...]`
 //! Replaces chorus-log.sh (95 lines bash).

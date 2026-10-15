@@ -1,4 +1,5 @@
 // @test-type: unit — POSTs audio to the in-process Clearing with ffmpeg and whisper-cli stubbed on PATH; audio lands in a temp dir.
+// @domain: messages — placed by chorus-crawl's domain rules (#4538)
 // @card: #3857
 // @owner: wren
 /**

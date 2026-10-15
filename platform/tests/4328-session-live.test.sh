@@ -1,5 +1,6 @@
 #!/usr/bin/env bash
 # @test-type: integration — reads the live store (read only) and asks, for each role, whether its login is really recorded. UNMEASURED (exit 2) when athena-make does not answer.
+# @domain: identity — placed by chorus-crawl's domain rules (#4538)
 #
 # #4328 — Jeff 2026-09-26 08:29: "is ur session better now?" This is his
 # question as a check: an open session acting as the role, started, seen in the

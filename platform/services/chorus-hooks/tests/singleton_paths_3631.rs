@@ -1,3 +1,4 @@
+// @domain: spine — placed by chorus-crawl's domain rules (#4538)
 //! #3631 — the hook control socket + pidfile must live in the durable run dir
 //! (~/.chorus/run, 0700), NOT world-writable /tmp. This is the path half of the
 //! 14h-outage fix: /tmp is OS-evicted (the flap) and world-writable (the guard

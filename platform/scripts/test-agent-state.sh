@@ -1,4 +1,5 @@
 #!/bin/bash
+# @domain: deploys — placed by chorus-crawl's domain rules (#4538)
 # test-agent-state.sh — Tests for agent-state.sh (#2009)
 # AC: Script manages LaunchAgent start/stop/restart/status for all agents
 # Tests what Jeff experiences when running the tool.

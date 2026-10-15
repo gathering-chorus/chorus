@@ -1,4 +1,5 @@
 // @test-type: unit — tmpdir fixture view/doc dirs; no gathering repo, no live services.
+// @domain: code — placed by chorus-crawl's domain rules (#4538)
 //
 // #3606 — discover-pages-gathering.ts was 0% in the hermetic tier (its only
 // exercise was the integration discover-pages test). The two scanners are

@@ -1,4 +1,5 @@
 // @test-type: unit — the events domain's one spine reader, against a temp log file
+// @domain: spine — placed by chorus-crawl's domain rules (#4538)
 // @card: #4431
 // @owner: wren
 /**

@@ -1,4 +1,5 @@
 // @test-type: unit — router, journal and tailer over temp dirs; no live Clearing, no live transcripts
+// @domain: cicd — placed by chorus-crawl's domain rules (#4538)
 // @card: #4363
 // @owner: wren
 /**

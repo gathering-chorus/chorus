@@ -1,4 +1,5 @@
 // @test-type: unit — in-memory sqlite + fake fetch/exec deps; no Fuseki, no Loki, no live services.
+// @domain: code — placed by chorus-crawl's domain rules (#4538)
 /**
  * chorus-crawl handler — unit tests (#2189).
  *

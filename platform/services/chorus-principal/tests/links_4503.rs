@@ -1,3 +1,4 @@
+// @domain: spine — placed by chorus-crawl's domain rules (#4538)
 //! #4503 — which WebIDs leave Jeff's sign-in, against account-API answers shaped
 //! as the provider gave them on 2026-10-12 (12 links, 33 client credentials).
 

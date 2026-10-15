@@ -1,4 +1,5 @@
 // @test-type: unit:security — drives relayRenew with a stub guard (no network, fixed clock); brings its own world.
+// @domain: messages — placed by chorus-crawl's domain rules (#4538)
 // @card: #4500
 // @owner: wren
 /**

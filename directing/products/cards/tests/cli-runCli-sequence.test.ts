@@ -1,3 +1,5 @@
+// @test-type: unit — inferred by chorus-crawl --classify (hermetic) (#4538)
+// @domain: cards — placed by chorus-crawl's domain rules (#4538)
 /**
  * runCli sequence + domain-remove + label tests (#2241 wave 10).
  * Targets the remaining cli.ts gaps: cmdDomain remove, cmdSequence inner.

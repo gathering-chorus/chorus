@@ -1,3 +1,4 @@
+// @domain: spine — placed by chorus-crawl's domain rules (#4538)
 //! Pure-helper unit tests (#3300) — the CLI seam, the porcelain stash-set parse
 //! (Bash `grep -E '^[ MAD]'` parity incl. the deliberate untracked exclusion),
 //! the manifest row format, and the chorus-log positional contract.

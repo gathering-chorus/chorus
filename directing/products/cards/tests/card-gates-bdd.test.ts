@@ -1,4 +1,5 @@
 // @test-type: integration — drives the real cards CLI and asserts the gate
+// @domain: cards — placed by chorus-crawl's domain rules (#4538)
 // refusals a human sees; gated behind RUN_INTEGRATION. Error paths only, so
 // no card is created.
 /**

@@ -1,3 +1,4 @@
+// @domain: spine — placed by chorus-crawl's domain rules (#4538)
 use serde::{Deserialize, Serialize};
 
 /// Role detection from working directory

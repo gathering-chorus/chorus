@@ -2,6 +2,7 @@
 // @owner: wren
 /* eslint-disable @typescript-eslint/require-await -- injected async doubles document the Promise contract the watcher awaits */
 // @test-type: unit — fake timers + injected readers; no board, no spine, no clock
+// @domain: cicd — placed by chorus-crawl's domain rules (#4538)
 //
 // #4004 — wip-drift.ts sat at 45% function coverage. The pure rule was tested;
 // the WATCH LOOP was not — and the loop is where the two hard-won fixes live:

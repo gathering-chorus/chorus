@@ -1,4 +1,5 @@
 // @test-type: unit — fixture spine log in tmpdir; no ~/.chorus, no live services.
+// @domain: messages — placed by chorus-crawl's domain rules (#4538)
 /**
  * #2725 AC1/AC8 — GET /api/nudge/:role/pending reads the spine fold:
  * nudge.emitted minus nudge.surfaced for :role. Role-lane scoped

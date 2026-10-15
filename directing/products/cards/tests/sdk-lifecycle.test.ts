@@ -1,4 +1,5 @@
 // @test-type: unit — stubbed dependencies; no live service.
+// @domain: cards — placed by chorus-crawl's domain rules (#4538)
 /**
  * sdk.ts lifecycle tests (#2241 wave 2 pt 2).
  *

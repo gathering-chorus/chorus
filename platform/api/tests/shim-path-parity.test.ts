@@ -1,4 +1,5 @@
 // @test-type: unit — signal is fixture-data: both resolvers run as pure functions
+// @domain: services — placed by chorus-crawl's domain rules (#4538)
 // of an env we construct (no live services; the "deployed binary" is a tempdir fixture)
 /**
  * #2478 — Bash CLI ↔ resolveShimPath() parity, reordered by #3750.

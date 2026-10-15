@@ -1,3 +1,4 @@
+// @domain: spine — placed by chorus-crawl's domain rules (#4538)
 //! #2731 — CLAUDE.md becomes a derived artifact. SessionStart defensively
 //! regenerates `roles/*/CLAUDE.md` from fragments, so the staleness deadlock
 //! that paged Jeff 12+ times in a week (2026-04-28 → 2026-05-04) becomes

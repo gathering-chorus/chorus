@@ -1,3 +1,4 @@
+// @domain: spine — placed by chorus-crawl's domain rules (#4538)
 // #2645 — the outbound twin of write_scrubber.
 //
 // write_scrubber stops a secret being WRITTEN to a shared file. Nothing stopped

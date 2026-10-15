@@ -1,4 +1,5 @@
 // @test-type: unit — drives deliverJeffMessageToTarget against a stub pulse on an ephemeral port and a stub chorus-log; brings its own world.
+// @domain: messages — placed by chorus-crawl's domain rules (#4538)
 // @card: #3343
 // @owner: wren
 /**

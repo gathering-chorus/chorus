@@ -1,4 +1,5 @@
 // @test-type: unit — a stubbed board API in-process; no Vikunja, no network.
+// @domain: cards — placed by chorus-crawl's domain rules (#4538)
 /**
  * #4457 — Jeff, 2026-10-08 12:34: "yes fix". Abby pulled #4456 and the board
  * could not name her: owners were typed into config.ts as jeff/wren/silas/kade.

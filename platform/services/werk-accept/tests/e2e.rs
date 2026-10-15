@@ -1,3 +1,4 @@
+// @domain: builds — placed by chorus-crawl's domain rules (#4538)
 //! Real end-to-end for the accept verb (#3057): actual `git` on temp repos +
 //! PATH-shimmed `gh` / `cards` / `chorus-log` / `chorus-werk`. Proves (1) the
 //! authority gate refuses end-to-end with NO finalize side effects, and (2) the

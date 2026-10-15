@@ -1,4 +1,5 @@
 // @test-type: unit — pure text→HTML rendering; brings its own world.
+// @domain: messages — placed by chorus-crawl's domain rules (#4538)
 // @card: #4223
 // @owner: wren
 /**

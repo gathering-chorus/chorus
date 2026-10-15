@@ -1,4 +1,5 @@
 // @test-type: unit — stubs the store; no Fuseki, no live service.
+// @domain: domains — placed by chorus-crawl's domain rules (#4538)
 // @card: #2188
 // @owner: wren
 /**

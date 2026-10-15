@@ -1,3 +1,4 @@
+// @domain: spine — placed by chorus-crawl's domain rules (#4538)
 //! Health/ops commands — extracted from shim.rs (#2077)
 //!
 //! Contains: health_hourly, health_daily, log_rotate, cruft_scan

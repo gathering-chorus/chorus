@@ -1,5 +1,6 @@
 #!/usr/bin/env bash
 # @test-type: unit — runs session-live-check on fixture rows; no store, no network
+# @domain: identity — placed by chorus-crawl's domain rules (#4538)
 #
 # #4351 — the nightly read two non-failures as red: Wren idle at 4am, and a
 # leftover zz-probe row picked as Kade's newest session. Idle and residue must

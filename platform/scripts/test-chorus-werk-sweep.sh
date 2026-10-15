@@ -1,4 +1,5 @@
 #!/usr/bin/env bash
+# @domain: cicd — placed by chorus-crawl's domain rules (#4538)
 # test-chorus-werk-sweep.sh — hermetic tests for the git-hygiene sweeper (#3541).
 #
 # Every test brings its own world: a temp canonical repo + werk base + stubbed

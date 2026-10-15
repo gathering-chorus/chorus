@@ -1,3 +1,5 @@
+// @test-type: unit — inferred by chorus-crawl --classify (hermetic) (#4538)
+// @domain: services — placed by chorus-crawl's domain rules (#4538)
 /**
  * #3415 — design-system contract. system.css is the portable token base (two
  * themes on one base, audited tokens, first-class print); the specimen + the

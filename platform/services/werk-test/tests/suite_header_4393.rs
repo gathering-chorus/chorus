@@ -1,3 +1,4 @@
+// @domain: builds — placed by chorus-crawl's domain rules (#4538)
 //! #4393 — card runs pick the right tests. Jeff 2026-09-27: "we want the
 //! goldilocks spot on tests, not too many and not too little". On #4335 two
 //! suites that send live alerts paged Silas and Jeff from card runs, and

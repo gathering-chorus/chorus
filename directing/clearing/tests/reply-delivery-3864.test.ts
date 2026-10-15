@@ -1,4 +1,5 @@
 // @test-type: unit — signal is fixture-data: pure hasher + emit shaping, no io
+// @domain: messages — placed by chorus-crawl's domain rules (#4538)
 // @card: #3864
 // @owner: wren
 //

@@ -1,5 +1,6 @@
 #!/usr/bin/env bash
 # @test-type: unit — runs the shipped gc-pre-mint-names query against two fixtures; no store, no network
+# @domain: tests — placed by chorus-crawl's domain rules (#4538)
 #
 # #4316 — the pre-mint names the seed accepts are counted as debt by a governance
 # check (Wren, 2026-09-25). A check that measures must be shown red on data built

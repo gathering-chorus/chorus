@@ -2,6 +2,7 @@
 // @owner: wren
 /**
  * @test-type: unit
+// @domain: messages — placed by chorus-crawl's domain rules (#4538)
  * #4010 — the tile ages from what the PANE renders, one predicate for both.
  *
  * Root cause of the 06:19 defect, caught live by the #3976 reconciliation

@@ -1,4 +1,5 @@
 #!/usr/bin/env bash
+# @domain: tests — placed by chorus-crawl's domain rules (#4538)
 # test-gate-test-type-negative.sh — #3677 commit-moment negative suite for the
 # @test-type header gate (#3442). The gate has blocked real commits for months
 # with NO fixture proving it still can — the exact hollow-gate class (#3734)

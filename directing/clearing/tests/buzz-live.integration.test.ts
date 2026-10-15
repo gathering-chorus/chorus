@@ -1,4 +1,5 @@
 // @test-type: integration — hits the LIVE self-hosted relay with the REAL bridge
+// @domain: identity — placed by chorus-crawl's domain rules (#4538)
 // @card: #3696
 // @owner: wren
 // key. Gated: runs only when BUZZ_LIVE=1 and ~/.chorus/buzz/bridge.key exists

@@ -1,4 +1,5 @@
 //! @test-type: unit — signal is fixture-data: pure hasher, no io beyond the fixture read
+// @domain: spine — placed by chorus-crawl's domain rules (#4538)
 //! #3864 — reply-delivery correlation, Rust leg.
 //!
 //! The SHARED FIXTURE suite: config/reply-hash-fixtures.json is the

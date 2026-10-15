@@ -1,4 +1,5 @@
 // @test-type: e2e:ui — playwright browser flow (clearing-room-key-3865), live surface
+// @domain: identity — placed by chorus-crawl's domain rules (#4538)
 // @card: #3865
 // @owner: wren
 /**

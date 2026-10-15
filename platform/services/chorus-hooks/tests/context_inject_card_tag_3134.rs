@@ -1,3 +1,4 @@
+// @domain: spine — placed by chorus-crawl's domain rules (#4538)
 //! #3134 — card-as-tag on the per-prompt context search.
 //!
 //! The per-prompt search is driven by what Jeff typed (the prompt keywords ARE

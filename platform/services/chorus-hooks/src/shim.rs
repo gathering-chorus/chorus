@@ -1,3 +1,4 @@
+// @domain: spine — placed by chorus-crawl's domain rules (#4538)
 //! chorus-hook-shim — compiled CLI for Claude Code hooks.
 //!
 //! Modes:

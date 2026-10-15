@@ -1,4 +1,5 @@
 #!/bin/bash
+# @domain: toolchain — placed by chorus-crawl's domain rules (#4538)
 # test-compound-loop.sh — Tests for compound loop reboot survival (#2008)
 # AC: after-prompt hooks fire on first prompt of new session, context injected every prompt
 

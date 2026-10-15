@@ -1,3 +1,5 @@
+// @test-type: unit — inferred by chorus-crawl --classify (hermetic) (#4538)
+// @domain: spine — placed by chorus-crawl's domain rules (#4538)
 // #3039 — chorus-api had ZERO Prometheus instrumentation (/metrics = 404), so a
 // blocked event loop (the March incident, and the 6.24s idle stall on the releases
 // route) was invisible — inferred from symptoms, never measured. These tests pin

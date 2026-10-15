@@ -1,4 +1,5 @@
 // @test-type: integration — oxigraph-backed golden of /api/chorus/domain/:name; fixture rows in the domain's own graph (#4187)
+// @domain: domains — placed by chorus-crawl's domain rules (#4538)
 /**
  * #2208 — Data-driven regression for /api/chorus/domain/:name (hot path for
  * envelope enrichment — #2178). Exercises the SPARQL-section fallback path

@@ -1,4 +1,5 @@
 #!/usr/bin/env bash
+# @domain: tests — placed by chorus-crawl's domain rules (#4538)
 # test-library-health-probe-spine-emit.sh (#2835)
 # AC: library-health-probe.sh emits library.health.{failed,passed} via chorus-log
 # alongside the existing nudge path, so probe results are queryable on the spine.

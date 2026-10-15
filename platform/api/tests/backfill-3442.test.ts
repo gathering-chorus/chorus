@@ -1,4 +1,5 @@
 // @test-type: integration — reads the real backfilled test files from disk.
+// @domain: services — placed by chorus-crawl's domain rules (#4538)
 //
 // #3442 backfill guard: the *-unit.test.ts files that touch a real tmpdir
 // were mislabeled "unit" by the old path-only heuristic. They now carry an

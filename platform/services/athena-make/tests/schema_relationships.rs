@@ -1,3 +1,4 @@
+// @domain: domains — placed by chorus-crawl's domain rules (#4538)
 //! #3739 — /schema carries RELATIONSHIPS, not just fields. The model's edges
 //! (`field|edge:Target`) were already in the RouteTable; the schema projection
 //! dropped them to bare annotated strings nothing parsed, so every consumer saw

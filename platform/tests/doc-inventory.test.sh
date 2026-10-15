@@ -1,4 +1,5 @@
 #!/usr/bin/env bash
+# @domain: knowledge — placed by chorus-crawl's domain rules (#4538)
 # Hermetic tests for doc-inventory.sh (AC7 of #2457).
 # Fixture: 6 files exercising each state.
 set -uo pipefail

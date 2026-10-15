@@ -1,4 +1,5 @@
 // @test-type: unit — pure functions over door-shaped rows; no store, no network
+// @domain: services — placed by chorus-crawl's domain rules (#4538)
 // #4405 reopen 4 — Visible (Jeff, 2026-10-12: "make sure our runner is properly
 // aligned integrated and visible as a sensor"). /crawler-validate shows each
 // Sensor's last run: when, on what, what it changed. A sensor that has not

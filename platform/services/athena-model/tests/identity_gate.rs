@@ -1,3 +1,4 @@
+// @domain: identity — placed by chorus-crawl's domain rules (#4538)
 //! #3651 — the DAL self-stamp bypass is closed. Red-first (DEC-1674).
 //!
 //! The audit's top confirmed gap: chorus-model defaulted DEPLOY_ROLE to a role

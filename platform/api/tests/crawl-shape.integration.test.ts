@@ -1,4 +1,5 @@
 // @test-type: integration:api — in-process TestApp harness
+// @domain: domains — placed by chorus-crawl's domain rules (#4538)
 /**
  * Crawl API response shape tests — #1884
  *

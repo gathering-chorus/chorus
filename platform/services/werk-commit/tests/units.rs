@@ -1,3 +1,4 @@
+// @domain: builds — placed by chorus-crawl's domain rules (#4538)
 //! Pure-helper unit tests (RED first). These cover the verb-contract helpers
 //! (AC1): branch/card handling, the jsonl witness line shape, and commit-message
 //! assembly. No git, no env — pure functions, deterministic.

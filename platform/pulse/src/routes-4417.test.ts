@@ -1,4 +1,5 @@
 // @test-type: unit — pulse's chat, board-event, messages and stats routes over HTTP (supertest) against an in-memory store
+// @domain: messages — placed by chorus-crawl's domain rules (#4538)
 // @card: #4417
 // @owner: wren
 /**

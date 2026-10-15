@@ -1,3 +1,4 @@
+// @domain: spine — placed by chorus-crawl's domain rules (#4538)
 //! Context synthesis gate (#1811, redesigned #1835)
 //! PreToolUse on Edit/Write: blocks code changes without demonstrated synthesis.
 //!

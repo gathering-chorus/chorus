@@ -1,3 +1,4 @@
+// @domain: spine — placed by chorus-crawl's domain rules (#4538)
 //! TDD gate (#1814, refined per Jeff's feedback, #1915 acceptance fix)
 //!
 //! Two enforcement points:

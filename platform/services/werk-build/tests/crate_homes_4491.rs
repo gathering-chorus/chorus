@@ -1,3 +1,4 @@
+// @domain: builds — placed by chorus-crawl's domain rules (#4538)
 //! #4491 — werk-build finds a binary crate in any crate home, not only
 //! platform/services: designing/services/<c> and <step>/products/<p>/api.
 

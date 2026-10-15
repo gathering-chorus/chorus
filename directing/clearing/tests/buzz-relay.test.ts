@@ -1,4 +1,5 @@
 // @test-type: unit — injected stubs (signer/socket/env); no live relay, no real key, brings its own world.
+// @domain: messages — placed by chorus-crawl's domain rules (#4538)
 // @card: #3696
 // @owner: wren
 // #3696 — the live relay adapter's pure/framing logic + the publish state machine

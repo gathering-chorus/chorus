@@ -1,4 +1,5 @@
 // @test-type: unit — mkdtemp fixture dirs for scan + werk-runs, unreachable board API; brings its own world.
+// @domain: messages — placed by chorus-crawl's domain rules (#4538)
 // @card: #3772
 // @owner: wren
 /**

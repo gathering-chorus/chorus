@@ -1,4 +1,5 @@
 # @test-type: unit — hermetic unittest; the nightly runs it per case with python3 -m unittest (#4292)
+# @domain: security — placed by chorus-crawl's domain rules (#4538)
 """#3637 — photo writers carry Fuseki Basic auth (deploy-before-require gate for #3630).
 
 Hermetic: no network, no live Fuseki, no live NiFi. The tests import the two

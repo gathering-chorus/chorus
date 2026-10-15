@@ -1,3 +1,4 @@
+// @domain: builds — placed by chorus-crawl's domain rules (#4538)
 //! #4446 reopen — prod audit 2026-10-07 15:40: seven always-on services never
 //! restarted onto the land's code (bridge-subscriber ×3, share-guard ×2,
 //! eventloop-probe, athena-make.staging), and the seven crates that include

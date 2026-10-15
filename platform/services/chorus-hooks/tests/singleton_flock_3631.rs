@@ -1,3 +1,4 @@
+// @domain: spine — placed by chorus-crawl's domain rules (#4538)
 //! #3631 — BEHAVIORAL proof of the flock singleton (Kade's demo catch: the
 //! path test alone doesn't prove contention). Two things must hold:
 //!   1. while one holder owns the lock, a second acquire fails (real mutual

@@ -1,4 +1,5 @@
 #!/usr/bin/env bash
+# @domain: tests — placed by chorus-crawl's domain rules (#4538)
 # #2462: hermetic tests for lint-ratchet.js.
 # Creates a fixture repo with one .ts file, runs ratchet against it with controlled baselines.
 

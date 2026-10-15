@@ -1,3 +1,4 @@
+// @domain: spine — placed by chorus-crawl's domain rules (#4538)
 //! Loki-first gate (#4149)
 //!
 //! PreToolUse on Bash: refuses a text read of a LIVE log file and hands back

@@ -1,4 +1,5 @@
 // @test-type: integration — shells out to the real cards CLI (execSync) and
+// @domain: cards — placed by chorus-crawl's domain rules (#4538)
 // asserts on its refusal messages; gated behind RUN_INTEGRATION. Creates no
 // cards: every case is an error path.
 /**

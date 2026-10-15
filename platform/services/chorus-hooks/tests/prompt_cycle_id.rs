@@ -1,3 +1,4 @@
+// @domain: spine — placed by chorus-crawl's domain rules (#4538)
 //! Tests for prompt cycle ID (#2231)
 //! UserPromptSubmit generates a cycle_id, PreToolUse hooks read it.
 

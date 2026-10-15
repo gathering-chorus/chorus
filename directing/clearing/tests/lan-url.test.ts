@@ -1,4 +1,5 @@
 // @test-type: unit — pure module calls with fixtures; no live services
+// @domain: messages — placed by chorus-crawl's domain rules (#4538)
 // @card: #3366
 // @owner: wren
 /**

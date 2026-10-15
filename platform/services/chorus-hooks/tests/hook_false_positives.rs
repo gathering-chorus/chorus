@@ -1,3 +1,4 @@
+// @domain: spine — placed by chorus-crawl's domain rules (#4538)
 //! #2047 + #2062 — Hook false positive tests
 //!
 //! #2047: infra guardrail blocks kill -0 (signal-0 liveness check) — should allow

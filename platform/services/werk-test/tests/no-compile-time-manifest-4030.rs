@@ -1,3 +1,4 @@
+// @domain: builds — placed by chorus-crawl's domain rules (#4538)
 //! #4030 — no test may bake `CARGO_MANIFEST_DIR` in at compile time.
 //!
 //! The nightly shares ONE cargo target dir (`~/.chorus/nightly-cargo-target`)

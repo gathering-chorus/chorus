@@ -1,3 +1,4 @@
+// @domain: builds — placed by chorus-crawl's domain rules (#4538)
 //! #4499 — the edges werk-build, werk-test and werk-deploy scope by come from
 //! the same code-unit generator the crawler writes to the graph, read from the
 //! build files git tracks in the real tree (no folder walk).

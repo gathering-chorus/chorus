@@ -1,3 +1,4 @@
+// @domain: domains — placed by chorus-crawl's domain rules (#4538)
 //! The subject list the door check walks.
 //!
 //! #4167. The door check compares one subject's stored predicates against the

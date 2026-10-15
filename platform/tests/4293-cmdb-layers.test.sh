@@ -1,5 +1,6 @@
 #!/usr/bin/env bash
 # @test-type: unit — runs the three #4293 layer checks, read out of the checks file itself, against two fixtures; no store, no network
+# @domain: tests — placed by chorus-crawl's domain rules (#4538)
 #
 # #4293 — the CMDB layer rules. A check that gates must be shown RED on a violation
 # (#3734), so each check runs twice: on a fixture built to break it (expect exactly

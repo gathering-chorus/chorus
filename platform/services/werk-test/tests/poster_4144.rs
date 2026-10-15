@@ -1,3 +1,4 @@
+// @domain: builds — placed by chorus-crawl's domain rules (#4538)
 //! #4144 AC3 — a unit's results post off the worker's path. Measured on the
 //! 2026-10-11 03:00 nightly: 444 one-unit posts, 7.9 min of writeback, each
 //! holding its pool worker ~1.07 s before the next unit could start (≈5 min of

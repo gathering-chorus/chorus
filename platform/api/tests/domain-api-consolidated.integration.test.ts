@@ -1,5 +1,6 @@
 /**
  * @test-type: integration:api
+// @domain: domains — placed by chorus-crawl's domain rules (#4538)
  *
  * Domain API consolidation tests — #2060
  *

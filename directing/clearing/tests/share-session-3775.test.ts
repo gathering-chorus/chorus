@@ -1,4 +1,5 @@
 // @test-type: unit:security — asserts the REAL verifier against the shared cross-implementation vectors (test key, fixed clock); no live guard, no production key, brings its own world.
+// @domain: messages — placed by chorus-crawl's domain rules (#4538)
 // @card: #3775
 // @owner: wren
 /**

@@ -1,4 +1,5 @@
 #!/usr/bin/env bash
+# @domain: alerts — placed by chorus-crawl's domain rules (#4538)
 # #3519 — Alert CONTRACT: an alert's action message reports the OBSERVATION
 # (what was measured), never an inferred cause or a prescribed fix.
 set -uo pipefail

@@ -1,3 +1,4 @@
+// @domain: spine — placed by chorus-crawl's domain rules (#4538)
 //! `/tmp` and `/var/folders` are ephemeral sketch surfaces, not production code.
 //!
 //! The TDD gate uses `is_source_code` / `is_production_code` to decide whether

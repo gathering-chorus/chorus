@@ -1,4 +1,5 @@
 #!/bin/bash
+# @domain: messages — placed by chorus-crawl's domain rules (#4538)
 # Bridge integration tests — run before every deploy
 # Jeff's rule: don't tell him to test until these pass
 

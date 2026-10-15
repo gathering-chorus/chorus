@@ -1,3 +1,4 @@
+// @domain: builds — placed by chorus-crawl's domain rules (#4538)
 //! #3983 — every accepted card carries its own-test evidence.
 
 use werk_accept::own_tests_at_accept;

@@ -1,4 +1,5 @@
 // @test-type: fitness — parses chorus-api's real route table with the security sweep's own parser
+// @domain: security — placed by chorus-crawl's domain rules (#4538)
 // @card: #4417
 // @owner: wren
 /**

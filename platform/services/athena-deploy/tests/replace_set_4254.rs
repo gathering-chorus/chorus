@@ -1,3 +1,4 @@
+// @domain: domains — placed by chorus-crawl's domain rules (#4538)
 //! #4254 — the `replace` flag on a domain set, and the guard that keeps it from
 //! becoming the 2026-08-28 ontology wipe with a config switch in front of it.
 //!

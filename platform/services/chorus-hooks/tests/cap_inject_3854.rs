@@ -1,3 +1,4 @@
+// @domain: messages — placed by chorus-crawl's domain rules (#4538)
 //! #3854 — the cap is injected into every turn's context so drafts start
 //! short; the Stop gate stays as backstop. Pure-line test first (TDD red).
 

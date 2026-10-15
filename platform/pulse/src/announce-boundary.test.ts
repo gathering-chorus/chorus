@@ -1,4 +1,5 @@
 // @test-type: unit — pure pulse logic on fixtures; no live services
+// @domain: messages — placed by chorus-crawl's domain rules (#4538)
 // @card: #3357
 // @owner: wren
 /* eslint-disable sonarjs/no-duplicate-string -- repeated fixture literals are real captured tape, intentionally verbatim (#3429) */

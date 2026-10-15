@@ -1,3 +1,4 @@
+// @domain: spine — placed by chorus-crawl's domain rules (#4538)
 //! #3700 (kade half) — self-healing session registry + turn-state (busy)
 //! tracking. Red-first against the pair-agreed decision table (Silas
 //! navigation, 2026-07-26):

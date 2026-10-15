@@ -1,5 +1,6 @@
 #!/usr/bin/env bash
 # @test-type: integration — fixture graphs on live Fuseki, hermetic subjects
+# @domain: identity — placed by chorus-crawl's domain rules (#4538)
 # Negative proofs for retire-identity-principal-copies.sh (#3785 phase 2 / #3734).
 #
 # The retire deletes Principal records; done wrong it is the 2026-08-06 lockout.

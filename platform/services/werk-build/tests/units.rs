@@ -1,3 +1,4 @@
+// @domain: builds — placed by chorus-crawl's domain rules (#4538)
 //! werk-build unit tests — pure helpers (no subprocess, no fs side effects).
 use werk_build::{
     branch_name, discover_build_units_in_tree, ensure_node_modules, extract_cdhash, extract_file_deps,

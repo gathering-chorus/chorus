@@ -1,3 +1,5 @@
+// @test-type: integration — inferred by chorus-crawl --classify (needs-stack) (#4538)
+// @domain: products — placed by chorus-crawl's domain rules (#4538)
 /**
  * Chorus landing tests — #2099 (follow-on per Jeff's /docs-clinical feedback).
  *

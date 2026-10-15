@@ -1,4 +1,5 @@
 // @test-type: unit — data-driven CLI permutations against FixtureClient;
+// @domain: cards — placed by chorus-crawl's domain rules (#4538)
 // blast-radius mocked at the module seam (#3663), no live socket/session.
 /**
  * Data-driven API permutation tests for cards CLI (#2245).

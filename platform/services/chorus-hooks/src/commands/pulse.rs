@@ -1,3 +1,4 @@
+// @domain: spine — placed by chorus-crawl's domain rules (#4538)
 //! Pulse service — event-bus cache over team-state producers (#1881, #2280).
 //!
 //! Each section in pulse-latest.json is owned by a separate upstream producer

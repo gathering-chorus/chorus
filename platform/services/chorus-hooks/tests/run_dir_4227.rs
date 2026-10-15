@@ -1,3 +1,4 @@
+// @domain: spine — placed by chorus-crawl's domain rules (#4538)
 //! #4227 — the hooks daemon's run dir decides two things at once: where the
 //! control socket lives and where the singleton lock lives. That is why a demo
 //! has never had its own hooks — a second daemon on the same path loses the

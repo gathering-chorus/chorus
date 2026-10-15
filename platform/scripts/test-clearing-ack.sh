@@ -1,4 +1,5 @@
 #!/bin/bash
+# @domain: messages — placed by chorus-crawl's domain rules (#4538)
 # test-clearing-ack.sh — Tests for Clearing Socket.IO ack (#1934)
 # AC: jeff-message uses ack callback, client shows delivery state
 

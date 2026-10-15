@@ -1,3 +1,5 @@
+// @test-type: unit — inferred by chorus-crawl --classify (hermetic) (#4538)
+// @domain: services — placed by chorus-crawl's domain rules (#4538)
 /**
  * #3086 — pool dispatcher tests with a FAKE worker (no real thread, no flakiness).
  * Covers the error-surfacing AC: every request settles — reply, error reply,

@@ -1,4 +1,5 @@
 // @test-type: unit — signal:api is fixture-data (pure functions over log fixtures; the word "api" is a suite path in them)
+// @domain: tests — placed by chorus-crawl's domain rules (#4538)
 // #4060 — "I don't even get a readout on the run."
 //
 // One readout per run, in Jeff's units (minutes, suites, who owns each red,

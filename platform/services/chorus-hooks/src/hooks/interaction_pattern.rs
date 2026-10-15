@@ -1,3 +1,4 @@
+// @domain: spine — placed by chorus-crawl's domain rules (#4538)
 //! Interaction Pattern Detector (#2282)
 //!
 //! Classifies Jeff's prompt into one of 9 interaction patterns:

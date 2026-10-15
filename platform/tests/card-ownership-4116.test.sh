@@ -1,4 +1,5 @@
 #!/usr/bin/env bash
+# @domain: cards — placed by chorus-crawl's domain rules (#4538)
 # card-ownership-4116.sh — #4116. Every card row carries the owner the model declares.
 #
 # WHY THIS EXISTS

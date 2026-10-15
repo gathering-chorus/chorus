@@ -1,3 +1,4 @@
+// @domain: domains — placed by chorus-crawl's domain rules (#4538)
 //! #4022 — an enum written as sh:pattern `^(a|b)$` names its legal values, so a
 //! generated create can send one (Presence.reachability, Session.sessionState
 //! answered 422 on every walk because the manifest carried none).

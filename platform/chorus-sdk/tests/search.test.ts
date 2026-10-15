@@ -1,4 +1,5 @@
 // @test-type: unit — spins its own http server on port 0; no live chorus-api, brings its own world.
+// @domain: search — placed by chorus-crawl's domain rules (#4538)
 //
 // #3606 — search.ts and index.ts were 0% covered, dragging the sdk below both
 // its own jest gate (functions 75%) and the Jeff-floor (statements 85 in

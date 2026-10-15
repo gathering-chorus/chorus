@@ -1,4 +1,5 @@
 // @test-type: unit — the Clearing over HTTP, in-process, every page under the /clearing mount; no live service.
+// @domain: roles — placed by chorus-crawl's domain rules (#4538)
 // @card: #4412
 // @owner: wren
 /**

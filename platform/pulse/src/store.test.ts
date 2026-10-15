@@ -1,4 +1,5 @@
 // @test-type: unit — real sqlite against per-test tempfiles; no live services. #3615 membrane suite included; signal words are fixture-data (the refusal message is the subject under test).
+// @domain: messages — placed by chorus-crawl's domain rules (#4538)
 // @card: #1827
 // @owner: wren
 /* eslint-disable @typescript-eslint/no-explicit-any -- test reads dynamic sqlite row shapes; `any[]` casts keep the assertions terse (#3429) */

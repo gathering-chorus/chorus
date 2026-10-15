@@ -1,3 +1,4 @@
+// @domain: tests — placed by chorus-crawl's domain rules (#4538)
 //! #4419 reopen — a data file is exercised by the tests that read it. 8 card
 //! runs on 8 cards (2026-10-09/10) were refused for fixtures, goldens and crate
 //! config their own tests read; each refusal cost a whole build first.

@@ -1,3 +1,4 @@
+// @domain: domains — placed by chorus-crawl's domain rules (#4538)
 //! #4167 — the checks athena-validate runs, as data.
 //!
 //! Jeff, 2026-09-19: "a job we keep chipping away at until it runs clean."

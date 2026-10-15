@@ -1,3 +1,5 @@
+// @test-type: unit — inferred by chorus-crawl --classify (hermetic) (#4538)
+// @domain: roles — placed by chorus-crawl's domain rules (#4538)
 import fs from 'fs';
 import path from 'path';
 

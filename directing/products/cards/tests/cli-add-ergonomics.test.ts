@@ -1,3 +1,5 @@
+// @test-type: unit — inferred by chorus-crawl --classify (hermetic) (#4538)
+// @domain: cards — placed by chorus-crawl's domain rules (#4538)
 /**
  * #2143 — #2223 follow-on: three-variant description test, error message coverage.
  * #2223 — cards CLI add ergonomics.

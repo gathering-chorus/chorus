@@ -1,3 +1,4 @@
+// @domain: code — placed by chorus-crawl's domain rules (#4538)
 //! #4214 — the UI-Pages and API-Contract folds.
 //!
 //! A Page is a file that renders a route a person can open. An Endpoint is a

@@ -1,4 +1,5 @@
 // @test-type: unit
+// @domain: board — placed by chorus-crawl's domain rules (#4538)
 // #3610 — scheduled-job op attribution must cover ONLY the sync slice.
 // The old server.ts wiring set currentOp='boardCache' and cleared it in
 // .finally() around the whole async refresh — so the label spanned the

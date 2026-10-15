@@ -1,4 +1,5 @@
 // @test-type: unit — BoardClient HTTP-verb methods with the api()/resolveIndex layer
+// @domain: cards — placed by chorus-crawl's domain rules (#4538)
 // fully stubbed; no socket, no live Vikunja. Asserts each verb's exact contract call.
 // #3600 — covers client.ts's untested thin wrappers (delete/relations/labels/bucket-limit/
 // prefix-search), the drag under the cards coverage floor.

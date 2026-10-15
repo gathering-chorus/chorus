@@ -1,4 +1,5 @@
 // @test-type: unit — pure tests of the tagger/gate/fitness logic; the security/api/fs tokens below are FIXTURE INPUTS, not real calls.
+// @domain: services — placed by chorus-crawl's domain rules (#4538)
 // #3442 — type-mix fitness surface.
 // The surface earns its keep by surfacing BLIND SPOTS (high-risk test types
 // absent in a domain), not by tallying. The audit's headline: chorus-api has

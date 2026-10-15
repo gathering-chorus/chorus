@@ -1,3 +1,4 @@
+// @domain: builds — placed by chorus-crawl's domain rules (#4538)
 //! Real end-to-end: actual `git` on temp repos + PATH-shimmed `cards` and `gh`.
 //! Proves pull() against the v6 diagram (gh = process holder): worktree off
 //! origin/main, branch pushed so gh has a ref, gh state registered, board WIP —

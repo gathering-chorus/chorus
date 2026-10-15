@@ -1,3 +1,4 @@
+// @domain: spine — placed by chorus-crawl's domain rules (#4538)
 //! #2270: hook-shim demo gate removed from PreToolUse chain.
 //!
 //! The hook-shim was blocking `cards done` without demo evidence, duplicating

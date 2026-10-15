@@ -1,4 +1,5 @@
 // @test-type: unit:security — calls the REAL socketSessionAuthed with real cookie strings signed by the guard's own algorithm; allow-set and key injected, no live services. Brings its own world.
+// @domain: messages — placed by chorus-crawl's domain rules (#4538)
 // @card: #3797
 // @owner: wren
 /**

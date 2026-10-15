@@ -1,3 +1,4 @@
+// @domain: spine — placed by chorus-crawl's domain rules (#4538)
 //! #2168 AC-13 — Writer-discipline invariants for role-state files.
 //!
 //! Each file has exactly one writer by architecture:

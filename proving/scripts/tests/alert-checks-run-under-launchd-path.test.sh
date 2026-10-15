@@ -1,4 +1,5 @@
 #!/usr/bin/env bash
+# @domain: alerts — placed by chorus-crawl's domain rules (#4538)
 # #3713 — an alert check must work in the environment it RUNS in, not only in
 # the one I test it from.
 #

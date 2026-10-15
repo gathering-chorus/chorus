@@ -1,3 +1,4 @@
+// @domain: tests — placed by chorus-crawl's domain rules (#4538)
 //! #4081 — the schedule readings, against plist and launchctl text as Library
 //! printed it on 2026-10-11.
 

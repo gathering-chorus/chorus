@@ -1,3 +1,4 @@
+// @domain: spine — placed by chorus-crawl's domain rules (#4538)
 //! Tests for shared search state (#2225)
 //!
 //! context_inject stores Chorus results in AppState.

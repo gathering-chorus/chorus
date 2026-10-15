@@ -1,4 +1,5 @@
 #!/usr/bin/env bash
+# @domain: toolchain — placed by chorus-crawl's domain rules (#4538)
 # SHARE_PATH_PREFIX — the guard mounted under a path, not at a host root. (#3765)
 #
 # Jeff's four-URL scheme: one host, and every Chorus surface a child of /chorus.

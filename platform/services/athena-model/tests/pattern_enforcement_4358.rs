@@ -1,3 +1,4 @@
+// @domain: domains — placed by chorus-crawl's domain rules (#4538)
 //! #4358 — SHACL sh:pattern is enforced from the model, at every place sh:in is:
 //! the door create (`write` → plan_writes), the field set (`set_field`), and the
 //! bulk seed (`seed`). Property-level patterns test each value; a NodeShape's own

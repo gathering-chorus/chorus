@@ -1,5 +1,6 @@
 #!/usr/bin/env bash
 # @test-type: unit — validates two fixtures against the shipped Session / SessionRun / Presence shapes with Jena shacl; no store, no network
+# @domain: identity — placed by chorus-crawl's domain rules (#4538)
 #
 # #4302 — the session model, step 1. Every rule gates writes, so each must be
 # shown RED on data built to break it (#3734) and green on data that keeps it.

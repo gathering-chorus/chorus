@@ -1,4 +1,5 @@
 // @test-type: unit — imports the target picker and calls it; no server, no sockets, no pulse.
+// @domain: messages — placed by chorus-crawl's domain rules (#4538)
 // @card: #3833
 // @owner: wren
 /**

@@ -1,3 +1,4 @@
+// @domain: domains — placed by chorus-crawl's domain rules (#4538)
 //! #3467 — athena-make projects two MORE surfaces from the model, alongside
 //! routes/openapi/page: a TEST manifest (unit + conformance + security) and the
 //! ADR-031 MCP tool binding. Both pure functions of the RouteTable. Red-first.

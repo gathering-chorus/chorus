@@ -1,4 +1,5 @@
 // @test-type: integration — touches a real tmpdir (mkdtemp), not unit; no live services.
+// @domain: products — placed by chorus-crawl's domain rules (#4538)
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import fs from 'fs';

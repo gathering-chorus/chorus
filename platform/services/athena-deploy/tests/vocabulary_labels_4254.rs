@@ -1,3 +1,4 @@
+// @domain: domains — placed by chorus-crawl's domain rules (#4538)
 //! #4254 — the within-scheme label report, and the negative proof that it can
 //! still go red now that the real collision is gone.
 //!

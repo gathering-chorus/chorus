@@ -1,3 +1,4 @@
+// @domain: spine — placed by chorus-crawl's domain rules (#4538)
 //! #3203 — context-inject FORCE (HIP-001, the forcing pattern applied to the inject).
 //!
 //! The inject was an IGNORE: it appends a context block but can't compel use, so

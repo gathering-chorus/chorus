@@ -1,3 +1,4 @@
+// @domain: domains — placed by chorus-crawl's domain rules (#4538)
 //! #4229 — the staged retirement legs. The bash's are the only delete paths in
 //! the deploy, and two of the three take no backup at all. AC3 says every one
 //! of them unloads before it deletes and refuses if the dump fails, so these

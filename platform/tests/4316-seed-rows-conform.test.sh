@@ -1,5 +1,6 @@
 #!/usr/bin/env bash
 # @test-type: unit — reads two shipped seed files; no store, no network
+# @domain: cards — placed by chorus-crawl's domain rules (#4538)
 #
 # #4316 — after the Gate fix, the seed would stop next on two rows of this kind:
 # 14 card stubs with chorus:label but no rdfs:label (CardShape requires one), and

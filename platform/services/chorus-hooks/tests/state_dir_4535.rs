@@ -1,3 +1,4 @@
+// @domain: spine — placed by chorus-crawl's domain rules (#4538)
 //! #4535 — a role on its own Mac account writes the team's spine, not a
 //! private one. Abby's events went to /Users/chorus-abby-normal/.chorus/chorus.log
 //! (1.7 MB on 2026-10-15, never in Loki).

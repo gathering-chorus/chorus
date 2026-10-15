@@ -1,4 +1,5 @@
 // @test-type: unit — gateDecision is a pure decision table; no server, no fs.
+// @domain: messages — placed by chorus-crawl's domain rules (#4538)
 // @card: #3667
 // @owner: wren
 /**
