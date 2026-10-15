@@ -315,9 +315,6 @@ chorus:GateResult a owl:Class ;
     chorus:ingestionStatus "ingestible" .
 
 chorus:pipelines
-    # #4536 (Silas 11:46) — cicd records gate outcomes, so it claims GateResult;
-    # the class had no product domain, which athena-gen refused.
-    chorus:definesVocabulary chorus:GateResult ;
     chorus:status "operating" ;
     chorus:hasDesignDoc "designing/docs/ci-pipeline-service-design.html" ;
     chorus:gaps "per-PR CI disconnected (cost stop); nightly not yet trusted" ;
