@@ -5468,6 +5468,18 @@
         "message": "Where the build was expected and what to run"
       }
     },
+    "test.slot.stale": {
+      "producer": "tests",
+      "about": "TestResult",
+      "category": "fact",
+      "version": "1",
+      "vertebra": "proving",
+      "source": "werk",
+      "description": "A werk-test running from a role slot is older than the installed one and the card does not build werk-test (#4537 row 13); the run is handed to the installed werk-test instead of a leftover copy.",
+      "fields": {
+        "path": "The stale slot copy that handed the run on"
+      }
+    },
     "test.plan.degraded": {
       "producer": "tests",
       "about": "TestResult",

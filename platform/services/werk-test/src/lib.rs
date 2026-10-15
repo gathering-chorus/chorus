@@ -4349,6 +4349,43 @@ pub fn membrane_refused_cases(tap: &str) -> (Vec<String>, usize) {
     (refused, other)
 }
 
+/// #4537 — one top-level string field of a JSON document ("target_directory"
+/// in `cargo metadata`), without a JSON dependency. Pure.
+pub fn json_str_field(json: &str, key: &str) -> Option<String> {
+    let at = json.find(&format!("\"{}\":\"", key))? + key.len() + 4;
+    let rest = &json[at..];
+    let end = rest.find('"')?;
+    Some(rest[..end].replace("\\/", "/").replace("\\\\", "\\"))
+}
+
+/// #4537 row 13 — set on the installed werk-test a stale slot copy hands the
+/// run to, so the hand-off happens at most once.
+pub const STALE_SLOT_ENV: &str = "WERK_TEST_STALE_SLOT_SKIPPED";
+
+/// #4537 row 13 — a werk-test running from a role slot (`<role>-bin/`) that is
+/// older than the installed one, on a card that does not build werk-test, is a
+/// leftover (10-15: Abby's 15:40 slot copy kept refusing #4530 after #4536
+/// landed). Returns the installed binary to hand the run to. Pure.
+pub fn stale_slot_redirect(
+    current: &std::path::Path,
+    installed: &std::path::Path,
+    already: bool,
+    mtime: &dyn Fn(&std::path::Path) -> Option<std::time::SystemTime>,
+) -> Option<std::path::PathBuf> {
+    if already || current == installed {
+        return None;
+    }
+    let in_slot = current.parent().and_then(|d| d.file_name()).and_then(|n| n.to_str())
+        .is_some_and(|n| n.ends_with("-bin"));
+    if !in_slot {
+        return None;
+    }
+    match (mtime(current), mtime(installed)) {
+        (Some(c), Some(i)) if c < i => Some(installed.to_path_buf()),
+        _ => None,
+    }
+}
+
 /// #4537 — a nightly unit that could not measure.
 pub fn nightly_lane_line_unmeasured(kind: &str, unit: &str, reason: &str) -> String {
     format!("nightly-unit|{}|{}|unmeasured|0 pass, 0 fail (UNMEASURED — {})", kind, unit, reason)

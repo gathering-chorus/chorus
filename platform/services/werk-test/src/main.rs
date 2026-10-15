@@ -185,7 +185,20 @@ fn run(args: &[String]) -> Result<i32, String> {
             let err = std::process::Command::new(&own).args(args).env(werk_test::OWN_BUILD_ENV, "1").exec();
             return Err(format!("could not start the card's own werk-test {}: {}", own.display(), err));
         }
-        Ok(None) => {}
+        Ok(None) => {
+            // #4537 row 13 — a stale slot copy hands the run to the installed werk-test
+            let installed = Path::new(&std::env::var("HOME").unwrap_or_default()).join(".chorus/bin/werk-test-bin");
+            let already = std::env::var(werk_test::STALE_SLOT_ENV).as_deref() == Ok("1");
+            let mtime = |p: &Path| std::fs::metadata(p).and_then(|m| m.modified()).ok();
+            if let Some(inst) = werk_test::stale_slot_redirect(&current, &installed, already, &mtime) {
+                use std::os::unix::process::CommandExt;
+                println!("werk-test: the slot copy {} is older than the installed one and this card does not build werk-test — using the installed werk-test {}",
+                    current.display(), inst.display());
+                emit_spine("test.slot.stale", &role, &card, &trace, &[("path", &current.display().to_string())]);
+                let err = std::process::Command::new(&inst).args(args).env(werk_test::STALE_SLOT_ENV, "1").exec();
+                return Err(format!("could not start the installed werk-test {}: {}", inst.display(), err));
+            }
+        }
         Err(why) => {
             println!("werk-test: BLOCK — {}", why);
             emit_spine("test.own_build.missing", &role, &card, &trace, &[("message", &why)]);
@@ -2230,6 +2243,12 @@ fn run_cargo_sel(werk: &str, name: &str, quarantined: &[&str], exclude_bins: &[&
         let why = if reason.starts_with("build did not start") { reason.clone() } else { format!("nextest {}", reason) };
         return (werk_test::lane_unmeasured(why), Vec::new(), format!("UNMEASURED cargo lane: {}", reason));
     }
+    // #4537 — another build holding this crate's build lock: wait up to a cap,
+    // then UNMEASURED naming the holder (never an hour of "Blocking waiting")
+    if let Err(why) = wait_for_build_lock(&dir) {
+        eprintln!("UNMEASURED cargo lane for {}: {}", name, why);
+        return (werk_test::lane_unmeasured(why.clone()), Vec::new(), why);
+    }
     // #4022 — each crate gets its share of the CPU budget (see lane_widths);
     // NIGHTLY_NEXTEST_THREADS is set by the nightly lane, absent for card runs.
     let threads = std::env::var("NIGHTLY_NEXTEST_THREADS").ok().and_then(|v| v.parse().ok());
@@ -2279,6 +2298,46 @@ fn run_cargo_sel(werk: &str, name: &str, quarantined: &[&str], exclude_bins: &[&
             let why = format!("build did not start: {}", werk_test::did_not_start("cargo", &e));
             (werk_test::lane_unmeasured(why.clone()), Vec::new(), why)
         }
+    }
+}
+
+/// #4537 — the processes holding a crate's cargo build lock open, as
+/// "pid N (command)". Empty when free or when it cannot be read.
+fn build_lock_holders(crate_dir: &str) -> Vec<String> {
+    let target = Command::new("cargo").args(["metadata", "--no-deps", "--format-version", "1"])
+        .current_dir(crate_dir).output().ok()
+        .and_then(|o| werk_test::json_str_field(&String::from_utf8_lossy(&o.stdout), "target_directory"))
+        .unwrap_or_else(|| format!("{}/target", crate_dir));
+    let me = std::process::id().to_string();
+    let mut out = Vec::new();
+    for lock in [format!("{}/debug/.cargo-lock", target), format!("{}/release/.cargo-lock", target)] {
+        if !Path::new(&lock).is_file() {
+            continue;
+        }
+        let pids = Command::new("lsof").args(["-t", &lock]).output().map(|o| String::from_utf8_lossy(&o.stdout).to_string()).unwrap_or_default();
+        for pid in pids.split_whitespace().filter(|p| *p != me) {
+            let cmd = Command::new("ps").args(["-o", "command=", "-p", pid]).output()
+                .map(|o| String::from_utf8_lossy(&o.stdout).trim().chars().take(80).collect::<String>()).unwrap_or_default();
+            out.push(format!("pid {} ({})", pid, cmd));
+        }
+    }
+    out
+}
+
+/// #4537 — wait while another process holds the build lock, up to
+/// WERK_TEST_LOCK_CAP seconds (default 600); past it, the reason to report.
+fn wait_for_build_lock(crate_dir: &str) -> Result<(), String> {
+    let cap = std::env::var("WERK_TEST_LOCK_CAP").ok().and_then(|v| v.parse::<u64>().ok()).unwrap_or(600);
+    let start = std::time::Instant::now();
+    loop {
+        let holders = build_lock_holders(crate_dir);
+        if holders.is_empty() {
+            return Ok(());
+        }
+        if start.elapsed().as_secs() >= cap {
+            return Err(format!("build did not start: lock held by {} after {}s", holders.join(", "), cap));
+        }
+        std::thread::sleep(std::time::Duration::from_secs(1));
     }
 }
 
