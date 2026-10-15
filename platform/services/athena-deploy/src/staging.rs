@@ -124,12 +124,13 @@ pub fn parse_manifest(text: &str) -> Vec<(String, usize, String)> {
 }
 
 fn auth() -> Vec<String> {
-    match std::env::var("FUSEKI_ADMIN_PASSWORD") {
-        Ok(pw) if !pw.is_empty() => {
+    // #4533 — the environment first, else the credential file (see fuseki_password).
+    match crate::fuseki_password() {
+        Some(pw) => {
             let user = std::env::var("FUSEKI_ADMIN_USER").unwrap_or_else(|_| "admin".into());
             vec!["-u".into(), format!("{user}:{pw}")]
         }
-        _ => Vec::new(),
+        None => Vec::new(),
     }
 }
 

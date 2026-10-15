@@ -81,7 +81,10 @@ fn clearing_card_files_a_card_with_the_fields_the_cli_needs() {
     check_args(&args, &t.schema).unwrap();
     let a = argv(&t.template, &args, "wren");
     assert_eq!(a[0], "add");
-    assert!(a.contains(&"--owner=kade".to_string()), "{a:?}");
+    // #4533 — the cards CLI reads `--owner kade`; `--owner=kade` was refused (Silas, 20:19).
+    let i = a.iter().position(|x| x == "--owner").expect("--owner flag");
+    assert_eq!(a[i + 1], "kade", "{a:?}");
+    assert!(!a.iter().any(|x| x.starts_with("--owner=")), "NEGATIVE PROOF: no --owner=value form: {a:?}");
     assert!(!a.iter().any(|x| x.starts_with("--sequence")), "an absent optional flag is dropped: {a:?}");
 }
 
