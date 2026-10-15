@@ -24,6 +24,16 @@ fn skip_unless_integration(reason: &str) -> bool {
     false
 }
 
+/// #4532 — timing limits are checked in the nightly lane only (Jeff
+/// 2026-10-14, "nightly yes"). A card run on a shared M1 measures the box, not
+/// the product: #4530 run 9 went red on 3424ms with nothing broken. werk-test
+/// names the lane in WERK_TEST_LANE (#4531); unset (a developer's shell) is not
+/// nightly. Off the nightly the test still runs and checks its result, and
+/// prints the time as UNMEASURED rather than calling it green or red.
+fn timing_checks_on() -> bool {
+    std::env::var("WERK_TEST_LANE").as_deref() == Ok("nightly")
+}
+
 fn chat_script() -> String { format!("{}/platform/scripts/chat.sh", chorus_root()) }
 fn chorus_log() -> String { format!("{}/platform/scripts/chorus-log", chorus_root()) }
 // #2287 reopened 2026-10-03 (Kade, #4228 run 3): the shim the test just built,
@@ -55,9 +65,13 @@ fn nudge_persist_under_100ms() {
     let elapsed = t.elapsed().as_millis();
 
     assert!(out.is_ok(), "curl must not error");
-    assert!(elapsed < 100,
+    if timing_checks_on() {
+        assert!(elapsed < 100,
         "nudge persist took {}ms, budget 100ms. Bridge API slow? (#2287)",
         elapsed);
+    } else {
+        eprintln!("UNMEASURED: timing — {elapsed}ms against a 100ms budget, checked in the nightly lane only (#4532)");
+    }
 }
 
 /// Chat.sh say budget: 200ms. Exercises: persist + tick marker write + file append.
@@ -93,9 +107,13 @@ fn chat_say_under_200ms() {
     let _ = std::fs::remove_file(format!("/tmp/chorus-chat/tick-{}", chat_id));
 
     assert!(out.status.success(), "chat say must exit 0");
-    assert!(elapsed < 200,
+    if timing_checks_on() {
+        assert!(elapsed < 200,
         "chat.sh say took {}ms, budget 200ms (#2287)",
         elapsed);
+    } else {
+        eprintln!("UNMEASURED: timing — {elapsed}ms against a 200ms budget, checked in the nightly lane only (#4532)");
+    }
 }
 
 /// Pulse assembly budget: 1500ms. Current baseline 628-761ms (#2172).
@@ -126,9 +144,13 @@ fn pulse_assembly_under_1500ms() {
 
     assert!(out.status.success(), "pulse must exit 0, stderr: {}",
         String::from_utf8_lossy(&out.stderr));
-    assert!(elapsed < 1500,
+    if timing_checks_on() {
+        assert!(elapsed < 1500,
         "pulse assembly took {}ms, budget 1500ms. #2172 target is sub-100ms. (#2287)",
         elapsed);
+    } else {
+        eprintln!("UNMEASURED: timing — {elapsed}ms against a 1500ms budget, checked in the nightly lane only (#4532)");
+    }
 }
 
 /// Spine emit budget: 200ms. Measured baseline ~90ms.
@@ -145,7 +167,11 @@ fn spine_emit_under_200ms() {
     let elapsed = t.elapsed().as_millis();
 
     assert!(out.status.success(), "chorus-log must exit 0");
-    assert!(elapsed < 200,
+    if timing_checks_on() {
+        assert!(elapsed < 200,
         "spine emit took {}ms, budget 200ms (#2287)",
         elapsed);
+    } else {
+        eprintln!("UNMEASURED: timing — {elapsed}ms against a 200ms budget, checked in the nightly lane only (#4532)");
+    }
 }
