@@ -107,6 +107,11 @@ chorus:writeOrigin a owl:AnnotationProperty ;
 chorus:cardId a owl:DatatypeProperty ;
     rdfs:range xsd:string ;
     rdfs:comment "The card a record belongs to. Shared across event classes; no rdfs:domain on purpose. Range is string, not integer: every live row is a string — TestResult 22167, TestSuiteRun 1206 (#4250)." .
+# #4536 — runTs was used by three shapes and declared nowhere, so every sh:path
+# to it was a dangling edge (run 11 counted the TestShape one as this card's).
+chorus:runTs a owl:DatatypeProperty ;
+    rdfs:range xsd:string ;
+    rdfs:comment "When a test ran, offset-ISO (#3925). Shared by TestResult, TestSuiteRun and Test (latest result); no rdfs:domain on purpose." .
 chorus:ts a owl:DatatypeProperty ;
     rdfs:range xsd:dateTime ;
     rdfs:comment "Event timestamp (witness ts, ms epoch normalized to xsd:dateTime at ingest). DAL also stamps dcterms:created/modified + dcterms:creator on every write (audit envelope — core vocab)." .

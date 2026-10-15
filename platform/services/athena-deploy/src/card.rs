@@ -41,6 +41,9 @@ pub struct CardPlan {
     pub files_root: Option<String>,
     /// #4536 — where the card's changed-subject files are written (removed after the run).
     pub scratch: Option<String>,
+    /// #4536 — the retirement lines this card added, as a file: the deploy runs
+    /// these, never the whole ledger.
+    pub retirements: Option<String>,
 }
 
 /// The paths of a commit's tree that a deploy reads: every roles/*/ontology
@@ -238,6 +241,15 @@ pub fn changed_triples(nt: &str, base_nt: &str) -> String {
     nt.lines().filter(|l| keep.contains(&subj(l))).map(|l| format!("{l}\n")).collect()
 }
 
+/// #4536 — the ledger lines a card added: lines in `werk` that `base` does not
+/// hold. Run 11 executed 16 old ledger retirements in staging (deploys-domain,
+/// borg, chorus, …) that prod still holds, and counted the edges they left
+/// dangling as the card's. Pure.
+pub fn added_lines(werk: &str, base: &str) -> String {
+    let old: std::collections::HashSet<&str> = base.lines().map(str::trim).collect();
+    werk.lines().filter(|l| !l.trim().is_empty() && !old.contains(l.trim())).map(|l| format!("{l}\n")).collect()
+}
+
 /// The local names of the classes the card's TTL files add or change (through riot).
 pub fn card_classes(card: &Card) -> Result<Vec<String>, String> {
     let mut out: Vec<String> = Vec::new();
@@ -338,11 +350,25 @@ pub fn prepare_mode(card_id: &str, mode: Mode) -> Result<(Card, CardPlan, Vec<St
     let mut p = plan(&ttl, &card.werk, &sets);
     p.commit = card.commit.clone();
     p.files_root = files_root;
+    let dir = std::env::temp_dir().join(format!("athena-deploy-card-{}-{}", card.card, std::process::id())).display().to_string();
+    std::fs::create_dir_all(&dir).map_err(|e| CardError::Failed(format!("{dir}: {e}")))?;
+    p.scratch = Some(dir.clone());
+    // #4536 — the deploy runs only the retirement lines this card added
+    let ledger = "designing/schemas/model-retirements.jsonl";
+    let added = if card.sources.iter().any(|s| s == ledger) {
+        let werk_text = std::fs::read_to_string(card.abs(ledger)).unwrap_or_default();
+        let git = if card.commit.is_some() { card_scope::chorus_home() } else { card.werk.clone() };
+        let base = Command::new("git").args(["-C", &git, "show", &format!("{}:{ledger}", card_scope::base_rev(&card))]).output()
+            .ok().filter(|o| o.status.success()).map(|o| String::from_utf8_lossy(&o.stdout).into_owned()).unwrap_or_default();
+        added_lines(&werk_text, &base)
+    } else {
+        String::new()
+    };
+    let rfile = format!("{dir}/retirements.jsonl");
+    std::fs::write(&rfile, added).map_err(|e| CardError::Failed(format!("{rfile}: {e}")))?;
+    p.retirements = Some(rfile);
     // #4536 — an ontology file loads only the subjects the card changed
     if !p.ontology.is_empty() {
-        let dir = std::env::temp_dir().join(format!("athena-deploy-card-{}-{}", card.card, std::process::id())).display().to_string();
-        std::fs::create_dir_all(&dir).map_err(|e| CardError::Failed(format!("{dir}: {e}")))?;
-        p.scratch = Some(dir.clone());
         let werk = format!("{}/", card.werk.trim_end_matches('/'));
         let mut files = Vec::new();
         for abs in &p.ontology {
@@ -415,6 +441,9 @@ pub fn run(card_id: &str, mode: Mode, target: Option<&str>) -> Result<String, Ca
     // for a landed card canonical (its files come from the snapshot, files_root)
     let root = if mode == Mode::Landed { card_scope::chorus_home() } else { card.werk.clone() };
     std::env::set_var("CHORUS_ROOT", &root);
+    if let Some(r) = &p.retirements {
+        std::env::set_var("RETIREMENTS_FILE", r);
+    }
     out.push(crate::run_athena_deploy_plan(Some(&p)).map_err(CardError::Failed)?);
 
     // athena-make reads the shapes at boot: restart it and wait for healthy.

@@ -51,3 +51,21 @@ fn negative_proof_a_stale_or_unnamed_copy_is_refused() {
     assert!(copy_is_this_runs(Some(""), Some("034gUFGI")).is_err());
     assert!(copy_is_this_runs(Some("034gUFGI"), None).is_err());
 }
+
+// #4536 run 11 (15:03) — the card deploy executed 16 old ledger retirements
+// (deploys-domain, borg, chorus, …) in staging; ADR-011's hasDomain edge to
+// deploys-domain dangled and counted as the card's.
+use athena_deploy::card::added_lines;
+
+#[test]
+fn a_card_that_adds_no_ledger_line_runs_no_retirement() {
+    let ledger = "{\"a\":1}\n{\"b\":2}\n";
+    assert_eq!(added_lines(ledger, ledger), "");
+}
+
+/// NEGATIVE PROOF: a line the card adds is still run, and only that line.
+#[test]
+fn negative_proof_a_line_the_card_adds_is_still_run() {
+    assert_eq!(added_lines("{\"a\":1}\n{\"c\":3}\n", "{\"a\":1}\n"), "{\"c\":3}\n");
+    assert_eq!(added_lines("{\"a\":1}\n", ""), "{\"a\":1}\n");
+}
