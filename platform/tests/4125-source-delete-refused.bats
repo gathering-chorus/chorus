@@ -114,8 +114,9 @@ _live_count() {
   echo "$output" | grep -q "REFUSED"
   echo "$output" | grep -q "fixtureDropMe"
   echo "$output" | grep -q "fixture-4125.ttl"
-  # the refusal names the FIX, not only the fact (Wren, 2026-09-18 13:27)
-  echo "$output" | grep -q "retire-subject"
+  # the refusal names the FIX, not only the fact (Wren, 2026-09-18 13:27); since #4531
+  # the fix is a staged line in the retirements file, not a retire-subject command
+  echo "$output" | grep -q "model-retirements.jsonl"
   # and nothing was written: the subject is untouched, not half-removed
   test "$(_live_count fixtureDropMe)" -gt 0
 }
