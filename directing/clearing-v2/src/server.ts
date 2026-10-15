@@ -255,8 +255,8 @@ export function createApp(options?: {
   const app = express();
   app.use(express.json());
   app.use(express.static(path.join(__dirname, '../public'), { index: false }));
-  app.use('/vendor/@noble/curves', express.static(path.join(__dirname, '../node_modules/@noble/curves/esm')));
-  app.use('/vendor/@noble/hashes', express.static(path.join(__dirname, '../node_modules/@noble/hashes/esm')));
+  app.use('/vendor/@noble/curves', express.static(path.join(__dirname, '../node_modules/@noble/curves/esm'), { extensions: ['js'] }));
+  app.use('/vendor/@noble/hashes', express.static(path.join(__dirname, '../node_modules/@noble/hashes/esm'), { extensions: ['js'] }));
 
   const router = new MessageRouter(500);
   const pulseUrl = options?.pulseUrl || PULSE_URL;
@@ -307,7 +307,7 @@ export function createApp(options?: {
       visible: true,
       pubkey: event.pubkey,
       room,
-      tick: true,
+      tick: relay.isConnected(),
     };
 
     if (router.ingest(msg)) {

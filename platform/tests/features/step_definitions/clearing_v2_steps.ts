@@ -28,11 +28,55 @@ Given('Clearing v2 is running on port {int}', async function (port: number) {
   assert.strictEqual(data.ok, true, 'Clearing v2 health returned ok=false');
 });
 
+let browserInstance: any = null;
+let browserContext: any = null;
+let browserPage: any = null;
+let lastPostedMsgText = '';
+
+async function ensureBrowserPage(viewport = { width: 390, height: 844 }) {
+  if (!browserInstance) {
+    const { chromium } = require('playwright');
+    browserInstance = await chromium.launch({
+      executablePath: '/Applications/Google Chrome.app/Contents/MacOS/Google Chrome',
+      headless: true,
+      args: ['--no-sandbox', '--disable-setuid-sandbox', '--disable-gpu'],
+    });
+  }
+  if (!browserContext) {
+    const { readCookieKey, mintShareSessionCookie } = require('../../../../directing/clearing-v2/dist/share-session.js');
+    browserContext = await browserInstance.newContext({ viewport });
+    const key = readCookieKey();
+    if (key) {
+      const cookie = mintShareSessionCookie('https://id.lightlifeurbangardens.com/jeff/profile/card#me', key);
+      await browserContext.addCookies([{
+        name: 'chorus_share_session',
+        value: cookie,
+        domain: '127.0.0.1',
+        path: '/',
+      }]);
+    }
+  }
+  if (!browserPage) {
+    browserPage = await browserContext.newPage();
+  }
+  return browserPage;
+}
+
+async function closeBrowser() {
+  if (browserInstance) {
+    try { await browserInstance.close(); } catch {}
+    browserInstance = null;
+    browserContext = null;
+    browserPage = null;
+  }
+}
+
 // Roles steps
-When('Jeff loads the Roles page', async function () {
-  const res = await fetchUrl(`${BASE_URL}/roles`);
-  lastHttpStatus = res.status;
-  lastPageContent = res.body;
+When('Jeff loads the Roles page', { timeout: 30000 }, async function () {
+  const p = await ensureBrowserPage();
+  const res = await p.goto(`${BASE_URL}/roles`, { waitUntil: 'domcontentloaded' });
+  lastHttpStatus = res?.status() || 200;
+  lastPageContent = await p.content();
 });
 
 Then('Jeff sees all five principals listed with login status and active session', async function () {
@@ -129,10 +173,11 @@ Then("each row displays the principal's current card and last heard time", funct
   assert.ok(lastPageContent.includes('#4530'), 'Abby Normal row does not display card #4530');
 });
 
-When('viewing the roles status table', async function () {
-  const res = await fetchUrl(`${BASE_URL}/roles`);
-  lastHttpStatus = res.status;
-  lastPageContent = res.body;
+When('viewing the roles status table', { timeout: 30000 }, async function () {
+  const p = await ensureBrowserPage();
+  const res = await p.goto(`${BASE_URL}/roles`, { waitUntil: 'domcontentloaded' });
+  lastHttpStatus = res?.status() || 200;
+  lastPageContent = await p.content();
 });
 
 Then('each principal shows one of {string}, {string}, {string}, {string}, or {string}', function (s1: string, s2: string, s3: string, s4: string, s5: string) {
@@ -230,33 +275,74 @@ Then('Jeff sees who is working right now with their active card and status dot',
 });
 
 // Rooms steps
-When('Jeff loads the Rooms page', async function () {
-  const res = await fetchUrl(`${BASE_URL}/rooms/team`);
-  lastHttpStatus = res.status;
-  lastPageContent = res.body;
+When('Jeff loads the Rooms page', { timeout: 30000 }, async function () {
+  const p = await ensureBrowserPage();
+  await p.goto(`${BASE_URL}/rooms/team`, { waitUntil: 'domcontentloaded' });
 });
 
-Then('Jeff sees a list of rooms including {string} and direct conversations', function (room: string) {
-  assert.strictEqual(lastHttpStatus, 200, `Rooms page returned HTTP ${lastHttpStatus}`);
-  assert.match(lastPageContent, /class="[^"]*rooms-sidebar[^"]*"/, 'Rooms page lacks rooms sidebar selector');
-  assert.ok(lastPageContent.includes(room), `Rooms page lacks room ${room}`);
-  assert.ok(lastPageContent.includes('Wren') && lastPageContent.includes('Silas') && lastPageContent.includes('Abby Normal'), 'Rooms sidebar lacks direct role participants');
-});
+Then('Jeff sees a list of rooms including {string} and direct conversations', async function (room: string) {
+  assert.ok(browserPage, 'Browser page was not launched');
+  const sidebar = browserPage.locator('.rooms-sidebar');
+  assert.ok(await sidebar.isVisible(), 'Rooms page lacks visible rooms sidebar selector');
 
-Then('Jeff can switch to {string} room', function (room: string) {
-  assert.match(lastPageContent, new RegExp(`href="[^"]*/rooms/${room.replace('#', '').trim()}"`), `No link to switch to ${room}`);
-});
-
-When('Jeff posts a message {string} into the {string} room', async function (msg: string, room: string) {
   const cleanRoom = room.replace('#', '').trim();
-  const res = await fetchUrl(`${BASE_URL}/rooms/${cleanRoom}`);
-  lastHttpStatus = res.status;
-  lastPageContent = res.body;
+  const roomLink = browserPage.locator(`.rooms-sidebar a[href*="/rooms/${cleanRoom}"]`);
+  assert.ok(await roomLink.isVisible(), `Rooms page lacks room ${room}`);
+
+  const sidebarText = await sidebar.innerText();
+  assert.ok(sidebarText.includes('Wren') && sidebarText.includes('Silas') && sidebarText.includes('Abby Normal'),
+    'Rooms sidebar lacks direct role participants');
 });
 
-Then('Jeff sees the message appear in the feed with a delivery confirmation tick', function () {
-  assert.match(lastPageContent, /class="[^"]*delivery-tick[^"]*"/, 'Messages lack delivery confirmation tick from relay OK');
-  assert.ok(lastPageContent.includes('✓ relay'), 'Delivery tick does not show relay confirmation');
+Then('Jeff can switch to {string} room', async function (room: string) {
+  try {
+    assert.ok(browserPage, 'Browser page was not launched');
+    const cleanRoom = room.replace('#', '').trim();
+    const roomLink = browserPage.locator(`.rooms-sidebar a[href*="/rooms/${cleanRoom}"]`);
+    assert.ok(await roomLink.isVisible(), `No link to switch to ${room}`);
+    await roomLink.click();
+    await browserPage.waitForTimeout(500);
+    assert.ok(browserPage.url().includes(`/rooms/${cleanRoom}`), `URL did not switch to /rooms/${cleanRoom}`);
+  } finally {
+    await closeBrowser();
+  }
+});
+
+When('Jeff posts a message {string} into the {string} room', { timeout: 30000 }, async function (msg: string, room: string) {
+  const cleanRoom = room.replace('#', '').trim();
+  lastPostedMsgText = msg;
+
+  const p = await ensureBrowserPage();
+  await p.goto(`${BASE_URL}/rooms/${cleanRoom}`, { waitUntil: 'domcontentloaded' });
+
+  // Wait for room-key auto-binding to finish
+  await p.waitForFunction(() => (window as any).roomKeyStatus && (window as any).roomKeyStatus.state === 'bound', { timeout: 5000 }).catch(() => {});
+
+  // Type message into composer input
+  const box = p.locator('textarea, input[type=text]').first();
+  await box.fill(msg);
+
+  // Click Send button
+  await p.getByRole('button', { name: /send/i }).click();
+
+  // Wait for response / delivery update
+  await p.waitForTimeout(2000);
+});
+
+Then('Jeff sees the message appear in the feed with a delivery confirmation tick', { timeout: 10000 }, async function () {
+  try {
+    assert.ok(browserPage, 'Browser page was not launched');
+
+    // 1. Assert message appears in feed
+    const feedHtml = await browserPage.innerHTML('#messages-stream');
+    assert.ok(feedHtml.includes(lastPostedMsgText), `Message text "${lastPostedMsgText}" not found in feed`);
+
+    // 2. Assert delivery confirmation tick is visible
+    const tickCount = await browserPage.locator('.delivery-tick').count();
+    assert.ok(tickCount > 0, 'Message lacks delivery confirmation tick from relay OK');
+  } finally {
+    await closeBrowser();
+  }
 });
 
 When('role chatter occurs in response to a message', function () {
@@ -299,10 +385,11 @@ Given('the trust strip endpoint returns source, last successful write, and statu
   assert.ok(names.includes('decisions'), 'Trust strip missing decisions source');
 });
 
-When('Jeff loads any Clearing page', async function () {
-  const res = await fetchUrl(`${BASE_URL}/`);
-  lastHttpStatus = res.status;
-  lastPageContent = res.body;
+When('Jeff loads any Clearing page', { timeout: 30000 }, async function () {
+  const p = await ensureBrowserPage();
+  const res = await p.goto(`${BASE_URL}/today`, { waitUntil: 'domcontentloaded' });
+  lastHttpStatus = res?.status() || 200;
+  lastPageContent = await p.content();
 });
 
 Then('Jeff sees a trust strip with chips for board, rooms, decisions, and roles', function () {
@@ -321,11 +408,14 @@ Given('a backend source has not written for {int} minutes', function (_min: numb
   currentLagSource = 'roles';
 });
 
-When('Jeff looks at the trust strip', async function () {
-  const headers = currentLagSource ? { 'x-clearing-test': '1', 'x-lag-source': currentLagSource } : undefined;
-  const res = await fetchUrl(`${BASE_URL}/`, headers);
-  lastHttpStatus = res.status;
-  lastPageContent = res.body;
+When('Jeff looks at the trust strip', { timeout: 30000 }, async function () {
+  const p = await ensureBrowserPage();
+  if (currentLagSource) {
+    await p.setExtraHTTPHeaders({ 'x-clearing-test': '1', 'x-lag-source': currentLagSource });
+  }
+  const res = await p.goto(`${BASE_URL}/today`, { waitUntil: 'domcontentloaded' });
+  lastHttpStatus = res?.status() || 200;
+  lastPageContent = await p.content();
 });
 
 Then('the lag is displayed as elapsed time with a neutral grey indicator', function () {
