@@ -7,6 +7,11 @@
 //! shape (sh:targetClass), and every product whose own rows they write (its
 //! settings, its domains). A touched class that no product serves is named, never
 //! skipped: nothing would generate it.
+//!
+//! #4547 reopen 1 — a file is not the change. Only the classes and rows whose
+//! triples differ from main's are the card's (the shared rule, card_scope::
+//! changed_subjects): touching chorus.ttl must not make a card answer for the
+//! 26 old classes already in it.
 
 use crate::model::{select_iri, ModelError};
 use oxigraph::io::{RdfFormat, RdfParser};
@@ -29,6 +34,8 @@ fn err(e: impl std::fmt::Display) -> ModelError {
 pub struct Touched {
     pub classes: BTreeSet<String>,
     pub subjects: BTreeSet<String>,
+    /// (shape, class) for every `?shape sh:targetClass ?class` in the files.
+    pub targets: BTreeSet<(String, String)>,
 }
 
 /// Read the card's files on their own. A file that does not parse is an error
@@ -49,7 +56,37 @@ pub fn touched(files: &[PathBuf]) -> Result<Touched, ModelError> {
     for r in select_iri(&store, "SELECT DISTINCT ?s WHERE { ?s ?p ?o FILTER(isIRI(?s)) }")? {
         t.subjects.insert(r["s"].clone());
     }
+    for r in select_iri(&store, "SELECT DISTINCT ?s ?c WHERE { ?s sh:targetClass ?c FILTER(isIRI(?s) && isIRI(?c)) }")? {
+        t.targets.insert((r["s"].clone(), r["c"].clone()));
+    }
     Ok(t)
+}
+
+/// #4547 reopen 1 — keep only what the card changed: a class whose own triples
+/// changed or whose shape changed, and the rows whose triples changed. `changed`
+/// holds bare IRIs (card_scope::changed_subjects without the angle brackets).
+pub fn only_changed(t: Touched, changed: &BTreeSet<String>) -> Touched {
+    let shape_changed = |c: &String| t.targets.iter().any(|(s, tc)| tc == c && changed.contains(s));
+    Touched {
+        classes: t.classes.iter().filter(|c| changed.contains(*c) || shape_changed(c)).cloned().collect(),
+        subjects: t.subjects.iter().filter(|s| changed.contains(*s)).cloned().collect(),
+        targets: t.targets.iter().filter(|(s, _)| changed.contains(s)).cloned().collect(),
+    }
+}
+
+/// The bare IRIs a card's files changed against main, by the shared rule. A file
+/// riot cannot read is an error naming it.
+pub fn changed_since_main(werk: &str, rels: &[String]) -> Result<BTreeSet<String>, ModelError> {
+    let mut out = BTreeSet::new();
+    for rel in rels {
+        let abs = format!("{}/{rel}", werk.trim_end_matches('/'));
+        let werk_nt = card_scope::ntriples(&[abs]).map_err(|e| err(format!("{rel}: {e}")))?;
+        let main_nt = card_scope::main_ntriples(werk, rel);
+        for s in card_scope::changed_subjects(&werk_nt, &main_nt) {
+            out.insert(s.trim_matches(|c| c == '<' || c == '>').to_string());
+        }
+    }
+    Ok(out)
 }
 
 /// product name → the classes it serves that the card touched; then the unserved classes.

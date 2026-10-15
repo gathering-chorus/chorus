@@ -302,3 +302,102 @@ pub fn shape_for(class_iri: &str, model_nt: &str) -> Option<String> {
         .find(|(s, p, o)| *s == named && *p == RDF_TYPE && *o == NODE_SHAPE)
         .map(|(s, _, _)| local_name(s))
 }
+
+// #4547 reopen 1 — what a card changed, judged by triples rather than by file.
+// Written by Kade on #4536 (athena-validate card.rs, bb8f85e71, normalised in
+// 305cceea3) and moved here so validate and gen use one rule: a class or row
+// is the card's only when its triples differ from main's.
+
+/// Main's version of a card file as N-Triples. Empty when main has no such file,
+/// so every class in it is the card's.
+pub fn main_ntriples(werk: &str, rel: &str) -> String {
+    let out = std::process::Command::new("git")
+        .args(["-C", werk, "show", &format!("origin/main:{rel}")])
+        .output();
+    let Ok(out) = out else { return String::new() };
+    if !out.status.success() {
+        return String::new();
+    }
+    let tmp = std::env::temp_dir().join(format!("card-scope-main-{}-{}.ttl", std::process::id(), rel.replace('/', "_")));
+    if std::fs::write(&tmp, &out.stdout).is_err() {
+        return String::new();
+    }
+    let nt = ntriples(&[tmp.to_string_lossy().into_owned()]).unwrap_or_default();
+    let _ = std::fs::remove_file(&tmp);
+    nt
+}
+
+/// The triples about one subject (`<iri>` with its angle brackets), sorted.
+/// Blank-node labels differ per parse (`_:b0` vs `_:b7`), so they are
+/// normalised first: the same list is not a change.
+fn triples_about(nt: &str, subject: &str) -> Vec<String> {
+    let key = format!("{subject} ");
+    let bnode = |l: &str| l.split_whitespace().map(|t| if t.starts_with("_:") { "_:b" } else { t }).collect::<Vec<_>>().join(" ");
+    let mut v: Vec<String> = nt.lines().filter(|l| l.starts_with(&key)).map(bnode).collect();
+    v.sort();
+    v
+}
+
+/// Classes declared in `werk_nt` that main does not declare with the same
+/// triples about them: added, or changed.
+pub fn changed_classes(werk_nt: &str, main_nt: &str) -> Vec<String> {
+    declared_classes(werk_nt).into_iter().filter(|c| triples_about(werk_nt, c) != triples_about(main_nt, c)).collect()
+}
+
+/// Every named subject in `werk_nt` whose triples differ from main's: the rows
+/// and shapes a card added or changed. Sorted, with angle brackets.
+pub fn changed_subjects(werk_nt: &str, main_nt: &str) -> Vec<String> {
+    // every line's subject, whatever its object (nt_triple keeps IRI objects only)
+    let mut subjects: Vec<String> =
+        werk_nt.lines().filter_map(|l| l.split_whitespace().next()).filter(|s| s.starts_with('<')).map(str::to_string).collect();
+    subjects.sort();
+    subjects.dedup();
+    subjects.into_iter().filter(|s| triples_about(werk_nt, s) != triples_about(main_nt, s)).collect()
+}
+
+#[cfg(test)]
+mod changed_4536 {
+    use super::{changed_classes, changed_subjects};
+    const OWL: &str = "<http://www.w3.org/2002/07/owl#Class>";
+    const TYPE: &str = "<http://www.w3.org/1999/02/22-rdf-syntax-ns#type>";
+    const LABEL: &str = "<http://www.w3.org/2000/01/rdf-schema#label>";
+    fn class(n: &str, label: &str) -> String {
+        format!("<urn:x#{n}> {TYPE} {OWL} .\n<urn:x#{n}> {LABEL} \"{label}\" .\n")
+    }
+
+    #[test]
+    fn an_unchanged_class_from_main_is_not_the_cards() {
+        let main = class("Old", "old");
+        let werk = format!("{}{}", class("Old", "old"), class("New", "new"));
+        assert_eq!(changed_classes(&werk, &main), vec!["<urn:x#New>".to_string()]);
+    }
+
+    #[test]
+    fn a_class_whose_triples_changed_is_the_cards() {
+        assert_eq!(changed_classes(&class("Old", "renamed"), &class("Old", "old")), vec!["<urn:x#Old>".to_string()]);
+    }
+
+    /// A list object parses to a fresh blank node each time; the same list is
+    /// not a change (10-15: GateResult's mintKey list read as "changed").
+    #[test]
+    fn the_same_list_under_a_different_blank_node_is_not_a_change() {
+        let main = format!("<urn:x#G> {TYPE} {OWL} .\n<urn:x#G> <urn:x#mintKey> _:b0 .\n");
+        let werk = format!("<urn:x#G> {TYPE} {OWL} .\n<urn:x#G> <urn:x#mintKey> _:b7 .\n");
+        assert!(changed_classes(&werk, &main).is_empty());
+    }
+
+    /// NEGATIVE PROOF: with no main version every declared class is the card's,
+    /// so a new unshaped class can never hide behind the diff.
+    #[test]
+    fn negative_proof_a_new_file_answers_for_every_class() {
+        let werk = format!("{}{}", class("A", "a"), class("B", "b"));
+        assert_eq!(changed_classes(&werk, "").len(), 2);
+    }
+
+    #[test]
+    fn changed_subjects_names_only_rows_whose_triples_moved() {
+        let main = format!("{}<urn:x#row1> {LABEL} \"a\" .\n<urn:x#row2> {LABEL} \"b\" .\n", class("Old", "old"));
+        let werk = format!("{}<urn:x#row1> {LABEL} \"a\" .\n<urn:x#row2> {LABEL} \"c\" .\n", class("Old", "old"));
+        assert_eq!(changed_subjects(&werk, &main), vec!["<urn:x#row2>".to_string()]);
+    }
+}
