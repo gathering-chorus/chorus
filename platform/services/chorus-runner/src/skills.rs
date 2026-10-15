@@ -317,6 +317,8 @@ pub fn child_env(owner: &str, token: &str, trace: &str) -> Vec<(&'static str, St
         ("CHORUS_ROLE", owner.to_string()),
         ("DEPLOY_ROLE", owner.to_string()),
         ("CHORUS_TRACE", trace.to_string()),
+        // #4535 — a tool run under a role's own Mac account finds the shared state.
+        ("CHORUS_STATE_DIR", crate::server::state_dir()),
     ]
 }
 

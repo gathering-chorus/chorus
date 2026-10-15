@@ -116,10 +116,25 @@ if [ -n "${CHORUS_ROLE:-}" ]; then
   unset __chorus_env_werk_dir __chorus_env_werk_count
 fi
 
+# #4535 — CHORUS_STATE_DIR: the team's shared ~/.chorus (spine, bin, run,
+# identity). It belongs to whoever owns the canonical checkout, not to the
+# caller: a role on its own Mac account (Abby, chorus-abby-normal) has its own
+# empty HOME, and every $HOME/.chorus read under her user found nothing.
+if [ -z "${CHORUS_STATE_DIR:-}" ]; then
+  __chorus_env_owner="$(stat -f %Su "$CHORUS_HOME" 2>/dev/null)"
+  case "$__chorus_env_owner" in
+    ''|*[!a-z0-9._-]*) __chorus_env_owner_home="$HOME" ;;
+    *) __chorus_env_owner_home="$(eval echo "~$__chorus_env_owner")" ;;
+  esac
+  [ -d "$__chorus_env_owner_home/.chorus" ] || __chorus_env_owner_home="$HOME"
+  export CHORUS_STATE_DIR="$__chorus_env_owner_home/.chorus"
+  unset __chorus_env_owner __chorus_env_owner_home
+fi
+
 # CHORUS_BIN: single deployed location for chorus-* binaries (#2734 target).
 # Prepend to PATH so signed installs override target/release builds.
 # Idempotent: re-sourcing does not duplicate the entry.
-export CHORUS_BIN="$HOME/.chorus/bin"
+export CHORUS_BIN="$CHORUS_STATE_DIR/bin"
 case ":$PATH:" in
   *":$CHORUS_BIN:"*) ;;  # already present, no-op
   *) export PATH="$CHORUS_BIN:$PATH" ;;

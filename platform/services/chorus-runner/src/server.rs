@@ -99,6 +99,15 @@ pub fn identity_token(principal: &str) -> Option<String> {
     out.status.success().then(|| String::from_utf8_lossy(&out.stdout).trim().to_string()).filter(|t| !t.is_empty())
 }
 
+/// #4535 — the team's shared ~/.chorus. chorus-env-setup exports
+/// CHORUS_STATE_DIR as the canonical checkout owner's; a role on its own Mac
+/// account (Abby) has an empty HOME, so $HOME/.chorus/bin held nothing and her
+/// tools fell back to bare names on whatever PATH she had.
+pub fn state_dir() -> String {
+    std::env::var("CHORUS_STATE_DIR").ok().filter(|s| !s.is_empty())
+        .unwrap_or_else(|| format!("{}/.chorus", std::env::var("HOME").unwrap_or_default()))
+}
+
 /// Which binary a tool runs. #4514 — the caller's werk bin slot first, as the
 /// cicd pipeline's PATH does today (${CHORUS_WERK_BASE}/<role>-bin first), so a
 /// card that changes a verb runs its own build; then the installed copy.
@@ -109,7 +118,7 @@ pub fn binary_path(name: &str, who: &str) -> String {
             return slot;
         }
     }
-    let installed = format!("{}/.chorus/bin/{name}", std::env::var("HOME").unwrap_or_default());
+    let installed = format!("{}/bin/{name}", state_dir());
     if std::path::Path::new(&installed).exists() {
         return installed;
     }
