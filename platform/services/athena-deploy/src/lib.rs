@@ -917,13 +917,42 @@ fn ok_http(code: &str) -> bool {
 /// verb then reported `staging-load-http-401` — true, and useless: a refusal that
 /// names the store's answer cannot name a missing credential.
 fn fuseki_auth() -> Vec<String> {
-    match std::env::var("FUSEKI_ADMIN_PASSWORD") {
-        Ok(pw) if !pw.is_empty() => {
+    match fuseki_password() {
+        Some(pw) => {
             let user = env_or("FUSEKI_ADMIN_USER", "admin");
             vec!["-u".to_string(), format!("{user}:{pw}")]
         }
-        _ => Vec::new(),
+        None => Vec::new(),
     }
+}
+
+/// #4533 — where the write credential lives when the environment has none:
+/// the same 0600 file `fuseki-auth.sh` reads. Since #4515 the land runs this
+/// verb through the runner, which carries no store password, so #4531's model
+/// deploy got `staging-load-http-401-no-credential` (2026-10-14 20:29).
+pub fn fuseki_credential_file() -> String {
+    std::env::var("FUSEKI_WRITE_ENV").ok().filter(|v| !v.is_empty()).unwrap_or_else(|| {
+        format!("{}/.gathering/data/fuseki-write.env", std::env::var("HOME").unwrap_or_default())
+    })
+}
+
+/// The write password: the environment first, else the credential file. Never printed.
+pub fn fuseki_password() -> Option<String> {
+    if let Ok(pw) = std::env::var("FUSEKI_ADMIN_PASSWORD") {
+        if !pw.is_empty() {
+            return Some(pw);
+        }
+    }
+    let body = std::fs::read_to_string(fuseki_credential_file()).ok()?;
+    body.lines()
+        .find_map(|l| l.trim().strip_prefix("FUSEKI_ADMIN_PASSWORD="))
+        .map(|v| v.trim().trim_matches('"').to_string())
+        .filter(|v| !v.is_empty())
+}
+
+/// The refusal when no credential exists anywhere: it names the file looked for.
+pub fn no_credential_refusal(prefix: &str) -> String {
+    format!("{prefix}-http-401-no-credential (no FUSEKI_ADMIN_PASSWORD in the environment or in {})", fuseki_credential_file())
 }
 
 /// Run a curl invocation, returning its stdout (trimmed) or a failure message.
@@ -1248,7 +1277,7 @@ pub fn run_athena_deploy_plan(plan: Option<&card::CardPlan>) -> Result<String, S
             // 401 sent two roles looking at Fuseki when the cause was an empty
             // FUSEKI_ADMIN_PASSWORD in the calling environment.
             if code == "401" && fuseki_auth().is_empty() {
-                return Err(fail("staging-load-http-401-no-credential"));
+                return Err(fail(&no_credential_refusal("staging-load")));
             }
             return Err(fail(&format!("staging-load-http-{code}")));
         }
@@ -1567,7 +1596,7 @@ pub fn deploy_domain_set(set: &DomainSet, root: &str, ctx: &StoreCtx) -> Result<
             &format!("{}?graph={staging}", ctx.gsp)])?;
         if !ok_http(&code) {
             if code == "401" && fuseki_auth().is_empty() {
-                return Err(fail(&format!("{}-staging-http-401-no-credential", set.name)));
+                return Err(fail(&no_credential_refusal(&format!("{}-staging", set.name))));
             }
             return Err(fail(&format!("{}-staging-http-{code}", set.name)));
         }
